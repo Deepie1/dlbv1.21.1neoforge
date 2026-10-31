@@ -102,7 +102,13 @@ public final class ChunkKeeper {
     // pour recevoir leur ticket. Cette latence artificielle dominait les runs
     // (99 chunks annoncés prêts, puis 24/48/72/96). La génération reste limitée
     // séparément; seuls les tickets bon marché sont posés en une vague.
-    private static final int REQUEST_PER_TICK = Math.max(1, Math.min(12, Integer.getInteger("dlb.requestPerTick", 12))); // T232
+    // T302-B : soumission non bloquante (getChunkFuture) relevée à 24/tick (plafond 32)
+    // pour alimenter les workers sans attendre 9 ticks de soumission à vide sur 99 chunks.
+    // T302-B/J : 8 demandes/tick et 20 en vol avec BACKGROUND_EXECUTOR elargi a CPUS (2 workers sur 2 vCPU
+    // au lieu d'1 seul dans Util.makeExecutor = availableProcessors()-1) : double le debit worldgen tout en
+    // etalant les promotions ChunkStatus.FULL sur plusieurs ticks (< 600 ms/tick, regle R8).
+    private static final int REQUEST_PER_TICK = Math.max(1, Math.min(24, Integer.getInteger("dlb.requestPerTick", 8)));
+    private static int savedBgParallelism = -1;
     private static final int PIN_PER_TICK = 128;
     /**
      * Demandes de chargement asynchrones EN VOL, tout au plus.
@@ -119,7 +125,7 @@ public final class ChunkKeeper {
     // dizaines de chunks par seconde (une generation dure quelques dizaines de ms).
     // Même régression : T76b prescrit 2 chunks en vol, pas 16. Un plafond élevé
     // laisse les résultats FULL s'accumuler puis s'appliquer ensemble au tick.
-    private static final int MAX_IN_FLIGHT = Math.max(2, Math.min(32, Integer.getInteger("dlb.maxInFlight", 16))); // T232
+    private static final int MAX_IN_FLIGHT = Math.max(2, Math.min(32, Integer.getInteger("dlb.maxInFlight", 20))); // T232/T302-B : 20 en vol = 0 contention thread serveur
     /** Le maintien est rafraichi tous les 5 s (le ticket PORTAL dure 15 s). */
     private static final int REFRESH_TICKS = 100;
     /** T66 : intervalle des re-demandes forcees pour les chunks toujours absents (5 s). */
@@ -187,8 +193,10 @@ public final class ChunkKeeper {
      */
     private static void ensureTicker(ServerLevel level) {
         if (!TICKING.add(level)) return;
+        Zone z0 = ZONES.get(level);
+        int delay = (z0 != null && !z0.pending.isEmpty()) ? 1 : REFRESH_TICKS; // T302-B : pompe chaque tick tant que pending != vide
         deepluckyblock.procedures.TestProcedure.schedule(level,
-                deepluckyblock.procedures.TestProcedure.currentTick(level) + REFRESH_TICKS, () -> {
+                deepluckyblock.procedures.TestProcedure.currentTick(level) + delay, () -> {
                     TICKING.remove(level);
                     if (!ZONES.containsKey(level)) return;
                     keep(level);
@@ -236,8 +244,31 @@ public final class ChunkKeeper {
         track(level, min, max, false);
     }
 
+    private static void boostBgParallelism() {
+        try {
+            if (net.minecraft.Util.backgroundExecutor() instanceof java.util.concurrent.ForkJoinPool fjp) {
+                int cur = fjp.getParallelism();
+                if (cur < CPUS) {
+                    if (savedBgParallelism < 0) savedBgParallelism = cur;
+                    fjp.setParallelism(CPUS);
+                }
+            }
+        } catch (Throwable ignored) { }
+    }
+
+    private static void restoreBgParallelism() {
+        try {
+            if (savedBgParallelism > 0 && ZONES.isEmpty()
+                    && net.minecraft.Util.backgroundExecutor() instanceof java.util.concurrent.ForkJoinPool fjp) {
+                fjp.setParallelism(savedBgParallelism);
+                savedBgParallelism = -1;
+            }
+        } catch (Throwable ignored) { }
+    }
+
     public static void track(ServerLevel level, BlockPos min, BlockPos max, boolean pin) {
         if (level == null || min == null || max == null) return;
+        boostBgParallelism(); // T302-J : utilise les 2 vCPU pendant le chargement asynchrone de la zone
         Zone z = ZONES.get(level);
         if (z == null) {
             z = new Zone(level);
@@ -271,6 +302,9 @@ public final class ChunkKeeper {
         // pipeline (prepZone -> paste -> decorate), meme quand aucune passe ne
         // tourne. Sans ca, les tickets PORTAL (15 s) expiraient pendant un paste
         // de 30 s et les chunks se dechargeaient sous les passes suivantes.
+        if (level.getServer() != null && level.getServer().isSameThread()) {
+            keep(level); // T302-B : soumet la 1re salve des le tick 0 sans attendre la reprise a +4 ticks
+        }
         ensureTicker(level);
     }
 
@@ -458,6 +492,7 @@ public final class ChunkKeeper {
     /** Libere les tickets de la zone du niveau (fin de pipeline). */
     public static void release(ServerLevel level) {
         Zone z = ZONES.remove(level);
+        restoreBgParallelism();
         deepluckyblock.util.TerrainEditClamp.stop(level, "fin de pipeline");
         if (z == null) return;
         int total = z.pinned.size();
@@ -537,22 +572,21 @@ public final class ChunkKeeper {
         // Grow a compact region from the center. Long strips make each wave
         // expose a large new world-generation dependency border. Tile sorting
         // changes only order: coverage, request limits and pinning stay identical.
-        List<int[]> tiles = new ArrayList<>();
-        for (int bx = z.cx0; bx <= z.cx1; bx += 4)
-            for (int bz = z.cz0; bz <= z.cz1; bz += 4) tiles.add(new int[]{bx, bz});
-        tiles.sort(java.util.Comparator.<int[]>comparingLong(tile -> {
-            long dx = (long) tile[0] + Math.min(tile[0] + 3, z.cx1) - z.cx0 - z.cx1;
-            long dz = (long) tile[1] + Math.min(tile[1] + 3, z.cz1) - z.cz0 - z.cz1;
-            return dx * dx + dz * dz;
-        }).thenComparingInt(tile -> tile[0]).thenComparingInt(tile -> tile[1]));
-        for (int[] tile : tiles) {
-            for (int cx = tile[0]; cx <= Math.min(tile[0] + 3, z.cx1); cx++) {
-                for (int cz = tile[1]; cz <= Math.min(tile[1] + 3, z.cz1); cz++) {
-                    ChunkPos cp = new ChunkPos(cx, cz);
-                    if (!known.add(cp)) continue;
-                    z.pending.add(cp);
-                }
+        // T302-B : ordre concentrique exact par anneaux de Chebyshev depuis le centre :
+        // débloque dans l'ordre exact safetyRadius -> x0,6 -> emprise -> couronne prepZone
+        // sans qu'aucun chunk de bord retarde l'emprise centrale.
+        final int midX2 = z.cx0 + z.cx1;
+        final int midZ2 = z.cz0 + z.cz1;
+        List<ChunkPos> added = new ArrayList<>();
+        for (int cx = z.cx0; cx <= z.cx1; cx++) {
+            for (int cz = z.cz0; cz <= z.cz1; cz++) {
+                ChunkPos cp = new ChunkPos(cx, cz);
+                if (known.add(cp)) added.add(cp);
             }
         }
+        added.sort(java.util.Comparator.<ChunkPos>comparingInt(cp ->
+                Math.max(Math.abs(cp.x * 2 - midX2), Math.abs(cp.z * 2 - midZ2)))
+                .thenComparingInt(cp -> Math.abs(cp.x * 2 - midX2) + Math.abs(cp.z * 2 - midZ2)));
+        z.pending.addAll(added);
     }
 }

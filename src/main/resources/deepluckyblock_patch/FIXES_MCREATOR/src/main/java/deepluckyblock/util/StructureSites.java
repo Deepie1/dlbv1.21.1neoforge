@@ -49,21 +49,71 @@ public final class StructureSites {
 
     private static final Map<ServerLevel, List<Area>> PLACED = new HashMap<>();
 
+    private static java.nio.file.Path sitesFile(ServerLevel level) {
+        try {
+            if (level == null || level.getServer() == null) return null;
+            String dim = level.dimension().location().toString().replace(':', '_').replace('/', '_');
+            return level.getServer()
+                    .getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
+                    .resolve("data")
+                    .resolve("dlb_sites_" + dim + ".tsv");
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static List<Area> ensureLoaded(ServerLevel level) {
+        if (level == null) return java.util.Collections.emptyList();
+        List<Area> existing = PLACED.get(level);
+        if (existing != null) return existing;
+        List<Area> list = new ArrayList<>();
+        java.nio.file.Path file = sitesFile(level);
+        if (file != null && java.nio.file.Files.isRegularFile(file)) {
+            try {
+                for (String line : java.nio.file.Files.readAllLines(file, java.nio.charset.StandardCharsets.UTF_8)) {
+                    String s = line.trim();
+                    if (s.isEmpty() || s.startsWith("#")) continue;
+                    String[] parts = s.split("\t", 5);
+                    if (parts.length >= 5) {
+                        list.add(new Area(
+                                Integer.parseInt(parts[0]),
+                                Integer.parseInt(parts[1]),
+                                Integer.parseInt(parts[2]),
+                                Integer.parseInt(parts[3]),
+                                parts[4]));
+                    }
+                }
+            } catch (Throwable ignored) { }
+        }
+        PLACED.put(level, list);
+        return list;
+    }
+
     /** Enregistre l'emprise d'une structure qui vient d'etre posee (a appeler AVANT le paste). */
     public static void register(ServerLevel level, String name, int x0, int z0, int x1, int z1) {
         if (level == null) return;
         int ax0 = Math.min(x0, x1) - MARGIN, ax1 = Math.max(x0, x1) + MARGIN;
         int az0 = Math.min(z0, z1) - MARGIN, az1 = Math.max(z0, z1) + MARGIN;
-        List<Area> list = PLACED.computeIfAbsent(level, l -> new ArrayList<>());
-        list.add(new Area(ax0, az0, ax1, az1, name));
+        List<Area> list = ensureLoaded(level);
+        Area added = new Area(ax0, az0, ax1, az1, name);
+        list.add(added);
+        java.nio.file.Path file = sitesFile(level);
+        if (file != null) {
+            try {
+                java.nio.file.Files.createDirectories(file.getParent());
+                String row = added.x0 + "\t" + added.z0 + "\t" + added.x1 + "\t" + added.z1 + "\t" + added.name + "\n";
+                java.nio.file.Files.writeString(file, row, java.nio.charset.StandardCharsets.UTF_8,
+                        java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+            } catch (Throwable ignored) { }
+        }
         deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-SITES] emprise enregistree : {} ({}x{} a {},{}), {} structure(s) suivie(s)",
                 name, ax1 - ax0 + 1, az1 - az0 + 1, ax0, az0, list.size());
     }
 
     /** Nom de la structure qui occupe ce carre, ou null si la place est libre. */
     public static String conflict(ServerLevel level, int cx, int cz, int radius) {
-        List<Area> list = PLACED.get(level);
-        if (list == null) return null;
+        List<Area> list = ensureLoaded(level);
+        if (list.isEmpty()) return null;
         int x0 = cx - radius, x1 = cx + radius, z0 = cz - radius, z1 = cz + radius;
         for (Area a : list) if (a.overlaps(x0, z0, x1, z1)) return a.name;
         return null;

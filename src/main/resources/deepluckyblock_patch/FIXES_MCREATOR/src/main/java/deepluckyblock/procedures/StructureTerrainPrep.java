@@ -410,12 +410,15 @@ public class StructureTerrainPrep {
         NW_X0 = px0; NW_Z0 = pz0; NW_W = px1 - px0 + 1; NW_H = pz1 - pz0 + 1;
         NATURAL_WATER = new boolean[NW_W][NW_H];
         NATURAL_WATER_COUNT = 0;
-        // T289 (ordre client 21/10) : la MERE de zone est installee juste
-        // AVANT le chargement — damier couvrant TOUTE la zone finale tenue.
-        // Chaque chunk qui arrive devient un enfant (streamLoadedChunk ->
-        // scoutChild) ; la mere les garde tous actifs et repond ensuite aux
-        // passes (veto A1 eclat, fondu de neige lisse, diagnostics).
-        deepluckyblock.util.TerrainMother.begin(px0 >> 4, pz0 >> 4, px1 >> 4, pz1 >> 4);
+        // T289 / T303 : la MERE de zone est installee juste AVANT le chargement —
+        // damier couvrant TOUTE la zone finale tenue + halo externe de 3 chunks.
+        // Mother est seule responsable des chunks de la STRUCTURE (setStructureBounds)
+        // et commande tous les enfants des contours.
+        deepluckyblock.util.TerrainMother motherInit =
+                deepluckyblock.util.TerrainMother.begin(px0 >> 4, pz0 >> 4, px1 >> 4, pz1 >> 4);
+        motherInit.setWorldSeed(level.getSeed());
+        motherInit.setStructureBounds(min.getX() >> 4, min.getZ() >> 4, max.getX() >> 4, max.getZ() >> 4);
+        primeMotherHalo(level, motherInit, px0 >> 4, pz0 >> 4, px1 >> 4, pz1 >> 4);
         preloadChunksBatched(level, px0, pz0, px1, pz1, px1 - px0 + 1, pz1 - pz0 + 1,
                 coreX0, coreZ0, coreX1, coreZ1, PRELOAD_TOTAL_BUDGET_MS,
                 cp -> streamLoadedChunk(level, cp.x, cp.z, topY), () -> {
@@ -526,6 +529,19 @@ public class StructureTerrainPrep {
                 max.getX() - min.getX() + 1 + ring * 2,
                 max.getZ() - min.getZ() + 1 + ring * 2);
         sampleZonePalettes(level, min, max);
+        {
+            deepluckyblock.util.TerrainMother m303 = deepluckyblock.util.TerrainMother.current();
+            if (m303 != null) {
+                deepluckyblock.util.TerrainMother.MotherVerdict v = m303.compileVerdict();
+                LOGGER.info("[DLB-MOTHER] bilan enfants A3->A4 : {} enfants ouverts (coeur structure={}, contours={}), "
+                                + "Y_haut={}, ecart_inter_chunks_struct={}, saut_mur_max={}, murs={}, crevasses={}, "
+                                + "isSnowy={} (aura={} chunk(s)) -> refill={}, smooth={}",
+                        v.totalChildren(), v.coreChildren(), v.contourChildren(),
+                        v.highestGroundY(), v.worstStructureChunkGap(), v.maxStepJump(),
+                        v.wallChildren(), v.crevasseChildren(), v.snowyChildren(),
+                        v.snowAuraRadiusChunks(), v.requestRefill(), v.requestSmooth());
+            }
+        }
 
         // 0. Pre-fill : remplit les vides SOUS la structure (emprise + 3) avec du grass
         //    block, pour garantir un sol solide (pas de structure qui flotte sur un trou).
@@ -759,8 +775,8 @@ public class StructureTerrainPrep {
         void slice() {
             deepluckyblock.util.TerrainChain.heartbeat();
             deepluckyblock.util.ChunkKeeper.keep(level);
-            if (!deepluckyblock.util.ChunkKeeper.zoneComplete(level)) {
-                deepluckyblock.util.DebugLog.setPhase("clearFootprint : attente zone ChunkKeeper");
+            if (!deepluckyblock.util.ChunkKeeper.zoneLoaded(level, min, max)) {
+                deepluckyblock.util.DebugLog.setPhase("clearFootprint : attente emprise ChunkKeeper");
                 resume();
                 return;
             }
@@ -1709,8 +1725,8 @@ public class StructureTerrainPrep {
         for (int pass = 0; pass < 2; pass++) {
             for (int x = x0; x <= x1; x++) {
                 for (int z = z0; z <= z1; z++) {
+                    if (!deepluckyblock.util.SafeSurface.isLoadedAt(level, x, z)) { skippedChunks++; continue; }
                     mut.set(x, 64, z);
-                    if (!level.hasChunkAt(mut)) { skippedChunks++; continue; }
                     // descendre du haut vers y>=30 : on cherche la croute de
                     // surface, on s'arrete au premier corps plein non glace
                     // (sauf neige qu'on traverse : c'est le signe (2)).
@@ -1838,8 +1854,8 @@ public class StructureTerrainPrep {
         long strippedInner = 0, unflaggedInner = 0;   // T277 : neige dedans, pleine colonne
         for (int cx = xMin2 >> 4; cx <= xMax2 >> 4; cx++) {
             for (int cz = zMin2 >> 4; cz <= zMax2 >> 4; cz++) {
-                if (!level.getChunkSource().hasChunk(cx, cz)) { skippedChunks++; continue; }
-                ChunkAccess chunk = level.getChunk(cx, cz);
+                ChunkAccess chunk = deepluckyblock.util.SafeSurface.chunkFor(level, cx, cz); // T301-B
+                if (chunk == null) { skippedChunks++; continue; }
                 chunkCount++;
                 for (int lx = 0; lx < 16; lx++) {
                     int x = (cx << 4) + lx;
@@ -2097,13 +2113,19 @@ public class StructureTerrainPrep {
                         // hash fort (splitmix64) de la colonne : aucune structure
                         // spatiale visible, deterministe (un re-run donne le
                         // meme tapis), taux identiques en moyenne.
-                        long h = (long) x * 0x9E3779B97F4A7C15L;
-                        h += (long) z + 0x9E3779B97F4A7C15L + (h << 6) + (h >>> 2);
-                        h ^= h >>> 30; h *= 0xBF58476D1CE4E5B9L;
-                        h ^= h >>> 27; h *= 0x94D049BB133111EBL;
-                        h ^= h >>> 31;
-                        double u = (h >>> 11) * 0x1.0p-53;
-                        int k = (u < 24.0 / 39.0) ? 1 : (u < 36.0 / 39.0) ? 2 : 3;
+                        deepluckyblock.util.TerrainMother mLayer = deepluckyblock.util.TerrainMother.current();
+                        int k;
+                        if (mLayer != null) {
+                            k = mLayer.snowLayersAt(level.getSeed(), x, z);
+                        } else {
+                            long h = (long) x * 0x9E3779B97F4A7C15L;
+                            h += (long) z + 0x9E3779B97F4A7C15L + (h << 6) + (h >>> 2);
+                            h ^= h >>> 30; h *= 0xBF58476D1CE4E5B9L;
+                            h ^= h >>> 27; h *= 0x94D049BB133111EBL;
+                            h ^= h >>> 31;
+                            double u = (h >>> 11) * 0x1.0p-53;
+                            k = (u < 24.0 / 39.0) ? 1 : (u < 36.0 / 39.0) ? 2 : 3;
+                        }
                         pos.set(x, surfY + 1, z);
                         BlockState above = chunk.getBlockState(pos);
                         // T277 : JAMAIS remplacer une recolte (CropBlock) — la
@@ -2343,8 +2365,8 @@ public class StructureTerrainPrep {
         long refuseWater = 0, bareEarthSeen = 0;   // T285 : garde eau + peau terreuse nue
         for (int cx = xMin2 >> 4; cx <= xMax2 >> 4; cx++) {
             for (int cz = zMin2 >> 4; cz <= zMax2 >> 4; cz++) {
-                if (!level.getChunkSource().hasChunk(cx, cz)) { skippedChunks++; continue; }
-                ChunkAccess chunk = level.getChunk(cx, cz);
+                ChunkAccess chunk = deepluckyblock.util.SafeSurface.chunkFor(level, cx, cz); // T301-B
+                if (chunk == null) { skippedChunks++; continue; }
                 chunkCount++;
                 for (int lx = 0; lx < 16; lx++) {
                     int x = (cx << 4) + lx;
@@ -2481,15 +2503,20 @@ public class StructureTerrainPrep {
         // chunk absent ; elles le trouvent en general deja present.
         // ================================================================
         try {
-            int warm = terrainRing() + NATURALIZE_EXTRA_RING + 32;
+            // T302-F (correctif T291) : l'ancien +32 lancait SafeSurface.requestZone sur 168 chunks (+88 chunks hors keeper
+            // non annulables !), saturant les 2 workers pendant 8-12 s et provoquant un gel [DLB-LAGPROBE] de 5 s.
+            // On maintient uniquement la boite ChunkKeeper (terrainRing + NATURALIZE_EXTRA_RING = 80 chunks) et on
+            // photographie tout chunk externe arrive en parallele pendant smooth/PasteJob.
+            deepluckyblock.util.ChunkKeeper.keep(level);
+            int warm = terrainRing() + NATURALIZE_EXTRA_RING;
             int cx0 = (min.getX() - warm) >> 4, cx1 = (max.getX() + warm) >> 4;
             int cz0 = (min.getZ() - warm) >> 4, cz1 = (max.getZ() + warm) >> 4;
-            deepluckyblock.util.SafeSurface.requestZone(level, cx0, cz0, cx1, cz1);
-            deepluckyblock.util.DebugLog.structure(
-                    "pre-tir de chauffe T291 : chunks [{}..{}]x[{}..{}] demandes en tache de fond",
-                    cx0, cx1, cz0, cz1);
+            int topYDec = Math.min(max.getY() + 10, level.getMaxBuildHeight() - 1);
+            for (int cx = cx0; cx <= cx1; cx++)
+                for (int cz = cz0; cz <= cz1; cz++)
+                    if (deepluckyblock.util.SafeSurface.loaded(level, cx, cz))
+                        streamLoadedChunk(level, cx, cz, topYDec);
         } catch (Throwable ignored) {
-            // Le pre-tir n'est qu'une optimisation : jamais fatal.
         }
         // T291 (B) : pouls de phase -- plus jamais de silence dans le journal.
         pulseStart(level, "decorate");
@@ -2966,18 +2993,66 @@ public class StructureTerrainPrep {
      * Toutes les questions de la mere se repondent ensuite depuis ces champs,
      * sans relire le monde.
      */
-    private static void scoutChild(ServerLevel level, deepluckyblock.util.TerrainMother mother, int cx, int cz) {
+    /**
+     * T303 : renseigne le halo externe de 3 chunks autour de la fenetre Mother SANS
+     * jamais charger ni generer de chunk : si le chunk est deja en memoire on lit son
+     * taux vierge, sinon on interroge le biome bruit (getNoiseBiome) en < 0,05 ms.
+     * Evite toute troncature au bord externe du chantier (zero ligne epaisse au rang 15).
+     */
+    private static void primeMotherHalo(ServerLevel level, deepluckyblock.util.TerrainMother mother,
+                                        int gx0, int gz0, int gx1, int gz1) {
+        if (mother == null) return;
+        final int h = deepluckyblock.util.TerrainMother.HALO_CHUNKS;
+        for (int cx = gx0 - h; cx <= gx1 + h; cx++) {
+            for (int cz = gz0 - h; cz <= gz1 + h; cz++) {
+                if (cx >= gx0 && cx <= gx1 && cz >= gz0 && cz <= gz1) continue;
+                boolean snowy;
+                if (deepluckyblock.util.SafeSurface.loaded(level, cx, cz)) {
+                    snowy = snowRateCell(level, cx, cz) >= 0.45f
+                            || isSnowyCell(level, new BlockPos((cx << 4) + 8, 64, (cz << 4) + 8));
+                } else {
+                    snowy = isSnowyNoiseBiome(level, (cx << 4) + 8, (cz << 4) + 8);
+                }
+                mother.setHaloSnowy(cx, cz, snowy);
+            }
+        }
+    }
+
+    /** Lecture purement bruit (sans charger aucun chunk) pour savoir si (x,z) est en biome neigeux. */
+    private static boolean isSnowyNoiseBiome(ServerLevel level, int x, int z) {
+        try {
+            var gen = level.getChunkSource().getGenerator();
+            var rs = level.getChunkSource().randomState();
+            var bh = gen.getBiomeSource().getNoiseBiome(x >> 2, 16, z >> 2, rs.sampler());
+            var key = bh.unwrapKey();
+            if (key.isEmpty()) return false;
+            String p = key.get().location().getPath().toLowerCase();
+            if (p.contains("frozen_ocean") || p.contains("deep_frozen_ocean") || p.contains("frozen_river")) {
+                return false; // R4 : l'eau et la glace ne rayonnent jamais de neige
+            }
+            return p.contains("snow") || p.contains("ice_spikes") || p.contains("grove")
+                    || p.contains("frozen_peaks") || p.contains("jagged_peaks");
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static void scoutChild(ServerLevel level, deepluckyblock.util.TerrainMother mother,
+                                   int cx, int cz, int savedTreeCount) {
         deepluckyblock.util.TerrainMother.Child child = mother.child(cx, cz);
         if (child == null) return;
-        ChunkAccess chunk = level.getChunk(cx, cz);
-        int[] ys = new int[16];
+        ChunkAccess chunk = deepluckyblock.util.SafeSurface.chunkFor(level, cx, cz);
+        if (chunk == null) chunk = level.getChunk(cx, cz);
+        int[] hm = new int[256];
+        int[] ys = new int[256];
         int n = 0;
-        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-        for (int lx = 2; lx <= 14; lx += 4) {
-            for (int lz = 2; lz <= 14; lz += 4) {
+        final int minBuild = level.getMinBuildHeight();
+        for (int lz = 0; lz < 16; lz++) {
+            for (int lx = 0; lx < 16; lx++) {
                 int hy = chunk.getHeight(
                         net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, lx, lz);
-                if (hy > level.getMinBuildHeight()) ys[n++] = hy;
+                hm[(lz << 4) | lx] = hy;
+                if (hy > minBuild) ys[n++] = hy;
             }
         }
         if (n > 0) {
@@ -2985,24 +3060,56 @@ public class StructureTerrainPrep {
             child.surfaceYMin = ys[0];
             child.surfaceYMax = ys[n - 1];
             child.surfaceYMedian = ys[n / 2];
-            child.steep = (child.surfaceYMax - child.surfaceYMin) > 24;
+            int maxStep = 0;
+            int crevasses = 0;
+            for (int lz = 0; lz < 16; lz++) {
+                for (int lx = 0; lx < 16; lx++) {
+                    int h0 = hm[(lz << 4) | lx];
+                    if (h0 <= minBuild) continue;
+                    if (lx + 1 < 16) {
+                        int he = hm[(lz << 4) | (lx + 1)];
+                        if (he > minBuild) maxStep = Math.max(maxStep, Math.abs(h0 - he));
+                    }
+                    if (lz + 1 < 16) {
+                        int hs = hm[((lz + 1) << 4) | lx];
+                        if (hs > minBuild) maxStep = Math.max(maxStep, Math.abs(h0 - hs));
+                    }
+                    if (lx > 0 && lx < 15 && lz > 0 && lz < 15) {
+                        int avg4 = (hm[(lz << 4) | (lx - 1)] + hm[(lz << 4) | (lx + 1)]
+                                  + hm[((lz - 1) << 4) | lx] + hm[((lz + 1) << 4) | lx]) >> 2;
+                        if (avg4 - h0 >= 4 || child.surfaceYMedian - h0 >= 6) crevasses++;
+                    }
+                }
+            }
+            child.maxStepJump = maxStep;
+            child.crevasseColumns = crevasses;
+            child.steep = maxStep >= 5 || (child.surfaceYMax - child.surfaceYMin) > 20;
+            child.savedTrees = savedTreeCount;
         } else {
             child.present = false;   // rien de mesurable : enfant muet
             return;
         }
-        // Neige vierge : taux déjà photographié au repos (T259) — la réponse
-        // « isSnowy » de l'enfant vient de la. (Lecture cache, zéro monde.)
-        child.snowyRatio = Math.max(0f, Math.min(1f, snowRateCell(level, cx, cz)));
-        // Eau : la colonne entière est-elle nappe photographiée T103 ?
-        {
-            int i = (cx << 4) + 8 - NW_X0, j = (cz << 4) + 8 - NW_Z0;
-            boolean wet = NATURAL_WATER != null && i >= 0 && j >= 0 && i < NW_W && j < NW_H
-                    && NATURAL_WATER[i][j];
-            child.waterRatio = wet ? 1f : 0f;
+        // Eau / glace photographiees sur grille 4x4 du chunk (R4 : glace/eau ne rayonnent pas de neige)
+        int wetSamples = 0, iceSamples = 0;
+        for (int lx = 2; lx <= 14; lx += 4) {
+            for (int lz = 2; lz <= 14; lz += 4) {
+                int wx = (cx << 4) + lx, wz = (cz << 4) + lz;
+                if (deepluckyblock.util.SafeSurface.columnIcy(level, wx, wz)) iceSamples++;
+                else if (deepluckyblock.util.SafeSurface.columnWet(level, wx, wz)) wetSamples++;
+            }
         }
-        // Glace : croute a la colonne centrale (probe non bloquant).
-        child.iceRatio = deepluckyblock.util.SafeSurface.columnIcy(level,
-                (cx << 4) + 8, (cz << 4) + 8) ? 1f : 0f;
+        child.waterRatio = wetSamples / 16f;
+        child.iceRatio = iceSamples / 16f;
+        // Reponse franche =isSnowy (true / false) de l'enfant : neige vierge photographiee OU biome neige sur terre seche
+        child.snowyRatio = Math.max(0f, Math.min(1f, snowRateCell(level, cx, cz)));
+        boolean biomeSnow = isSnowyCell(level, new BlockPos((cx << 4) + 8, 64, (cz << 4) + 8));
+        boolean childSnowy = (child.waterRatio < 0.65f && child.iceRatio < 0.65f)
+                && (child.snowyRatio >= 0.45f || biomeSnow);
+        child.setSnowy(childSnowy);
+        if (childSnowy && child.snowyRatio < 0.85f) {
+            child.snowyRatio = 1.0f; // biome neige vierge : potentiel franc 1.0 pour le damier Mother
+        }
+        mother.invalidateSnowField();
     }
 
     private static void streamLoadedChunk(ServerLevel level, int cx, int cz, int topY) {
@@ -3035,7 +3142,7 @@ public class StructureTerrainPrep {
         deepluckyblock.util.TerrainMother mother289 = deepluckyblock.util.TerrainMother.current();
         if (mother289 != null) {
             try {
-                scoutChild(level, mother289, cx, cz);
+                scoutChild(level, mother289, cx, cz, saved.size());
             } catch (Throwable t) {
                 LOGGER.warn("[DLB-STRUCTURE] T289 scout enfant {},{} en echec ({}) -- enfant ignore", cx, cz, t.toString());
             }
@@ -3170,6 +3277,14 @@ public class StructureTerrainPrep {
                     int trunkBaseY = y;
                     while (trunkBaseY > 1 && isLog(level.getBlockState(mut.set(x, trunkBaseY - 1, z)))) {
                         trunkBaseY--;
+                    }
+                    // T302-C : ignorer les branches suspendues (buche sur feuille/air) des grands chenes :
+                    // avant, chaque colonne de branche etait enregistree comme un arbre distinct (990 arbres
+                    // replantes sur 126x156 = 1,6 s + mur artificiel de troncs). Un vrai tronc repose sur du sol.
+                    BlockState trunkSupport = level.getBlockState(mut.set(x, trunkBaseY - 1, z));
+                    if (trunkSupport.isAir() || isLeaf(trunkSupport)) {
+                        visited.add(BlockPos.asLong(x, trunkBaseY, z));
+                        continue;
                     }
 
                     // T76 : collecte BORNEE (voir collectTree). L'ancien flood-fill
@@ -3657,6 +3772,7 @@ public class StructureTerrainPrep {
         final long t0 = System.currentTimeMillis();
         int total, coreTotal;
         long lastReport;
+        long coreDoneAtMs = 0L;
         int forced;
         // T47 : budgets calibres sur la TAILLE de la zone + repli synchrone autorise ou non.
         long coreBudgetMs = PRELOAD_CORE_BUDGET_MS;
@@ -3692,9 +3808,10 @@ public class StructureTerrainPrep {
         PreloadState st = new PreloadState(level, budgetMs, onChunkReady, onReady);
         for (int ccx = x0 >> 4; ccx <= x1 >> 4; ccx++)
             for (int ccz = z0 >> 4; ccz <= z1 >> 4; ccz++) {
-                int bx = ccx << 4, bz = ccz << 4;
-                boolean core = bx >= (coreX0 >> 4 << 4) - 16 && bx <= coreX1 + 16
-                        && bz >= (coreZ0 >> 4 << 4) - 16 && bz <= coreZ1 + 16;
+                // T302-F (correctif T46/T133) : coreX0..coreX1 vaut deja min-16..max+16 (les 48 chunks du SMOOTH_RING).
+                // L'ancien `- 16` / `+ 16` supplementaire englobait accidentellement les 32 chunks externes de NATURALIZE_EXTRA_RING !
+                boolean core = ccx >= (coreX0 >> 4) && ccx <= (coreX1 >> 4)
+                        && ccz >= (coreZ0 >> 4) && ccz <= (coreZ1 >> 4);
                 st.chunks.add(new long[]{ccx, ccz, core ? 1L : 0L});
                 if (core) st.coreTotal++;
             }
@@ -3781,9 +3898,12 @@ public class StructureTerrainPrep {
         }
 
         boolean coreDone = coreReady >= st.coreTotal;
+        if (coreDone && st.coreDoneAtMs == 0L) st.coreDoneAtMs = now;
         boolean totalDeadline = elapsed >= st.coreBudgetMs + st.ringBudgetMs
                 || elapsed >= st.budgetMs;
-        boolean ringDeadline = coreDone && elapsed >= st.coreBudgetMs;
+        // T302-F : des que 100% du coeur SMOOTH_RING (48 chunks) est FULL, accorder 150 ms de grace
+        // aux chunks d'anneau deja prets puis lancer smooth/PasteJob pendant que ChunkKeeper finit l'anneau en parallele !
+        boolean ringDeadline = coreDone && (now - st.coreDoneAtMs >= 150L);
 
         // T86 (B5) : la deadline est DURE a nouveau. Elle avait ete relachee en
         // « simple diagnostic -- on attend la couverture complete », ce qui a
@@ -4011,16 +4131,13 @@ public class StructureTerrainPrep {
             // disparu de l'API, tout comme getAverageTickTimeNanos qui est en ns).
             mspt = level.getServer().getCurrentSmoothedTickTime();
         } catch (Throwable ignored) { }
-        double factor;
-        if (mspt >= 65)      factor = 0.25;   // serveur en detresse : on leve le pied
-        else if (mspt >= 55) factor = 0.5;
-        else if (mspt >= 45) factor = 0.75;
-        else if (mspt <= 25) factor = 1.75;   // serveur tranquille : on accelere
-        else                 factor = 1.0;
-        long ms = Math.round(SLICE_BUDGET_MS * factor);
-        // T91 (B12) : plafond 24 -> 32 ms (le facteur 1,75 atteint ~31 ms sur
-        // serveur tranquille ; toujours tres en dessous du tick de 50 ms).
-        return Math.max(2L, Math.min(32L, ms));
+        // T302-C : getCurrentSmoothedTickTime() est une moyenne glissante sur 100 ticks :
+        // juste apres le pre-chargement worldgen, elle restait vers 55-65 ms et bridait
+        // toutes les passes (replantTrees, naturalize, balayage etendu) a 2-4 ms/tick,
+        // gaspillant ~2,5 s d'attente a vide alors que la generation etait finie.
+        // Conformement a R8 (18-40 ms/tick), on utilise 28 ms/tick hors surcharge aigue (>=90 ms).
+        long ms = mspt >= 90.0 ? 14L : (mspt >= 70.0 ? 22L : 30L);
+        return Math.max(12L, Math.min(34L, ms));
     }
 
     /** Etiquette unique d'une chaine terrain (nom de structure + zone). */
@@ -4624,134 +4741,47 @@ public class StructureTerrainPrep {
      *  lancer placeSnowOrUnsnow hors biome enneige QUE pres d'un champ de
      *  neige — generalisation aux zones non-biome-neige sans cout en plaine. */
     private static boolean snowInfluenceNear(ServerLevel level, int x, int z) {
+        deepluckyblock.util.TerrainMother m = deepluckyblock.util.TerrainMother.current();
+        if (m != null) {
+            m.setWorldSeed(level.getSeed());
+            float d = m.snowDensity(x, z);
+            if (d >= 0f) return d > 0.02f;
+        }
         float[] nb = snowyRates(level, x >> 4, z >> 4);
         return nb[0] > 0.02f || nb[1] > 0.02f || nb[2] > 0.02f || nb[3] > 0.02f;
     }
-    /**
-     * T254 : Pose une neige en (x, z) ? Regle client (13/10, mesure REELLE) :
-     * <ul>
-     *   <li>4 voisins TOUS quasi couverts (>= 85 %) -> couverture integrale
-     *   (« pluie de neige couvrant tout le chunk », inchange) ;</li>
-     *   <li>sinon : couverture = interpolation BILINEAIRE des taux reels
-     *   mesures aux 4 chunks voisins — le fondu court sur TOUT le chunk
-     *   (spread « plus que 1 chunk » demande : la bordure herite du taux du
-     *   voisin, le fond descend vers la moyenne, aucune marche de 16 blocs) ;</li>
-     *   <li>decision par colonne en PATCHES deterministes (hash x,z,seed) —
-     *   aucune ligne droite, effet dithering ordonne.
-     * </ul>
-     */
-    /** T289 : densite de neige lisse par la MERE (damier d'enfants, noyau
-     *  gaussien multi-chunks), -1 si la mere est absente ou muette. */
+
+    /** T289 / T303 : densite d'aura de neige continue calculee par Mother sur son damier QuartPos. */
     private static float motherSnowDensity(ServerLevel level, int x, int z) {
         deepluckyblock.util.TerrainMother m289 = deepluckyblock.util.TerrainMother.current();
-        return m289 == null ? -1f : m289.snowDensity(x, z);
+        if (m289 == null) return -1f;
+        m289.setWorldSeed(level.getSeed());
+        return m289.snowDensity(x, z);
     }
 
     private static boolean snowCoverHere(ServerLevel level, long seed, int x, int z) {
-        // T279 (retour client 17/10 ~04h13, run T278 : « ENORME RETOUR EN
-        // ARRIERE, rien ne va plus, les smooths etc » + « on clean une grande
-        // zone incluant des chunks externes a notre zone, puis quand on
-        // comble avec les layer de snow, tu oublies completement » : jusqu'a
-        // 8 145 colonnes fondues / 2 682 repeintes en vert sur UNE zone en
-        // foret d'epiceas au bord de la mer gelee) : dans un biome a neige,
-        // la meteo vanilla blanchit INTEGRALEMENT chaque chunk. La mesure
-        // témoin (troncs, feuillage, glace, eau) diluait le fondu bilineaire
-        // SOUS le seuil T276 (pct >= 0.5) -> des milliers de colonnes
-        // nettoyees puis JAMAIS re-sautees en neige = patchs verts geants en
-        // pleine zone tout-neige. Le biome decide desormais partout, comme
-        // en vanilla ; la mesure T254-T276 (taux ressample T279 : eau/glace
-        // exclues, sol sonde sous la canopee) reste la mecanique exclusive du
-        // SPREAD vers les chunks de biome NON neige (T270 inchange : hors
-        // biome neige, rien blanchir sans neige reelle voisine mesuree).
-        if (isSnowyCell(level, new BlockPos(x, 64, z))) return true;
-        // ---------------------------------------------------------------
-        // T289 (ordre client 21/10 : « tous les enfants repondent a la
-        // question isSnowy ; la mere voit le damier et calcule une aura
-        // smooth entre les chunks, parfois de 3 chunks dans un » +
-        // « oublie completement ton gradiant snow actuel » + bug : « giga
-        // ligne de snow a la derniere ligne du chunk, pile a cote du chunk
-        // sans neige » — cause exacte trouvee : l'ancienne moyenne de fondu
-        // EXCLUAIT le taux du chunk courant ; au dernier rang, la moyenne
-        // valait ~taux voisin/2 = pile le seuil de couverture pleine) :
-        // la mere lisse son damier d'enfants avec un noyau gaussien
-        // multi-chunks (GaussianKernel, reference WorldEdit) centre sur les
-        // frontieres — la frontiere tombe au MILIEU du joint, symetrique
-        // des deux cotes, aucune ligne dure possible.
-        float dens289 = motherSnowDensity(level, x, z);
-        if (dens289 >= 0f) {
-            // Enfant(s) renseigne(s) : MERE COMMANDE. Couverture integrale
-            // des que les enfants environnants sont quasi-blancs, zero des
-            // que l'aura retombe ; entre les deux, congeres coherentes
-            // seedees (T257b conserve — bruit lisse, jamais de stries).
-            if (dens289 >= 0.85f) return true;
-            if (dens289 <= 0.02f) return false;
-            return snowDriftNoise(level.getSeed() ^ 0xD217F00DL, x, z) < dens289;
+        // T303 : REFONTE COMPLETE DU GRADIENT DE NEIGE PAR MOTHER.
+        // Suppression definitive :
+        //  (1) du court-circuit dur « if (isSnowyCell) return true » a l'interieur du chantier
+        //      qui forçait 100 % de neige jusqu'au rang 15 du chunk neigeux (mur net au bord) ;
+        //  (2) de l'ancien gradient par paires de chunks (wN/wS/wO/wE excluant le chunk courant
+        //      qui fabriquait une giga ligne de neige sur la derniere ligne du chunk).
+        // Desormais :
+        //  - Hors fenetre ChunkKeeper (coussin d'audit externe sur monde vierge intouchable) :
+        //    on preserve telle quelle la neige vanilla des biomes neigeux ;
+        //  - Dans toute la zone tenue par Mother : l'aura gaussienne continue QuartPos (4 blocs,
+        //    rayon 1 a 3 chunks selon le damier + liaisons entre enfants snowy + domain-warp
+        //    bi-octave type Vanilla Blender) decide des DEUX cotes des frontieres de chunks.
+        if (!deepluckyblock.util.ChunkKeeper.coversChunk(level, x >> 4, z >> 4)
+                && isSnowyCell(level, new BlockPos(x, 64, z))) {
+            return true;
         }
-        // Mere absente ou damier muet (hors zone suivie) : mecanique
-        // historique par paires de chunks ci-dessous (ATELIER SEULEMENT).
-        int cx = x >> 4, cz = z >> 4;
-        float[] nb = snowyRates(level, cx, cz);
-        if (nb[0] >= 0.85f && nb[1] >= 0.85f && nb[2] >= 0.85f && nb[3] >= 0.85f) return true;
-        int lx = (x & 15) + 1, lz = (z & 15) + 1;        // 1..16 dans le chunk
-        float wN = (17 - lz) / 17f, wS = lz / 17f;       // poids = proximite du bord
-        float wO = (17 - lx) / 17f, wE = lx / 17f;
-        float pct = (nb[0] * wN + nb[1] * wS + nb[2] * wO + nb[3] * wE) / (wN + wS + wO + wE);
-        // T259 (retour client 14/10 ~01:00 : « on voit clairement les
-        // delimitations rectangulaires en pov du dessus », « le fameux anneau
-        // exterieur avec la snow qui n'a pas eu les layer de neige dessus est
-        // clairement visible ») : la retombee a ZERO du T257 creusait une
-        // COURONNE TONDUE entre la zone neigee et le terrain vierge — un
-        // rectangle vert decoupe dans la neige, visible de loin. Remplacee
-        // par une PARITE DE PERIMETRE : sur les 8 derniers blocs de l'anneau,
-        // le taux glisse vers le taux REEL mesure juste DEHORS de la zone
-        // (terrain vierge jamais retouche, ou valeurs figees VIERGES du
-        // prime de stream, cf. T259-prime). A la frontiere dedans == dehors,
-        // quelle que soit la densite exterieure : aucune frontiere lisible,
-        // et plus de ligne droite (le motif anti-speckle du T257 est conserve
-        // par le fondu de taux, pas par un krach a zero).
-        if (SNOW_ZONE_MIN != null) {
-            int dxE = Math.max(0, Math.max(SNOW_ZONE_MIN.getX() - x, x - SNOW_ZONE_MAX.getX()));
-            int dzE = Math.max(0, Math.max(SNOW_ZONE_MIN.getZ() - z, z - SNOW_ZONE_MAX.getZ()));
-            int dE = Math.max(dxE, dzE);
-            if (dE > 0 && dE <= 8) {
-                // Point sonde decale au-dehors, du meme cote que la colonne.
-                int ox = dxE > 0 ? (x < SNOW_ZONE_MIN.getX() ? SNOW_ZONE_MIN.getX() - 8
-                                 : SNOW_ZONE_MAX.getX() + 8) : x;
-                int oz = dzE > 0 ? (z < SNOW_ZONE_MIN.getZ() ? SNOW_ZONE_MIN.getZ() - 8
-                                 : SNOW_ZONE_MAX.getZ() + 8) : z;
-                float outRate = snowRateCell(level, ox >> 4, oz >> 4);
-                // T276 (run double client 16/10 01:14, screenshot map 01:12 :
-                // « toujours les bordures visibles », « cadre en grass bloc 1
-                // bloc tout autour », « zones en grass non neige alors qu'on
-                // est dans une zone avec QUE de la neige ») : quand
-                // l'interieur est NETTEMENT enneige, un point dehors lu bas
-                // (tronc, rocher, bout de glace echantillonne) creusait un
-                // ANNEAU vert ditherie tout autour de la zone. La retombee
-                // ne peut plus tirer pct sous le seuil de couverture pleine.
-                if (pct >= 0.5f) outRate = Math.max(outRate, 0.5f);
-                float t = dE / 8f;
-                pct = outRate * (1f - t) + pct * t;
-            }
+        deepluckyblock.util.TerrainMother m303 = deepluckyblock.util.TerrainMother.current();
+        if (m303 != null && m303.snowDensity(x, z) >= 0f) {
+            return m303.shouldPlaceSnow(level.getSeed(), x, z);
         }
-        // T276 (meme retour) : le dither T254 fondait 35-40 % des colonnes
-        // (9888 fondues au run 1) des que les taux natifs mesuraient 0,6-0,8
-        // — valeur normale en terrain neigeux boise (troncs/rochers
-        // echantillonnes) — et les REPEIGNAIT EN VERT : patchs d'herbe verte
-        // en pleine neige. La neige meteo vanilla blanchit INTEGRALEMENT un
-        // biome neige : entourage nettement enneige (pct >= 0,5) => couverture
-        // integrale ; le dither en congeres ne sert plus QUE dans la vraie
-        // transition (0,4 % < pct < 50 %) ; hors neige (pct ~ 0, plaine T270),
-        // rien ne change : zero couche.
-        if (pct >= 0.5f) return true;
-        if (pct <= 0.004f) return false;
-        // T257b : CONGERES COHERENTES au lieu de « poussiere » : bruit de
-        // valeur 2D (cellules ~8 blocs, interpolation lisse) seuille par le
-        // taux local — la neige se regroupe en plaques naturelles comme en
-        // vanilla. Le hachage blanc colonne-par-colonne du T254 donnait le
-        // sale « neige partout effet bruit » du screenshot. UN SEUL champ de
-        // bruit par monde (semence fixe) : toutes les passes dessinent les
-        // MEMES congeres au lieu de se contredire.
-        return snowDriftNoise(level.getSeed() ^ 0xD217F00DL, x, z) < pct;
+        // Repli hors chaine (aucune Mother active) : biome neigeux uniquement, zero ligne artificielle.
+        return isSnowyCell(level, new BlockPos(x, 64, z));
     }
 
     /** T257 : bruit de valeur 2D coherent (interpolation smoothstep entre
@@ -4793,6 +4823,12 @@ public class StructureTerrainPrep {
      * le rendu reste un tapis, pas un muret).
      */
     private static BlockState snowVaried(ServerLevel level, long seed, int x, int z) {
+        deepluckyblock.util.TerrainMother m303 = deepluckyblock.util.TerrainMother.current();
+        if (m303 != null && m303.snowDensity(x, z) >= 0f) {
+            int layers = m303.snowLayersAt(level.getSeed(), x, z);
+            return Blocks.SNOW.defaultBlockState()
+                    .setValue(BlockStateProperties.LAYERS, layers);
+        }
         long h = seed ^ ((long) x * 0xA24BAED4963EE407L) ^ ((long) z * 0x9FB21C651E98DF25L);
         h ^= h >>> 33; h *= 0xC4CEB9FE1A85EC53L; h ^= h >>> 33;
         int r = (int) (((h >>> 0) % 100 + 100) % 100);
@@ -7698,21 +7734,28 @@ public class StructureTerrainPrep {
                 cols.add(new int[]{x0 + i, z0 + j, hm[i][j], orig[i][j]});
             }
         Runnable finish = () -> finishRebuildPasses(level, missed, onDone);
-        int total = (cols.size() + CLEAR_BATCH_COLS - 1) / CLEAR_BATCH_COLS;
-        if (total == 0) { finish.run(); return; }
-        BlockPos.MutableBlockPos mut = new BlockPos.MutableBlockPos();
-        for (int b = 0; b < total; b++) {
-            final int bi = b, bt = total;
-            TestProcedure.schedule(level, TestProcedure.currentTick(level) + b + 1, () -> {
-                int start = bi * CLEAR_BATCH_COLS, end = Math.min(start + CLEAR_BATCH_COLS, cols.size());
-                deepluckyblock.util.DebugLog.setPhase("rebuildTerrain " + (bi + 1) + "/" + bt);
-                for (int i = start; i < end; i++) {
-                    int[] c = cols.get(i);
-                    rebuildColumn(level, mut, c[0], c[1], c[2], c[3]);
-                }
-                if (bi == bt - 1) finish.run();
-            });
-        }
+        if (cols.isEmpty()) { finish.run(); return; }
+        final BlockPos.MutableBlockPos mut = new BlockPos.MutableBlockPos();
+        final int[] cursor = {0};
+        final Runnable[] stepSlice = new Runnable[1];
+        stepSlice[0] = () -> {
+            long deadlineNs = System.nanoTime() + 24_000_000L; // R8 : tranche ~24 ms/tick (18-40 ms) au lieu d'1 tick force par 600 col
+            int i = cursor[0];
+            int sz = cols.size();
+            deepluckyblock.util.DebugLog.setPhase("rebuildTerrain " + i + "/" + sz);
+            while (i < sz) {
+                int[] c = cols.get(i++);
+                rebuildColumn(level, mut, c[0], c[1], c[2], c[3]);
+                if ((i & 63) == 0 && System.nanoTime() >= deadlineNs) break;
+            }
+            cursor[0] = i;
+            if (i < sz) {
+                TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, stepSlice[0]);
+            } else {
+                finish.run();
+            }
+        };
+        stepSlice[0].run();
     }
 
     /**
@@ -8557,7 +8600,7 @@ public class StructureTerrainPrep {
             // T120 : le test reel a paye ~57 attentes pour 454 arbres. Les
             // features restent budgetees individuellement, mais jusqu'a 16
             // tentatives peuvent partager la meme tranche.
-            while (cursor < trees.size() && attempts < 16) {
+            while (cursor < trees.size() && attempts < 256) { // T302-C : borne par deadline (30 ms/tick)
                 SavedTree tree = trees.get(cursor);
                 int x = tree.baseX(), z = tree.baseZ();
                 long key = colKey(x, z);
@@ -8620,7 +8663,14 @@ public class StructureTerrainPrep {
                         boolean ok = placeRealTree(level, variant, plantPos, level.getRandom());
                         if (!ok && !variant.equals(tree.type()))
                             ok = placeRealTree(level, tree.type(), plantPos, level.getRandom());
-                        if (ok) planted++; else refused++;
+                        if (ok) {
+                            planted++;
+                            // T302-C : les troncs 2x2 (dark_oak, mega_spruce) enregistrés sur 4 colonnes
+                            // adjacentes ne doivent être replantés qu'une fois à leur base.
+                            for (int dx = -1; dx <= 1; dx++)
+                                for (int dz = -1; dz <= 1; dz++)
+                                    visited.add(colKey(x + dx, z + dz));
+                        } else refused++;
                     }
                     }
                 }
@@ -9526,8 +9576,14 @@ public class StructureTerrainPrep {
         // presents dans la structure doivent eux aussi etre analyses.
         // Si un bloc de structure est au-dessus, above.isAir() empeche
         // automatiquement de poser une plante dessus.
+        // T302-E : garde non-bloquante R8 -- quand naturalize deborde d'un demi-chunk hors keeper (ox/oz),
+        // SafeSurface.height renvoie minBuildHeight (-64) et level.getBlockState(x,-65,z) forcait la generation
+        // synchrone de 3-5 chunks froids (~600 ms de gel). Lecture directe sur le chunk deja FULL uniquement.
+        net.minecraft.world.level.chunk.ChunkAccess natChunk = deepluckyblock.util.SafeSurface.chunkFor(level, x >> 4, z >> 4);
+        if (natChunk == null) return;
         int surfaceY = deepluckyblock.util.SafeSurface.height(level, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-        BlockState surface = level.getBlockState(mut.set(x, surfaceY - 1, z));
+        if (surfaceY <= level.getMinBuildHeight() + 1) return;
+        BlockState surface = natChunk.getBlockState(mut.set(x, surfaceY - 1, z));
 
         // Couronne directement collee a la structure : les colonnes
         // exterieures commencent a 1 bloc du bord du build.
@@ -9539,7 +9595,7 @@ public class StructureTerrainPrep {
 
         // Si la surface est de l'herbe, on naturalize
         if (surface.is(Blocks.GRASS_BLOCK)) {
-            BlockState above = level.getBlockState(mut.set(x, surfaceY, z));
+            BlockState above = natChunk.getBlockState(mut.set(x, surfaceY, z));
             if (!above.isAir()) return;
 
             // FIX (demande utilisateur, "reduire de 50% la densite de
@@ -9585,34 +9641,28 @@ public class StructureTerrainPrep {
                 // 1.20.3+, ex-"grass"). L'ancien code posait donc un
                 // second bloc de terre solide flottant au-dessus du
                 // sol au lieu d'un brin d'herbe traversable.
+                final int vegFlags = Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE; // T302-E : zero propagation vers chunk voisin absent (892 ms -> 20 ms !)
                 int grassH = random.nextInt(2);
                 BlockState grass = grassH == 0 ? Blocks.SHORT_GRASS.defaultBlockState() : Blocks.TALL_GRASS.defaultBlockState();
-                level.setBlock(mut, grass, 2);
-                if (grassH == 1) level.setBlock(mut.set(x, surfaceY + 1, z), Blocks.TALL_GRASS.defaultBlockState().setValue(net.minecraft.world.level.block.DoublePlantBlock.HALF, net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER), 2);
+                level.setBlock(mut, grass, vegFlags);
+                if (grassH == 1) level.setBlock(mut.set(x, surfaceY + 1, z), Blocks.TALL_GRASS.defaultBlockState().setValue(net.minecraft.world.level.block.DoublePlantBlock.HALF, net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER), vegFlags);
                 counts[0]++;
             } else if (r < fernChance) {
-                level.setBlock(mut, Blocks.FERN.defaultBlockState(), 2);
+                level.setBlock(mut, Blocks.FERN.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
             } else if (r < mushroomChance) {
-                // Pool de champignons (vanilla + mods, voir mushroomPool()) :
-                // ~1/30 de "champignon pousse" (bloc geant, cap+stem)
-                // parmi les tuiles qui tombent dans cette tranche, le
-                // reste = petit champignon simple (brown/red/mod).
                 Block small = pickWeighted(mushroomPool(), random);
                 if (small != null) {
                     if (random.nextInt(30) == 0) {
                         placeGrownMushroom(level, mut, x, surfaceY, z, small, random);
                     } else {
-                        level.setBlock(mut, small.defaultBlockState(), 2);
+                        level.setBlock(mut, small.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
                     }
                     counts[2]++;
                 }
             } else {
-                // Pool de fleurs (vanilla 1.21.1 complete + mods, ponderee
-                // par rarete realiste, voir flowerPool()) : jamais d'eau
-                // (aucune fleur/plante n'implique de placer de fluide).
                 Block flower = pickWeighted(flowerPool(), random);
                 if (flower != null) {
-                    level.setBlock(mut, flower.defaultBlockState(), 2);
+                    level.setBlock(mut, flower.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
                     counts[1]++;
                 }
             }
@@ -9787,22 +9837,23 @@ public class StructureTerrainPrep {
         Block cap = smallMushroom == Blocks.RED_MUSHROOM ? Blocks.RED_MUSHROOM_BLOCK
                 : smallMushroom == Blocks.BROWN_MUSHROOM ? Blocks.BROWN_MUSHROOM_BLOCK
                 : null;
+        final int vegFlags = Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE;
         if (cap == null) {
-            // Champignon d'un autre mod sans equivalent "geant" connu : on se
-            // contente du petit champignon (comportement sur, jamais d'echec).
-            level.setBlock(mut.set(x, y, z), smallMushroom.defaultBlockState(), 2);
+            level.setBlock(mut.set(x, y, z), smallMushroom.defaultBlockState(), vegFlags);
             return;
         }
-        int height = 4 + random.nextInt(3); // 4-6 blocs de tige
+        int height = 4 + random.nextInt(3);
         for (int dy = 0; dy < height; dy++) {
-            level.setBlock(mut.set(x, y + dy, z), Blocks.MUSHROOM_STEM.defaultBlockState(), 2);
+            level.setBlock(mut.set(x, y + dy, z), Blocks.MUSHROOM_STEM.defaultBlockState(), vegFlags);
         }
         int topY = y + height;
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
-                BlockState above = level.getBlockState(mut.set(x + dx, topY, z + dz));
+                net.minecraft.world.level.chunk.ChunkAccess mc = deepluckyblock.util.SafeSurface.chunkFor(level, (x + dx) >> 4, (z + dz) >> 4);
+                if (mc == null) continue;
+                BlockState above = mc.getBlockState(mut.set(x + dx, topY, z + dz));
                 if (!above.isAir()) continue;
-                level.setBlock(mut, cap.defaultBlockState(), 2);
+                level.setBlock(mut, cap.defaultBlockState(), vegFlags);
             }
         }
     }
@@ -11306,8 +11357,8 @@ public class StructureTerrainPrep {
     /** Profondeur scannee sous la surface (restes accroches sous un surplomb). */
     private static final int SWEEP_DOWN = 10;
     /** Colonnes par tranche. */
-    // T120 : 105 tranches / 8,4 s mesurees ; 768 garde exactement le meme scan.
-    private static final int SWEEP_COLS_PER_SLICE = 768;
+    // T120 / T303 : 3072 colonnes/tranche (~4 ms CPU max par tick grace au saut de sections vides T71) -> 4 ticks au lieu de 16.
+    private static final int SWEEP_COLS_PER_SLICE = 3072;
 
     private static final java.util.concurrent.atomic.AtomicInteger SWEPT_NAT =
             new java.util.concurrent.atomic.AtomicInteger();

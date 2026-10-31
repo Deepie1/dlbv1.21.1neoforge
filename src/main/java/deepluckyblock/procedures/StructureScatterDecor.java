@@ -313,7 +313,9 @@ public final class StructureScatterDecor {
         // Nouvelle structure -> on repart d'un registre vide.
         PLACED_FOOTPRINTS.clear();
 
-        int ring = 46;
+        // T302-K : couronne bornee a 28 blocs (strictement dans les +-32 blocs tenus par ChunkKeeper)
+        // pour qu'aucun schematic ni son emprise (fw,fd) ne touche un chunk hors ChunkKeeper.
+        int ring = 28;
         int x0 = min.getX() - ring, x1 = max.getX() + ring;
         int z0 = min.getZ() - ring, z1 = max.getZ() + ring;
 
@@ -658,6 +660,8 @@ public final class StructureScatterDecor {
     // =====================================================================
     /** Comblement maximal sous un decor (au-dela : le decor est repose plus bas). */
     private static final int MAX_SEAT = 4;
+    private static final java.util.Map<StructureTemplate, Integer> MIN_LOCAL_Y_CACHE =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
     /**
      * Y local du PLUS BAS bloc du schematic (0 si le fichier commence deja par
@@ -666,6 +670,8 @@ public final class StructureScatterDecor {
      * variantes de pose.
      */
     private static int minLocalY(StructureTemplate t) {
+        Integer cached = MIN_LOCAL_Y_CACHE.get(t);
+        if (cached != null) return cached;
         int min = Integer.MAX_VALUE;
         try {
             for (java.lang.reflect.Field f : StructureTemplate.class.getDeclaredFields()) {
@@ -682,7 +688,9 @@ public final class StructureScatterDecor {
                 }
             }
         } catch (Exception ignored) {}
-        return (min == Integer.MAX_VALUE) ? 0 : Math.max(0, min);
+        int res = (min == Integer.MAX_VALUE) ? 0 : Math.max(0, min);
+        MIN_LOCAL_Y_CACHE.put(t, res);
+        return res;
     }
 
     /**

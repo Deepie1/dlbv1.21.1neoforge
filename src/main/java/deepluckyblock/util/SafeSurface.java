@@ -464,14 +464,17 @@ public final class SafeSurface {
         java.util.concurrent.CompletableFuture.supplyAsync(
                 () -> level.getChunkSource().getChunkFuture(cx, cz, ChunkStatus.FULL, true), CHUNK_REQUESTS)
                 .thenCompose(future -> future)
-                .whenComplete((result, error) -> level.getServer().execute(() ->
-                        deepluckyblock.procedures.TestProcedure.schedule(level,
-                                deepluckyblock.procedures.TestProcedure.currentTick(level) + 1, () -> {
+                // T302-B : publier READY directement dans level.getServer().execute() des la fin de getChunkFuture
+                // (via result.isSuccess(), sans getChunkNow ni report TestProcedure +1 tick). Le report +1 tick
+                // retardait LAST_CHUNK_READY_MS apres la fin d'un tick de generation et declenchait de faux abandons T294.
+                .whenComplete((result, error) -> level.getServer().execute(() -> {
                     try {
-                        if (error == null && level.getChunkSource().getChunkNow(cx, cz) != null) {
+                        boolean ok = error == null && result != null && result.isSuccess() && result.orElse(null) != null;
+                        if (ok) {
+                            long nowMs = System.currentTimeMillis();
                             READY.add(key);
-                            READY_TIME.put(key, System.currentTimeMillis());
-                            LAST_CHUNK_READY_MS = System.currentTimeMillis();   // T298
+                            READY_TIME.put(key, nowMs);
+                            LAST_CHUNK_READY_MS = nowMs;   // T298
                         } else {
                             READY.remove(key);
                             READY_TIME.remove(key);
@@ -484,20 +487,12 @@ public final class SafeSurface {
                         deepluckyblock.procedures.TestProcedure.schedule(level,
                                 deepluckyblock.procedures.TestProcedure.currentTick(level) + 2,
                                 () -> {
-                                    // T232 (accord sanitaire SafeSurface <-> ChunkKeeper) :
-                                    // si le chunk appartient a une emprise epinglee par le
-                                    // pipeline, ce ticket ne se retire PAS. Symptome tue :
-                                    // en sandbox, le retrait +2 ticks dechargeait le chunk
-                                    // (zone hors portee joueur), la reprise suivante le
-                                    // regenereait, le ticket etait a nouveau retire -- roue
-                                    // de hamster infinie, aucune structure ne spawnait
-                                    // jamais. ChunkKeeper garde la zone : un seul tuteur.
                                     if (!hasZoneTicket(level, cx, cz))
                                         level.getChunkSource().removeRegionTicket(ASYNC_TICKET, chunkPos, 0, ticket);
                                 });
                         whenDone.run();
                     }
-                })));
+                }));
     }
 
     /** Demande la generation d'un chunk en TACHE DE FOND (jamais bloquant). */

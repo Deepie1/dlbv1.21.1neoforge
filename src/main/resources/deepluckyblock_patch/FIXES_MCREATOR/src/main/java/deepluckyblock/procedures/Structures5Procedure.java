@@ -615,13 +615,41 @@ public class Structures5Procedure {
         // bas (caves), et on ne touche JAMAIS sous baseLevel-1 = la peau de
         // terrain interieure peinte (cour en herbe voulue, couchee par le
         // sweep T269 de StructureTerrainPrep).
+        int lastCx = Integer.MIN_VALUE, lastCz = Integer.MIN_VALUE;
+        net.minecraft.world.level.chunk.LevelChunk cachedChunk = null;
         for (int[] col : pj.columns) {
             int x = col[0], z = col[1], lo = col[2], hi = col[3];
             int start = Math.min(lo, pj.baseLevel);
-            for (int y = start; y <= hi; y++) {
-                if (pj.occupied.contains(BlockPos.asLong(x, y, z))) continue;
-                BlockState s = level.getBlockState(mut.set(x, y, z));
-                if (isNaturalTerrain(s)) { level.setBlock(mut, Blocks.AIR.defaultBlockState(), FAST_FLAG); cleared++; }
+            int cx = x >> 4, cz = z >> 4;
+            if (cx != lastCx || cz != lastCz) {
+                lastCx = cx; lastCz = cz;
+                var ca = deepluckyblock.util.SafeSurface.chunkFor(level, cx, cz);
+                cachedChunk = (ca instanceof net.minecraft.world.level.chunk.LevelChunk lc) ? lc : null;
+            }
+            if (cachedChunk != null) {
+                var sections = cachedChunk.getSections();
+                int minSec = cachedChunk.getMinSection();
+                int lx = x & 15, lz = z & 15;
+                for (int y = start; y <= hi; y++) {
+                    int secIdx = (y >> 4) - minSec;
+                    if (secIdx < 0 || secIdx >= sections.length) continue;
+                    var sec = sections[secIdx];
+                    if (sec == null || sec.hasOnlyAir()) {
+                        y = (((y >> 4) + 1) << 4) - 1;
+                        continue;
+                    }
+                    BlockState s = sec.getBlockState(lx, y & 15, lz);
+                    if (!isNaturalTerrain(s)) continue;
+                    if (pj.occupied.contains(BlockPos.asLong(x, y, z))) continue;
+                    level.setBlock(mut.set(x, y, z), Blocks.AIR.defaultBlockState(), FAST_FLAG);
+                    cleared++;
+                }
+            } else {
+                for (int y = start; y <= hi; y++) {
+                    if (pj.occupied.contains(BlockPos.asLong(x, y, z))) continue;
+                    BlockState s = level.getBlockState(mut.set(x, y, z));
+                    if (isNaturalTerrain(s)) { level.setBlock(mut, Blocks.AIR.defaultBlockState(), FAST_FLAG); cleared++; }
+                }
             }
         }
         // (B) colonnes d'air totalement enfermees dans l'empreinte.
@@ -675,10 +703,36 @@ public class Structures5Procedure {
                 for (int z = minZ; z <= maxZ; z++) {
                     if (pj.baseCols.contains(colKey(x, z))
                             || outside[(z - minZ) * w + (x - minX)]) continue;
-                    for (int y = pj.baseLevel; y <= top; y++) {
-                        if (pj.occupied.contains(BlockPos.asLong(x, y, z))) continue;
-                        BlockState s = level.getBlockState(mut.set(x, y, z));
-                        if (isNaturalTerrain(s)) { level.setBlock(mut, Blocks.AIR.defaultBlockState(), FAST_FLAG); cleared++; }
+                    int cx = x >> 4, cz = z >> 4;
+                    if (cx != lastCx || cz != lastCz) {
+                        lastCx = cx; lastCz = cz;
+                        var ca = deepluckyblock.util.SafeSurface.chunkFor(level, cx, cz);
+                        cachedChunk = (ca instanceof net.minecraft.world.level.chunk.LevelChunk lc) ? lc : null;
+                    }
+                    if (cachedChunk != null) {
+                        var sections = cachedChunk.getSections();
+                        int minSec = cachedChunk.getMinSection();
+                        int lx = x & 15, lz = z & 15;
+                        for (int y = pj.baseLevel; y <= top; y++) {
+                            int secIdx = (y >> 4) - minSec;
+                            if (secIdx < 0 || secIdx >= sections.length) continue;
+                            var sec = sections[secIdx];
+                            if (sec == null || sec.hasOnlyAir()) {
+                                y = (((y >> 4) + 1) << 4) - 1;
+                                continue;
+                            }
+                            BlockState s = sec.getBlockState(lx, y & 15, lz);
+                            if (!isNaturalTerrain(s)) continue;
+                            if (pj.occupied.contains(BlockPos.asLong(x, y, z))) continue;
+                            level.setBlock(mut.set(x, y, z), Blocks.AIR.defaultBlockState(), FAST_FLAG);
+                            cleared++;
+                        }
+                    } else {
+                        for (int y = pj.baseLevel; y <= top; y++) {
+                            if (pj.occupied.contains(BlockPos.asLong(x, y, z))) continue;
+                            BlockState s = level.getBlockState(mut.set(x, y, z));
+                            if (isNaturalTerrain(s)) { level.setBlock(mut, Blocks.AIR.defaultBlockState(), FAST_FLAG); cleared++; }
+                        }
                     }
                 }
             }
@@ -947,9 +1001,13 @@ public class Structures5Procedure {
                 // de baseLevel) ET uniquement les positions CACHEES. Une position
                 // dont un voisin horizontal est exposed (air/non-solide) est sautee :
                 // sinon on colle des blocs de dirt visibles sur les facades.
-                int end = Math.min(cj.groundIdx + GROUND_COLS_PER_TICK, cj.columns.size());
+                // T302-C : budget temporel 25 ms/tick (R8) au lieu d'un plafond fixe de 200 colonnes/tick
+                // qui faisait dormir CarveJob pendant ~23 ticks (1,15 s) pour <2 ms de travail reel.
+                long carveDeadline = System.nanoTime() + 25_000_000L;
                 BlockPos.MutableBlockPos side = new BlockPos.MutableBlockPos();
-                for (int i = cj.groundIdx; i < end; i++) {
+                int i = cj.groundIdx;
+                for (; i < cj.columns.size(); i++) {
+                    if ((i & 63) == 0 && System.nanoTime() >= carveDeadline) break;
                     int[] c = cj.columns.get(i);
                     int x = c[0], z = c[1], lo = c[2];
                     if (lo > cj.baseLevel + FLOOR_TOLERANCE) continue; // colonne de toit/auvent -> RIEN
@@ -967,7 +1025,7 @@ public class Structures5Procedure {
                         y--; depth++;
                     }
                 }
-                cj.groundIdx = end;
+                cj.groundIdx = i;
                 if (cj.groundIdx >= cj.columns.size()) cj.groundDone = true;
             }
             if (cj.idx >= cj.columns.size() && cj.ringIdx >= cj.occList.size() && cj.groundDone) {
@@ -992,7 +1050,9 @@ public class Structures5Procedure {
         }
         if (!POST_Q.isEmpty()) {
             PostJob pj = POST_Q.peek();
-            for (int s = 0; s < 4 && pj.y <= pj.max.getY(); s++) { postLayer(pj.level, pj.min, pj.max, pj.y); pj.y++; }
+            // T302-C : budget temporel 25 ms/tick (R8) au lieu de 4 couches/tick fixes (~27 ticks = 1,35 s d'attente vide).
+            long postDeadline = System.nanoTime() + 25_000_000L;
+            while (pj.y <= pj.max.getY() && System.nanoTime() < postDeadline) { postLayer(pj.level, pj.min, pj.max, pj.y); pj.y++; }
             if (pj.y > pj.max.getY()) {
                 killLaggyItems(pj.level, pj.min, pj.max);
                 if (isEverestNbt(pj.name)) {
@@ -1146,8 +1206,9 @@ public class Structures5Procedure {
      *  T298 : la panne n'est declaree que si le generateur n'a RIEN livre du
      *  tout pendant ce delai (dernire livraison SafeSurface), sinon c'est une
      *  simple lenteur/file saturee et on patiente sous la borne absolue T232. */
+    // T302-B : sur 2 vCPU en monde froid, une salve worldgen + GC peut durer 4,1 s sans etre en panne.
     private static final long AWAIT_PROGRESS_MS =
-            Long.getLong("dlb.awaitProgressMs", 4_000L);
+            Long.getLong("dlb.awaitProgressMs", 12_000L);
     private static int AWAIT_LAST_MISSING = -1;
     private static long AWAIT_LAST_MOVE_MS = 0L;
     /** Retourne vrai si l'attente est en panne (aucun chunk livre depuis
@@ -1186,6 +1247,150 @@ public class Structures5Procedure {
     private static int GROUND_WAIT_TICKS = 0;
     /** Centres démasqués par le contrôle exhaustif x0,6 pendant la génération active. */
     private static final Set<Long> REJECTED_RUGGED_CENTERS = new HashSet<>();
+    // T302-A / T303 : memoire permanente (RAM + disque par monde) des quartiers refuses (relief/eau/T301-C/A1)
+    private static final java.util.Set<Long> PERMANENT_REJECTED_CENTERS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static volatile java.nio.file.Path loadedRejectsFile = null;
+
+    private static java.nio.file.Path rejectsFile(ServerLevel lvl) {
+        try {
+            if (lvl == null || lvl.getServer() == null) return null;
+            String dim = lvl.dimension().location().toString().replace(':', '_').replace('/', '_');
+            return lvl.getServer()
+                    .getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
+                    .resolve("data")
+                    .resolve("dlb_rejects_" + dim + ".tsv");
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static void ensureRejectsLoaded(ServerLevel lvl) {
+        java.nio.file.Path f = rejectsFile(lvl);
+        if (f == null || f.equals(loadedRejectsFile)) return;
+        loadedRejectsFile = f;
+        if (java.nio.file.Files.isRegularFile(f)) {
+            try {
+                for (String line : java.nio.file.Files.readAllLines(f, java.nio.charset.StandardCharsets.UTF_8)) {
+                    String s = line.trim();
+                    if (s.isEmpty()) continue;
+                    String[] p = s.split("\t");
+                    if (p.length >= 2) {
+                        PERMANENT_REJECTED_CENTERS.add(BlockPos.asLong(Integer.parseInt(p[0]), 0, Integer.parseInt(p[1])));
+                    }
+                }
+            } catch (Throwable ignored) { }
+        }
+    }
+
+    private static void markPermanentReject(int x, int z) {
+        int qx = x >> 6, qz = z >> 6;
+        if (PERMANENT_REJECTED_CENTERS.add(BlockPos.asLong(qx, 0, qz))) {
+            java.nio.file.Path f = loadedRejectsFile;
+            if (f != null) {
+                try {
+                    java.nio.file.Files.createDirectories(f.getParent());
+                    java.nio.file.Files.writeString(f, qx + "\t" + qz + "\n", java.nio.charset.StandardCharsets.UTF_8,
+                            java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+                } catch (Throwable ignored) { }
+            }
+        }
+    }
+    // T302-A : lecture ultra-legere (entete 4 Ko Anvil r.<rx>.<rz>.mca, 0 decompression NBT)
+    // pour privilegier les zones dont les chunks (sectors >= 2 => terrain deja genere sur disque :
+    // 0,3 s de chargement au lieu de 8,2 s de generation de 624 proto-chunks sur 2 vCPU) existent deja !
+    private static final java.util.concurrent.ConcurrentHashMap<Long, byte[]> MCA_SECTOR_CACHE =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private static volatile long mcaCacheStampMs = 0L;
+    private static volatile java.nio.file.Path mcaLastRegionDir = null;
+
+    private static byte[] mcaRegionSectors(ServerLevel lvl, int rx, int rz) {
+        try {
+            java.nio.file.Path worldRoot = lvl.getServer().getWorldPath(
+                    net.minecraft.world.level.storage.LevelResource.ROOT);
+            java.nio.file.Path regDir = net.minecraft.world.level.dimension.DimensionType
+                    .getStorageFolder(lvl.dimension(), worldRoot).resolve("region");
+            long now = System.currentTimeMillis();
+            if (!regDir.equals(mcaLastRegionDir) || now - mcaCacheStampMs > 15_000L) {
+                MCA_SECTOR_CACHE.clear();
+                mcaLastRegionDir = regDir;
+                mcaCacheStampMs = now;
+            }
+            long rk = (((long) rx) << 32) ^ (rz & 0xFFFFFFFFL);
+            return MCA_SECTOR_CACHE.computeIfAbsent(rk, k -> {
+                java.nio.file.Path f = regDir.resolve("r." + rx + "." + rz + ".mca");
+                byte[] secs = new byte[1024];
+                if (!java.nio.file.Files.isRegularFile(f)) return secs;
+                byte[] hdr = new byte[4096];
+                try (java.nio.channels.FileChannel ch = java.nio.channels.FileChannel.open(
+                        f, java.nio.file.StandardOpenOption.READ)) {
+                    java.nio.ByteBuffer bb = java.nio.ByteBuffer.wrap(hdr);
+                    int n = ch.read(bb, 0L);
+                    if (n < 4096) return secs;
+                } catch (Throwable ignored) {
+                    return secs;
+                }
+                for (int i = 0; i < 1024; i++) {
+                    int base = i << 2;
+                    int off = ((hdr[base] & 0xFF) << 16) | ((hdr[base + 1] & 0xFF) << 8) | (hdr[base + 2] & 0xFF);
+                    secs[i] = (off != 0) ? hdr[base + 3] : 0;
+                }
+                return secs;
+            });
+        } catch (Throwable t) {
+            return new byte[1024];
+        }
+    }
+
+    private static int mcaWarmScore80(ServerLevel lvl, int cxBlock, int czBlock, boolean swapXZ) {
+        final int cxc = cxBlock >> 4, czc = czBlock >> 4;
+        // Lecture 100% tableau byte[] en RAM (0 appel ConcurrentHashMap -> ~2 ms pour 100 000 candidats au lieu de 350 ms !)
+        final int xMin = swapXZ ? (cxc - 5) : (cxc - 4);
+        final int xMax = swapXZ ? (cxc + 4) : (cxc + 3);
+        final int zMin = swapXZ ? (czc - 4) : (czc - 5);
+        final int zMax = swapXZ ? (czc + 3) : (czc + 4);
+        int score = 0;
+        int lastRx = Integer.MIN_VALUE, lastRz = Integer.MIN_VALUE;
+        byte[] curSecs = null;
+        for (int cx = xMin; cx <= xMax; cx++) {
+            int rx = cx >> 5;
+            for (int cz = zMin; cz <= zMax; cz++) {
+                int rz = cz >> 5;
+                if (rx != lastRx || rz != lastRz || curSecs == null) {
+                    curSecs = mcaRegionSectors(lvl, rx, rz);
+                    lastRx = rx;
+                    lastRz = rz;
+                }
+                int sc = curSecs[(cx & 31) + ((cz & 31) << 5)] & 0xFF;
+                if (sc >= 2) {
+                    // T303 : les vraies structures deja posees sont persistees dans StructureSites ;
+                    // un chunk FULL vanilla sur disque (sc >= 2) se recharge en ~2 ms au lieu de ~70 ms de generation !
+                    score += 3;
+                } else if (sc == 1) {
+                    score += 2;
+                }
+            }
+        }
+        return score;
+    }
+
+    private static final java.util.concurrent.ConcurrentHashMap<Long, Integer> DRY_ORIGIN_RING_CURSOR =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static boolean dragonSwapXZ(int cx, int cz, Player p, int structMax) {
+        if (structMax != 82 && structMax != 92) return false;
+        long rotSeed = BlockPos.asLong(cx, 0, cz) ^ ((long) "dragon".hashCode() * 0x9E3779B97F4A7C15L);
+        Rotation rot = pickRotation(new BlockPos(cx + 10, 64, cz + 10), p, Direction.WEST,
+                net.minecraft.util.RandomSource.create(rotSeed));
+        return rot == Rotation.CLOCKWISE_90 || rot == Rotation.COUNTERCLOCKWISE_90;
+    }
+
+    private static boolean isPermanentReject(int x, int z) {
+        int qx = x >> 6, qz = z >> 6;
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dz = -1; dz <= 1; dz++)
+                if (PERMANENT_REJECTED_CENTERS.contains(BlockPos.asLong(qx + dx, 0, qz + dz))) return true;
+        return false;
+    }
     /** T291d : candidats de rang 1..4 de la DERNIERE selection seche, reutilises
      *  en cas de rejet « ecarte avant terrain » au lieu de relancer toute la
      *  fouille (0,4-0,6 s par tour sur le banc). Fraicheur 30 s, meme origine
@@ -1546,86 +1751,28 @@ public class Structures5Procedure {
         }
         if (cands.isEmpty()) return null;
 
-        // 2) DOUBLE CERVEAU : deux workers a indices disjoints (pairs /
-        //    impairs — ils ne se marchent jamais dessus), filtres bruit
-        //    purs identiques au choix sec (getBaseHeight WG est une simple
-        //    fonction du sampler, utilisee en concurrence par vanilla),
-        //    drapeau commun « bon candidat trouve » pour s'arreter ensemble.
-        final java.util.concurrent.atomic.AtomicBoolean good = new java.util.concurrent.atomic.AtomicBoolean();
-        final int[][] scores = new int[cands.size()][2];   // [0]=span (-1=ecarte), [1]=wet
-        final Thread[] workers = new Thread[2];
-        final int[][] wpts;
-        {
-            int w = Math.max(12, checkR / 2);
-            wpts = new int[][]{{-w,0},{w,0},{0,-w},{0,w},{-w,-w},{-w,w},{w,-w},{w,w}};
-        }
-        for (int half = 0; half < 2; half++) {
-            final int h = half;
-            Thread w = new Thread(() -> {
-                for (int i = h; i < cands.size(); i += 2) {
-                    if (good.get() || System.currentTimeMillis() - t0 > budget) return;
-                    int cx = cands.get(i)[0], cz = cands.get(i)[1];
-                    try {
-                        int hy = gen.getBaseHeight(cx, cz,
-                                net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE_WG, lvl, rs);
-                        if (hy <= 61 || hy >= 190) { scores[i][0] = -1; continue; }
-                        if (gen.getBaseHeight(cx, cz,
-                                net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR_WG, lvl, rs) <= 61) {
-                            scores[i][0] = -1; continue;
-                        }
-                        int wet = 0;
-                        for (int[] wp : wpts)
-                            if (gen.getBaseHeight(cx + wp[0], cz + wp[1],
-                                    net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR_WG, lvl, rs) <= 61) wet++;
-                        int span = dryRuggedSpan(lvl, cx, cz, fullCheckR);
-                        scores[i][0] = span; scores[i][1] = wet;
-                        if (wet == 0 && span <= DRY_PICK_GOOD_SPAN) good.compareAndSet(false, true);
-                    } catch (Throwable any) { scores[i][0] = -1; }
-                }
-            }, "dlb-search-" + half);
-            w.setDaemon(true);
-            workers[half] = w;
-            w.start();
-        }
-
-        // 3) COORDINATION : le serveur attend la fin des deux cerveaux, la
-        //    decouverte d'un candidat strictement bon, ou l'epuisement du
-        //    budget DUR (0,5 s). Puis le verdict REEL decide, candidats
-        //    tries : secs d'abord, meilleur span en tete.
-        //    T255(b) : budget ADAPTATIF — si apres 150 ms moins d'un quart
-        //    des candidats a ete traite, cette machine ne verra jamais le
-        //    reste de la liste avant le budget dur : on coupe (une vague
-        //    "sans bon candidat" passe ainsi de ~490 ms a ~150 ms).
-        final long limit = t0 + budget;
-        while (System.currentTimeMillis() < limit) {
-            boolean alive = false;
-            for (Thread w : workers) if (w != null && w.isAlive()) { alive = true; break; }
-            if (!alive || good.get()) break;
-            long el = System.currentTimeMillis() - t0;
-            if (el > 175) {
-                // Un candidat a un "resultat" quand ses workers l'ont marque
-                // (-1 = ecarte eau/hauteur, span>0 ou wet>0 = traite/garde).
-                int scored = 0;
-                for (int i = 0; i < cands.size(); i++)
-                    if (scores[i][0] != 0 || scores[i][1] != 0) scored++;
-                if (scored < Math.max(1, cands.size() / 5)) break;
-            }
-            try { Thread.sleep(2); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
-        }
-        good.set(true);   // geler les workers (ils verifient le drapeau a chaque iteration)
-        for (Thread w : workers) if (w != null) try { w.join(5); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
-
+        // T302-A : ces candidats sont DEJA en memoire (empriseAlreadyLoaded) !
+        // Appeler 27 fois gen.getBaseHeight par candidat gaspillait 150-500 ms sur du bruit
+        // alors que la lecture directe SafeSurface sur chunks charges prend <0,05 ms par candidat
+        // et mesure le VRAI terrain (lacs, glace, ravins reels).
+        final int[][] scores = new int[cands.size()][2];
         final java.util.ArrayList<Integer> order = new java.util.ArrayList<>();
         int probed = 0, water = 0;
         for (int i = 0; i < cands.size(); i++) {
-            if (scores[i][0] > 0) { order.add(i); probed++; }
-            else water++;
+            int cx = cands.get(i)[0], cz = cands.get(i)[1];
+            if (deepluckyblock.util.SafeSurface.columnWet(lvl, cx, cz)) {
+                scores[i][0] = -1;
+                water++;
+                continue;
+            }
+            int vet = quickVetLoaded(lvl, cx, cz, fullCheckR);
+            if (vet == 2) { scores[i][0] = -1; water++; continue; }
+            if (vet == 1) { scores[i][0] = MAX_FOOTPRINT_GROUND_SPAN + 10; scores[i][1] = 0; probed++; continue; }
+            scores[i][0] = 1;
+            scores[i][1] = 0;
+            order.add(i);
+            probed++;
         }
-        order.sort((a, b) -> {
-            boolean da = scores[a][1] == 0, db = scores[b][1] == 0;
-            if (da != db) return da ? -1 : 1;
-            return Integer.compare(scores[a][0], scores[b][0]);
-        });
 
         for (int idx : order) {
             if (scores[idx][1] != 0) break;            // les humides ne passent plus le verdict reel
@@ -1639,6 +1786,14 @@ public class Structures5Procedure {
             int vetLoaded = quickVetLoaded(lvl, cx, cz, fullCheckR);          // T301-C : verifie aussi les bords charges de l'emprise complete
             if (vetLoaded == 2) { STAT_LOADED_REJ_WATER++; continue; }
             if (vetLoaded == 1) { STAT_LOADED_REJ_RELIEF++; continue; }
+            int halfMin = Math.min(fullCheckR, Math.max(checkR, 31));
+            int sT1 = measureStructureChunkStepMax(lvl, cx - halfMin, cz - fullCheckR, cx + halfMin, cz + fullCheckR);
+            int sT2 = measureStructureChunkStepMax(lvl, cx - fullCheckR, cz - halfMin, cx + fullCheckR, cz + halfMin);
+            int a1StepT245 = (sT1 >= 0 && sT2 >= 0) ? Math.min(sT1, sT2) : Math.max(sT1, sT2);
+            if (a1StepT245 > deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y) {
+                STAT_LOADED_REJ_RELIEF++;
+                continue;
+            }
             int realY = deepluckyblock.util.SafeSurface.height(lvl,
                     Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, cx, cz) - 1;
             if (realY < 1) { STAT_LOADED_REJ_GROUND++; continue; }            // T296
@@ -1758,6 +1913,7 @@ public class Structures5Procedure {
         final long t0 = System.currentTimeMillis();
         int probed = 0, water = 0, skipped = 0;
         try {
+            ensureRejectsLoaded(lvl);
             // T291d : revivre les sous-candidats de la fouille precedente avant
             // de repartir sonder le generateur (selection multi-centaines de ms).
             {
@@ -1769,7 +1925,9 @@ public class Structures5Procedure {
                 while (fresh && !SEARCH_REUSE_QUEUE.isEmpty()) {
                     BlockPos cand = SEARCH_REUSE_QUEUE.poll();
                     if (REJECTED_RUGGED_CENTERS.contains(BlockPos.asLong(cand.getX(), 0, cand.getZ()))) continue;
+                    if (isPermanentReject(cand.getX(), cand.getZ())) continue;
                     if (dryQuarterRejected(cand.getX(), cand.getZ(), Math.max(32, structMax))) continue;
+                    if (deepluckyblock.util.StructureSites.conflict(lvl, cand.getX(), cand.getZ(), checkR + 24) != null) continue;
                     DRY_PICK_SUGGESTED.add(new int[]{cand.getX(), cand.getZ()});
                     logLoadedTierDigest(cand.getX(), cand.getZ());   // T296
                     LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T291d : cache, reprise sans re-sondage serveur, {} restant)",
@@ -1780,104 +1938,357 @@ public class Structures5Procedure {
             }
             net.minecraft.world.level.chunk.ChunkGenerator gen = lvl.getChunkSource().getGenerator();
             net.minecraft.world.level.levelgen.RandomState rs = lvl.getChunkSource().randomState();
-            final int baseX = p != null ? p.blockPosition().getX() : origin.getX();
-            final int baseZ = p != null ? p.blockPosition().getZ() : origin.getZ();
+            // T301-C / T302-A : couronnes dynamiques jusqu'a 21 500 blocs (48 anneaux sans empoisonner DRY_CELLS_DONE)
+            // + alignement chunk exact (8x10 = 80 chunks) + rotation EXACTE pickRotation (structMax=82)
+            // + minDryY=65 & floodedness<=0.12 & exclusion biomes geles T301-A (zero mare d'aquifere ni glace)
+            // + 32 sondes OCEAN_FLOOR_WG seules (sans doublon WORLD_SURFACE_WG : 2x plus rapide, couvre x0,6 au pas de 9 blocs !)
+            // + priorite aux halos proto-chunks .mca deja construits sur disque !
+            final int baseX = origin != null ? origin.getX() : (p != null ? p.blockPosition().getX() : 0);
+            final int baseZ = origin != null ? origin.getZ() : (p != null ? p.blockPosition().getZ() : 0);
             final int minCenterDist = minEdgeDist + checkR;
             final int step = Math.max(32, structMax);
-            final long budget = budgetCapMs > 0 ? budgetCapMs : DRY_PICK_BUDGET_MS;
-            // T301-C : couronne supplementaire a +-2048 pour sortir des massifs
-            // montagneux ou grands bassins glaciaires sans retomber sur une falaise proche.
-            final int[][] bubbles = {
-                {0,0},
-                {1024,0},{-1024,0},{0,1024},{0,-1024},{1024,1024},{-1024,-1024},{1024,-1024},{-1024,1024},
-                {2048,0},{-2048,0},{0,2048},{0,-2048},{2048,2048},{-2048,-2048},{2048,-2048},{-2048,2048}
+            final long budget = Math.max(320L, budgetCapMs > 0 ? budgetCapMs : DRY_PICK_BUDGET_MS);
+            final net.minecraft.world.level.biome.Climate.Sampler sampler = rs.sampler();
+            final net.minecraft.world.level.biome.BiomeSource biomeSrc = gen.getBiomeSource();
+            final net.minecraft.world.level.levelgen.DensityFunction depthFn =
+                    rs.router() != null ? rs.router().depth() : null;
+            final net.minecraft.world.level.levelgen.DensityFunction floodFn =
+                    rs.router() != null ? rs.router().fluidLevelFloodednessNoise() : null;
+            final int minDryY = 65; // >= seaLevel+2 : dans NoiseBasedChunkGenerator, globalFluidPicker ne met jamais d'eau >= 64 !
+            // 24 points strategiques hors centre : 4 coins exterieurs + 12 points x0,6 EN PREMIER (detecte grottes/pentes en 2-5 appels !)
+            // + 8 points inter-chunks structure (garantit A1 worstChunkStep <= 2 sans gaspiller 30 appels bruit !)
+            final int[][] base32 = {
+                {-30,-45},{30,45},{-30,45},{30,-45},
+                {-18,-26},{18,26},{-18,26},{18,-26},{-9,-11},{9,11},{-9,11},{9,-11},
+                {0,-11},{0,11},{-9,0},{9,0},
+                {0,-45},{0,45},{-30,0},{30,0},
+                {0,-22},{0,22},{-15,0},{15,0}
             };
-            BlockPos bestStrict = null; int bestStrictSpan = Integer.MAX_VALUE;
-            BlockPos bestSoft = null;   int bestSoftSpan = Integer.MAX_VALUE;
-            // T291d : reserve des meilleurs candidats rencontres (hors retour)
-            // pour alimenter SEARCH_REUSE_QUEUE sans second sondage.
+            final java.util.HashSet<Long> seenLocal = new java.util.HashSet<>(8192);
             final java.util.ArrayList<BlockPos> strictPool = new ArrayList<>();
             final java.util.ArrayList<BlockPos> softPool = new ArrayList<>();
-            for (int b = 0; b < bubbles.length; b++) {
-                final int cx0 = baseX + bubbles[b][0], cz0 = baseZ + bubbles[b][1];
-                final int r0 = b == 0 ? Math.max(96, minCenterDist + step) : 128;
-                boolean blown = false;
-                for (int r = r0; r <= DRY_PICK_MAX_R; r += step) {
-                    final double angle0 = (r * 0.6180339887) % (2 * Math.PI);
-                    final int n = Math.max(8, (int) Math.ceil((2 * Math.PI * r) / step));
-                    for (int k = 0; k < n; k++) {
-                        final double a = angle0 + (2 * Math.PI * k) / n;
-                        int cx = cx0 + (int) Math.round(Math.cos(a) * r);
-                        int cz = cz0 + (int) Math.round(Math.sin(a) * r);
-                        long ck = dryCellKey(cx, cz);
-                        if (!DRY_CELLS_DONE.add(ck)) { continue; }  // deja sonde a sec
-                        if (dryQuarterRejected(cx, cz, step)) { skipped++; continue; }
-                        boolean dejaPropose = false;
-                        for (int[] q : DRY_PICK_SUGGESTED)
-                            if (Math.abs(cx - q[0]) + Math.abs(cz - q[1]) < step) { dejaPropose = true; break; }
-                        if (dejaPropose) { skipped++; continue; }
-                        if (p != null) {
-                            double dpx = cx - p.blockPosition().getX(), dpz = cz - p.blockPosition().getZ();
-                            if ((dpx * dpx + dpz * dpz) < (double) minCenterDist * minCenterDist) { skipped++; continue; }
+            BlockPos bestStrict = null; int bestStrictSpan = Integer.MAX_VALUE;
+            BlockPos bestSoft = null;   int bestSoftSpan = Integer.MAX_VALUE;
+
+            final java.util.function.BiFunction<Integer, Integer, int[]> evalPre = (cxBox, czBox) -> {
+                int cx = cxBox, cz = czBox;
+                long ck = dryCellKey(cx, cz);
+                if (DRY_CELLS_DONE.contains(ck) || !seenLocal.add(ck)) return null;
+                if (isPermanentReject(cx, cz) || dryQuarterRejected(cx, cz, step)) return null;
+                for (int[] q : DRY_PICK_SUGGESTED)
+                    if (Math.abs(cx - q[0]) + Math.abs(cz - q[1]) < step) return null;
+                if (p != null) {
+                    double dpx = cx - p.blockPosition().getX(), dpz = cz - p.blockPosition().getZ();
+                    if ((dpx * dpx + dpz * dpz) < (double) minCenterDist * minCenterDist) return null;
+                }
+                if (deepluckyblock.util.StructureSites.conflict(lvl, cx, cz, checkR) != null) return null;
+                if (quickVetLoaded(lvl, cx, cz, fullCheckR) != 0) return null;
+                boolean swapXZ = dragonSwapXZ(cx, cz, p, structMax);
+                int hx = swapXZ ? 45 : 30;
+                int hz = swapXZ ? 30 : 45;
+                int slopePrio = 0;
+                if (depthFn != null) {
+                    double d0 = depthFn.compute(new net.minecraft.world.level.levelgen.DensityFunction.SinglePointContext(cx, 64, cz));
+                    double dMin = d0, dMax = d0;
+                    final int[][] cPts = {{-hx,-hz},{hx,hz},{-hx,hz},{hx,-hz},{0,-hz},{0,hz},{-hx,0},{hx,0}};
+                    for (int[] cp : cPts) {
+                        double d = depthFn.compute(new net.minecraft.world.level.levelgen.DensityFunction.SinglePointContext(
+                                cx + cp[0], 64, cz + cp[1]));
+                        if (d < dMin) dMin = d;
+                        if (d > dMax) dMax = d;
+                        if (dMax - dMin > 0.14) return null; // ecarter seulement les vraies falaises continentales (0.026 rejetait 99,9% des plaines !)
+                    }
+                    slopePrio = (int) Math.round((dMax - dMin) * 4000.0);
+                }
+                // depthFn <= 0.026 garde toutes les vraies plaines sans eliminer les halos .mca !
+                if (biomeSrc != null && sampler != null) {
+                    final int[][] bPts = {{0,0},{-hx,-hz},{hx,hz},{-hx,hz},{hx,-hz},{0,-hz},{0,hz},{-hx,0},{hx,0}};
+                    for (int[] bp : bPts) {
+                        var bh = biomeSrc.getNoiseBiome((cx + bp[0]) >> 2, 16, (cz + bp[1]) >> 2, sampler);
+                        if (bh.is(net.minecraft.tags.BiomeTags.IS_OCEAN)
+                                || bh.is(net.minecraft.tags.BiomeTags.IS_DEEP_OCEAN)
+                                || bh.is(net.minecraft.tags.BiomeTags.IS_RIVER)
+                                || bh.is(net.minecraft.tags.BiomeTags.IS_BEACH)
+                                || bh.is(net.minecraft.tags.BiomeTags.IS_MOUNTAIN)
+                                || bh.is(net.minecraft.tags.BiomeTags.IS_HILL)
+                                || bh.is(net.minecraft.tags.BiomeTags.IS_BADLANDS)
+                                || bh.is(net.minecraft.world.level.biome.Biomes.SWAMP)
+                                || bh.is(net.minecraft.world.level.biome.Biomes.MANGROVE_SWAMP)
+                                || bh.is(net.minecraft.world.level.biome.Biomes.STONY_SHORE)
+                                || bh.is(net.minecraft.world.level.biome.Biomes.ICE_SPIKES)
+                                || bh.is(net.minecraft.world.level.biome.Biomes.GROVE)
+                                || bh.is(net.minecraft.world.level.biome.Biomes.SNOWY_SLOPES)
+                                || bh.is(net.minecraft.world.level.biome.Biomes.FROZEN_PEAKS)
+                                || bh.is(net.minecraft.world.level.biome.Biomes.JAGGED_PEAKS)
+                                || bh.is(net.minecraft.world.level.biome.Biomes.STONY_PEAKS)
+                                || bh.is(net.minecraft.world.level.biome.Biomes.FROZEN_RIVER)
+                                || bh.is(net.minecraft.world.level.biome.Biomes.SNOWY_BEACH)) {
+                            return new int[]{Integer.MIN_VALUE};
                         }
-                        int hy = gen.getBaseHeight(cx, cz,
-                                net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE_WG, lvl, rs);
-                        probed++;
-                        if (hy <= 61 || hy >= 190) { water++; continue; }
-                        int wet = 0;
-                        {
-                            int w1 = Math.max(12, checkR / 2);
-                            int w2 = Math.max(24, fullCheckR);
-                            int centerFloor = gen.getBaseHeight(cx, cz,
-                                    net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR_WG, lvl, rs);
-                            if (centerFloor <= 61) { water++; continue; }
-                            int[][] wpts = {
-                                {-w1,0},{w1,0},{0,-w1},{0,w1},{-w1,-w1},{-w1,w1},{w1,-w1},{w1,w1},
-                                {-w2,0},{w2,0},{0,-w2},{0,w2},{-w2,-w2},{-w2,w2},{w2,-w2},{w2,w2}
-                            };
-                            for (int[] wp : wpts) {
-                                int hf = gen.getBaseHeight(cx + wp[0], cz + wp[1],
-                                        net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR_WG, lvl, rs);
-                                if (hf <= 61) wet++;
+                    }
+                }
+                int warm = mcaWarmScore80(lvl, cx, cz, swapXZ);
+                if (warm < 0) return null; // coeur 4x4 deja FULL decharge = cimetiere rejete !
+                int distBlocks = (int) Math.hypot(cx - baseX, cz - baseZ);
+                int prio = slopePrio + (distBlocks / 12) - warm * 400;
+                return new int[]{cx, cz, distBlocks / 448, prio, warm};
+            };
+
+            final java.util.function.Function<java.util.List<int[]>, int[]> probeBatch = (batch) -> {
+                if (batch.isEmpty()) return null;
+                final int candCount = batch.size();
+                final int[] resSpan = new int[candCount];
+                final int[] resHy = new int[candCount];
+                final java.util.concurrent.atomic.AtomicInteger nextIdx = new java.util.concurrent.atomic.AtomicInteger(0);
+                final java.util.concurrent.atomic.AtomicInteger foundGoodIdx = new java.util.concurrent.atomic.AtomicInteger(-1);
+                final long batchDeadline = Math.min(t0 + budget, System.currentTimeMillis() + 220L);
+                final Runnable probeTask = () -> {
+                    while (System.currentTimeMillis() < batchDeadline) {
+                        int goodNow = foundGoodIdx.get();
+                        int idx = nextIdx.getAndIncrement();
+                        if (idx >= candCount || (goodNow >= 0 && idx > goodNow)) break;
+                        int cx = batch.get(idx)[0], cz = batch.get(idx)[1];
+                        boolean swapXZ = dragonSwapXZ(cx, cz, p, structMax);
+                        try {
+                            var lc0 = deepluckyblock.util.SafeSurface.chunkFor(lvl, cx >> 4, cz >> 4);
+                            int hf0 = (lc0 instanceof net.minecraft.world.level.chunk.LevelChunk lcc0)
+                                    ? (lcc0.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR, cx & 15, cz & 15) + 1)
+                                    : gen.getBaseHeight(cx, cz,
+                                            net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR_WG, lvl, rs);
+                            if (hf0 < minDryY || hf0 >= 180) { resSpan[idx] = -1; continue; }
+                            int minH = hf0, maxH = hf0;
+                            int inMinH = hf0, inMaxH = hf0;
+                            boolean badWater = false, badRelief = false;
+                            for (int pIdx = 0; pIdx < base32.length; pIdx++) {
+                                int dx = swapXZ ? base32[pIdx][1] : base32[pIdx][0];
+                                int dz = swapXZ ? base32[pIdx][0] : base32[pIdx][1];
+                                int qx = cx + dx, qz = cz + dz;
+                                var lcp = deepluckyblock.util.SafeSurface.chunkFor(lvl, qx >> 4, qz >> 4);
+                                int hf = (lcp instanceof net.minecraft.world.level.chunk.LevelChunk lccp)
+                                        ? (lccp.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR, qx & 15, qz & 15) + 1)
+                                        : gen.getBaseHeight(qx, qz,
+                                                net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR_WG, lvl, rs);
+                                if (hf < minDryY || hf >= 180) { badWater = true; break; }
+                                if (hf < minH) minH = hf;
+                                if (hf > maxH) maxH = hf;
+                                if (pIdx >= 4 && pIdx < 16) { // 12 points dans x0,6 (+ centre) : span <= 2 garantit x0,6 plat !
+                                    if (hf < inMinH) inMinH = hf;
+                                    if (hf > inMaxH) inMaxH = hf;
+                                    if (inMaxH - inMinH > 2) { badRelief = true; break; }
+                                }
+                                if (maxH - minH > 4) { badRelief = true; break; }
                             }
-                        }
-                        if (deepluckyblock.util.StructureSites.conflict(lvl, cx, cz, checkR) != null) { skipped++; continue; }
-                        int span = dryRuggedSpan(lvl, cx, cz, fullCheckR);
-                        if (wet <= 5) {
-                            int vet = quickVetLoaded(lvl, cx, cz, fullCheckR);
-                            if (vet != 0) { skipped++; continue; }  // T291e : veto terrain reel (zone chargee)
-                        }
-                        if (wet == 0) {
-                            if (span <= DRY_PICK_GOOD_SPAN) {
-                                DRY_PICK_SUGGESTED.add(new int[]{cx, cz});
-                                stashSearchReuse(origin, structMax, new BlockPos(cx, Math.max(hy, 63), cz), strictPool, softPool);
-                                logLoadedTierDigest(cx, cz);   // T296
-                                LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c : {} ms, bulle {}, {} sondes, {} eau/haut ecartees, span sec={}, 0 chunk genere)",
-                                        cx, cz, System.currentTimeMillis() - t0, b, probed, water, span);
-                                return new BlockPos(cx, Math.max(hy, 63), cz);
+                            if (badWater) { resSpan[idx] = -1; continue; }
+                            if (badRelief) { resSpan[idx] = -2; continue; }
+                            resHy[idx] = hf0;
+                            resSpan[idx] = (maxH - minH) + 1;
+                            if (maxH - minH <= 2) {
+                                foundGoodIdx.accumulateAndGet(idx, (prev, cur) -> prev < 0 ? cur : Math.min(prev, cur));
                             }
-                            // T301-C : n'admettre dans strictPool que des spans compatibles
-                            // avec la porte groundStats <= 6 (fini les span sec=28..38 retenus en bulle 0).
-                            if (span > 0 && span <= DRY_PICK_STRICT_MAX_SPAN) {
-                                strictPool.add(new BlockPos(cx, Math.max(hy, 63), cz));
-                                if (span < bestStrictSpan) {
-                                    bestStrictSpan = span; bestStrict = new BlockPos(cx, Math.max(hy, 63), cz);
+                        } catch (Throwable any) {
+                            resSpan[idx] = -1;
+                        }
+                    }
+                };
+                Thread helper = null;
+                if (candCount > 1) {
+                    helper = new Thread(probeTask, "dlb-drypick-helper");
+                    helper.setDaemon(true);
+                    helper.start();
+                }
+                probeTask.run();
+                if (helper != null) {
+                    try { helper.join(230L); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                }
+                int[] winner = null;
+                int probedDelta = 0, waterDelta = 0;
+                for (int i = 0; i < candCount; i++) {
+                    int code = resSpan[i];
+                    if (code == 0) continue;
+                    int[] c = batch.get(i);
+                    DRY_CELLS_DONE.add(dryCellKey(c[0], c[1]));
+                    probedDelta++;
+                    if (code == -1) { waterDelta++; continue; }
+                    if (code == -2) continue;
+                    int span = code - 1;
+                    BlockPos bp = new BlockPos(c[0], Math.max(resHy[i], 65), c[1]);
+                    if (span <= 3) {
+                        strictPool.add(bp);
+                        if (winner == null || span < winner[4]) {
+                            winner = new int[]{c[0], Math.max(resHy[i], 65), c[1], c[2], span, c[4], probedDelta, waterDelta};
+                        }
+                    } else {
+                        softPool.add(bp);
+                    }
+                }
+                if (winner != null) {
+                    winner[6] = probedDelta;
+                    winner[7] = waterDelta;
+                }
+                return winner != null ? winner : new int[]{Integer.MIN_VALUE, probedDelta, waterDelta};
+            };
+
+            // PHASE 1 : Scan RAM ultra-rapide (~5 ms) des en-tetes .mca AVANT tout bruit 3D !
+            // On filtre d'abord en memoire mcaWarmScore80 >= 168 (~25-50 chunks FULL deja sur disque en bordure + coeur 4x4 proto intact),
+            // on trie par warmScore DESC puis proximite, et on n'evalue depthFn/biomeSrc/getBaseHeight QUE sur l'elite !
+            final int brx = baseX >> 9, brz = baseZ >> 9;
+            final java.util.HashMap<Long, int[]> bestWarmByCell = new java.util.HashMap<>(512);
+            for (int rrad = 0; rrad <= 12; rrad++) {
+                for (int rdx = -rrad; rdx <= rrad; rdx++) {
+                    for (int rdz = -rrad; rdz <= rrad; rdz++) {
+                        if (Math.max(Math.abs(rdx), Math.abs(rdz)) != rrad) continue;
+                        int rx = brx + rdx, rz = brz + rdz;
+                        byte[] secs = mcaRegionSectors(lvl, rx, rz);
+                        boolean anyWarm = false;
+                        for (int i = 0; i < 1024; i++) { if ((secs[i] & 0xFF) >= 2) { anyWarm = true; break; } }
+                        if (!anyWarm) continue;
+                        for (int lx = 0; lx < 32; lx++) {
+                            for (int lz = 0; lz < 32; lz++) {
+                                if ((secs[lx + (lz << 5)] & 0xFF) < 2) continue;
+                                int cx = ((rx << 5) + lx) << 4;
+                                int cz = ((rz << 5) + lz) << 4;
+                                long dck = dryCellKey(cx, cz);
+                                if (DRY_CELLS_DONE.contains(dck) || isPermanentReject(cx, cz)) continue;
+                                if (p != null) {
+                                    double dpx = cx - p.blockPosition().getX(), dpz = cz - p.blockPosition().getZ();
+                                    if ((dpx * dpx + dpz * dpz) < (double) minCenterDist * minCenterDist) continue;
+                                }
+                                if (deepluckyblock.util.StructureSites.conflict(lvl, cx, cz, checkR + 24) != null) continue;
+                                boolean swapXZ = dragonSwapXZ(cx, cz, p, structMax);
+                                int warm = mcaWarmScore80(lvl, cx, cz, swapXZ);
+                                if (warm >= 212) {
+                                    int dist = (int) Math.hypot(cx - baseX, cz - baseZ);
+                                    int[] prev = bestWarmByCell.get(dck);
+                                    if (prev == null || warm > prev[2] || (warm == prev[2] && dist < prev[3])) {
+                                        bestWarmByCell.put(dck, new int[]{cx, cz, warm, dist});
+                                    }
                                 }
                             }
-                        } else if (wet <= 2 && span > 0 && span <= DRY_PICK_SOFT_SPAN) {
-                            softPool.add(new BlockPos(cx, Math.max(hy, 63), cz));
-                            if (span < bestSoftSpan) {
-                                bestSoftSpan = span; bestSoft = new BlockPos(cx, Math.max(hy, 63), cz);
+                        }
+                    }
+                }
+                if (bestWarmByCell.size() >= 256 && rrad >= 3) break;
+            }
+            final java.util.ArrayList<int[]> rawWarm = new java.util.ArrayList<>(bestWarmByCell.values());
+            if (!rawWarm.isEmpty()) {
+                rawWarm.sort((a, b) -> {
+                    int nearA = a[3] <= 1536 ? 0 : 1, nearB = b[3] <= 1536 ? 0 : 1;
+                    if (nearA != nearB) return Integer.compare(nearA, nearB);
+                    return a[2] != b[2] ? Integer.compare(b[2], a[2]) : Integer.compare(a[3], b[3]);
+                });
+                final java.util.ArrayList<int[]> protoBatch = new java.util.ArrayList<>(32);
+                final long warmDeadline = t0 + 220L;
+                for (int i = 0; i < rawWarm.size(); i++) {
+                    if (System.currentTimeMillis() >= warmDeadline) break;
+                    int[] rw = rawWarm.get(i);
+                    int[] cand = evalPre.apply(rw[0], rw[1]);
+                    if (cand == null) continue;
+                    if (cand.length == 1) { water++; continue; }
+                    protoBatch.add(cand);
+                    if (protoBatch.size() >= 24) {
+                        protoBatch.sort(java.util.Comparator.comparingInt(arr -> arr[3]));
+                        int[] pRes = probeBatch.apply(protoBatch);
+                        if (pRes != null && pRes[0] != Integer.MIN_VALUE) {
+                            probed += pRes[6]; water += pRes[7];
+                            BlockPos choice = new BlockPos(pRes[0], pRes[1], pRes[2]);
+                            DRY_PICK_SUGGESTED.add(new int[]{choice.getX(), choice.getZ()});
+                            stashSearchReuse(origin, structMax, choice, strictPool, softPool);
+                            logLoadedTierDigest(choice.getX(), choice.getZ());
+                            LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c/T302 PROTO-HALO : {} ms, anneau {}, {} sondes, {} eau/biome ecartees, span sec={}, warmScore={}/240, 0 chunk genere)",
+                                    choice.getX(), choice.getZ(), System.currentTimeMillis() - t0, pRes[3], probed, water, pRes[4], pRes[5]);
+                            return choice;
+                        } else if (pRes != null) {
+                            probed += pRes[1]; water += pRes[2];
+                        }
+                        protoBatch.clear();
+                    }
+                }
+                if (!protoBatch.isEmpty()) {
+                    protoBatch.sort(java.util.Comparator.comparingInt(arr -> arr[3]));
+                    int[] pRes = probeBatch.apply(protoBatch);
+                    if (pRes != null && pRes[0] != Integer.MIN_VALUE) {
+                        probed += pRes[6]; water += pRes[7];
+                        BlockPos choice = new BlockPos(pRes[0], pRes[1], pRes[2]);
+                        DRY_PICK_SUGGESTED.add(new int[]{choice.getX(), choice.getZ()});
+                        stashSearchReuse(origin, structMax, choice, strictPool, softPool);
+                        logLoadedTierDigest(choice.getX(), choice.getZ());
+                        LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c/T302 PROTO-HALO : {} ms, anneau {}, {} sondes, {} eau/biome ecartees, span sec={}, warmScore={}/240, 0 chunk genere)",
+                                choice.getX(), choice.getZ(), System.currentTimeMillis() - t0, pRes[3], probed, water, pRes[4], pRes[5]);
+                        return choice;
+                    } else if (pRes != null) {
+                        probed += pRes[1]; water += pRes[2];
+                    }
+                }
+            }
+
+            // PHASE 2 : Couronnes dynamiques jusqu'a 48 anneaux (21 500 blocs, sans jamais s'epuiser !)
+            final long originKey = BlockPos.asLong(baseX >> 7, 0, baseZ >> 7);
+            int startRing = DRY_ORIGIN_RING_CURSOR.getOrDefault(originKey, 0);
+            if (startRing > 44) startRing = 0;
+            final java.util.ArrayList<int[]> coldBatch = new java.util.ArrayList<>(20);
+            for (int ringOff = 0; ringOff <= 48 && System.currentTimeMillis() - t0 < budget - 30L; ringOff++) {
+                int ring = (startRing + ringOff) % 49;
+                final int ringBulles = (ring == 0) ? 1 : (ring * 8);
+                final double ringRad = ring * 448.0;
+                for (int bi = 0; bi < ringBulles; bi++) {
+                    final double ba = (ring == 0) ? 0.0 : ((2.0 * Math.PI * bi) / ringBulles + ring * 0.3819660113);
+                    final int cx0 = baseX + (ring == 0 ? 0 : (int) Math.round(Math.cos(ba) * ringRad));
+                    final int cz0 = baseZ + (ring == 0 ? 0 : (int) Math.round(Math.sin(ba) * ringRad));
+                    final int r0 = (ring == 0) ? Math.max(80, minCenterDist + 32) : 48;
+                    final int rMax = (ring == 0) ? 384 : 272;
+                    final int rStep = 64;
+                    for (int r = r0; r <= rMax; r += rStep) {
+                        final double angle0 = (r * 0.6180339887) % (2 * Math.PI);
+                        final int n = Math.max(6, (int) Math.ceil((2 * Math.PI * r) / rStep));
+                        for (int k = 0; k < n; k++) {
+                            final double a = angle0 + (2 * Math.PI * k) / n;
+                            int cx = (cx0 + (int) Math.round(Math.cos(a) * r) + 8) & ~15;
+                            int cz = (cz0 + (int) Math.round(Math.sin(a) * r) + 8) & ~15;
+                            int[] cand = evalPre.apply(cx, cz);
+                            if (cand == null) { skipped++; continue; }
+                            if (cand.length == 1) { water++; continue; }
+                            coldBatch.add(cand);
+                            if (coldBatch.size() >= 16) {
+                                coldBatch.sort(java.util.Comparator.comparingInt(arr -> arr[3]));
+                                int[] cRes = probeBatch.apply(coldBatch);
+                                coldBatch.clear();
+                                if (cRes != null && cRes[0] != Integer.MIN_VALUE) {
+                                    probed += cRes[6]; water += cRes[7];
+                                    DRY_ORIGIN_RING_CURSOR.put(originKey, ring);
+                                    BlockPos choice = new BlockPos(cRes[0], cRes[1], cRes[2]);
+                                    DRY_PICK_SUGGESTED.add(new int[]{choice.getX(), choice.getZ()});
+                                    stashSearchReuse(origin, structMax, choice, strictPool, softPool);
+                                    logLoadedTierDigest(choice.getX(), choice.getZ());
+                                    LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c/T302 : {} ms, anneau {}, {} sondes, {} eau/biome ecartees, span sec={}, warmScore={}/160, 0 chunk genere)",
+                                            choice.getX(), choice.getZ(), System.currentTimeMillis() - t0, cRes[3], probed, water, cRes[4], cRes[5]);
+                                    return choice;
+                                } else if (cRes != null) {
+                                    probed += cRes[1]; water += cRes[2];
+                                }
+                                if (System.currentTimeMillis() - t0 >= budget - 30L) break;
                             }
                         }
-                        if (System.currentTimeMillis() - t0 > budget) { blown = true; break; }
+                        if (System.currentTimeMillis() - t0 >= budget - 30L) break;
                     }
-                    if (blown || (b == 0 && System.currentTimeMillis() - t0 > budget / 2)) break;
+                    if (System.currentTimeMillis() - t0 >= budget - 30L) break;
                 }
-                // T301-C : tant qu'il reste du budget et des bulles plus lointaines (+-1024/+-2048),
-                // ne pas s'arreter sur un candidat moyen (> DRY_PICK_GOOD_SPAN) en bulle proche :
-                // elargir d'abord aux bulles suivantes pour trouver un vrai span <= 6.
-                if (blown) break;
+                DRY_ORIGIN_RING_CURSOR.put(originKey, (ring + 1) % 49);
+            }
+            if (!coldBatch.isEmpty()) {
+                coldBatch.sort(java.util.Comparator.comparingInt(arr -> arr[3]));
+                int[] cRes = probeBatch.apply(coldBatch);
+                if (cRes != null && cRes[0] != Integer.MIN_VALUE) {
+                    probed += cRes[6]; water += cRes[7];
+                    BlockPos choice = new BlockPos(cRes[0], cRes[1], cRes[2]);
+                    DRY_PICK_SUGGESTED.add(new int[]{choice.getX(), choice.getZ()});
+                    stashSearchReuse(origin, structMax, choice, strictPool, softPool);
+                    logLoadedTierDigest(choice.getX(), choice.getZ());
+                    LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c/T302 : {} ms, anneau {}, {} sondes, {} eau/biome ecartees, span sec={}, warmScore={}/160, 0 chunk genere)",
+                            choice.getX(), choice.getZ(), System.currentTimeMillis() - t0, cRes[3], probed, water, cRes[4], cRes[5]);
+                    return choice;
+                } else if (cRes != null) {
+                    probed += cRes[1]; water += cRes[2];
+                }
             }
             if (bestStrict != null) {
                 DRY_PICK_SUGGESTED.add(new int[]{bestStrict.getX(), bestStrict.getZ()});
@@ -1886,6 +2297,10 @@ public class Structures5Procedure {
                 LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c : {} ms, meilleur strict span sec={}, {} sondes, {} eau/haut, 0 chunk genere)",
                         bestStrict.getX(), bestStrict.getZ(), System.currentTimeMillis() - t0, bestStrictSpan, probed, water);
                 return bestStrict;
+            }
+            if (bestSoft == null && !softPool.isEmpty()) {
+                bestSoft = softPool.get(0);
+                bestSoftSpan = 4;
             }
             if (bestSoft != null) {
                 DRY_PICK_SUGGESTED.add(new int[]{bestSoft.getX(), bestSoft.getZ()});
@@ -1946,7 +2361,7 @@ public class Structures5Procedure {
     private static void finishWhenTerrainReleased(ServerLevel level, String name, BlockPos placeMin) {
         if (deepluckyblock.util.ChunkKeeper.held(level)) {
             deepluckyblock.procedures.TestProcedure.schedule(level,
-                    deepluckyblock.procedures.TestProcedure.currentTick(level) + 2,
+                    deepluckyblock.procedures.TestProcedure.currentTick(level) + 1,
                     () -> finishWhenTerrainReleased(level, name, placeMin));
             return;
         }
@@ -2848,11 +3263,10 @@ public class Structures5Procedure {
                     SEARCH_DRY_REJECTS++;
                     continue;
                 }
-                if (SEARCH_DEFERRED_KEYS.add(ck) && SEARCH_DEFERRED.size() < MAX_DEFERRED) {
+                // T302-A : ne pas inonder CHUNK_REQUESTS avec des requestZone de candidats historiques
+                // non verifies, sinon l'emprise finale du vrai candidat attend derriere eux (>4,5 s -> ABANDON).
+                if (false && SEARCH_DEFERRED_KEYS.add(ck) && SEARCH_DEFERRED.size() < MAX_DEFERRED) {
                     SEARCH_DEFERRED.add(new BlockPos(c.cx(), 0, c.cz()));
-                    deepluckyblock.util.SafeSurface.requestZone(lvl,
-                            (c.cx() - fullCheckR) >> 4, (c.cz() - fullCheckR) >> 4,
-                            (c.cx() + fullCheckR) >> 4, (c.cz() + fullCheckR) >> 4);
                 } else {
                     REJECTED_RUGGED_CENTERS.add(ck);
                 }
@@ -2876,6 +3290,25 @@ public class Structures5Procedure {
                 // pas jeter ici un terrain sec accidenté que les smooths peuvent
                 // corriger; compter seulement le désaccord de la grille.
                 phantomRejected++;
+            }
+            // T303-A1 EN PREMIER (0.04 ms vs 25 ms pour detectExactGround !) :
+            // ecarte instantanement tout candidat dont un chunk manque ou dont l'ecart inter-chunks > 2 !
+            int halfMinF = Math.min(structW, structD) / 2;
+            int sA = measureStructureChunkStepMax(
+                    lvl, c.cx() - halfMinF, c.cz() - fullCheckR, c.cx() + halfMinF, c.cz() + fullCheckR);
+            int sB = measureStructureChunkStepMax(
+                    lvl, c.cx() - fullCheckR, c.cz() - halfMinF, c.cx() + fullCheckR, c.cz() + halfMinF);
+            int a1Step = (sA >= 0 && sB >= 0) ? Math.min(sA, sB) : Math.max(sA, sB);
+            if (a1Step < 0) {
+                if (cLoaded) pickStatLoadedReject('n');
+                REJECTED_RUGGED_CENTERS.add(BlockPos.asLong(c.cx(), 0, c.cz()));
+                continue;
+            }
+            if (a1Step > deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y) {
+                if (cLoaded) pickStatLoadedReject('r');
+                REJECTED_RUGGED_CENTERS.add(BlockPos.asLong(c.cx(), 0, c.cz()));
+                phantomRejected++;
+                continue;
             }
             // T173 : même verdict exhaustif que STRUCT5-GROUND AVANT de déclarer
             // la zone choisie. Le contrôle échantillonné acceptait encore pente=26
@@ -2913,10 +3346,12 @@ public class Structures5Procedure {
                 continue;
             }
             int exactRelief = candidateGround.maxY() - candidateGround.minY();
-            if (exactRelief > MAX_CLIFF_HEIGHT_DIFF) {
+            int fullRelief = candidateFull.maxY() - candidateFull.minY();
+            if (exactRelief > MAX_CLIFF_HEIGHT_DIFF || fullRelief > MAX_FOOTPRINT_GROUND_SPAN) {
                 // T190 : ne plus perdre un site sec déjà disponible. On mémorise
                 // le moins accidenté, puis on l'emploie avant tout secours généré.
-                if (exactRelief < SEARCH_BEST_LOADED_DRY_RELIEF) {
+                if (exactRelief <= MAX_CLIFF_HEIGHT_DIFF && fullRelief <= MAX_FOOTPRINT_GROUND_SPAN
+                        && exactRelief < SEARCH_BEST_LOADED_DRY_RELIEF) {
                     SEARCH_BEST_LOADED_DRY_RELIEF = exactRelief;
                     SEARCH_BEST_LOADED_DRY = new BlockPos(c.cx(), candidateGround.maxY(), c.cz());
                 }
@@ -2955,7 +3390,11 @@ public class Structures5Procedure {
             FootprintGround candidateFull2 = detectExactGround(lvl,
                     c.cx() - fullCheckR, c.cz() - fullCheckR,
                     c.cx() + fullCheckR, c.cz() + fullCheckR);
-            if (candidateFull2 == null || candidateFull2.wet() > 0) continue;
+            if (candidateFull2 == null || candidateFull2.wet() > 0
+                    || candidateFull2.maxY() - candidateFull2.minY() > MAX_FOOTPRINT_GROUND_SPAN) continue;
+            int a1Step2 = measureStructureChunkStepMax(
+                    lvl, c.cx() - fullCheckR, c.cz() - fullCheckR, c.cx() + fullCheckR, c.cz() + fullCheckR);
+            if (a1Step2 < 0 || a1Step2 > deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y) continue;
             int realY2 = deepluckyblock.util.SafeSurface.surfaceY(lvl, c.cx(), c.cz(), origin.getY());
             logLoadedTierDigest(c.cx(), c.cz());   // T296
             deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-FLAT] Zone choisie a {},{} (seconde passe T49, terrain reel verifie, Y reel={}, {} s de recherche)",
@@ -3019,11 +3458,8 @@ public class Structures5Procedure {
             deepluckyblock.util.ChunkKeeper.trackReplacing(lvl,
                     SEARCH_GENERATED_FALLBACK.offset(-fullCheckR, 0, -fullCheckR),
                     SEARCH_GENERATED_FALLBACK.offset(fullCheckR, 0, fullCheckR));
-            deepluckyblock.util.SafeSurface.requestZone(lvl,
-                    (SEARCH_GENERATED_FALLBACK.getX() - fullCheckR) >> 4,
-                    (SEARCH_GENERATED_FALLBACK.getZ() - fullCheckR) >> 4,
-                    (SEARCH_GENERATED_FALLBACK.getX() + fullCheckR) >> 4,
-                    (SEARCH_GENERATED_FALLBACK.getZ() + fullCheckR) >> 4);
+            // T302-B : ChunkKeeper.trackReplacing pilote deja le chargement de facon bornee et annulable ;
+            // requestZone posait 64 ASYNC_TICKET non annulables qui affamaient ensuite le vrai candidat choisi.
             LOGGER.warn("[STRUCT5-FLAT] zones historiques épuisées jusqu'à 768 blocs : génération ciblée d'une seule emprise à {},{}",
                     SEARCH_GENERATED_FALLBACK.getX(), SEARCH_GENERATED_FALLBACK.getZ());
             return null;
@@ -3047,6 +3483,56 @@ public class Structures5Procedure {
     // couronne. Verdicts identiques a la boucle de verification (eau, relief
     // exhaustif x0,6, emprise entiere seche) ; un candidat dont la zone
     // n'arrive pas est consomme apres MAX_DEFER_ROUNDS reprises.
+    /**
+     * T303-A1 : mesure rapide non bloquante de l'ecart maximal de Y median entre chunks
+     * adjacents d'une emprise structure deja chargee en RAM. Retourne -1 si un chunk manque.
+     */
+    private static int measureStructureChunkStepMax(ServerLevel level, int minX, int minZ, int maxX, int maxZ) {
+        int scx0 = minX >> 4, scx1 = maxX >> 4;
+        int scz0 = minZ >> 4, scz1 = maxZ >> 4;
+        int sw = scx1 - scx0 + 1, sh = scz1 - scz0 + 1;
+        int[] medY = new int[sw * sh];
+        java.util.Arrays.fill(medY, Integer.MIN_VALUE);
+        int sentinelY = level.getMinBuildHeight() - 1;
+        int[] colBuf = new int[16];
+        for (int sj = 0; sj < sh; sj++) {
+            int ccz = scz0 + sj;
+            for (int si = 0; si < sw; si++) {
+                int ccx = scx0 + si;
+                if (deepluckyblock.util.SafeSurface.chunkFor(level, ccx, ccz) == null) return -1;
+                int cnt = 0;
+                for (int lx = 2; lx <= 14; lx += 4) {
+                    int wx = (ccx << 4) + lx;
+                    if (wx < minX || wx > maxX) continue;
+                    for (int lz = 2; lz <= 14; lz += 4) {
+                        int wz = (ccz << 4) + lz;
+                        if (wz < minZ || wz > maxZ) continue;
+                        int gy = deepluckyblock.util.SafeSurface.groundY(level, wx, wz, sentinelY);
+                        if (gy > sentinelY) colBuf[cnt++] = gy;
+                    }
+                }
+                if (cnt >= 4) {
+                    java.util.Arrays.sort(colBuf, 0, cnt);
+                    medY[sj * sw + si] = colBuf[cnt / 2];
+                }
+            }
+        }
+        int worst = 0;
+        for (int sj = 0; sj < sh; sj++) {
+            for (int si = 0; si < sw; si++) {
+                int y0 = medY[sj * sw + si];
+                if (y0 == Integer.MIN_VALUE) continue;
+                if (si + 1 < sw && medY[sj * sw + (si + 1)] != Integer.MIN_VALUE) {
+                    worst = Math.max(worst, Math.abs(y0 - medY[sj * sw + (si + 1)]));
+                }
+                if (sj + 1 < sh && medY[(sj + 1) * sw + si] != Integer.MIN_VALUE) {
+                    worst = Math.max(worst, Math.abs(y0 - medY[(sj + 1) * sw + si]));
+                }
+            }
+        }
+        return worst;
+    }
+
     private static BlockPos drainDeferred(ServerLevel lvl, int checkR, int fullCheckR) {
         if (SEARCH_DEFERRED.isEmpty()) return null;
         long drainT0 = System.currentTimeMillis();
@@ -3081,11 +3567,12 @@ public class Structures5Procedure {
             REJECTED_RUGGED_CENTERS.add(ck);
             if (q.wetRatio() > FLAT_MAX_WET || dg.wet() > 0 || df.wet() > 0) continue;
             int relief = dg.maxY() - dg.minY();
-            if (relief > MAX_CLIFF_HEIGHT_DIFF) {
-                if (relief < SEARCH_BEST_LOADED_DRY_RELIEF) {
-                    SEARCH_BEST_LOADED_DRY_RELIEF = relief;
-                    SEARCH_BEST_LOADED_DRY = new BlockPos(c.getX(), dg.maxY(), c.getZ());
-                }
+            if (relief > MAX_CLIFF_HEIGHT_DIFF || df.maxY() - df.minY() > MAX_FOOTPRINT_GROUND_SPAN) {
+                continue;
+            }
+            int a1StepD = measureStructureChunkStepMax(
+                    lvl, c.getX() - fullCheckR, c.getZ() - fullCheckR, c.getX() + fullCheckR, c.getZ() + fullCheckR);
+            if (a1StepD < 0 || a1StepD > deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y) {
                 continue;
             }
             logLoadedTierDigest(c.getX(), c.getZ());   // T296
@@ -3365,6 +3852,19 @@ public class Structures5Procedure {
         return sc;
     }
 
+    // T302-C : mise en cache du filtrage NBT (filt + floorRelY + minRelY + bornes relatives par rotation)
+    // Avant : chaque tick d'attente exactGround/fullGround recalculait 3 boucles de ~150 000 StructureBlockInfo
+    // (~12 millions d'iterations + boxing Long sur le thread serveur pendant que les 2 coeurs generent les chunks !).
+    private record CachedFilteredTemplate(
+            List<StructureTemplate.StructureBlockInfo> filt,
+            int floorRelY,
+            int minRelY,
+            int glassSkipped,
+            int[][] rotRelBounds // [rot.ordinal()] -> {minX, minY, minZ, maxX, maxY, maxZ}
+    ) {}
+    private static final java.util.concurrent.ConcurrentHashMap<String, CachedFilteredTemplate> FILTERED_TMPL_CACHE =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     private static boolean doPaste(ServerLevel level, BlockPos origin, String nbt, int ox, int oy, int oz,
                                    int dist, Direction nf, boolean followSurf, boolean useFlat, boolean keepInt) {
         long tGlobal = System.currentTimeMillis();
@@ -3462,7 +3962,7 @@ public class Structures5Procedure {
             // colonne d'eau deja constatee.
             int wetSeen = partialWetProbe(level, txz.getX(), txz.getZ(), safetyRadius);
             if (wetSeen > 0) {
-                REJECTED_RUGGED_CENTERS.add(BlockPos.asLong(txz.getX(), 0, txz.getZ()));
+                REJECTED_RUGGED_CENTERS.add(BlockPos.asLong(txz.getX(), 0, txz.getZ())); markPermanentReject(txz.getX(), txz.getZ());
                 PENDING_FLAT_CENTER = null;
                 deepluckyblock.util.SafeSurface.dropZonePlan();
                 deepluckyblock.util.ChunkKeeper.release(level);
@@ -3480,31 +3980,29 @@ public class Structures5Procedure {
                 });
                 return true;
             }
+            // T302-B : ne créer la zone ChunkKeeper (trackReplacing) qu'UNE SEULE FOIS au premier essai !
+            // L'appeler à chaque reprise relâchait et recréait les tickets à chaque tick (10,2 s perdues).
+            // ChunkKeeper charge du centre vers l'extérieur (anneaux de Chebyshev) : safetyRadius -> x0,6 -> emprise -> prepZone.
+            // T302-B : boite EXACTE tournee (8x10 = 80 chunks au lieu de 11x11 = 121 chunks, -34% de generation !)
+            // cadencee par ChunkKeeper (16/tick, 20 en vol) SANS salve massive requestZone(121) qui gelait un tick de 7,9 s !
+            long rotSeed0 = BlockPos.asLong(txz.getX(), 0, txz.getZ()) ^ (long) nbt.hashCode() * 0x9E3779B97F4A7C15L;
+            Rotation rotEst = pickRotation(new BlockPos(txz.getX() + ox, 64, txz.getZ() + oz), pl, nf, RandomSource.create(rotSeed0));
+            boolean swapXZ = (rotEst == Rotation.CLOCKWISE_90 || rotEst == Rotation.COUNTERCLOCKWISE_90);
+            int halfW = (swapXZ ? Math.abs(size.getZ()) : Math.abs(size.getX())) / 2;
+            int halfD = (swapXZ ? Math.abs(size.getX()) : Math.abs(size.getZ())) / 2;
             int cx0 = (txz.getX() - safetyRadius) >> 4;
             int cx1 = (txz.getX() + safetyRadius) >> 4;
             int cz0 = (txz.getZ() - safetyRadius) >> 4;
             int cz1 = (txz.getZ() + safetyRadius) >> 4;
+            int kcx0 = (txz.getX() - halfW - 32) >> 4;
+            int kcx1 = (txz.getX() + halfW + 31) >> 4;
+            int kcz0 = (txz.getZ() - halfD - 32) >> 4;
+            int kcz1 = (txz.getZ() + halfD + 31) >> 4;
             ++FOOTPRINT_LOAD_RETRIES; // diagnostic uniquement : aucun abandon sauf borne T232
-            // Le scoring ne charge volontairement rien. Une fois LE candidat
-            // final choisi, demander uniquement son emprise puis reprendre sans
-            // bloquer le thread serveur. T165 refusait ici et gardait la file
-            // verrouillée pendant quatre minutes.
-            deepluckyblock.util.SafeSurface.requestZone(level, cx0, cz0, cx1, cz1);
-            // T232 : trois garde-fous additifs dans la phase d'attente :
-            //  (1) PIN de l'emprise finale via ChunkKeeper + keep immediat : le
-            //      ticker autonome de ChunkKeeper ne tournait que toutes les
-            //      100 ticks (5 s) -- assez tard pour qu'un chunk charge
-            //      soit deja decharge quand la zone est hors-portee joueur.
-            //  (2) Souscription de zone SafeSurface (diagnostic + accord avec
-            //      le pin : ses tickets ne sont plus retires sur ces chunks).
-            //  (3) Borne temporelle de 10 min puis abandon PROPRE : la
-            //      generation obtient une sortie visible au lieu d'une
-            //      boucle silencieuse infinie (bug "rien ne spawn").
-            deepluckyblock.util.ChunkKeeper.trackReplacing(level,
-                    new BlockPos(cx0 << 4, level.getMinBuildHeight(), cz0 << 4),
-                    new BlockPos((cx1 << 4) + 15, level.getMaxBuildHeight() - 1, (cz1 << 4) + 15));
-            deepluckyblock.util.ChunkKeeper.keep(level);
+            BlockPos keepMin = new BlockPos(kcx0 << 4, level.getMinBuildHeight(), kcz0 << 4);
+            BlockPos keepMax = new BlockPos((kcx1 << 4) + 15, level.getMaxBuildHeight() - 1, (kcz1 << 4) + 15);
             if (FOOTPRINT_LOAD_RETRIES == 1) {
+                deepluckyblock.util.ChunkKeeper.trackReplacing(level, keepMin, keepMax);
                 SAFETY_AWAIT_START_MS = System.currentTimeMillis();
                 resetAwaitProgress();
                 final String planNbt = nbt;
@@ -3512,7 +4010,10 @@ public class Structures5Procedure {
                         () -> deepluckyblock.util.DebugLog.info(LOGGER,
                                 "[STRUCT5-SAFETY] {} : emprise finale complete (plan zone, {} ms)",
                                 planNbt, System.currentTimeMillis() - SAFETY_AWAIT_START_MS));
+            } else {
+                deepluckyblock.util.ChunkKeeper.track(level, keepMin, keepMax);
             }
+            deepluckyblock.util.ChunkKeeper.keep(level);
             long awaitElapsed = SAFETY_AWAIT_START_MS == 0L ? 0L
                     : System.currentTimeMillis() - SAFETY_AWAIT_START_MS;
                         // T294 : file affamee (generateur qui ne livre plus) -> abandon
@@ -3569,7 +4070,7 @@ public class Structures5Procedure {
             // latence de detection de la fin de chargement diminue. Gain
             // identique sur le candidat FINAL : la pose demarre plus tot.
             deepluckyblock.procedures.TestProcedure.schedule(level,
-                    deepluckyblock.procedures.TestProcedure.currentTick(level) + 2, () -> {
+                    deepluckyblock.procedures.TestProcedure.currentTick(level) + 1, () -> {
                 boolean ok = doPaste(level, retryOrigin, nbt, ox, oy, oz, dist, nf, followSurf, useFlat, keepInt);
                 if (!ok) notifyGenerationAborted(level);
             });
@@ -3579,7 +4080,7 @@ public class Structures5Procedure {
         SAFETY_AWAIT_START_MS = 0L;   // T232
         deepluckyblock.util.SafeSurface.dropZonePlan();
         if (finalQuality.wetRatio() > FLAT_MAX_WET) {
-            REJECTED_RUGGED_CENTERS.add(BlockPos.asLong(txz.getX(), 0, txz.getZ()));
+            REJECTED_RUGGED_CENTERS.add(BlockPos.asLong(txz.getX(), 0, txz.getZ())); markPermanentReject(txz.getX(), txz.getZ());
             PENDING_FLAT_CENTER = null;
             // T235 : relcher immediat le pin de l'emprise finale du candidat
             // aquatique. Avant : la zone restait tenue jusqu'au garde-fou
@@ -3652,61 +4153,67 @@ public class Structures5Procedure {
         // (thread de fond) et mis en cache, au lieu d'etre recalcule a chaque pose
         // (deux grilles booleennes sur tout le volume + parcours complet, sur le
         // thread serveur).
-        Set<Long> intAir = isEverestNbt(nbt) ? Collections.emptySet()
-                : deepluckyblock.util.StructureTemplateCache.interiorAir(nbt);
-        if (intAir == null) intAir = isEverestNbt(nbt) ? Collections.emptySet() : detectIntAir(raw, size);
-        // Niveau reel du sol du template, hors LIGHT et vignes techniques.
-        // Le Y brut du template peut etre positif tout en etant enterre apres
-        // l'application de minRelY : c'est pourquoi on compare a floorRelY.
-        int floorRelY = Integer.MAX_VALUE;
-        for (var info : raw) {
-            BlockState candidate = info.state();
-            if (candidate.isAir() || isTechnicalLightOrVine(candidate)) continue;
-            floorRelY = Math.min(floorRelY, info.pos().getY());
-        }
-        if (floorRelY == Integer.MAX_VALUE) floorRelY = 0;
-        // T75 : copie FINALE (floorRelY est modifie par la boucle ci-dessus, donc non
-        // capturable par le lambda du pipeline ; celle-ci l'est).
+        final var rawForCache = raw;
+        final var sizeForCache = size;
+        CachedFilteredTemplate cft = FILTERED_TMPL_CACHE.computeIfAbsent(nbt, _key -> {
+            final var raw2 = rawForCache;
+            final var size2 = sizeForCache;
+            Set<Long> intAir = isEverestNbt(nbt) ? Collections.emptySet()
+                    : deepluckyblock.util.StructureTemplateCache.interiorAir(nbt);
+            if (intAir == null) intAir = isEverestNbt(nbt) ? Collections.emptySet() : detectIntAir(raw2, size2);
+            int flY = Integer.MAX_VALUE;
+            for (var info : raw2) {
+                BlockState candidate = info.state();
+                if (candidate.isAir() || isTechnicalLightOrVine(candidate)) continue;
+                flY = Math.min(flY, info.pos().getY());
+            }
+            if (flY == Integer.MAX_VALUE) flY = 0;
+            List<StructureTemplate.StructureBlockInfo> flt = new ArrayList<>(raw2.size());
+            int glSkip = 0;
+            for (var info : raw2) {
+                BlockState s = info.state();
+                if (isLaggy(s)) continue;
+                if (isUndergroundTechnicalBlock(s, info.pos().getY() - flY)) continue;
+                if (isGlassBlock(s)) { glSkip++; continue; }
+                if (s.isAir()) { if (!isEverestNbt(nbt) && intAir.contains(info.pos().asLong())) flt.add(info); }
+                else flt.add(info);
+            }
+            int mRelY = 0;
+            if (!flt.isEmpty()) {
+                mRelY = Integer.MAX_VALUE;
+                for (var b : flt) { int by = b.pos().getY(); if (by < mRelY) mRelY = by; }
+            }
+            int[][] rBounds = new int[Rotation.values().length][6];
+            for (Rotation rVal : Rotation.values()) {
+                StructurePlaceSettings sps = new StructurePlaceSettings().setRotation(rVal).setMirror(Mirror.NONE);
+                int rMinX=Integer.MAX_VALUE, rMinY=Integer.MAX_VALUE, rMinZ=Integer.MAX_VALUE;
+                int rMaxX=Integer.MIN_VALUE, rMaxY=Integer.MIN_VALUE, rMaxZ=Integer.MIN_VALUE;
+                for (StructureTemplate.StructureBlockInfo info : flt) {
+                    BlockPos rel = StructureTemplate.calculateRelativePosition(sps, info.pos());
+                    if (rel.getX()<rMinX)rMinX=rel.getX(); if(rel.getX()>rMaxX)rMaxX=rel.getX();
+                    if (rel.getY()<rMinY)rMinY=rel.getY(); if(rel.getY()>rMaxY)rMaxY=rel.getY();
+                    if (rel.getZ()<rMinZ)rMinZ=rel.getZ(); if(rel.getZ()>rMaxZ)rMaxZ=rel.getZ();
+                }
+                rBounds[rVal.ordinal()] = new int[]{rMinX, rMinY, rMinZ, rMaxX, rMaxY, rMaxZ};
+            }
+            return new CachedFilteredTemplate(java.util.Collections.unmodifiableList(flt), flY, mRelY, glSkip, rBounds);
+        });
+        final int floorRelY = cft.floorRelY();
         final int floorRelYFinal = floorRelY;
-
-        List<StructureTemplate.StructureBlockInfo> filt = new ArrayList<>(raw.size());
-        int glassSkipped = 0;
-        for (var info : raw) {
-            BlockState s = info.state();
-            if (isLaggy(s)) continue;
-            // Y relatif 1, 0 et negatif = sol et blocs enterres de la structure.
-            // On retire seulement l'id light technique et les vignes vanilla.
-            // Les LIGHT en positif restent intacts.
-            if (isUndergroundTechnicalBlock(s, info.pos().getY() - floorRelY)) continue;
-            if (isGlassBlock(s)) { glassSkipped++; continue; }
-            if (s.isAir()) { if (!isEverestNbt(nbt) && intAir.contains(info.pos().asLong())) filt.add(info); }
-            else filt.add(info);
-        }
-        // minRelY calcule sur la liste FILTREE (hors verre) pour que la base arrive
-        // exactement a baseY+offset. Si le verre etait en bas, il n'est plus la et
-        // ne fausse plus le calcul.
-        int minRelY = 0;
-        if (!filt.isEmpty()) { minRelY = Integer.MAX_VALUE; for (var b : filt) { int by = b.pos().getY(); if (by < minRelY) minRelY = by; } }
+        List<StructureTemplate.StructureBlockInfo> filt = cft.filt();
+        final int glassSkipped = cft.glassSkipped();
+        final int minRelY = cft.minRelY();
         BlockPos fp = new BlockPos(txz.getX() + ox, baseY + oy - minRelY, txz.getZ() + oz);
-        // Stable pendant les reprises asynchrones : changer la rotation changeait
-        // l'emprise demandée à chaque seconde et empêchait le chargement de finir.
         long rotationSeed = BlockPos.asLong(txz.getX(), 0, txz.getZ()) ^ (long) nbt.hashCode() * 0x9E3779B97F4A7C15L;
         Rotation rot = pickRotation(fp, pl, nf, RandomSource.create(rotationSeed));
-        BlockPos rp = adjRot(fp, tmpl, rot);
-        deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5] {} -> {} (baseY={}, minRelY={}, rot={}, {}ms)", nbt, rp.toShortString(), baseY, minRelY, rot, System.currentTimeMillis() - tGlobal);
-        // Bounding box EXACTE de la structure (positions réellement rotées) : le smooth
-        // et le paste seront parfaitement alignés. Corrige le décalage (~1 bloc) ET le
-        // swap X/Z des rotations 90/270 (rp+size était approximatif).
         StructurePlaceSettings bboxRs = new StructurePlaceSettings().setRotation(rot).setMirror(Mirror.NONE);
-        int bMinX=Integer.MAX_VALUE, bMinY=Integer.MAX_VALUE, bMinZ=Integer.MAX_VALUE;
-        int bMaxX=Integer.MIN_VALUE, bMaxY=Integer.MIN_VALUE, bMaxZ=Integer.MIN_VALUE;
-        for (StructureTemplate.StructureBlockInfo info : filt) {
-            BlockPos rel = StructureTemplate.calculateRelativePosition(bboxRs, info.pos());
-            int bx=rp.getX()+rel.getX(), by=rp.getY()+rel.getY(), bz=rp.getZ()+rel.getZ();
-            if (bx<bMinX)bMinX=bx; if(bx>bMaxX)bMaxX=bx;
-            if (by<bMinY)bMinY=by; if(by>bMaxY)bMaxY=by;
-            if (bz<bMinZ)bMinZ=bz; if(bz>bMaxZ)bMaxZ=bz;
+        BlockPos rp = adjRot(fp, tmpl, rot);
+        if (GROUND_WAIT_TICKS == 0) {
+            deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5] {} -> {} (baseY={}, minRelY={}, rot={}, {}ms)", nbt, rp.toShortString(), baseY, minRelY, rot, System.currentTimeMillis() - tGlobal);
         }
+        int[] rb = cft.rotRelBounds()[rot.ordinal()];
+        int bMinX = rp.getX() + rb[0], bMinY = rp.getY() + rb[1], bMinZ = rp.getZ() + rb[2];
+        int bMaxX = rp.getX() + rb[3], bMaxY = rp.getY() + rb[4], bMaxZ = rp.getZ() + rb[5];
         // T168 : findFlat choisit le CENTRE de la future structure. Jusqu'ici txz
         // était utilisé comme origine de template (+ offset), ce qui plaçait la
         // zone plane sous un bord après rotation. Recentre la boîte réellement
@@ -3732,13 +4239,12 @@ public class Structures5Procedure {
         int gx1 = max.getX() - trimX, gz1 = max.getZ() - trimZ;
         FootprintGround exactGround = detectExactGround(level, gx0, gz0, gx1, gz1);
         if (exactGround == null) {
-            deepluckyblock.util.SafeSurface.requestZone(level, gx0 >> 4, gz0 >> 4, gx1 >> 4, gz1 >> 4);
-            // T232 : meme accord sanitaire que la SAFETY -- pin + keep immediat +
-            // borne temporelle. Mesure en lab (queue) : citadel enchainerait
-            // 470 reprises de 20 ticks silencieusement (roue de hamster).
-            deepluckyblock.util.ChunkKeeper.trackReplacing(level,
-                    new BlockPos((gx0 >> 4) << 4, level.getMinBuildHeight(), (gz0 >> 4) << 4),
-                    new BlockPos(((gx1 >> 4) << 4) + 15, level.getMaxBuildHeight() - 1, ((gz1 >> 4) << 4) + 15));
+            // T302-B : maintenir ET demander toute la fenetre prepZone (min-32..max+32) sans trackReplacing !
+            int pcx0 = (min.getX() - 32) >> 4, pcz0 = (min.getZ() - 32) >> 4;
+            int pcx1 = (max.getX() + 32) >> 4, pcz1 = (max.getZ() + 32) >> 4;
+            deepluckyblock.util.ChunkKeeper.track(level,
+                    new BlockPos(pcx0 << 4, level.getMinBuildHeight(), pcz0 << 4),
+                    new BlockPos((pcx1 << 4) + 15, level.getMaxBuildHeight() - 1, (pcz1 << 4) + 15));
             deepluckyblock.util.ChunkKeeper.keep(level);
             if (SAFETY_AWAIT_START_MS == 0L) {
                 SAFETY_AWAIT_START_MS = System.currentTimeMillis();
@@ -3783,7 +4289,7 @@ public class Structures5Procedure {
             // terrain vierge, la generation domine : le reveil plus frequent ne
             // change rien, et le cout par reveil reste borne (zone plan).
             deepluckyblock.procedures.TestProcedure.schedule(level,
-                    deepluckyblock.procedures.TestProcedure.currentTick(level) + 4, () -> {
+                    deepluckyblock.procedures.TestProcedure.currentTick(level) + 1, () -> {
                 boolean ok = doPaste(level, retryOrigin, nbt, ox, oy, oz, dist, nf, followSurf, useFlat, keepInt);
                 if (!ok) notifyGenerationAborted(level);
             });
@@ -3793,14 +4299,12 @@ public class Structures5Procedure {
         // structure toucherait l'océan. Ainsi aucun bord ne peut finir dans l'eau.
         FootprintGround fullGround = detectExactGround(level, min.getX(), min.getZ(), max.getX(), max.getZ());
         if (fullGround == null) {
-            deepluckyblock.util.SafeSurface.requestZone(level, min.getX() >> 4, min.getZ() >> 4,
-                    max.getX() >> 4, max.getZ() >> 4);
-            // T232 : idem branche exactGround -- pin + keep + borne (la boucle
-            // « emprise entiere en chargement » n'avait AUCUNE garde : c'est la
-            // qu'une file de plusieurs structures restait perdue pour toujours).
-            deepluckyblock.util.ChunkKeeper.trackReplacing(level,
-                    new BlockPos((min.getX() >> 4) << 4, level.getMinBuildHeight(), (min.getZ() >> 4) << 4),
-                    new BlockPos(((max.getX() >> 4) << 4) + 15, level.getMaxBuildHeight() - 1, ((max.getZ() >> 4) << 4) + 15));
+            // T302-B : maintenir ET demander toute la fenetre prepZone (min-32..max+32) sans trackReplacing !
+            int pcx0 = (min.getX() - 32) >> 4, pcz0 = (min.getZ() - 32) >> 4;
+            int pcx1 = (max.getX() + 32) >> 4, pcz1 = (max.getZ() + 32) >> 4;
+            deepluckyblock.util.ChunkKeeper.track(level,
+                    new BlockPos(pcx0 << 4, level.getMinBuildHeight(), pcz0 << 4),
+                    new BlockPos((pcx1 << 4) + 15, level.getMaxBuildHeight() - 1, (pcz1 << 4) + 15));
             deepluckyblock.util.ChunkKeeper.keep(level);
             if (SAFETY_AWAIT_START_MS == 0L) {
                 SAFETY_AWAIT_START_MS = System.currentTimeMillis();
@@ -3835,7 +4339,7 @@ public class Structures5Procedure {
                 LOGGER.warn("[STRUCT5-GROUND] {} : emprise entiere en chargement ({} reprises de 4 ticks)", nbt, GROUND_WAIT_TICKS);
             final BlockPos retryOrigin = origin;
             deepluckyblock.procedures.TestProcedure.schedule(level,
-                    deepluckyblock.procedures.TestProcedure.currentTick(level) + 4, () -> {
+                    deepluckyblock.procedures.TestProcedure.currentTick(level) + 1, () -> {
                 boolean ok = doPaste(level, retryOrigin, nbt, ox, oy, oz, dist, nf, followSurf, useFlat, keepInt);
                 if (!ok) notifyGenerationAborted(level);
             });
@@ -3852,7 +4356,7 @@ public class Structures5Procedure {
                 deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-GROUND] aucun centre terrestre plan dans le rayon courant : recherche élargie de {} blocs (T301-C)",
                         SEARCH_EXTRA_RADIUS);
             }
-            REJECTED_RUGGED_CENTERS.add(BlockPos.asLong(txz.getX(), 0, txz.getZ()));
+            REJECTED_RUGGED_CENTERS.add(BlockPos.asLong(txz.getX(), 0, txz.getZ())); markPermanentReject(txz.getX(), txz.getZ());
             PENDING_FLAT_CENTER = null;
             deepluckyblock.util.SafeSurface.dropZonePlan();
             deepluckyblock.util.ChunkKeeper.release(level);
@@ -3925,7 +4429,7 @@ public class Structures5Procedure {
                             "[STRUCT5-GROUND] aucun centre terrestre plan (max-min <= {}) dans le rayon courant : recherche elargie de {} blocs (T301-C)",
                             MAX_FOOTPRINT_GROUND_SPAN, SEARCH_EXTRA_RADIUS);
                 }
-                REJECTED_RUGGED_CENTERS.add(BlockPos.asLong(txz.getX(), 0, txz.getZ()));
+                REJECTED_RUGGED_CENTERS.add(BlockPos.asLong(txz.getX(), 0, txz.getZ())); markPermanentReject(txz.getX(), txz.getZ());
                 PENDING_FLAT_CENTER = null;
                 deepluckyblock.util.SafeSurface.dropZonePlan();
                 deepluckyblock.util.ChunkKeeper.release(level);
@@ -3939,6 +4443,82 @@ public class Structures5Procedure {
                     if (!ok) notifyGenerationAborted(level);
                 });
                 return true;
+            }
+            // T303-A1 (ordre client : « verifier le Y de chaque chunk STRUCTURE pour eviter
+            // les terrains qui s'affaissent d'un coup ; ecart entre chaque chunk de max 2 blocs ») :
+            // chaque chunk couvrant l'emprise structure calcule son Y sol solide median reel ;
+            // tout saut > 2 blocs entre deux chunks structure adjacents (4-voisinage) refuse la zone.
+            if (useFlat) {
+                int scx0 = min.getX() >> 4, scx1 = max.getX() >> 4;
+                int scz0 = min.getZ() >> 4, scz1 = max.getZ() >> 4;
+                int sw = scx1 - scx0 + 1, sh = scz1 - scz0 + 1;
+                int[] structChunkMedY = new int[sw * sh];
+                java.util.Arrays.fill(structChunkMedY, Integer.MIN_VALUE);
+                int[] colBuf = new int[16];
+                int sentinelY = level.getMinBuildHeight();
+                for (int sj = 0; sj < sh; sj++) {
+                    int ccz = scz0 + sj;
+                    for (int si = 0; si < sw; si++) {
+                        int ccx = scx0 + si;
+                        int cnt = 0;
+                        for (int lx = 2; lx <= 14; lx += 4) {
+                            int wx = (ccx << 4) + lx;
+                            if (wx < min.getX() || wx > max.getX()) continue;
+                            for (int lz = 2; lz <= 14; lz += 4) {
+                                int wz = (ccz << 4) + lz;
+                                if (wz < min.getZ() || wz > max.getZ()) continue;
+                                int gy = deepluckyblock.util.SafeSurface.groundY(level, wx, wz, sentinelY);
+                                if (gy > sentinelY) colBuf[cnt++] = gy;
+                            }
+                        }
+                        if (cnt >= 4) {
+                            java.util.Arrays.sort(colBuf, 0, cnt);
+                            int med = colBuf[cnt / 2];
+                            structChunkMedY[sj * sw + si] = med;
+                            deepluckyblock.util.TerrainMother.Child sc =
+                                    deepluckyblock.util.TerrainMother.standaloneChild(ccx, ccz);
+                            sc.surfaceYMin = colBuf[0];
+                            sc.surfaceYMax = colBuf[cnt - 1];
+                            sc.surfaceYMedian = med;
+                        }
+                    }
+                }
+                int worstChunkStep = 0;
+                for (int sj = 0; sj < sh; sj++) {
+                    for (int si = 0; si < sw; si++) {
+                        int y0 = structChunkMedY[sj * sw + si];
+                        if (y0 == Integer.MIN_VALUE) continue;
+                        if (si + 1 < sw && structChunkMedY[sj * sw + (si + 1)] != Integer.MIN_VALUE) {
+                            worstChunkStep = Math.max(worstChunkStep,
+                                    Math.abs(y0 - structChunkMedY[sj * sw + (si + 1)]));
+                        }
+                        if (sj + 1 < sh && structChunkMedY[(sj + 1) * sw + si] != Integer.MIN_VALUE) {
+                            worstChunkStep = Math.max(worstChunkStep,
+                                    Math.abs(y0 - structChunkMedY[(sj + 1) * sw + si]));
+                        }
+                    }
+                }
+                if (worstChunkStep > deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y) {
+                    REJECTED_RUGGED_CENTERS.add(BlockPos.asLong(txz.getX(), 0, txz.getZ()));
+                    markPermanentReject(txz.getX(), txz.getZ());
+                    PENDING_FLAT_CENTER = null;
+                    deepluckyblock.util.SafeSurface.dropZonePlan();
+                    deepluckyblock.util.ChunkKeeper.release(level);
+                    LOGGER.info("[STRUCT5-MOTHER] {} candidat {},{} refuse avant terrain (A1 inter-chunks structure) : "
+                                    + "ecart Y entre chunks adjacents={} > {} blocs -- terrain qui s'affaisse, nouvelle recherche",
+                            nbt, txz.getX(), txz.getZ(), worstChunkStep,
+                            deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y);
+                    final BlockPos retryOrigin = origin;
+                    deepluckyblock.procedures.TestProcedure.schedule(level,
+                            deepluckyblock.procedures.TestProcedure.currentTick(level) + 3, () -> {
+                        boolean ok = doPaste(level, retryOrigin, nbt, ox, oy, oz, dist, nf, followSurf, useFlat, keepInt);
+                        if (!ok) notifyGenerationAborted(level);
+                    });
+                    return true;
+                }
+                deepluckyblock.util.DebugLog.info(LOGGER,
+                        "[STRUCT5-MOTHER] {} A1 inter-chunks structure OK : ecart max entre chunks adjacents={} <= {} blocs ({}x{} chunks)",
+                        nbt, worstChunkStep, deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y, sw, sh);
             }
             if (pre[3] >= 16 && Math.abs(pre[0] - baseY) > MAX_POST_SMOOTH_DELTA_Y) {
                 int delta = pre[0] - baseY;
@@ -4138,19 +4718,38 @@ public class Structures5Procedure {
     }
 
     /** Message vendeur affiche au joueur lorsque la structure est entierement posee. */
+    // T302-C : filtrage O(1) par palette de LevelChunkSection (maybeHas) au lieu de 570 000 getBlockState() !
     private static int removeUndergroundTechnicalBlocks(ServerLevel level, BlockPos min, BlockPos max) {
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         int removed = 0;
-        int thresholdY = min.getY() + 1;
-
-        for (int x = min.getX(); x <= max.getX(); x++) {
-            for (int z = min.getZ(); z <= max.getZ(); z++) {
-                for (int y = level.getMinBuildHeight(); y <= Math.min(max.getY(), thresholdY); y++) {
-                    pos.set(x, y, z);
-                    BlockState state = level.getBlockState(pos);
-                    if (isTechnicalLightOrVine(state)) {
-                        level.setBlock(pos, Blocks.AIR.defaultBlockState(), FAST_FLAG);
-                        removed++;
+        int yMax = Math.min(max.getY(), min.getY() + 1);
+        int yMin = level.getMinBuildHeight();
+        if (yMax < yMin) return 0;
+        int cx0 = min.getX() >> 4, cx1 = max.getX() >> 4;
+        int cz0 = min.getZ() >> 4, cz1 = max.getZ() >> 4;
+        for (int cx = cx0; cx <= cx1; cx++) {
+            int x0 = Math.max(min.getX(), cx << 4), x1 = Math.min(max.getX(), (cx << 4) + 15);
+            for (int cz = cz0; cz <= cz1; cz++) {
+                net.minecraft.world.level.chunk.ChunkAccess ca = deepluckyblock.util.SafeSurface.chunkFor(level, cx, cz);
+                if (!(ca instanceof net.minecraft.world.level.chunk.LevelChunk lc)) continue;
+                int z0 = Math.max(min.getZ(), cz << 4), z1 = Math.min(max.getZ(), (cz << 4) + 15);
+                int s0 = lc.getSectionIndex(yMin), s1 = lc.getSectionIndex(yMax);
+                for (int si = s0; si <= s1; si++) {
+                    var sec = lc.getSection(si);
+                    if (sec == null || sec.hasOnlyAir() || !sec.getStates().maybeHas(Structures5Procedure::isTechnicalLightOrVine)) continue;
+                    int sy0 = Math.max(yMin, lc.getSectionYFromSectionIndex(si) << 4);
+                    int sy1 = Math.min(yMax, (lc.getSectionYFromSectionIndex(si) << 4) + 15);
+                    for (int y = sy0; y <= sy1; y++) {
+                        for (int x = x0; x <= x1; x++) {
+                            for (int z = z0; z <= z1; z++) {
+                                BlockState state = sec.getBlockState(x & 15, y & 15, z & 15);
+                                if (isTechnicalLightOrVine(state)) {
+                                    pos.set(x, y, z);
+                                    level.setBlock(pos, Blocks.AIR.defaultBlockState(), FAST_FLAG);
+                                    removed++;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -4423,15 +5022,39 @@ public class Structures5Procedure {
                 && source.getChunkNow(cx1, cz0) != null;
     }
 
+    private static boolean isPostTargetBlock(BlockState s) {
+        return isGlassBlock(s) || s.is(Blocks.VINE)
+                || s.is(Blocks.CRIMSON_HYPHAE) || s.is(Blocks.STRIPPED_CRIMSON_HYPHAE)
+                || s.is(Blocks.CRIMSON_STEM) || s.is(Blocks.STRIPPED_CRIMSON_STEM)
+                || s.is(Blocks.CRIMSON_PLANKS);
+    }
+
+    // T302-C : filtrage par section (maybeHas) -> elimine ~700 ms (14 ticks) de scan vide sur 764 000 positions !
     private static void postLayer(ServerLevel lvl, BlockPos min, BlockPos max, int y) {
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         BlockPos.MutableBlockPos chk = new BlockPos.MutableBlockPos();
-        for (int x = min.getX(); x < max.getX(); x++) for (int z = min.getZ(); z < max.getZ(); z++) {
-            pos.set(x, y, z); BlockState s = lvl.getBlockState(pos); if (s.isAir()) continue;
-            if (isGlassBlock(s) && isFloat(lvl, pos, chk)) lvl.setBlock(pos, Blocks.AIR.defaultBlockState(), FAST_FLAG);
-            else if (s.is(Blocks.VINE) && removeVine(lvl, pos, chk)) lvl.setBlock(pos, Blocks.AIR.defaultBlockState(), FAST_FLAG);
-            else if (s.is(Blocks.CRIMSON_HYPHAE) || s.is(Blocks.STRIPPED_CRIMSON_HYPHAE) || s.is(Blocks.CRIMSON_STEM) || s.is(Blocks.STRIPPED_CRIMSON_STEM) || s.is(Blocks.CRIMSON_PLANKS)) {
-                lvl.setBlock(pos, Blocks.AIR.defaultBlockState(), FAST_FLAG); spawnGlow(lvl, pos, mkItem(lvl, lvl.getRandom()));
+        int cx0 = min.getX() >> 4, cx1 = (max.getX() - 1) >> 4;
+        int cz0 = min.getZ() >> 4, cz1 = (max.getZ() - 1) >> 4;
+        for (int cx = cx0; cx <= cx1; cx++) {
+            int x0 = Math.max(min.getX(), cx << 4), x1 = Math.min(max.getX() - 1, (cx << 4) + 15);
+            for (int cz = cz0; cz <= cz1; cz++) {
+                net.minecraft.world.level.chunk.ChunkAccess ca = deepluckyblock.util.SafeSurface.chunkFor(lvl, cx, cz);
+                if (!(ca instanceof net.minecraft.world.level.chunk.LevelChunk lc)) continue;
+                var sec = lc.getSection(lc.getSectionIndex(y));
+                if (sec == null || sec.hasOnlyAir() || !sec.getStates().maybeHas(Structures5Procedure::isPostTargetBlock)) continue;
+                int z0 = Math.max(min.getZ(), cz << 4), z1 = Math.min(max.getZ() - 1, (cz << 4) + 15);
+                for (int x = x0; x <= x1; x++) {
+                    for (int z = z0; z <= z1; z++) {
+                        BlockState s = sec.getBlockState(x & 15, y & 15, z & 15);
+                        if (s.isAir()) continue;
+                        pos.set(x, y, z);
+                        if (isGlassBlock(s) && isFloat(lvl, pos, chk)) lvl.setBlock(pos, Blocks.AIR.defaultBlockState(), FAST_FLAG);
+                        else if (s.is(Blocks.VINE) && removeVine(lvl, pos, chk)) lvl.setBlock(pos, Blocks.AIR.defaultBlockState(), FAST_FLAG);
+                        else if (s.is(Blocks.CRIMSON_HYPHAE) || s.is(Blocks.STRIPPED_CRIMSON_HYPHAE) || s.is(Blocks.CRIMSON_STEM) || s.is(Blocks.STRIPPED_CRIMSON_STEM) || s.is(Blocks.CRIMSON_PLANKS)) {
+                            lvl.setBlock(pos, Blocks.AIR.defaultBlockState(), FAST_FLAG); spawnGlow(lvl, pos, mkItem(lvl, lvl.getRandom()));
+                        }
+                    }
+                }
             }
         }
     }
