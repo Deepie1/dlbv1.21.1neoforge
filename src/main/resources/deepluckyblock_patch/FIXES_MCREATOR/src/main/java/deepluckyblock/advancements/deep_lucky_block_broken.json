@@ -1,0 +1,18 @@
+{
+  "parent": "deep_lucky_block:root",
+  "display": {
+    "icon": { "item": "deep_lucky_block:deep_lucky_block" },
+    "title": { "text": "Premier Casse" },
+    "description": { "text": "Casse un Deep Lucky Block. Qu'est-ce qui pourrait mal tourner ?" },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "deep_lucky_block_broken": {
+      "trigger": "deep_lucky_block:deep_lucky_block_broken",
+      "conditions": { "blocks_broken": { "min": 1 } }
+    }
+  }
+}

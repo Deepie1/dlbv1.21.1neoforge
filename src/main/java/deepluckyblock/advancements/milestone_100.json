@@ -1,0 +1,18 @@
+{
+  "parent": "deep_lucky_block:milestone_50",
+  "display": {
+    "icon": { "item": "minecraft:gold_ingot" },
+    "title": { "text": "Lucky Maniac" },
+    "description": { "text": "Casse 100 Deep Lucky Blocks (+0-10 blocs brillants)" },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "blocks_broken_100": {
+      "trigger": "deep_lucky_block:deep_lucky_block_broken",
+      "conditions": { "blocks_broken": { "min": 100 } }
+    }
+  }
+}

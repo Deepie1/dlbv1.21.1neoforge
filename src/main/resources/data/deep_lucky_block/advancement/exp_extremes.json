@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:hub_exploration",
+  "display": {
+    "icon": {
+      "id": "minecraft:ice"
+    },
+    "title": {
+      "text": "The Frozen Edge"
+    },
+    "description": {
+      "text": "Reach the Ghost Ship and Inoxtag's frozen Everest."
+    },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_exp_extremes": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

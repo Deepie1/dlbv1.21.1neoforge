@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:grade_tier_mid",
+  "display": {
+    "icon": {
+      "id": "minecraft:nautilus_shell"
+    },
+    "title": {
+      "text": "Grade: Outstanding"
+    },
+    "description": {
+      "text": "Obtained an Outstanding grade item."
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_grade_outstanding": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

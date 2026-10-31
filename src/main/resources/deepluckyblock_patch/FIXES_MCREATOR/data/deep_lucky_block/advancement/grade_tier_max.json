@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:hub_grade",
+  "display": {
+    "icon": {
+      "id": "minecraft:netherite_axe"
+    },
+    "title": {
+      "text": "Forge of the Gods"
+    },
+    "description": {
+      "text": "Mythic, Relic, Masterwork and ETERNAL."
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_grade_tier_max": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:exp_ruins",
+  "display": {
+    "icon": {
+      "id": "minecraft:red_wool"
+    },
+    "title": {
+      "text": "Cursed Circus"
+    },
+    "description": {
+      "text": "Summon the Cursed Circus (+2 Deep Lucky Blocks)."
+    },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_structure_circus": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

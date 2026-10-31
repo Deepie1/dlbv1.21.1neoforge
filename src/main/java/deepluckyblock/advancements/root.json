@@ -1,0 +1,18 @@
+{
+  "display": {
+    "icon": { "item": "deep_lucky_block:deep_lucky_block" },
+    "title": { "text": "Deep's Lucky Block" },
+    "description": { "text": "Casse ton premier Deep Lucky Block" },
+    "background": "minecraft:textures/gui/advancements/backgrounds/stone.png",
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "deep_lucky_block_broken": {
+      "trigger": "deep_lucky_block:deep_lucky_block_broken",
+      "conditions": { "blocks_broken": { "min": 1 } }
+    }
+  }
+}

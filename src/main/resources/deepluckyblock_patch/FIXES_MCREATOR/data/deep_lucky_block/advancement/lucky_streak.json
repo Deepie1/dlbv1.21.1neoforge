@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:hub_luck",
+  "display": {
+    "icon": {
+      "id": "minecraft:emerald_block"
+    },
+    "title": {
+      "text": "Lucky Streak!"
+    },
+    "description": {
+      "text": "Chain good fortune. +5 Luck!"
+    },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_lucky_streak": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "type": "minecraft:block",
+  "random_sequence": "deep_lucky_block:blocks/bo_cube_de_bois",
+  "pools": [
+    {
+      "rolls": 1.0,
+      "conditions": [
+        {
+          "condition": "minecraft:survives_explosion"
+        }
+      ],
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "deep_lucky_block:bo_cube_de_bois"
+        }
+      ]
+    }
+  ]
+}

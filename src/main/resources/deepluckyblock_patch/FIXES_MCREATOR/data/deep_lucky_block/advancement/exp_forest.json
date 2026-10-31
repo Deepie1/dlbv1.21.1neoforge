@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:hub_exploration",
+  "display": {
+    "icon": {
+      "id": "minecraft:oak_sapling"
+    },
+    "title": {
+      "text": "The Verdant Way"
+    },
+    "description": {
+      "text": "Cross the forests of the Sylvan Citadel and the Fae Observatory."
+    },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_exp_forest": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

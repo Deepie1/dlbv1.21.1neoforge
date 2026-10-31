@@ -1,0 +1,53 @@
+{
+  "item_type": "shovel",
+  "version": 1,
+  "categories": {
+    "offensive": {
+      "enchantments": [
+        "deep_lucky_block:armor_pry",
+        "deep_lucky_block:crit_rate",
+        "deep_lucky_block:focused_crit",
+        "deep_lucky_block:low_crit_damage",
+        "deep_lucky_block:low_crit_rate",
+        "deep_lucky_block:normal_crit_damage",
+        "deep_lucky_block:overclocked_crit",
+        "deep_lucky_block:shovel_blade",
+        "deep_lucky_block:shovel_halberd",
+        "deep_lucky_block:shovel_heavy_hit"
+      ]
+    },
+    "utility": {
+      "enchantments": [
+        "deep_lucky_block:basic_chrono_mending",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:burrowing",
+        "deep_lucky_block:chrono_mending",
+        "deep_lucky_block:extension",
+        "deep_lucky_block:haste_surge",
+        "deep_lucky_block:oxygen_lack_haste",
+        "deep_lucky_block:scooping",
+        "deep_lucky_block:snow_remover_shovel",
+        "deep_lucky_block:swift_strike",
+        "deep_lucky_block:unbreakable",
+        "deep_lucky_block:universal_trench_shovel",
+        "deep_lucky_block:utility_trench_shovel",
+        "minecraft:efficiency",
+        "minecraft:fortune",
+        "minecraft:mending",
+        "minecraft:silk_touch",
+        "minecraft:unbreaking"
+      ]
+    },
+    "curse": {
+      "enchantments": [
+        "deep_lucky_block:end_corrosion",
+        "deep_lucky_block:fear",
+        "deep_lucky_block:nether_corrosion",
+        "deep_lucky_block:nether_curse",
+        "deep_lucky_block:overworld_curse",
+        "deep_lucky_block:short_reach",
+        "deep_lucky_block:soul_bound"
+      ]
+    }
+  }
+}

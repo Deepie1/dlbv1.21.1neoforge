@@ -1,0 +1,52 @@
+{
+  "item_type": "trident",
+  "version": 1,
+  "categories": {
+    "offensive": {
+      "enchantments": [
+        "deep_lucky_block:battle_hardened",
+        "deep_lucky_block:blazing_trauma",
+        "deep_lucky_block:brutal",
+        "deep_lucky_block:cavalier",
+        "deep_lucky_block:crit_rate",
+        "deep_lucky_block:extreme_sharpness",
+        "deep_lucky_block:focused_ambush",
+        "deep_lucky_block:focused_crit",
+        "deep_lucky_block:last_stand_slayer",
+        "deep_lucky_block:low_crit_damage",
+        "deep_lucky_block:low_crit_rate",
+        "deep_lucky_block:new_edge",
+        "deep_lucky_block:normal_crit_damage",
+        "deep_lucky_block:overclocked_crit",
+        "deep_lucky_block:reinforced_sharpness",
+        "deep_lucky_block:sharp_edge",
+        "deep_lucky_block:titan_slayer",
+        "minecraft:impaling"
+      ]
+    },
+    "utility": {
+      "enchantments": [
+        "deep_lucky_block:basic_chrono_mending",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:chrono_mending",
+        "deep_lucky_block:unbreakable",
+        "minecraft:channeling",
+        "minecraft:loyalty",
+        "minecraft:mending",
+        "minecraft:riptide",
+        "minecraft:unbreaking"
+      ]
+    },
+    "curse": {
+      "enchantments": [
+        "deep_lucky_block:blunt",
+        "deep_lucky_block:end_corrosion",
+        "deep_lucky_block:fear",
+        "deep_lucky_block:nether_corrosion",
+        "deep_lucky_block:nether_curse",
+        "deep_lucky_block:overworld_curse",
+        "deep_lucky_block:soul_bound"
+      ]
+    }
+  }
+}

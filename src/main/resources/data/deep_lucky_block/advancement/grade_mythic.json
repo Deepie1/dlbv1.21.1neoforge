@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:grade_tier_max",
+  "display": {
+    "icon": {
+      "id": "minecraft:trident"
+    },
+    "title": {
+      "text": "Grade: Mythic"
+    },
+    "description": {
+      "text": "Obtained a Mythic grade item."
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_grade_mythic": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "parent": "deep_lucky_block:root",
+  "display": {
+    "icon": { "item": "minecraft:emerald_block" },
+    "title": { "text": "Série de Chance !" },
+    "description": { "text": "Enchaîne la bonne fortune. +5 Luck !" },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "lucky_streak": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

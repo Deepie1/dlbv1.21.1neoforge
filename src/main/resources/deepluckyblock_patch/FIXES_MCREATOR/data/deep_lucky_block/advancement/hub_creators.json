@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:deep_lucky_block_broken",
+  "display": {
+    "icon": {
+      "id": "minecraft:name_tag"
+    },
+    "title": {
+      "text": "The Creators' Syndicate"
+    },
+    "description": {
+      "text": "Meet the worst enemies of the game."
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_hub_creators": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

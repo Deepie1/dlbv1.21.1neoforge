@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:first_ultimate",
+  "display": {
+    "icon": {
+      "id": "minecraft:dragon_egg"
+    },
+    "title": {
+      "text": "The Connoisseur"
+    },
+    "description": {
+      "text": "Obtained 3 ULTIMATE (ETERNAL) items. Luck holds no more secrets."
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_ultimate_collector": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

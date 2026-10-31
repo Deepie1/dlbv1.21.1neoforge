@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:exp_forest",
+  "display": {
+    "icon": {
+      "id": "minecraft:cracked_stone_bricks"
+    },
+    "title": {
+      "text": "Sylvan Citadel"
+    },
+    "description": {
+      "text": "Summon the Sylvan Citadel (+2 Deep Lucky Blocks)."
+    },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_structure_citadel": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

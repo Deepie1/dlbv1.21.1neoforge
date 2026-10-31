@@ -1,0 +1,9 @@
+{
+  "plantable_crops": {
+    "minecraft:wheat_seeds": "minecraft:farmland",
+    "minecraft:carrot": "minecraft:farmland",
+    "minecraft:potato": "minecraft:farmland",
+    "minecraft:beetroot_seeds": "minecraft:farmland",
+    "minecraft:nether_wart": "minecraft:soul_sand"
+  }
+}

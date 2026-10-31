@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:hub_events",
+  "display": {
+    "icon": {
+      "id": "minecraft:lily_pad"
+    },
+    "title": {
+      "text": "Crimson Lake"
+    },
+    "description": {
+      "text": "CONGRATULATIONS! You uncovered the ultra-rare event: the crimson blood lake rises, swarming with blood-red butterflies."
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_crimson_lake": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

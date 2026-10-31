@@ -1,0 +1,26 @@
+{
+  "parent": "deep_lucky_block:root",
+  "display": {
+    "icon": {
+      "id": "minecraft:iron_pickaxe"
+    },
+    "title": {
+      "text": "First Break"
+    },
+    "description": {
+      "text": "Break a Deep Lucky Block. What could go wrong?"
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_deep_lucky_block_broken": {
+      "trigger": "deep_lucky_block:deep_lucky_block_broken",
+      "blocks_broken": {
+        "min": 1
+      }
+    }
+  }
+}

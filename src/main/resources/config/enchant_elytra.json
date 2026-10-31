@@ -1,0 +1,216 @@
+{
+  "item_type": "elytra",
+  "version": 10,
+  "rank_order": [
+    "BROKEN",
+    "CURSED",
+    "USED",
+    "COMMON",
+    "UNCOMMON",
+    "RARE",
+    "EPIC",
+    "LEGENDARY",
+    "MYTHIC",
+    "RELIC",
+    "MASTERWORK",
+    "ETERNAL"
+  ],
+  "rank_signature_chance": {
+    "BROKEN": 0,
+    "CURSED": 0,
+    "USED": 0,
+    "COMMON": 0,
+    "UNCOMMON": 50,
+    "RARE": 75,
+    "EPIC": 100,
+    "LEGENDARY": 100,
+    "MYTHIC": 100,
+    "RELIC": 100,
+    "MASTERWORK": 100,
+    "ETERNAL": 100
+  },
+  "minimum_luck": {},
+  "eternal_level_100_pool": [
+    "deep_lucky_block:ground_skimmer"
+  ],
+  "rank_pools": {
+    "BROKEN": {
+      "offensive": [],
+      "utility": [
+        "deep_lucky_block:ground_skimmer",
+        "minecraft:mending",
+        "minecraft:unbreaking"
+      ],
+      "curse": [
+        "deep_lucky_block:brittle_wings_curse",
+        "deep_lucky_block:sky_conductor_curse",
+        "deep_lucky_block:turbulence_curse",
+        "minecraft:binding_curse",
+        "minecraft:vanishing_curse"
+      ]
+    },
+    "CURSED": {
+      "offensive": [],
+      "utility": [
+        "deep_lucky_block:ground_skimmer",
+        "minecraft:mending",
+        "minecraft:unbreaking"
+      ],
+      "curse": [
+        "deep_lucky_block:brittle_wings_curse",
+        "deep_lucky_block:sky_conductor_curse",
+        "deep_lucky_block:turbulence_curse",
+        "minecraft:binding_curse",
+        "minecraft:vanishing_curse"
+      ]
+    },
+    "USED": {
+      "offensive": [],
+      "utility": [
+        "deep_lucky_block:ground_skimmer",
+        "minecraft:mending",
+        "minecraft:unbreaking"
+      ],
+      "curse": [
+        "deep_lucky_block:brittle_wings_curse",
+        "deep_lucky_block:sky_conductor_curse",
+        "deep_lucky_block:turbulence_curse",
+        "minecraft:binding_curse",
+        "minecraft:vanishing_curse"
+      ]
+    },
+    "COMMON": {
+      "offensive": [],
+      "utility": [
+        "deep_lucky_block:ground_skimmer",
+        "minecraft:mending",
+        "minecraft:unbreaking"
+      ],
+      "curse": [
+        "deep_lucky_block:brittle_wings_curse",
+        "deep_lucky_block:sky_conductor_curse",
+        "deep_lucky_block:turbulence_curse",
+        "minecraft:binding_curse",
+        "minecraft:vanishing_curse"
+      ]
+    },
+    "UNCOMMON": {
+      "offensive": [],
+      "utility": [
+        "deep_lucky_block:air_brake",
+        "deep_lucky_block:ground_skimmer",
+        "minecraft:mending",
+        "minecraft:unbreaking"
+      ],
+      "curse": [
+        "deep_lucky_block:turbulence_curse",
+        "minecraft:binding_curse"
+      ]
+    },
+    "RARE": {
+      "offensive": [],
+      "utility": [
+        "deep_lucky_block:aerodynamic",
+        "deep_lucky_block:air_brake",
+        "deep_lucky_block:ground_skimmer",
+        "minecraft:mending",
+        "minecraft:unbreaking"
+      ],
+      "curse": [
+        "deep_lucky_block:turbulence_curse",
+        "minecraft:binding_curse"
+      ]
+    },
+    "EPIC": {
+      "offensive": [],
+      "utility": [
+        "deep_lucky_block:aerodynamic",
+        "deep_lucky_block:air_brake",
+        "deep_lucky_block:ground_skimmer",
+        "deep_lucky_block:iron_wings",
+        "deep_lucky_block:winging",
+        "minecraft:mending",
+        "minecraft:unbreaking"
+      ],
+      "curse": []
+    },
+    "LEGENDARY": {
+      "offensive": [],
+      "utility": [
+        "deep_lucky_block:aerodynamic",
+        "deep_lucky_block:air_brake",
+        "deep_lucky_block:ground_skimmer",
+        "deep_lucky_block:iron_wings",
+        "deep_lucky_block:wind_rider",
+        "deep_lucky_block:winging",
+        "minecraft:mending",
+        "minecraft:unbreaking"
+      ],
+      "curse": []
+    },
+    "MYTHIC": {
+      "offensive": [
+        "deep_lucky_block:rocket_blast"
+      ],
+      "utility": [
+        "deep_lucky_block:aerodynamic",
+        "deep_lucky_block:air_brake",
+        "deep_lucky_block:ground_skimmer",
+        "deep_lucky_block:iron_wings",
+        "deep_lucky_block:wind_rider",
+        "deep_lucky_block:winging",
+        "minecraft:mending",
+        "minecraft:unbreaking"
+      ],
+      "curse": []
+    },
+    "RELIC": {
+      "offensive": [
+        "deep_lucky_block:rocket_blast"
+      ],
+      "utility": [
+        "deep_lucky_block:aerodynamic",
+        "deep_lucky_block:air_brake",
+        "deep_lucky_block:ground_skimmer",
+        "deep_lucky_block:iron_wings",
+        "deep_lucky_block:wind_rider",
+        "deep_lucky_block:winging",
+        "minecraft:mending",
+        "minecraft:unbreaking"
+      ],
+      "curse": []
+    },
+    "MASTERWORK": {
+      "offensive": [
+        "deep_lucky_block:rocket_blast"
+      ],
+      "utility": [
+        "deep_lucky_block:aerodynamic",
+        "deep_lucky_block:air_brake",
+        "deep_lucky_block:ground_skimmer",
+        "deep_lucky_block:iron_wings",
+        "deep_lucky_block:wind_rider",
+        "deep_lucky_block:winging",
+        "minecraft:mending",
+        "minecraft:unbreaking"
+      ],
+      "curse": []
+    },
+    "ETERNAL": {
+      "offensive": [
+        "deep_lucky_block:rocket_blast"
+      ],
+      "utility": [
+        "deep_lucky_block:aerodynamic",
+        "deep_lucky_block:air_brake",
+        "deep_lucky_block:ground_skimmer",
+        "deep_lucky_block:iron_wings",
+        "deep_lucky_block:wind_rider",
+        "deep_lucky_block:winging",
+        "minecraft:mending",
+        "minecraft:unbreaking"
+      ],
+      "curse": []
+    }
+  }
+}

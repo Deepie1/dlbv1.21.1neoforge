@@ -1,0 +1,108 @@
+package deepluckyblock.mixin;
+
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import deepluckyblock.client.EnchantGlintTyped;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+
+/**
+ * FIX CRASHS "Duplicate delegates" / "BufferBuilder not started".
+ *
+ * Chaque RenderType de glint teinté (EnchantGlintTyped) doit avoir son propre
+ * BufferBuilder, comme les glint vanilla (fixedBuffers). Sinon le builder
+ * partagé est rendu deux fois/démarre trop tôt.
+ */
+@Mixin(MultiBufferSource.BufferSource.class)
+public abstract class MultiBufferSourceEnchantMixin {
+
+    @Shadow protected BufferBuilder builder;
+    @Shadow protected Map<RenderType, BufferBuilder> fixedBuffers;
+    @Shadow protected Optional<RenderType> lastState;
+    @Shadow protected Set<BufferBuilder> startedBuffers;
+
+    @Unique private final Map<RenderType, BufferBuilder> deepEnchant_glintBuffers = new HashMap<>();
+
+    @Inject(method = "getBuffer(Lnet/minecraft/client/renderer/RenderType;)Lcom/mojang/blaze3d/vertex/VertexConsumer;",
+            at = @At("HEAD"), cancellable = true)
+    private void deepEnchant_getBuffer(RenderType type, CallbackInfoReturnable<VertexConsumer> cir) {
+        boolean mine = EnchantGlintTyped.isColoredGlint(type);
+        RenderType prev = this.lastState.orElse(null);
+        boolean prevMine = prev != null && EnchantGlintTyped.isColoredGlint(prev);
+        if (!mine && !prevMine) return;
+
+        BufferBuilder buffer;
+        if (mine) {
+            buffer = this.deepEnchant_glintBuffers.get(type);
+            if (buffer == null) {
+                buffer = new BufferBuilder(type.bufferSize());
+                this.deepEnchant_glintBuffers.put(type, buffer);
+            }
+        } else {
+            buffer = this.fixedBuffers.getOrDefault(type, this.builder);
+        }
+
+        if (!Objects.equals(this.lastState, type.asOptional()) || !type.canConsolidateConsecutiveGeometry()) {
+            if (prev != null && !this.fixedBuffers.containsKey(prev)
+                    && !this.deepEnchant_glintBuffers.containsKey(prev)) {
+                this.deepEnchant_self().endBatch(prev);
+            }
+            if (this.startedBuffers.add(buffer)) {
+                buffer.begin(type.mode(), type.format());
+            }
+            this.lastState = type.asOptional();
+        }
+        cir.setReturnValue(buffer);
+    }
+
+    @Inject(method = "endBatch(Lnet/minecraft/client/renderer/RenderType;)V",
+            at = @At("HEAD"), cancellable = true)
+    private void deepEnchant_endBatch(RenderType type, CallbackInfo ci) {
+        BufferBuilder buffer = this.deepEnchant_glintBuffers.get(type);
+        if (buffer == null) return; // vanilla gère
+        boolean isLast = Objects.equals(this.lastState, type.asOptional());
+        if (!this.startedBuffers.remove(buffer)) {
+            ci.cancel();
+            return;
+        }
+        type.end(buffer, RenderSystem.getVertexSorting());
+        if (isLast) {
+            this.lastState = Optional.empty();
+        }
+        ci.cancel();
+    }
+
+    @Inject(method = "endBatch()V", at = @At("TAIL"))
+    private void deepEnchant_endBatchAll(CallbackInfo ci) {
+        if (this.deepEnchant_glintBuffers.isEmpty()) return;
+        for (RenderType type : new ArrayList<>(this.deepEnchant_glintBuffers.keySet())) {
+            BufferBuilder buffer = this.deepEnchant_glintBuffers.get(type);
+            if (this.startedBuffers.remove(buffer)) {
+                type.end(buffer, RenderSystem.getVertexSorting());
+                if (Objects.equals(this.lastState, type.asOptional())) {
+                    this.lastState = Optional.empty();
+                }
+            }
+        }
+    }
+
+    @Unique
+    private MultiBufferSource.BufferSource deepEnchant_self() {
+        return (MultiBufferSource.BufferSource) (Object) this;
+    }
+}

@@ -1,0 +1,13 @@
+{
+  "parent": "block/cube",
+  "textures": {
+    "down": "deep_lucky_block:block/1",
+    "up": "deep_lucky_block:block/1",
+    "north": "deep_lucky_block:block/3",
+    "east": "deep_lucky_block:block/2",
+    "south": "deep_lucky_block:block/5",
+    "west": "deep_lucky_block:block/4",
+    "particle": "minecraft:block/structure_block_data"
+  },
+  "render_type": "solid"
+}

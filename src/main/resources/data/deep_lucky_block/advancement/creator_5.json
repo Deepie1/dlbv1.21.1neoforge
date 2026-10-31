@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:creator_1",
+  "display": {
+    "icon": {
+      "id": "minecraft:knowledge_book"
+    },
+    "title": {
+      "text": "Creator Collector"
+    },
+    "description": {
+      "text": "Obtained 5 Creator items."
+    },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_creator_5": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

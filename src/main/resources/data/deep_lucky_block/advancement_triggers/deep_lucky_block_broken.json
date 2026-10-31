@@ -1,0 +1,24 @@
+{
+  "parent": "minecraft:core/stand_next_to_block",
+  "display": {
+    "title": {
+      "text": "Deep Lucky Block"
+    },
+    "description": {
+      "text": "Brise un Deep Lucky Block"
+    },
+    "icon": {
+      "id": "minecraft:diamond"
+    },
+    "frame": "goal",
+    "show_toast": false,
+    "announce_to_chat": false,
+    "hidden": false
+  },
+  "criteria": {
+    "deep_lucky_block_broken": {
+      "trigger": "deep_lucky_block:deep_lucky_block_broken",
+      "conditions": {}
+    }
+  }
+}

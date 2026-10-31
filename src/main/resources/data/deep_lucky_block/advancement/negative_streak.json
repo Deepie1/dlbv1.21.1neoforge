@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:hub_luck",
+  "display": {
+    "icon": {
+      "id": "minecraft:poisonous_potato"
+    },
+    "title": {
+      "text": "Bad Luck Streak..."
+    },
+    "description": {
+      "text": "Chain bad luck. Not your day."
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_negative_streak": {
+      "trigger": "deep_lucky_block:negative_streak"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "type": "neoforge:add_spawns",
+  "biomes": {
+    "type": "neoforge:any"
+  },
+  "spawners": {
+    "type": "deep_lucky_block:slime_king",
+    "weight": 20,
+    "minCount": 4,
+    "maxCount": 4
+  }
+}

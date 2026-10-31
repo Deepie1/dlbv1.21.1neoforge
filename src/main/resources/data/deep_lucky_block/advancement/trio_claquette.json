@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:hub_creators",
+  "display": {
+    "icon": {
+      "id": "minecraft:player_head"
+    },
+    "title": {
+      "text": "Full Team Claquette!"
+    },
+    "description": {
+      "text": "Summoned Jerry, Ben and Samouss at the same time."
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_trio_claquette": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

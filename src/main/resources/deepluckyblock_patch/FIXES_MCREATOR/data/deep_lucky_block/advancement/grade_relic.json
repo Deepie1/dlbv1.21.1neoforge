@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:grade_tier_max",
+  "display": {
+    "icon": {
+      "id": "minecraft:netherite_pickaxe"
+    },
+    "title": {
+      "text": "Grade: Relic"
+    },
+    "description": {
+      "text": "Obtained a Relic grade item."
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_grade_relic": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "item_type": "boots",
+  "version": 1,
+  "categories": {
+    "offensive": {
+      "enchantments": []
+    },
+    "utility": {
+      "enchantments": [
+        "deep_lucky_block:basic_chrono_mending",
+        "deep_lucky_block:basic_leap_power",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:chrono_mending",
+        "deep_lucky_block:cloud_stride",
+        "deep_lucky_block:explosion_protection",
+        "deep_lucky_block:foot_placement",
+        "deep_lucky_block:high_step",
+        "deep_lucky_block:horse_boots",
+        "deep_lucky_block:last_stand_escape",
+        "deep_lucky_block:leap_power",
+        "deep_lucky_block:light_walker",
+        "deep_lucky_block:lightness",
+        "deep_lucky_block:magma_walker",
+        "deep_lucky_block:meteor_stomp",
+        "deep_lucky_block:oxygen_hover",
+        "deep_lucky_block:oxygen_lack_haste",
+        "deep_lucky_block:oxygen_sprint",
+        "deep_lucky_block:panic_escape",
+        "deep_lucky_block:range_foot_placement",
+        "deep_lucky_block:rapid_drop_stop",
+        "deep_lucky_block:shadow_sprint",
+        "deep_lucky_block:swiftness",
+        "deep_lucky_block:twenty_fourth_blessing",
+        "deep_lucky_block:unbreakable",
+        "minecraft:blast_protection",
+        "minecraft:depth_strider",
+        "minecraft:feather_falling",
+        "minecraft:fire_protection",
+        "minecraft:frost_walker",
+        "minecraft:mending",
+        "minecraft:projectile_protection",
+        "minecraft:protection",
+        "minecraft:soul_speed",
+        "minecraft:unbreaking",
+        "deep_lucky_block:divine_protection",
+        "deep_lucky_block:fire_protection_enhancement",
+        "deep_lucky_block:projectile_protection_enhancement",
+        "deep_lucky_block:basic_lightness",
+        "deep_lucky_block:basic_swiftness"
+      ]
+    },
+    "curse": {
+      "enchantments": [
+        "deep_lucky_block:armor_damage",
+        "deep_lucky_block:armor_shatter",
+        "deep_lucky_block:crash_landing",
+        "deep_lucky_block:crippled",
+        "deep_lucky_block:earth_bound",
+        "deep_lucky_block:end_corrosion",
+        "deep_lucky_block:enemy_speed_pursuit",
+        "deep_lucky_block:nether_corrosion",
+        "deep_lucky_block:soul_bound",
+        "deep_lucky_block:stinky_feet",
+        "deep_lucky_block:super_stinky_feet",
+        "deep_lucky_block:wound_crack"
+      ]
+    }
+  }
+}

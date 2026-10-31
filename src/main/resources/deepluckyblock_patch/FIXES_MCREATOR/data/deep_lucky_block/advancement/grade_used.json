@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:grade_tier_low",
+  "display": {
+    "icon": {
+      "id": "minecraft:wooden_sword"
+    },
+    "title": {
+      "text": "Grade: Used"
+    },
+    "description": {
+      "text": "Obtained a Used grade item."
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_grade_used": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:grade_tier_mid",
+  "display": {
+    "icon": {
+      "id": "minecraft:emerald"
+    },
+    "title": {
+      "text": "Grade: Rare"
+    },
+    "description": {
+      "text": "Obtained a Rare grade item."
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_grade_rare": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

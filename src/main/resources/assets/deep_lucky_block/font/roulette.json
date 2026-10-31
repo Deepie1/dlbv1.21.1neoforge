@@ -1,0 +1,31 @@
+{
+  "providers": [
+    {
+      "type": "bitmap",
+      "file": "deep_lucky_block:font/roulette_black.png",
+      "ascent": 9,
+      "height": 10,
+      "chars": [
+        "\ue000"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "deep_lucky_block:font/roulette_red.png",
+      "ascent": 9,
+      "height": 10,
+      "chars": [
+        "\ue001"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "deep_lucky_block:font/roulette_green.png",
+      "ascent": 9,
+      "height": 10,
+      "chars": [
+        "\ue002"
+      ]
+    }
+  ]
+}

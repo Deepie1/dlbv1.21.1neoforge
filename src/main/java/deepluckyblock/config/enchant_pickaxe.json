@@ -1,0 +1,59 @@
+{
+  "item_type": "pickaxe",
+  "version": 1,
+  "categories": {
+    "offensive": {
+      "enchantments": [
+        "deep_lucky_block:armor_pry",
+        "deep_lucky_block:brutal",
+        "deep_lucky_block:cavalier",
+        "deep_lucky_block:crit_rate",
+        "deep_lucky_block:extreme_sharpness",
+        "deep_lucky_block:flint_strike",
+        "deep_lucky_block:focused_crit",
+        "deep_lucky_block:low_crit_damage",
+        "deep_lucky_block:low_crit_rate",
+        "deep_lucky_block:normal_crit_damage",
+        "deep_lucky_block:overclocked_crit",
+        "deep_lucky_block:pierce",
+        "deep_lucky_block:reinforced_sharpness",
+        "deep_lucky_block:sharp_edge"
+      ]
+    },
+    "utility": {
+      "enchantments": [
+        "deep_lucky_block:basic_chrono_mending",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:blaze_sanctuary",
+        "deep_lucky_block:chrono_mending",
+        "deep_lucky_block:core_harvesting",
+        "deep_lucky_block:extension",
+        "deep_lucky_block:extracting",
+        "deep_lucky_block:haste_surge",
+        "deep_lucky_block:molten",
+        "deep_lucky_block:ore_detector",
+        "deep_lucky_block:oxygen_lack_haste",
+        "deep_lucky_block:swift_strike",
+        "deep_lucky_block:unbreakable",
+        "deep_lucky_block:vein_miner",
+        "minecraft:efficiency",
+        "minecraft:fortune",
+        "minecraft:mending",
+        "minecraft:silk_touch",
+        "minecraft:unbreaking"
+      ]
+    },
+    "curse": {
+      "enchantments": [
+        "deep_lucky_block:blunt",
+        "deep_lucky_block:end_corrosion",
+        "deep_lucky_block:fear",
+        "deep_lucky_block:nether_corrosion",
+        "deep_lucky_block:nether_curse",
+        "deep_lucky_block:overworld_curse",
+        "deep_lucky_block:short_reach",
+        "deep_lucky_block:soul_bound"
+      ]
+    }
+  }
+}

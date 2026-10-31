@@ -1,0 +1,26 @@
+{
+  "parent": "deep_lucky_block:milestone_500",
+  "display": {
+    "icon": {
+      "id": "minecraft:netherite_ingot"
+    },
+    "title": {
+      "text": "LUCKY LEGEND"
+    },
+    "description": {
+      "text": "Break 1000 Deep Lucky Blocks. Absolute madness (+100 glowing blocks)!"
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_milestone_1000": {
+      "trigger": "deep_lucky_block:deep_lucky_block_broken",
+      "blocks_broken": {
+        "min": 1000
+      }
+    }
+  }
+}

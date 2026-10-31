@@ -1,0 +1,27 @@
+{
+  "background": "deep_lucky_block:textures/gui/advancements/backgrounds/dirt.png",
+  "display": {
+    "icon": {
+      "id": "deep_lucky_block:deep_lucky_block"
+    },
+    "title": {
+      "text": "Deep's Lucky Block"
+    },
+    "description": {
+      "text": "Break your first Deep Lucky Block."
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false,
+    "background": "deep_lucky_block:textures/gui/advancements/backgrounds/dirt.png"
+  },
+  "criteria": {
+    "adv_root": {
+      "trigger": "deep_lucky_block:deep_lucky_block_broken",
+      "blocks_broken": {
+        "min": 1
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "type": "minecraft:block",
+  "pools": [],
+  "random_sequence": "deep_lucky_block:blocks/supremeluckyblock"
+}

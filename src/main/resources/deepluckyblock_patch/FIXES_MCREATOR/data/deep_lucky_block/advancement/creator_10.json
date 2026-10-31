@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:creator_5",
+  "display": {
+    "icon": {
+      "id": "minecraft:netherite_sword"
+    },
+    "title": {
+      "text": "Grand Master of the Web"
+    },
+    "description": {
+      "text": "Obtained 10 Creator items."
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_creator_10": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

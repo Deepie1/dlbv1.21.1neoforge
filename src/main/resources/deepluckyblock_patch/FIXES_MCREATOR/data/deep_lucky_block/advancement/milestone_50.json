@@ -1,0 +1,26 @@
+{
+  "parent": "deep_lucky_block:milestone_10",
+  "display": {
+    "icon": {
+      "id": "minecraft:iron_ingot"
+    },
+    "title": {
+      "text": "Lucky Explorer"
+    },
+    "description": {
+      "text": "Break 50 Deep Lucky Blocks (+5 glowing blocks)."
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_milestone_50": {
+      "trigger": "deep_lucky_block:deep_lucky_block_broken",
+      "blocks_broken": {
+        "min": 50
+      }
+    }
+  }
+}

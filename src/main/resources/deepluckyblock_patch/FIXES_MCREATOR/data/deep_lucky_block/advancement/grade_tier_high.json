@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:hub_grade",
+  "display": {
+    "icon": {
+      "id": "minecraft:diamond_pickaxe"
+    },
+    "title": {
+      "text": "Crucible of the Mighty"
+    },
+    "description": {
+      "text": "From Epic to Legendary."
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_grade_tier_high": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

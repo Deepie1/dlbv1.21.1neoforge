@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:grade_tier_high",
+  "display": {
+    "icon": {
+      "id": "minecraft:diamond_sword"
+    },
+    "title": {
+      "text": "Grade: Epic"
+    },
+    "description": {
+      "text": "Obtained an Epic grade item."
+    },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_grade_epic": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

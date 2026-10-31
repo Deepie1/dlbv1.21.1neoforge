@@ -1,0 +1,18 @@
+{
+  "parent": "deep_lucky_block:milestone_500",
+  "display": {
+    "icon": { "item": "minecraft:netherite_ingot" },
+    "title": { "text": "LUCKY LEGEND" },
+    "description": { "text": "Casse 1000 Deep Lucky Blocks. Folie absolue (+100 blocs brillants) !" },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "blocks_broken_1000": {
+      "trigger": "deep_lucky_block:deep_lucky_block_broken",
+      "conditions": { "blocks_broken": { "min": 1000 } }
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "item_type": "shield",
+  "version": 1,
+  "categories": {
+    "offensive": {
+      "enchantments": [
+        "deep_lucky_block:shield_quake"
+      ]
+    },
+    "utility": {
+      "enchantments": [
+        "deep_lucky_block:bash_damage",
+        "deep_lucky_block:bash_power",
+        "deep_lucky_block:basic_chrono_mending",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:chrono_mending",
+        "deep_lucky_block:shield_efficiency",
+        "deep_lucky_block:unbreakable",
+        "minecraft:mending",
+        "minecraft:unbreaking"
+      ]
+    },
+    "curse": {
+      "enchantments": [
+        "deep_lucky_block:end_corrosion",
+        "deep_lucky_block:hatred_draw",
+        "deep_lucky_block:nether_corrosion",
+        "deep_lucky_block:soul_bound"
+      ]
+    }
+  }
+}

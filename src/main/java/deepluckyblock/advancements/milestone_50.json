@@ -1,0 +1,18 @@
+{
+  "parent": "deep_lucky_block:milestone_10",
+  "display": {
+    "icon": { "item": "minecraft:iron_ingot" },
+    "title": { "text": "Lucky Explorer" },
+    "description": { "text": "Casse 50 Deep Lucky Blocks (+5 blocs brillants)" },
+    "frame": "task",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "blocks_broken_50": {
+      "trigger": "deep_lucky_block:deep_lucky_block_broken",
+      "conditions": { "blocks_broken": { "min": 50 } }
+    }
+  }
+}

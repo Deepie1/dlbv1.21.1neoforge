@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:hub_exploration",
+  "display": {
+    "icon": {
+      "id": "minecraft:cartography_table"
+    },
+    "title": {
+      "text": "Master of Structures"
+    },
+    "description": {
+      "text": "Brought all 6 structures into the world."
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_all_structures": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

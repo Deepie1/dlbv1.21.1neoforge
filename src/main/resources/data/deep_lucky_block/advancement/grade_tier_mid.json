@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:hub_grade",
+  "display": {
+    "icon": {
+      "id": "minecraft:golden_pickaxe"
+    },
+    "title": {
+      "text": "Anvil of the Curious"
+    },
+    "description": {
+      "text": "From Unusual to Rare."
+    },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_grade_tier_mid": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

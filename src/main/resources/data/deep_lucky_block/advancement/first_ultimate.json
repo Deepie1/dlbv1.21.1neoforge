@@ -1,0 +1,23 @@
+{
+  "parent": "deep_lucky_block:grade_eternal",
+  "display": {
+    "icon": {
+      "id": "deep_lucky_block:shadow_essence"
+    },
+    "title": {
+      "text": "First ULTIMATE"
+    },
+    "description": {
+      "text": "Obtained your very first ULTIMATE (ETERNAL, level 100 enchant)."
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "adv_first_ultimate": {
+      "trigger": "minecraft:impossible"
+    }
+  }
+}

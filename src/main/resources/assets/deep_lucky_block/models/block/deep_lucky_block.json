@@ -1,0 +1,13 @@
+{
+  "parent": "block/cube",
+  "textures": {
+    "down": "deep_lucky_block:block/supremeluckyblock",
+    "up": "deep_lucky_block:block/supremeluckyblock",
+    "north": "deep_lucky_block:block/supremeluckyblock",
+    "east": "deep_lucky_block:block/supremeluckyblock",
+    "south": "deep_lucky_block:block/supremeluckyblock",
+    "west": "deep_lucky_block:block/supremeluckyblock",
+    "particle": "deep_lucky_block:block/supremeluckyblock"
+  },
+  "render_type": "solid"
+}
