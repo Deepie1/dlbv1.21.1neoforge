@@ -5076,15 +5076,17 @@ public class StructureTerrainPrep {
     }
 
     /**
-     * T246 / T305-NO-ICE : degrade radial multi-bords vers TOUS les sols exterieurs
-     * terrestres valides (glace strictement exclue !).
-     * Si la zone est entouree de 3 cotes neige/herbe et d'1 cote glace, les 3 bords
-     * terrestres participent au fondu entrant selon leur proximite euclidienne, et le
-     * cote glace a un poids strictement nul (aucun degrade avec l'ice !).
+     * T246 / T305-NO-ICE / T306-ECOTONE : fondu organique du perimetre exterieur vers TOUS
+     * les sols terrestres valides hors anneau (glace et eau strictement exclues !).
+     * Remplace le tirage pixel 1x1 (posNoise) sur tout l'anneau par un fondu fBm Simplex
+     * multi-octaves a domaine distordu sur les 20 derniers blocs de la jupe :
+     *  - 100 % coherent en langues et ilots de 5 a 14 blocs (zero damier 1x1, zero coin carre) ;
+     *  - si 3 cotes sont terrestres/neigeux et 1 cote est en ICE, le cote ICE a un poids 0 %
+     *    et les 3 cotes terrestres assurent le fondu entrant.
      */
     private static Block borderFadePick(ServerLevel level, BlockPos min, BlockPos max,
                                         int ring, int x, int z, Block our) {
-        if (isIceFamily(our.defaultBlockState())) return our;
+        if (our == null || isIceFamily(our.defaultBlockState())) return our;
         int dxW = Math.max(0, min.getX() - x);
         int dxE = Math.max(0, x - max.getX());
         int dzN = Math.max(0, min.getZ() - z);
@@ -5092,7 +5094,9 @@ public class StructureTerrainPrep {
         int dxEuc = Math.max(dxW, dxE);
         int dzEuc = Math.max(dzN, dzS);
         double dRad = Math.hypot(dxEuc, dzEuc);
-        if (dRad <= 0.0 || dRad >= ring) return our;
+        final double featherBand = Math.min(20.0, Math.max(8.0, ring * 0.45));
+        double bandStart = Math.max(0.0, (double) ring - featherBand);
+        if (dRad <= bandStart || dRad >= ring) return our;
 
         float[] sideW = {
                 dxW > 0 ? (float) dxW / (float) ring : 0f,
@@ -5102,6 +5106,7 @@ public class StructureTerrainPrep {
         };
         Block[] sideBlock = new Block[4];
         float validSum = 0f;
+        boolean anyDiffFromOur = false;
         for (int s = 0; s < 4; s++) {
             if (sideW[s] <= 0.02f) { sideW[s] = 0f; continue; }
             Block b = outsideSoilForSide(level, min, max, ring, s, s <= 1 ? z : x);
@@ -5110,25 +5115,43 @@ public class StructureTerrainPrep {
                 continue;
             }
             sideBlock[s] = b;
-            // Courbe smoothstep pour que les bords les plus proches dominent naturellement
+            if (b != our) anyDiffFromOur = true;
             float t = Math.min(1f, sideW[s]);
             sideW[s] = t * t * (3f - 2f * t);
             validSum += sideW[s];
         }
-        if (validSum <= 0f) return our;
+        if (validSum <= 0f || !anyDiffFromOur) return our;
 
-        float fadeOut = (float) Math.min(1.0, dRad / (double) ring);
-        float pOur = BORDER_FADE_MAX * (1.0f - fadeOut * fadeOut * (3f - 2f * fadeOut));
-        if (posNoise(x, z, SALT_FADE) < pOur) return our;
-
-        float pick = posNoise(x, z, SALT_FADE ^ 0x33C5) * validSum;
-        float acc = 0f;
+        // Selection spatialement coherente du cote exterieur dominant (aucun bruit blanc 1x1)
+        long seed = level.getSeed() ^ 0x5A71306EL;
+        Block extBlock = our;
+        float bestSideScore = -1f;
         for (int s = 0; s < 4; s++) {
-            if (sideW[s] <= 0f) continue;
-            acc += sideW[s];
-            if (pick <= acc) return sideBlock[s];
+            if (sideW[s] <= 0f || sideBlock[s] == null) continue;
+            float jitter = 1.0f + 0.22f * (float) deepluckyblock.util.BiomeEcotoneSpread.simplex2(
+                    seed + s * 0x9E3779B97F4A7C15L, x * 0.045, z * 0.045);
+            float sc = sideW[s] * jitter;
+            if (sc > bestSideScore) {
+                bestSideScore = sc;
+                extBlock = sideBlock[s];
+            }
         }
-        return our;
+        if (extBlock == our) return our;
+
+        // Progression C2 quintique dans la bande externe [bandStart .. ring] : 0 -> 1 vers l'exterieur
+        double u = Math.max(0.0, Math.min(1.0, (dRad - bandStart) / Math.max(1.0, featherBand)));
+        double wExt = u * u * u * (u * (u * 6.0 - 15.0) + 10.0);
+        double env = 4.0 * wExt * (1.0 - wExt);
+        double patch = deepluckyblock.util.BiomeEcotoneSpread.warpedPatchSigned(seed ^ 0x6C8E9CF5L, x, z);
+        double effExt = wExt + 0.44 * env * patch;
+
+        // Coussin d'ecotone discontinu au coeur de la frange si les deux sols sont contrastes
+        if (env > 0.72 && Math.abs(effExt - 0.5) < 0.09) {
+            double meso = deepluckyblock.util.BiomeEcotoneSpread.simplex2(seed ^ 0x2F1A93B7L, x * 0.09, z * 0.09);
+            Block cushion = resolveEcotoneCushionBlock(our, extBlock, meso);
+            if (cushion != null) return cushion;
+        }
+        return effExt >= 0.5 ? extBlock : our;
     }
 
     /**
@@ -5383,6 +5406,230 @@ public class StructureTerrainPrep {
         PALETTE_RESOLVED.clear();
         CHUNK_NB_PALETTES.clear();
         PALETTE_FALLBACKS = 0;
+        clearEcotoneSurfaceCaches();
+    }
+
+    // ==================================================================
+    // T306-ECOTONE : PHOTOGRAPHIE SUB-CHUNK PRE-EDITION & CONVOLUTION
+    // HEXAGONALE DISPERSEE SANS GRILLE (KdotJPG CC0 + Simplex fBm 3 octaves)
+    // ==================================================================
+    private static final java.util.List<Block> ECOTONE_ID_TO_BLOCK = new java.util.ArrayList<>();
+    private static final java.util.Map<Block, Integer> ECOTONE_BLOCK_TO_ID = new java.util.HashMap<>();
+    /** Photographie 4x4 (QuartPos) du sol terrestre naturel prise AVANT toute edition. */
+    private static final java.util.Map<Long, Integer> PRE_EDITION_QUART_SURFACE = new java.util.HashMap<>();
+    /** Cache leger (pas 2 blocs) du sol terrestre naturel hors zone modifiee. */
+    private static final java.util.Map<Long, Integer> LIVE_EXTERIOR_GROUND_CACHE = new java.util.HashMap<>();
+    /** Surface 16x16 resolue par chunk (256 IDs + indicateur fastSingleBiome a l'indice 256). */
+    private static final java.util.Map<Long, int[]> ECOTONE_CHUNK_SURFACE = new java.util.HashMap<>();
+    private static boolean ECOTONE_SNAPSHOT_READY = false;
+    private static int ECOTONE_MOD_MIN_X = 0, ECOTONE_MOD_MAX_X = -1;
+    private static int ECOTONE_MOD_MIN_Z = 0, ECOTONE_MOD_MAX_Z = -1;
+
+    private static void clearEcotoneSurfaceCaches() {
+        ECOTONE_ID_TO_BLOCK.clear();
+        ECOTONE_BLOCK_TO_ID.clear();
+        PRE_EDITION_QUART_SURFACE.clear();
+        LIVE_EXTERIOR_GROUND_CACHE.clear();
+        ECOTONE_CHUNK_SURFACE.clear();
+        ECOTONE_SNAPSHOT_READY = false;
+        ECOTONE_MOD_MIN_X = 0; ECOTONE_MOD_MAX_X = -1;
+        ECOTONE_MOD_MIN_Z = 0; ECOTONE_MOD_MAX_Z = -1;
+    }
+
+    private static long packGridKey(int gx, int gz) {
+        return (((long) gx) << 32) ^ (gz & 0xFFFFFFFFL);
+    }
+
+    private static int ecotoneIdOf(Block b) {
+        if (b == null || b == Blocks.AIR || b == Blocks.WATER || b == Blocks.LAVA || b == Blocks.SNOW) {
+            return -1;
+        }
+        if (isIceFamily(b.defaultBlockState())) return -1; // T305-NO-ICE : poids strictement nul !
+        Integer id = ECOTONE_BLOCK_TO_ID.get(b);
+        if (id != null) return id;
+        int next = ECOTONE_ID_TO_BLOCK.size();
+        ECOTONE_ID_TO_BLOCK.add(b);
+        ECOTONE_BLOCK_TO_ID.put(b, next);
+        return next;
+    }
+
+    private static Block ecotoneBlockOf(int id) {
+        if (id < 0 || id >= ECOTONE_ID_TO_BLOCK.size()) return null;
+        return ECOTONE_ID_TO_BLOCK.get(id);
+    }
+
+    /**
+     * T306-ECOTONE : lit le vrai sol terrestre SEC a (x, z) sans jamais plonger
+     * sous l'eau ni sous la glace (ICE/WATER -> null => poids 0 dans le melangeur !),
+     * et ignore la terre nue directement sous un tronc d'arbre (cicatrice sous buche).
+     */
+    private static Block sampleDryGroundBlockAt(ServerLevel level, ChunkAccess chunk,
+                                                BlockPos.MutableBlockPos mut, int x, int z) {
+        if (chunk == null) return null;
+        int floor = level.getMinBuildHeight() + 8;
+        int y = deepluckyblock.util.SafeSurface.height(
+                level, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
+        boolean sawLog = false;
+        int steps = 0;
+        while (y > floor && steps < 28) {
+            steps++;
+            BlockState s = readBlock(level, chunk, mut, x, y, z);
+            if (s.isAir() || s.is(Blocks.SNOW)) { y--; continue; }
+            if (isLog(s)) { sawLog = true; y--; continue; }
+            if (isLeaf(s) || !s.blocksMotion()) { y--; continue; }
+            // T305-NO-ICE : ni la glace ni un lit de lac/riviere sous l'eau ne comptent comme sol terrestre !
+            if (s.is(Blocks.WATER) || s.is(Blocks.LAVA) || isIceFamily(s)) return null;
+            if (s.is(Blocks.SNOW_BLOCK) || s.is(Blocks.POWDER_SNOW)) {
+                return Blocks.SNOW_BLOCK;
+            }
+            if (isGroundCandidate(s)) {
+                if (sawLog && s.is(Blocks.DIRT)) return null; // cicatrice sous tronc : laisser parler la foret autour
+                return s.getBlock();
+            }
+            return null;
+        }
+        return null;
+    }
+
+    /**
+     * T306-ECOTONE : photographie sub-chunk (pas de 4 blocs = QuartPos) du sol terrestre
+     * naturel AVANT la premiere edition de bloc, jusqu'a +32 blocs au-dela de outerRing.
+     * Preserve les courbes exactes des biomes vanilla a l'interieur meme des chunks !
+     */
+    private static void capturePreEditionQuartSurface(ServerLevel level, BlockPos min, BlockPos max) {
+        clearEcotoneSurfaceCaches();
+        int outerRing = terrainRing() + NATURALIZE_EXTRA_RING;
+        ECOTONE_MOD_MIN_X = min.getX() - outerRing;
+        ECOTONE_MOD_MAX_X = max.getX() + outerRing;
+        ECOTONE_MOD_MIN_Z = min.getZ() - outerRing;
+        ECOTONE_MOD_MAX_Z = max.getZ() + outerRing;
+
+        final int halo = 32;
+        int qx0 = (ECOTONE_MOD_MIN_X - halo) >> 2;
+        int qx1 = (ECOTONE_MOD_MAX_X + halo) >> 2;
+        int qz0 = (ECOTONE_MOD_MIN_Z - halo) >> 2;
+        int qz1 = (ECOTONE_MOD_MAX_Z + halo) >> 2;
+
+        BlockPos.MutableBlockPos mut = new BlockPos.MutableBlockPos();
+        int lastCx = Integer.MIN_VALUE, lastCz = Integer.MIN_VALUE;
+        ChunkAccess chunk = null;
+
+        for (int qx = qx0; qx <= qx1; qx++) {
+            int wx = (qx << 2) + 2;
+            int cx = wx >> 4;
+            for (int qz = qz0; qz <= qz1; qz++) {
+                int wz = (qz << 2) + 2;
+                int cz = wz >> 4;
+                if (cx != lastCx || cz != lastCz) {
+                    lastCx = cx; lastCz = cz;
+                    chunk = deepluckyblock.util.SafeSurface.chunkFor(level, cx, cz);
+                }
+                if (chunk == null) continue;
+                Block b = sampleDryGroundBlockAt(level, chunk, mut, wx, wz);
+                if (b != null) {
+                    int id = ecotoneIdOf(b);
+                    if (id >= 0) PRE_EDITION_QUART_SURFACE.put(packGridKey(qx, qz), id);
+                }
+            }
+        }
+        ECOTONE_SNAPSHOT_READY = true;
+    }
+
+    /**
+     * T306-ECOTONE : coussin ecologique discontinu entre deux sols contrastes
+     * (jamais une bande continue artificielle — uniquement des poches naturelles).
+     */
+    private static Block resolveEcotoneCushionBlock(Block a, Block b, double mesoSigned) {
+        if (a == null || b == null || a == b) return null;
+        if (isIceFamily(a.defaultBlockState()) || isIceFamily(b.defaultBlockState())) return null;
+        boolean grassInvolved = (a == Blocks.GRASS_BLOCK || b == Blocks.GRASS_BLOCK);
+        Block other = (a == Blocks.GRASS_BLOCK) ? b : a;
+        if (grassInvolved) {
+            if (other == Blocks.SAND || other == Blocks.RED_SAND || other == Blocks.TERRACOTTA) {
+                return Blocks.COARSE_DIRT;
+            }
+            if (other == Blocks.PODZOL) {
+                return mesoSigned > 0.05 ? Blocks.MOSS_BLOCK : Blocks.COARSE_DIRT;
+            }
+            if (other == Blocks.MYCELIUM) {
+                return mesoSigned > 0.0 ? Blocks.PODZOL : Blocks.COARSE_DIRT;
+            }
+            if (other == Blocks.GRAVEL || other == Blocks.STONE || other == Blocks.SNOW_BLOCK) {
+                return Blocks.COARSE_DIRT;
+            }
+        }
+        if ((a == Blocks.PODZOL && (b == Blocks.SAND || b == Blocks.GRAVEL || b == Blocks.STONE || b == Blocks.SNOW_BLOCK))
+                || (b == Blocks.PODZOL && (a == Blocks.SAND || a == Blocks.GRAVEL || a == Blocks.STONE || a == Blocks.SNOW_BLOCK))) {
+            return Blocks.COARSE_DIRT;
+        }
+        return null;
+    }
+
+    /** Echantillonneur de point terrestre pour la grille hexagonale dispersee (poids 0 sur ICE/WATER). */
+    private static int sampleEcotoneGroundId(ServerLevel level, BlockPos.MutableBlockPos mut, int wx, int wz) {
+        boolean outsideModified = !ECOTONE_SNAPSHOT_READY
+                || wx < ECOTONE_MOD_MIN_X || wx > ECOTONE_MOD_MAX_X
+                || wz < ECOTONE_MOD_MIN_Z || wz > ECOTONE_MOD_MAX_Z;
+        if (outsideModified) {
+            int hx = wx >> 1, hz = wz >> 1;
+            long hKey = packGridKey(hx, hz);
+            Integer cached = LIVE_EXTERIOR_GROUND_CACHE.get(hKey);
+            if (cached != null) return cached;
+            Integer pre = PRE_EDITION_QUART_SURFACE.get(packGridKey(wx >> 2, wz >> 2));
+            if (pre != null) {
+                LIVE_EXTERIOR_GROUND_CACHE.put(hKey, pre);
+                return pre;
+            }
+            ChunkAccess chunk = deepluckyblock.util.SafeSurface.chunkFor(level, wx >> 4, wz >> 4);
+            if (chunk == null) return -1;
+            Block b = sampleDryGroundBlockAt(level, chunk, mut, wx, wz);
+            int id = (b != null) ? ecotoneIdOf(b) : -1;
+            LIVE_EXTERIOR_GROUND_CACHE.put(hKey, id);
+            return id;
+        }
+        Integer pre = PRE_EDITION_QUART_SURFACE.get(packGridKey(wx >> 2, wz >> 2));
+        if (pre != null) return pre;
+        // Si ce quart etait initialement sous un arbre ou l'eau, ne repli sur la palette du chunk
+        // QUE si ce chunk avait de vrais echantillons terrestres confiants (evite les carres 16x16 de defaut).
+        SurfacePalette raw = samplePalette(level, wx >> 4, wz >> 4);
+        if (raw.confident()) return ecotoneIdOf(raw.top());
+        return -1;
+    }
+
+    /**
+     * T306-ECOTONE : calcule (1 seule fois par chunk !) la carte 16x16 des surfaces
+     * melangees sans grille ni bruit 1x1 via BiomeEcotoneSpread.
+     */
+    private static int[] ecotoneChunkSurfaceAt(ServerLevel level, int cx, int cz) {
+        long cKey = net.minecraft.world.level.ChunkPos.asLong(cx, cz);
+        int[] cached = ECOTONE_CHUNK_SURFACE.get(cKey);
+        if (cached != null) return cached;
+
+        BlockPos.MutableBlockPos mut = new BlockPos.MutableBlockPos();
+        long seed = level.getSeed() ^ 0x306EC0704EL;
+        int fallbackId = ecotoneIdOf(paletteAt(level, cx, cz).top());
+        int[] raw256 = deepluckyblock.util.BiomeEcotoneSpread.blendChunkSurface(
+                seed, cx, cz, fallbackId,
+                deepluckyblock.util.BiomeEcotoneSpread.DEFAULT_SURFACE_CONFIG,
+                (wx, wz) -> sampleEcotoneGroundId(level, mut, wx, wz),
+                (pId, sId, meso) -> {
+                    Block cushion = resolveEcotoneCushionBlock(
+                            ecotoneBlockOf(pId), ecotoneBlockOf(sId), meso);
+                    return cushion != null ? ecotoneIdOf(cushion) : -1;
+                });
+
+        int[] packed = new int[257];
+        int first = raw256[0];
+        boolean allSame = first >= 0;
+        for (int i = 0; i < 256; i++) {
+            int id = raw256[i];
+            if (id < 0) id = fallbackId;
+            packed[i] = id;
+            if (id != first) allSame = false;
+        }
+        packed[256] = allSame ? 1 : 0;
+        ECOTONE_CHUNK_SURFACE.put(cKey, packed);
+        return packed;
     }
 
     /**
@@ -5610,6 +5857,8 @@ public class StructureTerrainPrep {
                 if (p.confident()) confident++;
                 dominants.merge(p.top(), 1, Integer::sum);
             }
+        // T306-ECOTONE : photographie sub-chunk (4x4) du sol naturel AVANT la premiere edition !
+        capturePreEditionQuartSurface(level, min, max);
         if (!deepluckyblock.util.DebugLog.STRUCTURE) return;   // journal desactive : ne pas construire la ligne
         StringBuilder sb = new StringBuilder();
         dominants.entrySet().stream()
@@ -5617,8 +5866,9 @@ public class StructureTerrainPrep {
                 .forEach(e -> sb.append(net.minecraft.core.registries.BuiltInRegistries.BLOCK
                         .getKey(e.getKey()).getPath()).append('(').append(e.getValue()).append(") "));
         deepluckyblock.util.DebugLog.structure(
-                "palette : {} chunks echantillonnes, {} confiants, {} repli, dominants = {}",
-                chunks, confident, PALETTE_FALLBACKS - fallbacksBefore, sb.toString().trim());
+                "palette : {} chunks echantillonnes, {} confiants, {} repli, {} quarts pre-edition, dominants = {}",
+                chunks, confident, PALETTE_FALLBACKS - fallbacksBefore,
+                PRE_EDITION_QUART_SURFACE.size(), sb.toString().trim());
     }
 
     // ==================================================================
@@ -5739,46 +5989,60 @@ public class StructureTerrainPrep {
         return local.top();
     }
 
-    // ---- Vegetation ordinaire (guide §45-§47) ----
+    // ---- Vegetation ordinaire & colonies botaniques coherentes (guide §45-§47 + T306-ECOTONE) ----
 
     /** Table de GOUT : quantite de vegetation par sol final. 0,00 = jamais deviner. */
     private static float densityFor(Block ground) {
         if (ground == Blocks.GRASS_BLOCK) return 0.30f;
+        if (ground == Blocks.MOSS_BLOCK)  return 0.26f;
         if (ground == Blocks.PODZOL)      return 0.20f;
         if (ground == Blocks.MYCELIUM)    return 0.15f;
+        if (ground == Blocks.COARSE_DIRT) return 0.10f;
         if (ground == Blocks.SAND)        return 0.02f;
         if (ground == Blocks.RED_SAND)    return 0.02f;
         return 0f;   // gravier, neige, inconnu : rien — ne jamais deviner
     }
 
     /** Table de GOUT : lesquelles, par sol final. null = rien ici. */
-    private static BlockState pickPlant(Block ground, float r) {
+    private static BlockState pickPlant(Block ground, float r, float colony) {
         if (ground == Blocks.GRASS_BLOCK) {
-            if (r < 0.42f) return Blocks.SHORT_GRASS.defaultBlockState();
+            if (r < 0.44f) return Blocks.SHORT_GRASS.defaultBlockState();
             if (r < 0.58f) return Blocks.FERN.defaultBlockState();
-            if (r < 0.68f) return Blocks.TALL_GRASS.defaultBlockState();
-            if (r < 0.76f) return Blocks.LARGE_FERN.defaultBlockState();
-            // T185 : palette complète plutôt que le couple visuellement
-            // dominant dandelion/poppy. Les doubles plantes restent prises en
-            // charge par plantOn et canSurvive tranche selon le biome/sol réel.
-            if (r < 0.80f) return Blocks.DANDELION.defaultBlockState();
-            if (r < 0.84f) return Blocks.POPPY.defaultBlockState();
-            if (r < 0.87f) return Blocks.BLUE_ORCHID.defaultBlockState();
-            if (r < 0.90f) return Blocks.ALLIUM.defaultBlockState();
-            if (r < 0.93f) return Blocks.AZURE_BLUET.defaultBlockState();
-            if (r < 0.95f) return Blocks.RED_TULIP.defaultBlockState();
-            if (r < 0.97f) return Blocks.OXEYE_DAISY.defaultBlockState();
-            if (r < 0.985f) return Blocks.CORNFLOWER.defaultBlockState();
+            if (r < 0.69f) return Blocks.TALL_GRASS.defaultBlockState();
+            if (r < 0.77f) return Blocks.LARGE_FERN.defaultBlockState();
+            // T185 + T306-ECOTONE : les fleurs sont regroupees en colonies botaniques
+            // coherentes (~11 blocs via BiomeEcotoneSpread.flowerColonySelector) au lieu
+            // d'un melange chaotique de 9 especes differentes sur 9 blocs adjacents.
+            if (colony < 0.16f) return Blocks.DANDELION.defaultBlockState();
+            if (colony < 0.31f) return Blocks.POPPY.defaultBlockState();
+            if (colony < 0.43f) return Blocks.OXEYE_DAISY.defaultBlockState();
+            if (colony < 0.55f) return Blocks.AZURE_BLUET.defaultBlockState();
+            if (colony < 0.67f) return Blocks.CORNFLOWER.defaultBlockState();
+            if (colony < 0.77f) return Blocks.ALLIUM.defaultBlockState();
+            if (colony < 0.86f) return Blocks.RED_TULIP.defaultBlockState();
+            if (colony < 0.94f) return Blocks.BLUE_ORCHID.defaultBlockState();
             return Blocks.LILY_OF_THE_VALLEY.defaultBlockState();
+        }
+        if (ground == Blocks.MOSS_BLOCK) {
+            if (r < 0.48f) return Blocks.SHORT_GRASS.defaultBlockState();
+            if (r < 0.78f) return Blocks.FERN.defaultBlockState();
+            if (r < 0.90f) return Blocks.TALL_GRASS.defaultBlockState();
+            return colony < 0.5f ? Blocks.AZURE_BLUET.defaultBlockState()
+                                 : Blocks.OXEYE_DAISY.defaultBlockState();
         }
         if (ground == Blocks.PODZOL) {
             if (r < 0.50f) return Blocks.FERN.defaultBlockState();
             if (r < 0.78f) return Blocks.LARGE_FERN.defaultBlockState();
             return Blocks.BROWN_MUSHROOM.defaultBlockState();
         }
+        if (ground == Blocks.COARSE_DIRT) {
+            if (r < 0.55f) return Blocks.SHORT_GRASS.defaultBlockState();
+            if (r < 0.82f) return Blocks.FERN.defaultBlockState();
+            return Blocks.DEAD_BUSH.defaultBlockState();
+        }
         if (ground == Blocks.MYCELIUM)
-            return r < 0.50f ? Blocks.BROWN_MUSHROOM.defaultBlockState()
-                             : Blocks.RED_MUSHROOM.defaultBlockState();
+            return colony < 0.52f ? Blocks.BROWN_MUSHROOM.defaultBlockState()
+                                  : Blocks.RED_MUSHROOM.defaultBlockState();
         if (ground == Blocks.SAND || ground == Blocks.RED_SAND)
             return Blocks.DEAD_BUSH.defaultBlockState();
         return null;
@@ -5787,13 +6051,25 @@ public class StructureTerrainPrep {
     /**
      * Pose une plante ordinaire si le sol final l'accepte ; la validite est
      * tranchee par canSurvive (jamais par une table sol↔plante, guide §46).
+     * T306-ECOTONE : densite modulee en clairieres/bosquets naturels (Simplex fBm)
+     * et especes florales regroupees en colonies coherentes.
      */
     private static boolean plantOn(ServerLevel level, BlockPos.MutableBlockPos mut,
                                    int x, int surfY, int z, Block ground, long vegSeed,
                                    float densityScale) {
-        float r = posNoise(x, z, SALT_PLANT);
-        if (r > densityFor(ground) * Math.max(0f, Math.min(1f, densityScale))) return false;
-        BlockState plant = pickPlant(ground, posNoise(x, z, SALT_PICK));
+        float baseDensity = densityFor(ground);
+        if (baseDensity <= 0f) return false;
+        float clump = deepluckyblock.util.BiomeEcotoneSpread.vegetationClumpFactor(vegSeed, x, z);
+        float snowTaper = 1.0f;
+        deepluckyblock.util.TerrainMother m306 = deepluckyblock.util.TerrainMother.current();
+        if (m306 != null) {
+            float sd = m306.snowDensity(x, z);
+            if (sd > 0.05f) snowTaper = Math.max(0.22f, 1.0f - 0.65f * sd);
+        }
+        float target = baseDensity * Math.max(0f, Math.min(1.35f, densityScale * clump * snowTaper));
+        if (posNoise(x, z, SALT_PLANT) > target) return false;
+        float colony = deepluckyblock.util.BiomeEcotoneSpread.flowerColonySelector(vegSeed, x, z);
+        BlockState plant = pickPlant(ground, posNoise(x, z, SALT_PICK), colony);
         if (plant == null) return false;
         mut.set(x, surfY + 1, z);
         if (!level.getBlockState(mut).isAir()) return false;
@@ -5935,44 +6211,52 @@ public class StructureTerrainPrep {
             if (isIceFamily(actualSurface)) return;
             Block chosen = vegetationOnly ? actualSurface.getBlock() : pal.top();
 
-            if (inner && !vegetationOnly) {
-                // T303-PERF : les 8 palettes voisines ne dependent que du chunk (cx, cz).
-                // On les resout 1 fois par chunk (~99 fois) au lieu de 30 000 fois !
-                long nbKey = net.minecraft.world.level.ChunkPos.asLong(cx, cz);
-                SurfacePalette[] nb = CHUNK_NB_PALETTES.get(nbKey);
-                if (nb == null) {
-                    boolean anyDifferent = false;
-                    for (int dx = -1; dx <= 1 && !anyDifferent; dx++)
-                        for (int dz = -1; dz <= 1 && !anyDifferent; dz++) {
-                            if (dx == 0 && dz == 0) continue;
-                            if (paletteAt(level, cx + dx, cz + dz).top() != pal.top()) anyDifferent = true;
-                        }
-                    if (anyDifferent) {
-                        nb = new SurfacePalette[8];
-                        int k = 0;
-                        for (int dx = -1; dx <= 1; dx++)
-                            for (int dz = -1; dz <= 1; dz++) {
-                                if (dx == 0 && dz == 0) continue;
-                                SurfacePalette q = paletteAt(level, cx + dx, cz + dz);
-                                nb[k] = (q.top() == pal.top()) ? null : q;
-                                k++;
-                            }
-                    } else {
-                        nb = NO_DIFF_NEIGHBORS;
-                    }
-                    CHUNK_NB_PALETTES.put(nbKey, nb);
+            if (!vegetationOnly) {
+                // T306-ECOTONE : melange inter-biomes sans grille 16x16 ni bruit blanc 1x1 !
+                // Calcul 1 seule fois par chunk (256 colonnes) via convolution hexagonale
+                // dispersee (KdotJPG CC0) + fBm Simplex 3 octaves a domaine distordu +
+                // coussins d'ecotone discontinus, sur la photographie 4x4 pre-edition et
+                // le terrain vanilla intact hors anneau (poids 0 sur ICE/WATER).
+                int[] ecoChunk = ecotoneChunkSurfaceAt(level, cx, cz);
+                Block ecoBlock = ecotoneBlockOf(ecoChunk[(lz << 4) | lx]);
+                if (ecoBlock != null && !isIceFamily(ecoBlock.defaultBlockState())) {
+                    chosen = ecoBlock;
                 }
-                if (nb != NO_DIFF_NEIGHBORS) {
-                    stats[1]++;
-                    chosen = pickGround(pal, nb, x, z, lx, lz);
-                } else {
+                if (ecoChunk[256] != 0) {
                     stats[0]++;
+                } else {
+                    stats[1]++;
+                }
+
+                // T306-ECOTONE : affleurement rocheux naturel sur paroi tres raide (pente >= 6 sur 2 blocs)
+                // uniquement dans la jupe externe hors collier bas [Y0-2, Y0] (evite les murs verticaux 100 % herbe).
+                int dxStruct = x < min.getX() ? min.getX() - x : (x > max.getX() ? x - max.getX() : 0);
+                int dzStruct = z < min.getZ() ? min.getZ() - z : (z > max.getZ() ? z - max.getZ() : 0);
+                if (!protectedColumn && chosen == Blocks.GRASS_BLOCK && Math.hypot(dxStruct, dzStruct) > 18.0
+                        && deepluckyblock.util.SafeSurface.isLoadedAt(level, x - 1, z)
+                        && deepluckyblock.util.SafeSurface.isLoadedAt(level, x + 1, z)
+                        && deepluckyblock.util.SafeSurface.isLoadedAt(level, x, z - 1)
+                        && deepluckyblock.util.SafeSurface.isLoadedAt(level, x, z + 1)) {
+                    int hx0 = deepluckyblock.util.SafeSurface.height(level, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x - 1, z);
+                    int hx1 = deepluckyblock.util.SafeSurface.height(level, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x + 1, z);
+                    int hz0 = deepluckyblock.util.SafeSurface.height(level, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z - 1);
+                    int hz1 = deepluckyblock.util.SafeSurface.height(level, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z + 1);
+                    int maxSlope2 = Math.max(Math.abs(hx1 - hx0), Math.abs(hz1 - hz0));
+                    if (maxSlope2 >= 6) {
+                        double outcrop = deepluckyblock.util.BiomeEcotoneSpread.simplex2(
+                                vegSeed ^ 0x7C11FF01L, x * 0.11, z * 0.11);
+                        if (maxSlope2 >= 8 && outcrop > 0.18) {
+                            chosen = Blocks.STONE;
+                        } else if (outcrop > -0.05) {
+                            chosen = Blocks.COARSE_DIRT;
+                        }
+                    }
                 }
 
                 // T189 : après le paste, le rebuild/smooth a déjà reconstruit le
                 // sous-sol. Ne pas réécrire 8–12 000 blocs identiques pendant la
                 // décoration finale ; seule la surface et la végétation comptent.
-                Block filler = postPaste ? null : fillerFor(chosen);
+                Block filler = (inner && !postPaste) ? fillerFor(chosen) : null;
                 if (filler != null) {
                     for (int d = 1; d <= SUBSOIL_DEPTH; d++) {
                         BlockState s = readBlock(level, chunk, mut, x, surfY - d, z);

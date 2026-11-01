@@ -531,94 +531,46 @@ public final class TerrainMother {
             }
         }
 
-        // Étape 3 : projection QuartPos (4 blocs) + Gaussienne 2D séparable NORMALISÉE hors glace/eau
+        // Étape 3 (T306-ECOTONE) : Convolution éparse sur réseau hexagonal jitterisé
+        // (KdotJPG ScatteredBiomeBlender, noyau quartique (R^2 - d^2)^2, SANS grille carrée),
+        // où toute cellule GLACE / EAU retourne -1f (poids strictement nul : 0 dégradé avec l'ICE,
+        // et fondu entrant depuis les 3 côtés neigeux si le 4e côté est de l'ICE !).
         final int qW = hw * 4;
         final int qH = hh * 4;
-        final float[] srcVal = new float[qW * qH];
-        final float[] srcW = new float[qW * qH];
-        for (int qz = 0; qz < qH; qz++) {
-            int cj = qz >> 2;
-            for (int qx = 0; qx < qW; qx++) {
-                int ci = qx >> 2;
-                int cIdx = cj * hw + ci;
-                float w = cellWeight[cIdx];
-                srcVal[qz * qW + qx] = linkedPotential[cIdx] * w;
-                srcW[qz * qW + qx] = w;
-            }
-        }
-
+        final int qx0 = hx0 * 4;
+        final int qz0 = hz0 * 4;
         final int rChunks = Math.max(1, Math.min(3, snowRadiusChunks));
-        final double sigmaQ = (rChunks == 1) ? 2.4 : (rChunks == 2 ? 4.0 : 5.8);
-        final int kRad = Math.max(4, (int) Math.ceil(sigmaQ * 2.8));
-        final float[] kernel = buildGaussian1D(kRad, sigmaQ);
+        final double radiusBlocks = (rChunks == 1) ? 23.0 : (rChunks == 2 ? 35.0 : 47.0);
+        final long effSeed = worldSeed != 0L ? worldSeed : 0x517CC1B727220A95L;
 
-        final float[] tmpVal = new float[qW * qH];
-        final float[] tmpW = new float[qW * qH];
-        final float[] out = new float[qW * qH];
+        final int fHx0 = hx0, fHz0 = hz0, fHw = hw, fHh = hh;
+        final float[] out = BiomeEcotoneSpread.buildScatteredSnowField(
+                effSeed, qx0, qz0, qW, qH, radiusBlocks,
+                (wx, wz) -> {
+                    int ccx = wx >> 4;
+                    int ccz = wz >> 4;
+                    int ci = ccx - fHx0;
+                    int cj = ccz - fHz0;
+                    if (ci < 0 || ci >= fHw || cj < 0 || cj >= fHh) return -1f;
+                    int cIdx = cj * fHw + ci;
+                    float w = cellWeight[cIdx];
+                    if (w <= 0.08f) return -1f; // GLACE / EAU : ignoré (0 influence !)
+                    return linkedPotential[cIdx];
+                });
 
-        // Passe horizontale (numérateur et poids de terre ferme)
-        for (int qz = 0; qz < qH; qz++) {
-            int row = qz * qW;
-            for (int qx = 0; qx < qW; qx++) {
-                float accV = 0f, accW = 0f;
-                for (int k = -kRad; k <= kRad; k++) {
-                    int sx = qx + k;
-                    if (sx < 0) sx = 0;
-                    else if (sx >= qW) sx = qW - 1;
-                    float kw = kernel[k + kRad];
-                    accV += srcVal[row + sx] * kw;
-                    accW += srcW[row + sx] * kw;
-                }
-                tmpVal[row + qx] = accV;
-                tmpW[row + qx] = accW;
-            }
-        }
-
-        // Passe verticale + normalisation par le poids de terre ferme (glace/eau = 0 d'influence !)
-        for (int qz = 0; qz < qH; qz++) {
-            for (int qx = 0; qx < qW; qx++) {
-                float accV = 0f, accW = 0f;
-                for (int k = -kRad; k <= kRad; k++) {
-                    int sz = qz + k;
-                    if (sz < 0) sz = 0;
-                    else if (sz >= qH) sz = qH - 1;
-                    float kw = kernel[k + kRad];
-                    int sIdx = sz * qW + qx;
-                    accV += tmpVal[sIdx] * kw;
-                    accW += tmpW[sIdx] * kw;
-                }
-                out[qz * qW + qx] = (accW > 1.0e-4f) ? Math.max(0f, accV / accW) : 0f;
-            }
-        }
-
-        this.auraQx0 = hx0 * 4;
-        this.auraQz0 = hz0 * 4;
+        this.auraQx0 = qx0;
+        this.auraQz0 = qz0;
         this.auraQw = qW;
         this.auraQh = qH;
         this.auraQuartGrid = out;
         return out;
     }
 
-    private static float[] buildGaussian1D(int radius, double sigma) {
-        int len = radius * 2 + 1;
-        float[] k = new float[len];
-        double s22 = 2.0 * sigma * sigma;
-        float sum = 0f;
-        for (int i = -radius; i <= radius; i++) {
-            float v = (float) Math.exp(-(i * i) / s22);
-            k[i + radius] = v;
-            sum += v;
-        }
-        for (int i = 0; i < len; i++) k[i] /= sum;
-        return k;
-    }
-
     /**
      * Densité d'aura de neige continue en {@code (x, z)} :
-     * interpolation bilinéaire lisse sur la grille QuartPos filtrée par Gaussienne,
-     * combinée à un domain-warp 2D multi-octaves (±9 blocs, façon {@code SHIFT_NOISE}
-     * de {@code Blender.java}) lorsque {@code worldSeed != 0} afin d'effacer toute
-     * rectitude résiduelle des contours de chunks.
+     * interpolation Hermite C1 sur le champ hexagonal jitterisé {@link BiomeEcotoneSpread},
+     * combinée à un domain-warp Simplex 2D isotrope bi-octave (±9 blocs, sans biais d'axe X/Z)
+     * et garde stricte anti-glace/eau.
      *
      * <p>Renvoie {@code -1f} uniquement si aucun enfant n'a encore été renseigné.
      */
@@ -648,11 +600,11 @@ public final class TerrainMother {
         double sampleX = x + 0.5;
         double sampleZ = z + 0.5;
         if (worldSeed != 0L) {
-            // Domain-warp organique bi-octave (amplitude ~9.5 blocs = > 1/2 chunk, zéro ligne droite)
-            double wx = (smoothValueNoise(worldSeed ^ 0x6A09E667F3BCC909L, x, z, 20.0) - 0.5) * 14.0
-                      + (smoothValueNoise(worldSeed ^ 0xBB67AE8584CAA73BL, x, z, 9.0) - 0.5) * 5.0;
-            double wz = (smoothValueNoise(worldSeed ^ 0x3C6EF372FE94F82BL, x, z, 20.0) - 0.5) * 14.0
-                      + (smoothValueNoise(worldSeed ^ 0xA54FF53A5F1D36F1L, x, z, 9.0) - 0.5) * 5.0;
+            // T306-ECOTONE : Domain-warp Simplex 2D isotrope bi-octave (aucun alignement X/Z)
+            double wx = BiomeEcotoneSpread.simplex2(worldSeed ^ 0x6A09E667F3BCC909L, x / 22.0, z / 22.0) * 7.5
+                      + BiomeEcotoneSpread.simplex2(worldSeed ^ 0xBB67AE8584CAA73BL, x / 9.5,  z / 9.5)  * 2.8;
+            double wz = BiomeEcotoneSpread.simplex2(worldSeed ^ 0x3C6EF372FE94F82BL, x / 22.0 + 19.1, z / 22.0 - 13.7) * 7.5
+                      + BiomeEcotoneSpread.simplex2(worldSeed ^ 0xA54FF53A5F1D36F1L, x / 9.5  - 7.3,  z / 9.5  + 11.9) * 2.8;
             int wcx = ((int) Math.floor(sampleX + wx)) >> 4;
             int wcz = ((int) Math.floor(sampleZ + wz)) >> 4;
             if (!isIceOrWaterCell(wcx, wcz)) {
@@ -673,9 +625,9 @@ public final class TerrainMother {
         int iz1 = Math.min(auraQh - 1, iz + 1);
         float fx = (float) (cx - ix);
         float fz = (float) (cz - iz);
-        // Lissage Hermite C1 entre quarts pour éliminer toute cassure de pente
-        fx = fx * fx * (3f - 2f * fx);
-        fz = fz * fz * (3f - 2f * fz);
+        // Lissage Quintique Perlin C2 entre quarts (6t^5 - 15t^4 + 10t^3) : zéro cassure de dérivée
+        fx = fx * fx * fx * (fx * (fx * 6f - 15f) + 10f);
+        fz = fz * fz * fz * (fz * (fz * 6f - 15f) + 10f);
 
         float v00 = field[iz * auraQw + ix];
         float v10 = field[iz * auraQw + ix1];
@@ -687,43 +639,43 @@ public final class TerrainMother {
     }
 
     /**
-     * Décision finale de couverture neigeuse en {@code (x, z)} pilotée par l'aura continue de Mother :
+     * T306-ECOTONE : Décision finale de couverture neigeuse en {@code (x, z)} par langues et
+     * congères cohérentes Simplex fBm domain-warpées (zéro confetti 1x1, zéro bordure carrée) :
      * <ul>
-     *   <li>{@code aura >= 0.86f} (coeur de massif enneigé) : couverture intégrale ;</li>
-     *   <li>{@code aura <= 0.035f} (plaine sèche hors portée d'aura) : zéro neige ;</li>
-     *   <li>entre les deux : transition progressive par grandes langues/congères cohérentes
-     *       bi-octaves (16 blocs + 7 blocs) — plus l'aura décroît en s'éloignant sur 1 à 3 chunks,
-     *       plus les plaques s'affinent et s'espacent sans jamais tracer de ligne en bord de chunk.</li>
+     *   <li>{@code aura >= 0.85f} (coeur de massif enneigé) : manteau continu ;</li>
+     *   <li>{@code aura <= 0.04f} (hors portée d'aura) : zéro neige ;</li>
+     *   <li>entre les deux : enveloppe d'écotone {@code 4*t*(1-t)} modulée par des langues
+     *       organiques multi-échelles (19 bl + 7.5 bl + 3.2 bl) imitant de vraies plaques de fonte/congères.</li>
      * </ul>
      */
     public boolean shouldPlaceSnow(long seed, int x, int z) {
         setWorldSeed(seed);
         float aura = snowDensity(x, z);
         if (aura < 0f) return false;
-        if (aura >= 0.86f) return true;
-        if (aura <= 0.035f) return false;
-        // Courbe smoothstep pour adoucir à la fois l'entrée dans le chunk sec ET le bord du chunk neigeux
-        float t = Math.max(0f, Math.min(1f, (aura - 0.035f) / (0.86f - 0.035f)));
-        float prob = t * t * (3f - 2f * t);
-        double drift = 0.68 * smoothValueNoise(seed ^ 0xD217F00DL, x, z, 14.0)
-                     + 0.32 * smoothValueNoise(seed ^ 0x517CC1B727220A95L, x, z, 6.0);
-        return drift < prob;
+        if (aura >= 0.85f) return true;
+        if (aura <= 0.04f) return false;
+        float t = Math.max(0f, Math.min(1f, (aura - 0.04f) / (0.85f - 0.04f)));
+        float smoothT = t * t * (3f - 2f * t);
+        float env = 4f * smoothT * (1f - smoothT);
+        float patch = BiomeEcotoneSpread.warpedPatchSigned(seed ^ 0xD217F00D5EEDL, x, z); // [-0.5, +0.5]
+        return (smoothT + 0.62f * env * patch) >= 0.50f;
     }
 
     /**
-     * Épaisseur progressive de la couche de neige (1 à 3, inspirée de {@code SnowHeightMap}
-     * dans WorldEdit) : fine (1 couche) sur toute la frange d'aura externe, 1-2 couches en
-     * zone médiane, et 1-3 couches uniquement au coeur du manteau neigeux.
+     * T306-ECOTONE : Épaisseur progressive réaliste des congères (1 à 3 couches) :
+     * fine (1 couche) sur toute la frange d'écotone externe, ondulation organique 1-2 couches
+     * en zone médiane, et vraies congères éoliennes 1-3 couches au coeur du manteau neigeux.
      */
     public int snowLayersAt(long seed, int x, int z) {
         setWorldSeed(seed);
         float aura = snowDensity(x, z);
-        if (aura < 0.48f) return 1; // frange d'aura : toujours 1 couche fine, jamais de marche épaisse
-        double n = smoothValueNoise(seed ^ 0x9E3779B97F4A7C15L, x, z, 10.0);
-        if (aura < 0.80f) {
-            return n < 0.68 ? 1 : 2;
+        if (aura < 0.46f) return 1;
+        double drift = 0.5 + 0.5 * (0.68 * BiomeEcotoneSpread.simplex2(seed ^ 0x9E3779B97F4A7C15L, x / 13.0, z / 13.0)
+                                  + 0.32 * BiomeEcotoneSpread.simplex2(seed ^ 0xBF58476D1CE4E5B9L, x / 5.5,  z / 5.5));
+        if (aura < 0.72f) {
+            return drift < 0.58 ? 1 : 2;
         }
-        return n < 0.52 ? 1 : (n < 0.84 ? 2 : 3);
+        return drift < 0.52 ? 1 : (drift < 0.71 ? 2 : 3);
     }
 
     private static double smoothValueNoise(long seed, int x, int z, double scale) {
