@@ -3551,6 +3551,17 @@ public class UniversalEnchantmentHandler {
 
     private static int getEnchantLvl(ItemStack stack, String id) {
         if (stack.isEmpty() || !stack.isEnchanted()) return 0;
+        net.minecraft.world.item.enchantment.ItemEnchantments ie = stack.get(DataComponents.ENCHANTMENTS);
+        if (ie != null && !ie.isEmpty()) {
+            for (var entry : ie.entrySet()) {
+                int rawLvl = entry.getIntValue();
+                if (rawLvl <= 0) continue;
+                var keyOpt = entry.getKey().unwrapKey();
+                if (keyOpt.isPresent() && id.equals(keyOpt.get().location().toString())) {
+                    return softCappedLevel(entry.getKey().value(), rawLvl);
+                }
+            }
+        }
         Enchantment en = deepluckyblock.util.DeepEnchant.byId(id);
         if (en == null) return 0;
         int lvl = deepluckyblock.util.DeepEnchant.getLevel(stack, en);
@@ -3699,7 +3710,7 @@ public class UniversalEnchantmentHandler {
         return (sideBit << 32) | (entity.getId() & 0xFFFFFFFFL);
     }
 
-    private static boolean isTouchingHorizontalWall(LivingEntity entity) {
+    public static boolean isTouchingHorizontalWall(LivingEntity entity) {
         AABB box = entity.getBoundingBox();
         if (box.getYsize() < 0.35) return false;
         AABB probe = box.deflate(0.0, 0.14, 0.0).inflate(0.09, 0.0, 0.09);
@@ -3841,10 +3852,12 @@ public class UniversalEnchantmentHandler {
                 Vec3 flat = new Vec3(lk.x, 0.0, lk.z);
                 if (flat.lengthSqr() > 1.0e-4) {
                     flat = flat.normalize();
-                    state.slideSpeed = Math.min(2.55, 1.25 + 0.34 * slideLvl);
+                    boolean cryoCombo = EnchantmentComboRegistry.hasCombo(entity, EnchantmentComboRegistry.C04_PATINEUR_AZOTE);
+                    double mult = cryoCombo ? 1.32 : 1.0;
+                    state.slideSpeed = Math.min(2.90, (1.25 + 0.34 * slideLvl) * mult);
                     state.slideDirX = flat.x;
                     state.slideDirZ = flat.z;
-                    state.slideTicksLeft = 10 + 2 * Math.min(5, slideLvl);
+                    state.slideTicksLeft = (10 + 2 * Math.min(5, slideLvl)) + (cryoCombo ? 5 : 0);
                     state.slideCooldownUntil = now + 44L;
                     state.sprintGraceTicks = 0;
                 }
@@ -3919,24 +3932,53 @@ public class UniversalEnchantmentHandler {
     }
 
     /**
-     * T307-CLOUD-WALKER : Réception serveur du Double Saut / Triple Saut de « Marcheur des Nuages ».
+     * T307-CLOUD-WALKER + T308-COMBOS #1 & #2 :
+     *  - requestedJumpIdx == -1 : Combo #1 « Acrobate Miel-Slime » (Wall-Jump élastique depuis un mur !).
+     *  - requestedJumpIdx >= 1  : Marcheur des Nuages (Triple Saut normal, ou Quadruple Saut Céleste avec Combo #2 !).
      */
     public static void performServerCloudJump(ServerPlayer sp, int requestedJumpIdx) {
         if (sp == null || !sp.isAlive() || sp.isSpectator()) return;
-        int cwLvl = getArmorEnchantLvl(sp, "deep_lucky_block:cloud_walker");
-        if (cwLvl <= 0) return;
         if (sp.onGround() || sp.isInWater() || sp.isInLava() || sp.onClimbable() || sp.isFallFlying()) return;
 
         SharedMoveState state = SHARED_MOVE_STATES.computeIfAbsent(sideEntityKey(sp), k -> new SharedMoveState());
-        if (state.serverAirJumpsUsed >= 2) return;
+
+        // T308-COMBO #1 : Acrobate Miel-Slime (LEGS: wall_runner + FEET: bouncy) -> Wall-Jump élastique !
+        if (requestedJumpIdx == -1) {
+            if (!EnchantmentComboRegistry.hasCombo(sp, EnchantmentComboRegistry.C01_ACROBAT_ALCHIMIQUE)) return;
+            if (!isTouchingHorizontalWall(sp)) return;
+            Vec3 look = sp.getLookAngle();
+            Vec3 flat = new Vec3(look.x, 0.0, look.z);
+            if (flat.lengthSqr() > 1.0e-4) flat = flat.normalize();
+            sp.setDeltaMovement(flat.x * 0.56, 0.62, flat.z * 0.56);
+            sp.hurtMarked = true;
+            sp.fallDistance = 0.0F;
+            state.lastAirVy = 0.0;
+            if (sp.level() instanceof ServerLevel slw) {
+                EnchantmentParticleFX.shockwaveRing(slw, sp.getX(), sp.getY() + 0.25, sp.getZ(),
+                        ParticleTypes.ITEM_SLIME, 0.85, 10, 0.05);
+                slw.sendParticles(EnchantmentParticleFX.HONEY_AMBER, sp.getX(), sp.getY() + 0.35, sp.getZ(),
+                        8, 0.25, 0.20, 0.25, 0.02);
+                slw.playSound(null, sp.getX(), sp.getY(), sp.getZ(),
+                        SoundEvents.SLIME_JUMP, SoundSource.PLAYERS, 0.85f, 1.25f);
+            }
+            return;
+        }
+
+        int cwLvl = getArmorEnchantLvl(sp, "deep_lucky_block:cloud_walker");
+        if (cwLvl <= 0) return;
+
+        boolean hasQuadCombo = EnchantmentComboRegistry.hasCombo(sp, EnchantmentComboRegistry.C02_ASCENSION_CELESTE);
+        int maxAirJumps = hasQuadCombo ? 3 : 2;
+        if (state.serverAirJumpsUsed >= maxAirJumps) return;
         state.serverAirJumpsUsed++;
 
-        boolean isThirdJump = (state.serverAirJumpsUsed >= 2 || requestedJumpIdx >= 2);
-        double jumpVy = isThirdJump ? 0.56 : 0.50;
+        boolean isFinalJump = (state.serverAirJumpsUsed >= maxAirJumps || requestedJumpIdx >= maxAirJumps);
+        double jumpVy = (state.serverAirJumpsUsed >= 3) ? 0.64 : (isFinalJump ? 0.56 : 0.50);
+        double horizBoost = (hasQuadCombo && state.serverAirJumpsUsed >= 3) ? 0.20 : 0.08;
         Vec3 look = sp.getLookAngle();
         Vec3 horiz = new Vec3(look.x, 0.0, look.z);
         if (horiz.lengthSqr() > 1.0e-4) {
-            horiz = horiz.normalize().scale(0.08);
+            horiz = horiz.normalize().scale(horizBoost);
         }
         Vec3 dm = sp.getDeltaMovement();
         sp.setDeltaMovement(dm.x + horiz.x, jumpVy, dm.z + horiz.z);
@@ -3946,9 +3988,13 @@ public class UniversalEnchantmentHandler {
 
         if (sp.level() instanceof ServerLevel sl) {
             EnchantmentParticleFX.cloudCushion(sl, sp.getX(), sp.getY() - 0.05, sp.getZ(),
-                    isThirdJump ? 1.12 : 0.82, isThirdJump);
+                    isFinalJump ? 1.18 : 0.84, isFinalJump);
+            if (hasQuadCombo && state.serverAirJumpsUsed >= 3) {
+                EnchantmentParticleFX.shockwaveRing(sl, sp.getX(), sp.getY() - 0.02, sp.getZ(),
+                        EnchantmentParticleFX.GOLD_DIVINE, 1.25, 16, 0.02);
+            }
             sl.playSound(null, sp.getX(), sp.getY(), sp.getZ(),
-                    SoundEvents.WOOL_FALL, SoundSource.PLAYERS, 0.75f, isThirdJump ? 1.45f : 1.22f);
+                    SoundEvents.WOOL_FALL, SoundSource.PLAYERS, 0.75f, isFinalJump ? 1.48f : 1.22f);
         }
     }
 

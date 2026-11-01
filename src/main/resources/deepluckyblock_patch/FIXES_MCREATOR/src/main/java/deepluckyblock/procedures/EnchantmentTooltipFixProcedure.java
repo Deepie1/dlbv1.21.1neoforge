@@ -432,6 +432,15 @@ public final class EnchantmentTooltipFixProcedure {
             insertHeartBonusLines(lines, heartBonusLines);
         }
 
+        // T308-COMBOS : Affiche les synergies multi-pièces actives (et sous Shift, les combos possibles avec état des pièces)
+        try {
+            List<Component> comboLines = deepluckyblock.enchantments.EnchantmentComboRegistry
+                    .buildTooltipComboLines(stack, event.getEntity(), shift);
+            for (Component cl : comboLines) {
+                lines.add(index++, cl);
+            }
+        } catch (Throwable ignoredComboTooltip) {}
+
         if (!shift) lines.add(Component.translatable("tooltip.deep_lucky_block.hold_shift"));
     }
 
