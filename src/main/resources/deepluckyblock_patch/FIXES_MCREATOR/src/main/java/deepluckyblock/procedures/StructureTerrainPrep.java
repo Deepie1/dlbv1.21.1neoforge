@@ -1533,16 +1533,132 @@ public class StructureTerrainPrep {
         BlockPos.MutableBlockPos mut = new BlockPos.MutableBlockPos();
         int clearedSnow = 0, clearedOther = 0, fixedGrey = 0;
 
-        // T304-FINAL-LEAVES : purger toute feuille flottante dans les chunks externes arrives en fin de pipeline
-        // (99,5 % des feuilles saines sont deja dans SWEEP_ANCHORED -> verification O(1) en quelques ms, AVANT le sweep des flying snow !).
+        // Etape 1 (T304-NO-STUMPS + T305-FOOTPRINT-REPAINT) : purger toute souche solitaire d'arbre coupe
+        // (1 a 2 blocs verticaux de LOGS sans feuilles ni construction adjacente) dans [min-24..max+24],
+        // ET repeindre toute colonne DIRT/STONE restee a nu dans l'emprise structure [min..max].
+        int sx0 = min.getX() - 24, sx1 = max.getX() + 24;
+        int sz0 = min.getZ() - 24, sz1 = max.getZ() + 24;
+        for (int cx = sx0 >> 4; cx <= sx1 >> 4; cx++) {
+            for (int cz = sz0 >> 4; cz <= sz1 >> 4; cz++) {
+                if (!deepluckyblock.util.SafeSurface.loaded(level, cx, cz)) continue;
+                net.minecraft.world.level.chunk.LevelChunk lc = level.getChunkSource().getChunkNow(cx, cz);
+                if (lc == null) continue;
+                long[] mask = {0L};
+                int lx0 = Math.max(0, sx0 - (cx << 4)), lx1 = Math.min(15, sx1 - (cx << 4));
+                int lz0 = Math.max(0, sz0 - (cz << 4)), lz1 = Math.min(15, sz1 - (cz << 4));
+                for (int lx = lx0; lx <= lx1; lx++) {
+                    int wx = (cx << 4) + lx;
+                    for (int lz = lz0; lz <= lz1; lz++) {
+                        int wz = (cz << 4) + lz;
+                        if (StructureScatterDecor.isInsideDecor(wx, wz, 1)) continue;
+                        int topY = deepluckyblock.util.SafeSurface.height(
+                                level, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, wx, wz) - 1;
+                        if (topY <= minY) continue;
+                        long topKey = BlockPos.asLong(wx, topY, wz);
+                        if (!PASTED_OCCUPIED.isEmpty() && PASTED_OCCUPIED.contains(topKey)) continue;
+                        BlockState topS = lc.getBlockState(mut.set(wx, topY, wz));
+                        if (wx >= min.getX() && wx <= max.getX() && wz >= min.getZ() && wz <= max.getZ()
+                                && (topS.is(Blocks.DIRT) || topS.is(Blocks.STONE)
+                                    || topS.is(Blocks.COBBLESTONE) || topS.is(Blocks.DEEPSLATE))) {
+                            Block paint = Blocks.GRASS_BLOCK;
+                            for (net.minecraft.core.Direction hd : net.minecraft.core.Direction.Plane.HORIZONTAL) {
+                                var nlcP = level.getChunkSource().getChunkNow((wx + hd.getStepX()) >> 4, (wz + hd.getStepZ()) >> 4);
+                                if (nlcP == null) continue;
+                                BlockState nsP = nlcP.getBlockState(mut.set(wx + hd.getStepX(), topY, wz + hd.getStepZ()));
+                                if (nsP.is(Blocks.PODZOL) || nsP.is(Blocks.SNOW_BLOCK)
+                                        || nsP.is(Blocks.GRASS_BLOCK) || nsP.is(Blocks.SAND)
+                                        || nsP.is(Blocks.MOSS_BLOCK) || nsP.is(Blocks.COARSE_DIRT)) {
+                                    paint = nsP.getBlock();
+                                    break;
+                                }
+                            }
+                            BlockState paintSt = paint.defaultBlockState();
+                            boolean snowHere = paintSt.hasProperty(BlockStateProperties.SNOWY)
+                                    && isSnowyCell(level, mut.set(wx, topY + 1, wz));
+                            if (snowHere) paintSt = paintSt.setValue(BlockStateProperties.SNOWY, true);
+                            setPaletteBlockInChunk(level, lc, wx, topY, wz, paintSt, mask);
+                            if (snowHere && lc.getBlockState(mut.set(wx, topY + 1, wz)).isAir()) {
+                                setPaletteBlockInChunk(level, lc, wx, topY + 1, wz, Blocks.SNOW.defaultBlockState(), mask);
+                            }
+                            continue;
+                        }
+                        if (!topS.is(net.minecraft.tags.BlockTags.LOGS)) continue;
+                        int run = 1;
+                        while (run <= 3 && topY - run > minY
+                                && lc.getBlockState(mut.set(wx, topY - run, wz)).is(net.minecraft.tags.BlockTags.LOGS)) {
+                            run++;
+                        }
+                        if (run > 2) continue;
+                        BlockState baseUnder = lc.getBlockState(mut.set(wx, topY - run, wz));
+                        if (baseUnder.isAir() || isSurfaceDecor(baseUnder)) continue;
+                        boolean partOfDecorOrTree = false;
+                        for (int dy = -(run - 1); dy <= 2 && !partOfDecorOrTree; dy++) {
+                            for (int dx = -1; dx <= 1 && !partOfDecorOrTree; dx++) {
+                                for (int dz = -1; dz <= 1 && !partOfDecorOrTree; dz++) {
+                                    if (dx == 0 && dz == 0 && dy <= 0) continue;
+                                    var nlc = level.getChunkSource().getChunkNow((wx + dx) >> 4, (wz + dz) >> 4);
+                                    if (nlc == null) continue;
+                                    BlockState nb = nlc.getBlockState(mut.set(wx + dx, topY + dy, wz + dz));
+                                    if (nb.isAir() || nb.is(Blocks.SNOW)
+                                            || nb.getBlock() instanceof net.minecraft.world.level.block.BushBlock
+                                            || nb.getBlock() instanceof net.minecraft.world.level.block.CarpetBlock) {
+                                        continue;
+                                    }
+                                    if (dy <= 0 && isNaturalTerrain(nb)) continue;
+                                    partOfDecorOrTree = true;
+                                }
+                            }
+                        }
+                        if (!partOfDecorOrTree) {
+                            for (int dy = 0; dy < run; dy++) {
+                                setPaletteBlockInChunk(level, lc, wx, topY - dy, wz, air, mask);
+                                clearedOther++;
+                            }
+                            if (lc.getBlockState(mut.set(wx, topY + 1, wz)).is(Blocks.SNOW)) {
+                                setPaletteBlockInChunk(level, lc, wx, topY + 1, wz, air, mask);
+                                clearedSnow++;
+                            }
+                            if (baseUnder.is(Blocks.DIRT) || baseUnder.is(Blocks.STONE)
+                                    || baseUnder.is(Blocks.COBBLESTONE) || baseUnder.is(Blocks.DEEPSLATE)) {
+                                Block paint = Blocks.GRASS_BLOCK;
+                                for (net.minecraft.core.Direction hd : net.minecraft.core.Direction.Plane.HORIZONTAL) {
+                                    var nlcP = level.getChunkSource().getChunkNow((wx + hd.getStepX()) >> 4, (wz + hd.getStepZ()) >> 4);
+                                    if (nlcP == null) continue;
+                                    BlockState nsP = nlcP.getBlockState(mut.set(wx + hd.getStepX(), topY - run, wz + hd.getStepZ()));
+                                    if (nsP.is(Blocks.PODZOL) || nsP.is(Blocks.SNOW_BLOCK)
+                                            || nsP.is(Blocks.GRASS_BLOCK) || nsP.is(Blocks.SAND)
+                                            || nsP.is(Blocks.MOSS_BLOCK) || nsP.is(Blocks.COARSE_DIRT)) {
+                                        paint = nsP.getBlock();
+                                        break;
+                                    }
+                                }
+                                BlockState paintSt = paint.defaultBlockState();
+                                boolean snowOnStump = paintSt.hasProperty(BlockStateProperties.SNOWY)
+                                        && isSnowyCell(level, mut.set(wx, topY - run + 1, wz));
+                                if (snowOnStump) {
+                                    paintSt = paintSt.setValue(BlockStateProperties.SNOWY, true);
+                                }
+                                setPaletteBlockInChunk(level, lc, wx, topY - run, wz, paintSt, mask);
+                                if (snowOnStump && lc.getBlockState(mut.set(wx, topY - run + 1, wz)).isAir()) {
+                                    setPaletteBlockInChunk(level, lc, wx, topY - run + 1, wz, Blocks.SNOW.defaultBlockState(), mask);
+                                }
+                            }
+                        }
+                    }
+                }
+                if (mask[0] != 0L) flushChunkSections(level, lc, mask[0]);
+            }
+        }
+
+        // Etape 2 (T305-FINAL-GLOBAL-TREES) : vider tout cache perime SWEEP_ANCHORED et verifier sur l'etat 3D reel final
+        // que CHAQUE amas arbre/feuillage est relie globalement (26-connexite, 0-1 Deque) AU SOL ou A UNE STRUCTURE !
+        // Les arbres normaux (tronc au sol + vide sous les feuilles) sont 100 % conserves ; seuls les amas reellement
+        // suspendus dans les airs sans tronc au sol ni structure sont retires, AVANT le sweep final des flying snow/lianes.
+        SWEEP_ANCHORED.clear();
         it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap leafFinalMasks =
                 new it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap();
-        int lxMin = min.getX() - (terrainRing() + NATURALIZE_EXTRA_RING);
-        int lxMax = max.getX() + (terrainRing() + NATURALIZE_EXTRA_RING);
-        int lzMin = min.getZ() - (terrainRing() + NATURALIZE_EXTRA_RING);
-        int lzMax = max.getZ() + (terrainRing() + NATURALIZE_EXTRA_RING);
-        for (int cx = lxMin >> 4; cx <= lxMax >> 4; cx++) {
-            for (int cz = lzMin >> 4; cz <= lzMax >> 4; cz++) {
+        for (int cx = cx0; cx <= cx1; cx++) {
+            for (int cz = cz0; cz <= cz1; cz++) {
                 if (!deepluckyblock.util.SafeSurface.loaded(level, cx, cz)) continue;
                 net.minecraft.world.level.chunk.LevelChunk lc = level.getChunkSource().getChunkNow(cx, cz);
                 if (lc == null) continue;
@@ -1550,7 +1666,7 @@ public class StructureTerrainPrep {
                 int bx = cx << 4, bz = cz << 4;
                 for (int si = sections.length - 1; si >= 0; si--) {
                     var sec = sections[si];
-                    if (sec == null || sec.hasOnlyAir() || !sec.maybeHas(st -> st.is(net.minecraft.tags.BlockTags.LEAVES))) continue;
+                    if (sec == null || sec.hasOnlyAir() || !sec.maybeHas(StructureTerrainPrep::isTreeClusterBlock)) continue;
                     int sy = lc.getSectionYFromSectionIndex(si) << 4;
                     var states = sec.getStates();
                     for (int ly = 15; ly >= 0; ly--) {
@@ -1558,16 +1674,16 @@ public class StructureTerrainPrep {
                         if (wy < minY || wy > maxY) continue;
                         for (int lz = 0; lz < 16; lz++) {
                             int wz = bz + lz;
-                            if (wz < lzMin || wz > lzMax) continue;
+                            if (wz < z0 || wz > z1) continue;
                             for (int lx = 0; lx < 16; lx++) {
                                 int wx = bx + lx;
-                                if (wx < lxMin || wx > lxMax) continue;
+                                if (wx < x0 || wx > x1) continue;
                                 BlockState s = states.get(lx, ly, lz);
-                                if (!s.is(net.minecraft.tags.BlockTags.LEAVES)) continue;
+                                if (!isTreeClusterBlock(s)) continue;
                                 long pk = BlockPos.asLong(wx, wy, wz);
                                 if (SWEEP_ANCHORED.contains(pk)) continue;
                                 if (!PASTED_OCCUPIED.isEmpty() && PASTED_OCCUPIED.contains(pk)) continue;
-                                if (isFloatingClusterFast(level, wx, wy, wz, s, !PASTED_OCCUPIED.isEmpty(), leafFinalMasks)) {
+                                if (isFloatingClusterFast(level, wx, wy, wz, s, true, leafFinalMasks)) {
                                     clearedOther++;
                                 }
                             }
@@ -1585,6 +1701,7 @@ public class StructureTerrainPrep {
             if (lc != null && m != 0L) flushChunkSections(level, lc, m);
         }
 
+        // Etape 3 : passe finale sur tous les tapis de neige volants, tapis, plantes, lianes orphelines et snowy=true gris
         for (int cx = cx0; cx <= cx1; cx++) {
             for (int cz = cz0; cz <= cz1; cz++) {
                 if (!deepluckyblock.util.SafeSurface.loaded(level, cx, cz)) continue;
@@ -1593,8 +1710,6 @@ public class StructureTerrainPrep {
                 long[] mask = {0L};
                 var sections = lc.getSections();
                 int bx = cx << 4, bz = cz << 4;
-                // Descente du haut vers le bas pour qu'un empilement de tapis flottants
-                // ou une plante double cassée soit purgé proprement en une seule passe.
                 for (int si = sections.length - 1; si >= 0; si--) {
                     var sec = sections[si];
                     if (sec == null || sec.hasOnlyAir() || !sec.maybeHas(HAS_FLYING_CANDIDATE)) continue;
@@ -1702,100 +1817,6 @@ public class StructureTerrainPrep {
                 }
             }
         }
-        // T304-NO-STUMPS : purger toute souche solitaire d'arbre coupe (1 a 2 blocs verticaux de LOGS
-        // sans feuilles ni construction adjacente) dans le collier proche [min-24..max+24].
-        int sx0 = min.getX() - 24, sx1 = max.getX() + 24;
-        int sz0 = min.getZ() - 24, sz1 = max.getZ() + 24;
-        for (int cx = sx0 >> 4; cx <= sx1 >> 4; cx++) {
-            for (int cz = sz0 >> 4; cz <= sz1 >> 4; cz++) {
-                if (!deepluckyblock.util.SafeSurface.loaded(level, cx, cz)) continue;
-                net.minecraft.world.level.chunk.LevelChunk lc = level.getChunkSource().getChunkNow(cx, cz);
-                if (lc == null) continue;
-                long[] mask = {0L};
-                int lx0 = Math.max(0, sx0 - (cx << 4)), lx1 = Math.min(15, sx1 - (cx << 4));
-                int lz0 = Math.max(0, sz0 - (cz << 4)), lz1 = Math.min(15, sz1 - (cz << 4));
-                for (int lx = lx0; lx <= lx1; lx++) {
-                    int wx = (cx << 4) + lx;
-                    for (int lz = lz0; lz <= lz1; lz++) {
-                        int wz = (cz << 4) + lz;
-                        int topY = deepluckyblock.util.SafeSurface.height(
-                                level, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, wx, wz) - 1;
-                        if (topY <= minY) continue;
-                        long topKey = BlockPos.asLong(wx, topY, wz);
-                        if (!PASTED_OCCUPIED.isEmpty() && PASTED_OCCUPIED.contains(topKey)) continue;
-                        BlockState topS = lc.getBlockState(mut.set(wx, topY, wz));
-                        if (!topS.is(net.minecraft.tags.BlockTags.LOGS)) continue;
-                        // Compter la hauteur verticale continue de LOGS sous topY
-                        int run = 1;
-                        while (run <= 3 && topY - run > minY
-                                && lc.getBlockState(mut.set(wx, topY - run, wz)).is(net.minecraft.tags.BlockTags.LOGS)) {
-                            run++;
-                        }
-                        if (run > 2) continue; // vrai tronc >= 3 blocs
-                        // S'assurer que la base repose sur le sol (pas une branche haute d'un chene au-dessus du vide)
-                        BlockState baseUnder = lc.getBlockState(mut.set(wx, topY - run, wz));
-                        if (baseUnder.isAir() || isSurfaceDecor(baseUnder)) continue;
-                        // Verifier qu'il ne fait pas partie d'un decor construit ni d'un buisson feuillu
-                        boolean partOfDecorOrTree = false;
-                        for (int dy = -(run - 1); dy <= 2 && !partOfDecorOrTree; dy++) {
-                            for (int dx = -1; dx <= 1 && !partOfDecorOrTree; dx++) {
-                                for (int dz = -1; dz <= 1 && !partOfDecorOrTree; dz++) {
-                                    if (dx == 0 && dz == 0 && dy <= 0) continue;
-                                    var nlc = level.getChunkSource().getChunkNow((wx + dx) >> 4, (wz + dz) >> 4);
-                                    if (nlc == null) continue;
-                                    BlockState nb = nlc.getBlockState(mut.set(wx + dx, topY + dy, wz + dz));
-                                    if (nb.isAir() || nb.is(Blocks.SNOW)
-                                            || nb.getBlock() instanceof net.minecraft.world.level.block.BushBlock
-                                            || nb.getBlock() instanceof net.minecraft.world.level.block.CarpetBlock) {
-                                        continue;
-                                    }
-                                    if (dy <= 0 && isNaturalTerrain(nb)) continue;
-                                    partOfDecorOrTree = true;
-                                }
-                            }
-                        }
-                        if (!partOfDecorOrTree) {
-                            for (int dy = 0; dy < run; dy++) {
-                                setPaletteBlockInChunk(level, lc, wx, topY - dy, wz, air, mask);
-                                clearedOther++;
-                            }
-                            if (lc.getBlockState(mut.set(wx, topY + 1, wz)).is(Blocks.SNOW)) {
-                                setPaletteBlockInChunk(level, lc, wx, topY + 1, wz, air, mask);
-                                clearedSnow++;
-                            }
-                            // T304-REPAINT-UNDER-STUMP : une souche vanilla avait converti l'herbe en DIRT ;
-                            // maintenant que la souche est retiree, repeindre immediatement le DIRT/STONE a nu !
-                            if (baseUnder.is(Blocks.DIRT) || baseUnder.is(Blocks.STONE)
-                                    || baseUnder.is(Blocks.COBBLESTONE) || baseUnder.is(Blocks.DEEPSLATE)) {
-                                Block paint = Blocks.GRASS_BLOCK;
-                                for (net.minecraft.core.Direction hd : net.minecraft.core.Direction.Plane.HORIZONTAL) {
-                                    var nlcP = level.getChunkSource().getChunkNow((wx + hd.getStepX()) >> 4, (wz + hd.getStepZ()) >> 4);
-                                    if (nlcP == null) continue;
-                                    BlockState nsP = nlcP.getBlockState(mut.set(wx + hd.getStepX(), topY - run, wz + hd.getStepZ()));
-                                    if (nsP.is(Blocks.PODZOL) || nsP.is(Blocks.SNOW_BLOCK)
-                                            || nsP.is(Blocks.GRASS_BLOCK) || nsP.is(Blocks.SAND)
-                                            || nsP.is(Blocks.MOSS_BLOCK) || nsP.is(Blocks.COARSE_DIRT)) {
-                                        paint = nsP.getBlock();
-                                        break;
-                                    }
-                                }
-                                BlockState paintSt = paint.defaultBlockState();
-                                boolean snowOnStump = paintSt.hasProperty(BlockStateProperties.SNOWY)
-                                        && isSnowyCell(level, mut.set(wx, topY - run + 1, wz));
-                                if (snowOnStump) {
-                                    paintSt = paintSt.setValue(BlockStateProperties.SNOWY, true);
-                                }
-                                setPaletteBlockInChunk(level, lc, wx, topY - run, wz, paintSt, mask);
-                                if (snowOnStump && lc.getBlockState(mut.set(wx, topY - run + 1, wz)).isAir()) {
-                                    setPaletteBlockInChunk(level, lc, wx, topY - run + 1, wz, Blocks.SNOW.defaultBlockState(), mask);
-                                }
-                            }
-                        }
-                    }
-                }
-                if (mask[0] != 0L) flushChunkSections(level, lc, mask[0]);
-            }
-        }
         LOGGER.info("[DLB-STRUCTURE] T304-FINAL-FLYING-PASS : {} flying snow carpet(s) supprimees, {} plantes/tapis/souches supprimes, {} snowy=true gris corriges en {} ms",
                 clearedSnow, clearedOther, fixedGrey, System.currentTimeMillis() - tic);
     }
@@ -1810,10 +1831,13 @@ public class StructureTerrainPrep {
         int x0 = min.getX() - margin, x1 = max.getX() + margin;
         int z0 = min.getZ() - margin, z1 = max.getZ() + margin;
         int flyingSnow = 0, bareGreySnowy = 0, floatingLeaves = 0;
-        int nearRingTrees = 0, stumps1to2 = 0, unpaintedFootprintCols = 0, paintedFootprintCols = 0;
+        int nearRingTrees = 0, intactTrees = 0, leaflessTrunks = 0;
+        int stumps1to2 = 0, unpaintedFootprintCols = 0, paintedFootprintCols = 0;
         BlockPos.MutableBlockPos mut = new BlockPos.MutableBlockPos();
         it.unimi.dsi.fastutil.longs.LongOpenHashSet leafVisited = new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
         it.unimi.dsi.fastutil.longs.LongOpenHashSet leafAnchored = new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
+        java.util.ArrayDeque<Long> q = new java.util.ArrayDeque<>(256);
+        it.unimi.dsi.fastutil.longs.LongOpenHashSet seen = new it.unimi.dsi.fastutil.longs.LongOpenHashSet(512);
         for (int x = x0; x <= x1; x++) {
             for (int z = z0; z <= z1; z++) {
                 int cx = x >> 4, cz = z >> 4;
@@ -1855,10 +1879,28 @@ public class StructureTerrainPrep {
                     if (!isOcc && s.is(net.minecraft.tags.BlockTags.LOGS)) {
                         logRun++;
                     } else if (logRun > 0) {
-                        if (inNearRing && logRun >= 4) {
-                            nearRingTrees++;
+                        int topLogY = y - 1;
+                        if (logRun >= 4) {
+                            intactTrees++;
+                            if (inNearRing) nearRingTrees++;
+                            // T305 : verifier qu'aucun tronc d'arbre normal (hors decor construit) n'a ete rase de ses feuilles !
+                            if (!StructureScatterDecor.isInsideDecor(x, z, 2)) {
+                                boolean hasCrown = false;
+                                for (int dy = -2; dy <= 3 && !hasCrown; dy++) {
+                                    for (int dx = -2; dx <= 2 && !hasCrown; dx++) {
+                                        for (int dz = -2; dz <= 2 && !hasCrown; dz++) {
+                                            var nlcC = level.getChunkSource().getChunkNow((x + dx) >> 4, (z + dz) >> 4);
+                                            if (nlcC == null) { hasCrown = true; break; }
+                                            BlockState cs = nlcC.getBlockState(mut.set(x + dx, topLogY + dy, z + dz));
+                                            if (isLeaf(cs) || ((Math.abs(dx) > 0 || Math.abs(dz) > 0) && isLog(cs))) {
+                                                hasCrown = true;
+                                            }
+                                        }
+                                    }
+                                }
+                                if (!hasCrown) leaflessTrunks++;
+                            }
                         } else if ((inNearRing || inBox) && logRun <= 2) {
-                            int topLogY = y - 1;
                             BlockState underLog = lc.getBlockState(mut.set(x, topLogY - logRun, z));
                             if (!underLog.isAir() && !isSurfaceDecor(underLog)) {
                                 boolean attachedToDecorOrLeaves = false;
@@ -1885,52 +1927,51 @@ public class StructureTerrainPrep {
                         logRun = 0;
                     }
                     if (!isOcc && s.is(net.minecraft.tags.BlockTags.LEAVES) && !leafVisited.contains(pk)) {
-                        it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue q = new it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue();
-                        it.unimi.dsi.fastutil.longs.LongOpenHashSet seen = new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
-                        q.enqueue(pk);
+                        q.clear();
+                        seen.clear();
+                        q.addLast(pk);
                         seen.add(pk);
                         boolean anchored = false;
-                        while (!q.isEmpty() && seen.size() < 4096 && !anchored) {
-                            long ck = q.dequeueLong();
+                        while (!q.isEmpty() && seen.size() < 8192 && !anchored) {
+                            long ck = q.removeFirst();
                             int lx = BlockPos.getX(ck), ly = BlockPos.getY(ck), lz = BlockPos.getZ(ck);
                             long downKey = BlockPos.asLong(lx, ly - 1, lz);
-                            if (occ.contains(downKey) || leafAnchored.contains(downKey)) { anchored = true; break; }
-                            var clc = level.getChunkSource().getChunkNow(lx >> 4, lz >> 4);
-                            if (clc == null) { anchored = true; break; }
-                            BlockState curBs = clc.getBlockState(mut.set(lx, ly, lz));
-                            boolean curIsLog = curBs.is(net.minecraft.tags.BlockTags.LOGS);
-                            BlockState belowS = clc.getBlockState(mut.set(lx, ly - 1, lz));
-                            if (!belowS.isAir() && !isSurfaceDecor(belowS) && belowS.blocksMotion()) {
+                            if (occ.contains(downKey) || leafAnchored.contains(downKey)
+                                    || StructureScatterDecor.isInsideDecor(lx, lz, 0)) {
                                 anchored = true;
                                 break;
                             }
-                            for (net.minecraft.core.Direction d : net.minecraft.core.Direction.values()) {
-                                int nx = lx + d.getStepX(), ny = ly + d.getStepY(), nz = lz + d.getStepZ();
-                                long nk = BlockPos.asLong(nx, ny, nz);
-                                if (occ.contains(nk) || leafAnchored.contains(nk)) { anchored = true; break; }
-                                if (!seen.add(nk)) continue;
-                                var nlc = level.getChunkSource().getChunkNow(nx >> 4, nz >> 4);
-                                if (nlc == null) { anchored = true; break; }
-                                BlockState ns = nlc.getBlockState(mut.set(nx, ny, nz));
-                                if (ns.is(net.minecraft.tags.BlockTags.LEAVES) || ns.is(net.minecraft.tags.BlockTags.LOGS)) {
-                                    q.enqueue(nk);
+                            var clc = level.getChunkSource().getChunkNow(lx >> 4, lz >> 4);
+                            if (clc == null) { anchored = true; break; }
+                            BlockState belowS = clc.getBlockState(mut.set(lx, ly - 1, lz));
+                            if (!belowS.isAir() && !isSurfaceDecor(belowS) && belowS.blocksMotion()) {
+                                if (!isLooseSurface(belowS) || !clc.getBlockState(mut.set(lx, ly - 2, lz)).isAir()) {
+                                    anchored = true;
+                                    break;
                                 }
                             }
-                            if (curIsLog && !anchored) {
-                                for (int dx = -1; dx <= 1 && !anchored; dx++) {
-                                    for (int dy = -1; dy <= 1 && !anchored; dy++) {
-                                        for (int dz = -1; dz <= 1; dz++) {
-                                            if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) <= 1) continue;
-                                            int nx = lx + dx, ny = ly + dy, nz = lz + dz;
-                                            long nk = BlockPos.asLong(nx, ny, nz);
-                                            if (leafAnchored.contains(nk)) { anchored = true; break; }
-                                            if (!seen.add(nk)) continue;
-                                            var nlc = level.getChunkSource().getChunkNow(nx >> 4, nz >> 4);
-                                            if (nlc == null) { anchored = true; break; }
-                                            BlockState ns = nlc.getBlockState(mut.set(nx, ny, nz));
-                                            if (ns.is(net.minecraft.tags.BlockTags.LOGS)) {
-                                                q.enqueue(nk);
-                                            }
+                            // T305 : connexite 26 sur la globalite arbre (LOGS + LEAVES + champignons/racines) + 0-1 Deque vers le tronc/sol
+                            for (int dx = -1; dx <= 1 && !anchored; dx++) {
+                                for (int dy = -1; dy <= 1 && !anchored; dy++) {
+                                    for (int dz = -1; dz <= 1 && !anchored; dz++) {
+                                        if (dx == 0 && dy == 0 && dz == 0) continue;
+                                        int nx = lx + dx, ny = ly + dy, nz = lz + dz;
+                                        long nk = BlockPos.asLong(nx, ny, nz);
+                                        if (occ.contains(nk) || leafAnchored.contains(nk)) { anchored = true; break; }
+                                        boolean ortho = (Math.abs(dx) + Math.abs(dy) + Math.abs(dz)) == 1;
+                                        if (ortho && StructureScatterDecor.isInsideDecor(nx, nz, 0)) { anchored = true; break; }
+                                        var nlc = (nx >> 4 == lx >> 4 && nz >> 4 == lz >> 4)
+                                                ? clc : level.getChunkSource().getChunkNow(nx >> 4, nz >> 4);
+                                        if (nlc == null) { anchored = true; break; }
+                                        BlockState ns = nlc.getBlockState(mut.set(nx, ny, nz));
+                                        if (ns.isAir()) continue;
+                                        if (ortho && !isSurfaceDecor(ns) && !isNaturalTerrain(ns) && ns.blocksMotion()) {
+                                            anchored = true;
+                                            break;
+                                        }
+                                        if (isTreeClusterBlock(ns) && seen.add(nk)) {
+                                            if (isLog(ns) || dy < 0) q.addFirst(nk);
+                                            else q.addLast(nk);
                                         }
                                     }
                                 }
@@ -1952,13 +1993,14 @@ public class StructureTerrainPrep {
                         }
                     }
                 }
-                if (logRun >= 4 && inNearRing) {
-                    nearRingTrees++;
+                if (logRun >= 4) {
+                    intactTrees++;
+                    if (inNearRing) nearRingTrees++;
                 }
             }
         }
-        LOGGER.info("[T304-AUDIT] flyingSnow={} bareGreySnowy={} floatingLeaves={} nearRingTrees={} stumps1to2={} paintedFootprintCols={} unpaintedFootprintCols={}",
-                flyingSnow, bareGreySnowy, floatingLeaves, nearRingTrees, stumps1to2, paintedFootprintCols, unpaintedFootprintCols);
+        LOGGER.info("[T304-AUDIT] flyingSnow={} bareGreySnowy={} floatingLeaves={} nearRingTrees={} intactTrees={} leaflessTrunks={} stumps1to2={} paintedFootprintCols={} unpaintedFootprintCols={}",
+                flyingSnow, bareGreySnowy, floatingLeaves, nearRingTrees, intactTrees, leaflessTrunks, stumps1to2, paintedFootprintCols, unpaintedFootprintCols);
     }
 
     // ------------------------------------------------------------------
@@ -3487,6 +3529,7 @@ public class StructureTerrainPrep {
         int surfY = deepluckyblock.util.SafeSurface.height(level, Heightmap.Types.WORLD_SURFACE, x, z);
         int top = Math.min(surfY + 25, level.getMaxBuildHeight() - 1);
         int bot = Math.max(surfY - 25, minB);
+        it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap dirtyMasks = null;
         for (int y = top; y >= bot; y--) {
             BlockState s = level.getBlockState(mut.set(x, y, z));
             if (s.isAir()) continue;
@@ -3496,8 +3539,30 @@ public class StructureTerrainPrep {
                 if (lvl > 0) { level.setBlock(mut, Blocks.WATER.defaultBlockState(), FAST_FLAG); counters[1]++; }
                 continue;
             }
+            // T305 : NE JAMAIS juger les feuilles/buches d'un arbre par le vide en dessous (isFloatingFoliage) !
+            // Un arbre normal a du vide sous son houppier mais est relie globalement a son tronc/sol ou a une structure.
+            if (isTreeClusterBlock(s)) {
+                long pk = BlockPos.asLong(x, y, z);
+                if (!SWEEP_ANCHORED.contains(pk)) {
+                    if (dirtyMasks == null) dirtyMasks = new it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap(4);
+                    if (isFloatingClusterFast(level, x, y, z, s, false, dirtyMasks)) {
+                        counters[0]++;
+                    }
+                }
+                continue;
+            }
             if (isDecoration(s) && !isLooseSurface(s) && isFloatingFoliage(level, mut, x, y, z)) {
                 level.setBlock(mut.set(x, y, z), Blocks.AIR.defaultBlockState(), FAST_FLAG); counters[0]++;
+            }
+        }
+        if (dirtyMasks != null && !dirtyMasks.isEmpty()) {
+            var it = dirtyMasks.long2LongEntrySet().fastIterator();
+            while (it.hasNext()) {
+                var e = it.next();
+                long cKey = e.getLongKey();
+                net.minecraft.world.level.chunk.LevelChunk lc = level.getChunkSource().getChunkNow(
+                        net.minecraft.world.level.ChunkPos.getX(cKey), net.minecraft.world.level.ChunkPos.getZ(cKey));
+                if (lc != null) flushChunkSections(level, lc, e.getLongValue());
             }
         }
     }
@@ -3993,9 +4058,28 @@ public class StructureTerrainPrep {
                 if (isGroundStop(state) || moddedGround) { floor = y; break; }
             }
             if (top - 1 <= floor) continue;
+            // T305 : dans la frange externe de 5 blocs de STREAM_CLEAR, si la colonne ne contient AUCUN tronc,
+            // ne pas trancher au couteau les feuilles en surplomb (y >= floor + 3) d'arbres normaux situes juste
+            // a l'exterieur de STREAM_CLEAR ! Si ces feuilles appartenaient a un tronc interieur supprime,
+            // sweepFloatingNaturalPass constatera que la globalite n'a plus de tronc et retirera l'amas proprement.
+            boolean inOuterBorderRim = hasClearBox && (x < STREAM_CLEAR_X0 + 5 || x > STREAM_CLEAR_X1 - 5
+                    || z < STREAM_CLEAR_Z0 + 5 || z > STREAM_CLEAR_Z1 - 5);
+            boolean hasLogInCol = false;
+            if (inOuterBorderRim) {
+                for (int y = floor + 1; y < top; y++) {
+                    if (isLog(readBlock(level, streamChunk, m, x, y, z))) {
+                        hasLogInCol = true;
+                        break;
+                    }
+                }
+            }
             for (int y = top - 1; y > floor; y--) {
                 BlockState state = readBlock(level, streamChunk, m, x, y, z);
                 if (state.is(Blocks.WATER) || state.is(Blocks.LAVA)) continue;
+                if (inOuterBorderRim && !hasLogInCol && y >= floor + 3) {
+                    if (isLeaf(state)) continue;
+                    if (state.is(Blocks.SNOW) && isLeaf(readBlock(level, streamChunk, m, x, y - 1, z))) continue;
+                }
                 if (!state.isAir()) {
                     if (streamLc != null) {
                         if (setPaletteBlockInChunk(level, streamLc, x, y, z, airState, touchedMask)) removed++;
@@ -10318,8 +10402,12 @@ public class StructureTerrainPrep {
                         }
                         if (ok) {
                             planted++;
-                            for (int dy = 0; dy <= 12; dy++)
-                                SWEEP_ANCHORED.add(BlockPos.asLong(x, y + dy, z));
+                            BlockPos.MutableBlockPos mLog = new BlockPos.MutableBlockPos();
+                            for (int dy = 0; dy <= 16; dy++) {
+                                if (isLog(level.getBlockState(mLog.set(x, y + dy, z)))) {
+                                    SWEEP_ANCHORED.add(BlockPos.asLong(x, y + dy, z));
+                                }
+                            }
                             for (int dx = -1; dx <= 1; dx++)
                                 for (int dz = -1; dz <= 1; dz++) {
                                     visited.add(colKey(x + dx, z + dz));
@@ -10346,23 +10434,32 @@ public class StructureTerrainPrep {
         }
     }
 
-    /** T261 / T304 : purge le cylindre du futur tronc (1x1 ou 2x2 pour mega_spruce/dark_oak/mega_jungle)
-     *  avant un replant — retire les couches Blocks.SNOW, petites plantes ET toute souche residuelle coupee
-     *  d'1-3 blocs qui empechait Feature.TREE de se poser ! */
+    /** T261 / T304 / T305 : degage uniquement l'encombrement au sol du futur tronc (1x1 ou 2x2)
+     *  — Blocks.SNOW, petites plantes (BushBlock/CarpetBlock) et souche coupee d'1-2 blocs a la base —
+     *  SANS JAMAIS trouer les feuilles (LEAVES) ni les branches des arbres voisins deja intacts
+     *  (TreeFeature.validTreePos accepte deja nativement BlockTags.LEAVES !). */
     private static void clearTrunkColumn(ServerLevel level, BlockPos plantPos, String variant) {
         boolean wide = "mega_spruce".equals(variant) || "mega_jungle".equals(variant) || "dark_oak".equals(variant);
-        int top = wide ? 10 : 7;
         int span = wide ? 1 : 0;
         BlockPos.MutableBlockPos mut = new BlockPos.MutableBlockPos();
         for (int dx = 0; dx <= span; dx++) {
             for (int dz = 0; dz <= span; dz++) {
                 int px = plantPos.getX() + dx, pz = plantPos.getZ() + dz;
-                for (int dy = 0; dy < top; dy++) {
-                    int py = plantPos.getY() + dy;
+                int baseY = plantPos.getY();
+                // Si une souche coupee d'1-2 blocs (sans tronc continu au-dessus) bloque la base, la retirer
+                boolean shortStump = isLog(level.getBlockState(mut.set(px, baseY, pz)))
+                        && !isLog(level.getBlockState(mut.set(px, baseY + 2, pz)))
+                        && !isLog(level.getBlockState(mut.set(px, baseY + 3, pz)));
+                for (int dy = 0; dy < 4; dy++) {
+                    int py = baseY + dy;
                     if (!PASTED_OCCUPIED.isEmpty() && PASTED_OCCUPIED.contains(BlockPos.asLong(px, py, pz))) break;
                     BlockState s = level.getBlockState(mut.set(px, py, pz));
-                    if (s.isAir()) continue;
-                    if (s.is(Blocks.SNOW) || s.canBeReplaced() || isSurfaceDecor(s)) {
+                    if (s.isAir() || isLeaf(s)) continue;
+                    if (s.is(Blocks.SNOW) || s.canBeReplaced()
+                            || s.getBlock() instanceof net.minecraft.world.level.block.BushBlock
+                            || s.getBlock() instanceof net.minecraft.world.level.block.CarpetBlock
+                            || s.getBlock() instanceof net.minecraft.world.level.block.PinkPetalsBlock
+                            || (shortStump && dy <= 1 && isLog(s))) {
                         level.setBlock(mut, Blocks.AIR.defaultBlockState(), FAST_FLAG);
                     } else {
                         break;
@@ -13226,11 +13323,11 @@ public class StructureTerrainPrep {
         }
     }
 
-    /** T45 / T304 : taille maximale de l'amas naturel explore (rehausse a 2048 pour grandes couronnes d'epiceas). */
-    private static final int SWEEP_CLUSTER_MAX = 2048;
+    /** T45 / T305 : taille maximale de l'amas d'arbre explore (8192 couvre meme un bosquet entier de mega_spruce/dark_oak). */
+    private static final int SWEEP_CLUSTER_MAX = 8192;
 
-    /** T69 / T304 : budget de temps pour l'exploration d'UN amas (ms). */
-    private static final long CLUSTER_BUDGET_MS = 45;
+    /** T69 / T305 : budget de temps pour l'exploration d'UN amas (ms). */
+    private static final long CLUSTER_BUDGET_MS = 50;
 
     /** T69 : nombre d'amas non verifies faute de temps (conservee = non supprimee). */
     private static final java.util.concurrent.atomic.AtomicInteger CLUSTER_TIMEOUTS =
@@ -13239,17 +13336,53 @@ public class StructureTerrainPrep {
     /** T45 : blocs dont on sait deja que leur amas est ANCRE (donc conserves). */
     private static final it.unimi.dsi.fastutil.longs.LongOpenHashSet SWEEP_ANCHORED =
             new it.unimi.dsi.fastutil.longs.LongOpenHashSet(8192);
-    private static final it.unimi.dsi.fastutil.longs.LongOpenHashSet BFS_SEEN =
-            new it.unimi.dsi.fastutil.longs.LongOpenHashSet(1024);
-    private static final it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue BFS_QUEUE =
-            new it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue(1024);
+    // T305-PERF : table de visite O(1) par generation (seenGen++ = 1 cycle CPU au lieu d'Arrays.fill sur 25 000 feuilles !)
+    private static final int SEEN_CAP = 1 << 16;
+    private static final int SEEN_MASK = SEEN_CAP - 1;
+    private static final long[] SEEN_KEYS = new long[SEEN_CAP];
+    private static final int[] SEEN_STAMP = new int[SEEN_CAP];
+    private static int seenGen = 1;
+    // T305-PERF : 0-1 Deque primitif long[] (zero boxing Long.valueOf !)
+    private static final int DEQUE_CAP = 1 << 16;
+    private static final int DEQUE_MASK = DEQUE_CAP - 1;
+    private static final long[] DEQUE_BUF = new long[DEQUE_CAP];
     private static final it.unimi.dsi.fastutil.longs.LongArrayList BFS_CLUSTER =
-            new it.unimi.dsi.fastutil.longs.LongArrayList(512);
+            new it.unimi.dsi.fastutil.longs.LongArrayList(1024);
+    private static final BlockPos.MutableBlockPos BFS_MUT = new BlockPos.MutableBlockPos();
+
+    private static boolean markSeenFast(long k) {
+        int idx = (int) it.unimi.dsi.fastutil.HashCommon.mix(k) & SEEN_MASK;
+        while (SEEN_STAMP[idx] == seenGen) {
+            if (SEEN_KEYS[idx] == k) return false;
+            idx = (idx + 1) & SEEN_MASK;
+        }
+        SEEN_STAMP[idx] = seenGen;
+        SEEN_KEYS[idx] = k;
+        return true;
+    }
 
     /**
-     * T45 / T304-FAST -- l'amas naturel contenant (x,y,z) flotte-t-il ?
-     * Si oui (aucun bloc de l'amas ne repose sur un bloc plein ni ne touche un bloc de structure),
-     * supprime immediatement TOUT l'amas connexe en ecriture directe LevelChunkSection (+ neige posee dessus) !
+     * T305 : reconnait tous les blocs constitutifs d'un arbre / grand champignon / paletuvier.
+     * Un arbre normal possede un tronc relie au sol et un houppier de feuilles avec du vide en dessous :
+     * toute la composante connexe 26-voisine de ces blocs forme UNE SEULE globalite d'arbre.
+     */
+    private static boolean isTreeClusterBlock(BlockState s) {
+        return isLog(s) || isLeaf(s)
+                || s.getBlock() instanceof net.minecraft.world.level.block.HugeMushroomBlock
+                || s.is(net.minecraft.tags.BlockTags.WART_BLOCKS)
+                || s.is(Blocks.MUSHROOM_STEM) || s.is(Blocks.SHROOMLIGHT)
+                || s.is(Blocks.MANGROVE_ROOTS) || s.is(Blocks.BEE_NEST)
+                || s.is(Blocks.COCOA);
+    }
+
+    /**
+     * T45 / T304 / T305-GLOBAL-TREE -- verifie si LA GLOBALITE de l'amas (tronc + branches + feuilles)
+     * est reliee AU SOL ou A UNE STRUCTURE (structure principale PASTED_OCCUPIED, mini-structure
+     * StructureScatterDecor, ou tout bloc bati non naturel).
+     * - Pour un arbre/feuillage (treeMode) : parcours 0-1 Deque primitif en 26-connexite qui plonge en priorite
+     *   vers les buches (LOGS) et vers le bas (dy < 0) -> atteint le sol en ~15 etapes (< 1 us) et
+     *   CONSERVE 100 % des feuilles d'arbres normaux meme lorsqu'il y a du vide sous le houppier !
+     * - Ne supprime l'amas QUE si la globalite entiere a ete inspectee et n'est reliee ni au sol ni a une structure.
      */
     private static boolean isFloatingClusterFast(ServerLevel level, int sx, int sy, int sz, BlockState start,
                                                  boolean includeFootprint,
@@ -13258,24 +13391,34 @@ public class StructureTerrainPrep {
         long startKey = BlockPos.asLong(sx, sy, sz);
         if (!PASTED_OCCUPIED.isEmpty() && PASTED_OCCUPIED.contains(startKey)) return false;
         if (SWEEP_ANCHORED.contains(startKey)) return false;
-        BFS_SEEN.clear();
-        BFS_QUEUE.clear();
+        boolean treeMode = isTreeClusterBlock(start);
+        if (treeMode && StructureScatterDecor.isInsideDecor(sx, sz, 0)) {
+            SWEEP_ANCHORED.add(startKey);
+            return false;
+        }
+        if (++seenGen == Integer.MAX_VALUE) {
+            java.util.Arrays.fill(SEEN_STAMP, 0);
+            seenGen = 1;
+        }
+        int dqHead = 0, dqTail = 0;
         BFS_CLUSTER.clear();
-        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-        BFS_QUEUE.enqueue(startKey);
-        BFS_SEEN.add(startKey);
+        BlockPos.MutableBlockPos m = BFS_MUT;
+        DEQUE_BUF[dqTail] = startKey;
+        dqTail = (dqTail + 1) & DEQUE_MASK;
+        markSeenFast(startKey);
         BFS_CLUSTER.add(startKey);
         int visited = 0;
         long clusterT0 = System.currentTimeMillis();
         int lastCx = Integer.MIN_VALUE, lastCz = Integer.MIN_VALUE;
         ChunkAccess lastChunk = null;
-        while (!BFS_QUEUE.isEmpty() && visited < SWEEP_CLUSTER_MAX) {
-            if ((visited & 31) == 0 && System.currentTimeMillis() - clusterT0 > CLUSTER_BUDGET_MS) {
+        while (dqHead != dqTail && visited < SWEEP_CLUSTER_MAX) {
+            if ((visited & 63) == 0 && System.currentTimeMillis() - clusterT0 > CLUSTER_BUDGET_MS) {
                 CLUSTER_TIMEOUTS.incrementAndGet();
                 SWEEP_ANCHORED.addAll(BFS_CLUSTER);
                 return false;
             }
-            long pk = BFS_QUEUE.dequeueLong();
+            long pk = DEQUE_BUF[dqHead];
+            dqHead = (dqHead + 1) & DEQUE_MASK;
             int x = BlockPos.getX(pk), y = BlockPos.getY(pk), z = BlockPos.getZ(pk);
             visited++;
             int cx = x >> 4, cz = z >> 4;
@@ -13289,91 +13432,133 @@ public class StructureTerrainPrep {
                 SWEEP_ANCHORED.addAll(BFS_CLUSTER);
                 return false;
             }
+            if (treeMode && StructureScatterDecor.isInsideDecor(x, z, 0)) {
+                SWEEP_ANCHORED.addAll(BFS_CLUSTER);
+                return false;
+            }
             BlockState below = readBlock(level, lastChunk, m, x, y - 1, z);
             if (!below.isAir() && below.blocksMotion() && !isSurfaceDecor(below)) {
-                SWEEP_ANCHORED.addAll(BFS_CLUSTER);
-                return false;
-            }
-            if (!below.isAir() && below.blocksMotion() && SWEEP_ANCHORED.contains(belowKey)) {
-                SWEEP_ANCHORED.addAll(BFS_CLUSTER);
-                return false;
-            }
-            BlockState curBs = readBlock(level, lastChunk, m, x, y, z);
-            boolean curIsLog = curBs.is(net.minecraft.tags.BlockTags.LOGS);
-            for (net.minecraft.core.Direction d : net.minecraft.core.Direction.values()) {
-                int nx = x + d.getStepX(), ny = y + d.getStepY(), nz = z + d.getStepZ();
-                long k = BlockPos.asLong(nx, ny, nz);
-                if (!PASTED_OCCUPIED.isEmpty() && PASTED_OCCUPIED.contains(k)) {
-                    // Tout feuillage/liane touchant un bloc de la structure est ancre (decor architectural intact) !
+                // Eviter qu'une motte de terre volante d'1 bloc en plein ciel passe pour le "sol" d'un arbre coupe
+                if (!treeMode || !isLooseSurface(below) || !readBlock(level, lastChunk, m, x, y - 2, z).isAir()) {
                     SWEEP_ANCHORED.addAll(BFS_CLUSTER);
                     return false;
                 }
-                if (SWEEP_ANCHORED.contains(k)) {
-                    SWEEP_ANCHORED.addAll(BFS_CLUSTER);
-                    return false;
-                }
-                if (!BFS_SEEN.add(k)) continue;
-                int ncx = nx >> 4, ncz = nz >> 4;
-                ChunkAccess nChunk = (ncx == lastCx && ncz == lastCz)
-                        ? lastChunk : deepluckyblock.util.SafeSurface.chunkFor(level, ncx, ncz);
-                if (nChunk == null) {
-                    return false;
-                }
-                BlockState n = readBlock(level, nChunk, m, nx, ny, nz);
-                if (n.isAir()) continue;
-                if (!isSurfaceDecor(n)) {
-                    if (d == net.minecraft.core.Direction.DOWN && n.blocksMotion()) {
-                        SWEEP_ANCHORED.addAll(BFS_CLUSTER);
-                        return false;
-                    }
-                    if (isProtected(nx, nz) && n.blocksMotion() && !isNaturalTerrain(n)) {
-                        SWEEP_ANCHORED.addAll(BFS_CLUSTER);
-                        return false;
-                    }
-                    continue;
-                }
-                if (n.is(Blocks.SNOW)
-                        || n.getBlock() instanceof net.minecraft.world.level.block.BushBlock
-                        || n.getBlock() instanceof net.minecraft.world.level.block.CarpetBlock
-                        || n.getBlock() instanceof net.minecraft.world.level.block.PinkPetalsBlock
-                        || n.getBlock() instanceof net.minecraft.world.level.block.VineBlock
-                        || n.getBlock() instanceof net.minecraft.world.level.block.GrowingPlantBlock
-                        || n.is(Blocks.GLOW_LICHEN) || n.is(Blocks.HANGING_ROOTS)) {
-                    continue;
-                }
-                BFS_QUEUE.enqueue(k);
-                BFS_CLUSTER.add(k);
             }
-            // T304 : seules les BUCHES de branches diagonales (fancy_oak / acacia / cherry) se connectent en diagonale a d'autres LOGS
-            if (curIsLog) {
+            if (!below.isAir() && below.blocksMotion() && SWEEP_ANCHORED.contains(belowKey)
+                    && (!treeMode || isTreeClusterBlock(below))) {
+                SWEEP_ANCHORED.addAll(BFS_CLUSTER);
+                return false;
+            }
+            if (treeMode) {
+                // T305 : 26-connexite sur toute la globalite arbre (tronc + branches diagonales + feuilles en coin)
                 for (int dx = -1; dx <= 1; dx++) {
                     for (int dy = -1; dy <= 1; dy++) {
                         for (int dz = -1; dz <= 1; dz++) {
-                            if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) <= 1) continue;
+                            if (dx == 0 && dy == 0 && dz == 0) continue;
                             int nx = x + dx, ny = y + dy, nz = z + dz;
                             long k = BlockPos.asLong(nx, ny, nz);
-                            if (SWEEP_ANCHORED.contains(k)) {
+                            if (!PASTED_OCCUPIED.isEmpty() && PASTED_OCCUPIED.contains(k)) {
                                 SWEEP_ANCHORED.addAll(BFS_CLUSTER);
                                 return false;
                             }
-                            if (!BFS_SEEN.add(k)) continue;
+                            boolean ortho = (Math.abs(dx) + Math.abs(dy) + Math.abs(dz)) == 1;
+                            if (ortho && StructureScatterDecor.isInsideDecor(nx, nz, 0)) {
+                                SWEEP_ANCHORED.addAll(BFS_CLUSTER);
+                                return false;
+                            }
                             int ncx = nx >> 4, ncz = nz >> 4;
                             ChunkAccess nChunk = (ncx == lastCx && ncz == lastCz)
                                     ? lastChunk : deepluckyblock.util.SafeSurface.chunkFor(level, ncx, ncz);
                             if (nChunk == null) {
+                                // Bord de chunk non charge : ne JAMAIS supprimer par erreur les feuilles d'un arbre externe !
                                 return false;
                             }
                             BlockState n = readBlock(level, nChunk, m, nx, ny, nz);
-                            if (n.is(net.minecraft.tags.BlockTags.LOGS)) {
-                                BFS_QUEUE.enqueue(k);
-                                BFS_CLUSTER.add(k);
+                            if (n.isAir()) continue;
+                            if (ortho && !isSurfaceDecor(n)) {
+                                // Tout bloc bati / structurel (planches, pierres taillees, murets, barrieres, etc.) ancre le feuillage
+                                if (n.blocksMotion() && !isNaturalTerrain(n)) {
+                                    SWEEP_ANCHORED.addAll(BFS_CLUSTER);
+                                    return false;
+                                }
+                                continue;
+                            }
+                            if (isTreeClusterBlock(n)) {
+                                if (SWEEP_ANCHORED.contains(k)) {
+                                    SWEEP_ANCHORED.addAll(BFS_CLUSTER);
+                                    return false;
+                                }
+                                if (markSeenFast(k)) {
+                                    if (((dqTail - dqHead) & DEQUE_MASK) >= DEQUE_CAP - 32) {
+                                        SWEEP_ANCHORED.addAll(BFS_CLUSTER);
+                                        return false;
+                                    }
+                                    BFS_CLUSTER.add(k);
+                                    if (isLog(n) || dy < 0) {
+                                        dqHead = (dqHead - 1) & DEQUE_MASK;
+                                        DEQUE_BUF[dqHead] = k;
+                                    } else {
+                                        DEQUE_BUF[dqTail] = k;
+                                        dqTail = (dqTail + 1) & DEQUE_MASK;
+                                    }
+                                }
                             }
                         }
                     }
                 }
+            } else {
+                for (net.minecraft.core.Direction d : net.minecraft.core.Direction.values()) {
+                    int nx = x + d.getStepX(), ny = y + d.getStepY(), nz = z + d.getStepZ();
+                    long k = BlockPos.asLong(nx, ny, nz);
+                    if (!PASTED_OCCUPIED.isEmpty() && PASTED_OCCUPIED.contains(k)) {
+                        SWEEP_ANCHORED.addAll(BFS_CLUSTER);
+                        return false;
+                    }
+                    int ncx = nx >> 4, ncz = nz >> 4;
+                    ChunkAccess nChunk = (ncx == lastCx && ncz == lastCz)
+                            ? lastChunk : deepluckyblock.util.SafeSurface.chunkFor(level, ncx, ncz);
+                    if (nChunk == null) {
+                        return false;
+                    }
+                    BlockState n = readBlock(level, nChunk, m, nx, ny, nz);
+                    if (n.isAir()) continue;
+                    if (!isSurfaceDecor(n)) {
+                        if (d == net.minecraft.core.Direction.DOWN && n.blocksMotion()) {
+                            SWEEP_ANCHORED.addAll(BFS_CLUSTER);
+                            return false;
+                        }
+                        if (n.blocksMotion() && !isNaturalTerrain(n)) {
+                            SWEEP_ANCHORED.addAll(BFS_CLUSTER);
+                            return false;
+                        }
+                        continue;
+                    }
+                    if (SWEEP_ANCHORED.contains(k) && !isTreeClusterBlock(n)) {
+                        SWEEP_ANCHORED.addAll(BFS_CLUSTER);
+                        return false;
+                    }
+                    if (!markSeenFast(k)) continue;
+                    if (n.is(Blocks.SNOW)
+                            || n.getBlock() instanceof net.minecraft.world.level.block.BushBlock
+                            || n.getBlock() instanceof net.minecraft.world.level.block.CarpetBlock
+                            || n.getBlock() instanceof net.minecraft.world.level.block.PinkPetalsBlock
+                            || n.getBlock() instanceof net.minecraft.world.level.block.VineBlock
+                            || n.getBlock() instanceof net.minecraft.world.level.block.GrowingPlantBlock
+                            || n.is(Blocks.GLOW_LICHEN) || n.is(Blocks.HANGING_ROOTS)
+                            || isTreeClusterBlock(n)) {
+                        continue;
+                    }
+                    if (((dqTail - dqHead) & DEQUE_MASK) >= DEQUE_CAP - 32) {
+                        SWEEP_ANCHORED.addAll(BFS_CLUSTER);
+                        return false;
+                    }
+                    DEQUE_BUF[dqTail] = k;
+                    dqTail = (dqTail + 1) & DEQUE_MASK;
+                    BFS_CLUSTER.add(k);
+                }
             }
         }
-        if (!BFS_QUEUE.isEmpty()) {
+        if (dqHead != dqTail) {
             SWEEP_ANCHORED.addAll(BFS_CLUSTER);
             return false;
         }
@@ -13431,9 +13616,11 @@ public class StructureTerrainPrep {
         long belowKey = BlockPos.asLong(x, y - 1, z);
         if (!PASTED_OCCUPIED.isEmpty() && PASTED_OCCUPIED.contains(belowKey)) return true;
         BlockState below = readBlock(level, chunk, mut, x, y - 1, z);
-        if (!below.isAir() && below.blocksMotion()
-                && (!isSurfaceDecor(below) || SWEEP_ANCHORED.contains(belowKey))) {
-            return true;
+        if (!below.isAir() && below.blocksMotion()) {
+            if (!isSurfaceDecor(below)) return true;
+            if (SWEEP_ANCHORED.contains(belowKey) && (!isTreeClusterBlock(s) || isTreeClusterBlock(below))) {
+                return true;
+            }
         }
         boolean lateral = s.getBlock() instanceof net.minecraft.world.level.block.VineBlock
                 || s.is(Blocks.GLOW_LICHEN) || s.is(Blocks.HANGING_ROOTS)
