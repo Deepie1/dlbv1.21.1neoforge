@@ -274,7 +274,7 @@ public final class CustomEnchantment {
     // CONFLITS (remplace checkCompatibility) — table d'origine 1.20.1
     // ══════════════════════════════════════════════════════════════════════
     private static final Set<String> PHASING_ALLOWED = Set.of(
-            "phasing", "steady_shot", "ranger", "inverted_arrows",
+            "phasing", "steady_shot", "ranger", "quick_charge", "inverted_arrows",
             "instant_shot", "point_shoot", "weak_force", "retrieval",
             "unbreaking", "mending");
     private static final Set<String> PIERCE_UNSAFE = Set.of(
@@ -301,6 +301,7 @@ public final class CustomEnchantment {
                 || (pb.equals("toy") && TOY_UNSAFE.contains(pa))) return false;
         if (pair(pa, pb, "water_arrow", "dry_arrow")
                 || pair(pa, pb, "infinity", "retrieval")
+                || pair(pa, pb, "pierce", "piercing")
                 || pair(pa, pb, "sniper", "weak_force")
                 || pair(pa, pb, "storm_strike", "thunderstruck")
                 || pair(pa, pb, "ricochet", "bounce")

@@ -75,10 +75,12 @@ public abstract class HumanoidArmorLayerEnchantMixin {
                                            CallbackInfo ci) {
         try {
             var piece = livingEntity.getItemBySlot(slot);
-            EnchantAura.capture(piece);
+            boolean armorProcWindow = livingEntity.hurtTime > 0;
+            EnchantAura.captureWithFlash(piece, armorProcWindow, livingEntity.tickCount / 10, true);
             if (EnchantAura.DEBUG && EnchantAura.DEBUG_VERBOSE) {
                 System.out.println("[MIXIN] renderArmorPiece() HEAD slot=" + slot
                         + " item=" + (piece == null ? "null" : piece.getItem().getDescriptionId())
+                        + " hurt=" + armorProcWindow
                         + " captée=" + Integer.toHexString(EnchantAura.currentRgb()));
             }
         } catch (Throwable t) {

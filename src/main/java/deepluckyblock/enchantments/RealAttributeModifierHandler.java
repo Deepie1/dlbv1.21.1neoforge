@@ -346,10 +346,11 @@ public final class RealAttributeModifierHandler {
         addArmor(event, Attributes.FALL_DAMAGE_MULTIPLIER, "gale_step",
                 -Math.min(0.75, 0.20 * lvl(stack, "gale_step")), SPEED_MULT, group, slot);
 
-        // T306-OVERHAUL : Pas Surélevé (High Step) -> vrai STEP_HEIGHT natif (+0.5 bloc/niv, plafonné à +3.0)
+        // T310-UNIQUE : Marche-Pente (high_step, Bottes) -> foulée tout-terrain (+0.45 STEP_HEIGHT fixe + +3 %/niv vitesse, couplé à l'élan en montée)
         int highStep = lvl(stack, "high_step");
         if (highStep > 0) {
-            addArmor(event, Attributes.STEP_HEIGHT, "high_step", Math.min(3.0, 0.5 * highStep), ADD, group, slot);
+            addArmor(event, Attributes.STEP_HEIGHT, "high_step", 0.45, ADD, group, slot);
+            addArmor(event, Attributes.MOVEMENT_SPEED, "high_step", 0.03 * highStep, SPEED_MULT, group, slot);
         }
         // T307-STEP : Famille Jambières "Grand Pas" (big_step) -> "Pas de Géant" (giant_step)
         // Base vanilla STEP_HEIGHT = 0.6 (plafond RangedAttribute vanilla = 10.0) :

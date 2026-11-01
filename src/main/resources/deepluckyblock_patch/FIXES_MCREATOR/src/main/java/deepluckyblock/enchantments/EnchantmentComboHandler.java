@@ -265,9 +265,10 @@ public final class EnchantmentComboHandler {
             player.fallDistance = 0.0F;
         }
 
-        // #092 Pluie Cataclysmique : Bullet-Time aérien à l'arc
+        // #092 Pluie Cataclysmique : Bullet-Time aérien à l'arc ou à l'arbalète
         if (mask.has(IDX_PLUIE_CATACLYSMIQUE) && !player.onGround()
-                && player.isUsingItem() && player.getUseItem().is(Items.BOW)) {
+                && player.isUsingItem()
+                && (player.getUseItem().is(Items.BOW) || player.getUseItem().is(Items.CROSSBOW))) {
             Vec3 dm = player.getDeltaMovement();
             if (dm.y < -0.02) {
                 player.setDeltaMovement(dm.x * 0.92, -0.02, dm.z * 0.92);
@@ -679,9 +680,10 @@ public final class EnchantmentComboHandler {
             }
         }
 
-        // #092 Pluie Cataclysmique : Bullet-Time serveur
+        // #092 Pluie Cataclysmique : Bullet-Time serveur (arc & arbalète)
         if (mask.has(IDX_PLUIE_CATACLYSMIQUE) && !entity.onGround()
-                && entity.isUsingItem() && entity.getUseItem().is(Items.BOW)) {
+                && entity.isUsingItem()
+                && (entity.getUseItem().is(Items.BOW) || entity.getUseItem().is(Items.CROSSBOW))) {
             Vec3 dm = entity.getDeltaMovement();
             if (dm.y < -0.02) {
                 entity.setDeltaMovement(dm.x * 0.92, -0.02, dm.z * 0.92);

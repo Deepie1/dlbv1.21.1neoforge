@@ -5,24 +5,41 @@
     "offensive": {
       "enchantments": [
         "deep_lucky_block:blazing_arrow",
+        "deep_lucky_block:bounce",
+        "deep_lucky_block:briar_arrow",
         "deep_lucky_block:dragons_breath_arrow",
         "deep_lucky_block:dry_arrow",
+        "deep_lucky_block:elemental_chain",
         "deep_lucky_block:enemy_attractor",
         "deep_lucky_block:flint_heart",
-        "deep_lucky_block:poison_arrow",
-        "deep_lucky_block:water_arrow",
-        "deep_lucky_block:wraith_arrow",
         "deep_lucky_block:heavy_impact",
         "deep_lucky_block:heavy_range_crossbow",
+        "deep_lucky_block:instant_shot",
+        "deep_lucky_block:meteor",
         "deep_lucky_block:peregrine",
+        "deep_lucky_block:phasing",
+        "deep_lucky_block:pierce",
+        "deep_lucky_block:poison_arrow",
         "deep_lucky_block:ranger",
+        "deep_lucky_block:recoil_launch",
         "deep_lucky_block:ricochet",
+        "deep_lucky_block:steady_shot",
+        "deep_lucky_block:storm_strike",
+        "deep_lucky_block:suppression_shot",
         "deep_lucky_block:swap_arrow",
         "deep_lucky_block:teleport_arrow",
+        "deep_lucky_block:thunderstruck",
         "deep_lucky_block:toy",
+        "deep_lucky_block:tracer_shot",
+        "deep_lucky_block:warp",
+        "deep_lucky_block:water_arrow",
         "deep_lucky_block:whisper",
+        "deep_lucky_block:wraith_arrow",
+        "minecraft:flame",
         "minecraft:multishot",
-        "minecraft:piercing"
+        "minecraft:piercing",
+        "minecraft:power",
+        "minecraft:punch"
       ]
     },
     "utility": {
@@ -33,8 +50,11 @@
         "deep_lucky_block:chaos",
         "deep_lucky_block:chrono_mending",
         "deep_lucky_block:delay",
+        "deep_lucky_block:eternal",
+        "deep_lucky_block:grapple",
         "deep_lucky_block:killing_sense",
         "deep_lucky_block:multishot_bow",
+        "deep_lucky_block:point_shoot",
         "deep_lucky_block:retrieval",
         "deep_lucky_block:scatter",
         "deep_lucky_block:sniper",
@@ -50,10 +70,12 @@
       "enchantments": [
         "deep_lucky_block:end_corrosion",
         "deep_lucky_block:fear",
+        "deep_lucky_block:inverted_arrows",
         "deep_lucky_block:nether_corrosion",
         "deep_lucky_block:soul_bound",
         "deep_lucky_block:string_snap",
-        "deep_lucky_block:weak_force"
+        "deep_lucky_block:weak_force",
+        "minecraft:vanishing_curse"
       ]
     }
   }

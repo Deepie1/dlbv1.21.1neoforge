@@ -332,4 +332,185 @@ public final class DeepGlintColor {
     public static int[] toRgbArray(int rgb) {
         return new int[]{ (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF };
     }
+
+    // =======================================================================
+    // T310-GLINT-FLASH : Couleur active d'action (swing d'arme / tir / proc)
+    // branchée directement sur CE moteur DeepGlintColor (0 nouveau système,
+    // palette bornée aux constantes de famille -> cache EnchantGlintTyped fixe).
+    // =======================================================================
+    private static final int FLASH_POISON  = 0xFF28EE58; // Vert émeraude toxique vif
+    private static final int FLASH_FIRE    = 0xFFFF5C08; // Orange ardent (FIRE)
+    private static final int FLASH_ECHO    = 0xFF38EEFF; // Cyan électrique / foudre / sonique
+    private static final int FLASH_WATER   = 0xFF2888FF; // Azur polaire / océan
+    private static final int FLASH_BLOOD   = 0xFFFF1E38; // Rouge sang / vampirisme / exécution
+    private static final int FLASH_SHADOW  = 0xFF9B38FF; // Violet ombre / Wither
+    private static final int FLASH_DRAGON  = 0xFFC47AFF; // Magenta Ender / vide / téléport
+    private static final int FLASH_LIGHT   = 0xFFFFE048; // Or solaire sacré
+    private static final int FLASH_NATURE  = 0xFF28D848; // Vert sylvestre / récolte
+    private static final int FLASH_MAGIC   = 0xFF9E58FF; // Violet arcanique
+    private static final int FLASH_AIR     = 0xFFD8F2FF; // Blanc céleste / bourrasque
+    private static final int FLASH_FORCE   = 0xFFFF8418; // Ambre cinétique / impact lourd
+    private static final int FLASH_SPEED   = 0xFF4C7CFF; // Cobalt vélocité
+    private static final int FLASH_CURSE   = 0xFFFF4444; // Rouge malédiction
+
+    /**
+     * T310-GLINT-FLASH : Résout la couleur de flash temporaire de l'item pendant
+     * un coup / tir / blocage / proc défensif, à partir des familles existantes de
+     * {@link DeepGlintColor}.
+     *
+     * <p>Priorité aux enchantements élémentaires / procs actifs (Poison, Feu,
+     * Foudre/Écho, Eau/Givre, Sang/Vampirisme, Ombre/Wither, Dragon/Vide, Sacré,
+     * Nature, Magie) afin qu'un enchantement passif utilitaire ({@code unbreaking},
+     * {@code mending}, {@code soul_bound}) ne masque jamais le flash élémentaire
+     * actif (ex. vert poison pendant le coup d'épée). Si l'item possède plusieurs
+     * éléments actifs de même rang, {@code cycleIndex} alterne proprement d'un
+     * coup au suivant. Renvoie {@code 0} si aucun thème actif n'est présent.
+     */
+    public static int resolveActiveFlash(ItemStack stack, int cycleIndex, boolean defensiveArmor) {
+        if (stack == null || stack.isEmpty()) return 0;
+        Map<net.minecraft.world.item.enchantment.Enchantment, Integer> enchants;
+        try {
+            enchants = deepluckyblock.util.DeepEnchant.map(stack);
+        } catch (Throwable t) {
+            return 0;
+        }
+        if (enchants == null || enchants.isEmpty()) return 0;
+
+        int[] tier1 = new int[8];
+        int tier1Count = 0;
+        int bestTier2Color = 0;
+        int bestTier2Lvl = -1;
+
+        for (Map.Entry<net.minecraft.world.item.enchantment.Enchantment, Integer> e : enchants.entrySet()) {
+            var ench = e.getKey();
+            if (ench == null) continue;
+            net.minecraft.resources.ResourceLocation rl;
+            try {
+                rl = deepluckyblock.util.DeepEnchant.getKeySafe(ench);
+            } catch (Throwable t) {
+                continue;
+            }
+            if (rl == null) continue;
+            String s = rl.toString().toLowerCase(Locale.ROOT);
+            int lvl = e.getValue() == null ? 1 : e.getValue();
+
+            // Ignore les enchantements purement passifs de durabilité / sauvegarde
+            if (s.endsWith(":unbreaking") || s.endsWith(":mending") || s.endsWith(":basic_mending")
+                    || s.endsWith(":chrono_mending") || s.endsWith(":basic_chrono_mending")
+                    || s.endsWith(":unbreakable") || s.endsWith(":eternal")
+                    || s.endsWith(":soul_bound") || s.endsWith(":infinity")
+                    || s.endsWith(":looting") || s.endsWith(":fortune")
+                    || s.endsWith(":efficiency") || s.endsWith(":protection")) {
+                continue;
+            }
+
+            int t1 = classifyPrimaryElementFlash(s);
+            if (t1 != 0) {
+                boolean already = false;
+                for (int i = 0; i < tier1Count; i++) {
+                    if (tier1[i] == t1) { already = true; break; }
+                }
+                if (!already && tier1Count < tier1.length) {
+                    tier1[tier1Count++] = t1;
+                }
+                continue;
+            }
+
+            int t2 = classifySecondaryCombatFlash(s, defensiveArmor);
+            if (t2 != 0 && lvl > bestTier2Lvl) {
+                bestTier2Lvl = lvl;
+                bestTier2Color = t2;
+            }
+        }
+
+        if (tier1Count == 1) return tier1[0];
+        if (tier1Count > 1) {
+            int idx = Math.floorMod(cycleIndex, tier1Count);
+            return tier1[idx];
+        }
+        return bestTier2Color;
+    }
+
+    private static int classifyPrimaryElementFlash(String s) {
+        // Poison / venin / toxique / ronces -> Vert émeraude vif
+        if (s.contains("poison") || s.contains("venom") || s.contains("toxic")
+                || s.contains("fang") || s.contains("scorpion") || s.contains("briar")) {
+            return FLASH_POISON;
+        }
+        // Foudre / électrique / surcadencé / onde sonique -> Cyan électrique
+        if (s.contains("thunder") || s.contains("lightning") || s.contains("storm")
+                || s.contains("channeling") || s.contains("electric") || s.contains("overclock")
+                || s.contains("overcharge") || s.contains("hydro_shock")
+                || s.contains("echo") || s.contains("sonic") || s.contains("sonar")) {
+            return FLASH_ECHO;
+        }
+        // Feu / lave / météore / phénix / soufre / braise -> Orange ardent
+        if (s.contains("fire") || s.contains("flame") || s.contains("blaze")
+                || s.contains("blazing") || s.contains("burning") || s.contains("lava")
+                || s.contains("magma") || s.contains("meteor") || s.contains("phoenix")
+                || s.contains("scorch") || s.contains("ember") || s.contains("infernal")
+                || s.contains("brimstone") || s.contains("molten") || s.contains("flint")
+                || s.contains("torch") || s.contains("fiery")) {
+            return FLASH_FIRE;
+        }
+        // Eau / givre / océan / courant -> Azur polaire
+        if (s.contains("water") || s.contains("ocean") || s.contains("ice")
+                || s.contains("frost") || s.contains("conduit") || s.contains("hydro")
+                || s.contains("tide") || s.contains("undertow") || s.contains("snow")
+                || s.contains("riptide")) {
+            return FLASH_WATER;
+        }
+        // Sang / vampirisme / sangsue / exécution -> Rouge sang
+        if (s.contains("blood") || s.contains("leech") || s.contains("vamp")
+                || s.contains("devour") || s.contains("execute") || s.contains("behead")
+                || s.contains("decapit") || s.contains("killing_sense") || s.contains("last_stand")) {
+            return FLASH_BLOOD;
+        }
+        // Wither / ombre / fantôme / spectre -> Violet sombre lumineux
+        if (s.contains("wither") || s.contains("shadow") || s.contains("phantom")
+                || s.contains("wraith") || s.contains("umbral") || s.contains("dark")
+                || s.contains("dread") || s.contains("stealth") || s.contains("soul")) {
+            return FLASH_SHADOW;
+        }
+        // Dragon / Ender / vide / téléport / phase -> Magenta Ender
+        if (s.contains("dragon") || s.contains("ender") || s.contains("void")
+                || s.contains("teleport") || s.contains("swap_arrow") || s.contains("warp")
+                || s.contains("phasing") || s.contains("dimension")) {
+            return FLASH_DRAGON;
+        }
+        // Lumière / sacré / divin -> Or solaire
+        if (s.contains("holy") || s.contains("divine") || s.contains("sacred")
+                || s.contains("radiant") || s.contains("light_heart") || s.contains("angel")
+                || s.contains("smite") || s.contains("blessing")) {
+            return FLASH_LIGHT;
+        }
+        // Nature / récolte / sylviculture / veine -> Vert nature
+        if (s.contains("nature") || s.contains("harvest") || s.contains("lumber")
+                || s.contains("tree_felling") || s.contains("replant") || s.contains("compost")
+                || s.contains("vein_miner") || s.contains("earth_heart")) {
+            return FLASH_NATURE;
+        }
+        // Magie / chaos / arcanique -> Violet arcanique
+        if (s.contains("chaos") || s.contains("arcane") || s.contains("mystic")
+                || s.contains("magic")) {
+            return FLASH_MAGIC;
+        }
+        return 0;
+    }
+
+    private static int classifySecondaryCombatFlash(String s, boolean defensiveArmor) {
+        if (s.contains("curse") || s.contains("cursed") || s.contains("blemish")) {
+            return FLASH_CURSE;
+        }
+        int base = baseColor(s);
+        if (base == AIR || base == WIND) return FLASH_AIR;
+        if (base == FORCE) return FLASH_FORCE;
+        if (base == SPEED) return FLASH_SPEED;
+        if (!defensiveArmor && base == DAMAGE && (s.contains("crit") || s.contains("seismic")
+                || s.contains("brutal") || s.contains("titan") || s.contains("giant")
+                || s.contains("annihilat") || s.contains("supreme"))) {
+            return FLASH_FORCE;
+        }
+        return 0;
+    }
 }

@@ -52,6 +52,16 @@ public final class EnchantAura {
      */
     public static boolean THEME_FALLBACK = false;
 
+    /**
+     * T310-GLINT-FLASH : Surcharge temporaire purement côté client pendant un
+     * coup d'arme/outil, un tir actif ou un proc défensif d'armure. Utilise
+     * directement {@link DeepGlintColor#resolveActiveFlash} + {@link EnchantGlintTyped},
+     * sans aucune écriture NBT serveur (aucune saccade de ré-équipement), puis
+     * restaure automatiquement la couleur précédente ({@link #auraColor}) dès
+     * la fin du geste.
+     */
+    public static boolean ACTIVE_SWING_FLASH = true;
+
     // =======================================================================
     // Codes couleur Minecraft -> RGB
     // Valeurs identiques à celles de l'ancien GlintColors et aux couleurs
@@ -240,6 +250,36 @@ public final class EnchantAura {
         current = v;
         if (DEBUG && stack != null && !stack.isEmpty()) {
             log("capture -> #" + Integer.toHexString(v));
+        }
+    }
+
+    /**
+     * T310-GLINT-FLASH : Capture la couleur du glint avec surcharge temporaire
+     * pendant l'action active (frappe en mêlée, tir arc/arbalète/trident ou
+     * impact sur armure portée), puis retour immédiat à {@link #auraColor(ItemStack)}
+     * dès que {@code activeAction} repasse à {@code false}.
+     */
+    public static void captureWithFlash(ItemStack stack, boolean activeAction,
+                                        int cycleIndex, boolean defensiveArmor) {
+        int base = auraColor(stack);
+        if (ACTIVE_SWING_FLASH && activeAction && stack != null && !stack.isEmpty()) {
+            // Respecte explicitement /glint clear (ENCHANTMENT_GLINT_OVERRIDE == false)
+            Boolean override = stack.get(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
+            if (!Boolean.FALSE.equals(override)) {
+                int flash = DeepGlintColor.resolveActiveFlash(stack, cycleIndex, defensiveArmor);
+                if (flash != 0) {
+                    current = flash;
+                    if (DEBUG) {
+                        log("captureWithFlash (ACTIF) -> #" + Integer.toHexString(flash)
+                                + " (retour prévu -> #" + Integer.toHexString(base) + ")");
+                    }
+                    return;
+                }
+            }
+        }
+        current = base;
+        if (DEBUG && stack != null && !stack.isEmpty()) {
+            log("capture -> #" + Integer.toHexString(base));
         }
     }
 
