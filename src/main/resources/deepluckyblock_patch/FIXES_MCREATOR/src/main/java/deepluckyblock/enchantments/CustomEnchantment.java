@@ -16,7 +16,9 @@ import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.BowItem;
 import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.ElytraItem;
+import net.minecraft.world.item.HoeItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ShovelItem;
 import net.minecraft.world.item.SwordItem;
 import net.minecraft.world.item.enchantment.Enchantment;
 
@@ -204,9 +206,16 @@ public final class CustomEnchantment {
             }
             if (!slotAllowed) return false;
         }
+        // Les enchants de pelle/houe ne vont que sur leur outil dédié
+        String n = path.toLowerCase(Locale.ROOT);
+        if (n.contains("shovel") && !(stack.getItem() instanceof ShovelItem)) {
+            return false;
+        }
+        if (n.endsWith("_hoe") && !(stack.getItem() instanceof HoeItem)) {
+            return false;
+        }
         // Les enchants de houe/pelle/bouclier/botte ne vont pas sur les épées
         if (stack.getItem() instanceof SwordItem) {
-            String n = path.toLowerCase(Locale.ROOT);
             if (n.contains("hoe") || n.contains("shovel") || n.contains("shield")
                     || n.contains("boot") || n.contains("step") || n.contains("harvest")
                     || n.contains("sickle")) {
@@ -236,8 +245,9 @@ public final class CustomEnchantment {
     public static boolean checkCompatibilityMod(Enchantment a, Enchantment b) {
         if (a == null || b == null) return true;
         String pa = pathOf(a), pb = pathOf(b);
-        // vanilla vs vanilla : les conflits vanilla sont gérés par le jeu
-        if (isVanilla(a) || isVanilla(b)) return true;
+        if (pa.equals(pb) && !isVanilla(a) && !isVanilla(b)) return false;
+        // T306-FAMILIES : vanilla vs vanilla uniquement (&&) pour préserver les conflits vanilla <-> mod (infinity/retrieval, mending/basic_mending, etc.)
+        if (isVanilla(a) && isVanilla(b)) return true;
         if ((pa.equals("phasing") && !PHASING_ALLOWED.contains(pb))
                 || (pb.equals("phasing") && !PHASING_ALLOWED.contains(pa))) return false;
         if ((pa.equals("pierce") && PIERCE_UNSAFE.contains(pb))
@@ -255,7 +265,8 @@ public final class CustomEnchantment {
                 || pair(pa, pb, "explosive_return", "sincere_loyalty")
                 || pair(pa, pb, "aerodynamic", "wind_rider")
                 || pair(pa, pb, "chain_lightning", "hydro_shock")
-                || pair(pa, pb, "chain_lightning", "channeling")) return false;
+                || pair(pa, pb, "chain_lightning", "channeling")
+                || pair(pa, pb, "unbreakable", "eternal")) return false;
         if (pa.equals("riptide") || pb.equals("riptide")) {
             String otherPath = pa.equals("riptide") ? pb : pa;
             if (Set.of("homing_trident", "sincere_loyalty", "scorching_prongs",
@@ -269,20 +280,40 @@ public final class CustomEnchantment {
                 && Set.of("multishot_bow", "scatter", "multishot").contains(pb)) return false;
         if (Set.of("momentum", "trailblazer", "windrunner").contains(pa)
                 && Set.of("momentum", "trailblazer", "windrunner").contains(pb)) return false;
-        // Correctif (audit demande utilisateur, équilibrage des 7 cœurs
-        // élémentaires) : sans cette règle, RIEN n'empêchait de graver
-        // plusieurs cœurs élémentaires différents (ex: fire_heart +
-        // water_heart + earth_heart...) sur le MÊME plastron via enclume/
-        // commandes -- cumulant alors leurs bonus de PV ET tous leurs
-        // pouvoirs actifs simultanément (dégâts bonus, réduction de dégâts,
-        // vol de vie, procs, faim/saturation, minage, répulsion de mobs...),
-        // ce qui casserait complètement l'équilibrage prévu "un cœur =
-        // un choix". Les 7 cœurs sont donc désormais mutuellement exclusifs
-        // entre eux (un seul actif à la fois par plastron), exactement comme
-        // les familles momentum/trailblazer/windrunner ci-dessus.
+        // T306-FAMILIES : progression Enfant -> Upgrade par famille globale (un seul palier actif par famille).
+        for (Set<String> family : UPGRADE_FAMILIES) {
+            if (family.contains(pa) && family.contains(pb) && !pa.equals(pb)) return false;
+        }
         if (ELEMENTAL_HEART_IDS.contains(pa) && ELEMENTAL_HEART_IDS.contains(pb) && !pa.equals(pb)) return false;
         return true;
     }
+
+    /**
+     * T306-FAMILIES : Familles globales évolutives (Enfant moins fort -> Upgrade).
+     * Deux paliers de la même famille sont mutuellement exclusifs (enclume ET Lucky Block).
+     */
+    public static final List<Set<String>> UPGRADE_FAMILIES = List.of(
+            Set.of("sharp_edge", "reinforced_sharpness", "advanced_sharpness", "ultra_edge", "extreme_sharpness", "supreme_sharpness"),
+            Set.of("basic_swiftness", "swiftness"),
+            Set.of("basic_lightness", "lightness"),
+            Set.of("basic_leap_power", "leap_power"),
+            Set.of("basic_chrono_mending", "chrono_mending"),
+            Set.of("basic_mending", "mending"),
+            Set.of("low_crit_rate", "crit_rate"),
+            Set.of("low_crit_damage", "normal_crit_damage", "overclocked_crit"),
+            Set.of("low_damage_critical", "critical_strike", "damage_critical"),
+            Set.of("sweeping_enhancement", "reinforced_sweeping", "annihilating_sweep"),
+            Set.of("sweeping_fire", "fiery_sweep"),
+            Set.of("bloodthirst", "bloodthirsty", "blood_drinker_edge"),
+            Set.of("promising_blade", "giant_slayer", "titan_slayer"),
+            Set.of("tree_felling", "lumberjack"),
+            Set.of("vein_miner", "extracting"),
+            Set.of("utility_trench_shovel", "universal_trench_shovel"),
+            Set.of("stinky_feet", "super_stinky_feet"),
+            Set.of("rock_breaking_gauntlet", "diamond_glow_gauntlet"),
+            Set.of("army_summon", "summon_army"),
+            Set.of("echolocation", "perception")
+    );
 
     /**
      * Les 7 cœurs élémentaires à condition de régénération (voir

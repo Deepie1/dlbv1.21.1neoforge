@@ -10,6 +10,7 @@ import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ShovelItem;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -192,18 +193,27 @@ public final class RealAttributeModifierHandler {
         // {@link EnchantmentTooltipFixProcedure#overrideNativeAttackStats}
         // + {@link deepluckyblock.util.CombatStatsCalculator}.
 
-        // ---- Bonus FIXES et inconditionnels ----
-        add(event, Attributes.ATTACK_DAMAGE, "brutal", 1.5 * lvl(stack, "brutal"), ADD, mh);
+        // ---- Bonus FIXES et inconditionnels (T306-OVERHAUL : différenciation complète) ----
+        int brutal = lvl(stack, "brutal");
+        add(event, Attributes.ATTACK_DAMAGE, "brutal", 2.5 * brutal, ADD, mh);
+        add(event, Attributes.ATTACK_SPEED, "brutal_spd", -0.08 * brutal, ADD, mh);
 
         int mighty = lvl(stack, "mighty_strike");
         add(event, Attributes.ATTACK_DAMAGE, "mighty_strike", 1.2 * mighty, ADD, mh);
         add(event, Attributes.ATTACK_KNOCKBACK, "mighty_strike_kb", 0.4 * mighty, ADD, mh);
 
-        add(event, Attributes.ATTACK_DAMAGE, "sighing_strike", 1.0 * lvl(stack, "sighing_strike"), ADD, mh);
+        add(event, Attributes.ATTACK_DAMAGE, "sighing_strike", 1.25 * lvl(stack, "sighing_strike"), ADD, mh);
 
-        int shovelDmg = Math.max(lvl(stack, "shovel_halberd"),
-                Math.max(lvl(stack, "shovel_heavy_hit"), lvl(stack, "shovel_blade")));
-        add(event, Attributes.ATTACK_DAMAGE, "shovel_family", 2.0 * shovelDmg, ADD, mh);
+        if (stack.getItem() instanceof ShovelItem) {
+            int sBlade = lvl(stack, "shovel_blade");
+            int sHeavy = lvl(stack, "shovel_heavy_hit");
+            int sHalberd = lvl(stack, "shovel_halberd");
+            add(event, Attributes.ATTACK_DAMAGE, "shovel_blade", 1.5 * sBlade, ADD, mh);
+            add(event, Attributes.ATTACK_DAMAGE, "shovel_heavy_hit", 2.5 * sHeavy, ADD, mh);
+            add(event, Attributes.ATTACK_KNOCKBACK, "shovel_heavy_kb", 0.35 * sHeavy, ADD, mh);
+            add(event, Attributes.ATTACK_DAMAGE, "shovel_halberd", 2.5 * sHalberd, ADD, mh);
+            add(event, Attributes.ENTITY_INTERACTION_RANGE, "shovel_halberd_reach", 0.35 * sHalberd, ADD, mh);
+        }
 
         add(event, Attributes.ATTACK_DAMAGE, "sharp_edge", 1.0 * lvl(stack, "sharp_edge"), ADD, mh);
         add(event, Attributes.ATTACK_DAMAGE, "reinforced_sharpness", 2.0 * lvl(stack, "reinforced_sharpness"), ADD, mh);
@@ -211,26 +221,23 @@ public final class RealAttributeModifierHandler {
         // le bonus additionnel "si cible en armure" reste conditionnel (cf.
         // CombatStatsCalculator, même choix).
         add(event, Attributes.ATTACK_DAMAGE, "sharpened_sharpness", 1.5 * lvl(stack, "sharpened_sharpness"), ADD, mh);
-        add(event, Attributes.ATTACK_DAMAGE, "swift_strike", 1.0 * lvl(stack, "swift_strike"), ADD, mh);
-        add(event, Attributes.ATTACK_DAMAGE, "extension", 1.2 * lvl(stack, "extension"), ADD, mh);
-        // FIX DOUBLE-COMPTAGE JUMEAU (ask #5) : Titan's Grasp ("Crushing melee
-        // damage bonus, but your attack speed is reduced") -- le bonus de
-        // degats plat est deja gere cote combat (handleOffensiveHurt), mais le
-        // MALUS de vitesse d'attaque, lui, etait pose UNIQUEMENT sur le JOUEUR
-        // par EquipmentExpansionHandler#updateHeartEnchantmentPassives a
-        // chaque tick (TITANS_GRASP_SPEED_ID), fixe et inconditionnel (aucune
-        // condition de jeu au-dela du simple port de l'arme), jamais visible
-        // dans la ligne native "When in Main Hand" -> "Attack Speed". Meme
-        // formule (-min(0.45, 0.15*niv), multiplicatif) reprise ici, le calcul
-        // cote tick reste pour l'instant en place UNIQUEMENT parce qu'il gere
-        // aussi le nettoyage Creatif/Spectateur -- a terme, doublon a retirer
-        // une fois confirme que Attributes.ATTACK_SPEED nettoie deja seul en
-        // mode Creatif (les modificateurs d'ITEM disparaissent des qu'il est
-        // retire de la main, contrairement aux anciens modifs JOUEUR).
+        int swiftStrike = lvl(stack, "swift_strike");
+        add(event, Attributes.ATTACK_DAMAGE, "swift_strike", 1.0 * swiftStrike, ADD, mh);
+        add(event, Attributes.ATTACK_SPEED, "swift_strike_spd", 0.25 * swiftStrike, ADD, mh);
+
+        int ext = lvl(stack, "extension");
+        add(event, Attributes.ATTACK_DAMAGE, "extension", 1.2 * ext, ADD, mh);
+        add(event, Attributes.ENTITY_INTERACTION_RANGE, "extension_entity_reach", 0.5 * ext, ADD, mh);
+        add(event, Attributes.BLOCK_INTERACTION_RANGE, "extension_block_reach", 0.5 * ext, ADD, mh);
+
+        int shortReach = lvl(stack, "short_reach");
+        add(event, Attributes.ATTACK_DAMAGE, "short_reach", -1.0 * shortReach, ADD, mh);
+        add(event, Attributes.ENTITY_INTERACTION_RANGE, "short_reach_entity", -0.35 * shortReach, ADD, mh);
+        add(event, Attributes.BLOCK_INTERACTION_RANGE, "short_reach_block", -0.35 * shortReach, ADD, mh);
+
         add(event, Attributes.ATTACK_SPEED, "titans_grasp", -Math.min(0.45, 0.15 * lvl(stack, "titans_grasp")), MULT, mh);
-        // blood_pact : bonus +2/niv quasi toujours actif (ne s'annule que si le
-        // porteur a moins de 2 PV, cas limite négligeable pour un tooltip).
-        add(event, Attributes.ATTACK_DAMAGE, "blood_pact", 2.0 * lvl(stack, "blood_pact"), ADD, mh);
+        // T306-FIX : blood_pact inflige désormais +2/niv de VRAIS dégâts ignorant l'armure (contre 1 PV)
+        // directement dans UniversalEnchantmentHandler (plus de simple bonus d'attaque bloqué par l'armure).
         // blunt : malus fixe et inconditionnel.
         add(event, Attributes.ATTACK_DAMAGE, "blunt", -1.5 * lvl(stack, "blunt"), ADD, mh);
 
@@ -311,65 +318,56 @@ public final class RealAttributeModifierHandler {
         addArmor(event, Attributes.ARMOR, "vanilla_protection",
                 Math.min(20.0, 4.0 * vanillaProtection * ARMOR_POINT_PER_PERCENT), ADD, group, slot);
 
-        // Divine Protection : -10%/niv, cumulable sur chaque piece -> +2.5 armure/niv PAR piece.
-        addArmor(event, Attributes.ARMOR, "divine_protection", 10.0 * lvl(stack, "divine_protection") * ARMOR_POINT_PER_PERCENT, ADD, group, slot);
-        // Stomach Pouch (plastron uniquement) : -10%/niv -> +2.5 armure/niv.
-        addArmor(event, Attributes.ARMOR, "stomach_pouch", 10.0 * lvl(stack, "stomach_pouch") * ARMOR_POINT_PER_PERCENT, ADD, group, slot);
-        // Wound Crack / Crippled : malus +20%/niv de degats subis -> -5.0 armure/niv.
-        int woundCrack = Math.max(lvl(stack, "wound_crack"), lvl(stack, "crippled"));
-        addArmor(event, Attributes.ARMOR, "wound_crack", -20.0 * woundCrack * ARMOR_POINT_PER_PERCENT, ADD, group, slot);
+        // T306-OVERHAUL : différenciation Divine Protection vs Stomach Pouch et Wound Crack vs Crippled
+        int divineProt = lvl(stack, "divine_protection");
+        addArmor(event, Attributes.ARMOR, "divine_protection", 2.5 * divineProt, ADD, group, slot);
+        addArmor(event, Attributes.ARMOR_TOUGHNESS, "divine_protection_tough", 0.5 * divineProt, ADD, group, slot);
 
-        // FIX CRITIQUE (ask #5, rapporté en jeu, capture d'écran "L'Armure de
-        // Fluffy" -- Protection V/Thorns III/Adrenalaline III/Sustained
-        // Resistance I posés sur l'armure NE modifient PAS les lignes +8
-        // Armor/+3 Armor Toughness/+10% Knockback Resistance) : Surefooted
-        // ("Adds knockback resistance [...]", bottes uniquement) est un
-        // bonus FIXE et INCONDITIONNEL (actif dès que le niveau > 0, sans
-        // aucune condition de jeu) qui était géré EXCLUSIVEMENT par
-        // {@code EquipmentExpansionHandler#playerTickImpl} via un vrai
-        // AttributeModifier posé sur le JOUEUR à chaque tick -- jamais sur
-        // l'ITEM lui-même via {@link ItemAttributeModifierEvent}. Résultat :
-        // le bonus fonctionnait bel et bien en jeu (le joueur résistait
-        // réellement plus au recul), mais n'apparaissait JAMAIS dans la
-        // ligne native "When on Body" -> "Knockback Resistance" de
-        // l'infobulle des bottes, exactement le symptôme rapporté ("les
-        // enchantements ne modifient pas les lignes affichées"). Le
-        // recalcul de la fonte de distance de chute (composante VRAIMENT
-        // conditionnelle : ne s'applique qu'au moment d'un atterrissage,
-        // cf. Javadoc CombatStatsCalculator) reste tick-based dans
-        // EquipmentExpansionHandler -- la boucle de tick n'y repose plus
-        // que sur cette partie fall-distance, le knockback resistance est
-        // maintenant réglé ICI, en miroir supprimé côté tick (voir FIX
-        // jumeau dans EquipmentExpansionHandler.playerTickImpl).
+        // Stomach Pouch (plastron) : rembourrage modéré (+1.5 armure/niv) + poche nutritive & anti-souffle
+        addArmor(event, Attributes.ARMOR, "stomach_pouch", 1.5 * lvl(stack, "stomach_pouch"), ADD, group, slot);
+
+        // Wound Crack : brèche sévère d'armure (-3.5 armure/niv) + risque de saignement
+        addArmor(event, Attributes.ARMOR, "wound_crack", -3.5 * lvl(stack, "wound_crack"), ADD, group, slot);
+        // Crippled : mobilité estropiée (-2.0 armure/niv et -8%/niv vitesse de déplacement)
+        int crippled = lvl(stack, "crippled");
+        addArmor(event, Attributes.ARMOR, "crippled", -2.0 * crippled, ADD, group, slot);
+
         addArmor(event, Attributes.KNOCKBACK_RESISTANCE, "surefooted", 0.18 * lvl(stack, "surefooted"), ADD, group, slot);
 
-        // FIX DOUBLE-COMPTAGE JUMEAU (ask #5) : Stonebound Roots ("Greatly
-        // reduces knockback and fall damage, but slows your movement",
-        // jambières uniquement) -- même bug exact que Surefooted ci-dessus :
-        // volet knockback-resistance ET malus de vitesse sont FIXES et
-        // INCONDITIONNELS (actifs dès que le niveau > 0), gérés
-        // exclusivement par {@code EquipmentExpansionHandler
-        // #updateHeartEnchantmentPassives} via des AttributeModifier posés
-        // sur le JOUEUR, jamais visibles dans "When on Body" -> "Knockback
-        // Resistance"/"Movement Speed". Miroir ici, formules identiques
-        // (min(1.0, 0.25*niv) pour la résistance, -0.06*niv multiplicatif
-        // pour la vitesse). La réduction de distance de chute (instantanée,
-        // au moment de l'atterrissage) reste tick-based, comme pour Surefoot.
         AttributeModifier.Operation SPEED_MULT = AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL;
+        addArmor(event, Attributes.MOVEMENT_SPEED, "crippled_slow", -0.08 * crippled, SPEED_MULT, group, slot);
+
         addArmor(event, Attributes.KNOCKBACK_RESISTANCE, "stonebound_roots",
                 Math.min(1.0, 0.25 * lvl(stack, "stonebound_roots")), ADD, group, slot);
         addArmor(event, Attributes.MOVEMENT_SPEED, "stonebound_roots",
                 -0.06 * lvl(stack, "stonebound_roots"), SPEED_MULT, group, slot);
 
-        // FIX DOUBLE-COMPTAGE JUMEAU (ask #5) : Gale Step ("Higher jumps and
-        // softer landings, carried by the wind", bottes uniquement) -- même
-        // bug : bonus de saut + réduction des dégâts de chute FIXES et
-        // INCONDITIONNELS, gérés exclusivement côté tick jusqu'ici. Miroir
-        // ici, formules identiques (+0.10*niv sur Jump Strength, additif ;
-        // -min(0.75, 0.20*niv) sur Fall Damage Multiplier, multiplicatif).
         addArmor(event, Attributes.JUMP_STRENGTH, "gale_step", 0.10 * lvl(stack, "gale_step"), ADD, group, slot);
         addArmor(event, Attributes.FALL_DAMAGE_MULTIPLIER, "gale_step",
                 -Math.min(0.75, 0.20 * lvl(stack, "gale_step")), SPEED_MULT, group, slot);
+
+        // T306-OVERHAUL : Pas Surélevé (High Step) -> vrai STEP_HEIGHT natif (+0.5 bloc/niv, plafonné à +3.0)
+        int highStep = lvl(stack, "high_step");
+        if (highStep > 0) {
+            addArmor(event, Attributes.STEP_HEIGHT, "high_step", Math.min(3.0, 0.5 * highStep), ADD, group, slot);
+        }
+        // T306-FIX : Malédiction du Courant (Riptide Curse) -> vraie nage fulgurante native
+        int riptideCurse = lvl(stack, "riptide_curse");
+        if (riptideCurse > 0) {
+            addArmor(event, Attributes.WATER_MOVEMENT_EFFICIENCY, "riptide_curse_swim",
+                    Math.min(1.0, 0.32 * riptideCurse), ADD, group, slot);
+        }
+        // T306-OVERHAUL : Célérité d'Hypoxie -> efficacité de minage sous l'eau native
+        int oxyLack = lvl(stack, "oxygen_lack_haste");
+        if (oxyLack > 0) {
+            addArmor(event, Attributes.SUBMERGED_MINING_SPEED, "oxygen_lack_submerged",
+                    Math.min(1.2, 0.35 * oxyLack), ADD, group, slot);
+        }
+        // T306-OVERHAUL : Chaînes de la Terre -> pesanteur sur les sauts
+        int earthBound = lvl(stack, "earth_bound");
+        if (earthBound > 0) {
+            addArmor(event, Attributes.JUMP_STRENGTH, "earth_bound_jump", -0.08 * earthBound, ADD, group, slot);
+        }
 
         // Anchoring (jambières uniquement) : "Sneaking [...] increases
         // knockback resistance" -- la hausse de résistance au recul ne

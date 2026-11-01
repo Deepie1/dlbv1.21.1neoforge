@@ -478,7 +478,9 @@ public final class EnchantmentTooltipFixProcedure {
     private static int insertComputedCombatStats(ItemStack stack, List<Component> lines, int index) {
         boolean isMeleeWeapon = stack.getItem() instanceof net.minecraft.world.item.SwordItem
                 || stack.getItem() instanceof net.minecraft.world.item.AxeItem
-                || stack.getItem() instanceof net.minecraft.world.item.TridentItem;
+                || stack.getItem() instanceof net.minecraft.world.item.TridentItem
+                || stack.getItem() instanceof net.minecraft.world.item.MaceItem
+                || stack.getItem() instanceof net.minecraft.world.item.ShovelItem;
         boolean isArmor = stack.getItem() instanceof net.minecraft.world.item.ArmorItem;
 
         if (isMeleeWeapon) {
@@ -544,7 +546,8 @@ public final class EnchantmentTooltipFixProcedure {
         boolean isMeleeWeapon = stack.getItem() instanceof net.minecraft.world.item.SwordItem
                 || stack.getItem() instanceof net.minecraft.world.item.AxeItem
                 || stack.getItem() instanceof net.minecraft.world.item.TridentItem
-                || stack.getItem() instanceof net.minecraft.world.item.MaceItem;
+                || stack.getItem() instanceof net.minecraft.world.item.MaceItem
+                || stack.getItem() instanceof net.minecraft.world.item.ShovelItem;
         if (!isMeleeWeapon) return;
 
         deepluckyblock.util.CombatStatsCalculator.MeleeStats stats =

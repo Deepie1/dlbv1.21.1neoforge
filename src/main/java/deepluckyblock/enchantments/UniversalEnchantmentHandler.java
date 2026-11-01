@@ -102,6 +102,9 @@ public class UniversalEnchantmentHandler {
     private static final net.minecraft.resources.ResourceLocation CORE_SPRINT_SPEED_ID = net.minecraft.resources.ResourceLocation.parse("deep_lucky_block:modifier_core_sprint_speed");
     private static final net.minecraft.resources.ResourceLocation STACKED_SPRINT_SPEED_ID = net.minecraft.resources.ResourceLocation.parse("deep_lucky_block:modifier_stacked_sprint_speed");
     private static final net.minecraft.resources.ResourceLocation RANGER_SPEED_ID = net.minecraft.resources.ResourceLocation.parse("deep_lucky_block:modifier_ranger_speed");
+    private static final net.minecraft.resources.ResourceLocation LIGHT_WALKER_SPEED_ID = net.minecraft.resources.ResourceLocation.parse("deep_lucky_block:modifier_light_walker_speed");
+    private static final net.minecraft.resources.ResourceLocation STRAFE_SPEED_ID = net.minecraft.resources.ResourceLocation.parse("deep_lucky_block:modifier_strafe_speed");
+    private static final net.minecraft.resources.ResourceLocation LONE_WOLF_SPEED_ID = net.minecraft.resources.ResourceLocation.parse("deep_lucky_block:modifier_lone_wolf_speed");
 
     private static final ThreadLocal<Boolean> HURT_GUARD = ThreadLocal.withInitial(() -> false);
 
@@ -241,102 +244,175 @@ public class UniversalEnchantmentHandler {
         if (supSharpLvl >= 100) {
             event.setAmount(event.getEntity().getMaxHealth() * 10f);
         }
-        // GIANT / TITAN SLAYER : dégâts proportionnels à la TAILLE de la cible.
-        // Cible plus grande que le joueur -> +% de dégâts ; plus petite -> -% de
-        // dégâts. Toujours proportionnel (volume de hitbox vs volume du joueur).
-        int titanLvl = getEnchantLvl(weapon, "deep_lucky_block:titan_slayer");
-        if (titanLvl > 0) event.setAmount(event.getAmount() * sizeDamageMultiplier(player, event.getEntity(), 0.75f * titanLvl));
-        int giantLvl = getEnchantLvl(weapon, "deep_lucky_block:giant_slayer");
-        if (giantLvl > 0) event.setAmount(event.getAmount() * sizeDamageMultiplier(player, event.getEntity(), 0.40f * giantLvl));
-        // FIX DOUBLE-COMPTAGE : cursed_blade (x10) est désormais un vrai
-        // AttributeModifier (ADD_MULTIPLIED_TOTAL) dans RealAttributeModifierHandler,
-        // déjà inclus dans event.getAmount() de base -- le multiplier ENCORE
-        // par 10 ici produisait un x100 réel en combat.
-        // CAVALIER : +50 % de dégâts par niveau UNIQUEMENT lorsque le joueur
-        // est sur une monture vivante (cheval, cochon, strider ou monture moddée).
-        // Les bateaux et wagonnets ne comptent pas comme des montures.
-        int cavalierLvl = getEnchantLvl(weapon, "deep_lucky_block:cavalier");
-        if (cavalierLvl > 0 && player.getVehicle() instanceof LivingEntity) {
-            event.setAmount(event.getAmount() * (1.0f + 0.50f * cavalierLvl));
+        if (supSharpLvl > 0) {
+            EnchantmentParticleFX.slashArc(player, ParticleTypes.END_ROD, EnchantmentParticleFX.GOLD_DIVINE, 2.3, 12);
+        } else if (getEnchantLvl(weapon, "deep_lucky_block:extreme_sharpness") > 0) {
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.ENCHANTED_HIT, 10, 0.3, 0.15);
         }
-        // FIX DOUBLE-COMPTAGE : peerless (flat +4/niv ET mult +50%/niv) est
-        // désormais un vrai AttributeModifier dans RealAttributeModifierHandler,
-        // déjà inclus dans event.getAmount() de base.
+        int peerlessLvl = getEnchantLvl(weapon, "deep_lucky_block:peerless");
+        if (peerlessLvl > 0) {
+            EnchantmentParticleFX.slashArc(player, EnchantmentParticleFX.STEEL_SILVER, ParticleTypes.CRIT, 2.0, 9);
+            if (event.getEntity().getArmorValue() > 0) {
+                hurtNoCascade(event.getEntity(), player.damageSources().magic(), Math.min(20f, 1.5f * peerlessLvl));
+            }
+        }
+
+        // T306-OVERHAUL : Famille Tueurs de Colosses (promising_blade -> giant_slayer -> titan_slayer)
+        int titanLvl = getEnchantLvl(weapon, "deep_lucky_block:titan_slayer");
+        if (titanLvl > 0) {
+            float mult = sizeDamageMultiplier(player, event.getEntity(), 0.75f * titanLvl);
+            if (event.getEntity().getMaxHealth() >= 50f) {
+                mult += 0.20f * titanLvl;
+                event.setAmount(event.getAmount() * mult + Math.min(24f, event.getEntity().getHealth() * 0.02f * titanLvl));
+                if (player.level() instanceof ServerLevel slt) {
+                    EnchantmentParticleFX.shockwaveRing(slt, event.getEntity().getX(), event.getEntity().getY() + 0.1,
+                            event.getEntity().getZ(), EnchantmentParticleFX.EARTH_OCHRE, 1.8, 14, 0.06);
+                }
+            } else {
+                event.setAmount(event.getAmount() * mult);
+            }
+        }
+        int giantLvl = getEnchantLvl(weapon, "deep_lucky_block:giant_slayer");
+        if (giantLvl > 0) {
+            if (event.getEntity().getMaxHealth() >= 40f) {
+                event.setAmount(event.getAmount() * (1.0f + 0.25f * giantLvl));
+            } else {
+                event.setAmount(event.getAmount() * sizeDamageMultiplier(player, event.getEntity(), 0.40f * giantLvl));
+            }
+        }
+        int cavalierLvl = getEnchantLvl(weapon, "deep_lucky_block:cavalier");
+        if (cavalierLvl > 0 && player.getVehicle() instanceof LivingEntity lvMount) {
+            event.setAmount(event.getAmount() * (1.0f + 0.50f * cavalierLvl));
+            EnchantmentParticleFX.ankleTrail(lvMount, EnchantmentParticleFX.GOLD_DIVINE, 4, 0.03);
+        }
         int battleHardLvl = getEnchantLvl(weapon, "deep_lucky_block:battle_hardened");
         if (battleHardLvl > 0 && weapon.isDamageableItem()) {
             float lostPct = (float) weapon.getDamageValue() / weapon.getMaxDamage();
             event.setAmount(event.getAmount() * (1f + Math.min(1.0f, lostPct * battleHardLvl)));
         }
-        // BLOODTHIRST / BLOODTHIRSTY / BLOOD_EDGE : vol de vie. Le joueur récupère
-        // un % des dégâts infligés à la cible.
+
+        // T306-OVERHAUL : Famille Vol de Vie (bloodthirst -> bloodthirsty -> blood_drinker_edge) + blood_edge
         int bloodThirstLvl = getEnchantLvl(weapon, "deep_lucky_block:bloodthirst");
-        if (bloodThirstLvl > 0) player.heal(event.getAmount() * (0.10f * bloodThirstLvl));
+        if (bloodThirstLvl > 0) player.heal(event.getAmount() * (0.08f * bloodThirstLvl));
         int bloodThirstyLvl = getEnchantLvl(weapon, "deep_lucky_block:bloodthirsty");
-        if (bloodThirstyLvl > 0) player.heal(event.getAmount() * (0.15f * bloodThirstyLvl));
+        if (bloodThirstyLvl > 0) {
+            player.heal(event.getAmount() * (0.14f * bloodThirstyLvl));
+            player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 40, 0, true, false));
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), EnchantmentParticleFX.SCARLET_MIST, 6, 0.25, 0.02);
+        }
         int bloodEdgeLvl = getEnchantLvl(weapon, "deep_lucky_block:blood_edge");
-        if (bloodEdgeLvl > 0) player.heal(event.getAmount() * (0.10f * bloodEdgeLvl));
-        // FIX DOUBLE-COMPTAGE : le bonus de dégâts (+2/niv) de blood_pact est
-        // désormais un vrai AttributeModifier dans RealAttributeModifierHandler,
-        // déjà inclus dans event.getAmount() de base. Seul l'effet SECONDAIRE
-        // (drain de 1 PV à chaque coup, non représentable comme attribut)
-        // reste géré ici.
+        if (bloodEdgeLvl > 0) {
+            player.heal(event.getAmount() * (0.10f * bloodEdgeLvl));
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), EnchantmentParticleFX.CRIMSON_BLOOD, 5, 0.2, 0.01);
+        }
+        int bloodDrinkerLvl = getEnchantLvl(weapon, "deep_lucky_block:blood_drinker_edge");
+        if (bloodDrinkerLvl > 0) {
+            float rawHeal = event.getAmount() * (0.20f * bloodDrinkerLvl);
+            float missing = Math.max(0f, player.getMaxHealth() - player.getHealth());
+            player.heal(rawHeal);
+            float overheal = Math.max(0f, rawHeal - missing);
+            if (overheal > 0.1f) {
+                player.setAbsorptionAmount(Math.min(6.0f + bloodDrinkerLvl, player.getAbsorptionAmount() + overheal * 0.5f));
+            }
+            EnchantmentParticleFX.doubleHelix(player, EnchantmentParticleFX.CRIMSON_BLOOD, EnchantmentParticleFX.SCARLET_MIST, 0.52, 8);
+        }
+
+        // T306-FIX : blood_pact sacrifie 1 PV pour infliger +2/niv VRAIS dégâts ignorant l'armure
         int bloodPactLvl = getEnchantLvl(weapon, "deep_lucky_block:blood_pact");
         if (bloodPactLvl > 0 && player.getHealth() > 2f) {
             player.setHealth(player.getHealth() - 1f);
+            hurtNoCascade(event.getEntity(), player.damageSources().magic(), 2.0f * bloodPactLvl);
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), EnchantmentParticleFX.CRIMSON_BLOOD, 8, 0.25, 0.03);
         }
-        // (crit_rate est gere dans le bloc PATCH 1 plus bas, a 10%/niveau, sans doublon de crit)
 
+        // T306-OVERHAUL : sighing_strike (Frappe Soupirante) & brutal & Pelles de combat
+        int sighLvl = getEnchantLvl(weapon, "deep_lucky_block:sighing_strike");
+        if (sighLvl > 0) {
+            boolean weakenedOrSlowed = event.getEntity().hasEffect(MobEffects.MOVEMENT_SLOWDOWN) || event.getEntity().hasEffect(MobEffects.WEAKNESS);
+            if (weakenedOrSlowed) event.setAmount(event.getAmount() * (1.0f + 0.20f * sighLvl));
+            event.getEntity().setAirSupply(Math.max(-20, event.getEntity().getAirSupply() - 40 * sighLvl));
+            event.getEntity().addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 40, 0));
+            EnchantmentParticleFX.slashArc(player, ParticleTypes.CLOUD, ParticleTypes.SOUL, 1.9, 8);
+        }
+        int brutalLvl = getEnchantLvl(weapon, "deep_lucky_block:brutal");
+        if (brutalLvl > 0) {
+            if (event.getEntity() instanceof Player tp && tp.isBlocking()) {
+                tp.getCooldowns().addCooldown(tp.getUseItem().getItem(), 30 * brutalLvl);
+            }
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), EnchantmentParticleFX.CRIMSON_BLOOD, 6, 0.25, 0.03);
+        }
+        if (weapon.getItem() instanceof net.minecraft.world.item.ShovelItem) {
+            int sBlade = getEnchantLvl(weapon, "deep_lucky_block:shovel_blade");
+            int sHeavy = getEnchantLvl(weapon, "deep_lucky_block:shovel_heavy_hit");
+            int sHalberd = getEnchantLvl(weapon, "deep_lucky_block:shovel_halberd");
+            if (sBlade > 0) {
+                EnchantmentParticleFX.slashArc(player, ParticleTypes.SWEEP_ATTACK, null, 1.8, 5);
+                for (Mob mob : player.level().getEntitiesOfClass(Mob.class, event.getEntity().getBoundingBox().inflate(2.3))) {
+                    if (mob != event.getEntity() && mob.isAlive()) {
+                        hurtNoCascade(mob, attackerDamageSource(player), event.getAmount() * (0.35f + 0.10f * sBlade));
+                    }
+                }
+            }
+            if (sHeavy > 0) {
+                event.getEntity().addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 35, 1));
+                event.getEntity().addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 35, 0));
+                player.level().playSound(null, event.getEntity().blockPosition(), SoundEvents.ANVIL_PLACE, SoundSource.PLAYERS, 0.35f, 1.55f);
+            }
+            if (sHalberd > 0 && (player.distanceTo(event.getEntity()) >= 2.7f || event.getEntity().isPassenger())) {
+                event.setAmount(event.getAmount() * (1.0f + 0.25f * sHalberd));
+            }
+        }
+
+        // T306-FIX : annihilating_sweep inflige désormais 100% (+15%/niv supplémentaire) en zone !
         int sweepLvl = getEnchantLvl(weapon, "deep_lucky_block:annihilating_sweep");
         if (sweepLvl > 0) {
-            AABB box = event.getEntity().getBoundingBox().inflate(3.0);
+            double rad = deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(3.2, 0.3, sweepLvl);
+            float mult = 1.0f + 0.15f * Math.max(0, sweepLvl - 1);
+            EnchantmentParticleFX.slashArc(player, EnchantmentParticleFX.SHADOW_VIOLET, ParticleTypes.WITCH, Math.min(3.5, rad), 13);
+            AABB box = event.getEntity().getBoundingBox().inflate(rad);
             for (Mob mob : player.level().getEntitiesOfClass(Mob.class, box)) {
                 if (mob != event.getEntity() && mob.isAlive()) {
-                    // FIX (mob-equipment-enchant generalization) : DamageSources.playerAttack
-                    // exige un Player ; pour un mob porteur on retombe sur
-                    // mobAttack, l'equivalent vanilla pour un attaquant non-joueur.
-                    hurtNoCascade(mob, player instanceof Player pAtk
-                            ? player.damageSources().playerAttack(pAtk)
-                            : player.damageSources().mobAttack(player), event.getAmount() * 0.5f);
+                    hurtNoCascade(mob, attackerDamageSource(player), event.getAmount() * mult);
                 }
             }
         }
-        int bloodDrinkerLvl = getEnchantLvl(weapon, "deep_lucky_block:blood_drinker_edge");
-        if (bloodDrinkerLvl > 0) player.heal(event.getAmount() * (0.2f * bloodDrinkerLvl));
 
+        // T306-FIX : fear vérifie réellement la présence de monstres proches (et non Y < 0 !)
         int fearLvl = getEnchantLvl(weapon, "deep_lucky_block:fear");
         if (fearLvl > 0) {
-            int chance = player.getY() < 0 ? 60 : 30;
-            if (player.level().random.nextInt(100) < chance) {
+            boolean monstersNear = event.getEntity() instanceof net.minecraft.world.entity.monster.Monster
+                    || !player.level().getEntitiesOfClass(net.minecraft.world.entity.monster.Monster.class, player.getBoundingBox().inflate(8.0)).isEmpty();
+            if (monstersNear && player.level().random.nextInt(100) < Math.min(75, 18 * fearLvl)) {
                 event.setCanceled(true);
-                // Feedback bien visible : le coup rate, le porteur est brièvement
-                // ralenti par la peur, avec son + particules d'âme sur la cible.
                 player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 20, 0, false, true, true));
                 player.level().playSound(null, player.getX(), player.getY(), player.getZ(),
-                        SoundEvents.WOLF_GROWL, SoundSource.PLAYERS, 0.9f, 0.5f);
-                if (player.level() instanceof ServerLevel sl) {
-                    sl.sendParticles(ParticleTypes.SOUL,
-                            event.getEntity().getX(), event.getEntity().getY() + 1.0, event.getEntity().getZ(),
-                            10, 0.35, 0.5, 0.35, 0.02);
-                }
+                        SoundEvents.WOLF_GROWL, SoundSource.PLAYERS, 0.8f, 0.55f);
+                EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.SOUL, 8, 0.35, 0.02);
                 return;
             }
         }
-        int berserkLvl = Math.max(getEnchantLvl(weapon, "deep_lucky_block:berserk"), getEnchantLvl(weapon, "deep_lucky_block:desperate_kill"));
+
+        // T306-OVERHAUL : berserk (PV manquants continus) séparé de desperate_kill (seuil critique <=35% PV)
+        int berserkLvl = getEnchantLvl(weapon, "deep_lucky_block:berserk");
         if (berserkLvl > 0) {
-            float missingHp = player.getMaxHealth() - player.getHealth();
-            event.setAmount(event.getAmount() + (missingHp * 0.5f * berserkLvl));
+            float missingHp = Math.max(0f, player.getMaxHealth() - player.getHealth());
+            if (missingHp > 0.5f) {
+                event.setAmount(event.getAmount() + (missingHp * 0.5f * berserkLvl));
+                if (missingHp >= 6.0f) EnchantmentParticleFX.burstOnEntity(player, EnchantmentParticleFX.CRIMSON_BLOOD, 4, 0.3, 0.02);
+            }
         }
         int executeLvl = getEnchantLvl(weapon, "deep_lucky_block:execute_chance");
         if (executeLvl > 0) {
-            float targetHpPct = event.getEntity().getHealth() / event.getEntity().getMaxHealth();
-            if (targetHpPct <= (0.05f * executeLvl)) {
+            float targetHpPct = event.getEntity().getHealth() / Math.max(1f, event.getEntity().getMaxHealth());
+            if (targetHpPct <= 0.35f && player.level().random.nextInt(100) < Math.min(90, 6 * executeLvl)) {
                 event.setAmount(event.getEntity().getMaxHealth() * 10f);
+                EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.FLASH, 1, 0.0, 0.0);
             }
         }
         int newEdgeLvl = getEnchantLvl(weapon, "deep_lucky_block:new_edge");
         if (newEdgeLvl > 0 && weapon.isDamageableItem()) {
             float durPct = (float)(weapon.getMaxDamage() - weapon.getDamageValue()) / weapon.getMaxDamage();
-            event.setAmount(event.getAmount() * (1f + durPct));
+            event.setAmount(event.getAmount() * (1f + durPct * 0.18f * newEdgeLvl));
         }
         int comboLvl = getEnchantLvl(weapon, "deep_lucky_block:combo_slash");
         if (comboLvl > 0) {
@@ -348,30 +424,22 @@ public class UniversalEnchantmentHandler {
             COMBO_STACKS.put(player.getUUID(), stacks);
             if (stacks > 0) event.setAmount(event.getAmount() * (1f + (0.2f * stacks)));
         }
-        // FIX DOUBLE-COMPTAGE : sharp_edge (+1.0/niv) et reinforced_sharpness
-        // (+2.0/niv) sont désormais de vrais AttributeModifier Attack Damage
-        // dans RealAttributeModifierHandler, déjà inclus dans event.getAmount()
-        // de base -- plus de recalcul ici.
-        // sharpened_sharpness : seule sa partie FIXE (+1.5/niv) est un vrai
-        // AttributeModifier (déjà incluse dans event.getAmount()). Sa partie
-        // CONDITIONNELLE (+10%/niv, seulement si la cible porte de l'armure)
-        // n'est pas représentable comme attribut permanent et reste gérée ici.
         int sharpSharpLvl = getEnchantLvl(weapon, "deep_lucky_block:sharpened_sharpness");
         if (sharpSharpLvl > 0 && event.getEntity().getArmorValue() > 0) {
             event.setAmount(event.getAmount() + event.getAmount() * (0.10f * sharpSharpLvl));
         }
-        // bloodEdgeLvl est déjà déclaré plus haut dans cette méthode.
-        if (bloodEdgeLvl > 0) event.getEntity().addEffect(new MobEffectInstance(MobEffects.POISON, 100, bloodEdgeLvl - 1));
-        // POISON FANG : les enchantements « Fang » de mods Minecraft appliquent
-        // leur effet à chaque morsure/frappe ; ici la cible est empoisonnée.
+        if (bloodEdgeLvl > 0) event.getEntity().addEffect(new MobEffectInstance(MobEffects.POISON, 100, Math.min(3, bloodEdgeLvl - 1)));
+
         int poisonFangLvl = getEnchantLvl(weapon, "deep_lucky_block:poison_fang");
         if (poisonFangLvl > 0) {
-            event.getEntity().addEffect(new MobEffectInstance(
-                    MobEffects.POISON, 60 + 40 * poisonFangLvl,
-                    Math.min(1, poisonFangLvl - 1)));
+            if (event.getEntity().hasEffect(MobEffects.POISON)) {
+                event.setAmount(event.getAmount() + 1.5f * poisonFangLvl);
+                EnchantmentParticleFX.burstOnEntity(event.getEntity(), EnchantmentParticleFX.TOXIC_GREEN, 8, 0.25, 0.02);
+            }
+            event.getEntity().addEffect(new MobEffectInstance(MobEffects.POISON, 60 + 40 * poisonFangLvl, Math.min(2, poisonFangLvl - 1)));
         }
         int witherEdgeLvl = getEnchantLvl(weapon, "deep_lucky_block:wither_edge");
-        if (witherEdgeLvl > 0) event.getEntity().addEffect(new MobEffectInstance(MobEffects.WITHER, 100, witherEdgeLvl - 1));
+        if (witherEdgeLvl > 0) event.getEntity().addEffect(new MobEffectInstance(MobEffects.WITHER, 100, Math.min(3, witherEdgeLvl - 1)));
         int witherBladeLvl = getEnchantLvl(weapon, "deep_lucky_block:wither_blade");
         if (witherBladeLvl > 0 && event.getEntity().hasEffect(MobEffects.WITHER)) {
             float newDmg = event.getAmount() * 1.5f;
@@ -382,41 +450,132 @@ public class UniversalEnchantmentHandler {
         if (promLvl > 0 && event.getEntity().getMaxHealth() >= 20f) {
             event.setAmount(event.getAmount() * (1f + 0.15f * promLvl));
         }
-        // Frappe Critique / Degats Critiques / Critique Leger : base 1.0 (juste les bonus sur un crit vanilla)
+
+        int lowCritLvl = getEnchantLvl(weapon, "deep_lucky_block:low_damage_critical");
         int critStrikeLvl = getEnchantLvl(weapon, "deep_lucky_block:critical_strike");
         int dmgCritLvl = getEnchantLvl(weapon, "deep_lucky_block:damage_critical");
-        int lowCritLvl = getEnchantLvl(weapon, "deep_lucky_block:low_damage_critical");
         if (critStrikeLvl > 0 || dmgCritLvl > 0 || lowCritLvl > 0) {
             if (player.fallDistance > 0.0F && !player.onGround() && !player.onClimbable() && !player.isInWater()) {
-                float critMult = 1.0f + (0.15f * critStrikeLvl) + (0.20f * dmgCritLvl) + (0.10f * lowCritLvl);
+                float critMult = 1.0f + (0.12f * lowCritLvl) + (0.20f * critStrikeLvl) + (0.32f * dmgCritLvl);
                 event.setAmount(event.getAmount() * critMult);
-            }
-        }
-        // Traumatisme Ardent & Frappe Silex
-        int blazeTraumaLvl = getEnchantLvl(weapon, "deep_lucky_block:blazing_trauma");
-        int flintLvl = getEnchantLvl(weapon, "deep_lucky_block:flint_strike");
-        if (blazeTraumaLvl > 0 || flintLvl > 0) {
-            event.getEntity().setRemainingFireTicks((3 * (Math.max(blazeTraumaLvl, flintLvl) * 20)));
-            if (blazeTraumaLvl > 0) event.getEntity().addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 60, blazeTraumaLvl - 1));
-        }
-        // Balayages Ardents & Ameliores
-        int sweepFire = Math.max(getEnchantLvl(weapon, "deep_lucky_block:sweeping_fire"), Math.max(getEnchantLvl(weapon, "deep_lucky_block:fiery_sweep"), Math.max(getEnchantLvl(weapon, "deep_lucky_block:sweeping_burn_slash"), getEnchantLvl(weapon, "deep_lucky_block:blazing_soul_sweep"))));
-        int sweepSlash = Math.max(
-                getEnchantLvl(weapon, "deep_lucky_block:reinforced_sweeping"),
-                Math.max(getEnchantLvl(weapon, "deep_lucky_block:sweeping_strike"),
-                        Math.max(getEnchantLvl(weapon, "deep_lucky_block:sweeping_slash"),
-                                getEnchantLvl(weapon, "deep_lucky_block:sweeping_enhancement"))));
-        if (sweepFire > 0 || sweepSlash > 0) {
-            AABB box = event.getEntity().getBoundingBox().inflate(2.5 + (0.5 * sweepSlash));
-            for (Mob mob : player.level().getEntitiesOfClass(Mob.class, box)) {
-                if (mob != event.getEntity() && mob.isAlive()) {
-                    if (sweepSlash > 0) hurtNoCascade(mob, player instanceof Player pSw
-                            ? player.damageSources().playerAttack(pSw)
-                            : player.damageSources().mobAttack(player), event.getAmount() * (0.3f + 0.1f * sweepSlash));
-                    if (sweepFire > 0) mob.setRemainingFireTicks((3 * sweepFire) * 20);
+                if (dmgCritLvl > 0) {
+                    event.getEntity().setDeltaMovement(event.getEntity().getDeltaMovement().add(0, -0.25, 0));
+                    EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.CRIT, 14, 0.35, 0.12);
                 }
             }
         }
+
+        int blazeTraumaLvl = getEnchantLvl(weapon, "deep_lucky_block:blazing_trauma");
+        int flintLvl = getEnchantLvl(weapon, "deep_lucky_block:flint_strike");
+        if (flintLvl > 0) {
+            if (!event.getEntity().isOnFire()) event.setAmount(event.getAmount() + 1.0f * flintLvl);
+            event.getEntity().setRemainingFireTicks(Math.max(event.getEntity().getRemainingFireTicks(), 60 * flintLvl));
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.LAVA, 4, 0.2, 0.02);
+        }
+        if (blazeTraumaLvl > 0) {
+            event.getEntity().setRemainingFireTicks(Math.max(event.getEntity().getRemainingFireTicks(), 60 * blazeTraumaLvl));
+            event.getEntity().addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 80, Math.min(3, blazeTraumaLvl - 1)));
+            event.getEntity().addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 30, 0));
+        }
+
+        int sweepEnh = getEnchantLvl(weapon, "deep_lucky_block:sweeping_enhancement");
+        int sweepReinf = getEnchantLvl(weapon, "deep_lucky_block:reinforced_sweeping");
+        int sweepStrike = getEnchantLvl(weapon, "deep_lucky_block:sweeping_strike");
+        int sweepSlash = getEnchantLvl(weapon, "deep_lucky_block:sweeping_slash");
+        int sweepFire = getEnchantLvl(weapon, "deep_lucky_block:sweeping_fire");
+        int fierySweep = getEnchantLvl(weapon, "deep_lucky_block:fiery_sweep");
+        int burnSlash = getEnchantLvl(weapon, "deep_lucky_block:sweeping_burn_slash");
+        int soulSweep = getEnchantLvl(weapon, "deep_lucky_block:blazing_soul_sweep");
+
+        if (sweepEnh > 0 || sweepReinf > 0) {
+            double rad = sweepReinf > 0
+                    ? deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(2.8, 0.35, sweepReinf)
+                    : 2.5;
+            float ratio = sweepReinf > 0 ? (0.45f + 0.15f * sweepReinf) : (0.25f + 0.10f * sweepEnh);
+            if (sweepReinf > 0) EnchantmentParticleFX.slashArc(player, EnchantmentParticleFX.STEEL_SILVER, ParticleTypes.SWEEP_ATTACK, 2.2, 9);
+            for (Mob mob : player.level().getEntitiesOfClass(Mob.class, event.getEntity().getBoundingBox().inflate(rad))) {
+                if (mob != event.getEntity() && mob.isAlive()) {
+                    hurtNoCascade(mob, attackerDamageSource(player), event.getAmount() * ratio);
+                    if (sweepReinf > 0) mob.knockback(0.35f, player.getX() - mob.getX(), player.getZ() - mob.getZ());
+                }
+            }
+        }
+        if (sweepStrike > 0) {
+            EnchantmentParticleFX.slashArc(player, ParticleTypes.CLOUD, ParticleTypes.CRIT, 2.3, 10);
+            for (Mob mob : player.level().getEntitiesOfClass(Mob.class, event.getEntity().getBoundingBox().inflate(3.0))) {
+                if (mob != event.getEntity() && mob.isAlive()) {
+                    hurtNoCascade(mob, attackerDamageSource(player), event.getAmount() * (0.30f + 0.10f * sweepStrike));
+                    mob.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 35, 1));
+                }
+            }
+        }
+        if (sweepSlash > 0) {
+            EnchantmentParticleFX.slashArc(player, EnchantmentParticleFX.CRIMSON_BLOOD, EnchantmentParticleFX.SCARLET_MIST, 2.2, 10);
+            float bleed = 1.5f * sweepSlash;
+            for (Mob mob : player.level().getEntitiesOfClass(Mob.class, event.getEntity().getBoundingBox().inflate(2.8))) {
+                if (mob != event.getEntity() && mob.isAlive()) {
+                    hurtNoCascade(mob, attackerDamageSource(player), event.getAmount() * 0.30f);
+                    if (player.level() instanceof ServerLevel slb) {
+                        final Mob bledMob = mob;
+                        final LivingEntity atkRef = player;
+                        TestProcedure.schedule(slb, TestProcedure.currentTick(slb) + 30, () -> {
+                            if (bledMob.isAlive()) {
+                                hurtNoCascade(bledMob, atkRef.damageSources().magic(), bleed);
+                                EnchantmentParticleFX.burstOnEntity(bledMob, EnchantmentParticleFX.CRIMSON_BLOOD, 5, 0.2, 0.02);
+                            }
+                        });
+                    }
+                }
+            }
+        }
+        if (sweepFire > 0 || fierySweep > 0) {
+            double rad = fierySweep > 0 ? 3.5 : 2.5;
+            int fireTicks = fierySweep > 0 ? (70 * fierySweep) : (40 * sweepFire);
+            if (fierySweep > 0) EnchantmentParticleFX.slashArc(player, ParticleTypes.FLAME, ParticleTypes.SMALL_FLAME, 2.4, 11);
+            for (Mob mob : player.level().getEntitiesOfClass(Mob.class, event.getEntity().getBoundingBox().inflate(rad))) {
+                if (mob != event.getEntity() && mob.isAlive()) {
+                    mob.setRemainingFireTicks(Math.max(mob.getRemainingFireTicks(), fireTicks));
+                    if (fierySweep > 0) hurtNoCascade(mob, player.damageSources().onFire(), 1.0f * fierySweep);
+                }
+            }
+        }
+        if (burnSlash > 0) {
+            if (event.getEntity().isOnFire()) {
+                event.setAmount(event.getAmount() * (1.0f + 0.22f * burnSlash));
+                EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.LAVA, 8, 0.3, 0.04);
+                for (Mob mob : player.level().getEntitiesOfClass(Mob.class, event.getEntity().getBoundingBox().inflate(2.8))) {
+                    if (mob != event.getEntity() && mob.isAlive()) {
+                        mob.setRemainingFireTicks(60 * burnSlash);
+                        hurtNoCascade(mob, player.damageSources().onFire(), 1.5f * burnSlash);
+                    }
+                }
+            } else {
+                event.getEntity().setRemainingFireTicks(40 * burnSlash);
+            }
+        }
+        if (soulSweep > 0) {
+            EnchantmentParticleFX.slashArc(player, ParticleTypes.SOUL_FIRE_FLAME, ParticleTypes.SOUL, 2.4, 12);
+            int soulsHit = 0;
+            for (Mob mob : player.level().getEntitiesOfClass(Mob.class, event.getEntity().getBoundingBox().inflate(3.0))) {
+                if (mob.isAlive()) {
+                    hurtNoCascade(mob, player.damageSources().magic(), 1.5f * soulSweep);
+                    mob.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 40, 0));
+                    soulsHit++;
+                }
+            }
+            if (soulsHit > 0) player.heal(Math.min(3.0f, 0.5f * soulsHit));
+        }
+
+        int sprintImpHit = getArmorEnchantLvl(player, "deep_lucky_block:sprint_impact");
+        if (sprintImpHit > 0 && player.isSprinting()) {
+            event.setAmount(event.getAmount() + 1.5f * sprintImpHit);
+            event.getEntity().knockback(0.25f * Math.min(4, sprintImpHit), player.getX() - event.getEntity().getX(), player.getZ() - event.getEntity().getZ());
+            if (player.level() instanceof ServerLevel sls) {
+                EnchantmentParticleFX.shockwaveRing(sls, event.getEntity().getX(), event.getEntity().getY() + 0.2,
+                        event.getEntity().getZ(), ParticleTypes.CLOUD, 1.3, 10, 0.06);
+            }
+        }
+
         int lastStandLvl = getEnchantLvl(weapon, "deep_lucky_block:last_stand_slayer");
         if (lastStandLvl > 0 && event.getEntity().getHealth() < (event.getEntity().getMaxHealth() * 0.30f)) {
             event.setAmount(event.getAmount() * (1f + 0.25f * lastStandLvl));
@@ -425,20 +584,8 @@ public class UniversalEnchantmentHandler {
         if (ambushLvl > 0 && event.getEntity().getHealth() >= event.getEntity().getMaxHealth()) {
             event.setAmount(event.getAmount() * (1f + 0.20f * ambushLvl));
         }
-        // FIX DOUBLE-COMPTAGE : brutal/mighty_strike/sighing_strike (Attack
-        // Damage) et la famille shovel_* sont désormais de vrais
-        // AttributeModifier dans RealAttributeModifierHandler, déjà inclus
-        // dans event.getAmount() de base. Le knockback de mighty_strike est
-        // également couvert par son propre AttributeModifier ATTACK_KNOCKBACK
-        // -- depuis Minecraft 1.21 (24w18a), cet attribut est appliqué
-        // NATIVEMENT aux joueurs par le jeu lui-même (avant cette version il
-        // n'affectait que les mobs, d'où l'ancien appel manuel knockback()
-        // ici). Le réappliquer manuellement produirait désormais un DOUBLE
-        // recul (attribut natif + appel manuel), donc plus aucun code ici :
-        // le seul AttributeModifier suffit, tooltip ET effet réel inclus.
         int pryLvl = getEnchantLvl(weapon, "deep_lucky_block:armor_pry");
         if (pryLvl > 0 && event.getEntity().getArmorValue() > 0) event.setAmount(event.getAmount() * (1f + 0.15f * pryLvl));
-        // Stealth Hunter, Transfer Misfortune
         int stealthLvl = getEnchantLvl(weapon, "deep_lucky_block:stealth_hunter");
         if (stealthLvl > 0) {
             if (player.hasEffect(MobEffects.INVISIBILITY)) {
@@ -453,7 +600,6 @@ public class UniversalEnchantmentHandler {
             if (player.hasEffect(MobEffects.WITHER)) { event.getEntity().addEffect(new MobEffectInstance(MobEffects.WITHER, 100, 1)); player.removeEffect(MobEffects.WITHER); }
             if (player.hasEffect(MobEffects.WEAKNESS)) { event.getEntity().addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 100, 1)); player.removeEffect(MobEffects.WEAKNESS); }
         }
-        // GAUNTLETS (FIST) sur plastron : effets offensifs main vide uniquement
         ItemStack gauntletChestplate = player.getItemBySlot(EquipmentSlot.CHEST);
         int hwyWound = getEnchantLvl(gauntletChestplate, "deep_lucky_block:heavy_wound_punch_gauntlet");
         int emptyFist = getEnchantLvl(gauntletChestplate, "deep_lucky_block:empty_fist_gauntlet");
@@ -475,94 +621,107 @@ public class UniversalEnchantmentHandler {
             if (sprintPunch > 0 && player.isSprinting()) event.setAmount(event.getAmount() + 1.0f * sprintPunch);
         }
         int blzRage = getArmorEnchantLvl(player, "deep_lucky_block:blazing_rage");
-        if (blzRage > 0 && player.isOnFire()) event.setAmount(event.getAmount() * (1f + 0.20f * blzRage));
+        if (blzRage > 0 && player.isOnFire()) {
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.LAVA, 6, 0.3, 0.04);
+            for (Mob mob : player.level().getEntitiesOfClass(Mob.class, event.getEntity().getBoundingBox().inflate(2.5))) {
+                if (mob.isAlive()) {
+                    mob.setRemainingFireTicks(40 * blzRage);
+                    hurtNoCascade(mob, player.damageSources().onFire(), 1.5f * blzRage);
+                }
+            }
+        }
         int sturdy = getArmorEnchantLvl(player, "deep_lucky_block:sturdy_brute");
         if (sturdy > 0 && player.getHealth() > 20f) event.setAmount(event.getAmount() + (player.getHealth() - 20f) * 0.1f);
         int endCurse = getArmorEnchantLvl(player, "deep_lucky_block:end_curse");
-        if (endCurse > 0) event.setAmount(event.getAmount() * (player.level().dimension() == Level.END ? 0.4f : 1.3f));
+        if (endCurse > 0) {
+            boolean inEnd = player.level().dimension() == Level.END;
+            event.setAmount(event.getAmount() * (inEnd ? 0.5f : 1.25f));
+            if (inEnd) EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.PORTAL, 5, 0.25, 0.1);
+        }
         int exhaust = getEnchantLvl(weapon, "deep_lucky_block:exhaustion");
         if (exhaust > 0 && player.getAirSupply() < 300) event.setAmount(event.getAmount() * 0.5f);
-        // Curses dimensionnels
         int unCurse = getEnchantLvl(weapon, "deep_lucky_block:undead_curse");
         if (unCurse > 0) {
-            if (event.getEntity() instanceof net.minecraft.world.entity.monster.Zombie || event.getEntity() instanceof net.minecraft.world.entity.monster.Skeleton) event.setAmount(event.getAmount() * 0.4f);
+            if (event.getEntity().getType().is(net.minecraft.tags.EntityTypeTags.SENSITIVE_TO_SMITE)) event.setAmount(event.getAmount() * 0.4f);
             else if (event.getEntity() instanceof Player || event.getEntity() instanceof Villager || event.getEntity() instanceof Pillager) event.setAmount(event.getAmount() * 1.5f);
         }
         int ovCurse = getEnchantLvl(weapon, "deep_lucky_block:overworld_curse");
         int neCurse = getEnchantLvl(weapon, "deep_lucky_block:nether_curse");
-        if (ovCurse > 0) event.setAmount(event.getAmount() * (player.level().dimension() == Level.OVERWORLD ? 0.4f : 1.3f));
-        if (neCurse > 0) event.setAmount(event.getAmount() * (player.level().dimension() == Level.NETHER ? 0.4f : 1.3f));
+        if (ovCurse > 0) {
+            boolean inOw = player.level().dimension() == Level.OVERWORLD;
+            event.setAmount(event.getAmount() * (inOw ? 0.5f : 1.3f));
+            if (inOw) EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.ASH, 6, 0.25, 0.02);
+        }
+        if (neCurse > 0) {
+            boolean inNether = player.level().dimension() == Level.NETHER;
+            event.setAmount(event.getAmount() * (inNether ? 0.5f : 1.3f));
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), inNether ? ParticleTypes.SMOKE : ParticleTypes.SNOWFLAKE, 5, 0.25, 0.02);
+        }
         int battleScar = getEnchantLvl(weapon, "deep_lucky_block:battle_scarred");
         if (battleScar > 0 && weapon.isDamageableItem()) {
             float lost = (float) weapon.getDamageValue() / weapon.getMaxDamage();
             event.setAmount(Math.max(0.0f, event.getAmount() * (1f - lost)));
-            // Visuel : l'arme s'use réellement à chaque coup (+2 durabilité par
-            // coup). La barre de durabilité descend donc visiblement et les
-            // dégâts diminuent en même temps -> cohérent et perceptible.
             if (player.level() instanceof net.minecraft.server.level.ServerLevel slw) weapon.hurtAndBreak(2, slw, player, item -> {});
         }
-        // FIX DOUBLE-COMPTAGE : blunt (-1.5 Attack Damage/niv) est désormais
-        // un vrai AttributeModifier négatif dans RealAttributeModifierHandler,
-        // déjà inclus dans event.getAmount() de base. Le recalculer ici en
-        // plus infligeait la pénalité deux fois.
 
-        // ============================================================
-        // FIX CRIT x2.25 (PATCH 1) : Minecraft applique deja le x1.5 du crit
-        // vanilla AVANT LivingIncomingDamageEvent. On ne multiplie QUE si un enchant de
-        // crit custom est present, base 1.0 sur crit vanilla / 1.5 sur crit custom.
-        // ============================================================
         int lowCritRate = getEnchantLvl(weapon, "deep_lucky_block:low_crit_rate");
         int normalCritRate = getEnchantLvl(weapon, "deep_lucky_block:crit_rate");
         int focCrit = getEnchantLvl(weapon, "deep_lucky_block:focused_crit");
         int lowCritDmg = getEnchantLvl(weapon, "deep_lucky_block:low_crit_damage");
         int normCritDmg = getEnchantLvl(weapon, "deep_lucky_block:normal_crit_damage");
         int overCritDmg = getEnchantLvl(weapon, "deep_lucky_block:overclocked_crit");
-        boolean hasCustomCrit = lowCritRate > 0 || normalCritRate > 0 || focCrit > 0 || lowCritDmg > 0 || normCritDmg > 0 || overCritDmg > 0;
-        if (hasCustomCrit) {
-            boolean vanillaCrit = player.fallDistance > 0.0F && !player.onGround() && !player.onClimbable() && !player.isInWater();
-            boolean customCrit = (focCrit > 0 && player.isShiftKeyDown()) || (player.level().random.nextInt(100) < (lowCritRate * 5 + normalCritRate * 10));
-            if (vanillaCrit || customCrit) {
+        boolean vanillaCrit = player.fallDistance > 0.0F && !player.onGround() && !player.onClimbable() && !player.isInWater();
+        boolean focusedSurgical = focCrit > 0 && player.isShiftKeyDown()
+                && (!(player instanceof Player fp) || fp.getAttackStrengthScale(0.5f) >= 0.85f);
+        boolean rolledCustomCrit = (lowCritRate > 0 || normalCritRate > 0)
+                && player.level().random.nextInt(100) < Math.min(100, lowCritRate * 5 + normalCritRate * 10);
+        boolean customCrit = focusedSurgical || rolledCustomCrit;
+        if (vanillaCrit || customCrit) {
+            if (customCrit || lowCritDmg > 0 || normCritDmg > 0 || overCritDmg > 0) {
                 float base = vanillaCrit ? 1.0f : 1.5f;
-                float critMult = base + (0.10f * lowCritDmg) + (0.20f * normCritDmg) + (1.0f * overCritDmg);
+                float critMult = base + (0.12f * lowCritDmg) + (0.25f * normCritDmg) + (0.75f * overCritDmg);
                 event.setAmount(event.getAmount() * critMult);
+            }
+            if (focusedSurgical && event.getEntity().getArmorValue() > 0) {
+                hurtNoCascade(event.getEntity(), player.damageSources().magic(), Math.min(16f, event.getAmount() * 0.20f));
+                EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.FLASH, 1, 0.0, 0.0);
+            }
+            if (overCritDmg > 0) {
+                EnchantmentParticleFX.burstOnEntity(event.getEntity(), EnchantmentParticleFX.OVERCLOCK_CYAN, 10, 0.3, 0.05);
+                EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.ELECTRIC_SPARK, 8, 0.3, 0.08);
+            } else if (rolledCustomCrit) {
+                EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.CRIT, 8, 0.25, 0.1);
+            }
 
-                // OVERCHARGE (Electric Heart) : sur un coup critique, chance
-                // de dechainer une chaine electrique vers les ennemis proches.
-                // Fun/agressif, sans element defensif -- l'inverse d'Umbral
-                // Pact plus bas qui est un vrai pacte a double tranchant.
-                int overcharge = getEnchantLvl(weapon, "deep_lucky_block:overcharge");
-                if (overcharge > 0 && event.getEntity() instanceof LivingEntity primaryTarget
-                        && player.level().random.nextInt(100) < (20 + 10 * overcharge)) {
-                    // THUNDERCALL PACT (Electric Heart, arme) : sous la pluie,
-                    // synergie eau/electricite assumee -- chaine plus longue
-                    // et plus violente, a l'oppose de la faiblesse classique
-                    // "eau conduit l'electricite contre soi".
-                    int thundercall = getEnchantLvl(weapon, "deep_lucky_block:thundercall_pact");
-                    boolean stormBoost = thundercall > 0 && player.level().isRaining();
-                    int maxJumps = 1 + overcharge + (stormBoost ? thundercall : 0);
-                    float chainDamage = (1.5f + 1.0f * overcharge) * (stormBoost ? (1f + 0.35f * thundercall) : 1f);
-                    LivingEntity current = primaryTarget;
-                    java.util.Set<LivingEntity> struck = new java.util.HashSet<>();
-                    struck.add(primaryTarget);
-                    for (int jump = 0; jump < maxJumps; jump++) {
-                        LivingEntity next = null;
-                        double best = Double.MAX_VALUE;
-                        for (LivingEntity candidate : player.level().getEntitiesOfClass(
-                                LivingEntity.class, current.getBoundingBox().inflate(4.0))) {
-                            if (candidate == player || struck.contains(candidate) || !candidate.isAlive()) continue;
-                            double distSqr = candidate.distanceToSqr(current);
-                            if (distSqr < best) { best = distSqr; next = candidate; }
-                        }
-                        if (next == null) break;
-                        struck.add(next);
-                        hurtNoCascade(next, player.damageSources().lightningBolt(), chainDamage);
-                        if (next.level() instanceof ServerLevel chainLevel) {
-                            chainLevel.sendParticles(ParticleTypes.ELECTRIC_SPARK,
-                                    next.getX(), next.getY() + next.getBbHeight() * 0.5, next.getZ(),
-                                    stormBoost ? 24 : 14, 0.3, 0.3, 0.3, 0.02);
-                        }
-                        current = next;
+            int overcharge = getEnchantLvl(weapon, "deep_lucky_block:overcharge");
+            if (overcharge > 0 && event.getEntity() instanceof LivingEntity primaryTarget
+                    && player.level().random.nextInt(100) < (20 + 10 * overcharge)) {
+                int thundercall = getEnchantLvl(weapon, "deep_lucky_block:thundercall_pact");
+                boolean stormBoost = thundercall > 0 && player.level().isRaining();
+                int maxJumps = 1 + overcharge + (stormBoost ? thundercall : 0);
+                float chainDamage = (1.5f + 1.0f * overcharge) * (stormBoost ? (1f + 0.35f * thundercall) : 1f);
+                LivingEntity current = primaryTarget;
+                java.util.Set<LivingEntity> struck = new java.util.HashSet<>();
+                struck.add(primaryTarget);
+                for (int jump = 0; jump < maxJumps; jump++) {
+                    LivingEntity next = null;
+                    double best = Double.MAX_VALUE;
+                    for (LivingEntity candidate : player.level().getEntitiesOfClass(
+                            LivingEntity.class, current.getBoundingBox().inflate(4.0))) {
+                        if (candidate == player || struck.contains(candidate) || !candidate.isAlive()) continue;
+                        double distSqr = candidate.distanceToSqr(current);
+                        if (distSqr < best) { best = distSqr; next = candidate; }
                     }
+                    if (next == null) break;
+                    struck.add(next);
+                    hurtNoCascade(next, player.damageSources().lightningBolt(), chainDamage);
+                    if (next.level() instanceof ServerLevel chainLevel) {
+                        EnchantmentParticleFX.tetherBeam(chainLevel,
+                                current.position().add(0, current.getBbHeight() * 0.5, 0),
+                                next.position().add(0, next.getBbHeight() * 0.5, 0),
+                                ParticleTypes.ELECTRIC_SPARK, EnchantmentParticleFX.OVERCLOCK_CYAN, 0.55);
+                    }
+                    current = next;
                 }
             }
         }
@@ -626,8 +785,9 @@ public class UniversalEnchantmentHandler {
             event.setAmount(event.getAmount() + (event.getEntity().getMaxHealth() * 0.10f));
         }
         int execPwr = getEnchantLvl(weapon, "deep_lucky_block:execute_power");
-        if (execPwr > 0 && event.getEntity().getHealth() < (event.getEntity().getMaxHealth() * (0.05f + 0.05f * execPwr))) {
+        if (execPwr > 0 && event.getEntity().getHealth() < (event.getEntity().getMaxHealth() * Math.min(0.45f, 0.06f + 0.04f * execPwr))) {
             event.setAmount(event.getEntity().getMaxHealth() * 10f);
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), EnchantmentParticleFX.CRIMSON_BLOOD, 14, 0.3, 0.04);
         }
         int disarmLvl = getEnchantLvl(weapon, "deep_lucky_block:disarm");
         if (disarmLvl > 0 && event.getEntity() instanceof Mob mob && !mob.getMainHandItem().isEmpty() && player.level().random.nextInt(100) < (10 * disarmLvl)) {
@@ -638,109 +798,178 @@ public class UniversalEnchantmentHandler {
         if (pebble > 0 && event.getSource().getMsgId().equals("teleport")) event.setCanceled(true);
         int reachGaunt = getEnchantLvl(gauntletChestplate, "deep_lucky_block:straight_reach_gauntlet");
         int blzBat = getArmorEnchantLvl(player, "deep_lucky_block:blaze_battle");
-        int shReach = getEnchantLvl(weapon, "deep_lucky_block:short_reach");
-        if (reachGaunt > 0 && weapon.isEmpty()) event.setAmount(event.getAmount() + 1.0f * reachGaunt);
-        if (blzBat > 0 && player.isOnFire()) event.setAmount(event.getAmount() * (1f + 0.20f * blzBat));
-        if (shReach > 0) event.setAmount(Math.max(0.5f, event.getAmount() - 1.0f * shReach));
-        // FIX DOUBLE-COMPTAGE : swift_strike (+1.0/niv) et extension (+1.2/niv)
-        // sont désormais de vrais AttributeModifier Attack Damage dans
-        // RealAttributeModifierHandler, déjà inclus dans event.getAmount() de
-        // base. Les rajouter ici en plus doublait leur bonus.
-        // BLOOD TRANSFUSION : soigne le mob frappé. L'arme donne de la vie au
-        // lieu d'en retirer (Healer's Sword).
-        // FIX rapport en jeu ("la healer sword ne frappe meme pas l'ennemi,
-        // le clic gauche ne fait aucune animation") : event.setCanceled(true)
-        // fait retourner FALSE a Entity#hurtOrSimulate/hurtServer côté
-        // vanilla, ce qui arrête TOUTE la pipeline d'attaque du joueur avant
-        // qu'elle ne soit considérée réussie (pas de swing d'animation, pas
-        // de son de coup, pas de knockback, pas de hurtEnemy/postHurtEnemy).
-        // C'est différent de mettre les dégâts à 0 : avec amount=0, le coup
-        // est bien traité comme un HIT valide (animation, son, knockback
-        // fonctionnent normalement), seule la perte de vie de la cible est
-        // neutralisée -> exactement l'effet "soigneur" voulu, sans casser
-        // l'attaque elle-même.
+        if (reachGaunt > 0 && weapon.isEmpty()) event.setAmount(event.getAmount() + 1.5f * reachGaunt);
+        if (blzBat > 0 && player.isOnFire()) {
+            event.setAmount(event.getAmount() * (1f + 0.20f * blzBat));
+            event.getEntity().setRemainingFireTicks(Math.max(event.getEntity().getRemainingFireTicks(), 60 * blzBat));
+        }
+        // T306-FIX : short_reach est désormais un vrai AttributeModifier négatif (-1 dégât & -0.35 portée/niv)
+        // dans RealAttributeModifierHandler -> pas de double soustraction ici.
+
+        // Rythme Martial : cadence personnelle à chaque coup enchaîné
+        int marRhyHit = getArmorEnchantLvl(player, "deep_lucky_block:martial_rhythm");
+        if (marRhyHit > 0) {
+            long nowTick = player.level().getGameTime();
+            long exp = player.getPersistentData().getLong("slb_martial_until");
+            int st = nowTick <= exp ? Math.min(marRhyHit, player.getPersistentData().getInt("slb_martial_stacks") + 1) : 1;
+            player.getPersistentData().putInt("slb_martial_stacks", st);
+            player.getPersistentData().putLong("slb_martial_until", nowTick + 90);
+            event.setAmount(event.getAmount() * (1.0f + 0.07f * st));
+            player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 70, Math.min(3, st - 1), true, false));
+        }
+
         int transfLvl = getEnchantLvl(weapon, "deep_lucky_block:blood_transfusion");
         if (transfLvl > 0) {
             event.setAmount(0.0f);
             event.getEntity().heal(1.0f * transfLvl);
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.HEART, 3, 0.25, 0.02);
             return;
         }
-        // Indestructible & Eternite
-        int unbrLvl = Math.max(getEnchantLvl(weapon, "deep_lucky_block:unbreakable"), getEnchantLvl(weapon, "deep_lucky_block:eternal"));
-        if (unbrLvl > 0 && weapon.isDamageableItem()) weapon.setDamageValue(0);
-        // Decapitation
-        int decapLvl = Math.max(getEnchantLvl(weapon, "deep_lucky_block:decapitation"), getEnchantLvl(weapon, "deep_lucky_block:beheading"));
-        if (decapLvl > 0 && player.level().random.nextInt(100) < (15 * decapLvl)) {
-            if (event.getEntity() instanceof net.minecraft.world.entity.monster.Zombie) event.getEntity().spawnAtLocation(Items.ZOMBIE_HEAD);
-            else if (event.getEntity() instanceof net.minecraft.world.entity.monster.Skeleton) event.getEntity().spawnAtLocation(Items.SKELETON_SKULL);
-            else if (event.getEntity() instanceof net.minecraft.world.entity.monster.Creeper) event.getEntity().spawnAtLocation(Items.CREEPER_HEAD);
-            else if (event.getEntity() instanceof Player targetP) {
-                ItemStack skull = new ItemStack(Items.PLAYER_HEAD);
-                deepluckyblock.util.DeepNbt.getOrCreateTag(skull).putString("SkullOwner", targetP.getGameProfile().getName());
-                event.getEntity().spawnAtLocation(skull);
+        // T306-OVERHAUL : unbreakable (0 usure absolue) vs eternal (immortel à >=1 durabilité + conservé à la mort)
+        if (weapon.isDamageableItem()) {
+            if (getEnchantLvl(weapon, "deep_lucky_block:unbreakable") > 0) {
+                weapon.setDamageValue(0);
+            } else if (getEnchantLvl(weapon, "deep_lucky_block:eternal") > 0 && weapon.getDamageValue() >= weapon.getMaxDamage() - 1) {
+                weapon.setDamageValue(Math.max(0, weapon.getMaxDamage() - 2));
             }
         }
-        // Armee du Chaos
-        int armyLvl = getEnchantLvl(weapon, "deep_lucky_block:summon_army");
-        if (armyLvl > 0 && player.level().random.nextInt(100) < (10 * armyLvl) && !player.level().isClientSide()) {
-            net.minecraft.world.entity.animal.Wolf wolf = new net.minecraft.world.entity.animal.Wolf(EntityType.WOLF, player.level());
-            wolf.setTame(true, true);
-            wolf.setOwnerUUID(player.getUUID());
-            wolf.moveTo(player.getX(), player.getY(), player.getZ());
-            player.level().addFreshEntity(wolf);
+        // T306-OVERHAUL : beheading (Coupe-Tête : +12%/niv sur coup chargé + Force à l'élimination)
+        // tandis que decapitation (Décapitation : chasseur de crânes) tombe proprement à la mort !
+        int beheadLvl = getEnchantLvl(weapon, "deep_lucky_block:beheading");
+        if (beheadLvl > 0) {
+            boolean fullSwing = !(player instanceof Player bp) || bp.getAttackStrengthScale(0.5f) >= 0.85f;
+            if (fullSwing) {
+                event.setAmount(event.getAmount() * (1.0f + 0.12f * beheadLvl));
+                EnchantmentParticleFX.burstOnEntity(event.getEntity(), EnchantmentParticleFX.CRIMSON_BLOOD, 5, 0.2, 0.02);
+            }
         }
-        // Chasse de l'Ombre / Instinct Meurtrier / Sens
+
+        // Chasse de l'Ombre / Sens du Meurtre / Sixième Sens
         int shadowLvl = getEnchantLvl(weapon, "deep_lucky_block:shadow_hunt");
         int killLvl = getEnchantLvl(weapon, "deep_lucky_block:killing_sense");
         int senseLvl = getEnchantLvl(weapon, "deep_lucky_block:sense");
-        if (shadowLvl > 0 && player.level().getMaxLocalRawBrightness(player.blockPosition()) < 7) event.setAmount(event.getAmount() * (1f + 0.15f * shadowLvl));
-        if (killLvl > 0 && event.getEntity().getHealth() < (event.getEntity().getMaxHealth() * 0.25f)) event.setAmount(event.getAmount() * (1f + 0.25f * killLvl));
+        if (shadowLvl > 0 && player.level().getMaxLocalRawBrightness(player.blockPosition()) < 7) {
+            event.setAmount(event.getAmount() * (1f + 0.18f * shadowLvl));
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.SMOKE, 6, 0.25, 0.02);
+        }
+        if (killLvl > 0 && event.getEntity().getHealth() < (event.getEntity().getMaxHealth() * 0.30f)) {
+            event.setAmount(event.getAmount() * (1f + 0.20f * killLvl));
+            event.getEntity().addEffect(new MobEffectInstance(MobEffects.GLOWING, 80, 0, false, false));
+            hurtNoCascade(event.getEntity(), player.damageSources().magic(), 1.5f * killLvl);
+        }
         if (senseLvl > 0) {
             event.setAmount(event.getAmount() + (1.0f * senseLvl));
             event.getEntity().addEffect(new MobEffectInstance(MobEffects.GLOWING, 60, 0));
         }
-        // Blessure Affaiblissante & Cicatrice Empoisonnee
-        int weakWound = Math.max(getEnchantLvl(weapon, "deep_lucky_block:weakness_wound"), getEnchantLvl(weapon, "deep_lucky_block:weakness_trauma"));
+
+        // T306-OVERHAUL : weakness_wound (plaie durable anti-soin) vs weakness_trauma (choc commotionnel intense)
+        // et poison_scar (toxine acide augmentant les dégâts subis)
+        int weakWound = getEnchantLvl(weapon, "deep_lucky_block:weakness_wound");
+        int weakTrauma = getEnchantLvl(weapon, "deep_lucky_block:weakness_trauma");
         int poisonScar = getEnchantLvl(weapon, "deep_lucky_block:poison_scar");
-        if (weakWound > 0) event.getEntity().addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 80, weakWound - 1));
-        if (poisonScar > 0) event.getEntity().addEffect(new MobEffectInstance(MobEffects.POISON, 100, poisonScar - 1));
-        // Coup du Desespoir & Frappe Nourriciere
+        if (weakWound > 0) {
+            event.getEntity().addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 60 + 40 * weakWound, 0));
+            event.getEntity().getPersistentData().putLong("slb_weak_wound_until", player.level().getGameTime() + 60L + 40L * weakWound);
+        }
+        if (weakTrauma > 0) {
+            event.getEntity().addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 55, Math.min(3, weakTrauma)));
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.CRIT, 6, 0.25, 0.08);
+        }
+        if (poisonScar > 0) {
+            if (event.getEntity().getPersistentData().getLong("slb_poison_scar_until") > player.level().getGameTime()) {
+                event.setAmount(event.getAmount() * (1.0f + 0.08f * poisonScar));
+            }
+            event.getEntity().addEffect(new MobEffectInstance(MobEffects.POISON, 100, Math.min(2, poisonScar - 1)));
+            event.getEntity().getPersistentData().putLong("slb_poison_scar_until", player.level().getGameTime() + 100L);
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), EnchantmentParticleFX.TOXIC_GREEN, 5, 0.2, 0.01);
+        }
+
+        // Coup du Désespoir (seuil critique <=35% PV) & Frappe Nourricière
         int despLvl = getEnchantLvl(weapon, "deep_lucky_block:desperate_kill");
         int foodLvl = getEnchantLvl(weapon, "deep_lucky_block:food_power_strike");
-        if (despLvl > 0 && player.getHealth() < (player.getMaxHealth() * 0.30f)) event.setAmount(event.getAmount() * (1f + 0.30f * despLvl));
-        // FOOD POWER STRIKE : necessite FoodData (jauge de faim), propre au
-        // JOUEUR -- reste Player-only, un mob n'a pas de faim.
-        if (foodLvl > 0 && player instanceof Player foodPlayer && foodPlayer.getFoodData().getFoodLevel() >= 18) event.setAmount(event.getAmount() * (1f + 0.20f * foodLvl));
-        // Devoration & Sangsue
-        int devLvl = Math.max(getEnchantLvl(weapon, "deep_lucky_block:devour"), getEnchantLvl(weapon, "deep_lucky_block:leech"));
-        if (devLvl > 0) player.heal(event.getAmount() * 0.15f * devLvl);
-        // Poing Direct
+        if (despLvl > 0 && player.getHealth() <= (player.getMaxHealth() * 0.35f)) {
+            event.setAmount(event.getAmount() * (1f + 0.35f * despLvl));
+            EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.ANGRY_VILLAGER, 3, 0.3, 0.02);
+        }
+        if (foodLvl > 0 && player instanceof Player foodPlayer && foodPlayer.getFoodData().getFoodLevel() >= 18) {
+            event.setAmount(event.getAmount() * (1f + 0.20f * foodLvl));
+        }
+
+        // T306-OVERHAUL : devour (soin léger + festin à l'élimination) vs leech (sangsue parasitaire sur 3s !)
+        int devLvl = getEnchantLvl(weapon, "deep_lucky_block:devour");
+        int leechLvl = getEnchantLvl(weapon, "deep_lucky_block:leech");
+        if (devLvl > 0) {
+            player.heal(event.getAmount() * 0.08f * devLvl);
+        }
+        if (leechLvl > 0 && player.level() instanceof ServerLevel slLeech) {
+            final LivingEntity leechTarget = event.getEntity();
+            final LivingEntity leechOwner = player;
+            final float tickDrain = 1.0f * leechLvl;
+            for (int step = 1; step <= 3; step++) {
+                final int d = step * 20;
+                TestProcedure.schedule(slLeech, TestProcedure.currentTick(slLeech) + d, () -> {
+                    if (leechTarget.isAlive() && leechOwner.isAlive()) {
+                        hurtNoCascade(leechTarget, leechOwner.damageSources().magic(), tickDrain);
+                        leechOwner.heal(tickDrain);
+                        EnchantmentParticleFX.tetherBeam(slLeech,
+                                leechTarget.position().add(0, leechTarget.getBbHeight() * 0.5, 0),
+                                leechOwner.position().add(0, leechOwner.getBbHeight() * 0.5, 0),
+                                EnchantmentParticleFX.CRIMSON_BLOOD, EnchantmentParticleFX.SCARLET_MIST, 0.7);
+                    }
+                });
+            }
+        }
+
+        // T306-FIX : Gantelet Direct uniquement main vide (weapon.isEmpty()) !
         int gauntLvl = getEnchantLvl(gauntletChestplate, "deep_lucky_block:straight_punch_gauntlet");
-        if (gauntLvl > 0) event.setAmount(event.getAmount() + (3.0f * gauntLvl));
-        // Loup Solitaire & Massacre de Masse
-        int loneLvl = Math.max(getEnchantLvl(weapon, "deep_lucky_block:lone_wolf"), getEnchantLvl(weapon, "deep_lucky_block:solo_combat"));
+        if (gauntLvl > 0 && weapon.isEmpty()) {
+            event.setAmount(event.getAmount() + (3.0f * gauntLvl));
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.CRIT, 5, 0.2, 0.05);
+        }
+
+        // T306-OVERHAUL : solo_combat (+20%/niv pur en duel isolé) vs lone_wolf (instinct alpha : dégâts + chasse + défense)
+        int soloLvl = getEnchantLvl(weapon, "deep_lucky_block:solo_combat");
+        int loneLvl = getEnchantLvl(weapon, "deep_lucky_block:lone_wolf");
         int massLvl = getEnchantLvl(weapon, "deep_lucky_block:mass_slaughter");
-        if (loneLvl > 0 && player.level().getEntitiesOfClass(Player.class, player.getBoundingBox().inflate(10.0)).size() <= 1) event.setAmount(event.getAmount() * (1f + 0.20f * loneLvl));
+        if (soloLvl > 0 || loneLvl > 0) {
+            boolean noAllies = player.level().getEntitiesOfClass(Player.class, player.getBoundingBox().inflate(12.0), p2 -> p2 != player).isEmpty();
+            if (noAllies) {
+                if (soloLvl > 0) event.setAmount(event.getAmount() * (1f + 0.20f * soloLvl));
+                if (loneLvl > 0) {
+                    float nightBonus = !player.level().isDay() ? 0.10f : 0.0f;
+                    event.setAmount(event.getAmount() * (1f + 0.15f * loneLvl + nightBonus));
+                }
+            }
+        }
         if (massLvl > 0) {
             int mobs = player.level().getEntitiesOfClass(Mob.class, player.getBoundingBox().inflate(6.0)).size();
-            if (mobs >= 3) event.setAmount(event.getAmount() * (1f + 0.10f * massLvl * mobs));
+            if (mobs >= 3) event.setAmount(event.getAmount() * (1f + 0.10f * massLvl * Math.min(8, mobs)));
         }
-        // Pesanteur & Coup de Masse
-        int slowHvy = Math.max(getEnchantLvl(weapon, "deep_lucky_block:slow_heavy_weakness"), getEnchantLvl(weapon, "deep_lucky_block:heavy_slow_hit"));
-        if (slowHvy > 0) {
-            event.getEntity().addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 60, slowHvy - 1));
-            event.getEntity().addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 60, slowHvy - 1));
+
+        // T306-OVERHAUL : heavy_slow_hit (impact plombé immédiat) vs slow_heavy_weakness (fardeau empilable jusqu'à 4x)
+        int heavySlowHit = getEnchantLvl(weapon, "deep_lucky_block:heavy_slow_hit");
+        int slowHvyWeak = getEnchantLvl(weapon, "deep_lucky_block:slow_heavy_weakness");
+        if (heavySlowHit > 0) {
+            event.getEntity().addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 50, Math.min(3, heavySlowHit)));
+            event.getEntity().addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 50, Math.min(2, heavySlowHit - 1)));
+            event.getEntity().setDeltaMovement(event.getEntity().getDeltaMovement().multiply(0.35, 1.0, 0.35).add(0, -0.15, 0));
         }
-        // Corrosion Dimensionnelle
-        int nCor = getEnchantLvl(weapon, "deep_lucky_block:nether_corrosion");
-        int eCor = getEnchantLvl(weapon, "deep_lucky_block:end_corrosion");
-        if (nCor > 0 && (player.level().dimension() == Level.NETHER || event.getEntity() instanceof net.minecraft.world.entity.monster.Blaze || event.getEntity() instanceof net.minecraft.world.entity.monster.WitherSkeleton)) event.setAmount(event.getAmount() * (1f + 0.30f * nCor));
-        if (eCor > 0 && (player.level().dimension() == Level.END || event.getEntity() instanceof net.minecraft.world.entity.monster.EnderMan)) event.setAmount(event.getAmount() * (1f + 0.30f * eCor));
-        // Malediction de Tremblement
+        if (slowHvyWeak > 0) {
+            long gTime = player.level().getGameTime();
+            int stacks = gTime <= event.getEntity().getPersistentData().getLong("slb_burden_until")
+                    ? Math.min(4, event.getEntity().getPersistentData().getInt("slb_burden_stacks") + 1) : 1;
+            event.getEntity().getPersistentData().putInt("slb_burden_stacks", stacks);
+            event.getEntity().getPersistentData().putLong("slb_burden_until", gTime + 100L);
+            event.setAmount(event.getAmount() * (1.0f + 0.05f * slowHvyWeak * stacks));
+            event.getEntity().addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 80, Math.min(3, stacks - 1)));
+            event.getEntity().addEffect(new MobEffectInstance(MobEffects.DIG_SLOWDOWN, 80, Math.min(2, stacks - 1)));
+        }
+
+        // T306-FIX : nether_corrosion et end_corrosion sont des MALÉDICTIONS d'usure dimensionnelle
+        // (gérées désormais dans handlePlayerTick), plus des buffs de dégâts inversés !
+
         int tremorLvl = getEnchantLvl(weapon, "deep_lucky_block:curse_of_tremor");
         if (tremorLvl > 0 && player.level().random.nextInt(100) < 15) {
-            // Player.drop(ItemStack, boolean) est Player-only ; l'equivalent
-            // generique Entity.spawnAtLocation(ItemStack) fonctionne aussi pour un mob.
             player.spawnAtLocation(weapon.copy());
             weapon.setCount(0);
         }
@@ -770,54 +999,85 @@ public class UniversalEnchantmentHandler {
 
     private static void handlePlayerTick(LivingEntity player) {
 
-        // 7. Gale : détection du saut (remplace LivingJumpEvent)
+        // 7. Gale + Saut Renforcé (leap_power impulsion avant au saut)
         try {
             boolean slbUgWasGround = player.getPersistentData().getBoolean("slb_ug_was_ground");
             player.getPersistentData().putBoolean("slb_ug_was_ground", player.onGround());
             if (!player.onGround() && slbUgWasGround && player.getDeltaMovement().y > 0.0) {
                 int galeLvl = getEnchantLvl(player.getItemBySlot(EquipmentSlot.FEET), "deep_lucky_block:gale");
-                if (galeLvl > 0) player.setDeltaMovement(player.getDeltaMovement().add(0, 0.1f * galeLvl, 0));
+                if (galeLvl > 0) {
+                    player.setDeltaMovement(player.getDeltaMovement().add(0, 0.1f * galeLvl, 0));
+                    if (player.level() instanceof ServerLevel slg) {
+                        EnchantmentParticleFX.shockwaveRing(slg, player.getX(), player.getY() + 0.08, player.getZ(), ParticleTypes.SMALL_GUST, 0.9, 10, 0.04);
+                    }
+                }
+                int leapUpgrade = getArmorEnchantLvl(player, "deep_lucky_block:leap_power");
+                if (leapUpgrade > 0) {
+                    if (player.isSprinting()) {
+                        net.minecraft.world.phys.Vec3 lk = player.getLookAngle();
+                        player.setDeltaMovement(player.getDeltaMovement().add(lk.x * 0.10 * leapUpgrade, 0.03 * leapUpgrade, lk.z * 0.10 * leapUpgrade));
+                        player.hurtMarked = true;
+                    }
+                    if (player.level() instanceof ServerLevel sll) {
+                        EnchantmentParticleFX.shockwaveRing(sll, player.getX(), player.getY() + 0.08, player.getZ(), ParticleTypes.CLOUD, 0.85, 10, 0.03);
+                    }
+                }
+                int highAlt = getArmorEnchantLvl(player, "deep_lucky_block:high_altitude_hypoxia");
+                if (highAlt > 0 && player.getY() > 100) {
+                    player.setDeltaMovement(player.getDeltaMovement().add(0, 0.06, 0));
+                }
             }
         } catch (Throwable t) {
             printHandlerError("onPlayerJump", t);
         }
 
-        // FIX SCALING : l'ancienne "normalisation" parcourait tout l'inventaire
-        // chaque seconde et reecrivait le niveau des enchantements (X -> 1) des
-        // que le maxLevel enregistre etait 1. C'est ce qui DETRUISAIT les niveaux
-        // des items et empechait Basic Swiftness (et beaucoup d'autres) de scaler.
-        // Le niveau stocke sur l'item est desormais preserve.
-
+        // T306-FIX : weeding_hoe ne détruit PLUS JAMAIS les blocs d'herbe (GRASS_BLOCK) ! Uniquement mauvaises herbes / fougères / buissons secs.
         int weedHoe = getEnchantLvl(player.getMainHandItem(), "deep_lucky_block:weeding_hoe");
-        if (weedHoe > 0 && player.tickCount % 40 == 0) {
+        if (weedHoe > 0 && player.tickCount % 30 == 0) {
             BlockPos c = player.blockPosition();
-            for (BlockPos p : BlockPos.betweenClosed(c.offset(-4, -2, -4), c.offset(4, 2, 4))) {
-                if (player.level().getBlockState(p).is(Blocks.TALL_GRASS) || player.level().getBlockState(p).is(Blocks.GRASS_BLOCK)) player.level().destroyBlock(p, true, player);
+            for (BlockPos p : BlockPos.betweenClosed(c.offset(-4, -1, -4), c.offset(4, 2, 4))) {
+                BlockState ws = player.level().getBlockState(p);
+                if (ws.is(Blocks.SHORT_GRASS) || ws.is(Blocks.TALL_GRASS) || ws.is(Blocks.FERN)
+                        || ws.is(Blocks.LARGE_FERN) || ws.is(Blocks.DEAD_BUSH)) {
+                    player.level().destroyBlock(p, true, player);
+                }
             }
         }
+        // T306-FIX : farmers_hoe ne récolte QUE les cultures arrivées à maturité (isMaxAge) !
         int farmHoe = getEnchantLvl(player.getMainHandItem(), "deep_lucky_block:farmers_hoe");
         if (farmHoe > 0 && player.tickCount % 20 == 0) {
             BlockPos c = player.blockPosition();
             for (BlockPos p : BlockPos.betweenClosed(c.offset(-2, -1, -2), c.offset(2, 1, 2))) {
                 BlockState st = player.level().getBlockState(p);
-                if (st.is(Blocks.WHEAT) || st.is(Blocks.CARROTS) || st.is(Blocks.POTATOES)) player.level().destroyBlock(p, true, player);
+                if (st.getBlock() instanceof net.minecraft.world.level.block.CropBlock crop && crop.isMaxAge(st)) {
+                    player.level().destroyBlock(p, true, player);
+                }
             }
         }
+
         int rainHeal = getArmorEnchantLvl(player, "deep_lucky_block:rain_nourishment");
-        if (rainHeal > 0 && player.level().isRaining() && player.tickCount % 60 == 0) player.heal(1.0f * rainHeal);
-        int kingLvl = getArmorEnchantLvl(player, "deep_lucky_block:king");
-        if (kingLvl > 0 && player.tickCount % 220 == 0) {
-            for (Player ally : player.level().getEntitiesOfClass(Player.class, player.getBoundingBox().inflate(10.0))) if (ally != player) ally.heal(1.0f);
+        if (rainHeal > 0 && player.level().isRaining() && player.tickCount % 60 == 0) {
+            player.heal(1.0f * rainHeal);
+            EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.HAPPY_VILLAGER, 4, 0.3, 0.02);
         }
-        // LEADER : tant que l'épée est tenue, le porteur et les joueurs alliés
-        // proches reçoivent Force et Résistance. Les effets courts sont renouvelés.
+        // T306-FIX : king scale désormais avec son niveau (1..3) + couronne dorée
+        int kingLvl = getArmorEnchantLvl(player, "deep_lucky_block:king");
+        if (kingLvl > 0 && player.tickCount % 200 == 0) {
+            player.heal(0.5f * kingLvl);
+            EnchantmentParticleFX.crownHalo(player, EnchantmentParticleFX.GOLD_DIVINE, 8);
+            for (Player ally : player.level().getEntitiesOfClass(Player.class, player.getBoundingBox().inflate(10.0))) {
+                if (ally != player) {
+                    ally.heal(1.0f * kingLvl);
+                    EnchantmentParticleFX.burstOnEntity(ally, ParticleTypes.HEART, 2, 0.25, 0.02);
+                }
+            }
+        }
         int leaderLvl = getEnchantLvl(player.getMainHandItem(), "deep_lucky_block:leader");
         if (leaderLvl > 0 && player.tickCount % 20 == 0) {
             int amplifier = Math.max(0, leaderLvl - 1);
             player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 40, amplifier, true, false));
             player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 40, amplifier, true, false));
-            for (Player ally : player.level().getEntitiesOfClass(Player.class,
-                    player.getBoundingBox().inflate(10.0))) {
+            for (Player ally : player.level().getEntitiesOfClass(Player.class, player.getBoundingBox().inflate(10.0))) {
                 if (ally != player && player.isAlliedTo(ally)) {
                     ally.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 40, amplifier, true, false));
                     ally.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 40, amplifier, true, false));
@@ -830,23 +1090,69 @@ public class UniversalEnchantmentHandler {
             player.removeEffect(MobEffects.WEAKNESS); player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
         }
         int nightVeil = getArmorEnchantLvl(player, "deep_lucky_block:night_veil");
-        if (nightVeil > 0 && player.isShiftKeyDown()) player.addEffect(new MobEffectInstance(MobEffects.NIGHT_VISION, 600, 0, true, false));
+        if (nightVeil > 0 && player.isShiftKeyDown()) {
+            player.addEffect(new MobEffectInstance(MobEffects.NIGHT_VISION, 600, 0, true, false));
+            if (player.tickCount % 20 == 0) EnchantmentParticleFX.ankleTrail(player, ParticleTypes.SMOKE, 2, 0.01);
+        }
         int heartbeat = getArmorEnchantLvl(player, "deep_lucky_block:heartbeat_rhythm");
         if (heartbeat > 0 && player.tickCount % 20 == 0) player.heal(player.getMaxHealth() * 0.01f * heartbeat);
+
+        // T306-OVERHAUL : item_attraction (aspiration instantanée accroupi) vs magnetic (glissement magnétique fluide passif)
         int itemAttr = getArmorEnchantLvl(player, "deep_lucky_block:item_attraction");
-        // ItemEntity.playerTouch(Player) est Player-only (ramassage direct
-        // dans l'inventaire) ; un mob generique n'a pas ce mecanisme, on
-        // saute simplement cet effet pour lui.
         if (itemAttr > 0 && player.isShiftKeyDown() && player.tickCount % 5 == 0 && player instanceof Player attrPlayer) {
-            for (net.minecraft.world.entity.item.ItemEntity ie : player.level().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, player.getBoundingBox().inflate(2.0 * itemAttr))) ie.playerTouch(attrPlayer);
-        }
-        int dreadAura = getArmorEnchantLvl(player, "deep_lucky_block:dread_aura");
-        if (dreadAura > 0 && player.tickCount % 40 == 0) {
-            for (Mob mob : player.level().getEntitiesOfClass(Mob.class, player.getBoundingBox().inflate(8.0))) {
-                if (mob.getTarget() == player) mob.setTarget(null);
-                mob.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 60, 0));
+            for (net.minecraft.world.entity.item.ItemEntity ie : player.level().getEntitiesOfClass(
+                    net.minecraft.world.entity.item.ItemEntity.class, player.getBoundingBox().inflate(2.5 * itemAttr))) {
+                ie.playerTouch(attrPlayer);
             }
         }
+        int magLvl = getArmorEnchantLvl(player, "deep_lucky_block:magnetic");
+        if (magLvl > 0 && player.tickCount % 4 == 0 && player instanceof Player magPlayer) {
+            for (net.minecraft.world.entity.item.ItemEntity ie : player.level().getEntitiesOfClass(
+                    net.minecraft.world.entity.item.ItemEntity.class, player.getBoundingBox().inflate(6.0))) {
+                net.minecraft.world.phys.Vec3 pull = magPlayer.position().add(0, 0.5, 0).subtract(ie.position());
+                double dist = pull.length();
+                if (dist < 1.3) ie.playerTouch(magPlayer);
+                else {
+                    ie.setDeltaMovement(ie.getDeltaMovement().scale(0.65).add(pull.normalize().scale(0.18)));
+                    ie.hurtMarked = true;
+                }
+            }
+        }
+
+        // T306-OVERHAUL : dread_aura (terreur noire : faiblesse + recul d'effroi) vs phantom_bee_vex_aversion (anti-nuisibles volants !)
+        int dreadAura = getArmorEnchantLvl(player, "deep_lucky_block:dread_aura");
+        if (dreadAura > 0 && player.tickCount % 40 == 0) {
+            EnchantmentParticleFX.ankleTrail(player, ParticleTypes.SCULK_SOUL, 3, 0.02);
+            for (Mob mob : player.level().getEntitiesOfClass(Mob.class, player.getBoundingBox().inflate(8.0))) {
+                if (mob.getMaxHealth() <= 60f && mob.getTarget() == player) mob.setTarget(null);
+                mob.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 60, 0));
+                net.minecraft.world.phys.Vec3 away = mob.position().subtract(player.position());
+                if (away.horizontalDistanceSqr() > 0.01) {
+                    net.minecraft.world.phys.Vec3 an = away.normalize();
+                    mob.setDeltaMovement(mob.getDeltaMovement().add(an.x * 0.14, 0.02, an.z * 0.14));
+                }
+            }
+        }
+        int phantomAv = getArmorEnchantLvl(player, "deep_lucky_block:phantom_bee_vex_aversion");
+        if (phantomAv > 0 && player.tickCount % 15 == 0) {
+            for (Mob mob : player.level().getEntitiesOfClass(Mob.class, player.getBoundingBox().inflate(16.0))) {
+                boolean isPest = mob instanceof net.minecraft.world.entity.monster.Phantom
+                        || mob instanceof net.minecraft.world.entity.animal.Bee
+                        || mob instanceof net.minecraft.world.entity.monster.Vex
+                        || mob instanceof net.minecraft.world.entity.monster.Silverfish
+                        || mob instanceof net.minecraft.world.entity.monster.Endermite;
+                if (isPest) {
+                    if (mob.getTarget() == player) mob.setTarget(null);
+                    net.minecraft.world.phys.Vec3 away = mob.position().subtract(player.position());
+                    if (away.lengthSqr() < 25.0 && away.lengthSqr() > 0.01) {
+                        mob.setDeltaMovement(away.normalize().scale(0.45));
+                        mob.hurtMarked = true;
+                        if (away.lengthSqr() < 9.0) hurtNoCascade(mob, player.damageSources().magic(), 2.0f);
+                    }
+                }
+            }
+        }
+
         int thirsty = getArmorEnchantLvl(player, "deep_lucky_block:thirsty_heart");
         if (thirsty > 0 && player.tickCount % 20 == 0) {
             boolean cleared = false;
@@ -857,42 +1163,114 @@ public class UniversalEnchantmentHandler {
             if (cleared) player.heal(1.0f);
         }
         int conduit = getArmorEnchantLvl(player, "deep_lucky_block:conduit_heart");
-        if (conduit > 0 && (player.isInWater() || player.level().isRaining())) player.addEffect(new MobEffectInstance(MobEffects.CONDUIT_POWER, 40, 0, true, false));
+        if (conduit > 0 && (player.isInWater() || player.level().isRaining())) {
+            player.addEffect(new MobEffectInstance(MobEffects.CONDUIT_POWER, 40, 0, true, false));
+            if (player.tickCount % 20 == 0 && player.isInWater()) EnchantmentParticleFX.ankleTrail(player, ParticleTypes.NAUTILUS, 3, 0.05);
+        }
         int cloudStride = getArmorEnchantLvl(player, "deep_lucky_block:cloud_stride");
-        if (cloudStride > 0 && player.getY() > 195 && player.level().getBlockState(player.blockPosition().below()).isAir()) player.level().setBlockAndUpdate(player.blockPosition().below(), Blocks.WHITE_WOOL.defaultBlockState());
-        // lightness & basic_lightness : on tombe plus lentement (leger comme une plume). lightness = plus fort.
+        if (cloudStride > 0 && player.getY() > 195 && player.level().getBlockState(player.blockPosition().below()).isAir()) {
+            BlockPos bPos = player.blockPosition().below().immutable();
+            player.level().setBlockAndUpdate(bPos, Blocks.WHITE_WOOL.defaultBlockState());
+            if (player.level() instanceof ServerLevel slc) {
+                TestProcedure.schedule(slc, TestProcedure.currentTick(slc) + 120, () -> {
+                    if (slc.getBlockState(bPos).is(Blocks.WHITE_WOOL)) slc.setBlockAndUpdate(bPos, Blocks.AIR.defaultBlockState());
+                });
+            }
+        }
+        // lightness (Upgrade) & basic_lightness (Enfant)
         int lightSlow = getArmorEnchantLvl(player, "deep_lucky_block:lightness");
         int basicLightSlow = getArmorEnchantLvl(player, "deep_lucky_block:basic_lightness");
-        if (player.getDeltaMovement().y < 0) {
-            if (lightSlow > 0) player.setDeltaMovement(player.getDeltaMovement().multiply(1.0, 0.75, 1.0));
-            else if (basicLightSlow > 0) player.setDeltaMovement(player.getDeltaMovement().multiply(1.0, 0.88, 1.0));
+        if (player.getDeltaMovement().y < -0.08) {
+            if (lightSlow > 0) {
+                player.setDeltaMovement(player.getDeltaMovement().multiply(1.0, 0.75, 1.0));
+                if (player.tickCount % 8 == 0) EnchantmentParticleFX.ankleTrail(player, ParticleTypes.CLOUD, 1, 0.01);
+            } else if (basicLightSlow > 0) {
+                player.setDeltaMovement(player.getDeltaMovement().multiply(1.0, 0.88, 1.0));
+            }
         }
-        int panic = Math.max(getArmorEnchantLvl(player, "deep_lucky_block:panic_escape"), getArmorEnchantLvl(player, "deep_lucky_block:last_stand_escape"));
-        setStackingMovementBonus(player, PANIC_SPEED_ID, panic > 0 && player.getHealth() < player.getMaxHealth() * 0.20f
-                        ? 0.10 * Math.max(1, panic) : 0);
+
+        // T306-FIX : last_stand_escape (<25% PV -> vitesse continue + furtivité d'urgence) séparé de panic_escape (sur coup subi !)
+        int lastStandEsc = getArmorEnchantLvl(player, "deep_lucky_block:last_stand_escape");
+        boolean nearDeath = lastStandEsc > 0 && player.getHealth() <= player.getMaxHealth() * 0.25f;
+        setStackingMovementBonus(player, PANIC_SPEED_ID, nearDeath ? 0.25 : 0.0);
+        if (nearDeath) {
+            player.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+            long escReady = player.getPersistentData().getLong("slb_last_esc_ready");
+            if (player.level().getGameTime() >= escReady) {
+                player.addEffect(new MobEffectInstance(MobEffects.INVISIBILITY, 60, 0, true, false));
+                player.getPersistentData().putLong("slb_last_esc_ready", player.level().getGameTime() + 240L);
+                EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.LARGE_SMOKE, 10, 0.35, 0.03);
+            }
+        }
+
+        // Famille Pieds Malodorants (stinky_feet -> super_stinky_feet)
         int superStinky = getArmorEnchantLvl(player, "deep_lucky_block:super_stinky_feet");
         int stinky = getArmorEnchantLvl(player, "deep_lucky_block:stinky_feet");
         if ((superStinky > 0 || stinky > 0) && player.tickCount % 20 == 0) {
-            int radius = superStinky > 0 ? 5 : 3;
+            double radius = superStinky > 0
+                    ? deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(3.5, 1.0, superStinky)
+                    : deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(2.2, 0.6, stinky);
             int amp = superStinky > 0 ? 1 : 0;
+            EnchantmentParticleFX.ankleTrail(player, EnchantmentParticleFX.TOXIC_GREEN, superStinky > 0 ? 4 : 2, 0.01);
             for (Mob mob : player.level().getEntitiesOfClass(Mob.class, player.getBoundingBox().inflate(radius))) {
                 mob.addEffect(new MobEffectInstance(MobEffects.POISON, 80, amp));
                 if (superStinky > 0) mob.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 80, 0));
             }
         }
+        // T306-FIX : swift_strike -> vraie vitesse d'attaque en Attribut + Célérité maîtrisée (lvl - 1) + étincelles hypersoniques
         int swiftStrikeLvl = getEnchantLvl(player.getMainHandItem(), "deep_lucky_block:swift_strike");
-        if (swiftStrikeLvl > 0) player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 20, swiftStrikeLvl + 2, true, false));
-        // Chrono Mending
-        if (player.tickCount % 60 == 0) {
+        if (swiftStrikeLvl > 0) {
+            player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 25, Math.min(3, swiftStrikeLvl - 1), true, false));
+            if (player.tickCount % 16 == 0) EnchantmentParticleFX.ankleTrail(player, ParticleTypes.ELECTRIC_SPARK, 1, 0.02);
+        }
+
+        // T306-OVERHAUL : Durabilité & Chrono-Réparation (unbreakable vs eternal ; basic_chrono_mending -> chrono_mending ; corrosions)
+        if (player.tickCount % 20 == 0) {
+            boolean inNether = player.level().dimension() == Level.NETHER;
+            boolean inEnd = player.level().dimension() == Level.END;
             for (ItemStack stack : player.getAllSlots()) {
-                if (!stack.isEmpty() && stack.isDamageableItem() && stack.getDamageValue() > 0) {
-                    int chronoLvl = Math.max(getEnchantLvl(stack, "deep_lucky_block:chrono_mending"), Math.max(getEnchantLvl(stack, "deep_lucky_block:basic_chrono_mending"), getEnchantLvl(stack, "deep_lucky_block:basic_mending")));
-                    if (chronoLvl > 0) stack.setDamageValue(Math.max(0, stack.getDamageValue() - Math.max(1, (int)(stack.getMaxDamage() * 0.01f * chronoLvl))));
+                if (stack.isEmpty() || !stack.isDamageableItem()) continue;
+                if (getEnchantLvl(stack, "deep_lucky_block:unbreakable") > 0) {
+                    if (stack.getDamageValue() > 0) stack.setDamageValue(0);
+                    continue;
+                }
+                int eternalLvl = getEnchantLvl(stack, "deep_lucky_block:eternal");
+                if (eternalLvl > 0) {
+                    if (stack.getDamageValue() >= stack.getMaxDamage() - 1) {
+                        stack.setDamageValue(Math.max(0, stack.getMaxDamage() - 2));
+                    } else if (stack.getDamageValue() > 0 && player.tickCount % 100 == 0) {
+                        stack.setDamageValue(Math.max(0, stack.getDamageValue() - 1));
+                    }
+                }
+                if (stack.getDamageValue() > 0) {
+                    int chronoAdv = getEnchantLvl(stack, "deep_lucky_block:chrono_mending");
+                    int chronoBasic = getEnchantLvl(stack, "deep_lucky_block:basic_chrono_mending");
+                    if (chronoAdv > 0 && player.tickCount % 60 == 0) {
+                        int rep = Math.max(2, Math.round(stack.getMaxDamage() * 0.015f * chronoAdv));
+                        stack.setDamageValue(Math.max(0, stack.getDamageValue() - rep));
+                        EnchantmentParticleFX.ankleTrail(player, EnchantmentParticleFX.TEMPORAL_AMBER, 2, 0.01);
+                    } else if (chronoBasic > 0 && player.tickCount % 120 == 0) {
+                        int rep = Math.max(1, Math.round(stack.getMaxDamage() * 0.005f * chronoBasic));
+                        stack.setDamageValue(Math.max(0, stack.getDamageValue() - rep));
+                    }
+                }
+                // T306-FIX : nether_corrosion & end_corrosion rongent réellement la durabilité dans leur dimension maudite !
+                if (player.tickCount % 40 == 0 && eternalLvl == 0) {
+                    int nCor = getEnchantLvl(stack, "deep_lucky_block:nether_corrosion");
+                    int eCor = getEnchantLvl(stack, "deep_lucky_block:end_corrosion");
+                    if (nCor > 0 && inNether) {
+                        stack.setDamageValue(Math.min(stack.getMaxDamage() - 1, stack.getDamageValue() + nCor));
+                        EnchantmentParticleFX.ankleTrail(player, ParticleTypes.SMOKE, 2, 0.01);
+                    }
+                    if (eCor > 0 && inEnd) {
+                        stack.setDamageValue(Math.min(stack.getMaxDamage() - 1, stack.getDamageValue() + eCor));
+                        EnchantmentParticleFX.ankleTrail(player, ParticleTypes.PORTAL, 2, 0.05);
+                    }
                 }
             }
         }
-        // Assimilation : depend de l'inventaire complet + de la faim, qui
-        // n'existent que chez un Player -- reste gate derriere instanceof.
+
+        // Assimilation
         if (player.tickCount % 20 == 0 && player instanceof Player assimPlayer) {
             ItemStack helmet = assimPlayer.getItemBySlot(EquipmentSlot.HEAD);
             if (getEnchantLvl(helmet, "deep_lucky_block:assimilation") > 0 && assimPlayer.getFoodData().getFoodLevel() < 18) {
@@ -906,11 +1284,13 @@ public class UniversalEnchantmentHandler {
                 }
             }
         }
-        // Perception ESP (LivingEntity-safe : marche pour tout mob equipe d'un casque enchante)
-        if (player.tickCount % 40 == 0) {
+        // Perception ESP (Upgrade de echolocation : permanent toutes luminosités dans 24 blocs)
+        if (player.tickCount % 30 == 0) {
             ItemStack helmet = player.getItemBySlot(EquipmentSlot.HEAD);
             if (getEnchantLvl(helmet, "deep_lucky_block:perception") > 0) {
-                for (Mob mob : player.level().getEntitiesOfClass(Mob.class, player.getBoundingBox().inflate(24.0))) mob.addEffect(new MobEffectInstance(MobEffects.GLOWING, 60, 0, false, false));
+                for (Mob mob : player.level().getEntitiesOfClass(Mob.class, player.getBoundingBox().inflate(24.0))) {
+                    mob.addEffect(new MobEffectInstance(MobEffects.GLOWING, 50, 0, false, false));
+                }
             }
         }
         int adrLvl = getArmorEnchantLvl(player, "deep_lucky_block:adrenaline");
@@ -919,97 +1299,341 @@ public class UniversalEnchantmentHandler {
             player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 100, 0, true, false));
         }
         int mysticLvl = getArmorEnchantLvl(player, "deep_lucky_block:mystic_mind");
-        // L'XP-joueur n'existe pas pour un mob generique ; on saute simplement pour lui.
-        if (mysticLvl > 0 && player.tickCount % 200 == 0 && player instanceof Player mysticPlayer) mysticPlayer.giveExperiencePoints(mysticLvl * 2);
-        int speedLvl = Math.max(getArmorEnchantLvl(player, "deep_lucky_block:e_speed"), Math.max(getArmorEnchantLvl(player, "deep_lucky_block:dash"), Math.max(getArmorEnchantLvl(player, "deep_lucky_block:strafe"), getArmorEnchantLvl(player, "deep_lucky_block:slide"))));
-        setStackingMovementBonus(player, CORE_SPRINT_SPEED_ID, speedLvl > 0 && player.isSprinting() ? 0.05 * speedLvl : 0);
+        if (mysticLvl > 0 && player.tickCount % 200 == 0 && player instanceof Player mysticPlayer) {
+            mysticPlayer.giveExperiencePoints(mysticLvl * 2);
+            EnchantmentParticleFX.crownHalo(player, ParticleTypes.ENCHANT, 5);
+        }
+
+        // T306-OVERHAUL : Différenciation totale de e_speed, dash, strafe et slide !
+        int eSpeedLvl = getArmorEnchantLvl(player, "deep_lucky_block:e_speed");
+        setStackingMovementBonus(player, CORE_SPRINT_SPEED_ID, eSpeedLvl > 0 && player.isSprinting() ? 0.08 * eSpeedLvl : 0.0);
+        if (eSpeedLvl > 0 && player.isSprinting() && player.tickCount % 8 == 0) {
+            EnchantmentParticleFX.ankleTrail(player, ParticleTypes.ELECTRIC_SPARK, 2, 0.03);
+        }
+
+        // STRAFE (Esquive Latérale, plastron) : vitesse latérale accrue (même en sprint/visée) + esquive projectiles
+        int strafeLvl = getArmorEnchantLvl(player, "deep_lucky_block:strafe");
+        boolean isStrafing = false;
+        if (strafeLvl > 0) {
+            net.minecraft.world.phys.Vec3 mv = player.getDeltaMovement();
+            double hSpd = Math.sqrt(mv.x * mv.x + mv.z * mv.z);
+            if (hSpd > 0.02) {
+                net.minecraft.world.phys.Vec3 lk = player.getLookAngle();
+                double dot = (mv.x * lk.x + mv.z * lk.z) / Math.max(0.0001, hSpd * Math.sqrt(lk.x * lk.x + lk.z * lk.z));
+                isStrafing = Math.abs(dot) < 0.72;
+            }
+        }
+        setStackingMovementBonus(player, STRAFE_SPEED_ID, isStrafing ? 0.08 * strafeLvl : 0.0);
+
+        // DASH (Ruée, jambières) : impulsion avant vive au départ de sprint ou saut sprinté + fenêtre d'esquive projectiles
+        int dashLvl = getArmorEnchantLvl(player, "deep_lucky_block:dash");
+        boolean prevDashSprint = player.getPersistentData().getBoolean("slb_dash_was_sprint");
+        long nowTime = player.level().getGameTime();
+        if (dashLvl > 0 && player.isSprinting() && !prevDashSprint && nowTime >= player.getPersistentData().getLong("slb_dash_ready")) {
+            net.minecraft.world.phys.Vec3 lk = player.getLookAngle();
+            double force = deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.velocity(0.32, 0.13, dashLvl);
+            player.setDeltaMovement(player.getDeltaMovement().add(lk.x * force, 0.06, lk.z * force));
+            player.hurtMarked = true;
+            player.getPersistentData().putLong("slb_dash_ready", nowTime + Math.max(35L, 80L - 12L * dashLvl));
+            player.getPersistentData().putLong("slb_dash_dodge_until", nowTime + 10L);
+            EnchantmentParticleFX.ankleTrail(player, ParticleTypes.SMALL_GUST, 4, 0.04);
+        }
+        player.getPersistentData().putBoolean("slb_dash_was_sprint", player.isSprinting());
+
+        // SLIDE (Glissade, jambières) : s'accroupir en plein sprint déclenche une vraie glissade rasante fauchante !
+        int slideLvl = getArmorEnchantLvl(player, "deep_lucky_block:slide");
+        boolean prevSneak = player.getPersistentData().getBoolean("slb_slide_was_sneak");
+        if (slideLvl > 0) {
+            if (player.isSprinting()) player.getPersistentData().putLong("slb_recent_sprint", nowTime + 6L);
+            if (player.isShiftKeyDown() && !prevSneak && player.onGround()
+                    && nowTime <= player.getPersistentData().getLong("slb_recent_sprint")
+                    && nowTime >= player.getPersistentData().getLong("slb_slide_ready")) {
+                net.minecraft.world.phys.Vec3 lk = player.getLookAngle();
+                net.minecraft.world.phys.Vec3 flat = new net.minecraft.world.phys.Vec3(lk.x, 0.0, lk.z);
+                if (flat.lengthSqr() > 1.0e-4) {
+                    flat = flat.normalize();
+                    double slideVel = deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.velocity(0.55, 0.16, slideLvl);
+                    player.setDeltaMovement(flat.x * slideVel, player.getDeltaMovement().y, flat.z * slideVel);
+                    player.hurtMarked = true;
+                    player.getPersistentData().putLong("slb_slide_ready", nowTime + 50L);
+                    EnchantmentParticleFX.ankleTrail(player, ParticleTypes.CLOUD, 6, 0.05);
+                    EnchantmentParticleFX.ankleTrail(player, ParticleTypes.CRIT, 5, 0.06);
+                    for (Mob mob : player.level().getEntitiesOfClass(Mob.class, player.getBoundingBox().inflate(2.0))) {
+                        mob.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 45, 1));
+                        mob.setDeltaMovement(mob.getDeltaMovement().add(0, 0.24, 0));
+                    }
+                }
+            }
+        }
+        player.getPersistentData().putBoolean("slb_slide_was_sneak", player.isShiftKeyDown());
+
         int amphLvl = getArmorEnchantLvl(player, "deep_lucky_block:amphibious");
         if (amphLvl > 0 && player.isInWater()) {
             player.addEffect(new MobEffectInstance(MobEffects.WATER_BREATHING, 40, 0, true, false));
             player.addEffect(new MobEffectInstance(MobEffects.DOLPHINS_GRACE, 40, amphLvl - 1, true, false));
+            if (player.tickCount % 15 == 0) EnchantmentParticleFX.ankleTrail(player, ParticleTypes.BUBBLE_COLUMN_UP, 2, 0.03);
         }
+        // T306-OVERHAUL : blaze_walker (Obsidienne permanente + Résistance au Feu + flammèches)
+        // vs magma_walker (disque de Blocs de Magma temporaires + Résistance au Feu + immunité sol brûlant !)
         int blazeWalkLvl = getArmorEnchantLvl(player, "deep_lucky_block:blaze_walker");
-        if (blazeWalkLvl > 0 && player.onGround()) {
+        if (blazeWalkLvl > 0) {
             player.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 40, 0, true, false));
-            BlockPos pos = player.blockPosition().below();
-            if (player.level().getBlockState(pos).is(Blocks.LAVA)) player.level().setBlockAndUpdate(pos, Blocks.OBSIDIAN.defaultBlockState());
+            if (player.onGround()) {
+                BlockPos pos = player.blockPosition().below();
+                if (player.level().getBlockState(pos).is(Blocks.LAVA)) {
+                    player.level().setBlockAndUpdate(pos, Blocks.OBSIDIAN.defaultBlockState());
+                    EnchantmentParticleFX.ankleTrail(player, ParticleTypes.FLAME, 4, 0.02);
+                } else if (player.tickCount % 20 == 0 && player.isSprinting()) {
+                    EnchantmentParticleFX.ankleTrail(player, ParticleTypes.SMALL_FLAME, 2, 0.01);
+                }
+            }
         }
-        int leapLvl = Math.max(getArmorEnchantLvl(player, "deep_lucky_block:leap_power"), getArmorEnchantLvl(player, "deep_lucky_block:basic_leap_power"));
-        if (leapLvl > 0) player.addEffect(new MobEffectInstance(MobEffects.JUMP, 20, leapLvl - 1, true, false));
-        int phantomAv = getArmorEnchantLvl(player, "deep_lucky_block:phantom_bee_vex_aversion");
-        if (phantomAv > 0 && player.tickCount % 40 == 0) {
-            for (Mob mob : player.level().getEntitiesOfClass(Mob.class, player.getBoundingBox().inflate(12.0))) if (mob.getTarget() == player) mob.setTarget(null);
+        int magmaWalk = getArmorEnchantLvl(player, "deep_lucky_block:magma_walker");
+        if (magmaWalk > 0) {
+            player.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 40, 0, true, false));
+            if (player.onGround()) {
+                BlockPos base = player.blockPosition().below();
+                for (BlockPos lp : BlockPos.betweenClosed(base.offset(-1, 0, -1), base.offset(1, 0, 1))) {
+                    if (player.level().getBlockState(lp).is(Blocks.LAVA)) {
+                        BlockPos imm = lp.immutable();
+                        player.level().setBlockAndUpdate(imm, Blocks.MAGMA_BLOCK.defaultBlockState());
+                        if (player.level() instanceof ServerLevel slm) {
+                            TestProcedure.schedule(slm, TestProcedure.currentTick(slm) + 140, () -> {
+                                if (slm.getBlockState(imm).is(Blocks.MAGMA_BLOCK)) {
+                                    slm.setBlockAndUpdate(imm, Blocks.LAVA.defaultBlockState());
+                                }
+                            });
+                        }
+                    }
+                }
+            }
         }
+
+        // T306-OVERHAUL : Famille Saut Renforcé (basic_leap_power = Enfant, leap_power = Upgrade +1 cran + bond avant !)
+        int leapAdv = getArmorEnchantLvl(player, "deep_lucky_block:leap_power");
+        int leapBasic = getArmorEnchantLvl(player, "deep_lucky_block:basic_leap_power");
+        if (leapAdv > 0) {
+            player.addEffect(new MobEffectInstance(MobEffects.JUMP, 25, Math.min(5, leapAdv), true, false));
+        } else if (leapBasic > 0) {
+            player.addEffect(new MobEffectInstance(MobEffects.JUMP, 25, Math.min(4, leapBasic - 1), true, false));
+        }
+
+        // T306-OVERHAUL : general (aura de commandement alliés !) vs wing_chun_gauntlet (célérité poings nus pure !)
+        // (martial_rhythm est désormais une transe de cadence empilée à chaque coup dans handleOffensiveHurt !)
         int genLVL = getArmorEnchantLvl(player, "deep_lucky_block:general");
-        int marRhy = getArmorEnchantLvl(player, "deep_lucky_block:martial_rhythm");
-        // wing_chun_gauntlet = FIST : boost seulement si main principale vide
-        int wingChun = player.getMainHandItem().isEmpty() ? getEnchantLvl(player.getItemBySlot(EquipmentSlot.CHEST), "deep_lucky_block:wing_chun_gauntlet") : 0;
-        if ((genLVL > 0 || marRhy > 0 || wingChun > 0) && player.tickCount % 20 == 0) {
-            player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 40, genLVL + marRhy + wingChun, true, false));
-            player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 40, genLVL + marRhy, true, false));
+        if (genLVL > 0 && player.tickCount % 20 == 0) {
+            int amp = Math.min(3, genLVL - 1);
+            player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 40, amp, true, false));
+            player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 40, amp, true, false));
+            if (player.tickCount % 80 == 0) EnchantmentParticleFX.crownHalo(player, EnchantmentParticleFX.GOLD_DIVINE, 6);
+            for (LivingEntity ally : player.level().getEntitiesOfClass(LivingEntity.class, player.getBoundingBox().inflate(12.0))) {
+                if (ally != player && (ally instanceof Player || (ally instanceof net.minecraft.world.entity.TamableAnimal ta && ta.isOwnedBy(player))
+                        || (ally.getPersistentData().hasUUID("slb_ally_owner") && ally.getPersistentData().getUUID("slb_ally_owner").equals(player.getUUID())))) {
+                    ally.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 45, amp, true, false));
+                    ally.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 45, 0, true, false));
+                }
+            }
         }
+        int wingChun = player.getMainHandItem().isEmpty() ? getEnchantLvl(player.getItemBySlot(EquipmentSlot.CHEST), "deep_lucky_block:wing_chun_gauntlet") : 0;
+        if (wingChun > 0 && player.tickCount % 20 == 0) {
+            player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 40, Math.min(4, wingChun), true, false));
+        }
+
+        // T306-FIX : Troupes alliées invoquées (slb_ally_owner) défendent leur commandant sans jamais le cibler !
+        if (player instanceof Mob summonedMob && summonedMob.getPersistentData().hasUUID("slb_ally_owner")) {
+            UUID ownerId = summonedMob.getPersistentData().getUUID("slb_ally_owner");
+            if (summonedMob.getTarget() != null && (summonedMob.getTarget().getUUID().equals(ownerId)
+                    || (summonedMob.getTarget().getPersistentData().hasUUID("slb_ally_owner")
+                    && summonedMob.getTarget().getPersistentData().getUUID("slb_ally_owner").equals(ownerId)))) {
+                summonedMob.setTarget(null);
+            }
+            if (summonedMob.tickCount % 20 == 0 && summonedMob.getTarget() == null && summonedMob.level() instanceof ServerLevel slAlly) {
+                Player cmdOwner = slAlly.getPlayerByUUID(ownerId);
+                if (cmdOwner != null) {
+                    LivingEntity threat = cmdOwner.getLastHurtByMob();
+                    if (threat != null && threat.isAlive() && threat != cmdOwner) summonedMob.setTarget(threat);
+                }
+            }
+        }
+
         int breathHeal = getArmorEnchantLvl(player, "deep_lucky_block:breath_heal");
         if (breathHeal > 0 && player.getAirSupply() == 300 && player.tickCount % 40 == 0) player.heal(2.0f);
-        int sprintImp = getArmorEnchantLvl(player, "deep_lucky_block:sprint_impact");
+
+        // T306-OVERHAUL : Famille Vélocité (basic_swiftness -> swiftness) + Sprints Uniques (shadow_sprint, light_walker, oxygen_sprint, oxygen_lack_haste)
         int bSwift = getArmorEnchantLvl(player, "deep_lucky_block:basic_swiftness");
         int swift2 = getArmorEnchantLvl(player, "deep_lucky_block:swiftness");
         int shadowSpr = getArmorEnchantLvl(player, "deep_lucky_block:shadow_sprint");
         int lightWalk = getArmorEnchantLvl(player, "deep_lucky_block:light_walker");
         int oxySpr = getArmorEnchantLvl(player, "deep_lucky_block:oxygen_sprint");
         int oxyHaste = getArmorEnchantLvl(player, "deep_lucky_block:oxygen_lack_haste");
-        int totalSpeed = sprintImp + bSwift + swift2 + shadowSpr + lightWalk + oxySpr + oxyHaste;
-        setStackingMovementBonus(player, STACKED_SPRINT_SPEED_ID, totalSpeed > 0 && player.isSprinting()
-                        ? Math.min(0.60, 0.035 * totalSpeed) : 0);
-        // oxygen_lack_haste : donne aussi la Celerite (Haste), pas seulement la Speed
-        if (oxyHaste > 0 && player.tickCount % 20 == 0) player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 40, oxyHaste, true, false));
+        int blzRageSpd = getArmorEnchantLvl(player, "deep_lucky_block:blazing_rage");
+
+        int localLight = player.level().getMaxLocalRawBrightness(player.blockPosition());
+        double sprintBonus = 0.0;
+        if (swift2 > 0) {
+            sprintBonus += 0.065 * swift2;
+            if (player.isSprinting() && player.tickCount % 10 == 0) EnchantmentParticleFX.ankleTrail(player, ParticleTypes.CLOUD, 2, 0.02);
+        } else if (bSwift > 0) {
+            sprintBonus += 0.030 * bSwift;
+        }
+        if (shadowSpr > 0 && (localLight <= 9 || !player.level().isDay())) {
+            sprintBonus += 0.08 * shadowSpr;
+            if (player.isSprinting() && player.tickCount % 10 == 0) EnchantmentParticleFX.ankleTrail(player, ParticleTypes.SMOKE, 2, 0.01);
+        }
+        if (oxySpr > 0) {
+            if (player.getAirSupply() >= 270) sprintBonus += 0.12;
+            if (player.isInWater() && player.isSprinting() && player.getAirSupply() > 30) {
+                net.minecraft.world.phys.Vec3 lk = player.getLookAngle();
+                player.setDeltaMovement(player.getDeltaMovement().add(lk.x * 0.035, lk.y * 0.02, lk.z * 0.035));
+                if (player.tickCount % 15 == 0) {
+                    player.setAirSupply(player.getAirSupply() - 2);
+                    EnchantmentParticleFX.ankleTrail(player, ParticleTypes.BUBBLE, 4, 0.05);
+                }
+            }
+        }
+        boolean hypoxic = oxyHaste > 0 && (player.isInWater() || player.getAirSupply() < player.getMaxAirSupply() || player.getY() < 16);
+        if (hypoxic) {
+            sprintBonus += 0.06 * oxyHaste;
+            if (player.tickCount % 20 == 0) player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 40, Math.min(3, oxyHaste - 1), true, false));
+        }
+        if (blzRageSpd > 0 && player.isOnFire()) {
+            sprintBonus += 0.08 * blzRageSpd;
+            if (player.tickCount % 20 == 0) player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 35, Math.min(2, blzRageSpd - 1), true, false));
+        }
+        setStackingMovementBonus(player, STACKED_SPRINT_SPEED_ID, player.isSprinting() ? Math.min(0.65, sprintBonus) : 0.0);
+
+        // light_walker fonctionne à la marche ET au sprint sous la lumière (>= 10) !
+        boolean inBrightLight = lightWalk > 0 && localLight >= 10;
+        setStackingMovementBonus(player, LIGHT_WALKER_SPEED_ID, inBrightLight ? 0.05 * lightWalk : 0.0);
+        if (inBrightLight && player.isSprinting() && player.tickCount % 16 == 0) {
+            EnchantmentParticleFX.ankleTrail(player, ParticleTypes.WAX_ON, 1, 0.01);
+        }
+
+        // lone_wolf : vitesse de chasse en solitaire
+        int loneWolfHeld = getEnchantLvl(player.getMainHandItem(), "deep_lucky_block:lone_wolf");
+        boolean loneActive = loneWolfHeld > 0
+                && player.level().getEntitiesOfClass(Player.class, player.getBoundingBox().inflate(12.0), p2 -> p2 != player).isEmpty();
+        setStackingMovementBonus(player, LONE_WOLF_SPEED_ID, loneActive ? 0.04 * loneWolfHeld : 0.0);
+
         int scorchBath = getArmorEnchantLvl(player, "deep_lucky_block:scorching_bath");
-        if (scorchBath > 0 && player.isOnFire() && player.tickCount % 20 == 0) player.heal(player.getMaxHealth() * 0.01f * scorchBath);
+        if (scorchBath > 0 && player.isOnFire() && player.tickCount % 20 == 0) {
+            player.heal(player.getMaxHealth() * 0.01f * scorchBath);
+            EnchantmentParticleFX.ankleTrail(player, ParticleTypes.FLAME, 3, 0.02);
+        }
         int fireDev = getArmorEnchantLvl(player, "deep_lucky_block:fire_devour");
         if (fireDev > 0 && player.isOnFire()) {
             player.clearFire();
-            // Le regain de faim n'a de sens que pour un joueur ; pour un
-            // mob generique, l'extinction de feu suffit deja comme benefice.
             if (player instanceof Player fdPlayer) fdPlayer.getFoodData().setFoodLevel(Math.min(20, fdPlayer.getFoodData().getFoodLevel() + fireDev));
         }
-        // FIX COEURS D'ABSORPTION : cap ampli 1 + fenetre 5s (avant = invincibilite permanente)
+
+        // T306-OVERHAUL : Les 7 Enchantements Corporels ont chacun leur propre mécanique !
         int meatArm = getArmorEnchantLvl(player, "deep_lucky_block:meat_armor");
-        int hundVet = getArmorEnchantLvl(player, "deep_lucky_block:hundred_battles_veteran");
-        int tempBody = Math.max(getArmorEnchantLvl(player, "deep_lucky_block:tempered_body"), getArmorEnchantLvl(player, "deep_lucky_block:exercise"));
-        int glut = getArmorEnchantLvl(player, "deep_lucky_block:gluttony");
-        int corp = getArmorEnchantLvl(player, "deep_lucky_block:corpulent");
-        int wingTough = getArmorEnchantLvl(player, "deep_lucky_block:wing_toughness_armor");
-        if ((meatArm > 0 || hundVet > 0 || tempBody > 0 || glut > 0 || corp > 0 || wingTough > 0) && player.tickCount % 100 == 0) {
-            int absLvl = Math.min(1, (meatArm + hundVet + tempBody + glut + corp + wingTough) - 1);
-            player.addEffect(new MobEffectInstance(MobEffects.ABSORPTION, 100, Math.max(0, absLvl), true, false));
+        if (meatArm > 0 && player.tickCount % 120 == 0) {
+            boolean wellFed = !(player instanceof Player mp) || mp.getFoodData().getFoodLevel() >= 12;
+            if (wellFed) {
+                float targetAbs = Math.min(6.0f, 1.0f + 1.0f * meatArm);
+                if (player.getAbsorptionAmount() < targetAbs) player.setAbsorptionAmount(targetAbs);
+            }
         }
-        // SHELTER : petit effet de Régénération quand on sneak SANS BOUGER du
-        // tout (à plat, immobile). Remplace l'ancien heal direct automatique.
+        int exerLvl = getArmorEnchantLvl(player, "deep_lucky_block:exercise");
+        if (exerLvl > 0) {
+            int stamina = player.getPersistentData().getInt("slb_exercise_ticks");
+            stamina = player.isSprinting() ? Math.min(120, stamina + 1) : Math.max(0, stamina - 2);
+            player.getPersistentData().putInt("slb_exercise_ticks", stamina);
+            if (stamina >= 60 && player.tickCount % 40 == 0) {
+                if (player instanceof Player ep && ep.getFoodData().getSaturationLevel() < 4.0f) {
+                    ep.getFoodData().setSaturation(Math.min(5.0f, ep.getFoodData().getSaturationLevel() + 0.35f * exerLvl));
+                }
+                if (player.getAbsorptionAmount() < 2.0f) player.setAbsorptionAmount(2.0f);
+                player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 50, 0, true, false));
+            }
+        }
+        int corp = getArmorEnchantLvl(player, "deep_lucky_block:corpulent");
+        if (corp > 0 && player.tickCount % 160 == 0) {
+            long sinceHit = player.level().getGameTime() - player.getPersistentData().getLong("slb_last_hurt");
+            if (sinceHit >= 140L && player.getAbsorptionAmount() < 4.0f) {
+                player.setAbsorptionAmount(4.0f);
+            }
+        }
+        int wingTough = getArmorEnchantLvl(player, "deep_lucky_block:wing_toughness_armor");
+        if (wingTough > 0 && (!player.onGround() || player.isFallFlying()) && player.tickCount % 40 == 0) {
+            if (player.getAbsorptionAmount() < 4.0f) player.setAbsorptionAmount(4.0f);
+            EnchantmentParticleFX.wingRibbons(player, ParticleTypes.CLOUD);
+        }
+
         int shelter = getArmorEnchantLvl(player, "deep_lucky_block:shelter");
         int campHeal = getArmorEnchantLvl(player, "deep_lucky_block:campfire_heal");
         if (shelter > 0 && player.isShiftKeyDown() && player.onGround() && player.tickCount % 20 == 0) {
             boolean still = Math.abs(player.getDeltaMovement().x) < 0.005
                     && Math.abs(player.getDeltaMovement().z) < 0.005;
-            if (still) {
-                player.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 40, 0, true, false));
-            }
+            if (still) player.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 40, 0, true, false));
         }
-        // CAMPFIRE HEAL : conserve son ancien comportement de soin direct.
-        if (campHeal > 0 && player.tickCount % 20 == 0) player.heal(1.0f * campHeal);
+        if (campHeal > 0 && player.tickCount % 20 == 0) {
+            player.heal(1.0f * campHeal);
+            if (player.tickCount % 60 == 0) EnchantmentParticleFX.ankleTrail(player, ParticleTypes.CAMPFIRE_COSY_SMOKE, 1, 0.01);
+        }
         int focStead = getArmorEnchantLvl(player, "deep_lucky_block:focused_steadiness");
         if (focStead > 0 && player.isShiftKeyDown()) player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 20, focStead - 1, true, false));
-        int magmaWalk = getArmorEnchantLvl(player, "deep_lucky_block:magma_walker");
-        if (magmaWalk > 0 && player.onGround() && player.level().getBlockState(player.blockPosition().below()).is(Blocks.LAVA)) player.level().setBlockAndUpdate(player.blockPosition().below(), Blocks.OBSIDIAN.defaultBlockState());
+
         int metStomp = getArmorEnchantLvl(player, "deep_lucky_block:meteor_stomp");
-        if (metStomp > 0 && player.fallDistance >= 4.0f && player.onGround()) player.level().explode(player, player.getX(), player.getY(), player.getZ(), 3.0f, Level.ExplosionInteraction.NONE);
+        if (metStomp > 0 && player.fallDistance >= 4.0f && player.onGround()) {
+            player.level().explode(player, player.getX(), player.getY(), player.getZ(), 3.0f, Level.ExplosionInteraction.NONE);
+            if (player.level() instanceof ServerLevel slms) {
+                EnchantmentParticleFX.shockwaveRing(slms, player.getX(), player.getY() + 0.1, player.getZ(), ParticleTypes.LAVA, 2.2, 16, 0.06);
+            }
+        }
+        // T306-OVERHAUL : rapid_drop_stop (plongeon rapide contrôlé sur Shift + frein de chute sécurisé !)
+        // vs earth_bound (malédiction pesante constante qui vous tire vers le bas)
         int rapDrop = getArmorEnchantLvl(player, "deep_lucky_block:rapid_drop_stop");
         int earthBnd = getArmorEnchantLvl(player, "deep_lucky_block:earth_bound");
-        if (((rapDrop > 0 && player.isShiftKeyDown()) || earthBnd > 0) && player.getDeltaMovement().y < 0) player.setDeltaMovement(player.getDeltaMovement().multiply(1.0, 1.5, 1.0));
-        int footPl = Math.max(getArmorEnchantLvl(player, "deep_lucky_block:foot_placement"), getArmorEnchantLvl(player, "deep_lucky_block:range_foot_placement"));
-        if (footPl > 0 && !player.onGround() && player.level().getBlockState(player.blockPosition().below()).isAir()) player.level().setBlockAndUpdate(player.blockPosition().below(), Blocks.COBBLESTONE.defaultBlockState());
+        if (rapDrop > 0 && player.isShiftKeyDown() && !player.onGround() && player.getDeltaMovement().y < 0) {
+            BlockPos twoBelow = player.blockPosition().below(2);
+            if (player.level().getBlockState(twoBelow).blocksMotion() || player.level().getBlockState(player.blockPosition().below()).blocksMotion()) {
+                // Frein d'atterrissage juste avant le sol !
+                player.setDeltaMovement(player.getDeltaMovement().x, Math.max(-0.25, player.getDeltaMovement().y * 0.35), player.getDeltaMovement().z);
+                player.fallDistance = Math.min(player.fallDistance, 2.0f);
+                EnchantmentParticleFX.ankleTrail(player, ParticleTypes.CLOUD, 3, 0.02);
+            } else {
+                player.setDeltaMovement(player.getDeltaMovement().multiply(1.0, 1.38, 1.0));
+                player.fallDistance *= 0.65f;
+            }
+        }
+        if (earthBnd > 0 && player.getDeltaMovement().y < 0) {
+            player.setDeltaMovement(player.getDeltaMovement().multiply(1.0, 1.45, 1.0));
+        }
+
+        // T306-OVERHAUL : foot_placement (pont temporaire de pavés en marchant accroupi au bord du vide)
+        // vs range_foot_placement (coussin aérien éphémère de verre-nuage amortissant les grandes chutes !)
+        int footPl = getArmorEnchantLvl(player, "deep_lucky_block:foot_placement");
+        int featherFoot = getArmorEnchantLvl(player, "deep_lucky_block:range_foot_placement");
+        if (footPl > 0 && player.isShiftKeyDown() && player.getDeltaMovement().y <= 0.02) {
+            BlockPos below = player.blockPosition().below().immutable();
+            if (player.level().getBlockState(below).isAir()) {
+                player.level().setBlockAndUpdate(below, Blocks.MOSSY_COBBLESTONE.defaultBlockState());
+                if (player.level() instanceof ServerLevel slf) {
+                    TestProcedure.schedule(slf, TestProcedure.currentTick(slf) + 160, () -> {
+                        if (slf.getBlockState(below).is(Blocks.MOSSY_COBBLESTONE)) slf.setBlockAndUpdate(below, Blocks.AIR.defaultBlockState());
+                    });
+                }
+            }
+        }
+        if (featherFoot > 0 && !player.onGround() && player.fallDistance >= 3.2f && !player.isShiftKeyDown()) {
+            BlockPos below = player.blockPosition().below().immutable();
+            if (player.level().getBlockState(below).isAir()) {
+                player.level().setBlockAndUpdate(below, Blocks.WHITE_STAINED_GLASS.defaultBlockState());
+                player.fallDistance = 0.0f;
+                EnchantmentParticleFX.ankleTrail(player, ParticleTypes.CLOUD, 8, 0.03);
+                if (player.level() instanceof ServerLevel slr) {
+                    TestProcedure.schedule(slr, TestProcedure.currentTick(slr) + 60, () -> {
+                        if (slr.getBlockState(below).is(Blocks.WHITE_STAINED_GLASS)) slr.setBlockAndUpdate(below, Blocks.AIR.defaultBlockState());
+                    });
+                }
+            }
+        }
+
         int oxyHov = getArmorEnchantLvl(player, "deep_lucky_block:oxygen_hover");
         if (oxyHov > 0 && player.isShiftKeyDown()) player.setDeltaMovement(player.getDeltaMovement().x, 0.0, player.getDeltaMovement().z);
-        int highStp = getArmorEnchantLvl(player, "deep_lucky_block:high_step");
-        if (highStp > 0 && player.tickCount % 20 == 0) player.addEffect(new MobEffectInstance(MobEffects.JUMP, 40, highStp - 1, true, false));
+        // high_step est désormais un vrai Attribut STEP_HEIGHT natif dans RealAttributeModifierHandler (plus de Jump Boost forcé !)
         int shortBreath = getArmorEnchantLvl(player, "deep_lucky_block:shortness_of_breath");
         if (shortBreath > 0 && player.isSprinting() && player.tickCount % 20 == 0) player.hurt(player.damageSources().drown(), 2.0f);
         int enemSpd = getArmorEnchantLvl(player, "deep_lucky_block:enemy_speed_pursuit");
@@ -1018,11 +1642,12 @@ public class UniversalEnchantmentHandler {
         }
         int noiseDist = getArmorEnchantLvl(player, "deep_lucky_block:noise_disturbance");
         if (noiseDist > 0 && player.tickCount % 20 == 0) player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 60, 0));
+        // T306-FIX : horse_boots scale réellement avec son niveau (1..3) + saut de monture + étincelles aux sabots
         int horseB = getArmorEnchantLvl(player, "deep_lucky_block:horse_boots");
-        if (horseB > 0 && player.getVehicle() instanceof LivingEntity mount && player.tickCount % 20 == 0) mount.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 40, 1, true, false));
-        int magLvl = getArmorEnchantLvl(player, "deep_lucky_block:magnetic");
-        if (magLvl > 0 && player.tickCount % 10 == 0 && player instanceof Player magPlayer) {
-            for (net.minecraft.world.entity.item.ItemEntity ie : player.level().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, player.getBoundingBox().inflate(6.0))) ie.playerTouch(magPlayer);
+        if (horseB > 0 && player.getVehicle() instanceof LivingEntity mount && player.tickCount % 20 == 0) {
+            mount.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 40, Math.min(3, horseB - 1), true, false));
+            if (horseB >= 2) mount.addEffect(new MobEffectInstance(MobEffects.JUMP, 40, horseB - 2, true, false));
+            EnchantmentParticleFX.ankleTrail(mount, ParticleTypes.CRIT, 2, 0.02);
         }
         int breathLvl = getArmorEnchantLvl(player, "deep_lucky_block:breath_holding");
         if (breathLvl > 0 && player.getAirSupply() < 200) player.setAirSupply(300);
@@ -1032,8 +1657,6 @@ public class UniversalEnchantmentHandler {
         boolean aimingRanged = player.isUsingItem()
                 && (player.getUseItem().is(Items.BOW) || player.getUseItem().is(Items.CROSSBOW));
         setStackingMovementBonus(player, RANGER_SPEED_ID, aimingRanged && rangerLvl > 0 ? 0.05 * rangerLvl : 0);
-        // Steady Shot ne ralentit plus le joueur : sa stabilité vient uniquement
-        // de la trajectoire droite et sans gravité de la flèche.
 
         handleMovementEnchantments(player);
     }
@@ -1118,6 +1741,9 @@ public class UniversalEnchantmentHandler {
         int windStages = openSkySprint
                 ? windrunner + (player.getY() >= 100.0 ? 1 : 0) : 0;
         setStackingMovementBonus(player, WINDRUNNER_SPEED_ID, 0.05 * windStages);
+        if (openSkySprint && player.tickCount % 12 == 0) {
+            EnchantmentParticleFX.ankleTrail(player, ParticleTypes.SMALL_GUST, 1, 0.02);
+        }
     }
 
     // 3. Cassage de blocs
@@ -1134,41 +1760,203 @@ public class UniversalEnchantmentHandler {
     private static void handleBlockBreak(BlockEvent.BreakEvent event) {
         Player player = event.getPlayer();
         ItemStack tool = player.getMainHandItem();
-        if (player.isShiftKeyDown()) return;
         Level level = (Level) event.getLevel();
         BlockPos origin = event.getPos();
-        int recLvl = getEnchantLvl(tool, "deep_lucky_block:recycle");
-        if (recLvl > 0 && player.level().random.nextInt(100) < 20) Block.popResource(level, origin, new ItemStack(Items.IRON_INGOT));
-        int bHarv = getEnchantLvl(tool, "deep_lucky_block:bountiful_harvest");
-        if (bHarv > 0 && !player.getAbilities().instabuild
-                && event.getState().getBlock() instanceof net.minecraft.world.level.block.CropBlock crop && crop.isMaxAge(event.getState())) {
-            Item cropItem = event.getState().is(Blocks.WHEAT) ? Items.WHEAT : event.getState().is(Blocks.CARROTS) ? Items.CARROT : Items.POTATO;
-            Block.popResource(level, origin, new ItemStack(cropItem, bHarv));
+        BlockState brokenState = event.getState();
+
+        // Protection Eternal : empêche un outil Éternel de se briser sur le minage d'un bloc
+        if (!tool.isEmpty() && tool.isDamageableItem()
+                && getEnchantLvl(tool, "deep_lucky_block:eternal") > 0
+                && tool.getDamageValue() >= tool.getMaxDamage() - 2) {
+            tool.setDamageValue(Math.max(0, tool.getMaxDamage() - 3));
         }
+
+        if (player.isShiftKeyDown()) return;
+
+        int recLvl = getEnchantLvl(tool, "deep_lucky_block:recycle");
+        if (recLvl > 0 && player.level().random.nextInt(100) < 20) {
+            Block.popResource(level, origin, new ItemStack(Items.IRON_INGOT));
+        }
+
+        // Récolte Abondante + Houe du Fermier (auto-replantation !)
+        int bHarv = getEnchantLvl(tool, "deep_lucky_block:bountiful_harvest");
+        int farmHoe = getEnchantLvl(tool, "deep_lucky_block:farmers_hoe");
+        if (!player.getAbilities().instabuild
+                && brokenState.getBlock() instanceof net.minecraft.world.level.block.CropBlock crop
+                && crop.isMaxAge(brokenState)) {
+            if (bHarv > 0) {
+                Item cropItem = brokenState.is(Blocks.WHEAT) ? Items.WHEAT
+                        : brokenState.is(Blocks.CARROTS) ? Items.CARROT
+                        : brokenState.is(Blocks.BEETROOTS) ? Items.BEETROOT : Items.POTATO;
+                Block.popResource(level, origin, new ItemStack(cropItem, bHarv));
+                if (level instanceof ServerLevel slbh) {
+                    slbh.sendParticles(ParticleTypes.HAPPY_VILLAGER, origin.getX() + 0.5, origin.getY() + 0.5, origin.getZ() + 0.5, 5, 0.3, 0.2, 0.3, 0.02);
+                }
+            }
+            if (farmHoe > 0 && level instanceof ServerLevel slfh) {
+                final BlockPos replantPos = origin.immutable();
+                final BlockState babyCrop = crop.getStateForAge(0);
+                TestProcedure.schedule(slfh, TestProcedure.currentTick(slfh) + 2, () -> {
+                    if (slfh.getBlockState(replantPos).isAir() && babyCrop.canSurvive(slfh, replantPos)) {
+                        slfh.setBlockAndUpdate(replantPos, babyCrop);
+                    }
+                });
+            }
+        }
+
+        // T306-OVERHAUL : Famille Pelle de Tranchée (utility_trench_shovel = Enfant 3x1x2 meuble ; universal_trench_shovel = Upgrade 3x3x2 !)
         int utilTrench = getEnchantLvl(tool, "deep_lucky_block:utility_trench_shovel");
         int univTrench = getEnchantLvl(tool, "deep_lucky_block:universal_trench_shovel");
-        if ((utilTrench > 0 || univTrench > 0) && (event.getState().is(Blocks.DIRT) || event.getState().is(Blocks.GRAVEL) || event.getState().is(Blocks.SAND))) { veinMine(level, origin, player, null, univTrench > 0 ? 64 : 32); return; }
+        if ((utilTrench > 0 || univTrench > 0) && brokenState.is(BlockTags.MINEABLE_WITH_SHOVEL)) {
+            int radXZ = 1;
+            int radY = univTrench > 0 ? 1 : 0;
+            for (BlockPos p : BlockPos.betweenClosed(origin.offset(-radXZ, -radY, -radXZ), origin.offset(radXZ, radY, radXZ))) {
+                if (p.equals(origin)) continue;
+                BlockState st = level.getBlockState(p);
+                boolean ok = st.is(BlockTags.MINEABLE_WITH_SHOVEL)
+                        || (univTrench > 0 && (st.is(Blocks.COBBLESTONE) || st.is(Blocks.STONE) || st.is(Blocks.SANDSTONE)));
+                if (ok && st.getDestroySpeed(level, p) >= 0 && !st.hasBlockEntity()) {
+                    level.destroyBlock(p, true, player);
+                }
+            }
+            return;
+        }
+
+        // Gantelets brise-roche (Enfant rock_breaking_gauntlet -> Upgrade diamond_glow_gauntlet) : sécurisés (uniquement roches/minerais !)
         ItemStack gauntletChestplate = player.getItemBySlot(EquipmentSlot.CHEST);
         int rockBrk = getEnchantLvl(gauntletChestplate, "deep_lucky_block:rock_breaking_gauntlet");
         int diamGlow = getEnchantLvl(gauntletChestplate, "deep_lucky_block:diamond_glow_gauntlet");
-        if ((rockBrk > 0 || diamGlow > 0) && tool.isEmpty()) veinMine(level, origin, player, null, diamGlow > 0 ? 16 : 8);
+        if ((rockBrk > 0 || diamGlow > 0) && tool.isEmpty() && brokenState.is(BlockTags.MINEABLE_WITH_PICKAXE)) {
+            veinMine(level, origin, player, BlockTags.MINEABLE_WITH_PICKAXE, diamGlow > 0 ? 16 : 6);
+            if (diamGlow > 0 && level instanceof ServerLevel sldg) {
+                sldg.sendParticles(ParticleTypes.GLOW, origin.getX() + 0.5, origin.getY() + 0.5, origin.getZ() + 0.5, 6, 0.3, 0.3, 0.3, 0.02);
+            }
+        }
+
+        // T306-OVERHAUL : Famille Bûcheron (tree_felling = Enfant 32 bûches ; lumberjack = Upgrade 128 bûches + feuillage + replantation !)
         int lumberLvl = getEnchantLvl(tool, "deep_lucky_block:lumberjack");
         int treeLvl = getEnchantLvl(tool, "deep_lucky_block:tree_felling");
+        if ((lumberLvl > 0 || treeLvl > 0) && brokenState.is(BlockTags.LOGS)) {
+            int maxLogs = lumberLvl > 0 ? 128 : 32;
+            veinMine(level, origin, player, BlockTags.LOGS, maxLogs);
+            if (lumberLvl > 0) {
+                for (BlockPos lp : BlockPos.betweenClosed(origin.offset(-3, 1, -3), origin.offset(3, 8, 3))) {
+                    if (level.getBlockState(lp).is(BlockTags.LEAVES)) {
+                        level.destroyBlock(lp, true, player);
+                    }
+                }
+                if (level instanceof ServerLevel sllj) {
+                    EnchantmentParticleFX.shockwaveRing(sllj, origin.getX() + 0.5, origin.getY() + 0.2, origin.getZ() + 0.5, ParticleTypes.CHERRY_LEAVES, 1.4, 10, 0.02);
+                }
+            }
+            return;
+        }
+
+        // T306-OVERHAUL : scooping (Pelletage : nappe 3x1x3 meuble + tamisage d'orpailleur !)
+        // vs burrowing (Fouissage : tunnel directionnel 1x2 devant le joueur + Vision Nocturne souterraine !)
+        int scoopLvl = getEnchantLvl(tool, "deep_lucky_block:scooping");
+        int burrowLvl = getEnchantLvl(tool, "deep_lucky_block:burrowing");
+        if (scoopLvl > 0 && brokenState.is(BlockTags.MINEABLE_WITH_SHOVEL)) {
+            Block targetBlock = brokenState.getBlock();
+            for (BlockPos p : BlockPos.betweenClosed(origin.offset(-1, 0, -1), origin.offset(1, 0, 1))) {
+                if (!p.equals(origin) && level.getBlockState(p).is(targetBlock)) {
+                    level.destroyBlock(p, true, player);
+                }
+            }
+            if (!player.getAbilities().instabuild && level.random.nextInt(100) < 12 * scoopLvl) {
+                Item bonus = level.random.nextInt(3) == 0 ? Items.GOLD_NUGGET
+                        : (level.random.nextBoolean() ? Items.IRON_NUGGET : Items.FLINT);
+                Block.popResource(level, origin, new ItemStack(bonus, 1 + level.random.nextInt(2)));
+            }
+            return;
+        }
+        if (burrowLvl > 0 && (brokenState.is(BlockTags.MINEABLE_WITH_SHOVEL) || brokenState.is(BlockTags.MINEABLE_WITH_PICKAXE))) {
+            net.minecraft.core.Direction dir = player.getDirection();
+            int depth = Math.min(5, 1 + burrowLvl);
+            for (int d = 1; d <= depth; d++) {
+                for (int dy = 0; dy <= 1; dy++) {
+                    BlockPos bp = origin.relative(dir, d).above(dy - 1);
+                    BlockState bs = level.getBlockState(bp);
+                    if ((bs.is(BlockTags.MINEABLE_WITH_SHOVEL) || bs.is(BlockTags.MINEABLE_WITH_PICKAXE))
+                            && !bs.is(Tags.Blocks.ORES) && bs.getDestroySpeed(level, bp) >= 0 && !bs.hasBlockEntity()) {
+                        level.destroyBlock(bp, true, player);
+                    }
+                }
+            }
+            if (origin.getY() < 55) {
+                player.addEffect(new MobEffectInstance(MobEffects.NIGHT_VISION, 220, 0, true, false));
+            }
+            return;
+        }
+
+        // T306-FIX : snow_remover_shovel ne détruit PLUS que la neige (SNOW, SNOW_BLOCK, POWDER_SNOW) !
+        int snowLvl = getEnchantLvl(tool, "deep_lucky_block:snow_remover_shovel");
+        if (snowLvl > 0 && (brokenState.is(Blocks.SNOW) || brokenState.is(Blocks.SNOW_BLOCK) || brokenState.is(Blocks.POWDER_SNOW))) {
+            for (BlockPos sp : BlockPos.betweenClosed(origin.offset(-4, -1, -4), origin.offset(4, 2, 4))) {
+                BlockState sst = level.getBlockState(sp);
+                if (!sp.equals(origin) && (sst.is(Blocks.SNOW) || sst.is(Blocks.SNOW_BLOCK) || sst.is(Blocks.POWDER_SNOW))) {
+                    level.destroyBlock(sp, true, player);
+                }
+            }
+            if (level instanceof ServerLevel slsn) {
+                EnchantmentParticleFX.shockwaveRing(slsn, origin.getX() + 0.5, origin.getY() + 0.2, origin.getZ() + 0.5, ParticleTypes.SNOWFLAKE, 2.0, 14, 0.03);
+            }
+            return;
+        }
+
+        // T306-OVERHAUL : molten (En Fusion : tous minerais métalliques + Fortune + gerbe de fonderie)
+        int moltenLvl = getEnchantLvl(tool, "deep_lucky_block:molten");
+        if (moltenLvl > 0 && !level.isClientSide() && !player.getAbilities().instabuild) {
+            Item smelted = null;
+            int baseCount = 1;
+            if (brokenState.is(Blocks.IRON_ORE) || brokenState.is(Blocks.DEEPSLATE_IRON_ORE)) smelted = Items.IRON_INGOT;
+            else if (brokenState.is(Blocks.GOLD_ORE) || brokenState.is(Blocks.DEEPSLATE_GOLD_ORE)) smelted = Items.GOLD_INGOT;
+            else if (brokenState.is(Blocks.COPPER_ORE) || brokenState.is(Blocks.DEEPSLATE_COPPER_ORE)) { smelted = Items.COPPER_INGOT; baseCount = 2 + level.random.nextInt(3); }
+            else if (brokenState.is(Blocks.NETHER_GOLD_ORE)) { smelted = Items.GOLD_NUGGET; baseCount = 4 + level.random.nextInt(4); }
+            else if (brokenState.is(Blocks.ANCIENT_DEBRIS)) smelted = Items.NETHERITE_SCRAP;
+
+            if (smelted != null) {
+                int fortune = getEnchantLvl(tool, "minecraft:fortune");
+                int extra = fortune > 0 ? level.random.nextInt(fortune + 1) : 0;
+                int extractBonus = getEnchantLvl(tool, "deep_lucky_block:extracting");
+                event.setCanceled(true);
+                level.destroyBlock(origin, false);
+                Block.popResource(level, origin, new ItemStack(smelted, baseCount + extra + extractBonus));
+                player.giveExperiencePoints(1 + extractBonus * 2);
+                if (level instanceof ServerLevel slmo) {
+                    slmo.sendParticles(ParticleTypes.FLAME, origin.getX() + 0.5, origin.getY() + 0.5, origin.getZ() + 0.5, 8, 0.25, 0.25, 0.25, 0.03);
+                    slmo.sendParticles(ParticleTypes.LAVA, origin.getX() + 0.5, origin.getY() + 0.5, origin.getZ() + 0.5, 2, 0.2, 0.2, 0.2, 0.01);
+                }
+                return;
+            }
+        }
+
+        // T306-OVERHAUL : vein_miner (mine tout le filon connecté) vs extracting (raffinage chirurgical : +butin minéral & XP sans casser les blocs voisins !)
         int extractLvl = getEnchantLvl(tool, "deep_lucky_block:extracting");
         int veinLvl = getEnchantLvl(tool, "deep_lucky_block:vein_miner");
-        int moltenLvl = getEnchantLvl(tool, "deep_lucky_block:molten");
-        int scoopLvl = Math.max(getEnchantLvl(tool, "deep_lucky_block:scooping"), getEnchantLvl(tool, "deep_lucky_block:burrowing"));
-        int snowLvl = getEnchantLvl(tool, "deep_lucky_block:snow_remover_shovel");
-        if ((lumberLvl > 0 || treeLvl > 0) && event.getState().is(BlockTags.LOGS)) { veinMine(level, origin, player, BlockTags.LOGS, treeLvl > 0 ? 128 : 64); return; }
-        if ((extractLvl > 0 || veinLvl > 0) && event.getState().is(Tags.Blocks.ORES)) { veinMine(level, origin, player, Tags.Blocks.ORES, veinLvl > 0 ? 64 : 32); return; }
-        if (scoopLvl > 0 && (event.getState().is(Blocks.DIRT) || event.getState().is(Blocks.GRAVEL) || event.getState().is(Blocks.SAND))) { veinMine(level, origin, player, null, 32); return; }
-        if (snowLvl > 0 && event.getState().is(Blocks.SNOW)) { veinMine(level, origin, player, null, 64); return; }
-        if (moltenLvl > 0 && !level.isClientSide()) {
-            if (event.getState().is(Blocks.IRON_ORE) || event.getState().is(Blocks.DEEPSLATE_IRON_ORE)) { event.setCanceled(true); level.destroyBlock(origin, false); Block.popResource(level, origin, new ItemStack(Items.IRON_INGOT)); }
-            else if (event.getState().is(Blocks.GOLD_ORE) || event.getState().is(Blocks.DEEPSLATE_GOLD_ORE)) { event.setCanceled(true); level.destroyBlock(origin, false); Block.popResource(level, origin, new ItemStack(Items.GOLD_INGOT)); }
+        if (extractLvl > 0 && brokenState.is(Tags.Blocks.ORES) && !player.getAbilities().instabuild && level instanceof ServerLevel slex) {
+            List<ItemStack> drops = Block.getDrops(brokenState, slex, origin, level.getBlockEntity(origin), player, tool);
+            for (ItemStack dr : drops) {
+                if (!dr.is(brokenState.getBlock().asItem())) {
+                    ItemStack bonusDrop = dr.copy();
+                    bonusDrop.setCount(Math.max(1, level.random.nextInt(extractLvl) + 1));
+                    Block.popResource(level, origin, bonusDrop);
+                    break;
+                }
+            }
+            player.giveExperiencePoints(2 * extractLvl);
+            slex.sendParticles(ParticleTypes.ENCHANT, origin.getX() + 0.5, origin.getY() + 0.5, origin.getZ() + 0.5, 10, 0.3, 0.3, 0.3, 0.15);
         }
-        int hasteCont = Math.max(getEnchantLvl(tool, "deep_lucky_block:haste_continuation"), getEnchantLvl(tool, "deep_lucky_block:oxygen_lack_haste"));
-        if (hasteCont > 0 && !level.isClientSide()) player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 120, hasteCont - 1, true, false));
+        if (veinLvl > 0 && brokenState.is(Tags.Blocks.ORES)) {
+            veinMine(level, origin, player, Tags.Blocks.ORES, Math.min(96, 24 * veinLvl));
+            return;
+        }
+
+        // haste_continuation : prolonge et empile l'élan de minage à chaque bloc cassé !
+        int hasteCont = getEnchantLvl(tool, "deep_lucky_block:haste_continuation");
+        if (hasteCont > 0 && !level.isClientSide()) {
+            player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 120, Math.min(4, hasteCont - 1), true, false));
+        }
     }
 
     @SubscribeEvent
@@ -1178,16 +1966,34 @@ public class UniversalEnchantmentHandler {
             Player player = event.getEntity();
             ItemStack tool = player.getMainHandItem();
             if (tool.isEmpty()) return;
+            // fear : nyctophobie souterraine — ralentit fortement le minage dans le noir / sous Y=0 !
             int fearLvl = getEnchantLvl(tool, "deep_lucky_block:fear");
-            if (fearLvl > 0) event.setNewSpeed(event.getOriginalSpeed() * (player.getY() < 0 ? 0.2f : 0.6f));
-            int milShovel = Math.max(getEnchantLvl(tool, "deep_lucky_block:military_shovel"), Math.max(getEnchantLvl(tool, "deep_lucky_block:utility_trench_shovel"), getEnchantLvl(tool, "deep_lucky_block:universal_trench_shovel")));
-            if (milShovel > 0 && tool.getItem() instanceof net.minecraft.world.item.ShovelItem) event.setNewSpeed(event.getOriginalSpeed() * (1.0f + milShovel * 4.0f));
+            if (fearLvl > 0) {
+                int light = player.level().getMaxLocalRawBrightness(player.blockPosition());
+                float mult = (player.getY() < 0 || light <= 7) ? 0.25f : 0.70f;
+                event.setNewSpeed(event.getOriginalSpeed() * mult);
+            }
+            // Différenciation vitesse pelles : military_shovel (polyvalente tous matériaux !) vs utility/universal_trench_shovel (sols meubles)
+            int milShovel = getEnchantLvl(tool, "deep_lucky_block:military_shovel");
+            int utilTrench = getEnchantLvl(tool, "deep_lucky_block:utility_trench_shovel");
+            int univTrench = getEnchantLvl(tool, "deep_lucky_block:universal_trench_shovel");
+            if (tool.getItem() instanceof net.minecraft.world.item.ShovelItem) {
+                if (milShovel > 0) {
+                    float base = Math.max(event.getOriginalSpeed(), 4.0f);
+                    event.setNewSpeed(base * (1.0f + milShovel * 1.8f));
+                } else if (univTrench > 0) {
+                    event.setNewSpeed(event.getOriginalSpeed() * (1.0f + univTrench * 2.5f));
+                } else if (utilTrench > 0) {
+                    event.setNewSpeed(event.getOriginalSpeed() * (1.0f + utilTrench * 1.4f));
+                }
+            }
         } catch (Throwable t) {
             printHandlerError("onBreakSpeed", t);
         }
     }
 
     private static void veinMine(Level level, BlockPos origin, Player player, net.minecraft.tags.TagKey<net.minecraft.world.level.block.Block> tag, int limit) {
+        Block originBlock = level.getBlockState(origin).getBlock();
         Queue<BlockPos> queue = new ArrayDeque<>();
         Set<BlockPos> visited = new HashSet<>();
         queue.add(origin);
@@ -1196,12 +2002,16 @@ public class UniversalEnchantmentHandler {
         while (!queue.isEmpty() && broken < limit) {
             BlockPos curr = queue.poll();
             BlockState state = level.getBlockState(curr);
-            if (tag == null || state.is(tag)) {
-                if (!curr.equals(origin)) { level.destroyBlock(curr, true, player); broken++; }
-                for (BlockPos neighbor : BlockPos.betweenClosed(curr.offset(-1, -1, -1), curr.offset(1, 1, 1))) {
-                    BlockPos imm = neighbor.immutable();
-                    if (visited.add(imm)) queue.add(imm);
-                }
+            if (!curr.equals(origin)) {
+                if (state.isAir() || state.getDestroySpeed(level, curr) < 0 || state.hasBlockEntity()) continue;
+                boolean match = tag != null ? state.is(tag) : state.is(originBlock);
+                if (!match) continue;
+                level.destroyBlock(curr, true, player);
+                broken++;
+            }
+            for (BlockPos neighbor : BlockPos.betweenClosed(curr.offset(-1, -1, -1), curr.offset(1, 1, 1))) {
+                BlockPos imm = neighbor.immutable();
+                if (visited.add(imm)) queue.add(imm);
             }
         }
     }
@@ -1228,7 +2038,7 @@ public class UniversalEnchantmentHandler {
         }
     }
 
-    // 5. Mort : Phenix, Soul Bound, Plunder Wealth
+    // 5. Mort : Phenix, Soul Bound & Eternal, Plunder Wealth, Décapitation, Coupe-Tête, Dévoration, Vétéran
     @SubscribeEvent
     public static void onLivingDeath(LivingDeathEvent event){try{onLivingDeathImpl(event);}catch(Throwable t__){guard("onLivingDeath",t__);}}
     private static void onLivingDeathImpl(LivingDeathEvent event){
@@ -1240,9 +2050,6 @@ public class UniversalEnchantmentHandler {
     }
 
     private static void handleLivingDeath(LivingDeathEvent event) {
-        // FIX (mob-equipment-enchant generalization) : la renaissance Phoenix
-        // se declenche desormais pour toute LivingEntity portant l'armure
-        // enchantee, pas seulement pour un joueur.
         if (ENABLE_PHOENIX_REVIVE && event.getEntity() instanceof LivingEntity player && !player.level().isClientSide()) {
             for (ItemStack armor : player.getArmorSlots()) {
                 int phxLvl = getEnchantLvl(armor, "deep_lucky_block:phoenix");
@@ -1252,45 +2059,160 @@ public class UniversalEnchantmentHandler {
                     player.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 600, 0));
                     player.addEffect(new MobEffectInstance(MobEffects.REGENERATION, Math.max(40, Math.min(140, 40 + (phxLvl - 1) * 50)), 1));
                     player.level().explode(player, player.getX(), player.getY(), player.getZ(), 4.0f, Level.ExplosionInteraction.NONE);
+                    EnchantmentParticleFX.doubleHelix(player, ParticleTypes.FLAME, ParticleTypes.LAVA, 0.85, 14);
                     Enchantment phxEnch = deepluckyblock.util.DeepEnchant.byId("deep_lucky_block:phoenix");
                     if (phxEnch != null) {
-                        // PORT 1.21.1 : suppression d'un enchantement via DeepEnchant
                         deepluckyblock.util.DeepEnchant.remove(armor, phxEnch);
                     }
                     return;
                 }
             }
-            // FIX (mob-equipment-enchant generalization) : Soul Bound sauvegarde
-            // le CONTENU DE L'INVENTAIRE (getInventory), qui n'existe que sur
-            // Player -- ce volet reste donc strictement reserve au joueur.
+            // Soul Bound ET Eternal préservent tous deux l'objet dans l'inventaire à la mort !
             if (player instanceof Player sbPlayer) {
                 List<ItemStack> saved = new ArrayList<>();
                 for (int i = 0; i < sbPlayer.getInventory().getContainerSize(); i++) {
                     ItemStack stack = sbPlayer.getInventory().getItem(i);
-                    if (getEnchantLvl(stack, "deep_lucky_block:soul_bound") > 0) { saved.add(stack.copy()); sbPlayer.getInventory().setItem(i, ItemStack.EMPTY); }
+                    if (getEnchantLvl(stack, "deep_lucky_block:soul_bound") > 0
+                            || getEnchantLvl(stack, "deep_lucky_block:eternal") > 0) {
+                        saved.add(stack.copy());
+                        sbPlayer.getInventory().setItem(i, ItemStack.EMPTY);
+                    }
                 }
                 if (!saved.isEmpty()) SOUL_BOUND_CACHE.put(sbPlayer.getUUID(), saved);
             }
         }
-        // FIX (mob-equipment-enchant generalization) : les enchantements de
-        // butin (plunder_wealth, soul_reaping_sickle, loot_harvest) profitent
-        // desormais a tout tueur LivingEntity equipe, pas seulement au joueur.
         if (event.getSource().getEntity() instanceof LivingEntity player && !player.level().isClientSide()) {
+            LivingEntity victim = event.getEntity();
             ItemStack weapon = player.getMainHandItem();
             int plunderLvl = getEnchantLvl(weapon, "deep_lucky_block:plunder_wealth");
-            if (plunderLvl > 0 && (event.getEntity() instanceof Villager || event.getEntity() instanceof Pillager)) {
-                event.getEntity().spawnAtLocation(new ItemStack(Items.EMERALD, (2 + player.level().random.nextInt(3)) * plunderLvl));
+            if (plunderLvl > 0 && (victim instanceof Villager || victim instanceof Pillager)) {
+                victim.spawnAtLocation(new ItemStack(Items.EMERALD, (2 + player.level().random.nextInt(3)) * plunderLvl));
             }
             int soulReap = getEnchantLvl(weapon, "deep_lucky_block:soul_reaping_sickle");
-            if (soulReap > 0 && player.level().random.nextInt(100) < soulReap) {
-                if (event.getEntity() instanceof net.minecraft.world.entity.monster.Zombie) event.getEntity().spawnAtLocation(Items.ZOMBIE_SPAWN_EGG);
-                else if (event.getEntity() instanceof net.minecraft.world.entity.monster.Skeleton) event.getEntity().spawnAtLocation(Items.SKELETON_SPAWN_EGG);
-                else if (event.getEntity() instanceof net.minecraft.world.entity.monster.Creeper) event.getEntity().spawnAtLocation(Items.CREEPER_SPAWN_EGG);
+            if (soulReap > 0 && player.level().random.nextInt(100) < Math.min(35, 4 * soulReap)) {
+                EnchantmentParticleFX.burstOnEntity(victim, ParticleTypes.SCULK_SOUL, 10, 0.3, 0.04);
+                if (victim instanceof net.minecraft.world.entity.monster.Zombie) victim.spawnAtLocation(Items.ZOMBIE_SPAWN_EGG);
+                else if (victim instanceof net.minecraft.world.entity.monster.Skeleton) victim.spawnAtLocation(Items.SKELETON_SPAWN_EGG);
+                else if (victim instanceof net.minecraft.world.entity.monster.Creeper) victim.spawnAtLocation(Items.CREEPER_SPAWN_EGG);
             }
             int lootHarv = getEnchantLvl(weapon, "deep_lucky_block:loot_harvest");
-            if (lootHarv > 0) event.getEntity().spawnAtLocation(new ItemStack(Items.EMERALD, lootHarv));
-            // Experience Harvest est traité dans LivingExperienceDropEvent à
-            // priorité LOWEST afin de multiplier l'XP déjà modifiée par les autres mods.
+            if (lootHarv > 0) victim.spawnAtLocation(new ItemStack(Items.EMERALD, lootHarv));
+
+            // T306-OVERHAUL : decapitation (trophées de crânes !) vs beheading (frénésie de bourreau à l'exécution !)
+            int decapLvl = getEnchantLvl(weapon, "deep_lucky_block:decapitation");
+            if (decapLvl > 0 && player.level().random.nextInt(100) < Math.min(60, 12 * decapLvl)) {
+                Item headItem = null;
+                if (victim instanceof net.minecraft.world.entity.monster.WitherSkeleton) headItem = Items.WITHER_SKELETON_SKULL;
+                else if (victim instanceof net.minecraft.world.entity.monster.Skeleton) headItem = Items.SKELETON_SKULL;
+                else if (victim instanceof net.minecraft.world.entity.monster.Zombie) headItem = Items.ZOMBIE_HEAD;
+                else if (victim instanceof net.minecraft.world.entity.monster.Creeper) headItem = Items.CREEPER_HEAD;
+                else if (victim instanceof net.minecraft.world.entity.monster.piglin.AbstractPiglin) headItem = Items.PIGLIN_HEAD;
+                if (headItem != null) {
+                    victim.spawnAtLocation(headItem);
+                    EnchantmentParticleFX.burstOnEntity(victim, EnchantmentParticleFX.CRIMSON_BLOOD, 10, 0.25, 0.02);
+                }
+            }
+            int beheadLvl = getEnchantLvl(weapon, "deep_lucky_block:beheading");
+            if (beheadLvl > 0) {
+                player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 80, Math.min(2, beheadLvl - 1), true, false));
+                player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 80, 0, true, false));
+                EnchantmentParticleFX.burstOnEntity(victim, EnchantmentParticleFX.CRIMSON_BLOOD, 8, 0.25, 0.03);
+            }
+
+            // T306-OVERHAUL : devour (Dévoration : festin carnassier sur élimination -> Faim + Saturation + PV !)
+            int devourLvl = getEnchantLvl(weapon, "deep_lucky_block:devour");
+            if (devourLvl > 0) {
+                float feastHeal = Math.min(10.0f, 1.5f + 1.5f * devourLvl);
+                player.heal(feastHeal);
+                if (player instanceof Player devPlayer) {
+                    devPlayer.getFoodData().eat(Math.min(8, 1 + devourLvl), 0.7f);
+                }
+                EnchantmentParticleFX.burstOnEntity(victim, EnchantmentParticleFX.CRIMSON_BLOOD, 8, 0.3, 0.02);
+                EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.HEART, 2, 0.25, 0.02);
+            }
+
+            // T306-OVERHAUL : hundred_battles_veteran (Vétéran des Cent Batailles : gagne de l'endurance aguerrie à chaque victoire !)
+            int hundVet = getArmorEnchantLvl(player, "deep_lucky_block:hundred_battles_veteran");
+            if (hundVet > 0) {
+                int kills = Math.min(100, player.getPersistentData().getInt("slb_veteran_kills") + 1);
+                player.getPersistentData().putInt("slb_veteran_kills", kills);
+                float vetAbs = Math.min(8.0f, 2.0f + (kills / 25.0f) * 2.0f);
+                if (player.getAbsorptionAmount() < vetAbs) player.setAbsorptionAmount(vetAbs);
+            }
+        }
+    }
+
+    // 5b. T306 Hooks : XP (basic_mending), Repas (gluttony / stomach_pouch), Soins réduits (weakness_wound), Champs (light_walker)
+    @SubscribeEvent
+    public static void onPickupXp(net.neoforged.neoforge.event.entity.player.PlayerXpEvent.PickupXp event) {
+        try {
+            Player player = event.getEntity();
+            if (player.level().isClientSide()) return;
+            int xpVal = Math.max(1, event.getOrb().getValue());
+            for (ItemStack st : player.getAllSlots()) {
+                if (!st.isEmpty() && st.isDamageableItem() && st.getDamageValue() > 0) {
+                    int bMend = getEnchantLvl(st, "deep_lucky_block:basic_mending");
+                    if (bMend > 0) {
+                        int repair = Math.max(1, xpVal * bMend);
+                        st.setDamageValue(Math.max(0, st.getDamageValue() - repair));
+                        break;
+                    }
+                }
+            }
+        } catch (Throwable t__) {
+            guard("onPickupXp", t__);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onFinishEat(net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent.Finish event) {
+        try {
+            LivingEntity entity = event.getEntity();
+            if (entity.level().isClientSide()) return;
+            ItemStack item = event.getItem();
+            if (!item.has(DataComponents.FOOD)) return;
+            int glut = getArmorEnchantLvl(entity, "deep_lucky_block:gluttony");
+            if (glut > 0) {
+                entity.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 60 * glut, 0, true, false));
+                if (entity.getAbsorptionAmount() < 4.0f * glut) {
+                    entity.setAbsorptionAmount(Math.min(8.0f, 2.0f + 2.0f * glut));
+                }
+                EnchantmentParticleFX.burstOnEntity(entity, ParticleTypes.HAPPY_VILLAGER, 5, 0.3, 0.02);
+            }
+            int pouch = getArmorEnchantLvl(entity, "deep_lucky_block:stomach_pouch");
+            if (pouch > 0 && entity instanceof Player fp) {
+                fp.getFoodData().eat(pouch, 0.5f);
+            }
+        } catch (Throwable t__) {
+            guard("onFinishEat", t__);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onLivingHeal(net.neoforged.neoforge.event.entity.living.LivingHealEvent event) {
+        try {
+            LivingEntity entity = event.getEntity();
+            if (entity.level().isClientSide()) return;
+            if (entity.getPersistentData().getLong("slb_weak_wound_until") > entity.level().getGameTime()) {
+                event.setAmount(event.getAmount() * 0.65f);
+            }
+        } catch (Throwable t__) {
+            guard("onLivingHeal", t__);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onFarmlandTrample(BlockEvent.FarmlandTrampleEvent event) {
+        try {
+            if (event.getEntity() instanceof LivingEntity le) {
+                if (getArmorEnchantLvl(le, "deep_lucky_block:light_walker") > 0
+                        || getArmorEnchantLvl(le, "deep_lucky_block:lightness") > 0
+                        || getArmorEnchantLvl(le, "deep_lucky_block:basic_lightness") > 0) {
+                    event.setCanceled(true);
+                }
+            }
+        } catch (Throwable t__) {
+            guard("onFarmlandTrample", t__);
         }
     }
 
@@ -1313,15 +2235,18 @@ public class UniversalEnchantmentHandler {
     // dans handlePlayerTick (PlayerTickEvent.Post), cle NBT dédiée
     // "slb_ug_was_ground" (distincte de celle d'EquipmentExpansionHandler).
 
-    // 8. Buoy (FIX mob-equipment-enchant generalization : passe de
-    // PlayerTickEvent.Post a EntityTickEvent.Post pour couvrir les mobs equipes)
+    // 8. Buoy (scale par niveau 1..3 + bulles de flottabilité)
     @SubscribeEvent
     public static void onPlayerWaterBuoy(EntityTickEvent.Post event){try{onPlayerWaterBuoyImpl(event);}catch(Throwable t__){guard("onPlayerWaterBuoy",t__);}}
     private static void onPlayerWaterBuoyImpl(EntityTickEvent.Post event){
         try {
             if (event.getEntity() instanceof LivingEntity player && !player.level().isClientSide()) {
                 int buoyLvl = getEnchantLvl(player.getItemBySlot(EquipmentSlot.FEET), "deep_lucky_block:buoy");
-                if (buoyLvl > 0 && player.isInWater() && player.getDeltaMovement().y > 0.0) player.setDeltaMovement(player.getDeltaMovement().add(0, 0.25f, 0));
+                if (buoyLvl > 0 && player.isInWater() && player.getDeltaMovement().y > -0.02 && !player.isShiftKeyDown()) {
+                    double lift = Math.min(0.45, 0.14 + 0.08 * buoyLvl);
+                    player.setDeltaMovement(player.getDeltaMovement().x, Math.min(0.65, player.getDeltaMovement().y + lift), player.getDeltaMovement().z);
+                    if (player.tickCount % 12 == 0) EnchantmentParticleFX.ankleTrail(player, ParticleTypes.BUBBLE_COLUMN_UP, 2, 0.03);
+                }
             }
         } catch (Throwable t) {
             printHandlerError("onPlayerWaterBuoy", t);
@@ -1333,17 +2258,11 @@ public class UniversalEnchantmentHandler {
     public static void onItemUseStart(net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent.Start event){try{onItemUseStartImpl(event);}catch(Throwable t__){guard("onItemUseStart",t__);}}
     private static void onItemUseStartImpl(net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent.Start event){
         try {
-            // FIX (mob-equipment-enchant generalization) : cet evenement est
-            // deja generique (LivingEntity), la restriction "instanceof
-            // Player" etait artificielle -- retiree pour couvrir les mobs
-            // utilisant un arc/objet "toy" enchante.
             if (event.getEntity() instanceof LivingEntity) {
                 ItemStack stack = event.getItem();
                 if (stack.isEmpty()) return;
                 int toyLvl = getEnchantLvl(stack, "deep_lucky_block:toy");
                 if (toyLvl > 0) event.setDuration(3);
-                // instant_shot ne modifie plus le Start : la flèche ne part JAMAIS
-                // tant que la corde n'est pas relâchée (fini la mitraillette).
             }
         } catch (Throwable t) {
             printHandlerError("onItemUseStart", t);
@@ -1354,10 +2273,6 @@ public class UniversalEnchantmentHandler {
     public static void onItemUseTick(net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent.Tick event){try{onItemUseTickImpl(event);}catch(Throwable t__){guard("onItemUseTick",t__);}}
     private static void onItemUseTickImpl(net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent.Tick event){
         try {
-            // FIX (mob-equipment-enchant generalization) : evenement deja
-            // generique -- generalise a LivingEntity pour couvrir un mob
-            // qui utilise un arc/objet enchante (toy, ranger, quick_charge,
-            // instant_shot, fast_eating).
             if (!(event.getEntity() instanceof LivingEntity player)) return;
             ItemStack stack = event.getItem();
             if (stack.isEmpty()) return;
@@ -1366,8 +2281,6 @@ public class UniversalEnchantmentHandler {
                 if (event.getDuration() <= 1) { fireToyArrow(player, toyLvl); event.setDuration(4); }
                 return;
             }
-            // instant_shot : armement TRES rapide, mais AUCUN tir automatique.
-            // La flèche ne part qu'au relâchement de la corde (ArrowLoose).
             int rangerLvl = getEnchantLvl(stack, "deep_lucky_block:ranger");
             int quickLvl = getEnchantLvl(stack, "minecraft:quick_charge");
             int instantLvl = getEnchantLvl(stack, "deep_lucky_block:instant_shot");
@@ -1384,27 +2297,8 @@ public class UniversalEnchantmentHandler {
 
     private static void fireToyArrow(LivingEntity player, int toyLvl) {
         if (player.level().isClientSide()) return;
-        // FIX DÉFINITIF (400x+ "Cannot encode empty ItemStack" en boucle au unload de
-        // chunk, cause racine du bug "l'arc ne tire plus / plus d'animation" rapporté
-        // en jeu) : le constructeur Arrow(level, shooter, pickupItemStack,
-        // firedFromWeapon) stocke la REFERENCE exacte de l'ItemStack passé comme
-        // pickupItemStack de l'entité flèche — CE N'EST PAS UNE "FLÈCHE REPRÉSENTÉE PAR
-        // L'ARC", c'est juste l'item que le joueur récupérerait au sol. Passer une copie
-        // de l'ARC LUI-MÊME (player.getMainHandItem().copy()) était déjà une erreur
-        // sémantique (l'entité flèche traîne alors une copie figée d'un arc enchanté
-        // potentiellement massif en NBT), et une simple .copy() ne suffit pas : la
-        // flèche peut rester en vol/au sol largement plus longtemps que l'arc ne reste
-        // inchangé (unbreaking/mending qui retouchent le stack, remplacement d'item...),
-        // et TOUT ItemStack vide déclenche IllegalStateException "Cannot encode empty
-        // ItemStack" dans AbstractArrow.addAdditionalSaveData dès la sauvegarde du chunk.
-        // Avec des centaines de flèches "toy" tirées par seconde, ce spam d'exceptions
-        // serveur (voir logs : 400+ occurrences en quelques secondes) sature le thread
-        // serveur et donne l'impression que "l'arc ne répond plus du tout". On utilise
-        // désormais une VRAIE pile d'UNE flèche vanilla, indépendante de l'arc, qui ne
-        // sera jamais vidée par un autre système.
         Arrow arrow = new Arrow(player.level(), player, new ItemStack(Items.ARROW), null);
         arrow.setBaseDamage(player.getRandom().nextFloat() < 0.10f ? 0.05f : 0.0f);
-        // [1.21.1] setKnockback supprimé : knockback piloté par l'enchantement PUNCH
         arrow.pickup = AbstractArrow.Pickup.DISALLOWED;
         arrow.shootFromRotation(player, player.getXRot(), player.getYRot(), 0.0F, 3.0F, 6.0F);
         player.level().addFreshEntity(arrow);
@@ -1424,63 +2318,58 @@ public class UniversalEnchantmentHandler {
 
     private static void handleArrowLoose(ArrowLooseEvent event) {
         ItemStack bow = event.getBow();
-        // PHASING : la flèche n'a plus de gravité, file tout droit lentement
-        // (vitesse normale -45%) et traverse tout.
-        // La vitesse est modifiée sur la flèche elle-même dans EntityJoinLevel.
         if (getEnchantLvl(bow, "deep_lucky_block:phasing") > 0) {
             event.getEntity().getPersistentData().putBoolean("slb_phasing_arrow", true);
         }
-        // SNIPER : portée maximale de l'arc doublée (vitesse x2 sur la flèche).
         if (getEnchantLvl(bow, "deep_lucky_block:sniper") > 0) {
             event.getEntity().getPersistentData().putBoolean("slb_arrow_sniper", true);
         }
-        // INSTANT SHOT : la flèche ne part qu'ici, au RELÂCHEMENT de la corde,
-        // mais toujours à pleine puissance, même avec un clic rapide.
         if (getEnchantLvl(bow, "deep_lucky_block:instant_shot") > 0) {
             event.setCharge(Math.max(event.getCharge(), 20));
         }
-        // INVERTED ARROWS : un seul tirage par salve. Si la malédiction se
-        // déclenche, TOUTES les flèches de cette salve partent vers l'arrière ;
-        // aucune flèche résiduelle ne continue vers l'avant.
         int invertedLvl = getEnchantLvl(bow, "deep_lucky_block:inverted_arrows");
         boolean invertThisShot = invertedLvl > 0
                 && event.getEntity().level().random.nextInt(100) < Math.min(100, 20 * invertedLvl);
 
-        // STEADY SHOT (niveau max I) : la vraie flèche ne subit plus la gravité,
-        // donc aucune courbe ni retombée. Son axe initial reste inchangé.
         boolean steadyThisShot = getEnchantLvl(bow, "deep_lucky_block:steady_shot") > 0;
         if (steadyThisShot) {
             event.getEntity().getPersistentData().putBoolean("slb_arrow_steady", true);
         }
 
+        // T306-OVERHAUL : multishot_bow (éventail horizontal discipliné) vs scatter (chevrotine conique à dispersion 3D !)
         int multiLvl = getEnchantLvl(bow, "deep_lucky_block:multishot_bow");
         int scatterLvl = getEnchantLvl(bow, "deep_lucky_block:scatter");
-        int count = Math.max(multiLvl > 0 ? 2 * multiLvl : 0, scatterLvl > 0 ? 4 : 0);
-        if (count > 0 && !event.getEntity().level().isClientSide()) {
-            for (int i = 0; i < count; i++) {
-                // FIX DÉFINITIF (voir fireToyArrow) : une VRAIE pile de flèche vanilla
-                // indépendante de l'arc, jamais une copie de l'arc lui-même (source du
-                // spam "Cannot encode empty ItemStack" en jeu, cause racine du bug de
-                // l'arc qui semblait ne plus répondre).
+        if (multiLvl > 0 && !event.getEntity().level().isClientSide()) {
+            int fanCount = Math.min(10, 2 * multiLvl);
+            for (int i = 0; i < fanCount; i++) {
                 Arrow extraArrow = new Arrow(event.getEntity().level(), event.getEntity(), new ItemStack(Items.ARROW), null);
-                extraArrow.shootFromRotation(event.getEntity(), event.getEntity().getXRot(), event.getEntity().getYRot() + (i % 2 == 0 ? 6f : -6f) * ((i / 2) + 1), 0.0f, 3.0f, 1.0f);
-                if (invertThisShot) {
-                    extraArrow.setDeltaMovement(extraArrow.getDeltaMovement().scale(-1.0));
-                }
-                if (steadyThisShot) {
-                    extraArrow.setNoGravity(true);
-                }
+                float yawOff = (i % 2 == 0 ? 5.5f : -5.5f) * ((i / 2) + 1);
+                extraArrow.shootFromRotation(event.getEntity(), event.getEntity().getXRot(), event.getEntity().getYRot() + yawOff, 0.0f, 3.0f, 0.3f);
+                if (invertThisShot) extraArrow.setDeltaMovement(extraArrow.getDeltaMovement().scale(-1.0));
+                if (steadyThisShot) extraArrow.setNoGravity(true);
                 extraArrow.pickup = AbstractArrow.Pickup.CREATIVE_ONLY;
-                // Les flèches bonus ne consomment pas le marqueur PHASING :
-                // seule la vraie flèche tirée devient intangible.
                 extraArrow.getPersistentData().putBoolean("slb_no_phasing", true);
                 event.getEntity().level().addFreshEntity(extraArrow);
             }
         }
+        if (scatterLvl > 0 && !event.getEntity().level().isClientSide()) {
+            int pellets = Math.min(12, 4 + 2 * scatterLvl);
+            for (int i = 0; i < pellets; i++) {
+                Arrow pellet = new Arrow(event.getEntity().level(), event.getEntity(), new ItemStack(Items.ARROW), null);
+                pellet.setBaseDamage(1.6);
+                pellet.shootFromRotation(event.getEntity(), event.getEntity().getXRot(), event.getEntity().getYRot(), 0.0f, 2.75f, 9.5f);
+                if (invertThisShot) pellet.setDeltaMovement(pellet.getDeltaMovement().scale(-1.0));
+                if (steadyThisShot) pellet.setNoGravity(true);
+                pellet.pickup = AbstractArrow.Pickup.CREATIVE_ONLY;
+                pellet.getPersistentData().putBoolean("slb_no_phasing", true);
+                event.getEntity().level().addFreshEntity(pellet);
+            }
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.SMALL_GUST, 5, 0.25, 0.04);
+        }
+
         int snapLvl = getEnchantLvl(bow, "deep_lucky_block:string_snap");
         if (snapLvl > 0 && event.getEntity().level().random.nextInt(100) < (20 * snapLvl)) if (event.getEntity().level() instanceof net.minecraft.server.level.ServerLevel slb) bow.hurtAndBreak(Math.max(1, (int)(bow.getMaxDamage() * 0.30f)), slb, event.getEntity(), item -> {});
         if (getEnchantLvl(bow, "deep_lucky_block:point_shoot") > 0) event.getEntity().getPersistentData().putBoolean("slb_arrow_point_shoot", true);
-        // Tags consommés par la vraie flèche dans EntityJoinLevel.
         int weakForceLvl = getEnchantLvl(bow, "deep_lucky_block:weak_force");
         if (weakForceLvl > 0) {
             event.getEntity().getPersistentData().putInt("slb_arrow_weak", weakForceLvl);
@@ -1501,7 +2390,7 @@ public class UniversalEnchantmentHandler {
         }
     }
 
-    // 10b. PHASING : appliqué à la flèche dès son apparition dans le monde.
+    // 10b. PHASING & Arbalètes : appliqué à tout AbstractArrow dès son apparition dans le monde.
     @SubscribeEvent
     public static void onEntityJoinLevel(EntityJoinLevelEvent event){try{onEntityJoinLevelImpl(event);}catch(Throwable t__){guard("onEntityJoinLevel",t__);}}
     private static void onEntityJoinLevelImpl(EntityJoinLevelEvent event){
@@ -1512,26 +2401,28 @@ public class UniversalEnchantmentHandler {
         }
     }
 
-    // FIX (mob-equipment-enchant generalization) : "instanceof Player" ->
-    // "instanceof LivingEntity" pour Phasing/Sniper/Weak Force/Inverted
-    // Arrows/Steady Shot/Point Shoot -- un mob archer (squelette, etc.)
-    // tirant une fleche enchantee beneficie desormais de ces effets au
-    // meme titre qu'un joueur. Tous les champs lus/ecrits ici
-    // (getPersistentData, getLookAngle) sont deja disponibles sur
-    // n'importe quelle LivingEntity.
     private static void handleEntityJoinLevel(EntityJoinLevelEvent event) {
         if (event.getLevel().isClientSide()) return;
-        if (!(event.getEntity() instanceof Arrow arrow)) return;
+        if (!(event.getEntity() instanceof AbstractArrow arrow)) return;
         if (!(arrow.getOwner() instanceof LivingEntity player)) return;
         if (arrow.getPersistentData().getBoolean("slb_no_phasing")) return;
+
+        ItemStack rangedWeapon = player.getMainHandItem();
+        if (rangedWeapon.isEmpty() || !(rangedWeapon.getItem() instanceof net.minecraft.world.item.ProjectileWeaponItem)) {
+            rangedWeapon = player.getOffhandItem();
+        }
+        // heavy_range_crossbow : accélère directement le trait d'arbalète (+35% vélocité par niveau) !
+        int hvyCross = getEnchantLvl(rangedWeapon, "deep_lucky_block:heavy_range_crossbow");
+        if (hvyCross > 0 && !arrow.getPersistentData().getBoolean("slb_hvy_cross_boosted")) {
+            arrow.getPersistentData().putBoolean("slb_hvy_cross_boosted", true);
+            arrow.setDeltaMovement(arrow.getDeltaMovement().scale(1.0 + Math.min(1.5, 0.35 * hvyCross)));
+        }
 
         if (player.getPersistentData().getBoolean("slb_phasing_arrow")) {
             player.getPersistentData().remove("slb_phasing_arrow");
             arrow.getPersistentData().putBoolean("slb_phasing", true);
-            arrow.setNoGravity(true); // plus de gravité : file tout droit, lentement
-            arrow.setDeltaMovement(arrow.getDeltaMovement().scale(0.55f)); // vitesse -45 %
-            // Elle vole "à l'infini"... avec une limite de sécurité de 30 s pour
-            // ne pas laisser des entités orphelines dans le monde.
+            arrow.setNoGravity(true);
+            arrow.setDeltaMovement(arrow.getDeltaMovement().scale(0.55f));
             if (event.getLevel() instanceof ServerLevel sl) {
                 TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 600, () -> {
                     if (arrow.isAlive()) arrow.discard();
@@ -1539,13 +2430,11 @@ public class UniversalEnchantmentHandler {
             }
         }
 
-        // SNIPER : portée maximale doublée (vitesse x2 sur la vraie flèche).
         if (player.getPersistentData().getBoolean("slb_arrow_sniper")) {
             player.getPersistentData().remove("slb_arrow_sniper");
             arrow.setDeltaMovement(arrow.getDeltaMovement().scale(2.0));
         }
 
-        // WEAK FORCE : la flèche inflige moins de dégâts (-25 % par niveau).
         int weakLvl = player.getPersistentData().getInt("slb_arrow_weak");
         if (weakLvl > 0) {
             player.getPersistentData().remove("slb_arrow_weak");
@@ -1553,16 +2442,12 @@ public class UniversalEnchantmentHandler {
                     arrow.getBaseDamage() * Math.max(0.25f, 1.0f - 0.25f * weakLvl)));
         }
 
-        // INVERTED ARROWS : le tirage a déjà été fait une seule fois au
-        // relâchement. On inverse la vraie flèche sans créer de seconde flèche.
         boolean invertedShot = player.getPersistentData().getBoolean("slb_arrow_inverted_shot");
         if (invertedShot) {
             player.getPersistentData().remove("slb_arrow_inverted_shot");
             arrow.setDeltaMovement(arrow.getDeltaMovement().scale(-1.0));
         }
 
-        // STEADY SHOT : conserve le vecteur courant (y compris s'il est inversé)
-        // et retire la gravité. La trajectoire reste donc droite à l'infini.
         if (player.getPersistentData().getBoolean("slb_arrow_steady")) {
             player.getPersistentData().remove("slb_arrow_steady");
             double speed = arrow.getDeltaMovement().length();
@@ -1572,7 +2457,6 @@ public class UniversalEnchantmentHandler {
             arrow.setNoGravity(true);
         }
 
-        // POINT SHOOT : trajectoire parfaitement rectiligne (zéro dispersion).
         if (player.getPersistentData().getBoolean("slb_arrow_point_shoot")) {
             player.getPersistentData().remove("slb_arrow_point_shoot");
             double speed = arrow.getDeltaMovement().length();
@@ -1582,14 +2466,6 @@ public class UniversalEnchantmentHandler {
         }
     }
 
-    // FIX (mob-equipment-enchant generalization) : "instanceof Player" ->
-    // "instanceof LivingEntity" -- generalise TOUS les effets d'impact de
-    // fleche (Phasing, Torch, Whisper, Flint Heart, Ricochet, Enemy
-    // Attractor, Heavy Range Crossbow, Peregrine, Wraith Arrow, Blazing
-    // Arrow, Dragon's Breath Arrow, Sniper, etc.) a n'importe quel tireur
-    // LivingEntity, dont les mobs archers. Seul le volet "Retrieval"
-    // (ajoute une fleche a l'INVENTAIRE) reste explicitement Player-only
-    // plus bas (un mob n'a pas d'inventaire consultable de la meme facon).
     private static void handleArrowImpact(ProjectileImpactEvent event) {
         if (!(event.getProjectile() instanceof AbstractArrow arrow)) return;
         if (!(arrow.getOwner() instanceof LivingEntity player)) return;
@@ -1597,23 +2473,6 @@ public class UniversalEnchantmentHandler {
         ItemStack bow = player.getMainHandItem();
         if (bow.isEmpty()) bow = player.getOffhandItem();
 
-        // PHASING : la flèche traverse TOUT (entités et blocs), en infligeant ses
-        // dégâts à chaque entité traversée, sans jamais s'arrêter.
-        //
-        // FIX (rendre fonctionnels les objets ayant une combinaison
-        // d'enchantements incompatible, ex. Arc de l'Ascension) : cette
-        // branche faisait un "return" immédiat après avoir infligé les
-        // dégâts de base, ce qui empêchait TOUS les autres effets à l'impact
-        // (torch, whisper, ricochet, retrieval, wraith_arrow, thunderstruck,
-        // water_arrow, pierce, briar_arrow, etc.) de jamais se déclencher sur
-        // une flèche qui a AUSSI Phasing -- alors que les règles de
-        // compatibilité au tirage (PHASING_ALLOWED) n'autorisent normalement
-        // Phasing qu'avec une petite liste d'enchants, un objet plus ancien /
-        // au tirage "eternal" peut légitimement porter Phasing ET d'autres
-        // enchants d'impact en même temps. On applique désormais les dégâts
-        // de base de Phasing SANS interrompre le reste du traitement : tous
-        // les autres enchants d'impact continuent de s'exécuter normalement
-        // ensuite, y compris sur une flèche qui traverse sa cible.
         if (arrow.getPersistentData().getBoolean("slb_phasing")) {
             if (event.getRayTraceResult() instanceof EntityHitResult ehr
                     && ehr.getEntity() instanceof LivingEntity target) {
@@ -1621,9 +2480,9 @@ public class UniversalEnchantmentHandler {
                         (float) arrow.getBaseDamage());
                 player.level().playSound(null, target.getX(), target.getY(), target.getZ(),
                         SoundEvents.ARROW_HIT, SoundSource.NEUTRAL, 1.0f, 1.2f);
+                EnchantmentParticleFX.burstOnEntity(target, ParticleTypes.PORTAL, 6, 0.25, 0.05);
             }
             event.setCanceled(true);
-            // (pas de "return" ici : voir commentaire ci-dessus)
         }
 
         if (getEnchantLvl(bow, "deep_lucky_block:torch") > 0 && event.getRayTraceResult() instanceof net.minecraft.world.phys.BlockHitResult bhr) {
@@ -1635,25 +2494,62 @@ public class UniversalEnchantmentHandler {
             hurtNoCascade(target, player.damageSources().arrow(arrow, player), target.getArmorValue() * 2.0f);
         int flintHeartLvl = getEnchantLvl(bow, "deep_lucky_block:flint_heart");
         if (flintHeartLvl > 0 && event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target) {
-            hurtNoCascade(target, player.damageSources().arrow(arrow, player), 2.0f * flintHeartLvl);
-            if (bow.isDamageableItem()) if (player.level() instanceof net.minecraft.server.level.ServerLevel slr) bow.hurtAndBreak(Math.max(1, (int)(bow.getMaxDamage() * 0.02f)), slr, player, item -> {});
-        }
-        int ricochetLvl = Math.max(getEnchantLvl(bow, "deep_lucky_block:ricochet"), Math.max(getEnchantLvl(bow, "deep_lucky_block:bounce"), getEnchantLvl(bow, "deep_lucky_block:bouncy")));
-        if (ricochetLvl > 0 && event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target) {
-            int bounces = 0;
-            for (Mob mob : player.level().getEntitiesOfClass(Mob.class, target.getBoundingBox().inflate(6.0))) {
-                if (mob != target && bounces < ricochetLvl) { hurtNoCascade(mob, player.damageSources().arrow(arrow, player), 4.0f); bounces++; }
+            hurtNoCascade(target, player.damageSources().arrow(arrow, player), 2.5f * flintHeartLvl);
+            EnchantmentParticleFX.burstOnEntity(target, ParticleTypes.CRIT, 6, 0.25, 0.08);
+            if (bow.isDamageableItem() && player.level() instanceof net.minecraft.server.level.ServerLevel slr) {
+                bow.hurtAndBreak(Math.max(1, (int)(bow.getMaxDamage() * 0.02f)), slr, player, item -> {});
             }
         }
+
+        // T306-OVERHAUL : ricochet (chaîne d'ennemi en ennemi !) vs bounce (vrai rebond physique contre les murs/sols !)
+        int ricochetLvl = getEnchantLvl(bow, "deep_lucky_block:ricochet");
+        if (ricochetLvl > 0 && event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target) {
+            int bounces = 0;
+            LivingEntity prev = target;
+            for (Mob mob : player.level().getEntitiesOfClass(Mob.class, target.getBoundingBox().inflate(7.0))) {
+                if (mob != target && mob.isAlive() && bounces < ricochetLvl) {
+                    hurtNoCascade(mob, player.damageSources().arrow(arrow, player), 4.0f + ricochetLvl);
+                    if (player.level() instanceof ServerLevel slric) {
+                        EnchantmentParticleFX.tetherBeam(slric, prev.position().add(0, prev.getBbHeight() * 0.5, 0),
+                                mob.position().add(0, mob.getBbHeight() * 0.5, 0), ParticleTypes.CRIT, null, 0.55);
+                    }
+                    prev = mob;
+                    bounces++;
+                }
+            }
+        }
+        int bounceLvl = getEnchantLvl(bow, "deep_lucky_block:bounce");
+        if (bounceLvl > 0 && event.getRayTraceResult() instanceof net.minecraft.world.phys.BlockHitResult bhr) {
+            int usedBounces = arrow.getPersistentData().getInt("slb_wall_bounces");
+            if (usedBounces < 1 + bounceLvl) {
+                arrow.getPersistentData().putInt("slb_wall_bounces", usedBounces + 1);
+                net.minecraft.world.phys.Vec3 v = arrow.getDeltaMovement();
+                net.minecraft.core.Direction face = bhr.getDirection();
+                double rx = face.getAxis() == net.minecraft.core.Direction.Axis.X ? -v.x : v.x;
+                double ry = face.getAxis() == net.minecraft.core.Direction.Axis.Y ? -v.y : v.y;
+                double rz = face.getAxis() == net.minecraft.core.Direction.Axis.Z ? -v.z : v.z;
+                arrow.setDeltaMovement(rx * 0.85, ry * 0.85, rz * 0.85);
+                arrow.setPos(bhr.getLocation().add(face.getStepX() * 0.12, face.getStepY() * 0.12, face.getStepZ() * 0.12));
+                arrow.hurtMarked = true;
+                if (player.level() instanceof ServerLevel slbnc) {
+                    slbnc.sendParticles(ParticleTypes.ITEM_SLIME, bhr.getLocation().x, bhr.getLocation().y, bhr.getLocation().z, 6, 0.1, 0.1, 0.1, 0.02);
+                }
+                player.level().playSound(null, bhr.getBlockPos(), SoundEvents.SLIME_JUMP, SoundSource.PLAYERS, 0.7f, 1.3f);
+                event.setCanceled(true);
+                return;
+            }
+        }
+
         if (getEnchantLvl(bow, "deep_lucky_block:enemy_attractor") > 0 && event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target) {
             for (Mob mob : player.level().getEntitiesOfClass(Mob.class, target.getBoundingBox().inflate(6.0))) if (mob != target) mob.setTarget(target);
         }
+        // heavy_range_crossbow : bonus longue portée croissant au-delà de 10 blocs !
         int hvyCrossLvl = getEnchantLvl(bow, "deep_lucky_block:heavy_range_crossbow");
-        if (hvyCrossLvl > 0 && event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target)
-            hurtNoCascade(target, player.damageSources().arrow(arrow, player), 2.0f * hvyCrossLvl);
-        // PEREGRINE : plongeon du faucon. Si la cible est EN CONTREBAS, bonus de
-        // dégâts proportionnel à la hauteur de chute entre vous et elle
-        // (+0,5 dégât par bloc de dénivelé et par niveau, max 20 blocs comptés).
+        if (hvyCrossLvl > 0 && event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target) {
+            double dist = player.distanceTo(target);
+            float distBonus = dist > 10.0 ? (float) Math.min(10.0, (dist - 10.0) * 0.25) : 0.0f;
+            hurtNoCascade(target, player.damageSources().arrow(arrow, player), 2.0f * hvyCrossLvl + distBonus);
+        }
         int peregrineLvl = getEnchantLvl(bow, "deep_lucky_block:peregrine");
         if (peregrineLvl > 0 && event.getRayTraceResult() instanceof EntityHitResult ehr
                 && ehr.getEntity() instanceof LivingEntity target) {
@@ -1661,30 +2557,32 @@ public class UniversalEnchantmentHandler {
             if (drop > 1.0) {
                 float bonus = (float) Math.min(drop, 20.0) * 0.5f * peregrineLvl;
                 hurtNoCascade(target, player.damageSources().arrow(arrow, player), bonus);
+                EnchantmentParticleFX.burstOnEntity(target, ParticleTypes.CLOUD, 6, 0.3, 0.04);
             }
         }
         int wraithLvl = getEnchantLvl(bow, "deep_lucky_block:wraith_arrow");
         if (wraithLvl > 0 && event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target) {
             hurtNoCascade(target, player.damageSources().magic(), target.getMaxHealth() * 0.05f);
             target.addEffect(new MobEffectInstance(MobEffects.GLOWING, 60, 0, false, false));
+            EnchantmentParticleFX.burstOnEntity(target, ParticleTypes.SCULK_SOUL, 8, 0.25, 0.03);
             if (target.getHealth() <= 0) player.heal(player.getMaxHealth() * 0.10f);
         }
         if (getEnchantLvl(bow, "deep_lucky_block:blazing_arrow") > 0) {
             for (LivingEntity le : player.level().getEntitiesOfClass(LivingEntity.class, arrow.getBoundingBox().inflate(6.0, 3.0, 6.0))) if (le != player) le.setRemainingFireTicks((4) * 20);
+            if (player.level() instanceof ServerLevel slba) {
+                EnchantmentParticleFX.shockwaveRing(slba, event.getRayTraceResult().getLocation().x, event.getRayTraceResult().getLocation().y + 0.1, event.getRayTraceResult().getLocation().z, ParticleTypes.FLAME, 2.5, 14, 0.04);
+            }
         }
-        // DRAGON BREATH : zone COURTE (0,5 s) + debuffs de 2 s empilables.
-        // Nerf demandé : plus de nuage de 1,5-15 s, juste 2 impulsions de dégâts.
         if (getEnchantLvl(bow, "deep_lucky_block:dragons_breath_arrow") > 0) {
             double dbx = event.getRayTraceResult().getLocation().x;
             double dby = event.getRayTraceResult().getLocation().y;
             double dbz = event.getRayTraceResult().getLocation().z;
             net.minecraft.world.entity.AreaEffectCloud cloud = new net.minecraft.world.entity.AreaEffectCloud(player.level(), dbx, dby, dbz);
-            cloud.setParticle(ParticleTypes.DRAGON_BREATH); // violet, comme le souffle du dragon
+            cloud.setParticle(ParticleTypes.DRAGON_BREATH);
             cloud.setRadius(4.0f);
-            cloud.setDuration(10); // zone : 0,5 s seulement
+            cloud.setDuration(10);
             cloud.setWaitTime(0);
             player.level().addFreshEntity(cloud);
-            // 2 impulsions (t=0 et t=10) : dégâts dragon breath + debuffs 2 s empilables
             ServerLevel dsl = (ServerLevel) player.level();
             final LivingEntity dPlayer = player;
             for (int t = 0; t <= 1; t++) {
@@ -1694,25 +2592,21 @@ public class UniversalEnchantmentHandler {
                     for (LivingEntity le : dsl.getEntitiesOfClass(LivingEntity.class, dmgBox)) {
                         if (le != dPlayer && le.isAlive()) {
                             le.hurt(dsl.damageSources().dragonBreath(), 2.0f);
-                            le.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 40, 0)); // 2 s
-                            le.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 40, 0));           // 2 s
+                            le.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 40, 0));
+                            le.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 40, 0));
                         }
                     }
                 });
             }
         }
-        // POISON ARROW : nuage VERT, zone 0,5 s, poison 2 s empilable (re-appliqué
-        // à chaque flèche : les durées s'additionnent).
         if (getEnchantLvl(bow, "deep_lucky_block:poison_arrow") > 0) {
             net.minecraft.world.entity.AreaEffectCloud cloud = new net.minecraft.world.entity.AreaEffectCloud(player.level(), event.getRayTraceResult().getLocation().x, event.getRayTraceResult().getLocation().y, event.getRayTraceResult().getLocation().z);
             cloud.setRadius(3.0f);
-            cloud.setDuration(10); // zone : 0,5 s
+            cloud.setDuration(10);
             cloud.setWaitTime(0);
-            cloud.addEffect(new MobEffectInstance(MobEffects.POISON, 40, 0)); // effet : 2 s, empilable
+            cloud.addEffect(new MobEffectInstance(MobEffects.POISON, 40, 0));
             player.level().addFreshEntity(cloud);
         }
-        // WATER ARROW : éteint le feu, blesse FORT les mobs qui détestent l'eau,
-        // pose de l'eau et purifie une zone de 3x3 autour de l'impact.
         if (getEnchantLvl(bow, "deep_lucky_block:water_arrow") > 0) {
             if (event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target) {
                 target.clearFire();
@@ -1721,16 +2615,11 @@ public class UniversalEnchantmentHandler {
                         || target instanceof net.minecraft.world.entity.monster.EnderMan
                         || target instanceof net.minecraft.world.entity.animal.SnowGolem
                         || target instanceof net.minecraft.world.entity.monster.Strider;
-                // Inclut Enderman, Endermite, Ender Dragon et toute créature
-                // moddée dont l'identité/NBT contient « end » ou « ender ».
                 boolean endCreature = isEndCreatureByIdentityOrNbt(target);
                 if (waterSensitive || endCreature) {
                     hurtNoCascade(target, player.damageSources().drown(), 12.0f);
                 }
             }
-            // Le terrain et la source ne sont traités qu'au PREMIER impact réel
-            // de la flèche. Aucun effet de source sur entité, ricochet, bounce ou
-            // impact ultérieur après Pierce.
             boolean firstWaterImpact = !arrow.getPersistentData()
                     .getBoolean("slb_water_arrow_impacted");
             if (firstWaterImpact) {
@@ -1753,16 +2642,59 @@ public class UniversalEnchantmentHandler {
                 }
             }
         }
+        // heavy_impact : carreau bélier percutant (+dégâts + recul lourd !)
         int hvyImpLvl = getEnchantLvl(bow, "deep_lucky_block:heavy_impact");
-        if (hvyImpLvl > 0 && event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target)
+        if (hvyImpLvl > 0 && event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target) {
             hurtNoCascade(target, player.damageSources().arrow(arrow, player), 4.0f * hvyImpLvl);
-        if (getEnchantLvl(bow, "deep_lucky_block:teleport_arrow") > 0) player.teleportTo(event.getRayTraceResult().getLocation().x, event.getRayTraceResult().getLocation().y, event.getRayTraceResult().getLocation().z);
+            net.minecraft.world.phys.Vec3 push = arrow.getDeltaMovement().normalize();
+            target.setDeltaMovement(target.getDeltaMovement().add(push.x * 0.55 * hvyImpLvl, 0.22, push.z * 0.55 * hvyImpLvl));
+            target.hurtMarked = true;
+            EnchantmentParticleFX.burstOnEntity(target, ParticleTypes.CRIT, 10, 0.3, 0.09);
+        }
+
+        // T306-OVERHAUL : teleport_arrow (téléportation instantanée) vs swap_arrow (VRAI échange de position corrigé !) vs grapple (traction cinétique de grappin !)
+        if (getEnchantLvl(bow, "deep_lucky_block:teleport_arrow") > 0) {
+            net.minecraft.world.phys.Vec3 hitLoc = event.getRayTraceResult().getLocation();
+            EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.PORTAL, 12, 0.3, 0.2);
+            player.fallDistance = 0.0f;
+            player.teleportTo(hitLoc.x, hitLoc.y, hitLoc.z);
+            EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.PORTAL, 12, 0.3, 0.2);
+            player.level().playSound(null, hitLoc.x, hitLoc.y, hitLoc.z, SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 0.9f, 1.1f);
+        }
         int swapArrow = getEnchantLvl(bow, "deep_lucky_block:swap_arrow");
         if (swapArrow > 0 && event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target) {
             double px = player.getX(), py = player.getY(), pz = player.getZ();
+            double tx = target.getX(), ty = target.getY(), tz = target.getZ();
+            player.fallDistance = 0.0f;
+            target.fallDistance = 0.0f;
             target.teleportTo(px, py, pz);
-            player.teleportTo(target.getX(), target.getY(), target.getZ());
+            player.teleportTo(tx, ty, tz);
+            EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.REVERSE_PORTAL, 14, 0.3, 0.06);
+            EnchantmentParticleFX.burstOnEntity(target, ParticleTypes.REVERSE_PORTAL, 14, 0.3, 0.06);
+            player.level().playSound(null, tx, ty, tz, SoundEvents.CHORUS_FRUIT_TELEPORT, SoundSource.PLAYERS, 1.0f, 1.0f);
         }
+        if (getEnchantLvl(bow, "deep_lucky_block:grapple") > 0) {
+            net.minecraft.world.phys.Vec3 hitLoc = event.getRayTraceResult().getLocation();
+            if (player.level() instanceof ServerLevel slgrp) {
+                EnchantmentParticleFX.tetherBeam(slgrp, player.position().add(0, 1.0, 0), hitLoc, ParticleTypes.CRIT, null, 0.65);
+            }
+            if (player.isShiftKeyDown() && event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target) {
+                net.minecraft.world.phys.Vec3 pull = player.position().subtract(target.position());
+                double len = Math.max(1.0, pull.length());
+                double speed = Math.min(2.6, 0.55 + len * 0.14);
+                target.setDeltaMovement(pull.normalize().scale(speed).add(0, 0.28, 0));
+                target.hurtMarked = true;
+            } else {
+                net.minecraft.world.phys.Vec3 pull = hitLoc.subtract(player.position());
+                double len = Math.max(1.0, pull.length());
+                double speed = Math.min(2.8, 0.65 + len * 0.16);
+                player.setDeltaMovement(pull.normalize().scale(speed).add(0, 0.25, 0));
+                player.fallDistance = 0.0f;
+                player.hurtMarked = true;
+            }
+            player.level().playSound(null, player.getX(), player.getY(), player.getZ(), SoundEvents.CROSSBOW_SHOOT, SoundSource.PLAYERS, 0.9f, 1.4f);
+        }
+
         if (getEnchantLvl(bow, "deep_lucky_block:transfer") > 0 && event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof Player targetPlayer) {
             ItemStack off = player.getOffhandItem();
             if (!off.isEmpty()) {
@@ -1771,22 +2703,36 @@ public class UniversalEnchantmentHandler {
                 if (!targetPlayer.getInventory().add(copy)) targetPlayer.drop(copy, false);
             }
         }
-        // RETRIEVAL : ajoute une fleche a l'INVENTAIRE -- reste Player-only,
-        // un mob n'a pas d'inventaire au sens Player#getInventory().
         int retLvl = getEnchantLvl(bow, "deep_lucky_block:retrieval");
         if (retLvl > 0 && player.level().random.nextInt(100) < (10 * retLvl) && player instanceof Player retPlayer) retPlayer.getInventory().add(new ItemStack(Items.ARROW));
+
+        // T306-OVERHAUL : storm_strike (foudre céleste garantie + arc d'orage !) vs thunderstruck (surcharge paralysante électrique sur cible !)
         if (getEnchantLvl(bow, "deep_lucky_block:storm_strike") > 0) {
+            net.minecraft.world.phys.Vec3 loc = event.getRayTraceResult().getLocation();
             LightningBolt bolt = new LightningBolt(EntityType.LIGHTNING_BOLT, player.level());
-            bolt.moveTo(event.getRayTraceResult().getLocation());
+            bolt.moveTo(loc);
             player.level().addFreshEntity(bolt);
+            if (player.level().isRaining() && player.level() instanceof ServerLevel slst) {
+                EnchantmentParticleFX.shockwaveRing(slst, loc.x, loc.y + 0.1, loc.z, ParticleTypes.ELECTRIC_SPARK, 3.0, 18, 0.08);
+            }
         }
+        int thunderLvl = getEnchantLvl(bow, "deep_lucky_block:thunderstruck");
+        if (thunderLvl > 0) {
+            net.minecraft.world.phys.Vec3 loc = event.getRayTraceResult().getLocation();
+            if (event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target) {
+                hurtNoCascade(target, player.damageSources().magic(), 3.0f * thunderLvl);
+                target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 50, 2));
+                EnchantmentParticleFX.burstOnEntity(target, ParticleTypes.ELECTRIC_SPARK, 14, 0.35, 0.10);
+            } else if (player.level() instanceof ServerLevel slth) {
+                EnchantmentParticleFX.shockwaveRing(slth, loc.x, loc.y + 0.1, loc.z, ParticleTypes.ELECTRIC_SPARK, 1.8, 12, 0.06);
+            }
+        }
+
         int sniperLvl = getEnchantLvl(bow, "deep_lucky_block:sniper");
         if (sniperLvl > 0 && event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target) {
             double dist = player.distanceTo(target);
             if (dist >= 15.0) hurtNoCascade(target, player.damageSources().arrow(arrow, player), (float)(dist * 0.5 * sniperLvl));
         }
-        // CHAOS : un effet NÉGATIF aléatoire par flèche, zone de 0,5 s, effet de 2 s.
-        // Une entité ne peut être touchée qu'UNE SEULE FOIS par le cloud (pas de stack).
         int chaosLvl = getEnchantLvl(bow, "deep_lucky_block:chaos");
         if (chaosLvl > 0) {
             net.minecraft.core.Holder<MobEffect> chaosEffect = CHAOS_EFFECTS[player.level().random.nextInt(CHAOS_EFFECTS.length)];
@@ -1794,9 +2740,9 @@ public class UniversalEnchantmentHandler {
             double chy = event.getRayTraceResult().getLocation().y;
             double chz = event.getRayTraceResult().getLocation().z;
             net.minecraft.world.entity.AreaEffectCloud cloud = new net.minecraft.world.entity.AreaEffectCloud(player.level(), chx, chy, chz);
-            cloud.setParticle(ParticleTypes.WITCH); // particules violettes "chaos"
+            cloud.setParticle(ParticleTypes.WITCH);
             cloud.setRadius(3.5f);
-            cloud.setDuration(10); // zone : 0,5 s
+            cloud.setDuration(10);
             cloud.setWaitTime(0);
             player.level().addFreshEntity(cloud);
 
@@ -1810,31 +2756,70 @@ public class UniversalEnchantmentHandler {
                     for (LivingEntity le : chsl.getEntitiesOfClass(LivingEntity.class, chBox)) {
                         if (le == chPlayer || !le.isAlive()) continue;
                         long immuneUntil = le.getPersistentData().getLong("slb_chaos_immune");
-                        if (immuneUntil > chsl.getGameTime()) continue; // déjà touché par ce cloud
+                        if (immuneUntil > chsl.getGameTime()) continue;
                         le.getPersistentData().putLong("slb_chaos_immune", chsl.getGameTime() + 20);
-                        le.addEffect(new MobEffectInstance(fChaosEffect, 40, 0)); // 2 s, non stackable
+                        le.addEffect(new MobEffectInstance(fChaosEffect, 40, 0));
                     }
                 });
             }
         }
+
+        // T306-OVERHAUL : delay (charge à retardement tic-tac 1.5s !) vs brimstone (soufre infernal Wither+Feu !) vs meteor (chute de météore céleste !)
         int delayLvl = getEnchantLvl(bow, "deep_lucky_block:delay");
-        if (delayLvl > 0) player.level().explode(player, event.getRayTraceResult().getLocation().x, event.getRayTraceResult().getLocation().y, event.getRayTraceResult().getLocation().z, 2.0f * delayLvl, Level.ExplosionInteraction.NONE);
+        if (delayLvl > 0 && player.level() instanceof ServerLevel sldel) {
+            final net.minecraft.world.phys.Vec3 dLoc = event.getRayTraceResult().getLocation();
+            final float dPow = Math.min(6.0f, 1.8f + 1.0f * delayLvl);
+            final LivingEntity dOwner = player;
+            for (int step = 0; step < 3; step++) {
+                final int tickOff = step * 10;
+                TestProcedure.schedule(sldel, TestProcedure.currentTick(sldel) + tickOff, () -> {
+                    EnchantmentParticleFX.shockwaveRing(sldel, dLoc.x, dLoc.y + 0.1, dLoc.z, EnchantmentParticleFX.TEMPORAL_AMBER, 1.2, 10, 0.02);
+                    sldel.playSound(null, dLoc.x, dLoc.y, dLoc.z, SoundEvents.NOTE_BLOCK_HAT.value(), SoundSource.BLOCKS, 0.8f, 1.5f);
+                });
+            }
+            TestProcedure.schedule(sldel, TestProcedure.currentTick(sldel) + 30, () -> {
+                sldel.explode(dOwner, dLoc.x, dLoc.y, dLoc.z, dPow, Level.ExplosionInteraction.NONE);
+                EnchantmentParticleFX.shockwaveRing(sldel, dLoc.x, dLoc.y + 0.1, dLoc.z, ParticleTypes.END_ROD, 2.4, 16, 0.06);
+            });
+        }
         int brimLvl = getEnchantLvl(bow, "deep_lucky_block:brimstone");
-        if (brimLvl > 0) player.level().explode(player, event.getRayTraceResult().getLocation().x, event.getRayTraceResult().getLocation().y, event.getRayTraceResult().getLocation().z, 3.0f * brimLvl, true, Level.ExplosionInteraction.NONE);
-        if (getEnchantLvl(bow, "deep_lucky_block:thunderstruck") > 0) {
-            LightningBolt bolt = new LightningBolt(EntityType.LIGHTNING_BOLT, player.level());
-            bolt.moveTo(event.getRayTraceResult().getLocation());
-            player.level().addFreshEntity(bolt);
+        if (brimLvl > 0 && player.level() instanceof ServerLevel slbrm) {
+            net.minecraft.world.phys.Vec3 bLoc = event.getRayTraceResult().getLocation();
+            double bRad = deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(2.8, 0.7, brimLvl);
+            slbrm.explode(player, bLoc.x, bLoc.y, bLoc.z, Math.min(4.5f, 1.5f + 0.8f * brimLvl), Level.ExplosionInteraction.NONE);
+            EnchantmentParticleFX.shockwaveRing(slbrm, bLoc.x, bLoc.y + 0.15, bLoc.z, ParticleTypes.LAVA, bRad, 16, 0.04);
+            slbrm.sendParticles(ParticleTypes.CAMPFIRE_COSY_SMOKE, bLoc.x, bLoc.y + 0.3, bLoc.z, 12, 0.8, 0.3, 0.8, 0.02);
+            for (LivingEntity le : slbrm.getEntitiesOfClass(LivingEntity.class, new AABB(bLoc.x - bRad, bLoc.y - 2, bLoc.z - bRad, bLoc.x + bRad, bLoc.y + 3, bLoc.z + bRad))) {
+                if (le != player) {
+                    le.setRemainingFireTicks(100);
+                    le.addEffect(new MobEffectInstance(MobEffects.WITHER, 60, Math.min(2, brimLvl - 1)));
+                }
+            }
         }
         int meteorLvl = getEnchantLvl(bow, "deep_lucky_block:meteor");
-        if (meteorLvl > 0) player.level().explode(player, event.getRayTraceResult().getLocation().x, event.getRayTraceResult().getLocation().y, event.getRayTraceResult().getLocation().z, 4.0f, true, Level.ExplosionInteraction.NONE);
-        if (getEnchantLvl(bow, "deep_lucky_block:grapple") > 0) player.teleportTo(event.getRayTraceResult().getLocation().x, event.getRayTraceResult().getLocation().y, event.getRayTraceResult().getLocation().z);
+        if (meteorLvl > 0 && player.level() instanceof ServerLevel slmet) {
+            final net.minecraft.world.phys.Vec3 mLoc = event.getRayTraceResult().getLocation();
+            final LivingEntity mOwner = player;
+            for (int step = 0; step < 4; step++) {
+                final int tickOff = step * 3;
+                final double my = mLoc.y + 12.0 - step * 3.0;
+                TestProcedure.schedule(slmet, TestProcedure.currentTick(slmet) + tickOff, () -> {
+                    slmet.sendParticles(ParticleTypes.FLAME, mLoc.x, my, mLoc.z, 14, 0.35, 0.5, 0.35, 0.03);
+                    slmet.sendParticles(ParticleTypes.LAVA, mLoc.x, my, mLoc.z, 5, 0.25, 0.3, 0.25, 0.02);
+                    slmet.sendParticles(ParticleTypes.LARGE_SMOKE, mLoc.x, my + 0.6, mLoc.z, 6, 0.3, 0.3, 0.3, 0.01);
+                });
+            }
+            TestProcedure.schedule(slmet, TestProcedure.currentTick(slmet) + 12, () -> {
+                slmet.explode(mOwner, mLoc.x, mLoc.y, mLoc.z, 3.8f, true, Level.ExplosionInteraction.NONE);
+                EnchantmentParticleFX.shockwaveRing(slmet, mLoc.x, mLoc.y + 0.15, mLoc.z, ParticleTypes.FLAME, 3.2, 20, 0.08);
+            });
+        }
+
         int warpLvl = getEnchantLvl(bow, "deep_lucky_block:warp");
-        if (warpLvl > 0 && event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target)
+        if (warpLvl > 0 && event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target) {
+            EnchantmentParticleFX.burstOnEntity(target, ParticleTypes.PORTAL, 10, 0.3, 0.15);
             target.teleportTo(target.getX() + player.level().random.nextInt(16) - 8, target.getY(), target.getZ() + player.level().random.nextInt(16) - 8);
-        // PIERCE : la flèche traverse jusqu'à N entités OU blocs (N = niveau du
-        // pierce), en blessant chaque entité traversée, puis se plante normalement.
-        // Pierce I = 1 entité/bloc traversé, Pierce II = 2, etc.
+        }
         int pierceLvl = getEnchantLvl(bow, "deep_lucky_block:pierce");
         if (pierceLvl > 0) {
             CompoundTag pierceTag = arrow.getPersistentData();
@@ -1843,14 +2828,11 @@ public class UniversalEnchantmentHandler {
                 pierceTag.putInt("slb_pierce_hits", hits + 1);
                 if (event.getRayTraceResult() instanceof EntityHitResult ehr
                         && ehr.getEntity() instanceof LivingEntity target) {
-                    // On applique nous-mêmes les dégâts de la flèche, puis on la
-                    // laisse poursuivre sa trajectoire (l'impact est annulé).
                     hurtNoCascade(target, player.damageSources().arrow(arrow, player),
                             (float) arrow.getBaseDamage());
                     player.level().playSound(null, target.getX(), target.getY(), target.getZ(),
                             SoundEvents.ARROW_HIT, SoundSource.NEUTRAL, 1.0f, 1.2f);
                 }
-                // Annule l'impact : la flèche traverse l'entité OU le bloc.
                 event.setCanceled(true);
             }
         }
@@ -1873,10 +2855,6 @@ public class UniversalEnchantmentHandler {
         }
     }
 
-    /**
-     * Pose une source uniquement lorsqu'une Water Arrow touche directement un
-     * bloc. Cette méthode n'accepte volontairement pas EntityHitResult.
-     */
     private static void placeWaterArrowSource(Level level,
             net.minecraft.world.phys.BlockHitResult blockHit) {
         if (level == null || blockHit == null || level.isClientSide()) return;
@@ -1885,15 +2863,11 @@ public class UniversalEnchantmentHandler {
         BlockPos preferred = hitBlock.relative(blockHit.getDirection());
         BlockState preferredState = level.getBlockState(preferred);
 
-        // Comportement historique : source dans la case libre contre la face
-        // directement touchée par la flèche.
         if (preferredState.isAir() || preferredState.canBeReplaced()) {
             level.setBlockAndUpdate(preferred, Blocks.WATER.defaultBlockState());
             return;
         }
 
-        // Si la face est enfermée, cherche uniquement autour du BLOC touché.
-        // Cela reste un impact bloc et ne s'étend jamais à une entité/rebond.
         for (int dy = 2; dy >= -2; dy--) {
             for (int dx = -1; dx <= 1; dx++) {
                 for (int dz = -1; dz <= 1; dz++) {
@@ -1909,7 +2883,7 @@ public class UniversalEnchantmentHandler {
         }
     }
 
-    /** Water Arrow : croissance végétale dans une sphère de rayon 4. */
+    /** Water Arrow : croissance végétale dans une sphère de rayon 4 (T306-FIX : SHORT_GRASS et plus GRASS_BLOCK !). */
     private static void growWaterArrowPlants(Level level,
             net.minecraft.world.phys.Vec3 location, int radius) {
         if (level == null || location == null || level.isClientSide()) return;
@@ -1931,12 +2905,10 @@ public class UniversalEnchantmentHandler {
 
                     BlockPos plantPos = grassPos.above();
                     if (!level.getBlockState(plantPos).isAir()) continue;
-                    // Tous les Grass Blocks ne poussent pas à chaque flèche :
-                    // la sphère reste naturelle et ne devient pas surchargée.
                     if (level.random.nextInt(100) >= 38) continue;
 
                     int roll = level.random.nextInt(100);
-                    Block plant = roll < 68 ? Blocks.GRASS_BLOCK
+                    Block plant = roll < 68 ? Blocks.SHORT_GRASS
                             : roll < 78 ? Blocks.FERN
                             : flowers[level.random.nextInt(flowers.length)];
                     BlockState plantState = plant.defaultBlockState();
@@ -2060,46 +3032,64 @@ public class UniversalEnchantmentHandler {
                 if (bashDamage > 0) {
                     hurtNoCascade(attacker, player.damageSources().thorns(player),
                             3.0f * bashDamage);
+                    EnchantmentParticleFX.burstOnEntity(attacker, ParticleTypes.CRIT, 6, 0.25, 0.08);
                 }
 
-                double force = Math.max(0.6 * bashPower, 0.8 * shieldQuake);
-                if (force > 0.0) {
-                    // setDeltaMovement contourne la Knockback Resistance élevée
-                    // des Iron Golems et garantit un recul visible à chaque coup.
-                    net.minecraft.world.phys.Vec3 away = attacker.position()
-                            .subtract(player.position());
-                    away = new net.minecraft.world.phys.Vec3(
-                            away.x, 0.0, away.z).normalize();
-                    attacker.setDeltaMovement(attacker.getDeltaMovement().add(
-                            away.x * force, 0.20 + 0.05 * force, away.z * force));
+                // T306-OVERHAUL : bash_power (bourrade ciblée + étourdissement) vs shield_quake (onde sismique radiale de bouclier !)
+                if (bashPower > 0) {
+                    double force = deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.velocity(0.65, 0.45, bashPower);
+                    net.minecraft.world.phys.Vec3 away = attacker.position().subtract(player.position());
+                    away = new net.minecraft.world.phys.Vec3(away.x, 0.0, away.z).normalize();
+                    attacker.setDeltaMovement(attacker.getDeltaMovement().add(away.x * force, 0.22 + 0.04 * force, away.z * force));
                     attacker.hurtMarked = true;
+                    attacker.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 40, 1));
+                }
+            }
+            if (shieldQuake > 0) {
+                double qRad = deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(3.5, 1.0, shieldQuake);
+                if (player.level() instanceof ServerLevel slsq) {
+                    EnchantmentParticleFX.shockwaveRing(slsq, player.getX(), player.getY() + 0.1, player.getZ(),
+                            new net.minecraft.core.particles.BlockParticleOption(ParticleTypes.BLOCK, Blocks.COBBLESTONE.defaultBlockState()), qRad, 18, 0.06);
+                    slsq.playSound(null, player.blockPosition(), SoundEvents.ANVIL_LAND, SoundSource.PLAYERS, 0.55f, 0.75f);
+                }
+                for (LivingEntity nearby : player.level().getEntitiesOfClass(LivingEntity.class, player.getBoundingBox().inflate(qRad))) {
+                    if (nearby != player && !player.isAlliedTo(nearby)) {
+                        net.minecraft.world.phys.Vec3 away = nearby.position().subtract(player.position());
+                        if (away.horizontalDistanceSqr() > 0.001) {
+                            net.minecraft.world.phys.Vec3 flat = new net.minecraft.world.phys.Vec3(away.x, 0.0, away.z).normalize();
+                            double push = Math.min(2.4, 0.55 + 0.25 * shieldQuake);
+                            nearby.setDeltaMovement(nearby.getDeltaMovement().add(flat.x * push, 0.30, flat.z * push));
+                            nearby.hurtMarked = true;
+                        }
+                        hurtNoCascade(nearby, player.damageSources().thorns(player), 1.5f * shieldQuake);
+                    }
                 }
             }
 
             if (hatredDraw > 0) {
                 for (Mob mob : player.level().getEntitiesOfClass(
                         Mob.class, player.getBoundingBox().inflate(10.0))) {
-                    mob.setTarget(player);
+                    if (!mob.getPersistentData().hasUUID("slb_ally_owner")) {
+                        mob.setTarget(player);
+                    }
                 }
+                EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.ANGRY_VILLAGER, 4, 0.35, 0.02);
             }
         } catch (Throwable t) {
             printHandlerError("onShieldAttackAttempt", t);
         }
     }
 
-    // LivingShieldBlockEvent reste utilisé uniquement pour Shield Efficiency, afin de
-    // supprimer l'usure sur chaque blocage réellement validé par Minecraft.
     @SubscribeEvent
     public static void onShieldBlock(LivingShieldBlockEvent event){try{onShieldBlockImpl(event);}catch(Throwable t__){guard("onShieldBlock",t__);}}
     private static void onShieldBlockImpl(LivingShieldBlockEvent event){
         try {
-            // FIX (mob-equipment-enchant generalization) : generalise a LivingEntity.
             if (!(event.getEntity() instanceof LivingEntity player)) return;
             if (player.level().isClientSide()) return;
             ItemStack shield = findActiveEnchantedShield(player);
             if (!shield.isEmpty()
                     && getEnchantLvl(shield, "deep_lucky_block:shield_efficiency") > 0) {
-                event.setShieldDamage(0.0f); // [1.21.1] setShieldTakesDamage supprime : degats bouclier mis a 0
+                event.setShieldDamage(0.0f);
             }
         } catch (Throwable t) {
             printHandlerError("onShieldBlock", t);
@@ -2126,34 +3116,93 @@ public class UniversalEnchantmentHandler {
         }
     }
 
-    // FIX (mob-equipment-enchant generalization) : "instanceof Player" ->
-    // "instanceof LivingEntity" -- un mob equipe d'une armure enchantee
-    // (Bouncy, Sticky, Veil, Block, Powerful Thorns, etc.) beneficie
-    // desormais des memes effets defensifs qu'un joueur.
     private static void handleDefensiveHurt(LivingIncomingDamageEvent event) {
         if (!(event.getEntity() instanceof LivingEntity player)) return;
         if (player.level().isClientSide()) return;
+        long nowTick = player.level().getGameTime();
+        player.getPersistentData().putLong("slb_last_hurt", nowTick);
 
+        // Protection anti-tir-ami des troupes invoquées loyales (slb_ally_owner)
+        if (event.getSource().getEntity() instanceof Mob srcMob
+                && srcMob.getPersistentData().hasUUID("slb_ally_owner")
+                && srcMob.getPersistentData().getUUID("slb_ally_owner").equals(player.getUUID())) {
+            event.setCanceled(true);
+            srcMob.setTarget(null);
+            return;
+        }
+
+        // T306-FIX : cursed_blade ("Lame Maudite de Cristal" : 10x dégâts mais subir >= 1 dégât brise le porteur en éclats de cristal !)
+        if (getEnchantLvl(player.getMainHandItem(), "deep_lucky_block:cursed_blade") > 0 && event.getAmount() >= 1.0f) {
+            event.setAmount(Math.max(event.getAmount(), player.getMaxHealth() + player.getAbsorptionAmount() + 100.0f));
+            if (player.level() instanceof ServerLevel slcb) {
+                slcb.sendParticles(new net.minecraft.core.particles.BlockParticleOption(ParticleTypes.BLOCK, Blocks.GLASS.defaultBlockState()),
+                        player.getX(), player.getY() + player.getBbHeight() * 0.5, player.getZ(), 24, 0.35, 0.45, 0.35, 0.08);
+                slcb.playSound(null, player.blockPosition(), SoundEvents.GLASS_BREAK, SoundSource.PLAYERS, 1.0f, 0.8f);
+            }
+        }
+
+        // lone_wolf : instinct de survie solitaire (-12% dégâts reçus loin des autres joueurs)
+        int loneDef = getEnchantLvl(player.getMainHandItem(), "deep_lucky_block:lone_wolf");
+        if (loneDef > 0 && player.level().getEntitiesOfClass(Player.class, player.getBoundingBox().inflate(12.0), p2 -> p2 != player).isEmpty()) {
+            event.setAmount(event.getAmount() * 0.88f);
+        }
+
+        // Esquive cinétique de projectiles : dash (pendant la ruée) & strafe (en déplacement latéral)
+        if (event.getSource().is(net.minecraft.tags.DamageTypeTags.IS_PROJECTILE)) {
+            if (nowTick <= player.getPersistentData().getLong("slb_dash_dodge_until")) {
+                event.setCanceled(true);
+                EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.SMALL_GUST, 8, 0.3, 0.04);
+                return;
+            }
+            int strafeDef = getArmorEnchantLvl(player, "deep_lucky_block:strafe");
+            if (strafeDef > 0 && player.level().random.nextInt(100) < Math.min(45, 15 * strafeDef)) {
+                net.minecraft.world.phys.Vec3 mv = player.getDeltaMovement();
+                if (mv.horizontalDistanceSqr() > 0.002) {
+                    event.setCanceled(true);
+                    EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.CLOUD, 6, 0.25, 0.03);
+                    return;
+                }
+            }
+        }
+
+        // Bouncy : rebond de slime en cas de chute
         int bouncyLvl = getArmorEnchantLvl(player, "deep_lucky_block:bouncy");
         if (bouncyLvl > 0 && event.getSource().getMsgId().equals("fall")) {
             event.setCanceled(true);
-            player.setDeltaMovement(player.getDeltaMovement().x, 0.4 * bouncyLvl, player.getDeltaMovement().z);
+            player.setDeltaMovement(player.getDeltaMovement().x, Math.min(1.6, 0.42 * bouncyLvl), player.getDeltaMovement().z);
             player.hurtMarked = true;
+            EnchantmentParticleFX.ankleTrail(player, ParticleTypes.ITEM_SLIME, 8, 0.04);
             return;
         }
         int stickyLvl = getArmorEnchantLvl(player, "deep_lucky_block:sticky");
         if (stickyLvl > 0) player.setDeltaMovement(player.getDeltaMovement().scale(0.1));
+
+        // T306-OVERHAUL : undead_commander (-50% morts-vivants), illager_commander (-50% illageois/sorcières), veil (-35% magie/projectiles + voile d'ombre !)
         int undeadCmd = getArmorEnchantLvl(player, "deep_lucky_block:undead_commander");
         int illagerCmd = getArmorEnchantLvl(player, "deep_lucky_block:illager_commander");
         int veilLvl = getArmorEnchantLvl(player, "deep_lucky_block:veil");
-        if ((undeadCmd > 0 && (event.getSource().getEntity() instanceof net.minecraft.world.entity.monster.Zombie || event.getSource().getEntity() instanceof net.minecraft.world.entity.monster.Skeleton))
-                || (illagerCmd > 0 && event.getSource().getEntity() instanceof net.minecraft.world.entity.monster.Pillager)
-                || (veilLvl > 0)) {
+        if (undeadCmd > 0 && event.getSource().getEntity() instanceof LivingEntity srcU && srcU.getType().is(net.minecraft.tags.EntityTypeTags.UNDEAD)) {
             event.setAmount(event.getAmount() * 0.5f);
         }
+        if (illagerCmd > 0 && event.getSource().getEntity() instanceof LivingEntity srcI && srcI.getType().is(net.minecraft.tags.EntityTypeTags.ILLAGER)) {
+            event.setAmount(event.getAmount() * 0.5f);
+        }
+        if (veilLvl > 0) {
+            if (event.getSource().is(net.minecraft.tags.DamageTypeTags.IS_PROJECTILE)
+                    || event.getSource().is(net.minecraft.tags.DamageTypeTags.WITCH_RESISTANT_TO)) {
+                event.setAmount(event.getAmount() * 0.55f);
+            } else {
+                event.setAmount(event.getAmount() * 0.82f);
+            }
+            EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.SMOKE, 5, 0.3, 0.02);
+        }
+
         if (event.getSource().getEntity() instanceof LivingEntity attacker) {
             int wardenLvl = getArmorEnchantLvl(player, "deep_lucky_block:wardenspine");
-            if (wardenLvl > 0) hurtNoCascade(attacker, player.damageSources().thorns(player), 2.0f * wardenLvl);
+            if (wardenLvl > 0) {
+                hurtNoCascade(attacker, player.damageSources().thorns(player), 2.5f * wardenLvl);
+                EnchantmentParticleFX.burstOnEntity(attacker, ParticleTypes.SONIC_BOOM, 1, 0.0, 0.0);
+            }
             int punchLvl = getArmorEnchantLvl(player, "deep_lucky_block:punching_armor");
             if (punchLvl > 0) attacker.knockback(0.5f * punchLvl, player.getX() - attacker.getX(), player.getZ() - attacker.getZ());
             int fearLvl = getArmorEnchantLvl(player, "deep_lucky_block:inner_fear");
@@ -2162,12 +3211,6 @@ public class UniversalEnchantmentHandler {
                 attacker.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 80, fearLvl - 1));
             }
 
-            // ZEPHYR'S GAMBIT (Wind Heart, plastron, FUN) : si le coup
-            // encaisse etait un critique (meme formule vanilla que le crit
-            // du joueur, cf. handleOffensiveHurt), chance de se teleporter
-            // sur une courte distance et d'annuler une partie des degats --
-            // "insaisissable comme le vent", en accord avec l'esprit fun de
-            // la demande.
             int zephyrsGambit = getArmorEnchantLvl(player, "deep_lucky_block:zephyrs_gambit");
             boolean attackerCrit = attacker.fallDistance > 0.0F && !attacker.onGround() && !attacker.onClimbable() && !attacker.isInWater();
             if (zephyrsGambit > 0 && attackerCrit
@@ -2185,31 +3228,14 @@ public class UniversalEnchantmentHandler {
         }
         int resSustain = getArmorEnchantLvl(player, "deep_lucky_block:resistance_sustain");
         if (resSustain > 0 && player.hasEffect(MobEffects.DAMAGE_RESISTANCE)) player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 60, resSustain, true, false));
-        // FIX DOUBLE-COMPTAGE (rapporté en jeu) : stomach_pouch est désormais
-        // converti en vrais points d'ARMOR vanilla dans
-        // RealAttributeModifierHandler -- la réduction de dégâts est donc
-        // déjà appliquée AUTOMATIQUEMENT par le moteur vanilla via la
-        // formule d'armure, avant même que ce handler ne s'exécute.
-        // Multiplier ENCORE event.getAmount() ici par le même pourcentage
-        // réduisait les dégâts DEUX FOIS (une fois par l'armure réelle, une
-        // fois par ce code) -- exactement le bug de stacking déjà corrigé
-        // pour l'attaque, mais qui subsistait côté défense.
         int oceanBless = getArmorEnchantLvl(player, "deep_lucky_block:oceans_blessing");
         if (oceanBless > 0 && player.isInWater()) event.setAmount(event.getAmount() * 0.60f);
 
-        // SHADOW HEART (volet defensif, cahier des charges original) :
-        // chance de brief invisibilite quand touche -- complete le
-        // vol de vie/affaiblissement offensif gere dans handleOffensiveHurt.
         int shadowHeartDef = getElementalHeartLvl(player, "shadow_heart");
         if (shadowHeartDef > 0 && player.level().random.nextInt(100) < (8 * shadowHeartDef)) {
             player.addEffect(new MobEffectInstance(MobEffects.INVISIBILITY, 30, 0, true, true));
         }
 
-        // WIND HEART (cahier des charges original) : deviation partielle des
-        // PROJECTILES, +15% de reduction de degats par coeur (en plus de la
-        // chute reduite + saut ameliore de Gale Step, geres en tick). Le
-        // "vent porteur" devie une partie de la trajectoire/force d'impact
-        // d'une fleche/trident qui touche le joueur.
         int windHeartLvl = getElementalHeartLvl(player, "wind_heart");
         if (windHeartLvl > 0 && event.getSource().is(net.minecraft.tags.DamageTypeTags.IS_PROJECTILE)) {
             event.setAmount(event.getAmount() * Math.max(0f, 1f - 0.15f * windHeartLvl));
@@ -2219,13 +3245,6 @@ public class UniversalEnchantmentHandler {
             }
         }
 
-        // EARTH HEART (cahier des charges original, "combo equilibree" :
-        // reduction de degats + chance de blocage + vitesse de minage -- le
-        // volet minage est gere en tick, voir updateHeartEnchantmentPassives).
-        // Reduction de degats plate modeste (l'armure "roche" absorbe une
-        // partie du choc) + une CHANCE distincte d'annuler completement le
-        // coup ("bouclier de pierre" ponctuel), les deux scalant avec le
-        // niveau du coeur.
         int earthHeartLvl = getElementalHeartLvl(player, "earth_heart");
         if (earthHeartLvl > 0) {
             if (player.level().random.nextInt(100) < (6 * earthHeartLvl)) {
@@ -2251,36 +3270,98 @@ public class UniversalEnchantmentHandler {
         if (fireShell > 0 && player.isOnFire()) event.setAmount(event.getAmount() * (1f - 0.25f * fireShell));
         int steelBody = getArmorEnchantLvl(player, "deep_lucky_block:steel_body");
         if (steelBody > 0 && player.getHealth() > 20f) event.setAmount(event.getAmount() * (1f - Math.min(0.80f, (player.getHealth() - 20f) * 0.01f)));
-        // FIX DOUBLE-COMPTAGE : divine_protection est désormais converti en
-        // vrais points d'ARMOR vanilla PAR PIÈCE dans RealAttributeModifierHandler
-        // (déjà appliqués automatiquement par la formule d'armure vanilla).
-        // Le multiplicateur manuel ci-dessous double la réduction réelle.
+
+        // T306-OVERHAUL : Défense des Enchantements Corporels uniques (tempered_body, hundred_battles_veteran, gluttony, corpulent, wing_toughness_armor)
+        int tempBody = getArmorEnchantLvl(player, "deep_lucky_block:tempered_body");
+        if (tempBody > 0) {
+            event.setAmount(event.getAmount() * Math.max(0.65f, 1.0f - 0.08f * tempBody));
+            if (event.getSource().is(net.minecraft.tags.DamageTypeTags.IS_FIRE)) event.setAmount(event.getAmount() * 0.80f);
+        }
+        int hundVetDef = getArmorEnchantLvl(player, "deep_lucky_block:hundred_battles_veteran");
+        if (hundVetDef > 0) {
+            int kills = player.getPersistentData().getInt("slb_veteran_kills");
+            float vetRed = Math.min(0.20f, 0.05f + kills * 0.0015f);
+            event.setAmount(event.getAmount() * (1.0f - vetRed));
+        }
+        int glutDef = getArmorEnchantLvl(player, "deep_lucky_block:gluttony");
+        if (glutDef > 0 && player instanceof Player gp && gp.getFoodData().getFoodLevel() >= 16) {
+            event.setAmount(event.getAmount() * 0.88f);
+        }
+        int corpDef = getArmorEnchantLvl(player, "deep_lucky_block:corpulent");
+        if (corpDef > 0 && event.getSource().is(net.minecraft.tags.DamageTypeTags.IS_EXPLOSION)) {
+            event.setAmount(event.getAmount() * 0.75f);
+        }
+        int wingToughDef = getArmorEnchantLvl(player, "deep_lucky_block:wing_toughness_armor");
+        if (wingToughDef > 0 && (!player.onGround() || player.isFallFlying())) {
+            event.setAmount(event.getAmount() * 0.72f);
+        }
+
+        // T306-OVERHAUL : panic_escape (sprint immédiat quand frappé !) séparé de last_stand_escape
+        int panicEsc = getArmorEnchantLvl(player, "deep_lucky_block:panic_escape");
+        if (panicEsc > 0 && !event.getSource().getMsgId().equals("fall")) {
+            player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 50, Math.min(3, panicEsc), true, false));
+            EnchantmentParticleFX.ankleTrail(player, ParticleTypes.SMALL_GUST, 4, 0.04);
+        }
+
+        // T306-OVERHAUL : cloud_walker (immunité chute sur nuage doux) vs twenty_fourth_blessing (grâce miraculeuse : survit toujours à une chute mortelle à >= 2 PV + Régén !)
+        int cloudWalk = getArmorEnchantLvl(player, "deep_lucky_block:cloud_walker");
+        if (cloudWalk > 0 && event.getSource().getMsgId().equals("fall")) {
+            event.setCanceled(true);
+            if (player.level() instanceof ServerLevel slcw) {
+                EnchantmentParticleFX.shockwaveRing(slcw, player.getX(), player.getY() + 0.08, player.getZ(), ParticleTypes.CLOUD, 1.2, 12, 0.03);
+            }
+            return;
+        }
         int twentyFourth = getArmorEnchantLvl(player, "deep_lucky_block:twenty_fourth_blessing");
-        if (twentyFourth > 0 && event.getSource().getMsgId().equals("fall")) event.setCanceled(true);
+        if (twentyFourth > 0 && event.getSource().getMsgId().equals("fall")) {
+            float reduced = event.getAmount() * 0.45f;
+            if (player.getHealth() - reduced <= 2.0f) {
+                event.setAmount(Math.max(0.0f, player.getHealth() - 2.0f));
+                player.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 80, 1, true, false));
+                EnchantmentParticleFX.crownHalo(player, EnchantmentParticleFX.GOLD_DIVINE, 10);
+            } else {
+                event.setAmount(reduced);
+            }
+        }
         int crashLand = getArmorEnchantLvl(player, "deep_lucky_block:crash_landing");
         if (crashLand > 0 && event.getSource().getMsgId().equals("fall")) event.setAmount(event.getAmount() * 2.4f);
-        // lightness & basic_lightness : reduisent les degats de chute. lightness = plus fort.
         if (event.getSource().getMsgId().equals("fall")) {
             int lightFall = getArmorEnchantLvl(player, "deep_lucky_block:lightness");
             int basicLightFall = getArmorEnchantLvl(player, "deep_lucky_block:basic_lightness");
             if (lightFall > 0) event.setAmount(event.getAmount() * Math.max(0.0f, 1f - 0.30f * lightFall));
             else if (basicLightFall > 0) event.setAmount(event.getAmount() * Math.max(0.1f, 1f - 0.15f * basicLightFall));
         }
+
+        // Malédictions défensives différenciées : chest_tightness, fracture, crippled (lenteur quand blessé !), armor_damage vs armor_shatter
         int chestTight = getArmorEnchantLvl(player, "deep_lucky_block:chest_tightness");
-        if (chestTight > 0 && player.level().random.nextInt(100) < 40) player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 600, 0));
+        if (chestTight > 0 && player.level().random.nextInt(100) < 40) player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 300, 0));
+        int crippledCurse = getArmorEnchantLvl(player, "deep_lucky_block:crippled");
+        if (crippledCurse > 0) {
+            player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 80, 0));
+        }
         int frac = getArmorEnchantLvl(player, "deep_lucky_block:fracture");
         if (frac > 0 && event.getSource().getMsgId().equals("fall")) {
-            player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 1600, 2));
+            player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 1200, 2));
             player.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 200, 0));
         }
         int armorDmg = getArmorEnchantLvl(player, "deep_lucky_block:armor_damage");
         int armorShat = getArmorEnchantLvl(player, "deep_lucky_block:armor_shatter");
-        if (armorDmg > 0 && player.level().random.nextInt(100) < 30 * armorDmg) {
-            for (ItemStack s : player.getArmorSlots()) if (!s.isEmpty() && getEnchantLvl(s, "deep_lucky_block:armor_damage") > 0) if (player.level() instanceof net.minecraft.server.level.ServerLevel sla) s.hurtAndBreak(Math.max(1, (int)(s.getMaxDamage() * 0.05f)), sla, player, item -> {});
+        if (armorDmg > 0) {
+            for (ItemStack s : player.getArmorSlots()) {
+                if (!s.isEmpty() && getEnchantLvl(s, "deep_lucky_block:armor_damage") > 0 && player.level() instanceof ServerLevel sla) {
+                    s.hurtAndBreak(2 * armorDmg, sla, player, item -> {});
+                }
+            }
         }
-        if (armorShat > 0) {
-            for (ItemStack s : player.getArmorSlots()) if (!s.isEmpty() && getEnchantLvl(s, "deep_lucky_block:armor_shatter") > 0) if (player.level() instanceof net.minecraft.server.level.ServerLevel sls) s.hurtAndBreak(Math.max(1, (int)(s.getMaxDamage() * 0.05f * armorShat)), sls, player, item -> {});
+        if (armorShat > 0 && player.level().random.nextInt(100) < Math.min(60, 14 * armorShat)) {
+            for (ItemStack s : player.getArmorSlots()) {
+                if (!s.isEmpty() && getEnchantLvl(s, "deep_lucky_block:armor_shatter") > 0 && player.level() instanceof ServerLevel sls) {
+                    s.hurtAndBreak(Math.max(3, (int) (s.getMaxDamage() * 0.08f * armorShat)), sls, player, item -> {});
+                }
+            }
+            player.level().playSound(null, player.blockPosition(), SoundEvents.ANVIL_PLACE, SoundSource.PLAYERS, 0.5f, 1.7f);
         }
+
         int lightCalam = getArmorEnchantLvl(player, "deep_lucky_block:lightning_calamity");
         if (lightCalam > 0 && player.level().random.nextInt(100) < 5) {
             LightningBolt bolt = new LightningBolt(EntityType.LIGHTNING_BOLT, player.level());
@@ -2291,64 +3372,65 @@ public class UniversalEnchantmentHandler {
         if (expProt > 0 && event.getSource().is(net.minecraft.tags.DamageTypeTags.IS_EXPLOSION)) event.setAmount(event.getAmount() * Math.max(0.0f, 1.0f - 0.20f * expProt));
         int foodHeaven = getArmorEnchantLvl(player, "deep_lucky_block:food_is_heaven");
         if (foodHeaven > 0 && player.isUsingItem() && (player.getUseItem().has(DataComponents.FOOD) || player.getUseItem().is(Items.POTION))) { event.setCanceled(true); return; }
-        int cloudWalk = getArmorEnchantLvl(player, "deep_lucky_block:cloud_walker");
-        if (cloudWalk > 0 && event.getSource().getMsgId().equals("fall")) { event.setCanceled(true); return; }
+
         int resBurst = getArmorEnchantLvl(player, "deep_lucky_block:resistance_burst");
         if (resBurst > 0 && player.level().random.nextInt(100) < (10 * resBurst)) player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 60, 0, true, false));
         int painDev = getArmorEnchantLvl(player, "deep_lucky_block:pain_devour");
-        // La faim n'existe que pour un joueur ; un mob generique n'a pas
-        // de FoodData, on saute simplement ce bonus pour lui.
         if (painDev > 0 && player instanceof Player painDevPlayer) painDevPlayer.getFoodData().setFoodLevel(Math.min(20, painDevPlayer.getFoodData().getFoodLevel() + 2 * painDev));
-        int blockChance = Math.max(getArmorEnchantLvl(player, "deep_lucky_block:block"), Math.max(getArmorEnchantLvl(player, "deep_lucky_block:big_stomach"), getArmorEnchantLvl(player, "deep_lucky_block:life_block")));
-        if (blockChance > 0 && player.level().random.nextInt(100) < Math.min(90, 30 + 15 * blockChance)) { event.setCanceled(true); return; }
+
+        // T306-OVERHAUL : block (parade martiale d'armure) vs big_stomach (rebond ventral de sumo !) vs life_block (garde vitale d'urgence qui soigne !)
+        int blockLvl = getArmorEnchantLvl(player, "deep_lucky_block:block");
+        if (blockLvl > 0 && player.level().random.nextInt(100) < Math.min(45, 12 + 10 * blockLvl)) {
+            event.setCanceled(true);
+            EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.CRIT, 8, 0.3, 0.08);
+            player.level().playSound(null, player.blockPosition(), SoundEvents.SHIELD_BLOCK, SoundSource.PLAYERS, 0.8f, 1.2f);
+            return;
+        }
+        int bigStomLvl = getArmorEnchantLvl(player, "deep_lucky_block:big_stomach");
+        if (bigStomLvl > 0 && player.level().random.nextInt(100) < 25) {
+            event.setAmount(event.getAmount() * 0.45f);
+            if (event.getSource().getEntity() instanceof LivingEntity attacker) {
+                attacker.knockback(1.25f, player.getX() - attacker.getX(), player.getZ() - attacker.getZ());
+                attacker.hurtMarked = true;
+            }
+            player.level().playSound(null, player.blockPosition(), SoundEvents.SLIME_JUMP, SoundSource.PLAYERS, 0.9f, 0.8f);
+        }
+        int lifeBlockLvl = Math.max(getArmorEnchantLvl(player, "deep_lucky_block:life_block"),
+                getEnchantLvl(findActiveEnchantedShield(player), "deep_lucky_block:life_block"));
+        if (lifeBlockLvl > 0 && (player.getHealth() - event.getAmount() <= player.getMaxHealth() * 0.35f)
+                && nowTick >= player.getPersistentData().getLong("slb_life_block_ready")) {
+            player.getPersistentData().putLong("slb_life_block_ready", nowTick + 160L);
+            event.setAmount(event.getAmount() * 0.25f);
+            player.heal(Math.min(10.0f, 2.0f + 2.0f * lifeBlockLvl));
+            EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.HEART, 6, 0.35, 0.03);
+            player.level().playSound(null, player.blockPosition(), SoundEvents.TOTEM_USE, SoundSource.PLAYERS, 0.45f, 1.6f);
+        }
+
         int pwrThorns = getArmorEnchantLvl(player, "deep_lucky_block:powerful_thorns");
         if (pwrThorns > 0 && event.getSource().getEntity() instanceof LivingEntity attacker)
-            // FIX SCALING NIVEAU FORCE : (1 << (pwrThorns - 1)) est un decalage
-            // de BIT ENTIER. Le decalage d'un int en Java ignore silencieusement
-            // tous les bits au-dela de 5 (shift mod 32) : a partir d'un niveau
-            // effectif de 32, "1 << 31" devient NEGATIF (Integer.MIN_VALUE) et
-            // "1 << 32" revient a 1 -- le multiplicateur s'ecroule ou devient
-            // negatif au lieu de continuer a grandir, ce qui pouvait annuler
-            // ou inverser les degats de reflet a haut niveau force (ex. 1000).
-            // Remplace par un calcul en double, plafonne a un multiplicateur
-            // enorme (2^30) largement suffisant pour rester "sane" sans jamais
-            // deborder/repasser negatif, quel que soit le niveau force.
             hurtNoCascade(attacker, player.damageSources().thorns(player),
                     (float) (event.getAmount() * Math.min(1_073_741_824.0, Math.pow(2, Math.max(0, pwrThorns - 1)))));
         int soulRep = getArmorEnchantLvl(player, "deep_lucky_block:soul_repulsion_blast");
         if (soulRep > 0) {
-            for (Mob mob : player.level().getEntitiesOfClass(Mob.class, player.getBoundingBox().inflate(2.0))) {
+            EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.SOUL_FIRE_FLAME, 10, 0.4, 0.05);
+            for (Mob mob : player.level().getEntitiesOfClass(Mob.class, player.getBoundingBox().inflate(2.5))) {
                 hurtNoCascade(mob, player.damageSources().magic(), event.getAmount() * 0.5f);
-                mob.knockback(0.5, player.getX() - mob.getX(), player.getZ() - mob.getZ());
+                mob.knockback(0.6, player.getX() - mob.getX(), player.getZ() - mob.getZ());
             }
         }
         int ironLung = getArmorEnchantLvl(player, "deep_lucky_block:iron_lung");
         if (ironLung > 0 && event.getSource().getMsgId().equals("inWall")) event.setCanceled(true);
         int lastStand = getArmorEnchantLvl(player, "deep_lucky_block:last_stand_toughness");
         if (lastStand > 0 && player.getHealth() < (player.getMaxHealth() * 0.20f)) event.setAmount(event.getAmount() * (1f - 0.15f * lastStand));
-        // FIX DOUBLE-COMPTAGE : wound_crack/crippled sont désormais convertis
-        // en points d'ARMOR NÉGATIFS vanilla dans RealAttributeModifierHandler
-        // (déjà appliqués automatiquement, réduction d'armure donc plus de
-        // dégâts encaissés via la formule vanilla). Le multiplicateur manuel
-        // ci-dessous aggravait ENCORE la pénalité en plus de l'armure déjà
-        // réduite.
         int blazeSanc = getArmorEnchantLvl(player, "deep_lucky_block:blaze_sanctuary");
         if (blazeSanc > 0 && (event.getSource().is(net.minecraft.world.damagesource.DamageTypes.IN_FIRE) || event.getSource().is(net.minecraft.world.damagesource.DamageTypes.ON_FIRE))) event.setAmount(event.getAmount() * 0.2f);
-        // fire_protection_enhancement : reduit feu/lave
         int fireProtEnh = getArmorEnchantLvl(player, "deep_lucky_block:fire_protection_enhancement");
         if (fireProtEnh > 0 && event.getSource().is(net.minecraft.tags.DamageTypeTags.IS_FIRE)) event.setAmount(event.getAmount() * Math.max(0.10f, 1f - 0.12f * fireProtEnh));
-        // projectile_protection_enhancement : reduit projectiles
         int projProtEnh = getArmorEnchantLvl(player, "deep_lucky_block:projectile_protection_enhancement");
         if (projProtEnh > 0 && event.getSource().is(net.minecraft.tags.DamageTypeTags.IS_PROJECTILE)) event.setAmount(event.getAmount() * Math.max(0.10f, 1f - 0.12f * projProtEnh));
-        // infernal_armor (RELIC) : feu/lave reduits de 90% + eteint le porteur
         int infernal = getArmorEnchantLvl(player, "deep_lucky_block:infernal_armor");
         if (infernal > 0 && event.getSource().is(net.minecraft.tags.DamageTypeTags.IS_FIRE)) { event.setAmount(event.getAmount() * 0.1f); player.clearFire(); }
 
-        // SALAMANDER'S VOW (Fire Heart, casque) : les degats de feu sont
-        // ANNULES et convertis en regeneration -- "corps de salamandre" qui
-        // se nourrit des flammes -- mais desactive au contact de l'eau
-        // (RiptideCurse fait l'inverse cote Water Heart), faiblesse
-        // classique feu/eau assumee.
         int salamandersVow = getArmorEnchantLvl(player, "deep_lucky_block:salamanders_vow");
         if (salamandersVow > 0 && event.getSource().is(net.minecraft.tags.DamageTypeTags.IS_FIRE) && !player.isInWater()) {
             event.setAmount(0f);
@@ -2360,10 +3442,6 @@ public class UniversalEnchantmentHandler {
             }
         }
 
-        // RIPTIDE CURSE (Water Heart, jambieres, MAUDIT) : degats accrus des
-        // que le joueur n'est PAS dans l'eau -- "poisson hors de l'eau"
-        // pousse a l'extreme, contrebalance par une nage/respiration
-        // exceptionnelles geres en tick (voir updateHeartEnchantmentPassives).
         int riptideCurse = getArmorEnchantLvl(player, "deep_lucky_block:riptide_curse");
         if (riptideCurse > 0 && !player.isInWaterOrRain()) {
             event.setAmount(event.getAmount() * (1f + 0.20f * riptideCurse));
@@ -2373,10 +3451,6 @@ public class UniversalEnchantmentHandler {
         if (altHyp > 0 && player.getY() > 100) event.setAmount(event.getAmount() * 0.7f);
         if (deepHyp > 0 && player.getY() < 20) event.setAmount(event.getAmount() * 0.7f);
 
-        // RADIANT WARD (Light Heart) : chance d'annuler completement le coup
-        // (flash "monarque de lumiere") + purge lente des effets negatifs.
-        // Positif pur, sans contrepartie -- c'est le cote "sacre" de la
-        // lumiere face au cote "pacte risque" des tenebres plus bas.
         int radiantWard = getArmorEnchantLvl(player, "deep_lucky_block:radiant_ward");
         if (radiantWard > 0) {
             if (player.level().random.nextInt(100) < (5 + 5 * radiantWard)) {
@@ -2397,12 +3471,6 @@ public class UniversalEnchantmentHandler {
             }
         }
 
-        // UMBRAL PACT (Shadow Heart) : +dégâts encaissés reduits dans le noir
-        // mais VULNERABILITE ACCRUE en plein jour, et draine periodiquement
-        // un demi-coeur pour offrir un burst d'invisibilite -- vrai pacte a
-        // double tranchant façon "malédiction volontaire" de manhwa. L'aura
-        // trouble/malsaine correspondante est rendue cote client (voir
-        // ElementalHeartOverlay, aura desaturee/vacillante).
         int umbralPact = getArmorEnchantLvl(player, "deep_lucky_block:umbral_pact");
         if (umbralPact > 0) {
             boolean daylight = player.level().isDay() && player.level().canSeeSky(player.blockPosition());
@@ -2411,15 +3479,10 @@ public class UniversalEnchantmentHandler {
             } else {
                 event.setAmount(event.getAmount() * Math.max(0.4f, 1f - 0.15f * umbralPact));
             }
-            // Le drain periodique de vie -> burst d'invisibilite est gere en
-            // tick regulier (EquipmentExpansionHandler#playerTick), pas ici :
-            // ce bloc ne s'execute que lorsque le joueur ENCAISSE un coup, ce
-            // qui n'est pas le comportement "periodique independant" voulu.
         }
     }
 
     /** Attribute bonus stacks naturally with vanilla Speed potion amplifiers. */
-    // PORT 1.21.1 : id d'attribut en ResourceLocation (plus de UUID + nom)
     private static void setStackingMovementBonus(LivingEntity player, net.minecraft.resources.ResourceLocation id,
             double amount) {
         net.minecraft.world.entity.ai.attributes.AttributeInstance attribute =
@@ -2433,31 +3496,16 @@ public class UniversalEnchantmentHandler {
         }
     }
 
-    /**
-     * FIX SCALING "PETIT A PETIT" : niveau effectif d'un enchantement.
-     * - Jusqu'au niveau max officiel (getMaxLevel) : le niveau est lu tel quel.
-     *   Un enchantement cappe a 1 reste donc TOUJOURS niveau 1 en jeu normal.
-     * - Au-dela (niveau FORCE par commande / lucky block / NBT) : la puissance
-     *   continue d'augmenter mais au ralenti, rendement decroissant :
-     *   +1 niveau effectif par palier de racine carree du depassement.
-     *   Exemple pour un cap de 1 : force 2-4 -> 2, force 5-9 -> 3,
-     *   force 10-16 -> 4, force 100 -> 10.
-     */
     private static int softCappedLevel(Enchantment ench, int storedLevel) {
-        // Centralise dans DeepEnchant pour que EquipmentExpansionHandler et
-        // FishingTridentElytraHandler beneficient de la meme regle.
         return deepluckyblock.util.DeepEnchant.softCappedLevel(ench, storedLevel);
     }
 
     private static int getEnchantLvl(ItemStack stack, String id) {
         if (stack.isEmpty() || !stack.isEnchanted()) return 0;
-        // PORT 1.21.1 : lecture via DeepEnchant (composant ItemEnchantments)
         Enchantment en = deepluckyblock.util.DeepEnchant.byId(id);
         if (en == null) return 0;
         int lvl = deepluckyblock.util.DeepEnchant.getLevel(stack, en);
         if (lvl <= 0) return 0;
-        // Le cap officiel est respecte ; un niveau force au-dela du cap
-        // scale "petit a petit" (voir softCappedLevel).
         return softCappedLevel(en, lvl);
     }
 
@@ -2467,26 +3515,6 @@ public class UniversalEnchantmentHandler {
         return total;
     }
 
-    /**
-     * Niveau EFFECTIF d'un cœur ÉLÉMENTAIRE (les 7 cœurs à condition de
-     * régénération : fire/water/earth/wind/electric/shadow/light_heart)
-     * pour les POUVOIRS ACTIFS -- càd le niveau brut gravé sur le plastron,
-     * DIMINUÉ du nombre de cœurs actuellement "perdus" par des dégâts réels
-     * (voir {@link deepluckyblock.util.ElementalHeartLoss}).
-     *
-     * <p>Correctif (audit demande utilisateur #3, "les effets doivent
-     * disparaître en perdant des cœurs et ne réapparaître qu'à la regen") :
-     * TOUT pouvoir actif des 7 cœurs élémentaires doit passer par cette
-     * méthode plutôt que par {@link #getArmorEnchantLvl} directement, sans
-     * quoi le pouvoir resterait à pleine puissance même cœur(s) perdu(s)
-     * (seul le bonus de PV plat était réduit avant ce correctif). N'utiliser
-     * QUE pour les 7 IDs listés dans
-     * {@code deepluckyblock.util.ElementalHeartConditions.ELEMENT_IDS} --
-     * les autres enchantements "cœur" (burning_heart, thirsty_heart,
-     * conduit_heart, bastion_heart, blaze_repulsion_heart, flint_heart,
-     * heart_resonance...) ne font PAS partie du système de perte/regen et
-     * continuent d'utiliser {@link #getArmorEnchantLvl} tel quel.
-     */
     private static int getElementalHeartLvl(LivingEntity player, String elementId) {
         ItemStack chest = player.getItemBySlot(EquipmentSlot.CHEST);
         int raw = getEnchantLvl(chest, "deep_lucky_block:" + elementId);
@@ -2494,7 +3522,7 @@ public class UniversalEnchantmentHandler {
         return deepluckyblock.util.ElementalHeartLoss.effectiveLevel(chest, elementId, raw);
     }
 
-    // Ore Detector & Summon Army
+    // Ore Detector & Famille Invocation d'Armée (army_summon Enfant -> summon_army Upgrade)
     @SubscribeEvent
     public static void onRightClickItem(PlayerInteractEvent.RightClickItem event){try{onRightClickItemImpl(event);}catch(Throwable t__){guard("onRightClickItem",t__);}}
     private static void onRightClickItemImpl(PlayerInteractEvent.RightClickItem event){
@@ -2513,35 +3541,78 @@ public class UniversalEnchantmentHandler {
             boolean hasStar = player.getMainHandItem().is(Items.NETHER_STAR) || player.getOffhandItem().is(Items.NETHER_STAR);
             int count = 0;
             BlockPos c = player.blockPosition();
-            for (BlockPos p : BlockPos.betweenClosed(c.offset(-8, -8, -8), c.offset(8, 8, 8))) if (player.level().getBlockState(p).is(Tags.Blocks.ORES)) count++;
-            player.sendSystemMessage(Component.literal("§e§l[Ore Detector] §fMinerais dans 16 blocs : §6" + count + (hasStar ? " (Position !)" : "")));
+            BlockPos nearest = null;
+            double bestDist = Double.MAX_VALUE;
+            BlockState nearestState = null;
+            for (BlockPos p : BlockPos.betweenClosed(c.offset(-8, -8, -8), c.offset(8, 8, 8))) {
+                BlockState st = player.level().getBlockState(p);
+                if (st.is(Tags.Blocks.ORES)) {
+                    count++;
+                    double d = p.distSqr(c);
+                    if (d < bestDist) {
+                        bestDist = d;
+                        nearest = p.immutable();
+                        nearestState = st;
+                    }
+                }
+            }
+            String extra = (hasStar && nearest != null && nearestState != null)
+                    ? " §7— Plus proche : §b" + nearestState.getBlock().getName().getString()
+                      + " §7(" + nearest.getX() + ", " + nearest.getY() + ", " + nearest.getZ() + ")"
+                    : "";
+            player.sendSystemMessage(Component.literal("§e§l[Ore Detector] §fMinerais dans 16 blocs : §6" + count + extra));
+            player.level().playSound(null, c, SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS, 0.9f, 1.3f);
+            EnchantmentParticleFX.crownHalo(player, ParticleTypes.GLOW, 6);
         }
-        int armyLvl = Math.max(getEnchantLvl(tool, "deep_lucky_block:army_summon"), getEnchantLvl(tool, "deep_lucky_block:summon_army"));
-        if (armyLvl > 0 && (player.totalExperience >= 15 || player.isCreative())) {
-            if (!player.isCreative()) player.giveExperiencePoints(-30);
-            player.getCooldowns().addCooldown(tool.getItem(), 420);
+
+        // T306-OVERHAUL : Famille Invocation d'Armée (army_summon Enfant : patrouille légère ; summon_army Upgrade : légion d'élite loyale !)
+        int advArmy = getEnchantLvl(tool, "deep_lucky_block:summon_army");
+        int basicArmy = getEnchantLvl(tool, "deep_lucky_block:army_summon");
+        int armyLvl = Math.max(advArmy, basicArmy);
+        if (armyLvl > 0 && !player.getCooldowns().isOnCooldown(tool.getItem())
+                && (player.totalExperience >= 15 || player.isCreative())) {
+            boolean upgradedArmy = advArmy > 0;
+            if (!player.isCreative()) player.giveExperiencePoints(upgradedArmy ? -25 : -20);
+            player.getCooldowns().addCooldown(tool.getItem(), upgradedArmy ? 360 : 440);
             player.level().playSound(null, player.getX(), player.getY(), player.getZ(), SoundEvents.EVOKER_CAST_SPELL, SoundSource.PLAYERS, 1.0F, 1.0F);
-            int count = armyLvl * 2;
+            if (player.level() instanceof ServerLevel slarm) {
+                EnchantmentParticleFX.shockwaveRing(slarm, player.getX(), player.getY() + 0.1, player.getZ(), ParticleTypes.ENCHANT, 2.2, 20, 0.08);
+            }
+            int count = Math.min(10, upgradedArmy ? (2 + 2 * advArmy) : (1 + basicArmy));
             ItemStack helmet = player.getItemBySlot(EquipmentSlot.HEAD);
             boolean isCmd = getEnchantLvl(helmet, "deep_lucky_block:commander") > 0;
             boolean isIllager = getEnchantLvl(helmet, "deep_lucky_block:illager_commander") > 0;
             boolean isUndead = getEnchantLvl(helmet, "deep_lucky_block:undead_commander") > 0;
+            LivingEntity currentThreat = player.getLastHurtMob() != null && player.getLastHurtMob().isAlive()
+                    ? player.getLastHurtMob() : player.getLastHurtByMob();
             for (int i = 0; i < count; i++) {
                 EntityType<? extends Mob> type = EntityType.WOLF;
-                if (isCmd) type = (player.level().random.nextFloat() < 0.6f) ? EntityType.WOLF : EntityType.IRON_GOLEM;
+                if (isCmd) type = (player.level().random.nextFloat() < (upgradedArmy ? 0.45f : 0.75f)) ? EntityType.WOLF : EntityType.IRON_GOLEM;
                 else if (isIllager) {
                     float r = player.level().random.nextFloat();
-                    type = (r < 0.7f) ? EntityType.PILLAGER : (r < 0.9f) ? EntityType.VINDICATOR : EntityType.EVOKER;
+                    type = (r < 0.65f) ? EntityType.PILLAGER : (r < 0.9f) ? EntityType.VINDICATOR : EntityType.EVOKER;
                 } else if (isUndead) {
                     type = (player.level().random.nextFloat() < 0.4f) ? EntityType.HUSK : EntityType.WITHER_SKELETON;
                 }
                 Mob mob = type.create(player.level());
                 if (mob != null) {
                     mob.setPos(player.getX() + player.level().random.nextInt(5) - 2, player.getY(), player.getZ() + player.level().random.nextInt(5) - 2);
+                    mob.getPersistentData().putUUID("slb_ally_owner", player.getUUID());
+                    if (mob instanceof net.minecraft.world.entity.animal.Wolf wolf) {
+                        wolf.tame(player);
+                    }
                     if (type == EntityType.PILLAGER) mob.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.CROSSBOW));
-                    else if (type == EntityType.VINDICATOR) mob.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_AXE));
-                    else if (type == EntityType.WITHER_SKELETON) mob.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_SWORD));
+                    else if (type == EntityType.VINDICATOR) mob.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(upgradedArmy ? Items.DIAMOND_AXE : Items.IRON_AXE));
+                    else if (type == EntityType.WITHER_SKELETON) mob.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(upgradedArmy ? Items.IRON_SWORD : Items.STONE_SWORD));
+                    if (upgradedArmy) {
+                        mob.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 1200, 0, true, false));
+                        mob.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 1200, 0, true, false));
+                    }
+                    if (currentThreat != null && currentThreat != player && currentThreat.isAlive()) {
+                        mob.setTarget(currentThreat);
+                    }
                     player.level().addFreshEntity(mob);
+                    EnchantmentParticleFX.burstOnEntity(mob, ParticleTypes.POOF, 6, 0.3, 0.03);
                 }
             }
         }

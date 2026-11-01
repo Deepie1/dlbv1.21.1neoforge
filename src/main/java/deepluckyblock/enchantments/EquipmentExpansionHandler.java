@@ -107,35 +107,25 @@ public final class EquipmentExpansionHandler {
         if(p.level().isClientSide())return; long now=p.level().getGameTime();
         if(p instanceof ServerPlayer sp&&p.level() instanceof ServerLevel sl){int guidance=armor(p,"miners_guidance");if(guidance>0&&p.tickCount%5==0){try{updateOreGuidance(sp,sl,guidance);}catch(Throwable failure){ORE_GUIDANCE.remove(p.getUUID());System.err.println("[DeepLuckyBlock] Miner's Eye disabled for this scan after an error: "+failure);}}else if(guidance<=0)ORE_GUIDANCE.remove(p.getUUID());}
         int clarity=armor(p,"mental_clarity"); if(clarity>0&&p.tickCount%20==0){ shorten(p,MobEffects.CONFUSION,clarity);shorten(p,MobEffects.BLINDNESS,clarity);shorten(p,MobEffects.DARKNESS,clarity); }
-        int echo=armor(p,"echolocation"); if(echo>0&&p.tickCount%40==0&&p.level().getMaxLocalRawBrightness(p.blockPosition())<8) for(Mob m:p.level().getEntitiesOfClass(Mob.class,p.getBoundingBox().inflate(deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(10,6,echo))))m.addEffect(new MobEffectInstance(MobEffects.GLOWING,30,0,false,false));
+        int echo=armor(p,"echolocation"); if(echo>0&&p.tickCount%40==0&&p.level().getMaxLocalRawBrightness(p.blockPosition())<8){double er=deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(10,6,echo);if(p.level() instanceof ServerLevel sl)EnchantmentParticleFX.shockwaveRing(sl,p.getX(),p.getY()+.2,p.getZ(),ParticleTypes.SCULK_CHARGE_POP,1.4,12,.03);for(Mob m:p.level().getEntitiesOfClass(Mob.class,p.getBoundingBox().inflate(er)))m.addEffect(new MobEffectInstance(MobEffects.GLOWING,35,0,false,false));}
         int conc=armor(p,"concentration"); double hs=p.getDeltaMovement().horizontalDistance(); int focus=p.getPersistentData().getInt("slb_focus"); focus=conc>0&&hs<.01?Math.min(100,focus+1):Math.max(0,focus-4);p.getPersistentData().putInt("slb_focus",focus);
-        int whispers=armor(p,"curse_of_whispers"); if(whispers>0){long next=p.getPersistentData().getLong("slb_whisper_next");if(next<=0)p.getPersistentData().putLong("slb_whisper_next",now+200+p.getRandom().nextInt(2801));else if(now>=next){playFakePack(p);p.getPersistentData().putLong("slb_whisper_next",now+200+p.getRandom().nextInt(2801));}}
+        int whispers=armor(p,"curse_of_whispers"); if(whispers>0){long next=p.getPersistentData().getLong("slb_whisper_next");if(next<=0)p.getPersistentData().putLong("slb_whisper_next",now+200+p.getRandom().nextInt(2801));else if(now>=next){playFakePack(p);EnchantmentParticleFX.ankleTrail(p,ParticleTypes.SCULK_SOUL,4,.02);p.getPersistentData().putLong("slb_whisper_next",now+200+p.getRandom().nextInt(2801));}}
         // Phantom Step: after 4 seconds without attacking, sneaking clears nearby mob targets and hides the player.
-        int phantom=armor(p,"phantom_step"); long lastAttack=p.getPersistentData().getLong("slb_last_attack");if(phantom>0&&p.isShiftKeyDown()&&now-lastAttack>=80){p.addEffect(new MobEffectInstance(MobEffects.INVISIBILITY,8,0,true,false));for(Mob m:p.level().getEntitiesOfClass(Mob.class,p.getBoundingBox().inflate(deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(4,3,phantom))))if(m.getTarget()==p)m.setTarget(null);}
+        int phantom=armor(p,"phantom_step"); long lastAttack=p.getPersistentData().getLong("slb_last_attack");if(phantom>0&&p.isShiftKeyDown()&&now-lastAttack>=80){p.addEffect(new MobEffectInstance(MobEffects.INVISIBILITY,8,0,true,false));if(p.tickCount%12==0)EnchantmentParticleFX.ankleTrail(p,ParticleTypes.SMOKE,2,.01);for(Mob m:p.level().getEntitiesOfClass(Mob.class,p.getBoundingBox().inflate(deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(4,3,phantom))))if(m.getTarget()==p)m.setTarget(null);}
         // Pivot detects a sharp horizontal direction change.
         int pivot=armor(p,"pivot");double vx=p.getDeltaMovement().x,vz=p.getDeltaMovement().z,oldx=p.getPersistentData().getDouble("slb_old_vx"),oldz=p.getPersistentData().getDouble("slb_old_vz");double dot=vx*oldx+vz*oldz;setSpeed(p,PIVOT_ID,pivot>0&&dot<-.005?.06*pivot:0);p.getPersistentData().putDouble("slb_old_vx",vx);p.getPersistentData().putDouble("slb_old_vz",vz);
         int anchor=armor(p,"anchoring");if(anchor>0&&p.isShiftKeyDown()){p.setDeltaMovement(p.getDeltaMovement().multiply(Math.max(.35,1-.18*anchor),1,Math.max(.35,1-.18*anchor)));setKnockback(p,.25*anchor);}else setKnockback(p,0);
         int hunter=armor(p,"hunters_pace");boolean chase=false;if(hunter>0)for(Mob m:p.level().getEntitiesOfClass(Mob.class,p.getBoundingBox().inflate(12))){if(m.getHealth()<m.getMaxHealth()*.5&&p.getLookAngle().dot(m.position().subtract(p.position()).normalize())>.25){chase=true;break;}}setSpeed(p,HUNTER_ID,chase?.06*hunter:0);
         int carrier=armor(p,"carriers_stride");setSpeed(p,CARRIER_ID,carrier>0&&p.isUsingItem()?.045*carrier:0);
         int tidal=armor(p,"tidal_step");boolean shallow=tidal>0&&p.isInWater()&&p.level().getBlockState(p.blockPosition().below()).blocksMotion();setSpeed(p,TIDAL_ID,shallow?.07*tidal:0);
-        // FIX DOUBLE-COMPTAGE (ask #5, miroir du fix dans RealAttributeModifierHandler) :
-        // le bonus de Knockback Resistance de Surefooted (+0.18/niv, fixe et
-        // inconditionnel) est desormais un VRAI AttributeModifier pose sur
-        // l'ITEM (voir RealAttributeModifierHandler#applyArmorBonuses),
-        // visible dans la ligne native "When on Body" comme demande. Le
-        // reposer ICI EN PLUS (sur le joueur, a chaque tick) doublerait le
-        // bonus reel en jeu. Seule la reduction de distance de chute
-        // accumulee reste ici : elle depend d'un evenement instantane
-        // (progression de la chute EN COURS), pas d'un simple equipement,
-        // donc reste hors de portee d'un AttributeModifier statique.
         int sure=armor(p,"surefooted");if(sure>0){p.fallDistance=Math.max(0,p.fallDistance-.3f*sure);}
         int dim=armor(p,"dimensional_step");setSpeed(p,DIMENSION_ID,dim>0&&p.level().dimension()==Level.OVERWORLD?.04*dim:0);if(dim>0){if(p.level().dimension()==Level.NETHER)p.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE,30,0,true,false));else if(p.level().dimension()==Level.END&&p.getDeltaMovement().y<0)p.setDeltaMovement(p.getDeltaMovement().multiply(1,.86,1));}
         int kineticLevel=p.getPersistentData().getInt("slb_kinetic_level");setSpeed(p,KINETIC_ID,now<p.getPersistentData().getLong("slb_kinetic_until")?.05*kineticLevel:0);
         int quick=armor(p,"quicksand_curse");BlockState under=p.level().getBlockState(p.blockPosition().below());boolean soft=under.is(Blocks.SAND)||under.is(Blocks.RED_SAND)||under.is(Blocks.GRAVEL)||under.is(Blocks.DIRT)||under.is(Blocks.MUD);setSpeed(p,QUICKSAND_ID,quick>0&&soft?-.10*quick:0);
-        // Windrunner stacks as an attribute bonus with existing Speed effects.
-        int wind=armor(p,"windrunner");setSpeed(p,WIND_ID,wind>0&&p.isSprinting()&&p.level().canSeeSky(p.blockPosition())?.05*(wind+(p.getY()>100?1:0)):0);
+        // T306-FIX : retrait du double-comptage de Windrunner (géré en source unique par UniversalEnchantmentHandler).
+        setSpeed(p,WIND_ID,0);
         // Frost/ember trails are passive and temporary.
-        if(p.tickCount%5==0&&p.onGround()){int frost=armor(p,"frost_trail");if(frost>0)trail(p,true,frost);int ember=armor(p,"ember_step");if(ember>0&&p.isSprinting())trail(p,false,ember);}
+        if(p.tickCount%5==0&&p.onGround()){int frost=armor(p,"frost_trail");if(frost>0){trail(p,true,frost);if(p.tickCount%15==0)EnchantmentParticleFX.ankleTrail(p,ParticleTypes.SNOWFLAKE,2,.01);}int ember=armor(p,"ember_step");if(ember>0&&p.isSprinting()){trail(p,false,ember);if(p.tickCount%10==0)EnchantmentParticleFX.ankleTrail(p,ParticleTypes.SMALL_FLAME,2,.01);}}
         // PORT 1.21.1 : LivingJumpEvent supprimé -> polling onGround() (brittle_knees)
         boolean wasG=p.getPersistentData().getBoolean("slb_was_on_ground");
         p.getPersistentData().putBoolean("slb_was_on_ground",p.onGround());
@@ -152,22 +142,20 @@ public final class EquipmentExpansionHandler {
         if(p.tickCount%20==0) tickHeartEnchantmentPeriodics(p);
     }
 
-    // FIX : voir commentaire sur EXT_BLOCK_REACH_ID/EXT_ENTITY_REACH_ID plus
-    // haut. On relit le niveau d'Extension sur l'arme en main a chaque
-    // rafraichissement (comme setArmor/setSpeed) et on (re)applique un
-    // modificateur transitoire de portee de bloc/entite. +0.5 bloc par niveau
-    // pour chaque attribut, jusqu'a 10 niveaux (soft cap deja gere par lvl()).
+    // T306-OVERHAUL : Extension est désormais un vrai AttributeModifier d'ITEM dans
+    // RealAttributeModifierHandler ; ici, EXT_ENTITY_REACH_ID sert à appliquer l'allonge
+    // à mains nues de Gantelet Allonge (straight_reach_gauntlet, +0.75 bloc/niv main vide).
     private static void updateExtensionReach(LivingEntity p){
-        int extLvl = lvl(p.getMainHandItem(), "extension");
+        int unarmedReachLvl = p.getMainHandItem().isEmpty() ? armor(p, "straight_reach_gauntlet") : 0;
         AttributeInstance blockReach = p.getAttribute(Attributes.BLOCK_INTERACTION_RANGE);
         AttributeInstance entityReach = p.getAttribute(Attributes.ENTITY_INTERACTION_RANGE);
         if (blockReach != null) {
             blockReach.removeModifier(EXT_BLOCK_REACH_ID);
-            if (extLvl > 0) blockReach.addTransientModifier(new AttributeModifier(EXT_BLOCK_REACH_ID, 0.5 * extLvl, AttributeModifier.Operation.ADD_VALUE));
+            if (unarmedReachLvl > 0) blockReach.addTransientModifier(new AttributeModifier(EXT_BLOCK_REACH_ID, 0.5 * unarmedReachLvl, AttributeModifier.Operation.ADD_VALUE));
         }
         if (entityReach != null) {
             entityReach.removeModifier(EXT_ENTITY_REACH_ID);
-            if (extLvl > 0) entityReach.addTransientModifier(new AttributeModifier(EXT_ENTITY_REACH_ID, 0.5 * extLvl, AttributeModifier.Operation.ADD_VALUE));
+            if (unarmedReachLvl > 0) entityReach.addTransientModifier(new AttributeModifier(EXT_ENTITY_REACH_ID, 0.75 * unarmedReachLvl, AttributeModifier.Operation.ADD_VALUE));
         }
     }
 
@@ -186,7 +174,7 @@ public final class EquipmentExpansionHandler {
             int kinetic=armor(p,"kinetic_conversion");if(kinetic>0){p.addEffect(new MobEffectInstance(MobEffects.ABSORPTION,60,Math.min(1,kinetic-1),true,false));p.getPersistentData().putInt("slb_kinetic_level",kinetic);p.getPersistentData().putLong("slb_kinetic_until",now+40);}
             int glass=armor(p,"glass_bones_champion_curse");if(glass>0)e.setAmount(e.getAmount()*(1f+.25f*glass));
             int resonance=shield(p,"resonance_curse");int vulnerable=p.getPersistentData().getInt("slb_resonance_vulnerable");if(vulnerable>0){e.setAmount(e.getAmount()*(1f+.15f*vulnerable));p.getPersistentData().remove("slb_resonance_vulnerable");}
-            if(e.getSource().getMsgId().equals("fall")){int roll=armor(p,"combat_roll");long ready=p.getPersistentData().getLong("slb_roll_ready");if(roll>0&&now>=ready&&p.getDeltaMovement().horizontalDistance()>.03){e.setAmount(e.getAmount()*Math.max(.1f,1f-.25f*roll));p.setDeltaMovement(p.getLookAngle().scale(.25+.12*roll).add(0,.18,0));p.getPersistentData().putLong("slb_roll_ready",now+Math.max(30,70-10L*roll));}int elastic=armor(p,"elastic_soles");if(elastic>0){e.setAmount(e.getAmount()*Math.max(0f,1f-.25f*elastic));if(!p.isShiftKeyDown())p.setDeltaMovement(p.getDeltaMovement().x,.3+.15*elastic,p.getDeltaMovement().z);} }
+            if(e.getSource().getMsgId().equals("fall")){int roll=armor(p,"combat_roll");long ready=p.getPersistentData().getLong("slb_roll_ready");if(roll>0&&now>=ready&&p.getDeltaMovement().horizontalDistance()>.03){e.setAmount(e.getAmount()*Math.max(.1f,1f-.25f*roll));p.setDeltaMovement(p.getLookAngle().scale(.25+.12*roll).add(0,.18,0));p.getPersistentData().putLong("slb_roll_ready",now+Math.max(30,70-10L*roll));if(p.level() instanceof ServerLevel sl)EnchantmentParticleFX.shockwaveRing(sl,p.getX(),p.getY()+.1,p.getZ(),ParticleTypes.CLOUD,1.1,12,.06);}int elastic=armor(p,"elastic_soles");if(elastic>0){e.setAmount(e.getAmount()*Math.max(0f,1f-.25f*elastic));if(!p.isShiftKeyDown())p.setDeltaMovement(p.getDeltaMovement().x,.3+.15*elastic,p.getDeltaMovement().z);} }
             // EMBER CORE (Fire Heart, casque) : quand touche par une entite
             // vivante en melee proche, chance d'enflammer l'agresseur --
             // "noyau ardent" d'auto-defense, positif/agressif sans malus.
@@ -226,14 +214,12 @@ public final class EquipmentExpansionHandler {
                 }
             }
         }
-        if(e.getSource().getEntity() instanceof Player attacker){ItemStack weapon=attacker.getMainHandItem();attacker.getPersistentData().putLong("slb_last_attack",now);int glass=armor(attacker,"glass_bones_champion_curse");if(glass>0)e.setAmount(e.getAmount()*(1f+.25f*glass));int pred=lvl(weapon,"predator");if(pred>0&&target.level().getEntitiesOfClass(LivingEntity.class,target.getBoundingBox().inflate(6),x->x!=target&&x!=attacker&&x.isAlive()).isEmpty())e.setAmount(e.getAmount()*(1f+.2f*pred));int ret=lvl(weapon,"retaliation");if(ret>0&&now<=attacker.getPersistentData().getLong("slb_retaliate_until")&&attacker.getPersistentData().hasUUID("slb_retaliate")&&attacker.getPersistentData().getUUID("slb_retaliate").equals(target.getUUID())){e.setAmount(e.getAmount()*(1f+.2f*ret));attacker.getPersistentData().remove("slb_retaliate");}int mark=lvl(weapon,"marked_prey");if(mark>0){String key="slb_mark_"+attacker.getUUID(),expiry=key+"_until";int st=now<=target.getPersistentData().getLong(expiry)?target.getPersistentData().getInt(key):0;st=Math.min(5,st+1);target.getPersistentData().putInt(key,st);target.getPersistentData().putLong(expiry,now+100);e.setAmount(e.getAmount()*(1f+.06f*mark*st));}int mercy=lvl(weapon,"mercy_curse");if(mercy>0)e.setAmount(Math.max(0f,Math.min(e.getAmount(),target.getHealth()-1f)));int interrupt=lvl(weapon,"interrupting_strike");if(interrupt>0&&target.isUsingItem())target.stopUsingItem();int guard=lvl(weapon,"guard_breaker");if(guard>0&&target instanceof Player tp&&tp.isBlocking())tp.getCooldowns().addCooldown(tp.getUseItem().getItem(),40+20*guard);int echo=lvl(weapon,"echo_strike");if(echo>0&&target.level() instanceof ServerLevel sl){float dmg=e.getAmount()*(.15f+.10f*echo);TestProcedure.schedule(sl,TestProcedure.currentTick(sl)+10,()->guardedHurt(target,attacker.damageSources().playerAttack(attacker),dmg));}int seismic=lvl(weapon,"seismic_strike");if(seismic>0&&attacker.onGround()&&attacker.getAttackStrengthScale(.5f)>.9f)for(Mob m:attacker.level().getEntitiesOfClass(Mob.class,target.getBoundingBox().inflate(deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(2,.5,seismic))))if(m!=target)guardedHurt(m,attacker.damageSources().playerAttack(attacker),e.getAmount()*.2f*seismic);}
+        if(e.getSource().getEntity() instanceof Player attacker){ItemStack weapon=attacker.getMainHandItem();attacker.getPersistentData().putLong("slb_last_attack",now);int glass=armor(attacker,"glass_bones_champion_curse");if(glass>0)e.setAmount(e.getAmount()*(1f+.25f*glass));int pred=lvl(weapon,"predator");if(pred>0&&target.level().getEntitiesOfClass(LivingEntity.class,target.getBoundingBox().inflate(6),x->x!=target&&x!=attacker&&x.isAlive()).isEmpty())e.setAmount(e.getAmount()*(1f+.2f*pred));int ret=lvl(weapon,"retaliation");if(ret>0&&now<=attacker.getPersistentData().getLong("slb_retaliate_until")&&attacker.getPersistentData().hasUUID("slb_retaliate")&&attacker.getPersistentData().getUUID("slb_retaliate").equals(target.getUUID())){e.setAmount(e.getAmount()*(1f+.2f*ret));attacker.getPersistentData().remove("slb_retaliate");}int mark=lvl(weapon,"marked_prey");if(mark>0){String key="slb_mark_"+attacker.getUUID(),expiry=key+"_until";int st=now<=target.getPersistentData().getLong(expiry)?target.getPersistentData().getInt(key):0;st=Math.min(5,st+1);target.getPersistentData().putInt(key,st);target.getPersistentData().putLong(expiry,now+100);e.setAmount(e.getAmount()*(1f+.06f*mark*st));}int mercy=lvl(weapon,"mercy_curse");if(mercy>0)e.setAmount(Math.max(0f,Math.min(e.getAmount(),target.getHealth()-1f)));int interrupt=lvl(weapon,"interrupting_strike");if(interrupt>0&&target.isUsingItem())target.stopUsingItem();int guard=lvl(weapon,"guard_breaker");if(guard>0&&target instanceof Player tp&&tp.isBlocking())tp.getCooldowns().addCooldown(tp.getUseItem().getItem(),40+20*guard);int echo=lvl(weapon,"echo_strike");if(echo>0&&target.level() instanceof ServerLevel sl){float dmg=e.getAmount()*(.15f+.10f*echo);TestProcedure.schedule(sl,TestProcedure.currentTick(sl)+10,()->{guardedHurt(target,attacker.damageSources().playerAttack(attacker),dmg);EnchantmentParticleFX.burstOnEntity(target,ParticleTypes.SONIC_BOOM,1,0,0);});}int seismic=lvl(weapon,"seismic_strike");if(seismic>0&&attacker.onGround()&&attacker.getAttackStrengthScale(.5f)>.9f){double sRad=deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(2,.5,seismic);if(target.level() instanceof ServerLevel sl){BlockState ground=sl.getBlockState(target.blockPosition().below());if(ground.isAir())ground=Blocks.STONE.defaultBlockState();EnchantmentParticleFX.blockDebrisRing(sl,target.getX(),target.getY(),target.getZ(),ground,sRad,16);}for(Mob m:attacker.level().getEntitiesOfClass(Mob.class,target.getBoundingBox().inflate(sRad)))if(m!=target)guardedHurt(m,attacker.damageSources().playerAttack(attacker),e.getAmount()*.2f*seismic);}}
     }
 
-    @SubscribeEvent(priority=EventPriority.LOWEST) public static void experienceDrop(LivingExperienceDropEvent e){Player p=e.getAttackingPlayer();if(p==null)return;int level=lvl(p.getMainHandItem(),"experience_harvest");if(level>0)e.setDroppedExperience(Math.max(0,Math.round(e.getDroppedExperience()*(1f+.5f*level))));}
-    // FIX (mob-equipment-enchant generalization) : Final Breath/Vital
-    // Reserve generalises a LivingEntity -- un mob equipe de l'armure
-    // correspondante en beneficie desormais lui aussi.
-    @SubscribeEvent public static void livingDeath(LivingDeathEvent e){try{livingDeathImpl(e);}catch(Throwable t__){guard("livingDeath",t__);}} private static void livingDeathImpl(LivingDeathEvent e){if(e.getEntity() instanceof LivingEntity p){int l=armor(p,"final_breath");long n=p.level().getGameTime(),r=p.getPersistentData().getLong("slb_final_breath_ready");if(l>0&&n>=r){e.setCanceled(true);p.setHealth(1f);p.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 601));p.getPersistentData().putLong("slb_final_breath_ready",n+2400);}}}
+    // T306-FIX : Moisson d'Expérience garantit +5 XP fixes/niv (+ bonus sur gros boss) + glyphes d'enchantement
+    @SubscribeEvent(priority=EventPriority.LOWEST) public static void experienceDrop(LivingExperienceDropEvent e){Player p=e.getAttackingPlayer();if(p==null)return;int level=lvl(p.getMainHandItem(),"experience_harvest");if(level>0){int base=Math.max(0,e.getDroppedExperience());int bonus=5*level+Math.round(base*.25f*level);e.setDroppedExperience(base+bonus);EnchantmentParticleFX.burstOnEntity(e.getEntity(),ParticleTypes.ENCHANT,10,.35,.25);}}
+    @SubscribeEvent public static void livingDeath(LivingDeathEvent e){try{livingDeathImpl(e);}catch(Throwable t__){guard("livingDeath",t__);}} private static void livingDeathImpl(LivingDeathEvent e){if(e.getEntity() instanceof LivingEntity p){int l=armor(p,"final_breath");long n=p.level().getGameTime(),r=p.getPersistentData().getLong("slb_final_breath_ready");if(l>0&&n>=r){e.setCanceled(true);p.setHealth(1f);p.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 60, 1));p.getPersistentData().putLong("slb_final_breath_ready",n+2400);EnchantmentParticleFX.doubleHelix(p,ParticleTypes.TOTEM_OF_UNDYING,ParticleTypes.SOUL_FIRE_FLAME,.65,12);}}}
     @SubscribeEvent public static void livingHeal(LivingHealEvent e){try{livingHealImpl(e);}catch(Throwable t__){guard("livingHeal",t__);}} private static void livingHealImpl(LivingHealEvent e){if(e.getEntity() instanceof LivingEntity p){int l=armor(p,"vital_reserve");float excess=p.getHealth()+e.getAmount()-p.getMaxHealth();if(l>0&&excess>0)p.setAbsorptionAmount(Math.min(4f*l,p.getAbsorptionAmount()+excess));}}
 
     @SubscribeEvent public static void blockBreak(BlockEvent.BreakEvent e){try{blockBreakImpl(e);}catch(Throwable t__){guard("blockBreak",t__);}} private static void blockBreakImpl(BlockEvent.BreakEvent e){if(MINING_GUARD.get())return;Player p=e.getPlayer();ItemStack tool=p.getMainHandItem();Level level=(Level)e.getLevel();BlockPos pos=e.getPos();BlockState state=e.getState();
@@ -846,19 +832,17 @@ public final class EquipmentExpansionHandler {
         // bas pour le comptage "activeElements" de Heart Resonance.
         int gale = lvl(p.getItemBySlot(EquipmentSlot.FEET), "gale_step");
 
-        // EMBER CORE (Fire Heart, casque) : chance de riposte enflammee quand
-        // touche, geree directement dans livingHurtImpl (voir plus bas) car
-        // elle depend de l'attaquant au moment du coup, pas d'un tick.
+        // T306-FIX : Malédiction du Courant (riptide_curse, jambières) -> respiration aquatique + grâce du dauphin dans l'eau
+        int riptideCurse = lvl(p.getItemBySlot(EquipmentSlot.LEGS), "riptide_curse");
+        if (riptideCurse > 0) {
+            p.addEffect(new MobEffectInstance(MobEffects.WATER_BREATHING, 40, 0, true, false));
+            if (p.isInWater()) {
+                p.addEffect(new MobEffectInstance(MobEffects.DOLPHINS_GRACE, 30, Math.min(2, riptideCurse - 1), true, false));
+                if (p.tickCount % 20 == 0) EnchantmentParticleFX.ankleTrail(p, ParticleTypes.BUBBLE_COLUMN_UP, 3, 0.04);
+            }
+        }
 
-        // TITAN'S GRASP (Earth Heart, arme) : le bonus de degats plat est
-        // applique cote combat (UniversalEnchantmentHandler#handleOffensiveHurt) ;
-        // le malus de vitesse d'attaque est desormais lui aussi un vrai
-        // AttributeModifier d'ITEM (voir FIX ci-dessus).
-
-        // VOIDLING'S HUNGER (Shadow Heart, casque, MAUDIT) : le vol de vie
-        // nocturne est gere cote combat (UniversalEnchantmentHandler); ici on
-        // applique la "saignee" en plein jour qui rend la malediction
-        // reellement punitive -- la creature des tenebres depeurit au soleil.
+        // VOIDLING'S HUNGER (Shadow Heart, casque, MAUDIT)
         int voidHunger = lvl(p.getItemBySlot(EquipmentSlot.HEAD), "voidlings_hunger");
         if (voidHunger > 0 && p.level().isDay() && p.level().canSeeSky(p.blockPosition()) && !p.level().isClientSide()) {
             if (p.tickCount % 60 == 0 && p.getHealth() > 1.0f) {
@@ -866,35 +850,41 @@ public final class EquipmentExpansionHandler {
             }
         }
 
-        // HEART RESONANCE (capstone plastron) : si 3 elements ou plus sont
-        // actifs simultanement (cœurs elementaires OU enchantements lies),
-        // regen + absorption cumulative -- recompense de synergie.
+        // T306-FIX : HEART RESONANCE prend en compte les 7 cœurs + TOUS les pactes élémentaires (vagues 1 et 2)
         ItemStack chest = p.getItemBySlot(EquipmentSlot.CHEST);
         int resonance = lvl(chest, "heart_resonance");
         if (resonance > 0) {
-            int activeElements = 0;
-            for (String id : ELEMENTAL_HEART_IDS) if (lvl(chest, id) > 0) activeElements++;
-            if (lvl(p.getItemBySlot(EquipmentSlot.HEAD), "ember_core") > 0) activeElements++;
-            if (tidalWard > 0) activeElements++;
-            if (stonebound > 0) activeElements++;
-            if (gale > 0) activeElements++;
-            if (lvl(p.getMainHandItem(), "overcharge") > 0) activeElements++;
-            if (lvl(p.getItemBySlot(EquipmentSlot.HEAD), "radiant_ward") > 0) activeElements++;
-            if (lvl(p.getItemBySlot(EquipmentSlot.LEGS), "umbral_pact") > 0) activeElements++;
+            int activeElements = countActiveElementalSynergies(p, chest, tidalWard, stonebound, gale, riptideCurse, voidHunger);
             if (activeElements >= 3) {
-                if (p.tickCount % 60 == 0) p.heal(1.0f);
+                if (p.tickCount % 60 == 0) {
+                    p.heal(1.0f);
+                    EnchantmentParticleFX.crownHalo(p, ParticleTypes.END_ROD, 6);
+                }
                 p.setAbsorptionAmount(Math.max(p.getAbsorptionAmount(), 2.0f * Math.min(4, activeElements - 2)));
             }
         }
     }
 
-    // UMBRAL PACT : drain periodique independant des coups recus (toutes les
-    // ~10s), voir aussi le bonus/malus de degats dans
-    // UniversalEnchantmentHandler#handleDefensiveHurt.
+    private static int countActiveElementalSynergies(LivingEntity p, ItemStack chest,
+            int tidalWard, int stonebound, int gale, int riptideCurse, int voidHunger) {
+        ItemStack head = p.getItemBySlot(EquipmentSlot.HEAD);
+        ItemStack legs = p.getItemBySlot(EquipmentSlot.LEGS);
+        ItemStack feet = p.getItemBySlot(EquipmentSlot.FEET);
+        ItemStack main = p.getMainHandItem();
+        int count = 0;
+        if (lvl(chest, "fire_heart") > 0 || lvl(head, "ember_core") > 0 || lvl(chest, "salamanders_vow") > 0) count++;
+        if (lvl(chest, "water_heart") > 0 || tidalWard > 0 || riptideCurse > 0) count++;
+        if (lvl(chest, "earth_heart") > 0 || stonebound > 0 || lvl(main, "titans_grasp") > 0) count++;
+        if (lvl(chest, "wind_heart") > 0 || gale > 0 || lvl(feet, "zephyrs_gambit") > 0) count++;
+        if (lvl(chest, "electric_heart") > 0 || lvl(main, "overcharge") > 0 || lvl(main, "thundercall_pact") > 0) count++;
+        if (lvl(chest, "light_heart") > 0 || lvl(head, "radiant_ward") > 0 || lvl(main, "seraphs_judgment") > 0) count++;
+        if (lvl(chest, "shadow_heart") > 0 || lvl(legs, "umbral_pact") > 0 || voidHunger > 0) count++;
+        if (lvl(feet, "chimeras_whim") > 0) count++;
+        return count;
+    }
+
+    // UMBRAL PACT : drain periodique independant des coups recus (toutes les ~10s)
     private static void tickHeartEnchantmentPeriodics(LivingEntity p) {
-        // FIX (meme rapport) : pas de drain/effet periodique de coeur maudit
-        // sur un joueur invincible. Un MOB n'a pas cette notion, il passe
-        // toujours au calcul normal.
         if (p instanceof Player pl && (pl.isCreative() || pl.isSpectator() || pl.getAbilities().invulnerable)) return;
         int umbralPact = lvl(p.getItemBySlot(EquipmentSlot.LEGS), "umbral_pact");
         if (umbralPact <= 0) return;
@@ -908,14 +898,26 @@ public final class EquipmentExpansionHandler {
         }
     }
 
-    // CHIMERA'S WHIM (multi-element, bottes, FUN) : tire un effet elementaire
-    // aleatoire parmi 6 themes (feu/eau/terre/vent/electricite/ombre), tous
-    // volontairement mineurs et courts -- l'esprit est la surprise, pas la
-    // puissance brute. Capstone niveau 1 uniquement.
+    // T306-FIX : Caprice de la Chimère puise parmi les éléments ACTIFS équipés (les 7 thèmes, Lumière incluse !),
+    // avec repli sur les 7 éléments si aucun autre thème élémentaire n'est équipé.
     private static void triggerChimeraWhim(LivingEntity p) {
         if (!(p.level() instanceof ServerLevel level)) return;
+        ItemStack head = p.getItemBySlot(EquipmentSlot.HEAD);
+        ItemStack chest = p.getItemBySlot(EquipmentSlot.CHEST);
+        ItemStack legs = p.getItemBySlot(EquipmentSlot.LEGS);
+        ItemStack feet = p.getItemBySlot(EquipmentSlot.FEET);
+        ItemStack main = p.getMainHandItem();
+        int[] pool = new int[7];
+        int poolLen = 0;
+        if (lvl(chest, "fire_heart") > 0 || lvl(head, "ember_core") > 0 || lvl(chest, "salamanders_vow") > 0) pool[poolLen++] = 0;
+        if (lvl(chest, "water_heart") > 0 || lvl(chest, "tidal_ward") > 0 || lvl(legs, "riptide_curse") > 0) pool[poolLen++] = 1;
+        if (lvl(chest, "earth_heart") > 0 || lvl(legs, "stonebound_roots") > 0 || lvl(main, "titans_grasp") > 0) pool[poolLen++] = 2;
+        if (lvl(chest, "wind_heart") > 0 || lvl(feet, "gale_step") > 0 || lvl(feet, "zephyrs_gambit") > 0) pool[poolLen++] = 3;
+        if (lvl(chest, "electric_heart") > 0 || lvl(main, "overcharge") > 0 || lvl(main, "thundercall_pact") > 0) pool[poolLen++] = 4;
+        if (lvl(chest, "shadow_heart") > 0 || lvl(legs, "umbral_pact") > 0 || lvl(head, "voidlings_hunger") > 0) pool[poolLen++] = 5;
+        if (lvl(chest, "light_heart") > 0 || lvl(head, "radiant_ward") > 0 || lvl(main, "seraphs_judgment") > 0) pool[poolLen++] = 6;
         RandomSource rand = p.level().random;
-        int roll = rand.nextInt(6);
+        int roll = poolLen > 0 ? pool[rand.nextInt(poolLen)] : rand.nextInt(7);
         switch (roll) {
             case 0 -> { // Fire
                 p.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 60, 0, true, true));
@@ -937,9 +939,13 @@ public final class EquipmentExpansionHandler {
                 p.addEffect(new MobEffectInstance(MobEffects.GLOWING, 60, 0, true, true));
                 level.sendParticles(ParticleTypes.ELECTRIC_SPARK, p.getX(), p.getY() + 0.2, p.getZ(), 12, 0.3, 0.2, 0.3, 0.02);
             }
-            default -> { // Shadow
+            case 5 -> { // Shadow
                 p.addEffect(new MobEffectInstance(MobEffects.INVISIBILITY, 30, 0, true, true));
                 level.sendParticles(ParticleTypes.SMOKE, p.getX(), p.getY() + 0.2, p.getZ(), 12, 0.3, 0.2, 0.3, 0.02);
+            }
+            default -> { // Light
+                p.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 50, 0, true, true));
+                level.sendParticles(ParticleTypes.END_ROD, p.getX(), p.getY() + 0.2, p.getZ(), 12, 0.3, 0.2, 0.3, 0.02);
             }
         }
     }

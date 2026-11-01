@@ -3169,7 +3169,26 @@ public class GenerateLuckyItemProcedure {
             for (String a : applied) {
                 if (a == null) continue;
                 String an = a.toLowerCase(Locale.ROOT);
-                if (!an.equals(n) && an.contains("unbreak")) return true;
+                if (!an.equals(n) && (an.contains("unbreak") || an.equals("eternal") || an.endsWith(":eternal"))) return true;
+            }
+        }
+        String candBare = n.contains(":") ? n.substring(n.indexOf(':') + 1) : n;
+        if (candBare.equals("eternal")) {
+            for (String a : applied) {
+                if (a == null) continue;
+                String an = a.toLowerCase(Locale.ROOT);
+                if (an.contains("unbreak") || an.contains("mending")) return true;
+            }
+        }
+        // T306-FAMILIES : progression Enfant -> Upgrade par famille globale
+        for (Set<String> family : deepluckyblock.enchantments.CustomEnchantment.UPGRADE_FAMILIES) {
+            if (family.contains(candBare)) {
+                for (String a : applied) {
+                    if (a == null) continue;
+                    String ab = a.toLowerCase(Locale.ROOT);
+                    if (ab.contains(":")) ab = ab.substring(ab.indexOf(':') + 1);
+                    if (!ab.equals(candBare) && family.contains(ab)) return true;
+                }
             }
         }
         return false;

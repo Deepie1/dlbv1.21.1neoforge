@@ -157,6 +157,7 @@ public final class CombatStatsCalculator {
         // permanent (voir RealAttributeModifierHandler) -- uniquement
         // signalés ici comme conditionnels, jamais inclus dans baseDamage.
         int conditionalDamageBonuses = lvlById(stack, "deep_lucky_block:last_stand_slayer")
+                + lvlById(stack, "deep_lucky_block:killing_sense")
                 + lvlById(stack, "deep_lucky_block:focused_ambush")
                 + lvlById(stack, "deep_lucky_block:armor_pry")
                 + lvlById(stack, "deep_lucky_block:cavalier")
@@ -165,7 +166,14 @@ public final class CombatStatsCalculator {
                 + lvlById(stack, "deep_lucky_block:overworld_curse")
                 + lvlById(stack, "deep_lucky_block:nether_curse")
                 + lvlById(stack, "deep_lucky_block:undead_curse")
-                + lvlById(stack, "deep_lucky_block:exhaustion");
+                + lvlById(stack, "deep_lucky_block:exhaustion")
+                + lvlById(stack, "deep_lucky_block:blood_pact")
+                + lvlById(stack, "deep_lucky_block:lone_wolf")
+                + lvlById(stack, "deep_lucky_block:solo_combat")
+                + lvlById(stack, "deep_lucky_block:berserk")
+                + lvlById(stack, "deep_lucky_block:desperate_kill")
+                + lvlById(stack, "deep_lucky_block:sighing_strike")
+                + lvlById(stack, "deep_lucky_block:beheading");
         if (conditionalDamageBonuses > 0) conditional = true;
 
         // ---- Enchantement VANILLA Sharpness ----
