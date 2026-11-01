@@ -79,9 +79,20 @@ public final class TerrainMother {
         /** Fixe explicitement la réponse booléenne {@code =isSnowy} de l'enfant. */
         public void setSnowy(boolean snowy) { this.snowyOverride = snowy; }
 
-        /** QUESTION MERE « =isSnowy » (true / false) : hors nappe d'eau/glace pure (R4). */
+        /** Poids de terre ferme hors eau et glace [0..1] (T305 : la glace et l'eau sont exclues de tout dégradé). */
+        public float landWeight() {
+            float lw = 1.0f - waterRatio - iceRatio;
+            return lw < 0f ? 0f : (lw > 1f ? 1f : lw);
+        }
+
+        /** Vrai si le chunk est dominé par la glace ou l'eau (interdit de transitionner avec lui). */
+        public boolean isIceOrWaterDominated() {
+            return iceRatio >= 0.30f || (waterRatio + iceRatio) >= 0.55f;
+        }
+
+        /** QUESTION MERE « =isSnowy » (true / false) : hors nappe d'eau/glace (R4 + T305). */
         public boolean isSnowy() {
-            if (waterRatio >= 0.65f || iceRatio >= 0.65f) return false;
+            if (isIceOrWaterDominated()) return false;
             if (snowyOverride != null) return snowyOverride;
             return snowyRatio >= 0.45f;
         }
@@ -218,6 +229,16 @@ public final class TerrainMother {
         byte v = (byte) (snowy ? 1 : 0);
         if (haloSnowy[j * hw + i] != v) {
             haloSnowy[j * hw + i] = v;
+            auraQuartGrid = null;
+        }
+    }
+
+    /** T305 : marque un chunk du halo comme glace/eau (exclu de tout dégradé de neige : ni source 1 ni puits 0). */
+    public void setHaloIceOrWater(int cx, int cz) {
+        int i = cx - hx0, j = cz - hz0;
+        if (i < 0 || j < 0 || i >= hw || j >= hh) return;
+        if (haloSnowy[j * hw + i] != 2) {
+            haloSnowy[j * hw + i] = 2;
             auraQuartGrid = null;
         }
     }
@@ -383,10 +404,11 @@ public final class TerrainMother {
         else snowRadiusChunks = 2;
     }
 
-    /** État neigeux unifié d'une case (cx, cz) du damier étendu (enfants + halo). */
+    /** État neigeux unifié d'une case (cx, cz) du damier étendu : 2 = glace/eau (neutre), 1 = neige, 0 = terre sèche, -1 = inconnu. */
     private int cellSnowState(int cx, int cz) {
         Child c = child(cx, cz);
         if (c != null && c.present && c.surfaceYMedian != Integer.MIN_VALUE) {
+            if (c.isIceOrWaterDominated()) return 2;
             return c.isSnowy() ? 1 : 0;
         }
         int hi = cx - hx0, hj = cz - hz0;
@@ -398,16 +420,17 @@ public final class TerrainMother {
     }
 
     /**
-     * Construit en une passe (~0,15 ms) la carte continue d'aura neige au pas QuartPos (4 blocs) :
+     * Construit en une passe (~0,18 ms) la carte continue d'aura neige au pas QuartPos (4 blocs) :
      * <ol>
-     *   <li>Lecture binaire {@code isSnowy()} sur chaque case du damier (+ halo de 3 chunks) ;</li>
-     *   <li><b>Liaisons entre enfants enneigés</b> : si une case sèche est prise en pont entre
-     *       deux masses enneigées opposées (N-S, E-O ou diagonales) ou entourée d'au moins
-     *       3 voisins enneigés, Mother crée un pont d'aura doux pour relier organiquement les masses ;</li>
-     *   <li><b>Convolution gaussienne 2D séparable normalisée</b> (modèle {@code GaussianKernel} /
-     *       {@code HeightMapFilter} de WorldEdit) sur toute la grille QuartPos continue :
-     *       portée réelle de 1 à 3 chunks (sigma = 2,5 à 6,0 quarts = 10 à 24 blocs),
-     *       strictement continue à travers toutes les frontières de chunks (aucun saut à lx=15|0).</li>
+     *   <li>Lecture {@code isSnowy()} sur chaque case de TERRE FERME (+ halo de 3 chunks) ;</li>
+     *   <li><b>Exclusion stricte de la GLACE et de l'EAU (T305)</b> : toute case glace/eau reçoit un
+     *       poids {@code cellWeight = 0} au numérateur ET au dénominateur de la Gaussienne normalisée.
+     *       Ainsi : (a) un chunk neigeux bordant un lac gelé reste à {@code 1.0 / 1.0 = 1.0} jusqu'à la
+     *       rive sans aucun dégradé avec la glace ; (b) un chunk non-neige entouré par 3 côtés de neige
+     *       et 1 côté de glace reçoit le dégradé entrant depuis <b>les 3 bords neigeux à la fois</b>,
+     *       sans jamais impliquer le bord de glace ;</li>
+     *   <li><b>Convolution gaussienne 2D séparable normalisée</b> ({@code num / den}) sur toute la
+     *       grille QuartPos continue.</li>
      * </ol>
      */
     private float[] ensureAuraField() {
@@ -415,18 +438,18 @@ public final class TerrainMother {
         float[] ready = auraQuartGrid;
         if (ready != null) return ready;
 
-        int known = 0, snowyKnown = 0;
+        int known = 0;
         for (Child c : grid) {
             if (c != null && c.present && c.surfaceYMedian != Integer.MIN_VALUE) {
                 known++;
-                if (c.isSnowy()) snowyKnown++;
             }
         }
         if (known == 0) return null;
 
         final MotherAISnowDirector.SnowPlan plan = aiPlan;
         final float[] cellPotential = new float[hw * hh];
-        int totalKnown = 0, totalSnowy = 0;
+        final float[] cellWeight = new float[hw * hh];
+        int totalLandKnown = 0, totalLandSnowy = 0;
 
         for (int cj = 0; cj < hh; cj++) {
             int cz = hz0 + cj;
@@ -434,36 +457,50 @@ public final class TerrainMother {
                 int cx = hx0 + ci;
                 int st = cellSnowState(cx, cz);
                 if (st < 0) {
-                    // Prolongement par l'enfant connu le plus proche (évite tout trou artificiel hors halo,
-                    // exactement comme le clamp de bord de HeightMapFilter dans WorldEdit).
                     int clampedCx = Math.max(gx0, Math.min(gx0 + gw - 1, cx));
                     int clampedCz = Math.max(gz0, Math.min(gz0 + gh - 1, cz));
                     st = cellSnowState(clampedCx, clampedCz);
                 }
+                int idx = cj * hw + ci;
+                if (st == 2) {
+                    // T305 : GLACE / EAU = poids 0 absolu (ni source de neige, ni puits de fonte !).
+                    cellPotential[idx] = 0.0f;
+                    cellWeight[idx] = 0.0f;
+                    continue;
+                }
+                Child ch = child(cx, cz);
+                float lw = (ch != null && ch.present && ch.surfaceYMedian != Integer.MIN_VALUE)
+                        ? ch.landWeight() : 1.0f;
+                if (lw <= 0.15f) {
+                    cellPotential[idx] = 0.0f;
+                    cellWeight[idx] = 0.0f;
+                    continue;
+                }
                 if (st < 0) st = 0;
                 else {
-                    totalKnown++;
-                    if (st == 1) totalSnowy++;
+                    totalLandKnown++;
+                    if (st == 1) totalLandSnowy++;
                 }
                 float val = (st == 1) ? 1.0f : 0.0f;
-                if (plan != null) {
+                if (plan != null && val > 0f) {
                     Float boost = plan.childAuraBoost().get((((long) cx) << 32) | (cz & 0xffffffffL));
-                    if (boost != null && val > 0f) {
+                    if (boost != null) {
                         val *= boost;
                     }
                 }
-                cellPotential[cj * hw + ci] = val;
+                cellPotential[idx] = val;
+                cellWeight[idx] = lw;
             }
         }
 
-        if (totalSnowy == 0) {
+        if (totalLandSnowy == 0) {
             auraAllZero = true;
             auraAllOne = false;
             float[] empty = new float[0];
             auraQuartGrid = empty;
             return empty;
         }
-        if (totalSnowy == totalKnown && plan == null) {
+        if (totalLandSnowy == totalLandKnown && totalLandKnown > 0 && plan == null) {
             auraAllOne = true;
             auraAllZero = false;
             float[] full = new float[0];
@@ -473,82 +510,84 @@ public final class TerrainMother {
         auraAllZero = false;
         auraAllOne = false;
 
-        // Étape 2 : liaisons Mother entre enfants snowy proches (ponts N-S, E-O, diagonales et golfes)
+        // Étape 2 (T305) : pont doux uniquement sur couloirs opposés entre deux terres neigeuses,
+        // SANS remplissage uniforme de boîte (0.62) afin qu'un chunk entouré de 3 côtés neige
+        // (+ 1 côté glace/sec) conserve un vrai dégradé progressif entrant depuis ses 3 bords neigeux !
         final float[] linkedPotential = cellPotential.clone();
         for (int cj = 1; cj < hh - 1; cj++) {
             for (int ci = 1; ci < hw - 1; ci++) {
                 int idx = cj * hw + ci;
-                if (cellPotential[idx] > 0f) continue;
-                boolean n = cellPotential[(cj - 1) * hw + ci] > 0.5f;
-                boolean s = cellPotential[(cj + 1) * hw + ci] > 0.5f;
-                boolean w = cellPotential[cj * hw + (ci - 1)] > 0.5f;
-                boolean e = cellPotential[cj * hw + (ci + 1)] > 0.5f;
-                boolean nw = cellPotential[(cj - 1) * hw + (ci - 1)] > 0.5f;
-                boolean ne = cellPotential[(cj - 1) * hw + (ci + 1)] > 0.5f;
-                boolean sw = cellPotential[(cj + 1) * hw + (ci - 1)] > 0.5f;
-                boolean se = cellPotential[(cj + 1) * hw + (ci + 1)] > 0.5f;
+                if (cellWeight[idx] <= 0.15f || cellPotential[idx] > 0f) continue;
+                boolean n = cellWeight[(cj - 1) * hw + ci] > 0.15f && cellPotential[(cj - 1) * hw + ci] > 0.5f;
+                boolean s = cellWeight[(cj + 1) * hw + ci] > 0.15f && cellPotential[(cj + 1) * hw + ci] > 0.5f;
+                boolean w = cellWeight[cj * hw + (ci - 1)] > 0.15f && cellPotential[cj * hw + (ci - 1)] > 0.5f;
+                boolean e = cellWeight[cj * hw + (ci + 1)] > 0.15f && cellPotential[cj * hw + (ci + 1)] > 0.5f;
                 int card = (n ? 1 : 0) + (s ? 1 : 0) + (w ? 1 : 0) + (e ? 1 : 0);
-                int diag = (nw ? 1 : 0) + (ne ? 1 : 0) + (sw ? 1 : 0) + (se ? 1 : 0);
-                boolean oppositeBridge = (n && s) || (w && e) || (nw && se) || (ne && sw);
-                if (card >= 3) {
-                    linkedPotential[idx] = 0.62f; // enclave entourée de neige : liaison forte
-                } else if (oppositeBridge) {
-                    linkedPotential[idx] = 0.44f; // couloir entre deux enfants snowy : pont d'aura doux
-                } else if (card == 2 && diag >= 1) {
-                    linkedPotential[idx] = 0.30f; // concavité d'angle : arrondit le coin du damier
+                if (card == 4) {
+                    linkedPotential[idx] = 0.42f; // enclave 4/4 terres neigeuses
+                } else if ((n && s && !w && !e) || (w && e && !n && !s)) {
+                    linkedPotential[idx] = 0.22f; // pont doux entre deux massifs opposés
                 }
             }
         }
 
-        // Étape 3 : projection sur grille QuartPos (4 blocs = 4x4 quarts par chunk) + GaussianKernel séparable
+        // Étape 3 : projection QuartPos (4 blocs) + Gaussienne 2D séparable NORMALISÉE hors glace/eau
         final int qW = hw * 4;
         final int qH = hh * 4;
-        final float[] srcQ = new float[qW * qH];
+        final float[] srcVal = new float[qW * qH];
+        final float[] srcW = new float[qW * qH];
         for (int qz = 0; qz < qH; qz++) {
             int cj = qz >> 2;
             for (int qx = 0; qx < qW; qx++) {
                 int ci = qx >> 2;
-                srcQ[qz * qW + qx] = linkedPotential[cj * hw + ci];
+                int cIdx = cj * hw + ci;
+                float w = cellWeight[cIdx];
+                srcVal[qz * qW + qx] = linkedPotential[cIdx] * w;
+                srcW[qz * qW + qx] = w;
             }
         }
 
-        // Sigma en quarts (1 quart = 4 blocs) : r=1 -> 2.4q (9.6 bl), r=2 -> 4.2q (16.8 bl), r=3 -> 6.2q (24.8 bl, portée ~3 chunks)
         final int rChunks = Math.max(1, Math.min(3, snowRadiusChunks));
-        final double sigmaQ = (rChunks == 1) ? 2.4 : (rChunks == 2 ? 4.2 : 6.2);
-        final int kRad = Math.max(4, (int) Math.ceil(sigmaQ * 2.8)); // support >= 2.8 sigma (~7 à 18 quarts = 28 à 72 blocs)
+        final double sigmaQ = (rChunks == 1) ? 2.4 : (rChunks == 2 ? 4.0 : 5.8);
+        final int kRad = Math.max(4, (int) Math.ceil(sigmaQ * 2.8));
         final float[] kernel = buildGaussian1D(kRad, sigmaQ);
 
-        final float[] tmp = new float[qW * qH];
+        final float[] tmpVal = new float[qW * qH];
+        final float[] tmpW = new float[qW * qH];
         final float[] out = new float[qW * qH];
 
-        // Passe horizontale (clamp aux bords du halo comme HeightMapFilter de WorldEdit)
+        // Passe horizontale (numérateur et poids de terre ferme)
         for (int qz = 0; qz < qH; qz++) {
             int row = qz * qW;
             for (int qx = 0; qx < qW; qx++) {
-                float acc = 0f;
+                float accV = 0f, accW = 0f;
                 for (int k = -kRad; k <= kRad; k++) {
                     int sx = qx + k;
                     if (sx < 0) sx = 0;
                     else if (sx >= qW) sx = qW - 1;
-                    acc += srcQ[row + sx] * kernel[k + kRad];
+                    float kw = kernel[k + kRad];
+                    accV += srcVal[row + sx] * kw;
+                    accW += srcW[row + sx] * kw;
                 }
-                tmp[row + qx] = acc;
+                tmpVal[row + qx] = accV;
+                tmpW[row + qx] = accW;
             }
         }
 
-        // Passe verticale
+        // Passe verticale + normalisation par le poids de terre ferme (glace/eau = 0 d'influence !)
         for (int qz = 0; qz < qH; qz++) {
             for (int qx = 0; qx < qW; qx++) {
-                float acc = 0f;
+                float accV = 0f, accW = 0f;
                 for (int k = -kRad; k <= kRad; k++) {
                     int sz = qz + k;
                     if (sz < 0) sz = 0;
                     else if (sz >= qH) sz = qH - 1;
-                    acc += tmp[sz * qW + qx] * kernel[k + kRad];
+                    float kw = kernel[k + kRad];
+                    int sIdx = sz * qW + qx;
+                    accV += tmpVal[sIdx] * kw;
+                    accW += tmpW[sIdx] * kw;
                 }
-                // Pas de saturation dure à 1.0 tant qu'un boost IA > 1.0 peut différencier deux enfants ;
-                // snowCoverHere applique le seuil de couverture pleine en aval.
-                out[qz * qW + qx] = Math.max(0f, acc);
+                out[qz * qW + qx] = (accW > 1.0e-4f) ? Math.max(0f, accV / accW) : 0f;
             }
         }
 
@@ -583,11 +622,26 @@ public final class TerrainMother {
      *
      * <p>Renvoie {@code -1f} uniquement si aucun enfant n'a encore été renseigné.
      */
+    private boolean isIceOrWaterCell(int cx, int cz) {
+        if (cx >= gx0 && cx < gx0 + gw && cz >= gz0 && cz < gz0 + gh) {
+            Child c = grid[(cz - gz0) * gw + (cx - gx0)];
+            return c != null && c.present && c.isIceOrWaterDominated();
+        }
+        int hx0 = gx0 - HALO_CHUNKS, hz0 = gz0 - HALO_CHUNKS;
+        int hw = gw + 2 * HALO_CHUNKS, hh = gh + 2 * HALO_CHUNKS;
+        if (cx >= hx0 && cx < hx0 + hw && cz >= hz0 && cz < hz0 + hh) {
+            return haloSnowy[(cz - hz0) * hw + (cx - hx0)] == 2;
+        }
+        return false;
+    }
+
     public float snowDensity(int x, int z) {
         awaitAiPlanOnce();
         evaluateSnowRadius();
         float[] field = ensureAuraField();
         if (field == null) return -1f;
+        // T305-NO-ICE : la glace/eau = 0 neige strict et 0 degrade avec l'ice !
+        if (isIceOrWaterCell(x >> 4, z >> 4)) return 0f;
         if (auraAllZero) return 0f;
         if (auraAllOne) return 1f;
 
@@ -599,8 +653,12 @@ public final class TerrainMother {
                       + (smoothValueNoise(worldSeed ^ 0xBB67AE8584CAA73BL, x, z, 9.0) - 0.5) * 5.0;
             double wz = (smoothValueNoise(worldSeed ^ 0x3C6EF372FE94F82BL, x, z, 20.0) - 0.5) * 14.0
                       + (smoothValueNoise(worldSeed ^ 0xA54FF53A5F1D36F1L, x, z, 9.0) - 0.5) * 5.0;
-            sampleX += wx;
-            sampleZ += wz;
+            int wcx = ((int) Math.floor(sampleX + wx)) >> 4;
+            int wcz = ((int) Math.floor(sampleZ + wz)) >> 4;
+            if (!isIceOrWaterCell(wcx, wcz)) {
+                sampleX += wx;
+                sampleZ += wz;
+            }
         }
 
         // Coordonnée continue dans la grille QuartPos (centre d'un quart = q*4 + 2.0)

@@ -121,18 +121,18 @@ public class Structures4Procedure {
         int scaled = (int) Math.round(baseCount * mult);
         return Math.max(1, Math.min(64, scaled));
     }
-    private static final int SEARCH_RADIUS = 160;
+    private static final int SEARCH_RADIUS = 320; // T305-DIST2X : rayon double en X et Z (160 -> 320)
     // T304-FAST-1S : plafond dur <= 850 ms (< 1 s) pour la recherche de zone Structures4,
     // puis retenue immediate du meilleur candidat sec trouve !
     private static final long FIND_FLAT_TIME_BUDGET_MS = 850;
-    private static final int SEARCH_STEP = 12;
+    private static final int SEARCH_STEP = 16;
     private static final double VIEW_CONE = Math.PI / 2.0;
     private static final int SAFETY_CHECK_RADIUS = 6;
     private static final int SAFETY_CHECK_DEPTH = 2;
     private static final double WATER_MAX_RATIO = 0.15;
     private static final double LAVA_MAX_RATIO = 0.05;
     private static final int MAX_CLIFF_HEIGHT_DIFF = 10;
-    private static final int ALT_SEARCH_RADIUS = 60;
+    private static final int ALT_SEARCH_RADIUS = 120; // T305-DIST2X : repli double (60 -> 120)
     private static final int ALT_SEARCH_STEP = 10;
     private static final int VEG_RADIUS = 3;        // T23 : rayon de nettoyage vegetal
     private static final long VEG_SLICE_NANOS = 12_000_000L;
@@ -1216,7 +1216,8 @@ public class Structures4Procedure {
                 double dx = targetXZ.getX() - nearestPlayer.getX();
                 double dz = targetXZ.getZ() - nearestPlayer.getZ();
                 double dist = Math.sqrt(dx * dx + dz * dz);
-                final double safeAnchorDistance = Math.max(size.getX(), size.getZ()) * 0.5 + 20.0;
+                // T305-DIST2X : distance X/Z par rapport au joueur doublee !
+                final double safeAnchorDistance = (Math.max(size.getX(), size.getZ()) * 0.5 + 20.0) * 2.0;
                 if (dist < safeAnchorDistance) {
                     if (dist < 0.001) { dx = 1.0; dz = 0.0; dist = 1.0; }
                     int push = (int) Math.ceil(safeAnchorDistance - dist);
@@ -1627,7 +1628,8 @@ public class Structures4Procedure {
     }
 
     public static BlockPos findSafeOutsideChunkPos(ServerLevel level, BlockPos origin) {
-        int[][] offsets = {{32, 0}, {-32, 0}, {0, 32}, {0, -32}, {32, 32}, {-32, -32}, {32, -32}, {-32, 32}};
+        // T305-DIST2X : offsets X/Z doubles (32 -> 64)
+        int[][] offsets = {{64, 0}, {-64, 0}, {0, 64}, {0, -64}, {64, 64}, {-64, -64}, {64, -64}, {-64, 64}};
         int wetSkipped4 = 0;
         for (int[] off : offsets) { int cx = origin.getX() + off[0], cz = origin.getZ() + off[1];
             // FIX T7 : hauteur lue sur un chunk dont la heightmap est initialisee (voir SafeSurface).
@@ -1638,7 +1640,7 @@ public class Structures4Procedure {
             BlockPos cand = new BlockPos(cx, cy, cz); if (!isPlayerChunk(cand, null, origin)) return cand; }
         if (wetSkipped4 > 0)
             LOGGER.warn("[STRUCT4-FLAT] findSafeOutsideChunkPos : {} offset(s) sous l'eau ecartes (T80)", wetSkipped4);
-        return origin.offset(32, 0, 32);
+        return origin.offset(64, 0, 64);
     }
 
     private static BlockPos findFlatArea(ServerLevel level, BlockPos origin, int structW, int structD) {
@@ -1661,7 +1663,7 @@ public class Structures4Procedure {
                 int cx = origin.getX() + dx, cz = origin.getZ() + dz;
                 if (player != null) {
                     double dpx = cx - player.blockPosition().getX(), dpz = cz - player.blockPosition().getZ();
-                    if ((dpx * dpx + dpz * dpz) < 80.0 * 80.0) continue;
+                    if ((dpx * dpx + dpz * dpz) < 160.0 * 160.0) continue; // T305-DIST2X : distance joueur doublee (80 -> 160)
                 }
                 if (isPlayerChunk(new BlockPos(cx, 64, cz), player, origin)) continue;
                 if (deepluckyblock.util.StructureSites.conflict(level, cx, cz, checkR) != null) continue;

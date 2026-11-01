@@ -65,10 +65,9 @@ public class Structures5Procedure {
     // structure ne spawn plus pres, quelle que soit sa taille. Modifiable ici en
     // haut pour eviter les problemes de terrain (build qui ecrase le joueur ou qui
     // modifie le terrain sous ses pieds).
-    // T143 : 128 supprimait tous les candidats charges puis activait le fallback
-    // aveugle (run ocean du 01/10). La securite reelle est validee sur l'emprise
-    // complete juste avant toute edition, pas en eloignant artificiellement le centre.
-    public static int MIN_PLAYER_DISTANCE = 65;
+    // T305-DIST2X : distance minimale bord-structure <-> joueur doublee en X et Z (65 -> 130)
+    // pour que les structures ne spawnent plus jamais collees au joueur !
+    public static int MIN_PLAYER_DISTANCE = 130;
     private static final int BLOCKS_PER_TICK = 200000; // T303-PERF : borne en temps reel par PASTE_TICK_BUDGET_MS (40 ms) -> Citadel (105k blocs) en 1-2 tranches via LevelChunkSection
     private static final java.util.EnumSet<Heightmap.Types> PASTE_HEIGHTMAPS =
             java.util.EnumSet.of(
@@ -96,7 +95,7 @@ public class Structures5Procedure {
     // desormais fiables (SafeSurface). Un ecart superieur a cette valeur signale
     // qu'une hauteur a encore menti, pas une intention de placement.
     private static final int MAX_POST_SMOOTH_DELTA_Y = 4;
-    private static final int SEARCH_R = 80;
+    private static final int SEARCH_R = 160; // T305-DIST2X : rayon de recherche double (80 -> 160)
     // FIX (freeze silencieux au paste, voir Javadoc dans findFlat) : budget de
     // temps maximum pour la verification "chunks reels" des candidats de zone
     // plate. Au-dela, on arrete d'essayer de nouveaux candidats et on retombe
@@ -182,7 +181,7 @@ public class Structures5Procedure {
     private static final int MAX_FOOTPRINT_GROUND_SPAN =
             Integer.getInteger("dlb.search.maxFootprintSpan", 6);
     private static final int MAX_CLIFF_HEIGHT_DIFF = MAX_FOOTPRINT_GROUND_SPAN;
-    private static final int ALT_SEARCH_RADIUS = 60;
+    private static final int ALT_SEARCH_RADIUS = 120; // T305-DIST2X : rayon de repli double (60 -> 120)
     private static final int ALT_SEARCH_STEP = 10;
     private static final int CARVE_COLS_PER_TICK = 600;
     private static final int CARVE_CANOPY = 8;
@@ -540,6 +539,7 @@ public class Structures5Procedure {
         boolean lastLoaded = false;
         net.minecraft.world.level.chunk.LevelChunk lastChunk = null;
         boolean lastChunkTouched = false;
+        long touchedSecMask = 0L;      // T305-ULTRA-5S : sections modifiees dans lastChunk (recalcBlockCounts 1x/section)
         final int structureY0;         // T303 : Y0 sol structure (interdit de creuser <= structureY0)
         int waitTicks;                 // T12 : ticks d'attente de la passe de rattrapage
         int redeferred;                // T12 : blocs finalement poses par la passe de rattrapage
@@ -774,10 +774,24 @@ public class Structures5Procedure {
      */
     private static void flushPasteChunk(PasteJob j) {
         if (j.lastChunk != null && j.lastChunkTouched) {
+            var sections = j.lastChunk.getSections();
+            long mask = j.touchedSecMask;
+            for (int si = 0; si < sections.length && mask != 0L; si++) {
+                if ((mask & (1L << si)) == 0L) continue;
+                mask &= ~(1L << si);
+                var sec = sections[si];
+                if (sec == null) continue;
+                sec.recalcBlockCounts();
+                int secY = j.lastChunk.getSectionYFromSectionIndex(si);
+                j.level.getChunkSource().getLightEngine().updateSectionStatus(
+                        net.minecraft.core.SectionPos.of(j.lastChunk.getPos(), secY), sec.hasOnlyAir());
+            }
             Heightmap.primeHeightmaps(j.lastChunk, PASTE_HEIGHTMAPS);
             j.lastChunk.setUnsaved(true);
             j.level.getChunkSource().getLightEngine().tryScheduleUpdate();
+            StructureTerrainPrep.markChunkModified(j.lastChunk);
             j.lastChunkTouched = false;
+            j.touchedSecMask = 0L;
         }
     }
 
@@ -803,40 +817,30 @@ public class Structures5Procedure {
             j.lastChunk = null;
             return false;
         }
-        // T102 (rappel dev 30/09 : « toutes les structures doivent etre
-        // paste -air... etc ! ») : toute entree d'air du template est
-        // SAUTEE (-- equivalent strict du -a de WorldEdit --), quelle que
-        // soit la case cible. L'ancienne regle (ecrire l'air sur non-air
-        // pour creuser l'interieur, T73) n'est plus utile : le cut
-        // d'emprise (clearFootprint, au-dessus du sol planifie) a DEJA
-        // vide le volume avant le paste.
         if (ts.isAir()) return true;
-        // T171 / T303-PERF : ecriture directe LevelChunkSection (modele FAWE PaperweightGetBlocks / T101)
-        // sur fFilt deja groupe par section 16x16x16 (orderBySectionSpiral) + primeHeightmaps unique par chunk.
+        // T305-ULTRA-5S : ecriture directe PalettedContainer (T101/FAWE) sans blockChanged par bloc
+        // (qui saturait le remesh GPU client Intel HD 630 avec 70 000 paquets delta !).
+        // Le chunk complet + lumiere finale est diffuse en 1 seul paquet par chunk !
         if (!ts.hasBlockEntity()) {
             net.minecraft.world.level.chunk.LevelChunk chunk = j.lastChunk;
-            // T175 : une écriture rapide peut remplacer un ancien hopper,
-            // comparator, coffre, etc. Supprimer explicitement son BlockEntity,
-            // y compris le NBT différé du chunk, avant de poser un bloc ordinaire.
             int secIdx = chunk.getSectionIndex(wy);
             net.minecraft.world.level.chunk.LevelChunkSection sec = chunk.getSection(secIdx);
-            boolean wasOnlyAir = sec.hasOnlyAir();
-            BlockState oldState = sec.setBlockState(wx & 15, wy & 15, wz & 15, ts, false);
+            var states = sec.getStates();
+            int lx = wx & 15, ly = wy & 15, lz = wz & 15;
+            BlockState oldState = states.get(lx, ly, lz);
             if (oldState != ts) {
-                if (oldState.hasBlockEntity()) chunk.removeBlockEntity(bp);
-                if (wasOnlyAir != sec.hasOnlyAir()) {
-                    j.level.getChunkSource().getLightEngine().updateSectionStatus(
-                            net.minecraft.core.SectionPos.of(chunk.getPos(), wy >> 4), sec.hasOnlyAir());
-                }
-                if (net.minecraft.world.level.lighting.LightEngine.hasDifferentLightProperties(
-                        chunk, bp, oldState, ts)) {
+                if (oldState.hasBlockEntity()) chunk.removeBlockEntity(bp.immutable());
+                states.set(lx, ly, lz, ts);
+                if (secIdx >= 0 && secIdx < 64) j.touchedSecMask |= (1L << secIdx);
+                if (oldState.getLightEmission() != ts.getLightEmission()
+                        || oldState.getLightBlock(chunk, bp) != ts.getLightBlock(chunk, bp)) {
                     j.level.getChunkSource().getLightEngine().checkBlock(bp);
                 }
-                j.level.getChunkSource().blockChanged(bp);
                 j.lastChunkTouched = true;
             }
         } else {
             j.level.setBlock(bp, ts, FAST_FLAG);
+            StructureTerrainPrep.markChunkModified(j.lastChunk);
             j.lastChunkTouched = true;
         }
         if (ts.getBlock() instanceof net.minecraft.world.level.block.FallingBlock) j.grav++;
@@ -1738,7 +1742,7 @@ public class Structures5Procedure {
         final long elapsedGlobal = (SEARCH_CLOCK_START_MS > 0L) ? (t0 - SEARCH_CLOCK_START_MS) : 0L;
         final long budget = Math.max(120L, Math.min(580L, SEARCH_HARD_CAP_MS - elapsedGlobal));
         final int minCenterDist = minEdgeDist + checkR;
-        final int maxR = Math.max(512, 8 * Math.max(32, structMax));
+        final int maxR = Math.max(640, minCenterDist + 320);
         final BlockPos pivot = p != null ? p.blockPosition() : origin;
         final int px = pivot.getX(), pz = pivot.getZ();
         double lookX = 0.0, lookZ = 0.0;
@@ -1802,13 +1806,28 @@ public class Structures5Procedure {
                     int fSpan = fGs[2] - fGs[1];
                     int rawStep = measureStructureChunkStepMax(lvl, cx - rx, cz - rz, cx + rx, cz + rz);
                     int effStep = (rawStep >= 0) ? rawStep : Math.max(3, (fSpan + 2) / 3);
+                    // T305 : penaliser toute montagne abrupte dans le collier de 1 chunk (+18 blocs) autour de l'emprise
+                    int hRx = rx + 18, hRz = rz + 18;
+                    int haloMaxY = fGs[2];
+                    int[][] hPts = {{-hRx, 0}, {hRx, 0}, {0, -hRz}, {0, hRz},
+                                    {-hRx, -hRz}, {hRx, -hRz}, {-hRx, hRz}, {hRx, hRz}};
+                    for (int[] hp : hPts) {
+                        int hx = cx + hp[0], hz = cz + hp[1];
+                        if (deepluckyblock.util.SafeSurface.isLoadedAt(lvl, hx, hz)) {
+                            int hy = deepluckyblock.util.SafeSurface.height(
+                                    lvl, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, hx, hz) - 1;
+                            if (hy > haloMaxY) haloMaxY = hy;
+                        }
+                    }
+                    int haloCliffExcess = Math.max(0, haloMaxY - fGs[2] - 8);
                     int pen = Math.max(0, effStep - deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y) * 350
                             + Math.max(0, fSpan - MAX_FOOTPRINT_GROUND_SPAN) * 35
+                            + haloCliffExcess * 60
                             + fSpan * 4 + (rawStep < 0 ? 600 : 0);
                     if (pen < bestOriPenalty) {
                         bestOriPenalty = pen;
                         bestOri = ori;
-                        bestFSpan = fSpan;
+                        bestFSpan = fSpan + (haloCliffExcess > 10 ? haloCliffExcess / 2 : 0);
                         bestStep = effStep;
                     }
                 }
@@ -4672,7 +4691,8 @@ public class Structures5Procedure {
                         nbt, pre[0], pre[1], pre[2], pre[3], baseY, delta);
                 baseY = pre[0];
                 fp = fp.above(delta);
-                rp = adjRot(fp, tmpl, rot);
+                // T305-CENTER : conserver centerShiftX/centerShiftZ sur rp (ne JAMAIS rappeler adjRot(fp) nu !)
+                rp = rp.above(delta);
                 min = min.above(delta); max = max.above(delta);
             } else if (pre[3] > 0) {
                 deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5] {} : center anchor confirmed by footprint (T76) -- median={}, min={}, max={}, "
@@ -4684,25 +4704,7 @@ public class Structures5Procedure {
                         nbt, pre[3], baseY);
             }
         }
-        // T14 : groupe par section 16x16x16 + spirale (guide sections 42/43).
-        filt = orderBySectionSpiral(filt, bboxRs, rp);
-        deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5] {} : {} a poser ({} verre supprime, air exterieur deja ecarte au chargement) -- T73",
-                nbt, filt.size(), glassSkipped);
-        final List<StructureTemplate.StructureBlockInfo> fFilt = filt;
         // === T83 (Y0) : PLATEFORME >= EAU EXTERIEURE + 1 ===
-        // Garde finale, sur la plateforme definitive (apres re-ancrage T76). T80
-        // interdit deja de spawner SOUS l'eau ; Y0 exige en outre qu'aucun plan
-        // d'eau exterieur (+1 bloc) n'atteigne la plateforme, sinon il deborderait
-        // sur l'emprise malgre les digues. Mesure bloc par bloc (heightmap jamais
-        // crue, voir SafeSurface.maxWaterLevelOutside).
-        // T104 (run 29/09 21:44 : citadel abandonnee, le joueur a attendu 3 min
-        // et « rien ne spawn ») : L'ABANDON PUR ET DUR EST INTERDIT -- meme
-        // consigne que T88 pour l'Everest. La plateforme est REMONTEE au plafond
-        // Y0 (eau exterieure + 1) et la pose a lieu quoi qu'il arrive : la
-        // fondation/les digues font la garde de l'eau, et la regle
-        // plateforme >= eau+1 est satisfaite par construction. La mesure se fait
-        // AVANT de figer les valeurs du pipeline (les captures finales doivent
-        // tenir compte du lift).
         int y0Water = deepluckyblock.util.SafeSurface.maxWaterLevelOutside(level,
                 min.getX(), min.getZ(), max.getX(), max.getZ(),
                 deepluckyblock.util.SafeSurface.Y0_BAND, deepluckyblock.util.SafeSurface.Y0_STEP);
@@ -4711,7 +4713,8 @@ public class Structures5Procedure {
             int oldBaseY = baseY;
             baseY = y0Water + 1;
             fp = fp.above(lift);
-            rp = adjRot(fp, tmpl, rot);
+            // T305-CENTER : conserver centerShiftX/centerShiftZ sur rp (corrige le decalage de ~25 blocs sous T104 !)
+            rp = rp.above(lift);
             min = min.above(lift); max = max.above(lift);
             LOGGER.warn("[STRUCT5] {} : plateforme Y={} sous le plafond Y0 (eau exterieure max Y={} "
                             + "a moins de {} blocs hors-emprise) -- PLATEFORME REMONTEE de {} bloc(s) a Y={} "
@@ -4721,6 +4724,23 @@ public class Structures5Procedure {
         }
         if (y0Water != Integer.MIN_VALUE && baseY >= y0Water + 1)
             deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5] {} : Y0 OK -- plateforme Y={} >= eau exterieure Y={} + 1", nbt, baseY, y0Water);
+        // T305-CENTER : verrouillage mathematique exact rp <-> [min..max] centre sur txz AVANT tri spirale et prepZone !
+        {
+            int[] rbAlign = cft.rotRelBounds()[rot.ordinal()];
+            int dxAlign = min.getX() - (rp.getX() + rbAlign[0]);
+            int dyAlign = min.getY() - (rp.getY() + rbAlign[1]);
+            int dzAlign = min.getZ() - (rp.getZ() + rbAlign[2]);
+            if (dxAlign != 0 || dyAlign != 0 || dzAlign != 0) {
+                rp = rp.offset(dxAlign, dyAlign, dzAlign);
+                LOGGER.info("[STRUCT5] T305-CENTER : rp recale de ({},{},{}) pour alignement exact sur min..max {}",
+                        dxAlign, dyAlign, dzAlign, min.toShortString());
+            }
+        }
+        // T14 : groupe par section 16x16x16 + spirale sur le rp DEFINITIF (guide sections 42/43).
+        filt = orderBySectionSpiral(filt, bboxRs, rp);
+        deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5] {} : {} a poser ({} verre supprime, air exterieur deja ecarte au chargement) -- T73",
+                nbt, filt.size(), glassSkipped);
+        final List<StructureTemplate.StructureBlockInfo> fFilt = filt;
         // Keep one selected ground plane throughout clearance, terrain and paste.
         // SafeSurface.groundY returns the SOLID block Y (no +/-1 conversion here).
         final int selectedGroundY = baseY;
@@ -4793,7 +4813,7 @@ public class Structures5Procedure {
                     deepluckyblock.util.StructureSites.register(level, nbt,
                             Math.min(actualPasteMin.getX(), actualPasteMax.getX()), Math.min(actualPasteMin.getZ(), actualPasteMax.getZ()),
                             Math.max(actualPasteMin.getX(), actualPasteMax.getX()), Math.max(actualPasteMin.getZ(), actualPasteMax.getZ()));
-                    PASTE_Q.offer(new PasteJob(level, fFilt, actualPasteRp, finalRot, Mirror.NONE, nbt, tGlobal, pl, actualPasteMin, actualPasteMax, selectedGroundY));
+                    PASTE_Q.offer(new PasteJob(level, fFilt, actualPasteRp, finalRot, Mirror.NONE, nbt, System.currentTimeMillis(), pl, actualPasteMin, actualPasteMax, selectedGroundY));
                 };
                 BlockPos pBoxMin = new BlockPos(pasteMin.getX() - 8, pasteMin.getY(), pasteMin.getZ() - 8);
                 BlockPos pBoxMax = new BlockPos(pasteMax.getX() + 8, pasteMax.getY(), pasteMax.getZ() + 8);

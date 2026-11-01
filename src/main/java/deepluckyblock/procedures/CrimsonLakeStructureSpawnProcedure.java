@@ -263,8 +263,9 @@ public class CrimsonLakeStructureSpawnProcedure {
             deepluckyblock.util.StructureTemplateCache.requestAsync(level, NBT_NAME);
         }
         double halfDepth = Math.abs(fdx) * (sx / 2.0) + Math.abs(fdz) * (sz / 2.0);
-        int ox = (int) Math.round(px + fdx * halfDepth);
-        int oz = (int) Math.round(pz + fdz * halfDepth);
+        // T305-DIST2X : distance X et Z par rapport au joueur doublee !
+        int ox = (int) Math.round(px + fdx * (halfDepth * 2.0));
+        int oz = (int) Math.round(pz + fdz * (halfDepth * 2.0));
         return new BlockPos(ox, (int) py, oz);
     }
 
