@@ -220,6 +220,7 @@ public class CrimsonLakeStructureSpawnProcedure {
             // rien du tout (le pipeline ne demarrerait jamais en console).
             theServer = level.getServer();
             loginTick = theServer.getTickCount() - BUILD_DELAY_TICKS;
+            stateOf(theServer.overworld()).clear();
             TRIGGERED.clear();
             PENDING.clear();
         } catch (Throwable ignored) { }

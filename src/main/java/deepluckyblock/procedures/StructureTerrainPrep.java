@@ -4242,7 +4242,10 @@ public class StructureTerrainPrep {
     // Les blocs poses et l'ordre des operations sont STRICTEMENT identiques.
 
     /** Grains de colonnes : on avance par paquets de cette taille avant de regarder l'horloge. */
-    private static final int BATCH_COLS = 192;
+    // T304-FAST : releve le plafond fixe par tranche (192 arretait verifyGrassSurface/dressAndPlant
+    // au bout de ~1,5 ms CPU et dormait 50 ms x 60 ticks sur Citadel !). Le vrai garde-fou MSPT
+    // reste sliceBudgetMs(level) dans ColumnPass.slice().
+    private static final int BATCH_COLS = 1024;
     /**
      * Budget de temps par tranche (millisecondes). Une tranche s'arrete des
      * qu'elle l'a depasse (au grain pres) et se replanifie pour le tick suivant.
@@ -11587,8 +11590,8 @@ public class StructureTerrainPrep {
     /** Profondeur scannee sous la surface (restes accroches sous un surplomb). */
     private static final int SWEEP_DOWN = 10;
     /** Colonnes par tranche. */
-    // T120 / T303 : 3072 colonnes/tranche (~4 ms CPU max par tick grace au saut de sections vides T71) -> 4 ticks au lieu de 16.
-    private static final int SWEEP_COLS_PER_SLICE = 3072;
+    // T120 / T303 / T304-FAST : 16384 colonnes/tranche (bornee par le budget temps de ColumnPass) -> 1-2 ticks au lieu de 7 !
+    private static final int SWEEP_COLS_PER_SLICE = 16384;
 
     private static final java.util.concurrent.atomic.AtomicInteger SWEPT_NAT =
             new java.util.concurrent.atomic.AtomicInteger();
@@ -11665,9 +11668,6 @@ public class StructureTerrainPrep {
             if (!supported) {
                 if (SWEEP_ANCHORED.contains(BlockPos.asLong(x, y, z))) { supported = true; y++; continue; }
                 if (isFloatingCluster(level, x, y, z, s)) {
-                    level.setBlock(mut.set(x, y, z), Blocks.AIR.defaultBlockState(), FAST_FLAG);
-                    SWEPT_NAT.incrementAndGet();
-                    SWEPT.incrementAndGet();
                     supported = false;
                 } else {
                     supported = true;
@@ -11677,9 +11677,6 @@ public class StructureTerrainPrep {
             }
             if (!hasNaturalSupport(level, chunk, mut, x, y, z, s)
                     && isFloatingCluster(level, x, y, z, s)) {
-                level.setBlock(mut.set(x, y, z), Blocks.AIR.defaultBlockState(), FAST_FLAG);
-                SWEPT_NAT.incrementAndGet();
-                SWEPT.incrementAndGet();
                 supported = false;
                 y++;
                 continue;
@@ -11706,15 +11703,13 @@ public class StructureTerrainPrep {
             new it.unimi.dsi.fastutil.longs.LongOpenHashSet(1024);
     private static final it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue BFS_QUEUE =
             new it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue(1024);
+    private static final it.unimi.dsi.fastutil.longs.LongArrayList BFS_CLUSTER =
+            new it.unimi.dsi.fastutil.longs.LongArrayList(512);
 
     /**
-     * T45 -- l'amas naturel contenant (x,y,z) flotte-t-il ?
-     *
-     * <p>Vrai si AUCUN bloc de l'amas ne repose sur un bloc PLEIN. Un bord de
-     * canopee (feuille au-dessus du vide, mais voisine d'autres feuilles posees
-     * sur l'arbre) est donc CONSERVE : c'est un porte-a-faux naturel legitime.
-     * Une liane, un ilot d'herbe ou un reste de l'ancien terrain, eux, ne
-     * reposent sur rien et partent entierement.
+     * T45 / T304-FAST -- l'amas naturel contenant (x,y,z) flotte-t-il ?
+     * Si oui (aucun bloc de l'amas ne repose sur un bloc plein), supprime
+     * immediatement TOUT l'amas connexe en O(N) au lieu de relancer N BFS en O(N^2) !
      */
     private static boolean isFloatingCluster(ServerLevel level, int sx, int sy, int sz, BlockState start) {
         if (!isSweepableNatural(start)) return false;
@@ -11722,9 +11717,11 @@ public class StructureTerrainPrep {
         if (SWEEP_ANCHORED.contains(startKey)) return false;
         BFS_SEEN.clear();
         BFS_QUEUE.clear();
+        BFS_CLUSTER.clear();
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         BFS_QUEUE.enqueue(startKey);
         BFS_SEEN.add(startKey);
+        BFS_CLUSTER.add(startKey);
         int visited = 0;
         long clusterT0 = System.currentTimeMillis();
         int lastCx = Integer.MIN_VALUE, lastCz = Integer.MIN_VALUE;
@@ -11732,7 +11729,7 @@ public class StructureTerrainPrep {
         while (!BFS_QUEUE.isEmpty() && visited < SWEEP_CLUSTER_MAX) {
             if ((visited & 15) == 0 && System.currentTimeMillis() - clusterT0 > CLUSTER_BUDGET_MS) {
                 CLUSTER_TIMEOUTS.incrementAndGet();
-                SWEEP_ANCHORED.addAll(BFS_SEEN);
+                SWEEP_ANCHORED.addAll(BFS_CLUSTER);
                 return false;
             }
             long pk = BFS_QUEUE.dequeueLong();
@@ -11746,18 +11743,18 @@ public class StructureTerrainPrep {
             if (lastChunk == null) return false;
             BlockState below = readBlock(level, lastChunk, m, x, y - 1, z);
             if (!below.isAir() && below.blocksMotion() && !isSweepableNatural(below)) {
-                SWEEP_ANCHORED.addAll(BFS_SEEN);
+                SWEEP_ANCHORED.addAll(BFS_CLUSTER);
                 return false;
             }
             if (!below.isAir() && below.blocksMotion() && SWEEP_ANCHORED.contains(BlockPos.asLong(x, y - 1, z))) {
-                SWEEP_ANCHORED.addAll(BFS_SEEN);
+                SWEEP_ANCHORED.addAll(BFS_CLUSTER);
                 return false;
             }
             for (net.minecraft.core.Direction d : net.minecraft.core.Direction.values()) {
                 int nx = x + d.getStepX(), ny = y + d.getStepY(), nz = z + d.getStepZ();
                 long k = BlockPos.asLong(nx, ny, nz);
                 if (SWEEP_ANCHORED.contains(k)) {
-                    SWEEP_ANCHORED.addAll(BFS_SEEN);
+                    SWEEP_ANCHORED.addAll(BFS_CLUSTER);
                     return false;
                 }
                 if (!BFS_SEEN.add(k)) continue;
@@ -11765,24 +11762,39 @@ public class StructureTerrainPrep {
                 ChunkAccess nChunk = (ncx == lastCx && ncz == lastCz)
                         ? lastChunk : deepluckyblock.util.SafeSurface.chunkFor(level, ncx, ncz);
                 if (nChunk == null) {
-                    SWEEP_ANCHORED.addAll(BFS_SEEN);
+                    SWEEP_ANCHORED.addAll(BFS_CLUSTER);
                     return false;
                 }
                 BlockState n = readBlock(level, nChunk, m, nx, ny, nz);
                 if (n.isAir()) continue;
                 if (!isSweepableNatural(n)) {
                     if (d == net.minecraft.core.Direction.DOWN && n.blocksMotion()) {
-                        SWEEP_ANCHORED.addAll(BFS_SEEN);
+                        SWEEP_ANCHORED.addAll(BFS_CLUSTER);
                         return false;
                     }
                     continue;
                 }
                 BFS_QUEUE.enqueue(k);
+                BFS_CLUSTER.add(k);
             }
         }
         if (!BFS_QUEUE.isEmpty()) {
-            SWEEP_ANCHORED.addAll(BFS_SEEN);
+            SWEEP_ANCHORED.addAll(BFS_CLUSTER);
             return false;
+        }
+        BlockState air = Blocks.AIR.defaultBlockState();
+        int removed = 0;
+        for (int ci = 0; ci < BFS_CLUSTER.size(); ci++) {
+            long ck = BFS_CLUSTER.getLong(ci);
+            int rx = BlockPos.getX(ck), ry = BlockPos.getY(ck), rz = BlockPos.getZ(ck);
+            if (!isProtected(rx, rz)) {
+                level.setBlock(m.set(rx, ry, rz), air, FAST_FLAG);
+                removed++;
+            }
+        }
+        if (removed > 0) {
+            SWEPT_NAT.addAndGet(removed);
+            SWEPT.addAndGet(removed);
         }
         return true;
     }

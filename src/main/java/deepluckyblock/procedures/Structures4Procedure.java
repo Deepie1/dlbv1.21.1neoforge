@@ -121,11 +121,11 @@ public class Structures4Procedure {
         int scaled = (int) Math.round(baseCount * mult);
         return Math.max(1, Math.min(64, scaled));
     }
-    private static final int SEARCH_RADIUS = 80;
-    // FIX (freeze silencieux au paste, voir Javadoc dans findFlatArea) : budget
-    // de temps maximum pour la verification "chunks reels" des candidats.
-    private static final long FIND_FLAT_TIME_BUDGET_MS = 3000;
-    private static final int SEARCH_STEP = 5;
+    private static final int SEARCH_RADIUS = 160;
+    // T304-FAST-1S : plafond dur <= 850 ms (< 1 s) pour la recherche de zone Structures4,
+    // puis retenue immediate du meilleur candidat sec trouve !
+    private static final long FIND_FLAT_TIME_BUDGET_MS = 850;
+    private static final int SEARCH_STEP = 12;
     private static final double VIEW_CONE = Math.PI / 2.0;
     private static final int SAFETY_CHECK_RADIUS = 6;
     private static final int SAFETY_CHECK_DEPTH = 2;
@@ -1648,134 +1648,100 @@ public class Structures4Procedure {
         if (player != null) { float yaw = player.getYRot(); lookX = -Math.sin(Math.toRadians(yaw)); lookZ = Math.cos(Math.toRadians(yaw)); playerPos = player.blockPosition(); }
         int checkR = Math.max(8, Math.max(structW, structD) / 2);
         int maxDiff = Math.max(3, checkR / 8);
-        // FIX CHUNKS FANTOMES (meme bug "giga montagne" que Structures5Procedure.findFlat,
-        // voir le commentaire detaille la-bas) : measureFlatnessZone() n'interroge que
-        // getHeight() SANS forcer la generation des chunks. Sur un chunk pas encore
-        // genere, cette mesure peut etre totalement fausse (terrain "plat" fantome),
-        // demasque uniquement une fois le terrain reellement genere par smoothAround/
-        // prepZone -> une montagne entiere peut alors se retrouver sous/autour du
-        // batiment. On garde donc les meilleurs candidats (mesure rapide, chunks NON
-        // forces) puis on verifie le meilleur avec generation forcee + re-mesure,
-        // en essayant le suivant si le terrain reel s'avere ne pas etre plat.
-        record FlatAreaCandidate(int cx, int cz, int diff, int score) {}
-        List<FlatAreaCandidate> goodCandidates = new ArrayList<>();
+        // T304-FAST-1S : classer TOUS les candidats secs (zones deja en RAM en priorite absolue !),
+        // et retenir en <= 850 ms (< 1 s) soit le premier site ideal (diff <= maxDiff, A1 <= 2),
+        // soit le MEILLEUR candidat sec verifie trouve dans la fenetre <= 1 s !
+        record FlatAreaCandidate(int cx, int cz, int diff, int score, boolean loaded, int rankKey) {}
+        List<FlatAreaCandidate> goodCandidates = new ArrayList<>(256);
         int bestDiff = Integer.MAX_VALUE, bdX = 0, bdZ = 0;
         int flat4WetSkipped = 0;   // T80 : compteur de cellules ecartees (centre sous l'eau)
         for (int dx = -SEARCH_RADIUS; dx <= SEARCH_RADIUS; dx += SEARCH_STEP) {
+            if (System.currentTimeMillis() - t0 > FIND_FLAT_TIME_BUDGET_MS / 2) break;
             for (int dz = -SEARCH_RADIUS; dz <= SEARCH_RADIUS; dz += SEARCH_STEP) {
                 int cx = origin.getX() + dx, cz = origin.getZ() + dz;
-                // BUG CRITIQUE CORRIGE (voir Structures5Procedure.findFlat pour le
-                // detail) : closerThan() calculait une distance 3D entre le VRAI Y
-                // du joueur et un Y FICTIF de 64 sur le candidat. En altitude
-                // (montagne), cet ecart vertical suffisait a lui seul a "faire
-                // semblant" d'etre loin, meme si le candidat etait juste a cote
-                // du joueur en horizontal -> la structure pouvait apparaitre au
-                // sommet de la montagne au lieu d'aller chercher le terrain plat
-                // en contrebas. On compare desormais uniquement X/Z.
                 if (player != null) {
                     double dpx = cx - player.blockPosition().getX(), dpz = cz - player.blockPosition().getZ();
                     if ((dpx * dpx + dpz * dpz) < 80.0 * 80.0) continue;
                 }
                 if (isPlayerChunk(new BlockPos(cx, 64, cz), player, origin)) continue;
-                // T80 : JAMAIS de zone dont le centre est sous l'eau. La mesure de
-                // planeite traverse l'eau (heightmap) : un fond d'ocean serait note
-                // « plat » et gagnerait le classement « moins pentu » -- structure
-                // ancree au FOND, eau de la zone videe ensuite.
+                if (deepluckyblock.util.StructureSites.conflict(level, cx, cz, checkR) != null) continue;
                 if (deepluckyblock.util.SafeSurface.columnWet(level, cx, cz)) { flat4WetSkipped++; continue; }
                 int diff = measureFlatnessZone(level, cx, cz, checkR);
                 if (diff < 0) continue;
                 if (diff < bestDiff) { bestDiff = diff; bdX = cx; bdZ = cz; }
-                if (diff <= maxDiff) {
-                    int score = scoreCandidate(cx, cz, playerPos, lookX, lookZ);
-                    goodCandidates.add(new FlatAreaCandidate(cx, cz, diff, score));
-                }
+                int ccx0 = (cx - checkR) >> 4, ccx1 = (cx + checkR) >> 4;
+                int ccz0 = (cz - checkR) >> 4, ccz1 = (cz + checkR) >> 4;
+                boolean loaded = deepluckyblock.util.SafeSurface.zoneLoaded(level, ccx0, ccz0, ccx1, ccz1);
+                boolean warmHalo = loaded && deepluckyblock.util.SafeSurface.zoneLoaded(
+                        level, (cx - checkR - 32) >> 4, (cz - checkR - 32) >> 4,
+                        (cx + checkR + 32) >> 4, (cz + checkR + 32) >> 4);
+                int score = scoreCandidate(cx, cz, playerPos, lookX, lookZ);
+                int rankKey = (loaded ? 0 : 100_000) + (warmHalo ? 0 : 2_000) + diff * 30 - (score / 25);
+                goodCandidates.add(new FlatAreaCandidate(cx, cz, diff, score, loaded, rankKey));
             }
         }
         if (flat4WetSkipped > 0)
             deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4-FLAT] {} cellule(s) ecartee(s) : centre sous l'EAU (T80)", flat4WetSkipped);
-        goodCandidates.sort((a, b) -> Integer.compare(b.score(), a.score()));
-        int maxVerified = Math.min(goodCandidates.size(), 12);
-        // T49 : candidats dont la zone n'etait pas encore en memoire (reexamines
-        // apres la boucle, le temps que les demandes en tache de fond aboutissent).
+        goodCandidates.sort(java.util.Comparator.comparingInt(FlatAreaCandidate::rankKey));
+        int maxVerified = Math.min(goodCandidates.size(), 96);
         java.util.List<FlatAreaCandidate> pendingVerif = new java.util.ArrayList<>();
-        // FIX (freeze silencieux au paste, meme cause que Structures5Procedure.findFlat
-        // -- voir Javadoc la-bas) : budget de temps + log AVANT de forcer la
-        // generation de chaque candidat, pour ne plus jamais bloquer le
-        // thread principal en silence pendant potentiellement des dizaines
-        // de secondes sur un monde au chunk generator lent.
-        long verifyStart4 = System.currentTimeMillis();
+        BlockPos bestVerifiedPos = null;
+        int bestVerifiedCost = Integer.MAX_VALUE;
+        int bestVerifiedDiff = Integer.MAX_VALUE, bestVerifiedA1 = 99;
         for (int i = 0; i < maxVerified; i++) {
-            if (i > 0 && System.currentTimeMillis() - verifyStart4 > FIND_FLAT_TIME_BUDGET_MS) {
-                LOGGER.warn("[STRUCT4-FLAT] Budget de temps ({}ms) depasse apres {} candidat(s) verifie(s) -- abandon des {} candidats restants",
-                        FIND_FLAT_TIME_BUDGET_MS, i, maxVerified - i);
+            if (i > 0 && System.currentTimeMillis() - t0 >= FIND_FLAT_TIME_BUDGET_MS) {
                 break;
             }
             FlatAreaCandidate c = goodCandidates.get(i);
-            deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4-FLAT] Verification candidat #{}/{} a {},{} (force generation de la zone, checkR={})...",
-                    i + 1, maxVerified, c.cx(), c.cz(), checkR);
             int ccx0 = (c.cx() - checkR) >> 4, ccx1 = (c.cx() + checkR) >> 4;
             int ccz0 = (c.cz() - checkR) >> 4, ccz1 = (c.cz() + checkR) >> 4;
-            // T49 : la generation SYNCHRONE de toute la zone du candidat (jusqu'a
-            // ~300 chunks pour une grosse structure, x12 candidats) etait le plus
-            // gros consommateur de temps du mod sur un monde neuf. On demande la
-            // zone en tache de fond et on ne verifie le candidat que lorsqu'elle
-            // est REELLEMENT en memoire.
-            // Load only the selected footprint through the bounded preload queue.
             if (!deepluckyblock.util.SafeSurface.zoneLoaded(level, ccx0, ccz0, ccx1, ccz1)) {
-                deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4-FLAT] Candidat #{}/{} a {},{} : zone pas encore en memoire -- verification differee (tache de fond, aucun blocage)",
-                        i + 1, maxVerified, c.cx(), c.cz());
                 pendingVerif.add(c);
                 continue;
             }
             int realDiff = measureFlatnessZone(level, c.cx(), c.cz(), checkR);
-            if (realDiff < 0 || realDiff > maxDiff * 2) {
-                LOGGER.warn("[STRUCT4-FLAT] Candidat {},{} REJETE : terrain fantome demasque apres generation reelle (diff avant={}, apres={})",
-                        c.cx(), c.cz(), c.diff(), realDiff);
-                continue;
-            }
-            // T80 : la mesure de planeite traverse l'eau ; le centre a ete teste sec,
-            // on exige ici que la ZONE entiere le soit (riviere/etang dans l'emprise).
+            if (realDiff < 0) continue;
             double wet4 = wetRatioArea(level, c.cx(), c.cz(), checkR);
-            if (wet4 > 0.10) {
-                LOGGER.warn("[STRUCT4-FLAT] Candidat {},{} REJETE : zone en EAU ({} % des colonnes sont liquides) -- plate mais inconstructible (T80)",
-                        c.cx(), c.cz(), (int) (wet4 * 100));
-                continue;
-            }
-            // T303 A1 : veto inter-chunks STRUCTURE (ecart Y max <= 2 blocs entre chunks structure adjacents).
+            if (wet4 > 0.08) continue;
             int stepA1 = measureStructureChunkStepMax(level,
                     c.cx() - structW / 2, c.cz() - structD / 2,
                     c.cx() + structW / 2, c.cz() + structD / 2);
-            if (stepA1 > deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y) {
-                LOGGER.warn("[STRUCT4-MOTHER] Candidat {},{} REJETE (A1 inter-chunks structure) : ecart={} > {} blocs",
-                        c.cx(), c.cz(), stepA1, deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y);
-                continue;
-            }
-            LOGGER.info("[STRUCT4-MOTHER] A1 inter-chunks structure OK a {},{} : ecart max={} <= {} blocs",
-                    c.cx(), c.cz(), stepA1, deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y);
+            int effStep = stepA1 >= 0 ? stepA1 : Math.max(3, (realDiff + 2) / 3);
             int surfY = deepluckyblock.util.SafeSurface.surfaceY(level, c.cx(), c.cz(), origin.getY());
-            return new BlockPos(c.cx(), surfY, c.cz());
+            if (realDiff <= maxDiff && stepA1 >= 0
+                    && stepA1 <= deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y) {
+                LOGGER.info("[STRUCT4-MOTHER] Zone ideale retenue en {} ms a {},{} : diff={}, A1={} <= {} blocs",
+                        System.currentTimeMillis() - t0, c.cx(), c.cz(), realDiff, stepA1,
+                        deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y);
+                return new BlockPos(c.cx(), surfY, c.cz());
+            }
+            int cost = Math.max(0, effStep - deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y) * 250
+                    + Math.max(0, realDiff - maxDiff) * 40 + realDiff * 8;
+            if (cost < bestVerifiedCost) {
+                bestVerifiedCost = cost;
+                bestVerifiedDiff = realDiff;
+                bestVerifiedA1 = effStep;
+                bestVerifiedPos = new BlockPos(c.cx(), surfY, c.cz());
+            }
         }
-        // T49 : seconde passe sur les candidats differes (leurs chunks ont ete
-        // demandes pendant la premiere passe, ils sont souvent arrives depuis).
+        if (bestVerifiedPos != null) {
+            LOGGER.info("[STRUCT4-MOTHER] Meilleur candidat charge retenu en {} ms (<=1s) a {},{} : diff={}, A1={} -> remodelage Mother",
+                    System.currentTimeMillis() - t0, bestVerifiedPos.getX(), bestVerifiedPos.getZ(),
+                    bestVerifiedDiff, bestVerifiedA1);
+            return bestVerifiedPos;
+        }
         for (FlatAreaCandidate c : pendingVerif) {
-            if (System.currentTimeMillis() - verifyStart4 > FIND_FLAT_TIME_BUDGET_MS) break;
+            if (System.currentTimeMillis() - t0 >= FIND_FLAT_TIME_BUDGET_MS) break;
             int ccx0 = (c.cx() - checkR) >> 4, ccx1 = (c.cx() + checkR) >> 4;
             int ccz0 = (c.cz() - checkR) >> 4, ccz1 = (c.cz() + checkR) >> 4;
             if (!deepluckyblock.util.SafeSurface.zoneLoaded(level, ccx0, ccz0, ccx1, ccz1)) continue;
             int realDiff2 = measureFlatnessZone(level, c.cx(), c.cz(), checkR);
-            if (realDiff2 < 0 || realDiff2 > maxDiff * 2) continue;
-            double wet42 = wetRatioArea(level, c.cx(), c.cz(), checkR);   // T80
-            if (wet42 > 0.10) {
-                LOGGER.warn("[STRUCT4-FLAT] Candidat {},{} REJETE (seconde passe) : zone en EAU ({} % des colonnes, T80)",
-                        c.cx(), c.cz(), (int) (wet42 * 100));
-                continue;
-            }
-            int stepA12 = measureStructureChunkStepMax(level,
-                    c.cx() - structW / 2, c.cz() - structD / 2,
-                    c.cx() + structW / 2, c.cz() + structD / 2);
-            if (stepA12 > deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y) continue;
+            if (realDiff2 < 0) continue;
+            double wet42 = wetRatioArea(level, c.cx(), c.cz(), checkR);
+            if (wet42 > 0.08) continue;
             int surfY2 = deepluckyblock.util.SafeSurface.surfaceY(level, c.cx(), c.cz(), origin.getY());
-            deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4-FLAT] Zone choisie a {},{} (seconde passe T49, terrain reel verifie, Y reel={})", c.cx(), c.cz(), surfY2);
+            LOGGER.info("[STRUCT4-FLAT] Meilleur candidat seconde passe retenu en {} ms a {},{} (diff={})",
+                    System.currentTimeMillis() - t0, c.cx(), c.cz(), realDiff2);
             return new BlockPos(c.cx(), surfY2, c.cz());
         }
         if (!goodCandidates.isEmpty()) {
