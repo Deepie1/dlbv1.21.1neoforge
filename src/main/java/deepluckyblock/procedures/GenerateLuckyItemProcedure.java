@@ -343,7 +343,7 @@ public class GenerateLuckyItemProcedure {
         "deep_lucky_block:ranger", "deep_lucky_block:inverted_arrows",
         "deep_lucky_block:instant_shot", "deep_lucky_block:point_shoot",
         "deep_lucky_block:weak_force", "deep_lucky_block:retrieval",
-        "minecraft:unbreaking", "minecraft:mending"
+        "minecraft:quick_charge", "minecraft:unbreaking", "minecraft:mending"
     );
     private static final Set<String> PIERCE_REPEAT_UNSAFE = Set.of(
         "deep_lucky_block:brimstone", "deep_lucky_block:delay",
@@ -379,6 +379,8 @@ public class GenerateLuckyItemProcedure {
         Set.of("deep_lucky_block:momentum", "deep_lucky_block:trailblazer",
                "deep_lucky_block:windrunner"),
         Set.of("minecraft:multishot", "minecraft:piercing"),
+        Set.of("deep_lucky_block:pierce", "minecraft:piercing"),
+        Set.of("deep_lucky_block:unbreakable", "deep_lucky_block:eternal"),
         Set.of("deep_lucky_block:multishot_bow", "deep_lucky_block:scatter",
                "minecraft:multishot"),
         Set.of("deep_lucky_block:teleport_arrow", "deep_lucky_block:swap_arrow",

@@ -1,56 +1,54 @@
 {
-  "item_type": "hoe",
   "version": 1,
+  "item_type": "hoe",
   "categories": {
-    "offensive": {
-      "enchantments": [
-        "deep_lucky_block:crit_rate",
-        "deep_lucky_block:execute_chance",
-        "deep_lucky_block:execute_power",
-        "deep_lucky_block:focused_crit",
-        "deep_lucky_block:low_crit_damage",
-        "deep_lucky_block:low_crit_rate",
-        "deep_lucky_block:normal_crit_damage",
-        "deep_lucky_block:overclocked_crit",
-        "deep_lucky_block:sickle_damage",
-        "deep_lucky_block:sickle_slash"
-      ]
-    },
-    "utility": {
-      "enchantments": [
-        "deep_lucky_block:basic_chrono_mending",
-        "deep_lucky_block:basic_mending",
-        "deep_lucky_block:beheading",
-        "deep_lucky_block:bountiful_harvest",
-        "deep_lucky_block:chrono_mending",
-        "deep_lucky_block:experience_harvest",
-        "deep_lucky_block:extension",
-        "deep_lucky_block:farmers_hoe",
-        "deep_lucky_block:haste_surge",
-        "deep_lucky_block:loot_harvest",
-        "deep_lucky_block:oxygen_lack_haste",
-        "deep_lucky_block:soul_reaping_sickle",
-        "deep_lucky_block:soul_sacrifice_slash",
-        "deep_lucky_block:swift_strike",
-        "deep_lucky_block:unbreakable",
-        "deep_lucky_block:weeding_hoe",
-        "minecraft:efficiency",
-        "minecraft:fortune",
-        "minecraft:mending",
-        "minecraft:silk_touch",
-        "minecraft:unbreaking"
-      ]
-    },
-    "curse": {
-      "enchantments": [
-        "deep_lucky_block:end_corrosion",
-        "deep_lucky_block:fear",
-        "deep_lucky_block:nether_corrosion",
-        "deep_lucky_block:nether_curse",
-        "deep_lucky_block:overworld_curse",
-        "deep_lucky_block:short_reach",
-        "deep_lucky_block:soul_bound"
-      ]
-    }
+    "offensive": [
+      "deep_lucky_block:low_crit_damage",
+      "deep_lucky_block:low_crit_rate",
+      "deep_lucky_block:sickle_damage",
+      "deep_lucky_block:sickle_slash",
+      "deep_lucky_block:focused_crit",
+      "deep_lucky_block:normal_crit_damage",
+      "deep_lucky_block:crit_rate",
+      "deep_lucky_block:overclocked_crit",
+      "deep_lucky_block:execute_power",
+      "deep_lucky_block:soul_sacrifice_slash"
+    ],
+    "utility": [
+      "minecraft:efficiency",
+      "minecraft:fortune",
+      "minecraft:mending",
+      "minecraft:silk_touch",
+      "minecraft:unbreaking",
+      "deep_lucky_block:haste_surge",
+      "deep_lucky_block:weeding_hoe",
+      "deep_lucky_block:basic_mending",
+      "deep_lucky_block:bountiful_harvest",
+      "deep_lucky_block:composting",
+      "deep_lucky_block:experience_harvest",
+      "deep_lucky_block:farmers_hoe",
+      "deep_lucky_block:haste_continuation",
+      "deep_lucky_block:recycle",
+      "deep_lucky_block:replanting",
+      "deep_lucky_block:loot_harvest",
+      "deep_lucky_block:basic_chrono_mending",
+      "deep_lucky_block:beheading",
+      "deep_lucky_block:soul_reaping_sickle",
+      "deep_lucky_block:swift_strike",
+      "deep_lucky_block:extension",
+      "deep_lucky_block:soul_bound",
+      "deep_lucky_block:chrono_mending",
+      "deep_lucky_block:eternal",
+      "deep_lucky_block:unbreakable"
+    ],
+    "curse": [
+      "minecraft:vanishing_curse",
+      "deep_lucky_block:fear",
+      "deep_lucky_block:nether_curse",
+      "deep_lucky_block:overworld_curse",
+      "deep_lucky_block:short_reach",
+      "deep_lucky_block:end_corrosion",
+      "deep_lucky_block:nether_corrosion"
+    ]
   }
 }

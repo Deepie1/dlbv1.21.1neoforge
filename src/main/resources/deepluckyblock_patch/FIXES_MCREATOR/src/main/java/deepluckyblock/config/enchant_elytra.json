@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "item_type": "elytra",
+  "categories": {
+    "offensive": [
+      "deep_lucky_block:rocket_blast"
+    ],
+    "utility": [
+      "minecraft:mending",
+      "minecraft:unbreaking",
+      "deep_lucky_block:air_brake",
+      "deep_lucky_block:basic_mending",
+      "deep_lucky_block:aerodynamic",
+      "deep_lucky_block:ground_skimmer",
+      "deep_lucky_block:basic_chrono_mending",
+      "deep_lucky_block:iron_wings",
+      "deep_lucky_block:winging",
+      "deep_lucky_block:soul_bound",
+      "deep_lucky_block:wind_rider",
+      "deep_lucky_block:chrono_mending",
+      "deep_lucky_block:eternal",
+      "deep_lucky_block:unbreakable",
+      "deep_lucky_block:wing_toughness_armor"
+    ],
+    "curse": [
+      "minecraft:binding_curse",
+      "minecraft:vanishing_curse",
+      "deep_lucky_block:turbulence_curse",
+      "deep_lucky_block:brittle_wings_curse",
+      "deep_lucky_block:sky_conductor_curse",
+      "deep_lucky_block:end_corrosion",
+      "deep_lucky_block:nether_corrosion"
+    ]
+  }
+}

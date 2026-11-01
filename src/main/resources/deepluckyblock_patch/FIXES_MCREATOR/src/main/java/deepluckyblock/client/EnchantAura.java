@@ -243,21 +243,27 @@ public final class EnchantAura {
     // =======================================================================
     private static int current = 0;
 
+    /** T311-GLINT-INTENSE : true uniquement pendant la fenêtre active d'attaque/tir/impact. */
+    private static boolean currentIntense = false;
+
     public static int currentRgb() { return current; }
+
+    public static boolean isCurrentIntense() { return currentIntense; }
 
     public static void capture(ItemStack stack) {
         int v = auraColor(stack);
         current = v;
+        currentIntense = false;
         if (DEBUG && stack != null && !stack.isEmpty()) {
             log("capture -> #" + Integer.toHexString(v));
         }
     }
 
     /**
-     * T310-GLINT-FLASH : Capture la couleur du glint avec surcharge temporaire
-     * pendant l'action active (frappe en mêlée, tir arc/arbalète/trident ou
-     * impact sur armure portée), puis retour immédiat à {@link #auraColor(ItemStack)}
-     * dès que {@code activeAction} repasse à {@code false}.
+     * T310/T311-GLINT-INTENSE : Capture la couleur du glint avec surcharge temporaire
+     * HAUTE INTENSITÉ pendant l'action active (frappe en mêlée, tir arc/arbalète/trident ou
+     * impact sur armure portée), puis retour immédiat à la couleur ET à l'intensité
+     * normales ({@link #auraColor(ItemStack)}) dès que {@code activeAction} repasse à {@code false}.
      */
     public static void captureWithFlash(ItemStack stack, boolean activeAction,
                                         int cycleIndex, boolean defensiveArmor) {
@@ -267,10 +273,12 @@ public final class EnchantAura {
             Boolean override = stack.get(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
             if (!Boolean.FALSE.equals(override)) {
                 int flash = DeepGlintColor.resolveActiveFlash(stack, cycleIndex, defensiveArmor);
-                if (flash != 0) {
-                    current = flash;
+                int chosen = (flash != 0) ? flash : base;
+                if (chosen != 0) {
+                    current = chosen;
+                    currentIntense = true;
                     if (DEBUG) {
-                        log("captureWithFlash (ACTIF) -> #" + Integer.toHexString(flash)
+                        log("captureWithFlash (INTENSE) -> #" + Integer.toHexString(chosen)
                                 + " (retour prévu -> #" + Integer.toHexString(base) + ")");
                     }
                     return;
@@ -278,12 +286,16 @@ public final class EnchantAura {
             }
         }
         current = base;
+        currentIntense = false;
         if (DEBUG && stack != null && !stack.isEmpty()) {
             log("capture -> #" + Integer.toHexString(base));
         }
     }
 
-    public static void clear() { current = 0; }
+    public static void clear() {
+        current = 0;
+        currentIntense = false;
+    }
 
     // =======================================================================
     private static long lastLog = 0;

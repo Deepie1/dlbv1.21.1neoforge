@@ -19,6 +19,7 @@ import deepluckyblock.Rarity;
 public class ModEnchantments {
 
         private static final EquipmentSlot[] HANDS = new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND};
+    private static final EquipmentSlot[] ALL_SLOTS = EquipmentSlot.values();
     private static final EquipmentSlot[] MAIN_HAND = new EquipmentSlot[]{EquipmentSlot.MAINHAND};
     private static final EquipmentSlot[] ARMOR = new EquipmentSlot[]{EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
     private static final EquipmentSlot[] HEAD = new EquipmentSlot[]{EquipmentSlot.HEAD};
@@ -66,11 +67,11 @@ public class ModEnchantments {
             CustomEnchantment.create("annihilating_sweep", Rarity.LEGENDARY, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
             CustomEnchantment.create("fiery_sweep", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
             CustomEnchantment.create("sweeping_burn_slash", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
-            CustomEnchantment.create("unbreakable", Rarity.LEGENDARY, CustomEnchantment.Cat.BREAKABLE, HANDS, 1);
-            CustomEnchantment.create("soul_bound", Rarity.MYTHIC, CustomEnchantment.Cat.BREAKABLE, HANDS, 1);
+            CustomEnchantment.create("unbreakable", Rarity.LEGENDARY, CustomEnchantment.Cat.BREAKABLE, ALL_SLOTS, 1);
+            CustomEnchantment.create("soul_bound", Rarity.MYTHIC, CustomEnchantment.Cat.BREAKABLE, ALL_SLOTS, 1);
             CustomEnchantment.create("beheading", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
             CustomEnchantment.create("decapitation", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
-            CustomEnchantment.create("execute_chance", Rarity.EPIC, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 10);
+            CustomEnchantment.create("execute_chance", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
             CustomEnchantment.create("summon_army", Rarity.LEGENDARY, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1);
             CustomEnchantment.create("shadow_hunt", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
             CustomEnchantment.create("plunder_wealth", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
@@ -189,11 +190,11 @@ public class ModEnchantments {
             CustomEnchantment.create("shield_efficiency", Rarity.COMMON, CustomEnchantment.Cat.BREAKABLE, HANDS, 1);
 
     // ===================== 12. UNIVERSELS & REPARATION =====================
-            CustomEnchantment.create("chrono_mending", Rarity.LEGENDARY, CustomEnchantment.Cat.BREAKABLE, HANDS, 5);
-            CustomEnchantment.create("basic_chrono_mending", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, HANDS, 3);
-            CustomEnchantment.create("basic_mending", Rarity.UNCOMMON, CustomEnchantment.Cat.BREAKABLE, HANDS, 5);
+            CustomEnchantment.create("chrono_mending", Rarity.LEGENDARY, CustomEnchantment.Cat.BREAKABLE, ALL_SLOTS, 5);
+            CustomEnchantment.create("basic_chrono_mending", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, ALL_SLOTS, 3);
+            CustomEnchantment.create("basic_mending", Rarity.UNCOMMON, CustomEnchantment.Cat.BREAKABLE, ALL_SLOTS, 5);
             CustomEnchantment.create("phoenix", Rarity.LEGENDARY, CustomEnchantment.Cat.ARMOR, ARMOR, 3);
-            CustomEnchantment.create("eternal", Rarity.LEGENDARY, CustomEnchantment.Cat.BREAKABLE, HANDS, 1);
+            CustomEnchantment.create("eternal", Rarity.LEGENDARY, CustomEnchantment.Cat.BREAKABLE, ALL_SLOTS, 1);
             CustomEnchantment.create("magnetic", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR, ARMOR, 1);
 
     // ===================== 13. PROTECTIONS PERSONNALISEES =====================
@@ -276,8 +277,8 @@ public class ModEnchantments {
             CustomEnchantment.create("chimeras_whim", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1);
 
     // ===================== 14. MALEDICTIONS / CURSES + RESTE =====================
-            CustomEnchantment.create("nether_corrosion", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, HANDS, 1, false, true);
-            CustomEnchantment.create("end_corrosion", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, HANDS, 1, false, true);
+            CustomEnchantment.create("nether_corrosion", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, ALL_SLOTS, 1, false, true);
+            CustomEnchantment.create("end_corrosion", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, ALL_SLOTS, 1, false, true);
             CustomEnchantment.create("fear", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1, false, true);
             CustomEnchantment.create("haste_surge", Rarity.COMMON, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 10, false, false); // positif : affiché ORANGE, plus rouge
             CustomEnchantment.create("breath_holding", Rarity.RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, false); // positif : affiché BLEU

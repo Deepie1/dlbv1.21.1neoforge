@@ -55,14 +55,15 @@ public final class EnchantGlintTyped {
     public static RenderType currentRenderType(String kind) {
         int rgb = EnchantAura.currentRgb();
         if (rgb == 0) { glintLog(kind, 0, "violet (aucune couleur capturée)"); return null; }
+        boolean intense = EnchantAura.isCurrentIntense();
         String[] params = glintParams(kind);
         if (params == null) return null;
-        String key = Integer.toHexString(rgb) + ":" + kind;
+        String key = (intense ? "I:" : "N:") + Integer.toHexString(rgb) + ":" + kind;
         if (BUILD_FAILED.contains(key)) { glintLog(kind, rgb, "violet (build déjà raté)"); return null; }
         RenderType cached = RENDER_TYPE_CACHE.get(key);
         if (cached != null) { glintLog(kind, rgb, "OK (cache)"); return cached; }
         try {
-            RenderType built = buildColoredGlint(rgb, kind, params, key);
+            RenderType built = buildColoredGlint(rgb, kind, params, intense);
             if (built == null) { BUILD_FAILED.add(key); glintLog(kind, rgb, "violet (build null)"); return null; }
             KNOWN_TYPES.add(built);
             RENDER_TYPE_CACHE.put(key, built);
@@ -123,7 +124,7 @@ public final class EnchantGlintTyped {
         }
     }
 
-    private static RenderType buildColoredGlint(int rgb, String kind, String[] params, String key) {
+    private static RenderType buildColoredGlint(int rgb, String kind, String[] params, boolean intense) {
         Class<?> renderTypeClass = RenderType.class;
         Class<?> renderStateClass = RenderStateShard.class;
         Class<?> compositeStateClass;
@@ -157,7 +158,7 @@ public final class EnchantGlintTyped {
         }
 
         try {
-            ResourceLocation texture = getOrCreateTintedTexture(rgb, params[1], kind);
+            ResourceLocation texture = getOrCreateTintedTexture(rgb, params[1], kind, intense);
             bgl("texture=" + texture);
             if (texture == null) return null;
 
@@ -196,7 +197,8 @@ public final class EnchantGlintTyped {
                     int.class, boolean.class, boolean.class, compositeStateClass});
             bgl("create=" + create);
             if (create == null) return null;
-            String name = "dlb_glint_" + Integer.toHexString(rgb) + "_" + kind.toLowerCase();
+            String name = "dlb_glint_" + (intense ? "intense_" : "")
+                    + Integer.toHexString(rgb) + "_" + kind.toLowerCase();
             RenderType rt = (RenderType) create.invoke(null, name,
                     DefaultVertexFormat.POSITION_TEX, VertexFormat.Mode.QUADS,
                     256, false, false, compositeState);
@@ -327,31 +329,62 @@ public final class EnchantGlintTyped {
         return null;
     }
 
-    private static ResourceLocation getOrCreateTintedTexture(int rgb, String textureKind, String kind) {
-        String key = Integer.toHexString(rgb) + ":" + textureKind;
+    private static ResourceLocation getOrCreateTintedTexture(int rgb, String textureKind,
+                                                             String kind, boolean intense) {
+        String key = (intense ? "I:" : "N:") + Integer.toHexString(rgb) + ":" + textureKind;
         ResourceLocation cached = TEXTURE_CACHE.get(key);
         if (cached != null) return cached;
         try {
             Minecraft mc = Minecraft.getInstance();
             NativeImage img = loadGlint(textureKind);
             int tr = (rgb >> 16) & 0xFF, tg = (rgb >> 8) & 0xFF, tb = rgb & 0xFF;
-            for (int x = 0; x < img.getWidth(); x++)
-                for (int y = 0; y < img.getHeight(); y++) {
-                    int px = img.getPixelRGBA(x, y);
-                    // NativeImage : bytes [R,G,B,A] -> R=bits0-7, G=8-15, B=16-23, A=24-31.
-                    int a = (px >> 24) & 0xFF;
-                    int r = px & 0xFF;
-                    int g = (px >> 8) & 0xFF;
-                    int b = (px >> 16) & 0xFF;
-                    int bright = Math.max(r, Math.max(g, b));
-                    // Écrit la cible dans le BON slot (R=0-7, G=8-15, B=16-23, A=24-31).
-                    img.setPixelRGBA(x, y, (a << 24)
-                            | ((tb * bright / 255) << 16)
-                            | ((tg * bright / 255) << 8)
-                            | (tr * bright / 255));
+            if (intense) {
+                // T311-GLINT-INTENSE : GLINT_TRANSPARENCY utilise le blend (SRC_COLOR, ONE),
+                // qui met la couleur source AU CARRÉ (C * C). Sur la texture vanilla (luminance
+                // moyenne ~40-100/255), le glint normal ne produit que ~4-12 % de lumière additive.
+                // En mode actif (attaque/tir/impact), on normalise la saturation au maximum,
+                // on relève fortement le plancher lumineux (gamma 0.42 + base 0.54) pour embraser
+                // toute la lame, et on ajoute un cœur incandescent sur les crêtes d'onde !
+                int maxChan = Math.max(1, Math.max(tr, Math.max(tg, tb)));
+                double sr = tr * 255.0 / maxChan;
+                double sg = tg * 255.0 / maxChan;
+                double sb = tb * 255.0 / maxChan;
+                for (int x = 0; x < img.getWidth(); x++) {
+                    for (int y = 0; y < img.getHeight(); y++) {
+                        int px = img.getPixelRGBA(x, y);
+                        int r = px & 0xFF;
+                        int g = (px >> 8) & 0xFF;
+                        int b = (px >> 16) & 0xFF;
+                        int bright = Math.max(r, Math.max(g, b));
+                        double norm = bright / 255.0;
+                        double lifted = Math.min(1.0, 0.54 + Math.pow(norm, 0.42) * 0.72);
+                        double core = norm > 0.42 ? Math.pow((norm - 0.42) / 0.58, 1.25) * 92.0 : 0.0;
+                        int outR = Math.min(255, (int) Math.round(sr * lifted + core));
+                        int outG = Math.min(255, (int) Math.round(sg * lifted + core));
+                        int outB = Math.min(255, (int) Math.round(sb * lifted + core));
+                        img.setPixelRGBA(x, y, (0xFF << 24) | (outB << 16) | (outG << 8) | outR);
+                    }
                 }
+            } else {
+                for (int x = 0; x < img.getWidth(); x++) {
+                    for (int y = 0; y < img.getHeight(); y++) {
+                        int px = img.getPixelRGBA(x, y);
+                        // NativeImage : bytes [R,G,B,A] -> R=bits0-7, G=8-15, B=16-23, A=24-31.
+                        int a = (px >> 24) & 0xFF;
+                        int r = px & 0xFF;
+                        int g = (px >> 8) & 0xFF;
+                        int b = (px >> 16) & 0xFF;
+                        int bright = Math.max(r, Math.max(g, b));
+                        // Écrit la cible dans le BON slot (R=0-7, G=8-15, B=16-23, A=24-31).
+                        img.setPixelRGBA(x, y, (a << 24)
+                                | ((tb * bright / 255) << 16)
+                                | ((tg * bright / 255) << 8)
+                                | (tr * bright / 255));
+                    }
+                }
+            }
             ResourceLocation loc = ResourceLocation.fromNamespaceAndPath("deep_lucky_block",
-                    "lucky_glint_" + kind.toLowerCase() + "_" + Integer.toHexString(rgb) + ".png");
+                    "lucky_glint_" + (intense ? "intense_" : "") + kind.toLowerCase() + "_" + Integer.toHexString(rgb) + ".png");
             mc.getTextureManager().register(loc, new DynamicTexture(img));
             TEXTURE_CACHE.put(key, loc);
             return loc;

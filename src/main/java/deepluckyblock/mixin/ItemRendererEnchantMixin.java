@@ -39,6 +39,7 @@ public abstract class ItemRendererEnchantMixin {
 
     @Unique private static boolean dlbWasSwinging = false;
     @Unique private static int dlbSwingCycle = 0;
+    @Unique private static long dlbMeleeFlashUntil = 0L;
     @Unique private static boolean dlbWasMainCrossbowCharged = false;
     @Unique private static boolean dlbWasOffCrossbowCharged = false;
     @Unique private static boolean dlbWasUsingRanged = false;
@@ -80,7 +81,8 @@ public abstract class ItemRendererEnchantMixin {
 
             long gameTime = player.level().getGameTime();
 
-            // 1) Suivi du cycle de frappe (mêlée / minage)
+            // 1) Suivi du cycle de frappe (mêlée / minage) avec rémanence courte (5 ticks)
+            // pour que l'éclat intense soit nettement visible même sur les armes très rapides
             boolean swingingNow = player.swinging || player.attackAnim > 0.0F;
             if (swingingNow && !dlbWasSwinging) {
                 dlbSwingCycle++;
@@ -88,8 +90,13 @@ public abstract class ItemRendererEnchantMixin {
             dlbWasSwinging = swingingNow;
 
             InteractionHand activeArm = player.swingingArm == null ? InteractionHand.MAIN_HAND : player.swingingArm;
-            if (swingingNow && ((isMain && activeArm == InteractionHand.MAIN_HAND)
-                    || (isOff && activeArm == InteractionHand.OFF_HAND))) {
+            boolean activeHandMatch = (isMain && activeArm == InteractionHand.MAIN_HAND)
+                    || (isOff && activeArm == InteractionHand.OFF_HAND);
+            if (swingingNow && activeHandMatch) {
+                dlbMeleeFlashUntil = gameTime + 5L;
+                return true;
+            }
+            if (gameTime <= dlbMeleeFlashUntil && activeHandMatch) {
                 return true;
             }
 
@@ -99,20 +106,20 @@ public abstract class ItemRendererEnchantMixin {
             if ((dlbWasMainCrossbowCharged && !mainCbCharged && main.getItem() instanceof CrossbowItem)
                     || (dlbWasOffCrossbowCharged && !offCbCharged && off.getItem() instanceof CrossbowItem)) {
                 dlbSwingCycle++;
-                dlbRangedShotFlashUntil = gameTime + 10L;
+                dlbRangedShotFlashUntil = gameTime + 12L;
             }
             dlbWasMainCrossbowCharged = mainCbCharged;
             dlbWasOffCrossbowCharged = offCbCharged;
 
             boolean usingNow = player.isUsingItem();
-            if (usingNow && player.getUseItem() == stack && player.getTicksUsingItem() >= 5) {
+            if (usingNow && player.getUseItem() == stack && player.getTicksUsingItem() >= 4) {
                 dlbWasUsingRanged = true;
                 return true;
             }
             if (dlbWasUsingRanged && !usingNow) {
                 dlbWasUsingRanged = false;
                 dlbSwingCycle++;
-                dlbRangedShotFlashUntil = gameTime + 8L;
+                dlbRangedShotFlashUntil = gameTime + 12L;
             }
             return gameTime <= dlbRangedShotFlashUntil
                     && (stack.getItem() instanceof net.minecraft.world.item.ProjectileWeaponItem

@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "item_type": "fishing_rod",
+  "categories": {
+    "offensive": [
+      "deep_lucky_block:barbed_hook",
+      "deep_lucky_block:monster_fishing",
+      "deep_lucky_block:thunder_hook"
+    ],
+    "utility": [
+      "minecraft:luck_of_the_sea",
+      "minecraft:lure",
+      "minecraft:mending",
+      "minecraft:unbreaking",
+      "deep_lucky_block:basic_mending",
+      "deep_lucky_block:cooked_catch",
+      "deep_lucky_block:experienced_fishing",
+      "deep_lucky_block:dredge",
+      "deep_lucky_block:reliability",
+      "deep_lucky_block:anglers_blessing",
+      "deep_lucky_block:basic_chrono_mending",
+      "deep_lucky_block:pulling_power",
+      "deep_lucky_block:ender_hook",
+      "deep_lucky_block:fishing_grapple",
+      "deep_lucky_block:soul_bound",
+      "deep_lucky_block:chrono_mending",
+      "deep_lucky_block:eternal",
+      "deep_lucky_block:infernal_line",
+      "deep_lucky_block:unbreakable"
+    ],
+    "curse": [
+      "minecraft:vanishing_curse",
+      "deep_lucky_block:false_bite_curse",
+      "deep_lucky_block:scorching_line_curse",
+      "deep_lucky_block:abyss_curse",
+      "deep_lucky_block:end_corrosion",
+      "deep_lucky_block:nether_corrosion"
+    ]
+  }
+}
