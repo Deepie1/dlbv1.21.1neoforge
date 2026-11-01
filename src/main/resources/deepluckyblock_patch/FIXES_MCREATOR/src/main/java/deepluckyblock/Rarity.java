@@ -1,30 +1,40 @@
 package deepluckyblock;
 
 /**
- * Rarity des enchantements custom — PORT 1.21.1.
+ * T307-RARITY : Échelle complète de rareté des enchantements custom (7 paliers jusqu'à LEGENDARY),
+ * alignée sur les seuils de QualityTier (TestProcedure) :
+ *  - COMMON    (poids 32, luck min  0)
+ *  - UNCOMMON  (poids 18, luck min 25)
+ *  - RARE      (poids 10, luck min 46)
+ *  - VERY_RARE (poids  5, luck min 64)
+ *  - EPIC      (poids  3, luck min 78)
+ *  - MYTHIC    (poids  2, luck min 87)
+ *  - LEGENDARY (poids  1, luck min 91)
  *
- * En 1.20.1 c'était Enchantment.Rarity (supprimée en 1.20.5+). Le champ
- * "weight" (poids de tirage en table d'enchante vanilla) remplace la notion
- * de rareté : les mêmes valeurs que l'ancien enum (COMMON=9, UNCOMMON=5,
- * RARE=2, VERY_RARE=1). La table d'enchante vanilla est désactivée pour ce
- * mod (voir CustomEnchantment.ENABLE_VANILLA_INTEGRATION), le poids ne sert
- * qu'aux calculs de coût / affichage.
- *
- * NB : n'a RIEN à voir avec net.minecraft.world.item.Rarity (rareté d'item).
+ * NB : distinct de {@code net.minecraft.world.item.Rarity} (rareté vanilla d'item).
  */
 public enum Rarity {
-    COMMON(9),
-    UNCOMMON(5),
-    RARE(2),
-    VERY_RARE(1);
+    COMMON(32, 0),
+    UNCOMMON(18, 25),
+    RARE(10, 46),
+    VERY_RARE(5, 64),
+    EPIC(3, 78),
+    MYTHIC(2, 87),
+    LEGENDARY(1, 91);
 
     private final int weight;
+    private final int minLuck;
 
-    Rarity(int weight) {
+    Rarity(int weight, int minLuck) {
         this.weight = weight;
+        this.minLuck = minLuck;
     }
 
     public int weight() {
         return this.weight;
+    }
+
+    public int minLuck() {
+        return this.minLuck;
     }
 }

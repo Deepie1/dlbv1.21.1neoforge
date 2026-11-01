@@ -43,6 +43,10 @@ public final class EnchantmentParticleFX {
             new DustParticleOptions(new Vector3f(0.80f, 0.84f, 0.90f), 0.95f);
     public static final DustParticleOptions EARTH_OCHRE =
             new DustParticleOptions(new Vector3f(0.58f, 0.42f, 0.24f), 1.10f);
+    public static final DustParticleOptions CLOUD_WHITE =
+            new DustParticleOptions(new Vector3f(0.94f, 0.98f, 1.00f), 1.05f);
+    public static final DustParticleOptions HONEY_AMBER =
+            new DustParticleOptions(new Vector3f(0.98f, 0.66f, 0.08f), 1.05f);
 
     /** Arc d'entaille orienté devant l'attaquant (balayages, lames maîtresses). */
     public static void slashArc(LivingEntity attacker, ParticleOptions main, ParticleOptions accent,
@@ -216,6 +220,33 @@ public final class EnchantmentParticleFX {
             sl.sendParticles(particle,
                     target.getX(), target.getY() + target.getBbHeight() * 0.52, target.getZ(),
                     Math.max(1, Math.min(36, count)), spread, spread, spread, speed);
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * T307-CLOUD : Coussin de nuages cotonneux directement sous les pieds du joueur
+     * (Marcheur des Nuages triple saut, Marche Aérienne, Foulée des Nuages, rebonds aériens).
+     */
+    public static void cloudCushion(ServerLevel sl, double x, double y, double z, double radius, boolean radiant) {
+        if (sl == null) return;
+        try {
+            double r = Math.max(0.35, Math.min(2.2, radius));
+            // Cœur cotonneux dense juste sous les semelles
+            sl.sendParticles(ParticleTypes.CLOUD, x, y, z, radiant ? 12 : 7, r * 0.36, 0.04, r * 0.36, 0.012);
+            // Couronne horizontale de nuage qui s'évase doucement
+            int pts = radiant ? 14 : 9;
+            for (int i = 0; i < pts; i++) {
+                double ang = (Math.PI * 2.0 * i) / pts;
+                double px = x + Math.cos(ang) * r;
+                double pz = z + Math.sin(ang) * r;
+                sl.sendParticles(ParticleTypes.CLOUD, px, y + 0.02, pz, 1, 0.05, 0.02, 0.05, 0.008);
+                if (radiant && (i & 1) == 0) {
+                    sl.sendParticles(CLOUD_WHITE, px * 0.5 + x * 0.5, y + 0.03, pz * 0.5 + z * 0.5, 1, 0.03, 0.02, 0.03, 0.0);
+                }
+            }
+            if (radiant) {
+                sl.sendParticles(ParticleTypes.WHITE_ASH, x, y + 0.05, z, 6, r * 0.45, 0.05, r * 0.45, 0.01);
+            }
         } catch (Throwable ignored) {}
     }
 }

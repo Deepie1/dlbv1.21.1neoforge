@@ -74,13 +74,16 @@ public final class CustomEnchantment {
         WEARABLE, ARMOR, ARMOR_HEAD, ARMOR_CHEST, ARMOR_LEGS, ARMOR_FEET
     }
 
-    /** Coûts de la table par rareté — [min, max] (utilisé si intégration ON). */
+    /** Coûts de la table par rareté — [min, max] (T307-RARITY : 7 paliers jusqu'à LEGENDARY). */
     public static final Map<Rarity, int[]> TABLE_COST_BY_RARITY =
         new java.util.EnumMap<>(java.util.Map.of(
-            Rarity.COMMON,    new int[]{ 1,  35},   // USED / COMMON
-            Rarity.UNCOMMON,  new int[]{12,  45},   // UNCOMMON
-            Rarity.RARE,      new int[]{20,  65},   // RARE / EPIC
-            Rarity.VERY_RARE, new int[]{36,  110}   // LEGENDARY et au-dessus
+            Rarity.COMMON,    new int[]{ 1,  30},
+            Rarity.UNCOMMON,  new int[]{10,  42},
+            Rarity.RARE,      new int[]{18,  58},
+            Rarity.VERY_RARE, new int[]{28,  80},
+            Rarity.EPIC,      new int[]{38, 105},
+            Rarity.MYTHIC,    new int[]{50, 135},
+            Rarity.LEGENDARY, new int[]{65, 175}
         ));
 
     /** Coût minimal en fonction du niveau : chaque niveau décale la fenêtre. */
@@ -165,6 +168,48 @@ public final class CustomEnchantment {
     public static Rarity getRarityMod(Enchantment en) {
         Meta m = meta(en);
         return m == null ? null : m.rarity();
+    }
+
+    /** T307-RARITY : Accès direct à la rareté depuis un ID ("deep_lucky_block:foo" ou "foo"). */
+    public static Rarity getRarityByPath(String idOrPath) {
+        if (idOrPath == null || idOrPath.isEmpty()) return null;
+        String clean = idOrPath.toLowerCase(Locale.ROOT);
+        int colon = clean.indexOf(':');
+        if (colon >= 0) {
+            String ns = clean.substring(0, colon);
+            if (!NS().equals(ns) && !"supreme_lucky_block".equals(ns)) return null;
+            clean = clean.substring(colon + 1);
+        }
+        Meta m = META.get(ResourceLocation.parse(NS() + ":" + clean));
+        return m == null ? null : m.rarity();
+    }
+
+    /** T307-RARITY : Badge localisé et coloré pour les infobulles détaillées (Shift). */
+    public static MutableComponent formatRarityBadge(Rarity rarity) {
+        if (rarity == null) return Component.empty();
+        String key = "tooltip.deep_lucky_block.rarity." + rarity.name().toLowerCase(Locale.ROOT);
+        String fallback = switch (rarity) {
+            case COMMON -> "Commun";
+            case UNCOMMON -> "Peu commun";
+            case RARE -> "Rare";
+            case VERY_RARE -> "Tr\u00e8s rare";
+            case EPIC -> "\u00c9pique";
+            case MYTHIC -> "Mythique";
+            case LEGENDARY -> "L\u00e9gendaire";
+        };
+        int rgb = switch (rarity) {
+            case COMMON -> 0xB8C2CC;
+            case UNCOMMON -> 0x55FF55;
+            case RARE -> 0x55AAFF;
+            case VERY_RARE -> 0x00DDDD;
+            case EPIC -> 0xB366FF;
+            case MYTHIC -> 0xFF55CC;
+            case LEGENDARY -> 0xFFAA00;
+        };
+        return Component.literal("[")
+                .append(deepluckyblock.util.TranslationFallback.translatableOrFallback(key, fallback))
+                .append("]")
+                .withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb)));
     }
 
     public static boolean isTreasureMod(Enchantment en) {
@@ -312,7 +357,8 @@ public final class CustomEnchantment {
             Set.of("stinky_feet", "super_stinky_feet"),
             Set.of("rock_breaking_gauntlet", "diamond_glow_gauntlet"),
             Set.of("army_summon", "summon_army"),
-            Set.of("echolocation", "perception")
+            Set.of("echolocation", "perception"),
+            Set.of("big_step", "giant_step")
     );
 
     /**
@@ -375,7 +421,8 @@ public final class CustomEnchantment {
         if (n.contains("conduit") || n.contains("water") || n.contains("ocean")
                 || n.contains("aqua") || n.contains("tide") || n.contains("amphibious")
                 || n.contains("buoy") || n.contains("depth")) return Style.EMPTY.withColor(ChatFormatting.BLUE);
-        if (n.contains("leap") || n.contains("jump") || n.contains("high_step")) return Style.EMPTY.withColor(ChatFormatting.GREEN);
+        if (n.contains("leap") || n.contains("jump") || n.contains("high_step") || n.equals("big_step")) return Style.EMPTY.withColor(ChatFormatting.GREEN);
+        if (n.equals("giant_step")) return Style.EMPTY.withColor(TextColor.fromRgb(0xFFAA00));
         if (n.contains("lumber") || n.contains("tree") || n.contains("vein")
                 || n.contains("harvest") || n.contains("weeding") || n.contains("farmer")
                 || n.contains("forest") || n.contains("moss") || n.contains("plant")
@@ -386,6 +433,11 @@ public final class CustomEnchantment {
                 || n.contains("lava") || n.contains("scorch") || n.contains("molten")
                 || n.contains("fiery") || n.contains("blazing") || n.contains("meteor")) return Style.EMPTY.withColor(ChatFormatting.GOLD);
         if (n.contains("haste") || n.contains("hypoxia")) return Style.EMPTY.withColor(ChatFormatting.GOLD);
+        // T307-RARITY : Teinte de prestige pour les paliers Épique / Mythique / Légendaire sans élément dédié
+        Rarity r = getRarityByPath(n);
+        if (r == Rarity.LEGENDARY) return Style.EMPTY.withColor(TextColor.fromRgb(0xFFBB33));
+        if (r == Rarity.MYTHIC) return Style.EMPTY.withColor(TextColor.fromRgb(0xFF66CC));
+        if (r == Rarity.EPIC) return Style.EMPTY.withColor(TextColor.fromRgb(0xB877FF));
         return Style.EMPTY.withColor(ChatFormatting.WHITE);
     }
 

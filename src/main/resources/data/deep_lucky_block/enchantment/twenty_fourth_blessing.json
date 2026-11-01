@@ -3,7 +3,7 @@
     "translate": "enchantment.deep_lucky_block.twenty_fourth_blessing"
   },
   "supported_items": "#minecraft:enchantable/foot_armor",
-  "weight": 1,
+  "weight": 5,
   "max_level": 1,
   "min_cost": {
     "base": 1,

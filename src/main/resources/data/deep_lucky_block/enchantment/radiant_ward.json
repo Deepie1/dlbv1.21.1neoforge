@@ -3,7 +3,7 @@
     "translate": "enchantment.deep_lucky_block.radiant_ward"
   },
   "supported_items": "#minecraft:enchantable/head_armor",
-  "weight": 1,
+  "weight": 2,
   "max_level": 3,
   "min_cost": {
     "base": 1,

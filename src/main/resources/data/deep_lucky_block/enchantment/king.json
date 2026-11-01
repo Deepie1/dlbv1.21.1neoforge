@@ -3,7 +3,7 @@
     "translate": "enchantment.deep_lucky_block.king"
   },
   "supported_items": "#minecraft:enchantable/head_armor",
-  "weight": 1,
+  "weight": 3,
   "max_level": 5,
   "min_cost": {
     "base": 1,

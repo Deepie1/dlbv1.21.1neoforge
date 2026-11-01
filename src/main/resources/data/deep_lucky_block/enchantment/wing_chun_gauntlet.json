@@ -3,7 +3,7 @@
     "translate": "enchantment.deep_lucky_block.wing_chun_gauntlet"
   },
   "supported_items": "#minecraft:enchantable/chest_armor",
-  "weight": 1,
+  "weight": 5,
   "max_level": 5,
   "min_cost": {
     "base": 1,

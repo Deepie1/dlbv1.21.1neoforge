@@ -3,7 +3,7 @@
     "translate": "enchantment.deep_lucky_block.execute_power"
   },
   "supported_items": "#minecraft:enchantable/durability",
-  "weight": 2,
+  "weight": 1,
   "max_level": 5,
   "min_cost": {
     "base": 1,

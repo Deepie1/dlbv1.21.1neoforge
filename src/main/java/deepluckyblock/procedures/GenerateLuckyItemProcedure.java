@@ -2474,8 +2474,7 @@ public class GenerateLuckyItemProcedure {
         if (filteredPool.isEmpty()) filteredPool = pool;
 
         if (isEternal) {
-            List<String> all = new ArrayList<>(filteredPool);
-            Collections.shuffle(all, new java.util.Random(random.nextLong()));
+            List<String> all = weightedOrderByRarity(filteredPool, effectiveLuck, random);
 
             // L'unique niveau 100 vient exclusivement du pool JSON dédié. Ce
             // pool ne contient que des enchantements MODDÉS, simples et COMMON.
@@ -2521,7 +2520,7 @@ public class GenerateLuckyItemProcedure {
             else modded.add(id);
         }
         Collections.shuffle(vanilla, new java.util.Random(random.nextLong()));
-        Collections.shuffle(modded, new java.util.Random(random.nextLong()));
+        modded = weightedOrderByRarity(modded, effectiveLuck, random);
 
         EnchantRange range = enchantRange(mainLuck, branchLuck, creatorMode, random);
         int targetCount = rollEnchantCount(effectiveLuck, random);
@@ -2555,9 +2554,9 @@ public class GenerateLuckyItemProcedure {
         if (targetCount > 0 && random.nextInt(100) < signatureChance) {
             Set<String> signatureCategories = selectedCategories == null
                     ? Set.of("offensive", "utility") : selectedCategories;
-            List<String> signaturePool = loadBestSignaturePool(
-                    type.configKey, rankKey, effectiveLuck, signatureCategories);
-            Collections.shuffle(signaturePool, new java.util.Random(random.nextLong()));
+            List<String> signaturePool = weightedOrderByRarity(
+                    loadBestSignaturePool(type.configKey, rankKey, effectiveLuck, signatureCategories),
+                    effectiveLuck, random);
             for (String id : signaturePool) {
                 if (applied.contains(id) || conflictsWithApplied(id, applied)) continue;
                 int level = id.startsWith("minecraft:")
@@ -3094,6 +3093,81 @@ public class GenerateLuckyItemProcedure {
     }
 
     private static final String NS_PREFIX = "deep_lucky_block:";
+
+    /**
+     * T307-RARITY : Tirage pondéré sans remise selon l'échelle à 7 paliers (COMMON -> LEGENDARY)
+     * et filtrage par seuil minimal de chance ({@link deepluckyblock.Rarity#minLuck()}).
+     * Les enchantements Épiques, Mythiques et Légendaires deviennent nettement plus rares à obtenir
+     * tout en restant déblocables aux hauts paliers de chance.
+     */
+    private static List<String> weightedOrderByRarity(List<String> candidates, int effectiveLuck, RandomSource random) {
+        if (candidates == null || candidates.size() <= 1) {
+            return candidates == null ? new ArrayList<>() : new ArrayList<>(candidates);
+        }
+        List<String> eligible = new ArrayList<>(candidates.size());
+        List<String> locked = new ArrayList<>();
+        for (String id : candidates) {
+            if (id == null) continue;
+            if (id.startsWith("minecraft:") || effectiveLuck < 0 || id.toLowerCase(Locale.ROOT).contains("curse")) {
+                eligible.add(id);
+                continue;
+            }
+            deepluckyblock.Rarity r = deepluckyblock.enchantments.CustomEnchantment.getRarityByPath(id);
+            if (r == null || effectiveLuck >= r.minLuck()) {
+                eligible.add(id);
+            } else {
+                locked.add(id);
+            }
+        }
+        List<String> ordered = weightedSampleWithoutReplacement(eligible, effectiveLuck, random);
+        if (!locked.isEmpty()) {
+            ordered.addAll(weightedSampleWithoutReplacement(locked, effectiveLuck, random));
+        }
+        return ordered;
+    }
+
+    private static List<String> weightedSampleWithoutReplacement(List<String> pool, int effectiveLuck, RandomSource random) {
+        List<String> remaining = new ArrayList<>(pool);
+        int n = remaining.size();
+        if (n <= 1) return remaining;
+        int[] weights = new int[n];
+        int totalWeight = 0;
+        for (int i = 0; i < n; i++) {
+            String id = remaining.get(i);
+            deepluckyblock.Rarity r = deepluckyblock.enchantments.CustomEnchantment.getRarityByPath(id);
+            int w = (r != null) ? r.weight() : 10;
+            // Léger coup de pouce aux rangs ultimes (Mythic/Relic/Masterwork/Eternal, luck >= 95)
+            // tout en gardant LEGENDARY nettement plus rare que COMMON/UNCOMMON/RARE.
+            if (effectiveLuck >= 97 && (r == deepluckyblock.Rarity.LEGENDARY || r == deepluckyblock.Rarity.MYTHIC)) {
+                w += 2;
+            } else if (effectiveLuck >= 94 && r == deepluckyblock.Rarity.LEGENDARY) {
+                w += 1;
+            }
+            weights[i] = Math.max(1, w);
+            totalWeight += weights[i];
+        }
+        List<String> out = new ArrayList<>(n);
+        int activeCount = n;
+        while (activeCount > 0 && totalWeight > 0) {
+            int roll = random.nextInt(totalWeight);
+            int chosenIdx = activeCount - 1;
+            int acc = 0;
+            for (int i = 0; i < activeCount; i++) {
+                acc += weights[i];
+                if (roll < acc) {
+                    chosenIdx = i;
+                    break;
+                }
+            }
+            out.add(remaining.get(chosenIdx));
+            totalWeight -= weights[chosenIdx];
+            int lastIdx = activeCount - 1;
+            remaining.set(chosenIdx, remaining.get(lastIdx));
+            weights[chosenIdx] = weights[lastIdx];
+            activeCount--;
+        }
+        return out;
+    }
 
     private static boolean conflictsWithApplied(String id, Set<String> applied) {
         if (id == null) return false;

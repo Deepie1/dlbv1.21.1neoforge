@@ -3,7 +3,7 @@
     "translate": "enchantment.deep_lucky_block.amphibious"
   },
   "supported_items": "#minecraft:enchantable/chest_armor",
-  "weight": 5,
+  "weight": 18,
   "max_level": 1,
   "min_cost": {
     "base": 1,

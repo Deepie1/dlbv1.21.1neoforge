@@ -3,7 +3,7 @@
     "translate": "enchantment.deep_lucky_block.burst_step"
   },
   "supported_items": "#minecraft:enchantable/foot_armor",
-  "weight": 1,
+  "weight": 3,
   "max_level": 3,
   "min_cost": {
     "base": 1,

@@ -40,40 +40,40 @@ public class ModEnchantments {
     static {
 
     // ===================== 1. EPEES & COMBAT (SWORDS) =====================
-            CustomEnchantment.create("supreme_sharpness", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 100);
+            CustomEnchantment.create("supreme_sharpness", Rarity.LEGENDARY, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 100);
             CustomEnchantment.create("advanced_sharpness", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 25);
-            CustomEnchantment.create("extreme_sharpness", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 20);
-            CustomEnchantment.create("ultra_edge", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 15);
-            CustomEnchantment.create("titan_slayer", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
-            CustomEnchantment.create("giant_slayer", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
-            CustomEnchantment.create("swift_strike", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
-            CustomEnchantment.create("extension", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
+            CustomEnchantment.create("extreme_sharpness", Rarity.MYTHIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 20);
+            CustomEnchantment.create("ultra_edge", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 15);
+            CustomEnchantment.create("titan_slayer", Rarity.LEGENDARY, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
+            CustomEnchantment.create("giant_slayer", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
+            CustomEnchantment.create("swift_strike", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
+            CustomEnchantment.create("extension", Rarity.MYTHIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
             CustomEnchantment.create("cursed_blade", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1, false, true);
             CustomEnchantment.create("battle_hardened", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
-            CustomEnchantment.create("new_edge", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
-            CustomEnchantment.create("blood_drinker_edge", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
+            CustomEnchantment.create("new_edge", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
+            CustomEnchantment.create("blood_drinker_edge", Rarity.LEGENDARY, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
             CustomEnchantment.create("bloodthirst", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
-            CustomEnchantment.create("bloodthirsty", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
-            CustomEnchantment.create("blood_pact", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
+            CustomEnchantment.create("bloodthirsty", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
+            CustomEnchantment.create("blood_pact", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
             CustomEnchantment.create("blood_transfusion", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
-            CustomEnchantment.create("blood_edge", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
-            CustomEnchantment.create("wither_edge", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
-            CustomEnchantment.create("wither_blade", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1);
-            CustomEnchantment.create("crit_rate", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
-            CustomEnchantment.create("critical_strike", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
-            CustomEnchantment.create("damage_critical", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
-            CustomEnchantment.create("combo_slash", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
-            CustomEnchantment.create("annihilating_sweep", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
-            CustomEnchantment.create("fiery_sweep", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
+            CustomEnchantment.create("blood_edge", Rarity.MYTHIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
+            CustomEnchantment.create("wither_edge", Rarity.MYTHIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
+            CustomEnchantment.create("wither_blade", Rarity.LEGENDARY, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1);
+            CustomEnchantment.create("crit_rate", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
+            CustomEnchantment.create("critical_strike", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
+            CustomEnchantment.create("damage_critical", Rarity.LEGENDARY, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
+            CustomEnchantment.create("combo_slash", Rarity.MYTHIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("annihilating_sweep", Rarity.LEGENDARY, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
+            CustomEnchantment.create("fiery_sweep", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
             CustomEnchantment.create("sweeping_burn_slash", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
-            CustomEnchantment.create("unbreakable", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, HANDS, 1);
-            CustomEnchantment.create("soul_bound", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, HANDS, 1);
-            CustomEnchantment.create("beheading", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
-            CustomEnchantment.create("decapitation", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
-            CustomEnchantment.create("execute_chance", Rarity.VERY_RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 10);
-            CustomEnchantment.create("summon_army", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1);
-            CustomEnchantment.create("shadow_hunt", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
-            CustomEnchantment.create("plunder_wealth", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("unbreakable", Rarity.LEGENDARY, CustomEnchantment.Cat.BREAKABLE, HANDS, 1);
+            CustomEnchantment.create("soul_bound", Rarity.MYTHIC, CustomEnchantment.Cat.BREAKABLE, HANDS, 1);
+            CustomEnchantment.create("beheading", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
+            CustomEnchantment.create("decapitation", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
+            CustomEnchantment.create("execute_chance", Rarity.EPIC, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 10);
+            CustomEnchantment.create("summon_army", Rarity.LEGENDARY, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1);
+            CustomEnchantment.create("shadow_hunt", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
+            CustomEnchantment.create("plunder_wealth", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("weakness_wound", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("weakness_trauma", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("brutal", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
@@ -81,7 +81,7 @@ public class ModEnchantments {
             CustomEnchantment.create("sighing_strike", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("flint_strike", Rarity.UNCOMMON, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 3);
             CustomEnchantment.create("promising_blade", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
-            CustomEnchantment.create("low_damage_critical", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("low_damage_critical", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("poison_scar", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("killing_sense", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("sense", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
@@ -96,32 +96,32 @@ public class ModEnchantments {
             CustomEnchantment.create("slow_heavy_weakness", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
             CustomEnchantment.create("heavy_slow_hit", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("solo_combat", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
-            CustomEnchantment.create("sharp_edge", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
-            CustomEnchantment.create("reinforced_sharpness", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
-            CustomEnchantment.create("sharpened_sharpness", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
+            CustomEnchantment.create("sharp_edge", Rarity.COMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
+            CustomEnchantment.create("reinforced_sharpness", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
+            CustomEnchantment.create("sharpened_sharpness", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
             CustomEnchantment.create("blazing_trauma", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
             CustomEnchantment.create("blazing_soul_sweep", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
             CustomEnchantment.create("sweeping_fire", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
-            CustomEnchantment.create("sweeping_enhancement", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
+            CustomEnchantment.create("sweeping_enhancement", Rarity.COMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
             CustomEnchantment.create("sweeping_strike", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
             CustomEnchantment.create("sweeping_slash", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
-            CustomEnchantment.create("last_stand_slayer", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
+            CustomEnchantment.create("last_stand_slayer", Rarity.LEGENDARY, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
             CustomEnchantment.create("focused_ambush", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
-            CustomEnchantment.create("cavalier", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
-            CustomEnchantment.create("leader", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
-            CustomEnchantment.create("peerless", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
+            CustomEnchantment.create("cavalier", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
+            CustomEnchantment.create("leader", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("peerless", Rarity.LEGENDARY, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10);
             CustomEnchantment.create("poison_fang", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("reinforced_sweeping", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
 
     // ===================== 2. HACHES (AXES) =====================
-            CustomEnchantment.create("lumberjack", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
+            CustomEnchantment.create("lumberjack", Rarity.LEGENDARY, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5);
             CustomEnchantment.create("tree_felling", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
 
     // ===================== 3. PIOCHES & OUTILS (PICKAXES & TOOLS) =====================
-            CustomEnchantment.create("extracting", Rarity.VERY_RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 1);
-            CustomEnchantment.create("core_harvesting", Rarity.VERY_RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 1);
+            CustomEnchantment.create("extracting", Rarity.LEGENDARY, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 1);
+            CustomEnchantment.create("core_harvesting", Rarity.LEGENDARY, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 1);
             CustomEnchantment.create("molten", Rarity.RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 1);
-            CustomEnchantment.create("vein_miner", Rarity.RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 3);
+            CustomEnchantment.create("vein_miner", Rarity.VERY_RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 3);
             CustomEnchantment.create("burrowing", Rarity.RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 3);
 
     // ===================== 4. PELLES (SHOVELS) =====================
@@ -133,50 +133,50 @@ public class ModEnchantments {
             CustomEnchantment.create("snow_remover_shovel", Rarity.COMMON, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 1);
 
     // ===================== 5. ARCS & ARBALETES (BOWS & CROSSBOWS) =====================
-            CustomEnchantment.create("phasing", Rarity.VERY_RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
-            CustomEnchantment.create("storm_strike", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 5);
+            CustomEnchantment.create("phasing", Rarity.MYTHIC, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
+            CustomEnchantment.create("storm_strike", Rarity.MYTHIC, CustomEnchantment.Cat.BOW, MAIN_HAND, 5);
             CustomEnchantment.create("delay", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 5);
             CustomEnchantment.create("sniper", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
             CustomEnchantment.create("multishot_bow", Rarity.UNCOMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
             CustomEnchantment.create("chaos", Rarity.UNCOMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
-            CustomEnchantment.create("brimstone", Rarity.VERY_RARE, CustomEnchantment.Cat.CROSSBOW, MAIN_HAND, 5);
+            CustomEnchantment.create("brimstone", Rarity.LEGENDARY, CustomEnchantment.Cat.CROSSBOW, MAIN_HAND, 5);
             CustomEnchantment.create("scatter", Rarity.RARE, CustomEnchantment.Cat.CROSSBOW, MAIN_HAND, 1);
             CustomEnchantment.create("torch", Rarity.COMMON, CustomEnchantment.Cat.CROSSBOW, MAIN_HAND, 1);
             CustomEnchantment.create("poison_arrow", Rarity.COMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 2);
 
     // ===================== 6. TRIDENTS, MASSES & PECHE =====================
-            CustomEnchantment.create("warp", Rarity.VERY_RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
+            CustomEnchantment.create("warp", Rarity.MYTHIC, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
             CustomEnchantment.create("leech", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
-            CustomEnchantment.create("thunderstruck", Rarity.VERY_RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
-            CustomEnchantment.create("meteor", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
+            CustomEnchantment.create("thunderstruck", Rarity.EPIC, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
+            CustomEnchantment.create("meteor", Rarity.LEGENDARY, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
             CustomEnchantment.create("disarm", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("grapple", Rarity.UNCOMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
 
     // ===================== 7. CASQUES (HELMETS) =====================
-            CustomEnchantment.create("commander", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1);
-            CustomEnchantment.create("illager_commander", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1);
-            CustomEnchantment.create("undead_commander", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1);
-            CustomEnchantment.create("perception", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1);
-            CustomEnchantment.create("veil", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1);
+            CustomEnchantment.create("commander", Rarity.EPIC, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1);
+            CustomEnchantment.create("illager_commander", Rarity.EPIC, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1);
+            CustomEnchantment.create("undead_commander", Rarity.EPIC, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1);
+            CustomEnchantment.create("perception", Rarity.EPIC, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1);
+            CustomEnchantment.create("veil", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1);
             CustomEnchantment.create("mystic_mind", Rarity.RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1);
             CustomEnchantment.create("assimilation", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1);
 
     // ===================== 8. PLASTRONS (CHESTPLATES) =====================
             CustomEnchantment.create("inner_fear", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1);
-            CustomEnchantment.create("wardenspine", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
+            CustomEnchantment.create("wardenspine", Rarity.LEGENDARY, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
             CustomEnchantment.create("punching_armor", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 10);
             CustomEnchantment.create("adrenaline", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
             CustomEnchantment.create("strafe", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
             CustomEnchantment.create("amphibious", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1);
 
     // ===================== 9. JAMBIERES (LEGGINGS) =====================
-            CustomEnchantment.create("slide", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 3);
+            CustomEnchantment.create("slide", Rarity.RARE, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 3);
             CustomEnchantment.create("dash", Rarity.RARE, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 3);
-            CustomEnchantment.create("leap_power", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 5);
+            CustomEnchantment.create("leap_power", Rarity.RARE, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 5);
             CustomEnchantment.create("basic_leap_power", Rarity.COMMON, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 3);
 
     // ===================== 10. BOTTES (BOOTS) =====================
-            CustomEnchantment.create("gale", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 10);
+            CustomEnchantment.create("gale", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 10);
             CustomEnchantment.create("buoy", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
             CustomEnchantment.create("bouncy", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
             CustomEnchantment.create("e_speed", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
@@ -189,19 +189,19 @@ public class ModEnchantments {
             CustomEnchantment.create("shield_efficiency", Rarity.COMMON, CustomEnchantment.Cat.BREAKABLE, HANDS, 1);
 
     // ===================== 12. UNIVERSELS & REPARATION =====================
-            CustomEnchantment.create("chrono_mending", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, HANDS, 5);
-            CustomEnchantment.create("basic_chrono_mending", Rarity.RARE, CustomEnchantment.Cat.BREAKABLE, HANDS, 3);
-            CustomEnchantment.create("basic_mending", Rarity.COMMON, CustomEnchantment.Cat.BREAKABLE, HANDS, 5);
-            CustomEnchantment.create("phoenix", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR, ARMOR, 3);
-            CustomEnchantment.create("eternal", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, HANDS, 1);
+            CustomEnchantment.create("chrono_mending", Rarity.LEGENDARY, CustomEnchantment.Cat.BREAKABLE, HANDS, 5);
+            CustomEnchantment.create("basic_chrono_mending", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, HANDS, 3);
+            CustomEnchantment.create("basic_mending", Rarity.UNCOMMON, CustomEnchantment.Cat.BREAKABLE, HANDS, 5);
+            CustomEnchantment.create("phoenix", Rarity.LEGENDARY, CustomEnchantment.Cat.ARMOR, ARMOR, 3);
+            CustomEnchantment.create("eternal", Rarity.LEGENDARY, CustomEnchantment.Cat.BREAKABLE, HANDS, 1);
             CustomEnchantment.create("magnetic", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR, ARMOR, 1);
 
     // ===================== 13. PROTECTIONS PERSONNALISEES =====================
-            CustomEnchantment.create("explosion_protection", Rarity.RARE, CustomEnchantment.Cat.ARMOR, ARMOR, 5, false, false);
+            CustomEnchantment.create("explosion_protection", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR, ARMOR, 5, false, false);
             CustomEnchantment.create("fire_protection_enhancement", Rarity.RARE, CustomEnchantment.Cat.ARMOR, ARMOR, 4);
             CustomEnchantment.create("projectile_protection_enhancement", Rarity.RARE, CustomEnchantment.Cat.ARMOR, ARMOR, 4);
-            CustomEnchantment.create("divine_protection", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR, ARMOR, 5);
-            CustomEnchantment.create("infernal_armor", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1);
+            CustomEnchantment.create("divine_protection", Rarity.LEGENDARY, CustomEnchantment.Cat.ARMOR, ARMOR, 5);
+            CustomEnchantment.create("infernal_armor", Rarity.LEGENDARY, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1);
 
     // ===================== 13b. COEURS ELEMENTAIRES (plastron uniquement) =====================
     // +1 coeur (2 PV) par niveau, niveau max 3 -> jusqu'a +3 coeurs (6 PV).
@@ -209,13 +209,13 @@ public class ModEnchantments {
     // élément (voir client/ElementalHeartOverlay + EnchantAura pour le theme
     // de couleur), un enchantement distinct par élément pour permettre de
     // les cumuler sur des plastrons différents / de les distinguer en jeu.
-            CustomEnchantment.create("fire_heart", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
-            CustomEnchantment.create("water_heart", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
-            CustomEnchantment.create("earth_heart", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
-            CustomEnchantment.create("wind_heart", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
-            CustomEnchantment.create("electric_heart", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
-            CustomEnchantment.create("shadow_heart", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
-            CustomEnchantment.create("light_heart", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
+            CustomEnchantment.create("fire_heart", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
+            CustomEnchantment.create("water_heart", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
+            CustomEnchantment.create("earth_heart", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
+            CustomEnchantment.create("wind_heart", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
+            CustomEnchantment.create("electric_heart", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
+            CustomEnchantment.create("shadow_heart", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
+            CustomEnchantment.create("light_heart", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
 
     // ===================== 13c. ENCHANTEMENTS LIES AUX COEURS ELEMENTAIRES =====================
     // 8 enchantements pensés comme des "pactes elementaires" (inspiration
@@ -225,16 +225,16 @@ public class ModEnchantments {
             CustomEnchantment.create("ember_core", Rarity.RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 3);
             CustomEnchantment.create("tidal_ward", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
             CustomEnchantment.create("stonebound_roots", Rarity.RARE, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 3);
-            CustomEnchantment.create("gale_step", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
+            CustomEnchantment.create("gale_step", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
             CustomEnchantment.create("overcharge", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
-            CustomEnchantment.create("radiant_ward", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 3);
+            CustomEnchantment.create("radiant_ward", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 3);
             // Umbral Pact est un pacte maudit : il ne va PAS dans la liste des
             // curses "malediction pure" (il apporte un vrai avantage offensif),
             // mais son cout (vulnerabilite + saignee de vie) et son aura
             // visuelle malsaine (voir ElementalHeartOverlay) le signalent
             // clairement comme un choix risque.
-            CustomEnchantment.create("umbral_pact", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 3);
-            CustomEnchantment.create("heart_resonance", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1);
+            CustomEnchantment.create("umbral_pact", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 3);
+            CustomEnchantment.create("heart_resonance", Rarity.LEGENDARY, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1);
 
     // ===================== 13d. PACTES ELEMENTAIRES (2e vague, retour utilisateur) =====================
     // 8 nouveaux enchantements lies aux coeurs elementaires -- inspiration
@@ -253,7 +253,7 @@ public class ModEnchantments {
             CustomEnchantment.create("riptide_curse", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 3, false, true);
             // TITAN'S GRASP (Earth, arme) : degats de melee augmentes mais
             // vitesse d'attaque reduite -- le colosse lent et ecrasant.
-            CustomEnchantment.create("titans_grasp", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("titans_grasp", Rarity.MYTHIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             // ZEPHYR'S GAMBIT (Wind, plastron, FUN) : chance de micro-
             // teleportation d'esquive quand on encaisse un coup critique --
             // "insaisissable comme le vent".
@@ -273,12 +273,12 @@ public class ModEnchantments {
             // CHIMERA'S WHIM (multi-element, bottes, FUN) : a chaque saut,
             // declenche un effet aleatoire parmi les elements de coeur
             // actifs sur le joueur -- la "chimere instable" imprevisible.
-            CustomEnchantment.create("chimeras_whim", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1);
+            CustomEnchantment.create("chimeras_whim", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1);
 
     // ===================== 14. MALEDICTIONS / CURSES + RESTE =====================
             CustomEnchantment.create("nether_corrosion", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, HANDS, 1, false, true);
             CustomEnchantment.create("end_corrosion", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, HANDS, 1, false, true);
-            CustomEnchantment.create("fear", Rarity.COMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1, false, true);
+            CustomEnchantment.create("fear", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1, false, true);
             CustomEnchantment.create("haste_surge", Rarity.COMMON, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 10, false, false); // positif : affiché ORANGE, plus rouge
             CustomEnchantment.create("breath_holding", Rarity.RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, false); // positif : affiché BLEU
             CustomEnchantment.create("high_altitude_hypoxia", Rarity.RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, false); // positif (protège en altitude) : affiché ORANGE
@@ -287,41 +287,41 @@ public class ModEnchantments {
             CustomEnchantment.create("inverted_arrows", Rarity.VERY_RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 1, false, true);
             CustomEnchantment.create("whisper", Rarity.VERY_RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
             CustomEnchantment.create("flint_heart", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
-            CustomEnchantment.create("ricochet", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 5);
-            CustomEnchantment.create("ranger", Rarity.VERY_RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
+            CustomEnchantment.create("ricochet", Rarity.VERY_RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 5);
+            CustomEnchantment.create("ranger", Rarity.EPIC, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
             CustomEnchantment.create("steady_shot", Rarity.VERY_RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
             CustomEnchantment.create("enemy_attractor", Rarity.VERY_RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 1, true, false);
             CustomEnchantment.create("pierce", Rarity.UNCOMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 5);
             CustomEnchantment.create("heavy_range_crossbow", Rarity.RARE, CustomEnchantment.Cat.CROSSBOW, MAIN_HAND, 5);
             CustomEnchantment.create("peregrine", Rarity.RARE, CustomEnchantment.Cat.CROSSBOW, MAIN_HAND, 3);
-            CustomEnchantment.create("wraith_arrow", Rarity.VERY_RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
+            CustomEnchantment.create("wraith_arrow", Rarity.LEGENDARY, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
             CustomEnchantment.create("blazing_arrow", Rarity.UNCOMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
-            CustomEnchantment.create("dragons_breath_arrow", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
+            CustomEnchantment.create("dragons_breath_arrow", Rarity.MYTHIC, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
             CustomEnchantment.create("water_arrow", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
             CustomEnchantment.create("dry_arrow", Rarity.UNCOMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
             CustomEnchantment.create("heavy_impact", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
-            CustomEnchantment.create("teleport_arrow", Rarity.VERY_RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
-            CustomEnchantment.create("swap_arrow", Rarity.VERY_RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
+            CustomEnchantment.create("teleport_arrow", Rarity.EPIC, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
+            CustomEnchantment.create("swap_arrow", Rarity.MYTHIC, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
             CustomEnchantment.create("toy", Rarity.COMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
             CustomEnchantment.create("instant_shot", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
             CustomEnchantment.create("transfer", Rarity.UNCOMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
-            CustomEnchantment.create("weak_force", Rarity.COMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 3, false, true); // négatif -> rouge forcé
-            CustomEnchantment.create("string_snap", Rarity.COMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 3, false, true); // négatif -> rouge forcé
+            CustomEnchantment.create("weak_force", Rarity.UNCOMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 3, false, true); // négatif -> rouge forcé
+            CustomEnchantment.create("string_snap", Rarity.UNCOMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 3, false, true); // négatif -> rouge forcé
             CustomEnchantment.create("retrieval", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 10);
             CustomEnchantment.create("rain_nourishment", Rarity.RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 5, false, false);
             CustomEnchantment.create("fast_eating", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 3, false, false);
             CustomEnchantment.create("phantom_bee_vex_aversion", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, false);
-            CustomEnchantment.create("king", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 5, false, false);
-            CustomEnchantment.create("general", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 3, false, false);
+            CustomEnchantment.create("king", Rarity.EPIC, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 5, false, false);
+            CustomEnchantment.create("general", Rarity.EPIC, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 3, false, false);
             CustomEnchantment.create("priests_blessing", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, false);
             CustomEnchantment.create("breath_heal", Rarity.RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, false);
-            CustomEnchantment.create("night_veil", Rarity.RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, false);
+            CustomEnchantment.create("night_veil", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, false);
             CustomEnchantment.create("resistance_burst", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 10, false, false);
-            CustomEnchantment.create("resistance_sustain", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3, false, false);
+            CustomEnchantment.create("resistance_sustain", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3, false, false);
             CustomEnchantment.create("pain_devour", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 5, false, false);
             CustomEnchantment.create("stomach_pouch", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 5, false, false);
             CustomEnchantment.create("big_stomach", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 5, false, false);
-            CustomEnchantment.create("sprint_impact", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 10, false, false);
+            CustomEnchantment.create("sprint_impact", Rarity.EPIC, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 10, false, false);
             CustomEnchantment.create("block", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 5, false, false);
             CustomEnchantment.create("life_block", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 5, false, false);
             CustomEnchantment.create("oceans_blessing", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1, false, false);
@@ -345,99 +345,99 @@ public class ModEnchantments {
             CustomEnchantment.create("straight_reach_gauntlet", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3, false, false);
             CustomEnchantment.create("wing_chun_gauntlet", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 5, false, false);
             CustomEnchantment.create("sprint_punch_gauntlet", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 5, false, false);
-            CustomEnchantment.create("rock_breaking_gauntlet", Rarity.COMMON, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1, false, false);
-            CustomEnchantment.create("diamond_glow_gauntlet", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1, false, false);
+            CustomEnchantment.create("rock_breaking_gauntlet", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1, false, false);
+            CustomEnchantment.create("diamond_glow_gauntlet", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1, false, false);
             CustomEnchantment.create("blaze_battle", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 5, false, false);
-            CustomEnchantment.create("blaze_repulsion_heart", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1, false, false);
+            CustomEnchantment.create("blaze_repulsion_heart", Rarity.LEGENDARY, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1, false, false);
             CustomEnchantment.create("scorching_bath", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 10, false, false);
             CustomEnchantment.create("fire_devour", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3, false, false);
             CustomEnchantment.create("burning_heart", Rarity.COMMON, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3, false, false);
             CustomEnchantment.create("fire_shell", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3, false, false);
             CustomEnchantment.create("blazing_rage", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3, false, false);
             CustomEnchantment.create("meat_armor", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 5, false, false);
-            CustomEnchantment.create("hundred_battles_veteran", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 5, false, false);
+            CustomEnchantment.create("hundred_battles_veteran", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 5, false, false);
             CustomEnchantment.create("tempered_body", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3, false, false);
             CustomEnchantment.create("gluttony", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 5, false, false);
-            CustomEnchantment.create("sturdy_brute", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1, false, false);
-            CustomEnchantment.create("steel_body", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1, false, false);
-            CustomEnchantment.create("corpulent", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1, false, false);
+            CustomEnchantment.create("sturdy_brute", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1, false, false);
+            CustomEnchantment.create("steel_body", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1, false, false);
+            CustomEnchantment.create("corpulent", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1, false, false);
             CustomEnchantment.create("shelter", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1, false, false);
             CustomEnchantment.create("campfire_heal", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1, false, false);
             CustomEnchantment.create("focused_steadiness", Rarity.RARE, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 3, false, false);
             CustomEnchantment.create("magma_walker", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
-            CustomEnchantment.create("meteor_stomp", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
-            CustomEnchantment.create("cloud_stride", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
+            CustomEnchantment.create("meteor_stomp", Rarity.LEGENDARY, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
+            CustomEnchantment.create("cloud_stride", Rarity.EPIC, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
             CustomEnchantment.create("basic_lightness", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 5, false, false);
-            CustomEnchantment.create("lightness", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 5, false, false);
-            CustomEnchantment.create("basic_swiftness", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3, false, false);
+            CustomEnchantment.create("lightness", Rarity.EPIC, CustomEnchantment.Cat.ARMOR_FEET, FEET, 5, false, false);
+            CustomEnchantment.create("basic_swiftness", Rarity.COMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3, false, false);
             CustomEnchantment.create("swiftness", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3, false, false);
             CustomEnchantment.create("rapid_drop_stop", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
             CustomEnchantment.create("twenty_fourth_blessing", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
-            CustomEnchantment.create("foot_placement", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
-            CustomEnchantment.create("range_foot_placement", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
+            CustomEnchantment.create("foot_placement", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
+            CustomEnchantment.create("range_foot_placement", Rarity.EPIC, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
             CustomEnchantment.create("panic_escape", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3, false, false);
-            CustomEnchantment.create("last_stand_escape", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
-            CustomEnchantment.create("oxygen_sprint", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
+            CustomEnchantment.create("last_stand_escape", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
+            CustomEnchantment.create("oxygen_sprint", Rarity.EPIC, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
             CustomEnchantment.create("oxygen_lack_haste", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3, false, false);
             CustomEnchantment.create("stinky_feet", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3, false, false);
-            CustomEnchantment.create("super_stinky_feet", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3, false, false);
-            CustomEnchantment.create("oxygen_hover", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
-            CustomEnchantment.create("crash_landing", Rarity.COMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, true);
+            CustomEnchantment.create("super_stinky_feet", Rarity.EPIC, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3, false, false);
+            CustomEnchantment.create("oxygen_hover", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
+            CustomEnchantment.create("crash_landing", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, true);
             CustomEnchantment.create("shadow_sprint", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3, false, false);
             CustomEnchantment.create("light_walker", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3, false, false);
             CustomEnchantment.create("high_step", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 10, false, false);
-            CustomEnchantment.create("shortness_of_breath", Rarity.COMMON, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, true);
-            CustomEnchantment.create("enemy_speed_pursuit", Rarity.COMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, true);
-            CustomEnchantment.create("chest_tightness", Rarity.COMMON, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1, false, true);
-            CustomEnchantment.create("fracture", Rarity.COMMON, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 1, false, true);
-            CustomEnchantment.create("wound_crack", Rarity.COMMON, CustomEnchantment.Cat.ARMOR, ARMOR, 3, false, true);
+            CustomEnchantment.create("shortness_of_breath", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, true);
+            CustomEnchantment.create("enemy_speed_pursuit", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, true);
+            CustomEnchantment.create("chest_tightness", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1, false, true);
+            CustomEnchantment.create("fracture", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 1, false, true);
+            CustomEnchantment.create("wound_crack", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR, ARMOR, 3, false, true);
             CustomEnchantment.create("crippled", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR, ARMOR, 2, false, true); // négatif -> rouge forcé
-            CustomEnchantment.create("armor_damage", Rarity.COMMON, CustomEnchantment.Cat.ARMOR, ARMOR, 3, false, true);
+            CustomEnchantment.create("armor_damage", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR, ARMOR, 3, false, true);
             CustomEnchantment.create("armor_shatter", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR, ARMOR, 2, false, true); // négatif -> rouge forcé
-            CustomEnchantment.create("noise_disturbance", Rarity.COMMON, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, true);
-            CustomEnchantment.create("lightning_calamity", Rarity.COMMON, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, true);
-            CustomEnchantment.create("wing_toughness_armor", Rarity.RARE, CustomEnchantment.Cat.WEARABLE, CHEST, 1, false, false);
+            CustomEnchantment.create("noise_disturbance", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, true);
+            CustomEnchantment.create("lightning_calamity", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, true);
+            CustomEnchantment.create("wing_toughness_armor", Rarity.LEGENDARY, CustomEnchantment.Cat.WEARABLE, CHEST, 1, false, false);
             CustomEnchantment.create("earth_bound", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR, ARMOR, 1, false, true); // négatif (chute accélérée) -> rouge forcé
-            CustomEnchantment.create("undead_curse", Rarity.COMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1, false, true);
-            CustomEnchantment.create("overworld_curse", Rarity.COMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1, false, true);
-            CustomEnchantment.create("nether_curse", Rarity.COMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1, false, true);
-            CustomEnchantment.create("end_curse", Rarity.COMMON, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, true);
-            CustomEnchantment.create("battle_scarred", Rarity.COMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1, false, true);
-            CustomEnchantment.create("blunt", Rarity.COMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3, false, true);
-            CustomEnchantment.create("exhaustion", Rarity.COMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1, false, true);
-            CustomEnchantment.create("short_reach", Rarity.COMMON, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 3, false, true);
-            CustomEnchantment.create("low_crit_rate", Rarity.COMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5, false, false);
+            CustomEnchantment.create("undead_curse", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1, false, true);
+            CustomEnchantment.create("overworld_curse", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1, false, true);
+            CustomEnchantment.create("nether_curse", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1, false, true);
+            CustomEnchantment.create("end_curse", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, true);
+            CustomEnchantment.create("battle_scarred", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1, false, true);
+            CustomEnchantment.create("blunt", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3, false, true);
+            CustomEnchantment.create("exhaustion", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1, false, true);
+            CustomEnchantment.create("short_reach", Rarity.UNCOMMON, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 3, false, true);
+            CustomEnchantment.create("low_crit_rate", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5, false, false);
             CustomEnchantment.create("focused_crit", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1, false, false);
-            CustomEnchantment.create("low_crit_damage", Rarity.COMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5, false, false);
-            CustomEnchantment.create("normal_crit_damage", Rarity.RARE, CustomEnchantment.Cat.BREAKABLE, MAIN_HAND, 5, false, false);
-            CustomEnchantment.create("overclocked_crit", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10, false, false);
+            CustomEnchantment.create("low_crit_damage", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 5, false, false);
+            CustomEnchantment.create("normal_crit_damage", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, MAIN_HAND, 5, false, false);
+            CustomEnchantment.create("overclocked_crit", Rarity.MYTHIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 10, false, false);
             CustomEnchantment.create("sickle_damage", Rarity.RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 3, false, false);
             CustomEnchantment.create("sickle_slash", Rarity.RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 5, false, false);
             CustomEnchantment.create("bountiful_harvest", Rarity.UNCOMMON, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 3, false, false);
             CustomEnchantment.create("loot_harvest", Rarity.RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 3, false, false);
             CustomEnchantment.create("farmers_hoe", Rarity.UNCOMMON, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 1, false, false);
             CustomEnchantment.create("weeding_hoe", Rarity.COMMON, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 1, false, false);
-            CustomEnchantment.create("soul_reaping_sickle", Rarity.VERY_RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 10, false, false);
-            CustomEnchantment.create("soul_sacrifice_slash", Rarity.VERY_RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 1, false, false);
-            CustomEnchantment.create("execute_power", Rarity.RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 5, false, false);
-            CustomEnchantment.create("utility_trench_shovel", Rarity.COMMON, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 1, false, false);
-            CustomEnchantment.create("universal_trench_shovel", Rarity.RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 1, false, false);
+            CustomEnchantment.create("soul_reaping_sickle", Rarity.EPIC, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 10, false, false);
+            CustomEnchantment.create("soul_sacrifice_slash", Rarity.LEGENDARY, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 1, false, false);
+            CustomEnchantment.create("execute_power", Rarity.LEGENDARY, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 5, false, false);
+            CustomEnchantment.create("utility_trench_shovel", Rarity.RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 1, false, false);
+            CustomEnchantment.create("universal_trench_shovel", Rarity.MYTHIC, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 1, false, false);
             CustomEnchantment.create("shield_quake", Rarity.RARE, CustomEnchantment.Cat.WEAPON, OFF_HAND, 2, false, false);
-            CustomEnchantment.create("hatred_draw", Rarity.COMMON, CustomEnchantment.Cat.WEAPON, OFF_HAND, 1, false, true); // négatif (provoque les mobs) -> rouge forcé
+            CustomEnchantment.create("hatred_draw", Rarity.UNCOMMON, CustomEnchantment.Cat.WEAPON, OFF_HAND, 1, false, true); // négatif (provoque les mobs) -> rouge forcé
             CustomEnchantment.create("ore_detector", Rarity.RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 3, false, false);
             CustomEnchantment.create("horse_boots", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3, false, false);
-            CustomEnchantment.create("food_is_heaven", Rarity.RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, false);
+            CustomEnchantment.create("food_is_heaven", Rarity.LEGENDARY, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, false);
             CustomEnchantment.create("transfer_misfortune", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3, false, false);
             CustomEnchantment.create("point_shoot", Rarity.UNCOMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 3, false, false);
             CustomEnchantment.create("recycle", Rarity.UNCOMMON, CustomEnchantment.Cat.BREAKABLE, MAIN_HAND, 1, false, false);
-            CustomEnchantment.create("cloud_walker", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
+            CustomEnchantment.create("cloud_walker", Rarity.LEGENDARY, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
             CustomEnchantment.create("stealth_hunter", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3, false, false);
 
     // ===================== 15. AJOUTS SYNCHRONISES V19 =====================
     // Anciens IDs présents dans les pools/handlers mais absents du registre.
-            CustomEnchantment.create("army_summon", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1);
-            CustomEnchantment.create("berserk", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
-            CustomEnchantment.create("bounce", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 5);
+            CustomEnchantment.create("army_summon", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1);
+            CustomEnchantment.create("berserk", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("bounce", Rarity.VERY_RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 5);
             CustomEnchantment.create("exercise", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
             CustomEnchantment.create("haste_continuation", Rarity.UNCOMMON, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 3);
             CustomEnchantment.create("military_shovel", Rarity.RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 3);
@@ -445,25 +445,27 @@ public class ModEnchantments {
     // Six enchantements de déplacement.
             CustomEnchantment.create("momentum", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
             CustomEnchantment.create("trailblazer", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
-            CustomEnchantment.create("wall_runner", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 2);
-            CustomEnchantment.create("evasive_footwork", Rarity.RARE, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 3);
-            CustomEnchantment.create("burst_step", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
-            CustomEnchantment.create("windrunner", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
+            CustomEnchantment.create("wall_runner", Rarity.EPIC, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 2);
+            CustomEnchantment.create("big_step", Rarity.RARE, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 3);
+            CustomEnchantment.create("giant_step", Rarity.LEGENDARY, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 5);
+            CustomEnchantment.create("evasive_footwork", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 3);
+            CustomEnchantment.create("burst_step", Rarity.EPIC, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
+            CustomEnchantment.create("windrunner", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
 
     // Casques.
             CustomEnchantment.create("mental_clarity", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 3);
             CustomEnchantment.create("foresight", Rarity.RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 3);
-            CustomEnchantment.create("miners_guidance", Rarity.RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 5);
+            CustomEnchantment.create("miners_guidance", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 5);
             CustomEnchantment.create("echolocation", Rarity.RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 2);
             CustomEnchantment.create("concentration", Rarity.RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 3);
             CustomEnchantment.create("curse_of_whispers", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_HEAD, HEAD, 1, false, true);
 
     // Plastrons.
             CustomEnchantment.create("adaptive_shell", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
-            CustomEnchantment.create("final_breath", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1);
+            CustomEnchantment.create("final_breath", Rarity.LEGENDARY, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 1);
             CustomEnchantment.create("bastion_heart", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
             CustomEnchantment.create("kinetic_conversion", Rarity.RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
-            CustomEnchantment.create("vital_reserve", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
+            CustomEnchantment.create("vital_reserve", Rarity.EPIC, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3);
             CustomEnchantment.create("glass_bones_champion_curse", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_CHEST, CHEST, 3, false, true);
 
     // Jambières.
@@ -476,22 +478,22 @@ public class ModEnchantments {
             CustomEnchantment.create("brittle_knees", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_LEGS, LEGS, 3, false, true);
 
     // Bottes.
-            CustomEnchantment.create("elastic_soles", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
+            CustomEnchantment.create("elastic_soles", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
             CustomEnchantment.create("tidal_step", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
             CustomEnchantment.create("frost_trail", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 2);
             CustomEnchantment.create("ember_step", Rarity.RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 2);
             CustomEnchantment.create("surefooted", Rarity.UNCOMMON, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
-            CustomEnchantment.create("dimensional_step", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
+            CustomEnchantment.create("dimensional_step", Rarity.MYTHIC, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3);
             CustomEnchantment.create("quicksand_curse", Rarity.VERY_RARE, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3, false, true);
 
     // Armes de mêlée.
             CustomEnchantment.create("echo_strike", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("interrupting_strike", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
-            CustomEnchantment.create("guard_breaker", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("guard_breaker", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("predator", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("retaliation", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
-            CustomEnchantment.create("marked_prey", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
-            CustomEnchantment.create("seismic_strike", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("marked_prey", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("seismic_strike", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("mercy_curse", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 1, false, true);
 
     // Outils.
@@ -504,61 +506,61 @@ public class ModEnchantments {
             CustomEnchantment.create("cave_in_curse", Rarity.VERY_RARE, CustomEnchantment.Cat.DIGGER, MAIN_HAND, 3, false, true);
 
     // Projectiles.
-            CustomEnchantment.create("tracer_shot", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 5);
+            CustomEnchantment.create("tracer_shot", Rarity.VERY_RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 5);
             CustomEnchantment.create("briar_arrow", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
             CustomEnchantment.create("suppression_shot", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
-            CustomEnchantment.create("elemental_chain", Rarity.VERY_RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
+            CustomEnchantment.create("elemental_chain", Rarity.EPIC, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
             CustomEnchantment.create("recoil_launch", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
             CustomEnchantment.create("ocean_current", Rarity.RARE, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 3);
 
     // Boucliers.
-            CustomEnchantment.create("perfect_parry", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, OFF_HAND, 3);
+            CustomEnchantment.create("perfect_parry", Rarity.EPIC, CustomEnchantment.Cat.BREAKABLE, OFF_HAND, 3);
             CustomEnchantment.create("resonance_curse", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, OFF_HAND, 3, false, true);
 
     // ===================== 16. PECHE, TRIDENT ET ELYTRA =====================
     // Canne à pêche (15)
-            CustomEnchantment.create("pulling_power", Rarity.RARE, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 5);
-            CustomEnchantment.create("fishing_grapple", Rarity.VERY_RARE, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 3);
+            CustomEnchantment.create("pulling_power", Rarity.VERY_RARE, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 5);
+            CustomEnchantment.create("fishing_grapple", Rarity.EPIC, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 3);
             CustomEnchantment.create("dredge", Rarity.RARE, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 3);
             CustomEnchantment.create("reliability", Rarity.RARE, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 2);
             CustomEnchantment.create("experienced_fishing", Rarity.UNCOMMON, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 3);
-            CustomEnchantment.create("infernal_line", Rarity.VERY_RARE, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 1);
-            CustomEnchantment.create("thunder_hook", Rarity.VERY_RARE, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 3);
-            CustomEnchantment.create("barbed_hook", Rarity.RARE, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 5);
+            CustomEnchantment.create("infernal_line", Rarity.LEGENDARY, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 1);
+            CustomEnchantment.create("thunder_hook", Rarity.EPIC, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 3);
+            CustomEnchantment.create("barbed_hook", Rarity.VERY_RARE, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 5);
             CustomEnchantment.create("cooked_catch", Rarity.UNCOMMON, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 1);
-            CustomEnchantment.create("anglers_blessing", Rarity.RARE, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 5);
-            CustomEnchantment.create("ender_hook", Rarity.VERY_RARE, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 1);
-            CustomEnchantment.create("monster_fishing", Rarity.VERY_RARE, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 3);
-            CustomEnchantment.create("false_bite_curse", Rarity.COMMON, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 3, false, true);
+            CustomEnchantment.create("anglers_blessing", Rarity.VERY_RARE, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 5);
+            CustomEnchantment.create("ender_hook", Rarity.EPIC, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 1);
+            CustomEnchantment.create("monster_fishing", Rarity.EPIC, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 3);
+            CustomEnchantment.create("false_bite_curse", Rarity.UNCOMMON, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 3, false, true);
             CustomEnchantment.create("abyss_curse", Rarity.RARE, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 3, false, true);
-            CustomEnchantment.create("scorching_line_curse", Rarity.COMMON, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 3, false, true);
+            CustomEnchantment.create("scorching_line_curse", Rarity.UNCOMMON, CustomEnchantment.Cat.FISHING_ROD, MAIN_HAND, 3, false, true);
 
     // Trident (15)
-            CustomEnchantment.create("homing_trident", Rarity.VERY_RARE, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 4);
-            CustomEnchantment.create("hydro_shock", Rarity.VERY_RARE, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 5);
-            CustomEnchantment.create("sincere_loyalty", Rarity.VERY_RARE, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 1);
+            CustomEnchantment.create("homing_trident", Rarity.MYTHIC, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 4);
+            CustomEnchantment.create("hydro_shock", Rarity.MYTHIC, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 5);
+            CustomEnchantment.create("sincere_loyalty", Rarity.LEGENDARY, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 1);
             CustomEnchantment.create("scorching_prongs", Rarity.RARE, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 3);
-            CustomEnchantment.create("wind_lance", Rarity.RARE, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 3);
-            CustomEnchantment.create("harpoon", Rarity.VERY_RARE, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 5);
+            CustomEnchantment.create("wind_lance", Rarity.VERY_RARE, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 3);
+            CustomEnchantment.create("harpoon", Rarity.EPIC, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 5);
             CustomEnchantment.create("undertow", Rarity.RARE, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 3);
-            CustomEnchantment.create("chain_lightning", Rarity.VERY_RARE, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 3);
+            CustomEnchantment.create("chain_lightning", Rarity.MYTHIC, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 3);
             CustomEnchantment.create("lingering_skewer", Rarity.RARE, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 3);
             CustomEnchantment.create("tidecaller", Rarity.RARE, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 3);
             CustomEnchantment.create("sea_pogo", Rarity.RARE, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 3);
-            CustomEnchantment.create("explosive_return", Rarity.VERY_RARE, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 2);
+            CustomEnchantment.create("explosive_return", Rarity.EPIC, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 2);
             CustomEnchantment.create("hostile_boomerang_curse", Rarity.RARE, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 3, false, true);
             CustomEnchantment.create("lightning_rod_curse", Rarity.RARE, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 3, false, true);
-            CustomEnchantment.create("depth_curse", Rarity.COMMON, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 3, false, true);
+            CustomEnchantment.create("depth_curse", Rarity.UNCOMMON, CustomEnchantment.Cat.TRIDENT, MAIN_HAND, 3, false, true);
 
     // Elytra (10)
             CustomEnchantment.create("aerodynamic", Rarity.RARE, CustomEnchantment.Cat.BREAKABLE, CHEST, 3);
             CustomEnchantment.create("air_brake", Rarity.UNCOMMON, CustomEnchantment.Cat.BREAKABLE, CHEST, 1);
-            CustomEnchantment.create("winging", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, CHEST, 1);
-            CustomEnchantment.create("iron_wings", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, CHEST, 3);
-            CustomEnchantment.create("rocket_blast", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, CHEST, 1);
-            CustomEnchantment.create("wind_rider", Rarity.VERY_RARE, CustomEnchantment.Cat.BREAKABLE, CHEST, 3);
+            CustomEnchantment.create("winging", Rarity.EPIC, CustomEnchantment.Cat.BREAKABLE, CHEST, 1);
+            CustomEnchantment.create("iron_wings", Rarity.EPIC, CustomEnchantment.Cat.BREAKABLE, CHEST, 3);
+            CustomEnchantment.create("rocket_blast", Rarity.LEGENDARY, CustomEnchantment.Cat.BREAKABLE, CHEST, 1);
+            CustomEnchantment.create("wind_rider", Rarity.MYTHIC, CustomEnchantment.Cat.BREAKABLE, CHEST, 3);
             CustomEnchantment.create("ground_skimmer", Rarity.RARE, CustomEnchantment.Cat.BREAKABLE, CHEST, 3);
-            CustomEnchantment.create("turbulence_curse", Rarity.COMMON, CustomEnchantment.Cat.BREAKABLE, CHEST, 3, false, true);
+            CustomEnchantment.create("turbulence_curse", Rarity.UNCOMMON, CustomEnchantment.Cat.BREAKABLE, CHEST, 3, false, true);
             CustomEnchantment.create("brittle_wings_curse", Rarity.RARE, CustomEnchantment.Cat.BREAKABLE, CHEST, 3, false, true);
             CustomEnchantment.create("sky_conductor_curse", Rarity.RARE, CustomEnchantment.Cat.BREAKABLE, CHEST, 3, false, true);
 

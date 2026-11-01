@@ -174,7 +174,7 @@ public final class EquipmentExpansionHandler {
             int kinetic=armor(p,"kinetic_conversion");if(kinetic>0){p.addEffect(new MobEffectInstance(MobEffects.ABSORPTION,60,Math.min(1,kinetic-1),true,false));p.getPersistentData().putInt("slb_kinetic_level",kinetic);p.getPersistentData().putLong("slb_kinetic_until",now+40);}
             int glass=armor(p,"glass_bones_champion_curse");if(glass>0)e.setAmount(e.getAmount()*(1f+.25f*glass));
             int resonance=shield(p,"resonance_curse");int vulnerable=p.getPersistentData().getInt("slb_resonance_vulnerable");if(vulnerable>0){e.setAmount(e.getAmount()*(1f+.15f*vulnerable));p.getPersistentData().remove("slb_resonance_vulnerable");}
-            if(e.getSource().getMsgId().equals("fall")){int roll=armor(p,"combat_roll");long ready=p.getPersistentData().getLong("slb_roll_ready");if(roll>0&&now>=ready&&p.getDeltaMovement().horizontalDistance()>.03){e.setAmount(e.getAmount()*Math.max(.1f,1f-.25f*roll));p.setDeltaMovement(p.getLookAngle().scale(.25+.12*roll).add(0,.18,0));p.getPersistentData().putLong("slb_roll_ready",now+Math.max(30,70-10L*roll));if(p.level() instanceof ServerLevel sl)EnchantmentParticleFX.shockwaveRing(sl,p.getX(),p.getY()+.1,p.getZ(),ParticleTypes.CLOUD,1.1,12,.06);}int elastic=armor(p,"elastic_soles");if(elastic>0){e.setAmount(e.getAmount()*Math.max(0f,1f-.25f*elastic));if(!p.isShiftKeyDown())p.setDeltaMovement(p.getDeltaMovement().x,.3+.15*elastic,p.getDeltaMovement().z);} }
+            if(e.getSource().getMsgId().equals("fall")){int roll=armor(p,"combat_roll");long ready=p.getPersistentData().getLong("slb_roll_ready");if(roll>0&&now>=ready&&p.getDeltaMovement().horizontalDistance()>.03){e.setAmount(e.getAmount()*Math.max(.1f,1f-.25f*roll));p.setDeltaMovement(p.getLookAngle().scale(.25+.12*roll).add(0,.18,0));p.hurtMarked=true;p.getPersistentData().putLong("slb_roll_ready",now+Math.max(30,70-10L*roll));if(p.level() instanceof ServerLevel sl)EnchantmentParticleFX.shockwaveRing(sl,p.getX(),p.getY()+.1,p.getZ(),ParticleTypes.CLOUD,1.1,12,.06);}int elastic=armor(p,"elastic_soles");if(elastic>0){e.setAmount(e.getAmount()*Math.max(0f,1f-.25f*elastic));if(!p.isShiftKeyDown()){p.setDeltaMovement(p.getDeltaMovement().x,.38+.15*elastic,p.getDeltaMovement().z);p.hurtMarked=true;if(p.level() instanceof ServerLevel sle){EnchantmentParticleFX.cloudCushion(sle,p.getX(),p.getY()+.05,p.getZ(),.75,false);EnchantmentParticleFX.shockwaveRing(sle,p.getX(),p.getY()+.08,p.getZ(),EnchantmentParticleFX.OVERCLOCK_CYAN,.7,8,.02);}}} }
             // EMBER CORE (Fire Heart, casque) : quand touche par une entite
             // vivante en melee proche, chance d'enflammer l'agresseur --
             // "noyau ardent" d'auto-defense, positif/agressif sans malus.
@@ -929,7 +929,7 @@ public final class EquipmentExpansionHandler {
             }
             case 2 -> { // Earth
                 p.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 60, 0, true, true));
-                level.sendParticles(ParticleTypes.CRIT, p.getX(), p.getY() + 0.2, p.getZ(), 12, 0.3, 0.2, 0.3, 0.02);
+                level.sendParticles(EnchantmentParticleFX.EARTH_OCHRE, p.getX(), p.getY() + 0.2, p.getZ(), 14, 0.32, 0.2, 0.32, 0.02);
             }
             case 3 -> { // Wind
                 p.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 100, 1, true, true));

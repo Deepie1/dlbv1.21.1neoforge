@@ -374,6 +374,12 @@ public final class EnchantmentTooltipFixProcedure {
                     LOGGER.warn("[deep_lucky_block] buildName() a echoue pour {} -> repli sur le nom brut", id, nameFail);
                     nameLine = fallbackName(ench, id, entry.getValue());
                 }
+                if (shift && isModEnchantment(id)) {
+                    deepluckyblock.Rarity rar = CustomEnchantment.getRarityByPath(id.getPath());
+                    if (rar != null) {
+                        nameLine = Component.empty().append(nameLine).append(" ").append(CustomEnchantment.formatRarityBadge(rar));
+                    }
+                }
                 lines.add(index++, nameLine);
 
                 // ==================== FIX (voir commentaire au point de

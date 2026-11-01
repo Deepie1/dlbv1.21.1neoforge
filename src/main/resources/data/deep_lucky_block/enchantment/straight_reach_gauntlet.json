@@ -3,7 +3,7 @@
     "translate": "enchantment.deep_lucky_block.straight_reach_gauntlet"
   },
   "supported_items": "#minecraft:enchantable/chest_armor",
-  "weight": 2,
+  "weight": 10,
   "max_level": 3,
   "min_cost": {
     "base": 1,

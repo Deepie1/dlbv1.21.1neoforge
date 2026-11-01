@@ -351,6 +351,19 @@ public final class RealAttributeModifierHandler {
         if (highStep > 0) {
             addArmor(event, Attributes.STEP_HEIGHT, "high_step", Math.min(3.0, 0.5 * highStep), ADD, group, slot);
         }
+        // T307-STEP : Famille Jambières "Grand Pas" (big_step) -> "Pas de Géant" (giant_step)
+        // Base vanilla STEP_HEIGHT = 0.6 (plafond RangedAttribute vanilla = 10.0) :
+        //  - Grand Pas I/II/III : +0.5 / +1.5 / +2.5 -> franchit 1 / 2 / 3 blocs en marchant tout droit.
+        //  - Pas de Géant I..V  : +3.5 / +5.5 / +7.5 / +9.4 (+ franchissement mural étendu jusqu'à 18 blocs au niv. max dans UniversalEnchantmentHandler).
+        int bigStep = lvl(stack, "big_step");
+        if (bigStep > 0) {
+            addArmor(event, Attributes.STEP_HEIGHT, "big_step", Math.min(4.0, 1.0 * bigStep - 0.5), ADD, group, slot);
+        }
+        int giantStep = lvl(stack, "giant_step");
+        if (giantStep > 0) {
+            double giantBonus = Math.min(9.4, 1.5 + 2.0 * giantStep);
+            addArmor(event, Attributes.STEP_HEIGHT, "giant_step", giantBonus, ADD, group, slot);
+        }
         // T306-FIX : Malédiction du Courant (Riptide Curse) -> vraie nage fulgurante native
         int riptideCurse = lvl(stack, "riptide_curse");
         if (riptideCurse > 0) {

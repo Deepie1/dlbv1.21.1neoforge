@@ -3,7 +3,7 @@
     "translate": "enchantment.deep_lucky_block.basic_swiftness"
   },
   "supported_items": "#minecraft:enchantable/foot_armor",
-  "weight": 5,
+  "weight": 32,
   "max_level": 3,
   "min_cost": {
     "base": 1,

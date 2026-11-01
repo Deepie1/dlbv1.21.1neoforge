@@ -3,7 +3,7 @@
     "translate": "enchantment.deep_lucky_block.burning_heart"
   },
   "supported_items": "#minecraft:enchantable/chest_armor",
-  "weight": 9,
+  "weight": 32,
   "max_level": 3,
   "min_cost": {
     "base": 1,

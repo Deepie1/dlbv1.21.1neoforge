@@ -3,7 +3,7 @@
     "translate": "enchantment.deep_lucky_block.super_stinky_feet"
   },
   "supported_items": "#minecraft:enchantable/foot_armor",
-  "weight": 1,
+  "weight": 3,
   "max_level": 3,
   "min_cost": {
     "base": 1,

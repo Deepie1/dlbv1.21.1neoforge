@@ -12,6 +12,11 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
+import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import java.util.concurrent.ConcurrentHashMap;
 import deepluckyblock.procedures.TestProcedure;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.core.registries.Registries;
@@ -363,12 +368,16 @@ public class UniversalEnchantmentHandler {
             }
         }
 
-        // T306-FIX : annihilating_sweep inflige désormais 100% (+15%/niv supplémentaire) en zone !
+        // T306-FIX + T307-FX : annihilating_sweep inflige 100% (+15%/niv supplémentaire) en zone avec un arc doré/écarlate d'annihilation !
         int sweepLvl = getEnchantLvl(weapon, "deep_lucky_block:annihilating_sweep");
         if (sweepLvl > 0) {
             double rad = deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(3.2, 0.3, sweepLvl);
             float mult = 1.0f + 0.15f * Math.max(0, sweepLvl - 1);
-            EnchantmentParticleFX.slashArc(player, EnchantmentParticleFX.SHADOW_VIOLET, ParticleTypes.WITCH, Math.min(3.5, rad), 13);
+            EnchantmentParticleFX.slashArc(player, EnchantmentParticleFX.GOLD_DIVINE, ParticleTypes.SWEEP_ATTACK, Math.min(3.6, rad), 15);
+            if (player.level() instanceof ServerLevel slsw) {
+                EnchantmentParticleFX.shockwaveRing(slsw, event.getEntity().getX(), event.getEntity().getY() + 0.5, event.getEntity().getZ(),
+                        EnchantmentParticleFX.SCARLET_MIST, Math.min(3.4, rad), 16, 0.04);
+            }
             AABB box = event.getEntity().getBoundingBox().inflate(rad);
             for (Mob mob : player.level().getEntitiesOfClass(Mob.class, box)) {
                 if (mob != event.getEntity() && mob.isAlive()) {
@@ -655,7 +664,10 @@ public class UniversalEnchantmentHandler {
         if (neCurse > 0) {
             boolean inNether = player.level().dimension() == Level.NETHER;
             event.setAmount(event.getAmount() * (inNether ? 0.5f : 1.3f));
-            EnchantmentParticleFX.burstOnEntity(event.getEntity(), inNether ? ParticleTypes.SMOKE : ParticleTypes.SNOWFLAKE, 5, 0.25, 0.02);
+            if (inNether) {
+                EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.ASH, 6, 0.25, 0.02);
+                EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.SOUL_FIRE_FLAME, 3, 0.20, 0.01);
+            }
         }
         int battleScar = getEnchantLvl(weapon, "deep_lucky_block:battle_scarred");
         if (battleScar > 0 && weapon.isDamageableItem()) {
@@ -731,7 +743,16 @@ public class UniversalEnchantmentHandler {
         // continu (voir EquipmentExpansionHandler#updateHeartEnchantmentPassives)
         // -- le colosse lent et inarretable, trope manhwa classique.
         int titansGrasp = getEnchantLvl(weapon, "deep_lucky_block:titans_grasp");
-        if (titansGrasp > 0) event.setAmount(event.getAmount() * (1f + 0.30f * titansGrasp));
+        if (titansGrasp > 0) {
+            event.setAmount(event.getAmount() * (1f + 0.30f * titansGrasp));
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), EnchantmentParticleFX.EARTH_OCHRE, 6, 0.28, 0.02);
+        }
+
+        // T307-FX : swift_strike déclenche son entaille hypersonique cyan à l'instant exact de la frappe !
+        int swiftHitLvl = getEnchantLvl(weapon, "deep_lucky_block:swift_strike");
+        if (swiftHitLvl > 0) {
+            EnchantmentParticleFX.slashArc(player, EnchantmentParticleFX.OVERCLOCK_CYAN, ParticleTypes.ELECTRIC_SPARK, 1.85, 9);
+        }
 
         // SERAPH'S JUDGMENT (Light Heart, arme) : chatiment severe contre
         // les morts-vivants, mais lumiere qui "brule moins" tout le reste --
@@ -850,7 +871,8 @@ public class UniversalEnchantmentHandler {
         int senseLvl = getEnchantLvl(weapon, "deep_lucky_block:sense");
         if (shadowLvl > 0 && player.level().getMaxLocalRawBrightness(player.blockPosition()) < 7) {
             event.setAmount(event.getAmount() * (1f + 0.18f * shadowLvl));
-            EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.SMOKE, 6, 0.25, 0.02);
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), EnchantmentParticleFX.SHADOW_VIOLET, 7, 0.26, 0.02);
+            EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.SQUID_INK, 4, 0.22, 0.01);
         }
         if (killLvl > 0 && event.getEntity().getHealth() < (event.getEntity().getMaxHealth() * 0.30f)) {
             event.setAmount(event.getAmount() * (1f + 0.20f * killLvl));
@@ -989,6 +1011,13 @@ public class UniversalEnchantmentHandler {
     public static void onPlayerTick(EntityTickEvent.Post event){try{onPlayerTickImpl(event);}catch(Throwable t__){guard("onPlayerTick",t__);}}
     private static void onPlayerTickImpl(EntityTickEvent.Post event){
         if (!(event.getEntity() instanceof LivingEntity living)) return;
+        // T307-PHYSICS : Mouvements client-authoritative (Légèreté poulet, Coureur Mural miel,
+        // Glissade soutenue, Bondissant slime, Pas de Géant, Coussin de nuages) exécutés des DEUX côtés !
+        try {
+            handleSharedClientServerMovement(living);
+        } catch (Throwable t) {
+            printHandlerError("handleSharedClientServerMovement", t);
+        }
         if (living.level().isClientSide()) return;
         try {
             handlePlayerTick(living);
@@ -999,7 +1028,7 @@ public class UniversalEnchantmentHandler {
 
     private static void handlePlayerTick(LivingEntity player) {
 
-        // 7. Gale + Saut Renforcé (leap_power impulsion avant au saut)
+        // 7. Gale + Saut Renforcé (leap_power impulsion avant au saut) + Nuage sous les pieds au saut
         try {
             boolean slbUgWasGround = player.getPersistentData().getBoolean("slb_ug_was_ground");
             player.getPersistentData().putBoolean("slb_ug_was_ground", player.onGround());
@@ -1007,8 +1036,18 @@ public class UniversalEnchantmentHandler {
                 int galeLvl = getEnchantLvl(player.getItemBySlot(EquipmentSlot.FEET), "deep_lucky_block:gale");
                 if (galeLvl > 0) {
                     player.setDeltaMovement(player.getDeltaMovement().add(0, 0.1f * galeLvl, 0));
+                    player.hurtMarked = true;
                     if (player.level() instanceof ServerLevel slg) {
+                        EnchantmentParticleFX.cloudCushion(slg, player.getX(), player.getY() + 0.03, player.getZ(), 0.72, false);
                         EnchantmentParticleFX.shockwaveRing(slg, player.getX(), player.getY() + 0.08, player.getZ(), ParticleTypes.SMALL_GUST, 0.9, 10, 0.04);
+                    }
+                }
+                if (player.level() instanceof ServerLevel slJumpCloud) {
+                    int cwJump = getArmorEnchantLvl(player, "deep_lucky_block:cloud_walker");
+                    int fpJump = getArmorEnchantLvl(player, "deep_lucky_block:foot_placement");
+                    int csJump = getArmorEnchantLvl(player, "deep_lucky_block:cloud_stride");
+                    if (cwJump > 0 || fpJump > 0 || csJump > 0) {
+                        EnchantmentParticleFX.cloudCushion(slJumpCloud, player.getX(), player.getY() + 0.02, player.getZ(), 0.78, cwJump > 0);
                     }
                 }
                 int leapUpgrade = getArmorEnchantLvl(player, "deep_lucky_block:leap_power");
@@ -1167,25 +1206,22 @@ public class UniversalEnchantmentHandler {
             player.addEffect(new MobEffectInstance(MobEffects.CONDUIT_POWER, 40, 0, true, false));
             if (player.tickCount % 20 == 0 && player.isInWater()) EnchantmentParticleFX.ankleTrail(player, ParticleTypes.NAUTILUS, 3, 0.05);
         }
+        // T307-BARRIER-TRAIL : cloud_stride pose désormais une traînée temporaire de Blocks.BARRIER
+        // (et non plus de laine blanche !) en haute altitude, nettoyée automatiquement dès >= 4 blocs derrière le joueur !
         int cloudStride = getArmorEnchantLvl(player, "deep_lucky_block:cloud_stride");
-        if (cloudStride > 0 && player.getY() > 195 && player.level().getBlockState(player.blockPosition().below()).isAir()) {
-            BlockPos bPos = player.blockPosition().below().immutable();
-            player.level().setBlockAndUpdate(bPos, Blocks.WHITE_WOOL.defaultBlockState());
-            if (player.level() instanceof ServerLevel slc) {
-                TestProcedure.schedule(slc, TestProcedure.currentTick(slc) + 120, () -> {
-                    if (slc.getBlockState(bPos).is(Blocks.WHITE_WOOL)) slc.setBlockAndUpdate(bPos, Blocks.AIR.defaultBlockState());
-                });
-            }
+        if (cloudStride > 0 && player.getY() >= 160 && !player.isShiftKeyDown()
+                && !player.isInWater() && !player.isFallFlying() && player.getDeltaMovement().y <= 0.04) {
+            placeBarrierTrailUnderFeet(player, true);
         }
-        // lightness (Upgrade) & basic_lightness (Enfant)
-        int lightSlow = getArmorEnchantLvl(player, "deep_lucky_block:lightness");
-        int basicLightSlow = getArmorEnchantLvl(player, "deep_lucky_block:basic_lightness");
-        if (player.getDeltaMovement().y < -0.08) {
-            if (lightSlow > 0) {
-                player.setDeltaMovement(player.getDeltaMovement().multiply(1.0, 0.75, 1.0));
-                if (player.tickCount % 8 == 0) EnchantmentParticleFX.ankleTrail(player, ParticleTypes.CLOUD, 1, 0.01);
-            } else if (basicLightSlow > 0) {
-                player.setDeltaMovement(player.getDeltaMovement().multiply(1.0, 0.88, 1.0));
+        // T307-PHYSICS : lightness & basic_lightness sont désormais gérés côté Client+Serveur dans handleSharedClientServerMovement
+        // (vraie chute planée lente façon poulet + particules plume/nuage sous les pieds).
+        if (!player.onGround() && !player.isShiftKeyDown() && player.getDeltaMovement().y < -0.02) {
+            int lightSlow = getArmorEnchantLvl(player, "deep_lucky_block:lightness");
+            int basicLightSlow = getArmorEnchantLvl(player, "deep_lucky_block:basic_lightness");
+            if (lightSlow > 0 && player.tickCount % 7 == 0) {
+                EnchantmentParticleFX.ankleTrail(player, ParticleTypes.CLOUD, 2, 0.012);
+            } else if (basicLightSlow > 0 && player.tickCount % 12 == 0) {
+                EnchantmentParticleFX.ankleTrail(player, ParticleTypes.CLOUD, 1, 0.01);
             }
         }
 
@@ -1217,11 +1253,10 @@ public class UniversalEnchantmentHandler {
                 if (superStinky > 0) mob.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 80, 0));
             }
         }
-        // T306-FIX : swift_strike -> vraie vitesse d'attaque en Attribut + Célérité maîtrisée (lvl - 1) + étincelles hypersoniques
+        // T306-FIX + T307-FX : swift_strike -> Célérité maîtrisée (les particules se déclenchent désormais à l'impact mêlée !)
         int swiftStrikeLvl = getEnchantLvl(player.getMainHandItem(), "deep_lucky_block:swift_strike");
         if (swiftStrikeLvl > 0) {
             player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 25, Math.min(3, swiftStrikeLvl - 1), true, false));
-            if (player.tickCount % 16 == 0) EnchantmentParticleFX.ankleTrail(player, ParticleTypes.ELECTRIC_SPARK, 1, 0.02);
         }
 
         // T306-OVERHAUL : Durabilité & Chrono-Réparation (unbreakable vs eternal ; basic_chrono_mending -> chrono_mending ; corrosions)
@@ -1340,27 +1375,33 @@ public class UniversalEnchantmentHandler {
         }
         player.getPersistentData().putBoolean("slb_dash_was_sprint", player.isSprinting());
 
-        // SLIDE (Glissade, jambières) : s'accroupir en plein sprint déclenche une vraie glissade rasante fauchante !
+        // T307-SLIDE : Glissade puissante synchronisée Client+Serveur dans handleSharedClientServerMovement
+        // + balayage fauchant serveur et nuage de glisse sous les jambes !
         int slideLvl = getArmorEnchantLvl(player, "deep_lucky_block:slide");
         boolean prevSneak = player.getPersistentData().getBoolean("slb_slide_was_sneak");
         if (slideLvl > 0) {
-            if (player.isSprinting()) player.getPersistentData().putLong("slb_recent_sprint", nowTime + 6L);
+            if (player.isSprinting()) player.getPersistentData().putLong("slb_recent_sprint", nowTime + 8L);
             if (player.isShiftKeyDown() && !prevSneak && player.onGround()
                     && nowTime <= player.getPersistentData().getLong("slb_recent_sprint")
                     && nowTime >= player.getPersistentData().getLong("slb_slide_ready")) {
-                net.minecraft.world.phys.Vec3 lk = player.getLookAngle();
-                net.minecraft.world.phys.Vec3 flat = new net.minecraft.world.phys.Vec3(lk.x, 0.0, lk.z);
-                if (flat.lengthSqr() > 1.0e-4) {
-                    flat = flat.normalize();
-                    double slideVel = deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.velocity(0.55, 0.16, slideLvl);
-                    player.setDeltaMovement(flat.x * slideVel, player.getDeltaMovement().y, flat.z * slideVel);
-                    player.hurtMarked = true;
-                    player.getPersistentData().putLong("slb_slide_ready", nowTime + 50L);
-                    EnchantmentParticleFX.ankleTrail(player, ParticleTypes.CLOUD, 6, 0.05);
-                    EnchantmentParticleFX.ankleTrail(player, ParticleTypes.CRIT, 5, 0.06);
-                    for (Mob mob : player.level().getEntitiesOfClass(Mob.class, player.getBoundingBox().inflate(2.0))) {
-                        mob.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 45, 1));
-                        mob.setDeltaMovement(mob.getDeltaMovement().add(0, 0.24, 0));
+                player.getPersistentData().putLong("slb_slide_ready", nowTime + 44L);
+                player.getPersistentData().putLong("slb_slide_active_until", nowTime + 10L + 2L * Math.min(5, slideLvl));
+                player.level().playSound(null, player.getX(), player.getY(), player.getZ(),
+                        SoundEvents.PLAYER_ATTACK_SWEEP, SoundSource.PLAYERS, 0.65f, 1.30f);
+                if (player.level() instanceof ServerLevel slSlide) {
+                    EnchantmentParticleFX.cloudCushion(slSlide, player.getX(), player.getY() + 0.04, player.getZ(), 0.85, false);
+                }
+            }
+            if (player.isShiftKeyDown() && nowTime < player.getPersistentData().getLong("slb_slide_active_until")) {
+                if ((player.tickCount & 1) == 0) {
+                    EnchantmentParticleFX.ankleTrail(player, ParticleTypes.CLOUD, 3, 0.03);
+                    EnchantmentParticleFX.ankleTrail(player, EnchantmentParticleFX.STEEL_SILVER, 2, 0.02);
+                }
+                for (Mob mob : player.level().getEntitiesOfClass(Mob.class, player.getBoundingBox().inflate(2.2))) {
+                    mob.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 50, 1));
+                    if (mob.onGround()) {
+                        mob.setDeltaMovement(mob.getDeltaMovement().add(0, 0.28, 0));
+                        mob.hurtMarked = true;
                     }
                 }
             }
@@ -1602,32 +1643,23 @@ public class UniversalEnchantmentHandler {
             player.setDeltaMovement(player.getDeltaMovement().multiply(1.0, 1.45, 1.0));
         }
 
-        // T306-OVERHAUL : foot_placement (pont temporaire de pavés en marchant accroupi au bord du vide)
-        // vs range_foot_placement (coussin aérien éphémère de verre-nuage amortissant les grandes chutes !)
+        // T307-BARRIER-TRAIL : Marche Aérienne (foot_placement) & Pas d'Amorti Aérien (range_foot_placement)
+        // Plus JAMAIS de cobblestone ni de verre laissé dans le monde : pose uniquement des Blocks.BARRIER invisibles
+        // en trail sous les pieds qui s'effacent automatiquement dès que le joueur est à >= 4 blocs (ou s'accroupit pour descendre) !
         int footPl = getArmorEnchantLvl(player, "deep_lucky_block:foot_placement");
         int featherFoot = getArmorEnchantLvl(player, "deep_lucky_block:range_foot_placement");
-        if (footPl > 0 && player.isShiftKeyDown() && player.getDeltaMovement().y <= 0.02) {
-            BlockPos below = player.blockPosition().below().immutable();
-            if (player.level().getBlockState(below).isAir()) {
-                player.level().setBlockAndUpdate(below, Blocks.MOSSY_COBBLESTONE.defaultBlockState());
-                if (player.level() instanceof ServerLevel slf) {
-                    TestProcedure.schedule(slf, TestProcedure.currentTick(slf) + 160, () -> {
-                        if (slf.getBlockState(below).is(Blocks.MOSSY_COBBLESTONE)) slf.setBlockAndUpdate(below, Blocks.AIR.defaultBlockState());
-                    });
-                }
+        if (footPl > 0) {
+            if (player.isShiftKeyDown()) {
+                clearPlayerBarriersUnderneath(player);
+            } else if (!player.isInWater() && !player.isFallFlying() && player.getDeltaMovement().y <= 0.04) {
+                placeBarrierTrailUnderFeet(player, true);
             }
         }
         if (featherFoot > 0 && !player.onGround() && player.fallDistance >= 3.2f && !player.isShiftKeyDown()) {
-            BlockPos below = player.blockPosition().below().immutable();
-            if (player.level().getBlockState(below).isAir()) {
-                player.level().setBlockAndUpdate(below, Blocks.WHITE_STAINED_GLASS.defaultBlockState());
-                player.fallDistance = 0.0f;
-                EnchantmentParticleFX.ankleTrail(player, ParticleTypes.CLOUD, 8, 0.03);
-                if (player.level() instanceof ServerLevel slr) {
-                    TestProcedure.schedule(slr, TestProcedure.currentTick(slr) + 60, () -> {
-                        if (slr.getBlockState(below).is(Blocks.WHITE_STAINED_GLASS)) slr.setBlockAndUpdate(below, Blocks.AIR.defaultBlockState());
-                    });
-                }
+            placeBarrierTrailUnderFeet(player, true);
+            player.fallDistance = 0.0f;
+            if (player.level() instanceof ServerLevel slr) {
+                EnchantmentParticleFX.cloudCushion(slr, player.getX(), player.getY() + 0.02, player.getZ(), 0.90, false);
             }
         }
 
@@ -1705,17 +1737,24 @@ public class UniversalEnchantmentHandler {
         }
         setStackingMovementBonus(player, EVASIVE_SPEED_ID, lateralMove ? 0.05 * evasive : 0);
 
-        // WALL RUNNER — cling to a wall, slow the fall and move along it.
+        // T307-WALL-RUNNER : Physique HoneyBlock (glisse murale -0.05 + course latérale) synchronisée Client+Serveur
+        // dans handleSharedClientServerMovement ; ici effets sonores de bloc de miel & gouttelettes ambrées côté serveur !
         int wallRunner = getArmorEnchantLvl(player, "deep_lucky_block:wall_runner");
-        if (wallRunner > 0 && player.horizontalCollision && !player.onGround()) {
-            net.minecraft.world.phys.Vec3 current = player.getDeltaMovement();
-            double minY = wallRunner >= 2 ? 0.015 : -0.045;
-            net.minecraft.world.phys.Vec3 look = player.getLookAngle();
-            player.setDeltaMovement(current.x + look.x * 0.035 * wallRunner,
-                    Math.max(current.y, minY),
-                    current.z + look.z * 0.035 * wallRunner);
+        if (wallRunner > 0 && !player.onGround() && !player.isInWater() && !player.isFallFlying()
+                && !player.isShiftKeyDown() && isTouchingHorizontalWall(player)) {
             player.fallDistance = 0.0F;
-            player.hurtMarked = true;
+            if (player.tickCount % 6 == 0) {
+                player.level().playSound(null, player.getX(), player.getY(), player.getZ(),
+                        SoundEvents.HONEY_BLOCK_SLIDE, SoundSource.PLAYERS, 0.65f, 0.98f);
+                if (player.level() instanceof ServerLevel slHoney) {
+                    slHoney.sendParticles(ParticleTypes.FALLING_HONEY,
+                            player.getX(), player.getY() + player.getBbHeight() * 0.45, player.getZ(),
+                            3, 0.25, 0.25, 0.25, 0.01);
+                    slHoney.sendParticles(EnchantmentParticleFX.HONEY_AMBER,
+                            player.getX(), player.getY() + 0.35, player.getZ(),
+                            3, 0.22, 0.20, 0.22, 0.01);
+                }
+            }
         }
 
         // BURST STEP — a short dash when a new sprint starts, with cooldown.
@@ -2676,7 +2715,8 @@ public class UniversalEnchantmentHandler {
         if (getEnchantLvl(bow, "deep_lucky_block:grapple") > 0) {
             net.minecraft.world.phys.Vec3 hitLoc = event.getRayTraceResult().getLocation();
             if (player.level() instanceof ServerLevel slgrp) {
-                EnchantmentParticleFX.tetherBeam(slgrp, player.position().add(0, 1.0, 0), hitLoc, ParticleTypes.CRIT, null, 0.65);
+                EnchantmentParticleFX.tetherBeam(slgrp, player.position().add(0, 1.0, 0), hitLoc,
+                        EnchantmentParticleFX.STEEL_SILVER, EnchantmentParticleFX.EARTH_OCHRE, 0.55);
             }
             if (player.isShiftKeyDown() && event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target) {
                 net.minecraft.world.phys.Vec3 pull = player.position().subtract(target.position());
@@ -3165,13 +3205,21 @@ public class UniversalEnchantmentHandler {
             }
         }
 
-        // Bouncy : rebond de slime en cas de chute
+        // T307-BOUNCY : Immunité totale aux dégâts de chute + vrai rebond de bloc de slime (handleSharedClientServerMovement + filet serveur)
         int bouncyLvl = getArmorEnchantLvl(player, "deep_lucky_block:bouncy");
         if (bouncyLvl > 0 && event.getSource().getMsgId().equals("fall")) {
             event.setCanceled(true);
-            player.setDeltaMovement(player.getDeltaMovement().x, Math.min(1.6, 0.42 * bouncyLvl), player.getDeltaMovement().z);
-            player.hurtMarked = true;
-            EnchantmentParticleFX.ankleTrail(player, ParticleTypes.ITEM_SLIME, 8, 0.04);
+            if (!player.isShiftKeyDown() && player.getDeltaMovement().y <= 0.05) {
+                double vyBounce = Math.min(2.0, 0.52 + 0.16 * bouncyLvl);
+                player.setDeltaMovement(player.getDeltaMovement().x, vyBounce, player.getDeltaMovement().z);
+                player.hurtMarked = true;
+            }
+            if (player.level() instanceof ServerLevel slSlime) {
+                EnchantmentParticleFX.shockwaveRing(slSlime, player.getX(), player.getY() + 0.06, player.getZ(),
+                        ParticleTypes.ITEM_SLIME, 0.85, 12, 0.05);
+            }
+            player.level().playSound(null, player.getX(), player.getY(), player.getZ(),
+                    SoundEvents.SLIME_BLOCK_FALL, SoundSource.PLAYERS, 0.85f, 1.05f);
             return;
         }
         int stickyLvl = getArmorEnchantLvl(player, "deep_lucky_block:sticky");
@@ -3194,7 +3242,8 @@ public class UniversalEnchantmentHandler {
             } else {
                 event.setAmount(event.getAmount() * 0.82f);
             }
-            EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.SMOKE, 5, 0.3, 0.02);
+            EnchantmentParticleFX.burstOnEntity(player, EnchantmentParticleFX.SHADOW_VIOLET, 6, 0.30, 0.02);
+            EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.SCULK_SOUL, 2, 0.24, 0.01);
         }
 
         if (event.getSource().getEntity() instanceof LivingEntity attacker) {
@@ -3308,7 +3357,7 @@ public class UniversalEnchantmentHandler {
         if (cloudWalk > 0 && event.getSource().getMsgId().equals("fall")) {
             event.setCanceled(true);
             if (player.level() instanceof ServerLevel slcw) {
-                EnchantmentParticleFX.shockwaveRing(slcw, player.getX(), player.getY() + 0.08, player.getZ(), ParticleTypes.CLOUD, 1.2, 12, 0.03);
+                EnchantmentParticleFX.cloudCushion(slcw, player.getX(), player.getY() + 0.05, player.getZ(), 1.05, true);
             }
             return;
         }
@@ -3509,7 +3558,7 @@ public class UniversalEnchantmentHandler {
         return softCappedLevel(en, lvl);
     }
 
-    private static int getArmorEnchantLvl(LivingEntity entity, String id) {
+    public static int getArmorEnchantLvl(LivingEntity entity, String id) {
         int total = 0;
         for (ItemStack armor : entity.getArmorSlots()) total = Math.max(total, getEnchantLvl(armor, id));
         return total;
@@ -3615,6 +3664,438 @@ public class UniversalEnchantmentHandler {
                     EnchantmentParticleFX.burstOnEntity(mob, ParticleTypes.POOF, 6, 0.3, 0.03);
                 }
             }
+        }
+    }
+
+    // =========================================================================================
+    // T307-PHYSICS & T307-BARRIER-TRAIL :
+    //  1) Moteur de physique partagé Client + Serveur (Légèreté façon poulet, Coureur Mural
+    //     façon bloc de miel, Glissade soutenue, Bondissant façon bloc de slime, Pas de Géant
+    //     jusqu'en haut d'un mur, Stationnaire d'Oxygène).
+    //  2) Marcheur des Nuages (Triple Saut sur coussin de nuages côté serveur + C2S).
+    //  3) Marche Aérienne (foot_placement) & Foulée des Nuages (cloud_stride) en trail de
+    //     Blocks.BARRIER temporaires supprimés automatiquement dès >= 4 blocs derrière le joueur.
+    // =========================================================================================
+
+    private static final class SharedMoveState {
+        boolean wasOnGround = true;
+        boolean wasSneak = false;
+        double lastAirVy = 0.0;
+        double prevY = Double.NaN;
+        int sprintGraceTicks = 0;
+        int slideTicksLeft = 0;
+        double slideSpeed = 0.0;
+        double slideDirX = 0.0;
+        double slideDirZ = 0.0;
+        long slideCooldownUntil = 0L;
+        int serverAirJumpsUsed = 0;
+        long lastSeenTick = 0L;
+    }
+
+    private static final Map<Long, SharedMoveState> SHARED_MOVE_STATES = new ConcurrentHashMap<>();
+
+    private static long sideEntityKey(LivingEntity entity) {
+        long sideBit = entity.level().isClientSide() ? 1L : 0L;
+        return (sideBit << 32) | (entity.getId() & 0xFFFFFFFFL);
+    }
+
+    private static boolean isTouchingHorizontalWall(LivingEntity entity) {
+        AABB box = entity.getBoundingBox();
+        if (box.getYsize() < 0.35) return false;
+        AABB probe = box.deflate(0.0, 0.14, 0.0).inflate(0.09, 0.0, 0.09);
+        return !entity.level().noCollision(entity, probe);
+    }
+
+    private static void handleSharedClientServerMovement(LivingEntity entity) {
+        if (!entity.isAlive() || entity.isSpectator()) return;
+        // Sur serveur comme sur client, les joueurs bénéficient toujours du moteur ; les mobs uniquement s'ils portent de l'armure enchantée.
+        if (!(entity instanceof Player)) {
+            boolean anyEnchantedArmor = false;
+            for (ItemStack arm : entity.getArmorSlots()) {
+                if (!arm.isEmpty() && arm.isEnchanted()) { anyEnchantedArmor = true; break; }
+            }
+            if (!anyEnchantedArmor) return;
+        }
+
+        long now = entity.level().getGameTime();
+        long key = sideEntityKey(entity);
+        SharedMoveState state = SHARED_MOVE_STATES.computeIfAbsent(key, k -> new SharedMoveState());
+        state.lastSeenTick = now;
+        if ((entity.tickCount & 255) == 0 && SHARED_MOVE_STATES.size() > 256) {
+            SHARED_MOVE_STATES.entrySet().removeIf(e -> now - e.getValue().lastSeenTick > 600L);
+        }
+
+        boolean grounded = entity.onGround();
+        boolean sneaking = entity.isShiftKeyDown();
+        Vec3 dm = entity.getDeltaMovement();
+
+        if (grounded) {
+            state.serverAirJumpsUsed = 0;
+        }
+
+        // --- A. Saut initial Gale côté Client (pour correspondre exactement au boost Serveur) ---
+        if (!grounded && state.wasOnGround && dm.y > 0.18 && entity.level().isClientSide()) {
+            int galeClient = getEnchantLvl(entity.getItemBySlot(EquipmentSlot.FEET), "deep_lucky_block:gale");
+            if (galeClient > 0) {
+                dm = dm.add(0.0, 0.10 * galeClient, 0.0);
+                entity.setDeltaMovement(dm);
+            }
+        }
+
+        // --- B. Bondissant (bouncy) : Vrai rebond de Bloc de Slime à l'atterrissage (même sur petit saut !) ---
+        int bouncyLvl = getArmorEnchantLvl(entity, "deep_lucky_block:bouncy");
+        if (!grounded) {
+            if (dm.y < state.lastAirVy) state.lastAirVy = dm.y;
+        } else {
+            if (!state.wasOnGround && bouncyLvl > 0 && !sneaking
+                    && !entity.isInWater() && !entity.isInLava() && state.lastAirVy < -0.15) {
+                double retention = 0.84 + 0.08 * Math.min(4, bouncyLvl);
+                double bounceVy = Math.min(2.15, Math.max(0.46 + 0.09 * bouncyLvl, -state.lastAirVy * retention));
+                dm = new Vec3(dm.x * 1.02, bounceVy, dm.z * 1.02);
+                entity.setDeltaMovement(dm);
+                entity.setOnGround(false);
+                entity.fallDistance = 0.0F;
+                grounded = false;
+                state.lastAirVy = 0.0;
+                if (entity.level() instanceof ServerLevel slBounce) {
+                    EnchantmentParticleFX.shockwaveRing(slBounce, entity.getX(), entity.getY() + 0.05, entity.getZ(),
+                            ParticleTypes.ITEM_SLIME, 0.80, 12, 0.05);
+                    entity.level().playSound(null, entity.getX(), entity.getY(), entity.getZ(),
+                            SoundEvents.SLIME_BLOCK_FALL, SoundSource.PLAYERS, 0.80f, 1.08f);
+                }
+            } else {
+                state.lastAirVy = 0.0;
+            }
+        }
+
+        // --- C. Légèreté (lightness & basic_lightness) : Chute lente planée comme un Poulet ! ---
+        if (!grounded && !sneaking && !entity.isInWater() && !entity.isInLava()
+                && !entity.onClimbable() && !entity.isFallFlying()
+                && !(entity instanceof Player plFly && plFly.getAbilities().flying)) {
+            int lightLvl = getArmorEnchantLvl(entity, "deep_lucky_block:lightness");
+            int basicLightLvl = getArmorEnchantLvl(entity, "deep_lucky_block:basic_lightness");
+            dm = entity.getDeltaMovement();
+            if (lightLvl > 0 && dm.y < 0.0) {
+                // Physique authentique Chicken#aiStep : amortissement doux plafonné à ~ -0.092 bloc/tick + léger plané horizontal
+                double dampedY = Math.max(dm.y * 0.56, -0.092);
+                double hx = dm.x;
+                double hz = dm.z;
+                double hSpeedSq = hx * hx + hz * hz;
+                if (hSpeedSq > 1.0e-4 && hSpeedSq < 0.14) {
+                    hx *= 1.02;
+                    hz *= 1.02;
+                }
+                entity.setDeltaMovement(hx, dampedY, hz);
+                entity.fallDistance = 0.0F;
+                dm = entity.getDeltaMovement();
+            } else if (basicLightLvl > 0 && dm.y < 0.0) {
+                double dampedY = Math.max(dm.y * 0.72, -0.175);
+                entity.setDeltaMovement(dm.x, dampedY, dm.z);
+                entity.fallDistance *= 0.55F;
+                dm = entity.getDeltaMovement();
+            }
+        }
+
+        // --- D. Coureur Mural (wall_runner) : Glisse sur tous les murs exactement comme des Blocs de Miel + course latérale ! ---
+        int wallRunnerLvl = getArmorEnchantLvl(entity, "deep_lucky_block:wall_runner");
+        if (wallRunnerLvl > 0 && !grounded && !sneaking && !entity.isInWater()
+                && !entity.isFallFlying() && isTouchingHorizontalWall(entity)) {
+            dm = entity.getDeltaMovement();
+            Vec3 look = entity.getLookAngle();
+            // HoneyBlock#doSlideMovement : vitesse verticale retenue à -0.05 (niv. I) ou -0.025 (niv. II+),
+            // et légère grimpe murale au niv. II+ si le joueur sprinte en regardant vers le haut !
+            double minSlideY = wallRunnerLvl >= 2 ? -0.025 : -0.05;
+            double newY = Math.max(dm.y, minSlideY);
+            if (wallRunnerLvl >= 2 && entity.isSprinting() && look.y > 0.24) {
+                newY = Math.max(newY, Math.min(0.18, 0.055 * wallRunnerLvl));
+            }
+            Vec3 flatLook = new Vec3(look.x, 0.0, look.z);
+            double nx = dm.x;
+            double nz = dm.z;
+            if (flatLook.lengthSqr() > 1.0e-4 && (entity.isSprinting() || dm.horizontalDistanceSqr() > 4.0e-4)) {
+                flatLook = flatLook.normalize();
+                double maxWallRun = 0.28 + 0.07 * Math.min(4, wallRunnerLvl);
+                nx += flatLook.x * 0.032 * wallRunnerLvl;
+                nz += flatLook.z * 0.032 * wallRunnerLvl;
+                double hLen = Math.sqrt(nx * nx + nz * nz);
+                if (hLen > maxWallRun) {
+                    nx = (nx / hLen) * maxWallRun;
+                    nz = (nz / hLen) * maxWallRun;
+                }
+            }
+            entity.setDeltaMovement(nx, newY, nz);
+            entity.fallDistance = 0.0F;
+            dm = entity.getDeltaMovement();
+        }
+
+        // --- E. Glissade (slide) : Forte projection avant soutenue sur plusieurs ticks ! ---
+        int slideLvl = getArmorEnchantLvl(entity, "deep_lucky_block:slide");
+        if (slideLvl > 0) {
+            if (entity.isSprinting()) {
+                state.sprintGraceTicks = 8;
+            } else if (state.sprintGraceTicks > 0) {
+                state.sprintGraceTicks--;
+            }
+            if (sneaking && !state.wasSneak && grounded && state.sprintGraceTicks > 0 && now >= state.slideCooldownUntil) {
+                Vec3 lk = entity.getLookAngle();
+                Vec3 flat = new Vec3(lk.x, 0.0, lk.z);
+                if (flat.lengthSqr() > 1.0e-4) {
+                    flat = flat.normalize();
+                    state.slideSpeed = Math.min(2.55, 1.25 + 0.34 * slideLvl);
+                    state.slideDirX = flat.x;
+                    state.slideDirZ = flat.z;
+                    state.slideTicksLeft = 10 + 2 * Math.min(5, slideLvl);
+                    state.slideCooldownUntil = now + 44L;
+                    state.sprintGraceTicks = 0;
+                }
+            }
+            if (state.slideTicksLeft > 0) {
+                if (sneaking && !entity.isInWater()) {
+                    state.slideTicksLeft--;
+                    dm = entity.getDeltaMovement();
+                    entity.setDeltaMovement(state.slideDirX * state.slideSpeed, dm.y, state.slideDirZ * state.slideSpeed);
+                    state.slideSpeed *= 0.90;
+                } else {
+                    state.slideTicksLeft = 0;
+                }
+            }
+        } else {
+            state.slideTicksLeft = 0;
+        }
+
+        // --- F. Stationnaire d'Oxygène (oxygen_hover) synchronisé Client + Serveur ---
+        int oxyHov = getArmorEnchantLvl(entity, "deep_lucky_block:oxygen_hover");
+        if (oxyHov > 0 && !grounded && sneaking) {
+            dm = entity.getDeltaMovement();
+            entity.setDeltaMovement(dm.x, 0.0, dm.z);
+            entity.fallDistance = 0.0F;
+        }
+
+        // --- G. Pas de Géant (giant_step) : Au niveau max (niv. >= 5), marche directement du sol jusqu'en haut d'un grand mur (> 10 jusqu'à 18 blocs) ! ---
+        int giantStepLvl = getArmorEnchantLvl(entity, "deep_lucky_block:giant_step");
+        int bigStepLvl = getArmorEnchantLvl(entity, "deep_lucky_block:big_step");
+        if (giantStepLvl >= 5 && grounded && !sneaking && !entity.isInWater()) {
+            Vec3 lk = entity.getLookAngle();
+            Vec3 flat = new Vec3(lk.x, 0.0, lk.z);
+            if (flat.lengthSqr() > 1.0e-4 && (entity.isSprinting() || isTouchingHorizontalWall(entity))) {
+                flat = flat.normalize();
+                double stepAheadX = flat.x * 0.55;
+                double stepAheadZ = flat.z * 0.55;
+                AABB curBox = entity.getBoundingBox();
+                // Si bloqué par un haut mur (> 10 blocs, au-delà du plafond vanilla RangedAttribute STEP_HEIGHT = 10.0) :
+                if (!entity.level().noCollision(entity, curBox.move(stepAheadX, 0.0, stepAheadZ))
+                        && !entity.level().noCollision(entity, curBox.move(stepAheadX, 9.5, stepAheadZ))) {
+                    int maxWallHeight = Math.min(24, 8 + 2 * giantStepLvl); // 18 blocs au niveau V !
+                    for (int h = 10; h <= maxWallHeight; h++) {
+                        AABB crestBox = curBox.move(stepAheadX, h + 0.05, stepAheadZ);
+                        BlockPos belowCrest = BlockPos.containing(entity.getX() + stepAheadX, entity.getY() + h - 0.25, entity.getZ() + stepAheadZ);
+                        if (!entity.level().getBlockState(belowCrest).isAir()
+                                && entity.level().noCollision(entity, crestBox)
+                                && entity.level().noCollision(entity, curBox.move(0.0, h + 0.05, 0.0))) {
+                            entity.setPos(entity.getX() + stepAheadX, entity.getY() + h + 0.05, entity.getZ() + stepAheadZ);
+                            entity.fallDistance = 0.0F;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if ((giantStepLvl > 0 || bigStepLvl > 0) && !Double.isNaN(state.prevY)) {
+            double climbed = entity.getY() - state.prevY;
+            if (climbed >= 1.8 && entity.onGround()) {
+                entity.fallDistance = 0.0F;
+                if (entity.level() instanceof ServerLevel slStep) {
+                    EnchantmentParticleFX.cloudCushion(slStep, entity.getX(), entity.getY() + 0.04, entity.getZ(),
+                            climbed >= 5.0 ? 1.05 : 0.72, climbed >= 8.0);
+                    EnchantmentParticleFX.shockwaveRing(slStep, entity.getX(), entity.getY() + 0.06, entity.getZ(),
+                            EnchantmentParticleFX.EARTH_OCHRE, climbed >= 5.0 ? 1.0 : 0.65, 10, 0.02);
+                }
+            }
+        }
+
+        state.prevY = entity.getY();
+        state.wasOnGround = entity.onGround();
+        state.wasSneak = sneaking;
+    }
+
+    /**
+     * T307-CLOUD-WALKER : Réception serveur du Double Saut / Triple Saut de « Marcheur des Nuages ».
+     */
+    public static void performServerCloudJump(ServerPlayer sp, int requestedJumpIdx) {
+        if (sp == null || !sp.isAlive() || sp.isSpectator()) return;
+        int cwLvl = getArmorEnchantLvl(sp, "deep_lucky_block:cloud_walker");
+        if (cwLvl <= 0) return;
+        if (sp.onGround() || sp.isInWater() || sp.isInLava() || sp.onClimbable() || sp.isFallFlying()) return;
+
+        SharedMoveState state = SHARED_MOVE_STATES.computeIfAbsent(sideEntityKey(sp), k -> new SharedMoveState());
+        if (state.serverAirJumpsUsed >= 2) return;
+        state.serverAirJumpsUsed++;
+
+        boolean isThirdJump = (state.serverAirJumpsUsed >= 2 || requestedJumpIdx >= 2);
+        double jumpVy = isThirdJump ? 0.56 : 0.50;
+        Vec3 look = sp.getLookAngle();
+        Vec3 horiz = new Vec3(look.x, 0.0, look.z);
+        if (horiz.lengthSqr() > 1.0e-4) {
+            horiz = horiz.normalize().scale(0.08);
+        }
+        Vec3 dm = sp.getDeltaMovement();
+        sp.setDeltaMovement(dm.x + horiz.x, jumpVy, dm.z + horiz.z);
+        sp.hurtMarked = true;
+        sp.fallDistance = 0.0F;
+        state.lastAirVy = 0.0;
+
+        if (sp.level() instanceof ServerLevel sl) {
+            EnchantmentParticleFX.cloudCushion(sl, sp.getX(), sp.getY() - 0.05, sp.getZ(),
+                    isThirdJump ? 1.12 : 0.82, isThirdJump);
+            sl.playSound(null, sp.getX(), sp.getY(), sp.getZ(),
+                    SoundEvents.WOOL_FALL, SoundSource.PLAYERS, 0.75f, isThirdJump ? 1.45f : 1.22f);
+        }
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // T307-BARRIER-TRAIL : Trail temporaire de Blocks.BARRIER sous les pieds du joueur,
+    // supprimé automatiquement dès que le joueur est à >= 4.0 blocs (distSq >= 16.0) !
+    // -----------------------------------------------------------------------------------------
+    private record BarrierNode(ResourceKey<Level> dimension, BlockPos pos, long placedTick) {}
+
+    private static final Map<UUID, Map<BlockPos, BarrierNode>> PLAYER_BARRIER_TRAILS = new ConcurrentHashMap<>();
+
+    private static void placeBarrierTrailUnderFeet(LivingEntity entity, boolean withCloudTrail) {
+        if (!(entity instanceof Player player) || !(entity.level() instanceof ServerLevel sl)) return;
+        int footY = Mth.floor(player.getY() - 0.05);
+        if (footY < sl.getMinBuildHeight() || footY >= sl.getMaxBuildHeight()) return;
+
+        AABB footBox = player.getBoundingBox().deflate(0.04, 0.0, 0.04);
+        int minX = Mth.floor(footBox.minX);
+        int maxX = Mth.floor(footBox.maxX);
+        int minZ = Mth.floor(footBox.minZ);
+        int maxZ = Mth.floor(footBox.maxZ);
+
+        Map<BlockPos, BarrierNode> trail = PLAYER_BARRIER_TRAILS.computeIfAbsent(
+                player.getUUID(), u -> new ConcurrentHashMap<>());
+        long now = sl.getGameTime();
+        boolean anyBarrierUnder = false;
+
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                BlockPos pos = new BlockPos(x, footY, z);
+                BlockState cur = sl.getBlockState(pos);
+                if (cur.isAir()) {
+                    sl.setBlockAndUpdate(pos, Blocks.BARRIER.defaultBlockState());
+                    trail.put(pos, new BarrierNode(sl.dimension(), pos, now));
+                    anyBarrierUnder = true;
+                } else if (cur.is(Blocks.BARRIER) && trail.containsKey(pos)) {
+                    trail.put(pos, new BarrierNode(sl.dimension(), pos, now));
+                    anyBarrierUnder = true;
+                }
+            }
+        }
+
+        if (withCloudTrail && anyBarrierUnder && (player.tickCount % 4 == 0)) {
+            sl.sendParticles(ParticleTypes.CLOUD,
+                    player.getX(), footY + 1.03, player.getZ(),
+                    2, 0.20, 0.02, 0.20, 0.006);
+        }
+    }
+
+    private static void clearPlayerBarriersUnderneath(LivingEntity entity) {
+        if (!(entity instanceof Player player) || !(entity.level() instanceof ServerLevel sl)) return;
+        Map<BlockPos, BarrierNode> trail = PLAYER_BARRIER_TRAILS.get(player.getUUID());
+        if (trail == null || trail.isEmpty()) return;
+        Iterator<Map.Entry<BlockPos, BarrierNode>> it = trail.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<BlockPos, BarrierNode> entry = it.next();
+            BarrierNode node = entry.getValue();
+            ServerLevel targetLvl = sl.getServer().getLevel(node.dimension());
+            if (targetLvl != null && targetLvl.isLoaded(node.pos()) && targetLvl.getBlockState(node.pos()).is(Blocks.BARRIER)) {
+                targetLvl.setBlockAndUpdate(node.pos(), Blocks.AIR.defaultBlockState());
+            }
+            it.remove();
+        }
+    }
+
+    @SubscribeEvent
+    public static void onServerTickBarrierTrail(ServerTickEvent.Post event) {
+        try {
+            if (PLAYER_BARRIER_TRAILS.isEmpty()) return;
+            net.minecraft.server.MinecraftServer server = event.getServer();
+            Iterator<Map.Entry<UUID, Map<BlockPos, BarrierNode>>> playerIt = PLAYER_BARRIER_TRAILS.entrySet().iterator();
+            while (playerIt.hasNext()) {
+                Map.Entry<UUID, Map<BlockPos, BarrierNode>> pEntry = playerIt.next();
+                UUID uuid = pEntry.getKey();
+                Map<BlockPos, BarrierNode> trail = pEntry.getValue();
+                if (trail == null || trail.isEmpty()) {
+                    playerIt.remove();
+                    continue;
+                }
+                ServerPlayer sp = server.getPlayerList().getPlayer(uuid);
+                boolean activeAirBoots = sp != null && sp.isAlive() && !sp.hasDisconnected()
+                        && (getArmorEnchantLvl(sp, "deep_lucky_block:foot_placement") > 0
+                            || getArmorEnchantLvl(sp, "deep_lucky_block:cloud_stride") > 0
+                            || getArmorEnchantLvl(sp, "deep_lucky_block:range_foot_placement") > 0);
+
+                Iterator<Map.Entry<BlockPos, BarrierNode>> nodeIt = trail.entrySet().iterator();
+                while (nodeIt.hasNext()) {
+                    BarrierNode node = nodeIt.next().getValue();
+                    ServerLevel nodeLvl = server.getLevel(node.dimension());
+                    boolean mustRemove = !activeAirBoots
+                            || !sp.level().dimension().equals(node.dimension());
+                    if (!mustRemove) {
+                        double dx = sp.getX() - (node.pos().getX() + 0.5);
+                        double dy = (sp.getY() - 0.5) - (node.pos().getY() + 0.5);
+                        double dz = sp.getZ() - (node.pos().getZ() + 0.5);
+                        double horizDistSq = dx * dx + dz * dz;
+                        double dist3DSq = horizDistSq + dy * dy;
+                        // Règle stricte T307 : dès que le joueur est à >= 4 blocs d'une barrière posée derrière lui, elle disparaît !
+                        if (horizDistSq >= 16.0 || dist3DSq >= 16.0) {
+                            mustRemove = true;
+                        }
+                    }
+                    if (mustRemove) {
+                        if (nodeLvl != null && nodeLvl.isLoaded(node.pos())
+                                && nodeLvl.getBlockState(node.pos()).is(Blocks.BARRIER)) {
+                            nodeLvl.setBlockAndUpdate(node.pos(), Blocks.AIR.defaultBlockState());
+                            nodeLvl.sendParticles(ParticleTypes.CLOUD,
+                                    node.pos().getX() + 0.5, node.pos().getY() + 0.85, node.pos().getZ() + 0.5,
+                                    2, 0.15, 0.05, 0.15, 0.005);
+                        }
+                        nodeIt.remove();
+                    }
+                }
+                if (trail.isEmpty()) {
+                    playerIt.remove();
+                }
+            }
+        } catch (Throwable t) {
+            guard("onServerTickBarrierTrail", t);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onPlayerLogoutBarrierCleanup(PlayerEvent.PlayerLoggedOutEvent event) {
+        try {
+            clearPlayerBarriersUnderneath(event.getEntity());
+            PLAYER_BARRIER_TRAILS.remove(event.getEntity().getUUID());
+        } catch (Throwable t) {
+            guard("onPlayerLogoutBarrierCleanup", t);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onServerStoppingBarrierCleanup(ServerStoppingEvent event) {
+        try {
+            net.minecraft.server.MinecraftServer server = event.getServer();
+            for (Map<BlockPos, BarrierNode> trail : PLAYER_BARRIER_TRAILS.values()) {
+                for (BarrierNode node : trail.values()) {
+                    ServerLevel lvl = server.getLevel(node.dimension());
+                    if (lvl != null && lvl.isLoaded(node.pos()) && lvl.getBlockState(node.pos()).is(Blocks.BARRIER)) {
+                        lvl.setBlockAndUpdate(node.pos(), Blocks.AIR.defaultBlockState());
+                    }
+                }
+            }
+            PLAYER_BARRIER_TRAILS.clear();
+        } catch (Throwable t) {
+            guard("onServerStoppingBarrierCleanup", t);
         }
     }
 

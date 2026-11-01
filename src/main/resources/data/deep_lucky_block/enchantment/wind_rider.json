@@ -3,7 +3,7 @@
     "translate": "enchantment.deep_lucky_block.wind_rider"
   },
   "supported_items": "#minecraft:enchantable/chest_armor",
-  "weight": 1,
+  "weight": 2,
   "max_level": 3,
   "min_cost": {
     "base": 1,

@@ -3,7 +3,7 @@
     "translate": "enchantment.deep_lucky_block.overcharge"
   },
   "supported_items": "#minecraft:enchantable/durability",
-  "weight": 2,
+  "weight": 10,
   "max_level": 3,
   "min_cost": {
     "base": 1,

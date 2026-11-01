@@ -3,7 +3,7 @@
     "translate": "enchantment.deep_lucky_block.perfect_parry"
   },
   "supported_items": "minecraft:shield",
-  "weight": 1,
+  "weight": 3,
   "max_level": 3,
   "min_cost": {
     "base": 1,

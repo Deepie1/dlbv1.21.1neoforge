@@ -3,7 +3,7 @@
     "translate": "enchantment.deep_lucky_block.carriers_stride"
   },
   "supported_items": "#minecraft:enchantable/leg_armor",
-  "weight": 5,
+  "weight": 18,
   "max_level": 3,
   "min_cost": {
     "base": 1,
