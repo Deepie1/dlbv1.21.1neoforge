@@ -82,10 +82,9 @@ public class Structures5Procedure {
      * paste de l'everest). C'est la mesure en millisecondes qui garantit qu'un
      * tick ne s'eternise jamais.
      */
-    // T291c : borne pilotable (defaut 40 ms, inchangee) -- permet de mesurer
-    // l'elasticite du paste au budget tick sur le banc (-Ddlb.pasteTickBudgetMs=NN).
+    // T291c / T304-PERF : budget 48 ms/tick en ecriture directe LevelChunkSection (sans checkBlock unitaire).
     private static final long PASTE_TICK_BUDGET_MS =
-            Long.getLong("dlb.pasteTickBudgetMs", 40L);
+            Long.getLong("dlb.pasteTickBudgetMs", 48L);
     private static final int FLAT_SIZE = 10;
     private static final int MAX_HDIFF = 3;
     // Ecart (en blocs) au-dela duquel l'ecart de sol avant/apres smooth est
@@ -733,6 +732,8 @@ public class Structures5Procedure {
                         var sections = cachedChunk.getSections();
                         int minSec = cachedChunk.getMinSection();
                         int lx = x & 15, lz = z & 15;
+                        long touchedMask = 0L;
+                        BlockState airState = Blocks.AIR.defaultBlockState();
                         for (int y = floorGuardY; y <= top; y++) {
                             int secIdx = (y >> 4) - minSec;
                             if (secIdx < 0 || secIdx >= sections.length) continue;
@@ -744,8 +745,20 @@ public class Structures5Procedure {
                             BlockState s = sec.getBlockState(lx, y & 15, lz);
                             if (!isNaturalTerrain(s)) continue;
                             if (pj.occupied.contains(BlockPos.asLong(x, y, z))) continue;
-                            level.setBlock(mut.set(x, y, z), Blocks.AIR.defaultBlockState(), FAST_FLAG);
+                            if (s.hasBlockEntity()) cachedChunk.removeBlockEntity(new BlockPos(x, y, z));
+                            sec.getStates().set(lx, y & 15, lz, airState);
+                            if (secIdx < 64) touchedMask |= (1L << secIdx);
                             cleared++;
+                        }
+                        if (touchedMask != 0L) {
+                            for (int si = 0; si < sections.length; si++) {
+                                if ((touchedMask & (1L << si)) == 0L) continue;
+                                var sec = sections[si];
+                                if (sec != null) sec.recalcBlockCounts();
+                            }
+                            Heightmap.primeHeightmaps(cachedChunk, PASTE_HEIGHTMAPS);
+                            cachedChunk.setUnsaved(true);
+                            StructureTerrainPrep.markChunkModified(cachedChunk);
                         }
                     } else {
                         for (int y = floorGuardY; y <= top; y++) {
@@ -832,9 +845,11 @@ public class Structures5Procedure {
                 if (oldState.hasBlockEntity()) chunk.removeBlockEntity(bp.immutable());
                 states.set(lx, ly, lz, ts);
                 if (secIdx >= 0 && secIdx < 64) j.touchedSecMask |= (1L << secIdx);
-                if (oldState.getLightEmission() != ts.getLightEmission()
-                        || oldState.getLightBlock(chunk, bp) != ts.getLightBlock(chunk, bp)) {
-                    j.level.getChunkSource().getLightEngine().checkBlock(bp);
+                // T304-PERF : suppression des ~68 000 checkBlock(bp) unitaires (~1,5 s de saturation mailbox) !
+                // La relumiere Starlight complete (ciel + lanternes) est lancee en 1 seule passe par chunk
+                // via initializeLightSources() + lightEngine.lightChunk() avant l'envoi reseau !
+                if (ts.getLightEmission() > 0 || oldState.getLightEmission() > 0) {
+                    j.level.getChunkSource().getLightEngine().checkBlock(bp.immutable());
                 }
                 j.lastChunkTouched = true;
             }
@@ -1047,7 +1062,7 @@ public class Structures5Procedure {
                 // sinon on colle des blocs de dirt visibles sur les facades.
                 // T302-C : budget temporel 25 ms/tick (R8) au lieu d'un plafond fixe de 200 colonnes/tick
                 // qui faisait dormir CarveJob pendant ~23 ticks (1,15 s) pour <2 ms de travail reel.
-                long carveDeadline = System.nanoTime() + 25_000_000L;
+                long carveDeadline = System.nanoTime() + 45_000_000L;
                 BlockPos.MutableBlockPos side = new BlockPos.MutableBlockPos();
                 int i = cj.groundIdx;
                 for (; i < cj.columns.size(); i++) {
@@ -1080,12 +1095,10 @@ public class Structures5Procedure {
                 // doivent pousser AUTOUR des decors, jamais dedans ni dessus).
                 // On lui transmet le nom de la structure pour le choix du theme.
                 StructureTerrainPrep.setStructureName(cj.name);
-                // T39 : finitions post-pose. T240+T241 : le raccord post-pose
-                // (smoothAround, serie multi-rayons) s'execute A L'INTERIEUR de
-                // cette fenetre, APRES la pose et les decors mais AVANT la
-                // liberation keeper/chaine -- jamais en parallele : la version
-                // T240 parallele relachait la zone sous ses pieds (hang client
-                // 6+ min sur machine lente : chargements synchrones de chunks).
+                // T304 : transmettre les positions exactes des blocs poses + colonnes de base reelles + Y0
+                // pour repeindre le sol naturel decouvert/sous-auvents de l'emprise, laisser pousser les arbres
+                // proches et purger toute feuille flottante hors blocs de structure !
+                StructureTerrainPrep.setPastedStructureContext(cj.occupied, cj.baseCols, cj.structureY0);
                 StructureTerrainPrep.decorateFinish(cj.level, cj.min, cj.max, true);   // T39 : finitions post-pose
                 POST_Q.offer(new PostJob(cj.level, cj.min, cj.max, cj.name,
                         cj.columns, cj.baseCols, cj.occupied, cj.baseLevel, cj.structureY0));   // T260 / T303 : sweep interieur en fin de post
@@ -1094,8 +1107,8 @@ public class Structures5Procedure {
         }
         if (!POST_Q.isEmpty()) {
             PostJob pj = POST_Q.peek();
-            // T302-C : budget temporel 25 ms/tick (R8) au lieu de 4 couches/tick fixes (~27 ticks = 1,35 s d'attente vide).
-            long postDeadline = System.nanoTime() + 25_000_000L;
+            // T304-PERF : budget temporel 45 ms/tick -> 1 seul tick sur LevelChunkSection !
+            long postDeadline = System.nanoTime() + 45_000_000L;
             while (pj.y <= pj.max.getY() && System.nanoTime() < postDeadline) { postLayer(pj.level, pj.min, pj.max, pj.y); pj.y++; }
             if (pj.y > pj.max.getY()) {
                 killLaggyItems(pj.level, pj.min, pj.max);
@@ -1104,17 +1117,8 @@ public class Structures5Procedure {
                 }
                 POST_Q.poll();
                 deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5] Post-process de {} termine", pj.name);
-                // T260 : le filet anti-gris planifie +40 est SUPPRIME d'ici —
-                // il tournait AVANT la fin du raccord T240 (ordre non garanti,
-                // cause exacte de l'anneau gris residuel du run T259) ; il est
-                // desormais la derniere etape de smoothAround, inconditionnelle.
-                // A la place : le sweep interieur deterministe post-pose
-                // (« terre dans la maison », consigne client 14/10 01:49).
                 sweepInteriorTerrain(pj);
-                // T184 : decorateFinish est asynchrone. T183 libérait ici la FIFO
-                // alors que dressAndPlant/replantTrees travaillaient encore 4 s :
-                // le second Dragon recherchait pendant les déchargements du premier.
-                // La libération réelle de ChunkKeeper marque désormais la vraie fin.
+                StructureTerrainPrep.broadcastModifiedChunks(pj.level);
                 finishWhenTerrainReleased(pj.level, pj.name, pj.min);
             }
         }
@@ -1792,20 +1796,36 @@ public class Structures5Procedure {
 
                 int[] cGs = deepluckyblock.util.SafeSurface.groundStats(lvl,
                         cx - checkR, cz - checkR, cx + checkR, cz + checkR, 4, sentinel, 64, true);
-                if (cGs[3] < 9) continue;
+                if (cGs[3] < 5) continue;
                 int cSpan = cGs[2] - cGs[1];
 
                 int bestOri = -1, bestFSpan = Integer.MAX_VALUE, bestStep = 99, bestOriPenalty = Integer.MAX_VALUE;
+                int bestMissFoot = 999, bestMissCollar = 999;
                 for (int ori = 0; ori < (halfMin == fullCheckR ? 1 : 2); ori++) {
                     if ((ori == 0 && !dry0) || (ori == 1 && !dry1)) continue;
                     int rx = (ori == 0) ? halfMin : fullCheckR;
                     int rz = (ori == 0) ? fullCheckR : halfMin;
                     int[] fGs = deepluckyblock.util.SafeSurface.groundStats(lvl,
                             cx - rx, cz - rz, cx + rx, cz + rz, 4, sentinel, 64, true);
-                    if (fGs[3] < 12) continue;
+                    if (fGs[3] < 6) continue;
                     int fSpan = fGs[2] - fGs[1];
                     int rawStep = measureStructureChunkStepMax(lvl, cx - rx, cz - rz, cx + rx, cz + rz);
                     int effStep = (rawStep >= 0) ? rawStep : Math.max(3, (fSpan + 2) / 3);
+                    // T304-PERF-DIAG : compter les chunks manquants dans l'emprise (missFoot) et le collier 1-chunk (missCollar).
+                    // Un candidat diagonal (±120, ±120) dans un carre joueur RD=11-12 (±176..192) a missFoot=0 et missCollar=0,
+                    // economisant 100% des attentes STRUCT5-SAFETY + STRUCT5-GROUND + preload (gain direct de 3 a 6 s !).
+                    int missFoot = 0, missCollar = 0;
+                    for (int mcx = (cx - rx - 16) >> 4; mcx <= (cx + rx + 16) >> 4; mcx++) {
+                        for (int mcz = (cz - rz - 16) >> 4; mcz <= (cz + rz + 16) >> 4; mcz++) {
+                            if (!deepluckyblock.util.SafeSurface.loaded(lvl, mcx, mcz)) {
+                                missCollar++;
+                                if (mcx >= ((cx - rx) >> 4) && mcx <= ((cx + rx) >> 4)
+                                        && mcz >= ((cz - rz) >> 4) && mcz <= ((cz + rz) >> 4)) {
+                                    missFoot++;
+                                }
+                            }
+                        }
+                    }
                     // T305 : penaliser toute montagne abrupte dans le collier de 1 chunk (+18 blocs) autour de l'emprise
                     int hRx = rx + 18, hRz = rz + 18;
                     int haloMaxY = fGs[2];
@@ -1820,21 +1840,24 @@ public class Structures5Procedure {
                         }
                     }
                     int haloCliffExcess = Math.max(0, haloMaxY - fGs[2] - 8);
-                    int pen = Math.max(0, effStep - deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y) * 350
+                    int pen = missFoot * 650 + missCollar * 120
+                            + Math.max(0, effStep - deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y) * 350
                             + Math.max(0, fSpan - MAX_FOOTPRINT_GROUND_SPAN) * 35
                             + haloCliffExcess * 60
-                            + fSpan * 4 + (rawStep < 0 ? 600 : 0);
+                            + fSpan * 4 + (rawStep < 0 ? 400 : 0);
                     if (pen < bestOriPenalty) {
                         bestOriPenalty = pen;
                         bestOri = ori;
                         bestFSpan = fSpan + (haloCliffExcess > 10 ? haloCliffExcess / 2 : 0);
                         bestStep = effStep;
+                        bestMissFoot = missFoot;
+                        bestMissCollar = missCollar;
                     }
                 }
                 if (bestOri < 0) continue;
 
                 probed++;
-                boolean warmPrep = empriseAlreadyLoaded(lvl, cx, cz, fullCheckR + 40);
+                boolean warmPrep = bestMissFoot == 0 && bestMissCollar <= 4;
                 int lookBonus = 0;
                 if (p != null && r > 1) {
                     double dot = ((cx - px) * lookX + (cz - pz) * lookZ) / r;
@@ -1846,11 +1869,11 @@ public class Structures5Procedure {
                         && bestFSpan <= MAX_FOOTPRINT_GROUND_SPAN;
                 int cost;
                 if (ideal) {
-                    cost = Math.max(0, bestStep * 20 + cSpan * 5 + bestFSpan * 2 + (r / 16) - lookBonus);
+                    cost = Math.max(0, bestMissCollar * 60 + bestStep * 20 + cSpan * 5 + bestFSpan * 2 + (r / 16) - lookBonus);
                     idealWarmCount++;
                 } else {
                     cost = 10_000
-                            + (warmPrep ? 0 : 2_000)
+                            + bestMissFoot * 900 + bestMissCollar * 150
                             + Math.max(0, bestStep - deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y) * 350
                             + Math.max(0, cSpan - MAX_FOOTPRINT_GROUND_SPAN) * 80
                             + Math.max(0, bestFSpan - MAX_FOOTPRINT_GROUND_SPAN) * 35
@@ -1886,8 +1909,34 @@ public class Structures5Procedure {
                 continue;
             }
             FootprintGround egLoaded = detectExactGround(lvl, cx - checkR, cz - checkR, cx + checkR, cz + checkR);
-            if (egLoaded == null) { STAT_LOADED_REJ_NOTREADY++; continue; }
-            if (egLoaded.wet() > 0) { STAT_LOADED_REJ_WATER++; continue; }
+            if (egLoaded != null) {
+                if (egLoaded.wet() > 0) { STAT_LOADED_REJ_WATER++; continue; }
+            } else {
+                // T304-DIST2X-BORDER : a distance 2x (MIN_PLAYER_DISTANCE=130, r ~ 160-190 blocs),
+                // le centre et la moitie cote joueur sont DEJA FULL en RAM mais 1 a 3 chunks du bord
+                // externe depassent la renderDistance=10-12. Valider ces coins externes par bruit pur
+                // OCEAN_FLOOR_WG (< 0,1 ms, 0 chunk genere) evite de rejeter toute la couronne du joueur
+                // et d'aller generer 120 chunks a froid a 1 000 blocs de distance !
+                var gen = lvl.getChunkSource().getGenerator();
+                var rs = lvl.getChunkSource().randomState();
+                int minDryY = Math.max(63, lvl.getSeaLevel());
+                boolean outerWet = false;
+                int[][] checkCorners = {
+                        {-rx, -rz}, {rx, -rz}, {-rx, rz}, {rx, rz},
+                        {-rx, 0}, {rx, 0}, {0, -rz}, {0, rz}
+                };
+                for (int[] cc : checkCorners) {
+                    int qx = cx + cc[0], qz = cz + cc[1];
+                    if (deepluckyblock.util.SafeSurface.isLoadedAt(lvl, qx, qz)) {
+                        if (deepluckyblock.util.SafeSurface.columnWet(lvl, qx, qz)) { outerWet = true; break; }
+                    } else {
+                        int hf = gen.getBaseHeight(qx, qz,
+                                net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR_WG, lvl, rs);
+                        if (hf < minDryY || hf >= 180) { outerWet = true; break; }
+                    }
+                }
+                if (outerWet) { STAT_LOADED_REJ_WATER++; continue; }
+            }
             int realY = deepluckyblock.util.SafeSurface.height(lvl,
                     Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, cx, cz) - 1;
             if (realY < 1) { STAT_LOADED_REJ_GROUND++; continue; }
@@ -1903,25 +1952,20 @@ public class Structures5Procedure {
         return null;
     }
 
-    /** T245+T246 : l'emprise (boite checkR, 9 points de controle) est-elle
-     *  deja PRESQUE entierement en memoire ? Regle : centre obligatoire,
-     *  au moins 6 des 8 points peripheriques charges, dont au moins 2 coins
-     *  (mesure en jeu, view distance 20 : le carre charge du joueur coupe
-     *  souvent UN coin de la boite d'emprise ; exiger 9/9 disqualifiait tous
-     *  les bons sites et le tier ne servait jamais). Les 1-2 chunks manquants
-     *  seront combles par le plan-zone SAFETY en tache de fond — le tier ne
-     *  provoque quant a lui JAMAIS de chargement. */
+    /** T245+T246 / T304-DIST2X : l'emprise (boite checkR, 9 points de controle) est-elle
+     *  deja suffisamment en memoire ? Avec MIN_PLAYER_DISTANCE=130 (2x), le bord externe
+     *  de checkR coupe la frontiere de renderDistance=10-12 : centre obligatoire + >= 3 points
+     *  peripheriques deja FULL garantit >= 50-85% des chunks deja en RAM ! */
     private static boolean empriseAlreadyLoaded(net.minecraft.server.level.ServerLevel lvl, int cx, int cz, int checkR) {
         int[][] pts = {{0,0},{-checkR,-checkR},{checkR,-checkR},{-checkR,checkR},{checkR,checkR},
                        {-checkR,0},{checkR,0},{0,-checkR},{0,checkR}};
         if (!deepluckyblock.util.SafeSurface.isLoadedAt(lvl, cx, cz)) return false;   // centre obligatoire
-        int periphery = 0, corners = 0;
+        int periphery = 0;
         for (int i = 1; i < pts.length; i++) {
             if (!deepluckyblock.util.SafeSurface.isLoadedAt(lvl, cx + pts[i][0], cz + pts[i][1])) continue;
             periphery++;
-            if (i <= 4) corners++;
         }
-        return periphery >= 6 && corners >= 2;
+        return periphery >= 3;
     }
 
     private static BlockPos dryPickCenter(net.minecraft.server.level.ServerLevel lvl,
@@ -2201,8 +2245,10 @@ public class Structures5Procedure {
                     if (code == -1) { waterDelta++; continue; }
                     int span = code - 1;
                     BlockPos bp = new BlockPos(c[0], Math.max(resHy[i], 65), c[1]);
-                    if (span < bestAnyDry[0]) {
-                        bestAnyDry[0] = span;
+                    int distFromBase = (int) Math.hypot(c[0] - baseX, c[1] - baseZ);
+                    int compositeScore = span * 6 + Math.max(0, distFromBase - minCenterDist) / 5;
+                    if (compositeScore < bestAnyDry[0]) {
+                        bestAnyDry[0] = compositeScore;
                         bestAnyDry[1] = c[0];
                         bestAnyDry[2] = Math.max(resHy[i], 65);
                         bestAnyDry[3] = c[1];
@@ -2330,9 +2376,9 @@ public class Structures5Procedure {
                     final double ba = (ring == 0) ? 0.0 : ((2.0 * Math.PI * bi) / ringBulles + ring * 0.3819660113);
                     final int cx0 = baseX + (ring == 0 ? 0 : (int) Math.round(Math.cos(ba) * ringRad));
                     final int cz0 = baseZ + (ring == 0 ? 0 : (int) Math.round(Math.sin(ba) * ringRad));
-                    final int r0 = (ring == 0) ? Math.max(80, minCenterDist + 32) : 48;
-                    final int rMax = (ring == 0) ? 384 : 272;
-                    final int rStep = 64;
+                    final int r0 = (ring == 0) ? Math.max(80, minCenterDist + 8) : 48;
+                    final int rMax = (ring == 0) ? Math.max(320, minCenterDist + 160) : 272;
+                    final int rStep = (ring == 0) ? 32 : 64;
                     for (int r = r0; r <= rMax; r += rStep) {
                         final double angle0 = (r * 0.6180339887) % (2 * Math.PI);
                         final int n = Math.max(6, (int) Math.ceil((2 * Math.PI * r) / rStep));
@@ -2370,6 +2416,25 @@ public class Structures5Procedure {
                     if (System.currentTimeMillis() - t0 >= budget - 30L) break;
                 }
                 DRY_ORIGIN_RING_CURSOR.put(originKey, (ring + 1) % 49);
+                if (ring == 0 && !coldBatch.isEmpty()) {
+                    coldBatch.sort(java.util.Comparator.comparingInt(arr -> arr[3]));
+                    int[] cRes0 = probeBatch.apply(coldBatch);
+                    coldBatch.clear();
+                    if (cRes0 != null && cRes0[0] != Integer.MIN_VALUE) {
+                        probed += cRes0[6]; water += cRes0[7];
+                        BlockPos choice = new BlockPos(cRes0[0], cRes0[1], cRes0[2]);
+                        DRY_PICK_SUGGESTED.add(new int[]{choice.getX(), choice.getZ()});
+                        SELECTED_BEST_IN_1S = true;
+                        stashSearchReuse(origin, structMax, choice, strictPool, softPool);
+                        logLoadedTierDigest(choice.getX(), choice.getZ());
+                        LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c/T304 anneau 0 : {} ms, {} sondes, {} eau/biome ecartees, span sec={}, 0 chunk genere)",
+                                choice.getX(), choice.getZ(), System.currentTimeMillis() - t0, probed, water, cRes0[4]);
+                        return choice;
+                    } else if (cRes0 != null) {
+                        probed += cRes0[1]; water += cRes0[2];
+                    }
+                }
+                if (ring == 0 && bestAnyDry[0] <= 24 * 6 + 40) break;
             }
             if (!coldBatch.isEmpty()) {
                 coldBatch.sort(java.util.Comparator.comparingInt(arr -> arr[3]));

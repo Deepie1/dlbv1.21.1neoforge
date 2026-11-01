@@ -487,10 +487,13 @@ public final class StructureScatterDecor {
             // chaine -- aucune entree d'air du template n'est posee (les
             // deux processeurs sont composes : celui qui renvoie null retire
             // l'entree de la liste de pose).
+            // T304-PERF : setKnownShape(true) empeche StructureTemplate.placeInWorld de balayer les 6 voisins
+            // avec updateFromNeighbourShapes (qui forçait une generation synchrone de 570 ms si le decor touchait un bord de chunk).
             StructurePlaceSettings settings = new StructurePlaceSettings()
                     .setRotation(rot)
                     .setMirror(mir)
                     .setIgnoreEntities(true)
+                    .setKnownShape(true)
                     .addProcessor(BlockIgnoreProcessor.STRUCTURE_BLOCK)
                     .addProcessor(BlockIgnoreProcessor.AIR);
 
@@ -584,6 +587,9 @@ public final class StructureScatterDecor {
 
     /** Sol naturel et assez plat sous toute l'emprise ? Retourne le Y de pose. */
     private static Integer flatGroundUnder(ServerLevel level, int px, int pz, int fw, int fd) {
+        for (int cx = (px - 1) >> 4; cx <= (px + fw) >> 4; cx++)
+            for (int cz = (pz - 1) >> 4; cz <= (pz + fd) >> 4; cz++)
+                if (!deepluckyblock.util.SafeSurface.loaded(level, cx, cz)) return null;
         int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         for (int dx = 0; dx < fw; dx++) {

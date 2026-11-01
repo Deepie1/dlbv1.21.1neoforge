@@ -185,6 +185,21 @@ public final class SafeSurface {
         // garde ne porte que sur le premier acces reel a la source.
         long pk = chunkKey(cx, cz);
         if (PENDING.contains(pk) && !READY.contains(pk)) {
+            // T304-FAST : en NeoForge 1.21.1, ServerChunkCache.getChunkNow(cx, cz) sur le thread serveur
+            // est O(1) et strictement non-bloquant (aucun managedBlock). Si le chunk est deja promu FULL,
+            // le publier immediatement dans READY evite 1-2 ticks de latence TickTask et toute fuite PENDING !
+            if (level.getServer() != null && level.getServer().isSameThread()) {
+                ChunkAccess now = null;
+                try { now = level.getChunkSource().getChunkNow(cx, cz); } catch (Throwable ignored) { }
+                if (now != null) {
+                    READY.add(pk);
+                    READY_TIME.put(pk, System.currentTimeMillis());
+                    PENDING.remove(pk);
+                    C_LEVEL[i] = level; C_KEY[i] = key; C_CHUNK[i] = now; C_VERIFIED[i] = false;
+                    lastLevel = level; lastKey = key; lastChunk = now;
+                    return now;
+                }
+            }
             statPendingSkips++;
             softMisses++;
             return null;
@@ -211,7 +226,10 @@ public final class SafeSurface {
         ChunkAccess c = cached(level, cx, cz);
         long _b = DIAG ? System.nanoTime() : 0L;
         if (c == null) {
-            request(level, cx, cz);
+            // T304-PERF : ne JAMAIS declencher de pyramide worldgen ChunkStatus.FULL sur des lectures
+            // passives hors de la zone epinglee par ChunkKeeper (ex. sondes findFlat a 300-700 blocs !),
+            // sinon 48 a 96 generations inutiles saturent Util.backgroundExecutor() pendant 8 a 12 s !
+            if (hasZoneTicket(level, cx, cz)) request(level, cx, cz);
             softMisses++;
             return level.getMinBuildHeight();
         }
@@ -279,7 +297,11 @@ public final class SafeSurface {
      */
     public static BlockState state(ServerLevel level, int x, int y, int z) {
         ChunkAccess c = cached(level, x >> 4, z >> 4);
-        if (c == null) { request(level, x >> 4, z >> 4); softMisses++; return null; }
+        if (c == null) {
+            if (hasZoneTicket(level, x >> 4, z >> 4)) request(level, x >> 4, z >> 4);
+            softMisses++;
+            return null;
+        }
         try { return c.getBlockState(new BlockPos(x, y, z)); } catch (Throwable t) { return null; }
     }
 
@@ -817,7 +839,11 @@ public final class SafeSurface {
     public static ChunkAccess primeChunkSoft(ServerLevel level, int cx, int cz) {
         try {
             ChunkAccess chunk = cached(level, cx, cz);      // T53 : cache (une recherche par chunk)
-            if (chunk == null) { request(level, cx, cz); softMisses++; return null; }
+            if (chunk == null) {
+                if (hasZoneTicket(level, cx, cz)) request(level, cx, cz);
+                softMisses++;
+                return null;
+            }
             // T53 : la verification de la heightmap (et son eventuel recalcul) n'a lieu
             // qu'UNE FOIS PAR CHUNK, plus une fois par colonne : c'etait 65 536 fois le meme
             // test pour un chunk de 16x16 lu colonne par colonne.
@@ -973,7 +999,11 @@ public final class SafeSurface {
      * @return Integer.MIN_VALUE si le chunk n'est pas en memoire
      */
     public static int surfaceMaterial(ServerLevel level, int x, int z) {
-        if (cached(level, x >> 4, z >> 4) == null) { request(level, x >> 4, z >> 4); softMisses++; return Integer.MIN_VALUE; }
+        if (cached(level, x >> 4, z >> 4) == null) {
+            if (hasZoneTicket(level, x >> 4, z >> 4)) request(level, x >> 4, z >> 4);
+            softMisses++;
+            return Integer.MIN_VALUE;
+        }
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         for (int y = level.getMaxBuildHeight() - 1; y > level.getMinBuildHeight(); y--) {
             m.set(x, y, z);
@@ -1000,7 +1030,11 @@ public final class SafeSurface {
     public static int groundY(ServerLevel level, int x, int z, int fallbackY) {
         int cx = x >> 4, cz = z >> 4;
         net.minecraft.world.level.chunk.ChunkAccess c = cached(level, cx, cz);
-        if (c == null) { request(level, cx, cz); softMisses++; return fallbackY; }
+        if (c == null) {
+            if (hasZoneTicket(level, cx, cz)) request(level, cx, cz);
+            softMisses++;
+            return fallbackY;
+        }
         // T74 : la heightmap ne sert QUE de borne haute (elle inclut les cimes) et
         // n'est jamais la valeur rendue : le sol est lu BLOC PAR BLOC, en descendant
         // depuis cette borne. Aucune generation declenchee, lecture bornee.

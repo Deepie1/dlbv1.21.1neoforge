@@ -107,9 +107,11 @@ public final class ChunkKeeper {
     // T302-B/J : 8 demandes/tick et 20 en vol avec BACKGROUND_EXECUTOR elargi a CPUS (2 workers sur 2 vCPU
     // au lieu d'1 seul dans Util.makeExecutor = availableProcessors()-1) : double le debit worldgen tout en
     // etalant les promotions ChunkStatus.FULL sur plusieurs ticks (< 600 ms/tick, regle R8).
-    private static final int REQUEST_PER_TICK = Math.max(1, Math.min(28, Integer.getInteger("dlb.requestPerTick", 20))); // T303-PERF : 20 lectures .mca/tick bornees par MAX_IN_FLIGHT=26
+    // T304-PERF : soumission concentrique cadencee (safetyRadius -> x0,6 -> emprise -> prepZone)
+    // sans inonder l'anneau externe avant les 16 chunks centraux, avec pool background >= 4 threads.
+    private static final int REQUEST_PER_TICK = Math.max(12, Math.min(24, Integer.getInteger("dlb.requestPerTick", CPUS * 6)));
     private static int savedBgParallelism = -1;
-    private static final int PIN_PER_TICK = 128;
+    private static final int PIN_PER_TICK = 256;
     /**
      * Demandes de chargement asynchrones EN VOL, tout au plus.
      *
@@ -119,13 +121,8 @@ public final class ChunkKeeper {
      * suffisent a sature les coeurs (chacun dure quelques dizaines de ms) : le
      * debit reste de plusieurs centaines de chunks par minute, sans risque.
      */
-    // T76 : 48 -> 4 au maximum (reglable par -Ddlb.maxInFlight=N). Le plafond de
-    // 48 datait du diagnostic OOM ; il bornait la MEMOIRE, pas le travail du
-    // thread principal -- qui, lui, gelait le jeu. Le debit reste de plusieurs
-    // dizaines de chunks par seconde (une generation dure quelques dizaines de ms).
-    // Même régression : T76b prescrit 2 chunks en vol, pas 16. Un plafond élevé
-    // laisse les résultats FULL s'accumuler puis s'appliquer ensemble au tick.
-    private static final int MAX_IN_FLIGHT = Math.max(2, Math.min(32, Integer.getInteger("dlb.maxInFlight", 26))); // T232/T302-B/T303-PERF : 26 en vol = 80 chunks .mca en ~4 ticks sans contention
+    // T304-PERF : 24-36 en vol respecte l'ordre concentrique Chebyshev sans affamer l'emprise centrale.
+    private static final int MAX_IN_FLIGHT = Math.max(20, Math.min(36, Integer.getInteger("dlb.maxInFlight", CPUS * 10)));
     /** Le maintien est rafraichi tous les 5 s (le ticket PORTAL dure 15 s). */
     private static final int REFRESH_TICKS = 100;
     /** T66 : intervalle des re-demandes forcees pour les chunks toujours absents (5 s). */
@@ -247,10 +244,11 @@ public final class ChunkKeeper {
     private static void boostBgParallelism() {
         try {
             if (net.minecraft.Util.backgroundExecutor() instanceof java.util.concurrent.ForkJoinPool fjp) {
+                int target = Math.max(4, CPUS);
                 int cur = fjp.getParallelism();
-                if (cur < CPUS) {
+                if (cur < target) {
                     if (savedBgParallelism < 0) savedBgParallelism = cur;
-                    fjp.setParallelism(CPUS);
+                    fjp.setParallelism(target);
                 }
             }
         } catch (Throwable ignored) { }
