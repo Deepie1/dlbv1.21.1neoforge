@@ -464,10 +464,11 @@ public final class SafeSurface {
         java.util.concurrent.CompletableFuture.supplyAsync(
                 () -> level.getChunkSource().getChunkFuture(cx, cz, ChunkStatus.FULL, true), CHUNK_REQUESTS)
                 .thenCompose(future -> future)
-                // T302-B : publier READY directement dans level.getServer().execute() des la fin de getChunkFuture
-                // (via result.isSuccess(), sans getChunkNow ni report TestProcedure +1 tick). Le report +1 tick
-                // retardait LAST_CHUNK_READY_MS apres la fin d'un tick de generation et declenchait de faux abandons T294.
-                .whenComplete((result, error) -> level.getServer().execute(() -> {
+                // T302-B + T303-PERF : publier READY via srv.tell(new TickTask(...)) dans le tick courant
+                // (0 tick de delai, mais mis en file hors verrou interne DistanceManager si complete sur Server thread).
+                .whenComplete((result, error) -> {
+                    var srv = level.getServer();
+                    srv.tell(new net.minecraft.server.TickTask(srv.getTickCount(), () -> {
                     try {
                         boolean ok = error == null && result != null && result.isSuccess() && result.orElse(null) != null;
                         if (ok) {
@@ -492,7 +493,8 @@ public final class SafeSurface {
                                 });
                         whenDone.run();
                     }
-                }));
+                    }));
+                });
     }
 
     /** Demande la generation d'un chunk en TACHE DE FOND (jamais bloquant). */

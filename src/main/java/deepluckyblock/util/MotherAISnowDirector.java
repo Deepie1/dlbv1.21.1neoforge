@@ -232,24 +232,23 @@ public final class MotherAISnowDirector {
             return CompletableFuture.completedFuture(null);
         }
         if ("embedded".equals(cfg)) {
-            // T293 : cerveau embarque — decision locale, pas d'appel reseau,
-            // pas d'attente : plan immediat, ~50 us sur damier 24x24.
-            return CompletableFuture.supplyAsync(() -> {
-                long t0 = System.nanoTime();
-                try {
-                    SnowPlan plan = MotherSnowBrain.decide(mother,
-                            (System.nanoTime() - t0) / 1_000_000L);
-                    System.out.println("[DLB T293] IA mere (cerveau embarque) : rayon "
-                            + plan.radiusChunks() + ", boosts " + plan.childAuraBoost().size()
-                            + " — 0 cout reseau, 0 installation requise.");
-                    return plan;
-                } catch (Throwable t) {
-                    System.out.println("[DLB T293] IA mere (cerveau embarque) en echec ("
-                            + t.getClass().getSimpleName() + " : " + t.getMessage()
-                            + ") — fallback deterministe T289.");
-                    return null;
-                }
-            }, AI_POOL);
+            // T293 / T303 : cerveau embarque — decision locale instantanee (~40 us sur damier),
+            // 0 appel reseau, 0 installation requise, 0 attente de pool asynchrone sur 2 coeurs.
+            long t0 = System.nanoTime();
+            try {
+                SnowPlan plan = MotherSnowBrain.decide(mother,
+                        (System.nanoTime() - t0) / 1_000_000L);
+                long us = (System.nanoTime() - t0) / 1_000L;
+                System.out.println("[DLB T293] IA mere (cerveau embarque) : rayon "
+                        + plan.radiusChunks() + ", boosts " + plan.childAuraBoost().size()
+                        + " (" + us + " us) — 0 cout reseau, 0 installation requise.");
+                return CompletableFuture.completedFuture(plan);
+            } catch (Throwable t) {
+                System.out.println("[DLB T293] IA mere (cerveau embarque) en echec ("
+                        + t.getClass().getSimpleName() + " : " + t.getMessage()
+                        + ") — fallback deterministe T289.");
+                return CompletableFuture.completedFuture(null);
+            }
         }
         final String[] parts = cfg.split("@", 2);
         final String model = parts[0];

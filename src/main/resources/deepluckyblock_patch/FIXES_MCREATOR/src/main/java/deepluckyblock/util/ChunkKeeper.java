@@ -107,7 +107,7 @@ public final class ChunkKeeper {
     // T302-B/J : 8 demandes/tick et 20 en vol avec BACKGROUND_EXECUTOR elargi a CPUS (2 workers sur 2 vCPU
     // au lieu d'1 seul dans Util.makeExecutor = availableProcessors()-1) : double le debit worldgen tout en
     // etalant les promotions ChunkStatus.FULL sur plusieurs ticks (< 600 ms/tick, regle R8).
-    private static final int REQUEST_PER_TICK = Math.max(1, Math.min(24, Integer.getInteger("dlb.requestPerTick", 8)));
+    private static final int REQUEST_PER_TICK = Math.max(1, Math.min(28, Integer.getInteger("dlb.requestPerTick", 20))); // T303-PERF : 20 lectures .mca/tick bornees par MAX_IN_FLIGHT=26
     private static int savedBgParallelism = -1;
     private static final int PIN_PER_TICK = 128;
     /**
@@ -125,7 +125,7 @@ public final class ChunkKeeper {
     // dizaines de chunks par seconde (une generation dure quelques dizaines de ms).
     // Même régression : T76b prescrit 2 chunks en vol, pas 16. Un plafond élevé
     // laisse les résultats FULL s'accumuler puis s'appliquer ensemble au tick.
-    private static final int MAX_IN_FLIGHT = Math.max(2, Math.min(32, Integer.getInteger("dlb.maxInFlight", 20))); // T232/T302-B : 20 en vol = 0 contention thread serveur
+    private static final int MAX_IN_FLIGHT = Math.max(2, Math.min(32, Integer.getInteger("dlb.maxInFlight", 26))); // T232/T302-B/T303-PERF : 26 en vol = 80 chunks .mca en ~4 ticks sans contention
     /** Le maintien est rafraichi tous les 5 s (le ticket PORTAL dure 15 s). */
     private static final int REFRESH_TICKS = 100;
     /** T66 : intervalle des re-demandes forcees pour les chunks toujours absents (5 s). */

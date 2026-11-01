@@ -282,6 +282,7 @@ public final class TerrainMother {
      * Y sol le plus haut, murs de blocs empilés droits, crevasses et damier {@code isSnowy}.
      */
     public MotherVerdict compileVerdict() {
+        awaitAiPlanOnce();
         evaluateSnowRadius();
         int total = 0, core = 0, contour = 0;
         int highestY = Integer.MIN_VALUE, maxJump = 0;
@@ -322,6 +323,19 @@ public final class TerrainMother {
         aiFuture = MotherAISnowDirector.consultAsync(this);
     }
 
+    /** T303 : relance la consultation IA une fois tous les enfants du damier enregistrés (A3->A4). */
+    public void refreshAiConsultation() {
+        aiFuture = MotherAISnowDirector.consultAsync(this);
+        aiAwaited = false;
+        awaitAiPlanOnce();
+    }
+
+    /** T303 : expose le plan IA actif (MotherSnowBrain embarqué ou Ollama) pour audit/logs. */
+    public MotherAISnowDirector.SnowPlan activeAiPlan() {
+        awaitAiPlanOnce();
+        return aiPlan;
+    }
+
     private void awaitAiPlanOnce() {
         if (aiAwaited) return;
         aiAwaited = true;
@@ -339,9 +353,9 @@ public final class TerrainMother {
         }
     }
 
-    /** Impose le rayon de l'aura en chunks (1..3) et invalide la grille précalculée. */
+    /** Impose le rayon de l'aura en chunks (1..4) et invalide la grille précalculée. */
     public void setSnowRadiusChunks(int r) {
-        int clamped = Math.max(1, Math.min(3, r));
+        int clamped = Math.max(1, Math.min(4, r));
         if (snowRadiusChunks != clamped || !snowRadiusLocked) {
             snowRadiusChunks = clamped;
             snowRadiusLocked = true;
@@ -397,6 +411,7 @@ public final class TerrainMother {
      * </ol>
      */
     private float[] ensureAuraField() {
+        awaitAiPlanOnce();
         float[] ready = auraQuartGrid;
         if (ready != null) return ready;
 
@@ -677,6 +692,21 @@ public final class TerrainMother {
         h *= 0xc4ceb9fe1a85ec53L;
         h ^= h >>> 33;
         return ((h >>> 11) & 0xFFFFFL) / 1048576.0;
+    }
+
+    /**
+     * T303-E : renvoie la liste des enfants de CONTOUR (hors coeur structure)
+     * qui signalent des crevasses profondes ({@link Child#needsRefill()}) afin que
+     * la Mere ordonne leur comblement cible avant le lissage A9.
+     */
+    public java.util.List<Child> contourRefillTargets() {
+        java.util.List<Child> out = new java.util.ArrayList<>();
+        for (Child c : grid) {
+            if (c != null && c.present && !c.structureCore && c.needsRefill()) {
+                out.add(c);
+            }
+        }
+        return out;
     }
 
     // ------------------------------------------------------------------

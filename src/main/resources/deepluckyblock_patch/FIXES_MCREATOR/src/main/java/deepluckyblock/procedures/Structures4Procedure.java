@@ -79,6 +79,12 @@ public class Structures4Procedure {
     private static final int MIN_CHUNKS_EVEREST = 6;
     private static final int PROGRESS_LOG_INTERVAL = 20;
     private static final int EVEREST_FLAG = FAST_FLAG;
+    private static final java.util.EnumSet<Heightmap.Types> EVEREST_HEIGHTMAPS =
+            java.util.EnumSet.of(
+                    Heightmap.Types.MOTION_BLOCKING,
+                    Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                    Heightmap.Types.OCEAN_FLOOR,
+                    Heightmap.Types.WORLD_SURFACE);
 
     /**
      * T102 (rappel dev 30/09 : « TOUTES les structures doivent etre paste -air,
@@ -439,6 +445,10 @@ public class Structures4Procedure {
         // constate en jeu. Desormais : demande NON bloquante + mise de cote +
         // repose par la passe de rattrapage, exactement comme PasteJob (T12).
         final List<Integer> defer = new ArrayList<>();
+        int lastCx = Integer.MIN_VALUE, lastCz = Integer.MIN_VALUE;
+        boolean lastLoaded = false;
+        net.minecraft.world.level.chunk.LevelChunk lastChunk = null;
+        boolean lastChunkTouched = false;
         int waitTicks;      // ticks d'attente de la passe de rattrapage
         int redeferred;     // blocs finalement reposes par la passe de rattrapage
         EverestJob(ServerLevel l, List<StructureTemplate.StructureBlockInfo> b, BlockPos o, Rotation r, Mirror m, long t, Player p, Runnable cb, BlockPos[] cherry) {
@@ -662,20 +672,85 @@ public class Structures4Procedure {
     }
 
     /** T33 : pose un bloc Everest unitaire ; false = chunk pas encore pret (differes). */
+    private static void flushEverestChunk(EverestJob job) {
+        if (job.lastChunk != null && job.lastChunkTouched) {
+            Heightmap.primeHeightmaps(job.lastChunk, EVEREST_HEIGHTMAPS);
+            job.lastChunk.setUnsaved(true);
+            job.level.getChunkSource().getLightEngine().tryScheduleUpdate();
+            job.lastChunkTouched = false;
+        }
+    }
+
+    private static List<StructureTemplate.StructureBlockInfo> orderEverestByChunk(
+            List<StructureTemplate.StructureBlockInfo> blocks, StructurePlaceSettings rs, BlockPos origin) {
+        int n = blocks.size();
+        if (n <= 1) return blocks;
+        int ox = origin.getX(), oy = origin.getY(), oz = origin.getZ();
+        long[] keys = new long[n];
+        Integer[] order = new Integer[n];
+        for (int i = 0; i < n; i++) {
+            BlockPos rel = StructureTemplate.calculateRelativePosition(rs, blocks.get(i).pos());
+            int cx = (ox + rel.getX()) >> 4;
+            int cz = (oz + rel.getZ()) >> 4;
+            int sy = (oy + rel.getY()) >> 4;
+            keys[i] = (((long) (cx + 2097152)) << 42)
+                    | (((long) (cz + 2097152) & 0x3fffffL) << 20)
+                    | ((long) (sy + 512) & 0xfffffL);
+            order[i] = i;
+        }
+        java.util.Arrays.sort(order, (a, b) -> Long.compare(keys[a], keys[b]));
+        List<StructureTemplate.StructureBlockInfo> sorted = new ArrayList<>(n);
+        for (int idx : order) sorted.add(blocks.get(idx));
+        return sorted;
+    }
+
     private static boolean placeEverestBlock(EverestJob job, int i, StructurePlaceSettings rotSettings,
                                              BlockPos.MutableBlockPos bp, boolean force) {
         StructureTemplate.StructureBlockInfo info = job.blocks.get(i);
         BlockState tState = info.state().mirror(job.mirror).rotate(job.rotation);
         BlockPos rel = StructureTemplate.calculateRelativePosition(rotSettings, info.pos());
-        bp.set(job.origin.getX() + rel.getX(), job.origin.getY() + rel.getY(), job.origin.getZ() + rel.getZ());
-        int cx = bp.getX() >> 4, cz = bp.getZ() >> 4;
-        if (job.level.getChunkSource().getChunkNow(cx, cz) == null) {
+        int wx = job.origin.getX() + rel.getX(), wy = job.origin.getY() + rel.getY(), wz = job.origin.getZ() + rel.getZ();
+        bp.set(wx, wy, wz);
+        int cx = wx >> 4, cz = wz >> 4;
+        if (cx != job.lastCx || cz != job.lastCz) {
+            flushEverestChunk(job);
+            job.lastCx = cx; job.lastCz = cz;
+            job.lastLoaded = deepluckyblock.util.SafeSurface.loaded(job.level, cx, cz);
+            job.lastChunk = job.lastLoaded ? job.level.getChunkSource().getChunkNow(cx, cz) : null;
+        }
+        if (!job.lastLoaded || job.lastChunk == null) {
             // T49 : demande en tache de fond uniquement (jamais de generation
             // synchrone, meme en mode force).
             deepluckyblock.util.SafeSurface.request(job.level, cx, cz);
+            job.lastCx = Integer.MIN_VALUE;
+            job.lastChunk = null;
             return false;
         }
-        job.level.setBlock(bp, tState, EVEREST_FLAG);
+        // T303-PERF : pose rapide par LevelChunkSection mise en cache (modele FAWE / T101)
+        // avec conservation integrale des BlockEntities, coffres automatiques et cherryHolder Manish.
+        if (!tState.hasBlockEntity()) {
+            net.minecraft.world.level.chunk.LevelChunk chunk = job.lastChunk;
+            int secIdx = chunk.getSectionIndex(wy);
+            net.minecraft.world.level.chunk.LevelChunkSection sec = chunk.getSection(secIdx);
+            boolean wasOnlyAir = sec.hasOnlyAir();
+            BlockState old = sec.setBlockState(wx & 15, wy & 15, wz & 15, tState, false);
+            if (old != tState) {
+                if (old.hasBlockEntity()) chunk.removeBlockEntity(bp);
+                if (wasOnlyAir != sec.hasOnlyAir()) {
+                    job.level.getChunkSource().getLightEngine().updateSectionStatus(
+                            net.minecraft.core.SectionPos.of(chunk.getPos(), wy >> 4), sec.hasOnlyAir());
+                }
+                if (net.minecraft.world.level.lighting.LightEngine.hasDifferentLightProperties(
+                        chunk, bp, old, tState)) {
+                    job.level.getChunkSource().getLightEngine().checkBlock(bp);
+                }
+                job.level.getChunkSource().blockChanged(bp);
+                job.lastChunkTouched = true;
+            }
+        } else {
+            job.level.setBlock(bp, tState, EVEREST_FLAG);
+            job.lastChunkTouched = true;
+        }
         if (job.cherryHolder[0] == null && isStrippedCherry(tState)) job.cherryHolder[0] = bp.immutable();
         if (info.nbt() != null) {
             var be = job.level.getBlockEntity(bp);
@@ -869,9 +944,13 @@ public class Structures4Procedure {
                 }
                 return;
             }
+            // T303-PERF : budget temporel 25 ms/tick (parite T302-C Structures5) au lieu des plafonds fixes
+            // de 200-600 colonnes/tick qui ajoutaient ~1 s de ticks dormants sur circus/shipdead.
+            long carveDeadline = System.nanoTime() + 25_000_000L;
             if (cj.idx < cj.columns.size()) {
-                int end = Math.min(cj.idx + CARVE_COLS_PER_TICK, cj.columns.size());
-                for (int i = cj.idx; i < end; i++) {
+                int i = cj.idx;
+                for (; i < cj.columns.size(); i++) {
+                    if ((i & 63) == 0 && System.nanoTime() >= carveDeadline) break;
                     int[] c = cj.columns.get(i);
                     int x = c[0], z = c[1], lo = c[2], hi = c[3];
                     for (int y = lo + 1; y <= hi; y++) {
@@ -885,10 +964,12 @@ public class Structures4Procedure {
                         if (!s.isAir() && isTreePart(s)) { cj.level.setBlock(mut, Blocks.AIR.defaultBlockState(), FAST_FLAG); cj.carved++; }
                     }
                 }
-                cj.idx = end;
-            } else if (cj.ringIdx < cj.occList.size()) {
-                int end = Math.min(cj.ringIdx + RING_PER_TICK, cj.occList.size());
-                for (int i = cj.ringIdx; i < end; i++) {
+                cj.idx = i;
+            }
+            if (cj.idx >= cj.columns.size() && cj.ringIdx < cj.occList.size() && System.nanoTime() < carveDeadline) {
+                int i = cj.ringIdx;
+                for (; i < cj.occList.size(); i++) {
+                    if ((i & 255) == 0 && System.nanoTime() >= carveDeadline) break;
                     long pos = cj.occList.get(i);
                     int px = BlockPos.getX(pos), py = BlockPos.getY(pos), pz = BlockPos.getZ(pos);
                     clearRing(cj, mut, px + 1, py, pz);
@@ -896,14 +977,16 @@ public class Structures4Procedure {
                     clearRing(cj, mut, px, py, pz + 1);
                     clearRing(cj, mut, px, py, pz - 1);
                 }
-                cj.ringIdx = end;
-            } else if (!cj.groundDone) {
+                cj.ringIdx = i;
+            }
+            if (cj.idx >= cj.columns.size() && cj.ringIdx >= cj.occList.size() && !cj.groundDone && System.nanoTime() < carveDeadline) {
                 // Par colonne : on rebouche UNIQUEMENT les colonnes de sol (lo pres
                 // de baseLevel). Les colonnes de toit/auvent (lo beaucoup plus haut)
                 // sont sautees : sinon on fabrique des piliers de dirt qui pendant
                 // des bords du toit. RIEN n'est jamais place au-dessus du toit.
-                int end = Math.min(cj.groundIdx + GROUND_COLS_PER_TICK, cj.columns.size());
-                for (int i = cj.groundIdx; i < end; i++) {
+                int i = cj.groundIdx;
+                for (; i < cj.columns.size(); i++) {
+                    if ((i & 63) == 0 && System.nanoTime() >= carveDeadline) break;
                     int[] c = cj.columns.get(i);
                     int x = c[0], z = c[1], lo = c[2];
                     if (lo > cj.baseLevel + FLOOR_TOLERANCE) continue; // colonne de toit/auvent -> RIEN
@@ -920,7 +1003,7 @@ public class Structures4Procedure {
                         first = false; y--; depth++;
                     }
                 }
-                cj.groundIdx = end;
+                cj.groundIdx = i;
                 if (cj.groundIdx >= cj.columns.size()) cj.groundDone = true;
             }
             if (cj.idx >= cj.columns.size() && cj.ringIdx >= cj.occList.size() && cj.groundDone) {
@@ -938,52 +1021,27 @@ public class Structures4Procedure {
 
         if (!EVEREST_QUEUE.isEmpty()) {
             EverestJob job = EVEREST_QUEUE.peek();
+            deepluckyblock.util.ChunkKeeper.keep(job.level);
             job.ticksElapsed++;
             long tickStart = System.currentTimeMillis();
             int end = Math.min(job.index + EVEREST_BLOCKS_PER_TICK, job.blocks.size());
             StructurePlaceSettings rotSettings = new StructurePlaceSettings().setRotation(job.rotation).setMirror(job.mirror);
             BlockPos.MutableBlockPos bp = new BlockPos.MutableBlockPos();
-            int i = job.index; int placedThisTick = 0;
+            int i = job.index;
             for (; i < end; i++) {
-                if (System.currentTimeMillis() - tickStart > EVEREST_TICK_TIMEOUT_MS) break;
-                StructureTemplate.StructureBlockInfo info = job.blocks.get(i);
-                BlockState tState = info.state().mirror(job.mirror).rotate(job.rotation);
-                BlockPos rel = StructureTemplate.calculateRelativePosition(rotSettings, info.pos());
-                bp.set(job.origin.getX() + rel.getX(), job.origin.getY() + rel.getY(), job.origin.getZ() + rel.getZ());
-                // T33/T53 : JAMAIS de generation synchrone ici (cause du gel de 36 s), et
-                // plus de recherche de chunk PAR BLOC : le memo ne re-interroge le chunk
-                // source que quand on change de chunk (1 fois tous les ~16 blocs).
-                if (!deepluckyblock.util.SafeSurface.present(job.level, bp.getX(), bp.getZ(), job.memo)) {
-                    // Demande en tache de fond (non bloquant) et mise de cote du bloc :
-                    // il sera repose par la passe de rattrapage, sans figer le tick serveur.
-                    deepluckyblock.util.SafeSurface.request(job.level, bp.getX() >> 4, bp.getZ() >> 4);
-                    job.memo.reset();
+                if ((i & 127) == 0 && System.currentTimeMillis() - tickStart > PASTE_TICK_BUDGET_MS) break;
+                if (!placeEverestBlock(job, i, rotSettings, bp, false)) {
                     job.defer.add(i);
-                    continue;
-                }
-                job.level.setBlock(bp, tState, EVEREST_FLAG);
-                placedThisTick++;
-                if (job.cherryHolder[0] == null && isStrippedCherry(tState)) job.cherryHolder[0] = bp.immutable();
-                if (info.nbt() != null) {
-                    var be = job.level.getBlockEntity(bp);
-                    if (be != null) { CompoundTag tag = info.nbt().copy(); tag.putInt("x", bp.getX()); tag.putInt("y", bp.getY()); tag.putInt("z", bp.getZ()); be.loadWithComponents(tag, job.level.registryAccess()); }
-                }
-                // FIX (coffres Everest lies au systeme common->ultimate + nettoyage
-                // "3 coffres max", voir Javadoc EverestJob.chests) : meme traitement
-                // que PasteJob pour citadel/observatory/dragon -- on collecte chaque
-                // coffre pose et on lui attribue immediatement ses drapeaux
-                // slb_auto_chest/slb_chest_rank (necessaires a LuckyChestAutofillProcedure
-                // pour le remplir), avant de decider plus tard lesquels survivent.
-                if (tState.getBlock() instanceof net.minecraft.world.level.block.ChestBlock) {
-                    BlockPos chestPos = bp.immutable();
-                    job.chests.add(chestPos);
-                    Structures5Procedure.prepareAutomaticChest(job.level, chestPos, tState, info.nbt(), info.pos().getY(), job.blocks);
                 }
             }
             job.index = i;
+            flushEverestChunk(job);
             // T33 : une fois tous les blocs parcourus, on repose ceux qui
             // attendaient leur chunk (aucune ecriture bloquante).
-            if (job.index >= job.blocks.size() && !job.defer.isEmpty()) retryDeferredEverest(job, rotSettings, bp);
+            if (job.index >= job.blocks.size() && !job.defer.isEmpty()) {
+                retryDeferredEverest(job, rotSettings, bp);
+                flushEverestChunk(job);
+            }
             if (job.index >= job.blocks.size() && !job.defer.isEmpty()) {
                 // T85/B4 : le job attend ses derniers chunks -- dire CE QU'IL ATTEND
                 // toutes les 10 s, au lieu de spammer « 100% (N/N) » chaque seconde
@@ -1014,7 +1072,10 @@ public class Structures4Procedure {
         if (!POST_QUEUE.isEmpty() && PASTE_QUEUE.isEmpty()
                 && CARVE_QUEUE.isEmpty() && EVEREST_QUEUE.isEmpty()) {
             PostJob pj = POST_QUEUE.peek();
-            for (int s = 0; s < 4 && pj.y <= pj.max.getY(); s++) { postProcessLayer(pj.level, pj.min, pj.max, pj.y); pj.y++; }
+            // T303-PERF : budget temporel 25 ms/tick (parite T302-C Structures5) au lieu de 4 couches/tick fixes
+            // qui bloquaient Everest pendant 31 ticks (1,55 s) et Circus pendant 27 ticks (1,35 s) pour <1 ms de travail.
+            long postDeadline = System.nanoTime() + 25_000_000L;
+            while (pj.y <= pj.max.getY() && System.nanoTime() < postDeadline) { postProcessLayer(pj.level, pj.min, pj.max, pj.y); pj.y++; }
             if (pj.y > pj.max.getY()
                     && !deepluckyblock.util.TerrainChain.owns(StructureTerrainPrep.chainTag(pj.min, pj.max))) {
                 killLaggyItems(pj.level, pj.min, pj.max);
@@ -1440,7 +1501,9 @@ public class Structures4Procedure {
             // T157 : preloadEditedTerrain ci-dessus couvre déjà exactement toute
             // l'emprise. Une seconde barrière preloadBox relançait six attentes
             // de 5 s (32,6 s mesurées, 100 % du coût Everest).
-            EVEREST_QUEUE.offer(new EverestJob(level, fEverestBlocks, rotatedPos, rotation, Mirror.NONE, t0, nearestPlayer, onComplete, cherryHolder));
+            final List<StructureTemplate.StructureBlockInfo> orderedEverestBlocks =
+                    orderEverestByChunk(fEverestBlocks, footprintSettings, rotatedPos);
+            EVEREST_QUEUE.offer(new EverestJob(level, orderedEverestBlocks, rotatedPos, rotation, Mirror.NONE, t0, nearestPlayer, onComplete, cherryHolder));
             POST_QUEUE.offer(new PostJob(level, min, max, "everest", false));
             deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4-EVEREST] paste -a immédiat après l'unique chargement de zone");
             if (nearestPlayer != null) nearestPlayer.sendSystemMessage(Component.literal("§b§l⛰ Everest en construction"));
@@ -1678,6 +1741,17 @@ public class Structures4Procedure {
                         c.cx(), c.cz(), (int) (wet4 * 100));
                 continue;
             }
+            // T303 A1 : veto inter-chunks STRUCTURE (ecart Y max <= 2 blocs entre chunks structure adjacents).
+            int stepA1 = measureStructureChunkStepMax(level,
+                    c.cx() - structW / 2, c.cz() - structD / 2,
+                    c.cx() + structW / 2, c.cz() + structD / 2);
+            if (stepA1 > deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y) {
+                LOGGER.warn("[STRUCT4-MOTHER] Candidat {},{} REJETE (A1 inter-chunks structure) : ecart={} > {} blocs",
+                        c.cx(), c.cz(), stepA1, deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y);
+                continue;
+            }
+            LOGGER.info("[STRUCT4-MOTHER] A1 inter-chunks structure OK a {},{} : ecart max={} <= {} blocs",
+                    c.cx(), c.cz(), stepA1, deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y);
             int surfY = deepluckyblock.util.SafeSurface.surfaceY(level, c.cx(), c.cz(), origin.getY());
             return new BlockPos(c.cx(), surfY, c.cz());
         }
@@ -1696,6 +1770,10 @@ public class Structures4Procedure {
                         c.cx(), c.cz(), (int) (wet42 * 100));
                 continue;
             }
+            int stepA12 = measureStructureChunkStepMax(level,
+                    c.cx() - structW / 2, c.cz() - structD / 2,
+                    c.cx() + structW / 2, c.cz() + structD / 2);
+            if (stepA12 > deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y) continue;
             int surfY2 = deepluckyblock.util.SafeSurface.surfaceY(level, c.cx(), c.cz(), origin.getY());
             deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4-FLAT] Zone choisie a {},{} (seconde passe T49, terrain reel verifie, Y reel={})", c.cx(), c.cz(), surfY2);
             return new BlockPos(c.cx(), surfY2, c.cz());
@@ -1730,6 +1808,51 @@ public class Structures4Procedure {
         LOGGER.warn("[STRUCT4-FLAT] Aucune zone valide trouvee ({}ms) -- repli sur une position hors chunk avec hauteur reelle",
                 System.currentTimeMillis() - t0);
         return findSafeOutsideChunkPos(level, origin);
+    }
+
+    /** T303 A1 : ecart maximal de Y sol median entre deux chunks STRUCTURE adjacents (<= 2 blocs). */
+    private static int measureStructureChunkStepMax(ServerLevel level, int minX, int minZ, int maxX, int maxZ) {
+        int scx0 = minX >> 4, scx1 = maxX >> 4;
+        int scz0 = minZ >> 4, scz1 = maxZ >> 4;
+        int sw = Math.max(1, scx1 - scx0 + 1), sh = Math.max(1, scz1 - scz0 + 1);
+        int[] medY = new int[sw * sh];
+        java.util.Arrays.fill(medY, Integer.MIN_VALUE);
+        int sentinelY = level.getMinBuildHeight() - 1;
+        int[] buf = new int[16];
+        for (int sj = 0; sj < sh; sj++) {
+            int ccz = scz0 + sj;
+            for (int si = 0; si < sw; si++) {
+                int ccx = scx0 + si;
+                if (!deepluckyblock.util.SafeSurface.loaded(level, ccx, ccz)) return Integer.MAX_VALUE;
+                int cnt = 0;
+                for (int lx = 2; lx <= 14; lx += 4) {
+                    int wx = (ccx << 4) + lx;
+                    if (wx < minX || wx > maxX) continue;
+                    for (int lz = 2; lz <= 14; lz += 4) {
+                        int wz = (ccz << 4) + lz;
+                        if (wz < minZ || wz > maxZ) continue;
+                        int gy = deepluckyblock.util.SafeSurface.groundY(level, wx, wz, sentinelY);
+                        if (gy > sentinelY) buf[cnt++] = gy;
+                    }
+                }
+                if (cnt >= 1) {
+                    java.util.Arrays.sort(buf, 0, cnt);
+                    medY[sj * sw + si] = buf[cnt / 2];
+                }
+            }
+        }
+        int worst = 0;
+        for (int sj = 0; sj < sh; sj++) {
+            for (int si = 0; si < sw; si++) {
+                int y0 = medY[sj * sw + si];
+                if (y0 == Integer.MIN_VALUE) continue;
+                if (si + 1 < sw && medY[sj * sw + (si + 1)] != Integer.MIN_VALUE)
+                    worst = Math.max(worst, Math.abs(y0 - medY[sj * sw + (si + 1)]));
+                if (sj + 1 < sh && medY[(sj + 1) * sw + si] != Integer.MIN_VALUE)
+                    worst = Math.max(worst, Math.abs(y0 - medY[(sj + 1) * sw + si]));
+            }
+        }
+        return worst;
     }
     /**
      * T80 : part des colonnes de la zone dont la SURFACE est un liquide (eau/lave),
@@ -2047,12 +2170,34 @@ public class Structures4Procedure {
                 && source.getChunkNow(cx1, cz0) != null;
     }
 
+    private static boolean isPost4TargetBlock(BlockState s) {
+        return !s.isAir() && (isGlassBlock(s) || isCrimson(s));
+    }
+
     private static void postProcessLayer(ServerLevel level, BlockPos min, BlockPos max, int y) {
+        // T303-PERF : filtre de palette O(1) par section (parite Structures5Procedure.postLayer)
+        // au lieu de 5 949 756 level.getBlockState sur le volume 174x123x278 de l'Everest.
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos(); BlockPos.MutableBlockPos chk = new BlockPos.MutableBlockPos();
-        for (int x = min.getX(); x < max.getX(); x++) for (int z = min.getZ(); z < max.getZ(); z++) {
-            pos.set(x, y, z); BlockState s = level.getBlockState(pos); if (s.isAir()) continue;
-            if (isGlassBlock(s) && isFloating(level, pos, chk)) level.setBlock(pos, Blocks.AIR.defaultBlockState(), FAST_FLAG);
-            else if (isCrimson(s)) { level.setBlock(pos, Blocks.AIR.defaultBlockState(), FAST_FLAG); spawnGlowItem(level, pos, makeYTItem(level, level.getRandom())); }
+        int cx0 = min.getX() >> 4, cx1 = (max.getX() - 1) >> 4;
+        int cz0 = min.getZ() >> 4, cz1 = (max.getZ() - 1) >> 4;
+        for (int cx = cx0; cx <= cx1; cx++) {
+            int x0 = Math.max(min.getX(), cx << 4), x1 = Math.min(max.getX() - 1, (cx << 4) + 15);
+            for (int cz = cz0; cz <= cz1; cz++) {
+                net.minecraft.world.level.chunk.ChunkAccess ca = deepluckyblock.util.SafeSurface.chunkFor(level, cx, cz);
+                if (!(ca instanceof net.minecraft.world.level.chunk.LevelChunk lc)) continue;
+                var sec = lc.getSection(lc.getSectionIndex(y));
+                if (sec == null || sec.hasOnlyAir() || !sec.getStates().maybeHas(Structures4Procedure::isPost4TargetBlock)) continue;
+                int z0 = Math.max(min.getZ(), cz << 4), z1 = Math.min(max.getZ() - 1, (cz << 4) + 15);
+                for (int x = x0; x <= x1; x++) {
+                    for (int z = z0; z <= z1; z++) {
+                        BlockState s = sec.getBlockState(x & 15, y & 15, z & 15);
+                        if (s.isAir()) continue;
+                        pos.set(x, y, z);
+                        if (isGlassBlock(s) && isFloating(level, pos, chk)) level.setBlock(pos, Blocks.AIR.defaultBlockState(), FAST_FLAG);
+                        else if (isCrimson(s)) { level.setBlock(pos, Blocks.AIR.defaultBlockState(), FAST_FLAG); spawnGlowItem(level, pos, makeYTItem(level, level.getRandom())); }
+                    }
+                }
+            }
         }
     }
     private static boolean isFloating(ServerLevel level, BlockPos pos, BlockPos.MutableBlockPos chk) {

@@ -289,9 +289,12 @@ public final class DlbTestCommands {
     private static void logTabTree() {
         List<String> names = new ArrayList<>();
         for (Struct s : STRUCTS) names.add(s.name());
+        // T239 : l'etiquette de build dans la ligne « commande prete » permet
+        // d'identifier instantanement la version compilée côté utilisateur
+        // (trop de diagnostics ont buté sur « quelle version tournait ? »).
         DeepLuckyBlockMod.LOGGER.info("[DLBTEST] commande prete : /dlbtest -> {} | structure <nom|id> | list | "
                         + "water <status|freeze|thaw> | probe <x> <z> | luckybreak [nombre] "
-                        + "(permission {})",
+                        + "(permission {}) [build T293]",
                 String.join(", ", names), opOnly() ? "operateur (niveau 2)" : "tout le monde (0)");
     }
 

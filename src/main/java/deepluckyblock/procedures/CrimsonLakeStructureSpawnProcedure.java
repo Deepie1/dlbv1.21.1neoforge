@@ -40,7 +40,9 @@ public class CrimsonLakeStructureSpawnProcedure {
     // ACTIVE/DESACTIVE les logs de debug [SLB-DEBUG]. Mettre a false avant publication.
     private static final boolean DEBUG_LOGS = false;
 
-    private static final int BLOCKS_PER_TICK        = 25000;
+    // T303-PERF : l'ancien plafond fixe 25 000/tick imposait un plancher incompressible de 55 ticks
+    // (2,75 s d'attente vide) sur 1 359 489 blocs. Borne en temps reel par PASTE_TICK_BUDGET_MS (40 ms).
+    private static final int BLOCKS_PER_TICK        = 400000;
     /**
      * T48 : budget de temps de la pose par tick (la structure du lac fait
      * plusieurs millions de blocs : laisser la boucle tourner jusqu'a
@@ -48,6 +50,12 @@ public class CrimsonLakeStructureSpawnProcedure {
      */
     private static final long PASTE_TICK_BUDGET_MS  = 40L;
     private static final int FAST_FLAG              = 2 | 16 | 32;
+    private static final java.util.EnumSet<net.minecraft.world.level.levelgen.Heightmap.Types> LAKE_HEIGHTMAPS =
+            java.util.EnumSet.of(
+                    net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                    net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                    net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR,
+                    net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE);
     /**
      * Enfoncement du lac dans le terrain naturel (blocs).
      *
@@ -70,7 +78,8 @@ public class CrimsonLakeStructureSpawnProcedure {
     private static final int BUTTERFLY_MAX          = 1200;
     private static final int INITIAL_BUTTERFLIES_MIN = 20;
     private static final int INITIAL_BUTTERFLIES_MAX = 77;
-    private static final int PRE_DISCOVERY_TICKS = 120 * 20;
+    // T303-PERF : 120 s (2400 ticks) strictement conserve en jeu (T157), pilotable uniquement pour le banc de test (-Ddlb.lake.omenTicks).
+    private static final int PRE_DISCOVERY_TICKS = Math.max(1, Integer.getInteger("dlb.lake.omenTicks", 120 * 20));
 
     // === T234 : JAMAIS DE BLOCAGE INFINI (ticket utilisateur 11/10 : « ca charge
     //    infini !! toujours pas apparu ?? crimsonlake ? ») ======================
@@ -407,10 +416,11 @@ public class CrimsonLakeStructureSpawnProcedure {
         long now = theServer.getTickCount();
 
         if (!PENDING.isEmpty()) {
+            long minQueueNanos = Math.min(10_000_000_000L, (long) PRE_DISCOVERY_TICKS * 50_000_000L);
             Iterator<PendingBuild> it = PENDING.iterator();
             while (it.hasNext()) {
                 PendingBuild pb = it.next();
-                if (now < pb.startTick || System.nanoTime() - pb.queuedNanos < 10_000_000_000L) continue;
+                if (now < pb.startTick || System.nanoTime() - pb.queuedNanos < minQueueNanos) continue;
                 // FIX T7 : le NBT de crimsonlake ne doit JAMAIS etre parse sur le
                 // thread serveur (3,46 Mo -> ~1,3 s de freeze a la premiere
                 // apparition). Tant qu'il n'est pas en memoire, la construction
@@ -441,12 +451,13 @@ public class CrimsonLakeStructureSpawnProcedure {
             if (j.idx < j.blocks.size()) {
                 int end = Math.min(j.idx + BLOCKS_PER_TICK, j.blocks.size());
                 for (int i = j.idx; i < end; i++) {
-                    if ((i & 127) == 0 && System.currentTimeMillis() - pasteT0 > PASTE_TICK_BUDGET_MS) { end = i; break; }
+                    if ((i & 255) == 0 && System.currentTimeMillis() - pasteT0 > PASTE_TICK_BUDGET_MS) { end = i; break; }
                     // T48 : chunk absent -> DIFFERE (demande async), jamais de
                     // generation synchrone sur le thread serveur.
                     if (!placeCrimsonOne(j, i, rs, bp)) j.defer.add(i);
                 }
                 j.idx = end;
+                flushLakeChunk(j);
             } else if (!j.defer.isEmpty()) {
                 // Passe de rattrapage : les blocs differes (chunk pas encore en
                 // memoire) sont reposes ici, sans jamais bloquer.
@@ -455,6 +466,7 @@ public class CrimsonLakeStructureSpawnProcedure {
                     if (System.currentTimeMillis() - pasteT0 > PASTE_TICK_BUDGET_MS) break;
                     if (placeCrimsonOne(j, it.next(), rs, bp)) it.remove();
                 }
+                flushLakeChunk(j);
             }
             if (j.idx >= j.blocks.size() && !j.defer.isEmpty()) {
                 j.waitTicks++;
@@ -861,8 +873,12 @@ public class CrimsonLakeStructureSpawnProcedure {
             // garde-fou du keeper (600 s), jamais apres.
             deepluckyblock.util.ChunkKeeper.track(level, finalOrigin.offset(0, minRelativeY, 0), max);
             announceLakeProgress(level, "terrain locked, clearing starts (" + sx + "x" + sz + " blocks)...");
+            // T303-PERF : regroupement lineaire O(N) par chunk monde (bucket counting sans Comparator ni GC,
+            // ~6 ms sur 1,36 M blocs, respecte T175) pour ecrire chaque chunk en continu via LevelChunkSection.
+            final List<StructureTemplate.StructureBlockInfo> bucketedFilt =
+                    bucketByWorldChunk(fFilt, finalOrigin.getX(), finalOrigin.getZ(), sx, sz);
             clearBuildVolume(level, finalOrigin.offset(0, minRelativeY, 0), max,
-                    groundY + 1, () -> PASTE_Q.offer(new PasteJob(level, fFilt,
+                    groundY + 1, () -> PASTE_Q.offer(new PasteJob(level, bucketedFilt,
                             finalOrigin, bfly, System.currentTimeMillis(), sx, sz)));
         });
     }
@@ -1128,28 +1144,60 @@ public class CrimsonLakeStructureSpawnProcedure {
      * generation FULL synchrone, ~15 s par chunk mesure en jeu, « Can't keep up!
      * Running 26381 ms ». C'etait la plus grosse source de freeze du mod.
      */
+    private static void flushLakeChunk(PasteJob j) {
+        if (j.lastChunk != null && j.lastChunkTouched) {
+            net.minecraft.world.level.levelgen.Heightmap.primeHeightmaps(j.lastChunk, LAKE_HEIGHTMAPS);
+            j.lastChunk.setUnsaved(true);
+            j.level.getChunkSource().getLightEngine().tryScheduleUpdate();
+            j.lastChunkTouched = false;
+        }
+    }
+
     private static boolean placeCrimsonOne(PasteJob j, int i, StructurePlaceSettings rs, BlockPos.MutableBlockPos bp) {
         var info = j.blocks.get(i);
-        BlockPos rel = StructureTemplate.calculateRelativePosition(rs, info.pos());
-        bp.set(j.origin.getX() + rel.getX(), j.origin.getY() + rel.getY(), j.origin.getZ() + rel.getZ());
-        // T53 : memo de chunk -- la source n'est interrogee qu'au changement de chunk.
-        if (!deepluckyblock.util.SafeSurface.present(j.level, bp.getX(), bp.getZ(), j.memo)) {
-            deepluckyblock.util.SafeSurface.request(j.level, bp.getX() >> 4, bp.getZ() >> 4);
-            j.memo.reset();
+        // T303-PERF : CrimsonLake est pose sans rotation ni miroir -> evite 1,36 M d'allocations calculateRelativePosition.
+        BlockPos p = info.pos();
+        int wx = j.origin.getX() + p.getX(), wy = j.origin.getY() + p.getY(), wz = j.origin.getZ() + p.getZ();
+        bp.set(wx, wy, wz);
+        int cx = wx >> 4, cz = wz >> 4;
+        if (cx != j.lastCx || cz != j.lastCz) {
+            flushLakeChunk(j);
+            j.lastCx = cx; j.lastCz = cz;
+            j.lastLoaded = deepluckyblock.util.SafeSurface.loaded(j.level, cx, cz);
+            j.lastChunk = j.lastLoaded ? j.level.getChunkSource().getChunkNow(cx, cz) : null;
+        }
+        if (!j.lastLoaded || j.lastChunk == null) {
+            deepluckyblock.util.SafeSurface.request(j.level, cx, cz);
+            j.lastCx = Integer.MIN_VALUE;
+            j.lastChunk = null;
             return false;
         }
         BlockState target = info.state();
         if (!target.hasBlockEntity()) {
-            int cx = bp.getX() >> 4, cz = bp.getZ() >> 4;
-            net.minecraft.world.level.chunk.LevelChunk chunk = j.level.getChunkSource().getChunkNow(cx, cz);
-            if (chunk == null) return false;
-            BlockState old = chunk.getBlockState(bp);
-            if (old.hasBlockEntity()) chunk.removeBlockEntity(bp);
-            chunk.setBlockState(bp, target, false);
-            chunk.setUnsaved(true);
-            j.level.getChunkSource().blockChanged(bp);
+            // T303-PERF (modele FAWE PaperweightGetBlocks + T101 clearChunkDirect) :
+            // ecriture directe dans LevelChunkSection + heightmaps primees 1 seule fois par chunk
+            // (304 appels au lieu de 1 359 489 recalculs de 4 heightmaps).
+            net.minecraft.world.level.chunk.LevelChunk chunk = j.lastChunk;
+            int secIdx = chunk.getSectionIndex(wy);
+            net.minecraft.world.level.chunk.LevelChunkSection sec = chunk.getSection(secIdx);
+            boolean wasOnlyAir = sec.hasOnlyAir();
+            BlockState old = sec.setBlockState(wx & 15, wy & 15, wz & 15, target, false);
+            if (old != target) {
+                if (old.hasBlockEntity()) chunk.removeBlockEntity(bp);
+                if (wasOnlyAir != sec.hasOnlyAir()) {
+                    j.level.getChunkSource().getLightEngine().updateSectionStatus(
+                            net.minecraft.core.SectionPos.of(chunk.getPos(), wy >> 4), sec.hasOnlyAir());
+                }
+                if (net.minecraft.world.level.lighting.LightEngine.hasDifferentLightProperties(
+                        chunk, bp, old, target)) {
+                    j.level.getChunkSource().getLightEngine().checkBlock(bp);
+                }
+                j.level.getChunkSource().blockChanged(bp);
+                j.lastChunkTouched = true;
+            }
         } else {
             j.level.setBlock(bp, target, FAST_FLAG);
+            j.lastChunkTouched = true;
         }
         if (info.nbt() != null) {
             var be = j.level.getBlockEntity(bp);
@@ -1160,6 +1208,45 @@ public class CrimsonLakeStructureSpawnProcedure {
             }
         }
         return true;
+    }
+
+    /**
+     * T303-PERF : Regroupement lineaire O(N) par chunk monde (bucket counting sans Comparator ni boxe,
+     * respectant T175) : garantit que tous les blocs d'un meme chunk (cx, cz) sont contigus (~6 ms sur 1,36 M blocs).
+     */
+    private static List<StructureTemplate.StructureBlockInfo> bucketByWorldChunk(
+            List<StructureTemplate.StructureBlockInfo> blocks, int ox, int oz, int sx, int sz) {
+        int n = blocks.size();
+        if (n <= 1) return blocks;
+        int cx0 = ox >> 4, cz0 = oz >> 4;
+        int cx1 = (ox + Math.max(0, sx - 1)) >> 4, cz1 = (oz + Math.max(0, sz - 1)) >> 4;
+        int w = cx1 - cx0 + 1, d = cz1 - cz0 + 1;
+        int buckets = w * d;
+        if (buckets <= 1 || buckets > 16384) return blocks;
+        int[] counts = new int[buckets + 1];
+        for (int i = 0; i < n; i++) {
+            BlockPos p = blocks.get(i).pos();
+            int bx = ((ox + p.getX()) >> 4) - cx0;
+            int bz = ((oz + p.getZ()) >> 4) - cz0;
+            int b = (bx >= 0 && bx < w && bz >= 0 && bz < d) ? (bx * d + bz) : buckets;
+            counts[b]++;
+        }
+        int[] offsets = new int[buckets + 1];
+        int sum = 0;
+        for (int b = 0; b <= buckets; b++) {
+            offsets[b] = sum;
+            sum += counts[b];
+        }
+        StructureTemplate.StructureBlockInfo[] out = new StructureTemplate.StructureBlockInfo[n];
+        for (int i = 0; i < n; i++) {
+            var info = blocks.get(i);
+            BlockPos p = info.pos();
+            int bx = ((ox + p.getX()) >> 4) - cx0;
+            int bz = ((oz + p.getZ()) >> 4) - cz0;
+            int b = (bx >= 0 && bx < w && bz >= 0 && bz < d) ? (bx * d + bz) : buckets;
+            out[offsets[b]++] = info;
+        }
+        return java.util.Arrays.asList(out);
     }
 
     private static List<StructureTemplate.StructureBlockInfo> orderByY(List<StructureTemplate.StructureBlockInfo> blocks) {
@@ -1249,8 +1336,12 @@ public class CrimsonLakeStructureSpawnProcedure {
         int idx;
         /** T48 : blocs dont le chunk n'etait pas en memoire (repose au tick suivant). */
         final List<Integer> defer = new ArrayList<>();
-        /** T53 : memo de chunk pour la pose (une recherche par chunk au lieu d'une par bloc). */
+        /** T53 / T303-PERF : cache direct LevelChunk + etat dirty pour primeHeightmaps unique par chunk. */
         final deepluckyblock.util.SafeSurface.ChunkMemo memo = new deepluckyblock.util.SafeSurface.ChunkMemo();
+        int lastCx = Integer.MIN_VALUE, lastCz = Integer.MIN_VALUE;
+        boolean lastLoaded = false;
+        net.minecraft.world.level.chunk.LevelChunk lastChunk = null;
+        boolean lastChunkTouched = false;
         int waitTicks;
         /** T234 : debut de l'attente des blocs differes (0 = aucune attente). */
         long deferSinceMs;
