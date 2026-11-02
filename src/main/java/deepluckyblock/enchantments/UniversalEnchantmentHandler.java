@@ -1254,12 +1254,19 @@ public class UniversalEnchantmentHandler {
             player.addEffect(new MobEffectInstance(MobEffects.CONDUIT_POWER, 40, 0, true, false));
             if (player.tickCount % 20 == 0 && player.isInWater()) EnchantmentParticleFX.ankleTrail(player, ParticleTypes.NAUTILUS, 3, 0.05);
         }
-        // T307-BARRIER-TRAIL : cloud_stride pose désormais une traînée temporaire de Blocks.BARRIER
-        // (et non plus de laine blanche !) en haute altitude, nettoyée automatiquement dès >= 4 blocs derrière le joueur !
+        // T307-BARRIER-TRAIL + T319-AIRWALK-JUMP : cloud_stride pose une piste temporaire de Blocks.BARRIER
+        // en haute altitude (Y >= 160) qui reste stable même en sprint-saut aérien, nettoyée à >= 4 blocs derrière !
         int cloudStride = getArmorEnchantLvl(player, "deep_lucky_block:cloud_stride");
-        if (cloudStride > 0 && player.getY() >= 160 && !player.isShiftKeyDown()
-                && !player.isInWater() && !player.isFallFlying() && player.getDeltaMovement().y <= 0.04) {
-            placeBarrierTrailUnderFeet(player, true);
+        int footPlCheck = getArmorEnchantLvl(player, "deep_lucky_block:foot_placement");
+        if (cloudStride > 0 && footPlCheck <= 0) {
+            if (player.isShiftKeyDown()) {
+                resetAirWalkAnchor(player);
+                clearPlayerBarriersUnderneath(player);
+            } else if (player.getY() >= 160.0) {
+                maintainAirWalkRunway(player, 159);
+            } else {
+                resetAirWalkAnchor(player);
+            }
         }
         // T307-PHYSICS : lightness & basic_lightness sont désormais gérés côté Client+Serveur dans handleSharedClientServerMovement
         // (vraie chute planée lente façon poulet + particules plume/nuage sous les pieds).
@@ -1691,20 +1698,23 @@ public class UniversalEnchantmentHandler {
             player.setDeltaMovement(player.getDeltaMovement().multiply(1.0, 1.45, 1.0));
         }
 
-        // T307-BARRIER-TRAIL : Marche Aérienne (foot_placement) & Pas d'Amorti Aérien (range_foot_placement)
-        // Plus JAMAIS de cobblestone ni de verre laissé dans le monde : pose uniquement des Blocks.BARRIER invisibles
-        // en trail sous les pieds qui s'effacent automatiquement dès que le joueur est à >= 4 blocs (ou s'accroupit pour descendre) !
+        // T307-BARRIER-TRAIL + T319-AIRWALK-JUMP : Marche Aérienne (foot_placement) & Pas d'Amorti Aérien (range_foot_placement)
+        // Piste de Blocks.BARRIER anticipée en 3x3 + lookahead horizontal au niveau du plancher d'ancrage :
+        // sauter tout en avançant dans les airs ne fait plus JAMAIS traverser ni tomber !
         int footPl = getArmorEnchantLvl(player, "deep_lucky_block:foot_placement");
         int featherFoot = getArmorEnchantLvl(player, "deep_lucky_block:range_foot_placement");
         if (footPl > 0) {
             if (player.isShiftKeyDown()) {
+                resetAirWalkAnchor(player);
                 clearPlayerBarriersUnderneath(player);
-            } else if (!player.isInWater() && !player.isFallFlying() && player.getDeltaMovement().y <= 0.04) {
-                placeBarrierTrailUnderFeet(player, true);
+            } else {
+                maintainAirWalkRunway(player, Integer.MIN_VALUE);
             }
+        } else if (getArmorEnchantLvl(player, "deep_lucky_block:cloud_stride") <= 0) {
+            resetAirWalkAnchor(player);
         }
-        if (featherFoot > 0 && !player.onGround() && player.fallDistance >= 3.2f && !player.isShiftKeyDown()) {
-            placeBarrierTrailUnderFeet(player, true);
+        if (featherFoot > 0 && footPl <= 0 && !player.onGround() && player.fallDistance >= 3.2f && !player.isShiftKeyDown()) {
+            placeAerialCushionUnderFeet(player);
             player.fallDistance = 0.0f;
             if (player.level() instanceof ServerLevel slr) {
                 EnchantmentParticleFX.cloudCushion(slr, player.getX(), player.getY() + 0.02, player.getZ(), 0.90, false);
@@ -4143,49 +4153,209 @@ public class UniversalEnchantmentHandler {
     }
 
     // -----------------------------------------------------------------------------------------
-    // T307-BARRIER-TRAIL : Trail temporaire de Blocks.BARRIER sous les pieds du joueur,
-    // supprimé automatiquement dès que le joueur est à >= 4.0 blocs (distSq >= 16.0) !
+    // T307-BARRIER-TRAIL + T319-AIRWALK-JUMP :
+    // Trail temporaire de Blocks.BARRIER sous les pieds du joueur avec plancher d'ancrage stable
+    // et anticipation horizontale (lookahead) pendant les sauts en mouvement dans les airs.
+    // Chaque barrière est supprimée automatiquement dès que le joueur est à >= 4.0 blocs !
     // -----------------------------------------------------------------------------------------
     private record BarrierNode(ResourceKey<Level> dimension, BlockPos pos, long placedTick) {}
 
+    private static final class AirWalkState {
+        ResourceKey<Level> dimension = null;
+        double lastX = Double.NaN;
+        double lastY = Double.NaN;
+        double lastZ = Double.NaN;
+        int anchorFloorY = Integer.MIN_VALUE;
+        long lastTick = -1L;
+    }
+
     private static final Map<UUID, Map<BlockPos, BarrierNode>> PLAYER_BARRIER_TRAILS = new ConcurrentHashMap<>();
+    private static final Map<UUID, AirWalkState> PLAYER_AIRWALK_STATES = new ConcurrentHashMap<>();
 
-    private static void placeBarrierTrailUnderFeet(LivingEntity entity, boolean withCloudTrail) {
+    private static void resetAirWalkAnchor(LivingEntity entity) {
+        if (!(entity instanceof Player player)) return;
+        AirWalkState st = PLAYER_AIRWALK_STATES.get(player.getUUID());
+        if (st != null) {
+            st.anchorFloorY = Integer.MIN_VALUE;
+        }
+    }
+
+    private static AirWalkState samplePlayerMotion(Player player, ServerLevel sl, double[] outVel) {
+        AirWalkState st = PLAYER_AIRWALK_STATES.computeIfAbsent(player.getUUID(), u -> new AirWalkState());
+        long now = sl.getGameTime();
+        boolean consecutive = st.dimension != null && st.dimension.equals(sl.dimension())
+                && !Double.isNaN(st.lastY) && (now - st.lastTick) <= 5L;
+        if (st.lastTick == now && consecutive) {
+            outVel[0] = 0.0;
+            outVel[1] = 0.0;
+            outVel[2] = 0.0;
+            return st;
+        }
+        outVel[0] = consecutive ? Mth.clamp(player.getX() - st.lastX, -1.6, 1.6) : 0.0;
+        outVel[1] = consecutive ? Mth.clamp(player.getY() - st.lastY, -2.5, 2.5) : 0.0;
+        outVel[2] = consecutive ? Mth.clamp(player.getZ() - st.lastZ, -1.6, 1.6) : 0.0;
+        st.dimension = sl.dimension();
+        st.lastX = player.getX();
+        st.lastY = player.getY();
+        st.lastZ = player.getZ();
+        st.lastTick = now;
+        return st;
+    }
+
+    private static void maintainAirWalkRunway(LivingEntity entity, int minAllowedFloorY) {
         if (!(entity instanceof Player player) || !(entity.level() instanceof ServerLevel sl)) return;
-        int footY = Mth.floor(player.getY() - 0.05);
-        if (footY < sl.getMinBuildHeight() || footY >= sl.getMaxBuildHeight()) return;
+        double[] vel = new double[3];
+        AirWalkState st = samplePlayerMotion(player, sl, vel);
 
-        AABB footBox = player.getBoundingBox().deflate(0.04, 0.0, 0.04);
-        int minX = Mth.floor(footBox.minX);
-        int maxX = Mth.floor(footBox.maxX);
-        int minZ = Mth.floor(footBox.minZ);
-        int maxZ = Mth.floor(footBox.maxZ);
+        if (player.isInWater() || player.isInLava() || player.onClimbable()
+                || player.isFallFlying() || player.isPassenger() || player.getAbilities().flying) {
+            st.anchorFloorY = Integer.MIN_VALUE;
+            return;
+        }
+
+        double vx = vel[0];
+        double vy = vel[1];
+        double vz = vel[2];
+        // T319-FIX : le sommet d'un bloc à Y=footY vaut footY + 1.0.
+        // Pour ne JAMAIS placer une barrière DANS la hitbox des jambes du joueur (ce qui annule
+        // toute collision dans Minecraft Shapes.collide et fait tomber à travers !), le plancher
+        // strict sous les pieds est Mth.floor(player.getY() - 1.0 + 1.0E-4).
+        int exactFloorUnderFeet = Mth.floor(player.getY() - 1.0 + 1.0E-4);
+
+        if (st.anchorFloorY == Integer.MIN_VALUE) {
+            double catchY = player.getY() + (vy < -0.05 ? vy * 2.2 : 0.0);
+            st.anchorFloorY = Mth.floor(catchY - 1.0 + 1.0E-4);
+            player.fallDistance = 0.0f;
+        } else {
+            // Montée sur du relief plus haut ou saut propulsé au-delà d'un saut normal (Triple Saut, Wind Charge, Jump Boost II+)
+            if (player.onGround() && exactFloorUnderFeet > st.anchorFloorY) {
+                st.anchorFloorY = exactFloorUnderFeet;
+            } else if (player.getY() >= st.anchorFloorY + 2.35 && vy <= 0.02) {
+                double catchY = player.getY() + (vy < -0.05 ? vy * 2.0 : 0.0);
+                st.anchorFloorY = Math.max(st.anchorFloorY, Mth.floor(catchY - 1.0 + 1.0E-4));
+            }
+            // Auto-rattrapage immédiat si le joueur est passé sous le plancher (descente d'escalier/dalle ou pic de lag)
+            if (player.getY() < st.anchorFloorY + 0.96) {
+                double catchY = player.getY() + (vy < -0.05 ? vy * 2.2 : 0.0);
+                st.anchorFloorY = Mth.floor(catchY - 1.0 + 1.0E-4);
+            }
+        }
+
+        int targetFloorY = st.anchorFloorY;
+        if (minAllowedFloorY != Integer.MIN_VALUE && targetFloorY < minAllowedFloorY) {
+            targetFloorY = minAllowedFloorY;
+            if (player.getY() < targetFloorY + 0.96) {
+                return;
+            }
+            st.anchorFloorY = targetFloorY;
+        }
+        if (targetFloorY < sl.getMinBuildHeight() || targetFloorY >= sl.getMaxBuildHeight()) return;
+
+        boolean placedAny = placeBarrierRunwayAtY(player, sl, targetFloorY, vx, vz, true);
+        if (placedAny && player.getY() <= targetFloorY + 2.45) {
+            player.fallDistance = 0.0f;
+        }
+    }
+
+    private static void placeAerialCushionUnderFeet(LivingEntity entity) {
+        if (!(entity instanceof Player player) || !(entity.level() instanceof ServerLevel sl)) return;
+        double[] vel = new double[3];
+        samplePlayerMotion(player, sl, vel);
+        double catchY = player.getY() + (vel[1] < -0.05 ? vel[1] * 2.2 : 0.0);
+        int cushionY = Mth.floor(catchY - 1.0 + 1.0E-4);
+        if (cushionY < sl.getMinBuildHeight() || cushionY >= sl.getMaxBuildHeight()) return;
+        placeBarrierRunwayAtY(player, sl, cushionY, vel[0], vel[2], true);
+    }
+
+    private static boolean placeBarrierRunwayAtY(Player player, ServerLevel sl, int footY,
+                                                 double vx, double vz, boolean withCloudTrail) {
+        if (footY < sl.getMinBuildHeight() || footY >= sl.getMaxBuildHeight()) return false;
+        // Garantie absolue anti-chevauchement : on ne pose jamais un bloc dont le sommet (footY + 1) dépasse les pieds
+        if (footY + 1.0 > player.getY() + 0.04) return false;
 
         Map<BlockPos, BarrierNode> trail = PLAYER_BARRIER_TRAILS.computeIfAbsent(
                 player.getUUID(), u -> new ConcurrentHashMap<>());
         long now = sl.getGameTime();
         boolean anyBarrierUnder = false;
 
+        // 1) Tapis 3x3 centré sous le joueur (couvre la hitbox + 1 bloc de marge latérale immédiate)
+        double px = player.getX();
+        double pz = player.getZ();
+        int minX = Mth.floor(px - 0.85);
+        int maxX = Mth.floor(px + 0.85);
+        int minZ = Mth.floor(pz - 0.85);
+        int maxZ = Mth.floor(pz + 0.85);
         for (int x = minX; x <= maxX; x++) {
             for (int z = minZ; z <= maxZ; z++) {
-                BlockPos pos = new BlockPos(x, footY, z);
-                BlockState cur = sl.getBlockState(pos);
-                if (cur.isAir()) {
-                    sl.setBlockAndUpdate(pos, Blocks.BARRIER.defaultBlockState());
-                    trail.put(pos, new BarrierNode(sl.dimension(), pos, now));
+                if (setTrackedBarrier(sl, trail, x, footY, z, px, player.getY(), pz, now)) {
                     anyBarrierUnder = true;
-                } else if (cur.is(Blocks.BARRIER) && trail.containsKey(pos)) {
-                    trail.put(pos, new BarrierNode(sl.dimension(), pos, now));
-                    anyBarrierUnder = true;
+                }
+            }
+        }
+
+        // 2) Anticipation horizontale (lookahead) le long du vecteur de déplacement réel (ou du regard en sprint) :
+        //    pré-pose la piste jusqu'à ~2.6 blocs devant le joueur PENDANT le saut pour que le client ait déjà
+        //    reçu les paquets BlockUpdate bien avant de retomber au bout de sa parabole !
+        double dirX = vx;
+        double dirZ = vz;
+        double hSpeed = Math.hypot(dirX, dirZ);
+        if (hSpeed < 0.04 && player.isSprinting()) {
+            Vec3 look = player.getLookAngle();
+            double lh = Math.hypot(look.x, look.z);
+            if (lh > 1.0E-4) {
+                dirX = look.x / lh;
+                dirZ = look.z / lh;
+                hSpeed = 0.28;
+            }
+        }
+        if (hSpeed >= 0.035) {
+            double nx = dirX / hSpeed;
+            double nz = dirZ / hSpeed;
+            double maxLead = Mth.clamp(0.95 + hSpeed * 4.2, 1.2, 2.65);
+            for (double d = 0.85; d <= maxLead + 0.01; d += 0.85) {
+                double lx = px + nx * d;
+                double lz = pz + nz * d;
+                int lMinX = Mth.floor(lx - 0.55);
+                int lMaxX = Mth.floor(lx + 0.55);
+                int lMinZ = Mth.floor(lz - 0.55);
+                int lMaxZ = Mth.floor(lz + 0.55);
+                for (int x = lMinX; x <= lMaxX; x++) {
+                    for (int z = lMinZ; z <= lMaxZ; z++) {
+                        if (setTrackedBarrier(sl, trail, x, footY, z, px, player.getY(), pz, now)) {
+                            anyBarrierUnder = true;
+                        }
+                    }
                 }
             }
         }
 
         if (withCloudTrail && anyBarrierUnder && (player.tickCount % 4 == 0)) {
             sl.sendParticles(ParticleTypes.CLOUD,
-                    player.getX(), footY + 1.03, player.getZ(),
-                    2, 0.20, 0.02, 0.20, 0.006);
+                    px, footY + 1.03, pz,
+                    2, 0.22, 0.02, 0.22, 0.006);
         }
+        return anyBarrierUnder;
+    }
+
+    private static boolean setTrackedBarrier(ServerLevel sl, Map<BlockPos, BarrierNode> trail,
+                                             int x, int y, int z, double px, double py, double pz, long now) {
+        double dx = px - (x + 0.5);
+        double dy = (py - 0.5) - (y + 0.5);
+        double dz = pz - (z + 0.5);
+        if ((dx * dx + dz * dz) >= 14.5 || (dx * dx + dy * dy + dz * dz) >= 15.0) {
+            return false;
+        }
+        BlockPos pos = new BlockPos(x, y, z);
+        BlockState cur = sl.getBlockState(pos);
+        if (cur.isAir()) {
+            sl.setBlockAndUpdate(pos, Blocks.BARRIER.defaultBlockState());
+            trail.put(pos, new BarrierNode(sl.dimension(), pos, now));
+            return true;
+        } else if (cur.is(Blocks.BARRIER) && trail.containsKey(pos)) {
+            trail.put(pos, new BarrierNode(sl.dimension(), pos, now));
+            return true;
+        }
+        return false;
     }
 
     private static void clearPlayerBarriersUnderneath(LivingEntity entity) {
@@ -4230,7 +4400,7 @@ public class UniversalEnchantmentHandler {
                     ServerLevel nodeLvl = server.getLevel(node.dimension());
                     boolean mustRemove = !activeAirBoots
                             || !sp.level().dimension().equals(node.dimension());
-                    if (!mustRemove) {
+                    if (!mustRemove && (nodeLvl == null || (nodeLvl.getGameTime() - node.placedTick()) >= 2L)) {
                         double dx = sp.getX() - (node.pos().getX() + 0.5);
                         double dy = (sp.getY() - 0.5) - (node.pos().getY() + 0.5);
                         double dz = sp.getZ() - (node.pos().getZ() + 0.5);
@@ -4266,6 +4436,7 @@ public class UniversalEnchantmentHandler {
         try {
             clearPlayerBarriersUnderneath(event.getEntity());
             PLAYER_BARRIER_TRAILS.remove(event.getEntity().getUUID());
+            PLAYER_AIRWALK_STATES.remove(event.getEntity().getUUID());
         } catch (Throwable t) {
             guard("onPlayerLogoutBarrierCleanup", t);
         }
@@ -4284,6 +4455,7 @@ public class UniversalEnchantmentHandler {
                 }
             }
             PLAYER_BARRIER_TRAILS.clear();
+            PLAYER_AIRWALK_STATES.clear();
         } catch (Throwable t) {
             guard("onServerStoppingBarrierCleanup", t);
         }
