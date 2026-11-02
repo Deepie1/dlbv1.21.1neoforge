@@ -2834,7 +2834,13 @@
       "tooltip.deep_lucky_block.stats.base_armor": "base armor",
       "tooltip.deep_lucky_block.stats.extra_reduction": "extra reduction",
       "tooltip.deep_lucky_block.stats.mod_bonuses_included": "mod bonuses already included above",
-      "tooltip.deep_lucky_block.stats.conditional_note": " (conditional effects not averaged: damage type, wearer HP...)"
+      "tooltip.deep_lucky_block.stats.conditional_note": " (conditional effects not averaged: damage type, wearer HP...)",
+      "command.deep_lucky_block.combos.page_info": "Page %s / %s",
+      "command.deep_lucky_block.combos.first_hover": "§6« Jump to first page (Page 1)",
+      "command.deep_lucky_block.combos.prev_hover": "§e◀ Previous page (Page %s)",
+      "command.deep_lucky_block.combos.next_hover": "§e▶ Next page (Page %s)",
+      "command.deep_lucky_block.combos.last_hover": "§6» Jump to last page (Page %s)",
+      "command.deep_lucky_block.combos.give_hover": "§aClick to receive Combo #%s kit"
     },
     "fr_fr": {
       "advancements.deep_lucky_block.deep_lucky_block_broken.description": "Casse un Deep Lucky Block. Qu'est-ce qui pourrait mal tourner ?",
@@ -4913,7 +4919,13 @@
       "tooltip.deep_lucky_block.stats.base_armor": "armure de base",
       "tooltip.deep_lucky_block.stats.extra_reduction": "réduction suppl.",
       "tooltip.deep_lucky_block.stats.mod_bonuses_included": "bonus du mod déjà inclus ci-dessus",
-      "tooltip.deep_lucky_block.stats.conditional_note": " (effets conditionnels non moyennables non comptés : type de dégâts, PV du porteur...)"
+      "tooltip.deep_lucky_block.stats.conditional_note": " (effets conditionnels non moyennables non comptés : type de dégâts, PV du porteur...)",
+      "command.deep_lucky_block.combos.page_info": "Page %s / %s",
+      "command.deep_lucky_block.combos.first_hover": "§6« Aller tout au début (Page 1)",
+      "command.deep_lucky_block.combos.prev_hover": "§e◀ Page précédente (Page %s)",
+      "command.deep_lucky_block.combos.next_hover": "§e▶ Page suivante (Page %s)",
+      "command.deep_lucky_block.combos.last_hover": "§6» Aller tout à la fin (Page %s)",
+      "command.deep_lucky_block.combos.give_hover": "§aCliquez pour recevoir le kit du Combo #%s"
     }
   },
   "metadata": {

@@ -16,7 +16,9 @@ import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -72,6 +74,7 @@ import net.neoforged.neoforge.event.tick.EntityTickEvent;
 import org.joml.Vector3f;
 import org.slf4j.Logger;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -2064,11 +2067,18 @@ public final class EnchantmentComboHandler {
     }
 
     // =========================================================================
-    // 8. COMMANDE EN JEU /dlbcombos (110 Combos : list, tier <palier>, give <1..110>)
+    // 8. COMMANDE EN JEU /dlbcombos & /dlbcombo (Paginé 7 par 7 avec flèches cliquables)
     // =========================================================================
+    private static final int COMBOS_PER_PAGE = 7;
+
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
-        event.getDispatcher().register(Commands.literal("dlbcombos")
+        event.getDispatcher().register(buildComboCommandTree("dlbcombos"));
+        event.getDispatcher().register(buildComboCommandTree("dlbcombo"));
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<net.minecraft.commands.CommandSourceStack> buildComboCommandTree(String rootLiteral) {
+        return Commands.literal(rootLiteral)
                 .executes(ctx -> {
                     ServerPlayer sp = ctx.getSource().getPlayerOrException();
                     ComboMask mask = EnchantmentComboRegistry.computeRawMask(sp);
@@ -2092,49 +2102,37 @@ public final class EnchantmentComboHandler {
                 })
                 .then(Commands.literal("list")
                         .requires(src -> src.hasPermission(2))
-                        .executes(ctx -> {
-                            ServerPlayer sp = ctx.getSource().getPlayerOrException();
-                            ComboMask mask = EnchantmentComboRegistry.computeRawMask(sp);
-                            sp.sendSystemMessage(Component.translatable(
-                                    "command.deep_lucky_block.combos.codex_header", COMBOS.size())
-                                    .withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
-                            for (ComboDef c : COMBOS) {
-                                boolean on = mask.has(c.index());
-                                sp.sendSystemMessage(Component.literal((on ? "\u00a7a\u2726 " : "\u00a78\u2727 ") + "#" + (c.index() + 1) + " ")
-                                        .append(c.tier().badge()).append(" ")
-                                        .append(c.translatedName())
-                                        .append(Component.literal(" \u00a78[").append(EnchantmentComboRegistry.buildRequirementsSummary(c, sp)).append("\u00a78]")));
-                            }
-                            return COMBOS.size();
-                        }))
+                        .executes(ctx -> sendComboPage(
+                                ctx.getSource().getPlayerOrException(),
+                                COMBOS,
+                                1,
+                                "/" + rootLiteral + " list ",
+                                "/" + rootLiteral + " give ",
+                                Component.translatable("command.deep_lucky_block.combos.codex_header", COMBOS.size())
+                                        .withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD)))
+                        .then(Commands.argument("page", IntegerArgumentType.integer(1, 999))
+                                .executes(ctx -> sendComboPage(
+                                        ctx.getSource().getPlayerOrException(),
+                                        COMBOS,
+                                        IntegerArgumentType.getInteger(ctx, "page"),
+                                        "/" + rootLiteral + " list ",
+                                        "/" + rootLiteral + " give ",
+                                        Component.translatable("command.deep_lucky_block.combos.codex_header", COMBOS.size())
+                                                .withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD)))))
                 .then(Commands.literal("tier")
                         .requires(src -> src.hasPermission(2))
-                        .then(Commands.argument("palier", StringArgumentType.word()).executes(ctx -> {
-                            ServerPlayer sp = ctx.getSource().getPlayerOrException();
-                            String raw = StringArgumentType.getString(ctx, "palier").toUpperCase(Locale.ROOT);
-                            ComboTier tier;
-                            try {
-                                tier = ComboTier.valueOf(raw);
-                            } catch (IllegalArgumentException ex) {
-                                sp.sendSystemMessage(Component.translatable("command.deep_lucky_block.combos.invalid_tier")
-                                        .withStyle(ChatFormatting.RED));
-                                return 0;
-                            }
-                            ComboMask mask = EnchantmentComboRegistry.computeRawMask(sp);
-                            int count = 0;
-                            sp.sendSystemMessage(Component.translatable(
-                                    "command.deep_lucky_block.combos.tier_header", tier.badge())
-                                    .withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
-                            for (ComboDef c : COMBOS) {
-                                if (c.tier() != tier) continue;
-                                count++;
-                                boolean on = mask.has(c.index());
-                                sp.sendSystemMessage(Component.literal((on ? "\u00a7a\u2726 " : "\u00a78\u2727 ") + "#" + (c.index() + 1) + " ")
-                                        .append(c.translatedName())
-                                        .append(Component.literal(" \u00a78[").append(EnchantmentComboRegistry.buildRequirementsSummary(c, sp)).append("\u00a78]")));
-                            }
-                            return count;
-                        })))
+                        .then(Commands.argument("palier", StringArgumentType.word())
+                                .executes(ctx -> sendTierComboPage(
+                                        ctx.getSource().getPlayerOrException(),
+                                        StringArgumentType.getString(ctx, "palier"),
+                                        1,
+                                        rootLiteral))
+                                .then(Commands.argument("page", IntegerArgumentType.integer(1, 999))
+                                        .executes(ctx -> sendTierComboPage(
+                                                ctx.getSource().getPlayerOrException(),
+                                                StringArgumentType.getString(ctx, "palier"),
+                                                IntegerArgumentType.getInteger(ctx, "page"),
+                                                rootLiteral)))))
                 .then(Commands.literal("give")
                         .requires(src -> src.hasPermission(2))
                         .then(Commands.argument("numero", IntegerArgumentType.integer(1, 110)).executes(ctx -> {
@@ -2160,6 +2158,116 @@ public final class EnchantmentComboHandler {
                                     .withStyle(ChatFormatting.GREEN)
                                     .append(c.translatedName()).append(" ").append(c.tier().badge()));
                             return 1;
-                        }))));
+                        })));
+    }
+
+    private static int sendTierComboPage(ServerPlayer sp, String rawTier, int page, String rootLiteral) {
+        ComboTier tier;
+        try {
+            tier = ComboTier.valueOf(rawTier.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            sp.sendSystemMessage(Component.translatable("command.deep_lucky_block.combos.invalid_tier")
+                    .withStyle(ChatFormatting.RED));
+            return 0;
+        }
+        List<ComboDef> filtered = new ArrayList<>();
+        for (ComboDef c : COMBOS) {
+            if (c.tier() == tier) {
+                filtered.add(c);
+            }
+        }
+        return sendComboPage(
+                sp,
+                filtered,
+                page,
+                "/" + rootLiteral + " tier " + tier.name().toLowerCase(Locale.ROOT) + " ",
+                "/" + rootLiteral + " give ",
+                Component.translatable("command.deep_lucky_block.combos.tier_header", tier.badge())
+                        .withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
+    }
+
+    private static int sendComboPage(ServerPlayer sp, List<ComboDef> entries, int requestedPage,
+                                     String pageCommandPrefix, String giveCommandPrefix,
+                                     MutableComponent header) {
+        if (entries.isEmpty()) {
+            sp.sendSystemMessage(header);
+            return 0;
+        }
+        int total = entries.size();
+        int totalPages = Math.max(1, (total + COMBOS_PER_PAGE - 1) / COMBOS_PER_PAGE);
+        int page = Math.max(1, Math.min(requestedPage, totalPages));
+        int fromIdx = (page - 1) * COMBOS_PER_PAGE;
+        int toIdx = Math.min(total, fromIdx + COMBOS_PER_PAGE);
+
+        ComboMask mask = EnchantmentComboRegistry.computeRawMask(sp);
+
+        sp.sendSystemMessage(Component.literal("\u00a78\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac\u25ac"));
+        sp.sendSystemMessage(header.copy().append(Component.literal(
+                " \u00a77(" + (fromIdx + 1) + "\u2013" + toIdx + " / " + total + ")")));
+
+        for (int i = fromIdx; i < toIdx; i++) {
+            ComboDef c = entries.get(i);
+            int num = c.index() + 1;
+            boolean on = mask.has(c.index());
+
+            MutableComponent hoverBox = c.translatedName().copy().append(" ").append(c.tier().badge())
+                    .append(Component.literal("\n"))
+                    .append(c.translatedDesc().copy().withStyle(ChatFormatting.GRAY))
+                    .append(Component.literal("\n\n"))
+                    .append(Component.translatable("command.deep_lucky_block.combos.give_hover", num));
+
+            MutableComponent numTag = Component.literal((on ? "\u00a7a\u2726 " : "\u00a78\u2727 ") + "\u00a7e#" + num + " ")
+                    .withStyle(st -> st
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, giveCommandPrefix + num))
+                            .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, hoverBox)));
+
+            MutableComponent line = numTag
+                    .append(c.tier().badge()).append(" ")
+                    .append(c.translatedName().copy().withStyle(st -> st
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, giveCommandPrefix + num))
+                            .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, hoverBox))))
+                    .append(Component.literal(" \u00a78["))
+                    .append(EnchantmentComboRegistry.buildRequirementsSummary(c, sp))
+                    .append(Component.literal("\u00a78]"));
+
+            sp.sendSystemMessage(line);
+        }
+
+        // Barre de navigation cliquable en bas : [«] [◀]  Page X / Y  [▶] [»]
+        MutableComponent navBar = Component.literal("\u00a78\u2500\u2500\u2500 ");
+        navBar.append(buildNavArrow("[\u00ab]", page > 1, pageCommandPrefix + 1,
+                ChatFormatting.GOLD,
+                Component.translatable("command.deep_lucky_block.combos.first_hover")));
+        navBar.append(Component.literal(" "));
+        navBar.append(buildNavArrow("[\u25c0]", page > 1, pageCommandPrefix + (page - 1),
+                ChatFormatting.YELLOW,
+                Component.translatable("command.deep_lucky_block.combos.prev_hover", Math.max(1, page - 1))));
+        navBar.append(Component.literal("  "));
+        navBar.append(Component.translatable("command.deep_lucky_block.combos.page_info", page, totalPages)
+                .withStyle(ChatFormatting.WHITE, ChatFormatting.BOLD));
+        navBar.append(Component.literal("  "));
+        navBar.append(buildNavArrow("[\u25b6]", page < totalPages, pageCommandPrefix + (page + 1),
+                ChatFormatting.YELLOW,
+                Component.translatable("command.deep_lucky_block.combos.next_hover", Math.min(totalPages, page + 1))));
+        navBar.append(Component.literal(" "));
+        navBar.append(buildNavArrow("[\u00bb]", page < totalPages, pageCommandPrefix + totalPages,
+                ChatFormatting.GOLD,
+                Component.translatable("command.deep_lucky_block.combos.last_hover", totalPages)));
+        navBar.append(Component.literal(" \u00a78\u2500\u2500\u2500"));
+
+        sp.sendSystemMessage(navBar);
+        return toIdx - fromIdx;
+    }
+
+    private static MutableComponent buildNavArrow(String symbol, boolean enabled, String command,
+                                                  ChatFormatting activeColor, Component hoverText) {
+        if (!enabled) {
+            return Component.literal(symbol).withStyle(ChatFormatting.DARK_GRAY);
+        }
+        return Component.literal(symbol).withStyle(st -> st
+                .withColor(activeColor)
+                .withBold(true)
+                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command))
+                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, hoverText)));
     }
 }

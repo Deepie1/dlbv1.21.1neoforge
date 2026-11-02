@@ -4,6 +4,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.stats.Stats;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -3806,6 +3807,7 @@ public class UniversalEnchantmentHandler {
         double slideDirZ = 0.0;
         long slideCooldownUntil = 0L;
         int serverAirJumpsUsed = 0;
+        long lastCloudJumpTick = -100L;
         long lastSeenTick = 0L;
     }
 
@@ -4086,25 +4088,62 @@ public class UniversalEnchantmentHandler {
     }
 
     /**
-     * T307-CLOUD-WALKER + T308-COMBOS #1 & #2 :
+     * T320-ARTIFACTS-CLOUD-JUMP : Physique exacte du « Cloud in a Bottle » (ochotonida/artifacts 1.21.1,
+     * DoubleJump#jump) étendue au Triple Saut (2 sauts aériens, ou 3 avec Combo #2) :
+     *  - upwardsMotion = 0.50 (+0.04 sur le dernier saut aérien) + 0.10 * (JumpBoostAmplifier + 1)
+     *  - Si sprint actif : upwardsMotion *= 1.25 et impulsion horizontale +0.25 dans l'axe du yaw (getYRot)
+     *  - fallDistance = 0, hasImpulse = true (JAMAIS hurtMarked=true côté serveur pour ne pas écraser
+     *    l'élan horizontal du client !), awardStat(Stats.JUMP) et causeFoodExhaustion.
+     */
+    public static void applyCloudJumpPhysics(Player player, int jumpIndex, int maxAirJumps, boolean hasQuadCombo) {
+        player.fallDistance = 0.0F;
+
+        boolean isCulmination = jumpIndex >= maxAirJumps;
+        double upwardsMotion = isCulmination ? 0.54 : 0.50;
+        MobEffectInstance jumpEffect = player.getEffect(MobEffects.JUMP);
+        if (jumpEffect != null) {
+            upwardsMotion += 0.10 * (jumpEffect.getAmplifier() + 1);
+        }
+        if (player.isSprinting()) {
+            upwardsMotion *= (hasQuadCombo && jumpIndex >= 3) ? 1.32 : 1.25;
+        }
+
+        Vec3 motion = player.getDeltaMovement();
+        double motionMultiplier = 0.0;
+        if (player.isSprinting()) {
+            motionMultiplier = (hasQuadCombo && jumpIndex >= 3) ? 0.30 : 0.25;
+        }
+        float direction = player.getYRot() * ((float) Math.PI / 180.0F);
+        player.setDeltaMovement(motion.add(
+                -Mth.sin(direction) * motionMultiplier,
+                upwardsMotion - motion.y,
+                Mth.cos(direction) * motionMultiplier
+        ));
+
+        player.hasImpulse = true;
+        player.awardStat(Stats.JUMP);
+        player.causeFoodExhaustion(player.isSprinting() ? 0.20F : 0.05F);
+    }
+
+    /**
+     * T307-CLOUD-WALKER + T308-COMBOS #1 & #2 + T320-ARTIFACTS-CLOUD-JUMP :
      *  - requestedJumpIdx == -1 : Combo #1 « Acrobate Miel-Slime » (Wall-Jump élastique depuis un mur !).
-     *  - requestedJumpIdx >= 1  : Marcheur des Nuages (Triple Saut normal, ou Quadruple Saut Céleste avec Combo #2 !).
+     *  - requestedJumpIdx >= 1  : Marcheur des Nuages (Triple Saut style Artifacts Cloud in a Bottle, ou Quadruple Saut avec Combo #2 !).
      */
     public static void performServerCloudJump(ServerPlayer sp, int requestedJumpIdx) {
         if (sp == null || !sp.isAlive() || sp.isSpectator()) return;
-        if (sp.onGround() || sp.isInWater() || sp.isInLava() || sp.onClimbable() || sp.isFallFlying()) return;
+        if (sp.isInWater() || sp.isInLava() || sp.isFallFlying() || sp.getAbilities().flying) return;
 
         SharedMoveState state = SHARED_MOVE_STATES.computeIfAbsent(sideEntityKey(sp), k -> new SharedMoveState());
+        long now = sp.level().getGameTime();
 
         // T308-COMBO #1 : Acrobate Miel-Slime (LEGS: wall_runner + FEET: bouncy) -> Wall-Jump élastique !
         if (requestedJumpIdx == -1) {
             if (!EnchantmentComboRegistry.hasCombo(sp, EnchantmentComboRegistry.C01_ACROBAT_ALCHIMIQUE)) return;
             if (!isTouchingHorizontalWall(sp)) return;
-            Vec3 look = sp.getLookAngle();
-            Vec3 flat = new Vec3(look.x, 0.0, look.z);
-            if (flat.lengthSqr() > 1.0e-4) flat = flat.normalize();
-            sp.setDeltaMovement(flat.x * 0.56, 0.62, flat.z * 0.56);
-            sp.hurtMarked = true;
+            float dir = sp.getYRot() * ((float) Math.PI / 180.0F);
+            sp.setDeltaMovement(-Mth.sin(dir) * 0.56, 0.62, Mth.cos(dir) * 0.56);
+            sp.hasImpulse = true;
             sp.fallDistance = 0.0F;
             state.lastAirVy = 0.0;
             if (sp.level() instanceof ServerLevel slw) {
@@ -4123,39 +4162,46 @@ public class UniversalEnchantmentHandler {
 
         boolean hasQuadCombo = EnchantmentComboRegistry.hasCombo(sp, EnchantmentComboRegistry.C02_ASCENSION_CELESTE);
         int maxAirJumps = hasQuadCombo ? 3 : 2;
+        // T320-FIX : Si le client redémarre une séquence aérienne (jump #1) après un atterrissage rapide
+        // type bunny-hop que le tick serveur n'aurait pas vu comme onGround, on réarme proprement !
+        if (requestedJumpIdx == 1 && (sp.onGround() || (now - state.lastCloudJumpTick) >= 5L)) {
+            state.serverAirJumpsUsed = 0;
+        }
         if (state.serverAirJumpsUsed >= maxAirJumps) return;
         state.serverAirJumpsUsed++;
+        state.lastCloudJumpTick = now;
 
-        boolean isFinalJump = (state.serverAirJumpsUsed >= maxAirJumps || requestedJumpIdx >= maxAirJumps);
-        double jumpVy = (state.serverAirJumpsUsed >= 3) ? 0.64 : (isFinalJump ? 0.56 : 0.50);
-        double horizBoost = (hasQuadCombo && state.serverAirJumpsUsed >= 3) ? 0.20 : 0.08;
-        Vec3 look = sp.getLookAngle();
-        Vec3 horiz = new Vec3(look.x, 0.0, look.z);
-        if (horiz.lengthSqr() > 1.0e-4) {
-            horiz = horiz.normalize().scale(horizBoost);
-        }
-        Vec3 dm = sp.getDeltaMovement();
-        sp.setDeltaMovement(dm.x + horiz.x, jumpVy, dm.z + horiz.z);
-        sp.hurtMarked = true;
-        sp.fallDistance = 0.0F;
+        int effectiveIdx = Math.max(state.serverAirJumpsUsed, Math.min(requestedJumpIdx, maxAirJumps));
+        boolean isFinalJump = effectiveIdx >= maxAirJumps;
+
+        applyCloudJumpPhysics(sp, effectiveIdx, maxAirJumps, hasQuadCombo);
         state.lastAirVy = 0.0;
 
         if (sp.level() instanceof ServerLevel sl) {
+            // Particules authentiques Cloud in a Bottle (20 bouffées POOF gaussiennes + anneau nuageux)
+            for (int i = 0; i < 20; ++i) {
+                double motionX = sp.getRandom().nextGaussian() * 0.02;
+                double motionY = sp.getRandom().nextGaussian() * 0.02 + 0.20;
+                double motionZ = sp.getRandom().nextGaussian() * 0.02;
+                sl.sendParticles(ParticleTypes.POOF, sp.getX(), sp.getY(), sp.getZ(),
+                        1, motionX, motionY, motionZ, 0.15);
+            }
             EnchantmentParticleFX.cloudCushion(sl, sp.getX(), sp.getY() - 0.05, sp.getZ(),
-                    isFinalJump ? 1.18 : 0.84, isFinalJump);
-            if (hasQuadCombo && state.serverAirJumpsUsed >= 3) {
+                    isFinalJump ? 1.15 : 0.82, isFinalJump);
+            if (hasQuadCombo && effectiveIdx >= 3) {
                 EnchantmentParticleFX.shockwaveRing(sl, sp.getX(), sp.getY() - 0.02, sp.getZ(),
                         EnchantmentParticleFX.GOLD_DIVINE, 1.25, 16, 0.02);
             }
-            sl.playSound(null, sp.getX(), sp.getY(), sp.getZ(),
-                    SoundEvents.WOOL_FALL, SoundSource.PLAYERS, 0.75f, isFinalJump ? 1.48f : 1.22f);
+            sl.playSound(null, sp, SoundEvents.WOOL_FALL, SoundSource.PLAYERS,
+                    1.0F, 0.9F + sp.getRandom().nextFloat() * 0.2F + (isFinalJump ? 0.15F : 0.0F));
         }
     }
 
     // -----------------------------------------------------------------------------------------
-    // T307-BARRIER-TRAIL + T319-AIRWALK-JUMP :
-    // Trail temporaire de Blocks.BARRIER sous les pieds du joueur avec plancher d'ancrage stable
-    // et anticipation horizontale (lookahead) pendant les sauts en mouvement dans les airs.
+    // T307-BARRIER-TRAIL + T319/T320-AIRWALK-LOCKSTEP :
+    // Trail temporaire de Blocks.BARRIER synchronisé en lockstep entier Client (ClientTickEvent.Pre)
+    // + Serveur : solide dès le tick 0, zéro tremblement, 100% compatible Speed & Jump Boost,
+    // zéro bloc posé plus haut devant les tibias pendant un saut, et zéro mini-rollback !
     // Chaque barrière est supprimée automatiquement dès que le joueur est à >= 4.0 blocs !
     // -----------------------------------------------------------------------------------------
     private record BarrierNode(ResourceKey<Level> dimension, BlockPos pos, long placedTick) {}
@@ -4166,17 +4212,49 @@ public class UniversalEnchantmentHandler {
         double lastY = Double.NaN;
         double lastZ = Double.NaN;
         int anchorFloorY = Integer.MIN_VALUE;
+        boolean clientControlled = false;
         long lastTick = -1L;
     }
 
     private static final Map<UUID, Map<BlockPos, BarrierNode>> PLAYER_BARRIER_TRAILS = new ConcurrentHashMap<>();
     private static final Map<UUID, AirWalkState> PLAYER_AIRWALK_STATES = new ConcurrentHashMap<>();
 
+    public static void handleClientAirWalkAnchor(ServerPlayer sp, int clientAnchorY) {
+        if (sp == null || !sp.isAlive() || !(sp.level() instanceof ServerLevel sl)) return;
+        int footPl = getArmorEnchantLvl(sp, "deep_lucky_block:foot_placement");
+        int cloudStride = getArmorEnchantLvl(sp, "deep_lucky_block:cloud_stride");
+        if (footPl <= 0 && cloudStride <= 0) {
+            resetAirWalkAnchor(sp);
+            clearPlayerBarriersUnderneath(sp);
+            return;
+        }
+        if (clientAnchorY == Integer.MIN_VALUE) {
+            resetAirWalkAnchor(sp);
+            clearPlayerBarriersUnderneath(sp);
+            return;
+        }
+        int minBuild = sl.getMinBuildHeight();
+        int maxBuild = sl.getMaxBuildHeight() - 1;
+        if (footPl <= 0 && cloudStride > 0 && clientAnchorY < 159) {
+            return;
+        }
+        // Validation anti-triche : le plancher doit être sous les pieds du joueur et à distance raisonnable
+        int maxAllowedUnderFeet = Mth.floor(sp.getY() - 1.0 + 0.15);
+        int clampedY = Mth.clamp(clientAnchorY, Math.max(minBuild, maxAllowedUnderFeet - 14), Math.min(maxBuild, maxAllowedUnderFeet));
+        double[] vel = new double[3];
+        AirWalkState st = samplePlayerMotion(sp, sl, vel);
+        st.anchorFloorY = clampedY;
+        st.clientControlled = true;
+        sp.fallDistance = 0.0F;
+        placeBarrierRunwayAtY(sp, sl, clampedY, vel[0], vel[2], true);
+    }
+
     private static void resetAirWalkAnchor(LivingEntity entity) {
         if (!(entity instanceof Player player)) return;
         AirWalkState st = PLAYER_AIRWALK_STATES.get(player.getUUID());
         if (st != null) {
             st.anchorFloorY = Integer.MIN_VALUE;
+            st.clientControlled = false;
         }
     }
 
@@ -4191,9 +4269,9 @@ public class UniversalEnchantmentHandler {
             outVel[2] = 0.0;
             return st;
         }
-        outVel[0] = consecutive ? Mth.clamp(player.getX() - st.lastX, -1.6, 1.6) : 0.0;
-        outVel[1] = consecutive ? Mth.clamp(player.getY() - st.lastY, -2.5, 2.5) : 0.0;
-        outVel[2] = consecutive ? Mth.clamp(player.getZ() - st.lastZ, -1.6, 1.6) : 0.0;
+        outVel[0] = consecutive ? Mth.clamp(player.getX() - st.lastX, -3.5, 3.5) : 0.0;
+        outVel[1] = consecutive ? Mth.clamp(player.getY() - st.lastY, -3.5, 3.5) : 0.0;
+        outVel[2] = consecutive ? Mth.clamp(player.getZ() - st.lastZ, -3.5, 3.5) : 0.0;
         st.dimension = sl.dimension();
         st.lastX = player.getX();
         st.lastY = player.getY();
@@ -4210,35 +4288,37 @@ public class UniversalEnchantmentHandler {
         if (player.isInWater() || player.isInLava() || player.onClimbable()
                 || player.isFallFlying() || player.isPassenger() || player.getAbilities().flying) {
             st.anchorFloorY = Integer.MIN_VALUE;
+            st.clientControlled = false;
             return;
         }
 
         double vx = vel[0];
         double vy = vel[1];
         double vz = vel[2];
-        // T319-FIX : le sommet d'un bloc à Y=footY vaut footY + 1.0.
-        // Pour ne JAMAIS placer une barrière DANS la hitbox des jambes du joueur (ce qui annule
-        // toute collision dans Minecraft Shapes.collide et fait tomber à travers !), le plancher
-        // strict sous les pieds est Mth.floor(player.getY() - 1.0 + 1.0E-4).
         int exactFloorUnderFeet = Mth.floor(player.getY() - 1.0 + 1.0E-4);
 
         if (st.anchorFloorY == Integer.MIN_VALUE) {
-            double catchY = player.getY() + (vy < -0.05 ? vy * 2.2 : 0.0);
+            double catchY = player.getY() + (vy < -0.05 ? vy * 2.0 : 0.0);
             st.anchorFloorY = Mth.floor(catchY - 1.0 + 1.0E-4);
             player.fallDistance = 0.0f;
-        } else {
-            // Montée sur du relief plus haut ou saut propulsé au-delà d'un saut normal (Triple Saut, Wind Charge, Jump Boost II+)
+        } else if (!st.clientControlled) {
+            // Fallback serveur si aucun paquet client n'a encore fixé l'ancre :
+            // JAMAIS de hausse automatique pendant un saut (même avec Jump Boost !) pour ne jamais
+            // poser un bloc devant les jambes ; hausse uniquement sur vrai terrain solide plus haut.
             if (player.onGround() && exactFloorUnderFeet > st.anchorFloorY) {
-                st.anchorFloorY = exactFloorUnderFeet;
-            } else if (player.getY() >= st.anchorFloorY + 2.35 && vy <= 0.02) {
-                double catchY = player.getY() + (vy < -0.05 ? vy * 2.0 : 0.0);
-                st.anchorFloorY = Math.max(st.anchorFloorY, Mth.floor(catchY - 1.0 + 1.0E-4));
+                BlockPos underPos = BlockPos.containing(player.getX(), exactFloorUnderFeet, player.getZ());
+                BlockState underState = sl.getBlockState(underPos);
+                if (!underState.isAir() && !underState.is(Blocks.BARRIER)) {
+                    st.anchorFloorY = exactFloorUnderFeet;
+                }
             }
-            // Auto-rattrapage immédiat si le joueur est passé sous le plancher (descente d'escalier/dalle ou pic de lag)
             if (player.getY() < st.anchorFloorY + 0.96) {
-                double catchY = player.getY() + (vy < -0.05 ? vy * 2.2 : 0.0);
+                double catchY = player.getY() + (vy < -0.05 ? vy * 2.0 : 0.0);
                 st.anchorFloorY = Mth.floor(catchY - 1.0 + 1.0E-4);
             }
+        } else if (player.getY() < st.anchorFloorY + 0.92) {
+            // Garde-fou serveur : si le joueur est descendu sous l'ancre sans que le paquet ait encore atterri
+            st.anchorFloorY = exactFloorUnderFeet;
         }
 
         int targetFloorY = st.anchorFloorY;
@@ -4252,7 +4332,7 @@ public class UniversalEnchantmentHandler {
         if (targetFloorY < sl.getMinBuildHeight() || targetFloorY >= sl.getMaxBuildHeight()) return;
 
         boolean placedAny = placeBarrierRunwayAtY(player, sl, targetFloorY, vx, vz, true);
-        if (placedAny && player.getY() <= targetFloorY + 2.45) {
+        if (placedAny && player.getY() <= targetFloorY + 6.0) {
             player.fallDistance = 0.0f;
         }
     }
@@ -4308,17 +4388,17 @@ public class UniversalEnchantmentHandler {
                 hSpeed = 0.28;
             }
         }
-        if (hSpeed >= 0.035) {
+        if (hSpeed >= 0.03) {
             double nx = dirX / hSpeed;
             double nz = dirZ / hSpeed;
-            double maxLead = Mth.clamp(0.95 + hSpeed * 4.2, 1.2, 2.65);
-            for (double d = 0.85; d <= maxLead + 0.01; d += 0.85) {
+            double maxLead = Mth.clamp(1.25 + hSpeed * 4.5, 1.5, 3.85);
+            for (double d = 0.80; d <= maxLead + 0.01; d += 0.80) {
                 double lx = px + nx * d;
                 double lz = pz + nz * d;
-                int lMinX = Mth.floor(lx - 0.55);
-                int lMaxX = Mth.floor(lx + 0.55);
-                int lMinZ = Mth.floor(lz - 0.55);
-                int lMaxZ = Mth.floor(lz + 0.55);
+                int lMinX = Mth.floor(lx - 0.65);
+                int lMaxX = Mth.floor(lx + 0.65);
+                int lMinZ = Mth.floor(lz - 0.65);
+                int lMaxZ = Mth.floor(lz + 0.65);
                 for (int x = lMinX; x <= lMaxX; x++) {
                     for (int z = lMinZ; z <= lMaxZ; z++) {
                         if (setTrackedBarrier(sl, trail, x, footY, z, px, player.getY(), pz, now)) {
@@ -4340,9 +4420,8 @@ public class UniversalEnchantmentHandler {
     private static boolean setTrackedBarrier(ServerLevel sl, Map<BlockPos, BarrierNode> trail,
                                              int x, int y, int z, double px, double py, double pz, long now) {
         double dx = px - (x + 0.5);
-        double dy = (py - 0.5) - (y + 0.5);
         double dz = pz - (z + 0.5);
-        if ((dx * dx + dz * dz) >= 14.5 || (dx * dx + dy * dy + dz * dz) >= 15.0) {
+        if ((dx * dx + dz * dz) >= 15.6) {
             return false;
         }
         BlockPos pos = new BlockPos(x, y, z);
@@ -4394,6 +4473,9 @@ public class UniversalEnchantmentHandler {
                             || getArmorEnchantLvl(sp, "deep_lucky_block:cloud_stride") > 0
                             || getArmorEnchantLvl(sp, "deep_lucky_block:range_foot_placement") > 0);
 
+                AirWalkState awState = PLAYER_AIRWALK_STATES.get(uuid);
+                int activeAnchorY = (awState != null) ? awState.anchorFloorY : Integer.MIN_VALUE;
+
                 Iterator<Map.Entry<BlockPos, BarrierNode>> nodeIt = trail.entrySet().iterator();
                 while (nodeIt.hasNext()) {
                     BarrierNode node = nodeIt.next().getValue();
@@ -4406,8 +4488,11 @@ public class UniversalEnchantmentHandler {
                         double dz = sp.getZ() - (node.pos().getZ() + 0.5);
                         double horizDistSq = dx * dx + dz * dz;
                         double dist3DSq = horizDistSq + dy * dy;
-                        // Règle stricte T307 : dès que le joueur est à >= 4 blocs d'une barrière posée derrière lui, elle disparaît !
-                        if (horizDistSq >= 16.0 || dist3DSq >= 16.0) {
+                        // Règle T307 + compatibilité T320 Jump Boost :
+                        // - Toujours effacé dès >= 4 blocs horizontalement derrière/autour du joueur (horizDistSq >= 16.0).
+                        // - Sur le plancher actif (activeAnchorY), un grand saut vertical (Jump Boost III+) ne détruit
+                        //   pas la piste sous le joueur pendant sa parabole ; tout ancien étage est effacé dès dist3DSq >= 16.0.
+                        if (horizDistSq >= 16.0 || (node.pos().getY() != activeAnchorY && dist3DSq >= 16.0)) {
                             mustRemove = true;
                         }
                     }

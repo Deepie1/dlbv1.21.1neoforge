@@ -29,6 +29,9 @@ public final class DeepPayloads {
     public static final ResourceLocation CLOUD_JUMP_C2S =
             ResourceLocation.fromNamespaceAndPath(DeepLuckyBlockMod.MODID, "cloud_jump_c2s");
 
+    public static final ResourceLocation AIR_WALK_ANCHOR_C2S =
+            ResourceLocation.fromNamespaceAndPath(DeepLuckyBlockMod.MODID, "air_walk_anchor_c2s");
+
     @SubscribeEvent
     public static void onRegisterPayloadHandlers(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar("1");
@@ -40,6 +43,10 @@ public final class DeepPayloads {
                 CloudJumpMessage.TYPE,
                 CloudJumpMessage.STREAM_CODEC,
                 CloudJumpMessage::handle);
+        registrar.playToServer(
+                AirWalkAnchorMessage.TYPE,
+                AirWalkAnchorMessage.STREAM_CODEC,
+                AirWalkAnchorMessage::handle);
     }
 
     /**
@@ -64,6 +71,34 @@ public final class DeepPayloads {
             context.enqueueWork(() -> {
                 if (context.player() instanceof ServerPlayer sp) {
                     UniversalEnchantmentHandler.performServerCloudJump(sp, message.airJumpIndex());
+                }
+            });
+        }
+    }
+
+    /**
+     * T320-AIRWALK-LOCKSTEP : Synchronise exactement le plancher d'ancrage Y calculé côté Client
+     * (en ClientTickEvent.Pre avant la physique locale) avec le Serveur, ou Integer.MIN_VALUE
+     * pour effacer immédiatement les barrières sous les pieds (Shift / retrait des bottes).
+     */
+    public record AirWalkAnchorMessage(int anchorFloorY) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<AirWalkAnchorMessage> TYPE =
+                new CustomPacketPayload.Type<>(AIR_WALK_ANCHOR_C2S);
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, AirWalkAnchorMessage> STREAM_CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.INT, AirWalkAnchorMessage::anchorFloorY,
+                        AirWalkAnchorMessage::new);
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+
+        public static void handle(AirWalkAnchorMessage message, IPayloadContext context) {
+            context.enqueueWork(() -> {
+                if (context.player() instanceof ServerPlayer sp) {
+                    UniversalEnchantmentHandler.handleClientAirWalkAnchor(sp, message.anchorFloorY());
                 }
             });
         }
