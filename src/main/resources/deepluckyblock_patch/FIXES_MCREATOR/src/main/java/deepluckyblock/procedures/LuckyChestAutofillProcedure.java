@@ -555,7 +555,7 @@ public class LuckyChestAutofillProcedure {
         }
 
         if (added > 0) {
-            deepluckyblock.util.DeepNbt.markLuckyBlockOrigin(book);
+            // T333-GRADED-ORIGIN-ONLY : Les livres enchantés ne sont pas des équipements gradés.
             items.add(book);
         }
     }

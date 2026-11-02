@@ -203,7 +203,8 @@ public final class EnchantmentComboHandler {
     // =========================================================================
     @SubscribeEvent
     public static void onEntityTick(EntityTickEvent.Post event) {
-        if (!(event.getEntity() instanceof LivingEntity entity) || !entity.isAlive()) return;
+        // T333-NO-MOB-COMBOS : Sortie O(1) immédiate pour toutes les entités non-joueurs.
+        if (!(event.getEntity() instanceof Player entity) || !entity.isAlive()) return;
         try {
             if (entity.level().isClientSide()) {
                 handleClientComboMovement(entity);
@@ -1129,6 +1130,154 @@ public final class EnchantmentComboHandler {
         if (mask.has(IDX_TRANSCENDANCE_CHANCE_INFINIE) && entity.tickCount % 20 == 0) {
             entity.addEffect(new MobEffectInstance(MobEffects.LUCK, 55, 3, true, false));
         }
+        // ==================== T333 : TICK SERVEUR DES COMBOS DE BAS GRADE (#211-#310) ====================
+        if (entity instanceof Player pl333 && sl != null) {
+            BlockPos bp333 = pl333.blockPosition();
+            BlockState below333 = sl.getBlockState(bp333.below());
+            String belowId333 = below333.getBlock().getDescriptionId();
+
+            // #219 Patrouilleur des Clairières : en pleine lumière (>= 12), Vitesse I
+            if (mask.has(IDX_PATROUILLEUR_CLAIRIERE) && pl333.tickCount % 30 == 0 && sl.getMaxLocalRawBrightness(bp333) >= 12) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 55, 0, true, false));
+            }
+            // #221 Puisatier des Profondeurs : sous Y = 32, Vision Nocturne + Célérité I
+            if (mask.has(IDX_PUISATIER_AIR_RARE) && pl333.tickCount % 40 == 0 && pl333.getY() < 32.0) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.NIGHT_VISION, 260, 0, true, false));
+                pl333.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 65, 0, true, false));
+            }
+            // #224 Cantonnier des Névés : sur neige/glace, Vitesse I + purge Lenteur
+            if (mask.has(IDX_DENEIGEUR_PAS_FERME) && pl333.tickCount % 25 == 0
+                    && (belowId333.contains("snow") || belowId333.contains("ice") || sl.getBlockState(bp333).is(Blocks.SNOW))) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 50, 0, true, false));
+                pl333.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+            }
+            // #233 Moissonneur au Panier Plein : sur terre labourée, Vitesse I
+            if (mask.has(IDX_MOISSONNEUR_PANIER_PLEIN) && pl333.tickCount % 25 == 0 && below333.is(Blocks.FARMLAND)) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 50, 0, true, false));
+            }
+            // #234 Gardien du Rucher : au soleil sur herbe/terre labourée, +0,5 cœur / 6 s
+            if (mask.has(IDX_FERMIER_RUCHER_PAISIBLE) && pl333.tickCount % 120 == 0
+                    && sl.isDay() && sl.canSeeSky(bp333) && (below333.is(Blocks.GRASS_BLOCK) || below333.is(Blocks.FARMLAND))) {
+                pl333.heal(1.0f);
+            }
+            // #235 Glaneur des Chemins : sur chemin ou terre labourée, répare la houe (1 pt / 5 s)
+            if (mask.has(IDX_GLANEUR_SENTIER_VERT) && pl333.tickCount % 100 == 0
+                    && (below333.is(Blocks.DIRT_PATH) || below333.is(Blocks.FARMLAND))) {
+                ItemStack mh = pl333.getMainHandItem();
+                if (mh.getItem() instanceof HoeItem && mh.isDamageableItem() && mh.getDamageValue() > 0) {
+                    mh.setDamageValue(mh.getDamageValue() - 1);
+                }
+            }
+            // #239 Engrais Ambulant : fait pousser occasionnellement une culture proche
+            if (mask.has(IDX_HERBORISTE_PIEDS_FLEURIS) && pl333.tickCount % 80 == 0) {
+                for (BlockPos cp : BlockPos.betweenClosed(bp333.offset(-2, -1, -2), bp333.offset(2, 1, 2))) {
+                    BlockState cs = sl.getBlockState(cp);
+                    if (cs.getBlock() instanceof net.minecraft.world.level.block.CropBlock crop && !crop.isMaxAge(cs) && sl.random.nextInt(4) == 0) {
+                        sl.setBlock(cp, crop.getStateForAge(crop.getAge(cs) + 1), 2);
+                        break;
+                    }
+                }
+            }
+            // #252 Passeur des Gués : dans l'eau ou sous la pluie, Grâce du Dauphin I + Respiration Aquatique
+            if (mask.has(IDX_MARIN_GUE_RAPIDE) && pl333.tickCount % 30 == 0 && pl333.isInWaterOrRain()) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.DOLPHINS_GRACE, 55, 0, true, false));
+                pl333.addEffect(new MobEffectInstance(MobEffects.WATER_BREATHING, 55, 0, true, false));
+            }
+            // #253 Éclaireur des Récifs : sous l'eau, Vision Nocturne
+            if (mask.has(IDX_PLONGEUR_AIMANT_MARIN) && pl333.tickCount % 40 == 0 && pl333.isUnderWater()) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.NIGHT_VISION, 260, 0, true, false));
+            }
+            // #254 Harponneur des Bas-Fonds : dans l'eau, Respiration Aquatique
+            if (mask.has(IDX_HARPONNEUR_ABYSSES_DOMPTE) && pl333.tickCount % 35 == 0 && pl333.isInWater()) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.WATER_BREATHING, 60, 0, true, false));
+            }
+            // #257 Pêcheur au Crépuscule : flotteur lancé -> Résistance I + repousse Phantoms proches
+            if (mask.has(IDX_PECHEUR_MOUCHE_PAISIBLE) && pl333.fishing != null && pl333.tickCount % 25 == 0) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 45, 0, true, false));
+                for (Phantom ph : sl.getEntitiesOfClass(Phantom.class, pl333.getBoundingBox().inflate(7.0))) {
+                    Vec3 away = ph.position().subtract(pl333.position());
+                    if (away.lengthSqr() > 0.01) ph.setDeltaMovement(away.normalize().scale(0.65).add(0, 0.25, 0));
+                }
+            }
+            // #260 Estafette des Grands Chemins : sprint -> Vitesse I + réduction perte faim
+            if (mask.has(IDX_MESSAGER_ROUTES_PAVEES) && pl333.isSprinting() && pl333.tickCount % 30 == 0) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 45, 0, true, false));
+                pl333.getFoodData().eat(0, 0.08f);
+            }
+            // #261 Chamois des Collines : Saut Amélioré I
+            if (mask.has(IDX_VOLTIGEUR_TALUS_BOND) && pl333.tickCount % 40 == 0) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.JUMP, 65, 0, true, false));
+            }
+            // #262 Postillon Royal : monture -> Régénération I
+            if (mask.has(IDX_CAVALIER_ESTAFETTE) && pl333.getVehicle() instanceof LivingEntity steed333 && pl333.tickCount % 40 == 0) {
+                steed333.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 65, 0, true, false));
+            }
+            // #263 Veilleur de l'Aube : au soleil, purge Lenteur + soigne 0,5 cœur / 8 s
+            if (mask.has(IDX_ECLAIREUR_AUBE_CLAIRE) && sl.isDay() && sl.canSeeSky(bp333)) {
+                if (pl333.tickCount % 40 == 0) pl333.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+                if (pl333.tickCount % 160 == 0) pl333.heal(1.0f);
+            }
+            // #264 Acrobate des Toits & #308 Dompteur de Bourrasques : atterrissage après chute >= 3 blocs -> Vitesse I
+            if ((mask.has(IDX_MARCHEUR_SEMELLES_PLUME) || mask.has(IDX_REDEMPTION_TURBULENCE_PLANEUR))
+                    && pl333.onGround() && !st.wasOnGround && st.maxFallDist >= 3.0f) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 60, 0, true, false));
+                if (mask.has(IDX_REDEMPTION_ATTERRISSAGE_LOURD)) {
+                    for (Mob m : sl.getEntitiesOfClass(Mob.class, pl333.getBoundingBox().inflate(3.0))) {
+                        if (!isFriendlySummon(m, pl333)) safeHurt(m, pl333.damageSources().playerAttack(pl333), 3.0f);
+                    }
+                }
+            } else if (mask.has(IDX_REDEMPTION_ATTERRISSAGE_LOURD) && pl333.onGround() && !st.wasOnGround && st.maxFallDist >= 3.0f) {
+                for (Mob m : sl.getEntitiesOfClass(Mob.class, pl333.getBoundingBox().inflate(3.0))) {
+                    if (!isFriendlySummon(m, pl333)) safeHurt(m, pl333.damageSources().playerAttack(pl333), 3.0f);
+                }
+            }
+            // #267 Colporteur Aimanté : sprint -> répare 1 pt d'armure / 6 s
+            if (mask.has(IDX_GUIDE_SENTIER_AIMANTE) && pl333.isSprinting() && pl333.tickCount % 120 == 0) {
+                repairMostDamagedArmor(pl333, 1);
+            }
+            // #268 Éclaireur des Trois Horizons : Vitesse I sur terre ferme
+            if (mask.has(IDX_RANGER_TROIS_HORIZONS) && !pl333.isInWater() && pl333.tickCount % 35 == 0) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 55, 0, true, false));
+            }
+            // #277 Champion des Quais : à mains nues -> Célérité I
+            if (mask.has(IDX_CHAMPION_TAVERNE_TROIS_POINGS) && pl333.getMainHandItem().isEmpty() && pl333.tickCount % 30 == 0) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 50, 0, true, false));
+            }
+            // #283 Ferrailleur Prévoyant : arme ou bouclier < 35 % durabilité -> Résistance I
+            if (mask.has(IDX_FERRAILLEUR_BOUCLIER_RECYCLE) && pl333.tickCount % 35 == 0) {
+                ItemStack mh = pl333.getMainHandItem();
+                ItemStack oh = pl333.getOffhandItem();
+                boolean lowD = (mh.isDamageableItem() && mh.getDamageValue() >= mh.getMaxDamage() * 0.65f)
+                        || (oh.isDamageableItem() && oh.getDamageValue() >= oh.getMaxDamage() * 0.65f);
+                if (lowD) pl333.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 55, 0, true, false));
+            }
+            // #285 Porte-Écu Mobile : bouclier levé -> Vitesse I
+            if (mask.has(IDX_GARDE_PAS_LATERAL_PAVOIS) && pl333.isBlocking() && pl333.tickCount % 15 == 0) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 30, 0, true, false));
+            }
+            // #290 Éclaireur des Cendrières : en feu ou proche magma/lave -> Vitesse I
+            if (mask.has(IDX_MARCHEUR_CENDRE_ARDENTE) && pl333.tickCount % 25 == 0
+                    && (pl333.isOnFire() || belowId333.contains("magma") || belowId333.contains("obsidian"))) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 45, 0, true, false));
+            }
+            // #298 Veilleur des Trois Braises : Résistance au Feu constante
+            if (mask.has(IDX_VEILLEUR_FLAMME_CLAIRE) && pl333.tickCount % 40 == 0) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 65, 0, true, false));
+            }
+            // #302 Second Souffle Amphibie : en sprint ou dans l'eau -> +1 cœur / 4 s
+            if (mask.has(IDX_REDEMPTION_SOUFFLE_COURT) && pl333.tickCount % 80 == 0 && (pl333.isSprinting() || pl333.isInWater())) {
+                pl333.heal(2.0f);
+            }
+            // #303 Mineur au Corps-à-Corps : Célérité II constante
+            if (mask.has(IDX_REDEMPTION_PORTEE_COURTE) && pl333.tickCount % 35 == 0) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 55, 1, true, false));
+            }
+            // #309 Héros en Armure cabossée : Résistance I constante
+            if (mask.has(IDX_PENITENT_FERRAILLE_HEROIQUE) && pl333.tickCount % 40 == 0) {
+                pl333.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 65, 0, true, false));
+            }
+        }
+
 
         if (entity.onGround()) {
             st.maxFallDist = 0.0f;
@@ -1157,10 +1306,73 @@ public final class EnchantmentComboHandler {
                 event.setAmount(event.getAmount() * 1.25f);
             }
 
+            if (victim.getControllingPassenger() instanceof Player rider262
+                    && EnchantmentComboRegistry.hasCombo(rider262, IDX_CAVALIER_ESTAFETTE)) {
+                event.setAmount(event.getAmount() * 0.85f);
+            }
             // --- A. Défense du porteur d'un combo ---
             ComboMask defMask = EnchantmentComboRegistry.getActiveMask(victim);
             if (!defMask.isEmpty()) {
                 PlayerComboState defSt = stateOf(victim);
+                // ==================== T333 : DÉFENSE DES COMBOS DE BAS GRADE (#211-#310) ====================
+                if (defMask.has(IDX_PLONGEUR_AIMANT_MARIN) && victim.isUnderWater()) {
+                    event.setAmount(event.getAmount() * 0.85f);
+                }
+                if (defMask.has(IDX_ARCHER_GRAPPIN_AEROFREIN) && event.getSource().is(DamageTypeTags.IS_FALL)
+                        && now < victim.getPersistentData().getLong("slb_c247_fall_safe")) {
+                    event.setCanceled(true);
+                    return;
+                }
+                if (defMask.has(IDX_VOLTIGEUR_TALUS_BOND) && event.getSource().is(DamageTypeTags.IS_FALL)) {
+                    event.setAmount(event.getAmount() * 0.70f);
+                }
+                if (defMask.has(IDX_PLANEUR_FREIN_PLUME)
+                        && (event.getSource().is(DamageTypeTags.IS_FALL) || "flyIntoWall".equals(event.getSource().getMsgId()))) {
+                    event.setAmount(event.getAmount() * 0.50f);
+                }
+                if (defMask.has(IDX_RANGER_TROIS_HORIZONS) && event.getSource().is(DamageTypeTags.IS_FALL)) {
+                    event.setAmount(event.getAmount() * 0.75f);
+                }
+                if (defMask.has(IDX_LUTTEUR_INAMOVIBLE) && rawAttacker instanceof LivingEntity
+                        && now >= victim.getPersistentData().getLong("slb_c272_cd")) {
+                    victim.getPersistentData().putLong("slb_c272_cd", now + 80L);
+                    victim.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 60, 0, true, false));
+                }
+                if (defMask.has(IDX_ENCAISSEUR_COEUR_CHAUD) && victim.isShiftKeyDown()) {
+                    event.setAmount(event.getAmount() * 0.85f);
+                    if (rawAttacker instanceof LivingEntity livAtk275) {
+                        livAtk275.setRemainingFireTicks(Math.max(livAtk275.getRemainingFireTicks(), 40));
+                    }
+                }
+                if (defMask.has(IDX_BOXEUR_ESQUIVE_CROISEE) && victim.getMainHandItem().isEmpty()) {
+                    event.setAmount(event.getAmount() * 0.85f);
+                    victim.getPersistentData().putLong("slb_c276_charge", now + 80L);
+                }
+                if (defMask.has(IDX_MARCHEUR_CENDRE_ARDENTE) && event.getSource().is(DamageTypeTags.IS_FIRE)) {
+                    event.setAmount(event.getAmount() * 0.75f);
+                }
+                if (defMask.has(IDX_LAME_SANCTUAIRE_MAGMA) && "hotFloor".equals(event.getSource().getMsgId())) {
+                    event.setCanceled(true);
+                    return;
+                }
+                if (defMask.has(IDX_ECORCHEUR_BALAYAGE_LARGE) && victim.level() instanceof ServerLevel sl299D) {
+                    int near299 = sl299D.getEntitiesOfClass(Mob.class, victim.getBoundingBox().inflate(4.0), m -> m.isAlive() && !isFriendlySummon(m, victim)).size();
+                    if (near299 >= 2) event.setAmount(event.getAmount() * 0.90f);
+                }
+                if (defMask.has(IDX_REDEMPTION_ATTERRISSAGE_LOURD) && event.getSource().is(DamageTypeTags.IS_FALL)) {
+                    event.setAmount(event.getAmount() * 0.50f);
+                }
+                if (defMask.has(IDX_REDEMPTION_OPPRESSION_THORACIQUE)) {
+                    event.setAmount(event.getAmount() * 0.82f);
+                    if (victim.isShiftKeyDown()) {
+                        victim.setDeltaMovement(0, Math.min(0, victim.getDeltaMovement().y), 0);
+                    }
+                }
+                if (defMask.has(IDX_REDEMPTION_TURBULENCE_PLANEUR)
+                        && (event.getSource().is(DamageTypeTags.IS_FALL) || "flyIntoWall".equals(event.getSource().getMsgId()))) {
+                    event.setAmount(event.getAmount() * 0.40f);
+                }
+
 
                 // #012 Apiculteur Serein : -30 % dégâts des Phantoms, Vex, Abeilles + les repousse
                 if (defMask.has(IDX_APICULTEUR_SEREIN) && (rawAttacker instanceof Phantom || rawAttacker instanceof Vex || rawAttacker instanceof Bee)) {
@@ -2285,6 +2497,188 @@ public final class EnchantmentComboHandler {
                 event.setAmount(event.getAmount() * 1.50f);
             }
 
+
+            // ==================== T333 : ATTAQUE DES COMBOS DE BAS GRADE (#211-#310) ====================
+            if (atkMask.has(IDX_FANTASSIN_TRANCHANT_VIF) && !isProjectile && attacker.isSprinting()) {
+                event.setAmount(event.getAmount() + 1.5f);
+                attacker.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 25, 0, true, false));
+            }
+            if (atkMask.has(IDX_RECRUE_BALAYAGE_AGILE) && !isProjectile && attacker.fallDistance > 0.2f
+                    && victim.level() instanceof ServerLevel sl211) {
+                for (Mob m : sl211.getEntitiesOfClass(Mob.class, victim.getBoundingBox().inflate(2.6))) {
+                    if (m != victim && !isFriendlySummon(m, attacker)) safeHurt(m, attacker.damageSources().mobAttack(attacker), 2.0f);
+                }
+            }
+            if (atkMask.has(IDX_ESCARMOUCHEUR_PAS_LATERAL) && !isProjectile && Math.abs(attacker.xxa) > 0.25f) {
+                event.setAmount(event.getAmount() * 1.20f);
+                attacker.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 40, 0, true, false));
+            }
+            if (atkMask.has(IDX_DUELLISTE_CRITIQUE_LEGER) && !isProjectile && attacker.fallDistance > 0.2f) {
+                event.setAmount(event.getAmount() + 2.0f);
+                attacker.fallDistance *= 0.5f;
+            }
+            if (atkMask.has(IDX_HALLEBARDIER_ANCRAGE_FER) && !isProjectile && attacker.isShiftKeyDown() && attacker.onGround()) {
+                event.setAmount(event.getAmount() + 2.5f);
+                Vec3 kb216 = victim.position().subtract(attacker.position());
+                if (kb216.lengthSqr() > 0.01) victim.setDeltaMovement(kb216.normalize().scale(0.55).add(0, 0.18, 0));
+            }
+            if (atkMask.has(IDX_FANTASSIN_TROIS_LAMES) && !isProjectile) {
+                int c217 = attacker.getPersistentData().getInt("slb_c217_cnt") + 1;
+                if (c217 >= 3) {
+                    c217 = 0;
+                    event.setAmount(event.getAmount() + 3.0f);
+                    attacker.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 50, 0, true, false));
+                }
+                attacker.getPersistentData().putInt("slb_c217_cnt", c217);
+            }
+            if (atkMask.has(IDX_FAUCHEUR_SOUPIR_AFFAIBLISSANT) && !isProjectile && victim.hasEffect(MobEffects.WEAKNESS)) {
+                event.setAmount(event.getAmount() + 1.5f);
+                if (attacker instanceof Player pl218) pl218.getFoodData().eat(1, 0.2f);
+            }
+            if (atkMask.has(IDX_PATROUILLEUR_CLAIRIERE) && !isProjectile
+                    && attacker.level().getMaxLocalRawBrightness(attacker.blockPosition()) >= 12) {
+                event.setAmount(event.getAmount() + 2.0f);
+            }
+            if (atkMask.has(IDX_TRANCHEUR_PELLE_ROBUSTE) && !isProjectile && weapon.getItem() instanceof ShovelItem) {
+                event.setAmount(event.getAmount() + 2.0f);
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 40, 0));
+            }
+            if (atkMask.has(IDX_PAYSAN_FOURCHE_DEFENSE) && !isProjectile && weapon.getItem() instanceof HoeItem) {
+                event.setAmount(event.getAmount() + 2.5f);
+                Vec3 kb237 = victim.position().subtract(attacker.position());
+                if (kb237.lengthSqr() > 0.01) victim.setDeltaMovement(kb237.normalize().scale(0.45).add(0, 0.15, 0));
+            }
+            if (atkMask.has(IDX_ARCHER_PERCE_ARMURE_LEGER) && isProjectile && attacker.isShiftKeyDown() && attacker.onGround()) {
+                event.setAmount(event.getAmount() * 1.20f);
+            }
+            if (atkMask.has(IDX_HARPONNEUR_ABYSSES_DOMPTE) && attacker.isInWater()) {
+                event.setAmount(event.getAmount() + 3.0f);
+            }
+            if (atkMask.has(IDX_CORSAIRE_GUE_SANGLANT) && !isProjectile && attacker.isInWaterOrRain()
+                    && now >= attacker.getPersistentData().getLong("slb_c259_cd")) {
+                attacker.getPersistentData().putLong("slb_c259_cd", now + 40L);
+                attacker.heal(1.0f);
+            }
+            if (atkMask.has(IDX_CAVALIER_LANCE_FRANCHE) && !isProjectile && attacker.isPassenger()) {
+                event.setAmount(event.getAmount() + 2.5f);
+            }
+            if (atkMask.has(IDX_PUGILISTE_PAS_VIF) && !isProjectile && weapon.isEmpty()) {
+                event.setAmount(event.getAmount() + 1.5f);
+                attacker.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 40, 0, true, false));
+            }
+            if (atkMask.has(IDX_COGNEUR_ELANCE) && !isProjectile && weapon.isEmpty() && (attacker.isSprinting() || !attacker.onGround())) {
+                event.setAmount(event.getAmount() + 2.5f);
+                Vec3 kb271 = victim.position().subtract(attacker.position());
+                if (kb271.lengthSqr() > 0.01) victim.setDeltaMovement(kb271.normalize().scale(0.55).add(0, 0.2, 0));
+            }
+            if (atkMask.has(IDX_MOINE_SOUFFLE_CLAIR) && !isProjectile) {
+                int c273 = attacker.getPersistentData().getInt("slb_c273_cnt") + 1;
+                if (c273 >= 4) {
+                    c273 = 0;
+                    attacker.heal(2.0f);
+                    attacker.removeEffect(MobEffects.DIG_SLOWDOWN);
+                }
+                attacker.getPersistentData().putInt("slb_c273_cnt", c273);
+            }
+            if (atkMask.has(IDX_BAGARREUR_BIEN_NOURRI) && !isProjectile && attacker instanceof Player pl274
+                    && pl274.getFoodData().getFoodLevel() >= 16) {
+                event.setAmount(event.getAmount() + 2.0f);
+                pl274.getFoodData().eat(0, 0.1f);
+            }
+            if (atkMask.has(IDX_BOXEUR_ESQUIVE_CROISEE) && !isProjectile && weapon.isEmpty()
+                    && now < attacker.getPersistentData().getLong("slb_c276_charge")) {
+                attacker.getPersistentData().remove("slb_c276_charge");
+                event.setAmount(event.getAmount() + 2.0f);
+            }
+            if (atkMask.has(IDX_CHAMPION_TAVERNE_TROIS_POINGS) && !isProjectile && weapon.isEmpty()) {
+                event.setAmount(event.getAmount() + 3.0f);
+                int c277 = attacker.getPersistentData().getInt("slb_c277_cnt") + 1;
+                if (c277 >= 3) {
+                    c277 = 0;
+                    attacker.heal(1.0f);
+                }
+                attacker.getPersistentData().putInt("slb_c277_cnt", c277);
+            }
+            if (atkMask.has(IDX_BRISEUR_ELAN_BRUTAL) && !isProjectile && attacker.isSprinting()) {
+                event.setAmount(event.getAmount() + 2.5f);
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 40, 0));
+            }
+            if (atkMask.has(IDX_SURVIVANT_DERNIER_SOUFFLE_BAS) && !isProjectile
+                    && attacker.getHealth() <= attacker.getMaxHealth() * 0.40f) {
+                event.setAmount(event.getAmount() + 2.5f);
+                if (now >= attacker.getPersistentData().getLong("slb_c279_cd")) {
+                    attacker.getPersistentData().putLong("slb_c279_cd", now + 50L);
+                    attacker.heal(1.0f);
+                }
+            }
+            if (atkMask.has(IDX_FERRAILLEUR_BOUCLIER_RECYCLE) && !isProjectile) {
+                ItemStack oh283 = attacker.getOffhandItem();
+                if ((weapon.isDamageableItem() && weapon.getDamageValue() >= weapon.getMaxDamage() * 0.65f)
+                        || (oh283.isDamageableItem() && oh283.getDamageValue() >= oh283.getMaxDamage() * 0.65f)) {
+                    event.setAmount(event.getAmount() + 2.0f);
+                }
+            }
+            if (atkMask.has(IDX_LANCIER_BOUCLIER_BALAYANT) && !isProjectile
+                    && now < attacker.getPersistentData().getLong("slb_c284_riposte")) {
+                attacker.getPersistentData().remove("slb_c284_riposte");
+                event.setAmount(event.getAmount() + 2.5f);
+            }
+            if (atkMask.has(IDX_PHALANGE_TROIS_FERS) && !isProjectile
+                    && now < attacker.getPersistentData().getLong("slb_c287_riposte")) {
+                attacker.getPersistentData().remove("slb_c287_riposte");
+                event.setAmount(event.getAmount() + 3.0f);
+            }
+            if (atkMask.has(IDX_FRACASSEUR_TRAUMATISME_BOUCLIER) && !isProjectile
+                    && (victim.hasEffect(MobEffects.WEAKNESS) || victim.hasEffect(MobEffects.MOVEMENT_SLOWDOWN))) {
+                event.setAmount(event.getAmount() + 2.5f);
+            }
+            if (atkMask.has(IDX_LAME_SANCTUAIRE_MAGMA) && !isProjectile) {
+                event.setAmount(event.getAmount() + 1.0f);
+                victim.setRemainingFireTicks(Math.max(victim.getRemainingFireTicks(), 60));
+            }
+            if (atkMask.has(IDX_TRAQUEUR_VENIN_CICATRICE) && !isProjectile && victim.hasEffect(MobEffects.POISON)) {
+                event.setAmount(event.getAmount() + 2.0f);
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 40, 0));
+            }
+            if (atkMask.has(IDX_LIMIER_SENS_AIGUISE) && !isProjectile) {
+                event.setAmount(event.getAmount() + 1.5f);
+                victim.addEffect(new MobEffectInstance(MobEffects.GLOWING, 80, 0));
+            }
+            if (atkMask.has(IDX_CHASSEUR_PLAIE_AFFAIBLISSANTE) && !isProjectile) {
+                if (victim.getHealth() < victim.getMaxHealth()) {
+                    attacker.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 45, 0, true, false));
+                }
+                victim.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 50, 0));
+            }
+            if (atkMask.has(IDX_PISTEUR_FLAIR_SENTIER) && !isProjectile && victim.getHealth() <= victim.getMaxHealth() * 0.50f) {
+                event.setAmount(event.getAmount() + 2.5f);
+                attacker.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 60, 0, true, false));
+            }
+            if (atkMask.has(IDX_CHIRURGIEN_VENIN_ECARLATE) && !isProjectile) {
+                if (victim.hasEffect(MobEffects.POISON)) {
+                    event.setAmount(event.getAmount() + 2.5f);
+                    if (now >= attacker.getPersistentData().getLong("slb_c297_cd")) {
+                        attacker.getPersistentData().putLong("slb_c297_cd", now + 60L);
+                        attacker.heal(1.0f);
+                    }
+                }
+                victim.addEffect(new MobEffectInstance(MobEffects.POISON, 60, 0));
+            }
+            if (atkMask.has(IDX_VEILLEUR_FLAMME_CLAIRE) && !isProjectile && victim.isOnFire()) {
+                event.setAmount(event.getAmount() + 2.5f);
+            }
+            if (atkMask.has(IDX_ECORCHEUR_BALAYAGE_LARGE) && !isProjectile && victim.level() instanceof ServerLevel sl299A) {
+                int near299 = sl299A.getEntitiesOfClass(Mob.class, attacker.getBoundingBox().inflate(4.0), m -> m.isAlive() && !isFriendlySummon(m, attacker)).size();
+                if (near299 >= 2) event.setAmount(event.getAmount() + 2.0f);
+            }
+            if (atkMask.has(IDX_REDEMPTION_LAME_EMOUSSEE) && !isProjectile) {
+                event.setAmount(event.getAmount() + 3.0f);
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 40, 0));
+            }
+            if (atkMask.has(IDX_PENITENT_FERRAILLE_HEROIQUE) && !isProjectile) {
+                event.setAmount(event.getAmount() + 3.0f);
+            }
+
             // #209 Élu Astral de la Chance Infinie : +35 % dégâts critiques stellaires + nova curatrice
             if (atkMask.has(IDX_TRANSCENDANCE_CHANCE_INFINIE) && !isProjectile
                     && (attacker.fallDistance > 0.1f || attacker.getRandom().nextInt(100) < 35)
@@ -2408,6 +2802,59 @@ public final class EnchantmentComboHandler {
             // #162 Brise-Pavois Nordique : charge la prochaine frappe à la hache (+45 % + étourdissement)
             if (mask.has(IDX_BRISE_GARDE_TONNERRE)) {
                 stDef.shieldAxeRiposteUntil = now + 100L;
+            }
+
+
+            // ==================== T333 : BOUCLIER DES COMBOS DE BAS GRADE (#211-#310) ====================
+            if (mask.has(IDX_GARDE_BOUCLIER_ARDENT)) {
+                if (attacker instanceof LivingEntity liv212) liv212.setRemainingFireTicks(Math.max(liv212.getRemainingFireTicks(), 60));
+                if (now >= defender.getPersistentData().getLong("slb_c212_cd")) {
+                    defender.getPersistentData().putLong("slb_c212_cd", now + 60L);
+                    defender.heal(1.0f);
+                }
+            }
+            if (mask.has(IDX_GARDE_COTE_BOUCLIER) && defender.isInWaterOrRain()) {
+                defender.heal(1.0f);
+                if (attacker instanceof LivingEntity liv256) {
+                    Vec3 away = liv256.position().subtract(defender.position());
+                    if (away.lengthSqr() > 0.01) liv256.setDeltaMovement(away.normalize().scale(0.60).add(0, 0.20, 0));
+                }
+            }
+            if (mask.has(IDX_PORTEBOUCLIER_PIEDS_COLLES)) {
+                defender.setDeltaMovement(0, Math.min(0, defender.getDeltaMovement().y), 0);
+                defender.hurtMarked = true;
+                if (attacker instanceof LivingEntity liv280) {
+                    Vec3 away = liv280.position().subtract(defender.position());
+                    if (away.lengthSqr() > 0.01) liv280.setDeltaMovement(away.normalize().scale(0.65).add(0, 0.20, 0));
+                }
+            }
+            if (mask.has(IDX_GARDE_CHOC_ECRASANT) && attacker instanceof LivingEntity liv281 && !event.getDamageSource().is(DamageTypeTags.IS_PROJECTILE)) {
+                safeHurt(liv281, defender.damageSources().thorns(defender), 2.5f);
+                liv281.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 40, 0));
+            }
+            if (mask.has(IDX_SENTINELLE_RACCOMMODAGE)) {
+                ItemStack sh282 = defender.getUseItem();
+                if (sh282.isDamageableItem() && sh282.getDamageValue() > 0) sh282.setDamageValue(Math.max(0, sh282.getDamageValue() - 2));
+                ItemStack ch282 = defender.getItemBySlot(EquipmentSlot.CHEST);
+                if (ch282.isDamageableItem() && ch282.getDamageValue() > 0) ch282.setDamageValue(Math.max(0, ch282.getDamageValue() - 1));
+            }
+            if (mask.has(IDX_LANCIER_BOUCLIER_BALAYANT)) {
+                defender.getPersistentData().putLong("slb_c284_riposte", now + 60L);
+            }
+            if (mask.has(IDX_GARDIEN_FLAMME_PAVOIS)) {
+                defender.clearFire();
+                if (now >= defender.getPersistentData().getLong("slb_c286_cd")) {
+                    defender.getPersistentData().putLong("slb_c286_cd", now + 80L);
+                    defender.setAbsorptionAmount(Math.max(defender.getAbsorptionAmount(), 2.0f));
+                }
+            }
+            if (mask.has(IDX_PHALANGE_TROIS_FERS)) {
+                defender.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 60, 0, true, false));
+                defender.getPersistentData().putLong("slb_c287_riposte", now + 60L);
+            }
+            if (mask.has(IDX_VEILLEURS_MURAILLES_CLAIRES) && event.getDamageSource().is(DamageTypeTags.IS_PROJECTILE)) {
+                defender.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+                if (attacker instanceof LivingEntity liv288) safeHurt(liv288, defender.damageSources().thorns(defender), 2.0f);
             }
 
             // #191 Égide Solaire Inviolable : renvoie 150 % des dégâts bloqués, soigne 2 cœurs et Résistance III (4 s)
@@ -2554,6 +3001,22 @@ public final class EnchantmentComboHandler {
                 killer.addEffect(new MobEffectInstance(MobEffects.INVISIBILITY, 80, 0, true, false));
             }
 
+
+            // ==================== T333 : ÉLIMINATION DES COMBOS DE BAS GRADE (#211-#310) ====================
+            if (mask.has(IDX_BRETTEUR_LAME_PROMETTEUSE) && killer instanceof Player pl214) {
+                if (kWeapon.isDamageableItem() && kWeapon.getDamageValue() > 0) {
+                    kWeapon.setDamageValue(Math.max(0, kWeapon.getDamageValue() - 3));
+                }
+                pl214.giveExperiencePoints(3);
+            }
+            if (mask.has(IDX_BUVEUR_TRANSFUSION_VORACE) && killer instanceof Player pl295) {
+                pl295.heal(2.0f);
+                pl295.getFoodData().eat(2, 0.3f);
+            }
+            if (mask.has(IDX_PENITENT_FERRAILLE_HEROIQUE)) {
+                killer.heal(2.0f);
+            }
+
             // #202 Empereur de la Faux du Néant : élimination à la houe -> soigne 3 cœurs
             if (mask.has(IDX_EMPEREUR_FAUX_NEANT) && kWeapon.getItem() instanceof HoeItem) {
                 killer.heal(6.0f);
@@ -2693,6 +3156,23 @@ public final class EnchantmentComboHandler {
                     if (mask.has(IDX_ARCHER_DISTORSION_VIDE)) arrow.getPersistentData().putBoolean("slb_c186_rift", true);
                     if (mask.has(IDX_TEMPETE_ASTRALE_INFINIE)) arrow.getPersistentData().putBoolean("slb_c190_starstorm", true);
                     if (mask.has(IDX_ARTILLEUR_METEOR_ECARLATE)) arrow.getPersistentData().putBoolean("slb_c197_solar", true);
+                    if (mask.has(IDX_ARCHER_RONCE_AGILE)) arrow.getPersistentData().putBoolean("slb_c240", true);
+                    if (mask.has(IDX_ARCHER_JOUET_FARCEUR)) arrow.getPersistentData().putBoolean("slb_c241", true);
+                    if (mask.has(IDX_ARBALETRIER_TORCHE_VEILLEUR)) {
+                        arrow.getPersistentData().putBoolean("slb_c242", true);
+                        shooter.removeEffect(MobEffects.DARKNESS);
+                        shooter.removeEffect(MobEffects.BLINDNESS);
+                    }
+                    if (mask.has(IDX_VOLTIGEUR_TIR_RAPPROCHE)) arrow.getPersistentData().putBoolean("slb_c243", true);
+                    if (mask.has(IDX_ARCHER_SALVE_LEGERE) && !shooter.onGround()) {
+                        arrow.getPersistentData().putBoolean("slb_c244", true);
+                        shooter.fallDistance *= 0.5f;
+                    }
+                    if (mask.has(IDX_ARCHER_FLECHE_SECHE_SABLE)) arrow.getPersistentData().putBoolean("slb_c246", true);
+                    if (mask.has(IDX_ARCHER_GRAPPIN_AEROFREIN)) arrow.getPersistentData().putBoolean("slb_c247", true);
+                    if (mask.has(IDX_ARCHER_BRAISE_COEUR)) arrow.getPersistentData().putBoolean("slb_c248", true);
+                    if (mask.has(IDX_CAPITAINE_ARCHERS_MILICE)) arrow.getPersistentData().putBoolean("slb_c249", true);
+                    if (mask.has(IDX_REDEMPTION_CORDE_FRAGILE)) arrow.getPersistentData().putBoolean("slb_c306", true);
                 }
             }
         } catch (Throwable t) {
@@ -3028,6 +3508,61 @@ public final class EnchantmentComboHandler {
                 }
             }
 
+
+            // ==================== T333 : IMPACT PROJECTILES DE BAS GRADE (#241-#307) ====================
+            if (tag.getBoolean("slb_c240") && hitEntity != null) {
+                tag.remove("slb_c240");
+                shooter.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 50, 0, true, false));
+            }
+            if (tag.getBoolean("slb_c241") && hitEntity != null) {
+                tag.remove("slb_c241");
+                shooter.addEffect(new MobEffectInstance(MobEffects.JUMP, 60, 0, true, false));
+                Vec3 kb = hitEntity.position().subtract(shooter.position());
+                if (kb.lengthSqr() > 0.01) hitEntity.setDeltaMovement(kb.normalize().scale(0.65).add(0, 0.22, 0));
+            }
+            if (tag.getBoolean("slb_c242") && hitEntity != null) {
+                tag.remove("slb_c242");
+                hitEntity.setRemainingFireTicks(Math.max(hitEntity.getRemainingFireTicks(), 60));
+            }
+            if (tag.getBoolean("slb_c243") && hitEntity != null && shooter.distanceToSqr(hitEntity) <= 64.0) {
+                tag.remove("slb_c243");
+                safeHurt(hitEntity, shooter.damageSources().mobAttack(shooter), 2.5f);
+                shooter.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 35, 0, true, false));
+            }
+            if (tag.getBoolean("slb_c244") && hitEntity != null) {
+                tag.remove("slb_c244");
+                safeHurt(hitEntity, shooter.damageSources().mobAttack(shooter), 1.5f);
+            }
+            if (tag.getBoolean("slb_c246") && hitEntity != null) {
+                tag.remove("slb_c246");
+                hitEntity.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 60, 0));
+                if (hitEntity.isInWaterOrRain()) safeHurt(hitEntity, shooter.damageSources().mobAttack(shooter), 2.0f);
+            }
+            if (tag.getBoolean("slb_c247")) {
+                tag.remove("slb_c247");
+                shooter.getPersistentData().putLong("slb_c247_fall_safe", sl.getGameTime() + 80L);
+                shooter.fallDistance = 0.0f;
+            }
+            if (tag.getBoolean("slb_c248") && hitEntity != null && hitEntity.isOnFire()) {
+                tag.remove("slb_c248");
+                safeHurt(hitEntity, shooter.damageSources().onFire(), 1.5f);
+                shooter.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 80, 0, true, false));
+            }
+            if (tag.getBoolean("slb_c249") && hitEntity != null) {
+                tag.remove("slb_c249");
+                safeHurt(hitEntity, shooter.damageSources().mobAttack(shooter), 2.0f);
+                hitEntity.addEffect(new MobEffectInstance(MobEffects.GLOWING, 60, 0));
+                if (shooter instanceof Player pl249) pl249.giveExperiencePoints(2);
+            }
+            if (tag.getBoolean("slb_c306") && hitEntity != null) {
+                tag.remove("slb_c306");
+                safeHurt(hitEntity, shooter.damageSources().mobAttack(shooter), 2.0f);
+                ItemStack bow306 = shooter.getMainHandItem();
+                if (bow306.getItem() instanceof BowItem && bow306.isDamageableItem() && bow306.getDamageValue() > 0) {
+                    bow306.setDamageValue(Math.max(0, bow306.getDamageValue() - 3));
+                }
+            }
+
             // #197 Canonnier d'Apocalypse Solaire : impact explosif ardent
             if (tag.getBoolean("slb_c197_solar")) {
                 tag.remove("slb_c197_solar");
@@ -3295,6 +3830,92 @@ public final class EnchantmentComboHandler {
                 sl.addFreshEntity(new ItemEntity(sl, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, ingot193));
             }
 
+
+            // ==================== T333 : MINAGE & AGRICULTURE DE BAS GRADE (#221-#304) ====================
+            boolean isOre333 = state.is(Tags.Blocks.ORES);
+            boolean isCrop333 = state.getBlock() instanceof net.minecraft.world.level.block.CropBlock cb333 && cb333.isMaxAge(state);
+            String blkDesc333 = state.getBlock().getDescriptionId();
+
+            if (mask.has(IDX_MINEUR_CADENCE_AIMANTEE) && isOre333) {
+                player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 60, 0, true, false));
+                for (ItemEntity ie : sl.getEntitiesOfClass(ItemEntity.class, new AABB(pos).inflate(3.5))) {
+                    ie.moveTo(player.getX(), player.getY() + 0.3, player.getZ());
+                }
+            }
+            if (mask.has(IDX_ALLUMEUR_GALERIE_SILEX) && (isOre333 || state.is(Blocks.STONE) || state.is(Blocks.DEEPSLATE)) && sl.random.nextInt(100) < 20) {
+                sl.addFreshEntity(new ItemEntity(sl, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
+                        new ItemStack(sl.random.nextBoolean() ? Items.FLINT : Items.COAL)));
+            }
+            if (mask.has(IDX_TERRASSIER_PELLE_AGILE)
+                    && (blkDesc333.contains("dirt") || blkDesc333.contains("sand") || blkDesc333.contains("gravel"))) {
+                player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 60, 0, true, false));
+                if (sl.random.nextInt(100) < 15) {
+                    sl.addFreshEntity(new ItemEntity(sl, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, new ItemStack(Items.IRON_NUGGET)));
+                }
+            }
+            if (mask.has(IDX_MINEUR_XP_CLAIRVOYANT) && isOre333) {
+                player.giveExperiencePoints(3);
+                ItemStack helm226 = player.getItemBySlot(EquipmentSlot.HEAD);
+                if (helm226.isDamageableItem() && helm226.getDamageValue() > 0) helm226.setDamageValue(helm226.getDamageValue() - 1);
+            }
+            if (mask.has(IDX_FOREUR_ELAN_CONTINU)) {
+                player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 80, 0, true, false));
+                if (sl.random.nextInt(100) < 10) player.getFoodData().eat(0, 0.25f);
+            }
+            if (mask.has(IDX_PROSPECTEUR_TROIS_OUTILS) && isOre333) {
+                player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 60, 1, true, false));
+                player.giveExperiencePoints(4);
+                if (sl.random.nextInt(100) < 15) {
+                    sl.addFreshEntity(new ItemEntity(sl, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
+                            new ItemStack(sl.random.nextBoolean() ? Items.RAW_IRON : Items.RAW_COPPER)));
+                }
+            }
+            if (mask.has(IDX_EXCAVATEUR_RECYCLEUR)) {
+                int cnt229 = player.getPersistentData().getInt("slb_c229_cnt") + 1;
+                if (cnt229 >= 8) {
+                    cnt229 = 0;
+                    ItemStack mh229 = player.getMainHandItem();
+                    if (mh229.isDamageableItem() && mh229.getDamageValue() > 0) mh229.setDamageValue(Math.max(0, mh229.getDamageValue() - 2));
+                    ItemStack oh229 = player.getOffhandItem();
+                    if (oh229.isDamageableItem() && oh229.getDamageValue() > 0) oh229.setDamageValue(Math.max(0, oh229.getDamageValue() - 2));
+                }
+                player.getPersistentData().putInt("slb_c229_cnt", cnt229);
+            }
+            if (mask.has(IDX_SARCLEUR_PAS_RAPIDE) && (isCrop333 || isWeedPlant(state))) {
+                player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 60, 0, true, false));
+                if (sl.random.nextInt(100) < 15) {
+                    sl.addFreshEntity(new ItemEntity(sl, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, new ItemStack(Items.WHEAT_SEEDS)));
+                }
+            }
+            if (mask.has(IDX_SEMEUR_REPLANT_AIMANTE) && isCrop333) {
+                player.giveExperiencePoints(1);
+                if (sl.random.nextInt(100) < 20) {
+                    sl.addFreshEntity(new ItemEntity(sl, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, new ItemStack(Items.WHEAT)));
+                }
+            }
+            if (mask.has(IDX_MARAICHER_COMPOST_GOURMAND) && isCrop333) {
+                player.getFoodData().eat(1, 0.15f);
+                if (sl.random.nextInt(100) < 20) {
+                    sl.addFreshEntity(new ItemEntity(sl, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, new ItemStack(Items.BONE_MEAL)));
+                }
+            }
+            if (mask.has(IDX_MOISSONNEUR_PANIER_PLEIN) && isCrop333 && sl.random.nextInt(100) < 25) {
+                sl.addFreshEntity(new ItemEntity(sl, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
+                        new ItemStack(sl.random.nextBoolean() ? Items.CARROT : Items.POTATO)));
+            }
+            if (mask.has(IDX_VIGNERON_ASSIMILATION) && isCrop333) {
+                player.getFoodData().eat(0, 0.3f);
+            }
+            if (mask.has(IDX_MAITRE_FERMIER_TROIS_CHAMPS) && isCrop333 && sl.isDay()) {
+                player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 80, 0, true, false));
+                if (sl.random.nextInt(100) < 35) {
+                    sl.addFreshEntity(new ItemEntity(sl, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, new ItemStack(Items.WHEAT, 2)));
+                }
+            }
+            if (mask.has(IDX_REDEMPTION_PORTEE_COURTE) && isOre333) {
+                player.giveExperiencePoints(2);
+            }
+
             // #203 Forgeron Divin des Reliques : minerai -> 25 % gemme bonus (Diamant ou Émeraude)
             if (mask.has(IDX_FORGERON_DIVIN_RELIQUE) && state.is(Tags.Blocks.ORES) && sl.random.nextInt(100) < 25) {
                 ItemStack gem203 = new ItemStack(sl.random.nextBoolean() ? Items.DIAMOND : Items.EMERALD);
@@ -3392,6 +4013,48 @@ public final class EnchantmentComboHandler {
                 }
             }
 
+
+            // ==================== T333 : PÊCHE DE BAS GRADE (#251-#306) ====================
+            if (mask.has(IDX_PECHEUR_RIVE_PAISIBLE)) {
+                player.getFoodData().eat(2, 0.25f);
+                player.giveExperiencePoints(3);
+            }
+            if (mask.has(IDX_CUISINIER_FEU_CAMP) && player.level() instanceof ServerLevel sl251) {
+                player.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 60, 0, true, false));
+                if (sl251.random.nextInt(100) < 25) {
+                    sl251.addFreshEntity(new ItemEntity(sl251, player.getX(), player.getY() + 0.5, player.getZ(), new ItemStack(Items.COOKED_COD)));
+                }
+            }
+            if (mask.has(IDX_PECHEUR_AIMANT_EPAVES) && player.level() instanceof ServerLevel sl255 && sl255.random.nextInt(100) < 25) {
+                ItemStack haul = switch (sl255.random.nextInt(3)) {
+                    case 0 -> new ItemStack(Items.IRON_NUGGET, 3);
+                    case 1 -> new ItemStack(Items.GOLD_NUGGET, 2);
+                    default -> new ItemStack(Items.PRISMARINE_SHARD, 1);
+                };
+                sl255.addFreshEntity(new ItemEntity(sl255, player.getX(), player.getY() + 0.5, player.getZ(), haul));
+            }
+            if (mask.has(IDX_LOUP_MER_TROIS_MARES) && player.level() instanceof ServerLevel sl258) {
+                player.addEffect(new MobEffectInstance(MobEffects.LUCK, 300, 0, true, false));
+                player.giveExperiencePoints(5);
+                if (sl258.random.nextInt(100) < 20) {
+                    sl258.addFreshEntity(new ItemEntity(sl258, player.getX(), player.getY() + 0.5, player.getZ(),
+                            new ItemStack(sl258.random.nextBoolean() ? Items.EMERALD : Items.NAUTILUS_SHELL)));
+                }
+            }
+            if (mask.has(IDX_REDEMPTION_LIGNE_BRULANTE) && player.level() instanceof ServerLevel sl304) {
+                player.clearFire();
+                if (sl304.random.nextInt(100) < 30) {
+                    sl304.addFreshEntity(new ItemEntity(sl304, player.getX(), player.getY() + 0.5, player.getZ(),
+                            new ItemStack(sl304.random.nextBoolean() ? Items.GOLD_NUGGET : Items.MAGMA_CREAM)));
+                }
+            }
+            if (mask.has(IDX_REDEMPTION_FAUSSE_TOUCHE) && player.level() instanceof ServerLevel sl305) {
+                player.giveExperiencePoints(5);
+                if (!event.getDrops().isEmpty() && sl305.random.nextInt(100) < 25) {
+                    sl305.addFreshEntity(new ItemEntity(sl305, player.getX(), player.getY() + 0.5, player.getZ(), event.getDrops().get(0).copy()));
+                }
+            }
+
             // #201 Grand Amiral des Sept Mers : double chaque butin pêché !
             if (mask.has(IDX_GRAND_AMIRAL_SEPT_MERS) && player.level() instanceof ServerLevel sl201) {
                 List<ItemStack> drops = event.getDrops();
@@ -3401,6 +4064,26 @@ public final class EnchantmentComboHandler {
             }
         } catch (Throwable t) {
             guard("onItemFished", t);
+        }
+    }
+
+
+    @SubscribeEvent
+    public static void onFoodFinish(net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent.Finish event) {
+        try {
+            if (!(event.getEntity() instanceof Player player) || player.level().isClientSide()) return;
+            if (event.getItem().get(net.minecraft.core.component.DataComponents.FOOD) == null) return;
+            ComboMask mask = EnchantmentComboRegistry.getActiveMask(player);
+            if (mask.isEmpty()) return;
+            if (mask.has(IDX_VIGNERON_ASSIMILATION)) {
+                player.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 60, 0, true, false));
+            }
+            if (mask.has(IDX_COUREUR_RAVITAILLEUR)) {
+                player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 60, 1, true, false));
+                player.setAbsorptionAmount(Math.max(player.getAbsorptionAmount(), 2.0f));
+            }
+        } catch (Throwable t) {
+            guard("onFoodFinish", t);
         }
     }
 
@@ -3482,6 +4165,14 @@ public final class EnchantmentComboHandler {
                             for (PieceRequirement req : c.pieces()) {
                                 ItemStack item = kitBySlot.computeIfAbsent(req.slot(), s -> {
                                     ItemStack st = new ItemStack(req.sampleItem());
+                                    st.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+                                            Component.literal(c.tier().name() + " " + req.sampleItem().getDescription().getString())
+                                                    .withStyle(net.minecraft.network.chat.Style.EMPTY
+                                                            .withColor(net.minecraft.network.chat.TextColor.fromRgb(c.tier().rgb()))
+                                                            .withBold(true)));
+                                    net.minecraft.nbt.CompoundTag tag = deepluckyblock.util.DeepNbt.getOrCreateTag(st);
+                                    tag.putInt("dlbGlint", 0xFF000000 | (c.tier().rgb() & 0xFFFFFF));
+                                    deepluckyblock.util.DeepNbt.commit(st, tag);
                                     deepluckyblock.util.DeepNbt.markLuckyBlockOrigin(st);
                                     return st;
                                 });

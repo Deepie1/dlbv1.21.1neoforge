@@ -707,11 +707,12 @@ public final class SystemTooltipWindowRenderer {
             int screenW = Math.max(280, event.getScreenWidth());
             int screenH = Math.max(180, event.getScreenHeight());
 
-            // 3) Calcul de la largeur logique confortable (centrage du titre + artefacts inclus)
+            // 3) Calcul de la largeur logique confortable (centrage du titre + artefacts + zéro troncature "…")
             int padX = 4;
-            int logicalW = shift ? 308 : 238;
+            int maxAllowedW = Math.max(240, Math.min(screenW - 24, 372));
+            int logicalW = shift ? 320 : 244;
             int minTitleBoxW = titleScaledW + padX * 2 + (artifactVariant >= 0 ? 48 : 20);
-            logicalW = Math.min(344, Math.max(logicalW, minTitleBoxW));
+            logicalW = Math.min(maxAllowedW, Math.max(logicalW, minTitleBoxW));
 
             if (!shift && totalEnchants >= 3) {
                 int maxColPx = 0;
@@ -722,13 +723,28 @@ public final class SystemTooltipWindowRenderer {
                             EnchantmentTooltipFixProcedure.formatEnchantTitle(e.getKey(), id, e.getValue()), false);
                     maxColPx = Math.max(maxColPx, (int) Math.ceil(font.width(c) * S_ITEM));
                 }
-                logicalW = Math.min(320, Math.max(logicalW, maxColPx * 2 + 28));
+                logicalW = Math.min(maxAllowedW, Math.max(logicalW, maxColPx * 2 + 30));
+            } else {
+                for (Map.Entry<Enchantment, Integer> e : entries) {
+                    ResourceLocation id = DeepEnchant.getKeySafe(e.getKey());
+                    if (id == null) continue;
+                    Component leftC = decorateEnchantBullet(e.getKey(),
+                            EnchantmentTooltipFixProcedure.formatEnchantTitle(e.getKey(), id, e.getValue()), shift);
+                    int rowW = (int) Math.ceil(font.width(leftC) * S_ITEM) + 22;
+                    if (shift && EnchantmentTooltipFixProcedure.isModEnchantmentId(id)) {
+                        Rarity rar = CustomEnchantment.getRarityByPath(id.getPath());
+                        if (rar != null) {
+                            rowW += (int) Math.ceil(font.width(CustomEnchantment.formatRarityBadge(rar)) * S_SUB) + 10;
+                        }
+                    }
+                    logicalW = Math.min(maxAllowedW, Math.max(logicalW, rowW));
+                }
             }
 
             for (ComboDef c : activeCombos) {
                 int comboLineW = (int) Math.ceil(font.width(Component.literal("\u2726 ").append(c.translatedName())) * S_ITEM)
                         + (int) Math.ceil(font.width(c.tier().badge()) * S_SUB) + 24;
-                logicalW = Math.min(344, Math.max(logicalW, comboLineW));
+                logicalW = Math.min(maxAllowedW, Math.max(logicalW, comboLineW));
             }
 
             int innerW = logicalW - padX * 2;
@@ -816,7 +832,7 @@ public final class SystemTooltipWindowRenderer {
                     String cleanDesc = EnchantmentTooltipFixProcedure.resolveCleanDescription(id, lvl);
                     if (cleanDesc != null && !cleanDesc.isBlank()) {
                         int barCol = CustomEnchantment.isCurseMod(ench) ? 0xAAEF4444 : 0xAA38BDF8;
-                        List<String> wrapped = wrapDescriptionItalic(font, cleanDesc, descMaxFontPx, 3);
+                        List<String> wrapped = wrapDescriptionItalic(font, cleanDesc, descMaxFontPx, 6);
                         for (String line : wrapped) {
                             rows.add(new IndentedBarTextRow(line, barCol, S_DESC, curY, descLineH));
                             curY += descLineH;
@@ -862,7 +878,7 @@ public final class SystemTooltipWindowRenderer {
                         if (resolvedDesc == null || resolvedDesc.isBlank()) {
                             resolvedDesc = c.translatedDesc().getString();
                         }
-                        for (String line : wrapDescriptionItalic(font, resolvedDesc, synDescFontPx, 3)) {
+                        for (String line : wrapDescriptionItalic(font, resolvedDesc, synDescFontPx, 6)) {
                             rows.add(new IndentedBarTextRow(line, 0xBBF59E0B, S_DESC, curY, synDescLineH));
                             curY += synDescLineH;
                         }
@@ -874,7 +890,7 @@ public final class SystemTooltipWindowRenderer {
                                 .withStyle(ChatFormatting.AQUA)
                                 .append(EnchantmentComboRegistry.buildComboPiecesSummary(c, viewer));
                         List<FormattedCharSequence> pieceSplits = font.split(piecesLine, synPiecesFontPx);
-                        int maxPieceLines = Math.min(3, pieceSplits.size());
+                        int maxPieceLines = Math.min(5, pieceSplits.size());
                         for (int pi = 0; pi < maxPieceLines; pi++) {
                             rows.add(new IndentedBarSeqRow(pieceSplits.get(pi), 0x6638BDF8, S_SUB, curY, synSubLineH));
                             curY += synSubLineH;

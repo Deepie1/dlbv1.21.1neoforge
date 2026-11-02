@@ -1734,15 +1734,37 @@ public class UniversalEnchantmentHandler {
         // sauter tout en avançant dans les airs ne fait plus JAMAIS traverser ni tomber !
         int footPl = getArmorEnchantLvl(player, "deep_lucky_block:foot_placement");
         int featherFoot = getArmorEnchantLvl(player, "deep_lucky_block:range_foot_placement");
+        int oxyHov = getArmorEnchantLvl(player, "deep_lucky_block:oxygen_hover");
         if (footPl > 0) {
             if (player.isShiftKeyDown()) {
                 resetAirWalkAnchor(player);
                 clearPlayerBarriersUnderneath(player);
+                // T333-AIRWALK-SHIFT-DIVE : Descente progressive côté serveur (anti-chute + particules d'air)
+                if (oxyHov <= 0 && !player.isInWater() && !player.isInLava() && !player.onClimbable()
+                        && !player.isFallFlying() && !player.isPassenger() && !player.getAbilities().flying) {
+                    player.fallDistance = 0.0f;
+                    int diveTicks = player.getPersistentData().getInt("dlb_airwalk_dive") + 1;
+                    player.getPersistentData().putInt("dlb_airwalk_dive", diveTicks);
+                    if (!player.onGround() && player.level() instanceof ServerLevel slDive && (diveTicks % 3 == 0)) {
+                        slDive.sendParticles(ParticleTypes.CLOUD,
+                                player.getX(), player.getY() + 0.15, player.getZ(),
+                                2, 0.22, 0.12, 0.22, 0.02);
+                    }
+                } else {
+                    player.getPersistentData().remove("dlb_airwalk_dive");
+                }
             } else {
+                if (player.getPersistentData().contains("dlb_airwalk_dive")) {
+                    player.getPersistentData().remove("dlb_airwalk_dive");
+                    player.fallDistance = 0.0f;
+                }
                 maintainAirWalkRunway(player, Integer.MIN_VALUE);
             }
-        } else if (getArmorEnchantLvl(player, "deep_lucky_block:cloud_stride") <= 0) {
-            resetAirWalkAnchor(player);
+        } else {
+            player.getPersistentData().remove("dlb_airwalk_dive");
+            if (getArmorEnchantLvl(player, "deep_lucky_block:cloud_stride") <= 0) {
+                resetAirWalkAnchor(player);
+            }
         }
         if (featherFoot > 0 && footPl <= 0 && !player.onGround() && player.fallDistance >= 3.2f && !player.isShiftKeyDown()) {
             placeAerialCushionUnderFeet(player);
@@ -1752,7 +1774,6 @@ public class UniversalEnchantmentHandler {
             }
         }
 
-        int oxyHov = getArmorEnchantLvl(player, "deep_lucky_block:oxygen_hover");
         if (oxyHov > 0 && player.isShiftKeyDown()) player.setDeltaMovement(player.getDeltaMovement().x, 0.0, player.getDeltaMovement().z);
         // high_step est désormais un vrai Attribut STEP_HEIGHT natif dans RealAttributeModifierHandler (plus de Jump Boost forcé !)
         int shortBreath = getArmorEnchantLvl(player, "deep_lucky_block:shortness_of_breath");
@@ -4328,7 +4349,25 @@ public class UniversalEnchantmentHandler {
         st.anchorFloorY = clampedY;
         st.clientControlled = true;
         sp.fallDistance = 0.0F;
+        purgeServerBarriersExceptFloor(sp, sl, clampedY);
         placeBarrierRunwayAtY(sp, sl, clampedY, vel[0], vel[2], true);
+    }
+
+    private static void purgeServerBarriersExceptFloor(Player player, ServerLevel sl, int keepFloorY) {
+        Map<BlockPos, BarrierNode> trail = PLAYER_BARRIER_TRAILS.get(player.getUUID());
+        if (trail == null || trail.isEmpty()) return;
+        Iterator<Map.Entry<BlockPos, BarrierNode>> it = trail.entrySet().iterator();
+        while (it.hasNext()) {
+            BarrierNode node = it.next().getValue();
+            if (node.pos().getY() != keepFloorY) {
+                ServerLevel targetLvl = sl.getServer().getLevel(node.dimension());
+                if (targetLvl != null && targetLvl.isLoaded(node.pos())
+                        && targetLvl.getBlockState(node.pos()).is(Blocks.BARRIER)) {
+                    targetLvl.setBlockAndUpdate(node.pos(), Blocks.AIR.defaultBlockState());
+                }
+                it.remove();
+            }
+        }
     }
 
     private static void resetAirWalkAnchor(LivingEntity entity) {
@@ -4413,6 +4452,7 @@ public class UniversalEnchantmentHandler {
         }
         if (targetFloorY < sl.getMinBuildHeight() || targetFloorY >= sl.getMaxBuildHeight()) return;
 
+        purgeServerBarriersExceptFloor(player, sl, targetFloorY);
         boolean placedAny = placeBarrierRunwayAtY(player, sl, targetFloorY, vx, vz, true);
         if (placedAny && player.getY() <= targetFloorY + 6.0) {
             player.fallDistance = 0.0f;
@@ -4440,53 +4480,20 @@ public class UniversalEnchantmentHandler {
         long now = sl.getGameTime();
         boolean anyBarrierUnder = false;
 
-        // 1) Tapis 3x3 centré sous le joueur (couvre la hitbox + 1 bloc de marge latérale immédiate)
+        // T333-DIRECT-UNDER-FEET : Pose strictement sous la hitbox des pieds (+ le seul pas du tick courant),
+        // jamais plusieurs blocs en avance (ne bloque plus ni la descente, ni la montée en sautant).
         double px = player.getX();
         double pz = player.getZ();
-        int minX = Mth.floor(px - 0.85);
-        int maxX = Mth.floor(px + 0.85);
-        int minZ = Mth.floor(pz - 0.85);
-        int maxZ = Mth.floor(pz + 0.85);
+        double stepX = Mth.clamp(vx, -0.95, 0.95);
+        double stepZ = Mth.clamp(vz, -0.95, 0.95);
+        int minX = Mth.floor(Math.min(px, px + stepX) - 0.42);
+        int maxX = Mth.floor(Math.max(px, px + stepX) + 0.42);
+        int minZ = Mth.floor(Math.min(pz, pz + stepZ) - 0.42);
+        int maxZ = Mth.floor(Math.max(pz, pz + stepZ) + 0.42);
         for (int x = minX; x <= maxX; x++) {
             for (int z = minZ; z <= maxZ; z++) {
                 if (setTrackedBarrier(sl, trail, x, footY, z, px, player.getY(), pz, now)) {
                     anyBarrierUnder = true;
-                }
-            }
-        }
-
-        // 2) Anticipation horizontale (lookahead) le long du vecteur de déplacement réel (ou du regard en sprint) :
-        //    pré-pose la piste jusqu'à ~2.6 blocs devant le joueur PENDANT le saut pour que le client ait déjà
-        //    reçu les paquets BlockUpdate bien avant de retomber au bout de sa parabole !
-        double dirX = vx;
-        double dirZ = vz;
-        double hSpeed = Math.hypot(dirX, dirZ);
-        if (hSpeed < 0.04 && player.isSprinting()) {
-            Vec3 look = player.getLookAngle();
-            double lh = Math.hypot(look.x, look.z);
-            if (lh > 1.0E-4) {
-                dirX = look.x / lh;
-                dirZ = look.z / lh;
-                hSpeed = 0.28;
-            }
-        }
-        if (hSpeed >= 0.03) {
-            double nx = dirX / hSpeed;
-            double nz = dirZ / hSpeed;
-            double maxLead = Mth.clamp(1.25 + hSpeed * 4.5, 1.5, 3.85);
-            for (double d = 0.80; d <= maxLead + 0.01; d += 0.80) {
-                double lx = px + nx * d;
-                double lz = pz + nz * d;
-                int lMinX = Mth.floor(lx - 0.65);
-                int lMaxX = Mth.floor(lx + 0.65);
-                int lMinZ = Mth.floor(lz - 0.65);
-                int lMaxZ = Mth.floor(lz + 0.65);
-                for (int x = lMinX; x <= lMaxX; x++) {
-                    for (int z = lMinZ; z <= lMaxZ; z++) {
-                        if (setTrackedBarrier(sl, trail, x, footY, z, px, player.getY(), pz, now)) {
-                            anyBarrierUnder = true;
-                        }
-                    }
                 }
             }
         }
@@ -4503,7 +4510,7 @@ public class UniversalEnchantmentHandler {
                                              int x, int y, int z, double px, double py, double pz, long now) {
         double dx = px - (x + 0.5);
         double dz = pz - (z + 0.5);
-        if ((dx * dx + dz * dz) >= 15.6) {
+        if ((dx * dx + dz * dz) >= 4.0) {
             return false;
         }
         BlockPos pos = new BlockPos(x, y, z);
@@ -4563,18 +4570,13 @@ public class UniversalEnchantmentHandler {
                     BarrierNode node = nodeIt.next().getValue();
                     ServerLevel nodeLvl = server.getLevel(node.dimension());
                     boolean mustRemove = !activeAirBoots
-                            || !sp.level().dimension().equals(node.dimension());
+                            || !sp.level().dimension().equals(node.dimension())
+                            || (activeAnchorY != Integer.MIN_VALUE && node.pos().getY() != activeAnchorY);
                     if (!mustRemove && (nodeLvl == null || (nodeLvl.getGameTime() - node.placedTick()) >= 2L)) {
                         double dx = sp.getX() - (node.pos().getX() + 0.5);
-                        double dy = (sp.getY() - 0.5) - (node.pos().getY() + 0.5);
                         double dz = sp.getZ() - (node.pos().getZ() + 0.5);
                         double horizDistSq = dx * dx + dz * dz;
-                        double dist3DSq = horizDistSq + dy * dy;
-                        // Règle T307 + compatibilité T320 Jump Boost :
-                        // - Toujours effacé dès >= 4 blocs horizontalement derrière/autour du joueur (horizDistSq >= 16.0).
-                        // - Sur le plancher actif (activeAnchorY), un grand saut vertical (Jump Boost III+) ne détruit
-                        //   pas la piste sous le joueur pendant sa parabole ; tout ancien étage est effacé dès dist3DSq >= 16.0.
-                        if (horizDistSq >= 16.0 || (node.pos().getY() != activeAnchorY && dist3DSq >= 16.0)) {
+                        if (horizDistSq >= 3.24) {
                             mustRemove = true;
                         }
                     }

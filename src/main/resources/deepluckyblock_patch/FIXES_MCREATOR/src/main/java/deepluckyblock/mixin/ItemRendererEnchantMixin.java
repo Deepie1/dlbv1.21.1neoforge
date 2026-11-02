@@ -49,15 +49,39 @@ public abstract class ItemRendererEnchantMixin {
     private void dlbCapture(ItemStack stack, ItemDisplayContext displayContext,
                             boolean inverted, PoseStack poseStack, MultiBufferSource buffer,
                             int light, int overlay, BakedModel model, CallbackInfo ci) {
-        boolean activeInHand = dlbCheckActiveAction(stack, displayContext);
-        EnchantAura.captureWithFlash(stack, activeInHand, dlbSwingCycle, false);
+        LocalPlayer heldOwner = dlbResolveHeldOwner(stack, displayContext);
+        if (heldOwner != null) {
+            // T333-UNIQUE-CONTEXTUAL-GLOW : Déclenchement selon les conditions uniques des enchantements de l'item tenu
+            EnchantAura.captureContextual(heldOwner, stack, false);
+        } else {
+            EnchantAura.capture(stack);
+        }
         if (EnchantAura.DEBUG && EnchantAura.DEBUG_VERBOSE) {
             deepluckyblock.util.DebugLog.out("[MIXIN] ItemRenderer.render() HEAD — stack="
                     + (stack == null ? "null" : stack.getItem().getDescriptionId())
                     + " hasFoil=" + (stack != null && stack.hasFoil())
-                    + " active=" + activeInHand
+                    + " intense=" + EnchantAura.isCurrentIntense()
                     + " captée=" + Integer.toHexString(EnchantAura.currentRgb()));
         }
+    }
+
+    @Unique
+    private static LocalPlayer dlbResolveHeldOwner(ItemStack stack, ItemDisplayContext ctx) {
+        if (stack == null || stack.isEmpty() || ctx == null) return null;
+        boolean inHandContext = ctx == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND
+                || ctx == ItemDisplayContext.FIRST_PERSON_LEFT_HAND
+                || ctx == ItemDisplayContext.THIRD_PERSON_RIGHT_HAND
+                || ctx == ItemDisplayContext.THIRD_PERSON_LEFT_HAND;
+        if (!inHandContext) return null;
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            LocalPlayer player = mc == null ? null : mc.player;
+            if (player == null || player.level() == null) return null;
+            if (stack == player.getMainHandItem() || stack == player.getOffhandItem()) {
+                return player;
+            }
+        } catch (Throwable ignored) {}
+        return null;
     }
 
     @Unique

@@ -51,6 +51,7 @@ public final class CloudWalkerClientInput {
     private static int clientAnchorFloorY = Integer.MIN_VALUE;
     private static int lastSentAnchorFloorY = Integer.MIN_VALUE;
     private static boolean cloudAscentPending = false;
+    private static int clientShiftDiveTicks = 0;
     private static double prevClientX = Double.NaN;
     private static double prevClientZ = Double.NaN;
 
@@ -72,6 +73,7 @@ public final class CloudWalkerClientInput {
                 clientAnchorFloorY = Integer.MIN_VALUE;
                 lastSentAnchorFloorY = Integer.MIN_VALUE;
                 cloudAscentPending = false;
+                clientShiftDiveTicks = 0;
                 prevClientX = Double.NaN;
                 prevClientZ = Double.NaN;
             }
@@ -79,6 +81,7 @@ public final class CloudWalkerClientInput {
 
             int footPl = UniversalEnchantmentHandler.getArmorEnchantLvl(player, "deep_lucky_block:foot_placement");
             int cloudStride = UniversalEnchantmentHandler.getArmorEnchantLvl(player, "deep_lucky_block:cloud_stride");
+            int oxyHov = UniversalEnchantmentHandler.getArmorEnchantLvl(player, "deep_lucky_block:oxygen_hover");
             boolean hasAirWalk = footPl > 0 || (cloudStride > 0 && player.getY() >= 160.0);
 
             boolean sneaking = (player.input != null && player.input.shiftKeyDown) || player.isShiftKeyDown();
@@ -91,6 +94,25 @@ public final class CloudWalkerClientInput {
                     cloudAscentPending = false;
                     syncAnchorToServer(Integer.MIN_VALUE);
                 }
+                // T333-AIRWALK-SHIFT-DIVE : Descente progressive de plus en plus rapide tant que Shift est maintenu en l'air
+                if (sneaking && footPl > 0 && oxyHov <= 0
+                        && !player.isInWater() && !player.isInLava() && !player.onClimbable()
+                        && !player.isFallFlying() && !player.isPassenger() && !player.getAbilities().flying) {
+                    if (!hasSolidGroundBelow(level, player)) {
+                        player.setOnGround(false);
+                        clientShiftDiveTicks++;
+                        Vec3 dmDive = player.getDeltaMovement();
+                        double accel = Math.min(0.14, 0.020 + clientShiftDiveTicks * 0.0045);
+                        double maxDive = -Math.min(1.85, 0.38 + clientShiftDiveTicks * 0.038);
+                        double targetVy = Math.max(maxDive, Math.min(dmDive.y, -0.15) - accel);
+                        player.setDeltaMovement(dmDive.x, targetVy, dmDive.z);
+                        player.fallDistance = 0.0F;
+                    } else {
+                        clientShiftDiveTicks = 0;
+                    }
+                } else {
+                    clientShiftDiveTicks = 0;
+                }
                 prevClientX = player.getX();
                 prevClientZ = player.getZ();
                 return;
@@ -100,20 +122,35 @@ public final class CloudWalkerClientInput {
                     || player.isFallFlying() || player.isPassenger() || player.getAbilities().flying) {
                 clientAnchorFloorY = Integer.MIN_VALUE;
                 cloudAscentPending = false;
+                clientShiftDiveTicks = 0;
                 syncAnchorToServer(Integer.MIN_VALUE);
                 prevClientX = player.getX();
                 prevClientZ = player.getZ();
                 return;
             }
 
-            int exactUnderFeetY = Mth.floor(player.getY() - 1.0 + 1.0E-4);
             Vec3 dm = player.getDeltaMovement();
+            // Amorti doux à la relâche de Shift pour se ré-ancrer net sous les pieds
+            if (clientShiftDiveTicks > 0) {
+                if (dm.y < -0.10) {
+                    dm = new Vec3(dm.x, -0.05, dm.z);
+                    player.setDeltaMovement(dm);
+                }
+                player.fallDistance = 0.0F;
+                clientShiftDiveTicks = 0;
+            }
+
+            int exactUnderFeetY = Mth.floor(player.getY() - 1.0 + 1.0E-4);
+            boolean jumpingInput = player.input != null && player.input.jumping;
+            if ((jumpingInput && dm.y > 0.05) || dm.y > 0.22) {
+                cloudAscentPending = true;
+            }
 
             if (clientAnchorFloorY == Integer.MIN_VALUE) {
                 clientAnchorFloorY = exactUnderFeetY;
                 player.fallDistance = 0.0F;
             } else {
-                // 1) Montée sur du VRAI relief solide (colline, escalier, bâtiment) — jamais sur nos propres barrières !
+                // 1) Montée sur du VRAI relief solide (colline, escalier, bâtiment)
                 if (player.onGround() && exactUnderFeetY > clientAnchorFloorY) {
                     BlockPos belowPos = BlockPos.containing(player.getX(), exactUnderFeetY, player.getZ());
                     BlockState belowState = level.getBlockState(belowPos);
@@ -121,14 +158,14 @@ public final class CloudWalkerClientInput {
                         clientAnchorFloorY = exactUnderFeetY;
                     }
                 }
-                // 2) Montée volontaire via Double/Triple Saut (cloud_walker) : au sommet du saut aérien, le plancher monte nous cueillir
+                // 2) T333-AIRWALK-JUMP-ASCENT : Sauter normalement (Espace) ou en saut aérien fait monter le plancher d'air au sommet du saut
                 if (cloudAscentPending && dm.y <= 0.02) {
                     if (exactUnderFeetY > clientAnchorFloorY) {
                         clientAnchorFloorY = exactUnderFeetY;
                     }
                     cloudAscentPending = false;
                 }
-                // 3) Si le joueur est descendu sous le plancher (pente/dalle descendante), ré-ancrage immédiat sous ses pieds
+                // 3) Si le joueur est descendu sous le plancher, ré-ancrage immédiat sous ses pieds
                 if (player.getY() < clientAnchorFloorY + 0.96) {
                     clientAnchorFloorY = exactUnderFeetY;
                 }
@@ -143,6 +180,8 @@ public final class CloudWalkerClientInput {
                 }
             }
 
+            // Purge immédiate de tout bloc d'un ancien étage Y avant de poser le niveau courant
+            purgeClientBarriersExceptFloor(level, clientAnchorFloorY);
             syncAnchorToServer(clientAnchorFloorY);
 
             double frameVx = Double.isNaN(prevClientX) ? dm.x : (player.getX() - prevClientX);
@@ -253,6 +292,41 @@ public final class CloudWalkerClientInput {
         }
     }
 
+    private static boolean hasSolidGroundBelow(ClientLevel level, LocalPlayer player) {
+        int underY = Mth.floor(player.getY() - 0.08);
+        double px = player.getX();
+        double pz = player.getZ();
+        int minX = Mth.floor(px - 0.30);
+        int maxX = Mth.floor(px + 0.30);
+        int minZ = Mth.floor(pz - 0.30);
+        int maxZ = Mth.floor(pz + 0.30);
+        for (int x = minX; x <= maxX; x++) {
+            for (int z = minZ; z <= maxZ; z++) {
+                BlockPos pos = new BlockPos(x, underY, z);
+                BlockState st = level.getBlockState(pos);
+                if (!st.isAir() && !(st.is(Blocks.BARRIER) && CLIENT_BARRIER_TRAIL.containsKey(pos))
+                        && !st.getCollisionShape(level, pos).isEmpty()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static void purgeClientBarriersExceptFloor(ClientLevel level, int keepFloorY) {
+        if (CLIENT_BARRIER_TRAIL.isEmpty()) return;
+        Iterator<Map.Entry<BlockPos, Long>> it = CLIENT_BARRIER_TRAIL.entrySet().iterator();
+        while (it.hasNext()) {
+            BlockPos pos = it.next().getKey();
+            if (pos.getY() != keepFloorY) {
+                if (level.isLoaded(pos) && level.getBlockState(pos).is(Blocks.BARRIER)) {
+                    level.setBlock(pos, Blocks.AIR.defaultBlockState(), 2);
+                }
+                it.remove();
+            }
+        }
+    }
+
     private static void placeClientBarrierRunway(ClientLevel level, LocalPlayer player,
                                                  int footY, double vx, double vz) {
         if (footY < level.getMinBuildHeight() || footY >= level.getMaxBuildHeight()) return;
@@ -262,41 +336,17 @@ public final class CloudWalkerClientInput {
         double px = player.getX();
         double pz = player.getZ();
 
-        int minX = Mth.floor(px - 0.85);
-        int maxX = Mth.floor(px + 0.85);
-        int minZ = Mth.floor(pz - 0.85);
-        int maxZ = Mth.floor(pz + 0.85);
+        // T333-DIRECT-UNDER-FEET : Pose strictement sous la hitbox des pieds (+ le seul pas du tick courant),
+        // jamais plusieurs blocs en avance (ne bloque plus ni la descente, ni le saut ascendant).
+        double stepX = Mth.clamp(vx, -0.80, 0.80);
+        double stepZ = Mth.clamp(vz, -0.80, 0.80);
+        int minX = Mth.floor(Math.min(px, px + stepX) - 0.33);
+        int maxX = Mth.floor(Math.max(px, px + stepX) + 0.33);
+        int minZ = Mth.floor(Math.min(pz, pz + stepZ) - 0.33);
+        int maxZ = Mth.floor(Math.max(pz, pz + stepZ) + 0.33);
         for (int x = minX; x <= maxX; x++) {
             for (int z = minZ; z <= maxZ; z++) {
                 setClientBarrier(level, x, footY, z, px, pz, now);
-            }
-        }
-
-        double dirX = vx;
-        double dirZ = vz;
-        double hSpeed = Math.hypot(dirX, dirZ);
-        if (hSpeed < 0.04 && player.isSprinting()) {
-            float yawRad = player.getYRot() * ((float) Math.PI / 180.0F);
-            dirX = -Mth.sin(yawRad);
-            dirZ = Mth.cos(yawRad);
-            hSpeed = 0.30;
-        }
-        if (hSpeed >= 0.025) {
-            double nx = dirX / hSpeed;
-            double nz = dirZ / hSpeed;
-            double maxLead = Mth.clamp(1.25 + hSpeed * 4.5, 1.5, 3.85);
-            for (double d = 0.75; d <= maxLead + 0.01; d += 0.75) {
-                double lx = px + nx * d;
-                double lz = pz + nz * d;
-                int lMinX = Mth.floor(lx - 0.65);
-                int lMaxX = Mth.floor(lx + 0.65);
-                int lMinZ = Mth.floor(lz - 0.65);
-                int lMaxZ = Mth.floor(lz + 0.65);
-                for (int x = lMinX; x <= lMaxX; x++) {
-                    for (int z = lMinZ; z <= lMaxZ; z++) {
-                        setClientBarrier(level, x, footY, z, px, pz, now);
-                    }
-                }
             }
         }
     }
@@ -305,7 +355,7 @@ public final class CloudWalkerClientInput {
                                          double px, double pz, long now) {
         double dx = px - (x + 0.5);
         double dz = pz - (z + 0.5);
-        if ((dx * dx + dz * dz) >= 15.6) return;
+        if ((dx * dx + dz * dz) >= 3.24) return;
 
         BlockPos pos = new BlockPos(x, y, z);
         BlockState cur = level.getBlockState(pos);
@@ -328,14 +378,11 @@ public final class CloudWalkerClientInput {
         while (it.hasNext()) {
             Map.Entry<BlockPos, Long> entry = it.next();
             BlockPos pos = entry.getKey();
-            boolean mustRemove = !active;
+            boolean mustRemove = !active || pos.getY() != clientAnchorFloorY;
             if (!mustRemove && (now - entry.getValue()) >= 2L) {
                 double dx = player.getX() - (pos.getX() + 0.5);
-                double dy = (player.getY() - 0.5) - (pos.getY() + 0.5);
                 double dz = player.getZ() - (pos.getZ() + 0.5);
-                double horizDistSq = dx * dx + dz * dz;
-                double dist3DSq = horizDistSq + dy * dy;
-                if (horizDistSq >= 16.0 || (pos.getY() != clientAnchorFloorY && dist3DSq >= 16.0)) {
+                if ((dx * dx + dz * dz) >= 2.56) {
                     mustRemove = true;
                 }
             }
@@ -366,6 +413,7 @@ public final class CloudWalkerClientInput {
         clientAnchorFloorY = Integer.MIN_VALUE;
         lastSentAnchorFloorY = Integer.MIN_VALUE;
         cloudAscentPending = false;
+        clientShiftDiveTicks = 0;
         prevClientX = Double.NaN;
         prevClientZ = Double.NaN;
         if (notifyServer) {

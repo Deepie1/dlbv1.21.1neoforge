@@ -354,6 +354,9 @@ public class SanctuarySpawnerEquipProcedure {
         // fichier attribue aux mobs. Le glow des mobs ne vient desormais QUE
         // du clic sur un coffre verrouille (LuckyChestAutofillProcedure).
         stripEcholocation(mob);
+        // T333-MOB-ARMOR-GLINT-DURABILITY : Garantit le glint du grade sur chaque pièce d'armure
+        // et applique une durabilité restante aléatoire de 1 % à 50 % du max.
+        GenerateLuckyItemProcedure.applyMobArmorGradeAndLowDurability(mob, luck, random);
     }
 
     /**

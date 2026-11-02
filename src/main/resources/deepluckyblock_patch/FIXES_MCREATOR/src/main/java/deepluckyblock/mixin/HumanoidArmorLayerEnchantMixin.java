@@ -75,12 +75,14 @@ public abstract class HumanoidArmorLayerEnchantMixin {
                                            CallbackInfo ci) {
         try {
             var piece = livingEntity.getItemBySlot(slot);
-            boolean armorProcWindow = livingEntity.hurtTime > 0;
-            EnchantAura.captureWithFlash(piece, armorProcWindow, livingEntity.tickCount / 10, true);
+            // T333-UNIQUE-CONTEXTUAL-GLOW + MOB-GRADE-GLINT :
+            // - Mobs : affiche toujours le glint stable du grade de l'armure.
+            // - Joueurs : active l'éclat intense uniquement selon la condition propre de l'enchantement !
+            EnchantAura.captureContextual(livingEntity, piece, true);
             if (EnchantAura.DEBUG && EnchantAura.DEBUG_VERBOSE) {
                 deepluckyblock.util.DebugLog.out("[MIXIN] renderArmorPiece() HEAD slot=" + slot
                         + " item=" + (piece == null ? "null" : piece.getItem().getDescriptionId())
-                        + " hurt=" + armorProcWindow
+                        + " intense=" + EnchantAura.isCurrentIntense()
                         + " captée=" + Integer.toHexString(EnchantAura.currentRgb()));
             }
         } catch (Throwable t) {

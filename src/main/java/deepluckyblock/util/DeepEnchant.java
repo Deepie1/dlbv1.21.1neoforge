@@ -388,12 +388,8 @@ public final class DeepEnchant {
                 m.set(h, level);
             }
         });
-        // T331-LUCKY-ITEM-ORIGIN : Tout item enchanté via les systèmes ou commandes du mod
-        // reçoit automatiquement l'estampille Lucky Block (n'affecte jamais la table d'enchantement
-        // vanilla, l'enclume vanilla normale ni les autres mods).
-        if (level > 0) {
-            DeepNbt.markLuckyBlockOrigin(stack);
-        }
+        // T333-GRADED-ORIGIN-ONLY : Ne jamais marquer un item via setLevel() seul, afin qu'un
+        // enchantement posé à la main (enclume, essence d'ombre, etc.) ne déclenche pas l'UI Lucky Block.
     }
 
     /** Remplace stack.removeEnchantment(en). */

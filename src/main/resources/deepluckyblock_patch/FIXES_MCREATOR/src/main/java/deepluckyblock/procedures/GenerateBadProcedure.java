@@ -2502,6 +2502,7 @@ public class GenerateBadProcedure {
         zombie.setItemSlot(EquipmentSlot.LEGS, enchantedPiece(iron ? Items.IRON_LEGGINGS : Items.LEATHER_LEGGINGS, el, random));
         zombie.setItemSlot(EquipmentSlot.FEET, enchantedPiece(iron ? Items.IRON_BOOTS : Items.LEATHER_BOOTS, el, random));
         zombie.setItemSlot(EquipmentSlot.MAINHAND, enchantedPiece(iron ? Items.IRON_SWORD : Items.STONE_SWORD, el, random));
+        GenerateLuckyItemProcedure.applyMobArmorGradeAndLowDurability(zombie, el, random);
         zombie.setDropChance(EquipmentSlot.HEAD, 0.02f); zombie.setDropChance(EquipmentSlot.CHEST, 0.02f); zombie.setDropChance(EquipmentSlot.LEGS, 0.02f); zombie.setDropChance(EquipmentSlot.FEET, 0.02f); zombie.setDropChance(EquipmentSlot.MAINHAND, 0.05f);
     }
 
@@ -2526,6 +2527,7 @@ public class GenerateBadProcedure {
             z.setItemSlot(slot, enchantedPiece(piece, luck, random));
             z.setDropChance(slot, 0.15f);
         }
+        GenerateLuckyItemProcedure.applyMobArmorGradeAndLowDurability(z, luck, random);
     }
 
     private static ItemStack enchantedPiece(Item item, int luck, RandomSource random) {

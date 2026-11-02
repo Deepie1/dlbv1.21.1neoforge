@@ -350,6 +350,32 @@ public final class EnchantAura {
         }
     }
 
+    /**
+     * T333-UNIQUE-CONTEXTUAL-GLOW : Active le glint intense uniquement si au moins un
+     * enchantement de {@code stack} voit sa condition contextuelle unique remplie sur {@code wearer}
+     * (et garde le glint de grade pur et stable sur tous les mobs).
+     */
+    public static void captureContextual(net.minecraft.world.entity.LivingEntity wearer,
+                                         ItemStack stack, boolean defensiveArmor) {
+        int base = auraColor(stack);
+        int tier = glintTier(stack);
+        if (ACTIVE_SWING_FLASH && wearer != null && stack != null && !stack.isEmpty()) {
+            Boolean override = stack.get(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
+            if (!Boolean.FALSE.equals(override)) {
+                int flash = DeepGlintColor.resolveContextualFlash(wearer, stack, defensiveArmor);
+                if (flash != 0) {
+                    current = flash;
+                    currentIntense = true;
+                    currentTier = tier;
+                    return;
+                }
+            }
+        }
+        current = base;
+        currentIntense = false;
+        currentTier = tier;
+    }
+
     public static void clear() {
         current = 0;
         currentIntense = false;

@@ -1216,6 +1216,9 @@ public class GenerateLuckyItemProcedure {
 
             String healerColor = healerProfile.colorCode;
             special.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§" + healerColor + "§lHealer's Magic Sword"));
+            deepluckyblock.util.DeepNbt.markLuckyBlockOrigin(special);
+            healerProfile.stampGlint(special);
+            DeepCustomGlint.applyThemed(special);
 
             result.items.add(0, special);
             result.title = "§" + healerColor + "§l✦ Healer's Sword (" + healerProfile.display + ") ✦";
@@ -1846,6 +1849,12 @@ public class GenerateLuckyItemProcedure {
         // 4) Nom avec le sous-rang visible + lore "pourquoi maudit".
         stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§" + result.titleColorCode + "§l"
                 + conditionRank + " " + displayName(type)));
+        deepluckyblock.util.DeepNbt.markLuckyBlockOrigin(stack);
+        profileFromLuck(luck).stampGlint(stack);
+        if (!stack.hasFoil()) {
+            stack.set(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+        }
+        DeepCustomGlint.applyThemed(stack);
         applyCursedLore(stack, type);
 
         addArrowsIfRanged(type, result, random);
@@ -2030,7 +2039,16 @@ public class GenerateLuckyItemProcedure {
         if (level != null && !level.isClientSide()) {
             deepluckyblock.util.DeepEnchant.rememberServerAccess(level.registryAccess());
         }
-        return createItemForType(slotToItemType(slot), luck, luck, random, false, false);
+        ItemType type = slotToItemType(slot);
+        ItemStack stack = createItemForType(type, luck, luck, random, false, false);
+        // T333-MOB-ARMOR-GLINT : Applique systématiquement le nom de grade et la couleur de glint
+        // du grade (dlbGlint + ENCHANTMENT_GLINT_OVERRIDE) sur les pièces générées par emplacement.
+        if (!stack.has(net.minecraft.core.component.DataComponents.CUSTOM_NAME)) {
+            RankProfile profile = profileFromLuck(luck);
+            profile.applyName(stack, displayName(type));
+        }
+        DeepCustomGlint.applyThemed(stack);
+        return stack;
     }
 
     public static ItemStack generateSpecific(Level level, int luck, TestProcedure.QualityTier tier,
@@ -2038,7 +2056,65 @@ public class GenerateLuckyItemProcedure {
         if (level != null && !level.isClientSide()) {
             deepluckyblock.util.DeepEnchant.rememberServerAccess(level.registryAccess());
         }
-        return createItemForType(normalizeItemType(itemType), luck, luck, random, false, false);
+        ItemType type = normalizeItemType(itemType);
+        ItemStack stack = createItemForType(type, luck, luck, random, false, false);
+        if (!stack.has(net.minecraft.core.component.DataComponents.CUSTOM_NAME)) {
+            RankProfile profile = profileFromLuck(luck);
+            profile.applyName(stack, displayName(type));
+        }
+        DeepCustomGlint.applyThemed(stack);
+        return stack;
+    }
+
+    /**
+     * T333-MOB-ARMOR-GLINT-DURABILITY :
+     * 1) Garantit que chaque pièce d'armure équipée sur un mob de spawner conserve le glint exact
+     *    de son grade (même si son unique enchantement a été filtré ou si le tirage était bas).
+     * 2) Applique une durabilité restante aléatoire comprise entre 1 % et 50 % de la durabilité max.
+     */
+    public static void applyMobArmorGradeAndLowDurability(net.minecraft.world.entity.Mob mob,
+                                                          int fallbackLuck,
+                                                          RandomSource random) {
+        if (mob == null || random == null) return;
+        EquipmentSlot[] armorSlots = {
+            EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
+        };
+        RankProfile fallbackProfile = profileFromLuck(Math.max(0, Math.min(100, fallbackLuck)));
+        for (EquipmentSlot slot : armorSlots) {
+            ItemStack piece = mob.getItemBySlot(slot);
+            if (piece == null || piece.isEmpty()) continue;
+
+            if (!piece.has(net.minecraft.core.component.DataComponents.CUSTOM_NAME)) {
+                fallbackProfile.applyName(piece, displayName(slotToItemType(slot)));
+            } else {
+                CompoundTag tag = deepluckyblock.util.DeepNbt.tag(piece);
+                if (tag == null || !tag.contains(GLINT_NBT_KEY)) {
+                    fallbackProfile.stampGlint(piece);
+                }
+            }
+            piece.set(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+            DeepCustomGlint.applyThemed(piece);
+
+            // Retrait de tout composant/enchantement incassable sur l'armure de mob
+            piece.remove(net.minecraft.core.component.DataComponents.UNBREAKABLE);
+            for (Enchantment ench : new ArrayList<>(deepluckyblock.util.DeepEnchant.map(piece).keySet())) {
+                ResourceLocation rl = deepluckyblock.util.DeepEnchant.getKeySafe(ench);
+                if (rl != null && ("unbreakable".equals(rl.getPath()) || "eternal".equals(rl.getPath()))) {
+                    deepluckyblock.util.DeepEnchant.remove(piece, ench);
+                }
+            }
+
+            if (piece.isDamageableItem()) {
+                int maxDmg = piece.getMaxDamage();
+                if (maxDmg > 1) {
+                    int minRem = Math.max(1, Math.round(maxDmg * 0.01f));
+                    int maxRem = Math.max(minRem, Math.round(maxDmg * 0.50f));
+                    int remaining = minRem + random.nextInt(maxRem - minRem + 1);
+                    piece.setDamageValue(Math.max(1, Math.min(maxDmg - 1, maxDmg - remaining)));
+                }
+            }
+            mob.setItemSlot(slot, piece);
+        }
     }
 
     // ==================== CREATE ITEM ====================
@@ -3748,11 +3824,15 @@ public class GenerateLuckyItemProcedure {
             };
         }
 
-        /** Pose le nom ET, pour les rangs hors-palette, la couleur exacte du glint. */
+        /** Pose le nom ET la couleur exacte du glint du grade (T333 : les 17 grades sont estampillés). */
         void applyName(ItemStack stack, String itemType) {
             stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, formatItemName(itemType));
             deepluckyblock.util.DeepNbt.markLuckyBlockOrigin(stack);
-            if (hex) stampGlint(stack);
+            stampGlint(stack);
+            if (!stack.hasFoil()) {
+                stack.set(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+            }
+            DeepCustomGlint.applyThemed(stack);
         }
 
         /** Écrit la couleur exacte du rang pour {@code EnchantAura}. */

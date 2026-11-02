@@ -513,4 +513,327 @@ public final class DeepGlintColor {
         }
         return 0;
     }
+
+    // =======================================================================
+    // T333-UNIQUE-CONTEXTUAL-GLOW : Déclenchement intense uniquement lorsque la
+    // condition propre à l'enchantement de la pièce est réellement remplie !
+    // (Fini le déclenchement générique redondant au simple swing dans le vide ou dégât quelconque.)
+    // =======================================================================
+    private static final java.util.WeakHashMap<ItemStack, long[]> CONTEXT_GLOW_CACHE = new java.util.WeakHashMap<>();
+    private static final long CONTEXT_CACHE_TTL_NS = 90_000_000L; // ~90 ms (< 2 ticks)
+
+    public static int resolveContextualFlash(net.minecraft.world.entity.LivingEntity wearer,
+                                             ItemStack stack, boolean defensiveArmor) {
+        if (!(wearer instanceof net.minecraft.world.entity.player.Player player)) return 0;
+        if (stack == null || stack.isEmpty() || !stack.isEnchanted()) return 0;
+
+        long nowNs = System.nanoTime();
+        synchronized (CONTEXT_GLOW_CACHE) {
+            long[] cached = CONTEXT_GLOW_CACHE.get(stack);
+            if (cached != null && (nowNs - cached[1]) <= CONTEXT_CACHE_TTL_NS) {
+                return (int) cached[0];
+            }
+        }
+
+        int computed = computeContextualFlashUncached(player, stack, defensiveArmor);
+        synchronized (CONTEXT_GLOW_CACHE) {
+            CONTEXT_GLOW_CACHE.put(stack, new long[]{computed, nowNs});
+        }
+        return computed;
+    }
+
+    private static int computeContextualFlashUncached(net.minecraft.world.entity.player.Player player,
+                                                      ItemStack stack, boolean defensiveArmor) {
+        Map<net.minecraft.world.item.enchantment.Enchantment, Integer> enchants = deepluckyblock.util.DeepEnchant.map(stack);
+        if (enchants.isEmpty()) return 0;
+
+        int[] activeColors = new int[8];
+        int activeCount = 0;
+
+        for (Map.Entry<net.minecraft.world.item.enchantment.Enchantment, Integer> e : enchants.entrySet()) {
+            var ench = e.getKey();
+            if (ench == null) continue;
+            net.minecraft.resources.ResourceLocation rl;
+            try {
+                rl = deepluckyblock.util.DeepEnchant.getKeySafe(ench);
+            } catch (Throwable t) {
+                continue;
+            }
+            if (rl == null) continue;
+            String fullId = rl.toString().toLowerCase(Locale.ROOT);
+            String path = rl.getPath().toLowerCase(Locale.ROOT);
+
+            if (!isUniqueConditionMet(player, stack, path, defensiveArmor)) {
+                continue;
+            }
+
+            int col = classifyPrimaryElementFlash(fullId);
+            if (col == 0) {
+                col = classifySecondaryCombatFlash(fullId, defensiveArmor);
+            }
+            if (col == 0) {
+                int base = baseColor(fullId);
+                if (base != 0xFFFFFFFF) {
+                    col = 0xFF000000 | brightenForFlash(base);
+                }
+            }
+            if (col != 0) {
+                boolean dup = false;
+                for (int i = 0; i < activeCount; i++) {
+                    if (activeColors[i] == col) { dup = true; break; }
+                }
+                if (!dup && activeCount < activeColors.length) {
+                    activeColors[activeCount++] = col;
+                }
+            }
+        }
+
+        if (activeCount == 0) return 0;
+        if (activeCount == 1) return activeColors[0];
+        int cycle = (player.tickCount / 20) % activeCount;
+        return activeColors[Math.floorMod(cycle, activeCount)];
+    }
+
+    private static int brightenForFlash(int rgb) {
+        int r = Math.min(255, ((rgb >> 16) & 0xFF) + 55);
+        int g = Math.min(255, ((rgb >> 8) & 0xFF) + 55);
+        int b = Math.min(255, (rgb & 0xFF) + 55);
+        return (r << 16) | (g << 8) | b;
+    }
+
+    private static boolean isUniqueConditionMet(net.minecraft.world.entity.player.Player player,
+                                                ItemStack stack, String path, boolean defensiveArmor) {
+        var level = player.level();
+        if (level == null) return false;
+        net.minecraft.core.BlockPos pos = player.blockPosition();
+
+        // 1) Obscurité / Nuit / Furtivité
+        if (path.equals("shadow_heart") || path.equals("voidlings_hunger") || path.equals("umbral_pact")
+                || path.equals("shadow_sprint") || path.equals("shadow_hunt")) {
+            return level.getMaxLocalRawBrightness(pos) <= 7;
+        }
+        if (path.equals("echolocation")) {
+            return level.getMaxLocalRawBrightness(pos) <= 7 && (player.tickCount % 40) < 10;
+        }
+        if (path.equals("night_veil") || path.equals("phantom_step") || path.equals("stealth_hunter")) {
+            return player.isInvisible() || (player.isShiftKeyDown() && level.getMaxLocalRawBrightness(pos) <= 8);
+        }
+
+        // 2) Pleine Lumière / Solaire / Sacré
+        if (path.equals("light_heart") || path.equals("light_walker")) {
+            return level.getMaxLocalRawBrightness(pos) >= 12;
+        }
+
+        // 3) Eau / Pluie / Glace
+        if (path.equals("water_heart") || path.equals("tidal_ward") || path.equals("amphibious")
+                || path.equals("oceans_blessing") || path.equals("buoy") || path.equals("breath_holding")
+                || path.equals("ocean_current") || path.equals("riptide_curse") || path.equals("depth_curse")) {
+            return player.isInWater();
+        }
+        if (path.equals("conduit_heart") || path.equals("rain_nourishment") || path.equals("hydro_shock")) {
+            return player.isInWaterOrRain();
+        }
+        if (path.equals("tidal_step")) {
+            return player.isInWater() && player.onGround();
+        }
+        if (path.equals("frost_trail") || path.equals("frost_walker") || path.equals("snow_remover_shovel")) {
+            var below = level.getBlockState(pos.below()).getBlock().getDescriptionId();
+            return below.contains("ice") || below.contains("snow") || level.getBlockState(pos).getBlock().getDescriptionId().contains("snow");
+        }
+
+        // 4) Feu / Lave / Chaleur
+        if (path.equals("blaze_battle") || path.equals("blazing_rage") || path.equals("fire_shell")
+                || path.equals("salamanders_vow") || path.equals("scorching_bath")
+                || path.equals("infernal_armor") || path.equals("fire_devour") || path.equals("blaze_sanctuary")) {
+            return player.isOnFire() || player.isInLava();
+        }
+        if (path.equals("fire_heart") || path.equals("blaze_walker") || path.equals("magma_walker")) {
+            if (player.isOnFire() || player.isInLava()) return true;
+            String below = level.getBlockState(pos.below()).getBlock().getDescriptionId();
+            return below.contains("magma") || below.contains("obsidian") || below.contains("lava");
+        }
+        if (path.equals("ember_step")) {
+            return player.isSprinting() && player.onGround();
+        }
+
+        // 5) Orage / Foudre
+        if (path.equals("electric_heart") || path.equals("thundercall_pact") || path.equals("chain_lightning")
+                || path.equals("sky_conductor_curse") || path.equals("lightning_rod_curse") || path.equals("lightning_calamity")) {
+            return level.isThundering() || level.isRainingAt(pos);
+        }
+
+        // 6) Ciel / Haute Altitude / Vol Élytres / Marche Aérienne / Paroi
+        if (path.equals("cloud_stride")) {
+            return player.getY() >= 160.0 && !player.isShiftKeyDown();
+        }
+        if (path.equals("wind_heart")) {
+            return player.getY() >= 140.0 || !player.onGround();
+        }
+        if (path.equals("high_altitude_hypoxia")) {
+            return player.getY() > 100.0;
+        }
+        if (path.equals("ground_skimmer")) {
+            return player.isFallFlying() && !level.getBlockState(pos.below(4)).isAir();
+        }
+        if (path.equals("air_brake")) {
+            return player.isFallFlying() && player.isShiftKeyDown();
+        }
+        if (path.equals("aerodynamic") || path.equals("wind_rider") || path.equals("iron_wings")
+                || path.equals("wing_toughness_armor") || path.equals("rocket_blast") || path.equals("turbulence_curse")) {
+            return player.isFallFlying();
+        }
+        if (path.equals("foot_placement")) {
+            if (player.isShiftKeyDown() || player.isInWater() || player.isInLava()) return false;
+            var under = level.getBlockState(pos.below());
+            return !player.onGround() || under.isAir() || under.is(net.minecraft.world.level.block.Blocks.BARRIER);
+        }
+        if (path.equals("range_foot_placement")) {
+            return player.fallDistance >= 2.8f;
+        }
+        if (path.equals("oxygen_hover") || path.equals("gale")) {
+            return !player.onGround() && player.isShiftKeyDown();
+        }
+        if (path.equals("cloud_walker") || path.equals("peregrine")) {
+            return !player.onGround() && !player.isInWater();
+        }
+        if (path.equals("wall_runner")) {
+            return player.horizontalCollision && !player.onGround();
+        }
+
+        // 7) Souterrain / Cible Minerai / Arbre / Culture / Pêche
+        if (path.equals("earth_heart") || path.equals("deep_hypoxia") || path.equals("oxygen_lack_haste")
+                || path.equals("burrowing") || path.equals("mining_stability")) {
+            return player.getY() < 32.0 && !level.canSeeSky(pos);
+        }
+        if (path.equals("vein_miner") || path.equals("miners_guidance") || path.equals("extracting")
+                || path.equals("prospecting") || path.equals("auto_smelt") || path.equals("flint_strike")) {
+            return isLookingAtBlockMatching(level, "ore");
+        }
+        if (path.equals("lumberjack") || path.equals("tree_felling")) {
+            return isLookingAtBlockMatching(level, "log") || isLookingAtBlockMatching(level, "stem");
+        }
+        if (path.equals("farmers_hoe") || path.equals("bountiful_harvest") || path.equals("replanting")
+                || path.equals("weeding_hoe") || path.equals("composting")) {
+            String below = level.getBlockState(pos.below()).getBlock().getDescriptionId();
+            return below.contains("farmland") || isLookingAtBlockMatching(level, "crop")
+                    || isLookingAtBlockMatching(level, "wheat") || isLookingAtBlockMatching(level, "carrot")
+                    || isLookingAtBlockMatching(level, "potato") || isLookingAtBlockMatching(level, "beetroot");
+        }
+        if (path.contains("fishing") || path.equals("cooked_catch") || path.equals("false_bite_curse")
+                || path.equals("scorching_line_curse")) {
+            return player.fishing != null;
+        }
+
+        // 8) PV bas / Faim pleine / Posture / Bouclier / Arc bandé / Monture / Mains nues
+        if (path.equals("berserk") || path.equals("adrenaline") || path.equals("final_breath")
+                || path.equals("last_stand_escape") || path.equals("last_stand_toughness")
+                || path.equals("desperate_kill") || path.equals("life_block") || path.equals("phoenix_rebirth")) {
+            return player.getHealth() <= player.getMaxHealth() * 0.35f;
+        }
+        if (path.equals("gluttony") || path.equals("meat_armor") || path.equals("food_power_strike")) {
+            return player.getFoodData().getFoodLevel() >= 18;
+        }
+        if (path.equals("fast_eating") || path.equals("assimilation") || path.equals("food_is_heaven")) {
+            return player.isUsingItem() && player.getUseItem().has(net.minecraft.core.component.DataComponents.FOOD);
+        }
+        if (path.equals("shelter")) {
+            return player.isShiftKeyDown() && player.onGround() && player.getDeltaMovement().horizontalDistanceSqr() < 0.002;
+        }
+        if (path.equals("anchoring") || path.equals("focused_steadiness") || path.equals("focused_crit")
+                || path.equals("focused_punch_gauntlet")) {
+            return player.isShiftKeyDown();
+        }
+        if (path.equals("elastic_soles")) {
+            return player.isShiftKeyDown() && player.onGround();
+        }
+        if (path.equals("concentration")) {
+            return player.isUsingItem() && player.getDeltaMovement().horizontalDistanceSqr() < 0.002;
+        }
+        if (path.equals("shield_efficiency") || path.equals("bash_power") || path.equals("bash_damage")
+                || path.equals("shield_quake") || path.equals("perfect_parry")) {
+            return player.isBlocking();
+        }
+        if (stack.getItem() instanceof net.minecraft.world.item.BowItem
+                || stack.getItem() instanceof net.minecraft.world.item.CrossbowItem
+                || stack.getItem() instanceof net.minecraft.world.item.TridentItem) {
+            if (stack.getItem() instanceof net.minecraft.world.item.CrossbowItem
+                    && net.minecraft.world.item.CrossbowItem.isCharged(stack)) {
+                return true;
+            }
+            return player.isUsingItem() && player.getUseItem() == stack && player.getTicksUsingItem() >= 5;
+        }
+        if (path.equals("cavalier") || path.equals("horse_boots")) {
+            return player.isPassenger();
+        }
+        if (path.equals("momentum") || path.equals("e_speed") || path.equals("windrunner")
+                || path.equals("sprint_punch_gauntlet") || path.equals("carriers_stride")) {
+            return player.isSprinting();
+        }
+        if (path.equals("slide")) {
+            return player.isShiftKeyDown() && player.getDeltaMovement().horizontalDistanceSqr() > 0.03;
+        }
+        if (path.equals("trailblazer")) {
+            String below = level.getBlockState(pos.below()).getBlock().getDescriptionId();
+            return below.contains("path") || below.contains("brick") || below.contains("cobblestone");
+        }
+        if (path.equals("strafe") || path.equals("evasive_footwork")) {
+            return Math.abs(player.xxa) > 0.35f;
+        }
+        if (path.equals("straight_punch_gauntlet") || path.equals("wing_chun_gauntlet")) {
+            return player.getMainHandItem().isEmpty();
+        }
+        if (path.equals("new_edge") || path.equals("promising_blade")) {
+            return stack.isDamageableItem() && stack.getDamageValue() == 0 && isAimingAtLivingEntity();
+        }
+        if (path.equals("battle_hardened") || path.equals("recycle")) {
+            return stack.isDamageableItem() && stack.getDamageValue() >= stack.getMaxDamage() * 0.70f;
+        }
+
+        // 9) Armures réactives à l'impact UNIQUEMENT si la pièce porte vraiment un enchantement de riposte/réaction
+        if (defensiveArmor) {
+            if (path.equals("wardenspine") || path.equals("powerful_thorns") || path.equals("ember_core")
+                    || path.equals("burning_heart") || path.equals("pain_devour") || path.equals("kinetic_conversion")
+                    || path.equals("panic_escape") || path.equals("blaze_repulsion_heart")
+                    || path.equals("soul_repulsion_blast") || path.equals("armor_damage")
+                    || path.equals("armor_shatter") || path.equals("wound_crack")) {
+                return player.hurtTime > 0;
+            }
+            return false;
+        }
+
+        // 10) Armes de mêlée à effet d'impact : s'illuminent UNIQUEMENT sur un coup réellement porté sur une cible vivante (jamais en frappant l'air !)
+        return isLandingHitOnTarget(player, stack);
+    }
+
+    private static boolean isLookingAtBlockMatching(net.minecraft.world.level.Level level, String keyword) {
+        try {
+            var mc = net.minecraft.client.Minecraft.getInstance();
+            if (mc == null || !(mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult bhr)) return false;
+            if (bhr.getType() != net.minecraft.world.phys.HitResult.Type.BLOCK) return false;
+            String desc = level.getBlockState(bhr.getBlockPos()).getBlock().getDescriptionId().toLowerCase(Locale.ROOT);
+            return desc.contains(keyword);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static boolean isAimingAtLivingEntity() {
+        try {
+            var mc = net.minecraft.client.Minecraft.getInstance();
+            return mc != null && mc.crosshairPickEntity instanceof net.minecraft.world.entity.LivingEntity le && le.isAlive();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static boolean isLandingHitOnTarget(net.minecraft.world.entity.player.Player player, ItemStack stack) {
+        try {
+            if (stack != player.getMainHandItem()) return false;
+            var mc = net.minecraft.client.Minecraft.getInstance();
+            if (mc != null && mc.crosshairPickEntity instanceof net.minecraft.world.entity.LivingEntity target) {
+                return target.isAlive() && target.hurtTime >= 6 && (player.swinging || player.attackAnim > 0.0F);
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
 }
