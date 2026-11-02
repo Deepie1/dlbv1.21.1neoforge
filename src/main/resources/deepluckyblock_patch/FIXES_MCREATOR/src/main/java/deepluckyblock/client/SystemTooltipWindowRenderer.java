@@ -85,7 +85,9 @@ public final class SystemTooltipWindowRenderer {
     private static final float S_DESC    = 0.80f;
     private static final float S_SUB     = 0.75f;
 
-    private static final int MAX_SHIFT_ENCHANTS_PER_PAGE = 4;
+    private static final float PANEL_SCALE_MULTIPLIER = 1.50f;
+    private static final int MAX_SHIFT_ENCHANTS_STANDARD = 4;
+    private static final int MAX_SHIFT_ENCHANTS_COMPACT_SCREEN = 3;
 
     private static ItemStack trackedStack = ItemStack.EMPTY;
     private static int currentShiftPage = 0;
@@ -198,30 +200,32 @@ public final class SystemTooltipWindowRenderer {
         public void renderImage(Font font, int x, int y, GuiGraphics g) {
             double timeSec = (System.nanoTime() * 1.0e-9);
 
-            // 1) Coins extérieurs lumineux (1:1 pixels écran pour une netteté parfaite)
+            float sc = data.uiScale();
+
+            // 1) Coins extérieurs lumineux proportionnels à l'échelle x1.5
             if (frameBoxW > 0 && frameBoxH > 0 && Math.abs(x - frameBoxX) <= 3) {
-                int left = frameBoxX - 4;
-                int top = frameBoxY - 4;
+                int left = Math.max(1, frameBoxX - 4);
+                int top = Math.max(1, frameBoxY - 4);
                 int right = frameBoxX + frameBoxW + 4;
                 int bottom = frameBoxY + frameBoxH + 4;
-                int arm = 6;
+                int arm = Math.max(6, Math.round(6 * sc));
+                int ct = sc >= 1.25f ? 2 : 1;
 
-                if (right - left > 20) {
-                    g.fill(left + 8, top, right - 8, top + 1, 0x887DD3FC);
-                    g.fill(left + 8, bottom - 1, right - 8, bottom, 0x5538BDF8);
+                if (right - left > arm * 2 + 8) {
+                    g.fill(left + arm + 2, top, right - arm - 2, top + 1, 0x887DD3FC);
+                    g.fill(left + arm + 2, bottom - 1, right - arm - 2, bottom, 0x5538BDF8);
                 }
-                g.fill(left, top, left + arm, top + 1, CORNER_STARLIGHT);
-                g.fill(left, top, left + 1, top + arm, CORNER_STARLIGHT);
-                g.fill(right - arm, top, right, top + 1, CORNER_STARLIGHT);
-                g.fill(right - 1, top, right, top + arm, CORNER_STARLIGHT);
-                g.fill(left, bottom - 1, left + arm, bottom, CORNER_STARLIGHT);
-                g.fill(left, bottom - arm, left + 1, bottom, CORNER_STARLIGHT);
-                g.fill(right - arm, bottom - 1, right, bottom, CORNER_STARLIGHT);
-                g.fill(right - 1, bottom - arm, right, bottom, CORNER_STARLIGHT);
+                g.fill(left, top, left + arm, top + ct, CORNER_STARLIGHT);
+                g.fill(left, top, left + ct, top + arm, CORNER_STARLIGHT);
+                g.fill(right - arm, top, right, top + ct, CORNER_STARLIGHT);
+                g.fill(right - ct, top, right, top + arm, CORNER_STARLIGHT);
+                g.fill(left, bottom - ct, left + arm, bottom, CORNER_STARLIGHT);
+                g.fill(left, bottom - arm, left + ct, bottom, CORNER_STARLIGHT);
+                g.fill(right - arm, bottom - ct, right, bottom, CORNER_STARLIGHT);
+                g.fill(right - ct, bottom - arm, right, bottom, CORNER_STARLIGHT);
             }
 
             int lw = data.logicalWidth();
-            float sc = data.uiScale();
             int padX = 4;
             int innerW = lw - padX * 2;
             int centerX = lw / 2;
@@ -348,11 +352,13 @@ public final class SystemTooltipWindowRenderer {
             fillHairlineH(g, baseX, baseY, sc, centerX + sweepOffset - 4, centerX + sweepOffset + 4, barY,
                     withAlpha(0xFFFFFF, 210));
 
-            // Gemme losange au centre du filet
+            // Gemme losange au centre du filet (proportionnelle à l'échelle x1.5)
             int sxCenter = baseX + Math.round(centerX * sc);
             int syBar = baseY + Math.round(barY * sc);
-            g.fill(sxCenter - 1, syBar - 1, sxCenter + 2, syBar + 2, withAlpha(mainRgb, 230));
-            g.fill(sxCenter, syBar, sxCenter + 1, syBar + 1, 0xFFFFFFFF);
+            int gemOuter = Math.max(1, Math.round(1.2f * sc));
+            int gemCore = Math.max(1, Math.round(0.8f * sc));
+            g.fill(sxCenter - gemOuter, syBar - gemOuter, sxCenter + gemOuter + 1, syBar + gemOuter + 1, withAlpha(mainRgb, 230));
+            g.fill(sxCenter, syBar, sxCenter + gemCore, syBar + gemCore, 0xFFFFFFFF);
 
             // 3) Artefacts mystiques autour du titre (uniquement si déclenchés par la rareté)
             if (tr.artifactVariant() < 0) return;
@@ -535,30 +541,34 @@ public final class SystemTooltipWindowRenderer {
                                          int lx, int ly, int rgb, int alpha) {
             int sx = baseX + Math.round(lx * sc);
             int sy = baseY + Math.round(ly * sc);
-            g.fill(sx, sy, sx + 1, sy + 1, withAlpha(rgb, alpha));
+            int sz = Math.max(1, Math.round(sc));
+            g.fill(sx, sy, sx + sz, sy + sz, withAlpha(rgb, alpha));
         }
 
         private static void fillHairlineH(GuiGraphics g, int baseX, int baseY, float sc, int lx0, int lx1, int ly, int color) {
             int sx0 = baseX + Math.round(lx0 * sc);
             int sx1 = baseX + Math.round(lx1 * sc);
             int sy = baseY + Math.round(ly * sc);
+            int th = sc >= 1.35f ? 2 : 1;
             if (sx1 > sx0) {
-                g.fill(sx0, sy, sx1, sy + 1, color);
+                g.fill(sx0, sy, sx1, sy + th, color);
             }
         }
 
         private static void fillHairlineV(GuiGraphics g, int baseX, int baseY, float sc, int lx, int ly0, int ly1, int color) {
             int sx = baseX + Math.round(lx * sc);
             int sy0 = baseY + Math.round(ly0 * sc);
-            int sy1 = Math.max(sy0 + 1, baseY + Math.round(ly1 * sc));
-            g.fill(sx, sy0, sx + 1, sy1, color);
+            int th = sc >= 1.35f ? 2 : 1;
+            int sy1 = Math.max(sy0 + th, baseY + Math.round(ly1 * sc));
+            g.fill(sx, sy0, sx + th, sy1, color);
         }
 
         private static void fillAccentBarV(GuiGraphics g, int baseX, int baseY, float sc, int lx, int ly0, int ly1, int color) {
             int sx = baseX + Math.round(lx * sc);
             int sy0 = baseY + Math.round(ly0 * sc);
+            int barW = Math.max(2, Math.round(1.8f * sc));
             int sy1 = Math.max(sy0 + 1, baseY + Math.round(ly1 * sc));
-            g.fill(sx, sy0, sx + 2, sy1, color);
+            g.fill(sx, sy0, sx + barW, sy1, color);
         }
 
         private static int scaledWidth(Font font, String s, float relScale) {
@@ -759,7 +769,8 @@ public final class SystemTooltipWindowRenderer {
                 }
             } else {
                 lastShiftTooltipNs = System.nanoTime();
-                int totalPages = Math.max(1, (totalEnchants + MAX_SHIFT_ENCHANTS_PER_PAGE - 1) / MAX_SHIFT_ENCHANTS_PER_PAGE);
+                int maxPerPage = (screenH < 360) ? MAX_SHIFT_ENCHANTS_COMPACT_SCREEN : MAX_SHIFT_ENCHANTS_STANDARD;
+                int totalPages = Math.max(1, (totalEnchants + maxPerPage - 1) / maxPerPage);
                 activeTotalShiftPages = totalPages;
                 if (currentShiftPage >= totalPages) currentShiftPage = 0;
 
@@ -773,8 +784,8 @@ public final class SystemTooltipWindowRenderer {
                 rows.add(new SectionHeaderRow(enchHeader, scrollHint, false, curY, 10));
                 curY += 12;
 
-                int startIdx = currentShiftPage * MAX_SHIFT_ENCHANTS_PER_PAGE;
-                int endIdx = Math.min(totalEnchants, startIdx + MAX_SHIFT_ENCHANTS_PER_PAGE);
+                int startIdx = currentShiftPage * maxPerPage;
+                int endIdx = Math.min(totalEnchants, startIdx + maxPerPage);
                 int descMaxFontPx = Math.max(140, (int) Math.floor((innerW - 12) / S_DESC));
                 int descLineH = Math.max(8, (int) Math.ceil(9 * S_DESC) + 1);
 
@@ -911,22 +922,25 @@ public final class SystemTooltipWindowRenderer {
 
             int logicalH = curY + 2;
 
-            // 5) Facteur d'échelle adaptatif à l'écran (garantit zéro débordement sur petit écran)
-            float baseScale;
+            // 5) T328 : Facteur d'échelle agrandi x1.5 (pannel + polices), tout en conservant le
+            // plafond strict anti-débordement pour ne jamais dépasser de la fenêtre
+            float refScale;
             if (screenH >= 420 && screenW >= 700) {
-                baseScale = 0.94f;
+                refScale = 0.94f;
             } else if (screenH >= 310 && screenW >= 520) {
-                baseScale = 0.86f;
+                refScale = 0.86f;
             } else if (screenH >= 255) {
-                baseScale = 0.78f;
+                refScale = 0.78f;
             } else {
-                baseScale = 0.72f;
+                refScale = 0.72f;
             }
+            float baseScale = refScale * PANEL_SCALE_MULTIPLIER; // 1.08f .. 1.41f (x1.5)
 
-            float maxAllowedW = Math.max(150.0f, screenW - 24.0f);
-            float maxAllowedH = Math.max(110.0f, screenH - 22.0f);
-            float fitScale = Math.min(baseScale, Math.min(maxAllowedW / logicalW, maxAllowedH / logicalH));
-            fitScale = Math.max(0.50f, fitScale);
+            float maxAllowedW = Math.max(150.0f, screenW - 18.0f);
+            float maxAllowedH = Math.max(110.0f, screenH - 18.0f);
+            float screenFitCap = Math.min(maxAllowedW / logicalW, maxAllowedH / logicalH);
+            float fitScale = Math.min(baseScale, screenFitCap);
+            fitScale = Math.min(screenFitCap, Math.max(0.55f, fitScale));
 
             boolean singleComponent = preservedImages.isEmpty();
             elements.clear();
