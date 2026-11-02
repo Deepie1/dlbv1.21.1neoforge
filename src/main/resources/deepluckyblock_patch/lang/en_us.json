@@ -1207,7 +1207,7 @@
   "enchantment.deep_lucky_block.military_shovel": "Military Shovel",
   "enchantment.deep_lucky_block.military_shovel.desc": "§7• §eMilitary Shovel: §fGreatly speeds up digging across soft terrain and briefly stuns enemies struck in melee.",
   "enchantment.deep_lucky_block.miners_eye": "Miner's Eye",
-  "enchantment.deep_lucky_block.miners_eye.desc": "§7• §eMiner's Eye: §fReveals nearby ore veins using subtle color-coded guiding light rays.",
+  "enchantment.deep_lucky_block.miners_eye.desc": "§7• §eMiner's Eye: §fTurns surrounding rock semi-transparent (up to §b30 blocks§f) to reveal all ores and liquids.",
   "enchantment.deep_lucky_block.mining_stability": "Mining Stability",
   "enchantment.deep_lucky_block.mining_stability.desc": "§7• §eMining Stability: §fStabilizes nearby sand, red sand and unsupported gravel into solid blocks.",
   "enchantment.deep_lucky_block.minor_crit_amplifier": "Minor Crit Amplifier",

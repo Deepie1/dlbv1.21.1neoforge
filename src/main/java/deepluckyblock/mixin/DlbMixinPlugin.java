@@ -42,6 +42,21 @@ public final class DlbMixinPlugin implements IMixinConfigPlugin {
         { "LuckyXpRouletteOverlayMixin", "com.lwi.luckyxp.client.RouletteOverlay" },
     };
 
+    // T341-MINERS-EYE-XRAY : Mixins de maillage semi-transparent vanilla sautés automatiquement
+    // si Sodium / Embeddium / Rubidium remplace le compilateur de chunks (MinersEyeClientXray bascule alors
+    // vers sa passe 3D X-Ray directe sans aucun conflit de Mixin).
+    private static final Set<String> VANILLA_XRAY_MIXINS = Set.of(
+        "BlockXrayMixin",
+        "LiquidBlockRendererXrayMixin",
+        "SectionCompilerXrayMixin"
+    );
+
+    private static final String[] SODIUM_MARKERS = {
+        "net/caffeinemc/mods/sodium/client/SodiumClientMod.class",
+        "me/jellysquid/mods/sodium/client/SodiumClientMod.class",
+        "org/embeddedt/embeddium/impl/Embeddium.class"
+    };
+
     @Override
     public void onLoad(String mixinPackage) {
         // Rien à initialiser.
@@ -74,6 +89,10 @@ public final class DlbMixinPlugin implements IMixinConfigPlugin {
                 ? mixinClassName.substring(mixinClassName.lastIndexOf('.') + 1)
                 : mixinClassName;
 
+        if (VANILLA_XRAY_MIXINS.contains(simple)) {
+            return !isAnyResourcePresent(SODIUM_MARKERS);
+        }
+
         for (String[] pair : OPTIONAL_MIXINS) {
             if (pair[0].equals(simple)) {
                 return isClassPresent(pair[1]);
@@ -92,6 +111,21 @@ public final class DlbMixinPlugin implements IMixinConfigPlugin {
     public void postApply(String targetClassName, ClassNode targetClass,
                           String mixinClassName, IMixinInfo mixinInfo) {
         // Aucun post-traitement.
+    }
+
+    /** Teste la présence d'une ressource .class sans déclencher aucun chargement de classe au stade Mixin. */
+    private static boolean isAnyResourcePresent(String[] resourcePaths) {
+        ClassLoader cl = DlbMixinPlugin.class.getClassLoader();
+        if (cl == null) return false;
+        for (String path : resourcePaths) {
+            try {
+                if (cl.getResource(path) != null) {
+                    return true;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return false;
     }
 
     /** Teste la présence d'une classe sur le classpath (sans l'initialiser). */

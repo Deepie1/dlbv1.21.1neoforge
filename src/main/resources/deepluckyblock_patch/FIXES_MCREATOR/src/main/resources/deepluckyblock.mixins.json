@@ -12,7 +12,10 @@
     "RenderTypeEnchantMixin",
     "HumanoidArmorLayerEnchantMixin",
     "RenderStateShardConstantAccessor",
-    "RenderStateShardShaderAccessor"
+    "RenderStateShardShaderAccessor",
+    "BlockXrayMixin",
+    "LiquidBlockRendererXrayMixin",
+    "SectionCompilerXrayMixin"
   ],
   "injectors": {
     "defaultRequire": 0

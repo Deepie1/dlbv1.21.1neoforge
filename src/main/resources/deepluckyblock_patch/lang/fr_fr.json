@@ -1207,7 +1207,7 @@
   "enchantment.deep_lucky_block.military_shovel": "Pelle Militaire",
   "enchantment.deep_lucky_block.military_shovel.desc": "§7• §ePelle Militaire : §fAccélère fortement le creusement sur tous les sols meubles et étourdit brièvement les ennemis frappés.",
   "enchantment.deep_lucky_block.miners_eye": "Œil du Mineur",
-  "enchantment.deep_lucky_block.miners_eye.desc": "§7• §eŒil du Mineur : §fRévèle la direction des filons de minerais proches grâce à de fins rayons lumineux codés par couleur.",
+  "enchantment.deep_lucky_block.miners_eye.desc": "§7• §eŒil du Mineur : §fRend la roche semi-transparente autour de vous (jusqu'à §b30 blocs§f) pour révéler minerais et liquides.",
   "enchantment.deep_lucky_block.mining_stability": "Stabilité Minière",
   "enchantment.deep_lucky_block.mining_stability.desc": "§7• §eStabilité Minière : §fStabilise sable, sable rouge et gravier proches en blocs solides pendant le minage.",
   "enchantment.deep_lucky_block.minor_crit_amplifier": "Amplificateur Critique Mineur",

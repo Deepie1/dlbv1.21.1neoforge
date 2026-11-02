@@ -24,13 +24,16 @@ public class GlintMixinConnector implements IMixinConnector {
     /** Nom EXACT de la config chargée par le launcher (--mixin.config). */
     public static final String CONFIG = "deep_lucky_block.mixins.json";
 
-    /** Les 6 classes que la config doit lister (4 mixins + 2 accessors). */
+    /** Les 8 classes client que la config doit lister (glint + accessors + X-Ray local miners_eye T341). */
     public static final String[] EXPECTED = {
             "ItemRendererEnchantMixin",
             "RenderTypeEnchantMixin",
             "HumanoidArmorLayerEnchantMixin",
             "RenderStateShardConstantAccessor",
-            "RenderStateShardShaderAccessor"
+            "RenderStateShardShaderAccessor",
+            "BlockXrayMixin",
+            "LiquidBlockRendererXrayMixin",
+            "SectionCompilerXrayMixin"
     };
 
     @Override

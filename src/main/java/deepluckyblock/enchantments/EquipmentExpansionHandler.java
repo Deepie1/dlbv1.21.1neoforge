@@ -74,21 +74,10 @@ public final class EquipmentExpansionHandler {
     // augmenter Attributes.BLOCK_INTERACTION_RANGE et ENTITY_INTERACTION_RANGE
     // pour que la "reach" annoncee soit reellement ressentie en jeu.
     private static final ResourceLocation EXT_BLOCK_REACH_ID=ResourceLocation.parse("deep_lucky_block:modifier_extension_block_reach"), EXT_ENTITY_REACH_ID=ResourceLocation.parse("deep_lucky_block:modifier_extension_entity_reach");
-    private static final Map<UUID, OreGuidanceState> ORE_GUIDANCE = new HashMap<>();
     private static final Map<UUID, ArrayDeque<net.minecraft.world.phys.Vec3>> TRACER_HISTORY = new HashMap<>();
     private static final Map<UUID, Integer> TRACER_END = new HashMap<>();
     private static final Map<UUID, Integer> TRACER_LEVEL = new HashMap<>();
     private static final Map<UUID, UUID> TRACER_VIEWER = new HashMap<>();
-
-    private static final class OreGuidanceState {
-        int level; long nextScan; String dimension=""; final List<OreTarget> targets=new ArrayList<>();
-    }
-    private static final class OreTarget {
-        final String family; final Vector3f color; final List<BlockPos> blocks;
-        OreTarget(String family,Vector3f color,List<BlockPos> blocks){this.family=family;this.color=color;this.blocks=blocks;}
-        boolean refresh(ServerLevel level){blocks.removeIf(p->!isOreLike(level.getBlockState(p))||!oreFamily(level.getBlockState(p)).equals(family));return !blocks.isEmpty();}
-        net.minecraft.world.phys.Vec3 center(){double x=0,y=0,z=0;for(BlockPos p:blocks){x+=p.getX()+.5;y+=p.getY()+.5;z+=p.getZ()+.5;}int n=Math.max(1,blocks.size());return new net.minecraft.world.phys.Vec3(x/n,y/n,z/n);}
-    }
 
     // FIX (mob-equipment-enchant generalization) : ce handler tournait
     // auparavant sur PlayerTickEvent.Post, donc AUCUN de ces passifs
@@ -117,7 +106,8 @@ public final class EquipmentExpansionHandler {
             }
         }
         long now=p.level().getGameTime();
-        if(p instanceof ServerPlayer sp&&p.level() instanceof ServerLevel sl){int guidance=armor(p,"miners_eye");if(guidance>0&&p.tickCount%5==0){try{updateOreGuidance(sp,sl,guidance);}catch(Throwable failure){ORE_GUIDANCE.remove(p.getUUID());deepluckyblock.util.DebugLog.err("[DeepLuckyBlock] Miner's Eye disabled for this scan after an error: "+failure);}}else if(guidance<=0)ORE_GUIDANCE.remove(p.getUUID());}
+        // T341-MINERS-EYE-XRAY : l'ancien guidage serveur par particules (updateOreGuidance) est remplacé
+        // par la vision X-Ray locale hybride 100 % client (MinersEyeClientXray).
         int clarity=armor(p,"mental_clarity"); if(clarity>0&&p.tickCount%20==0){ shorten(p,MobEffects.CONFUSION,clarity);shorten(p,MobEffects.BLINDNESS,clarity);shorten(p,MobEffects.DARKNESS,clarity); }
         int echo=armor(p,"echolocation"); if(echo>0&&p.tickCount%40==0&&p.level().getMaxLocalRawBrightness(p.blockPosition())<8){double er=deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(10,6,echo);if(p.level() instanceof ServerLevel sl)EnchantmentParticleFX.shockwaveRing(sl,p.getX(),p.getY()+.2,p.getZ(),ParticleTypes.SCULK_CHARGE_POP,1.4,12,.03);for(Mob m:p.level().getEntitiesOfClass(Mob.class,p.getBoundingBox().inflate(er)))m.addEffect(new MobEffectInstance(MobEffects.GLOWING,35,0,false,false));}
         int conc=armor(p,"concentration"); double hs=p.getDeltaMovement().horizontalDistance(); int focus=p.getPersistentData().getInt("slb_focus"); focus=conc>0&&hs<.01?Math.min(100,focus+1):Math.max(0,focus-4);p.getPersistentData().putInt("slb_focus",focus);
@@ -397,46 +387,6 @@ public final class EquipmentExpansionHandler {
     @SubscribeEvent public static void shieldAttack(LivingIncomingDamageEvent e){try{shieldAttackImpl(e);}catch(Throwable t__){guard("shieldAttack",t__);}} private static void shieldAttackImpl(LivingIncomingDamageEvent e){if(!(e.getEntity() instanceof LivingEntity p)||!p.isBlocking())return;ItemStack s=p.getUseItem();int parry=lvl(s,"perfect_parry");if(parry>0&&p.getTicksUsingItem()<=4+parry&&e.getSource().getEntity() instanceof LivingEntity a){a.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,20+10*parry,2));a.setDeltaMovement(a.position().subtract(p.position()).normalize().scale(.5+.25*parry));a.hurtMarked=true;}int resonance=lvl(s,"curse_of_resonance");if(resonance>0){p.level().playSound(null,p.blockPosition(),SoundEvents.WARDEN_HEARTBEAT,SoundSource.PLAYERS,1,1);p.getPersistentData().putInt("slb_resonance_vulnerable",resonance);for(Mob m:p.level().getEntitiesOfClass(Mob.class,p.getBoundingBox().inflate(deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(8,3,resonance))))m.setTarget(p);}}
 
     private static void playFakePack(LivingEntity p){SoundEvent[] sounds={SoundEvents.ZOMBIE_AMBIENT,SoundEvents.SKELETON_AMBIENT,SoundEvents.SPIDER_AMBIENT,SoundEvents.CREEPER_PRIMED,SoundEvents.ENDERMAN_STARE,SoundEvents.WARDEN_NEARBY_CLOSE};int n=1+p.getRandom().nextInt(3);for(int i=0;i<n;i++){double ang=p.getRandom().nextDouble()*Math.PI*2,dist=2+p.getRandom().nextDouble()*8;p.level().playSound(null,p.getX()+Math.cos(ang)*dist,p.getY(),p.getZ()+Math.sin(ang)*dist,sounds[p.getRandom().nextInt(sounds.length)],SoundSource.HOSTILE,.9f,.8f+p.getRandom().nextFloat()*.4f);}}
-    private static void updateOreGuidance(ServerPlayer player, ServerLevel level, int enchantLevel) {
-        OreGuidanceState state=ORE_GUIDANCE.computeIfAbsent(player.getUUID(),u->new OreGuidanceState());
-        String dimension=level.dimension().location().toString();
-        if(!state.dimension.equals(dimension)||state.level!=enchantLevel){state.targets.clear();state.nextScan=0;state.dimension=dimension;state.level=enchantLevel;}
-        boolean removed=state.targets.removeIf(target->!target.refresh(level));
-        int wanted=maxOreTargets(enchantLevel);long now=level.getGameTime();
-        if(now>=state.nextScan||removed||state.targets.size()<Math.min(2,wanted)){
-            state.targets.clear();state.targets.addAll(scanOreTargets(level,player,enchantLevel,wanted));state.nextScan=now+100;
-        }
-        for(OreTarget target:state.targets)drawOreTrail(player,level,target);
-    }
-
-    private static int maxOreTargets(int level){return switch(Math.min(5,level)){case 1->5;case 2->7;case 3->10;case 4->15;default->20;};}
-    private static int detectionRadius(int level){return 16+8*Math.min(5,level);}
-
-    private static List<OreTarget> scanOreTargets(ServerLevel level,ServerPlayer player,int enchantLevel,int maximum){
-        BlockPos origin=player.blockPosition();int radius=detectionRadius(enchantLevel);LinkedHashSet<BlockPos> candidates=new LinkedHashSet<>();
-        int local=Math.min(10,radius);for(BlockPos p:BlockPos.betweenClosed(origin.offset(-local,-local,-local),origin.offset(local,local,local)))if(isAllowedOre(level.getBlockState(p),enchantLevel))candidates.add(p.immutable());
-        RandomSource random=level.random;int samples=10000+5000*Math.min(5,enchantLevel);for(int i=0;i<samples;i++){int dx=random.nextInt(radius*2+1)-radius,dy=random.nextInt(radius*2+1)-radius,dz=random.nextInt(radius*2+1)-radius;if(dx*dx+dy*dy+dz*dz>radius*radius)continue;BlockPos p=origin.offset(dx,dy,dz);if(level.hasChunkAt(p)&&isAllowedOre(level.getBlockState(p),enchantLevel))candidates.add(p);}
-        ArrayList<BlockPos> ordered=new ArrayList<>(candidates);
-        // IMPORTANT : le score est calculé UNE SEULE FOIS. Utiliser un nombre
-        // aléatoire directement dans le Comparator rendait la comparaison non
-        // transitive et faisait crasher TimSort (« violates its general contract »).
-        Map<Long,Double> scores=new HashMap<>();
-        for(BlockPos pos:ordered)scores.put(pos.asLong(),oreScore(level,pos,origin,enchantLevel));
-        ordered.sort(Comparator.<BlockPos>comparingDouble(pos->scores.get(pos.asLong()))
-                .reversed().thenComparingLong(pos->pos.asLong()));
-        ArrayList<OreTarget> result=new ArrayList<>();HashSet<Long> consumed=new HashSet<>();for(BlockPos candidate:ordered){if(result.size()>=maximum)break;if(consumed.contains(candidate.asLong()))continue;String family=oreFamily(level.getBlockState(candidate));List<BlockPos> vein=connectedVeinBlocks(level,candidate,family);for(BlockPos p:vein)consumed.add(p.asLong());if(!vein.isEmpty())result.add(new OreTarget(family,oreColor(family),vein));}
-        return result;
-    }
-
-    private static boolean isAllowedOre(BlockState state,int level){if(!isOreLike(state))return false;ResourceLocation id=BuiltInRegistries.BLOCK.getKey(state.getBlock());if(id!=null&&!id.getNamespace().equals("minecraft"))return true;String f=oreFamily(state);int needed=switch(f){case "coal","iron","copper"->1;case "gold","redstone","lapis"->2;case "diamond","emerald"->3;case "netherite"->4;default->2;};return level>=needed;}
-    private static double oreScore(ServerLevel level,BlockPos pos,BlockPos origin,int enchantLevel){BlockState state=level.getBlockState(pos);String f=oreFamily(state);ResourceLocation id=BuiltInRegistries.BLOCK.getKey(state.getBlock());boolean modded=id!=null&&!id.getNamespace().equals("minecraft");double priority=switch(f){case "coal"->110;case "iron"->108;case "copper"->100;case "gold"->enchantLevel>=5?185:145;case "redstone","lapis"->135;case "diamond"->enchantLevel>=5?205:180;case "emerald"->178;case "netherite"->enchantLevel>=5?235:220;default->modded?(enchantLevel>=5?210:120):90;};long mixed=pos.asLong()^(long)f.hashCode()*0x9E3779B97F4A7C15L;double stableJitter=Math.floorMod(mixed,1000L)/1000.0;double distance=Math.sqrt(pos.distSqr(origin));return -distance+priority*.10+stableJitter*.02;}
-
-    private static void drawOreTrail(ServerPlayer player,ServerLevel level,OreTarget target){net.minecraft.world.phys.Vec3 center=target.center();net.minecraft.world.phys.Vec3 fromPlayer=center.subtract(player.position());net.minecraft.world.phys.Vec3 horizontal=new net.minecraft.world.phys.Vec3(fromPlayer.x,0,fromPlayer.z);if(horizontal.lengthSqr()<.0001){net.minecraft.world.phys.Vec3 look=player.getLookAngle();horizontal=new net.minecraft.world.phys.Vec3(look.x,0,look.z);}horizontal=horizontal.normalize();net.minecraft.world.phys.Vec3 from=player.position().add(horizontal.scale(1.35)).add(0,1.25,0);net.minecraft.world.phys.Vec3 delta=center.subtract(from);double distance=delta.length();if(distance<.01)return;net.minecraft.world.phys.Vec3 direction=delta.scale(1.0/distance);double length=Math.min(5.0,distance);int index=0;for(double d=0;d<=length;d+=.38){double progress=d/Math.max(.01,length);float particleSize=(float)(.30+.85*progress);DustParticleOptions dust=new DustParticleOptions(target.color,particleSize);net.minecraft.world.phys.Vec3 point=from.add(direction.scale(d));level.sendParticles(player,dust,true,point.x,point.y,point.z,2,.012+.008*progress,.012+.008*progress,.012+.008*progress,0);if(d>=1.5&&index%3==0)level.sendParticles(player,ParticleTypes.END_ROD,true,point.x,point.y,point.z,1,0,0,0,0);index++;}}
-
-    private static boolean isOreLike(BlockState state){if(state.is(Tags.Blocks.ORES))return true;ResourceLocation id=BuiltInRegistries.BLOCK.getKey(state.getBlock());if(id==null)return false;String path=id.getPath().toLowerCase(Locale.ROOT);return path.contains("_ore")||path.startsWith("ore_")||path.contains("raw_")||path.contains("_raw")||path.contains("ancient_debris");}
-    private static String oreFamily(BlockState state){ResourceLocation id=BuiltInRegistries.BLOCK.getKey(state.getBlock());String path=id==null?"unknown":id.getPath().toLowerCase(Locale.ROOT);String[] known={"diamond","emerald","redstone","lapis","copper","iron","gold","coal","quartz","netherite","uranium","tin","silver","lead","nickel","zinc","osmium","aluminum","aluminium","cobalt"};for(String name:known)if(path.contains(name))return name;if(path.contains("ancient_debris"))return "netherite";return path.replace("deepslate_","").replace("_ore","").replace("ore_","").replace("raw_","").replace("_block","");}
-    private static Vector3f oreColor(String family){return switch(family){case "iron"->new Vector3f(.95f,.95f,.92f);case "emerald"->new Vector3f(.1f,.95f,.3f);case "diamond"->new Vector3f(.15f,.9f,1f);case "lapis"->new Vector3f(.08f,.2f,.85f);case "redstone"->new Vector3f(1f,.05f,.03f);case "gold"->new Vector3f(1f,.85f,.05f);case "copper"->new Vector3f(.65f,.28f,.10f);case "coal"->new Vector3f(.12f,.12f,.12f);case "quartz"->new Vector3f(.95f,.88f,.8f);case "netherite"->new Vector3f(.28f,.18f,.16f);case "uranium"->new Vector3f(.45f,1f,.05f);case "tin"->new Vector3f(.65f,.85f,.9f);case "silver"->new Vector3f(.8f,.88f,1f);case "lead"->new Vector3f(.25f,.28f,.42f);case "nickel"->new Vector3f(.78f,.7f,.3f);case "zinc"->new Vector3f(.55f,.7f,.72f);case "osmium"->new Vector3f(.35f,.55f,1f);case "aluminum","aluminium"->new Vector3f(.8f,.82f,.85f);case "cobalt"->new Vector3f(.05f,.3f,1f);default->{int h=Math.abs(family.hashCode());yield new Vector3f(.25f+(h&255)/510f,.25f+((h>>8)&255)/510f,.25f+((h>>16)&255)/510f);}};}
-    private static List<BlockPos> connectedVeinBlocks(ServerLevel level,BlockPos start,String family){ArrayDeque<BlockPos> queue=new ArrayDeque<>();HashSet<BlockPos> seen=new HashSet<>();ArrayList<BlockPos> blocks=new ArrayList<>();queue.add(start);seen.add(start);while(!queue.isEmpty()&&blocks.size()<256){BlockPos pos=queue.removeFirst();BlockState state=level.getBlockState(pos);if(!isOreLike(state)||!oreFamily(state).equals(family))continue;blocks.add(pos.immutable());for(BlockPos n:BlockPos.betweenClosed(pos.offset(-1,-1,-1),pos.offset(1,1,1))){BlockPos immutable=n.immutable();if(seen.add(immutable))queue.addLast(immutable);}}return blocks;}
 
     // NOTE (mob-equipment-enchant generalization) : shooter est desormais
     // LivingEntity (peut etre un mob archer). Le rendu du tracer reste
