@@ -65,6 +65,8 @@ public final class WeaponWorldVfxManager {
 
     private static final Map<Integer, Boolean> PLAYER_WAS_SWINGING = new HashMap<>(16);
     private static final Map<Integer, Integer> PLAYER_SWING_PARITY = new HashMap<>(16);
+    /** T349-VFX-FREQUENCY : cooldown aléatoire de la traînée de coup (par joueur). */
+    private static final Map<Integer, Long> PLAYER_SWING_READY = new HashMap<>(16);
     private static final Map<Integer, Boolean> PLAYER_WAS_DRAWING = new HashMap<>(16);
     private static final Map<Integer, Boolean> PLAYER_WAS_CB_CHARGED = new HashMap<>(16);
 
@@ -73,6 +75,37 @@ public final class WeaponWorldVfxManager {
 
     private static RenderType additiveType;
     private static RenderType translucentType;
+
+    /** T349 : temps de frame (secondes) partagé, mis à jour une seule fois par frame. */
+    private static float frameTimeSeconds;
+    /** T349-PIXEL-VARIATION : échelle douce globale de tous les pixels. */
+    private static float framePixelScale = 1.0f;
+
+    /**
+     * T349-IDLE-FILTER : plancher d'alpha. Quand il vaut &gt; 0, tout cube dont l'alpha est inférieur est
+     * ignoré. Utilisé par le rendu d'arme tenue pour supprimer les « pixels lumineux constants » qui
+     * restaient collés sur l'item, sans toucher aux éclats d'action (alpha élevé).
+     */
+    private static int alphaFloor = 0;
+
+    public static void setAlphaFloor(int floor) {
+        alphaFloor = Math.max(0, Math.min(255, floor));
+    }
+
+    public static int getAlphaFloor() {
+        return alphaFloor;
+    }
+
+    /** T349 : remise à zéro du compteur de cubes (utilisée par CosmeticPixelAura, autre passe de rendu). */
+    public static void resetCubeBudget() {
+        cubesSinceFlush = 0;
+    }
+
+    /** Appelé une fois par frame pour partager le même temps / la même échelle de pixels. */
+    public static void beginFrame(float timeSeconds) {
+        frameTimeSeconds = timeSeconds;
+        framePixelScale = 0.80f + 0.10f * Mth.sin(timeSeconds * 0.53f) + 0.10f * Mth.sin(timeSeconds * 1.27f + 1.7f);
+    }
 
     private record TrackedProjectile(WeaponVisualEffectId effect, int intensity, long startTick, long expiresTick) {}
 
@@ -119,6 +152,11 @@ public final class WeaponWorldVfxManager {
         final int maxAge;
         final long seed;
         int age;
+
+        /** T349-VARIATION : variante 0..7 tirée au déclenchement (forme, sens de rotation, teinte). */
+        int variant() {
+            return (int) ((seed >>> 17) & 7);
+        }
 
         VfxInstance(WeaponVisualEffectId effect, int kind, int intensity,
                     double x, double y, double z,
@@ -252,7 +290,11 @@ public final class WeaponWorldVfxManager {
             double vx = (rand.nextDouble() - 0.5) * speed;
             double vy = (rand.nextDouble() - 0.2) * speed;
             double vz = (rand.nextDouble() - 0.5) * speed;
-            int rgb = ((i & 1) == 0) ? fx.primaryRgb : fx.secondaryRgb;
+            int rgb = switch (i % 3) {
+                case 0 -> fx.primaryRgb;
+                case 1 -> fx.secondaryRgb;
+                default -> rotateHue(fx.secondaryRgb, 0.16f);
+            };
             // Tailles multi-échelles : quelques gros pixels, beaucoup de micro-éclats (jamais uniforme)
             float sz = halfSize * (0.42f + rand.nextFloat() * 1.05f);
             PIXEL_PARTICLES.add(new FloatingPixel(fx.additive, x, y, z, vx, vy, vz, grav, sz, rgb,
@@ -354,7 +396,10 @@ public final class WeaponWorldVfxManager {
                 double px = ent.getX() - vel.x * f + (level.random.nextDouble() - 0.5) * 0.08;
                 double py = ent.getY() + 0.1 - vel.y * f + (level.random.nextDouble() - 0.5) * 0.08;
                 double pz = ent.getZ() - vel.z * f + (level.random.nextDouble() - 0.5) * 0.08;
-                int rgb = (step == 0) ? tp.effect().primaryRgb : tp.effect().secondaryRgb;
+                // T349-PALETTE : traînée de flèche tricolore qui dérive lentement en teinte
+                int rgb = (step == 0)
+                        ? tp.effect().primaryRgb
+                        : rotateHue(tp.effect().secondaryRgb, 0.10f + (float) ((now & 31L) / 31.0) * 0.14f);
                 PIXEL_PARTICLES.add(new FloatingPixel(
                         tp.effect().additive, px, py, pz,
                         (level.random.nextDouble() - 0.5) * 0.02,
@@ -412,6 +457,22 @@ public final class WeaponWorldVfxManager {
     }
 
     private static void onPlayerWeaponSwing(Player p) {
+        // T349-VFX-FREQUENCY : la tranche partait à CHAQUE clic, en plus de l'effet d'impact envoyé par
+        // le serveur au touche -> même effet vu deux fois de suite, en rafale. On applique ici une chance
+        // de 62 % et un vrai cooldown aléatoire (7..18 ticks) : les coups deviennent irréguliers et
+        // chaque déclenchement a une variante de teinte différente.
+        long nowTick = p.level().getGameTime();
+        Long swingReady = PLAYER_SWING_READY.get(p.getId());
+        if (swingReady != null && nowTick < swingReady) return;
+        if (p.level().random.nextInt(100) >= 62) {
+            PLAYER_SWING_READY.put(p.getId(), nowTick + 3L + p.level().random.nextInt(4));
+            return;
+        }
+        PLAYER_SWING_READY.put(p.getId(), nowTick + 7L + p.level().random.nextInt(12));
+        if (PLAYER_SWING_READY.size() > 256) {
+            PLAYER_SWING_READY.clear();
+        }
+
         InteractionHand hand = p.swingingArm == null ? InteractionHand.MAIN_HAND : p.swingingArm;
         ItemStack stack = p.getItemInHand(hand);
 
@@ -485,6 +546,8 @@ public final class WeaponWorldVfxManager {
         Vector3f tmp = new Vector3f();
 
         cubesSinceFlush = 0;
+        beginFrame((mc.level.getGameTime() & 0xFFFFFL) * 0.05f
+                + (mc.isPaused() ? 0.0f : Mth.clamp((System.nanoTime() - lastTickNanos) / 1.0e9f, 0.0f, 1.0f)));
 
         // T348-BUFFER-SAFETY : tout le rendu est encapsulé. Un BufferBuilder partagé qui aurait été
         // vidé/recyclé par un autre listener ne doit JAMAIS faire crasher le jeu ("Not building!").
@@ -661,9 +724,22 @@ public final class WeaponWorldVfxManager {
             default -> 0.038f;
         };
 
+        // T349-VARIATION : chaque déclenchement diffère un peu — amplitude, ouverture et grain.
+        // (variante tirée au déclenchement, donc deux coups consécutifs ne se ressemblent jamais)
+        int v = inst.variant();
+        float varSpan = 0.90f + (v & 3) * 0.06f;          // 0.90 .. 1.08
+        float varSweep = 0.92f + ((v >> 1) & 3) * 0.05f;  // 0.92 .. 1.07
+        radius *= varSpan;
+        sweepDeg *= varSweep;
+        voxelHalf *= 0.88f + (v & 1) * 0.10f;
+
         int alpha = Math.round(238.0f * (1.0f - t * t));
-        emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, inst.tiltRad,
-                radius, voxelHalf, sweepDeg, t, inst.effect.primaryRgb, inst.effect.secondaryRgb, alpha);
+        // T349-PALETTE : dégradé propre à l'enchantement + variante de teinte à chaque déclenchement
+        int[] pal = palette(inst.effect, inst.variant());
+        int arcCore = pal[0];
+        int arcTrail = ((inst.variant() & 1) == 0) ? pal[1] : pal[2];
+        emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg,
+                inst.tiltRad, radius, voxelHalf, sweepDeg, t, arcCore, arcTrail, alpha);
 
         if (inst.effect == WeaponVisualEffectId.SUPREME_PRISM_EDGE) {
             emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, -inst.tiltRad * 0.85f,
@@ -792,8 +868,11 @@ public final class WeaponWorldVfxManager {
         float cy = quantize((float) (inst.y - cam.y), 0.0625f);
         float cz = quantize((float) (inst.z - cam.z), 0.0625f);
         int fadeA = Math.round(240.0f * (1.0f - t));
-        int pRgb = inst.effect.primaryRgb;
-        int sRgb = inst.effect.secondaryRgb;
+        // T349-PALETTE : trois teintes par enchantement (cœur / halo / accent) au lieu de deux
+        int[] pal = palette(inst.effect, inst.variant());
+        int pRgb = pal[0];
+        int sRgb = pal[1];
+        int aRgb = pal[2];
 
         switch (inst.effect) {
             case GOLDEN_CRIT_STAR -> {
@@ -813,7 +892,7 @@ public final class WeaponWorldVfxManager {
                 float span = 0.85f + 0.55f * t;
                 emitSteppedVoxelLine(vc, mat, tmp, cx - span, cy - span, cz, cx + span, cy + span, cz, 0.048f, 0xFFFFFF, pRgb, fadeA);
                 emitSteppedVoxelLine(vc, mat, tmp, cx - span, cy + span, cz, cx + span, cy - span, cz, 0.048f, 0xFFFFFF, sRgb, fadeA);
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.55f + 1.35f * t, -t * 3.0f, pRgb, sRgb, 0xFFFFFF, fadeA, false);
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.55f + 1.35f * t, -t * 3.0f, pRgb, sRgb, aRgb, fadeA, false);
             }
             case GUILLOTINE_CLEAVE -> {
                 // #05 Colonne de cubes d'exécution tranchant de haut en bas + cercle pixel au sol
@@ -855,7 +934,7 @@ public final class WeaponWorldVfxManager {
             }
             case SOUL_FIRE_CRESCENT -> {
                 // #14 Cercle runique d'âme en pixels turquoise + flammes voxel montantes
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.40f, cz, 0.55f + 1.35f * t, t * 2.2f, pRgb, sRgb, 0xFFFFFF, fadeA, true);
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.40f, cz, 0.55f + 1.35f * t, t * 2.2f, pRgb, sRgb, aRgb, fadeA, true);
                 emitVoxelHelix(vc, mat, tmp, cx, cy - 0.4f, cz, 0.60f, 1.6f, t * 3.8f, pRgb, sRgb, fadeA);
             }
             case BRIMSTONE_METEOR -> {
@@ -984,7 +1063,7 @@ public final class WeaponWorldVfxManager {
                     }
                 }
                 emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.38f, cz, 0.65f + 1.75f * Math.min(1.0f, t * 1.6f),
-                        t * 1.8f, pRgb, sRgb, 0xFFFFFF, fadeA, true);
+                        t * 1.8f, pRgb, sRgb, aRgb, fadeA, true);
                 emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.20f + 2.4f * t, cz, 0.55f + 1.15f * t, 0xFFFFFF, sRgb, fadeA);
             }
             case WITHER_SHADOW_RIFT -> {
@@ -999,13 +1078,13 @@ public final class WeaponWorldVfxManager {
             }
             case ASTRAL_STAR_LANCE -> {
                 // #25 Impact stellaire : étoile 3D + cercle runique astral en pixels !
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.50f + 1.35f * t, -t * 2.4f, pRgb, sRgb, 0xFFFFFF, fadeA, true);
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.50f + 1.35f * t, -t * 2.4f, pRgb, sRgb, aRgb, fadeA, true);
                 emitPixelCross3D(vc, mat, tmp, cx, cy + 0.1f, cz, 0.0625f, 4, 0xFFFFFF, pRgb, fadeA);
             }
             case VOID_WARP_SPHERE -> {
                 // #26 Cercle runique du Vide en pixels 3D (implosion/explosion) + croix abyssale
                 float r = 0.40f + 1.45f * Mth.sin(t * (float) Math.PI);
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.20f, cz, r, -t * 3.5f, pRgb, sRgb, 0xFFFFFF, fadeA, true);
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.20f, cz, r, -t * 3.5f, pRgb, sRgb, aRgb, fadeA, true);
                 emitPixelCircleBillboard3D(vc, mat, tmp, cx, cy + 0.1f, cz, r * 0.65f, sRgb, pRgb, fadeA);
                 emitPixelCross3D(vc, mat, tmp, cx, cy + 0.1f, cz, 0.0625f, 3, sRgb, pRgb, fadeA);
             }
@@ -1020,7 +1099,7 @@ public final class WeaponWorldVfxManager {
                 // #28 Cadran d'horloge runique en pixels 3D (double cercle de Bresenham + 8 runes + aiguilles pixels) !
                 float r = 1.05f;
                 float hy = cy + 0.65f;
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, hy, cz, r, t * 0.8f, pRgb, sRgb, 0xFFFFFF, fadeA, false);
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, hy, cz, r, t * 0.8f, pRgb, sRgb, aRgb, fadeA, false);
                 float aFast = t * 8.5f;
                 float aSlow = t * 2.2f;
                 emitSteppedVoxelLine(vc, mat, tmp, cx, hy, cz,
@@ -1033,12 +1112,12 @@ public final class WeaponWorldVfxManager {
             case WARLORD_RALLY_SIGIL -> {
                 // #29 Grand Cercle Runique du Chef de Guerre en pixels 3D (double anneau Bresenham + 8 runes 3x3 + étoile) !
                 float r = 2.05f * Math.min(1.0f, t * 2.4f);
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.40f, cz, r, t * 1.6f, pRgb, sRgb, 0xFFFFFF, fadeA, true);
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.40f, cz, r, t * 1.6f, pRgb, sRgb, aRgb, fadeA, true);
             }
             default -> {
                 float maxR = (inst.effect == WeaponVisualEffectId.ANNIHILATING_ARC) ? 3.1f : 1.65f;
                 if (inst.effect == WeaponVisualEffectId.ANNIHILATING_ARC) {
-                    emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.45f + maxR * t, t * 3.0f, 0xFFFFFF, pRgb, sRgb, fadeA, true);
+                    emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.45f + maxR * t, t * 3.0f, aRgb, pRgb, sRgb, fadeA, true);
                 } else {
                     emitPixelCircle3D(vc, mat, tmp, cx, cy, cz, 0.25f + maxR * t, pRgb, sRgb, fadeA);
                 }
@@ -1058,8 +1137,18 @@ public final class WeaponWorldVfxManager {
                                      float hx, float hy, float hz,
                                      int rgb, int alpha) {
         if (alpha <= 5 || hx <= 0.0005f || hy <= 0.0005f || hz <= 0.0005f) return;
+        if (alphaFloor > 0 && alpha < alphaFloor) return;
         if (cubesSinceFlush >= HARD_CUBE_CAP_PER_FRAME) return;
         cubesSinceFlush++;
+
+        // T349-PIXEL-VARIATION : chaque pixel est rapetissé/agrandi aléatoirement MAIS de façon lisse
+        // dans le temps (bruit sinusoïdal déterministe par position) : la taille respire doucement au
+        // lieu de rester un gros bloc figé.
+        float scale = framePixelScale * smoothPulse(cx, cy, cz);
+        hx *= scale;
+        hy *= scale;
+        hz *= scale;
+
         float x0 = cx - hx, x1 = cx + hx;
         float y0 = cy - hy, y1 = cy + hy;
         float z0 = cz - hz, z1 = cz + hz;
@@ -1081,6 +1170,69 @@ public final class WeaponWorldVfxManager {
         putQuad(vc, mat, tmp, x0, y1, z0, rEW, alpha, x0, y0, z0, rEW, alpha, x0, y0, z1, rEW, alpha, x0, y1, z1, rEW, alpha);
         // EAST
         putQuad(vc, mat, tmp, x1, y1, z1, rEW, alpha, x1, y0, z1, rEW, alpha, x1, y0, z0, rEW, alpha, x1, y1, z0, rEW, alpha);
+    }
+
+    /**
+     * T349-PIXEL-VARIATION : pulsation lente et déterministe (0.72 .. 1.12) propre à chaque position.
+     * Comme elle dérive du temps de frame, la variation est parfaitement lisse (aucun scintillement).
+     */
+    private static float smoothPulse(float x, float y, float z) {
+        float h = x * 12.9898f + y * 78.233f + z * 37.719f;
+        float n = h - (float) Math.floor(h * 0.15915494f) * 6.2831855f;
+        float t = frameTimeSeconds;
+        return 0.92f + 0.11f * Mth.sin(t * 1.15f + n) + 0.09f * Mth.sin(t * 0.41f + n * 2.3f);
+    }
+
+    /**
+     * T349-PALETTE : palette vivante (cœur, halo, accent saturé) dérivée de l'enchantement et tournée
+     * par variante. Les entailles et traînées de flèches ne sont donc plus monochromes : chaque
+     * enchantement a son dégradé propre et chaque déclenchement décale légèrement la teinte.
+     */
+    public static int[] palette(WeaponVisualEffectId fx, int variant) {
+        int core = fx.primaryRgb;
+        int glow = fx.secondaryRgb;
+        float shift = ((variant & 7) - 3.5f) * 0.012f;
+        int accent = rotateHue(glow, 0.12f + shift);
+        return new int[]{core, glow, accent};
+    }
+
+    /** Rotation de teinte HSV légère d'une couleur RGB 0xRRGGBB. */
+    public static int rotateHue(int rgb, float deltaHue) {
+        int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+        float max = Math.max(r, Math.max(g, b)) / 255.0f;
+        float min = Math.min(r, Math.min(g, b)) / 255.0f;
+        float v = max;
+        float sat = max <= 0.0f ? 0.0f : (max - min) / max;
+        float h;
+        float d = max - min;
+        if (d <= 0.00001f) {
+            h = 0.0f;
+        } else if (max == r / 255.0f) {
+            h = ((g - b) / 255.0f) / d;
+            if (h < 0.0f) h += 6.0f;
+            h /= 6.0f;
+        } else if (max == g / 255.0f) {
+            h = (((b - r) / 255.0f) / d + 2.0f) / 6.0f;
+        } else {
+            h = (((r - g) / 255.0f) / d + 4.0f) / 6.0f;
+        }
+        h = (h + deltaHue) % 1.0f;
+        if (h < 0.0f) h += 1.0f;
+        int i = (int) (h * 6.0f);
+        float f = h * 6.0f - i;
+        float pp = v * (1.0f - sat);
+        float q = v * (1.0f - sat * f);
+        float t = v * (1.0f - sat * (1.0f - f));
+        float rr, gg, bb;
+        switch (i % 6) {
+            case 0 -> { rr = v; gg = t; bb = pp; }
+            case 1 -> { rr = q; gg = v; bb = pp; }
+            case 2 -> { rr = pp; gg = v; bb = t; }
+            case 3 -> { rr = pp; gg = q; bb = v; }
+            case 4 -> { rr = t; gg = pp; bb = v; }
+            default -> { rr = v; gg = pp; bb = q; }
+        }
+        return ((int) (rr * 255) << 16) | ((int) (gg * 255) << 8) | (int) (bb * 255);
     }
 
     /** T345-PIXEL-DETAIL : micro-aléa déterministe (0..1) — toutes les tailles de pixels restent stables d'une frame à l'autre. */

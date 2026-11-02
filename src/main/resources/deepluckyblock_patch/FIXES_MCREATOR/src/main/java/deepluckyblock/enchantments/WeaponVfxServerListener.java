@@ -50,6 +50,11 @@ public final class WeaponVfxServerListener {
     private static final Map<Integer, Long> LAST_PROJECTILE_HIT_TICK = new ConcurrentHashMap<>();
     private static final Map<Integer, Long> LAST_CRIT_TICK = new ConcurrentHashMap<>();
     private static final Map<Integer, Long> LAST_RALLY_TICK = new ConcurrentHashMap<>();
+    /** T349-VFX-FREQUENCY : cooldown réel et aléatoire par (attaquant, effet). */
+    private static final Map<String, Long> EFFECT_COOLDOWN = new ConcurrentHashMap<>();
+
+    /** Chance de déclencher un effet d'impact (les critiques, plus rares, passent toujours). */
+    private static final int IMPACT_TRIGGER_PERCENT = 42;
 
     private WeaponVfxServerListener() {}
 
@@ -62,6 +67,15 @@ public final class WeaponVfxServerListener {
         LAST_CRIT_TICK.put(attacker.getId(), now);
 
         WeaponVisualEffectId fx = (critStyle != null) ? critStyle : WeaponVisualEffectId.GOLDEN_CRIT_STAR;
+
+        // T349-VFX-FREQUENCY : un critique n'éclate plus systématiquement (spam visuel).
+        // Chance 72 % + cooldown aléatoire 12..29 ticks par joueur et par style de critique.
+        if (sl.random.nextInt(100) >= 72) return;
+        String critKey = "crit:" + attacker.getId() + ":" + fx.id;
+        Long critReady = EFFECT_COOLDOWN.get(critKey);
+        if (critReady != null && now < critReady) return;
+        EFFECT_COOLDOWN.put(critKey, now + 12L + sl.random.nextInt(18));
+
         float cx = (float) target.getX();
         float cy = (float) (target.getY() + target.getBbHeight() * 0.55);
         float cz = (float) target.getZ();
@@ -120,6 +134,33 @@ public final class WeaponVfxServerListener {
         });
     }
 
+    /**
+     * T349-VFX-FREQUENCY : les effets d'attaque partaient à CHAQUE coup (et se répétaient). On applique
+     * maintenant un vrai cooldown aléatoire par effet (26..59 ticks) + un % de chance de déclenchement.
+     * Les effets critiques gardent leur chance naturelle (ils sont déjà rares) mais restent throttlés.
+     */
+    private static boolean shouldPlay(int attackerId, WeaponVisualEffectId fx, ServerLevel sl) {
+        long now = sl.getGameTime();
+        String key = attackerId + ":" + fx.id;
+        Long ready = EFFECT_COOLDOWN.get(key);
+        if (ready != null && now < ready) return false;
+
+        if (fx.category != WeaponVisualEffectId.Category.CRIT
+                && sl.random.nextInt(100) >= IMPACT_TRIGGER_PERCENT) {
+            // Nouvelle tentative possible très vite : on ne veut pas « perdre » un long cooldown sur un jet raté
+            EFFECT_COOLDOWN.put(key, now + 5L);
+            return false;
+        }
+        int cooldown = (fx.category == WeaponVisualEffectId.Category.CRIT)
+                ? 14 + sl.random.nextInt(18)
+                : 26 + sl.random.nextInt(34);
+        EFFECT_COOLDOWN.put(key, now + cooldown);
+        if (EFFECT_COOLDOWN.size() > 2048) {
+            EFFECT_COOLDOWN.clear();
+        }
+        return true;
+    }
+
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onLivingHurtVisuals(LivingIncomingDamageEvent event) {
         // Note : on autorise event.getAmount() == 0.0f pour blood_transfusion (#11), curse_of_mercy et toy !
@@ -171,7 +212,10 @@ public final class WeaponVfxServerListener {
                     tx, ty, tz, ax, ay, az);
         }
 
+        // T349-VFX-FREQUENCY : un seul effet par coup (rarement deux) au lieu de toute la pile
+        int layerBudget = (sl.random.nextInt(100) < 22) ? 2 : 1;
         for (int i = 0; i < layers.size(); i++) {
+            if (layerBudget <= 0) break;
             WeaponVisualEffectId.ResolvedLayer layer = layers.get(i);
             WeaponVisualEffectId fx = layer.effect();
 
@@ -179,6 +223,10 @@ public final class WeaponVfxServerListener {
             if (fx.category == WeaponVisualEffectId.Category.CRIT && meleeCritJustFired && i == 0) {
                 continue;
             }
+            if (!shouldPlay(attacker.getId(), fx, sl)) {
+                continue;
+            }
+            layerBudget--;
 
             if (fx == WeaponVisualEffectId.CRIMSON_SIPHON) {
                 broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
@@ -210,6 +258,8 @@ public final class WeaponVfxServerListener {
         List<WeaponVisualEffectId.ResolvedLayer> layers = WeaponVisualEffectId.resolveLayers(weapon, 1);
         if (layers.isEmpty()) return;
 
+        if (!shouldPlay(shooter.getId(), layers.get(0).effect(), sl)) return;
+
         WeaponVisualEffectId.ResolvedLayer top = layers.get(0);
         Vec3 hit = event.getRayTraceResult().getLocation();
         if (top.effect() == WeaponVisualEffectId.ASTRAL_STAR_LANCE) {
@@ -238,7 +288,7 @@ public final class WeaponVfxServerListener {
             if (l.effect() == WeaponVisualEffectId.WARLORD_RALLY_SIGIL) {
                 long now = sl.getGameTime();
                 Long prev = LAST_RALLY_TICK.put(player.getId(), now);
-                if (prev != null && now - prev < 15L) return;
+                if (prev != null && now - prev < 40L) return; // T349 : sceau moins spammable
                 float px = (float) player.getX();
                 float py = (float) (player.getY() + 0.45);
                 float pz = (float) player.getZ();

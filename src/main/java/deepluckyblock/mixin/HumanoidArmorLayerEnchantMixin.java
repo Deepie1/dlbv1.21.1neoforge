@@ -78,7 +78,8 @@ public abstract class HumanoidArmorLayerEnchantMixin {
             // T333-UNIQUE-CONTEXTUAL-GLOW + MOB-GRADE-GLINT :
             // - Mobs : affiche toujours le glint stable du grade de l'armure.
             // - Joueurs : active l'éclat intense uniquement selon la condition propre de l'enchantement !
-            EnchantAura.captureContextual(livingEntity, piece, true);
+            // T349 : on transmet l'emplacement pour compenser la surface du plastron (glint uniforme)
+            EnchantAura.captureContextual(livingEntity, piece, true, slot);
             if (EnchantAura.DEBUG && EnchantAura.DEBUG_VERBOSE) {
                 deepluckyblock.util.DebugLog.out("[MIXIN] renderArmorPiece() HEAD slot=" + slot
                         + " item=" + (piece == null ? "null" : piece.getItem().getDescriptionId())

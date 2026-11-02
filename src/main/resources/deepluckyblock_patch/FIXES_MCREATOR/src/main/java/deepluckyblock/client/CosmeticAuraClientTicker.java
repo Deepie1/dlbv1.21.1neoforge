@@ -8,9 +8,6 @@ import deepluckyblock.util.DeepEnchant;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.core.particles.DustParticleOptions;
-import net.minecraft.core.particles.ParticleOptions;
-import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.api.distmarker.Dist;
@@ -40,37 +37,20 @@ public final class CosmeticAuraClientTicker {
 
     private CosmeticAuraClientTicker() {}
 
-    private static final int F_COMBO_110_AVATAR      = 1;
-    private static final int F_COMBO_097_ETERNAL     = 1 << 1;
-    private static final int F_COMBO_098_SWORD_GOD   = 1 << 2;
-    private static final int F_COMBO_101_ARCHANGEL   = 1 << 3;
-    private static final int F_COMBO_106_WARLORD     = 1 << 4;
-    private static final int F_COMBO_062_PLAGUE      = 1 << 5;
-    private static final int F_ENCH_KING             = 1 << 6;
-    private static final int F_ENCH_MYSTIC_MIND      = 1 << 7;
-    private static final int F_ENCH_RADIANT_AEGIS    = 1 << 8;
-    private static final int F_ENCH_WINGED_ENDURANCE = 1 << 9;
-    private static final int F_ENCH_DREAD_AURA       = 1 << 10;
+    public static final int F_COMBO_110_AVATAR      = 1;
+    public static final int F_COMBO_097_ETERNAL     = 1 << 1;
+    public static final int F_COMBO_098_SWORD_GOD   = 1 << 2;
+    public static final int F_COMBO_101_ARCHANGEL   = 1 << 3;
+    public static final int F_COMBO_106_WARLORD     = 1 << 4;
+    public static final int F_COMBO_062_PLAGUE      = 1 << 5;
+    public static final int F_ENCH_KING             = 1 << 6;
+    public static final int F_ENCH_MYSTIC_MIND      = 1 << 7;
+    public static final int F_ENCH_RADIANT_AEGIS    = 1 << 8;
+    public static final int F_ENCH_WINGED_ENDURANCE = 1 << 9;
+    public static final int F_ENCH_DREAD_AURA       = 1 << 10;
 
-    private static final DustParticleOptions STELLAR_WHITE =
-            new DustParticleOptions(new Vector3f(1.00f, 1.00f, 1.00f), 0.68f);
-    private static final DustParticleOptions CELESTIAL_GOLD =
-            new DustParticleOptions(new Vector3f(1.00f, 0.86f, 0.28f), 0.62f);
-    private static final DustParticleOptions CROWN_GOLD =
-            new DustParticleOptions(new Vector3f(1.00f, 0.82f, 0.18f), 0.60f);
-    private static final DustParticleOptions BLADE_SILVER =
-            new DustParticleOptions(new Vector3f(0.84f, 0.90f, 0.98f), 0.58f);
-    private static final DustParticleOptions MYSTIC_VIOLET =
-            new DustParticleOptions(new Vector3f(0.62f, 0.28f, 0.96f), 0.58f);
-    private static final DustParticleOptions RADIANT_PEARL =
-            new DustParticleOptions(new Vector3f(1.00f, 0.96f, 0.76f), 0.56f);
-    private static final DustParticleOptions PLAGUE_MIASMA =
-            new DustParticleOptions(new Vector3f(0.40f, 0.68f, 0.08f), 0.66f);
-    private static final DustParticleOptions DREAD_SHADOW =
-            new DustParticleOptions(new Vector3f(0.26f, 0.06f, 0.44f), 0.62f);
-
-    private static final int MAX_PARTICLES_PER_TICK = 36;
-    private static final double CULL_DIST_SQR = 24.0 * 24.0;
+    /** T349 : rayon de collecte des profils cosmétiques (rendu fait par CosmeticPixelAura). */
+    private static final double CULL_DIST_SQR = 40.0 * 40.0;
 
     private static final class CachedProfile {
         int flags;
@@ -109,25 +89,22 @@ public final class CosmeticAuraClientTicker {
                 }
             }
 
-            int budget = MAX_PARTICLES_PER_TICK;
+            // T349-COSMETIC-PIXEL-AURA : PLUS AUCUNE particule émise ici.
+            // Le tick ne sert plus qu'à rafraîchir le bitmask (cache 10 ticks, gratuit) ; le dessin des
+            // ailes / couronnes / auras est fait une seule fois par frame par CosmeticPixelAura.
+            getCosmeticFlags(viewer, now);
 
-            // 1) Toujours traiter en priorité le joueur local
-            budget = emitForEntity(level, viewer, now, budget);
-
-            // 2) Autres joueurs proches dans un rayon de 24 blocs (multijoueur / LAN)
-            if (budget > 0) {
-                List<? extends Player> nearbyPlayers = level.players();
-                for (int i = 0, n = nearbyPlayers.size(); i < n && budget > 0; i++) {
-                    Player other = nearbyPlayers.get(i);
-                    if (other == viewer || !other.isAlive() || other.isSpectator()) continue;
-                    if (other.distanceToSqr(viewer) > CULL_DIST_SQR) continue;
-                    budget = emitForEntity(level, other, now, budget);
-                }
+            List<? extends Player> nearbyPlayers = level.players();
+            for (int i = 0, n = nearbyPlayers.size(); i < n; i++) {
+                Player other = nearbyPlayers.get(i);
+                if (other == viewer || !other.isAlive() || other.isSpectator()) continue;
+                if (other.distanceToSqr(viewer) > CULL_DIST_SQR) continue;
+                getCosmeticFlags(other, now);
             }
         } catch (Throwable ignored) {}
     }
 
-    private static int getCosmeticFlags(LivingEntity entity, long now) {
+    public static int getCosmeticFlags(LivingEntity entity, long now) {
         CachedProfile cp = PROFILE_CACHE.get(entity.getId());
         if (cp != null && now < cp.expiresAt) {
             return cp.flags;
@@ -164,142 +141,12 @@ public final class CosmeticAuraClientTicker {
         return f;
     }
 
+    /**
+     * T349 : plus aucune particule. Conservé vide volontairement pour ne rien casser côté appelants
+     * éventuels : le cosmétique est désormais intégralement rendu en mini-cubes 3D par
+     * {@link CosmeticPixelAura} (formes d'ailes réelles, couronnes en anneau, auras au sol).
+     */
     private static int emitForEntity(ClientLevel level, LivingEntity entity, long now, int budget) {
-        if (entity.isInvisible()) return budget;
-        int flags = getCosmeticFlags(entity, now);
-        if (flags == 0) return budget;
-
-        double vx = entity.getX() - entity.xo;
-        double vy = entity.getY() - entity.yo;
-        double vz = entity.getZ() - entity.zo;
-        // Centre anticipé d'une demi-frame + héritage de vitesse pour que le halo colle à la tête en mouvement !
-        double cx = entity.getX() + vx * 0.60;
-        double baseY = entity.getY() + vy * 0.45;
-        double cz = entity.getZ() + vz * 0.60;
-        double headY = baseY + entity.getBbHeight() + 0.32;
-        double pvx = vx * 0.55;
-        double pvy = vy * 0.30;
-        double pvz = vz * 0.55;
-
-        // --- 1. HALO SUPRÊME CONTINU : Combo #110 (Avatar Ultime du Deep's Lucky Block) ---
-        if ((flags & F_COMBO_110_AVATAR) != 0) {
-            double phase = now * 0.22;
-            int pts = 6;
-            for (int i = 0; i < pts && budget > 0; i++) {
-                double ang = phase + (Math.PI * 2.0 * i) / pts;
-                ParticleOptions dust = ((i & 1) == 0) ? STELLAR_WHITE : CELESTIAL_GOLD;
-                level.addParticle(dust,
-                        cx + Math.cos(ang) * 0.48,
-                        headY + Math.sin(ang * 2.0 + now * 0.10) * 0.03,
-                        cz + Math.sin(ang) * 0.48,
-                        pvx, pvy, pvz);
-                budget--;
-            }
-            if ((now % 3L) == 0L && budget > 0) {
-                double starAng = -now * 0.31;
-                level.addParticle(ParticleTypes.END_ROD,
-                        cx + Math.cos(starAng) * 0.52,
-                        headY + 0.04,
-                        cz + Math.sin(starAng) * 0.52,
-                        pvx * 0.3, 0.008, pvz * 0.3);
-                budget--;
-            }
-        } else if ((flags & F_COMBO_097_ETERNAL) != 0) {
-            // Combo #097 : Couronne dorée transcendante continue
-            budget = emitOrbitHalo(level, cx, headY, cz, pvx, pvy, pvz, 0.44, now * 0.20, 4, CELESTIAL_GOLD, null, budget);
-        } else if ((flags & F_COMBO_098_SWORD_GOD) != 0) {
-            // Combo #098 : Halo doré & argenté continu de l'Empereur de l'Épée
-            budget = emitOrbitHalo(level, cx, headY, cz, pvx, pvy, pvz, 0.45, now * 0.25, 4, CROWN_GOLD, BLADE_SILVER, budget);
-        } else {
-            // Couronnes d'enchantements individuels (Roi, Esprit Mystique, Égide Radieuse)
-            if ((flags & F_ENCH_KING) != 0) {
-                budget = emitOrbitHalo(level, cx, headY, cz, pvx, pvy, pvz, 0.40, now * 0.18, 3, CROWN_GOLD, null, budget);
-            }
-            if ((flags & F_ENCH_MYSTIC_MIND) != 0 && (now & 1L) == 0L) {
-                budget = emitOrbitHalo(level, cx, headY + 0.03, cz, pvx, pvy, pvz, 0.38, -now * 0.16, 3, MYSTIC_VIOLET, null, budget);
-            }
-            if ((flags & F_ENCH_RADIANT_AEGIS) != 0 && (now & 1L) == 1L) {
-                budget = emitOrbitHalo(level, cx, headY - 0.02, cz, pvx, pvy, pvz, 0.41, now * 0.15, 3, RADIANT_PEARL, null, budget);
-            }
-        }
-
-        // --- 2. RUBANS D'AILES CONTINUS (Combo #101 Archange Solaire & Endurance Ailée) ---
-        if ((flags & F_COMBO_101_ARCHANGEL) != 0 && budget >= 2) {
-            budget = emitWingStreams(level, entity, cx, baseY, cz, pvx, pvy, pvz, CELESTIAL_GOLD, now, budget);
-        } else if ((flags & F_ENCH_WINGED_ENDURANCE) != 0 && (!entity.onGround() || entity.isFallFlying())
-                && (now & 1L) == 0L && budget >= 2) {
-            budget = emitWingStreams(level, entity, cx, baseY, cz, pvx, pvy, pvz, ParticleTypes.CLOUD, now, budget);
-        }
-
-        // --- 3. AURAS BASSES CONTINUES (Combo #106 Seigneur Volcanique, #062 Peste, Aura d'Effroi) ---
-        if ((flags & F_COMBO_106_WARLORD) != 0 && (now & 1L) == 0L && budget >= 2) {
-            double ang = now * 0.24;
-            for (int i = 0; i < 2 && budget > 0; i++) {
-                double a = ang + i * Math.PI;
-                level.addParticle(ParticleTypes.SOUL_FIRE_FLAME,
-                        cx + Math.cos(a) * 0.85, baseY + 0.12, cz + Math.sin(a) * 0.85,
-                        pvx * 0.4, 0.015, pvz * 0.4);
-                budget--;
-            }
-        }
-        if ((flags & F_COMBO_062_PLAGUE) != 0 && (now & 1L) == 1L && budget >= 2) {
-            budget = emitOrbitHalo(level, cx, baseY + 0.15, cz, pvx, pvy, pvz, 0.95, now * 0.16, 2, PLAGUE_MIASMA, null, budget);
-        }
-        if ((flags & F_ENCH_DREAD_AURA) != 0 && (now % 3L) == 0L && budget > 0) {
-            double ang = -now * 0.20;
-            level.addParticle(DREAD_SHADOW,
-                    cx + Math.cos(ang) * 0.65, baseY + 0.35, cz + Math.sin(ang) * 0.65,
-                    pvx * 0.4, 0.01, pvz * 0.4);
-            budget--;
-        }
-
-        return budget;
-    }
-
-    private static int emitOrbitHalo(ClientLevel level, double cx, double y, double cz,
-                                     double pvx, double pvy, double pvz,
-                                     double radius, double phase, int points,
-                                     ParticleOptions primary, ParticleOptions alt, int budget) {
-        for (int i = 0; i < points && budget > 0; i++) {
-            double ang = phase + (Math.PI * 2.0 * i) / points;
-            ParticleOptions p = (alt != null && (i & 1) == 1) ? alt : primary;
-            level.addParticle(p,
-                    cx + Math.cos(ang) * radius,
-                    y,
-                    cz + Math.sin(ang) * radius,
-                    pvx, pvy, pvz);
-            budget--;
-        }
-        return budget;
-    }
-
-    private static int emitWingStreams(ClientLevel level, LivingEntity entity,
-                                       double cx, double baseY, double cz,
-                                       double pvx, double pvy, double pvz,
-                                       ParticleOptions particle, long now, int budget) {
-        float yawRad = entity.getYRot() * ((float) Math.PI / 180.0F);
-        double fwdX = -Math.sin(yawRad);
-        double fwdZ = Math.cos(yawRad);
-        double rightX = -fwdZ;
-        double rightZ = fwdX;
-        double flap = Math.sin(now * 0.22) * 0.08;
-        double backX = cx - fwdX * 0.32;
-        double backZ = cz - fwdZ * 0.32;
-        double wingY = baseY + entity.getBbHeight() * 0.68 + flap;
-        double span = 0.56 + Math.cos(now * 0.22) * 0.06;
-
-        if (budget > 0) {
-            level.addParticle(particle,
-                    backX - rightX * span, wingY, backZ - rightZ * span,
-                    pvx * 0.4, pvy * 0.3, pvz * 0.4);
-            budget--;
-        }
-        if (budget > 0) {
-            level.addParticle(particle,
-                    backX + rightX * span, wingY, backZ + rightZ * span,
-                    pvx * 0.4, pvy * 0.3, pvz * 0.4);
-            budget--;
-        }
         return budget;
     }
 }

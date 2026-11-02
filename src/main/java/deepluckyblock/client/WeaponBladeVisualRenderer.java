@@ -123,6 +123,13 @@ public final class WeaponBladeVisualRenderer {
                 : getOrBuildModelVoxelNodes(stack, model);
         if (nodes.isEmpty()) return;
 
+        // T349-IDLE-FILTER : les « pixels lumineux constants » collés sur l'item tenu sont supprimés.
+        // Seuls les éclats d'ACTION (alpha élevé : reflet qui parcourt la lame, charge d'arc, goutte qui
+        // tombe...) restent visibles. Hors action, on ne garde donc que les accents animés.
+        boolean armActive = isHeldWeaponActive();
+        WeaponWorldVfxManager.setAlphaFloor(armActive ? 0 : 172);
+        WeaponWorldVfxManager.beginFrame(WeaponWorldVfxManager.smoothTimeSeconds());
+
         renderingOverlay = true;
         try {
             float time = WeaponWorldVfxManager.smoothTimeSeconds();
@@ -144,8 +151,23 @@ public final class WeaponBladeVisualRenderer {
         } catch (Throwable ignored) {
             // Tolérance totale avec ImmediatelyFast / Sodium / Iris
         } finally {
+            WeaponWorldVfxManager.setAlphaFloor(0);
             renderingOverlay = false;
         }
+    }
+
+    /**
+     * T349-IDLE-FILTER : vrai quand l'arme est réellement « en action » (coup en cours, arc tendu,
+     * arbalète chargée, trident lancé). Dans ce cas seulement, l'épaisse couche de pixels du tranchant
+     * est autorisée : sinon on se contente du reflet animé.
+     */
+    private static boolean isHeldWeaponActive() {
+        var mc = Minecraft.getInstance();
+        var player = mc.player;
+        if (player == null) return false;
+        if (player.swinging || player.attackAnim > 0.02f) return true;
+        if (player.isUsingItem()) return true;
+        return player.getTicksUsingItem() > 0;
     }
 
     private static void renderBladeVoxelEffect(VertexConsumer vc, Matrix4f mat, Vector3f tmp,

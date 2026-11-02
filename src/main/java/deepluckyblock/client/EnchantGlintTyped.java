@@ -62,7 +62,8 @@ public final class EnchantGlintTyped {
         if (params == null) return null;
         String tierPrefix = (!intense && !wornBoost && tier == EnchantAura.DEFAULT_GLINT_TIER)
                 ? "N:"
-                : ((wornBoost ? "W:" : "") + "T" + tier + ":" + (intense ? "I:" : "N:"));
+                : ((wornBoost ? ("W" + EnchantAura.currentWornSlotTag() + ":") : "")
+                        + "T" + tier + ":" + (intense ? "I:" : "N:"));
         String key = tierPrefix + Integer.toHexString(rgb) + ":" + kind;
         if (BUILD_FAILED.contains(key)) { glintLog(kind, rgb, "violet (build déjà raté)"); return null; }
         RenderType cached = RENDER_TYPE_CACHE.get(key);
@@ -338,7 +339,8 @@ public final class EnchantGlintTyped {
                                                              String kind, boolean intense, int tier, boolean wornBoost) {
         String tierTag = (!intense && !wornBoost && tier == EnchantAura.DEFAULT_GLINT_TIER)
                 ? "N:"
-                : ((wornBoost ? "W:" : "") + "T" + tier + ":" + (intense ? "I:" : "N:"));
+                : ((wornBoost ? ("W" + EnchantAura.currentWornSlotTag() + ":") : "")
+                        + "T" + tier + ":" + (intense ? "I:" : "N:"));
         String key = tierTag + Integer.toHexString(rgb) + ":" + textureKind;
         ResourceLocation cached = TEXTURE_CACHE.get(key);
         if (cached != null) return cached;
@@ -382,10 +384,19 @@ public final class EnchantGlintTyped {
                 double effG = tg + (tg * 255.0 / maxChan - tg) * satBlend;
                 double effB = tb + (tb * 255.0 / maxChan - tb) * satBlend;
                 int tierDelta = tier - EnchantAura.DEFAULT_GLINT_TIER; // -3 .. +16
-                double waveScale = 1.88 + 0.045 * tierDelta;
-                double floor = Math.max(0.0, 0.11 + 0.026 * tierDelta);
-                double gamma = Math.max(0.36, 0.84 - 0.026 * tierDelta);
-                double coreStrength = tierDelta > 2 ? (tierDelta - 2) * 5.5 : 0.0;
+                // T349-GLINT-UNIFORM : la montée en palier était TROP forte (1.88 + 0.045/tier, noyau
+                // jusqu'à +75) et s'appliquait identiquement à toutes les pièces : un plastron de palier
+                // élevé devenait un bloc lumineux comparé aux bottes. On normalise :
+                //  - montée en palier adoucie et plafonnée,
+                //  - noyau très réduit (plus de « tache blanche »),
+                //  - alpha plafonné (220 -> 186) pour rester une brillance, pas une lampe.
+                double tierClamped = Math.max(-3.0, Math.min(8.0, tierDelta));
+                double waveScale = 1.34 + 0.020 * tierClamped;
+                double floor = Math.max(0.0, 0.085 + 0.014 * tierClamped);
+                double gamma = Math.max(0.52, 0.92 - 0.016 * tierClamped);
+                double coreStrength = tierClamped > 4 ? (tierClamped - 4) * 2.2 : 0.0;
+                // Compensation par emplacement (le plastron couvre le plus de surface)
+                double slotFactor = EnchantAura.currentWornSlotFactor();
 
                 for (int x = 0; x < img.getWidth(); x++) {
                     for (int y = 0; y < img.getHeight(); y++) {
@@ -396,14 +407,16 @@ public final class EnchantGlintTyped {
                         int b = (px >> 16) & 0xFF;
                         double norm = Math.max(r, Math.max(g, b)) / 255.0;
                         double wave = Math.min(1.0, norm * waveScale);
-                        double lifted = Math.min(1.0, floor + Math.pow(wave, gamma) * (0.94 - floor * 0.45));
-                        double core = (coreStrength > 0.0 && wave > 0.60)
-                                ? Math.pow((wave - 0.60) / 0.40, 1.20) * coreStrength
+                        double lifted = Math.min(1.0, floor + Math.pow(wave, gamma) * (0.86 - floor * 0.45));
+                        // On n'applique la compensation que sur la partie « éclat » (au-dessus du plancher)
+                        lifted = floor + (lifted - floor) * slotFactor;
+                        double core = (coreStrength > 0.0 && wave > 0.72)
+                                ? Math.pow((wave - 0.72) / 0.28, 1.20) * coreStrength * slotFactor
                                 : 0.0;
                         int outR = Math.min(255, (int) Math.round(effR * lifted + core));
                         int outG = Math.min(255, (int) Math.round(effG * lifted + core));
                         int outB = Math.min(255, (int) Math.round(effB * lifted + core));
-                        int outA = Math.max(a, 220);
+                        int outA = Math.min(255, Math.max(a, 186));
                         img.setPixelRGBA(x, y, (outA << 24) | (outB << 16) | (outG << 8) | outR);
                     }
                 }

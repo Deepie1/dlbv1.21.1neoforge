@@ -326,6 +326,30 @@ public final class EnchantAura {
     /** T339-WORN-ARMOR-GLINT : true uniquement pendant le rendu 3D d'une armure portée issue du Lucky Block (+2 crans une fois portée, sans toucher au rendu item). */
     private static boolean currentWornArmorBoost = false;
 
+    /**
+     * T349-GLINT-UNIFORM : emplacement en cours de rendu. Le modèle de plastron couvre beaucoup plus de
+     * surface (torse + épaules + bras) que des bottes : à réglage identique il paraissait nettement plus
+     * lumineux. On compense donc par emplacement pour que TOUTES les pièces brillent pareil.
+     */
+    private static net.minecraft.world.entity.EquipmentSlot currentWornSlot = null;
+
+    /** Facteur de compensation de luminosité du glint porté, par emplacement. */
+    public static float currentWornSlotFactor() {
+        if (currentWornSlot == null) return 1.0f;
+        return switch (currentWornSlot) {
+            case CHEST -> 0.74f;   // le plastron expose ~2x plus de surface que les autres pièces
+            case LEGS -> 0.88f;
+            case HEAD -> 0.94f;
+            case FEET -> 1.0f;
+            default -> 1.0f;
+        };
+    }
+
+    /** Suffixe de cache du glint porté (l'emplacement change la texture générée). */
+    public static String currentWornSlotTag() {
+        return currentWornSlot == null ? "-" : currentWornSlot.getName().substring(0, 1).toUpperCase();
+    }
+
     public static int currentRgb() { return current; }
 
     public static boolean isCurrentIntense() { return currentIntense; }
@@ -340,6 +364,7 @@ public final class EnchantAura {
         currentIntense = false;
         currentTier = glintTier(stack);
         currentWornArmorBoost = false;
+        currentWornSlot = null;
         if (DEBUG && stack != null && !stack.isEmpty()) {
             log("capture -> #" + Integer.toHexString(v) + " tier=" + currentTier);
         }
@@ -391,6 +416,13 @@ public final class EnchantAura {
      */
     public static void captureContextual(net.minecraft.world.entity.LivingEntity wearer,
                                          ItemStack stack, boolean defensiveArmor) {
+        captureContextual(wearer, stack, defensiveArmor, null);
+    }
+
+    public static void captureContextual(net.minecraft.world.entity.LivingEntity wearer,
+                                         ItemStack stack, boolean defensiveArmor,
+                                         net.minecraft.world.entity.EquipmentSlot slot) {
+        currentWornSlot = slot;
         int base = auraColor(stack);
         int tier = glintTier(stack);
         boolean wornBoost = defensiveArmor && isLuckyBlockArmor(stack);
@@ -418,6 +450,7 @@ public final class EnchantAura {
         currentIntense = false;
         currentTier = DEFAULT_GLINT_TIER;
         currentWornArmorBoost = false;
+        currentWornSlot = null;
     }
 
     // =======================================================================
