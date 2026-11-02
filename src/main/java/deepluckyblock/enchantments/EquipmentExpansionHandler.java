@@ -21,6 +21,7 @@ import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.AbstractArrow;
+import net.minecraft.world.entity.projectile.ThrownTrident;
 import net.minecraft.world.item.*;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
@@ -240,7 +241,7 @@ public final class EquipmentExpansionHandler {
                 }
             }
         }
-        if(e.getSource().getEntity() instanceof Player attacker){ItemStack weapon=attacker.getMainHandItem();attacker.getPersistentData().putLong("slb_last_attack",now);int glass=armor(attacker,"curse_of_the_glass_boned_champion");if(glass>0)e.setAmount(e.getAmount()*(1f+.25f*glass));int pred=lvl(weapon,"stealth_ambush");if(pred>0){net.minecraft.world.phys.Vec3 aLook=attacker.getLookAngle(),tLook=target.getLookAngle();double backDot=(aLook.x*tLook.x+aLook.z*tLook.z)/Math.max(1e-4,Math.hypot(aLook.x,aLook.z)*Math.hypot(tLook.x,tLook.z));boolean ambush=backDot>0.35||attacker.isInvisible()||attacker.isShiftKeyDown()||(target instanceof Mob mp&&mp.getTarget()!=attacker);if(ambush){e.setAmount(e.getAmount()*(1f+.28f*pred));EnchantmentParticleFX.burstOnEntity(target,EnchantmentParticleFX.SCARLET_MIST,7,.25,.03);}}int ret=lvl(weapon,"retaliation");if(ret>0&&now<=attacker.getPersistentData().getLong("slb_retaliate_until")&&attacker.getPersistentData().hasUUID("slb_retaliate")&&attacker.getPersistentData().getUUID("slb_retaliate").equals(target.getUUID())){e.setAmount(e.getAmount()*(1f+.2f*ret));attacker.getPersistentData().remove("slb_retaliate");}int mark=lvl(weapon,"marked_prey");if(mark>0){String key="slb_mark_"+attacker.getUUID(),expiry=key+"_until";int st=now<=target.getPersistentData().getLong(expiry)?target.getPersistentData().getInt(key):0;st=Math.min(5,st+1);target.getPersistentData().putInt(key,st);target.getPersistentData().putLong(expiry,now+100);e.setAmount(e.getAmount()*(1f+.06f*mark*st));}int mercy=lvl(weapon,"curse_of_mercy");if(mercy>0)e.setAmount(Math.max(0f,Math.min(e.getAmount(),target.getHealth()-1f)));int interrupt=lvl(weapon,"interrupting_strike");if(interrupt>0&&target.isUsingItem())target.stopUsingItem();int guard=lvl(weapon,"guard_breaker");if(guard>0&&target instanceof Player tp&&tp.isBlocking())tp.getCooldowns().addCooldown(tp.getUseItem().getItem(),40+20*guard);int echo=lvl(weapon,"echo_strike");if(echo>0&&target.level() instanceof ServerLevel sl){float dmg=e.getAmount()*(.15f+.10f*echo);TestProcedure.schedule(sl,TestProcedure.currentTick(sl)+10,()->{guardedHurt(target,attacker.damageSources().playerAttack(attacker),dmg);EnchantmentParticleFX.burstOnEntity(target,ParticleTypes.SONIC_BOOM,1,0,0);});}int seismic=lvl(weapon,"seismic_strike");if(seismic>0&&attacker.onGround()&&attacker.getAttackStrengthScale(.5f)>.9f){double sRad=deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(2,.5,seismic);if(target.level() instanceof ServerLevel sl){BlockState ground=sl.getBlockState(target.blockPosition().below());if(ground.isAir())ground=Blocks.STONE.defaultBlockState();EnchantmentParticleFX.blockDebrisRing(sl,target.getX(),target.getY(),target.getZ(),ground,sRad,16);}for(Mob m:attacker.level().getEntitiesOfClass(Mob.class,target.getBoundingBox().inflate(sRad)))if(m!=target)guardedHurt(m,attacker.damageSources().playerAttack(attacker),e.getAmount()*.2f*seismic);}}
+        if(e.getSource().getEntity() instanceof Player attacker){boolean isRangedArrow=e.getSource().getDirectEntity() instanceof AbstractArrow ra&&!(ra instanceof ThrownTrident);ItemStack weapon=isRangedArrow?UniversalEnchantmentHandler.resolveArrowWeapon((AbstractArrow)e.getSource().getDirectEntity(),attacker):attacker.getMainHandItem();attacker.getPersistentData().putLong("slb_last_attack",now);int glass=armor(attacker,"curse_of_the_glass_boned_champion");if(glass>0)e.setAmount(e.getAmount()*(1f+.25f*glass));int pred=lvl(weapon,"stealth_ambush");if(pred>0){net.minecraft.world.phys.Vec3 aLook=attacker.getLookAngle(),tLook=target.getLookAngle();double backDot=(aLook.x*tLook.x+aLook.z*tLook.z)/Math.max(1e-4,Math.hypot(aLook.x,aLook.z)*Math.hypot(tLook.x,tLook.z));boolean ambush=backDot>0.35||attacker.isInvisible()||attacker.isShiftKeyDown()||(target instanceof Mob mp&&mp.getTarget()!=attacker);if(ambush){e.setAmount(e.getAmount()*(1f+.28f*pred));EnchantmentParticleFX.burstOnEntity(target,EnchantmentParticleFX.SCARLET_MIST,7,.25,.03);}}int ret=lvl(weapon,"retaliation");if(ret>0&&now<=attacker.getPersistentData().getLong("slb_retaliate_until")&&attacker.getPersistentData().hasUUID("slb_retaliate")&&attacker.getPersistentData().getUUID("slb_retaliate").equals(target.getUUID())){e.setAmount(e.getAmount()*(1f+.2f*ret));attacker.getPersistentData().remove("slb_retaliate");}int mark=lvl(weapon,"marked_prey");if(mark>0){String key="slb_mark_"+attacker.getUUID(),expiry=key+"_until";int st=now<=target.getPersistentData().getLong(expiry)?target.getPersistentData().getInt(key):0;st=Math.min(5,st+1);target.getPersistentData().putInt(key,st);target.getPersistentData().putLong(expiry,now+100);e.setAmount(e.getAmount()*(1f+.06f*mark*st));}int mercy=lvl(weapon,"curse_of_mercy");if(mercy>0)e.setAmount(Math.max(0f,Math.min(e.getAmount(),target.getHealth()-1f)));int interrupt=lvl(weapon,"interrupting_strike");if(interrupt>0&&target.isUsingItem())target.stopUsingItem();int guard=lvl(weapon,"guard_breaker");if(guard>0&&target instanceof Player tp&&tp.isBlocking())tp.getCooldowns().addCooldown(tp.getUseItem().getItem(),40+20*guard);int echo=lvl(weapon,"echo_strike");if(echo>0&&target.level() instanceof ServerLevel sl){float dmg=e.getAmount()*(.15f+.10f*echo);TestProcedure.schedule(sl,TestProcedure.currentTick(sl)+10,()->{guardedHurt(target,attacker.damageSources().playerAttack(attacker),dmg);EnchantmentParticleFX.burstOnEntity(target,ParticleTypes.SONIC_BOOM,1,0,0);});}int seismic=isRangedArrow?0:lvl(weapon,"seismic_strike");if(seismic>0&&attacker.onGround()&&attacker.getAttackStrengthScale(.5f)>.9f){double sRad=deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(2,.5,seismic);if(target.level() instanceof ServerLevel sl){BlockState ground=sl.getBlockState(target.blockPosition().below());if(ground.isAir())ground=Blocks.STONE.defaultBlockState();EnchantmentParticleFX.blockDebrisRing(sl,target.getX(),target.getY(),target.getZ(),ground,sRad,16);}for(Mob m:attacker.level().getEntitiesOfClass(Mob.class,target.getBoundingBox().inflate(sRad)))if(m!=target)guardedHurt(m,attacker.damageSources().playerAttack(attacker),e.getAmount()*.2f*seismic);}}
     }
 
     // T306-FIX : Moisson d'Expérience garantit +5 XP fixes/niv (+ bonus sur gros boss) + glyphes d'enchantement
@@ -273,7 +274,8 @@ public final class EquipmentExpansionHandler {
         if(e.getLevel().isClientSide()||!(e.getEntity() instanceof AbstractArrow a)||!(a.getOwner() instanceof LivingEntity p))return;
         int concentration=armor(p,"concentration"),focus=p.getPersistentData().getInt("slb_focus");
         if(concentration>0&&focus>0){a.setBaseDamage(a.getBaseDamage()*(1+Math.min(.6,focus*concentration/1000.0)));double speed=a.getDeltaMovement().length();if(speed>.01)a.setDeltaMovement(p.getLookAngle().scale(speed));}
-        ItemStack weapon=p.getMainHandItem();if(weapon.isEmpty()||!(weapon.getItem() instanceof BowItem||weapon.getItem() instanceof CrossbowItem||weapon.getItem() instanceof TridentItem))weapon=p.getOffhandItem();
+        ItemStack weapon=(a instanceof ThrownTrident)?ItemStack.EMPTY:UniversalEnchantmentHandler.resolveArrowWeapon(a,p);
+        if(weapon.isEmpty()||!(weapon.getItem() instanceof BowItem||weapon.getItem() instanceof CrossbowItem||weapon.getItem() instanceof TridentItem)){weapon=p.getMainHandItem();if(weapon.isEmpty()||!(weapon.getItem() instanceof BowItem||weapon.getItem() instanceof CrossbowItem||weapon.getItem() instanceof TridentItem))weapon=p.getOffhandItem();}
         String[] ids={"tracer_shot","briar_arrow","suppression_shot","elemental_chain","ocean_current"};for(String id:ids){int level=lvl(weapon,id);if(level>0)a.getPersistentData().putInt("slb_"+id,level);}
         int pendingOcean=p.getPersistentData().getInt("slb_pending_ocean_current");if(pendingOcean>0){p.getPersistentData().remove("slb_pending_ocean_current");a.getPersistentData().putInt("slb_ocean_current",pendingOcean);}
         int ocean=a.getPersistentData().getInt("slb_ocean_current");if(ocean>0&&(p.isInWater()||p.level().isRainingAt(p.blockPosition())))a.setDeltaMovement(a.getDeltaMovement().scale(1+.30*ocean));
@@ -301,8 +303,92 @@ public final class EquipmentExpansionHandler {
     // "instanceof LivingEntity" -- generalise Tracer Shot/Suppression
     // Shot/Elemental Chain/Ocean Current/Briar Arrow a n'importe quel
     // tireur LivingEntity (mob archer avec arc enchante inclus).
-    @SubscribeEvent(priority = EventPriority.HIGHEST, receiveCanceled = true) public static void projectile(ProjectileImpactEvent e){try{projectileImpl(e);}catch(Throwable t__){guard("projectile",t__);}} private static void projectileImpl(ProjectileImpactEvent e){if(!(e.getProjectile() instanceof AbstractArrow a)||!(a.getOwner() instanceof LivingEntity p)||p.level().isClientSide())return;ItemStack bow=p.getMainHandItem();if(bow.isEmpty()||!(bow.getItem() instanceof BowItem||bow.getItem() instanceof CrossbowItem||bow.getItem() instanceof TridentItem)){ItemStack off=p.getOffhandItem();if(!off.isEmpty()&&(off.getItem() instanceof BowItem||off.getItem() instanceof CrossbowItem||off.getItem() instanceof TridentItem))bow=off;}if(e.getRayTraceResult() instanceof EntityHitResult hit&&hit.getEntity() instanceof LivingEntity t){int tracer=arrowLvl(a,bow,"tracer_shot");if(tracer>0&&p.level() instanceof ServerLevel sl){t.addEffect(new MobEffectInstance(MobEffects.GLOWING,10,0,false,false));startTracer(sl,t,p,tracer);}int suppress=arrowLvl(a,bow,"suppression_shot");if(suppress>0){t.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,40+20*suppress,suppress-1));t.addEffect(new MobEffectInstance(MobEffects.WEAKNESS,40+20*suppress,0));}int elem=arrowLvl(a,bow,"elemental_chain");if(elem>0){if(p.level().dimension()==Level.NETHER)t.setRemainingFireTicks((2+elem) * 20);else if(p.level().isRaining())t.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,40+20*elem,elem-1));else if(p.level().dimension()==Level.END)t.addEffect(new MobEffectInstance(MobEffects.LEVITATION,10+5*elem,0));}int ocean=a.getPersistentData().getInt("slb_ocean_current");if(ocean>0&&(t.isInWater()||p.level().isRainingAt(t.blockPosition()))){guardedHurt(t,p.damageSources().drown(),2.5f*ocean);EnchantmentParticleFX.burstOnEntity(t,ParticleTypes.SPLASH,12,.3,.08);}}
-        if(e.getRayTraceResult() instanceof BlockHitResult bh){int briar=arrowLvl(a,bow,"briar_arrow");if(briar>0&&p.level() instanceof ServerLevel sl){BlockPos c=bh.getBlockPos().relative(bh.getDirection());for(BlockPos q:BlockPos.betweenClosed(c.offset(-briar,0,-briar),c.offset(briar,0,briar))){if(sl.getBlockState(q).isAir()&&sl.getBlockState(q.below()).is(Blocks.GRASS_BLOCK)&&sl.random.nextInt(100)<35){sl.setBlockAndUpdate(q,Blocks.SWEET_BERRY_BUSH.defaultBlockState().setValue(SweetBerryBushBlock.AGE,2));BlockPos saved=q.immutable();TestProcedure.schedule(sl,TestProcedure.currentTick(sl)+200,()->{if(sl.getBlockState(saved).is(Blocks.SWEET_BERRY_BUSH))sl.setBlockAndUpdate(saved,Blocks.AIR.defaultBlockState());});}}}}
+    // T340-RANGED-OVERHAUL : Résolution d'arme via snapshot NBT + vraies durées/puissances de tracer_shot (30–70s),
+    // suppression_shot (Lenteur ET Faiblesse scalées I..III), elemental_chain (Nether/Eau-Pluie/End/Overworld + FX + sans perte d'i-frames)
+    // et briar_arrow (ronces temporaires sur herbe/terre/mousse + impact épineux lisible partout !).
+    @SubscribeEvent(priority = EventPriority.HIGHEST, receiveCanceled = true) public static void projectile(ProjectileImpactEvent e){try{projectileImpl(e);}catch(Throwable t__){guard("projectile",t__);}} private static void projectileImpl(ProjectileImpactEvent e){
+        if(!(e.getProjectile() instanceof AbstractArrow a)||!(a.getOwner() instanceof LivingEntity p)||p.level().isClientSide())return;
+        if(a.getPersistentData().getBoolean("dlb_toy_arrow"))return;
+        ItemStack bow=(a instanceof ThrownTrident)?ItemStack.EMPTY:UniversalEnchantmentHandler.resolveArrowWeapon(a,p);
+        if(bow.isEmpty()||!(bow.getItem() instanceof BowItem||bow.getItem() instanceof CrossbowItem||bow.getItem() instanceof TridentItem)){
+            bow=p.getMainHandItem();
+            if(bow.isEmpty()||!(bow.getItem() instanceof BowItem||bow.getItem() instanceof CrossbowItem||bow.getItem() instanceof TridentItem)){
+                ItemStack off=p.getOffhandItem();
+                if(!off.isEmpty()&&(off.getItem() instanceof BowItem||off.getItem() instanceof CrossbowItem||off.getItem() instanceof TridentItem))bow=off;
+            }
+        }
+        boolean isExtra=a.getPersistentData().getBoolean("dlb_extra_proj")||a.getPersistentData().getBoolean("slb_no_phasing");
+        if(e.getRayTraceResult() instanceof EntityHitResult hit&&hit.getEntity() instanceof LivingEntity t){
+            int tracer=arrowLvl(a,bow,"tracer_shot");
+            if(tracer>0&&p.level() instanceof ServerLevel sl){
+                int glowTicks=600+200*Math.max(0,Math.min(6,tracer-1));
+                t.addEffect(new MobEffectInstance(MobEffects.GLOWING,glowTicks,0,false,false));
+                EnchantmentParticleFX.burstOnEntity(t,ParticleTypes.END_ROD,8,.28,.04);
+                startTracer(sl,t,p,tracer);
+            }
+            int suppress=arrowLvl(a,bow,"suppression_shot");
+            if(suppress>0){
+                int supDur=60+40*Math.min(6,suppress);
+                int supAmp=Math.min(3,suppress-1);
+                t.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,supDur,supAmp));
+                t.addEffect(new MobEffectInstance(MobEffects.WEAKNESS,supDur,supAmp));
+                EnchantmentParticleFX.burstOnEntity(t,EnchantmentParticleFX.SHADOW_VIOLET,7,.26,.02);
+                EnchantmentParticleFX.burstOnEntity(t,ParticleTypes.SMOKE,6,.24,.02);
+            }
+            int elem=arrowLvl(a,bow,"elemental_chain");
+            if(elem>0){
+                if(p.level().dimension()==Level.NETHER){
+                    t.setRemainingFireTicks(Math.max(t.getRemainingFireTicks(),(3+2*Math.min(6,elem))*20));
+                    guardedProjectileHurt(t,p.damageSources().onFire(),2.0f*elem);
+                    EnchantmentParticleFX.burstOnEntity(t,ParticleTypes.FLAME,10,.30,.05);
+                    EnchantmentParticleFX.burstOnEntity(t,ParticleTypes.LAVA,4,.22,.02);
+                }else if(p.isInWaterOrRain()||t.isInWaterOrRain()||p.level().isRaining()){
+                    t.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,60+25*Math.min(6,elem),Math.min(3,elem-1)));
+                    guardedProjectileHurt(t,p.damageSources().indirectMagic(a,p),2.0f*elem);
+                    EnchantmentParticleFX.burstOnEntity(t,ParticleTypes.SPLASH,12,.30,.08);
+                    EnchantmentParticleFX.burstOnEntity(t,EnchantmentParticleFX.FROST_CYAN,7,.25,.03);
+                }else if(p.level().dimension()==Level.END){
+                    t.addEffect(new MobEffectInstance(MobEffects.LEVITATION,20+12*Math.min(6,elem),Math.min(2,elem-1)));
+                    guardedProjectileHurt(t,p.damageSources().indirectMagic(a,p),2.0f*elem);
+                    EnchantmentParticleFX.burstOnEntity(t,ParticleTypes.PORTAL,12,.30,.08);
+                    EnchantmentParticleFX.burstOnEntity(t,ParticleTypes.END_ROD,6,.24,.04);
+                }else{
+                    guardedProjectileHurt(t,p.damageSources().indirectMagic(a,p),1.5f*elem);
+                    t.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,30+10*Math.min(5,elem),0));
+                    EnchantmentParticleFX.burstOnEntity(t,ParticleTypes.ELECTRIC_SPARK,8,.26,.05);
+                }
+            }
+            int briarHit=arrowLvl(a,bow,"briar_arrow");
+            if(briarHit>0){
+                guardedProjectileHurt(t,p.damageSources().thorns(p),1.5f*briarHit);
+                t.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,35+15*Math.min(5,briarHit),0));
+                EnchantmentParticleFX.burstOnEntity(t,EnchantmentParticleFX.TOXIC_GREEN,7,.25,.02);
+            }
+            int ocean=a.getPersistentData().getInt("slb_ocean_current");
+            if(ocean>0&&(t.isInWater()||p.level().isRainingAt(t.blockPosition()))){
+                guardedProjectileHurt(t,p.damageSources().drown(),2.5f*ocean);
+                EnchantmentParticleFX.burstOnEntity(t,ParticleTypes.SPLASH,12,.3,.08);
+            }
+        }
+        int briar=arrowLvl(a,bow,"briar_arrow");
+        if(briar>0&&!isExtra&&p.level() instanceof ServerLevel sl){
+            BlockPos c=(e.getRayTraceResult() instanceof BlockHitResult bh)
+                    ?bh.getBlockPos().relative(bh.getDirection())
+                    :BlockPos.containing(e.getRayTraceResult().getLocation());
+            int rad=Math.min(4,1+briar);
+            EnchantmentParticleFX.shockwaveRing(sl,c.getX()+.5,c.getY()+.15,c.getZ()+.5,EnchantmentParticleFX.TOXIC_GREEN,Math.min(3.5,rad),14,.03);
+            for(BlockPos q:BlockPos.betweenClosed(c.offset(-rad,-1,-rad),c.offset(rad,1,rad))){
+                BlockState below=sl.getBlockState(q.below());
+                boolean fertile=below.is(Blocks.GRASS_BLOCK)||below.is(BlockTags.DIRT)||below.is(Blocks.MOSS_BLOCK);
+                if(sl.getBlockState(q).isAir()&&fertile&&sl.random.nextInt(100)<42){
+                    sl.setBlockAndUpdate(q,Blocks.SWEET_BERRY_BUSH.defaultBlockState().setValue(SweetBerryBushBlock.AGE,2));
+                    BlockPos saved=q.immutable();
+                    TestProcedure.schedule(sl,TestProcedure.currentTick(sl)+200,()->{
+                        if(sl.getBlockState(saved).is(Blocks.SWEET_BERRY_BUSH))sl.setBlockAndUpdate(saved,Blocks.AIR.defaultBlockState());
+                    });
+                }
+            }
+        }
     }
     // FIX (mob-equipment-enchant generalization) : "instanceof Player" ->
     // "instanceof LivingEntity" -- un mob bloquant avec un bouclier
@@ -1003,6 +1089,8 @@ public final class EquipmentExpansionHandler {
         return deepluckyblock.util.ElementalHeartLoss.effectiveLevel(chest, elementId, raw);
     }
     private static void guardedHurt(LivingEntity t,net.minecraft.world.damagesource.DamageSource s,float a){if(a<=0||!t.isAlive())return;try{DAMAGE_GUARD.set(true);t.hurt(s,a);}finally{DAMAGE_GUARD.set(false);}}
+    /** T340-RANGED-OVERHAUL : Préserve invulnerableTime <= 10 pour ne jamais annuler l'impact de flèche/trident vanilla ! */
+    private static void guardedProjectileHurt(LivingEntity t,net.minecraft.world.damagesource.DamageSource s,float a){if(a<=0||!t.isAlive())return;int prev=t.invulnerableTime;if(prev<=10)t.invulnerableTime=0;try{DAMAGE_GUARD.set(true);t.hurt(s,a);}finally{DAMAGE_GUARD.set(false);if(prev<=10&&t.isAlive())t.invulnerableTime=prev;}}
     // FIX (mob-equipment-enchant generalization) : DamageSources.playerAttack
     // exige un Player ; l'equivalent generique mobAttack(LivingEntity)
     // fonctionne pour n'importe quel attaquant (y compris un Player).

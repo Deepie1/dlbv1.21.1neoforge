@@ -42,6 +42,10 @@ public final class CombatStatsCalculator {
     public record ArmorStats(float baseArmor, float toughness, float damageReductionPercent,
                               boolean hasConditionalBonuses) {}
 
+    public record RangedStats(float shotDamage, float volleyDamage, int projectileCount,
+                               float shotsPerSecond, float dps, boolean isToy,
+                               boolean hasConditionalBonuses) {}
+
     private static int lvlById(ItemStack stack, String id) {
         Enchantment en = DeepEnchant.byId(id);
         if (en == null) return 0;
@@ -375,5 +379,103 @@ public final class CombatStatsCalculator {
         }
 
         return new ArmorStats(baseArmor, toughness, 0f, conditional);
+    }
+
+    /**
+     * T340-RANGED-OVERHAUL : Estimation fidèle des dégâts d'impact, du nombre de projectiles
+     * et de la cadence réelle d'un Arc ou d'une Arbalète, alignée à 100 % sur les formules de
+     * {@code UniversalEnchantmentHandler} et {@code EquipmentExpansionHandler}.
+     */
+    public static RangedStats computeRangedStats(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return new RangedStats(0f, 0f, 1, 0f, 0f, false, false);
+        }
+        boolean isCrossbow = stack.getItem() instanceof net.minecraft.world.item.CrossbowItem;
+        if (lvlById(stack, "deep_lucky_block:toy") > 0) {
+            return new RangedStats(0f, 0f, 1, 1.0f, 0f, true, false);
+        }
+
+        // Tir bandé complet vanilla (~9.0 PV moyens sur flèche pleine charge / carreau 3.15x)
+        float perArrow = 9.0f;
+        int power = lvlById(stack, "minecraft:power");
+        if (power > 0) {
+            perArrow *= (1.0f + 0.25f * (power + 1));
+        }
+        int heavyImpact = lvlById(stack, "deep_lucky_block:heavy_impact");
+        if (heavyImpact > 0) {
+            perArrow += 4.0f * heavyImpact;
+        }
+        int heavyRange = lvlById(stack, "deep_lucky_block:heavy_range");
+        if (heavyRange > 0) {
+            perArrow += 2.0f * heavyRange;
+        }
+        int flint = lvlById(stack, "deep_lucky_block:flint_heart");
+        if (flint > 0) {
+            perArrow += 2.5f * flint;
+        }
+        int weakForce = lvlById(stack, "deep_lucky_block:weak_force");
+        if (weakForce > 0) {
+            perArrow *= Math.max(0.25f, 1.0f - 0.25f * weakForce);
+        }
+
+        // Bonus d'impact directs garantis sur la flèche principale
+        float directBonus = 0.0f;
+        int dragon = lvlById(stack, "deep_lucky_block:dragons_breath_arrow");
+        if (dragon > 0) directBonus += 14.0f * dragon;
+        int poison = lvlById(stack, "deep_lucky_block:poison_arrow");
+        if (poison > 0) directBonus += 2.0f * poison;
+        int elem = lvlById(stack, "deep_lucky_block:elemental_chain");
+        if (elem > 0) directBonus += 2.0f * elem;
+        int briar = lvlById(stack, "deep_lucky_block:briar_arrow");
+        if (briar > 0) directBonus += 1.5f * briar;
+        int storm = lvlById(stack, "deep_lucky_block:storm_strike");
+        if (storm > 0) directBonus += 6.0f + 3.0f * storm;
+        int thunder = lvlById(stack, "deep_lucky_block:thunderstruck");
+        if (thunder > 0) directBonus += 3.0f * thunder;
+        int meteor = lvlById(stack, "deep_lucky_block:meteor");
+        if (meteor > 0) directBonus += 10.0f + 4.0f * Math.max(0, meteor - 1);
+        int delay = lvlById(stack, "deep_lucky_block:delay");
+        if (delay > 0) directBonus += 6.0f + 3.0f * delay;
+        int brim = lvlById(stack, "deep_lucky_block:brimstone");
+        if (brim > 0) directBonus += 4.0f + 2.5f * brim;
+
+        float primaryShot = perArrow + directBonus;
+
+        // Volée multi-projectiles (Multishot, Éventail, Dispersion)
+        int multishot = lvlById(stack, "minecraft:multishot");
+        int fan = lvlById(stack, "deep_lucky_block:fan_volley");
+        int scatter = lvlById(stack, "deep_lucky_block:scatter");
+        int extraFullArrows = (multishot > 0 ? 2 : 0) + Math.min(10, 2 * fan);
+        int scatterPellets = scatter > 0 ? Math.min(12, 4 + 2 * scatter) : 0;
+        int totalProj = 1 + extraFullArrows + scatterPellets;
+        float volley = primaryShot + extraFullArrows * perArrow + scatterPellets * (perArrow * 0.48f);
+
+        // Cadence effective (tirs/seconde)
+        int instant = lvlById(stack, "deep_lucky_block:instant_shot");
+        int quick = lvlById(stack, "minecraft:quick_charge");
+        float cycleSeconds;
+        if (isCrossbow) {
+            cycleSeconds = instant > 0 ? 0.35f : Math.max(0.30f, 1.25f - 0.25f * Math.min(4, quick));
+        } else {
+            cycleSeconds = instant >= 3 ? 0.35f : Math.max(0.35f, (20.0f - 5.0f * Math.min(3, instant)) / 20.0f + 0.15f);
+        }
+        float shotsPerSec = 1.0f / cycleSeconds;
+        float dps = volley * shotsPerSec;
+
+        boolean conditional = lvlById(stack, "deep_lucky_block:sniper") > 0
+                || lvlById(stack, "deep_lucky_block:point_blank_shot") > 0
+                || lvlById(stack, "deep_lucky_block:peregrine") > 0
+                || lvlById(stack, "deep_lucky_block:water_arrow") > 0
+                || lvlById(stack, "deep_lucky_block:predators_scent") > 0
+                || lvlById(stack, "deep_lucky_block:fear") > 0
+                || lvlById(stack, "deep_lucky_block:thunderstruck") > 0
+                || lvlById(stack, "deep_lucky_block:chaos") > 0
+                || lvlById(stack, "deep_lucky_block:poison_arrow") > 0
+                || lvlById(stack, "deep_lucky_block:wraith_arrow") > 0
+                || lvlById(stack, "deep_lucky_block:flint_heart") > 0
+                || lvlById(stack, "deep_lucky_block:astral_pierce") > 0
+                || lvlById(stack, "deep_lucky_block:phasing_bolts") > 0;
+
+        return new RangedStats(primaryShot, volley, totalProj, shotsPerSec, dps, false, conditional);
     }
 }

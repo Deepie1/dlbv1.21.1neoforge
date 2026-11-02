@@ -273,12 +273,12 @@ public class GenerateLuckyItemProcedure {
     private static final int FEATHER_FALLING_BONUS_MAX = 5;
 
     // ==================== BRIMSTONE (ULTRA-DÉGÂTS) ====================
-    // Brimstone : disponible à partir de luck 80, niveau max II partout
-    // (80-99 et ETERNAL). Brimstone ne peut jamais devenir le niveau 100 :
-    // l'unique god enchant ETERNAL vient du pool COMMON dédié dans le JSON.
+    // T340-RANGED-OVERHAUL : Brimstone débloqué jusqu'au niveau V (progression par palier de luck :
+    // 80–87 -> I–II, 88–94 -> II–III, 95–98 -> III–IV, 99–100 -> IV–V), aligné avec ModEnchantments (max 5)
+    // et débloquant naturellement la Synergie #092 (Requiem du Canon de Soufre, brimstone >= 4) !
     private static final String BRIMSTONE_ID = "deep_lucky_block:brimstone";
     private static final int BRIMSTONE_MIN_LUCK = 80;
-    private static final int BRIMSTONE_MAX_LEVEL = 2;
+    private static final int BRIMSTONE_MAX_LEVEL = 5;
 
     private static final String LEAP_KEYWORD = "leap";
     private static final int LEAP_MAX_LEVEL = 6;
@@ -289,9 +289,9 @@ public class GenerateLuckyItemProcedure {
     // mais avec une CHANCE d'acceptation réduite ("un peu de chance").
     private static final int UNBREAKABLE_MIN_LUCK = 50;
     private static final int UNBREAKABLE_ACCEPT_CHANCE = 10;
-    // Delay : niveau 1 (luck < 50) ou 1-2 (luck >= 50). Jamais au-delà de II.
+    // T340-RANGED-OVERHAUL : Delay progresse de I à V selon la luck (aligné avec ModEnchantments max 5).
     private static final int DELAY_MIN_LEVEL = 1;
-    private static final int DELAY_MAX_LEVEL = 2;
+    private static final int DELAY_MAX_LEVEL = 5;
 
     // ==================== LUNETTES DU PATRON ====================
     // 10% de chance qu'un casque généré soit remplacé par les Lunettes du
@@ -303,6 +303,8 @@ public class GenerateLuckyItemProcedure {
     private static final int BASIC_LIGHTNESS_APPLY_CHANCE = 8;
 
     private static final String SHARPNESS_ID = "minecraft:sharpness";
+    private static final String POWER_ID = "minecraft:power";
+    private static final String QUICK_CHARGE_ID = "minecraft:quick_charge";
     private static final String PROTECTION_ID = "minecraft:protection";
     private static final int PRIORITY_ENCHANT_CHANCE = 66;
 
@@ -2576,14 +2578,16 @@ public class GenerateLuckyItemProcedure {
         return bounded(random, min, max);
     }
 
-    // Charte de difficulté pour brimstone : luck 80+ uniquement, niveau max II.
-    // L'ETERNAL suit la même charte (I-II) : Brimstone est toujours exclu du
-    // niveau 100, réservé aux enchantements COMMON du pool JSON dédié.
+    // T340-RANGED-OVERHAUL : Progression étagée I..V selon le palier de luck (80+),
+    // tout en restant exclu du niveau 100 ETERNAL.
     private static int rollBrimstoneLevelForLuck(int luck, RandomSource random) {
         if (luck < BRIMSTONE_MIN_LUCK) {
-            return 1; // ne devrait jamais arriver : isEnchantmentAllowedForLuck bloque en amont
+            return 1;
         }
-        return 1 + random.nextInt(BRIMSTONE_MAX_LEVEL); // 1..2
+        if (luck < 88) return 1 + random.nextInt(2); // I–II
+        if (luck <= 94) return 2 + random.nextInt(2); // II–III
+        if (luck <= 98) return 3 + random.nextInt(2); // III–IV (débloque Synergie #092 en Relic !)
+        return 4 + random.nextInt(2);                 // IV–V (Masterwork / Eternal)
     }
 
     private static int rollLevelFor(String id, EnchantRange range, RandomSource random, int luck) {
@@ -2597,10 +2601,12 @@ public class GenerateLuckyItemProcedure {
             return rollBrimstoneLevelForLuck(luck, random);
         }
         if (isDelay(id)) {
-            // Delay : max level II, minimum I. Luck < 50 -> I, luck >= 50 -> I-II.
-            return luck >= 50
-                    ? DELAY_MIN_LEVEL + random.nextInt(DELAY_MAX_LEVEL - DELAY_MIN_LEVEL + 1)
-                    : DELAY_MIN_LEVEL;
+            // T340-RANGED-OVERHAUL : Delay progresse de I à V selon la luck.
+            if (luck < 45) return DELAY_MIN_LEVEL;
+            if (luck <= 70) return 1 + random.nextInt(2); // I–II
+            if (luck <= 88) return 2 + random.nextInt(2); // II–III
+            if (luck <= 96) return 3 + random.nextInt(2); // III–IV
+            return Math.min(DELAY_MAX_LEVEL, 3 + random.nextInt(3)); // III–V
         }
         if (isFeatherFalling(id)) {
             int maxSteps = Math.min(FEATHER_FALLING_MAX / FEATHER_FALLING_STEP,
@@ -2678,6 +2684,10 @@ public class GenerateLuckyItemProcedure {
 
     private static boolean isWeapon(ItemType t) {
         return t == ItemType.SWORD || t == ItemType.AXE || t == ItemType.TRIDENT;
+    }
+
+    private static boolean isRangedWeapon(ItemType t) {
+        return t == ItemType.BOW || t == ItemType.CROSSBOW;
     }
 
     // ⛔ T224 — retour « enorme probleme la ! j'ai eu direct une pioche mythic
@@ -2936,6 +2946,8 @@ public class GenerateLuckyItemProcedure {
         if (targetCount > count && random.nextInt(100) < PRIORITY_ENCHANT_CHANCE) {
             String priorityId = null;
             if (isWeapon(type) && pool.contains(SHARPNESS_ID)) priorityId = SHARPNESS_ID;
+            else if (type == ItemType.BOW && pool.contains(POWER_ID)) priorityId = POWER_ID;
+            else if (type == ItemType.CROSSBOW && pool.contains(QUICK_CHARGE_ID)) priorityId = QUICK_CHARGE_ID;
             else if (isArmor(type) && pool.contains(PROTECTION_ID)) priorityId = PROTECTION_ID;
 
             if (priorityId != null && !applied.contains(priorityId)
@@ -3029,7 +3041,7 @@ public class GenerateLuckyItemProcedure {
         }
 
         if (!stack.isEmpty()) {
-            applyRankBoosts(stack, effectiveLuck, random);
+            applyRankBoosts(stack, type, effectiveLuck, random);
         }
 
         // ==================== PALIERS DE PUISSANCE/ARMURE PAR RANG ====================
@@ -3108,6 +3120,33 @@ public class GenerateLuckyItemProcedure {
             Map.entry("minecraft:smite", 1.0),
             Map.entry("minecraft:bane_of_arthropods", 1.0));
 
+    /** T340-RANGED-OVERHAUL : Poids de puissance PAR NIVEAU des enchantements d'Arc & Arbalète. */
+    private static final Map<String, Double> RANGED_POWER_WEIGHTS = Map.ofEntries(
+            Map.entry("minecraft:power", 2.2),
+            Map.entry("minecraft:punch", 1.2),
+            Map.entry("minecraft:piercing", 1.4),
+            Map.entry("minecraft:quick_charge", 1.8),
+            Map.entry("deep_lucky_block:heavy_impact", 2.4),
+            Map.entry("deep_lucky_block:heavy_range", 2.6),
+            Map.entry("deep_lucky_block:sniper", 2.5),
+            Map.entry("deep_lucky_block:point_blank_shot", 2.4),
+            Map.entry("deep_lucky_block:peregrine", 2.0),
+            Map.entry("deep_lucky_block:water_arrow", 1.8),
+            Map.entry("deep_lucky_block:blazing_arrow", 2.4),
+            Map.entry("deep_lucky_block:dragons_breath_arrow", 3.0),
+            Map.entry("deep_lucky_block:poison_arrow", 2.2),
+            Map.entry("deep_lucky_block:elemental_chain", 2.4),
+            Map.entry("deep_lucky_block:briar_arrow", 1.8),
+            Map.entry("deep_lucky_block:storm_strike", 3.6),
+            Map.entry("deep_lucky_block:thunderstruck", 2.6),
+            Map.entry("deep_lucky_block:chaos", 2.8),
+            Map.entry("deep_lucky_block:meteor", 4.2),
+            Map.entry("deep_lucky_block:astral_pierce", 2.8),
+            Map.entry("deep_lucky_block:phasing_bolts", 2.8),
+            Map.entry("deep_lucky_block:fan_volley", 3.2),
+            Map.entry("deep_lucky_block:scatter", 2.8),
+            Map.entry("deep_lucky_block:instant_shot", 2.0));
+
     /** Poids de puissance PAR NIVEAU des enchantements défensifs (ARMOR/ARMOR_TOUGHNESS), en points d'armure. */
     private static final Map<String, Double> DEFENSIVE_POWER_WEIGHTS = Map.ofEntries(
             Map.entry("minecraft:protection", 0.25),        // 4%/niv * ARMOR_POINT_PER_PERCENT(0.25)
@@ -3178,10 +3217,26 @@ public class GenerateLuckyItemProcedure {
         };
     }
 
+    private static PowerTier rangedTierFor(TestProcedure.ItemRank rank) {
+        return switch (rank) {
+            case BROKEN, CURSED, USED -> new PowerTier(0, 3);
+            case COMMON -> new PowerTier(1.5, 5.5);
+            case UNCOMMON -> new PowerTier(3.5, 9);
+            case RARE -> new PowerTier(6.5, 14);
+            case EPIC -> new PowerTier(11, 21);
+            case LEGENDARY -> new PowerTier(16, 28);
+            case MYTHIC -> new PowerTier(22, 36);
+            case RELIC -> new PowerTier(30, 46);
+            case MASTERWORK -> new PowerTier(38, 58);
+            case ETERNAL -> new PowerTier(50, 82);
+            default -> new PowerTier(0, 5.5);
+        };
+    }
+
     /**
      * Recalibre APRÈS COUP la puissance totale (offensive pour les armes,
-     * défensive pour les armures) pour qu'elle reste dans la fourchette
-     * {@link #offensiveTierFor}/{@link #defensiveTierFor} du rang courant.
+     * distante pour arcs/arbalètes, défensive pour les armures) pour qu'elle reste dans la fourchette
+     * {@link #offensiveTierFor}/{@link #rangedTierFor}/{@link #defensiveTierFor} du rang courant.
      * Ne touche JAMAIS au nombre d'enchantements ni aux enchantements exemptés
      * (voir {@link #isExemptFromPowerTier}) : ne fait QUE monter/descendre le
      * niveau des enchantements contributeurs déjà présents sur l'objet, de
@@ -3190,13 +3245,16 @@ public class GenerateLuckyItemProcedure {
     private static void enforcePowerTier(ItemStack stack, ItemType type, int luck, RandomSource random) {
         if (stack == null || stack.isEmpty()) return;
         boolean weapon = isWeapon(type);
+        boolean ranged = isRangedWeapon(type);
         boolean armor = isArmor(type);
         boolean tool = isDamageTool(type);
-        if (!weapon && !armor && !tool) return;
+        if (!weapon && !ranged && !armor && !tool) return;
 
         TestProcedure.ItemRank rank = profileFromLuck(luck).rank();
-        Map<String, Double> weights = armor ? DEFENSIVE_POWER_WEIGHTS : OFFENSIVE_POWER_WEIGHTS;
-        PowerTier tier = armor ? defensiveTierFor(rank) : offensiveTierFor(rank);
+        Map<String, Double> weights = armor ? DEFENSIVE_POWER_WEIGHTS
+                : (ranged ? RANGED_POWER_WEIGHTS : OFFENSIVE_POWER_WEIGHTS);
+        PowerTier tier = armor ? defensiveTierFor(rank)
+                : (ranged ? rangedTierFor(rank) : offensiveTierFor(rank));
         if (tool) {
             // Bande offensive reduite : un outil reste un outil.
             tier = new PowerTier(tier.min() * TOOL_OFFENSIVE_FACTOR,
@@ -3255,7 +3313,7 @@ public class GenerateLuckyItemProcedure {
     }
 
     // ==================== BOOST DE RANG SELON LE GRADE ====================
-    private static void applyRankBoosts(ItemStack stack, int effectiveLuck, RandomSource random) {
+    private static void applyRankBoosts(ItemStack stack, ItemType type, int effectiveLuck, RandomSource random) {
         TestProcedure.ItemRank rank = profileFromLuck(effectiveLuck).rank();
 
         int boostCount = switch (rank) {
@@ -3282,20 +3340,30 @@ public class GenerateLuckyItemProcedure {
         Map<Enchantment, Integer> enchants = new HashMap<>(deepluckyblock.util.DeepEnchant.map(stack)); // PORT 1.21.1
         if (enchants.isEmpty()) return;
 
+        Set<String> configuredCurses = type != null ? new HashSet<>(getAllConfiguredCurses(type)) : Collections.emptySet();
         List<Enchantment> pool = new ArrayList<>(enchants.keySet());
         Collections.shuffle(pool, new java.util.Random(random.nextLong()));
 
         int boosted = 0;
         for (Enchantment ench : pool) {
             if (boosted >= boostCount) break;
+            // T340-RANGED-OVERHAUL : Ne jamais gaspiller un boost de grade sur un enchantement maxLevel == 1
+            // (torch, teleport_arrow, swap_arrow, grapple, toy, infinity, multishot...) ni gonfler une malédiction !
+            if (ench.getMaxLevel() <= 1) continue;
             ResourceLocation boostId = deepluckyblock.util.DeepEnchant.getKeySafe(ench);
-            if (boostId != null && (PROTECTION_ID.equals(boostId.toString())
-                    || BRIMSTONE_ID.equals(boostId.toString()))) {
-                // Protection ET Brimstone possèdent déjà leur plage exacte par grade ;
-                // ne pas leur ajouter le boost générique (+10 à +16 en MASTERWORK),
-                // sinon la charte de difficulté de brimstone serait cassée.
-                boosted++;
-                continue;
+            if (boostId != null) {
+                String bid = boostId.toString();
+                if (configuredCurses.contains(bid) || bid.contains("curse")
+                        || "deep_lucky_block:string_snap".equals(bid)
+                        || "deep_lucky_block:inverted_arrows".equals(bid)
+                        || "deep_lucky_block:weak_force".equals(bid)
+                        || "deep_lucky_block:toy".equals(bid)) {
+                    continue;
+                }
+                if (PROTECTION_ID.equals(bid) || BRIMSTONE_ID.equals(bid)) {
+                    boosted++;
+                    continue;
+                }
             }
             int current = enchants.get(ench);
             setEnchantmentLevel(stack, ench, Math.min(200, current + bonus));
@@ -3353,9 +3421,18 @@ public class GenerateLuckyItemProcedure {
         // elle-meme la progression 1->3, on ne doit plus jamais la court-circuiter.
         if (isElementalHeart(id)) return 1;
         if (isBrimstone(id)) {
-            return BRIMSTONE_MAX_LEVEL; // luck 80+ : max II
+            if (luck < 88) return 2;
+            if (luck <= 94) return 3;
+            if (luck <= 98) return 4;
+            return BRIMSTONE_MAX_LEVEL;
         }
-        if (isDelay(id)) return DELAY_MAX_LEVEL;
+        if (isDelay(id)) {
+            if (luck < 45) return 1;
+            if (luck <= 70) return 2;
+            if (luck <= 88) return 3;
+            if (luck <= 96) return 4;
+            return DELAY_MAX_LEVEL;
+        }
         if (isLeap(id)) return Math.min(LEAP_MAX_LEVEL, Math.max(1, range.maxLevel()));
         if (isBasicLightness(id)) return Math.max(BASIC_LIGHTNESS_MIN_LEVEL, range.maxLevel());
         if (isFeatherFalling(id)) {
@@ -3406,6 +3483,7 @@ public class GenerateLuckyItemProcedure {
             for (String keyword : new String[]{"sharpness", "sweep", "edge", "mending",
                                                "jump", "leap", "walker", "arrow",
                                                "swift", "protection"}) {
+                if ("arrow".equals(keyword) && enchId.endsWith(":inverted_arrows")) continue;
                 if (enchId.contains(keyword)) {
                     keywordGroups.computeIfAbsent(keyword, k -> new ArrayList<>()).add(ench);
                     break;

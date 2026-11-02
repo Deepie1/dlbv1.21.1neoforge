@@ -143,12 +143,14 @@ public class ModEnchantments {
             CustomEnchantment.create("brimstone", Rarity.LEGENDARY, CustomEnchantment.Cat.CROSSBOW, MAIN_HAND, 5);
             CustomEnchantment.create("scatter", Rarity.RARE, CustomEnchantment.Cat.CROSSBOW, MAIN_HAND, 1);
             CustomEnchantment.create("torch", Rarity.COMMON, CustomEnchantment.Cat.CROSSBOW, MAIN_HAND, 1);
-            CustomEnchantment.create("poison_arrow", Rarity.COMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 2);
+            // T340-RANGED-OVERHAUL : poison_arrow maxLevel 2 -> 3 (aligné sur eternal_level_100_pool >= III et progression I->III)
+            CustomEnchantment.create("poison_arrow", Rarity.COMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
 
     // ===================== 6. TRIDENTS, MASSES & PECHE =====================
             CustomEnchantment.create("warp", Rarity.MYTHIC, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
             CustomEnchantment.create("leech", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
-            CustomEnchantment.create("thunderstruck", Rarity.EPIC, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
+            // T340-RANGED-OVERHAUL : thunderstruck maxLevel 1 -> 3 (aligné sur .desc "+3 dégâts magiques/niv.")
+            CustomEnchantment.create("thunderstruck", Rarity.EPIC, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
             CustomEnchantment.create("meteor", Rarity.LEGENDARY, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
             CustomEnchantment.create("disarm", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("grapple", Rarity.UNCOMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);

@@ -4,14 +4,14 @@
   },
   "supported_items": "#minecraft:enchantable/durability",
   "weight": 32,
-  "max_level": 2,
+  "max_level": 3,
   "min_cost": {
     "base": 1,
-    "per_level_above_first": 0
+    "per_level_above_first": 8
   },
   "max_cost": {
-    "base": 1,
-    "per_level_above_first": 0
+    "base": 20,
+    "per_level_above_first": 8
   },
   "anvil_cost": 1,
   "slots": [

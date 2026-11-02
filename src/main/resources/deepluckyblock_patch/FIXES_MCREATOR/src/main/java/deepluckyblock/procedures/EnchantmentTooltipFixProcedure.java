@@ -520,6 +520,8 @@ public final class EnchantmentTooltipFixProcedure {
                 || stack.getItem() instanceof net.minecraft.world.item.TridentItem
                 || stack.getItem() instanceof net.minecraft.world.item.MaceItem
                 || stack.getItem() instanceof net.minecraft.world.item.ShovelItem;
+        boolean isRangedWeapon = stack.getItem() instanceof net.minecraft.world.item.BowItem
+                || stack.getItem() instanceof net.minecraft.world.item.CrossbowItem;
         boolean isArmor = stack.getItem() instanceof net.minecraft.world.item.ArmorItem;
         boolean fr = deepluckyblock.util.TranslationFallback.isFrench();
 
@@ -535,6 +537,28 @@ public final class EnchantmentTooltipFixProcedure {
                                 + trimNumber(stats.attackSpeed()) + "/s \u00a77= \u00a7b"
                                 + trimNumber(stats.dps()) + " DPS"));
                 if (stats.hasConditionalBonuses()) {
+                    line.append(Component.literal(" \u00a77(\u2248 base)"));
+                }
+                return line;
+            }
+        } else if (isRangedWeapon) {
+            deepluckyblock.util.CombatStatsCalculator.RangedStats rStats =
+                    deepluckyblock.util.CombatStatsCalculator.computeRangedStats(stack);
+            if (rStats.isToy()) {
+                return Component.literal("\u00a7b\ud83c\udff9 ")
+                        .append(Component.literal(fr ? "Tir inoffensif : \u00a7f0 dmg \u00a77(Jouet)" : "Harmless Shot: \u00a7f0 dmg \u00a77(Toy)")
+                                .withStyle(ChatFormatting.GRAY));
+            }
+            if (rStats.volleyDamage() > 0f) {
+                String dmgPart = rStats.projectileCount() > 1
+                        ? "\u00a7f" + trimNumber(rStats.volleyDamage()) + " \u00a77dmg (\u00d7" + rStats.projectileCount() + ")"
+                        : "\u00a7f" + trimNumber(rStats.shotDamage()) + " \u00a77dmg";
+                MutableComponent line = Component.literal("\u00a7b\ud83c\udff9 ")
+                        .append(Component.literal(fr ? "Tir r\u00e9el : " : "Effective Shot: ").withStyle(ChatFormatting.GRAY))
+                        .append(Component.literal(dmgPart + " \u00d7 \u00a7f"
+                                + trimNumber(rStats.shotsPerSecond()) + "/s \u00a77= \u00a7b"
+                                + trimNumber(rStats.dps()) + " DPS"));
+                if (rStats.hasConditionalBonuses()) {
                     line.append(Component.literal(" \u00a77(\u2248 base)"));
                 }
                 return line;

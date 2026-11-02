@@ -61,6 +61,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.common.Tags;
@@ -148,14 +149,22 @@ public final class EnchantmentComboHandler {
         return STATES.computeIfAbsent(e.getUUID(), u -> new PlayerComboState());
     }
 
+    private static final ThreadLocal<Boolean> IN_PROJ_IMPACT = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
     private static void safeHurt(LivingEntity target, net.minecraft.world.damagesource.DamageSource src, float amount) {
         if (target == null || !target.isAlive() || amount <= 0.0f) return;
         if (COMBO_HURT_GUARD.get()) return;
+        boolean preserveIFrames = IN_PROJ_IMPACT.get();
+        int prevInvuln = target.invulnerableTime;
+        if (preserveIFrames && prevInvuln <= 10) target.invulnerableTime = 0;
         COMBO_HURT_GUARD.set(true);
         try {
             target.hurt(src, amount);
         } finally {
             COMBO_HURT_GUARD.set(false);
+            if (preserveIFrames && prevInvuln <= 10 && target.isAlive()) {
+                target.invulnerableTime = prevInvuln;
+            }
         }
     }
 
@@ -3209,9 +3218,12 @@ public final class EnchantmentComboHandler {
         }
     }
 
-    @SubscribeEvent
+    // T340-RANGED-OVERHAUL : HIGH + receiveCanceled = true (ne rate plus aucun combo sur flèche perforante/rebondissante)
+    // + préservation des i-frames dans safeHurt pour ne jamais annuler l'impact vanilla de la flèche/trident !
+    @SubscribeEvent(priority = EventPriority.HIGH, receiveCanceled = true)
     public static void onProjectileImpact(ProjectileImpactEvent event) {
         if (event.getProjectile().level().isClientSide()) return;
+        IN_PROJ_IMPACT.set(Boolean.TRUE);
         try {
             Projectile proj = event.getProjectile();
             if (!(proj.getOwner() instanceof LivingEntity shooter)) return;
@@ -3578,6 +3590,8 @@ public final class EnchantmentComboHandler {
             }
         } catch (Throwable t) {
             guard("onProjectileImpact", t);
+        } finally {
+            IN_PROJ_IMPACT.set(Boolean.FALSE);
         }
     }
 
