@@ -25,9 +25,9 @@
     "curse": [
       "minecraft:binding_curse",
       "minecraft:vanishing_curse",
-      "deep_lucky_block:turbulence_curse",
-      "deep_lucky_block:brittle_wings_curse",
-      "deep_lucky_block:sky_conductor_curse",
+      "deep_lucky_block:curse_of_turbulence",
+      "deep_lucky_block:curse_of_brittle_wings",
+      "deep_lucky_block:curse_of_the_sky_conductor",
       "deep_lucky_block:end_corrosion",
       "deep_lucky_block:nether_corrosion"
     ]

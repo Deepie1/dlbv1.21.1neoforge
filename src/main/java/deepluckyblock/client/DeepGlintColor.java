@@ -266,12 +266,12 @@ public final class DeepGlintColor {
                 || s.contains("warden") || s.contains("phasing")) return DRAGON;
 
         if (s.contains("cloud") || s.contains("bounc") || s.contains("landing")
-                || s.contains("hover")) return AIR;
+                || s.contains("hover") || s.contains("air_walk") || s.contains("aerial_cushion")) return AIR;
 
         if (s.contains("beheading") || s.contains("decapit") || s.contains("armor_pry")
                 || s.contains("armor_shatter") || s.contains("blunt") || s.contains("gauntlet")
                 || s.contains("punch") || s.contains("kill") || s.contains("hatred")
-                || s.contains("lone_wolf") || s.contains("solo_combat") || s.contains("peerless")
+                || s.contains("lone_wolf") || s.contains("duelists_mastery") || s.contains("peerless")
                 || s.contains("veteran") || s.contains("battle") || s.contains("berserk")
                 || s.contains("disarm") || s.contains("shield_quake") || s.endsWith(":block")
                 || s.contains("sniper") || s.contains("scatter") || s.contains("shot")
@@ -463,7 +463,7 @@ public final class DeepGlintColor {
         // Sang / vampirisme / sangsue / exécution -> Rouge sang
         if (s.contains("blood") || s.contains("leech") || s.contains("vamp")
                 || s.contains("devour") || s.contains("execute") || s.contains("behead")
-                || s.contains("decapit") || s.contains("killing_sense") || s.contains("last_stand")) {
+                || s.contains("decapit") || s.contains("predators_scent") || s.contains("guillotine") || s.contains("reapers_scythe") || s.contains("agony_breaker") || s.contains("last_stand")) {
             return FLASH_BLOOD;
         }
         // Wither / ombre / fantôme / spectre -> Violet sombre lumineux
@@ -627,7 +627,7 @@ public final class DeepGlintColor {
         // 3) Eau / Pluie / Glace
         if (path.equals("water_heart") || path.equals("tidal_ward") || path.equals("amphibious")
                 || path.equals("oceans_blessing") || path.equals("buoy") || path.equals("breath_holding")
-                || path.equals("ocean_current") || path.equals("riptide_curse") || path.equals("depth_curse")) {
+                || path.equals("ocean_current") || path.equals("riptide_curse") || path.equals("curse_of_the_depths")) {
             return player.isInWater();
         }
         if (path.equals("conduit_heart") || path.equals("rain_nourishment") || path.equals("hydro_shock")) {
@@ -636,7 +636,7 @@ public final class DeepGlintColor {
         if (path.equals("tidal_step")) {
             return player.isInWater() && player.onGround();
         }
-        if (path.equals("frost_trail") || path.equals("frost_walker") || path.equals("snow_remover_shovel")) {
+        if (path.equals("frost_trail") || path.equals("frost_walker") || path.equals("snow_remover")) {
             var below = level.getBlockState(pos.below()).getBlock().getDescriptionId();
             return below.contains("ice") || below.contains("snow") || level.getBlockState(pos).getBlock().getDescriptionId().contains("snow");
         }
@@ -658,7 +658,7 @@ public final class DeepGlintColor {
 
         // 5) Orage / Foudre
         if (path.equals("electric_heart") || path.equals("thundercall_pact") || path.equals("chain_lightning")
-                || path.equals("sky_conductor_curse") || path.equals("lightning_rod_curse") || path.equals("lightning_calamity")) {
+                || path.equals("curse_of_the_sky_conductor") || path.equals("curse_of_the_lightning_rod") || path.equals("lightning_calamity")) {
             return level.isThundering() || level.isRainingAt(pos);
         }
 
@@ -679,18 +679,18 @@ public final class DeepGlintColor {
             return player.isFallFlying() && player.isShiftKeyDown();
         }
         if (path.equals("aerodynamic") || path.equals("wind_rider") || path.equals("iron_wings")
-                || path.equals("wing_toughness_armor") || path.equals("rocket_blast") || path.equals("turbulence_curse")) {
+                || path.equals("wing_toughness_armor") || path.equals("rocket_blast") || path.equals("curse_of_turbulence")) {
             return player.isFallFlying();
         }
-        if (path.equals("foot_placement")) {
+        if (path.equals("air_walk")) {
             if (player.isShiftKeyDown() || player.isInWater() || player.isInLava()) return false;
             var under = level.getBlockState(pos.below());
             return !player.onGround() || under.isAir() || under.is(net.minecraft.world.level.block.Blocks.BARRIER);
         }
-        if (path.equals("range_foot_placement")) {
+        if (path.equals("aerial_cushion_step")) {
             return player.fallDistance >= 2.8f;
         }
-        if (path.equals("oxygen_hover") || path.equals("gale")) {
+        if (path.equals("air_hover") || path.equals("ascending_gale")) {
             return !player.onGround() && player.isShiftKeyDown();
         }
         if (path.equals("cloud_walker") || path.equals("peregrine")) {
@@ -701,11 +701,11 @@ public final class DeepGlintColor {
         }
 
         // 7) Souterrain / Cible Minerai / Arbre / Culture / Pêche
-        if (path.equals("earth_heart") || path.equals("deep_hypoxia") || path.equals("oxygen_lack_haste")
+        if (path.equals("earth_heart") || path.equals("deep_hypoxia") || path.equals("hypoxia_haste")
                 || path.equals("burrowing") || path.equals("mining_stability")) {
             return player.getY() < 32.0 && !level.canSeeSky(pos);
         }
-        if (path.equals("vein_miner") || path.equals("miners_guidance") || path.equals("extracting")
+        if (path.equals("vein_miner") || path.equals("miners_eye") || path.equals("extracting")
                 || path.equals("prospecting") || path.equals("auto_smelt") || path.equals("flint_strike")) {
             return isLookingAtBlockMatching(level, "ore");
         }
@@ -719,13 +719,13 @@ public final class DeepGlintColor {
                     || isLookingAtBlockMatching(level, "wheat") || isLookingAtBlockMatching(level, "carrot")
                     || isLookingAtBlockMatching(level, "potato") || isLookingAtBlockMatching(level, "beetroot");
         }
-        if (path.contains("fishing") || path.equals("cooked_catch") || path.equals("false_bite_curse")
-                || path.equals("scorching_line_curse")) {
+        if (path.contains("fishing") || path.equals("cooked_catch") || path.equals("curse_of_false_bite")
+                || path.equals("curse_of_scorching_line")) {
             return player.fishing != null;
         }
 
         // 8) PV bas / Faim pleine / Posture / Bouclier / Arc bandé / Monture / Mains nues
-        if (path.equals("berserk") || path.equals("adrenaline") || path.equals("final_breath")
+        if (path.equals("berserk") || path.equals("adrenaline") || path.equals("second_wind")
                 || path.equals("last_stand_escape") || path.equals("last_stand_toughness")
                 || path.equals("desperate_kill") || path.equals("life_block") || path.equals("phoenix_rebirth")) {
             return player.getHealth() <= player.getMaxHealth() * 0.35f;
@@ -743,7 +743,7 @@ public final class DeepGlintColor {
                 || path.equals("focused_punch_gauntlet")) {
             return player.isShiftKeyDown();
         }
-        if (path.equals("elastic_soles")) {
+        if (path.equals("spring_coil_soles")) {
             return player.isShiftKeyDown() && player.onGround();
         }
         if (path.equals("concentration")) {
@@ -765,7 +765,7 @@ public final class DeepGlintColor {
         if (path.equals("cavalier") || path.equals("horse_boots")) {
             return player.isPassenger();
         }
-        if (path.equals("momentum") || path.equals("e_speed") || path.equals("windrunner")
+        if (path.equals("momentum") || path.equals("electric_speed") || path.equals("windrunner")
                 || path.equals("sprint_punch_gauntlet") || path.equals("carriers_stride")) {
             return player.isSprinting();
         }

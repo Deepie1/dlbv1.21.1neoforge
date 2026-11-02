@@ -142,11 +142,11 @@ public final class CombatStatsCalculator {
 
         // Critique (chance + multiplicateur) : probabiliste, dépend du jet
         // aléatoire ET/OU de l'état de chute du joueur au moment du coup.
-        int critStuff = lvlById(stack, "deep_lucky_block:low_crit_rate")
+        int critStuff = lvlById(stack, "deep_lucky_block:minor_crit_rate")
                 + lvlById(stack, "deep_lucky_block:crit_rate")
                 + lvlById(stack, "deep_lucky_block:focused_crit")
-                + lvlById(stack, "deep_lucky_block:low_crit_damage")
-                + lvlById(stack, "deep_lucky_block:normal_crit_damage")
+                + lvlById(stack, "deep_lucky_block:minor_crit_amplifier")
+                + lvlById(stack, "deep_lucky_block:crit_amplifier")
                 + lvlById(stack, "deep_lucky_block:overclocked_crit");
         if (critStuff > 0) conditional = true;
 
@@ -156,20 +156,20 @@ public final class CombatStatsCalculator {
         // air restant) et ne sont plus "moyennés" dans un vrai AttributeModifier
         // permanent (voir RealAttributeModifierHandler) -- uniquement
         // signalés ici comme conditionnels, jamais inclus dans baseDamage.
-        int conditionalDamageBonuses = lvlById(stack, "deep_lucky_block:last_stand_slayer")
-                + lvlById(stack, "deep_lucky_block:killing_sense")
+        int conditionalDamageBonuses = lvlById(stack, "deep_lucky_block:agony_breaker")
+                + lvlById(stack, "deep_lucky_block:predators_scent")
                 + lvlById(stack, "deep_lucky_block:focused_ambush")
                 + lvlById(stack, "deep_lucky_block:armor_pry")
                 + lvlById(stack, "deep_lucky_block:cavalier")
                 + lvlById(stack, "deep_lucky_block:stealth_hunter")
-                + lvlById(stack, "deep_lucky_block:end_curse")
+                + lvlById(stack, "deep_lucky_block:curse_of_the_end")
                 + lvlById(stack, "deep_lucky_block:overworld_curse")
                 + lvlById(stack, "deep_lucky_block:nether_curse")
                 + lvlById(stack, "deep_lucky_block:undead_curse")
                 + lvlById(stack, "deep_lucky_block:exhaustion")
                 + lvlById(stack, "deep_lucky_block:blood_pact")
                 + lvlById(stack, "deep_lucky_block:lone_wolf")
-                + lvlById(stack, "deep_lucky_block:solo_combat")
+                + lvlById(stack, "deep_lucky_block:duelists_mastery")
                 + lvlById(stack, "deep_lucky_block:berserk")
                 + lvlById(stack, "deep_lucky_block:desperate_kill")
                 + lvlById(stack, "deep_lucky_block:sighing_strike")
@@ -339,7 +339,7 @@ public final class CombatStatsCalculator {
         // variable morte.
         boolean conditional = false;
 
-        int expProt = lvlById(stack, "deep_lucky_block:explosion_protection");
+        int expProt = lvlById(stack, "deep_lucky_block:explosion_guard");
         int fireProtEnh = lvlById(stack, "deep_lucky_block:fire_protection_enhancement");
         int projProtEnh = lvlById(stack, "deep_lucky_block:projectile_protection_enhancement");
         if (expProt > 0 || fireProtEnh > 0 || projProtEnh > 0) conditional = true; // spécifique au type de dégâts

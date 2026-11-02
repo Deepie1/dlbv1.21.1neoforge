@@ -230,8 +230,8 @@ public final class CustomEnchantment {
     // ══════════════════════════════════════════════════════════════════════
     private static final Set<String> ELYTRA_ONLY = Set.of(
             "aerodynamic", "air_brake", "winging", "iron_wings", "rocket_blast",
-            "wind_rider", "ground_skimmer", "turbulence_curse",
-            "brittle_wings_curse", "sky_conductor_curse");
+            "wind_rider", "ground_skimmer", "curse_of_turbulence",
+            "curse_of_brittle_wings", "curse_of_the_sky_conductor");
 
     public static boolean canEnchantMod(Enchantment en, ItemStack stack) {
         if (en == null || stack == null || stack.isEmpty()) return false;
@@ -275,8 +275,8 @@ public final class CustomEnchantment {
     // CONFLITS (remplace checkCompatibility) — table d'origine 1.20.1
     // ══════════════════════════════════════════════════════════════════════
     private static final Set<String> PHASING_ALLOWED = Set.of(
-            "phasing", "steady_shot", "ranger", "quick_charge", "inverted_arrows",
-            "instant_shot", "point_shoot", "weak_force", "retrieval",
+            "phasing_bolts", "zero_gravity_shot", "ranger", "quick_charge", "inverted_arrows",
+            "instant_shot", "point_blank_shot", "weak_force", "retrieval",
             "unbreaking", "mending");
     private static final Set<String> PIERCE_UNSAFE = Set.of(
             "brimstone", "delay", "meteor", "storm_strike", "thunderstruck",
@@ -294,20 +294,20 @@ public final class CustomEnchantment {
         if (pa.equals(pb) && !isVanilla(a) && !isVanilla(b)) return false;
         // T306-FAMILIES : vanilla vs vanilla uniquement (&&) pour préserver les conflits vanilla <-> mod (infinity/retrieval, mending/basic_mending, etc.)
         if (isVanilla(a) && isVanilla(b)) return true;
-        if ((pa.equals("phasing") && !PHASING_ALLOWED.contains(pb))
-                || (pb.equals("phasing") && !PHASING_ALLOWED.contains(pa))) return false;
-        if ((pa.equals("pierce") && PIERCE_UNSAFE.contains(pb))
-                || (pb.equals("pierce") && PIERCE_UNSAFE.contains(pa))) return false;
+        if ((pa.equals("phasing_bolts") && !PHASING_ALLOWED.contains(pb))
+                || (pb.equals("phasing_bolts") && !PHASING_ALLOWED.contains(pa))) return false;
+        if ((pa.equals("astral_pierce") && PIERCE_UNSAFE.contains(pb))
+                || (pb.equals("astral_pierce") && PIERCE_UNSAFE.contains(pa))) return false;
         if ((pa.equals("toy") && TOY_UNSAFE.contains(pb))
                 || (pb.equals("toy") && TOY_UNSAFE.contains(pa))) return false;
         if (pair(pa, pb, "water_arrow", "dry_arrow")
                 || pair(pa, pb, "infinity", "retrieval")
-                || pair(pa, pb, "pierce", "piercing")
+                || pair(pa, pb, "astral_pierce", "piercing")
                 || pair(pa, pb, "sniper", "weak_force")
                 || pair(pa, pb, "storm_strike", "thunderstruck")
                 || pair(pa, pb, "ricochet", "bounce")
-                || pair(pa, pb, "pulling_power", "fishing_grapple")
-                || pair(pa, pb, "fishing_grapple", "ender_hook")
+                || pair(pa, pb, "pulling_power", "grappling_hook")
+                || pair(pa, pb, "grappling_hook", "ender_hook")
                 || pair(pa, pb, "infernal_line", "cooked_catch")
                 || pair(pa, pb, "explosive_return", "sincere_loyalty")
                 || pair(pa, pb, "aerodynamic", "wind_rider")
@@ -316,15 +316,15 @@ public final class CustomEnchantment {
                 || pair(pa, pb, "unbreakable", "eternal")) return false;
         if (pa.equals("riptide") || pb.equals("riptide")) {
             String otherPath = pa.equals("riptide") ? pb : pa;
-            if (Set.of("homing_trident", "sincere_loyalty", "scorching_prongs",
+            if (Set.of("homing", "sincere_loyalty", "scorching_prongs",
                     "wind_lance", "harpoon", "lingering_skewer").contains(otherPath)) return false;
         }
         if (Set.of("teleport_arrow", "swap_arrow", "grapple").contains(pa)
                 && Set.of("teleport_arrow", "swap_arrow", "grapple").contains(pb)) return false;
         if (Set.of("brimstone", "delay", "meteor").contains(pa)
                 && Set.of("brimstone", "delay", "meteor").contains(pb)) return false;
-        if (Set.of("multishot_bow", "scatter", "multishot").contains(pa)
-                && Set.of("multishot_bow", "scatter", "multishot").contains(pb)) return false;
+        if (Set.of("fan_volley", "scatter", "multishot").contains(pa)
+                && Set.of("fan_volley", "scatter", "multishot").contains(pb)) return false;
         if (Set.of("momentum", "trailblazer", "windrunner").contains(pa)
                 && Set.of("momentum", "trailblazer", "windrunner").contains(pb)) return false;
         // T306-FAMILIES : progression Enfant -> Upgrade par famille globale (un seul palier actif par famille).
@@ -340,26 +340,26 @@ public final class CustomEnchantment {
      * Deux paliers de la même famille sont mutuellement exclusifs (enclume ET Lucky Block).
      */
     public static final List<Set<String>> UPGRADE_FAMILIES = List.of(
-            Set.of("sharp_edge", "reinforced_sharpness", "advanced_sharpness", "ultra_edge", "extreme_sharpness", "supreme_sharpness"),
+            Set.of("sharp_edge", "reinforced_sharpness", "advanced_sharpness", "ultra_sharpness", "extreme_sharpness", "supreme_sharpness"),
             Set.of("basic_swiftness", "swiftness"),
             Set.of("basic_lightness", "lightness"),
             Set.of("basic_leap_power", "leap_power"),
             Set.of("basic_chrono_mending", "chrono_mending"),
             Set.of("basic_mending", "mending"),
-            Set.of("low_crit_rate", "crit_rate"),
-            Set.of("low_crit_damage", "normal_crit_damage", "overclocked_crit"),
-            Set.of("low_damage_critical", "critical_strike", "damage_critical"),
+            Set.of("minor_crit_rate", "crit_rate"),
+            Set.of("minor_crit_amplifier", "crit_amplifier", "overclocked_crit"),
+            Set.of("minor_dive_strike", "dive_strike", "meteoric_slam"),
             Set.of("sweeping_enhancement", "reinforced_sweeping", "annihilating_sweep"),
             Set.of("sweeping_fire", "fiery_sweep"),
-            Set.of("bloodthirst", "bloodthirsty", "blood_drinker_edge"),
+            Set.of("bloodthirst", "bloodthirsty", "blood_drinkers_edge"),
             Set.of("promising_blade", "giant_slayer", "titan_slayer"),
             Set.of("tree_felling", "lumberjack"),
             Set.of("vein_miner", "extracting"),
-            Set.of("utility_trench_shovel", "universal_trench_shovel"),
+            Set.of("utility_trench", "universal_trench"),
             Set.of("stinky_feet", "super_stinky_feet"),
             Set.of("rock_breaking_gauntlet", "diamond_glow_gauntlet"),
             Set.of("army_summon", "summon_army"),
-            Set.of("echolocation", "perception"),
+            Set.of("echolocation", "omniscient_perception"),
             Set.of("big_step", "giant_step")
     );
 
@@ -417,13 +417,13 @@ public final class CustomEnchantment {
         if (n.contains("dragon") || n.contains("ender") || n.contains("void")
                 || n.contains("warp") || n.contains("shadow") || n.contains("teleport")
                 || n.contains("wraith") || n.contains("night")) return Style.EMPTY.withColor(ChatFormatting.DARK_PURPLE);
-        if (n.contains("breath") || n.contains("oxygen") || n.contains("gale")
+        if (n.contains("breath") || n.contains("oxygen") || n.contains("ascending_gale")
                 || n.contains("wind") || n.contains("cloud") || n.contains("air")
                 || n.contains("lung") || n.contains("hover")) return Style.EMPTY.withColor(TextColor.fromRgb(0xDDEEFF));
         if (n.contains("conduit") || n.contains("water") || n.contains("ocean")
                 || n.contains("aqua") || n.contains("tide") || n.contains("amphibious")
                 || n.contains("buoy") || n.contains("depth")) return Style.EMPTY.withColor(ChatFormatting.BLUE);
-        if (n.contains("leap") || n.contains("jump") || n.contains("high_step") || n.equals("big_step")) return Style.EMPTY.withColor(ChatFormatting.GREEN);
+        if (n.contains("leap") || n.contains("jump") || n.contains("slope_strider") || n.equals("big_step")) return Style.EMPTY.withColor(ChatFormatting.GREEN);
         if (n.equals("giant_step")) return Style.EMPTY.withColor(TextColor.fromRgb(0xFFAA00));
         if (n.contains("lumber") || n.contains("tree") || n.contains("vein")
                 || n.contains("harvest") || n.contains("weeding") || n.contains("farmer")

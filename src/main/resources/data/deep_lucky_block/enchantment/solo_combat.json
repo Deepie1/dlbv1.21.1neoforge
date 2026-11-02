@@ -1,20 +1,7 @@
 {
-  "description": {
-    "translate": "enchantment.deep_lucky_block.solo_combat"
-  },
-  "supported_items": "#minecraft:enchantable/durability",
-  "weight": 10,
-  "max_level": 5,
-  "min_cost": {
-    "base": 1,
-    "per_level_above_first": 0
-  },
-  "max_cost": {
-    "base": 1,
-    "per_level_above_first": 0
-  },
-  "anvil_cost": 1,
-  "slots": [
-    "mainhand"
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:false"
+    }
   ]
 }

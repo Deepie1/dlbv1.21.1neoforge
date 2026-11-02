@@ -3,15 +3,15 @@
   "item_type": "hoe",
   "categories": {
     "offensive": [
-      "deep_lucky_block:low_crit_damage",
-      "deep_lucky_block:low_crit_rate",
+      "deep_lucky_block:minor_crit_amplifier",
+      "deep_lucky_block:minor_crit_rate",
       "deep_lucky_block:sickle_damage",
       "deep_lucky_block:sickle_slash",
       "deep_lucky_block:focused_crit",
-      "deep_lucky_block:normal_crit_damage",
+      "deep_lucky_block:crit_amplifier",
       "deep_lucky_block:crit_rate",
       "deep_lucky_block:overclocked_crit",
-      "deep_lucky_block:execute_power",
+      "deep_lucky_block:reapers_scythe",
       "deep_lucky_block:soul_sacrifice_slash"
     ],
     "utility": [

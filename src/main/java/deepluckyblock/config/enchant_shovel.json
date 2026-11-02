@@ -3,13 +3,13 @@
   "item_type": "shovel",
   "categories": {
     "offensive": [
-      "deep_lucky_block:low_crit_damage",
-      "deep_lucky_block:low_crit_rate",
+      "deep_lucky_block:minor_crit_amplifier",
+      "deep_lucky_block:minor_crit_rate",
       "deep_lucky_block:shovel_blade",
       "deep_lucky_block:armor_pry",
-      "deep_lucky_block:shovel_heavy_hit",
+      "deep_lucky_block:heavy_hit",
       "deep_lucky_block:focused_crit",
-      "deep_lucky_block:normal_crit_damage",
+      "deep_lucky_block:crit_amplifier",
       "deep_lucky_block:shovel_halberd",
       "deep_lucky_block:crit_rate",
       "deep_lucky_block:overclocked_crit"
@@ -21,7 +21,7 @@
       "minecraft:silk_touch",
       "minecraft:unbreaking",
       "deep_lucky_block:haste_surge",
-      "deep_lucky_block:snow_remover_shovel",
+      "deep_lucky_block:snow_remover",
       "deep_lucky_block:basic_mending",
       "deep_lucky_block:haste_continuation",
       "deep_lucky_block:mining_stability",
@@ -30,12 +30,12 @@
       "deep_lucky_block:burrowing",
       "deep_lucky_block:military_shovel",
       "deep_lucky_block:selective_excavation",
-      "deep_lucky_block:utility_trench_shovel",
+      "deep_lucky_block:utility_trench",
       "deep_lucky_block:basic_chrono_mending",
       "deep_lucky_block:swift_strike",
       "deep_lucky_block:extension",
       "deep_lucky_block:soul_bound",
-      "deep_lucky_block:universal_trench_shovel",
+      "deep_lucky_block:universal_trench",
       "deep_lucky_block:chrono_mending",
       "deep_lucky_block:eternal",
       "deep_lucky_block:unbreakable"
@@ -46,7 +46,7 @@
       "deep_lucky_block:nether_curse",
       "deep_lucky_block:overworld_curse",
       "deep_lucky_block:short_reach",
-      "deep_lucky_block:cave_in_curse",
+      "deep_lucky_block:curse_of_cave_in",
       "deep_lucky_block:end_corrosion",
       "deep_lucky_block:nether_corrosion"
     ]

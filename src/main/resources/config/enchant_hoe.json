@@ -6,14 +6,14 @@
   "eternal_level_100_pool": [
     "deep_lucky_block:haste_surge",
     "deep_lucky_block:bountiful_harvest",
-    "deep_lucky_block:low_crit_damage",
-    "deep_lucky_block:low_crit_rate"
+    "deep_lucky_block:minor_crit_amplifier",
+    "deep_lucky_block:minor_crit_rate"
   ],
   "rank_pools": {
     "BROKEN": {
       "offensive": [
-        "deep_lucky_block:low_crit_damage",
-        "deep_lucky_block:low_crit_rate"
+        "deep_lucky_block:minor_crit_amplifier",
+        "deep_lucky_block:minor_crit_rate"
       ],
       "utility": [
         "minecraft:efficiency",
@@ -37,8 +37,8 @@
     },
     "CURSED": {
       "offensive": [
-        "deep_lucky_block:low_crit_damage",
-        "deep_lucky_block:low_crit_rate"
+        "deep_lucky_block:minor_crit_amplifier",
+        "deep_lucky_block:minor_crit_rate"
       ],
       "utility": [
         "minecraft:efficiency",
@@ -62,8 +62,8 @@
     },
     "USED": {
       "offensive": [
-        "deep_lucky_block:low_crit_damage",
-        "deep_lucky_block:low_crit_rate"
+        "deep_lucky_block:minor_crit_amplifier",
+        "deep_lucky_block:minor_crit_rate"
       ],
       "utility": [
         "minecraft:efficiency",
@@ -87,8 +87,8 @@
     },
     "COMMON": {
       "offensive": [
-        "deep_lucky_block:low_crit_damage",
-        "deep_lucky_block:low_crit_rate"
+        "deep_lucky_block:minor_crit_amplifier",
+        "deep_lucky_block:minor_crit_rate"
       ],
       "utility": [
         "minecraft:efficiency",
@@ -112,8 +112,8 @@
     },
     "UNCOMMON": {
       "offensive": [
-        "deep_lucky_block:low_crit_damage",
-        "deep_lucky_block:low_crit_rate"
+        "deep_lucky_block:minor_crit_amplifier",
+        "deep_lucky_block:minor_crit_rate"
       ],
       "utility": [
         "minecraft:efficiency",
@@ -143,8 +143,8 @@
     },
     "RARE": {
       "offensive": [
-        "deep_lucky_block:low_crit_damage",
-        "deep_lucky_block:low_crit_rate",
+        "deep_lucky_block:minor_crit_amplifier",
+        "deep_lucky_block:minor_crit_rate",
         "deep_lucky_block:sickle_damage",
         "deep_lucky_block:sickle_slash"
       ],
@@ -178,12 +178,12 @@
     },
     "EPIC": {
       "offensive": [
-        "deep_lucky_block:low_crit_damage",
-        "deep_lucky_block:low_crit_rate",
+        "deep_lucky_block:minor_crit_amplifier",
+        "deep_lucky_block:minor_crit_rate",
         "deep_lucky_block:sickle_damage",
         "deep_lucky_block:sickle_slash",
         "deep_lucky_block:focused_crit",
-        "deep_lucky_block:normal_crit_damage"
+        "deep_lucky_block:crit_amplifier"
       ],
       "utility": [
         "minecraft:efficiency",
@@ -210,12 +210,12 @@
     },
     "LEGENDARY": {
       "offensive": [
-        "deep_lucky_block:low_crit_damage",
-        "deep_lucky_block:low_crit_rate",
+        "deep_lucky_block:minor_crit_amplifier",
+        "deep_lucky_block:minor_crit_rate",
         "deep_lucky_block:sickle_damage",
         "deep_lucky_block:sickle_slash",
         "deep_lucky_block:focused_crit",
-        "deep_lucky_block:normal_crit_damage",
+        "deep_lucky_block:crit_amplifier",
         "deep_lucky_block:crit_rate"
       ],
       "utility": [
@@ -245,12 +245,12 @@
     },
     "MYTHIC": {
       "offensive": [
-        "deep_lucky_block:low_crit_damage",
-        "deep_lucky_block:low_crit_rate",
+        "deep_lucky_block:minor_crit_amplifier",
+        "deep_lucky_block:minor_crit_rate",
         "deep_lucky_block:sickle_damage",
         "deep_lucky_block:sickle_slash",
         "deep_lucky_block:focused_crit",
-        "deep_lucky_block:normal_crit_damage",
+        "deep_lucky_block:crit_amplifier",
         "deep_lucky_block:crit_rate",
         "deep_lucky_block:overclocked_crit"
       ],
@@ -283,12 +283,12 @@
     },
     "RELIC": {
       "offensive": [
-        "deep_lucky_block:low_crit_damage",
-        "deep_lucky_block:low_crit_rate",
+        "deep_lucky_block:minor_crit_amplifier",
+        "deep_lucky_block:minor_crit_rate",
         "deep_lucky_block:sickle_damage",
         "deep_lucky_block:sickle_slash",
         "deep_lucky_block:focused_crit",
-        "deep_lucky_block:normal_crit_damage",
+        "deep_lucky_block:crit_amplifier",
         "deep_lucky_block:crit_rate",
         "deep_lucky_block:overclocked_crit"
       ],
@@ -322,15 +322,15 @@
     },
     "MASTERWORK": {
       "offensive": [
-        "deep_lucky_block:low_crit_damage",
-        "deep_lucky_block:low_crit_rate",
+        "deep_lucky_block:minor_crit_amplifier",
+        "deep_lucky_block:minor_crit_rate",
         "deep_lucky_block:sickle_damage",
         "deep_lucky_block:sickle_slash",
         "deep_lucky_block:focused_crit",
-        "deep_lucky_block:normal_crit_damage",
+        "deep_lucky_block:crit_amplifier",
         "deep_lucky_block:crit_rate",
         "deep_lucky_block:overclocked_crit",
-        "deep_lucky_block:execute_power",
+        "deep_lucky_block:reapers_scythe",
         "deep_lucky_block:soul_sacrifice_slash"
       ],
       "utility": [
@@ -363,15 +363,15 @@
     },
     "ETERNAL": {
       "offensive": [
-        "deep_lucky_block:low_crit_damage",
-        "deep_lucky_block:low_crit_rate",
+        "deep_lucky_block:minor_crit_amplifier",
+        "deep_lucky_block:minor_crit_rate",
         "deep_lucky_block:sickle_damage",
         "deep_lucky_block:sickle_slash",
         "deep_lucky_block:focused_crit",
-        "deep_lucky_block:normal_crit_damage",
+        "deep_lucky_block:crit_amplifier",
         "deep_lucky_block:crit_rate",
         "deep_lucky_block:overclocked_crit",
-        "deep_lucky_block:execute_power",
+        "deep_lucky_block:reapers_scythe",
         "deep_lucky_block:soul_sacrifice_slash"
       ],
       "utility": [

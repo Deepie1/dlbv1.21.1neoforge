@@ -1,0 +1,224 @@
+{
+  "version": 10,
+  "item_type": "shield",
+  "notes": "T311 : 420 enchantements vérifiés et classés par rareté par rang (BROKEN -> ETERNAL) — aucune règle générique ajoutée dans GenerateLuckyItemProcedure.",
+  "minimum_luck": {},
+  "eternal_level_100_pool": [
+    "deep_lucky_block:bash_damage",
+    "deep_lucky_block:bash_power"
+  ],
+  "rank_pools": {
+    "BROKEN": {
+      "offensive": [],
+      "utility": [
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:shield_efficiency",
+        "deep_lucky_block:bash_damage",
+        "deep_lucky_block:bash_power"
+      ],
+      "curse": [
+        "minecraft:vanishing_curse",
+        "deep_lucky_block:hatred_draw",
+        "deep_lucky_block:end_corrosion",
+        "deep_lucky_block:nether_corrosion",
+        "deep_lucky_block:curse_of_resonance"
+      ]
+    },
+    "CURSED": {
+      "offensive": [],
+      "utility": [
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:shield_efficiency",
+        "deep_lucky_block:bash_damage",
+        "deep_lucky_block:bash_power"
+      ],
+      "curse": [
+        "minecraft:vanishing_curse",
+        "deep_lucky_block:hatred_draw",
+        "deep_lucky_block:end_corrosion",
+        "deep_lucky_block:nether_corrosion",
+        "deep_lucky_block:curse_of_resonance"
+      ]
+    },
+    "USED": {
+      "offensive": [],
+      "utility": [
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:shield_efficiency",
+        "deep_lucky_block:bash_damage",
+        "deep_lucky_block:bash_power"
+      ],
+      "curse": [
+        "minecraft:vanishing_curse",
+        "deep_lucky_block:hatred_draw",
+        "deep_lucky_block:end_corrosion",
+        "deep_lucky_block:nether_corrosion",
+        "deep_lucky_block:curse_of_resonance"
+      ]
+    },
+    "COMMON": {
+      "offensive": [],
+      "utility": [
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:shield_efficiency",
+        "deep_lucky_block:bash_damage",
+        "deep_lucky_block:bash_power"
+      ],
+      "curse": [
+        "minecraft:vanishing_curse",
+        "deep_lucky_block:hatred_draw",
+        "deep_lucky_block:end_corrosion",
+        "deep_lucky_block:nether_corrosion",
+        "deep_lucky_block:curse_of_resonance"
+      ]
+    },
+    "UNCOMMON": {
+      "offensive": [],
+      "utility": [
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:shield_efficiency",
+        "deep_lucky_block:bash_damage",
+        "deep_lucky_block:bash_power",
+        "deep_lucky_block:basic_mending"
+      ],
+      "curse": [
+        "deep_lucky_block:hatred_draw",
+        "deep_lucky_block:end_corrosion",
+        "deep_lucky_block:nether_corrosion"
+      ]
+    },
+    "RARE": {
+      "offensive": [
+        "deep_lucky_block:shield_quake"
+      ],
+      "utility": [
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:shield_efficiency",
+        "deep_lucky_block:bash_damage",
+        "deep_lucky_block:bash_power",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:unbreakable"
+      ],
+      "curse": [
+        "deep_lucky_block:hatred_draw",
+        "deep_lucky_block:end_corrosion",
+        "deep_lucky_block:nether_corrosion"
+      ]
+    },
+    "EPIC": {
+      "offensive": [
+        "deep_lucky_block:shield_quake"
+      ],
+      "utility": [
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:shield_efficiency",
+        "deep_lucky_block:bash_damage",
+        "deep_lucky_block:bash_power",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:basic_chrono_mending",
+        "deep_lucky_block:unbreakable"
+      ],
+      "curse": []
+    },
+    "LEGENDARY": {
+      "offensive": [
+        "deep_lucky_block:shield_quake"
+      ],
+      "utility": [
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:shield_efficiency",
+        "deep_lucky_block:bash_damage",
+        "deep_lucky_block:bash_power",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:basic_chrono_mending",
+        "deep_lucky_block:perfect_parry",
+        "deep_lucky_block:unbreakable"
+      ],
+      "curse": []
+    },
+    "MYTHIC": {
+      "offensive": [
+        "deep_lucky_block:shield_quake"
+      ],
+      "utility": [
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:shield_efficiency",
+        "deep_lucky_block:bash_damage",
+        "deep_lucky_block:bash_power",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:basic_chrono_mending",
+        "deep_lucky_block:perfect_parry",
+        "deep_lucky_block:soul_bound",
+        "deep_lucky_block:unbreakable"
+      ],
+      "curse": []
+    },
+    "RELIC": {
+      "offensive": [
+        "deep_lucky_block:shield_quake"
+      ],
+      "utility": [
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:shield_efficiency",
+        "deep_lucky_block:bash_damage",
+        "deep_lucky_block:bash_power",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:basic_chrono_mending",
+        "deep_lucky_block:perfect_parry",
+        "deep_lucky_block:soul_bound",
+        "deep_lucky_block:chrono_mending",
+        "deep_lucky_block:unbreakable"
+      ],
+      "curse": []
+    },
+    "MASTERWORK": {
+      "offensive": [
+        "deep_lucky_block:shield_quake"
+      ],
+      "utility": [
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:shield_efficiency",
+        "deep_lucky_block:bash_damage",
+        "deep_lucky_block:bash_power",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:basic_chrono_mending",
+        "deep_lucky_block:perfect_parry",
+        "deep_lucky_block:soul_bound",
+        "deep_lucky_block:chrono_mending",
+        "deep_lucky_block:unbreakable"
+      ],
+      "curse": []
+    },
+    "ETERNAL": {
+      "offensive": [
+        "deep_lucky_block:shield_quake"
+      ],
+      "utility": [
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:shield_efficiency",
+        "deep_lucky_block:bash_damage",
+        "deep_lucky_block:bash_power",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:basic_chrono_mending",
+        "deep_lucky_block:perfect_parry",
+        "deep_lucky_block:soul_bound",
+        "deep_lucky_block:chrono_mending",
+        "deep_lucky_block:eternal",
+        "deep_lucky_block:unbreakable"
+      ],
+      "curse": []
+    }
+  }
+}

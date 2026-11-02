@@ -15,13 +15,13 @@
       "deep_lucky_block:basic_mending",
       "deep_lucky_block:cooked_catch",
       "deep_lucky_block:experienced_fishing",
-      "deep_lucky_block:dredge",
+      "deep_lucky_block:abyssal_dredge",
       "deep_lucky_block:reliability",
       "deep_lucky_block:anglers_blessing",
       "deep_lucky_block:basic_chrono_mending",
       "deep_lucky_block:pulling_power",
       "deep_lucky_block:ender_hook",
-      "deep_lucky_block:fishing_grapple",
+      "deep_lucky_block:grappling_hook",
       "deep_lucky_block:soul_bound",
       "deep_lucky_block:chrono_mending",
       "deep_lucky_block:eternal",
@@ -30,9 +30,9 @@
     ],
     "curse": [
       "minecraft:vanishing_curse",
-      "deep_lucky_block:false_bite_curse",
-      "deep_lucky_block:scorching_line_curse",
-      "deep_lucky_block:abyss_curse",
+      "deep_lucky_block:curse_of_false_bite",
+      "deep_lucky_block:curse_of_scorching_line",
+      "deep_lucky_block:curse_of_the_abyss",
       "deep_lucky_block:end_corrosion",
       "deep_lucky_block:nether_corrosion"
     ]

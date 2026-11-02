@@ -22,7 +22,7 @@
         "deep_lucky_block:hatred_draw",
         "deep_lucky_block:end_corrosion",
         "deep_lucky_block:nether_corrosion",
-        "deep_lucky_block:resonance_curse"
+        "deep_lucky_block:curse_of_resonance"
       ]
     },
     "CURSED": {
@@ -39,7 +39,7 @@
         "deep_lucky_block:hatred_draw",
         "deep_lucky_block:end_corrosion",
         "deep_lucky_block:nether_corrosion",
-        "deep_lucky_block:resonance_curse"
+        "deep_lucky_block:curse_of_resonance"
       ]
     },
     "USED": {
@@ -56,7 +56,7 @@
         "deep_lucky_block:hatred_draw",
         "deep_lucky_block:end_corrosion",
         "deep_lucky_block:nether_corrosion",
-        "deep_lucky_block:resonance_curse"
+        "deep_lucky_block:curse_of_resonance"
       ]
     },
     "COMMON": {
@@ -73,7 +73,7 @@
         "deep_lucky_block:hatred_draw",
         "deep_lucky_block:end_corrosion",
         "deep_lucky_block:nether_corrosion",
-        "deep_lucky_block:resonance_curse"
+        "deep_lucky_block:curse_of_resonance"
       ]
     },
     "UNCOMMON": {

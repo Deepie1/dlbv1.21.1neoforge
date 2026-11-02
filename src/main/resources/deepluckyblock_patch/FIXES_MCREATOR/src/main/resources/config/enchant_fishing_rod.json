@@ -1,0 +1,281 @@
+{
+  "version": 10,
+  "item_type": "fishing_rod",
+  "notes": "T311 : 420 enchantements vérifiés et classés par rareté par rang (BROKEN -> ETERNAL) — aucune règle générique ajoutée dans GenerateLuckyItemProcedure.",
+  "minimum_luck": {},
+  "eternal_level_100_pool": [
+    "deep_lucky_block:experienced_fishing"
+  ],
+  "rank_pools": {
+    "BROKEN": {
+      "offensive": [],
+      "utility": [
+        "minecraft:luck_of_the_sea",
+        "minecraft:lure",
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:experienced_fishing"
+      ],
+      "curse": [
+        "minecraft:vanishing_curse",
+        "deep_lucky_block:curse_of_false_bite",
+        "deep_lucky_block:curse_of_scorching_line",
+        "deep_lucky_block:curse_of_the_abyss",
+        "deep_lucky_block:end_corrosion",
+        "deep_lucky_block:nether_corrosion"
+      ]
+    },
+    "CURSED": {
+      "offensive": [],
+      "utility": [
+        "minecraft:luck_of_the_sea",
+        "minecraft:lure",
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:experienced_fishing"
+      ],
+      "curse": [
+        "minecraft:vanishing_curse",
+        "deep_lucky_block:curse_of_false_bite",
+        "deep_lucky_block:curse_of_scorching_line",
+        "deep_lucky_block:curse_of_the_abyss",
+        "deep_lucky_block:end_corrosion",
+        "deep_lucky_block:nether_corrosion"
+      ]
+    },
+    "USED": {
+      "offensive": [],
+      "utility": [
+        "minecraft:luck_of_the_sea",
+        "minecraft:lure",
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:experienced_fishing"
+      ],
+      "curse": [
+        "minecraft:vanishing_curse",
+        "deep_lucky_block:curse_of_false_bite",
+        "deep_lucky_block:curse_of_scorching_line",
+        "deep_lucky_block:curse_of_the_abyss",
+        "deep_lucky_block:end_corrosion",
+        "deep_lucky_block:nether_corrosion"
+      ]
+    },
+    "COMMON": {
+      "offensive": [],
+      "utility": [
+        "minecraft:luck_of_the_sea",
+        "minecraft:lure",
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:experienced_fishing"
+      ],
+      "curse": [
+        "minecraft:vanishing_curse",
+        "deep_lucky_block:curse_of_false_bite",
+        "deep_lucky_block:curse_of_scorching_line",
+        "deep_lucky_block:curse_of_the_abyss",
+        "deep_lucky_block:end_corrosion",
+        "deep_lucky_block:nether_corrosion"
+      ]
+    },
+    "UNCOMMON": {
+      "offensive": [],
+      "utility": [
+        "minecraft:luck_of_the_sea",
+        "minecraft:lure",
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:cooked_catch",
+        "deep_lucky_block:experienced_fishing"
+      ],
+      "curse": [
+        "deep_lucky_block:curse_of_false_bite",
+        "deep_lucky_block:curse_of_scorching_line",
+        "deep_lucky_block:curse_of_the_abyss",
+        "deep_lucky_block:end_corrosion",
+        "deep_lucky_block:nether_corrosion"
+      ]
+    },
+    "RARE": {
+      "offensive": [],
+      "utility": [
+        "minecraft:luck_of_the_sea",
+        "minecraft:lure",
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:cooked_catch",
+        "deep_lucky_block:experienced_fishing",
+        "deep_lucky_block:abyssal_dredge",
+        "deep_lucky_block:reliability",
+        "deep_lucky_block:unbreakable"
+      ],
+      "curse": [
+        "deep_lucky_block:curse_of_false_bite",
+        "deep_lucky_block:curse_of_scorching_line",
+        "deep_lucky_block:curse_of_the_abyss",
+        "deep_lucky_block:end_corrosion",
+        "deep_lucky_block:nether_corrosion"
+      ]
+    },
+    "EPIC": {
+      "offensive": [
+        "deep_lucky_block:barbed_hook"
+      ],
+      "utility": [
+        "minecraft:luck_of_the_sea",
+        "minecraft:lure",
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:cooked_catch",
+        "deep_lucky_block:experienced_fishing",
+        "deep_lucky_block:abyssal_dredge",
+        "deep_lucky_block:reliability",
+        "deep_lucky_block:anglers_blessing",
+        "deep_lucky_block:basic_chrono_mending",
+        "deep_lucky_block:pulling_power",
+        "deep_lucky_block:unbreakable"
+      ],
+      "curse": []
+    },
+    "LEGENDARY": {
+      "offensive": [
+        "deep_lucky_block:barbed_hook",
+        "deep_lucky_block:monster_fishing",
+        "deep_lucky_block:thunder_hook"
+      ],
+      "utility": [
+        "minecraft:luck_of_the_sea",
+        "minecraft:lure",
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:cooked_catch",
+        "deep_lucky_block:experienced_fishing",
+        "deep_lucky_block:abyssal_dredge",
+        "deep_lucky_block:reliability",
+        "deep_lucky_block:anglers_blessing",
+        "deep_lucky_block:basic_chrono_mending",
+        "deep_lucky_block:pulling_power",
+        "deep_lucky_block:ender_hook",
+        "deep_lucky_block:grappling_hook",
+        "deep_lucky_block:unbreakable"
+      ],
+      "curse": []
+    },
+    "MYTHIC": {
+      "offensive": [
+        "deep_lucky_block:barbed_hook",
+        "deep_lucky_block:monster_fishing",
+        "deep_lucky_block:thunder_hook"
+      ],
+      "utility": [
+        "minecraft:luck_of_the_sea",
+        "minecraft:lure",
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:cooked_catch",
+        "deep_lucky_block:experienced_fishing",
+        "deep_lucky_block:abyssal_dredge",
+        "deep_lucky_block:reliability",
+        "deep_lucky_block:anglers_blessing",
+        "deep_lucky_block:basic_chrono_mending",
+        "deep_lucky_block:pulling_power",
+        "deep_lucky_block:ender_hook",
+        "deep_lucky_block:grappling_hook",
+        "deep_lucky_block:soul_bound",
+        "deep_lucky_block:unbreakable"
+      ],
+      "curse": []
+    },
+    "RELIC": {
+      "offensive": [
+        "deep_lucky_block:barbed_hook",
+        "deep_lucky_block:monster_fishing",
+        "deep_lucky_block:thunder_hook"
+      ],
+      "utility": [
+        "minecraft:luck_of_the_sea",
+        "minecraft:lure",
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:cooked_catch",
+        "deep_lucky_block:experienced_fishing",
+        "deep_lucky_block:abyssal_dredge",
+        "deep_lucky_block:reliability",
+        "deep_lucky_block:anglers_blessing",
+        "deep_lucky_block:basic_chrono_mending",
+        "deep_lucky_block:pulling_power",
+        "deep_lucky_block:ender_hook",
+        "deep_lucky_block:grappling_hook",
+        "deep_lucky_block:soul_bound",
+        "deep_lucky_block:chrono_mending",
+        "deep_lucky_block:infernal_line",
+        "deep_lucky_block:unbreakable"
+      ],
+      "curse": []
+    },
+    "MASTERWORK": {
+      "offensive": [
+        "deep_lucky_block:barbed_hook",
+        "deep_lucky_block:monster_fishing",
+        "deep_lucky_block:thunder_hook"
+      ],
+      "utility": [
+        "minecraft:luck_of_the_sea",
+        "minecraft:lure",
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:cooked_catch",
+        "deep_lucky_block:experienced_fishing",
+        "deep_lucky_block:abyssal_dredge",
+        "deep_lucky_block:reliability",
+        "deep_lucky_block:anglers_blessing",
+        "deep_lucky_block:basic_chrono_mending",
+        "deep_lucky_block:pulling_power",
+        "deep_lucky_block:ender_hook",
+        "deep_lucky_block:grappling_hook",
+        "deep_lucky_block:soul_bound",
+        "deep_lucky_block:chrono_mending",
+        "deep_lucky_block:infernal_line",
+        "deep_lucky_block:unbreakable"
+      ],
+      "curse": []
+    },
+    "ETERNAL": {
+      "offensive": [
+        "deep_lucky_block:barbed_hook",
+        "deep_lucky_block:monster_fishing",
+        "deep_lucky_block:thunder_hook"
+      ],
+      "utility": [
+        "minecraft:luck_of_the_sea",
+        "minecraft:lure",
+        "minecraft:mending",
+        "minecraft:unbreaking",
+        "deep_lucky_block:basic_mending",
+        "deep_lucky_block:cooked_catch",
+        "deep_lucky_block:experienced_fishing",
+        "deep_lucky_block:abyssal_dredge",
+        "deep_lucky_block:reliability",
+        "deep_lucky_block:anglers_blessing",
+        "deep_lucky_block:basic_chrono_mending",
+        "deep_lucky_block:pulling_power",
+        "deep_lucky_block:ender_hook",
+        "deep_lucky_block:grappling_hook",
+        "deep_lucky_block:soul_bound",
+        "deep_lucky_block:chrono_mending",
+        "deep_lucky_block:eternal",
+        "deep_lucky_block:infernal_line",
+        "deep_lucky_block:unbreakable"
+      ],
+      "curse": []
+    }
+  }
+}

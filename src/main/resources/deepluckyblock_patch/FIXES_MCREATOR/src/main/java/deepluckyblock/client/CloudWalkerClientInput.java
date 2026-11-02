@@ -79,9 +79,9 @@ public final class CloudWalkerClientInput {
             }
             DeepEnchant.rememberClientAccess(level.registryAccess());
 
-            int footPl = UniversalEnchantmentHandler.getArmorEnchantLvl(player, "deep_lucky_block:foot_placement");
+            int footPl = UniversalEnchantmentHandler.getArmorEnchantLvl(player, "deep_lucky_block:air_walk");
             int cloudStride = UniversalEnchantmentHandler.getArmorEnchantLvl(player, "deep_lucky_block:cloud_stride");
-            int oxyHov = UniversalEnchantmentHandler.getArmorEnchantLvl(player, "deep_lucky_block:oxygen_hover");
+            int oxyHov = UniversalEnchantmentHandler.getArmorEnchantLvl(player, "deep_lucky_block:air_hover");
             boolean hasAirWalk = footPl > 0 || (cloudStride > 0 && player.getY() >= 160.0);
 
             boolean sneaking = (player.input != null && player.input.shiftKeyDown) || player.isShiftKeyDown();
@@ -369,7 +369,7 @@ public final class CloudWalkerClientInput {
 
     private static void cleanupClientBarriers(ClientLevel level, LocalPlayer player) {
         if (CLIENT_BARRIER_TRAIL.isEmpty()) return;
-        int footPl = UniversalEnchantmentHandler.getArmorEnchantLvl(player, "deep_lucky_block:foot_placement");
+        int footPl = UniversalEnchantmentHandler.getArmorEnchantLvl(player, "deep_lucky_block:air_walk");
         int cloudStride = UniversalEnchantmentHandler.getArmorEnchantLvl(player, "deep_lucky_block:cloud_stride");
         boolean active = footPl > 0 || cloudStride > 0;
         long now = level.getGameTime();

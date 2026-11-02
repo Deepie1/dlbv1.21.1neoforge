@@ -339,9 +339,9 @@ public class GenerateLuckyItemProcedure {
     private static final int STANDARD_ENCHANT_MAX_LEVEL = 7;
 
     private static final Set<String> PHASING_ALLOWED = Set.of(
-        "deep_lucky_block:phasing", "deep_lucky_block:steady_shot",
+        "deep_lucky_block:phasing_bolts", "deep_lucky_block:zero_gravity_shot",
         "deep_lucky_block:ranger", "deep_lucky_block:inverted_arrows",
-        "deep_lucky_block:instant_shot", "deep_lucky_block:point_shoot",
+        "deep_lucky_block:instant_shot", "deep_lucky_block:point_blank_shot",
         "deep_lucky_block:weak_force", "deep_lucky_block:retrieval",
         "minecraft:quick_charge", "minecraft:unbreaking", "minecraft:mending"
     );
@@ -379,9 +379,9 @@ public class GenerateLuckyItemProcedure {
         Set.of("deep_lucky_block:momentum", "deep_lucky_block:trailblazer",
                "deep_lucky_block:windrunner"),
         Set.of("minecraft:multishot", "minecraft:piercing"),
-        Set.of("deep_lucky_block:pierce", "minecraft:piercing"),
+        Set.of("deep_lucky_block:astral_pierce", "minecraft:piercing"),
         Set.of("deep_lucky_block:unbreakable", "deep_lucky_block:eternal"),
-        Set.of("deep_lucky_block:multishot_bow", "deep_lucky_block:scatter",
+        Set.of("deep_lucky_block:fan_volley", "deep_lucky_block:scatter",
                "minecraft:multishot"),
         Set.of("deep_lucky_block:teleport_arrow", "deep_lucky_block:swap_arrow",
                "deep_lucky_block:grapple"),
@@ -390,13 +390,13 @@ public class GenerateLuckyItemProcedure {
         Set.of("deep_lucky_block:storm_strike", "deep_lucky_block:thunderstruck"),
         Set.of("deep_lucky_block:ricochet", "deep_lucky_block:bounce"),
         Set.of("deep_lucky_block:sniper", "deep_lucky_block:weak_force"),
-        Set.of("deep_lucky_block:pulling_power", "deep_lucky_block:fishing_grapple"),
-        Set.of("deep_lucky_block:fishing_grapple", "deep_lucky_block:ender_hook"),
+        Set.of("deep_lucky_block:pulling_power", "deep_lucky_block:grappling_hook"),
+        Set.of("deep_lucky_block:grappling_hook", "deep_lucky_block:ender_hook"),
         Set.of("deep_lucky_block:infernal_line", "deep_lucky_block:cooked_catch"),
         Set.of("deep_lucky_block:chain_lightning", "deep_lucky_block:hydro_shock", "minecraft:channeling"),
         Set.of("deep_lucky_block:explosive_return", "deep_lucky_block:sincere_loyalty"),
         Set.of("deep_lucky_block:aerodynamic", "deep_lucky_block:wind_rider"),
-        Set.of("minecraft:riptide", "deep_lucky_block:homing_trident"),
+        Set.of("minecraft:riptide", "deep_lucky_block:homing"),
         Set.of("minecraft:riptide", "deep_lucky_block:sincere_loyalty"),
         Set.of("minecraft:riptide", "deep_lucky_block:scorching_prongs"),
         Set.of("minecraft:riptide", "deep_lucky_block:wind_lance"),
@@ -2886,7 +2886,7 @@ public class GenerateLuckyItemProcedure {
             Map.entry("deep_lucky_block:mighty_strike", 1.2),
             Map.entry("deep_lucky_block:sighing_strike", 1.0),
             Map.entry("deep_lucky_block:shovel_halberd", 2.0),
-            Map.entry("deep_lucky_block:shovel_heavy_hit", 2.0),
+            Map.entry("deep_lucky_block:heavy_hit", 2.0),
             Map.entry("deep_lucky_block:shovel_blade", 2.0),
             Map.entry("deep_lucky_block:sharp_edge", 1.0),
             Map.entry("deep_lucky_block:reinforced_sharpness", 2.0),
@@ -2896,7 +2896,7 @@ public class GenerateLuckyItemProcedure {
             Map.entry("deep_lucky_block:blood_pact", 2.0),
             Map.entry("deep_lucky_block:peerless", 6.0),          // flat 4.0 + ~0.5*base(~4) mult
             Map.entry("deep_lucky_block:extreme_sharpness", 7.0),  // flat 5.0 + ~0.12*base mult
-            Map.entry("deep_lucky_block:ultra_edge", 6.0),
+            Map.entry("deep_lucky_block:ultra_sharpness", 6.0),
             Map.entry("deep_lucky_block:advanced_sharpness", 4.0),
             Map.entry("deep_lucky_block:supreme_sharpness", 12.0),
             Map.entry("minecraft:sharpness", 1.0),
@@ -3344,16 +3344,16 @@ public class GenerateLuckyItemProcedure {
 
         // Phasing annule le traitement normal des impacts : seuls les effets de
         // trajectoire/maniement explicitement autorisés peuvent l'accompagner.
-        if (n.equals("deep_lucky_block:phasing")) {
+        if (n.equals("deep_lucky_block:phasing_bolts")) {
             for (String a : applied) if (!PHASING_ALLOWED.contains(a.toLowerCase(Locale.ROOT))) return true;
         } else if (!PHASING_ALLOWED.contains(n)) {
-            for (String a : applied) if (a.equalsIgnoreCase("deep_lucky_block:phasing")) return true;
+            for (String a : applied) if (a.equalsIgnoreCase("deep_lucky_block:phasing_bolts")) return true;
         }
         // Pierce peut déclencher plusieurs impacts : pas d'explosion, terrain ou téléportation répétée.
-        if (n.equals("deep_lucky_block:pierce")) {
+        if (n.equals("deep_lucky_block:astral_pierce")) {
             for (String a : applied) if (PIERCE_REPEAT_UNSAFE.contains(a.toLowerCase(Locale.ROOT))) return true;
         } else if (PIERCE_REPEAT_UNSAFE.contains(n)) {
-            for (String a : applied) if (a.equalsIgnoreCase("deep_lucky_block:pierce")) return true;
+            for (String a : applied) if (a.equalsIgnoreCase("deep_lucky_block:astral_pierce")) return true;
         }
         // Toy tire environ cinq fois par seconde : bloque les effets d'impact destructeurs.
         if (n.equals("deep_lucky_block:toy")) {
