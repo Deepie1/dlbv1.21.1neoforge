@@ -116,7 +116,7 @@ public final class CosmeticAuraClientTicker {
 
             // 2) Autres joueurs proches dans un rayon de 24 blocs (multijoueur / LAN)
             if (budget > 0) {
-                List<Player> nearbyPlayers = level.players();
+                List<? extends Player> nearbyPlayers = level.players();
                 for (int i = 0, n = nearbyPlayers.size(); i < n && budget > 0; i++) {
                     Player other = nearbyPlayers.get(i);
                     if (other == viewer || !other.isAlive() || other.isSpectator()) continue;
