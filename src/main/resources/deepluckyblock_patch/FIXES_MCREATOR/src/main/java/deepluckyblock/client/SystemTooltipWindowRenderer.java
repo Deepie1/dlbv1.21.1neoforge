@@ -955,9 +955,9 @@ public final class SystemTooltipWindowRenderer {
                 baseScale = 0.72f;
             }
 
-            float maxAllowedW = Math.max(150.0f, screenW - 24.0f);
-            float maxAllowedH = Math.max(110.0f, screenH - 22.0f);
-            float fitScale = Math.min(baseScale, Math.min(maxAllowedW / logicalW, maxAllowedH / logicalH));
+            float maxScreenFitW = Math.max(150.0f, screenW - 24.0f);
+            float maxScreenFitH = Math.max(110.0f, screenH - 22.0f);
+            float fitScale = Math.min(baseScale, Math.min(maxScreenFitW / logicalW, maxScreenFitH / logicalH));
             fitScale = Math.max(0.50f, fitScale);
 
             boolean singleComponent = preservedImages.isEmpty();

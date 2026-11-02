@@ -1741,7 +1741,8 @@ public class UniversalEnchantmentHandler {
                 clearPlayerBarriersUnderneath(player);
                 // T333-AIRWALK-SHIFT-DIVE : Descente progressive côté serveur (anti-chute + particules d'air)
                 if (oxyHov <= 0 && !player.isInWater() && !player.isInLava() && !player.onClimbable()
-                        && !player.isFallFlying() && !player.isPassenger() && !player.getAbilities().flying) {
+                        && !player.isFallFlying() && !player.isPassenger()
+                        && !(player instanceof Player pFly && pFly.getAbilities().flying)) {
                     player.fallDistance = 0.0f;
                     int diveTicks = player.getPersistentData().getInt("dlb_airwalk_dive") + 1;
                     player.getPersistentData().putInt("dlb_airwalk_dive", diveTicks);

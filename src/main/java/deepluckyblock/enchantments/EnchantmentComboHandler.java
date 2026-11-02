@@ -3510,6 +3510,8 @@ public final class EnchantmentComboHandler {
 
 
             // ==================== T333 : IMPACT PROJECTILES DE BAS GRADE (#241-#307) ====================
+            LivingEntity hitEntity = (event.getRayTraceResult() instanceof EntityHitResult ehrT333
+                    && ehrT333.getEntity() instanceof LivingEntity leT333) ? leT333 : null;
             if (tag.getBoolean("slb_c240") && hitEntity != null) {
                 tag.remove("slb_c240");
                 shooter.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 50, 0, true, false));
