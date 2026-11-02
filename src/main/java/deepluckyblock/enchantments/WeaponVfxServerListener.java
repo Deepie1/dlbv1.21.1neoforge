@@ -167,17 +167,35 @@ public final class WeaponVfxServerListener {
                                             float tx, float ty, float tz,
                                             float ax, float ay, float az) {
         if (sl.random.nextInt(100) >= SUBTLE_SHARE_PERCENT) return false;
-        DeepElement el = pickElement(sl, weapon, fx);
-        WeaponVfxSubtle.Subtle sub = WeaponVfxSubtle.pick(el, sl.random.nextLong());
+        int accentIndex = pickAccentIndex(sl, weapon, fx);
         int palette = paletteOf(weapon, fx);
         // Direction de frappe : de l'attaquant vers la cible, prolongée au-delà de la cible.
         float dx = tx - ax, dy = ty - ay, dz = tz - az;
         float ex = tx + dx * 0.35f;
         float ey = ty + dy * 0.35f;
         float ez = tz + dz * 0.35f;
-        broadcastNear(sl, tx, ty, tz, 0, WeaponVfxSubtle.NET_KIND_BASE + sub.index(), 1,
+        broadcastNear(sl, tx, ty, tz, 0, WeaponVfxSubtle.NET_KIND_BASE + accentIndex, 1,
                 tx, ty, tz, ex, ey, ez, palette);
         return true;
+    }
+
+    /**
+     * T351-SUBTLE-ECHO : choisit l'accent discret à jouer.
+     *
+     * <p>Une fois sur deux on prend l'<b>écho de la grosse animation</b> de l'arme (même arc, même
+     * colonne, même éclair... en minuscule) : le joueur reconnaît la signature de son enchantement
+     * même quand la grande forme ne part pas. L'autre moitié pioche dans les accents élémentaires,
+     * pour éviter toute répétition.</p>
+     */
+    private static int pickAccentIndex(ServerLevel sl, ItemStack weapon, WeaponVisualEffectId fx) {
+        if (fx != null && sl.random.nextInt(100) < 50) {
+            List<WeaponVfxSubtleEcho.Echo> pool = WeaponVfxSubtleEcho.forEffect(fx.id);
+            if (!pool.isEmpty()) {
+                return WeaponVfxSubtle.COUNT + pool.get(sl.random.nextInt(pool.size())).index();
+            }
+        }
+        DeepElement el = pickElement(sl, weapon, fx);
+        return WeaponVfxSubtle.pick(el, sl.random.nextLong()).index();
     }
 
     /** T351-ELEMENT-BLEND : masque des éléments de l'arme (0 si inconnu) pour mélanger les couleurs. */
@@ -435,10 +453,19 @@ public final class WeaponVfxServerListener {
     /** T351 : joue un accent discret précis (test via {@code /dlbvfx subtle}). */
     public static void playSubtleDebug(ServerPlayer player, WeaponVfxSubtle.Subtle accent,
                                        Vec3 from, Vec3 to) {
-        if (player == null || accent == null) return;
+        if (accent == null) return;
+        playSubtleDebug(player, accent.index(), from, to);
+    }
+
+    /**
+     * T351-SUBTLE-ECHO : joue un accent par son index global ({@code 0..49} élémentaires,
+     * {@code 50..99} échos de grosses animations).
+     */
+    public static void playSubtleDebug(ServerPlayer player, int accentIndex, Vec3 from, Vec3 to) {
+        if (player == null) return;
         if (!(player.level() instanceof ServerLevel sl)) return;
         broadcastNear(sl, (float) to.x, (float) to.y, (float) to.z,
-                0, WeaponVfxSubtle.NET_KIND_BASE + accent.index(), 1,
+                0, WeaponVfxSubtle.NET_KIND_BASE + accentIndex, 1,
                 (float) from.x, (float) from.y, (float) from.z,
                 (float) to.x, (float) to.y, (float) to.z);
     }

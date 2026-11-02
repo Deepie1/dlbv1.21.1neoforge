@@ -22,6 +22,34 @@ public final class WeaponVfxSubtle {
     public static final int COUNT = 50;
     /** Décalage de {@code kind} utilisé sur le réseau pour transporter un accent subtil. */
     public static final int NET_KIND_BASE = 100;
+    /**
+     * T351-SUBTLE-ECHO : espace d'index complet = 50 accents élémentaires (0..49) puis
+     * 50 échos de grosses animations (50..99, voir {@link WeaponVfxSubtleEcho}).
+     */
+    public static final int TOTAL = COUNT + WeaponVfxSubtleEcho.COUNT;
+
+    /** Famille élémentaire d'un accent par son index global (0..{@code TOTAL-1}). */
+    public static DeepElement elementOf(int index) {
+        return (index < COUNT) ? get(index).element()
+                : WeaponVfxSubtleEcho.get(index - COUNT).element();
+    }
+
+    /** Nom lisible d'un accent par son index global. */
+    public static String nameOf(int index) {
+        return (index < COUNT) ? get(index).name()
+                : WeaponVfxSubtleEcho.get(index - COUNT).name();
+    }
+
+    /** Description courte (forme / mouvement + nombre de pixels) d'un accent par son index global. */
+    public static String detailOf(int index) {
+        if (index < COUNT) {
+            Subtle s = get(index);
+            return "forme " + s.shapeName() + ", " + s.count() + " pixels";
+        }
+        WeaponVfxSubtleEcho.Echo e = WeaponVfxSubtleEcho.get(index - COUNT);
+        return "écho de " + WeaponVfxSubtleEcho.label(e.source())
+                + ", mouvement " + e.motionName() + ", " + e.count() + " pixels";
+    }
 
     // ── Formes disponibles (rendues par le moteur de mini-pixels, jamais de forme englobante) ──
     /** Étincelle vive qui file le long du coup. */

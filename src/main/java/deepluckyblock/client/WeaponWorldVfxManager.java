@@ -392,6 +392,192 @@ public final class WeaponWorldVfxManager {
     // ==================================================================================
 
     /**
+     * T351-SUBTLE-ECHO : joue le <b>souvenir</b> d'une grosse animation
+     * ({@link deepluckyblock.enchantments.WeaponVfxSubtleEcho}) : même géométrie (arc, colonne,
+     * orbite, éclair, couronne...), même élément, mais seulement 2 à 6 mini-pixels.
+     */
+    public static void spawnEcho(int echoIndex, float x, float y, float z,
+                                 float towardX, float towardY, float towardZ, int paletteMask) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return;
+        var rand = mc.level.random;
+        var echo = deepluckyblock.enchantments.WeaponVfxSubtleEcho.get(echoIndex);
+
+        float dx = towardX - x, dy = towardY - y, dz = towardZ - z;
+        float len = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (len < 0.0001f) { dx = 0; dy = 0; dz = 1; len = 1; }
+        dx /= len; dy /= len; dz /= len;
+        float px = -dz, pz = dx;                     // perpendiculaire horizontale
+        float spread = echo.spread();
+        int count = Math.max(2, Math.min(6, echo.count()));
+        boolean additive = true;
+
+        for (int i = 0; i < count; i++) {
+            if (PIXEL_PARTICLES.size() >= MAX_VOXEL_TRAIL_PIXELS) PIXEL_PARTICLES.remove(0);
+            float t = (count <= 1) ? 0.5f : (float) i / (float) (count - 1);
+            float ang = (float) (Math.PI * 2.0 * i / count) + rand.nextFloat() * 0.4f;
+            float radial = spread * (0.35f + rand.nextFloat() * 0.8f);
+            double ox = 0, oy = 0, oz = 0, vx = 0, vy = 0, vz = 0;
+            float speed = echo.speed();
+
+            switch (echo.motion()) {
+                case deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_TRAIL -> {
+                    // Traînée : les pixels s'égrènent DANS l'axe de la frappe, puis ralentissent.
+                    ox = px * (t - 0.5f) * spread;
+                    oy = (t - 0.5f) * spread * 0.5f;
+                    oz = pz * (t - 0.5f) * spread;
+                    vx = dx * speed * (0.6 + t);
+                    vy = dy * speed * (0.6 + t) + 0.010;
+                    vz = dz * speed * (0.6 + t);
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_ARC -> {
+                    // Arc : balayage perpendiculaire, comme une entaille minuscule.
+                    ox = px * (t - 0.5f) * spread * 2.2f;
+                    oy = (t - 0.5f) * spread * 0.35f;
+                    oz = pz * (t - 0.5f) * spread * 2.2f;
+                    vx = px * speed * 1.3;
+                    vy = 0.016 + rand.nextDouble() * 0.012;
+                    vz = pz * speed * 1.3;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_SPIRE -> {
+                    // Colonne : montée verticale très serrée.
+                    ox = px * radial * 0.35f;
+                    oy = t * 0.16f;
+                    oz = pz * radial * 0.35f;
+                    vx = px * 0.010;
+                    vy = 0.030 + t * 0.014;
+                    vz = pz * 0.010;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_ORBIT -> {
+                    // Orbite : petit cercle horizontal autour du point.
+                    ox = Math.cos(ang) * radial;
+                    oy = 0.02 + (rand.nextFloat() - 0.5f) * 0.05f;
+                    oz = Math.sin(ang) * radial;
+                    vx = -Math.sin(ang) * speed * 0.9;
+                    vy = 0.009 + rand.nextDouble() * 0.008;
+                    vz = Math.cos(ang) * speed * 0.9;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_RING -> {
+                    // Anneau : couronne plate qui tourne à peine.
+                    ox = Math.cos(ang) * spread;
+                    oy = (rand.nextFloat() - 0.5f) * 0.02f;
+                    oz = Math.sin(ang) * spread;
+                    vx = -Math.sin(ang) * speed * 0.45;
+                    vy = 0.006;
+                    vz = Math.cos(ang) * speed * 0.45;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_FALL -> {
+                    // Chute : arrive d'en haut et tombe (météore / gouttes).
+                    ox = (rand.nextFloat() - 0.5f) * spread * 1.4f;
+                    oy = 0.16f + rand.nextFloat() * 0.10f;
+                    oz = (rand.nextFloat() - 0.5f) * spread * 1.4f;
+                    vx = dx * 0.020;
+                    vy = -0.024 - rand.nextDouble() * 0.022;
+                    vz = dz * 0.020;
+                    additive = false;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_SIPHON -> {
+                    // Tourbillon : part d'un cercle et revient vers le point d'impact.
+                    ox = Math.cos(ang) * radial * 1.5f;
+                    oy = 0.03 + Math.abs(Math.sin(ang)) * 0.06f;
+                    oz = Math.sin(ang) * radial * 1.5f;
+                    vx = -Math.cos(ang) * speed * 1.4;
+                    vy = 0.014;
+                    vz = -Math.sin(ang) * speed * 1.4;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_BOLT -> {
+                    // Éclair : 2-3 pixels en zigzag, très brefs.
+                    float zig = ((i & 1) == 0) ? 1.0f : -1.0f;
+                    ox = px * zig * spread * (1.0f - t);
+                    oy = dy * 0.04f + zig * 0.010f;
+                    oz = pz * zig * spread * (1.0f - t);
+                    vx = dx * speed * 0.9;
+                    vy = dy * speed * 0.9 + 0.008;
+                    vz = dz * speed * 0.9;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_HALO -> {
+                    // Couronne : anneau au-dessus du point, léger flottement.
+                    ox = Math.cos(ang) * spread * 0.9f;
+                    oy = 0.13f + Math.sin(ang * 2.0f) * 0.012f;
+                    oz = Math.sin(ang) * spread * 0.9f;
+                    vx = -Math.sin(ang) * speed * 0.35;
+                    vy = 0.012;
+                    vz = Math.cos(ang) * speed * 0.35;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_PRISM -> {
+                    // Prisme : 3 facettes qui s'écartent en gardant un axe net.
+                    ox = px * (t - 0.5f) * spread * 1.6f;
+                    oy = (rand.nextFloat() - 0.5f) * spread;
+                    oz = pz * (t - 0.5f) * spread * 1.6f;
+                    vx = px * speed * (0.5 + t * 0.8);
+                    vy = (rand.nextDouble() - 0.5) * speed * 0.5 + 0.008;
+                    vz = pz * speed * (0.5 + t * 0.8);
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_WAVE -> {
+                    // Vague : front courbe qui déferle vers l'avant.
+                    ox = px * (t - 0.5f) * spread * 1.8f;
+                    oy = 0.02 + Math.sin(t * Math.PI) * 0.05f;
+                    oz = pz * (t - 0.5f) * spread * 1.8f;
+                    vx = dx * speed * (0.7 + t * 0.6);
+                    vy = 0.020 + Math.sin(t * Math.PI) * 0.012;
+                    vz = dz * speed * (0.7 + t * 0.6);
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_CROSS -> {
+                    // Croix pixel 3D : 4 directions franches (haut, bas, gauche, droite).
+                    float sx = ((i & 1) == 0) ? 1.0f : -1.0f;
+                    float sy = ((i & 2) == 0) ? 1.0f : -1.0f;
+                    ox = px * sx * spread;
+                    oy = sy * spread * 0.55f;
+                    oz = pz * sx * spread;
+                    vx = px * sx * speed * 0.8;
+                    vy = sy * speed * 0.45 + 0.010;
+                    vz = pz * sx * speed * 0.8;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_STAR -> {
+                    // Étoile : rayonnement 3D court et vif (signature des critiques).
+                    float elev = (i % 2 == 0) ? 1.0f : -0.5f;
+                    ox = Math.cos(ang) * radial * 0.7f;
+                    oy = elev * 0.035f;
+                    oz = Math.sin(ang) * radial * 0.7f;
+                    vx = Math.cos(ang) * speed * 1.2;
+                    vy = elev * speed * 0.7 + 0.012;
+                    vz = Math.sin(ang) * speed * 1.2;
+                }
+                default -> { // MOTION_BLOOM
+                    // Éclosion : petit dôme qui s'ouvre au point d'impact.
+                    ox = Math.cos(ang) * radial;
+                    oy = -0.02f - Math.abs(Math.sin(ang)) * 0.02f;
+                    oz = Math.sin(ang) * radial;
+                    vx = Math.cos(ang) * speed * 1.1;
+                    vy = 0.016 + Math.abs(Math.sin(ang)) * 0.010;
+                    vz = Math.sin(ang) * speed * 1.1;
+                    additive = false;
+                }
+            }
+
+            int rgb = switch (i % 3) {
+                case 0 -> echo.element().primary;
+                case 1 -> echo.element().highlight;
+                default -> rotateHue(echo.element().secondary, 0.05f);
+            };
+            if (paletteMask != 0 && Integer.bitCount(paletteMask & 0x3FF) > 1) {
+                rgb = mixRgb(rgb, paletteColor(paletteMask, rgb, t), 0.85f);
+            }
+            // Les mouvements « lumineux » restent bien lisibles même minuscules.
+            if (echo.motion() == deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_STAR
+                    || echo.motion() == deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_PRISM
+                    || echo.motion() == deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_HALO) {
+                rgb = mixRgb(rgb, 0xFFFFFF, 0.35f);
+            }
+
+            float sz = echo.size() * (0.7f + rand.nextFloat() * 0.6f);
+            PIXEL_PARTICLES.add(new FloatingPixel(additive,
+                    x + ox, y + oy, z + oz, vx, vy, vz, echo.gravity(), sz, rgb,
+                    echo.life() + rand.nextInt(3), rand.nextInt(Integer.MAX_VALUE)));
+        }
+    }
+
+    /**
      * Joue un accent subtil de {@link deepluckyblock.enchantments.WeaponVfxSubtle}.
      * Aucune forme qui entoure la cible : quelques pixels seulement, avec la physique adaptée
      * à la forme (braise qui monte, goutte qui tombe, poussière qui s'étale...).
@@ -403,6 +589,12 @@ public final class WeaponWorldVfxManager {
 
     public static void spawnSubtle(int subtleIndex, float x, float y, float z,
                                    float towardX, float towardY, float towardZ, int paletteMask) {
+        // T351-SUBTLE-ECHO : les index 50..99 sont les échos dérivés des grosses animations.
+        int base = deepluckyblock.enchantments.WeaponVfxSubtle.COUNT;
+        if (subtleIndex >= base) {
+            spawnEcho(subtleIndex - base, x, y, z, towardX, towardY, towardZ, paletteMask);
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
         var rand = mc.level.random;

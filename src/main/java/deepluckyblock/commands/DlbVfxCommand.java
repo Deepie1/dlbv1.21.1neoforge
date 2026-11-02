@@ -240,7 +240,7 @@ public final class DlbVfxCommand {
                                 .suggests(SUGGEST_FAMILIES)
                                 .executes(ctx -> subtleDemo(ctx,
                                         StringArgumentType.getString(ctx, "family"), 0))
-                                .then(Commands.argument("index", IntegerArgumentType.integer(1, 50))
+                                .then(Commands.argument("index", IntegerArgumentType.integer(1, 100))
                                         .executes(ctx -> subtleDemo(ctx,
                                                 StringArgumentType.getString(ctx, "family"),
                                                 IntegerArgumentType.getInteger(ctx, "index"))))))
@@ -294,7 +294,7 @@ public final class DlbVfxCommand {
         line(src, "§e/dlbvfx give <effet> [niveau]", "donne les armes enchantées qui déclenchent cet effet");
         line(src, "§e/dlbvfx elements [famille]", "les 10 familles élémentaires (couleurs + effets)");
         line(src, "§e/dlbvfx variants", "défile les 50 déclinaisons (de moins en moins de particules)");
-        line(src, "§e/dlbvfx subtle [famille] [index]", "les 50 accents discrets (90 % des déclenchements)");
+        line(src, "§e/dlbvfx subtle [famille] [index]", "les 100 accents discrets : 50 élémentaires + 50 échos des grosses animations");
         line(src, "§7Déclenchement", "§f5 % §7coup normal, §f66 % §7coup critique, §f10 % §7des déclenchements en grosse animation (§f+5 % §7dégâts)");
         line(src, "§e/dlbvfx clear", "supprime les cibles d'entraînement");
         line(src, "§7Exemples : §f/dlbvfx play 29 §7puis §f/dlbvfx give 8 §7puis §f/dlbvfx hit 3", "");
@@ -317,7 +317,7 @@ public final class DlbVfxCommand {
                     fx.element.displayName, enchant);
             src.sendSuccess(() -> Component.literal("  " + label), false);
         }
-        src.sendSuccess(() -> Component.literal("§7Astuce : §f/dlbvfx all §7pour tout voir d'un coup, §f/dlbvfx elements §7par famille, §f/dlbvfx variants §7pour les 50 déclinaisons."), false);
+        src.sendSuccess(() -> Component.literal("§7Astuce : §f/dlbvfx all §7pour tout voir d'un coup, §f/dlbvfx elements §7par famille, §f/dlbvfx variants §7pour les 50 déclinaisons, §f/dlbvfx subtle §7pour les 100 accents discrets."), false);
         return 1;
     }
 
@@ -612,9 +612,10 @@ public final class DlbVfxCommand {
             }
         }
 
-        List<WeaponVfxSubtle.Subtle> pool = new ArrayList<>();
-        for (WeaponVfxSubtle.Subtle s : WeaponVfxSubtle.all()) {
-            if (wanted == null || s.element() == wanted) pool.add(s);
+        // T351-SUBTLE-ECHO : espace complet 0..99 (50 élémentaires + 50 échos de grosses animations).
+        List<Integer> pool = new ArrayList<>();
+        for (int i = 0; i < WeaponVfxSubtle.TOTAL; i++) {
+            if (wanted == null || WeaponVfxSubtle.elementOf(i) == wanted) pool.add(i);
         }
         if (pool.isEmpty()) {
             src.sendFailure(Component.literal("§cAucun accent pour cette famille."));
@@ -622,8 +623,7 @@ public final class DlbVfxCommand {
         }
 
         int index = (indexArg <= 0) ? 1 : indexArg;
-
-        WeaponVfxSubtle.Subtle chosen = pool.get(Math.floorMod(index - 1, pool.size()));
+        final int chosen = pool.get(Math.floorMod(index - 1, pool.size()));
         Vec3 to = aimPoint(player);
         Vec3 from = player.getEyePosition();
         WeaponVfxServerListener.playSubtleDebug(player, chosen, from, to);
@@ -631,17 +631,18 @@ public final class DlbVfxCommand {
         // Petite salve de démonstration : les autres déclinaisons de la famille, une par 6 ticks.
         int n = Math.min(4, pool.size());
         for (int i = 0; i < n; i++) {
-            WeaponVfxSubtle.Subtle extra = pool.get(Math.floorMod(index + i, pool.size()));
-            if (extra.index() == chosen.index()) continue;
+            final int extra = pool.get(Math.floorMod(index + i, pool.size()));
+            if (extra == chosen) continue;
             TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 6 * (i + 1),
                     () -> WeaponVfxServerListener.playSubtleDebug(player, extra,
                             player.getEyePosition(), aimPoint(player)));
         }
 
         src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                "§b%s §7— accent §f#%d §7(%s, forme §f%s§7, %d pixels)",
-                chosen.name(), chosen.index() + 1, chosen.element().displayName,
-                chosen.shapeName(), chosen.count())), false);
+                "§b%s §7— accent §f#%d §7(%s, %s)",
+                WeaponVfxSubtle.nameOf(chosen), chosen + 1,
+                WeaponVfxSubtle.elementOf(chosen).displayName,
+                WeaponVfxSubtle.detailOf(chosen))), false);
         return 1;
     }
 
