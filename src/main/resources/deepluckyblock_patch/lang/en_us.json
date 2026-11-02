@@ -2082,12 +2082,9 @@
   "command.deep_lucky_block.combos.next_hover": "§e▶ Next page (Page %s)",
   "command.deep_lucky_block.combos.last_hover": "§6» Jump to last page (Page %s)",
   "command.deep_lucky_block.combos.give_hover": "§aClick to receive Combo #%s kit",
-  "tooltip.deep_lucky_block.system.header_scan": "❖ [ SYSTEM · SCAN ]",
-  "tooltip.deep_lucky_block.system.header_inspect": "❖ [ SYSTEM · DETAILS ]",
-  "tooltip.deep_lucky_block.system.section_runes": "❖ SKILLS & RUNES",
-  "tooltip.deep_lucky_block.system.section_synergy": "❖ AWAKENED SYNERGY",
-  "tooltip.deep_lucky_block.system.runes_count": "%s RUNES",
-  "tooltip.deep_lucky_block.system.rune_single": "1 RUNE",
-  "tooltip.deep_lucky_block.system.scroll_hint": "⟳ Scroll: %s/%s",
-  "tooltip.deep_lucky_block.system.hold_shift_compact": "▸ Hold [SHIFT] to inspect rune details"
+  "tooltip.deep_lucky_block.system.scroll_hint": "⟳ Scroll %s/%s",
+  "tooltip.deep_lucky_block.system.hold_shift_compact": "▸ Hold [SHIFT] to view details",
+  "tooltip.deep_lucky_block.system.section_enchantments": "❖ ENCHANTMENTS (%s)",
+  "tooltip.deep_lucky_block.system.section_combo": "❖ ACTIVE COMBO",
+  "tooltip.deep_lucky_block.system.section_combos": "❖ ACTIVE COMBOS (%s)"
 }

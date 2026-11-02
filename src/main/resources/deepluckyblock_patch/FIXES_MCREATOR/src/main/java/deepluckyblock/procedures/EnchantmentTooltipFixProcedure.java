@@ -502,15 +502,15 @@ public final class EnchantmentTooltipFixProcedure {
             deepluckyblock.util.CombatStatsCalculator.MeleeStats stats =
                     deepluckyblock.util.CombatStatsCalculator.computeMeleeStats(stack);
             if (stats.effectiveDamage() > 0f) {
-                MutableComponent line = Component.literal("\u00a7b\u2694 \u00a77")
+                MutableComponent line = Component.literal("\u00a7b\u2694 ")
                         .append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
                                 "tooltip.deep_lucky_block.stats.real_dps",
-                                fr ? "DPS r\u00e9el : " : "Effective DPS: "))
-                        .append(Component.literal("\u00a7f" + trimNumber(stats.effectiveDamage()) + " \u00a78dmg \u00d7 \u00a7f"
-                                + trimNumber(stats.attackSpeed()) + "/s \u00a78= \u00a7b"
+                                fr ? "DPS r\u00e9el : " : "Effective DPS: ").withStyle(ChatFormatting.GRAY))
+                        .append(Component.literal("\u00a7f" + trimNumber(stats.effectiveDamage()) + " \u00a77dmg \u00d7 \u00a7f"
+                                + trimNumber(stats.attackSpeed()) + "/s \u00a77= \u00a7b"
                                 + trimNumber(stats.dps()) + " DPS"));
                 if (stats.hasConditionalBonuses()) {
-                    line.append(Component.literal(fr ? " \u00a78(\u2248 std)" : " \u00a78(\u2248 std)"));
+                    line.append(Component.literal(" \u00a77(\u2248 base)"));
                 }
                 return line;
             }
@@ -518,11 +518,11 @@ public final class EnchantmentTooltipFixProcedure {
             deepluckyblock.util.CombatStatsCalculator.ArmorStats stats =
                     deepluckyblock.util.CombatStatsCalculator.computeArmorStats(stack);
             if (stats.damageReductionPercent() > 0f) {
-                return Component.literal("\u00a7b\u26e8 \u00a77")
+                return Component.literal("\u00a7b\u26e8 ")
                         .append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
                                 "tooltip.deep_lucky_block.stats.effective_armor",
-                                fr ? "Armure effective : " : "Effective Armor: "))
-                        .append(Component.literal("\u00a7f" + trimNumber(stats.baseArmor()) + " \u00a78+ \u00a7b"
+                                fr ? "Armure effective : " : "Effective Armor: ").withStyle(ChatFormatting.GRAY))
+                        .append(Component.literal("\u00a7f" + trimNumber(stats.baseArmor()) + " \u00a77+ \u00a7b"
                                 + trimNumber(stats.damageReductionPercent()) + "% \u00a77"))
                         .append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
                                 "tooltip.deep_lucky_block.stats.extra_reduction",
@@ -953,7 +953,7 @@ public final class EnchantmentTooltipFixProcedure {
         return id != null && isModEnchantment(id);
     }
 
-    public static Component formatRuneTitle(Enchantment ench, ResourceLocation id, int level) {
+    public static Component formatEnchantTitle(Enchantment ench, ResourceLocation id, int level) {
         try {
             return buildName(ench, level);
         } catch (Throwable t) {
@@ -963,8 +963,9 @@ public final class EnchantmentTooltipFixProcedure {
 
     /**
      * Résout la description d'un enchantement, substitue %s si présent, retire la répétition
-     * redondante « • Nom : » en tête de ligne et adoucit le blanc brut (§f) en argent lisible (§7)
-     * tout en conservant les valeurs colorées (§c, §a, §b, §e, §6, §d).
+     * redondante « • Nom : » en tête de ligne et remet le corps en style neutre (§r) pour
+     * qu'il prenne la teinte blanc-glace haute lisibilité du panneau tout en gardant les
+     * valeurs colorées (§c, §a, §b, §e, §6, §d).
      */
     public static String resolveCleanDescription(ResourceLocation id, int level) {
         if (id == null) return null;
@@ -976,7 +977,6 @@ public final class EnchantmentTooltipFixProcedure {
             } catch (Throwable ignored) {}
         }
         String trimmed = raw.trim();
-        // Retire le préfixe redondant « §7• §eNom : » ou « • Nom : » lorsque présent
         if (trimmed.contains("\u2022")) {
             int bulletIdx = trimmed.indexOf('\u2022');
             int colonIdx = trimmed.indexOf(':', bulletIdx);
@@ -986,9 +986,9 @@ public final class EnchantmentTooltipFixProcedure {
                 trimmed = trimmed.substring(cut);
             }
         }
-        trimmed = trimmed.replace("\u00a7f", "\u00a77");
-        if (!trimmed.startsWith("\u00a7")) {
-            trimmed = "\u00a77" + trimmed;
+        trimmed = trimmed.replace("\u00a7f", "\u00a7r").replace("\u00a77", "\u00a7r");
+        while (trimmed.startsWith("\u00a7r")) {
+            trimmed = trimmed.substring(2).trim();
         }
         return trimmed;
     }

@@ -2082,12 +2082,9 @@
   "command.deep_lucky_block.combos.next_hover": "§e▶ Page suivante (Page %s)",
   "command.deep_lucky_block.combos.last_hover": "§6» Aller tout à la fin (Page %s)",
   "command.deep_lucky_block.combos.give_hover": "§aCliquez pour recevoir le kit du Combo #%s",
-  "tooltip.deep_lucky_block.system.header_scan": "❖ [ SYSTÈME · ANALYSE ]",
-  "tooltip.deep_lucky_block.system.header_inspect": "❖ [ SYSTÈME · DÉTAILS ]",
-  "tooltip.deep_lucky_block.system.section_runes": "❖ COMPÉTENCES & RUNES",
-  "tooltip.deep_lucky_block.system.section_synergy": "❖ SYNERGIE ÉVEILLÉE",
-  "tooltip.deep_lucky_block.system.runes_count": "%s RUNES",
-  "tooltip.deep_lucky_block.system.rune_single": "1 RUNE",
-  "tooltip.deep_lucky_block.system.scroll_hint": "⟳ Molette : %s/%s",
-  "tooltip.deep_lucky_block.system.hold_shift_compact": "▸ Maintenez [SHIFT] pour inspecter les runes"
+  "tooltip.deep_lucky_block.system.scroll_hint": "⟳ Molette %s/%s",
+  "tooltip.deep_lucky_block.system.hold_shift_compact": "▸ Maintenez [SHIFT] pour voir les détails",
+  "tooltip.deep_lucky_block.system.section_enchantments": "❖ ENCHANTEMENTS (%s)",
+  "tooltip.deep_lucky_block.system.section_combo": "❖ COMBO ACTIF",
+  "tooltip.deep_lucky_block.system.section_combos": "❖ COMBOS ACTIFS (%s)"
 }
