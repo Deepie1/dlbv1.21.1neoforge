@@ -52,7 +52,7 @@ public abstract class ItemRendererEnchantMixin {
         boolean activeInHand = dlbCheckActiveAction(stack, displayContext);
         EnchantAura.captureWithFlash(stack, activeInHand, dlbSwingCycle, false);
         if (EnchantAura.DEBUG && EnchantAura.DEBUG_VERBOSE) {
-            System.out.println("[MIXIN] ItemRenderer.render() HEAD — stack="
+            deepluckyblock.util.DebugLog.out("[MIXIN] ItemRenderer.render() HEAD — stack="
                     + (stack == null ? "null" : stack.getItem().getDescriptionId())
                     + " hasFoil=" + (stack != null && stack.hasFoil())
                     + " active=" + activeInHand

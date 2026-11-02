@@ -91,7 +91,7 @@ public final class LuckyXpEventPoolCompatibility {
         String dimensionName = dimension != null ? dimension.toString() : "<null>";
         String sourceName = source != null ? source : "unknown";
         if (LOGGED_SOURCES.add(sourceName + "|" + dimensionName)) {
-            System.out.println("[DeepLuckyBlock/LuckyXP] " + sourceName
+            deepluckyblock.util.DebugLog.out("[DeepLuckyBlock/LuckyXP] " + sourceName
                     + " pool " + dimensionName + ": size=" + result.size()
                     + ", deepPresent=" + result.contains(DEEP_LUCKY_BLOCK_ID)
                     + ", deepRegistered=" + deepRegistered);
@@ -111,14 +111,14 @@ public final class LuckyXpEventPoolCompatibility {
 
     public static void logClientIconRendered() {
         if (ICON_LOGGED.compareAndSet(false, true)) {
-            System.out.println("[DeepLuckyBlock/LuckyXP] CLIENT Deep item icon rendered");
+            deepluckyblock.util.DebugLog.out("[DeepLuckyBlock/LuckyXP] CLIENT Deep item icon rendered");
         }
     }
 
     private static void logFailureOnce(Throwable error) {
         if (failureLogged) return;
         failureLogged = true;
-        System.err.println("[DeepLuckyBlock/LuckyXP] official dimension pool unavailable: "
+        deepluckyblock.util.DebugLog.err("[DeepLuckyBlock/LuckyXP] official dimension pool unavailable: "
                 + error);
     }
 }

@@ -951,6 +951,6 @@ public class LuckyChestAutofillProcedure {
     }
 
     private static void debug(String msg) {
-        if (DEBUG) LOGGER.info("[SLB-CHEST] {}", msg);
+        if (DEBUG) deepluckyblock.util.DebugLog.info(LOGGER, "[SLB-CHEST] {}", msg);
     }
 }

@@ -329,7 +329,7 @@ public class Structures4Procedure {
         BlockPos surfPos = new BlockPos(targetXZ.getX(), surfaceY, targetXZ.getZ());
         ZoneAnalysis analysis = analyzeZone(level, surfPos);
         if (!analysis.isUnsafe()) { deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4-SAFETY] Zone OK"); return targetXZ; }
-        LOGGER.warn("[STRUCT4-SAFETY] {} : {} -> recherche alt...", nbtName, analysis.getReason());
+        deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4-SAFETY] {} : {} -> recherche alt...", nbtName, analysis.getReason());
         BlockPos safeAlt = findSafeAlternative(level, surfPos, true);
         if (safeAlt != null && !analyzeZone(level, safeAlt).hasTooMuchLava()) return safeAlt;
         if (analysis.hasTooMuchLava()) return null;
@@ -603,7 +603,7 @@ public class Structures4Procedure {
         job.waitTicks++;
         boolean force = job.waitTicks > 600;
         if (force && job.waitTicks == 601) {
-            LOGGER.warn("[STRUCT4-EVEREST] everest : {} blocs en attente depuis 30 s -- chargement force des chunks restants", job.defer.size());
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4-EVEREST] everest : {} blocs en attente depuis 30 s -- chargement force des chunks restants", job.defer.size());
         }
         // T85/B4 : le mode « force » n'etait qu'un warn -- les chunks manquants
         // n'etaient plus re-demandes que passivement (a la lecture). Desormais,
@@ -667,7 +667,7 @@ public class Structures4Procedure {
             if (shown++ > 0) sample.append(", ");
             sample.append(job.origin.getX() + rel.getX()).append(',').append(job.origin.getZ() + rel.getZ());
         }
-        LOGGER.warn("[STRUCT4-EVEREST] everest : {} bloc(s) SANS CHUNK apres {} s et re-demandes actives -- "
+        deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4-EVEREST] everest : {} bloc(s) SANS CHUNK apres {} s et re-demandes actives -- "
                         + "abandon honnete (positions x,z : {}) ; la file se termine, le reste ({}/{}) est pose (T85)",
                 job.defer.size(), MAX_DEFER_WAIT_TICKS / 20, sample, job.index, job.blocks.size());
         job.defer.clear();
@@ -775,7 +775,7 @@ public class Structures4Procedure {
         job.waitTicks++;
         boolean force = job.waitTicks > 600;
         if (force && job.waitTicks == 601) {
-            LOGGER.warn("[STRUCT4] {} : {} blocs en attente depuis 30 s -- chargement force des chunks restants", job.name, job.defer.size());
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4] {} : {} blocs en attente depuis 30 s -- chargement force des chunks restants", job.name, job.defer.size());
         }
         // T85/B4 : meme re-demande active + meme plafond honnete que la file everest
         // (la boucle « blocs jamais poses, file a 100 % indefiniment » touchait toutes
@@ -832,7 +832,7 @@ public class Structures4Procedure {
             if (shown++ > 0) sample.append(", ");
             sample.append(job.origin.getX() + rel.getX()).append(',').append(job.origin.getZ() + rel.getZ());
         }
-        LOGGER.warn("[STRUCT4] {} : {} bloc(s) SANS CHUNK apres {} s et re-demandes actives -- "
+        deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4] {} : {} bloc(s) SANS CHUNK apres {} s et re-demandes actives -- "
                         + "abandon honnete (positions x,z : {}) ; la file se termine, le reste ({}/{}) est pose (T85)",
                 job.name, job.defer.size(), MAX_DEFER_WAIT_TICKS / 20, sample, job.index, job.blocks.size());
         job.defer.clear();
@@ -1096,7 +1096,7 @@ public class Structures4Procedure {
                 // plus utilise : c'est la garantie, verifiable ici, que la structure
                 // est bien le dernier objet pose sur la zone.
                 if (pj.terrainFinal) {
-                    LOGGER.warn("[STRUCT4] PostJob terrainFinal sur {} ignore (T39 : terrain avant le paste)", pj.name);
+                    deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4] PostJob terrainFinal sur {} ignore (T39 : terrain avant le paste)", pj.name);
                 }
                 POST_QUEUE.poll();
                 deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4] Post-process de {} terminé", pj.name);
@@ -1161,7 +1161,7 @@ public class Structures4Procedure {
             case 3 -> spawnCircus(level, origin);
             case 4 -> spawnShipdead(level, origin);
             case 5 -> spawnEverest(level, origin);
-            default -> { LOGGER.warn("[STRUCT4] ID inconnu : {}", structureId); yield false; }
+            default -> { deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4] ID inconnu : {}", structureId); yield false; }
         };
     }
 
@@ -1337,7 +1337,7 @@ public class Structures4Procedure {
                 };
                 int gap0 = y0Gap.applyAsInt(decidedSpot);
                 if (gap0 != Integer.MIN_VALUE && gap0 < 1) {
-                    LOGGER.warn("[STRUCT4-EVEREST] Y0 insuffisant au site retenu (plateforme {} bloc(s) "
+                    deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4-EVEREST] Y0 insuffisant au site retenu (plateforme {} bloc(s) "
                                     + "sous le plafond) -- essai des directions proches (T88)", 1 - gap0);
                     final int[][] DIRS = { {1, 0}, {-1, 0}, {0, 1}, {0, -1},
                             {1, 1}, {1, -1}, {-1, 1}, {-1, -1} };
@@ -1358,7 +1358,7 @@ public class Structures4Procedure {
                         }
                     }
                     if (!moved)
-                        LOGGER.warn("[STRUCT4-EVEREST] Y0 introuvable a proximite (relief bas ou chunks "
+                        deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4-EVEREST] Y0 introuvable a proximite (relief bas ou chunks "
                                 + "non charges) -- pose QUAND MEME au site initial : digues conservees, "
                                 + "geant largement au-dessus de l'eau exterieure (T88)");
                 }
@@ -1440,7 +1440,7 @@ public class Structures4Procedure {
             int maxEverestPasteY = level.getMaxBuildHeight() - size.getY();
             int minEverestPasteY = level.getMinBuildHeight() + 1;
             if (pasteY > maxEverestPasteY) {
-                LOGGER.warn("[STRUCT4-EVEREST] sommet prevu au-dessus de maxBuildHeight={} -- pasteY bride de {} a {} (T313)",
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4-EVEREST] sommet prevu au-dessus de maxBuildHeight={} -- pasteY bride de {} a {} (T313)",
                         level.getMaxBuildHeight(), pasteY, maxEverestPasteY);
                 pasteY = maxEverestPasteY;
             }
@@ -1462,7 +1462,7 @@ public class Structures4Procedure {
                     eMin.getX(), eMin.getZ(), eMax.getX(), eMax.getZ(),
                     deepluckyblock.util.SafeSurface.Y0_BAND, deepluckyblock.util.SafeSurface.Y0_STEP);
             if (y0Water != Integer.MIN_VALUE && baseY < y0Water + 1)
-                LOGGER.warn("[STRUCT4-EVEREST] plateforme Y={} sous le plafond Y0 (eau exterieure max Y={} "
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4-EVEREST] plateforme Y={} sous le plafond Y0 (eau exterieure max Y={} "
                                 + "a moins de {} blocs hors-emprise) -- POSE MAINTENUE (T88 : aucun site "
                                 + "voisin ne faisait mieux ; digues conservees)",
                         baseY, y0Water, deepluckyblock.util.SafeSurface.Y0_BAND);
@@ -1656,7 +1656,7 @@ public class Structures4Procedure {
             if (deepluckyblock.util.SafeSurface.columnWet(level, cx, cz)) { wetSkipped4++; continue; }
             BlockPos cand = new BlockPos(cx, cy, cz); if (!isPlayerChunk(cand, null, origin)) return cand; }
         if (wetSkipped4 > 0)
-            LOGGER.warn("[STRUCT4-FLAT] findSafeOutsideChunkPos : {} offset(s) sous l'eau ecartes (T80)", wetSkipped4);
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4-FLAT] findSafeOutsideChunkPos : {} offset(s) sous l'eau ecartes (T80)", wetSkipped4);
         return origin.offset(64, 0, 64);
     }
 
@@ -1729,7 +1729,7 @@ public class Structures4Procedure {
             int surfY = deepluckyblock.util.SafeSurface.surfaceY(level, c.cx(), c.cz(), origin.getY());
             if (realDiff <= maxDiff && stepA1 >= 0
                     && stepA1 <= deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y) {
-                LOGGER.info("[STRUCT4-MOTHER] Zone ideale retenue en {} ms a {},{} : diff={}, A1={} <= {} blocs",
+                deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4-MOTHER] Zone ideale retenue en {} ms a {},{} : diff={}, A1={} <= {} blocs",
                         System.currentTimeMillis() - t0, c.cx(), c.cz(), realDiff, stepA1,
                         deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y);
                 return new BlockPos(c.cx(), surfY, c.cz());
@@ -1744,7 +1744,7 @@ public class Structures4Procedure {
             }
         }
         if (bestVerifiedPos != null) {
-            LOGGER.info("[STRUCT4-MOTHER] Meilleur candidat charge retenu en {} ms (<=1s) a {},{} : diff={}, A1={} -> remodelage Mother",
+            deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4-MOTHER] Meilleur candidat charge retenu en {} ms (<=1s) a {},{} : diff={}, A1={} -> remodelage Mother",
                     System.currentTimeMillis() - t0, bestVerifiedPos.getX(), bestVerifiedPos.getZ(),
                     bestVerifiedDiff, bestVerifiedA1);
             return bestVerifiedPos;
@@ -1759,12 +1759,12 @@ public class Structures4Procedure {
             double wet42 = wetRatioArea(level, c.cx(), c.cz(), checkR);
             if (wet42 > 0.08) continue;
             int surfY2 = deepluckyblock.util.SafeSurface.surfaceY(level, c.cx(), c.cz(), origin.getY());
-            LOGGER.info("[STRUCT4-FLAT] Meilleur candidat seconde passe retenu en {} ms a {},{} (diff={})",
+            deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4-FLAT] Meilleur candidat seconde passe retenu en {} ms a {},{} (diff={})",
                     System.currentTimeMillis() - t0, c.cx(), c.cz(), realDiff2);
             return new BlockPos(c.cx(), surfY2, c.cz());
         }
         if (!goodCandidates.isEmpty()) {
-            LOGGER.warn("[STRUCT4-FLAT] {} candidats testes, tous rejetes comme terrain fantome -- fallback pente minimale", maxVerified);
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4-FLAT] {} candidats testes, tous rejetes comme terrain fantome -- fallback pente minimale", maxVerified);
         }
         if (bestDiff < Integer.MAX_VALUE) {
             // Meme verification pour le fallback pente-minimale : force la generation
@@ -1779,18 +1779,18 @@ public class Structures4Procedure {
             // heightmap traverse l'eau, une mer gagnerait toujours ce classement.
             double wetBd = wetRatioArea(level, bdX, bdZ, checkR);
             if (wetBd > 0.10) {
-                LOGGER.warn("[STRUCT4-FLAT] Repli « moins pentu » {},{} sous l'EAU ({} % des colonnes) -- refuse (T80), repli hors chunk sec",
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4-FLAT] Repli « moins pentu » {},{} sous l'EAU ({} % des colonnes) -- refuse (T80), repli hors chunk sec",
                         bdX, bdZ, (int) (wetBd * 100));
                 return findSafeOutsideChunkPos(level, origin);
             }
             int realBdY = deepluckyblock.util.SafeSurface.surfaceY(level, bdX, bdZ, origin.getY());
-            LOGGER.warn("[STRUCT4-FLAT] Pas assez plat (min diff={}, max={}), utilise le moins pentu (verifie)", bestDiff, maxDiff);
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4-FLAT] Pas assez plat (min diff={}, max={}), utilise le moins pentu (verifie)", bestDiff, maxDiff);
             return new BlockPos(bdX, realBdY, bdZ);
         }
         // FIX T7 : ne jamais renvoyer null (l'appelant retombait alors sur une
         // hauteur fantome). On renvoie une position hors du chunk d'origine avec
         // une hauteur REELLE lue via SafeSurface.
-        LOGGER.warn("[STRUCT4-FLAT] Aucune zone valide trouvee ({}ms) -- repli sur une position hors chunk avec hauteur reelle",
+        deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4-FLAT] Aucune zone valide trouvee ({}ms) -- repli sur une position hors chunk avec hauteur reelle",
                 System.currentTimeMillis() - t0);
         return findSafeOutsideChunkPos(level, origin);
     }
@@ -2050,7 +2050,7 @@ public class Structures4Procedure {
                     deepluckyblock.util.SafeSurface.Y0_BAND, deepluckyblock.util.SafeSurface.Y0_STEP);
             if (y0Water != Integer.MIN_VALUE && baseY < y0Water + 1) {
                 int lift = (y0Water + 1) - baseY;
-                LOGGER.warn("[STRUCT4] {} : plateforme Y={} sous le plafond Y0 (eau exterieure max Y={} "
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4] {} : plateforme Y={} sous le plafond Y0 (eau exterieure max Y={} "
                                 + "a moins de {} blocs hors-emprise) -- PLATEFORME REMONTEE de {} bloc(s) a Y={} "
                                 + "et POSE MAINTENUE (T104 : jamais d'abandon silencieux, precedent T88-everest)",
                         nbtName, baseY, y0Water, deepluckyblock.util.SafeSurface.Y0_BAND,
@@ -2076,7 +2076,7 @@ public class Structures4Procedure {
                     rotatedPos = adjustForRotation(finalPos, template, rotation);
                     min = min.below(drop);
                     max = max.below(drop);
-                    LOGGER.warn("[STRUCT4] {} : sommet prevu au-dessus de maxBuildHeight={} -- ancrage abaisse de {} bloc(s) (Y={}) (T313)",
+                    deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4] {} : sommet prevu au-dessus de maxBuildHeight={} -- ancrage abaisse de {} bloc(s) (Y={}) (T313)",
                             nbtName, level.getMaxBuildHeight(), drop, baseY);
                 }
             } else if (min.getY() < minBuildFloor) {
@@ -2148,7 +2148,7 @@ public class Structures4Procedure {
     @SuppressWarnings("unchecked")
     private static List<StructureTemplate.StructureBlockInfo> extractBlocks(StructureTemplate t) {
         try { for (Field f : StructureTemplate.class.getDeclaredFields()) { f.setAccessible(true); Object val = f.get(t); if (val instanceof List<?> list && !list.isEmpty() && list.get(0) instanceof StructureTemplate.Palette) return ((StructureTemplate.Palette) list.get(0)).blocks(); } }
-        catch (Exception ex) { LOGGER.warn("[STRUCT4] Reflection échouée: {}", ex.getMessage()); }
+        catch (Exception ex) { deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT4] Reflection échouée: {}", ex.getMessage()); }
         return Collections.emptyList();
     }
     private static BlockPos adjustForRotation(BlockPos pos, StructureTemplate t, Rotation rot) { Vec3i s = t.getSize(); return switch (rot) { case NONE -> pos; case CLOCKWISE_90 -> pos.offset(s.getZ() - 1, 0, 0); case CLOCKWISE_180 -> pos.offset(s.getX() - 1, 0, s.getZ() - 1); case COUNTERCLOCKWISE_90 -> pos.offset(0, 0, s.getX() - 1); }; }

@@ -190,25 +190,25 @@ public final class EnchantmentLevelAuditProcedure {
         }
 
         public void log() {
-            LOGGER.info("========================================================");
-            LOGGER.info("[deep_lucky_block] AUDIT DE NIVEAUX — jusqu'au niveau {}", maxLevel);
-            LOGGER.info("  enchantements testés : {}", total);
-            LOGGER.info("  contrôles effectués  : {}", checks);
-            LOGGER.info("  CRASHS               : {}", failures.size());
-            LOGGER.info("  descriptions absentes: {}", missingDescs.size());
-            LOGGER.info("  avertissements       : {}", warnings.size());
+            deepluckyblock.util.DebugLog.info(LOGGER, "========================================================");
+            deepluckyblock.util.DebugLog.info(LOGGER, "[deep_lucky_block] AUDIT DE NIVEAUX — jusqu'au niveau {}", maxLevel);
+            deepluckyblock.util.DebugLog.info(LOGGER, "  enchantements testés : {}", total);
+            deepluckyblock.util.DebugLog.info(LOGGER, "  contrôles effectués  : {}", checks);
+            deepluckyblock.util.DebugLog.info(LOGGER, "  CRASHS               : {}", failures.size());
+            deepluckyblock.util.DebugLog.info(LOGGER, "  descriptions absentes: {}", missingDescs.size());
+            deepluckyblock.util.DebugLog.info(LOGGER, "  avertissements       : {}", warnings.size());
             for (String f : failures) LOGGER.error("  [CRASH]   {}", f);
-            for (String d : missingDescs) LOGGER.warn("  [NO-DESC] {}", d);
+            for (String d : missingDescs) deepluckyblock.util.DebugLog.warn(LOGGER, "  [NO-DESC] {}", d);
             int shown = 0;
             for (String w : warnings) {
                 if (shown++ >= 40) {
-                    LOGGER.warn("  ... {} avertissements supplémentaires", warnings.size() - 40);
+                    deepluckyblock.util.DebugLog.warn(LOGGER, "  ... {} avertissements supplémentaires", warnings.size() - 40);
                     break;
                 }
-                LOGGER.warn("  [WARN]    {}", w);
+                deepluckyblock.util.DebugLog.warn(LOGGER, "  [WARN]    {}", w);
             }
-            LOGGER.info("  RESULTAT : {}", ok() ? "AUCUN CRASH" : "DES CRASHS SUBSISTENT");
-            LOGGER.info("========================================================");
+            deepluckyblock.util.DebugLog.info(LOGGER, "  RESULTAT : {}", ok() ? "AUCUN CRASH" : "DES CRASHS SUBSISTENT");
+            deepluckyblock.util.DebugLog.info(LOGGER, "========================================================");
         }
 
         public void tell(Player p) {

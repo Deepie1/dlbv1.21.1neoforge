@@ -97,7 +97,7 @@ public final class EternalAuraParticles {
         } catch (Throwable t) {
             // Jamais de crash pour un effet cosmétique.
             if (EnchantAura.DEBUG) {
-                System.out.println("[ETERNAL-FX] ignoré : " + t);
+                deepluckyblock.util.DebugLog.out("[ETERNAL-FX] ignoré : " + t);
             }
         }
     }

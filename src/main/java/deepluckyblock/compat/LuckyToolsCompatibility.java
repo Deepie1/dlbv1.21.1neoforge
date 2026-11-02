@@ -255,7 +255,7 @@ public final class LuckyToolsCompatibility {
             method.invoke(null, args);
             return true;
         } catch (Throwable error) {
-            System.err.println("[DeepLuckyBlock/LuckyStats] API call failed: " + error);
+            deepluckyblock.util.DebugLog.err("[DeepLuckyBlock/LuckyStats] API call failed: " + error);
             return false;
         }
     }
@@ -462,7 +462,7 @@ public final class LuckyToolsCompatibility {
         // plus qu'a polluer la console. Passer DEBUG_LUCKY_TOOLS a true pour la
         // reactiver ponctuellement.
         if (DEBUG_LUCKY_TOOLS && (!ring.isEmpty() || beltReroll || boosted || cursed)) {
-            System.out.println("[DeepLuckyBlock/LuckyTools] luck=" + effectiveLuck
+            deepluckyblock.util.DebugLog.out("[DeepLuckyBlock/LuckyTools] luck=" + effectiveLuck
                     + ", ring=" + ringChance
                     + ", belt=" + beltReroll
                     + ", idolBoost=" + boosted
@@ -582,7 +582,7 @@ public final class LuckyToolsCompatibility {
         }
 
         if (recorded) {
-            System.out.println("[DeepLuckyBlock/LuckyStats] base Average Luck updated: score="
+            deepluckyblock.util.DebugLog.out("[DeepLuckyBlock/LuckyStats] base Average Luck updated: score="
                     + String.format(java.util.Locale.ROOT, "%.1f", averageLuckScore)
                     + ", percentile="
                     + String.format(java.util.Locale.ROOT, "%.1f%%", percentile * 100.0));

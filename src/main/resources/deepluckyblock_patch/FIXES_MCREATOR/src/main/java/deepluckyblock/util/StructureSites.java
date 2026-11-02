@@ -151,7 +151,7 @@ public final class StructureSites {
                 }
             }
         }
-        LOGGER.warn("[DLB-SITES] {} : chevauche l'emprise '{}' et aucune place libre dans {} anneaux de {} blocs -- pose a l'emplacement prevu",
+        deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-SITES] {} : chevauche l'emprise '{}' et aucune place libre dans {} anneaux de {} blocs -- pose a l'emplacement prevu",
                 p.toShortString(), here, rings, step);
         return p;
     }

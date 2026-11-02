@@ -16,7 +16,7 @@ import deepluckyblock.DeepLuckyBlockMod;
 
 import net.neoforged.fml.common.EventBusSubscriber;
 
-@EventBusSubscriber(modid = "deep_lucky_block", bus = EventBusSubscriber.Bus.MOD)
+@EventBusSubscriber(modid = "deep_lucky_block")
 public class DeepLuckyBlockModTabs {
 	public static final DeferredRegister<CreativeModeTab> REGISTRY = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, DeepLuckyBlockMod.MODID);
 

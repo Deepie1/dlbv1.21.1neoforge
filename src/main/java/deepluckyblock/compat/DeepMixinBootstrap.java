@@ -59,25 +59,25 @@ public final class DeepMixinBootstrap {
             patch();
         } catch (Throwable t) {
             // Ne jamais bloquer le chargement du mod à cause de l'injecteur.
-            LOGGER.warn("[DeepMixinBootstrap] Injection mixin impossible : {}", t.getMessage());
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[DeepMixinBootstrap] Injection mixin impossible : {}", t.getMessage());
         }
     }
 
     private static void patch() throws Exception {
         URL url = DeepMixinBootstrap.class.getClassLoader().getResource(CONFIG_RESOURCE);
         if (url == null) {
-            LOGGER.info("[DeepMixinBootstrap] Introuvable {} -> rien à patcher (probablement déjà géré).", CONFIG_RESOURCE);
+            deepluckyblock.util.DebugLog.info(LOGGER, "[DeepMixinBootstrap] Introuvable {} -> rien à patcher (probablement déjà géré).", CONFIG_RESOURCE);
             return;
         }
         // En .jar, le fichier est embedded -> interdit d'écrire. On ne patch que
         // les fichiers sur disque (workspace en dev).
         if (!"file".equalsIgnoreCase(url.getProtocol())) {
-            LOGGER.info("[DeepMixinBootstrap] {} est embarqué ({}), non modifiable.", CONFIG_RESOURCE, url.getProtocol());
+            deepluckyblock.util.DebugLog.info(LOGGER, "[DeepMixinBootstrap] {} est embarqué ({}), non modifiable.", CONFIG_RESOURCE, url.getProtocol());
             return;
         }
         File file = new File(new URI(url.toString()));
         if (!file.isFile() || !file.canWrite()) {
-            LOGGER.info("[DeepMixinBootstrap] {} non accessible en écriture -> skip.", file.getAbsolutePath());
+            deepluckyblock.util.DebugLog.info(LOGGER, "[DeepMixinBootstrap] {} non accessible en écriture -> skip.", file.getAbsolutePath());
             return;
         }
 
@@ -96,7 +96,7 @@ public final class DeepMixinBootstrap {
 
         if (changed) {
             Files.writeString(file.toPath(), GSON.toJson(root), StandardCharsets.UTF_8);
-            LOGGER.info("[DeepMixinBootstrap] {} corrigé : plugin garanti.",
+            deepluckyblock.util.DebugLog.info(LOGGER, "[DeepMixinBootstrap] {} corrigé : plugin garanti.",
                     file.getAbsolutePath());
         }
     }

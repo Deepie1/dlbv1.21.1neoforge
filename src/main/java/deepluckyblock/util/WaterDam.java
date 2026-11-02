@@ -191,7 +191,7 @@ public final class WaterDam {
         ZONES.put(level, f);
         List<int[]> cols = new ArrayList<>();
         for (int x = x0; x <= x1; x++) for (int z = z0; z <= z1; z++) cols.add(new int[]{x, z});
-        LOGGER.info("[DLB-WATER] gel de l'eau sur la zone {}x{} ({} colonnes, profondeur {} sous la surface) -- le terrain sera retaille A SEC",
+        deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-WATER] gel de l'eau sur la zone {}x{} ({} colonnes, profondeur {} sous la surface) -- le terrain sera retaille A SEC",
                 x1 - x0 + 1, z1 - z0 + 1, cols.size(), SCAN_DEPTH);
         freezeSlice(level, f, cols, 0, onDone);
     }
@@ -243,7 +243,7 @@ public final class WaterDam {
                         freezeSlice(level, f, cols, i, onDone);
                         return;
                     }
-                    LOGGER.info("[DLB-WATER] eau gelee : {} blocs sur {} colonnes{}", f.entries.size(), f.columns,
+                    deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-WATER] eau gelee : {} blocs sur {} colonnes{}", f.entries.size(), f.columns,
                             f.capped ? " (PLAFOND ATTEINT : le reste de l'eau n'est pas gele)" : "");
                     if (onDone != null) onDone.run();
                 });
@@ -271,7 +271,7 @@ public final class WaterDam {
         pauseSlices = 0;
         lastSliceMs = 0L;
         deepluckyblock.util.DebugLog.setPhase("degel de l'eau 0/" + f.entries.size());
-        LOGGER.info("[DLB-WATER] debut du degel : {} blocs d'eau memorises", f.entries.size());
+        deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-WATER] debut du degel : {} blocs d'eau memorises", f.entries.size());
         thawSlice(level, f, 0, st, keepOutMin, keepOutMax, onDone);
     }
 
@@ -335,14 +335,14 @@ public final class WaterDam {
                     if (i < f.entries.size()) {
                         if (pauseSlices > 0) {
                             if (pauseSlices >= 5)
-                                LOGGER.warn("[DLB-WATER] degel : le serveur encaisse mal les ecritures "
+                                deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-WATER] degel : le serveur encaisse mal les ecritures "
                                                 + "(tick > {} ms) -- tranche reportee de {} ticks ({}/{} blocs d'eau)",
                                         SLOW_TICK_MS, pauseSlices, i, f.entries.size());
                         }
                         thawSlice(level, f, i, st, koMin, koMax, onDone);
                         return;
                     }
-                    LOGGER.info("[DLB-WATER] degel termine : {} blocs d'eau restitues a leur position EXACTE, {} recouverts par le terrain (abandonnes : l'eau n'existe plus la), {} ignores (emprise de la structure)",
+                    deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-WATER] degel termine : {} blocs d'eau restitues a leur position EXACTE, {} recouverts par le terrain (abandonnes : l'eau n'existe plus la), {} ignores (emprise de la structure)",
                             st.restored, st.dropped + st.moved, st.skipped);
                     if (onDone != null) onDone.run();
                 });

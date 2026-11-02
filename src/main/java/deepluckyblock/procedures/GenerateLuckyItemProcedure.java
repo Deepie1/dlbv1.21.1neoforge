@@ -202,13 +202,13 @@ public class GenerateLuckyItemProcedure {
         if (id == EVEREST_STRUCTURE_ID) f.everestSpawned = true;
         else if (id < f.normalSpawned.length) f.normalSpawned[id] = true;
         f.setDirty();
-        LOGGER.info("[STRUCT] ID={} confirmee et enregistree comme unique sur ce monde", id);
+        deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT] ID={} confirmee et enregistree comme unique sur ce monde", id);
     }
 
     /** Appele si la generation echoue : la structure redevient disponible. */
     public static void releaseStructureReservation(int id) {
         if (id >= 0 && STRUCTURE_RESERVED.remove(id)) {
-            LOGGER.warn("[STRUCT] ID={} non posee : reservation liberee, elle pourra retomber", id);
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT] ID={} non posee : reservation liberee, elle pourra retomber", id);
         }
     }
 
@@ -227,7 +227,7 @@ public class GenerateLuckyItemProcedure {
         f.everestSpawned = false;
         f.setDirty();
         STRUCTURE_RESERVED.clear();
-        LOGGER.info("[STRUCT] Drapeaux de structures remis a zero sur ce monde");
+        deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT] Drapeaux de structures remis a zero sur ce monde");
     }
 
     public static class EverestFlagData extends SavedData {
@@ -3421,7 +3421,7 @@ public class GenerateLuckyItemProcedure {
                 }
             }
         } catch (Exception exception) {
-            System.err.println("[DeepLuckyBlock] Impossible de lire " + configFile
+            deepluckyblock.util.DebugLog.err("[DeepLuckyBlock] Impossible de lire " + configFile
                     + " au rang " + rankKey + " : " + exception.getMessage());
         }
         return all;
@@ -3490,7 +3490,7 @@ public class GenerateLuckyItemProcedure {
                 }
             }
         } catch (Exception exception) {
-            System.err.println("[DeepLuckyBlock] Pool ETERNAL niveau 100 invalide dans "
+            deepluckyblock.util.DebugLog.err("[DeepLuckyBlock] Pool ETERNAL niveau 100 invalide dans "
                     + configFile + " : " + exception.getMessage());
         }
         return configured;
@@ -3999,7 +3999,7 @@ public class GenerateLuckyItemProcedure {
             player.sendSystemMessage(Component.literal(String.format(
                 "§8CRANE        §f%4d  §7total §f%5.2f%%", skulls, 100.0 * skulls / Math.max(1, done))));
         } catch (Throwable t) {
-            t.printStackTrace();
+            deepluckyblock.util.DebugLog.trace(t);
             player.sendSystemMessage(Component.literal("§c[SLB-DEBUG] Erreur pendant /dlb w (voir console) : " + t));
         } finally {
             DEBUG_COMMAND_ACTIVE = prevActive;
@@ -4046,7 +4046,7 @@ public class GenerateLuckyItemProcedure {
                 deliverDebugResult(level, player, res, "g", luck, i + 1);
             }
         } catch (Throwable t) {
-            t.printStackTrace();
+            deepluckyblock.util.DebugLog.trace(t);
             player.sendSystemMessage(Component.literal("§c[SLB-DEBUG] Erreur pendant /dlb (voir console) : " + t));
         } finally {
             DEBUG_COMMAND_ACTIVE = prevActive;

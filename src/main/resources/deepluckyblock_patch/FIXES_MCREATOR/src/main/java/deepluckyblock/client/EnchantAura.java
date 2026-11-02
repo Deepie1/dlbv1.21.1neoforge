@@ -305,6 +305,6 @@ public final class EnchantAura {
         long now = System.currentTimeMillis();
         if (now - lastLog < 300) return;   // throttle ~3/s
         lastLog = now;
-        System.out.println("[AURA] " + msg);
+        deepluckyblock.util.DebugLog.out("[AURA] " + msg);
     }
 }

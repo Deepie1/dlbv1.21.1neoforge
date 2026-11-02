@@ -347,7 +347,7 @@ public final class ChunkKeeper {
         // expiration a 10 s relachait la zone pendant le paste.
         long heldMs = System.currentTimeMillis() - z.holdStartMs;
         if (heldMs > HOLD_TIMEOUT_MS) {
-            LOGGER.warn("[DLB-CHUNKS] zone tenue en memoire depuis {} s sans fin de pipeline -- "
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-CHUNKS] zone tenue en memoire depuis {} s sans fin de pipeline -- "
                     + "relachee par garde-fou ({} chunks)", heldMs / 1000, z.pinned.size());
             release(level);
             return;
@@ -368,7 +368,7 @@ public final class ChunkKeeper {
         // arrete TOUTES les demandes : plus aucun chunk ne se charge et le pipeline attend sa
         // zone indefiniment).
         if (z.inFlight.get() > MAX_IN_FLIGHT * 2) {
-            LOGGER.warn("[DLB-CHUNKS] compteur d'appels en vol incoherent ({}) -- remis a zero (garde-fou T65)",
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-CHUNKS] compteur d'appels en vol incoherent ({}) -- remis a zero (garde-fou T65)",
                     z.inFlight.get());
             z.inFlight.set(0);
         }

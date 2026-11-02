@@ -90,7 +90,7 @@ public final class EnchantmentTooltipFixProcedure {
     private static final String CONT_INDENT = "    ";
 
     /** Mettre a false pour masquer le marqueur de traduction manquante en production. */
-    private static final boolean SHOW_MISSING_MARKER = true;
+    private static final boolean SHOW_MISSING_MARKER = false;
 
     /** Namespaces testes, dans l'ordre, pour retrouver une description. */
     private static final String[] DESC_NAMESPACES = {"deep_lucky_block", "supreme_lucky_block"};
@@ -372,7 +372,7 @@ public final class EnchantmentTooltipFixProcedure {
                 try {
                     nameLine = buildName(ench, entry.getValue());
                 } catch (Throwable nameFail) {
-                    LOGGER.warn("[deep_lucky_block] buildName() a echoue pour {} -> repli sur le nom brut", id, nameFail);
+                    deepluckyblock.util.DebugLog.warn(LOGGER, "[deep_lucky_block] buildName() a echoue pour {} -> repli sur le nom brut", id, nameFail);
                     nameLine = fallbackName(ench, id, entry.getValue());
                 }
                 if (shift && isModEnchantment(id)) {
@@ -629,7 +629,7 @@ public final class EnchantmentTooltipFixProcedure {
         for (int i = 1; i < lines.size(); ) {
             Component line = lines.get(i);
             if (System.getProperty("dlb.debugTooltip") != null) {
-                LOGGER.info("[DEBUG-TOOLTIP] line[{}] class={} text='{}' key={}",
+                deepluckyblock.util.DebugLog.info(LOGGER, "[DEBUG-TOOLTIP] line[{}] class={} text='{}' key={}",
                         i, line.getContents().getClass().getSimpleName(), line.getString(),
                         (line.getContents() instanceof TranslatableContents tc) ? tc.getKey() : "-");
             }
@@ -965,7 +965,7 @@ public final class EnchantmentTooltipFixProcedure {
                 }
             }
         } catch (Throwable t) {
-            LOGGER.warn("[deep_lucky_block] Echec de lecture du filet de secours lang ({})", classpathResource, t);
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[deep_lucky_block] Echec de lecture du filet de secours lang ({})", classpathResource, t);
         }
     }
 
@@ -987,7 +987,7 @@ public final class EnchantmentTooltipFixProcedure {
 
     private static void reportMissing(ResourceLocation id) {
         if (MISSING_REPORTED.add(id.toString())) {
-            LOGGER.warn("[deep_lucky_block] Description manquante pour {} -> cle attendue: {}",
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[deep_lucky_block] Description manquante pour {} -> cle attendue: {}",
                     id, descriptionKey(id, id.getNamespace()));
         }
     }

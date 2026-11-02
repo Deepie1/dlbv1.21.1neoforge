@@ -16,7 +16,7 @@ import net.neoforged.neoforge.event.entity.RegisterSpawnPlacementsEvent;
  * les placements s'enregistrent via l'event NeoForge RegisterSpawnPlacementsEvent
  * (mod bus), et le type utilise SpawnPlacementTypes (enum de top-level).
  */
-@EventBusSubscriber(modid = DeepLuckyBlockMod.MODID, bus = EventBusSubscriber.Bus.MOD)
+@EventBusSubscriber(modid = DeepLuckyBlockMod.MODID)
 public class SpawnPlacementRegistration {
 
     @SubscribeEvent

@@ -173,7 +173,7 @@ public final class DeepCustomGlint {
         } catch (Throwable t) {
             // silencieux : lib absente ou signature différente.
             if (DeepGlintColor.DEBUG) {
-                System.out.println("[DLB-GLINT] échec application : " + t);
+                deepluckyblock.util.DebugLog.out("[DLB-GLINT] échec application : " + t);
             }
         }
     }
@@ -181,7 +181,7 @@ public final class DeepCustomGlint {
     private static void write(ItemStack stack, int argb, String source) throws Exception {
         writeMethod.invoke(null, stack, designValue, argb);
         if (DeepGlintColor.DEBUG) {
-            System.out.println("[DLB-GLINT] applied #" + Integer.toHexString(argb)
+            deepluckyblock.util.DebugLog.out("[DLB-GLINT] applied #" + Integer.toHexString(argb)
                     + " on " + stack.getHoverName().getString() + "  (" + source + ")");
         }
     }

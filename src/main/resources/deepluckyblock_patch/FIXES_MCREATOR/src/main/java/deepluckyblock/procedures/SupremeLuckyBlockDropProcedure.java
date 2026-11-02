@@ -95,7 +95,7 @@ public class SupremeLuckyBlockDropProcedure {
                 + (radarBonus ? DeepRadarDropBonus.BONUS_PERCENT : 0);
 
         if (DEBUG && radarBonus) {
-            LOGGER.info("[DeepRadar] +{}% active; total Deep block drop chance={} %",
+            deepluckyblock.util.DebugLog.info(LOGGER, "[DeepRadar] +{}% active; total Deep block drop chance={} %",
                     DeepRadarDropBonus.BONUS_PERCENT, effectiveChance);
         }
 

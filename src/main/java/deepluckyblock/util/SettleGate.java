@@ -61,7 +61,7 @@ public final class SettleGate {
         final boolean pending = falling > 0 || lightBusy;
 
         if (elapsed == 0) {
-            LOGGER.info("[DLB-SETTLE] fin de pipeline : attente de stabilisation de la zone "
+            deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-SETTLE] fin de pipeline : attente de stabilisation de la zone "
                             + "(entites de chute : {} en vol, moteur de lumiere : {}) -- la zone sera "
                             + "rendue au chunk system quand le monde sera retombe (max {} ticks)",
                     falling, lightBusy ? "occupe" : "au repos", MAX_WAIT_TICKS);
@@ -70,14 +70,14 @@ public final class SettleGate {
         int newStable = pending ? 0 : stable + 1;
 
         if (newStable >= STABLE_TICKS && elapsed > 0) {
-            LOGGER.info("[DLB-SETTLE] zone stabilisee apres {} tick(s) d'attente ({} s) : aucune entite "
+            deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-SETTLE] zone stabilisee apres {} tick(s) d'attente ({} s) : aucune entite "
                             + "de chute, moteur de lumiere au repos -- le terrain est REELLEMENT definitif",
                     newStable, String.format("%.1f", elapsed / 20.0));
             if (onDone != null) onDone.run();
             return;
         }
         if (elapsed >= MAX_WAIT_TICKS) {
-            LOGGER.warn("[DLB-SETTLE] delai maximal atteint ({} ticks) : la zone n'est pas encore au repos "
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-SETTLE] delai maximal atteint ({} ticks) : la zone n'est pas encore au repos "
                             + "({} entite(s) de chute, lumiere {}) -- on continue quand meme pour ne pas "
                             + "bloquer la structure ; les passes restantes filtreront",
                     MAX_WAIT_TICKS, falling, lightBusy ? "occupee" : "au repos");
@@ -85,7 +85,7 @@ public final class SettleGate {
             return;
         }
         if (elapsed > 0 && elapsed % REPORT_EVERY == 0 && pending) {
-            LOGGER.info("[DLB-SETTLE] attente de stabilisation : {} tick(s), {} entite(s) de chute, "
+            deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-SETTLE] attente de stabilisation : {} tick(s), {} entite(s) de chute, "
                             + "lumiere {}", elapsed, falling, lightBusy ? "occupee" : "au repos");
         }
         deepluckyblock.procedures.TestProcedure.schedule(level,

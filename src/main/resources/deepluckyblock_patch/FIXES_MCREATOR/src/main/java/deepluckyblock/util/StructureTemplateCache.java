@@ -104,7 +104,7 @@ public final class StructureTemplateCache {
         long sizeKb = fileSizeKb(level, nbtName);
         boolean big = sizeKb > TEMPLATE_SYNC_MAX_KB;
         if (big && !SYNC_PARSE_ALWAYS) {
-            LOGGER.warn("[STRUCT-CACHE] '{}' ({} Ko) pas encore en memoire : chargement lance en tache de fond, "
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT-CACHE] '{}' ({} Ko) pas encore en memoire : chargement lance en tache de fond, "
                             + "aucune deserialisation synchrone (le jeu ne se fige pas ; nouvel essai au tick suivant)",
                     nbtName, sizeKb);
             requestAsync(level, nbtName);
@@ -125,7 +125,7 @@ public final class StructureTemplateCache {
         if (template == null || template.getSize().getX() == 0) return null;
         long ms = System.currentTimeMillis() - t0;
         if (ms > 150) {
-            LOGGER.warn("[STRUCT-CACHE] '{}' deserialise sur le thread serveur en {} ms ({} Ko) -- "
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT-CACHE] '{}' deserialise sur le thread serveur en {} ms ({} Ko) -- "
                             + "structure normalement pre-chargee ; voir preloadAll()/tickWarmup()", nbtName, ms, sizeKb);
         }
         CACHE.put(nbtName, template);
@@ -257,7 +257,7 @@ public final class StructureTemplateCache {
                     } else {
                         GAME_LAUNCH_TAGS.put(name, tag);
                         if (pre != null) GAME_LAUNCH_FILTERS.put(name, pre);
-                        LOGGER.warn("[STRUCT-CACHE] '{}' NBT préparé au lancement en {}ms; résolution registres reportée",
+                        deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT-CACHE] '{}' NBT préparé au lancement en {}ms; résolution registres reportée",
                                 name, System.currentTimeMillis() - t0);
                     }
                 } catch (Throwable ex) {
@@ -297,7 +297,7 @@ public final class StructureTemplateCache {
             if (!loaded || t.getSize().getX() == 0) return null;
             return compact(name, t, pre);
         } catch (Throwable ex) {
-            LOGGER.warn("[STRUCT-CACHE] matérialisation jeu de '{}' indisponible : {}", name, ex.toString());
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT-CACHE] matérialisation jeu de '{}' indisponible : {}", name, ex.toString());
             return null;
         }
     }
@@ -428,7 +428,7 @@ public final class StructureTemplateCache {
                     String.format("%.0f", airExt * 80.0 / 1048576.0),
                     freed > 0 ? ", template vanilla allege" : "");
         } catch (Throwable ex) {
-            LOGGER.warn("[STRUCT-CACHE] compactage de '{}' impossible ({}) -- liste vanilla conservee",
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT-CACHE] compactage de '{}' impossible ({}) -- liste vanilla conservee",
                     nbtName, ex.toString());
         }
         return t;

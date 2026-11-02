@@ -131,7 +131,7 @@ public class CrimsonLakeStructureSpawnProcedure {
      */
     private static void abortLakeBuild(ServerLevel level, String reason) {
         long waited = lakeBuildT0Ms > 0 ? (System.currentTimeMillis() - lakeBuildT0Ms) : -1;
-        System.err.println("[DLB-LAKE] ABORT T234 : " + reason
+        deepluckyblock.util.DebugLog.err("[DLB-LAKE] ABORT T234 : " + reason
                 + (waited >= 0 ? " (construction abandonnee apres " + waited / 1000 + " s)" : "")
                 + " -- aucun blocage infini, terrain/clear non termine laisse en l'etat, le lac redevient tirable");
         lakeBuildT0Ms = 0L;
@@ -161,7 +161,7 @@ public class CrimsonLakeStructureSpawnProcedure {
         long now = System.currentTimeMillis();
         if (now - lakeLastAnnounceMs < 20_000L) return;
         lakeLastAnnounceMs = now;
-        System.out.println("[DLB-LAKE] progression : " + text);
+        deepluckyblock.util.DebugLog.out("[DLB-LAKE] progression : " + text);
         Component msg = Component.literal("Crimson Lake: " + text).withStyle(ChatFormatting.GRAY);
         for (var pl : level.players()) pl.sendSystemMessage(msg);
     }
@@ -275,7 +275,7 @@ public class CrimsonLakeStructureSpawnProcedure {
         long key = pos.asLong();
         if (!TRIGGERED.add(key)) return;
         markWorldTriggered(overworld);
-        if (DEBUG_LOGS) System.out.println("[SLB-DEBUG] CrimsonLake TRIGGER from " + source);
+        if (DEBUG_LOGS) deepluckyblock.util.DebugLog.out("[SLB-DEBUG] CrimsonLake TRIGGER from " + source);
 
         // 🏆 Achievement : le Crimson Lake (événement ultra rare) a été trouvé.
         // T157 : aucun message, avancement ni construction avant le présage complet.
@@ -304,13 +304,13 @@ public class CrimsonLakeStructureSpawnProcedure {
             if (player != null)
                 try { DeepLuckyBlockAdvancements.grantCrimsonLake(player); }
                 catch (Throwable grantErr) {
-                    System.err.println("[DLB-LAKE] avancement crimsonlake NON accorde (le build continue) : " + grantErr);
+                    deepluckyblock.util.DebugLog.err("[DLB-LAKE] avancement crimsonlake NON accorde (le build continue) : " + grantErr);
                 }
             Component msg = Component.literal(
                     "Congratulations! You found the secret event: Crimson Lake. Please step back! Construction is starting.")
                     .withStyle(ChatFormatting.GOLD);
             for (var p : level.players()) p.sendSystemMessage(msg);
-            System.err.println("[DLB-LAKE] presage de 120 s termine : la construction debute (PENDING="
+            deepluckyblock.util.DebugLog.err("[DLB-LAKE] presage de 120 s termine : la construction debute (PENDING="
                     + PENDING.size() + ", NBT cache=" + deepluckyblock.util.StructureTemplateCache.isCached(NBT_NAME) + ")");
         });
         // T239 : WATCHDOG -- 10 s apres la fin censée du presage, si rien n'a
@@ -318,14 +318,14 @@ public class CrimsonLakeStructureSpawnProcedure {
         // NBT, echec de chargement). Toute disparition future sera auto-diagnostiquee.
         TestProcedure.schedule(level, serverTick + PRE_DISCOVERY_TICKS + 200, () -> {
             if (!PENDING.isEmpty()) {
-                System.err.println("[DLB-LAKE WATCHDOG] construction toujours en attente 130 s apres le trigger : "
+                deepluckyblock.util.DebugLog.err("[DLB-LAKE WATCHDOG] construction toujours en attente 130 s apres le trigger : "
                         + "PENDING=" + PENDING.size()
                         + " NBT cache=" + deepluckyblock.util.StructureTemplateCache.isCached(NBT_NAME)
                         + " NBT echec=" + deepluckyblock.util.StructureTemplateCache.hasFailed(NBT_NAME)
                         + " buildT0ms=" + lakeBuildT0Ms
                         + " -- la cause du blocage est dans cette ligne.");
             } else if (PASTE_Q.isEmpty() && lakeBuildT0Ms == 0L) {
-                System.err.println("[DLB-LAKE WATCHDOG] 130 s apres le trigger, le pipeline n'a JAMAIS demarre "
+                deepluckyblock.util.DebugLog.err("[DLB-LAKE WATCHDOG] 130 s apres le trigger, le pipeline n'a JAMAIS demarre "
                         + "(PENDING vide, PASTE_Q vide, sans horloge de build) -- suicide avant queueBuild ; "
                         + "remonter les lignes [DLB-LAKE] ci-dessus.");
             }
@@ -337,7 +337,7 @@ public class CrimsonLakeStructureSpawnProcedure {
         // Le 11/10 une generation demandee par /dlbtest pendant une autre a
         // disparu en silence total ; desormais chaque etape du lac laisse une
         // trace, jusqu'au watchdog de fin de presage.
-        System.err.println("[DLB-LAKE] TRIGGER (" + source + ") : centre prevu "
+        deepluckyblock.util.DebugLog.err("[DLB-LAKE] TRIGGER (" + source + ") : centre prevu "
                 + pos.getX() + "," + pos.getY() + "," + pos.getZ()
                 + " -- presage de 120 s demarre (tick serveur " + (startTick - PRE_DISCOVERY_TICKS) + ")");
         // === T46 : PRE-CHAUFFAGE DES CHUNKS PENDANT LES 60 s D'ANNONCE ===
@@ -414,7 +414,7 @@ public class CrimsonLakeStructureSpawnProcedure {
 
         tickCounter++;
         if (DEBUG_LOGS && (tickCounter % 200 == 0 || !PASTE_Q.isEmpty()))
-            if (deepluckyblock.util.DebugLog.ENABLED) System.out.println("[SLB-DEBUG] CrimsonLake TICK: PASTE=" + PASTE_Q.size() + " PENDING=" + PENDING.size() + " ACTIVE=" + ACTIVE.size());
+            if (deepluckyblock.util.DebugLog.ENABLED) deepluckyblock.util.DebugLog.out("[SLB-DEBUG] CrimsonLake TICK: PASTE=" + PASTE_Q.size() + " PENDING=" + PENDING.size() + " ACTIVE=" + ACTIVE.size());
 
         long now = theServer.getTickCount();
 
@@ -435,7 +435,7 @@ public class CrimsonLakeStructureSpawnProcedure {
                     pb.startTick = now + 20;
                     if (pb.startTick % 400L < 20L)
                         // T239 : visible sans dlb.debug -- etape decisive du pipeline.
-                        System.err.println("[DLB-LAKE] NBT crimsonlake charge en tache de fond, construction reportee (cache="
+                        deepluckyblock.util.DebugLog.err("[DLB-LAKE] NBT crimsonlake charge en tache de fond, construction reportee (cache="
                                 + deepluckyblock.util.StructureTemplateCache.isCached(NBT_NAME) + ", serveur non bloque)");
                     continue;
                 }
@@ -481,7 +481,7 @@ public class CrimsonLakeStructureSpawnProcedure {
                 if (j.deferSinceMs == 0L) j.deferSinceMs = System.currentTimeMillis();
                 long waiting = System.currentTimeMillis() - j.deferSinceMs;
                 if (waiting > LAKE_PASTE_DEFER_MS) {
-                    System.err.println("[DLB-LAKE] T234 : " + j.defer.size() + " bloc(s) differes abandonnes apres "
+                    deepluckyblock.util.DebugLog.err("[DLB-LAKE] T234 : " + j.defer.size() + " bloc(s) differes abandonnes apres "
                             + waiting / 1000 + " s (chunk definitidement indisponible) -- la pose se termine quand meme");
                     announceLakeProgress(j.level, j.defer.size() + " blocks at unloaded terrain edges were skipped; finishing.");
                     j.defer.clear();
@@ -506,7 +506,7 @@ public class CrimsonLakeStructureSpawnProcedure {
             }
             if (j.idx >= j.blocks.size()) {
                 PASTE_Q.poll();
-                if (DEBUG_LOGS) System.out.println("[SLB-DEBUG] CrimsonLake PASTE COMPLETE");
+                if (DEBUG_LOGS) deepluckyblock.util.DebugLog.out("[SLB-DEBUG] CrimsonLake PASTE COMPLETE");
                 // T234 : construction reussie -> reset des bornes/caches de build.
                 lakeBuildT0Ms = 0L;
                 lakeFiltCache = null;
@@ -551,7 +551,7 @@ public class CrimsonLakeStructureSpawnProcedure {
                     // T234 : la fin de construction est toujours visible en
                     // console (tant pis pour le serveur headless/test) --
                     // c'est le seul marqueur certain que le pipeline est FINIT.
-                    System.out.println("[DLB-LAKE] STRUCTURE DISCOVERED (T111): center [" + cx + ", " + cy
+                    deepluckyblock.util.DebugLog.out("[DLB-LAKE] STRUCTURE DISCOVERED (T111): center [" + cx + ", " + cy
                             + ", " + cz + "], built in " + dur + "s");
                 }
 
@@ -664,7 +664,7 @@ public class CrimsonLakeStructureSpawnProcedure {
     }
 
     private static void queueBuild(ServerLevel level, int px, int py, int pz) {
-        if (DEBUG_LOGS) System.out.println("[SLB-DEBUG] CrimsonLake QUEUE BUILD at " + px + "," + py + "," + pz);
+        if (DEBUG_LOGS) deepluckyblock.util.DebugLog.out("[SLB-DEBUG] CrimsonLake QUEUE BUILD at " + px + "," + py + "," + pz);
         // T234 : horloge de construction. Premiere entree = debut du build ;
         // toutes les deadlines T234 (global + par phase) s'y referent.
         if (lakeBuildT0Ms == 0L) {
@@ -688,13 +688,13 @@ public class CrimsonLakeStructureSpawnProcedure {
         if (tmpl == null) {
             // T239 : ancien retour muet. Si le cache a ECHOUE (parse impossible),
             // le pipeline mourait ici sans aucune trace.
-            System.err.println("[DLB-LAKE] ABORT implicite : template indisponible en memoire (echec cache="
+            deepluckyblock.util.DebugLog.err("[DLB-LAKE] ABORT implicite : template indisponible en memoire (echec cache="
                     + deepluckyblock.util.StructureTemplateCache.hasFailed(NBT_NAME) + ") -- construction annulee");
             return;
         }
         List<StructureTemplate.StructureBlockInfo> raw = exBlocks(tmpl);
         if (raw.isEmpty()) {
-            System.err.println("[DLB-LAKE] ABORT implicite : template vide (0 bloc) -- construction annulee");
+            deepluckyblock.util.DebugLog.err("[DLB-LAKE] ABORT implicite : template vide (0 bloc) -- construction annulee");
             return;
         }
 
@@ -713,7 +713,7 @@ public class CrimsonLakeStructureSpawnProcedure {
         if (lakeFiltCache != null && lakeFiltCacheKey == filterKey) {
             filt = lakeFiltCache;
             minRelativeY = lakeFiltCacheMinRelY;
-            if (deepluckyblock.util.DebugLog.ENABLED) System.out.println("[DLB-LAKE] T234 : liste de pose REUTILISEE ("
+            if (deepluckyblock.util.DebugLog.ENABLED) deepluckyblock.util.DebugLog.out("[DLB-LAKE] T234 : liste de pose REUTILISEE ("
                     + filt.size() + " blocs) -- aucun re-filtrage pour cette relance");
         } else {
             long filterT0 = System.currentTimeMillis();
@@ -725,14 +725,14 @@ public class CrimsonLakeStructureSpawnProcedure {
                 if (info.pos().getY() < minRelativeY0) minRelativeY0 = info.pos().getY();
             }
             if (filt.isEmpty()) {
-                System.err.println("[DLB-LAKE] ABORT implicite : 0 bloc posable apres filtrage -- construction annulee");
+                deepluckyblock.util.DebugLog.err("[DLB-LAKE] ABORT implicite : 0 bloc posable apres filtrage -- construction annulee");
                 return;
             }
             lakeFiltCache = filt;
             lakeFiltCacheKey = filterKey;
             lakeFiltCacheMinRelY = minRelativeY0;
             minRelativeY = minRelativeY0;
-            if (deepluckyblock.util.DebugLog.ENABLED) System.out.println("[DLB-LAKE] liste de pose prête sans tri : " + filt.size()
+            if (deepluckyblock.util.DebugLog.ENABLED) deepluckyblock.util.DebugLog.out("[DLB-LAKE] liste de pose prête sans tri : " + filt.size()
                     + " blocs filtrés en " + (System.currentTimeMillis() - filterT0) + "ms");
         }
         // T175 : NE PLUS TRIER 1 359 489 blocs sur le thread serveur.
@@ -813,7 +813,7 @@ public class CrimsonLakeStructureSpawnProcedure {
                 if (shiftedConflict != null || (shifted.getX() == px && shifted.getZ() == pz)) {
                     // Garde absolue anti-boucle : l'ancienne version rappelait
                     // queueBuild éternellement sur le même centre.
-                    System.err.println("[DLB-LAKE] ABORT: aucune emprise complete libre trouvee; "
+                    deepluckyblock.util.DebugLog.err("[DLB-LAKE] ABORT: aucune emprise complete libre trouvee; "
                             + "aucun terrain modifie (conflit '" + shiftedConflict + "')");
                     // T228 : ABORT = notifyGenerationAborted, jamais Finished :
                     // Finished gravait le lac comme « deja apparu » alors qu'il
@@ -825,7 +825,7 @@ public class CrimsonLakeStructureSpawnProcedure {
                     lakeProbeAnnounced = false;
                     return;
                 }
-                if (deepluckyblock.util.DebugLog.ENABLED) System.out.println("[DLB-LAKE] conflit tardif avec '" + conflict
+                if (deepluckyblock.util.DebugLog.ENABLED) deepluckyblock.util.DebugLog.out("[DLB-LAKE] conflit tardif avec '" + conflict
                         + "' : centre déplacé UNE FOIS vers [" + shifted.getX() + "," + shifted.getZ()
                         + "] AVANT terrain/clear");
                 queueBuild(level, shifted.getX(), py, shifted.getZ());
@@ -838,7 +838,7 @@ public class CrimsonLakeStructureSpawnProcedure {
 
             if (finalOrigin.getY() + minRelativeY <= level.getMinBuildHeight()
                     || max.getY() >= level.getMaxBuildHeight()) {
-                System.err.println("[DLB-LAKE] ABORT: template outside build height; no blocks placed");
+                deepluckyblock.util.DebugLog.err("[DLB-LAKE] ABORT: template outside build height; no blocks placed");
                 deepluckyblock.util.ChunkKeeper.release(level);
                 // T228 : ABORT = notifyGenerationAborted (voir le correctif
                 // ci-dessus) : la structure doit redevenir tirable.
@@ -849,13 +849,13 @@ public class CrimsonLakeStructureSpawnProcedure {
                 lakeProbeAnnounced = false;
                 return;
             }
-            if (deepluckyblock.util.DebugLog.ENABLED) System.out.println("[DLB-LAKE] anchor: ground=" + groundY + ", lowest block="
+            if (deepluckyblock.util.DebugLog.ENABLED) deepluckyblock.util.DebugLog.out("[DLB-LAKE] anchor: ground=" + groundY + ", lowest block="
                     + (finalOrigin.getY() + minRelativeY) + ", sink=" + SINK_BLOCKS);
             // All shaping precedes clearing. Nothing may refill the interior before paste.
             // groundY is the SOLID selected ground: shared clearance only removes what
             // stands ABOVE it. The lake's own sink and its interior are written by the
             // paste itself over the preserved ground (T93 : on n'efface plus sous le sol).
-            if (deepluckyblock.util.DebugLog.ENABLED) System.out.println("[DLB-LAKE] clearance floor: selected groundY=" + groundY
+            if (deepluckyblock.util.DebugLog.ENABLED) deepluckyblock.util.DebugLog.out("[DLB-LAKE] clearance floor: selected groundY=" + groundY
                     + ", shared clearance starts at Y=" + (groundY + 1)
                     + ", foundation Y=" + (finalOrigin.getY() + minRelativeY)
                     + " (sink=" + SINK_BLOCKS + ", T93 : sous-sol preserve, creuse par le paste)");
@@ -973,8 +973,8 @@ public class CrimsonLakeStructureSpawnProcedure {
             try {
                 stepGuarded();
             } catch (Throwable t) {
-                System.err.println("[DLB-LAKE] CLEAR a plante en mais ne bouclera plus (cause ci-dessous) :");
-                t.printStackTrace();
+                deepluckyblock.util.DebugLog.err("[DLB-LAKE] CLEAR a plante en mais ne bouclera plus (cause ci-dessous) :");
+                deepluckyblock.util.DebugLog.trace(t);
                 abortLakeBuild(level, "exception pendant le clear : " + t);
             }
         }
@@ -1038,7 +1038,7 @@ public class CrimsonLakeStructureSpawnProcedure {
             if (cx <= cx1) {
                 TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, this::step);
             } else {
-                if (deepluckyblock.util.DebugLog.ENABLED) System.out.println("[DLB-LAKE] CLEAR COMPLETE (T101 direct-sections): " + cleared
+                if (deepluckyblock.util.DebugLog.ENABLED) deepluckyblock.util.DebugLog.out("[DLB-LAKE] CLEAR COMPLETE (T101 direct-sections): " + cleared
                         + " blocks removed on " + chunksDone + " chunks; paste may start");
                 if (onReady != null) onReady.run();
             }

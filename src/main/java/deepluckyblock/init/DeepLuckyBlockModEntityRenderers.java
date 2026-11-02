@@ -12,7 +12,7 @@ import deepluckyblock.client.renderer.*;
 
 import net.neoforged.fml.common.EventBusSubscriber;
 
-@EventBusSubscriber(modid = "deep_lucky_block", bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+@EventBusSubscriber(modid = "deep_lucky_block", value = Dist.CLIENT)
 public class DeepLuckyBlockModEntityRenderers {
 	@SubscribeEvent
 	public static void registerEntityRenderers(EntityRenderersEvent.RegisterRenderers event) {

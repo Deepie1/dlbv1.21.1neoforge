@@ -14,6 +14,8 @@ public final class DeepMixinConnector implements IMixinConnector {
     @Override
     public void connect() {
         Mixins.addConfiguration("deep_lucky_block.mixins.json");
-        System.out.println("[DeepLuckyBlock/Compat] EARLY mixin connector loaded");
+        if (Boolean.getBoolean("dlb.debug")) {
+            System.out.println("[DeepLuckyBlock/Compat] EARLY mixin connector loaded");
+        }
     }
 }

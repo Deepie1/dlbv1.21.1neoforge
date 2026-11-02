@@ -66,10 +66,10 @@ public abstract class ItemChestTagTransferMixin {
                 data.put(key, flags.get(key));
             }
             be.setChanged();
-            System.out.println("[SLB-CHEST] drapeaux transfere vers " + pos
+            deepluckyblock.util.DebugLog.out("[SLB-CHEST] drapeaux transfere vers " + pos
                     + " : slb_chest_rank=" + data.getInt("slb_chest_rank"));
         } catch (Throwable t) {
-            System.out.println("[SLB-CHEST] erreur de transfert de drapeaux : " + t);
+            deepluckyblock.util.DebugLog.out("[SLB-CHEST] erreur de transfert de drapeaux : " + t);
         }
     }
 

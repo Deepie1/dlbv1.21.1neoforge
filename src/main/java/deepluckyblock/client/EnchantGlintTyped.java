@@ -100,14 +100,14 @@ public final class EnchantGlintTyped {
         long now = System.currentTimeMillis();
         if (now - lastGlog < 400) return;
         lastGlog = now;
-        System.out.println("[GLINT-RT] currentRenderType(" + kind + ") rgb=#"
+        deepluckyblock.util.DebugLog.out("[GLINT-RT] currentRenderType(" + kind + ") rgb=#"
                 + Integer.toHexString(rgb) + " -> " + result);
     }
 
     /** Log de build pas-à-pas (gated DEBUG_VERBOSE) pour identifier l'étape en échec. */
     private static void bgl(String msg) {
         if (!EnchantAura.DEBUG || !EnchantAura.DEBUG_VERBOSE) return;
-        System.out.println("[GLINT-BUILD] " + msg);
+        deepluckyblock.util.DebugLog.out("[GLINT-BUILD] " + msg);
     }
 
     /** Paramètres exacts de chaque glint vanilla 1.20.1 (source vanilla). */
@@ -227,7 +227,7 @@ public final class EnchantGlintTyped {
         } catch (Throwable t) {
             if (!accessorWarned) {
                 accessorWarned = true;
-                System.out.println("[GLINT-BUILD] IMPOSSIBLE de lire les constantes de "
+                deepluckyblock.util.DebugLog.out("[GLINT-BUILD] IMPOSSIBLE de lire les constantes de "
                         + "RenderStateShard (" + t.getClass().getSimpleName() + ") : les ACCESSORS "
                         + "RenderStateShardConstantAccessor / RenderStateShardShaderAccessor ne sont "
                         + "probablement pas listés dans deep_lucky_block.mixins.json (section "

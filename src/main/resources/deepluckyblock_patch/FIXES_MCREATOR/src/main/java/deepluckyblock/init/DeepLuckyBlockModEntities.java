@@ -21,7 +21,7 @@ import deepluckyblock.DeepLuckyBlockMod;
 
 import net.neoforged.fml.common.EventBusSubscriber;
 
-@EventBusSubscriber(modid = "deep_lucky_block", bus = EventBusSubscriber.Bus.MOD)
+@EventBusSubscriber(modid = "deep_lucky_block")
 public class DeepLuckyBlockModEntities {
 	public static final DeferredRegister<EntityType<?>> REGISTRY = DeferredRegister.create(BuiltInRegistries.ENTITY_TYPE, DeepLuckyBlockMod.MODID);
 	public static final DeferredHolder<EntityType<?>, EntityType<ShadowMirrorEntity>> SHADOW_MIRROR = register("shadow_mirror",

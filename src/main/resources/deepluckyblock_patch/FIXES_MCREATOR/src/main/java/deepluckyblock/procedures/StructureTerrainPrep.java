@@ -676,12 +676,12 @@ public class StructureTerrainPrep {
                     deepluckyblock.util.MotherAISnowDirector.SnowPlan aiP = m303.activeAiPlan();
                     deepluckyblock.util.TerrainMother.MotherVerdict v = m303.compileVerdict();
                     if (aiP != null) {
-                        LOGGER.info("[DLB-MOTHER-AI] IA mere active ({}) sur damier complet ({}/{} enfants enneiges) : "
+                        deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-MOTHER-AI] IA mere active ({}) sur damier complet ({}/{} enfants enneiges) : "
                                         + "rayon={} chunk(s), boosts_enfants={}, latence={} ms",
                                 aiP.model(), v.snowyChildren(), v.totalChildren(),
                                 aiP.radiusChunks(), aiP.childAuraBoost().size(), aiP.latencyMs());
                     } else {
-                        LOGGER.info("[DLB-MOTHER-AI] IA mere (enabled={}) : damier sec ou heuristique ({}/{} enfants enneiges) -> rayon={} chunk(s)",
+                        deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-MOTHER-AI] IA mere (enabled={}) : damier sec ou heuristique ({}/{} enfants enneiges) -> rayon={} chunk(s)",
                                 deepluckyblock.util.MotherAISnowDirector.isEnabled(),
                                 v.snowyChildren(), v.totalChildren(), v.snowAuraRadiusChunks());
                     }
@@ -689,7 +689,7 @@ public class StructureTerrainPrep {
                     // T305-COLLAR16 : on active toujours le smooth brush radial WorldEdit
                     // afin de garantir le collier bas de 1 chunk (16 blocs, Y0..Y0-2 max apres smooth) !
                     motherOrdersSmoothTmp = true;
-                    LOGGER.info("[DLB-MOTHER] bilan enfants A3->A4 : {} enfants ouverts (coeur structure={}, contours={}), "
+                    deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-MOTHER] bilan enfants A3->A4 : {} enfants ouverts (coeur structure={}, contours={}), "
                                     + "Y_haut={}, ecart_inter_chunks_struct={}, saut_mur_max={}, murs={}, crevasses={}, "
                                     + "isSnowy={} (aura={} chunk(s)) -> refill={} (crevasses comblees={}), smooth={}",
                             v.totalChildren(), v.coreChildren(), v.contourChildren(),
@@ -697,7 +697,7 @@ public class StructureTerrainPrep {
                             v.wallChildren(), v.crevasseChildren(), v.snowyChildren(),
                             v.snowAuraRadiusChunks(), v.requestRefill(), refilledCols, motherOrdersSmoothTmp);
                 } catch (Throwable t) {
-                    LOGGER.warn("[DLB-MOTHER] bilan enfants A3->A4 interrompu sans impact pipeline : {}", t.toString());
+                    deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-MOTHER] bilan enfants A3->A4 interrompu sans impact pipeline : {}", t.toString());
                 }
             }
         }
@@ -1208,7 +1208,7 @@ public class StructureTerrainPrep {
             }
         }
         if (filled > 0 || capped > 0 || cleared > 0) {
-            LOGGER.warn("[STRUCT5-VOID] plateforme de secours construite (raccord blend sur {} blocs) : {} blocs combles, {} blocs herbe/neige poses en surface, {} blocs de surplomb retires",
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-VOID] plateforme de secours construite (raccord blend sur {} blocs) : {} blocs combles, {} blocs herbe/neige poses en surface, {} blocs de surplomb retires",
                     ring, filled, capped, cleared);
         }
     }
@@ -1380,7 +1380,7 @@ public class StructureTerrainPrep {
                     TERRAIN_RING_SCALE_PERCENT = 100;
                     deepluckyblock.util.TerrainMother.end();   // T289 : la mere est dissoute avec la zone
                     String perf = deepluckyblock.util.DebugLog.perfSummary();
-                    if (!perf.isEmpty()) LOGGER.info("[DLB-PERF] {}", perf);
+                    if (!perf.isEmpty()) deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-PERF] {}", perf);
                     step("decorate TERMINE T304 (sol repeint + arbres proches + sweep flottants + passe finale anti-flying-snow)");
                     if (auditOcc != null) {
                         TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1,
@@ -1462,7 +1462,7 @@ public class StructureTerrainPrep {
             }
         }
         if (replaced > 0) {
-            LOGGER.info("[DLB-STRUCTURE] T305-SNOWBLOCK : {} grass_block[snowy=true] remplaces directement par SNOW_BLOCK en zone structure centrale", replaced);
+            deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-STRUCTURE] T305-SNOWBLOCK : {} grass_block[snowy=true] remplaces directement par SNOW_BLOCK en zone structure centrale", replaced);
         }
     }
 
@@ -1817,7 +1817,7 @@ public class StructureTerrainPrep {
                 }
             }
         }
-        LOGGER.info("[DLB-STRUCTURE] T304-FINAL-FLYING-PASS : {} flying snow carpet(s) supprimees, {} plantes/tapis/souches supprimes, {} snowy=true gris corriges en {} ms",
+        deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-STRUCTURE] T304-FINAL-FLYING-PASS : {} flying snow carpet(s) supprimees, {} plantes/tapis/souches supprimes, {} snowy=true gris corriges en {} ms",
                 clearedSnow, clearedOther, fixedGrey, System.currentTimeMillis() - tic);
     }
 
@@ -1999,7 +1999,7 @@ public class StructureTerrainPrep {
                 }
             }
         }
-        LOGGER.info("[T304-AUDIT] flyingSnow={} bareGreySnowy={} floatingLeaves={} nearRingTrees={} intactTrees={} leaflessTrunks={} stumps1to2={} paintedFootprintCols={} unpaintedFootprintCols={}",
+        deepluckyblock.util.DebugLog.info(LOGGER, "[T304-AUDIT] flyingSnow={} bareGreySnowy={} floatingLeaves={} nearRingTrees={} intactTrees={} leaflessTrunks={} stumps1to2={} paintedFootprintCols={} unpaintedFootprintCols={}",
                 flyingSnow, bareGreySnowy, floatingLeaves, nearRingTrees, intactTrees, leaflessTrunks, stumps1to2, paintedFootprintCols, unpaintedFootprintCols);
     }
 
@@ -2024,7 +2024,7 @@ public class StructureTerrainPrep {
      *  nouveau sommet (le sweep T263 la recouvrira ensuite si besoin). */
     private static void fuseGroundToStructure(ServerLevel level, BlockPos structMin, BlockPos structMax) {
         if (CLEARANCE_PLAN == null || !CLEARANCE_PLAN.matches(level, structMin, structMax)) {
-            LOGGER.info("[DLB-STRUCTURE] T279 fusion : aucun plan de sol zero valide pour cette emprise -- etape passee");
+            deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-STRUCTURE] T279 fusion : aucun plan de sol zero valide pour cette emprise -- etape passee");
             return;
         }
         long tic = System.currentTimeMillis();
@@ -2144,7 +2144,7 @@ public class StructureTerrainPrep {
                 }
             }
         }
-        LOGGER.info("[DLB-STRUCTURE] T288 fusion sol/structure : {} colonnes de la couronne remontees au glacis "
+        deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-STRUCTURE] T288 fusion sol/structure : {} colonnes de la couronne remontees au glacis "
                         + "(anti-montagne T282 : max +4, jamais au-dessus de Y0 ; decors/structure sautes : {} ; "
                         + "colonnes de nappe au ruban : {} vues, {} remplissage-de-fondation poses "
                         + "(T288 P2/P4 : fente/corps de crique au pied du mur comblee a fleur d'eau et au profil "
@@ -2174,7 +2174,7 @@ public class StructureTerrainPrep {
     private static void enforceGlacisGradient(ServerLevel level, BlockPos structMin, BlockPos structMax) {
         if (CLEARANCE_PLAN == null || !CLEARANCE_PLAN.matches(level, structMin, structMax)
                 || NATURAL_REF == null) {
-            LOGGER.info("[DLB-STRUCTURE] T279 glacis continu : pas de plan/reference naturelle pour cette emprise -- etape passee");
+            deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-STRUCTURE] T279 glacis continu : pas de plan/reference naturelle pour cette emprise -- etape passee");
             return;
         }
         long tic = System.currentTimeMillis();
@@ -2343,7 +2343,7 @@ public class StructureTerrainPrep {
             net.minecraft.world.level.chunk.LevelChunk lc = level.getChunkSource().getChunkNow(cx, cz);
             if (lc != null && m != 0L) flushChunkSections(level, lc, m);
         }
-        LOGGER.info("[DLB-STRUCTURE] T286 glacis continu : {} colonnes abaissees, {} remontees "
+        deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-STRUCTURE] T286 glacis continu : {} colonnes abaissees, {} remontees "
                         + "(pente <= {} d'anneau en anneau sur {} blocs autour de l'emprise ; plancher = max(naturel, profil contact T284) ; "
                         + "nappe vanilla exclue T286 (jamais de talus/pilier dans le lac) ; colonnes protegees : {}), en {} ms",
                 lowered, raised, G, R, skipped, System.currentTimeMillis() - tic);
@@ -2426,7 +2426,7 @@ public class StructureTerrainPrep {
             }
             if (scanned == 0) break;
         }
-        LOGGER.info("[DLB-STRUCTURE] T280 degel : {} blocs de glace fraiche refondus en eau "
+        deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-STRUCTURE] T280 degel : {} blocs de glace fraiche refondus en eau "
                         + "(croutes examinees : {} ; glace sans eau adjacente conservee : {} ; "
                         + "colonnes hors keeper sautees : {} ; 2 passages), en {} ms",
                 melted, scanned, keptCrustless, skippedChunks, System.currentTimeMillis() - tic);
@@ -3012,7 +3012,7 @@ public class StructureTerrainPrep {
                 }
             }
         }
-        LOGGER.info("[DLB-STRUCTURE] T285 sweep-neige natif+spray (union lissages+keeper, garde EAU+GLACE) : "
+        deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-STRUCTURE] T285 sweep-neige natif+spray (union lissages+keeper, garde EAU+GLACE) : "
                         + "{} chunks (skippes hors keeper : {}), "
                         + "{} colonnes scannees, {} corps de surface trouves (dont {} via probe), "
                         + "{} colonnes fondues hors neige native (spray T254) dont {} snowy nus repeints vert "
@@ -3172,7 +3172,7 @@ public class StructureTerrainPrep {
                 }
             }
         }
-        LOGGER.info("[DLB-STRUCTURE] T285 audit final snowy nu + peau terreuse (fenetre union identique au sweep, ciel libre seulement) : "
+        deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-STRUCTURE] T285 audit final snowy nu + peau terreuse (fenetre union identique au sweep, ciel libre seulement) : "
                         + "{} chunks (skippes hors keeper : {}), {} snowy herbeux ciel-libre inspectes "
                         + "+ {} corps terreux nus zones-neige (T285 : herbe/dirt grise sans couche) "
                         + "-> {} couches posees, {} repeints vert (pas de neige native) ; "
@@ -3997,7 +3997,7 @@ public class StructureTerrainPrep {
             try {
                 scoutChild(level, mother289, cx, cz, saved.size());
             } catch (Throwable t) {
-                LOGGER.warn("[DLB-STRUCTURE] T289 scout enfant {},{} en echec ({}) -- enfant ignore", cx, cz, t.toString());
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-STRUCTURE] T289 scout enfant {},{} en echec ({}) -- enfant ignore", cx, cz, t.toString());
             }
         }
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
@@ -5109,7 +5109,7 @@ public class StructureTerrainPrep {
             int lag = now - scheduledTick;
             if (lag >= SCHEDULER_LAG_WARN_TICKS && !warned) {
                 warned = true;
-                LOGGER.warn("[DLB-STRUCTURE] {} : file du planificateur saturee ({} ticks de retard) "
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-STRUCTURE] {} : file du planificateur saturee ({} ticks de retard) "
                         + "-- la passe continue par tranches, les autres taches du mod ne sont plus "
                         + "bloquees derriere elle.", label, lag);
             }
@@ -5147,7 +5147,7 @@ public class StructureTerrainPrep {
                 if (missed.isEmpty()) {
                     finishPass();
                 } else if (++missRetries >= MAX_MISS_RETRIES) {
-                    LOGGER.warn("[DLB-STRUCTURE] {} : {} colonne(s) restent non traitees "
+                    deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-STRUCTURE] {} : {} colonne(s) restent non traitees "
                                     + "(chunk jamais charge apres {} tentatives) -- le reste est termine.",
                             label, missed.size(), missRetries);
                     finishPass();
@@ -5193,12 +5193,12 @@ public class StructureTerrainPrep {
         private void finishPass() {
             if (!RUNNING_PASSES.remove(label)) return;
             if (skippedCols > 0) {
-                LOGGER.warn("[DLB-STRUCTURE] {} : {} colonnes non traitees (chunk absent) -- "
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-STRUCTURE] {} : {} colonnes non traitees (chunk absent) -- "
                                 + "elles n'ont pas ete traitees, a relancer si le rendu le justifie",
                         label, skippedCols);
             }
             if (slowCols > 0) {
-                LOGGER.warn("[DLB-STRUCTURE] {} : {} colonne(s) lente(s) (> {} ms chacune, "
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-STRUCTURE] {} : {} colonne(s) lente(s) (> {} ms chacune, "
                                 + "pire {} ms, {} ms au total) -- elles ont ete traitees, mais ce sont elles "
                                 + "qui allongent les tranches",
                         label, slowCols, SLOW_COLUMN_MS, worstColMs, slowColMs);
@@ -5209,7 +5209,7 @@ public class StructureTerrainPrep {
                 // revoit des arbres/feuillages, ce compte doit etre a 0 sur toutes
                 // les passes de nettoyage ; sinon le log dit ou chercher.
                 int[] first = cols.isEmpty() ? null : cols.get(0);
-                LOGGER.warn("[DLB-STRUCTURE] {} : {} colonne(s) ont leve une exception pendant le traitement "
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-STRUCTURE] {} : {} colonne(s) ont leve une exception pendant le traitement "
                                 + "-- elles peuvent rester en l'etat (premiere colonne vers x={}, z={}).",
                         label, errored, first != null ? first[0] : 0, first != null ? first[1] : 0);
             }
@@ -5268,7 +5268,7 @@ public class StructureTerrainPrep {
                 String.format("%.2f", avg), worst, worstX, worstZ, (100 * near) / n, over, MAX_SMOOTH_RISE, MAX_SMOOTH_DROP, n,
                 digs, worstDig, fills, worstFill);
         if (avg > 6.0) {
-            LOGGER.warn("[DLB-STRUCTURE] le terrain livre s'ecarte en moyenne de {} blocs du terrain naturel "
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-STRUCTURE] le terrain livre s'ecarte en moyenne de {} blocs du terrain naturel "
                             + "(max {} en {},{}) : verifier le rendu, la zone a ete fortement remodelee",
                     String.format("%.2f", avg), worst, worstX, worstZ);
         }
@@ -5887,7 +5887,7 @@ public class StructureTerrainPrep {
             }
         }
         if (covered[0] > 0 || fixed[0] > 0)
-            LOGGER.info("[DLB-STRUCTURE] anti-gris final T256 : {} dirt(s) neige COUVERTE(S) d'une couche min (consigne 13/10), {} snowy en zone occupee desenneigee(s)", covered[0], fixed[0]);
+            deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-STRUCTURE] anti-gris final T256 : {} dirt(s) neige COUVERTE(S) d'une couche min (consigne 13/10), {} snowy en zone occupee desenneigee(s)", covered[0], fixed[0]);
     }
 
     // T257 : l'invalidation par ecriture du T256 est SUPPRIMEE — re-mesurer
@@ -7248,7 +7248,7 @@ public class StructureTerrainPrep {
         NW_X0 = x0; NW_Z0 = z0; NW_W = w; NW_H = h; NATURAL_WATER_COUNT = n;
         // T297 : promu en INFO visible (une ligne par structure) -- c'est le
         // chronometrage qui confirmera ou non le mega-tick cote machine faible.
-        LOGGER.info("[DLB-STRUCTURE] nappe vanilla memorisee : {} colonne(s) d'eau sur {}x{} en {},{} en {} ms (T295 scan chunk-major) -- "
+        deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-STRUCTURE] nappe vanilla memorisee : {} colonne(s) d'eau sur {}x{} en {},{} en {} ms (T295 scan chunk-major) -- "
                         + "fixwater borne a cette base naturelle (T103, plus de lac artificiel)",
                 n, w, h, x0, z0, System.currentTimeMillis() - t0);
     }
@@ -7931,7 +7931,7 @@ public class StructureTerrainPrep {
             }
         }
         if (clamped > 0) {
-            LOGGER.warn("[DLB-STRUCTURE] lissage bridé : {} colonne(s) sortaient de la fenetre autorisee "
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-STRUCTURE] lissage bridé : {} colonne(s) sortaient de la fenetre autorisee "
                             + "(adaptative T89+T263 : coupe -{} libre au bord, remblai = mini trous SEULEMENT "
                             + "(+2 contact, +0 au-dela de 4 bl ; etalement par la baisse, style WorldEdit) ; "
                             + "derive maximale mesuree : {} blocs, colonne {},{} de la zone) -- ramenees dans la fenetre",
@@ -7944,7 +7944,7 @@ public class StructureTerrainPrep {
                     worst, ADAPTIVE_SMOOTH_MAX);
         }
         if (floored > 0)
-            LOGGER.info("[DLB-STRUCTURE] T283 plancher de coupe (ruban de contact dd 1..8) : {} colonnes relevees "
+            deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-STRUCTURE] T283 plancher de coupe (ruban de contact dd 1..8) : {} colonnes relevees "
                             + "au profil de la rampe (Y0 au mur, -2 par anneau, plancher PUR T284) "
                             + "-- plus aucun trou/passe-air sous y0 colle aux fondations",
                     floored);
@@ -8472,7 +8472,7 @@ public class StructureTerrainPrep {
         // naturel ; seule la zone lissee par le lissage se raccorde en pente
         // douce. La garantie y0 finale (ci-dessous) est inchangee.
         if (target.length != w || (w > 0 && target[0].length != h)) {
-            LOGGER.warn("[DLB-STRUCTURE] T244 edge-slope : shape inattendue de target {}x{} pour zone {}x{} -- ruban relache sur les dimensions REELLES",
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-STRUCTURE] T244 edge-slope : shape inattendue de target {}x{} pour zone {}x{} -- ruban relache sur les dimensions REELLES",
                     target.length, w == 0 ? 0 : target[0].length, w, h);
             target = limitOuterEdgeSlope(target, waterMask,
                     target.length, w == 0 ? 0 : target[0].length);
@@ -8537,7 +8537,7 @@ public class StructureTerrainPrep {
             int flooredLate = contactFloorSweep(orig, target, waterMask, x0, z0, w, h,
                     sMinI, sMaxI, sMinJ, sMaxJ);
             if (flooredLate > 0)
-                LOGGER.info("[DLB-STRUCTURE] T283 plancher de coupe (post-relaxation de contact) : {} colonnes "
+                deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-STRUCTURE] T283 plancher de coupe (post-relaxation de contact) : {} colonnes "
                                 + "relevees au profil de la rampe (Y0 au mur, -2 par anneau, plancher PUR T284) "
                                 + "-- zero trou sous y0 colle aux fondations",
                         flooredLate);
@@ -8603,7 +8603,7 @@ public class StructureTerrainPrep {
                     }
                 }
             }
-            LOGGER.warn("[DLB-STRUCTURE] " + String.format(
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-STRUCTURE] " + String.format(
                     "T246 symetrie lissage [ampleur moy/pire, remblai moy, marche max A>B @(x,z) dist-emprise, nb col] : "
                             + "N %.1f/%d +%.1f p%d %d>%d@(%d,%d) d%d n%d | S %.1f/%d +%.1f p%d %d>%d@(%d,%d) d%d n%d"
                             + " | E %.1f/%d +%.1f p%d %d>%d@(%d,%d) d%d n%d | O %.1f/%d +%.1f p%d %d>%d@(%d,%d) d%d n%d",
@@ -8797,7 +8797,7 @@ public class StructureTerrainPrep {
                 }
             }
         }
-        LOGGER.info("[DLB-AI][T305-BRUSH] Brush radial WorldEdit + col bas 1-chunk (r={} blocs, jupe max={}) : {} colonnes du col forcees dans [{}..{}]",
+        deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-AI][T305-BRUSH] Brush radial WorldEdit + col bas 1-chunk (r={} blocs, jupe max={}) : {} colonnes du col forcees dans [{}..{}]",
                 (int) rCollar, smoothRing, lowCollarCols, y0 - 2, y0);
     }
 
@@ -9206,7 +9206,7 @@ public class StructureTerrainPrep {
                         "[DLB-STEP] {} ms -- {}", delta, label);
             }
             if (delta >= 3000L) {
-                LOGGER.warn("[DLB-STRUCTURE] l'etape qui vient de finir a pris {} ms de temps REEL ({})"
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-STRUCTURE] l'etape qui vient de finir a pris {} ms de temps REEL ({})"
                                 + " -- voir [DLB-LAGPROBE] pour le detail par tick", delta, label);
             }
         }
@@ -9338,7 +9338,7 @@ public class StructureTerrainPrep {
                                             Runnable onDone, int retries) {
         if (missed.isEmpty() || retries >= MAX_MISS_RETRIES) {
             if (!missed.isEmpty())
-                LOGGER.warn("[DLB-STRUCTURE] rebuildTerrain : {} colonne(s) restent non lissees "
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-STRUCTURE] rebuildTerrain : {} colonne(s) restent non lissees "
                                 + "(chunk jamais charge apres {} reprises T82) -- le reste est termine.",
                         missed.size(), retries);
             if (onDone != null) onDone.run();
@@ -12943,7 +12943,7 @@ public class StructureTerrainPrep {
         private void finish() {
             RUNNING_PASSES.remove(label);
             if (capped > 0 || dropped > 0 || unloaded > 0 || stalled > 0)
-                LOGGER.warn("[DLB-FIXLIQ] incomplete repair: capped={}, queueLimit={}, unloaded={}, stalled={}",
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-FIXLIQ] incomplete repair: capped={}, queueLimit={}, unloaded={}, stalled={}",
                         capped, dropped, unloaded, stalled);
             if (stalled > 0)
                 deepluckyblock.util.DebugLog.structure(

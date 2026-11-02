@@ -317,7 +317,7 @@ public class GenerateBadProcedure {
 
         if (DEBUG_LOGS) {
             ResourceLocation applied = BuiltInRegistries.CAT_VARIANT.getKey(variant.value());
-            if (deepluckyblock.util.DebugLog.ENABLED) System.out.println("[SLB-DEBUG] Cat variant applied: requested=" + id + ", actual=" + applied);
+            if (deepluckyblock.util.DebugLog.ENABLED) deepluckyblock.util.DebugLog.out("[SLB-DEBUG] Cat variant applied: requested=" + id + ", actual=" + applied);
         }
     }
 
@@ -371,7 +371,7 @@ public class GenerateBadProcedure {
         if (level.addFreshEntity(cat)) {
             bindCatToOwner(cat, owner);
         } else if (DEBUG_LOGS) {
-            System.err.println("[SLB-DEBUG] Failed to spawn cat " + pet.name());
+            deepluckyblock.util.DebugLog.err("[SLB-DEBUG] Failed to spawn cat " + pet.name());
         }
     }
 
@@ -426,7 +426,7 @@ public class GenerateBadProcedure {
         dewey.setGlowingTag(true);
 
         if (!level.addFreshEntity(dewey)) {
-            if (DEBUG_LOGS) System.err.println("[SLB-DEBUG] Failed to add Dewey to the level");
+            if (DEBUG_LOGS) deepluckyblock.util.DebugLog.err("[SLB-DEBUG] Failed to add Dewey to the level");
             return false;
         }
 
@@ -728,7 +728,7 @@ public class GenerateBadProcedure {
                     Component.literal("\u00a77[" + (testIndex + 1) + "/" + evs.length + "] \u00a7" + col + "\u00a7l")
                             .append(localizeEventTitle(res.title)));
         }
-        if (res.deferredAction != null) { try { res.deferredAction.run(); } catch (Throwable e) { e.printStackTrace(); } }
+        if (res.deferredAction != null) { try { res.deferredAction.run(); } catch (Throwable e) { deepluckyblock.util.DebugLog.trace(e); } }
         testIndex++;
     }
 
@@ -784,7 +784,7 @@ public class GenerateBadProcedure {
             }
             return result;
         } catch (Throwable error) {
-            if (DEBUG_LOGS) error.printStackTrace();
+            if (DEBUG_LOGS) deepluckyblock.util.DebugLog.trace(error);
             return null;
         }
     }
@@ -842,7 +842,7 @@ public class GenerateBadProcedure {
                 try {
                     action.run();
                 } catch (Throwable error) {
-                    if (DEBUG_LOGS) error.printStackTrace();
+                    if (DEBUG_LOGS) deepluckyblock.util.DebugLog.trace(error);
                 }
             });
         }
@@ -890,7 +890,7 @@ public class GenerateBadProcedure {
             player.sendSystemMessage(Component.literal("\u00a77[eventtest] \u00a7" + col + "\u00a7l")
                     .append(localizeEventTitle(res.title)));
         }
-        if (res.deferredAction != null) { try { res.deferredAction.run(); } catch (Throwable e) { e.printStackTrace(); } }
+        if (res.deferredAction != null) { try { res.deferredAction.run(); } catch (Throwable e) { deepluckyblock.util.DebugLog.trace(e); } }
     }
 
     // ==================== ENTRYPOINT ====================
@@ -1048,17 +1048,17 @@ public class GenerateBadProcedure {
             final Runnable orig = result.deferredAction;
             result.deferredAction = () -> {
                 long t0 = System.currentTimeMillis();
-                if (DEBUG_LOGS) System.out.println("[SLB-DEBUG] >>> START " + dbgName);
+                if (DEBUG_LOGS) deepluckyblock.util.DebugLog.out("[SLB-DEBUG] >>> START " + dbgName);
                 try {
                     orig.run();
                 } catch (Throwable e) {
-                    System.err.println("[SLB-DEBUG] ERROR " + dbgName + ": " + e);
-                    e.printStackTrace();
+                    deepluckyblock.util.DebugLog.err("[SLB-DEBUG] ERROR " + dbgName + ": " + e);
+                    deepluckyblock.util.DebugLog.trace(e);
                 }
                 long ms = System.currentTimeMillis() - t0;
                 if (DEBUG_LOGS) {
-                    if (deepluckyblock.util.DebugLog.ENABLED) System.out.println("[SLB-DEBUG] <<< END " + dbgName + " (" + ms + "ms)");
-                    if (ms > 100) System.out.println("[SLB-DEBUG] !!! LENT: " + dbgName + " a pris " + ms + "ms");
+                    if (deepluckyblock.util.DebugLog.ENABLED) deepluckyblock.util.DebugLog.out("[SLB-DEBUG] <<< END " + dbgName + " (" + ms + "ms)");
+                    if (ms > 100) deepluckyblock.util.DebugLog.out("[SLB-DEBUG] !!! LENT: " + dbgName + " a pris " + ms + "ms");
                 }
             };
         }
@@ -5106,7 +5106,7 @@ public class GenerateBadProcedure {
             }
             if (SAMOUSS_LOOT_PIECES[i] == null) {
                 SAMOUSS_LOOT_PIECES[i] = fallback[i];
-                System.err.println("[deep_lucky_block] Item Samouss introuvable pour "
+                deepluckyblock.util.DebugLog.err("[deep_lucky_block] Item Samouss introuvable pour "
                         + suffixes[i] + " -> fallback diamant");
             }
         }
@@ -5170,7 +5170,7 @@ public class GenerateBadProcedure {
             event.getDrops().add(new ItemEntity(
                     entity.level(), entity.getX(), entity.getY(), entity.getZ(), piece));
         } catch (Throwable t) {
-            if (DEBUG_LOGS) t.printStackTrace();
+            if (DEBUG_LOGS) deepluckyblock.util.DebugLog.trace(t);
         }
     }
 
@@ -5262,10 +5262,10 @@ public class GenerateBadProcedure {
                                 .append(localizeEventTitle(res.title)));
             }
 
-            if (deepluckyblock.util.DebugLog.ENABLED) System.out.println("[SLB-DEBUG] /dlb b #" + index + " luck=" + luck
+            if (deepluckyblock.util.DebugLog.ENABLED) deepluckyblock.util.DebugLog.out("[SLB-DEBUG] /dlb b #" + index + " luck=" + luck
                     + (res != null ? " event=" + res.badEventNumber + " rank=" + res.rank : " res=null"));
         } catch (Throwable t) {
-            t.printStackTrace();
+            deepluckyblock.util.DebugLog.trace(t);
             player.sendSystemMessage(Component.literal("§c[SLB-DEBUG] generate a échoué : " + t));
         }
     }

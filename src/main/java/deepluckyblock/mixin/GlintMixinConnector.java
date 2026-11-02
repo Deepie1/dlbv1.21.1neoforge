@@ -36,10 +36,9 @@ public class GlintMixinConnector implements IMixinConnector {
     @Override
     public void connect() {
         Mixins.addConfiguration(CONFIG);
-        // Diagnostic : au lancement, cette ligne confirme que la config du glint
-        // coloré est bien enregistrée. Les 2 ACCESSORS sont indispensables :
-        // sans eux EnchantGlintTyped lève AssertionError et retombe sur le violet.
-        System.out.println("[DeepLuckyBlock] Config mixin enregistrée : " + CONFIG
-                + " — mixins attendus : " + String.join(", ", EXPECTED));
+        if (Boolean.getBoolean("dlb.debug")) {
+            System.out.println("[DeepLuckyBlock] Config mixin enregistrée : " + CONFIG
+                    + " — mixins attendus : " + String.join(", ", EXPECTED));
+        }
     }
 }

@@ -34,7 +34,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
  *  - LevelTickEvent.Post (Phase.END) -> LevelTickEvent.Post
  *  - @Mod.EventBusSubscriber -> @EventBusSubscriber (neoforged)
  */
-@EventBusSubscriber(modid = DeepLuckyBlockMod.MODID, bus = EventBusSubscriber.Bus.MOD)
+@EventBusSubscriber(modid = DeepLuckyBlockMod.MODID)
 public class DeepLuckyBlockModVariables {
     @SubscribeEvent
     public static void init(FMLCommonSetupEvent event) {

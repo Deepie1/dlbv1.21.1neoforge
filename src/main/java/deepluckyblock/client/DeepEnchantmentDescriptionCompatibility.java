@@ -137,7 +137,7 @@ public final class DeepEnchantmentDescriptionCompatibility {
 
         if (!diagnosticLogged) {
             diagnosticLogged = true;
-            System.out.println("[DeepLuckyBlock/Tooltip] enchdesc detected; "
+            deepluckyblock.util.DebugLog.out("[DeepLuckyBlock/Tooltip] enchdesc detected; "
                     + "all enchantment descriptions delegated");
         }
     }

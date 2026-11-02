@@ -161,8 +161,8 @@ public class UniversalEnchantmentHandler {
 
     private static void printHandlerError(String where, Throwable t) {
         try {
-            System.err.println("[DeepLuckyBlock] Erreur interceptee dans " + where + " (crash evite) : " + t);
-            t.printStackTrace(System.err);
+            deepluckyblock.util.DebugLog.err("[DeepLuckyBlock] Erreur interceptee dans " + where + " (crash evite) : " + t);
+            deepluckyblock.util.DebugLog.trace(t, System.err);
         } catch (Throwable ignored) {}
     }
 

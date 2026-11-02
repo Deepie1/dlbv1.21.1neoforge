@@ -34,7 +34,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
  * aucune clé de combo ou d'événement ne tombe jamais en clé brute ni dans la mauvaise langue,
  * même après changement de langue en plein jeu ou régénération MCreator.
  */
-@EventBusSubscriber(modid = "deep_lucky_block", bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+@EventBusSubscriber(modid = "deep_lucky_block", value = Dist.CLIENT)
 public final class ClientTranslationInjector {
 
     private static final Map<String, String> ENGLISH = createEnglish();

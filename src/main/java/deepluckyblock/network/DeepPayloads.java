@@ -20,7 +20,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
  * 1.21.1 utilise le système CustomPacketPayload + PayloadRegistrar.
  * La version de protocole est "1" comme l'ancienne PROTOCOL_VERSION.
  */
-@EventBusSubscriber(modid = DeepLuckyBlockMod.MODID, bus = EventBusSubscriber.Bus.MOD)
+@EventBusSubscriber(modid = DeepLuckyBlockMod.MODID)
 public final class DeepPayloads {
 
     public static final ResourceLocation SAVED_DATA_SYNC =

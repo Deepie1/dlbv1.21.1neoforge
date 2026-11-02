@@ -28,7 +28,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
  * - Si le fichier n'existe pas encore (premier lancement), on ne fait rien :
  *   ImmediatelyFast le créera, et notre mod le corrigera au lancement suivant.
  */
-@EventBusSubscriber(modid = "deep_lucky_block", bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+@EventBusSubscriber(modid = "deep_lucky_block", value = Dist.CLIENT)
 public final class ImmediatelyFastGlintCompat {
 
     private ImmediatelyFastGlintCompat() {}
@@ -41,7 +41,7 @@ public final class ImmediatelyFastGlintCompat {
             Path cfgDir = FMLPaths.CONFIGDIR.get();
             Path file = cfgDir.resolve("immediatelyfast.json");
             if (!Files.exists(file)) {
-                System.out.println("[DeepLuckyBlock] immediatelyfast présent mais config absente (le mod la créera).");
+                deepluckyblock.util.DebugLog.out("[DeepLuckyBlock] immediatelyfast présent mais config absente (le mod la créera).");
                 return;
             }
 
@@ -63,14 +63,14 @@ public final class ImmediatelyFastGlintCompat {
 
             if (!changed) {
                 // Déjà à false (ou absents) : rien à faire.
-                System.out.println("[DeepLuckyBlock] immediatelyfast batching déjà désactivé (hud + screen) -> OK.");
+                deepluckyblock.util.DebugLog.out("[DeepLuckyBlock] immediatelyfast batching déjà désactivé (hud + screen) -> OK.");
                 return;
             }
 
             Files.write(file, root.toString().getBytes(StandardCharsets.UTF_8));
-            System.out.println("[DeepLuckyBlock] immediatelyfast hud_batching & experimental_screen_batching désactivés (fix glint). Relance une fois pour prendre effet.");
+            deepluckyblock.util.DebugLog.out("[DeepLuckyBlock] immediatelyfast hud_batching & experimental_screen_batching désactivés (fix glint). Relance une fois pour prendre effet.");
         } catch (Throwable t) {
-            System.out.println("[DeepLuckyBlock] immediatelyfast compat: " + t);
+            deepluckyblock.util.DebugLog.out("[DeepLuckyBlock] immediatelyfast compat: " + t);
         }
     }
 }

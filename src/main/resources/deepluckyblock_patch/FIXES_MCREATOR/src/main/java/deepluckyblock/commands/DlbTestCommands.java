@@ -148,7 +148,7 @@ public final class DlbTestCommands {
         ServerPlayer player = fakeOrReal(src.getPlayer(), level, src.getPosition().x, src.getPosition().z);
         String where = player.blockPosition().toShortString();
         boolean fake = src.getPlayer() == null;
-        DeepLuckyBlockMod.LOGGER.info("[DLBTEST] {} demandee a {} (id={}, nbt={}, joueur {})",
+        deepluckyblock.util.DebugLog.info(DeepLuckyBlockMod.LOGGER, "[DLBTEST] {} demandee a {} (id={}, nbt={}, joueur {})",
                 s.name(), where, s.id(), s.nbt(), fake ? "factice" : "reel");
         String hint = s.id() < 0
                 ? " -- presage de 120 s puis construction (le lac est un evenement)"
@@ -177,7 +177,7 @@ public final class DlbTestCommands {
         }
         if (s == null) {
             final String k = raw;
-            DeepLuckyBlockMod.LOGGER.warn("[DLBTEST] structure inconnue : '{}' (valides : {})", k, namesList());
+            deepluckyblock.util.DebugLog.warn(DeepLuckyBlockMod.LOGGER, "[DLBTEST] structure inconnue : '{}' (valides : {})", k, namesList());
             ctx.getSource().sendFailure(Component.literal("[DLB-TEST] Structure « " + k
                     + " » inconnue. Noms valides : " + namesList()));
             return 0;
@@ -252,7 +252,7 @@ public final class DlbTestCommands {
         var root = dispatcher.getRoot().getChild("dlbtest");
         if (root == null) {
             src.sendFailure(Component.literal("[DLB-TEST] commande /dlbtest ABSENTE du dispatcher !"));
-            DeepLuckyBlockMod.LOGGER.error("[DLBTEST] /dlbtest absent du dispatcher");
+            deepluckyblock.util.DebugLog.warn(DeepLuckyBlockMod.LOGGER, "[DLBTEST] /dlbtest absent du dispatcher");
             return 0;
         }
         int n = 0;
@@ -277,7 +277,7 @@ public final class DlbTestCommands {
         final int total = n;
         src.sendSuccess(() -> Component.literal("[DLB-TEST] arbre enregistre : " + total
                 + " entree(s) de premier niveau sous /dlbtest -- toutes proposees par TAB"), false);
-        DeepLuckyBlockMod.LOGGER.info("[DLBTEST] arbre /dlbtest : {} entree(s) de premier niveau", total);
+        deepluckyblock.util.DebugLog.info(DeepLuckyBlockMod.LOGGER, "[DLBTEST] arbre /dlbtest : {} entree(s) de premier niveau", total);
         return n;
     }
 
@@ -292,7 +292,7 @@ public final class DlbTestCommands {
         // T239 : l'etiquette de build dans la ligne « commande prete » permet
         // d'identifier instantanement la version compilée côté utilisateur
         // (trop de diagnostics ont buté sur « quelle version tournait ? »).
-        DeepLuckyBlockMod.LOGGER.info("[DLBTEST] commande prete : /dlbtest -> {} | structure <nom|id> | list | "
+        deepluckyblock.util.DebugLog.info(DeepLuckyBlockMod.LOGGER, "[DLBTEST] commande prete : /dlbtest -> {} | structure <nom|id> | list | "
                         + "water <status|freeze|thaw> | probe <x> <z> | luckybreak [nombre] "
                         + "(permission {}) [build T293]",
                 String.join(", ", names), opOnly() ? "operateur (niveau 2)" : "tout le monde (0)");
@@ -425,13 +425,12 @@ public final class DlbTestCommands {
             var chunkAfter = level.getChunkSource().getChunkNow(x >> 4, z >> 4);
             boolean primedAfter = chunkAfter != null && chunkAfter.hasPrimedHeightmap(H);
             int rawAfter = deepluckyblock.util.SafeSurface.height(level, H, x, z) - 1;
-            DeepLuckyBlockMod.LOGGER.info(
-                    "[DLBTEST] PROBE {},{} : AVANT correction -- chunk charge={} heightmap initialisee={} getHeight brut={} | "
+            deepluckyblock.util.DebugLog.info(DeepLuckyBlockMod.LOGGER, "[DLBTEST] PROBE {},{} : AVANT correction -- chunk charge={} heightmap initialisee={} getHeight brut={} | "
                             + "APRES correction (SafeSurface) -- hauteur={} heightmap initialisee={} getHeight relu={} | {}",
                     x, z, loadedBefore, primedBefore, rawBefore, fixed, primedAfter, rawAfter,
                     deepluckyblock.util.SafeSurface.stats());
         } catch (Throwable t) {
-            DeepLuckyBlockMod.LOGGER.error("[DLBTEST] PROBE {},{} en echec", x, z, t);
+            deepluckyblock.util.DebugLog.warn(DeepLuckyBlockMod.LOGGER, "[DLBTEST] PROBE {},{} en echec", x, z, t);
         }
     }
 
@@ -472,7 +471,7 @@ public final class DlbTestCommands {
                     be.setSlbLuckBonus(100);
                     be.setChanged();
                 }
-                DeepLuckyBlockMod.LOGGER.info("[DLBTEST] casse du lucky block {} (luck=100, n°{}/{})",
+                deepluckyblock.util.DebugLog.info(DeepLuckyBlockMod.LOGGER, "[DLBTEST] casse du lucky block {} (luck=100, n°{}/{})",
                         pos.toShortString(), bi + 1, nombre);
                 player.moveTo(px + 0.5, py, pz + 0.5, 0.0F, 0.0F);
                 BlockState state = level.getBlockState(pos);
@@ -480,10 +479,10 @@ public final class DlbTestCommands {
                     // Meme chemin qu'un clic gauche de joueur : playerDestroy/onDestroyedByPlayer.
                     player.gameMode.destroyBlock(pos);
                 } catch (Throwable t) {
-                    DeepLuckyBlockMod.LOGGER.error("[DLBTEST] echec destroyBlock {}", pos, t);
+                    deepluckyblock.util.DebugLog.warn(DeepLuckyBlockMod.LOGGER, "[DLBTEST] echec destroyBlock {}", pos, t);
                 }
                 if (!level.getBlockState(pos).equals(state)) {
-                    DeepLuckyBlockMod.LOGGER.info("[DLBTEST] bloc casse OK {}", pos.toShortString());
+                    deepluckyblock.util.DebugLog.info(DeepLuckyBlockMod.LOGGER, "[DLBTEST] bloc casse OK {}", pos.toShortString());
                 }
             });
         }
@@ -501,7 +500,7 @@ public final class DlbTestCommands {
         int n = deepluckyblock.util.WaterDam.frozenCount(level);
         String msg = "[DLB-WATER] etat : gel " + (frozen ? "ACTIF" : "inactif")
                 + ", " + n + " bloc(s) d'eau memorises (futurs restaures)";
-        DeepLuckyBlockMod.LOGGER.info(msg);
+        deepluckyblock.util.DebugLog.info(DeepLuckyBlockMod.LOGGER, msg);
         ctx.getSource().sendSuccess(() -> Component.literal(msg), false);
         return n;
     }
@@ -511,9 +510,9 @@ public final class DlbTestCommands {
         ServerLevel level = ctx.getSource().getLevel();
         net.minecraft.world.phys.Vec3 p = ctx.getSource().getPosition();
         int cx = net.minecraft.util.Mth.floor(p.x), cz = net.minecraft.util.Mth.floor(p.z);
-        DeepLuckyBlockMod.LOGGER.info("[DLBTEST] water freeze rayon={} centre={},{}", rayon, cx, cz);
+        deepluckyblock.util.DebugLog.info(DeepLuckyBlockMod.LOGGER, "[DLBTEST] water freeze rayon={} centre={},{}", rayon, cx, cz);
         deepluckyblock.util.WaterDam.freeze(level, cx - rayon, cz - rayon, cx + rayon, cz + rayon, () -> {
-            DeepLuckyBlockMod.LOGGER.info("[DLBTEST] water freeze TERMINE : {} bloc(s) d'eau geles",
+            deepluckyblock.util.DebugLog.info(DeepLuckyBlockMod.LOGGER, "[DLBTEST] water freeze TERMINE : {} bloc(s) d'eau geles",
                     deepluckyblock.util.WaterDam.frozenCount(level));
             ctx.getSource().sendSuccess(() -> Component.literal("[DLB-WATER] gel manuel termine : "
                     + deepluckyblock.util.WaterDam.frozenCount(level) + " bloc(s)"), false);
@@ -531,10 +530,10 @@ public final class DlbTestCommands {
             ctx.getSource().sendSuccess(() -> Component.literal("[DLB-WATER] rien a degeler (aucun gel actif)"), false);
             return 0;
         }
-        DeepLuckyBlockMod.LOGGER.info("[DLBTEST] water thaw demande ({} bloc(s) geles)",
+        deepluckyblock.util.DebugLog.info(DeepLuckyBlockMod.LOGGER, "[DLBTEST] water thaw demande ({} bloc(s) geles)",
                 deepluckyblock.util.WaterDam.frozenCount(level));
         deepluckyblock.util.WaterDam.thaw(level, null, null, () -> {
-            DeepLuckyBlockMod.LOGGER.info("[DLBTEST] water thaw TERMINE");
+            deepluckyblock.util.DebugLog.info(DeepLuckyBlockMod.LOGGER, "[DLBTEST] water thaw TERMINE");
             ctx.getSource().sendSuccess(() -> Component.literal("[DLB-WATER] degel manuel termine"), false);
         });
         return 1;

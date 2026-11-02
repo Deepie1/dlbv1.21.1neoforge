@@ -254,14 +254,14 @@ public final class SafeSurface {
                 primedOnDemand++;
                 Heightmap.primeHeightmaps(c, java.util.EnumSet.of(type));
                 if (primedOnDemand <= 5 || primedOnDemand % 500 == 0) {
-                    LOGGER.warn("[DLB-SURFACE] heightmap {} absente sur le chunk {},{} -- primée une fois "
+                    deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-SURFACE] heightmap {} absente sur le chunk {},{} -- primée une fois "
                                     + "(sans ca : rescan complet du chunk a CHAQUE lecture, 180 us mesurees) [#{}]",
                             type, cx, cz, primedOnDemand);
                 }
             }
             int r = c.getHeight(type, x & 15, z & 15) + 1;
             if (DIAG) { nCache += _b - _a; nGet += System.nanoTime() - _b; if (++nCalls % 20000 == 0)
-                LOGGER.warn("[DLB-DIAG] height() : {} appels, {} ms dans la recherche de chunk, {} ms dans chunk.getHeight, {} ms/chunk, {} ms/lecture",
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-DIAG] height() : {} appels, {} ms dans la recherche de chunk, {} ms dans chunk.getHeight, {} ms/chunk, {} ms/lecture",
                         nCalls, nCache / 1_000_000, nGet / 1_000_000,
                         (nGet / 1000) / Math.max(1, lookups), (nGet / 1000) / Math.max(1, nCalls)); }
             return r;
@@ -528,7 +528,7 @@ public final class SafeSurface {
         if (PENDING.size() >= PENDING_CAP) {   // T231 : debit borne du fond
             if (System.getProperty("dlb.debug") != null || System.getenv("DLB_DEBUG") != null) {
                 if (++CAP_DROP_COUNT % 100 == 1)
-                    LOGGER.warn("[DLB-CHUNKS] T231 pendingCap atteint ({}) : {} nouvelle(s) demande(s) ignorees -- fuite possible de PENDING", PENDING.size(), CAP_DROP_COUNT);
+                    deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-CHUNKS] T231 pendingCap atteint ({}) : {} nouvelle(s) demande(s) ignorees -- fuite possible de PENDING", PENDING.size(), CAP_DROP_COUNT);
             }
             return;
         }
@@ -854,7 +854,7 @@ public final class SafeSurface {
                     Heightmap.primeHeightmaps(chunk, TYPES);
                     primedChunks++;
                     if (primedChunks <= 5 || primedChunks % 500 == 0) {
-                        LOGGER.warn("[DLB-SURFACE] heightmap inutilisable sur le chunk {},{} -- recalculee "
+                        deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-SURFACE] heightmap inutilisable sur le chunk {},{} -- recalculee "
                                         + "(sans ca, toutes les hauteurs de ce chunk valent -65 et les structures s'ancrent sous le sol). [#{}]",
                                 cx, cz, primedChunks);
                     }
@@ -914,14 +914,14 @@ public final class SafeSurface {
                 Heightmap.primeHeightmaps(chunk, TYPES);
                 primedChunks++;
                 if (primedChunks <= 5 || primedChunks % 500 == 0) {
-                    LOGGER.warn("[DLB-SURFACE] heightmap inutilisable sur le chunk {},{} -- recalculee "
+                    deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-SURFACE] heightmap inutilisable sur le chunk {},{} -- recalculee "
                                     + "(sans ca, toutes les hauteurs de ce chunk valent -65 et les structures s'ancrent sous le sol). [#{}]",
                             cx, cz, primedChunks);
                 }
             }
             return chunk;
         } catch (Throwable t) {
-            LOGGER.warn("[DLB-SURFACE] chunk {},{} : generation/initialisation impossible : {}", cx, cz, t.toString());
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-SURFACE] chunk {},{} : generation/initialisation impossible : {}", cx, cz, t.toString());
             return null;
         }
     }
@@ -1139,12 +1139,12 @@ public final class SafeSurface {
         int real = scanGroundY(level, x, z);
         if (real != Integer.MIN_VALUE) {
             if (scannedColumns <= 5 || scannedColumns % 100 == 0) {
-                LOGGER.warn("[DLB-SURFACE] heightmap toujours vide en {},{} apres recalcule : rien a l'emplacement "
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-SURFACE] heightmap toujours vide en {},{} apres recalcule : rien a l'emplacement "
                                 + "indique par la heightmap -- hauteur REELLE lue bloc par bloc : {}. [#{}]", x, z, real, scannedColumns);
             }
             return real;
         }
-        LOGGER.error("[DLB-SURFACE] colonne illisible en {},{} : chunk pas encore genere (heightmap et blocs vides) -- "
+        deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-SURFACE] colonne illisible en {},{} : chunk pas encore genere (heightmap et blocs vides) -- "
                 + "mesure impossible, l'appelant doit garder sa valeur de repli", x, z);
         return Integer.MIN_VALUE;
     }
@@ -1158,7 +1158,7 @@ public final class SafeSurface {
     public static int surfaceY(ServerLevel level, int x, int z, int fallbackY) {
         int y = surfaceY(level, x, z);
         if (y == Integer.MIN_VALUE || y <= level.getMinBuildHeight()) {
-            LOGGER.warn("[DLB-SURFACE] ancrage {},{} : mesure impossible -- repli sur Y={} (au lieu de -65, ce qui "
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-SURFACE] ancrage {},{} : mesure impossible -- repli sur Y={} (au lieu de -65, ce qui "
                     + "enterrerait la structure)", x, z, fallbackY);
             return fallbackY;
         }
@@ -1204,7 +1204,7 @@ public final class SafeSurface {
         }
         if (bad > 0) {
             repairedZones++;
-            LOGGER.warn("[DLB-SURFACE] capture de zone {}x{} : {} colonnes sur {} restent illisibles apres recalcule "
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-SURFACE] capture de zone {}x{} : {} colonnes sur {} restent illisibles apres recalcule "
                             + "(le despeckle de la heightmap les remplace par la mediane des voisins). [#{}]",
                     w, h, bad, w * h, repairedZones);
         }

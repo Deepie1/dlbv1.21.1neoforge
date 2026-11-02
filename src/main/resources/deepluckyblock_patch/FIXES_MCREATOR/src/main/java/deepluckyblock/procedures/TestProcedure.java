@@ -1263,7 +1263,7 @@ public class TestProcedure {
                 result = runNegativeBranch(level, x, y, z, mainLuck, rng, badCategory);
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            deepluckyblock.util.DebugLog.trace(e);
         }
 
         if (result == null) {
@@ -1348,7 +1348,7 @@ public class TestProcedure {
                 }
             } catch (Exception e) {
                 GenerateLuckyItemProcedure.releaseStructureReservation(result.structureId);
-                e.printStackTrace();
+                deepluckyblock.util.DebugLog.trace(e);
             }
         }
 
@@ -1362,11 +1362,11 @@ public class TestProcedure {
             if (textHolo != null) {
                 schedule(level, currentTick(level) + 24, () -> {
                     try { GenerateLuckyItemProcedure.notifyNegativeBranch(level, x, y, z); }
-                    catch (Throwable e) { if (DEBUG_LOGS) e.printStackTrace(); }
+                    catch (Throwable e) { if (DEBUG_LOGS) deepluckyblock.util.DebugLog.trace(e); }
                 });
             } else {
                 try { GenerateLuckyItemProcedure.notifyNegativeBranch(level, x, y, z); }
-                catch (Throwable e) { if (DEBUG_LOGS) e.printStackTrace(); }
+                catch (Throwable e) { if (DEBUG_LOGS) deepluckyblock.util.DebugLog.trace(e); }
             }
         }
 
@@ -1376,11 +1376,11 @@ public class TestProcedure {
                 // 20 ticks de tension apres l'affichage du teaser, puis l'event se revele tout seul.
                 schedule(level, currentTick(level) + 24, () -> {
                     try { action.run(); }
-                    catch (Throwable e) { e.printStackTrace(); }
+                    catch (Throwable e) { deepluckyblock.util.DebugLog.trace(e); }
                 });
             } else {
                 try { action.run(); }
-                catch (Throwable e) { e.printStackTrace(); }
+                catch (Throwable e) { deepluckyblock.util.DebugLog.trace(e); }
             }
         }
 
@@ -1463,7 +1463,7 @@ public class TestProcedure {
             fb.particles      = new ArrayList<>(List.of("ENCHANT"));
             return fb;
         } catch (Exception e) {
-            e.printStackTrace();
+            deepluckyblock.util.DebugLog.trace(e);
         }
         return null;
     }
@@ -1486,8 +1486,8 @@ public class TestProcedure {
                 return result;
             }
         } catch (Throwable e) {
-            System.err.println("[SLB-DEBUG] Negative event generation failed");
-            e.printStackTrace();
+            deepluckyblock.util.DebugLog.err("[SLB-DEBUG] Negative event generation failed");
+            deepluckyblock.util.DebugLog.trace(e);
         }
 
         BranchResult fb   = new BranchResult();
@@ -1590,7 +1590,7 @@ public class TestProcedure {
         for (ScheduledTask t : due) {
             done.add(t);
             try { t.task.run(); }
-            catch (Exception e) { e.printStackTrace(); }
+            catch (Exception e) { deepluckyblock.util.DebugLog.trace(e); }
             ran++;
             if (System.currentTimeMillis() - dbgT0 >= TASK_BUDGET_MS) break;
         }
@@ -1598,7 +1598,7 @@ public class TestProcedure {
 
         long dbgMs = System.currentTimeMillis() - dbgT0;
         if (DEBUG_LOGS && (dbgQueueSize > 20 || dbgMs > 5))
-            if (deepluckyblock.util.DebugLog.ENABLED) System.out.println("[SLB-DEBUG] TASK_QUEUE: " + dbgQueueSize + " total, " + ran + " ran, " + dbgMs + "ms");
+            if (deepluckyblock.util.DebugLog.ENABLED) deepluckyblock.util.DebugLog.out("[SLB-DEBUG] TASK_QUEUE: " + dbgQueueSize + " total, " + ran + " ran, " + dbgMs + "ms");
     }
 
     private static final class ScheduledTask {
@@ -1633,7 +1633,7 @@ public class TestProcedure {
             level.addFreshEntity(stand);
             return stand;
         } catch (Exception e) {
-            e.printStackTrace();
+            deepluckyblock.util.DebugLog.trace(e);
             return null;
         }
     }

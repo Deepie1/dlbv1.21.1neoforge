@@ -31,7 +31,7 @@ public final class StructureTemplateStartupPreloader {
      * démarrage d'une map ne fait ensuite que résoudre les états de blocs avec
      * les registres du serveur, opération impossible avant leur création.
      */
-    @EventBusSubscriber(modid = "deep_lucky_block", bus = EventBusSubscriber.Bus.MOD)
+    @EventBusSubscriber(modid = "deep_lucky_block")
     public static final class GameLaunchHook {
         private GameLaunchHook() {}
 

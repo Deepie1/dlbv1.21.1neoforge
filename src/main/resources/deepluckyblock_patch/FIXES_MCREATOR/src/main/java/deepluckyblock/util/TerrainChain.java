@@ -62,7 +62,7 @@ public final class TerrainChain {
             return true;
         }
         if (now - lastActivity > STEAL_MS) {
-            LOGGER.warn("[DLB-CHAIN] chaine terrain '{}' sans progression depuis {} s -- reprise de force par '{}'",
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-CHAIN] chaine terrain '{}' sans progression depuis {} s -- reprise de force par '{}'",
                     owner, (now - lastActivity) / 1000, tag);
             owner = tag;
             lastActivity = now;

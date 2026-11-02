@@ -511,7 +511,7 @@ public class Structures5Procedure {
         BlockPos surfPos = new BlockPos(targetXZ.getX(), surfaceY, targetXZ.getZ());
         ZoneAnalysis analysis = analyzeZone(level, surfPos);
         if (!analysis.isUnsafe()) return targetXZ;
-        LOGGER.warn("[STRUCT5-SAFETY] {} : {} -> recherche alt...", nbtName, analysis.getReason());
+        deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-SAFETY] {} : {} -> recherche alt...", nbtName, analysis.getReason());
         BlockPos safeAlt = findSafeAlternative(level, surfPos);
         if (safeAlt != null && !analyzeZone(level, safeAlt).hasTooMuchLava()) return safeAlt;
         if (analysis.hasTooMuchLava()) return null;
@@ -894,7 +894,7 @@ public class Structures5Procedure {
         j.waitTicks++;
         boolean force = j.waitTicks > 600;
         if (force && j.waitTicks == 601) {
-            LOGGER.warn("[STRUCT5] {} : {} blocs en attente depuis 30 s -- chargement force des chunks restants", j.name, j.defer.size());
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5] {} : {} blocs en attente depuis 30 s -- chargement force des chunks restants", j.name, j.defer.size());
         }
         // T85/B4 : le mode « force » n'etait qu'un warn -- les chunks manquants
         // n'etaient plus re-demandes. Re-demande active toutes les
@@ -927,7 +927,7 @@ public class Structures5Procedure {
                 if (shown++ > 0) sample.append(", ");
                 sample.append(j.origin.getX() + rel.getX()).append(',').append(j.origin.getZ() + rel.getZ());
             }
-            LOGGER.warn("[STRUCT5] {} : {} bloc(s) SANS CHUNK apres {} s et re-demandes actives -- "
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5] {} : {} bloc(s) SANS CHUNK apres {} s et re-demandes actives -- "
                             + "abandon honnete (positions x,z : {}) ; la file se termine, le reste ({}/{}) est pose (T85)",
                     j.name, j.defer.size(), MAX_DEFER_WAIT_TICKS / 20, sample, j.idx, j.blocks.size());
             j.defer.clear();
@@ -1191,7 +1191,7 @@ public class Structures5Procedure {
             case 0, 16 -> doPaste(level, origin, CITADEL_NBT, CITADEL_OFFSET_X, CITADEL_OFFSET_Y, CITADEL_OFFSET_Z, CITADEL_DISTANCE, CITADEL_FACING, CITADEL_FOLLOW_SURFACE, CITADEL_USE_FLAT, CITADEL_KEEP_INT);
             case 1, 17 -> doPaste(level, origin, OBS_NBT, OBS_OFFSET_X, OBS_OFFSET_Y, OBS_OFFSET_Z, OBS_DISTANCE, OBS_FACING, OBS_FOLLOW_SURFACE, OBS_USE_FLAT, OBS_KEEP_INT);
             case 2, 18 -> doPaste(level, origin, DRAGON_NBT, DRAGON_OFFSET_X, DRAGON_OFFSET_Y, DRAGON_OFFSET_Z, DRAGON_DISTANCE, DRAGON_FACING, DRAGON_FOLLOW_SURFACE, DRAGON_USE_FLAT, DRAGON_KEEP_INT);
-            default -> { LOGGER.warn("[STRUCT5] ID inconnu : {}", id); yield false; }
+            default -> { deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5] ID inconnu : {}", id); yield false; }
         };
         // Un refus avant création d'un job doit libérer la file immédiatement.
         // T165 laissait GENERATION_BUSY actif pendant 240 secondes.
@@ -1482,7 +1482,7 @@ public class Structures5Procedure {
     }
     private static void logLoadedTierDigest(int chosenX, int chosenZ) {
         if (STAT_LOADED_SEEN == 0 && STAT_SCAN_PLAYER == 0 && STAT_SCAN_SITE == 0) return;
-        LOGGER.info("[STRUCT5-PICK] bilan proximite T296 : {} candidat(s) dans les chunks DEJA generes examines, "
+        deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-PICK] bilan proximite T296 : {} candidat(s) dans les chunks DEJA generes examines, "
                         + "rejets : eau={}, relief>{}={}, sol incomplet={}, verification impossible={} ; "
                         + "balayage : trop pres du joueur={}, conflit emprise={}, eau(grille)={} -- choix final en {},{}",
                 STAT_LOADED_SEEN, STAT_LOADED_REJ_WATER, MAX_FOOTPRINT_GROUND_SPAN, STAT_LOADED_REJ_RELIEF,
@@ -1949,7 +1949,7 @@ public class Structures5Procedure {
             DRY_PICK_SUGGESTED.add(new int[]{cx, cz});
             SELECTED_BEST_IN_1S = true;
             logLoadedTierDigest(cx, cz);
-            LOGGER.info("[STRUCT5-FLAT] Zone choisie en {} ms a {},{} (T304 <=1s meilleur candidat charge : {} sondes seches, {} eau ecartees, {} candidats classes, cout={}, relief x0,6={}, relief emprise={}, A1={}, warmPrep={})",
+            deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-FLAT] Zone choisie en {} ms a {},{} (T304 <=1s meilleur candidat charge : {} sondes seches, {} eau ecartees, {} candidats classes, cout={}, relief x0,6={}, relief emprise={}, A1={}, warmPrep={})",
                     System.currentTimeMillis() - t0, cx, cz, probed, water, cands.size(),
                     cost, cSpan, fSpan, stepA1, c[7] == 1);
             TIER_MISS_PIVOT = null; TIER_MISS_UNTIL_MS = 0L; TIER_MISS_STREAK = 0;
@@ -2072,7 +2072,7 @@ public class Structures5Procedure {
                     if (deepluckyblock.util.StructureSites.conflict(lvl, cand.getX(), cand.getZ(), checkR + 24) != null) continue;
                     DRY_PICK_SUGGESTED.add(new int[]{cand.getX(), cand.getZ()});
                     logLoadedTierDigest(cand.getX(), cand.getZ());   // T296
-                    LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T291d : cache, reprise sans re-sondage serveur, {} restant)",
+                    deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T291d : cache, reprise sans re-sondage serveur, {} restant)",
                             cand.getX(), cand.getZ(), SEARCH_REUSE_QUEUE.size());
                     return cand;
                 }
@@ -2341,7 +2341,7 @@ public class Structures5Procedure {
                             DRY_PICK_SUGGESTED.add(new int[]{choice.getX(), choice.getZ()});
                             stashSearchReuse(origin, structMax, choice, strictPool, softPool);
                             logLoadedTierDigest(choice.getX(), choice.getZ());
-                            LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c/T302 PROTO-HALO : {} ms, anneau {}, {} sondes, {} eau/biome ecartees, span sec={}, warmScore={}/240, 0 chunk genere)",
+                            deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c/T302 PROTO-HALO : {} ms, anneau {}, {} sondes, {} eau/biome ecartees, span sec={}, warmScore={}/240, 0 chunk genere)",
                                     choice.getX(), choice.getZ(), System.currentTimeMillis() - t0, pRes[3], probed, water, pRes[4], pRes[5]);
                             return choice;
                         } else if (pRes != null) {
@@ -2360,7 +2360,7 @@ public class Structures5Procedure {
                         SELECTED_BEST_IN_1S = true;
                         stashSearchReuse(origin, structMax, choice, strictPool, softPool);
                         logLoadedTierDigest(choice.getX(), choice.getZ());
-                        LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c/T302 PROTO-HALO : {} ms, anneau {}, {} sondes, {} eau/biome ecartees, span sec={}, warmScore={}/240, 0 chunk genere)",
+                        deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c/T302 PROTO-HALO : {} ms, anneau {}, {} sondes, {} eau/biome ecartees, span sec={}, warmScore={}/240, 0 chunk genere)",
                                 choice.getX(), choice.getZ(), System.currentTimeMillis() - t0, pRes[3], probed, water, pRes[4], pRes[5]);
                         return choice;
                     } else if (pRes != null) {
@@ -2408,7 +2408,7 @@ public class Structures5Procedure {
                                     SELECTED_BEST_IN_1S = true;
                                     stashSearchReuse(origin, structMax, choice, strictPool, softPool);
                                     logLoadedTierDigest(choice.getX(), choice.getZ());
-                                    LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c/T302 : {} ms, anneau {}, {} sondes, {} eau/biome ecartees, span sec={}, warmScore={}/160, 0 chunk genere)",
+                                    deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c/T302 : {} ms, anneau {}, {} sondes, {} eau/biome ecartees, span sec={}, warmScore={}/160, 0 chunk genere)",
                                             choice.getX(), choice.getZ(), System.currentTimeMillis() - t0, cRes[3], probed, water, cRes[4], cRes[5]);
                                     return choice;
                                 } else if (cRes != null) {
@@ -2433,7 +2433,7 @@ public class Structures5Procedure {
                         SELECTED_BEST_IN_1S = true;
                         stashSearchReuse(origin, structMax, choice, strictPool, softPool);
                         logLoadedTierDigest(choice.getX(), choice.getZ());
-                        LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c/T304 anneau 0 : {} ms, {} sondes, {} eau/biome ecartees, span sec={}, 0 chunk genere)",
+                        deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c/T304 anneau 0 : {} ms, {} sondes, {} eau/biome ecartees, span sec={}, 0 chunk genere)",
                                 choice.getX(), choice.getZ(), System.currentTimeMillis() - t0, probed, water, cRes0[4]);
                         return choice;
                     } else if (cRes0 != null) {
@@ -2452,7 +2452,7 @@ public class Structures5Procedure {
                     SELECTED_BEST_IN_1S = true;
                     stashSearchReuse(origin, structMax, choice, strictPool, softPool);
                     logLoadedTierDigest(choice.getX(), choice.getZ());
-                    LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c/T302 : {} ms, anneau {}, {} sondes, {} eau/biome ecartees, span sec={}, warmScore={}/160, 0 chunk genere)",
+                    deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c/T302 : {} ms, anneau {}, {} sondes, {} eau/biome ecartees, span sec={}, warmScore={}/160, 0 chunk genere)",
                             choice.getX(), choice.getZ(), System.currentTimeMillis() - t0, cRes[3], probed, water, cRes[4], cRes[5]);
                     return choice;
                 } else if (cRes != null) {
@@ -2465,7 +2465,7 @@ public class Structures5Procedure {
                 SELECTED_BEST_IN_1S = true;
                 stashSearchReuse(origin, structMax, bestFound, strictPool, softPool);
                 logLoadedTierDigest(bestFound.getX(), bestFound.getZ());
-                LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (T304 <=1s meilleur candidat sec trouve en {} ms : span sec={}, {} sondes, {} eau ecartees, 0 chunk genere)",
+                deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-FLAT] Zone choisie a {},{} (T304 <=1s meilleur candidat sec trouve en {} ms : span sec={}, {} sondes, {} eau ecartees, 0 chunk genere)",
                         bestFound.getX(), bestFound.getZ(), System.currentTimeMillis() - t0, bestAnyDry[0], probed, water);
                 return bestFound;
             }
@@ -2474,7 +2474,7 @@ public class Structures5Procedure {
                 SELECTED_BEST_IN_1S = true;
                 stashSearchReuse(origin, structMax, bestStrict, strictPool, softPool);
                 logLoadedTierDigest(bestStrict.getX(), bestStrict.getZ());   // T296
-                LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c : {} ms, meilleur strict span sec={}, {} sondes, {} eau/haut, 0 chunk genere)",
+                deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c : {} ms, meilleur strict span sec={}, {} sondes, {} eau/haut, 0 chunk genere)",
                         bestStrict.getX(), bestStrict.getZ(), System.currentTimeMillis() - t0, bestStrictSpan, probed, water);
                 return bestStrict;
             }
@@ -2487,15 +2487,15 @@ public class Structures5Procedure {
                 SELECTED_BEST_IN_1S = true;
                 stashSearchReuse(origin, structMax, bestSoft, strictPool, softPool);
                 logLoadedTierDigest(bestSoft.getX(), bestSoft.getZ());   // T296
-                LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c : {} ms, DERNIER RECOURS souple span sec={}, {} sondes, {} eau/haut, 0 chunk genere)",
+                deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-FLAT] Zone choisie a {},{} (selection seche T233c : {} ms, DERNIER RECOURS souple span sec={}, {} sondes, {} eau/haut, 0 chunk genere)",
                         bestSoft.getX(), bestSoft.getZ(), System.currentTimeMillis() - t0, bestSoftSpan, probed, water);
                 return bestSoft;
             }
-            LOGGER.info("[STRUCT5-FLAT] selection seche T233c : aucun candidat credible en {} ms ({} sondes, {} eau/haut, {} exclus) -> balayage historique",
+            deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-FLAT] selection seche T233c : aucun candidat credible en {} ms ({} sondes, {} eau/haut, {} exclus) -> balayage historique",
                     System.currentTimeMillis() - t0, probed, water, skipped);
             return null;
         } catch (Throwable any) {
-            LOGGER.warn("[STRUCT5-FLAT] selection seche T233c en echec ({}), relais par balayage historique", any.toString());
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-FLAT] selection seche T233c en echec ({}), relais par balayage historique", any.toString());
             return null;
         }
     }
@@ -2606,14 +2606,14 @@ public class Structures5Procedure {
         int purged = PASTE_Q.size() + CARVE_Q.size() + POST_Q.size();
         if (purged > 0) {
             PASTE_Q.clear(); CARVE_Q.clear(); POST_Q.clear();
-            LOGGER.warn("[DLB] abandon : {} tache(s) de pose/terrain purgees (generation unique abortee)", purged);
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB] abandon : {} tache(s) de pose/terrain purgees (generation unique abortee)", purged);
         }
         //  (2) marqueur de fin TOUJOURS visible (console + joueurs), quelle
         //      que soit la branche d'abandon : fin du trou noir.
         long totalMs = GENERATION_START_MS == 0L ? -1L
                 : System.currentTimeMillis() - GENERATION_START_MS;
         String abortedName = abortedId >= 0 ? structureDisplayName(nbtNameForId(abortedId)) : "?";
-        LOGGER.info("[DLB] generation {} ABANDONNEE proprement{} -- aucune emission silencieuse possible desormais (T298)",
+        deepluckyblock.util.DebugLog.info(LOGGER, "[DLB] generation {} ABANDONNEE proprement{} -- aucune emission silencieuse possible desormais (T298)",
                 abortedName, totalMs > 0 ? " apres " + (totalMs / 1000) + " s" : "");
         if (level != null && level.getServer() != null) {
             Component msg = Component.literal("\u00a7e\u2716 " + abortedName
@@ -2746,7 +2746,7 @@ public class Structures5Procedure {
         // Deblocage de securite : une generation qui n'a jamais signale sa fin
         // ne doit pas geler la file pour toujours.
         if (GENERATION_BUSY && System.currentTimeMillis() - GENERATION_START_MS > GENERATION_TIMEOUT_MS) {
-            LOGGER.warn("[STRUCT5] Generation precedente sans fin signalee apres {} s -- file debloquee",
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5] Generation precedente sans fin signalee apres {} s -- file debloquee",
                     GENERATION_TIMEOUT_MS / 1000);
             // T226 : la precedente n'a jamais abouti -> elle redevient tirable.
             GenerateLuckyItemProcedure.releaseStructureReservation(CURRENT_STRUCTURE_ID);
@@ -2828,7 +2828,7 @@ public class Structures5Procedure {
             case 4 -> { if (!Structures4Procedure.spawnShipdead(level, origin)) notifyGenerationAborted(level); }
             case 5 -> { if (!Structures4Procedure.spawnEverest(level, origin)) notifyGenerationAborted(level); }
             default -> {
-                LOGGER.warn("[STRUCT5] ID inconnu dans execute : {}", id);
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5] ID inconnu dans execute : {}", id);
                 GenerateLuckyItemProcedure.releaseStructureReservation(id);
                 CURRENT_STRUCTURE_ID = -1;
                 GENERATION_BUSY = false;
@@ -2944,7 +2944,7 @@ public class Structures5Procedure {
             if (!isPlayerChunk(cand, null, origin)) return cand;
         }
         if (wetSkipped > 0)
-            LOGGER.warn("[STRUCT5-FLAT] findSafeOutsideChunkPos : {} offset(s) sous l'eau ecartes (T80)", wetSkipped);
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-FLAT] findSafeOutsideChunkPos : {} offset(s) sous l'eau ecartes (T80)", wetSkipped);
         return origin.offset(32, 0, 32);
     }
 
@@ -2957,7 +2957,7 @@ public class Structures5Procedure {
         if (best != null && SEARCH_BEST_LOADED_DRY_RELIEF <= MAX_FOOTPRINT_GROUND_SPAN
                 && !REJECTED_RUGGED_CENTERS.contains(BlockPos.asLong(best.getX(), 0, best.getZ()))) {
             int by = deepluckyblock.util.SafeSurface.surfaceY(lvl, best.getX(), best.getZ(), origin.getY());
-            LOGGER.warn("[STRUCT5-FLAT] secours abandonne apres {} sauts (plafond {}); repli sur terrain deja charge a {},{} (Y={})",
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-FLAT] secours abandonne apres {} sauts (plafond {}); repli sur terrain deja charge a {},{} (Y={})",
                     jumps, MAX_FALLBACK_JUMPS, best.getX(), best.getZ(), by);
             SEARCH_STALL_START_MS = 0L;   // T232-F : terrain trouve -> fin du regime d'attente
             return new BlockPos(best.getX(), by, best.getZ());
@@ -2993,7 +2993,7 @@ public class Structures5Procedure {
                     SEARCH_ABORTED = true;
                     SEARCH_STALL_START_MS = 0L;
                     SEARCH_FALLBACK_LAST_TARGET = null;
-                    LOGGER.warn("[STRUCT5-FLAT] ABANDON de secours : aucune emprise livrable apres {} s de rearmements (borne dlb.search.stallTimeoutMs). Pose interrompue proprement.",
+                    deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-FLAT] ABANDON de secours : aucune emprise livrable apres {} s de rearmements (borne dlb.search.stallTimeoutMs). Pose interrompue proprement.",
                             SEARCH_STALL_TIMEOUT_MS / 1000);
                     return null;
                 }
@@ -3005,7 +3005,7 @@ public class Structures5Procedure {
                         (g2.getX() + 96) >> 4, (g2.getZ() + 96) >> 4);
                 deepluckyblock.util.ChunkKeeper.trackReplacing(lvl,
                         g2.offset(-96, 0, -96), g2.offset(96, 0, 96));
-                LOGGER.warn("[STRUCT5-FLAT] plafond de sauts atteint sans terrain sec charge : rearmement T231 du secours cible a {},{} (T229 annulait la structure) -- reste {} s avant abandon",
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-FLAT] plafond de sauts atteint sans terrain sec charge : rearmement T231 du secours cible a {},{} (T229 annulait la structure) -- reste {} s avant abandon",
                         g2.getX(), g2.getZ(),
                         Math.max(0L, (SEARCH_STALL_TIMEOUT_MS - (nowMs - SEARCH_STALL_START_MS)) / 1000));
             }
@@ -3078,12 +3078,12 @@ public class Structures5Procedure {
             SELECTED_BEST_IN_1S = true;
             if (SEARCH_BEST_LOADED_DRY != null) {
                 BlockPos best = SEARCH_BEST_LOADED_DRY;
-                LOGGER.info("[STRUCT5-FLAT] Plafond 1s atteint ({} ms) : meilleur candidat charge retenu a {},{} (relief={})",
+                deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-FLAT] Plafond 1s atteint ({} ms) : meilleur candidat charge retenu a {},{} (relief={})",
                         System.currentTimeMillis() - SEARCH_CLOCK_START_MS, best.getX(), best.getZ(), SEARCH_BEST_LOADED_DRY_RELIEF);
                 return best;
             }
             BlockPos emerg = emergencyBestIn1s(lvl, searchOrigin, minEdgeDist + checkR, checkR);
-            LOGGER.info("[STRUCT5-FLAT] Plafond 1s atteint ({} ms) : meilleur candidat de repli retenu a {},{}",
+            deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-FLAT] Plafond 1s atteint ({} ms) : meilleur candidat de repli retenu a {},{}",
                     System.currentTimeMillis() - SEARCH_CLOCK_START_MS, emerg.getX(), emerg.getZ());
             return emerg;
         }
@@ -3117,7 +3117,7 @@ public class Structures5Procedure {
                         (SEARCH_GENERATED_FALLBACK.getZ() - fullCheckR) >> 4,
                         (SEARCH_GENERATED_FALLBACK.getX() + fullCheckR) >> 4,
                         (SEARCH_GENERATED_FALLBACK.getZ() + fullCheckR) >> 4);
-                LOGGER.warn("[STRUCT5-FLAT] secours ciblé non livré après 5 s; déplacement à {},{}",
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-FLAT] secours ciblé non livré après 5 s; déplacement à {},{}",
                         SEARCH_GENERATED_FALLBACK.getX(), SEARCH_GENERATED_FALLBACK.getZ());
                 return null;
             }
@@ -3143,7 +3143,7 @@ public class Structures5Procedure {
                             (g.getX() + fullCheckR) >> 4, (g.getZ() + fullCheckR) >> 4);
                 }
                 if (stalls == 1 || stalls % 100 == 0) {
-                    LOGGER.warn("[STRUCT5-FLAT] secours cible a {},{} : emprise incomplete ({} ticks), re-demande en cours (T229)",
+                    deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-FLAT] secours cible a {},{} : emprise incomplete ({} ticks), re-demande en cours (T229)",
                             g.getX(), g.getZ(), stalls);
                 }
                 if (stalls < 100) return null;
@@ -3157,7 +3157,7 @@ public class Structures5Procedure {
                         (SEARCH_GENERATED_FALLBACK.getZ() - fullCheckR) >> 4,
                         (SEARCH_GENERATED_FALLBACK.getX() + fullCheckR) >> 4,
                         (SEARCH_GENERATED_FALLBACK.getZ() + fullCheckR) >> 4);
-                LOGGER.warn("[STRUCT5-FLAT] secours cible incomplet apres {} ticks; deplacement a {},{} (T229)",
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-FLAT] secours cible incomplet apres {} ticks; deplacement a {},{} (T229)",
                         stalls, SEARCH_GENERATED_FALLBACK.getX(), SEARCH_GENERATED_FALLBACK.getZ());
                 return null;
             }
@@ -3626,11 +3626,11 @@ public class Structures5Procedure {
             // le propose plus : on oublie ce "meilleur" terrain pour laisser la
             // place a un autre, et on continue vers le secours lointain borne.
             if (!REJECTED_RUGGED_CENTERS.contains(BlockPos.asLong(fallback.getX(), 0, fallback.getZ()))) {
-                LOGGER.warn("[STRUCT5-FLAT] secours local chargé choisi à {},{} : relief brut {}, eau=0, génération distante évitée -- T190",
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-FLAT] secours local chargé choisi à {},{} : relief brut {}, eau=0, génération distante évitée -- T190",
                         fallback.getX(), fallback.getZ(), SEARCH_BEST_LOADED_DRY_RELIEF);
                 return fallback;
             }
-            LOGGER.warn("[STRUCT5-FLAT] secours local {},{} deja banni par la porte relief (relief brut {}) -- on l'oublie et on passe au secours lointain (T232-F3)",
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-FLAT] secours local {},{} deja banni par la porte relief (relief brut {}) -- on l'oublie et on passe au secours lointain (T232-F3)",
                     fallback.getX(), fallback.getZ(), SEARCH_BEST_LOADED_DRY_RELIEF);
             SEARCH_BEST_LOADED_DRY = null;
             SEARCH_BEST_LOADED_DRY_RELIEF = Integer.MAX_VALUE;
@@ -3648,7 +3648,7 @@ public class Structures5Procedure {
                     SEARCH_GENERATED_FALLBACK.offset(fullCheckR, 0, fullCheckR));
             // T302-B : ChunkKeeper.trackReplacing pilote deja le chargement de facon bornee et annulable ;
             // requestZone posait 64 ASYNC_TICKET non annulables qui affamaient ensuite le vrai candidat choisi.
-            LOGGER.warn("[STRUCT5-FLAT] zones historiques épuisées jusqu'à 768 blocs : génération ciblée d'une seule emprise à {},{}",
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-FLAT] zones historiques épuisées jusqu'à 768 blocs : génération ciblée d'une seule emprise à {},{}",
                     SEARCH_GENERATED_FALLBACK.getX(), SEARCH_GENERATED_FALLBACK.getZ());
             return null;
         }
@@ -3768,7 +3768,7 @@ public class Structures5Procedure {
                 continue;
             }
             logLoadedTierDigest(c.getX(), c.getZ());   // T296
-            LOGGER.info("[STRUCT5-FLAT] Zone choisie a {},{} (candidat differe pret apres chargement fond, relief={}, flat={}%, Y sol={}, {} s de recherche)",
+            deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-FLAT] Zone choisie a {},{} (candidat differe pret apres chargement fond, relief={}, flat={}%, Y sol={}, {} s de recherche)",
                     c.getX(), c.getZ(), relief, (int) (q.flatExtent() * 100), dg.maxY(),
                     GENERATION_START_MS == 0L ? -1L : (System.currentTimeMillis() - GENERATION_START_MS) / 1000);
             return new BlockPos(c.getX(), dg.maxY(), c.getZ());
@@ -3793,7 +3793,7 @@ public class Structures5Procedure {
         long elapsed = now - GENERATION_START_MS;
         if (elapsed < 10_000 || now - SEARCH_PROGRESS_LAST_MS < 10_000) return;
         SEARCH_PROGRESS_LAST_MS = now;
-        LOGGER.info("[STRUCT5-FLAT] recherche toujours en cours : rayon {} blocs, {} candidat(s) differe(s) en chargement de fond, {} centre(s) ecarte(s), {} s ecoulees -- T230",
+        deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-FLAT] recherche toujours en cours : rayon {} blocs, {} candidat(s) differe(s) en chargement de fond, {} centre(s) ecarte(s), {} s ecoulees -- T230",
                 searchR, SEARCH_DEFERRED.size(), REJECTED_RUGGED_CENTERS.size(), elapsed / 1000);
     }
 
@@ -4215,7 +4215,7 @@ public class Structures5Procedure {
             // immediat du candidat ; [TAG] remplace plus bas par le libelle
             // de la phase concernee, pour un journal exploit wincli.
             if (awaitStalled()) {
-                LOGGER.warn("[STRUCT5-SAFETY] {} : [{}] attente en panne -- plan-zone restant={} fige depuis {} ms -- ABANDON candidat (T294, machine faible) : abandon propre signale (T298) ; un nouveau lucky block relancera une recherche complete",
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-SAFETY] {} : [{}] attente en panne -- plan-zone restant={} fige depuis {} ms -- ABANDON candidat (T294, machine faible) : abandon propre signale (T298) ; un nouveau lucky block relancera une recherche complete",
                         nbt, "emprise-finale", deepluckyblock.util.SafeSurface.zonePlanMissing(),
                         System.currentTimeMillis() - AWAIT_LAST_MOVE_MS);
                 deepluckyblock.util.SafeSurface.dropZonePlan();
@@ -4228,7 +4228,7 @@ public class Structures5Procedure {
             }
             if (awaitElapsed > SAFETY_AWAIT_TIMEOUT_MS) {
                 int missed = deepluckyblock.util.SafeSurface.zonePlanMissing();
-                LOGGER.warn("[STRUCT5-SAFETY] {} : emprise finale INCOMPLETE apres {} ms ({} chunk(s) manquant(s) "
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-SAFETY] {} : emprise finale INCOMPLETE apres {} ms ({} chunk(s) manquant(s) "
                                 + "sur {}x{}) -- ABANDON PROPRE de ce candidat : la file est liberee, au prochain "
                                 + "/dlbtest le pipeline refera une nouvelle recherche. (T232 : borne contre la "
                                 + "boucle silencieuse infinie reproduite en lab)",
@@ -4243,7 +4243,7 @@ public class Structures5Procedure {
             // joueur n'avait AUCUNE trace pendant ce chargement (silence total
             // constate en jeu). WARN borne : au debut puis toutes les 100 reprises.
             if (FOOTPRINT_LOAD_RETRIES == 1 || FOOTPRINT_LOAD_RETRIES % 100 == 0)
-                LOGGER.warn("[STRUCT5-SAFETY] {} : chargement asynchrone de l'emprise finale (reprise {}/{}, "
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-SAFETY] {} : chargement asynchrone de l'emprise finale (reprise {}/{}, "
                                 + "plan-zone restant={} chunk(s), SafeSurface PENDING={}, capDrops={}, {} ms)",
                         nbt, FOOTPRINT_LOAD_RETRIES, MAX_FOOTPRINT_LOAD_RETRIES,
                         deepluckyblock.util.SafeSurface.zonePlanMissing(),
@@ -4517,7 +4517,7 @@ public class Structures5Procedure {
             // immediat du candidat ; [TAG] remplace plus bas par le libelle
             // de la phase concernee, pour un journal exploit wincli.
             if (awaitStalled()) {
-                LOGGER.warn("[STRUCT5-SAFETY] {} : [{}] attente en panne -- plan-zone restant={} fige depuis {} ms -- ABANDON candidat (T294, machine faible) : abandon propre signale (T298) ; un nouveau lucky block relancera une recherche complete",
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-SAFETY] {} : [{}] attente en panne -- plan-zone restant={} fige depuis {} ms -- ABANDON candidat (T294, machine faible) : abandon propre signale (T298) ; un nouveau lucky block relancera une recherche complete",
                         nbt, "x0,6", deepluckyblock.util.SafeSurface.zonePlanMissing(),
                         System.currentTimeMillis() - AWAIT_LAST_MOVE_MS);
                 deepluckyblock.util.SafeSurface.dropZonePlan();
@@ -4529,7 +4529,7 @@ public class Structures5Procedure {
                 return false;   // file liberee : le pipeline re-recherche
             }
             if (awaitElapsed > SAFETY_AWAIT_TIMEOUT_MS) {
-                LOGGER.warn("[STRUCT5-GROUND] {} : emprise x0,6 INCOMPLETE apres {} ms -- ABANDON PROPRE (T232 borne)", nbt, awaitElapsed);
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-GROUND] {} : emprise x0,6 INCOMPLETE apres {} ms -- ABANDON PROPRE (T232 borne)", nbt, awaitElapsed);
                 deepluckyblock.util.SafeSurface.dropZonePlan();
                 deepluckyblock.util.ChunkKeeper.release(level);
                 SAFETY_AWAIT_START_MS = 0L;
@@ -4539,7 +4539,7 @@ public class Structures5Procedure {
             deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-GROUND] {} : centre x0,6 incomplet, chargement asynchrone puis reprise (aucun refus)", nbt);
             // T229 : reprises bornees a 200 ci-dessus ; rendre l'attente visible.
             if (++GROUND_WAIT_TICKS % 10 == 0)
-                LOGGER.warn("[STRUCT5-GROUND] {} : controles de sol toujours en chargement ({} reprises de 4 ticks)", nbt, GROUND_WAIT_TICKS);
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-GROUND] {} : controles de sol toujours en chargement ({} reprises de 4 ticks)", nbt, GROUND_WAIT_TICKS);
             final BlockPos retryOrigin = origin;
             // T291c : la reprise passait de 20 a 4 ticks -- sur zone deja chargee
             // la planification seule coutait 1 s plein avant chaque essai. Sur
@@ -4572,7 +4572,7 @@ public class Structures5Procedure {
             // immediat du candidat ; [TAG] remplace plus bas par le libelle
             // de la phase concernee, pour un journal exploit wincli.
             if (awaitStalled()) {
-                LOGGER.warn("[STRUCT5-SAFETY] {} : [{}] attente en panne -- plan-zone restant={} fige depuis {} ms -- ABANDON candidat (T294, machine faible) : abandon propre signale (T298) ; un nouveau lucky block relancera une recherche complete",
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-SAFETY] {} : [{}] attente en panne -- plan-zone restant={} fige depuis {} ms -- ABANDON candidat (T294, machine faible) : abandon propre signale (T298) ; un nouveau lucky block relancera une recherche complete",
                         nbt, "emprise-entiere", deepluckyblock.util.SafeSurface.zonePlanMissing(),
                         System.currentTimeMillis() - AWAIT_LAST_MOVE_MS);
                 deepluckyblock.util.SafeSurface.dropZonePlan();
@@ -4584,7 +4584,7 @@ public class Structures5Procedure {
                 return false;   // file liberee : le pipeline re-recherche
             }
             if (awaitElapsed > SAFETY_AWAIT_TIMEOUT_MS) {
-                LOGGER.warn("[STRUCT5-GROUND] {} : emprise entiere INCOMPLETE apres {} ms -- ABANDON PROPRE (T232 borne)", nbt, awaitElapsed);
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-GROUND] {} : emprise entiere INCOMPLETE apres {} ms -- ABANDON PROPRE (T232 borne)", nbt, awaitElapsed);
                 deepluckyblock.util.SafeSurface.dropZonePlan();
                 deepluckyblock.util.ChunkKeeper.release(level);
                 SAFETY_AWAIT_START_MS = 0L;
@@ -4593,7 +4593,7 @@ public class Structures5Procedure {
             }
             // T229 : cette reprise n'avait AUCUN journal. WARN periodique borne.
             if (++GROUND_WAIT_TICKS % 10 == 0)
-                LOGGER.warn("[STRUCT5-GROUND] {} : emprise entiere en chargement ({} reprises de 4 ticks)", nbt, GROUND_WAIT_TICKS);
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-GROUND] {} : emprise entiere en chargement ({} reprises de 4 ticks)", nbt, GROUND_WAIT_TICKS);
             final BlockPos retryOrigin = origin;
             deepluckyblock.procedures.TestProcedure.schedule(level,
                     deepluckyblock.procedures.TestProcedure.currentTick(level) + 1, () -> {
@@ -4647,7 +4647,7 @@ public class Structures5Procedure {
             if (baseY < exactGround.minY() - MAX_POST_SMOOTH_DELTA_Y
                     || baseY > exactGround.maxY() + MAX_POST_SMOOTH_DELTA_Y) {
                 int delta = measuredBaseY - baseY;
-                LOGGER.warn("[STRUCT5] {} : Y fallback invalide corrigé avant terrain : {} -> {} "
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5] {} : Y fallback invalide corrigé avant terrain : {} -> {} "
                                 + "(sol exhaustif {}..{}, delta={})",
                         nbt, baseY, measuredBaseY, exactGround.minY(), exactGround.maxY(), delta);
                 baseY = measuredBaseY;
@@ -4671,7 +4671,7 @@ public class Structures5Procedure {
                 PENDING_FLAT_CENTER = null;
                 deepluckyblock.util.SafeSurface.dropZonePlan();
                 deepluckyblock.util.ChunkKeeper.release(level);
-                LOGGER.info("[STRUCT5-GROUND] {} candidat {},{} refuse avant terrain (T301-C) : groundStats max-min={} > {} (median={}, min={}, max={}, {} col)",
+                deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-GROUND] {} candidat {},{} refuse avant terrain (T301-C) : groundStats max-min={} > {} (median={}, min={}, max={}, {} col)",
                         nbt, txz.getX(), txz.getZ(), preSpan, MAX_FOOTPRINT_GROUND_SPAN,
                         pre[0], pre[1], pre[2], pre[3]);
                 final BlockPos retryOrigin = origin;
@@ -4740,7 +4740,7 @@ public class Structures5Procedure {
                     PENDING_FLAT_CENTER = null;
                     deepluckyblock.util.SafeSurface.dropZonePlan();
                     deepluckyblock.util.ChunkKeeper.release(level);
-                    LOGGER.info("[STRUCT5-MOTHER] {} candidat {},{} refuse avant terrain (A1 inter-chunks structure) : ecart={} > {} blocs",
+                    deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-MOTHER] {} candidat {},{} refuse avant terrain (A1 inter-chunks structure) : ecart={} > {} blocs",
                             nbt, txz.getX(), txz.getZ(), worstChunkStep,
                             deepluckyblock.util.TerrainMother.MAX_STRUCTURE_CHUNK_STEP_Y);
                     final BlockPos retryOrigin = origin;
@@ -4751,12 +4751,12 @@ public class Structures5Procedure {
                     });
                     return true;
                 }
-                LOGGER.info("[STRUCT5-MOTHER] {} candidat retenu en <=1s a {},{} : relief={} blocs, A1 inter-chunks={} blocs ({}x{} chunks) -> remodelage Mother direct",
+                deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5-MOTHER] {} candidat retenu en <=1s a {},{} : relief={} blocs, A1 inter-chunks={} blocs ({}x{} chunks) -> remodelage Mother direct",
                         nbt, txz.getX(), txz.getZ(), preSpan, worstChunkStep, sw, sh);
             }
             if (pre[3] >= 16 && Math.abs(pre[0] - baseY) > MAX_POST_SMOOTH_DELTA_Y) {
                 int delta = pre[0] - baseY;
-                LOGGER.warn("[STRUCT5] {} : anchor corrected BEFORE terrain (T76) -- measured ground median={} "
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5] {} : anchor corrected BEFORE terrain (T76) -- measured ground median={} "
                                 + "(min={}, max={}, {} columns) vs center groundY={}; vertical shift of {} block(s), "
                                 + "single offset application preserved",
                         nbt, pre[0], pre[1], pre[2], pre[3], baseY, delta);
@@ -4770,7 +4770,7 @@ public class Structures5Procedure {
                                 + "{} columns, delta={} <= {}",
                         nbt, pre[0], pre[1], pre[2], pre[3], Math.abs(pre[0] - baseY), MAX_POST_SMOOTH_DELTA_Y);
             } else {
-                LOGGER.warn("[STRUCT5] {} : footprint ground NOT measurable before terrain ({} columns) -- center "
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5] {} : footprint ground NOT measurable before terrain ({} columns) -- center "
                                 + "anchor {} kept, post-pass diagnostic still applies (T76)",
                         nbt, pre[3], baseY);
             }
@@ -4787,7 +4787,7 @@ public class Structures5Procedure {
             // T305-CENTER : conserver centerShiftX/centerShiftZ sur rp (corrige le decalage de ~25 blocs sous T104 !)
             rp = rp.above(lift);
             min = min.above(lift); max = max.above(lift);
-            LOGGER.warn("[STRUCT5] {} : plateforme Y={} sous le plafond Y0 (eau exterieure max Y={} "
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5] {} : plateforme Y={} sous le plafond Y0 (eau exterieure max Y={} "
                             + "a moins de {} blocs hors-emprise) -- PLATEFORME REMONTEE de {} bloc(s) a Y={} "
                             + "et POSE MAINTENUE (T104 : jamais d'abandon silencieux, precedent T88-everest)",
                     nbt, oldBaseY, y0Water, deepluckyblock.util.SafeSurface.Y0_BAND,
@@ -4812,7 +4812,7 @@ public class Structures5Procedure {
                     rp = rp.below(drop);
                     min = min.below(drop);
                     max = max.below(drop);
-                    LOGGER.warn("[STRUCT5] {} : sommet prevu au-dessus de maxBuildHeight={} -- "
+                    deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5] {} : sommet prevu au-dessus de maxBuildHeight={} -- "
                                     + "ancrage abaisse de {} bloc(s) (Y={} -> Y={}, maxY={}) (T313)",
                             nbt, level.getMaxBuildHeight(), drop, oldBaseY, baseY, max.getY());
                 }
@@ -4826,7 +4826,7 @@ public class Structures5Procedure {
                     rp = rp.above(liftFloor);
                     min = min.above(liftFloor);
                     max = max.above(liftFloor);
-                    LOGGER.warn("[STRUCT5] {} : fondation sous minBuildHeight={} -- "
+                    deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5] {} : fondation sous minBuildHeight={} -- "
                                     + "ancrage remonte de {} bloc(s) (Y={} -> Y={}) (T313)",
                             nbt, level.getMinBuildHeight(), liftFloor, oldBaseY, baseY);
                 }
@@ -4840,7 +4840,7 @@ public class Structures5Procedure {
             int dzAlign = min.getZ() - (rp.getZ() + rbAlign[2]);
             if (dxAlign != 0 || dyAlign != 0 || dzAlign != 0) {
                 rp = rp.offset(dxAlign, dyAlign, dzAlign);
-                LOGGER.info("[STRUCT5] T305-CENTER : rp recale de ({},{},{}) pour alignement exact sur min..max {}",
+                deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5] T305-CENTER : rp recale de ({},{},{}) pour alignement exact sur min..max {}",
                         dxAlign, dyAlign, dzAlign, min.toShortString());
             }
         }
@@ -4903,16 +4903,16 @@ public class Structures5Procedure {
                             nbt, selectedGroundY, oy, firstBlockY,
                             ground[0], ground[1], ground[2], ground[3]);
                     if (ground[3] == 0) {
-                        LOGGER.warn("[STRUCT5] {} : no usable ground samples; support and entrance accessibility NOT verified", nbt);
+                        deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5] {} : no usable ground samples; support and entrance accessibility NOT verified", nbt);
                     } else {
                         if (Math.abs(ground[0] - selectedGroundY) > MAX_POST_SMOOTH_DELTA_Y
                                 || ground[2] - ground[1] > MAX_FOOTPRINT_GROUND_SPAN) {
-                            LOGGER.warn("[STRUCT5] {} : uneven ground remains (selected={}, median={}, min={}, max={}); "
+                            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5] {} : uneven ground remains (selected={}, median={}, min={}, max={}); "
                                             + "model anchor and manual offset preserved, visual inspection required",
                                     nbt, selectedGroundY, ground[0], ground[1], ground[2]);
                         }
                         if (firstBlockY > ground[0] + 1) {
-                            LOGGER.warn("[STRUCT5] {} : possible unsupported model (first blockY={}, median ground={}); "
+                            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5] {} : possible unsupported model (first blockY={}, median ground={}); "
                                             + "no automatic sinking or excavation applied", nbt, firstBlockY, ground[0]);
                         }
                     }
@@ -5009,7 +5009,7 @@ public class Structures5Procedure {
         try { for (Field f : StructureTemplate.class.getDeclaredFields()) { f.setAccessible(true); Object val = f.get(t);
             if (val instanceof List<?> list && !list.isEmpty() && list.get(0) instanceof StructureTemplate.Palette)
                 return ((StructureTemplate.Palette) list.get(0)).blocks(); }
-        } catch (Exception e) { LOGGER.warn("[STRUCT5] Reflection echouee: {}", e.getMessage()); }
+        } catch (Exception e) { deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5] Reflection echouee: {}", e.getMessage()); }
         return Collections.emptyList();
     }
 
@@ -5211,7 +5211,7 @@ public class Structures5Procedure {
             }
             if (any) chest.setChanged();
         } catch (Throwable t) {
-            LOGGER.warn("[STRUCT5-EVEREST] Impossible de nettoyer {} : {}", pos.toShortString(), t.getMessage());
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-EVEREST] Impossible de nettoyer {} : {}", pos.toShortString(), t.getMessage());
         }
     }
 
@@ -5260,7 +5260,7 @@ public class Structures5Procedure {
             if (e.getValue() <= summitThreshold) valid.add(e);
         }
         if (valid.isEmpty()) {
-            LOGGER.warn("[STRUCT5-EVEREST] Aucune surface hors sommet -> pas de mobs");
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[STRUCT5-EVEREST] Aucune surface hors sommet -> pas de mobs");
             return;
         }
         Collections.shuffle(valid, new java.util.Random(r.nextLong()));

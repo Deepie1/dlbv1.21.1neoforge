@@ -167,13 +167,13 @@ public final class TerrainEditClamp {
             try {
                 level.getBlockTicks().clearArea(box);
             } catch (Throwable t) {
-                LOGGER.warn("[DLB-CLAMP] clearArea(blockTicks) indisponible : {}", t.toString());
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-CLAMP] clearArea(blockTicks) indisponible : {}", t.toString());
                 ENABLED = false;
             }
             try {
                 level.getFluidTicks().clearArea(box);
             } catch (Throwable t) {
-                LOGGER.warn("[DLB-CLAMP] clearArea(fluidTicks) indisponible : {}", t.toString());
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-CLAMP] clearArea(fluidTicks) indisponible : {}", t.toString());
                 ENABLED = false;
             }
         }
@@ -194,7 +194,7 @@ public final class TerrainEditClamp {
             // C'est la seule mesure qui remonte l'information AVANT la mort du
             // serveur -- indispensable pour ne pas corriger a l'aveugle.
             if (period >= LAGPROBE_MS) {
-                LOGGER.warn("[DLB-LAGPROBE] periode de tick de {} ms pendant la phase \u00ab {} \u00bb"
+                deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-LAGPROBE] periode de tick de {} ms pendant la phase \u00ab {} \u00bb"
                                 + " -- c'est cette phase qui accapare le thread principal ({} ; {} tick(s) > 1 s au total)",
                         period, deepluckyblock.util.DebugLog.phaseNow(), ChunkKeeper.stats(level), r.stallTicks);
             }

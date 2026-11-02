@@ -95,7 +95,7 @@ public final class LuckyStatsSyncCompatibility {
     private static void logFailureOnce(Throwable error) {
         if (failureLogged) return;
         failureLogged = true;
-        System.err.println("[DeepLuckyBlock/LuckyStats] immediate sync unavailable; "
+        deepluckyblock.util.DebugLog.err("[DeepLuckyBlock/LuckyStats] immediate sync unavailable; "
                 + "native polling remains active: " + error);
     }
 }

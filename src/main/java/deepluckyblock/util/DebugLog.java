@@ -41,9 +41,51 @@ public final class DebugLog {
      * LOGGER.warn / LOGGER.error (les vrais problemes restent visibles).
      */
     public static void info(Logger logger, String msg, Object... args) {
-        if (!ENABLED) return;
+        if (!ENABLED || logger == null) return;
         if (args == null || args.length == 0) logger.info(msg);
+        else if (args.length == 1 && args[0] instanceof Throwable t && (msg == null || !msg.contains("{}"))) logger.info(msg, t);
         else logger.info(msg, args);
+    }
+
+    public static void info(org.apache.logging.log4j.Logger logger, String msg, Object... args) {
+        if (!ENABLED || logger == null) return;
+        if (args == null || args.length == 0) logger.info(msg);
+        else if (args.length == 1 && args[0] instanceof Throwable t && (msg == null || !msg.contains("{}"))) logger.info(msg, t);
+        else logger.info(msg, args);
+    }
+
+    public static void warn(Logger logger, String msg, Object... args) {
+        if (!ENABLED || logger == null) return;
+        if (args == null || args.length == 0) logger.warn(msg);
+        else if (args.length == 1 && args[0] instanceof Throwable t && (msg == null || !msg.contains("{}"))) logger.warn(msg, t);
+        else logger.warn(msg, args);
+    }
+
+    public static void warn(org.apache.logging.log4j.Logger logger, String msg, Object... args) {
+        if (!ENABLED || logger == null) return;
+        if (args == null || args.length == 0) logger.warn(msg);
+        else if (args.length == 1 && args[0] instanceof Throwable t && (msg == null || !msg.contains("{}"))) logger.warn(msg, t);
+        else logger.warn(msg, args);
+    }
+
+    public static void out(Object msg) {
+        if (!ENABLED) return;
+        System.out.println(msg);
+    }
+
+    public static void err(Object msg) {
+        if (!ENABLED) return;
+        System.err.println(msg);
+    }
+
+    public static void trace(Throwable t) {
+        if (!ENABLED || t == null) return;
+        t.printStackTrace(System.err);
+    }
+
+    public static void trace(Throwable t, java.io.PrintStream ps) {
+        if (!ENABLED || t == null) return;
+        t.printStackTrace(ps != null ? ps : System.err);
     }
 
     /** Interrupteur general. false = silence total (hors erreurs/warnings reels).

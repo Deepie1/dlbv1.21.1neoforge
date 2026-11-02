@@ -132,7 +132,7 @@ public final class MotherAISnowDirector {
             ollamaState = (code >= 200 && code < 300) ? 1 : 0;
             lastDiag = "HTTP " + code;
             if (ollamaState == 1)
-                System.out.println("[DLB T290] IA mere : Ollama DETECTE sur " + baseUrl + " -- consultation active.");
+                deepluckyblock.util.DebugLog.out("[DLB T290] IA mere : Ollama DETECTE sur " + baseUrl + " -- consultation active.");
         } catch (Throwable t) {
             ollamaState = 0;
             lastDiag = t.getClass().getSimpleName() + " : " + String.valueOf(t.getMessage());
@@ -239,12 +239,12 @@ public final class MotherAISnowDirector {
                 SnowPlan plan = MotherSnowBrain.decide(mother,
                         (System.nanoTime() - t0) / 1_000_000L);
                 long us = (System.nanoTime() - t0) / 1_000L;
-                System.out.println("[DLB T293] IA mere (cerveau embarque) : rayon "
+                deepluckyblock.util.DebugLog.out("[DLB T293] IA mere (cerveau embarque) : rayon "
                         + plan.radiusChunks() + ", boosts " + plan.childAuraBoost().size()
                         + " (" + us + " us) — 0 cout reseau, 0 installation requise.");
                 return CompletableFuture.completedFuture(plan);
             } catch (Throwable t) {
-                System.out.println("[DLB T293] IA mere (cerveau embarque) en echec ("
+                deepluckyblock.util.DebugLog.out("[DLB T293] IA mere (cerveau embarque) en echec ("
                         + t.getClass().getSimpleName() + " : " + t.getMessage()
                         + ") — fallback deterministe T289.");
                 return CompletableFuture.completedFuture(null);
@@ -255,7 +255,7 @@ public final class MotherAISnowDirector {
         final String baseUrl = parts.length > 1 ? parts[1] : DEFAULT_URL;
         return CompletableFuture.supplyAsync(() -> {
             if (!ollamaReachable(baseUrl)) {
-                System.out.println("[DLB T290] IA mere : demandee mais Ollama indisponible (" + lastDiag
+                deepluckyblock.util.DebugLog.out("[DLB T290] IA mere : demandee mais Ollama indisponible (" + lastDiag
                         + ") — gaussien deterministe T289 conserve pour cette zone.");
                 return null;
             }
@@ -282,25 +282,25 @@ public final class MotherAISnowDirector {
                 HttpResponse<String> resp = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
                 long dt = System.currentTimeMillis() - t0;
                 if (resp.statusCode() == 404) {
-                    System.out.println("[DLB T290] IA mere : modele '" + model
+                    deepluckyblock.util.DebugLog.out("[DLB T290] IA mere : modele '" + model
                             + "' absent d'Ollama -- installez-le une fois :  ollama pull " + model
                             + "  (fallback deterministe T289 en attendant).");
                     return null;
                 }
                 if (resp.statusCode() / 100 != 2) {
-                    System.out.println("[DLB T290] IA mere : Ollama HTTP " + resp.statusCode() + " — fallback deterministe.");
+                    deepluckyblock.util.DebugLog.out("[DLB T290] IA mere : Ollama HTTP " + resp.statusCode() + " — fallback deterministe.");
                     return null;
                 }
                 SnowPlan plan = parsePlan(resp.body(), model, dt);
                 if (plan == null) {
-                    System.out.println("[DLB T290] IA mere : reponse illisible apres " + dt + " ms — fallback deterministe.");
+                    deepluckyblock.util.DebugLog.out("[DLB T290] IA mere : reponse illisible apres " + dt + " ms — fallback deterministe.");
                 } else {
-                    System.out.println("[DLB T290] IA mere : plan recu du modele " + model + " en " + dt
+                    deepluckyblock.util.DebugLog.out("[DLB T290] IA mere : plan recu du modele " + model + " en " + dt
                             + " ms : radius=" + plan.radiusChunks() + ", boosts=" + plan.childAuraBoost().size());
                 }
                 return plan;
             } catch (Throwable t) {
-                System.out.println("[DLB T290] IA mere : consultation en echec ("
+                deepluckyblock.util.DebugLog.out("[DLB T290] IA mere : consultation en echec ("
                         + t.getClass().getSimpleName() + " : " + t.getMessage()
                         + ") — fallback deterministe T289.");
                 return null;

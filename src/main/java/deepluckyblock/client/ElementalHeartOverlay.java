@@ -304,7 +304,7 @@ public final class ElementalHeartOverlay {
     public static void onRenderHealth(RenderGuiLayerEvent.Post event) {
         if (!VanillaGuiLayers.PLAYER_HEALTH.equals(event.getName())) return;
         try { render(event); } catch (Throwable t) {
-            System.err.println("[DeepLuckyBlock] ElementalHeartOverlay render error: " + t);
+            deepluckyblock.util.DebugLog.err("[DeepLuckyBlock] ElementalHeartOverlay render error: " + t);
         }
     }
 
