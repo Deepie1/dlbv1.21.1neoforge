@@ -1,0 +1,37 @@
+{
+  "providers": [
+    {
+      "type": "space",
+      "advances": {
+        " ": 4,
+        " ": 4
+      }
+    },
+    {
+      "type": "bitmap",
+      "file": "deep_lucky_block:font/pixel_musketeer.png",
+      "height": 16,
+      "ascent": 13,
+      "chars": [
+        "!\"#$%&'()*+,-./0",
+        "123456789:;<=>?@",
+        "ABCDEFGHIJKLMNOP",
+        "QRSTUVWXYZ[\\]^_`",
+        "abcdefghijklmnop",
+        "qrstuvwxyz{|}~¡¢",
+        "£¤¥¦§¨©«¬®°´µ¶·¸",
+        "»¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍ",
+        "ÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝ",
+        "Þßàáâãäåæçèéêëìí",
+        "îïðñòóôõö÷øùúûüý",
+        "þÿıŒœŸˆˇˉ˘˙˚˛˜˝;",
+        "–—‘’‚“”„†‡•…‹›⁄₣",
+        "₤₧€№™−∕∙\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000"
+      ]
+    },
+    {
+      "type": "reference",
+      "id": "minecraft:default"
+    }
+  ]
+}

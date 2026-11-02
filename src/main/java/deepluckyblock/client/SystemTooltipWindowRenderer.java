@@ -19,6 +19,8 @@ import net.minecraft.locale.Language;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.FormattedText;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.TextColor;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.entity.player.Player;
@@ -40,28 +42,25 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * T325-SYSTEM-PANEL-V2 : Panneau d'infobulle style « System Window » (Solo Leveling / ORV)
- * entièrement unifié, aéré et mis à l'échelle dynamiquement selon la taille de l'écran.
- *
- * Corrections clés (retours captures d'écran en jeu) :
- *  1) Terminologie exacte du mod uniquement : « ENCHANTEMENTS » & « COMBO ACTIF »
- *     (retrait total de « SKILLS & RUNES », « 1 RUNE », « SYSTEM · SCAN » et « AWAKENED SYNERGY »).
- *  2) Zéro double retour à la ligne cassé : tout le panneau est rendu dans un unique
- *     ClientTooltipComponent vectoriel -> ClientHooks ne re-coupe jamais les phrases au milieu.
- *  3) Hiérarchie typographique claire & marges respirantes :
- *     - Titre de l'objet (1.00x)
- *     - En-têtes de section espacés (0.86x, cyan #38BDF8 / or #FBBF24)
- *     - Noms d'enchantements / combos en blanc pur (0.92x) avec badge [Rareté] aligné à droite
- *     - Descriptions plus fines (0.80x) en blanc-glace haute lisibilité (#DCE7F5) derrière une
- *       fine barre verticale colorée, avec 6 px d'air entre chaque bloc.
- *  4) Police adaptative à la résolution + anti-débordement absolu : si l'écran / la fenêtre est
- *     petite ou en grand GUI Scale, le facteur d'échelle s'adapte automatiquement pour que
- *     100 % du panneau tienne toujours à l'écran sans jamais être coupé en haut ni en bas.
+ * T325 / T326 : Panneau d'infobulle d'inspiration fantasy / manhwa sombre (sans aucun texte
+ * littéral « SYSTEM » ou « SCAN »), aéré, adaptatif à la taille d'écran, avec :
+ *  - Titre de l'objet centré en haut dans la police dédiée « Pixel Musketeer »
+ *    (assets/deep_lucky_block/font/pixel_musketeer.json), légèrement agrandi et rendu brillant
+ *    (halo elliptique respirant, ombre colorée prestige, reflet stellaire mobile et filet centré
+ *    à gemme centrale).
+ *  - Artefacts mystiques déterministes-aléatoires autour du titre lorsque l'objet possède des
+ *    enchantements rares / épiques / mythiques / légendaires ou un combo actif (6 archétypes
+ *    pixel-art distincts tirés par graine stable de l'objet).
+ *  - Terminologie stricte du mod : « ENCHANTEMENTS » & « COMBO ACTIF » uniquement.
+ *  - Adaptation automatique de l'échelle à la résolution / GUI Scale pour zéro débordement.
  */
 @EventBusSubscriber(modid = DeepLuckyBlockMod.MODID, value = Dist.CLIENT)
 public final class SystemTooltipWindowRenderer {
 
     private SystemTooltipWindowRenderer() {}
+
+    private static final ResourceLocation PIXEL_MUSKETEER_FONT =
+            ResourceLocation.fromNamespaceAndPath(DeepLuckyBlockMod.MODID, "pixel_musketeer");
 
     // Palette haute lisibilité (contraste AAA sur fond abyssal)
     private static final int BG_ABYSS_TOP     = 0xF6060D1D;
@@ -76,8 +75,9 @@ public final class SystemTooltipWindowRenderer {
     private static final int TEXT_BRIGHT      = 0xFFF8FAFC;
     private static final int TEXT_DESC_ICE    = 0xFFDCE7F5;
 
-    // Échelles typographiques internes (relatives à uiScale)
-    private static final float S_TITLE   = 1.00f;
+    // Échelles typographiques internes (Pixel Musketeer a déjà des capitales de 9px vs 7px vanilla,
+    // donc S_TITLE = 1.05f donne un titre subtilement plus grand et majestueux sans alourdir).
+    private static final float S_TITLE   = 1.05f;
     private static final float S_SECTION = 0.86f;
     private static final float S_ITEM    = 0.92f;
     private static final float S_ATTR    = 0.88f;
@@ -113,7 +113,20 @@ public final class SystemTooltipWindowRenderer {
             TitleRow, SectionHeaderRow, EnchantGridRow, SplitItemRow,
             IndentedBarTextRow, IndentedBarSeqRow, PlainComponentRow, RuleRow, SpacerRow {}
 
-    private record TitleRow(Component title, int accentColor, int y, int height) implements CardRow {}
+    /**
+     * En-tête centré en police Pixel Musketeer, stylisé brillant, avec artefacts optionnels
+     * (artifactVariant = -1 si aucun artefact, ou 0..5 selon la graine rare de l'objet).
+     */
+    private record TitleRow(
+            Component styledTitle,
+            int mainRgb,
+            int brightRgb,
+            int rarityTier,
+            int artifactVariant,
+            int itemSeed,
+            int y,
+            int height
+    ) implements CardRow {}
 
     private record SectionHeaderRow(String title, String rightHint, boolean gold, int y, int height) implements CardRow {}
 
@@ -182,7 +195,9 @@ public final class SystemTooltipWindowRenderer {
 
         @Override
         public void renderImage(Font font, int x, int y, GuiGraphics g) {
-            // 1) Coins extérieurs Solo Leveling / ORV (1:1 pixels écran pour une netteté parfaite)
+            double timeSec = (System.nanoTime() * 1.0e-9);
+
+            // 1) Coins extérieurs lumineux (1:1 pixels écran pour une netteté parfaite)
             if (frameBoxW > 0 && frameBoxH > 0 && Math.abs(x - frameBoxX) <= 3) {
                 int left = frameBoxX - 4;
                 int top = frameBoxY - 4;
@@ -204,22 +219,16 @@ public final class SystemTooltipWindowRenderer {
                 g.fill(right - 1, bottom - arm, right, bottom, CORNER_STARLIGHT);
             }
 
-            // 2) Contenu interne mis à l'échelle proportionnellement à l'écran
             int lw = data.logicalWidth();
             float sc = data.uiScale();
             int padX = 4;
             int innerW = lw - padX * 2;
+            int centerX = lw / 2;
 
-            // Passe 2a : filets horizontaux 1px et barres verticales d'accentuation en pixels écran exacts
-            // (évite toute disparition sub-pixel quand sc < 1.0 sur petit écran)
+            // 2a) Halo du titre, artefacts pixel-art et filets 1px en coordonnées écran exactes
             for (CardRow row : data.rows()) {
                 if (row instanceof TitleRow tr) {
-                    int barY = tr.y() + 11;
-                    int third = Math.max(12, innerW / 3);
-                    fillHairlineH(g, x, y, sc, padX, padX + 8, barY, tr.accentColor() | 0xFF000000);
-                    fillHairlineH(g, x, y, sc, padX + 8, padX + third, barY, 0xCC38BDF8);
-                    fillHairlineH(g, x, y, sc, padX + third, padX + third * 2, barY, 0x772563EB);
-                    fillHairlineH(g, x, y, sc, padX + third * 2, padX + innerW, barY, 0x331E3A8A);
+                    renderTitleBackdropAndArtifacts(g, font, x, y, sc, lw, padX, innerW, centerX, tr, timeSec);
                 } else if (row instanceof SectionHeaderRow sr) {
                     int lColor = sr.gold() ? 0x66F59E0B : 0x5538BDF8;
                     int titlePx = scaledWidth(font, sr.title(), S_SECTION);
@@ -254,14 +263,14 @@ public final class SystemTooltipWindowRenderer {
                 }
             }
 
-            // Passe 2b : textes vectoriels mis à l'échelle
+            // 2b) Rendu vectoriel des textes mis à l'échelle
             g.pose().pushPose();
             g.pose().translate(x, y, 0.0F);
             g.pose().scale(sc, sc, 1.0F);
 
             for (CardRow row : data.rows()) {
                 if (row instanceof TitleRow tr) {
-                    drawScaledComponent(g, font, tr.title(), padX, tr.y() + 1, S_TITLE, 0xFFFFFFFF);
+                    drawRadiantCenteredTitle(g, font, tr, lw, innerW, timeSec);
                 } else if (row instanceof SectionHeaderRow sr) {
                     int tColor = sr.gold() ? GOLD_HEADER : CYAN_HEADER;
                     drawScaledString(g, font, sr.title(), padX, sr.y() + 1, S_SECTION, tColor);
@@ -295,6 +304,237 @@ public final class SystemTooltipWindowRenderer {
             }
 
             g.pose().popPose();
+        }
+
+        /**
+         * Dessine le halo elliptique doux derrière le titre centré, le filet symétrique fuselé
+         * à gemme centrale animée, ainsi que l'artefact mystique aléatoire de l'objet (si rare).
+         */
+        private static void renderTitleBackdropAndArtifacts(
+                GuiGraphics g, Font font, int baseX, int baseY, float sc,
+                int lw, int padX, int innerW, int centerX, TitleRow tr, double timeSec) {
+
+            int rawTitleW = Math.max(12, font.width(tr.styledTitle()));
+            int availForTitle = tr.artifactVariant() >= 0 ? Math.max(80, innerW - 44) : Math.max(80, innerW - 12);
+            float effScale = Math.min(S_TITLE, availForTitle / (float) rawTitleW);
+            int halfTitleW = Math.max(8, Math.round((rawTitleW * effScale) * 0.5f));
+
+            float pulse = 0.86f + 0.14f * (float) Math.sin(timeSec * 2.4 + (tr.itemSeed() & 0xFF) * 0.05);
+            int mainRgb = tr.mainRgb();
+            int brightRgb = tr.brightRgb();
+            int cy = tr.y() + 9; // centre vertical visuel des capitales Pixel Musketeer
+
+            // 1) Halo elliptique progressif derrière le titre centré
+            fillLogicalRect(g, baseX, baseY, sc, centerX - halfTitleW - 14, cy - 4, centerX + halfTitleW + 14, cy + 5,
+                    withAlpha(mainRgb, Math.round(13 * pulse)));
+            fillLogicalRect(g, baseX, baseY, sc, centerX - halfTitleW - 8, cy - 5, centerX + halfTitleW + 8, cy + 6,
+                    withAlpha(mainRgb, Math.round(22 * pulse)));
+            fillLogicalRect(g, baseX, baseY, sc, centerX - halfTitleW - 2, cy - 4, centerX + halfTitleW + 2, cy + 5,
+                    withAlpha(brightRgb, Math.round(28 * pulse)));
+
+            // 2) Filet symétrique fuselé centré sous le titre + éclat mobile + gemme centrale
+            int barY = tr.y() + 18;
+            int wingHalf = Math.min(innerW / 2 - 4, Math.max(halfTitleW + 22, innerW * 2 / 5));
+            int midHalf = Math.max(18, wingHalf * 3 / 5);
+            int coreHalf = Math.max(8, wingHalf / 4);
+
+            fillHairlineH(g, baseX, baseY, sc, centerX - wingHalf, centerX + wingHalf, barY, withAlpha(mainRgb, 62));
+            fillHairlineH(g, baseX, baseY, sc, centerX - midHalf, centerX + midHalf, barY, withAlpha(mainRgb, 148));
+            fillHairlineH(g, baseX, baseY, sc, centerX - coreHalf, centerX + coreHalf, barY, withAlpha(brightRgb, 225));
+
+            // Reflet stellaire glissant le long du filet
+            int sweepOffset = (int) Math.round(Math.sin(timeSec * 1.85 + (tr.itemSeed() & 31)) * (midHalf - 6));
+            fillHairlineH(g, baseX, baseY, sc, centerX + sweepOffset - 4, centerX + sweepOffset + 4, barY,
+                    withAlpha(0xFFFFFF, 210));
+
+            // Gemme losange au centre du filet
+            int sxCenter = baseX + Math.round(centerX * sc);
+            int syBar = baseY + Math.round(barY * sc);
+            g.fill(sxCenter - 1, syBar - 1, sxCenter + 2, syBar + 2, withAlpha(mainRgb, 230));
+            g.fill(sxCenter, syBar, sxCenter + 1, syBar + 1, 0xFFFFFFFF);
+
+            // 3) Artefacts mystiques autour du titre (uniquement si déclenchés par la rareté)
+            if (tr.artifactVariant() < 0) return;
+
+            int lx = centerX - halfTitleW - 6;
+            int rx = centerX + halfTitleW + 6;
+            int minX = padX + 2;
+            int maxX = padX + innerW - 2;
+            int bob = (int) Math.round(Math.sin(timeSec * 2.8 + (tr.itemSeed() & 15)) * 1.0);
+            int twinkleA = 165 + (int) Math.round(85 * (0.5 + 0.5 * Math.sin(timeSec * 4.2 + ((tr.itemSeed() >>> 4) & 15))));
+
+            switch (tr.artifactVariant()) {
+                case 0 -> {
+                    // Archétype 0 : Ailes Séraphiques étagées + poussière d'étoile
+                    if (lx - 10 >= minX && rx + 10 <= maxX) {
+                        fillPixelPip(g, baseX, baseY, sc, lx, cy, brightRgb, 240);
+                        fillPixelPip(g, baseX, baseY, sc, rx - 1, cy, brightRgb, 240);
+
+                        fillHairlineH(g, baseX, baseY, sc, Math.max(minX, lx - 8), lx - 2, cy - 2, withAlpha(mainRgb, 215));
+                        fillHairlineH(g, baseX, baseY, sc, Math.max(minX, lx - 12), lx - 3, cy, withAlpha(brightRgb, 235));
+                        fillHairlineH(g, baseX, baseY, sc, Math.max(minX, lx - 9), lx - 2, cy + 2, withAlpha(mainRgb, 175));
+
+                        fillHairlineH(g, baseX, baseY, sc, rx + 2, Math.min(maxX, rx + 8), cy - 2, withAlpha(mainRgb, 215));
+                        fillHairlineH(g, baseX, baseY, sc, rx + 3, Math.min(maxX, rx + 12), cy, withAlpha(brightRgb, 235));
+                        fillHairlineH(g, baseX, baseY, sc, rx + 2, Math.min(maxX, rx + 9), cy + 2, withAlpha(mainRgb, 175));
+
+                        if (lx - 15 >= minX && rx + 15 <= maxX) {
+                            fillPixelPip(g, baseX, baseY, sc, lx - 15, cy - 1 + bob, 0xFFFFFF, twinkleA);
+                            fillPixelPip(g, baseX, baseY, sc, rx + 14, cy - 1 - bob, 0xFFFFFF, twinkleA);
+                        }
+                    }
+                }
+                case 1 -> {
+                    // Archétype 1 : Éclats de Relique Cristalline asymétriques en lévitation
+                    int dyAsym = ((tr.itemSeed() >>> 9) & 1) == 0 ? -1 : 1;
+                    for (int side : new int[]{-1, 1}) {
+                        int bx = (side < 0) ? (lx - 2) : (rx + 2);
+                        if (bx - 2 < minX || bx + 2 > maxX) continue;
+                        int cyLocal = cy + (side < 0 ? bob : -bob);
+                        // Petit cristal losange à cœur blanc
+                        fillHairlineV(g, baseX, baseY, sc, bx, cyLocal - 1, cyLocal + 2, withAlpha(mainRgb, 220));
+                        fillHairlineH(g, baseX, baseY, sc, bx - 1, bx + 2, cyLocal, withAlpha(mainRgb, 220));
+                        fillPixelPip(g, baseX, baseY, sc, bx, cyLocal, 0xFFFFFF, 248);
+
+                        int s1 = bx + side * 5;
+                        int s2 = bx + side * 9;
+                        if (s1 >= minX && s1 + 1 <= maxX) {
+                            fillHairlineH(g, baseX, baseY, sc, Math.min(s1, s1 + side * 2), Math.max(s1, s1 + side * 2) + 1,
+                                    cy - 2 * dyAsym, withAlpha(brightRgb, 215));
+                        }
+                        if (s2 >= minX && s2 < maxX) {
+                            fillPixelPip(g, baseX, baseY, sc, s2, cy + 2 * dyAsym, 0xFFFFFF, twinkleA);
+                        }
+                    }
+                }
+                case 2 -> {
+                    // Archétype 2 : Lames / Hallebardes Runiques jumelles (◄══╪  ...  ╪══►)
+                    if (lx - 13 >= minX && rx + 13 <= maxX) {
+                        // Garde verticale
+                        fillHairlineV(g, baseX, baseY, sc, lx - 1, cy - 2, cy + 3, withAlpha(brightRgb, 230));
+                        fillHairlineV(g, baseX, baseY, sc, rx + 1, cy - 2, cy + 3, withAlpha(brightRgb, 230));
+                        // Hampe runique
+                        fillHairlineH(g, baseX, baseY, sc, lx - 11, lx + 1, cy, withAlpha(mainRgb, 225));
+                        fillHairlineH(g, baseX, baseY, sc, rx, rx + 12, cy, withAlpha(mainRgb, 225));
+                        // Pointe étincelante
+                        fillPixelPip(g, baseX, baseY, sc, lx - 12, cy, 0xFFFFFF, 245);
+                        fillPixelPip(g, baseX, baseY, sc, rx + 12, cy, 0xFFFFFF, 245);
+                        if (tr.rarityTier() >= 4 && lx - 15 >= minX && rx + 15 <= maxX) {
+                            fillPixelPip(g, baseX, baseY, sc, lx - 15, cy + bob, brightRgb, twinkleA);
+                            fillPixelPip(g, baseX, baseY, sc, rx + 15, cy - bob, brightRgb, twinkleA);
+                        }
+                    }
+                }
+                case 3 -> {
+                    // Archétype 3 : Croissants Astraux & Étoiles Polaires latérales (sans gêner les accents hauts)
+                    for (int side : new int[]{-1, 1}) {
+                        int bx = (side < 0) ? (lx - 1) : (rx + 1);
+                        if (bx - 3 < minX || bx + 3 > maxX) continue;
+                        fillHairlineV(g, baseX, baseY, sc, bx, cy - 2, cy + 3, withAlpha(brightRgb, 230));
+                        fillPixelPip(g, baseX, baseY, sc, bx - side, cy - 3, mainRgb, 195);
+                        fillPixelPip(g, baseX, baseY, sc, bx - side, cy + 3, mainRgb, 195);
+
+                        int starX = bx + side * 5;
+                        if (starX - 1 >= minX && starX + 2 <= maxX) {
+                            int sy = cy + (side < 0 ? bob : -bob);
+                            fillHairlineH(g, baseX, baseY, sc, starX - 1, starX + 2, sy, withAlpha(brightRgb, twinkleA));
+                            fillHairlineV(g, baseX, baseY, sc, starX, sy - 1, sy + 2, withAlpha(brightRgb, twinkleA));
+                            fillPixelPip(g, baseX, baseY, sc, starX, sy, 0xFFFFFF, 250);
+                        }
+                    }
+                }
+                case 4 -> {
+                    // Archétype 4 : Constellation Abyssale reliée par fils de mana
+                    for (int side : new int[]{-1, 1}) {
+                        int n1x = (side < 0) ? (lx - 1) : (rx + 1);
+                        int n2x = n1x + side * 5;
+                        int n3x = n1x + side * 10;
+                        if (n3x < minX || n3x >= maxX) continue;
+
+                        fillHairlineH(g, baseX, baseY, sc, Math.min(n1x, n2x), Math.max(n1x, n2x) + 1, cy - 1, withAlpha(mainRgb, 85));
+                        fillHairlineH(g, baseX, baseY, sc, Math.min(n2x, n3x), Math.max(n2x, n3x) + 1, cy + 1, withAlpha(mainRgb, 70));
+
+                        fillPixelPip(g, baseX, baseY, sc, n1x, cy + 1, 0xFFFFFF, 245);
+                        fillPixelPip(g, baseX, baseY, sc, n2x, cy - 2, brightRgb, 225);
+                        fillPixelPip(g, baseX, baseY, sc, n3x, cy + 1 + bob, 0xFFFFFF, twinkleA);
+                    }
+                }
+                default -> {
+                    // Archétype 5 : Sceaux Reliques Gothiques [❖ ... ❖]
+                    if (lx - 6 >= minX && rx + 7 <= maxX) {
+                        fillHairlineV(g, baseX, baseY, sc, lx - 6, cy - 3, cy + 4, withAlpha(mainRgb, 220));
+                        fillHairlineH(g, baseX, baseY, sc, lx - 6, lx - 2, cy - 3, withAlpha(brightRgb, 230));
+                        fillHairlineH(g, baseX, baseY, sc, lx - 6, lx - 2, cy + 3, withAlpha(brightRgb, 230));
+                        fillPixelPip(g, baseX, baseY, sc, lx - 3, cy, 0xFFFFFF, twinkleA);
+
+                        fillHairlineV(g, baseX, baseY, sc, rx + 6, cy - 3, cy + 4, withAlpha(mainRgb, 220));
+                        fillHairlineH(g, baseX, baseY, sc, rx + 2, rx + 6, cy - 3, withAlpha(brightRgb, 230));
+                        fillHairlineH(g, baseX, baseY, sc, rx + 2, rx + 6, cy + 3, withAlpha(brightRgb, 230));
+                        fillPixelPip(g, baseX, baseY, sc, rx + 3, cy, 0xFFFFFF, twinkleA);
+                    }
+                }
+            }
+        }
+
+        /**
+         * Rend le titre centré avec Pixel Musketeer : ombre prestige colorée + léger bloom
+         * supérieur + glyphes brillants haute netteté.
+         */
+        private static void drawRadiantCenteredTitle(GuiGraphics g, Font font, TitleRow tr,
+                                                     int lw, int innerW, double timeSec) {
+            Component comp = tr.styledTitle();
+            int rawW = Math.max(1, font.width(comp));
+            int availW = tr.artifactVariant() >= 0 ? Math.max(80, innerW - 44) : Math.max(80, innerW - 12);
+            float effScale = Math.min(S_TITLE, availW / (float) rawW);
+
+            float drawW = rawW * effScale;
+            float drawX = (lw - drawW) * 0.5f;
+            // Avec pixel_musketeer.json (height=16, ascent=13), getBearingY place le haut des accents
+            // à drawY - 6*effScale : drawY = tr.y() + 6.3f positionne l'accent aigu exactement à tr.y().
+            float drawY = tr.y() + 6.2f;
+
+            int darkShadow = darkenRgb(tr.mainRgb(), 0.28f) | 0xDD000000;
+            int shimmerAlpha = 36 + (int) Math.round(28 * (0.5 + 0.5 * Math.sin(timeSec * 3.0 + (tr.itemSeed() & 7))));
+            int bloomColor = withAlpha(0xFFFFFF, shimmerAlpha);
+
+            // Passe 1 : ombre prestige profonde (+0.85, +0.85)
+            g.pose().pushPose();
+            g.pose().translate(drawX + 0.85f, drawY + 0.85f, 0.0F);
+            g.pose().scale(effScale, effScale, 1.0F);
+            g.drawString(font, stripColorsForShadow(comp), 0, 0, darkShadow, false);
+            g.pose().popPose();
+
+            // Passe 2 : glyphes principaux lumineux (sans l'ombre grise terne vanilla)
+            g.pose().pushPose();
+            g.pose().translate(drawX, drawY, 0.0F);
+            g.pose().scale(effScale, effScale, 1.0F);
+            g.drawString(font, comp, 0, 0, tr.brightRgb() | 0xFF000000, false);
+            g.pose().popPose();
+
+            // Passe 3 : reflet brillant subtil respirant sur la crête des lettres (-0.30y)
+            g.pose().pushPose();
+            g.pose().translate(drawX, drawY - 0.30f, 0.0F);
+            g.pose().scale(effScale, effScale, 1.0F);
+            g.drawString(font, stripColorsForShadow(comp), 0, 0, bloomColor, false);
+            g.pose().popPose();
+        }
+
+        private static void fillLogicalRect(GuiGraphics g, int baseX, int baseY, float sc,
+                                            int lx0, int ly0, int lx1, int ly1, int color) {
+            int sx0 = baseX + Math.round(lx0 * sc);
+            int sy0 = baseY + Math.round(ly0 * sc);
+            int sx1 = baseX + Math.round(lx1 * sc);
+            int sy1 = baseY + Math.round(ly1 * sc);
+            if (sx1 > sx0 && sy1 > sy0) {
+                g.fill(sx0, sy0, sx1, sy1, color);
+            }
+        }
+
+        private static void fillPixelPip(GuiGraphics g, int baseX, int baseY, float sc,
+                                         int lx, int ly, int rgb, int alpha) {
+            int sx = baseX + Math.round(lx * sc);
+            int sy = baseY + Math.round(ly * sc);
+            g.fill(sx, sy, sx + 1, sy + 1, withAlpha(rgb, alpha));
         }
 
         private static void fillHairlineH(GuiGraphics g, int baseX, int baseY, float sc, int lx0, int lx1, int ly, int color) {
@@ -405,8 +645,8 @@ public final class SystemTooltipWindowRenderer {
             if (elements.isEmpty()) return;
 
             // 1) Extraction du titre, d'éventuels TooltipComponent images (ex: Bundle), et des attributs natifs
-            Component itemTitle = extractComponent(elements.get(0));
-            if (itemTitle == null) itemTitle = stack.getHoverName();
+            Component rawItemTitle = extractComponent(elements.get(0));
+            if (rawItemTitle == null) rawItemTitle = stack.getHoverName();
 
             List<TooltipComponent> preservedImages = new ArrayList<>();
             List<Component> nativeExtraLines = new ArrayList<>();
@@ -428,15 +668,33 @@ public final class SystemTooltipWindowRenderer {
                 return id == null ? "" : id.toString();
             }));
 
+            List<ComboDef> activeCombos = EnchantmentComboRegistry.getActiveCombosOnStack(stack, viewer);
+
+            // 2) Évaluation de la rareté prestige, de la graine déterministe et de l'artefact du titre
+            int maxRarityTier = computeMaxRarityTier(entries, activeCombos);
+            int itemSeed = computeDeterministicSeed(stack, rawItemTitle, entries);
+            int artifactVariant = chooseArtifactVariant(maxRarityTier, itemSeed);
+
+            int mainPrestigeRgb = prestigeMainRgb(maxRarityTier);
+            int auraRgb = EnchantAura.auraColor(stack) & 0xFFFFFF;
+            if (auraRgb != 0 && maxRarityTier >= 2) {
+                mainPrestigeRgb = blendRgb(mainPrestigeRgb, auraRgb, 0.30f);
+            }
+            int brightPrestigeRgb = blendRgb(mainPrestigeRgb, 0xFFFFFF, 0.72f);
+
+            Component styledTitle = stylizeTitleWithMusketeer(rawItemTitle, brightPrestigeRgb);
+            int titleScaledW = (int) Math.ceil(font.width(styledTitle) * S_TITLE);
+
             int totalEnchants = entries.size();
             boolean fr = TranslationFallback.isFrench();
             int screenW = Math.max(280, event.getScreenWidth());
             int screenH = Math.max(180, event.getScreenHeight());
 
-            // 2) Calcul de la largeur logique confortable (avant mise à l'échelle écran)
+            // 3) Calcul de la largeur logique confortable (centrage du titre + artefacts inclus)
             int padX = 4;
-            int logicalW = shift ? 308 : 236;
-            logicalW = Math.max(logicalW, font.width(itemTitle) + padX * 2 + 8);
+            int logicalW = shift ? 308 : 238;
+            int minTitleBoxW = titleScaledW + padX * 2 + (artifactVariant >= 0 ? 48 : 20);
+            logicalW = Math.min(344, Math.max(logicalW, minTitleBoxW));
 
             if (!shift && totalEnchants >= 3) {
                 int maxColPx = 0;
@@ -447,26 +705,24 @@ public final class SystemTooltipWindowRenderer {
                             EnchantmentTooltipFixProcedure.formatEnchantTitle(e.getKey(), id, e.getValue()), false);
                     maxColPx = Math.max(maxColPx, (int) Math.ceil(font.width(c) * S_ITEM));
                 }
-                logicalW = Math.min(310, Math.max(logicalW, maxColPx * 2 + 28));
+                logicalW = Math.min(320, Math.max(logicalW, maxColPx * 2 + 28));
             }
 
-            List<ComboDef> activeCombos = EnchantmentComboRegistry.getActiveCombosOnStack(stack, viewer);
             for (ComboDef c : activeCombos) {
                 int comboLineW = (int) Math.ceil(font.width(Component.literal("\u2726 ").append(c.translatedName())) * S_ITEM)
                         + (int) Math.ceil(font.width(c.tier().badge()) * S_SUB) + 24;
-                logicalW = Math.min(340, Math.max(logicalW, comboLineW));
+                logicalW = Math.min(344, Math.max(logicalW, comboLineW));
             }
 
             int innerW = logicalW - padX * 2;
 
-            // 3) Construction aérée des lignes logiques avec espacements nets
+            // 4) Construction aérée des lignes logiques
             List<CardRow> rows = new ArrayList<>();
             int curY = 2;
 
-            int accent = EnchantAura.auraColor(stack);
-            if (accent == 0) accent = CYAN_HEADER;
-            rows.add(new TitleRow(itemTitle, accent, curY, 13));
-            curY += 16; // +3 px d'air sous le filet du titre
+            rows.add(new TitleRow(styledTitle, mainPrestigeRgb, brightPrestigeRgb,
+                    maxRarityTier, artifactVariant, itemSeed, curY, 21));
+            curY += 23; // Espace respirant sous le filet à gemme centrale
 
             // --- SECTION : ENCHANTEMENTS ---
             String enchHeaderFmt = TranslationFallback.resolve("tooltip.deep_lucky_block.system.section_enchantments");
@@ -559,7 +815,7 @@ public final class SystemTooltipWindowRenderer {
 
             // --- SECTION : COMBO ACTIF (affiché uniquement si actif sur le joueur) ---
             if (!activeCombos.isEmpty()) {
-                curY += 5; // Air net avant la section Combo
+                curY += 5;
                 String comboHeader;
                 if (activeCombos.size() > 1) {
                     String fmt = TranslationFallback.resolve("tooltip.deep_lucky_block.system.section_combos");
@@ -654,7 +910,7 @@ public final class SystemTooltipWindowRenderer {
 
             int logicalH = curY + 2;
 
-            // 4) Calcul du facteur d'échelle adaptatif à l'écran (garantit 0 débordement sur petit écran !)
+            // 5) Facteur d'échelle adaptatif à l'écran (garantit zéro débordement sur petit écran)
             float baseScale;
             if (screenH >= 420 && screenW >= 700) {
                 baseScale = 0.94f;
@@ -685,7 +941,6 @@ public final class SystemTooltipWindowRenderer {
             ItemStack stack = event.getItemStack();
             if (stack == null || stack.isEmpty() || DeepEnchant.map(stack).isEmpty()) return;
 
-            // Empêche DefaultTooltipPositioner de placer le haut du panneau hors écran (y - 12 < 6)
             if (event.getY() < 20) {
                 event.setY(20);
             }
@@ -735,6 +990,221 @@ public final class SystemTooltipWindowRenderer {
         }
     }
 
+    // =========================================================================
+    // Utilitaires de style Pixel Musketeer, rareté, graine et couleurs
+    // =========================================================================
+
+    private static int computeMaxRarityTier(List<Map.Entry<Enchantment, Integer>> entries, List<ComboDef> activeCombos) {
+        int tier = 0;
+        if (!activeCombos.isEmpty()) {
+            tier = 6;
+        }
+        for (Map.Entry<Enchantment, Integer> e : entries) {
+            ResourceLocation id = DeepEnchant.getKeySafe(e.getKey());
+            if (id != null && EnchantmentTooltipFixProcedure.isModEnchantmentId(id)) {
+                Rarity r = CustomEnchantment.getRarityByPath(id.getPath());
+                if (r != null) {
+                    int rt = switch (r) {
+                        case COMMON -> 0;
+                        case UNCOMMON -> 1;
+                        case RARE -> 2;
+                        case VERY_RARE -> 3;
+                        case EPIC -> 4;
+                        case MYTHIC -> 5;
+                        case LEGENDARY -> 6;
+                    };
+                    tier = Math.max(tier, rt);
+                }
+            } else if (e.getValue() >= 5) {
+                tier = Math.max(tier, 2);
+            }
+        }
+        if (entries.size() >= 6) {
+            tier = Math.max(tier, 3);
+        } else if (entries.size() >= 4) {
+            tier = Math.max(tier, 2);
+        }
+        return tier;
+    }
+
+    private static int computeDeterministicSeed(ItemStack stack, Component rawTitle,
+                                                List<Map.Entry<Enchantment, Integer>> entries) {
+        int h = 0x9E3779B9;
+        h = mix32(h ^ stack.getItem().toString().hashCode());
+        if (rawTitle != null) {
+            h = mix32(h ^ rawTitle.getString().hashCode());
+        }
+        for (Map.Entry<Enchantment, Integer> e : entries) {
+            ResourceLocation id = DeepEnchant.getKeySafe(e.getKey());
+            if (id != null) {
+                h = mix32(h ^ id.toString().hashCode());
+            }
+            h = mix32(h ^ (e.getValue() * 0x85EBCA6B));
+        }
+        return h;
+    }
+
+    private static int mix32(int z) {
+        z ^= (z >>> 16);
+        z *= 0x7FEB352D;
+        z ^= (z >>> 15);
+        z *= 0x846CA68B;
+        z ^= (z >>> 16);
+        return z;
+    }
+
+    /**
+     * Retourne -1 (pas d'artefact) ou un archétype 0..5 de manière déterministe-aléatoire
+     * selon la rareté de l'objet : absent sur Commun, occasionnel sur Peu commun / Rare,
+     * fréquent sur Très rare / Épique, garanti sur Mythique / Légendaire / Combo actif.
+     */
+    private static int chooseArtifactVariant(int rarityTier, int itemSeed) {
+        if (rarityTier <= 0) return -1;
+        int roll = (itemSeed >>> 16) & 0xFF; // 0..255
+        int threshold = switch (rarityTier) {
+            case 1 -> 52;   // ~20% Peu commun
+            case 2 -> 148;  // ~58% Rare
+            case 3 -> 196;  // ~77% Très rare
+            case 4 -> 232;  // ~91% Épique
+            default -> 256; // 100% Mythique / Légendaire / Combo actif
+        };
+        if (roll >= threshold) return -1;
+        return Math.floorMod(itemSeed, 6);
+    }
+
+    private static int prestigeMainRgb(int rarityTier) {
+        return switch (rarityTier) {
+            case 6 -> 0xFACC15; // Or solaire Légendaire / Combo
+            case 5 -> 0xF472B6; // Rose céleste Mythique
+            case 4 -> 0xC084FC; // Améthyste astrale Épique
+            case 3 -> 0x60A5FA; // Azur profond Très rare
+            case 2 -> 0x38BDF8; // Cyan mana Rare
+            case 1 -> 0x34D399; // Émeraude stellaire Peu commun
+            default -> 0x7DD3FC; // Argent glacé Commun
+        };
+    }
+
+    /**
+     * Applique la police Pixel Musketeer au titre de l'objet (y compris sur les noms Lucky Block
+     * contenant des codes inline §6§l / §r / multi-couleurs), retire le gras §l pour garder la
+     * finesse calligraphique exacte de Pixel Musketeer, et rehausse chaque teinte vers un éclat
+     * nacré brillant.
+     */
+    private static Component stylizeTitleWithMusketeer(Component src, int defaultBrightRgb) {
+        if (src == null) return Component.empty();
+        MutableComponent out = Component.empty();
+        src.visit((style, content) -> {
+            if (content == null || content.isEmpty()) return java.util.Optional.empty();
+            appendParsedMusketeerSegments(out, content, style, defaultBrightRgb);
+            return java.util.Optional.empty();
+        }, Style.EMPTY);
+        return out;
+    }
+
+    private static void appendParsedMusketeerSegments(MutableComponent out, String text,
+                                                      Style inheritedStyle, int defaultBrightRgb) {
+        TextColor inheritedTc = inheritedStyle != null ? inheritedStyle.getColor() : null;
+        Integer curRgb = inheritedTc != null ? (inheritedTc.getValue() & 0xFFFFFF) : null;
+        boolean curItalic = inheritedStyle != null && inheritedStyle.isItalic();
+
+        StringBuilder buf = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (ch == '\u00a7' && i + 1 < text.length()) {
+                if (buf.length() > 0) {
+                    out.append(buildMusketeerSpan(buf.toString(), curRgb, curItalic, defaultBrightRgb));
+                    buf.setLength(0);
+                }
+                char code = Character.toLowerCase(text.charAt(++i));
+                ChatFormatting fmt = ChatFormatting.getByCode(code);
+                if (fmt != null) {
+                    if (fmt == ChatFormatting.RESET) {
+                        curRgb = null;
+                        curItalic = false;
+                    } else if (fmt.isColor() && fmt.getColor() != null) {
+                        curRgb = fmt.getColor() & 0xFFFFFF;
+                        curItalic = false;
+                    } else if (fmt == ChatFormatting.ITALIC) {
+                        curItalic = true;
+                    }
+                    // On ignore volontairement BOLD (§l) pour ne jamais empâter Pixel Musketeer
+                }
+                continue;
+            }
+            buf.append(ch);
+        }
+        if (buf.length() > 0) {
+            out.append(buildMusketeerSpan(buf.toString(), curRgb, curItalic, defaultBrightRgb));
+        }
+    }
+
+    private static MutableComponent buildMusketeerSpan(String segment, Integer rawRgb,
+                                                       boolean italic, int defaultBrightRgb) {
+        int targetRgb;
+        if (rawRgb == null || rawRgb == 0xFFFFFF || rawRgb == 0x55FFFF || rawRgb == 0xFFFF55) {
+            targetRgb = defaultBrightRgb;
+        } else {
+            targetRgb = blendRgb(rawRgb, 0xFFFFFF, 0.28f);
+        }
+        Style s = Style.EMPTY
+                .withFont(PIXEL_MUSKETEER_FONT)
+                .withBold(false)
+                .withItalic(italic)
+                .withColor(TextColor.fromRgb(targetRgb));
+        return Component.literal(segment).withStyle(s);
+    }
+
+    /**
+     * Clone le titre avec la police Pixel Musketeer mais sans couleur forcée (ni codes §)
+     * afin que les passes d'ombre colorée et de reflet crête utilisent exactement la couleur passée.
+     */
+    private static Component stripColorsForShadow(Component styled) {
+        MutableComponent out = Component.empty();
+        styled.visit((style, content) -> {
+            if (content == null || content.isEmpty()) return java.util.Optional.empty();
+            Style shadowStyle = Style.EMPTY
+                    .withFont(PIXEL_MUSKETEER_FONT)
+                    .withBold(false)
+                    .withItalic(style != null && style.isItalic());
+            out.append(Component.literal(stripSectionCodes(content)).withStyle(shadowStyle));
+            return java.util.Optional.empty();
+        }, Style.EMPTY);
+        return out;
+    }
+
+    private static String stripSectionCodes(String s) {
+        if (s == null || s.indexOf('\u00a7') < 0) return s == null ? "" : s;
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) == '\u00a7' && i + 1 < s.length()) {
+                i++;
+                continue;
+            }
+            sb.append(s.charAt(i));
+        }
+        return sb.toString();
+    }
+
+    private static int blendRgb(int rgbA, int rgbB, float t) {
+        float u = 1.0f - t;
+        int r = Math.min(255, Math.round(((rgbA >>> 16) & 0xFF) * u + ((rgbB >>> 16) & 0xFF) * t));
+        int g = Math.min(255, Math.round(((rgbA >>> 8) & 0xFF) * u + ((rgbB >>> 8) & 0xFF) * t));
+        int b = Math.min(255, Math.round((rgbA & 0xFF) * u + (rgbB & 0xFF) * t));
+        return (r << 16) | (g << 8) | b;
+    }
+
+    private static int darkenRgb(int rgb, float factor) {
+        int r = Math.max(0, Math.min(255, Math.round(((rgb >>> 16) & 0xFF) * factor)));
+        int g = Math.max(0, Math.min(255, Math.round(((rgb >>> 8) & 0xFF) * factor)));
+        int b = Math.max(0, Math.min(255, Math.round((rgb & 0xFF) * factor)));
+        return (r << 16) | (g << 8) | b;
+    }
+
+    private static int withAlpha(int rgb, int alpha) {
+        int a = Math.max(0, Math.min(255, alpha));
+        return (a << 24) | (rgb & 0xFFFFFF);
+    }
+
     private static Component extractComponent(Either<FormattedText, TooltipComponent> el) {
         if (el.left().isEmpty()) return null;
         FormattedText ft = el.left().get();
@@ -755,10 +1225,6 @@ public final class SystemTooltipWindowRenderer {
         return bullet.append(baseTitle);
     }
 
-    /**
-     * Découpage mot-par-mot mesuré exactement en pixels Font, en conservant les codes couleur §
-     * d'une ligne à l'autre sans jamais couper un mot orphelin.
-     */
     private static List<String> wrapStringExact(Font font, String text, int maxFontPx, int maxLines) {
         List<String> out = new ArrayList<>();
         if (text == null || text.isBlank()) return out;
