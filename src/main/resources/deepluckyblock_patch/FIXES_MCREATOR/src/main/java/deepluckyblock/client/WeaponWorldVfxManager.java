@@ -205,7 +205,7 @@ public final class WeaponWorldVfxManager {
                     double tx, double ty, double tz,
                     float yawDeg, float pitchDeg, float tiltRad,
                     int maxAge, long seed, int paletteMask) {
-            this.paletteMask = paletteMask & 0x3FF;
+            this.paletteMask = paletteMask & deepluckyblock.enchantments.DeepElement.MASK_ALL;
             this.effect = effect;
             this.kind = kind;
             this.intensity = Math.max(1, Math.min(12, intensity));
@@ -312,7 +312,9 @@ public final class WeaponWorldVfxManager {
 
         int duration = switch (fx) {
             case SERAPH_SKY_PILLAR, ABYSSAL_MAELSTROM, WARLORD_RALLY_SIGIL,
-                 DRAGON_CHAOS_PRISM, BRIMSTONE_METEOR -> 22;
+                 DRAGON_CHAOS_PRISM, BRIMSTONE_METEOR, BIG_BANG_SCAR -> 22;
+            case THORN_MAW_ROOT, SANDSTORM_DUNE, ECLIPSE_VEIL, NULL_RIFT_FISSURE,
+                 CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE -> 18;
             case ASTRAL_STAR_LANCE, VOID_WARP_SPHERE, SEISMIC_TECTONIC,
                  CRIMSON_SIPHON, CHRONO_ETERNAL_HALO, ANNIHILATING_ARC -> 16;
             case CHAIN_VOLT_ARC -> 11;
@@ -375,7 +377,7 @@ public final class WeaponWorldVfxManager {
                 case 1 -> fx.secondaryRgb;
                 default -> rotateHue(fx.secondaryRgb, 0.16f);
             };
-            if (paletteMask != 0 && Integer.bitCount(paletteMask & 0x3FF) > 1) {
+            if (paletteMask != 0 && Integer.bitCount(paletteMask & deepluckyblock.enchantments.DeepElement.MASK_ALL) > 1) {
                 // Répartition des pixels le long de la palette : le mélange est visible d'un seul coup d'œil.
                 float phase = (count <= 1) ? 0.5f : (float) i / (float) (count - 1);
                 rgb = mixRgb(rgb, paletteColor(paletteMask, rgb, phase), 0.85f);
@@ -560,7 +562,7 @@ public final class WeaponWorldVfxManager {
                 case 1 -> echo.element().highlight;
                 default -> rotateHue(echo.element().secondary, 0.05f);
             };
-            if (paletteMask != 0 && Integer.bitCount(paletteMask & 0x3FF) > 1) {
+            if (paletteMask != 0 && Integer.bitCount(paletteMask & deepluckyblock.enchantments.DeepElement.MASK_ALL) > 1) {
                 rgb = mixRgb(rgb, paletteColor(paletteMask, rgb, t), 0.85f);
             }
             // Les mouvements « lumineux » restent bien lisibles même minuscules.
@@ -742,7 +744,7 @@ public final class WeaponWorldVfxManager {
                 case 1 -> sub.element().highlight;
                 default -> rotateHue(sub.element().secondary, 0.06f);
             };
-            if (paletteMask != 0 && Integer.bitCount(paletteMask & 0x3FF) > 1) {
+            if (paletteMask != 0 && Integer.bitCount(paletteMask & deepluckyblock.enchantments.DeepElement.MASK_ALL) > 1) {
                 // Mélange élémentaire : chaque mini-pixel tombe à un autre point de la palette.
                 float phase = (count <= 1) ? 0.5f : (float) i / (float) (count - 1);
                 rgb = mixRgb(rgb, paletteColor(paletteMask, rgb, phase), 0.82f);
@@ -774,7 +776,7 @@ public final class WeaponWorldVfxManager {
      * Une seule famille (ou aucune) renvoie {@code fallback} : le rendu d'origine est conservé.
      */
     public static int paletteColor(int mask, int fallback, float phase) {
-        int total = Integer.bitCount(mask & 0x3FF);
+        int total = Integer.bitCount(mask & deepluckyblock.enchantments.DeepElement.MASK_ALL);
         if (total <= 1) return fallback;
         float tri = (phase < 0.5f) ? (phase * 2.0f) : (2.0f - phase * 2.0f);
         tri = Math.max(0.0f, Math.min(1.0f, tri));
@@ -819,7 +821,14 @@ public final class WeaponWorldVfxManager {
         List<deepluckyblock.enchantments.DeepElement> els =
                 WeaponVisualEffectId.elementsOf(stack);
         if (els.isEmpty()) return 0xFFFFFF;
-        if (els.size() == 1) return els.get(0).primary;
+        if (els.size() == 1) {
+            deepluckyblock.enchantments.DeepElement only = els.get(0);
+            if (only == deepluckyblock.enchantments.DeepElement.CHAOS) {
+                return smoothColor(0x5A5A0001, deepluckyblock.enchantments.DeepElement.chaosHue(
+                        timeSeconds, 0.0f, only.primary));
+            }
+            return only.primary;
+        }
 
         float cycle = (timeSeconds * 0.16f) % 2.0f;              // ~6,2 s par aller-retour
         float tri = cycle < 1.0f ? cycle : 2.0f - cycle;          // 0..1..0
@@ -831,6 +840,11 @@ public final class WeaponWorldVfxManager {
         float f = pos - i0;
         f = f * f * (3.0f - 2.0f * f);                            // smoothstep : départs/arrivées doux
         int target = mixRgb(els.get(i0).primary, els.get(i1).primary, f);
+        // T352-CHAOS-ELEMENT : une arme chaotique garde une base très sombre mais laisse passer un
+        // reflet qui tourne sur toute la roue chromatique (sombre + multicolore, jamais clignotant).
+        if (els.contains(deepluckyblock.enchantments.DeepElement.CHAOS)) {
+            target = deepluckyblock.enchantments.DeepElement.chaosHue(timeSeconds, 0.0f, target);
+        }
         int key = 0x5A5A0000 | (System.identityHashCode(stack) & 0xFFFF);
         return smoothColor(key, target);
     }
@@ -933,7 +947,7 @@ public final class WeaponWorldVfxManager {
                 int rgb = (step == 0)
                         ? tp.effect().primaryRgb
                         : rotateHue(tp.effect().secondaryRgb, 0.10f + (float) ((now & 31L) / 31.0) * 0.14f);
-                if (tp.paletteMask() != 0 && Integer.bitCount(tp.paletteMask() & 0x3FF) > 1) {
+                if (tp.paletteMask() != 0 && Integer.bitCount(tp.paletteMask() & deepluckyblock.enchantments.DeepElement.MASK_ALL) > 1) {
                     // T351-ELEMENT-BLEND : la traînée des flèches mélange aussi les familles de l'arc.
                     float phase = ((now & 15L) / 15.0f) * 0.5f + step * 0.5f;
                     rgb = mixRgb(rgb, paletteColor(tp.paletteMask(), rgb, phase), 0.85f);
@@ -1663,6 +1677,148 @@ public final class WeaponWorldVfxManager {
                 // #29 Grand Cercle Runique du Chef de Guerre en pixels 3D (double anneau Bresenham + 8 runes 3x3 + étoile) !
                 float r = 2.05f * Math.min(1.0f, t * 2.4f);
                 emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.40f, cz, r, t * 1.6f, pRgb, sRgb, aRgb, fadeA, true);
+            }
+            case THORN_MAW_ROOT -> {
+                // #31 T352 Bois : 8 ronces en escalier qui montent du sol puis se referment vers le haut,
+                // + anneau de spores vert sombre (aucune forme pleine, uniquement des pixels 3D).
+                int roots = 8;
+                for (int i = 0; i < roots; i++) {
+                    float ang = i * (float) (Math.PI * 2.0 / roots) + 0.25f;
+                    float baseR = 0.55f + 0.55f * (1.0f - t);
+                    float topR = 0.12f + 0.40f * t;
+                    float bx = cx + Mth.cos(ang) * baseR;
+                    float bz = cz + Mth.sin(ang) * baseR;
+                    float tx2 = cx + Mth.cos(ang + 0.5f) * topR;
+                    float tz2 = cz + Mth.sin(ang + 0.5f) * topR;
+                    emitSteppedVoxelLine(vc, mat, tmp, bx, cy - 0.55f, bz, tx2, cy + 0.85f, tz2,
+                            0.040f, sRgb, pRgb, fadeA);
+                    // épines : petits pixels qui dépassent de la ronce
+                    if ((i & 1) == 0) {
+                        emitVoxelCube(vc, mat, tmp, Mth.lerp(0.55f, bx, tx2), cy + 0.10f, Mth.lerp(0.55f, bz, tz2),
+                                0.026f, 0.032f, 0.026f, 0xFFFFFF, Math.round(fadeA * 0.75f));
+                    }
+                }
+                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.52f, cz, 0.45f + 1.35f * t, pRgb, sRgb, Math.round(fadeA * 0.85f));
+            }
+            case SANDSTORM_DUNE -> {
+                // #32 T352 Terre : tempête de sable — 3 bras en spirale qui tournent en s'élargissant,
+                // grains épars au sol et dune soulevée en pixels (ocre, non additif = poussière lisible).
+                for (int armI = 0; armI < 3; armI++) {
+                    float baseAng = armI * 2.094f + t * 7.5f;
+                    for (int seg = 1; seg <= 8; seg++) {
+                        float u = seg / 8.0f;
+                        float rad = Mth.lerp(u, 0.30f, 2.35f * (0.35f + t));
+                        float ang = baseAng + u * 2.8f;
+                        float px = quantize(cx + Mth.cos(ang) * rad, 0.0625f);
+                        float pz = quantize(cz + Mth.sin(ang) * rad, 0.0625f);
+                        float py = quantize(cy - 0.25f + u * (1.15f * t), 0.0625f);
+                        emitVoxelCube(vc, mat, tmp, px, py, pz, 0.038f * (1.2f - 0.5f * u),
+                                0.030f, 0.038f * (1.2f - 0.5f * u),
+                                (seg & 1) == 0 ? pRgb : sRgb, fadeA);
+                    }
+                }
+                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.48f, cz, 0.55f + 1.85f * t, sRgb, pRgb, Math.round(fadeA * 0.8f));
+            }
+            case ECLIPSE_VEIL -> {
+                // #33 T352 Ombre : éclipse — disque noir pixelisé (cercle de Bresenham) qui grossit,
+                // voile en spirale et triple griffure violette.
+                float disc = 0.55f + 1.25f * t;
+                emitPixelCircleBillboard3D(vc, mat, tmp, cx, cy + 0.35f, cz, disc, sRgb, 0x000000, fadeA);
+                emitPixelCircle3D(vc, mat, tmp, cx, cy + 0.35f, cz, disc * 0.72f, 0x000000, sRgb,
+                        Math.round(fadeA * 0.85f));
+                for (int claw = -1; claw <= 1; claw++) {
+                    float off = claw * 0.26f + 0.10f * t;
+                    emitSteppedVoxelLine(vc, mat, tmp,
+                            cx - 0.70f + off, cy + 0.85f, cz - 0.35f,
+                            cx + 0.70f + off, cy - 0.55f, cz + 0.35f,
+                            0.040f, pRgb, sRgb, fadeA);
+                }
+                emitPixelRing3D(vc, mat, tmp, cx, cy - 0.50f, cz, 0.40f + 1.55f * t, pRgb, sRgb, fadeA, PIXEL_RING_DASHED);
+            }
+            case NULL_RIFT_FISSURE -> {
+                // #34 T352 Vide : faille verticale crénelée qui s'ouvre puis se referme, avec
+                // aspiration circulaire et éclats de vide qui filent vers l'intérieur.
+                float open = Mth.sin(Math.min(1.0f, t * 1.15f) * (float) Math.PI);
+                float half = 0.05f + 0.70f * open;
+                for (int side = -1; side <= 1; side += 2) {
+                    for (int segI = 0; segI < 6; segI++) {
+                        float u = segI / 5.0f;
+                        float w = half * (0.35f + 0.65f * Mth.sin(u * (float) Math.PI));
+                        float jx = (pixelHash(inst.effect.ordinal() + segI, side * 13) - 0.5f) * 0.22f;
+                        emitVoxelCube(vc, mat, tmp,
+                                quantize(cx + side * w + jx, 0.0625f),
+                                quantize(cy - 1.10f + u * 2.35f, 0.0625f),
+                                quantize(cz + side * 0.05f, 0.0625f),
+                                0.032f, 0.045f, 0.032f,
+                                (segI & 1) == 0 ? pRgb : sRgb, fadeA);
+                    }
+                }
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.45f, cz, 0.35f + 1.95f * t,
+                        -t * 4.2f, aRgb, pRgb, 0xFFFFFF, fadeA, true);
+                for (int k = 0; k < 6; k++) {
+                    float ang = k * 1.047f + t * 3.0f;
+                    float rad = 1.45f * (1.0f - t);
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + Mth.cos(ang) * rad, 0.0625f),
+                            quantize(cy + 0.25f + Mth.sin(ang * 2.0f) * 0.45f, 0.0625f),
+                            quantize(cz + Mth.sin(ang) * rad, 0.0625f),
+                            0.026f, 0.026f, 0.026f, 0xFFFFFF, fadeA);
+                }
+            }
+            case CHAOS_KALEIDO_LOOP -> {
+                // #35 T352 Chaos : boucle kaléidoscopique — trois anneaux runiques qui tournent
+                // dans des teintes différentes sur un fond sombre, plus éclats multicolores.
+                int hueBase = Mth.hsvToRgb((t * 1.35f) % 1.0f, 0.9f, 1.0f);
+                int hueAlt = Mth.hsvToRgb((t * 1.35f + 0.33f) % 1.0f, 0.9f, 1.0f);
+                int hueAlt2 = Mth.hsvToRgb((t * 1.35f + 0.66f) % 1.0f, 0.9f, 1.0f);
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.40f, cz, 0.55f + 2.10f * t,
+                        t * 2.4f, hueBase, sRgb, hueAlt, fadeA, true);
+                emitPixelRing3D(vc, mat, tmp, cx, cy + 0.35f, cz, 0.45f + 1.45f * t,
+                        hueAlt, hueAlt2, Math.round(fadeA * 0.85f), PIXEL_RING_DASHED);
+                emitPixelCircleBillboard3D(vc, mat, tmp, cx, cy + 0.35f, cz, 0.30f + 1.05f * t,
+                        hueAlt2, hueBase, Math.round(fadeA * 0.70f));
+                emitPixelCross3D(vc, mat, tmp, cx, cy + 0.20f, cz, 0.0625f, 4, 0xFFFFFF, hueBase, fadeA);
+            }
+            case ENTROPY_SPHERE -> {
+                // #36 T352 Chaos : sphère d'entropie — 3 cercles orthogonaux (équateur, méridiens)
+                // aux teintes différentes + hélice intérieure : volume bariolé, base sombre.
+                int hueA = Mth.hsvToRgb((t * 1.1f) % 1.0f, 0.85f, 1.0f);
+                int hueB = Mth.hsvToRgb((t * 1.1f + 0.33f) % 1.0f, 0.85f, 1.0f);
+                int hueC = Mth.hsvToRgb((t * 1.1f + 0.66f) % 1.0f, 0.85f, 1.0f);
+                float rad = 0.45f + 1.25f * Mth.sin(t * (float) Math.PI);
+                emitPixelRing3D(vc, mat, tmp, cx, cy, cz, rad, hueA, hueB, fadeA, PIXEL_RING_SOLID);
+                emitPixelCircleBillboard3D(vc, mat, tmp, cx, cy, cz, rad, hueB, hueC, Math.round(fadeA * 0.8f));
+                emitPixelCircleBillboard3D(vc, mat, tmp, cx, cy, cz, rad * 0.92f, hueC, hueA,
+                        Math.round(fadeA * 0.55f));
+                emitVoxelHelix(vc, mat, tmp, cx, cy - rad, cz, rad * 0.55f, rad * 2.0f, t * 5.5f,
+                        hueA, 0xFFFFFF, fadeA);
+            }
+            case BIG_BANG_SCAR -> {
+                // #37 T352 Chaos : déchirure du big bang — 12 rayons bariolés qui jaillissent d'un
+                // cœur blanc, anneau noir d'effondrement et éclats projetés très loin.
+                int rays = 12;
+                for (int i = 0; i < rays; i++) {
+                    float ang = i * (float) (Math.PI * 2.0 / rays) + t * 0.6f;
+                    float len = (0.55f + 2.9f * t) * ((i & 1) == 0 ? 1.0f : 0.72f);
+                    int hue = Mth.hsvToRgb((t * 1.9f + i / (float) rays) % 1.0f, 0.9f, 1.0f);
+                    float elev = (i % 3 == 0) ? 0.55f : ((i % 3 == 1) ? -0.35f : 0.05f);
+                    emitSteppedVoxelLine(vc, mat, tmp, cx, cy, cz,
+                            cx + Mth.cos(ang) * len, cy + elev * len * 0.55f, cz + Mth.sin(ang) * len,
+                            0.045f * (1.0f - 0.45f * t), 0xFFFFFF, hue, fadeA);
+                }
+                emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, 5, 0xFFFFFF, 0xFFFFFF, fadeA);
+                emitPixelRing3D(vc, mat, tmp, cx, cy, cz, 0.45f + 2.55f * t,
+                        0x000000, sRgb, Math.round(fadeA * 0.75f), PIXEL_RING_DASHED);
+                for (int k = 0; k < 8; k++) {
+                    float ang = k * 0.785f - t * 2.5f;
+                    float rad = 3.2f * t;
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + Mth.cos(ang) * rad, 0.0625f),
+                            quantize(cy + (pixelHash(k, k * 7) - 0.5f) * 1.4f, 0.0625f),
+                            quantize(cz + Mth.sin(ang) * rad, 0.0625f),
+                            0.028f, 0.028f, 0.028f,
+                            Mth.hsvToRgb((t * 2.4f + k * 0.12f) % 1.0f, 0.85f, 1.0f), fadeA);
+                }
             }
             default -> {
                 float maxR = (inst.effect == WeaponVisualEffectId.ANNIHILATING_ARC) ? 3.1f : 1.65f;

@@ -131,6 +131,21 @@ public final class DlbVfxCommand {
                             .toList(),
                     builder);
 
+    /** T352-ELEMENT-COVERAGE : un enchantement existe-t-il vraiment dans le registre du serveur ? */
+    private static boolean enchantmentExists(ServerPlayer player, String path) {
+        try {
+            var registry = player.serverLevel().registryAccess()
+                    .registryOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT);
+            var key = net.minecraft.resources.ResourceKey.create(
+                    net.minecraft.core.registries.Registries.ENCHANTMENT,
+                    net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(
+                            deepluckyblock.DeepLuckyBlockMod.MODID, path));
+            return registry.get(key) != null;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     private static boolean opOnly() {
         return "1".equals(System.getProperty("dlb.cmdOp", "0"));
     }
@@ -240,7 +255,7 @@ public final class DlbVfxCommand {
                                 .suggests(SUGGEST_FAMILIES)
                                 .executes(ctx -> subtleDemo(ctx,
                                         StringArgumentType.getString(ctx, "family"), 0))
-                                .then(Commands.argument("index", IntegerArgumentType.integer(1, 100))
+                                .then(Commands.argument("index", IntegerArgumentType.integer(1, WeaponVfxSubtle.TOTAL))
                                         .executes(ctx -> subtleDemo(ctx,
                                                 StringArgumentType.getString(ctx, "family"),
                                                 IntegerArgumentType.getInteger(ctx, "index"))))))
@@ -283,19 +298,20 @@ public final class DlbVfxCommand {
 
     private static int help(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack src = ctx.getSource();
-        src.sendSuccess(() -> Component.literal("§b§l/dlbvfx §7— test des 30 effets visuels d'armes"), false);
-        line(src, "§e/dlbvfx list", "liste des 30 effets + enchant à utiliser");
+        src.sendSuccess(() -> Component.literal("§b§l/dlbvfx §7— test des " + WeaponVisualEffectId.values().length + " effets visuels d'armes"), false);
+        line(src, "§e/dlbvfx list", "liste des effets + enchant à utiliser");
         line(src, "§e/dlbvfx play <effet> [impact|swing|beam|proj] [niveau]", "joue l'effet devant toi (aucune action requise)");
-        line(src, "§e/dlbvfx all [kind]", "les 30 effets à la suite, en cercle autour de toi");
-        line(src, "§e/dlbvfx demo", "boucle automatique des 30 effets (relancer pour arrêter)");
+        line(src, "§e/dlbvfx all [kind]", "tous les effets à la suite, en cercle autour de toi");
+        line(src, "§e/dlbvfx demo", "boucle automatique de tous les effets (relancer pour arrêter)");
         line(src, "§e/dlbvfx crit [effet] [niveau]", "force le chemin CRITIQUE (nécessite normalement un saut/sprint)");
         line(src, "§e/dlbvfx hit [nombre]", "vraies frappes sur la cible d'entraînement (impact + crit réels)");
         line(src, "§e/dlbvfx dummy", "invoque / retire la cible d'entraînement");
         line(src, "§e/dlbvfx give <effet> [niveau]", "donne les armes enchantées qui déclenchent cet effet");
         line(src, "§e/dlbvfx elements [famille]", "les 10 familles élémentaires (couleurs + effets)");
-        line(src, "§e/dlbvfx variants", "défile les 50 déclinaisons (de moins en moins de particules)");
+        line(src, "§e/dlbvfx variants", "défile les déclinaisons (de moins en moins de particules)");
         line(src, "§e/dlbvfx subtle [famille] [index]", "les 100 accents discrets : 50 élémentaires + 50 échos des grosses animations");
         line(src, "§7Déclenchement", "§f5 % §7coup normal, §f66 % §7coup critique, §f10 % §7des déclenchements en grosse animation (§f+5 % §7dégâts)");
+        line(src, "§7Arme multi-éléments", "§f6 % §7de chance de jouer en simultané une animation de §fchaque §7élément de l'arme");
         line(src, "§e/dlbvfx clear", "supprime les cibles d'entraînement");
         line(src, "§7Exemples : §f/dlbvfx play 29 §7puis §f/dlbvfx give 8 §7puis §f/dlbvfx hit 3", "");
         return 1;
@@ -307,7 +323,7 @@ public final class DlbVfxCommand {
 
     private static int list(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack src = ctx.getSource();
-        src.sendSuccess(() -> Component.literal("§b§l30 effets visuels d'armes §7(§f/dlbvfx play <id>§7)"), false);
+        src.sendSuccess(() -> Component.literal("§b§l" + WeaponVisualEffectId.values().length + " effets visuels d'armes §7(§f/dlbvfx play <id>§7)"), false);
         for (WeaponVisualEffectId fx : WeaponVisualEffectId.values()) {
             List<String> keys = WeaponVisualEffectId.enchantKeysFor(fx);
             if (keys.isEmpty()) keys = WeaponVisualEffectId.gauntletKeysFor(fx);
@@ -355,7 +371,7 @@ public final class DlbVfxCommand {
         ServerPlayer player = requirePlayer(ctx);
         WeaponVisualEffectId fx = parseEffect(StringArgumentType.getString(ctx, "effect"));
         if (fx == null) {
-            ctx.getSource().sendFailure(Component.literal("§cEffet inconnu. Utilise /dlbvfx list ou un id 1..30."));
+            ctx.getSource().sendFailure(Component.literal("§cEffet inconnu. Utilise /dlbvfx list ou un id 1.." + WeaponVisualEffectId.values().length + "."));
             return 0;
         }
         ServerLevel sl = player.serverLevel();
@@ -439,7 +455,7 @@ public final class DlbVfxCommand {
         st.ringCenter = player.position();
         DEMOS.put(player.getUUID(), st);
         ctx.getSource().sendSuccess(() -> Component.literal(
-                "§b[Démo VFX] §f30 effets en cercle autour de toi §7— §f/dlbvfx stop §7pour arrêter."), false);
+                "§b[Démo VFX] §f" + WeaponVisualEffectId.values().length + " effets en cercle autour de toi §7— §f/dlbvfx stop §7pour arrêter."), false);
         return 1;
     }
 
@@ -459,7 +475,7 @@ public final class DlbVfxCommand {
         st.ringCenter = player.position();
         DEMOS.put(player.getUUID(), st);
         ctx.getSource().sendSuccess(() -> Component.literal(
-                "§b[Démo VFX] §fboucle lancée (30 effets) §7— §f/dlbvfx demo §7pour arrêter."), false);
+                "§b[Démo VFX] §fboucle lancée (" + WeaponVisualEffectId.values().length + " effets) §7— §f/dlbvfx demo §7pour arrêter."), false);
         return 1;
     }
 
@@ -525,16 +541,34 @@ public final class DlbVfxCommand {
         CommandSourceStack src = ctx.getSource();
         ServerPlayer player = requirePlayer(ctx);
         src.sendSuccess(() -> Component.literal("§b§lFamilles élémentaires §7(Wu Xing étendu)"), false);
+        // T352-ELEMENT-COVERAGE : audit de la couverture élémentaire — 5 enchantements dédiés et
+        // au moins 3 grosses animations par famille, avec vérification RÉELLE dans le registre.
+        src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "§7Vérification : §f%d enchantements §7minimum et §f%d animations §7minimum par famille.",
+                deepluckyblock.enchantments.ElementalCatalog.MIN_ENCHANTMENTS,
+                deepluckyblock.enchantments.ElementalCatalog.MIN_ANIMATIONS)), false);
         for (DeepElement el : DeepElement.values()) {
-            int n = 0;
-            for (WeaponVisualEffectId fx : WeaponVisualEffectId.values()) {
-                if (fx.element == el) n++;
+            List<WeaponVisualEffectId> anims = WeaponVisualEffectId.animationsOf(el);
+            List<String> ench = deepluckyblock.enchantments.ElementalCatalog.enchantmentsOf(el);
+            int present = 0;
+            for (String path : ench) {
+                if (enchantmentExists(player, path)) present++;
             }
-            final int count = n;
+            final int animCount = anims.size();
+            final int enchPresent = present;
+            final int enchTotal = ench.size();
+            final boolean ok = enchPresent >= deepluckyblock.enchantments.ElementalCatalog.MIN_ENCHANTMENTS
+                    && animCount >= deepluckyblock.enchantments.ElementalCatalog.MIN_ANIMATIONS;
+            String mark = ok ? "§a✔" : "§c✘";
             src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                    "  §f%-8s §7%02d effet(s) §8· §7couleurs §f#%06X §f#%06X",
-                    el.displayName, count, el.primary, el.highlight)), false);
+                    "  %s §f%-8s §7%02d anim. §8· §7%d/%d ench. §8· §7couleurs §f#%06X §f#%06X",
+                    mark, el.displayName, animCount, enchPresent, enchTotal,
+                    el.primary, el.highlight)), false);
         }
+        List<DeepElement> missing = deepluckyblock.enchantments.ElementalCatalog.incompleteElements();
+        src.sendSuccess(() -> Component.literal(missing.isEmpty()
+                ? "§aToutes les familles sont complètes (5 enchantements + 3 animations)."
+                : "§cFamilles incomplètes : §f" + missing), false);
         // Défilement dans l'ordre des familles
         DemoState st = new DemoState();
         st.cursor = 0;
@@ -650,7 +684,7 @@ public final class DlbVfxCommand {
         CommandSourceStack src = ctx.getSource();
         ServerPlayer player = requirePlayer(ctx);
         src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                "§b§l50 déclinaisons §7(30 pleines + 20 allégées, densité décroissante)")), false);
+                "§b§l" + WeaponVfxVariant.COUNT + " déclinaisons §7(une pleine par effet + 20 allégées, densité décroissante)")), false);
         for (DeepElement el : DeepElement.values()) {
             List<String> names = new ArrayList<>();
             for (WeaponVfxVariant.Entry e : WeaponVfxVariant.all()) {
@@ -682,7 +716,7 @@ public final class DlbVfxCommand {
     private static int crit(CommandContext<CommandSourceStack> ctx, WeaponVisualEffectId fx, int level)
             throws CommandSyntaxException {
         if (fx == null) {
-            ctx.getSource().sendFailure(Component.literal("§cEffet inconnu (1..30)."));
+            ctx.getSource().sendFailure(Component.literal("§cEffet inconnu (1.." + WeaponVisualEffectId.values().length + ")."));
             return 0;
         }
         ServerPlayer player = requirePlayer(ctx);
@@ -883,7 +917,7 @@ public final class DlbVfxCommand {
     private static int give(CommandContext<CommandSourceStack> ctx, WeaponVisualEffectId fx, int level)
             throws CommandSyntaxException {
         if (fx == null) {
-            ctx.getSource().sendFailure(Component.literal("§cEffet inconnu (1..30)."));
+            ctx.getSource().sendFailure(Component.literal("§cEffet inconnu (1.." + WeaponVisualEffectId.values().length + ")."));
             return 0;
         }
         ServerPlayer player = requirePlayer(ctx);

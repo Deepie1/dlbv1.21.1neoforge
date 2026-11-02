@@ -73,7 +73,24 @@ public enum WeaponVisualEffectId {
     DRAGON_CHAOS_PRISM(27, Category.RANGED,     90, true,  0xFF2EC4, 0x7A28FF, DeepElement.VOID),
     CHRONO_ETERNAL_HALO(28, Category.SPECIAL,    79, true,  0xFFC845, 0xFFF4CC, DeepElement.LIGHT),
     WARLORD_RALLY_SIGIL(29, Category.SPECIAL,    91, true,  0xFFD644, 0xFFF0B8, DeepElement.EARTH),
-    ANNIHILATING_ARC(30, Category.SPECIAL,    95, true,  0xFFFFFF, 0x9ED8FF, DeepElement.METAL);
+    ANNIHILATING_ARC(30, Category.SPECIAL,    95, true,  0xFFFFFF, 0x9ED8FF, DeepElement.METAL),
+
+    // === VII. T352-ELEMENT-COMPLET : 3e animation des familles qui n'en avaient que deux,
+    // et les 3 signatures du nouveau élément CHAOS (sombre + multicolore) ===
+    /** #31 Bois : mâchoire de ronces qui se referme autour de la cible (vert sombre). */
+    THORN_MAW_ROOT(31, Category.ELEMENT,    71, false, 0x4BE04A, 0x145A22, DeepElement.WOOD),
+    /** #32 Terre : tempête de sable en spirale + dune soulevée (ocre). */
+    SANDSTORM_DUNE(32, Category.ELEMENT,    72, false, 0xE0A94A, 0x6B3D12, DeepElement.EARTH),
+    /** #33 Ombre : éclipse — disque noir, voile et triple griffure (violet nuit). */
+    ECLIPSE_VEIL(33, Category.ELEMENT,    74, false, 0x1B0726, 0xA66BFF, DeepElement.SHADOW),
+    /** #34 Vide : faille verticale qui aspire la lumière, puis se referme (indigo). */
+    NULL_RIFT_FISSURE(34, Category.ELEMENT,    77, true,  0x6A5BFF, 0x0B0A2A, DeepElement.VOID),
+    /** #35 Chaos : boucle kaléidoscopique multicolore sur base noire. */
+    CHAOS_KALEIDO_LOOP(35, Category.SPECIAL,    83, true,  0xFF3DDC, 0x120616, DeepElement.CHAOS),
+    /** #36 Chaos : sphère d'entropie — trois cercles orthogonaux qui changent de teinte. */
+    ENTROPY_SPHERE(36, Category.SPECIAL,    87, true,  0x9B5CFF, 0x0B0710, DeepElement.CHAOS),
+    /** #37 Chaos : déchirure du big bang — cœur blanc aveuglant, rayons bariolés, anneau noir. */
+    BIG_BANG_SCAR(37, Category.SPECIAL,    96, true,  0xFFFFFF, 0x53103B, DeepElement.CHAOS);
 
     public enum Category {
         EDGE_SHARP,
@@ -142,7 +159,7 @@ public enum WeaponVisualEffectId {
         return element;
     }
 
-    private static final WeaponVisualEffectId[] BY_ID = new WeaponVisualEffectId[31];
+    private static final WeaponVisualEffectId[] BY_ID = new WeaponVisualEffectId[64];
     private static final Map<String, WeaponVisualEffectId> ENCHANT_MAP = new HashMap<>(256);
     private static final Map<String, WeaponVisualEffectId> GAUNTLET_MAP = new HashMap<>(24);
 
@@ -223,8 +240,22 @@ public enum WeaponVisualEffectId {
         register(VOID_WARP_SPHERE, "warp", "teleport_arrow", "swap_arrow", "phasing_bolts", "wraith_arrow",
                 "enemy_attractor", "zero_gravity_shot", "retrieval", "sincere_loyalty",
                 "inverted_arrows", "curse_of_the_hostile_boomerang", "minecraft:loyalty");
-        // #27 Souffle Draconique & Chaos Prismatique
-        register(DRAGON_CHAOS_PRISM, "dragons_breath_arrow", "chaos");
+        // #27 Souffle Draconique & Chaos Prismatique (le dragon reste dans la famille Vide)
+        register(DRAGON_CHAOS_PRISM, "dragons_breath_arrow");
+
+        // === T352-ELEMENT-COMPLET : 3es animations + signatures du CHAOS ===
+        // #31 Bois
+        register(THORN_MAW_ROOT, "thorn_maw", "briar_cage", "rooted_grasp", "overgrowth");
+        // #32 Terre
+        register(SANDSTORM_DUNE, "sandstorm", "dune_surge", "dust_devil", "sahara_wrath");
+        // #33 Ombre
+        register(ECLIPSE_VEIL, "eclipse_veil", "nightfall", "umbral_veil", "blackout");
+        // #34 Vide
+        register(NULL_RIFT_FISSURE, "null_rift", "fissure", "nullification", "unmaking");
+        // #35-#37 Chaos (les 4 nouveaux enchantements + l'historique `chaos`)
+        register(CHAOS_KALEIDO_LOOP, "chaos_entropy", "chaos", "kaleidoscope");
+        register(ENTROPY_SPHERE, "chaos_nexus", "entropy_sphere", "discord");
+        register(BIG_BANG_SCAR, "chaos_rupture", "prismatic_brand", "chaos_cataclysm");
         // #28 Aiguille Temporelle & Lame Éternelle
         register(CHRONO_ETERNAL_HALO, "chrono_mending", "basic_chrono_mending", "basic_mending",
                 "eternal", "promising_blade", "delay", "unbreakable", "recycle", "minecraft:mending", "minecraft:unbreaking");
@@ -439,6 +470,28 @@ public enum WeaponVisualEffectId {
     }
 
     /**
+     * T352-ELEMENT-COMPLET : animation « signature » d'une famille = sa plus haute priorité.
+     * Sert au déclenchement simultané (une animation de CHAQUE élément de l'arme).
+     */
+    public static WeaponVisualEffectId signatureFor(DeepElement el) {
+        WeaponVisualEffectId best = null;
+        for (WeaponVisualEffectId fx : values()) {
+            if (fx.element != el) continue;
+            if (best == null || fx.priority > best.priority) best = fx;
+        }
+        return best;
+    }
+
+    /** Toutes les grosses animations d'une famille (au moins 3 garanties depuis T352). */
+    public static List<WeaponVisualEffectId> animationsOf(DeepElement el) {
+        List<WeaponVisualEffectId> out = new ArrayList<>(4);
+        for (WeaponVisualEffectId fx : values()) {
+            if (fx.element == el) out.add(fx);
+        }
+        return out;
+    }
+
+    /**
      * T351-ELEMENT-BLEND : masque des familles élémentaires portées par l'arme (bit {@code ordinal()}),
      * transmis au client pour que les particules mélangent les couleurs (feu + eau, etc.).
      */
@@ -447,7 +500,7 @@ public enum WeaponVisualEffectId {
         for (DeepElement el : elementsOf(stack)) {
             mask |= 1 << el.ordinal();
         }
-        return mask & 0x3FF;
+        return mask & deepluckyblock.enchantments.DeepElement.MASK_ALL;
     }
 
     private static int boostSharpnessTierLevel(String path, int lvl) {

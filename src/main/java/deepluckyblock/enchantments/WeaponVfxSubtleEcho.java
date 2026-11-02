@@ -5,7 +5,7 @@ import java.util.List;
 
 /**
  * T351-SUBTLE-ECHO : <b>50 accents discrets supplémentaires</b>, cette fois <b>dérivés des grosses
- * animations</b> (les 30 effets « forts » de {@link WeaponVisualEffectId}).
+ * animations</b> (les effets « forts » de {@link WeaponVisualEffectId}, 30 à l'origine, 37 depuis T352).
  *
  * <p><b>Idée :</b> une grosse animation ne tombe qu'une fois sur dix. Quand c'est le cas, on garde la
  * grande forme ; le reste du temps on en joue le <i>souvenir</i> : même géométrie, même élément, même

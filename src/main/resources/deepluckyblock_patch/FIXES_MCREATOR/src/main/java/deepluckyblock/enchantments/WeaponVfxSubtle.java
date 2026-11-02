@@ -4,22 +4,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * T351-SUBTLE-VFX : 50 <b>nouvelles déclinaisons discrètes</b> construites sur les familles
- * élémentaires (10 familles × 5 paliers de discrétion).
+ * T351-SUBTLE-VFX : <b>55 déclinaisons discrètes</b> construites sur les familles
+ * élémentaires (11 familles × 5 paliers de discrétion, CHAOS inclus).
  *
  * <p><b>Pourquoi ?</b> Les 50 déclinaisons de {@link WeaponVfxVariant} restaient des déclinaisons des
  * 30 grosses animations : beaucoup de formes qui « englobent » la cible (cercles, colonnes, sphères).
  * Il manquait la petite touche de combat crédible : une braise qui monte, une goutte qui tombe, une
  * poussière qui s'envole, une étincelle qui glisse le long du tranchant...</p>
  *
- * <p>Ces 50 accents sont volontairement minimalistes : 2 à 9 mini-pixels, jamais de forme englobante,
+ * <p>Ces accents sont volontairement minimalistes : 2 à 9 mini-pixels, jamais de forme englobante,
  * 0,2 à 0,8 s de vie. Le palier {@code 0} est le plus visible, le palier {@code 4} est presque un
  * chuchotement — ce qui permet d'avoir une gradation naturelle de discrétion.</p>
  */
 public final class WeaponVfxSubtle {
 
-    /** Nombre total d'accents subtils (10 familles × 5 paliers). */
-    public static final int COUNT = 50;
+    /** Nombre total d'accents subtils (11 familles × 5 paliers, CHAOS inclus depuis T352). */
+    public static final int COUNT = 55;
     /** Décalage de {@code kind} utilisé sur le réseau pour transporter un accent subtil. */
     public static final int NET_KIND_BASE = 100;
     /**
@@ -171,6 +171,8 @@ public final class WeaponVfxSubtle {
             case SHADOW -> (tier % 2 == 0) ? SHAPE_WISP : SHAPE_ASH;
             case BLOOD -> (tier % 2 == 0) ? SHAPE_DROPLET : SHAPE_ASH;
             case VOID -> (tier % 2 == 0) ? SHAPE_MOTES : SHAPE_WISP;
+            // T352-CHAOS : traînée bariolée + reflet instable (toujours 2..9 pixels).
+            case CHAOS -> (tier % 2 == 0) ? SHAPE_DRIFT : SHAPE_GLINT;
         };
     }
 

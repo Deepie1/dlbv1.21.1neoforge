@@ -55,6 +55,8 @@ public final class WeaponVfxServerListener {
     private static final Map<Integer, Long> LAST_RALLY_TICK = new ConcurrentHashMap<>();
     /** T351-BIG-BONUS : dernier tick où une GROSSE animation (critique) a été jouée, par attaquant. */
     private static final Map<Integer, Long> LAST_BIG_ANIM_TICK = new ConcurrentHashMap<>();
+    /** T352-ELEMENT-COMBO : dernier tick d'un combo multi-éléments, par attaquant (anti-doublon). */
+    private static final Map<Integer, Long> LAST_ELEMENT_COMBO_TICK = new ConcurrentHashMap<>();
     /** T349-VFX-FREQUENCY : cooldown réel et aléatoire par (attaquant, effet). */
     private static final Map<String, Long> EFFECT_COOLDOWN = new ConcurrentHashMap<>();
 
@@ -66,6 +68,13 @@ public final class WeaponVfxServerListener {
     private static final int SUBTLE_SHARE_PERCENT = 90;
     /** T351-BIG-BONUS : une grosse animation (les 10 % restants) amplifie les dégâts de 5 %. */
     private static final float BIG_ANIM_DAMAGE_BONUS = 1.05f;
+    /**
+     * T352-ELEMENT-COMBO : sur une arme portant PLUSIEURS éléments, 6 % de chance de jouer en
+     * simultané une grosse animation de CHAQUE famille présente (une couleur par élément).
+     */
+    private static final int ELEMENT_COMBO_PERCENT = 6;
+    /** Garde-fou : au-delà de 6 éléments, on se limite aux 6 plus prioritaires (anti-spam réseau). */
+    private static final int ELEMENT_COMBO_MAX = 6;
 
     private WeaponVfxServerListener() {}
 
@@ -89,6 +98,10 @@ public final class WeaponVfxServerListener {
         float cx = (float) target.getX();
         float cy = (float) (target.getY() + target.getBbHeight() * 0.55);
         float cz = (float) target.getZ();
+
+        // T352-ELEMENT-COMBO : une arme multi-éléments peut déclencher une animation de chaque famille.
+        tryElementCombo(sl, attacker.getId(), attacker.getMainHandItem(), cx, cy, cz,
+                (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ());
 
         // T351 : la plupart des critiques jouent seulement un accent discret (bien plus subtil).
         if (playSubtleAccent(sl, attacker.getMainHandItem(), fx, cx, cy, cz,
@@ -198,6 +211,44 @@ public final class WeaponVfxServerListener {
         return WeaponVfxSubtle.pick(el, sl.random.nextLong()).index();
     }
 
+    /**
+     * T352-ELEMENT-COMBO : joue, en même temps, la signature de chaque famille élémentaire portée par
+     * l'arme (6 % de chance, armes multi-éléments uniquement). Chaque animation part avec un masque
+     * réduit à SA famille : les couleurs restent donc pures et bien distinctes (feu rouge, eau bleue,
+     * chaos bariolé...), au lieu d'être moyennées.
+     *
+     * @return vrai si le combo élémentaire a été déclenché
+     */
+    private static boolean tryElementCombo(ServerLevel sl, int attackerId, ItemStack weapon,
+                                           float tx, float ty, float tz,
+                                           float ax, float ay, float az) {
+        // Un seul combo par coup : le critique et le handler d'impact peuvent viser le même tick.
+        long now = sl.getGameTime();
+        Long last = LAST_ELEMENT_COMBO_TICK.get(attackerId);
+        if (last != null && now - last <= 1L) return false;
+        if (sl.random.nextInt(100) >= ELEMENT_COMBO_PERCENT) return false;
+        List<DeepElement> els = WeaponVisualEffectId.elementsOf(weapon);
+        if (els.size() < 2) return false;
+        LAST_ELEMENT_COMBO_TICK.put(attackerId, now);
+        if (LAST_ELEMENT_COMBO_TICK.size() > 512) LAST_ELEMENT_COMBO_TICK.clear();
+
+        int played = 0;
+        for (DeepElement el : els) {
+            if (played >= ELEMENT_COMBO_MAX) break;
+            if (el == null) continue;
+            WeaponVisualEffectId sig = WeaponVisualEffectId.signatureFor(el);
+            if (sig == null) continue;
+            broadcastNear(sl, tx, ty, tz, sig.id, KIND_IMPACT, 3,
+                    tx, ty, tz, ax, ay, az, 1 << el.ordinal());
+            // Étincelles de la famille, une par élément : le mélange de couleurs se voit tout de suite.
+            WeaponVfxSubtle.Subtle accent = WeaponVfxSubtle.pick(el, sl.random.nextLong());
+            broadcastNear(sl, tx, ty, tz, 0, WeaponVfxSubtle.NET_KIND_BASE + accent.index(), 1,
+                    tx, ty, tz, ax, ay, az, 1 << el.ordinal());
+            played++;
+        }
+        return played > 1;
+    }
+
     /** T351-ELEMENT-BLEND : masque des éléments de l'arme (0 si inconnu) pour mélanger les couleurs. */
     private static int paletteOf(ItemStack weapon, WeaponVisualEffectId fx) {
         int mask = WeaponVisualEffectId.elementMaskOf(weapon);
@@ -265,6 +316,7 @@ public final class WeaponVfxServerListener {
             LAST_CRIT_TICK.clear();
             LAST_RALLY_TICK.clear();
             LAST_BIG_ANIM_TICK.clear();
+            LAST_ELEMENT_COMBO_TICK.clear();
         }
 
         ItemStack weapon = resolveImpactWeapon(attacker, direct);
@@ -296,6 +348,8 @@ public final class WeaponVfxServerListener {
         int layerBudget = (sl.random.nextInt(100) < 22) ? 2 : 1;
         // Le critique a-t-il déjà lancé une grosse animation ? Alors le +5 % est appliqué tout de suite.
         boolean bigAnimBonusApplied = (now - LAST_BIG_ANIM_TICK.getOrDefault(attacker.getId(), -100L)) <= 2L;
+        // T352-ELEMENT-COMBO : un seul combo élémentaire par coup, même si deux couches partent.
+        boolean elementComboDone = false;
         if (bigAnimBonusApplied) {
             event.setAmount(event.getAmount() * BIG_ANIM_DAMAGE_BONUS);
         }
@@ -319,6 +373,11 @@ public final class WeaponVfxServerListener {
                 continue;
             }
             layerBudget--;
+
+            // T352-ELEMENT-COMBO : arme multi-éléments -> parfois une animation de CHAQUE élément.
+            if (!elementComboDone) {
+                elementComboDone = tryElementCombo(sl, attacker.getId(), weapon, tx, ty, tz, ax, ay, az);
+            }
 
             // T351-BIG-BONUS : les 10 % de grosses animations amplifient de 5 % les dégâts subis
             // (une seule fois par coup, même si deux couches partent).

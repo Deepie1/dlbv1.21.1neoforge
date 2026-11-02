@@ -2486,5 +2486,13 @@
   "tooltip.deep_lucky_block.system.section_combos": "❖ ACTIVE SYNERGIES (%s)",
   "tooltip.deep_lucky_block.system.section_enchantments": "❖ ENCHANTMENTS (%s)",
   "tooltip.supreme_lucky_block.enchant_details_header": "§6✦ How It Works & Enchantment Effects:",
-  "tooltip.supreme_lucky_block.hold_shift": "§8[Hold §e§lSHIFT §8for enchantment guide]"
+  "tooltip.supreme_lucky_block.hold_shift": "§8[Hold §e§lSHIFT §8for enchantment guide]",
+  "enchantment.deep_lucky_block.chaos_entropy": "Chaos Entropy",
+  "enchantment.deep_lucky_block.chaos_entropy.desc": "§7• §eChaos Entropy: §fstrikes can afflict a §drandom debuff§f (§cWither§f, §8Blindness§f, §2Poison§f…).",
+  "enchantment.deep_lucky_block.chaos_nexus": "Chaos Nexus",
+  "enchantment.deep_lucky_block.chaos_nexus.desc": "§7• §eChaos Nexus: §fhits §dpropagate §fpart of the damage to nearby foes.",
+  "enchantment.deep_lucky_block.chaos_rupture": "Chaos Rupture",
+  "enchantment.deep_lucky_block.chaos_rupture.desc": "§7• §eChaos Rupture: §fcritical strikes §dtear reality§f, adding damage and §8Wither§f.",
+  "enchantment.deep_lucky_block.prismatic_brand": "Prismatic Brand",
+  "enchantment.deep_lucky_block.prismatic_brand.desc": "§7• §ePrismatic Brand: §fbranded foes take §d+6 % per level§f damage for §64 s§f."
 }

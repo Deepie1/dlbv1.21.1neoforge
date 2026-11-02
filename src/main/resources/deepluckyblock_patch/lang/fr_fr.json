@@ -2486,5 +2486,13 @@
   "tooltip.deep_lucky_block.system.section_combos": "❖ SYNERGIES ACTIVES (%s)",
   "tooltip.deep_lucky_block.system.section_enchantments": "❖ ENCHANTEMENTS (%s)",
   "tooltip.supreme_lucky_block.enchant_details_header": "§6✦ Mode de Fonctionnement & Effets :",
-  "tooltip.supreme_lucky_block.hold_shift": "§8[Maintenir §e§lSHIFT §8pour le guide des enchantements]"
+  "tooltip.supreme_lucky_block.hold_shift": "§8[Maintenir §e§lSHIFT §8pour le guide des enchantements]",
+  "enchantment.deep_lucky_block.chaos_entropy": "Entropie Chaotique",
+  "enchantment.deep_lucky_block.chaos_entropy.desc": "§7• §eEntropie Chaotique : §fles coups peuvent infliger un §dmalus aléatoire§f (§cWither§f, §8Cécité§f, §2Poison§f…).",
+  "enchantment.deep_lucky_block.chaos_nexus": "Nexus du Chaos",
+  "enchantment.deep_lucky_block.chaos_nexus.desc": "§7• §eNexus du Chaos : §fles coups §dpropagent§f une partie des dégâts aux ennemis proches.",
+  "enchantment.deep_lucky_block.chaos_rupture": "Rupture Chaotique",
+  "enchantment.deep_lucky_block.chaos_rupture.desc": "§7• §eRupture Chaotique : §fles coups critiques §fdéchirent la réalité§f, dégâts supplémentaires et §8Wither§f.",
+  "enchantment.deep_lucky_block.prismatic_brand": "Marque Prismatique",
+  "enchantment.deep_lucky_block.prismatic_brand.desc": "§7• §eMarque Prismatique : §fla cible marquée encaisse §d+6 % par niveau§f pendant §64 s§f."
 }

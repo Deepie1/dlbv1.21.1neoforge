@@ -1,0 +1,20 @@
+{
+  "description": {
+    "translate": "enchantment.deep_lucky_block.chaos_nexus"
+  },
+  "supported_items": "#minecraft:enchantable/durability",
+  "weight": 3,
+  "max_level": 3,
+  "min_cost": {
+    "base": 12,
+    "per_level_above_first": 9
+  },
+  "max_cost": {
+    "base": 34,
+    "per_level_above_first": 12
+  },
+  "anvil_cost": 2,
+  "slots": [
+    "mainhand"
+  ]
+}

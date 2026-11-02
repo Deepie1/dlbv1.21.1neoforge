@@ -140,6 +140,12 @@ public class ModEnchantments {
             CustomEnchantment.create("sniper", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
             CustomEnchantment.create("fan_volley", Rarity.UNCOMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
             CustomEnchantment.create("chaos", Rarity.UNCOMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 1);
+            // T352-CHAOS-ELEMENT : 4 nouveaux enchantements de la famille CHAOS (sombre + multicolore).
+            // Ils complètent `chaos` pour donner 5 enchantements dédiés à cette nouvelle famille.
+            CustomEnchantment.create("chaos_entropy", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("chaos_nexus", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("chaos_rupture", Rarity.LEGENDARY, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("prismatic_brand", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("brimstone", Rarity.LEGENDARY, CustomEnchantment.Cat.CROSSBOW, MAIN_HAND, 5);
             CustomEnchantment.create("scatter", Rarity.RARE, CustomEnchantment.Cat.CROSSBOW, MAIN_HAND, 1);
             CustomEnchantment.create("torch", Rarity.COMMON, CustomEnchantment.Cat.CROSSBOW, MAIN_HAND, 1);

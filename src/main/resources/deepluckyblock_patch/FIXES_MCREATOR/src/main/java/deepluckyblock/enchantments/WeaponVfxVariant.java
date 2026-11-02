@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * T350-VFX-VARIATIONS : bibliothèque de <b>50 animations</b> dérivées des 30 effets d'arme existants.
+ * T350-VFX-VARIATIONS : bibliothèque d'animations dérivées de TOUS les effets d'arme existants.
  *
  * <p><b>Problème.</b> Chaque enchantement ne disposait que d'une seule animation « pleine » : dès qu'on
  * enchaînait les coups, le même effet revenait à l'identique, et les effets des différents enchantements
@@ -12,7 +12,7 @@ import java.util.List;
  *
  * <p><b>Solution.</b> 50 déclinaisons construites sur les 30 effets :</p>
  * <ul>
- *   <li>30 variantes <b>pleines</b> (une par effet, densité de pixels 100 %),</li>
+ *   <li>une variante <b>pleine</b> par effet (densité de pixels 100 %),</li>
  *   <li>20 variantes <b>allégées</b> des effets les plus courants, avec de moins en moins de particules
  *       (densité 70 % → 30 %), une taille légèrement réduite et un léger décalage de teinte.</li>
  * </ul>
@@ -23,10 +23,10 @@ import java.util.List;
  */
 public final class WeaponVfxVariant {
 
-    /** Nombre total de déclinaisons (30 pleines + 20 allégées). */
-    public static final int COUNT = 50;
-    /** Nombre de déclinaisons allégées. */
+    /** Nombre de déclinaisons allégées (déclaré AVANT COUNT : ordre d'initialisation des champs). */
     public static final int LITE_COUNT = 20;
+    /** Nombre total de déclinaisons (une pleine par effet + 20 allégées). */
+    public static final int COUNT = WeaponVisualEffectId.values().length + LITE_COUNT;
 
     /**
      * Une déclinaison concrète : effet de base + réglages de rendu.

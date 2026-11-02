@@ -170,7 +170,7 @@ public final class DeepPayloads {
                     | ((Math.max(1, Math.min(15, intensity)) & 0xFF) << 16);
             return new WeaponVfxMessage(
                     meta,
-                    paletteMask & 0x3FF,
+                    paletteMask & deepluckyblock.enchantments.DeepElement.MASK_ALL,
                     new FloatPos3((float) x, (float) y, (float) z),
                     new FloatPos3((float) tx, (float) ty, (float) tz));
         }

@@ -37,7 +37,14 @@ public enum DeepElement {
     /** Sang / vampirisme (cramoisi) — famille historique du mod. */
     BLOOD("Sang", 0xC8102A, 0x5C0410, 0xFF5A78),
     /** Vide / ender / dragon / warp (indigo-cyan). */
-    VOID("Vide", 0x8A7CFF, 0x2A1B7A, 0x9EF8FF);
+    VOID("Vide", 0x8A7CFF, 0x2A1B7A, 0x9EF8FF),
+    /**
+     * T352-CHAOS-ELEMENT : 乱 Chaos / entropie / discordance prismatique.
+     * Base volontairement <b>très sombre</b> (noir violacé) pour que les effets chaos restent
+     * « dark », avec un accent multicolore : les animations chaos font défiler la teinte (HSV)
+     * sur toute la roue chromatique par-dessus cette base sombre.
+     */
+    CHAOS("Chaos", 0x2B0B38, 0x120616, 0xFF4FD8);
 
     public final String displayName;
     public final int primary;
@@ -121,6 +128,13 @@ public enum DeepElement {
                 || s.contains("soul") || s.contains("night")) {
             return SHADOW;
         }
+        // T352-CHAOS-ELEMENT : chaos / entropie / prismatique / discorde (avant le Vide, sinon
+        // « chaos » retombait dans la famille Vide).
+        if (s.contains("chaos") || s.contains("entropy") || s.contains("prism")
+                || s.contains("discord") || s.contains("anarch") || s.contains("kaleido")
+                || s.contains("pandemon") || s.contains("mirage")) {
+            return CHAOS;
+        }
         // Vide / ender / dragon
         if (s.contains("void") || s.contains("ender") || s.contains("dragon")
                 || s.contains("warp") || s.contains("portal") || s.contains("chaos")) {
@@ -135,6 +149,22 @@ public enum DeepElement {
         }
         // Métal par défaut (tranchant, acier, or, critiques)
         return METAL;
+    }
+
+    /** Nombre de familles (masque de bits utilisable sur 16 bits). */
+    public static final int COUNT = values().length;
+
+    /** Masque de bits des familles (bit {@code ordinal()}). */
+    public static final int MASK_ALL = (1 << COUNT) - 1;
+
+    /** Couleur multicolore du chaos : teinte qui tourne sur toute la roue (base sombre conservée). */
+    public static int chaosHue(float timeSeconds, float offset, int baseRgb) {
+        int hsv = net.minecraft.util.Mth.hsvToRgb((timeSeconds * 0.33f + offset) % 1.0f, 0.85f, 1.0f);
+        // 25 % seulement de la couleur vive : le chaos reste sombre, mais bariolé.
+        int r = (int) (((baseRgb >> 16) & 0xFF) * 0.75f + ((hsv >> 16) & 0xFF) * 0.25f);
+        int g = (int) (((baseRgb >> 8) & 0xFF) * 0.75f + ((hsv >> 8) & 0xFF) * 0.25f);
+        int b = (int) ((baseRgb & 0xFF) * 0.75f + (hsv & 0xFF) * 0.25f);
+        return (r << 16) | (g << 8) | b;
     }
 
     /** Couleur principale adoucie pour un rendu de pixel (mélange vers le blanc). */
