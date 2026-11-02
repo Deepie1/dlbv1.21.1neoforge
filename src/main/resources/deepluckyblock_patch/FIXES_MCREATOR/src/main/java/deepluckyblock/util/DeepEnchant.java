@@ -1,10 +1,8 @@
 package deepluckyblock.util;
 
 import net.minecraft.core.Holder;
-import net.minecraft.core.HolderLookup;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -17,136 +15,235 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.BiConsumer;
 
 /**
- * DeepEnchant — pont d'API pour 1.21.1 (version 2, API vérifiée sur la
- * javadoc NeoForge 21.1.x).
+ * DeepEnchant — pont d'API pour 1.21.1 (version 3 — T315-SIDE-SAFE-REGISTRY).
  *
  * ⚠️ Rupture 1.20.5+ : les enchantements ne sont PLUS des champs d'ItemStack.
  * Ils vivent dans le composant de données DataComponents.ENCHANTMENTS dont le
- * type est {@link ItemEnchantments} (pas un Map). Les méthodes supprimées :
- *   - stack.enchant(en, lvl)            -> DeepEnchant.setLevel(stack, en, lvl)
- *   - stack.getEnchantmentLevel(en)     -> DeepEnchant.getLevel(stack, en)
- *   - stack.removeEnchantment(en)       -> DeepEnchant.remove(stack, en)
- *   - stack.getEnchantmentLevels()      -> DeepEnchant.map(stack) / forEach
- *   - EnchantmentHelper.getEnchantments(stack)  -> DeepEnchant.map(stack)
- *   - EnchantmentHelper.setEnchantments(map, stack) -> DeepEnchant.setLevel x N
+ * type est {@link ItemEnchantments} (pas un Map).
  *
- * Points d'appui 1.21.1 (javadoc vérifiée) :
- *   - IItemStackExtension.getEnchantmentLevel(Holder)            [lecture jeu]
- *   - IItemStackExtension.getAllEnchantments(RegistryLookup)     [ItemEnchantments]
- *   - EnchantmentHelper.updateEnchantments(stack, Consumer&lt;Mutable&gt;)
- *   - ItemEnchantments.Mutable.set/removeIf
- * L'auto-port (scripts/autoport.py) remplace les anciens appels automatiquement.
+ * T315-SIDE-SAFE-REGISTRY :
+ * En solo (IntegratedServer + Render thread dans la même JVM), le client et le
+ * serveur possèdent CHACUN leur propre instance de MappedRegistry<Enchantment>
+ * et leurs propres Holder.Reference<Enchantment> (comparés par identité dans
+ * Registry.asHolderIdMap() lors de l'encodage réseau Netty).
+ * Séparer strictement cachedServerAccess et cachedClientAccess empêche tout
+ * appel client (ex. CloudWalkerClientInput / overlays / tooltips) d'écraser le
+ * RegistryAccess serveur et garantit que tout ItemStack serveur reçoit toujours
+ * un Holder.Reference appartenant au MappedRegistry du ServerLevel actif.
  */
 public final class DeepEnchant {
 
     private DeepEnchant() {}
 
-    /**
-     * PORT 1.21.1 : Enchantment est un REGISTRE DATAPACK (Registries.ENCHANTMENT),
-     * plus dans BuiltInRegistries. Toutes les resolutions passent par un
-     * RegistryAccess (level.registryAccess(), stack.getRegistry(), ...).
-     */
-    // Cache du dernier RegistryAccess connu (le registre datapack enchantment
-    // n'est pas accessible statiquement ; on memorise l'access d'un level/stack).
-    private static volatile RegistryAccess cachedAccess;
+    // Caches séparés Serveur vs Client (aucune pollution croisée en solo IntegratedServer)
+    private static volatile RegistryAccess cachedServerAccess;
+    private static volatile RegistryAccess cachedClientAccess;
 
-    public static void rememberAccess(RegistryAccess access) {
-        if (access != null) cachedAccess = access;
-    }
+    private static volatile Registry<Enchantment> lastGoodServerRegistry;
+    private static volatile Registry<Enchantment> lastGoodClientRegistry;
 
-    /** Access en cache (initialise EMPTY si aucun encore — a utiliser en secours). */
-    public static RegistryAccess access() {
-        return cachedAccess != null ? cachedAccess : net.minecraft.core.RegistryAccess.EMPTY;
-    }
-
-    // FIX v6 : dernier registre valide connu (defense en profondeur). Si un
-    // access sans registre datapack arrive (RegistryAccess.EMPTY = aucun level
-    // charge encore), on retourne le dernier registre valide au lieu de lancer
-    // "Missing registry: minecraft:enchantment" qui plantait toute la
-    // generation d'items (enchantements, glow, infusions, coffres, mobs).
-    private static volatile Registry<Enchantment> lastGoodRegistry;
-
-    // FIX v38 : lookup fiable de la cle d'un enchantement, INDEPENDANT du
-    // registre mis en cache (cachedAccess / lastGoodRegistry ne sont mis a
-    // jour que cote SERVEUR, via onServerStarted/tick). Cote CLIENT, les
-    // instances Enchantment recues par synchronisation reseau ne sont pas
-    // les MEMES objets Java que celles du registre serveur en cache : une
-    // recherche inverse "registry.getKey(en)" (par IDENTITE d'objet, cf.
-    // MappedRegistry) echoue alors SILENCIEUSEMENT (retourne null, aucune
-    // exception) pour tout enchantement, cote client. C'est la cause du bug
-    // "les enchantements s'appliquent mais aucun nom/description ne
-    // s'affiche dans l'infobulle" : getKeySafe() renvoyait null pour les 6
-    // enchantements d'un item alors que forEach()/map() venaient JUSTEMENT
-    // d'obtenir un Holder<Enchantment> connaissant sa propre cle (via
-    // ItemEnchantments.keySet()), avant de la jeter en ne gardant que
-    // h.value(). On memorise desormais cette cle des qu'on la voit, par
-    // IDENTITE de l'objet Enchantment (IdentityHashMap : deux enchantements
-    // "egaux" en structure mais d'instances differentes ne doivent PAS se
-    // confondre), afin que getKeySafe() la retrouve sans dependre d'aucun
-    // registre mis en cache.
+    // Lookup fiable de la clé d'un enchantement par IDENTITÉ d'objet Java,
+    // peuplé dès l'indexation des registres serveur/client ET lors des lectures d'ItemStack.
     private static final Map<Enchantment, ResourceLocation> KEY_BY_IDENTITY =
             Collections.synchronizedMap(new IdentityHashMap<>());
 
-    /** Memorise la cle d'un enchantement des qu'on la connait avec certitude (via un Holder). */
+    /** Détecte sans aucun import client si le thread courant est un thread client/rendu. */
+    private static boolean isClientThread() {
+        if (deepluckyblock.DeepLuckyBlockMod.isServerThread()) {
+            return false;
+        }
+        String name = Thread.currentThread().getName();
+        if (name != null && (name.equals("Render thread") || name.startsWith("Client"))) {
+            return true;
+        }
+        return cachedServerAccess == null && cachedClientAccess != null;
+    }
+
+    private static void indexRegistry(Registry<Enchantment> reg) {
+        if (reg == null) return;
+        try {
+            for (Enchantment e : reg) {
+                if (e == null) continue;
+                ResourceLocation rl = reg.getKey(e);
+                if (rl != null) {
+                    KEY_BY_IDENTITY.put(e, rl);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** Mémorise explicitement le RegistryAccess du SERVEUR actif. */
+    public static void rememberServerAccess(RegistryAccess access) {
+        if (access == null || access == RegistryAccess.EMPTY) return;
+        cachedServerAccess = access;
+        try {
+            Registry<Enchantment> r = access.registryOrThrow(Registries.ENCHANTMENT);
+            if (r != lastGoodServerRegistry) {
+                lastGoodServerRegistry = r;
+                indexRegistry(r);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** Mémorise explicitement le RegistryAccess du CLIENT actif (sans jamais toucher au cache serveur). */
+    public static void rememberClientAccess(RegistryAccess access) {
+        if (access == null || access == RegistryAccess.EMPTY) return;
+        cachedClientAccess = access;
+        try {
+            Registry<Enchantment> r = access.registryOrThrow(Registries.ENCHANTMENT);
+            if (r != lastGoodClientRegistry) {
+                lastGoodClientRegistry = r;
+                indexRegistry(r);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** Purgé à l'arrêt du serveur intégré/dédié pour éviter tout registre périmé entre deux mondes. */
+    public static void clearServerAccess() {
+        cachedServerAccess = null;
+        lastGoodServerRegistry = null;
+    }
+
+    /** Mémorise un RegistryAccess en le routant automatiquement vers le bon côté (Serveur vs Client). */
+    public static void rememberAccess(RegistryAccess access) {
+        if (access == null || access == RegistryAccess.EMPTY) return;
+        if (isClientThread()) {
+            rememberClientAccess(access);
+        } else {
+            rememberServerAccess(access);
+        }
+    }
+
+    /**
+     * Retourne le RegistryAccess approprié au thread courant :
+     * - Sur le Server thread (ou thread serveur) : UNIQUEMENT cachedServerAccess (jamais le registre client !).
+     * - Sur le Render thread / client : cachedClientAccess en priorité, sinon cachedServerAccess.
+     */
+    public static RegistryAccess access() {
+        if (deepluckyblock.DeepLuckyBlockMod.isServerThread()) {
+            return cachedServerAccess != null ? cachedServerAccess : RegistryAccess.EMPTY;
+        }
+        if (isClientThread()) {
+            if (cachedClientAccess != null) return cachedClientAccess;
+            if (cachedServerAccess != null) return cachedServerAccess;
+            return RegistryAccess.EMPTY;
+        }
+        if (cachedServerAccess != null) return cachedServerAccess;
+        if (cachedClientAccess != null) return cachedClientAccess;
+        return RegistryAccess.EMPTY;
+    }
+
+    /** Mémorise la clé d'un enchantement dès qu'on la connaît avec certitude (via un Holder). */
     private static void rememberKey(Holder<Enchantment> holder) {
         if (holder == null) return;
         holder.unwrapKey().ifPresent(key -> KEY_BY_IDENTITY.put(holder.value(), key.location()));
     }
 
     public static Registry<Enchantment> reg(RegistryAccess access) {
-        rememberAccess(access);
-        try {
-            Registry<Enchantment> reg = access.registryOrThrow(Registries.ENCHANTMENT);
-            lastGoodRegistry = reg;
-            return reg;
-        } catch (IllegalStateException e) {
-            if (lastGoodRegistry != null) {
-                return lastGoodRegistry;
+        boolean client = isClientThread();
+        if (access != null && access != RegistryAccess.EMPTY) {
+            rememberAccess(access);
+            try {
+                Registry<Enchantment> reg = access.registryOrThrow(Registries.ENCHANTMENT);
+                if (client) {
+                    if (reg != lastGoodClientRegistry) {
+                        lastGoodClientRegistry = reg;
+                        indexRegistry(reg);
+                    }
+                } else {
+                    if (reg != lastGoodServerRegistry) {
+                        lastGoodServerRegistry = reg;
+                        indexRegistry(reg);
+                    }
+                }
+                return reg;
+            } catch (IllegalStateException ignored) {
             }
-            throw e;
         }
+        Registry<Enchantment> fallback = client
+                ? (lastGoodClientRegistry != null ? lastGoodClientRegistry : lastGoodServerRegistry)
+                : lastGoodServerRegistry;
+        if (fallback != null) {
+            return fallback;
+        }
+        if (access != null) {
+            return access.registryOrThrow(Registries.ENCHANTMENT);
+        }
+        return RegistryAccess.EMPTY.registryOrThrow(Registries.ENCHANTMENT);
     }
 
     /** Enchantment de registre par path, ou null si inconnu. */
     public static Enchantment byId(RegistryAccess access, String id) {
         if (id == null) return null;
-        rememberAccess(access);
-        Enchantment found = reg(access).get(ResourceLocation.tryParse(id));
-        // FIX (rapporté en jeu : "/testhearts donnait un shulker sans aucun
-        // enchantement visible") : ResourceLocation.tryParse("light_heart")
-        // (SANS ':') retombe SILENCIEUSEMENT sur le namespace "minecraft"
-        // (ResourceLocation.tryParse -> défaut "minecraft" si aucun ':'
-        // n'est présent), donc byId("light_heart") cherchait en réalité
-        // "minecraft:light_heart" (inexistant) et renvoyait null sans
-        // aucune erreur -- un appelant oubliant de préfixer explicitement
-        // "deep_lucky_block:" perdait alors silencieusement TOUS ses
-        // enchantements. Filet de secours en profondeur : si l'id fourni ne
-        // contient aucun ':' et que la recherche a échoué, on retente avec
-        // le namespace du mod avant d'abandonner.
+        Registry<Enchantment> r = reg(access);
+        ResourceLocation parsed = ResourceLocation.tryParse(id);
+        Enchantment found = parsed != null ? r.get(parsed) : null;
+        if (found != null && parsed != null) {
+            KEY_BY_IDENTITY.put(found, parsed);
+            return found;
+        }
         if (found == null && id.indexOf(':') < 0) {
-            found = reg(access).get(ResourceLocation.fromNamespaceAndPath("deep_lucky_block", id));
+            ResourceLocation modLoc = ResourceLocation.fromNamespaceAndPath("deep_lucky_block", id);
+            found = r.get(modLoc);
+            if (found != null) {
+                KEY_BY_IDENTITY.put(found, modLoc);
+            }
         }
         return found;
     }
 
+    /**
+     * Résout un Holder.Reference<Enchantment> garanti appartenir au registre cible {@code access}.
+     * Même si {@code en} provient d'un autre monde ou de l'autre côté (client vs serveur),
+     * la résolution par ResourceKey renvoie le Holder.Reference canonique du registre actif
+     * (indispensable pour que Registry.asHolderIdMap().getIdOrThrow réussisse à l'encodage Netty).
+     */
     public static Holder<Enchantment> holder(RegistryAccess access, Enchantment en) {
         if (en == null) return null;
-        if (access != null) {
-            try {
-                return reg(access).wrapAsHolder(en);
-            } catch (Exception ignored) {
+        RegistryAccess targetAccess = (access != null && access != RegistryAccess.EMPTY) ? access : access();
+        try {
+            Registry<Enchantment> r = reg(targetAccess);
+            ResourceLocation rl = r.getKey(en);
+            if (rl == null) {
+                rl = KEY_BY_IDENTITY.get(en);
             }
+            if (rl != null) {
+                Optional<Holder.Reference<Enchantment>> ref =
+                        r.getHolder(ResourceKey.create(Registries.ENCHANTMENT, rl));
+                if (ref.isPresent()) {
+                    rememberKey(ref.get());
+                    return ref.get();
+                }
+            }
+            Holder<Enchantment> wrapped = r.wrapAsHolder(en);
+            if (wrapped instanceof Holder.Reference<Enchantment>) {
+                rememberKey(wrapped);
+                return wrapped;
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            return RegistryAccess.EMPTY.registryOrThrow(Registries.ENCHANTMENT).wrapAsHolder(en);
+        } catch (Exception ignored) {
         }
         return Holder.direct(en);
     }
 
-    /** Niveau d'un enchantement identifie par ResourceKey (Enchantments.FALL_PROTECTION etc.). */
+    /** Niveau d'un enchantement identifié par ResourceKey (Enchantments.FALL_PROTECTION etc.). */
     public static int keyLevel(RegistryAccess access, ItemStack stack, ResourceKey<Enchantment> key) {
-        rememberAccess(access);
-        return getLevel(stack, keyHolder(access, key));
+        if (stack == null || stack.isEmpty() || key == null) return 0;
+        try {
+            return getLevel(stack, keyHolder(access, key));
+        } catch (Exception ignored) {
+            return getLevelByLocation(stack, key.location());
+        }
     }
 
     /** Holder d'un effet connu par ResourceKey (MobEffects.*). */
@@ -156,36 +253,50 @@ public final class DeepEnchant {
                 .orElseThrow(() -> new IllegalStateException("Effet inconnu: " + key));
     }
 
-    /** Holder d'un enchantement connu par ResourceKey (cle vanilla type Enchantments.SILK_TOUCH). */
+    /** Holder d'un enchantement connu par ResourceKey (clé vanilla type Enchantments.SILK_TOUCH). */
     public static Holder<Enchantment> keyHolder(RegistryAccess access, ResourceKey<Enchantment> key) {
-        rememberAccess(access);
-        return access.registryOrThrow(Registries.ENCHANTMENT).getHolder(key)
+        RegistryAccess target = (access != null && access != RegistryAccess.EMPTY) ? access : access();
+        return reg(target).getHolder(key)
                 .orElseThrow(() -> new IllegalStateException("Enchantement inconnu: " + key));
     }
 
-    /** ResourceLocation (path) d'un enchantement. */
+    /** ResourceLocation (namespace:path) d'un enchantement. */
     public static ResourceLocation path(RegistryAccess access, Enchantment en) {
         if (en == null) return null;
-        // FIX v38 : priorite absolue au cache par identite (fiable cote
-        // client, voir KEY_BY_IDENTITY) avant toute recherche inverse dans
-        // un registre qui peut appartenir a un autre cote (serveur vs
-        // client) et donc contenir des instances differentes de "en".
         ResourceLocation known = KEY_BY_IDENTITY.get(en);
         if (known != null) return known;
 
-        rememberAccess(access);
-        ResourceLocation fromRegistry = reg(access).getKey(en);
-        if (fromRegistry != null) return fromRegistry;
+        try {
+            Registry<Enchantment> r = reg(access);
+            ResourceLocation fromRegistry = r.getKey(en);
+            if (fromRegistry != null) {
+                KEY_BY_IDENTITY.put(en, fromRegistry);
+                return fromRegistry;
+            }
+        } catch (Exception ignored) {
+        }
 
-        // FIX v38 : dernier recours si l'enchantement n'a jamais transite par
-        // forEach()/map() (donc jamais memorise) ET que la recherche par
-        // identite dans le registre courant echoue : on tente aussi
-        // RegistryAccess.EMPTY (registres datapack vanilla bases uniquement),
-        // au cas ou "en" appartienne a un registre different de celui mis en
-        // cache (ex. registre client vs registre serveur).
+        if (lastGoodServerRegistry != null) {
+            ResourceLocation srv = lastGoodServerRegistry.getKey(en);
+            if (srv != null) {
+                KEY_BY_IDENTITY.put(en, srv);
+                return srv;
+            }
+        }
+        if (lastGoodClientRegistry != null) {
+            ResourceLocation cli = lastGoodClientRegistry.getKey(en);
+            if (cli != null) {
+                KEY_BY_IDENTITY.put(en, cli);
+                return cli;
+            }
+        }
+
         try {
             ResourceLocation fallback = RegistryAccess.EMPTY.registryOrThrow(Registries.ENCHANTMENT).getKey(en);
-            if (fallback != null) return fallback;
+            if (fallback != null) {
+                KEY_BY_IDENTITY.put(en, fallback);
+                return fallback;
+            }
         } catch (Exception ignored) {
         }
         return null;
@@ -196,27 +307,7 @@ public final class DeepEnchant {
     }
 
     public static Holder<Enchantment> holder(Enchantment en) {
-        if (en == null) return null;
-        // FIX v5 : Holder.direct() (Holder.Direct) ne se SERIALISE PAS — a la
-        // sauvegarde : "Elements from registry minecraft:enchantment can't be
-        // serialized to a value" (holders Direct{}) et l'item/l'entite ne
-        // persiste pas. Un holder serialisable est un holder KEYED
-        // (Reference sur un ResourceKey), obtenu via Registry.wrapAsHolder().
-        // On resout donc via le RegistryAccess du dernier level connu (cache,
-        // complet : vanilla + enchantements du mod), sinon via
-        // RegistryAccess.EMPTY (registres datapack vanilla). Le direct ne
-        // reste que dernier recours (lecture seule, jamais persiste).
-        if (cachedAccess != null) {
-            try {
-                return cachedAccess.registryOrThrow(Registries.ENCHANTMENT).wrapAsHolder(en);
-            } catch (Exception ignored) {
-            }
-        }
-        try {
-            return RegistryAccess.EMPTY.registryOrThrow(Registries.ENCHANTMENT).wrapAsHolder(en);
-        } catch (Exception ignored) {
-        }
-        return Holder.direct(en);
+        return holder(access(), en);
     }
 
     public static Enchantment byId(String id) {
@@ -228,24 +319,38 @@ public final class DeepEnchant {
         return path(en);
     }
 
-    /** Remplace stack.getEnchantmentLevel(en) — niveau "jeu" (composants). */
+    private static int getLevelByLocation(ItemStack stack, ResourceLocation wanted) {
+        if (stack == null || stack.isEmpty() || wanted == null) return 0;
+        ItemEnchantments ench = stack.getEnchantments();
+        if (ench.isEmpty()) return 0;
+        for (Holder<Enchantment> entry : ench.keySet()) {
+            Optional<ResourceKey<Enchantment>> rk = entry.unwrapKey();
+            if (rk.isPresent() && wanted.equals(rk.get().location())) {
+                return ench.getLevel(entry);
+            }
+        }
+        return 0;
+    }
+
+    /** Remplace stack.getEnchantmentLevel(en) — niveau "jeu" (composants), tolérant inter-registres. */
     public static int getLevel(ItemStack stack, Enchantment en) {
-        return getLevel(stack, holder(en));
+        if (stack == null || stack.isEmpty() || en == null) return 0;
+        Holder<Enchantment> h = holder(en);
+        if (h != null) {
+            int lvl = stack.getEnchantmentLevel(h);
+            if (lvl > 0) return lvl;
+        }
+        ResourceLocation wanted = path(en);
+        return wanted != null ? getLevelByLocation(stack, wanted) : 0;
     }
 
     /**
      * FILET DE SECURITE "SCALING A NIVEAU FORCE" (commande/lucky block/NBT) :
      * - Jusqu'au niveau max officiel de l'enchantement (getMaxLevel), le
-     *   niveau est retourne tel quel : AUCUN changement pour le jeu normal.
-     * - Au-dela (niveau force par commande, ex. 1000), la puissance continue
-     *   d'augmenter mais a rendement decroissant (+1 niveau effectif par
-     *   palier de racine carree du depassement), pour eviter qu'une formule
-     *   lineaire non plafonnee ne produise des valeurs absurdes/instables a
-     *   tres haut niveau tout en restant clairement croissante.
-     * Reprend exactement la meme regle que UniversalEnchantmentHandler
-     * (softCappedLevel), centralisee ici pour que TOUS les handlers
-     * d'enchantements (equipement, peche/trident/elytre, etc.) beneficient
-     * du meme filet, meme ceux qui ne passent pas par ce handler.
+     *   niveau est retourné tel quel : AUCUN changement pour le jeu normal.
+     * - Au-delà (niveau forcé par commande, ex. 1000), la puissance continue
+     *   d'augmenter mais à rendement décroissant (+1 niveau effectif par
+     *   palier de racine carrée du dépassement).
      */
     public static int softCappedLevel(Enchantment en, int storedLevel) {
         if (en == null) return Math.max(0, storedLevel);
@@ -257,7 +362,10 @@ public final class DeepEnchant {
 
     public static int getLevel(ItemStack stack, Holder<Enchantment> h) {
         if (stack == null || stack.isEmpty() || h == null) return 0;
-        return stack.getEnchantmentLevel(h);
+        int lvl = stack.getEnchantmentLevel(h);
+        if (lvl > 0) return lvl;
+        Optional<ResourceKey<Enchantment>> rk = h.unwrapKey();
+        return rk.isPresent() ? getLevelByLocation(stack, rk.get().location()) : 0;
     }
 
     /** Remplace stack.enchant(en, level) — pose le niveau (supprime si <= 0). */
@@ -267,10 +375,16 @@ public final class DeepEnchant {
 
     public static void setLevel(ItemStack stack, Holder<Enchantment> h, int level) {
         if (stack == null || stack.isEmpty() || h == null) return;
+        final ResourceLocation targetKey = h.unwrapKey().map(ResourceKey::location).orElse(null);
         EnchantmentHelper.updateEnchantments(stack, m -> {
             if (level <= 0) {
-                m.removeIf(x -> x.equals(h));
+                m.removeIf(x -> x.equals(h) || (targetKey != null
+                        && x.unwrapKey().map(rk -> targetKey.equals(rk.location())).orElse(false)));
             } else {
+                if (targetKey != null) {
+                    m.removeIf(x -> !x.equals(h)
+                            && x.unwrapKey().map(rk -> targetKey.equals(rk.location())).orElse(false));
+                }
                 m.set(h, level);
             }
         });
@@ -300,10 +414,6 @@ public final class DeepEnchant {
         for (Holder<Enchantment> h : ench.keySet()) {
             int lvl = ench.getLevel(h);
             if (lvl > 0) {
-                // FIX v38 : on memorise la cle AVANT de perdre le Holder (voir
-                // KEY_BY_IDENTITY plus haut) afin que getKeySafe() la retrouve
-                // meme si le registre en cache est celui du serveur et que
-                // cet Enchantment est une instance cote client.
                 rememberKey(h);
                 consumer.accept(h.value(), lvl);
             }
@@ -323,9 +433,6 @@ public final class DeepEnchant {
      */
     public static boolean areCompatible(Enchantment a, Enchantment b) {
         if (a == null || b == null) return true;
-        // PORT 1.21.1 : CustomEnchantment n'est plus une sous-classe d'Enchantment
-        // (Enchantment est un record) -> la table de conflits est statique et
-        // fonctionne sur les paths du registre (gère aussi vanilla vs vanilla).
         return deepluckyblock.enchantments.CustomEnchantment.checkCompatibilityMod(a, b);
     }
 }

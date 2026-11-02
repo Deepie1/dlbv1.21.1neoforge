@@ -43,7 +43,7 @@ public final class CloudWalkerClientInput {
                 wallJumpCooldown = 0;
                 return;
             }
-            DeepEnchant.rememberAccess(mc.level.registryAccess());
+            DeepEnchant.rememberClientAccess(mc.level.registryAccess());
             if (wallJumpCooldown > 0) wallJumpCooldown--;
 
             boolean jumpDown = mc.screen == null && mc.options.keyJump.isDown();

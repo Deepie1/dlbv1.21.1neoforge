@@ -52,6 +52,7 @@ public class LuckyChestAutofillProcedure {
     private static List<Item> LUCKY_BLOCK_CACHE = null;
     private static List<Item> APPLE_ITEM_CACHE = null;
     private static List<Enchantment> ENCHANTMENT_CACHE = null;
+    private static net.minecraft.core.Registry<Enchantment> ENCHANTMENT_CACHE_REGISTRY = null;
     private static Item deep_lucky_block = null;
     private static boolean deep_lucky_block_SEARCHED = false;
 
@@ -81,6 +82,7 @@ public class LuckyChestAutofillProcedure {
         if (player == null) return;
 
         if (!(event.getLevel() instanceof ServerLevel level)) return;
+        deepluckyblock.util.DeepEnchant.rememberServerAccess(level.registryAccess());
 
         BlockPos pos = event.getPos();
         BlockEntity be = level.getBlockEntity(pos);
@@ -523,7 +525,11 @@ public class LuckyChestAutofillProcedure {
     private static void maybeAddEnchantedBook(List<ItemStack> items, int chancePercent, RandomSource random) {
         if (random.nextInt(100) >= chancePercent) return;
 
-        if (ENCHANTMENT_CACHE == null) buildEnchantmentCache();
+        net.minecraft.core.Registry<Enchantment> currentReg =
+                deepluckyblock.util.DeepEnchant.reg(deepluckyblock.util.DeepEnchant.access());
+        if (ENCHANTMENT_CACHE == null || ENCHANTMENT_CACHE_REGISTRY != currentReg) {
+            buildEnchantmentCache(currentReg);
+        }
         if (ENCHANTMENT_CACHE.isEmpty()) return;
 
         ItemStack book = new ItemStack(Items.ENCHANTED_BOOK);
@@ -553,11 +559,14 @@ public class LuckyChestAutofillProcedure {
         }
     }
 
-    private static void buildEnchantmentCache() {
+    private static void buildEnchantmentCache(net.minecraft.core.Registry<Enchantment> currentReg) {
+        ENCHANTMENT_CACHE_REGISTRY = currentReg;
         ENCHANTMENT_CACHE = new ArrayList<>();
-        for (Enchantment ench : deepluckyblock.util.DeepEnchant.reg(deepluckyblock.util.DeepEnchant.access())) {
-            if (ench == null) continue;
-            ENCHANTMENT_CACHE.add(ench);
+        if (currentReg != null) {
+            for (Enchantment ench : currentReg) {
+                if (ench == null) continue;
+                ENCHANTMENT_CACHE.add(ench);
+            }
         }
         debug("Cache enchantements : " + ENCHANTMENT_CACHE.size() + " trouves");
     }

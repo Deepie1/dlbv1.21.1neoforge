@@ -2129,7 +2129,7 @@ public final class EnchantmentComboHandler {
                         .requires(src -> src.hasPermission(2))
                         .then(Commands.argument("numero", IntegerArgumentType.integer(1, 110)).executes(ctx -> {
                             ServerPlayer sp = ctx.getSource().getPlayerOrException();
-                            DeepEnchant.rememberAccess(sp.serverLevel().registryAccess());
+                            DeepEnchant.rememberServerAccess(sp.serverLevel().registryAccess());
                             int num = IntegerArgumentType.getInteger(ctx, "numero");
                             ComboDef c = COMBOS.get(num - 1);
                             for (PieceRequirement req : c.pieces()) {

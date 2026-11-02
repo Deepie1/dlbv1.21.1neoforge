@@ -1005,6 +1005,9 @@ public class GenerateLuckyItemProcedure {
      */
     public static TestProcedure.BranchResult generateLuckyToolsEternalPayload(
             Level level, double x, double y, double z, RandomSource random) {
+        if (level != null && !level.isClientSide()) {
+            deepluckyblock.util.DeepEnchant.rememberServerAccess(level.registryAccess());
+        }
         final int eternalLuck = 100;
         RankProfile profile = profileFromLuck(eternalLuck);
 
@@ -1031,6 +1034,9 @@ public class GenerateLuckyItemProcedure {
     // ==================== GENERATE PAYLOAD ====================
     public static TestProcedure.BranchResult generatePayload(Level level, double x, double y, double z,
                                                              int mainLuck, RandomSource random) {
+        if (level != null && !level.isClientSide()) {
+            deepluckyblock.util.DeepEnchant.rememberServerAccess(level.registryAccess());
+        }
         ServerPlayer nearestSP = findNearestServerPlayer(level, x, y, z, 32.0);
         int rolledLuck = mainLuck;
 
@@ -1917,6 +1923,9 @@ public class GenerateLuckyItemProcedure {
                                                  int luckMin, int luckMax, RandomSource random,
                                                  boolean netherite) {
         if (mob == null) return;
+        if (!mob.level().isClientSide()) {
+            deepluckyblock.util.DeepEnchant.rememberServerAccess(mob.level().registryAccess());
+        }
         try {
             EquipmentSlot[] slots = {
                 EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
@@ -1954,6 +1963,9 @@ public class GenerateLuckyItemProcedure {
     public static void enchantWornArmor(net.minecraft.world.entity.Mob mob,
                                         int luckMin, int luckMax, RandomSource random) {
         if (mob == null) return;
+        if (!mob.level().isClientSide()) {
+            deepluckyblock.util.DeepEnchant.rememberServerAccess(mob.level().registryAccess());
+        }
         try {
             EquipmentSlot[] slots = {
                 EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
@@ -2000,6 +2012,9 @@ public class GenerateLuckyItemProcedure {
     }
 
     public static ItemStack generate(Level level, int luck, TestProcedure.QualityTier tier, RandomSource random) {
+        if (level != null && !level.isClientSide()) {
+            deepluckyblock.util.DeepEnchant.rememberServerAccess(level.registryAccess());
+        }
         int branchLuck = luck;
         ItemType type = pickRandomItemType(random, luck);
         ItemStack stack = createItemForType(type, luck, branchLuck, random, false, false);
@@ -2012,11 +2027,17 @@ public class GenerateLuckyItemProcedure {
 
     public static ItemStack generateSpecific(Level level, int luck, TestProcedure.QualityTier tier,
                                              RandomSource random, EquipmentSlot slot) {
+        if (level != null && !level.isClientSide()) {
+            deepluckyblock.util.DeepEnchant.rememberServerAccess(level.registryAccess());
+        }
         return createItemForType(slotToItemType(slot), luck, luck, random, false, false);
     }
 
     public static ItemStack generateSpecific(Level level, int luck, TestProcedure.QualityTier tier,
                                              RandomSource random, String itemType) {
+        if (level != null && !level.isClientSide()) {
+            deepluckyblock.util.DeepEnchant.rememberServerAccess(level.registryAccess());
+        }
         return createItemForType(normalizeItemType(itemType), luck, luck, random, false, false);
     }
 

@@ -139,6 +139,7 @@ public final class DlbCommand {
      */
     private static int launchLuckyBlocks(CommandSourceStack src, boolean forceGood, int infusedLuck, int count) {
         ServerLevel level = src.getLevel();
+        deepluckyblock.util.DeepEnchant.rememberServerAccess(level.registryAccess());
         Vec3 origin = src.getPosition();
         ServerPlayer player = src.getPlayer();
         if (player == null) {

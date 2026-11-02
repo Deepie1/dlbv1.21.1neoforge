@@ -165,9 +165,26 @@ public class DeepLuckyBlockMod {
 	// serveur sur le premier tick (plus fiable, aucune dependance au patch).
 	private static volatile Thread serverThread;
 
+	public static boolean isServerThread() {
+		Thread st = serverThread;
+		return st != null && Thread.currentThread() == st;
+	}
+
 	public static void queueServerWork(int delay, Runnable action) {
 		if (Thread.currentThread() == serverThread)
 			workToBeScheduled.add(new IntObjectImmutablePair<>(delay, action));
+	}
+
+	@SubscribeEvent
+	public void onServerAboutToStart(net.neoforged.neoforge.event.server.ServerAboutToStartEvent event) {
+		serverThread = Thread.currentThread();
+		deepluckyblock.util.DeepEnchant.rememberServerAccess(event.getServer().registryAccess());
+	}
+
+	@SubscribeEvent
+	public void onServerStopped(net.neoforged.neoforge.event.server.ServerStoppedEvent event) {
+		deepluckyblock.util.DeepEnchant.clearServerAccess();
+		serverThread = null;
 	}
 
 	// FIX v6 : le cache de RegistryAccess etait pose trop tard (ServerTickEvent.Post
@@ -181,9 +198,10 @@ public class DeepLuckyBlockMod {
 	@SubscribeEvent
 	public void onServerStarted(net.neoforged.neoforge.event.server.ServerStartedEvent event) {
 		serverThread = Thread.currentThread();
+		deepluckyblock.util.DeepEnchant.rememberServerAccess(event.getServer().registryAccess());
 		net.minecraft.server.level.ServerLevel overworld = event.getServer().overworld();
 		if (overworld != null) {
-			deepluckyblock.util.DeepEnchant.rememberAccess(overworld.registryAccess());
+			deepluckyblock.util.DeepEnchant.rememberServerAccess(overworld.registryAccess());
 			// FIX (freeze serveur ~78s au premier spawn de shipdead, log :
 			// "Can't keep up! ... Running 78183ms or 1563 ticks behind") :
 			// on précharge ici, AVANT toute connexion de joueur, toutes les
@@ -201,7 +219,7 @@ public class DeepLuckyBlockMod {
 	@SubscribeEvent
 	public void tick(ServerTickEvent.Post event) {
 		serverThread = Thread.currentThread();
-		deepluckyblock.util.DeepEnchant.rememberAccess(event.getServer().overworld().registryAccess());
+		deepluckyblock.util.DeepEnchant.rememberServerAccess(event.getServer().overworld().registryAccess());
 		int currentTick = event.getServer().getTickCount();
 		IntObjectPair<Runnable> work;
 		while ((work = workToBeScheduled.poll()) != null) {

@@ -258,6 +258,7 @@ public class TestProcedure {
         if (world instanceof Level compatLevel
                 && LuckyToolsCompatibility.consumeAndExecute(compatLevel, x, y, z)) return;
         if (!(world instanceof ServerLevel level)) return;
+        deepluckyblock.util.DeepEnchant.rememberServerAccess(level.registryAccess());
 
         RandomSource rng      = RandomSource.create();
         boolean      mainPos  = deepluckyblock.procedures.GenerateLuckyItemProcedure.DEBUG_STRUCTURE_LOOP || rollPercent(rng, 50.0); // Système UNIFIÉ : branche via rollPercent (50 % au bonus 0), identique à l'infusé
@@ -845,6 +846,7 @@ public class TestProcedure {
                                                     double x, double y, double z,
                                                     int luckBonus) {
         if (!(world instanceof ServerLevel level)) return;
+        deepluckyblock.util.DeepEnchant.rememberServerAccess(level.registryAccess());
         RandomSource random = level.getRandom();
         luckBonus = Math.max(-100, Math.min(100, luckBonus));
 
@@ -914,6 +916,7 @@ public class TestProcedure {
             return;
         }
         if (!(world instanceof ServerLevel level)) return;
+        deepluckyblock.util.DeepEnchant.rememberServerAccess(level.registryAccess());
 
         RandomSource random = level.getRandom();
         boolean mainPos = forceBest;
