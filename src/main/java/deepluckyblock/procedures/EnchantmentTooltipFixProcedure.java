@@ -149,6 +149,7 @@ public final class EnchantmentTooltipFixProcedure {
     }
 
     private static void onTooltipImpl(ItemTooltipEvent event) {
+        deepluckyblock.client.ClientTranslationInjector.ensureInjected();
         ItemStack stack = event.getItemStack();
         if (stack == null || stack.isEmpty()) return;
 
@@ -432,7 +433,8 @@ public final class EnchantmentTooltipFixProcedure {
             insertHeartBonusLines(lines, heartBonusLines);
         }
 
-        // T308-COMBOS : Affiche les synergies multi-pièces actives (et sous Shift, les combos possibles avec état des pièces)
+        // T316-COMBOS : Affiche UNIQUEMENT les synergies actives sur la pièce équipée (aucun spoil des combos possibles),
+        // et sous Shift, affiche sous chaque combo actif sa description complète (effet + circonstance).
         try {
             List<Component> comboLines = deepluckyblock.enchantments.EnchantmentComboRegistry
                     .buildTooltipComboLines(stack, event.getEntity(), shift);
@@ -892,18 +894,21 @@ public final class EnchantmentTooltipFixProcedure {
 
     /** Cache cle de traduction -> valeur, alimente par lecture directe du JSON packagé du mod. */
     private static final Map<String, String> JSON_FALLBACK_CACHE = new HashMap<>();
-    private static volatile boolean JSON_FALLBACK_LOADED = false;
+    private static volatile String JSON_FALLBACK_LANG = null;
 
     private static synchronized void ensureJsonFallbackLoaded() {
-        if (JSON_FALLBACK_LOADED) return;
-        JSON_FALLBACK_LOADED = true;
         String langCode = resolveLangCode();
+        if (langCode.equals(JSON_FALLBACK_LANG)) return;
+        JSON_FALLBACK_CACHE.clear();
+        JSON_FALLBACK_LANG = langCode;
         // Priorite a la langue active, puis repli sur l'anglais (toujours
         // present) afin qu'une langue partiellement traduite ne prive pas
         // le filet de secours des cles encore absentes de sa propre langue.
         loadLangFileIntoCache("/assets/deep_lucky_block/lang/" + langCode + ".json");
+        loadLangFileIntoCache("/deepluckyblock_patch/lang/" + langCode + ".json");
         if (!"en_us".equals(langCode)) {
             loadLangFileIntoCache("/assets/deep_lucky_block/lang/en_us.json");
+            loadLangFileIntoCache("/deepluckyblock_patch/lang/en_us.json");
         }
     }
 

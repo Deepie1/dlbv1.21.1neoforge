@@ -37,18 +37,20 @@ public final class EnchantmentComboRegistry {
     private EnchantmentComboRegistry() {}
 
     public enum ComboTier {
-        NORMAL(0x94A3B8, "Normal"),
-        UNCOMMON(0x4ADE80, "Avanc\u00e9"),
-        RARE(0x38BDF8, "Rare"),
-        EPIC(0xC084FC, "\u00c9pique"),
-        MYTHIC(0xF472B6, "Mythique"),
-        ULTRA_RARE(0xFFAA00, "Ultra-Rare");
+        NORMAL(0x94A3B8, "Normal", "Normal"),
+        UNCOMMON(0x4ADE80, "Uncommon", "Avanc\u00e9"),
+        RARE(0x38BDF8, "Rare", "Rare"),
+        EPIC(0xC084FC, "Epic", "\u00c9pique"),
+        MYTHIC(0xF472B6, "Mythic", "Mythique"),
+        ULTRA_RARE(0xFFAA00, "Ultra-Rare", "Ultra-Rare");
 
         private final int rgb;
+        private final String fallbackEn;
         private final String fallbackFr;
 
-        ComboTier(int rgb, String fallbackFr) {
+        ComboTier(int rgb, String fallbackEn, String fallbackFr) {
             this.rgb = rgb;
+            this.fallbackEn = fallbackEn;
             this.fallbackFr = fallbackFr;
         }
 
@@ -56,8 +58,9 @@ public final class EnchantmentComboRegistry {
 
         public MutableComponent badge() {
             String key = "tooltip.deep_lucky_block.combo_tier." + name().toLowerCase(Locale.ROOT);
+            String fb = TranslationFallback.isFrench() ? fallbackFr : fallbackEn;
             return Component.literal("[")
-                    .append(TranslationFallback.translatableOrFallback(key, fallbackFr))
+                    .append(TranslationFallback.translatableOrFallback(key, fb))
                     .append("]")
                     .withStyle(Style.EMPTY.withColor(TextColor.fromRgb(rgb)).withBold(this == ULTRA_RARE));
         }
@@ -715,19 +718,23 @@ public final class EnchantmentComboRegistry {
         return BY_ENCHANT_PATH.getOrDefault(path.toLowerCase(Locale.ROOT), List.of());
     }
 
-    public static String slotLabelFrOrEn(EquipmentSlot slot) {
+    public static MutableComponent slotComponent(EquipmentSlot slot) {
         String key = "tooltip.deep_lucky_block.slot." + slot.getName().toLowerCase(Locale.ROOT);
-        String resolved = TranslationFallback.resolve(key);
-        if (resolved != null) return resolved;
-        return switch (slot) {
-            case HEAD -> "Casque";
-            case CHEST -> "Plastron/\u00c9lytres";
-            case LEGS -> "Jambi\u00e8res";
-            case FEET -> "Bottes";
-            case MAINHAND -> "Arme/Outil";
-            case OFFHAND -> "Bouclier";
+        boolean fr = TranslationFallback.isFrench();
+        String fallback = switch (slot) {
+            case HEAD -> fr ? "Casque" : "Helmet";
+            case CHEST -> fr ? "Plastron/\u00c9lytres" : "Chestplate/Elytra";
+            case LEGS -> fr ? "Jambi\u00e8res" : "Leggings";
+            case FEET -> fr ? "Bottes" : "Boots";
+            case MAINHAND -> fr ? "Arme/Outil" : "Weapon/Tool";
+            case OFFHAND -> fr ? "Bouclier" : "Shield";
             default -> slot.getName();
         };
+        return TranslationFallback.translatableOrFallback(key, fallback);
+    }
+
+    public static String slotLabelFrOrEn(EquipmentSlot slot) {
+        return slotComponent(slot).getString();
     }
 
     private static String romanMin(int lvl) {
@@ -752,8 +759,9 @@ public final class EnchantmentComboRegistry {
             if (req.minLevel() > 1) {
                 enchName = enchName.append(Component.literal(romanMin(req.minLevel())));
             }
-            MutableComponent part = Component.literal(slotLabelFrOrEn(req.slot()) + ": ")
-                    .withStyle(ChatFormatting.GRAY)
+            MutableComponent part = Component.empty()
+                    .append(slotComponent(req.slot()).withStyle(ChatFormatting.GRAY))
+                    .append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
                     .append(enchName.withStyle(satisfied ? ChatFormatting.GREEN : ChatFormatting.YELLOW));
             if (i > 0) out.append(Component.literal(" + ").withStyle(ChatFormatting.DARK_GRAY));
             out.append(part);
@@ -761,50 +769,102 @@ public final class EnchantmentComboRegistry {
         return out;
     }
 
+    private static boolean isStackContributingToActiveCombo(ComboDef combo, ItemStack stack, Player viewer) {
+        if (combo == null || stack == null || stack.isEmpty() || viewer == null) return false;
+        for (PieceRequirement req : combo.pieces()) {
+            if (!req.matches(stack)) continue;
+            ItemStack worn = viewer.getItemBySlot(req.slot());
+            if (!worn.isEmpty() && (worn == stack || ItemStack.matches(worn, stack))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static List<String> wrapPlainText(String text, int maxWidth) {
+        if (text == null || text.isBlank()) return List.of();
+        String trimmed = text.trim();
+        if (trimmed.length() <= maxWidth) return List.of(trimmed);
+        List<String> out = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        for (String word : trimmed.split("\\s+")) {
+            if (word.isEmpty()) continue;
+            if (current.length() > 0 && current.length() + 1 + word.length() > maxWidth) {
+                out.add(current.toString());
+                current.setLength(0);
+            } else if (current.length() > 0) {
+                current.append(' ');
+            }
+            current.append(word);
+        }
+        if (current.length() > 0) out.add(current.toString());
+        return out;
+    }
+
+    /**
+     * T316-NO-SPOIL-SHIFT-DESC :
+     * - Ne spoile AUCUN combo potentiel/inactif (ni normalement, ni avec Shift) : la surprise reste totale !
+     * - Si un ou plusieurs combos sont ACTIFS sur le joueur et que l'item survolé en fait partie :
+     *   - Sans Shift : affiche la ligne dorée du combo actif + son badge de palier.
+     *   - Avec Shift : affiche juste SOUS chaque combo actif sa description complète (ce que ça fait et dans quelle circonstance)
+     *     proprement découpée à la ligne, suivie du rappel des pièces actives qui le composent.
+     */
     public static List<Component> buildTooltipComboLines(ItemStack stack, Player viewer, boolean shiftHeld) {
-        if (stack == null || stack.isEmpty() || !stack.isEnchanted()) return List.of();
+        if (viewer == null || stack == null || stack.isEmpty() || !stack.isEnchanted()) return List.of();
+        ComboMask activeMask = computeRawMask(viewer);
+        if (activeMask.isEmpty()) return List.of();
+
         Map<Enchantment, Integer> enchMap = DeepEnchant.map(stack);
         if (enchMap.isEmpty()) return List.of();
 
-        List<ComboDef> matchedCombos = new ArrayList<>();
+        List<ComboDef> activeOnThisStack = new ArrayList<>();
         for (Enchantment en : enchMap.keySet()) {
             String path = CustomEnchantment.pathOf(en);
             for (ComboDef c : combosForEnchantPath(path)) {
-                if (!matchedCombos.contains(c)) matchedCombos.add(c);
-            }
-        }
-        if (matchedCombos.isEmpty()) return List.of();
-
-        ComboMask activeMask = viewer != null ? computeRawMask(viewer) : ComboMask.EMPTY;
-        List<Component> lines = new ArrayList<>();
-        int hintsShown = 0;
-        for (ComboDef c : matchedCombos) {
-            boolean active = activeMask.has(c.index());
-            if (active) {
-                MutableComponent activePrefix = TranslationFallback.translatableOrFallback(
-                        "tooltip.deep_lucky_block.combo_active", "\u2726 Synergie Active : ")
-                        .withStyle(ChatFormatting.GOLD);
-                lines.add(Component.literal("  ").append(activePrefix).append(c.translatedName()).append(" ").append(c.tier().badge()));
-                if (shiftHeld) {
-                    lines.add(Component.literal("    \u25b8 ")
-                            .withStyle(ChatFormatting.YELLOW)
-                            .append(c.translatedDesc().copy().withStyle(ChatFormatting.WHITE)));
+                if (activeMask.has(c.index()) && !activeOnThisStack.contains(c)
+                        && isStackContributingToActiveCombo(c, stack, viewer)) {
+                    activeOnThisStack.add(c);
                 }
-            } else if (shiftHeld && hintsShown < 4) {
-                hintsShown++;
-                MutableComponent hintPrefix = TranslationFallback.translatableOrFallback(
-                        "tooltip.deep_lucky_block.combo_hint", "\u2727 Combo possible : ")
-                        .withStyle(ChatFormatting.DARK_AQUA);
-                lines.add(Component.literal("  ").append(hintPrefix).append(c.translatedName()).append(" ").append(c.tier().badge())
-                        .append(Component.literal(" (").withStyle(ChatFormatting.DARK_GRAY))
-                        .append(buildRequirementsSummary(c, viewer))
-                        .append(Component.literal(")").withStyle(ChatFormatting.DARK_GRAY)));
             }
         }
-        if (shiftHeld && matchedCombos.size() > hintsShown + activeMask.bitCount()) {
-            int more = matchedCombos.size() - hintsShown;
-            if (more > 0 && activeMask.isEmpty()) {
-                lines.add(Component.literal("  \u00a78\u00a7o(+ " + more + " autre(s) synergie(s) via /dlbcombos list)"));
+        if (activeOnThisStack.isEmpty()) return List.of();
+
+        boolean fr = TranslationFallback.isFrench();
+        List<Component> lines = new ArrayList<>();
+        for (ComboDef c : activeOnThisStack) {
+            MutableComponent activePrefix = TranslationFallback.translatableOrFallback(
+                    "tooltip.deep_lucky_block.combo_active",
+                    fr ? "\u2726 Synergie Active : " : "\u2726 Active Synergy: ")
+                    .withStyle(ChatFormatting.GOLD);
+            lines.add(Component.literal("  ")
+                    .append(activePrefix)
+                    .append(c.translatedName())
+                    .append(" ")
+                    .append(c.tier().badge()));
+
+            if (shiftHeld) {
+                String resolvedDesc = TranslationFallback.resolve(c.descKey());
+                if (resolvedDesc == null || resolvedDesc.isBlank()) {
+                    resolvedDesc = c.translatedDesc().getString();
+                }
+                List<String> wrapped = wrapPlainText(resolvedDesc, 52);
+                for (int i = 0; i < wrapped.size(); i++) {
+                    if (i == 0) {
+                        lines.add(Component.literal("    \u25b8 ")
+                                .withStyle(ChatFormatting.YELLOW)
+                                .append(Component.literal(wrapped.get(i)).withStyle(ChatFormatting.WHITE)));
+                    } else {
+                        lines.add(Component.literal("      " + wrapped.get(i)).withStyle(ChatFormatting.WHITE));
+                    }
+                }
+                MutableComponent piecesLabel = TranslationFallback.translatableOrFallback(
+                        "tooltip.deep_lucky_block.combo_pieces_label",
+                        fr ? "Pi\u00e8ces : " : "Pieces: ")
+                        .withStyle(ChatFormatting.DARK_AQUA);
+                lines.add(Component.literal("    \u2022 ")
+                        .withStyle(ChatFormatting.DARK_GRAY)
+                        .append(piecesLabel)
+                        .append(buildRequirementsSummary(c, viewer)));
             }
         }
         return lines;

@@ -1,16 +1,24 @@
 package deepluckyblock.client;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 import net.minecraft.client.Minecraft;
 import net.minecraft.locale.Language;
 import net.minecraft.network.chat.FormattedText;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.minecraft.util.FormattedCharSequence;
 import net.neoforged.api.distmarker.Dist;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -18,11 +26,13 @@ import java.util.Map;
 import net.neoforged.fml.common.EventBusSubscriber;
 
 /**
- * Injecte les traductions des evenements directement dans le Language actif.
+ * Injecte les traductions (combos, infobulles, commandes et événements) dans le Language actif.
  *
- * Cette classe est strictement client-side : elle n'est jamais chargee par un
- * serveur dedie. Les traductions deja presentes dans les fichiers lang du mod
- * restent prioritaires ; l'injection ne fournit que les cles absentes.
+ * Strictement client-side : jamais chargé sur serveur dédié.
+ * Les traductions déjà présentes dans Language restent prioritaires ; l'injection
+ * garantit qu'en anglais (en_us, en_gb...) comme en français (fr_fr, fr_ca...),
+ * aucune clé de combo ou d'événement ne tombe jamais en clé brute ni dans la mauvaise langue,
+ * même après changement de langue en plein jeu ou régénération MCreator.
  */
 @EventBusSubscriber(modid = "deep_lucky_block", bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public final class ClientTranslationInjector {
@@ -39,49 +49,92 @@ public final class ClientTranslationInjector {
 
     @SubscribeEvent
     public static void onRegisterReloadListeners(RegisterClientReloadListenersEvent event) {
-        // Reinjecte apres F3+T et apres chaque changement de langue.
+        // Réinjecte après F3+T et après chaque changement de langue.
         event.registerReloadListener((ResourceManagerReloadListener) resourceManager -> injectNow());
     }
 
+    @EventBusSubscriber(modid = "deep_lucky_block", value = Dist.CLIENT)
+    public static final class GameBusGuard {
+        private GameBusGuard() {}
+
+        @SubscribeEvent
+        public static void onClientTickPre(ClientTickEvent.Pre event) {
+            // Si LanguageManager.onResourceManagerReload s'est exécuté APRÈS notre listener
+            // lors d'un changement de langue en jeu, on ré-enveloppe immédiatement Language.
+            if (!(Language.getInstance() instanceof InjectedLanguage)) {
+                injectNow();
+            }
+        }
+    }
+
+    public static void ensureInjected() {
+        if (!(Language.getInstance() instanceof InjectedLanguage)) {
+            injectNow();
+        }
+    }
+
+    private static boolean isFrenchActive() {
+        try {
+            Minecraft minecraft = Minecraft.getInstance();
+            if (minecraft != null && minecraft.options != null) {
+                String code = minecraft.options.languageCode;
+                return code != null && code.toLowerCase(Locale.ROOT).startsWith("fr");
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
     private static void injectNow() {
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft == null || minecraft.options == null) return;
-
-        String code = minecraft.options.languageCode;
-        boolean french = code != null
-                && code.toLowerCase(Locale.ROOT).startsWith("fr_");
-
         Language current = Language.getInstance();
         if (current instanceof InjectedLanguage injected) {
             current = injected.delegate;
         }
+        Language.inject(new InjectedLanguage(current));
+    }
 
-        Language.inject(new InjectedLanguage(current, french ? FRENCH : ENGLISH));
+    private static void loadJsonResource(Map<String, String> target, String classpathResource) {
+        try (InputStream stream = ClientTranslationInjector.class.getResourceAsStream(classpathResource)) {
+            if (stream == null) return;
+            try (InputStreamReader reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
+                JsonObject root = new Gson().fromJson(reader, JsonObject.class);
+                if (root == null) return;
+                for (Map.Entry<String, JsonElement> e : root.entrySet()) {
+                    JsonElement v = e.getValue();
+                    if (v instanceof JsonPrimitive prim && prim.isString()) {
+                        target.putIfAbsent(e.getKey(), prim.getAsString());
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     /**
-     * Delegue tout le rendu au langage Minecraft courant et ne remplit que les
-     * cles absentes. Ainsi, les traductions deja presentes dans les fichiers
-     * en_us/fr_fr existants du projet gagnent toujours.
+     * Délègue tout le rendu au langage Minecraft courant et résout dynamiquement
+     * la langue active (FR vs EN) à chaque lecture pour supporter le changement
+     * de langue à chaud sans jamais figer l'ancienne langue.
      */
     private static final class InjectedLanguage extends Language {
         private final Language delegate;
-        private final Map<String, String> injected;
 
-        private InjectedLanguage(Language delegate, Map<String, String> injected) {
+        private InjectedLanguage(Language delegate) {
             this.delegate = delegate;
-            this.injected = injected;
+        }
+
+        private Map<String, String> activeMap() {
+            return isFrenchActive() ? FRENCH : ENGLISH;
         }
 
         @Override
         public String getOrDefault(String key, String fallback) {
             if (delegate.has(key)) return delegate.getOrDefault(key, fallback);
-            return injected.getOrDefault(key, fallback);
+            return activeMap().getOrDefault(key, fallback);
         }
 
         @Override
         public boolean has(String key) {
-            return delegate.has(key) || injected.containsKey(key);
+            return delegate.has(key) || activeMap().containsKey(key);
         }
 
         @Override
@@ -319,6 +372,8 @@ public final class ClientTranslationInjector {
         map.put("event.deep_lucky_block.youve_been_slimed.action", "YOU'VE BEEN SLIMED!");
         map.put("event.deep_lucky_block.youve_been_slimed.narration", "Slime everywhere... yuck.");
         map.put("event.deep_lucky_block.youve_been_slimed.title", "Something wet and green...");
+        loadJsonResource(map, "/deepluckyblock_patch/lang/en_us.json");
+        loadJsonResource(map, "/assets/deep_lucky_block/lang/en_us.json");
         return Map.copyOf(map);
     }
 
@@ -546,6 +601,8 @@ public final class ClientTranslationInjector {
         map.put("event.deep_lucky_block.youve_been_slimed.action", "VOUS ÊTES COUVERT DE SLIME !");
         map.put("event.deep_lucky_block.youve_been_slimed.narration", "Du slime partout... beurk.");
         map.put("event.deep_lucky_block.youve_been_slimed.title", "Quelque chose d’humide et de vert...");
+        loadJsonResource(map, "/deepluckyblock_patch/lang/fr_fr.json");
+        loadJsonResource(map, "/assets/deep_lucky_block/lang/fr_fr.json");
         return Map.copyOf(map);
     }
 }

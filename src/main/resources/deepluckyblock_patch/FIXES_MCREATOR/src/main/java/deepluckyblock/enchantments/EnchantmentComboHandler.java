@@ -297,8 +297,7 @@ public final class EnchantmentComboHandler {
             if (!newlyOn.isEmpty() && sp.tickCount > 20) {
                 for (ComboDef c : COMBOS) {
                     if (newlyOn.has(c.index())) {
-                        MutableComponent banner = TranslationFallback.translatableOrFallback(
-                                "tooltip.deep_lucky_block.combo_activated", "\u2726 Synergie Activ\u00e9e : ")
+                        MutableComponent banner = Component.translatable("tooltip.deep_lucky_block.combo_activated")
                                 .withStyle(ChatFormatting.GOLD)
                                 .append(c.translatedName())
                                 .append(" ")
@@ -2074,9 +2073,12 @@ public final class EnchantmentComboHandler {
                     ServerPlayer sp = ctx.getSource().getPlayerOrException();
                     ComboMask mask = EnchantmentComboRegistry.computeRawMask(sp);
                     int activeCount = mask.bitCount();
-                    sp.sendSystemMessage(Component.literal("\u00a76\u00a7l=== Synergies Multi-Pi\u00e8ces Actives (" + activeCount + "/" + COMBOS.size() + ") ==="));
+                    sp.sendSystemMessage(Component.translatable(
+                            "command.deep_lucky_block.combos.active_header", activeCount, COMBOS.size())
+                            .withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
                     if (activeCount == 0) {
-                        sp.sendSystemMessage(Component.literal("\u00a77Aucun combo actif. Utilisez \u00a7e/dlbcombos list\u00a77 ou \u00a7e/dlbcombos tier ultra_rare\u00a77 !"));
+                        sp.sendSystemMessage(Component.translatable("command.deep_lucky_block.combos.none_active")
+                                .withStyle(ChatFormatting.GRAY));
                     } else {
                         for (ComboDef c : COMBOS) {
                             if (mask.has(c.index())) {
@@ -2088,20 +2090,25 @@ public final class EnchantmentComboHandler {
                     }
                     return activeCount;
                 })
-                .then(Commands.literal("list").executes(ctx -> {
-                    ServerPlayer sp = ctx.getSource().getPlayerOrException();
-                    ComboMask mask = EnchantmentComboRegistry.computeRawMask(sp);
-                    sp.sendSystemMessage(Component.literal("\u00a76\u00a7l=== Codex des " + COMBOS.size() + " Combos Multi-Pi\u00e8ces ==="));
-                    for (ComboDef c : COMBOS) {
-                        boolean on = mask.has(c.index());
-                        sp.sendSystemMessage(Component.literal((on ? "\u00a7a\u2726 " : "\u00a78\u2727 ") + "#" + (c.index() + 1) + " ")
-                                .append(c.tier().badge()).append(" ")
-                                .append(c.translatedName())
-                                .append(Component.literal(" \u00a78[").append(EnchantmentComboRegistry.buildRequirementsSummary(c, sp)).append("\u00a78]")));
-                    }
-                    return COMBOS.size();
-                }))
+                .then(Commands.literal("list")
+                        .requires(src -> src.hasPermission(2))
+                        .executes(ctx -> {
+                            ServerPlayer sp = ctx.getSource().getPlayerOrException();
+                            ComboMask mask = EnchantmentComboRegistry.computeRawMask(sp);
+                            sp.sendSystemMessage(Component.translatable(
+                                    "command.deep_lucky_block.combos.codex_header", COMBOS.size())
+                                    .withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
+                            for (ComboDef c : COMBOS) {
+                                boolean on = mask.has(c.index());
+                                sp.sendSystemMessage(Component.literal((on ? "\u00a7a\u2726 " : "\u00a78\u2727 ") + "#" + (c.index() + 1) + " ")
+                                        .append(c.tier().badge()).append(" ")
+                                        .append(c.translatedName())
+                                        .append(Component.literal(" \u00a78[").append(EnchantmentComboRegistry.buildRequirementsSummary(c, sp)).append("\u00a78]")));
+                            }
+                            return COMBOS.size();
+                        }))
                 .then(Commands.literal("tier")
+                        .requires(src -> src.hasPermission(2))
                         .then(Commands.argument("palier", StringArgumentType.word()).executes(ctx -> {
                             ServerPlayer sp = ctx.getSource().getPlayerOrException();
                             String raw = StringArgumentType.getString(ctx, "palier").toUpperCase(Locale.ROOT);
@@ -2109,12 +2116,15 @@ public final class EnchantmentComboHandler {
                             try {
                                 tier = ComboTier.valueOf(raw);
                             } catch (IllegalArgumentException ex) {
-                                sp.sendSystemMessage(Component.literal("\u00a7cPaliers valides : normal, uncommon, rare, epic, mythic, ultra_rare"));
+                                sp.sendSystemMessage(Component.translatable("command.deep_lucky_block.combos.invalid_tier")
+                                        .withStyle(ChatFormatting.RED));
                                 return 0;
                             }
                             ComboMask mask = EnchantmentComboRegistry.computeRawMask(sp);
                             int count = 0;
-                            sp.sendSystemMessage(Component.literal("\u00a76\u00a7l=== Combos du palier ").append(tier.badge()).append(" \u00a76\u00a7l==="));
+                            sp.sendSystemMessage(Component.translatable(
+                                    "command.deep_lucky_block.combos.tier_header", tier.badge())
+                                    .withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
                             for (ComboDef c : COMBOS) {
                                 if (c.tier() != tier) continue;
                                 count++;
@@ -2146,7 +2156,8 @@ public final class EnchantmentComboHandler {
                                     sp.drop(item, false);
                                 }
                             }
-                            sp.sendSystemMessage(Component.literal("\u00a7a\u2726 Kit du Combo #" + num + " remis : ")
+                            sp.sendSystemMessage(Component.translatable("command.deep_lucky_block.combos.kit_given", num)
+                                    .withStyle(ChatFormatting.GREEN)
                                     .append(c.translatedName()).append(" ").append(c.tier().badge()));
                             return 1;
                         }))));
