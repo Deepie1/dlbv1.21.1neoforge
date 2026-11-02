@@ -94,9 +94,6 @@ public final class EnchantAura {
     public static final String GLINT_TIER_NBT_KEY = "dlbGlintTier";
     public static final int MIN_GLINT_TIER = 1;
     public static final int DEFAULT_GLINT_TIER = 4;
-    /** T337-ARMOR-GLINT-PLUS2 : +2 paliers par défaut sur les armures issues du Deep Lucky Block (Palier 6/20). */
-    public static final int LUCKY_ARMOR_GLINT_BONUS_TIERS = 2;
-    public static final int LUCKY_ARMOR_DEFAULT_GLINT_TIER = DEFAULT_GLINT_TIER + LUCKY_ARMOR_GLINT_BONUS_TIERS;
     public static final int MAX_GLINT_TIER = 20;
 
     private static final Map<Character, Integer> CODE_TO_RGB = buildCodeTable();
@@ -124,7 +121,7 @@ public final class EnchantAura {
         }
     }
 
-    /** T337-ARMOR-GLINT-PLUS2 : Vrai si l'item est une pièce d'armure (casque, plastron, jambières, bottes, Samouss, Lunettes du Patron) ou une élytre. */
+    /** T339-WORN-ARMOR-GLINT : Vrai si l'item est une pièce d'armure ou élytre. */
     public static boolean isArmorPiece(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
         net.minecraft.world.item.Item item = stack.getItem();
@@ -132,24 +129,24 @@ public final class EnchantAura {
                 || item instanceof net.minecraft.world.item.ElytraItem;
     }
 
-    /** T337-ARMOR-GLINT-PLUS2 : Palier par défaut (6 pour les armures du Deep Lucky Block, 4 pour le reste). */
-    public static int defaultGlintTierFor(ItemStack stack) {
-        if (isArmorPiece(stack)) {
-            if (deepluckyblock.util.DeepNbt.isLuckyBlockOrigin(stack)) {
-                return LUCKY_ARMOR_DEFAULT_GLINT_TIER;
-            }
-            try {
-                CompoundTag tag = deepluckyblock.util.DeepNbt.tag(stack);
-                if (tag != null && (tag.getBoolean(deepluckyblock.util.DeepNbt.LUCKY_ITEM_NBT_KEY)
-                        || tag.contains(GLINT_NBT_KEY, 99))) {
-                    return LUCKY_ARMOR_DEFAULT_GLINT_TIER;
-                }
-            } catch (Throwable ignored) {}
+    /** T339-WORN-ARMOR-GLINT : Vrai si la pièce d'armure provient du Deep Lucky Block (ou commande /glint). */
+    public static boolean isLuckyBlockArmor(ItemStack stack) {
+        if (!isArmorPiece(stack)) return false;
+        if (deepluckyblock.util.DeepNbt.isLuckyBlockOrigin(stack)) {
+            return true;
         }
-        return DEFAULT_GLINT_TIER;
+        try {
+            CompoundTag tag = deepluckyblock.util.DeepNbt.tag(stack);
+            if (tag != null && (tag.getBoolean(deepluckyblock.util.DeepNbt.LUCKY_ITEM_NBT_KEY)
+                    || tag.contains(GLINT_NBT_KEY, 99)
+                    || tag.contains(GLINT_FORCE_NBT_KEY, 99))) {
+                return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
     }
 
-    /** Renvoie le palier de visibilité du glint (1..20, défaut = 6 sur armure Lucky Block, 4 sinon) porté par l'item. */
+    /** Renvoie le palier de visibilité du glint (1..20, défaut = 4) porté par l'item. */
     public static int glintTier(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return DEFAULT_GLINT_TIER;
         try {
@@ -159,7 +156,7 @@ public final class EnchantAura {
                 return Math.max(MIN_GLINT_TIER, Math.min(MAX_GLINT_TIER, t));
             }
         } catch (Throwable ignored) {}
-        return defaultGlintTierFor(stack);
+        return DEFAULT_GLINT_TIER;
     }
 
     /**
@@ -326,17 +323,23 @@ public final class EnchantAura {
     /** T324-GLINT-TIERS : palier de visibilité courant (1..20). */
     private static int currentTier = DEFAULT_GLINT_TIER;
 
+    /** T339-WORN-ARMOR-GLINT : true uniquement pendant le rendu 3D d'une armure portée issue du Lucky Block (+2 crans une fois portée, sans toucher au rendu item). */
+    private static boolean currentWornArmorBoost = false;
+
     public static int currentRgb() { return current; }
 
     public static boolean isCurrentIntense() { return currentIntense; }
 
     public static int currentTier() { return currentTier; }
 
+    public static boolean isCurrentWornArmorBoost() { return currentWornArmorBoost; }
+
     public static void capture(ItemStack stack) {
         int v = auraColor(stack);
         current = v;
         currentIntense = false;
         currentTier = glintTier(stack);
+        currentWornArmorBoost = false;
         if (DEBUG && stack != null && !stack.isEmpty()) {
             log("capture -> #" + Integer.toHexString(v) + " tier=" + currentTier);
         }
@@ -352,6 +355,7 @@ public final class EnchantAura {
                                         int cycleIndex, boolean defensiveArmor) {
         int base = auraColor(stack);
         int tier = glintTier(stack);
+        boolean wornBoost = defensiveArmor && isLuckyBlockArmor(stack);
         if (ACTIVE_SWING_FLASH && activeAction && stack != null && !stack.isEmpty()) {
             // Respecte explicitement /glint clear (ENCHANTMENT_GLINT_OVERRIDE == false)
             Boolean override = stack.get(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
@@ -362,6 +366,7 @@ public final class EnchantAura {
                     current = chosen;
                     currentIntense = true;
                     currentTier = tier;
+                    currentWornArmorBoost = wornBoost;
                     if (DEBUG) {
                         log("captureWithFlash (INTENSE) -> #" + Integer.toHexString(chosen)
                                 + " (retour prévu -> #" + Integer.toHexString(base) + ")");
@@ -373,6 +378,7 @@ public final class EnchantAura {
         current = base;
         currentIntense = false;
         currentTier = tier;
+        currentWornArmorBoost = wornBoost;
         if (DEBUG && stack != null && !stack.isEmpty()) {
             log("capture -> #" + Integer.toHexString(base) + " tier=" + tier);
         }
@@ -387,6 +393,7 @@ public final class EnchantAura {
                                          ItemStack stack, boolean defensiveArmor) {
         int base = auraColor(stack);
         int tier = glintTier(stack);
+        boolean wornBoost = defensiveArmor && isLuckyBlockArmor(stack);
         if (ACTIVE_SWING_FLASH && wearer != null && stack != null && !stack.isEmpty()) {
             Boolean override = stack.get(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
             if (!Boolean.FALSE.equals(override)) {
@@ -395,6 +402,7 @@ public final class EnchantAura {
                     current = flash;
                     currentIntense = true;
                     currentTier = tier;
+                    currentWornArmorBoost = wornBoost;
                     return;
                 }
             }
@@ -402,12 +410,14 @@ public final class EnchantAura {
         current = base;
         currentIntense = false;
         currentTier = tier;
+        currentWornArmorBoost = wornBoost;
     }
 
     public static void clear() {
         current = 0;
         currentIntense = false;
         currentTier = DEFAULT_GLINT_TIER;
+        currentWornArmorBoost = false;
     }
 
     // =======================================================================

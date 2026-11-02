@@ -4085,16 +4085,11 @@ public class GenerateLuckyItemProcedure {
             DeepCustomGlint.applyThemed(stack);
         }
 
-        /** Écrit la couleur exacte du rang (et +2 paliers sur les armures, T337) pour {@code EnchantAura}. */
+        /** Écrit la couleur exacte du rang pour {@code EnchantAura}. */
         void stampGlint(ItemStack stack) {
             try {
                 CompoundTag tag = deepluckyblock.util.DeepNbt.getOrCreateTag(stack);
                 tag.putInt(GLINT_NBT_KEY, 0xFF000000 | (rgb & 0xFFFFFF));
-                if (deepluckyblock.client.EnchantAura.isArmorPiece(stack)
-                        && !tag.contains(deepluckyblock.client.EnchantAura.GLINT_TIER_NBT_KEY, 99)) {
-                    tag.putInt(deepluckyblock.client.EnchantAura.GLINT_TIER_NBT_KEY,
-                            deepluckyblock.client.EnchantAura.LUCKY_ARMOR_DEFAULT_GLINT_TIER);
-                }
                 deepluckyblock.util.DeepNbt.commit(stack, tag);
             } catch (Throwable ignored) {
                 // jamais bloquant : le glint retombe sur le parsing §

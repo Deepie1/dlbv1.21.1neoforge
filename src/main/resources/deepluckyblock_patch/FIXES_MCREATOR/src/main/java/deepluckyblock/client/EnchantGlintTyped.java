@@ -57,17 +57,18 @@ public final class EnchantGlintTyped {
         if (rgb == 0) { glintLog(kind, 0, "violet (aucune couleur capturée)"); return null; }
         boolean intense = EnchantAura.isCurrentIntense();
         int tier = EnchantAura.currentTier();
+        boolean wornBoost = "armorEntityGlint".equals(kind) && EnchantAura.isCurrentWornArmorBoost();
         String[] params = glintParams(kind);
         if (params == null) return null;
-        String tierPrefix = (!intense && tier == EnchantAura.DEFAULT_GLINT_TIER)
+        String tierPrefix = (!intense && !wornBoost && tier == EnchantAura.DEFAULT_GLINT_TIER)
                 ? "N:"
-                : ("T" + tier + ":" + (intense ? "I:" : "N:"));
+                : ((wornBoost ? "W:" : "") + "T" + tier + ":" + (intense ? "I:" : "N:"));
         String key = tierPrefix + Integer.toHexString(rgb) + ":" + kind;
         if (BUILD_FAILED.contains(key)) { glintLog(kind, rgb, "violet (build déjà raté)"); return null; }
         RenderType cached = RENDER_TYPE_CACHE.get(key);
         if (cached != null) { glintLog(kind, rgb, "OK (cache)"); return cached; }
         try {
-            RenderType built = buildColoredGlint(rgb, kind, params, intense, tier);
+            RenderType built = buildColoredGlint(rgb, kind, params, intense, tier, wornBoost);
             if (built == null) { BUILD_FAILED.add(key); glintLog(kind, rgb, "violet (build null)"); return null; }
             KNOWN_TYPES.add(built);
             RENDER_TYPE_CACHE.put(key, built);
@@ -128,7 +129,7 @@ public final class EnchantGlintTyped {
         }
     }
 
-    private static RenderType buildColoredGlint(int rgb, String kind, String[] params, boolean intense, int tier) {
+    private static RenderType buildColoredGlint(int rgb, String kind, String[] params, boolean intense, int tier, boolean wornBoost) {
         Class<?> renderTypeClass = RenderType.class;
         Class<?> renderStateClass = RenderStateShard.class;
         Class<?> compositeStateClass;
@@ -162,7 +163,7 @@ public final class EnchantGlintTyped {
         }
 
         try {
-            ResourceLocation texture = getOrCreateTintedTexture(rgb, params[1], kind, intense, tier);
+            ResourceLocation texture = getOrCreateTintedTexture(rgb, params[1], kind, intense, tier, wornBoost);
             bgl("texture=" + texture);
             if (texture == null) return null;
 
@@ -201,7 +202,7 @@ public final class EnchantGlintTyped {
                     int.class, boolean.class, boolean.class, compositeStateClass});
             bgl("create=" + create);
             if (create == null) return null;
-            String name = "dlb_glint_t" + tier + "_" + (intense ? "intense_" : "")
+            String name = "dlb_glint_" + (wornBoost ? "w2_" : "") + "t" + tier + "_" + (intense ? "intense_" : "")
                     + Integer.toHexString(rgb) + "_" + kind.toLowerCase();
             RenderType rt = (RenderType) create.invoke(null, name,
                     DefaultVertexFormat.POSITION_TEX, VertexFormat.Mode.QUADS,
@@ -334,10 +335,10 @@ public final class EnchantGlintTyped {
     }
 
     private static ResourceLocation getOrCreateTintedTexture(int rgb, String textureKind,
-                                                             String kind, boolean intense, int tier) {
-        String tierTag = (!intense && tier == EnchantAura.DEFAULT_GLINT_TIER)
+                                                             String kind, boolean intense, int tier, boolean wornBoost) {
+        String tierTag = (!intense && !wornBoost && tier == EnchantAura.DEFAULT_GLINT_TIER)
                 ? "N:"
-                : ("T" + tier + ":" + (intense ? "I:" : "N:"));
+                : ((wornBoost ? "W:" : "") + "T" + tier + ":" + (intense ? "I:" : "N:"));
         String key = tierTag + Integer.toHexString(rgb) + ":" + textureKind;
         ResourceLocation cached = TEXTURE_CACHE.get(key);
         if (cached != null) return cached;
@@ -368,6 +369,42 @@ public final class EnchantGlintTyped {
                         int outG = Math.min(255, (int) Math.round(sg * lifted + core));
                         int outB = Math.min(255, (int) Math.round(sb * lifted + core));
                         img.setPixelRGBA(x, y, (0xFF << 24) | (outB << 16) | (outG << 8) | outR);
+                    }
+                }
+            } else if (wornBoost) {
+                // T339-WORN-ARMOR-GLINT : Sur les armures portées du Deep Lucky Block (armorEntityGlint),
+                // enchanted_glint_entity.png est nativement beaucoup plus sombre (~0.38) qu'enchanted_glint_item.png (~0.85)
+                // et subit le blend additif au carré (SRC_COLOR, ONE). On monte uniquement le rendu PORTÉ de +2 crans nets
+                // tout en laissant le rendu item dans l'inventaire/en main strictement intact !
+                int maxChan = Math.max(1, Math.max(tr, Math.max(tg, tb)));
+                double satBlend = tier >= EnchantAura.DEFAULT_GLINT_TIER ? 0.58 : 0.30;
+                double effR = tr + (tr * 255.0 / maxChan - tr) * satBlend;
+                double effG = tg + (tg * 255.0 / maxChan - tg) * satBlend;
+                double effB = tb + (tb * 255.0 / maxChan - tb) * satBlend;
+                int tierDelta = tier - EnchantAura.DEFAULT_GLINT_TIER; // -3 .. +16
+                double waveScale = 1.88 + 0.045 * tierDelta;
+                double floor = Math.max(0.0, 0.11 + 0.026 * tierDelta);
+                double gamma = Math.max(0.36, 0.84 - 0.026 * tierDelta);
+                double coreStrength = tierDelta > 2 ? (tierDelta - 2) * 5.5 : 0.0;
+
+                for (int x = 0; x < img.getWidth(); x++) {
+                    for (int y = 0; y < img.getHeight(); y++) {
+                        int px = img.getPixelRGBA(x, y);
+                        int a = (px >> 24) & 0xFF;
+                        int r = px & 0xFF;
+                        int g = (px >> 8) & 0xFF;
+                        int b = (px >> 16) & 0xFF;
+                        double norm = Math.max(r, Math.max(g, b)) / 255.0;
+                        double wave = Math.min(1.0, norm * waveScale);
+                        double lifted = Math.min(1.0, floor + Math.pow(wave, gamma) * (0.94 - floor * 0.45));
+                        double core = (coreStrength > 0.0 && wave > 0.60)
+                                ? Math.pow((wave - 0.60) / 0.40, 1.20) * coreStrength
+                                : 0.0;
+                        int outR = Math.min(255, (int) Math.round(effR * lifted + core));
+                        int outG = Math.min(255, (int) Math.round(effG * lifted + core));
+                        int outB = Math.min(255, (int) Math.round(effB * lifted + core));
+                        int outA = Math.max(a, 220);
+                        img.setPixelRGBA(x, y, (outA << 24) | (outB << 16) | (outG << 8) | outR);
                     }
                 }
             } else if (tier == EnchantAura.DEFAULT_GLINT_TIER) {
@@ -437,7 +474,7 @@ public final class EnchantGlintTyped {
                 }
             }
             ResourceLocation loc = ResourceLocation.fromNamespaceAndPath("deep_lucky_block",
-                    "lucky_glint_t" + tier + "_" + (intense ? "intense_" : "")
+                    "lucky_glint_" + (wornBoost ? "w2_" : "") + "t" + tier + "_" + (intense ? "intense_" : "")
                             + kind.toLowerCase() + "_" + Integer.toHexString(rgb) + ".png");
             mc.getTextureManager().register(loc, new DynamicTexture(img));
             TEXTURE_CACHE.put(key, loc);
