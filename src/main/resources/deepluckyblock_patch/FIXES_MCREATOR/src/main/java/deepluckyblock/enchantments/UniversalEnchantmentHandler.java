@@ -3551,11 +3551,13 @@ public class UniversalEnchantmentHandler {
             final float dDmg = 6.0f + 3.0f * delayLvl;
             final LivingEntity dOwner = player;
             for (int step = 0; step < 3; step++) {
+                // T347-FIX-COMPILE : `step` etait capture dans la lambda (doit etre final/effectivement final)
                 final int tickOff = step * 10;
                 final float pitch = 1.25f + step * 0.28f;
+                final float ringRad = 1.1f + step * 0.35f;
                 TestProcedure.schedule(sldel, TestProcedure.currentTick(sldel) + tickOff, () -> {
                     EnchantmentParticleFX.shockwaveRing(sldel, dLoc.x, dLoc.y + 0.12, dLoc.z,
-                            EnchantmentParticleFX.TEMPORAL_AMBER, 1.1 + step * 0.35, 12, 0.02);
+                            EnchantmentParticleFX.TEMPORAL_AMBER, ringRad, 12, 0.02);
                     sldel.playSound(null, dLoc.x, dLoc.y, dLoc.z, SoundEvents.NOTE_BLOCK_HAT.value(), SoundSource.PLAYERS, 0.85f, pitch);
                 });
             }
