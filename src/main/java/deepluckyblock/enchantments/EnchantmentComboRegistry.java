@@ -827,7 +827,7 @@ public final class EnchantmentComboRegistry {
      *   - Avec Shift : affiche juste SOUS chaque combo actif sa description complète (ce que ça fait et dans quelle circonstance)
      *     proprement découpée à la ligne, suivie du rappel des pièces actives qui le composent.
      */
-    public static List<Component> buildTooltipComboLines(ItemStack stack, Player viewer, boolean shiftHeld) {
+    public static List<ComboDef> getActiveCombosOnStack(ItemStack stack, Player viewer) {
         if (viewer == null || stack == null || stack.isEmpty() || !stack.isEnchanted()) return List.of();
         ComboMask activeMask = computeRawMask(viewer);
         if (activeMask.isEmpty()) return List.of();
@@ -845,6 +845,15 @@ public final class EnchantmentComboRegistry {
                 }
             }
         }
+        return activeOnThisStack;
+    }
+
+    public static Component buildComboPiecesSummary(ComboDef c, Player viewer) {
+        return buildRequirementsSummary(c, viewer);
+    }
+
+    public static List<Component> buildTooltipComboLines(ItemStack stack, Player viewer, boolean shiftHeld) {
+        List<ComboDef> activeOnThisStack = getActiveCombosOnStack(stack, viewer);
         if (activeOnThisStack.isEmpty()) return List.of();
 
         boolean fr = TranslationFallback.isFrench();

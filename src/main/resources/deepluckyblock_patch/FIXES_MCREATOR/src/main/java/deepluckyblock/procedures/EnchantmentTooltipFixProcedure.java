@@ -97,7 +97,16 @@ public final class EnchantmentTooltipFixProcedure {
 
     private static final Set<String> MISSING_REPORTED = Collections.synchronizedSet(new HashSet<>());
 
-    private EnchantmentTooltipFixProcedure() {
+    /** Marqueur invisible dans Style#getInsertion() permettant à SystemTooltipWindowRenderer de remplacer proprement le bloc texte sans casser l'indexation JEI/EMI. */
+    public static final String DLB_SYSTEM_INSERTION_TAG = "\u200b#dlb_sys";
+
+    private static Component markSystemManaged(Component c) {
+        if (c == null) return null;
+        return Component.empty().withStyle(s -> s.withInsertion(DLB_SYSTEM_INSERTION_TAG)).append(c);
+    }
+
+    public static boolean isSystemManagedComponent(Component c) {
+        return c != null && DLB_SYSTEM_INSERTION_TAG.equals(c.getStyle().getInsertion());
     }
 
     @SubscribeEvent
@@ -381,23 +390,8 @@ public final class EnchantmentTooltipFixProcedure {
                         nameLine = Component.empty().append(nameLine).append(" ").append(CustomEnchantment.formatRarityBadge(rar));
                     }
                 }
-                lines.add(index++, nameLine);
+                lines.add(index++, markSystemManaged(nameLine));
 
-                // ==================== FIX (voir commentaire au point de
-                // déclaration de heartBonusLines ci-dessus, et Javadoc de
-                // buildHeartBonusLine) : les coeurs élémentaires restent
-                // volontairement HORS de RealAttributeModifierHandler (voir
-                // Javadoc de classe, "ENCHANTEMENTS COEUR (v43, RETIRÉ EN
-                // v44)") -- leur bonus de vie réel est calculé UNIQUEMENT par
-                // EquipmentExpansionHandler#updateElementalHearts (+2 PV par
-                // niveau, soit +1 coeur/niveau), jamais comme un vrai
-                // AttributeModifier MAX_HEALTH sur l'ITEM, donc JAMAIS visible
-                // nativement dans "When on Body" -- contrairement à Armor/
-                // Armor Toughness/Knockback Resistance. On ACCUMULE ici (au
-                // lieu d'insérer immédiatement à côté du nom de
-                // l'enchantement) : la ligne groupée est insérée une seule
-                // fois, plus bas, directement dans la section "When on ..."
-                // native, avec le même style que "+8 Armor".
                 Component heartBonusLine = buildHeartBonusLine(id, entry.getValue());
                 if (heartBonusLine != null) heartBonusLines.add(heartBonusLine);
 
@@ -405,12 +399,12 @@ public final class EnchantmentTooltipFixProcedure {
 
                 List<Component> desc = descCache.get(id);
                 if (desc != null) {
-                    for (Component c : desc) lines.add(index++, c);
+                    for (Component c : desc) lines.add(index++, markSystemManaged(c));
                 } else if (isModEnchantment(id)) {
                     reportMissing(id);
                     if (SHOW_MISSING_MARKER) {
-                        lines.add(index++, Component.literal(
-                                CONT_INDENT + "\u00a78\u00a7o(missing: " + descriptionKey(id, id.getNamespace()) + ")"));
+                        lines.add(index++, markSystemManaged(Component.literal(
+                                CONT_INDENT + "\u00a78\u00a7o(missing: " + descriptionKey(id, id.getNamespace()) + ")")));
                     }
                 }
             } catch (Throwable perEnchantFail) {
@@ -420,15 +414,6 @@ public final class EnchantmentTooltipFixProcedure {
             }
         }
 
-        // FIX (voir commentaire à la déclaration de heartBonusLines) :
-        // insertion groupée, une seule fois, de toutes les lignes "+X
-        // <Élément> Heart" accumulées ci-dessus -- directement dans la
-        // section native "When on Head/Body/Legs/Feet:" générée par
-        // vanilla (ItemStack#addAttributeTooltips), juste après ses
-        // propres lignes d'attribut ("+8 Armor", "+2 Armor Toughness"...).
-        // Reste INCONDITIONNEL (pas seulement sous Shift) : c'est une
-        // information de base au même titre que "+8 Armor", pas un détail
-        // secondaire.
         if (!heartBonusLines.isEmpty()) {
             insertHeartBonusLines(lines, heartBonusLines);
         }
@@ -439,11 +424,11 @@ public final class EnchantmentTooltipFixProcedure {
             List<Component> comboLines = deepluckyblock.enchantments.EnchantmentComboRegistry
                     .buildTooltipComboLines(stack, event.getEntity(), shift);
             for (Component cl : comboLines) {
-                lines.add(index++, cl);
+                lines.add(index++, markSystemManaged(cl));
             }
         } catch (Throwable ignoredComboTooltip) {}
 
-        if (!shift) lines.add(Component.translatable("tooltip.deep_lucky_block.hold_shift"));
+        if (!shift) lines.add(markSystemManaged(Component.translatable("tooltip.deep_lucky_block.hold_shift")));
     }
 
     /**
@@ -493,72 +478,58 @@ public final class EnchantmentTooltipFixProcedure {
      * suite du traitement (noms/descriptions d'enchantements).
      */
     private static int insertComputedCombatStats(ItemStack stack, List<Component> lines, int index) {
+        Component summary = buildCompactCombatSummary(stack);
+        if (summary != null) {
+            lines.add(index++, markSystemManaged(summary));
+        }
+        return index;
+    }
+
+    /**
+     * Résumé compact sur 1 ligne du DPS réel (arme de mêlée) ou de l'armure effective (pièce d'armure)
+     * pour la fenêtre [ SYSTÈME ] sous Shift — concis, sans note à rallonge.
+     */
+    public static Component buildCompactCombatSummary(ItemStack stack) {
         boolean isMeleeWeapon = stack.getItem() instanceof net.minecraft.world.item.SwordItem
                 || stack.getItem() instanceof net.minecraft.world.item.AxeItem
                 || stack.getItem() instanceof net.minecraft.world.item.TridentItem
                 || stack.getItem() instanceof net.minecraft.world.item.MaceItem
                 || stack.getItem() instanceof net.minecraft.world.item.ShovelItem;
         boolean isArmor = stack.getItem() instanceof net.minecraft.world.item.ArmorItem;
-
         boolean fr = deepluckyblock.util.TranslationFallback.isFrench();
 
         if (isMeleeWeapon) {
             deepluckyblock.util.CombatStatsCalculator.MeleeStats stats =
                     deepluckyblock.util.CombatStatsCalculator.computeMeleeStats(stack);
             if (stats.effectiveDamage() > 0f) {
-                MutableComponent line = Component.literal("\u00a76\u2694 \u00a7f")
+                MutableComponent line = Component.literal("\u00a7b\u2694 \u00a77")
                         .append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
                                 "tooltip.deep_lucky_block.stats.real_dps",
                                 fr ? "DPS r\u00e9el : " : "Effective DPS: "))
-                        .append(Component.literal("\u00a7e" + trimNumber(stats.effectiveDamage()) + " \u00a77dmg \u00d7 "
-                                + trimNumber(stats.attackSpeed()) + "/s \u00a7f= \u00a7a"
+                        .append(Component.literal("\u00a7f" + trimNumber(stats.effectiveDamage()) + " \u00a78dmg \u00d7 \u00a7f"
+                                + trimNumber(stats.attackSpeed()) + "/s \u00a78= \u00a7b"
                                 + trimNumber(stats.dps()) + " DPS"));
                 if (stats.hasConditionalBonuses()) {
-                    line.append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
-                                    "tooltip.deep_lucky_block.stats.vs_standard_target",
-                                    fr ? " (\u2248, vs cible standard)" : " (\u2248, vs standard target)")
-                            .withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC));
+                    line.append(Component.literal(fr ? " \u00a78(\u2248 std)" : " \u00a78(\u2248 std)"));
                 }
-                lines.add(index++, line);
+                return line;
             }
         } else if (isArmor) {
             deepluckyblock.util.CombatStatsCalculator.ArmorStats stats =
                     deepluckyblock.util.CombatStatsCalculator.computeArmorStats(stack);
-            // FIX v41 : la plupart des bonus de reduction de degats du mod
-            // sont desormais de VRAIS points d'armure vanilla (deja visibles
-            // dans "When on Body" ci-dessus) -- damageReductionPercent() ne
-            // couvre donc plus que les cas exclus (voir CombatStatsCalculator).
-            if (stats.damageReductionPercent() > 0f || stats.hasConditionalBonuses()) {
-                MutableComponent line = Component.literal("\u00a76\u26e8 \u00a7f")
+            if (stats.damageReductionPercent() > 0f) {
+                return Component.literal("\u00a7b\u26e8 \u00a77")
                         .append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
                                 "tooltip.deep_lucky_block.stats.effective_armor",
-                                fr ? "Armure effective : " : "Effective Armor: "));
-                if (stats.damageReductionPercent() > 0f) {
-                    line.append(Component.literal("\u00a7e" + trimNumber(stats.baseArmor()) + " \u00a77"))
-                            .append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
-                                    "tooltip.deep_lucky_block.stats.base_armor",
-                                    fr ? "armure de base" : "base armor").withStyle(ChatFormatting.GRAY))
-                            .append(Component.literal(" \u00a7f+ \u00a7b" + trimNumber(stats.damageReductionPercent()) + "% \u00a77"))
-                            .append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
-                                    "tooltip.deep_lucky_block.stats.extra_reduction",
-                                    fr ? "r\u00e9duction suppl." : "extra reduction").withStyle(ChatFormatting.GRAY));
-                } else {
-                    line.append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
-                            "tooltip.deep_lucky_block.stats.mod_bonuses_included",
-                            fr ? "bonus du mod d\u00e9j\u00e0 inclus ci-dessus" : "mod bonuses already included above")
-                            .withStyle(ChatFormatting.YELLOW));
-                }
-                if (stats.hasConditionalBonuses()) {
-                    line.append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
-                                    "tooltip.deep_lucky_block.stats.conditional_note",
-                                    fr ? " (effets conditionnels non moyennables non compt\u00e9s : type de d\u00e9g\u00e2ts, PV du porteur...)"
-                                       : " (conditional effects not averaged: damage type, wearer HP...)")
-                            .withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC));
-                }
-                lines.add(index++, line);
+                                fr ? "Armure effective : " : "Effective Armor: "))
+                        .append(Component.literal("\u00a7f" + trimNumber(stats.baseArmor()) + " \u00a78+ \u00a7b"
+                                + trimNumber(stats.damageReductionPercent()) + "% \u00a77"))
+                        .append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
+                                "tooltip.deep_lucky_block.stats.extra_reduction",
+                                fr ? "r\u00e9d. suppl." : "extra red.").withStyle(ChatFormatting.GRAY));
             }
         }
-        return index;
+        return null;
     }
 
     /**
@@ -976,6 +947,50 @@ public final class EnchantmentTooltipFixProcedure {
 
     private static String descriptionKey(ResourceLocation id, String namespace) {
         return "enchantment." + namespace + "." + id.getPath() + ".desc";
+    }
+
+    public static boolean isModEnchantmentId(ResourceLocation id) {
+        return id != null && isModEnchantment(id);
+    }
+
+    public static Component formatRuneTitle(Enchantment ench, ResourceLocation id, int level) {
+        try {
+            return buildName(ench, level);
+        } catch (Throwable t) {
+            return fallbackName(ench, id, level);
+        }
+    }
+
+    /**
+     * Résout la description d'un enchantement, substitue %s si présent, retire la répétition
+     * redondante « • Nom : » en tête de ligne et adoucit le blanc brut (§f) en argent lisible (§7)
+     * tout en conservant les valeurs colorées (§c, §a, §b, §e, §6, §d).
+     */
+    public static String resolveCleanDescription(ResourceLocation id, int level) {
+        if (id == null) return null;
+        String raw = rawDescription(id);
+        if (raw == null || raw.isBlank()) return null;
+        if (raw.indexOf("%s") >= 0) {
+            try {
+                raw = String.format(Locale.ROOT, raw, level);
+            } catch (Throwable ignored) {}
+        }
+        String trimmed = raw.trim();
+        // Retire le préfixe redondant « §7• §eNom : » ou « • Nom : » lorsque présent
+        if (trimmed.contains("\u2022")) {
+            int bulletIdx = trimmed.indexOf('\u2022');
+            int colonIdx = trimmed.indexOf(':', bulletIdx);
+            if (bulletIdx <= 4 && colonIdx > bulletIdx && colonIdx - bulletIdx <= 54) {
+                int cut = colonIdx + 1;
+                while (cut < trimmed.length() && trimmed.charAt(cut) == ' ') cut++;
+                trimmed = trimmed.substring(cut);
+            }
+        }
+        trimmed = trimmed.replace("\u00a7f", "\u00a77");
+        if (!trimmed.startsWith("\u00a7")) {
+            trimmed = "\u00a77" + trimmed;
+        }
+        return trimmed;
     }
 
     private static boolean isModEnchantment(ResourceLocation id) {
