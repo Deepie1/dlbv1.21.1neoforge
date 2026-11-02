@@ -90,6 +90,12 @@ public final class EnchantAura {
      */
     public static final String GLINT_FORCE_NBT_KEY = "dlbGlintForce";
 
+    /** T324-GLINT-TIERS : Palier de visibilité du glint coloré (1..20, défaut = 4) réglé via /glint + et /glint -. */
+    public static final String GLINT_TIER_NBT_KEY = "dlbGlintTier";
+    public static final int MIN_GLINT_TIER = 1;
+    public static final int DEFAULT_GLINT_TIER = 4;
+    public static final int MAX_GLINT_TIER = 20;
+
     private static final Map<Character, Integer> CODE_TO_RGB = buildCodeTable();
 
     private static Map<Character, Integer> buildCodeTable() {
@@ -107,6 +113,26 @@ public final class EnchantAura {
 
     private static final WeakHashMap<ItemStack, long[]> AURA_COLOR_CACHE = new WeakHashMap<>();
     private static final long AURA_CACHE_TTL_NS = 150_000_000L; // 150 ms
+
+    public static void invalidateCache(ItemStack stack) {
+        if (stack == null) return;
+        synchronized (AURA_COLOR_CACHE) {
+            AURA_COLOR_CACHE.remove(stack);
+        }
+    }
+
+    /** Renvoie le palier de visibilité du glint (1..20, défaut = 4) porté par l'item. */
+    public static int glintTier(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return DEFAULT_GLINT_TIER;
+        try {
+            CompoundTag tag = deepluckyblock.util.DeepNbt.tag(stack);
+            if (tag != null && tag.contains(GLINT_TIER_NBT_KEY, 99)) {
+                int t = tag.getInt(GLINT_TIER_NBT_KEY);
+                return Math.max(MIN_GLINT_TIER, Math.min(MAX_GLINT_TIER, t));
+            }
+        } catch (Throwable ignored) {}
+        return DEFAULT_GLINT_TIER;
+    }
 
     /**
      * Renvoie {@code 0} si aucun glint teinté ne doit s'appliquer (violet
@@ -269,16 +295,22 @@ public final class EnchantAura {
     /** T311-GLINT-INTENSE : true uniquement pendant la fenêtre active d'attaque/tir/impact. */
     private static boolean currentIntense = false;
 
+    /** T324-GLINT-TIERS : palier de visibilité courant (1..20). */
+    private static int currentTier = DEFAULT_GLINT_TIER;
+
     public static int currentRgb() { return current; }
 
     public static boolean isCurrentIntense() { return currentIntense; }
+
+    public static int currentTier() { return currentTier; }
 
     public static void capture(ItemStack stack) {
         int v = auraColor(stack);
         current = v;
         currentIntense = false;
+        currentTier = glintTier(stack);
         if (DEBUG && stack != null && !stack.isEmpty()) {
-            log("capture -> #" + Integer.toHexString(v));
+            log("capture -> #" + Integer.toHexString(v) + " tier=" + currentTier);
         }
     }
 
@@ -291,6 +323,7 @@ public final class EnchantAura {
     public static void captureWithFlash(ItemStack stack, boolean activeAction,
                                         int cycleIndex, boolean defensiveArmor) {
         int base = auraColor(stack);
+        int tier = glintTier(stack);
         if (ACTIVE_SWING_FLASH && activeAction && stack != null && !stack.isEmpty()) {
             // Respecte explicitement /glint clear (ENCHANTMENT_GLINT_OVERRIDE == false)
             Boolean override = stack.get(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE);
@@ -300,6 +333,7 @@ public final class EnchantAura {
                 if (chosen != 0) {
                     current = chosen;
                     currentIntense = true;
+                    currentTier = tier;
                     if (DEBUG) {
                         log("captureWithFlash (INTENSE) -> #" + Integer.toHexString(chosen)
                                 + " (retour prévu -> #" + Integer.toHexString(base) + ")");
@@ -310,14 +344,16 @@ public final class EnchantAura {
         }
         current = base;
         currentIntense = false;
+        currentTier = tier;
         if (DEBUG && stack != null && !stack.isEmpty()) {
-            log("capture -> #" + Integer.toHexString(base));
+            log("capture -> #" + Integer.toHexString(base) + " tier=" + tier);
         }
     }
 
     public static void clear() {
         current = 0;
         currentIntense = false;
+        currentTier = DEFAULT_GLINT_TIER;
     }
 
     // =======================================================================
