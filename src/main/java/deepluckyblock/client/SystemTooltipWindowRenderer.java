@@ -647,7 +647,7 @@ public final class SystemTooltipWindowRenderer {
             if (mc == null || mc.font == null) return;
             Font font = mc.font;
             Player viewer = mc.player;
-            boolean shift = Screen.hasShiftDown();
+            boolean shift = EnchantmentTooltipFixProcedure.isDetailKeyDown();
 
             if (!ItemStack.isSameItemSameComponents(stack, trackedStack)) {
                 trackedStack = stack.copy();
@@ -1009,7 +1009,7 @@ public final class SystemTooltipWindowRenderer {
 
         @SubscribeEvent
         public static void onMouseScrolled(ScreenEvent.MouseScrolled.Pre event) {
-            if (!Screen.hasShiftDown() || activeTotalShiftPages <= 1) return;
+            if (!EnchantmentTooltipFixProcedure.isDetailKeyDown() || activeTotalShiftPages <= 1) return;
             if (System.nanoTime() - lastShiftTooltipNs > 180_000_000L) return;
             double dy = event.getScrollDeltaY();
             if (Math.abs(dy) < 0.01) return;

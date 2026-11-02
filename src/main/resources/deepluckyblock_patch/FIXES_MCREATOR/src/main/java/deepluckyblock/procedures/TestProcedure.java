@@ -669,6 +669,25 @@ public class TestProcedure {
         return sampleKeyframeLuck(luckBonus, random);
     }
 
+    /**
+     * T338-MOB-PIECE-BY-PIECE : Simule le tirage indépendant d'UNE pièce d'équipement
+     * directement depuis un Deep Lucky Block infusé autour de {@code desiredBonusLuck} (-100..+100),
+     * avec une dispersion naturelle par pièce (±12) autour de la moyenne désirée pour
+     * que chaque pièce équipée par un mob tire son propre grade réaliste.
+     */
+    public static int rollSimulatedLuckyBlockPieceLuck(int desiredBonusLuck, RandomSource random) {
+        int jitter = random.nextInt(25) - 12; // [-12, +12] autour de la moyenne désirée
+        int effectiveBonus = Mth.clamp(desiredBonusLuck + jitter, -100, 100);
+        if (effectiveBonus <= 20) {
+            double cursedChance = effectiveBonus <= -40 ? 0.14
+                    : (effectiveBonus <= 0 ? 0.06 : 0.025);
+            if (random.nextDouble() < cursedChance) {
+                return random.nextInt(9); // 0..8 -> BROKEN / CURSED / USED
+            }
+        }
+        return sampleKeyframeLuck(effectiveBonus, random);
+    }
+
     public static void executeWithLuckBonus(Level world, double x, double y, double z, int luckBonus) {
         if (LuckyToolsCompatibility.consumeAndExecute(world, x, y, z)) return;
         // FIX v7 (resolu) : trace de diagnostic retiree (se declenchait a

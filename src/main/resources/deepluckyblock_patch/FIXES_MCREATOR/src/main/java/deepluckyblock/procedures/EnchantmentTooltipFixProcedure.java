@@ -157,19 +157,32 @@ public final class EnchantmentTooltipFixProcedure {
         }
     }
 
+    /**
+     * T338-HAND-ENCHANT-TOOLTIP : Détecte le maintien de SHIFT ou de TAB (GLFW_KEY_TAB = 258)
+     * afin que les descriptions d'enchantements fonctionnent aussi bien en maintenant Shift que Tab.
+     */
+    public static boolean isDetailKeyDown() {
+        if (Screen.hasShiftDown()) return true;
+        try {
+            net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+            if (mc != null && mc.getWindow() != null) {
+                return com.mojang.blaze3d.platform.InputConstants.isKeyDown(mc.getWindow().getWindow(), 258);
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
     private static void onTooltipImpl(ItemTooltipEvent event) {
         deepluckyblock.client.ClientTranslationInjector.ensureInjected();
         ItemStack stack = event.getItemStack();
         if (stack == null || stack.isEmpty()) return;
 
-        // T331-LUCKY-ITEM-ORIGIN : Ne jamais altérer l'infobulle d'un item normal enchanté à la main
-        // ni d'un item provenant d'un autre mod — l'interface Minecraft de base (ou celle de l'autre
-        // mod) reste 100 % intacte pour bien différencier les items du Lucky Block.
-        if (!deepluckyblock.util.DeepNbt.isLuckyBlockOrigin(stack)) return;
-
-        // PORT 1.21.1 : composant ItemEnchantments -> DeepEnchant
-        Map<Enchantment, Integer> map = deepluckyblock.util.DeepEnchant.map(stack);
+        // T338-HAND-ENCHANT-TOOLTIP : Seule l'interface graphique spéciale [SYSTÈME] (SystemTooltipWindowRenderer)
+        // est réservée aux items gradés du Lucky Block. Les équipements enchantés à la main ET les livres enchantés
+        // conservent leurs descriptions complètes dans l'infobulle standard comme avant !
+        Map<Enchantment, Integer> map = deepluckyblock.util.DeepEnchant.mapWithStored(stack);
         if (map.isEmpty()) return;
+        boolean isBook = stack.is(net.minecraft.world.item.Items.ENCHANTED_BOOK);
 
         List<Component> lines = event.getToolTip();
         if (lines == null || lines.isEmpty()) return;
@@ -299,7 +312,7 @@ public final class EnchantmentTooltipFixProcedure {
             if (remove) lines.remove(i);
         }
 
-        boolean shift = Screen.hasShiftDown();
+        boolean shift = isDetailKeyDown();
         int index = Math.min(1, lines.size());
         Set<ResourceLocation> handled = new HashSet<>();
 
@@ -328,10 +341,12 @@ public final class EnchantmentTooltipFixProcedure {
         // INCONDITIONNELLEMENT (pas seulement sous Shift) car il s'agit de
         // corriger une ligne DÉJÀ affichée par défaut, pas d'ajouter une
         // info supplémentaire.
-        try {
-            overrideNativeAttackStats(stack, lines);
-        } catch (Throwable statsOverrideFail) {
-            LOGGER.error("[deep_lucky_block] Echec du recalcul Attack Damage/Speed, ignore", statsOverrideFail);
+        if (!isBook) {
+            try {
+                overrideNativeAttackStats(stack, lines);
+            } catch (Throwable statsOverrideFail) {
+                LOGGER.error("[deep_lucky_block] Echec du recalcul Attack Damage/Speed, ignore", statsOverrideFail);
+            }
         }
 
         // ==================== DPS RÉEL / ARMURE EFFECTIVE ====================
@@ -354,7 +369,7 @@ public final class EnchantmentTooltipFixProcedure {
         // maintenant Shift, pour les enchantements CONDITIONNELS dont la
         // moyenne appliquée à l'attribut réel ne représente qu'une
         // approximation (comparaison exacte contre une cible générique).
-        if (shift) {
+        if (shift && !isBook) {
             try {
                 index = insertComputedCombatStats(stack, lines, index);
             } catch (Throwable statsFail) {
@@ -422,19 +437,21 @@ public final class EnchantmentTooltipFixProcedure {
             }
         }
 
-        if (!heartBonusLines.isEmpty()) {
+        if (!isBook && !heartBonusLines.isEmpty()) {
             insertHeartBonusLines(lines, heartBonusLines);
         }
 
         // T316-COMBOS : Affiche UNIQUEMENT les synergies actives sur la pièce équipée (aucun spoil des combos possibles),
         // et sous Shift, affiche sous chaque combo actif sa description complète (effet + circonstance).
-        try {
-            List<Component> comboLines = deepluckyblock.enchantments.EnchantmentComboRegistry
-                    .buildTooltipComboLines(stack, event.getEntity(), shift);
-            for (Component cl : comboLines) {
-                lines.add(index++, markSystemManaged(cl));
-            }
-        } catch (Throwable ignoredComboTooltip) {}
+        if (!isBook) {
+            try {
+                List<Component> comboLines = deepluckyblock.enchantments.EnchantmentComboRegistry
+                        .buildTooltipComboLines(stack, event.getEntity(), shift);
+                for (Component cl : comboLines) {
+                    lines.add(index++, markSystemManaged(cl));
+                }
+            } catch (Throwable ignoredComboTooltip) {}
+        }
 
         if (!shift) lines.add(markSystemManaged(Component.translatable("tooltip.deep_lucky_block.hold_shift")));
     }

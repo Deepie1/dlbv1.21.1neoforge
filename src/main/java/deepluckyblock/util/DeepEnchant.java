@@ -430,6 +430,27 @@ public final class DeepEnchant {
     }
 
     /**
+     * T338-TOOLTIP-DESCRIPTIONS : Lit les enchantements d'équipement (ENCHANTMENTS) ET
+     * les enchantements stockés sur les livres enchantés (STORED_ENCHANTMENTS) pour l'affichage
+     * d'infobulle, sans affecter les handlers de gameplay qui utilisent {@link #map(ItemStack)}.
+     */
+    public static Map<Enchantment, Integer> mapWithStored(ItemStack stack) {
+        Map<Enchantment, Integer> out = map(stack);
+        if (stack == null || stack.isEmpty()) return out;
+        ItemEnchantments stored = stack.get(net.minecraft.core.component.DataComponents.STORED_ENCHANTMENTS);
+        if (stored != null && !stored.isEmpty()) {
+            for (Holder<Enchantment> h : stored.keySet()) {
+                int lvl = stored.getLevel(h);
+                if (lvl > 0) {
+                    rememberKey(h);
+                    out.putIfAbsent(h.value(), lvl);
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
      * Conflits d'enchantements — remplace Enchantment.checkCompatibility(other)
      * (méthode supprimée en 1.21). Délégué à la logique métier du mod.
      */

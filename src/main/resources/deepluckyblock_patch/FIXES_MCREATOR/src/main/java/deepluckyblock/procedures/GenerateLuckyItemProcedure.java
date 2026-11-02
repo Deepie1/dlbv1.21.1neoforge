@@ -1846,6 +1846,20 @@ public class GenerateLuckyItemProcedure {
         result.title = "§" + result.titleColorCode + "§l" + conditionRank + " Item";
 
         ItemType type = pickRandomItemType(random, luck);
+        ItemStack stack = buildCursedPieceForType(type, luck, random);
+
+        addArrowsIfRanged(type, result, random);
+        result.items.add(stack);
+        result.particles.add("SMOKE");
+        result.particles.add("SOUL");
+        return result;
+    }
+
+    /** T338-MOB-PIECE-BY-PIECE : Construit une pièce maudite/usée authentique du Lucky Block pour un type donné. */
+    private static ItemStack buildCursedPieceForType(ItemType type, int luck, RandomSource random) {
+        String conditionRank = luck <= 2 ? "BROKEN" : luck <= 6 ? "CURSED" : "USED";
+        String colorCode = conditionRank.equals("BROKEN") ? "4"
+                : conditionRank.equals("CURSED") ? "c" : "8";
         Item item = switch (type) {
             case HELMET -> Items.LEATHER_HELMET;
             case CHESTPLATE -> Items.LEATHER_CHESTPLATE;
@@ -1860,9 +1874,8 @@ public class GenerateLuckyItemProcedure {
             case CROSSBOW -> Items.CROSSBOW;
             case TRIDENT -> Items.TRIDENT;
             case SHIELD -> Items.SHIELD;
-                case FISHING_ROD -> Items.FISHING_ROD;
-                case ELYTRA -> Items.ELYTRA;
-            default -> Items.WOODEN_SWORD;
+            case FISHING_ROD -> Items.FISHING_ROD;
+            case ELYTRA -> Items.ELYTRA;
         };
 
         ItemStack stack = new ItemStack(item);
@@ -1875,9 +1888,9 @@ public class GenerateLuckyItemProcedure {
                 type.configKey, conditionRank, luck, Set.of("curse")));
         Collections.shuffle(curses, new java.util.Random(random.nextLong()));
         int curseCount = switch (conditionRank) {
-            case "BROKEN" -> 3;                  // le plus maudit
+            case "BROKEN" -> 3;                     // le plus maudit
             case "CURSED" -> 2 + random.nextInt(2); // 2-3
-            default -> 1 + random.nextInt(2);    // USED : 1-2
+            default -> 1 + random.nextInt(2);       // USED : 1-2
         };
         int appliedCurses = 0;
         for (String id : curses) {
@@ -1898,7 +1911,7 @@ public class GenerateLuckyItemProcedure {
         }
 
         // 4) Nom avec le sous-rang visible + lore "pourquoi maudit".
-        stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§" + result.titleColorCode + "§l"
+        stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§" + colorCode + "§l"
                 + conditionRank + " " + displayName(type)));
         deepluckyblock.util.DeepNbt.markLuckyBlockOrigin(stack);
         profileFromLuck(luck).stampGlint(stack);
@@ -1907,12 +1920,7 @@ public class GenerateLuckyItemProcedure {
         }
         DeepCustomGlint.applyThemed(stack);
         applyCursedLore(stack, type);
-
-        addArrowsIfRanged(type, result, random);
-        result.items.add(stack);
-        result.particles.add("SMOKE");
-        result.particles.add("SOUL");
-        return result;
+        return stack;
     }
 
     /** Lore explicatif : liste les malédictions réellement posées sur l'item. */
@@ -2118,9 +2126,217 @@ public class GenerateLuckyItemProcedure {
     }
 
     /**
-     * T333-MOB-ARMOR-GLINT-DURABILITY :
-     * 1) Garantit que chaque pièce d'armure équipée sur un mob de spawner conserve le glint exact
-     *    de son grade (même si son unique enchantement a été filtré ou si le tirage était bas).
+     * T338-MOB-PIECE-BY-PIECE : Simule l'ouverture réelle d'un Deep Lucky Block pour UNE seule pièce
+     * (emplacement {@code slot}), avec son propre tirage indépendant de luck et de grade autour de la
+     * moyenne désirée {@code desiredBonusLuck} (-100..+100), ses propres matériaux, enchantements,
+     * chances naturelles de Creator Event / Lunettes du Patron / malédiction, et son glint de grade.
+     */
+    public static ItemStack generateSimulatedLuckyPiece(Level level, int desiredBonusLuck,
+                                                        EquipmentSlot slot, RandomSource random) {
+        return generateSimulatedLuckyPieceInternal(level, desiredBonusLuck, slotToItemType(slot), random);
+    }
+
+    /**
+     * T338-MOB-PIECE-BY-PIECE : Variante par type d'arme/équipement ("sword", "axe", "bow", etc.).
+     */
+    public static ItemStack generateSimulatedLuckyPieceByType(Level level, int desiredBonusLuck,
+                                                              String itemType, RandomSource random) {
+        return generateSimulatedLuckyPieceInternal(level, desiredBonusLuck, normalizeItemType(itemType), random);
+    }
+
+    private static ItemStack generateSimulatedLuckyPieceInternal(Level level, int desiredBonusLuck,
+                                                                 ItemType type, RandomSource random) {
+        if (level != null && !level.isClientSide()) {
+            deepluckyblock.util.DeepEnchant.rememberServerAccess(level.registryAccess());
+        }
+        int pieceLuck = TestProcedure.rollSimulatedLuckyBlockPieceLuck(desiredBonusLuck, random);
+        if (pieceLuck <= CURSED_LUCK_MAX) {
+            return buildCursedPieceForType(type, pieceLuck, random);
+        }
+        RankProfile profile = profileFromLuck(pieceLuck);
+        if (!CREATORS.isEmpty() && random.nextInt(100) < creatorEventChance(pieceLuck)) {
+            CreatorProfile creator = CREATORS.get(random.nextInt(CREATORS.size()));
+            String creatorName = creator.getNameForType(type, random);
+            String finalName = applyGrammarPrefix(creatorName, type);
+            ItemStack creatorItem = createItemForType(type, pieceLuck, pieceLuck, random, true, creator.isMaximeBiaggi());
+            String displayedName = hasUniqueLetterColors(finalName)
+                    ? finalName
+                    : recolorNameToRank(finalName, profile.colorCode);
+            creatorItem.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+                    Component.literal(displayedName + rankSuffix(pieceLuck)));
+            deepluckyblock.util.DeepNbt.markLuckyBlockOrigin(creatorItem);
+            profile.stampGlint(creatorItem);
+            if (!creatorItem.hasFoil()) {
+                creatorItem.set(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+            }
+            DeepCustomGlint.applyThemed(creatorItem);
+            return creatorItem;
+        }
+        ItemStack stack = createItemForType(type, pieceLuck, pieceLuck, random, false, false);
+        if (!stack.has(net.minecraft.core.component.DataComponents.CUSTOM_NAME)) {
+            profile.applyName(stack, displayName(type));
+        }
+        DeepCustomGlint.applyThemed(stack);
+        return stack;
+    }
+
+    /**
+     * T338-MOB-PIECE-BY-PIECE : Applique les règles de sécurité mob sur UNE pièce sans écraser son grade :
+     * - retire echolocation (T113 : pas de halo mural permanent dans le noir) et unbreakable/eternal (T333),
+     * - applique une durabilité restante aléatoire entre 1 % et 50 % du max (T333).
+     */
+    private static void sanitizeMobLuckyPiece(ItemStack piece, RandomSource random) {
+        if (piece == null || piece.isEmpty()) return;
+        if (!piece.hasFoil()) {
+            piece.set(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+        }
+        DeepCustomGlint.applyThemed(piece);
+        piece.remove(net.minecraft.core.component.DataComponents.UNBREAKABLE);
+        for (Enchantment ench : new ArrayList<>(deepluckyblock.util.DeepEnchant.map(piece).keySet())) {
+            ResourceLocation rl = deepluckyblock.util.DeepEnchant.getKeySafe(ench);
+            if (rl != null) {
+                String p = rl.getPath();
+                if ("unbreakable".equals(p) || "eternal".equals(p) || "echolocation".equals(p)) {
+                    deepluckyblock.util.DeepEnchant.remove(piece, ench);
+                }
+            }
+        }
+        if (piece.isDamageableItem()) {
+            int maxDmg = piece.getMaxDamage();
+            if (maxDmg > 1) {
+                int minRem = Math.max(1, Math.round(maxDmg * 0.01f));
+                int maxRem = Math.max(minRem, Math.round(maxDmg * 0.50f));
+                int remaining = minRem + random.nextInt(maxRem - minRem + 1);
+                piece.setDamageValue(Math.max(1, Math.min(maxDmg - 1, maxDmg - remaining)));
+            }
+        }
+    }
+
+    /**
+     * T338-MOB-PIECE-BY-PIECE : Équipe un mob emplacement par emplacement comme si chaque pièce
+     * avait réellement été tirée individuellement depuis un Deep Lucky Block autour de {@code desiredBonusLuck} :
+     * - Vide d'abord tous les slots pour qu'aucun template NBT de spawner ne force une armure 4/4.
+     * - Tire indépendamment la présence de chaque pièce d'armure et de l'arme (armure complète + arme très rare).
+     * - Chaque pièce tirée reçoit son PROPRE grade, matériau, enchantements et glint (+2 paliers sur armure).
+     */
+    public static void equipMobPieceByPieceFromLuckyBlock(net.minecraft.world.entity.Mob mob,
+                                                          Level level,
+                                                          int desiredBonusLuck,
+                                                          float armorSlotChance,
+                                                          float weaponChance,
+                                                          boolean guaranteeAtLeastOnePiece,
+                                                          float dropChanceArmor,
+                                                          float dropChanceWeapon,
+                                                          RandomSource random) {
+        if (mob == null || random == null) return;
+        EquipmentSlot[] allClearSlots = {
+            EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS,
+            EquipmentSlot.FEET, EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND
+        };
+        for (EquipmentSlot s : allClearSlots) {
+            mob.setItemSlot(s, ItemStack.EMPTY);
+        }
+
+        int equippedLuckyPieces = 0;
+        EquipmentSlot[] armorSlots = {
+            EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
+        };
+        for (EquipmentSlot slot : armorSlots) {
+            if (random.nextFloat() < armorSlotChance) {
+                ItemStack piece = generateSimulatedLuckyPiece(level, desiredBonusLuck, slot, random);
+                sanitizeMobLuckyPiece(piece, random);
+                mob.setItemSlot(slot, piece);
+                mob.setDropChance(slot, dropChanceArmor);
+                equippedLuckyPieces++;
+            }
+        }
+
+        boolean isSkeleton = mob instanceof net.minecraft.world.entity.monster.AbstractSkeleton;
+        boolean isPillager = mob instanceof net.minecraft.world.entity.monster.Pillager;
+        boolean isDrowned = mob instanceof net.minecraft.world.entity.monster.Drowned;
+
+        if (isSkeleton) {
+            if (random.nextFloat() < weaponChance) {
+                ItemStack bow = generateSimulatedLuckyPieceByType(level, desiredBonusLuck, "bow", random);
+                sanitizeMobLuckyPiece(bow, random);
+                mob.setItemSlot(EquipmentSlot.MAINHAND, bow);
+                mob.setDropChance(EquipmentSlot.MAINHAND, dropChanceWeapon);
+                equippedLuckyPieces++;
+            } else {
+                // Arc vanilla simple usé pour conserver l'IA à distance sans forcer un arc gradé sur 100 % des squelettes
+                ItemStack plainBow = new ItemStack(Items.BOW);
+                plainBow.setDamageValue(Math.max(1, plainBow.getMaxDamage() / 2));
+                mob.setItemSlot(EquipmentSlot.MAINHAND, plainBow);
+                mob.setDropChance(EquipmentSlot.MAINHAND, 0.0f);
+            }
+        } else if (isPillager) {
+            if (random.nextFloat() < weaponChance) {
+                ItemStack cb = generateSimulatedLuckyPieceByType(level, desiredBonusLuck, "crossbow", random);
+                sanitizeMobLuckyPiece(cb, random);
+                mob.setItemSlot(EquipmentSlot.MAINHAND, cb);
+                mob.setDropChance(EquipmentSlot.MAINHAND, dropChanceWeapon);
+                equippedLuckyPieces++;
+            } else {
+                ItemStack plainCb = new ItemStack(Items.CROSSBOW);
+                plainCb.setDamageValue(Math.max(1, plainCb.getMaxDamage() / 2));
+                mob.setItemSlot(EquipmentSlot.MAINHAND, plainCb);
+                mob.setDropChance(EquipmentSlot.MAINHAND, 0.0f);
+            }
+        } else {
+            if (random.nextFloat() < weaponChance) {
+                String wType = pickRandomMobMeleeWeaponType(isDrowned, random);
+                ItemStack weapon = generateSimulatedLuckyPieceByType(level, desiredBonusLuck, wType, random);
+                sanitizeMobLuckyPiece(weapon, random);
+                mob.setItemSlot(EquipmentSlot.MAINHAND, weapon);
+                mob.setDropChance(EquipmentSlot.MAINHAND, dropChanceWeapon);
+                equippedLuckyPieces++;
+            }
+            if (random.nextFloat() < 0.08f) {
+                ItemStack shield = generateSimulatedLuckyPieceByType(level, desiredBonusLuck, "shield", random);
+                sanitizeMobLuckyPiece(shield, random);
+                mob.setItemSlot(EquipmentSlot.OFFHAND, shield);
+                mob.setDropChance(EquipmentSlot.OFFHAND, dropChanceArmor);
+                equippedLuckyPieces++;
+            }
+        }
+
+        if (guaranteeAtLeastOnePiece && equippedLuckyPieces == 0) {
+            // Garantit au moins 1 pièce Lucky Block aléatoire sur les paliers moyens/hauts sans jamais forcer le full set
+            int pick = random.nextInt(5);
+            if (pick == 0) {
+                String wType = isSkeleton ? "bow" : (isPillager ? "crossbow" : pickRandomMobMeleeWeaponType(isDrowned, random));
+                ItemStack weapon = generateSimulatedLuckyPieceByType(level, desiredBonusLuck, wType, random);
+                sanitizeMobLuckyPiece(weapon, random);
+                mob.setItemSlot(EquipmentSlot.MAINHAND, weapon);
+                mob.setDropChance(EquipmentSlot.MAINHAND, dropChanceWeapon);
+            } else {
+                EquipmentSlot chosenSlot = armorSlots[pick - 1];
+                ItemStack piece = generateSimulatedLuckyPiece(level, desiredBonusLuck, chosenSlot, random);
+                sanitizeMobLuckyPiece(piece, random);
+                mob.setItemSlot(chosenSlot, piece);
+                mob.setDropChance(chosenSlot, dropChanceArmor);
+            }
+        }
+    }
+
+    private static String pickRandomMobMeleeWeaponType(boolean isDrowned, RandomSource random) {
+        int r = random.nextInt(100);
+        if (isDrowned) {
+            if (r < 42) return "sword";
+            if (r < 68) return "trident";
+            if (r < 88) return "axe";
+            return "shovel";
+        }
+        if (r < 50) return "sword";
+        if (r < 82) return "axe";
+        if (r < 91) return "pickaxe";
+        return "shovel";
+    }
+
+    /**
+     * T333/T338-MOB-ARMOR-GLINT-DURABILITY :
+     * 1) Si une pièce d'armure n'a pas encore de grade, tire un grade INDÉPENDANT par pièce
+     *    autour de la luck cible (jamais le même grade cloné sur les 4 pièces !).
      * 2) Applique une durabilité restante aléatoire comprise entre 1 % et 50 % de la durabilité max.
      */
     public static void applyMobArmorGradeAndLowDurability(net.minecraft.world.entity.Mob mob,
@@ -2130,40 +2346,23 @@ public class GenerateLuckyItemProcedure {
         EquipmentSlot[] armorSlots = {
             EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
         };
-        RankProfile fallbackProfile = profileFromLuck(Math.max(0, Math.min(100, fallbackLuck)));
+        int desiredBonus = Math.max(-60, Math.min(95, fallbackLuck * 2 - 45));
         for (EquipmentSlot slot : armorSlots) {
             ItemStack piece = mob.getItemBySlot(slot);
             if (piece == null || piece.isEmpty()) continue;
 
             if (!piece.has(net.minecraft.core.component.DataComponents.CUSTOM_NAME)) {
-                fallbackProfile.applyName(piece, displayName(slotToItemType(slot)));
+                int pieceLuck = TestProcedure.rollSimulatedLuckyBlockPieceLuck(desiredBonus, random);
+                RankProfile pieceProfile = profileFromLuck(pieceLuck);
+                pieceProfile.applyName(piece, displayName(slotToItemType(slot)));
             } else {
                 CompoundTag tag = deepluckyblock.util.DeepNbt.tag(piece);
                 if (tag == null || !tag.contains(GLINT_NBT_KEY)) {
-                    fallbackProfile.stampGlint(piece);
+                    int pieceLuck = TestProcedure.rollSimulatedLuckyBlockPieceLuck(desiredBonus, random);
+                    profileFromLuck(pieceLuck).stampGlint(piece);
                 }
             }
-            piece.set(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
-            DeepCustomGlint.applyThemed(piece);
-
-            // Retrait de tout composant/enchantement incassable sur l'armure de mob
-            piece.remove(net.minecraft.core.component.DataComponents.UNBREAKABLE);
-            for (Enchantment ench : new ArrayList<>(deepluckyblock.util.DeepEnchant.map(piece).keySet())) {
-                ResourceLocation rl = deepluckyblock.util.DeepEnchant.getKeySafe(ench);
-                if (rl != null && ("unbreakable".equals(rl.getPath()) || "eternal".equals(rl.getPath()))) {
-                    deepluckyblock.util.DeepEnchant.remove(piece, ench);
-                }
-            }
-
-            if (piece.isDamageableItem()) {
-                int maxDmg = piece.getMaxDamage();
-                if (maxDmg > 1) {
-                    int minRem = Math.max(1, Math.round(maxDmg * 0.01f));
-                    int maxRem = Math.max(minRem, Math.round(maxDmg * 0.50f));
-                    int remaining = minRem + random.nextInt(maxRem - minRem + 1);
-                    piece.setDamageValue(Math.max(1, Math.min(maxDmg - 1, maxDmg - remaining)));
-                }
-            }
+            sanitizeMobLuckyPiece(piece, random);
             mob.setItemSlot(slot, piece);
         }
     }

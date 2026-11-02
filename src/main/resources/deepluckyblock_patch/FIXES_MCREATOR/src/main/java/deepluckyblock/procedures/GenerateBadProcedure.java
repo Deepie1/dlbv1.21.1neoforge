@@ -2496,38 +2496,19 @@ public class GenerateBadProcedure {
     // ==================== ZOMBIE EQUIP HELPERS ====================
 
     private static void equipZombieForLuck(Zombie zombie, ServerLevel level, int mainLuck, RandomSource random) {
-        int el = Math.max(10, Math.min(mainLuck, 50)); boolean iron = el >= 30;
-        zombie.setItemSlot(EquipmentSlot.HEAD, enchantedPiece(iron ? Items.IRON_HELMET : Items.LEATHER_HELMET, el, random));
-        zombie.setItemSlot(EquipmentSlot.CHEST, enchantedPiece(iron ? Items.IRON_CHESTPLATE : Items.LEATHER_CHESTPLATE, el, random));
-        zombie.setItemSlot(EquipmentSlot.LEGS, enchantedPiece(iron ? Items.IRON_LEGGINGS : Items.LEATHER_LEGGINGS, el, random));
-        zombie.setItemSlot(EquipmentSlot.FEET, enchantedPiece(iron ? Items.IRON_BOOTS : Items.LEATHER_BOOTS, el, random));
-        zombie.setItemSlot(EquipmentSlot.MAINHAND, enchantedPiece(iron ? Items.IRON_SWORD : Items.STONE_SWORD, el, random));
-        GenerateLuckyItemProcedure.applyMobArmorGradeAndLowDurability(zombie, el, random);
-        zombie.setDropChance(EquipmentSlot.HEAD, 0.02f); zombie.setDropChance(EquipmentSlot.CHEST, 0.02f); zombie.setDropChance(EquipmentSlot.LEGS, 0.02f); zombie.setDropChance(EquipmentSlot.FEET, 0.02f); zombie.setDropChance(EquipmentSlot.MAINHAND, 0.05f);
+        // T338-MOB-PIECE-BY-PIECE : Simule pièce par pièce un vrai tirage Lucky Block autour de la moyenne désirée
+        // (au lieu d'une armure 4/4 + épée ayant toutes le même grade).
+        int el = Math.max(10, Math.min(mainLuck, 50));
+        int desiredBonusLuck = Mth.clamp(el * 2 - 45, -45, 55);
+        GenerateLuckyItemProcedure.equipMobPieceByPieceFromLuckyBlock(
+                zombie, level, desiredBonusLuck, 0.34f, 0.68f, true, 0.02f, 0.05f, random);
     }
 
-    // Equipement aleatoire enchante (luck 0-50) pour les mobs du tunnel : 1-5 pieces, 15% de drop chacune.
+    // Equipement aleatoire enchante piece par piece (simulation Lucky Block) pour les mobs du tunnel : 15% de drop chacune.
     private static void equipTunnelMob(Zombie z, ServerLevel level, RandomSource random) {
-        int luck = random.nextInt(51); // 0-50
-        boolean iron = luck >= 30;
-        EquipmentSlot[] allSlots = { EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET, EquipmentSlot.MAINHAND };
-        List<EquipmentSlot> order = new ArrayList<>(Arrays.asList(allSlots));
-        Collections.shuffle(order, new java.util.Random(random.nextLong()));
-        int count = 1 + random.nextInt(5); // 1-5 pieces
-        for (int i = 0; i < count; i++) {
-            EquipmentSlot slot = order.get(i);
-            Item piece = switch (slot) {
-                case HEAD -> iron ? Items.IRON_HELMET : Items.LEATHER_HELMET;
-                case CHEST -> iron ? Items.IRON_CHESTPLATE : Items.LEATHER_CHESTPLATE;
-                case LEGS -> iron ? Items.IRON_LEGGINGS : Items.LEATHER_LEGGINGS;
-                case FEET -> iron ? Items.IRON_BOOTS : Items.LEATHER_BOOTS;
-                case MAINHAND -> iron ? Items.IRON_SWORD : Items.STONE_SWORD;
-                default -> Items.STONE_SWORD;
-            };
-            z.setItemSlot(slot, enchantedPiece(piece, luck, random));
-            z.setDropChance(slot, 0.15f);
-        }
-        GenerateLuckyItemProcedure.applyMobArmorGradeAndLowDurability(z, luck, random);
+        int desiredBonusLuck = -25 + random.nextInt(76); // -25..+50 autour d'un Lucky Block bas/moyen
+        GenerateLuckyItemProcedure.equipMobPieceByPieceFromLuckyBlock(
+                z, level, desiredBonusLuck, 0.32f, 0.65f, true, 0.15f, 0.15f, random);
     }
 
     private static ItemStack enchantedPiece(Item item, int luck, RandomSource random) {
@@ -4878,28 +4859,10 @@ public class GenerateBadProcedure {
     }
 
     private static void equipGeneratedMimicMob(Mob mob, ServerLevel level, RandomSource random) {
-        int luck = random.nextInt(78);
-        TestProcedure.QualityTier tier = TestProcedure.QualityTier.getQualityTier(luck);
-        if (mob instanceof Skeleton) {
-            mob.setItemSlot(EquipmentSlot.MAINHAND, generateLuckyBow(level, random, luck));
-            mob.setDropChance(EquipmentSlot.MAINHAND, 0.18f);
-        } else if (mob instanceof Pillager) {
-            mob.setItemSlot(EquipmentSlot.MAINHAND, generateLuckyCrossbow(level, random, luck));
-            mob.setDropChance(EquipmentSlot.MAINHAND, 0.18f);
-        } else if (mob instanceof Zombie) {
-            mob.setItemSlot(EquipmentSlot.MAINHAND,
-                    safeSpecific(level, luck, tier, random, EquipmentSlot.MAINHAND));
-            mob.setDropChance(EquipmentSlot.MAINHAND, 0.15f);
-        }
-        EquipmentSlot[] armor = {EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET};
-        int pieces = random.nextInt(5);
-        List<EquipmentSlot> shuffled = new ArrayList<>(Arrays.asList(armor));
-        Collections.shuffle(shuffled, new java.util.Random(random.nextLong()));
-        for (int i = 0; i < pieces; i++) {
-            EquipmentSlot slot = shuffled.get(i);
-            mob.setItemSlot(slot, safeSpecific(level, luck, tier, random, slot));
-            mob.setDropChance(slot, 0.08f);
-        }
+        // T338-MOB-PIECE-BY-PIECE : Chaque pièce du mob mimic est tirée indépendamment depuis le Lucky Block
+        int desiredBonusLuck = -15 + random.nextInt(91); // -15..+75
+        GenerateLuckyItemProcedure.equipMobPieceByPieceFromLuckyBlock(
+                mob, level, desiredBonusLuck, 0.36f, 0.72f, true, 0.08f, 0.16f, random);
         mob.setPersistenceRequired();
     }
 

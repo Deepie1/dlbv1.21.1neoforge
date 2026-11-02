@@ -53,16 +53,17 @@ public final class DeepEnchantmentDescriptionCompatibility {
         if (!externalDescriptionModLoaded()) return;
 
         ItemStack stack = event.getItemStack();
-        if (stack == null || stack.isEmpty() || !stack.isEnchanted()) return;
-        // T331-LUCKY-ITEM-ORIGIN : Laisse les items hors Lucky Block / commandes 100 % à vanilla / autres mods.
-        if (!deepluckyblock.util.DeepNbt.isLuckyBlockOrigin(stack)) return;
+        if (stack == null || stack.isEmpty()) return;
+        // T338-HAND-ENCHANT-TOOLTIP : Dédoublonne aussi les équipements enchantés à la main et les livres enchantés.
+        Map<Enchantment, Integer> enchMap = deepluckyblock.util.DeepEnchant.mapWithStored(stack);
+        if (enchMap.isEmpty()) return;
 
         Map<String, String> descriptionKeys = new HashMap<>();
         Map<String, String> renderedDescriptions = new HashMap<>();
         Language language = Language.getInstance();
 
-        // PORT 1.21.1 : lecture du composant ItemEnchantments via DeepEnchant
-        for (Map.Entry<Enchantment, Integer> enchEntry : deepluckyblock.util.DeepEnchant.map(stack).entrySet()) {
+        // PORT 1.21.1 : lecture des composants ENCHANTMENTS + STORED_ENCHANTMENTS via DeepEnchant
+        for (Map.Entry<Enchantment, Integer> enchEntry : enchMap.entrySet()) {
             Enchantment enchantment = enchEntry.getKey();
             ResourceLocation id = deepluckyblock.util.DeepEnchant.getKeySafe(enchantment);
             if (id == null) continue;

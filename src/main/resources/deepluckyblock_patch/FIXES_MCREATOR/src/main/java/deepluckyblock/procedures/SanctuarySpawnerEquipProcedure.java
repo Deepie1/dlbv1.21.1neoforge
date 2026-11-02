@@ -282,81 +282,45 @@ public class SanctuarySpawnerEquipProcedure {
     private static void equipCustomMob(Mob mob, ServerLevel level, int tierId) {
         RandomSource random = level.getRandom();
 
-        int[] luckRange = switch (tierId) {
-            case 1 -> new int[]{0, 13};
-            case 2 -> new int[]{20, 40};
-            case 3 -> new int[]{40, 80};
-            case 4 -> new int[]{50, 80};
-            case 5 -> new int[]{75, 100};
-            default -> new int[]{0, 13};
+        // T338-MOB-PIECE-BY-PIECE : Chaque pièce d'équipement est désormais tirée INDÉPENDAMMENT
+        // comme si elle sortait réellement d'un Deep Lucky Block infusé autour de la moyenne désirée
+        // du palier de spawner (et les slots pré-remplis par le template NBT du spawner sont vidés
+        // pour qu'une armure complète + arme reste rare, surtout du même grade).
+        int desiredBonusLuck = switch (tierId) {
+            case 1 -> -35; // Moyenne basse (Used / Worn / Common + quelques maudits)
+            case 2 -> 5;   // Moyenne Lucky Block standard (Common / Uncommon / Unusual)
+            case 3 -> 38;  // Moyenne intermédiaire (Uncommon -> Remarkable / Outstanding)
+            case 4 -> 65;  // Moyenne haute (Remarkable -> Rare / Epic)
+            case 5 -> 88;  // Moyenne élite de salle finale (Outstanding -> Legendary / Mythic+)
+            default -> -35;
         };
 
-        int luck = luckRange[0] + random.nextInt(luckRange[1] - luckRange[0] + 1);
-        TestProcedure.QualityTier tier = TestProcedure.QualityTier.getQualityTier(luck);
-
-        int totalPieces = switch (tierId) {
-            case 1 -> random.nextInt(3);     // 0 à 2 pièces
-            case 2 -> 1 + random.nextInt(2); // 1 à 2 pièces
-            case 3 -> random.nextInt(4);     // 0 à 3 pièces
-            case 4 -> random.nextInt(6);     // 0 à 5 pièces
-            case 5 -> 4 + random.nextInt(2); // 4 à 5 pièces
-            default -> random.nextInt(3);
+        float armorSlotChance = switch (tierId) {
+            case 1 -> 0.24f; // ~0.96 pièce d'armure en moyenne (4/4 = 0,33 %)
+            case 2 -> 0.30f; // ~1.20 pièce d'armure en moyenne (4/4 = 0,81 %)
+            case 3 -> 0.36f; // ~1.44 pièce d'armure en moyenne (4/4 = 1,68 %)
+            case 4 -> 0.42f; // ~1.68 pièce d'armure en moyenne (4/4 = 3,11 %)
+            case 5 -> 0.48f; // ~1.92 pièce d'armure en moyenne (4/4 = 5,31 %)
+            default -> 0.24f;
         };
 
-        String weaponType;
-        if (mob instanceof Skeleton) {
-            weaponType = "bow";
-        } else {
-            weaponType = random.nextBoolean() ? "sword" : "axe";
-        }
-
-        ItemStack weapon = safeSpecificByType(level, luck, tier, random, weaponType);
-        mob.setItemSlot(EquipmentSlot.MAINHAND, weapon);
-        mob.setDropChance(EquipmentSlot.MAINHAND, 0.05f);
-
-        boolean needsHelmet = (mob instanceof Zombie && !(mob instanceof Drowned)) || mob instanceof Skeleton;
-        int armorPieces = totalPieces - 1;
-
-        if (needsHelmet) {
-            ItemStack helmet = safeSpecific(level, luck, tier, random, EquipmentSlot.HEAD);
-            mob.setItemSlot(EquipmentSlot.HEAD, helmet);
-            mob.setDropChance(EquipmentSlot.HEAD, 0.05f);
-            armorPieces = Math.max(0, armorPieces - 1);
-        }
-
-        EquipmentSlot[] armorSlots = {
-                EquipmentSlot.CHEST,
-                EquipmentSlot.LEGS,
-                EquipmentSlot.FEET
+        float weaponChance = switch (tierId) {
+            case 1 -> 0.50f;
+            case 2 -> 0.60f;
+            case 3 -> 0.68f;
+            case 4 -> 0.75f;
+            case 5 -> 0.82f;
+            default -> 0.50f;
         };
-        shuffleSlots(armorSlots, random);
 
-        for (int i = 0; i < armorPieces && i < armorSlots.length; i++) {
-            EquipmentSlot slot = armorSlots[i];
-            ItemStack armor = safeSpecific(level, luck, tier, random, slot);
-            mob.setItemSlot(slot, armor);
-            mob.setDropChance(slot, 0.05f);
-        }
+        boolean guaranteeOnePiece = tierId >= 2;
 
-        // T113 (consigne dev 30/09 : « quand les mobs des structures spawnent,
-        // ils brillent (effet glow), ce qui est anormal -- ils sont senses
-        // recevoir ce glow uniquement si ils sont proche du coffre et qu'au
-        // clic joueur il est verouille ! » et « dans le fichier qui gere nos
-        // spawners custom, ou il est precise le type de spawners et la
-        // difficulte en Luck ») : l'enchantement echolocation (affixe de
-        // CASQUE, Cat.ARMOR_HEAD) se retrouve par hasard sur des pieces
-        // generees au luck pour ces mobs ; or son ping s'applique a TOUTE
-        // LivingEntity (mobs compris) et colore TOUS les mobs du rayon toutes
-        // les 40 ticks des que la lumiere est < 8 -- donc en permanence dans
-        // les structures sombres : « les mobs des structures brillent des leur
-        // spawn ». L'enchantement lui-meme EST INTACT pour les joueurs (on n'y
-        // touche pas) ; on retire simplement cet affixe de l'equipement que CE
-        // fichier attribue aux mobs. Le glow des mobs ne vient desormais QUE
-        // du clic sur un coffre verrouille (LuckyChestAutofillProcedure).
+        GenerateLuckyItemProcedure.equipMobPieceByPieceFromLuckyBlock(
+                mob, level, desiredBonusLuck, armorSlotChance, weaponChance,
+                guaranteeOnePiece, 0.05f, 0.05f, random);
+
+        // Filet de sécurité supplémentaire T113 (aucun echolocation sur mob de spawner)
         stripEcholocation(mob);
-        // T333-MOB-ARMOR-GLINT-DURABILITY : Garantit le glint du grade sur chaque pièce d'armure
-        // et applique une durabilité restante aléatoire de 1 % à 50 % du max.
-        GenerateLuckyItemProcedure.applyMobArmorGradeAndLowDurability(mob, luck, random);
     }
 
     /**
