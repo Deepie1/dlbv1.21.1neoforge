@@ -94,6 +94,9 @@ public final class EnchantAura {
     public static final String GLINT_TIER_NBT_KEY = "dlbGlintTier";
     public static final int MIN_GLINT_TIER = 1;
     public static final int DEFAULT_GLINT_TIER = 4;
+    /** T337-ARMOR-GLINT-PLUS2 : +2 paliers par défaut sur les armures issues du Deep Lucky Block (Palier 6/20). */
+    public static final int LUCKY_ARMOR_GLINT_BONUS_TIERS = 2;
+    public static final int LUCKY_ARMOR_DEFAULT_GLINT_TIER = DEFAULT_GLINT_TIER + LUCKY_ARMOR_GLINT_BONUS_TIERS;
     public static final int MAX_GLINT_TIER = 20;
 
     private static final Map<Character, Integer> CODE_TO_RGB = buildCodeTable();
@@ -121,7 +124,32 @@ public final class EnchantAura {
         }
     }
 
-    /** Renvoie le palier de visibilité du glint (1..20, défaut = 4) porté par l'item. */
+    /** T337-ARMOR-GLINT-PLUS2 : Vrai si l'item est une pièce d'armure (casque, plastron, jambières, bottes, Samouss, Lunettes du Patron) ou une élytre. */
+    public static boolean isArmorPiece(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        net.minecraft.world.item.Item item = stack.getItem();
+        return item instanceof net.minecraft.world.item.ArmorItem
+                || item instanceof net.minecraft.world.item.ElytraItem;
+    }
+
+    /** T337-ARMOR-GLINT-PLUS2 : Palier par défaut (6 pour les armures du Deep Lucky Block, 4 pour le reste). */
+    public static int defaultGlintTierFor(ItemStack stack) {
+        if (isArmorPiece(stack)) {
+            if (deepluckyblock.util.DeepNbt.isLuckyBlockOrigin(stack)) {
+                return LUCKY_ARMOR_DEFAULT_GLINT_TIER;
+            }
+            try {
+                CompoundTag tag = deepluckyblock.util.DeepNbt.tag(stack);
+                if (tag != null && (tag.getBoolean(deepluckyblock.util.DeepNbt.LUCKY_ITEM_NBT_KEY)
+                        || tag.contains(GLINT_NBT_KEY, 99))) {
+                    return LUCKY_ARMOR_DEFAULT_GLINT_TIER;
+                }
+            } catch (Throwable ignored) {}
+        }
+        return DEFAULT_GLINT_TIER;
+    }
+
+    /** Renvoie le palier de visibilité du glint (1..20, défaut = 6 sur armure Lucky Block, 4 sinon) porté par l'item. */
     public static int glintTier(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return DEFAULT_GLINT_TIER;
         try {
@@ -131,7 +159,7 @@ public final class EnchantAura {
                 return Math.max(MIN_GLINT_TIER, Math.min(MAX_GLINT_TIER, t));
             }
         } catch (Throwable ignored) {}
-        return DEFAULT_GLINT_TIER;
+        return defaultGlintTierFor(stack);
     }
 
     /**

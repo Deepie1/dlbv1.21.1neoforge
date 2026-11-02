@@ -1406,6 +1406,12 @@ public class GenerateLuckyItemProcedure {
                 ? finalName
                 : recolorNameToRank(finalName, profile.colorCode);
         creatorItem.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal(displayedName + rankSuffix(branchLuck)));
+        // T337-ARMOR-GLINT-PLUS2 : Estampille aussi la couleur exacte de grade et le palier d'armure (+2) sur les Creator Events
+        profile.stampGlint(creatorItem);
+        if (!creatorItem.hasFoil()) {
+            creatorItem.set(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+        }
+        DeepCustomGlint.applyThemed(creatorItem);
 
         addArrowsIfRanged(itemType, result, random);
         result.items.add(creatorItem);
@@ -3880,11 +3886,16 @@ public class GenerateLuckyItemProcedure {
             DeepCustomGlint.applyThemed(stack);
         }
 
-        /** Écrit la couleur exacte du rang pour {@code EnchantAura}. */
+        /** Écrit la couleur exacte du rang (et +2 paliers sur les armures, T337) pour {@code EnchantAura}. */
         void stampGlint(ItemStack stack) {
             try {
                 CompoundTag tag = deepluckyblock.util.DeepNbt.getOrCreateTag(stack);
                 tag.putInt(GLINT_NBT_KEY, 0xFF000000 | (rgb & 0xFFFFFF));
+                if (deepluckyblock.client.EnchantAura.isArmorPiece(stack)
+                        && !tag.contains(deepluckyblock.client.EnchantAura.GLINT_TIER_NBT_KEY, 99)) {
+                    tag.putInt(deepluckyblock.client.EnchantAura.GLINT_TIER_NBT_KEY,
+                            deepluckyblock.client.EnchantAura.LUCKY_ARMOR_DEFAULT_GLINT_TIER);
+                }
                 deepluckyblock.util.DeepNbt.commit(stack, tag);
             } catch (Throwable ignored) {
                 // jamais bloquant : le glint retombe sur le parsing §

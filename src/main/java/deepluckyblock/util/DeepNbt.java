@@ -143,8 +143,19 @@ public final class DeepNbt {
         if (stack == null || stack.isEmpty()) return;
         try {
             CompoundTag tag = getOrCreateTag(stack);
+            boolean changed = false;
             if (!tag.getBoolean(LUCKY_ITEM_NBT_KEY)) {
                 tag.putBoolean(LUCKY_ITEM_NBT_KEY, true);
+                changed = true;
+            }
+            // T337-ARMOR-GLINT-PLUS2 : +2 paliers de glint par défaut sur les armures issues du bloc (Palier 6/20)
+            if (deepluckyblock.client.EnchantAura.isArmorPiece(stack)
+                    && !tag.contains(deepluckyblock.client.EnchantAura.GLINT_TIER_NBT_KEY, 99)) {
+                tag.putInt(deepluckyblock.client.EnchantAura.GLINT_TIER_NBT_KEY,
+                        deepluckyblock.client.EnchantAura.LUCKY_ARMOR_DEFAULT_GLINT_TIER);
+                changed = true;
+            }
+            if (changed) {
                 commit(stack, tag);
             }
         } catch (Throwable ignored) {
