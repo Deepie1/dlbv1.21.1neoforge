@@ -127,4 +127,68 @@ public final class DeepNbt {
     public static void commit(ItemStack stack, CompoundTag tag) {
         setTag(stack, tag);
     }
+
+    /**
+     * T331-LUCKY-ITEM-ORIGIN : Clé NBT (dans {@code DataComponents.CUSTOM_DATA}) marquant
+     * tout item looté via le Lucky Block (blocs, coffres de structures, boss, événements)
+     * ou généré/enchanté via une commande du mod.
+     */
+    public static final String LUCKY_ITEM_NBT_KEY = "dlbLuckyItem";
+
+    /**
+     * T331-LUCKY-ITEM-ORIGIN : Estampille l'item comme issu du Lucky Block ou d'une commande
+     * du mod, puis force la synchronisation réseau via {@link #commit}.
+     */
+    public static void markLuckyBlockOrigin(@Nullable ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return;
+        try {
+            CompoundTag tag = getOrCreateTag(stack);
+            if (!tag.getBoolean(LUCKY_ITEM_NBT_KEY)) {
+                tag.putBoolean(LUCKY_ITEM_NBT_KEY, true);
+                commit(stack, tag);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * T331-LUCKY-ITEM-ORIGIN : Retourne {@code true} uniquement si l'item provient du Lucky Block
+     * (ou de ses coffres/boss/événements) ou d'une commande du mod (y compris {@code /enchant} ou
+     * {@code /give} posant un enchantement exclusif {@code deep_lucky_block:*}).
+     *
+     * <p>Un item normal enchanté à la main (table d'enchantement, enclume vanilla, villageois,
+     * coffre vanilla ou autre mod) retourne {@code false} : il conserve ainsi son interface
+     * Minecraft basique et n'empiète jamais sur les panneaux d'infobulle d'autres mods.
+     */
+    public static boolean isLuckyBlockOrigin(@Nullable ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        CompoundTag tag = tag(stack);
+        if (tag != null && (tag.getBoolean(LUCKY_ITEM_NBT_KEY)
+                || tag.contains("dlbGlint")
+                || tag.contains("dlbGlintForce")
+                || tag.contains("dlbGlintTier"))) {
+            return true;
+        }
+        for (net.minecraft.world.item.enchantment.Enchantment ench : DeepEnchant.map(stack).keySet()) {
+            net.minecraft.resources.ResourceLocation id = DeepEnchant.getKeySafe(ench);
+            if (id != null && ("deep_lucky_block".equals(id.getNamespace())
+                    || "supreme_lucky_block".equals(id.getNamespace()))) {
+                return true;
+            }
+        }
+        net.minecraft.world.item.enchantment.ItemEnchantments stored =
+                stack.get(DataComponents.STORED_ENCHANTMENTS);
+        if (stored != null && !stored.isEmpty()) {
+            for (net.minecraft.core.Holder<net.minecraft.world.item.enchantment.Enchantment> h : stored.keySet()) {
+                net.minecraft.resources.ResourceLocation id = h.unwrapKey()
+                        .map(net.minecraft.resources.ResourceKey::location)
+                        .orElseGet(() -> DeepEnchant.getKeySafe(h.value()));
+                if (id != null && ("deep_lucky_block".equals(id.getNamespace())
+                        || "supreme_lucky_block".equals(id.getNamespace()))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 }

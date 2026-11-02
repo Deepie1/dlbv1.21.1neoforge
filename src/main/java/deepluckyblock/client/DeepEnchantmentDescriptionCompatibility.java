@@ -54,6 +54,8 @@ public final class DeepEnchantmentDescriptionCompatibility {
 
         ItemStack stack = event.getItemStack();
         if (stack == null || stack.isEmpty() || !stack.isEnchanted()) return;
+        // T331-LUCKY-ITEM-ORIGIN : Laisse les items hors Lucky Block / commandes 100 % à vanilla / autres mods.
+        if (!deepluckyblock.util.DeepNbt.isLuckyBlockOrigin(stack)) return;
 
         Map<String, String> descriptionKeys = new HashMap<>();
         Map<String, String> renderedDescriptions = new HashMap<>();

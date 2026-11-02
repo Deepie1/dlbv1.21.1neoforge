@@ -2055,6 +2055,7 @@ public class GenerateLuckyItemProcedure {
                 ? DeepLuckyBlockModItems.LUNETTES_DU_PATRON_HELMET.get()
                 : materialByLuck(type, branchLuck, random);
         ItemStack stack = new ItemStack(item);
+        deepluckyblock.util.DeepNbt.markLuckyBlockOrigin(stack);
         applyEnchantmentsFromConfig(stack, type, mainLuck, branchLuck, random, creatorMode, isMaximeBiaggi);
 
         if (patronGlasses) {
@@ -3750,13 +3751,16 @@ public class GenerateLuckyItemProcedure {
         /** Pose le nom ET, pour les rangs hors-palette, la couleur exacte du glint. */
         void applyName(ItemStack stack, String itemType) {
             stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, formatItemName(itemType));
+            deepluckyblock.util.DeepNbt.markLuckyBlockOrigin(stack);
             if (hex) stampGlint(stack);
         }
 
         /** Écrit la couleur exacte du rang pour {@code EnchantAura}. */
         void stampGlint(ItemStack stack) {
             try {
-                deepluckyblock.util.DeepNbt.getOrCreateTag(stack).putInt(GLINT_NBT_KEY, 0xFF000000 | (rgb & 0xFFFFFF));
+                CompoundTag tag = deepluckyblock.util.DeepNbt.getOrCreateTag(stack);
+                tag.putInt(GLINT_NBT_KEY, 0xFF000000 | (rgb & 0xFFFFFF));
+                deepluckyblock.util.DeepNbt.commit(stack, tag);
             } catch (Throwable ignored) {
                 // jamais bloquant : le glint retombe sur le parsing §
             }

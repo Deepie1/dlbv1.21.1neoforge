@@ -2140,6 +2140,7 @@ public final class EnchantmentComboHandler {
                             ComboDef c = COMBOS.get(num - 1);
                             for (PieceRequirement req : c.pieces()) {
                                 ItemStack item = new ItemStack(req.sampleItem());
+                                deepluckyblock.util.DeepNbt.markLuckyBlockOrigin(item);
                                 Enchantment ench = DeepEnchant.byId("deep_lucky_block:" + req.primaryPath());
                                 if (ench != null) {
                                     int maxMod = Math.max(1, CustomEnchantment.getMaxLevelMod(ench));

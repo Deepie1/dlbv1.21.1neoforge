@@ -162,6 +162,11 @@ public final class EnchantmentTooltipFixProcedure {
         ItemStack stack = event.getItemStack();
         if (stack == null || stack.isEmpty()) return;
 
+        // T331-LUCKY-ITEM-ORIGIN : Ne jamais altérer l'infobulle d'un item normal enchanté à la main
+        // ni d'un item provenant d'un autre mod — l'interface Minecraft de base (ou celle de l'autre
+        // mod) reste 100 % intacte pour bien différencier les items du Lucky Block.
+        if (!deepluckyblock.util.DeepNbt.isLuckyBlockOrigin(stack)) return;
+
         // PORT 1.21.1 : composant ItemEnchantments -> DeepEnchant
         Map<Enchantment, Integer> map = deepluckyblock.util.DeepEnchant.map(stack);
         if (map.isEmpty()) return;

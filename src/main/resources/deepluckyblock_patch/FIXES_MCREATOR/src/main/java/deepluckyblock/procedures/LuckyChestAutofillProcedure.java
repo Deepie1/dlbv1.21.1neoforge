@@ -555,6 +555,7 @@ public class LuckyChestAutofillProcedure {
         }
 
         if (added > 0) {
+            deepluckyblock.util.DeepNbt.markLuckyBlockOrigin(book);
             items.add(book);
         }
     }

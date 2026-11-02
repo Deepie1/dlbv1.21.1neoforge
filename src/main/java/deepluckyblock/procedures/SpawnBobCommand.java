@@ -71,6 +71,7 @@ public class SpawnBobCommand {
         // Canne à pêche
         ItemStack rod = new ItemStack(Items.FISHING_ROD);
         rod.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§6§l✦ Eternal Fisher's Rod ✦"));
+        deepluckyblock.util.DeepNbt.markLuckyBlockOrigin(rod);
         bob.setItemSlot(EquipmentSlot.OFFHAND, rod);
 
         // Tags de drop

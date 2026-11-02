@@ -230,6 +230,7 @@ public final class GlintCommand {
 
         CompoundTag tag = DeepNbt.getOrCreateTag(held);
         tag.putInt(deepluckyblock.client.EnchantAura.GLINT_TIER_NBT_KEY, newTier);
+        DeepNbt.commit(held, tag);
         deepluckyblock.client.EnchantAura.invalidateCache(held);
         player.inventoryMenu.broadcastChanges();
 
@@ -309,6 +310,7 @@ public final class GlintCommand {
     private static void applyGlint(ItemStack stack, int rgb) {
         CompoundTag tag = DeepNbt.getOrCreateTag(stack);
         tag.putInt(deepluckyblock.client.EnchantAura.GLINT_FORCE_NBT_KEY, 0xFF000000 | (rgb & 0xFFFFFF));
+        DeepNbt.commit(stack, tag);
         // Composant VANILLA officiel (vérifié 1.21.1) : force ItemStack.hasFoil()
         // à true indépendamment de isEnchanted(), donc le halo est visible même
         // sur un bâton en bois tout nu.
@@ -321,6 +323,7 @@ public final class GlintCommand {
         if (tag != null) {
             tag.remove(deepluckyblock.client.EnchantAura.GLINT_FORCE_NBT_KEY);
             tag.remove(deepluckyblock.client.EnchantAura.GLINT_TIER_NBT_KEY);
+            DeepNbt.commit(stack, tag);
         }
         // false (et non simplement "remove") : un item réellement enchanté
         // reste enchanté (les effets restent actifs), mais son halo visuel

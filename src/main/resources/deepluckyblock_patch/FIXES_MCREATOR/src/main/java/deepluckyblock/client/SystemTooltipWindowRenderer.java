@@ -619,10 +619,26 @@ public final class SystemTooltipWindowRenderer {
     public static final class GameEvents {
         private GameEvents() {}
 
+        /**
+         * T331-LUCKY-ITEM-ORIGIN : Le panneau spécial d'hover n'est activé QUE sur les items
+         * lootés via le Lucky Block (ou ses coffres/boss/événements) ou obtenus par commande du mod.
+         * Les items normaux enchantés à la main et les items d'autres mods gardent leur interface
+         * de base (ou celle de leur mod) sans aucun empiètement.
+         */
+        private static boolean shouldUseSystemWindow(ItemStack stack) {
+            return stack != null && !stack.isEmpty()
+                    && deepluckyblock.util.DeepNbt.isLuckyBlockOrigin(stack)
+                    && !DeepEnchant.map(stack).isEmpty();
+        }
+
         @SubscribeEvent(priority = EventPriority.LOW)
         public static void onGatherComponents(RenderTooltipEvent.GatherComponents event) {
             ItemStack stack = event.getItemStack();
-            if (stack == null || stack.isEmpty()) return;
+            if (!shouldUseSystemWindow(stack)) {
+                activeTotalShiftPages = 1;
+                currentShiftPage = 0;
+                return;
+            }
 
             Map<Enchantment, Integer> map = DeepEnchant.map(stack);
             if (map.isEmpty()) return;
@@ -940,7 +956,7 @@ public final class SystemTooltipWindowRenderer {
         @SubscribeEvent
         public static void onRenderTooltipPre(RenderTooltipEvent.Pre event) {
             ItemStack stack = event.getItemStack();
-            if (stack == null || stack.isEmpty() || DeepEnchant.map(stack).isEmpty()) return;
+            if (!shouldUseSystemWindow(stack)) return;
 
             if (event.getY() < 20) {
                 event.setY(20);
@@ -950,7 +966,7 @@ public final class SystemTooltipWindowRenderer {
         @SubscribeEvent
         public static void onRenderTooltipColor(RenderTooltipEvent.Color event) {
             ItemStack stack = event.getItemStack();
-            if (stack == null || stack.isEmpty() || DeepEnchant.map(stack).isEmpty()) {
+            if (!shouldUseSystemWindow(stack)) {
                 frameBoxW = 0;
                 frameBoxH = 0;
                 return;
