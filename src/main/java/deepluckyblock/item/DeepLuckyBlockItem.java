@@ -51,9 +51,9 @@ public class DeepLuckyBlockItem extends BlockItem {
         } else if (luck < 0) {
             return Component.literal("§6§lDeep's Lucky Block §c[" + luck + "%]");
         } else if (luck >= 50) {
-            return Component.literal("§6§lDeep's Lucky Block §b[+" + luck + "%]");
+            return Component.literal("§6§lDeep's Lucky Block §b[+" + luck + "]");
         } else if (luck > 0) {
-            return Component.literal("§6§lDeep's Lucky Block §7[+" + luck + "%]");
+            return Component.literal("§6§lDeep's Lucky Block §7[+" + luck + "]");
         }
         return Component.literal("§6§lDeep's Lucky Block");
     }

@@ -394,6 +394,11 @@ public final class DeepGlintColor {
             String s = rl.toString().toLowerCase(Locale.ROOT);
             int lvl = e.getValue() == null ? 1 : e.getValue();
 
+            // T350-CURSE-NO-FX : une malédiction ne déclenche jamais d'éclat ni de particule.
+            if (deepluckyblock.enchantments.DeepElement.isCursePath(rl.getPath())) {
+                continue;
+            }
+
             // Ignore les enchantements purement passifs de durabilité / sauvegarde
             if (s.endsWith(":unbreaking") || s.endsWith(":mending") || s.endsWith(":basic_mending")
                     || s.endsWith(":chrono_mending") || s.endsWith(":basic_chrono_mending")

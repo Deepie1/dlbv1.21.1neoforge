@@ -38,42 +38,42 @@ import java.util.Optional;
 public enum WeaponVisualEffectId {
 
     // === I. TRANCHANT, ALLONGE, ÉCHO & EXÉCUTION (1..5) ===
-    RAZOR_GLEAM         (1,  Category.EDGE_SHARP, 35, true,  0xEEF8FF, 0x7CC6FF),
-    SUPREME_PRISM_EDGE  (2,  Category.EDGE_SHARP, 85, true,  0xFFFFFF, 0x4CF2FF),
-    SPECTRAL_REACH      (3,  Category.SPECIAL,    62, true,  0x7CF7E8, 0x1FB6CC),
-    TWIN_ECHO_SLASH     (4,  Category.SPECIAL,    68, true,  0x5EE2FF, 0x2B6BFF),
-    GUILLOTINE_CLEAVE   (5,  Category.SPECIAL,    80, false, 0xD91E36, 0xF0F4F8),
+    RAZOR_GLEAM(1,  Category.EDGE_SHARP, 35, true,  0xEEF8FF, 0x7CC6FF, DeepElement.METAL),
+    SUPREME_PRISM_EDGE(2,  Category.EDGE_SHARP, 85, true,  0xFFFFFF, 0x4CF2FF, DeepElement.METAL),
+    SPECTRAL_REACH(3,  Category.SPECIAL,    62, true,  0x7CF7E8, 0x1FB6CC, DeepElement.SHADOW),
+    TWIN_ECHO_SLASH(4,  Category.SPECIAL,    68, true,  0x5EE2FF, 0x2B6BFF, DeepElement.THUNDER),
+    GUILLOTINE_CLEAVE(5,  Category.SPECIAL,    80, false, 0xD91E36, 0xF0F4F8, DeepElement.BLOOD),
 
     // === II. COUPS CRITIQUES AMÉLIORÉS (6..8) ===
-    GOLDEN_CRIT_STAR    (6,  Category.CRIT,       52, true,  0xFFE66D, 0xFFFFFF),
-    FOCUSED_BULLSEYE    (7,  Category.CRIT,       64, true,  0xFFB703, 0x38F28D),
-    OVERCLOCK_CYBER_X   (8,  Category.CRIT,       88, true,  0x00F5FF, 0xFF2A85),
+    GOLDEN_CRIT_STAR(6,  Category.CRIT,       52, true,  0xFFE66D, 0xFFFFFF, DeepElement.LIGHT),
+    FOCUSED_BULLSEYE(7,  Category.CRIT,       64, true,  0xFFB703, 0x38F28D, DeepElement.METAL),
+    OVERCLOCK_CYBER_X(8,  Category.CRIT,       88, true,  0x00F5FF, 0xFF2A85, DeepElement.THUNDER),
 
     // === III. SANG, VAMPIRISME & CARNAGE (9..12) ===
-    DRIPPING_BLOOD_EDGE (9,  Category.BLOOD,      66, false, 0xB8081E, 0xFF263B),
-    CRIMSON_SIPHON      (10, Category.BLOOD,      84, false, 0x9E061A, 0xFF3858),
-    VITAL_TRANSFUSION   (11, Category.BLOOD,      60, true,  0xFF4D79, 0xFFD166),
-    CARNAGE_BERSERK     (12, Category.BLOOD,      86, false, 0xD40A20, 0xFF5A1F),
+    DRIPPING_BLOOD_EDGE(9,  Category.BLOOD,      66, false, 0xB8081E, 0xFF263B, DeepElement.BLOOD),
+    CRIMSON_SIPHON(10, Category.BLOOD,      84, false, 0x9E061A, 0xFF3858, DeepElement.BLOOD),
+    VITAL_TRANSFUSION(11, Category.BLOOD,      60, true,  0xFF4D79, 0xFFD166, DeepElement.BLOOD),
+    CARNAGE_BERSERK(12, Category.BLOOD,      86, false, 0xD40A20, 0xFF5A1F, DeepElement.BLOOD),
 
     // === IV. ÉLÉMENTS, EFFETS À DISTANCE & GRANDIOSES (13..30) ===
-    MOLTEN_FIRE_WAVE    (13, Category.ELEMENT,    58, true,  0xFF6B1A, 0xFFD147),
-    SOUL_FIRE_CRESCENT  (14, Category.ELEMENT,    76, true,  0x2EF2E6, 0x80FFFA),
-    BRIMSTONE_METEOR    (15, Category.ELEMENT,    92, true,  0xFF3B00, 0xFFAE00),
-    CHAIN_VOLT_ARC      (16, Category.ELEMENT,    87, true,  0x70E8FF, 0xE6FBFF),
-    HYDRO_TIDAL_SURGE   (17, Category.ELEMENT,    60, true,  0x1CC8FF, 0xA8F0FF),
-    ABYSSAL_MAELSTROM   (18, Category.ELEMENT,    89, true,  0x0A58CA, 0x3CEFFF),
-    PERMAFROST_RIME     (19, Category.ELEMENT,    56, true,  0x8CE8FF, 0xE8FCFF),
-    VENOM_BRIAR_FANG    (20, Category.ELEMENT,    63, false, 0x2BC418, 0x9DFF2E),
-    SEISMIC_TECTONIC    (21, Category.ELEMENT,    82, false, 0xC97A2B, 0xFFD275),
-    ZEPHYR_WIND_LANCE   (22, Category.ELEMENT,    67, true,  0xC7FFF0, 0x5EF2CE),
-    SERAPH_SKY_PILLAR   (23, Category.ELEMENT,    96, true,  0xFFF3B0, 0xFFD043),
-    WITHER_SHADOW_RIFT  (24, Category.ELEMENT,    78, false, 0x4A1275, 0xB44CFF),
-    ASTRAL_STAR_LANCE   (25, Category.RANGED,     93, true,  0x8A7CFF, 0x9EF8FF),
-    VOID_WARP_SPHERE    (26, Category.RANGED,     85, true,  0xB538FF, 0x3DF5FF),
-    DRAGON_CHAOS_PRISM  (27, Category.RANGED,     90, true,  0xFF2EC4, 0x7A28FF),
-    CHRONO_ETERNAL_HALO (28, Category.SPECIAL,    79, true,  0xFFC845, 0xFFF4CC),
-    WARLORD_RALLY_SIGIL (29, Category.SPECIAL,    91, true,  0xFFD644, 0xFFF0B8),
-    ANNIHILATING_ARC    (30, Category.SPECIAL,    95, true,  0xFFFFFF, 0x9ED8FF);
+    MOLTEN_FIRE_WAVE(13, Category.ELEMENT,    58, true,  0xFF6B1A, 0xFFD147, DeepElement.FIRE),
+    SOUL_FIRE_CRESCENT(14, Category.ELEMENT,    76, true,  0x2EF2E6, 0x80FFFA, DeepElement.FIRE),
+    BRIMSTONE_METEOR(15, Category.ELEMENT,    92, true,  0xFF3B00, 0xFFAE00, DeepElement.FIRE),
+    CHAIN_VOLT_ARC(16, Category.ELEMENT,    87, true,  0x70E8FF, 0xE6FBFF, DeepElement.THUNDER),
+    HYDRO_TIDAL_SURGE(17, Category.ELEMENT,    60, true,  0x1CC8FF, 0xA8F0FF, DeepElement.WATER),
+    ABYSSAL_MAELSTROM(18, Category.ELEMENT,    89, true,  0x0A58CA, 0x3CEFFF, DeepElement.WATER),
+    PERMAFROST_RIME(19, Category.ELEMENT,    56, true,  0x8CE8FF, 0xE8FCFF, DeepElement.WATER),
+    VENOM_BRIAR_FANG(20, Category.ELEMENT,    63, false, 0x2BC418, 0x9DFF2E, DeepElement.WOOD),
+    SEISMIC_TECTONIC(21, Category.ELEMENT,    82, false, 0xC97A2B, 0xFFD275, DeepElement.EARTH),
+    ZEPHYR_WIND_LANCE(22, Category.ELEMENT,    67, true,  0xC7FFF0, 0x5EF2CE, DeepElement.WOOD),
+    SERAPH_SKY_PILLAR(23, Category.ELEMENT,    96, true,  0xFFF3B0, 0xFFD043, DeepElement.LIGHT),
+    WITHER_SHADOW_RIFT(24, Category.ELEMENT,    78, false, 0x4A1275, 0xB44CFF, DeepElement.SHADOW),
+    ASTRAL_STAR_LANCE(25, Category.RANGED,     93, true,  0x8A7CFF, 0x9EF8FF, DeepElement.LIGHT),
+    VOID_WARP_SPHERE(26, Category.RANGED,     85, true,  0xB538FF, 0x3DF5FF, DeepElement.VOID),
+    DRAGON_CHAOS_PRISM(27, Category.RANGED,     90, true,  0xFF2EC4, 0x7A28FF, DeepElement.VOID),
+    CHRONO_ETERNAL_HALO(28, Category.SPECIAL,    79, true,  0xFFC845, 0xFFF4CC, DeepElement.LIGHT),
+    WARLORD_RALLY_SIGIL(29, Category.SPECIAL,    91, true,  0xFFD644, 0xFFF0B8, DeepElement.EARTH),
+    ANNIHILATING_ARC(30, Category.SPECIAL,    95, true,  0xFFFFFF, 0x9ED8FF, DeepElement.METAL);
 
     public enum Category {
         EDGE_SHARP,
@@ -86,20 +86,60 @@ public enum WeaponVisualEffectId {
 
     public record ResolvedLayer(WeaponVisualEffectId effect, int level) {}
 
+    /**
+     * T350-ELEMENT-ORDER : trie les couches pour que les animations « se suivent » de façon cohérente.
+     * L'effet dominant (plus haute priorité) reste en couche 0 — c'est lui qui définit l'animation
+     * principale et la couleur de l'arme — puis toutes les autres couches sont regroupées par famille
+     * élémentaire, ce qui supprime l'impression que les effets sortent « n'importe quand ».
+     */
+    public static void sortByElement(List<ResolvedLayer> layers) {
+        if (layers == null || layers.size() < 2) return;
+        int bestPriority = Integer.MIN_VALUE;
+        for (ResolvedLayer l : layers) {
+            bestPriority = Math.max(bestPriority, l.effect().priority);
+        }
+        final int top = bestPriority;
+        layers.sort(Comparator
+                .comparingInt((ResolvedLayer l) -> (l.effect().priority == top) ? 0 : 1)
+                .thenComparingInt(l -> l.effect().element.ordinal())
+                .thenComparingInt(l -> -l.effect().priority));
+    }
+
     public final int id;
     public final Category category;
     public final int priority;
     public final boolean additive;
+    /** T350-ELEMENT-FAMILIES : famille élémentaire (couleur + ordre + ambiance). */
+    public final DeepElement element;
+    /** Couleur d'accent propre à l'effet, harmonisée vers la famille élémentaire. */
     public final int primaryRgb;
     public final int secondaryRgb;
 
-    WeaponVisualEffectId(int id, Category category, int priority, boolean additive, int primaryRgb, int secondaryRgb) {
+    WeaponVisualEffectId(int id, Category category, int priority, boolean additive,
+                         int primaryRgb, int secondaryRgb, DeepElement element) {
         this.id = id;
         this.category = category;
         this.priority = priority;
         this.additive = additive;
-        this.primaryRgb = primaryRgb;
-        this.secondaryRgb = secondaryRgb;
+        this.element = element;
+        // T350-ELEMENT-COLORS : les couleurs déclarées sont recadrées vers la palette de la famille
+        // (feu = rouge/orange, poison & nature = vert, eau = bleu, foudre = jaune, métal = argent...).
+        // 60 % de la teinte de famille : l'effet garde son identité mais s'accorde avec ses voisins.
+        this.primaryRgb = blend(primaryRgb, element.primary, 0.60f);
+        this.secondaryRgb = blend(secondaryRgb, element.highlight, 0.45f);
+    }
+
+    /** Mélange linéaire de deux couleurs 0xRRGGBB. */
+    private static int blend(int a, int b, float t) {
+        float k = Math.max(0.0f, Math.min(1.0f, t));
+        int r = (int) (((a >> 16) & 0xFF) * (1 - k) + ((b >> 16) & 0xFF) * k);
+        int g = (int) (((a >> 8) & 0xFF) * (1 - k) + ((b >> 8) & 0xFF) * k);
+        int bl = (int) ((a & 0xFF) * (1 - k) + (b & 0xFF) * k);
+        return (r << 16) | (g << 8) | bl;
+    }
+
+    public DeepElement element() {
+        return element;
     }
 
     private static final WeaponVisualEffectId[] BY_ID = new WeaponVisualEffectId[31];
@@ -252,6 +292,8 @@ public enum WeaponVisualEffectId {
 
     public static WeaponVisualEffectId forEnchantmentLocation(ResourceLocation loc) {
         if (loc == null) return null;
+        // T350-CURSE-NO-FX : aucune malédiction ne déclenche de VFX ni de glint custom.
+        if (DeepElement.isCursePath(loc.getPath())) return null;
         if ("deep_lucky_block".equals(loc.getNamespace())) {
             return ENCHANT_MAP.get(loc.getPath());
         }
@@ -302,7 +344,7 @@ public enum WeaponVisualEffectId {
                 out.add(new ResolvedLayer(fx, Math.max(1, ench.getLevel(entry))));
             }
         }
-        out.sort(Comparator.comparingInt((ResolvedLayer l) -> l.effect().priority).reversed());
+        sortByElement(out);
         return out.size() <= maxLayers ? out : out.subList(0, maxLayers);
     }
 
@@ -356,7 +398,7 @@ public enum WeaponVisualEffectId {
         for (Map.Entry<WeaponVisualEffectId, Integer> e : bestLevelPerEffect.entrySet()) {
             all.add(new ResolvedLayer(e.getKey(), e.getValue()));
         }
-        all.sort(Comparator.comparingInt((ResolvedLayer l) -> l.effect().priority).reversed());
+        sortByElement(all);
 
         if (all.size() <= maxLayers) {
             return all;
@@ -365,7 +407,9 @@ public enum WeaponVisualEffectId {
         List<ResolvedLayer> picked = new ArrayList<>(maxLayers);
         int usedCatMask = 0;
         for (ResolvedLayer layer : all) {
-            int bit = 1 << layer.effect().category.ordinal();
+            // T350 : on privilégie une animation par FAMILLE ÉLÉMENTAIRE (et plus par catégorie technique),
+            // pour que l'arme montre des effets cohérents entre eux.
+            int bit = 1 << layer.effect().element.ordinal();
             if ((usedCatMask & bit) == 0) {
                 usedCatMask |= bit;
                 picked.add(layer);

@@ -212,6 +212,29 @@ public final class EnchantAura {
         }
         if (enchants == null || enchants.isEmpty()) return 0;
 
+        // T350-CURSE-NO-FX : les malédictions/malédictions ne brillent pas et ne génèrent aucune
+        // particule custom. Si TOUS les enchantements de l'item sont des malédictions, on rend 0 :
+        // l'item garde son apparence neutre, sans teinte ni VFX.
+        boolean anyNonCurse = false;
+        try {
+            for (Enchantment e : enchants.keySet()) {
+                if (e == null) continue;
+                var rl = deepluckyblock.util.DeepEnchant.getKeySafe(e);
+                String path = (rl == null) ? null : rl.getPath();
+                if (path == null) { anyNonCurse = true; break; }
+                if (!deepluckyblock.enchantments.DeepElement.isCursePath(path)) {
+                    anyNonCurse = true;
+                    break;
+                }
+            }
+        } catch (Throwable ignored) {
+            anyNonCurse = true;
+        }
+        if (!anyNonCurse) {
+            log("aura('malédiction seule') -> aucune teinte (T350-CURSE-NO-FX)");
+            return 0;
+        }
+
         String name;
         try {
             name = stack.getHoverName().getString();

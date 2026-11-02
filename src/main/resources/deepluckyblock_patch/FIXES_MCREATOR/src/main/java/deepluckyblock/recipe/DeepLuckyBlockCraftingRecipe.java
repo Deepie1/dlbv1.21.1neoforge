@@ -32,7 +32,7 @@ import java.util.Map;
  *
  * Un Deep Lucky Block + des objets de chance (ou de malchance) dans la grille
  * => un Deep Lucky Block dont le bonus est modifié (rendement dégressif au-delà
- * de 50, chaque item consommé -1 unité).
+ * de 25 depuis T350, chaque item consommé -1 unité).
  *
  * ⚠️ API 1.21.1 :
  *  - CustomRecipe(CraftingBookCategory) — plus de ResourceLocation en param
@@ -108,8 +108,9 @@ public class DeepLuckyBlockCraftingRecipe extends CustomRecipe {
             if (val == 0) continue;
 
             int add = val;
-            // Rendement dégressif au-delà de 50 de luck cumulé (uniquement pour les ajouts positifs).
-            if (simulated >= 50 && val > 0) {
+            // Rendement dégressif : seuil ramené à 25 avec la nouvelle échelle « plus chère »
+            // (T350-LUCK-RESCALE), pour garder la même progressivité qu'avant.
+            if (simulated >= 25 && val > 0) {
                 add = Math.max(1, val / 2);
             }
 
@@ -171,59 +172,67 @@ public class DeepLuckyBlockCraftingRecipe extends CustomRecipe {
     private static int getLuckValue(ItemStack stack) {
         if (stack.isEmpty()) return 0;
 
-        // 1. Objets Positifs Vanilla (Ordre logique : Or < Émeraude < Diamant < Netherite < Boss)
+        // T350-LUCK-RESCALE : nouvelle base « plus chère » demandée en jeu.
+        // Ancres explicites : Lingot de Netherite = +5 (avant +20), Diamant = +1 (avant +3),
+        // Emeraude = +1 (avant +2). TOUT le reste est recalcule de façon cohérente à partir de
+        // ces trois ancres (échelle ~4x plus stricte qu'avant), en gardant les mêmes rapports
+        // de valeur entre matériaux :
+        //   1 diamant = 1 | 9 diamants (bloc) = 9 | lingot netherite = 5 | bloc netherite = 45
+        //   1 emeraude = 1 | bloc = 9 | or (commun) = 1 | bloc d'or = 9
+
+        // 1. Objets Positifs Vanilla (du plus commun au plus rare)
         if (stack.is(Items.GOLD_INGOT))              return 1;
         if (stack.is(Items.GOLD_BLOCK))              return 9;
-        if (stack.is(Items.EMERALD))                 return 2;
-        if (stack.is(Items.EMERALD_BLOCK))           return 18;
-        if (stack.is(Items.DIAMOND))                 return 3;
-        if (stack.is(Items.DIAMOND_BLOCK))           return 27;
-        if (stack.is(Items.GOLDEN_CARROT))           return 10;
-        if (stack.is(Items.GOLDEN_APPLE))            return 20;
-        if (stack.is(Items.ENCHANTED_GOLDEN_APPLE))  return 45;
+        if (stack.is(Items.EMERALD))                 return 1;   // T350 : +1 (au lieu de +2)
+        if (stack.is(Items.EMERALD_BLOCK))           return 9;
+        if (stack.is(Items.DIAMOND))                 return 1;   // T350 : +1 (au lieu de +3)
+        if (stack.is(Items.DIAMOND_BLOCK))           return 9;
+        if (stack.is(Items.GOLDEN_CARROT))           return 2;
+        if (stack.is(Items.GOLDEN_APPLE))            return 6;
+        if (stack.is(Items.ENCHANTED_GOLDEN_APPLE))  return 15;
 
-        // Nourriture simple / récoltes : +1 à +2 (pour que les craft "avec mon bloc
-        // pour ajouter la luck" s'affichent aussi avec les pommes et aliments basiques).
+        // Nourriture simple / récoltes : +1 (le minimum reste 1 pour que les recettes
+        // « avec mon bloc pour ajouter la luck » s'affichent toujours).
         if (stack.is(Items.APPLE))                   return 1;
-        if (stack.is(Items.CARROT))                   return 1;
+        if (stack.is(Items.CARROT))                  return 1;
         if (stack.is(Items.BREAD))                   return 1;
-        if (stack.is(Items.POTATO))                   return 1;
-        if (stack.is(Items.BAKED_POTATO))            return 2;
-        if (stack.is(Items.COOKED_BEEF))             return 2;
-        if (stack.is(Items.COOKED_PORKCHOP))         return 2;
-        if (stack.is(Items.COOKED_CHICKEN))          return 2;
+        if (stack.is(Items.POTATO))                  return 1;
+        if (stack.is(Items.BAKED_POTATO))            return 1;
+        if (stack.is(Items.COOKED_BEEF))             return 1;
+        if (stack.is(Items.COOKED_PORKCHOP))         return 1;
+        if (stack.is(Items.COOKED_CHICKEN))          return 1;
         if (stack.is(Items.SWEET_BERRIES))           return 1;
         if (stack.is(Items.GLOW_BERRIES))            return 1;
 
-        // Toutes les formes de Netherite
-        if (stack.is(Items.NETHERITE_SCRAP))         return 5;
-        if (stack.is(Items.NETHERITE_INGOT))         return 20;
-        if (stack.is(Items.NETHERITE_BLOCK))         return 60;
+        // Toutes les formes de Netherite (ancre : lingot = 5)
+        if (stack.is(Items.NETHERITE_SCRAP))         return 2;
+        if (stack.is(Items.NETHERITE_INGOT))         return 5;   // T350 : +5 (au lieu de +20)
+        if (stack.is(Items.NETHERITE_BLOCK))         return 45;  // 9 lingots
 
         // Trophées et Boss Vanilla
-        if (stack.is(Items.NETHER_STAR))             return 50;
-        if (stack.is(Items.DRAGON_HEAD))             return 50;
-        if (stack.is(Items.DRAGON_EGG))              return 50; // +50 (affiche bien "+50")
+        if (stack.is(Items.NETHER_STAR))             return 25;
+        if (stack.is(Items.DRAGON_HEAD))             return 20;
+        if (stack.is(Items.DRAGON_EGG))              return 25;
 
-        // 2. Objets Malchanceux (Malédictions / Luck Négative - Ordre logique croissant en malus)
-        if (stack.is(Items.ROTTEN_FLESH))            return -2;
-        if (stack.is(Items.SLIME_BALL))              return -3;
-        if (stack.is(Items.BONE))                    return -3;
-        if (stack.is(Items.SPIDER_EYE))              return -5;
-        if (stack.is(Items.POISONOUS_POTATO))        return -10;
-        if (stack.is(Items.FERMENTED_SPIDER_EYE))    return -20;
-        if (stack.is(Items.PUFFERFISH))              return -20;
-        if (stack.is(Items.WITHER_SKELETON_SKULL))   return -35;
+        // 2. Objets Malchanceux (Malédictions / Luck Négative — recalibrés sur la même échelle)
+        if (stack.is(Items.ROTTEN_FLESH))            return -1;
+        if (stack.is(Items.SLIME_BALL))              return -1;
+        if (stack.is(Items.BONE))                    return -1;
+        if (stack.is(Items.SPIDER_EYE))              return -2;
+        if (stack.is(Items.POISONOUS_POTATO))        return -3;
+        if (stack.is(Items.FERMENTED_SPIDER_EYE))    return -6;
+        if (stack.is(Items.PUFFERFISH))              return -6;
+        if (stack.is(Items.WITHER_SKELETON_SKULL))   return -12;
 
         // 3. Objets Suprêmes du Mod (Paliers Rare & Signature)
         ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
         if (id != null) {
             String path = id.getPath().toLowerCase(Locale.ROOT);
-            if ("firarain_potion".equals(path))      return 25; // Palier Rare (+25)
-            if ("shadow_essence".equals(path))       return 75; // Palier Signature (+75)
-            // Œufs / trophées de dragon custom du mod -> +50 (comme le dragon_head vanilla)
-            if (path.contains("dragon_egg"))         return 50;
-            if (path.endsWith("_dragon") || path.endsWith("dragon_egg")) return 50;
+            if ("firarain_potion".equals(path))      return 8;  // Palier Rare
+            if ("shadow_essence".equals(path))       return 20; // Palier Signature
+            // Œufs / trophées de dragon custom du mod
+            if (path.contains("dragon_egg"))         return 25;
+            if (path.endsWith("_dragon") || path.endsWith("dragon_egg")) return 25;
         }
 
         return 0;
@@ -266,13 +275,13 @@ public class DeepLuckyBlockCraftingRecipe extends CustomRecipe {
         } else if (luck <= -100) {
             stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§4§l✦ DEEP'S LUCKY BLOCK [MAUDIT MAX] ✦"));
         } else if (luck <= -50) {
-            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§c§lDeep's Lucky Block §4[" + luck + "%]"));
+            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§c§lDeep's Lucky Block §4[" + luck + "]"));
         } else if (luck < 0) {
-            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§6§lDeep's Lucky Block §c[" + luck + "%]"));
+            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§6§lDeep's Lucky Block §c[" + luck + "]"));
         } else if (luck >= 50) {
-            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§6§lDeep's Lucky Block §b[+" + luck + "%]"));
+            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§6§lDeep's Lucky Block §b[+" + luck + "]"));
         } else if (luck > 0) {
-            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§6§lDeep's Lucky Block §7[+" + luck + "%]"));
+            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§6§lDeep's Lucky Block §7[+" + luck + "]"));
         } else {
             stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§6§lDeep's Lucky Block"));
         }

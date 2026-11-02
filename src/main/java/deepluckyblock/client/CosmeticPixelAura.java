@@ -110,23 +110,23 @@ public final class CosmeticPixelAura {
     public static void onClientTickPost(ClientTickEvent.Post event) {
         try {
             Minecraft mc = Minecraft.getInstance();
-            ClientLevel level = mc.level;
-            Player viewer = mc.player;
-            if (level == null || viewer == null) {
-                TARGETS.clear();
-                return;
-            }
-            TARGETS.clear();
-            TARGETS.add(viewer);
-            List<? extends Player> others = level.players();
-            for (int i = 0, n = others.size(); i < n; i++) {
-                Player other = others.get(i);
-                if (other == viewer || !other.isAlive() || other.isSpectator()) continue;
-                if (other.distanceToSqr(viewer) > MAX_DIST_SQR) continue;
-                TARGETS.add(other);
-            }
+            refillTargets(mc, mc.level);
         } catch (Throwable ignored) {
             TARGETS.clear();
+        }
+    }
+
+    private static void refillTargets(Minecraft mc, ClientLevel level) {
+        Player viewer = mc.player;
+        TARGETS.clear();
+        if (level == null || viewer == null) return;
+        TARGETS.add(viewer);
+        List<? extends Player> others = level.players();
+        for (int i = 0, n = others.size(); i < n; i++) {
+            Player other = others.get(i);
+            if (other == viewer || !other.isAlive() || other.isSpectator()) continue;
+            if (other.distanceToSqr(viewer) > MAX_DIST_SQR) continue;
+            TARGETS.add(other);
         }
     }
 
@@ -137,11 +137,16 @@ public final class CosmeticPixelAura {
     @SubscribeEvent
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_PARTICLES) return;
-        if (TARGETS.isEmpty()) return;
 
         Minecraft mc = Minecraft.getInstance();
         ClientLevel level = mc.level;
         if (level == null) return;
+
+        // T350-COSMETIC-RELIABLE : repli si la liste n'a pas été remplie (tick sauté, monde rechargé...)
+        if (TARGETS.isEmpty()) {
+            refillTargets(mc, level);
+            if (TARGETS.isEmpty()) return;
+        }
 
         Vec3 cam = event.getCamera().getPosition();
         Matrix4f mat = event.getPoseStack().last().pose();
@@ -199,8 +204,11 @@ public final class CosmeticPixelAura {
 
         // --- 1. COURONNES / HALOS (anneaux de pixels au-dessus de la tête) ---
         if ((flags & CosmeticAuraClientTicker.F_COMBO_110_AVATAR) != 0) {
-            haloRing(add, mat, tmp, px, py + height + 0.30f, pz, 0.42f, time * 0.55f,
-                    14, 0xFFF6D0, 0xFFC63D, 240, 1.6f);
+            // T350 : couronne double, plus large et plus lumineuse (halo du Combo #110 bien visible)
+            haloRing(add, mat, tmp, px, py + height + 0.30f, pz, 0.54f, time * 0.55f,
+                    16, 0xFFF6D0, 0xFFC63D, 250, 1.8f);
+            haloRing(add, mat, tmp, px, py + height + 0.44f, pz, 0.40f, -time * 0.72f,
+                    12, 0xFFFFFF, 0xFFE9A0, 235, 1.5f);
         } else if ((flags & CosmeticAuraClientTicker.F_COMBO_097_ETERNAL) != 0
                 || (flags & CosmeticAuraClientTicker.F_COMBO_098_SWORD_GOD) != 0) {
             haloRing(add, mat, tmp, px, py + height + 0.28f, pz, 0.40f, time * 0.5f,

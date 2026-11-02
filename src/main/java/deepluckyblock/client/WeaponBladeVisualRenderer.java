@@ -174,8 +174,10 @@ public final class WeaponBladeVisualRenderer {
                                                ItemStack stack, List<VoxelNode> nodes, boolean is3dTrident,
                                                WeaponVisualEffectId fx, int level, float time, float layerMul) {
         int count = nodes.size();
-        int pRgb = fx.primaryRgb;
-        int sRgb = fx.secondaryRgb;
+        // T350-SMOOTH-COLOR : couleurs de famille élémentaire lissées dans le temps (dégradé
+        // progressif, jamais de changement brutal d'un coup à l'autre).
+        int pRgb = WeaponWorldVfxManager.smoothBladeColor(fx);
+        int sRgb = WeaponWorldVfxManager.smoothBladeColor2(fx);
         float lvlBoost = 1.0f + Math.min(4, Math.max(0, level - 1)) * 0.08f;
 
         // Demi-épaisseur Z chevauchant les deux faces de la lame 2D (0.46875..0.53125 -> 0.461..0.539)

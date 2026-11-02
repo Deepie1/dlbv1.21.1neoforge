@@ -115,11 +115,10 @@ public final class CosmeticAuraClientTicker {
         }
         cp.expiresAt = now + 10L;
 
-        if (!UniversalEnchantmentHandler.hasAnyEnchantedEquipment(entity)) {
-            cp.flags = 0;
-            return 0;
-        }
-
+        // T350-COSMETIC-RELIABLE : on lit d'abord le masque de combos (les 6 pièces d'un combo
+        // suffisent, même si l'équipement n'est pas "classiquement" enchanté). L'ancien garde-fou
+        // "aucun équipement enchanté -> 0" pouvait couper le halo du Combo #110 alors que le combo
+        // était actif : c'est exactement le symptôme "le halo ne fonctionne plus".
         int f = 0;
         ComboMask mask = EnchantmentComboRegistry.getActiveMask(entity);
         if (!mask.isEmpty()) {
@@ -129,6 +128,11 @@ public final class CosmeticAuraClientTicker {
             if (mask.has(EnchantmentComboRegistry.IDX_ARCHANGE_JUGEMENT_SOLAIRE)) f |= F_COMBO_101_ARCHANGEL;
             if (mask.has(EnchantmentComboRegistry.IDX_SEIGNEUR_GUERRE_APOCALYPSE)) f |= F_COMBO_106_WARLORD;
             if (mask.has(EnchantmentComboRegistry.IDX_PESTE_AMBULANTE)) f |= F_COMBO_062_PLAGUE;
+        }
+
+        if (f == 0 && !UniversalEnchantmentHandler.hasAnyEnchantedEquipment(entity)) {
+            cp.flags = 0;
+            return 0;
         }
 
         if (UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:king") > 0) f |= F_ENCH_KING;

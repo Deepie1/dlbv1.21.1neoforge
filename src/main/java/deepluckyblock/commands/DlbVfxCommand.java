@@ -35,7 +35,9 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 import deepluckyblock.DeepLuckyBlockMod;
+import deepluckyblock.enchantments.DeepElement;
 import deepluckyblock.enchantments.WeaponVisualEffectId;
+import deepluckyblock.enchantments.WeaponVfxVariant;
 import deepluckyblock.enchantments.WeaponVfxServerListener;
 import deepluckyblock.procedures.TestProcedure;
 import deepluckyblock.util.DeepEnchant;
@@ -84,15 +86,25 @@ public final class DlbVfxCommand {
     private DlbVfxCommand() {}
 
     /** Cible d'entraînement : marquée en NBT persistant pour pouvoir la retrouver et la nettoyer. */
-    private static final String DUMMY_TAG = "dlb_vfx_dummy";
+    private static final String DUMMY_TAG = deepluckyblock.util.TrainingDummyTracker.DUMMY_TAG;
 
     private static final int KIND_SWING = 0;
 
-    private static final int[] ALL_IDS = new int[30];
+    /**
+     * T350-ELEMENT-ORDER : ordre de défilement par FAMILLE ÉLÉMENTAIRE (Bois, Feu, Terre, Métal, Eau,
+     * Foudre, Lumière, Ombre, Sang, Vide) puis par priorité décroissante. Les animations ne défilent
+     * donc plus « dans le désordre » : on voit une famille complète, puis la suivante.
+     */
+    private static final int[] ALL_IDS;
 
     static {
+        List<WeaponVisualEffectId> ordered = new ArrayList<>(List.of(WeaponVisualEffectId.values()));
+        ordered.sort(java.util.Comparator
+                .comparingInt((WeaponVisualEffectId fx) -> fx.element.ordinal())
+                .thenComparingInt(fx -> -fx.priority));
+        ALL_IDS = new int[ordered.size()];
         for (int i = 0; i < ALL_IDS.length; i++) {
-            ALL_IDS[i] = i + 1;
+            ALL_IDS[i] = ordered.get(i).id;
         }
     }
 
@@ -103,10 +115,20 @@ public final class DlbVfxCommand {
         int remaining;
         boolean loop;
         int kind;
+        /** T350 : 0 = 30 effets, 1 = par familles élémentaires, 2 = les 50 déclinaisons. */
+        int mode;
         Vec3 ringCenter;
     }
 
     private static final Map<UUID, DemoState> DEMOS = new ConcurrentHashMap<>();
+
+    /** T350 : noms (et couleurs) des familles élémentaires proposées par la commande. */
+    private static final SuggestionProvider<CommandSourceStack> SUGGEST_FAMILIES =
+            (ctx, builder) -> SharedSuggestionProvider.suggest(
+                    java.util.Arrays.stream(DeepElement.values())
+                            .map(e -> e.name().toLowerCase(Locale.ROOT))
+                            .toList(),
+                    builder);
 
     private static boolean opOnly() {
         return "1".equals(System.getProperty("dlb.cmdOp", "0"));
@@ -203,6 +225,13 @@ public final class DlbVfxCommand {
                         .then(Commands.argument("kind", StringArgumentType.word())
                                 .suggests(SUGGEST_KINDS)
                                 .executes(ctx -> startShow(ctx, parseKind(StringArgumentType.getString(ctx, "kind")), false))))
+                // /dlbvfx elements  (les 10 familles élémentaires, animation par famille)
+                .then(Commands.literal("elements").executes(DlbVfxCommand::families)
+                        .then(Commands.argument("family", StringArgumentType.word())
+                                .suggests(SUGGEST_FAMILIES)
+                                .executes(DlbVfxCommand::familyShow)))
+                // /dlbvfx variants  (les 50 déclinaisons, de moins en moins de particules)
+                .then(Commands.literal("variants").executes(DlbVfxCommand::variantsDemo))
                 // /dlbvfx demo  (bascule boucle / stop)
                 .then(Commands.literal("demo").executes(DlbVfxCommand::toggleDemo))
                 .then(Commands.literal("stop").executes(DlbVfxCommand::stopDemo))
@@ -251,6 +280,8 @@ public final class DlbVfxCommand {
         line(src, "§e/dlbvfx hit [nombre]", "vraies frappes sur la cible d'entraînement (impact + crit réels)");
         line(src, "§e/dlbvfx dummy", "invoque / retire la cible d'entraînement");
         line(src, "§e/dlbvfx give <effet> [niveau]", "donne les armes enchantées qui déclenchent cet effet");
+        line(src, "§e/dlbvfx elements [famille]", "les 10 familles élémentaires (couleurs + effets)");
+        line(src, "§e/dlbvfx variants", "défile les 50 déclinaisons (de moins en moins de particules)");
         line(src, "§e/dlbvfx clear", "supprime les cibles d'entraînement");
         line(src, "§7Exemples : §f/dlbvfx play 29 §7puis §f/dlbvfx give 8 §7puis §f/dlbvfx hit 3", "");
         return 1;
@@ -267,11 +298,12 @@ public final class DlbVfxCommand {
             List<String> keys = WeaponVisualEffectId.enchantKeysFor(fx);
             if (keys.isEmpty()) keys = WeaponVisualEffectId.gauntletKeysFor(fx);
             String enchant = keys.isEmpty() ? "§8—" : "§8" + keys.get(0);
-            String label = String.format(Locale.ROOT, "§f#%02d §b%-20s §7%-10s %s",
-                    fx.id, fx.name(), fx.category.name().toLowerCase(Locale.ROOT), enchant);
+            String label = String.format(Locale.ROOT, "§f#%02d §b%-20s §7%-10s §d%-8s %s",
+                    fx.id, fx.name(), fx.category.name().toLowerCase(Locale.ROOT),
+                    fx.element.displayName, enchant);
             src.sendSuccess(() -> Component.literal("  " + label), false);
         }
-        src.sendSuccess(() -> Component.literal("§7Astuce : §f/dlbvfx all §7pour tout voir d'un coup, ou §f/dlbvfx demo §7en boucle."), false);
+        src.sendSuccess(() -> Component.literal("§7Astuce : §f/dlbvfx all §7pour tout voir d'un coup, §f/dlbvfx elements §7par famille, §f/dlbvfx variants §7pour les 50 déclinaisons."), false);
         return 1;
     }
 
@@ -448,7 +480,15 @@ public final class DlbVfxCommand {
             }
             st.remaining--;
 
-            WeaponVisualEffectId fx = WeaponVisualEffectId.byId(ALL_IDS[st.cursor % ALL_IDS.length]);
+            WeaponVisualEffectId fx;
+            String densLabel = "";
+            if (st.mode == 2) {
+                WeaponVfxVariant.Entry var = WeaponVfxVariant.get(st.cursor % WeaponVfxVariant.COUNT);
+                fx = var.effect();
+                densLabel = String.format(Locale.ROOT, " §8· §7densité §f%.0f%%", var.density() * 100);
+            } else {
+                fx = WeaponVisualEffectId.byId(ALL_IDS[st.cursor % ALL_IDS.length]);
+            }
             st.cursor++;
             if (fx == null) continue;
 
@@ -457,8 +497,112 @@ public final class DlbVfxCommand {
             Vec3 to = player.position().add(Math.cos(ang) * 2.4, 1.05, Math.sin(ang) * 2.4);
             Vec3 from = player.getEyePosition();
             WeaponVfxServerListener.playDebug(player, fx, st.kind, 5, from, to);
-            announce(player, "§b#%02d §f%s §8(%s)".formatted(fx.id, fx.name(), fx.category.name().toLowerCase(Locale.ROOT)));
+            final String extra = densLabel;
+            announce(player, "§b#%02d §f%s §8(%s · %s)".formatted(fx.id, fx.name(),
+                    fx.element.displayName, fx.category.name().toLowerCase(Locale.ROOT)) + extra);
         }
+    }
+
+    // =====================================================================
+    // /dlbvfx elements & /dlbvfx variants — FAMILLES ÉLÉMENTAIRES (T350)
+    // =====================================================================
+
+    private static int families(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        CommandSourceStack src = ctx.getSource();
+        ServerPlayer player = requirePlayer(ctx);
+        src.sendSuccess(() -> Component.literal("§b§lFamilles élémentaires §7(Wu Xing étendu)"), false);
+        for (DeepElement el : DeepElement.values()) {
+            int n = 0;
+            for (WeaponVisualEffectId fx : WeaponVisualEffectId.values()) {
+                if (fx.element == el) n++;
+            }
+            final int count = n;
+            src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                    "  §f%-8s §7%02d effet(s) §8· §7couleurs §f#%06X §f#%06X",
+                    el.displayName, count, el.primary, el.highlight)), false);
+        }
+        // Défilement dans l'ordre des familles
+        DemoState st = new DemoState();
+        st.cursor = 0;
+        st.cooldown = 2;
+        st.remaining = ALL_IDS.length;
+        st.loop = true;
+        st.kind = WeaponVfxServerListener.KIND_IMPACT;
+        st.mode = 1;
+        st.ringCenter = player.position();
+        DEMOS.put(player.getUUID(), st);
+        src.sendSuccess(() -> Component.literal("§b[Familles] §fdéfilement en cours, une famille après l'autre §7— §f/dlbvfx stop §7pour arrêter."), false);
+        return 1;
+    }
+
+    private static int familyShow(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer player = requirePlayer(ctx);
+        String raw = StringArgumentType.getString(ctx, "family").toLowerCase(Locale.ROOT);
+        DeepElement el = null;
+        for (DeepElement e : DeepElement.values()) {
+            if (e.name().toLowerCase(Locale.ROOT).equals(raw) || e.displayName.toLowerCase(Locale.ROOT).equals(raw)) {
+                el = e;
+                break;
+            }
+        }
+        if (el == null) {
+            ctx.getSource().sendFailure(Component.literal("§cFamille inconnue. Utilise /dlbvfx elements."));
+            return 0;
+        }
+        ServerLevel sl = player.serverLevel();
+        int i = 0;
+        int shown = 0;
+        for (WeaponVisualEffectId fx : WeaponVisualEffectId.values()) {
+            if (fx.element != el) continue;
+            Vec3 to = player.position().add(player.getLookAngle().scale(2.5)).add(0, 1.0, 0);
+            final WeaponVisualEffectId target = fx;
+            final int delay = i * 8;
+            final int level = Math.max(3, Math.min(12, fx.priority / 10));
+            if (delay == 0) {
+                WeaponVfxServerListener.playDebug(player, target, WeaponVfxServerListener.KIND_IMPACT, level,
+                        player.getEyePosition(), to);
+            } else {
+                TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + delay,
+                        () -> WeaponVfxServerListener.playDebug(player, target,
+                                WeaponVfxServerListener.KIND_IMPACT, level, player.getEyePosition(), to));
+            }
+            i++;
+            shown++;
+        }
+        final DeepElement fam = el;
+        final int total = shown;
+        ctx.getSource().sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "§b[%s] §f%d effet(s) enchaînés.", fam.displayName, total)), false);
+        return 1;
+    }
+
+    private static int variantsDemo(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        CommandSourceStack src = ctx.getSource();
+        ServerPlayer player = requirePlayer(ctx);
+        src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "§b§l50 déclinaisons §7(30 pleines + 20 allégées, densité décroissante)")), false);
+        for (DeepElement el : DeepElement.values()) {
+            List<String> names = new ArrayList<>();
+            for (WeaponVfxVariant.Entry e : WeaponVfxVariant.all()) {
+                if (e.effect().element != el || !e.lite()) continue;
+                names.add(String.format(Locale.ROOT, "§f#%02d§8(§7%.0f%%§8)", e.index() + 1, e.density() * 100));
+            }
+            if (names.isEmpty()) continue;
+            final String joined = String.join(" §8· ", names);
+            final String fam = el.displayName;
+            src.sendSuccess(() -> Component.literal("  §d" + fam + " §8: " + joined), false);
+        }
+        DemoState st = new DemoState();
+        st.cursor = 0;
+        st.cooldown = 2;
+        st.remaining = WeaponVfxVariant.COUNT;
+        st.loop = true;
+        st.kind = WeaponVfxServerListener.KIND_IMPACT;
+        st.mode = 2;
+        st.ringCenter = player.position();
+        DEMOS.put(player.getUUID(), st);
+        src.sendSuccess(() -> Component.literal("§b[Variantes] §fdéfilement des 50 déclinaisons §7— §f/dlbvfx stop §7pour arrêter."), false);
+        return 1;
     }
 
     // =====================================================================
@@ -546,7 +690,10 @@ public final class DlbVfxCommand {
         ServerPlayer player = requirePlayer(ctx);
         List<LivingEntity> existing = findDummies(player, 24.0);
         if (!existing.isEmpty()) {
-            for (LivingEntity le : existing) le.discard();
+            for (LivingEntity le : existing) {
+                deepluckyblock.util.TrainingDummyTracker.forget(le);
+                le.discard();
+            }
             ctx.getSource().sendSuccess(() -> Component.literal("§7[Cible] supprimée."), false);
             return 1;
         }
@@ -578,8 +725,17 @@ public final class DlbVfxCommand {
             return existing.get(0);
         }
 
-        // Husk : zombie du désert, insensible au feu du soleil, donc utilisable en plein jour.
-        Mob mob = EntityType.HUSK.create(player.level());
+        // T350-DUMMY-PEACEFUL : en mode Paisible, tout monstre hostile est automatiquement retiré
+        // par le jeu (Mob#shouldDespawnInPeaceful) -> la cible disparaissait aussitôt. On utilise donc
+        // un Villageois inoffensif (jamais supprimé en Paisible) dans ce mode, et on garde le Husk
+        // (insensible au feu du soleil) le reste du temps.
+        boolean peaceful = sl.getDifficulty() == net.minecraft.world.Difficulty.PEACEFUL;
+        Mob mob;
+        if (peaceful) {
+            mob = EntityType.VILLAGER.create(player.level());
+        } else {
+            mob = EntityType.HUSK.create(player.level());
+        }
         if (mob == null) return null;
         Vec3 look = player.getLookAngle();
         double dist = 2.5;
@@ -603,7 +759,13 @@ public final class DlbVfxCommand {
         }
         mob.setHealth(100_000.0f);
         mob.getPersistentData().putBoolean(DUMMY_TAG, true);
+        if (peaceful) {
+            mob.setInvulnerable(false);
+            mob.setRemainingFireTicks(0);
+        }
         if (!sl.addFreshEntity(mob)) return null;
+        // T350-DUMMY-DPS : affichage du DPS (dégâts encaissés sur 1 s) au-dessus de la tête
+        deepluckyblock.util.TrainingDummyTracker.track(mob);
         return mob;
     }
 
@@ -614,6 +776,7 @@ public final class DlbVfxCommand {
             for (LivingEntity le : sl.getEntitiesOfClass(LivingEntity.class,
                     player.getBoundingBox().inflate(128.0))) {
                 if (le.getPersistentData().getBoolean(DUMMY_TAG)) {
+                    deepluckyblock.util.TrainingDummyTracker.forget(le);
                     le.discard();
                     removed++;
                 }

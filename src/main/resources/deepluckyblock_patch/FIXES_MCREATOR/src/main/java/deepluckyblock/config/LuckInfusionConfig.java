@@ -25,8 +25,8 @@ import java.util.Map;
  *  - globalLuckMultiplier : un multiplicateur UNIQUE applique a TOUS les
  *    items d'infusion en meme temps (positifs ET negatifs, valeur par
  *    defaut 1.0 = comportement inchange). Exemple demande : 0.5 -> tous les
- *    gains sont divises par 2 (un lingot de Netherite qui donnait +20 en
- *    donne desormais +10) ; 2.0 -> tous les gains sont doubles (+20 -> +40).
+ *    gains sont divises par 2 (un lingot de Netherite qui donne +5 en
+ *    donne desormais +2 ou +3) ; 2.0 -> tous les gains sont doubles (+5 -> +10).
  *
  *  - perItemLuckMultiplier : une liste de paires "id_item=multiplicateur"
  *    (ex. "minecraft:netherite_ingot=2.0") pour ajuster le taux de luck
@@ -63,8 +63,9 @@ public class LuckInfusionConfig {
                 .comment(
                         "Multiplicateur GLOBAL applique a TOUS les items d'infusion (positifs et negatifs).",
                         "1.0 = comportement d'origine (aucun changement).",
-                        "0.5 = tous les gains sont divises par 2 (ex. Lingot de Netherite : +20 -> +10).",
-                        "2.0 = tous les gains sont doubles (ex. Lingot de Netherite : +20 -> +40).")
+                        "T350 : la valeur de base a ete recalibree (Lingot de Netherite +5, Diamant +1, Emeraude +1).",
+                        "0.5 = tous les gains sont divises par 2 (ex. Lingot de Netherite : +5 -> +3).",
+                        "2.0 = tous les gains sont doubles (ex. Lingot de Netherite : +5 -> +10).")
                 .defineInRange("globalLuckMultiplier", 1.0, 0.0, 100.0);
 
         perItemLuckMultiplier = builder

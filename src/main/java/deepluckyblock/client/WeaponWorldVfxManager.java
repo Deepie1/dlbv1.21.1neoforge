@@ -82,6 +82,20 @@ public final class WeaponWorldVfxManager {
     private static float framePixelScale = 1.0f;
 
     /**
+     * T350-VFX-VARIATIONS : densité de pixels de la déclinaison en cours de rendu (1.0 = tout).
+     * Les pixels de silhouette (alpha élevé) ne sont jamais retirés, seuls les pixels secondaires
+     * s'espacent : l'animation reste lisible mais devient beaucoup moins chargée.
+     */
+    private static float pixelDensity = 1.0f;
+    /** T350 : échelle de taille de la déclinaison en cours (0.80 .. 1.0). */
+    private static float variantScale = 1.0f;
+
+    /** T350-SMOOTH-COLOR : index de frame pour ne faire avancer les couleurs qu'une fois par frame. */
+    private static int frameIndex;
+    /** Couleur courante (r,g,b,dernièreFrame) par effet : transition douce, jamais de saut brutal. */
+    private static final java.util.Map<Integer, float[]> SMOOTH_COLORS = new java.util.HashMap<>(40);
+
+    /**
      * T349-IDLE-FILTER : plancher d'alpha. Quand il vaut &gt; 0, tout cube dont l'alpha est inférieur est
      * ignoré. Utilisé par le rendu d'arme tenue pour supprimer les « pixels lumineux constants » qui
      * restaient collés sur l'item, sans toucher aux éclats d'action (alpha élevé).
@@ -104,6 +118,7 @@ public final class WeaponWorldVfxManager {
     /** Appelé une fois par frame pour partager le même temps / la même échelle de pixels. */
     public static void beginFrame(float timeSeconds) {
         frameTimeSeconds = timeSeconds;
+        frameIndex++;
         framePixelScale = 0.80f + 0.10f * Mth.sin(timeSeconds * 0.53f) + 0.10f * Mth.sin(timeSeconds * 1.27f + 1.7f);
     }
 
@@ -151,6 +166,8 @@ public final class WeaponWorldVfxManager {
         final float yawDeg, pitchDeg, tiltRad;
         final int maxAge;
         final long seed;
+        /** T350-VFX-VARIATIONS : déclinaison tirée au déclenchement (pleine ou allégée). */
+        final deepluckyblock.enchantments.WeaponVfxVariant.Entry variantEntry;
         int age;
 
         /** T349-VARIATION : variante 0..7 tirée au déclenchement (forme, sens de rotation, teinte). */
@@ -171,6 +188,7 @@ public final class WeaponWorldVfxManager {
             this.yawDeg = yawDeg; this.pitchDeg = pitchDeg; this.tiltRad = tiltRad;
             this.maxAge = Math.max(4, maxAge);
             this.seed = seed;
+            this.variantEntry = deepluckyblock.enchantments.WeaponVfxVariant.pick(effect, seed);
         }
     }
 
@@ -651,12 +669,20 @@ public final class WeaponWorldVfxManager {
                 vc = alphaVc;
             }
 
-            if (inst.kind == KIND_SWING_SLASH) {
-                renderVoxelSwingSlash(vc, mat, tmp, camPos, inst, t);
-            } else if (inst.kind == KIND_BEAM_SIPHON) {
-                renderVoxelBeamOrSiphon(vc, mat, tmp, camPos, inst, t);
-            } else {
-                renderVoxelImpact(vc, mat, tmp, camPos, inst, t);
+            // T350-VFX-VARIATIONS : chaque déclinaison a sa densité de pixels et sa taille.
+            pixelDensity = inst.variantEntry.density();
+            variantScale = inst.variantEntry.scale();
+            try {
+                if (inst.kind == KIND_SWING_SLASH) {
+                    renderVoxelSwingSlash(vc, mat, tmp, camPos, inst, t);
+                } else if (inst.kind == KIND_BEAM_SIPHON) {
+                    renderVoxelBeamOrSiphon(vc, mat, tmp, camPos, inst, t);
+                } else {
+                    renderVoxelImpact(vc, mat, tmp, camPos, inst, t);
+                }
+            } finally {
+                pixelDensity = 1.0f;
+                variantScale = 1.0f;
             }
         }
 
@@ -1144,10 +1170,16 @@ public final class WeaponWorldVfxManager {
         // T349-PIXEL-VARIATION : chaque pixel est rapetissé/agrandi aléatoirement MAIS de façon lisse
         // dans le temps (bruit sinusoïdal déterministe par position) : la taille respire doucement au
         // lieu de rester un gros bloc figé.
-        float scale = framePixelScale * smoothPulse(cx, cy, cz);
+        float scale = framePixelScale * smoothPulse(cx, cy, cz) * variantScale;
         hx *= scale;
         hy *= scale;
         hz *= scale;
+
+        // T350-VFX-VARIATIONS : allègement contrôlé (les contours lumineux restent toujours dessinés)
+        if (pixelDensity < 0.999f && alpha < 200) {
+            float keep = pixelHash(0x5EED, (int) (cx * 977.0f + cy * 613.0f + cz * 389.0f));
+            if (keep > pixelDensity) return;
+        }
 
         float x0 = cx - hx, x1 = cx + hx;
         float y0 = cy - hy, y1 = cy + hy;
@@ -1189,11 +1221,48 @@ public final class WeaponWorldVfxManager {
      * enchantement a son dégradé propre et chaque déclenchement décale légèrement la teinte.
      */
     public static int[] palette(WeaponVisualEffectId fx, int variant) {
-        int core = fx.primaryRgb;
-        int glow = fx.secondaryRgb;
-        float shift = ((variant & 7) - 3.5f) * 0.012f;
-        int accent = rotateHue(glow, 0.12f + shift);
+        // T350-ELEMENT-COLORS : couleur de la FAMILLE ÉLÉMENTAIRE (feu = rouge, poison = vert,
+        // eau = bleu, foudre = jaune, métal = argent, ombre = violet...), mélangée à l'identité
+        // propre de l'effet, puis lissée dans le temps.
+        int target = fx.primaryRgb;
+        int core = smoothColor(fx.id, target);
+        int glow = smoothColor(1000 + fx.id, fx.secondaryRgb);
+        float shift = ((variant & 7) - 3.5f) * 0.010f;
+        int accent = rotateHue(glow, 0.10f + shift);
         return new int[]{core, glow, accent};
+    }
+
+    /**
+     * T350-SMOOTH-COLOR : renvoie la couleur courante d'une clé, en la faisant glisser doucement vers
+     * sa cible (~0,5 s de transition). Plus aucun changement de teinte brutal d'un coup à l'autre.
+     */
+    public static int smoothColor(int key, int target) {
+        int tr = (target >> 16) & 0xFF, tg = (target >> 8) & 0xFF, tb = target & 0xFF;
+        float[] cur = SMOOTH_COLORS.get(key);
+        if (cur == null) {
+            cur = new float[]{(float) tr, (float) tg, (float) tb, -1.0f};
+            SMOOTH_COLORS.put(key, cur);
+            if (SMOOTH_COLORS.size() > 256) SMOOTH_COLORS.clear();
+            return target;
+        }
+        if ((int) cur[3] == frameIndex) {
+            return (Math.round(cur[0]) << 16) | (Math.round(cur[1]) << 8) | Math.round(cur[2]);
+        }
+        float k = 0.055f; // par frame (~0,5 s à 60 fps)
+        cur[0] += (tr - cur[0]) * k;
+        cur[1] += (tg - cur[1]) * k;
+        cur[2] += (tb - cur[2]) * k;
+        cur[3] = frameIndex;
+        return (Math.round(cur[0]) << 16) | (Math.round(cur[1]) << 8) | Math.round(cur[2]);
+    }
+
+    /** Couleur lissée utilisée par le rendu de l'arme tenue (dégradé progressif, jamais de saut). */
+    public static int smoothBladeColor(WeaponVisualEffectId fx) {
+        return smoothColor(fx.id, fx.primaryRgb);
+    }
+
+    public static int smoothBladeColor2(WeaponVisualEffectId fx) {
+        return smoothColor(1000 + fx.id, fx.secondaryRgb);
     }
 
     /** Rotation de teinte HSV légère d'une couleur RGB 0xRRGGBB. */
