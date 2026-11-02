@@ -379,14 +379,15 @@ public class CrimsonLakeStructureSpawnProcedure {
 
     private static void rollDice() {
         if (theServer == null) return;
-        if (isWorldTriggered(theServer.overworld())) return;
+        ServerLevel ow = theServer.overworld();
+        if (ow == null || isWorldTriggered(ow)) return;
         int roll = RNG.nextInt(DICE_SIDES);
         if (roll != DICE_HIT) return;
-        for (ServerLevel sl : theServer.getAllLevels()) {
-            for (ServerPlayer p : sl.players()) {
-                triggerAt(sl, p, positionInFront(sl, p), "dice " + DICE_HIT + "/" + DICE_SIDES);
-                return;
-            }
+        // T313 : Crimson Lake est un evenement de surface Overworld uniquement --
+        // ne jamais le declencher sur le toit bedrock du Nether ou dans le vide de l'End.
+        for (ServerPlayer p : ow.players()) {
+            triggerAt(ow, p, positionInFront(ow, p), "dice " + DICE_HIT + "/" + DICE_SIDES);
+            return;
         }
     }
 
@@ -1065,10 +1066,12 @@ public class CrimsonLakeStructureSpawnProcedure {
             }
             if (kill != null) for (BlockPos bp : kill) level.removeBlockEntity(bp);
             // 2) ecriture palette directe, section par section.
+            if (yBot > yTop) return 0;
             var sections = chunk.getSections();
-            int i0 = chunk.getSectionIndex(yBot), i1 = chunk.getSectionIndex(yTop);
+            int i0 = Math.max(0, chunk.getSectionIndex(yBot));
+            int i1 = Math.min(sections.length - 1, chunk.getSectionIndex(yTop));
             boolean anyTouched = false;
-            for (int i = i0; i <= i1 && i < sections.length; i++) {
+            for (int i = i0; i <= i1; i++) {
                 net.minecraft.world.level.chunk.LevelChunkSection sec = sections[i];
                 if (sec == null || sec.hasOnlyAir()) continue;      // « eviter d'avoir les blocs d'air »
                 int secY = chunk.getSectionYFromSectionIndex(i);
@@ -1160,6 +1163,7 @@ public class CrimsonLakeStructureSpawnProcedure {
         // T303-PERF : CrimsonLake est pose sans rotation ni miroir -> evite 1,36 M d'allocations calculateRelativePosition.
         BlockPos p = info.pos();
         int wx = j.origin.getX() + p.getX(), wy = j.origin.getY() + p.getY(), wz = j.origin.getZ() + p.getZ();
+        if (j.level.isOutsideBuildHeight(wy)) return true; // T313 : garde hors limites Y de la dimension
         bp.set(wx, wy, wz);
         int cx = wx >> 4, cz = wz >> 4;
         if (cx != j.lastCx || cz != j.lastCz) {
@@ -1180,8 +1184,11 @@ public class CrimsonLakeStructureSpawnProcedure {
             // ecriture directe dans LevelChunkSection + heightmaps primees 1 seule fois par chunk
             // (304 appels au lieu de 1 359 489 recalculs de 4 heightmaps).
             net.minecraft.world.level.chunk.LevelChunk chunk = j.lastChunk;
+            var sections = chunk.getSections();
             int secIdx = chunk.getSectionIndex(wy);
-            net.minecraft.world.level.chunk.LevelChunkSection sec = chunk.getSection(secIdx);
+            if (secIdx < 0 || secIdx >= sections.length) return true;
+            net.minecraft.world.level.chunk.LevelChunkSection sec = sections[secIdx];
+            if (sec == null) return true;
             boolean wasOnlyAir = sec.hasOnlyAir();
             BlockState old = sec.setBlockState(wx & 15, wy & 15, wz & 15, target, false);
             if (old != target) {

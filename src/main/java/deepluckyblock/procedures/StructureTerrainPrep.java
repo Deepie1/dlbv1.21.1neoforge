@@ -159,7 +159,7 @@ public class StructureTerrainPrep {
         if (lc == null || touchedSecMask == 0L) return;
         var sections = lc.getSections();
         long mask = touchedSecMask;
-        for (int si = 0; si < sections.length && mask != 0L; si++) {
+        for (int si = 0; si < Math.min(sections.length, 64) && mask != 0L; si++) {
             if ((mask & (1L << si)) == 0L) continue;
             mask &= ~(1L << si);
             var sec = sections[si];
@@ -1475,7 +1475,7 @@ public class StructureTerrainPrep {
      */
     private static boolean canSupportSnowLayer(ChunkAccess chunk, BlockPos.MutableBlockPos pos,
                                                int x, int supportY, int z) {
-        if (chunk == null || supportY < chunk.getMinBuildHeight()) return false;
+        if (chunk == null || supportY < chunk.getMinBuildHeight() || supportY >= chunk.getMaxBuildHeight()) return false;
         BlockState below = chunk.getBlockState(pos.set(x, supportY, z));
         if (below.isAir() || below.is(Blocks.SNOW) || below.is(Blocks.POWDER_SNOW)) return false;
         if (!below.getFluidState().isEmpty() || isIceFamily(below)) return false;

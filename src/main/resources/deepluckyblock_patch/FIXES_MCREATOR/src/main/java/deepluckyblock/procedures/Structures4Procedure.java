@@ -522,7 +522,9 @@ public class Structures4Procedure {
         BlockState tState = info.state().mirror(job.mirror).rotate(job.rotation);
         if (isLaggyBlock(tState)) return true;
         BlockPos rel = StructureTemplate.calculateRelativePosition(rotSettings, info.pos());
-        bp.set(job.origin.getX() + rel.getX(), job.origin.getY() + rel.getY(), job.origin.getZ() + rel.getZ());
+        int wy = job.origin.getY() + rel.getY();
+        if (job.level.isOutsideBuildHeight(wy)) return true; // T313 : garde hors limites Y de la dimension
+        bp.set(job.origin.getX() + rel.getX(), wy, job.origin.getZ() + rel.getZ());
         int cx = bp.getX() >> 4, cz = bp.getZ() >> 4;
         if (cx != job.lastCx || cz != job.lastCz) {
             job.lastCx = cx; job.lastCz = cz;
@@ -710,6 +712,7 @@ public class Structures4Procedure {
         BlockState tState = info.state().mirror(job.mirror).rotate(job.rotation);
         BlockPos rel = StructureTemplate.calculateRelativePosition(rotSettings, info.pos());
         int wx = job.origin.getX() + rel.getX(), wy = job.origin.getY() + rel.getY(), wz = job.origin.getZ() + rel.getZ();
+        if (job.level.isOutsideBuildHeight(wy)) return true; // T313 : garde hors limites Y de la dimension
         bp.set(wx, wy, wz);
         int cx = wx >> 4, cz = wz >> 4;
         if (cx != job.lastCx || cz != job.lastCz) {
@@ -730,8 +733,11 @@ public class Structures4Procedure {
         // avec conservation integrale des BlockEntities, coffres automatiques et cherryHolder Manish.
         if (!tState.hasBlockEntity()) {
             net.minecraft.world.level.chunk.LevelChunk chunk = job.lastChunk;
+            var sections = chunk.getSections();
             int secIdx = chunk.getSectionIndex(wy);
-            net.minecraft.world.level.chunk.LevelChunkSection sec = chunk.getSection(secIdx);
+            if (secIdx < 0 || secIdx >= sections.length) return true;
+            net.minecraft.world.level.chunk.LevelChunkSection sec = sections[secIdx];
+            if (sec == null) return true;
             boolean wasOnlyAir = sec.hasOnlyAir();
             BlockState old = sec.setBlockState(wx & 15, wy & 15, wz & 15, tState, false);
             if (old != tState) {
@@ -1430,6 +1436,17 @@ public class Structures4Procedure {
                     ? deepluckyblock.util.SafeSurface.surfaceY(level, everestSpot.getX(), everestSpot.getZ(), origin.getY())
                     : origin.getY();
             int pasteY = baseY + EVEREST_OFFSET_Y - fMinRelY - EVEREST_SINK_BLOCKS;
+            // T313 : garde verticale Everest selon les bornes reelles de la dimension
+            int maxEverestPasteY = level.getMaxBuildHeight() - size.getY();
+            int minEverestPasteY = level.getMinBuildHeight() + 1;
+            if (pasteY > maxEverestPasteY) {
+                LOGGER.warn("[STRUCT4-EVEREST] sommet prevu au-dessus de maxBuildHeight={} -- pasteY bride de {} a {} (T313)",
+                        level.getMaxBuildHeight(), pasteY, maxEverestPasteY);
+                pasteY = maxEverestPasteY;
+            }
+            if (pasteY < minEverestPasteY && minEverestPasteY <= maxEverestPasteY) {
+                pasteY = minEverestPasteY;
+            }
             final BlockPos rotatedPos = plannedRotatedPos.offset(0, pasteY, 0);
             final BlockPos eMin = plannedMin.offset(0, pasteY, 0);
             final BlockPos eMax = plannedMax.offset(0, pasteY, 0);
@@ -2046,6 +2063,34 @@ public class Structures4Procedure {
                 deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4] {} : Y0 OK -- plateforme Y={} >= eau exterieure Y={} + 1", nbtName, baseY, y0Water);
             }
         }
+        // T313 : garde verticale universelle selon les bornes reelles de la dimension
+        {
+            int minBuildFloor = level.getMinBuildHeight() + 1;
+            int maxBuildCeil = level.getMaxBuildHeight() - 1;
+            if (max.getY() > maxBuildCeil) {
+                int maxDrop = Math.max(0, baseY - (minBuildFloor + 4));
+                int drop = Math.min(max.getY() - maxBuildCeil, maxDrop);
+                if (drop > 0) {
+                    baseY -= drop;
+                    finalPos = finalPos.below(drop);
+                    rotatedPos = adjustForRotation(finalPos, template, rotation);
+                    min = min.below(drop);
+                    max = max.below(drop);
+                    LOGGER.warn("[STRUCT4] {} : sommet prevu au-dessus de maxBuildHeight={} -- ancrage abaisse de {} bloc(s) (Y={}) (T313)",
+                            nbtName, level.getMaxBuildHeight(), drop, baseY);
+                }
+            } else if (min.getY() < minBuildFloor) {
+                int maxLift = Math.max(0, maxBuildCeil - max.getY());
+                int liftFloor = Math.min(minBuildFloor - min.getY(), maxLift);
+                if (liftFloor > 0) {
+                    baseY += liftFloor;
+                    finalPos = finalPos.above(liftFloor);
+                    rotatedPos = adjustForRotation(finalPos, template, rotation);
+                    min = min.above(liftFloor);
+                    max = max.above(liftFloor);
+                }
+            }
+        }
         // T14 : groupe par section 16x16x16 + spirale (guide sections 42/43) au
         // lieu du tri « layer par layer ».
         filtered = orderBySectionSpiral(filtered, bboxRs, rotatedPos);
@@ -2061,6 +2106,12 @@ public class Structures4Procedure {
             int dy = skipTerrain && followSurface
                     ? deepluckyblock.util.SafeSurface.groundY(level, selectedSite.getX(), selectedSite.getZ(), fBaseY) - fBaseY
                     : 0;
+            if (dy != 0) {
+                int maxDy = (level.getMaxBuildHeight() - 1) - fMax.getY();
+                int minDy = (level.getMinBuildHeight() + 1) - fMin.getY();
+                if (minDy <= maxDy) dy = Math.max(minDy, Math.min(maxDy, dy));
+                else dy = Math.min(dy, maxDy);
+            }
             BlockPos pasteOrigin = fRotatedPos.offset(0, dy, 0);
             Runnable onComplete = () -> { if (callback != null) callback.onComplete(pasteOrigin, level, nearestPlayer); };
             PASTE_QUEUE.offer(new PasteJob(level, fFiltered, pasteOrigin, rotation, Mirror.NONE,
@@ -2143,6 +2194,7 @@ public class Structures4Procedure {
     }
 
     private static void postProcessLayer(ServerLevel level, BlockPos min, BlockPos max, int y) {
+        if (level.isOutsideBuildHeight(y)) return; // T313 : garde hors limites Y de la dimension
         // T303-PERF : filtre de palette O(1) par section (parite Structures5Procedure.postLayer)
         // au lieu de 5 949 756 level.getBlockState sur le volume 174x123x278 de l'Everest.
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos(); BlockPos.MutableBlockPos chk = new BlockPos.MutableBlockPos();
@@ -2153,7 +2205,10 @@ public class Structures4Procedure {
             for (int cz = cz0; cz <= cz1; cz++) {
                 net.minecraft.world.level.chunk.ChunkAccess ca = deepluckyblock.util.SafeSurface.chunkFor(level, cx, cz);
                 if (!(ca instanceof net.minecraft.world.level.chunk.LevelChunk lc)) continue;
-                var sec = lc.getSection(lc.getSectionIndex(y));
+                var sections = lc.getSections();
+                int si = lc.getSectionIndex(y);
+                if (si < 0 || si >= sections.length) continue;
+                var sec = sections[si];
                 if (sec == null || sec.hasOnlyAir() || !sec.getStates().maybeHas(Structures4Procedure::isPost4TargetBlock)) continue;
                 int z0 = Math.max(min.getZ(), cz << 4), z1 = Math.min(max.getZ() - 1, (cz << 4) + 15);
                 for (int x = x0; x <= x1; x++) {

@@ -789,7 +789,7 @@ public class Structures5Procedure {
         if (j.lastChunk != null && j.lastChunkTouched) {
             var sections = j.lastChunk.getSections();
             long mask = j.touchedSecMask;
-            for (int si = 0; si < sections.length && mask != 0L; si++) {
+            for (int si = 0; si < Math.min(sections.length, 64) && mask != 0L; si++) {
                 if ((mask & (1L << si)) == 0L) continue;
                 mask &= ~(1L << si);
                 var sec = sections[si];
@@ -815,6 +815,9 @@ public class Structures5Procedure {
         if (isLaggy(ts)) return true;   // bloc ignore : considere comme traite
         BlockPos rel = StructureTemplate.calculateRelativePosition(rs, info.pos());
         int wx = j.origin.getX() + rel.getX(), wy = j.origin.getY() + rel.getY(), wz = j.origin.getZ() + rel.getZ();
+        // T313 : garde stricte sur la hauteur constructible de la dimension (ex. Nether [0..255] = 16 sections,
+        // Overworld [-64..319] = 24 sections) -- empeche tout ArrayIndexOutOfBoundsException dans getSection().
+        if (j.level.isOutsideBuildHeight(wy)) return true;
         bp.set(wx, wy, wz);
         int cx = wx >> 4, cz = wz >> 4;
         if (cx != j.lastCx || cz != j.lastCz) {
@@ -836,8 +839,11 @@ public class Structures5Procedure {
         // Le chunk complet + lumiere finale est diffuse en 1 seul paquet par chunk !
         if (!ts.hasBlockEntity()) {
             net.minecraft.world.level.chunk.LevelChunk chunk = j.lastChunk;
+            var sections = chunk.getSections();
             int secIdx = chunk.getSectionIndex(wy);
-            net.minecraft.world.level.chunk.LevelChunkSection sec = chunk.getSection(secIdx);
+            if (secIdx < 0 || secIdx >= sections.length) return true;
+            net.minecraft.world.level.chunk.LevelChunkSection sec = sections[secIdx];
+            if (sec == null) return true;
             var states = sec.getStates();
             int lx = wx & 15, ly = wy & 15, lz = wz & 15;
             BlockState oldState = states.get(lx, ly, lz);
@@ -4789,6 +4795,43 @@ public class Structures5Procedure {
         }
         if (y0Water != Integer.MIN_VALUE && baseY >= y0Water + 1)
             deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5] {} : Y0 OK -- plateforme Y={} >= eau exterieure Y={} + 1", nbt, baseY, y0Water);
+        // T313 : garde verticale universelle selon les bornes reelles de la dimension
+        // (Overworld [-64..319] = 24 sections, Nether/End [0..255] = 16 sections).
+        // Evite tout debordement du sommet au-dessus de maxBuildHeight - 1 (ex: Citadel sur Y=127 Nether
+        // ou haut sommet Overworld Y>=191) sans tronquer les tours ni sortir des sections de chunk.
+        {
+            int minBuildFloor = level.getMinBuildHeight() + 1;
+            int maxBuildCeil = level.getMaxBuildHeight() - 1;
+            if (max.getY() > maxBuildCeil) {
+                int maxDrop = Math.max(0, baseY - (minBuildFloor + 4));
+                int drop = Math.min(max.getY() - maxBuildCeil, maxDrop);
+                if (drop > 0) {
+                    int oldBaseY = baseY;
+                    baseY -= drop;
+                    fp = fp.below(drop);
+                    rp = rp.below(drop);
+                    min = min.below(drop);
+                    max = max.below(drop);
+                    LOGGER.warn("[STRUCT5] {} : sommet prevu au-dessus de maxBuildHeight={} -- "
+                                    + "ancrage abaisse de {} bloc(s) (Y={} -> Y={}, maxY={}) (T313)",
+                            nbt, level.getMaxBuildHeight(), drop, oldBaseY, baseY, max.getY());
+                }
+            } else if (min.getY() < minBuildFloor) {
+                int maxLift = Math.max(0, maxBuildCeil - max.getY());
+                int liftFloor = Math.min(minBuildFloor - min.getY(), maxLift);
+                if (liftFloor > 0) {
+                    int oldBaseY = baseY;
+                    baseY += liftFloor;
+                    fp = fp.above(liftFloor);
+                    rp = rp.above(liftFloor);
+                    min = min.above(liftFloor);
+                    max = max.above(liftFloor);
+                    LOGGER.warn("[STRUCT5] {} : fondation sous minBuildHeight={} -- "
+                                    + "ancrage remonte de {} bloc(s) (Y={} -> Y={}) (T313)",
+                            nbt, level.getMinBuildHeight(), liftFloor, oldBaseY, baseY);
+                }
+            }
+        }
         // T305-CENTER : verrouillage mathematique exact rp <-> [min..max] centre sur txz AVANT tri spirale et prepZone !
         {
             int[] rbAlign = cft.rotRelBounds()[rot.ordinal()];
@@ -4981,7 +5024,7 @@ public class Structures5Procedure {
     private static int removeUndergroundTechnicalBlocks(ServerLevel level, BlockPos min, BlockPos max) {
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         int removed = 0;
-        int yMax = Math.min(max.getY(), min.getY() + 1);
+        int yMax = Math.min(level.getMaxBuildHeight() - 1, Math.min(max.getY(), min.getY() + 1));
         int yMin = level.getMinBuildHeight();
         if (yMax < yMin) return 0;
         int cx0 = min.getX() >> 4, cx1 = max.getX() >> 4;
@@ -4992,9 +5035,11 @@ public class Structures5Procedure {
                 net.minecraft.world.level.chunk.ChunkAccess ca = deepluckyblock.util.SafeSurface.chunkFor(level, cx, cz);
                 if (!(ca instanceof net.minecraft.world.level.chunk.LevelChunk lc)) continue;
                 int z0 = Math.max(min.getZ(), cz << 4), z1 = Math.min(max.getZ(), (cz << 4) + 15);
-                int s0 = lc.getSectionIndex(yMin), s1 = lc.getSectionIndex(yMax);
+                var sections = lc.getSections();
+                int s0 = Math.max(0, lc.getSectionIndex(yMin));
+                int s1 = Math.min(sections.length - 1, lc.getSectionIndex(yMax));
                 for (int si = s0; si <= s1; si++) {
-                    var sec = lc.getSection(si);
+                    var sec = sections[si];
                     if (sec == null || sec.hasOnlyAir() || !sec.getStates().maybeHas(Structures5Procedure::isTechnicalLightOrVine)) continue;
                     int sy0 = Math.max(yMin, lc.getSectionYFromSectionIndex(si) << 4);
                     int sy1 = Math.min(yMax, (lc.getSectionYFromSectionIndex(si) << 4) + 15);
@@ -5290,6 +5335,7 @@ public class Structures5Procedure {
 
     // T302-C : filtrage par section (maybeHas) -> elimine ~700 ms (14 ticks) de scan vide sur 764 000 positions !
     private static void postLayer(ServerLevel lvl, BlockPos min, BlockPos max, int y) {
+        if (lvl.isOutsideBuildHeight(y)) return; // T313 : garde hors limites Y de la dimension
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         BlockPos.MutableBlockPos chk = new BlockPos.MutableBlockPos();
         int cx0 = min.getX() >> 4, cx1 = (max.getX() - 1) >> 4;
@@ -5299,7 +5345,10 @@ public class Structures5Procedure {
             for (int cz = cz0; cz <= cz1; cz++) {
                 net.minecraft.world.level.chunk.ChunkAccess ca = deepluckyblock.util.SafeSurface.chunkFor(lvl, cx, cz);
                 if (!(ca instanceof net.minecraft.world.level.chunk.LevelChunk lc)) continue;
-                var sec = lc.getSection(lc.getSectionIndex(y));
+                var sections = lc.getSections();
+                int si = lc.getSectionIndex(y);
+                if (si < 0 || si >= sections.length) continue;
+                var sec = sections[si];
                 if (sec == null || sec.hasOnlyAir() || !sec.getStates().maybeHas(Structures5Procedure::isPostTargetBlock)) continue;
                 int z0 = Math.max(min.getZ(), cz << 4), z1 = Math.min(max.getZ() - 1, (cz << 4) + 15);
                 for (int x = x0; x <= x1; x++) {

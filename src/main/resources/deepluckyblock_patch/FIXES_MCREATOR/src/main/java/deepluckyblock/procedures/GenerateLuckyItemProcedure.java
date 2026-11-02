@@ -931,6 +931,11 @@ public class GenerateLuckyItemProcedure {
         //              par structure est conservee telle quelle.
         if (branchLuck < STRUCTURE_LUCK_MIN) return;
         if (!(level instanceof ServerLevel sl)) return;
+        // T313 : les 6 structures uniques par monde (Citadelle, Observatoire, Dragon, Cirque,
+        // Epave, Everest) sont des structures de surface Overworld (ciel ouvert + biomes Overworld).
+        // Dans le Nether (plafond bedrock scelle a Y=127 + maxBuildHeight=256 / 16 sections) ou l'End,
+        // un Lucky Block casse ne doit ni les poser hors-sol sur le toit du Nether ni bruler leur quota unique !
+        if (sl.dimension() != Level.OVERWORLD || sl.dimensionType().hasCeiling()) return;
 
         EverestFlagData flagData = EverestFlagData.get(sl);
 

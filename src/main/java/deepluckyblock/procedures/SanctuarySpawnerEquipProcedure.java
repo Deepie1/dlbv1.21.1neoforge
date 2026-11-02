@@ -83,6 +83,7 @@ public class SanctuarySpawnerEquipProcedure {
         int z0 = center.getZ() - rx, z1 = center.getZ() + rx;
         int y0 = Math.max(level.getMinBuildHeight(), center.getY() - ry);
         int y1 = Math.min(level.getMaxBuildHeight() - 1, center.getY() + ry);
+        if (y0 > y1) return; // T313 : hors hauteur constructible -> aucun acces getSection hors bornes
         int sec0 = level.getSectionIndex(y0), sec1 = level.getSectionIndex(y1);
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
 
@@ -97,8 +98,10 @@ public class SanctuarySpawnerEquipProcedure {
                 }
                 int bx0 = Math.max(x0, cx << 4), bx1 = Math.min(x1, (cx << 4) + 15);
                 int bz0 = Math.max(z0, cz << 4), bz1 = Math.min(z1, (cz << 4) + 15);
-                for (int sec = sec0; sec <= sec1; sec++) {
-                    LevelChunkSection section = chunk.getSection(sec);
+                var sections = chunk.getSections();
+                int s0 = Math.max(0, sec0), s1 = Math.min(sections.length - 1, sec1);
+                for (int sec = s0; sec <= s1; sec++) {
+                    LevelChunkSection section = sections[sec];
                     if (section == null || section.hasOnlyAir()) continue; // 4096 positions sautees
                     int sy0 = Math.max(y0, level.getSectionYFromSectionIndex(sec) << 4);
                     int sy1 = Math.min(y1, (level.getSectionYFromSectionIndex(sec) << 4) + 15);
