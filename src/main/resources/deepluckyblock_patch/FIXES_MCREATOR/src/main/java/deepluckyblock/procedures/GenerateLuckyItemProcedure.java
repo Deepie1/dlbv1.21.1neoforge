@@ -409,18 +409,57 @@ public class GenerateLuckyItemProcedure {
 
     private static List<Item> APPLE_ITEMS_CACHE = null;
 
-    // ==================== CHIENS DES CRÉATEURS (nom + couleur du nom + collier assorti) ====================
-    private record DogPet(String name, String color, net.minecraft.world.item.DyeColor collar) {}
+    // ==================== CHIENS DES CRÉATEURS (T334 : nom + race réelle IRL + skin WolfVariant 1.21.1 + collier assorti) ====================
+    private record DogPet(String name, String color, net.minecraft.world.item.DyeColor collar, String variantId) {}
 
     private static final DogPet[] DOG_PETS = {
-        new DogPet("Fluffy", "a", net.minecraft.world.item.DyeColor.GREEN),
-        new DogPet("Ace", "c", net.minecraft.world.item.DyeColor.RED),
-        new DogPet("Yuki", "f", net.minecraft.world.item.DyeColor.WHITE),
-        new DogPet("Natsu", "6", net.minecraft.world.item.DyeColor.ORANGE),
-        new DogPet("Kira", "9", net.minecraft.world.item.DyeColor.BLUE),
-        new DogPet("Chaussette", "5", net.minecraft.world.item.DyeColor.PURPLE),
-        new DogPet("Mouki", "e", net.minecraft.world.item.DyeColor.YELLOW)
+        // Fluffy (Frigiel — Frigiel & Fluffy) : chien-loup blanc-gris iconique de Minecraft -> pale
+        new DogPet("Fluffy", "a", net.minecraft.world.item.DyeColor.GREEN, "minecraft:pale"),
+        // Ace (Inoxtag) : Shikoku Inu au pelage sésame brun foncé, sourcils feu et pattes crème -> woods
+        new DogPet("Ace", "c", net.minecraft.world.item.DyeColor.RED, "minecraft:woods"),
+        // Yuki (Michou) : Pomsky (Husky × Spitz nain) au pelage blanc polaire ("Yuki" = neige) -> snowy
+        new DogPet("Yuki", "f", net.minecraft.world.item.DyeColor.WHITE, "minecraft:snowy"),
+        // Natsu (Squeezie) : Shiba Inu au pelage roux orangé et museau/pattes clairs -> rusty
+        new DogPet("Natsu", "6", net.minecraft.world.item.DyeColor.ORANGE, "minecraft:rusty"),
+        // Kira (Kameto) : Jack Russell Terrier au pelage tricolore tacheté blanc/fauve/noir -> spotted
+        new DogPet("Kira", "9", net.minecraft.world.item.DyeColor.BLUE, "minecraft:spotted"),
+        // Chaussette (Maxime Biaggi) : Chow-Chow crème-doré au museau sombre -> chestnut
+        new DogPet("Chaussette", "5", net.minecraft.world.item.DyeColor.PURPLE, "minecraft:chestnut"),
+        // Mouki (Laink / Wankil Studio) : Carlin (Pug) sable/beige à masque et oreilles noirs -> chestnut
+        new DogPet("Mouki", "e", net.minecraft.world.item.DyeColor.YELLOW, "minecraft:chestnut")
     };
+
+    // T334 : skins dédiés pour l'Easter egg CrazyTown "Team Claquette" (Ben, Jerry & Samousse) si x3
+    private static final String[] CLAQUETTE_TRIO_VARIANTS = {
+        "minecraft:black",   // Ben (Hctuan)
+        "minecraft:ashen",   // Jerry (Mastu)
+        "minecraft:striped"  // Samousse (SamEzTwitch — mascotte de la niche)
+    };
+
+    private static void applyWolfVariantAndCollar(ServerLevel level,
+                                                  net.minecraft.world.entity.animal.Wolf wolf,
+                                                  String variantId,
+                                                  net.minecraft.world.item.DyeColor collar) {
+        if (collar != null) {
+            try {
+                CompoundTag tag = new CompoundTag();
+                wolf.addAdditionalSaveData(tag);
+                tag.putByte("CollarColor", (byte) collar.getId());
+                wolf.readAdditionalSaveData(tag);
+            } catch (Exception ignored) {}
+        }
+        if (variantId != null && !variantId.isEmpty()) {
+            try {
+                ResourceLocation id = ResourceLocation.tryParse(variantId);
+                if (id != null) {
+                    level.registryAccess()
+                            .registryOrThrow(net.minecraft.core.registries.Registries.WOLF_VARIANT)
+                            .getHolder(id)
+                            .ifPresent(wolf::setVariant);
+                }
+            } catch (Exception ignored) {}
+        }
+    }
 
     // ==================== CREATORS ====================
     private record CreatorProfile(String creatorId, String[] helmetNames, String[] chestplateNames,
@@ -1163,16 +1202,22 @@ public class GenerateLuckyItemProcedure {
 
                     String name;
                     net.minecraft.world.item.DyeColor collar;
+                    String variantId;
                     if (isTrio) {
                         name = claquetteTrio[wi];
                         collar = net.minecraft.world.item.DyeColor.PINK;
+                        variantId = CLAQUETTE_TRIO_VARIANTS[wi % CLAQUETTE_TRIO_VARIANTS.length];
                     } else {
                         DogPet pet = shuffledDogs.get(wi % shuffledDogs.size());
                         name = "§" + pet.color() + "§l" + pet.name();
                         collar = pet.collar();
+                        variantId = pet.variantId();
                     }
+                    // T334 : applique le skin WolfVariant 1.21.1 correspondant à la race réelle IRL du chien + couleur du collier
+                    applyWolfVariantAndCollar(sl, wolf, variantId, collar);
+                    wolf.setOrderedToSit(false);
                     wolf.setCustomName(Component.literal(name));
-                    wolf.setCustomNameVisible(true); // [1.21.1] setCollarColor privé -> nom du collier non modifiable (comportement best-effort)
+                    wolf.setCustomNameVisible(true);
 
                     int randomHealth = 3 + random.nextInt(18);
 
