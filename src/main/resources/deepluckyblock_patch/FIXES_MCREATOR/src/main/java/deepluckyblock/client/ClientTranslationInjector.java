@@ -128,8 +128,12 @@ public final class ClientTranslationInjector {
 
         @Override
         public String getOrDefault(String key, String fallback) {
+            Map<String, String> preferred = activeMap();
+            if (preferred.containsKey(key)) {
+                return preferred.get(key);
+            }
             if (delegate.has(key)) return delegate.getOrDefault(key, fallback);
-            return activeMap().getOrDefault(key, fallback);
+            return fallback;
         }
 
         @Override

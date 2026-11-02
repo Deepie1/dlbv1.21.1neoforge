@@ -184,18 +184,19 @@ public final class CustomEnchantment {
         return m == null ? null : m.rarity();
     }
 
-    /** T307-RARITY : Badge localisé et coloré pour les infobulles détaillées (Shift). */
+    /** T307-RARITY / T317-LANG : Badge localisé (EN ou FR selon la langue active du jeu) et coloré pour Shift. */
     public static MutableComponent formatRarityBadge(Rarity rarity) {
         if (rarity == null) return Component.empty();
         String key = "tooltip.deep_lucky_block.rarity." + rarity.name().toLowerCase(Locale.ROOT);
+        boolean fr = deepluckyblock.util.TranslationFallback.isFrench();
         String fallback = switch (rarity) {
-            case COMMON -> "Commun";
-            case UNCOMMON -> "Peu commun";
+            case COMMON -> fr ? "Commun" : "Common";
+            case UNCOMMON -> fr ? "Peu commun" : "Uncommon";
             case RARE -> "Rare";
-            case VERY_RARE -> "Tr\u00e8s rare";
-            case EPIC -> "\u00c9pique";
-            case MYTHIC -> "Mythique";
-            case LEGENDARY -> "L\u00e9gendaire";
+            case VERY_RARE -> fr ? "Tr\u00e8s rare" : "Very Rare";
+            case EPIC -> fr ? "\u00c9pique" : "Epic";
+            case MYTHIC -> fr ? "Mythique" : "Mythic";
+            case LEGENDARY -> fr ? "L\u00e9gendaire" : "Legendary";
         };
         int rgb = switch (rarity) {
             case COMMON -> 0xB8C2CC;

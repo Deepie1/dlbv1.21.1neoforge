@@ -2067,6 +2067,13 @@
   "tooltip.deep_lucky_block.slot.legs": "Leggings",
   "tooltip.deep_lucky_block.slot.mainhand": "Weapon/Tool",
   "tooltip.deep_lucky_block.slot.offhand": "Shield",
+  "tooltip.deep_lucky_block.stats.base_armor": "base armor",
+  "tooltip.deep_lucky_block.stats.conditional_note": " (conditional effects not averaged: damage type, wearer HP...)",
+  "tooltip.deep_lucky_block.stats.effective_armor": "Effective Armor: ",
+  "tooltip.deep_lucky_block.stats.extra_reduction": "extra reduction",
+  "tooltip.deep_lucky_block.stats.mod_bonuses_included": "mod bonuses already included above",
+  "tooltip.deep_lucky_block.stats.real_dps": "Effective DPS: ",
+  "tooltip.deep_lucky_block.stats.vs_standard_target": " (≈, vs standard target)",
   "tooltip.supreme_lucky_block.enchant_details_header": "§6✦ How It Works & Enchantment Effects:",
   "tooltip.supreme_lucky_block.hold_shift": "§8[Hold §e§lSHIFT §8for enchantment guide]"
 }

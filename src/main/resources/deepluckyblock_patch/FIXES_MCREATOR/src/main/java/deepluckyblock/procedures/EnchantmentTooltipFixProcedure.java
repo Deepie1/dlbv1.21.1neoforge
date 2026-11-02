@@ -500,15 +500,25 @@ public final class EnchantmentTooltipFixProcedure {
                 || stack.getItem() instanceof net.minecraft.world.item.ShovelItem;
         boolean isArmor = stack.getItem() instanceof net.minecraft.world.item.ArmorItem;
 
+        boolean fr = deepluckyblock.util.TranslationFallback.isFrench();
+
         if (isMeleeWeapon) {
             deepluckyblock.util.CombatStatsCalculator.MeleeStats stats =
                     deepluckyblock.util.CombatStatsCalculator.computeMeleeStats(stack);
             if (stats.effectiveDamage() > 0f) {
-                String approx = stats.hasConditionalBonuses() ? "\u00a78\u00a7o (\u2248, vs cible standard)" : "";
-                Component line = Component.literal("\u00a76\u2694 " + "\u00a7fDPS r\u00e9el : "
-                        + "\u00a7e" + trimNumber(stats.effectiveDamage()) + " \u00a77dmg \u00d7 "
-                        + trimNumber(stats.attackSpeed()) + "/s \u00a7f= \u00a7a"
-                        + trimNumber(stats.dps()) + " DPS" + approx);
+                MutableComponent line = Component.literal("\u00a76\u2694 \u00a7f")
+                        .append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
+                                "tooltip.deep_lucky_block.stats.real_dps",
+                                fr ? "DPS r\u00e9el : " : "Effective DPS: "))
+                        .append(Component.literal("\u00a7e" + trimNumber(stats.effectiveDamage()) + " \u00a77dmg \u00d7 "
+                                + trimNumber(stats.attackSpeed()) + "/s \u00a7f= \u00a7a"
+                                + trimNumber(stats.dps()) + " DPS"));
+                if (stats.hasConditionalBonuses()) {
+                    line.append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
+                                    "tooltip.deep_lucky_block.stats.vs_standard_target",
+                                    fr ? " (\u2248, vs cible standard)" : " (\u2248, vs standard target)")
+                            .withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC));
+                }
                 lines.add(index++, line);
             }
         } else if (isArmor) {
@@ -519,18 +529,33 @@ public final class EnchantmentTooltipFixProcedure {
             // dans "When on Body" ci-dessus) -- damageReductionPercent() ne
             // couvre donc plus que les cas exclus (voir CombatStatsCalculator).
             if (stats.damageReductionPercent() > 0f || stats.hasConditionalBonuses()) {
-                String note = stats.hasConditionalBonuses()
-                        ? "\u00a78\u00a7o (effets conditionnels non moyennables non compt\u00e9s : type de d\u00e9g\u00e2ts, PV du porteur...)"
-                        : "";
+                MutableComponent line = Component.literal("\u00a76\u26e8 \u00a7f")
+                        .append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
+                                "tooltip.deep_lucky_block.stats.effective_armor",
+                                fr ? "Armure effective : " : "Effective Armor: "));
                 if (stats.damageReductionPercent() > 0f) {
-                    Component line = Component.literal("\u00a76\u26e8 " + "\u00a7fArmure effective : "
-                            + "\u00a7e" + trimNumber(stats.baseArmor()) + " \u00a77armure de base \u00a7f+ \u00a7b"
-                            + trimNumber(stats.damageReductionPercent()) + "% \u00a77r\u00e9duction suppl." + note);
-                    lines.add(index++, line);
+                    line.append(Component.literal("\u00a7e" + trimNumber(stats.baseArmor()) + " \u00a77"))
+                            .append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
+                                    "tooltip.deep_lucky_block.stats.base_armor",
+                                    fr ? "armure de base" : "base armor").withStyle(ChatFormatting.GRAY))
+                            .append(Component.literal(" \u00a7f+ \u00a7b" + trimNumber(stats.damageReductionPercent()) + "% \u00a77"))
+                            .append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
+                                    "tooltip.deep_lucky_block.stats.extra_reduction",
+                                    fr ? "r\u00e9duction suppl." : "extra reduction").withStyle(ChatFormatting.GRAY));
                 } else {
-                    lines.add(index++, Component.literal("\u00a76\u26e8 " + "\u00a7fArmure effective : "
-                            + "\u00a7ebonus du mod d\u00e9j\u00e0 inclus ci-dessus" + note));
+                    line.append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
+                            "tooltip.deep_lucky_block.stats.mod_bonuses_included",
+                            fr ? "bonus du mod d\u00e9j\u00e0 inclus ci-dessus" : "mod bonuses already included above")
+                            .withStyle(ChatFormatting.YELLOW));
                 }
+                if (stats.hasConditionalBonuses()) {
+                    line.append(deepluckyblock.util.TranslationFallback.translatableOrFallback(
+                                    "tooltip.deep_lucky_block.stats.conditional_note",
+                                    fr ? " (effets conditionnels non moyennables non compt\u00e9s : type de d\u00e9g\u00e2ts, PV du porteur...)"
+                                       : " (conditional effects not averaged: damage type, wearer HP...)")
+                            .withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC));
+                }
+                lines.add(index++, line);
             }
         }
         return index;

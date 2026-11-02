@@ -2067,6 +2067,13 @@
   "tooltip.deep_lucky_block.slot.legs": "Jambières",
   "tooltip.deep_lucky_block.slot.mainhand": "Arme/Outil",
   "tooltip.deep_lucky_block.slot.offhand": "Bouclier",
+  "tooltip.deep_lucky_block.stats.base_armor": "armure de base",
+  "tooltip.deep_lucky_block.stats.conditional_note": " (effets conditionnels non moyennables non comptés : type de dégâts, PV du porteur...)",
+  "tooltip.deep_lucky_block.stats.effective_armor": "Armure effective : ",
+  "tooltip.deep_lucky_block.stats.extra_reduction": "réduction suppl.",
+  "tooltip.deep_lucky_block.stats.mod_bonuses_included": "bonus du mod déjà inclus ci-dessus",
+  "tooltip.deep_lucky_block.stats.real_dps": "DPS réel : ",
+  "tooltip.deep_lucky_block.stats.vs_standard_target": " (≈, vs cible standard)",
   "tooltip.supreme_lucky_block.enchant_details_header": "§6✦ Mode de Fonctionnement & Effets :",
   "tooltip.supreme_lucky_block.hold_shift": "§8[Maintenir §e§lSHIFT §8pour le guide des enchantements]"
 }
