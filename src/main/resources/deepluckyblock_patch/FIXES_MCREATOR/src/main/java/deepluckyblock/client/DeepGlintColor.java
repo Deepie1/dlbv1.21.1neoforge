@@ -524,6 +524,51 @@ public final class DeepGlintColor {
     // condition propre à l'enchantement de la pièce est réellement remplie !
     // (Fini le déclenchement générique redondant au simple swing dans le vide ou dégât quelconque.)
     // =======================================================================
+    // =======================================================================
+    // T351-SMOOTH-GLINT : aucun à-coup de couleur sur le glint / l'aura. La couleur
+    // affichée rejoint TOUJOURS sa cible progressivement (interpolation), donc on ne
+    // voit jamais de « flash » d'une teinte à l'autre, ni en multi-élément.
+    // =======================================================================
+    private static final java.util.Map<Integer, int[]> SMOOTH_GLINT = new java.util.HashMap<>();
+    /** Facteur d'interpolation par frame (~0.35 s pour rejoindre la cible). */
+    private static final float SMOOTH_GLINT_K = 0.075f;
+
+    /** Interpole la couleur de glint vers {@code target} (retourne la couleur lissée). */
+    public static int smoothGlint(ItemStack stack, int target, boolean armorSlot) {
+        if (stack == null || stack.isEmpty() || target == 0) return target;
+        int key = System.identityHashCode(stack) ^ (armorSlot ? 0x5BD1E995 : 0);
+        synchronized (SMOOTH_GLINT) {
+            int[] prev = SMOOTH_GLINT.get(key);
+            if (prev == null || prev.length < 3 || prev[2] != target) {
+                // Nouvelle cible : on garde la couleur précédente et on la fait voyager vers la cible.
+                int from = (prev == null || prev.length < 1) ? target : prev[0];
+                prev = new int[]{from, target, target};
+                SMOOTH_GLINT.put(key, prev);
+            }
+            int from = prev[0];
+            int to = prev[1];
+            int r = lerpChannel((from >> 16) & 0xFF, (to >> 16) & 0xFF, SMOOTH_GLINT_K);
+            int g = lerpChannel((from >> 8) & 0xFF, (to >> 8) & 0xFF, SMOOTH_GLINT_K);
+            int b = lerpChannel(from & 0xFF, to & 0xFF, SMOOTH_GLINT_K);
+            int out = 0xFF000000 | (r << 16) | (g << 8) | b;
+            if (Math.abs(r - ((to >> 16) & 0xFF)) <= 1
+                    && Math.abs(g - ((to >> 8) & 0xFF)) <= 1
+                    && Math.abs(b - (to & 0xFF)) <= 1) {
+                out = to;
+            }
+            prev[0] = out;
+            if (SMOOTH_GLINT.size() > 256) {
+                SMOOTH_GLINT.clear();
+            }
+            return out;
+        }
+    }
+
+    private static int lerpChannel(int a, int b, float k) {
+        int v = Math.round(a + (b - a) * k);
+        return v < 0 ? 0 : Math.min(255, v);
+    }
+
     private static final java.util.WeakHashMap<ItemStack, long[]> CONTEXT_GLOW_CACHE = new java.util.WeakHashMap<>();
     private static final long CONTEXT_CACHE_TTL_NS = 90_000_000L; // ~90 ms (< 2 ticks)
 

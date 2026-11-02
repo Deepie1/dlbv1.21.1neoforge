@@ -253,11 +253,18 @@ public final class WeaponWorldVfxManager {
     public static void enqueueNetworkVfx(int vfxId, int kind, int intensity,
                                          float x, float y, float z,
                                          float tx, float ty, float tz) {
-        WeaponVisualEffectId fx = WeaponVisualEffectId.byId(vfxId);
-        if (fx == null) return;
         Minecraft mc = Minecraft.getInstance();
         ClientLevel level = mc.level;
         if (level == null) return;
+
+        // T351-SUBTLE : un « kind » >= 100 transporte un accent discret (2..9 mini-pixels).
+        if (kind >= deepluckyblock.enchantments.WeaponVfxSubtle.NET_KIND_BASE) {
+            spawnSubtle(kind - deepluckyblock.enchantments.WeaponVfxSubtle.NET_KIND_BASE, x, y, z, tx, ty, tz);
+            return;
+        }
+
+        WeaponVisualEffectId fx = WeaponVisualEffectId.byId(vfxId);
+        if (fx == null) return;
 
         // Attachement en direct d'un sillage de mini-pixels 3D à un projectile en vol !
         if (kind == KIND_PROJECTILE_ATTACH) {
@@ -284,6 +291,17 @@ public final class WeaponWorldVfxManager {
         float yaw = (float) (Mth.atan2(dz, dx) * (180.0 / Math.PI)) - 90.0f;
         long seed = Double.doubleToLongBits(x * 31.0 + y * 17.0 + z * 13.0) ^ System.nanoTime();
         pushInstance(new VfxInstance(fx, kind, intensity, x, y, z, tx, ty, tz, yaw, 0.0f, 0.25f, duration, seed));
+
+        // T351 : l'entaille est pilotée par le serveur ; l'écho du TWIN_ECHO est donc reproduit ici.
+        if (kind == KIND_SWING_SLASH && fx == WeaponVisualEffectId.TWIN_ECHO_SLASH && PENDING_ECHOES.size() < 16) {
+            PendingEcho pe = new PendingEcho();
+            pe.ticksLeft = 4;
+            pe.effect = WeaponVisualEffectId.TWIN_ECHO_SLASH;
+            pe.intensity = intensity;
+            pe.x = x; pe.y = y; pe.z = z;
+            pe.yaw = yaw; pe.pitch = 0.0f; pe.tiltRad = -0.34f;
+            PENDING_ECHOES.add(pe);
+        }
 
         // Éclaboussure de vrais mini-pixels 3D cubiques animés sous la physique !
         int burstCount = (fx.category == WeaponVisualEffectId.Category.BLOOD) ? 14 : 10;
@@ -318,6 +336,210 @@ public final class WeaponWorldVfxManager {
             PIXEL_PARTICLES.add(new FloatingPixel(fx.additive, x, y, z, vx, vy, vz, grav, sz, rgb,
                     10 + rand.nextInt(10), rand.nextInt(Integer.MAX_VALUE)));
         }
+    }
+
+    // ==================================================================================
+    // T351-SUBTLE : accents discrets (2..9 mini-pixels, jamais de forme englobante)
+    // ==================================================================================
+
+    /**
+     * Joue un accent subtil de {@link deepluckyblock.enchantments.WeaponVfxSubtle}.
+     * Aucune forme qui entoure la cible : quelques pixels seulement, avec la physique adaptée
+     * à la forme (braise qui monte, goutte qui tombe, poussière qui s'étale...).
+     */
+    public static void spawnSubtle(int subtleIndex, float x, float y, float z,
+                                   float towardX, float towardY, float towardZ) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return;
+        var rand = mc.level.random;
+        var sub = deepluckyblock.enchantments.WeaponVfxSubtle.get(subtleIndex);
+
+        float dx = towardX - x, dy = towardY - y, dz = towardZ - z;
+        float len = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (len < 0.0001f) { dx = 0; dy = 0; dz = 1; len = 1; }
+        dx /= len; dy /= len; dz /= len;
+        // Perpendiculaire horizontale pour les effets latéraux
+        float px = -dz, pz = dx;
+
+        boolean additive = true;
+        int count = Math.min(9, Math.max(2, sub.count()));
+
+        for (int i = 0; i < count; i++) {
+            if (PIXEL_PARTICLES.size() >= MAX_VOXEL_TRAIL_PIXELS) PIXEL_PARTICLES.remove(0);
+            double vx, vy, vz;
+            float ox = 0f, oy = 0f, oz = 0f;
+            float speed = sub.speed();
+            switch (sub.shape()) {
+                case deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_SPARK -> {
+                    vx = dx * speed * (1.2 + rand.nextDouble());
+                    vy = dy * speed * (0.6 + rand.nextDouble() * 0.8) + 0.02;
+                    vz = dz * speed * (1.2 + rand.nextDouble());
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_EMBER -> {
+                    ox = (rand.nextFloat() - 0.5f) * 0.20f;
+                    oz = (rand.nextFloat() - 0.5f) * 0.20f;
+                    vx = (rand.nextDouble() - 0.5) * 0.015;
+                    vy = 0.028 + rand.nextDouble() * 0.030;
+                    vz = (rand.nextDouble() - 0.5) * 0.015;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_DROPLET -> {
+                    ox = (rand.nextFloat() - 0.5f) * 0.16f;
+                    oy = 0.05f + rand.nextFloat() * 0.10f;
+                    vx = dx * 0.02 + (rand.nextDouble() - 0.5) * 0.02;
+                    vy = -0.02 - rand.nextDouble() * 0.03;
+                    vz = dz * 0.02 + (rand.nextDouble() - 0.5) * 0.02;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_MIST -> {
+                    ox = (rand.nextFloat() - 0.5f) * 0.26f;
+                    oy = (rand.nextFloat() - 0.5f) * 0.10f;
+                    oz = (rand.nextFloat() - 0.5f) * 0.26f;
+                    vx = ox * 0.06;
+                    vy = 0.008 + rand.nextDouble() * 0.010;
+                    vz = oz * 0.06;
+                    additive = false;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_LEAF -> {
+                    ox = px * (rand.nextFloat() - 0.5f) * 0.24f;
+                    oz = pz * (rand.nextFloat() - 0.5f) * 0.24f;
+                    vx = px * 0.030 + (rand.nextDouble() - 0.5) * 0.01;
+                    vy = 0.020 + rand.nextDouble() * 0.02;
+                    vz = pz * 0.030 + (rand.nextDouble() - 0.5) * 0.01;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_SHARD -> {
+                    ox = (rand.nextFloat() - 0.5f) * 0.18f;
+                    oy = (rand.nextFloat() - 0.5f) * 0.18f;
+                    oz = (rand.nextFloat() - 0.5f) * 0.18f;
+                    vx = (rand.nextDouble() - 0.5) * 0.05;
+                    vy = (rand.nextDouble() - 0.5) * 0.05;
+                    vz = (rand.nextDouble() - 0.5) * 0.05;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_DUST -> {
+                    ox = (rand.nextFloat() - 0.5f) * 0.22f;
+                    oy = -0.10f + rand.nextFloat() * 0.06f;
+                    oz = (rand.nextFloat() - 0.5f) * 0.22f;
+                    vx = (rand.nextDouble() - 0.5) * 0.04;
+                    vy = 0.010 + rand.nextDouble() * 0.012;
+                    vz = (rand.nextDouble() - 0.5) * 0.04;
+                    additive = false;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_WISP -> {
+                    ox = px * (rand.nextFloat() - 0.5f) * 0.18f;
+                    oz = pz * (rand.nextFloat() - 0.5f) * 0.18f;
+                    vx = px * 0.018;
+                    vy = 0.026 + rand.nextDouble() * 0.018;
+                    vz = pz * 0.018;
+                    additive = false;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_GLINT -> {
+                    // Reflet unique qui balaie l'arc : un seul pixel très court, très clair
+                    ox = dx * (0.02f + i * 0.05f);
+                    oy = dy * (0.02f + i * 0.05f);
+                    oz = dz * (0.02f + i * 0.05f);
+                    vx = dx * 0.06;
+                    vy = dy * 0.06;
+                    vz = dz * 0.06;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_BOLT -> {
+                    // Micro-éclair : 2-3 pixels en zigzag entre deux points
+                    float t = (i + 1) / (float) (count + 1);
+                    ox = (px * ((i & 1) == 0 ? 0.05f : -0.05f)) * (1.0f - t);
+                    oz = (pz * ((i & 1) == 0 ? 0.05f : -0.05f)) * (1.0f - t);
+                    vx = dx * 0.05;
+                    vy = dy * 0.05 + 0.01;
+                    vz = dz * 0.05;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_BUBBLE -> {
+                    ox = (rand.nextFloat() - 0.5f) * 0.20f;
+                    oz = (rand.nextFloat() - 0.5f) * 0.20f;
+                    vx = (rand.nextDouble() - 0.5) * 0.012;
+                    vy = 0.030 + rand.nextDouble() * 0.020;
+                    vz = (rand.nextDouble() - 0.5) * 0.012;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_ASH -> {
+                    ox = (rand.nextFloat() - 0.5f) * 0.24f;
+                    oy = 0.04f + rand.nextFloat() * 0.10f;
+                    oz = (rand.nextFloat() - 0.5f) * 0.24f;
+                    vx = (rand.nextDouble() - 0.5) * 0.02;
+                    vy = -0.010 - rand.nextDouble() * 0.012;
+                    vz = (rand.nextDouble() - 0.5) * 0.02;
+                    additive = false;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_MOTES -> {
+                    ox = (rand.nextFloat() - 0.5f) * 0.30f;
+                    oy = (rand.nextFloat() - 0.5f) * 0.24f;
+                    oz = (rand.nextFloat() - 0.5f) * 0.30f;
+                    vx = (rand.nextDouble() - 0.5) * 0.006;
+                    vy = (rand.nextDouble() - 0.5) * 0.004;
+                    vz = (rand.nextDouble() - 0.5) * 0.006;
+                }
+                case deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_CRUMBLE -> {
+                    ox = (rand.nextFloat() - 0.5f) * 0.18f;
+                    oy = -0.06f + rand.nextFloat() * 0.10f;
+                    oz = (rand.nextFloat() - 0.5f) * 0.18f;
+                    vx = (rand.nextDouble() - 0.5) * 0.035;
+                    vy = -0.015 - rand.nextDouble() * 0.02;
+                    vz = (rand.nextDouble() - 0.5) * 0.035;
+                    additive = false;
+                }
+                default -> { // SHAPE_DRIFT
+                    ox = (rand.nextFloat() - 0.5f) * 0.16f;
+                    oy = (rand.nextFloat() - 0.5f) * 0.16f;
+                    oz = (rand.nextFloat() - 0.5f) * 0.16f;
+                    vx = (rand.nextDouble() - 0.5) * 0.010;
+                    vy = 0.008 + rand.nextDouble() * 0.008;
+                    vz = (rand.nextDouble() - 0.5) * 0.010;
+                }
+            }
+
+            int rgb = switch (i % 3) {
+                case 0 -> sub.element().primary;
+                case 1 -> sub.element().highlight;
+                default -> rotateHue(sub.element().secondary, 0.06f);
+            };
+            if (sub.shape() == deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_GLINT
+                    || sub.shape() == deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_SHARD) {
+                rgb = mixRgb(rgb, 0xFFFFFF, 0.45f);
+            }
+            float sz = sub.size() * (0.7f + rand.nextFloat() * 0.7f);
+            PIXEL_PARTICLES.add(new FloatingPixel(additive,
+                    x + ox, y + oy, z + oz, vx, vy, vz, sub.gravity(), sz, rgb,
+                    sub.life() + rand.nextInt(4), rand.nextInt(Integer.MAX_VALUE)));
+        }
+    }
+
+    /** Mélange linéaire de deux couleurs 0xRRGGBB. */
+    public static int mixRgb(int a, int b, float t) {
+        float k = Math.max(0.0f, Math.min(1.0f, t));
+        int r = (int) (((a >> 16) & 0xFF) * (1 - k) + ((b >> 16) & 0xFF) * k);
+        int g = (int) (((a >> 8) & 0xFF) * (1 - k) + ((b >> 8) & 0xFF) * k);
+        int bl = (int) ((a & 0xFF) * (1 - k) + (b & 0xFF) * k);
+        return (r << 16) | (g << 8) | bl;
+    }
+
+    /**
+     * T351-MULTI-ELEMENT-GRADIENT : couleur de l'arme tenue quand elle porte PLUSIEURS éléments.
+     * On parcourt les couleurs de famille en aller-retour (bleu → rouge → bleu...) avec une
+     * interpolation lissée aux extrémités, puis on repasse par {@link #smoothColor} pour que la
+     * transition reste douce même si l'ensemble d'éléments change (changement d'arme).
+     */
+    public static int gradientColorFor(net.minecraft.world.item.ItemStack stack, float timeSeconds) {
+        List<deepluckyblock.enchantments.DeepElement> els =
+                WeaponVisualEffectId.elementsOf(stack);
+        if (els.isEmpty()) return 0xFFFFFF;
+        if (els.size() == 1) return els.get(0).primary;
+
+        float cycle = (timeSeconds * 0.16f) % 2.0f;              // ~6,2 s par aller-retour
+        float tri = cycle < 1.0f ? cycle : 2.0f - cycle;          // 0..1..0
+        float pos = tri * (els.size() - 1);
+        int i0 = (int) Math.floor(pos);
+        if (i0 < 0) i0 = 0;
+        if (i0 > els.size() - 1) i0 = els.size() - 1;
+        int i1 = Math.min(i0 + 1, els.size() - 1);
+        float f = pos - i0;
+        f = f * f * (3.0f - 2.0f * f);                            // smoothstep : départs/arrivées doux
+        int target = mixRgb(els.get(i0).primary, els.get(i1).primary, f);
+        int key = 0x5A5A0000 | (System.identityHashCode(stack) & 0xFFFF);
+        return smoothColor(key, target);
     }
 
     private static void pushInstance(VfxInstance inst) {
@@ -475,18 +697,17 @@ public final class WeaponWorldVfxManager {
     }
 
     private static void onPlayerWeaponSwing(Player p) {
-        // T349-VFX-FREQUENCY : la tranche partait à CHAQUE clic, en plus de l'effet d'impact envoyé par
-        // le serveur au touche -> même effet vu deux fois de suite, en rafale. On applique ici une chance
-        // de 62 % et un vrai cooldown aléatoire (7..18 ticks) : les coups deviennent irréguliers et
-        // chaque déclenchement a une variante de teinte différente.
+        // T351-TRIGGER-LAW : le serveur décide du vrai déclenchement (5 % coup normal / 66 % critique).
+        // Côté client on ne garde qu'une « respiration » très rare (5 % + long cooldown) pour donner un
+        // retour visuel même dans le vide (coup dans l'air), sans jamais doubler l'animation d'impact.
         long nowTick = p.level().getGameTime();
         Long swingReady = PLAYER_SWING_READY.get(p.getId());
         if (swingReady != null && nowTick < swingReady) return;
-        if (p.level().random.nextInt(100) >= 62) {
-            PLAYER_SWING_READY.put(p.getId(), nowTick + 3L + p.level().random.nextInt(4));
+        if (p.level().random.nextInt(100) >= 5) {
+            PLAYER_SWING_READY.put(p.getId(), nowTick + 4L + p.level().random.nextInt(5));
             return;
         }
-        PLAYER_SWING_READY.put(p.getId(), nowTick + 7L + p.level().random.nextInt(12));
+        PLAYER_SWING_READY.put(p.getId(), nowTick + 24L + p.level().random.nextInt(24));
         if (PLAYER_SWING_READY.size() > 256) {
             PLAYER_SWING_READY.clear();
         }

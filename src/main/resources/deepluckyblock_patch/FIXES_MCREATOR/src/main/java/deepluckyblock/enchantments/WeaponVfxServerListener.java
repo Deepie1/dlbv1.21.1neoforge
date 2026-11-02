@@ -1,6 +1,8 @@
 package deepluckyblock.enchantments;
 
 import deepluckyblock.DeepLuckyBlockMod;
+import deepluckyblock.enchantments.DeepElement;
+import deepluckyblock.enchantments.WeaponVfxSubtle;
 import deepluckyblock.network.DeepPayloads;
 import deepluckyblock.procedures.TestProcedure;
 import net.minecraft.server.level.ServerLevel;
@@ -42,6 +44,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class WeaponVfxServerListener {
 
     // T346-VFX-TEST : kinds exposés publiquement pour la commande de test /dlbvfx
+    public static final int KIND_SWING_SLASH       = 0;
     public static final int KIND_IMPACT            = 1;
     public static final int KIND_BEAM_SIPHON       = 2;
     public static final int KIND_PROJECTILE_ATTACH = 3;
@@ -53,8 +56,12 @@ public final class WeaponVfxServerListener {
     /** T349-VFX-FREQUENCY : cooldown réel et aléatoire par (attaquant, effet). */
     private static final Map<String, Long> EFFECT_COOLDOWN = new ConcurrentHashMap<>();
 
-    /** Chance de déclencher un effet d'impact (les critiques, plus rares, passent toujours). */
-    private static final int IMPACT_TRIGGER_PERCENT = 42;
+    /** T351 : attaque NORMALE -> 5 % de chance de déclencher l'animation pixel. */
+    private static final int NORMAL_TRIGGER_PERCENT = 5;
+    /** T351 : coup CRITIQUE -> 66 % de chance. */
+    private static final int CRIT_TRIGGER_PERCENT = 66;
+    /** T351 : part des déclenchements qui jouent un accent discret (au lieu de la grosse animation). */
+    private static final int SUBTLE_SHARE_PERCENT = 70;
 
     private WeaponVfxServerListener() {}
 
@@ -68,17 +75,23 @@ public final class WeaponVfxServerListener {
 
         WeaponVisualEffectId fx = (critStyle != null) ? critStyle : WeaponVisualEffectId.GOLDEN_CRIT_STAR;
 
-        // T349-VFX-FREQUENCY : un critique n'éclate plus systématiquement (spam visuel).
-        // Chance 72 % + cooldown aléatoire 12..29 ticks par joueur et par style de critique.
-        if (sl.random.nextInt(100) >= 72) return;
+        // T351 : sur un coup critique, 66 % de chance de déclencher l'animation pixel.
+        if (sl.random.nextInt(100) >= CRIT_TRIGGER_PERCENT) return;
         String critKey = "crit:" + attacker.getId() + ":" + fx.id;
         Long critReady = EFFECT_COOLDOWN.get(critKey);
         if (critReady != null && now < critReady) return;
-        EFFECT_COOLDOWN.put(critKey, now + 12L + sl.random.nextInt(18));
+        EFFECT_COOLDOWN.put(critKey, now + 16L + sl.random.nextInt(20));
 
         float cx = (float) target.getX();
         float cy = (float) (target.getY() + target.getBbHeight() * 0.55);
         float cz = (float) target.getZ();
+
+        // T351 : la plupart des critiques jouent seulement un accent discret (bien plus subtil).
+        if (playSubtleAccent(sl, attacker.getMainHandItem(), fx, cx, cy, cz,
+                (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ())) {
+            return;
+        }
+
         broadcastNear(sl, cx, cy, cz, fx.id, KIND_IMPACT, Math.max(2, intensity),
                 cx, cy, cz, (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ());
     }
@@ -139,21 +152,49 @@ public final class WeaponVfxServerListener {
      * maintenant un vrai cooldown aléatoire par effet (26..59 ticks) + un % de chance de déclenchement.
      * Les effets critiques gardent leur chance naturelle (ils sont déjà rares) mais restent throttlés.
      */
-    private static boolean shouldPlay(int attackerId, WeaponVisualEffectId fx, ServerLevel sl) {
+    /**
+     * T351-SUBTLE : joue un accent discret (2..9 mini-pixels) au lieu de la grosse animation.
+     * Retourne {@code true} si un accent a effectivement été envoyé.
+     */
+    private static boolean playSubtleAccent(ServerLevel sl, ItemStack weapon, WeaponVisualEffectId fx,
+                                            float tx, float ty, float tz,
+                                            float ax, float ay, float az) {
+        if (sl.random.nextInt(100) >= SUBTLE_SHARE_PERCENT) return false;
+        DeepElement el = pickElement(sl, weapon, fx);
+        WeaponVfxSubtle.Subtle sub = WeaponVfxSubtle.pick(el, sl.random.nextLong());
+        // Direction de frappe : de l'attaquant vers la cible, prolongée au-delà de la cible.
+        float dx = tx - ax, dy = ty - ay, dz = tz - az;
+        float ex = tx + dx * 0.35f;
+        float ey = ty + dy * 0.35f;
+        float ez = tz + dz * 0.35f;
+        broadcastNear(sl, tx, ty, tz, 0, WeaponVfxSubtle.NET_KIND_BASE + sub.index(), 1,
+                tx, ty, tz, ex, ey, ez);
+        return true;
+    }
+
+    /** Famille élémentaire à utiliser : une des familles portées par l'arme (variété), sinon celle de l'effet. */
+    private static DeepElement pickElement(ServerLevel sl, ItemStack weapon, WeaponVisualEffectId fx) {
+        List<DeepElement> els = WeaponVisualEffectId.elementsOf(weapon);
+        if (els.isEmpty()) return (fx == null) ? DeepElement.METAL : fx.element;
+        return els.get(sl.random.nextInt(els.size()));
+    }
+
+    private static boolean shouldPlay(int attackerId, WeaponVisualEffectId fx, ServerLevel sl, boolean crit) {
         long now = sl.getGameTime();
         String key = attackerId + ":" + fx.id;
         Long ready = EFFECT_COOLDOWN.get(key);
         if (ready != null && now < ready) return false;
 
-        if (fx.category != WeaponVisualEffectId.Category.CRIT
-                && sl.random.nextInt(100) >= IMPACT_TRIGGER_PERCENT) {
+        // T351 : 5 % sur une attaque normale, 66 % sur un coup critique.
+        int chance = crit ? CRIT_TRIGGER_PERCENT : NORMAL_TRIGGER_PERCENT;
+        if (sl.random.nextInt(100) >= chance) {
             // Nouvelle tentative possible très vite : on ne veut pas « perdre » un long cooldown sur un jet raté
-            EFFECT_COOLDOWN.put(key, now + 5L);
+            EFFECT_COOLDOWN.put(key, now + 4L);
             return false;
         }
-        int cooldown = (fx.category == WeaponVisualEffectId.Category.CRIT)
-                ? 14 + sl.random.nextInt(18)
-                : 26 + sl.random.nextInt(34);
+        int cooldown = crit
+                ? 18 + sl.random.nextInt(22)
+                : 45 + sl.random.nextInt(45);
         EFFECT_COOLDOWN.put(key, now + cooldown);
         if (EFFECT_COOLDOWN.size() > 2048) {
             EFFECT_COOLDOWN.clear();
@@ -207,9 +248,12 @@ public final class WeaponVfxServerListener {
         boolean arrowCrit = (direct instanceof AbstractArrow arr) && arr.isCritArrow();
 
         // Critique à l'arc / arbalète : étoile critique pixel 3D dédiée si pas déjà en couche 0
-        if (arrowCrit && layers.get(0).effect().category != WeaponVisualEffectId.Category.CRIT) {
-            broadcastNear(sl, tx, ty, tz, WeaponVisualEffectId.GOLDEN_CRIT_STAR.id, KIND_IMPACT, 2,
-                    tx, ty, tz, ax, ay, az);
+        if (arrowCrit && layers.get(0).effect().category != WeaponVisualEffectId.Category.CRIT
+                && sl.random.nextInt(100) < CRIT_TRIGGER_PERCENT) {
+            if (!playSubtleAccent(sl, weapon, WeaponVisualEffectId.GOLDEN_CRIT_STAR, tx, ty, tz, ax, ay, az)) {
+                broadcastNear(sl, tx, ty, tz, WeaponVisualEffectId.GOLDEN_CRIT_STAR.id, KIND_IMPACT, 2,
+                        tx, ty, tz, ax, ay, az);
+            }
         }
 
         // T349-VFX-FREQUENCY : un seul effet par coup (rarement deux) au lieu de toute la pile
@@ -223,10 +267,24 @@ public final class WeaponVfxServerListener {
             if (fx.category == WeaponVisualEffectId.Category.CRIT && meleeCritJustFired && i == 0) {
                 continue;
             }
-            if (!shouldPlay(attacker.getId(), fx, sl)) {
+            boolean critHit = arrowCrit || meleeCritJustFired
+                    || fx.category == WeaponVisualEffectId.Category.CRIT;
+            if (!shouldPlay(attacker.getId(), fx, sl, critHit)) {
+                continue;
+            }
+            // T351 : la majorité des déclenchements devient un accent discret (jamais englobant).
+            if (playSubtleAccent(sl, weapon, fx, tx, ty, tz, ax, ay, az)) {
+                layerBudget--;
                 continue;
             }
             layerBudget--;
+
+            // T351 : l'entaille est désormais elle aussi décidée par le serveur (5 % / 66 %),
+            // ce qui évite tout double déclenchement client + serveur.
+            if (!isProjectileHit) {
+                broadcastNear(sl, ax, ay, az, fx.id, KIND_SWING_SLASH, layer.level(),
+                        ax, ay, az, tx, ty, tz);
+            }
 
             if (fx == WeaponVisualEffectId.CRIMSON_SIPHON) {
                 broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
@@ -258,7 +316,7 @@ public final class WeaponVfxServerListener {
         List<WeaponVisualEffectId.ResolvedLayer> layers = WeaponVisualEffectId.resolveLayers(weapon, 1);
         if (layers.isEmpty()) return;
 
-        if (!shouldPlay(shooter.getId(), layers.get(0).effect(), sl)) return;
+        if (!shouldPlay(shooter.getId(), layers.get(0).effect(), sl, false)) return;
 
         WeaponVisualEffectId.ResolvedLayer top = layers.get(0);
         Vec3 hit = event.getRayTraceResult().getLocation();
@@ -339,6 +397,17 @@ public final class WeaponVfxServerListener {
             return;
         }
         broadcastNear(sl, (float) to.x, (float) to.y, (float) to.z, fx.id, kind, lvl,
+                (float) from.x, (float) from.y, (float) from.z,
+                (float) to.x, (float) to.y, (float) to.z);
+    }
+
+    /** T351 : joue un accent discret précis (test via {@code /dlbvfx subtle}). */
+    public static void playSubtleDebug(ServerPlayer player, WeaponVfxSubtle.Subtle accent,
+                                       Vec3 from, Vec3 to) {
+        if (player == null || subature == null) return;
+        if (!(player.level() instanceof ServerLevel sl)) return;
+        broadcastNear(sl, (float) to.x, (float) to.y, (float) to.z,
+                0, WeaponVfxSubtle.NET_KIND_BASE + accent.index(), 1,
                 (float) from.x, (float) from.y, (float) from.z,
                 (float) to.x, (float) to.y, (float) to.z);
     }

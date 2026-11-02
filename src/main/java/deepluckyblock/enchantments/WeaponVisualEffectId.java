@@ -425,6 +425,19 @@ public enum WeaponVisualEffectId {
         return picked;
     }
 
+    /**
+     * T351-MULTI-ELEMENT : familles élémentaires réellement portées par l'arme (sans doublon,
+     * dans l'ordre de tri élémentaire). Sert au dégradé aller-retour des pixels de la lame.
+     */
+    public static List<DeepElement> elementsOf(ItemStack stack) {
+        List<DeepElement> out = new ArrayList<>(4);
+        for (ResolvedLayer layer : resolveLayers(stack, 32)) {
+            DeepElement el = layer.effect().element;
+            if (!out.contains(el)) out.add(el);
+        }
+        return out;
+    }
+
     private static int boostSharpnessTierLevel(String path, int lvl) {
         return switch (path) {
             case "supreme_sharpness" -> lvl + 8;

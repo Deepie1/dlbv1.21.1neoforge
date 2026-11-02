@@ -272,7 +272,12 @@ public final class CosmeticPixelAura {
             float x = cx + Mth.cos(ang) * radius;
             float z = cz + Mth.sin(ang) * radius;
             float y = cy + Mth.sin(ang * 2.0f + phase) * 0.035f;
-            int rgb = ((i & 1) == 0) ? rgbA : rgbB;
+            // T351-SMOOTH-GLINT : dégradé ANGULAIRE continu (A -> B -> A) au lieu d'une alternance
+            // pixel/pixel : plus aucun clignotement quand l'anneau tourne.
+            float t = (float) i / (float) points;
+            float tri = (t < 0.5f) ? (t * 2.0f) : (2.0f - t * 2.0f);
+            tri = tri * tri * (3.0f - 2.0f * tri);
+            int rgb = WeaponWorldVfxManager.mixRgb(rgbA, rgbB, tri);
             int a = alpha - (i % 3) * 12;
             WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp, x, y, z, step, step * 0.80f, step, rgb, a);
             budget--;
@@ -281,7 +286,8 @@ public final class CosmeticPixelAura {
                 WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
                         cx + Mth.cos(ang) * (radius - step * 2.2f), y + step * 0.6f,
                         cz + Mth.sin(ang) * (radius - step * 2.2f),
-                        step * 0.55f, step * 0.45f, step * 0.55f, rgbB, Math.round(a * 0.7f));
+                        step * 0.55f, step * 0.45f, step * 0.55f,
+                        WeaponWorldVfxManager.mixRgb(rgb, rgbB, 0.5f), Math.round(a * 0.7f));
                 budget--;
             }
         }

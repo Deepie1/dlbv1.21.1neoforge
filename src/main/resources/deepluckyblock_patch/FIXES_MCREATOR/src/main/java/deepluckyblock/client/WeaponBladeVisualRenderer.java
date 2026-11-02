@@ -178,6 +178,22 @@ public final class WeaponBladeVisualRenderer {
         // progressif, jamais de changement brutal d'un coup à l'autre).
         int pRgb = WeaponWorldVfxManager.smoothBladeColor(fx);
         int sRgb = WeaponWorldVfxManager.smoothBladeColor2(fx);
+
+        // T351-MULTI-ELEMENT-GRADIENT : si l'arme porte plusieurs éléments (ex. feu + eau), les pixels
+        // clairs qui l'entourent prennent une teinte qui voyage EN DOUCEUR d'une famille à l'autre
+        // (bleu -> rouge -> bleu...), au lieu de rester blanches.
+        java.util.List<deepluckyblock.enchantments.DeepElement> elements =
+                WeaponVisualEffectId.elementsOf(stack);
+        int whiteRgb = 0xFFFFFF;
+        if (elements.size() > 1) {
+            int grad = WeaponWorldVfxManager.gradientColorFor(stack, time);
+            pRgb = WeaponWorldVfxManager.mixRgb(fx.primaryRgb, grad, 0.78f);
+            sRgb = WeaponWorldVfxManager.mixRgb(fx.secondaryRgb,
+                    WeaponWorldVfxManager.mixRgb(grad, 0xFFFFFF, 0.30f), 0.62f);
+            // Les « points blancs » deviennent des reflets teintés : la nuance joue sur toute la lame.
+            whiteRgb = WeaponWorldVfxManager.mixRgb(0xFFFFFF, grad, 0.42f);
+        }
+        final int white = whiteRgb;
         float lvlBoost = 1.0f + Math.min(4, Math.max(0, level - 1)) * 0.08f;
 
         // Demi-épaisseur Z chevauchant les deux faces de la lame 2D (0.46875..0.53125 -> 0.461..0.539)
@@ -196,7 +212,7 @@ public final class WeaponBladeVisualRenderer {
                     float d = Math.abs(n.progress - head);
                     float shine = Math.max(0.0f, 1.0f - d * 5.2f);
                     int a = Math.round((75.0f + 175.0f * shine * shine) * layerMul);
-                    int rgb = shine > 0.45f ? 0xFFFFFF : sRgb;
+                    int rgb = shine > 0.45f ? white : sRgb;
                     float s = hxy * (0.82f + 0.35f * shine);
                     WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
                             n.x + n.nx * 0.014f, n.y + n.ny * 0.014f, n.z, s, s, hz, rgb, a);
@@ -205,7 +221,7 @@ public final class WeaponBladeVisualRenderer {
                 float pulse = 0.55f + 0.45f * Mth.sin(time * 6.5f);
                 WeaponWorldVfxManager.emitPixelCross3D(vc, mat, tmp,
                         tip.x + tip.nx * 0.03f, tip.y + tip.ny * 0.03f, tip.z,
-                        0.035f, 2, 0xFFFFFF, sRgb, Math.round(220 * pulse * layerMul));
+                        0.035f, 2, white, sRgb, Math.round(220 * pulse * layerMul));
             }
 
             case SUPREME_PRISM_EDGE -> {
@@ -218,7 +234,7 @@ public final class WeaponBladeVisualRenderer {
                     float d2 = Math.min(Math.abs(n.progress - w2), 1.0f - Math.abs(n.progress - w2));
                     boolean first = d1 <= d2;
                     float glow = Math.max(0.0f, 1.0f - Math.min(d1, d2) * 5.0f);
-                    int rgb = glow > 0.65f ? 0xFFFFFF : (first ? pRgb : sRgb);
+                    int rgb = glow > 0.65f ? white : (first ? pRgb : sRgb);
                     int a = Math.round((115.0f + 135.0f * glow) * layerMul);
                     float s = hxy * (0.90f + 0.32f * glow);
                     WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
@@ -226,7 +242,7 @@ public final class WeaponBladeVisualRenderer {
                 }
                 VoxelNode tip = nodes.get(count - 1);
                 WeaponWorldVfxManager.emitPixelCross3D(vc, mat, tmp,
-                        tip.x + 0.03f, tip.y + 0.03f, tip.z, 0.038f, 2, 0xFFFFFF, sRgb, Math.round(235 * layerMul));
+                        tip.x + 0.03f, tip.y + 0.03f, tip.z, 0.038f, 2, white, sRgb, Math.round(235 * layerMul));
             }
 
             case SPECTRAL_REACH -> {
@@ -239,7 +255,7 @@ public final class WeaponBladeVisualRenderer {
                     int a = Math.round((220 - k * 42) * layerMul);
                     WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
                             tip.x + f, tip.y + f, tip.z, hxy * (1.05f - k * 0.14f), hxy * (1.05f - k * 0.14f), hz * 0.85f,
-                            (k == 1) ? 0xFFFFFF : pRgb, a);
+                            (k == 1) ? white : pRgb, a);
                 }
             }
 
@@ -311,7 +327,7 @@ public final class WeaponBladeVisualRenderer {
                     float rise = WeaponWorldVfxManager.quantize(cyc * 0.22f, 0.03125f);
                     float sway = ((e & 1) == 0 ? 1 : -1) * 0.03125f * (cyc > 0.5f ? 1 : 0);
                     float sz = hxy * (1.05f - cyc * 0.55f) * lvlBoost;
-                    int rgb = cyc < 0.3f ? 0xFFFFFF : (cyc < 0.65f ? sRgb : pRgb);
+                    int rgb = cyc < 0.3f ? white : (cyc < 0.65f ? sRgb : pRgb);
                     WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
                             base.x + sway, base.y + rise, base.z,
                             sz, sz, sz, rgb, Math.round(235 * (1.0f - cyc) * layerMul));
@@ -326,7 +342,7 @@ public final class WeaponBladeVisualRenderer {
                 long boltSeed = (long) (time * 14.0f);
                 WeaponWorldVfxManager.emitVoxelLightning(vc, mat, tmp,
                         start.x, start.y, start.z, end.x, end.y, end.z,
-                        5, 0.065f, boltSeed, 0xFFFFFF, pRgb, Math.round(235 * layerMul), 0.022f);
+                        5, 0.065f, boltSeed, white, pRgb, Math.round(235 * layerMul), 0.022f);
             }
 
             case PERMAFROST_RIME -> {
@@ -364,7 +380,7 @@ public final class WeaponBladeVisualRenderer {
                     if (tw > 0.25f) {
                         WeaponWorldVfxManager.emitPixelCross3D(vc, mat, tmp,
                                 n.x + n.nx * 0.035f, n.y + n.ny * 0.035f, n.z,
-                                0.028f * tw, 2, 0xFFFFFF, pRgb, Math.round(235 * tw * layerMul));
+                                0.028f * tw, 2, white, pRgb, Math.round(235 * tw * layerMul));
                     }
                 }
             }
@@ -384,10 +400,10 @@ public final class WeaponBladeVisualRenderer {
 
             case ANNIHILATING_ARC -> {
                 // #30 Couronne de plasma solaire en gros mini-cubes incandescents + étoile 3D en pointe
-                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 1.15f, hz * 1.12f, 0xFFFFFF, pRgb, time * 5.2f, 225, layerMul);
+                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 1.15f, hz * 1.12f, white, pRgb, time * 5.2f, 225, layerMul);
                 VoxelNode tip = nodes.get(count - 1);
                 WeaponWorldVfxManager.emitPixelCross3D(vc, mat, tmp,
-                        tip.x + 0.03f, tip.y + 0.03f, tip.z, 0.042f, 3, 0xFFFFFF, pRgb, Math.round(245 * layerMul));
+                        tip.x + 0.03f, tip.y + 0.03f, tip.z, 0.042f, 3, white, pRgb, Math.round(245 * layerMul));
             }
 
             default -> {
@@ -402,7 +418,7 @@ public final class WeaponBladeVisualRenderer {
                     float oz = Mth.sin(a * 1.3f) * 0.07f;
                     WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
                             mid.x + ox, mid.y + oy, mid.z + oz,
-                            0.026f, 0.026f, 0.026f, (o == 0) ? 0xFFFFFF : sRgb, Math.round(220 * layerMul));
+                            0.026f, 0.026f, 0.026f, (o == 0) ? white : sRgb, Math.round(220 * layerMul));
                 }
             }
         }
@@ -412,7 +428,7 @@ public final class WeaponBladeVisualRenderer {
             float cx = 0.68f, cy = 0.68f, cz = 0.50f;
             WeaponWorldVfxManager.emitPixelCross3D(vc, mat, tmp, cx, cy, cz,
                     0.034f * (0.6f + 0.6f * rangedCharge), 2,
-                    0xFFFFFF, pRgb, Math.round(240 * rangedCharge * layerMul));
+                    white, pRgb, Math.round(240 * rangedCharge * layerMul));
         }
     }
 
