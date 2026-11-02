@@ -183,8 +183,9 @@ public final class CloudWalkerClientInput {
             if (player.input == null) return;
 
             int cwLvl = UniversalEnchantmentHandler.getArmorEnchantLvl(player, "deep_lucky_block:cloud_walker");
-            boolean hasQuadCombo = EnchantmentComboRegistry.hasCombo(player, EnchantmentComboRegistry.C02_ASCENSION_CELESTE);
-            int maxAirJumps = hasQuadCombo ? 3 : 2;
+            boolean hasQuintCombo = EnchantmentComboRegistry.hasCombo(player, EnchantmentComboRegistry.IDX_TRANSCENDANCE_CHANCE_INFINIE);
+            boolean hasQuadCombo = hasQuintCombo || EnchantmentComboRegistry.hasCombo(player, EnchantmentComboRegistry.C02_ASCENSION_CELESTE);
+            int maxAirJumps = hasQuintCombo ? 4 : (hasQuadCombo ? 3 : 2);
 
             if ((player.onGround() || player.onClimbable()) && !player.isInWater() && !player.isInLava()) {
                 hasReleasedJumpKey = false;

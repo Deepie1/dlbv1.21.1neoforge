@@ -44,13 +44,17 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.entity.projectile.FishingHook;
 import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.entity.projectile.ThrownEnderpearl;
 import net.minecraft.world.entity.projectile.ThrownTrident;
+import net.minecraft.world.item.AxeItem;
+import net.minecraft.world.item.BowItem;
 import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.HoeItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ShovelItem;
 import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -75,6 +79,7 @@ import org.joml.Vector3f;
 import org.slf4j.Logger;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -85,7 +90,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import static deepluckyblock.enchantments.EnchantmentComboRegistry.*;
 
 /**
- * T309-COMBOS : Gestionnaire d'exécution des 110 Combos & Synergies Multi-Pièces
+ * T309-COMBOS / T332-COMBOS-210 : Gestionnaire d'exécution des 210 Combos & Synergies
  * (Normal -> Avancé -> Rare -> Épique -> Mythique -> Ultra-Rare).
  *
  * Chaque synergie dispose de sa mécanique dédiée, de particules thématiques,
@@ -104,12 +109,15 @@ public final class EnchantmentComboHandler {
         Vec3 prevPos = null;
         int stillTicks = 0;
         boolean wasFallFlying = false;
+        boolean wasOnGround = true;
+        float maxFallDist = 0.0f;
         double lastFlightSpeed = 0.0;
         boolean wasSprinting = false;
         boolean wasShiftDown = false;
         int thunderHitCounter = 0;
         int rhythmHitCounter = 0;
         int supremeSlashCounter = 0;
+        int thousandCutCounter = 0;
         int oreMinedCounter = 0;
         int stoneMinedCounter = 0;
         long lateralChargeUntil = 0L;
@@ -122,6 +130,14 @@ public final class EnchantmentComboHandler {
         long airBrakeUntil = 0L;
         long airBrakeCooldownUntil = 0L;
         long saitamaCooldownUntil = 0L;
+        long springJumpCd = 0L;
+        long shieldHealCd = 0L;
+        long thornsShieldChargeUntil = 0L;
+        long shieldAxeRiposteUntil = 0L;
+        long mirageRiposteUntil = 0L;
+        long grappleMeteorUntil = 0L;
+        long riftFallImmuneUntil = 0L;
+        long aegisRetaliationUntil = 0L;
     }
 
     private static final Map<UUID, PlayerComboState> STATES = new ConcurrentHashMap<>();
@@ -781,6 +797,343 @@ public final class EnchantmentComboHandler {
             entity.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 55, 0, true, false));
         }
 
+        // ---- T332-COMBOS-210 : PASSIVES & TICK HOOKS (#111 .. #210) ----
+
+        // Suivi de la chute maximale pour les synergies d'atterrissage (#158, #181)
+        if (!entity.onGround()) {
+            st.maxFallDist = Math.max(st.maxFallDist, entity.fallDistance);
+        }
+
+        // #119 Coureur des Averses : pluie ou eau -> Vitesse II + dissipe Fatigue de Minage
+        if (mask.has(IDX_COUREUR_PLUIE) && entity.isInWaterOrRain() && entity.tickCount % 20 == 0) {
+            entity.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 50, 1, true, false));
+            entity.removeEffect(MobEffects.DIG_SLOWDOWN);
+        }
+
+        // #122 Voltigeur Arbalétrier : épauler ou tenir une arbalète chargée -> Vitesse II + purge Lenteur
+        if (mask.has(IDX_ARBALETRIER_RODEUR)) {
+            ItemStack mh = entity.getMainHandItem();
+            boolean activeCrossbow = (mh.getItem() instanceof CrossbowItem && CrossbowItem.isCharged(mh))
+                    || (entity.isUsingItem() && entity.getUseItem().getItem() instanceof CrossbowItem);
+            if (activeCrossbow && entity.tickCount % 15 == 0) {
+                entity.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 45, 1, true, false));
+                entity.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+            }
+        }
+
+        // #123 Marcheur Lucide : zone éclairée (>= 9) -> purge Lenteur/Nausée/Cécité + Vitesse I
+        if (mask.has(IDX_VEILLEUR_CLAIRVOYANT) && entity.tickCount % 20 == 0) {
+            if (entity.level().getMaxLocalRawBrightness(entity.blockPosition()) >= 9) {
+                entity.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+                entity.removeEffect(MobEffects.CONFUSION);
+                entity.removeEffect(MobEffects.BLINDNESS);
+                entity.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 50, 0, true, false));
+            }
+        }
+
+        // #126 Chamois des Collines : sauter en avançant -> Vitesse I (3 s)
+        if (mask.has(IDX_GRIMPEUR_PENTE) && !entity.onGround() && st.wasOnGround
+                && entity.getDeltaMovement().horizontalDistanceSqr() > 0.008) {
+            entity.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 60, 0, true, false));
+        }
+
+        // #127 Carapace de Granit : accroupi au sol -> Résistance II + réduction de recul
+        if (mask.has(IDX_ABRI_TORTUE) && entity.onGround() && entity.isShiftKeyDown()) {
+            if (entity.tickCount % 15 == 0) {
+                entity.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 35, 1, true, false));
+            }
+            if (entity.hurtTime == 9) {
+                Vec3 dm = entity.getDeltaMovement();
+                entity.setDeltaMovement(dm.x * 0.2, Math.min(0.05, dm.y * 0.2), dm.z * 0.2);
+                entity.hurtMarked = true;
+            }
+        }
+
+        // #137 Catapulte Cinétique : bondir depuis l'accroupissement -> onde répulsive + Vitesse II
+        if (mask.has(IDX_SAUTEUR_RESSORT) && !entity.onGround() && st.wasOnGround
+                && (st.wasShiftDown || entity.isShiftKeyDown()) && entity.getDeltaMovement().y > 0.20
+                && now >= st.springJumpCd) {
+            st.springJumpCd = now + 30L;
+            entity.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 70, 1, true, false));
+            if (sl != null) {
+                EnchantmentParticleFX.shockwaveRing(sl, entity.getX(), entity.getY() + 0.1, entity.getZ(),
+                        ParticleTypes.CLOUD, 3.0, 16, 0.04);
+                for (Mob mob : sl.getEntitiesOfClass(Mob.class, entity.getBoundingBox().inflate(3.5))) {
+                    if (!isFriendlySummon(mob, entity)) {
+                        Vec3 push = mob.position().subtract(entity.position());
+                        if (push.lengthSqr() > 0.01) {
+                            mob.setDeltaMovement(push.normalize().scale(0.80).add(0, 0.32, 0));
+                            mob.hurtMarked = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // #145 Planeur des Courants Chauds : vol Élytres au-dessus du feu/lave ou dans le Nether -> ascendance douce
+        if (mask.has(IDX_PLANEUR_THERMIQUE) && entity.isFallFlying()) {
+            boolean hotUpdraft = entity.level().dimension() == Level.NETHER;
+            if (!hotUpdraft) {
+                BlockPos base = entity.blockPosition();
+                for (int dy = 1; dy <= 8; dy++) {
+                    BlockState bs = entity.level().getBlockState(base.below(dy));
+                    if (bs.is(Blocks.LAVA) || bs.is(Blocks.FIRE) || bs.is(Blocks.SOUL_FIRE)
+                            || bs.is(Blocks.MAGMA_BLOCK) || bs.is(Blocks.CAMPFIRE)) {
+                        hotUpdraft = true;
+                        break;
+                    }
+                }
+            }
+            if (hotUpdraft) {
+                Vec3 dm = entity.getDeltaMovement();
+                if (dm.y < 0.045) {
+                    entity.setDeltaMovement(dm.x, Math.min(0.045, dm.y + 0.065), dm.z);
+                    entity.hurtMarked = true;
+                    entity.fallDistance = 0.0f;
+                }
+            }
+        }
+
+        // #147 Sentinelle des Murailles : contre un mur -> Régénération I
+        if (mask.has(IDX_BASTION_MURAL) && entity.tickCount % 20 == 0
+                && UniversalEnchantmentHandler.isTouchingHorizontalWall(entity)) {
+            entity.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 45, 0, true, false));
+        }
+
+        // #158 Rebond Tellurique : atterrissage après > 3 blocs -> onde de choc sur 4 blocs (6 dégâts)
+        if (mask.has(IDX_SUMO_SISMIQUE) && entity.onGround() && !st.wasOnGround && st.maxFallDist >= 3.0f && sl != null) {
+            EnchantmentParticleFX.shockwaveRing(sl, entity.getX(), entity.getY() + 0.1, entity.getZ(),
+                    EnchantmentParticleFX.EARTH_OCHRE, 4.0, 22, 0.05);
+            sl.playSound(null, entity.blockPosition(), SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.55f, 1.15f);
+            for (Mob mob : sl.getEntitiesOfClass(Mob.class, entity.getBoundingBox().inflate(4.0))) {
+                if (!isFriendlySummon(mob, entity)) {
+                    safeHurt(mob, entity.damageSources().mobAttack(entity), 6.0f);
+                    Vec3 away = mob.position().subtract(entity.position());
+                    if (away.lengthSqr() > 0.01) {
+                        mob.setDeltaMovement(away.normalize().scale(0.85).add(0, 0.42, 0));
+                        mob.hurtMarked = true;
+                    }
+                }
+            }
+        }
+
+        // #160 Pyromancien de Mêlée : tant que vous brûlez -> Résistance au Feu
+        if (mask.has(IDX_BERSERKER_FLAMMES) && entity.isOnFire() && entity.tickCount % 20 == 0) {
+            entity.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 45, 0, true, false));
+        }
+
+        // #161 Capitaine Mercenaire : renforce vos troupes invoquées proches (Force I + Résistance II)
+        if (mask.has(IDX_COMMANDANT_MEUTE_FER) && sl != null && entity.tickCount % 25 == 0) {
+            for (Mob mob : sl.getEntitiesOfClass(Mob.class, entity.getBoundingBox().inflate(10.0))) {
+                if (isFriendlySummon(mob, entity)) {
+                    mob.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 60, 0, true, false));
+                    mob.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 60, 1, true, false));
+                }
+            }
+        }
+
+        // #169 Dompteur d'Orage Ailé : en vol d'Élytres -> répare les ailes et électrocute les ennemis proches
+        if (mask.has(IDX_AILES_ORAGEUSES_MAITRISEES) && entity.isFallFlying() && entity.tickCount % 25 == 0) {
+            ItemStack chest = entity.getItemBySlot(EquipmentSlot.CHEST);
+            if (chest.isDamageableItem() && chest.getDamageValue() > 0) {
+                chest.setDamageValue(Math.max(0, chest.getDamageValue() - 1));
+            }
+            if (sl != null) {
+                for (Mob mob : sl.getEntitiesOfClass(Mob.class, entity.getBoundingBox().inflate(4.5))) {
+                    if (!isFriendlySummon(mob, entity)) {
+                        safeHurt(mob, entity.damageSources().lightningBolt(), 5.0f);
+                        EnchantmentParticleFX.burstOnEntity(mob, ParticleTypes.ELECTRIC_SPARK, 8, 0.3, 0.04);
+                    }
+                }
+            }
+        }
+
+        // #173 Avatar de la Salamandre : tant que vous brûlez -> Force II + Régénération II + Résistance au Feu
+        if (mask.has(IDX_PACTE_SALAMANDRE_ARDENT) && entity.isOnFire() && entity.tickCount % 20 == 0) {
+            entity.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 45, 1, true, false));
+            entity.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 45, 1, true, false));
+            entity.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 45, 0, true, false));
+        }
+
+        // #174 Seigneur du Ressac Abyssal : dans l'eau ou sous la pluie -> Régénération II
+        if (mask.has(IDX_KRAKEN_RESSAC_MAUDIT) && entity.isInWaterOrRain() && entity.tickCount % 20 == 0) {
+            entity.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 45, 1, true, false));
+        }
+
+        // #175 Seigneur Nocturne du Vide : apaise le drain du jour par régénération douce
+        if (mask.has(IDX_PREDATEUR_VOIDLING_NOCTURNE) && entity.level().isDay() && entity.tickCount % 30 == 0) {
+            entity.heal(1.0f);
+        }
+
+        // #177 Monolithe Inébranlable : Résistance II permanente
+        if (mask.has(IDX_COLOSSE_RACINES_PIERRE) && entity.tickCount % 20 == 0) {
+            entity.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 50, 1, true, false));
+        }
+
+        // #181 Comète à Grappin : atterrissage chargé -> onde météore 5 blocs
+        if (mask.has(IDX_VOLTIGEUR_PLONGEON_METEORE) && entity.onGround() && !st.wasOnGround
+                && now < st.grappleMeteorUntil && sl != null) {
+            st.grappleMeteorUntil = 0L;
+            EnchantmentParticleFX.shockwaveRing(sl, entity.getX(), entity.getY() + 0.15, entity.getZ(),
+                    ParticleTypes.LAVA, 4.8, 24, 0.06);
+            sl.playSound(null, entity.blockPosition(), SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.7f, 1.15f);
+            for (Mob mob : sl.getEntitiesOfClass(Mob.class, entity.getBoundingBox().inflate(5.0))) {
+                if (!isFriendlySummon(mob, entity)) {
+                    safeHurt(mob, entity.damageSources().onFire(), 9.0f);
+                    mob.setRemainingFireTicks(Math.max(mob.getRemainingFireTicks(), 80));
+                }
+            }
+        }
+
+        // #182 Grand Maréchal d'Empire : Force II + Résistance I + Régénération I sur 12 blocs
+        if (mask.has(IDX_MARECHAL_SOUVERAIN) && entity.tickCount % 25 == 0) {
+            entity.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 60, 1, true, false));
+            entity.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 60, 0, true, false));
+            entity.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 60, 0, true, false));
+            if (sl != null) {
+                for (LivingEntity ally : sl.getEntitiesOfClass(LivingEntity.class, entity.getBoundingBox().inflate(12.0))) {
+                    if (ally != entity && (ally instanceof Player || (ally instanceof Mob m && isFriendlySummon(m, entity)))) {
+                        ally.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 60, 1, true, false));
+                        ally.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 60, 0, true, false));
+                        ally.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 60, 0, true, false));
+                    }
+                }
+            }
+        }
+
+        // #185 Cataphractaire Foudroyant : sur monture -> Résistance au Feu + Absorption sur la monture
+        if (mask.has(IDX_CAVALIER_TONNERRE_ROYAL) && entity.isPassenger()
+                && entity.getVehicle() instanceof LivingEntity mount && entity.tickCount % 25 == 0) {
+            mount.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 60, 0, true, false));
+            mount.addEffect(new MobEffectInstance(MobEffects.ABSORPTION, 60, 1, true, false));
+        }
+
+        // #188 Éveil de la Chimère Prismatique : Régénération II périodique + onde électrique en sautant
+        if (mask.has(IDX_CHIMERE_SEPT_COEURS)) {
+            if (entity.tickCount % 40 == 0) {
+                entity.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 55, 1, true, false));
+            }
+            if (!entity.onGround() && st.wasOnGround && entity.getDeltaMovement().y > 0.20 && sl != null) {
+                EnchantmentParticleFX.shockwaveRing(sl, entity.getX(), entity.getY() + 0.15, entity.getZ(),
+                        ParticleTypes.ELECTRIC_SPARK, 3.6, 18, 0.05);
+                for (Mob mob : sl.getEntitiesOfClass(Mob.class, entity.getBoundingBox().inflate(4.0))) {
+                    if (!isFriendlySummon(mob, entity)) {
+                        safeHurt(mob, entity.damageSources().lightningBolt(), 5.0f);
+                    }
+                }
+            }
+        }
+
+        // #193 Forgeron du Noyau Stellaire : Célérité III + Résistance au Feu continues
+        if (mask.has(IDX_SEIGNEUR_FORGES_STELLAIRES) && entity.tickCount % 20 == 0) {
+            entity.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 50, 2, true, false));
+            entity.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 50, 0, true, false));
+        }
+
+        // #196 Banquet du Titan Invincible : faim >= 14 -> maintient 5 cœurs d'Absorption
+        if (mask.has(IDX_JUGGERNAUT_GOURMAND_COLOSSAL) && entity.tickCount % 25 == 0
+                && entity instanceof Player p196 && p196.getFoodData().getFoodLevel() >= 14) {
+            entity.setAbsorptionAmount(Math.max(entity.getAbsorptionAmount(), 10.0f));
+        }
+
+        // #199 Souverain de la Stratosphère : en l'air ou en Élytres -> Régénération II continue
+        if (mask.has(IDX_AERONAUTE_SUPERSONIQUE_ROYAL) && (entity.isFallFlying() || !entity.onGround())
+                && entity.tickCount % 20 == 0) {
+            entity.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 45, 1, true, false));
+        }
+
+        // #200 Dieu-Bourreau du Cataclysme : Force II + Résistance II permanentes
+        if (mask.has(IDX_DIEU_HACHE_CATACLYSME) && entity.tickCount % 20 == 0) {
+            entity.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 50, 1, true, false));
+            entity.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 50, 1, true, false));
+        }
+
+        // #201 Grand Amiral des Sept Mers : Chance III + Régénération II permanentes
+        if (mask.has(IDX_GRAND_AMIRAL_SEPT_MERS) && entity.tickCount % 20 == 0) {
+            entity.addEffect(new MobEffectInstance(MobEffects.LUCK, 55, 2, true, false));
+            entity.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 55, 1, true, false));
+        }
+
+        // #203 Forgeron Divin des Reliques : Célérité IV + Résistance au Feu + réparation continue
+        if (mask.has(IDX_FORGERON_DIVIN_RELIQUE) && entity.tickCount % 20 == 0) {
+            entity.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 50, 3, true, false));
+            entity.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 50, 0, true, false));
+            for (EquipmentSlot slot : EquipmentSlot.values()) {
+                ItemStack eq = entity.getItemBySlot(slot);
+                if (!eq.isEmpty() && eq.isDamageableItem() && eq.getDamageValue() > 0) {
+                    eq.setDamageValue(Math.max(0, eq.getDamageValue() - 1));
+                }
+            }
+        }
+
+        // #204 Tireur Céleste Omniscient : Vision Nocturne permanente
+        if (mask.has(IDX_SNIPER_CELESTE_OMNISCIENT) && entity.tickCount % 20 == 0) {
+            entity.addEffect(new MobEffectInstance(MobEffects.NIGHT_VISION, 260, 0, true, false));
+        }
+
+        // #205 Bastion Immortel de l'Égide : Régénération II continue + immunité totale au recul
+        if (mask.has(IDX_CITADELLE_IMMORTELLE_EGIDE)) {
+            if (entity.tickCount % 20 == 0) {
+                entity.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 50, 1, true, false));
+            }
+            if (entity.hurtTime == 9) {
+                entity.setDeltaMovement(0.0, Math.min(0.0, entity.getDeltaMovement().y), 0.0);
+                entity.hurtMarked = true;
+            }
+        }
+
+        // #206 Avatar de la Chimère Primordiale : feu/noyade annulés + éclair curatif à chaque saut
+        if (mask.has(IDX_AVATAR_CHIMERE_PRIMORDIALE)) {
+            if (entity.tickCount % 20 == 0) {
+                entity.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 50, 0, true, false));
+                entity.setAirSupply(entity.getMaxAirSupply());
+            }
+            if (!entity.onGround() && st.wasOnGround && entity.getDeltaMovement().y > 0.20 && sl != null) {
+                entity.heal(2.0f);
+                EnchantmentParticleFX.shockwaveRing(sl, entity.getX(), entity.getY() + 0.15, entity.getZ(),
+                        ParticleTypes.ELECTRIC_SPARK, 4.0, 20, 0.05);
+                for (Mob mob : sl.getEntitiesOfClass(Mob.class, entity.getBoundingBox().inflate(4.5))) {
+                    if (!isFriendlySummon(mob, entity)) {
+                        safeHurt(mob, entity.damageSources().lightningBolt(), 6.0f);
+                    }
+                }
+            }
+        }
+
+        // #207 Seigneur du Fléau Émeraude : immunité Poison/Wither + aura corrosive 6 blocs
+        if (mask.has(IDX_SEIGNEUR_FLEAU_TOXIQUE) && entity.tickCount % 20 == 0) {
+            entity.removeEffect(MobEffects.POISON);
+            entity.removeEffect(MobEffects.WITHER);
+            if (sl != null) {
+                for (Mob mob : sl.getEntitiesOfClass(Mob.class, entity.getBoundingBox().inflate(6.0))) {
+                    if (!isFriendlySummon(mob, entity)) {
+                        mob.addEffect(new MobEffectInstance(MobEffects.POISON, 70, 1));
+                        mob.addEffect(new MobEffectInstance(MobEffects.WITHER, 70, 0));
+                    }
+                }
+            }
+        }
+
+        // #208 Souverain de la Légion d'Or : Force II + Résistance II + Vitesse II aux troupes invoquées
+        if (mask.has(IDX_EMPEREUR_COMMANDANT_SUPREME) && sl != null && entity.tickCount % 25 == 0) {
+            for (Mob mob : sl.getEntitiesOfClass(Mob.class, entity.getBoundingBox().inflate(14.0))) {
+                if (isFriendlySummon(mob, entity)) {
+                    mob.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 60, 1, true, false));
+                    mob.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 60, 1, true, false));
+                    mob.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 60, 1, true, false));
+                }
+            }
+        }
+
+        // #209 Élu Astral de la Chance Infinie : Chance IV permanente
+        if (mask.has(IDX_TRANSCENDANCE_CHANCE_INFINIE) && entity.tickCount % 20 == 0) {
+            entity.addEffect(new MobEffectInstance(MobEffects.LUCK, 55, 3, true, false));
+        }
+
+        if (entity.onGround()) {
+            st.maxFallDist = 0.0f;
+        }
+        st.wasOnGround = entity.onGround();
         st.prevY = entity.getY();
         st.prevPos = entity.position();
         st.wasFallFlying = entity.isFallFlying();
@@ -951,6 +1304,161 @@ public final class EnchantmentComboHandler {
 
                 // #109 Avatar Suprême du Deep Lucky : -25 % dégâts reçus !
                 if (defMask.has(IDX_AVATAR_SUPREME_DEEP_LUCKY)) {
+                    event.setAmount(event.getAmount() * 0.75f);
+                }
+
+                // ---- T332-COMBOS-210 : DÉFENSE (#111 .. #210) ----
+                String msgId = event.getSource().getMsgId();
+
+                // #112 Étayeur de Galerie : annule les dégâts de chute de blocs / étouffement de gravier-sable
+                if (defMask.has(IDX_MINEUR_STABILISATEUR)
+                        && ("fallingBlock".equals(msgId) || "anvil".equals(msgId) || "inWall".equals(msgId))) {
+                    event.setCanceled(true);
+                    return;
+                }
+
+                // #126 Chamois des Collines : -30 % dégâts de chute
+                if (defMask.has(IDX_GRIMPEUR_PENTE) && "fall".equals(msgId)) {
+                    event.setAmount(event.getAmount() * 0.70f);
+                }
+
+                // #136 Rempart de Ronces : armure chargée par blocage -> +5 dégâts d'épines
+                if (defMask.has(IDX_PROVOCATEUR_EPINEUX) && now < defSt.thornsShieldChargeUntil
+                        && rawAttacker instanceof LivingEntity aggr136
+                        && !event.getSource().is(DamageTypeTags.IS_PROJECTILE)) {
+                    safeHurt(aggr136, victim.damageSources().thorns(victim), 5.0f);
+                }
+
+                // #142 Survivant des Tranchées : sous 50 % PV ou arme usée > 40 % -> -22 % dégâts subis
+                if (defMask.has(IDX_VETERAN_ENDURCI)) {
+                    ItemStack mh142 = victim.getMainHandItem();
+                    boolean wornWeapon = mh142.isDamageableItem() && mh142.getDamageValue() >= mh142.getMaxDamage() * 0.40;
+                    if (victim.getHealth() <= victim.getMaxHealth() * 0.50f || wornWeapon) {
+                        event.setAmount(event.getAmount() * 0.78f);
+                    }
+                }
+
+                // #161 Capitaine Mercenaire : -20 % dégâts subis
+                if (defMask.has(IDX_COMMANDANT_MEUTE_FER)) {
+                    event.setAmount(event.getAmount() * 0.80f);
+                }
+
+                // #166 Réflexe Blindé : purge Lenteur + Résistance II et Vitesse II (3 s)
+                if (defMask.has(IDX_CARAPACE_CINETIQUE)) {
+                    victim.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
+                    victim.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 60, 1, true, false));
+                    victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 60, 1, true, false));
+                }
+
+                // #173 Avatar de la Salamandre : en feu -> libère une nova ardente lorsque touché
+                if (defMask.has(IDX_PACTE_SALAMANDRE_ARDENT) && victim.isOnFire() && victim.level() instanceof ServerLevel slSal) {
+                    EnchantmentParticleFX.shockwaveRing(slSal, victim.getX(), victim.getY() + 0.3, victim.getZ(),
+                            ParticleTypes.FLAME, 3.6, 20, 0.05);
+                    for (Mob m : slSal.getEntitiesOfClass(Mob.class, victim.getBoundingBox().inflate(3.8))) {
+                        if (!isFriendlySummon(m, victim)) {
+                            m.setRemainingFireTicks(Math.max(m.getRemainingFireTicks(), 100));
+                            safeHurt(m, victim.damageSources().onFire(), 5.0f);
+                        }
+                    }
+                }
+
+                // #174 Seigneur du Ressac Abyssal : -30 % dégâts subis hors de l'eau (compense le Ressac)
+                if (defMask.has(IDX_KRAKEN_RESSAC_MAUDIT) && !victim.isInWaterOrRain()) {
+                    event.setAmount(event.getAmount() * 0.70f);
+                }
+
+                // #176 Mirage du Vent Vif : -25 % dégâts, aveugle l'agresseur et charge la prochaine frappe (+45 %)
+                if (defMask.has(IDX_DANSEUR_MIRAGE_ZEPHYR)) {
+                    event.setAmount(event.getAmount() * 0.75f);
+                    defSt.mirageRiposteUntil = now + 100L;
+                    if (rawAttacker instanceof LivingEntity aggr176) {
+                        aggr176.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 50, 0));
+                    }
+                }
+
+                // #181 Comète à Grappin & #186 Archer des Failles Astrales : immunité chute post-tir
+                if ("fall".equals(msgId) && ((defMask.has(IDX_VOLTIGEUR_PLONGEON_METEORE) && now < defSt.grappleMeteorUntil)
+                        || (defMask.has(IDX_ARCHER_DISTORSION_VIDE) && now < defSt.riftFallImmuneUntil))) {
+                    if (defMask.has(IDX_VOLTIGEUR_PLONGEON_METEORE) && victim.level() instanceof ServerLevel slMet) {
+                        defSt.grappleMeteorUntil = 0L;
+                        EnchantmentParticleFX.shockwaveRing(slMet, victim.getX(), victim.getY() + 0.15, victim.getZ(),
+                                ParticleTypes.LAVA, 4.8, 24, 0.06);
+                        for (Mob m : slMet.getEntitiesOfClass(Mob.class, victim.getBoundingBox().inflate(5.0))) {
+                            if (!isFriendlySummon(m, victim)) {
+                                safeHurt(m, victim.damageSources().onFire(), 9.0f);
+                                m.setRemainingFireTicks(Math.max(m.getRemainingFireTicks(), 80));
+                            }
+                        }
+                    }
+                    event.setCanceled(true);
+                    return;
+                }
+
+                // #193 Forgeron du Noyau Stellaire : immunité complète au feu et à la lave
+                if (defMask.has(IDX_SEIGNEUR_FORGES_STELLAIRES) && event.getSource().is(DamageTypeTags.IS_FIRE)) {
+                    victim.clearFire();
+                    event.setCanceled(true);
+                    return;
+                }
+
+                // #196 Banquet du Titan Invincible : faim >= 14 -> -20 % dégâts reçus
+                if (defMask.has(IDX_JUGGERNAUT_GOURMAND_COLOSSAL)
+                        && victim instanceof Player vp196 && vp196.getFoodData().getFoodLevel() >= 14) {
+                    event.setAmount(event.getAmount() * 0.80f);
+                }
+
+                // #197 Canonnier d'Apocalypse Solaire : immunité au feu et aux explosions
+                if (defMask.has(IDX_ARTILLEUR_METEOR_ECARLATE)
+                        && (event.getSource().is(DamageTypeTags.IS_FIRE) || event.getSource().is(DamageTypeTags.IS_EXPLOSION))) {
+                    victim.clearFire();
+                    event.setCanceled(true);
+                    return;
+                }
+
+                // #199 Souverain de la Stratosphère : immunité chocs/chute + -30 % dégâts en l'air
+                if (defMask.has(IDX_AERONAUTE_SUPERSONIQUE_ROYAL)) {
+                    if ("fall".equals(msgId) || "flyIntoWall".equals(msgId)) {
+                        event.setCanceled(true);
+                        return;
+                    }
+                    if (victim.isFallFlying() || !victim.onGround()) {
+                        event.setAmount(event.getAmount() * 0.70f);
+                    }
+                }
+
+                // #201 Grand Amiral des Sept Mers & #206 Avatar Chimère Primordiale : annule la pénalité hors de l'eau du Ressac
+                if ((defMask.has(IDX_GRAND_AMIRAL_SEPT_MERS) || defMask.has(IDX_AVATAR_CHIMERE_PRIMORDIALE))
+                        && !victim.isInWaterOrRain()) {
+                    event.setAmount(event.getAmount() * 0.78f);
+                }
+                if (defMask.has(IDX_AVATAR_CHIMERE_PRIMORDIALE)
+                        && (event.getSource().is(DamageTypeTags.IS_FIRE) || "drown".equals(msgId))) {
+                    victim.clearFire();
+                    event.setCanceled(true);
+                    return;
+                }
+
+                // #204 Tireur Céleste Omniscient : zéro dégât de chute + 40 % déviation des projectiles
+                if (defMask.has(IDX_SNIPER_CELESTE_OMNISCIENT)) {
+                    if ("fall".equals(msgId)) {
+                        event.setCanceled(true);
+                        return;
+                    }
+                    if (event.getSource().is(DamageTypeTags.IS_PROJECTILE) && victim.getRandom().nextInt(100) < 40) {
+                        EnchantmentParticleFX.burstOnEntity(victim, ParticleTypes.CLOUD, 10, 0.3, 0.04);
+                        event.setCanceled(true);
+                        return;
+                    }
+                }
+
+                // #205 Bastion Immortel de l'Égide : -30 % dégâts subis + charge la riposte (+80 %)
+                if (defMask.has(IDX_CITADELLE_IMMORTELLE_EGIDE)) {
+                    event.setAmount(event.getAmount() * 0.70f);
+                    defSt.aegisRetaliationUntil = now + 100L;
+                }
+
+                // #208 Souverain de la Légion d'Or : -25 % dégâts subis
+                if (defMask.has(IDX_EMPEREUR_COMMANDANT_SUPREME)) {
                     event.setAmount(event.getAmount() * 0.75f);
                 }
             }
@@ -1384,6 +1892,413 @@ public final class EnchantmentComboHandler {
                 event.setAmount(event.getAmount() * 1.30f);
                 EnchantmentParticleFX.burstOnEntity(victim, ParticleTypes.END_ROD, 10, 0.35, 0.05);
             }
+
+            // ---- T332-COMBOS-210 : OFFENSE (#111 .. #210) ----
+
+            // #110 Lame d'Acier Impeccable : durabilité >= 90 % -> +20 % dégâts mêlée
+            if (atkMask.has(IDX_LAME_NEUVE_ETINCELANTE) && !isProjectile && weapon.isDamageableItem()
+                    && weapon.getDamageValue() <= weapon.getMaxDamage() * 0.10) {
+                event.setAmount(event.getAmount() * 1.20f);
+            }
+
+            // #117 Carquois d'Éclats de Silex : +2 dégâts perforants + 35 % remboursement de flèche
+            if (atkMask.has(IDX_ARCHER_RECUPERATEUR) && isProjectile
+                    && (weapon.getItem() instanceof BowItem || event.getSource().getDirectEntity() instanceof AbstractArrow)) {
+                event.setAmount(event.getAmount() + 2.0f);
+                if (attacker instanceof Player pl117 && attacker.getRandom().nextInt(100) < 35) {
+                    pl117.getInventory().add(new ItemStack(Items.ARROW, 1));
+                }
+            }
+
+            // #120 Maître de Feinte : Faiblesse I + Lenteur I (4 s)
+            if (atkMask.has(IDX_DUELLISTE_DESARMEUR) && !isProjectile) {
+                victim.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 80, 0));
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 80, 0));
+            }
+
+            // #121 Pugiliste Fulgurant : poing nu en sprintant -> +4 dégâts + 1 cœur d'Absorption
+            if (atkMask.has(IDX_BOXEUR_SPRINT) && !isProjectile && weapon.isEmpty() && attacker.isSprinting()) {
+                event.setAmount(event.getAmount() + 4.0f);
+                attacker.setAbsorptionAmount(Math.max(attacker.getAbsorptionAmount(), 2.0f));
+            }
+
+            // #130 Lame à Choc Thermique : cible ralentie/gelée ET en feu -> +40 % dégâts
+            if (atkMask.has(IDX_CHOC_THERMIQUE_LAME) && !isProjectile && victim.isOnFire()
+                    && (victim.hasEffect(MobEffects.MOVEMENT_SLOWDOWN) || victim.getTicksFrozen() > 0)) {
+                event.setAmount(event.getAmount() * 1.40f);
+                EnchantmentParticleFX.burstOnEntity(victim, ParticleTypes.CLOUD, 12, 0.35, 0.05);
+            }
+
+            // #138 Fleuret d'Argent : portée >= 3,0 blocs -> +30 % dégâts d'estoc
+            if (atkMask.has(IDX_ESCRIMEUR_ALLONGE) && !isProjectile && attacker.distanceTo(victim) >= 3.0f) {
+                event.setAmount(event.getAmount() * 1.30f);
+            }
+
+            // #139 Rôdeur du Crépuscule : lumière <= 7 -> Obscurité sur la cible + Vitesse II (4 s)
+            if (atkMask.has(IDX_CHASSEUR_CREPUSCULE) && !isProjectile
+                    && attacker.level().getMaxLocalRawBrightness(attacker.blockPosition()) <= 7) {
+                victim.addEffect(new MobEffectInstance(MobEffects.DARKNESS, 80, 0));
+                attacker.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 80, 1, true, false));
+            }
+
+            // #140 Guetteur des Remparts : arbalète depuis hauteur >= 2,5 blocs -> +35 % dégâts + Lenteur II
+            if (atkMask.has(IDX_ARBALETE_FAUCON) && isProjectile && weapon.getItem() instanceof CrossbowItem
+                    && (attacker.getY() - victim.getY()) >= 2.5) {
+                event.setAmount(event.getAmount() * 1.35f);
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 70, 1));
+            }
+
+            // #141 Frappe des Points Vitaux : poing nu -> +6 dégâts + Lenteur IV (2 s)
+            if (atkMask.has(IDX_GANTELET_CHIRURGIEN) && !isProjectile && weapon.isEmpty()) {
+                event.setAmount(event.getAmount() + 6.0f);
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 40, 3));
+            }
+
+            // #143 Exorciste de Bataille : contre cible empoisonnée/flétrie/affaiblie -> +25 % dégâts + soin 1 cœur
+            if (atkMask.has(IDX_PURIFICATEUR_PLAIES) && !isProjectile
+                    && (victim.hasEffect(MobEffects.POISON) || victim.hasEffect(MobEffects.WITHER) || victim.hasEffect(MobEffects.WEAKNESS))) {
+                event.setAmount(event.getAmount() * 1.25f);
+                attacker.heal(2.0f);
+            }
+
+            // #147 Sentinelle des Murailles : contre un mur -> +25 % dégâts mêlée
+            if (atkMask.has(IDX_BASTION_MURAL) && !isProjectile
+                    && UniversalEnchantmentHandler.isTouchingHorizontalWall(attacker)) {
+                event.setAmount(event.getAmount() * 1.25f);
+            }
+
+            // #148 Canon d'Assaut : arbalète <= 7 blocs -> +35 % dégâts + 1 cœur d'Absorption
+            if (atkMask.has(IDX_TIR_BOUT_PORTANT_LOURD) && isProjectile && weapon.getItem() instanceof CrossbowItem
+                    && attacker.distanceTo(victim) <= 7.0f) {
+                event.setAmount(event.getAmount() * 1.35f);
+                attacker.setAbsorptionAmount(Math.max(attacker.getAbsorptionAmount(), 2.0f));
+            }
+
+            // #150 Faucheuse de Flammes Bleues : cercle de feu des âmes (3,5 blocs) + Wither II + 5 dégâts magiques
+            if (atkMask.has(IDX_TOURBILLON_AME_ARDENTE) && !isProjectile && victim.level() instanceof ServerLevel sl150) {
+                EnchantmentParticleFX.shockwaveRing(sl150, victim.getX(), victim.getY() + 0.2, victim.getZ(),
+                        ParticleTypes.SOUL_FIRE_FLAME, 3.2, 18, 0.04);
+                victim.addEffect(new MobEffectInstance(MobEffects.WITHER, 80, 1));
+                for (Mob m : sl150.getEntitiesOfClass(Mob.class, victim.getBoundingBox().inflate(3.5))) {
+                    if (!isFriendlySummon(m, attacker)) {
+                        m.addEffect(new MobEffectInstance(MobEffects.WITHER, 80, 1));
+                        if (m != victim) safeHurt(m, attacker.damageSources().magic(), 5.0f);
+                    }
+                }
+            }
+
+            // #151 Prisme de Ricochet : +35 % sur cible en Surbrillance + propage Surbrillance
+            if (atkMask.has(IDX_RICOCHET_TRACANT) && isProjectile) {
+                if (victim.hasEffect(MobEffects.GLOWING)) {
+                    event.setAmount(event.getAmount() * 1.35f);
+                }
+                victim.addEffect(new MobEffectInstance(MobEffects.GLOWING, 100, 0));
+                if (victim.level() instanceof ServerLevel sl151) {
+                    for (Mob m : sl151.getEntitiesOfClass(Mob.class, victim.getBoundingBox().inflate(4.0))) {
+                        if (!isFriendlySummon(m, attacker)) m.addEffect(new MobEffectInstance(MobEffects.GLOWING, 100, 0));
+                    }
+                }
+            }
+
+            // #152 Barrage d'Interdiction : carreaux -> Lenteur III + Faiblesse II (4 s) + élan coupé
+            if (atkMask.has(IDX_SALVE_SUPPRESSION) && isProjectile && weapon.getItem() instanceof CrossbowItem) {
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 80, 2));
+                victim.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 80, 1));
+                victim.setDeltaMovement(0.0, Math.min(0.0, victim.getDeltaMovement().y), 0.0);
+                victim.hurtMarked = true;
+            }
+
+            // #155 Hache Fend-Orage : attaque à la hache -> +35 % dégâts électriques + répare 2 durabilité
+            if (atkMask.has(IDX_ABATTEUR_OURAGAN) && !isProjectile && weapon.getItem() instanceof AxeItem) {
+                event.setAmount(event.getAmount() * 1.35f);
+                if (weapon.isDamageableItem() && weapon.getDamageValue() > 0) {
+                    weapon.setDamageValue(Math.max(0, weapon.getDamageValue() - 2));
+                }
+                EnchantmentParticleFX.burstOnEntity(victim, ParticleTypes.ELECTRIC_SPARK, 12, 0.35, 0.05);
+            }
+
+            // #157 Plongeon du Rapace : attaque en chute -> +45 % dégâts + bourrasque
+            if (atkMask.has(IDX_PIQUE_FAUCON_PLONGEANT) && !isProjectile && attacker.fallDistance > 0.25f) {
+                event.setAmount(event.getAmount() * 1.45f);
+                if (victim.level() instanceof ServerLevel sl157) {
+                    EnchantmentParticleFX.shockwaveRing(sl157, victim.getX(), victim.getY() + 0.2, victim.getZ(),
+                            ParticleTypes.GUST_EMITTER_SMALL, 3.0, 6, 0.04);
+                }
+            }
+
+            // #160 Pyromancien de Mêlée : en feu -> +35 % dégâts + 0,5 cœur soigné par coup
+            if (atkMask.has(IDX_BERSERKER_FLAMMES) && !isProjectile && attacker.isOnFire()) {
+                event.setAmount(event.getAmount() * 1.35f);
+                attacker.heal(1.0f);
+            }
+
+            // #162 Brise-Pavois Nordique : après blocage au bouclier, prochaine hache -> +45 % + étourdissement
+            if (atkMask.has(IDX_BRISE_GARDE_TONNERRE) && !isProjectile && weapon.getItem() instanceof AxeItem
+                    && now < atkSt.shieldAxeRiposteUntil) {
+                atkSt.shieldAxeRiposteUntil = 0L;
+                event.setAmount(event.getAmount() * 1.45f);
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 45, 3));
+                EnchantmentParticleFX.burstOnEntity(victim, ParticleTypes.CRIT, 14, 0.35, 0.07);
+            }
+
+            // #164 Murmure Longue-Portée : >= 14 blocs -> +40 % dégâts à l'arc
+            if (atkMask.has(IDX_TIREUR_FANTOME_MURMURE) && isProjectile && attacker.distanceTo(victim) >= 14.0f) {
+                event.setAmount(event.getAmount() * 1.40f);
+            }
+
+            // #165 Traqueur d'Agonie : cible <= 40 % PV -> +35 % dégâts + Célérité II (4 s)
+            if (atkMask.has(IDX_JUGEMENT_AGONIE) && victim.getHealth() <= victim.getMaxHealth() * 0.40f) {
+                event.setAmount(event.getAmount() * 1.35f);
+                attacker.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 80, 1, true, false));
+            }
+
+            // #167 Harpon de Vapeur Ardente : coup au Trident -> explosion de vapeur +6 dégâts de feu
+            if (atkMask.has(IDX_TRIDENT_EMPALEMENT_SOLAIRE)
+                    && (weapon.is(Items.TRIDENT) || event.getSource().getDirectEntity() instanceof ThrownTrident)
+                    && victim.level() instanceof ServerLevel sl167) {
+                EnchantmentParticleFX.shockwaveRing(sl167, victim.getX(), victim.getY() + 0.3, victim.getZ(),
+                        ParticleTypes.CLOUD, 2.8, 16, 0.04);
+                for (Mob m : sl167.getEntitiesOfClass(Mob.class, victim.getBoundingBox().inflate(3.2))) {
+                    if (!isFriendlySummon(m, attacker)) {
+                        m.setRemainingFireTicks(Math.max(m.getRemainingFireTicks(), 80));
+                        safeHurt(m, attacker.damageSources().onFire(), 6.0f);
+                    }
+                }
+            }
+
+            // #168 Alchimiste Sanguin : restaure 1 faim + Régénération I (3 s)
+            if (atkMask.has(IDX_PACTE_SANG_ECARLATE) && !isProjectile) {
+                if (attacker instanceof Player pl168) pl168.getFoodData().eat(1, 0.2f);
+                attacker.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 60, 0, true, false));
+            }
+
+            // #170 Katana Surcadencé : frappe critique/chute -> foudre en chaîne sur 4 ennemis (+7) + Célérité II
+            if (atkMask.has(IDX_LAME_SURCHARGE_CRITIQUE) && !isProjectile
+                    && (attacker.fallDistance > 0.1f || attacker.getRandom().nextInt(100) < 35)
+                    && victim.level() instanceof ServerLevel sl170) {
+                attacker.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 70, 1, true, false));
+                int arcs = 0;
+                for (Mob m : sl170.getEntitiesOfClass(Mob.class, victim.getBoundingBox().inflate(4.8))) {
+                    if (!isFriendlySummon(m, attacker) && arcs < 4) {
+                        arcs++;
+                        safeHurt(m, attacker.damageSources().lightningBolt(), 7.0f);
+                        EnchantmentParticleFX.burstOnEntity(m, ParticleTypes.ELECTRIC_SPARK, 10, 0.3, 0.05);
+                    }
+                }
+            }
+
+            // #171 Rayon Dimensionnel : flèches spectrales -> +45 % dégâts + Surbrillance
+            if (atkMask.has(IDX_SNIPER_SPECTRAL_ABSOLU) && isProjectile) {
+                event.setAmount(event.getAmount() * 1.45f);
+                victim.addEffect(new MobEffectInstance(MobEffects.GLOWING, 100, 0));
+            }
+
+            // #172 Paladin de l'Aube Pure : +65 % + soin contre morts-vivants, +35 % contre vivants
+            if (atkMask.has(IDX_INQUISITEUR_PURIFICATEUR) && !isProjectile) {
+                if (victim.getType().is(EntityTypeTags.UNDEAD)) {
+                    event.setAmount(event.getAmount() * 1.65f);
+                    attacker.heal(2.0f);
+                    EnchantmentParticleFX.burstOnEntity(victim, EnchantmentParticleFX.GOLD_DIVINE, 12, 0.35, 0.04);
+                } else {
+                    event.setAmount(event.getAmount() * 1.35f);
+                }
+            }
+
+            // #174 Seigneur du Ressac Abyssal : dans l'eau ou sous la pluie -> +40 % dégâts
+            if (atkMask.has(IDX_KRAKEN_RESSAC_MAUDIT) && attacker.isInWaterOrRain()) {
+                event.setAmount(event.getAmount() * 1.40f);
+            }
+
+            // #175 Seigneur Nocturne du Vide : la nuit -> +35 % dégâts + 20 % vol de vie
+            if (atkMask.has(IDX_PREDATEUR_VOIDLING_NOCTURNE) && attacker.level().isNight()) {
+                event.setAmount(event.getAmount() * 1.35f);
+                attacker.heal(Math.min(8.0f, event.getAmount() * 0.20f));
+            }
+
+            // #176 Mirage du Vent Vif : riposte chargée -> +45 % dégâts
+            if (atkMask.has(IDX_DANSEUR_MIRAGE_ZEPHYR) && !isProjectile && now < atkSt.mirageRiposteUntil) {
+                atkSt.mirageRiposteUntil = 0L;
+                event.setAmount(event.getAmount() * 1.45f);
+                EnchantmentParticleFX.burstOnEntity(victim, ParticleTypes.CLOUD, 12, 0.35, 0.05);
+            }
+
+            // #177 Monolithe Inébranlable : coup de hache -> onde sismique projetant les ennemis en l'air
+            if (atkMask.has(IDX_COLOSSE_RACINES_PIERRE) && !isProjectile && weapon.getItem() instanceof AxeItem
+                    && victim.level() instanceof ServerLevel sl177) {
+                EnchantmentParticleFX.shockwaveRing(sl177, victim.getX(), victim.getY() + 0.1, victim.getZ(),
+                        EnchantmentParticleFX.EARTH_OCHRE, 3.6, 18, 0.05);
+                for (Mob m : sl177.getEntitiesOfClass(Mob.class, victim.getBoundingBox().inflate(3.8))) {
+                    if (!isFriendlySummon(m, attacker)) {
+                        if (m != victim) safeHurt(m, attacker.damageSources().mobAttack(attacker), 5.0f);
+                        m.setDeltaMovement(m.getDeltaMovement().x, 0.50, m.getDeltaMovement().z);
+                        m.hurtMarked = true;
+                    }
+                }
+            }
+
+            // #179 Tempête de Mille Entailles : toutes les 4 frappes -> entaille circulaire (65 % zone) + soin 1,5 cœur
+            if (atkMask.has(IDX_MAITRE_LAMES_COMBO) && !isProjectile && victim.level() instanceof ServerLevel sl179) {
+                atkSt.thousandCutCounter++;
+                if (atkSt.thousandCutCounter >= 4) {
+                    atkSt.thousandCutCounter = 0;
+                    attacker.heal(3.0f);
+                    float cleaveDmg = event.getAmount() * 0.65f;
+                    EnchantmentParticleFX.slashArc(attacker, EnchantmentParticleFX.CRIMSON_BLOOD, ParticleTypes.SWEEP_ATTACK, 3.4, 16);
+                    for (Mob m : sl179.getEntitiesOfClass(Mob.class, attacker.getBoundingBox().inflate(3.8))) {
+                        if (m != victim && !isFriendlySummon(m, attacker)) {
+                            safeHurt(m, attacker.damageSources().mobAttack(attacker), cleaveDmg);
+                        }
+                    }
+                }
+            }
+
+            // #183 Seigneur de l'Effroi Sculk : cible affaiblie/ralentie/obscurcie -> +35 % dégâts + soin 0,5 cœur
+            if (atkMask.has(IDX_TERREUR_ABYSSE_WARDEN)
+                    && (victim.hasEffect(MobEffects.WEAKNESS) || victim.hasEffect(MobEffects.MOVEMENT_SLOWDOWN) || victim.hasEffect(MobEffects.DARKNESS))) {
+                event.setAmount(event.getAmount() * 1.35f);
+                attacker.heal(1.0f);
+            }
+
+            // #184 Pacte de la Faux Immortelle : frappe à la houe -> 3 cœurs d'Absorption
+            if (atkMask.has(IDX_FAUCHEUR_SACRIFICE_IMMORTEL) && !isProjectile && weapon.getItem() instanceof HoeItem) {
+                attacker.setAbsorptionAmount(Math.max(attacker.getAbsorptionAmount(), 6.0f));
+            }
+
+            // #185 Cataphractaire Foudroyant : sur monture -> foudre + +45 % dégâts
+            if (atkMask.has(IDX_CAVALIER_TONNERRE_ROYAL) && attacker.isPassenger() && victim.level() instanceof ServerLevel sl185) {
+                event.setAmount(event.getAmount() * 1.45f);
+                spawnVisualLightning(sl185, victim.position());
+            }
+
+            // #187 Poing d'Adamantine : à mains nues -> +9 dégâts, Faiblesse II sur la cible et Résistance II (4 s)
+            if (atkMask.has(IDX_BOXEUR_DIAMANT_TITAN) && !isProjectile && weapon.isEmpty()) {
+                event.setAmount(event.getAmount() + 9.0f);
+                victim.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 60, 1));
+                attacker.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 80, 1, true, false));
+            }
+
+            // #188 Éveil de la Chimère Prismatique : +25 % à tous vos dégâts
+            if (atkMask.has(IDX_CHIMERE_SEPT_COEURS)) {
+                event.setAmount(event.getAmount() * 1.25f);
+            }
+
+            // #189 Bourreau des Colosses : hache -> +45 % dégâts + onde tellurique 4 blocs
+            if (atkMask.has(IDX_EXECUTEUR_APOCALYPSE_HACHE) && !isProjectile && weapon.getItem() instanceof AxeItem
+                    && victim.level() instanceof ServerLevel sl189) {
+                event.setAmount(event.getAmount() * 1.45f);
+                EnchantmentParticleFX.shockwaveRing(sl189, victim.getX(), victim.getY() + 0.1, victim.getZ(),
+                        EnchantmentParticleFX.EARTH_OCHRE, 3.8, 20, 0.05);
+                for (Mob m : sl189.getEntitiesOfClass(Mob.class, victim.getBoundingBox().inflate(4.0))) {
+                    if (m != victim && !isFriendlySummon(m, attacker)) {
+                        safeHurt(m, attacker.damageSources().mobAttack(attacker), 6.0f);
+                    }
+                }
+            }
+
+            // #192 Archonte de la Nécropole : houe -> +45 % dégâts d'âme
+            if (atkMask.has(IDX_FAUCHEUSE_NECROPOLE_ROYALE) && !isProjectile && weapon.getItem() instanceof HoeItem) {
+                event.setAmount(event.getAmount() * 1.45f);
+            }
+
+            // #194 Lame Fantôme de l'Outre-Monde : Invisible ou accroupi -> +100 % dégâts
+            if (atkMask.has(IDX_FANTOME_LAME_DIMENSIONNELLE) && !isProjectile
+                    && (attacker.hasEffect(MobEffects.INVISIBILITY) || attacker.isShiftKeyDown())) {
+                event.setAmount(event.getAmount() * 2.00f);
+            }
+
+            // #195 Archonte des Marées Célestes : Trident -> foudre + +40 % dégâts + soin 1,5 cœur
+            if (atkMask.has(IDX_ARCHONTE_MAREES_CELESTES)
+                    && (weapon.is(Items.TRIDENT) || event.getSource().getDirectEntity() instanceof ThrownTrident)
+                    && victim.level() instanceof ServerLevel sl195) {
+                event.setAmount(event.getAmount() * 1.40f);
+                attacker.heal(3.0f);
+                spawnVisualLightning(sl195, victim.position());
+            }
+
+            // #196 Banquet du Titan Invincible : faim >= 14 -> +35 % dégâts mêlée
+            if (atkMask.has(IDX_JUGGERNAUT_GOURMAND_COLOSSAL) && !isProjectile
+                    && attacker instanceof Player ap196 && ap196.getFoodData().getFoodLevel() >= 14) {
+                event.setAmount(event.getAmount() * 1.35f);
+            }
+
+            // #197 Canonnier d'Apocalypse Solaire : carreaux d'arbalète -> +40 % dégâts explosifs
+            if (atkMask.has(IDX_ARTILLEUR_METEOR_ECARLATE) && isProjectile && weapon.getItem() instanceof CrossbowItem) {
+                event.setAmount(event.getAmount() * 1.40f);
+            }
+
+            // #198 Héraut des Malédictions Brisées : +60 % dégâts toutes dimensions + 18 % vol de vie
+            if (atkMask.has(IDX_CHAMPION_MAUDIT_TRANSCENDANT)) {
+                event.setAmount(event.getAmount() * 1.60f);
+                attacker.heal(Math.min(8.0f, event.getAmount() * 0.18f));
+            }
+
+            // #200 Dieu-Bourreau du Cataclysme : hache -> +50 % dégâts + séisme volcanique
+            if (atkMask.has(IDX_DIEU_HACHE_CATACLYSME) && !isProjectile && weapon.getItem() instanceof AxeItem
+                    && victim.level() instanceof ServerLevel sl200) {
+                event.setAmount(event.getAmount() * 1.50f);
+                EnchantmentParticleFX.shockwaveRing(sl200, victim.getX(), victim.getY() + 0.15, victim.getZ(),
+                        ParticleTypes.LAVA, 4.4, 22, 0.06);
+                for (Mob m : sl200.getEntitiesOfClass(Mob.class, victim.getBoundingBox().inflate(4.5))) {
+                    if (!isFriendlySummon(m, attacker)) {
+                        m.setRemainingFireTicks(Math.max(m.getRemainingFireTicks(), 100));
+                        if (m != victim) safeHurt(m, attacker.damageSources().onFire(), 8.0f);
+                    }
+                }
+            }
+
+            // #202 Empereur de la Faux du Néant : houe -> fauchage 4 blocs (+55 %) + exécution sous 25 % PV
+            if (atkMask.has(IDX_EMPEREUR_FAUX_NEANT) && !isProjectile && weapon.getItem() instanceof HoeItem
+                    && victim.level() instanceof ServerLevel sl202) {
+                event.setAmount(event.getAmount() * 1.55f);
+                float scytheAoE = event.getAmount() * 0.50f;
+                for (Mob m : sl202.getEntitiesOfClass(Mob.class, attacker.getBoundingBox().inflate(4.0))) {
+                    if (m != victim && !isFriendlySummon(m, attacker)) {
+                        safeHurt(m, attacker.damageSources().magic(), scytheAoE);
+                    }
+                }
+                if (!(victim instanceof Player) && victim.getMaxHealth() < 150.0f
+                        && (victim.getHealth() - event.getAmount()) <= victim.getMaxHealth() * 0.25f) {
+                    event.setAmount(victim.getHealth() + 10.0f);
+                }
+            }
+
+            // #204 Tireur Céleste Omniscient : +55 % dégâts à l'arc
+            if (atkMask.has(IDX_SNIPER_CELESTE_OMNISCIENT) && isProjectile
+                    && (weapon.getItem() instanceof BowItem || event.getSource().getDirectEntity() instanceof AbstractArrow)) {
+                event.setAmount(event.getAmount() * 1.55f);
+            }
+
+            // #205 Bastion Immortel de l'Égide : +80 % de riposte après un coup reçu
+            if (atkMask.has(IDX_CITADELLE_IMMORTELLE_EGIDE) && now < atkSt.aegisRetaliationUntil) {
+                atkSt.aegisRetaliationUntil = 0L;
+                event.setAmount(event.getAmount() * 1.80f);
+            }
+
+            // #206 Avatar de la Chimère Primordiale : +40 % dégâts
+            if (atkMask.has(IDX_AVATAR_CHIMERE_PRIMORDIALE)) {
+                event.setAmount(event.getAmount() * 1.40f);
+            }
+
+            // #207 Seigneur du Fléau Émeraude : +50 % contre les cibles empoisonnées ou flétries
+            if (atkMask.has(IDX_SEIGNEUR_FLEAU_TOXIQUE)
+                    && (victim.hasEffect(MobEffects.POISON) || victim.hasEffect(MobEffects.WITHER))) {
+                event.setAmount(event.getAmount() * 1.50f);
+            }
+
+            // #209 Élu Astral de la Chance Infinie : +35 % dégâts critiques stellaires + nova curatrice
+            if (atkMask.has(IDX_TRANSCENDANCE_CHANCE_INFINIE) && !isProjectile
+                    && (attacker.fallDistance > 0.1f || attacker.getRandom().nextInt(100) < 35)
+                    && victim.level() instanceof ServerLevel sl209) {
+                event.setAmount(event.getAmount() * 1.35f);
+                attacker.heal(3.0f);
+                EnchantmentParticleFX.shockwaveRing(sl209, victim.getX(), victim.getY() + 0.3, victim.getZ(),
+                        ParticleTypes.END_ROD, 3.6, 18, 0.04);
+                for (Mob m : sl209.getEntitiesOfClass(Mob.class, victim.getBoundingBox().inflate(3.8))) {
+                    if (m != victim && !isFriendlySummon(m, attacker)) {
+                        safeHurt(m, attacker.damageSources().magic(), 5.0f);
+                    }
+                }
+            }
         } catch (Throwable t) {
             guard("onLivingHurt", t);
         }
@@ -1466,6 +2381,45 @@ public final class EnchantmentComboHandler {
                     }
                 }
             }
+
+            // ---- T332-COMBOS-210 : BOUCLIER (#118, #136, #162, #191) ----
+            PlayerComboState stDef = stateOf(defender);
+
+            // #118 Fantassin Trempé : soin 1 cœur (4 s recharge) + repousse l'assaillant
+            if (mask.has(IDX_GARDE_ENDURCI)) {
+                if (now >= stDef.shieldHealCd) {
+                    stDef.shieldHealCd = now + 80L;
+                    defender.heal(2.0f);
+                }
+                if (attacker instanceof LivingEntity liv118) {
+                    Vec3 away = liv118.position().subtract(defender.position());
+                    if (away.lengthSqr() > 0.01) {
+                        liv118.setDeltaMovement(away.normalize().scale(0.55).add(0, 0.20, 0));
+                        liv118.hurtMarked = true;
+                    }
+                }
+            }
+
+            // #136 Rempart de Ronces : charge l'armure d'épines pendant 5 s
+            if (mask.has(IDX_PROVOCATEUR_EPINEUX)) {
+                stDef.thornsShieldChargeUntil = now + 100L;
+            }
+
+            // #162 Brise-Pavois Nordique : charge la prochaine frappe à la hache (+45 % + étourdissement)
+            if (mask.has(IDX_BRISE_GARDE_TONNERRE)) {
+                stDef.shieldAxeRiposteUntil = now + 100L;
+            }
+
+            // #191 Égide Solaire Inviolable : renvoie 150 % des dégâts bloqués, soigne 2 cœurs et Résistance III (4 s)
+            if (mask.has(IDX_CITADELLE_MIROIR_DIVIN)) {
+                defender.heal(4.0f);
+                defender.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 80, 2, true, false));
+                if (attacker instanceof LivingEntity liv191) {
+                    float reflected = Math.max(4.0f, event.getBlockedDamage() * 1.50f);
+                    safeHurt(liv191, defender.damageSources().thorns(defender), reflected);
+                    EnchantmentParticleFX.burstOnEntity(liv191, EnchantmentParticleFX.GOLD_DIVINE, 14, 0.35, 0.05);
+                }
+            }
         } catch (Throwable t) {
             guard("onShieldBlock", t);
         }
@@ -1539,6 +2493,71 @@ public final class EnchantmentComboHandler {
             if (mask.has(IDX_MAITRE_TEMPS_IMMUABLE) && killer instanceof Player pl) {
                 pl.giveExperiencePoints(5);
             }
+
+            // ---- T332-COMBOS-210 : ÉLIMINATIONS (#124, #128, #134, #156, #184, #189, #192, #194, #202) ----
+            ItemStack kWeapon = killer.getMainHandItem();
+
+            // #124 Chasseur de Primes : 2 points de faim + 25 % Émeraude
+            if (mask.has(IDX_CHASSEUR_PILLARDS) && dead instanceof Mob) {
+                if (killer instanceof Player pl124) pl124.getFoodData().eat(2, 0.4f);
+                if (dead.level() instanceof ServerLevel sl124 && killer.getRandom().nextInt(100) < 25) {
+                    sl124.addFreshEntity(new ItemEntity(sl124, dead.getX(), dead.getY() + 0.5, dead.getZ(),
+                            new ItemStack(Items.EMERALD)));
+                }
+            }
+
+            // #128 Bûcheron Frénétique : élimination à la hache -> Célérité II (5 s)
+            if (mask.has(IDX_FENDEUR_BRUTAL) && kWeapon.getItem() instanceof AxeItem) {
+                killer.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 100, 1, true, false));
+            }
+
+            // #134 Moissonneur Prospère : élimination à la houe -> +10 XP + répare 3 durabilité
+            if (mask.has(IDX_FAUCHEUR_XP) && kWeapon.getItem() instanceof HoeItem) {
+                if (killer instanceof Player pl134) pl134.giveExperiencePoints(10);
+                if (kWeapon.isDamageableItem() && kWeapon.getDamageValue() > 0) {
+                    kWeapon.setDamageValue(Math.max(0, kWeapon.getDamageValue() - 3));
+                }
+            }
+
+            // #156 Moisson Écarlate : élimination à la houe -> +3 cœurs d'Absorption + Vitesse II (5 s)
+            if (mask.has(IDX_FAUCHEUSE_SANGLANTE) && kWeapon.getItem() instanceof HoeItem) {
+                killer.setAbsorptionAmount(Math.max(killer.getAbsorptionAmount(), 6.0f));
+                killer.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 100, 1, true, false));
+            }
+
+            // #184 Pacte de la Faux Immortelle : soigne 2 cœurs sur élimination
+            if (mask.has(IDX_FAUCHEUR_SACRIFICE_IMMORTEL)) {
+                killer.heal(4.0f);
+            }
+
+            // #189 Bourreau des Colosses : élimination à la hache -> +2,5 cœurs soignés
+            if (mask.has(IDX_EXECUTEUR_APOCALYPSE_HACHE) && kWeapon.getItem() instanceof AxeItem) {
+                killer.heal(5.0f);
+            }
+
+            // #192 Archonte de la Nécropole : élimination à la houe -> déflagration nécrotique + soin 2,5 cœurs
+            if (mask.has(IDX_FAUCHEUSE_NECROPOLE_ROYALE) && kWeapon.getItem() instanceof HoeItem) {
+                killer.heal(5.0f);
+                if (dead.level() instanceof ServerLevel sl192) {
+                    EnchantmentParticleFX.shockwaveRing(sl192, dead.getX(), dead.getY() + 0.3, dead.getZ(),
+                            ParticleTypes.SCULK_SOUL, 3.5, 20, 0.05);
+                    for (Mob m : sl192.getEntitiesOfClass(Mob.class, dead.getBoundingBox().inflate(3.8))) {
+                        if (m != dead && !isFriendlySummon(m, killer)) {
+                            safeHurt(m, killer.damageSources().magic(), 7.0f);
+                        }
+                    }
+                }
+            }
+
+            // #194 Lame Fantôme de l'Outre-Monde : réapplique Invisibilité 4 s sur élimination
+            if (mask.has(IDX_FANTOME_LAME_DIMENSIONNELLE)) {
+                killer.addEffect(new MobEffectInstance(MobEffects.INVISIBILITY, 80, 0, true, false));
+            }
+
+            // #202 Empereur de la Faux du Néant : élimination à la houe -> soigne 3 cœurs
+            if (mask.has(IDX_EMPEREUR_FAUX_NEANT) && kWeapon.getItem() instanceof HoeItem) {
+                killer.heal(6.0f);
+            }
         } catch (Throwable t) {
             guard("onLivingDeath", t);
         }
@@ -1573,6 +2592,23 @@ public final class EnchantmentComboHandler {
                 PlayerComboState st = stateOf(shooter);
                 long now = event.getLevel().getGameTime();
 
+                // #144 Voyageur Astral : lancer une Perle de l'Ender -> Vitesse II + 2 cœurs d'Absorption (6 s)
+                if (proj instanceof ThrownEnderpearl && mask.has(IDX_MARCHEUR_END_PERLE)) {
+                    shooter.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 120, 1, true, false));
+                    shooter.setAbsorptionAmount(Math.max(shooter.getAbsorptionAmount(), 4.0f));
+                }
+
+                // #146 Harponneur Foudroyant : lancer / tracter la ligne -> Vitesse II + arc électrique proche
+                if (proj instanceof FishingHook && mask.has(IDX_HARPON_TONNERRE) && event.getLevel() instanceof ServerLevel sl146) {
+                    shooter.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 80, 1, true, false));
+                    for (Mob m : sl146.getEntitiesOfClass(Mob.class, shooter.getBoundingBox().inflate(3.0))) {
+                        if (!isFriendlySummon(m, shooter)) {
+                            safeHurt(m, shooter.damageSources().lightningBolt(), 4.0f);
+                            EnchantmentParticleFX.burstOnEntity(m, ParticleTypes.ELECTRIC_SPARK, 8, 0.25, 0.04);
+                        }
+                    }
+                }
+
                 // #093 Avatar du Zéphyr : bourrasque perforante à chaque lancer de Trident !
                 if (proj instanceof ThrownTrident tri) {
                     if (mask.has(IDX_AVATAR_ZEPHYR) && event.getLevel() instanceof ServerLevel slZ) {
@@ -1580,8 +2616,20 @@ public final class EnchantmentComboHandler {
                         EnchantmentParticleFX.shockwaveRing(slZ, shooter.getX(), shooter.getY() + 1.0, shooter.getZ(),
                                 ParticleTypes.GUST_EMITTER_SMALL, 1.5, 4, 0.03);
                     }
+                    if (mask.has(IDX_ARCHONTE_MAREES_CELESTES)) {
+                        tri.setDeltaMovement(tri.getDeltaMovement().scale(1.40));
+                    }
                     if (mask.has(IDX_TRIDENT_RETOUR_EXPLOSIF)) {
                         tri.getPersistentData().putBoolean("slb_combo75_explosive", true);
+                    }
+                    if (mask.has(IDX_PLONGEUR_CORAIL)) {
+                        tri.getPersistentData().putBoolean("slb_c125_coral", true);
+                    }
+                    if (mask.has(IDX_VORTEX_ELECTRIQUE_MARIN)) {
+                        tri.getPersistentData().putBoolean("slb_c153_vortex", true);
+                    }
+                    if (mask.has(IDX_TRIDENT_EMPALEMENT_SOLAIRE)) {
+                        tri.getPersistentData().putBoolean("slb_c167_steam", true);
                     }
                 }
 
@@ -1632,6 +2680,19 @@ public final class EnchantmentComboHandler {
                     if (mask.has(IDX_PLUIE_CATACLYSMIQUE) && !shooter.onGround()) arrow.getPersistentData().putBoolean("slb_combo22_apocalypse", true);
                     if (mask.has(IDX_DRAGONNIER_END)) arrow.getPersistentData().putBoolean("slb_c95_dragon", true);
                     if (mask.has(IDX_VALKYRIE_SUPERSONIQUE) && shooter.isFallFlying()) arrow.getPersistentData().putBoolean("slb_c102_valkyrie", true);
+                    if (mask.has(IDX_ECLAIREUR_FLAMBEAU)) {
+                        arrow.getPersistentData().putBoolean("slb_c113_lantern", true);
+                        shooter.removeEffect(MobEffects.DARKNESS);
+                    }
+                    if (mask.has(IDX_ARCHER_OASIS)) arrow.getPersistentData().putBoolean("slb_c131_oasis", true);
+                    if (mask.has(IDX_ARCHER_DESERTIQUE)) arrow.getPersistentData().putBoolean("slb_c132_sirocco", true);
+                    if (mask.has(IDX_ASSASSIN_ECHANGE)) arrow.getPersistentData().putBoolean("slb_c159_swap", true);
+                    if (mask.has(IDX_SNIPER_SPECTRAL_ABSOLU)) arrow.setNoGravity(true);
+                    if (mask.has(IDX_ARTILLEUR_CHAOS_ALCHIMIQUE)) arrow.getPersistentData().putBoolean("slb_c178_chaos", true);
+                    if (mask.has(IDX_VOLTIGEUR_PLONGEON_METEORE)) arrow.getPersistentData().putBoolean("slb_c181_meteor", true);
+                    if (mask.has(IDX_ARCHER_DISTORSION_VIDE)) arrow.getPersistentData().putBoolean("slb_c186_rift", true);
+                    if (mask.has(IDX_TEMPETE_ASTRALE_INFINIE)) arrow.getPersistentData().putBoolean("slb_c190_starstorm", true);
+                    if (mask.has(IDX_ARTILLEUR_METEOR_ECARLATE)) arrow.getPersistentData().putBoolean("slb_c197_solar", true);
                 }
             }
         } catch (Throwable t) {
@@ -1677,13 +2738,47 @@ public final class EnchantmentComboHandler {
             if (!(proj.level() instanceof ServerLevel sl)) return;
             Vec3 hit = event.getRayTraceResult().getLocation();
 
-            // #075 Trident à Retour Explosif : onde explosive sécurisée sans blesser le lanceur
-            if (proj instanceof ThrownTrident tri && tri.getPersistentData().getBoolean("slb_combo75_explosive")) {
-                tri.getPersistentData().remove("slb_combo75_explosive");
-                EnchantmentParticleFX.shockwaveRing(sl, hit.x, hit.y + 0.2, hit.z, ParticleTypes.EXPLOSION, 2.5, 6, 0.02);
-                sl.playSound(null, BlockPos.containing(hit), SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.65f, 1.3f);
-                for (Mob m : sl.getEntitiesOfClass(Mob.class, new AABB(hit, hit).inflate(3.5))) {
-                    if (!isFriendlySummon(m, shooter)) safeHurt(m, shooter.damageSources().trident(tri, shooter), 6.5f);
+            // #075 / #125 / #153 / #167 : Impacts de Trident
+            if (proj instanceof ThrownTrident tri) {
+                var triTag = tri.getPersistentData();
+                if (triTag.getBoolean("slb_combo75_explosive")) {
+                    triTag.remove("slb_combo75_explosive");
+                    EnchantmentParticleFX.shockwaveRing(sl, hit.x, hit.y + 0.2, hit.z, ParticleTypes.EXPLOSION, 2.5, 6, 0.02);
+                    sl.playSound(null, BlockPos.containing(hit), SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.65f, 1.3f);
+                    for (Mob m : sl.getEntitiesOfClass(Mob.class, new AABB(hit, hit).inflate(3.5))) {
+                        if (!isFriendlySummon(m, shooter)) safeHurt(m, shooter.damageSources().trident(tri, shooter), 6.5f);
+                    }
+                }
+                if (triTag.getBoolean("slb_c125_coral")) {
+                    triTag.remove("slb_c125_coral");
+                    if (shooter.isInWaterOrRain()) {
+                        shooter.heal(2.0f);
+                        shooter.setAirSupply(shooter.getMaxAirSupply());
+                    }
+                }
+                if (triTag.getBoolean("slb_c153_vortex")) {
+                    triTag.remove("slb_c153_vortex");
+                    EnchantmentParticleFX.shockwaveRing(sl, hit.x, hit.y + 0.2, hit.z, ParticleTypes.NAUTILUS, 3.6, 20, 0.05);
+                    for (Mob m : sl.getEntitiesOfClass(Mob.class, new AABB(hit, hit).inflate(4.0))) {
+                        if (!isFriendlySummon(m, shooter)) {
+                            Vec3 pull = hit.subtract(m.position());
+                            if (pull.lengthSqr() > 0.05) {
+                                m.setDeltaMovement(pull.normalize().scale(0.55).add(0, 0.18, 0));
+                                m.hurtMarked = true;
+                            }
+                            safeHurt(m, shooter.damageSources().lightningBolt(), 6.0f);
+                        }
+                    }
+                }
+                if (triTag.getBoolean("slb_c167_steam")) {
+                    triTag.remove("slb_c167_steam");
+                    EnchantmentParticleFX.shockwaveRing(sl, hit.x, hit.y + 0.2, hit.z, ParticleTypes.CLOUD, 2.8, 16, 0.04);
+                    for (Mob m : sl.getEntitiesOfClass(Mob.class, new AABB(hit, hit).inflate(3.2))) {
+                        if (!isFriendlySummon(m, shooter)) {
+                            m.setRemainingFireTicks(Math.max(m.getRemainingFireTicks(), 80));
+                            safeHurt(m, shooter.damageSources().onFire(), 6.0f);
+                        }
+                    }
                 }
                 return;
             }
@@ -1849,6 +2944,101 @@ public final class EnchantmentComboHandler {
                     if (!isFriendlySummon(m, shooter)) safeHurt(m, shooter.damageSources().lightningBolt(), 9.0f);
                 }
             }
+
+            // ---- T332-COMBOS-210 : IMPACTS DE FLÈCHES & CARREAUX (#113..#197) ----
+
+            // #113 Veilleur Porte-Lanterne : Surbrillance 5 s sur les monstres à 6 blocs
+            if (tag.getBoolean("slb_c113_lantern")) {
+                tag.remove("slb_c113_lantern");
+                for (Mob m : sl.getEntitiesOfClass(Mob.class, new AABB(hit, hit).inflate(6.0))) {
+                    if (!isFriendlySummon(m, shooter)) m.addEffect(new MobEffectInstance(MobEffects.GLOWING, 100, 0));
+                }
+            }
+
+            // #131 Gardien de l'Oasis : soigne 2 cœurs et éteint les flammes autour de l'impact
+            if (tag.getBoolean("slb_c131_oasis")) {
+                tag.remove("slb_c131_oasis");
+                for (Player pl131 : sl.getEntitiesOfClass(Player.class, new AABB(hit, hit).inflate(4.5))) {
+                    pl131.heal(4.0f);
+                    pl131.clearFire();
+                }
+                if (shooter.position().distanceToSqr(hit) <= 20.25) {
+                    shooter.heal(4.0f);
+                    shooter.clearFire();
+                }
+            }
+
+            // #132 Mirage du Sirocco : Force I (6 s) + 2 cœurs d'Absorption
+            if (tag.getBoolean("slb_c132_sirocco")) {
+                tag.remove("slb_c132_sirocco");
+                shooter.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 120, 0, true, false));
+                shooter.setAbsorptionAmount(Math.max(shooter.getAbsorptionAmount(), 4.0f));
+            }
+
+            // #159 Permutation Fantôme : Cécité 3 s sur la cible + Invisibilité 4 s & Force I
+            if (tag.getBoolean("slb_c159_swap") && event.getRayTraceResult() instanceof EntityHitResult ehr159
+                    && ehr159.getEntity() instanceof LivingEntity liv159) {
+                tag.remove("slb_c159_swap");
+                liv159.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 60, 0));
+                shooter.addEffect(new MobEffectInstance(MobEffects.INVISIBILITY, 80, 0, true, false));
+                shooter.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 80, 0, true, false));
+            }
+
+            // #178 Bombardier du Chaos : brume alchimique 4 blocs (Wither II, Faiblesse II, Lenteur II — 5 s)
+            if (tag.getBoolean("slb_c178_chaos")) {
+                tag.remove("slb_c178_chaos");
+                EnchantmentParticleFX.shockwaveRing(sl, hit.x, hit.y + 0.2, hit.z, ParticleTypes.DRAGON_BREATH, 3.6, 20, 0.03);
+                for (Mob m : sl.getEntitiesOfClass(Mob.class, new AABB(hit, hit).inflate(4.0))) {
+                    if (!isFriendlySummon(m, shooter)) {
+                        m.addEffect(new MobEffectInstance(MobEffects.WITHER, 100, 1));
+                        m.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 100, 1));
+                        m.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 100, 1));
+                    }
+                }
+            }
+
+            // #181 Comète à Grappin : charge les bottes pendant 6 s
+            if (tag.getBoolean("slb_c181_meteor")) {
+                tag.remove("slb_c181_meteor");
+                stateOf(shooter).grappleMeteorUntil = sl.getGameTime() + 120L;
+            }
+
+            // #186 Archer des Failles Astrales : faille gravitationnelle (5 dégâts magiques) + 6 s anti-chute
+            if (tag.getBoolean("slb_c186_rift")) {
+                tag.remove("slb_c186_rift");
+                stateOf(shooter).riftFallImmuneUntil = sl.getGameTime() + 120L;
+                EnchantmentParticleFX.shockwaveRing(sl, hit.x, hit.y + 0.2, hit.z,
+                        EnchantmentParticleFX.SHADOW_VIOLET, 3.2, 18, 0.04);
+                for (Mob m : sl.getEntitiesOfClass(Mob.class, new AABB(hit, hit).inflate(3.5))) {
+                    if (!isFriendlySummon(m, shooter)) {
+                        safeHurt(m, shooter.damageSources().magic(), 5.0f);
+                    }
+                }
+            }
+
+            // #190 Tempête d'Étoiles Foudroyantes : foudroie 4,5 blocs (+8 dégâts) + Vitesse III (5 s)
+            if (tag.getBoolean("slb_c190_starstorm")) {
+                tag.remove("slb_c190_starstorm");
+                spawnVisualLightning(sl, hit);
+                shooter.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 100, 2, true, false));
+                for (Mob m : sl.getEntitiesOfClass(Mob.class, new AABB(hit, hit).inflate(4.5))) {
+                    if (!isFriendlySummon(m, shooter)) {
+                        safeHurt(m, shooter.damageSources().lightningBolt(), 8.0f);
+                    }
+                }
+            }
+
+            // #197 Canonnier d'Apocalypse Solaire : impact explosif ardent
+            if (tag.getBoolean("slb_c197_solar")) {
+                tag.remove("slb_c197_solar");
+                EnchantmentParticleFX.shockwaveRing(sl, hit.x, hit.y + 0.2, hit.z, ParticleTypes.FLAME, 3.2, 18, 0.05);
+                for (Mob m : sl.getEntitiesOfClass(Mob.class, new AABB(hit, hit).inflate(3.5))) {
+                    if (!isFriendlySummon(m, shooter)) {
+                        m.setRemainingFireTicks(Math.max(m.getRemainingFireTicks(), 100));
+                        safeHurt(m, shooter.damageSources().onFire(), 6.0f);
+                    }
+                }
+            }
         } catch (Throwable t) {
             guard("onProjectileImpact", t);
         }
@@ -2012,6 +3202,104 @@ public final class EnchantmentComboHandler {
             if (mask.has(IDX_MAITRE_TEMPS_IMMUABLE) && state.is(Tags.Blocks.ORES)) {
                 player.giveExperiencePoints(3);
             }
+
+            // ---- T332-COMBOS-210 : MINAGE, BOIS, PELLE & RÉCOLTE (#111..#203) ----
+            ItemStack heldTool = player.getMainHandItem();
+
+            // #111 Forestier Infatigable : bûche -> 1 faim + Vitesse I (5 s)
+            if (mask.has(IDX_BUCHERON_INFATIGABLE) && state.is(BlockTags.LOGS)) {
+                player.getFoodData().eat(1, 0.3f);
+                player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 100, 0, true, false));
+            }
+
+            // #112 Étayeur de Galerie : miner sous terre -> Vision Nocturne temporaire
+            if (mask.has(IDX_MINEUR_STABILISATEUR) && !sl.canSeeSky(pos)) {
+                player.addEffect(new MobEffectInstance(MobEffects.NIGHT_VISION, 240, 0, true, false));
+            }
+
+            // #115 Paysan Rassasié : récolte mature -> 1 point de faim + saturation
+            if (mask.has(IDX_MOISSONNEUR_MATINAL)
+                    && state.getBlock() instanceof CropBlock crop115 && crop115.isMaxAge(state)) {
+                player.getFoodData().eat(1, 0.4f);
+            }
+
+            // #116 Orpailleur des Rivières : sable/gravier/boue -> 18 % pépites d'or ou fer brut
+            if (mask.has(IDX_TERRASSIER_ORPAILLEUR)
+                    && (state.is(BlockTags.SAND) || state.is(Blocks.GRAVEL) || state.is(Blocks.MUD) || state.is(Blocks.CLAY))
+                    && sl.random.nextInt(100) < 18) {
+                ItemStack panLoot = sl.random.nextBoolean()
+                        ? new ItemStack(Items.GOLD_NUGGET, 2)
+                        : new ItemStack(Items.RAW_IRON, 1);
+                sl.addFreshEntity(new ItemEntity(sl, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, panLoot));
+            }
+
+            // #129 Tailleur de Gemmes : minerai -> +3 XP + répare 1 durabilité
+            if (mask.has(IDX_VEINE_PRUDENTE) && state.is(Tags.Blocks.ORES)) {
+                player.giveExperiencePoints(3);
+                if (heldTool.isDamageableItem() && heldTool.getDamageValue() > 0) {
+                    heldTool.setDamageValue(Math.max(0, heldTool.getDamageValue() - 1));
+                }
+            }
+
+            // #135 Sapeur de Galerie : creuser à la pelle -> Célérité II + Résistance I (5 s) + recul proche
+            if (mask.has(IDX_TAUPE_FOREUSE) && state.is(BlockTags.MINEABLE_WITH_SHOVEL)
+                    && heldTool.getItem() instanceof ShovelItem) {
+                player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 100, 1, true, false));
+                player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 100, 0, true, false));
+                for (Mob m : sl.getEntitiesOfClass(Mob.class, player.getBoundingBox().inflate(3.0))) {
+                    if (!isFriendlySummon(m, player)) {
+                        Vec3 away = m.position().subtract(player.position());
+                        if (away.lengthSqr() > 0.01) {
+                            m.setDeltaMovement(away.normalize().scale(0.50).add(0, 0.18, 0));
+                            m.hurtMarked = true;
+                        }
+                    }
+                }
+            }
+
+            // #149 Sondeur des Profondeurs : minerai -> Surbrillance monstres 12 blocs (6 s) + Célérité II
+            if (mask.has(IDX_PROSPECTEUR_RADAR) && state.is(Tags.Blocks.ORES)) {
+                player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 100, 1, true, false));
+                for (Mob m : sl.getEntitiesOfClass(Mob.class, player.getBoundingBox().inflate(12.0))) {
+                    if (!isFriendlySummon(m, player)) m.addEffect(new MobEffectInstance(MobEffects.GLOWING, 120, 0));
+                }
+            }
+
+            // #154 Haut-Fourneau Souterrain : minerai -> +6 XP, Régénération I (4 s) + 30 % lingot fer/or
+            if (mask.has(IDX_FORGE_FILON_ARDENT) && state.is(Tags.Blocks.ORES)) {
+                player.giveExperiencePoints(6);
+                player.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 80, 0, true, false));
+                if (sl.random.nextInt(100) < 30) {
+                    ItemStack ingot154 = state.is(BlockTags.GOLD_ORES) ? new ItemStack(Items.GOLD_INGOT) : new ItemStack(Items.IRON_INGOT);
+                    sl.addFreshEntity(new ItemEntity(sl, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, ingot154));
+                }
+            }
+
+            // #180 Foreur Géomancien : minerai -> répare 2 durabilité, Résistance II + 35 % Or brut/Émeraude/Diamant
+            if (mask.has(IDX_FOREUR_COEUR_MONDE) && state.is(Tags.Blocks.ORES)) {
+                if (heldTool.isDamageableItem() && heldTool.getDamageValue() > 0) {
+                    heldTool.setDamageValue(Math.max(0, heldTool.getDamageValue() - 2));
+                }
+                player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 100, 1, true, false));
+                if (sl.random.nextInt(100) < 35) {
+                    int r180 = sl.random.nextInt(10);
+                    ItemStack bonus180 = r180 < 6 ? new ItemStack(Items.RAW_GOLD)
+                            : r180 < 9 ? new ItemStack(Items.EMERALD) : new ItemStack(Items.DIAMOND);
+                    sl.addFreshEntity(new ItemEntity(sl, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, bonus180));
+                }
+            }
+
+            // #193 Forgeron du Noyau Stellaire : minerai -> 40 % lingot fondu bonus
+            if (mask.has(IDX_SEIGNEUR_FORGES_STELLAIRES) && state.is(Tags.Blocks.ORES) && sl.random.nextInt(100) < 40) {
+                ItemStack ingot193 = state.is(BlockTags.GOLD_ORES) ? new ItemStack(Items.GOLD_INGOT) : new ItemStack(Items.IRON_INGOT);
+                sl.addFreshEntity(new ItemEntity(sl, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, ingot193));
+            }
+
+            // #203 Forgeron Divin des Reliques : minerai -> 25 % gemme bonus (Diamant ou Émeraude)
+            if (mask.has(IDX_FORGERON_DIVIN_RELIQUE) && state.is(Tags.Blocks.ORES) && sl.random.nextInt(100) < 25) {
+                ItemStack gem203 = new ItemStack(sl.random.nextBoolean() ? Items.DIAMOND : Items.EMERALD);
+                sl.addFreshEntity(new ItemEntity(sl, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, gem203));
+            }
         } catch (Throwable t) {
             guard("onBlockBreak", t);
         }
@@ -2058,6 +3346,58 @@ public final class EnchantmentComboHandler {
             // #078 Pêcheur Dimensionnel de l'End : chance de pêcher une Perle de l'Ender !
             if (mask.has(IDX_PECHEUR_DIMENSION_END) && player.getRandom().nextInt(100) < 35 && player.level() instanceof ServerLevel slEnd) {
                 slEnd.addFreshEntity(new ItemEntity(slEnd, player.getX(), player.getY() + 0.6, player.getZ(), new ItemStack(Items.ENDER_PEARL)));
+            }
+
+            // ---- T332-COMBOS-210 : PÊCHE (#114, #133, #146, #163, #201) ----
+
+            // #114 Pêcheur Érudit : +8 XP + répare 2 durabilité sur la canne
+            if (mask.has(IDX_PECHEUR_EXPERIMENTE)) {
+                player.giveExperiencePoints(8);
+                ItemStack rod = player.getMainHandItem();
+                if (rod.isDamageableItem() && rod.getDamageValue() > 0) {
+                    rod.setDamageValue(Math.max(0, rod.getDamageValue() - 2));
+                }
+            }
+
+            // #133 Pêcheur des Volcans : Résistance au Feu (15 s) + 35 % Crème de Magma ou Pépites d'Or
+            if (mask.has(IDX_PECHEUR_MAGMA)) {
+                player.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 300, 0, true, false));
+                if (player.getRandom().nextInt(100) < 35 && player.level() instanceof ServerLevel sl133) {
+                    ItemStack magmaLoot = player.getRandom().nextBoolean()
+                            ? new ItemStack(Items.MAGMA_CREAM, 1)
+                            : new ItemStack(Items.GOLD_NUGGET, 3);
+                    sl133.addFreshEntity(new ItemEntity(sl133, player.getX(), player.getY() + 0.6, player.getZ(), magmaLoot));
+                }
+            }
+
+            // #146 Harponneur Foudroyant : Vitesse II + électrocute les ennemis à 3 blocs
+            if (mask.has(IDX_HARPON_TONNERRE) && player.level() instanceof ServerLevel sl146f) {
+                player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 100, 1, true, false));
+                for (Mob m : sl146f.getEntitiesOfClass(Mob.class, player.getBoundingBox().inflate(3.0))) {
+                    if (!isFriendlySummon(m, player)) {
+                        safeHurt(m, player.damageSources().lightningBolt(), 4.0f);
+                    }
+                }
+            }
+
+            // #163 Trésorier Englouti : Chance II (10 s) + 30 % Émeraude, Améthyste ou Prismarine
+            if (mask.has(IDX_DRAGUEUR_TRESORS_ABYSSES)) {
+                player.addEffect(new MobEffectInstance(MobEffects.LUCK, 200, 1, true, false));
+                if (player.getRandom().nextInt(100) < 30 && player.level() instanceof ServerLevel sl163) {
+                    int r163 = player.getRandom().nextInt(3);
+                    ItemStack treasure = r163 == 0 ? new ItemStack(Items.EMERALD)
+                            : r163 == 1 ? new ItemStack(Items.AMETHYST_SHARD, 2)
+                            : new ItemStack(Items.PRISMARINE_CRYSTALS, 2);
+                    sl163.addFreshEntity(new ItemEntity(sl163, player.getX(), player.getY() + 0.6, player.getZ(), treasure));
+                }
+            }
+
+            // #201 Grand Amiral des Sept Mers : double chaque butin pêché !
+            if (mask.has(IDX_GRAND_AMIRAL_SEPT_MERS) && player.level() instanceof ServerLevel sl201) {
+                List<ItemStack> drops = event.getDrops();
+                if (!drops.isEmpty()) {
+                    sl201.addFreshEntity(new ItemEntity(sl201, player.getX(), player.getY() + 0.6, player.getZ(), drops.get(0).copy()));
+                }
             }
         } catch (Throwable t) {
             guard("onItemFished", t);
@@ -2133,22 +3473,30 @@ public final class EnchantmentComboHandler {
                                                 rootLiteral)))))
                 .then(Commands.literal("give")
                         .requires(src -> src.hasPermission(2))
-                        .then(Commands.argument("numero", IntegerArgumentType.integer(1, 110)).executes(ctx -> {
+                        .then(Commands.argument("numero", IntegerArgumentType.integer(1, COMBOS.size())).executes(ctx -> {
                             ServerPlayer sp = ctx.getSource().getPlayerOrException();
                             DeepEnchant.rememberServerAccess(sp.serverLevel().registryAccess());
                             int num = IntegerArgumentType.getInteger(ctx, "numero");
                             ComboDef c = COMBOS.get(num - 1);
+                            Map<EquipmentSlot, ItemStack> kitBySlot = new LinkedHashMap<>();
                             for (PieceRequirement req : c.pieces()) {
-                                ItemStack item = new ItemStack(req.sampleItem());
-                                deepluckyblock.util.DeepNbt.markLuckyBlockOrigin(item);
+                                ItemStack item = kitBySlot.computeIfAbsent(req.slot(), s -> {
+                                    ItemStack st = new ItemStack(req.sampleItem());
+                                    deepluckyblock.util.DeepNbt.markLuckyBlockOrigin(st);
+                                    return st;
+                                });
                                 Enchantment ench = DeepEnchant.byId("deep_lucky_block:" + req.primaryPath());
                                 if (ench != null) {
                                     int maxMod = Math.max(1, CustomEnchantment.getMaxLevelMod(ench));
                                     int giveLvl = Math.max(req.minLevel(), Math.min(5, maxMod));
                                     DeepEnchant.setLevel(item, ench, giveLvl);
                                 }
-                                if (sp.getItemBySlot(req.slot()).isEmpty()) {
-                                    sp.setItemSlot(req.slot(), item);
+                            }
+                            for (Map.Entry<EquipmentSlot, ItemStack> entry : kitBySlot.entrySet()) {
+                                EquipmentSlot slot = entry.getKey();
+                                ItemStack item = entry.getValue();
+                                if (sp.getItemBySlot(slot).isEmpty()) {
+                                    sp.setItemSlot(slot, item);
                                 } else if (!sp.getInventory().add(item)) {
                                     sp.drop(item, false);
                                 }

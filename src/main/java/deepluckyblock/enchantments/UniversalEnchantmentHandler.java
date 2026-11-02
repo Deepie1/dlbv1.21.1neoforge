@@ -4239,8 +4239,9 @@ public class UniversalEnchantmentHandler {
         int cwLvl = getArmorEnchantLvl(sp, "deep_lucky_block:cloud_walker");
         if (cwLvl <= 0) return;
 
-        boolean hasQuadCombo = EnchantmentComboRegistry.hasCombo(sp, EnchantmentComboRegistry.C02_ASCENSION_CELESTE);
-        int maxAirJumps = hasQuadCombo ? 3 : 2;
+        boolean hasQuintCombo = EnchantmentComboRegistry.hasCombo(sp, EnchantmentComboRegistry.IDX_TRANSCENDANCE_CHANCE_INFINIE);
+        boolean hasQuadCombo = hasQuintCombo || EnchantmentComboRegistry.hasCombo(sp, EnchantmentComboRegistry.C02_ASCENSION_CELESTE);
+        int maxAirJumps = hasQuintCombo ? 4 : (hasQuadCombo ? 3 : 2);
         // T320-FIX : Si le client redémarre une séquence aérienne (jump #1) après un atterrissage rapide
         // type bunny-hop que le tick serveur n'aurait pas vu comme onGround, on réarme proprement !
         if (requestedJumpIdx == 1 && (sp.onGround() || (now - state.lastCloudJumpTick) >= 5L)) {

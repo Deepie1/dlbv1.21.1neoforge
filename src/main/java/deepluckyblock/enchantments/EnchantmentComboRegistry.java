@@ -27,10 +27,10 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * T309-COMBOS : Registre central des 110 Combos & Synergies Uniques Multi-Pièces,
+ * T309-COMBOS : Registre central des 210 Combos & Synergies Uniques (Mono-Pièce & Multi-Pièces),
  * échelonnés sur 6 paliers de difficulté : NORMAL -> UNCOMMON -> RARE -> EPIC -> MYTHIC -> ULTRA_RARE.
  *
- * Utilise un masque 128 bits sans allocation ({@link ComboMask}) couvrant les 110 synergies en O(1).
+ * Utilise un masque 256 bits sans allocation ({@link ComboMask}) couvrant les 210 synergies en O(1).
  */
 public final class EnchantmentComboRegistry {
 
@@ -66,28 +66,38 @@ public final class EnchantmentComboRegistry {
         }
     }
 
-    /** Masque binaire 128 bits immuable couvrant jusqu'à 128 combos sans aucune allocation de tableau. */
-    public record ComboMask(long lo, long hi) {
-        public static final ComboMask EMPTY = new ComboMask(0L, 0L);
+    /** T332-COMBOS-210 : Masque binaire 256 bits immuable couvrant jusqu'à 256 combos sans aucune allocation de tableau. */
+    public record ComboMask(long w0, long w1, long w2, long w3) {
+        public static final ComboMask EMPTY = new ComboMask(0L, 0L, 0L, 0L);
 
-        public boolean isEmpty() { return lo == 0L && hi == 0L; }
+        public boolean isEmpty() { return w0 == 0L && w1 == 0L && w2 == 0L && w3 == 0L; }
 
         public boolean has(int index) {
-            if (index < 0 || index >= 128) return false;
-            return index < 64 ? ((lo & (1L << index)) != 0L) : ((hi & (1L << (index - 64))) != 0L);
+            return switch (index >> 6) {
+                case 0 -> (w0 & (1L << index)) != 0L;
+                case 1 -> (w1 & (1L << index)) != 0L;
+                case 2 -> (w2 & (1L << index)) != 0L;
+                case 3 -> (w3 & (1L << index)) != 0L;
+                default -> false;
+            };
         }
 
         public ComboMask withBit(int index) {
-            if (index < 0 || index >= 128) return this;
-            return index < 64 ? new ComboMask(lo | (1L << index), hi) : new ComboMask(lo, hi | (1L << (index - 64)));
+            return switch (index >> 6) {
+                case 0 -> new ComboMask(w0 | (1L << index), w1, w2, w3);
+                case 1 -> new ComboMask(w0, w1 | (1L << index), w2, w3);
+                case 2 -> new ComboMask(w0, w1, w2 | (1L << index), w3);
+                case 3 -> new ComboMask(w0, w1, w2, w3 | (1L << index));
+                default -> this;
+            };
         }
 
         public ComboMask andNot(ComboMask other) {
-            return new ComboMask(lo & ~other.lo, hi & ~other.hi);
+            return new ComboMask(w0 & ~other.w0, w1 & ~other.w1, w2 & ~other.w2, w3 & ~other.w3);
         }
 
         public int bitCount() {
-            return Long.bitCount(lo) + Long.bitCount(hi);
+            return Long.bitCount(w0) + Long.bitCount(w1) + Long.bitCount(w2) + Long.bitCount(w3);
         }
     }
 
@@ -256,12 +266,114 @@ public final class EnchantmentComboRegistry {
     public static final int IDX_POING_DIVIN_SAITAMA = 107;
     public static final int IDX_INQUISITEUR_ARBALETE_SOUFRE = 108;
     public static final int IDX_AVATAR_SUPREME_DEEP_LUCKY = 109;
+    // T332-COMBOS-210 : 100 nouveaux combos (#111 .. #210)
+    public static final int IDX_LAME_NEUVE_ETINCELANTE = 110;
+    public static final int IDX_BUCHERON_INFATIGABLE = 111;
+    public static final int IDX_MINEUR_STABILISATEUR = 112;
+    public static final int IDX_ECLAIREUR_FLAMBEAU = 113;
+    public static final int IDX_PECHEUR_EXPERIMENTE = 114;
+    public static final int IDX_MOISSONNEUR_MATINAL = 115;
+    public static final int IDX_TERRASSIER_ORPAILLEUR = 116;
+    public static final int IDX_ARCHER_RECUPERATEUR = 117;
+    public static final int IDX_GARDE_ENDURCI = 118;
+    public static final int IDX_COUREUR_PLUIE = 119;
+    public static final int IDX_DUELLISTE_DESARMEUR = 120;
+    public static final int IDX_BOXEUR_SPRINT = 121;
+    public static final int IDX_ARBALETRIER_RODEUR = 122;
+    public static final int IDX_VEILLEUR_CLAIRVOYANT = 123;
+    public static final int IDX_CHASSEUR_PILLARDS = 124;
+    public static final int IDX_PLONGEUR_CORAIL = 125;
+    public static final int IDX_GRIMPEUR_PENTE = 126;
+    public static final int IDX_ABRI_TORTUE = 127;
+    public static final int IDX_FENDEUR_BRUTAL = 128;
+    public static final int IDX_VEINE_PRUDENTE = 129;
+    public static final int IDX_CHOC_THERMIQUE_LAME = 130;
+    public static final int IDX_ARCHER_OASIS = 131;
+    public static final int IDX_ARCHER_DESERTIQUE = 132;
+    public static final int IDX_PECHEUR_MAGMA = 133;
+    public static final int IDX_FAUCHEUR_XP = 134;
+    public static final int IDX_TAUPE_FOREUSE = 135;
+    public static final int IDX_PROVOCATEUR_EPINEUX = 136;
+    public static final int IDX_SAUTEUR_RESSORT = 137;
+    public static final int IDX_ESCRIMEUR_ALLONGE = 138;
+    public static final int IDX_CHASSEUR_CREPUSCULE = 139;
+    public static final int IDX_ARBALETE_FAUCON = 140;
+    public static final int IDX_GANTELET_CHIRURGIEN = 141;
+    public static final int IDX_VETERAN_ENDURCI = 142;
+    public static final int IDX_PURIFICATEUR_PLAIES = 143;
+    public static final int IDX_MARCHEUR_END_PERLE = 144;
+    public static final int IDX_PLANEUR_THERMIQUE = 145;
+    public static final int IDX_HARPON_TONNERRE = 146;
+    public static final int IDX_BASTION_MURAL = 147;
+    public static final int IDX_TIR_BOUT_PORTANT_LOURD = 148;
+    public static final int IDX_PROSPECTEUR_RADAR = 149;
+    public static final int IDX_TOURBILLON_AME_ARDENTE = 150;
+    public static final int IDX_RICOCHET_TRACANT = 151;
+    public static final int IDX_SALVE_SUPPRESSION = 152;
+    public static final int IDX_VORTEX_ELECTRIQUE_MARIN = 153;
+    public static final int IDX_FORGE_FILON_ARDENT = 154;
+    public static final int IDX_ABATTEUR_OURAGAN = 155;
+    public static final int IDX_FAUCHEUSE_SANGLANTE = 156;
+    public static final int IDX_PIQUE_FAUCON_PLONGEANT = 157;
+    public static final int IDX_SUMO_SISMIQUE = 158;
+    public static final int IDX_ASSASSIN_ECHANGE = 159;
+    public static final int IDX_BERSERKER_FLAMMES = 160;
+    public static final int IDX_COMMANDANT_MEUTE_FER = 161;
+    public static final int IDX_BRISE_GARDE_TONNERRE = 162;
+    public static final int IDX_DRAGUEUR_TRESORS_ABYSSES = 163;
+    public static final int IDX_TIREUR_FANTOME_MURMURE = 164;
+    public static final int IDX_JUGEMENT_AGONIE = 165;
+    public static final int IDX_CARAPACE_CINETIQUE = 166;
+    public static final int IDX_TRIDENT_EMPALEMENT_SOLAIRE = 167;
+    public static final int IDX_PACTE_SANG_ECARLATE = 168;
+    public static final int IDX_AILES_ORAGEUSES_MAITRISEES = 169;
+    public static final int IDX_LAME_SURCHARGE_CRITIQUE = 170;
+    public static final int IDX_SNIPER_SPECTRAL_ABSOLU = 171;
+    public static final int IDX_INQUISITEUR_PURIFICATEUR = 172;
+    public static final int IDX_PACTE_SALAMANDRE_ARDENT = 173;
+    public static final int IDX_KRAKEN_RESSAC_MAUDIT = 174;
+    public static final int IDX_PREDATEUR_VOIDLING_NOCTURNE = 175;
+    public static final int IDX_DANSEUR_MIRAGE_ZEPHYR = 176;
+    public static final int IDX_COLOSSE_RACINES_PIERRE = 177;
+    public static final int IDX_ARTILLEUR_CHAOS_ALCHIMIQUE = 178;
+    public static final int IDX_MAITRE_LAMES_COMBO = 179;
+    public static final int IDX_FOREUR_COEUR_MONDE = 180;
+    public static final int IDX_VOLTIGEUR_PLONGEON_METEORE = 181;
+    public static final int IDX_MARECHAL_SOUVERAIN = 182;
+    public static final int IDX_TERREUR_ABYSSE_WARDEN = 183;
+    public static final int IDX_FAUCHEUR_SACRIFICE_IMMORTEL = 184;
+    public static final int IDX_CAVALIER_TONNERRE_ROYAL = 185;
+    public static final int IDX_ARCHER_DISTORSION_VIDE = 186;
+    public static final int IDX_BOXEUR_DIAMANT_TITAN = 187;
+    public static final int IDX_CHIMERE_SEPT_COEURS = 188;
+    public static final int IDX_EXECUTEUR_APOCALYPSE_HACHE = 189;
+    public static final int IDX_TEMPETE_ASTRALE_INFINIE = 190;
+    public static final int IDX_CITADELLE_MIROIR_DIVIN = 191;
+    public static final int IDX_FAUCHEUSE_NECROPOLE_ROYALE = 192;
+    public static final int IDX_SEIGNEUR_FORGES_STELLAIRES = 193;
+    public static final int IDX_FANTOME_LAME_DIMENSIONNELLE = 194;
+    public static final int IDX_ARCHONTE_MAREES_CELESTES = 195;
+    public static final int IDX_JUGGERNAUT_GOURMAND_COLOSSAL = 196;
+    public static final int IDX_ARTILLEUR_METEOR_ECARLATE = 197;
+    public static final int IDX_CHAMPION_MAUDIT_TRANSCENDANT = 198;
+    public static final int IDX_AERONAUTE_SUPERSONIQUE_ROYAL = 199;
+    public static final int IDX_DIEU_HACHE_CATACLYSME = 200;
+    public static final int IDX_GRAND_AMIRAL_SEPT_MERS = 201;
+    public static final int IDX_EMPEREUR_FAUX_NEANT = 202;
+    public static final int IDX_FORGERON_DIVIN_RELIQUE = 203;
+    public static final int IDX_SNIPER_CELESTE_OMNISCIENT = 204;
+    public static final int IDX_CITADELLE_IMMORTELLE_EGIDE = 205;
+    public static final int IDX_AVATAR_CHIMERE_PRIMORDIALE = 206;
+    public static final int IDX_SEIGNEUR_FLEAU_TOXIQUE = 207;
+    public static final int IDX_EMPEREUR_COMMANDANT_SUPREME = 208;
+    public static final int IDX_TRANSCENDANCE_CHANCE_INFINIE = 209;
 
     public static final List<ComboDef> COMBOS;
     private static final Map<String, List<ComboDef>> BY_ENCHANT_PATH;
+    private static final int[] MIN_DISTINCT_SLOTS;
 
     static {
-        List<ComboDef> list = new ArrayList<>(110);
+        List<ComboDef> list = new ArrayList<>(210);
         list.add(new ComboDef(0, "eclaireur_agile", ComboTier.NORMAL, 0x94A3B8, List.of(
                 req(EquipmentSlot.MAINHAND, Items.IRON_SWORD, 1, "sharp_edge"),
                 req(EquipmentSlot.FEET, Items.IRON_BOOTS, 1, "basic_swiftness"))));
@@ -653,15 +765,392 @@ public final class EnchantmentComboRegistry {
                 req(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS, 5, "giant_step"),
                 req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "cloud_walker"))));
 
+        // T332-COMBOS-210 : Combos #111 à #210 (index 110 .. 209)
+        list.add(new ComboDef(110, "lame_neuve_etincelante", ComboTier.NORMAL, 0x93C5FD, List.of(
+                req(EquipmentSlot.MAINHAND, Items.IRON_SWORD, 1, "new_edge"),
+                req(EquipmentSlot.MAINHAND, Items.IRON_SWORD, 1, "basic_mending", "basic_chrono_mending"))));
+        list.add(new ComboDef(111, "bucheron_infatigable", ComboTier.NORMAL, 0x86EFAC, List.of(
+                req(EquipmentSlot.MAINHAND, Items.IRON_AXE, 1, "tree_felling", "lumberjack"),
+                req(EquipmentSlot.CHEST, Items.IRON_CHESTPLATE, 1, "exercise"))));
+        list.add(new ComboDef(112, "mineur_stabilisateur", ComboTier.NORMAL, 0xCBD5E1, List.of(
+                req(EquipmentSlot.MAINHAND, Items.IRON_PICKAXE, 1, "mining_stability"),
+                req(EquipmentSlot.CHEST, Items.IRON_CHESTPLATE, 1, "iron_lung"))));
+        list.add(new ComboDef(113, "eclaireur_flambeau", ComboTier.NORMAL, 0xFCD34D, List.of(
+                req(EquipmentSlot.MAINHAND, Items.BOW, 1, "torch"),
+                req(EquipmentSlot.HEAD, Items.IRON_HELMET, 1, "night_veil"))));
+        list.add(new ComboDef(114, "pecheur_experimente", ComboTier.NORMAL, 0x7DD3FC, List.of(
+                req(EquipmentSlot.MAINHAND, Items.FISHING_ROD, 1, "experienced_fishing", "reliability"),
+                req(EquipmentSlot.HEAD, Items.IRON_HELMET, 1, "mystic_mind"))));
+        list.add(new ComboDef(115, "moissonneur_matinal", ComboTier.NORMAL, 0xA3E635, List.of(
+                req(EquipmentSlot.MAINHAND, Items.IRON_HOE, 1, "replanting", "farmers_hoe"),
+                req(EquipmentSlot.CHEST, Items.IRON_CHESTPLATE, 1, "stomach_pouch"))));
+        list.add(new ComboDef(116, "terrassier_orpailleur", ComboTier.NORMAL, 0xFBBF24, List.of(
+                req(EquipmentSlot.MAINHAND, Items.IRON_SHOVEL, 1, "scooping"),
+                req(EquipmentSlot.CHEST, Items.IRON_CHESTPLATE, 1, "item_attraction", "magnetic"))));
+        list.add(new ComboDef(117, "archer_recuperateur", ComboTier.NORMAL, 0xFCA5A5, List.of(
+                req(EquipmentSlot.MAINHAND, Items.BOW, 1, "retrieval"),
+                req(EquipmentSlot.MAINHAND, Items.BOW, 1, "flint_heart"))));
+        list.add(new ComboDef(118, "garde_endurci", ComboTier.NORMAL, 0x94A3B8, List.of(
+                req(EquipmentSlot.OFFHAND, Items.SHIELD, 1, "shield_efficiency"),
+                req(EquipmentSlot.CHEST, Items.IRON_CHESTPLATE, 1, "tempered_body"))));
+        list.add(new ComboDef(119, "coureur_pluie", ComboTier.NORMAL, 0x38BDF8, List.of(
+                req(EquipmentSlot.HEAD, Items.IRON_HELMET, 1, "rain_nourishment"),
+                req(EquipmentSlot.FEET, Items.IRON_BOOTS, 1, "tidal_step"))));
+        list.add(new ComboDef(120, "duelliste_desarmeur", ComboTier.NORMAL, 0xF9A8D4, List.of(
+                req(EquipmentSlot.MAINHAND, Items.IRON_SWORD, 1, "disarm", "interrupting_strike"),
+                req(EquipmentSlot.LEGS, Items.IRON_LEGGINGS, 1, "pivot"))));
+        list.add(new ComboDef(121, "boxeur_sprint", ComboTier.NORMAL, 0xFB923C, List.of(
+                req(EquipmentSlot.CHEST, Items.IRON_CHESTPLATE, 1, "sprint_punch_gauntlet"),
+                req(EquipmentSlot.FEET, Items.IRON_BOOTS, 1, "basic_swiftness", "swiftness"))));
+        list.add(new ComboDef(122, "arbaletrier_rodeur", ComboTier.NORMAL, 0xA7F3D0, List.of(
+                req(EquipmentSlot.MAINHAND, Items.CROSSBOW, 1, "ranger"),
+                req(EquipmentSlot.LEGS, Items.IRON_LEGGINGS, 1, "carriers_stride"))));
+        list.add(new ComboDef(123, "veilleur_clairvoyant", ComboTier.NORMAL, 0xFEF08A, List.of(
+                req(EquipmentSlot.HEAD, Items.IRON_HELMET, 1, "mental_clarity"),
+                req(EquipmentSlot.FEET, Items.IRON_BOOTS, 1, "light_walker"))));
+        list.add(new ComboDef(124, "chasseur_pillards", ComboTier.NORMAL, 0x34D399, List.of(
+                req(EquipmentSlot.MAINHAND, Items.IRON_SWORD, 1, "plunder_wealth"),
+                req(EquipmentSlot.CHEST, Items.IRON_CHESTPLATE, 1, "meat_armor"))));
+        list.add(new ComboDef(125, "plongeur_corail", ComboTier.NORMAL, 0x22D3EE, List.of(
+                req(EquipmentSlot.MAINHAND, Items.TRIDENT, 1, "tidecaller"),
+                req(EquipmentSlot.FEET, Items.IRON_BOOTS, 1, "buoy"))));
+        list.add(new ComboDef(126, "grimpeur_pente", ComboTier.NORMAL, 0x84CC16, List.of(
+                req(EquipmentSlot.LEGS, Items.IRON_LEGGINGS, 1, "basic_leap_power", "leap_power"),
+                req(EquipmentSlot.FEET, Items.IRON_BOOTS, 1, "high_step"))));
+        list.add(new ComboDef(127, "abri_tortue", ComboTier.NORMAL, 0x64748B, List.of(
+                req(EquipmentSlot.CHEST, Items.IRON_CHESTPLATE, 1, "shelter"),
+                req(EquipmentSlot.LEGS, Items.IRON_LEGGINGS, 1, "anchoring"))));
+        list.add(new ComboDef(128, "fendeur_brutal", ComboTier.NORMAL, 0xF87171, List.of(
+                req(EquipmentSlot.MAINHAND, Items.IRON_AXE, 1, "brutal"),
+                req(EquipmentSlot.MAINHAND, Items.IRON_AXE, 1, "haste_continuation"))));
+        list.add(new ComboDef(129, "veine_prudente", ComboTier.NORMAL, 0x60A5FA, List.of(
+                req(EquipmentSlot.MAINHAND, Items.IRON_PICKAXE, 1, "delicate_extraction"),
+                req(EquipmentSlot.MAINHAND, Items.IRON_PICKAXE, 1, "mining_stability"))));
+        list.add(new ComboDef(130, "choc_thermique_lame", ComboTier.UNCOMMON, 0x38BDF8, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_SWORD, 1, "blazing_trauma", "sweeping_fire", "fiery_sweep"),
+                req(EquipmentSlot.FEET, Items.DIAMOND_BOOTS, 1, "frost_trail"))));
+        list.add(new ComboDef(131, "archer_oasis", ComboTier.UNCOMMON, 0x2DD4BF, List.of(
+                req(EquipmentSlot.MAINHAND, Items.BOW, 1, "water_arrow"),
+                req(EquipmentSlot.HEAD, Items.DIAMOND_HELMET, 1, "breath_heal"))));
+        list.add(new ComboDef(132, "archer_desertique", ComboTier.UNCOMMON, 0xF59E0B, List.of(
+                req(EquipmentSlot.MAINHAND, Items.BOW, 1, "dry_arrow"),
+                req(EquipmentSlot.CHEST, Items.DIAMOND_CHESTPLATE, 1, "thirsty_heart"))));
+        list.add(new ComboDef(133, "pecheur_magma", ComboTier.UNCOMMON, 0xFB923C, List.of(
+                req(EquipmentSlot.MAINHAND, Items.FISHING_ROD, 1, "infernal_line"),
+                req(EquipmentSlot.FEET, Items.DIAMOND_BOOTS, 1, "magma_walker", "blaze_walker"))));
+        list.add(new ComboDef(134, "faucheur_xp", ComboTier.UNCOMMON, 0xA3E635, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_HOE, 1, "experience_harvest"),
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_HOE, 1, "loot_harvest"))));
+        list.add(new ComboDef(135, "taupe_foreuse", ComboTier.UNCOMMON, 0xD97706, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_SHOVEL, 1, "burrowing"),
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_SHOVEL, 1, "military_shovel"))));
+        list.add(new ComboDef(136, "provocateur_epineux", ComboTier.UNCOMMON, 0xEF4444, List.of(
+                req(EquipmentSlot.OFFHAND, Items.SHIELD, 1, "hatred_draw"),
+                req(EquipmentSlot.CHEST, Items.DIAMOND_CHESTPLATE, 1, "powerful_thorns", "punching_armor"))));
+        list.add(new ComboDef(137, "sauteur_ressort", ComboTier.UNCOMMON, 0x34D399, List.of(
+                req(EquipmentSlot.FEET, Items.DIAMOND_BOOTS, 1, "elastic_soles"),
+                req(EquipmentSlot.LEGS, Items.DIAMOND_LEGGINGS, 1, "leap_power"))));
+        list.add(new ComboDef(138, "escrimeur_allonge", ComboTier.UNCOMMON, 0x67E8F9, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_SWORD, 1, "extension"),
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_SWORD, 1, "swift_strike"))));
+        list.add(new ComboDef(139, "chasseur_crepuscule", ComboTier.UNCOMMON, 0x818CF8, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_SWORD, 1, "shadow_hunt"),
+                req(EquipmentSlot.HEAD, Items.DIAMOND_HELMET, 1, "echolocation"))));
+        list.add(new ComboDef(140, "arbalete_faucon", ComboTier.UNCOMMON, 0xFACC15, List.of(
+                req(EquipmentSlot.MAINHAND, Items.CROSSBOW, 1, "peregrine"),
+                req(EquipmentSlot.FEET, Items.DIAMOND_BOOTS, 1, "gale_step"))));
+        list.add(new ComboDef(141, "gantelet_chirurgien", ComboTier.UNCOMMON, 0xF472B6, List.of(
+                req(EquipmentSlot.CHEST, Items.DIAMOND_CHESTPLATE, 1, "tendon_break_gauntlet"),
+                req(EquipmentSlot.HEAD, Items.DIAMOND_HELMET, 1, "concentration"))));
+        list.add(new ComboDef(142, "veteran_endurci", ComboTier.UNCOMMON, 0x94A3B8, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_SWORD, 1, "battle_hardened"),
+                req(EquipmentSlot.CHEST, Items.DIAMOND_CHESTPLATE, 1, "last_stand_toughness"))));
+        list.add(new ComboDef(143, "purificateur_plaies", ComboTier.UNCOMMON, 0xFDE047, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_SWORD, 1, "transfer_misfortune"),
+                req(EquipmentSlot.HEAD, Items.DIAMOND_HELMET, 1, "priests_blessing"))));
+        list.add(new ComboDef(144, "marcheur_end_perle", ComboTier.UNCOMMON, 0xC084FC, List.of(
+                req(EquipmentSlot.CHEST, Items.DIAMOND_CHESTPLATE, 1, "pebblekin"),
+                req(EquipmentSlot.FEET, Items.DIAMOND_BOOTS, 1, "dimensional_step"))));
+        list.add(new ComboDef(145, "planeur_thermique", ComboTier.UNCOMMON, 0xFB7185, List.of(
+                req(EquipmentSlot.CHEST, Items.ELYTRA, 1, "aerodynamic"),
+                req(EquipmentSlot.FEET, Items.DIAMOND_BOOTS, 1, "ember_step"))));
+        list.add(new ComboDef(146, "harpon_tonnerre", ComboTier.UNCOMMON, 0x38BDF8, List.of(
+                req(EquipmentSlot.MAINHAND, Items.FISHING_ROD, 1, "thunder_hook"),
+                req(EquipmentSlot.CHEST, Items.DIAMOND_CHESTPLATE, 1, "kinetic_conversion", "electric_heart"))));
+        list.add(new ComboDef(147, "bastion_mural", ComboTier.UNCOMMON, 0xA8A29E, List.of(
+                req(EquipmentSlot.CHEST, Items.DIAMOND_CHESTPLATE, 1, "bastion_heart"),
+                req(EquipmentSlot.LEGS, Items.DIAMOND_LEGGINGS, 1, "wall_runner"))));
+        list.add(new ComboDef(148, "tir_bout_portant_lourd", ComboTier.UNCOMMON, 0xF97316, List.of(
+                req(EquipmentSlot.MAINHAND, Items.CROSSBOW, 1, "point_shoot"),
+                req(EquipmentSlot.MAINHAND, Items.CROSSBOW, 1, "heavy_impact"))));
+        list.add(new ComboDef(149, "prospecteur_radar", ComboTier.UNCOMMON, 0x22D3EE, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_PICKAXE, 1, "ore_detector"),
+                req(EquipmentSlot.HEAD, Items.DIAMOND_HELMET, 1, "miners_guidance"))));
+        list.add(new ComboDef(150, "tourbillon_ame_ardente", ComboTier.RARE, 0x38BDF8, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_SWORD, 1, "blazing_soul_sweep"),
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_SWORD, 1, "wither_edge"))));
+        list.add(new ComboDef(151, "ricochet_tracant", ComboTier.RARE, 0xFDE047, List.of(
+                req(EquipmentSlot.MAINHAND, Items.BOW, 1, "ricochet"),
+                req(EquipmentSlot.MAINHAND, Items.BOW, 1, "tracer_shot"))));
+        list.add(new ComboDef(152, "salve_suppression", ComboTier.RARE, 0x94A3B8, List.of(
+                req(EquipmentSlot.MAINHAND, Items.CROSSBOW, 1, "multishot_bow"),
+                req(EquipmentSlot.MAINHAND, Items.CROSSBOW, 1, "suppression_shot"))));
+        list.add(new ComboDef(153, "vortex_electrique_marin", ComboTier.RARE, 0x06B6D4, List.of(
+                req(EquipmentSlot.MAINHAND, Items.TRIDENT, 1, "undertow"),
+                req(EquipmentSlot.MAINHAND, Items.TRIDENT, 1, "hydro_shock", "chain_lightning"))));
+        list.add(new ComboDef(154, "forge_filon_ardent", ComboTier.RARE, 0xFB923C, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_PICKAXE, 1, "vein_miner"),
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_PICKAXE, 1, "molten"))));
+        list.add(new ComboDef(155, "abatteur_ouragan", ComboTier.RARE, 0x60A5FA, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_AXE, 1, "lumberjack"),
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_AXE, 1, "overcharge", "thundercall_pact"))));
+        list.add(new ComboDef(156, "faucheuse_sanglante", ComboTier.RARE, 0xEF4444, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_HOE, 1, "execute_power"),
+                req(EquipmentSlot.CHEST, Items.DIAMOND_CHESTPLATE, 1, "vital_reserve"))));
+        list.add(new ComboDef(157, "pique_faucon_plongeant", ComboTier.RARE, 0x38BDF8, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_SWORD, 1, "critical_strike", "damage_critical"),
+                req(EquipmentSlot.FEET, Items.DIAMOND_BOOTS, 1, "gale"))));
+        list.add(new ComboDef(158, "sumo_sismique", ComboTier.RARE, 0xF59E0B, List.of(
+                req(EquipmentSlot.CHEST, Items.DIAMOND_CHESTPLATE, 1, "big_stomach", "corpulent"),
+                req(EquipmentSlot.FEET, Items.DIAMOND_BOOTS, 1, "bouncy"))));
+        list.add(new ComboDef(159, "assassin_echange", ComboTier.RARE, 0xA855F7, List.of(
+                req(EquipmentSlot.MAINHAND, Items.BOW, 1, "swap_arrow"),
+                req(EquipmentSlot.LEGS, Items.DIAMOND_LEGGINGS, 1, "phantom_step"))));
+        list.add(new ComboDef(160, "berserker_flammes", ComboTier.RARE, 0xFF6B35, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_SWORD, 1, "blazing_trauma", "fiery_sweep"),
+                req(EquipmentSlot.CHEST, Items.DIAMOND_CHESTPLATE, 1, "blazing_rage", "blaze_battle"),
+                req(EquipmentSlot.HEAD, Items.DIAMOND_HELMET, 1, "ember_core"))));
+        list.add(new ComboDef(161, "commandant_meute_fer", ComboTier.RARE, 0x64748B, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_SWORD, 1, "army_summon", "summon_army"),
+                req(EquipmentSlot.HEAD, Items.DIAMOND_HELMET, 1, "illager_commander", "undead_commander"))));
+        list.add(new ComboDef(162, "brise_garde_tonnerre", ComboTier.RARE, 0xFBBF24, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_AXE, 1, "guard_breaker"),
+                req(EquipmentSlot.OFFHAND, Items.SHIELD, 1, "bash_power"))));
+        list.add(new ComboDef(163, "dragueur_tresors_abysses", ComboTier.RARE, 0x2DD4BF, List.of(
+                req(EquipmentSlot.MAINHAND, Items.FISHING_ROD, 1, "dredge"),
+                req(EquipmentSlot.MAINHAND, Items.FISHING_ROD, 1, "anglers_blessing"))));
+        list.add(new ComboDef(164, "tireur_fantome_murmure", ComboTier.RARE, 0x818CF8, List.of(
+                req(EquipmentSlot.MAINHAND, Items.BOW, 1, "whisper"),
+                req(EquipmentSlot.MAINHAND, Items.BOW, 1, "sniper"))));
+        list.add(new ComboDef(165, "jugement_agonie", ComboTier.RARE, 0xDC2626, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_SWORD, 1, "last_stand_slayer"),
+                req(EquipmentSlot.LEGS, Items.DIAMOND_LEGGINGS, 1, "hunters_pace"))));
+        list.add(new ComboDef(166, "carapace_cinetique", ComboTier.RARE, 0x60A5FA, List.of(
+                req(EquipmentSlot.CHEST, Items.DIAMOND_CHESTPLATE, 1, "adaptive_shell"),
+                req(EquipmentSlot.FEET, Items.DIAMOND_BOOTS, 1, "panic_escape"))));
+        list.add(new ComboDef(167, "trident_empalement_solaire", ComboTier.RARE, 0xF97316, List.of(
+                req(EquipmentSlot.MAINHAND, Items.TRIDENT, 1, "scorching_prongs"),
+                req(EquipmentSlot.MAINHAND, Items.TRIDENT, 1, "lingering_skewer"))));
+        list.add(new ComboDef(168, "pacte_sang_ecarlate", ComboTier.RARE, 0xFB7185, List.of(
+                req(EquipmentSlot.MAINHAND, Items.DIAMOND_SWORD, 1, "blood_pact"),
+                req(EquipmentSlot.CHEST, Items.DIAMOND_CHESTPLATE, 1, "pain_devour"))));
+        list.add(new ComboDef(169, "ailes_orageuses_maitrisees", ComboTier.RARE, 0x38BDF8, List.of(
+                req(EquipmentSlot.CHEST, Items.ELYTRA, 1, "sky_conductor_curse", "turbulence_curse", "brittle_wings_curse"),
+                req(EquipmentSlot.HEAD, Items.DIAMOND_HELMET, 1, "veil"))));
+        list.add(new ComboDef(170, "lame_surcharge_critique", ComboTier.EPIC, 0x22D3EE, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_SWORD, 1, "overclocked_crit"),
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_SWORD, 1, "overcharge"))));
+        list.add(new ComboDef(171, "sniper_spectral_absolu", ComboTier.EPIC, 0xA855F7, List.of(
+                req(EquipmentSlot.MAINHAND, Items.BOW, 1, "phasing"),
+                req(EquipmentSlot.MAINHAND, Items.BOW, 1, "steady_shot", "instant_shot"))));
+        list.add(new ComboDef(172, "inquisiteur_purificateur", ComboTier.EPIC, 0xFEF08A, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_SWORD, 1, "seraphs_judgment"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "light_heart"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "radiant_ward"))));
+        list.add(new ComboDef(173, "pacte_salamandre_ardent", ComboTier.EPIC, 0xFF5722, List.of(
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "salamanders_vow"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "burning_heart", "fire_shell"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "blaze_walker"))));
+        list.add(new ComboDef(174, "kraken_ressac_maudit", ComboTier.EPIC, 0x0EA5E9, List.of(
+                req(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS, 1, "riptide_curse"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "water_heart", "conduit_heart"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "tidal_ward"))));
+        list.add(new ComboDef(175, "predateur_voidling_nocturne", ComboTier.EPIC, 0x7C3AED, List.of(
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "voidlings_hunger"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "shadow_heart"),
+                req(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS, 1, "umbral_pact"))));
+        list.add(new ComboDef(176, "danseur_mirage_zephyr", ComboTier.EPIC, 0x67E8F9, List.of(
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "zephyrs_gambit"),
+                req(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS, 1, "evasive_footwork"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "burst_step"))));
+        list.add(new ComboDef(177, "colosse_racines_pierre", ComboTier.EPIC, 0xD97706, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_AXE, 1, "titans_grasp"),
+                req(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS, 1, "stonebound_roots"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "sticky"))));
+        list.add(new ComboDef(178, "artilleur_chaos_alchimique", ComboTier.EPIC, 0xEC4899, List.of(
+                req(EquipmentSlot.MAINHAND, Items.CROSSBOW, 1, "chaos"),
+                req(EquipmentSlot.MAINHAND, Items.CROSSBOW, 1, "delay"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "perception"))));
+        list.add(new ComboDef(179, "maitre_lames_combo", ComboTier.EPIC, 0xF43F5E, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_SWORD, 1, "combo_slash"),
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_SWORD, 2, "crit_rate"))));
+        list.add(new ComboDef(180, "foreur_coeur_monde", ComboTier.EPIC, 0x10B981, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_PICKAXE, 1, "vein_miner", "extracting"),
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_PICKAXE, 1, "prospecting"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "earth_heart"))));
+        list.add(new ComboDef(181, "voltigeur_plongeon_meteore", ComboTier.EPIC, 0xFB923C, List.of(
+                req(EquipmentSlot.MAINHAND, Items.BOW, 1, "grapple"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "meteor_stomp"),
+                req(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS, 1, "slide"))));
+        list.add(new ComboDef(182, "marechal_souverain", ComboTier.EPIC, 0xFBBF24, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_SWORD, 1, "leader"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "general"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "hundred_battles_veteran"))));
+        list.add(new ComboDef(183, "terreur_abysse_warden", ComboTier.EPIC, 0x14B8A6, List.of(
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "dread_aura"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "inner_fear", "wardenspine"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "perception", "curse_of_whispers"))));
+        list.add(new ComboDef(184, "faucheur_sacrifice_immortel", ComboTier.EPIC, 0xE11D48, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_HOE, 1, "soul_sacrifice_slash"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "life_block"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "twenty_fourth_blessing"))));
+        list.add(new ComboDef(185, "cavalier_tonnerre_royal", ComboTier.EPIC, 0xFACC15, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_AXE, 1, "cavalier"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "king"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "horse_boots"))));
+        list.add(new ComboDef(186, "archer_distorsion_vide", ComboTier.EPIC, 0xC084FC, List.of(
+                req(EquipmentSlot.MAINHAND, Items.BOW, 1, "warp", "teleport_arrow"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "pebblekin"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "cloud_stride"))));
+        list.add(new ComboDef(187, "boxeur_diamant_titan", ComboTier.EPIC, 0x60A5FA, List.of(
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "diamond_glow_gauntlet"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "straight_reach_gauntlet", "bone_break_gauntlet"),
+                req(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS, 1, "focused_steadiness"))));
+        list.add(new ComboDef(188, "chimere_sept_coeurs", ComboTier.MYTHIC, 0xF472B6, List.of(
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "heart_resonance"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "chimeras_whim"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "radiant_ward"))));
+        list.add(new ComboDef(189, "executeur_apocalypse_hache", ComboTier.MYTHIC, 0xEF4444, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_AXE, 2, "titan_slayer", "giant_slayer"),
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_AXE, 2, "decapitation", "execute_chance"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "sturdy_brute"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "surefooted"))));
+        list.add(new ComboDef(190, "tempete_astrale_infinie", ComboTier.MYTHIC, 0x38BDF8, List.of(
+                req(EquipmentSlot.MAINHAND, Items.BOW, 2, "storm_strike"),
+                req(EquipmentSlot.MAINHAND, Items.BOW, 1, "multishot_bow"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "electric_heart"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "windrunner"))));
+        list.add(new ComboDef(191, "citadelle_miroir_divin", ComboTier.MYTHIC, 0xFDE047, List.of(
+                req(EquipmentSlot.OFFHAND, Items.SHIELD, 1, "shield_quake"),
+                req(EquipmentSlot.OFFHAND, Items.SHIELD, 2, "perfect_parry"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 2, "divine_protection"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "foresight"))));
+        list.add(new ComboDef(192, "faucheuse_necropole_royale", ComboTier.MYTHIC, 0xA855F7, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_HOE, 2, "soul_reaping_sickle"),
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_HOE, 2, "sickle_slash"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "undead_commander"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "shadow_heart"))));
+        list.add(new ComboDef(193, "seigneur_forges_stellaires", ComboTier.MYTHIC, 0xFB923C, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_PICKAXE, 1, "core_harvesting"),
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_PICKAXE, 1, "molten"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "fire_heart"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 2, "miners_guidance"))));
+        list.add(new ComboDef(194, "fantome_lame_dimensionnelle", ComboTier.MYTHIC, 0x818CF8, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_SWORD, 2, "predator", "stealth_hunter"),
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_SWORD, 2, "echo_strike"),
+                req(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS, 1, "phantom_step"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 2, "dimensional_step"))));
+        list.add(new ComboDef(195, "archonte_marees_celestes", ComboTier.MYTHIC, 0x06B6D4, List.of(
+                req(EquipmentSlot.MAINHAND, Items.TRIDENT, 2, "homing_trident"),
+                req(EquipmentSlot.MAINHAND, Items.TRIDENT, 2, "ocean_current"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "conduit_heart"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "cloud_walker"))));
+        list.add(new ComboDef(196, "juggernaut_gourmand_colossal", ComboTier.MYTHIC, 0xF97316, List.of(
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 2, "gluttony"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 2, "meat_armor"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "food_is_heaven"),
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_SWORD, 2, "devour"))));
+        list.add(new ComboDef(197, "artilleur_meteor_ecarlate", ComboTier.MYTHIC, 0xFF4500, List.of(
+                req(EquipmentSlot.MAINHAND, Items.CROSSBOW, 1, "meteor"),
+                req(EquipmentSlot.MAINHAND, Items.CROSSBOW, 1, "instant_shot"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "blaze_repulsion_heart"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 2, "gale"))));
+        list.add(new ComboDef(198, "champion_maudit_transcendant", ComboTier.MYTHIC, 0xDC2626, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_SWORD, 1, "undead_curse", "nether_curse", "overworld_curse"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "glass_bones_champion_curse"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "voidlings_hunger", "end_curse"))));
+        list.add(new ComboDef(199, "aeronaute_supersonique_royal", ComboTier.MYTHIC, 0x7DD3FC, List.of(
+                req(EquipmentSlot.CHEST, Items.ELYTRA, 2, "wind_rider"),
+                req(EquipmentSlot.CHEST, Items.ELYTRA, 2, "iron_wings"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "foot_placement"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "high_altitude_hypoxia"))));
+        list.add(new ComboDef(200, "dieu_hache_cataclysme", ComboTier.ULTRA_RARE, 0xFF6B00, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_AXE, 5, "supreme_sharpness", "ultra_edge", "extreme_sharpness"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 2, "general"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 2, "fire_heart"),
+                req(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS, 3, "giant_step"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "meteor_stomp"))));
+        list.add(new ComboDef(201, "grand_amiral_sept_mers", ComboTier.ULTRA_RARE, 0x00E5FF, List.of(
+                req(EquipmentSlot.MAINHAND, Items.FISHING_ROD, 2, "dredge", "anglers_blessing"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "breath_holding"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "conduit_heart"),
+                req(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS, 1, "riptide_curse"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 2, "tidal_ward"))));
+        list.add(new ComboDef(202, "empereur_faux_neant", ComboTier.ULTRA_RARE, 0xA855F7, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_HOE, 3, "execute_power"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "night_veil"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 2, "shadow_heart"),
+                req(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS, 2, "umbral_pact"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 2, "shadow_sprint"))));
+        list.add(new ComboDef(203, "forgeron_divin_relique", ComboTier.ULTRA_RARE, 0xFBBF24, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_PICKAXE, 2, "vein_miner"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 3, "miners_guidance"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "eternal", "chrono_mending"),
+                req(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS, 2, "big_step", "giant_step"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "blaze_walker"))));
+        list.add(new ComboDef(204, "sniper_celeste_omniscient", ComboTier.ULTRA_RARE, 0x38BDF8, List.of(
+                req(EquipmentSlot.MAINHAND, Items.BOW, 3, "sniper"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "perception"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 2, "wind_heart"),
+                req(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS, 2, "evasive_footwork"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "foot_placement"))));
+        list.add(new ComboDef(205, "citadelle_immortelle_egide", ComboTier.ULTRA_RARE, 0xFDE047, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_SWORD, 2, "retaliation"),
+                req(EquipmentSlot.OFFHAND, Items.SHIELD, 1, "shield_quake"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 2, "radiant_ward"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 3, "divine_protection"),
+                req(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS, 2, "stonebound_roots"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "twenty_fourth_blessing"))));
+        list.add(new ComboDef(206, "avatar_chimere_primordiale", ComboTier.ULTRA_RARE, 0xEC4899, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_SWORD, 2, "thundercall_pact"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 2, "ember_core"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "heart_resonance"),
+                req(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS, 1, "riptide_curse"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 1, "chimeras_whim"))));
+        list.add(new ComboDef(207, "seigneur_fleau_toxique", ComboTier.ULTRA_RARE, 0x84CC16, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_SWORD, 3, "wither_edge"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "priests_blessing"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 1, "dread_aura"),
+                req(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS, 2, "hunters_pace"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 2, "super_stinky_feet"))));
+        list.add(new ComboDef(208, "empereur_commandant_supreme", ComboTier.ULTRA_RARE, 0xF59E0B, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_SWORD, 1, "summon_army"),
+                req(EquipmentSlot.OFFHAND, Items.SHIELD, 1, "hatred_draw"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 1, "commander"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 3, "hundred_battles_veteran"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 2, "windrunner"))));
+        list.add(new ComboDef(209, "transcendance_chance_infinie", ComboTier.ULTRA_RARE, 0xFFFBEB, List.of(
+                req(EquipmentSlot.MAINHAND, Items.NETHERITE_SWORD, 5, "overclocked_crit"),
+                req(EquipmentSlot.OFFHAND, Items.SHIELD, 2, "perfect_parry"),
+                req(EquipmentSlot.HEAD, Items.NETHERITE_HELMET, 3, "king"),
+                req(EquipmentSlot.CHEST, Items.NETHERITE_CHESTPLATE, 2, "light_heart"),
+                req(EquipmentSlot.LEGS, Items.NETHERITE_LEGGINGS, 3, "leap_power"),
+                req(EquipmentSlot.FEET, Items.NETHERITE_BOOTS, 2, "cloud_walker"))));
+
         COMBOS = Collections.unmodifiableList(list);
+        int[] minSlots = new int[COMBOS.size()];
         Map<String, List<ComboDef>> map = new HashMap<>();
         for (ComboDef c : COMBOS) {
+            int slotBits = 0;
             for (PieceRequirement p : c.pieces()) {
+                slotBits |= (1 << p.slot().ordinal());
                 for (String path : p.acceptedPaths()) {
                     map.computeIfAbsent(path.toLowerCase(Locale.ROOT), k -> new ArrayList<>()).add(c);
                 }
             }
+            minSlots[c.index()] = Integer.bitCount(slotBits);
         }
+        MIN_DISTINCT_SLOTS = minSlots;
         BY_ENCHANT_PATH = Collections.unmodifiableMap(map);
     }
 
@@ -702,9 +1191,8 @@ public final class EnchantmentComboRegistry {
 
     public static ComboMask computeRawMask(LivingEntity entity) {
         if (entity == null) return ComboMask.EMPTY;
-        // T321-ANTI-LAG : Tout combo exige au moins 2 pièces enchantées !
-        // On compte d'abord les slots enchantés en O(1) (6 lectures de slot sans allocation) :
-        // si < 2 slots sont enchantés, retour immédiat en ~6 ns sans tester les 110 combos !
+        // T332-ANTI-LAG : Comptage O(1) des slots enchantés sans allocation ; sortie immédiate
+        // si 0 slot enchanté, et court-circuit par nombre minimal de slots distincts pour chaque combo.
         int enchantedSlots = 0;
         for (EquipmentSlot slot : ALL_COMBO_SLOTS) {
             ItemStack st = entity.getItemBySlot(slot);
@@ -712,18 +1200,24 @@ public final class EnchantmentComboRegistry {
                 enchantedSlots++;
             }
         }
-        if (enchantedSlots < 2) {
+        if (enchantedSlots == 0) {
             return ComboMask.EMPTY;
         }
-        long lo = 0L, hi = 0L;
+        long w0 = 0L, w1 = 0L, w2 = 0L, w3 = 0L;
         for (ComboDef c : COMBOS) {
+            int idx = c.index();
+            if (enchantedSlots < MIN_DISTINCT_SLOTS[idx]) continue;
             if (c.matchesEntity(entity)) {
-                int idx = c.index();
-                if (idx < 64) lo |= (1L << idx);
-                else hi |= (1L << (idx - 64));
+                switch (idx >> 6) {
+                    case 0 -> w0 |= (1L << idx);
+                    case 1 -> w1 |= (1L << idx);
+                    case 2 -> w2 |= (1L << idx);
+                    case 3 -> w3 |= (1L << idx);
+                    default -> {}
+                }
             }
         }
-        return new ComboMask(lo, hi);
+        return new ComboMask(w0, w1, w2, w3);
     }
 
     public static boolean hasCombo(LivingEntity entity, int comboIdx) {
@@ -761,6 +1255,10 @@ public final class EnchantmentComboRegistry {
             case 3 -> " III+";
             case 4 -> " IV+";
             case 5 -> " V+";
+            case 6 -> " VI+";
+            case 7 -> " VII+";
+            case 8 -> " VIII+";
+            case 9 -> " IX+";
             case 10 -> " X+";
             default -> lvl > 1 ? " " + lvl + "+" : "";
         };

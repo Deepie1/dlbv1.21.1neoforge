@@ -242,6 +242,9 @@ public final class EnchantmentTooltipFixProcedure {
                         // format invalide (ne devrait pas arriver) : on garde le texte brut plutot que de planter.
                     }
                 }
+                if (raw.indexOf("%%") >= 0) {
+                    raw = raw.replace("%%", "%");
+                }
                 exact.add(raw);
                 List<Component> wrapped = wrap(raw);
                 for (Component c : wrapped) exact.add(c.getString());
@@ -981,11 +984,18 @@ public final class EnchantmentTooltipFixProcedure {
                 raw = String.format(Locale.ROOT, raw, level);
             } catch (Throwable ignored) {}
         }
+        if (raw.indexOf("%%") >= 0) {
+            raw = raw.replace("%%", "%");
+        }
         String trimmed = raw.trim();
         if (trimmed.contains("\u2022")) {
             int bulletIdx = trimmed.indexOf('\u2022');
-            int colonIdx = trimmed.indexOf(':', bulletIdx);
-            if (bulletIdx <= 4 && colonIdx > bulletIdx && colonIdx - bulletIdx <= 54) {
+            int styledSep = trimmed.indexOf(": \u00a7f", bulletIdx);
+            if (styledSep < 0) styledSep = trimmed.indexOf(":\u00a7f", bulletIdx);
+            int colonIdx = (styledSep > bulletIdx && styledSep - bulletIdx <= 64)
+                    ? styledSep
+                    : trimmed.indexOf(':', bulletIdx);
+            if (bulletIdx <= 4 && colonIdx > bulletIdx && colonIdx - bulletIdx <= 64) {
                 int cut = colonIdx + 1;
                 while (cut < trimmed.length() && trimmed.charAt(cut) == ' ') cut++;
                 trimmed = trimmed.substring(cut);
