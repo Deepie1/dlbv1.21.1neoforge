@@ -51,7 +51,8 @@ import java.util.Map;
  *  - Artefacts mystiques déterministes-aléatoires autour du titre lorsque l'objet possède des
  *    enchantements rares / épiques / mythiques / légendaires ou un combo actif (6 archétypes
  *    pixel-art distincts tirés par graine stable de l'objet).
- *  - Terminologie stricte du mod : « ENCHANTEMENTS » & « COMBO ACTIF » uniquement.
+ *  - Terminologie stricte du mod : « ENCHANTEMENTS » & « SYNERGIE ACTIVE » (uniquement lorsqu'une
+ *    synergie est active sur le joueur).
  *  - Adaptation automatique de l'échelle à la résolution / GUI Scale pour zéro débordement.
  */
 @EventBusSubscriber(modid = DeepLuckyBlockMod.MODID, value = Dist.CLIENT)
@@ -813,18 +814,18 @@ public final class SystemTooltipWindowRenderer {
                 }
             }
 
-            // --- SECTION : COMBO ACTIF (affiché uniquement si actif sur le joueur) ---
+            // --- SECTION : SYNERGIE ACTIVE (affichée uniquement lorsqu'une synergie est active) ---
             if (!activeCombos.isEmpty()) {
                 curY += 5;
                 String comboHeader;
                 if (activeCombos.size() > 1) {
                     String fmt = TranslationFallback.resolve("tooltip.deep_lucky_block.system.section_combos");
                     comboHeader = String.format(Locale.ROOT,
-                            fmt != null ? fmt : (fr ? "\u2756 COMBOS ACTIFS (%s)" : "\u2756 ACTIVE COMBOS (%s)"),
+                            fmt != null ? fmt : (fr ? "\u2756 SYNERGIES ACTIVES (%s)" : "\u2756 ACTIVE SYNERGIES (%s)"),
                             activeCombos.size());
                 } else {
                     String s = TranslationFallback.resolve("tooltip.deep_lucky_block.system.section_combo");
-                    comboHeader = s != null ? s : (fr ? "\u2756 COMBO ACTIF" : "\u2756 ACTIVE COMBO");
+                    comboHeader = s != null ? s : (fr ? "\u2756 SYNERGIE ACTIVE" : "\u2756 ACTIVE SYNERGY");
                 }
                 rows.add(new SectionHeaderRow(comboHeader, "", true, curY, 10));
                 curY += 12;

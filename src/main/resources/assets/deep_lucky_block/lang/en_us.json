@@ -1887,9 +1887,9 @@
   "combo.deep_lucky_block.amiral_hauturier.desc": "Catching loot grants Absorption + Dolphin's Grace and a 50% chance to double fished treasure.",
   "combo.deep_lucky_block.armure_eternelle_transcendante.name": "Transcendent King's Regalia",
   "combo.deep_lucky_block.armure_eternelle_transcendante.desc": "4-Piece Royal Set: +20% all damage dealt, -15% damage taken, Wither/Slow/Levitation immunity, and golden halo.",
-  "tooltip.deep_lucky_block.combo_active": "✦ Active Combo: ",
+  "tooltip.deep_lucky_block.combo_active": "✦ Active Synergy: ",
   "tooltip.deep_lucky_block.combo_hint": "✧ Possible Combo: ",
-  "tooltip.deep_lucky_block.combo_activated": "✦ Combo Activated: ",
+  "tooltip.deep_lucky_block.combo_activated": "✦ Synergy Activated: ",
   "tooltip.deep_lucky_block.slot.head": "Helmet",
   "tooltip.deep_lucky_block.slot.chest": "Chestplate/Elytra",
   "tooltip.deep_lucky_block.slot.legs": "Leggings",
@@ -2085,6 +2085,6 @@
   "tooltip.deep_lucky_block.system.scroll_hint": "⟳ Scroll %s/%s",
   "tooltip.deep_lucky_block.system.hold_shift_compact": "▸ Hold [SHIFT] to view details",
   "tooltip.deep_lucky_block.system.section_enchantments": "❖ ENCHANTMENTS (%s)",
-  "tooltip.deep_lucky_block.system.section_combo": "❖ ACTIVE COMBO",
-  "tooltip.deep_lucky_block.system.section_combos": "❖ ACTIVE COMBOS (%s)"
+  "tooltip.deep_lucky_block.system.section_combo": "❖ ACTIVE SYNERGY",
+  "tooltip.deep_lucky_block.system.section_combos": "❖ ACTIVE SYNERGIES (%s)"
 }

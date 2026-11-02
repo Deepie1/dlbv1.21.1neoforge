@@ -2646,9 +2646,9 @@
       "combo.deep_lucky_block.amiral_hauturier.desc": "Catching loot grants Absorption + Dolphin's Grace and a 50% chance to double fished treasure.",
       "combo.deep_lucky_block.armure_eternelle_transcendante.name": "Transcendent King's Regalia",
       "combo.deep_lucky_block.armure_eternelle_transcendante.desc": "4-Piece Royal Set: +20% all damage dealt, -15% damage taken, Wither/Slow/Levitation immunity, and golden halo.",
-      "tooltip.deep_lucky_block.combo_active": "✦ Active Combo: ",
+      "tooltip.deep_lucky_block.combo_active": "✦ Active Synergy: ",
       "tooltip.deep_lucky_block.combo_hint": "✧ Possible Combo: ",
-      "tooltip.deep_lucky_block.combo_activated": "✦ Combo Activated: ",
+      "tooltip.deep_lucky_block.combo_activated": "✦ Synergy Activated: ",
       "tooltip.deep_lucky_block.slot.head": "Helmet",
       "tooltip.deep_lucky_block.slot.chest": "Chestplate/Elytra",
       "tooltip.deep_lucky_block.slot.legs": "Leggings",
@@ -2844,8 +2844,8 @@
       "tooltip.deep_lucky_block.system.scroll_hint": "⟳ Scroll %s/%s",
       "tooltip.deep_lucky_block.system.hold_shift_compact": "▸ Hold [SHIFT] to view details",
       "tooltip.deep_lucky_block.system.section_enchantments": "❖ ENCHANTMENTS (%s)",
-      "tooltip.deep_lucky_block.system.section_combo": "❖ ACTIVE COMBO",
-      "tooltip.deep_lucky_block.system.section_combos": "❖ ACTIVE COMBOS (%s)"
+      "tooltip.deep_lucky_block.system.section_combo": "❖ ACTIVE SYNERGY",
+      "tooltip.deep_lucky_block.system.section_combos": "❖ ACTIVE SYNERGIES (%s)"
     },
     "fr_fr": {
       "advancements.deep_lucky_block.deep_lucky_block_broken.description": "Casse un Deep Lucky Block. Qu'est-ce qui pourrait mal tourner ?",
@@ -4736,9 +4736,9 @@
       "combo.deep_lucky_block.amiral_hauturier.desc": "Chaque prise à la canne à pêche confère Absorption + Grâce du Dauphin et 50 % de chance de doubler le butin.",
       "combo.deep_lucky_block.armure_eternelle_transcendante.name": "Relique Indélébile du Roi",
       "combo.deep_lucky_block.armure_eternelle_transcendante.desc": "Set Royal 4 pièces : +20 % dégâts infligés, -15 % dégâts subis, immunité Wither/Lenteur/Lévitation et couronne dorée.",
-      "tooltip.deep_lucky_block.combo_active": "✦ Combo Actif : ",
+      "tooltip.deep_lucky_block.combo_active": "✦ Synergie Active : ",
       "tooltip.deep_lucky_block.combo_hint": "✧ Combo possible : ",
-      "tooltip.deep_lucky_block.combo_activated": "✦ Combo Activé : ",
+      "tooltip.deep_lucky_block.combo_activated": "✦ Synergie Activée : ",
       "tooltip.deep_lucky_block.slot.head": "Casque",
       "tooltip.deep_lucky_block.slot.chest": "Plastron/Élytres",
       "tooltip.deep_lucky_block.slot.legs": "Jambières",
@@ -4934,8 +4934,8 @@
       "tooltip.deep_lucky_block.system.scroll_hint": "⟳ Molette %s/%s",
       "tooltip.deep_lucky_block.system.hold_shift_compact": "▸ Maintenez [SHIFT] pour voir les détails",
       "tooltip.deep_lucky_block.system.section_enchantments": "❖ ENCHANTEMENTS (%s)",
-      "tooltip.deep_lucky_block.system.section_combo": "❖ COMBO ACTIF",
-      "tooltip.deep_lucky_block.system.section_combos": "❖ COMBOS ACTIFS (%s)"
+      "tooltip.deep_lucky_block.system.section_combo": "❖ SYNERGIE ACTIVE",
+      "tooltip.deep_lucky_block.system.section_combos": "❖ SYNERGIES ACTIVES (%s)"
     }
   },
   "metadata": {
