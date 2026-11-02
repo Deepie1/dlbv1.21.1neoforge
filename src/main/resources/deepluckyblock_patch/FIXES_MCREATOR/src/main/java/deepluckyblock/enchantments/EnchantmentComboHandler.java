@@ -628,7 +628,7 @@ public final class EnchantmentComboHandler {
         if (mask.has(IDX_BERSERKER_IMMORTEL) && entity.getHealth() <= entity.getMaxHealth() * 0.35f) {
             entity.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 30, 2, true, false));
             if (sl != null && entity.tickCount % 12 == 0) {
-                EnchantmentParticleFX.spiralHelix(entity, EnchantmentParticleFX.CRIMSON_BLOOD, 0.72, 6);
+                EnchantmentParticleFX.doubleHelix(entity, EnchantmentParticleFX.CRIMSON_BLOOD, EnchantmentParticleFX.SCARLET_MIST, 0.72, 6);
             }
         }
 
@@ -1124,7 +1124,7 @@ public final class EnchantmentComboHandler {
             // #058 Écho du Duelliste : 0,5 s après chaque coup mêlée, une lame fantôme re-frappe pour 30 % !
             if (atkMask.has(IDX_ECHO_DUELLISTE) && !isProjectile && victim.level() instanceof ServerLevel slEcho) {
                 float echoDmg = Math.max(1.5f, event.getAmount() * 0.30f);
-                TestProcedure.schedule(slEcho, TestProcedure.currentTick(slEcho) + 10L, () -> {
+                TestProcedure.schedule(slEcho, TestProcedure.currentTick(slEcho) + 10, () -> {
                     if (victim.isAlive() && attacker.isAlive()) {
                         safeHurt(victim, attacker.damageSources().magic(), echoDmg);
                         EnchantmentParticleFX.burstOnEntity(victim, EnchantmentParticleFX.OVERCLOCK_CYAN, 10, 0.3, 0.04);
@@ -1731,7 +1731,7 @@ public final class EnchantmentComboHandler {
                         m.hurtMarked = true;
                     }
                 }
-                TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 20L, () -> {
+                TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 20, () -> {
                     EnchantmentParticleFX.shockwaveRing(sl, hit.x, hit.y + 0.2, hit.z, ParticleTypes.SCULK_SOUL, 3.4, 20, 0.05);
                     for (Mob m : sl.getEntitiesOfClass(Mob.class, new AABB(hit, hit).inflate(3.8))) {
                         if (!isFriendlySummon(m, shooter)) safeHurt(m, shooter.damageSources().magic(), 6.0f);
@@ -1745,7 +1745,7 @@ public final class EnchantmentComboHandler {
                 tag.remove("slb_c53_delay");
                 liv53.addEffect(new MobEffectInstance(MobEffects.GLOWING, 50, 0));
                 for (int b = 1; b <= 2; b++) {
-                    TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 20L * b, () -> {
+                    TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 20 * b, () -> {
                         if (liv53.isAlive()) {
                             EnchantmentParticleFX.burstOnEntity(liv53, ParticleTypes.CRIT, 14, 0.35, 0.07);
                             safeHurt(liv53, shooter.damageSources().magic(), 5.0f);
@@ -1767,7 +1767,7 @@ public final class EnchantmentComboHandler {
                     && ehr.getEntity() instanceof LivingEntity hitMob) {
                 tag.remove("slb_combo24_brimstone");
                 hitMob.setRemainingFireTicks(80);
-                TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 30L, () -> {
+                TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 30, () -> {
                     if (hitMob.isAlive()) {
                         EnchantmentParticleFX.burstOnEntity(hitMob, ParticleTypes.LAVA, 10, 0.3, 0.05);
                         safeHurt(hitMob, shooter.damageSources().onFire(), 5.5f);
@@ -1813,7 +1813,7 @@ public final class EnchantmentComboHandler {
                     double ang = sl.random.nextDouble() * Math.PI * 2.0;
                     double rx = hit.x + Math.cos(ang) * 2.4;
                     double rz = hit.z + Math.sin(ang) * 2.4;
-                    TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 10 + i * 8L, () -> {
+                    TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 10 + i * 8, () -> {
                         EnchantmentParticleFX.shockwaveRing(sl, rx, hit.y + 0.15, rz, ParticleTypes.LAVA, 2.2, 16, 0.06);
                         sl.playSound(null, BlockPos.containing(rx, hit.y, rz),
                                 SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.7f, 1.2f);
@@ -1831,7 +1831,7 @@ public final class EnchantmentComboHandler {
             if (tag.getBoolean("slb_c95_dragon")) {
                 tag.remove("slb_c95_dragon");
                 for (int pulse = 0; pulse < 3; pulse++) {
-                    TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + pulse * 20L, () -> {
+                    TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + pulse * 20, () -> {
                         EnchantmentParticleFX.shockwaveRing(sl, hit.x, hit.y + 0.15, hit.z, ParticleTypes.DRAGON_BREATH, 3.0, 18, 0.02);
                         if (shooter.isAlive() && shooter.position().distanceToSqr(hit) <= 10.0) shooter.heal(2.0f);
                         for (Mob m : sl.getEntitiesOfClass(Mob.class, new AABB(hit, hit).inflate(3.2))) {
@@ -1949,7 +1949,7 @@ public final class EnchantmentComboHandler {
                         && sl.random.nextInt(100) < 55) {
                     BlockState sapling = saplingForLog(state);
                     BlockPos targetPos = pos.immutable();
-                    TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 2L, () -> {
+                    TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 2, () -> {
                         if (sl.getBlockState(targetPos).isAir()) {
                             sl.setBlockAndUpdate(targetPos, sapling);
                             sl.sendParticles(ParticleTypes.HAPPY_VILLAGER,
