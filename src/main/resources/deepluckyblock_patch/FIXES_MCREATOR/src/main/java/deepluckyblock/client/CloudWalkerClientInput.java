@@ -214,20 +214,32 @@ public final class CloudWalkerClientInput {
                 player.hasImpulse = true;
                 player.fallDistance = 0.0F;
                 cloudAscentPending = true;
-                PacketDistributor.sendToServer(new DeepPayloads.CloudJumpMessage(-1));
+                PacketDistributor.sendToServer(new DeepPayloads.CloudJumpMessage(-1, false, false, player.getYRot()));
                 return;
             }
 
-            // Marcheur des Nuages (Double Saut + Triple Saut, ou Quadruple Saut avec Combo #2)
+            // Marcheur des Nuages I..III (Double Saut + Triple Saut x2 -> x5, ou Quadruple Saut avec Combo #2)
             if (cwLvl > 0 && jumpsRemaining > 0) {
                 int currentJumpIdx = (maxAirJumps - jumpsRemaining) + 1;
                 jumpsRemaining--;
                 hasReleasedJumpKey = false;
                 cloudAscentPending = true;
 
-                PacketDistributor.sendToServer(new DeepPayloads.CloudJumpMessage(currentJumpIdx));
-                UniversalEnchantmentHandler.applyCloudJumpPhysics(player, currentJumpIdx, maxAirJumps, hasQuadCombo);
-                spawnLocalCloudBurst(level, player, currentJumpIdx >= maxAirJumps);
+                float fwd = player.input.forwardImpulse;
+                float left = player.input.leftImpulse;
+                boolean movingHoriz = Math.abs(fwd) > 0.01F || Math.abs(left) > 0.01F;
+                boolean sprinting = player.isSprinting();
+                float moveYawDeg = player.getYRot();
+                if (movingHoriz) {
+                    float relDeg = (float) (Mth.atan2(-left, fwd) * (180.0D / Math.PI));
+                    moveYawDeg = player.getYRot() + relDeg;
+                }
+
+                PacketDistributor.sendToServer(
+                        new DeepPayloads.CloudJumpMessage(currentJumpIdx, movingHoriz, sprinting, moveYawDeg));
+                UniversalEnchantmentHandler.applyCloudJumpPhysics(
+                        player, cwLvl, currentJumpIdx, maxAirJumps, hasQuadCombo, movingHoriz, sprinting, moveYawDeg);
+                spawnLocalCloudBurst(level, player, currentJumpIdx >= maxAirJumps, cwLvl);
             }
         } catch (Throwable ignored) {}
     }
@@ -360,23 +372,25 @@ public final class CloudWalkerClientInput {
         }
     }
 
-    private static void spawnLocalCloudBurst(ClientLevel level, LocalPlayer player, boolean radiant) {
+    private static void spawnLocalCloudBurst(ClientLevel level, LocalPlayer player, boolean radiant, int cwLvl) {
         double x = player.getX();
         double y = player.getY();
         double z = player.getZ();
-        for (int i = 0; i < 14; i++) {
-            double mx = level.random.nextGaussian() * 0.04;
+        int clampedLvl = Math.min(3, Math.max(1, cwLvl));
+        int poofs = 12 + clampedLvl * 4;
+        for (int i = 0; i < poofs; i++) {
+            double mx = level.random.nextGaussian() * 0.04 * clampedLvl;
             double my = level.random.nextGaussian() * 0.02 + 0.04;
-            double mz = level.random.nextGaussian() * 0.04;
+            double mz = level.random.nextGaussian() * 0.04 * clampedLvl;
             level.addParticle(ParticleTypes.POOF, x, y, z, mx, my, mz);
         }
-        double r = radiant ? 0.95 : 0.72;
-        int ring = radiant ? 14 : 10;
+        double r = (radiant ? 0.95 : 0.72) + 0.22 * (clampedLvl - 1);
+        int ring = (radiant ? 14 : 10) + (clampedLvl - 1) * 4;
         for (int i = 0; i < ring; i++) {
             double ang = (Math.PI * 2.0 * i) / ring;
             level.addParticle(ParticleTypes.CLOUD,
                     x + Math.cos(ang) * r * 0.45, y - 0.04, z + Math.sin(ang) * r * 0.45,
-                    Math.cos(ang) * 0.035, -0.01, Math.sin(ang) * 0.035);
+                    Math.cos(ang) * (0.035 + 0.012 * clampedLvl), -0.01, Math.sin(ang) * (0.035 + 0.012 * clampedLvl));
         }
     }
 }

@@ -4118,51 +4118,100 @@ public class UniversalEnchantmentHandler {
     }
 
     /**
-     * T320-ARTIFACTS-CLOUD-JUMP : Physique exacte du « Cloud in a Bottle » (ochotonida/artifacts 1.21.1,
-     * DoubleJump#jump) étendue au Triple Saut (2 sauts aériens, ou 3 avec Combo #2) :
-     *  - upwardsMotion = 0.50 (+0.04 sur le dernier saut aérien) + 0.10 * (JumpBoostAmplifier + 1)
-     *  - Si sprint actif : upwardsMotion *= 1.25 et impulsion horizontale +0.25 dans l'axe du yaw (getYRot)
-     *  - fallDistance = 0, hasImpulse = true (JAMAIS hurtMarked=true côté serveur pour ne pas écraser
-     *    l'élan horizontal du client !), awardStat(Stats.JUMP) et causeFoodExhaustion.
+     * T330-CLOUD-WALKER-X2-X5 : Multiplicateur de puissance et de portée du Triple Saut selon le
+     * niveau de Marcheur des Nuages (max level 3) :
+     *  - Niveau I   : x2.0 de la base initiale
+     *  - Niveau II  : x3.5 de la base initiale
+     *  - Niveau III : x5.0 de la base initiale (niveau max naturel)
      */
-    public static void applyCloudJumpPhysics(Player player, int jumpIndex, int maxAirJumps, boolean hasQuadCombo) {
-        player.fallDistance = 0.0F;
-
-        boolean isCulmination = jumpIndex >= maxAirJumps;
-        double upwardsMotion = isCulmination ? 0.54 : 0.50;
-        MobEffectInstance jumpEffect = player.getEffect(MobEffects.JUMP);
-        if (jumpEffect != null) {
-            upwardsMotion += 0.10 * (jumpEffect.getAmplifier() + 1);
-        }
-        if (player.isSprinting()) {
-            upwardsMotion *= (hasQuadCombo && jumpIndex >= 3) ? 1.32 : 1.25;
-        }
-
-        Vec3 motion = player.getDeltaMovement();
-        double motionMultiplier = 0.0;
-        if (player.isSprinting()) {
-            motionMultiplier = (hasQuadCombo && jumpIndex >= 3) ? 0.30 : 0.25;
-        }
-        float direction = player.getYRot() * ((float) Math.PI / 180.0F);
-        player.setDeltaMovement(motion.add(
-                -Mth.sin(direction) * motionMultiplier,
-                upwardsMotion - motion.y,
-                Mth.cos(direction) * motionMultiplier
-        ));
-
-        player.hasImpulse = true;
-        player.awardStat(Stats.JUMP);
-        player.causeFoodExhaustion(player.isSprinting() ? 0.20F : 0.05F);
+    public static double cloudWalkerPowerMultiplier(int cwLvl) {
+        if (cwLvl <= 0) return 1.0;
+        if (cwLvl == 1) return 2.0;
+        if (cwLvl == 2) return 3.5;
+        if (cwLvl == 3) return 5.0;
+        return Math.min(8.0, 5.0 + 1.0 * (cwLvl - 3));
     }
 
     /**
-     * T307-CLOUD-WALKER + T308-COMBOS #1 & #2 + T320-ARTIFACTS-CLOUD-JUMP :
-     *  - requestedJumpIdx == -1 : Combo #1 « Acrobate Miel-Slime » (Wall-Jump élastique depuis un mur !).
-     *  - requestedJumpIdx >= 1  : Marcheur des Nuages (Triple Saut style Artifacts Cloud in a Bottle, ou Quadruple Saut avec Combo #2 !).
+     * T320 + T330-CLOUD-WALKER-X2-X5 : Physique déterministe Client/Serveur du Triple Saut
+     * « Marcheur des Nuages » (2 sauts aériens, ou 3 avec Combo #2 Ascension Céleste), calibrée
+     * sur la gravité/traînée réelle de Minecraft pour offrir x2.0 (Niv. I), x3.5 (Niv. II) et
+     * x5.0 (Niv. III) en hauteur ET en distance de saut, avec redirection aérienne fluide et
+     * zéro rollback serveur (vecteur identique côté Client et Serveur, sans hurtMarked=true).
      */
-    public static void performServerCloudJump(ServerPlayer sp, int requestedJumpIdx) {
+    public static void applyCloudJumpPhysics(
+            Player player,
+            int cwLvl,
+            int jumpIndex,
+            int maxAirJumps,
+            boolean hasQuadCombo,
+            boolean movingHoriz,
+            boolean sprinting,
+            float moveYawDeg) {
+        player.fallDistance = 0.0F;
+
+        double powerMult = cloudWalkerPowerMultiplier(Math.max(1, cwLvl));
+        boolean isCulmination = jumpIndex >= maxAirJumps;
+
+        // Impulsion verticale calibrée sur g=0.08 / drag=0.98 -> hauteur effective x2.0 / x3.5 / x5.0+
+        double baseUp = isCulmination ? 0.54 : 0.50;
+        double upwardsMotion = baseUp * Math.pow(powerMult, 0.58);
+        MobEffectInstance jumpEffect = player.getEffect(MobEffects.JUMP);
+        if (jumpEffect != null) {
+            upwardsMotion += 0.12 * (jumpEffect.getAmplifier() + 1);
+        }
+        if (sprinting) {
+            upwardsMotion *= (hasQuadCombo && jumpIndex >= 3) ? 1.32 : 1.25;
+        }
+
+        // Impulsion horizontale calibrée sur drag aérien 0.91 -> distance effective x2.0 / x3.5 / x5.0+
+        Vec3 motion = player.getDeltaMovement();
+        double newVx;
+        double newVz;
+        if (sprinting || movingHoriz) {
+            double totalHorizSpeed;
+            if (sprinting) {
+                double comboExtra = (hasQuadCombo && jumpIndex >= 3) ? 0.18 : 0.0;
+                totalHorizSpeed = 0.28 + 0.40 * powerMult + 0.08 * (powerMult - 2.0) + comboExtra;
+            } else {
+                totalHorizSpeed = 0.15 + 0.20 * powerMult;
+            }
+            float rad = moveYawDeg * ((float) Math.PI / 180.0F);
+            double dirX = -Mth.sin(rad);
+            double dirZ = Mth.cos(rad);
+            // Si le joueur avait déjà plus d'élan dans cette même direction (ex: Speed X), on le préserve !
+            double existingAlongDir = motion.x * dirX + motion.z * dirZ;
+            double finalSpeed = Math.max(totalHorizSpeed, existingAlongDir + 0.25 * powerMult);
+            newVx = dirX * finalSpeed;
+            newVz = dirZ * finalSpeed;
+        } else {
+            newVx = motion.x * 0.25;
+            newVz = motion.z * 0.25;
+        }
+
+        player.setDeltaMovement(newVx, upwardsMotion, newVz);
+        player.hasImpulse = true;
+        player.awardStat(Stats.JUMP);
+        player.causeFoodExhaustion(sprinting ? 0.20F : 0.05F);
+    }
+
+    /**
+     * T307-CLOUD-WALKER + T308-COMBOS #1 & #2 + T320 + T330-CLOUD-WALKER-X2-X5 :
+     *  - requestedJumpIdx == -1 : Combo #1 « Acrobate Miel-Slime » (Wall-Jump élastique depuis un mur !).
+     *  - requestedJumpIdx >= 1  : Marcheur des Nuages I..III (x2 -> x5 puissance & distance).
+     */
+    public static void performServerCloudJump(
+            ServerPlayer sp,
+            int requestedJumpIdx,
+            boolean movingHoriz,
+            boolean sprinting,
+            float moveYawDeg) {
         if (sp == null || !sp.isAlive() || sp.isSpectator()) return;
         if (sp.isInWater() || sp.isInLava() || sp.isFallFlying() || sp.getAbilities().flying) return;
+
+        if (!Float.isFinite(moveYawDeg)) {
+            moveYawDeg = sp.getYRot();
+        }
 
         SharedMoveState state = SHARED_MOVE_STATES.computeIfAbsent(sideEntityKey(sp), k -> new SharedMoveState());
         long now = sp.level().getGameTime();
@@ -4204,23 +4253,25 @@ public class UniversalEnchantmentHandler {
         int effectiveIdx = Math.max(state.serverAirJumpsUsed, Math.min(requestedJumpIdx, maxAirJumps));
         boolean isFinalJump = effectiveIdx >= maxAirJumps;
 
-        applyCloudJumpPhysics(sp, effectiveIdx, maxAirJumps, hasQuadCombo);
+        applyCloudJumpPhysics(sp, cwLvl, effectiveIdx, maxAirJumps, hasQuadCombo, movingHoriz, sprinting, moveYawDeg);
         state.lastAirVy = 0.0;
 
         if (sp.level() instanceof ServerLevel sl) {
-            // Particules authentiques Cloud in a Bottle (20 bouffées POOF gaussiennes + anneau nuageux)
-            for (int i = 0; i < 20; ++i) {
-                double motionX = sp.getRandom().nextGaussian() * 0.02;
+            int poofCount = 18 + Math.min(3, cwLvl) * 6;
+            for (int i = 0; i < poofCount; ++i) {
+                double motionX = sp.getRandom().nextGaussian() * 0.03 * cwLvl;
                 double motionY = sp.getRandom().nextGaussian() * 0.02 + 0.20;
-                double motionZ = sp.getRandom().nextGaussian() * 0.02;
+                double motionZ = sp.getRandom().nextGaussian() * 0.03 * cwLvl;
                 sl.sendParticles(ParticleTypes.POOF, sp.getX(), sp.getY(), sp.getZ(),
                         1, motionX, motionY, motionZ, 0.15);
             }
+            double cushionRadius = (isFinalJump ? 1.15 : 0.85) + 0.22 * (Math.min(3, cwLvl) - 1);
             EnchantmentParticleFX.cloudCushion(sl, sp.getX(), sp.getY() - 0.05, sp.getZ(),
-                    isFinalJump ? 1.15 : 0.82, isFinalJump);
-            if (hasQuadCombo && effectiveIdx >= 3) {
+                    cushionRadius, isFinalJump || cwLvl >= 3);
+            if ((hasQuadCombo && effectiveIdx >= 3) || cwLvl >= 3) {
                 EnchantmentParticleFX.shockwaveRing(sl, sp.getX(), sp.getY() - 0.02, sp.getZ(),
-                        EnchantmentParticleFX.GOLD_DIVINE, 1.25, 16, 0.02);
+                        cwLvl >= 3 ? ParticleTypes.CLOUD : EnchantmentParticleFX.GOLD_DIVINE,
+                        1.15 + 0.20 * Math.min(3, cwLvl), 16, 0.04);
             }
             sl.playSound(null, sp, SoundEvents.WOOL_FALL, SoundSource.PLAYERS,
                     1.0F, 0.9F + sp.getRandom().nextFloat() * 0.2F + (isFinalJump ? 0.15F : 0.0F));
@@ -4270,7 +4321,7 @@ public class UniversalEnchantmentHandler {
         }
         // Validation anti-triche : le plancher doit être sous les pieds du joueur et à distance raisonnable
         int maxAllowedUnderFeet = Mth.floor(sp.getY() - 1.0 + 0.15);
-        int clampedY = Mth.clamp(clientAnchorY, Math.max(minBuild, maxAllowedUnderFeet - 14), Math.min(maxBuild, maxAllowedUnderFeet));
+        int clampedY = Mth.clamp(clientAnchorY, Math.max(minBuild, maxAllowedUnderFeet - 96), Math.min(maxBuild, maxAllowedUnderFeet));
         double[] vel = new double[3];
         AirWalkState st = samplePlayerMotion(sp, sl, vel);
         st.anchorFloorY = clampedY;

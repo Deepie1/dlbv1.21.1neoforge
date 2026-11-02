@@ -431,7 +431,7 @@ public class ModEnchantments {
             CustomEnchantment.create("transfer_misfortune", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3, false, false);
             CustomEnchantment.create("point_shoot", Rarity.UNCOMMON, CustomEnchantment.Cat.BOW, MAIN_HAND, 3, false, false);
             CustomEnchantment.create("recycle", Rarity.UNCOMMON, CustomEnchantment.Cat.BREAKABLE, MAIN_HAND, 1, false, false);
-            CustomEnchantment.create("cloud_walker", Rarity.LEGENDARY, CustomEnchantment.Cat.ARMOR_FEET, FEET, 1, false, false);
+            CustomEnchantment.create("cloud_walker", Rarity.LEGENDARY, CustomEnchantment.Cat.ARMOR_FEET, FEET, 3, false, false);
             CustomEnchantment.create("stealth_hunter", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3, false, false);
 
     // ===================== 15. AJOUTS SYNCHRONISES V19 =====================

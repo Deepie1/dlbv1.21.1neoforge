@@ -50,16 +50,24 @@ public final class DeepPayloads {
     }
 
     /**
-     * T307-CLOUD-WALKER : Packet Client -> Serveur déclenchant les 2 sauts aériens
-     * supplémentaires (Double Saut + Triple Saut) sur un coussin de nuages.
+     * T307-CLOUD-WALKER + T330-CLOUD-WALKER-X2-X5 : Packet Client -> Serveur déclenchant les sauts
+     * aériens sur coussin de nuages avec synchronisation exacte de la direction et du sprint client.
      */
-    public record CloudJumpMessage(int airJumpIndex) implements CustomPacketPayload {
+    public record CloudJumpMessage(
+            int airJumpIndex,
+            boolean movingHoriz,
+            boolean sprinting,
+            float moveYawDeg
+    ) implements CustomPacketPayload {
         public static final CustomPacketPayload.Type<CloudJumpMessage> TYPE =
                 new CustomPacketPayload.Type<>(CLOUD_JUMP_C2S);
 
         public static final StreamCodec<RegistryFriendlyByteBuf, CloudJumpMessage> STREAM_CODEC =
                 StreamCodec.composite(
                         ByteBufCodecs.INT, CloudJumpMessage::airJumpIndex,
+                        ByteBufCodecs.BOOL, CloudJumpMessage::movingHoriz,
+                        ByteBufCodecs.BOOL, CloudJumpMessage::sprinting,
+                        ByteBufCodecs.FLOAT, CloudJumpMessage::moveYawDeg,
                         CloudJumpMessage::new);
 
         @Override
@@ -70,7 +78,12 @@ public final class DeepPayloads {
         public static void handle(CloudJumpMessage message, IPayloadContext context) {
             context.enqueueWork(() -> {
                 if (context.player() instanceof ServerPlayer sp) {
-                    UniversalEnchantmentHandler.performServerCloudJump(sp, message.airJumpIndex());
+                    UniversalEnchantmentHandler.performServerCloudJump(
+                            sp,
+                            message.airJumpIndex(),
+                            message.movingHoriz(),
+                            message.sprinting(),
+                            message.moveYawDeg());
                 }
             });
         }
