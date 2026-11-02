@@ -53,6 +53,8 @@ public final class WeaponVfxServerListener {
     private static final Map<Integer, Long> LAST_PROJECTILE_HIT_TICK = new ConcurrentHashMap<>();
     private static final Map<Integer, Long> LAST_CRIT_TICK = new ConcurrentHashMap<>();
     private static final Map<Integer, Long> LAST_RALLY_TICK = new ConcurrentHashMap<>();
+    /** T351-BIG-BONUS : dernier tick où une GROSSE animation (critique) a été jouée, par attaquant. */
+    private static final Map<Integer, Long> LAST_BIG_ANIM_TICK = new ConcurrentHashMap<>();
     /** T349-VFX-FREQUENCY : cooldown réel et aléatoire par (attaquant, effet). */
     private static final Map<String, Long> EFFECT_COOLDOWN = new ConcurrentHashMap<>();
 
@@ -60,8 +62,10 @@ public final class WeaponVfxServerListener {
     private static final int NORMAL_TRIGGER_PERCENT = 5;
     /** T351 : coup CRITIQUE -> 66 % de chance. */
     private static final int CRIT_TRIGGER_PERCENT = 66;
-    /** T351 : part des déclenchements qui jouent un accent discret (au lieu de la grosse animation). */
-    private static final int SUBTLE_SHARE_PERCENT = 70;
+    /** T351 : part des déclenchements qui jouent un accent discret. */
+    private static final int SUBTLE_SHARE_PERCENT = 90;
+    /** T351-BIG-BONUS : une grosse animation (les 10 % restants) amplifie les dégâts de 5 %. */
+    private static final float BIG_ANIM_DAMAGE_BONUS = 1.05f;
 
     private WeaponVfxServerListener() {}
 
@@ -92,8 +96,11 @@ public final class WeaponVfxServerListener {
             return;
         }
 
+        // Grosse animation jouée -> le dégât de ce coup sera amplifié de 5 % (voir onLivingHurtVisuals).
+        LAST_BIG_ANIM_TICK.put(attacker.getId(), now);
         broadcastNear(sl, cx, cy, cz, fx.id, KIND_IMPACT, Math.max(2, intensity),
-                cx, cy, cz, (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ());
+                cx, cy, cz, (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ(),
+                paletteOf(attacker.getMainHandItem(), fx));
     }
 
     /** Appelé lors d'un rebond d'éclair en chaîne entre deux entités. */
@@ -162,14 +169,22 @@ public final class WeaponVfxServerListener {
         if (sl.random.nextInt(100) >= SUBTLE_SHARE_PERCENT) return false;
         DeepElement el = pickElement(sl, weapon, fx);
         WeaponVfxSubtle.Subtle sub = WeaponVfxSubtle.pick(el, sl.random.nextLong());
+        int palette = paletteOf(weapon, fx);
         // Direction de frappe : de l'attaquant vers la cible, prolongée au-delà de la cible.
         float dx = tx - ax, dy = ty - ay, dz = tz - az;
         float ex = tx + dx * 0.35f;
         float ey = ty + dy * 0.35f;
         float ez = tz + dz * 0.35f;
         broadcastNear(sl, tx, ty, tz, 0, WeaponVfxSubtle.NET_KIND_BASE + sub.index(), 1,
-                tx, ty, tz, ex, ey, ez);
+                tx, ty, tz, ex, ey, ez, palette);
         return true;
+    }
+
+    /** T351-ELEMENT-BLEND : masque des éléments de l'arme (0 si inconnu) pour mélanger les couleurs. */
+    private static int paletteOf(ItemStack weapon, WeaponVisualEffectId fx) {
+        int mask = WeaponVisualEffectId.elementMaskOf(weapon);
+        if (mask == 0 && fx != null) mask = 1 << fx.element.ordinal();
+        return mask;
     }
 
     /** Famille élémentaire à utiliser : une des familles portées par l'arme (variété), sinon celle de l'effet. */
@@ -231,6 +246,7 @@ public final class WeaponVfxServerListener {
             LAST_PROJECTILE_HIT_TICK.clear();
             LAST_CRIT_TICK.clear();
             LAST_RALLY_TICK.clear();
+            LAST_BIG_ANIM_TICK.clear();
         }
 
         ItemStack weapon = resolveImpactWeapon(attacker, direct);
@@ -246,18 +262,25 @@ public final class WeaponVfxServerListener {
 
         boolean meleeCritJustFired = (now - LAST_CRIT_TICK.getOrDefault(attacker.getId(), -100L)) <= 1L;
         boolean arrowCrit = (direct instanceof AbstractArrow arr) && arr.isCritArrow();
+        // T351-ELEMENT-BLEND : palette élémentaire de l'arme (feu + eau -> les deux teintes ensemble).
+        int palette = paletteOf(weapon, layers.get(0).effect());
 
         // Critique à l'arc / arbalète : étoile critique pixel 3D dédiée si pas déjà en couche 0
         if (arrowCrit && layers.get(0).effect().category != WeaponVisualEffectId.Category.CRIT
                 && sl.random.nextInt(100) < CRIT_TRIGGER_PERCENT) {
             if (!playSubtleAccent(sl, weapon, WeaponVisualEffectId.GOLDEN_CRIT_STAR, tx, ty, tz, ax, ay, az)) {
                 broadcastNear(sl, tx, ty, tz, WeaponVisualEffectId.GOLDEN_CRIT_STAR.id, KIND_IMPACT, 2,
-                        tx, ty, tz, ax, ay, az);
+                        tx, ty, tz, ax, ay, az, palette);
             }
         }
 
         // T349-VFX-FREQUENCY : un seul effet par coup (rarement deux) au lieu de toute la pile
         int layerBudget = (sl.random.nextInt(100) < 22) ? 2 : 1;
+        // Le critique a-t-il déjà lancé une grosse animation ? Alors le +5 % est appliqué tout de suite.
+        boolean bigAnimBonusApplied = (now - LAST_BIG_ANIM_TICK.getOrDefault(attacker.getId(), -100L)) <= 2L;
+        if (bigAnimBonusApplied) {
+            event.setAmount(event.getAmount() * BIG_ANIM_DAMAGE_BONUS);
+        }
         for (int i = 0; i < layers.size(); i++) {
             if (layerBudget <= 0) break;
             WeaponVisualEffectId.ResolvedLayer layer = layers.get(i);
@@ -279,23 +302,30 @@ public final class WeaponVfxServerListener {
             }
             layerBudget--;
 
+            // T351-BIG-BONUS : les 10 % de grosses animations amplifient de 5 % les dégâts subis
+            // (une seule fois par coup, même si deux couches partent).
+            if (!bigAnimBonusApplied) {
+                bigAnimBonusApplied = true;
+                event.setAmount(event.getAmount() * BIG_ANIM_DAMAGE_BONUS);
+            }
+
             // T351 : l'entaille est désormais elle aussi décidée par le serveur (5 % / 66 %),
             // ce qui évite tout double déclenchement client + serveur.
             if (!isProjectileHit) {
                 broadcastNear(sl, ax, ay, az, fx.id, KIND_SWING_SLASH, layer.level(),
-                        ax, ay, az, tx, ty, tz);
+                        ax, ay, az, tx, ty, tz, palette);
             }
 
             if (fx == WeaponVisualEffectId.CRIMSON_SIPHON) {
                 broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
-                        tx, ty, tz, ax, ay, az);
+                        tx, ty, tz, ax, ay, az, palette);
             } else if (fx == WeaponVisualEffectId.ASTRAL_STAR_LANCE && attacker.distanceToSqr(target) > 9.0) {
                 broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
-                        ax, (float) attacker.getEyeY() - 0.12f, az, tx, ty, tz);
+                        ax, (float) attacker.getEyeY() - 0.12f, az, tx, ty, tz, palette);
             } else {
                 int boost = (arrowCrit && fx.category == WeaponVisualEffectId.Category.CRIT) ? layer.level() + 1 : layer.level();
                 broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, boost,
-                        tx, ty, tz, ax, ay, az);
+                        tx, ty, tz, ax, ay, az, palette);
             }
         }
     }
@@ -319,17 +349,18 @@ public final class WeaponVfxServerListener {
         if (!shouldPlay(shooter.getId(), layers.get(0).effect(), sl, false)) return;
 
         WeaponVisualEffectId.ResolvedLayer top = layers.get(0);
+        int palette = paletteOf(weapon, top.effect());
         Vec3 hit = event.getRayTraceResult().getLocation();
         if (top.effect() == WeaponVisualEffectId.ASTRAL_STAR_LANCE) {
             broadcastNear(sl, (float) hit.x, (float) hit.y, (float) hit.z,
                     top.effect().id, KIND_BEAM_SIPHON, top.level(),
                     (float) shooter.getX(), (float) shooter.getEyeY() - 0.12f, (float) shooter.getZ(),
-                    (float) hit.x, (float) hit.y, (float) hit.z);
+                    (float) hit.x, (float) hit.y, (float) hit.z, palette);
         } else {
             broadcastNear(sl, (float) hit.x, (float) hit.y, (float) hit.z,
                     top.effect().id, KIND_IMPACT, top.level(),
                     (float) hit.x, (float) hit.y, (float) hit.z,
-                    (float) shooter.getX(), (float) shooter.getEyeY(), (float) shooter.getZ());
+                    (float) shooter.getX(), (float) shooter.getEyeY(), (float) shooter.getZ(), palette);
         }
     }
 
@@ -404,7 +435,7 @@ public final class WeaponVfxServerListener {
     /** T351 : joue un accent discret précis (test via {@code /dlbvfx subtle}). */
     public static void playSubtleDebug(ServerPlayer player, WeaponVfxSubtle.Subtle accent,
                                        Vec3 from, Vec3 to) {
-        if (player == null || subature == null) return;
+        if (player == null || accent == null) return;
         if (!(player.level() instanceof ServerLevel sl)) return;
         broadcastNear(sl, (float) to.x, (float) to.y, (float) to.z,
                 0, WeaponVfxSubtle.NET_KIND_BASE + accent.index(), 1,
@@ -416,8 +447,15 @@ public final class WeaponVfxServerListener {
                                       int vfxId, int kind, int intensity,
                                       float x, float y, float z,
                                       float tx, float ty, float tz) {
+        broadcastNear(sl, refX, refY, refZ, vfxId, kind, intensity, x, y, z, tx, ty, tz, 0);
+    }
+
+    private static void broadcastNear(ServerLevel sl, float refX, float refY, float refZ,
+                                      int vfxId, int kind, int intensity,
+                                      float x, float y, float z,
+                                      float tx, float ty, float tz, int paletteMask) {
         DeepPayloads.WeaponVfxMessage payload = DeepPayloads.WeaponVfxMessage.create(
-                vfxId, kind, intensity, x, y, z, tx, ty, tz);
+                vfxId, kind, intensity, x, y, z, tx, ty, tz, paletteMask);
 
         double maxDistSq = 52.0 * 52.0;
         for (ServerPlayer sp : sl.players()) {

@@ -33,7 +33,8 @@ public final class WeaponVfxClientBridge {
                     msg.origin().z(),
                     msg.target().x(),
                     msg.target().y(),
-                    msg.target().z());
+                    msg.target().z(),
+                    msg.paletteMask());
         }
     }
 }

@@ -438,6 +438,18 @@ public enum WeaponVisualEffectId {
         return out;
     }
 
+    /**
+     * T351-ELEMENT-BLEND : masque des familles élémentaires portées par l'arme (bit {@code ordinal()}),
+     * transmis au client pour que les particules mélangent les couleurs (feu + eau, etc.).
+     */
+    public static int elementMaskOf(ItemStack stack) {
+        int mask = 0;
+        for (DeepElement el : elementsOf(stack)) {
+            mask |= 1 << el.ordinal();
+        }
+        return mask & 0x3FF;
+    }
+
     private static int boostSharpnessTierLevel(String path, int lvl) {
         return switch (path) {
             case "supreme_sharpness" -> lvl + 8;

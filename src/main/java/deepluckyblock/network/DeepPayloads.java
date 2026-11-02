@@ -140,6 +140,7 @@ public final class DeepPayloads {
      */
     public record WeaponVfxMessage(
             int packedMeta,
+            int paletteMask,
             FloatPos3 origin,
             FloatPos3 target
     ) implements CustomPacketPayload {
@@ -149,6 +150,7 @@ public final class DeepPayloads {
         public static final StreamCodec<RegistryFriendlyByteBuf, WeaponVfxMessage> STREAM_CODEC =
                 StreamCodec.composite(
                         ByteBufCodecs.INT, WeaponVfxMessage::packedMeta,
+                        ByteBufCodecs.VAR_INT, WeaponVfxMessage::paletteMask,
                         FloatPos3.STREAM_CODEC, WeaponVfxMessage::origin,
                         FloatPos3.STREAM_CODEC, WeaponVfxMessage::target,
                         WeaponVfxMessage::new);
@@ -156,11 +158,19 @@ public final class DeepPayloads {
         public static WeaponVfxMessage create(int vfxId, int kind, int intensity,
                                               double x, double y, double z,
                                               double tx, double ty, double tz) {
+            return create(vfxId, kind, intensity, x, y, z, tx, ty, tz, 0);
+        }
+
+        public static WeaponVfxMessage create(int vfxId, int kind, int intensity,
+                                              double x, double y, double z,
+                                              double tx, double ty, double tz,
+                                              int paletteMask) {
             int meta = (vfxId & 0xFF)
                     | ((kind & 0xFF) << 8)
                     | ((Math.max(1, Math.min(15, intensity)) & 0xFF) << 16);
             return new WeaponVfxMessage(
                     meta,
+                    paletteMask & 0x3FF,
                     new FloatPos3((float) x, (float) y, (float) z),
                     new FloatPos3((float) tx, (float) ty, (float) tz));
         }

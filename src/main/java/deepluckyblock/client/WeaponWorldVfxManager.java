@@ -122,7 +122,8 @@ public final class WeaponWorldVfxManager {
         framePixelScale = 0.80f + 0.10f * Mth.sin(timeSeconds * 0.53f) + 0.10f * Mth.sin(timeSeconds * 1.27f + 1.7f);
     }
 
-    private record TrackedProjectile(WeaponVisualEffectId effect, int intensity, long startTick, long expiresTick) {}
+    private record TrackedProjectile(WeaponVisualEffectId effect, int intensity, int paletteMask,
+                                     long startTick, long expiresTick) {}
 
     private static final class FloatingPixel {
         final boolean additive;
@@ -153,6 +154,8 @@ public final class WeaponWorldVfxManager {
         int ticksLeft;
         WeaponVisualEffectId effect;
         int intensity;
+        /** T351-ELEMENT-BLEND : palette élémentaire de l'arme au moment du coup. */
+        int paletteMask;
         double x, y, z;
         float yaw, pitch, tiltRad;
     }
@@ -168,7 +171,21 @@ public final class WeaponWorldVfxManager {
         final long seed;
         /** T350-VFX-VARIATIONS : déclinaison tirée au déclenchement (pleine ou allégée). */
         final deepluckyblock.enchantments.WeaponVfxVariant.Entry variantEntry;
+        /** T351-ELEMENT-BLEND : masque des familles élémentaires portées par l'arme (0 = inconnu). */
+        final int paletteMask;
         int age;
+
+        /** Couleur principale, mélangée sur la palette élémentaire de l'arme si elle en porte plusieurs. */
+        int primary() {
+            return (paletteMask == 0) ? effect.primaryRgb
+                    : paletteColor(paletteMask, effect.primaryRgb, palettePhase(frameTimeSeconds));
+        }
+
+        /** Couleur secondaire, décalée d'un demi-cycle pour montrer l'autre bout du mélange. */
+        int secondary() {
+            return (paletteMask == 0) ? effect.secondaryRgb
+                    : paletteColor(paletteMask, effect.secondaryRgb, palettePhase(frameTimeSeconds + 3.1f));
+        }
 
         /** T349-VARIATION : variante 0..7 tirée au déclenchement (forme, sens de rotation, teinte). */
         int variant() {
@@ -180,6 +197,15 @@ public final class WeaponWorldVfxManager {
                     double tx, double ty, double tz,
                     float yawDeg, float pitchDeg, float tiltRad,
                     int maxAge, long seed) {
+            this(effect, kind, intensity, x, y, z, tx, ty, tz, yawDeg, pitchDeg, tiltRad, maxAge, seed, 0);
+        }
+
+        VfxInstance(WeaponVisualEffectId effect, int kind, int intensity,
+                    double x, double y, double z,
+                    double tx, double ty, double tz,
+                    float yawDeg, float pitchDeg, float tiltRad,
+                    int maxAge, long seed, int paletteMask) {
+            this.paletteMask = paletteMask & 0x3FF;
             this.effect = effect;
             this.kind = kind;
             this.intensity = Math.max(1, Math.min(12, intensity));
@@ -253,13 +279,20 @@ public final class WeaponWorldVfxManager {
     public static void enqueueNetworkVfx(int vfxId, int kind, int intensity,
                                          float x, float y, float z,
                                          float tx, float ty, float tz) {
+        enqueueNetworkVfx(vfxId, kind, intensity, x, y, z, tx, ty, tz, 0);
+    }
+
+    public static void enqueueNetworkVfx(int vfxId, int kind, int intensity,
+                                         float x, float y, float z,
+                                         float tx, float ty, float tz, int paletteMask) {
         Minecraft mc = Minecraft.getInstance();
         ClientLevel level = mc.level;
         if (level == null) return;
 
         // T351-SUBTLE : un « kind » >= 100 transporte un accent discret (2..9 mini-pixels).
         if (kind >= deepluckyblock.enchantments.WeaponVfxSubtle.NET_KIND_BASE) {
-            spawnSubtle(kind - deepluckyblock.enchantments.WeaponVfxSubtle.NET_KIND_BASE, x, y, z, tx, ty, tz);
+            spawnSubtle(kind - deepluckyblock.enchantments.WeaponVfxSubtle.NET_KIND_BASE,
+                    x, y, z, tx, ty, tz, paletteMask);
             return;
         }
 
@@ -271,9 +304,9 @@ public final class WeaponWorldVfxManager {
             int projEntityId = Math.round(tx);
             if (projEntityId > 0) {
                 long gt = level.getGameTime();
-                TRACKED_PROJECTILES.put(projEntityId, new TrackedProjectile(fx, intensity, gt, gt + 140L));
+                TRACKED_PROJECTILES.put(projEntityId, new TrackedProjectile(fx, intensity, paletteMask, gt, gt + 140L));
             }
-            spawnMiniPixelBurst(fx, x, y, z, 7, 0.032f, 0.14);
+            spawnMiniPixelBurst(fx, x, y, z, 7, 0.032f, 0.14, paletteMask);
             return;
         }
 
@@ -290,7 +323,8 @@ public final class WeaponWorldVfxManager {
         float dz = tz - z;
         float yaw = (float) (Mth.atan2(dz, dx) * (180.0 / Math.PI)) - 90.0f;
         long seed = Double.doubleToLongBits(x * 31.0 + y * 17.0 + z * 13.0) ^ System.nanoTime();
-        pushInstance(new VfxInstance(fx, kind, intensity, x, y, z, tx, ty, tz, yaw, 0.0f, 0.25f, duration, seed));
+        pushInstance(new VfxInstance(fx, kind, intensity, x, y, z, tx, ty, tz, yaw, 0.0f, 0.25f,
+                duration, seed, paletteMask));
 
         // T351 : l'entaille est pilotée par le serveur ; l'écho du TWIN_ECHO est donc reproduit ici.
         if (kind == KIND_SWING_SLASH && fx == WeaponVisualEffectId.TWIN_ECHO_SLASH && PENDING_ECHOES.size() < 16) {
@@ -300,17 +334,27 @@ public final class WeaponWorldVfxManager {
             pe.intensity = intensity;
             pe.x = x; pe.y = y; pe.z = z;
             pe.yaw = yaw; pe.pitch = 0.0f; pe.tiltRad = -0.34f;
+            pe.paletteMask = paletteMask;
             PENDING_ECHOES.add(pe);
         }
 
         // Éclaboussure de vrais mini-pixels 3D cubiques animés sous la physique !
         int burstCount = (fx.category == WeaponVisualEffectId.Category.BLOOD) ? 14 : 10;
         float cubeHalf = (fx.category == WeaponVisualEffectId.Category.BLOOD) ? 0.042f : 0.036f;
-        spawnMiniPixelBurst(fx, x, y, z, burstCount, cubeHalf, 0.18);
+        spawnMiniPixelBurst(fx, x, y, z, burstCount, cubeHalf, 0.18, paletteMask);
     }
 
     public static void spawnMiniPixelBurst(WeaponVisualEffectId fx, double x, double y, double z,
                                            int count, float halfSize, double speed) {
+        spawnMiniPixelBurst(fx, x, y, z, count, halfSize, speed, 0);
+    }
+
+    /**
+     * T351-ELEMENT-BLEND : même salve, mais chaque pixel prend une teinte piochée le long de la
+     * palette élémentaire de l'arme (feu + eau = braises chaudes ET givrantes dans le même éclat).
+     */
+    public static void spawnMiniPixelBurst(WeaponVisualEffectId fx, double x, double y, double z,
+                                           int count, float halfSize, double speed, int paletteMask) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
         var rand = mc.level.random;
@@ -331,6 +375,11 @@ public final class WeaponWorldVfxManager {
                 case 1 -> fx.secondaryRgb;
                 default -> rotateHue(fx.secondaryRgb, 0.16f);
             };
+            if (paletteMask != 0 && Integer.bitCount(paletteMask & 0x3FF) > 1) {
+                // Répartition des pixels le long de la palette : le mélange est visible d'un seul coup d'œil.
+                float phase = (count <= 1) ? 0.5f : (float) i / (float) (count - 1);
+                rgb = mixRgb(rgb, paletteColor(paletteMask, rgb, phase), 0.85f);
+            }
             // Tailles multi-échelles : quelques gros pixels, beaucoup de micro-éclats (jamais uniforme)
             float sz = halfSize * (0.42f + rand.nextFloat() * 1.05f);
             PIXEL_PARTICLES.add(new FloatingPixel(fx.additive, x, y, z, vx, vy, vz, grav, sz, rgb,
@@ -349,6 +398,11 @@ public final class WeaponWorldVfxManager {
      */
     public static void spawnSubtle(int subtleIndex, float x, float y, float z,
                                    float towardX, float towardY, float towardZ) {
+        spawnSubtle(subtleIndex, x, y, z, towardX, towardY, towardZ, 0);
+    }
+
+    public static void spawnSubtle(int subtleIndex, float x, float y, float z,
+                                   float towardX, float towardY, float towardZ, int paletteMask) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
         var rand = mc.level.random;
@@ -496,6 +550,11 @@ public final class WeaponWorldVfxManager {
                 case 1 -> sub.element().highlight;
                 default -> rotateHue(sub.element().secondary, 0.06f);
             };
+            if (paletteMask != 0 && Integer.bitCount(paletteMask & 0x3FF) > 1) {
+                // Mélange élémentaire : chaque mini-pixel tombe à un autre point de la palette.
+                float phase = (count <= 1) ? 0.5f : (float) i / (float) (count - 1);
+                rgb = mixRgb(rgb, paletteColor(paletteMask, rgb, phase), 0.82f);
+            }
             if (sub.shape() == deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_GLINT
                     || sub.shape() == deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_SHARD) {
                 rgb = mixRgb(rgb, 0xFFFFFF, 0.45f);
@@ -505,6 +564,48 @@ public final class WeaponWorldVfxManager {
                     x + ox, y + oy, z + oz, vx, vy, vz, sub.gravity(), sz, rgb,
                     sub.life() + rand.nextInt(4), rand.nextInt(Integer.MAX_VALUE)));
         }
+    }
+
+    /**
+     * T351-ELEMENT-BLEND : phase continue 0..1 pour parcourir la palette élémentaire (~3 s par
+     * aller-retour). Strictement continue dans le temps → aucun clignotement.
+     */
+    public static float palettePhase(float seconds) {
+        float p = (seconds * 0.32f) % 1.0f;
+        return (p < 0.0f) ? p + 1.0f : p;
+    }
+
+    /**
+     * T351-ELEMENT-BLEND : mélange les couleurs primaires des familles élémentaires contenues dans
+     * {@code mask} (bit {@code ordinal()} de {@link deepluckyblock.enchantments.DeepElement}).
+     * {@code phase} 0..1 décrit un aller-retour feu → eau → feu, interpolé en smoothstep.
+     * Une seule famille (ou aucune) renvoie {@code fallback} : le rendu d'origine est conservé.
+     */
+    public static int paletteColor(int mask, int fallback, float phase) {
+        int total = Integer.bitCount(mask & 0x3FF);
+        if (total <= 1) return fallback;
+        float tri = (phase < 0.5f) ? (phase * 2.0f) : (2.0f - phase * 2.0f);
+        tri = Math.max(0.0f, Math.min(1.0f, tri));
+        tri = tri * tri * (3.0f - 2.0f * tri);
+        float pos = tri * (total - 1);
+        int i0 = (int) Math.floor(pos);
+        if (i0 < 0) i0 = 0;
+        if (i0 > total - 1) i0 = total - 1;
+        int i1 = Math.min(i0 + 1, total - 1);
+        float f = pos - i0;
+        int a = nthElementPrimary(mask, i0, fallback);
+        int b = nthElementPrimary(mask, i1, fallback);
+        return mixRgb(a, b, f);
+    }
+
+    private static int nthElementPrimary(int mask, int index, int fallback) {
+        int seen = 0;
+        for (deepluckyblock.enchantments.DeepElement el : deepluckyblock.enchantments.DeepElement.values()) {
+            if ((mask & (1 << el.ordinal())) == 0) continue;
+            if (seen == index) return el.primary;
+            seen++;
+        }
+        return fallback;
     }
 
     /** Mélange linéaire de deux couleurs 0xRRGGBB. */
@@ -604,7 +705,7 @@ public final class WeaponWorldVfxManager {
                 pushInstance(new VfxInstance(
                         pe.effect, KIND_SWING_SLASH, pe.intensity,
                         pe.x, pe.y, pe.z, pe.x, pe.y, pe.z,
-                        pe.yaw, pe.pitch, -pe.tiltRad, 9, System.nanoTime()));
+                        pe.yaw, pe.pitch, -pe.tiltRad, 9, System.nanoTime(), pe.paletteMask));
                 it.remove();
             }
         }
@@ -640,6 +741,11 @@ public final class WeaponWorldVfxManager {
                 int rgb = (step == 0)
                         ? tp.effect().primaryRgb
                         : rotateHue(tp.effect().secondaryRgb, 0.10f + (float) ((now & 31L) / 31.0) * 0.14f);
+                if (tp.paletteMask() != 0 && Integer.bitCount(tp.paletteMask() & 0x3FF) > 1) {
+                    // T351-ELEMENT-BLEND : la traînée des flèches mélange aussi les familles de l'arc.
+                    float phase = ((now & 15L) / 15.0f) * 0.5f + step * 0.5f;
+                    rgb = mixRgb(rgb, paletteColor(tp.paletteMask(), rgb, phase), 0.85f);
+                }
                 PIXEL_PARTICLES.add(new FloatingPixel(
                         tp.effect().additive, px, py, pz,
                         (level.random.nextDouble() - 0.5) * 0.02,
@@ -693,7 +799,8 @@ public final class WeaponWorldVfxManager {
         double my = eye.y - 0.12 + look.y * 0.85;
         double mz = eye.z + look.z * 0.85;
         WeaponVisualEffectId fx = layers.get(0).effect();
-        spawnMiniPixelBurst(fx, mx, my, mz, 10, 0.030f, 0.12);
+        spawnMiniPixelBurst(fx, mx, my, mz, 10, 0.030f, 0.12,
+                WeaponVisualEffectId.elementMaskOf(ranged));
     }
 
     private static void onPlayerWeaponSwing(Player p) {
@@ -738,13 +845,16 @@ public final class WeaponWorldVfxManager {
         int duration = (fx == WeaponVisualEffectId.ANNIHILATING_ARC || fx == WeaponVisualEffectId.CARNAGE_BERSERK) ? 11 : 8;
         float tilt = (fx == WeaponVisualEffectId.GUILLOTINE_CLEAVE) ? 1.48f : baseTilt;
 
+        // T351-ELEMENT-BLEND : palette de l'arme tenue (feu + eau = entaille bicolore).
+        int localPalette = WeaponVisualEffectId.elementMaskOf(stack);
         pushInstance(new VfxInstance(
                 fx, KIND_SWING_SLASH, primary.level(),
                 ox, oy, oz, ox + look.x * 3.4, oy + look.y * 3.4, oz + look.z * 3.4,
-                p.getYRot(), p.getXRot(), tilt, duration, System.nanoTime()));
+                p.getYRot(), p.getXRot(), tilt, duration, System.nanoTime(), localPalette));
 
         // Quelques mini-pixels 3D détachés le long du coup
-        spawnMiniPixelBurst(fx, ox + look.x * 1.1, oy + look.y * 1.1, oz + look.z * 1.1, 5, 0.026f, 0.09);
+        spawnMiniPixelBurst(fx, ox + look.x * 1.1, oy + look.y * 1.1, oz + look.z * 1.1,
+                5, 0.026f, 0.09, localPalette);
 
         boolean hasEcho = fx == WeaponVisualEffectId.TWIN_ECHO_SLASH
                 || (layers.size() > 1 && layers.get(1).effect() == WeaponVisualEffectId.TWIN_ECHO_SLASH);
@@ -755,6 +865,7 @@ public final class WeaponWorldVfxManager {
             pe.intensity = primary.level();
             pe.x = ox; pe.y = oy; pe.z = oz;
             pe.yaw = p.getYRot(); pe.pitch = p.getXRot(); pe.tiltRad = baseTilt;
+            pe.paletteMask = localPalette;
             PENDING_ECHOES.add(pe);
         }
     }
@@ -949,7 +1060,7 @@ public final class WeaponWorldVfxManager {
             float reach = Math.min(1.0f, t * 2.3f);
             emitSteppedVoxelLine(vc, mat, tmp, rx, ry, rz,
                     Mth.lerp(reach, rx, tx), Mth.lerp(reach, ry, ty), Mth.lerp(reach, rz, tz),
-                    0.045f, 0xFFFFFF, inst.effect.primaryRgb, Math.round(230 * (1.0f - t)));
+                    0.045f, 0xFFFFFF, inst.primary(), Math.round(230 * (1.0f - t)));
             return;
         }
 
@@ -982,7 +1093,7 @@ public final class WeaponWorldVfxManager {
 
         int alpha = Math.round(238.0f * (1.0f - t * t));
         // T349-PALETTE : dégradé propre à l'enchantement + variante de teinte à chaque déclenchement
-        int[] pal = palette(inst.effect, inst.variant());
+        int[] pal = palette(inst.effect, inst.variant(), inst.paletteMask);
         int arcCore = pal[0];
         int arcTrail = ((inst.variant() & 1) == 0) ? pal[1] : pal[2];
         emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg,
@@ -991,7 +1102,7 @@ public final class WeaponWorldVfxManager {
         if (inst.effect == WeaponVisualEffectId.SUPREME_PRISM_EDGE) {
             emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, -inst.tiltRad * 0.85f,
                     radius * 0.92f, voxelHalf * 0.85f, sweepDeg * 0.88f, t,
-                    inst.effect.secondaryRgb, 0xFFFFFF, Math.round(alpha * 0.85f));
+                    inst.secondary(), 0xFFFFFF, Math.round(alpha * 0.85f));
         }
     }
 
@@ -1090,19 +1201,19 @@ public final class WeaponWorldVfxManager {
                 for (int s = 0; s < 3; s++) {
                     float phase = s * 2.094f + inst.age * 0.32f;
                     emitVoxelCurvedSiphon(vc, mat, tmp, x0, y0, z0, x1, y1, z1, phase, t,
-                            inst.effect.primaryRgb, inst.effect.secondaryRgb, alpha);
+                            inst.primary(), inst.secondary(), alpha);
                 }
             }
             case CHAIN_VOLT_ARC -> {
                 // #16 : Éclair en escalier de mini-cubes 3D !
                 emitVoxelLightning(vc, mat, tmp, x0, y0, z0, x1, y1, z1, 9, 0.25f,
-                        inst.seed + inst.age / 2, 0xFFFFFF, inst.effect.primaryRgb, alpha, 0.036f);
+                        inst.seed + inst.age / 2, 0xFFFFFF, inst.primary(), alpha, 0.036f);
             }
             default -> {
                 // #25 Lance Astrale / Sniper : Rayon crénelé en mini-cubes stellaires + croix pixel 3D à l'impact
                 emitSteppedVoxelLine(vc, mat, tmp, x0, y0, z0, x1, y1, z1,
-                        0.040f * (1.0f - t * 0.45f), 0xFFFFFF, inst.effect.primaryRgb, alpha);
-                emitPixelCross3D(vc, mat, tmp, x1, y1, z1, 0.0625f, 3, 0xFFFFFF, inst.effect.secondaryRgb, alpha);
+                        0.040f * (1.0f - t * 0.45f), 0xFFFFFF, inst.primary(), alpha);
+                emitPixelCross3D(vc, mat, tmp, x1, y1, z1, 0.0625f, 3, 0xFFFFFF, inst.secondary(), alpha);
             }
         }
     }
@@ -1116,7 +1227,7 @@ public final class WeaponWorldVfxManager {
         float cz = quantize((float) (inst.z - cam.z), 0.0625f);
         int fadeA = Math.round(240.0f * (1.0f - t));
         // T349-PALETTE : trois teintes par enchantement (cœur / halo / accent) au lieu de deux
-        int[] pal = palette(inst.effect, inst.variant());
+        int[] pal = palette(inst.effect, inst.variant(), inst.paletteMask);
         int pRgb = pal[0];
         int sRgb = pal[1];
         int aRgb = pal[2];
@@ -1442,12 +1553,21 @@ public final class WeaponWorldVfxManager {
      * enchantement a son dégradé propre et chaque déclenchement décale légèrement la teinte.
      */
     public static int[] palette(WeaponVisualEffectId fx, int variant) {
+        return palette(fx, variant, 0);
+    }
+
+    public static int[] palette(WeaponVisualEffectId fx, int variant, int paletteMask) {
         // T350-ELEMENT-COLORS : couleur de la FAMILLE ÉLÉMENTAIRE (feu = rouge, poison = vert,
         // eau = bleu, foudre = jaune, métal = argent, ombre = violet...), mélangée à l'identité
         // propre de l'effet, puis lissée dans le temps.
-        int target = fx.primaryRgb;
+        // T351-ELEMENT-BLEND : si l'arme porte plusieurs éléments, cœur et halo parcourent la
+        // palette en OPPOSITION DE PHASE -> les deux teintes (feu + eau) sont visibles ensemble.
+        int target = (paletteMask == 0) ? fx.primaryRgb
+                : paletteColor(paletteMask, fx.primaryRgb, palettePhase(frameTimeSeconds));
+        int glowTarget = (paletteMask == 0) ? fx.secondaryRgb
+                : paletteColor(paletteMask, fx.secondaryRgb, palettePhase(frameTimeSeconds + 3.1f));
         int core = smoothColor(fx.id, target);
-        int glow = smoothColor(1000 + fx.id, fx.secondaryRgb);
+        int glow = smoothColor(1000 + fx.id, glowTarget);
         float shift = ((variant & 7) - 3.5f) * 0.010f;
         int accent = rotateHue(glow, 0.10f + shift);
         return new int[]{core, glow, accent};

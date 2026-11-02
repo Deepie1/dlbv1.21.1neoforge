@@ -293,7 +293,8 @@ public final class DlbVfxCommand {
         line(src, "§e/dlbvfx give <effet> [niveau]", "donne les armes enchantées qui déclenchent cet effet");
         line(src, "§e/dlbvfx elements [famille]", "les 10 familles élémentaires (couleurs + effets)");
         line(src, "§e/dlbvfx variants", "défile les 50 déclinaisons (de moins en moins de particules)");
-        line(src, "§e/dlbvfx subtle [famille] [index]", "les 50 accents discrets (5 % coup normal / 66 % critique)");
+        line(src, "§e/dlbvfx subtle [famille] [index]", "les 50 accents discrets (90 % des déclenchements)");
+        line(src, "§7Déclenchement : §f5 % §7coup normal, §f66 % §7coup critique, §f10 % §7seulement en grosse animation (§f+5 % §7dégâts)");
         line(src, "§e/dlbvfx clear", "supprime les cibles d'entraînement");
         line(src, "§7Exemples : §f/dlbvfx play 29 §7puis §f/dlbvfx give 8 §7puis §f/dlbvfx hit 3", "");
         return 1;
