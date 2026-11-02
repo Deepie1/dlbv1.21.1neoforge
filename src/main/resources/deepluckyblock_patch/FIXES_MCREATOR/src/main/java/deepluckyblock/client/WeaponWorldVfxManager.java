@@ -85,10 +85,11 @@ public final class WeaponWorldVfxManager {
         int rgb;
         int age;
         int maxAge;
+        int detailSalt;
 
         FloatingPixel(boolean additive, double x, double y, double z,
                       double vx, double vy, double vz, float gravity,
-                      float halfSize, int rgb, int maxAge) {
+                      float halfSize, int rgb, int maxAge, int detailSalt) {
             this.additive = additive;
             this.x = x; this.y = y; this.z = z;
             this.vx = vx; this.vy = vy; this.vz = vz;
@@ -96,6 +97,7 @@ public final class WeaponWorldVfxManager {
             this.halfSize = halfSize;
             this.rgb = rgb;
             this.maxAge = Math.max(4, maxAge);
+            this.detailSalt = detailSalt;
         }
     }
 
@@ -251,8 +253,10 @@ public final class WeaponWorldVfxManager {
             double vy = (rand.nextDouble() - 0.2) * speed;
             double vz = (rand.nextDouble() - 0.5) * speed;
             int rgb = ((i & 1) == 0) ? fx.primaryRgb : fx.secondaryRgb;
-            float sz = halfSize * (0.75f + rand.nextFloat() * 0.5f);
-            PIXEL_PARTICLES.add(new FloatingPixel(fx.additive, x, y, z, vx, vy, vz, grav, sz, rgb, 10 + rand.nextInt(10)));
+            // Tailles multi-échelles : quelques gros pixels, beaucoup de micro-éclats (jamais uniforme)
+            float sz = halfSize * (0.42f + rand.nextFloat() * 1.05f);
+            PIXEL_PARTICLES.add(new FloatingPixel(fx.additive, x, y, z, vx, vy, vz, grav, sz, rgb,
+                    10 + rand.nextInt(10), rand.nextInt(Integer.MAX_VALUE)));
         }
     }
 
@@ -356,7 +360,8 @@ public final class WeaponWorldVfxManager {
                         (level.random.nextDouble() - 0.5) * 0.02,
                         (level.random.nextDouble() - 0.5) * 0.02,
                         (level.random.nextDouble() - 0.5) * 0.02,
-                        0.0f, 0.032f, rgb, 9));
+                        0.0f, 0.032f * (0.55f + level.random.nextFloat() * 0.9f), rgb, 9,
+                        level.random.nextInt(Integer.MAX_VALUE)));
             }
         }
 
@@ -488,12 +493,32 @@ public final class WeaponWorldVfxManager {
             float sz = fp.halfSize * (1.0f - t * 0.45f);
             int alpha = Math.round(235.0f * (1.0f - t));
 
-            if (fp.additive) {
-                if (addVc == null) addVc = buffers.getBuffer(getAdditiveRenderType());
-                emitVoxelCube(addVc, mat, tmp, rx, ry, rz, sz, sz, sz, fp.rgb, alpha);
-            } else {
-                if (alphaVc == null) alphaVc = buffers.getBuffer(getTranslucentRenderType());
-                emitVoxelCube(alphaVc, mat, tmp, rx, ry, rz, sz, sz, sz, fp.rgb, alpha);
+            VertexConsumer pvc = fp.additive ? addVc : alphaVc;
+            if (pvc == null) {
+                if (fp.additive) {
+                    addVc = buffers.getBuffer(getAdditiveRenderType());
+                    pvc = addVc;
+                } else {
+                    alphaVc = buffers.getBuffer(getTranslucentRenderType());
+                    pvc = alphaVc;
+                }
+            }
+            // Pixel principal de taille et de hauteur variables (aspect "vrai bloc de pixel")
+            float hy = sz * (0.72f + 0.40f * pixelHash(fp.detailSalt, 3));
+            emitVoxelCube(pvc, mat, tmp, rx, ry, rz, sz, hy, sz, fp.rgb, alpha);
+            // 1 ou 2 micro-éclats accolés : le débris se lit comme une grappe de pixels, pas un cube lisse
+            int detailMode = fp.detailSalt & 3;
+            if (detailMode != 0) {
+                float m = sz * 0.42f;
+                emitVoxelCube(pvc, mat, tmp,
+                        rx + (detailMode == 1 ? m * 1.1f : -m * 1.1f), ry + m * 0.5f, rz + m * 0.7f,
+                        m * 0.62f, m * 0.52f, m * 0.62f,
+                        detailMode == 2 ? 0xFFFFFF : fp.rgb, Math.round(alpha * 0.72f));
+            }
+            if (detailMode == 3) {
+                float m = sz * 0.30f;
+                emitVoxelCube(pvc, mat, tmp, rx - m, ry - m * 1.2f, rz - m,
+                        m * 0.55f, m * 0.45f, m * 0.55f, fp.rgb, Math.round(alpha * 0.6f));
             }
         }
 
@@ -602,9 +627,12 @@ public final class WeaponWorldVfxManager {
         float sy = uy0 * sinT;
         float sz = rz0 * cosT + uz0 * sinT;
 
-        int pixelSteps = Math.max(14, Math.round(sweepDeg / 6.5f));
+        // Pas volontairement gros (≈1 pixel de grille) : l'entaille doit se lire comme un escalier de
+        // pixels 3D bien visible, jamais comme un arc lissé.
+        int pixelSteps = Math.max(9, Math.round(sweepDeg / 10.0f));
         float halfArc = (sweepDeg * 0.5f) * Mth.DEG_TO_RAD;
         float headU = Mth.clamp(progress * 1.35f, 0.0f, 1.0f);
+        int salt = Math.round(cx * 577.0f + cz * 431.0f + radius * 97.0f);
 
         for (int i = 0; i <= pixelSteps; i++) {
             float u = (float) i / pixelSteps;
@@ -626,17 +654,27 @@ public final class WeaponWorldVfxManager {
             float pz = quantize(cz + dirZ * radius, 0.0625f);
 
             boolean isHead = Math.abs(distBehind) < 0.12f;
-            float hs = baseHalfSize * (0.55f + 0.75f * taper) * (isHead ? 1.25f : 1.0f);
+            float hs = baseHalfSize * (0.55f + 0.75f * taper) * (isHead ? 1.25f : 1.0f)
+                    * (0.82f + 0.34f * pixelHash(salt, i * 13));
             int rgb = isHead ? 0xFFFFFF : (distBehind < 0.28f ? coreRgb : trailRgb);
             int a = Math.round(peakAlpha * Math.max(0.2f, 1.0f - Math.max(0.0f, distBehind) * 1.35f));
 
-            emitVoxelCube(vc, mat, tmp, px, py, pz, hs, hs, hs, rgb, a);
+            emitVoxelCube(vc, mat, tmp, px, py, pz, hs,
+                    hs * (0.78f + 0.3f * pixelHash(salt + 3, i)), hs, rgb, a);
             // Épaisseur blocky doublée d'un mini-cube intérieur décalé d'un pixel 1/16
             if (taper > 0.45f) {
                 float pxIn = quantize(cx + dirX * (radius - baseHalfSize * 2.2f), 0.0625f);
                 float pyIn = quantize(cy + dirY * (radius - baseHalfSize * 2.2f), 0.0625f);
                 float pzIn = quantize(cz + dirZ * (radius - baseHalfSize * 2.2f), 0.0625f);
-                emitVoxelCube(vc, mat, tmp, pxIn, pyIn, pzIn, hs * 0.78f, hs * 0.78f, hs * 0.78f, trailRgb, Math.round(a * 0.8f));
+                emitVoxelCube(vc, mat, tmp, pxIn, pyIn, pzIn, hs * 0.72f, hs * 0.72f, hs * 0.72f, trailRgb, Math.round(a * 0.8f));
+                // Éclat de bord minuscule sur la tranche extérieure : cassure pixel-art
+                if ((i & 1) == 0) {
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + dirX * (radius + baseHalfSize * 1.4f), 0.03125f),
+                            quantize(cy + dirY * (radius + baseHalfSize * 1.4f), 0.03125f),
+                            quantize(cz + dirZ * (radius + baseHalfSize * 1.4f), 0.03125f),
+                            hs * 0.32f, hs * 0.26f, hs * 0.32f, 0xFFFFFF, Math.round(a * 0.55f));
+                }
             }
         }
     }
@@ -714,16 +752,28 @@ public final class WeaponWorldVfxManager {
                 emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.65f, cz, 0.30f + 1.30f * t, pRgb, sRgb, fadeA);
             }
             case DRIPPING_BLOOD_EDGE, CARNAGE_BERSERK -> {
-                // #09 / #12 Arcs de gros pixels cubiques de sang retombant en fontaine + cercle pixel écarlate
-                int count = (inst.effect == WeaponVisualEffectId.CARNAGE_BERSERK) ? 12 : 8;
+                // #09 / #12 Gouttes reconstruites en PIXELS 3D de tailles différentes (pointe fine, corps
+                // large, queue, éclaboussures satellites) — plus aucune goutte lisse ni gros cube unique !
+                int count = (inst.effect == WeaponVisualEffectId.CARNAGE_BERSERK) ? 10 : 7;
                 for (int i = 0; i < count; i++) {
                     float ang = (float) (i * (Math.PI * 2.0 / count) + (inst.seed & 7));
-                    float rad = (0.20f + 1.35f * t) * (0.75f + 0.25f * (i & 1));
+                    float rad = (0.20f + 1.35f * t) * (0.72f + 0.28f * pixelHash(inst.effect.ordinal(), i * 19));
                     float dy = 0.55f * t - 1.40f * t * t;
                     float px = quantize(cx + Mth.cos(ang) * rad, 0.0625f);
                     float py = quantize(cy + dy, 0.0625f);
                     float pz = quantize(cz + Mth.sin(ang) * rad, 0.0625f);
-                    emitVoxelCube(vc, mat, tmp, px, py, pz, 0.052f, 0.052f, 0.052f, (i & 1) == 0 ? pRgb : sRgb, fadeA);
+                    float dropStep = (i % 3 == 0) ? 0.034f : ((i % 3 == 1) ? 0.024f : 0.040f);
+                    emitPixelDroplet3D(vc, mat, tmp, px, py, pz, dropStep,
+                            (i & 1) == 0 ? pRgb : sRgb, 0xFF8A8A, fadeA, inst.effect.ordinal() * 7 + i);
+                    // Gouttelettes plus petites qui se détachent au-dessus de la goutte
+                    if ((i & 1) == 0) {
+                        emitVoxelCube(vc, mat, tmp, px, py + dropStep * 4.2f, pz,
+                                dropStep * 0.30f, dropStep * 0.30f, dropStep * 0.30f, pRgb,
+                                Math.round(fadeA * 0.8f));
+                        emitVoxelCube(vc, mat, tmp, px + dropStep * 0.9f, py + dropStep * 6.0f, pz,
+                                dropStep * 0.20f, dropStep * 0.20f, dropStep * 0.20f, sRgb,
+                                Math.round(fadeA * 0.6f));
+                    }
                 }
                 emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.35f + 1.50f * t, pRgb, sRgb, fadeA);
             }
@@ -745,9 +795,11 @@ public final class WeaponWorldVfxManager {
                     float mx = quantize(cx + 3.2f * (1.0f - mt), 0.0625f);
                     float my = quantize(cy + 11.0f * (1.0f - mt), 0.0625f);
                     float mz = quantize(cz + 2.0f * (1.0f - mt), 0.0625f);
-                    emitVoxelCube(vc, mat, tmp, mx, my, mz, 0.22f, 0.22f, 0.22f, 0xFFFFFF, 245);
-                    emitVoxelCube(vc, mat, tmp, mx, my, mz, 0.32f, 0.32f, 0.32f, pRgb, 190);
-                    emitSteppedVoxelLine(vc, mat, tmp, mx + 1.0f, my + 3.2f, mz + 0.6f, mx, my, mz, 0.075f, sRgb, pRgb, 220);
+                    // Météore reconstruit en amas de pixels 3D (croûte irrégulière + cœur incandescent)
+                    emitPixelRockCluster3D(vc, mat, tmp, mx, my, mz, 0.0625f, 10, pRgb, sRgb, 0xFFFFFF, 235,
+                            inst.effect.ordinal() * 13 + inst.age);
+                    emitSteppedVoxelLine(vc, mat, tmp, mx + 1.0f, my + 3.2f, mz + 0.6f, mx, my, mz,
+                            0.070f, sRgb, pRgb, 220);
                 }
                 float st = Math.max(0.0f, (t - 0.2f) / 0.8f);
                 emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.38f, cz, 0.55f + 2.65f * st, t * 1.5f, sRgb, pRgb, 0xFFFFFF, fadeA, true);
@@ -793,7 +845,21 @@ public final class WeaponWorldVfxManager {
                     float px = quantize(cx + Mth.cos(a) * r, 0.0625f);
                     float pz = quantize(cz + Mth.sin(a) * r, 0.0625f);
                     float h = 0.38f * (1.0f - t * 0.5f);
-                    emitVoxelCube(vc, mat, tmp, px, cy - 0.3f + h * 0.5f, pz, 0.0625f, h, 0.0625f, (k & 1) == 0 ? sRgb : pRgb, fadeA);
+                    // Cristal en pixels 3D empilés qui s'affinent vers la pointe (jamais un bloc unique)
+                    int segs = 4;
+                    for (int seg = 0; seg < segs; seg++) {
+                        float su = seg / (float) segs;
+                        float segS = 0.0625f * (1.0f - 0.62f * su);
+                        float sy = cy - 0.3f + h * (su + 0.5f / segs);
+                        emitVoxelCube(vc, mat, tmp, px, sy, pz,
+                                segS, h / segs * 0.52f, segS,
+                                (k & 1) == 0 ? sRgb : pRgb, fadeA);
+                        emitVoxelCube(vc, mat, tmp, px + segS * 0.85f, sy + h / segs * 0.16f, pz - segS * 0.7f,
+                                segS * 0.48f, h / segs * 0.3f, segS * 0.48f, 0xFFFFFF,
+                                Math.round(fadeA * 0.55f));
+                    }
+                    emitVoxelCube(vc, mat, tmp, px, cy - 0.3f + h + 0.02f, pz,
+                            0.0125f, 0.020f, 0.0125f, 0xFFFFFF, Math.round(fadeA * 0.9f));
                 }
                 emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.38f, cz, 0.45f + 1.45f * t, 0.0f, sRgb, pRgb, 0xFFFFFF, fadeA, false);
             }
@@ -818,10 +884,34 @@ public final class WeaponWorldVfxManager {
             }
             case SERAPH_SKY_PILLAR -> {
                 // #23 Colonne céleste blocky + VRAI CERCLE RUNIQUE SACRÉ EN PIXELS 3D au sol et en élévation !
-                float hw = 0.22f * Mth.sin(Math.min(1.0f, t * 1.3f) * (float) Math.PI);
+                float hw = 0.26f * Mth.sin(Math.min(1.0f, t * 1.3f) * (float) Math.PI);
                 if (hw > 0.02f) {
-                    emitVoxelCube(vc, mat, tmp, cx, cy + 5.0f, cz, hw, 5.6f, hw, 0xFFFFFF, fadeA);
-                    emitVoxelCube(vc, mat, tmp, cx, cy + 5.0f, cz, hw * 1.75f, 5.6f, hw * 1.75f, sRgb, Math.round(fadeA * 0.45f));
+                    // Colonne céleste reconstruite en pixels 3D empilés de tailles différentes : cœur blanc
+                    // crénelé, halo de micro-pixels colorés et étincelles — aucun gros bloc rectangulaire.
+                    int layers = 30;
+                    for (int li = 0; li < layers; li++) {
+                        float lu = li / (float) (layers - 1);
+                        float ly = cy + 0.15f + lu * 10.8f;
+                        float bulge = 0.35f + 0.85f * Mth.sin(lu * (float) Math.PI);
+                        float spread = hw * bulge;
+                        float jx = (pixelHash(inst.effect.ordinal() + li, li * 31) - 0.5f) * spread * 1.35f;
+                        float jz = (pixelHash(li * 7 + 3, li * 17) - 0.5f) * spread * 1.35f;
+                        float px = quantize(cx + jx, 0.0625f);
+                        float pz = quantize(cz + jz, 0.0625f);
+                        float coreS = 0.028f + 0.030f * bulge;
+                        emitVoxelCube(vc, mat, tmp, px, ly, pz, coreS,
+                                coreS * (1.05f + 0.35f * pixelHash(li, li * 5)), coreS, 0xFFFFFF, fadeA);
+                        int haloA = Math.round(fadeA * 0.42f);
+                        emitVoxelCube(vc, mat, tmp, quantize(px + spread, 0.0625f), ly + 0.02f, pz,
+                                coreS * 0.72f, coreS * 0.9f, coreS * 0.72f, sRgb, haloA);
+                        emitVoxelCube(vc, mat, tmp, px, ly + 0.01f, quantize(pz - spread, 0.0625f),
+                                coreS * 0.60f, coreS * 0.78f, coreS * 0.60f, pRgb, Math.round(haloA * 0.9f));
+                        if ((li & 3) == 0) {
+                            emitVoxelCube(vc, mat, tmp, quantize(px, 0.03125f), ly + coreS * 2.2f, pz,
+                                    coreS * 0.26f, coreS * 0.26f, coreS * 0.26f, 0xFFFFFF,
+                                    Math.round(fadeA * 0.6f));
+                        }
+                    }
                 }
                 emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.38f, cz, 0.65f + 1.75f * Math.min(1.0f, t * 1.6f),
                         t * 1.8f, pRgb, sRgb, 0xFFFFFF, fadeA, true);
@@ -921,31 +1011,76 @@ public final class WeaponWorldVfxManager {
         putQuad(vc, mat, tmp, x1, y1, z1, rEW, alpha, x1, y0, z1, rEW, alpha, x1, y0, z0, rEW, alpha, x1, y1, z0, rEW, alpha);
     }
 
-    /** Croix pixel-art 3D composée d'un cube central et de bras crénelés sur X/Y/Z. */
+    /** T345-PIXEL-DETAIL : micro-aléa déterministe (0..1) — toutes les tailles de pixels restent stables d'une frame à l'autre. */
+    private static float pixelHash(int salt, int a) {
+        int h = salt * 0x9E3779B1 ^ (a * 0x85EBCA77);
+        h ^= (h >>> 15);
+        h *= 0x2545F491;
+        h ^= (h >>> 13);
+        return (h & 0xFFFF) / 65535.0f;
+    }
+
+    private static final int PIXEL_RING_SOLID  = 0;
+    private static final int PIXEL_RING_DASHED = 1;
+    private static final int PIXEL_RING_BEADS  = 2;
+
+    /**
+     * Croix pixel-art 3D détaillée : cœur à double taille, bras crénelés de cubes dégressifs,
+     * éclats diagonaux minuscules et micro-pixels de pointe (aucun gros bloc uniforme).
+     */
     public static void emitPixelCross3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                         float cx, float cy, float cz,
                                         float stepSize, int armPixels,
                                         int coreRgb, int tipRgb, int alpha) {
-        if (alpha <= 6) return;
-        float hs = stepSize * 0.48f;
-        emitVoxelCube(vc, mat, tmp, cx, cy, cz, hs * 1.15f, hs * 1.15f, hs * 1.15f, coreRgb, alpha);
+        if (alpha <= 6 || stepSize <= 0.004f) return;
+        float hs = stepSize * 0.46f;
+        int salt = Math.round(cx * 811.0f + cy * 457.0f + cz * 293.0f);
+
+        emitVoxelCube(vc, mat, tmp, cx, cy, cz, hs * 1.24f, hs * 1.30f, hs * 1.24f, 0xFFFFFF, alpha);
+        emitVoxelCube(vc, mat, tmp, cx, cy - hs * 0.9f, cz, hs * 0.72f, hs * 0.42f, hs * 0.72f, coreRgb,
+                Math.round(alpha * 0.85f));
+        for (int d = 0; d < 4; d++) {
+            float sx = ((d & 1) == 0) ? 1.0f : -1.0f;
+            float sy = ((d & 2) == 0) ? 1.0f : -1.0f;
+            emitVoxelCube(vc, mat, tmp, cx + sx * stepSize * 0.92f, cy + sy * stepSize * 0.92f, cz,
+                    hs * 0.38f, hs * 0.38f, hs * 0.38f, coreRgb, Math.round(alpha * 0.8f));
+        }
+
         for (int i = 1; i <= armPixels; i++) {
             float off = i * stepSize;
-            float s = hs * (1.0f - (i - 1) * 0.16f);
+            float t = (armPixels > 1) ? (float) (i - 1) / (armPixels - 1) : 0.0f;
+            float s = hs * (1.02f - 0.40f * t) * (0.86f + 0.28f * pixelHash(salt + i * 17, i));
             int rgb = (i == 1) ? coreRgb : tipRgb;
-            int a = Math.round(alpha * (1.0f - (i - 1) * 0.18f));
-            emitVoxelCube(vc, mat, tmp, cx + off, cy, cz, s, s, s, rgb, a);
-            emitVoxelCube(vc, mat, tmp, cx - off, cy, cz, s, s, s, rgb, a);
-            emitVoxelCube(vc, mat, tmp, cx, cy + off, cz, s, s, s, rgb, a);
-            emitVoxelCube(vc, mat, tmp, cx, cy - off, cz, s, s, s, rgb, a);
+            int a = Math.round(alpha * (1.0f - 0.13f * (i - 1)));
+            crossArmPixel(vc, mat, tmp, cx + off, cy, cz, s, rgb, a, salt + i, 0);
+            crossArmPixel(vc, mat, tmp, cx - off, cy, cz, s, rgb, a, salt + i, 1);
+            crossArmPixel(vc, mat, tmp, cx, cy + off, cz, s, rgb, a, salt + i, 2);
+            crossArmPixel(vc, mat, tmp, cx, cy - off, cz, s, rgb, a, salt + i, 3);
             if (i <= 2) {
-                emitVoxelCube(vc, mat, tmp, cx, cy, cz + off, s, s, s, rgb, a);
-                emitVoxelCube(vc, mat, tmp, cx, cy, cz - off, s, s, s, rgb, a);
+                crossArmPixel(vc, mat, tmp, cx, cy, cz + off, s, rgb, a, salt + i, 4);
+                crossArmPixel(vc, mat, tmp, cx, cy, cz - off, s, rgb, a, salt + i, 5);
             }
         }
     }
 
-    /** Ligne 3D crénelée en mini-cubes jointifs alignés sur une grille de pixels (style Bresenham 3D). */
+    /** Pixel de bras de croix : tailles X/Y/Z différentes + micro-éclat de bord. */
+    private static void crossArmPixel(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                      float px, float py, float pz, float s,
+                                      int rgb, int alpha, int salt, int face) {
+        float jy = s * (0.76f + 0.44f * pixelHash(salt, face * 29 + 7));
+        float jz = s * (0.84f + 0.28f * pixelHash(salt + 3, face * 13 + 1));
+        emitVoxelCube(vc, mat, tmp, px, py, pz, s, jy, jz, rgb, alpha);
+        if ((face & 1) == 0) {
+            emitVoxelCube(vc, mat, tmp, px, py + jy * 0.94f, pz, s * 0.34f, s * 0.26f, s * 0.34f,
+                    0xFFFFFF, Math.round(alpha * 0.68f));
+        }
+    }
+
+    /**
+     * Ligne pixel-art 3D : chaque pas est un mini-cube de taille variable, avec coudes de remplissage
+     * (aucun trou en escalier) et éclats périodiques plus petits — l'effet "trait droit 3D" reste
+     * volontairement crénelé, jamais une forme lisse.
+     */
     public static void emitSteppedVoxelLine(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                             float x0, float y0, float z0,
                                             float x1, float y1, float z1,
@@ -953,154 +1088,265 @@ public final class WeaponWorldVfxManager {
         if (alpha <= 6 || halfSize <= 0.002f) return;
         float dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
         float dist = Mth.sqrt(dx * dx + dy * dy + dz * dz);
-        float grid = Math.max(0.03125f, halfSize * 1.92f);
-        int count = Math.min(56, Math.max(2, Math.round(dist / grid)));
+        if (dist <= 0.0005f) return;
 
+        float grid = Math.max(0.03125f, halfSize * 1.95f);
+        int count = Math.min(64, Math.max(2, Math.round(dist / grid)));
+        int salt = Math.round(x0 * 911.0f + z0 * 647.0f + y0 * 383.0f + dist * 97.0f);
+
+        float prevX = 0.0f, prevY = 0.0f, prevZ = 0.0f;
+        boolean hasPrev = false;
         for (int i = 0; i <= count; i++) {
             float u = (float) i / count;
             float px = quantize(Mth.lerp(u, x0, x1), grid);
             float py = quantize(Mth.lerp(u, y0, y1), grid);
             float pz = quantize(Mth.lerp(u, z0, z1), grid);
             int rgb = ((i & 1) == 0) ? coreRgb : outerRgb;
-            emitVoxelCube(vc, mat, tmp, px, py, pz, halfSize, halfSize, halfSize, rgb, alpha);
+
+            if (hasPrev) {
+                int changed = 0;
+                if (Math.abs(px - prevX) > grid * 0.45f) changed++;
+                if (Math.abs(py - prevY) > grid * 0.45f) changed++;
+                if (Math.abs(pz - prevZ) > grid * 0.45f) changed++;
+                if (changed >= 2) {
+                    // Coude : petit cube intercalé pour garder la ligne continue en escalier
+                    emitVoxelCube(vc, mat, tmp,
+                            (prevX + px) * 0.5f, (prevY + py) * 0.5f, (prevZ + pz) * 0.5f,
+                            halfSize * 0.60f, halfSize * 0.60f, halfSize * 0.60f,
+                            ((i & 1) == 0) ? outerRgb : coreRgb, Math.round(alpha * 0.92f));
+                }
+            }
+
+            float jit = 0.84f + 0.30f * pixelHash(salt, i * 13);
+            emitVoxelCube(vc, mat, tmp, px, py, pz,
+                    halfSize * jit,
+                    halfSize * (0.74f + 0.32f * pixelHash(salt + 5, i * 7)),
+                    halfSize * jit, rgb, alpha);
+            if ((i & 3) == 1) {
+                emitVoxelCube(vc, mat, tmp, px, py + halfSize * 1.12f, pz,
+                        halfSize * 0.33f, halfSize * 0.27f, halfSize * 0.33f, 0xFFFFFF,
+                        Math.round(alpha * 0.7f));
+            }
+            prevX = px; prevY = py; prevZ = pz;
+            hasPrev = true;
         }
     }
 
     /**
-     * 8 vraies runes pixel-art 3x3 (bitmaps 9 bits, ligne par ligne) composées de mini-cubes 3D :
-     * Fehu, Algiz, Othala, Tiwaz, Dagaz, Sowilo, Ingwaz, Gebo.
+     * 12 vraies runes pixel-art 5x5 (bitmaps 25 bits, ligne par ligne) : Fehu, Algiz, Othala, Tiwaz,
+     * Dagaz, Sowilo, Ingwaz, Gebo, Ehwaz, Ansuz, Raido, Thurisaz.
      */
-    private static final int[] RUNE_BITMAPS_3X3 = {
-            0b111_100_110, // Fehu
-            0b101_111_010, // Algiz
-            0b010_101_111, // Othala
-            0b010_111_010, // Tiwaz / Croix
-            0b101_010_101, // Dagaz
-            0b011_010_110, // Sowilo
-            0b111_101_111, // Ingwaz
-            0b101_010_111  // Gebo
+    private static final int[] RUNE_BITMAPS_5X5 = {
+            0b10000_11110_11111_10100_10000, // Fehu
+            0b10001_01010_00100_00100_00100, // Algiz
+            0b01110_10001_10001_01010_00100, // Othala
+            0b01110_00100_00100_00100_00100, // Tiwaz
+            0b11100_11110_01111_00111_00011, // Dagaz
+            0b01110_11000_01100_00110_01110, // Sowilo
+            0b00100_01010_10001_01010_00100, // Ingwaz
+            0b10001_01010_00100_01010_10001, // Gebo
+            0b00100_01110_11111_01110_00100, // Ehwaz
+            0b10000_11100_10110_10000_11000, // Ansuz
+            0b11100_10010_11100_10100_10010, // Raido
+            0b01100_10010_01100_01000_01000  // Thurisaz
     };
 
+    private static boolean runeBit(int mask, int row, int col) {
+        int bit = 24 - (row * 5 + col);
+        return ((mask >>> bit) & 1) != 0;
+    }
+
     /**
-     * T344-PIXEL-CIRCLE : Vrai cercle pixel-art continu (algorithme du cercle de Bresenham / Midpoint
-     * sur 8 octants sans aucun doublon aux points cardinaux/diagonaux), où chaque pixel est un
-     * mini-cube 3D jointif à 6 faces ombrées !
+     * T345-PIXEL-RING : vrai cercle pixel-art (rasterisation colonne par colonne, comme un sprite de
+     * cercle Minecraft) — chaque pixel est un mini-cube 3D de taille variable, avec pixels internes
+     * plus petits et biseaux de marche pour que la courbe reste visiblement crénelée.
      */
     public static void emitPixelCircle3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                          float cx, float cy, float cz,
                                          float radius, int rgbA, int rgbB, int alpha) {
-        if (alpha <= 6 || radius <= 0.05f) return;
-        float pixelSize = (radius <= 1.15f) ? 0.0625f : ((radius <= 2.15f) ? 0.09375f : 0.125f);
-        int rPix = Math.min(24, Math.max(2, Math.round(radius / pixelSize)));
-        float hs = pixelSize * 0.48f;
-        float hy = hs * 0.72f;
-        float gx = quantize(cx, pixelSize);
-        float gz = quantize(cz, pixelSize);
+        emitPixelRing3D(vc, mat, tmp, cx, cy, cz, radius, rgbA, rgbB, alpha, PIXEL_RING_SOLID);
+    }
 
-        int ix = rPix;
-        int iz = 0;
-        int err = 1 - rPix;
-        int stepIdx = 0;
-        while (ix >= iz) {
-            int rgb = ((stepIdx & 1) == 0) ? rgbA : rgbB;
-            float dx1 = ix * pixelSize;
-            float dz1 = iz * pixelSize;
-            emitVoxelCube(vc, mat, tmp, gx + dx1, cy, gz + dz1, hs, hy, hs, rgb, alpha);
-            emitVoxelCube(vc, mat, tmp, gx - dx1, cy, gz + dz1, hs, hy, hs, rgb, alpha);
-            if (iz != 0) {
-                emitVoxelCube(vc, mat, tmp, gx + dx1, cy, gz - dz1, hs, hy, hs, rgb, alpha);
-                emitVoxelCube(vc, mat, tmp, gx - dx1, cy, gz - dz1, hs, hy, hs, rgb, alpha);
-            }
-            if (ix != iz) {
-                float dx2 = iz * pixelSize;
-                float dz2 = ix * pixelSize;
-                emitVoxelCube(vc, mat, tmp, gx + dx2, cy, gz + dz2, hs, hy, hs, rgb, alpha);
-                emitVoxelCube(vc, mat, tmp, gx - dx2, cy, gz + dz2, hs, hy, hs, rgb, alpha);
-                if (iz != 0) {
-                    emitVoxelCube(vc, mat, tmp, gx + dx2, cy, gz - dz2, hs, hy, hs, rgb, alpha);
-                    emitVoxelCube(vc, mat, tmp, gx - dx2, cy, gz - dz2, hs, hy, hs, rgb, alpha);
+    private static void emitPixelRing3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                        float cx, float cy, float cz, float radius,
+                                        int rgbA, int rgbB, int alpha, int style) {
+        if (alpha <= 6 || radius <= 0.06f) return;
+        float grid = (radius <= 0.70f) ? 0.0625f : ((radius <= 1.55f) ? 0.078125f : 0.09375f);
+        int rPix = Math.min(40, Math.max(2, Math.round(radius / grid)));
+        float hs = grid * 0.47f;
+        float gx = quantize(cx, grid);
+        float gz = quantize(cz, grid);
+        int salt = Math.round(cx * 977.0f + cz * 613.0f + cy * 331.0f) ^ (rPix * 31);
+
+        if (style == PIXEL_RING_BEADS) {
+            // Anneau de perles : pixels isolés tous les 3 pas, tailles alternées
+            for (int u = -rPix; u <= rPix; u += 3) {
+                int v = (int) Math.round(Math.sqrt((double) Math.max(0, rPix * rPix - u * u)));
+                ringPixel(vc, mat, tmp, gx, cy, gz, u, v, grid, hs, alpha, rgbA, rgbB, false, salt);
+                if (v != 0) {
+                    ringPixel(vc, mat, tmp, gx, cy, gz, u, -v, grid, hs, alpha, rgbB, rgbA, false, salt + 1);
                 }
             }
-            iz++;
-            if (err < 0) {
-                err += 2 * iz + 1;
-            } else {
-                ix--;
-                err += 2 * (iz - ix) + 1;
+            return;
+        }
+
+        int lastV = -1;
+        for (int u = -rPix; u <= rPix; u++) {
+            int v = (int) Math.round(Math.sqrt((double) Math.max(0, rPix * rPix - u * u)));
+            boolean edgeStep = (u == -rPix || u == rPix || v == 0 || v == rPix);
+            if (style == PIXEL_RING_DASHED) {
+                if (((u >> 1) & 1) != 0) {
+                    lastV = v;
+                    continue;
+                }
+                ringPixel(vc, mat, tmp, gx, cy, gz, u, v, grid, hs, alpha, rgbA, rgbB, edgeStep, salt);
+                if (v != 0) {
+                    ringPixel(vc, mat, tmp, gx, cy, gz, u, -v, grid, hs, alpha, rgbB, rgbA, edgeStep, salt + 1);
+                }
+                lastV = v;
+                continue;
             }
-            stepIdx++;
+
+            // Remplissage vertical : le contour reste jointif là où la courbe "saute" d'un cran
+            int from = (lastV >= 0) ? Math.min(lastV, v) : v;
+            int to = (lastV >= 0) ? Math.max(lastV, v) : v;
+            for (int k = from; k <= to; k++) {
+                boolean edge = edgeStep || k == from || k == to;
+                ringPixel(vc, mat, tmp, gx, cy, gz, u, k, grid, hs, alpha, rgbA, rgbB, edge, salt);
+                if (k != 0) {
+                    ringPixel(vc, mat, tmp, gx, cy, gz, u, -k, grid, hs, alpha, rgbB, rgbA, edge, salt + 1);
+                }
+            }
+            lastV = v;
+        }
+    }
+
+    /** Un pixel de cercle : cube principal de taille variable, micro-pixel intérieur et biseau de marche. */
+    private static void ringPixel(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                  float gx, float gy, float gz, int u, int v,
+                                  float grid, float hs, int alpha,
+                                  int rgb, int rgbAlt, boolean edge, int salt) {
+        float px = gx + u * grid;
+        float pz = gz + v * grid;
+        float jx = 0.80f + 0.30f * pixelHash(salt, u * 37 + v * 11);
+        float hy = hs * (0.66f + 0.34f * pixelHash(salt ^ 0x5F, u * 13 + v * 41));
+
+        emitVoxelCube(vc, mat, tmp, px, gy, pz, hs * jx, hy, hs * (0.82f + 0.26f * pixelHash(salt + 9, u * 7 + v * 29)),
+                rgb, alpha);
+
+        // Pixel intérieur plus petit : donne l'épaisseur "2 blocs de tailles différentes"
+        if (((u * 3 + v * 5) & 1) == 0) {
+            float inX = px + (u >= 0 ? -grid * 0.29f : grid * 0.29f);
+            float inZ = pz + (v >= 0 ? -grid * 0.29f : grid * 0.29f);
+            emitVoxelCube(vc, mat, tmp, inX, gy + hy * 0.62f, inZ,
+                    grid * 0.20f, grid * 0.15f, grid * 0.20f, rgbAlt, Math.round(alpha * 0.88f));
+        }
+        // Biseau de marche : marque le crénelage pixel-art (jamais de courbe lissée)
+        if (edge) {
+            emitVoxelCube(vc, mat, tmp,
+                    px + (u >= 0 ? -grid * 0.42f : grid * 0.42f), gy - hy * 0.52f,
+                    pz + (v >= 0 ? grid * 0.20f : -grid * 0.20f),
+                    grid * 0.16f, grid * 0.10f, grid * 0.16f, rgbAlt, Math.round(alpha * 0.78f));
         }
     }
 
     /**
-     * T344-PIXEL-RETICLE : Vrai cercle pixel-art de Bresenham vertical orienté face au joueur
-     * + 4 crans de mire en pixels (pour les effets de visée / bullseye / sphère du Vide).
+     * T345-PIXEL-RETICLE : réticule pixel-art face caméra — anneau rasterisé en pixels 3D de tailles
+     * variées, second anneau intérieur pointillé, et crans de mire dégressifs.
      */
     private static void emitPixelCircleBillboard3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                                    float cx, float cy, float cz,
                                                    float radius, int rgbA, int rgbB, int alpha) {
-        if (alpha <= 6 || radius <= 0.05f) return;
+        if (alpha <= 6 || radius <= 0.06f) return;
         float horizDist = Mth.sqrt(cx * cx + cz * cz);
         float rx = (horizDist > 0.01f) ? (-cz / horizDist) : 1.0f;
         float rz = (horizDist > 0.01f) ? (cx / horizDist) : 0.0f;
 
-        float pixelSize = 0.0625f;
-        int rPix = Math.min(20, Math.max(3, Math.round(radius / pixelSize)));
-        float hs = pixelSize * 0.48f;
+        float grid = (radius <= 1.20f) ? 0.0625f : 0.078125f;
+        int rPix = Math.min(28, Math.max(3, Math.round(radius / grid)));
+        float hs = grid * 0.47f;
+        int salt = Math.round(cx * 733.0f + cy * 419.0f + cz * 617.0f + radius * 89.0f);
 
-        int ix = rPix;
-        int iy = 0;
-        int err = 1 - rPix;
-        int stepIdx = 0;
-        while (ix >= iy) {
-            int rgb = ((stepIdx & 1) == 0) ? rgbA : rgbB;
-            plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, ix, iy, pixelSize, hs, rgb, alpha);
-            plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, -ix, iy, pixelSize, hs, rgb, alpha);
-            if (iy != 0) {
-                plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, ix, -iy, pixelSize, hs, rgb, alpha);
-                plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, -ix, -iy, pixelSize, hs, rgb, alpha);
-            }
-            if (ix != iy) {
-                plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, iy, ix, pixelSize, hs, rgb, alpha);
-                plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, -iy, ix, pixelSize, hs, rgb, alpha);
-                if (iy != 0) {
-                    plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, iy, -ix, pixelSize, hs, rgb, alpha);
-                    plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, -iy, -ix, pixelSize, hs, rgb, alpha);
+        int lastV = -1;
+        for (int u = -rPix; u <= rPix; u++) {
+            int v = (int) Math.round(Math.sqrt((double) Math.max(0, rPix * rPix - u * u)));
+            int from = (lastV >= 0) ? Math.min(lastV, v) : v;
+            int to = (lastV >= 0) ? Math.max(lastV, v) : v;
+            for (int k = from; k <= to; k++) {
+                boolean edge = (u == -rPix || u == rPix || k == 0 || k == rPix || k == from || k == to);
+                int rgb = (((u + k) >> 1) & 1) == 0 ? rgbA : rgbB;
+                billboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, u, k, grid, hs, rgb, rgbB, alpha, edge, salt);
+                if (k != 0) {
+                    billboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, u, -k, grid, hs, rgb, rgbB, alpha, edge, salt + 1);
                 }
             }
-            iy++;
-            if (err < 0) {
-                err += 2 * iy + 1;
-            } else {
-                ix--;
-                err += 2 * (iy - ix) + 1;
-            }
-            stepIdx++;
+            lastV = v;
         }
-        // 4 crans de mire pixel-art sur les axes N/S/E/O du réticule
-        for (int t = 1; t <= 2; t++) {
-            int p = rPix - t;
+
+        // Second anneau intérieur pointillé (profondeur pixel-art du réticule)
+        int innerPix = Math.max(2, Math.round(rPix * 0.56f));
+        for (int u = -innerPix; u <= innerPix; u += 2) {
+            int v = (int) Math.round(Math.sqrt((double) Math.max(0, innerPix * innerPix - u * u)));
+            billboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, u, v, grid, hs * 0.8f, rgbB, rgbA,
+                    Math.round(alpha * 0.72f), false, salt + 5);
+            if (v != 0) {
+                billboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, u, -v, grid, hs * 0.8f, rgbB, rgbA,
+                        Math.round(alpha * 0.72f), false, salt + 6);
+            }
+        }
+
+        // Crans de mire dégressifs sur les 4 axes + marques diagonales minuscules
+        for (int tk = 1; tk <= 3; tk++) {
+            int p = rPix - tk;
             if (p <= 1) break;
-            plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, p, 0, pixelSize, hs, 0xFFFFFF, alpha);
-            plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, -p, 0, pixelSize, hs, 0xFFFFFF, alpha);
-            plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, 0, p, pixelSize, hs, 0xFFFFFF, alpha);
-            plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, 0, -p, pixelSize, hs, 0xFFFFFF, alpha);
+            int a2 = Math.round(alpha * (tk == 1 ? 1.0f : 0.62f));
+            float s = hs * (tk == 1 ? 1.05f : 0.56f);
+            billboardRaw(vc, mat, tmp, cx, cy, cz, rx, rz, p, 0, grid, s, 0xFFFFFF, a2);
+            billboardRaw(vc, mat, tmp, cx, cy, cz, rx, rz, -p, 0, grid, s, 0xFFFFFF, a2);
+            billboardRaw(vc, mat, tmp, cx, cy, cz, rx, rz, 0, p, grid, s, 0xFFFFFF, a2);
+            billboardRaw(vc, mat, tmp, cx, cy, cz, rx, rz, 0, -p, grid, s, 0xFFFFFF, a2);
+        }
+        int diag = Math.max(2, Math.round(rPix * 0.70f));
+        for (int d = 0; d < 4; d++) {
+            int ux = ((d & 1) == 0) ? diag : -diag;
+            int uy = ((d & 2) == 0) ? diag : -diag;
+            billboardRaw(vc, mat, tmp, cx, cy, cz, rx, rz, ux, uy, grid, hs * 0.5f, rgbA, Math.round(alpha * 0.8f));
         }
     }
 
-    private static void plotBillboardPixel(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                           float cx, float cy, float cz,
-                                           float rx, float rz, int uPix, int vPix,
-                                           float pixelSize, float hs, int rgb, int alpha) {
-        float px = cx + rx * (uPix * pixelSize);
-        float py = cy + vPix * pixelSize;
-        float pz = cz + rz * (uPix * pixelSize);
-        emitVoxelCube(vc, mat, tmp, px, py, pz, hs, hs, hs, rgb, alpha);
+    private static void billboardPixel(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                       float cx, float cy, float cz, float rx, float rz,
+                                       int uPix, int vPix, float grid, float hs, int rgb, int rgbAlt,
+                                       int alpha, boolean edge, int salt) {
+        float px = cx + rx * (uPix * grid);
+        float py = cy + vPix * grid;
+        float pz = cz + rz * (uPix * grid);
+        float jx = 0.80f + 0.30f * pixelHash(salt, uPix * 31 + vPix * 17);
+        float hy = hs * (0.68f + 0.32f * pixelHash(salt + 2, uPix * 11 + vPix * 43));
+        emitVoxelCube(vc, mat, tmp, px, py, pz, hs * jx, hy, hs * jx, rgb, alpha);
+        if (((uPix + vPix) & 1) == 0) {
+            emitVoxelCube(vc, mat, tmp, px - rx * grid * 0.26f, py - grid * 0.22f, pz - rz * grid * 0.26f,
+                    grid * 0.19f, grid * 0.15f, grid * 0.19f, rgbAlt, Math.round(alpha * 0.85f));
+        }
+        if (edge) {
+            emitVoxelCube(vc, mat, tmp, px + rx * grid * 0.30f, py + grid * 0.24f, pz + rz * grid * 0.30f,
+                    grid * 0.14f, grid * 0.11f, grid * 0.14f, 0xFFFFFF, Math.round(alpha * 0.75f));
+        }
+    }
+
+    private static void billboardRaw(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                     float cx, float cy, float cz, float rx, float rz,
+                                     int uPix, int vPix, float grid, float hs,
+                                     int rgb, int alpha) {
+        emitVoxelCube(vc, mat, tmp,
+                cx + rx * (uPix * grid), cy + vPix * grid, cz + rz * (uPix * grid),
+                hs, hs * 0.9f, hs, rgb, alpha);
     }
 
     /**
-     * T344-PIXEL-RUNIC-CIRCLE : Vrai Cercle Runique en Pixels 3D :
-     * double anneau circulaire de Bresenham + 8 vraies runes pixel-art 3x3 en orbite + étoile runique en pixels !
+     * T345-PIXEL-RUNIC-CIRCLE : cercle runique fait d'ANNEAUX DE PIXELS :
+     * anneau extérieur plein, anneau intérieur plein, anneau de perles ornemental, runes 5x5
+     * en mini-cubes orientés vers l'extérieur, étoile inscrite crénelée et accents cardinaux.
      */
     public static void emitPixelRunicCircle3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                               float cx, float cy, float cz,
@@ -1108,59 +1354,155 @@ public final class WeaponWorldVfxManager {
                                               int outerRgb, int innerRgb, int runeRgb,
                                               int alpha, boolean withInscribedStar) {
         if (alpha <= 6 || outerRadius <= 0.15f) return;
-        // 1) Grand cercle extérieur de Bresenham en mini-cubes 3D
-        emitPixelCircle3D(vc, mat, tmp, cx, cy, cz, outerRadius, outerRgb, innerRgb, alpha);
 
-        // 2) Cercle intérieur concentrique de Bresenham en mini-cubes 3D
-        float innerRadius = outerRadius * 0.60f;
-        if (innerRadius >= 0.18f) {
-            emitPixelCircle3D(vc, mat, tmp, cx, cy, cz, innerRadius, innerRgb, runeRgb, Math.round(alpha * 0.92f));
+        // 1) Anneau extérieur : cercle de pixels 3D jointifs, tailles variées
+        emitPixelRing3D(vc, mat, tmp, cx, cy, cz, outerRadius, outerRgb, innerRgb, alpha, PIXEL_RING_SOLID);
+
+        // 2) Anneau intérieur plein, légèrement plus petit
+        float innerR = outerRadius * 0.60f;
+        if (innerR >= 0.16f) {
+            emitPixelRing3D(vc, mat, tmp, cx, cy, cz, innerR, innerRgb, runeRgb,
+                    Math.round(alpha * 0.94f), PIXEL_RING_SOLID);
         }
 
-        // 3) 8 vraies runes 3x3 en mini-pixels 3D disposées dans la couronne entre les deux cercles !
-        if (outerRadius >= 0.55f) {
-            float midR = outerRadius * 0.80f;
-            float runePix = (outerRadius <= 1.4f) ? 0.042f : 0.055f;
-            int runeCount = (outerRadius >= 1.1f) ? 8 : 4;
+        // 3) Anneau de perles pixel-art entre les deux anneaux
+        float beadR = outerRadius * 0.78f;
+        if (beadR >= 0.30f) {
+            emitPixelRing3D(vc, mat, tmp, cx, cy, cz, beadR, runeRgb, outerRgb,
+                    Math.round(alpha * 0.72f), PIXEL_RING_BEADS);
+        }
+
+        // 4) Runes 5x5 en mini-pixels 3D, orientées vers l'extérieur du cercle
+        if (outerRadius >= 0.42f) {
+            float step = Mth.clamp(outerRadius * 0.040f, 0.024f, 0.050f);
+            int runeCount = (outerRadius >= 1.75f) ? 12 : ((outerRadius >= 0.95f) ? 8 : 4);
+            int phaseIdx = Math.round(rotPhase * 3.0f);
             for (int r = 0; r < runeCount; r++) {
                 float ang = rotPhase + r * ((float) (Math.PI * 2.0) / runeCount);
-                float rx = quantize(cx + Mth.cos(ang) * midR, 0.0625f);
-                float rz = quantize(cz + Mth.sin(ang) * midR, 0.0625f);
-                emitPixelRune3D(vc, mat, tmp, rx, cy + 0.015f, rz, r & 7, runePix,
-                        (r & 1) == 0 ? runeRgb : outerRgb, alpha);
+                float rx = quantize(cx + Mth.cos(ang) * beadR, 0.03125f);
+                float rz = quantize(cz + Mth.sin(ang) * beadR, 0.03125f);
+                emitPixelRune3D(vc, mat, tmp, rx, cy + 0.022f, rz, r + phaseIdx, step,
+                        -ang + (float) (Math.PI * 0.5), runeRgb, (r & 1) == 0 ? 0xFFFFFF : innerRgb, alpha);
             }
         }
 
-        // 4) Étoile / octagramme runique inscrit en lignes de pixels 3D crénelées
-        if (withInscribedStar && innerRadius >= 0.25f) {
-            float sr = innerRadius * 0.92f;
-            float lineHalf = (outerRadius <= 1.3f) ? 0.028f : 0.036f;
+        // 5) Étoile runique inscrite en lignes de pixels crénelées
+        if (withInscribedStar && innerR >= 0.22f) {
+            float sr = innerR * 0.92f;
+            float lineHalf = Mth.clamp(outerRadius * 0.024f, 0.014f, 0.032f);
             for (int k = 0; k < 4; k++) {
                 float a = rotPhase * 0.5f + k * ((float) Math.PI * 0.25f);
                 float dx = Mth.cos(a) * sr;
                 float dz = Mth.sin(a) * sr;
-                emitSteppedVoxelLine(vc, mat, tmp,
-                        cx - dx, cy, cz - dz,
-                        cx + dx, cy, cz + dz,
-                        lineHalf, (k & 1) == 0 ? runeRgb : innerRgb, outerRgb, Math.round(alpha * 0.82f));
+                emitSteppedVoxelLine(vc, mat, tmp, cx - dx, cy, cz - dz, cx + dx, cy, cz + dz,
+                        lineHalf, (k & 1) == 0 ? runeRgb : innerRgb, outerRgb, Math.round(alpha * 0.86f));
+            }
+            emitVoxelCube(vc, mat, tmp, cx, cy + lineHalf * 0.4f, cz,
+                    lineHalf * 1.5f, lineHalf * 1.2f, lineHalf * 1.5f, 0xFFFFFF, Math.round(alpha * 0.9f));
+        }
+
+        // 6) Accents cardinaux : micro-pixels blancs pour le piqué pixel-art
+        if (outerRadius >= 0.60f) {
+            for (int k = 0; k < 4; k++) {
+                float a = rotPhase * 0.35f + k * ((float) Math.PI * 0.5f);
+                float px = quantize(cx + Mth.cos(a) * outerRadius, 0.03125f);
+                float pz = quantize(cz + Mth.sin(a) * outerRadius, 0.03125f);
+                float s = Mth.clamp(outerRadius * 0.028f, 0.010f, 0.030f);
+                emitVoxelCube(vc, mat, tmp, px, cy + s * 1.1f, pz, s, s * 0.85f, s, 0xFFFFFF,
+                        Math.round(alpha * 0.85f));
             }
         }
     }
 
-    /** Dessine une rune pixel-art 3x3 composée de mini-cubes 3D jointifs au sol. */
+    /** Rune pixel-art 5x5 : pixels "colonne" plus gros et pixels de liaison plus petits + orientation radiale. */
     private static void emitPixelRune3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                         float rx, float ry, float rz,
-                                        int glyphIdx, float pixelStep, int rgb, int alpha) {
-        int mask = RUNE_BITMAPS_3X3[glyphIdx & 7];
-        float hs = pixelStep * 0.46f;
-        for (int row = 0; row < 3; row++) {
-            for (int col = 0; col < 3; col++) {
-                int bit = 8 - (row * 3 + col);
-                if (((mask >>> bit) & 1) == 0) continue;
-                float px = rx + (col - 1) * pixelStep;
-                float pz = rz + (row - 1) * pixelStep;
-                emitVoxelCube(vc, mat, tmp, px, ry, pz, hs, hs * 0.8f, hs, rgb, alpha);
+                                        int glyphIdx, float pixelStep, float angleRad,
+                                        int stemRgb, int accentRgb, int alpha) {
+        int mask = RUNE_BITMAPS_5X5[Math.floorMod(glyphIdx, RUNE_BITMAPS_5X5.length)];
+        float ca = Mth.cos(angleRad);
+        float sa = Mth.sin(angleRad);
+        for (int row = 0; row < 5; row++) {
+            for (int col = 0; col < 5; col++) {
+                if (!runeBit(mask, row, col)) continue;
+                int neighbours = 0;
+                if (col > 0 && runeBit(mask, row, col - 1)) neighbours++;
+                if (col < 4 && runeBit(mask, row, col + 1)) neighbours++;
+                if (row > 0 && runeBit(mask, row - 1, col)) neighbours++;
+                if (row < 4 && runeBit(mask, row + 1, col)) neighbours++;
+
+                boolean stem = neighbours >= 2;
+                float dx = (col - 2) * pixelStep;
+                float dz = (row - 2) * pixelStep;
+                float px = rx + dx * ca - dz * sa;
+                float pz = rz + dx * sa + dz * ca;
+                float hx = pixelStep * (stem ? 0.47f : 0.34f);
+                float hy = pixelStep * (stem ? 0.42f : 0.28f);
+                emitVoxelCube(vc, mat, tmp, px, ry + (stem ? 0.0f : pixelStep * 0.07f), pz,
+                        hx, hy, hx, stem ? stemRgb : accentRgb, alpha);
             }
+        }
+    }
+
+    /**
+     * Goutte pixel-art 3D : aucune forme lisse, uniquement un empilement de cubes de tailles
+     * différentes (pointe fine, corps large, queue, éclaboussures satellites, micro-reflet).
+     */
+    public static void emitPixelDroplet3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                          float cx, float cy, float cz, float pixelStep,
+                                          int bodyRgb, int lightRgb, int alpha, int salt) {
+        if (alpha <= 6 || pixelStep <= 0.004f) return;
+        float[][] pixels = {
+                {0.00f, 3.10f, 0.16f},
+                {0.00f, 2.25f, 0.28f},
+                {0.00f, 1.35f, 0.40f},
+                {-0.42f, 0.55f, 0.34f}, {0.42f, 0.55f, 0.34f},
+                {0.00f, 0.50f, 0.52f},
+                {-0.52f, -0.35f, 0.34f}, {0.52f, -0.35f, 0.34f},
+                {0.00f, -0.42f, 0.50f},
+                {0.00f, -1.20f, 0.34f},
+                {0.00f, -1.75f, 0.18f}
+        };
+        for (int i = 0; i < pixels.length; i++) {
+            float jx = (pixelHash(salt, i * 11) - 0.5f) * pixelStep * 0.22f;
+            float jz = (pixelHash(salt + 13, i * 7) - 0.5f) * pixelStep * 0.22f;
+            float s = pixelStep * pixels[i][2];
+            emitVoxelCube(vc, mat, tmp,
+                    cx + pixelStep * pixels[i][0] + jx,
+                    cy + pixelStep * pixels[i][1],
+                    cz + jz,
+                    s, s * 0.86f, s,
+                    i <= 2 ? lightRgb : bodyRgb,
+                    Math.round(alpha * (i <= 2 ? 0.92f : 1.0f)));
+        }
+        emitVoxelCube(vc, mat, tmp, cx - pixelStep * 0.55f, cy + pixelStep * 0.9f, cz - pixelStep * 0.1f,
+                pixelStep * 0.13f, pixelStep * 0.13f, pixelStep * 0.13f, 0xFFE0E0, Math.round(alpha * 0.85f));
+        emitVoxelCube(vc, mat, tmp, cx + pixelStep * 1.15f, cy + pixelStep * 2.0f, cz + pixelStep * 0.35f,
+                pixelStep * 0.11f, pixelStep * 0.11f, pixelStep * 0.11f, bodyRgb, Math.round(alpha * 0.8f));
+        emitVoxelCube(vc, mat, tmp, cx - pixelStep * 1.05f, cy - pixelStep * 0.9f, cz + pixelStep * 0.5f,
+                pixelStep * 0.14f, pixelStep * 0.12f, pixelStep * 0.14f, lightRgb, Math.round(alpha * 0.7f));
+    }
+
+    /** Amas de pixels 3D (météore, éclat de roche, cœur) : croûte irrégulière de cubes de tailles différentes. */
+    public static void emitPixelRockCluster3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                              float cx, float cy, float cz, float pixelStep, int count,
+                                              int crustRgb, int glowRgb, int hotRgb, int alpha, int salt) {
+        if (alpha <= 6 || pixelStep <= 0.004f) return;
+        emitVoxelCube(vc, mat, tmp, cx, cy, cz, pixelStep * 1.10f, pixelStep * 1.00f, pixelStep * 1.10f, hotRgb, alpha);
+        long h = salt * 0x9E3779B97F4A7C15L;
+        for (int i = 0; i < count; i++) {
+            h = h * 6364136223846793005L + 1442695040888963407L;
+            float a = (((h >>> 11) & 0x3FF) / 1023.0f) * (float) (Math.PI * 2.0);
+            h = h * 6364136223846793005L + 1442695040888963407L;
+            float elev = ((((h >>> 13) & 0x1FF) / 511.0f) - 0.5f) * 1.6f;
+            h = h * 6364136223846793005L + 1442695040888963407L;
+            float dist = 0.75f + (((h >>> 17) & 0xFF) / 255.0f) * 1.35f;
+            float px = quantize(cx + Mth.cos(a) * pixelStep * dist, pixelStep * 0.5f);
+            float py = quantize(cy + elev * pixelStep * dist, pixelStep * 0.5f);
+            float pz = quantize(cz + Mth.sin(a) * pixelStep * dist, pixelStep * 0.5f);
+            float s = pixelStep * (0.30f + 0.30f * ((i & 1) == 0 ? 1.0f : 0.5f));
+            emitVoxelCube(vc, mat, tmp, px, py, pz, s, s * 0.88f, s,
+                    (i % 3 == 0) ? glowRgb : crustRgb, Math.round(alpha * Math.max(0.45f, 0.95f - 0.03f * i)));
         }
     }
 
@@ -1202,7 +1544,9 @@ public final class WeaponWorldVfxManager {
         float my = Math.max(y0, y1) + 0.85f + Mth.sin(phase) * 0.35f;
         float mz = (z0 + z1) * 0.5f + Mth.sin(phase) * 0.75f;
 
-        int cubes = 14;
+        int cubes = 16;
+        int salt = Math.round(phase * 137.0f + progress * 53.0f);
+        float prevX = x0, prevY = y0, prevZ = z0;
         for (int i = 0; i <= cubes; i++) {
             float u = (float) i / cubes;
             float inv = 1.0f - u;
@@ -1210,8 +1554,20 @@ public final class WeaponWorldVfxManager {
             float by = quantize(inv * inv * y0 + 2.0f * inv * u * my + u * u * y1, 0.0625f);
             float bz = quantize(inv * inv * z0 + 2.0f * inv * u * mz + u * u * z1, 0.0625f);
             float pulse = 1.0f - Math.min(1.0f, Math.abs(u - progress) * 2.8f);
-            float hs = 0.038f + 0.024f * pulse;
-            emitVoxelCube(vc, mat, tmp, bx, by, bz, hs, hs, hs, pulse > 0.35f ? brightRgb : darkRgb, alpha);
+            float hs = (0.034f + 0.026f * pulse) * (0.82f + 0.36f * pixelHash(salt, i * 13));
+            // Coude de remplissage : le siphon reste un chapelet de pixels jointifs, jamais lissé
+            if (i > 0 && (Math.abs(bx - prevX) > 0.03f && Math.abs(by - prevY) > 0.03f)) {
+                emitVoxelCube(vc, mat, tmp, (bx + prevX) * 0.5f, (by + prevY) * 0.5f, (bz + prevZ) * 0.5f,
+                        hs * 0.58f, hs * 0.58f, hs * 0.58f, darkRgb, Math.round(alpha * 0.9f));
+            }
+            emitVoxelCube(vc, mat, tmp, bx, by, bz, hs,
+                    hs * (0.78f + 0.3f * pixelHash(salt + 4, i)), hs,
+                    pulse > 0.35f ? brightRgb : darkRgb, alpha);
+            if ((i & 2) == 0) {
+                emitVoxelCube(vc, mat, tmp, bx + hs * 1.1f, by + hs * 0.35f, bz,
+                        hs * 0.32f, hs * 0.32f, hs * 0.32f, brightRgb, Math.round(alpha * 0.62f));
+            }
+            prevX = bx; prevY = by; prevZ = bz;
         }
     }
 
@@ -1220,15 +1576,30 @@ public final class WeaponWorldVfxManager {
                                        float radius, float height, float phase,
                                        int rgbA, int rgbB, int alpha) {
         if (alpha <= 6) return;
-        int cubes = 14;
+        int cubes = 18;
+        int salt = Math.round(phase * 211.0f + radius * 379.0f);
+        float pxP = cx, pyP = baseY, pzP = cz;
         for (int i = 0; i <= cubes; i++) {
             float u = (float) i / cubes;
             float a = phase + u * (float) Math.PI * 2.4f;
             float nx = quantize(cx + Mth.cos(a) * radius * (1.0f - 0.2f * u), 0.0625f);
             float ny = quantize(baseY + u * height, 0.0625f);
             float nz = quantize(cz + Mth.sin(a) * radius * (1.0f - 0.2f * u), 0.0625f);
-            float hs = 0.042f * (1.0f - u * 0.35f);
-            emitVoxelCube(vc, mat, tmp, nx, ny, nz, hs, hs, hs, (i & 1) == 0 ? rgbA : rgbB, alpha);
+            float hs = 0.040f * (1.0f - u * 0.32f) * (0.80f + 0.38f * pixelHash(salt, i * 11));
+            // Remplissage des marches : l'hélice reste un escalier de pixels continus
+            if (i > 0) {
+                emitVoxelCube(vc, mat, tmp, (nx + pxP) * 0.5f, (ny + pyP) * 0.5f, (nz + pzP) * 0.5f,
+                        hs * 0.56f, hs * 0.56f, hs * 0.56f, rgbB, Math.round(alpha * 0.85f));
+            }
+            emitVoxelCube(vc, mat, tmp, nx, ny, nz, hs,
+                    hs * (0.80f + 0.26f * pixelHash(salt + 3, i)), hs,
+                    (i & 1) == 0 ? rgbA : rgbB, alpha);
+            // Micro-pixel décalé : casse l'effet "gros bloc uniforme"
+            if ((i & 1) == 0) {
+                emitVoxelCube(vc, mat, tmp, quantize(nx + hs * 1.25f, 0.03125f), ny, quantize(nz - hs * 1.1f, 0.03125f),
+                        hs * 0.34f, hs * 0.30f, hs * 0.34f, rgbA, Math.round(alpha * 0.66f));
+            }
+            pxP = nx; pyP = ny; pzP = nz;
         }
     }
 
