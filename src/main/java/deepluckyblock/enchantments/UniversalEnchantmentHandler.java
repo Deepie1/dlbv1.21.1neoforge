@@ -846,11 +846,15 @@ public class UniversalEnchantmentHandler {
                 WeaponVisualEffectId critStyle = overCritDmg > 0
                         ? WeaponVisualEffectId.OVERCLOCK_CYBER_X
                         : (focusedSurgical ? WeaponVisualEffectId.FOCUSED_BULLSEYE : WeaponVisualEffectId.GOLDEN_CRIT_STAR);
-                WeaponVfxServerListener.notifyMeleeCrit(
-                        player,
-                        event.getEntity(),
-                        critStyle,
-                        Math.max(1, overCritDmg + normCritDmg + lowCritDmg + normalCritRate + lowCritRate));
+                // T346-FIX-COMPILE : le porteur d'arme peut etre un mob (LivingEntity) : on ne
+                // declenche le VFX critique que pour un vrai joueur.
+                if (player instanceof Player critPlayer) {
+                    WeaponVfxServerListener.notifyMeleeCrit(
+                            critPlayer,
+                            event.getEntity(),
+                            critStyle,
+                            Math.max(1, overCritDmg + normCritDmg + lowCritDmg + normalCritRate + lowCritRate));
+                }
             }
 
             int overcharge = getEnchantLvl(weapon, "deep_lucky_block:overcharge");

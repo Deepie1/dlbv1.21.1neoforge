@@ -220,6 +220,36 @@ public enum WeaponVisualEffectId {
         return (id >= 1 && id < BY_ID.length) ? BY_ID[id] : null;
     }
 
+    /**
+     * T346-VFX-TEST : clés d'enchantement d'arme ({@code namespace:path}) qui déclenchent cet effet.
+     * Sert à la commande de test {@code /dlbvfx give} pour fabriquer l'arme correspondante.
+     */
+    public static List<String> enchantKeysFor(WeaponVisualEffectId fx) {
+        List<String> out = new ArrayList<>();
+        if (fx == null) return out;
+        for (Map.Entry<String, WeaponVisualEffectId> e : ENCHANT_MAP.entrySet()) {
+            if (e.getValue() == fx) {
+                String k = e.getKey();
+                out.add(k.indexOf(':') >= 0 ? k : "deep_lucky_block:" + k);
+            }
+        }
+        out.sort(Comparator.naturalOrder());
+        return out;
+    }
+
+    /** T346-VFX-TEST : clés d'enchantement de gantelet (plastron, mains nues) mappées sur cet effet. */
+    public static List<String> gauntletKeysFor(WeaponVisualEffectId fx) {
+        List<String> out = new ArrayList<>();
+        if (fx == null) return out;
+        for (Map.Entry<String, WeaponVisualEffectId> e : GAUNTLET_MAP.entrySet()) {
+            if (e.getValue() == fx) {
+                out.add("deep_lucky_block:" + e.getKey());
+            }
+        }
+        out.sort(Comparator.naturalOrder());
+        return out;
+    }
+
     public static WeaponVisualEffectId forEnchantmentLocation(ResourceLocation loc) {
         if (loc == null) return null;
         if ("deep_lucky_block".equals(loc.getNamespace())) {

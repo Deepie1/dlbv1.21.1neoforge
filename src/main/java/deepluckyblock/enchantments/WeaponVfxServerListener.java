@@ -41,9 +41,10 @@ import java.util.concurrent.ConcurrentHashMap;
 @EventBusSubscriber(modid = DeepLuckyBlockMod.MODID)
 public final class WeaponVfxServerListener {
 
-    private static final int KIND_IMPACT            = 1;
-    private static final int KIND_BEAM_SIPHON       = 2;
-    private static final int KIND_PROJECTILE_ATTACH = 3;
+    // T346-VFX-TEST : kinds exposés publiquement pour la commande de test /dlbvfx
+    public static final int KIND_IMPACT            = 1;
+    public static final int KIND_BEAM_SIPHON       = 2;
+    public static final int KIND_PROJECTILE_ATTACH = 3;
 
     private static final Map<Integer, Long> LAST_ATTACKER_HIT_TICK = new ConcurrentHashMap<>();
     private static final Map<Integer, Long> LAST_PROJECTILE_HIT_TICK = new ConcurrentHashMap<>();
@@ -95,7 +96,7 @@ public final class WeaponVfxServerListener {
         if (!(proj instanceof AbstractArrow)) return;
 
         // Planifié à J+1 tick afin que ClientboundAddEntityPacket et le snapshot d'arme soient déjà prêts
-        TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 1L, () -> {
+        TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 1, () -> {
             if (!proj.isAlive()) return;
             if (!(proj.getOwner() instanceof LivingEntity shooter)) return;
 
@@ -268,6 +269,28 @@ public final class WeaponVfxServerListener {
             if (!snap.isEmpty()) return snap;
         }
         return attacker.getMainHandItem();
+    }
+
+    /**
+     * T346-VFX-TEST : déclenchement MANUEL d'un effet visuel (utilisé par {@code /dlbvfx}).
+     * Emprunte exactement le même paquet S2C que les déclencheurs de jeu réels, donc ce que la
+     * commande affiche est rigoureusement identique à ce que le joueur voit en combat.
+     */
+    public static void playDebug(ServerPlayer player, WeaponVisualEffectId fx, int kind, int intensity,
+                                 Vec3 from, Vec3 to) {
+        if (player == null || fx == null) return;
+        if (!(player.level() instanceof ServerLevel sl)) return;
+        int lvl = Math.max(1, Math.min(12, intensity));
+        if (kind == KIND_PROJECTILE_ATTACH) {
+            // to.x porte l'identifiant d'entité du projectile à suivre (comme le vrai chemin réseau)
+            broadcastNear(sl, (float) from.x, (float) from.y, (float) from.z, fx.id, kind, lvl,
+                    (float) from.x, (float) from.y, (float) from.z,
+                    (float) to.x, 0.0f, 0.0f);
+            return;
+        }
+        broadcastNear(sl, (float) to.x, (float) to.y, (float) to.z, fx.id, kind, lvl,
+                (float) from.x, (float) from.y, (float) from.z,
+                (float) to.x, (float) to.y, (float) to.z);
     }
 
     private static void broadcastNear(ServerLevel sl, float refX, float refY, float refZ,
