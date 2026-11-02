@@ -186,8 +186,12 @@ public class DeepLuckyBlockBlock extends Block implements EntityBlock {
 
         int mainLuck = 0;
         int slbBonus = 0;
+        String forcedBranch = "";
 
         BlockEntity be = world.getBlockEntity(pos);
+        if (be != null && be.getPersistentData().contains("dlbForcedBranch")) {
+            forcedBranch = be.getPersistentData().getString("dlbForcedBranch");
+        }
         if (be instanceof DeepLuckyBlockBlockEntity dlBe) {
             mainLuck = dlBe.getLuck();
             slbBonus = dlBe.getSlbLuckBonus();
@@ -219,6 +223,12 @@ public class DeepLuckyBlockBlock extends Block implements EntityBlock {
                 deepluckyblock.util.DeepNbt.getOrCreateTagElement(drop, "BlockEntityTag").putInt("Luck", totalLuck);
             }
             Block.popResource(world, pos, drop);
+            return true;
+        }
+
+        if (!forcedBranch.isEmpty() && world instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+            TestProcedure.executeForcedInfusedOutcome(serverLevel, pos.getX(), pos.getY(), pos.getZ(),
+                    totalLuck, "g".equalsIgnoreCase(forcedBranch));
             return true;
         }
 

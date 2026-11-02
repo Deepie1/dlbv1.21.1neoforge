@@ -3803,29 +3803,8 @@ public class GenerateLuckyItemProcedure {
 
     @SubscribeEvent
     public static void onRegisterDebugCommands(RegisterCommandsEvent event) {
-        if (!DEBUG_COMMAND_ENABLED) return;
-        event.getDispatcher().register(
-            Commands.literal("dlb")
-                .requires(src -> src.hasPermission(2))
-                .then(Commands.literal("g")
-                    .then(Commands.argument("luck", StringArgumentType.word())
-                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 64))
-                            .executes(ctx -> runDebugCommand(ctx.getSource(),
-                                StringArgumentType.getString(ctx, "luck"),
-                                IntegerArgumentType.getInteger(ctx, "count"))))))
-                // 🔬 T231 : /dlb probs <luck> -> ce que la roue VOIT reellement.
-                .then(Commands.literal("probs")
-                    .then(Commands.argument("luck", IntegerArgumentType.integer(-100, 100))
-                        .executes(ctx -> runProbsCommand(ctx.getSource(),
-                            IntegerArgumentType.getInteger(ctx, "luck")))))
-                // 🎡 T227 : /dlb w <luck infusee> <count> -> passe par la VRAIE roue.
-                .then(Commands.literal("w")
-                    .then(Commands.argument("luck", IntegerArgumentType.integer(-100, 100))
-                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 1000))
-                            .executes(ctx -> runWheelCommand(ctx.getSource(),
-                                IntegerArgumentType.getInteger(ctx, "luck"),
-                                IntegerArgumentType.getInteger(ctx, "count"))))))
-        );
+        // T312-DLB-LAUNCH : L'enregistrement de /dlb (g, b, probs, w, rank) est désormais
+        // unifié dans deepluckyblock.commands.DlbCommand afin d'éviter tout conflit Brigadier.
     }
 
     // 🧪 DEBUG COMMAND /dlb (branche "g" uniquement)

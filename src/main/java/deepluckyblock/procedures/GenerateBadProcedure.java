@@ -5193,35 +5193,8 @@ public class GenerateBadProcedure {
 
     @SubscribeEvent
     public static void onRegisterDebugCommands(RegisterCommandsEvent event) {
-        var dlb = Commands.literal("dlb")
-                .requires(src -> src.hasPermission(2));
-
-        if (DEBUG_COMMAND_ENABLED) {
-            dlb.then(Commands.literal("b")
-                    .then(Commands.argument("luck", StringArgumentType.word())
-                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 64))
-                            .executes(ctx -> runDebugBadCommand(ctx.getSource(),
-                                StringArgumentType.getString(ctx, "luck"),
-                                IntegerArgumentType.getInteger(ctx, "count"))))));
-        }
-
-        // 🧪 Filet de secours : la branche "g" est enregistrée ICI (classe dont
-        // l'enregistrement est prouvé fonctionnel), mais elle exécute la vraie
-        // logique de GenerateLuckyItemProcedure.runDebugCommand (public).
-        // Si GenerateLuckyItemProcedure enregistre aussi son propre "g" via son
-        // @EventBusSubscriber(modid = "deep_lucky_block"), Brigadier fusionne les branches identiques :
-        // aucun conflit, une seule commande visible.
-        if (GenerateLuckyItemProcedure.DEBUG_COMMAND_ENABLED) {
-            dlb.then(Commands.literal("g")
-                    .then(Commands.argument("luck", StringArgumentType.word())
-                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 64))
-                            .executes(ctx -> GenerateLuckyItemProcedure.runDebugCommand(
-                                ctx.getSource(),
-                                StringArgumentType.getString(ctx, "luck"),
-                                IntegerArgumentType.getInteger(ctx, "count"))))));
-        }
-
-        event.getDispatcher().register(dlb);
+        // T312-DLB-LAUNCH : L'enregistrement de /dlb (g, b, probs, w, rank) est désormais
+        // unifié dans deepluckyblock.commands.DlbCommand afin d'éviter tout conflit Brigadier.
     }
 
     private static int runDebugBadCommand(CommandSourceStack source, String luckSpec, int count) {

@@ -2314,6 +2314,88 @@ public class TestProcedure {
     }
 
     /**
+     * T312-DLB-LAUNCH : Tire la VRAIE roue d'un Lucky Block infusé à {@code luckBonus}
+     * (-100..+100), mais garantit une issue finale POSITIVE (aucune bascule sur crâne),
+     * tout en conservant strictement la distribution réelle des grades hors crâne.
+     */
+    private static WheelResolution resolvePositiveWheelGuaranteedGood(int luckBonus, RandomSource rng) {
+        WheelResolution res = resolvePositiveWheel(luckBonus, rng);
+        if (!res.skull()) {
+            return res;
+        }
+        WheelSlot[] wheel = res.wheel();
+        for (int attempt = 0; attempt < 32; attempt++) {
+            int stopIdx = rng.nextInt(WHEEL_SIZE);
+            boolean surp = rng.nextInt(100) < WHEEL_SURPRISE_CHANCE;
+            int finalIdx = surp ? (stopIdx + 1) % WHEEL_SIZE : stopIdx;
+            WheelSlot slot = wheel[finalIdx];
+            if (!slot.skull()) {
+                return new WheelResolution(wheel, res.startIndex(), stopIdx, finalIdx,
+                        surp, false, slot.luck());
+            }
+        }
+        for (int idx = 0; idx < wheel.length; idx++) {
+            if (!wheel[idx].skull()) {
+                return new WheelResolution(wheel, res.startIndex(), idx, idx,
+                        false, false, wheel[idx].luck());
+            }
+        }
+        int fallbackLuck = rollQualityLuck(luckBonus, rng);
+        return new WheelResolution(wheel, res.startIndex(), 0, 0, false, false, fallbackLuck);
+    }
+
+    /**
+     * T312-DLB-LAUNCH : Point d'entrée de `/dlb g <luck> <count>` et `/dlb b <luck> <count>`.
+     * Lance un vrai Lucky Block infusé à {@code infusedLuck} (-100..+100) avec hologramme,
+     * roulette complète et récompenses/événements authentiques, forcé en GOOD ({@code forceGood=true},
+     * garanti positif sans bascule crâne) ou en BAD ({@code forceGood=false}).
+     */
+    public static void executeForcedInfusedOutcome(ServerLevel level,
+                                                   double x, double y, double z,
+                                                   int infusedLuck,
+                                                   boolean forceGood) {
+        if (level == null) return;
+        int clampedLuck = Mth.clamp(infusedLuck, -100, 100);
+        RandomSource rng = level.getRandom();
+        double bx = Math.floor(x) + 0.5;
+        double by = Math.floor(y);
+        double bz = Math.floor(z) + 0.5;
+
+        String label;
+        if (clampedLuck > 0) {
+            label = "§b§l⚡ +" + clampedLuck + "% Luck Bonus!";
+        } else if (clampedLuck < 0) {
+            label = "§c§l⚡ " + clampedLuck + "% Curse!";
+        } else {
+            label = "§e§l⚡ Launching...";
+        }
+
+        if (forceGood) {
+            WheelResolution wheelRes = resolvePositiveWheelGuaranteedGood(clampedLuck, rng);
+            int effectiveLuck = wheelRes.resolvedLuck();
+            ArmorStand pixelHolo = spawnHolo(level, bx, by + 0.4, bz, PIXEL_GREEN);
+            ArmorStand textHolo  = spawnHolo(level, bx, by - 0.3, bz, label);
+            if (pixelHolo == null || textHolo == null) {
+                generateResult(level, bx, by, bz, true, effectiveLuck, rng, null, null, null);
+                return;
+            }
+            buildSequence(level, pixelHolo, textHolo, bx, by, bz,
+                    true, effectiveLuck, rng, null, false, Math.max(0, clampedLuck), wheelRes);
+        } else {
+            int effectiveLuck = 1 + rng.nextInt(50);
+            ArmorStand pixelHolo = spawnHolo(level, bx, by + 0.4, bz, PIXEL_RED);
+            ArmorStand textHolo  = spawnHolo(level, bx, by - 0.3, bz, label);
+            if (pixelHolo == null || textHolo == null) {
+                GenerateBadProcedure.BadEventCategory badCategory = spinBadRoulette(rng).category();
+                generateResult(level, bx, by, bz, false, effectiveLuck, rng, badCategory, null, null);
+                return;
+            }
+            buildSequence(level, pixelHolo, textHolo, bx, by, bz,
+                    false, effectiveLuck, rng, null, false, Math.max(0, clampedLuck), null);
+        }
+    }
+
+    /**
      * Construit la roue de 10 cases pour un resultat donne.
      *
      * Selection CIBLEE des grades : on part du tier du resultat final et on
