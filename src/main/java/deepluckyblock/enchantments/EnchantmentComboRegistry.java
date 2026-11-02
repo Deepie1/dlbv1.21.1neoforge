@@ -695,8 +695,26 @@ public final class EnchantmentComboRegistry {
         return m;
     }
 
+    private static final EquipmentSlot[] ALL_COMBO_SLOTS = {
+            EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS,
+            EquipmentSlot.FEET, EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND
+    };
+
     public static ComboMask computeRawMask(LivingEntity entity) {
         if (entity == null) return ComboMask.EMPTY;
+        // T321-ANTI-LAG : Tout combo exige au moins 2 pièces enchantées !
+        // On compte d'abord les slots enchantés en O(1) (6 lectures de slot sans allocation) :
+        // si < 2 slots sont enchantés, retour immédiat en ~6 ns sans tester les 110 combos !
+        int enchantedSlots = 0;
+        for (EquipmentSlot slot : ALL_COMBO_SLOTS) {
+            ItemStack st = entity.getItemBySlot(slot);
+            if (st != null && !st.isEmpty() && st.isEnchanted()) {
+                enchantedSlots++;
+            }
+        }
+        if (enchantedSlots < 2) {
+            return ComboMask.EMPTY;
+        }
         long lo = 0L, hi = 0L;
         for (ComboDef c : COMBOS) {
             if (c.matchesEntity(entity)) {

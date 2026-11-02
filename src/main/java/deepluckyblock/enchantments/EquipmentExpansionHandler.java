@@ -102,9 +102,20 @@ public final class EquipmentExpansionHandler {
     // vitesse, coeurs...) aux mobs, tout en gardant les volets
     // intrinsequement lies au joueur (inventaire, Miner's Eye, faim...)
     // derriere des verifications explicites "instanceof Player" plus bas.
+    private static final java.util.Set<Integer> ACTIVE_ENCHANTED_MOBS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     @SubscribeEvent public static void entityTick(EntityTickEvent.Post e){try{entityTickImpl(e);}catch(Throwable t__){guard("entityTick",t__);}} private static void entityTickImpl(EntityTickEvent.Post e){
         if(!(e.getEntity() instanceof LivingEntity p))return;
-        if(p.level().isClientSide())return; long now=p.level().getGameTime();
+        if(p.level().isClientSide())return;
+        if(!(p instanceof Player)){
+            if(!UniversalEnchantmentHandler.hasAnyEnchantedEquipment(p)){
+                if(!ACTIVE_ENCHANTED_MOBS.remove(p.getId()))return;
+            }else{
+                if(ACTIVE_ENCHANTED_MOBS.size()>1024)ACTIVE_ENCHANTED_MOBS.clear();
+                ACTIVE_ENCHANTED_MOBS.add(p.getId());
+            }
+        }
+        long now=p.level().getGameTime();
         if(p instanceof ServerPlayer sp&&p.level() instanceof ServerLevel sl){int guidance=armor(p,"miners_guidance");if(guidance>0&&p.tickCount%5==0){try{updateOreGuidance(sp,sl,guidance);}catch(Throwable failure){ORE_GUIDANCE.remove(p.getUUID());deepluckyblock.util.DebugLog.err("[DeepLuckyBlock] Miner's Eye disabled for this scan after an error: "+failure);}}else if(guidance<=0)ORE_GUIDANCE.remove(p.getUUID());}
         int clarity=armor(p,"mental_clarity"); if(clarity>0&&p.tickCount%20==0){ shorten(p,MobEffects.CONFUSION,clarity);shorten(p,MobEffects.BLINDNESS,clarity);shorten(p,MobEffects.DARKNESS,clarity); }
         int echo=armor(p,"echolocation"); if(echo>0&&p.tickCount%40==0&&p.level().getMaxLocalRawBrightness(p.blockPosition())<8){double er=deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(10,6,echo);if(p.level() instanceof ServerLevel sl)EnchantmentParticleFX.shockwaveRing(sl,p.getX(),p.getY()+.2,p.getZ(),ParticleTypes.SCULK_CHARGE_POP,1.4,12,.03);for(Mob m:p.level().getEntitiesOfClass(Mob.class,p.getBoundingBox().inflate(er)))m.addEffect(new MobEffectInstance(MobEffects.GLOWING,35,0,false,false));}
@@ -873,7 +884,6 @@ public final class EquipmentExpansionHandler {
             if (activeElements >= 3) {
                 if (p.tickCount % 60 == 0) {
                     p.heal(1.0f);
-                    EnchantmentParticleFX.crownHalo(p, ParticleTypes.END_ROD, 6);
                 }
                 p.setAbsorptionAmount(Math.max(p.getAbsorptionAmount(), 2.0f * Math.min(4, activeElements - 2)));
             }

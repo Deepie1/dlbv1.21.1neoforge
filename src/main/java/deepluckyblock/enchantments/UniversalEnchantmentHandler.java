@@ -1065,10 +1065,44 @@ public class UniversalEnchantmentHandler {
     // mobs, tout en gardant les volets intrinsequement lies au joueur
     // (inventaire complet, faim...) derriere des "instanceof Player"
     // explicites plus bas (Assimilation, Perception ESP, Fire Devour).
+    private static final EquipmentSlot[] ALL_EQUIP_SLOTS = {
+            EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS,
+            EquipmentSlot.FEET, EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND
+    };
+
+    private static final Set<Long> ACTIVE_ENCHANTED_ENTITIES = ConcurrentHashMap.newKeySet();
+
+    /**
+     * T321-ANTI-LAG : Test O(1) ultra-rapide (6 slots, zéro allocation, zéro NBT attaché)
+     * permettant d'ignorer instantanément tous les mobs non enchantés (vaches, poissons, zombies nus...)
+     * sans exécuter des centaines de recherches d'enchantements et d'attributs par tick !
+     */
+    public static boolean hasAnyEnchantedEquipment(LivingEntity entity) {
+        if (entity == null) return false;
+        for (EquipmentSlot slot : ALL_EQUIP_SLOTS) {
+            ItemStack st = entity.getItemBySlot(slot);
+            if (st != null && !st.isEmpty() && st.isEnchanted()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @SubscribeEvent
     public static void onPlayerTick(EntityTickEvent.Post event){try{onPlayerTickImpl(event);}catch(Throwable t__){guard("onPlayerTick",t__);}}
     private static void onPlayerTickImpl(EntityTickEvent.Post event){
         if (!(event.getEntity() instanceof LivingEntity living)) return;
+        if (!(living instanceof Player)) {
+            long sideKey = ((living.level().isClientSide() ? 1L : 0L) << 32) | (living.getId() & 0xFFFFFFFFL);
+            if (!hasAnyEnchantedEquipment(living)) {
+                if (!ACTIVE_ENCHANTED_ENTITIES.remove(sideKey)) {
+                    return;
+                }
+            } else {
+                if (ACTIVE_ENCHANTED_ENTITIES.size() > 1024) ACTIVE_ENCHANTED_ENTITIES.clear();
+                ACTIVE_ENCHANTED_ENTITIES.add(sideKey);
+            }
+        }
         // T307-PHYSICS : Mouvements client-authoritative (Légèreté poulet, Coureur Mural miel,
         // Glissade soutenue, Bondissant slime, Pas de Géant, Coussin de nuages) exécutés des DEUX côtés !
         try {
@@ -1148,11 +1182,10 @@ public class UniversalEnchantmentHandler {
             player.heal(1.0f * rainHeal);
             EnchantmentParticleFX.burstOnEntity(player, ParticleTypes.HAPPY_VILLAGER, 4, 0.3, 0.02);
         }
-        // T306-FIX : king scale désormais avec son niveau (1..3) + couronne dorée
+        // T306-FIX : king scale désormais avec son niveau (1..3) (couronne dorée continue côté client : CosmeticAuraClientTicker)
         int kingLvl = getArmorEnchantLvl(player, "deep_lucky_block:king");
         if (kingLvl > 0 && player.tickCount % 200 == 0) {
             player.heal(0.5f * kingLvl);
-            EnchantmentParticleFX.crownHalo(player, EnchantmentParticleFX.GOLD_DIVINE, 8);
             for (Player ally : player.level().getEntitiesOfClass(Player.class, player.getBoundingBox().inflate(10.0))) {
                 if (ally != player) {
                     ally.heal(1.0f * kingLvl);
@@ -1207,10 +1240,9 @@ public class UniversalEnchantmentHandler {
             }
         }
 
-        // T306-OVERHAUL : dread_aura (terreur noire : faiblesse + recul d'effroi) vs phantom_bee_vex_aversion (anti-nuisibles volants !)
+        // T306-OVERHAUL : dread_aura (terreur noire : faiblesse + recul d'effroi ; aura sombre continue côté client : CosmeticAuraClientTicker)
         int dreadAura = getArmorEnchantLvl(player, "deep_lucky_block:dread_aura");
         if (dreadAura > 0 && player.tickCount % 40 == 0) {
-            EnchantmentParticleFX.ankleTrail(player, ParticleTypes.SCULK_SOUL, 3, 0.02);
             for (Mob mob : player.level().getEntitiesOfClass(Mob.class, player.getBoundingBox().inflate(8.0))) {
                 if (mob.getMaxHealth() <= 60f && mob.getTarget() == player) mob.setTarget(null);
                 mob.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 60, 0));
@@ -1392,7 +1424,6 @@ public class UniversalEnchantmentHandler {
         int mysticLvl = getArmorEnchantLvl(player, "deep_lucky_block:mystic_mind");
         if (mysticLvl > 0 && player.tickCount % 200 == 0 && player instanceof Player mysticPlayer) {
             mysticPlayer.giveExperiencePoints(mysticLvl * 2);
-            EnchantmentParticleFX.crownHalo(player, ParticleTypes.ENCHANT, 5);
         }
 
         // T306-OVERHAUL : Différenciation totale de e_speed, dash, strafe et slide !
@@ -1655,7 +1686,6 @@ public class UniversalEnchantmentHandler {
         int wingTough = getArmorEnchantLvl(player, "deep_lucky_block:wing_toughness_armor");
         if (wingTough > 0 && (!player.onGround() || player.isFallFlying()) && player.tickCount % 40 == 0) {
             if (player.getAbsorptionAmount() < 4.0f) player.setAbsorptionAmount(4.0f);
-            EnchantmentParticleFX.wingRibbons(player, ParticleTypes.CLOUD);
         }
 
         int shelter = getArmorEnchantLvl(player, "deep_lucky_block:shelter");

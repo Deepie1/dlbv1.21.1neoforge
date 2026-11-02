@@ -43,19 +43,20 @@ public final class EternalAuraParticles {
     /** false = plus aucune particule (le glint blanc, lui, reste actif). */
     public static boolean ENABLED = true;
 
-    /** Une salve tous les N ticks (10 ticks = 0,5 s). */
-    public static int INTERVAL_TICKS = 10;
+    /** Emission fluide tous les 4 ticks (0,2 s) avec pause auto et budget léger. */
+    public static int INTERVAL_TICKS = 4;
 
     /** Rayon de recherche autour du joueur, en blocs. */
     public static double RADIUS = 8.0D;
 
     /** Plafond de particules par salve, tous items confondus. */
-    public static int MAX_PER_TICK = 6;
+    public static int MAX_PER_TICK = 3;
 
     /** Particule blanche (traînée de bâton de l'Ender). */
     public static final String PARTICLE = "END_ROD";
 
     private static int tick = 0;
+    private static long lastGameTime = -1L;
 
     // =======================================================================
     // Détection (pure : testable sans Minecraft)
@@ -108,6 +109,9 @@ public final class EternalAuraParticles {
         LocalPlayer player = mc.player;
         ClientLevel level = mc.level;
         if (player == null || level == null) return;
+        long now = level.getGameTime();
+        if (now == lastGameTime) return;
+        lastGameTime = now;
 
         RandomSource rnd = level.random;
         int budget = MAX_PER_TICK;

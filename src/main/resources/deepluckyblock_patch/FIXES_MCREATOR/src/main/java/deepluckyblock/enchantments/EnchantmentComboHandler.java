@@ -289,7 +289,17 @@ public final class EnchantmentComboHandler {
     }
 
     private static void handleServerComboTick(LivingEntity entity) {
-        if (!(entity instanceof Player) && (entity.tickCount % 10 != 0)) return;
+        if (!(entity instanceof Player)) {
+            if (entity.tickCount % 10 != 0) return;
+            // T321-ANTI-LAG : Court-circuit O(1) pour tous les mobs non enchantés (vaches, poissons, zombies nus...)
+            // -> 0 allocation UUID dans STATES, 0 calcul de masque !
+            if (!UniversalEnchantmentHandler.hasAnyEnchantedEquipment(entity)) {
+                STATES.remove(entity.getUUID());
+                return;
+            }
+        } else if ((entity.tickCount & 511) == 0 && STATES.size() > 256) {
+            STATES.clear();
+        }
         ComboMask mask = EnchantmentComboRegistry.getActiveMask(entity);
         PlayerComboState st = stateOf(entity);
         long now = entity.level().getGameTime();
@@ -513,10 +523,8 @@ public final class EnchantmentComboHandler {
             entity.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 50, 1, true, false));
         }
 
-        // #061 Peste Ambulante : aura empoisonnée + Faiblesse I sur ennemis proches
+        // #061 Peste Ambulante : aura empoisonnée + Faiblesse I sur ennemis proches (halo miasmatique continu côté client : CosmeticAuraClientTicker)
         if (mask.has(IDX_PESTE_AMBULANTE) && sl != null && entity.tickCount % 25 == 0) {
-            EnchantmentParticleFX.shockwaveRing(sl, entity.getX(), entity.getY() + 0.1, entity.getZ(),
-                    dustOf(0x65A30D, 1.0f), 3.2, 10, 0.02);
             for (Mob mob : sl.getEntitiesOfClass(Mob.class, entity.getBoundingBox().inflate(4.5))) {
                 if (!isFriendlySummon(mob, entity)) {
                     mob.addEffect(new MobEffectInstance(MobEffects.POISON, 70, 0));
@@ -695,15 +703,14 @@ public final class EnchantmentComboHandler {
 
         // ---- ULTRA-RARE PASSIVES (#096 .. #109) ----
 
-        // #096 Armure Éternelle Transcendante : immunité Wither/Lenteur/Lévitation + couronne dorée
+        // #096 Armure Éternelle Transcendante : immunité Wither/Lenteur/Lévitation (couronne dorée continue côté client : CosmeticAuraClientTicker)
         if (mask.has(IDX_ARMURE_ETERNELLE_TRANSCENDANTE) && entity.tickCount % 20 == 0) {
             entity.removeEffect(MobEffects.WITHER);
             entity.removeEffect(MobEffects.MOVEMENT_SLOWDOWN);
             entity.removeEffect(MobEffects.LEVITATION);
-            if (sl != null) EnchantmentParticleFX.crownHalo(entity, EnchantmentParticleFX.GOLD_DIVINE, 8);
         }
 
-        // #097 Dieu de la Lame Suprême : Force II continue
+        // #097 Dieu de la Lame Suprême : Force II continue (halo doré/argenté continu côté client : CosmeticAuraClientTicker)
         if (mask.has(IDX_DIEU_LAME_SUPREME) && entity.tickCount % 20 == 0) {
             entity.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 50, 1, true, false));
         }
@@ -714,12 +721,11 @@ public final class EnchantmentComboHandler {
             entity.hurtMarked = true;
         }
 
-        // #100 Archange du Jugement Solaire : Régénération I au soleil + ailes dorées
+        // #100 Archange du Jugement Solaire : Régénération I au soleil (rubans d'ailes dorés continus côté client : CosmeticAuraClientTicker)
         if (mask.has(IDX_ARCHANGE_JUGEMENT_SOLAIRE) && entity.tickCount % 25 == 0) {
             if (entity.level().isDay() && entity.level().canSeeSky(entity.blockPosition())) {
                 entity.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 55, 0, true, false));
             }
-            if (sl != null) EnchantmentParticleFX.wingRibbons(entity, EnchantmentParticleFX.GOLD_DIVINE);
         }
 
         // #101 Poséidon du Cataclysme : soin continu sous la pluie / dans l'eau
@@ -741,15 +747,11 @@ public final class EnchantmentComboHandler {
             }
         }
 
-        // #105 Seigneur de Guerre de l'Apocalypse : immunité Feu/Wither + aura volcanique royale
+        // #105 Seigneur de Guerre de l'Apocalypse : immunité Feu/Wither (aura volcanique continue côté client : CosmeticAuraClientTicker)
         if (mask.has(IDX_SEIGNEUR_GUERRE_APOCALYPSE) && entity.tickCount % 20 == 0) {
             entity.clearFire();
             entity.removeEffect(MobEffects.WITHER);
             entity.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 50, 0, true, false));
-            if (sl != null) {
-                EnchantmentParticleFX.shockwaveRing(sl, entity.getX(), entity.getY() + 0.08, entity.getZ(),
-                        ParticleTypes.SOUL_FIRE_FLAME, 2.5, 10, 0.02);
-            }
         }
 
         // #106 Maître du Temps Immuable : répare tout votre équipement chaque seconde !
@@ -773,14 +775,10 @@ public final class EnchantmentComboHandler {
             entity.getPersistentData().putBoolean("slb_combo108_charged", nowCh);
         }
 
-        // #109 Avatar Suprême du Deep Lucky : Chance III + Régénération I + Halo Stellaire Blanc !
+        // #109 Avatar Ultime du Deep's Lucky Block : Chance III + Régénération I (Halo Stellaire Blanc & Or continu à 20 Hz côté client : CosmeticAuraClientTicker)
         if (mask.has(IDX_AVATAR_SUPREME_DEEP_LUCKY) && entity.tickCount % 20 == 0) {
             entity.addEffect(new MobEffectInstance(MobEffects.LUCK, 55, 2, true, false));
             entity.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 55, 0, true, false));
-            if (sl != null) {
-                EnchantmentParticleFX.crownHalo(entity, dustOf(0xFFFFFF, 1.25f), 14);
-                sl.sendParticles(ParticleTypes.END_ROD, entity.getX(), entity.getY() + 2.05, entity.getZ(), 2, 0.35, 0.1, 0.35, 0.01);
-            }
         }
 
         st.prevY = entity.getY();

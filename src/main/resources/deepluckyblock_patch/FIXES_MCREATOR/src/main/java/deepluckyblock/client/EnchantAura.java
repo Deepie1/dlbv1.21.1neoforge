@@ -7,6 +7,7 @@ import net.minecraft.world.item.enchantment.EnchantmentHelper;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.WeakHashMap;
 
 /**
  * EnchantAura — CALCUL DE L'AURA COLORÉE, porté depuis Deep's Enchantments+.
@@ -104,13 +105,35 @@ public final class EnchantAura {
         return m;
     }
 
+    private static final WeakHashMap<ItemStack, long[]> AURA_COLOR_CACHE = new WeakHashMap<>();
+    private static final long AURA_CACHE_TTL_NS = 150_000_000L; // 150 ms
+
     /**
      * Renvoie {@code 0} si aucun glint teinté ne doit s'appliquer (violet
      * vanilla), sinon {@code 0xAARRGGBB}.
      */
     public static int auraColor(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) return 0;
+        if (stack == null || stack.isEmpty() || !stack.hasFoil()) return 0;
 
+        long nowNs = System.nanoTime();
+        synchronized (AURA_COLOR_CACHE) {
+            long[] cached = AURA_COLOR_CACHE.get(stack);
+            if (cached != null && nowNs < cached[1]) {
+                return (int) cached[0];
+            }
+        }
+
+        int resolved = computeAuraColorUncached(stack);
+        synchronized (AURA_COLOR_CACHE) {
+            if (AURA_COLOR_CACHE.size() > 512) {
+                AURA_COLOR_CACHE.clear();
+            }
+            AURA_COLOR_CACHE.put(stack, new long[]{resolved, nowNs + AURA_CACHE_TTL_NS});
+        }
+        return resolved;
+    }
+
+    private static int computeAuraColorUncached(ItemStack stack) {
         // ── COULEUR FORCÉE PAR /glint <couleur> ────────────────────────────
         // Prioritaire sur TOUT (rang, thème...) et valable même SANS aucun
         // enchantement (GlintCommand pose alors ENCHANTMENT_GLINT_OVERRIDE=true
