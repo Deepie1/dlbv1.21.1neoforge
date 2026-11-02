@@ -162,7 +162,7 @@ public final class WeaponWorldVfxManager {
                     "dlb_voxel_vfx_add",
                     DefaultVertexFormat.POSITION_COLOR,
                     VertexFormat.Mode.QUADS,
-                    8192,
+                    32768,
                     false,
                     false,
                     state);
@@ -184,7 +184,7 @@ public final class WeaponWorldVfxManager {
                     "dlb_voxel_vfx_alpha",
                     DefaultVertexFormat.POSITION_COLOR,
                     VertexFormat.Mode.QUADS,
-                    8192,
+                    32768,
                     false,
                     true,
                     state);
@@ -689,32 +689,32 @@ public final class WeaponWorldVfxManager {
 
         switch (inst.effect) {
             case GOLDEN_CRIT_STAR -> {
-                // #06 Étoile Critique Pixel-Art 3D (+ en cubes + anneau carré crénelé)
+                // #06 Étoile Critique Pixel-Art 3D (+ en cubes + vrai cercle pixelisé de Bresenham)
                 int arms = (inst.intensity >= 3) ? 4 : 3;
                 emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, arms, 0xFFFFFF, pRgb, fadeA);
-                emitSteppedVoxelRing(vc, mat, tmp, cx, cy, cz, 0.30f + 1.35f * t, 0.040f, pRgb, sRgb, fadeA, 16);
+                emitPixelCircle3D(vc, mat, tmp, cx, cy, cz, 0.30f + 1.35f * t, pRgb, sRgb, fadeA);
             }
             case FOCUSED_BULLSEYE -> {
-                // #07 Mire carrée pixelisée qui se verrouille sur la cible
-                float half = (t < 0.4f) ? (1.15f - 1.8f * t) : (0.43f + (t - 0.4f) * 1.6f);
-                emitBlockySquareFrame(vc, mat, tmp, cx, cy, cz, half, 0.042f, sRgb, pRgb, fadeA);
-                emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.055f, 2, 0xFFFFFF, sRgb, fadeA);
+                // #07 Mire circulaire pixel-art (Bresenham) faisant face au tireur + 4 crans de visée pixels
+                float rad = (t < 0.4f) ? (1.10f - 1.55f * t) : (0.48f + (t - 0.4f) * 1.45f);
+                emitPixelCircleBillboard3D(vc, mat, tmp, cx, cy, cz, rad, sRgb, pRgb, fadeA);
+                emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, 2, 0xFFFFFF, sRgb, fadeA);
             }
             case OVERCLOCK_CYBER_X -> {
-                // #08 Immense X en escalier de mini-cubes néon cyan & magenta !
+                // #08 Immense X en escalier de mini-cubes néon cyan & magenta + cercle runique cyber pixelisé !
                 float span = 0.85f + 0.55f * t;
                 emitSteppedVoxelLine(vc, mat, tmp, cx - span, cy - span, cz, cx + span, cy + span, cz, 0.048f, 0xFFFFFF, pRgb, fadeA);
                 emitSteppedVoxelLine(vc, mat, tmp, cx - span, cy + span, cz, cx + span, cy - span, cz, 0.048f, 0xFFFFFF, sRgb, fadeA);
-                emitBlockySquareFrame(vc, mat, tmp, cx, cy, cz, 0.35f + 1.45f * t, 0.040f, pRgb, sRgb, fadeA);
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.55f + 1.35f * t, -t * 3.0f, pRgb, sRgb, 0xFFFFFF, fadeA, false);
             }
             case GUILLOTINE_CLEAVE -> {
-                // #05 Colonne de cubes d'exécution tranchant de haut en bas
+                // #05 Colonne de cubes d'exécution tranchant de haut en bas + cercle pixel au sol
                 float topY = cy + 2.0f * (1.0f - t * 0.35f);
                 emitSteppedVoxelLine(vc, mat, tmp, cx, topY, cz, cx, cy - 0.8f, cz, 0.058f, sRgb, pRgb, fadeA);
-                emitSteppedVoxelRing(vc, mat, tmp, cx, cy - 0.65f, cz, 0.3f + 1.3f * t, 0.045f, pRgb, sRgb, fadeA, 12);
+                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.65f, cz, 0.30f + 1.30f * t, pRgb, sRgb, fadeA);
             }
             case DRIPPING_BLOOD_EDGE, CARNAGE_BERSERK -> {
-                // #09 / #12 Arcs de gros pixels cubiques de sang retombant en fontaine
+                // #09 / #12 Arcs de gros pixels cubiques de sang retombant en fontaine + cercle pixel écarlate
                 int count = (inst.effect == WeaponVisualEffectId.CARNAGE_BERSERK) ? 12 : 8;
                 for (int i = 0; i < count; i++) {
                     float ang = (float) (i * (Math.PI * 2.0 / count) + (inst.seed & 7));
@@ -725,15 +725,21 @@ public final class WeaponWorldVfxManager {
                     float pz = quantize(cz + Mth.sin(ang) * rad, 0.0625f);
                     emitVoxelCube(vc, mat, tmp, px, py, pz, 0.052f, 0.052f, 0.052f, (i & 1) == 0 ? pRgb : sRgb, fadeA);
                 }
-                emitSteppedVoxelRing(vc, mat, tmp, cx, cy - 0.3f, cz, 0.35f + 1.5f * t, 0.044f, pRgb, sRgb, fadeA, 16);
+                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.35f + 1.50f * t, pRgb, sRgb, fadeA);
             }
             case VITAL_TRANSFUSION -> {
-                // #11 Croix médicales 3D rubis-or montantes en spirale voxel
+                // #11 Double hélice voxel rubis-or + petit cercle runique médical en pixels au sol
                 emitVoxelHelix(vc, mat, tmp, cx, cy - 0.6f, cz, 0.65f, 1.8f, t * 4.0f, pRgb, sRgb, fadeA);
                 emitVoxelHelix(vc, mat, tmp, cx, cy - 0.6f, cz, 0.65f, 1.8f, t * 4.0f + (float) Math.PI, sRgb, pRgb, fadeA);
+                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.45f, cz, 0.75f, sRgb, pRgb, fadeA);
+            }
+            case SOUL_FIRE_CRESCENT -> {
+                // #14 Cercle runique d'âme en pixels turquoise + flammes voxel montantes
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.40f, cz, 0.55f + 1.35f * t, t * 2.2f, pRgb, sRgb, 0xFFFFFF, fadeA, true);
+                emitVoxelHelix(vc, mat, tmp, cx, cy - 0.4f, cz, 0.60f, 1.6f, t * 3.8f, pRgb, sRgb, fadeA);
             }
             case BRIMSTONE_METEOR -> {
-                // #15 Bloc-météore cubique plongeant du ciel + anneau crénelé de magma
+                // #15 Bloc-météore cubique plongeant du ciel + grand cercle runique infernal en pixels !
                 if (t < 0.48f) {
                     float mt = t / 0.48f;
                     float mx = quantize(cx + 3.2f * (1.0f - mt), 0.0625f);
@@ -744,10 +750,10 @@ public final class WeaponWorldVfxManager {
                     emitSteppedVoxelLine(vc, mat, tmp, mx + 1.0f, my + 3.2f, mz + 0.6f, mx, my, mz, 0.075f, sRgb, pRgb, 220);
                 }
                 float st = Math.max(0.0f, (t - 0.2f) / 0.8f);
-                emitSteppedVoxelRing(vc, mat, tmp, cx, cy - 0.35f, cz, 0.4f + 3.1f * st, 0.075f, sRgb, pRgb, fadeA, 24);
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.38f, cz, 0.55f + 2.65f * st, t * 1.5f, sRgb, pRgb, 0xFFFFFF, fadeA, true);
             }
             case CHAIN_VOLT_ARC -> {
-                // #16 Éclair céleste en escalier de cubes 3D + 3 arcs au sol
+                // #16 Éclair céleste en escalier de cubes 3D + 3 arcs au sol + onde circulaire pixelisée
                 emitVoxelLightning(vc, mat, tmp, cx + 0.3f, cy + 8.0f, cz - 0.3f, cx, cy, cz, 11, 0.35f,
                         inst.seed + inst.age / 2, 0xFFFFFF, pRgb, fadeA, 0.045f);
                 for (int b = 0; b < 3; b++) {
@@ -756,13 +762,14 @@ public final class WeaponWorldVfxManager {
                             cx + Mth.cos(a) * 1.8f, cy - 0.3f, cz + Mth.sin(a) * 1.8f,
                             5, 0.18f, inst.seed + b * 29L + inst.age, sRgb, pRgb, fadeA, 0.035f);
                 }
+                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.35f + 1.45f * t, 0xFFFFFF, pRgb, fadeA);
             }
             case HYDRO_TIDAL_SURGE -> {
                 emitVoxelHelix(vc, mat, tmp, cx, cy - 0.5f, cz, 0.55f + 0.8f * t, 1.6f, t * 4.8f, pRgb, sRgb, fadeA);
-                emitSteppedVoxelRing(vc, mat, tmp, cx, cy - 0.3f, cz, 0.3f + 2.0f * t, 0.048f, sRgb, pRgb, fadeA, 18);
+                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.30f + 2.00f * t, sRgb, pRgb, fadeA);
             }
             case ABYSSAL_MAELSTROM -> {
-                // #18 Vortex océanique de mini-cubes 3D tournoyants à 4 bras
+                // #18 Vortex océanique de mini-cubes 3D tournoyants à 4 bras + cercle pixel abyssal
                 for (int arm = 0; arm < 4; arm++) {
                     float baseAng = arm * ((float) Math.PI * 0.5f) + t * 6.0f;
                     for (int s = 1; s <= 9; s++) {
@@ -776,9 +783,10 @@ public final class WeaponWorldVfxManager {
                                 (s & 1) == 0 ? sRgb : pRgb, fadeA);
                     }
                 }
+                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.38f, cz, 0.45f + 2.05f * t, pRgb, sRgb, fadeA);
             }
             case PERMAFROST_RIME -> {
-                // #19 Piliers de cristaux cubiques de glace émergeant du sol
+                // #19 Piliers de cristaux cubiques de glace + cercle runique givré en pixels !
                 for (int k = 0; k < 6; k++) {
                     float a = k * ((float) Math.PI / 3.0f);
                     float r = 0.40f + 1.45f * t;
@@ -787,13 +795,14 @@ public final class WeaponWorldVfxManager {
                     float h = 0.38f * (1.0f - t * 0.5f);
                     emitVoxelCube(vc, mat, tmp, px, cy - 0.3f + h * 0.5f, pz, 0.0625f, h, 0.0625f, (k & 1) == 0 ? sRgb : pRgb, fadeA);
                 }
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.38f, cz, 0.45f + 1.45f * t, 0.0f, sRgb, pRgb, 0xFFFFFF, fadeA, false);
             }
             case VENOM_BRIAR_FANG -> {
                 emitVoxelHelix(vc, mat, tmp, cx, cy - 0.5f, cz, 0.70f, 1.5f, t * 3.0f, pRgb, sRgb, fadeA);
                 emitVoxelHelix(vc, mat, tmp, cx, cy - 0.5f, cz, 0.70f, 1.5f, -t * 3.0f + 1.4f, sRgb, pRgb, fadeA);
             }
             case SEISMIC_TECTONIC -> {
-                // #21 Failles de cubes rocheux soulevés sur le sol
+                // #21 Failles de cubes rocheux soulevés sur le sol + onde sismique circulaire en pixels
                 float reach = 0.5f + 2.9f * Mth.sqrt(t);
                 for (int f = 0; f < 6; f++) {
                     float a = f * ((float) Math.PI / 3.0f) + 0.2f;
@@ -801,21 +810,22 @@ public final class WeaponWorldVfxManager {
                             cx + Mth.cos(a) * reach, cy - 0.42f, cz + Mth.sin(a) * reach,
                             0.058f, sRgb, pRgb, fadeA);
                 }
-                emitBlockySquareFrame(vc, mat, tmp, cx, cy - 0.40f, cz, reach * 0.72f, 0.055f, pRgb, sRgb, fadeA);
+                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.40f, cz, reach * 0.78f, pRgb, sRgb, fadeA);
             }
             case ZEPHYR_WIND_LANCE -> {
-                emitSteppedVoxelRing(vc, mat, tmp, cx, cy, cz, 0.35f + 1.9f * t, 0.042f, pRgb, sRgb, fadeA, 16);
-                emitSteppedVoxelRing(vc, mat, tmp, cx, cy + 0.45f * t, cz, 0.25f + 1.25f * t, 0.036f, 0xFFFFFF, pRgb, fadeA, 12);
+                emitPixelCircle3D(vc, mat, tmp, cx, cy, cz, 0.35f + 1.90f * t, pRgb, sRgb, fadeA);
+                emitPixelCircle3D(vc, mat, tmp, cx, cy + 0.45f * t, cz, 0.25f + 1.25f * t, 0xFFFFFF, pRgb, fadeA);
             }
             case SERAPH_SKY_PILLAR -> {
-                // #23 Colonne carrée blocky de lumière dorée tombant du ciel + cadres sacrés pixelisés !
+                // #23 Colonne céleste blocky + VRAI CERCLE RUNIQUE SACRÉ EN PIXELS 3D au sol et en élévation !
                 float hw = 0.22f * Mth.sin(Math.min(1.0f, t * 1.3f) * (float) Math.PI);
                 if (hw > 0.02f) {
                     emitVoxelCube(vc, mat, tmp, cx, cy + 5.0f, cz, hw, 5.6f, hw, 0xFFFFFF, fadeA);
                     emitVoxelCube(vc, mat, tmp, cx, cy + 5.0f, cz, hw * 1.75f, 5.6f, hw * 1.75f, sRgb, Math.round(fadeA * 0.45f));
                 }
-                emitBlockySquareFrame(vc, mat, tmp, cx, cy - 0.35f + 2.4f * t, cz, 0.55f + 1.4f * t, 0.050f, 0xFFFFFF, sRgb, fadeA);
-                emitSteppedVoxelRing(vc, mat, tmp, cx, cy + 0.25f, cz, 0.45f + 2.2f * t, 0.048f, pRgb, sRgb, fadeA, 20);
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.38f, cz, 0.65f + 1.75f * Math.min(1.0f, t * 1.6f),
+                        t * 1.8f, pRgb, sRgb, 0xFFFFFF, fadeA, true);
+                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.20f + 2.4f * t, cz, 0.55f + 1.15f * t, 0xFFFFFF, sRgb, fadeA);
             }
             case WITHER_SHADOW_RIFT -> {
                 // #24 Triple griffure d'ombre en escalier de mini-pixels violets-noirs
@@ -827,41 +837,51 @@ public final class WeaponWorldVfxManager {
                             0.044f, sRgb, pRgb, fadeA);
                 }
             }
+            case ASTRAL_STAR_LANCE -> {
+                // #25 Impact stellaire : étoile 3D + cercle runique astral en pixels !
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.50f + 1.35f * t, -t * 2.4f, pRgb, sRgb, 0xFFFFFF, fadeA, true);
+                emitPixelCross3D(vc, mat, tmp, cx, cy + 0.1f, cz, 0.0625f, 4, 0xFFFFFF, pRgb, fadeA);
+            }
             case VOID_WARP_SPHERE -> {
-                float r = 0.35f + 1.45f * Mth.sin(t * (float) Math.PI);
-                emitBlockySquareFrame(vc, mat, tmp, cx, cy, cz, r, 0.048f, pRgb, sRgb, fadeA);
-                emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, 4, sRgb, pRgb, fadeA);
+                // #26 Cercle runique du Vide en pixels 3D (implosion/explosion) + croix abyssale
+                float r = 0.40f + 1.45f * Mth.sin(t * (float) Math.PI);
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.20f, cz, r, -t * 3.5f, pRgb, sRgb, 0xFFFFFF, fadeA, true);
+                emitPixelCircleBillboard3D(vc, mat, tmp, cx, cy + 0.1f, cz, r * 0.65f, sRgb, pRgb, fadeA);
+                emitPixelCross3D(vc, mat, tmp, cx, cy + 0.1f, cz, 0.0625f, 3, sRgb, pRgb, fadeA);
             }
             case DRAGON_CHAOS_PRISM -> {
+                // #27 Cercle runique draconique arc-en-ciel en pixels 3D !
                 int c1 = Mth.hsvToRgb((t * 1.5f) % 1.0f, 0.8f, 1.0f);
                 int c2 = Mth.hsvToRgb((t * 1.5f + 0.35f) % 1.0f, 0.85f, 1.0f);
-                emitSteppedVoxelRing(vc, mat, tmp, cx, cy - 0.35f, cz, 0.45f + 2.4f * t, 0.058f, c1, c2, fadeA, 20);
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.38f, cz, 0.55f + 2.15f * t, t * 2.6f, c1, c2, 0xFFFFFF, fadeA, true);
                 emitPixelCross3D(vc, mat, tmp, cx, cy + 0.2f, cz, 0.0625f, 4, 0xFFFFFF, c1, fadeA);
             }
             case CHRONO_ETERNAL_HALO -> {
-                // #28 Cadran carré pixelisé + aiguilles en mini-cubes 3D
-                float r = 0.85f;
-                emitBlockySquareFrame(vc, mat, tmp, cx, cy + 0.7f, cz, r, 0.038f, pRgb, sRgb, fadeA);
+                // #28 Cadran d'horloge runique en pixels 3D (double cercle de Bresenham + 8 runes + aiguilles pixels) !
+                float r = 1.05f;
+                float hy = cy + 0.65f;
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, hy, cz, r, t * 0.8f, pRgb, sRgb, 0xFFFFFF, fadeA, false);
                 float aFast = t * 8.5f;
                 float aSlow = t * 2.2f;
-                emitSteppedVoxelLine(vc, mat, tmp, cx, cy + 0.7f, cz,
-                        cx + Mth.cos(aFast) * r * 0.85f, cy + 0.7f, cz + Mth.sin(aFast) * r * 0.85f,
+                emitSteppedVoxelLine(vc, mat, tmp, cx, hy, cz,
+                        cx + Mth.cos(aFast) * r * 0.58f, hy, cz + Mth.sin(aFast) * r * 0.58f,
                         0.032f, 0xFFFFFF, pRgb, fadeA);
-                emitSteppedVoxelLine(vc, mat, tmp, cx, cy + 0.7f, cz,
-                        cx + Mth.cos(aSlow) * r * 0.55f, cy + 0.7f, cz + Mth.sin(aSlow) * r * 0.55f,
+                emitSteppedVoxelLine(vc, mat, tmp, cx, hy, cz,
+                        cx + Mth.cos(aSlow) * r * 0.40f, hy, cz + Mth.sin(aSlow) * r * 0.40f,
                         0.038f, sRgb, pRgb, fadeA);
             }
             case WARLORD_RALLY_SIGIL -> {
-                // #29 Sceau carré double en mini-cubes dorés au sol
-                float r = 1.95f * Math.min(1.0f, t * 2.5f);
-                emitBlockySquareFrame(vc, mat, tmp, cx, cy - 0.40f, cz, r, 0.052f, pRgb, sRgb, fadeA);
-                emitBlockySquareFrame(vc, mat, tmp, cx, cy - 0.40f, cz, r * 0.58f, 0.042f, 0xFFFFFF, pRgb, fadeA);
-                emitSteppedVoxelLine(vc, mat, tmp, cx - r, cy - 0.40f, cz, cx + r, cy - 0.40f, cz, 0.036f, 0xFFFFFF, pRgb, fadeA);
-                emitSteppedVoxelLine(vc, mat, tmp, cx, cy - 0.40f, cz - r, cx, cy - 0.40f, cz + r, 0.036f, 0xFFFFFF, pRgb, fadeA);
+                // #29 Grand Cercle Runique du Chef de Guerre en pixels 3D (double anneau Bresenham + 8 runes 3x3 + étoile) !
+                float r = 2.05f * Math.min(1.0f, t * 2.4f);
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.40f, cz, r, t * 1.6f, pRgb, sRgb, 0xFFFFFF, fadeA, true);
             }
             default -> {
-                float maxR = (inst.effect == WeaponVisualEffectId.ANNIHILATING_ARC) ? 3.2f : 1.65f;
-                emitSteppedVoxelRing(vc, mat, tmp, cx, cy, cz, 0.25f + maxR * t, 0.048f, pRgb, sRgb, fadeA, 18);
+                float maxR = (inst.effect == WeaponVisualEffectId.ANNIHILATING_ARC) ? 3.1f : 1.65f;
+                if (inst.effect == WeaponVisualEffectId.ANNIHILATING_ARC) {
+                    emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.45f + maxR * t, t * 3.0f, 0xFFFFFF, pRgb, sRgb, fadeA, true);
+                } else {
+                    emitPixelCircle3D(vc, mat, tmp, cx, cy, cz, 0.25f + maxR * t, pRgb, sRgb, fadeA);
+                }
                 emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, 3, 0xFFFFFF, pRgb, fadeA);
             }
         }
@@ -925,7 +945,7 @@ public final class WeaponWorldVfxManager {
         }
     }
 
-    /** Ligne 3D crénelée en mini-cubes alignés sur une grille de pixels (style Bresenham 3D). */
+    /** Ligne 3D crénelée en mini-cubes jointifs alignés sur une grille de pixels (style Bresenham 3D). */
     public static void emitSteppedVoxelLine(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                             float x0, float y0, float z0,
                                             float x1, float y1, float z1,
@@ -933,9 +953,8 @@ public final class WeaponWorldVfxManager {
         if (alpha <= 6 || halfSize <= 0.002f) return;
         float dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
         float dist = Mth.sqrt(dx * dx + dy * dy + dz * dz);
-        float step = Math.max(halfSize * 2.1f, 0.0625f);
-        int count = Math.min(48, Math.max(2, Math.round(dist / step)));
-        float grid = halfSize * 1.8f;
+        float grid = Math.max(0.03125f, halfSize * 1.92f);
+        int count = Math.min(56, Math.max(2, Math.round(dist / grid)));
 
         for (int i = 0; i <= count; i++) {
             float u = (float) i / count;
@@ -947,30 +966,202 @@ public final class WeaponWorldVfxManager {
         }
     }
 
-    /** Anneau de mini-cubes 3D quantifiés sur la grille pixel. */
-    private static void emitSteppedVoxelRing(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                             float cx, float cy, float cz,
-                                             float radius, float halfSize,
-                                             int rgbA, int rgbB, int alpha, int cubeCount) {
-        if (alpha <= 6 || radius <= 0.04f) return;
-        for (int i = 0; i < cubeCount; i++) {
-            float a = (float) (i * Math.PI * 2.0 / cubeCount);
-            float px = quantize(cx + Mth.cos(a) * radius, 0.0625f);
-            float pz = quantize(cz + Mth.sin(a) * radius, 0.0625f);
-            emitVoxelCube(vc, mat, tmp, px, cy, pz, halfSize, halfSize, halfSize, (i & 1) == 0 ? rgbA : rgbB, alpha);
+    /**
+     * 8 vraies runes pixel-art 3x3 (bitmaps 9 bits, ligne par ligne) composées de mini-cubes 3D :
+     * Fehu, Algiz, Othala, Tiwaz, Dagaz, Sowilo, Ingwaz, Gebo.
+     */
+    private static final int[] RUNE_BITMAPS_3X3 = {
+            0b111_100_110, // Fehu
+            0b101_111_010, // Algiz
+            0b010_101_111, // Othala
+            0b010_111_010, // Tiwaz / Croix
+            0b101_010_101, // Dagaz
+            0b011_010_110, // Sowilo
+            0b111_101_111, // Ingwaz
+            0b101_010_111  // Gebo
+    };
+
+    /**
+     * T344-PIXEL-CIRCLE : Vrai cercle pixel-art continu (algorithme du cercle de Bresenham / Midpoint
+     * sur 8 octants sans aucun doublon aux points cardinaux/diagonaux), où chaque pixel est un
+     * mini-cube 3D jointif à 6 faces ombrées !
+     */
+    public static void emitPixelCircle3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                         float cx, float cy, float cz,
+                                         float radius, int rgbA, int rgbB, int alpha) {
+        if (alpha <= 6 || radius <= 0.05f) return;
+        float pixelSize = (radius <= 1.15f) ? 0.0625f : ((radius <= 2.15f) ? 0.09375f : 0.125f);
+        int rPix = Math.min(24, Math.max(2, Math.round(radius / pixelSize)));
+        float hs = pixelSize * 0.48f;
+        float hy = hs * 0.72f;
+        float gx = quantize(cx, pixelSize);
+        float gz = quantize(cz, pixelSize);
+
+        int ix = rPix;
+        int iz = 0;
+        int err = 1 - rPix;
+        int stepIdx = 0;
+        while (ix >= iz) {
+            int rgb = ((stepIdx & 1) == 0) ? rgbA : rgbB;
+            float dx1 = ix * pixelSize;
+            float dz1 = iz * pixelSize;
+            emitVoxelCube(vc, mat, tmp, gx + dx1, cy, gz + dz1, hs, hy, hs, rgb, alpha);
+            emitVoxelCube(vc, mat, tmp, gx - dx1, cy, gz + dz1, hs, hy, hs, rgb, alpha);
+            if (iz != 0) {
+                emitVoxelCube(vc, mat, tmp, gx + dx1, cy, gz - dz1, hs, hy, hs, rgb, alpha);
+                emitVoxelCube(vc, mat, tmp, gx - dx1, cy, gz - dz1, hs, hy, hs, rgb, alpha);
+            }
+            if (ix != iz) {
+                float dx2 = iz * pixelSize;
+                float dz2 = ix * pixelSize;
+                emitVoxelCube(vc, mat, tmp, gx + dx2, cy, gz + dz2, hs, hy, hs, rgb, alpha);
+                emitVoxelCube(vc, mat, tmp, gx - dx2, cy, gz + dz2, hs, hy, hs, rgb, alpha);
+                if (iz != 0) {
+                    emitVoxelCube(vc, mat, tmp, gx + dx2, cy, gz - dz2, hs, hy, hs, rgb, alpha);
+                    emitVoxelCube(vc, mat, tmp, gx - dx2, cy, gz - dz2, hs, hy, hs, rgb, alpha);
+                }
+            }
+            iz++;
+            if (err < 0) {
+                err += 2 * iz + 1;
+            } else {
+                ix--;
+                err += 2 * (iz - ix) + 1;
+            }
+            stepIdx++;
         }
     }
 
-    /** Cadre carré blocky composé de mini-cubes 3D le long des 4 côtés. */
-    private static void emitBlockySquareFrame(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+    /**
+     * T344-PIXEL-RETICLE : Vrai cercle pixel-art de Bresenham vertical orienté face au joueur
+     * + 4 crans de mire en pixels (pour les effets de visée / bullseye / sphère du Vide).
+     */
+    private static void emitPixelCircleBillboard3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                                   float cx, float cy, float cz,
+                                                   float radius, int rgbA, int rgbB, int alpha) {
+        if (alpha <= 6 || radius <= 0.05f) return;
+        float horizDist = Mth.sqrt(cx * cx + cz * cz);
+        float rx = (horizDist > 0.01f) ? (-cz / horizDist) : 1.0f;
+        float rz = (horizDist > 0.01f) ? (cx / horizDist) : 0.0f;
+
+        float pixelSize = 0.0625f;
+        int rPix = Math.min(20, Math.max(3, Math.round(radius / pixelSize)));
+        float hs = pixelSize * 0.48f;
+
+        int ix = rPix;
+        int iy = 0;
+        int err = 1 - rPix;
+        int stepIdx = 0;
+        while (ix >= iy) {
+            int rgb = ((stepIdx & 1) == 0) ? rgbA : rgbB;
+            plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, ix, iy, pixelSize, hs, rgb, alpha);
+            plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, -ix, iy, pixelSize, hs, rgb, alpha);
+            if (iy != 0) {
+                plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, ix, -iy, pixelSize, hs, rgb, alpha);
+                plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, -ix, -iy, pixelSize, hs, rgb, alpha);
+            }
+            if (ix != iy) {
+                plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, iy, ix, pixelSize, hs, rgb, alpha);
+                plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, -iy, ix, pixelSize, hs, rgb, alpha);
+                if (iy != 0) {
+                    plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, iy, -ix, pixelSize, hs, rgb, alpha);
+                    plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, -iy, -ix, pixelSize, hs, rgb, alpha);
+                }
+            }
+            iy++;
+            if (err < 0) {
+                err += 2 * iy + 1;
+            } else {
+                ix--;
+                err += 2 * (iy - ix) + 1;
+            }
+            stepIdx++;
+        }
+        // 4 crans de mire pixel-art sur les axes N/S/E/O du réticule
+        for (int t = 1; t <= 2; t++) {
+            int p = rPix - t;
+            if (p <= 1) break;
+            plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, p, 0, pixelSize, hs, 0xFFFFFF, alpha);
+            plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, -p, 0, pixelSize, hs, 0xFFFFFF, alpha);
+            plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, 0, p, pixelSize, hs, 0xFFFFFF, alpha);
+            plotBillboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, 0, -p, pixelSize, hs, 0xFFFFFF, alpha);
+        }
+    }
+
+    private static void plotBillboardPixel(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                           float cx, float cy, float cz,
+                                           float rx, float rz, int uPix, int vPix,
+                                           float pixelSize, float hs, int rgb, int alpha) {
+        float px = cx + rx * (uPix * pixelSize);
+        float py = cy + vPix * pixelSize;
+        float pz = cz + rz * (uPix * pixelSize);
+        emitVoxelCube(vc, mat, tmp, px, py, pz, hs, hs, hs, rgb, alpha);
+    }
+
+    /**
+     * T344-PIXEL-RUNIC-CIRCLE : Vrai Cercle Runique en Pixels 3D :
+     * double anneau circulaire de Bresenham + 8 vraies runes pixel-art 3x3 en orbite + étoile runique en pixels !
+     */
+    public static void emitPixelRunicCircle3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                               float cx, float cy, float cz,
-                                              float halfSpan, float cubeHalf,
-                                              int cornerRgb, int edgeRgb, int alpha) {
-        if (alpha <= 6 || halfSpan <= 0.04f) return;
-        emitSteppedVoxelLine(vc, mat, tmp, cx - halfSpan, cy, cz - halfSpan, cx + halfSpan, cy, cz - halfSpan, cubeHalf, cornerRgb, edgeRgb, alpha);
-        emitSteppedVoxelLine(vc, mat, tmp, cx + halfSpan, cy, cz - halfSpan, cx + halfSpan, cy, cz + halfSpan, cubeHalf, cornerRgb, edgeRgb, alpha);
-        emitSteppedVoxelLine(vc, mat, tmp, cx + halfSpan, cy, cz + halfSpan, cx - halfSpan, cy, cz + halfSpan, cubeHalf, cornerRgb, edgeRgb, alpha);
-        emitSteppedVoxelLine(vc, mat, tmp, cx - halfSpan, cy, cz + halfSpan, cx - halfSpan, cy, cz - halfSpan, cubeHalf, cornerRgb, edgeRgb, alpha);
+                                              float outerRadius, float rotPhase,
+                                              int outerRgb, int innerRgb, int runeRgb,
+                                              int alpha, boolean withInscribedStar) {
+        if (alpha <= 6 || outerRadius <= 0.15f) return;
+        // 1) Grand cercle extérieur de Bresenham en mini-cubes 3D
+        emitPixelCircle3D(vc, mat, tmp, cx, cy, cz, outerRadius, outerRgb, innerRgb, alpha);
+
+        // 2) Cercle intérieur concentrique de Bresenham en mini-cubes 3D
+        float innerRadius = outerRadius * 0.60f;
+        if (innerRadius >= 0.18f) {
+            emitPixelCircle3D(vc, mat, tmp, cx, cy, cz, innerRadius, innerRgb, runeRgb, Math.round(alpha * 0.92f));
+        }
+
+        // 3) 8 vraies runes 3x3 en mini-pixels 3D disposées dans la couronne entre les deux cercles !
+        if (outerRadius >= 0.55f) {
+            float midR = outerRadius * 0.80f;
+            float runePix = (outerRadius <= 1.4f) ? 0.042f : 0.055f;
+            int runeCount = (outerRadius >= 1.1f) ? 8 : 4;
+            for (int r = 0; r < runeCount; r++) {
+                float ang = rotPhase + r * ((float) (Math.PI * 2.0) / runeCount);
+                float rx = quantize(cx + Mth.cos(ang) * midR, 0.0625f);
+                float rz = quantize(cz + Mth.sin(ang) * midR, 0.0625f);
+                emitPixelRune3D(vc, mat, tmp, rx, cy + 0.015f, rz, r & 7, runePix,
+                        (r & 1) == 0 ? runeRgb : outerRgb, alpha);
+            }
+        }
+
+        // 4) Étoile / octagramme runique inscrit en lignes de pixels 3D crénelées
+        if (withInscribedStar && innerRadius >= 0.25f) {
+            float sr = innerRadius * 0.92f;
+            float lineHalf = (outerRadius <= 1.3f) ? 0.028f : 0.036f;
+            for (int k = 0; k < 4; k++) {
+                float a = rotPhase * 0.5f + k * ((float) Math.PI * 0.25f);
+                float dx = Mth.cos(a) * sr;
+                float dz = Mth.sin(a) * sr;
+                emitSteppedVoxelLine(vc, mat, tmp,
+                        cx - dx, cy, cz - dz,
+                        cx + dx, cy, cz + dz,
+                        lineHalf, (k & 1) == 0 ? runeRgb : innerRgb, outerRgb, Math.round(alpha * 0.82f));
+            }
+        }
+    }
+
+    /** Dessine une rune pixel-art 3x3 composée de mini-cubes 3D jointifs au sol. */
+    private static void emitPixelRune3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                        float rx, float ry, float rz,
+                                        int glyphIdx, float pixelStep, int rgb, int alpha) {
+        int mask = RUNE_BITMAPS_3X3[glyphIdx & 7];
+        float hs = pixelStep * 0.46f;
+        for (int row = 0; row < 3; row++) {
+            for (int col = 0; col < 3; col++) {
+                int bit = 8 - (row * 3 + col);
+                if (((mask >>> bit) & 1) == 0) continue;
+                float px = rx + (col - 1) * pixelStep;
+                float pz = rz + (row - 1) * pixelStep;
+                emitVoxelCube(vc, mat, tmp, px, ry, pz, hs, hs * 0.8f, hs, rgb, alpha);
+            }
+        }
     }
 
     /** Éclair 3D en escalier de mini-cubes voxels. */
