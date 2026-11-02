@@ -459,6 +459,15 @@ public final class WeaponWorldVfxManager {
         }
     }
 
+    /** Budget de cubes par batch : évite de saturer le ByteBufferBuilder partagé de renderBuffers(). */
+    private static final int MAX_CUBES_PER_BATCH = 900;
+    /** Plafond dur par frame : au-delà, on arrête simplement d'émettre (jamais de pic incontrôlé). */
+    private static final int HARD_CUBE_CAP_PER_FRAME = 7000;
+    /** Distance au-delà de laquelle un effet n'est plus dessiné (FPS + taille des batches). */
+    private static final double MAX_VFX_RENDER_DISTANCE_SQR = 96.0 * 96.0;
+
+    private static int cubesSinceFlush;
+
     @SubscribeEvent
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_PARTICLES) return;
@@ -469,17 +478,36 @@ public final class WeaponWorldVfxManager {
 
         Camera cam = event.getCamera();
         Vec3 camPos = cam.getPosition();
-        float subTick = mc.isPaused()
-                ? 0.0f
-                : Mth.clamp((System.nanoTime() - lastTickNanos) / 50_000_000.0f, 0.0f, 1.0f);
 
         PoseStack poseStack = event.getPoseStack();
         Matrix4f mat = poseStack.last().pose();
         MultiBufferSource.BufferSource buffers = mc.renderBuffers().bufferSource();
         Vector3f tmp = new Vector3f();
 
+        cubesSinceFlush = 0;
+
+        // T348-BUFFER-SAFETY : tout le rendu est encapsulé. Un BufferBuilder partagé qui aurait été
+        // vidé/recyclé par un autre listener ne doit JAMAIS faire crasher le jeu ("Not building!").
+        try {
+            renderVfxFrame(mc, buffers, mat, tmp, camPos);
+        } catch (RuntimeException ex) {
+            releaseBatches(buffers);
+            PIXEL_PARTICLES.clear();
+            if (ACTIVE.size() > 8) {
+                ACTIVE.subList(0, ACTIVE.size() - 8).clear();
+            }
+        }
+    }
+
+    private static void renderVfxFrame(Minecraft mc, MultiBufferSource.BufferSource buffers,
+                                       Matrix4f mat, Vector3f tmp, Vec3 camPos) {
+        float subTick = mc.isPaused()
+                ? 0.0f
+                : Mth.clamp((System.nanoTime() - lastTickNanos) / 50_000_000.0f, 0.0f, 1.0f);
+
         VertexConsumer addVc = null;
         VertexConsumer alphaVc = null;
+        cubesSinceFlush = 0;
 
         // 1) Rendu des mini-pixels 3D flottants (traînées de flèches, gouttes de sang, flammèches, étincelles)
         for (int i = 0, n = PIXEL_PARTICLES.size(); i < n; i++) {
@@ -487,9 +515,20 @@ public final class WeaponWorldVfxManager {
             float t = Mth.clamp((fp.age + subTick) / (float) fp.maxAge, 0.0f, 1.0f);
             if (t >= 1.0f) continue;
 
-            float rx = (float) (fp.x + fp.vx * subTick - camPos.x);
-            float ry = (float) (fp.y + fp.vy * subTick - camPos.y);
-            float rz = (float) (fp.z + fp.vz * subTick - camPos.z);
+            double dx = fp.x + fp.vx * subTick - camPos.x;
+            double dy = fp.y + fp.vy * subTick - camPos.y;
+            double dz = fp.z + fp.vz * subTick - camPos.z;
+            if (dx * dx + dy * dy + dz * dz > MAX_VFX_RENDER_DISTANCE_SQR) continue;
+
+            if (cubesSinceFlush >= MAX_CUBES_PER_BATCH) {
+                flushBatches(buffers, addVc != null, alphaVc != null);
+                addVc = null;
+                alphaVc = null;
+            }
+
+            float rx = (float) dx;
+            float ry = (float) dy;
+            float rz = (float) dz;
             float sz = fp.halfSize * (1.0f - t * 0.45f);
             int alpha = Math.round(235.0f * (1.0f - t));
 
@@ -528,6 +567,18 @@ public final class WeaponWorldVfxManager {
             float t = Mth.clamp((inst.age + subTick) / (float) inst.maxAge, 0.0f, 1.0f);
             if (t >= 1.0f) continue;
 
+            double ddx = inst.x - camPos.x;
+            double ddy = inst.y - camPos.y;
+            double ddz = inst.z - camPos.z;
+            if (ddx * ddx + ddy * ddy + ddz * ddz > MAX_VFX_RENDER_DISTANCE_SQR) continue;
+
+            // Flush progressif : chaque batch reste petit, le buffer partagé ne peut plus déborder
+            if (cubesSinceFlush >= MAX_CUBES_PER_BATCH) {
+                flushBatches(buffers, addVc != null, alphaVc != null);
+                addVc = null;
+                alphaVc = null;
+            }
+
             VertexConsumer vc;
             if (inst.effect.additive) {
                 if (addVc == null) addVc = buffers.getBuffer(getAdditiveRenderType());
@@ -546,12 +597,31 @@ public final class WeaponWorldVfxManager {
             }
         }
 
-        if (alphaVc != null) {
+        flushBatches(buffers, addVc != null, alphaVc != null);
+    }
+
+    /** Envoie les geometry accumulées au GPU et libère les builders (ordre : alpha puis additif). */
+    private static void flushBatches(MultiBufferSource.BufferSource buffers, boolean hasAlpha, boolean hasAdditive) {
+        if (hasAlpha) {
             buffers.endBatch(getTranslucentRenderType());
         }
-        if (addVc != null) {
+        if (hasAdditive) {
             buffers.endBatch(getAdditiveRenderType());
         }
+        cubesSinceFlush = 0;
+    }
+
+    /** Nettoyage défensif après une exception de rendu : libère les deux RenderTypes sans propager. */
+    private static void releaseBatches(MultiBufferSource.BufferSource buffers) {
+        try {
+            buffers.endBatch(getTranslucentRenderType());
+        } catch (RuntimeException ignored) {
+        }
+        try {
+            buffers.endBatch(getAdditiveRenderType());
+        } catch (RuntimeException ignored) {
+        }
+        cubesSinceFlush = 0;
     }
 
     // ==================== 1. ENTAILLES EN MINI-CUBES VOXELS 3D ====================
@@ -988,6 +1058,8 @@ public final class WeaponWorldVfxManager {
                                      float hx, float hy, float hz,
                                      int rgb, int alpha) {
         if (alpha <= 5 || hx <= 0.0005f || hy <= 0.0005f || hz <= 0.0005f) return;
+        if (cubesSinceFlush >= HARD_CUBE_CAP_PER_FRAME) return;
+        cubesSinceFlush++;
         float x0 = cx - hx, x1 = cx + hx;
         float y0 = cy - hy, y1 = cy + hy;
         float z0 = cz - hz, z1 = cz + hz;
@@ -1171,8 +1243,11 @@ public final class WeaponWorldVfxManager {
                                         float cx, float cy, float cz, float radius,
                                         int rgbA, int rgbB, int alpha, int style) {
         if (alpha <= 6 || radius <= 0.06f) return;
-        float grid = (radius <= 0.70f) ? 0.0625f : ((radius <= 1.55f) ? 0.078125f : 0.09375f);
-        int rPix = Math.min(40, Math.max(2, Math.round(radius / grid)));
+        float grid = (radius <= 0.70f) ? 0.0625f : ((radius <= 1.55f) ? 0.078125f : 0.109375f);
+        int rPix = Math.min(30, Math.max(2, Math.round(radius / grid)));
+        // Le niveau de détail (micro-pixel intérieur + biseau) n'est activé que sur les petits cercles :
+        // sur les grands rayons, le contour pixel-art suffit et le nombre de cubes reste raisonnable.
+        boolean fine = rPix <= 16;
         float hs = grid * 0.47f;
         float gx = quantize(cx, grid);
         float gz = quantize(cz, grid);
@@ -1182,9 +1257,9 @@ public final class WeaponWorldVfxManager {
             // Anneau de perles : pixels isolés tous les 3 pas, tailles alternées
             for (int u = -rPix; u <= rPix; u += 3) {
                 int v = (int) Math.round(Math.sqrt((double) Math.max(0, rPix * rPix - u * u)));
-                ringPixel(vc, mat, tmp, gx, cy, gz, u, v, grid, hs, alpha, rgbA, rgbB, false, salt);
+                ringPixel(vc, mat, tmp, gx, cy, gz, u, v, grid, hs, alpha, rgbA, rgbB, false, fine, salt);
                 if (v != 0) {
-                    ringPixel(vc, mat, tmp, gx, cy, gz, u, -v, grid, hs, alpha, rgbB, rgbA, false, salt + 1);
+                    ringPixel(vc, mat, tmp, gx, cy, gz, u, -v, grid, hs, alpha, rgbB, rgbA, false, fine, salt + 1);
                 }
             }
             return;
@@ -1199,22 +1274,24 @@ public final class WeaponWorldVfxManager {
                     lastV = v;
                     continue;
                 }
-                ringPixel(vc, mat, tmp, gx, cy, gz, u, v, grid, hs, alpha, rgbA, rgbB, edgeStep, salt);
+                ringPixel(vc, mat, tmp, gx, cy, gz, u, v, grid, hs, alpha, rgbA, rgbB, edgeStep, fine, salt);
                 if (v != 0) {
-                    ringPixel(vc, mat, tmp, gx, cy, gz, u, -v, grid, hs, alpha, rgbB, rgbA, edgeStep, salt + 1);
+                    ringPixel(vc, mat, tmp, gx, cy, gz, u, -v, grid, hs, alpha, rgbB, rgbA, edgeStep, fine, salt + 1);
                 }
                 lastV = v;
                 continue;
             }
 
-            // Remplissage vertical : le contour reste jointif là où la courbe "saute" d'un cran
+            // Remplissage vertical : le contour reste jointif là où la courbe "saute" d'un cran.
+            // Grand rayon : seuls les deux bords de la marche sont posés (4x moins de cubes).
             int from = (lastV >= 0) ? Math.min(lastV, v) : v;
             int to = (lastV >= 0) ? Math.max(lastV, v) : v;
             for (int k = from; k <= to; k++) {
+                if (!fine && k != from && k != to) continue;
                 boolean edge = edgeStep || k == from || k == to;
-                ringPixel(vc, mat, tmp, gx, cy, gz, u, k, grid, hs, alpha, rgbA, rgbB, edge, salt);
+                ringPixel(vc, mat, tmp, gx, cy, gz, u, k, grid, hs, alpha, rgbA, rgbB, edge, fine, salt);
                 if (k != 0) {
-                    ringPixel(vc, mat, tmp, gx, cy, gz, u, -k, grid, hs, alpha, rgbB, rgbA, edge, salt + 1);
+                    ringPixel(vc, mat, tmp, gx, cy, gz, u, -k, grid, hs, alpha, rgbB, rgbA, edge, fine, salt + 1);
                 }
             }
             lastV = v;
@@ -1225,7 +1302,7 @@ public final class WeaponWorldVfxManager {
     private static void ringPixel(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                   float gx, float gy, float gz, int u, int v,
                                   float grid, float hs, int alpha,
-                                  int rgb, int rgbAlt, boolean edge, int salt) {
+                                  int rgb, int rgbAlt, boolean edge, boolean detail, int salt) {
         float px = gx + u * grid;
         float pz = gz + v * grid;
         float jx = 0.80f + 0.30f * pixelHash(salt, u * 37 + v * 11);
@@ -1233,6 +1310,7 @@ public final class WeaponWorldVfxManager {
 
         emitVoxelCube(vc, mat, tmp, px, gy, pz, hs * jx, hy, hs * (0.82f + 0.26f * pixelHash(salt + 9, u * 7 + v * 29)),
                 rgb, alpha);
+        if (!detail) return;
 
         // Pixel intérieur plus petit : donne l'épaisseur "2 blocs de tailles différentes"
         if (((u * 3 + v * 5) & 1) == 0) {
@@ -1262,8 +1340,9 @@ public final class WeaponWorldVfxManager {
         float rx = (horizDist > 0.01f) ? (-cz / horizDist) : 1.0f;
         float rz = (horizDist > 0.01f) ? (cx / horizDist) : 0.0f;
 
-        float grid = (radius <= 1.20f) ? 0.0625f : 0.078125f;
-        int rPix = Math.min(28, Math.max(3, Math.round(radius / grid)));
+        float grid = (radius <= 1.20f) ? 0.0625f : 0.09375f;
+        int rPix = Math.min(24, Math.max(3, Math.round(radius / grid)));
+        boolean fine = rPix <= 14;
         float hs = grid * 0.47f;
         int salt = Math.round(cx * 733.0f + cy * 419.0f + cz * 617.0f + radius * 89.0f);
 
@@ -1273,11 +1352,12 @@ public final class WeaponWorldVfxManager {
             int from = (lastV >= 0) ? Math.min(lastV, v) : v;
             int to = (lastV >= 0) ? Math.max(lastV, v) : v;
             for (int k = from; k <= to; k++) {
+                if (!fine && k != from && k != to) continue;
                 boolean edge = (u == -rPix || u == rPix || k == 0 || k == rPix || k == from || k == to);
                 int rgb = (((u + k) >> 1) & 1) == 0 ? rgbA : rgbB;
-                billboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, u, k, grid, hs, rgb, rgbB, alpha, edge, salt);
+                billboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, u, k, grid, hs, rgb, rgbB, alpha, edge, fine, salt);
                 if (k != 0) {
-                    billboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, u, -k, grid, hs, rgb, rgbB, alpha, edge, salt + 1);
+                    billboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, u, -k, grid, hs, rgb, rgbB, alpha, edge, fine, salt + 1);
                 }
             }
             lastV = v;
@@ -1288,10 +1368,10 @@ public final class WeaponWorldVfxManager {
         for (int u = -innerPix; u <= innerPix; u += 2) {
             int v = (int) Math.round(Math.sqrt((double) Math.max(0, innerPix * innerPix - u * u)));
             billboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, u, v, grid, hs * 0.8f, rgbB, rgbA,
-                    Math.round(alpha * 0.72f), false, salt + 5);
+                    Math.round(alpha * 0.72f), false, fine, salt + 5);
             if (v != 0) {
                 billboardPixel(vc, mat, tmp, cx, cy, cz, rx, rz, u, -v, grid, hs * 0.8f, rgbB, rgbA,
-                        Math.round(alpha * 0.72f), false, salt + 6);
+                        Math.round(alpha * 0.72f), false, fine, salt + 6);
             }
         }
 
@@ -1317,13 +1397,14 @@ public final class WeaponWorldVfxManager {
     private static void billboardPixel(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                        float cx, float cy, float cz, float rx, float rz,
                                        int uPix, int vPix, float grid, float hs, int rgb, int rgbAlt,
-                                       int alpha, boolean edge, int salt) {
+                                       int alpha, boolean edge, boolean detail, int salt) {
         float px = cx + rx * (uPix * grid);
         float py = cy + vPix * grid;
         float pz = cz + rz * (uPix * grid);
         float jx = 0.80f + 0.30f * pixelHash(salt, uPix * 31 + vPix * 17);
         float hy = hs * (0.68f + 0.32f * pixelHash(salt + 2, uPix * 11 + vPix * 43));
         emitVoxelCube(vc, mat, tmp, px, py, pz, hs * jx, hy, hs * jx, rgb, alpha);
+        if (!detail) return;
         if (((uPix + vPix) & 1) == 0) {
             emitVoxelCube(vc, mat, tmp, px - rx * grid * 0.26f, py - grid * 0.22f, pz - rz * grid * 0.26f,
                     grid * 0.19f, grid * 0.15f, grid * 0.19f, rgbAlt, Math.round(alpha * 0.85f));
