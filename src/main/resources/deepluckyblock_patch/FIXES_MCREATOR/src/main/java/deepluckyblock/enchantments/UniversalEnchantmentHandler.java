@@ -841,6 +841,17 @@ public class UniversalEnchantmentHandler {
             } else if (rolledCustomCrit) {
                 EnchantmentParticleFX.burstOnEntity(event.getEntity(), ParticleTypes.CRIT, 8, 0.25, 0.1);
             }
+            // T342-WEAPON-VFX-30 : Éclat critique 3D amélioré (Étoile Dorée, Réticule Focalisé ou Cyber-X)
+            if (customCrit || lowCritDmg > 0 || normCritDmg > 0 || overCritDmg > 0 || !weapon.getEnchantments().isEmpty()) {
+                WeaponVisualEffectId critStyle = overCritDmg > 0
+                        ? WeaponVisualEffectId.OVERCLOCK_CYBER_X
+                        : (focusedSurgical ? WeaponVisualEffectId.FOCUSED_BULLSEYE : WeaponVisualEffectId.GOLDEN_CRIT_STAR);
+                WeaponVfxServerListener.notifyMeleeCrit(
+                        player,
+                        event.getEntity(),
+                        critStyle,
+                        Math.max(1, overCritDmg + normCritDmg + lowCritDmg + normalCritRate + lowCritRate));
+            }
 
             int overcharge = getEnchantLvl(weapon, "deep_lucky_block:overcharge");
             if (overcharge > 0 && event.getEntity() instanceof LivingEntity primaryTarget
@@ -869,6 +880,7 @@ public class UniversalEnchantmentHandler {
                                 current.position().add(0, current.getBbHeight() * 0.5, 0),
                                 next.position().add(0, next.getBbHeight() * 0.5, 0),
                                 ParticleTypes.ELECTRIC_SPARK, EnchantmentParticleFX.OVERCLOCK_CYAN, 0.55);
+                        WeaponVfxServerListener.notifyChainArc(chainLevel, current, next, overcharge);
                     }
                     current = next;
                 }

@@ -32,6 +32,9 @@ public final class DeepPayloads {
     public static final ResourceLocation AIR_WALK_ANCHOR_C2S =
             ResourceLocation.fromNamespaceAndPath(DeepLuckyBlockMod.MODID, "air_walk_anchor_c2s");
 
+    public static final ResourceLocation WEAPON_VFX_S2C =
+            ResourceLocation.fromNamespaceAndPath(DeepLuckyBlockMod.MODID, "weapon_vfx_s2c");
+
     @SubscribeEvent
     public static void onRegisterPayloadHandlers(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar("1");
@@ -39,6 +42,10 @@ public final class DeepPayloads {
                 DeepLuckyBlockModVariables.SavedDataSyncMessage.TYPE,
                 DeepLuckyBlockModVariables.SavedDataSyncMessage.STREAM_CODEC,
                 DeepLuckyBlockModVariables.SavedDataSyncMessage::handle);
+        registrar.playToClient(
+                WeaponVfxMessage.TYPE,
+                WeaponVfxMessage.STREAM_CODEC,
+                WeaponVfxMessage::handle);
         registrar.playToServer(
                 CloudJumpMessage.TYPE,
                 CloudJumpMessage.STREAM_CODEC,
@@ -114,6 +121,57 @@ public final class DeepPayloads {
                     UniversalEnchantmentHandler.handleClientAirWalkAnchor(sp, message.anchorFloorY());
                 }
             });
+        }
+    }
+
+    /** Coordonnée 3D flottante compacte pour les payloads visuels S2C. */
+    public record FloatPos3(float x, float y, float z) {
+        public static final StreamCodec<RegistryFriendlyByteBuf, FloatPos3> STREAM_CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.FLOAT, FloatPos3::x,
+                        ByteBufCodecs.FLOAT, FloatPos3::y,
+                        ByteBufCodecs.FLOAT, FloatPos3::z,
+                        FloatPos3::new);
+    }
+
+    /**
+     * T342-WEAPON-VFX-30 : Payload Serveur -> Client ultra-compact déclenchant les animations 3D
+     * d'impact, de critique amélioré, de siphon de sang et d'effets élémentaires/à distance.
+     */
+    public record WeaponVfxMessage(
+            int packedMeta,
+            FloatPos3 origin,
+            FloatPos3 target
+    ) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<WeaponVfxMessage> TYPE =
+                new CustomPacketPayload.Type<>(WEAPON_VFX_S2C);
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, WeaponVfxMessage> STREAM_CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.INT, WeaponVfxMessage::packedMeta,
+                        FloatPos3.STREAM_CODEC, WeaponVfxMessage::origin,
+                        FloatPos3.STREAM_CODEC, WeaponVfxMessage::target,
+                        WeaponVfxMessage::new);
+
+        public static WeaponVfxMessage create(int vfxId, int kind, int intensity,
+                                              double x, double y, double z,
+                                              double tx, double ty, double tz) {
+            int meta = (vfxId & 0xFF)
+                    | ((kind & 0xFF) << 8)
+                    | ((Math.max(1, Math.min(15, intensity)) & 0xFF) << 16);
+            return new WeaponVfxMessage(
+                    meta,
+                    new FloatPos3((float) x, (float) y, (float) z),
+                    new FloatPos3((float) tx, (float) ty, (float) tz));
+        }
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+
+        public static void handle(WeaponVfxMessage message, IPayloadContext context) {
+            context.enqueueWork(() -> WeaponVfxClientBridge.handleClient(message));
         }
     }
 

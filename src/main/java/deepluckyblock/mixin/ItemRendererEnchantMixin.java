@@ -153,6 +153,23 @@ public abstract class ItemRendererEnchantMixin {
         }
     }
 
+    @Inject(
+            method = RENDER_METHOD,
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lcom/mojang/blaze3d/vertex/PoseStack;popPose()V"
+            )
+    )
+    private void dlbRenderWeaponBladeEffects(ItemStack stack, ItemDisplayContext displayContext,
+                                             boolean inverted, PoseStack poseStack, MultiBufferSource buffer,
+                                             int light, int overlay, BakedModel model, CallbackInfo ci) {
+        try {
+            deepluckyblock.client.WeaponBladeVisualRenderer.renderWeaponOverlays(
+                    stack, displayContext, inverted, poseStack, buffer, light, model);
+        } catch (Throwable ignored) {
+        }
+    }
+
     @Inject(method = RENDER_METHOD, at = @At("TAIL"))
     private void dlbClear(ItemStack stack, ItemDisplayContext displayContext,
                           boolean inverted, PoseStack poseStack, MultiBufferSource buffer,
