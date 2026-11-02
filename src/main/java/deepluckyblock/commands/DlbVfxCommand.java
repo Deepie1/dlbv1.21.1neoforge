@@ -37,6 +37,7 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import deepluckyblock.DeepLuckyBlockMod;
 import deepluckyblock.enchantments.DeepElement;
 import deepluckyblock.enchantments.WeaponVisualEffectId;
+import deepluckyblock.enchantments.WeaponVfxSubtle;
 import deepluckyblock.enchantments.WeaponVfxVariant;
 import deepluckyblock.enchantments.WeaponVfxServerListener;
 import deepluckyblock.procedures.TestProcedure;
@@ -294,7 +295,7 @@ public final class DlbVfxCommand {
         line(src, "§e/dlbvfx elements [famille]", "les 10 familles élémentaires (couleurs + effets)");
         line(src, "§e/dlbvfx variants", "défile les 50 déclinaisons (de moins en moins de particules)");
         line(src, "§e/dlbvfx subtle [famille] [index]", "les 50 accents discrets (90 % des déclenchements)");
-        line(src, "§7Déclenchement : §f5 % §7coup normal, §f66 % §7coup critique, §f10 % §7seulement en grosse animation (§f+5 % §7dégâts)");
+        line(src, "§7Déclenchement", "§f5 % §7coup normal, §f66 % §7coup critique, §f10 % §7des déclenchements en grosse animation (§f+5 % §7dégâts)");
         line(src, "§e/dlbvfx clear", "supprime les cibles d'entraînement");
         line(src, "§7Exemples : §f/dlbvfx play 29 §7puis §f/dlbvfx give 8 §7puis §f/dlbvfx hit 3", "");
         return 1;
