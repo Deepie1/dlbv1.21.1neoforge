@@ -786,7 +786,7 @@ public final class SystemTooltipWindowRenderer {
 
                 int startIdx = currentShiftPage * maxPerPage;
                 int endIdx = Math.min(totalEnchants, startIdx + maxPerPage);
-                int descMaxFontPx = Math.max(140, (int) Math.floor((innerW - 12) / S_DESC));
+                int descMaxFontPx = Math.max(140, (int) Math.floor((innerW - 14) / S_DESC));
                 int descLineH = Math.max(8, (int) Math.ceil(9 * S_DESC) + 1);
 
                 for (int i = startIdx; i < endIdx; i++) {
@@ -811,7 +811,7 @@ public final class SystemTooltipWindowRenderer {
                     String cleanDesc = EnchantmentTooltipFixProcedure.resolveCleanDescription(id, lvl);
                     if (cleanDesc != null && !cleanDesc.isBlank()) {
                         int barCol = CustomEnchantment.isCurseMod(ench) ? 0xAAEF4444 : 0xAA38BDF8;
-                        List<String> wrapped = wrapStringExact(font, cleanDesc, descMaxFontPx, 3);
+                        List<String> wrapped = wrapDescriptionItalic(font, cleanDesc, descMaxFontPx, 3);
                         for (String line : wrapped) {
                             rows.add(new IndentedBarTextRow(line, barCol, S_DESC, curY, descLineH));
                             curY += descLineH;
@@ -841,7 +841,7 @@ public final class SystemTooltipWindowRenderer {
                 rows.add(new SectionHeaderRow(comboHeader, "", true, curY, 10));
                 curY += 12;
 
-                int synDescFontPx = Math.max(140, (int) Math.floor((innerW - 12) / S_DESC));
+                int synDescFontPx = Math.max(140, (int) Math.floor((innerW - 14) / S_DESC));
                 int synPiecesFontPx = Math.max(150, (int) Math.floor((innerW - 12) / S_SUB));
                 int synDescLineH = Math.max(8, (int) Math.ceil(9 * S_DESC) + 1);
                 int synSubLineH = Math.max(7, (int) Math.ceil(9 * S_SUB) + 1);
@@ -857,7 +857,7 @@ public final class SystemTooltipWindowRenderer {
                         if (resolvedDesc == null || resolvedDesc.isBlank()) {
                             resolvedDesc = c.translatedDesc().getString();
                         }
-                        for (String line : wrapStringExact(font, resolvedDesc, synDescFontPx, 3)) {
+                        for (String line : wrapDescriptionItalic(font, resolvedDesc, synDescFontPx, 3)) {
                             rows.add(new IndentedBarTextRow(line, 0xBBF59E0B, S_DESC, curY, synDescLineH));
                             curY += synDescLineH;
                         }
@@ -1240,35 +1240,45 @@ public final class SystemTooltipWindowRenderer {
         return bullet.append(baseTitle);
     }
 
-    private static List<String> wrapStringExact(Font font, String text, int maxFontPx, int maxLines) {
+    /**
+     * T329 : Découpe une description mot-par-mot en italique intégral (§o), en réinjectant §o
+     * après chaque code couleur ou reset (§0..§9, §a..§f, §r) afin que les valeurs colorées
+     * et la suite de phrase restent bien en italique jusqu'au bout de chaque ligne.
+     */
+    private static List<String> wrapDescriptionItalic(Font font, String text, int maxFontPx, int maxLines) {
         List<String> out = new ArrayList<>();
         if (text == null || text.isBlank()) return out;
 
-        String[] words = text.trim().split("\\s+");
-        StringBuilder current = new StringBuilder();
+        String[] rawWords = text.trim().split("\\s+");
+        StringBuilder current = new StringBuilder("\u00a7o");
         String activeColor = "";
         boolean hasWord = false;
 
-        for (String word : words) {
-            if (word.isEmpty()) continue;
-            String candidate = hasWord ? (current + " " + word) : word;
+        for (String rawWord : rawWords) {
+            if (rawWord.isEmpty()) continue;
+            String word = keepItalicAcrossCodes(rawWord);
+            String candidate = hasWord ? (current + " " + word) : ("\u00a7o" + word);
             if (hasWord && font.width(candidate) > maxFontPx) {
                 if (out.size() + 1 >= maxLines) {
-                    out.add(current + "\u00a78\u2026");
+                    out.add(current + "\u00a78\u00a7o\u2026");
                     return out;
                 }
                 out.add(current.toString());
-                current = new StringBuilder(activeColor).append(word);
+                current = new StringBuilder(activeColor).append("\u00a7o").append(word);
             } else {
                 if (hasWord) current.append(' ');
                 current.append(word);
                 hasWord = true;
             }
 
-            for (int i = 0; i < word.length() - 1; i++) {
-                if (word.charAt(i) == '\u00a7') {
-                    char code = Character.toLowerCase(word.charAt(i + 1));
-                    activeColor = (code == 'r') ? "" : ("\u00a7" + code);
+            for (int i = 0; i < rawWord.length() - 1; i++) {
+                if (rawWord.charAt(i) == '\u00a7') {
+                    char code = Character.toLowerCase(rawWord.charAt(++i));
+                    if (code == 'r') {
+                        activeColor = "";
+                    } else if ((code >= '0' && code <= '9') || (code >= 'a' && code <= 'f')) {
+                        activeColor = "\u00a7" + code;
+                    }
                 }
             }
         }
@@ -1276,5 +1286,22 @@ public final class SystemTooltipWindowRenderer {
             out.add(current.toString());
         }
         return out;
+    }
+
+    private static String keepItalicAcrossCodes(String word) {
+        if (word.indexOf('\u00a7') < 0) return word;
+        StringBuilder sb = new StringBuilder(word.length() + 4);
+        for (int i = 0; i < word.length(); i++) {
+            char ch = word.charAt(i);
+            sb.append(ch);
+            if (ch == '\u00a7' && i + 1 < word.length()) {
+                char code = Character.toLowerCase(word.charAt(++i));
+                sb.append(code);
+                if (code == 'r' || (code >= '0' && code <= '9') || (code >= 'a' && code <= 'f')) {
+                    sb.append("\u00a7o");
+                }
+            }
+        }
+        return sb.toString();
     }
 }
