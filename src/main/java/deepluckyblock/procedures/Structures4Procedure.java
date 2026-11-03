@@ -6,7 +6,9 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
@@ -22,6 +24,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.trading.ItemCost;
 import net.minecraft.world.item.trading.MerchantOffer;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Rotation;
@@ -337,6 +340,19 @@ public class Structures4Procedure {
         return targetXZ;
     }
 
+    /**
+     * T355b-MANISH-INFINI : liste des Manish deja poses (UUID -> dimension), pour pouvoir
+     * remettre leurs echanges a zero toutes les secondes.
+     *
+     * <p>Vanilla n'a AUCUN drapeau « echanges illimites » : une offre se verrouille des que
+     * {@code uses >= maxUses} et un villageois ne se reapprovisionne qu'en marchant vers son
+     * poste de travail -- or Manish est un PNJ invulnerable et {@code setNoAi(true)}, il ne
+     * restock donc JAMAIS tout seul. Ses trois echanges lingots -> diamant sont donc
+     * reinitialises par le serveur (voir {@link #refreshManishTrades(MinecraftServer)}).</p>
+     */
+    private static final Map<UUID, ResourceKey<Level>> MANISH_TRADERS = new HashMap<>();
+    /** Compteur de ticks : la remise a zero tourne une fois par seconde (20 ticks). */
+    private static int manishRestockTicker = 0;
     private static final List<DelayedAction> DELAYED_ACTIONS = new ArrayList<>();
     private static class DelayedAction { final Runnable action; int ticksRemaining; DelayedAction(Runnable a, int ticks) { action = a; ticksRemaining = ticks; } }
 
@@ -843,6 +859,14 @@ public class Structures4Procedure {
 
         // FIX T7 : reprise des structures dont le NBT etait en cours de chargement.
         tickDeferredSpawns();
+
+        // T355b-MANISH-INFINI : une fois par seconde, on remet a zero les trois echanges
+        // lingots -> diamant de chaque Manish encore charge. Cout negligeable (quelques
+        // entites, trois offres chacune) et totalement silencieux (aucun log).
+        if (++manishRestockTicker >= 20) {
+            manishRestockTicker = 0;
+            refreshManishTrades(e.getServer());
+        }
 
         if (!PASTE_QUEUE.isEmpty()) {
             PasteJob job = PASTE_QUEUE.peek();
@@ -1621,6 +1645,7 @@ public class Structures4Procedure {
         manish.getOffers().add(manishIngotsForDiamond(Items.IRON_INGOT, 10));
         manish.getOffers().add(manishIngotsForDiamond(Items.COPPER_INGOT, 20));
         level.addFreshEntity(manish);
+        MANISH_TRADERS.put(manish.getUUID(), level.dimension());
         deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4] Manish spawn à {} (variante {})", pos.toShortString(), everestVariant ? "Everest" : "historique");
     }
     /**
@@ -1630,12 +1655,56 @@ public class Structures4Procedure {
      * (6 or, 10 fer, 20 cuivre). Aucune remise n'est posee : le prix affiche est exactement le
      * tarif demande, et il reste identique pour tous les joueurs et toutes les generations.</p>
      *
+     * <p><b>Echanges INFINIS (T355b)</b> : {@code maxUses} est volontairement enorme et le
+     * serveur remet les compteurs a zero chaque seconde (voir {@link #refreshManishTrades}),
+     * donc ces trois offres ne tombent jamais en rupture de stock.</p>
+     *
      * @param ingot      lingot demande (or / fer / cuivre)
      * @param ingotCount nombre de lingots a donner pour recevoir 1 diamant
      */
     private static MerchantOffer manishIngotsForDiamond(net.minecraft.world.item.Item ingot, int ingotCount) {
         return new MerchantOffer(new ItemCost(ingot, ingotCount), new ItemStack(Items.DIAMOND),
-                9999, 0, 0.0f);
+                999_999, 0, 0.0f);
+    }
+
+    /**
+     * T355b-MANISH-INFINI : remet a zero les trois echanges fixes de tous les Manish charges.
+     *
+     * <p>Une offre verrouillee ({@code uses >= maxUses}) reste verrouillee pour toujours, car
+     * Manish ne se reapprovisionne pas : on appelle donc {@link MerchantOffer#resetUses()} sur
+     * les offres reconnues (cout = lingot d'or / de fer / de cuivre, resultat = 1 diamant).
+     * Les entrees dont l'entite n'est pas chargee sont CONSERVEES : le chunk peut revenir
+     * plus tard, et le NBT du villageois garde ses compteurs.</p>
+     */
+    private static void refreshManishTrades(MinecraftServer server) {
+        if (MANISH_TRADERS.isEmpty() || server == null) return;
+        try {
+            Iterator<Map.Entry<UUID, ResourceKey<Level>>> it = MANISH_TRADERS.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<UUID, ResourceKey<Level>> entry = it.next();
+                ServerLevel level = server.getLevel(entry.getValue());
+                if (level == null) { it.remove(); continue; }   // dimension disparue (changement de monde)
+                if (!(level.getEntity(entry.getKey()) instanceof Villager manish)) continue;
+                for (MerchantOffer offer : manish.getOffers()) {
+                    if (isManishIngotTrade(offer)) offer.resetUses();
+                }
+            }
+        } catch (Exception ex) {
+            LOGGER.error("[STRUCT4] remise a zero des echanges de Manish", ex);
+        }
+    }
+
+    /**
+     * T355b-MANISH-INFINI : reconnait les trois echanges fixes (6 or / 10 fer / 20 cuivre -> 1 diamant).
+     *
+     * <p>On ne touche a RIEN d'autre : les offres aleatoires de Manish gardent leur usure
+     * (et donc leurs remises), comme avant.</p>
+     */
+    private static boolean isManishIngotTrade(MerchantOffer offer) {
+        if (offer == null || !offer.getResult().is(Items.DIAMOND)) return false;
+        return offer.getCostA().is(Items.GOLD_INGOT)
+                || offer.getCostA().is(Items.IRON_INGOT)
+                || offer.getCostA().is(Items.COPPER_INGOT);
     }
 
     private static boolean isStrippedCherry(BlockState state) { return state.is(Blocks.STRIPPED_CHERRY_LOG) || state.is(Blocks.STRIPPED_CHERRY_WOOD) || state.is(Blocks.CHERRY_LOG) || state.is(Blocks.CHERRY_WOOD); }
