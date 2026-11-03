@@ -1,6 +1,7 @@
 package deepluckyblock.entity;
 
 import deepluckyblock.init.DeepLuckyBlockModEntities;
+import deepluckyblock.enchantments.PixelFx;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 
@@ -244,15 +245,10 @@ public class EndKnightEntity extends Monster {
 
         if (this.deathTime >= TOTAL_DEATH_TIME) {
             if (this.level() instanceof ServerLevel serverLevel) {
-                for (int i = 0; i < 30; i++) {
-                    serverLevel.sendParticles(
-                        ParticleTypes.PORTAL,
-                        this.getX() + (this.random.nextDouble() - 0.5D) * 2,
-                        this.getY() + this.random.nextDouble() * 4,
-                        this.getZ() + (this.random.nextDouble() - 0.5D) * 2,
-                        1, 0, 0, 0, 0
-                    );
-                }
+                // T360-NO-VANILLA-PARTICLES : colonne de mort en mini-cubes 3D violets.
+                PixelFx.send(serverLevel, ParticleTypes.PORTAL,
+                        this.getX(), this.getY() + 1.2D, this.getZ(),
+                        12, 1.1D, 1.8D, 1.1D, 0.06D);
             }
             this.level().broadcastEntityEvent(this, (byte) 60);
             this.remove(Entity.RemovalReason.KILLED);
@@ -510,36 +506,17 @@ public class EndKnightEntity extends Monster {
 
     @Override
     public void aiStep() {
-        if (this.level().isClientSide()) {
-            for (int i = 0; i < 4; ++i) {
-                this.level().addParticle(
-                    ParticleTypes.PORTAL,
-                    this.getRandomX(0.6D),
-                    this.getY() + this.random.nextDouble() * 2.0D,
-                    this.getRandomZ(0.6D),
-                    (this.getRandom().nextDouble() - 0.5D) * 2.0D,
-                    -this.getRandom().nextDouble(),
-                    (this.getRandom().nextDouble() - 0.5D) * 2.0D
-                );
-                this.level().addParticle(
-                    ParticleTypes.PORTAL,
-                    this.getRandomX(0.6D),
-                    this.getY() + 2.0D + this.random.nextDouble() * 1.5D,
-                    this.getRandomZ(0.6D),
-                    (this.getRandom().nextDouble() - 0.5D) * 1.5D,
-                    -this.getRandom().nextDouble() * 0.5D,
-                    (this.getRandom().nextDouble() - 0.5D) * 1.5D
-                );
-                this.level().addParticle(
-                    ParticleTypes.PORTAL,
-                    this.getRandomX(0.5D),
-                    this.getY() + this.getBbHeight() + 0.5D + this.random.nextDouble() * 0.5D,
-                    this.getRandomZ(0.5D),
-                    (this.getRandom().nextDouble() - 0.5D) * 1.5D,
-                    -this.getRandom().nextDouble() * 0.3D,
-                    (this.getRandom().nextDouble() - 0.5D) * 1.5D
-                );
-            }
+        if (this.level().isClientSide()
+                && net.neoforged.fml.loading.FMLEnvironment.dist == net.neoforged.api.distmarker.Dist.CLIENT) {
+            // T360-NO-VANILLA-PARTICLES : aura du Chevalier de l'End en mini-cubes 3D violets
+            // (plus aucune particule PORTAL vanilla), avec la même silhouette en colonne.
+            deepluckyblock.client.WeaponWorldVfxManager.spawnPixelPuff(0xA55BFF,
+                    this.getRandomX(0.55D), this.getY() + this.random.nextDouble() * 2.0D,
+                    this.getRandomZ(0.55D), 3, 0.12f, 0.02, 16);
+            deepluckyblock.client.WeaponWorldVfxManager.spawnPixelPuff(0x8E3BE8,
+                    this.getRandomX(0.45D),
+                    this.getY() + this.getBbHeight() + 0.4D + this.random.nextDouble() * 0.6D,
+                    this.getRandomZ(0.45D), 2, 0.10f, 0.015, 18);
         }
 
         this.jumping = false;
@@ -672,22 +649,14 @@ public class EndKnightEntity extends Monster {
                 }
 
                 if (this.level() instanceof ServerLevel serverLevel) {
-                    for (int i = 0; i < 64; i++) {
-                        serverLevel.sendParticles(
-                            ParticleTypes.PORTAL,
-                            originalPos.x + (this.random.nextDouble() - 0.5D) * 2,
-                            originalPos.y + this.random.nextDouble() * 4,
-                            originalPos.z + (this.random.nextDouble() - 0.5D) * 2,
-                            1, 0, 0, 0, 0
-                        );
-                        serverLevel.sendParticles(
-                            ParticleTypes.PORTAL,
-                            this.getX() + (this.random.nextDouble() - 0.5D) * 2,
-                            this.getY() + this.random.nextDouble() * 4,
-                            this.getZ() + (this.random.nextDouble() - 0.5D) * 2,
-                            1, 0, 0, 0, 0
-                        );
-                    }
+                    // T360-NO-VANILLA-PARTICLES : les deux nuages de téléportation deviennent deux
+                    // salves de mini-cubes 3D (plus aucune particule PORTAL vanilla).
+                    PixelFx.send(serverLevel, ParticleTypes.PORTAL,
+                            originalPos.x, originalPos.y + 1.2D, originalPos.z,
+                            12, 1.1D, 1.8D, 1.1D, 0.06D);
+                    PixelFx.send(serverLevel, ParticleTypes.PORTAL,
+                            this.getX(), this.getY() + 1.2D, this.getZ(),
+                            12, 1.1D, 1.8D, 1.1D, 0.06D);
                 }
             }
 

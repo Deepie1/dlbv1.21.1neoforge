@@ -299,7 +299,7 @@ public class UniversalEnchantmentHandler {
         if (lightHeartLvl > 0 && event.getEntity().getType().is(net.minecraft.tags.EntityTypeTags.SENSITIVE_TO_SMITE)) {
             event.setAmount(event.getAmount() * (1f + 0.25f * lightHeartLvl));
             if (player.level() instanceof ServerLevel lightLevel) {
-                lightLevel.sendParticles(ParticleTypes.END_ROD,
+                PixelFx.send(lightLevel, ParticleTypes.END_ROD,
                         event.getEntity().getX(), event.getEntity().getY() + event.getEntity().getBbHeight() * 0.5, event.getEntity().getZ(),
                         8, 0.2, 0.3, 0.2, 0.02);
             }
@@ -334,7 +334,7 @@ public class UniversalEnchantmentHandler {
                 default -> event.setAmount(event.getAmount() * (1f + 0.20f * electricHeartLvl));
             }
             if (player.level() instanceof ServerLevel electricLevel) {
-                electricLevel.sendParticles(ParticleTypes.ELECTRIC_SPARK,
+                PixelFx.send(electricLevel, ParticleTypes.ELECTRIC_SPARK,
                         electricTarget.getX(), electricTarget.getY() + electricTarget.getBbHeight() * 0.5, electricTarget.getZ(),
                         10, 0.25, 0.3, 0.25, 0.05);
             }
@@ -923,7 +923,7 @@ public class UniversalEnchantmentHandler {
             if (undead) {
                 event.setAmount(event.getAmount() * (1f + 0.50f * seraphsJudgment));
                 if (event.getEntity().level() instanceof ServerLevel judgmentLevel) {
-                    judgmentLevel.sendParticles(ParticleTypes.END_ROD,
+                    PixelFx.send(judgmentLevel, ParticleTypes.END_ROD,
                             event.getEntity().getX(), event.getEntity().getY() + event.getEntity().getBbHeight() * 0.5, event.getEntity().getZ(),
                             10, 0.3, 0.4, 0.3, 0.02);
                 }
@@ -943,7 +943,7 @@ public class UniversalEnchantmentHandler {
                 float healAmount = event.getAmount() * (0.15f + 0.10f * voidlingsHunger);
                 player.heal(healAmount);
                 if (player.level() instanceof ServerLevel voidLevel) {
-                    voidLevel.sendParticles(ParticleTypes.SOUL, player.getX(), player.getY() + player.getBbHeight() * 0.5, player.getZ(),
+                    PixelFx.send(voidLevel, ParticleTypes.SOUL, player.getX(), player.getY() + player.getBbHeight() * 0.5, player.getZ(),
                             6, 0.25, 0.3, 0.25, 0.01);
                 }
             }
@@ -1875,7 +1875,7 @@ public class UniversalEnchantmentHandler {
                     int diveTicks = player.getPersistentData().getInt("dlb_airwalk_dive") + 1;
                     player.getPersistentData().putInt("dlb_airwalk_dive", diveTicks);
                     if (!player.onGround() && player.level() instanceof ServerLevel slDive && (diveTicks % 3 == 0)) {
-                        slDive.sendParticles(ParticleTypes.CLOUD,
+                        PixelFx.send(slDive, ParticleTypes.CLOUD,
                                 player.getX(), player.getY() + 0.15, player.getZ(),
                                 2, 0.22, 0.12, 0.22, 0.02);
                     }
@@ -2013,10 +2013,10 @@ public class UniversalEnchantmentHandler {
                 player.level().playSound(null, player.getX(), player.getY(), player.getZ(),
                         SoundEvents.HONEY_BLOCK_SLIDE, SoundSource.PLAYERS, 0.65f, 0.98f);
                 if (player.level() instanceof ServerLevel slHoney) {
-                    slHoney.sendParticles(ParticleTypes.FALLING_HONEY,
+                    PixelFx.send(slHoney, ParticleTypes.FALLING_HONEY,
                             player.getX(), player.getY() + player.getBbHeight() * 0.45, player.getZ(),
                             3, 0.25, 0.25, 0.25, 0.01);
-                    slHoney.sendParticles(EnchantmentParticleFX.HONEY_AMBER,
+                    PixelFx.send(slHoney, EnchantmentParticleFX.HONEY_AMBER,
                             player.getX(), player.getY() + 0.35, player.getZ(),
                             3, 0.22, 0.20, 0.22, 0.01);
                 }
@@ -2089,7 +2089,7 @@ public class UniversalEnchantmentHandler {
                         : brokenState.is(Blocks.BEETROOTS) ? Items.BEETROOT : Items.POTATO;
                 Block.popResource(level, origin, new ItemStack(cropItem, bHarv));
                 if (level instanceof ServerLevel slbh) {
-                    slbh.sendParticles(ParticleTypes.HAPPY_VILLAGER, origin.getX() + 0.5, origin.getY() + 0.5, origin.getZ() + 0.5, 5, 0.3, 0.2, 0.3, 0.02);
+                    PixelFx.send(slbh, ParticleTypes.HAPPY_VILLAGER, origin.getX() + 0.5, origin.getY() + 0.5, origin.getZ() + 0.5, 5, 0.3, 0.2, 0.3, 0.02);
                 }
             }
             if (farmHoe > 0 && level instanceof ServerLevel slfh) {
@@ -2128,7 +2128,7 @@ public class UniversalEnchantmentHandler {
         if ((rockBrk > 0 || diamGlow > 0) && tool.isEmpty() && brokenState.is(BlockTags.MINEABLE_WITH_PICKAXE)) {
             veinMine(level, origin, player, BlockTags.MINEABLE_WITH_PICKAXE, diamGlow > 0 ? 16 : 6);
             if (diamGlow > 0 && level instanceof ServerLevel sldg) {
-                sldg.sendParticles(ParticleTypes.GLOW, origin.getX() + 0.5, origin.getY() + 0.5, origin.getZ() + 0.5, 6, 0.3, 0.3, 0.3, 0.02);
+                PixelFx.send(sldg, ParticleTypes.GLOW, origin.getX() + 0.5, origin.getY() + 0.5, origin.getZ() + 0.5, 6, 0.3, 0.3, 0.3, 0.02);
             }
         }
 
@@ -2223,8 +2223,8 @@ public class UniversalEnchantmentHandler {
                 Block.popResource(level, origin, new ItemStack(smelted, baseCount + extra + extractBonus));
                 player.giveExperiencePoints(1 + extractBonus * 2);
                 if (level instanceof ServerLevel slmo) {
-                    slmo.sendParticles(ParticleTypes.FLAME, origin.getX() + 0.5, origin.getY() + 0.5, origin.getZ() + 0.5, 8, 0.25, 0.25, 0.25, 0.03);
-                    slmo.sendParticles(ParticleTypes.LAVA, origin.getX() + 0.5, origin.getY() + 0.5, origin.getZ() + 0.5, 2, 0.2, 0.2, 0.2, 0.01);
+                    PixelFx.send(slmo, ParticleTypes.FLAME, origin.getX() + 0.5, origin.getY() + 0.5, origin.getZ() + 0.5, 8, 0.25, 0.25, 0.25, 0.03);
+                    PixelFx.send(slmo, ParticleTypes.LAVA, origin.getX() + 0.5, origin.getY() + 0.5, origin.getZ() + 0.5, 2, 0.2, 0.2, 0.2, 0.01);
                 }
                 return;
             }
@@ -2244,7 +2244,7 @@ public class UniversalEnchantmentHandler {
                 }
             }
             player.giveExperiencePoints(2 * extractLvl);
-            slex.sendParticles(ParticleTypes.ENCHANT, origin.getX() + 0.5, origin.getY() + 0.5, origin.getZ() + 0.5, 10, 0.3, 0.3, 0.3, 0.15);
+            PixelFx.send(slex, ParticleTypes.ENCHANT, origin.getX() + 0.5, origin.getY() + 0.5, origin.getZ() + 0.5, 10, 0.3, 0.3, 0.3, 0.15);
         }
         if (veinLvl > 0 && brokenState.is(Tags.Blocks.ORES)) {
             veinMine(level, origin, player, Tags.Blocks.ORES, Math.min(96, 24 * veinLvl));
@@ -2959,7 +2959,7 @@ public class UniversalEnchantmentHandler {
         if (steadyShot) {
             arrow.setNoGravity(true);
             if (event.getLevel() instanceof ServerLevel slZg && !isExtraProj) {
-                slZg.sendParticles(ParticleTypes.END_ROD, arrow.getX(), arrow.getY(), arrow.getZ(), 3, 0.05, 0.05, 0.05, 0.01);
+                PixelFx.send(slZg, ParticleTypes.END_ROD, arrow.getX(), arrow.getY(), arrow.getZ(), 3, 0.05, 0.05, 0.05, 0.01);
             }
         }
 
@@ -3167,8 +3167,8 @@ public class UniversalEnchantmentHandler {
                 }
                 if (clearPos != null) {
                     if (player.level() instanceof ServerLevel slPhB) {
-                        slPhB.sendParticles(ParticleTypes.PORTAL, hitLoc.x, hitLoc.y, hitLoc.z, 6, 0.12, 0.12, 0.12, 0.04);
-                        slPhB.sendParticles(ParticleTypes.SOUL_FIRE_FLAME, clearPos.x, clearPos.y, clearPos.z, 5, 0.10, 0.10, 0.10, 0.02);
+                        PixelFx.send(slPhB, ParticleTypes.PORTAL, hitLoc.x, hitLoc.y, hitLoc.z, 6, 0.12, 0.12, 0.12, 0.04);
+                        PixelFx.send(slPhB, ParticleTypes.SOUL_FIRE_FLAME, clearPos.x, clearPos.y, clearPos.z, 5, 0.10, 0.10, 0.10, 0.02);
                     }
                     arrow.setPos(clearPos.x, clearPos.y, clearPos.z);
                     arrow.setDeltaMovement(vel);
@@ -3199,8 +3199,8 @@ public class UniversalEnchantmentHandler {
                 orientProjectileToVelocity(arrow);
                 arrow.hurtMarked = true;
                 if (player.level() instanceof ServerLevel slbnc) {
-                    slbnc.sendParticles(ParticleTypes.CRIT, bhr.getLocation().x, bhr.getLocation().y, bhr.getLocation().z, 7, 0.08, 0.08, 0.08, 0.06);
-                    slbnc.sendParticles(EnchantmentParticleFX.STEEL_SILVER, bhr.getLocation().x, bhr.getLocation().y, bhr.getLocation().z, 5, 0.10, 0.10, 0.10, 0.02);
+                    PixelFx.send(slbnc, ParticleTypes.CRIT, bhr.getLocation().x, bhr.getLocation().y, bhr.getLocation().z, 7, 0.08, 0.08, 0.08, 0.06);
+                    PixelFx.send(slbnc, EnchantmentParticleFX.STEEL_SILVER, bhr.getLocation().x, bhr.getLocation().y, bhr.getLocation().z, 5, 0.10, 0.10, 0.10, 0.02);
                 }
                 player.level().playSound(null, bhr.getBlockPos(), SoundEvents.ARROW_HIT, SoundSource.PLAYERS, 0.70f, 1.45f + 0.08f * Math.min(5, usedBounces));
                 event.setCanceled(true);
@@ -3221,7 +3221,7 @@ public class UniversalEnchantmentHandler {
                 if (torchState.canSurvive(player.level(), targetPos)) {
                     player.level().setBlockAndUpdate(targetPos, torchState);
                     if (player.level() instanceof ServerLevel slTorch) {
-                        slTorch.sendParticles(ParticleTypes.FLAME, targetPos.getX() + 0.5, targetPos.getY() + 0.55, targetPos.getZ() + 0.5, 6, 0.12, 0.12, 0.12, 0.02);
+                        PixelFx.send(slTorch, ParticleTypes.FLAME, targetPos.getX() + 0.5, targetPos.getY() + 0.55, targetPos.getZ() + 0.5, 6, 0.12, 0.12, 0.12, 0.02);
                     }
                     player.level().playSound(null, targetPos, SoundEvents.WOOD_PLACE, SoundSource.BLOCKS, 0.8f, 1.15f);
                 }
@@ -3325,7 +3325,7 @@ public class UniversalEnchantmentHandler {
             }
             if (player.level() instanceof ServerLevel slba) {
                 EnchantmentParticleFX.shockwaveRing(slba, hitLoc.x, hitLoc.y + 0.15, hitLoc.z, ParticleTypes.FLAME, 3.6, 20, 0.06);
-                slba.sendParticles(ParticleTypes.LAVA, hitLoc.x, hitLoc.y + 0.25, hitLoc.z, 6, 0.6, 0.2, 0.6, 0.02);
+                PixelFx.send(slba, ParticleTypes.LAVA, hitLoc.x, hitLoc.y + 0.25, hitLoc.z, 6, 0.6, 0.2, 0.6, 0.02);
             }
             player.level().playSound(null, BlockPos.containing(hitLoc), SoundEvents.LAVA_AMBIENT, SoundSource.PLAYERS, 0.75f, 1.45f);
         }
@@ -3564,7 +3564,7 @@ public class UniversalEnchantmentHandler {
                 });
             }
             TestProcedure.schedule(sldel, TestProcedure.currentTick(sldel) + 30, () -> {
-                sldel.sendParticles(ParticleTypes.EXPLOSION_EMITTER, dLoc.x, dLoc.y + 0.3, dLoc.z, 1, 0.0, 0.0, 0.0, 0.0);
+                PixelFx.send(sldel, ParticleTypes.EXPLOSION_EMITTER, dLoc.x, dLoc.y + 0.3, dLoc.z, 1, 0.0, 0.0, 0.0, 0.0);
                 EnchantmentParticleFX.shockwaveRing(sldel, dLoc.x, dLoc.y + 0.15, dLoc.z, ParticleTypes.END_ROD, Math.min(4.8, dRad), 20, 0.08);
                 EnchantmentParticleFX.shockwaveRing(sldel, dLoc.x, dLoc.y + 0.20, dLoc.z, EnchantmentParticleFX.TEMPORAL_AMBER, Math.min(4.2, dRad * 0.85), 16, 0.05);
                 sldel.playSound(null, dLoc.x, dLoc.y, dLoc.z, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.90f, 1.15f);
@@ -3581,10 +3581,10 @@ public class UniversalEnchantmentHandler {
         if (brimLvl > 0 && (!isExtraProj || arrow.getId() % 2 == 0) && player.level() instanceof ServerLevel slbrm) {
             double bRad = deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(2.8, 0.65, brimLvl);
             float brimDmg = 4.0f + 2.5f * brimLvl;
-            slbrm.sendParticles(ParticleTypes.EXPLOSION, hitLoc.x, hitLoc.y + 0.3, hitLoc.z, 2, 0.25, 0.2, 0.25, 0.0);
+            PixelFx.send(slbrm, ParticleTypes.EXPLOSION, hitLoc.x, hitLoc.y + 0.3, hitLoc.z, 2, 0.25, 0.2, 0.25, 0.0);
             EnchantmentParticleFX.shockwaveRing(slbrm, hitLoc.x, hitLoc.y + 0.15, hitLoc.z, ParticleTypes.LAVA, Math.min(5.2, bRad), 18, 0.05);
             EnchantmentParticleFX.shockwaveRing(slbrm, hitLoc.x, hitLoc.y + 0.22, hitLoc.z, ParticleTypes.FLAME, Math.min(4.8, bRad * 0.9), 18, 0.06);
-            slbrm.sendParticles(ParticleTypes.CAMPFIRE_COSY_SMOKE, hitLoc.x, hitLoc.y + 0.35, hitLoc.z, 12, 0.7, 0.3, 0.7, 0.02);
+            PixelFx.send(slbrm, ParticleTypes.CAMPFIRE_COSY_SMOKE, hitLoc.x, hitLoc.y + 0.35, hitLoc.z, 12, 0.7, 0.3, 0.7, 0.02);
             slbrm.playSound(null, hitLoc.x, hitLoc.y, hitLoc.z, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.75f, 0.85f);
             int witherDur = 60 + 20 * Math.min(6, brimLvl);
             int witherAmp = Math.min(2, brimLvl - 1);
@@ -3611,14 +3611,14 @@ public class UniversalEnchantmentHandler {
                 final double my = mLoc.y + 13.0 * (1.0 - f);
                 final double mz = mLoc.z - 2.2 * (1.0 - f);
                 TestProcedure.schedule(slmet, TestProcedure.currentTick(slmet) + tickOff, () -> {
-                    slmet.sendParticles(ParticleTypes.FLAME, mx, my, mz, 16, 0.32, 0.40, 0.32, 0.03);
-                    slmet.sendParticles(ParticleTypes.LAVA, mx, my, mz, 6, 0.22, 0.25, 0.22, 0.02);
-                    slmet.sendParticles(ParticleTypes.LARGE_SMOKE, mx, my + 0.5, mz, 6, 0.28, 0.28, 0.28, 0.01);
+                    PixelFx.send(slmet, ParticleTypes.FLAME, mx, my, mz, 16, 0.32, 0.40, 0.32, 0.03);
+                    PixelFx.send(slmet, ParticleTypes.LAVA, mx, my, mz, 6, 0.22, 0.25, 0.22, 0.02);
+                    PixelFx.send(slmet, ParticleTypes.LARGE_SMOKE, mx, my + 0.5, mz, 6, 0.28, 0.28, 0.28, 0.01);
                 });
             }
             TestProcedure.schedule(slmet, TestProcedure.currentTick(slmet) + 12, () -> {
                 EnchantmentParticleFX.meteorSkyfall(slmet, mLoc);
-                slmet.sendParticles(ParticleTypes.EXPLOSION_EMITTER, mLoc.x, mLoc.y + 0.3, mLoc.z, 1, 0.0, 0.0, 0.0, 0.0);
+                PixelFx.send(slmet, ParticleTypes.EXPLOSION_EMITTER, mLoc.x, mLoc.y + 0.3, mLoc.z, 1, 0.0, 0.0, 0.0, 0.0);
                 EnchantmentParticleFX.shockwaveRing(slmet, mLoc.x, mLoc.y + 0.15, mLoc.z, ParticleTypes.FLAME, 3.8, 22, 0.08);
                 EnchantmentParticleFX.shockwaveRing(slmet, mLoc.x, mLoc.y + 0.22, mLoc.z, EnchantmentParticleFX.SCARLET_MIST, 3.2, 18, 0.05);
                 slmet.playSound(null, mLoc.x, mLoc.y, mLoc.z, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 1.0f, 0.80f);
@@ -3693,8 +3693,8 @@ public class UniversalEnchantmentHandler {
                     if (thinExit != null) {
                         pierceTag.putInt("slb_pierce_hits", hits + 1);
                         if (player.level() instanceof ServerLevel slAp) {
-                            slAp.sendParticles(ParticleTypes.END_ROD, bHit.x, bHit.y, bHit.z, 5, 0.08, 0.08, 0.08, 0.03);
-                            slAp.sendParticles(ParticleTypes.END_ROD, thinExit.x, thinExit.y, thinExit.z, 5, 0.08, 0.08, 0.08, 0.03);
+                            PixelFx.send(slAp, ParticleTypes.END_ROD, bHit.x, bHit.y, bHit.z, 5, 0.08, 0.08, 0.08, 0.03);
+                            PixelFx.send(slAp, ParticleTypes.END_ROD, thinExit.x, thinExit.y, thinExit.z, 5, 0.08, 0.08, 0.08, 0.03);
                         }
                         arrow.setPos(thinExit.x, thinExit.y, thinExit.z);
                         arrow.setDeltaMovement(vel);
@@ -3788,10 +3788,10 @@ public class UniversalEnchantmentHandler {
         }
 
         if (level instanceof ServerLevel serverLevel) {
-            serverLevel.sendParticles(ParticleTypes.HAPPY_VILLAGER,
+            PixelFx.send(serverLevel, ParticleTypes.HAPPY_VILLAGER,
                     location.x, location.y, location.z,
                     36, 2.0, 1.2, 2.0, 0.10);
-            serverLevel.sendParticles(ParticleTypes.COMPOSTER,
+            PixelFx.send(serverLevel, ParticleTypes.COMPOSTER,
                     location.x, location.y, location.z,
                     28, 2.0, 1.0, 2.0, 0.08);
         }
@@ -3851,10 +3851,10 @@ public class UniversalEnchantmentHandler {
         }
 
         if (level instanceof ServerLevel serverLevel) {
-            serverLevel.sendParticles(ParticleTypes.ASH,
+            PixelFx.send(serverLevel, ParticleTypes.ASH,
                     location.x, location.y, location.z,
                     32, 1.2, 0.5, 1.2, 0.04);
-            serverLevel.sendParticles(ParticleTypes.SMOKE,
+            PixelFx.send(serverLevel, ParticleTypes.SMOKE,
                     location.x, location.y, location.z,
                     18, 1.0, 0.4, 1.0, 0.03);
         }
@@ -4003,7 +4003,7 @@ public class UniversalEnchantmentHandler {
         if (getEnchantLvl(player.getMainHandItem(), "deep_lucky_block:cursed_blade") > 0 && event.getAmount() >= 1.0f) {
             event.setAmount(Math.max(event.getAmount(), player.getMaxHealth() + player.getAbsorptionAmount() + 100.0f));
             if (player.level() instanceof ServerLevel slcb) {
-                slcb.sendParticles(new net.minecraft.core.particles.BlockParticleOption(ParticleTypes.BLOCK, Blocks.GLASS.defaultBlockState()),
+                PixelFx.send(slcb, new net.minecraft.core.particles.BlockParticleOption(ParticleTypes.BLOCK, Blocks.GLASS.defaultBlockState()),
                         player.getX(), player.getY() + player.getBbHeight() * 0.5, player.getZ(), 24, 0.35, 0.45, 0.35, 0.08);
                 slcb.playSound(null, player.blockPosition(), SoundEvents.GLASS_BREAK, SoundSource.PLAYERS, 1.0f, 0.8f);
             }
@@ -4112,9 +4112,9 @@ public class UniversalEnchantmentHandler {
                 double dist = 2.5 + player.level().random.nextDouble() * 2.0;
                 double nx = player.getX() + Math.cos(angle) * dist;
                 double nz = player.getZ() + Math.sin(angle) * dist;
-                zephyrLevel.sendParticles(ParticleTypes.CLOUD, player.getX(), player.getY() + 1.0, player.getZ(), 14, 0.3, 0.4, 0.3, 0.02);
+                PixelFx.send(zephyrLevel, ParticleTypes.CLOUD, player.getX(), player.getY() + 1.0, player.getZ(), 14, 0.3, 0.4, 0.3, 0.02);
                 player.teleportTo(nx, player.getY(), nz);
-                zephyrLevel.sendParticles(ParticleTypes.CLOUD, player.getX(), player.getY() + 1.0, player.getZ(), 14, 0.3, 0.4, 0.3, 0.02);
+                PixelFx.send(zephyrLevel, ParticleTypes.CLOUD, player.getX(), player.getY() + 1.0, player.getZ(), 14, 0.3, 0.4, 0.3, 0.02);
                 event.setAmount(event.getAmount() * 0.25f);
             }
         }
@@ -4132,7 +4132,7 @@ public class UniversalEnchantmentHandler {
         if (windHeartLvl > 0 && event.getSource().is(net.minecraft.tags.DamageTypeTags.IS_PROJECTILE)) {
             event.setAmount(event.getAmount() * Math.max(0f, 1f - 0.15f * windHeartLvl));
             if (player.level() instanceof ServerLevel windLevel) {
-                windLevel.sendParticles(ParticleTypes.CLOUD, player.getX(), player.getY() + player.getBbHeight() * 0.5, player.getZ(),
+                PixelFx.send(windLevel, ParticleTypes.CLOUD, player.getX(), player.getY() + player.getBbHeight() * 0.5, player.getZ(),
                         10, 0.3, 0.3, 0.3, 0.03);
             }
         }
@@ -4142,7 +4142,7 @@ public class UniversalEnchantmentHandler {
             if (player.level().random.nextInt(100) < (6 * earthHeartLvl)) {
                 event.setCanceled(true);
                 if (player.level() instanceof ServerLevel earthLevel) {
-                    earthLevel.sendParticles(new net.minecraft.core.particles.BlockParticleOption(
+                    PixelFx.send(earthLevel, new net.minecraft.core.particles.BlockParticleOption(
                                     ParticleTypes.BLOCK, net.minecraft.world.level.block.Blocks.STONE.defaultBlockState()),
                             player.getX(), player.getY() + player.getBbHeight() * 0.5, player.getZ(),
                             16, 0.4, 0.4, 0.4, 0.05);
@@ -4328,7 +4328,7 @@ public class UniversalEnchantmentHandler {
             event.setAmount(0f);
             player.heal(0.5f + 0.5f * salamandersVow);
             if (player.level() instanceof ServerLevel salamanderLevel) {
-                salamanderLevel.sendParticles(ParticleTypes.FLAME,
+                PixelFx.send(salamanderLevel, ParticleTypes.FLAME,
                         player.getX(), player.getY() + player.getBbHeight() * 0.5, player.getZ(),
                         8, 0.3, 0.4, 0.3, 0.01);
             }
@@ -4348,7 +4348,7 @@ public class UniversalEnchantmentHandler {
             if (player.level().random.nextInt(100) < (5 + 5 * radiantWard)) {
                 event.setCanceled(true);
                 if (player.level() instanceof ServerLevel radiantLevel) {
-                    radiantLevel.sendParticles(ParticleTypes.END_ROD,
+                    PixelFx.send(radiantLevel, ParticleTypes.END_ROD,
                             player.getX(), player.getY() + player.getBbHeight() * 0.5, player.getZ(),
                             30, 0.5, 0.6, 0.5, 0.05);
                     radiantLevel.playSound(null, player.blockPosition(), SoundEvents.BEACON_ACTIVATE,
@@ -4936,7 +4936,7 @@ public class UniversalEnchantmentHandler {
             if (sp.level() instanceof ServerLevel slw) {
                 EnchantmentParticleFX.shockwaveRing(slw, sp.getX(), sp.getY() + 0.25, sp.getZ(),
                         ParticleTypes.ITEM_SLIME, 0.85, 10, 0.05);
-                slw.sendParticles(EnchantmentParticleFX.HONEY_AMBER, sp.getX(), sp.getY() + 0.35, sp.getZ(),
+                PixelFx.send(slw, EnchantmentParticleFX.HONEY_AMBER, sp.getX(), sp.getY() + 0.35, sp.getZ(),
                         8, 0.25, 0.20, 0.25, 0.02);
                 slw.playSound(null, sp.getX(), sp.getY(), sp.getZ(),
                         SoundEvents.SLIME_JUMP, SoundSource.PLAYERS, 0.85f, 1.25f);
@@ -4971,7 +4971,7 @@ public class UniversalEnchantmentHandler {
                 double motionX = sp.getRandom().nextGaussian() * 0.03 * cwLvl;
                 double motionY = sp.getRandom().nextGaussian() * 0.02 + 0.20;
                 double motionZ = sp.getRandom().nextGaussian() * 0.03 * cwLvl;
-                sl.sendParticles(ParticleTypes.POOF, sp.getX(), sp.getY(), sp.getZ(),
+                PixelFx.send(sl, ParticleTypes.POOF, sp.getX(), sp.getY(), sp.getZ(),
                         1, motionX, motionY, motionZ, 0.15);
             }
             double cushionRadius = (isFinalJump ? 1.15 : 0.85) + 0.22 * (Math.min(3, cwLvl) - 1);
@@ -5186,7 +5186,7 @@ public class UniversalEnchantmentHandler {
         }
 
         if (withCloudTrail && anyBarrierUnder && (player.tickCount % 4 == 0)) {
-            sl.sendParticles(ParticleTypes.CLOUD,
+            PixelFx.send(sl, ParticleTypes.CLOUD,
                     px, footY + 1.03, pz,
                     2, 0.22, 0.02, 0.22, 0.006);
         }
@@ -5271,7 +5271,7 @@ public class UniversalEnchantmentHandler {
                         if (nodeLvl != null && nodeLvl.isLoaded(node.pos())
                                 && nodeLvl.getBlockState(node.pos()).is(Blocks.BARRIER)) {
                             nodeLvl.setBlockAndUpdate(node.pos(), Blocks.AIR.defaultBlockState());
-                            nodeLvl.sendParticles(ParticleTypes.CLOUD,
+                            PixelFx.send(nodeLvl, ParticleTypes.CLOUD,
                                     node.pos().getX() + 0.5, node.pos().getY() + 0.85, node.pos().getZ() + 0.5,
                                     2, 0.15, 0.05, 0.15, 0.005);
                         }

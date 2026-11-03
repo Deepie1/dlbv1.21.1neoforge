@@ -48,6 +48,13 @@ public final class CosmeticAuraClientTicker {
     public static final int F_ENCH_RADIANT_AEGIS    = 1 << 8;
     public static final int F_ENCH_WINGED_ENDURANCE = 1 << 9;
     public static final int F_ENCH_DREAD_AURA       = 1 << 10;
+    /**
+     * T360-HALO-CONTINU : halo pixel <b>permanent</b> accordé à tout porteur d'équipement enchanté.
+     * Avant, seuls 6 combos et 5 enchantements d'armure déclenchaient un halo : les autres joueurs
+     * n'avaient qu'une salve de particules vanilla ponctuelle (le fameux « le halo spawn une fois
+     * et disparaît sans revenir »).
+     */
+    public static final int F_HALO_CONTINUOUS       = 1 << 11;
 
     /** T349 : rayon de collecte des profils cosmétiques (rendu fait par CosmeticPixelAura). */
     private static final double CULL_DIST_SQR = 40.0 * 40.0;
@@ -130,7 +137,8 @@ public final class CosmeticAuraClientTicker {
             if (mask.has(EnchantmentComboRegistry.IDX_PESTE_AMBULANTE)) f |= F_COMBO_062_PLAGUE;
         }
 
-        if (f == 0 && !UniversalEnchantmentHandler.hasAnyEnchantedEquipment(entity)) {
+        boolean equipped = UniversalEnchantmentHandler.hasAnyEnchantedEquipment(entity);
+        if (f == 0 && !equipped) {
             cp.flags = 0;
             return 0;
         }
@@ -140,6 +148,11 @@ public final class CosmeticAuraClientTicker {
         if (UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:heart_resonance") > 0) f |= F_ENCH_RADIANT_AEGIS;
         if (UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:wing_toughness_armor") > 0) f |= F_ENCH_WINGED_ENDURANCE;
         if (UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:dread_aura") > 0) f |= F_ENCH_DREAD_AURA;
+
+        // T360-HALO-CONTINU : le halo pixel ne dépend plus d'une liste fermée d'enchantements.
+        // Tout joueur portant au moins une pièce enchantée garde une couronne de pixels dessinée
+        // à CHAQUE frame (aucune salve, aucune particule, aucun risque de disparition).
+        if (equipped && f == 0) f |= F_HALO_CONTINUOUS;
 
         cp.flags = f;
         return f;

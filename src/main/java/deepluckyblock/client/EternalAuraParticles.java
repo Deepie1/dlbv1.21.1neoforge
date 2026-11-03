@@ -3,7 +3,6 @@ package deepluckyblock.client;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
@@ -52,8 +51,8 @@ public final class EternalAuraParticles {
     /** Plafond de particules par salve, tous items confondus. */
     public static int MAX_PER_TICK = 3;
 
-    /** Particule blanche (traînée de bâton de l'Ender). */
-    public static final String PARTICLE = "END_ROD";
+    /** T360 : couleur des mini-cubes 3D blancs (plus aucune particule vanilla). */
+    public static final String PARTICLE = "PIXEL_WHITE";
 
     private static int tick = 0;
     private static long lastGameTime = -1L;
@@ -151,14 +150,14 @@ public final class EternalAuraParticles {
                             int budget) {
         if (budget <= 0) return 0;
         int n = Math.min(1 + rnd.nextInt(2), budget);
+        // T360-NO-VANILLA-PARTICLES : l'aura ETERNAL n'utilise plus la particule END_ROD vanilla,
+        // mais de vrais mini-cubes 3D blancs qui montent doucement (même moteur que les VFX d'armes).
         for (int i = 0; i < n; i++) {
-            level.addParticle(ParticleTypes.END_ROD,
+            WeaponWorldVfxManager.spawnPixelPuff(0xFFF6D0,
                     x + (rnd.nextDouble() - 0.5D) * 0.25D,
                     y + rnd.nextDouble() * 0.25D,
                     z + (rnd.nextDouble() - 0.5D) * 0.25D,
-                    (rnd.nextDouble() - 0.5D) * 0.01D,
-                    0.012D + rnd.nextDouble() * 0.012D,
-                    (rnd.nextDouble() - 0.5D) * 0.01D);
+                    1, 0.03f, 0.012, 18);
         }
         return n;
     }

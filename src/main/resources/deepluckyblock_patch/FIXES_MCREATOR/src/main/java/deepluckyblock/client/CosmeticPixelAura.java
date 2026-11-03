@@ -161,6 +161,12 @@ public final class CosmeticPixelAura {
         VertexConsumer add = null;
         VertexConsumer alpha = null;
 
+        // T360-HALO-CONTINU : le style partagé du moteur (seuil d'alpha du reflet d'arme, densité de
+        // pixels) pouvait rester « fermé » et culling l'intégralité de l'aura (alpha 150-250). On
+        // isole donc complètement la passe cosmétique : halo TOUJOURS dessiné, quoi qu'il arrive.
+        int previousAlphaFloor = WeaponWorldVfxManager.getAlphaFloor();
+        WeaponWorldVfxManager.beginCosmeticPass();
+
         try {
             for (int i = 0, n = TARGETS.size(); i < n && budget > 0; i++) {
                 Player p = TARGETS.get(i);
@@ -173,11 +179,17 @@ public final class CosmeticPixelAura {
                 if (add == null) add = buffers.getBuffer(getAdditiveType());
                 if (alpha == null) alpha = buffers.getBuffer(getTranslucentType());
 
-                renderPlayerAura(p, flags, cam, mat, tmp, add, alpha, time);
+                // T360-HALO-CONTINU : une erreur sur un joueur ne doit plus vider l'écran de TOUS
+                // les autres halos (l'ancien catch englobant rendait le halo « invisible à vie »).
+                try {
+                    renderPlayerAura(p, flags, cam, mat, tmp, add, alpha, time);
+                } catch (RuntimeException ignored) {
+                }
             }
         } catch (RuntimeException ignored) {
             // Jamais de crash pour du cosmétique
         } finally {
+            WeaponWorldVfxManager.setAlphaFloor(previousAlphaFloor);
             try {
                 buffers.endBatch(getTranslucentType());
             } catch (RuntimeException ignored) {
@@ -203,6 +215,19 @@ public final class CosmeticPixelAura {
         float rightZ = fwdX;
 
         // --- 1. COURONNES / HALOS (anneaux de pixels au-dessus de la tête) ---
+        // T360-HALO-CONTINU : couronne pixel permanente pour tout porteur d'équipement enchanté.
+        // Dessinée à chaque frame (donc jamais « une fois puis disparue »), elle respire lentement
+        // et tourne en continu autour de la tête.
+        if ((flags & CosmeticAuraClientTicker.F_HALO_CONTINUOUS) != 0) {
+            float bob = Mth.sin(time * 1.35f) * 0.035f;
+            haloRing(add, mat, tmp, px, py + height + 0.36f + bob, pz, 0.46f, time * 0.62f,
+                    14, 0xFFF3C8, 0xFFC63D, 240, 1.6f);
+            haloRing(add, mat, tmp, px, py + height + 0.50f + bob * 0.6f, pz, 0.33f, -time * 0.85f,
+                    10, 0xFFFFFF, 0xFFE9A0, 215, 1.35f);
+            // petit socle d'aura au sol : le halo se lit même de loin
+            haloRing(add, mat, tmp, px, py + 0.06f, pz, 0.58f, -time * 0.33f,
+                    10, 0xFFE9A0, 0xFFC63D, 150, 1.0f);
+        }
         if ((flags & CosmeticAuraClientTicker.F_COMBO_110_AVATAR) != 0) {
             // T350 : couronne double, plus large et plus lumineuse (halo du Combo #110 bien visible)
             haloRing(add, mat, tmp, px, py + height + 0.30f, pz, 0.54f, time * 0.55f,

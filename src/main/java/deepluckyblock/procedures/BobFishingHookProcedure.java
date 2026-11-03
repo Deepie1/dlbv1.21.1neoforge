@@ -1,5 +1,6 @@
 package deepluckyblock.procedures;
 
+import deepluckyblock.enchantments.PixelFx;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -179,8 +180,8 @@ public class BobFishingHookProcedure {
             double x = start.x + dx * i;
             double y = start.y + dy * i;
             double z = start.z + dz * i;
-            level.sendParticles(ParticleTypes.END_ROD, x, y, z, 1, 0, 0, 0, 0);
-            level.sendParticles(ParticleTypes.FISHING, x, y, z, 1, 0, 0, 0, 0);
+            PixelFx.send(level, ParticleTypes.END_ROD, x, y, z, 1, 0, 0, 0, 0);
+            PixelFx.send(level, ParticleTypes.FISHING, x, y, z, 1, 0, 0, 0, 0);
         }
     }
 

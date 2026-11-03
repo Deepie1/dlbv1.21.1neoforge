@@ -69,9 +69,9 @@ public final class EnchantmentParticleFX {
                 double px = attacker.getX() + (flatFwd.x * cos + right.x * sin) * r;
                 double pz = attacker.getZ() + (flatFwd.z * cos + right.z * sin) * r;
                 double py = baseY + sin * 0.18;
-                sl.sendParticles(main, px, py, pz, 1, 0.03, 0.03, 0.03, 0.005);
+                PixelFx.send(sl, main, px, py, pz, 1, 0.03, 0.03, 0.03, 0.005);
                 if (accent != null && (i & 1) == 0) {
-                    sl.sendParticles(accent, px, py, pz, 1, 0.02, 0.02, 0.02, 0.01);
+                    PixelFx.send(sl, accent, px, py, pz, 1, 0.02, 0.02, 0.02, 0.01);
                 }
             }
         } catch (Throwable ignored) {}
@@ -93,10 +93,10 @@ public final class EnchantmentParticleFX {
                 double frac = (double) i / n;
                 double ang = phase + frac * Math.PI * 2.2;
                 double y = cy + frac * h;
-                sl.sendParticles(strandA, cx + Math.cos(ang) * r, y, cz + Math.sin(ang) * r,
+                PixelFx.send(sl, strandA, cx + Math.cos(ang) * r, y, cz + Math.sin(ang) * r,
                         1, 0.01, 0.01, 0.01, 0.0);
                 if (strandB != null) {
-                    sl.sendParticles(strandB, cx - Math.cos(ang) * r, y, cz - Math.sin(ang) * r,
+                    PixelFx.send(sl, strandB, cx - Math.cos(ang) * r, y, cz - Math.sin(ang) * r,
                             1, 0.01, 0.01, 0.01, 0.0);
                 }
             }
@@ -114,7 +114,7 @@ public final class EnchantmentParticleFX {
                 double ang = (Math.PI * 2.0 * i) / n;
                 double dx = Math.cos(ang);
                 double dz = Math.sin(ang);
-                sl.sendParticles(particle, x + dx * r, y, z + dz * r,
+                PixelFx.send(sl, particle, x + dx * r, y, z + dz * r,
                         1, dx * 0.04, 0.02, dz * 0.04, outwardSpeed);
             }
         } catch (Throwable ignored) {}
@@ -140,9 +140,9 @@ public final class EnchantmentParticleFX {
             int idx = 0;
             for (double d = 0.4; d <= dist; d += step) {
                 Vec3 p = from.add(dir.scale(d));
-                sl.sendParticles(main, p.x, p.y, p.z, 1, 0.02, 0.02, 0.02, 0.0);
+                PixelFx.send(sl, main, p.x, p.y, p.z, 1, 0.02, 0.02, 0.02, 0.0);
                 if (spark != null && (idx++ % 3 == 0)) {
-                    sl.sendParticles(spark, p.x, p.y, p.z, 1, 0.04, 0.04, 0.04, 0.01);
+                    PixelFx.send(sl, spark, p.x, p.y, p.z, 1, 0.04, 0.04, 0.04, 0.01);
                 }
             }
         } catch (Throwable ignored) {}
@@ -158,10 +158,10 @@ public final class EnchantmentParticleFX {
             for (int i = 0; i <= steps; i++) {
                 double f = (double) i / steps;
                 Vec3 p = skyStart.add(delta.scale(f));
-                sl.sendParticles(ParticleTypes.FLAME, p.x, p.y, p.z, 3, 0.18, 0.18, 0.18, 0.02);
-                sl.sendParticles(ParticleTypes.CAMPFIRE_COSY_SMOKE, p.x, p.y, p.z, 1, 0.12, 0.12, 0.12, 0.005);
+                PixelFx.send(sl, ParticleTypes.FLAME, p.x, p.y, p.z, 3, 0.18, 0.18, 0.18, 0.02);
+                PixelFx.send(sl, ParticleTypes.CAMPFIRE_COSY_SMOKE, p.x, p.y, p.z, 1, 0.12, 0.12, 0.12, 0.005);
                 if ((i & 1) == 0) {
-                    sl.sendParticles(ParticleTypes.LAVA, p.x, p.y, p.z, 1, 0.10, 0.10, 0.10, 0.0);
+                    PixelFx.send(sl, ParticleTypes.LAVA, p.x, p.y, p.z, 1, 0.10, 0.10, 0.10, 0.0);
                 }
             }
         } catch (Throwable ignored) {}
@@ -175,7 +175,7 @@ public final class EnchantmentParticleFX {
             double bx = entity.getX() - look.x * 0.28;
             double by = entity.getY() + 0.12;
             double bz = entity.getZ() - look.z * 0.28;
-            sl.sendParticles(particle, bx, by, bz, Math.max(1, Math.min(8, count)), 0.18, 0.06, 0.18, speed);
+            PixelFx.send(sl, particle, bx, by, bz, Math.max(1, Math.min(8, count)), 0.18, 0.06, 0.18, speed);
         } catch (Throwable ignored) {}
     }
 
@@ -184,16 +184,12 @@ public final class EnchantmentParticleFX {
         if (entity == null || !(entity.level() instanceof ServerLevel sl)) return;
         try {
             double y = entity.getY() + entity.getBbHeight() + 0.28;
-            int n = Math.max(4, Math.min(12, points));
-            double phase = entity.tickCount * 0.12;
-            for (int i = 0; i < n; i++) {
-                double ang = phase + (Math.PI * 2.0 * i) / n;
-                sl.sendParticles(particle,
-                        entity.getX() + Math.cos(ang) * 0.42,
-                        y,
-                        entity.getZ() + Math.sin(ang) * 0.42,
-                        1, 0.0, 0.0, 0.0, 0.0);
-            }
+            int n = Math.max(6, Math.min(16, points));
+            // T360-HALO-CONTINU : anneau de mini-cubes 3D à durée de vie LONGUE (22 ticks). Deux
+            // émissions successives se chevauchent donc toujours : la couronne ne s'éteint plus
+            // entre deux déclenchements (le fameux « le halo spawn une fois et disparaît »).
+            PixelFx.ring(sl, entity.getX(), y, entity.getZ(), 0.44, n,
+                    PixelFx.colorOf(particle), 22);
         } catch (Throwable ignored) {}
     }
 
@@ -208,8 +204,8 @@ public final class EnchantmentParticleFX {
             Vec3 back = entity.position().add(-look.x * 0.45, entity.getBbHeight() * 0.65, -look.z * 0.45);
             Vec3 leftTip = back.add(right.scale(-0.65));
             Vec3 rightTip = back.add(right.scale(0.65));
-            sl.sendParticles(particle, leftTip.x, leftTip.y, leftTip.z, 1, 0.04, 0.04, 0.04, 0.01);
-            sl.sendParticles(particle, rightTip.x, rightTip.y, rightTip.z, 1, 0.04, 0.04, 0.04, 0.01);
+            PixelFx.send(sl, particle, leftTip.x, leftTip.y, leftTip.z, 1, 0.04, 0.04, 0.04, 0.01);
+            PixelFx.send(sl, particle, rightTip.x, rightTip.y, rightTip.z, 1, 0.04, 0.04, 0.04, 0.01);
         } catch (Throwable ignored) {}
     }
 
@@ -217,7 +213,7 @@ public final class EnchantmentParticleFX {
     public static void burstOnEntity(Entity target, ParticleOptions particle, int count, double spread, double speed) {
         if (target == null || !(target.level() instanceof ServerLevel sl)) return;
         try {
-            sl.sendParticles(particle,
+            PixelFx.send(sl, particle,
                     target.getX(), target.getY() + target.getBbHeight() * 0.52, target.getZ(),
                     Math.max(1, Math.min(36, count)), spread, spread, spread, speed);
         } catch (Throwable ignored) {}
@@ -232,20 +228,20 @@ public final class EnchantmentParticleFX {
         try {
             double r = Math.max(0.35, Math.min(2.2, radius));
             // Cœur cotonneux dense juste sous les semelles
-            sl.sendParticles(ParticleTypes.CLOUD, x, y, z, radiant ? 12 : 7, r * 0.36, 0.04, r * 0.36, 0.012);
+            PixelFx.send(sl, ParticleTypes.CLOUD, x, y, z, radiant ? 12 : 7, r * 0.36, 0.04, r * 0.36, 0.012);
             // Couronne horizontale de nuage qui s'évase doucement
             int pts = radiant ? 14 : 9;
             for (int i = 0; i < pts; i++) {
                 double ang = (Math.PI * 2.0 * i) / pts;
                 double px = x + Math.cos(ang) * r;
                 double pz = z + Math.sin(ang) * r;
-                sl.sendParticles(ParticleTypes.CLOUD, px, y + 0.02, pz, 1, 0.05, 0.02, 0.05, 0.008);
+                PixelFx.send(sl, ParticleTypes.CLOUD, px, y + 0.02, pz, 1, 0.05, 0.02, 0.05, 0.008);
                 if (radiant && (i & 1) == 0) {
-                    sl.sendParticles(CLOUD_WHITE, px * 0.5 + x * 0.5, y + 0.03, pz * 0.5 + z * 0.5, 1, 0.03, 0.02, 0.03, 0.0);
+                    PixelFx.send(sl, CLOUD_WHITE, px * 0.5 + x * 0.5, y + 0.03, pz * 0.5 + z * 0.5, 1, 0.03, 0.02, 0.03, 0.0);
                 }
             }
             if (radiant) {
-                sl.sendParticles(ParticleTypes.WHITE_ASH, x, y + 0.05, z, 6, r * 0.45, 0.05, r * 0.45, 0.01);
+                PixelFx.send(sl, ParticleTypes.WHITE_ASH, x, y + 0.05, z, 6, r * 0.45, 0.05, r * 0.45, 0.01);
             }
         } catch (Throwable ignored) {}
     }

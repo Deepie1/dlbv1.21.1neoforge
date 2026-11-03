@@ -1,5 +1,6 @@
 package deepluckyblock.entity;
 
+import deepluckyblock.enchantments.PixelFx;
 import deepluckyblock.init.DeepLuckyBlockModEntities;
 
 
@@ -302,10 +303,10 @@ public class SlimeKingEntity extends Slime {
                 SoundEvents.ANVIL_LAND, this.getSoundSource(), 1.5f, 0.5f);
 
         if (this.level() instanceof ServerLevel sl) {
-            sl.sendParticles(ParticleTypes.ITEM_SLIME,
+            PixelFx.send(sl, ParticleTypes.ITEM_SLIME,
                     this.getX(), this.getY() + 1, this.getZ(),
                     40, this.getBbWidth(), 1.5, this.getBbWidth(), 0.3);
-            sl.sendParticles(ParticleTypes.CRIT,
+            PixelFx.send(sl, ParticleTypes.CRIT,
                     this.getX(), this.getY() + 2, this.getZ(),
                     20, 1.5, 1.0, 1.5, 0.2);
         }
@@ -330,13 +331,13 @@ public class SlimeKingEntity extends Slime {
         if (kl > 0) target.push(kx / kl * 2.5, 1.0, kz / kl * 2.5);
 
         if (this.level() instanceof ServerLevel sl) {
-            sl.sendParticles(ParticleTypes.EXPLOSION,
+            PixelFx.send(sl, ParticleTypes.EXPLOSION,
                     target.getX(), target.getY() + 1, target.getZ(),
                     10, 1, 1, 1, 0.1);
-            sl.sendParticles(ParticleTypes.ITEM_SLIME,
+            PixelFx.send(sl, ParticleTypes.ITEM_SLIME,
                     target.getX(), target.getY() + 0.5, target.getZ(),
                     40, 2.0, 0.5, 2.0, 0.2);
-            sl.sendParticles(ParticleTypes.CRIT,
+            PixelFx.send(sl, ParticleTypes.CRIT,
                     target.getX(), target.getY() + 1.5, target.getZ(),
                     15, 1.0, 0.5, 1.0, 0.3);
         }

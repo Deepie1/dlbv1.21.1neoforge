@@ -314,6 +314,9 @@ public final class DlbVfxCommand {
         line(src, "§7Arme multi-éléments", "§f6 % §7de chance de jouer en simultané une animation de §fchaque §7élément de l'arme");
         // T359-BIG-ANIM-SCALE : les grosses animations prennent la taille du mob touché.
         line(src, "§7Taille des animations", "§7les grosses animations se scalent sur le mob touché : §fminuscule §7(poulet) → §fénorme §7(ravager, dragon)");
+        // T360-NO-VANILLA-PARTICLES : plus une seule particule Minecraft dans tout le mod.
+        line(src, "§7Particules vanilla", "§f0 §7— §7halos, slashes, traînées et auras sont tous des §fmini-cubes 3D §7(Multi-Size Pixel-Art)");
+        line(src, "§7Halo cosmétique", "§7couronne de pixels §fpermanente §7sur tout équipement enchanté (jamais une salve unique)");
         line(src, "§e/dlbvfx clear", "supprime les cibles d'entraînement");
         line(src, "§7Exemples : §f/dlbvfx play 29 §7puis §f/dlbvfx give 8 §7puis §f/dlbvfx hit 3", "");
         return 1;

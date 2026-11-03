@@ -1,5 +1,6 @@
 package deepluckyblock.procedures;
 
+import deepluckyblock.enchantments.PixelFx;
 import com.mojang.logging.LogUtils;
 import deepluckyblock.compat.DeepRadarDropBonus;
 import net.minecraft.core.BlockPos;
@@ -145,13 +146,13 @@ public class SupremeLuckyBlockDropProcedure {
                 SoundEvents.EXPERIENCE_ORB_PICKUP,
                 SoundSource.BLOCKS, 0.8f, 1.2f);
 
-        level.sendParticles(ParticleTypes.END_ROD,
+        PixelFx.send(level, ParticleTypes.END_ROD,
                 pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5,
                 20, 0.3, 0.3, 0.3, 0.05);
-        level.sendParticles(ParticleTypes.HAPPY_VILLAGER,
+        PixelFx.send(level, ParticleTypes.HAPPY_VILLAGER,
                 pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5,
                 15, 0.4, 0.4, 0.4, 0.1);
-        level.sendParticles(ParticleTypes.FIREWORK,
+        PixelFx.send(level, ParticleTypes.FIREWORK,
                 pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5,
                 10, 0.2, 0.2, 0.2, 0.15);
     }

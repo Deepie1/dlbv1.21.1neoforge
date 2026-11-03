@@ -1,5 +1,6 @@
 package deepluckyblock.procedures;
 
+import deepluckyblock.enchantments.PixelFx;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
@@ -262,7 +263,7 @@ public class SanctuarySpawnerEquipProcedure {
         RandomSource random = level.getRandom();
         level.playSound(null, pos, SoundEvents.FIREWORK_ROCKET_LAUNCH, SoundSource.BLOCKS, 1.5f, 1.0f);
         level.playSound(null, pos, SoundEvents.FIREWORK_ROCKET_TWINKLE, SoundSource.BLOCKS, 1.5f, 1.2f);
-        level.sendParticles(ParticleTypes.FIREWORK, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, 30, 0.5, 0.5, 0.5, 0.1);
+        PixelFx.send(level, ParticleTypes.FIREWORK, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, 30, 0.5, 0.5, 0.5, 0.1);
 
         int gaCount = random.nextInt(6); // 0 à 5 Golden Apple
         if (gaCount > 0) {

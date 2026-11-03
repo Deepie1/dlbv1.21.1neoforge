@@ -200,7 +200,7 @@ public final class EquipmentExpansionHandler {
                     && p.getRandom().nextInt(100) < (15 + 10 * emberCore)) {
                 attackerEntity.setRemainingFireTicks(Math.max(attackerEntity.getRemainingFireTicks(), 40 + 20 * emberCore));
                 if (p.level() instanceof ServerLevel emberLevel) {
-                    emberLevel.sendParticles(ParticleTypes.FLAME,
+                    PixelFx.send(emberLevel, ParticleTypes.FLAME,
                             attackerEntity.getX(), attackerEntity.getY() + attackerEntity.getBbHeight() * 0.5, attackerEntity.getZ(),
                             12, 0.25, 0.35, 0.25, 0.02);
                 }
@@ -398,7 +398,7 @@ public final class EquipmentExpansionHandler {
     // nettoye au premier cycle, sans effet visuel -- comportement sur, pas
     // de NPE, simplement "pas de spectateur a qui montrer le tracer".
     private static void startTracer(ServerLevel level,LivingEntity target,LivingEntity shooter,int enchantLevel){UUID id=target.getUUID();int end=TestProcedure.currentTick(level)+600+200*Math.max(0,enchantLevel-1);TRACER_END.put(id,Math.max(end,TRACER_END.getOrDefault(id,0)));TRACER_LEVEL.put(id,Math.max(enchantLevel,TRACER_LEVEL.getOrDefault(id,1)));TRACER_VIEWER.put(id,shooter.getUUID());if(!TRACER_HISTORY.containsKey(id)){TRACER_HISTORY.put(id,new ArrayDeque<>());trace(level,target);}}
-    private static void trace(ServerLevel level,LivingEntity target){UUID id=target.getUUID();int now=TestProcedure.currentTick(level),end=TRACER_END.getOrDefault(id,0),enchantLevel=TRACER_LEVEL.getOrDefault(id,1);if(!target.isAlive()||now>end){TRACER_HISTORY.remove(id);TRACER_END.remove(id);TRACER_LEVEL.remove(id);TRACER_VIEWER.remove(id);return;}ServerPlayer viewer=level.getServer().getPlayerList().getPlayer(TRACER_VIEWER.get(id));if(viewer==null){TRACER_HISTORY.remove(id);TRACER_END.remove(id);TRACER_LEVEL.remove(id);TRACER_VIEWER.remove(id);return;}ArrayDeque<net.minecraft.world.phys.Vec3> history=TRACER_HISTORY.computeIfAbsent(id,k->new ArrayDeque<>());net.minecraft.world.phys.Vec3 current=new net.minecraft.world.phys.Vec3(target.getX(),target.getY()+target.getBbHeight()*.55,target.getZ());history.addFirst(current);int historyLimit=8+4*enchantLevel;while(history.size()>historyLimit)history.removeLast();double radius=.45+.28*enchantLevel;int ring=8+4*enchantLevel;for(int i=0;i<ring;i++){double angle=Math.PI*2*i/ring,x=current.x+Math.cos(angle)*radius,z=current.z+Math.sin(angle)*radius;level.sendParticles(viewer,ParticleTypes.END_ROD,true,x,current.y,z,1,0,0,0,0);if(i%2==0)level.sendParticles(viewer,ParticleTypes.ELECTRIC_SPARK,true,x,current.y,z,1,0,0,0,0);}int index=0;for(net.minecraft.world.phys.Vec3 old:history){if(index++==0)continue;int count=Math.max(1,4-index/3);level.sendParticles(viewer,ParticleTypes.END_ROD,true,old.x,old.y,old.z,1,.035,.035,.035,.002);level.sendParticles(viewer,ParticleTypes.WHITE_ASH,true,old.x,old.y+.15,old.z,count,.08,.06,.08,.008);}TestProcedure.schedule(level,now+4,()->trace(level,target));}
+    private static void trace(ServerLevel level,LivingEntity target){UUID id=target.getUUID();int now=TestProcedure.currentTick(level),end=TRACER_END.getOrDefault(id,0),enchantLevel=TRACER_LEVEL.getOrDefault(id,1);if(!target.isAlive()||now>end){TRACER_HISTORY.remove(id);TRACER_END.remove(id);TRACER_LEVEL.remove(id);TRACER_VIEWER.remove(id);return;}ServerPlayer viewer=level.getServer().getPlayerList().getPlayer(TRACER_VIEWER.get(id));if(viewer==null){TRACER_HISTORY.remove(id);TRACER_END.remove(id);TRACER_LEVEL.remove(id);TRACER_VIEWER.remove(id);return;}ArrayDeque<net.minecraft.world.phys.Vec3> history=TRACER_HISTORY.computeIfAbsent(id,k->new ArrayDeque<>());net.minecraft.world.phys.Vec3 current=new net.minecraft.world.phys.Vec3(target.getX(),target.getY()+target.getBbHeight()*.55,target.getZ());history.addFirst(current);int historyLimit=8+4*enchantLevel;while(history.size()>historyLimit)history.removeLast();double radius=.45+.28*enchantLevel;int ring=8+4*enchantLevel;for(int i=0;i<ring;i++){double angle=Math.PI*2*i/ring,x=current.x+Math.cos(angle)*radius,z=current.z+Math.sin(angle)*radius;PixelFx.send(level, viewer,ParticleTypes.END_ROD,true,x,current.y,z,1,0,0,0,0);if(i%2==0)PixelFx.send(level, viewer,ParticleTypes.ELECTRIC_SPARK,true,x,current.y,z,1,0,0,0,0);}int index=0;for(net.minecraft.world.phys.Vec3 old:history){if(index++==0)continue;int count=Math.max(1,4-index/3);PixelFx.send(level, viewer,ParticleTypes.END_ROD,true,old.x,old.y,old.z,1,.035,.035,.035,.002);PixelFx.send(level, viewer,ParticleTypes.WHITE_ASH,true,old.x,old.y+.15,old.z,count,.08,.06,.08,.008);}TestProcedure.schedule(level,now+4,()->trace(level,target));}
     private static boolean nearWall(LivingEntity p){BlockPos c=p.blockPosition();return p.level().getBlockState(c.north()).blocksMotion()||p.level().getBlockState(c.south()).blocksMotion()||p.level().getBlockState(c.east()).blocksMotion()||p.level().getBlockState(c.west()).blocksMotion();}
     private static void trail(LivingEntity p,boolean frost,int l){if(!(p.level() instanceof ServerLevel sl))return;BlockPos q=p.blockPosition().below();if(frost&&sl.getBlockState(q).is(Blocks.WATER)){sl.setBlockAndUpdate(q,Blocks.FROSTED_ICE.defaultBlockState());BlockPos z=q.immutable();TestProcedure.schedule(sl,TestProcedure.currentTick(sl)+80+20*l,()->{if(sl.getBlockState(z).is(Blocks.FROSTED_ICE))sl.setBlockAndUpdate(z,Blocks.WATER.defaultBlockState());});}else if(!frost){BlockPos a=q.above();if(sl.getBlockState(a).isAir()&&sl.getBlockState(q).blocksMotion()){sl.setBlockAndUpdate(a,Blocks.FIRE.defaultBlockState());BlockPos z=a.immutable();TestProcedure.schedule(sl,TestProcedure.currentTick(sl)+30+10*l,()->{if(sl.getBlockState(z).is(Blocks.FIRE))sl.setBlockAndUpdate(z,Blocks.AIR.defaultBlockState());});}}}
     private static boolean consumeSeed(Player p,BlockState s){Item wanted=s.is(Blocks.WHEAT)?Items.WHEAT_SEEDS:s.is(Blocks.BEETROOTS)?Items.BEETROOT_SEEDS:s.is(Blocks.CARROTS)?Items.CARROT:s.is(Blocks.POTATOES)?Items.POTATO:Items.AIR;if(wanted==Items.AIR)return false;for(int i=0;i<p.getInventory().getContainerSize();i++){ItemStack x=p.getInventory().getItem(i);if(x.is(wanted)){if(!p.isCreative())x.shrink(1);return true;}}return false;}
@@ -737,14 +737,14 @@ public final class EquipmentExpansionHandler {
         int count = gained ? 18 : 24;
         double spread = 0.35;
         switch (elementId) {
-            case "fire_heart" -> sl.sendParticles(gained ? ParticleTypes.FLAME : ParticleTypes.LAVA, x, y, z, count, spread, spread, spread, gained ? 0.02 : 0.0);
-            case "water_heart" -> sl.sendParticles(gained ? ParticleTypes.SPLASH : ParticleTypes.BUBBLE_POP, x, y, z, count, spread, spread, spread, 0.05);
-            case "earth_heart" -> sl.sendParticles(new net.minecraft.core.particles.BlockParticleOption(ParticleTypes.BLOCK, Blocks.DIRT.defaultBlockState()), x, y, z, count, spread, spread, spread, 0.05);
-            case "wind_heart" -> sl.sendParticles(ParticleTypes.CLOUD, x, y, z, count, spread * 1.5, spread, spread * 1.5, gained ? 0.03 : 0.06);
-            case "electric_heart" -> sl.sendParticles(ParticleTypes.ELECTRIC_SPARK, x, y, z, count, spread, spread, spread, 0.08);
-            case "shadow_heart" -> sl.sendParticles(ParticleTypes.SCULK_SOUL, x, y, z, count, spread, spread, spread, 0.02);
-            case "light_heart" -> sl.sendParticles(gained ? ParticleTypes.END_ROD : ParticleTypes.WHITE_ASH, x, y, z, count, spread, spread, spread, 0.02);
-            default -> sl.sendParticles(ParticleTypes.HEART, x, y, z, count, spread, spread, spread, 0.02);
+            case "fire_heart" -> PixelFx.send(sl, gained ? ParticleTypes.FLAME : ParticleTypes.LAVA, x, y, z, count, spread, spread, spread, gained ? 0.02 : 0.0);
+            case "water_heart" -> PixelFx.send(sl, gained ? ParticleTypes.SPLASH : ParticleTypes.BUBBLE_POP, x, y, z, count, spread, spread, spread, 0.05);
+            case "earth_heart" -> PixelFx.send(sl, new net.minecraft.core.particles.BlockParticleOption(ParticleTypes.BLOCK, Blocks.DIRT.defaultBlockState()), x, y, z, count, spread, spread, spread, 0.05);
+            case "wind_heart" -> PixelFx.send(sl, ParticleTypes.CLOUD, x, y, z, count, spread * 1.5, spread, spread * 1.5, gained ? 0.03 : 0.06);
+            case "electric_heart" -> PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, x, y, z, count, spread, spread, spread, 0.08);
+            case "shadow_heart" -> PixelFx.send(sl, ParticleTypes.SCULK_SOUL, x, y, z, count, spread, spread, spread, 0.02);
+            case "light_heart" -> PixelFx.send(sl, gained ? ParticleTypes.END_ROD : ParticleTypes.WHITE_ASH, x, y, z, count, spread, spread, spread, 0.02);
+            default -> PixelFx.send(sl, ParticleTypes.HEART, x, y, z, count, spread, spread, spread, 0.02);
         }
         // Complement sonore discret : plus aigu/joyeux au gain, plus grave au retrait.
         sl.playSound(null, p.blockPosition(),
@@ -875,7 +875,7 @@ public final class EquipmentExpansionHandler {
                             away.x / horiz * 0.10 * lightHeartPassiveLvl, 0.02, away.z / horiz * 0.10 * lightHeartPassiveLvl));
                     monster.hurtMarked = true;
                 }
-                lightLevel.sendParticles(ParticleTypes.END_ROD, p.getX(), p.getY() + p.getBbHeight() * 0.5, p.getZ(),
+                PixelFx.send(lightLevel, ParticleTypes.END_ROD, p.getX(), p.getY() + p.getBbHeight() * 0.5, p.getZ(),
                         6, 0.4, 0.4, 0.4, 0.01);
             }
             if (p.tickCount % 100 == 0) {
@@ -954,7 +954,7 @@ public final class EquipmentExpansionHandler {
         guardedHurt(p, p.damageSources().magic(), 1f);
         p.addEffect(new MobEffectInstance(MobEffects.INVISIBILITY, 60 + 20 * umbralPact, 0, true, false));
         if (p.level() instanceof ServerLevel sl) {
-            sl.sendParticles(ParticleTypes.SQUID_INK, p.getX(), p.getY() + p.getBbHeight() * 0.5, p.getZ(),
+            PixelFx.send(sl, ParticleTypes.SQUID_INK, p.getX(), p.getY() + p.getBbHeight() * 0.5, p.getZ(),
                     20, 0.4, 0.5, 0.4, 0.02);
         }
     }
@@ -982,31 +982,31 @@ public final class EquipmentExpansionHandler {
         switch (roll) {
             case 0 -> { // Fire
                 p.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 60, 0, true, true));
-                level.sendParticles(ParticleTypes.FLAME, p.getX(), p.getY() + 0.2, p.getZ(), 12, 0.3, 0.2, 0.3, 0.02);
+                PixelFx.send(level, ParticleTypes.FLAME, p.getX(), p.getY() + 0.2, p.getZ(), 12, 0.3, 0.2, 0.3, 0.02);
             }
             case 1 -> { // Water
                 p.addEffect(new MobEffectInstance(MobEffects.WATER_BREATHING, 200, 0, true, true));
-                level.sendParticles(ParticleTypes.SPLASH, p.getX(), p.getY() + 0.2, p.getZ(), 12, 0.3, 0.2, 0.3, 0.02);
+                PixelFx.send(level, ParticleTypes.SPLASH, p.getX(), p.getY() + 0.2, p.getZ(), 12, 0.3, 0.2, 0.3, 0.02);
             }
             case 2 -> { // Earth
                 p.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 60, 0, true, true));
-                level.sendParticles(EnchantmentParticleFX.EARTH_OCHRE, p.getX(), p.getY() + 0.2, p.getZ(), 14, 0.32, 0.2, 0.32, 0.02);
+                PixelFx.send(level, EnchantmentParticleFX.EARTH_OCHRE, p.getX(), p.getY() + 0.2, p.getZ(), 14, 0.32, 0.2, 0.32, 0.02);
             }
             case 3 -> { // Wind
                 p.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 100, 1, true, true));
-                level.sendParticles(ParticleTypes.CLOUD, p.getX(), p.getY() + 0.2, p.getZ(), 12, 0.3, 0.2, 0.3, 0.02);
+                PixelFx.send(level, ParticleTypes.CLOUD, p.getX(), p.getY() + 0.2, p.getZ(), 12, 0.3, 0.2, 0.3, 0.02);
             }
             case 4 -> { // Electricity
                 p.addEffect(new MobEffectInstance(MobEffects.GLOWING, 60, 0, true, true));
-                level.sendParticles(ParticleTypes.ELECTRIC_SPARK, p.getX(), p.getY() + 0.2, p.getZ(), 12, 0.3, 0.2, 0.3, 0.02);
+                PixelFx.send(level, ParticleTypes.ELECTRIC_SPARK, p.getX(), p.getY() + 0.2, p.getZ(), 12, 0.3, 0.2, 0.3, 0.02);
             }
             case 5 -> { // Shadow
                 p.addEffect(new MobEffectInstance(MobEffects.INVISIBILITY, 30, 0, true, true));
-                level.sendParticles(ParticleTypes.SMOKE, p.getX(), p.getY() + 0.2, p.getZ(), 12, 0.3, 0.2, 0.3, 0.02);
+                PixelFx.send(level, ParticleTypes.SMOKE, p.getX(), p.getY() + 0.2, p.getZ(), 12, 0.3, 0.2, 0.3, 0.02);
             }
             default -> { // Light
                 p.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 50, 0, true, true));
-                level.sendParticles(ParticleTypes.END_ROD, p.getX(), p.getY() + 0.2, p.getZ(), 12, 0.3, 0.2, 0.3, 0.02);
+                PixelFx.send(level, ParticleTypes.END_ROD, p.getX(), p.getY() + 0.2, p.getZ(), 12, 0.3, 0.2, 0.3, 0.02);
             }
         }
     }

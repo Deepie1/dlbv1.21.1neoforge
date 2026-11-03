@@ -9,7 +9,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -426,20 +425,18 @@ public final class CloudWalkerClientInput {
         double y = player.getY();
         double z = player.getZ();
         int clampedLvl = Math.min(3, Math.max(1, cwLvl));
-        int poofs = 12 + clampedLvl * 4;
-        for (int i = 0; i < poofs; i++) {
-            double mx = level.random.nextGaussian() * 0.04 * clampedLvl;
-            double my = level.random.nextGaussian() * 0.02 + 0.04;
-            double mz = level.random.nextGaussian() * 0.04 * clampedLvl;
-            level.addParticle(ParticleTypes.POOF, x, y, z, mx, my, mz);
-        }
+        // T360-NO-VANILLA-PARTICLES : coussin de nuage en VRAIS mini-cubes 3D (plus aucun sprite
+        // vanilla) — un cœur dense qui s'écrase, puis un anneau qui s'évase doucement.
+        int poofs = 8 + clampedLvl * 2;
+        WeaponWorldVfxManager.spawnPixelPuff(0xE8F4FF, x, y + 0.02, z,
+                poofs, 0.18f + 0.05f * clampedLvl, 0.05 + 0.02 * clampedLvl, 16);
         double r = (radiant ? 0.95 : 0.72) + 0.22 * (clampedLvl - 1);
         int ring = (radiant ? 14 : 10) + (clampedLvl - 1) * 4;
         for (int i = 0; i < ring; i++) {
             double ang = (Math.PI * 2.0 * i) / ring;
-            level.addParticle(ParticleTypes.CLOUD,
+            WeaponWorldVfxManager.spawnPixelPuff(radiant ? 0xFFF6DC : 0xDFF1FF,
                     x + Math.cos(ang) * r * 0.45, y - 0.04, z + Math.sin(ang) * r * 0.45,
-                    Math.cos(ang) * (0.035 + 0.012 * clampedLvl), -0.01, Math.sin(ang) * (0.035 + 0.012 * clampedLvl));
+                    1, 0.03f, 0.02 + 0.008 * clampedLvl, 18);
         }
     }
 }

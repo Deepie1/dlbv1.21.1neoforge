@@ -128,7 +128,7 @@ public final class ChaosEnchantments {
             Holder<MobEffect> effect = ENTROPY_EFFECTS[sl.random.nextInt(ENTROPY_EFFECTS.length)];
             int dur = 40 + 10 * entropy;
             target.addEffect(new MobEffectInstance(effect, dur, 0, true, false));
-            sl.sendParticles(prismatic(sl, sl.random.nextFloat()), tx, ty, tz,
+            PixelFx.send(sl, prismatic(sl, sl.random.nextFloat()), tx, ty, tz,
                     10, 0.35, 0.35, 0.35, 0.02);
         }
 
@@ -141,13 +141,13 @@ public final class ChaosEnchantments {
                 if (hits >= 2) break;
                 if (!isValidVictim(other, attacker)) continue;
                 other.hurt(sl.damageSources().playerAttack(attacker), share);
-                sl.sendParticles(prismatic(sl, 0.33f), other.getX(),
+                PixelFx.send(sl, prismatic(sl, 0.33f), other.getX(),
                         other.getY() + other.getBbHeight() * 0.5, other.getZ(),
                         6, 0.25, 0.25, 0.25, 0.01);
                 hits++;
             }
             if (hits > 0) {
-                sl.sendParticles(ParticleTypes.WITCH, tx, ty, tz, 8, 0.3, 0.3, 0.3, 0.02);
+                PixelFx.send(sl, ParticleTypes.WITCH, tx, ty, tz, 8, 0.3, 0.3, 0.3, 0.02);
             }
         }
 
@@ -158,7 +158,7 @@ public final class ChaosEnchantments {
             if (crit) {
                 event.setAmount(event.getAmount() + 1.5f * rupture);
                 target.addEffect(new MobEffectInstance(MobEffects.WITHER, 30 + 10 * rupture, 0, true, false));
-                sl.sendParticles(prismatic(sl, 0.66f), tx, ty, tz, 14, 0.45, 0.35, 0.45, 0.03);
+                PixelFx.send(sl, prismatic(sl, 0.66f), tx, ty, tz, 14, 0.45, 0.35, 0.45, 0.03);
             }
         }
 
@@ -169,7 +169,7 @@ public final class ChaosEnchantments {
             if (until > now) {
                 int lvl = Math.max(1, target.getPersistentData().getInt(BRAND_LEVEL));
                 event.setAmount(event.getAmount() * (1.0f + 0.06f * lvl));
-                sl.sendParticles(prismatic(sl, 0.5f), tx, ty, tz, 5, 0.25, 0.25, 0.25, 0.01);
+                PixelFx.send(sl, prismatic(sl, 0.5f), tx, ty, tz, 5, 0.25, 0.25, 0.25, 0.01);
             }
             target.getPersistentData().putLong(BRAND_UNTIL, now + 80L);
             target.getPersistentData().putInt(BRAND_LEVEL, Math.min(5, brand));

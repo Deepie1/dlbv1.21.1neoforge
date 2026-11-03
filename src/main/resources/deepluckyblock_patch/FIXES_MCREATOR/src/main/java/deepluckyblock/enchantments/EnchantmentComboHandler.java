@@ -2009,8 +2009,8 @@ public final class EnchantmentComboHandler {
                     Vec3 lk = attacker.getLookAngle().normalize();
                     for (int step = 1; step <= 7; step++) {
                         Vec3 pt = attacker.getEyePosition().add(lk.scale(step));
-                        slGod.sendParticles(ParticleTypes.SWEEP_ATTACK, pt.x, pt.y - 0.3, pt.z, 1, 0.1, 0.1, 0.1, 0.0);
-                        slGod.sendParticles(EnchantmentParticleFX.GOLD_DIVINE, pt.x, pt.y - 0.3, pt.z, 5, 0.25, 0.25, 0.25, 0.02);
+                        PixelFx.send(slGod, ParticleTypes.SWEEP_ATTACK, pt.x, pt.y - 0.3, pt.z, 1, 0.1, 0.1, 0.1, 0.0);
+                        PixelFx.send(slGod, EnchantmentParticleFX.GOLD_DIVINE, pt.x, pt.y - 0.3, pt.z, 5, 0.25, 0.25, 0.25, 0.02);
                         for (Mob m : slGod.getEntitiesOfClass(Mob.class, new AABB(pt.x - 1.5, pt.y - 1.5, pt.z - 1.5, pt.x + 1.5, pt.y + 1.5, pt.z + 1.5))) {
                             if (m != victim && !isFriendlySummon(m, attacker)) {
                                 safeHurt(m, attacker.damageSources().magic(), waveDmg);
@@ -2083,7 +2083,7 @@ public final class EnchantmentComboHandler {
                 atkSt.saitamaCooldownUntil = now + 15L;
                 event.setAmount(event.getAmount() + 22.0f);
                 if (victim.level() instanceof ServerLevel slSai) {
-                    slSai.sendParticles(ParticleTypes.SONIC_BOOM, victim.getX(), victim.getY() + 1.0, victim.getZ(), 1, 0, 0, 0, 0);
+                    PixelFx.send(slSai, ParticleTypes.SONIC_BOOM, victim.getX(), victim.getY() + 1.0, victim.getZ(), 1, 0, 0, 0, 0);
                     slSai.playSound(null, victim.blockPosition(), SoundEvents.WARDEN_SONIC_BOOM, SoundSource.PLAYERS, 0.65f, 1.25f);
                     Vec3 dir = victim.position().subtract(attacker.position());
                     if (dir.lengthSqr() < 0.01) dir = attacker.getLookAngle();
@@ -3614,7 +3614,7 @@ public final class EnchantmentComboHandler {
             if (mask.has(IDX_MINEUR_ETINCELLE) && state.is(BlockTags.BASE_STONE_OVERWORLD)
                     && sl.getMaxLocalRawBrightness(pos) <= 7) {
                 player.addEffect(new MobEffectInstance(MobEffects.NIGHT_VISION, 240, 0, true, false));
-                sl.sendParticles(ParticleTypes.LAVA, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, 4, 0.2, 0.2, 0.2, 0.02);
+                PixelFx.send(sl, ParticleTypes.LAVA, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, 4, 0.2, 0.2, 0.2, 0.02);
             }
 
             // #006 Jardinier Matinal : désherber / récolter -> Vitesse I (4 s) + chance poudre d'os
@@ -3676,7 +3676,7 @@ public final class EnchantmentComboHandler {
                 }
                 for (BlockPos scan : BlockPos.betweenClosed(pos.offset(-6, -4, -6), pos.offset(6, 4, 6))) {
                     if (!scan.equals(pos) && sl.getBlockState(scan).is(Tags.Blocks.ORES)) {
-                        sl.sendParticles(ParticleTypes.END_ROD, scan.getX() + 0.5, scan.getY() + 0.5, scan.getZ() + 0.5,
+                        PixelFx.send(sl, ParticleTypes.END_ROD, scan.getX() + 0.5, scan.getY() + 0.5, scan.getZ() + 0.5,
                                 2, 0.15, 0.15, 0.15, 0.0);
                     }
                 }
@@ -3693,7 +3693,7 @@ public final class EnchantmentComboHandler {
                     TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 2, () -> {
                         if (sl.getBlockState(targetPos).isAir()) {
                             sl.setBlockAndUpdate(targetPos, sapling);
-                            sl.sendParticles(ParticleTypes.HAPPY_VILLAGER,
+                            PixelFx.send(sl, ParticleTypes.HAPPY_VILLAGER,
                                     targetPos.getX() + 0.5, targetPos.getY() + 0.5, targetPos.getZ() + 0.5,
                                     6, 0.25, 0.25, 0.25, 0.02);
                         }
@@ -3716,7 +3716,7 @@ public final class EnchantmentComboHandler {
                     BlockState adjState = sl.getBlockState(adj);
                     if (adjState.getBlock() instanceof CropBlock adjCrop && !adjCrop.isMaxAge(adjState)) {
                         sl.setBlockAndUpdate(adj, adjCrop.getStateForAge(Math.min(adjCrop.getMaxAge(), adjCrop.getAge(adjState) + 1)));
-                        sl.sendParticles(ParticleTypes.HAPPY_VILLAGER, adj.getX() + 0.5, adj.getY() + 0.4, adj.getZ() + 0.5,
+                        PixelFx.send(sl, ParticleTypes.HAPPY_VILLAGER, adj.getX() + 0.5, adj.getY() + 0.4, adj.getZ() + 0.5,
                                 3, 0.2, 0.1, 0.2, 0.01);
                     }
                 }

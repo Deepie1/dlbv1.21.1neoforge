@@ -1,5 +1,6 @@
 package deepluckyblock.procedures;
 
+import deepluckyblock.enchantments.PixelFx;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
@@ -419,7 +420,7 @@ public class StructuresProcedure {
         ie.setGlowingTag(true);
         ie.setUnlimitedLifetime();
         level.addFreshEntity(ie);
-        level.sendParticles(ParticleTypes.END_ROD, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
+        PixelFx.send(level, ParticleTypes.END_ROD, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
                 20, 0.4, 0.4, 0.4, 0.03);
         placeLight(level, pos.above(), 12);
     }

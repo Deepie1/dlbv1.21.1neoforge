@@ -1,5 +1,6 @@
 package deepluckyblock.procedures;
 
+import deepluckyblock.enchantments.PixelFx;
 import deepluckyblock.init.DeepLuckyBlockModItems;
 import deepluckyblock.advancements.DeepLuckyBlockAdvancements;
 import deepluckyblock.compat.DeepCustomGlint;
@@ -1798,10 +1799,10 @@ public class GenerateLuckyItemProcedure {
 
         sl.playSound(null, targetPos, SoundEvents.WOOD_PLACE, SoundSource.BLOCKS, 1.0f, 1.2f);
         sl.playSound(null, targetPos, SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.BLOCKS, 0.8f, 1.5f);
-        sl.sendParticles(ParticleTypes.HAPPY_VILLAGER,
+        PixelFx.send(sl, ParticleTypes.HAPPY_VILLAGER,
             targetPos.getX() + 0.5, targetPos.getY() + 1.2, targetPos.getZ() + 0.5,
             20, 0.5, 0.5, 0.5, 0.05);
-        sl.sendParticles(ParticleTypes.END_ROD,
+        PixelFx.send(sl, ParticleTypes.END_ROD,
             targetPos.getX() + 0.5, targetPos.getY() + 1.5, targetPos.getZ() + 0.5,
             10, 0.3, 0.3, 0.3, 0.02);
 
@@ -4499,7 +4500,7 @@ public class GenerateLuckyItemProcedure {
             for (String p : res.particles) {
                 ParticleOptions po = debugParticleFor(p);
                 if (po != null) {
-                    level.sendParticles(po, player.getX(), player.getY() + 1.0, player.getZ(),
+                    PixelFx.send(level, po, player.getX(), player.getY() + 1.0, player.getZ(),
                             10, 0.4, 0.4, 0.4, 0.03);
                 }
             }

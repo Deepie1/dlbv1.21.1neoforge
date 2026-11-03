@@ -1,5 +1,6 @@
 package deepluckyblock.procedures;
 
+import deepluckyblock.enchantments.PixelFx;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleOptions;
@@ -292,7 +293,7 @@ public class GenerateBadProcedure {
                 owner.heal(0.5f);
                 giveEventEffect(owner, MobEffects.REGENERATION, 49, 0,
                         false, true, true);
-                owner.serverLevel().sendParticles(ParticleTypes.HEART,
+                PixelFx.send(owner.serverLevel(), ParticleTypes.HEART,
                         owner.getX(), owner.getY() + 1.0, owner.getZ(),
                         1, 0.2, 0.25, 0.2, 0.01);
             }
@@ -433,16 +434,16 @@ public class GenerateBadProcedure {
         bindCatToOwner(dewey, owner);
         giveEventEffect(owner, MobEffects.REGENERATION, 49, 0,
                 false, true, true);
-        level.sendParticles(ParticleTypes.END_ROD,
+        PixelFx.send(level, ParticleTypes.END_ROD,
                 dewey.getX(), dewey.getY() + 0.5, dewey.getZ(),
                 30, 0.6, 0.6, 0.6, 0.05);
         for (int second = 1; second <= 12; second++) {
             TestProcedure.schedule(level, TestProcedure.currentTick(level) + second * 20, () -> {
                 if (!dewey.isAlive()) return;
-                level.sendParticles(ParticleTypes.END_ROD,
+                PixelFx.send(level, ParticleTypes.END_ROD,
                         dewey.getX(), dewey.getY() + 0.5, dewey.getZ(),
                         8, 0.4, 0.4, 0.4, 0.02);
-                level.sendParticles(ParticleTypes.WITCH,
+                PixelFx.send(level, ParticleTypes.WITCH,
                         dewey.getX(), dewey.getY() + 0.8, dewey.getZ(),
                         4, 0.4, 0.4, 0.4, 0.01);
             });
@@ -486,7 +487,7 @@ public class GenerateBadProcedure {
         }
         level.playSound(null, pos, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE,
                 SoundSource.PLAYERS, 1.1f, 1.25f);
-        level.sendParticles(ParticleTypes.FIREWORK,
+        PixelFx.send(level, ParticleTypes.FIREWORK,
                 pos.getX() + 0.5, pos.getY() + 1.2, pos.getZ() + 0.5,
                 20, 0.45, 0.45, 0.45, 0.08);
 
@@ -514,8 +515,8 @@ public class GenerateBadProcedure {
                     giveEventEffect(sp, MobEffects.BLINDNESS, 200, 0);
                 }
             }
-            level.sendParticles(ParticleTypes.EXPLOSION, cx, cy, cz, 10, 1.5, 1.5, 1.5, 0.1);
-            level.sendParticles(ParticleTypes.LARGE_SMOKE, cx, cy, cz, 40, 2.0, 2.0, 2.0, 0.1);
+            PixelFx.send(level, ParticleTypes.EXPLOSION, cx, cy, cz, 10, 1.5, 1.5, 1.5, 0.1);
+            PixelFx.send(level, ParticleTypes.LARGE_SMOKE, cx, cy, cz, 40, 2.0, 2.0, 2.0, 0.1);
         });
     }
 
@@ -535,7 +536,7 @@ public class GenerateBadProcedure {
         level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
         level.playSound(null, pos, SoundEvents.CHEST_LOCKED,
                 SoundSource.HOSTILE, 1.5f, 0.55f);
-        level.sendParticles(ParticleTypes.SQUID_INK,
+        PixelFx.send(level, ParticleTypes.SQUID_INK,
                 pos.getX() + 0.5, pos.getY() + 0.8, pos.getZ() + 0.5,
                 30, 0.7, 0.7, 0.7, 0.04);
 
@@ -599,7 +600,7 @@ public class GenerateBadProcedure {
         double tntZ = supportPos.getZ() + 0.5;
 
         level.playSound(null, supportPos, SoundEvents.TNT_PRIMED, SoundSource.BLOCKS, 1.5f, 1.0f);
-        level.sendParticles(ParticleTypes.FLAME, tntX, tntY, tntZ, 30, 0.5, 0.5, 0.5, 0.05);
+        PixelFx.send(level, ParticleTypes.FLAME, tntX, tntY, tntZ, 30, 0.5, 0.5, 0.5, 0.05);
         actionBar(level, player.getX(), player.getY(), player.getZ(), "c", "Something clicks beneath your feet...");
         narrate(level, player.getX(), player.getY(), player.getZ(), level.getRandom(), "That sound came from below...");
 
@@ -1806,10 +1807,10 @@ public class GenerateBadProcedure {
             // chest.setCustomName(Component.literal("§6§l").append(Component.translatable("event.deep_lucky_block.name.ultimate_reward")));
             chest.setChanged();
 
-            level.sendParticles(ParticleTypes.END_ROD,
+            PixelFx.send(level, ParticleTypes.END_ROD,
                     chestPos.getX() + 0.5, chestPos.getY() + 1.2, chestPos.getZ() + 0.5,
                     30, 0.5, 0.5, 0.5, 0.05);
-            level.sendParticles(ParticleTypes.FIREWORK,
+            PixelFx.send(level, ParticleTypes.FIREWORK,
                     chestPos.getX() + 0.5, chestPos.getY() + 1.5, chestPos.getZ() + 0.5,
                     20, 0.5, 0.7, 0.5, 0.08);
             level.playSound(null, chestPos, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE,
@@ -1872,9 +1873,9 @@ public class GenerateBadProcedure {
 
             replaceGroundWithFade(level, x, y, z, random, 6, Blocks.SLIME_BLOCK.defaultBlockState());
 
-            level.sendParticles(ParticleTypes.ITEM_SLIME, x + 0.5, y + 2, z + 0.5,
+            PixelFx.send(level, ParticleTypes.ITEM_SLIME, x + 0.5, y + 2, z + 0.5,
                     150, 4, 3, 4, 0.3);
-            level.sendParticles(ParticleTypes.HAPPY_VILLAGER, x + 0.5, y + 4, z + 0.5,
+            PixelFx.send(level, ParticleTypes.HAPPY_VILLAGER, x + 0.5, y + 4, z + 0.5,
                     60, 3, 2, 3, 0.1);
 
             actionBar(level, x, y, z, "a", "👑 The Slime King has awakened! 👑");
@@ -2029,7 +2030,7 @@ public class GenerateBadProcedure {
             return;
         }
 
-        player.serverLevel().sendParticles(ParticleTypes.PORTAL,
+        PixelFx.send(player.serverLevel(), ParticleTypes.PORTAL,
                 player.getX(), player.getY() + 1.0, player.getZ(),
                 12, 0.5, 0.8, 0.5, 0.2);
         TestProcedure.schedule(origin, now + 10, () ->
@@ -2121,7 +2122,7 @@ public class GenerateBadProcedure {
                 SoundSource.HOSTILE, 2.5f, 0.55f);
         level.playSound(null, player.blockPosition(), SoundEvents.GHAST_AMBIENT,
                 SoundSource.HOSTILE, 1.5f, 0.7f);
-        level.sendParticles(ParticleTypes.SOUL_FIRE_FLAME,
+        PixelFx.send(level, ParticleTypes.SOUL_FIRE_FLAME,
                 player.getX(), player.getY() + 1.0, player.getZ(),
                 60, 1.5, 1.5, 1.5, 0.08);
     }
@@ -2130,7 +2131,7 @@ public class GenerateBadProcedure {
         r.title = "Your tools suddenly feel wrong..."; r.titleColorCode = "2"; r.rank = TestProcedure.ItemRank.CURSED;
         r.particles.add("SMOKE"); r.particles.add("SOUL");
         r.deferredAction = () -> {
-            for (int t = 0; t < 60; t += 5) level.sendParticles(ParticleTypes.SNEEZE, x + 0.5, y + 1.5, z + 0.5, 30, 3.0, 1.5, 3.0, 0.02);
+            for (int t = 0; t < 60; t += 5) PixelFx.send(level, ParticleTypes.SNEEZE, x + 0.5, y + 1.5, z + 0.5, 30, 3.0, 1.5, 3.0, 0.02);
             level.playSound(null, x, y, z, SoundEvents.WITHER_AMBIENT, SoundSource.HOSTILE, 0.8f, 1.2f);
             giveEffect(level, x, y, z, 5, MobEffects.POISON, 20 * 3, 1);
             giveEffect(level, x, y, z, 5, MobEffects.WEAKNESS, 20 * 30, 0);
@@ -2147,7 +2148,7 @@ public class GenerateBadProcedure {
         final int amp = amps[random.nextInt(amps.length)];
         final int d2 = randomDuration(random);
         r.deferredAction = () -> { playBadSound(level, x, y, z); giveEffect(level, x, y, z, 5, MobEffects.POISON, durPoison, amp); giveEffect(level, x, y, z, 5, MobEffects.HUNGER, d2, 2);
-            level.sendParticles(ParticleTypes.SNEEZE, x + 0.5, y + 1.5, z + 0.5, 40, 3, 1.5, 3, 0.01); narrate(level, x, y, z, random, "A sickly green cloud escapes..."); };
+            PixelFx.send(level, ParticleTypes.SNEEZE, x + 0.5, y + 1.5, z + 0.5, 40, 3, 1.5, 3, 0.01); narrate(level, x, y, z, random, "A sickly green cloud escapes..."); };
     }
 
     private static void event_EldritchWhispers(ServerLevel level, double x, double y, double z, RandomSource random, TestProcedure.BranchResult r) {
@@ -2306,7 +2307,7 @@ public class GenerateBadProcedure {
         r.deferredAction = () -> { level.playSound(null, x, y, z, SoundEvents.WARDEN_EMERGE, SoundSource.HOSTILE, 0.8f, 0.5f);
             ShadowMirrorEntity m = new ShadowMirrorEntity(DeepLuckyBlockModEntities.SHADOW_MIRROR.get(), level);
             m.moveTo(x + 0.5, y + 1, z + 0.5, random.nextFloat() * 360, 0); level.addFreshEntity(m);
-            level.sendParticles(ParticleTypes.SQUID_INK, x + 0.5, y + 1.5, z + 0.5, 30, 1, 1, 1, 0.02);
+            PixelFx.send(level, ParticleTypes.SQUID_INK, x + 0.5, y + 1.5, z + 0.5, 30, 1, 1, 1, 0.02);
             actionBar(level, x, y, z, "8", "👤 Dark Double!"); narrate(level, x, y, z, random, "A Dark Double materializes..."); };
     }
 
@@ -2402,7 +2403,7 @@ public class GenerateBadProcedure {
         r.deferredAction = () -> {
             level.playSound(null, x, y, z, SoundEvents.ENDERMAN_TELEPORT, SoundSource.HOSTILE, 1.5f, 0.4f);
             level.playSound(null, x, y, z, SoundEvents.WARDEN_EMERGE, SoundSource.HOSTILE, 0.8f, 0.6f);
-            level.sendParticles(ParticleTypes.PORTAL, x + 0.5, y + 2, z + 0.5, 200, 4, 3, 4, 0.5);
+            PixelFx.send(level, ParticleTypes.PORTAL, x + 0.5, y + 2, z + 0.5, 200, 4, 3, 4, 0.5);
 
             for (int i = 0; i < spawnCount; i++) {
                 try {
@@ -2618,7 +2619,7 @@ public class GenerateBadProcedure {
             TestProcedure.schedule(level, TestProcedure.currentTick(level) + 60, () -> {
                 for (ItemEntity ie : fakeGems) {
                     if (ie != null && ie.isAlive()) {
-                        level.sendParticles(ParticleTypes.FIREWORK, ie.getX(), ie.getY(), ie.getZ(), 10, 0.2, 0.2, 0.2, 0.05);
+                        PixelFx.send(level, ParticleTypes.FIREWORK, ie.getX(), ie.getY(), ie.getZ(), 10, 0.2, 0.2, 0.2, 0.05);
                         level.playSound(null, ie.getX(), ie.getY(), ie.getZ(), SoundEvents.VILLAGER_NO, SoundSource.PLAYERS, 1.0f, 1.0f);
                         ie.discard();
                     }
@@ -2893,7 +2894,7 @@ public class GenerateBadProcedure {
                         if (level.getBlockState(pos).is(Blocks.ORANGE_STAINED_GLASS)) {
                             BlockState original = originalGlassStates.getOrDefault(pos, Blocks.AIR.defaultBlockState());
                             level.setBlock(pos, original, 3);
-                            level.sendParticles(ParticleTypes.FLAME,
+                            PixelFx.send(level, ParticleTypes.FLAME,
                                     pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,
                                     3, 0.2, 0.2, 0.2, 0.03);
                         }
@@ -2917,7 +2918,7 @@ public class GenerateBadProcedure {
         r.deferredAction = () -> {
             level.playSound(null, x, y, z, SoundEvents.WARDEN_AMBIENT, SoundSource.HOSTILE, 2.0f, 0.8f);
             level.playSound(null, x, y, z, SoundEvents.WARDEN_EMERGE, SoundSource.HOSTILE, 2.0f, 0.8f);
-            level.sendParticles(ParticleTypes.SCULK_SOUL, x, y + 1, z, 40, 1.0, 1.0, 1.0, 0.1);
+            PixelFx.send(level, ParticleTypes.SCULK_SOUL, x, y + 1, z, 40, 1.0, 1.0, 1.0, 0.1);
 
             Entity warden = EntityType.WARDEN.create(level);
             if (warden == null) return;
@@ -2947,10 +2948,10 @@ public class GenerateBadProcedure {
                     snowman.setDeltaMovement(0, -1.05, 0);
                     snowman.hurtMarked = true;
                     level.addFreshEntity(snowman);
-                    level.sendParticles(ParticleTypes.CLOUD,
+                    PixelFx.send(level, ParticleTypes.CLOUD,
                             warden.getX(), spawnY, warden.getZ(),
                             40, 0.8, 0.8, 0.8, 0.06);
-                    level.sendParticles(ParticleTypes.END_ROD,
+                    PixelFx.send(level, ParticleTypes.END_ROD,
                             warden.getX(), spawnY, warden.getZ(),
                             24, 0.5, 0.7, 0.5, 0.04);
 
@@ -2959,10 +2960,10 @@ public class GenerateBadProcedure {
                         TestProcedure.schedule(level,
                                 TestProcedure.currentTick(level) + trail * 5, () -> {
                                     if (!snowman.isAlive()) return;
-                                    level.sendParticles(ParticleTypes.SNOWFLAKE,
+                                    PixelFx.send(level, ParticleTypes.SNOWFLAKE,
                                             snowman.getX(), snowman.getY() + 0.8, snowman.getZ(),
                                             12, 0.35, 0.45, 0.35, 0.04);
-                                    level.sendParticles(ParticleTypes.END_ROD,
+                                    PixelFx.send(level, ParticleTypes.END_ROD,
                                             snowman.getX(), snowman.getY() + 0.8, snowman.getZ(),
                                             5, 0.25, 0.35, 0.25, 0.02);
                                 });
@@ -2976,10 +2977,10 @@ public class GenerateBadProcedure {
                         warden.kill();
                         level.explode(null, warden.getX(), warden.getY() + 1, warden.getZ(),
                                 2.0f, Level.ExplosionInteraction.NONE);
-                        level.sendParticles(ParticleTypes.FIREWORK,
+                        PixelFx.send(level, ParticleTypes.FIREWORK,
                                 warden.getX(), warden.getY() + 1, warden.getZ(),
                                 40, 0.6, 0.6, 0.6, 0.15);
-                        level.sendParticles(ParticleTypes.SNOWFLAKE,
+                        PixelFx.send(level, ParticleTypes.SNOWFLAKE,
                                 warden.getX(), warden.getY() + 1, warden.getZ(),
                                 60, 0.8, 0.8, 0.8, 0.12);
                         level.playSound(null, warden.getX(), warden.getY(), warden.getZ(),
@@ -3055,7 +3056,7 @@ public class GenerateBadProcedure {
                 TestProcedure.schedule(level, TestProcedure.currentTick(level) + (round * 200), () -> {
                     if (!level.getBlockState(bellPos).is(Blocks.BELL)) return;
                     level.playSound(null, bellPos, SoundEvents.BELL_BLOCK, SoundSource.BLOCKS, 2.0f, 1.0f);
-                    level.sendParticles(ParticleTypes.SOUL, bellPos.getX() + 0.5, bellPos.getY() + 1, bellPos.getZ() + 0.5, 20, 0.5, 0.5, 0.5, 0.1);
+                    PixelFx.send(level, ParticleTypes.SOUL, bellPos.getX() + 0.5, bellPos.getY() + 1, bellPos.getZ() + 0.5, 20, 0.5, 0.5, 0.5, 0.1);
                     int count = 5 + random.nextInt(6);
                     for (int i = 0; i < count; i++) {
                         double angle = random.nextDouble() * Math.PI * 2;
@@ -3070,7 +3071,7 @@ public class GenerateBadProcedure {
                             if (level.getBlockState(bellPos).is(Blocks.BELL)) {
                                 level.setBlock(bellPos, Blocks.AIR.defaultBlockState(), 3);
                                 level.playSound(null, bellPos, SoundEvents.FIREWORK_ROCKET_LAUNCH, SoundSource.BLOCKS, 1.5f, 1.0f);
-                                level.sendParticles(ParticleTypes.FIREWORK, bellPos.getX() + 0.5, bellPos.getY() + 1, bellPos.getZ() + 0.5, 30, 0.5, 0.5, 0.5, 0.1);
+                                PixelFx.send(level, ParticleTypes.FIREWORK, bellPos.getX() + 0.5, bellPos.getY() + 1, bellPos.getZ() + 0.5, 30, 0.5, 0.5, 0.5, 0.1);
                                 int appleCount = 1 + random.nextInt(6);
                                 Block.popResource(level, bellPos, new ItemStack(Items.GOLDEN_APPLE, appleCount));
                             }
@@ -4203,7 +4204,7 @@ public class GenerateBadProcedure {
                     TestProcedure.schedule(level, TestProcedure.currentTick(level) + delay, () -> {
                         if (sp2.isAlive()) {
                             sp2.hurt(level.damageSources().freeze(), 1.0f);
-                            level.sendParticles(ParticleTypes.SNOWFLAKE, sp2.getX(), sp2.getY() + 1, sp2.getZ(), 6, 0.3, 0.5, 0.3, 0.02);
+                            PixelFx.send(level, ParticleTypes.SNOWFLAKE, sp2.getX(), sp2.getY() + 1, sp2.getZ(), 6, 0.3, 0.5, 0.3, 0.02);
                         }
                     });
                 }
@@ -5016,7 +5017,7 @@ public class GenerateBadProcedure {
 
             level.playSound(null, x, y, z, SoundEvents.WARDEN_EMERGE,
                     SoundSource.HOSTILE, 1.5f, 0.5f);
-            level.sendParticles(ParticleTypes.SOUL, x, y + 2, z,
+            PixelFx.send(level, ParticleTypes.SOUL, x, y + 2, z,
                     50, 1.5, 1.5, 1.5, 0.05);
 
             if (toSpawn == 3) {

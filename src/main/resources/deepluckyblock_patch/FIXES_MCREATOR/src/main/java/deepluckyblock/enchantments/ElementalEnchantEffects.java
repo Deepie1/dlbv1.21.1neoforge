@@ -106,7 +106,7 @@ public final class ElementalEnchantEffects {
     }
 
     private static void puff(ServerLevel sl, LivingEntity target, int rgb, int count) {
-        sl.sendParticles(dust(rgb), target.getX(), target.getY() + target.getBbHeight() * 0.55,
+        PixelFx.send(sl, dust(rgb), target.getX(), target.getY() + target.getBbHeight() * 0.55,
                 target.getZ(), count, 0.30, 0.30, 0.30, 0.02);
     }
 
@@ -132,7 +132,7 @@ public final class ElementalEnchantEffects {
         int miasma = level(weapon, MIASMA_ARROW);
         if (miasma > 0 && sl.random.nextInt(100) < 40) {
             target.addEffect(new MobEffectInstance(MobEffects.POISON, 50 + 15 * miasma, 0, true, false));
-            sl.sendParticles(ParticleTypes.ITEM_SLIME, target.getX(),
+            PixelFx.send(sl, ParticleTypes.ITEM_SLIME, target.getX(),
                     target.getY() + target.getBbHeight() * 0.5, target.getZ(), 10, 0.35, 0.35, 0.35, 0.01);
             puff(sl, target, DeepElement.POISON.primary, 10);
         }

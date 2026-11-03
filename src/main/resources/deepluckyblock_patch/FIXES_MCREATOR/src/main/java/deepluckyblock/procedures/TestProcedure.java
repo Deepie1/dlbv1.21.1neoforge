@@ -1,5 +1,6 @@
 package deepluckyblock.procedures;
 
+import deepluckyblock.enchantments.PixelFx;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleOptions;
@@ -1701,7 +1702,7 @@ public class TestProcedure {
             schedule(level, sparkTick, () -> {
                 for (ItemEntity item : spawnedItems) {
                     if (item.isAlive()) {
-                        level.sendParticles(ParticleTypes.END_ROD,
+                        PixelFx.send(level, ParticleTypes.END_ROD,
                                 item.getX(), item.getY() + 0.3, item.getZ(),
                                 3, 0.15, 0.15, 0.15, 0.02);
                     }
@@ -1788,7 +1789,7 @@ public class TestProcedure {
 
     private static void particles(ServerLevel level, double x, double y, double z,
                                   ParticleOptions type, int count, double dx, double dy, double dz) {
-        level.sendParticles(type, x, y, z, count, dx, dy, dz, 0.05);
+        PixelFx.send(level, type, x, y, z, count, dx, dy, dz, 0.05);
     }
 
     // =========================================================================
@@ -1814,16 +1815,16 @@ public class TestProcedure {
         level.playSound(null, cx, cy, cz, SoundEvents.BEACON_ACTIVATE, SoundSource.BLOCKS, 1.2f, 1.0f);
         level.playSound(null, cx, cy, cz, SoundEvents.PORTAL_TRAVEL, SoundSource.BLOCKS, 0.6f, 1.5f);
         level.playSound(null, cx, cy, cz, SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.BLOCKS, 0.5f, 1.2f);
-        level.sendParticles(ParticleTypes.EXPLOSION_EMITTER, cx, cy, cz, 5, 1.5, 1.5, 1.5, 0.0);
-        level.sendParticles(ParticleTypes.EXPLOSION, cx, cy, cz, 20, 3.0, 2.0, 3.0, 0.1);
-        level.sendParticles(ParticleTypes.FLASH, cx, cy, cz, 8, 2.0, 2.0, 2.0, 0.0);
-        level.sendParticles(ParticleTypes.CLOUD, cx, cy, cz, 200, 4.0, 2.5, 4.0, 0.15);
-        level.sendParticles(ParticleTypes.LARGE_SMOKE, cx, cy, cz, 100, 3.5, 2.5, 3.5, 0.08);
-        level.sendParticles(ParticleTypes.END_ROD, cx, cy, cz, 80, 3.0, 3.0, 3.0, 0.2);
-        level.sendParticles(ParticleTypes.FIREWORK, cx, cy + 2, cz, 60, 2.5, 2.0, 2.5, 0.3);
-        level.sendParticles(ParticleTypes.ENCHANT, cx, cy + 3, cz, 100, 3.0, 3.0, 3.0, 0.5);
-        level.sendParticles(ParticleTypes.DRAGON_BREATH, cx, cy, cz, 40, 3.0, 1.5, 3.0, 0.1);
-        level.sendParticles(ParticleTypes.TOTEM_OF_UNDYING, cx, cy + 1, cz, 60, 2.0, 2.0, 2.0, 0.4);
+        PixelFx.send(level, ParticleTypes.EXPLOSION_EMITTER, cx, cy, cz, 5, 1.5, 1.5, 1.5, 0.0);
+        PixelFx.send(level, ParticleTypes.EXPLOSION, cx, cy, cz, 20, 3.0, 2.0, 3.0, 0.1);
+        PixelFx.send(level, ParticleTypes.FLASH, cx, cy, cz, 8, 2.0, 2.0, 2.0, 0.0);
+        PixelFx.send(level, ParticleTypes.CLOUD, cx, cy, cz, 200, 4.0, 2.5, 4.0, 0.15);
+        PixelFx.send(level, ParticleTypes.LARGE_SMOKE, cx, cy, cz, 100, 3.5, 2.5, 3.5, 0.08);
+        PixelFx.send(level, ParticleTypes.END_ROD, cx, cy, cz, 80, 3.0, 3.0, 3.0, 0.2);
+        PixelFx.send(level, ParticleTypes.FIREWORK, cx, cy + 2, cz, 60, 2.5, 2.0, 2.5, 0.3);
+        PixelFx.send(level, ParticleTypes.ENCHANT, cx, cy + 3, cz, 100, 3.0, 3.0, 3.0, 0.5);
+        PixelFx.send(level, ParticleTypes.DRAGON_BREATH, cx, cy, cz, 40, 3.0, 1.5, 3.0, 0.1);
+        PixelFx.send(level, ParticleTypes.TOTEM_OF_UNDYING, cx, cy + 1, cz, 60, 2.0, 2.0, 2.0, 0.4);
     }
 
     // =========================================================================
@@ -1841,7 +1842,7 @@ public class TestProcedure {
                 if (po != null) set.add(po);
             }
         new HashSet<>(set).forEach(p ->
-                level.sendParticles(p, x + 0.5, y + 1.2, z + 0.5, 16, 0.45, 0.45, 0.45, 0.02));
+                PixelFx.send(level, p, x + 0.5, y + 1.2, z + 0.5, 16, 0.45, 0.45, 0.45, 0.02));
     }
 
     private static List<ParticleOptions> rankParticles(ItemRank r) {

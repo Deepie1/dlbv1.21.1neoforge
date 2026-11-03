@@ -1,5 +1,6 @@
 package deepluckyblock.advancements;
 
+import deepluckyblock.enchantments.PixelFx;
 import deepluckyblock.DeepLuckyBlockMod;
 
 import net.minecraft.core.particles.ParticleTypes;
@@ -98,7 +99,7 @@ public class DeepLuckyBlockAdvancementIntegration {
             level.addFreshEntity(itemEntity);
             GLOWING_ITEMS.put(itemEntity, GLOW_DURATION_TICKS);
 
-            level.sendParticles(ParticleTypes.ENCHANT, x, y, z, 10, 0.3, 0.3, 0.3, 0.05);
+            PixelFx.send(level, ParticleTypes.ENCHANT, x, y, z, 10, 0.3, 0.3, 0.3, 0.05);
         }
 
         level.playSound(null, player.getX(), player.getY(), player.getZ(),
@@ -126,7 +127,7 @@ public class DeepLuckyBlockAdvancementIntegration {
             if (ticksLeft <= 0) {
                 item.setGlowingTag(false);
                 if (item.level() instanceof ServerLevel serverLevel) {
-                    serverLevel.sendParticles(ParticleTypes.END_ROD,
+                    PixelFx.send(serverLevel, ParticleTypes.END_ROD,
                             item.getX(), item.getY(), item.getZ(), 5, 0.2, 0.2, 0.2, 0.02);
                 }
                 it.remove();

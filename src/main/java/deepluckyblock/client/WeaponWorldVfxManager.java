@@ -15,6 +15,7 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
@@ -51,7 +52,12 @@ import java.util.Map;
 public final class WeaponWorldVfxManager {
 
     private static final int MAX_ACTIVE_INSTANCES = 140;
-    private static final int MAX_VOXEL_TRAIL_PIXELS = 320;
+    /**
+     * T360-NO-VANILLA-PARTICLES : les salves de pixels remplacent désormais les particules
+     * vanilla du mod (halos, slashes, traînées d'équipement) : le réservoir doit donc être plus
+     * grand, sinon les effets anciens étaient évincés avant même d'avoir été vus.
+     */
+    private static final int MAX_VOXEL_TRAIL_PIXELS = 1400;
 
     public static final int KIND_SWING_SLASH       = 0;
     public static final int KIND_IMPACT            = 1;
@@ -59,7 +65,7 @@ public final class WeaponWorldVfxManager {
     public static final int KIND_PROJECTILE_ATTACH = 3;
 
     private static final List<VfxInstance> ACTIVE = new ArrayList<>(144);
-    private static final List<FloatingPixel> PIXEL_PARTICLES = new ArrayList<>(340);
+    private static final List<FloatingPixel> PIXEL_PARTICLES = new ArrayList<>(1400);
     private static final List<PendingEcho> PENDING_ECHOES = new ArrayList<>(16);
     private static final Map<Integer, TrackedProjectile> TRACKED_PROJECTILES = new HashMap<>(32);
 
@@ -131,6 +137,23 @@ public final class WeaponWorldVfxManager {
 
     /** T349 : remise à zéro du compteur de cubes (utilisée par CosmeticPixelAura, autre passe de rendu). */
     public static void resetCubeBudget() {
+        cubesSinceFlush = 0;
+    }
+
+    /**
+     * T360-HALO-CONTINU : isole complètement la passe cosmétique du style des VFX d'armes.
+     *
+     * <p>Le seuil d'alpha ({@code alphaFloor}, mis à 172 par le reflet d'arme) et la densité de
+     * pixels (mise à 0.35 par certaines déclinaisons) sont des états <b>globaux</b> du moteur. Si
+     * une frame se terminait mal, ils restaient « fermés » et {@code emitVoxelCube} jetait
+     * silencieusement TOUS les cubes du halo (alpha 150-250 &lt; 172, ou culling de densité) :
+     * le halo disparaissait définitivement. Cette méthode garantit que la couronne est toujours
+     * dessinée en pleine densité, quelle que soit la frame précédente.</p>
+     */
+    public static void beginCosmeticPass() {
+        pixelDensity = 1.0f;
+        variantScale = 1.0f;
+        alphaFloor = 0;
         cubesSinceFlush = 0;
     }
 
@@ -431,6 +454,78 @@ public final class WeaponWorldVfxManager {
             PIXEL_PARTICLES.add(new FloatingPixel(fx.additive, x, y, z, vx, vy, vz, grav, sz, rgb,
                     10 + rand.nextInt(10), rand.nextInt(Integer.MAX_VALUE)));
         }
+    }
+
+    // ==================================================================================
+    // T360-NO-VANILLA-PARTICLES : salve de mini-cubes 3D génériques
+    // ==================================================================================
+
+    /** Plafond de cubes créés par un seul paquet (anti-spam réseau + anti-lag). */
+    private static final int MAX_PUFF_CUBES_PER_PACKET = 12;
+
+    /**
+     * T360-NO-VANILLA-PARTICLES : remplace <b>toute</b> particule Minecraft du mod par de vrais
+     * mini-cubes 3D multi-tailles.
+     *
+     * <p>Appelé soit par {@code PixelPuffClientBridge} (effets serveur : halos, slashes, traînées
+     * d'enchantements), soit directement par le code client (aura ETERNAL, nuages du Cloud Walker).
+     * Chaque cube reçoit une taille aléatoire (multi-size), une trajectoire propre, une gravité
+     * douce et une durée de vie propre : la salve respire au lieu de ressembler à une boule unique.</p>
+     *
+     * @param rgb    couleur 0xRRGGBB du pixel
+     * @param count  nombre de cubes demandés (borné à {@value #MAX_PUFF_CUBES_PER_PACKET})
+     * @param spread dispersion initiale (rayon, en blocs)
+     * @param speed  vitesse d'éclatement
+     * @param maxAge durée de vie maximale (en ticks)
+     */
+    public static void spawnPixelPuff(int rgb, double x, double y, double z,
+                                      int count, float spread, double speed, int maxAge) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return;
+
+        RandomSource rand = mc.level.random;
+        int n = Mth.clamp(count, 1, MAX_PUFF_CUBES_PER_PACKET);
+        float sp = (float) Mth.clamp(spread, 0.0, 4.0);
+        double vel = Mth.clamp(speed, 0.0, 2.0);
+        int life = Mth.clamp(maxAge, 6, 60);
+
+        for (int i = 0; i < n; i++) {
+            if (PIXEL_PARTICLES.size() >= MAX_VOXEL_TRAIL_PIXELS) PIXEL_PARTICLES.remove(0);
+
+            double ox = (rand.nextDouble() - 0.5) * 2.0 * sp;
+            double oy = (rand.nextDouble() - 0.5) * 2.0 * sp * 0.8;
+            double oz = (rand.nextDouble() - 0.5) * 2.0 * sp;
+
+            double vx = (rand.nextDouble() - 0.5) * 2.0 * vel;
+            double vy = (rand.nextDouble() - 0.25) * 1.6 * vel;
+            double vz = (rand.nextDouble() - 0.5) * 2.0 * vel;
+
+            // MIROIR MULTI-SIZE : micro-éclats majoritaires, quelques gros pixels bien lisibles.
+            float roll = rand.nextFloat();
+            float halfSize = (roll < 0.62f) ? (0.022f + rand.nextFloat() * 0.016f)
+                    : (roll < 0.92f) ? (0.040f + rand.nextFloat() * 0.020f)
+                    : (0.062f + rand.nextFloat() * 0.024f);
+
+            // Teinte légèrement variée autour de la couleur demandée (jamais monochrome).
+            int shade = switch (i % 3) {
+                case 0 -> rgb;
+                case 1 -> shadeRgb(rgb, 1.18f);
+                default -> shadeRgb(rgb, 0.82f);
+            };
+
+            PIXEL_PARTICLES.add(new FloatingPixel(true,
+                    x + ox, y + oy, z + oz,
+                    vx, vy, vz, 0.006f,
+                    halfSize, shade,
+                    life / 2 + rand.nextInt(Math.max(3, life / 2)),
+                    rand.nextInt(Integer.MAX_VALUE)));
+        }
+    }
+
+    /** Variante flottante (utilisée par les paquets : positions déjà en float). */
+    public static void spawnPixelPuff(int rgb, float x, float y, float z,
+                                      int count, float spread, double speed, int maxAge) {
+        spawnPixelPuff(rgb, (double) x, (double) y, (double) z, count, spread, speed, maxAge);
     }
 
     // ==================================================================================

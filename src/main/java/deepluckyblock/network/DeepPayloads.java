@@ -35,6 +35,10 @@ public final class DeepPayloads {
     public static final ResourceLocation WEAPON_VFX_S2C =
             ResourceLocation.fromNamespaceAndPath(DeepLuckyBlockMod.MODID, "weapon_vfx_s2c");
 
+    /** T360-NO-VANILLA-PARTICLES : canal des salves de mini-cubes 3D (remplace les particules vanilla). */
+    public static final ResourceLocation PIXEL_PUFF_S2C =
+            ResourceLocation.fromNamespaceAndPath(DeepLuckyBlockMod.MODID, "pixel_puff_s2c");
+
     @SubscribeEvent
     public static void onRegisterPayloadHandlers(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar("1");
@@ -46,6 +50,11 @@ public final class DeepPayloads {
                 WeaponVfxMessage.TYPE,
                 WeaponVfxMessage.STREAM_CODEC,
                 WeaponVfxMessage::handle);
+        // T360-NO-VANILLA-PARTICLES : salves de mini-cubes 3D génériques (halos, slashes, traînées).
+        registrar.playToClient(
+                PixelPuffMessage.TYPE,
+                PixelPuffMessage.STREAM_CODEC,
+                PixelPuffMessage::handle);
         registrar.playToServer(
                 CloudJumpMessage.TYPE,
                 CloudJumpMessage.STREAM_CODEC,
@@ -202,6 +211,77 @@ public final class DeepPayloads {
 
         public static void handle(WeaponVfxMessage message, IPayloadContext context) {
             context.enqueueWork(() -> WeaponVfxClientBridge.handleClient(message));
+        }
+    }
+
+    /**
+     * T360-NO-VANILLA-PARTICLES : Payload Serveur -> Client ultra-compact qui remplace
+     * <b>toutes</b> les particules vanilla du mod par une salve de mini-cubes 3D (Multi-Size
+     * Pixel-Art). Le serveur n'envoie plus jamais {@code Level#sendParticles} : il envoie ce
+     * paquet (une couleur, un nombre de cubes, une dispersion, une vitesse, une durée de vie),
+     * et le client les dessine avec le même moteur de pixels que les VFX d'armes.
+     *
+     * <p>Compact : 4 champs (couleur, nombre de cubes, forme quantifiée, position), soit 13 octets
+     * utiles — moins qu'un paquet de particules vanilla. Aucun risque de désynchronisation avec
+     * un client plus ancien : le canal est versionné par le registre de payloads.</p>
+     */
+    public record PixelPuffMessage(
+            int rgb,
+            int count,
+            int packedShape,
+            FloatPos3 pos
+    ) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<PixelPuffMessage> TYPE =
+                new CustomPacketPayload.Type<>(PIXEL_PUFF_S2C);
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, PixelPuffMessage> STREAM_CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.INT, PixelPuffMessage::rgb,
+                        ByteBufCodecs.VAR_INT, PixelPuffMessage::count,
+                        ByteBufCodecs.INT, PixelPuffMessage::packedShape,
+                        FloatPos3.STREAM_CODEC, PixelPuffMessage::pos,
+                        PixelPuffMessage::new);
+
+        /**
+         * @param rgb     couleur 0xRRGGBB du mini-cube
+         * @param count   nombre de cubes (1..12)
+         * @param spread  dispersion en blocs (quantifiée au 1/64)
+         * @param speed   vitesse d'éclatement (quantifiée au 1/128)
+         * @param maxAge  durée de vie en ticks (6..60)
+         */
+        public static PixelPuffMessage create(int rgb, int count, double x, double y, double z,
+                                              float spread, float speed, int maxAge) {
+            int countQ = Math.max(1, Math.min(12, count));
+            int spreadQ = Math.max(0, Math.min(255, Math.round(Math.max(0.0f, Math.min(4.0f, spread)) * 64.0f)));
+            int speedQ = Math.max(0, Math.min(255, Math.round(Math.max(0.0f, Math.min(2.0f, speed)) * 128.0f)));
+            int lifeQ = Math.max(6, Math.min(60, maxAge));
+            int packedShape = spreadQ | (speedQ << 8) | (lifeQ << 16);
+            return new PixelPuffMessage(rgb & 0xFFFFFF, countQ, packedShape,
+                    new FloatPos3((float) x, (float) y, (float) z));
+        }
+
+        /** Dispersion décodée (blocs). */
+        public float spread() {
+            return (packedShape & 0xFF) / 64.0f;
+        }
+
+        /** Vitesse décodée. */
+        public float speed() {
+            return ((packedShape >>> 8) & 0xFF) / 128.0f;
+        }
+
+        /** Durée de vie décodée (ticks). */
+        public int maxAge() {
+            return (packedShape >>> 16) & 0xFF;
+        }
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+
+        public static void handle(PixelPuffMessage message, IPayloadContext context) {
+            context.enqueueWork(() -> PixelPuffClientBridge.handleClient(message));
         }
     }
 
