@@ -25,6 +25,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LightningBolt;
 import net.minecraft.world.entity.LivingEntity;
@@ -3435,24 +3436,25 @@ public class UniversalEnchantmentHandler {
                 EnchantmentParticleFX.burstOnEntity(target, ParticleTypes.REVERSE_PORTAL, 14, 0.3, 0.06);
                 player.level().playSound(null, tx, ty, tz, SoundEvents.CHORUS_FRUIT_TELEPORT, SoundSource.PLAYERS, 1.0f, 1.0f);
             }
-            if (getEnchantLvl(bow, "deep_lucky_block:grapple") > 0) {
+            int grappleLvl = getEnchantLvl(bow, "deep_lucky_block:grapple");
+            if (grappleLvl > 0) {
                 if (player.level() instanceof ServerLevel slgrp) {
                     EnchantmentParticleFX.tetherBeam(slgrp, player.position().add(0, 1.0, 0), hitLoc,
                             EnchantmentParticleFX.STEEL_SILVER, EnchantmentParticleFX.EARTH_OCHRE, 0.55);
-                }
-                if (player.isShiftKeyDown() && event.getRayTraceResult() instanceof EntityHitResult ehr && ehr.getEntity() instanceof LivingEntity target) {
-                    Vec3 pull = player.position().subtract(target.position());
-                    double len = Math.max(1.0, pull.length());
-                    double speed = Math.min(2.6, 0.55 + len * 0.14);
-                    target.setDeltaMovement(pull.normalize().scale(speed).add(0, 0.28, 0));
-                    target.hurtMarked = true;
-                } else {
-                    Vec3 pull = hitLoc.subtract(player.position());
-                    double len = Math.max(1.0, pull.length());
-                    double speed = Math.min(2.8, 0.65 + len * 0.16);
-                    player.setDeltaMovement(pull.normalize().scale(speed).add(0, 0.28, 0));
-                    player.fallDistance = 0.0f;
-                    player.hurtMarked = true;
+                    // T358-GRAPPLE : « on se fait pas pull assez longtemps ni assez fort ».
+                    //  - la traction ne s'arrête plus à l'à-coup initial : elle est REJOUÉE
+                    //    chaque tick pendant GRAPPLE_DRAG_TICKS (30 ticks, ~3x l'ancienne durée) ;
+                    //  - la vitesse de propulsion est tirée au hasard entre x1.2 et x2.2.
+                    float boost = 1.2f + slgrp.random.nextFloat() * 1.0f;
+                    EntityHitResult grappleHit = event.getRayTraceResult() instanceof EntityHitResult hr ? hr : null;
+                    LivingEntity grabbed = (grappleHit != null
+                            && grappleHit.getEntity() instanceof LivingEntity le
+                            && le != player) ? le : null;
+                    if (player.isShiftKeyDown() && grabbed != null) {
+                        startGrappleDrag(slgrp, player, grabbed, hitLoc, boost, true);
+                    } else {
+                        startGrappleDrag(slgrp, player, player, hitLoc, boost, false);
+                    }
                 }
                 player.level().playSound(null, player.getX(), player.getY(), player.getZ(), SoundEvents.CROSSBOW_SHOOT, SoundSource.PLAYERS, 0.9f, 1.4f);
             }
@@ -5322,6 +5324,92 @@ public class UniversalEnchantmentHandler {
             com.mojang.logging.LogUtils.getLogger().error(
                 "[deep_lucky_block] Erreur dans UniversalEnchantmentHandler#{} - effet ignore.", where, t);
         }
+    }
+
+
+    // ==================== T358-GRAPPLE : TRACTION LONGUE ET FORTE ====================
+
+    /**
+     * T358-GRAPPLE : durée de la traction, en ticks.
+     *
+     * <p>L'ancienne version ne posait qu'un seul {@code setDeltaMovement} : la friction de l'air
+     * mangeait l'élan en une dizaine de ticks, d'où la sensation de « coup de fouet » trop court.
+     * La traction est maintenant rejouée pendant <b>30 ticks</b> (~1,5 s), soit trois fois plus
+     * longtemps, avec une accélération continue vers l'ancre.</p>
+     */
+    private static final int GRAPPLE_DRAG_TICKS = 30;
+
+    /**
+     * T358-GRAPPLE : démarre la traction du grappin.
+     *
+     * @param level               niveau serveur
+     * @param shooter             joueur qui a tiré (source de la traction)
+     * @param pulled              entité tractée (le joueur lui-même, ou la cible en Shift)
+     * @param anchor              point d'ancrage (point d'impact de la flèche)
+     * @param boost               multiplicateur de propulsion, tiré entre <b>1.2 et 2.2</b>
+     * @param anchorFollowsShooter {@code true} = la cible est tirée vers le joueur (Shift),
+     *                            {@code false} = le joueur est tiré vers le point d'impact
+     */
+    public static void startGrappleDrag(ServerLevel level, Player shooter, Entity pulled, Vec3 anchor,
+                                        float boost, boolean anchorFollowsShooter) {
+        startGrappleDrag(level, shooter, pulled, anchor, boost, anchorFollowsShooter, 0.0);
+    }
+
+    /**
+     * T358-GRAPPLE (surcharge) : même traction, avec une <b>vitesse de base imposée</b> — utilisée
+     * par le grappin de canne à pêche, qui garde ainsi son échelle de puissance par niveau.
+     */
+    public static void startGrappleDrag(ServerLevel level, Player shooter, Entity pulled, Vec3 anchor,
+                                        float boost, boolean anchorFollowsShooter, double baseSpeedOverride) {
+        if (pulled == null || !pulled.isAlive()) return;
+        // T358-GRAPPLE : anti-cumul. Sans ce garde-fou, un joueur qui spamme le clic droit sur
+        // sa canne (ou plusieurs flèches grappin qui arrivent en même temps) empilerait les
+        // tractions et partirait à une vitesse absurde. 10 ticks de verrou suffisent : assez
+        // pour empêcher l'empilement, assez court pour enchaîner deux grappins naturellement.
+        long now = level.getGameTime();
+        if (now < pulled.getPersistentData().getLong("slb_grapple_until")) return;
+        pulled.getPersistentData().putLong("slb_grapple_until", now + 10L);
+        Vec3 destination = anchorFollowsShooter ? shooter.position().add(0, 1.0, 0) : anchor;
+        Vec3 delta = destination.subtract(pulled.position().add(0, pulled.getBbHeight() * 0.5, 0));
+        if (delta.lengthSqr() < 0.04) return;          // déjà sur place : rien à tracter (et pas de NaN)
+        double dist = Math.max(1.0, delta.length());
+        // Premier à-coup : formule d'origine, multipliée par la propulsion aléatoire x1.2..x2.2.
+        double base = baseSpeedOverride > 0.0
+                ? baseSpeedOverride
+                : ((pulled == shooter) ? (0.65 + dist * 0.16) : (0.55 + dist * 0.14));
+        double speed = Math.min(3.6, base * boost);
+        pulled.setDeltaMovement(delta.normalize().scale(speed).add(0, 0.30, 0));
+        pulled.fallDistance = 0.0f;
+        pulled.hurtMarked = true;
+        scheduleGrappleTick(level, shooter, pulled, anchor, boost, anchorFollowsShooter, GRAPPLE_DRAG_TICKS);
+    }
+
+    /**
+     * T358-GRAPPLE : une fraction de la traction, rejouée chaque tick jusqu'à la fin du drag.
+     *
+     * <p>La traction s'arrête d'elle-même dès que la cible est arrivée (moins de 1,15 bloc), si
+     * une des deux entités meurt ou change de dimension : aucun risque de « lancer » infini.</p>
+     */
+    private static void scheduleGrappleTick(ServerLevel level, Player shooter, Entity pulled, Vec3 anchor,
+                                            float boost, boolean anchorFollowsShooter, int ticksLeft) {
+        if (ticksLeft <= 0) return;
+        TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, () -> {
+            if (pulled.isRemoved() || !pulled.isAlive()) return;
+            if (pulled.level() != level) return;
+            if (pulled != shooter && (shooter.isRemoved() || !shooter.isAlive())) return;
+            Vec3 destination = anchorFollowsShooter ? shooter.position().add(0, 1.0, 0) : anchor;
+            Vec3 to = destination.subtract(pulled.position().add(0, pulled.getBbHeight() * 0.5, 0));
+            double dist = to.length();
+            if (dist < 1.15) return;                       // arrivé : la traction se relâche
+            Vec3 dir = to.scale(1.0 / dist);
+            Vec3 next = pulled.getDeltaMovement().add(dir.scale(0.16 * boost)).add(0, 0.055, 0);
+            double max = 2.4 + 0.8 * boost;                // borne : jamais de projection absurde
+            if (next.length() > max) next = next.normalize().scale(max);
+            pulled.setDeltaMovement(next);
+            pulled.fallDistance = 0.0f;                    // le grappin ne casse jamais les jambes
+            pulled.hurtMarked = true;
+            scheduleGrappleTick(level, shooter, pulled, anchor, boost, anchorFollowsShooter, ticksLeft - 1);
+        });
     }
 
 }

@@ -197,11 +197,21 @@ public final class WeaponBladeVisualRenderer {
         float lvlBoost = 1.0f + Math.min(4, Math.max(0, level - 1)) * 0.08f;
 
         // Demi-épaisseur Z chevauchant les deux faces de la lame 2D (0.46875..0.53125 -> 0.461..0.539)
+        // T358-PIXEL-GRID-HALF : la GRILLE des pixels animés est divisée par 2 sur les armes
+        // (0.03125 -> 0.015625, soit des cubes deux fois plus fins), la densité de texels est
+        // doublée plus bas pour que la lame reste couverte. L'épaisseur Z est conservée pour
+        // que les mini-cubes continuent de chevaucher les DEUX faces de la lame 2D.
         float hz = is3dTrident ? 0.024f : 0.039f;
-        float hxy = is3dTrident ? 0.022f : 0.03125f; // exactement 1 mini-pixel (1/16 de largeur = 2 * 0.03125)
+        float hxy = is3dTrident ? 0.011f : 0.015625f; // 1/64 de largeur : un demi mini-pixel d'origine
 
         // Détection tir à l'arc tendu ou arbalète chargée -> concentration de pixels 3D sur la pointe !
         float rangedCharge = computeRangedCharge(stack);
+
+        // T358-PIXEL-MIX : couche MÉLANGÉE de pixels encore plus petits, à taille aléatoire
+        // (nano 0.16 -> petit 0.90 de la grille), par-dessus les pixels réguliers : la lame
+        // fourmille de grains fins au lieu d'une grille uniforme. Taille tirée par un hash
+        // stable : aucun scintillement d'une frame à l'autre.
+        emitBladeMicroPixels(vc, mat, tmp, nodes, hxy, hz, pRgb, sRgb, white, time, layerMul);
 
         switch (fx) {
             case RAZOR_GLEAM -> {
@@ -213,7 +223,7 @@ public final class WeaponBladeVisualRenderer {
                     float shine = Math.max(0.0f, 1.0f - d * 5.2f);
                     int a = Math.round((75.0f + 175.0f * shine * shine) * layerMul);
                     int rgb = shine > 0.45f ? white : sRgb;
-                    float s = hxy * (0.82f + 0.35f * shine);
+                    float s = hxy * (0.82f + 0.35f * shine) * pixelVariance(i, time);
                     WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
                             n.x + n.nx * 0.014f, n.y + n.ny * 0.014f, n.z, s, s, hz, rgb, a);
                 }
@@ -236,7 +246,7 @@ public final class WeaponBladeVisualRenderer {
                     float glow = Math.max(0.0f, 1.0f - Math.min(d1, d2) * 5.0f);
                     int rgb = glow > 0.65f ? white : (first ? pRgb : sRgb);
                     int a = Math.round((115.0f + 135.0f * glow) * layerMul);
-                    float s = hxy * (0.90f + 0.32f * glow);
+                    float s = hxy * (0.90f + 0.32f * glow) * pixelVariance(i, time);
                     WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
                             n.x + n.nx * 0.018f, n.y + n.ny * 0.018f, n.z, s, s, hz, rgb, a);
                 }
@@ -284,7 +294,7 @@ public final class WeaponBladeVisualRenderer {
                     // Phase 0..0.35 : le pixel de sang gonfle sur le tranchant ; 0.35..1.0 : tombe par paliers !
                     float dropFall = (cycle < 0.35f) ? 0.0f : (cycle - 0.35f) / 0.65f;
                     float dy = -WeaponWorldVfxManager.quantize(dropFall * dropFall * 0.32f, 0.03125f);
-                    float sz = hxy * (cycle < 0.35f ? (0.55f + cycle * 1.4f) : (1.04f - dropFall * 0.45f));
+                    float sz = hxy * (cycle < 0.35f ? (0.55f + cycle * 1.4f) : (1.04f - dropFall * 0.45f)) * pixelVariance(i, time);
                     int alpha = Math.round(235.0f * (1.0f - dropFall * 0.75f) * layerMul);
                     WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
                             anchor.x + anchor.nx * 0.025f, anchor.y + dy, anchor.z,
@@ -299,7 +309,7 @@ public final class WeaponBladeVisualRenderer {
                     VoxelNode n = nodes.get(i);
                     float d = Math.min(Math.abs(n.progress - flow), 1.0f - Math.abs(n.progress - flow));
                     float pulse = Math.max(0.0f, 1.0f - d * 4.5f);
-                    float s = hxy * (0.78f + 0.45f * pulse);
+                    float s = hxy * (0.78f + 0.45f * pulse) * pixelVariance(i, time);
                     WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
                             n.x + n.nx * 0.018f, n.y + n.ny * 0.018f, n.z,
                             s, s, hz, pulse > 0.4f ? sRgb : pRgb, Math.round((130 + 115 * pulse) * layerMul));
@@ -326,7 +336,7 @@ public final class WeaponBladeVisualRenderer {
                     float cyc = (time * 1.65f + e * 0.17f) % 1.0f;
                     float rise = WeaponWorldVfxManager.quantize(cyc * 0.22f, 0.03125f);
                     float sway = ((e & 1) == 0 ? 1 : -1) * 0.03125f * (cyc > 0.5f ? 1 : 0);
-                    float sz = hxy * (1.05f - cyc * 0.55f) * lvlBoost;
+                    float sz = hxy * (1.05f - cyc * 0.55f) * lvlBoost * pixelVariance(i, time);
                     int rgb = cyc < 0.3f ? white : (cyc < 0.65f ? sRgb : pRgb);
                     WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
                             base.x + sway, base.y + rise, base.z,
@@ -363,7 +373,7 @@ public final class WeaponBladeVisualRenderer {
                     VoxelNode anchor = nodes.get((v * 4 + 2) % count);
                     float cyc = (time * 1.15f + v * 0.25f) % 1.0f;
                     float dy = -WeaponWorldVfxManager.quantize(cyc * cyc * 0.26f, 0.03125f);
-                    float sz = hxy * (0.95f - cyc * 0.4f);
+                    float sz = hxy * (0.95f - cyc * 0.4f) * pixelVariance(i, time);
                     WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
                             anchor.x + anchor.nx * 0.02f, anchor.y + dy, anchor.z,
                             sz, sz, sz, (v & 1) == 0 ? pRgb : sRgb, Math.round(225 * (1.0f - cyc * 0.7f) * layerMul));
@@ -454,7 +464,7 @@ public final class WeaponBladeVisualRenderer {
             float w = 0.5f + 0.5f * Mth.sin(n.progress * 9.0f - wavePhase);
             int rgb = w > 0.72f ? 0xFFFFFF : (w > 0.35f ? pRgb : sRgb);
             int a = Math.round((baseAlpha + 55.0f * w) * layerMul);
-            float s = hxy * (0.82f + 0.30f * w);
+            float s = hxy * (0.82f + 0.30f * w) * pixelVariance(i, time);
             WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
                     n.x + n.nx * 0.016f, n.y + n.ny * 0.016f, n.z, s, s, hz, rgb, a);
         }
@@ -560,9 +570,10 @@ public final class WeaponBladeVisualRenderer {
 
         raw.sort(Comparator.comparingDouble(RawTexel::sortKey));
 
-        // Limite à ~22 mini-cubes bien espacés pour un rendu pixel-art ultra net et performant
-        int stride = Math.max(1, raw.size() / 22);
-        List<VoxelNode> result = new ArrayList<>(24);
+        // T358-PIXEL-GRID-HALF : grille divisée par 2 -> DEUX FOIS plus de mini-cubes (44),
+        // chacun deux fois plus petit : même couverture de lame, rendu bien plus fin.
+        int stride = Math.max(1, raw.size() / 44);
+        List<VoxelNode> result = new ArrayList<>(48);
         for (int i = 0; i < raw.size(); i += stride) {
             RawTexel rt = raw.get(i);
             float cx = (rt.px + 0.5f) / 16.0f;
@@ -588,17 +599,19 @@ public final class WeaponBladeVisualRenderer {
      */
     private static List<VoxelNode> getTrident3dVoxelNodes() {
         if (trident3dNodes != null) return trident3dNodes;
-        List<VoxelNode> list = new ArrayList<>(24);
+        List<VoxelNode> list = new ArrayList<>(48);
+        // T358-PIXEL-GRID-HALF : 12 points par fourche au lieu de 6 (grille divisée par 2).
         // Fourche gauche (-0.125) et fourche droite (+0.125) : y = -0.0625 .. +0.1875
-        for (int i = 0; i <= 5; i++) {
-            float u = i / 5.0f;
+        for (int i = 0; i <= 11; i++) {
+            float u = i / 11.0f;
             float y = Mth.lerp(u, -0.0625f, 0.1875f);
             list.add(new VoxelNode(-0.125f, y, 0.0f, -1.0f, 0.3f, 0.30f + 0.58f * u));
             list.add(new VoxelNode(0.125f, y, 0.0f, 1.0f, 0.3f, 0.30f + 0.58f * u));
         }
         // Collet supérieur + pointe centrale (dernier noeud = 1.0f au sommet exact y = +0.25f !)
-        for (int i = 0; i <= 9; i++) {
-            float u = i / 9.0f;
+        // T358-PIXEL-GRID-HALF : 20 points au lieu de 10 sur l'axe central.
+        for (int i = 0; i <= 19; i++) {
+            float u = i / 19.0f;
             float y = Mth.lerp(u, -0.30f, 0.25f);
             list.add(new VoxelNode(0.0f, y, 0.0f, 0.0f, 1.0f, u));
         }
@@ -608,12 +621,82 @@ public final class WeaponBladeVisualRenderer {
     }
 
     private static List<VoxelNode> getFallbackBladeVoxels(ItemStack stack) {
-        List<VoxelNode> list = new ArrayList<>(12);
-        for (int p = 5; p <= 15; p++) {
-            float c = (p + 0.5f) / 16.0f;
-            float u = (p - 5) / 10.0f;
+        // T358-PIXEL-GRID-HALF : un point tous les DEMI-texel (21 points au lieu de 11).
+        List<VoxelNode> list = new ArrayList<>(24);
+        for (float p = 5.0f; p <= 15.0f; p += 0.5f) {
+            float c = (p + 0.25f) / 16.0f;
+            float u = (p - 5.0f) / 10.0f;
             list.add(new VoxelNode(c, c, 0.50f, -0.707f, 0.707f, u));
         }
         return Collections.unmodifiableList(list);
     }
+
+    // ==================== T358-PIXEL-GRID : GRILLE / 2 ET VARIATIONS ====================
+
+    /**
+     * T358-PIXEL-GRID-VARIATION : facteur de taille (stable) d'un mini-cube de lame.
+     *
+     * <p>La grille d'origine avait des cubes tous identiques, ce qui faisait « nappe » uniforme.
+     * Ici chaque texel reçoit sa propre taille : ~30 % de pixels <b>bien plus petits</b>
+     * (0.42–0.69), ~50 % de <b>normaux</b> (0.80–1.15), ~20 % de <b>plus gros</b> (1.10–1.42).
+     * Le facteur est dérivé d'un hash de l'index : il ne change donc JAMAIS d'une frame à
+     * l'autre (aucun scintillement, règle T351), seulement d'un texel à l'autre, et il respire
+     * très lentement (période ~4 s).</p>
+     */
+    private static float pixelVariance(int index, float time) {
+        int h = index * 0x9E3779B1;
+        h ^= (h >>> 15);
+        h *= 0x85EBCA6B;
+        h ^= (h >>> 13);
+        float r = (h & 0xFFFF) / 65535.0f;
+        float size;
+        if (r < 0.30f) {
+            size = 0.42f + r * 0.9f;                 // pixels nettement plus petits
+        } else if (r < 0.80f) {
+            size = 0.80f + (r - 0.30f) * 0.7f;       // taille normale
+        } else {
+            size = 1.10f + (r - 0.80f) * 1.6f;       // quelques gros pixels
+        }
+        return size * (0.94f + 0.06f * Mth.sin(time * 1.5f + index * 0.9f));
+    }
+
+    /**
+     * T358-PIXEL-MIX : couche de <b>micro-pixels</b> à taille aléatoire, mélangée aux pixels
+     * réguliers de la lame.
+     *
+     * <p>Trois familles : nano (0.16–0.39 de la grille), micro (0.40–0.60) et petit (0.60–0.90).
+     * Les positions et les tailles viennent d'un hash stable : le mélange reste le même image
+     * après image (pas de fourmillement nerveux), seule l'opacité ondule très lentement.</p>
+     */
+    private static void emitBladeMicroPixels(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                             List<VoxelNode> nodes, float hxy, float hz,
+                                             int pRgb, int sRgb, int white, float time, float layerMul) {
+        int count = nodes.size();
+        if (count < 3) return;
+        int passes = Math.min(18, 8 + count / 5);
+        for (int k = 0; k < passes; k++) {
+            int h = (k + 1) * 0x27D4EB2F;
+            int idx = Math.floorMod((h >>> 9) ^ (k * 31), count);
+            VoxelNode n = nodes.get(idx);
+            float r1 = ((h >>> 3) & 0xFF) / 255.0f;
+            float r2 = ((h >>> 11) & 0xFF) / 255.0f;
+            float r3 = ((h >>> 19) & 0xFF) / 255.0f;
+            float sizeFactor;
+            if (r1 < 0.55f) {
+                sizeFactor = 0.16f + r1 * 0.42f;                  // nano-pixel
+            } else if (r1 < 0.85f) {
+                sizeFactor = 0.40f + (r1 - 0.55f) * 0.67f;        // micro-pixel
+            } else {
+                sizeFactor = 0.60f + (r1 - 0.85f) * 2.0f;         // petit pixel
+            }
+            float s = hxy * sizeFactor;
+            float ox = (r2 - 0.5f) * 0.045f;
+            float oy = (r3 - 0.5f) * 0.045f;
+            int rgb = ((k & 3) == 0) ? white : (((k & 1) == 0) ? pRgb : sRgb);
+            int a = Math.round((55.0f + 120.0f * r1) * layerMul);
+            WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
+                    n.x + ox, n.y + oy, n.z, s, s, hz * 0.80f, rgb, a);
+        }
+    }
+
 }
