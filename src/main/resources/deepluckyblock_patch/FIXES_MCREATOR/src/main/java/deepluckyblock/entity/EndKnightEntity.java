@@ -510,10 +510,10 @@ public class EndKnightEntity extends Monster {
                 && net.neoforged.fml.loading.FMLEnvironment.dist == net.neoforged.api.distmarker.Dist.CLIENT) {
             // T360-NO-VANILLA-PARTICLES : aura du Chevalier de l'End en mini-cubes 3D violets
             // (plus aucune particule PORTAL vanilla), avec la même silhouette en colonne.
-            deepluckyblock.client.WeaponWorldVfxManager.spawnPixelPuff(0xA55BFF,
+            deepluckyblock.client.WeaponWorldVfxManager.spawnPixelPuff(deepluckyblock.enchantments.DeepElement.SHADOW.primary,
                     this.getRandomX(0.55D), this.getY() + this.random.nextDouble() * 2.0D,
                     this.getRandomZ(0.55D), 3, 0.12f, 0.02, 16);
-            deepluckyblock.client.WeaponWorldVfxManager.spawnPixelPuff(0x8E3BE8,
+            deepluckyblock.client.WeaponWorldVfxManager.spawnPixelPuff(deepluckyblock.enchantments.DeepElement.SHADOW.highlight,
                     this.getRandomX(0.45D),
                     this.getY() + this.getBbHeight() + 0.4D + this.random.nextDouble() * 0.6D,
                     this.getRandomZ(0.45D), 2, 0.10f, 0.015, 18);

@@ -189,12 +189,12 @@ public enum DeepElement {
         return (r << 16) | (g << 8) | b;
     }
 
-    /** Couleur principale adoucie pour un rendu de pixel (mélange vers le blanc). */
+    /** Adoucit un pixel vers la surbrillance déclarée de sa famille, sans injecter de blanc neutre. */
     public int tint(int rgb, float amount) {
         float a = Math.max(0.0f, Math.min(1.0f, amount));
-        int r = (int) (((rgb >> 16) & 0xFF) * (1.0f - a) + 255 * a);
-        int g = (int) (((rgb >> 8) & 0xFF) * (1.0f - a) + 255 * a);
-        int b = (int) ((rgb & 0xFF) * (1.0f - a) + 255 * a);
+        int r = (int) (((rgb >> 16) & 0xFF) * (1.0f - a) + ((highlight >> 16) & 0xFF) * a);
+        int g = (int) (((rgb >> 8) & 0xFF) * (1.0f - a) + ((highlight >> 8) & 0xFF) * a);
+        int b = (int) ((rgb & 0xFF) * (1.0f - a) + (highlight & 0xFF) * a);
         return (r << 16) | (g << 8) | b;
     }
 }

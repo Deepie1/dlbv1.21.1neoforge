@@ -239,19 +239,24 @@ public final class WeaponWorldVfxManager {
         final float sizeScale;
         int age;
 
-        /** Couleur principale, mélangée sur la palette élémentaire de l'arme si elle en porte plusieurs. */
+        /** Couleur primaire de l'effet ou d'une famille sélectionnée dans la palette de l'arme. */
         int primary() {
             return (paletteMask == 0) ? effect.primaryRgb
-                    : paletteColor(paletteMask, effect.primaryRgb, palettePhase(frameTimeSeconds));
+                    : paletteColor(paletteMask, effect.primaryRgb, palettePhase(frameTimeSeconds), 0);
         }
 
-        /** Couleur secondaire, décalée d'un demi-cycle pour montrer l'autre bout du mélange. */
+        /** Couleur secondaire, issue du même rôle chromatique pour chaque famille portée. */
         int secondary() {
             return (paletteMask == 0) ? effect.secondaryRgb
-                    : paletteColor(paletteMask, effect.secondaryRgb, palettePhase(frameTimeSeconds + 3.1f));
+                    : paletteColor(paletteMask, effect.secondaryRgb, palettePhase(frameTimeSeconds + 3.1f), 1);
         }
 
-        /** T349-VARIATION : variante 0..7 tirée au déclenchement (forme, sens de rotation, teinte). */
+        int highlight() {
+            return (paletteMask == 0) ? effect.highlightRgb
+                    : paletteColor(paletteMask, effect.highlightRgb, palettePhase(frameTimeSeconds + 1.55f), 2);
+        }
+
+        /** T349-VARIATION : variante 0..7 tirée au déclenchement (forme, sens, luminosité). */
         int variant() {
             return (int) ((seed >>> 17) & 7);
         }
@@ -503,8 +508,8 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * T351-ELEMENT-BLEND : même salve, mais chaque pixel prend une teinte piochée le long de la
-     * palette élémentaire de l'arme (feu + eau = braises chaudes ET givrantes dans le même éclat).
+     * T374-PALETTE-LOCK : chaque pixel choisit un rôle chromatique d'une famille portée par l'arme;
+     * les teintes de familles différentes alternent, sans interpolation RGB entre elles.
      */
     public static void spawnMiniPixelBurst(WeaponVisualEffectId fx, double x, double y, double z,
                                            int count, float halfSize, double speed, int paletteMask) {
@@ -523,15 +528,16 @@ public final class WeaponWorldVfxManager {
             double vx = (rand.nextDouble() - 0.5) * speed;
             double vy = (rand.nextDouble() - 0.2) * speed;
             double vz = (rand.nextDouble() - 0.5) * speed;
-            int rgb = switch (i % 3) {
+            int role = i % 3;
+            int rgb = switch (role) {
                 case 0 -> fx.primaryRgb;
                 case 1 -> fx.secondaryRgb;
-                default -> rotateHue(fx.secondaryRgb, 0.16f);
+                default -> fx.highlightRgb;
             };
             if (paletteMask != 0 && Integer.bitCount(paletteMask & deepluckyblock.enchantments.DeepElement.MASK_ALL) > 1) {
-                // Répartition des pixels le long de la palette : le mélange est visible d'un seul coup d'œil.
+                // Répartition des pixels entre familles sans changer leur rôle chromatique.
                 float phase = (count <= 1) ? 0.5f : (float) i / (float) (count - 1);
-                rgb = mixRgb(rgb, paletteColor(paletteMask, rgb, phase), 0.85f);
+                rgb = paletteColor(paletteMask, rgb, phase, role);
             }
             // Tailles multi-échelles : quelques gros pixels, beaucoup de micro-éclats (jamais uniforme)
             float sz = halfSize * (0.42f + rand.nextFloat() * 1.05f);
@@ -780,19 +786,21 @@ public final class WeaponWorldVfxManager {
                 }
             }
 
-            int rgb = switch (i % 3) {
+            int role = i % 3;
+            int rgb = switch (role) {
                 case 0 -> echo.element().primary;
                 case 1 -> echo.element().highlight;
-                default -> rotateHue(echo.element().secondary, 0.05f);
+                default -> echo.element().secondary;
             };
+            int paletteRole = role == 1 ? 2 : (role == 2 ? 1 : 0);
             if (paletteMask != 0 && Integer.bitCount(paletteMask & deepluckyblock.enchantments.DeepElement.MASK_ALL) > 1) {
-                rgb = mixRgb(rgb, paletteColor(paletteMask, rgb, t), 0.85f);
+                rgb = paletteColor(paletteMask, rgb, t, paletteRole);
             }
-            // Les mouvements « lumineux » restent bien lisibles même minuscules.
+            // Les mouvements lumineux utilisent la surbrillance validée de l'élément, jamais du blanc neutre.
             if (echo.motion() == deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_STAR
                     || echo.motion() == deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_PRISM
                     || echo.motion() == deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_HALO) {
-                rgb = mixRgb(rgb, 0xFFFFFF, 0.35f);
+                rgb = mixRgb(rgb, echo.element().highlight, 0.35f);
             }
 
             float sz = echo.size() * (0.7f + rand.nextFloat() * 0.6f);
@@ -962,19 +970,21 @@ public final class WeaponWorldVfxManager {
                 }
             }
 
-            int rgb = switch (i % 3) {
+            int role = i % 3;
+            int rgb = switch (role) {
                 case 0 -> sub.element().primary;
                 case 1 -> sub.element().highlight;
-                default -> rotateHue(sub.element().secondary, 0.06f);
+                default -> sub.element().secondary;
             };
+            int paletteRole = role == 1 ? 2 : (role == 2 ? 1 : 0);
             if (paletteMask != 0 && Integer.bitCount(paletteMask & deepluckyblock.enchantments.DeepElement.MASK_ALL) > 1) {
-                // Mélange élémentaire : chaque mini-pixel tombe à un autre point de la palette.
+                // Mélange élémentaire dans le même rôle de couleur : aucune teinte étrangère ajoutée.
                 float phase = (count <= 1) ? 0.5f : (float) i / (float) (count - 1);
-                rgb = mixRgb(rgb, paletteColor(paletteMask, rgb, phase), 0.82f);
+                rgb = paletteColor(paletteMask, rgb, phase, paletteRole);
             }
             if (sub.shape() == deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_GLINT
                     || sub.shape() == deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_SHARD) {
-                rgb = mixRgb(rgb, 0xFFFFFF, 0.45f);
+                rgb = mixRgb(rgb, sub.element().highlight, 0.45f);
             }
             // T370 : les accents étaient sub-pixel (diamètre < 1 px pour les tiers discrets).
             // Agrandissement modéré : ils restent petits, mais sont réellement visibles en jeu.
@@ -995,33 +1005,34 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * T351-ELEMENT-BLEND : mélange les couleurs primaires des familles élémentaires contenues dans
-     * {@code mask} (bit {@code ordinal()} de {@link deepluckyblock.enchantments.DeepElement}).
-     * {@code phase} 0..1 décrit un aller-retour feu → eau → feu, interpolé en smoothstep.
-     * Une seule famille (ou aucune) renvoie {@code fallback} : le rendu d'origine est conservé.
+     * T374-PALETTE-LOCK : sélectionne les couleurs exactes des familles présentes dans {@code mask}.
+     * La phase parcourt les éléments sans interpoler leurs teintes : aucun mélange rouge-orange
+     * ou autre couleur intermédiaire ne peut apparaître. Une famille seule renvoie son rôle exact.
      */
     public static int paletteColor(int mask, int fallback, float phase) {
+        return paletteColor(mask, fallback, phase, 0);
+    }
+
+    /** Role 0/1/2 = primaire/secondaire/surbrillance; les familles ne sont jamais mélangées en RGB. */
+    public static int paletteColor(int mask, int fallback, float phase, int role) {
         int total = Integer.bitCount(mask & deepluckyblock.enchantments.DeepElement.MASK_ALL);
-        if (total <= 1) return fallback;
+        if (total == 0) return fallback;
         float tri = (phase < 0.5f) ? (phase * 2.0f) : (2.0f - phase * 2.0f);
         tri = Math.max(0.0f, Math.min(1.0f, tri));
         tri = tri * tri * (3.0f - 2.0f * tri);
-        float pos = tri * (total - 1);
-        int i0 = (int) Math.floor(pos);
-        if (i0 < 0) i0 = 0;
-        if (i0 > total - 1) i0 = total - 1;
-        int i1 = Math.min(i0 + 1, total - 1);
-        float f = pos - i0;
-        int a = nthElementPrimary(mask, i0, fallback);
-        int b = nthElementPrimary(mask, i1, fallback);
-        return mixRgb(a, b, f);
+        int index = Math.min(total - 1, Math.max(0, Math.round(tri * (total - 1))));
+        return nthElementColor(mask, index, fallback, role);
     }
 
-    private static int nthElementPrimary(int mask, int index, int fallback) {
+    private static int nthElementColor(int mask, int index, int fallback, int role) {
         int seen = 0;
         for (deepluckyblock.enchantments.DeepElement el : deepluckyblock.enchantments.DeepElement.values()) {
             if ((mask & (1 << el.ordinal())) == 0) continue;
-            if (seen == index) return el.primary;
+            if (seen == index) return switch (role) {
+                case 1 -> el.secondary;
+                case 2 -> el.highlight;
+                default -> el.primary;
+            };
             seen++;
         }
         return fallback;
@@ -1037,41 +1048,35 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * T351-MULTI-ELEMENT-GRADIENT : couleur de l'arme tenue quand elle porte PLUSIEURS éléments.
-     * On parcourt les couleurs de famille en aller-retour (bleu → rouge → bleu...) avec une
-     * interpolation lissée aux extrémités, puis on repasse par {@link #smoothColor} pour que la
-     * transition reste douce même si l'ensemble d'éléments change (changement d'arme).
+     * T374-PALETTE-LOCK : couleur d'un rôle quand l'arme porte PLUSIEURS éléments.
+     * On parcourt les familles en aller-retour, en gardant chaque couleur exacte : aucune
+     * interpolation RGB ne crée une teinte intermédiaire étrangère aux palettes.
      */
     public static int gradientColorFor(net.minecraft.world.item.ItemStack stack, float timeSeconds) {
-        List<deepluckyblock.enchantments.DeepElement> els =
-                WeaponVisualEffectId.elementsOf(stack);
-        if (els.isEmpty()) return 0xFFFFFF;
-        if (els.size() == 1) {
-            deepluckyblock.enchantments.DeepElement only = els.get(0);
-            if (only == deepluckyblock.enchantments.DeepElement.CHAOS) {
-                return smoothColor(0x5A5A0001, deepluckyblock.enchantments.DeepElement.chaosHue(
-                        timeSeconds, 0.0f, only.primary));
-            }
-            return only.primary;
-        }
+        return gradientColorFor(stack, timeSeconds, 0);
+    }
 
-        float cycle = (timeSeconds * 0.16f) % 2.0f;              // ~6,2 s par aller-retour
-        float tri = cycle < 1.0f ? cycle : 2.0f - cycle;          // 0..1..0
-        float pos = tri * (els.size() - 1);
-        int i0 = (int) Math.floor(pos);
-        if (i0 < 0) i0 = 0;
-        if (i0 > els.size() - 1) i0 = els.size() - 1;
-        int i1 = Math.min(i0 + 1, els.size() - 1);
-        float f = pos - i0;
-        f = f * f * (3.0f - 2.0f * f);                            // smoothstep : départs/arrivées doux
-        int target = mixRgb(els.get(i0).primary, els.get(i1).primary, f);
-        // T352-CHAOS-ELEMENT : une arme chaotique garde une base très sombre mais laisse passer un
-        // reflet qui tourne sur toute la roue chromatique (sombre + multicolore, jamais clignotant).
-        if (els.contains(deepluckyblock.enchantments.DeepElement.CHAOS)) {
-            target = deepluckyblock.enchantments.DeepElement.chaosHue(timeSeconds, 0.0f, target);
+    /** Dégradé multi-élément pour un rôle chromatique donné : 0 primaire, 1 secondaire, 2 accent. */
+    public static int gradientColorFor(net.minecraft.world.item.ItemStack stack, float timeSeconds, int role) {
+        List<deepluckyblock.enchantments.DeepElement> els = WeaponVisualEffectId.elementsOf(stack);
+        if (els.isEmpty()) return 0;
+        float cycle = (timeSeconds * 0.16f) % 2.0f;
+        float tri = cycle < 1.0f ? cycle : 2.0f - cycle;
+        int index = Math.min(els.size() - 1, Math.max(0, Math.round(tri * (els.size() - 1))));
+        deepluckyblock.enchantments.DeepElement selected = els.get(index);
+        int target = elementRoleColor(selected, role);
+        if (selected == deepluckyblock.enchantments.DeepElement.CHAOS) {
+            return deepluckyblock.enchantments.DeepElement.chaosHue(timeSeconds, role * 0.23f, target);
         }
-        int key = 0x5A5A0000 | (System.identityHashCode(stack) & 0xFFFF);
-        return smoothColor(key, target);
+        return target;
+    }
+
+    private static int elementRoleColor(deepluckyblock.enchantments.DeepElement element, int role) {
+        return switch (role) {
+            case 1 -> element.secondary;
+            case 2 -> element.highlight;
+            default -> element.primary;
+        };
     }
 
     private static void pushInstance(VfxInstance inst) {
@@ -1168,14 +1173,13 @@ public final class WeaponWorldVfxManager {
                 double px = ent.getX() - vel.x * f + (level.random.nextDouble() - 0.5) * 0.08;
                 double py = ent.getY() + 0.1 - vel.y * f + (level.random.nextDouble() - 0.5) * 0.08;
                 double pz = ent.getZ() - vel.z * f + (level.random.nextDouble() - 0.5) * 0.08;
-                // T349-PALETTE : traînée de flèche tricolore qui dérive lentement en teinte
-                int rgb = (step == 0)
-                        ? tp.effect().primaryRgb
-                        : rotateHue(tp.effect().secondaryRgb, 0.10f + (float) ((now & 31L) / 31.0) * 0.14f);
+                // T374-PALETTE-LOCK : la traînée alterne primaire/surbrillance sans rotation de teinte.
+                int role = step == 0 ? 0 : 2;
+                int rgb = step == 0 ? tp.effect().primaryRgb : tp.effect().highlightRgb;
                 if (tp.paletteMask() != 0 && Integer.bitCount(tp.paletteMask() & deepluckyblock.enchantments.DeepElement.MASK_ALL) > 1) {
-                    // T351-ELEMENT-BLEND : la traînée des flèches mélange aussi les familles de l'arc.
+                    // Le mélange de familles conserve le rôle chromatique de chaque pixel.
                     float phase = ((now & 15L) / 15.0f) * 0.5f + step * 0.5f;
-                    rgb = mixRgb(rgb, paletteColor(tp.paletteMask(), rgb, phase), 0.85f);
+                    rgb = paletteColor(tp.paletteMask(), rgb, phase, role);
                 }
                 PIXEL_PARTICLES.add(new FloatingPixel(
                         tp.effect().additive, px, py, pz,
@@ -1309,6 +1313,9 @@ public final class WeaponWorldVfxManager {
     private static final double MAX_VFX_RENDER_DISTANCE_SQR = 96.0 * 96.0;
 
     private static int cubesSinceFlush;
+    /** Palette active pendant le dessin d'une instance : pare-feu contre les RGB hors famille. */
+    private static int[] activeRenderPalette;
+    private static boolean activePaletteAllowsSpectrum;
 
     @SubscribeEvent
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
@@ -1396,7 +1403,7 @@ public final class WeaponWorldVfxManager {
                 emitVoxelCube(pvc, mat, tmp,
                         rx + (detailMode == 1 ? m * 1.1f : -m * 1.1f), ry + m * 0.5f, rz + m * 0.7f,
                         m * 0.62f, m * 0.52f, m * 0.62f,
-                        detailMode == 2 ? 0xFFFFFF : fp.rgb, Math.round(alpha * 0.72f));
+                        detailMode == 2 ? shadeRgb(fp.rgb, 1.08f) : fp.rgb, Math.round(alpha * 0.72f));
             }
             if (detailMode == 3) {
                 float m = sz * 0.30f;
@@ -1447,6 +1454,8 @@ public final class WeaponWorldVfxManager {
             mobPivotX = (float) (inst.x - camPos.x);
             mobPivotY = (float) (inst.y - camPos.y);
             mobPivotZ = (float) (inst.z - camPos.z);
+            activeRenderPalette = new int[]{inst.primary(), inst.secondary(), inst.highlight()};
+            activePaletteAllowsSpectrum = inst.effect.element() == DeepElement.CHAOS;
             try {
                 if (inst.kind == KIND_SWING_SLASH) {
                     renderVoxelSwingSlash(vc, mat, tmp, camPos, inst, t);
@@ -1464,6 +1473,8 @@ public final class WeaponWorldVfxManager {
                 cubeGloss = 0.0f;
                 cubeTex = 0.10f;
                 voxelElement = DeepElement.EARTH;
+                activeRenderPalette = null;
+                activePaletteAllowsSpectrum = false;
             }
         }
 
@@ -2213,13 +2224,12 @@ public final class WeaponWorldVfxManager {
                     if (prof.shape() == WeaponVfxMotion.SHAPE_PRISM) {
                         int extra = Math.max(1, Math.min(3, prof.arms() - 1));
                         for (int layer = 1; layer <= extra; layer++) {
-                            float hue = (progress * prof.spin() + layer * 0.27f) % 1.0f;
-                            if (hue < 0.0f) hue += 1.0f;
-                            int c = Mth.hsvToRgb(hue, 0.70f, 1.0f);
+                            float roleMix = 0.18f + 0.64f * ((progress * prof.spin() + layer * 0.27f) % 1.0f);
+                            int c = mixRgb(coreRgb, accentRgb, roleMix);
                             emitMotionSlash(vc, mat, tmp, cx, cy, cz, yawDeg, pitchDeg, tiltRad * (0.6f * layer),
                                     radius * (1.0f - 0.14f * layer), baseHalf * (0.8f - 0.12f * layer),
                                     sweepDeg * (0.94f - 0.06f * layer), progress,
-                                    c, coreRgb, 0xFFFFFF, Math.round(peakAlpha * (0.7f - 0.12f * layer)),
+                                    c, coreRgb, accentRgb, Math.round(peakAlpha * (0.7f - 0.12f * layer)),
                                     WeaponVfxMotion.crescent(1, 0.0f), salt + 31 * layer, effectIdx);
                         }
                     }
@@ -3093,9 +3103,7 @@ public final class WeaponWorldVfxManager {
         for (int b = 0; b < blades; b++) {
             float ang = b * (float) (Math.PI * 2.0 / blades) + v.m().spin() * 0.25f;
             float rad = (0.55f + 0.80f * snap) * S;
-            int col = prism
-                    ? Mth.hsvToRgb((v.age() * 0.05f + b * 0.25f) % 1.0f, 0.55f, 1.0f)
-                    : v.grad(0.30f + 0.45f * v.hash(b * 13), b * 19);
+            int col = v.grad(0.30f + 0.45f * v.hash(b * 13), b * 19);
             // lame : longue, fine, INCLINÉE vers le centre (elle pointe la cible)
             v.rot(v.cx() + Mth.cos(ang) * rad, v.cy() + 0.05f, v.cz() + Mth.sin(ang) * rad,
                     (prism ? 0.050f : 0.022f) * S, (0.34f + 0.20f * v.hash(b * 13)) * S, 0.012f * S,
@@ -3124,9 +3132,8 @@ public final class WeaponWorldVfxManager {
             // T365-HOLOGRAM : cage prismatique en volume autour de l'impact (au lieu de la croix
             // seule, qui restait plate) + éclat central.
             v.cage((0.95f + 0.35f * t) * S, v.age() * 0.055f, 0.62f + t * 0.4f, v.age() * 0.03f,
-                    Mth.hsvToRgb((v.age() * 0.06f) % 1.0f, 0.55f, 1.0f), 0xFFFFFF,
-                    Math.round(v.fadeA() * 0.85f));
-            v.cross(4, 0xFFFFFF, Mth.hsvToRgb((v.age() * 0.08f) % 1.0f, 0.60f, 1.0f), v.fadeA());
+                    v.pRgb(), v.aRgb(), Math.round(v.fadeA() * 0.85f));
+            v.cross(4, v.aRgb(), v.pRgb(), v.fadeA());
         } else if (fx == WeaponVisualEffectId.FOCUSED_BULLSEYE) {
             float rad = (t < 0.50f) ? (1.05f - 1.45f * t) : (0.38f + (t - 0.50f) * 1.60f);
             // T365-HOLOGRAM : disque ÉPAIS (3 anneaux inclinés + cœur), plus un plan face caméra.
@@ -4631,18 +4638,19 @@ public final class WeaponWorldVfxManager {
     }
 
     public static int[] palette(WeaponVisualEffectId fx, int variant, int paletteMask) {
-        // T373-ELEMENT-COLORS : couleur de famille (foudre violet/bleu, ombre noir/violet,
-        // sang rouge, vide gris/noir), mélangée à l'identité propre de l'effet puis lissée.
-        // T351-ELEMENT-BLEND : si l'arme porte plusieurs éléments, cœur et halo parcourent la
-        // palette en OPPOSITION DE PHASE -> les deux teintes (feu + eau) sont visibles ensemble.
-        int target = (paletteMask == 0) ? fx.primaryRgb
-                : paletteColor(paletteMask, fx.primaryRgb, palettePhase(frameTimeSeconds));
-        int glowTarget = (paletteMask == 0) ? fx.secondaryRgb
-                : paletteColor(paletteMask, fx.secondaryRgb, palettePhase(frameTimeSeconds + 3.1f));
-        int core = smoothColor(fx.id, target);
-        int glow = smoothColor(1000 + fx.id, glowTarget);
-        float shift = ((variant & 7) - 3.5f) * 0.010f;
-        int accent = rotateHue(glow, 0.10f + shift);
+        // T374-PALETTE-LOCK : primaire, secondaire et accent suivent le même rôle dans chaque famille.
+        // Les variantes changent uniquement la luminosité; aucune rotation HSV ne peut créer une teinte étrangère.
+        int primaryTarget = (paletteMask == 0) ? fx.primaryRgb
+                : paletteColor(paletteMask, fx.primaryRgb, palettePhase(frameTimeSeconds), 0);
+        int secondaryTarget = (paletteMask == 0) ? fx.secondaryRgb
+                : paletteColor(paletteMask, fx.secondaryRgb, palettePhase(frameTimeSeconds + 3.1f), 1);
+        int highlightTarget = (paletteMask == 0) ? fx.highlightRgb
+                : paletteColor(paletteMask, fx.highlightRgb, palettePhase(frameTimeSeconds + 1.55f), 2);
+        int core = (paletteMask == 0) ? smoothColor(fx.id, primaryTarget) : primaryTarget;
+        int glow = (paletteMask == 0) ? smoothColor(1000 + fx.id, secondaryTarget) : secondaryTarget;
+        int highlight = (paletteMask == 0) ? smoothColor(2000 + fx.id, highlightTarget) : highlightTarget;
+        float accentBrightness = 0.94f + (variant & 7) * 0.015f;
+        int accent = shadeRgb(highlight, accentBrightness);
         return new int[]{core, glow, accent};
     }
 
@@ -4677,45 +4685,6 @@ public final class WeaponWorldVfxManager {
 
     public static int smoothBladeColor2(WeaponVisualEffectId fx) {
         return smoothColor(1000 + fx.id, fx.secondaryRgb);
-    }
-
-    /** Rotation de teinte HSV légère d'une couleur RGB 0xRRGGBB. */
-    public static int rotateHue(int rgb, float deltaHue) {
-        int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
-        float max = Math.max(r, Math.max(g, b)) / 255.0f;
-        float min = Math.min(r, Math.min(g, b)) / 255.0f;
-        float v = max;
-        float sat = max <= 0.0f ? 0.0f : (max - min) / max;
-        float h;
-        float d = max - min;
-        if (d <= 0.00001f) {
-            h = 0.0f;
-        } else if (max == r / 255.0f) {
-            h = ((g - b) / 255.0f) / d;
-            if (h < 0.0f) h += 6.0f;
-            h /= 6.0f;
-        } else if (max == g / 255.0f) {
-            h = (((b - r) / 255.0f) / d + 2.0f) / 6.0f;
-        } else {
-            h = (((r - g) / 255.0f) / d + 4.0f) / 6.0f;
-        }
-        h = (h + deltaHue) % 1.0f;
-        if (h < 0.0f) h += 1.0f;
-        int i = (int) (h * 6.0f);
-        float f = h * 6.0f - i;
-        float pp = v * (1.0f - sat);
-        float q = v * (1.0f - sat * f);
-        float t = v * (1.0f - sat * (1.0f - f));
-        float rr, gg, bb;
-        switch (i % 6) {
-            case 0 -> { rr = v; gg = t; bb = pp; }
-            case 1 -> { rr = q; gg = v; bb = pp; }
-            case 2 -> { rr = pp; gg = v; bb = t; }
-            case 3 -> { rr = pp; gg = q; bb = v; }
-            case 4 -> { rr = t; gg = pp; bb = v; }
-            default -> { rr = v; gg = pp; bb = q; }
-        }
-        return ((int) (rr * 255) << 16) | ((int) (gg * 255) << 8) | (int) (bb * 255);
     }
 
     /** T345-PIXEL-DETAIL : micro-aléa déterministe (0..1) — toutes les tailles de pixels restent stables d'une frame à l'autre. */
@@ -5350,21 +5319,11 @@ public final class WeaponWorldVfxManager {
         return mixRgb(high, tip, (k - 0.68f) / 0.32f);
     }
 
-    /**
-     * T364-GRADIENTS : micro-variation de teinte déterministe (± {@code amount} par canal).
-     *
-     * <p>Sans elle, tous les cubes d'une même vague ont exactement la même couleur et l'ensemble
-     * fait « plastique ». Avec, chaque pixel a sa nuance : c'est ce qui donne le rendu peint.</p>
-     */
+    /** Micro-variation déterministe de luminosité : nuance de la couleur d'origine, jamais dérive de teinte. */
     public static int jitterRgb(int rgb, int salt, float amount) {
-        int h = salt * 0x9E3779B1;
-        float jr = (((h >>> 3) & 0xFF) / 255.0f - 0.5f) * 2.0f * amount;
-        float jg = (((h >>> 11) & 0xFF) / 255.0f - 0.5f) * 2.0f * amount;
-        float jb = (((h >>> 19) & 0xFF) / 255.0f - 0.5f) * 2.0f * amount;
-        int r = Mth.clamp(Math.round((((rgb >>> 16) & 0xFF) / 255.0f + jr) * 255.0f), 0, 255);
-        int g = Mth.clamp(Math.round((((rgb >>> 8) & 0xFF) / 255.0f + jg) * 255.0f), 0, 255);
-        int b = Mth.clamp(Math.round(((rgb & 0xFF) / 255.0f + jb) * 255.0f), 0, 255);
-        return (r << 16) | (g << 8) | b;
+        int hash = salt * 0x9E3779B1;
+        float variation = (((hash >>> 3) & 0xFFFF) / 65535.0f - 0.5f) * 2.0f * amount;
+        return shadeRgb(rgb, 1.0f + variation);
     }
 
     public static void putQuad(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
@@ -5378,8 +5337,31 @@ public final class WeaponWorldVfxManager {
         putPosColor(vc, mat, tmp, x3, y3, z3, rgb3, a3);
     }
 
+    private static int keepWithinActivePalette(int rgb) {
+        if (activeRenderPalette == null || activePaletteAllowsSpectrum) return rgb;
+        int best = activeRenderPalette[0];
+        long bestDistance = Long.MAX_VALUE;
+        for (int candidate : activeRenderPalette) {
+            int dr = ((rgb >>> 16) & 0xFF) - ((candidate >>> 16) & 0xFF);
+            int dg = ((rgb >>> 8) & 0xFF) - ((candidate >>> 8) & 0xFF);
+            int db = (rgb & 0xFF) - (candidate & 0xFF);
+            long distance = 2L * dr * dr + 4L * dg * dg + db * db;
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = candidate;
+            }
+        }
+        float sourceLuma = 0.2126f * ((rgb >>> 16) & 0xFF)
+                + 0.7152f * ((rgb >>> 8) & 0xFF) + 0.0722f * (rgb & 0xFF);
+        float baseLuma = 0.2126f * ((best >>> 16) & 0xFF)
+                + 0.7152f * ((best >>> 8) & 0xFF) + 0.0722f * (best & 0xFF);
+        float shade = baseLuma < 1.0f ? 1.0f : Mth.clamp(sourceLuma / baseLuma, 0.45f, 1.14f);
+        return shadeRgb(best, shade);
+    }
+
     public static void putPosColor(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                    float x, float y, float z, int rgb, int a) {
+        rgb = keepWithinActivePalette(rgb);
         // T359-BIG-ANIM-SCALE : unique point de sortie de TOUTE la géométrie (cubes, anneaux,
         // cercles, lignes, hélices, réticules) -> une seule transformation suffit à faire
         // grossir/rétrécir l'animation entière autour de son point d'impact.

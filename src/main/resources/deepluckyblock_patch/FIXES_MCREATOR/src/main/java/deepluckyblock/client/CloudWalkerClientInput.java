@@ -428,13 +428,15 @@ public final class CloudWalkerClientInput {
         // T360-NO-VANILLA-PARTICLES : coussin de nuage en VRAIS mini-cubes 3D (plus aucun sprite
         // vanilla) — un cœur dense qui s'écrase, puis un anneau qui s'évase doucement.
         int poofs = 8 + clampedLvl * 2;
-        WeaponWorldVfxManager.spawnPixelPuff(0xE8F4FF, x, y + 0.02, z,
+        WeaponWorldVfxManager.spawnPixelPuff(deepluckyblock.enchantments.DeepElement.WATER.primary, x, y + 0.02, z,
                 poofs, 0.18f + 0.05f * clampedLvl, 0.05 + 0.02 * clampedLvl, 16);
         double r = (radiant ? 0.95 : 0.72) + 0.22 * (clampedLvl - 1);
         int ring = (radiant ? 14 : 10) + (clampedLvl - 1) * 4;
         for (int i = 0; i < ring; i++) {
             double ang = (Math.PI * 2.0 * i) / ring;
-            WeaponWorldVfxManager.spawnPixelPuff(radiant ? 0xFFF6DC : 0xDFF1FF,
+            WeaponWorldVfxManager.spawnPixelPuff(radiant
+                            ? deepluckyblock.enchantments.DeepElement.LIGHT.primary
+                            : deepluckyblock.enchantments.DeepElement.WATER.secondary,
                     x + Math.cos(ang) * r * 0.45, y - 0.04, z + Math.sin(ang) * r * 0.45,
                     1, 0.03f, 0.02 + 0.008 * clampedLvl, 18);
         }

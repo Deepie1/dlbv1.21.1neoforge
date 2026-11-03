@@ -38,68 +38,68 @@ import java.util.Optional;
 public enum WeaponVisualEffectId {
 
     // === I. TRANCHANT, ALLONGE, ÉCHO & EXÉCUTION (1..5) ===
-    RAZOR_GLEAM(1,  Category.EDGE_SHARP, 35, true,  0xEEF8FF, 0x7CC6FF, DeepElement.METAL),
-    SUPREME_PRISM_EDGE(2,  Category.EDGE_SHARP, 85, true,  0xFFFFFF, 0x4CF2FF, DeepElement.METAL),
-    SPECTRAL_REACH(3,  Category.SPECIAL,    62, true,  0x7CF7E8, 0x1FB6CC, DeepElement.SHADOW),
-    TWIN_ECHO_SLASH(4,  Category.SPECIAL,    68, true,  0x5EE2FF, 0x2B6BFF, DeepElement.THUNDER),
-    GUILLOTINE_CLEAVE(5,  Category.SPECIAL,    80, false, 0xD91E36, 0xF0F4F8, DeepElement.BLOOD),
+    RAZOR_GLEAM(1,  Category.EDGE_SHARP, 35, true, DeepElement.METAL),
+    SUPREME_PRISM_EDGE(2,  Category.EDGE_SHARP, 85, true, DeepElement.METAL),
+    SPECTRAL_REACH(3,  Category.SPECIAL,    62, true, DeepElement.SHADOW),
+    TWIN_ECHO_SLASH(4,  Category.SPECIAL,    68, true, DeepElement.THUNDER),
+    GUILLOTINE_CLEAVE(5,  Category.SPECIAL,    80, false, DeepElement.BLOOD),
 
     // === II. COUPS CRITIQUES AMÉLIORÉS (6..8) ===
-    GOLDEN_CRIT_STAR(6,  Category.CRIT,       52, true,  0xFFE66D, 0xFFFFFF, DeepElement.LIGHT),
-    FOCUSED_BULLSEYE(7,  Category.CRIT,       64, true,  0xFFB703, 0x38F28D, DeepElement.METAL),
-    OVERCLOCK_CYBER_X(8,  Category.CRIT,       88, true,  0x00F5FF, 0xFF2A85, DeepElement.THUNDER),
+    GOLDEN_CRIT_STAR(6,  Category.CRIT,       52, true, DeepElement.LIGHT),
+    FOCUSED_BULLSEYE(7,  Category.CRIT,       64, true, DeepElement.METAL),
+    OVERCLOCK_CYBER_X(8,  Category.CRIT,       88, true, DeepElement.THUNDER),
 
     // === III. SANG, VAMPIRISME & CARNAGE (9..12) ===
-    DRIPPING_BLOOD_EDGE(9,  Category.BLOOD,      66, false, 0xB8081E, 0xFF263B, DeepElement.BLOOD),
-    CRIMSON_SIPHON(10, Category.BLOOD,      84, false, 0x9E061A, 0xFF3858, DeepElement.BLOOD),
-    VITAL_TRANSFUSION(11, Category.BLOOD,      60, true,  0xFF4D79, 0xFFD166, DeepElement.BLOOD),
-    CARNAGE_BERSERK(12, Category.BLOOD,      86, false, 0xD40A20, 0xFF5A1F, DeepElement.BLOOD),
+    DRIPPING_BLOOD_EDGE(9,  Category.BLOOD,      66, false, DeepElement.BLOOD),
+    CRIMSON_SIPHON(10, Category.BLOOD,      84, false, DeepElement.BLOOD),
+    VITAL_TRANSFUSION(11, Category.BLOOD,      60, true, DeepElement.BLOOD),
+    CARNAGE_BERSERK(12, Category.BLOOD,      86, false, DeepElement.BLOOD),
 
     // === IV. ÉLÉMENTS, EFFETS À DISTANCE & GRANDIOSES (13..30) ===
-    MOLTEN_FIRE_WAVE(13, Category.ELEMENT,    58, true,  0xFF6B1A, 0xFFD147, DeepElement.FIRE),
-    SOUL_FIRE_CRESCENT(14, Category.ELEMENT,    76, true,  0x2EF2E6, 0x80FFFA, DeepElement.FIRE),
-    BRIMSTONE_METEOR(15, Category.ELEMENT,    92, true,  0xFF3B00, 0xFFAE00, DeepElement.FIRE),
-    CHAIN_VOLT_ARC(16, Category.ELEMENT,    87, true,  0x70E8FF, 0xE6FBFF, DeepElement.THUNDER),
-    HYDRO_TIDAL_SURGE(17, Category.ELEMENT,    60, true,  0x1CC8FF, 0xA8F0FF, DeepElement.WATER),
-    ABYSSAL_MAELSTROM(18, Category.ELEMENT,    89, true,  0x0A58CA, 0x3CEFFF, DeepElement.WATER),
-    PERMAFROST_RIME(19, Category.ELEMENT,    56, true,  0x8CE8FF, 0xE8FCFF, DeepElement.WATER),
-    VENOM_BRIAR_FANG(20, Category.ELEMENT,    63, false, 0x2BC418, 0x9DFF2E, DeepElement.POISON),
-    SEISMIC_TECTONIC(21, Category.ELEMENT,    82, false, 0xC97A2B, 0xFFD275, DeepElement.EARTH),
-    ZEPHYR_WIND_LANCE(22, Category.ELEMENT,    67, true,  0xC7FFF0, 0x5EF2CE, DeepElement.WOOD),
-    SERAPH_SKY_PILLAR(23, Category.ELEMENT,    96, true,  0xFFF3B0, 0xFFD043, DeepElement.LIGHT),
-    WITHER_SHADOW_RIFT(24, Category.ELEMENT,    78, false, 0x4A1275, 0xB44CFF, DeepElement.SHADOW),
-    ASTRAL_STAR_LANCE(25, Category.RANGED,     93, true,  0x8A7CFF, 0x9EF8FF, DeepElement.LIGHT),
-    VOID_WARP_SPHERE(26, Category.RANGED,     85, true,  0xB538FF, 0x3DF5FF, DeepElement.VOID),
-    DRAGON_CHAOS_PRISM(27, Category.RANGED,     90, true,  0xFF2EC4, 0x7A28FF, DeepElement.VOID),
-    CHRONO_ETERNAL_HALO(28, Category.SPECIAL,    79, true,  0xFFC845, 0xFFF4CC, DeepElement.LIGHT),
-    WARLORD_RALLY_SIGIL(29, Category.SPECIAL,    91, true,  0xFFD644, 0xFFF0B8, DeepElement.EARTH),
-    ANNIHILATING_ARC(30, Category.SPECIAL,    95, true,  0xFFFFFF, 0x9ED8FF, DeepElement.METAL),
+    MOLTEN_FIRE_WAVE(13, Category.ELEMENT, 58, true, DeepElement.FIRE),
+    SOUL_FIRE_CRESCENT(14, Category.ELEMENT, 76, true, DeepElement.FIRE),
+    BRIMSTONE_METEOR(15, Category.ELEMENT, 92, true, DeepElement.FIRE),
+    CHAIN_VOLT_ARC(16, Category.ELEMENT, 87, true, DeepElement.THUNDER),
+    HYDRO_TIDAL_SURGE(17, Category.ELEMENT, 60, true, DeepElement.WATER),
+    ABYSSAL_MAELSTROM(18, Category.ELEMENT, 89, true, DeepElement.WATER),
+    PERMAFROST_RIME(19, Category.ELEMENT, 56, true, DeepElement.WATER),
+    VENOM_BRIAR_FANG(20, Category.ELEMENT, 63, false, DeepElement.POISON),
+    SEISMIC_TECTONIC(21, Category.ELEMENT, 82, false, DeepElement.EARTH),
+    ZEPHYR_WIND_LANCE(22, Category.ELEMENT, 67, true, DeepElement.WOOD),
+    SERAPH_SKY_PILLAR(23, Category.ELEMENT, 96, true, DeepElement.LIGHT),
+    WITHER_SHADOW_RIFT(24, Category.ELEMENT, 78, false, DeepElement.SHADOW),
+    ASTRAL_STAR_LANCE(25, Category.RANGED, 93, true, DeepElement.LIGHT),
+    VOID_WARP_SPHERE(26, Category.RANGED, 85, true, DeepElement.VOID),
+    DRAGON_CHAOS_PRISM(27, Category.RANGED, 90, true, DeepElement.VOID),
+    CHRONO_ETERNAL_HALO(28, Category.SPECIAL, 79, true, DeepElement.LIGHT),
+    WARLORD_RALLY_SIGIL(29, Category.SPECIAL, 91, true, DeepElement.EARTH),
+    ANNIHILATING_ARC(30, Category.SPECIAL, 95, true, DeepElement.METAL),
 
     // === VII. T352-ELEMENT-COMPLET : 3e animation des familles qui n'en avaient que deux,
     // et les 3 signatures du nouveau élément CHAOS (sombre + multicolore) ===
     /** #31 Bois : mâchoire de ronces qui se referme autour de la cible (vert sombre). */
-    THORN_MAW_ROOT(31, Category.ELEMENT,    71, false, 0x4BE04A, 0x145A22, DeepElement.WOOD),
+    THORN_MAW_ROOT(31, Category.ELEMENT, 71, false, DeepElement.WOOD),
     /** #32 Terre : tempête de sable en spirale + dune soulevée (ocre). */
-    SANDSTORM_DUNE(32, Category.ELEMENT,    72, false, 0xE0A94A, 0x6B3D12, DeepElement.EARTH),
+    SANDSTORM_DUNE(32, Category.ELEMENT, 72, false, DeepElement.EARTH),
     /** #33 Ombre : éclipse — disque noir, voile et triple griffure (palette violet/noir T373). */
-    ECLIPSE_VEIL(33, Category.ELEMENT,    74, false, 0x1B0726, 0xA66BFF, DeepElement.SHADOW),
+    ECLIPSE_VEIL(33, Category.ELEMENT, 74, false, DeepElement.SHADOW),
     /** #34 Vide : faille verticale qui aspire la lumière, puis se referme (gris/noir T373). */
-    NULL_RIFT_FISSURE(34, Category.ELEMENT,    77, true,  0x6A5BFF, 0x0B0A2A, DeepElement.VOID),
+    NULL_RIFT_FISSURE(34, Category.ELEMENT, 77, true, DeepElement.VOID),
     /** #35 Chaos : boucle kaléidoscopique multicolore sur base noire. */
-    CHAOS_KALEIDO_LOOP(35, Category.SPECIAL,    83, true,  0xFF3DDC, 0x120616, DeepElement.CHAOS),
+    CHAOS_KALEIDO_LOOP(35, Category.SPECIAL, 83, true, DeepElement.CHAOS),
     /** #36 Chaos : sphère d'entropie — trois cercles orthogonaux qui changent de teinte. */
-    ENTROPY_SPHERE(36, Category.SPECIAL,    87, true,  0x9B5CFF, 0x0B0710, DeepElement.CHAOS),
+    ENTROPY_SPHERE(36, Category.SPECIAL, 87, true, DeepElement.CHAOS),
     /** #37 Chaos : déchirure du big bang — cœur blanc aveuglant, rayons bariolés, anneau noir. */
-    BIG_BANG_SCAR(37, Category.SPECIAL,    96, true,  0xFFFFFF, 0x53103B, DeepElement.CHAOS),
+    BIG_BANG_SCAR(37, Category.SPECIAL, 96, true, DeepElement.CHAOS),
 
     // === VIII. T352b-SPLIT-ELEMENTS : Bois (brun) et Poison (vert foncé) sont désormais deux
     // familles distinctes -> chacune doit avoir ses 3 grosses animations uniques.
     /** #38 Bois : sève vive — éclats d'écorce qui éclosent en pousses, sève ambrée (brun). */
-    VERDANT_SAP_BLOOM(38, Category.ELEMENT,    73, false, 0xB07A3E, 0x6B4118, DeepElement.WOOD),
+    VERDANT_SAP_BLOOM(38, Category.ELEMENT, 73, false, DeepElement.WOOD),
     /** #39 Poison : voile de miasme — nuage vert sombre en pixels, rampe de spores. */
-    MIASMA_SHROUD(39, Category.ELEMENT,    69, false, 0x1E7A32, 0x0A3D16, DeepElement.POISON),
+    MIASMA_SHROUD(39, Category.ELEMENT, 69, false, DeepElement.POISON),
     /** #40 Poison : nova venimeuse — 10 aiguillons qui jaillissent puis retombent. */
-    PLAGUE_NOVA(40, Category.ELEMENT,    81, false, 0x27A043, 0x074012, DeepElement.POISON);
+    PLAGUE_NOVA(40, Category.ELEMENT, 81, false, DeepElement.POISON);
 
     public enum Category {
         EDGE_SHARP,
@@ -137,31 +137,22 @@ public enum WeaponVisualEffectId {
     public final boolean additive;
     /** T350-ELEMENT-FAMILIES : famille élémentaire (couleur + ordre + ambiance). */
     public final DeepElement element;
-    /** Couleur d'accent propre à l'effet, harmonisée vers la famille élémentaire. */
+    /** Les trois rôles chromatiques reprennent exactement la famille de l'effet. */
     public final int primaryRgb;
     public final int secondaryRgb;
+    public final int highlightRgb;
 
     WeaponVisualEffectId(int id, Category category, int priority, boolean additive,
-                         int primaryRgb, int secondaryRgb, DeepElement element) {
+                         DeepElement element) {
         this.id = id;
         this.category = category;
         this.priority = priority;
         this.additive = additive;
         this.element = element;
-        // T350-ELEMENT-COLORS : les couleurs déclarées sont recadrées vers la palette de la famille
-        // (feu = rouge/orange, poison & nature = vert, eau = bleu, foudre = violet/bleu T373, métal = argent...).
-        // 60 % de la teinte de famille : l'effet garde son identité mais s'accorde avec ses voisins.
-        this.primaryRgb = blend(primaryRgb, element.primary, 0.60f);
-        this.secondaryRgb = blend(secondaryRgb, element.highlight, 0.45f);
-    }
-
-    /** Mélange linéaire de deux couleurs 0xRRGGBB. */
-    private static int blend(int a, int b, float t) {
-        float k = Math.max(0.0f, Math.min(1.0f, t));
-        int r = (int) (((a >> 16) & 0xFF) * (1 - k) + ((b >> 16) & 0xFF) * k);
-        int g = (int) (((a >> 8) & 0xFF) * (1 - k) + ((b >> 8) & 0xFF) * k);
-        int bl = (int) ((a & 0xFF) * (1 - k) + (b & 0xFF) * k);
-        return (r << 16) | (g << 8) | bl;
+        // T374-PALETTE-LOCK : aucun RGB individuel ne fuit dans une animation d'élément.
+        this.primaryRgb = element.primary;
+        this.secondaryRgb = element.secondary;
+        this.highlightRgb = element.highlight;
     }
 
     public DeepElement element() {

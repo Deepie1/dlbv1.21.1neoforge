@@ -178,22 +178,20 @@ public final class WeaponBladeVisualRenderer {
         // progressif, jamais de changement brutal d'un coup à l'autre).
         int pRgb = WeaponWorldVfxManager.smoothBladeColor(fx);
         int sRgb = WeaponWorldVfxManager.smoothBladeColor2(fx);
+        int highlightRgb = WeaponWorldVfxManager.smoothColor(2000 + fx.id, fx.highlightRgb);
 
-        // T351-MULTI-ELEMENT-GRADIENT : si l'arme porte plusieurs éléments (ex. feu + eau), les pixels
-        // clairs qui l'entourent prennent une teinte qui voyage EN DOUCEUR d'une famille à l'autre
-        // (bleu -> rouge -> bleu...), au lieu de rester blanches.
+        // T374-PALETTE-LOCK : primaire, secondaire et éclat restent dans le même rôle de chaque famille.
         java.util.List<deepluckyblock.enchantments.DeepElement> elements =
                 WeaponVisualEffectId.elementsOf(stack);
-        int whiteRgb = 0xFFFFFF;
         if (elements.size() > 1) {
-            int grad = WeaponWorldVfxManager.gradientColorFor(stack, time);
-            pRgb = WeaponWorldVfxManager.mixRgb(fx.primaryRgb, grad, 0.78f);
-            sRgb = WeaponWorldVfxManager.mixRgb(fx.secondaryRgb,
-                    WeaponWorldVfxManager.mixRgb(grad, 0xFFFFFF, 0.30f), 0.62f);
-            // Les « points blancs » deviennent des reflets teintés : la nuance joue sur toute la lame.
-            whiteRgb = WeaponWorldVfxManager.mixRgb(0xFFFFFF, grad, 0.42f);
+            int gradPrimary = WeaponWorldVfxManager.gradientColorFor(stack, time, 0);
+            int gradSecondary = WeaponWorldVfxManager.gradientColorFor(stack, time, 1);
+            int gradHighlight = WeaponWorldVfxManager.gradientColorFor(stack, time, 2);
+            pRgb = gradPrimary;
+            sRgb = gradSecondary;
+            highlightRgb = gradHighlight;
         }
-        final int white = whiteRgb;
+        final int white = highlightRgb;
         float lvlBoost = 1.0f + Math.min(4, Math.max(0, level - 1)) * 0.08f;
 
         // Demi-épaisseur Z chevauchant les deux faces de la lame 2D (0.46875..0.53125 -> 0.461..0.539)
@@ -396,12 +394,11 @@ public final class WeaponBladeVisualRenderer {
             }
 
             case DRAGON_CHAOS_PRISM -> {
-                // #27 Cubes chromatiques arc-en-ciel draconiques parcourant les texels
+                // #27 Prisme du Vide : le dégradé suit uniquement les rôles validés de la famille.
                 for (int i = 0; i < count; i++) {
                     VoxelNode n = nodes.get(i);
-                    float hue = (n.progress * 0.7f - time * 0.55f) % 1.0f;
-                    if (hue < 0.0f) hue += 1.0f;
-                    int rgb = Mth.hsvToRgb(hue, 0.78f, 1.0f);
+                    float phase = (n.progress * 0.7f + time * 0.12f) % 1.0f;
+                    int rgb = WeaponWorldVfxManager.rampRgb(phase, sRgb, pRgb, white, pRgb);
                     WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
                             n.x + n.nx * 0.02f, n.y + n.ny * 0.02f, n.z,
                             hxy * 1.02f, hxy * 1.02f, hz, rgb, Math.round(210 * layerMul));
@@ -462,7 +459,8 @@ public final class WeaponBladeVisualRenderer {
         for (int i = 0; i < count; i++) {
             VoxelNode n = nodes.get(i);
             float w = 0.5f + 0.5f * Mth.sin(n.progress * 9.0f - wavePhase);
-            int rgb = w > 0.72f ? 0xFFFFFF : (w > 0.35f ? pRgb : sRgb);
+            int rgb = w > 0.72f ? WeaponWorldVfxManager.mixRgb(pRgb, sRgb, 0.35f)
+                    : (w > 0.35f ? pRgb : sRgb);
             int a = Math.round((baseAlpha + 55.0f * w) * layerMul);
             float s = hxy * (0.82f + 0.30f * w) * pixelVariance(i, time);
             WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,

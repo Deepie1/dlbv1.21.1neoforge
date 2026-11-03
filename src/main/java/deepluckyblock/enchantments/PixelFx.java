@@ -56,8 +56,8 @@ public final class PixelFx {
     private static long lastKey = Long.MIN_VALUE;
     private static long lastKeyTick = Long.MIN_VALUE;
 
-    /** Couleur de repli (blanc chaud) quand le type de particule est inconnu. */
-    private static final int DEFAULT_RGB = 0xE8E3FF;
+    /** Couleur de repli neutre issue de la famille Métal quand le type de particule est inconnu. */
+    private static final int DEFAULT_RGB = DeepElement.METAL.secondary;
 
     private static final Map<ParticleOptions, Integer> COLOR_CACHE = new IdentityHashMap<>(64);
 
@@ -250,14 +250,12 @@ public final class PixelFx {
         return true;
     }
 
-    /** Éclaircit une couleur (0xRRGGBB) vers le blanc. */
+    /** Éclaircit par facteur uniforme : la teinte et la saturation de la famille sont conservées. */
     private static int brighten(int rgb, float amount) {
-        int r = (rgb >>> 16) & 0xFF;
-        int g = (rgb >>> 8) & 0xFF;
-        int b = rgb & 0xFF;
-        r = Math.min(255, Math.round(r + (255 - r) * amount));
-        g = Math.min(255, Math.round(g + (255 - g) * amount));
-        b = Math.min(255, Math.round(b + (255 - b) * amount));
+        float scale = 1.0f + Math.max(0.0f, amount) * 0.35f;
+        int r = Math.min(255, Math.round(((rgb >>> 16) & 0xFF) * scale));
+        int g = Math.min(255, Math.round(((rgb >>> 8) & 0xFF) * scale));
+        int b = Math.min(255, Math.round((rgb & 0xFF) * scale));
         return (r << 16) | (g << 8) | b;
     }
 
@@ -266,8 +264,8 @@ public final class PixelFx {
     // ==================================================================================
 
     /**
-     * Le type de particule vanilla n'est plus <b>jamais</b> rendu : il ne sert qu'à choisir la
-     * teinte du mini-cube 3D correspondant (braise orange, étincelle cyan, âme violette…).
+     * Le type de particule vanilla n'est plus <b>jamais</b> rendu : il ne sert qu'à choisir une
+     * couleur de rôle définie par les palettes élémentaires, puis une nuance de luminosité.
      */
     public static int colorOf(ParticleOptions type) {
         if (type == null) return DEFAULT_RGB;
@@ -307,53 +305,39 @@ public final class PixelFx {
 
     private static int tableColor(ParticleOptions type, int fallback) {
         if (type == ParticleTypes.FLAME || type == ParticleTypes.SMALL_FLAME
-                || type == ParticleTypes.LAVA || type == ParticleTypes.FIREWORK) {
-            return 0xFF8A2B;
+                || type == ParticleTypes.LAVA || type == ParticleTypes.FIREWORK
+                || type == ParticleTypes.EXPLOSION || type == ParticleTypes.EXPLOSION_EMITTER) {
+            return DeepElement.FIRE.primary;
         }
-        if (type == ParticleTypes.SOUL_FIRE_FLAME) return 0x63E7FF;
-        if (type == ParticleTypes.ELECTRIC_SPARK) return DeepElement.THUNDER.primary;
-        if (type == ParticleTypes.END_ROD || type == ParticleTypes.FLASH || type == ParticleTypes.GLOW) {
-            return 0xFFF6D0;
+        if (type == ParticleTypes.SOUL_FIRE_FLAME) return DeepElement.FIRE.highlight;
+        if (type == ParticleTypes.ELECTRIC_SPARK || type == ParticleTypes.SONIC_BOOM) return DeepElement.THUNDER.primary;
+        if (type == ParticleTypes.END_ROD || type == ParticleTypes.FLASH || type == ParticleTypes.GLOW
+                || type == ParticleTypes.TOTEM_OF_UNDYING) return DeepElement.LIGHT.highlight;
+        if (type == ParticleTypes.CRIT || type == ParticleTypes.ENCHANTED_HIT) return DeepElement.LIGHT.primary;
+        if (type == ParticleTypes.ENCHANT || type == ParticleTypes.SOUL || type == ParticleTypes.SCULK_SOUL) {
+            return DeepElement.SHADOW.highlight;
         }
-        if (type == ParticleTypes.CRIT || type == ParticleTypes.ENCHANTED_HIT) return 0xFFE9A0;
-        if (type == ParticleTypes.ENCHANT) return 0xC9A8FF;
-        if (type == ParticleTypes.PORTAL || type == ParticleTypes.REVERSE_PORTAL) {
-            return DeepElement.VOID.primary;
-        }
-        if (type == ParticleTypes.DRAGON_BREATH) return DeepElement.VOID.highlight;
-        if (type == ParticleTypes.WITCH) return DeepElement.POISON.primary;
-        if (type == ParticleTypes.SCULK_SOUL) return DeepElement.SHADOW.highlight;
-        if (type == ParticleTypes.SOUL) return 0x63D6E8;
-        if (type == ParticleTypes.SCULK_CHARGE_POP) return 0x5F7A9E;
+        if (type == ParticleTypes.PORTAL || type == ParticleTypes.REVERSE_PORTAL
+                || type == ParticleTypes.DRAGON_BREATH) return DeepElement.VOID.primary;
+        if (type == ParticleTypes.WITCH || type == ParticleTypes.ITEM_SLIME) return DeepElement.POISON.primary;
+        if (type == ParticleTypes.SCULK_CHARGE_POP || type == ParticleTypes.SQUID_INK) return DeepElement.SHADOW.secondary;
         if (type == ParticleTypes.SPLASH || type == ParticleTypes.BUBBLE
                 || type == ParticleTypes.BUBBLE_COLUMN_UP || type == ParticleTypes.BUBBLE_POP
                 || type == ParticleTypes.NAUTILUS || type == ParticleTypes.CURRENT_DOWN
-                || type == ParticleTypes.FALLING_HONEY) {
-            return 0x6FC9FF;
+                || type == ParticleTypes.SNOWFLAKE) {
+            return DeepElement.WATER.primary;
         }
         if (type == ParticleTypes.SWEEP_ATTACK || type == ParticleTypes.GUST
                 || type == ParticleTypes.SMALL_GUST || type == ParticleTypes.GUST_EMITTER_SMALL
-                || type == ParticleTypes.WHITE_SMOKE) {
-            return 0xE8F6FF;
-        }
+                || type == ParticleTypes.WHITE_SMOKE) return DeepElement.LIGHT.primary;
         if (type == ParticleTypes.CLOUD || type == ParticleTypes.POOF
                 || type == ParticleTypes.SMOKE || type == ParticleTypes.LARGE_SMOKE
                 || type == ParticleTypes.CAMPFIRE_COSY_SMOKE || type == ParticleTypes.WHITE_ASH
-                || type == ParticleTypes.ASH) {
-            return 0xD8DEE6;
-        }
-        if (type == ParticleTypes.HAPPY_VILLAGER || type == ParticleTypes.COMPOSTER
-                || type == ParticleTypes.HEART || type == ParticleTypes.TOTEM_OF_UNDYING) {
-            return 0x9CFF7A;
-        }
-        if (type == ParticleTypes.SNOWFLAKE) return 0xDFF7FF;
-        if (type == ParticleTypes.SQUID_INK) return 0x22304A;
-        if (type == ParticleTypes.ANGRY_VILLAGER) return 0xE0574C;
-        if (type == ParticleTypes.WAX_ON) return 0xFFC98A;
-        if (type == ParticleTypes.CHERRY_LEAVES) return 0xFFB7D5;
-        if (type == ParticleTypes.ITEM_SLIME) return 0x8BD46B;
-        if (type == ParticleTypes.EXPLOSION || type == ParticleTypes.EXPLOSION_EMITTER) return 0xFFD27A;
-        if (type == ParticleTypes.SONIC_BOOM) return 0x9BF6FF;
+                || type == ParticleTypes.ASH) return DeepElement.VOID.primary;
+        if (type == ParticleTypes.HAPPY_VILLAGER || type == ParticleTypes.COMPOSTER) return DeepElement.WOOD.highlight;
+        if (type == ParticleTypes.HEART || type == ParticleTypes.ANGRY_VILLAGER) return DeepElement.BLOOD.primary;
+        if (type == ParticleTypes.WAX_ON || type == ParticleTypes.FALLING_HONEY) return DeepElement.LIGHT.secondary;
+        if (type == ParticleTypes.CHERRY_LEAVES) return DeepElement.WOOD.primary;
         return fallback;
     }
 

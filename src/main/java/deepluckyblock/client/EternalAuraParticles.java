@@ -153,7 +153,7 @@ public final class EternalAuraParticles {
         // T360-NO-VANILLA-PARTICLES : l'aura ETERNAL n'utilise plus la particule END_ROD vanilla,
         // mais de vrais mini-cubes 3D blancs qui montent doucement (même moteur que les VFX d'armes).
         for (int i = 0; i < n; i++) {
-            WeaponWorldVfxManager.spawnPixelPuff(0xFFF6D0,
+            WeaponWorldVfxManager.spawnPixelPuff(deepluckyblock.enchantments.DeepElement.LIGHT.primary,
                     x + (rnd.nextDouble() - 0.5D) * 0.25D,
                     y + rnd.nextDouble() * 0.25D,
                     z + (rnd.nextDouble() - 0.5D) * 0.25D,
