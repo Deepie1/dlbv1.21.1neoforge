@@ -1468,41 +1468,44 @@ public final class WeaponWorldVfxManager {
         if (alpha <= 8 || radius <= 0.05f) return;
         float S = Mth.clamp(inst.sizeScale, 0.55f, 2.60f);
         int salt = (int) (inst.seed & 0x7FFFFFFFL) + inst.age * 53;
-        float yawR = -inst.yawDeg * Mth.DEG_TO_RAD;
-        float dirX = Mth.sin(yawR);
-        float dirZ = Mth.cos(yawR);
-        float perpX = Mth.cos(yawR);
-        float perpZ = -Mth.sin(yawR);
+        float yawRad = -inst.yawDeg * Mth.DEG_TO_RAD;
+        float dirX = Mth.sin(yawRad);
+        float dirZ = Mth.cos(yawRad);
+        float perpX = Mth.cos(yawRad);
+        float perpZ = -Mth.sin(yawRad);
 
         switch (inst.effect.element()) {
             case FIRE -> {
-                // Braises qui MONTENT de la lame (convection), en s'effaçant.
-                for (int i = 0; i < 6; i++) {
-                    float along = ((i / 5.0f) - 0.5f) * radius * 1.5f;
-                    float side = (pixelHash(salt, i * 7) - 0.5f) * 0.40f;
-                    float rise = (0.15f + 0.85f * pixelHash(salt, i * 13)) * (0.35f + 0.90f * t) * S;
-                    emitVoxelCube(vc, mat, tmp,
-                            quantize(cx + dirX * along + perpX * side, 0.0625f),
-                            quantize(cy + rise, 0.0625f),
-                            quantize(cz + dirZ * along + perpZ * side, 0.0625f),
-                            0.030f, 0.050f, 0.030f, (i & 1) == 0 ? coreRgb : 0xFFFFFF,
-                            Math.round(alpha * (1.0f - 0.40f * t)));
+                // Trois petites LANGUES de flamme accrochées à l'entaille (elles montent).
+                for (int i = 0; i < 3; i++) {
+                    float along = ((i / 2.0f) - 0.5f) * radius * 1.30f;
+                    emitPixelFlameLick3D(vc, mat, tmp,
+                            cx + dirX * along, cy - 0.05f, cz + dirZ * along,
+                            (0.35f + 0.45f * t) * S * (0.7f + 0.4f * pixelHash(salt, i * 7)),
+                            (0.040f + 0.012f * pixelHash(salt, i * 3)) * S,
+                            0.06f * S, inst.age * 0.6f + i * 1.9f,
+                            coreRgb, 0xFFFFFF, Math.round(alpha * (0.95f - 0.35f * t)), salt + i);
                 }
             }
             case WATER -> {
-                // Gouttes qui RETOMBENT de la lame (l'eau ne monte pas).
-                for (int i = 0; i < 5; i++) {
-                    float along = ((i / 4.0f) - 0.5f) * radius * 1.4f;
-                    float fall = 0.55f * t * t * S;
+                // Une petite CRÊTE d'eau qui se recourbe à la suite de la lame + gouttes qui tombent.
+                emitPixelWave3D(vc, mat, tmp,
+                        cx - dirX * 0.25f * S, cy - 0.30f * S, cz - dirZ * 0.25f * S,
+                        radius * 0.55f, (0.35f + 0.45f * t) * S, yawRad, 0.75f, t,
+                        coreRgb, accentRgb, 0xFFFFFF,
+                        Math.round(alpha * (0.85f - 0.35f * t)), salt);
+                for (int i = 0; i < 4; i++) {
+                    float along = ((i / 3.0f) - 0.5f) * radius * 1.2f;
                     emitPixelDroplet3D(vc, mat, tmp,
-                            quantize(cx + dirX * along, 0.0625f), quantize(cy - fall, 0.0625f),
+                            quantize(cx + dirX * along, 0.0625f),
+                            quantize(cy - 0.55f * t * t * S, 0.0625f),
                             quantize(cz + dirZ * along, 0.0625f),
-                            0.026f, (i & 1) == 0 ? coreRgb : accentRgb, 0xA8F0FF,
+                            0.024f, (i & 1) == 0 ? coreRgb : accentRgb, 0xA8F0FF,
                             Math.round(alpha * 0.90f), salt + i);
                 }
             }
             case THUNDER -> {
-                // Fourches qui claquent aux deux extrémités de l'entaille.
+                // Fourches qui claquent aux deux extrémités + éclats crénelés projetés.
                 for (int i = 0; i < 2; i++) {
                     float sgn = (i == 0) ? 1.0f : -1.0f;
                     float tx = cx + perpX * sgn * radius * 0.55f;
@@ -1512,81 +1515,90 @@ public final class WeaponWorldVfxManager {
                             5, 0.18f, (long) salt * 131L + inst.age, 0xFFFFFF, trailRgb,
                             Math.round(alpha * 0.90f), 0.030f);
                 }
+                for (int i = 0; i < 4; i++) {
+                    float ang = pixelHash(salt, i * 19) * 6.283f;
+                    emitPixelShard3D(vc, mat, tmp, cx, cy, cz, 0.30f * S, 0.014f,
+                            Mth.cos(ang), (pixelHash(salt, i * 5) - 0.5f) * 0.6f, Mth.sin(ang),
+                            0xFFFFFF, accentRgb, Math.round(alpha * 0.9f), salt + i);
+                }
             }
             case EARTH -> {
-                // Éclats de pierre qui tombent le long de l'entaille.
-                for (int i = 0; i < 4; i++) {
-                    float along = (pixelHash(salt, i * 11) - 0.5f) * radius * 1.2f;
+                // Éclats de pierre INCLINÉS qui tombent le long de l'entaille.
+                for (int i = 0; i < 5; i++) {
+                    float along = (pixelHash(salt, i * 11) - 0.5f) * radius * 1.3f;
                     float fall = (0.30f + 0.55f * t) * S;
-                    emitVoxelCube(vc, mat, tmp,
+                    emitVoxelBoxRotated(vc, mat, tmp,
                             quantize(cx + dirX * along, 0.0625f),
                             quantize(cy + 0.30f * S - fall, 0.0625f),
                             quantize(cz + dirZ * along, 0.0625f),
-                            0.034f, 0.020f, 0.030f, (i & 1) == 0 ? trailRgb : coreRgb,
-                            Math.round(alpha * 0.85f));
+                            0.034f, 0.020f, 0.030f,
+                            along, t * 2.0f + i, 0.6f + i * 0.3f,
+                            (i & 1) == 0 ? trailRgb : coreRgb, Math.round(alpha * 0.85f));
                 }
             }
             case METAL -> {
-                // Étincelles de contact projetées en ligne droite depuis le milieu de la lame.
-                emitVoxelCube(vc, mat, tmp, cx, cy, cz, 0.050f, 0.050f, 0.050f, 0xFFFFFF, alpha);
-                for (int i = 0; i < 4; i++) {
-                    float ang = pixelHash(salt, i * 19) * 6.28f;
-                    float sp = (0.20f + 0.35f * pixelHash(salt, i * 23)) * S * t;
-                    emitVoxelCube(vc, mat, tmp,
-                            quantize(cx + Mth.cos(ang) * sp, 0.0625f),
-                            quantize(cy + Mth.sin(ang) * sp * 0.6f, 0.0625f),
-                            quantize(cz + Mth.sin(ang * 1.7f) * sp, 0.0625f),
-                            0.016f, 0.016f, 0.016f, 0xFFFFFF, Math.round(alpha * 0.95f));
+                // Étincelles de contact : éclats fins projetés en ligne droite (aucune gravité).
+                emitVoxelBoxRotated(vc, mat, tmp, cx, cy, cz, 0.050f, 0.050f, 0.050f,
+                        inst.age * 0.2f, 0.6f, 0.4f, 0xFFFFFF, alpha);
+                for (int i = 0; i < 5; i++) {
+                    float ang = pixelHash(salt, i * 19) * 6.283f;
+                    float sp = 0.65f * S;
+                    emitPixelShard3D(vc, mat, tmp, cx, cy, cz, sp, 0.013f,
+                            Mth.cos(ang), (pixelHash(salt, i * 23) - 0.5f) * 0.9f, Mth.sin(ang),
+                            0xFFFFFF, accentRgb, Math.round(alpha * 0.95f), salt + i * 7);
                 }
             }
             case WOOD -> {
-                // Feuilles plates emportées qui planent en descendant lentement.
-                for (int i = 0; i < 3; i++) {
-                    float along = (pixelHash(salt, i * 17) - 0.5f) * radius;
-                    float drift = 0.25f * t * S;
-                    emitVoxelCube(vc, mat, tmp,
-                            quantize(cx + dirX * along + Mth.sin(t * 6.0f + i) * 0.08f, 0.0625f),
-                            quantize(cy + 0.20f * S - drift, 0.0625f),
-                            quantize(cz + dirZ * along, 0.0625f),
-                            0.040f, 0.010f, 0.040f, (i & 1) == 0 ? accentRgb : trailRgb,
-                            Math.round(alpha * 0.85f));
+                // Deux vrilles courtes qui sortent de la lame, feuilles plates au bout.
+                for (int i = 0; i < 2; i++) {
+                    float sgn = (i == 0) ? 1.0f : -1.0f;
+                    float ex = cx + perpX * sgn * radius * 0.45f;
+                    float ez = cz + perpZ * sgn * radius * 0.45f;
+                    emitPixelTendril3D(vc, mat, tmp, cx, cy, cz, ex, cy + 0.20f * S, ez,
+                            0.16f * S, 5, 0.024f * S, trailRgb, accentRgb,
+                            Math.round(alpha * 0.85f), salt + i);
+                    emitVoxelBoxRotated(vc, mat, tmp, ex, cy + 0.22f * S, ez,
+                            0.036f, 0.008f, 0.036f, sgn * 0.6f, 0.5f, sgn * 0.9f,
+                            accentRgb, Math.round(alpha * 0.8f));
                 }
             }
             case POISON -> {
-                // Bulles lourdes qui montent en flottant (le poison est lent).
+                // Bulles lourdes qui montent + un petit croc qui perle.
                 for (int i = 0; i < 4; i++) {
                     float along = ((i / 3.0f) - 0.5f) * radius;
                     float rise = (0.20f + 0.55f * pixelHash(salt, i * 29)) * t * S;
                     float wob = Mth.sin(inst.age * 0.20f + i * 1.4f) * 0.05f;
-                    emitVoxelCube(vc, mat, tmp,
+                    emitVoxelBoxRotated(vc, mat, tmp,
                             quantize(cx + dirX * along + wob, 0.0625f), quantize(cy + rise, 0.0625f),
                             quantize(cz + dirZ * along + wob, 0.0625f),
-                            0.026f, 0.026f, 0.026f, (i & 1) == 0 ? coreRgb : accentRgb,
-                            Math.round(alpha * 0.80f));
+                            0.026f, 0.032f, 0.026f, wob * 8.0f, 0.4f, 0.5f,
+                            (i & 1) == 0 ? coreRgb : accentRgb, Math.round(alpha * 0.80f));
                 }
+                emitPixelShard3D(vc, mat, tmp, cx, cy - 0.10f, cz, 0.22f * S, 0.016f,
+                        0.0f, -1.0f, 0.0f, 0xFFFFFF, accentRgb,
+                        Math.round(alpha * 0.85f), salt + 3);
             }
             case LIGHT -> {
-                // Motes de lumière qui s'élèvent, très blancs (l'aura de l'arme).
+                // Motes de lumière en plaques fines qui s'élèvent (aura « hologramme »).
                 for (int i = 0; i < 5; i++) {
                     float along = ((i / 4.0f) - 0.5f) * radius * 1.2f;
                     float rise = (0.10f + 0.45f * t) * S;
-                    emitVoxelCube(vc, mat, tmp,
+                    emitVoxelBoxRotated(vc, mat, tmp,
                             quantize(cx + dirX * along, 0.0625f), quantize(cy + rise, 0.0625f),
                             quantize(cz + dirZ * along, 0.0625f),
-                            0.024f, 0.024f, 0.024f, i % 2 == 0 ? 0xFFFFFF : coreRgb,
-                            Math.round(alpha * 0.90f));
+                            0.034f, 0.008f, 0.020f, yawRad + i * 0.4f, 0.4f, 0.6f,
+                            i % 2 == 0 ? 0xFFFFFF : coreRgb, Math.round(alpha * 0.90f));
                 }
             }
             case SHADOW -> {
-                // Volutes sombres qui coulent vers le bas en s'effaçant.
-                for (int i = 0; i < 5; i++) {
-                    float along = ((i / 4.0f) - 0.5f) * radius * 1.1f;
-                    float sink = (0.15f + 0.55f * t) * S;
-                    emitVoxelCube(vc, mat, tmp,
-                            quantize(cx + dirX * along, 0.0625f), quantize(cy - sink, 0.0625f),
-                            quantize(cz + dirZ * along, 0.0625f),
-                            0.028f, 0.028f, 0.028f, (i & 1) == 0 ? trailRgb : 0x25073F,
-                            Math.round(alpha * (1.0f - 0.55f * t)));
+                // Volutes sombres en tentacules courts qui coulent vers le bas.
+                for (int i = 0; i < 3; i++) {
+                    float along = ((i / 2.0f) - 0.5f) * radius * 1.1f;
+                    emitPixelTendril3D(vc, mat, tmp,
+                            cx + dirX * along, cy, cz + dirZ * along,
+                            cx + dirX * along + 0.10f * S, cy - 0.45f * t * S, cz + dirZ * along,
+                            0.12f * S, 5, 0.026f * S, trailRgb, 0x25073F,
+                            Math.round(alpha * (1.0f - 0.55f * t)), salt + i);
                 }
             }
             case BLOOD -> {
@@ -1602,29 +1614,32 @@ public final class WeaponWorldVfxManager {
                 }
             }
             case VOID -> {
-                // Pixels qui CONVERGENT vers le centre (le vide avale même l'entaille).
-                for (int i = 0; i < 5; i++) {
-                    float ang = i * 1.257f + inst.age * 0.20f;
-                    float rad = radius * (1.0f - t) * 0.85f;
-                    emitVoxelCube(vc, mat, tmp,
+                // Cubes inclinés qui CONVERGENT vers le centre (le vide avale l'entaille).
+                for (int i = 0; i < 6; i++) {
+                    float ang = i * 1.047f + inst.age * 0.20f;
+                    float rad = radius * (1.0f - t) * 0.90f;
+                    emitVoxelBoxRotated(vc, mat, tmp,
                             quantize(cx + Mth.cos(ang) * rad, 0.0625f),
                             quantize(cy + Mth.sin(ang) * rad * 0.55f, 0.0625f),
                             quantize(cz + Mth.sin(ang) * rad, 0.0625f),
-                            0.024f, 0.024f, 0.024f, (i & 1) == 0 ? coreRgb : accentRgb,
+                            0.026f, 0.026f, 0.026f,
+                            ang, t * 3.0f, ang * 0.7f,
+                            (i & 1) == 0 ? coreRgb : accentRgb,
                             Math.round(alpha * (0.5f + 0.5f * t)));
                 }
             }
             case CHAOS -> {
-                // Éclats arc-en-ciel en orbite autour de l'entaille.
-                for (int i = 0; i < 5; i++) {
-                    float ang = i * 1.257f + inst.age * 0.35f;
+                // Éclats arc-en-ciel inclinés en orbite autour de l'entaille.
+                for (int i = 0; i < 6; i++) {
+                    float ang = i * 1.047f + inst.age * 0.35f;
                     float rad = radius * 0.55f;
-                    emitVoxelCube(vc, mat, tmp,
+                    emitVoxelBoxRotated(vc, mat, tmp,
                             quantize(cx + Mth.cos(ang) * rad, 0.0625f),
                             quantize(cy + Mth.sin(ang * 2.0f) * rad * 0.40f, 0.0625f),
                             quantize(cz + Mth.sin(ang) * rad, 0.0625f),
-                            0.022f, 0.022f, 0.022f,
-                            Mth.hsvToRgb((inst.age * 0.05f + i / 5.0f) % 1.0f, 0.90f, 1.0f),
+                            0.024f, 0.030f, 0.020f,
+                            ang, ang * 1.7f, inst.age * 0.3f,
+                            Mth.hsvToRgb((inst.age * 0.05f + i / 6.0f) % 1.0f, 0.90f, 1.0f),
                             Math.round(alpha * 0.90f));
                 }
             }
@@ -2388,10 +2403,12 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * T362-ELEMENT-IMPACT : tout ce qu'il faut à une animation d'impact pour se dessiner, plus une
-     * petite boîte à outils de primitives (cube, dalle, trait, anneau, goutte, gerbe balistique,
-     * éclair) pour que chaque élément s'écrive comme une ANIMATION lisible — et non comme un
-     * enchaînement de primitives identiques d'un élément à l'autre.
+     * T362-ELEMENT-IMPACT / T363-ROTATED-VOXELS : tout ce qu'il faut à une animation d'impact pour
+     * se dessiner, plus une boîte à outils de formes (cube incliné, dalle, éclat facetté, liane
+     * courbe, vague déferlante, langue de flamme, anneau, goutte, gerbe balistique, éclair).
+     *
+     * <p>Chaque élément dispose donc de sa propre silhouette ET de son propre rythme, et joue de
+     * tout : tailles différentes, inclinaisons sur trois axes, opacités dégradées.</p>
      */
     private record ImpactView(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                               float cx, float cy, float cz,
@@ -2422,6 +2439,19 @@ public final class WeaponWorldVfxManager {
             return pixelHash(salt, a);
         }
 
+        /** Direction horizontale de l'attaque (vers la cible). */
+        float dirX() {
+            return Mth.sin(-inst.yawDeg * Mth.DEG_TO_RAD);
+        }
+
+        float dirZ() {
+            return Mth.cos(-inst.yawDeg * Mth.DEG_TO_RAD);
+        }
+
+        float yawRad() {
+            return -inst.yawDeg * Mth.DEG_TO_RAD;
+        }
+
         /** Mini-cube 3D aligné sur la grille. */
         void cube(float x, float y, float z, float s, int rgb, int a) {
             box(x, y, z, s, s, s, rgb, a);
@@ -2433,6 +2463,13 @@ public final class WeaponWorldVfxManager {
                     hx, hy, hz, rgb, a);
         }
 
+        /** Cube INCLINÉ sur les trois axes (la brique des formes organiques). */
+        void rot(float x, float y, float z, float hx, float hy, float hz,
+                 float yaw, float pitch, float roll, int rgb, int a) {
+            emitVoxelBoxRotated(vc, mat, tmp, quantize(x, 0.0625f), quantize(y, 0.0625f), quantize(z, 0.0625f),
+                    hx, hy, hz, yaw, pitch, roll, rgb, a);
+        }
+
         void line(float x0, float y0, float z0, float x1, float y1, float z1,
                   float hs, int core, int outer, int a) {
             emitSteppedVoxelLine(vc, mat, tmp, x0, y0, z0, x1, y1, z1, hs, core, outer, a);
@@ -2440,6 +2477,32 @@ public final class WeaponWorldVfxManager {
 
         void ring(float y, float radius, int rgbA, int rgbB, int a, int style) {
             emitPixelRing3D(vc, mat, tmp, cx, y, cz, radius, rgbA, rgbB, a, style);
+        }
+
+        /** Éclat facetté (glace, métal, pierre, croc). */
+        void shard(float x, float y, float z, float length, float half,
+                   float dx, float dy, float dz, int rgb, int tip, int a, int s) {
+            emitPixelShard3D(vc, mat, tmp, x, y, z, length, half, dx, dy, dz, rgb, tip, a, s);
+        }
+
+        /** Liane / tentacule / veine courbe. */
+        void tendril(float x0, float y0, float z0, float x1, float y1, float z1,
+                     float bow, int segments, float half, int rgb, int tip, int a) {
+            emitPixelTendril3D(vc, mat, tmp, x0, y0, z0, x1, y1, z1, bow, segments, half, rgb, tip, a, salt);
+        }
+
+        /** Vague déferlante (elle avance dans l'axe de l'attaque). */
+        void wave(float x, float y, float z, float radius, float height, float curl,
+                  int deep, int foam, int a) {
+            emitPixelWave3D(vc, mat, tmp, x, y, z, radius, height, yawRad(), curl, t,
+                    pRgb, deep, foam, a, salt);
+        }
+
+        /** Langue de flamme courbe. */
+        void lick(float x, float y, float z, float height, float baseHalf, float sway,
+                  float phase, int tip, int a) {
+            emitPixelFlameLick3D(vc, mat, tmp, x, y, z, height, baseHalf, sway, phase,
+                    pRgb, tip, a, salt);
         }
 
         /** Éclair 3D : le tracé est re-tiré à chaque image (comme un orage qui se re-ramifie). */
@@ -2484,44 +2547,39 @@ public final class WeaponWorldVfxManager {
     // ============================ ANIMATIONS D'IMPACT PAR ÉLÉMENT ============================
 
     /**
-     * 火 FEU — le feu MONTE : des langues de flamme effilées grandissent en vacillant, des braises
-     * sont projetées puis retombent, et le sol rougeoie. Aucun anneau tournant autour de la cible.
+     * 火 FEU — des langues de flamme <b>courbes et inclinées</b> qui montent en vacillant, des
+     * braises projetées qui retombent, et un sol qui rougeoie. Aucune pile de blocs droits.
      */
     private static void impactFire(ImpactView v) {
         float t = v.t();
         float S = v.S();
         WeaponVisualEffectId fx = v.inst().effect;
-        int arms = Mth.clamp(v.m().arms() + 1, 3, 7);
-        float grow = 0.40f + 1.60f * v.easeOut();
+        int licks = Mth.clamp(v.m().arms() + 2, 4, 8);
+        float grow = 0.45f + 1.70f * v.easeOut();
 
-        for (int i = 0; i < arms; i++) {
-            float ang = i * (float) (Math.PI * 2.0 / arms) + v.hash(i * 13) * 0.55f;
-            float rad = (0.18f + 0.50f * v.hash(i * 7)) * S;
-            float h = (0.50f + 0.90f * v.hash(i * 29)) * grow * S;
+        for (int i = 0; i < licks; i++) {
+            float ang = i * (float) (Math.PI * 2.0 / licks) + v.hash(i * 13) * 0.55f;
+            float rad = (0.16f + 0.52f * v.hash(i * 7)) * S;
+            float h = (0.55f + 0.95f * v.hash(i * 29)) * grow * S;
             float bx = v.cx() + Mth.cos(ang) * rad;
             float bz = v.cz() + Mth.sin(ang) * rad;
-            for (int k = 0; k < 6; k++) {
-                float u = k / 6.0f;
-                float sway = Mth.sin(v.age() * 0.55f + u * 4.4f + i * 1.7f) * 0.16f * u * rad;
-                float taper = 1.0f - 0.62f * u;
-                v.cube(bx + sway, v.cy() - 0.42f + u * h, bz + sway * 0.7f,
-                        0.050f * taper * S, u > 0.60f ? 0xFFFFFF : (k % 2 == 0 ? v.pRgb() : v.sRgb()),
-                        Math.round(v.fadeA() * (1.0f - 0.28f * u)));
-            }
+            v.lick(bx, v.cy() - 0.42f, bz, h, (0.052f + 0.014f * v.hash(i * 5)) * S,
+                    (0.10f + 0.09f * v.hash(i * 11)) * S, v.age() * 0.50f + i * 1.7f,
+                    0xFFFFFF, Math.round(v.fadeA() * (0.90f - 0.20f * t)));
         }
 
-        // Marque au sol : braises qui rougeoient, l'anneau s'élargit lentement puis s'éteint.
+        // Sol qui rougeoie : braises qui s'élargissent lentement puis s'éteignent.
         v.ring(-0.46f, (0.32f + 1.40f * v.easeOut()) * S, v.pRgb(), v.sRgb(),
                 Math.round(v.fadeA() * 0.72f), PIXEL_RING_DASHED);
 
-        // Braises projetées : elles montent, retombent et s'éteignent (gravité).
+        // Braises projetées (tailles et opacités variées), qui montent puis retombent.
         for (int e = 0; e < 10; e++) {
             float ang = e * 0.628f + v.hash(e) * 0.6f;
             float sp = (0.55f + 1.05f * v.hash(e * 31)) * S;
             v.lob(Mth.cos(ang) * sp, 1.30f + 0.90f * v.hash(e * 17), Mth.sin(ang) * sp,
-                    0.028f + 0.012f * v.hash(e * 5),
+                    0.022f + 0.016f * v.hash(e * 5),
                     (e & 1) == 0 ? 0xFFFFFF : (e % 3 == 0 ? v.pRgb() : v.sRgb()),
-                    Math.round(v.fadeA() * 0.85f));
+                    Math.round(v.fadeA() * (0.55f + 0.40f * v.hash(e * 3))));
         }
 
         if (fx == WeaponVisualEffectId.BRIMSTONE_METEOR) {
@@ -2533,13 +2591,18 @@ public final class WeaponWorldVfxManager {
                         0.055f * S, 5, v.sRgb(), v.pRgb(), 0xFFFFFF, v.fadeA());
             }
         } else if (fx == WeaponVisualEffectId.SOUL_FIRE_CRESCENT) {
-            // FEU D'ÂME : trois âmes pâles tourbillonnent autour de la cible (feu froid, âmes).
+            // FEU D'ÂME : trois âmes tourbillonnantes en cubes inclinés (feu froid).
             for (int w = 0; w < 3; w++) {
                 float ang = v.age() * 0.30f + w * 2.10f;
                 float rad = (0.55f + 0.35f * w) * S * (0.60f + 0.50f * t);
-                float yy = v.cy() + 0.25f + Mth.sin(v.age() * 0.25f + w) * 0.35f;
-                v.cube(v.cx() + Mth.cos(ang) * rad, yy, v.cz() + Mth.sin(ang) * rad,
-                        0.045f * S, w == 0 ? 0xFFFFFF : v.aRgb(), v.fadeA());
+                for (int k = 0; k < 3; k++) {
+                    float u = k / 2.0f;
+                    v.rot(v.cx() + Mth.cos(ang + u) * rad, v.cy() + 0.15f + u * 0.45f * S,
+                            v.cz() + Mth.sin(ang + u) * rad,
+                            0.040f * S * (1.0f - 0.3f * u), 0.055f * S, 0.030f * S,
+                            ang, u * 0.8f, ang * 0.5f, w == 0 ? 0xFFFFFF : v.aRgb(),
+                            Math.round(v.fadeA() * (1.0f - 0.3f * u)));
+                }
             }
         } else if (fx == WeaponVisualEffectId.MOLTEN_FIRE_WAVE) {
             // NAPPE ARDENTE : le feu court AU SOL, deux coulées de lave s'écartent de la cible.
@@ -2554,8 +2617,8 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * 水 EAU — gerbe en couronne (gouttes projetées en cloche) + rides concentriques : l'eau gicle
-     * puis retombe en ondes horizontales. Le givre est un cas à part (cristal qui pousse et se brise).
+     * 水 EAU — une <b>vague déferlante</b> : une paroi d'eau qui monte, se recourbe vers la cible et
+     * l'écrase, avec écume au sommet, embruns qui retombent et rides concentriques au sol.
      */
     private static void impactWater(ImpactView v) {
         if (v.inst().effect == WeaponVisualEffectId.PERMAFROST_RIME) {
@@ -2567,74 +2630,77 @@ public final class WeaponWorldVfxManager {
         float surge = v.easeOut();
         boolean maelstrom = v.inst().effect == WeaponVisualEffectId.ABYSSAL_MAELSTROM;
 
-        int drops = maelstrom ? 8 : 16;
-        for (int d = 0; d < drops; d++) {
-            float ang = d * (float) (Math.PI * 2.0 / drops) + v.hash(d * 11) * 0.35f;
-            float sp = (0.60f + 1.30f * v.hash(d * 23)) * S * (0.70f + 0.50f * surge);
-            float vy = (0.95f + 1.10f * v.hash(d * 37)) * (maelstrom ? 0.55f : 1.0f);
-            v.lob(Mth.cos(ang) * sp, vy, Mth.sin(ang) * sp,
-                    0.034f * S, (d & 1) == 0 ? v.pRgb() : v.aRgb(), Math.round(v.fadeA() * 0.90f));
-            if ((d & 3) == 0) {
-                v.cube(v.cx() + Mth.cos(ang) * sp * t * 2.4f, v.cy() + 0.20f + vy * t * 1.5f,
-                        v.cz() + Mth.sin(ang) * sp * t * 2.4f, 0.018f * S, 0xFFFFFF, v.fadeA());
-            }
+        // 1) LA VAGUE : elle démarre en arrière de la cible et la TRAVERSE (avance + se recourbe).
+        float advance = (1.35f - 2.10f * surge) * S;
+        float waveH = (0.85f + 0.95f * surge) * (maelstrom ? 0.55f : 1.0f) * S;
+        v.wave(v.cx() - v.dirX() * advance, v.cy() - 0.44f, v.cz() - v.dirZ() * advance,
+                (0.85f + 0.90f * surge) * S, waveH, 0.90f, v.sRgb(), 0xFFFFFF, v.fadeA());
+
+        // 2) La vague s'écrase : une seconde crête, plus basse, déjà passée de l'autre côté.
+        if (t > 0.32f) {
+            float u = (t - 0.32f) / 0.68f;
+            v.wave(v.cx() + v.dirX() * u * 1.15f * S, v.cy() - 0.44f, v.cz() + v.dirZ() * u * 1.15f * S,
+                    (1.15f * (1.0f - 0.35f * u)) * S, (0.75f * (1.0f - 0.55f * u)) * S,
+                    0.55f, v.sRgb(), 0xFFFFFF, Math.round(v.fadeA() * (1.0f - 0.75f * u)));
         }
 
-        // Rides concentriques : deux ondes plates qui s'élargissent (l'eau est une SURFACE).
+        // 3) Rides concentriques : deux ondes plates qui s'élargissent (l'eau est une SURFACE).
         for (int w = 0; w < 2; w++) {
             float u = Mth.clamp(t * 1.15f - w * 0.22f, 0.0f, 1.0f);
             v.ring(-0.44f, (0.30f + 1.85f * u) * S, w == 0 ? v.pRgb() : v.aRgb(), v.sRgb(),
                     Math.round(v.fadeA() * (0.85f - 0.35f * w)), PIXEL_RING_SOLID);
         }
 
-        // Embruns : quelques cubes très pâles qui flottent bas et s'évaporent.
-        for (int b = 0; b < 6; b++) {
-            float ang = b * 1.05f + v.age() * 0.12f;
-            float rad = (0.45f + 1.10f * surge) * S * (0.60f + 0.50f * v.hash(b * 19));
-            v.cube(v.cx() + Mth.cos(ang) * rad, v.cy() + 0.10f + 0.35f * v.hash(b * 41) * (1.0f - t),
-                    v.cz() + Mth.sin(ang) * rad, 0.022f * S, 0xA8F0FF,
-                    Math.round(v.fadeA() * 0.45f * (1.0f - 0.50f * t)));
+        // 4) Embruns / gouttes : tailles variées, opacité qui tombe avec la distance.
+        for (int d = 0; d < 10; d++) {
+            float ang = d * 0.628f + v.hash(d * 11) * 0.35f;
+            float sp = (0.60f + 1.30f * v.hash(d * 23)) * S * (0.70f + 0.50f * surge);
+            float vy = 0.95f + 1.10f * v.hash(d * 37);
+            v.lob(Mth.cos(ang) * sp, vy, Mth.sin(ang) * sp,
+                    0.020f + 0.016f * v.hash(d * 13),
+                    (d & 1) == 0 ? v.pRgb() : v.aRgb(),
+                    Math.round(v.fadeA() * (0.90f - 0.35f * t)));
         }
 
         if (maelstrom) {
-            // MAELSTRÖM : entonnoir qui tourbillonne et s'enfonce (l'eau tourne et descend).
+            // MAELSTRÖM : entonnoir de cubes inclinés qui tourbillonnent et s'enfoncent.
             float spin = 0.35f + 0.10f * v.m().spin();
-            for (int k = 0; k < 18; k++) {
-                float u = k / 18.0f;
+            for (int k = 0; k < 20; k++) {
+                float u = k / 20.0f;
                 float ang = u * 9.0f + v.age() * spin;
-                float rad = (1.55f - 1.20f * u) * S;
-                v.cube(v.cx() + Mth.cos(ang) * rad, v.cy() + 0.85f - u * 1.30f * S,
-                        v.cz() + Mth.sin(ang) * rad, 0.040f * (1.0f - 0.40f * u) * S,
-                        (k & 1) == 0 ? v.pRgb() : v.aRgb(), v.fadeA());
+                float rad = (1.55f - 1.25f * u) * S;
+                v.rot(v.cx() + Mth.cos(ang) * rad, v.cy() + 0.85f - u * 1.35f * S,
+                        v.cz() + Mth.sin(ang) * rad,
+                        0.042f * (1.0f - 0.40f * u) * S, 0.030f * S, 0.042f * (1.0f - 0.40f * u) * S,
+                        ang, 0.75f * u, 0.55f * u,
+                        (k & 1) == 0 ? v.pRgb() : v.aRgb(),
+                        Math.round(v.fadeA() * (0.45f + 0.55f * u)));
             }
         }
     }
 
     /**
-     * 氷 GIVRE (branche EAU) — le cristal POUSSE depuis l'impact (six bras facettés + barbules),
-     * gèle le sol, puis SE BRISE en éclats à la fin de sa vie.
+     * 氷 GIVRE (branche EAU) — des <b>éclats facettés inclinés</b> qui POUSSENT depuis l'impact en
+     * s'écartant, gèlent le sol, puis se brisent en éclats à la fin de leur vie.
      */
     private static void impactIce(ImpactView v) {
         float t = v.t();
         float S = v.S();
         float grow = v.easeOut();
 
-        for (int arm = 0; arm < 6; arm++) {
-            float ang = arm * 1.047f + v.hash(arm) * 0.20f;
-            float len = (0.35f + 1.55f * grow) * S;
-            for (int k = 1; k <= 5; k++) {
-                float u = k / 5.0f;
-                float rad = len * u;
-                v.cube(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.30f + 0.28f * u * u,
-                        v.cz() + Mth.sin(ang) * rad, (0.050f - 0.030f * u) * S,
-                        k == 5 ? 0xFFFFFF : v.pRgb(), Math.round(v.fadeA() * (1.0f - 0.20f * u)));
-                if (k > 1 && (k & 1) == 0) {
-                    float bang = ang + 1.05f;
-                    float brad = rad - len * 0.10f;
-                    v.cube(v.cx() + Mth.cos(bang) * brad, v.cy() - 0.30f + 0.35f * u,
-                            v.cz() + Mth.sin(bang) * brad, 0.024f * S, v.aRgb(),
-                            Math.round(v.fadeA() * 0.75f));
-                }
+        for (int arm = 0; arm < 7; arm++) {
+            float ang = arm * 0.897f + v.hash(arm) * 0.20f;
+            float len = (0.45f + 1.60f * grow) * S;
+            float rise = 0.25f + 0.55f * v.hash(arm * 17);
+            v.shard(v.cx(), v.cy() - 0.34f, v.cz(), len, 0.042f * S,
+                    Mth.cos(ang), rise, Mth.sin(ang), v.pRgb(), 0xFFFFFF, v.fadeA(), v.salt() + arm);
+            // barbules latérales : petits éclats greffés sur la hampe
+            if ((arm & 1) == 0) {
+                float bang = ang + 1.05f;
+                v.shard(v.cx() + Mth.cos(ang) * len * 0.55f, v.cy() - 0.20f,
+                        v.cz() + Mth.sin(ang) * len * 0.55f, len * 0.45f, 0.028f * S,
+                        Mth.cos(bang), 0.55f, Mth.sin(bang), v.aRgb(), 0xFFFFFF,
+                        Math.round(v.fadeA() * 0.80f), v.salt() + arm * 7);
             }
         }
 
@@ -2642,23 +2708,25 @@ public final class WeaponWorldVfxManager {
         v.ring(-0.45f, (0.30f + 1.30f * grow) * S, v.pRgb(), 0xFFFFFF,
                 Math.round(v.fadeA() * 0.80f), PIXEL_RING_SOLID);
 
-        // Éclatement : après 55 % de la vie, le cristal se brise en éclats qui s'écartent.
+        // Éclatement : le cristal se brise et les fragments s'écartent en tournoyant.
         if (t > 0.55f) {
             float b = (t - 0.55f) / 0.45f;
-            for (int e = 0; e < 10; e++) {
-                float ang = e * 0.628f + v.hash(e * 7) * 0.5f;
-                float rad = (0.45f + 1.25f * b) * S;
-                v.cube(v.cx() + Mth.cos(ang) * rad,
-                        v.cy() - 0.10f + (v.hash(e * 13) - 0.40f) * 1.10f * b,
-                        v.cz() + Mth.sin(ang) * rad, (0.032f - 0.018f * b) * S,
-                        (e & 1) == 0 ? 0xFFFFFF : v.aRgb(), Math.round(v.fadeA() * (1.0f - b)));
+            for (int e = 0; e < 12; e++) {
+                float ang = e * 0.524f + v.hash(e * 7) * 0.5f;
+                float rad = (0.45f + 1.35f * b) * S;
+                v.rot(v.cx() + Mth.cos(ang) * rad,
+                        v.cy() - 0.10f + (v.hash(e * 13) - 0.40f) * 1.20f * b,
+                        v.cz() + Mth.sin(ang) * rad,
+                        (0.034f - 0.020f * b) * S, (0.026f - 0.014f * b) * S, (0.030f - 0.016f * b) * S,
+                        ang, b * 2.2f + e, b * 1.7f, (e & 1) == 0 ? 0xFFFFFF : v.aRgb(),
+                        Math.round(v.fadeA() * (1.0f - b)));
             }
         }
     }
 
     /**
      * 雷 FOUDRE — instantané : des branches tombent du ciel et rampent au sol, l'intensité CLIGNOTE
-     * au lieu de croître, et un double anneau de choc part très vite.
+     * au lieu de croître, et des éclats crénelés sont projetés en ligne droite.
      */
     private static void impactThunder(ImpactView v) {
         float t = v.t();
@@ -2670,10 +2738,8 @@ public final class WeaponWorldVfxManager {
         for (int f = 0; f < forks; f++) {
             float ang = f * (float) (Math.PI * 2.0 / forks) + v.hash(f * 3) * 0.70f;
             float spread = (0.35f + 0.75f * v.hash(f * 11)) * S;
-            // Le coup de foudre TOMBE du ciel jusqu'au point d'impact.
             v.bolt(v.cx() + Mth.cos(ang) * spread, v.cy() + 3.40f * S, v.cz() + Mth.sin(ang) * spread,
                     v.cx(), v.cy(), v.cz(), 9, 0.28f, 0xFFFFFF, v.pRgb(), flick, 0.036f * S);
-            // Puis il RAMPES au sol.
             float reach = (1.30f + 0.60f * v.hash(f * 5)) * S;
             v.line(v.cx(), v.cy() - 0.42f, v.cz(),
                     v.cx() + Mth.cos(ang) * reach, v.cy() - 0.42f, v.cz() + Mth.sin(ang) * reach,
@@ -2687,23 +2753,23 @@ public final class WeaponWorldVfxManager {
                     Math.round(flick * (0.70f - 0.30f * w)), w == 0 ? PIXEL_RING_SOLID : PIXEL_RING_DASHED);
         }
 
-        // Étincelles : projetées en ligne droite, elles ne retombent pas (pas de gravité).
-        for (int e = 0; e < 8; e++) {
-            float ang = e * 0.785f + v.hash(e * 9) * 0.40f;
+        // Éclats crénelés projetés en ligne droite (ils ne retombent pas : pas de gravité).
+        for (int e = 0; e < 9; e++) {
+            float ang = e * 0.698f + v.hash(e * 9) * 0.40f;
             float sp = (1.20f + 1.60f * v.hash(e * 15)) * S * v.easeOut();
-            v.cube(v.cx() + Mth.cos(ang) * sp, v.cy() + (v.hash(e * 21) - 0.50f) * 1.20f,
-                    v.cz() + Mth.sin(ang) * sp, 0.028f * S,
-                    (e & 1) == 0 ? 0xFFFFFF : v.aRgb(), flick);
+            float yy = v.cy() + (v.hash(e * 21) - 0.50f) * 1.30f;
+            v.shard(v.cx(), v.cy() + (v.hash(e * 21) - 0.50f) * 1.30f, v.cz(),
+                    0.55f * S, 0.024f * S,
+                    Mth.cos(ang) * (0.6f + sp * 0.4f), yy * 0.05f, Mth.sin(ang) * (0.6f + sp * 0.4f),
+                    0xFFFFFF, v.aRgb(), flick, v.salt() + e * 11);
         }
 
         if (fx == WeaponVisualEffectId.TWIN_ECHO_SLASH) {
-            // DOUBLE RÉMANENCE : l'entaille est rejouée une seconde fois, décalée et plus pâle.
             v.slash((1.10f + 0.35f * t) * v.m().scale(), 0.036f, 155.0f,
                     v.pRgb(), v.sRgb(), v.aRgb(), v.fadeA());
             v.slash((0.85f + 0.30f * t) * v.m().scale(), 0.024f, 155.0f,
                     0xFFFFFF, v.sRgb(), v.pRgb(), Math.round(v.fadeA() * 0.55f));
         } else if (fx == WeaponVisualEffectId.CHAIN_VOLT_ARC) {
-            // CHAÎNE : des arcs secondaires sautent d'une cible à l'autre.
             for (int c = 0; c < 3; c++) {
                 float ang = c * 2.094f + v.age() * 0.10f;
                 float rad = (0.85f + 0.55f * v.hash(c * 23)) * S;
@@ -2712,7 +2778,6 @@ public final class WeaponWorldVfxManager {
                         6, 0.22f, 0xFFFFFF, v.aRgb(), Math.round(flick * 0.9f), 0.030f * S);
             }
         } else if (fx == WeaponVisualEffectId.OVERCLOCK_CYBER_X) {
-            // SURCADENCE : grande croix de néons qui s'ouvre en escalier.
             float span = (0.75f + 0.55f * t) * S;
             v.line(v.cx() - span, v.cy() - span, v.cz(), v.cx() + span, v.cy() + span, v.cz(),
                     0.042f * S, 0xFFFFFF, v.pRgb(), flick);
@@ -2722,8 +2787,8 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * 土 TERRE — la terre ne jaillit pas : des DALLES de pierre se soulèvent puis retombent
-     * lourdement, le sol se fend en étoile et la poussière reste au ras du sol.
+     * 土 TERRE — des <b>dalles de pierre inclinées</b> se soulèvent puis retombent lourdement, le
+     * sol se fend en étoile, et des blocs de roche sont arrachés (éclats facettés).
      */
     private static void impactEarth(ImpactView v) {
         float t = v.t();
@@ -2735,14 +2800,20 @@ public final class WeaponWorldVfxManager {
         for (int p = 0; p < plates; p++) {
             float ang = p * (float) (Math.PI * 2.0 / plates) + v.hash(p * 17) * 0.30f;
             float rad = (0.55f + 0.85f * v.hash(p * 23)) * S;
-            float w = (0.10f + 0.07f * v.hash(p * 31)) * S;
+            float w = (0.11f + 0.08f * v.hash(p * 31)) * S;
             float h = (0.045f + 0.035f * v.hash(p * 37)) * S;
-            float hy = v.cy() - 0.40f + lift * (0.55f + 0.75f * v.hash(p * 43)) * S;
-            v.box(v.cx() + Mth.cos(ang) * rad, hy, v.cz() + Mth.sin(ang) * rad,
-                    w, h, w * 0.80f, (p & 1) == 0 ? v.sRgb() : v.pRgb(), v.fadeA());
-            // poussière qui reste coincée sous la dalle
-            v.cube(v.cx() + Mth.cos(ang) * rad * 1.15f, hy - 0.06f, v.cz() + Mth.sin(ang) * rad * 1.15f,
-                    0.024f * S, v.aRgb(), Math.round(v.fadeA() * 0.70f));
+            float hy = v.cy() - 0.40f + lift * (0.55f + 0.80f * v.hash(p * 43)) * S;
+            // dalle INCLINÉE : elle bascule en s'arrachant du sol
+            v.rot(v.cx() + Mth.cos(ang) * rad, hy, v.cz() + Mth.sin(ang) * rad,
+                    w, h, w * 0.80f,
+                    ang, (v.hash(p * 53) - 0.5f) * 1.10f * lift - 0.35f * (1.0f - lift),
+                    (v.hash(p * 61) - 0.5f) * 0.90f * lift,
+                    (p & 1) == 0 ? v.sRgb() : v.pRgb(), v.fadeA());
+            // caillou plus petit qui tourne autour de la dalle
+            v.rot(v.cx() + Mth.cos(ang + 0.5f) * rad * 1.10f, hy + 0.10f,
+                    v.cz() + Mth.sin(ang + 0.5f) * rad * 1.10f,
+                    0.030f * S, 0.024f * S, 0.034f * S, ang * 2.0f, ang, 0.6f,
+                    v.aRgb(), Math.round(v.fadeA() * 0.85f));
         }
 
         // Failles radiales : le sol se fend depuis l'impact.
@@ -2755,17 +2826,20 @@ public final class WeaponWorldVfxManager {
         }
 
         if (fx == WeaponVisualEffectId.SANDSTORM_DUNE) {
-            // TEMPÊTE DE SABLE : tourbillon bas de grains qui enveloppe la cible.
-            for (int g = 0; g < 16; g++) {
-                float u = g / 16.0f;
+            // TEMPÊTE DE SABLE : grains inclinés qui tourbillonnent en enveloppant la cible.
+            for (int g = 0; g < 18; g++) {
+                float u = g / 18.0f;
                 float ang = u * 7.5f + v.age() * 0.55f;
-                float rad = (0.55f + 1.15f * u) * S;
-                v.cube(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.40f + u * 1.55f * S,
-                        v.cz() + Mth.sin(ang) * rad, 0.026f * S + 0.012f * v.hash(g * 7),
-                        (g & 1) == 0 ? v.pRgb() : v.aRgb(), v.fadeA());
+                float rad = (0.55f + 1.20f * u) * S;
+                v.rot(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.40f + u * 1.55f * S,
+                        v.cz() + Mth.sin(ang) * rad,
+                        0.026f * S + 0.014f * v.hash(g * 7), 0.014f * S,
+                        0.026f * S + 0.010f * v.hash(g * 13),
+                        ang, u * 1.6f, ang * 0.8f,
+                        (g & 1) == 0 ? v.pRgb() : v.aRgb(),
+                        Math.round(v.fadeA() * (0.55f + 0.45f * v.hash(g * 3))));
             }
         } else if (fx == WeaponVisualEffectId.WARLORD_RALLY_SIGIL) {
-            // SCEAU DE RALLIEMENT : cercle runique au sol + quatre piliers de bannière.
             emitPixelRunicCircle3D(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy() - 0.44f, v.cz(),
                     (0.60f + 1.15f * v.easeOut()) * S, t * 0.80f, v.pRgb(), v.sRgb(), v.aRgb(),
                     v.fadeA(), true);
@@ -2780,7 +2854,7 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * 金 MÉTAL — le métal est NET : des lames convergent vers la cible puis claquent, avec des
+     * 金 MÉTAL — des <b>lames inclinées</b> convergent vers la cible puis claquent, avec des
      * étincelles courtes et une entaille franche. Aucune gerbe molle, aucune fumée.
      */
     private static void impactMetal(ImpactView v) {
@@ -2788,50 +2862,54 @@ public final class WeaponWorldVfxManager {
         float S = v.S();
         WeaponVisualEffectId fx = v.inst().effect;
         boolean prism = fx == WeaponVisualEffectId.SUPREME_PRISM_EDGE;
-        int blades = prism ? 3 : 6;
+        int blades = prism ? 4 : 7;
         float snap = (t < 0.55f) ? (1.0f - v.easeIn() * 0.85f) : (0.15f + (t - 0.55f) * 0.35f);
 
         for (int b = 0; b < blades; b++) {
             float ang = b * (float) (Math.PI * 2.0 / blades) + v.m().spin() * 0.25f;
-            float rad = (0.55f + 0.75f * snap) * S;
+            float rad = (0.55f + 0.80f * snap) * S;
             int col = prism
-                    ? Mth.hsvToRgb((v.age() * 0.05f + b * 0.33f) % 1.0f, 0.55f, 1.0f)
+                    ? Mth.hsvToRgb((v.age() * 0.05f + b * 0.25f) % 1.0f, 0.55f, 1.0f)
                     : v.pRgb();
-            v.box(v.cx() + Mth.cos(ang) * rad, v.cy() + 0.05f, v.cz() + Mth.sin(ang) * rad,
-                    (prism ? 0.045f : 0.020f) * S, (0.30f + 0.20f * v.hash(b * 13)) * S, 0.012f * S,
+            // lame : longue, fine, INCLINÉE vers le centre (elle pointe la cible)
+            v.rot(v.cx() + Mth.cos(ang) * rad, v.cy() + 0.05f, v.cz() + Mth.sin(ang) * rad,
+                    (prism ? 0.050f : 0.022f) * S, (0.34f + 0.20f * v.hash(b * 13)) * S, 0.012f * S,
+                    ang + 1.5708f, 0.85f, (v.hash(b * 7) - 0.5f) * 0.5f,
                     col, v.fadeA());
+            // contre-lame plus petite, croisée
+            v.rot(v.cx() + Mth.cos(ang) * rad * 0.80f, v.cy() + 0.12f, v.cz() + Mth.sin(ang) * rad * 0.80f,
+                    0.012f * S, (0.16f + 0.10f * v.hash(b * 19)) * S, 0.010f * S,
+                    ang, -0.7f, 0.30f, 0xFFFFFF, Math.round(v.fadeA() * 0.85f));
         }
 
         // L'ENTAILLE elle-même : l'arc de lame de l'enchantement claque au point d'impact.
         v.slash((0.95f + 0.45f * t) * v.m().scale(), 0.030f, 150.0f,
                 v.pRgb(), v.sRgb(), 0xFFFFFF, v.fadeA());
 
-        // Étincelles de contact : très rapides, très courtes, sans gravité.
-        for (int e = 0; e < 6; e++) {
-            float ang = e * 1.05f + v.hash(e * 29) * 0.80f;
-            float sp = (0.35f + 0.75f * v.hash(e * 7)) * S;
-            v.cube(v.cx() + Mth.cos(ang) * sp, v.cy() + 0.05f + (v.hash(e * 3) - 0.50f) * 0.70f,
-                    v.cz() + Mth.sin(ang) * sp, 0.018f * S, 0xFFFFFF, Math.round(v.fadeA() * 0.95f));
+        // Étincelles de contact : éclats fins, très rapides, sans gravité.
+        for (int e = 0; e < 8; e++) {
+            float ang = e * 0.785f + v.hash(e * 29) * 0.80f;
+            float sp = (0.35f + 0.85f * v.hash(e * 7)) * S;
+            v.shard(v.cx(), v.cy() + 0.05f, v.cz(), sp, 0.014f * S,
+                    Mth.cos(ang), (v.hash(e * 3) - 0.5f) * 0.8f, Mth.sin(ang),
+                    0xFFFFFF, v.aRgb(), Math.round(v.fadeA() * 0.95f), v.salt() + e * 5);
         }
 
         if (prism) {
-            // PRISME : éclat arc-en-ciel au centre + croix de pixels.
             v.cross(4, 0xFFFFFF, Mth.hsvToRgb((v.age() * 0.08f) % 1.0f, 0.60f, 1.0f), v.fadeA());
         } else if (fx == WeaponVisualEffectId.FOCUSED_BULLSEYE) {
-            // MIRE : un cercle qui se resserre sur la cible (viser), puis se fend.
             float rad = (t < 0.50f) ? (1.05f - 1.45f * t) : (0.38f + (t - 0.50f) * 1.60f);
             emitPixelCircleBillboard3D(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), rad * S,
                     v.sRgb(), v.pRgb(), v.fadeA());
         } else if (fx == WeaponVisualEffectId.ANNIHILATING_ARC) {
-            // ARC ANNIHILANT : deux arcs croisés géants (la plus grande entaille du jeu).
             v.slash((1.35f + 0.70f * t) * v.m().scale(), 0.046f, 210.0f,
                     0xFFFFFF, v.aRgb(), v.pRgb(), v.fadeA());
         }
     }
 
     /**
-     * 木 BOIS — les végétaux POUSSENT depuis l'impact, rampent au sol puis se RECOURBENT sur la
-     * cible jusqu'à la serrer. Le vent (Zéphyr) garde sa propre animation d'enroulement.
+     * 木 BOIS — des <b>lianes courbes</b> poussent depuis l'impact, rampent au sol puis se
+     * recourbent sur la cible jusqu'à la serrer, terminées par des épines facettées.
      */
     private static void impactWood(ImpactView v) {
         if (v.inst().effect == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) {
@@ -2848,31 +2926,34 @@ public final class WeaponWorldVfxManager {
 
         for (int i = 0; i < vines; i++) {
             float ang = i * (float) (Math.PI * 2.0 / vines) + v.hash(i * 19) * 0.35f;
-            float rad = (0.30f + 1.35f * grow) * S * squeeze;
+            float rad = (0.30f + 1.40f * grow) * S * squeeze;
             float gx = v.cx() + Mth.cos(ang) * rad;
             float gz = v.cz() + Mth.sin(ang) * rad;
-            // liane qui rampe au sol
-            v.line(v.cx(), v.cy() - 0.44f, v.cz(), gx, v.cy() - 0.44f, gz,
-                    0.030f * S, v.sRgb(), v.pRgb(), v.fadeA());
-            // puis qui se redresse en se recourbant vers la cible (l'enlacement)
-            float height = (maw ? 0.85f : 0.55f) * (1.0f + 0.60f * v.hash(i * 23)) * S;
+            float height = (maw ? 0.90f : 0.60f) * (1.0f + 0.60f * v.hash(i * 23)) * S;
             float curl = 1.0f - squeeze;
-            float tipX = gx - Mth.cos(ang) * 0.45f * curl * S;
-            float tipZ = gz - Mth.sin(ang) * 0.45f * curl * S;
+            float tipX = gx - Mth.cos(ang) * 0.50f * curl * S;
+            float tipZ = gz - Mth.sin(ang) * 0.50f * curl * S;
             float tipY = v.cy() - 0.44f + height;
-            v.line(gx, v.cy() - 0.44f, gz, tipX, tipY, tipZ, 0.024f * S, v.pRgb(), v.aRgb(), v.fadeA());
-            // épine / feuille au bout de la liane
-            v.box(tipX, tipY, tipZ, 0.018f * S, 0.045f * S, 0.018f * S,
-                    maw ? 0xFFFFFF : v.aRgb(), v.fadeA());
+
+            // liane qui rampe au sol, puis se redresse : une seule COURBE continue
+            v.tendril(v.cx(), v.cy() - 0.44f, v.cz(), tipX, tipY, tipZ,
+                    (0.18f + 0.22f * v.hash(i * 7)) * S, 8, (maw ? 0.034f : 0.028f) * S,
+                    v.sRgb(), v.aRgb(), v.fadeA());
+            // épine au bout (croc pour la mâchoire, simple pointe sinon)
+            v.shard(tipX, tipY, tipZ, (maw ? 0.30f : 0.18f) * S, 0.026f * S,
+                    -Mth.cos(ang) * curl - 0.15f * Mth.cos(ang), 1.0f, -Mth.sin(ang) * curl - 0.15f * Mth.sin(ang),
+                    maw ? 0xFFFFFF : v.aRgb(), 0xFFFFFF, v.fadeA(), v.salt() + i * 9);
         }
 
         if (fx == WeaponVisualEffectId.VERDANT_SAP_BLOOM) {
-            // FLORAISON : des pétales s'ouvrent vers le haut et de la sève perle.
-            for (int p = 0; p < 6; p++) {
-                float ang = p * 1.047f + v.age() * 0.06f;
-                float rad = (0.18f + 0.85f * grow) * S;
-                v.box(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.10f + 0.35f * grow * S,
-                        v.cz() + Mth.sin(ang) * rad, 0.055f * S, 0.016f * S, 0.055f * S,
+            // FLORAISON : pétales inclinés qui s'ouvrent vers le haut, sève qui perle.
+            for (int p = 0; p < 7; p++) {
+                float ang = p * 0.897f + v.age() * 0.06f;
+                float rad = (0.18f + 0.90f * grow) * S;
+                v.rot(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.10f + 0.38f * grow * S,
+                        v.cz() + Mth.sin(ang) * rad,
+                        0.060f * S, 0.014f * S, 0.060f * S,
+                        ang, -0.55f * grow, ang * 0.5f,
                         (p & 1) == 0 ? v.aRgb() : v.pRgb(), v.fadeA());
             }
             for (int d = 0; d < 3; d++) {
@@ -2884,8 +2965,8 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * 風 VENT (branche BOIS) — trois rubans hélicoïdaux qui s'enroulent en montant, plus des
-     * feuilles emportées : le vent TOURNE, il ne pousse pas et ne retombe pas.
+     * 風 VENT (branche BOIS) — trois rubans hélicoïdaux faits de <b>plaques inclinées</b> qui
+     * s'enroulent en montant, plus des feuilles emportées : le vent TOURNE, il ne pousse pas.
      */
     private static void impactWind(ImpactView v) {
         float t = v.t();
@@ -2894,24 +2975,29 @@ public final class WeaponWorldVfxManager {
 
         for (int arm = 0; arm < 3; arm++) {
             float phase = arm * 2.094f;
-            for (int k = 0; k < 12; k++) {
-                float u = k / 12.0f;
+            for (int k = 0; k < 13; k++) {
+                float u = k / 13.0f;
                 float ang = phase + u * 5.2f + v.age() * spin * 0.12f;
                 float rad = (0.25f + 0.95f * u) * S * (0.65f + 0.50f * t);
-                v.cube(v.cx() + Mth.cos(ang) * rad,
-                        v.cy() - 0.30f + u * 1.85f * S * (0.50f + 0.50f * v.easeOut()),
-                        v.cz() + Mth.sin(ang) * rad, (0.036f - 0.014f * u) * S,
+                float half = (0.038f - 0.014f * u) * S;
+                v.rot(v.cx() + Mth.cos(ang) * rad,
+                        v.cy() - 0.30f + u * 1.90f * S * (0.50f + 0.50f * v.easeOut()),
+                        v.cz() + Mth.sin(ang) * rad,
+                        half * 1.8f, half * 0.35f, half,
+                        ang + 1.5708f, 0.25f, u * 1.4f,
                         k % 4 == 0 ? 0xFFFFFF : (arm == 0 ? v.pRgb() : v.sRgb()),
                         Math.round(v.fadeA() * (1.0f - 0.25f * u)));
             }
         }
 
-        // Feuilles / plumes emportées : elles tournent autour, elles ne tombent pas.
-        for (int l = 0; l < 7; l++) {
+        // Feuilles / plumes emportées : inclinées, elles tourbillonnent sans tomber.
+        for (int l = 0; l < 8; l++) {
             float ang = l * 0.90f + v.age() * 0.22f;
             float rad = (0.55f + 1.25f * v.hash(l * 13)) * S;
-            v.box(v.cx() + Mth.cos(ang) * rad, v.cy() + (v.hash(l * 7) - 0.30f) * 1.50f * S,
-                    v.cz() + Mth.sin(ang) * rad, 0.042f * S, 0.010f * S, 0.042f * S,
+            v.rot(v.cx() + Mth.cos(ang) * rad, v.cy() + (v.hash(l * 7) - 0.30f) * 1.50f * S,
+                    v.cz() + Mth.sin(ang) * rad,
+                    0.046f * S, 0.010f * S, 0.046f * S,
+                    ang, Mth.sin(v.age() * 0.3f + l) * 0.9f, ang * 1.3f,
                     (l & 1) == 0 ? v.aRgb() : v.pRgb(), v.fadeA());
         }
 
@@ -2921,24 +3007,26 @@ public final class WeaponWorldVfxManager {
 
     /**
      * 毒 POISON — lourd et lent : des bulles montent en flottant puis éclatent, du venin perle et
-     * tombe, et une MÂCHOIRE de crocs se referme sur la cible.
+     * tombe, et une <b>mâchoire de crocs inclinés</b> se referme sur la cible.
      */
     private static void impactPoison(ImpactView v) {
         float t = v.t();
         float S = v.S();
         WeaponVisualEffectId fx = v.inst().effect;
 
-        for (int b = 0; b < 12; b++) {
-            float ang = b * 0.524f + v.hash(b * 17) * 0.50f;
+        for (int b = 0; b < 14; b++) {
+            float ang = b * 0.449f + v.hash(b * 17) * 0.50f;
             float rad = (0.20f + 1.05f * v.hash(b * 11)) * S;
             float rise = (0.35f + 1.15f * t) * (0.45f + 0.70f * v.hash(b * 23)) * S;
             float wob = Mth.sin(v.age() * 0.18f + b * 1.3f) * 0.09f * S;
             float pop = (t > 0.72f) ? (1.0f - (t - 0.72f) / 0.28f) : 1.0f;
-            v.cube(v.cx() + Mth.cos(ang) * (rad + wob), v.cy() - 0.40f + rise,
+            float half = (0.032f + 0.016f * v.hash(b * 5)) * S * pop;
+            v.rot(v.cx() + Mth.cos(ang) * (rad + wob), v.cy() - 0.40f + rise,
                     v.cz() + Mth.sin(ang) * (rad + wob),
-                    (0.030f + 0.014f * v.hash(b * 5)) * S * pop,
+                    half, half * 1.25f, half,
+                    ang, wob * 12.0f, ang * 0.7f,
                     (b % 3 == 0) ? 0xFFFFFF : ((b & 1) == 0 ? v.pRgb() : v.sRgb()),
-                    Math.round(v.fadeA() * pop));
+                    Math.round(v.fadeA() * pop * (0.55f + 0.45f * v.hash(b * 7))));
         }
 
         if (fx == WeaponVisualEffectId.VENOM_BRIAR_FANG) {
@@ -2948,44 +3036,50 @@ public final class WeaponWorldVfxManager {
                 float sgn = (side == 0) ? 1.0f : -1.0f;
                 for (int f = 0; f < 5; f++) {
                     float u = f / 4.0f;
-                    float ang = sgn * (0.90f * close);
+                    float ang = sgn * (0.95f * close);
                     float rad = (0.35f + 0.85f * u) * S;
-                    v.box(v.cx() + Mth.cos(ang) * rad,
-                            v.cy() + 0.55f * u * close - 0.10f,
-                            v.cz() + Mth.sin(ang) * rad,
-                            0.020f * S, (0.070f - 0.030f * u) * S, 0.020f * S,
-                            (f & 1) == 0 ? 0xFFFFFF : v.aRgb(), v.fadeA());
+                    float fx2 = v.cx() + Mth.cos(ang) * rad;
+                    float fz = v.cz() + Mth.sin(ang) * rad;
+                    float fy = v.cy() + 0.60f * u * close - 0.10f;
+                    v.shard(fx2, fy, fz, (0.26f - 0.10f * u) * S, 0.026f * S,
+                            -Mth.cos(ang) * 0.55f, -1.0f * sgn, -Mth.sin(ang) * 0.55f,
+                            (f & 1) == 0 ? 0xFFFFFF : v.aRgb(), 0xFFFFFF, v.fadeA(), v.salt() + f * 3 + side);
                 }
             }
         }
 
         // Gouttes de venin : elles perlent puis tombent (accélération gravitaire).
-        for (int d = 0; d < 5; d++) {
-            float ang = d * 1.257f + v.hash(d * 31) * 0.60f;
+        for (int d = 0; d < 6; d++) {
+            float ang = d * 1.047f + v.hash(d * 31) * 0.60f;
             float rad = (0.30f + 0.60f * v.hash(d * 7)) * S;
             v.drop(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.05f - 0.55f * t * t,
-                    v.cz() + Mth.sin(ang) * rad, 0.024f * S, v.sRgb(), v.aRgb(), v.fadeA(), d);
+                    v.cz() + Mth.sin(ang) * rad, 0.024f * S, v.sRgb(), v.aRgb(),
+                    Math.round(v.fadeA() * (0.85f - 0.3f * t)), d);
         }
 
         if (fx == WeaponVisualEffectId.MIASMA_SHROUD) {
-            // MIASME : nappe de spores qui s'étale au sol et monte à peine.
-            for (int m = 0; m < 10; m++) {
-                float ang = m * 0.628f + v.age() * 0.06f;
+            for (int m = 0; m < 12; m++) {
+                float ang = m * 0.524f + v.age() * 0.06f;
                 float rad = (0.40f + 1.45f * v.easeOut()) * S * (0.60f + 0.50f * v.hash(m * 13));
-                v.cube(v.cx() + Mth.cos(ang) * rad,
+                v.rot(v.cx() + Mth.cos(ang) * rad,
                         v.cy() - 0.30f + 0.22f * v.hash(m * 29) * (1.0f - 0.40f * t),
-                        v.cz() + Mth.sin(ang) * rad, 0.030f * S,
-                        (m & 1) == 0 ? v.pRgb() : v.sRgb(), Math.round(v.fadeA() * 0.55f));
+                        v.cz() + Mth.sin(ang) * rad,
+                        0.034f * S, 0.022f * S, 0.034f * S,
+                        ang, 0.4f, ang * 0.5f,
+                        (m & 1) == 0 ? v.pRgb() : v.sRgb(),
+                        Math.round(v.fadeA() * (0.30f + 0.35f * v.hash(m * 3))));
             }
         } else if (fx == WeaponVisualEffectId.PLAGUE_NOVA) {
-            // NOVA DE PESTE : éclats projetés très loin, puis nuage qui retombe.
-            for (int e = 0; e < 14; e++) {
-                float ang = e * 0.449f + v.hash(e * 3) * 0.40f;
+            for (int e = 0; e < 16; e++) {
+                float ang = e * 0.393f + v.hash(e * 3) * 0.40f;
                 float sp = (0.70f + 1.90f * v.hash(e * 41)) * S * v.easeOut();
-                v.cube(v.cx() + Mth.cos(ang) * sp,
+                v.rot(v.cx() + Mth.cos(ang) * sp,
                         v.cy() + 0.10f + (v.hash(e * 9) - 0.50f) * 0.90f - 0.35f * t * t,
-                        v.cz() + Mth.sin(ang) * sp, 0.026f * S,
-                        (e & 1) == 0 ? v.aRgb() : v.pRgb(), v.fadeA());
+                        v.cz() + Mth.sin(ang) * sp,
+                        0.028f * S, 0.020f * S, 0.024f * S,
+                        ang, t * 2.0f, ang * 0.9f,
+                        (e & 1) == 0 ? v.aRgb() : v.pRgb(),
+                        Math.round(v.fadeA() * (0.55f + 0.45f * v.hash(e * 5))));
             }
             v.ring(-0.44f, (0.30f + 2.05f * v.easeOut()) * S, v.pRgb(), v.sRgb(),
                     Math.round(v.fadeA() * 0.70f), PIXEL_RING_DASHED);
@@ -2993,30 +3087,43 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * 光 LUMIÈRE — la lumière DESCEND : des rayons convergents tombent du ciel, la couronne s'ouvre
-     * et le cœur devient aveuglant. Elle ne jaillit jamais du sol.
+     * 光 LUMIÈRE — la lumière DESCEND : des rayons en plaques inclinées tombent du ciel et
+     * convergent, la couronne s'ouvre, un faisceau relie le ciel à la cible.
      */
     private static void impactLight(ImpactView v) {
         float t = v.t();
         float S = v.S();
         WeaponVisualEffectId fx = v.inst().effect;
 
-        int rays = 8;
+        int rays = 9;
         for (int r = 0; r < rays; r++) {
-            float ang = r * 0.785f + v.age() * 0.04f;
+            float ang = r * 0.698f + v.age() * 0.04f;
             float rad = (1.35f + 0.55f * v.hash(r * 7)) * S;
             float up = (2.55f - 0.85f * t) * S;
             float appear = Mth.clamp(t * 1.60f - r * 0.04f, 0.0f, 1.0f);
-            v.line(v.cx() + Mth.cos(ang) * rad, v.cy() + up, v.cz() + Mth.sin(ang) * rad,
-                    v.cx() + Mth.cos(ang) * 0.22f * S, v.cy() + 0.10f, v.cz() + Mth.sin(ang) * 0.22f * S,
-                    (0.026f + 0.014f * appear) * S, 0xFFFFFF,
-                    (r & 1) == 0 ? v.pRgb() : v.aRgb(), Math.round(v.fadeA() * appear));
+            float x0 = v.cx() + Mth.cos(ang) * rad;
+            float z0 = v.cz() + Mth.sin(ang) * rad;
+            float x1 = v.cx() + Mth.cos(ang) * 0.22f * S;
+            float z1 = v.cz() + Mth.sin(ang) * 0.22f * S;
+            // rayon = plaque fine inclinée le long de son axe (aspect « hologramme »)
+            int segs = 4;
+            for (int k = 0; k < segs; k++) {
+                float u = (k + 0.5f) / segs;
+                float px = Mth.lerp(u, x0, x1);
+                float py = Mth.lerp(u, v.cy() + up, v.cy() + 0.10f);
+                float pz = Mth.lerp(u, z0, z1);
+                float half = (0.030f - 0.014f * u) * S;
+                v.rot(px, py, pz, half * 2.2f, half * 0.30f, half,
+                        ang, 0.30f, 0.35f,
+                        (k & 1) == 0 ? 0xFFFFFF : v.pRgb(),
+                        Math.round(v.fadeA() * appear * (0.85f - 0.15f * u)));
+            }
         }
 
         v.ring(0.30f, (0.30f + 1.55f * v.easeOut()) * S, 0xFFFFFF, v.pRgb(),
                 Math.round(v.fadeA() * 0.85f), PIXEL_RING_SOLID);
-        // Faisceau : une colonne fine de pixels qui DESCEND du ciel vers la cible (la lumière tombe,
-        // elle ne fuse pas horizontalement comme le métal).
+
+        // Faisceau : une colonne fine de pixels qui DESCEND du ciel vers la cible.
         float beam = Mth.clamp(t * 1.60f, 0.0f, 1.0f);
         for (int k = 0; k < 8; k++) {
             float u = k / 8.0f;
@@ -3028,7 +3135,6 @@ public final class WeaponWorldVfxManager {
         }
 
         if (fx == WeaponVisualEffectId.SERAPH_SKY_PILLAR) {
-            // PILIER : colonne verticale de pixels qui relie le ciel à la cible.
             for (int k = 0; k < 12; k++) {
                 float u = k / 12.0f;
                 v.cube(v.cx() + (v.hash(k * 13) - 0.50f) * 0.22f * S,
@@ -3038,29 +3144,31 @@ public final class WeaponWorldVfxManager {
                         Math.round(v.fadeA() * (1.0f - 0.35f * u)));
             }
         } else if (fx == WeaponVisualEffectId.ASTRAL_STAR_LANCE) {
-            // LANCE ASTRALE : un trait de lumière qui transperce la cible en diagonale.
-            v.line(v.cx() - 1.60f * S, v.cy() + 2.20f * S, v.cz() - 1.60f * S,
-                    v.cx() + 1.20f * S * t, v.cy() - 0.30f, v.cz() + 1.20f * S * t,
-                    0.040f * S, 0xFFFFFF, v.aRgb(), v.fadeA());
+            // LANCE ASTRALE : un trait de lumière facetté qui transperce la cible en diagonale.
+            v.shard(v.cx() - 1.30f * S, v.cy() + 1.85f * S, v.cz() - 1.30f * S,
+                    3.4f * S, 0.060f * S, 1.0f, -1.15f, 1.0f,
+                    0xFFFFFF, v.aRgb(), v.fadeA(), v.salt());
         } else if (fx == WeaponVisualEffectId.CHRONO_ETERNAL_HALO) {
-            // HALO ÉTERNEL : deux orbites lentes + douze crans d'horloge (le temps s'arrête).
             for (int o = 0; o < 2; o++) {
                 float rad = (0.55f + 0.25f * o) * S;
                 float ang0 = v.age() * (0.05f + 0.04f * o);
                 for (int k = 0; k < 12; k++) {
                     float ang = ang0 + k * 0.524f;
-                    v.cube(v.cx() + Mth.cos(ang) * rad, v.cy() + 0.20f + (o == 0 ? 0.18f : -0.16f),
-                            v.cz() + Mth.sin(ang) * rad, (k % 3 == 0 ? 0.032f : 0.020f) * S,
+                    v.rot(v.cx() + Mth.cos(ang) * rad, v.cy() + 0.20f + (o == 0 ? 0.18f : -0.16f),
+                            v.cz() + Mth.sin(ang) * rad,
+                            (k % 3 == 0 ? 0.034f : 0.021f) * S, 0.014f * S,
+                            (k % 3 == 0 ? 0.034f : 0.021f) * S,
+                            ang, 0.0f, o == 0 ? 0.35f : -0.35f,
                             (k % 3 == 0) ? 0xFFFFFF : v.pRgb(), v.fadeA());
                 }
             }
         } else if (fx == WeaponVisualEffectId.GOLDEN_CRIT_STAR) {
-            // ÉTOILE CRITIQUE : rayons projetés + anneau de perles en orbite.
             for (int a = 0; a < 10; a++) {
                 float ang = a * 0.628f + v.age() * 0.10f;
-                float len = (0.35f + 1.25f * v.easeOut()) * S;
-                v.line(v.cx(), v.cy(), v.cz(), v.cx() + Mth.cos(ang) * len, v.cy() + 0.10f,
-                        v.cz() + Mth.sin(ang) * len, 0.028f * S, 0xFFFFFF, v.sRgb(), v.fadeA());
+                float len = (0.40f + 1.30f * v.easeOut()) * S;
+                v.shard(v.cx(), v.cy(), v.cz(), len, 0.026f * S,
+                        Mth.cos(ang), 0.16f, Mth.sin(ang),
+                        0xFFFFFF, v.sRgb(), v.fadeA(), v.salt() + a * 13);
             }
             v.ring(0.18f, (0.55f + 0.75f * t) * S, v.pRgb(), 0xFFFFFF,
                     Math.round(v.fadeA() * 0.80f), PIXEL_RING_BEADS);
@@ -3068,8 +3176,8 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * 影 OMBRE — l'ombre RAMPE au sol à partir de l'impact, puis se RÉTRACTE : aucun jaillissement,
-     * aucune élévation. La griffure et l'éclipse ont leur propre figure.
+     * 影 OMBRE — des <b>tentacules courbes</b> rampent au sol depuis l'impact puis se RÉTRACTENT,
+     * avec des griffures en éclats inclinés et une éclipse qui avale la lumière.
      */
     private static void impactShadow(ImpactView v) {
         float t = v.t();
@@ -3081,44 +3189,44 @@ public final class WeaponWorldVfxManager {
 
         for (int i = 0; i < arms; i++) {
             float ang = i * (float) (Math.PI * 2.0 / arms) + v.hash(i * 23) * 0.45f;
-            float len = (0.35f + 1.75f * crawl) * S * retract;
+            float len = (0.35f + 1.80f * crawl) * S * retract;
             float ex = v.cx() + Mth.cos(ang) * len;
             float ez = v.cz() + Mth.sin(ang) * len;
-            v.line(v.cx(), v.cy() - 0.45f, v.cz(), ex, v.cy() - 0.45f, ez,
-                    0.034f * S, v.sRgb(), v.pRgb(), Math.round(v.fadeA() * 0.90f));
-            v.cube(ex, v.cy() - 0.30f + 0.16f * (1.0f - retract), ez, 0.026f * S,
+            // tentacule au sol (courbe) puis pointe qui se dresse
+            v.tendril(v.cx(), v.cy() - 0.45f, v.cz(), ex, v.cy() - 0.45f + 0.22f * (1.0f - retract), ez,
+                    0.28f * S, 6, 0.030f * S, v.pRgb(), v.aRgb(),
+                    Math.round(v.fadeA() * (0.55f + 0.45f * retract)));
+            v.rot(ex, v.cy() - 0.32f + 0.18f * (1.0f - retract), ez,
+                    0.024f * S, 0.060f * S, 0.024f * S,
+                    ang, 0.55f, 0.30f,
                     (i & 1) == 0 ? v.aRgb() : v.pRgb(), v.fadeA());
         }
 
         if (fx == WeaponVisualEffectId.WITHER_SHADOW_RIFT) {
-            // GRIFFURE : trois entailles parallèles diagonales (une patte qui lacère).
+            // GRIFFURE : trois entailles parallèles en éclats inclinés (une patte qui lacère).
             for (int c = 0; c < 3; c++) {
                 float off = (c - 1) * 0.35f * S;
-                v.line(v.cx() - 0.85f * S + off, v.cy() + 0.95f * S, v.cz() - 0.55f * S,
-                        v.cx() + 0.45f * S + off, v.cy() - 0.55f * S, v.cz() + 0.40f * S,
-                        0.030f * S, 0xFFFFFF, v.aRgb(), Math.round(v.fadeA() * 0.90f));
+                v.shard(v.cx() - 0.85f * S + off, v.cy() + 0.95f * S, v.cz() - 0.55f * S,
+                        1.85f * S, 0.026f * S, 0.72f, -1.0f, 0.55f,
+                        0xFFFFFF, v.aRgb(), Math.round(v.fadeA() * 0.90f), v.salt() + c * 17);
             }
         } else if (fx == WeaponVisualEffectId.ECLIPSE_VEIL) {
-            // ÉCLIPSE : un disque noir qui grandit et avale la lumière, cerclé d'une couronne.
             float rad = (0.25f + 1.15f * crawl) * S;
             emitPixelCircleBillboard3D(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), rad,
                     0x120616, 0x2B0B38, Math.round(v.fadeA() * 0.85f));
             v.ring(0.05f, rad * 1.18f, v.aRgb(), 0xFFFFFF,
                     Math.round(v.fadeA() * 0.90f), PIXEL_RING_BEADS);
         } else if (fx == WeaponVisualEffectId.SPECTRAL_REACH) {
-            // ALLONGE : la lame spectrale s'étire vers la cible (la direction EST l'animation).
-            float yawR = -v.inst().yawDeg * Mth.DEG_TO_RAD;
-            float dx = Mth.sin(yawR);
-            float dz = Mth.cos(yawR);
             float reach = (0.90f + 1.90f * v.easeOut()) * S;
-            v.line(v.cx(), v.cy() + 0.05f, v.cz(), v.cx() + dx * reach, v.cy() + 0.05f,
-                    v.cz() + dz * reach, 0.030f * S, 0xFFFFFF, v.pRgb(), v.fadeA());
+            v.tendril(v.cx(), v.cy() + 0.05f, v.cz(),
+                    v.cx() + v.dirX() * reach, v.cy() + 0.05f, v.cz() + v.dirZ() * reach,
+                    0.10f * S, 7, 0.030f * S, 0xFFFFFF, v.pRgb(), v.fadeA());
         }
     }
 
     /**
-     * 血 SANG — le sang GICLE et PERLE : des veines rampent au sol, les gouttes tombent en
-     * accélérant, et les enchantements de prélèvement ont leur propre circulation (siphon, hélice).
+     * 血 SANG — veines courbes qui rampent, gouttes qui tombent en accélérant, éclats de sang
+     * inclinés ; chaque enchantement de prélèvement garde sa circulation propre.
      */
     private static void impactBlood(ImpactView v) {
         float t = v.t();
@@ -3128,16 +3236,15 @@ public final class WeaponWorldVfxManager {
 
         for (int i = 0; i < veins; i++) {
             float ang = i * (float) (Math.PI * 2.0 / veins) + v.hash(i * 29) * 0.50f;
-            float len = (0.30f + 1.45f * v.easeOut()) * S;
-            float midX = v.cx() + Mth.cos(ang) * len * 0.55f;
-            float midZ = v.cz() + Mth.sin(ang) * len * 0.55f;
-            v.line(v.cx(), v.cy() - 0.44f, v.cz(), midX, v.cy() - 0.44f, midZ,
-                    0.028f * S, v.pRgb(), v.sRgb(), v.fadeA());
-            // bifurcation de la veine
-            float bang = ang + 0.55f;
-            v.line(midX, v.cy() - 0.44f, midZ,
-                    v.cx() + Mth.cos(bang) * len, v.cy() - 0.44f, v.cz() + Mth.sin(bang) * len,
-                    0.020f * S, v.sRgb(), v.pRgb(), Math.round(v.fadeA() * 0.80f));
+            float len = (0.30f + 1.50f * v.easeOut()) * S;
+            v.tendril(v.cx(), v.cy() - 0.44f, v.cz(),
+                    v.cx() + Mth.cos(ang) * len, v.cy() - 0.44f, v.cz() + Mth.sin(ang) * len,
+                    0.24f * S, 6, 0.024f * S, v.pRgb(), v.sRgb(), Math.round(v.fadeA() * 0.90f));
+            // bifurcation plus fine
+            v.tendril(v.cx() + Mth.cos(ang) * len * 0.55f, v.cy() - 0.44f, v.cz() + Mth.sin(ang) * len * 0.55f,
+                    v.cx() + Mth.cos(ang + 0.55f) * len, v.cy() - 0.44f,
+                    v.cz() + Mth.sin(ang + 0.55f) * len,
+                    0.14f * S, 4, 0.016f * S, v.sRgb(), v.aRgb(), Math.round(v.fadeA() * 0.7f));
         }
 
         // Gouttes : accélération gravitaire (t²) — le sang tombe, il ne monte pas.
@@ -3146,47 +3253,48 @@ public final class WeaponWorldVfxManager {
             float rad = (0.20f + 1.05f * v.easeOut()) * S * (0.60f + 0.50f * v.hash(d * 7));
             v.drop(v.cx() + Mth.cos(ang) * rad, v.cy() + 0.45f - 1.55f * t * t,
                     v.cz() + Mth.sin(ang) * rad, (0.030f - 0.008f * t) * S,
-                    (d & 1) == 0 ? v.pRgb() : v.sRgb(), 0xFF8A8A, v.fadeA(), d);
+                    (d & 1) == 0 ? v.pRgb() : v.sRgb(), 0xFF8A8A,
+                    Math.round(v.fadeA() * (0.85f - 0.25f * t)), d);
         }
 
         if (fx == WeaponVisualEffectId.GUILLOTINE_CLEAVE) {
-            // GUILLOTINE : une lame large qui DESCEND (colonne d'exécution).
+            // GUILLOTINE : une lame large qui DESCEND (colonne d'exécution), légèrement inclinée.
             float y = v.cy() + 2.30f * S - (2.90f * S) * v.easeIn();
-            v.box(v.cx(), y, v.cz(), 0.42f * S, 0.030f * S, 0.030f * S, 0xFFFFFF, v.fadeA());
-            v.line(v.cx() - 0.42f * S, y, v.cz(), v.cx() + 0.42f * S, y, v.cz(),
+            v.rot(v.cx(), y, v.cz(), 0.44f * S, 0.032f * S, 0.030f * S, 0.0f, 0.10f, 0.05f,
+                    0xFFFFFF, v.fadeA());
+            v.line(v.cx() - 0.44f * S, y, v.cz(), v.cx() + 0.44f * S, y, v.cz(),
                     0.022f * S, v.sRgb(), v.pRgb(), v.fadeA());
         } else if (fx == WeaponVisualEffectId.CRIMSON_SIPHON) {
-            // SIPHON : spirale qui ASPIRE (rayon qui rétrécit vers le haut).
-            for (int k = 0; k < 16; k++) {
-                float u = k / 16.0f;
+            for (int k = 0; k < 18; k++) {
+                float u = k / 18.0f;
                 float ang = u * 8.5f + v.age() * 0.30f;
                 float rad = (1.25f - 1.05f * u) * S;
-                v.cube(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.35f + u * 1.85f * S,
-                        v.cz() + Mth.sin(ang) * rad, 0.034f * S,
-                        (k & 1) == 0 ? v.pRgb() : v.aRgb(), v.fadeA());
+                v.rot(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.35f + u * 1.90f * S,
+                        v.cz() + Mth.sin(ang) * rad,
+                        0.036f * S, 0.026f * S, 0.036f * S,
+                        ang, 0.7f, 0.4f, (k & 1) == 0 ? v.pRgb() : v.aRgb(), v.fadeA());
             }
         } else if (fx == WeaponVisualEffectId.VITAL_TRANSFUSION) {
-            // TRANSFUSION : double hélice montante (le sang remonte vers le blessé).
             for (int h = 0; h < 2; h++) {
-                for (int k = 0; k < 10; k++) {
-                    float u = k / 10.0f;
+                for (int k = 0; k < 11; k++) {
+                    float u = k / 11.0f;
                     float ang = u * 6.4f + v.age() * 0.22f + h * (float) Math.PI;
                     float rad = (0.55f - 0.30f * u) * S;
-                    v.cube(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.30f + u * 1.85f * S,
-                            v.cz() + Mth.sin(ang) * rad, 0.030f * S,
-                            h == 0 ? v.pRgb() : 0xFFFFFF, v.fadeA());
+                    v.rot(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.30f + u * 1.90f * S,
+                            v.cz() + Mth.sin(ang) * rad,
+                            0.032f * S, 0.026f * S, 0.032f * S,
+                            ang, 0.8f, 0.5f, h == 0 ? v.pRgb() : 0xFFFFFF, v.fadeA());
                 }
             }
         } else if (fx == WeaponVisualEffectId.CARNAGE_BERSERK) {
-            // CARNAGE : très large entaille + gerbe de gouttes.
             v.slash((1.15f + 0.55f * t) * v.m().scale(), 0.042f, 220.0f,
                     0xFFFFFF, v.pRgb(), v.aRgb(), v.fadeA());
         }
     }
 
     /**
-     * 虚 VID — le vide IMPLOSE : une sphère de pixels s'effondre vers la cible, l'espace se déforme
-     * puis tout ce qui a été avalé ressort d'un coup. Rien ne s'éloigne avant la fin.
+     * 虚 VID — le vide IMPLOSE : une coquille de cubes <b>inclinés</b> s'effondre vers la cible,
+     * l'espace se déforme, puis tout ce qui a été avalé ressort d'un coup.
      */
     private static void impactVoid(ImpactView v) {
         float t = v.t();
@@ -3194,60 +3302,64 @@ public final class WeaponWorldVfxManager {
         WeaponVisualEffectId fx = v.inst().effect;
 
         if (fx == WeaponVisualEffectId.NULL_RIFT_FISSURE) {
-            // FISSURE : une déchirure VERTICALE dont les bords se séparent (rien de circulaire).
             float open = (0.25f + 0.85f * v.easeOut()) * S;
-            for (int k = 0; k < 9; k++) {
-                float u = k / 9.0f;
+            for (int k = 0; k < 10; k++) {
+                float u = k / 10.0f;
                 float y = v.cy() - 1.10f * S + u * 2.30f * S;
                 float wob = Mth.sin(u * 6.0f + v.age() * 0.20f) * 0.10f * S;
-                v.cube(v.cx() - open + wob, y, v.cz(), 0.030f * S, v.pRgb(), v.fadeA());
-                v.cube(v.cx() + open + wob, y, v.cz(), 0.030f * S, v.aRgb(), v.fadeA());
+                v.rot(v.cx() - open + wob, y, v.cz(), 0.032f * S, 0.030f * S, 0.020f * S,
+                        0.0f, 0.20f, 0.35f, v.pRgb(), v.fadeA());
+                v.rot(v.cx() + open + wob, y, v.cz(), 0.032f * S, 0.030f * S, 0.020f * S,
+                        0.0f, -0.20f, -0.35f, v.aRgb(), v.fadeA());
                 if ((k & 1) == 0) {
-                    v.cube(v.cx() + (v.hash(k * 13) - 0.50f) * 0.70f * S, y,
+                    v.rot(v.cx() + (v.hash(k * 13) - 0.50f) * 0.70f * S, y,
                             v.cz() + (v.hash(k * 7) - 0.50f) * 0.50f * S,
-                            0.018f * S, 0xFFFFFF, Math.round(v.fadeA() * 0.80f));
+                            0.018f * S, 0.018f * S, 0.018f * S,
+                            v.age() * 0.4f, 0.6f, 0.6f,
+                            0xFFFFFF, Math.round(v.fadeA() * 0.80f));
                 }
             }
             return;
         }
 
-        // IMPLOSION : une sphère de pixels qui SE REFERME sur la cible et l'écrase.
+        // IMPLOSION : les cubes s'effondrent vers la cible en tournoyant (coquille qui se ferme).
         float close = 1.0f - v.easeIn();
-        float radius = (1.75f * close + 0.08f) * S;
-        int pts = 22;
+        float radius = (1.80f * close + 0.08f) * S;
+        int pts = 26;
         for (int i = 0; i < pts; i++) {
             float u = i / (float) pts;
             float ang = u * 12.4f + v.age() * 0.16f;
             float y = v.cy() + Mth.sin(u * 9.3f + v.age() * 0.10f) * radius * 0.85f;
             float rad = radius * (0.55f + 0.45f * Math.abs(Mth.cos(u * 7.1f)));
-            v.cube(v.cx() + Mth.cos(ang) * rad, y, v.cz() + Mth.sin(ang) * rad,
-                    (0.032f + 0.012f * v.hash(i * 11)) * S,
+            float half = (0.034f + 0.014f * v.hash(i * 11)) * S;
+            v.rot(v.cx() + Mth.cos(ang) * rad, y, v.cz() + Mth.sin(ang) * rad,
+                    half, half * 1.35f, half * 0.75f,
+                    ang, v.age() * 0.25f + u * 3.0f, u * 4.0f,
                     (i % 4 == 0) ? 0xFFFFFF : ((i & 1) == 0 ? v.pRgb() : v.aRgb()),
-                    Math.round(v.fadeA() * (0.55f + 0.45f * close)));
+                    Math.round(v.fadeA() * (0.45f + 0.55f * close)));
         }
 
-        // Lentille gravitationnelle : anneau déformé qui pulse sur place.
         float pulse = 0.75f + 0.25f * Mth.sin(v.age() * 0.35f);
         v.ring(0.02f, (0.95f + 0.25f * pulse) * S, v.aRgb(), v.pRgb(),
                 Math.round(v.fadeA() * 0.65f), PIXEL_RING_DASHED);
 
         if (fx == WeaponVisualEffectId.DRAGON_CHAOS_PRISM) {
-            // PRISME DRACONIQUE : quatre arcs de teintes différentes tournent pendant l'implosion.
             for (int a = 0; a < 4; a++) {
                 float rad = (1.05f + 0.35f * a) * S * (0.55f + 0.45f * close);
                 float ang0 = v.age() * (0.08f + 0.02f * a) + a * 0.8f;
                 for (int k = 0; k < 9; k++) {
                     float u = k / 9.0f;
                     float ang = ang0 + u * 2.6f;
-                    v.cube(v.cx() + Mth.cos(ang) * rad, v.cy() + (-0.45f + 0.90f * u) * S,
-                            v.cz() + Mth.sin(ang) * rad, 0.030f * S,
+                    v.rot(v.cx() + Mth.cos(ang) * rad, v.cy() + (-0.45f + 0.90f * u) * S,
+                            v.cz() + Mth.sin(ang) * rad,
+                            0.032f * S, 0.022f * S, 0.032f * S,
+                            ang, 0.9f, 0.6f,
                             Mth.hsvToRgb((v.age() * 0.05f + a * 0.25f) % 1.0f, 0.75f, 1.0f), v.fadeA());
                 }
             }
         }
 
         if (t > 0.82f) {
-            // L'ÉCLAT FINAL : tout ce qui a été avalé ressort d'un coup en croix blanche.
             float b = (t - 0.82f) / 0.18f;
             v.cross(4, 0xFFFFFF, v.aRgb(), Math.round(v.fadeA() * b));
             v.ring(0.02f, (1.05f + 0.85f * b) * S, 0xFFFFFF, v.pRgb(),
@@ -3256,8 +3368,8 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * 混沌 CHAOS — kaléidoscope : huit copies d'un petit glyphe tournent dans des teintes qui
-     * défilent. Le big bang et l'entropie gardent leurs figures propres.
+     * 混沌 CHAOS — kaléidoscope : huit copies <b>inclinées</b> d'un petit glyphe tournent dans des
+     * teintes qui défilent ; big bang et entropie gardent leurs figures propres.
      */
     private static void impactChaos(ImpactView v) {
         float t = v.t();
@@ -3268,15 +3380,14 @@ public final class WeaponWorldVfxManager {
         int hueC = Mth.hsvToRgb((v.age() * 0.045f + 0.66f) % 1.0f, 0.85f, 1.0f);
 
         if (fx == WeaponVisualEffectId.BIG_BANG_SCAR) {
-            // BIG BANG : douze rayons bariolés jaillissent très loin d'un cœur blanc.
-            for (int i = 0; i < 12; i++) {
-                float ang = i * 0.524f + t * 0.60f;
-                float len = (0.55f + 2.90f * t) * S * ((i & 1) == 0 ? 1.0f : 0.72f);
+            for (int i = 0; i < 14; i++) {
+                float ang = i * 0.449f + t * 0.60f;
+                float len = (0.55f + 3.00f * t) * S * ((i & 1) == 0 ? 1.0f : 0.70f);
                 float elev = (i % 3 == 0) ? 0.55f : ((i % 3 == 1) ? -0.35f : 0.05f);
-                v.line(v.cx(), v.cy(), v.cz(), v.cx() + Mth.cos(ang) * len,
-                        v.cy() + elev * len * 0.55f, v.cz() + Mth.sin(ang) * len,
-                        0.042f * S * (1.0f - 0.45f * t), 0xFFFFFF,
-                        Mth.hsvToRgb((v.age() * 0.05f + i / 12.0f) % 1.0f, 0.90f, 1.0f), v.fadeA());
+                v.shard(v.cx(), v.cy(), v.cz(), len, 0.030f * S,
+                        Mth.cos(ang), elev * 0.55f, Mth.sin(ang),
+                        0xFFFFFF, Mth.hsvToRgb((v.age() * 0.05f + i / 14.0f) % 1.0f, 0.90f, 1.0f),
+                        v.fadeA(), v.salt() + i * 19);
             }
             v.cross(5, 0xFFFFFF, 0xFFFFFF, v.fadeA());
             v.ring(0.0f, (0.40f + 2.45f * t) * S, 0x000000, v.sRgb(),
@@ -3285,17 +3396,26 @@ public final class WeaponWorldVfxManager {
         }
 
         if (fx == WeaponVisualEffectId.ENTROPY_SPHERE) {
-            // ENTROPIE : trois anneaux orthogonaux de teintes différentes = une sphère instable.
+            // ENTROPIE : trois anneaux orthogonaux + coquille de cubes inclinés = sphère instable.
             float rad = (0.45f + 1.20f * Mth.sin(t * (float) Math.PI)) * S;
             v.ring(0.0f, rad, hueA, hueB, v.fadeA(), PIXEL_RING_SOLID);
             emitPixelCircleBillboard3D(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), rad,
                     hueB, hueC, Math.round(v.fadeA() * 0.80f));
-            emitPixelCircleBillboard3D(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), rad * 0.92f,
-                    hueC, hueA, Math.round(v.fadeA() * 0.55f));
+            for (int i = 0; i < 12; i++) {
+                float u = i / 12.0f;
+                float ang = u * 6.283f + v.age() * 0.30f;
+                float th = u * (float) Math.PI - 1.5708f;
+                float rr = rad * Mth.cos(th);
+                v.rot(v.cx() + Mth.cos(ang) * rr, v.cy() + rad * Mth.sin(th), v.cz() + Mth.sin(ang) * rr,
+                        0.030f * S, 0.030f * S, 0.030f * S,
+                        ang, th, v.age() * 0.2f,
+                        i % 3 == 0 ? 0xFFFFFF : (i % 3 == 1 ? hueB : hueC),
+                        Math.round(v.fadeA() * 0.85f));
+            }
             return;
         }
 
-        // KALÉIDOSCOPE : huit copies d'un petit glyphe, chacune tournée, teinte qui défile.
+        // KALÉIDOSCOPE : huit copies inclinées d'un glyphe, chacune tournée, teinte qui défile.
         float base = v.age() * (0.10f + 0.05f * Math.abs(v.m().spin()));
         int copies = 8;
         for (int c = 0; c < copies; c++) {
@@ -3307,10 +3427,13 @@ public final class WeaponWorldVfxManager {
             for (int k = 0; k < 3; k++) {
                 float a2 = ang + k * 1.047f;
                 float rr = 0.30f * S;
-                v.cube(cx2 + Mth.cos(a2) * rr,
+                v.rot(cx2 + Mth.cos(a2) * rr,
                         v.cy() + 0.10f + 0.28f * (1.0f - t) * ((k & 1) == 0 ? 1.0f : -1.0f),
-                        cz2 + Mth.sin(a2) * rr, (0.030f - 0.008f * k) * S,
-                        (k == 0) ? 0xFFFFFF : hue, v.fadeA());
+                        cz2 + Mth.sin(a2) * rr,
+                        (0.034f - 0.008f * k) * S, 0.026f * S, (0.034f - 0.008f * k) * S,
+                        a2, 0.7f + k * 0.5f, ang,
+                        (k == 0) ? 0xFFFFFF : hue,
+                        Math.round(v.fadeA() * (0.55f + 0.45f * v.hash(c * 5 + k))));
             }
         }
 
@@ -3368,6 +3491,278 @@ public final class WeaponWorldVfxManager {
         putQuad(vc, mat, tmp, x0, y1, z0, rEW, alpha, x0, y0, z0, rEW, alpha, x0, y0, z1, rEW, alpha, x0, y1, z1, rEW, alpha);
         // EAST
         putQuad(vc, mat, tmp, x1, y1, z1, rEW, alpha, x1, y0, z1, rEW, alpha, x1, y0, z0, rEW, alpha, x1, y1, z0, rEW, alpha);
+    }
+
+
+    /**
+     * T363-ROTATED-VOXELS : mini-cube 3D <b>incliné sur les trois axes</b> (lacet, tangage, roulis).
+     *
+     * <p>C'est la brique qui manquait à tout le système : jusqu'ici chaque cube était aligné sur la
+     * grille, donc toutes les formes se ressemblaient à des piles de LEGO verticales. Avec
+     * l'inclinaison on peut enfin dessiner une vague qui se recourbe, un éclat de glace facetté,
+     * une lame qui pivote, une écaille de sable, une volute d'ombre.</p>
+     *
+     * <p>L'ombrage reste celui de Minecraft mais il est calculé à partir de la normale TOURNÉE de
+     * chaque face : un cube penché n'a donc plus des faces artificiellement claires.</p>
+     */
+    public static void emitVoxelBoxRotated(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                           float cx, float cy, float cz,
+                                           float hx, float hy, float hz,
+                                           float yawRad, float pitchRad, float rollRad,
+                                           int rgb, int alpha) {
+        if (alpha <= 5 || hx <= 0.0005f || hy <= 0.0005f || hz <= 0.0005f) return;
+        if (alphaFloor > 0 && alpha < alphaFloor) return;
+        if (cubesSinceFlush >= HARD_CUBE_CAP_PER_FRAME) return;
+        cubesSinceFlush++;
+
+        float scale = framePixelScale * smoothPulse(cx, cy, cz) * variantScale;
+        hx *= scale;
+        hy *= scale;
+        hz *= scale;
+
+        if (pixelDensity < 0.999f && alpha < 200) {
+            float keep = pixelHash(0x5EED, (int) (cx * 977.0f + cy * 613.0f + cz * 389.0f));
+            if (keep > pixelDensity) return;
+        }
+
+        float cr = Mth.cos(rollRad), sr = Mth.sin(rollRad);
+        float cp = Mth.cos(pitchRad), sp = Mth.sin(pitchRad);
+        float cyw = Mth.cos(yawRad), syw = Mth.sin(yawRad);
+
+        // 8 coins tournés, indexés par (xi << 2) | (yi << 1) | zi (0 = côté négatif)
+        float[] p = ROT_CORNERS;
+        for (int i = 0; i < 8; i++) {
+            float ox = ((i & 4) == 0) ? -hx : hx;
+            float oy = ((i & 2) == 0) ? -hy : hy;
+            float oz = ((i & 1) == 0) ? -hz : hz;
+            rotWrite(ox, oy, oz, cr, sr, cp, sp, cyw, syw, p, i * 3);
+            p[i * 3] += cx;
+            p[i * 3 + 1] += cy;
+            p[i * 3 + 2] += cz;
+        }
+
+        // UP / DOWN / NORTH / SOUTH / WEST / EAST — même sens d'enroulement que le cube droit
+        emitRotatedFace(vc, mat, tmp, p, 2, 3, 7, 6, rgb, alpha, 0.0f, 1.0f, 0.0f, cr, sr, cp, sp, cyw, syw);
+        emitRotatedFace(vc, mat, tmp, p, 1, 0, 4, 5, rgb, alpha, 0.0f, -1.0f, 0.0f, cr, sr, cp, sp, cyw, syw);
+        emitRotatedFace(vc, mat, tmp, p, 6, 4, 0, 2, rgb, alpha, 0.0f, 0.0f, -1.0f, cr, sr, cp, sp, cyw, syw);
+        emitRotatedFace(vc, mat, tmp, p, 3, 1, 5, 7, rgb, alpha, 0.0f, 0.0f, 1.0f, cr, sr, cp, sp, cyw, syw);
+        emitRotatedFace(vc, mat, tmp, p, 2, 0, 1, 3, rgb, alpha, -1.0f, 0.0f, 0.0f, cr, sr, cp, sp, cyw, syw);
+        emitRotatedFace(vc, mat, tmp, p, 7, 5, 4, 6, rgb, alpha, 1.0f, 0.0f, 0.0f, cr, sr, cp, sp, cyw, syw);
+    }
+
+    /** Tampons réutilisés : le rendu ne doit allouer AUCUN tableau par cube (sinon le GC tousse). */
+    private static final float[] ROT_CORNERS = new float[24];
+    private static final float[] ROT_NORMAL = new float[3];
+
+    /**
+     * Applique roulis (Z), puis tangage (X), puis lacet (Y) à un vecteur et écrit le résultat dans
+     * {@code out} à partir de {@code off} (aucune allocation).
+     */
+    private static void rotWrite(float x, float y, float z,
+                                 float cr, float sr, float cp, float sp, float cyw, float syw,
+                                 float[] out, int off) {
+        float x1 = x * cr - y * sr;
+        float y1 = x * sr + y * cr;
+        float y2 = y1 * cp - z * sp;
+        float z2 = y1 * sp + z * cp;
+        out[off] = x1 * cyw + z2 * syw;
+        out[off + 1] = y2;
+        out[off + 2] = -x1 * syw + z2 * cyw;
+    }
+
+    /** Dessine une face d'un cube incliné, ombrée par sa normale tournée. */
+    private static void emitRotatedFace(VertexConsumer vc, Matrix4f mat, Vector3f tmp, float[] p,
+                                        int i0, int i1, int i2, int i3, int rgb, int alpha,
+                                        float nx, float ny, float nz,
+                                        float cr, float sr, float cp, float sp, float cyw, float syw) {
+        rotWrite(nx, ny, nz, cr, sr, cp, sp, cyw, syw, ROT_NORMAL, 0);
+        float lit = Mth.clamp(ROT_NORMAL[1] * 0.80f + ROT_NORMAL[0] * 0.30f + ROT_NORMAL[2] * 0.36f,
+                0.0f, 1.0f);
+        int col = shadeRgb(rgb, 0.58f + 0.42f * lit);
+        putQuad(vc, mat, tmp,
+                p[i0 * 3], p[i0 * 3 + 1], p[i0 * 3 + 2], col, alpha,
+                p[i1 * 3], p[i1 * 3 + 1], p[i1 * 3 + 2], col, alpha,
+                p[i2 * 3], p[i2 * 3 + 1], p[i2 * 3 + 2], col, alpha,
+                p[i3 * 3], p[i3 * 3 + 1], p[i3 * 3 + 2], col, alpha);
+    }
+
+    /**
+     * T363-VAGUE : une <b>vraie vague déferlante</b> en cubes inclinés.
+     *
+     * <p>Une paroi d'eau qui monte en se recourbant vers la cible (la crête bascule en avant,
+     * le pied reste planté), avec une crête d'écume blanche, des cubes de plus en plus petits et
+     * de plus en plus transparents en montant, et des embruns qui retombent.</p>
+     */
+    public static void emitPixelWave3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                       float cx, float cy, float cz,
+                                       float radius, float height, float yawRad,
+                                       float curl, float progress,
+                                       int bodyRgb, int deepRgb, int foamRgb,
+                                       int alpha, int salt) {
+        if (alpha <= 6 || radius <= 0.05f || height <= 0.01f) return;
+        float dirX = Mth.sin(yawRad);
+        float dirZ = Mth.cos(yawRad);
+        float sideX = Mth.cos(yawRad);
+        float sideZ = -Mth.sin(yawRad);
+        int steps = 15;
+        int levels = 4;
+
+        for (int i = 0; i < steps; i++) {
+            float u = i / (float) (steps - 1);
+            float env = Mth.sin(u * (float) Math.PI);
+            env = Mth.sqrt(Mth.clamp(env, 0.0f, 1.0f));      // crête large, pieds fins
+            float lateral = (u - 0.5f) * 2.0f * radius;
+            float h = height * env * (0.55f + 0.45f * progress);
+            float wob = Mth.sin(u * 7.0f + frameTimeSeconds * 2.2f) * 0.035f * env;
+
+            for (int l = 0; l < levels; l++) {
+                float v = l / (float) (levels - 1);
+                float lean = curl * v * v * 0.70f * radius;   // la vague se recourbe vers la cible
+                float px = cx + sideX * (lateral + wob) + dirX * lean;
+                float pz = cz + sideZ * (lateral + wob) + dirZ * lean;
+                float py = cy + v * h;
+                float half = (0.055f - 0.018f * v) * (0.70f + 0.45f * env);
+                int col = (v > 0.70f) ? foamRgb : ((v > 0.32f) ? bodyRgb : deepRgb);
+                int a = Math.round(alpha * (0.72f + 0.28f * v) * (0.40f + 0.60f * env));
+                float pitch = curl * v * 1.15f;               // la crête bascule vers l'avant
+                float roll = (u - 0.5f) * 0.55f;              // la paroi ondule latéralement
+                emitVoxelBoxRotated(vc, mat, tmp, px, py, pz,
+                        half, half * 0.85f, half * 0.55f,
+                        yawRad, pitch, roll, col, a);
+            }
+
+            // Écume : au sommet de la crête, cubes blancs plus gros, un peu détachés (ça mousse).
+            if (env > 0.42f) {
+                float lean = curl * 0.70f * radius;
+                float px = cx + sideX * lateral + dirX * lean;
+                float pz = cz + sideZ * lateral + dirZ * lean;
+                emitVoxelBoxRotated(vc, mat, tmp, px, cy + h + 0.035f, pz,
+                        0.032f, 0.022f, 0.026f, yawRad + 0.4f, curl * 1.35f, 0.30f,
+                        foamRgb, Math.round(alpha * 0.95f * env));
+            }
+        }
+
+        // Embruns : gouttes projetées depuis la crête qui retombent (chute libre).
+        for (int s = 0; s < 6; s++) {
+            float u = (s + 0.5f) / 6.0f;
+            float lateral = (u - 0.5f) * 2.0f * radius;
+            float tt = progress;
+            float up = 0.55f * tt - 1.30f * tt * tt;
+            float px = cx + sideX * lateral + dirX * (curl * 0.75f * radius);
+            float pz = cz + sideZ * lateral + dirZ * (curl * 0.75f * radius);
+            emitVoxelBoxRotated(vc, mat, tmp,
+                    quantize(px, 0.0625f), quantize(cy + height * 0.80f + up, 0.0625f),
+                    quantize(pz, 0.0625f),
+                    0.024f, 0.034f, 0.024f, yawRad, 0.6f * tt, 0.4f,
+                    foamRgb, Math.round(alpha * 0.85f));
+        }
+    }
+
+    /**
+     * T363-FLAMME : une <b>langue de flamme</b> — chaîne de cubes inclinés qui se courbe en
+     * s'affinant vers le haut, avec un dégradé de couleur et d'opacité (le pied opaque, la pointe
+     * translucide). C'est ce qui donne l'aspect « feu » plutôt qu'une pile de blocs.
+     */
+    public static void emitPixelFlameLick3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                            float x, float y, float z,
+                                            float height, float baseHalf, float sway,
+                                            float phase, int coreRgb, int tipRgb,
+                                            int alpha, int salt) {
+        if (alpha <= 6 || height <= 0.02f) return;
+        int segs = 6;
+        for (int k = 0; k < segs; k++) {
+            float u = k / (float) (segs - 1);
+            float bend = Mth.sin(phase + u * 3.1f) * sway * u;
+            float bendZ = Mth.cos(phase * 0.7f + u * 2.3f) * sway * 0.55f * u;
+            float half = baseHalf * (1.0f - 0.68f * u);
+            int col = (u > 0.62f) ? tipRgb : coreRgb;
+            int a = Math.round(alpha * (1.0f - 0.30f * u));
+            emitVoxelBoxRotated(vc, mat, tmp, x + bend, y + u * height, z + bendZ,
+                    half, half * 1.30f, half * 0.85f,
+                    Mth.sin(phase) * 0.25f,
+                    Mth.sin(phase + u * 3.1f + 1.57f) * sway * 2.4f,
+                    bendZ * 3.0f, col, a);
+        }
+    }
+
+    /**
+     * T363-ÉCLAT : un <b>éclat facetté</b> (glace, métal, pierre, croc) — trois segments qui
+     * s'affinent jusqu'à une pointe, alignés sur une direction 3D libre, avec une facette
+     * latérale pour l'aspect cristal.
+     */
+    public static void emitPixelShard3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                        float x, float y, float z,
+                                        float length, float half,
+                                        float dirX, float dirY, float dirZ,
+                                        int baseRgb, int tipRgb, int alpha, int salt) {
+        if (alpha <= 6 || length <= 0.01f) return;
+        float len = Mth.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
+        if (len < 0.001f) return;
+        float nx = dirX / len, ny = dirY / len, nz = dirZ / len;
+        float yaw = (float) Math.atan2(nx, nz);
+        float pitch = (float) Math.acos(Mth.clamp(ny, -1.0f, 1.0f));
+
+        for (int k = 0; k < 3; k++) {
+            float u = (k + 0.5f) / 3.0f;
+            float h = half * (1.0f - 0.64f * u);
+            emitVoxelBoxRotated(vc, mat, tmp,
+                    x + nx * length * u, y + ny * length * u, z + nz * length * u,
+                    h * 0.60f, length * 0.20f, h,
+                    yaw, pitch, 0.28f * ((salt & 1) == 0 ? 1.0f : -1.0f),
+                    (k == 0) ? baseRgb : tipRgb, Math.round(alpha * (1.0f - 0.22f * u)));
+        }
+        // petite facette latérale : cassure du cristal
+        emitVoxelBoxRotated(vc, mat, tmp,
+                x + nx * length * 0.42f + nz * half * 0.8f, y + ny * length * 0.42f, z + nz * length * 0.42f - nx * half * 0.8f,
+                half * 0.34f, length * 0.10f, half * 0.34f,
+                yaw, pitch + 0.6f, 0.5f, tipRgb, Math.round(alpha * 0.75f));
+    }
+
+    /**
+     * T363-LIANE : une <b>liane / tentacule courbe</b> — chaîne de cubes inclinés suivant une
+     * courbe bombée, qui s'affine et change de teinte vers la pointe. Sert au bois (racines), à
+     * l'ombre (tentacules), au poison (fumée) et au sang (veines).
+     */
+    public static void emitPixelTendril3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                          float x0, float y0, float z0,
+                                          float x1, float y1, float z1,
+                                          float bow, int segments, float half,
+                                          int baseRgb, int tipRgb, int alpha, int salt) {
+        if (alpha <= 6 || segments < 2) return;
+        float dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
+        float dist = Mth.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist < 0.01f) return;
+
+        float px = -dz / dist;
+        float pz = dx / dist;
+        float pl = Mth.sqrt(px * px + pz * pz);
+        if (pl < 0.001f) { px = 1.0f; pz = 0.0f; pl = 1.0f; }
+        px /= pl;
+        pz /= pl;
+
+        float prevX = x0, prevY = y0, prevZ = z0;
+        for (int k = 1; k <= segments; k++) {
+            float u = k / (float) segments;
+            float bend = Mth.sin(u * (float) Math.PI) * bow;
+            float cxx = Mth.lerp(u, x0, x1) + px * bend;
+            float cyy = Mth.lerp(u, y0, y1) + bend * 0.35f;
+            float czz = Mth.lerp(u, z0, z1) + pz * bend;
+            float sx = cxx - prevX, sy = cyy - prevY, sz = czz - prevZ;
+            float sl = Mth.sqrt(sx * sx + sy * sy + sz * sz);
+            if (sl > 0.0005f) {
+                float yaw = (float) Math.atan2(sx / sl, sz / sl);
+                float pitch = (float) Math.acos(Mth.clamp(sy / sl, -1.0f, 1.0f));
+                float h = half * (1.0f - 0.58f * u);
+                emitVoxelBoxRotated(vc, mat, tmp,
+                        (prevX + cxx) * 0.5f, (prevY + cyy) * 0.5f, (prevZ + czz) * 0.5f,
+                        h, sl * 0.62f, h * 0.85f, yaw, pitch, 0.0f,
+                        (u > 0.55f) ? tipRgb : baseRgb,
+                        Math.round(alpha * (1.0f - 0.28f * u)));
+            }
+            prevX = cxx;
+            prevY = cyy;
+            prevZ = czz;
+        }
     }
 
     /**
