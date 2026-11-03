@@ -146,6 +146,20 @@ public class ModEnchantments {
             CustomEnchantment.create("chaos_nexus", Rarity.EPIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("chaos_rupture", Rarity.LEGENDARY, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
             CustomEnchantment.create("prismatic_brand", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+
+            // T352b-ELEMENT-RANGED : une signature à DISTANCE par famille élémentaire (arc, arbalète,
+            // trident). Le recomptage montrait que seuls Bois/Poison/Eau avaient un tir dédié.
+            CustomEnchantment.create("timber_arrow", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
+            CustomEnchantment.create("miasma_arrow", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
+            CustomEnchantment.create("cinder_volley", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
+            CustomEnchantment.create("sandburst_shot", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
+            CustomEnchantment.create("piercing_barb", Rarity.EPIC, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
+            CustomEnchantment.create("riptide_barb", Rarity.RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
+            CustomEnchantment.create("voltaic_shot", Rarity.EPIC, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
+            CustomEnchantment.create("radiant_bolt", Rarity.VERY_RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
+            CustomEnchantment.create("bloodletting_bolt", Rarity.EPIC, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
+            CustomEnchantment.create("null_shot", Rarity.VERY_RARE, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
+            CustomEnchantment.create("entropy_bolt", Rarity.EPIC, CustomEnchantment.Cat.BOW, MAIN_HAND, 3);
             CustomEnchantment.create("brimstone", Rarity.LEGENDARY, CustomEnchantment.Cat.CROSSBOW, MAIN_HAND, 5);
             CustomEnchantment.create("scatter", Rarity.RARE, CustomEnchantment.Cat.CROSSBOW, MAIN_HAND, 1);
             CustomEnchantment.create("torch", Rarity.COMMON, CustomEnchantment.Cat.CROSSBOW, MAIN_HAND, 1);

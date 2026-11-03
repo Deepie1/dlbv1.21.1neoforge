@@ -5,7 +5,7 @@ import java.util.List;
 
 /**
  * T351-SUBTLE-VFX : <b>55 déclinaisons discrètes</b> construites sur les familles
- * élémentaires (11 familles × 5 paliers de discrétion, CHAOS inclus).
+ * élémentaires (12 familles × 5 paliers : Bois brun, Poison vert foncé, Terre vert clair/brun...).
  *
  * <p><b>Pourquoi ?</b> Les 50 déclinaisons de {@link WeaponVfxVariant} restaient des déclinaisons des
  * 30 grosses animations : beaucoup de formes qui « englobent » la cible (cercles, colonnes, sphères).
@@ -18,8 +18,8 @@ import java.util.List;
  */
 public final class WeaponVfxSubtle {
 
-    /** Nombre total d'accents subtils (11 familles × 5 paliers, CHAOS inclus depuis T352). */
-    public static final int COUNT = 55;
+    /** Nombre total d'accents subtils (12 familles × 5 paliers : POISON séparé du Bois en T352b). */
+    public static final int COUNT = 60;
     /** Décalage de {@code kind} utilisé sur le réseau pour transporter un accent subtil. */
     public static final int NET_KIND_BASE = 100;
     /**
@@ -163,7 +163,15 @@ public final class WeaponVfxSubtle {
                 case 3 -> SHAPE_SHARD;
                 default -> SHAPE_DRIFT;
             };
-            case WOOD -> (tier % 2 == 0) ? SHAPE_LEAF : SHAPE_DRIFT;
+            // Bois = éclats d'écorce / feuilles qui tournoient (brun).
+            case WOOD -> (tier % 2 == 0) ? SHAPE_LEAF : SHAPE_CRUMBLE;
+            // Poison = gouttes et brume âcre (vert foncé), jamais de grosses formes.
+            case POISON -> switch (tier) {
+                case 0 -> SHAPE_DROPLET;
+                case 1 -> SHAPE_MIST;
+                case 2 -> SHAPE_BUBBLE;
+                default -> SHAPE_ASH;
+            };
             case EARTH -> (tier % 2 == 0) ? SHAPE_DUST : SHAPE_CRUMBLE;
             case METAL -> (tier % 2 == 0) ? SHAPE_GLINT : SHAPE_SPARK;
             case THUNDER -> (tier % 2 == 0) ? SHAPE_BOLT : SHAPE_SPARK;

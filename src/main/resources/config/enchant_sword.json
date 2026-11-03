@@ -326,7 +326,9 @@
         "deep_lucky_block:crit_amplifier",
         "deep_lucky_block:reinforced_sweeping",
         "deep_lucky_block:sharpened_sharpness",
-        "deep_lucky_block:stealth_hunter"
+        "deep_lucky_block:stealth_hunter",
+        "deep_lucky_block:chaos_entropy",
+        "deep_lucky_block:chaos_nexus"
       ],
       "utility": [
         "minecraft:looting",
@@ -414,7 +416,8 @@
         "deep_lucky_block:new_edge",
         "deep_lucky_block:seismic_strike",
         "deep_lucky_block:shadow_hunt",
-        "deep_lucky_block:ultra_sharpness"
+        "deep_lucky_block:ultra_sharpness",
+        "deep_lucky_block:chaos_rupture"
       ],
       "utility": [
         "minecraft:looting",

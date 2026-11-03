@@ -163,7 +163,12 @@
         "deep_lucky_block:instant_shot",
         "deep_lucky_block:recoil_launch",
         "deep_lucky_block:suppression_shot",
-        "deep_lucky_block:water_arrow"
+        "deep_lucky_block:water_arrow",
+        "deep_lucky_block:timber_arrow",
+        "deep_lucky_block:miasma_arrow",
+        "deep_lucky_block:cinder_volley",
+        "deep_lucky_block:sandburst_shot",
+        "deep_lucky_block:riptide_barb"
       ],
       "utility": [
         "minecraft:infinity",
@@ -213,7 +218,11 @@
         "deep_lucky_block:ricochet",
         "deep_lucky_block:zero_gravity_shot",
         "deep_lucky_block:tracer_shot",
-        "deep_lucky_block:whisper"
+        "deep_lucky_block:whisper",
+        "deep_lucky_block:piercing_barb",
+        "deep_lucky_block:voltaic_shot",
+        "deep_lucky_block:bloodletting_bolt",
+        "deep_lucky_block:entropy_bolt"
       ],
       "utility": [
         "minecraft:infinity",

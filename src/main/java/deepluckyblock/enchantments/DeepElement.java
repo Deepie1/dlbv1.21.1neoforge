@@ -18,12 +18,20 @@ import java.util.Locale;
  */
 public enum DeepElement {
 
-    /** 木 Bois / nature / récolte / poison & venin (vert). */
-    WOOD("Bois", 0x34C759, 0x1E7A33, 0xA8FF7A),
+    /**
+     * 木 Bois / nature / forêt / récolte — <b>BRUN</b> (écorce, planches, sève).
+     * T352b : le bois n'est plus vert ; le vert sombre appartient au Poison, désormais séparé.
+     */
+    WOOD("Bois", 0xA9743C, 0x5A3617, 0xE0B87E),
+    /**
+     * 毒 Poison / venin / miasme / peste — <b>VERT FONCÉ</b> (famille distincte depuis T352b :
+     * avant, le poison était mélangé au Bois et prenait sa couleur verte).
+     */
+    POISON("Poison", 0x1E7A32, 0x0A3D16, 0x63E05C),
     /** 火 Feu / lave / météore / braise (rouge-orangé). */
     FIRE("Feu", 0xFF4A10, 0xB01B00, 0xFFE08A),
-    /** 土 Terre / roche / séisme / sable (ocre). */
-    EARTH("Terre", 0xC97A2B, 0x7A3E10, 0xF0C888),
+    /** 土 Terre / sol / séisme / sable — <b>VERT CLAIR + BRUN</b> (herbe sur terre, T352b). */
+    EARTH("Terre", 0x9FC25E, 0x5C3B1A, 0xD6E39B),
     /** 金 Métal / acier / or / tranchant (argent & or). */
     METAL("Métal", 0xE9F1FF, 0x7F93AE, 0xFFFFFF),
     /** 水 Eau / glace / océan / givre (bleu). */
@@ -82,16 +90,26 @@ public enum DeepElement {
         // Foudre
         if (s.contains("thunder") || s.contains("lightning") || s.contains("storm")
                 || s.contains("channeling") || s.contains("electric") || s.contains("overclock")
-                || s.contains("overcharge") || s.contains("sonic") || s.contains("echo")) {
+                || s.contains("overcharge") || s.contains("sonic") || s.contains("echo")
+                || s.contains("voltaic") || s.contains("galvan") || s.contains("discharge")) {
             return THUNDER;
         }
-        // Poison / venin / nature -> Bois (vert)
+        // T352b : POISON (vert foncé) est une famille à part entière — testée AVANT le Bois.
         if (s.contains("poison") || s.contains("venom") || s.contains("toxic")
-                || s.contains("briar") || s.contains("fang") || s.contains("scorpion")
-                || s.contains("nature") || s.contains("harvest") || s.contains("wood")
+                || s.contains("fang") || s.contains("scorpion") || s.contains("plague")
+                || s.contains("peste") || s.contains("miasma") || s.contains("blight")
+                || s.contains("corrode") || s.contains("corrosion") || s.contains("acid")
+                || s.contains("contagion") || s.contains("disease") || s.contains("virul")) {
+            return POISON;
+        }
+        // Bois / nature / forêt / récolte -> BRUN (couleur de l'écorce et des planches)
+        if (s.contains("nature") || s.contains("harvest") || s.contains("wood")
                 || s.contains("lumber") || s.contains("tree") || s.contains("replant")
-                || s.contains("farm") || s.contains("crop") || s.contains("vein")
-                || s.contains("plague") || s.contains("peste")) {
+                || s.contains("farm") || s.contains("crop") || s.contains("timber")
+                || s.contains("plank") || s.contains("bark") || s.contains("forest")
+                || s.contains("thorn") || s.contains("briar") || s.contains("root")
+                || s.contains("vine") || s.contains("bloom") || s.contains("sap")
+                || s.contains("spore") || s.contains("moss")) {
             return WOOD;
         }
         // Feu
@@ -99,7 +117,8 @@ public enum DeepElement {
                 || s.contains("lava") || s.contains("magma") || s.contains("meteor")
                 || s.contains("phoenix") || s.contains("scorch") || s.contains("ember")
                 || s.contains("infernal") || s.contains("brimstone") || s.contains("molten")
-                || s.contains("burning") || s.contains("soul_fire") || s.contains("volcan")) {
+                || s.contains("burning") || s.contains("soul_fire") || s.contains("volcan")
+                || s.contains("cinder") || s.contains("pyro") || s.contains("ignite")) {
             return FIRE;
         }
         // Eau / glace
@@ -112,7 +131,9 @@ public enum DeepElement {
         // Terre / roche / séisme
         if (s.contains("earth") || s.contains("seismic") || s.contains("tectonic")
                 || s.contains("rock") || s.contains("stone") || s.contains("quake")
-                || s.contains("sand") || s.contains("mountain") || s.contains("bulwark")) {
+                || s.contains("sand") || s.contains("mountain") || s.contains("bulwark")
+                || s.contains("soil") || s.contains("dirt") || s.contains("clay")
+                || s.contains("terracotta") || s.contains("dune") || s.contains("golem")) {
             return EARTH;
         }
         // Sang / vampirisme
@@ -137,7 +158,8 @@ public enum DeepElement {
         }
         // Vide / ender / dragon
         if (s.contains("void") || s.contains("ender") || s.contains("dragon")
-                || s.contains("warp") || s.contains("portal") || s.contains("chaos")) {
+                || s.contains("warp") || s.contains("portal")
+                || s.contains("null") || s.contains("singular")) {
             return VOID;
         }
         // Lumière / saint / astral

@@ -314,7 +314,8 @@ public final class WeaponWorldVfxManager {
             case SERAPH_SKY_PILLAR, ABYSSAL_MAELSTROM, WARLORD_RALLY_SIGIL,
                  DRAGON_CHAOS_PRISM, BRIMSTONE_METEOR, BIG_BANG_SCAR -> 22;
             case THORN_MAW_ROOT, SANDSTORM_DUNE, ECLIPSE_VEIL, NULL_RIFT_FISSURE,
-                 CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE -> 18;
+                 CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE, VERDANT_SAP_BLOOM, MIASMA_SHROUD,
+                 PLAGUE_NOVA -> 18;
             case ASTRAL_STAR_LANCE, VOID_WARP_SPHERE, SEISMIC_TECTONIC,
                  CRIMSON_SIPHON, CHRONO_ETERNAL_HALO, ANNIHILATING_ARC -> 16;
             case CHAIN_VOLT_ARC -> 11;
@@ -1677,6 +1678,66 @@ public final class WeaponWorldVfxManager {
                 // #29 Grand Cercle Runique du Chef de Guerre en pixels 3D (double anneau Bresenham + 8 runes 3x3 + étoile) !
                 float r = 2.05f * Math.min(1.0f, t * 2.4f);
                 emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.40f, cz, r, t * 1.6f, pRgb, sRgb, aRgb, fadeA, true);
+            }
+            case VERDANT_SAP_BLOOM -> {
+                // #38 T352b Bois (BRUN) : éclats d'écorce projetés vers le haut + pousses qui
+                // s'ouvrent, gouttes de sève ambrée — aucune teinte verte (le vert = poison).
+                for (int i = 0; i < 7; i++) {
+                    float ang = i * 0.897f + (inst.seed & 7);
+                    float rad = 0.25f + 1.55f * Mth.sqrt(t);
+                    float px = quantize(cx + Mth.cos(ang) * rad, 0.0625f);
+                    float pz = quantize(cz + Mth.sin(ang) * rad, 0.0625f);
+                    float py = quantize(cy - 0.30f + 0.55f * t + (i % 3) * 0.06f, 0.0625f);
+                    // éclat d'écorce (bois sombre) surmonté d'une goutte de sève claire
+                    emitVoxelCube(vc, mat, tmp, px, py, pz, 0.040f, 0.030f, 0.040f,
+                            (i & 1) == 0 ? sRgb : pRgb, fadeA);
+                    emitVoxelCube(vc, mat, tmp, px, py + 0.055f, pz, 0.022f, 0.026f, 0.022f,
+                            0xE8C089, Math.round(fadeA * 0.85f));
+                }
+                // jeunes pousses : deux tiges en escalier de part et d'autre de l'impact
+                for (int side = -1; side <= 1; side += 2) {
+                    emitSteppedVoxelLine(vc, mat, tmp,
+                            cx + side * 0.35f, cy - 0.45f, cz,
+                            cx + side * (0.55f + 0.35f * t), cy + 0.55f, cz + side * 0.10f,
+                            0.030f, pRgb, sRgb, fadeA);
+                }
+                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.42f, cz, 0.35f + 1.25f * t,
+                        pRgb, sRgb, Math.round(fadeA * 0.75f));
+            }
+            case MIASMA_SHROUD -> {
+                // #39 T352b Poison (VERT FONCÉ) : voile de miasme — trois anneaux qui montent et
+                // s'élargissent, plus des spores qui flottent (mode alpha, pas de flash additif).
+                for (int ringI = 0; ringI < 3; ringI++) {
+                    float rt = Math.min(1.0f, t + ringI * 0.18f);
+                    emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.35f + rt * 0.85f, cz,
+                            0.35f + 1.45f * rt, pRgb, sRgb, Math.round(fadeA * (0.8f - 0.18f * ringI)));
+                }
+                for (int sp = 0; sp < 10; sp++) {
+                    float ang = sp * 0.628f + (inst.seed & 15) * 0.1f;
+                    float rad = (0.30f + 0.95f * t) * (0.6f + 0.4f * pixelHash(sp, sp * 11));
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + Mth.cos(ang) * rad, 0.0625f),
+                            quantize(cy - 0.10f + t * (0.55f + 0.3f * pixelHash(sp * 3, sp)), 0.0625f),
+                            quantize(cz + Mth.sin(ang) * rad, 0.0625f),
+                            0.028f, 0.028f, 0.028f,
+                            (sp & 1) == 0 ? pRgb : sRgb, Math.round(fadeA * 0.8f));
+                }
+            }
+            case PLAGUE_NOVA -> {
+                // #40 T352b Poison : nova venimeuse — 10 aiguillons jaillissent du sol puis retombent,
+                // anneau de contamination au sol et cœur sombre.
+                for (int i = 0; i < 10; i++) {
+                    float ang = i * 0.628f;
+                    float out = 0.25f + 1.85f * Mth.sqrt(t);
+                    float h = 0.75f * Mth.sin(Math.min(1.0f, t * 1.4f) * (float) Math.PI);
+                    emitSteppedVoxelLine(vc, mat, tmp,
+                            cx + Mth.cos(ang) * out * 0.55f, cy - 0.45f, cz + Mth.sin(ang) * out * 0.55f,
+                            cx + Mth.cos(ang) * out, cy - 0.45f + h, cz + Mth.sin(ang) * out,
+                            0.034f, sRgb, pRgb, fadeA);
+                }
+                emitPixelRing3D(vc, mat, tmp, cx, cy - 0.44f, cz, 0.40f + 1.70f * t,
+                        pRgb, sRgb, Math.round(fadeA * 0.85f), PIXEL_RING_DASHED);
+                emitPixelCross3D(vc, mat, tmp, cx, cy - 0.05f, cz, 0.0625f, 3, sRgb, pRgb, fadeA);
             }
             case THORN_MAW_ROOT -> {
                 // #31 T352 Bois : 8 ronces en escalier qui montent du sol puis se referment vers le haut,

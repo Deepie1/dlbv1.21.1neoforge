@@ -544,8 +544,10 @@ public final class DlbVfxCommand {
         // T352-ELEMENT-COVERAGE : audit de la couverture élémentaire — 5 enchantements dédiés et
         // au moins 3 grosses animations par famille, avec vérification RÉELLE dans le registre.
         src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                "§7Vérification : §f%d enchantements §7minimum et §f%d animations §7minimum par famille.",
+                "§7Recomptage : §f%d familles §8· §7minimum §f%d enchantements §7dont §f%d à distance §7et §f%d animations §7par famille.",
+                DeepElement.values().length,
                 deepluckyblock.enchantments.ElementalCatalog.MIN_ENCHANTMENTS,
+                deepluckyblock.enchantments.ElementalCatalog.MIN_RANGED,
                 deepluckyblock.enchantments.ElementalCatalog.MIN_ANIMATIONS)), false);
         for (DeepElement el : DeepElement.values()) {
             List<WeaponVisualEffectId> anims = WeaponVisualEffectId.animationsOf(el);
@@ -559,16 +561,21 @@ public final class DlbVfxCommand {
             final int enchTotal = ench.size();
             final boolean ok = enchPresent >= deepluckyblock.enchantments.ElementalCatalog.MIN_ENCHANTMENTS
                     && animCount >= deepluckyblock.enchantments.ElementalCatalog.MIN_ANIMATIONS;
+            final int rangedCount = deepluckyblock.enchantments.ElementalCatalog.rangedCount(el);
             String mark = ok ? "§a✔" : "§c✘";
             src.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                    "  %s §f%-8s §7%02d anim. §8· §7%d/%d ench. §8· §7couleurs §f#%06X §f#%06X",
+                    "  %s §f%-8s §7%02d anim. §8· §7%d/%d ench. §8· §7%d à distance §8· §7#%06X / #%06X",
                     mark, el.displayName, animCount, enchPresent, enchTotal,
-                    el.primary, el.highlight)), false);
+                    rangedCount, el.primary, el.highlight)), false);
         }
         List<DeepElement> missing = deepluckyblock.enchantments.ElementalCatalog.incompleteElements();
+        List<DeepElement> noRanged = deepluckyblock.enchantments.ElementalCatalog.elementsWithoutRanged();
         src.sendSuccess(() -> Component.literal(missing.isEmpty()
-                ? "§aToutes les familles sont complètes (5 enchantements + 3 animations)."
+                ? "§aToutes les familles sont complètes (5 enchantements, 1 à distance, 3 animations)."
                 : "§cFamilles incomplètes : §f" + missing), false);
+        if (!noRanged.isEmpty()) {
+            src.sendSuccess(() -> Component.literal("§cSans enchantement à distance : §f" + noRanged), false);
+        }
         // Défilement dans l'ordre des familles
         DemoState st = new DemoState();
         st.cursor = 0;

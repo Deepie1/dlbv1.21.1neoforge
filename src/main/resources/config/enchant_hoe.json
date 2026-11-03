@@ -183,7 +183,9 @@
         "deep_lucky_block:sickle_damage",
         "deep_lucky_block:sickle_slash",
         "deep_lucky_block:focused_crit",
-        "deep_lucky_block:crit_amplifier"
+        "deep_lucky_block:crit_amplifier",
+        "deep_lucky_block:chaos_entropy",
+        "deep_lucky_block:chaos_nexus"
       ],
       "utility": [
         "minecraft:efficiency",
@@ -216,7 +218,8 @@
         "deep_lucky_block:sickle_slash",
         "deep_lucky_block:focused_crit",
         "deep_lucky_block:crit_amplifier",
-        "deep_lucky_block:crit_rate"
+        "deep_lucky_block:crit_rate",
+        "deep_lucky_block:chaos_rupture"
       ],
       "utility": [
         "minecraft:efficiency",

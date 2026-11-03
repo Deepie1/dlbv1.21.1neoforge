@@ -229,7 +229,9 @@
         "deep_lucky_block:cavalier",
         "deep_lucky_block:focused_crit",
         "deep_lucky_block:crit_amplifier",
-        "deep_lucky_block:sharpened_sharpness"
+        "deep_lucky_block:sharpened_sharpness",
+        "deep_lucky_block:chaos_entropy",
+        "deep_lucky_block:chaos_nexus"
       ],
       "utility": [
         "minecraft:efficiency",
@@ -282,7 +284,8 @@
         "deep_lucky_block:guard_breaker",
         "deep_lucky_block:marked_prey",
         "deep_lucky_block:seismic_strike",
-        "deep_lucky_block:ultra_sharpness"
+        "deep_lucky_block:ultra_sharpness",
+        "deep_lucky_block:chaos_rupture"
       ],
       "utility": [
         "minecraft:efficiency",

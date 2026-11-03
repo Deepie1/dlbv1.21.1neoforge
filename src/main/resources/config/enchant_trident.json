@@ -166,7 +166,12 @@
         "deep_lucky_block:scorching_prongs",
         "deep_lucky_block:sea_pogo",
         "deep_lucky_block:tidecaller",
-        "deep_lucky_block:abyssal_undertow"
+        "deep_lucky_block:abyssal_undertow",
+        "deep_lucky_block:timber_arrow",
+        "deep_lucky_block:miasma_arrow",
+        "deep_lucky_block:cinder_volley",
+        "deep_lucky_block:sandburst_shot",
+        "deep_lucky_block:riptide_barb"
       ],
       "utility": [
         "minecraft:channeling",
@@ -212,7 +217,11 @@
         "deep_lucky_block:focused_crit",
         "deep_lucky_block:crit_amplifier",
         "deep_lucky_block:sharpened_sharpness",
-        "deep_lucky_block:wind_lance"
+        "deep_lucky_block:wind_lance",
+        "deep_lucky_block:piercing_barb",
+        "deep_lucky_block:voltaic_shot",
+        "deep_lucky_block:bloodletting_bolt",
+        "deep_lucky_block:entropy_bolt"
       ],
       "utility": [
         "minecraft:channeling",

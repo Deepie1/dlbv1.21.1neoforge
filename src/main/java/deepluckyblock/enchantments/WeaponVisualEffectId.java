@@ -63,7 +63,7 @@ public enum WeaponVisualEffectId {
     HYDRO_TIDAL_SURGE(17, Category.ELEMENT,    60, true,  0x1CC8FF, 0xA8F0FF, DeepElement.WATER),
     ABYSSAL_MAELSTROM(18, Category.ELEMENT,    89, true,  0x0A58CA, 0x3CEFFF, DeepElement.WATER),
     PERMAFROST_RIME(19, Category.ELEMENT,    56, true,  0x8CE8FF, 0xE8FCFF, DeepElement.WATER),
-    VENOM_BRIAR_FANG(20, Category.ELEMENT,    63, false, 0x2BC418, 0x9DFF2E, DeepElement.WOOD),
+    VENOM_BRIAR_FANG(20, Category.ELEMENT,    63, false, 0x2BC418, 0x9DFF2E, DeepElement.POISON),
     SEISMIC_TECTONIC(21, Category.ELEMENT,    82, false, 0xC97A2B, 0xFFD275, DeepElement.EARTH),
     ZEPHYR_WIND_LANCE(22, Category.ELEMENT,    67, true,  0xC7FFF0, 0x5EF2CE, DeepElement.WOOD),
     SERAPH_SKY_PILLAR(23, Category.ELEMENT,    96, true,  0xFFF3B0, 0xFFD043, DeepElement.LIGHT),
@@ -90,7 +90,16 @@ public enum WeaponVisualEffectId {
     /** #36 Chaos : sphère d'entropie — trois cercles orthogonaux qui changent de teinte. */
     ENTROPY_SPHERE(36, Category.SPECIAL,    87, true,  0x9B5CFF, 0x0B0710, DeepElement.CHAOS),
     /** #37 Chaos : déchirure du big bang — cœur blanc aveuglant, rayons bariolés, anneau noir. */
-    BIG_BANG_SCAR(37, Category.SPECIAL,    96, true,  0xFFFFFF, 0x53103B, DeepElement.CHAOS);
+    BIG_BANG_SCAR(37, Category.SPECIAL,    96, true,  0xFFFFFF, 0x53103B, DeepElement.CHAOS),
+
+    // === VIII. T352b-SPLIT-ELEMENTS : Bois (brun) et Poison (vert foncé) sont désormais deux
+    // familles distinctes -> chacune doit avoir ses 3 grosses animations uniques.
+    /** #38 Bois : sève vive — éclats d'écorce qui éclosent en pousses, sève ambrée (brun). */
+    VERDANT_SAP_BLOOM(38, Category.ELEMENT,    73, false, 0xB07A3E, 0x6B4118, DeepElement.WOOD),
+    /** #39 Poison : voile de miasme — nuage vert sombre en pixels, rampe de spores. */
+    MIASMA_SHROUD(39, Category.ELEMENT,    69, false, 0x1E7A32, 0x0A3D16, DeepElement.POISON),
+    /** #40 Poison : nova venimeuse — 10 aiguillons qui jaillissent puis retombent. */
+    PLAGUE_NOVA(40, Category.ELEMENT,    81, false, 0x27A043, 0x074012, DeepElement.POISON);
 
     public enum Category {
         EDGE_SHARP,

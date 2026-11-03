@@ -195,7 +195,9 @@
         "deep_lucky_block:armor_pry",
         "deep_lucky_block:focused_crit",
         "deep_lucky_block:crit_amplifier",
-        "deep_lucky_block:sharpened_sharpness"
+        "deep_lucky_block:sharpened_sharpness",
+        "deep_lucky_block:chaos_entropy",
+        "deep_lucky_block:chaos_nexus"
       ],
       "utility": [
         "minecraft:efficiency",
@@ -232,7 +234,8 @@
         "deep_lucky_block:focused_crit",
         "deep_lucky_block:crit_amplifier",
         "deep_lucky_block:sharpened_sharpness",
-        "deep_lucky_block:crit_rate"
+        "deep_lucky_block:crit_rate",
+        "deep_lucky_block:chaos_rupture"
       ],
       "utility": [
         "minecraft:efficiency",
