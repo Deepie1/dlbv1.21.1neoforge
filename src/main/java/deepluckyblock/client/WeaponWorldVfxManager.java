@@ -1822,8 +1822,10 @@ public final class WeaponWorldVfxManager {
             case WeaponVfxMotion.SHAPE_ECLIPSE -> {
                 // Éclipse : disque sombre qui grossit, liseré lumineux, puis triple griffure.
                 float disc = radius * (0.55f + 0.85f * progress);
-                emitPixelCircleBillboard3D(vc, mat, tmp, cx, cy + 0.32f + rise * progress, cz,
-                        disc, trailRgb, 0x000000, peakAlpha);
+                // T365-HOLOGRAM : le disque de l'éclipse a maintenant une ÉPAISSEUR (3 anneaux
+                // inclinés + cœur suspendu) au lieu d'être un plan face caméra.
+                emitPixelHoloDisc3D(vc, mat, tmp, cx, cy + 0.32f + rise * progress, cz, disc,
+                        yawRad, pitchRad + 1.35f, trailRgb, 0x000000, peakAlpha, salt);
                 emitPixelRing3D(vc, mat, tmp, cx, cy + 0.32f + rise * progress, cz, disc,
                         coreRgb, accentRgb, peakAlpha, PIXEL_RING_SOLID);
                 for (int claw = -1; claw <= 1; claw++) {
@@ -2566,6 +2568,21 @@ public final class WeaponWorldVfxManager {
             emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, arms, core, tip, a);
         }
 
+        /** Cage filaire holographique (vrais cubes, volume + profondeur). */
+        void cage(float half, float yaw, float pitch, float roll, int edge, int node, int a) {
+            emitPixelHoloCage3D(vc, mat, tmp, cx, cy, cz, half, yaw, pitch, roll, edge, node, a, salt);
+        }
+
+        /** Globe holographique (anneaux de latitude + méridiens). */
+        void holoSphere(float radius, float yaw, int ring, int accent, int a) {
+            emitPixelHoloSphere3D(vc, mat, tmp, cx, cy, cz, radius, yaw, ring, accent, a, salt);
+        }
+
+        /** Disque holographique épais (remplace le disque face caméra). */
+        void holoDisc(float radius, int rgbA, int rgbB, int a) {
+            emitPixelHoloDisc3D(vc, mat, tmp, cx, cy, cz, radius, yawRad(), 1.35f, rgbA, rgbB, a, salt);
+        }
+
         /** L'arc de lame propre à l'enchantement (mouvement T361 conservé). */
         void slash(float radius, float baseHalf, float sweepDeg, int core, int trail, int accent, int a) {
             emitMotionSlash(vc, mat, tmp, cx, cy, cz, inst.yawDeg, inst.pitchDeg, inst.tiltRad,
@@ -2824,6 +2841,9 @@ public final class WeaponWorldVfxManager {
                     0.042f * S, 0xFFFFFF, v.pRgb(), flick);
             v.line(v.cx() - span, v.cy() + span, v.cz(), v.cx() + span, v.cy() - span, v.cz(),
                     0.042f * S, 0xFFFFFF, v.sRgb(), flick);
+            // T365-HOLOGRAM : grille cubique de surcadence (volume néon).
+            v.cage(span * 0.95f, v.age() * 0.07f, 0.50f, v.age() * 0.05f,
+                    v.pRgb(), 0xFFFFFF, Math.round(flick * 0.75f));
         }
     }
 
@@ -2937,11 +2957,16 @@ public final class WeaponWorldVfxManager {
         }
 
         if (prism) {
+            // T365-HOLOGRAM : cage prismatique en volume autour de l'impact (au lieu de la croix
+            // seule, qui restait plate) + éclat central.
+            v.cage((0.95f + 0.35f * t) * S, v.age() * 0.055f, 0.62f + t * 0.4f, v.age() * 0.03f,
+                    Mth.hsvToRgb((v.age() * 0.06f) % 1.0f, 0.55f, 1.0f), 0xFFFFFF,
+                    Math.round(v.fadeA() * 0.85f));
             v.cross(4, 0xFFFFFF, Mth.hsvToRgb((v.age() * 0.08f) % 1.0f, 0.60f, 1.0f), v.fadeA());
         } else if (fx == WeaponVisualEffectId.FOCUSED_BULLSEYE) {
             float rad = (t < 0.50f) ? (1.05f - 1.45f * t) : (0.38f + (t - 0.50f) * 1.60f);
-            emitPixelCircleBillboard3D(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), rad * S,
-                    v.sRgb(), v.pRgb(), v.fadeA());
+            // T365-HOLOGRAM : disque ÉPAIS (3 anneaux inclinés + cœur), plus un plan face caméra.
+            v.holoDisc(rad * S, v.sRgb(), v.pRgb(), v.fadeA());
         } else if (fx == WeaponVisualEffectId.ANNIHILATING_ARC) {
             v.slash((1.35f + 0.70f * t) * v.m().scale(), 0.046f, 210.0f,
                     0xFFFFFF, v.aRgb(), v.pRgb(), v.fadeA());
@@ -3177,6 +3202,9 @@ public final class WeaponWorldVfxManager {
         }
 
         if (fx == WeaponVisualEffectId.SERAPH_SKY_PILLAR) {
+            // T365-HOLOGRAM : globe de lumière en volume au-dessus de la cible.
+            v.holoSphere((0.80f + 0.45f * v.easeOut()) * S, v.age() * 0.06f,
+                    v.pRgb(), 0xFFFFFF, Math.round(v.fadeA() * 0.85f));
             for (int k = 0; k < 12; k++) {
                 float u = k / 12.0f;
                 v.cube(v.cx() + (v.hash(k * 13) - 0.50f) * 0.22f * S,
@@ -3190,6 +3218,9 @@ public final class WeaponWorldVfxManager {
             v.shard(v.cx() - 1.30f * S, v.cy() + 1.85f * S, v.cz() - 1.30f * S,
                     3.4f * S, 0.060f * S, 1.0f, -1.15f, 1.0f,
                     0xFFFFFF, v.aRgb(), v.fadeA(), v.salt());
+            // T365-HOLOGRAM : cage stellaire qui tourne autour de l'impact.
+            v.cage((0.85f + 0.50f * v.easeOut()) * S, v.age() * 0.045f, 0.55f, v.age() * 0.02f,
+                    v.aRgb(), 0xFFFFFF, Math.round(v.fadeA() * 0.75f));
         } else if (fx == WeaponVisualEffectId.CHRONO_ETERNAL_HALO) {
             for (int o = 0; o < 2; o++) {
                 float rad = (0.55f + 0.25f * o) * S;
@@ -3254,8 +3285,10 @@ public final class WeaponWorldVfxManager {
             }
         } else if (fx == WeaponVisualEffectId.ECLIPSE_VEIL) {
             float rad = (0.25f + 1.15f * crawl) * S;
-            emitPixelCircleBillboard3D(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), rad,
-                    0x120616, 0x2B0B38, Math.round(v.fadeA() * 0.85f));
+            // T365-HOLOGRAM : l'éclipse devient un volume (disque épais + cage qui l'enserre).
+            v.holoDisc(rad, 0x120616, 0x2B0B38, Math.round(v.fadeA() * 0.85f));
+            v.cage(rad * 1.15f, v.age() * 0.03f, 0.95f, v.age() * 0.02f,
+                    v.aRgb(), 0xFFFFFF, Math.round(v.fadeA() * 0.70f));
             v.ring(0.05f, rad * 1.18f, v.aRgb(), 0xFFFFFF,
                     Math.round(v.fadeA() * 0.90f), PIXEL_RING_BEADS);
         } else if (fx == WeaponVisualEffectId.SPECTRAL_REACH) {
@@ -3381,6 +3414,10 @@ public final class WeaponWorldVfxManager {
                     Math.round(v.fadeA() * (0.45f + 0.55f * close)));
         }
 
+        // T365-HOLOGRAM : cage qui s'EFFONDRE avec la sphère (elle se replie sur la cible).
+        v.cage((1.55f * close + 0.10f) * S, v.age() * 0.12f, 0.75f, v.age() * 0.07f,
+                v.aRgb(), 0xFFFFFF, Math.round(v.fadeA() * 0.80f));
+
         float pulse = 0.75f + 0.25f * Mth.sin(v.age() * 0.35f);
         v.ring(0.02f, (0.95f + 0.25f * pulse) * S, v.aRgb(), v.pRgb(),
                 Math.round(v.fadeA() * 0.65f), PIXEL_RING_DASHED);
@@ -3441,8 +3478,8 @@ public final class WeaponWorldVfxManager {
             // ENTROPIE : trois anneaux orthogonaux + coquille de cubes inclinés = sphère instable.
             float rad = (0.45f + 1.20f * Mth.sin(t * (float) Math.PI)) * S;
             v.ring(0.0f, rad, hueA, hueB, v.fadeA(), PIXEL_RING_SOLID);
-            emitPixelCircleBillboard3D(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), rad,
-                    hueB, hueC, Math.round(v.fadeA() * 0.80f));
+            // T365-HOLOGRAM : globe en volume (le billboard plat est remplacé).
+            v.holoSphere(rad, v.age() * 0.10f, hueB, hueC, Math.round(v.fadeA() * 0.90f));
             for (int i = 0; i < 12; i++) {
                 float u = i / 12.0f;
                 float ang = u * 6.283f + v.age() * 0.30f;
@@ -3479,6 +3516,9 @@ public final class WeaponWorldVfxManager {
             }
         }
 
+        // T365-HOLOGRAM : cage kaléidoscopique en volume (teintes qui défilent).
+        v.cage((0.90f + 0.55f * v.easeOut()) * S, v.age() * 0.09f, v.age() * 0.05f, v.age() * 0.03f,
+                hueA, 0xFFFFFF, Math.round(v.fadeA() * 0.70f));
         v.slash((1.05f + 0.55f * t) * v.m().scale(), 0.038f, 170.0f,
                 0xFFFFFF, hueA, hueB, v.fadeA());
     }
@@ -3626,6 +3666,191 @@ public final class WeaponWorldVfxManager {
                 p[i1 * 3], p[i1 * 3 + 1], p[i1 * 3 + 2], col, alpha,
                 p[i2 * 3], p[i2 * 3 + 1], p[i2 * 3 + 2], col, alpha,
                 p[i3 * 3], p[i3 * 3 + 1], p[i3 * 3 + 2], col, alpha);
+    }
+
+    /**
+     * T365-HOLOGRAM : « à quel point ce cube est-il devant l'objet ? » (-1 derrière .. +1 devant).
+     *
+     * <p>Les positions sont déjà relatives à la caméra : la caméra est donc à l'origine et la
+     * direction de vue est simplement l'opposé du centre de l'effet. On peut ainsi éclaircir les
+     * cubes du devant et assombrir ceux du fond — c'est ce qui fait lire un VOLUME au lieu d'un
+     * plan, et c'est exactement ce que fait un hologramme.</p>
+     */
+    private static float nearness(float cx, float cy, float cz, float px, float py, float pz) {
+        float l = Mth.sqrt(cx * cx + cy * cy + cz * cz);
+        if (l < 0.01f) return 0.0f;
+        float vx = -cx / l, vy = -cy / l, vz = -cz / l;
+        float dx = px - cx, dy = py - cy, dz = pz - cz;
+        float dl = Mth.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dl < 0.001f) return 0.0f;
+        return (dx * vx + dy * vy + dz * vz) / dl;
+    }
+
+    /** Opacité d'un cube selon sa profondeur : devant = franc, derrière = translucide. */
+    private static int depthAlpha(int alpha, float nearness) {
+        return Math.round(alpha * (0.34f + 0.66f * (0.5f + 0.5f * nearness)));
+    }
+
+    /**
+     * T365-HOLOGRAM : <b>cage filaire 3D</b> — les 12 arêtes d'un cube, en vrais mini-cubes à
+     * 6 faces, qui tourne sur deux axes.
+     *
+     * <p>Ce n'est PAS un plan : chaque arête a de la profondeur, les cubes du fond sont plus
+     * translucides que ceux du devant (parallaxe réelle), et les huit sommets portent un nœud plus
+     * gros et plus clair. C'est la figure « hologramme » classique.</p>
+     */
+    public static void emitPixelHoloCage3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                           float cx, float cy, float cz, float half,
+                                           float yaw, float pitch, float roll,
+                                           int edgeRgb, int nodeRgb, int alpha, int salt) {
+        if (alpha <= 8 || half <= 0.02f) return;
+        float cr = Mth.cos(roll), sr = Mth.sin(roll);
+        float cp = Mth.cos(pitch), sp = Mth.sin(pitch);
+        float cyw = Mth.cos(yaw), syw = Mth.sin(yaw);
+
+        float[] p = ROT_CORNERS;
+        for (int i = 0; i < 8; i++) {
+            float ox = ((i & 4) == 0) ? -half : half;
+            float oy = ((i & 2) == 0) ? -half : half;
+            float oz = ((i & 1) == 0) ? -half : half;
+            rotWrite(ox, oy, oz, cr, sr, cp, sp, cyw, syw, p, i * 3);
+            p[i * 3] += cx;
+            p[i * 3 + 1] += cy;
+            p[i * 3 + 2] += cz;
+        }
+
+        int steps = 5;
+        float nodeHalf = half * 0.085f;
+        for (int axis = 0; axis < 3; axis++) {
+            for (int a = 0; a < 2; a++) {
+                for (int b = 0; b < 2; b++) {
+                    int i0;
+                    int i1;
+                    if (axis == 0) {
+                        i0 = (a << 1) | b;
+                        i1 = (1 << 2) | (a << 1) | b;
+                    } else if (axis == 1) {
+                        i0 = (a << 2) | b;
+                        i1 = (a << 2) | (1 << 1) | b;
+                    } else {
+                        i0 = (a << 2) | (b << 1);
+                        i1 = (a << 2) | (b << 1) | 1;
+                    }
+                    for (int s = 1; s < steps; s++) {
+                        float u = s / (float) steps;
+                        float px = Mth.lerp(u, p[i0 * 3], p[i1 * 3]);
+                        float py = Mth.lerp(u, p[i0 * 3 + 1], p[i1 * 3 + 1]);
+                        float pz = Mth.lerp(u, p[i0 * 3 + 2], p[i1 * 3 + 2]);
+                        float nr = nearness(cx, cy, cz, px, py, pz);
+                        float hsz = nodeHalf * (0.62f + 0.42f * pixelHash(salt, axis * 41 + s * 7 + a * 3 + b));
+                        emitVoxelCube(vc, mat, tmp, px, py, pz, hsz, hsz, hsz, edgeRgb,
+                                depthAlpha(alpha, nr));
+                    }
+                }
+            }
+        }
+        // Nœuds des 8 sommets
+        for (int i = 0; i < 8; i++) {
+            float px = p[i * 3], py = p[i * 3 + 1], pz = p[i * 3 + 2];
+            float nr = nearness(cx, cy, cz, px, py, pz);
+            emitVoxelCube(vc, mat, tmp, px, py, pz, nodeHalf * 1.7f, nodeHalf * 1.7f, nodeHalf * 1.7f,
+                    nodeRgb, depthAlpha(alpha, nr));
+        }
+    }
+
+    /**
+     * T365-HOLOGRAM : <b>globe holographique</b> — anneaux de latitude en cubes, tournant autour de
+     * l'axe vertical, avec dégradé de profondeur (le fond de la sphère est translucide).
+     */
+    public static void emitPixelHoloSphere3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                             float cx, float cy, float cz, float radius,
+                                             float yaw, int ringRgb, int accentRgb,
+                                             int alpha, int salt) {
+        if (alpha <= 8 || radius <= 0.05f) return;
+        int lat = 6;
+        float cyw = Mth.cos(yaw), syw = Mth.sin(yaw);
+        for (int i = 0; i < lat; i++) {
+            float theta = -1.5707964f + (i + 0.5f) * ((float) Math.PI / lat);
+            float yy = radius * Mth.sin(theta);
+            float rr = radius * Mth.cos(theta);
+            int n = Math.max(6, Math.round(rr / 0.072f));
+            for (int k = 0; k < n; k++) {
+                float ang = k * (float) (Math.PI * 2.0 / n) + yaw;
+                float lx = Mth.cos(ang) * rr;
+                float lz = Mth.sin(ang) * rr;
+                float px = cx + lx * cyw + lz * syw;
+                float pz = cz - lx * syw + lz * cyw;
+                float py = cy + yy;
+                float nr = nearness(cx, cy, cz, px, py, pz);
+                boolean pole = (i == 0 || i == lat - 1);
+                float hsz = radius * (pole ? 0.040f : 0.052f)
+                        * (0.80f + 0.40f * pixelHash(salt, i * 37 + k));
+                emitVoxelCube(vc, mat, tmp, px, py, pz, hsz, hsz, hsz,
+                        (k % 4 == 0) ? accentRgb : ringRgb, depthAlpha(alpha, nr));
+            }
+        }
+        // Méridien accentué : deux arcs verticaux opposés donnent la lecture « globe »
+        for (int m = 0; m < 2; m++) {
+            float phi = m * (float) Math.PI;
+            for (int k = 1; k < 12; k++) {
+                float th = -1.5707964f + k * ((float) Math.PI / 12.0f);
+                float lx = Mth.cos(th) * Mth.cos(phi) * radius;
+                float lz = Mth.cos(th) * Mth.sin(phi) * radius;
+                float px = cx + lx * cyw + lz * syw;
+                float pz = cz - lx * syw + lz * cyw;
+                float py = cy + Mth.sin(th) * radius;
+                float nr = nearness(cx, cy, cz, px, py, pz);
+                emitVoxelCube(vc, mat, tmp, px, py, pz, radius * 0.032f, radius * 0.032f, radius * 0.032f,
+                        accentRgb, depthAlpha(alpha, nr));
+            }
+        }
+    }
+
+    /**
+     * T365-HOLOGRAM : <b>disque holographique à épaisseur</b> — trois anneaux légèrement inclinés
+     * les uns par rapport aux autres, plus un cœur de pixels.
+     *
+     * <p>Remplace le disque « face caméra » (un plan) : ici l'objet a une vraie épaisseur et une
+     * parallaxe, donc il tourne avec la caméra au lieu de la suivre.</p>
+     */
+    public static void emitPixelHoloDisc3D(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                           float cx, float cy, float cz, float radius,
+                                           float yawRad, float pitchRad,
+                                           int rgbA, int rgbB, int alpha, int salt) {
+        if (alpha <= 8 || radius <= 0.04f) return;
+        float dx = Mth.sin(yawRad), dz = Mth.cos(yawRad);
+        float sx = Mth.cos(yawRad), sz = -Mth.sin(yawRad);
+        float hsz = radius * 0.038f;
+
+        for (int ringI = 0; ringI < 3; ringI++) {
+            float rr = radius * (1.0f - 0.13f * ringI);
+            float tilt = pitchRad + (ringI - 1) * 0.10f;
+            float ct = Mth.cos(tilt), st = Mth.sin(tilt);
+            int n = Math.max(10, Math.round(rr / 0.068f));
+            for (int k = 0; k < n; k++) {
+                float ang = k * (float) (Math.PI * 2.0 / n) + ringI * 0.22f;
+                float ox = Mth.cos(ang) * rr;
+                float oz = Mth.sin(ang) * rr;
+                float px = cx + sx * ox + dx * (oz * st);
+                float py = cy + oz * ct;
+                float pz = cz + sz * ox + dz * (oz * st);
+                float nr = nearness(cx, cy, cz, px, py, pz);
+                float s2 = hsz * (0.78f + 0.42f * pixelHash(salt, ringI * 53 + k));
+                emitVoxelCube(vc, mat, tmp, px, py, pz, s2, s2, s2,
+                        ((k + ringI) % 5 == 0) ? rgbB : rgbA, depthAlpha(alpha, nr));
+            }
+        }
+        // Cœur : quelques pixels suspendus entre les anneaux (profondeur supplémentaire)
+        for (int k = 0; k < 7; k++) {
+            float ang = k * 0.897f + salt * 0.01f;
+            float rr = radius * (0.18f + 0.22f * pixelHash(salt, k * 19));
+            float px = cx + sx * Mth.cos(ang) * rr + dx * Mth.sin(ang) * rr * 0.35f;
+            float py = cy + Mth.sin(ang) * rr * 0.55f;
+            float pz = cz + sz * Mth.cos(ang) * rr + dz * Mth.sin(ang) * rr * 0.35f;
+            float nr = nearness(cx, cy, cz, px, py, pz);
+            emitVoxelCube(vc, mat, tmp, px, py, pz, hsz * 0.7f, hsz * 0.7f, hsz * 0.7f, rgbB,
+                    depthAlpha(Math.round(alpha * 0.85f), nr));
+        }
     }
 
     /**
@@ -3975,10 +4200,10 @@ public final class WeaponWorldVfxManager {
             crossArmPixel(vc, mat, tmp, cx - off, cy, cz, s, rgb, a, salt + i, 1);
             crossArmPixel(vc, mat, tmp, cx, cy + off, cz, s, rgb, a, salt + i, 2);
             crossArmPixel(vc, mat, tmp, cx, cy - off, cz, s, rgb, a, salt + i, 3);
-            if (i <= 2) {
-                crossArmPixel(vc, mat, tmp, cx, cy, cz + off, s, rgb, a, salt + i, 4);
-                crossArmPixel(vc, mat, tmp, cx, cy, cz - off, s, rgb, a, salt + i, 5);
-            }
+            // T365-HOLOGRAM : les bras de la croix existent aussi en PROFONDEUR (avant/arrière),
+            // donc l'éclat est une étoile à six branches en volume, plus un dessin sur un plan.
+            crossArmPixel(vc, mat, tmp, cx, cy, cz + off, s * 0.92f, rgb, Math.round(a * 0.88f), salt + i, 4);
+            crossArmPixel(vc, mat, tmp, cx, cy, cz - off, s * 0.92f, rgb, Math.round(a * 0.80f), salt + i, 5);
         }
     }
 

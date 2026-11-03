@@ -352,6 +352,8 @@ public final class DlbVfxCommand {
         line(src, "§e/dlbvfx motions", "liste les §f" + WeaponVfxMotion.SHAPE_COUNT + " §7familles de mouvement et les effets qui les utilisent");
         // T363-ROTATED-VOXELS : cubes inclinés sur 3 axes, tailles et opacités variées.
         line(src, "§7Cubes 3D", "§7chaque pixel est un cube §fincliné sur les 3 axes§7, de §ftaille variable§7, d'§fopacité dégradée §7et de §fcouleur en dégradé continu §7(sombre → corps → lumière → pointe blanche)");
+        // T365-HOLOGRAM : volumes filaires (cage, globe, disque épais) avec profondeur réelle.
+        line(src, "§7Hologrammes", "§7cages filaires, globes et disques §fÉPAIS §7en cubes : le fond est translucide, l'avant franc (parallaxe) — aucun plan face caméra");
         // T362-ELEMENT-IMPACT : chaque élément a SA grosse animation, avec son propre déroulé.
         line(src, "§7Animations d'élément", "§7une grosse animation par élément : le §ffeu monte §7en langues, l'§feau gicle §7puis retombe en rides, le §fgive pousse puis se brise, la §ffoudre tombe §7et rampe, la §fterre se soulève, la §fmâchoire se referme§7, le §fvide implose§7, l'§fombre rampe §7puis se rétracte…");
         // T360-NO-VANILLA-PARTICLES : plus une seule particule Minecraft dans tout le mod.
