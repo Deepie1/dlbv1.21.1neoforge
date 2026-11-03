@@ -12,4 +12,6 @@
 
 [**Télécharger directement `src-modifies-t301-t372.zip`**](https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/b36d3c28-dlbv1-21-1neoforge/src-modifies-t301-t372.zip)
 
-Cette archive contient les modifications source incrémentales jusqu’à T372; ce n’est pas un fichier mod `.jar` compilé.
+Cette archive contient les modifications source incrémentales jusqu’à T372; ce n’est pas un fichier mod `.jar` compilé. Le PDF de palette couleur est inclus dans l’archive sous `docs/Palette_couleurs_animations_elementaires.pdf`.
+
+[Télécharger aussi le PDF séparément](https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/b36d3c28-dlbv1-21-1neoforge/docs/Palette_couleurs_animations_elementaires.pdf).
