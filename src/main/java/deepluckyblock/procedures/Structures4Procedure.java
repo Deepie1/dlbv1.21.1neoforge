@@ -1609,9 +1609,35 @@ public class Structures4Procedure {
             }
             manish.getOffers().add(offer);
         }
+        // T355-MANISH-3FIXES (consigne : « ajoute a manish 3 echanges tout en bas ;
+        // 6 lingots d'or contre 1 diamant ; 10 lingots de fer contre 1 diamant, et
+        // 20 lingots de cuivre contre 1 diamant ») : trois offres FIXES, ajoutees
+        // APRES la boucle des offres aleatoires pour qu'elles tombent TOUT EN BAS de
+        // la liste des echanges, dans les DEUX variantes (historique et Everest).
+        // Pas de setSpecialPriceDiff() ici : le tarif est deja celui demande, ces
+        // trois offres ne doivent jamais etre soldees (donc jamais teintees en rouge
+        // par ManishDiscountTint).
+        manish.getOffers().add(manishIngotsForDiamond(Items.GOLD_INGOT, 6));
+        manish.getOffers().add(manishIngotsForDiamond(Items.IRON_INGOT, 10));
+        manish.getOffers().add(manishIngotsForDiamond(Items.COPPER_INGOT, 20));
         level.addFreshEntity(manish);
         deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4] Manish spawn à {} (variante {})", pos.toShortString(), everestVariant ? "Everest" : "historique");
     }
+    /**
+     * T355-MANISH-3FIXES : offre fixe « N lingots -> 1 diamant ».
+     *
+     * <p>Utilisee pour les trois echanges permanents ajoutes tout en bas de la liste de Manish
+     * (6 or, 10 fer, 20 cuivre). Aucune remise n'est posee : le prix affiche est exactement le
+     * tarif demande, et il reste identique pour tous les joueurs et toutes les generations.</p>
+     *
+     * @param ingot      lingot demande (or / fer / cuivre)
+     * @param ingotCount nombre de lingots a donner pour recevoir 1 diamant
+     */
+    private static MerchantOffer manishIngotsForDiamond(net.minecraft.world.item.Item ingot, int ingotCount) {
+        return new MerchantOffer(new ItemCost(ingot, ingotCount), new ItemStack(Items.DIAMOND),
+                9999, 0, 0.0f);
+    }
+
     private static boolean isStrippedCherry(BlockState state) { return state.is(Blocks.STRIPPED_CHERRY_LOG) || state.is(Blocks.STRIPPED_CHERRY_WOOD) || state.is(Blocks.CHERRY_LOG) || state.is(Blocks.CHERRY_WOOD); }
     private static Rotation computeFacingRotation(BlockPos structPos, Player player, Direction nativeFacing) {
         if (player == null) return Rotation.NONE;
