@@ -351,7 +351,7 @@ public final class DlbVfxCommand {
         line(src, "§7Mouvements", "§f" + WeaponVisualEffectId.values().length + " §7trajectoires distinctes en §f" + WeaponVfxMotion.SHAPE_COUNT + " §7familles (arc, spirale, mâchoire, dune, vortex...)");
         line(src, "§e/dlbvfx motions", "liste les §f" + WeaponVfxMotion.SHAPE_COUNT + " §7familles de mouvement et les effets qui les utilisent");
         // T363-ROTATED-VOXELS : cubes inclinés sur 3 axes, tailles et opacités variées.
-        line(src, "§7Cubes 3D", "§7chaque pixel est un cube §fincliné sur les 3 axes§7, de §ftaille variable §7et d'§fopacité dégradée §7— plus de piles de blocs droits");
+        line(src, "§7Cubes 3D", "§7chaque pixel est un cube §fincliné sur les 3 axes§7, de §ftaille variable§7, d'§fopacité dégradée §7et de §fcouleur en dégradé continu §7(sombre → corps → lumière → pointe blanche)");
         // T362-ELEMENT-IMPACT : chaque élément a SA grosse animation, avec son propre déroulé.
         line(src, "§7Animations d'élément", "§7une grosse animation par élément : le §ffeu monte §7en langues, l'§feau gicle §7puis retombe en rides, le §fgive pousse puis se brise, la §ffoudre tombe §7et rampe, la §fterre se soulève, la §fmâchoire se referme§7, le §fvide implose§7, l'§fombre rampe §7puis se rétracte…");
         // T360-NO-VANILLA-PARTICLES : plus une seule particule Minecraft dans tout le mod.

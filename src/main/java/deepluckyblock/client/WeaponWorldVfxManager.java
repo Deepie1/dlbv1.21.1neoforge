@@ -1929,7 +1929,12 @@ public final class WeaponWorldVfxManager {
                     boolean isHead = Math.abs(distBehind) < 0.12f;
                     float hs = baseHalf * (0.55f + 0.75f * taper) * (isHead ? 1.25f : 1.0f)
                             * (0.82f + 0.34f * pixelHash(salt, i * 13));
-                    int rgb = isHead ? 0xFFFFFF : (distBehind < 0.28f ? coreRgb : trailRgb);
+                    // T364-GRADIENTS : l'entaille n'a plus deux bandes de couleur franches mais un
+                    // DÉGRADÉ continu le long de la lame : blanc incandescent à la tête, cœur de
+                    // l'élément au milieu, accent sombre dans la traînée.
+                    int rgb = isHead ? 0xFFFFFF
+                            : jitterRgb(rampRgb(Mth.clamp(1.0f - Math.max(0.0f, distBehind), 0.0f, 1.0f),
+                                    accentRgb, trailRgb, coreRgb, 0xFFFFFF), salt + i * 41, 0.045f);
                     int a = Math.round(peakAlpha * Math.max(0.18f, 1.0f - Math.max(0.0f, distBehind) * 1.35f));
 
                     switch (prof.shape()) {
@@ -1943,7 +1948,8 @@ public final class WeaponWorldVfxManager {
                                         quantize(cy + dirY * localR * k + rise * progress * u + sh * 0.03f, 0.0625f),
                                         quantize(cz + dirZ * localR * k, 0.0625f),
                                         sz2 * 0.62f, sz2 * (1.5f - 0.25f * sh), sz2 * 0.62f,
-                                        (sh == 0) ? 0xFFFFFF : ((sh == 1) ? coreRgb : accentRgb),
+                                        jitterRgb(rampRgb(sh / 2.0f, accentRgb, coreRgb, trailRgb, 0xFFFFFF),
+                                                salt + sh * 13 + i, 0.04f),
                                         Math.round(a * (1.0f - 0.22f * sh)));
                             }
                         }
@@ -2439,6 +2445,41 @@ public final class WeaponWorldVfxManager {
             return pixelHash(salt, a);
         }
 
+        /**
+         * Teinte la plus sombre du dégradé (creux, base, fond de la vague) : on mélange cœur et
+         * halo de l'élément puis on assombrit franchement, pour que le bas d'une forme « rentre »
+         * dans l'ombre et que le haut paraisse lumineux par contraste.
+         */
+        int deep() {
+            // On part TOUJOURS de la teinte la plus sombre des deux (peu importe laquelle est le
+            // "cœur" dans la palette de l'enchantement) : le bas des formes est donc réellement
+            // dans l'ombre, et non plus aléatoirement plus clair que le haut.
+            int darker = (luminanceRgb(pRgb) <= luminanceRgb(sRgb)) ? pRgb : sRgb;
+            return shadeRgb(mixRgb(darker, pRgb, 0.30f), 0.52f);
+        }
+
+        /** Teinte lumineuse intermédiaire (crête, partie éclairée) : garantie plus claire que le corps. */
+        int high() {
+            int brighter = (luminanceRgb(pRgb) >= luminanceRgb(sRgb)) ? pRgb : sRgb;
+            return shadeRgb(mixRgb(brighter, aRgb, 0.35f), 1.08f);
+        }
+
+        /** Pointe presque blanche (écume, braise, éclat) : le point le plus chaud de la forme. */
+        int tip() {
+            // Pointe quasi blanche : c'est là que la forme « brûle » (écume, braise, pointe d'éclat).
+            return mixRgb(0xFFFFFF, high(), 0.28f);
+        }
+
+        /** Dégradé continu de l'élément, u = 0 (creux) .. 1 (pointe). */
+        int grad(float u) {
+            return rampRgb(u, deep(), pRgb, high(), tip());
+        }
+
+        /** Dégradé + nuance propre à ce pixel (aucun cube n'a exactement la même couleur). */
+        int grad(float u, int saltOffset) {
+            return jitterRgb(grad(u), salt + saltOffset, 0.045f);
+        }
+
         /** Direction horizontale de l'attaque (vers la cible). */
         float dirX() {
             return Mth.sin(-inst.yawDeg * Mth.DEG_TO_RAD);
@@ -2808,7 +2849,7 @@ public final class WeaponWorldVfxManager {
                     w, h, w * 0.80f,
                     ang, (v.hash(p * 53) - 0.5f) * 1.10f * lift - 0.35f * (1.0f - lift),
                     (v.hash(p * 61) - 0.5f) * 0.90f * lift,
-                    (p & 1) == 0 ? v.sRgb() : v.pRgb(), v.fadeA());
+                    v.grad(0.20f + 0.55f * lift, p * 11), v.fadeA());
             // caillou plus petit qui tourne autour de la dalle
             v.rot(v.cx() + Mth.cos(ang + 0.5f) * rad * 1.10f, hy + 0.10f,
                     v.cz() + Mth.sin(ang + 0.5f) * rad * 1.10f,
@@ -2870,7 +2911,7 @@ public final class WeaponWorldVfxManager {
             float rad = (0.55f + 0.80f * snap) * S;
             int col = prism
                     ? Mth.hsvToRgb((v.age() * 0.05f + b * 0.25f) % 1.0f, 0.55f, 1.0f)
-                    : v.pRgb();
+                    : v.grad(0.30f + 0.45f * v.hash(b * 13), b * 19);
             // lame : longue, fine, INCLINÉE vers le centre (elle pointe la cible)
             v.rot(v.cx() + Mth.cos(ang) * rad, v.cy() + 0.05f, v.cz() + Mth.sin(ang) * rad,
                     (prism ? 0.050f : 0.022f) * S, (0.34f + 0.20f * v.hash(b * 13)) * S, 0.012f * S,
@@ -2985,7 +3026,8 @@ public final class WeaponWorldVfxManager {
                         v.cz() + Mth.sin(ang) * rad,
                         half * 1.8f, half * 0.35f, half,
                         ang + 1.5708f, 0.25f, u * 1.4f,
-                        k % 4 == 0 ? 0xFFFFFF : (arm == 0 ? v.pRgb() : v.sRgb()),
+                        mixRgb(v.grad(0.30f + 0.60f * u, k * 11 + arm * 5),
+                                arm == 0 ? v.pRgb() : v.sRgb(), 0.30f),
                         Math.round(v.fadeA() * (1.0f - 0.25f * u)));
             }
         }
@@ -3025,7 +3067,7 @@ public final class WeaponWorldVfxManager {
                     v.cz() + Mth.sin(ang) * (rad + wob),
                     half, half * 1.25f, half,
                     ang, wob * 12.0f, ang * 0.7f,
-                    (b % 3 == 0) ? 0xFFFFFF : ((b & 1) == 0 ? v.pRgb() : v.sRgb()),
+                    v.grad(Mth.clamp(rise / (2.0f * S) + 0.25f * v.hash(b * 3), 0.0f, 1.0f), b * 13),
                     Math.round(v.fadeA() * pop * (0.55f + 0.45f * v.hash(b * 7))));
         }
 
@@ -3078,7 +3120,7 @@ public final class WeaponWorldVfxManager {
                         v.cz() + Mth.sin(ang) * sp,
                         0.028f * S, 0.020f * S, 0.024f * S,
                         ang, t * 2.0f, ang * 0.9f,
-                        (e & 1) == 0 ? v.aRgb() : v.pRgb(),
+                        v.grad(0.30f + 0.55f * v.hash(e * 5), e * 17),
                         Math.round(v.fadeA() * (0.55f + 0.45f * v.hash(e * 5))));
             }
             v.ring(-0.44f, (0.30f + 2.05f * v.easeOut()) * S, v.pRgb(), v.sRgb(),
@@ -3115,7 +3157,7 @@ public final class WeaponWorldVfxManager {
                 float half = (0.030f - 0.014f * u) * S;
                 v.rot(px, py, pz, half * 2.2f, half * 0.30f, half,
                         ang, 0.30f, 0.35f,
-                        (k & 1) == 0 ? 0xFFFFFF : v.pRgb(),
+                        v.grad(0.45f + 0.55f * u, k * 23),
                         Math.round(v.fadeA() * appear * (0.85f - 0.15f * u)));
             }
         }
@@ -3199,7 +3241,7 @@ public final class WeaponWorldVfxManager {
             v.rot(ex, v.cy() - 0.32f + 0.18f * (1.0f - retract), ez,
                     0.024f * S, 0.060f * S, 0.024f * S,
                     ang, 0.55f, 0.30f,
-                    (i & 1) == 0 ? v.aRgb() : v.pRgb(), v.fadeA());
+                    v.grad(0.25f + 0.45f * retract, i * 31), v.fadeA());
         }
 
         if (fx == WeaponVisualEffectId.WITHER_SHADOW_RIFT) {
@@ -3335,7 +3377,7 @@ public final class WeaponWorldVfxManager {
             v.rot(v.cx() + Mth.cos(ang) * rad, y, v.cz() + Mth.sin(ang) * rad,
                     half, half * 1.35f, half * 0.75f,
                     ang, v.age() * 0.25f + u * 3.0f, u * 4.0f,
-                    (i % 4 == 0) ? 0xFFFFFF : ((i & 1) == 0 ? v.pRgb() : v.aRgb()),
+                    v.grad(0.15f + 0.65f * close + 0.20f * v.hash(i * 7), i * 29),
                     Math.round(v.fadeA() * (0.45f + 0.55f * close)));
         }
 
@@ -3432,7 +3474,7 @@ public final class WeaponWorldVfxManager {
                         cz2 + Mth.sin(a2) * rr,
                         (0.034f - 0.008f * k) * S, 0.026f * S, (0.034f - 0.008f * k) * S,
                         a2, 0.7f + k * 0.5f, ang,
-                        (k == 0) ? 0xFFFFFF : hue,
+                        (k == 0) ? 0xFFFFFF : jitterRgb(mixRgb(hue, v.pRgb(), 0.35f), salt + c * 7 + k, 0.05f),
                         Math.round(v.fadeA() * (0.55f + 0.45f * v.hash(c * 5 + k))));
             }
         }
@@ -3604,6 +3646,10 @@ public final class WeaponWorldVfxManager {
         float dirZ = Mth.cos(yawRad);
         float sideX = Mth.cos(yawRad);
         float sideZ = -Mth.sin(yawRad);
+        // Base de la vague : toujours nettement plus sombre que le corps (effet de profondeur).
+        int darkerTone = (luminanceRgb(deepRgb) <= luminanceRgb(bodyRgb)) ? deepRgb : bodyRgb;
+        int deepTone = shadeRgb(mixRgb(darkerTone, bodyRgb, 0.25f), 0.55f);
+        int midTone = mixRgb(bodyRgb, foamRgb, 0.55f);
         int steps = 15;
         int levels = 4;
 
@@ -3622,7 +3668,11 @@ public final class WeaponWorldVfxManager {
                 float pz = cz + sideZ * (lateral + wob) + dirZ * lean;
                 float py = cy + v * h;
                 float half = (0.055f - 0.018f * v) * (0.70f + 0.45f * env);
-                int col = (v > 0.70f) ? foamRgb : ((v > 0.32f) ? bodyRgb : deepRgb);
+                // Dégradé CONTINU du creux (bleu profond) vers la crête (écume blanche)
+                int col = rampRgb(v, deepTone, bodyRgb, midTone, foamRgb);
+                // éclairage directionnel : le flanc tourné vers la lumière est plus clair -> volume
+                float lit = 0.84f + 0.26f * (0.5f + 0.5f * Mth.cos(u * 6.2831855f - 0.6f));
+                col = shadeRgb(jitterRgb(col, salt + i * 31 + l, 0.055f), lit);
                 int a = Math.round(alpha * (0.72f + 0.28f * v) * (0.40f + 0.60f * env));
                 float pitch = curl * v * 1.15f;               // la crête bascule vers l'avant
                 float roll = (u - 0.5f) * 0.55f;              // la paroi ondule latéralement
@@ -3638,7 +3688,7 @@ public final class WeaponWorldVfxManager {
                 float pz = cz + sideZ * lateral + dirZ * lean;
                 emitVoxelBoxRotated(vc, mat, tmp, px, cy + h + 0.035f, pz,
                         0.032f, 0.022f, 0.026f, yawRad + 0.4f, curl * 1.35f, 0.30f,
-                        foamRgb, Math.round(alpha * 0.95f * env));
+                        jitterRgb(foamRgb, salt + i * 7, 0.04f), Math.round(alpha * 0.95f * env));
             }
         }
 
@@ -3675,7 +3725,10 @@ public final class WeaponWorldVfxManager {
             float bend = Mth.sin(phase + u * 3.1f) * sway * u;
             float bendZ = Mth.cos(phase * 0.7f + u * 2.3f) * sway * 0.55f * u;
             float half = baseHalf * (1.0f - 0.68f * u);
-            int col = (u > 0.62f) ? tipRgb : coreRgb;
+            // FEU : dégradé continu du rouge sombre (pied) au blanc-jaune (pointe)
+            int col = rampRgb(u, shadeRgb(coreRgb, 0.52f), coreRgb,
+                    mixRgb(coreRgb, tipRgb, 0.55f), tipRgb);
+            col = jitterRgb(col, salt + k * 17, 0.06f);
             int a = Math.round(alpha * (1.0f - 0.30f * u));
             emitVoxelBoxRotated(vc, mat, tmp, x + bend, y + u * height, z + bendZ,
                     half, half * 1.30f, half * 0.85f,
@@ -3709,7 +3762,9 @@ public final class WeaponWorldVfxManager {
                     x + nx * length * u, y + ny * length * u, z + nz * length * u,
                     h * 0.60f, length * 0.20f, h,
                     yaw, pitch, 0.28f * ((salt & 1) == 0 ? 1.0f : -1.0f),
-                    (k == 0) ? baseRgb : tipRgb, Math.round(alpha * (1.0f - 0.22f * u)));
+                    jitterRgb(rampRgb(u, shadeRgb(baseRgb, 0.55f), baseRgb,
+                            mixRgb(baseRgb, tipRgb, 0.60f), tipRgb), salt + k * 23, 0.05f),
+                    Math.round(alpha * (1.0f - 0.22f * u)));
         }
         // petite facette latérale : cassure du cristal
         emitVoxelBoxRotated(vc, mat, tmp,
@@ -3756,7 +3811,8 @@ public final class WeaponWorldVfxManager {
                 emitVoxelBoxRotated(vc, mat, tmp,
                         (prevX + cxx) * 0.5f, (prevY + cyy) * 0.5f, (prevZ + czz) * 0.5f,
                         h, sl * 0.62f, h * 0.85f, yaw, pitch, 0.0f,
-                        (u > 0.55f) ? tipRgb : baseRgb,
+                        jitterRgb(rampRgb(u, shadeRgb(baseRgb, 0.50f), baseRgb,
+                                mixRgb(baseRgb, tipRgb, 0.55f), tipRgb), salt + k * 29, 0.05f),
                         Math.round(alpha * (1.0f - 0.28f * u)));
             }
             prevX = cxx;
@@ -4483,6 +4539,43 @@ public final class WeaponWorldVfxManager {
         int r = Math.min(255, Math.round(((rgb >>> 16) & 0xFF) * mul));
         int g = Math.min(255, Math.round(((rgb >>> 8) & 0xFF) * mul));
         int b = Math.min(255, Math.round((rgb & 0xFF) * mul));
+        return (r << 16) | (g << 8) | b;
+    }
+
+    /** Luminance perçue (0..1) : sert à ordonner les arrêts d'un dégradé du sombre au clair. */
+    public static float luminanceRgb(int rgb) {
+        return (0.2126f * ((rgb >>> 16) & 0xFF) + 0.7152f * ((rgb >>> 8) & 0xFF)
+                + 0.0722f * (rgb & 0xFF)) / 255.0f;
+    }
+
+    /**
+     * T364-GRADIENTS : dégradé à quatre arrêts (creux → corps → lumière → pointe).
+     *
+     * <p>Avant, une vague ou une flamme avait trois teintes <b>plaquées</b> (une par étage de cube) :
+     * ça se voyait tout de suite, l'œil lit des bandes franches. Ici la couleur est <b>interpolée en
+     * continu</b> le long de la forme, du plus sombre au plus lumineux.</p>
+     */
+    public static int rampRgb(float u, int deep, int body, int high, int tip) {
+        float k = Mth.clamp(u, 0.0f, 1.0f);
+        if (k < 0.34f) return mixRgb(deep, body, k / 0.34f);
+        if (k < 0.68f) return mixRgb(body, high, (k - 0.34f) / 0.34f);
+        return mixRgb(high, tip, (k - 0.68f) / 0.32f);
+    }
+
+    /**
+     * T364-GRADIENTS : micro-variation de teinte déterministe (± {@code amount} par canal).
+     *
+     * <p>Sans elle, tous les cubes d'une même vague ont exactement la même couleur et l'ensemble
+     * fait « plastique ». Avec, chaque pixel a sa nuance : c'est ce qui donne le rendu peint.</p>
+     */
+    public static int jitterRgb(int rgb, int salt, float amount) {
+        int h = salt * 0x9E3779B1;
+        float jr = (((h >>> 3) & 0xFF) / 255.0f - 0.5f) * 2.0f * amount;
+        float jg = (((h >>> 11) & 0xFF) / 255.0f - 0.5f) * 2.0f * amount;
+        float jb = (((h >>> 19) & 0xFF) / 255.0f - 0.5f) * 2.0f * amount;
+        int r = Mth.clamp(Math.round((((rgb >>> 16) & 0xFF) / 255.0f + jr) * 255.0f), 0, 255);
+        int g = Mth.clamp(Math.round((((rgb >>> 8) & 0xFF) / 255.0f + jg) * 255.0f), 0, 255);
+        int b = Mth.clamp(Math.round(((rgb & 0xFF) / 255.0f + jb) * 255.0f), 0, 255);
         return (r << 16) | (g << 8) | b;
     }
 
