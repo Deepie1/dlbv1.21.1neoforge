@@ -844,17 +844,12 @@ public class UniversalEnchantmentHandler {
             }
             // T342-WEAPON-VFX-30 : Éclat critique 3D amélioré (Étoile Dorée, Réticule Focalisé ou Cyber-X)
             if (customCrit || lowCritDmg > 0 || normCritDmg > 0 || overCritDmg > 0 || !weapon.getEnchantments().isEmpty()) {
-                WeaponVisualEffectId critStyle = overCritDmg > 0
-                        ? WeaponVisualEffectId.OVERCLOCK_CYBER_X
-                        : (focusedSurgical ? WeaponVisualEffectId.FOCUSED_BULLSEYE : WeaponVisualEffectId.GOLDEN_CRIT_STAR);
                 // T346-FIX-COMPILE : le porteur d'arme peut etre un mob (LivingEntity) : on ne
                 // declenche le VFX critique que pour un vrai joueur.
                 if (player instanceof Player critPlayer) {
-                    WeaponVfxServerListener.notifyMeleeCrit(
-                            critPlayer,
-                            event.getEntity(),
-                            critStyle,
-                            Math.max(1, overCritDmg + normCritDmg + lowCritDmg + normalCritRate + lowCritRate));
+                    // T370 : signale seulement le critique ; le listener choisit UN seul VFX
+                    // correspondant à l'enchantement, au lieu de superposer une étoile générique.
+                    WeaponVfxServerListener.markMeleeCrit(critPlayer);
                 }
             }
 

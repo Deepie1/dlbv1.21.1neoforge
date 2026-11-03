@@ -95,7 +95,13 @@ public final class WeaponVfxServerListener {
         return net.minecraft.util.Mth.clamp(scale, 0.30f, 4.0f);
     }
 
-    /** Appelé par {@code UniversalEnchantmentHandler} lors d'un coup critique mêlée (vanilla ou custom). */
+    /** Marque le coup critique du tick ; l'animation correspondante est choisie une seule fois dans onLivingHurtVisuals. */
+    public static void markMeleeCrit(Player attacker) {
+        if (attacker == null || !(attacker.level() instanceof ServerLevel sl)) return;
+        LAST_CRIT_TICK.put(attacker.getId(), sl.getGameTime());
+    }
+
+    /** Démonstration explicite d'un effet critique (la mécanique normale passe par markMeleeCrit). */
     public static void notifyMeleeCrit(Player attacker, Entity target,
                                        WeaponVisualEffectId critStyle, int intensity) {
         if (attacker == null || target == null) return;
@@ -386,15 +392,12 @@ public final class WeaponVfxServerListener {
             WeaponVisualEffectId.ResolvedLayer layer = layers.get(i);
             WeaponVisualEffectId fx = layer.effect();
 
-            // Évite de doubler l'impact critique lancé par notifyMeleeCrit, mais garde l'entaille
-            // de combat : c'est le retour principal même lorsque le tirage d'animation est refusé.
-            if (fx.category == WeaponVisualEffectId.Category.CRIT && meleeCritJustFired && i == 0) {
-                if (!isProjectileHit && !swingSlashPlayed) {
-                    broadcastNear(sl, ax, ay, az, fx.id, KIND_SWING_SLASH, layer.level(),
-                            ax, ay, az, tx, ty, tz, palette);
-                    swingSlashPlayed = true;
-                }
-                continue;
+            // Le slash standard accompagne le coup critique même si le tirage rare de VFX échoue.
+            // Le petit/gros effet enchanté reste ensuite décidé une seule fois par shouldPlay.
+            if (!isProjectileHit && meleeCritJustFired && !swingSlashPlayed) {
+                broadcastNear(sl, ax, ay, az, fx.id, KIND_SWING_SLASH, layer.level(),
+                        ax, ay, az, tx, ty, tz, palette);
+                swingSlashPlayed = true;
             }
             boolean critHit = arrowCrit || meleeCritJustFired
                     || fx.category == WeaponVisualEffectId.Category.CRIT;
