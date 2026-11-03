@@ -37,6 +37,7 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import deepluckyblock.DeepLuckyBlockMod;
 import deepluckyblock.enchantments.DeepElement;
 import deepluckyblock.enchantments.WeaponVisualEffectId;
+import deepluckyblock.enchantments.WeaponVfxMotion;
 import deepluckyblock.enchantments.WeaponVfxSubtle;
 import deepluckyblock.enchantments.WeaponVfxVariant;
 import deepluckyblock.enchantments.WeaponVfxServerListener;
@@ -242,6 +243,7 @@ public final class DlbVfxCommand {
                                 .suggests(SUGGEST_KINDS)
                                 .executes(ctx -> startShow(ctx, parseKind(StringArgumentType.getString(ctx, "kind")), false))))
                 // /dlbvfx elements  (12 familles élémentaires, animation par famille)
+                .then(Commands.literal("motions").executes(DlbVfxCommand::motions))
                 .then(Commands.literal("elements").executes(DlbVfxCommand::families)
                         .then(Commands.argument("family", StringArgumentType.word())
                                 .suggests(SUGGEST_FAMILIES)
@@ -296,6 +298,37 @@ public final class DlbVfxCommand {
     // AIDE / LISTE
     // =====================================================================
 
+    /**
+     * T361-MOTIONS-UNIQUES : liste les 22 familles de mouvement et, pour chacune, les enchantements
+     * qui l'utilisent — et vérifie au passage qu'aucun effet ne partage la signature d'un autre.
+     */
+    private static int motions(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack src = ctx.getSource();
+        src.sendSuccess(() -> Component.literal("§b§l" + WeaponVfxMotion.SHAPE_COUNT
+                + " familles de mouvement §7pour " + WeaponVisualEffectId.values().length + " effets"), false);
+        java.util.Map<String, java.util.List<String>> byShape = new java.util.LinkedHashMap<>();
+        java.util.Set<String> signatures = new java.util.HashSet<>();
+        int duplicates = 0;
+        for (WeaponVisualEffectId fx : WeaponVisualEffectId.values()) {
+            WeaponVfxMotion.Profile prof = WeaponVfxMotion.of(fx);
+            byShape.computeIfAbsent(WeaponVfxMotion.labelOf(prof.shape()), k -> new java.util.ArrayList<>())
+                    .add("#" + fx.id + " " + fx.name());
+            if (!signatures.add(WeaponVfxMotion.signatureOf(fx))) duplicates++;
+        }
+        for (java.util.Map.Entry<String, java.util.List<String>> e : byShape.entrySet()) {
+            String names = String.join("§7, ", e.getValue());
+            src.sendSuccess(() -> Component.literal("  §d" + e.getKey() + " §8(" + e.getValue().size() + ") §7: §f" + names), false);
+        }
+        final int dupCount = duplicates;
+        final int total = WeaponVisualEffectId.values().length;
+        src.sendSuccess(() -> Component.literal(dupCount == 0
+                ? "§a\u2714 §7aucune signature partagée : les " + total
+                  + " animations ont un mouvement réellement différent."
+                : "§c\u2716 §7" + dupCount + " animation(s) réutilisent une signature de mouvement."), false);
+        return 1;
+    }
+
+
     private static int help(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack src = ctx.getSource();
         src.sendSuccess(() -> Component.literal("§b§l/dlbvfx §7— test des " + WeaponVisualEffectId.values().length + " effets visuels d'armes"), false);
@@ -314,6 +347,9 @@ public final class DlbVfxCommand {
         line(src, "§7Arme multi-éléments", "§f6 % §7de chance de jouer en simultané une animation de §fchaque §7élément de l'arme");
         // T359-BIG-ANIM-SCALE : les grosses animations prennent la taille du mob touché.
         line(src, "§7Taille des animations", "§7les grosses animations se scalent sur le mob touché : §fminuscule §7(poulet) → §fénorme §7(ravager, dragon)");
+        // T361-MOTIONS-UNIQUES : 40 trajectoires distinctes réparties en 22 familles de mouvement.
+        line(src, "§7Mouvements", "§f" + WeaponVisualEffectId.values().length + " §7trajectoires distinctes en §f" + WeaponVfxMotion.SHAPE_COUNT + " §7familles (arc, spirale, mâchoire, dune, vortex...)");
+        line(src, "§e/dlbvfx motions", "liste les §f" + WeaponVfxMotion.SHAPE_COUNT + " §7familles de mouvement et les effets qui les utilisent");
         // T360-NO-VANILLA-PARTICLES : plus une seule particule Minecraft dans tout le mod.
         line(src, "§7Particules vanilla", "§f0 §7— §7halos, slashes, traînées et auras sont tous des §fmini-cubes 3D §7(Multi-Size Pixel-Art)");
         line(src, "§7Halo cosmétique", "§7couronne de pixels §fpermanente §7sur tout équipement enchanté (jamais une salve unique)");
@@ -333,9 +369,11 @@ public final class DlbVfxCommand {
             List<String> keys = WeaponVisualEffectId.enchantKeysFor(fx);
             if (keys.isEmpty()) keys = WeaponVisualEffectId.gauntletKeysFor(fx);
             String enchant = keys.isEmpty() ? "§8—" : "§8" + keys.get(0);
-            String label = String.format(Locale.ROOT, "§f#%02d §b%-20s §7%-10s §d%-8s %s",
+            // T361-MOTIONS-UNIQUES : le mouvement est affiché à côté de chaque effet.
+            String motionName = WeaponVfxMotion.labelOf(WeaponVfxMotion.of(fx).shape());
+            String label = String.format(Locale.ROOT, "§f#%02d §b%-20s §7%-10s §d%-8s §8%-24s %s",
                     fx.id, fx.name(), fx.category.name().toLowerCase(Locale.ROOT),
-                    fx.element.displayName, enchant);
+                    fx.element.displayName, motionName, enchant);
             src.sendSuccess(() -> Component.literal("  " + label), false);
         }
         src.sendSuccess(() -> Component.literal("§7Astuce : §f/dlbvfx all §7pour tout voir d'un coup, §f/dlbvfx elements §7par famille, §f/dlbvfx variants §7pour les §f" + deepluckyblock.enchantments.WeaponVfxVariant.COUNT + " §7déclinaisons, §f/dlbvfx subtle §7pour les §f" + (deepluckyblock.enchantments.WeaponVfxSubtle.COUNT + deepluckyblock.enchantments.WeaponVfxSubtleEcho.COUNT) + " §7accents discrets."), false);

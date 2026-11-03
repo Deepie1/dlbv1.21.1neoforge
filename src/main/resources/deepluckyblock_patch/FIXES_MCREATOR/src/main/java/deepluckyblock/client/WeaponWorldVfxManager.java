@@ -6,6 +6,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import deepluckyblock.DeepLuckyBlockMod;
 import deepluckyblock.enchantments.WeaponVisualEffectId;
+import deepluckyblock.enchantments.WeaponVfxMotion;
 import deepluckyblock.util.DeepEnchant;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
@@ -1406,37 +1407,32 @@ public final class WeaponWorldVfxManager {
         float ry = (float) (inst.y - cam.y);
         float rz = (float) (inst.z - cam.z);
 
-        if (inst.effect == WeaponVisualEffectId.SPECTRAL_REACH) {
-            float tx = (float) (inst.tx - cam.x);
-            float ty = (float) (inst.ty - cam.y);
-            float tz = (float) (inst.tz - cam.z);
-            float reach = Math.min(1.0f, t * 2.3f);
-            emitSteppedVoxelLine(vc, mat, tmp, rx, ry, rz,
-                    Mth.lerp(reach, rx, tx), Mth.lerp(reach, ry, ty), Mth.lerp(reach, rz, tz),
-                    0.045f, 0xFFFFFF, inst.primary(), Math.round(230 * (1.0f - t)));
-            return;
-        }
+        // T361-MOTIONS-UNIQUES : chaque enchantement a SA trajectoire (22 familles de mouvement).
+        // Deux attaques ne se ressemblent plus, même à couleur identique : l'une balaie, l'autre
+        // monte, l'autre aspire, l'autre se referme, l'autre tombe...
+        WeaponVfxMotion.Profile prof = WeaponVfxMotion.of(inst.effect);
 
-        float sweepDeg = switch (inst.effect) {
-            case CARNAGE_BERSERK -> 320.0f;
-            case ANNIHILATING_ARC -> 175.0f;
-            case MOLTEN_FIRE_WAVE, SOUL_FIRE_CRESCENT -> 150.0f;
-            default -> 125.0f;
+        float sweepDeg = switch (prof.shape()) {
+            case WeaponVfxMotion.SHAPE_CRESCENT -> 118.0f;
+            case WeaponVfxMotion.SHAPE_DOUBLE_ARC, WeaponVfxMotion.SHAPE_PRISM -> 150.0f;
+            case WeaponVfxMotion.SHAPE_WAVE -> 165.0f;
+            case WeaponVfxMotion.SHAPE_ASH -> 190.0f;
+            case WeaponVfxMotion.SHAPE_MAW -> 130.0f;
+            case WeaponVfxMotion.SHAPE_SHARDS -> 140.0f;
+            default -> 130.0f;
         };
-        float radius = switch (inst.effect) {
-            case ANNIHILATING_ARC -> 2.10f + 0.95f * t;
-            case MOLTEN_FIRE_WAVE, SOUL_FIRE_CRESCENT, CARNAGE_BERSERK -> 1.60f + 0.45f * t;
-            default -> 1.35f + 0.22f * t;
-        };
-        float voxelHalf = switch (inst.effect) {
-            case RAZOR_GLEAM -> 0.032f;
-            case ANNIHILATING_ARC -> 0.058f;
-            case MOLTEN_FIRE_WAVE, SOUL_FIRE_CRESCENT, CARNAGE_BERSERK, SEISMIC_TECTONIC -> 0.048f;
-            default -> 0.038f;
-        };
+        if (inst.effect == WeaponVisualEffectId.CARNAGE_BERSERK) sweepDeg = 318.0f;
+        if (inst.effect == WeaponVisualEffectId.ANNIHILATING_ARC) sweepDeg = 205.0f;
+        if (inst.effect == WeaponVisualEffectId.FOCUSED_BULLSEYE) sweepDeg = 62.0f;
+
+        float radius = 1.32f + 0.22f * t;
+        float voxelHalf = 0.038f;
+        if (inst.effect == WeaponVisualEffectId.RAZOR_GLEAM) voxelHalf = 0.030f;
+        if (inst.effect == WeaponVisualEffectId.ANNIHILATING_ARC) voxelHalf = 0.056f;
+        radius *= prof.scale();
+        voxelHalf *= (0.90f + 0.10f * (prof.scale() - 1.0f));
 
         // T349-VARIATION : chaque déclenchement diffère un peu — amplitude, ouverture et grain.
-        // (variante tirée au déclenchement, donc deux coups consécutifs ne se ressemblent jamais)
         int v = inst.variant();
         float varSpan = 0.90f + (v & 3) * 0.06f;          // 0.90 .. 1.08
         float varSweep = 0.92f + ((v >> 1) & 3) * 0.05f;  // 0.92 .. 1.07
@@ -1445,17 +1441,493 @@ public final class WeaponWorldVfxManager {
         voxelHalf *= 0.88f + (v & 1) * 0.10f;
 
         int alpha = Math.round(238.0f * (1.0f - t * t));
-        // T349-PALETTE : dégradé propre à l'enchantement + variante de teinte à chaque déclenchement
         int[] pal = palette(inst.effect, inst.variant(), inst.paletteMask);
         int arcCore = pal[0];
         int arcTrail = ((inst.variant() & 1) == 0) ? pal[1] : pal[2];
-        emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg,
-                inst.tiltRad, radius, voxelHalf, sweepDeg, t, arcCore, arcTrail, alpha);
+        int accent = pal[2];
 
-        if (inst.effect == WeaponVisualEffectId.SUPREME_PRISM_EDGE) {
-            emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, -inst.tiltRad * 0.85f,
-                    radius * 0.92f, voxelHalf * 0.85f, sweepDeg * 0.88f, t,
-                    inst.secondary(), 0xFFFFFF, Math.round(alpha * 0.85f));
+        int motionSalt = (int) (inst.seed & 0x7FFFFFFFL) + inst.age * 31 + inst.effect.ordinal() * 977;
+        emitMotionSlash(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, inst.tiltRad,
+                radius, voxelHalf, sweepDeg, t, arcCore, arcTrail, accent, alpha,
+                prof, motionSalt, inst.effect.ordinal());
+    }
+
+    /**
+     * T361-MOTIONS-UNIQUES : dessine UNE trajectoire de mouvement (une des 22 familles).
+     *
+     * <p>C'est le cœur de la différenciation : la même fonction sert à toutes les attaques, mais
+     * chaque famille emprunte un trajet différent — et les paramètres du profil (bras, rotation,
+     * montée, oscillation) font que deux enchantements d'une même famille restent distincts.</p>
+     */
+    private static void emitMotionSlash(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                        float cx, float cy, float cz,
+                                        float yawDeg, float pitchDeg, float tiltRad,
+                                        float radius, float baseHalf, float sweepDeg, float progress,
+                                        int coreRgb, int trailRgb, int accentRgb, int peakAlpha,
+                                        WeaponVfxMotion.Profile prof, int salt, int effectIdx) {
+        if (peakAlpha <= 6) return;
+
+        float yawRad = -yawDeg * Mth.DEG_TO_RAD;
+        float pitchRad = pitchDeg * Mth.DEG_TO_RAD;
+
+        // Repère de l'attaque (identique à l'ancien arc, pour ne rien casser visuellement).
+        float fx = Mth.sin(yawRad) * Mth.cos(pitchRad);
+        float fy = -Mth.sin(pitchRad);
+        float fz = Mth.cos(yawRad) * Mth.cos(pitchRad);
+        float rx0 = Mth.cos(yawRad);
+        float rz0 = -Mth.sin(yawRad);
+        float ux0 = -Mth.sin(yawRad) * Mth.sin(pitchRad);
+        float uy0 = Mth.cos(pitchRad);
+        float uz0 = -Mth.cos(yawRad) * Mth.sin(pitchRad);
+        float cosT = Mth.cos(tiltRad);
+        float sinT = Mth.sin(tiltRad);
+        float sx = rx0 * cosT + ux0 * sinT;
+        float sy = uy0 * sinT;
+        float sz = rz0 * cosT + uz0 * sinT;
+
+        float halfArc = (sweepDeg * 0.5f) * Mth.DEG_TO_RAD;
+        int steps = Mth.clamp(Math.round(sweepDeg / 8.0f), 10, 42);
+        float headU = Mth.clamp(progress * 1.40f, 0.0f, 1.0f);
+        float rise = prof.rise();
+        float wobble = prof.wobble();
+
+        switch (prof.shape()) {
+
+            // ------------------------------------------------------------------
+            // Formes centrées (pas le long de l'arc) : orbite, estoc, colonnes, etc.
+            // ------------------------------------------------------------------
+            case WeaponVfxMotion.SHAPE_ORBIT -> {
+                int rings = Math.max(1, Math.min(3, prof.arms()));
+                for (int r = 0; r < rings; r++) {
+                    float tilt = (r - (rings - 1) * 0.5f) * 0.6f + prof.spin() * progress * 0.9f;
+                    float rr = radius * (0.85f + 0.16f * r) * (0.55f + 0.55f * progress);
+                    float cy2 = cy + rise * progress + (r - (rings - 1) * 0.5f) * 0.22f;
+                    int c1 = (r == 0) ? coreRgb : ((r == 1) ? trailRgb : accentRgb);
+                    int c2 = (r == 0) ? trailRgb : ((r == 1) ? accentRgb : coreRgb);
+                    emitPixelRunicCircle3D(vc, mat, tmp, cx, cy2, cz, rr,
+                            prof.spin() * progress * 2.2f + r * 1.1f, c1, c2, 0xFFFFFF,
+                            Math.round(peakAlpha * (1.0f - 0.18f * r)), r == 0);
+                    if (Math.abs(Mth.cos(tilt)) > 0.35f) {
+                        // second anneau incliné : donne un vrai volume d'orbite
+                        float ir = rr * 0.62f;
+                        for (int i = 0; i < 14; i++) {
+                            float ang = (float) (Math.PI * 2.0 * i / 14) + prof.spin() * progress * 3.0f;
+                            emitVoxelCube(vc, mat, tmp,
+                                    quantize(cx + Mth.cos(ang) * ir, 0.0625f),
+                                    quantize(cy2 + Mth.sin(ang) * ir * tilt, 0.0625f),
+                                    quantize(cz + Mth.sin(ang) * ir * Mth.cos(tilt), 0.0625f),
+                                    baseHalf * 0.72f, baseHalf * 0.72f, baseHalf * 0.72f,
+                                    (i & 1) == 0 ? c2 : 0xFFFFFF,
+                                    Math.round(peakAlpha * 0.8f));
+                        }
+                    }
+                }
+                if (prof.arms() >= 2) {
+                    emitPixelCross3D(vc, mat, tmp, cx, cy + rise * progress, cz,
+                            0.0625f, Math.min(4, prof.arms()), 0xFFFFFF, coreRgb, peakAlpha);
+                }
+            }
+
+            case WeaponVfxMotion.SHAPE_LANCE -> {
+                // Estoc rectiligne : l'arme "pousse" droit devant, la pointe s'allume.
+                float len = radius * (0.85f + 0.9f * Mth.clamp(progress * 1.5f, 0.0f, 1.0f));
+                float tx = cx + fx * len;
+                float ty = cy + fy * len + rise * progress;
+                float tz2 = cz + fz * len;
+                emitSteppedVoxelLine(vc, mat, tmp, cx, cy, cz, tx, ty, tz2,
+                        baseHalf * (1.0f - 0.35f * progress), 0xFFFFFF, coreRgb, peakAlpha);
+                emitSteppedVoxelLine(vc, mat, tmp, cx, cy, cz, tx * 0.94f, ty * 0.94f, tz2 * 0.94f,
+                        baseHalf * 0.5f, trailRgb, accentRgb, Math.round(peakAlpha * 0.55f));
+                if (prof.arms() >= 2) {
+                    emitPixelCross3D(vc, mat, tmp, tx, ty, tz2, 0.0625f, 4, 0xFFFFFF, trailRgb, peakAlpha);
+                }
+                // éclats arrachés le long de l'estoc
+                for (int i = 1; i <= 5; i++) {
+                    float u = i / 6.0f;
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + fx * len * u + (pixelHash(salt, i) - 0.5f) * wobble, 0.0625f),
+                            quantize(cy + fy * len * u + (pixelHash(salt + 3, i) - 0.5f) * 0.16f, 0.0625f),
+                            quantize(cz + fz * len * u + (pixelHash(salt + 7, i) - 0.5f) * wobble, 0.0625f),
+                            baseHalf * 0.34f, baseHalf * 0.34f, baseHalf * 0.34f, trailRgb,
+                            Math.round(peakAlpha * 0.6f));
+                }
+            }
+
+            case WeaponVfxMotion.SHAPE_PILLAR -> {
+                // Pilier de lumière : monte du sol vers le ciel, s'amincit en hauteur.
+                int layers = 26;
+                float h = 7.5f * prof.scale();
+                for (int li = 0; li < layers; li++) {
+                    float lu = li / (float) (layers - 1);
+                    float y = cy - 0.4f + lu * h * Mth.clamp(progress * 1.3f, 0.0f, 1.0f);
+                    float w = baseHalf * (2.6f - 1.5f * lu) * (0.8f + 0.4f * Mth.sin(lu * 3.1f + progress * 4.0f));
+                    float jx = (pixelHash(salt + li, li * 7) - 0.5f) * w;
+                    float jz = (pixelHash(salt + li * 3, li * 11) - 0.5f) * w;
+                    emitVoxelCube(vc, mat, tmp, quantize(cx + jx, 0.0625f), quantize(y, 0.0625f),
+                            quantize(cz + jz, 0.0625f), w * 0.55f, w * 0.42f, w * 0.55f,
+                            (li % 4 == 0) ? 0xFFFFFF : ((li & 1) == 0 ? coreRgb : trailRgb),
+                            Math.round(peakAlpha * (1.0f - 0.5f * lu)));
+                }
+                emitPixelRing3D(vc, mat, tmp, cx, cy - 0.42f, cz, 0.45f + 1.9f * progress,
+                        coreRgb, trailRgb, Math.round(peakAlpha * 0.8f), PIXEL_RING_DASHED);
+            }
+
+            case WeaponVfxMotion.SHAPE_RUNE_CIRCLE -> {
+                // Grand sceau runique au sol : anneau + runes + rayons, il tourne et s'ouvre.
+                float rr = radius * Math.min(1.0f, progress * 2.2f);
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.42f + rise * progress, cz, rr,
+                        prof.spin() * progress * 3.0f, coreRgb, trailRgb, accentRgb, peakAlpha, true);
+                int runes = Math.max(4, Math.min(8, prof.arms() * 2));
+                for (int i = 0; i < runes; i++) {
+                    float ang = (float) (Math.PI * 2.0 * i / runes) - prof.spin() * progress * 2.0f;
+                    float ux = cx + Mth.cos(ang) * rr * 0.74f;
+                    float uz = cz + Mth.sin(ang) * rr * 0.74f;
+                    float uy = cy - 0.42f + rise * progress;
+                    emitVoxelCube(vc, mat, tmp, quantize(ux, 0.0625f), quantize(uy + 0.05f, 0.0625f),
+                            quantize(uz, 0.0625f), baseHalf * 0.9f, baseHalf * 1.5f, baseHalf * 0.9f,
+                            0xFFFFFF, Math.round(peakAlpha * 0.85f));
+                    emitVoxelCube(vc, mat, tmp, quantize(ux, 0.0625f), quantize(uy + 0.22f, 0.0625f),
+                            quantize(uz, 0.0625f), baseHalf * 0.5f, baseHalf * 0.9f, baseHalf * 0.5f,
+                            accentRgb, Math.round(peakAlpha * 0.6f));
+                }
+                for (int i = 0; i < 6; i++) {
+                    float ang = (float) (Math.PI * 2.0 * i / 6) + prof.spin() * progress;
+                    emitSteppedVoxelLine(vc, mat, tmp,
+                            cx + Mth.cos(ang) * rr * 0.20f, cy - 0.40f, cz + Mth.sin(ang) * rr * 0.20f,
+                            cx + Mth.cos(ang) * rr * 0.62f, cy - 0.40f, cz + Mth.sin(ang) * rr * 0.62f,
+                            baseHalf * 0.7f, trailRgb, coreRgb, Math.round(peakAlpha * 0.7f));
+                }
+            }
+
+            case WeaponVfxMotion.SHAPE_CROSS_STAR -> {
+                // Étoile rayonnante : rayons de longueurs inégales partant d'un cœur blanc.
+                int rays = Math.max(8, prof.arms() * 3);
+                for (int i = 0; i < rays; i++) {
+                    float ang = (float) (Math.PI * 2.0 * i / rays) + prof.spin() * progress * 0.8f;
+                    float len = radius * (0.6f + 1.7f * progress) * ((i & 1) == 0 ? 1.0f : 0.66f);
+                    float elev = ((i % 3 == 0) ? 0.55f : ((i % 3 == 1) ? -0.35f : 0.05f)) + rise * 0.4f;
+                    int c = (i % 3 == 0) ? coreRgb : ((i % 3 == 1) ? trailRgb : accentRgb);
+                    emitSteppedVoxelLine(vc, mat, tmp, cx, cy, cz,
+                            cx + Mth.cos(ang) * len, cy + elev * len * 0.55f, cz + Mth.sin(ang) * len,
+                            baseHalf * (1.0f - 0.45f * progress), 0xFFFFFF, c, peakAlpha);
+                }
+                emitPixelCross3D(vc, mat, tmp, cx, cy + rise * progress, cz, 0.0625f,
+                        Math.min(5, prof.arms()), 0xFFFFFF, 0xFFFFFF, peakAlpha);
+                for (int k = 0; k < 8; k++) {
+                    float ang = k * 0.785f - progress * 2.5f;
+                    float rr = radius * 2.2f * progress;
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + Mth.cos(ang) * rr, 0.0625f),
+                            quantize(cy + (pixelHash(k, k * 7) - 0.5f) * 1.4f + rise * progress, 0.0625f),
+                            quantize(cz + Mth.sin(ang) * rr, 0.0625f),
+                            baseHalf * 0.7f, baseHalf * 0.7f, baseHalf * 0.7f, accentRgb,
+                            Math.round(peakAlpha * 0.8f));
+                }
+            }
+
+            case WeaponVfxMotion.SHAPE_ECLIPSE -> {
+                // Éclipse : disque sombre qui grossit, liseré lumineux, puis triple griffure.
+                float disc = radius * (0.55f + 0.85f * progress);
+                emitPixelCircleBillboard3D(vc, mat, tmp, cx, cy + 0.32f + rise * progress, cz,
+                        disc, trailRgb, 0x000000, peakAlpha);
+                emitPixelRing3D(vc, mat, tmp, cx, cy + 0.32f + rise * progress, cz, disc,
+                        coreRgb, accentRgb, peakAlpha, PIXEL_RING_SOLID);
+                for (int claw = -1; claw <= 1; claw++) {
+                    float off = claw * 0.26f + 0.10f * progress;
+                    emitSteppedVoxelLine(vc, mat, tmp,
+                            cx - 0.70f + off, cy + 0.80f, cz - 0.35f,
+                            cx + 0.70f + off, cy - 0.55f, cz + 0.35f,
+                            baseHalf * 1.05f, coreRgb, accentRgb, Math.round(peakAlpha * 0.9f));
+                }
+                emitPixelRing3D(vc, mat, tmp, cx, cy - 0.50f, cz, 0.40f + radius * progress,
+                        accentRgb, trailRgb, Math.round(peakAlpha * 0.7f), PIXEL_RING_DASHED);
+            }
+
+            case WeaponVfxMotion.SHAPE_RIFT -> {
+                // Faille verticale : deux lèvres qui s'écartent puis se referment, éclats aspirés.
+                float open = Mth.sin(Math.min(1.0f, progress * 1.2f) * (float) Math.PI);
+                float half = 0.04f + radius * 0.55f * open;
+                for (int side = -1; side <= 1; side += 2) {
+                    for (int segI = 0; segI < 7; segI++) {
+                        float u = segI / 6.0f;
+                        float w = half * (0.35f + 0.65f * Mth.sin(u * (float) Math.PI));
+                        float jx = (pixelHash(effectIdx + segI, side * 13) - 0.5f) * wobble * 5.0f;
+                        emitVoxelCube(vc, mat, tmp,
+                                quantize(cx + side * w + jx, 0.0625f),
+                                quantize(cy - 1.10f + u * 2.35f + rise * progress, 0.0625f),
+                                quantize(cz + side * 0.05f, 0.0625f),
+                                baseHalf * 0.85f, baseHalf * 1.2f, baseHalf * 0.85f,
+                                (segI & 1) == 0 ? coreRgb : accentRgb, peakAlpha);
+                    }
+                }
+                for (int k = 0; k < 6; k++) {
+                    float ang = k * 1.047f + progress * 3.0f;
+                    float rr = radius * 1.2f * (1.0f - progress);
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + Mth.cos(ang) * rr, 0.0625f),
+                            quantize(cy + 0.25f + Mth.sin(ang * 2.0f) * 0.45f, 0.0625f),
+                            quantize(cz + Mth.sin(ang) * rr, 0.0625f),
+                            baseHalf * 0.55f, baseHalf * 0.55f, baseHalf * 0.55f, 0xFFFFFF,
+                            Math.round(peakAlpha * 0.9f));
+                }
+                emitPixelRing3D(vc, mat, tmp, cx, cy - 0.45f, cz, 0.35f + radius * progress,
+                        accentRgb, coreRgb, Math.round(peakAlpha * 0.6f), PIXEL_RING_DASHED);
+            }
+
+            case WeaponVfxMotion.SHAPE_CLAW -> {
+                // Triple griffure : trois raies diagonales parallèles qui "rayent" l'espace.
+                int claws = Math.max(3, Math.min(5, prof.arms() + 2));
+                for (int claw = 0; claw < claws; claw++) {
+                    float off = (claw - (claws - 1) * 0.5f) * 0.28f;
+                    float grow = Mth.clamp(progress * 1.6f, 0.0f, 1.0f);
+                    emitSteppedVoxelLine(vc, mat, tmp,
+                            cx - 0.65f + off, cy + 0.75f + rise * progress, cz - 0.30f,
+                            Mth.lerp(grow, cx - 0.65f + off, cx + 0.65f + off),
+                            Mth.lerp(grow, cy + 0.75f, cy - 0.65f + rise * progress),
+                            Mth.lerp(grow, cz - 0.30f, cz + 0.30f),
+                            baseHalf * 1.1f, accentRgb, coreRgb, peakAlpha);
+                }
+                emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, 2, 0xFFFFFF, accentRgb,
+                        Math.round(peakAlpha * 0.7f));
+            }
+
+            // ------------------------------------------------------------------
+            // Formes qui suivent l'arc de l'arme
+            // ------------------------------------------------------------------
+            default -> {
+                for (int i = 0; i <= steps; i++) {
+                    float u = (float) i / steps;
+                    if (u > headU + 0.15f) break;
+                    float distBehind = headU - u;
+                    if (distBehind > 0.70f) continue;
+
+                    float ang = (u - 0.5f) * 2.0f * halfArc;
+                    // Les formes "tournantes" enroulent l'angle autour de l'arc.
+                    float twist = 0.0f;
+                    switch (prof.shape()) {
+                        case WeaponVfxMotion.SHAPE_VORTEX -> twist = -u * prof.spin() * 2.6f;
+                        case WeaponVfxMotion.SHAPE_SPIRAL -> twist = u * prof.spin() * 1.9f;
+                        case WeaponVfxMotion.SHAPE_WAVE -> twist = Mth.sin(u * 8.0f + progress * 6.0f) * 0.16f;
+                        case WeaponVfxMotion.SHAPE_ASH -> twist = Mth.sin(u * 5.0f + progress * 9.0f) * 0.10f;
+                        default -> { }
+                    }
+                    float ca = Mth.cos(ang + twist);
+                    float sa = Mth.sin(ang + twist);
+                    float dirX = fx * ca + sx * sa;
+                    float dirY = fy * ca + sy * sa;
+                    float dirZ = fz * ca + sz * sa;
+
+                    float localR = radius;
+                    if (prof.shape() == WeaponVfxMotion.SHAPE_VORTEX) {
+                        // la spirale se resserre à mesure qu'elle tourne (aspiration)
+                        localR = radius * (1.15f - 0.55f * u) * (1.0f - 0.25f * progress);
+                    } else if (prof.shape() == WeaponVfxMotion.SHAPE_WAVE) {
+                        localR = radius * (1.0f + 0.12f * Mth.sin(u * 6.0f + progress * 5.0f));
+                    }
+
+                    float taper = Mth.sin(u * (float) Math.PI);
+                    float jitterX = (wobble > 0.0f) ? (pixelHash(salt + i, i * 13) - 0.5f) * wobble * 2.0f : 0.0f;
+                    float jitterY = (wobble > 0.0f) ? (pixelHash(salt + i * 3, i * 7) - 0.5f) * wobble * 2.0f : 0.0f;
+                    float px = quantize(cx + dirX * localR + jitterX, 0.0625f);
+                    float py = quantize(cy + dirY * localR + jitterY + rise * progress * u, 0.0625f);
+                    float pz = quantize(cz + dirZ * localR + jitterX * 0.6f, 0.0625f);
+
+                    boolean isHead = Math.abs(distBehind) < 0.12f;
+                    float hs = baseHalf * (0.55f + 0.75f * taper) * (isHead ? 1.25f : 1.0f)
+                            * (0.82f + 0.34f * pixelHash(salt, i * 13));
+                    int rgb = isHead ? 0xFFFFFF : (distBehind < 0.28f ? coreRgb : trailRgb);
+                    int a = Math.round(peakAlpha * Math.max(0.18f, 1.0f - Math.max(0.0f, distBehind) * 1.35f));
+
+                    switch (prof.shape()) {
+                        case WeaponVfxMotion.SHAPE_SHARDS -> {
+                            // éclats projetés vers l'extérieur : pointe de 3 cubes qui s'affine
+                            for (int sh = 0; sh < 3; sh++) {
+                                float k = 0.35f + sh * 0.55f + 0.35f * progress;
+                                float sz2 = hs * (1.0f - 0.24f * sh);
+                                emitVoxelCube(vc, mat, tmp,
+                                        quantize(cx + dirX * localR * k, 0.0625f),
+                                        quantize(cy + dirY * localR * k + rise * progress * u + sh * 0.03f, 0.0625f),
+                                        quantize(cz + dirZ * localR * k, 0.0625f),
+                                        sz2 * 0.62f, sz2 * (1.5f - 0.25f * sh), sz2 * 0.62f,
+                                        (sh == 0) ? 0xFFFFFF : ((sh == 1) ? coreRgb : accentRgb),
+                                        Math.round(a * (1.0f - 0.22f * sh)));
+                            }
+                        }
+                        case WeaponVfxMotion.SHAPE_MAW -> {
+                            // dents qui pointent vers le centre et se referment
+                            float close = 1.0f - 0.62f * progress;
+                            float inX = cx + dirX * localR * close;
+                            float inY = cy + dirY * localR * close + rise * progress;
+                            float inZ = cz + dirZ * localR * close;
+                            emitSteppedVoxelLine(vc, mat, tmp, px, py, pz, inX, inY, inZ,
+                                    baseHalf * 0.6f, (i & 1) == 0 ? 0xFFFFFF : coreRgb, accentRgb, a);
+                        }
+                        case WeaponVfxMotion.SHAPE_DRIP -> {
+                            // goutte + traînée qui tombe (le sang, le venin)
+                            emitPixelDroplet3D(vc, mat, tmp, px, py, pz, hs,
+                                    (i & 1) == 0 ? coreRgb : trailRgb, 0xFF8A8A, a, salt + i);
+                            float fall = 0.35f + 0.55f * progress * (1.0f + taper);
+                            emitVoxelCube(vc, mat, tmp, px, quantize(py - fall, 0.0625f), pz,
+                                    hs * 0.42f, hs * 0.30f, hs * 0.42f, accentRgb,
+                                    Math.round(a * 0.7f));
+                        }
+                        case WeaponVfxMotion.SHAPE_COLUMN -> {
+                            // colonne verticale au niveau du tranchant : elle balaie avec l'arc
+                            float h = 1.1f + 1.5f * prof.scale() * (isHead ? 1.0f : 0.55f);
+                            int col = Math.max(3, Math.round(h / 0.16f));
+                            for (int c2 = 0; c2 < col; c2++) {
+                                float cy2 = py + (rise >= 0.0f ? 1.0f : -1.0f) * (c2 * 0.16f);
+                                emitVoxelCube(vc, mat, tmp, px, quantize(cy2, 0.0625f), pz,
+                                        hs * (1.0f - 0.10f * c2), hs * 0.85f, hs * (1.0f - 0.10f * c2),
+                                        (c2 == 0) ? 0xFFFFFF : ((c2 & 1) == 0 ? coreRgb : accentRgb),
+                                        Math.round(a * (1.0f - 0.10f * c2)));
+                            }
+                        }
+                        case WeaponVfxMotion.SHAPE_WAVE -> {
+                            // nappe : deux rangées qui ondulent (eau)
+                            emitVoxelCube(vc, mat, tmp, px, py, pz, hs, hs * 0.6f, hs, rgb, a);
+                            float waveY = py + 0.10f * Mth.sin(u * 9.0f - progress * 7.0f);
+                            emitVoxelCube(vc, mat, tmp, px, quantize(waveY - 0.14f, 0.0625f), pz,
+                                    hs * 0.7f, hs * 0.5f, hs * 0.7f, accentRgb, Math.round(a * 0.75f));
+                        }
+                        case WeaponVfxMotion.SHAPE_SPIRAL -> {
+                            // hélice enroulée autour du tranchant
+                            for (int arm = 0; arm < Math.max(1, Math.min(3, prof.arms())); arm++) {
+                                float ph = u * 9.0f + progress * 6.0f + arm * 2.094f;
+                                float off = 0.10f + 0.05f * prof.scale();
+                                emitVoxelCube(vc, mat, tmp,
+                                        quantize(px + Mth.cos(ph) * off, 0.0625f),
+                                        quantize(py + Mth.sin(ph) * off, 0.0625f),
+                                        quantize(pz + Mth.sin(ph * 1.3f) * off, 0.0625f),
+                                        hs * 0.7f, hs * 0.7f, hs * 0.7f,
+                                        (arm == 0) ? rgb : accentRgb, Math.round(a * 0.85f));
+                            }
+                        }
+                        case WeaponVfxMotion.SHAPE_BOLT -> {
+                            // éclair : les points sautent franchement de part et d'autre de l'arc
+                            float jump = (i & 1) == 0 ? 1.0f : -1.0f;
+                            float jag = wobble * jump * (0.6f + 0.6f * pixelHash(salt, i));
+                            emitVoxelCube(vc, mat, tmp,
+                                    quantize(px + sx * jag, 0.0625f),
+                                    quantize(py + sy * jag + uy0 * jag * 0.6f, 0.0625f),
+                                    quantize(pz + sz * jag, 0.0625f),
+                                    hs * (0.7f + 0.5f * pixelHash(i, salt)), hs * 0.75f, hs * 0.85f,
+                                    (Math.abs(distBehind) < 0.05f) ? 0xFFFFFF : ((i & 1) == 0 ? coreRgb : trailRgb), a);
+                            if ((i & 3) == 0) {
+                                emitVoxelCube(vc, mat, tmp,
+                                        quantize(px + sx * jag * 1.8f, 0.0625f),
+                                        quantize(py + sy * jag * 1.8f, 0.0625f),
+                                        quantize(pz + sz * jag * 1.8f, 0.0625f),
+                                        hs * 0.3f, hs * 0.3f, hs * 0.3f, 0xFFFFFF, Math.round(a * 0.6f));
+                            }
+                        }
+                        case WeaponVfxMotion.SHAPE_DUNE -> {
+                            // dune : blocs plus gros qui montent, grains qui retombent
+                            float bulk = prof.scale() * 1.15f;
+                            emitVoxelCube(vc, mat, tmp, px, quantize(py + 0.05f, 0.0625f), pz,
+                                    hs * bulk, hs * bulk * 0.8f, hs * bulk,
+                                    (i & 1) == 0 ? coreRgb : trailRgb, a);
+                            for (int g2 = 0; g2 < 2; g2++) {
+                                float drop = 0.30f + 0.55f * progress * (0.5f + pixelHash(i, g2 * 7));
+                                emitVoxelCube(vc, mat, tmp,
+                                        quantize(px + (pixelHash(i + g2, 3) - 0.5f) * 0.35f, 0.0625f),
+                                        quantize(py - drop, 0.0625f),
+                                        quantize(pz + (pixelHash(i + g2, 9) - 0.5f) * 0.35f, 0.0625f),
+                                        hs * 0.26f, hs * 0.26f, hs * 0.26f, accentRgb,
+                                        Math.round(a * 0.65f));
+                            }
+                        }
+                        case WeaponVfxMotion.SHAPE_ASH -> {
+                            // braises qui montent et dérivent
+                            float drift = prof.rise() * progress * (0.6f + 0.8f * pixelHash(i, 5));
+                            emitVoxelCube(vc, mat, tmp,
+                                    quantize(px + 0.12f * Mth.sin(progress * 5.0f + i), 0.0625f),
+                                    quantize(py + drift, 0.0625f),
+                                    quantize(pz + 0.12f * Mth.cos(progress * 4.0f + i), 0.0625f),
+                                    hs * 0.55f, hs * 0.55f, hs * 0.55f,
+                                    (i & 1) == 0 ? coreRgb : accentRgb,
+                                    Math.round(a * (1.0f - 0.35f * progress)));
+                        }
+                        case WeaponVfxMotion.SHAPE_BLOOM -> {
+                            // pétales qui s'ouvrent vers le haut
+                            float open = 0.4f + 0.9f * progress;
+                            for (int petal = 0; petal < Math.max(3, prof.arms()); petal++) {
+                                float pa = petal * 2.094f + u * 2.0f;
+                                float pr2 = 0.10f + 0.16f * open;
+                                emitVoxelCube(vc, mat, tmp,
+                                        quantize(px + Mth.cos(pa) * pr2, 0.0625f),
+                                        quantize(py + 0.10f * open + rise * progress * u, 0.0625f),
+                                        quantize(pz + Mth.sin(pa) * pr2, 0.0625f),
+                                        hs * 0.62f, hs * 0.9f, hs * 0.62f,
+                                        (petal == 0) ? 0xFFFFFF : ((petal & 1) == 0 ? coreRgb : accentRgb),
+                                        Math.round(a * 0.9f));
+                            }
+                        }
+                        case WeaponVfxMotion.SHAPE_VORTEX -> {
+                            // spirale aspirante : cubes + éclats qui filent vers l'intérieur
+                            emitVoxelCube(vc, mat, tmp, px, py, pz, hs, hs * 0.8f, hs, rgb, a);
+                            float suck = 0.30f + 0.45f * progress;
+                            emitVoxelCube(vc, mat, tmp,
+                                    quantize(Mth.lerp(suck, px, cx), 0.0625f),
+                                    quantize(Mth.lerp(suck, py, cy), 0.0625f),
+                                    quantize(Mth.lerp(suck, pz, cz), 0.0625f),
+                                    hs * 0.45f, hs * 0.45f, hs * 0.45f, 0xFFFFFF, Math.round(a * 0.8f));
+                        }
+                        case WeaponVfxMotion.SHAPE_DOUBLE_ARC, WeaponVfxMotion.SHAPE_PRISM -> {
+                            // géré hors boucle (arcs multiples) — rien ici
+                        }
+                        default -> {
+                            // CRESCENT (et repli) : arc plein + épaisseur + éclat de tranche
+                            emitVoxelCube(vc, mat, tmp, px, py, pz, hs,
+                                    hs * (0.78f + 0.3f * pixelHash(salt + 3, i)), hs, rgb, a);
+                            if (taper > 0.45f) {
+                                float pxIn = quantize(cx + dirX * (localR - baseHalf * 2.2f), 0.0625f);
+                                float pyIn = quantize(cy + dirY * (localR - baseHalf * 2.2f) + rise * progress * u, 0.0625f);
+                                float pzIn = quantize(cz + dirZ * (localR - baseHalf * 2.2f), 0.0625f);
+                                emitVoxelCube(vc, mat, tmp, pxIn, pyIn, pzIn,
+                                        hs * 0.72f, hs * 0.72f, hs * 0.72f, trailRgb, Math.round(a * 0.8f));
+                                if ((i & 1) == 0) {
+                                    emitVoxelCube(vc, mat, tmp,
+                                            quantize(cx + dirX * (localR + baseHalf * 1.4f), 0.03125f),
+                                            quantize(cy + dirY * (localR + baseHalf * 1.4f) + rise * progress * u, 0.03125f),
+                                            quantize(cz + dirZ * (localR + baseHalf * 1.4f), 0.03125f),
+                                            hs * 0.32f, hs * 0.26f, hs * 0.32f, 0xFFFFFF, Math.round(a * 0.55f));
+                                }
+                            }
+                            // couche supplémentaire (2e bras : flamme d'âme, furie...)
+                            if (prof.arms() >= 2) {
+                                emitVoxelCube(vc, mat, tmp,
+                                        quantize(px + sx * hs * 2.0f, 0.0625f),
+                                        quantize(py + sy * hs * 2.0f + rise * progress * 0.6f, 0.0625f),
+                                        quantize(pz + sz * hs * 2.0f, 0.0625f),
+                                        hs * 0.55f, hs * 0.8f, hs * 0.55f, accentRgb, Math.round(a * 0.7f));
+                            }
+                        }
+                    }
+                }
+
+                // Les familles à arcs multiples dessinent leur arc principal + les secondaires.
+                if (prof.shape() == WeaponVfxMotion.SHAPE_DOUBLE_ARC
+                        || prof.shape() == WeaponVfxMotion.SHAPE_PRISM) {
+                    emitMotionSlash(vc, mat, tmp, cx, cy, cz, yawDeg, pitchDeg, -tiltRad * 0.85f,
+                            radius * 0.80f, baseHalf * 0.82f, sweepDeg * 0.90f, progress,
+                            trailRgb, coreRgb, accentRgb, Math.round(peakAlpha * 0.85f),
+                            WeaponVfxMotion.crescent(1, wobble * 0.6f), salt + 17, effectIdx);
+                    if (prof.shape() == WeaponVfxMotion.SHAPE_PRISM) {
+                        int extra = Math.max(1, Math.min(3, prof.arms() - 1));
+                        for (int layer = 1; layer <= extra; layer++) {
+                            float hue = (progress * prof.spin() + layer * 0.27f) % 1.0f;
+                            if (hue < 0.0f) hue += 1.0f;
+                            int c = Mth.hsvToRgb(hue, 0.70f, 1.0f);
+                            emitMotionSlash(vc, mat, tmp, cx, cy, cz, yawDeg, pitchDeg, tiltRad * (0.6f * layer),
+                                    radius * (1.0f - 0.14f * layer), baseHalf * (0.8f - 0.12f * layer),
+                                    sweepDeg * (0.94f - 0.06f * layer), progress,
+                                    c, coreRgb, 0xFFFFFF, Math.round(peakAlpha * (0.7f - 0.12f * layer)),
+                                    WeaponVfxMotion.crescent(1, 0.0f), salt + 31 * layer, effectIdx);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1547,26 +2019,149 @@ public final class WeaponWorldVfxManager {
         float y1 = (float) (inst.ty - cam.y);
         float z1 = (float) (inst.tz - cam.z);
         int alpha = Math.round(240.0f * (1.0f - t));
+        int pRgb = inst.primary();
+        int sRgb = inst.secondary();
+        int salt = (int) (inst.seed & 0x7FFFFFFFL) + inst.age * 17;
 
-        switch (inst.effect) {
-            case CRIMSON_SIPHON -> {
-                // #10 : 3 courants courbes de mini-cubes de sang aspirés vers le porteur !
-                for (int s = 0; s < 3; s++) {
-                    float phase = s * 2.094f + inst.age * 0.32f;
-                    emitVoxelCurvedSiphon(vc, mat, tmp, x0, y0, z0, x1, y1, z1, phase, t,
-                            inst.primary(), inst.secondary(), alpha);
+        float dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
+        float len = Mth.sqrt(dx * dx + dy * dy + dz * dz);
+        if (len < 0.001f) return;
+        float nx = dx / len, ny = dy / len, nz = dz / len;
+        // perpendiculaire horizontale
+        float px = -nz, pz = nx;
+        float pl = Mth.sqrt(px * px + pz * pz);
+        if (pl < 0.001f) { px = 1.0f; pz = 0.0f; pl = 1.0f; }
+        px /= pl; pz /= pl;
+
+        // T361-MOTIONS-UNIQUES : le RAYON suit lui aussi le mouvement de son enchantement.
+        int shape = WeaponVfxMotion.of(inst.effect).shape();
+        switch (shape) {
+            case WeaponVfxMotion.SHAPE_VORTEX -> {
+                // spirale aspirante : les cubes tournent autour du rayon en se resserrant vers la cible
+                int nodes = 26;
+                for (int i = 0; i <= nodes; i++) {
+                    float u = (float) i / nodes;
+                    float ang = u * 10.0f + inst.age * 0.55f;
+                    float rad = 0.55f * (1.0f - 0.65f * u) * (1.0f - 0.3f * t);
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(Mth.lerp(u, x0, x1) + px * Mth.cos(ang) * rad, 0.0625f),
+                            quantize(Mth.lerp(u, y0, y1) + Mth.sin(ang) * rad, 0.0625f),
+                            quantize(Mth.lerp(u, z0, z1) + pz * Mth.cos(ang) * rad, 0.0625f),
+                            0.038f * (1.2f - 0.7f * u), 0.038f, 0.038f,
+                            (i & 1) == 0 ? pRgb : sRgb, Math.round(alpha * (0.45f + 0.55f * u)));
                 }
             }
-            case CHAIN_VOLT_ARC -> {
-                // #16 : Éclair en escalier de mini-cubes 3D !
-                emitVoxelLightning(vc, mat, tmp, x0, y0, z0, x1, y1, z1, 9, 0.25f,
-                        inst.seed + inst.age / 2, 0xFFFFFF, inst.primary(), alpha, 0.036f);
+            case WeaponVfxMotion.SHAPE_SPIRAL -> {
+                // hélice enroulée : le vent s'enroule autour du trajet
+                int nodes = 30;
+                for (int i = 0; i <= nodes; i++) {
+                    float u = (float) i / nodes;
+                    float ang = u * 14.0f + inst.age * 0.7f;
+                    for (int arm = 0; arm < 2; arm++) {
+                        float a2 = ang + arm * (float) Math.PI;
+                        float rad = 0.30f + 0.12f * Mth.sin(u * 6.0f);
+                        emitVoxelCube(vc, mat, tmp,
+                                quantize(Mth.lerp(u, x0, x1) + px * Mth.cos(a2) * rad, 0.03125f),
+                                quantize(Mth.lerp(u, y0, y1) + Mth.sin(a2) * rad, 0.03125f),
+                                quantize(Mth.lerp(u, z0, z1) + pz * Mth.cos(a2) * rad, 0.03125f),
+                                0.030f, 0.030f, 0.030f,
+                                (arm == 0) ? pRgb : sRgb, Math.round(alpha * (0.9f - 0.35f * u)));
+                    }
+                }
+            }
+            case WeaponVfxMotion.SHAPE_BOLT -> {
+                emitVoxelLightning(vc, mat, tmp, x0, y0, z0, x1, y1, z1, 11, 0.30f,
+                        inst.seed + inst.age / 2, 0xFFFFFF, pRgb, alpha, 0.036f);
+                for (int b = 0; b < 2; b++) {
+                    float off = (b == 0 ? 1.0f : -1.0f) * 0.28f;
+                    emitVoxelLightning(vc, mat, tmp, x0 + px * off, y0, z0 + pz * off,
+                            x1 + px * off, y1, z1 + pz * off, 7, 0.22f,
+                            inst.seed + b * 41L + inst.age, sRgb, pRgb,
+                            Math.round(alpha * 0.7f), 0.026f);
+                }
+            }
+            case WeaponVfxMotion.SHAPE_WAVE -> {
+                // ruban ondulant : deux nappes qui se croisent
+                int nodes = 30;
+                for (int i = 0; i <= nodes; i++) {
+                    float u = (float) i / nodes;
+                    float wob = Mth.sin(u * 9.0f - inst.age * 0.35f) * 0.16f;
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(Mth.lerp(u, x0, x1) + px * wob, 0.0625f),
+                            quantize(Mth.lerp(u, y0, y1) + wob * 0.7f, 0.0625f),
+                            quantize(Mth.lerp(u, z0, z1) + pz * wob, 0.0625f),
+                            0.034f, 0.030f, 0.034f, (i & 1) == 0 ? pRgb : sRgb,
+                            Math.round(alpha * (0.95f - 0.4f * u)));
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(Mth.lerp(u, x0, x1) - px * wob * 0.8f, 0.0625f),
+                            quantize(Mth.lerp(u, y0, y1) - wob * 0.5f + 0.05f, 0.0625f),
+                            quantize(Mth.lerp(u, z0, z1) - pz * wob * 0.8f, 0.0625f),
+                            0.024f, 0.024f, 0.024f, 0xFFFFFF, Math.round(alpha * 0.5f));
+                }
+            }
+            case WeaponVfxMotion.SHAPE_SHARDS -> {
+                // chapelet d'éclats : chaque segment projette une pointe perpendiculaire
+                int nodes = 16;
+                for (int i = 0; i <= nodes; i++) {
+                    float u = (float) i / nodes;
+                    float bx = Mth.lerp(u, x0, x1);
+                    float by = Mth.lerp(u, y0, y1);
+                    float bz = Mth.lerp(u, z0, z1);
+                    emitVoxelCube(vc, mat, tmp, quantize(bx, 0.0625f), quantize(by, 0.0625f), quantize(bz, 0.0625f),
+                            0.036f, 0.036f, 0.036f, (i & 1) == 0 ? pRgb : sRgb, Math.round(alpha * 0.9f));
+                    if ((i & 1) == 0) {
+                        float spike = 0.22f;
+                        emitSteppedVoxelLine(vc, mat, tmp, bx, by, bz,
+                                bx + px * spike, by + 0.16f, bz + pz * spike,
+                                0.024f, 0xFFFFFF, sRgb, Math.round(alpha * 0.7f));
+                    }
+                }
+            }
+            case WeaponVfxMotion.SHAPE_PILLAR -> {
+                // colonne de lumière : le rayon est épais, crénelé, avec halo large
+                emitSteppedVoxelLine(vc, mat, tmp, x0, y0, z0, x1, y1, z1, 0.075f, 0xFFFFFF, pRgb, alpha);
+                emitSteppedVoxelLine(vc, mat, tmp, x0, y0 + 0.12f, z0, x1, y1 + 0.12f, z1,
+                        0.040f, pRgb, sRgb, Math.round(alpha * 0.6f));
+            }
+            case WeaponVfxMotion.SHAPE_DRIP -> {
+                // gouttes qui perlent le long du rayon puis tombent
+                int nodes = 18;
+                for (int i = 0; i <= nodes; i++) {
+                    float u = (float) i / nodes;
+                    float bx = Mth.lerp(u, x0, x1);
+                    float by = Mth.lerp(u, y0, y1);
+                    float bz = Mth.lerp(u, z0, z1);
+                    emitVoxelCube(vc, mat, tmp, quantize(bx, 0.0625f), quantize(by, 0.0625f), quantize(bz, 0.0625f),
+                            0.028f, 0.028f, 0.028f, pRgb, Math.round(alpha * 0.85f));
+                    if ((i & 1) == 0) {
+                        float fall = 0.18f + 0.5f * u * (0.6f + pixelHash(salt, i));
+                        emitPixelDroplet3D(vc, mat, tmp,
+                                quantize(bx, 0.0625f), quantize(by - fall, 0.0625f), quantize(bz, 0.0625f),
+                                0.026f, sRgb, 0xFF8A8A, Math.round(alpha * 0.7f), salt + i);
+                    }
+                }
+            }
+            case WeaponVfxMotion.SHAPE_MAW -> {
+                // crocs : trois mâchoires qui se referment le long du rayon
+                for (int jaw = 0; jaw < 3; jaw++) {
+                    float u = 0.25f + jaw * 0.25f;
+                    float bx = Mth.lerp(u, x0, x1);
+                    float by = Mth.lerp(u, y0, y1);
+                    float bz = Mth.lerp(u, z0, z1);
+                    for (int side = -1; side <= 1; side += 2) {
+                        emitSteppedVoxelLine(vc, mat, tmp,
+                                bx + px * 0.22f * side, by + 0.20f, bz + pz * 0.22f * side,
+                                bx + px * 0.05f * side, by - 0.10f, bz + pz * 0.05f * side,
+                                0.030f, (jaw & 1) == 0 ? pRgb : sRgb, 0xFFFFFF, alpha);
+                    }
+                }
             }
             default -> {
-                // #25 Lance Astrale / Sniper : Rayon crénelé en mini-cubes stellaires + croix pixel 3D à l'impact
+                // estoc fin et net + étoile à l'impact
                 emitSteppedVoxelLine(vc, mat, tmp, x0, y0, z0, x1, y1, z1,
-                        0.040f * (1.0f - t * 0.45f), 0xFFFFFF, inst.primary(), alpha);
-                emitPixelCross3D(vc, mat, tmp, x1, y1, z1, 0.0625f, 3, 0xFFFFFF, inst.secondary(), alpha);
+                        0.036f * (1.0f - t * 0.45f), 0xFFFFFF, pRgb, alpha);
+                emitPixelCross3D(vc, mat, tmp, x1, y1, z1, 0.0625f,
+                        Math.min(4, 2 + inst.intensity / 4), 0xFFFFFF, sRgb, alpha);
             }
         }
     }
@@ -1584,8 +2179,75 @@ public final class WeaponWorldVfxManager {
         int pRgb = pal[0];
         int sRgb = pal[1];
         int aRgb = pal[2];
+        // T361-MOTIONS-UNIQUES : la trajectoire propre de cet enchantement est réutilisée ici,
+        // pour que l'impact ressemble à SA famille de mouvement (et pas à un anneau générique).
+        WeaponVfxMotion.Profile motion = WeaponVfxMotion.of(inst.effect);
+        int mSalt = (int) (inst.seed & 0x7FFFFFFFL) + inst.age * 31 + inst.effect.ordinal() * 613;
 
         switch (inst.effect) {
+            case RAZOR_GLEAM -> {
+                // #01 T361 : ÉCLAT D'ACIER — une entaille fine qui claque au point d'impact puis
+                // s'efface, avec un seul éclat blanc au centre (le "ting" du tranchant).
+                emitMotionSlash(vc, mat, tmp, cx, cy, cz, inst.yawDeg, inst.pitchDeg, inst.tiltRad,
+                        (1.05f + 0.30f * t) * motion.scale(), 0.030f, 165.0f, t,
+                        pRgb, 0xFFFFFF, aRgb, fadeA, motion, mSalt, inst.effect.ordinal());
+                emitVoxelCube(vc, mat, tmp, cx, cy, cz, 0.048f, 0.048f, 0.048f, 0xFFFFFF, fadeA);
+            }
+            case SUPREME_PRISM_EDGE -> {
+                // #02 T361 : PRISME — trois arcs concentriques dont la teinte tourne, cœur aveuglant.
+                int hue = Mth.hsvToRgb((inst.age * 0.06f) % 1.0f, 0.55f, 1.0f);
+                emitMotionSlash(vc, mat, tmp, cx, cy, cz, inst.yawDeg, inst.pitchDeg, inst.tiltRad,
+                        (1.20f + 0.40f * t) * motion.scale(), 0.034f, 190.0f, t,
+                        hue, pRgb, 0xFFFFFF, fadeA, motion, mSalt, inst.effect.ordinal());
+                emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, 4, 0xFFFFFF, hue, fadeA);
+            }
+            case SPECTRAL_REACH -> {
+                // #03 T361 : ALLONGE SPECTRALE — la lame s'étire vers la cible en pixels fantômes
+                // qui s'éloignent (aucun cercle au sol : la direction EST l'animation).
+                float yawR = -inst.yawDeg * Mth.DEG_TO_RAD;
+                float dirX = Mth.sin(yawR);
+                float dirZ = Mth.cos(yawR);
+                float ghost = 1.0f + 1.7f * Mth.clamp(t * 1.6f, 0.0f, 1.0f);
+                emitSteppedVoxelLine(vc, mat, tmp, cx, cy, cz,
+                        cx + dirX * ghost, cy + 0.05f, cz + dirZ * ghost,
+                        0.032f, 0xFFFFFF, pRgb, Math.round(fadeA * 0.85f));
+                for (int g2 = 1; g2 <= 3; g2++) {
+                    float k = g2 / 3.0f;
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + dirX * ghost * k, 0.0625f),
+                            quantize(cy + 0.05f + 0.10f * k, 0.0625f),
+                            quantize(cz + dirZ * ghost * k, 0.0625f),
+                            0.022f, 0.022f, 0.022f, 0xFFFFFF, Math.round(fadeA * (0.9f - 0.2f * k)));
+                }
+            }
+            case TWIN_ECHO_SLASH -> {
+                // #04 T361 : DOUBLE RÉMANENCE — l'entaille est rejouée une seconde fois, décalée,
+                // avec un écho plus pâle (deux arcs, jamais un anneau).
+                emitMotionSlash(vc, mat, tmp, cx, cy, cz, inst.yawDeg, inst.pitchDeg, inst.tiltRad,
+                        (1.15f + 0.35f * t) * motion.scale(), 0.036f, 155.0f, t,
+                        pRgb, sRgb, aRgb, fadeA, motion, mSalt, inst.effect.ordinal());
+                emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, 2, 0xFFFFFF, sRgb,
+                        Math.round(fadeA * 0.6f));
+            }
+            case MOLTEN_FIRE_WAVE -> {
+                // #13 T361 : NAPPE DE BRAISES — 14 flammèches tourbillonnantes qui montent, plus un
+                // anneau de cendres : le feu MONTE, il ne tourne pas autour de l'impact.
+                for (int e2 = 0; e2 < 14; e2++) {
+                    float ang = e2 * 0.4488f + inst.age * 0.10f;
+                    float rad = 0.25f + 1.30f * t * (0.6f + 0.5f * pixelHash(e2, e2 * 3));
+                    float up = (0.35f + 1.25f * t) * (0.55f + 0.7f * pixelHash(e2, 7));
+                    float sway = Mth.sin(inst.age * 0.35f + e2) * 0.12f;
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + Mth.cos(ang) * rad + sway, 0.0625f),
+                            quantize(cy - 0.35f + up, 0.0625f),
+                            quantize(cz + Mth.sin(ang) * rad + sway * 0.7f, 0.0625f),
+                            0.030f + 0.014f * pixelHash(e2, 11), 0.034f, 0.030f,
+                            (e2 & 2) == 0 ? 0xFFFFFF : ((e2 & 1) == 0 ? pRgb : sRgb),
+                            Math.round(fadeA * (1.0f - 0.45f * t)));
+                }
+                emitPixelRing3D(vc, mat, tmp, cx, cy - 0.44f, cz, 0.40f + 1.75f * t,
+                        pRgb, sRgb, Math.round(fadeA * 0.75f), PIXEL_RING_DASHED);
+            }
             case GOLDEN_CRIT_STAR -> {
                 // #06 Étoile Critique Pixel-Art 3D (+ en cubes + vrai cercle pixelisé de Bresenham)
                 int arms = (inst.intensity >= 3) ? 4 : 3;
@@ -1644,9 +2306,29 @@ public final class WeaponWorldVfxManager {
                 emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.45f, cz, 0.75f, sRgb, pRgb, fadeA);
             }
             case SOUL_FIRE_CRESCENT -> {
-                // #14 Cercle runique d'âme en pixels turquoise + flammes voxel montantes
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.40f, cz, 0.55f + 1.35f * t, t * 2.2f, pRgb, sRgb, aRgb, fadeA, true);
-                emitVoxelHelix(vc, mat, tmp, cx, cy - 0.4f, cz, 0.60f, 1.6f, t * 3.8f, pRgb, sRgb, fadeA);
+                // #14 T361 : LANGUES DE FEU D'ÂME — neuf flammes turquoise qui montent en escalier et
+                // vacillent (le feu monte), avec le cercle runique d'âme conservé au sol.
+                for (int fl = 0; fl < 9; fl++) {
+                    float ang = fl * 0.698f + inst.age * 0.05f;
+                    float rad = 0.25f + 0.85f * (0.4f + 0.6f * pixelHash(fl, fl * 5));
+                    float h = (0.55f + 0.75f * pixelHash(fl, 11)) * (0.55f + 0.75f * t);
+                    float bx = cx + Mth.cos(ang) * rad;
+                    float bz = cz + Mth.sin(ang) * rad;
+                    for (int sg = 0; sg < 5; sg++) {
+                        float u = sg / 5.0f;
+                        float sway = Mth.sin(u * 5.0f + inst.age * 0.5f + fl) * 0.10f * u;
+                        emitVoxelCube(vc, mat, tmp,
+                                quantize(bx + sway, 0.0625f),
+                                quantize(cy - 0.35f + u * h, 0.0625f),
+                                quantize(bz + sway * 0.7f, 0.0625f),
+                                0.040f * (1.0f - 0.55f * u), 0.052f * (1.0f - 0.45f * u),
+                                0.040f * (1.0f - 0.55f * u),
+                                u > 0.55f ? 0xFFFFFF : ((sg & 1) == 0 ? pRgb : sRgb),
+                                Math.round(fadeA * (1.0f - 0.25f * u)));
+                    }
+                }
+                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.42f, cz, 0.55f + 1.30f * t,
+                        t * 2.2f, pRgb, sRgb, aRgb, fadeA, true);
             }
             case BRIMSTONE_METEOR -> {
                 // #15 Bloc-météore cubique plongeant du ciel + grand cercle runique infernal en pixels !
@@ -1677,8 +2359,27 @@ public final class WeaponWorldVfxManager {
                 emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.35f + 1.45f * t, 0xFFFFFF, pRgb, fadeA);
             }
             case HYDRO_TIDAL_SURGE -> {
-                emitVoxelHelix(vc, mat, tmp, cx, cy - 0.5f, cz, 0.55f + 0.8f * t, 1.6f, t * 4.8f, pRgb, sRgb, fadeA);
-                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.30f + 2.00f * t, sRgb, pRgb, fadeA);
+                // #17 T361 : COURONNE DE VAGUES — trois nappes qui montent en ondulant + gerbes de
+                // gouttes projetées vers le haut puis retombées (l'eau ondule, elle ne s'enroule pas).
+                for (int wv = 0; wv < 3; wv++) {
+                    float wt = Math.min(1.0f, t + wv * 0.16f);
+                    float rr = 0.35f + (1.35f + 0.25f * wv) * wt;
+                    float yy = cy - 0.40f + wt * (0.32f + 0.16f * wv);
+                    emitPixelCircle3D(vc, mat, tmp, cx, yy, cz, rr,
+                            (wv & 1) == 0 ? pRgb : sRgb, 0xE8F8FF,
+                            Math.round(fadeA * (0.95f - 0.20f * wv)));
+                }
+                for (int d = 0; d < 12; d++) {
+                    float ang = d * 0.5236f + inst.age * 0.08f;
+                    float rad = 0.35f + 1.15f * t;
+                    float up = 0.55f * Mth.sin(Math.min(1.0f, t * 1.3f) * (float) Math.PI)
+                            * (0.6f + 0.4f * pixelHash(d, d * 7));
+                    emitPixelDroplet3D(vc, mat, tmp,
+                            quantize(cx + Mth.cos(ang) * rad, 0.0625f),
+                            quantize(cy - 0.30f + up, 0.0625f),
+                            quantize(cz + Mth.sin(ang) * rad, 0.0625f),
+                            0.030f + 0.012f * pixelHash(d, 3), pRgb, 0xE8F8FF, fadeA, d * 13);
+                }
             }
             case ABYSSAL_MAELSTROM -> {
                 // #18 Vortex océanique de mini-cubes 3D tournoyants à 4 bras + cercle pixel abyssal
@@ -1724,8 +2425,28 @@ public final class WeaponWorldVfxManager {
                 emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.38f, cz, 0.45f + 1.45f * t, 0.0f, sRgb, pRgb, 0xFFFFFF, fadeA, false);
             }
             case VENOM_BRIAR_FANG -> {
-                emitVoxelHelix(vc, mat, tmp, cx, cy - 0.5f, cz, 0.70f, 1.5f, t * 3.0f, pRgb, sRgb, fadeA);
-                emitVoxelHelix(vc, mat, tmp, cx, cy - 0.5f, cz, 0.70f, 1.5f, -t * 3.0f + 1.4f, sRgb, pRgb, fadeA);
+                // #20 T361 : MÂCHOIRE VENIMEUSE — trois paires de crocs qui jaillissent du sol et se
+                // referment sur la cible, avec un suintement de venin aux pointes (plus d'hélice).
+                for (int jaw = 0; jaw < 3; jaw++) {
+                    float ang = jaw * 2.094f + 0.40f;
+                    float baseR = 0.55f + 0.35f * (1.0f - t);
+                    float closeK = 1.0f - 0.55f * t;
+                    for (int side = -1; side <= 1; side += 2) {
+                        float ca2 = Mth.cos(ang) * side;
+                        float sa2 = Mth.sin(ang) * side;
+                        emitSteppedVoxelLine(vc, mat, tmp,
+                                cx + ca2 * baseR, cy - 0.55f, cz + sa2 * baseR,
+                                cx + ca2 * 0.12f * closeK, cy + 0.62f, cz + sa2 * 0.12f * closeK,
+                                0.036f, sRgb, pRgb, fadeA);
+                        emitPixelDroplet3D(vc, mat, tmp,
+                                quantize(cx + ca2 * 0.16f, 0.0625f),
+                                quantize(cy + 0.55f - 0.25f * t, 0.0625f),
+                                quantize(cz + sa2 * 0.16f, 0.0625f),
+                                0.026f, pRgb, 0xB6FF7A, Math.round(fadeA * 0.8f), jaw * 31 + side);
+                    }
+                }
+                emitPixelRing3D(vc, mat, tmp, cx, cy - 0.48f, cz, 0.40f + 1.25f * t,
+                        sRgb, pRgb, Math.round(fadeA * 0.7f), PIXEL_RING_DASHED);
             }
             case SEISMIC_TECTONIC -> {
                 // #21 Failles de cubes rocheux soulevés sur le sol + onde sismique circulaire en pixels
@@ -1739,8 +2460,25 @@ public final class WeaponWorldVfxManager {
                 emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.40f, cz, reach * 0.78f, pRgb, sRgb, fadeA);
             }
             case ZEPHYR_WIND_LANCE -> {
-                emitPixelCircle3D(vc, mat, tmp, cx, cy, cz, 0.35f + 1.90f * t, pRgb, sRgb, fadeA);
-                emitPixelCircle3D(vc, mat, tmp, cx, cy + 0.45f * t, cz, 0.25f + 1.25f * t, 0xFFFFFF, pRgb, fadeA);
+                // #22 T361 : ENROULEMENT DE VENT — trois bras spiraux qui tournent en s'élevant
+                // (le vent s'enroule) puis un cœur clair au centre ; plus deux anneaux plats.
+                for (int arm = 0; arm < 3; arm++) {
+                    float baseAng = arm * 2.094f + inst.age * 0.35f;
+                    for (int sg = 1; sg <= 10; sg++) {
+                        float u = sg / 10.0f;
+                        float ang = baseAng + u * 3.4f;
+                        float rad = (0.20f + 1.35f * u) * (0.45f + 0.75f * t);
+                        emitVoxelCube(vc, mat, tmp,
+                                quantize(cx + Mth.cos(ang) * rad, 0.0625f),
+                                quantize(cy - 0.35f + u * 1.45f * (0.5f + 0.7f * t), 0.0625f),
+                                quantize(cz + Mth.sin(ang) * rad, 0.0625f),
+                                0.032f * (1.2f - 0.5f * u), 0.028f, 0.032f * (1.2f - 0.5f * u),
+                                (sg & 1) == 0 ? pRgb : 0xFFFFFF,
+                                Math.round(fadeA * (1.0f - 0.35f * u)));
+                    }
+                }
+                emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, 2, 0xFFFFFF, pRgb,
+                        Math.round(fadeA * 0.8f));
             }
             case SERAPH_SKY_PILLAR -> {
                 // #23 Colonne céleste blocky + VRAI CERCLE RUNIQUE SACRÉ EN PIXELS 3D au sol et en élévation !
