@@ -5343,14 +5343,14 @@ public class UniversalEnchantmentHandler {
      * T358-GRAPPLE : démarre la traction du grappin.
      *
      * @param level               niveau serveur
-     * @param shooter             joueur qui a tiré (source de la traction)
+     * @param shooter             entité vivante qui a tiré (source de la traction)
      * @param pulled              entité tractée (le joueur lui-même, ou la cible en Shift)
      * @param anchor              point d'ancrage (point d'impact de la flèche)
      * @param boost               multiplicateur de propulsion, tiré entre <b>1.2 et 2.2</b>
      * @param anchorFollowsShooter {@code true} = la cible est tirée vers le joueur (Shift),
      *                            {@code false} = le joueur est tiré vers le point d'impact
      */
-    public static void startGrappleDrag(ServerLevel level, Player shooter, Entity pulled, Vec3 anchor,
+    public static void startGrappleDrag(ServerLevel level, LivingEntity shooter, Entity pulled, Vec3 anchor,
                                         float boost, boolean anchorFollowsShooter) {
         startGrappleDrag(level, shooter, pulled, anchor, boost, anchorFollowsShooter, 0.0);
     }
@@ -5359,7 +5359,7 @@ public class UniversalEnchantmentHandler {
      * T358-GRAPPLE (surcharge) : même traction, avec une <b>vitesse de base imposée</b> — utilisée
      * par le grappin de canne à pêche, qui garde ainsi son échelle de puissance par niveau.
      */
-    public static void startGrappleDrag(ServerLevel level, Player shooter, Entity pulled, Vec3 anchor,
+    public static void startGrappleDrag(ServerLevel level, LivingEntity shooter, Entity pulled, Vec3 anchor,
                                         float boost, boolean anchorFollowsShooter, double baseSpeedOverride) {
         if (pulled == null || !pulled.isAlive()) return;
         // T358-GRAPPLE : anti-cumul. Sans ce garde-fou, un joueur qui spamme le clic droit sur
@@ -5390,7 +5390,7 @@ public class UniversalEnchantmentHandler {
      * <p>La traction s'arrête d'elle-même dès que la cible est arrivée (moins de 1,15 bloc), si
      * une des deux entités meurt ou change de dimension : aucun risque de « lancer » infini.</p>
      */
-    private static void scheduleGrappleTick(ServerLevel level, Player shooter, Entity pulled, Vec3 anchor,
+    private static void scheduleGrappleTick(ServerLevel level, LivingEntity shooter, Entity pulled, Vec3 anchor,
                                             float boost, boolean anchorFollowsShooter, int ticksLeft) {
         if (ticksLeft <= 0) return;
         TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, () -> {

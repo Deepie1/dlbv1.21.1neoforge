@@ -257,7 +257,7 @@ public final class WeaponBladeVisualRenderer {
 
             case SPECTRAL_REACH -> {
                 // #03 Pointe fantôme en escalier de mini-pixels 3D prolongeant l'allonge de l'arme
-                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.88f, hz, pRgb, sRgb, time * 2.8f, 145, layerMul);
+                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.88f, hz, pRgb, sRgb, time * 2.8f, time, 145, layerMul);
                 VoxelNode tip = nodes.get(count - 1);
                 float ext = 0.05f + 0.04f * (0.5f + 0.5f * Mth.sin(time * 4.5f));
                 for (int k = 1; k <= 4; k++) {
@@ -271,7 +271,7 @@ public final class WeaponBladeVisualRenderer {
 
             case TWIN_ECHO_SLASH -> {
                 // #04 Seconde rangée fantôme de mini-cubes décalée d'un pixel à côté du tranchant !
-                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.85f, hz, pRgb, sRgb, time * 4.0f, 155, layerMul);
+                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.85f, hz, pRgb, sRgb, time * 4.0f, time, 155, layerMul);
                 float off = 0.0625f * (0.8f + 0.4f * Mth.sin(time * 6.0f));
                 for (int i = 0; i < count; i += 2) {
                     VoxelNode n = nodes.get(i);
@@ -284,7 +284,7 @@ public final class WeaponBladeVisualRenderer {
             case DRIPPING_BLOOD_EDGE, CARNAGE_BERSERK -> {
                 // #09 / #12 Tranchant taché de pixels écarlates + gouttes de sang cubiques 3D tombant sous la gravité !
                 boolean berserk = (fx == WeaponVisualEffectId.CARNAGE_BERSERK);
-                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * (berserk ? 1.08f : 0.92f), hz, pRgb, sRgb, time * 2.4f, berserk ? 205 : 175, layerMul);
+                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * (berserk ? 1.08f : 0.92f), hz, pRgb, sRgb, time * 2.4f, time, berserk ? 205 : 175, layerMul);
 
                 int drops = berserk ? 6 : 4;
                 for (int d = 0; d < drops; d++) {
@@ -294,7 +294,7 @@ public final class WeaponBladeVisualRenderer {
                     // Phase 0..0.35 : le pixel de sang gonfle sur le tranchant ; 0.35..1.0 : tombe par paliers !
                     float dropFall = (cycle < 0.35f) ? 0.0f : (cycle - 0.35f) / 0.65f;
                     float dy = -WeaponWorldVfxManager.quantize(dropFall * dropFall * 0.32f, 0.03125f);
-                    float sz = hxy * (cycle < 0.35f ? (0.55f + cycle * 1.4f) : (1.04f - dropFall * 0.45f)) * pixelVariance(i, time);
+                    float sz = hxy * (cycle < 0.35f ? (0.55f + cycle * 1.4f) : (1.04f - dropFall * 0.45f)) * pixelVariance(idx, time);
                     int alpha = Math.round(235.0f * (1.0f - dropFall * 0.75f) * layerMul);
                     WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
                             anchor.x + anchor.nx * 0.025f, anchor.y + dy, anchor.z,
@@ -318,7 +318,7 @@ public final class WeaponBladeVisualRenderer {
 
             case VITAL_TRANSFUSION -> {
                 // #11 Mini-croix médicales 3D rubis & or s'élevant le long de l'arme
-                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.85f, hz, pRgb, sRgb, time * 2.2f, 155, layerMul);
+                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.85f, hz, pRgb, sRgb, time * 2.2f, time, 155, layerMul);
                 for (int c = 0; c < 3; c++) {
                     float cyc = (time * 0.95f + c * 0.33f) % 1.0f;
                     VoxelNode n = nodes.get(Math.min(count - 1, Math.round(cyc * (count - 1))));
@@ -330,13 +330,13 @@ public final class WeaponBladeVisualRenderer {
 
             case MOLTEN_FIRE_WAVE, SOUL_FIRE_CRESCENT, BRIMSTONE_METEOR -> {
                 // #13 / #14 / #15 Braises et flammèches cubiques 3D s'élevant depuis chaque texel !
-                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.98f, hz, pRgb, sRgb, time * 4.2f, 195, layerMul);
+                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.98f, hz, pRgb, sRgb, time * 4.2f, time, 195, layerMul);
                 for (int e = 0; e < 6; e++) {
                     VoxelNode base = nodes.get((e * 3 + 1) % count);
                     float cyc = (time * 1.65f + e * 0.17f) % 1.0f;
                     float rise = WeaponWorldVfxManager.quantize(cyc * 0.22f, 0.03125f);
                     float sway = ((e & 1) == 0 ? 1 : -1) * 0.03125f * (cyc > 0.5f ? 1 : 0);
-                    float sz = hxy * (1.05f - cyc * 0.55f) * lvlBoost * pixelVariance(i, time);
+                    float sz = hxy * (1.05f - cyc * 0.55f) * lvlBoost * pixelVariance(e, time);
                     int rgb = cyc < 0.3f ? white : (cyc < 0.65f ? sRgb : pRgb);
                     WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
                             base.x + sway, base.y + rise, base.z,
@@ -346,7 +346,7 @@ public final class WeaponBladeVisualRenderer {
 
             case CHAIN_VOLT_ARC, OVERCLOCK_CYBER_X -> {
                 // #16 / #08 Éclairs crénelés en mini-cubes 3D sautant de la garde à la pointe !
-                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.85f, hz, pRgb, sRgb, time * 6.5f, 165, layerMul);
+                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.85f, hz, pRgb, sRgb, time * 6.5f, time, 165, layerMul);
                 VoxelNode start = nodes.get(0);
                 VoxelNode end = nodes.get(count - 1);
                 long boltSeed = (long) (time * 14.0f);
@@ -368,12 +368,12 @@ public final class WeaponBladeVisualRenderer {
 
             case VENOM_BRIAR_FANG -> {
                 // #20 Gouttes cubiques de venin acide vert néon suintant de la lame
-                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.90f, hz, pRgb, sRgb, time * 2.6f, 175, layerMul);
+                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.90f, hz, pRgb, sRgb, time * 2.6f, time, 175, layerMul);
                 for (int v = 0; v < 4; v++) {
                     VoxelNode anchor = nodes.get((v * 4 + 2) % count);
                     float cyc = (time * 1.15f + v * 0.25f) % 1.0f;
                     float dy = -WeaponWorldVfxManager.quantize(cyc * cyc * 0.26f, 0.03125f);
-                    float sz = hxy * (0.95f - cyc * 0.4f) * pixelVariance(i, time);
+                    float sz = hxy * (0.95f - cyc * 0.4f) * pixelVariance(v, time);
                     WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
                             anchor.x + anchor.nx * 0.02f, anchor.y + dy, anchor.z,
                             sz, sz, sz, (v & 1) == 0 ? pRgb : sRgb, Math.round(225 * (1.0f - cyc * 0.7f) * layerMul));
@@ -382,7 +382,7 @@ public final class WeaponBladeVisualRenderer {
 
             case GOLDEN_CRIT_STAR, FOCUSED_BULLSEYE, SERAPH_SKY_PILLAR, ASTRAL_STAR_LANCE -> {
                 // #06 / #07 / #23 / #25 Étoiles critiques pixel-art 3D scintillant le long du tranchant
-                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.90f, hz, pRgb, sRgb, time * 3.2f, 175, layerMul);
+                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.90f, hz, pRgb, sRgb, time * 3.2f, time, 175, layerMul);
                 for (int s = 0; s < 3; s++) {
                     int idx = Math.min(count - 1, ((s + 1) * count) / 3 - 1);
                     VoxelNode n = nodes.get(Math.max(0, idx));
@@ -410,7 +410,7 @@ public final class WeaponBladeVisualRenderer {
 
             case ANNIHILATING_ARC -> {
                 // #30 Couronne de plasma solaire en gros mini-cubes incandescents + étoile 3D en pointe
-                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 1.15f, hz * 1.12f, white, pRgb, time * 5.2f, 225, layerMul);
+                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 1.15f, hz * 1.12f, white, pRgb, time * 5.2f, time, 225, layerMul);
                 VoxelNode tip = nodes.get(count - 1);
                 WeaponWorldVfxManager.emitPixelCross3D(vc, mat, tmp,
                         tip.x + 0.03f, tip.y + 0.03f, tip.z, 0.042f, 3, white, pRgb, Math.round(245 * layerMul));
@@ -419,7 +419,7 @@ public final class WeaponBladeVisualRenderer {
             default -> {
                 // Tous les autres effets (#05, #17, #18, #21, #22, #24, #26, #28, #29) :
                 // Couronne crénelée de mini-cubes 3D + satellites cubiques en orbite autour de la pointe !
-                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.95f, hz, pRgb, sRgb, time * 3.4f, 185, layerMul);
+                renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.95f, hz, pRgb, sRgb, time * 3.4f, time, 185, layerMul);
                 VoxelNode mid = nodes.get(count / 2);
                 for (int o = 0; o < 3; o++) {
                     float a = time * 3.8f + o * 2.094f;
@@ -456,7 +456,7 @@ public final class WeaponBladeVisualRenderer {
 
     private static void renderSteppedRimCubes(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                               List<VoxelNode> nodes, float hxy, float hz,
-                                              int pRgb, int sRgb, float wavePhase,
+                                              int pRgb, int sRgb, float wavePhase, float time,
                                               int baseAlpha, float layerMul) {
         int count = nodes.size();
         for (int i = 0; i < count; i++) {

@@ -3691,7 +3691,7 @@ public final class WeaponWorldVfxManager {
                         cz2 + Mth.sin(a2) * rr,
                         (0.034f - 0.008f * k) * S, 0.026f * S, (0.034f - 0.008f * k) * S,
                         a2, 0.7f + k * 0.5f, ang,
-                        (k == 0) ? 0xFFFFFF : jitterRgb(mixRgb(hue, v.pRgb(), 0.35f), salt + c * 7 + k, 0.05f),
+                        (k == 0) ? 0xFFFFFF : jitterRgb(mixRgb(hue, v.pRgb(), 0.35f), v.salt() + c * 7 + k, 0.05f),
                         Math.round(v.fadeA() * (0.55f + 0.45f * v.hash(c * 5 + k))));
             }
         }
@@ -4206,7 +4206,7 @@ public final class WeaponWorldVfxManager {
                     int voxSalt = salt + i * 73 + j * 131 + k * 17;
                     // Dégradé du matériau : creux sombre en bas, pointe presque blanche en haut,
                     // avec une nuance par voxel (la sculpture n'est jamais monochrome).
-                    float u = Mth.clamp(0.42f + 0.62f * (ny * 0.5f + 0.5f) + 0.20f * z, 0.0f, 1.0f);
+                    float u = Mth.clamp(0.42f + 0.62f * (ny * 0.5f + 0.5f) + 0.20f * sz, 0.0f, 1.0f);
                     int rgb = rampRgb(u, deep, body, high, tip);
                     rgb = jitterRgb(rgb, voxSalt, 0.050f);
 
