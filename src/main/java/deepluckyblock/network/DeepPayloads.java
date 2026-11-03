@@ -165,9 +165,29 @@ public final class DeepPayloads {
                                               double x, double y, double z,
                                               double tx, double ty, double tz,
                                               int paletteMask) {
+            return create(vfxId, kind, intensity, x, y, z, tx, ty, tz, paletteMask, 1.0f);
+        }
+
+        /**
+         * T359-BIG-ANIM-SCALE : comme {@link #create(int, int, int, double, double, double,
+         * double, double, double, int)}, avec en plus l'<b>échelle de taille</b> de la grosse
+         * animation (déduite de la taille du mob touché).
+         *
+         * <p>L'échelle voyage dans l'octet haut de {@code packedMeta} (les 3 autres octets
+         * portent déjà id / kind / intensité), quantifiée au 1/40 : 0 = 1.0 (défaut), 10 = 0.25,
+         * 240 = 6.0. Aucun champ ni codec supplémentaire, donc aucun risque de désynchronisation
+         * avec un client plus ancien.</p>
+         */
+        public static WeaponVfxMessage create(int vfxId, int kind, int intensity,
+                                              double x, double y, double z,
+                                              double tx, double ty, double tz,
+                                              int paletteMask, float sizeScale) {
+            int sizeByte = Math.round(net.minecraft.util.Mth.clamp(sizeScale, 0.0f, 6.35f) * 40.0f);
+            if (sizeByte <= 0) sizeByte = 0;   // 0 = échelle par défaut (1.0)
             int meta = (vfxId & 0xFF)
                     | ((kind & 0xFF) << 8)
-                    | ((Math.max(1, Math.min(15, intensity)) & 0xFF) << 16);
+                    | ((Math.max(1, Math.min(15, intensity)) & 0xFF) << 16)
+                    | ((sizeByte & 0xFF) << 24);
             return new WeaponVfxMessage(
                     meta,
                     paletteMask & deepluckyblock.enchantments.DeepElement.MASK_ALL,

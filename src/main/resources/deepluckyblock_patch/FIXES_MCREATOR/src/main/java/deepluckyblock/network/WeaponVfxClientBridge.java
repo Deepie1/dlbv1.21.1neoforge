@@ -24,6 +24,9 @@ public final class WeaponVfxClientBridge {
             int vfxId = meta & 0xFF;
             int kind = (meta >>> 8) & 0xFF;
             int intensity = (meta >>> 16) & 0xFF;
+            // T359-BIG-ANIM-SCALE : octet haut = échelle de la grosse animation (0 = 1.0 par défaut).
+            int sizeByte = (meta >>> 24) & 0xFF;
+            float sizeScale = (sizeByte == 0) ? 1.0f : (sizeByte / 40.0f);
             deepluckyblock.client.WeaponWorldVfxManager.enqueueNetworkVfx(
                     vfxId,
                     kind,
@@ -34,7 +37,8 @@ public final class WeaponVfxClientBridge {
                     msg.target().x(),
                     msg.target().y(),
                     msg.target().z(),
-                    msg.paletteMask());
+                    msg.paletteMask(),
+                    sizeScale);
         }
     }
 }

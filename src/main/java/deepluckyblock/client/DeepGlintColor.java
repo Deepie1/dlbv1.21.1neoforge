@@ -376,6 +376,10 @@ public final class DeepGlintColor {
         }
         if (enchants == null || enchants.isEmpty()) return 0;
 
+        // T359-GLINT-NO-FAKE-FIRE : une arme à distance ne prend jamais la teinte ambre
+        // « force » (qui se lit comme du feu) : seule une famille élémentaire la colore.
+        boolean rangedWeapon = isRangedWeapon(stack);
+
         int[] tier1 = new int[8];
         int tier1Count = 0;
         int bestTier2Color = 0;
@@ -421,7 +425,7 @@ public final class DeepGlintColor {
                 continue;
             }
 
-            int t2 = classifySecondaryCombatFlash(s, defensiveArmor);
+            int t2 = classifySecondaryCombatFlash(s, defensiveArmor, rangedWeapon);
             if (t2 != 0 && lvl > bestTier2Lvl) {
                 bestTier2Lvl = lvl;
                 bestTier2Color = t2;
@@ -503,20 +507,37 @@ public final class DeepGlintColor {
         return 0;
     }
 
-    private static int classifySecondaryCombatFlash(String s, boolean defensiveArmor) {
+    /**
+     * T359-GLINT-NO-FAKE-FIRE : la famille « FORCE » est ambre/orangée, ce qui se confond avec le
+     * FEU. Sur une arme à distance, elle faisait virer le glint à l'orange dès qu'on bandait l'arc,
+     * même sans le moindre enchantement de feu (un simple {@code power} suffisait).
+     *
+     * <p>Règle désormais : sur arc / arbalète / trident, seuls les enchantements ÉLÉMENTAIRES
+     * colorent le flash — un enchantement purement cinétique ({@code power}, {@code punch},
+     * {@code heavy_impact}...) ne teinte plus rien (le glint garde sa couleur de rang).</p>
+     */
+    private static int classifySecondaryCombatFlash(String s, boolean defensiveArmor, boolean rangedWeapon) {
         if (s.contains("curse") || s.contains("cursed") || s.contains("blemish")) {
             return FLASH_CURSE;
         }
         int base = baseColor(s);
         if (base == AIR || base == WIND) return FLASH_AIR;
-        if (base == FORCE) return FLASH_FORCE;
+        if (base == FORCE) return rangedWeapon ? 0 : FLASH_FORCE;
         if (base == SPEED) return FLASH_SPEED;
         if (!defensiveArmor && base == DAMAGE && (s.contains("crit") || s.contains("seismic")
                 || s.contains("brutal") || s.contains("titan") || s.contains("giant")
                 || s.contains("annihilat") || s.contains("supreme"))) {
-            return FLASH_FORCE;
+            return rangedWeapon ? 0 : FLASH_FORCE;
         }
         return 0;
+    }
+
+    /** T359-GLINT-NO-FAKE-FIRE : vrai pour arc, arbalète et trident. */
+    private static boolean isRangedWeapon(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        return stack.getItem() instanceof net.minecraft.world.item.BowItem
+                || stack.getItem() instanceof net.minecraft.world.item.CrossbowItem
+                || stack.getItem() instanceof net.minecraft.world.item.TridentItem;
     }
 
     // =======================================================================
@@ -597,6 +618,9 @@ public final class DeepGlintColor {
         Map<net.minecraft.world.item.enchantment.Enchantment, Integer> enchants = deepluckyblock.util.DeepEnchant.map(stack);
         if (enchants.isEmpty()) return 0;
 
+        // T359-GLINT-NO-FAKE-FIRE : même règle pour l'éclat contextuel.
+        boolean rangedWeapon = isRangedWeapon(stack);
+
         int[] activeColors = new int[8];
         int activeCount = 0;
 
@@ -619,10 +643,15 @@ public final class DeepGlintColor {
 
             int col = classifyPrimaryElementFlash(fullId);
             if (col == 0) {
-                col = classifySecondaryCombatFlash(fullId, defensiveArmor);
+                col = classifySecondaryCombatFlash(fullId, defensiveArmor, rangedWeapon);
             }
             if (col == 0) {
                 int base = baseColor(fullId);
+                // T359-GLINT-NO-FAKE-FIRE : sur une arme à distance, l'ambre « force » est
+                // ignoré (il passait pour du feu) ; les autres teintes restent inchangées.
+                if (rangedWeapon && base == FORCE) {
+                    base = 0xFFFFFFFF;
+                }
                 if (base != 0xFFFFFFFF) {
                     col = 0xFF000000 | brightenForFlash(base);
                 }

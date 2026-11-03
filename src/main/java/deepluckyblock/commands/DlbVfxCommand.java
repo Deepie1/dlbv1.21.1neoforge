@@ -241,7 +241,7 @@ public final class DlbVfxCommand {
                         .then(Commands.argument("kind", StringArgumentType.word())
                                 .suggests(SUGGEST_KINDS)
                                 .executes(ctx -> startShow(ctx, parseKind(StringArgumentType.getString(ctx, "kind")), false))))
-                // /dlbvfx elements  (les 10 familles élémentaires, animation par famille)
+                // /dlbvfx elements  (12 familles élémentaires, animation par famille)
                 .then(Commands.literal("elements").executes(DlbVfxCommand::families)
                         .then(Commands.argument("family", StringArgumentType.word())
                                 .suggests(SUGGEST_FAMILIES)
@@ -307,11 +307,13 @@ public final class DlbVfxCommand {
         line(src, "§e/dlbvfx hit [nombre]", "vraies frappes sur la cible d'entraînement (impact + crit réels)");
         line(src, "§e/dlbvfx dummy", "invoque / retire la cible d'entraînement");
         line(src, "§e/dlbvfx give <effet> [niveau]", "donne les armes enchantées qui déclenchent cet effet");
-        line(src, "§e/dlbvfx elements [famille]", "les 10 familles élémentaires (couleurs + effets)");
+        line(src, "§e/dlbvfx elements [famille]", "les §f" + deepluckyblock.enchantments.DeepElement.values().length + " §7familles élémentaires (couleurs + effets)");
         line(src, "§e/dlbvfx variants", "défile les déclinaisons (de moins en moins de particules)");
-        line(src, "§e/dlbvfx subtle [famille] [index]", "les 100 accents discrets : 50 élémentaires + 50 échos des grosses animations");
-        line(src, "§7Déclenchement", "§f5 % §7coup normal, §f66 % §7coup critique, §f10 % §7des déclenchements en grosse animation (§f+5 % §7dégâts)");
+        line(src, "§e/dlbvfx subtle [famille] [index]", "les §f" + (deepluckyblock.enchantments.WeaponVfxSubtle.COUNT + deepluckyblock.enchantments.WeaponVfxSubtleEcho.COUNT) + " §7accents discrets : §f" + deepluckyblock.enchantments.WeaponVfxSubtle.COUNT + " §7élémentaires + §f" + deepluckyblock.enchantments.WeaponVfxSubtleEcho.COUNT + " §7échos des grosses animations");
+        line(src, "§7Déclenchement", "§f5 % §7coup normal, §f76 % §7coup critique, §f10 % §7des déclenchements en grosse animation (§f+5 % §7dégâts)");
         line(src, "§7Arme multi-éléments", "§f6 % §7de chance de jouer en simultané une animation de §fchaque §7élément de l'arme");
+        // T359-BIG-ANIM-SCALE : les grosses animations prennent la taille du mob touché.
+        line(src, "§7Taille des animations", "§7les grosses animations se scalent sur le mob touché : §fminuscule §7(poulet) → §fénorme §7(ravager, dragon)");
         line(src, "§e/dlbvfx clear", "supprime les cibles d'entraînement");
         line(src, "§7Exemples : §f/dlbvfx play 29 §7puis §f/dlbvfx give 8 §7puis §f/dlbvfx hit 3", "");
         return 1;
@@ -333,7 +335,7 @@ public final class DlbVfxCommand {
                     fx.element.displayName, enchant);
             src.sendSuccess(() -> Component.literal("  " + label), false);
         }
-        src.sendSuccess(() -> Component.literal("§7Astuce : §f/dlbvfx all §7pour tout voir d'un coup, §f/dlbvfx elements §7par famille, §f/dlbvfx variants §7pour les 50 déclinaisons, §f/dlbvfx subtle §7pour les 100 accents discrets."), false);
+        src.sendSuccess(() -> Component.literal("§7Astuce : §f/dlbvfx all §7pour tout voir d'un coup, §f/dlbvfx elements §7par famille, §f/dlbvfx variants §7pour les §f" + deepluckyblock.enchantments.WeaponVfxVariant.COUNT + " §7déclinaisons, §f/dlbvfx subtle §7pour les §f" + (deepluckyblock.enchantments.WeaponVfxSubtle.COUNT + deepluckyblock.enchantments.WeaponVfxSubtleEcho.COUNT) + " §7accents discrets."), false);
         return 1;
     }
 
@@ -632,7 +634,7 @@ public final class DlbVfxCommand {
     }
 
     // =====================================================================
-    // /dlbvfx subtle  — les 50 accents discrets (T351)
+    // /dlbvfx subtle  — les accents discrets (T351/T353, compteurs dynamiques)
     // =====================================================================
 
     private static int subtleDemo(CommandContext<CommandSourceStack> ctx, String familyRaw, int indexArg)

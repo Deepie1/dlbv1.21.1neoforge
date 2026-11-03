@@ -62,8 +62,8 @@ public final class WeaponVfxServerListener {
 
     /** T351 : attaque NORMALE -> 5 % de chance de déclencher l'animation pixel. */
     private static final int NORMAL_TRIGGER_PERCENT = 5;
-    /** T351 : coup CRITIQUE -> 66 % de chance. */
-    private static final int CRIT_TRIGGER_PERCENT = 66;
+    /** T351 : coup CRITIQUE -> 66 % de chance ; T359-CRIT-RATE : +10 points -> 76 %. */
+    private static final int CRIT_TRIGGER_PERCENT = 76;
     /** T351 : part des déclenchements qui jouent un accent discret. */
     private static final int SUBTLE_SHARE_PERCENT = 90;
     /** T351-BIG-BONUS : une grosse animation (les 10 % restants) amplifie les dégâts de 5 %. */
@@ -78,6 +78,23 @@ public final class WeaponVfxServerListener {
 
     private WeaponVfxServerListener() {}
 
+    /**
+     * T359-BIG-ANIM-SCALE : échelle des grosses animations d'après le VOLUME du mob touché.
+     *
+     * <p>Référence = joueur / zombie (0,6 × 0,6 × 1,8) -> 1.0. Le facteur suit la racine du
+     * rapport de volume, borné entre <b>0.30</b> (poulet, poisson, silverfish : animation
+     * minuscule) et <b>4.0</b> (ravager, wither, dragon : animation énorme).</p>
+     */
+    private static float sizeScaleOf(Entity entity) {
+        if (entity == null) return 1.0f;
+        double width = Math.max(0.05, entity.getBbWidth());
+        double height = Math.max(0.05, entity.getBbHeight());
+        double volume = width * width * height;
+        double reference = 0.6 * 0.6 * 1.8;                 // joueur / zombie standard
+        float scale = (float) Math.sqrt(volume / reference);
+        return net.minecraft.util.Mth.clamp(scale, 0.30f, 4.0f);
+    }
+
     /** Appelé par {@code UniversalEnchantmentHandler} lors d'un coup critique mêlée (vanilla ou custom). */
     public static void notifyMeleeCrit(Player attacker, Entity target,
                                        WeaponVisualEffectId critStyle, int intensity) {
@@ -88,7 +105,7 @@ public final class WeaponVfxServerListener {
 
         WeaponVisualEffectId fx = (critStyle != null) ? critStyle : WeaponVisualEffectId.GOLDEN_CRIT_STAR;
 
-        // T351 : sur un coup critique, 66 % de chance de déclencher l'animation pixel.
+        // T351/T359 : sur un coup critique, 76 % de chance de déclencher l'animation pixel.
         if (sl.random.nextInt(100) >= CRIT_TRIGGER_PERCENT) return;
         String critKey = "crit:" + attacker.getId() + ":" + fx.id;
         Long critReady = EFFECT_COOLDOWN.get(critKey);
@@ -101,7 +118,8 @@ public final class WeaponVfxServerListener {
 
         // T352-ELEMENT-COMBO : une arme multi-éléments peut déclencher une animation de chaque famille.
         tryElementCombo(sl, attacker.getId(), attacker.getMainHandItem(), cx, cy, cz,
-                (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ());
+                (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ(),
+                sizeScaleOf(target));
 
         // T351 : la plupart des critiques jouent seulement un accent discret (bien plus subtil).
         if (playSubtleAccent(sl, attacker.getMainHandItem(), fx, cx, cy, cz,
@@ -113,7 +131,7 @@ public final class WeaponVfxServerListener {
         LAST_BIG_ANIM_TICK.put(attacker.getId(), now);
         broadcastNear(sl, cx, cy, cz, fx.id, KIND_IMPACT, Math.max(2, intensity),
                 cx, cy, cz, (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ(),
-                paletteOf(attacker.getMainHandItem(), fx));
+                paletteOf(attacker.getMainHandItem(), fx), sizeScaleOf(target));
     }
 
     /** Appelé lors d'un rebond d'éclair en chaîne entre deux entités. */
@@ -222,6 +240,13 @@ public final class WeaponVfxServerListener {
     private static boolean tryElementCombo(ServerLevel sl, int attackerId, ItemStack weapon,
                                            float tx, float ty, float tz,
                                            float ax, float ay, float az) {
+        return tryElementCombo(sl, attackerId, weapon, tx, ty, tz, ax, ay, az, 1.0f);
+    }
+
+    /** T359-BIG-ANIM-SCALE : variante qui applique l'échelle de la cible à chacune des signatures. */
+    private static boolean tryElementCombo(ServerLevel sl, int attackerId, ItemStack weapon,
+                                           float tx, float ty, float tz,
+                                           float ax, float ay, float az, float sizeScale) {
         // Un seul combo par coup : le critique et le handler d'impact peuvent viser le même tick.
         long now = sl.getGameTime();
         Long last = LAST_ELEMENT_COMBO_TICK.get(attackerId);
@@ -239,7 +264,7 @@ public final class WeaponVfxServerListener {
             WeaponVisualEffectId sig = WeaponVisualEffectId.signatureFor(el);
             if (sig == null) continue;
             broadcastNear(sl, tx, ty, tz, sig.id, KIND_IMPACT, 3,
-                    tx, ty, tz, ax, ay, az, 1 << el.ordinal());
+                    tx, ty, tz, ax, ay, az, 1 << el.ordinal(), sizeScale);
             // Étincelles de la famille, une par élément : le mélange de couleurs se voit tout de suite.
             WeaponVfxSubtle.Subtle accent = WeaponVfxSubtle.pick(el, sl.random.nextLong());
             broadcastNear(sl, tx, ty, tz, 0, WeaponVfxSubtle.NET_KIND_BASE + accent.index(), 1,
@@ -269,7 +294,7 @@ public final class WeaponVfxServerListener {
         Long ready = EFFECT_COOLDOWN.get(key);
         if (ready != null && now < ready) return false;
 
-        // T351 : 5 % sur une attaque normale, 66 % sur un coup critique.
+        // T351/T359 : 5 % sur une attaque normale, 76 % sur un coup critique.
         int chance = crit ? CRIT_TRIGGER_PERCENT : NORMAL_TRIGGER_PERCENT;
         if (sl.random.nextInt(100) >= chance) {
             // Nouvelle tentative possible très vite : on ne veut pas « perdre » un long cooldown sur un jet raté
@@ -340,7 +365,7 @@ public final class WeaponVfxServerListener {
                 && sl.random.nextInt(100) < CRIT_TRIGGER_PERCENT) {
             if (!playSubtleAccent(sl, weapon, WeaponVisualEffectId.GOLDEN_CRIT_STAR, tx, ty, tz, ax, ay, az)) {
                 broadcastNear(sl, tx, ty, tz, WeaponVisualEffectId.GOLDEN_CRIT_STAR.id, KIND_IMPACT, 2,
-                        tx, ty, tz, ax, ay, az, palette);
+                        tx, ty, tz, ax, ay, az, palette, sizeScaleOf(target));
             }
         }
 
@@ -376,7 +401,8 @@ public final class WeaponVfxServerListener {
 
             // T352-ELEMENT-COMBO : arme multi-éléments -> parfois une animation de CHAQUE élément.
             if (!elementComboDone) {
-                elementComboDone = tryElementCombo(sl, attacker.getId(), weapon, tx, ty, tz, ax, ay, az);
+                elementComboDone = tryElementCombo(sl, attacker.getId(), weapon, tx, ty, tz, ax, ay, az,
+                        sizeScaleOf(target));
             }
 
             // T351-BIG-BONUS : les 10 % de grosses animations amplifient de 5 % les dégâts subis
@@ -386,7 +412,7 @@ public final class WeaponVfxServerListener {
                 event.setAmount(event.getAmount() * BIG_ANIM_DAMAGE_BONUS);
             }
 
-            // T351 : l'entaille est désormais elle aussi décidée par le serveur (5 % / 66 %),
+            // T351 : l'entaille est désormais elle aussi décidée par le serveur (5 % / 76 %),
             // ce qui évite tout double déclenchement client + serveur.
             if (!isProjectileHit) {
                 broadcastNear(sl, ax, ay, az, fx.id, KIND_SWING_SLASH, layer.level(),
@@ -395,14 +421,14 @@ public final class WeaponVfxServerListener {
 
             if (fx == WeaponVisualEffectId.CRIMSON_SIPHON) {
                 broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
-                        tx, ty, tz, ax, ay, az, palette);
+                        tx, ty, tz, ax, ay, az, palette, sizeScaleOf(target));
             } else if (fx == WeaponVisualEffectId.ASTRAL_STAR_LANCE && attacker.distanceToSqr(target) > 9.0) {
                 broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
                         ax, (float) attacker.getEyeY() - 0.12f, az, tx, ty, tz, palette);
             } else {
                 int boost = (arrowCrit && fx.category == WeaponVisualEffectId.Category.CRIT) ? layer.level() + 1 : layer.level();
                 broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, boost,
-                        tx, ty, tz, ax, ay, az, palette);
+                        tx, ty, tz, ax, ay, az, palette, sizeScaleOf(target));
             }
         }
     }
@@ -540,8 +566,22 @@ public final class WeaponVfxServerListener {
                                       int vfxId, int kind, int intensity,
                                       float x, float y, float z,
                                       float tx, float ty, float tz, int paletteMask) {
+        broadcastNear(sl, refX, refY, refZ, vfxId, kind, intensity, x, y, z, tx, ty, tz, paletteMask, 1.0f);
+    }
+
+    /**
+     * T359-BIG-ANIM-SCALE : comme ci-dessus, en transmettant l'<b>échelle de taille</b> de la
+     * grosse animation. Le client fait alors grossir/rétrécir l'animation ENTIÈRE autour de son
+     * point d'impact : un poulet reçoit une animation minuscule, un ravager ou un dragon une
+     * animation énorme.
+     */
+    private static void broadcastNear(ServerLevel sl, float refX, float refY, float refZ,
+                                      int vfxId, int kind, int intensity,
+                                      float x, float y, float z,
+                                      float tx, float ty, float tz, int paletteMask,
+                                      float sizeScale) {
         DeepPayloads.WeaponVfxMessage payload = DeepPayloads.WeaponVfxMessage.create(
-                vfxId, kind, intensity, x, y, z, tx, ty, tz, paletteMask);
+                vfxId, kind, intensity, x, y, z, tx, ty, tz, paletteMask, sizeScale);
 
         double maxDistSq = 52.0 * 52.0;
         for (ServerPlayer sp : sl.players()) {

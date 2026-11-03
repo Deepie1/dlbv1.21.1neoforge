@@ -90,6 +90,25 @@ public final class WeaponWorldVfxManager {
     /** T350 : échelle de taille de la déclinaison en cours (0.80 .. 1.0). */
     private static float variantScale = 1.0f;
 
+    // ── T359-BIG-ANIM-SCALE : échelle des grosses animations, pilotée par la taille du mob touché ──
+    /** Échelle courante (1 = normale) ; appliquée à TOUTE la géométrie d'une instance. */
+    private static float mobScale = 1.0f;
+    /** Pivot de mise à l'échelle = origine de l'instance (le point d'impact). */
+    private static float mobPivotX, mobPivotY, mobPivotZ;
+    /** Vrai seulement pendant le rendu d'une instance à échelle ≠ 1 (aucun coût sinon). */
+    private static boolean mobScaleActive = false;
+
+    /**
+     * T359-BIG-ANIM-SCALE : applique l'échelle au pivot courant.
+     *
+     * <p>Le point (x, y, z) est ramené dans le repère du pivot, multiplié par {@link #mobScale},
+     * puis replacé dans le monde : l'animation ENTIÈRE grossit ou rétrécit autour de son point
+     * d'impact (positions ET tailles), au lieu de simplement changer de taille de pixel.</p>
+     */
+    private static float scaleAxis(float v, float pivot) {
+        return mobScaleActive ? pivot + (v - pivot) * mobScale : v;
+    }
+
     /** T350-SMOOTH-COLOR : index de frame pour ne faire avancer les couleurs qu'une fois par frame. */
     private static int frameIndex;
     /** Couleur courante (r,g,b,dernièreFrame) par effet : transition douce, jamais de saut brutal. */
@@ -173,6 +192,8 @@ public final class WeaponWorldVfxManager {
         final deepluckyblock.enchantments.WeaponVfxVariant.Entry variantEntry;
         /** T351-ELEMENT-BLEND : masque des familles élémentaires portées par l'arme (0 = inconnu). */
         final int paletteMask;
+        /** T359-BIG-ANIM-SCALE : échelle de la grosse animation (taille du mob touché). */
+        final float sizeScale;
         int age;
 
         /** Couleur principale, mélangée sur la palette élémentaire de l'arme si elle en porte plusieurs. */
@@ -205,6 +226,16 @@ public final class WeaponWorldVfxManager {
                     double tx, double ty, double tz,
                     float yawDeg, float pitchDeg, float tiltRad,
                     int maxAge, long seed, int paletteMask) {
+            this(effect, kind, intensity, x, y, z, tx, ty, tz, yawDeg, pitchDeg, tiltRad,
+                    maxAge, seed, paletteMask, 1.0f);
+        }
+
+        VfxInstance(WeaponVisualEffectId effect, int kind, int intensity,
+                    double x, double y, double z,
+                    double tx, double ty, double tz,
+                    float yawDeg, float pitchDeg, float tiltRad,
+                    int maxAge, long seed, int paletteMask, float sizeScale) {
+            this.sizeScale = (sizeScale > 0.0f) ? Math.min(6.0f, Math.max(0.20f, sizeScale)) : 1.0f;
             this.paletteMask = paletteMask & deepluckyblock.enchantments.DeepElement.MASK_ALL;
             this.effect = effect;
             this.kind = kind;
@@ -285,6 +316,18 @@ public final class WeaponWorldVfxManager {
     public static void enqueueNetworkVfx(int vfxId, int kind, int intensity,
                                          float x, float y, float z,
                                          float tx, float ty, float tz, int paletteMask) {
+        enqueueNetworkVfx(vfxId, kind, intensity, x, y, z, tx, ty, tz, paletteMask, 1.0f);
+    }
+
+    /**
+     * T359-BIG-ANIM-SCALE : variante avec <b>échelle de taille</b> (taille du mob touché).
+     * 0.30 = animation minuscule (poulet, poisson), 1.0 = normale (joueur), jusqu'à 4.0 = énorme
+     * (ravager, wither, dragon) : la grosse animation s'adapte vraiment à sa cible.
+     */
+    public static void enqueueNetworkVfx(int vfxId, int kind, int intensity,
+                                         float x, float y, float z,
+                                         float tx, float ty, float tz, int paletteMask,
+                                         float sizeScale) {
         Minecraft mc = Minecraft.getInstance();
         ClientLevel level = mc.level;
         if (level == null) return;
@@ -327,7 +370,7 @@ public final class WeaponWorldVfxManager {
         float yaw = (float) (Mth.atan2(dz, dx) * (180.0 / Math.PI)) - 90.0f;
         long seed = Double.doubleToLongBits(x * 31.0 + y * 17.0 + z * 13.0) ^ System.nanoTime();
         pushInstance(new VfxInstance(fx, kind, intensity, x, y, z, tx, ty, tz, yaw, 0.0f, 0.25f,
-                duration, seed, paletteMask));
+                duration, seed, paletteMask, sizeScale));
 
         // T351 : l'entaille est pilotée par le serveur ; l'écho du TWIN_ECHO est donc reproduit ici.
         if (kind == KIND_SWING_SLASH && fx == WeaponVisualEffectId.TWIN_ECHO_SLASH && PENDING_ECHOES.size() < 16) {
@@ -1011,7 +1054,7 @@ public final class WeaponWorldVfxManager {
     }
 
     private static void onPlayerWeaponSwing(Player p) {
-        // T351-TRIGGER-LAW : le serveur décide du vrai déclenchement (5 % coup normal / 66 % critique).
+        // T351/T359-TRIGGER-LAW : le serveur décide du vrai déclenchement (5 % coup normal / 76 % critique).
         // Côté client on ne garde qu'une « respiration » très rare (5 % + long cooldown) pour donner un
         // retour visuel même dans le vide (coup dans l'air), sans jamais doubler l'animation d'impact.
         long nowTick = p.level().getGameTime();
@@ -1211,6 +1254,12 @@ public final class WeaponWorldVfxManager {
             // T350-VFX-VARIATIONS : chaque déclinaison a sa densité de pixels et sa taille.
             pixelDensity = inst.variantEntry.density();
             variantScale = inst.variantEntry.scale();
+            // T359-BIG-ANIM-SCALE : échelle propre à l'instance (taille du mob touché).
+            mobScale = inst.sizeScale;
+            mobScaleActive = Math.abs(mobScale - 1.0f) > 0.02f;
+            mobPivotX = (float) inst.x;
+            mobPivotY = (float) inst.y;
+            mobPivotZ = (float) inst.z;
             try {
                 if (inst.kind == KIND_SWING_SLASH) {
                     renderVoxelSwingSlash(vc, mat, tmp, camPos, inst, t);
@@ -1222,6 +1271,8 @@ public final class WeaponWorldVfxManager {
             } finally {
                 pixelDensity = 1.0f;
                 variantScale = 1.0f;
+                mobScale = 1.0f;
+                mobScaleActive = false;
             }
         }
 
@@ -2679,6 +2730,14 @@ public final class WeaponWorldVfxManager {
 
     public static void putPosColor(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                    float x, float y, float z, int rgb, int a) {
+        // T359-BIG-ANIM-SCALE : unique point de sortie de TOUTE la géométrie (cubes, anneaux,
+        // cercles, lignes, hélices, réticules) -> une seule transformation suffit à faire
+        // grossir/rétrécir l'animation entière autour de son point d'impact.
+        if (mobScaleActive) {
+            x = scaleAxis(x, mobPivotX);
+            y = scaleAxis(y, mobPivotY);
+            z = scaleAxis(z, mobPivotZ);
+        }
         mat.transformPosition(x, y, z, tmp);
         int ca = Mth.clamp(a, 0, 255);
         vc.addVertex(tmp.x(), tmp.y(), tmp.z())
