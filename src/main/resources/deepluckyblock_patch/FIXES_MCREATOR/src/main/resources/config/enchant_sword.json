@@ -328,7 +328,8 @@
         "deep_lucky_block:sharpened_sharpness",
         "deep_lucky_block:stealth_hunter",
         "deep_lucky_block:chaos_entropy",
-        "deep_lucky_block:chaos_nexus"
+        "deep_lucky_block:chaos_nexus",
+        "deep_lucky_block:prismatic_brand"
       ],
       "utility": [
         "minecraft:looting",

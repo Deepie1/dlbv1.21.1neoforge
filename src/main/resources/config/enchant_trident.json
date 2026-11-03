@@ -171,7 +171,8 @@
         "deep_lucky_block:miasma_arrow",
         "deep_lucky_block:cinder_volley",
         "deep_lucky_block:sandburst_shot",
-        "deep_lucky_block:riptide_barb"
+        "deep_lucky_block:riptide_barb",
+        "deep_lucky_block:radiant_bolt"
       ],
       "utility": [
         "minecraft:channeling",
@@ -221,7 +222,8 @@
         "deep_lucky_block:piercing_barb",
         "deep_lucky_block:voltaic_shot",
         "deep_lucky_block:bloodletting_bolt",
-        "deep_lucky_block:entropy_bolt"
+        "deep_lucky_block:entropy_bolt",
+        "deep_lucky_block:null_shot"
       ],
       "utility": [
         "minecraft:channeling",

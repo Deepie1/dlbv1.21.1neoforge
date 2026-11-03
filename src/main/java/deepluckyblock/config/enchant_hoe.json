@@ -12,7 +12,11 @@
       "deep_lucky_block:crit_rate",
       "deep_lucky_block:overclocked_crit",
       "deep_lucky_block:reapers_scythe",
-      "deep_lucky_block:soul_sacrifice_slash"
+      "deep_lucky_block:soul_sacrifice_slash",
+      "deep_lucky_block:chaos_entropy",
+      "deep_lucky_block:chaos_nexus",
+      "deep_lucky_block:chaos_rupture",
+      "deep_lucky_block:prismatic_brand"
     ],
     "utility": [
       "minecraft:efficiency",

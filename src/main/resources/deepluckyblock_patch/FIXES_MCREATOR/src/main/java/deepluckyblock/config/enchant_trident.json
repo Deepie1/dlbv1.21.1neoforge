@@ -41,7 +41,18 @@
       "deep_lucky_block:agony_breaker",
       "deep_lucky_block:sincere_loyalty",
       "deep_lucky_block:supreme_sharpness",
-      "deep_lucky_block:titan_slayer"
+      "deep_lucky_block:titan_slayer",
+      "deep_lucky_block:timber_arrow",
+      "deep_lucky_block:miasma_arrow",
+      "deep_lucky_block:cinder_volley",
+      "deep_lucky_block:sandburst_shot",
+      "deep_lucky_block:piercing_barb",
+      "deep_lucky_block:riptide_barb",
+      "deep_lucky_block:voltaic_shot",
+      "deep_lucky_block:radiant_bolt",
+      "deep_lucky_block:bloodletting_bolt",
+      "deep_lucky_block:null_shot",
+      "deep_lucky_block:entropy_bolt"
     ],
     "utility": [
       "minecraft:channeling",
