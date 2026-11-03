@@ -1439,9 +1439,12 @@ public final class WeaponWorldVfxManager {
             // T359-BIG-ANIM-SCALE : échelle propre à l'instance (taille du mob touché).
             mobScale = inst.sizeScale;
             mobScaleActive = Math.abs(mobScale - 1.0f) > 0.02f;
-            mobPivotX = (float) inst.x;
-            mobPivotY = (float) inst.y;
-            mobPivotZ = (float) inst.z;
+            // Les sommets déjà émis par les rendus sont en coordonnées RELATIVES à la caméra.
+            // Le pivot doit être dans le même repère : utiliser ici la position monde de l'effet
+            // décalait les petites animations vers le ciel et les grandes sous le point d'impact.
+            mobPivotX = (float) (inst.x - camPos.x);
+            mobPivotY = (float) (inst.y - camPos.y);
+            mobPivotZ = (float) (inst.z - camPos.z);
             try {
                 if (inst.kind == KIND_SWING_SLASH) {
                     renderVoxelSwingSlash(vc, mat, tmp, camPos, inst, t);
