@@ -520,19 +520,26 @@ public final class WeaponVfxServerListener {
      */
     public static void playDebug(ServerPlayer player, WeaponVisualEffectId fx, int kind, int intensity,
                                  Vec3 from, Vec3 to) {
+        playDebug(player, fx, kind, intensity, from, to, 1.0f);
+    }
+
+    /** T367 : intensité/échelle explicites pour montrer la petite puis la grande animation en démo. */
+    public static void playDebug(ServerPlayer player, WeaponVisualEffectId fx, int kind, int intensity,
+                                 Vec3 from, Vec3 to, float sizeScale) {
         if (player == null || fx == null) return;
         if (!(player.level() instanceof ServerLevel sl)) return;
         int lvl = Math.max(1, Math.min(12, intensity));
+        float scale = Math.max(0.45f, Math.min(2.60f, sizeScale));
         if (kind == KIND_PROJECTILE_ATTACH) {
             // to.x porte l'identifiant d'entité du projectile à suivre (comme le vrai chemin réseau)
             broadcastNear(sl, (float) from.x, (float) from.y, (float) from.z, fx.id, kind, lvl,
                     (float) from.x, (float) from.y, (float) from.z,
-                    (float) to.x, 0.0f, 0.0f);
+                    (float) to.x, 0.0f, 0.0f, 0, scale);
             return;
         }
         broadcastNear(sl, (float) to.x, (float) to.y, (float) to.z, fx.id, kind, lvl,
                 (float) from.x, (float) from.y, (float) from.z,
-                (float) to.x, (float) to.y, (float) to.z);
+                (float) to.x, (float) to.y, (float) to.z, 0, scale);
     }
 
     /** T351 : joue un accent discret précis (test via {@code /dlbvfx subtle}). */

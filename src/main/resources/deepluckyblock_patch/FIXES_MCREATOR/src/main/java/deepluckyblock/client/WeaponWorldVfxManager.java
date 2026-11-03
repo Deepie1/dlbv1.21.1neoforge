@@ -5,6 +5,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import deepluckyblock.DeepLuckyBlockMod;
+import deepluckyblock.enchantments.DeepElement;
 import deepluckyblock.enchantments.WeaponVisualEffectId;
 import deepluckyblock.enchantments.WeaponVfxMotion;
 import deepluckyblock.util.DeepEnchant;
@@ -87,6 +88,24 @@ public final class WeaponWorldVfxManager {
     private static float frameTimeSeconds;
     /** T349-PIXEL-VARIATION : échelle douce globale de tous les pixels. */
     private static float framePixelScale = 1.0f;
+
+    // ============================================================================================
+    // T367-VOXEL-MATERIAL — matière des cubes : voile (transparence), reflet (gloss), grain (texture)
+    // --------------------------------------------------------------------------------------------
+    // Chaque voxel est TOUJOURS un cube à 6 faces carrées (aucun triangle, aucun cercle) : la
+    // matière est donc obtenue uniquement par la couleur de ses 8 coins (texture + occlusion),
+    // par son opacité (l'eau et l'air laissent passer la lumière) et par sa taille.
+    // ============================================================================================
+    /** Opacité de base du matériau : seule une vraie matière fluide/vaporeuse descend sous 1. */
+    private static float cubeVeil = 1.0f;
+    /** Reflet spéculaire réservé au métal ; aucun « shine » générique sur les autres éléments. */
+    private static float cubeGloss = 0.0f;
+    /** Grain de surface propre à l'élément (eau lisse, bois strié, terre granuleuse...). */
+    private static float cubeTex = 0.10f;
+    /** Matériau courant, utilisé pour choisir un motif cohérent au lieu d'un bruit aléatoire partout. */
+    private static DeepElement voxelElement = DeepElement.EARTH;
+    /** Nuances par coin du cube courant (indice = (x>0 ? 4 : 0) | (y>0 ? 2 : 0) | (z>0 ? 1 : 0)). */
+    private static final float[] CORNER_SHADE = new float[8];
 
     /**
      * T350-VFX-VARIATIONS : densité de pixels de la déclinaison en cours de rendu (1.0 = tout).
@@ -285,6 +304,70 @@ public final class WeaponWorldVfxManager {
                 ? 0.0f
                 : Mth.clamp((System.nanoTime() - lastTickNanos) / 50_000_000.0f, 0.0f, 1.0f);
         return ((lvl.getGameTime() & 0xFFFFFL) + subTick) * 0.05f;
+    }
+
+    /**
+     * T367-VOXEL-MATERIAL : propriétés sobres et propres à chaque matière, jamais un post-traitement
+     * uniforme. La pierre/terre/bois/métal restent opaques ; seuls les fluides et les voiles le sont.
+     */
+    private static void applyVoxelMaterial(WeaponVisualEffectId fx) {
+        DeepElement el = fx != null ? fx.element() : null;
+        voxelElement = el == null ? DeepElement.EARTH : el;
+        cubeVeil = 1.0f;
+        cubeGloss = 0.0f;
+        switch (voxelElement) {
+            case WATER -> {
+                // L'eau est un volume translucide, mais le givre est un cristal opaque.
+                cubeVeil = fx == WeaponVisualEffectId.PERMAFROST_RIME ? 1.0f : 0.58f;
+                cubeTex = fx == WeaponVisualEffectId.PERMAFROST_RIME ? 0.075f : 0.035f;
+            }
+            case FIRE -> cubeTex = 0.075f;       // flamme = panaches lisses, non une pierre brillante
+            case THUNDER -> cubeTex = 0.025f;    // énergie nette, aucun reflet spéculaire
+            case LIGHT -> cubeTex = 0.045f;      // énergie pure, sans matière brillante
+            case WOOD -> cubeTex = 0.19f;        // stries d'écorce / fibres
+            case EARTH -> cubeTex = 0.22f;       // cassures et grains irréguliers
+            case METAL -> { cubeTex = 0.08f; cubeGloss = 0.18f; } // seule matière réfléchissante
+            case POISON -> {
+                // La vapeur de miasme passe à travers; les épines (Venom Briar) sont solides.
+                cubeVeil = fx == WeaponVisualEffectId.MIASMA_SHROUD ? 0.68f
+                        : fx == WeaponVisualEffectId.PLAGUE_NOVA ? 0.88f : 1.0f;
+                cubeTex = 0.12f;
+            }
+            case SHADOW -> { cubeVeil = 0.76f; cubeTex = 0.08f; }
+            case VOID -> { cubeVeil = 0.82f; cubeTex = 0.10f; }
+            case BLOOD -> { cubeVeil = 0.94f; cubeTex = 0.10f; }
+            case CHAOS -> { cubeTex = 0.16f; }
+        }
+    }
+
+    /** La lueur additive est réservée aux éléments qui émettent réellement de la lumière. */
+    private static boolean useAdditivePass(WeaponVisualEffectId fx) {
+        if (fx == null) return false;
+        return switch (fx.element()) {
+            case FIRE, THUNDER, LIGHT, CHAOS -> true;
+            default -> false;
+        };
+    }
+
+    /** Applique un motif matériel cohérent avec un seul hash par cube (aucune allocation). */
+    private static void prepareCorners(int seed) {
+        float noise = pixelHash(seed, 991) - 0.5f;
+        for (int i = 0; i < 8; i++) {
+            float x = ((i & 4) != 0) ? 1.0f : -1.0f;
+            float y = ((i & 2) != 0) ? 1.0f : -1.0f;
+            float z = ((i & 1) != 0) ? 1.0f : -1.0f;
+            float pattern = switch (voxelElement) {
+                case WOOD -> x * 0.36f + z * 0.14f + noise * 0.22f; // fibres longitudinales
+                case EARTH -> (x * y * z) * 0.26f + noise * 0.40f; // grain cassé
+                case METAL -> y * 0.12f + noise * 0.12f;           // stries d'usinage discrètes
+                case WATER -> y * 0.08f + noise * 0.10f;            // surface presque lisse
+                case FIRE, THUNDER, LIGHT -> noise * 0.22f;          // énergie peu texturée
+                case POISON, SHADOW, VOID -> noise * 0.34f;          // voile diffus
+                case BLOOD -> x * z * 0.12f + noise * 0.26f;
+                case CHAOS -> ((i & 1) == 0 ? 0.22f : -0.22f) + noise * 0.30f;
+            };
+            CORNER_SHADE[i] = 1.0f + pattern * cubeTex * 2.0f;
+        }
     }
 
     public static RenderType getAdditiveRenderType() {
@@ -1338,8 +1421,11 @@ public final class WeaponWorldVfxManager {
                 alphaVc = null;
             }
 
+            // T367-VOXEL-MATERIAL : la matière décide du rendu (les éléments fluides passent en
+            // transparence réelle au lieu d'être additifs).
+            applyVoxelMaterial(inst.effect);
             VertexConsumer vc;
-            if (inst.effect.additive) {
+            if (useAdditivePass(inst.effect)) {
                 if (addVc == null) addVc = buffers.getBuffer(getAdditiveRenderType());
                 vc = addVc;
             } else {
@@ -1369,6 +1455,10 @@ public final class WeaponWorldVfxManager {
                 variantScale = 1.0f;
                 mobScale = 1.0f;
                 mobScaleActive = false;
+                cubeVeil = 1.0f;
+                cubeGloss = 0.0f;
+                cubeTex = 0.10f;
+                voxelElement = DeepElement.EARTH;
             }
         }
 
@@ -2720,6 +2810,37 @@ public final class WeaponWorldVfxManager {
         v.wave(v.cx() - v.dirX() * advance, v.cy() - 0.44f, v.cz() - v.dirZ() * advance,
                 (0.85f + 0.90f * surge) * S, waveH, 0.90f, v.sRgb(), 0xFFFFFF, v.fadeA());
 
+        // ÉCUME : petites crêtes en cubes presque opaques, séparées du volume d'eau translucide.
+        // Pas de reflet global : l'écume est blanche, discontinue, et ne vit que sur la lèvre.
+        if (!maelstrom && t < 0.78f) {
+            float oldVeil = cubeVeil, oldTex = cubeTex, oldGloss = cubeGloss;
+            cubeVeil = 0.94f;
+            cubeTex = 0.015f;
+            cubeGloss = 0.0f;
+            try {
+                int count = 13;
+                float fade = Mth.clamp(1.0f - t * 1.20f, 0.0f, 1.0f);
+                for (int i = 0; i < count; i++) {
+                    float u = (i / (float) (count - 1)) * 2.0f - 1.0f;
+                    float jitter = v.hash(0xF04A + i) - 0.5f;
+                    if (v.hash(0xA11 + i) < 0.20f) continue; // interruptions irrégulières de l'écume
+                    float fx = v.cx() + u * 0.82f * S - v.dirX() * advance;
+                    float fz = v.cz() + u * 0.82f * S - v.dirZ() * advance;
+                    float fy = v.cy() - 0.44f + waveH * (0.58f + 0.18f * (1.0f - Math.abs(u)))
+                            + jitter * 0.10f * S;
+                    float hs = (0.040f + 0.020f * v.hash(i * 19)) * S;
+                    int foamRgb = mixRgb(v.sRgb(), 0xEAFBFF, 0.78f);
+                    emitVoxelCube(v.vc(), v.mat(), v.tmp(), fx, fy, fz,
+                            hs, hs * (0.72f + 0.28f * v.hash(i * 7)), hs,
+                            foamRgb, Math.round(v.fadeA() * fade * 0.90f));
+                }
+            } finally {
+                cubeVeil = oldVeil;
+                cubeTex = oldTex;
+                cubeGloss = oldGloss;
+            }
+        }
+
         // 2) La vague s'écrase : une seconde crête, plus basse, déjà passée de l'autre côté.
         if (t > 0.32f) {
             float u = (t - 0.32f) / 0.68f;
@@ -3597,10 +3718,11 @@ public final class WeaponWorldVfxManager {
         if (cubesSinceFlush >= HARD_CUBE_CAP_PER_FRAME) return;
         cubesSinceFlush++;
 
-        // T349-PIXEL-VARIATION : chaque pixel est rapetissé/agrandi aléatoirement MAIS de façon lisse
-        // dans le temps (bruit sinusoïdal déterministe par position) : la taille respire doucement au
-        // lieu de rester un gros bloc figé.
+        // T349-PIXEL-VARIATION : la taille respire doucement dans le temps…
         float scale = framePixelScale * smoothPulse(cx, cy, cz) * variantScale;
+        // …T367 : …et chaque cube a en plus sa PROPRE taille (aucun n'est identique à son voisin).
+        int sizeSeed = (int) (cx * 911.0f + cy * 577.0f + cz * 331.0f);
+        scale *= 0.82f + 0.34f * pixelHash(0x51C3, sizeSeed);
         hx *= scale;
         hy *= scale;
         hz *= scale;
@@ -3611,6 +3733,17 @@ public final class WeaponWorldVfxManager {
             if (keep > pixelDensity) return;
         }
 
+        // T367-VOXEL-MATERIAL : transparence de l'élément (l'eau laisse voir au travers).
+        if (cubeVeil < 0.999f) {
+            alpha = Math.round(alpha * cubeVeil);
+            if (alpha <= 5) return;
+        }
+
+        // T367-VOXEL-TEXTURE : les 8 coins du cube ont chacun leur nuance -> la face n'est plus un
+        // aplat, elle a un dégradé interne et des arêtes légèrement assombries (occlusion).
+        int texSeed = sizeSeed ^ (alpha * 31);
+        prepareCorners(texSeed);
+
         float x0 = cx - hx, x1 = cx + hx;
         float y0 = cy - hy, y1 = cy + hy;
         float z0 = cz - hz, z1 = cz + hz;
@@ -3619,19 +3752,47 @@ public final class WeaponWorldVfxManager {
         int rNS = shadeRgb(rgb, 0.85f);
         int rEW = shadeRgb(rgb, 0.73f);
         int rBot = shadeRgb(rgb, 0.62f);
+        // Reflet : les faces du dessus attrapent la lumière (métal, glace, lumière).
+        int rSpec = cubeGloss > 0.02f
+                ? mixRgb(rTop, 0xFFFFFF, 0.30f * cubeGloss)
+                : rTop;
 
         // UP
-        putQuad(vc, mat, tmp, x0, y1, z0, rTop, alpha, x0, y1, z1, rTop, alpha, x1, y1, z1, rTop, alpha, x1, y1, z0, rTop, alpha);
+        putQuadCorners(vc, mat, tmp, x0, y1, z0, 2, x0, y1, z1, 3, x1, y1, z1, 7, x1, y1, z0, 6,
+                rSpec, alpha);
         // DOWN
-        putQuad(vc, mat, tmp, x0, y0, z1, rBot, alpha, x0, y0, z0, rBot, alpha, x1, y0, z0, rBot, alpha, x1, y0, z1, rBot, alpha);
+        putQuadCorners(vc, mat, tmp, x0, y0, z1, 1, x0, y0, z0, 0, x1, y0, z0, 4, x1, y0, z1, 5,
+                rBot, alpha);
         // NORTH
-        putQuad(vc, mat, tmp, x1, y1, z0, rNS, alpha, x1, y0, z0, rNS, alpha, x0, y0, z0, rNS, alpha, x0, y1, z0, rNS, alpha);
+        putQuadCorners(vc, mat, tmp, x1, y1, z0, 6, x1, y0, z0, 4, x0, y0, z0, 0, x0, y1, z0, 2,
+                rNS, alpha);
         // SOUTH
-        putQuad(vc, mat, tmp, x0, y1, z1, rNS, alpha, x0, y0, z1, rNS, alpha, x1, y0, z1, rNS, alpha, x1, y1, z1, rNS, alpha);
+        putQuadCorners(vc, mat, tmp, x0, y1, z1, 3, x0, y0, z1, 1, x1, y0, z1, 5, x1, y1, z1, 7,
+                rNS, alpha);
         // WEST
-        putQuad(vc, mat, tmp, x0, y1, z0, rEW, alpha, x0, y0, z0, rEW, alpha, x0, y0, z1, rEW, alpha, x0, y1, z1, rEW, alpha);
+        putQuadCorners(vc, mat, tmp, x0, y1, z0, 2, x0, y0, z0, 0, x0, y0, z1, 1, x0, y1, z1, 3,
+                rEW, alpha);
         // EAST
-        putQuad(vc, mat, tmp, x1, y1, z1, rEW, alpha, x1, y0, z1, rEW, alpha, x1, y0, z0, rEW, alpha, x1, y1, z0, rEW, alpha);
+        putQuadCorners(vc, mat, tmp, x1, y1, z1, 7, x1, y0, z1, 5, x1, y0, z0, 4, x1, y1, z0, 6,
+                rEW, alpha);
+    }
+
+    /**
+     * T367-VOXEL-TEXTURE : une face de cube dont chaque coin porte sa nuance (issue de
+     * {@link #CORNER_SHADE}). C'est ce qui donne l'aspect « texturé » sans texture : dégradé
+     * interne, arêtes assombries, reflet en haut. Toujours exactement 4 sommets = 1 quad carré.
+     */
+    private static void putQuadCorners(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                       float x0, float y0, float z0, int c0,
+                                       float x1, float y1, float z1, int c1,
+                                       float x2, float y2, float z2, int c2,
+                                       float x3, float y3, float z3, int c3,
+                                       int rgb, int alpha) {
+        putQuad(vc, mat, tmp,
+                x0, y0, z0, shadeRgb(rgb, CORNER_SHADE[c0]), alpha,
+                x1, y1, z1, shadeRgb(rgb, CORNER_SHADE[c1]), alpha,
+                x2, y2, z2, shadeRgb(rgb, CORNER_SHADE[c2]), alpha,
+                x3, y3, z3, shadeRgb(rgb, CORNER_SHADE[c3]), alpha);
     }
 
 
@@ -3657,6 +3818,8 @@ public final class WeaponWorldVfxManager {
         cubesSinceFlush++;
 
         float scale = framePixelScale * smoothPulse(cx, cy, cz) * variantScale;
+        int sizeSeed = (int) (cx * 911.0f + cy * 577.0f + cz * 331.0f);
+        scale *= 0.82f + 0.34f * pixelHash(0x51C3, sizeSeed);
         hx *= scale;
         hy *= scale;
         hz *= scale;
@@ -3665,6 +3828,13 @@ public final class WeaponWorldVfxManager {
             float keep = pixelHash(0x5EED, (int) (cx * 977.0f + cy * 613.0f + cz * 389.0f));
             if (keep > pixelDensity) return;
         }
+
+        // T367-VOXEL-MATERIAL : même transparence et même grain que les cubes droits.
+        if (cubeVeil < 0.999f) {
+            alpha = Math.round(alpha * cubeVeil);
+            if (alpha <= 5) return;
+        }
+        prepareCorners(sizeSeed ^ (alpha * 31));
 
         float cr = Mth.cos(rollRad), sr = Mth.sin(rollRad);
         float cp = Mth.cos(pitchRad), sp = Mth.sin(pitchRad);
@@ -3720,11 +3890,16 @@ public final class WeaponWorldVfxManager {
         float lit = Mth.clamp(ROT_NORMAL[1] * 0.80f + ROT_NORMAL[0] * 0.30f + ROT_NORMAL[2] * 0.36f,
                 0.0f, 1.0f);
         int col = shadeRgb(rgb, 0.58f + 0.42f * lit);
+        // Reflet : les faces tournées vers le ciel s'éclaircissent (métal, glace, lumière).
+        if (cubeGloss > 0.02f && ROT_NORMAL[1] > 0.25f) {
+            col = mixRgb(col, 0xFFFFFF, 0.26f * cubeGloss * ROT_NORMAL[1]);
+        }
+        // T367-VOXEL-TEXTURE : chaque coin garde sa nuance, même sur un cube incliné.
         putQuad(vc, mat, tmp,
-                p[i0 * 3], p[i0 * 3 + 1], p[i0 * 3 + 2], col, alpha,
-                p[i1 * 3], p[i1 * 3 + 1], p[i1 * 3 + 2], col, alpha,
-                p[i2 * 3], p[i2 * 3 + 1], p[i2 * 3 + 2], col, alpha,
-                p[i3 * 3], p[i3 * 3 + 1], p[i3 * 3 + 2], col, alpha);
+                p[i0 * 3], p[i0 * 3 + 1], p[i0 * 3 + 2], shadeRgb(col, CORNER_SHADE[i0]), alpha,
+                p[i1 * 3], p[i1 * 3 + 1], p[i1 * 3 + 2], shadeRgb(col, CORNER_SHADE[i1]), alpha,
+                p[i2 * 3], p[i2 * 3 + 1], p[i2 * 3 + 2], shadeRgb(col, CORNER_SHADE[i2]), alpha,
+                p[i3 * 3], p[i3 * 3 + 1], p[i3 * 3 + 2], shadeRgb(col, CORNER_SHADE[i3]), alpha);
     }
 
     /**
@@ -4028,18 +4203,32 @@ public final class WeaponWorldVfxManager {
                 for (int j = 0; j < res; j++) {
                     if (!sculptSkin(res, i, j, k)) continue;
                     float ny = -1.0f + (j + 0.5f) * step;
+                    int voxSalt = salt + i * 73 + j * 131 + k * 17;
                     // Dégradé du matériau : creux sombre en bas, pointe presque blanche en haut,
                     // avec une nuance par voxel (la sculpture n'est jamais monochrome).
                     float u = Mth.clamp(0.42f + 0.62f * (ny * 0.5f + 0.5f) + 0.20f * z, 0.0f, 1.0f);
                     int rgb = rampRgb(u, deep, body, high, tip);
-                    rgb = jitterRgb(rgb, salt + i * 73 + j * 131 + k * 17, 0.050f);
+                    rgb = jitterRgb(rgb, voxSalt, 0.050f);
+
+
                     if (pixelDensity < 0.999f && alpha < 200) {
                         float keep = pixelHash(0x5EED ^ shape, (i * 977 + j * 613 + k * 389));
                         if (keep > pixelDensity) continue;
                     }
-                    emitVoxelCube(vc, mat, tmp, cx + sx * radius, cy + ny * radius, cz + sz * radius,
-                            hsz, hsz, hsz, rgb, alpha);
+
+                    // Tailles variées, sans omettre de voisins (les sculptures restent pleines).
+                    // L'opacité vient uniquement de la matière, jamais de l'épaisseur par hasard.
+                    float grain = pixelHash(voxSalt, 13);
+                    float sizeMul = 0.82f + 0.30f * grain;
+                    if (grain > 0.97f) sizeMul *= 1.12f;
+                    else if (grain < 0.08f) sizeMul *= 0.88f;
+                    int voxAlpha = alpha;
+
+                    float px = cx + sx * radius, py = cy + ny * radius, pz = cz + sz * radius;
+                    emitVoxelCube(vc, mat, tmp, px, py, pz,
+                            hsz * sizeMul, hsz * sizeMul, hsz * sizeMul, rgb, voxAlpha);
                     emitted++;
+
                 }
             }
         }

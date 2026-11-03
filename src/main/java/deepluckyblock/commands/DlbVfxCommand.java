@@ -119,7 +119,10 @@ public final class DlbVfxCommand {
         int kind;
         /** T350 : 0 = 30 effets, 1 = par familles élémentaires, 2 = les 50 déclinaisons. */
         int mode;
+        /** Ancre monde capturée à la commande : les VFX ne suivent jamais le joueur ensuite. */
         Vec3 ringCenter;
+        /** Direction de présentation capturée elle aussi (le joueur peut tourner/librement bouger). */
+        Vec3 lookDirection;
     }
 
     private static final Map<UUID, DemoState> DEMOS = new ConcurrentHashMap<>();
@@ -334,8 +337,8 @@ public final class DlbVfxCommand {
         src.sendSuccess(() -> Component.literal("§b§l/dlbvfx §7— test des " + WeaponVisualEffectId.values().length + " effets visuels d'armes"), false);
         line(src, "§e/dlbvfx list", "liste des effets + enchant à utiliser");
         line(src, "§e/dlbvfx play <effet> [impact|swing|beam|proj] [niveau]", "joue l'effet devant toi (aucune action requise)");
-        line(src, "§e/dlbvfx all [kind]", "tous les effets à la suite, en cercle autour de toi");
-        line(src, "§e/dlbvfx demo", "boucle automatique de tous les effets (relancer pour arrêter)");
+        line(src, "§e/dlbvfx all [kind]", "petit puis grand pour chaque effet, au point fixe devant toi");
+        line(src, "§e/dlbvfx demo", "petit puis grand pour chaque effet, au point fixe (tu peux te déplacer)");
         line(src, "§e/dlbvfx crit [effet] [niveau]", "force le chemin CRITIQUE (nécessite normalement un saut/sprint)");
         line(src, "§e/dlbvfx hit [nombre]", "vraies frappes sur la cible d'entraînement (impact + crit réels)");
         line(src, "§e/dlbvfx dummy", "invoque / retire la cible d'entraînement");
@@ -494,19 +497,28 @@ public final class DlbVfxCommand {
     // /dlbvfx all & /dlbvfx demo  — défilé automatique
     // =====================================================================
 
+    /** Point de présentation fixe, posé devant le joueur au moment de la commande. */
+    private static void captureDemoAnchor(DemoState st, ServerPlayer player) {
+        Vec3 look = player.getLookAngle();
+        Vec3 flat = new Vec3(look.x, 0.0, look.z);
+        if (flat.lengthSqr() < 1.0e-4) flat = new Vec3(0.0, 0.0, 1.0);
+        st.lookDirection = flat.normalize();
+        st.ringCenter = player.position().add(st.lookDirection.scale(3.25));
+    }
+
     private static int startShow(CommandContext<CommandSourceStack> ctx, int kind, boolean loop)
             throws CommandSyntaxException {
         ServerPlayer player = requirePlayer(ctx);
         DemoState st = new DemoState();
         st.cursor = 0;
         st.cooldown = 2;
-        st.remaining = ALL_IDS.length;
+        st.remaining = ALL_IDS.length * 2;
         st.loop = loop;
         st.kind = (kind == -1) ? WeaponVfxServerListener.KIND_IMPACT : kind;
-        st.ringCenter = player.position();
+        captureDemoAnchor(st, player);
         DEMOS.put(player.getUUID(), st);
         ctx.getSource().sendSuccess(() -> Component.literal(
-                "§b[Démo VFX] §f" + WeaponVisualEffectId.values().length + " effets en cercle autour de toi §7— §f/dlbvfx stop §7pour arrêter."), false);
+                "§b[Démo VFX] §fpetite puis grande animation, ancrées au point de départ §7— tu peux te déplacer librement; §f/dlbvfx stop §7pour arrêter."), false);
         return 1;
     }
 
@@ -523,10 +535,10 @@ public final class DlbVfxCommand {
         st.remaining = Integer.MAX_VALUE;
         st.loop = true;
         st.kind = WeaponVfxServerListener.KIND_IMPACT;
-        st.ringCenter = player.position();
+        captureDemoAnchor(st, player);
         DEMOS.put(player.getUUID(), st);
         ctx.getSource().sendSuccess(() -> Component.literal(
-                "§b[Démo VFX] §fboucle lancée (" + WeaponVisualEffectId.values().length + " effets) §7— §f/dlbvfx demo §7pour arrêter."), false);
+                "§b[Démo VFX] §fboucle petite/grande lancée au point de départ (" + WeaponVisualEffectId.values().length + " effets) §7— tu peux observer en bougeant; §f/dlbvfx demo §7pour arrêter."), false);
         return 1;
     }
 
@@ -552,7 +564,7 @@ public final class DlbVfxCommand {
             }
             DemoState st = entry.getValue();
             if (--st.cooldown > 0) continue;
-            st.cooldown = 10;
+            st.cooldown = 26; // effet terminé, petite pause, puis étape suivante
 
             if (st.remaining <= 0) {
                 it.remove();
@@ -561,26 +573,30 @@ public final class DlbVfxCommand {
             }
             st.remaining--;
 
+            int phase = st.cursor & 1; // chaque animation : petite taille, puis grande taille
+            int itemIndex = st.cursor >> 1;
             WeaponVisualEffectId fx;
             String densLabel = "";
             if (st.mode == 2) {
-                WeaponVfxVariant.Entry var = WeaponVfxVariant.get(st.cursor % WeaponVfxVariant.COUNT);
+                WeaponVfxVariant.Entry var = WeaponVfxVariant.get(itemIndex % WeaponVfxVariant.COUNT);
                 fx = var.effect();
                 densLabel = String.format(Locale.ROOT, " §8· §7densité §f%.0f%%", var.density() * 100);
             } else {
-                fx = WeaponVisualEffectId.byId(ALL_IDS[st.cursor % ALL_IDS.length]);
+                fx = WeaponVisualEffectId.byId(ALL_IDS[itemIndex % ALL_IDS.length]);
             }
             st.cursor++;
             if (fx == null) continue;
 
-            // Cercle de rayon 2,4 blocs autour du joueur : chaque effet occupe une position distincte
-            double ang = (st.cursor - 1) * (Math.PI * 2.0 / ALL_IDS.length);
-            Vec3 to = player.position().add(Math.cos(ang) * 2.4, 1.05, Math.sin(ang) * 2.4);
-            Vec3 from = player.getEyePosition();
-            WeaponVfxServerListener.playDebug(player, fx, st.kind, 5, from, to);
+            // Position et direction immuables capturées à la commande, sans suivre le joueur.
+            Vec3 from = st.ringCenter.add(0.0, 1.0, 0.0);
+            Vec3 to = from.add(st.lookDirection.scale(2.0));
+            int level = phase == 0 ? 2 : 10;
+            float sizeScale = phase == 0 ? 0.62f : 1.85f;
+            WeaponVfxServerListener.playDebug(player, fx, st.kind, level, from, to, sizeScale);
             final String extra = densLabel;
-            announce(player, "§b#%02d §f%s §8(%s · %s)".formatted(fx.id, fx.name(),
-                    fx.element.displayName, fx.category.name().toLowerCase(Locale.ROOT)) + extra);
+            final String tier = phase == 0 ? "petite" : "GRANDE";
+            announce(player, "§b#%02d §f%s §8(%s · %s · %s)".formatted(fx.id, fx.name(),
+                    fx.element.displayName, fx.category.name().toLowerCase(Locale.ROOT), tier) + extra);
         }
     }
 
@@ -631,11 +647,11 @@ public final class DlbVfxCommand {
         DemoState st = new DemoState();
         st.cursor = 0;
         st.cooldown = 2;
-        st.remaining = ALL_IDS.length;
+        st.remaining = ALL_IDS.length * 2;
         st.loop = true;
         st.kind = WeaponVfxServerListener.KIND_IMPACT;
         st.mode = 1;
-        st.ringCenter = player.position();
+        captureDemoAnchor(st, player);
         DEMOS.put(player.getUUID(), st);
         src.sendSuccess(() -> Component.literal("§b[Familles] §fdéfilement en cours, une famille après l'autre §7— §f/dlbvfx stop §7pour arrêter."), false);
         return 1;
@@ -656,21 +672,24 @@ public final class DlbVfxCommand {
             return 0;
         }
         ServerLevel sl = player.serverLevel();
+        Vec3 demoFrom = player.position().add(0.0, 1.0, 0.0);
+        Vec3 demoDirection = new Vec3(player.getLookAngle().x, 0.0, player.getLookAngle().z);
+        if (demoDirection.lengthSqr() < 1.0e-4) demoDirection = new Vec3(0.0, 0.0, 1.0);
+        Vec3 demoTo = demoFrom.add(demoDirection.normalize().scale(2.0));
         int i = 0;
         int shown = 0;
         for (WeaponVisualEffectId fx : WeaponVisualEffectId.values()) {
             if (fx.element != el) continue;
-            Vec3 to = player.position().add(player.getLookAngle().scale(2.5)).add(0, 1.0, 0);
             final WeaponVisualEffectId target = fx;
             final int delay = i * 8;
             final int level = Math.max(3, Math.min(12, fx.priority / 10));
             if (delay == 0) {
                 WeaponVfxServerListener.playDebug(player, target, WeaponVfxServerListener.KIND_IMPACT, level,
-                        player.getEyePosition(), to);
+                        demoFrom, demoTo);
             } else {
                 TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + delay,
                         () -> WeaponVfxServerListener.playDebug(player, target,
-                                WeaponVfxServerListener.KIND_IMPACT, level, player.getEyePosition(), to));
+                                WeaponVfxServerListener.KIND_IMPACT, level, demoFrom, demoTo));
             }
             i++;
             shown++;
@@ -757,11 +776,11 @@ public final class DlbVfxCommand {
         DemoState st = new DemoState();
         st.cursor = 0;
         st.cooldown = 2;
-        st.remaining = WeaponVfxVariant.COUNT;
+        st.remaining = WeaponVfxVariant.COUNT * 2;
         st.loop = true;
         st.kind = WeaponVfxServerListener.KIND_IMPACT;
         st.mode = 2;
-        st.ringCenter = player.position();
+        captureDemoAnchor(st, player);
         DEMOS.put(player.getUUID(), st);
         src.sendSuccess(() -> Component.literal("§b[Variantes] §fdéfilement des 50 déclinaisons §7— §f/dlbvfx stop §7pour arrêter."), false);
         return 1;
