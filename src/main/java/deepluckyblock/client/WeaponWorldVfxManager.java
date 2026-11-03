@@ -4631,9 +4631,8 @@ public final class WeaponWorldVfxManager {
     }
 
     public static int[] palette(WeaponVisualEffectId fx, int variant, int paletteMask) {
-        // T350-ELEMENT-COLORS : couleur de la FAMILLE ÉLÉMENTAIRE (feu = rouge, poison = vert,
-        // eau = bleu, foudre = jaune, métal = argent, ombre = violet...), mélangée à l'identité
-        // propre de l'effet, puis lissée dans le temps.
+        // T373-ELEMENT-COLORS : couleur de famille (foudre violet/bleu, ombre noir/violet,
+        // sang rouge, vide gris/noir), mélangée à l'identité propre de l'effet puis lissée.
         // T351-ELEMENT-BLEND : si l'arme porte plusieurs éléments, cœur et halo parcourent la
         // palette en OPPOSITION DE PHASE -> les deux teintes (feu + eau) sont visibles ensemble.
         int target = (paletteMask == 0) ? fx.primaryRgb

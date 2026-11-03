@@ -81,9 +81,9 @@ public enum WeaponVisualEffectId {
     THORN_MAW_ROOT(31, Category.ELEMENT,    71, false, 0x4BE04A, 0x145A22, DeepElement.WOOD),
     /** #32 Terre : tempête de sable en spirale + dune soulevée (ocre). */
     SANDSTORM_DUNE(32, Category.ELEMENT,    72, false, 0xE0A94A, 0x6B3D12, DeepElement.EARTH),
-    /** #33 Ombre : éclipse — disque noir, voile et triple griffure (violet nuit). */
+    /** #33 Ombre : éclipse — disque noir, voile et triple griffure (palette violet/noir T373). */
     ECLIPSE_VEIL(33, Category.ELEMENT,    74, false, 0x1B0726, 0xA66BFF, DeepElement.SHADOW),
-    /** #34 Vide : faille verticale qui aspire la lumière, puis se referme (indigo). */
+    /** #34 Vide : faille verticale qui aspire la lumière, puis se referme (gris/noir T373). */
     NULL_RIFT_FISSURE(34, Category.ELEMENT,    77, true,  0x6A5BFF, 0x0B0A2A, DeepElement.VOID),
     /** #35 Chaos : boucle kaléidoscopique multicolore sur base noire. */
     CHAOS_KALEIDO_LOOP(35, Category.SPECIAL,    83, true,  0xFF3DDC, 0x120616, DeepElement.CHAOS),
@@ -149,7 +149,7 @@ public enum WeaponVisualEffectId {
         this.additive = additive;
         this.element = element;
         // T350-ELEMENT-COLORS : les couleurs déclarées sont recadrées vers la palette de la famille
-        // (feu = rouge/orange, poison & nature = vert, eau = bleu, foudre = jaune, métal = argent...).
+        // (feu = rouge/orange, poison & nature = vert, eau = bleu, foudre = violet/bleu T373, métal = argent...).
         // 60 % de la teinte de famille : l'effet garde son identité mais s'accorde avec ses voisins.
         this.primaryRgb = blend(primaryRgb, element.primary, 0.60f);
         this.secondaryRgb = blend(secondaryRgb, element.highlight, 0.45f);

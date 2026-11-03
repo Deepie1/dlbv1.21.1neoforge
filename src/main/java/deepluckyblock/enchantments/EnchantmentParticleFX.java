@@ -23,22 +23,27 @@ public final class EnchantmentParticleFX {
 
     private EnchantmentParticleFX() {}
 
-    public static final DustParticleOptions CRIMSON_BLOOD =
-            new DustParticleOptions(new Vector3f(0.78f, 0.04f, 0.10f), 1.15f);
-    public static final DustParticleOptions SCARLET_MIST =
-            new DustParticleOptions(new Vector3f(0.95f, 0.16f, 0.22f), 0.90f);
+    private static DustParticleOptions dustFromRgb(int rgb, float scale) {
+        return new DustParticleOptions(new Vector3f(
+                ((rgb >> 16) & 0xFF) / 255.0f,
+                ((rgb >> 8) & 0xFF) / 255.0f,
+                (rgb & 0xFF) / 255.0f), scale);
+    }
+
+    // T373 : les accents de combat héritent directement des palettes élémentaires canoniques.
+    public static final DustParticleOptions CRIMSON_BLOOD = dustFromRgb(DeepElement.BLOOD.primary, 1.15f);
+    public static final DustParticleOptions SCARLET_MIST = dustFromRgb(DeepElement.BLOOD.secondary, 0.90f);
     public static final DustParticleOptions GOLD_DIVINE =
             new DustParticleOptions(new Vector3f(1.00f, 0.84f, 0.22f), 1.05f);
-    public static final DustParticleOptions SHADOW_VIOLET =
-            new DustParticleOptions(new Vector3f(0.32f, 0.08f, 0.52f), 1.10f);
+    public static final DustParticleOptions SHADOW_VIOLET = dustFromRgb(DeepElement.SHADOW.primary, 1.10f);
     public static final DustParticleOptions TOXIC_GREEN =
             new DustParticleOptions(new Vector3f(0.28f, 0.82f, 0.16f), 1.00f);
     public static final DustParticleOptions TEMPORAL_AMBER =
             new DustParticleOptions(new Vector3f(0.96f, 0.72f, 0.18f), 0.85f);
     public static final DustParticleOptions FROST_CYAN =
             new DustParticleOptions(new Vector3f(0.52f, 0.92f, 1.00f), 0.95f);
-    public static final DustParticleOptions OVERCLOCK_CYAN =
-            new DustParticleOptions(new Vector3f(0.15f, 0.95f, 0.95f), 1.05f);
+    /** Nom historique conservé pour compatibilité ; la poussière suit maintenant la Foudre T373. */
+    public static final DustParticleOptions OVERCLOCK_CYAN = dustFromRgb(DeepElement.THUNDER.primary, 1.05f);
     public static final DustParticleOptions STEEL_SILVER =
             new DustParticleOptions(new Vector3f(0.80f, 0.84f, 0.90f), 0.95f);
     public static final DustParticleOptions EARTH_OCHRE =

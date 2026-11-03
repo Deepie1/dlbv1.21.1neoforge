@@ -311,17 +311,19 @@ public final class PixelFx {
             return 0xFF8A2B;
         }
         if (type == ParticleTypes.SOUL_FIRE_FLAME) return 0x63E7FF;
-        if (type == ParticleTypes.END_ROD || type == ParticleTypes.FLASH
-                || type == ParticleTypes.GLOW || type == ParticleTypes.ELECTRIC_SPARK) {
-            return type == ParticleTypes.ELECTRIC_SPARK ? 0x7FE8FF : 0xFFF6D0;
+        if (type == ParticleTypes.ELECTRIC_SPARK) return DeepElement.THUNDER.primary;
+        if (type == ParticleTypes.END_ROD || type == ParticleTypes.FLASH || type == ParticleTypes.GLOW) {
+            return 0xFFF6D0;
         }
         if (type == ParticleTypes.CRIT || type == ParticleTypes.ENCHANTED_HIT) return 0xFFE9A0;
         if (type == ParticleTypes.ENCHANT) return 0xC9A8FF;
-        if (type == ParticleTypes.PORTAL || type == ParticleTypes.REVERSE_PORTAL
-                || type == ParticleTypes.DRAGON_BREATH || type == ParticleTypes.WITCH) {
-            return 0xA55BFF;
+        if (type == ParticleTypes.PORTAL || type == ParticleTypes.REVERSE_PORTAL) {
+            return DeepElement.VOID.primary;
         }
-        if (type == ParticleTypes.SOUL || type == ParticleTypes.SCULK_SOUL) return 0x63D6E8;
+        if (type == ParticleTypes.DRAGON_BREATH) return DeepElement.VOID.highlight;
+        if (type == ParticleTypes.WITCH) return DeepElement.POISON.primary;
+        if (type == ParticleTypes.SCULK_SOUL) return DeepElement.SHADOW.highlight;
+        if (type == ParticleTypes.SOUL) return 0x63D6E8;
         if (type == ParticleTypes.SCULK_CHARGE_POP) return 0x5F7A9E;
         if (type == ParticleTypes.SPLASH || type == ParticleTypes.BUBBLE
                 || type == ParticleTypes.BUBBLE_COLUMN_UP || type == ParticleTypes.BUBBLE_POP

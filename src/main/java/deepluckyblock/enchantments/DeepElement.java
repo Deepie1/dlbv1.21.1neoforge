@@ -10,8 +10,8 @@ import java.util.Locale;
  * sang, élément, distance, spécial) et joués dans un ordre hérité de la priorité : le résultat était un
  * mélange d'animations très différentes qui semblaient sortir « n'importe quand ». On trie maintenant
  * par <b>famille élémentaire</b>, ce qui donne une couleur et une ambiance cohérentes :
- * feu = rouge/orange, poison & nature = vert, eau & givre = bleu, foudre = jaune électrique,
- * métal = argent/or, terre = ocre, lumière = blanc doré, ombre = violet, sang = cramoisi, vide = indigo.</p>
+ * feu = rouge/orange, poison & nature = vert, eau & givre = bleu, foudre = violet/bleu avec surbrillance jaune pâle,
+ * métal = argent/or, terre = vert clair/terre, lumière = blanc doré, ombre = violet/noir, sang = rouge, vide = gris/noir.</p>
  *
  * <p>Les cinq éléments chinois classiques sont présents (Bois, Feu, Terre, Métal, Eau), complétés par
  * Foudre, Lumière et Ombre (demandés explicitement), plus Sang et Vide qui existaient déjà dans le mod.</p>
@@ -36,16 +36,16 @@ public enum DeepElement {
     METAL("Métal", 0xE9F1FF, 0x7F93AE, 0xFFFFFF),
     /** 水 Eau / glace / océan / givre (bleu). */
     WATER("Eau", 0x1CC8FF, 0x0A4FA8, 0xA8F0FF),
-    /** 雷 Foudre / éclair / surcadence (jaune électrique & cyan). */
-    THUNDER("Foudre", 0xFFF45A, 0x2C7BD6, 0xFFFFFF),
+    /** T373 : 雷 Foudre / éclair / surcadence (violet électrique, bleu profond, surbrillance jaune pâle). */
+    THUNDER("Foudre", 0x5E3AFF, 0x1E26FF, 0xFCFFBA),
     /** 光 Lumière / saint / astral / or radieux. */
     LIGHT("Lumière", 0xFFF3B0, 0xFFB01F, 0xFFFFFF),
-    /** 暗 Ombre / spectre / effroi / wither (violet sombre). */
-    SHADOW("Ombre", 0x7A34D0, 0x25073F, 0xC06BFF),
-    /** Sang / vampirisme (cramoisi) — famille historique du mod. */
-    BLOOD("Sang", 0xC8102A, 0x5C0410, 0xFF5A78),
-    /** Vide / ender / dragon / warp (indigo-cyan). */
-    VOID("Vide", 0x8A7CFF, 0x2A1B7A, 0x9EF8FF),
+    /** T373 : 暗 Ombre / spectre / effroi / wither (violet ardoise, noir, accent violet vif). */
+    SHADOW("Ombre", 0x4D318E, 0x000000, 0x7100A7),
+    /** T373 : Sang / vampirisme (rouges purs) — famille historique du mod. */
+    BLOOD("Sang", 0xDD0000, 0xB20000, 0xFF0000),
+    /** T373 : Vide / ender / dragon / warp (gris charbon, noir et gris clair). */
+    VOID("Vide", 0x444444, 0x000000, 0x5B5B5B),
     /**
      * T352-CHAOS-ELEMENT : 乱 Chaos / entropie / discordance prismatique.
      * Base volontairement <b>très sombre</b> (noir violacé) pour que les effets chaos restent

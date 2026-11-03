@@ -83,7 +83,7 @@ public final class ElementalCatalog {
                 e("hydro_shock", Kind.MELEE), e("ocean_current", Kind.MELEE),
                 e("undertow", Kind.MELEE), e("frost_trail", Kind.MELEE),
                 e("riptide_barb", Kind.BOW), e("water_arrow", Kind.BOW));
-        // ── 雷 Foudre — jaune électrique ──
+        // ── 雷 Foudre — violet électrique / bleu profond / surbrillance jaune pâle (T373) ──
         put(DeepElement.THUNDER,
                 e("chain_lightning", Kind.MELEE), e("storm_strike", Kind.MELEE),
                 e("overcharge", Kind.MELEE), e("thunderstruck", Kind.MELEE),
@@ -93,17 +93,17 @@ public final class ElementalCatalog {
                 e("seraphs_judgment", Kind.MELEE), e("radiant_ward", Kind.ARMOR),
                 e("king", Kind.MELEE), e("astral_pierce", Kind.BOW),
                 e("radiant_bolt", Kind.BOW));
-        // ── 暗 Ombre — violet nuit ──
+        // ── 暗 Ombre — violet ardoise / noir / violet vif (T373) ──
         put(DeepElement.SHADOW,
                 e("wither_blade", Kind.MELEE), e("shadow_hunt", Kind.MELEE),
                 e("fear", Kind.MELEE), e("stealth_ambush", Kind.MELEE),
                 e("wraith_arrow", Kind.BOW));
-        // ── Sang — cramoisi ──
+        // ── Sang — rouge / rouge sombre / rouge vif (T373) ──
         put(DeepElement.BLOOD,
                 e("blood_edge", Kind.MELEE), e("bloodthirst", Kind.MELEE),
                 e("blood_pact", Kind.MELEE), e("blood_transfusion", Kind.MELEE),
                 e("bloodletting_bolt", Kind.BOW));
-        // ── Vide — indigo ──
+        // ── Vide — gris charbon / noir / gris clair (T373) ──
         put(DeepElement.VOID,
                 e("warp", Kind.MELEE), e("ender_hook", Kind.MELEE),
                 e("voidlings_hunger", Kind.MELEE), e("teleport_arrow", Kind.BOW),
