@@ -352,6 +352,8 @@ public final class DlbVfxCommand {
         line(src, "§e/dlbvfx motions", "liste les §f" + WeaponVfxMotion.SHAPE_COUNT + " §7familles de mouvement et les effets qui les utilisent");
         // T363-ROTATED-VOXELS : cubes inclinés sur 3 axes, tailles et opacités variées.
         line(src, "§7Cubes 3D", "§7chaque pixel est un cube §fincliné sur les 3 axes§7, de §ftaille variable§7, d'§fopacité dégradée §7et de §fcouleur en dégradé continu §7(sombre → corps → lumière → pointe blanche)");
+        // T366-VOXEL-SCULPT : sculptures denses (masse pleine sculptée, style MagicaVoxel).
+        line(src, "§7Sculptures", "§7les gros effets sont des §fsculptures voxel PLEINES§7 : masse d'eau qui se recourbe, cristaux, tornade, orbe cratérisé — et non des fils de cubes");
         // T365-HOLOGRAM : volumes filaires (cage, globe, disque épais) avec profondeur réelle.
         line(src, "§7Hologrammes", "§7cages filaires, globes et disques §fÉPAIS §7en cubes : le fond est translucide, l'avant franc (parallaxe) — aucun plan face caméra");
         // T362-ELEMENT-IMPACT : chaque élément a SA grosse animation, avec son propre déroulé.

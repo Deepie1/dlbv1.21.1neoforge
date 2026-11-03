@@ -2568,6 +2568,24 @@ public final class WeaponWorldVfxManager {
             emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, arms, core, tip, a);
         }
 
+        /**
+         * T366-VOXEL-SCULPT : <b>vraie sculpture voxel dense</b> (masse pleine sculptée, comme les
+         * modèles MagicaVoxel) centrée sur l'impact. La résolution s'adapte au budget de cubes.
+         *
+         * @param shape    l'une des constantes {@code SCULPT_*}
+         * @param radius   rayon de la boîte englobante (avant facteur d'échelle du mob)
+         * @param alphaMul multiplicateur d'opacité (fondu de l'effet)
+         */
+        int sculpt(int shape, float radius, float alphaMul) {
+            // Seules les formes tournantes pivotent ; la vague, la dune et la colonne restent
+            // orientées vers la cible (leur silhouette doit rester lisible).
+            boolean spin = shape == SCULPT_ORB || shape == SCULPT_TWISTER || shape == SCULPT_BURST;
+            return emitVoxelSculpt(vc, mat, tmp, shape, cx, cy, cz, radius * S(),
+                    yawRad() + (spin ? inst.age * 0.045f : 0.0f), t,
+                    deep(), pRgb, high(), tip(), salt, Math.round(fadeA() * alphaMul),
+                    Math.min(1600, Math.max(280, HARD_CUBE_CAP_PER_FRAME - cubesSinceFlush)));
+        }
+
         /** Cage filaire holographique (vrais cubes, volume + profondeur). */
         void cage(float half, float yaw, float pitch, float roll, int edge, int node, int a) {
             emitPixelHoloCage3D(vc, mat, tmp, cx, cy, cz, half, yaw, pitch, roll, edge, node, a, salt);
@@ -2614,6 +2632,9 @@ public final class WeaponWorldVfxManager {
         WeaponVisualEffectId fx = v.inst().effect;
         int licks = Mth.clamp(v.m().arms() + 2, 4, 8);
         float grow = 0.45f + 1.70f * v.easeOut();
+
+        // T366-VOXEL-SCULPT : colonne de flammes PLEINE, torsadée, à langues (masse, pas de fils).
+        v.sculpt(SCULPT_COLUMN, 0.80f + 0.55f * v.easeOut(), 0.94f);
 
         for (int i = 0; i < licks; i++) {
             float ang = i * (float) (Math.PI * 2.0 / licks) + v.hash(i * 13) * 0.55f;
@@ -2688,6 +2709,11 @@ public final class WeaponWorldVfxManager {
         float surge = v.easeOut();
         boolean maelstrom = v.inst().effect == WeaponVisualEffectId.ABYSSAL_MAELSTROM;
 
+        // T366-VOXEL-SCULPT : LA VAGUE est désormais une SCULPTURE PLEINE (masse d'eau + arche
+        // creusée + lèvre qui retombe), plus une nappe de cubes en fil de fer.
+        v.sculpt(maelstrom ? SCULPT_TWISTER : SCULPT_WAVE,
+                (1.30f + 0.30f * surge) * (maelstrom ? 0.80f : 1.0f), 0.96f);
+
         // 1) LA VAGUE : elle démarre en arrière de la cible et la TRAVERSE (avance + se recourbe).
         float advance = (1.35f - 2.10f * surge) * S;
         float waveH = (0.85f + 0.95f * surge) * (maelstrom ? 0.55f : 1.0f) * S;
@@ -2746,6 +2772,9 @@ public final class WeaponWorldVfxManager {
         float S = v.S();
         float grow = v.easeOut();
 
+        // T366-VOXEL-SCULPT : faisceau de cristaux PLEINS (facettes réelles) au centre de l'impact.
+        v.sculpt(SCULPT_SHARD, 0.90f + 0.45f * grow, 0.94f);
+
         for (int arm = 0; arm < 7; arm++) {
             float ang = arm * 0.897f + v.hash(arm) * 0.20f;
             float len = (0.45f + 1.60f * grow) * S;
@@ -2792,6 +2821,9 @@ public final class WeaponWorldVfxManager {
         WeaponVisualEffectId fx = v.inst().effect;
         int flick = Math.round(v.fadeA() * (0.42f + 0.58f * Math.abs(Mth.sin(v.age() * 1.85f))));
         int forks = Mth.clamp(2 + v.m().arms(), 3, 5);
+
+        // T366-VOXEL-SCULPT : cristal de foudre PLEIN, hérissé de pointes (le cœur de l'arc).
+        v.sculpt(SCULPT_BURST, 0.92f + 0.10f * t, 0.86f);
 
         for (int f = 0; f < forks; f++) {
             float ang = f * (float) (Math.PI * 2.0 / forks) + v.hash(f * 3) * 0.70f;
@@ -2857,6 +2889,9 @@ public final class WeaponWorldVfxManager {
         WeaponVisualEffectId fx = v.inst().effect;
         float lift = Mth.sin(Mth.clamp(t * 1.15f, 0.0f, 1.0f) * (float) Math.PI);
         int plates = Mth.clamp(4 + v.m().arms(), 5, 9);
+
+        // T366-VOXEL-SCULPT : empilement de DALLES de roche PLEINES, inclinées et bruitées.
+        v.sculpt(SCULPT_DUNE, 1.05f + 0.30f * lift, 0.94f);
 
         for (int p = 0; p < plates; p++) {
             float ang = p * (float) (Math.PI * 2.0 / plates) + v.hash(p * 17) * 0.30f;
@@ -2926,6 +2961,9 @@ public final class WeaponWorldVfxManager {
         int blades = prism ? 4 : 7;
         float snap = (t < 0.55f) ? (1.0f - v.easeIn() * 0.85f) : (0.15f + (t - 0.55f) * 0.35f);
 
+        // T366-VOXEL-SCULPT : cœur de métal PLEIN (hérisse de pointes, ou vrille prismatique).
+        v.sculpt(prism ? SCULPT_TWISTER : SCULPT_BURST, 0.88f + 0.28f * snap, 0.92f);
+
         for (int b = 0; b < blades; b++) {
             float ang = b * (float) (Math.PI * 2.0 / blades) + v.m().spin() * 0.25f;
             float rad = (0.55f + 0.80f * snap) * S;
@@ -2990,6 +3028,9 @@ public final class WeaponWorldVfxManager {
         float squeeze = (t < 0.55f) ? 1.0f : (1.0f - 0.55f * ((t - 0.55f) / 0.45f));
         int vines = Mth.clamp(3 + v.m().arms(), 4, 8);
 
+        // T366-VOXEL-SCULPT : tronc/racines PLEINS et noueux, torsadés sur eux-mêmes.
+        v.sculpt(SCULPT_COLUMN, (0.75f + 0.40f * grow) * squeeze, 0.88f);
+
         for (int i = 0; i < vines; i++) {
             float ang = i * (float) (Math.PI * 2.0 / vines) + v.hash(i * 19) * 0.35f;
             float rad = (0.30f + 1.40f * grow) * S * squeeze;
@@ -3038,6 +3079,9 @@ public final class WeaponWorldVfxManager {
         float t = v.t();
         float S = v.S();
         float spin = 1.60f + 0.50f * Math.abs(v.m().spin());
+
+        // T366-VOXEL-SCULPT : trois vrilles hélicoïdales PLEINES enlacées (volume, pas de rubans).
+        v.sculpt(SCULPT_TWISTER, 1.00f + 0.12f * v.easeOut(), 0.80f);
 
         for (int arm = 0; arm < 3; arm++) {
             float phase = arm * 2.094f;
@@ -3162,6 +3206,9 @@ public final class WeaponWorldVfxManager {
         float S = v.S();
         WeaponVisualEffectId fx = v.inst().effect;
 
+        // T366-VOXEL-SCULPT : colonne de lumière PLEINE (masse de cristal, pas un faisceau de fils).
+        v.sculpt(SCULPT_COLUMN, 0.78f + 0.42f * t, 0.88f);
+
         int rays = 9;
         for (int r = 0; r < rays; r++) {
             float ang = r * 0.698f + v.age() * 0.04f;
@@ -3260,6 +3307,9 @@ public final class WeaponWorldVfxManager {
         float retract = (t < 0.45f) ? 1.0f : (1.0f - 0.65f * ((t - 0.45f) / 0.55f));
         int arms = Mth.clamp(4 + v.m().arms(), 5, 9);
 
+        // T366-VOXEL-SCULPT : masse d'ombre PLEINE, vrillée, qui se rétracte.
+        v.sculpt(SCULPT_TWISTER, (0.90f + 0.30f * crawl) * retract, 0.82f);
+
         for (int i = 0; i < arms; i++) {
             float ang = i * (float) (Math.PI * 2.0 / arms) + v.hash(i * 23) * 0.45f;
             float len = (0.35f + 1.80f * crawl) * S * retract;
@@ -3308,6 +3358,9 @@ public final class WeaponWorldVfxManager {
         float S = v.S();
         WeaponVisualEffectId fx = v.inst().effect;
         int veins = Mth.clamp(3 + v.m().arms(), 4, 7);
+
+        // T366-VOXEL-SCULPT : caillot PLEIN hérissé de pointes (masse visqueuse sculptée).
+        v.sculpt(SCULPT_BURST, 0.80f + 0.30f * v.easeOut(), 0.90f);
 
         for (int i = 0; i < veins; i++) {
             float ang = i * (float) (Math.PI * 2.0 / veins) + v.hash(i * 29) * 0.50f;
@@ -3399,6 +3452,8 @@ public final class WeaponWorldVfxManager {
 
         // IMPLOSION : les cubes s'effondrent vers la cible en tournoyant (coquille qui se ferme).
         float close = 1.0f - v.easeIn();
+        // T366-VOXEL-SCULPT : orbe de vide PLEIN et cratérisé qui se replie sur la cible.
+        v.sculpt(SCULPT_ORB, 0.55f + 0.95f * close, 0.92f);
         float radius = (1.80f * close + 0.08f) * S;
         int pts = 26;
         for (int i = 0; i < pts; i++) {
@@ -3457,6 +3512,10 @@ public final class WeaponWorldVfxManager {
         int hueA = Mth.hsvToRgb((v.age() * 0.045f) % 1.0f, 0.85f, 1.0f);
         int hueB = Mth.hsvToRgb((v.age() * 0.045f + 0.33f) % 1.0f, 0.85f, 1.0f);
         int hueC = Mth.hsvToRgb((v.age() * 0.045f + 0.66f) % 1.0f, 0.85f, 1.0f);
+
+        // T366-VOXEL-SCULPT : la masse chaotique est PLEINE (orbe/étoile sculptée, pas un treillis).
+        v.sculpt(fx == WeaponVisualEffectId.BIG_BANG_SCAR ? SCULPT_BURST : SCULPT_ORB,
+                0.92f + 0.32f * t, 0.88f);
 
         if (fx == WeaponVisualEffectId.BIG_BANG_SCAR) {
             for (int i = 0; i < 14; i++) {
@@ -3676,6 +3735,317 @@ public final class WeaponWorldVfxManager {
      * cubes du devant et assombrir ceux du fond — c'est ce qui fait lire un VOLUME au lieu d'un
      * plan, et c'est exactement ce que fait un hologramme.</p>
      */
+    // ============================================================================================
+    // T366-VOXEL-SCULPT — VRAIES sculptures voxel denses (style MagicaVoxel)
+    // --------------------------------------------------------------------------------------------
+    // Jusqu'ici les effets étaient des « fils de cubes » : quelques cubes posés le long de courbes.
+    // Une vraie sculpture voxel, c'est un VOLUME REMPLI puis creusé : un champ de distance signée
+    // échantillonné sur une grille N³, bruité pour donner des bords organiques, dont on n'émet que
+    // la PEAU (les voxels qui touchent du vide). C'est exactement la méthode des images de
+    // référence : masses pleines, gradins de voxels, silhouette sculptée.
+    // ============================================================================================
+
+    /** Sculpture : masse d'eau qui se recourbe (vague déferlante pleine). */
+    private static final int SCULPT_WAVE = 0;
+    /** Sculpture : orbe massif, cratères et bulles (eau, vide, entropie). */
+    private static final int SCULPT_ORB = 1;
+    /** Sculpture : faisceau d'éclats pointus (glace, éclats, poison). */
+    private static final int SCULPT_SHARD = 2;
+    /** Sculpture : dalles de roche empilées et inclinées (terre, sable). */
+    private static final int SCULPT_DUNE = 3;
+    /** Sculpture : colonne torsadée à langues (feu, lumière, racines). */
+    private static final int SCULPT_COLUMN = 4;
+    /** Sculpture : cœur + pointes rayonnantes (métal, foudre, chaos, sang). */
+    private static final int SCULPT_BURST = 5;
+    /** Sculpture : vrilles hélicoïdales enroulées (vent, maelström, ombre). */
+    private static final int SCULPT_TWISTER = 6;
+
+    /** Grille maximale d'une sculpture (24³ = 13 824 échantillons, calculés une seule fois). */
+    private static final int SCULPT_MAX_RES = 24;
+    /** Cases remplies de la dernière sculpture (1 = plein). */
+    private static final byte[] SCULPT_OCC = new byte[SCULPT_MAX_RES * SCULPT_MAX_RES * SCULPT_MAX_RES];
+
+    /** Bruit de valeur 3D déterministe (aucune allocation) : sert à éroder les formes. */
+    private static float voxNoise(int seed, float x, float y, float z) {
+        int xi = Mth.floor(x), yi = Mth.floor(y), zi = Mth.floor(z);
+        float fx = x - xi, fy = y - yi, fz = z - zi;
+        fx = fx * fx * (3.0f - 2.0f * fx);
+        fy = fy * fy * (3.0f - 2.0f * fy);
+        fz = fz * fz * (3.0f - 2.0f * fz);
+        float c000 = pixelHash(seed, xi * 73856093 ^ yi * 19349663 ^ zi * 83492791);
+        float c100 = pixelHash(seed, (xi + 1) * 73856093 ^ yi * 19349663 ^ zi * 83492791);
+        float c010 = pixelHash(seed, xi * 73856093 ^ (yi + 1) * 19349663 ^ zi * 83492791);
+        float c110 = pixelHash(seed, (xi + 1) * 73856093 ^ (yi + 1) * 19349663 ^ zi * 83492791);
+        float c001 = pixelHash(seed, xi * 73856093 ^ yi * 19349663 ^ (zi + 1) * 83492791);
+        float c101 = pixelHash(seed, (xi + 1) * 73856093 ^ yi * 19349663 ^ (zi + 1) * 83492791);
+        float c011 = pixelHash(seed, xi * 73856093 ^ (yi + 1) * 19349663 ^ (zi + 1) * 83492791);
+        float c111 = pixelHash(seed, (xi + 1) * 73856093 ^ (yi + 1) * 19349663 ^ (zi + 1) * 83492791);
+        float x00 = c000 + (c100 - c000) * fx;
+        float x10 = c010 + (c110 - c010) * fx;
+        float x01 = c001 + (c101 - c001) * fx;
+        float x11 = c011 + (c111 - c011) * fx;
+        float y0 = x00 + (x10 - x00) * fy;
+        float y1 = x01 + (x11 - x01) * fy;
+        return y0 + (y1 - y0) * fz;
+    }
+
+    /** Distance (normalisée par le rayon) d'un point 2D à un segment : sert aux « épines » des formes. */
+    private static float segDist2(float pz, float py, float az, float ay, float bz, float by) {
+        float vz = bz - az, vy = by - ay;
+        float wz = pz - az, wy = py - ay;
+        float len = vz * vz + vy * vy;
+        float t = len > 1.0e-9f ? Mth.clamp((wz * vz + wy * vy) / len, 0.0f, 1.0f) : 0.0f;
+        float cz = az + vz * t, cy2 = ay + vy * t;
+        return Mth.sqrt((pz - cz) * (pz - cz) + (py - cy2) * (py - cy2));
+    }
+
+    /**
+     * Champ de distance signée de chaque sculpture, dans une boîte [-1..1]³ :
+     * négatif = à l'intérieur de la matière, positif = dans le vide.
+     */
+    private static float sculptSdf(int shape, float x, float y, float z, float t, int salt) {
+        switch (shape) {
+            case SCULPT_WAVE -> {
+                // DÉFERLANTE : une colonne d'eau monte, se recourbe au-dessus de la cible et
+                // retombe en lèvre. L'épine dorsale est un chemin de segments dans le plan (z,y) ;
+                // chaque segment est épaisi, puis on limite en largeur (x) : masse pleine et
+                // silhouette de vague parfaitement lisible de profil.
+                float dmin = 1.0e9f;
+                dmin = Math.min(dmin, segDist2(z, y, -0.34f, -1.05f, -0.30f, 0.20f) - 0.27f);
+                dmin = Math.min(dmin, segDist2(z, y, -0.30f, 0.20f, 0.02f, 0.80f) - 0.25f);
+                dmin = Math.min(dmin, segDist2(z, y, 0.02f, 0.80f, 0.50f, 0.86f) - 0.21f);
+                dmin = Math.min(dmin, segDist2(z, y, 0.50f, 0.86f, 0.70f, 0.34f) - 0.17f);
+                dmin = Math.min(dmin, segDist2(z, y, 0.70f, 0.34f, 0.60f, -0.34f) - 0.12f);
+                float w = 0.56f - 0.20f * Mth.clamp((y + 1.05f) / 1.95f, 0.0f, 1.0f);
+                float d = Math.max(dmin, Math.abs(x) - w);
+                d = Math.max(d, Math.max(y - 1.02f, -y - 1.06f));
+                return d + (voxNoise(salt, x * 3.6f, y * 3.6f, z * 3.6f) - 0.5f) * 0.15f;
+            }
+            case SCULPT_ORB -> {
+                float rr = Mth.sqrt(x * x * 0.97f + y * y + z * z * 0.97f);
+                float d = rr - (0.86f + 0.10f * Mth.sin(t * 3.1f));
+                d += (voxNoise(salt, x * 2.5f, y * 2.5f, z * 2.5f) - 0.5f) * 0.36f;
+                float n2 = voxNoise(salt + 91, x * 5.0f + 3.0f, y * 5.0f, z * 5.0f + 7.0f);
+                d += Math.max(0.0f, n2 - 0.60f) * 1.10f;
+                return d;
+            }
+            case SCULPT_SHARD -> {
+                // Grappe de cristaux : cinq aiguilles facettées de hauteurs différentes.
+                float best = 1.0e9f;
+                best = Math.min(best, shardNeedle(x, y, z, 0.00f, 0.00f, 1.00f, 0.17f));
+                best = Math.min(best, shardNeedle(x, y, z, 0.36f, 0.22f, 0.78f, 0.14f));
+                best = Math.min(best, shardNeedle(x, y, z, -0.32f, 0.26f, 0.68f, 0.13f));
+                best = Math.min(best, shardNeedle(x, y, z, 0.18f, -0.36f, 0.58f, 0.12f));
+                best = Math.min(best, shardNeedle(x, y, z, -0.24f, -0.30f, 0.48f, 0.11f));
+                return best + (voxNoise(salt, x * 4.0f, y * 4.0f, z * 4.0f) - 0.5f) * 0.11f;
+            }
+            case SCULPT_DUNE -> {
+                // Dalles de roche empilées : trois strates inclinées, décalées, à bords cassés.
+                float best = 1.0e9f;
+                for (int s = 0; s < 3; s++) {
+                    float ang = s * 1.10f + 0.35f;
+                    float ca = Mth.cos(ang), sa = Mth.sin(ang);
+                    float ux = x * ca + z * sa;
+                    float uz = -x * sa + z * ca;
+                    float tilt = 0.34f + 0.16f * s;
+                    float yy = y - (s - 1) * 0.46f - ux * tilt;
+                    float d = Math.max(Math.abs(uz) - (0.46f + 0.10f * s), Math.abs(yy) - 0.17f);
+                    d = Math.max(d, Math.abs(ux) - (0.66f + 0.16f * s));
+                    best = Math.min(best, d);
+                }
+                return best + (voxNoise(salt, x * 4.2f, y * 4.2f, z * 4.2f) - 0.5f) * 0.16f;
+            }
+            case SCULPT_COLUMN -> {
+                float ty = Mth.clamp((y + 1.0f) * 0.5f, 0.0f, 1.0f);
+                float twist = ty * 2.7f;
+                float ca = Mth.cos(twist), sa = Mth.sin(twist);
+                float ux = x * ca + z * sa;
+                float uz = -x * sa + z * ca;
+                float rad = (0.60f - 0.50f * ty) * (1.0f + 0.14f * Mth.sin(ty * 8.5f));
+                float d = Mth.sqrt(ux * ux + uz * uz * 1.15f) - rad;
+                d = Math.max(d, Math.max(y - 0.98f, -y - 0.98f));
+                float lick = 1.0e9f;
+                for (int s = 0; s < 4; s++) {
+                    float a = s * 1.5708f + 0.55f;
+                    float px = Mth.cos(a) * 0.26f, pz = Mth.sin(a) * 0.26f;
+                    float lx = x - px, lz = z - pz;
+                    float high = 1.0f + 0.30f * pixelHash(salt, s * 31);
+                    float w = 0.17f * (1.0f - Mth.clamp((y - 0.10f) / high, 0.0f, 1.0f)) + 0.01f;
+                    float dd = Mth.sqrt(lx * lx + lz * lz) - w;
+                    dd = Math.max(dd, Math.max(y - high, -y - 0.98f));
+                    lick = Math.min(lick, dd);
+                }
+                return Math.min(d, lick) + (voxNoise(salt, x * 3.4f, y * 3.4f, z * 3.4f) - 0.5f) * 0.20f;
+            }
+            case SCULPT_BURST -> {
+                // Cœur massif + 14 pointes réparties sur la sphère : la lecture « explosion ».
+                float core = Mth.sqrt(x * x + y * y + z * z) - (0.46f + 0.10f * t);
+                float spikes = 1.0e9f;
+                float norm2 = x * x + y * y + z * z;
+                for (int s = 0; s < 14; s++) {
+                    float a = s * 2.399f;
+                    float by = 1.0f - 2.0f * ((s + 0.5f) / 14.0f);
+                    float br = Mth.sqrt(Math.max(0.0f, 1.0f - by * by));
+                    float dx = Mth.cos(a) * br, dz = Mth.sin(a) * br;
+                    float proj = x * dx + y * by + z * dz;
+                    float perp = Mth.sqrt(Math.max(0.0f, norm2 - proj * proj));
+                    float len = (0.80f + 0.30f * pixelHash(salt, s * 17)) * (0.55f + 0.60f * t);
+                    float w = 0.135f * (1.0f - 0.80f * Mth.clamp(proj / Math.max(0.2f, len), 0.0f, 1.0f))
+                            + 0.008f;
+                    float dd = Math.max(perp - w, Math.max(-proj - 0.05f, proj - len));
+                    spikes = Math.min(spikes, dd);
+                }
+                return Math.min(core, spikes)
+                        + (voxNoise(salt, x * 4.4f, y * 4.4f, z * 4.4f) - 0.5f) * 0.10f;
+            }
+            case SCULPT_TWISTER -> {
+                // TORNADE : entonnoir creux + trois crêtes hélicoïdales qui débordent.
+                float ty = Mth.clamp((y + 1.0f) * 0.5f, 0.0f, 1.0f);
+                float cone = (0.30f + 0.52f * (float) Math.pow(ty, 0.85)) * (1.0f + 0.05f * Mth.sin(ty * 9.0f));
+                float r = Mth.sqrt(x * x + z * z);
+                float d = r - cone;
+                d = Math.max(d, -(r - cone * 0.45f));
+                float ang = (float) Math.atan2(z, x);
+                float ridge = 1.0e9f;
+                for (int s = 0; s < 3; s++) {
+                    float ph = ang + ty * 7.4f + s * 2.094f;
+                    float rr = Mth.sqrt((r - cone - 0.02f) * (r - cone - 0.02f)
+                            + (Mth.sin(ph) * 0.10f) * (Mth.sin(ph) * 0.10f));
+                    ridge = Math.min(ridge, rr - 0.13f);
+                }
+                d = Math.min(d, ridge);
+                d = Math.max(d, Math.max(y - 1.00f, -y - 1.02f));
+                return d + (voxNoise(salt, x * 3.4f, y * 3.4f, z * 3.4f) - 0.5f) * 0.14f;
+            }
+            default -> {
+                return Mth.sqrt(x * x + y * y + z * z) - 0.80f;
+            }
+        }
+    }
+
+    /** Une aiguille de cristal : pyramide à base carrée tournée (facettes nettes, pas un cylindre). */
+    private static float shardNeedle(float x, float y, float z,
+                                     float ox, float oz, float hgt, float rad0) {
+        float ty = Mth.clamp((y + 0.55f) / (hgt + 0.55f), 0.0f, 1.0f);
+        float rad = rad0 * (1.0f - (float) Math.pow(ty, 1.35)) + 0.012f;
+        float facet = (Math.abs(x - ox) + Math.abs(z - oz)) * 0.80f - rad;
+        return Math.max(facet, Math.max(y - hgt, -y - 0.60f));
+    }
+
+    /** Remplit la grille {@code res³} avec la sculpture (booléen de matière). */
+    private static void fillSculpt(int shape, int res, float t, int salt, float cyaw, float syaw) {
+        float step = 2.0f / res;
+        for (int i = 0; i < res; i++) {
+            float nx = -1.0f + (i + 0.5f) * step;
+            for (int k = 0; k < res; k++) {
+                float nz = -1.0f + (k + 0.5f) * step;
+                // rotation autour de l'axe vertical : la sculpture tourne sur elle-même
+                float sx = nx * cyaw - nz * syaw;
+                float sz = nx * syaw + nz * cyaw;
+                for (int j = 0; j < res; j++) {
+                    float ny = -1.0f + (j + 0.5f) * step;
+                    byte in = (byte) (sculptSdf(shape, sx, ny, sz, t, salt) < 0.0f ? 1 : 0);
+                    SCULPT_OCC[(i * res + j) * res + k] = in;
+                }
+            }
+        }
+    }
+
+    /** Vrai si ce voxel plein touche du vide sur l'une de ses 6 faces (donc s'il est visible). */
+    private static boolean sculptSkin(int res, int i, int j, int k) {
+        int idx = (i * res + j) * res + k;
+        if (SCULPT_OCC[idx] == 0) return false;
+        if (i == 0 || i == res - 1 || j == 0 || j == res - 1 || k == 0 || k == res - 1) return true;
+        int di = res * res;
+        int dj = res;
+        return SCULPT_OCC[idx - di] == 0 || SCULPT_OCC[idx + di] == 0
+                || SCULPT_OCC[idx - dj] == 0 || SCULPT_OCC[idx + dj] == 0
+                || SCULPT_OCC[idx - 1] == 0 || SCULPT_OCC[idx + 1] == 0;
+    }
+
+    private static int countSculptSkin(int res) {
+        int n = 0;
+        for (int i = 0; i < res; i++) {
+            for (int j = 0; j < res; j++) {
+                for (int k = 0; k < res; k++) {
+                    if (sculptSkin(res, i, j, k)) n++;
+                }
+            }
+        }
+        return n;
+    }
+
+    /**
+     * T366-VOXEL-SCULPT : émet une <b>vraie sculpture voxel</b> dense à cet endroit.
+     *
+     * <p>La résolution est choisie automatiquement pour tenir dans le budget de cubes : la forme
+     * reste donc toujours bien plus dense que les anciens « fils de cubes », sans jamais faire
+     * exploser le nombre de faces envoyées au GPU.</p>
+     *
+     * @return le nombre de cubes émis (utile au mode test)
+     */
+    public static int emitVoxelSculpt(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                      int shape, float cx, float cy, float cz,
+                                      float radius, float yawRad, float t,
+                                      int deep, int body, int high, int tip,
+                                      int salt, int alpha, int budget) {
+        if (alpha <= 6 || radius <= 0.05f) return 0;
+        int room = HARD_CUBE_CAP_PER_FRAME - cubesSinceFlush;
+        if (room < 48) return 0;
+        int maxCubes = Math.min(budget, room);
+
+        float cyaw = Mth.cos(yawRad), syaw = Mth.sin(yawRad);
+        // La peau croît comme res² : on sonde une grille moyenne puis on ajuste en UNE passe, pour
+        // ne jamais remplir la grille plus de trois fois par frame (coût CPU borné).
+        int res = 16;
+        fillSculpt(shape, res, t, salt, cyaw, syaw);
+        int skin = countSculptSkin(res);
+        if (skin > maxCubes) {
+            res = Mth.clamp((int) (res * Mth.sqrt(maxCubes / (float) skin)), 8, SCULPT_MAX_RES);
+            fillSculpt(shape, res, t, salt, cyaw, syaw);
+            skin = countSculptSkin(res);
+            while (skin > maxCubes && res > 8) {
+                res--;
+                fillSculpt(shape, res, t, salt, cyaw, syaw);
+                skin = countSculptSkin(res);
+            }
+        } else if (res < SCULPT_MAX_RES) {
+            res = Mth.clamp((int) (res * Mth.sqrt(maxCubes / (float) Math.max(1, skin))), res, SCULPT_MAX_RES);
+            fillSculpt(shape, res, t, salt, cyaw, syaw);
+            skin = countSculptSkin(res);
+        }
+        if (skin <= 0) return 0;
+
+        float step = 2.0f / res;
+        float hsz = radius * step * 0.54f;   // léger recouvrement : aucune fente entre voxels
+        int emitted = 0;
+        for (int i = 0; i < res; i++) {
+            float nx = -1.0f + (i + 0.5f) * step;
+            for (int k = 0; k < res; k++) {
+                float nz = -1.0f + (k + 0.5f) * step;
+                float sx = nx * cyaw - nz * syaw;
+                float sz = nx * syaw + nz * cyaw;
+                for (int j = 0; j < res; j++) {
+                    if (!sculptSkin(res, i, j, k)) continue;
+                    float ny = -1.0f + (j + 0.5f) * step;
+                    // Dégradé du matériau : creux sombre en bas, pointe presque blanche en haut,
+                    // avec une nuance par voxel (la sculpture n'est jamais monochrome).
+                    float u = Mth.clamp(0.42f + 0.62f * (ny * 0.5f + 0.5f) + 0.20f * z, 0.0f, 1.0f);
+                    int rgb = rampRgb(u, deep, body, high, tip);
+                    rgb = jitterRgb(rgb, salt + i * 73 + j * 131 + k * 17, 0.050f);
+                    if (pixelDensity < 0.999f && alpha < 200) {
+                        float keep = pixelHash(0x5EED ^ shape, (i * 977 + j * 613 + k * 389));
+                        if (keep > pixelDensity) continue;
+                    }
+                    emitVoxelCube(vc, mat, tmp, cx + sx * radius, cy + ny * radius, cz + sz * radius,
+                            hsz, hsz, hsz, rgb, alpha);
+                    emitted++;
+                }
+            }
+        }
+        return emitted;
+    }
+
     private static float nearness(float cx, float cy, float cz, float px, float py, float pz) {
         float l = Mth.sqrt(cx * cx + cy * cy + cz * cz);
         if (l < 0.01f) return 0.0f;
