@@ -4043,21 +4043,12 @@ public class UniversalEnchantmentHandler {
             }
         }
 
-        // T307-BOUNCY : Immunité totale aux dégâts de chute + vrai rebond de bloc de slime (handleSharedClientServerMovement + filet serveur)
+        // T372-BOUNCY : annule seulement les dégâts de chute. La vitesse du rebond est calculée
+        // une fois à l'atterrissage dans handleSharedClientServerMovement, depuis la vraie chute.
+        // Ne jamais donner ici une impulsion fixe : cela réinitialisait l'énergie à chaque impact.
         int bouncyLvl = getArmorEnchantLvl(player, "deep_lucky_block:bouncy");
         if (bouncyLvl > 0 && event.getSource().getMsgId().equals("fall")) {
             event.setCanceled(true);
-            if (!player.isShiftKeyDown() && player.getDeltaMovement().y <= 0.05) {
-                double vyBounce = Math.min(2.0, 0.52 + 0.16 * bouncyLvl);
-                player.setDeltaMovement(player.getDeltaMovement().x, vyBounce, player.getDeltaMovement().z);
-                player.hurtMarked = true;
-            }
-            if (player.level() instanceof ServerLevel slSlime) {
-                EnchantmentParticleFX.shockwaveRing(slSlime, player.getX(), player.getY() + 0.06, player.getZ(),
-                        ParticleTypes.ITEM_SLIME, 0.85, 12, 0.05);
-            }
-            player.level().playSound(null, player.getX(), player.getY(), player.getZ(),
-                    SoundEvents.SLIME_BLOCK_FALL, SoundSource.PLAYERS, 0.85f, 1.05f);
             return;
         }
         int stickyLvl = getArmorEnchantLvl(player, "deep_lucky_block:sticky");
@@ -4642,16 +4633,21 @@ public class UniversalEnchantmentHandler {
             }
         }
 
-        // --- B. Bondissant (bouncy) : Vrai rebond de Bloc de Slime à l'atterrissage (même sur petit saut !) ---
+        // --- B. Bondissant (bouncy) : rebond proportionnel à l'impact, amorti jusqu'à l'arrêt ---
         int bouncyLvl = getArmorEnchantLvl(entity, "deep_lucky_block:bouncy");
         if (!grounded) {
             if (dm.y < state.lastAirVy) state.lastAirVy = dm.y;
         } else {
+            // Restitution toujours < 1 : chaque saut perd de l'énergie, quel que soit le niveau.
+            // Pas de vitesse minimale : quand la chute devient trop faible, le rebond s'éteint.
+            double retention = 0.75 + 0.045 * Math.min(3, bouncyLvl); // 0.795..0.885
+            double impactSpeed = -state.lastAirVy;
+            double bounceVy = impactSpeed * retention;
             if (!state.wasOnGround && bouncyLvl > 0 && !sneaking
-                    && !entity.isInWater() && !entity.isInLava() && state.lastAirVy < -0.15) {
-                double retention = 0.84 + 0.08 * Math.min(4, bouncyLvl);
-                double bounceVy = Math.min(2.15, Math.max(0.46 + 0.09 * bouncyLvl, -state.lastAirVy * retention));
-                dm = new Vec3(dm.x * 1.02, bounceVy, dm.z * 1.02);
+                    && !entity.isInWater() && !entity.isInLava()
+                    && impactSpeed > 0.15 && bounceVy >= 0.20) {
+                // Laisse la vitesse horizontale intacte : le joueur garde le contrôle en l'air.
+                dm = new Vec3(dm.x, bounceVy, dm.z);
                 entity.setDeltaMovement(dm);
                 entity.setOnGround(false);
                 entity.fallDistance = 0.0F;
