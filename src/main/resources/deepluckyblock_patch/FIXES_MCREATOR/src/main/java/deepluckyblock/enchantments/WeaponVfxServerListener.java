@@ -116,16 +116,18 @@ public final class WeaponVfxServerListener {
         float cy = (float) (target.getY() + target.getBbHeight() * 0.55);
         float cz = (float) target.getZ();
 
-        // T352-ELEMENT-COMBO : une arme multi-éléments peut déclencher une animation de chaque famille.
-        tryElementCombo(sl, attacker.getId(), attacker.getMainHandItem(), cx, cy, cz,
-                (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ(),
-                sizeScaleOf(target));
-
         // T351 : la plupart des critiques jouent seulement un accent discret (bien plus subtil).
+        // Ne lance pas le combo multicolore avant ce choix : sinon un accent discret pouvait quand
+        // même être accompagné de plusieurs grosses animations élémentaires simultanées.
         if (playSubtleAccent(sl, attacker.getMainHandItem(), fx, cx, cy, cz,
                 (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ())) {
             return;
         }
+
+        // T352-ELEMENT-COMBO : combo possible uniquement quand le tirage a choisi une vraie grosse anim.
+        tryElementCombo(sl, attacker.getId(), attacker.getMainHandItem(), cx, cy, cz,
+                (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ(),
+                sizeScaleOf(target));
 
         // Grosse animation jouée -> le dégât de ce coup sera amplifié de 5 % (voir onLivingHurtVisuals).
         LAST_BIG_ANIM_TICK.put(attacker.getId(), now);
@@ -375,6 +377,7 @@ public final class WeaponVfxServerListener {
         boolean bigAnimBonusApplied = (now - LAST_BIG_ANIM_TICK.getOrDefault(attacker.getId(), -100L)) <= 2L;
         // T352-ELEMENT-COMBO : un seul combo élémentaire par coup, même si deux couches partent.
         boolean elementComboDone = false;
+        boolean swingSlashPlayed = false;
         if (bigAnimBonusApplied) {
             event.setAmount(event.getAmount() * BIG_ANIM_DAMAGE_BONUS);
         }
@@ -383,8 +386,14 @@ public final class WeaponVfxServerListener {
             WeaponVisualEffectId.ResolvedLayer layer = layers.get(i);
             WeaponVisualEffectId fx = layer.effect();
 
-            // Évite uniquement de doubler exactement le même effet critique si notifyMeleeCrit vient de le lancer
+            // Évite de doubler l'impact critique lancé par notifyMeleeCrit, mais garde l'entaille
+            // de combat : c'est le retour principal même lorsque le tirage d'animation est refusé.
             if (fx.category == WeaponVisualEffectId.Category.CRIT && meleeCritJustFired && i == 0) {
+                if (!isProjectileHit && !swingSlashPlayed) {
+                    broadcastNear(sl, ax, ay, az, fx.id, KIND_SWING_SLASH, layer.level(),
+                            ax, ay, az, tx, ty, tz, palette);
+                    swingSlashPlayed = true;
+                }
                 continue;
             }
             boolean critHit = arrowCrit || meleeCritJustFired
@@ -392,12 +401,20 @@ public final class WeaponVfxServerListener {
             if (!shouldPlay(attacker.getId(), fx, sl, critHit)) {
                 continue;
             }
-            // T351 : la majorité des déclenchements devient un accent discret (jamais englobant).
+            // Slash de combat indépendant du tirage « petite ou grande animation » : les attaques
+            // sélectionnées gardent leur entaille même lorsque le gros effet est remplacé par un
+            // accent discret. Un seul slash par coup, jamais une superposition par couche.
+            if (!isProjectileHit && !swingSlashPlayed) {
+                broadcastNear(sl, ax, ay, az, fx.id, KIND_SWING_SLASH, layer.level(),
+                        ax, ay, az, tx, ty, tz, palette);
+                swingSlashPlayed = true;
+            }
+
+            layerBudget--;
+            // La petite animation reste propre à l'enchantement et ne remplace plus le slash.
             if (playSubtleAccent(sl, weapon, fx, tx, ty, tz, ax, ay, az)) {
-                layerBudget--;
                 continue;
             }
-            layerBudget--;
 
             // T352-ELEMENT-COMBO : arme multi-éléments -> parfois une animation de CHAQUE élément.
             if (!elementComboDone) {
@@ -410,13 +427,6 @@ public final class WeaponVfxServerListener {
             if (!bigAnimBonusApplied) {
                 bigAnimBonusApplied = true;
                 event.setAmount(event.getAmount() * BIG_ANIM_DAMAGE_BONUS);
-            }
-
-            // T351 : l'entaille est désormais elle aussi décidée par le serveur (5 % / 76 %),
-            // ce qui évite tout double déclenchement client + serveur.
-            if (!isProjectileHit) {
-                broadcastNear(sl, ax, ay, az, fx.id, KIND_SWING_SLASH, layer.level(),
-                        ax, ay, az, tx, ty, tz, palette);
             }
 
             if (fx == WeaponVisualEffectId.CRIMSON_SIPHON) {

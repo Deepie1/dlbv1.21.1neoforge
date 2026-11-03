@@ -976,7 +976,9 @@ public final class WeaponWorldVfxManager {
                     || sub.shape() == deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_SHARD) {
                 rgb = mixRgb(rgb, 0xFFFFFF, 0.45f);
             }
-            float sz = sub.size() * (0.7f + rand.nextFloat() * 0.7f);
+            // T370 : les accents étaient sub-pixel (diamètre < 1 px pour les tiers discrets).
+            // Agrandissement modéré : ils restent petits, mais sont réellement visibles en jeu.
+            float sz = sub.size() * (1.6f + rand.nextFloat() * 0.8f);
             PIXEL_PARTICLES.add(new FloatingPixel(additive,
                     x + ox, y + oy, z + oz, vx, vy, vz, sub.gravity(), sz, rgb,
                     sub.life() + rand.nextInt(4), rand.nextInt(Integer.MAX_VALUE)));
