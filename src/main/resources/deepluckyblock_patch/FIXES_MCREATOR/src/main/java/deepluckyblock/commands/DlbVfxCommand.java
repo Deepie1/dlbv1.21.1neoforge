@@ -350,6 +350,8 @@ public final class DlbVfxCommand {
         // T361-MOTIONS-UNIQUES : 40 trajectoires distinctes réparties en 22 familles de mouvement.
         line(src, "§7Mouvements", "§f" + WeaponVisualEffectId.values().length + " §7trajectoires distinctes en §f" + WeaponVfxMotion.SHAPE_COUNT + " §7familles (arc, spirale, mâchoire, dune, vortex...)");
         line(src, "§e/dlbvfx motions", "liste les §f" + WeaponVfxMotion.SHAPE_COUNT + " §7familles de mouvement et les effets qui les utilisent");
+        // T362-ELEMENT-IMPACT : chaque élément a SA grosse animation, avec son propre déroulé.
+        line(src, "§7Animations d'élément", "§7une grosse animation par élément : le §ffeu monte §7en langues, l'§feau gicle §7puis retombe en rides, le §fgive pousse puis se brise, la §ffoudre tombe §7et rampe, la §fterre se soulève, la §fmâchoire se referme§7, le §fvide implose§7, l'§fombre rampe §7puis se rétracte…");
         // T360-NO-VANILLA-PARTICLES : plus une seule particule Minecraft dans tout le mod.
         line(src, "§7Particules vanilla", "§f0 §7— §7halos, slashes, traînées et auras sont tous des §fmini-cubes 3D §7(Multi-Size Pixel-Art)");
         line(src, "§7Halo cosmétique", "§7couronne de pixels §fpermanente §7sur tout équipement enchanté (jamais une salve unique)");

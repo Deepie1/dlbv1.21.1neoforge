@@ -1450,6 +1450,185 @@ public final class WeaponWorldVfxManager {
         emitMotionSlash(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, inst.tiltRad,
                 radius, voxelHalf, sweepDeg, t, arcCore, arcTrail, accent, alpha,
                 prof, motionSalt, inst.effect.ordinal());
+        // T362-ELEMENT-SLASH : la trajectoire reste celle de l'enchantement (T361), mais elle est
+        // désormais HABITÉE par son élément — le feu laisse des braises qui montent, l'eau des
+        // gouttes qui retombent, la foudre des fourches aux extrémités, le vide des pixels qui
+        // convergent, etc. Deux attaques ne racontent donc plus la même chose.
+        emitSlashElementAccent(vc, mat, tmp, rx, ry, rz, inst, t, radius, arcCore, arcTrail, accent, alpha);
+    }
+
+    /**
+     * T362-ELEMENT-SLASH : petite signature élémentaire ajoutée au bout de CHAQUE trajectoire de
+     * lame. Volontairement discrète (4 à 6 cubes) : c'est une ponctuation, pas une seconde attaque.
+     */
+    private static void emitSlashElementAccent(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                               float cx, float cy, float cz,
+                                               VfxInstance inst, float t, float radius,
+                                               int coreRgb, int trailRgb, int accentRgb, int alpha) {
+        if (alpha <= 8 || radius <= 0.05f) return;
+        float S = Mth.clamp(inst.sizeScale, 0.55f, 2.60f);
+        int salt = (int) (inst.seed & 0x7FFFFFFFL) + inst.age * 53;
+        float yawR = -inst.yawDeg * Mth.DEG_TO_RAD;
+        float dirX = Mth.sin(yawR);
+        float dirZ = Mth.cos(yawR);
+        float perpX = Mth.cos(yawR);
+        float perpZ = -Mth.sin(yawR);
+
+        switch (inst.effect.element()) {
+            case FIRE -> {
+                // Braises qui MONTENT de la lame (convection), en s'effaçant.
+                for (int i = 0; i < 6; i++) {
+                    float along = ((i / 5.0f) - 0.5f) * radius * 1.5f;
+                    float side = (pixelHash(salt, i * 7) - 0.5f) * 0.40f;
+                    float rise = (0.15f + 0.85f * pixelHash(salt, i * 13)) * (0.35f + 0.90f * t) * S;
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + dirX * along + perpX * side, 0.0625f),
+                            quantize(cy + rise, 0.0625f),
+                            quantize(cz + dirZ * along + perpZ * side, 0.0625f),
+                            0.030f, 0.050f, 0.030f, (i & 1) == 0 ? coreRgb : 0xFFFFFF,
+                            Math.round(alpha * (1.0f - 0.40f * t)));
+                }
+            }
+            case WATER -> {
+                // Gouttes qui RETOMBENT de la lame (l'eau ne monte pas).
+                for (int i = 0; i < 5; i++) {
+                    float along = ((i / 4.0f) - 0.5f) * radius * 1.4f;
+                    float fall = 0.55f * t * t * S;
+                    emitPixelDroplet3D(vc, mat, tmp,
+                            quantize(cx + dirX * along, 0.0625f), quantize(cy - fall, 0.0625f),
+                            quantize(cz + dirZ * along, 0.0625f),
+                            0.026f, (i & 1) == 0 ? coreRgb : accentRgb, 0xA8F0FF,
+                            Math.round(alpha * 0.90f), salt + i);
+                }
+            }
+            case THUNDER -> {
+                // Fourches qui claquent aux deux extrémités de l'entaille.
+                for (int i = 0; i < 2; i++) {
+                    float sgn = (i == 0) ? 1.0f : -1.0f;
+                    float tx = cx + perpX * sgn * radius * 0.55f;
+                    float tz = cz + perpZ * sgn * radius * 0.55f;
+                    emitVoxelLightning(vc, mat, tmp, tx, cy + 0.25f * S, tz,
+                            tx + perpX * sgn * 0.55f * S, cy - 0.35f * S, tz + perpZ * sgn * 0.55f * S,
+                            5, 0.18f, (long) salt * 131L + inst.age, 0xFFFFFF, trailRgb,
+                            Math.round(alpha * 0.90f), 0.030f);
+                }
+            }
+            case EARTH -> {
+                // Éclats de pierre qui tombent le long de l'entaille.
+                for (int i = 0; i < 4; i++) {
+                    float along = (pixelHash(salt, i * 11) - 0.5f) * radius * 1.2f;
+                    float fall = (0.30f + 0.55f * t) * S;
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + dirX * along, 0.0625f),
+                            quantize(cy + 0.30f * S - fall, 0.0625f),
+                            quantize(cz + dirZ * along, 0.0625f),
+                            0.034f, 0.020f, 0.030f, (i & 1) == 0 ? trailRgb : coreRgb,
+                            Math.round(alpha * 0.85f));
+                }
+            }
+            case METAL -> {
+                // Étincelles de contact projetées en ligne droite depuis le milieu de la lame.
+                emitVoxelCube(vc, mat, tmp, cx, cy, cz, 0.050f, 0.050f, 0.050f, 0xFFFFFF, alpha);
+                for (int i = 0; i < 4; i++) {
+                    float ang = pixelHash(salt, i * 19) * 6.28f;
+                    float sp = (0.20f + 0.35f * pixelHash(salt, i * 23)) * S * t;
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + Mth.cos(ang) * sp, 0.0625f),
+                            quantize(cy + Mth.sin(ang) * sp * 0.6f, 0.0625f),
+                            quantize(cz + Mth.sin(ang * 1.7f) * sp, 0.0625f),
+                            0.016f, 0.016f, 0.016f, 0xFFFFFF, Math.round(alpha * 0.95f));
+                }
+            }
+            case WOOD -> {
+                // Feuilles plates emportées qui planent en descendant lentement.
+                for (int i = 0; i < 3; i++) {
+                    float along = (pixelHash(salt, i * 17) - 0.5f) * radius;
+                    float drift = 0.25f * t * S;
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + dirX * along + Mth.sin(t * 6.0f + i) * 0.08f, 0.0625f),
+                            quantize(cy + 0.20f * S - drift, 0.0625f),
+                            quantize(cz + dirZ * along, 0.0625f),
+                            0.040f, 0.010f, 0.040f, (i & 1) == 0 ? accentRgb : trailRgb,
+                            Math.round(alpha * 0.85f));
+                }
+            }
+            case POISON -> {
+                // Bulles lourdes qui montent en flottant (le poison est lent).
+                for (int i = 0; i < 4; i++) {
+                    float along = ((i / 3.0f) - 0.5f) * radius;
+                    float rise = (0.20f + 0.55f * pixelHash(salt, i * 29)) * t * S;
+                    float wob = Mth.sin(inst.age * 0.20f + i * 1.4f) * 0.05f;
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + dirX * along + wob, 0.0625f), quantize(cy + rise, 0.0625f),
+                            quantize(cz + dirZ * along + wob, 0.0625f),
+                            0.026f, 0.026f, 0.026f, (i & 1) == 0 ? coreRgb : accentRgb,
+                            Math.round(alpha * 0.80f));
+                }
+            }
+            case LIGHT -> {
+                // Motes de lumière qui s'élèvent, très blancs (l'aura de l'arme).
+                for (int i = 0; i < 5; i++) {
+                    float along = ((i / 4.0f) - 0.5f) * radius * 1.2f;
+                    float rise = (0.10f + 0.45f * t) * S;
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + dirX * along, 0.0625f), quantize(cy + rise, 0.0625f),
+                            quantize(cz + dirZ * along, 0.0625f),
+                            0.024f, 0.024f, 0.024f, i % 2 == 0 ? 0xFFFFFF : coreRgb,
+                            Math.round(alpha * 0.90f));
+                }
+            }
+            case SHADOW -> {
+                // Volutes sombres qui coulent vers le bas en s'effaçant.
+                for (int i = 0; i < 5; i++) {
+                    float along = ((i / 4.0f) - 0.5f) * radius * 1.1f;
+                    float sink = (0.15f + 0.55f * t) * S;
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + dirX * along, 0.0625f), quantize(cy - sink, 0.0625f),
+                            quantize(cz + dirZ * along, 0.0625f),
+                            0.028f, 0.028f, 0.028f, (i & 1) == 0 ? trailRgb : 0x25073F,
+                            Math.round(alpha * (1.0f - 0.55f * t)));
+                }
+            }
+            case BLOOD -> {
+                // Gouttes qui perlent puis tombent de la lame.
+                for (int i = 0; i < 4; i++) {
+                    float along = ((i / 3.0f) - 0.5f) * radius;
+                    emitPixelDroplet3D(vc, mat, tmp,
+                            quantize(cx + dirX * along, 0.0625f),
+                            quantize(cy - 0.45f * t * t * S, 0.0625f),
+                            quantize(cz + dirZ * along, 0.0625f),
+                            0.028f, (i & 1) == 0 ? coreRgb : accentRgb, 0xFF8A8A,
+                            Math.round(alpha * 0.90f), salt + i);
+                }
+            }
+            case VOID -> {
+                // Pixels qui CONVERGENT vers le centre (le vide avale même l'entaille).
+                for (int i = 0; i < 5; i++) {
+                    float ang = i * 1.257f + inst.age * 0.20f;
+                    float rad = radius * (1.0f - t) * 0.85f;
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + Mth.cos(ang) * rad, 0.0625f),
+                            quantize(cy + Mth.sin(ang) * rad * 0.55f, 0.0625f),
+                            quantize(cz + Mth.sin(ang) * rad, 0.0625f),
+                            0.024f, 0.024f, 0.024f, (i & 1) == 0 ? coreRgb : accentRgb,
+                            Math.round(alpha * (0.5f + 0.5f * t)));
+                }
+            }
+            case CHAOS -> {
+                // Éclats arc-en-ciel en orbite autour de l'entaille.
+                for (int i = 0; i < 5; i++) {
+                    float ang = i * 1.257f + inst.age * 0.35f;
+                    float rad = radius * 0.55f;
+                    emitVoxelCube(vc, mat, tmp,
+                            quantize(cx + Mth.cos(ang) * rad, 0.0625f),
+                            quantize(cy + Mth.sin(ang * 2.0f) * rad * 0.40f, 0.0625f),
+                            quantize(cz + Mth.sin(ang) * rad, 0.0625f),
+                            0.022f, 0.022f, 0.022f,
+                            Mth.hsvToRgb((inst.age * 0.05f + i / 5.0f) % 1.0f, 0.90f, 1.0f),
+                            Math.round(alpha * 0.90f));
+                }
+            }
+        }
     }
 
     /**
@@ -2184,597 +2363,959 @@ public final class WeaponWorldVfxManager {
         WeaponVfxMotion.Profile motion = WeaponVfxMotion.of(inst.effect);
         int mSalt = (int) (inst.seed & 0x7FFFFFFFL) + inst.age * 31 + inst.effect.ordinal() * 613;
 
-        switch (inst.effect) {
-            case RAZOR_GLEAM -> {
-                // #01 T361 : ÉCLAT D'ACIER — une entaille fine qui claque au point d'impact puis
-                // s'efface, avec un seul éclat blanc au centre (le "ting" du tranchant).
-                emitMotionSlash(vc, mat, tmp, cx, cy, cz, inst.yawDeg, inst.pitchDeg, inst.tiltRad,
-                        (1.05f + 0.30f * t) * motion.scale(), 0.030f, 165.0f, t,
-                        pRgb, 0xFFFFFF, aRgb, fadeA, motion, mSalt, inst.effect.ordinal());
-                emitVoxelCube(vc, mat, tmp, cx, cy, cz, 0.048f, 0.048f, 0.048f, 0xFFFFFF, fadeA);
-            }
-            case SUPREME_PRISM_EDGE -> {
-                // #02 T361 : PRISME — trois arcs concentriques dont la teinte tourne, cœur aveuglant.
-                int hue = Mth.hsvToRgb((inst.age * 0.06f) % 1.0f, 0.55f, 1.0f);
-                emitMotionSlash(vc, mat, tmp, cx, cy, cz, inst.yawDeg, inst.pitchDeg, inst.tiltRad,
-                        (1.20f + 0.40f * t) * motion.scale(), 0.034f, 190.0f, t,
-                        hue, pRgb, 0xFFFFFF, fadeA, motion, mSalt, inst.effect.ordinal());
-                emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, 4, 0xFFFFFF, hue, fadeA);
-            }
-            case SPECTRAL_REACH -> {
-                // #03 T361 : ALLONGE SPECTRALE — la lame s'étire vers la cible en pixels fantômes
-                // qui s'éloignent (aucun cercle au sol : la direction EST l'animation).
-                float yawR = -inst.yawDeg * Mth.DEG_TO_RAD;
-                float dirX = Mth.sin(yawR);
-                float dirZ = Mth.cos(yawR);
-                float ghost = 1.0f + 1.7f * Mth.clamp(t * 1.6f, 0.0f, 1.0f);
-                emitSteppedVoxelLine(vc, mat, tmp, cx, cy, cz,
-                        cx + dirX * ghost, cy + 0.05f, cz + dirZ * ghost,
-                        0.032f, 0xFFFFFF, pRgb, Math.round(fadeA * 0.85f));
-                for (int g2 = 1; g2 <= 3; g2++) {
-                    float k = g2 / 3.0f;
-                    emitVoxelCube(vc, mat, tmp,
-                            quantize(cx + dirX * ghost * k, 0.0625f),
-                            quantize(cy + 0.05f + 0.10f * k, 0.0625f),
-                            quantize(cz + dirZ * ghost * k, 0.0625f),
-                            0.022f, 0.022f, 0.022f, 0xFFFFFF, Math.round(fadeA * (0.9f - 0.2f * k)));
-                }
-            }
-            case TWIN_ECHO_SLASH -> {
-                // #04 T361 : DOUBLE RÉMANENCE — l'entaille est rejouée une seconde fois, décalée,
-                // avec un écho plus pâle (deux arcs, jamais un anneau).
-                emitMotionSlash(vc, mat, tmp, cx, cy, cz, inst.yawDeg, inst.pitchDeg, inst.tiltRad,
-                        (1.15f + 0.35f * t) * motion.scale(), 0.036f, 155.0f, t,
-                        pRgb, sRgb, aRgb, fadeA, motion, mSalt, inst.effect.ordinal());
-                emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, 2, 0xFFFFFF, sRgb,
-                        Math.round(fadeA * 0.6f));
-            }
-            case MOLTEN_FIRE_WAVE -> {
-                // #13 T361 : NAPPE DE BRAISES — 14 flammèches tourbillonnantes qui montent, plus un
-                // anneau de cendres : le feu MONTE, il ne tourne pas autour de l'impact.
-                for (int e2 = 0; e2 < 14; e2++) {
-                    float ang = e2 * 0.4488f + inst.age * 0.10f;
-                    float rad = 0.25f + 1.30f * t * (0.6f + 0.5f * pixelHash(e2, e2 * 3));
-                    float up = (0.35f + 1.25f * t) * (0.55f + 0.7f * pixelHash(e2, 7));
-                    float sway = Mth.sin(inst.age * 0.35f + e2) * 0.12f;
-                    emitVoxelCube(vc, mat, tmp,
-                            quantize(cx + Mth.cos(ang) * rad + sway, 0.0625f),
-                            quantize(cy - 0.35f + up, 0.0625f),
-                            quantize(cz + Mth.sin(ang) * rad + sway * 0.7f, 0.0625f),
-                            0.030f + 0.014f * pixelHash(e2, 11), 0.034f, 0.030f,
-                            (e2 & 2) == 0 ? 0xFFFFFF : ((e2 & 1) == 0 ? pRgb : sRgb),
-                            Math.round(fadeA * (1.0f - 0.45f * t)));
-                }
-                emitPixelRing3D(vc, mat, tmp, cx, cy - 0.44f, cz, 0.40f + 1.75f * t,
-                        pRgb, sRgb, Math.round(fadeA * 0.75f), PIXEL_RING_DASHED);
-            }
-            case GOLDEN_CRIT_STAR -> {
-                // #06 Étoile Critique Pixel-Art 3D (+ en cubes + vrai cercle pixelisé de Bresenham)
-                int arms = (inst.intensity >= 3) ? 4 : 3;
-                emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, arms, 0xFFFFFF, pRgb, fadeA);
-                emitPixelCircle3D(vc, mat, tmp, cx, cy, cz, 0.30f + 1.35f * t, pRgb, sRgb, fadeA);
-            }
-            case FOCUSED_BULLSEYE -> {
-                // #07 Mire circulaire pixel-art (Bresenham) faisant face au tireur + 4 crans de visée pixels
-                float rad = (t < 0.4f) ? (1.10f - 1.55f * t) : (0.48f + (t - 0.4f) * 1.45f);
-                emitPixelCircleBillboard3D(vc, mat, tmp, cx, cy, cz, rad, sRgb, pRgb, fadeA);
-                emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, 2, 0xFFFFFF, sRgb, fadeA);
-            }
-            case OVERCLOCK_CYBER_X -> {
-                // #08 Immense X en escalier de mini-cubes néon cyan & magenta + cercle runique cyber pixelisé !
-                float span = 0.85f + 0.55f * t;
-                emitSteppedVoxelLine(vc, mat, tmp, cx - span, cy - span, cz, cx + span, cy + span, cz, 0.048f, 0xFFFFFF, pRgb, fadeA);
-                emitSteppedVoxelLine(vc, mat, tmp, cx - span, cy + span, cz, cx + span, cy - span, cz, 0.048f, 0xFFFFFF, sRgb, fadeA);
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.55f + 1.35f * t, -t * 3.0f, pRgb, sRgb, aRgb, fadeA, false);
-            }
-            case GUILLOTINE_CLEAVE -> {
-                // #05 Colonne de cubes d'exécution tranchant de haut en bas + cercle pixel au sol
-                float topY = cy + 2.0f * (1.0f - t * 0.35f);
-                emitSteppedVoxelLine(vc, mat, tmp, cx, topY, cz, cx, cy - 0.8f, cz, 0.058f, sRgb, pRgb, fadeA);
-                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.65f, cz, 0.30f + 1.30f * t, pRgb, sRgb, fadeA);
-            }
-            case DRIPPING_BLOOD_EDGE, CARNAGE_BERSERK -> {
-                // #09 / #12 Gouttes reconstruites en PIXELS 3D de tailles différentes (pointe fine, corps
-                // large, queue, éclaboussures satellites) — plus aucune goutte lisse ni gros cube unique !
-                int count = (inst.effect == WeaponVisualEffectId.CARNAGE_BERSERK) ? 10 : 7;
-                for (int i = 0; i < count; i++) {
-                    float ang = (float) (i * (Math.PI * 2.0 / count) + (inst.seed & 7));
-                    float rad = (0.20f + 1.35f * t) * (0.72f + 0.28f * pixelHash(inst.effect.ordinal(), i * 19));
-                    float dy = 0.55f * t - 1.40f * t * t;
-                    float px = quantize(cx + Mth.cos(ang) * rad, 0.0625f);
-                    float py = quantize(cy + dy, 0.0625f);
-                    float pz = quantize(cz + Mth.sin(ang) * rad, 0.0625f);
-                    float dropStep = (i % 3 == 0) ? 0.034f : ((i % 3 == 1) ? 0.024f : 0.040f);
-                    emitPixelDroplet3D(vc, mat, tmp, px, py, pz, dropStep,
-                            (i & 1) == 0 ? pRgb : sRgb, 0xFF8A8A, fadeA, inst.effect.ordinal() * 7 + i);
-                    // Gouttelettes plus petites qui se détachent au-dessus de la goutte
-                    if ((i & 1) == 0) {
-                        emitVoxelCube(vc, mat, tmp, px, py + dropStep * 4.2f, pz,
-                                dropStep * 0.30f, dropStep * 0.30f, dropStep * 0.30f, pRgb,
-                                Math.round(fadeA * 0.8f));
-                        emitVoxelCube(vc, mat, tmp, px + dropStep * 0.9f, py + dropStep * 6.0f, pz,
-                                dropStep * 0.20f, dropStep * 0.20f, dropStep * 0.20f, sRgb,
-                                Math.round(fadeA * 0.6f));
-                    }
-                }
-                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.35f + 1.50f * t, pRgb, sRgb, fadeA);
-            }
-            case VITAL_TRANSFUSION -> {
-                // #11 Double hélice voxel rubis-or + petit cercle runique médical en pixels au sol
-                emitVoxelHelix(vc, mat, tmp, cx, cy - 0.6f, cz, 0.65f, 1.8f, t * 4.0f, pRgb, sRgb, fadeA);
-                emitVoxelHelix(vc, mat, tmp, cx, cy - 0.6f, cz, 0.65f, 1.8f, t * 4.0f + (float) Math.PI, sRgb, pRgb, fadeA);
-                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.45f, cz, 0.75f, sRgb, pRgb, fadeA);
-            }
-            case SOUL_FIRE_CRESCENT -> {
-                // #14 T361 : LANGUES DE FEU D'ÂME — neuf flammes turquoise qui montent en escalier et
-                // vacillent (le feu monte), avec le cercle runique d'âme conservé au sol.
-                for (int fl = 0; fl < 9; fl++) {
-                    float ang = fl * 0.698f + inst.age * 0.05f;
-                    float rad = 0.25f + 0.85f * (0.4f + 0.6f * pixelHash(fl, fl * 5));
-                    float h = (0.55f + 0.75f * pixelHash(fl, 11)) * (0.55f + 0.75f * t);
-                    float bx = cx + Mth.cos(ang) * rad;
-                    float bz = cz + Mth.sin(ang) * rad;
-                    for (int sg = 0; sg < 5; sg++) {
-                        float u = sg / 5.0f;
-                        float sway = Mth.sin(u * 5.0f + inst.age * 0.5f + fl) * 0.10f * u;
-                        emitVoxelCube(vc, mat, tmp,
-                                quantize(bx + sway, 0.0625f),
-                                quantize(cy - 0.35f + u * h, 0.0625f),
-                                quantize(bz + sway * 0.7f, 0.0625f),
-                                0.040f * (1.0f - 0.55f * u), 0.052f * (1.0f - 0.45f * u),
-                                0.040f * (1.0f - 0.55f * u),
-                                u > 0.55f ? 0xFFFFFF : ((sg & 1) == 0 ? pRgb : sRgb),
-                                Math.round(fadeA * (1.0f - 0.25f * u)));
-                    }
-                }
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.42f, cz, 0.55f + 1.30f * t,
-                        t * 2.2f, pRgb, sRgb, aRgb, fadeA, true);
-            }
-            case BRIMSTONE_METEOR -> {
-                // #15 Bloc-météore cubique plongeant du ciel + grand cercle runique infernal en pixels !
-                if (t < 0.48f) {
-                    float mt = t / 0.48f;
-                    float mx = quantize(cx + 3.2f * (1.0f - mt), 0.0625f);
-                    float my = quantize(cy + 11.0f * (1.0f - mt), 0.0625f);
-                    float mz = quantize(cz + 2.0f * (1.0f - mt), 0.0625f);
-                    // Météore reconstruit en amas de pixels 3D (croûte irrégulière + cœur incandescent)
-                    emitPixelRockCluster3D(vc, mat, tmp, mx, my, mz, 0.0625f, 10, pRgb, sRgb, 0xFFFFFF, 235,
-                            inst.effect.ordinal() * 13 + inst.age);
-                    emitSteppedVoxelLine(vc, mat, tmp, mx + 1.0f, my + 3.2f, mz + 0.6f, mx, my, mz,
-                            0.070f, sRgb, pRgb, 220);
-                }
-                float st = Math.max(0.0f, (t - 0.2f) / 0.8f);
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.38f, cz, 0.55f + 2.65f * st, t * 1.5f, sRgb, pRgb, 0xFFFFFF, fadeA, true);
-            }
-            case CHAIN_VOLT_ARC -> {
-                // #16 Éclair céleste en escalier de cubes 3D + 3 arcs au sol + onde circulaire pixelisée
-                emitVoxelLightning(vc, mat, tmp, cx + 0.3f, cy + 8.0f, cz - 0.3f, cx, cy, cz, 11, 0.35f,
-                        inst.seed + inst.age / 2, 0xFFFFFF, pRgb, fadeA, 0.045f);
-                for (int b = 0; b < 3; b++) {
-                    float a = b * 2.094f + (inst.seed & 3);
-                    emitVoxelLightning(vc, mat, tmp, cx, cy, cz,
-                            cx + Mth.cos(a) * 1.8f, cy - 0.3f, cz + Mth.sin(a) * 1.8f,
-                            5, 0.18f, inst.seed + b * 29L + inst.age, sRgb, pRgb, fadeA, 0.035f);
-                }
-                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.35f + 1.45f * t, 0xFFFFFF, pRgb, fadeA);
-            }
-            case HYDRO_TIDAL_SURGE -> {
-                // #17 T361 : COURONNE DE VAGUES — trois nappes qui montent en ondulant + gerbes de
-                // gouttes projetées vers le haut puis retombées (l'eau ondule, elle ne s'enroule pas).
-                for (int wv = 0; wv < 3; wv++) {
-                    float wt = Math.min(1.0f, t + wv * 0.16f);
-                    float rr = 0.35f + (1.35f + 0.25f * wv) * wt;
-                    float yy = cy - 0.40f + wt * (0.32f + 0.16f * wv);
-                    emitPixelCircle3D(vc, mat, tmp, cx, yy, cz, rr,
-                            (wv & 1) == 0 ? pRgb : sRgb, 0xE8F8FF,
-                            Math.round(fadeA * (0.95f - 0.20f * wv)));
-                }
-                for (int d = 0; d < 12; d++) {
-                    float ang = d * 0.5236f + inst.age * 0.08f;
-                    float rad = 0.35f + 1.15f * t;
-                    float up = 0.55f * Mth.sin(Math.min(1.0f, t * 1.3f) * (float) Math.PI)
-                            * (0.6f + 0.4f * pixelHash(d, d * 7));
-                    emitPixelDroplet3D(vc, mat, tmp,
-                            quantize(cx + Mth.cos(ang) * rad, 0.0625f),
-                            quantize(cy - 0.30f + up, 0.0625f),
-                            quantize(cz + Mth.sin(ang) * rad, 0.0625f),
-                            0.030f + 0.012f * pixelHash(d, 3), pRgb, 0xE8F8FF, fadeA, d * 13);
-                }
-            }
-            case ABYSSAL_MAELSTROM -> {
-                // #18 Vortex océanique de mini-cubes 3D tournoyants à 4 bras + cercle pixel abyssal
-                for (int arm = 0; arm < 4; arm++) {
-                    float baseAng = arm * ((float) Math.PI * 0.5f) + t * 6.0f;
-                    for (int s = 1; s <= 9; s++) {
-                        float u = s / 9.0f;
-                        float r = Mth.lerp(u, 0.25f, 2.6f * (1.0f - 0.2f * t));
-                        float a = baseAng + u * 2.6f;
-                        float vx = quantize(cx + Mth.cos(a) * r, 0.0625f);
-                        float vy = quantize(cy - 0.35f + (1.0f - u) * 0.55f, 0.0625f);
-                        float vz = quantize(cz + Mth.sin(a) * r, 0.0625f);
-                        emitVoxelCube(vc, mat, tmp, vx, vy, vz, 0.052f * (1.15f - 0.4f * u), 0.052f, 0.052f,
-                                (s & 1) == 0 ? sRgb : pRgb, fadeA);
-                    }
-                }
-                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.38f, cz, 0.45f + 2.05f * t, pRgb, sRgb, fadeA);
-            }
-            case PERMAFROST_RIME -> {
-                // #19 Piliers de cristaux cubiques de glace + cercle runique givré en pixels !
-                for (int k = 0; k < 6; k++) {
-                    float a = k * ((float) Math.PI / 3.0f);
-                    float r = 0.40f + 1.45f * t;
-                    float px = quantize(cx + Mth.cos(a) * r, 0.0625f);
-                    float pz = quantize(cz + Mth.sin(a) * r, 0.0625f);
-                    float h = 0.38f * (1.0f - t * 0.5f);
-                    // Cristal en pixels 3D empilés qui s'affinent vers la pointe (jamais un bloc unique)
-                    int segs = 4;
-                    for (int seg = 0; seg < segs; seg++) {
-                        float su = seg / (float) segs;
-                        float segS = 0.0625f * (1.0f - 0.62f * su);
-                        float sy = cy - 0.3f + h * (su + 0.5f / segs);
-                        emitVoxelCube(vc, mat, tmp, px, sy, pz,
-                                segS, h / segs * 0.52f, segS,
-                                (k & 1) == 0 ? sRgb : pRgb, fadeA);
-                        emitVoxelCube(vc, mat, tmp, px + segS * 0.85f, sy + h / segs * 0.16f, pz - segS * 0.7f,
-                                segS * 0.48f, h / segs * 0.3f, segS * 0.48f, 0xFFFFFF,
-                                Math.round(fadeA * 0.55f));
-                    }
-                    emitVoxelCube(vc, mat, tmp, px, cy - 0.3f + h + 0.02f, pz,
-                            0.0125f, 0.020f, 0.0125f, 0xFFFFFF, Math.round(fadeA * 0.9f));
-                }
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.38f, cz, 0.45f + 1.45f * t, 0.0f, sRgb, pRgb, 0xFFFFFF, fadeA, false);
-            }
-            case VENOM_BRIAR_FANG -> {
-                // #20 T361 : MÂCHOIRE VENIMEUSE — trois paires de crocs qui jaillissent du sol et se
-                // referment sur la cible, avec un suintement de venin aux pointes (plus d'hélice).
-                for (int jaw = 0; jaw < 3; jaw++) {
-                    float ang = jaw * 2.094f + 0.40f;
-                    float baseR = 0.55f + 0.35f * (1.0f - t);
-                    float closeK = 1.0f - 0.55f * t;
-                    for (int side = -1; side <= 1; side += 2) {
-                        float ca2 = Mth.cos(ang) * side;
-                        float sa2 = Mth.sin(ang) * side;
-                        emitSteppedVoxelLine(vc, mat, tmp,
-                                cx + ca2 * baseR, cy - 0.55f, cz + sa2 * baseR,
-                                cx + ca2 * 0.12f * closeK, cy + 0.62f, cz + sa2 * 0.12f * closeK,
-                                0.036f, sRgb, pRgb, fadeA);
-                        emitPixelDroplet3D(vc, mat, tmp,
-                                quantize(cx + ca2 * 0.16f, 0.0625f),
-                                quantize(cy + 0.55f - 0.25f * t, 0.0625f),
-                                quantize(cz + sa2 * 0.16f, 0.0625f),
-                                0.026f, pRgb, 0xB6FF7A, Math.round(fadeA * 0.8f), jaw * 31 + side);
-                    }
-                }
-                emitPixelRing3D(vc, mat, tmp, cx, cy - 0.48f, cz, 0.40f + 1.25f * t,
-                        sRgb, pRgb, Math.round(fadeA * 0.7f), PIXEL_RING_DASHED);
-            }
-            case SEISMIC_TECTONIC -> {
-                // #21 Failles de cubes rocheux soulevés sur le sol + onde sismique circulaire en pixels
-                float reach = 0.5f + 2.9f * Mth.sqrt(t);
-                for (int f = 0; f < 6; f++) {
-                    float a = f * ((float) Math.PI / 3.0f) + 0.2f;
-                    emitSteppedVoxelLine(vc, mat, tmp, cx, cy - 0.42f, cz,
-                            cx + Mth.cos(a) * reach, cy - 0.42f, cz + Mth.sin(a) * reach,
-                            0.058f, sRgb, pRgb, fadeA);
-                }
-                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.40f, cz, reach * 0.78f, pRgb, sRgb, fadeA);
-            }
-            case ZEPHYR_WIND_LANCE -> {
-                // #22 T361 : ENROULEMENT DE VENT — trois bras spiraux qui tournent en s'élevant
-                // (le vent s'enroule) puis un cœur clair au centre ; plus deux anneaux plats.
-                for (int arm = 0; arm < 3; arm++) {
-                    float baseAng = arm * 2.094f + inst.age * 0.35f;
-                    for (int sg = 1; sg <= 10; sg++) {
-                        float u = sg / 10.0f;
-                        float ang = baseAng + u * 3.4f;
-                        float rad = (0.20f + 1.35f * u) * (0.45f + 0.75f * t);
-                        emitVoxelCube(vc, mat, tmp,
-                                quantize(cx + Mth.cos(ang) * rad, 0.0625f),
-                                quantize(cy - 0.35f + u * 1.45f * (0.5f + 0.7f * t), 0.0625f),
-                                quantize(cz + Mth.sin(ang) * rad, 0.0625f),
-                                0.032f * (1.2f - 0.5f * u), 0.028f, 0.032f * (1.2f - 0.5f * u),
-                                (sg & 1) == 0 ? pRgb : 0xFFFFFF,
-                                Math.round(fadeA * (1.0f - 0.35f * u)));
-                    }
-                }
-                emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, 2, 0xFFFFFF, pRgb,
-                        Math.round(fadeA * 0.8f));
-            }
-            case SERAPH_SKY_PILLAR -> {
-                // #23 Colonne céleste blocky + VRAI CERCLE RUNIQUE SACRÉ EN PIXELS 3D au sol et en élévation !
-                float hw = 0.26f * Mth.sin(Math.min(1.0f, t * 1.3f) * (float) Math.PI);
-                if (hw > 0.02f) {
-                    // Colonne céleste reconstruite en pixels 3D empilés de tailles différentes : cœur blanc
-                    // crénelé, halo de micro-pixels colorés et étincelles — aucun gros bloc rectangulaire.
-                    int layers = 30;
-                    for (int li = 0; li < layers; li++) {
-                        float lu = li / (float) (layers - 1);
-                        float ly = cy + 0.15f + lu * 10.8f;
-                        float bulge = 0.35f + 0.85f * Mth.sin(lu * (float) Math.PI);
-                        float spread = hw * bulge;
-                        float jx = (pixelHash(inst.effect.ordinal() + li, li * 31) - 0.5f) * spread * 1.35f;
-                        float jz = (pixelHash(li * 7 + 3, li * 17) - 0.5f) * spread * 1.35f;
-                        float px = quantize(cx + jx, 0.0625f);
-                        float pz = quantize(cz + jz, 0.0625f);
-                        float coreS = 0.028f + 0.030f * bulge;
-                        emitVoxelCube(vc, mat, tmp, px, ly, pz, coreS,
-                                coreS * (1.05f + 0.35f * pixelHash(li, li * 5)), coreS, 0xFFFFFF, fadeA);
-                        int haloA = Math.round(fadeA * 0.42f);
-                        emitVoxelCube(vc, mat, tmp, quantize(px + spread, 0.0625f), ly + 0.02f, pz,
-                                coreS * 0.72f, coreS * 0.9f, coreS * 0.72f, sRgb, haloA);
-                        emitVoxelCube(vc, mat, tmp, px, ly + 0.01f, quantize(pz - spread, 0.0625f),
-                                coreS * 0.60f, coreS * 0.78f, coreS * 0.60f, pRgb, Math.round(haloA * 0.9f));
-                        if ((li & 3) == 0) {
-                            emitVoxelCube(vc, mat, tmp, quantize(px, 0.03125f), ly + coreS * 2.2f, pz,
-                                    coreS * 0.26f, coreS * 0.26f, coreS * 0.26f, 0xFFFFFF,
-                                    Math.round(fadeA * 0.6f));
-                        }
-                    }
-                }
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.38f, cz, 0.65f + 1.75f * Math.min(1.0f, t * 1.6f),
-                        t * 1.8f, pRgb, sRgb, aRgb, fadeA, true);
-                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.20f + 2.4f * t, cz, 0.55f + 1.15f * t, 0xFFFFFF, sRgb, fadeA);
-            }
-            case WITHER_SHADOW_RIFT -> {
-                // #24 Triple griffure d'ombre en escalier de mini-pixels violets-noirs
-                for (int claw = -1; claw <= 1; claw++) {
-                    float off = claw * 0.28f;
-                    emitSteppedVoxelLine(vc, mat, tmp,
-                            cx - 0.65f + off, cy + 0.75f, cz - 0.30f,
-                            cx + 0.65f + off, cy - 0.65f, cz + 0.30f,
-                            0.044f, sRgb, pRgb, fadeA);
-                }
-            }
-            case ASTRAL_STAR_LANCE -> {
-                // #25 Impact stellaire : étoile 3D + cercle runique astral en pixels !
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.50f + 1.35f * t, -t * 2.4f, pRgb, sRgb, aRgb, fadeA, true);
-                emitPixelCross3D(vc, mat, tmp, cx, cy + 0.1f, cz, 0.0625f, 4, 0xFFFFFF, pRgb, fadeA);
-            }
-            case VOID_WARP_SPHERE -> {
-                // #26 Cercle runique du Vide en pixels 3D (implosion/explosion) + croix abyssale
-                float r = 0.40f + 1.45f * Mth.sin(t * (float) Math.PI);
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.20f, cz, r, -t * 3.5f, pRgb, sRgb, aRgb, fadeA, true);
-                emitPixelCircleBillboard3D(vc, mat, tmp, cx, cy + 0.1f, cz, r * 0.65f, sRgb, pRgb, fadeA);
-                emitPixelCross3D(vc, mat, tmp, cx, cy + 0.1f, cz, 0.0625f, 3, sRgb, pRgb, fadeA);
-            }
-            case DRAGON_CHAOS_PRISM -> {
-                // #27 Cercle runique draconique arc-en-ciel en pixels 3D !
-                int c1 = Mth.hsvToRgb((t * 1.5f) % 1.0f, 0.8f, 1.0f);
-                int c2 = Mth.hsvToRgb((t * 1.5f + 0.35f) % 1.0f, 0.85f, 1.0f);
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.38f, cz, 0.55f + 2.15f * t, t * 2.6f, c1, c2, 0xFFFFFF, fadeA, true);
-                emitPixelCross3D(vc, mat, tmp, cx, cy + 0.2f, cz, 0.0625f, 4, 0xFFFFFF, c1, fadeA);
-            }
-            case CHRONO_ETERNAL_HALO -> {
-                // #28 Cadran d'horloge runique en pixels 3D (double cercle de Bresenham + 8 runes + aiguilles pixels) !
-                float r = 1.05f;
-                float hy = cy + 0.65f;
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, hy, cz, r, t * 0.8f, pRgb, sRgb, aRgb, fadeA, false);
-                float aFast = t * 8.5f;
-                float aSlow = t * 2.2f;
-                emitSteppedVoxelLine(vc, mat, tmp, cx, hy, cz,
-                        cx + Mth.cos(aFast) * r * 0.58f, hy, cz + Mth.sin(aFast) * r * 0.58f,
-                        0.032f, 0xFFFFFF, pRgb, fadeA);
-                emitSteppedVoxelLine(vc, mat, tmp, cx, hy, cz,
-                        cx + Mth.cos(aSlow) * r * 0.40f, hy, cz + Mth.sin(aSlow) * r * 0.40f,
-                        0.038f, sRgb, pRgb, fadeA);
-            }
-            case WARLORD_RALLY_SIGIL -> {
-                // #29 Grand Cercle Runique du Chef de Guerre en pixels 3D (double anneau Bresenham + 8 runes 3x3 + étoile) !
-                float r = 2.05f * Math.min(1.0f, t * 2.4f);
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.40f, cz, r, t * 1.6f, pRgb, sRgb, aRgb, fadeA, true);
-            }
-            case VERDANT_SAP_BLOOM -> {
-                // #38 T352b Bois (BRUN) : éclats d'écorce projetés vers le haut + pousses qui
-                // s'ouvrent, gouttes de sève ambrée — aucune teinte verte (le vert = poison).
-                for (int i = 0; i < 7; i++) {
-                    float ang = i * 0.897f + (inst.seed & 7);
-                    float rad = 0.25f + 1.55f * Mth.sqrt(t);
-                    float px = quantize(cx + Mth.cos(ang) * rad, 0.0625f);
-                    float pz = quantize(cz + Mth.sin(ang) * rad, 0.0625f);
-                    float py = quantize(cy - 0.30f + 0.55f * t + (i % 3) * 0.06f, 0.0625f);
-                    // éclat d'écorce (bois sombre) surmonté d'une goutte de sève claire
-                    emitVoxelCube(vc, mat, tmp, px, py, pz, 0.040f, 0.030f, 0.040f,
-                            (i & 1) == 0 ? sRgb : pRgb, fadeA);
-                    emitVoxelCube(vc, mat, tmp, px, py + 0.055f, pz, 0.022f, 0.026f, 0.022f,
-                            0xE8C089, Math.round(fadeA * 0.85f));
-                }
-                // jeunes pousses : deux tiges en escalier de part et d'autre de l'impact
-                for (int side = -1; side <= 1; side += 2) {
-                    emitSteppedVoxelLine(vc, mat, tmp,
-                            cx + side * 0.35f, cy - 0.45f, cz,
-                            cx + side * (0.55f + 0.35f * t), cy + 0.55f, cz + side * 0.10f,
-                            0.030f, pRgb, sRgb, fadeA);
-                }
-                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.42f, cz, 0.35f + 1.25f * t,
-                        pRgb, sRgb, Math.round(fadeA * 0.75f));
-            }
-            case MIASMA_SHROUD -> {
-                // #39 T352b Poison (VERT FONCÉ) : voile de miasme — trois anneaux qui montent et
-                // s'élargissent, plus des spores qui flottent (mode alpha, pas de flash additif).
-                for (int ringI = 0; ringI < 3; ringI++) {
-                    float rt = Math.min(1.0f, t + ringI * 0.18f);
-                    emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.35f + rt * 0.85f, cz,
-                            0.35f + 1.45f * rt, pRgb, sRgb, Math.round(fadeA * (0.8f - 0.18f * ringI)));
-                }
-                for (int sp = 0; sp < 10; sp++) {
-                    float ang = sp * 0.628f + (inst.seed & 15) * 0.1f;
-                    float rad = (0.30f + 0.95f * t) * (0.6f + 0.4f * pixelHash(sp, sp * 11));
-                    emitVoxelCube(vc, mat, tmp,
-                            quantize(cx + Mth.cos(ang) * rad, 0.0625f),
-                            quantize(cy - 0.10f + t * (0.55f + 0.3f * pixelHash(sp * 3, sp)), 0.0625f),
-                            quantize(cz + Mth.sin(ang) * rad, 0.0625f),
-                            0.028f, 0.028f, 0.028f,
-                            (sp & 1) == 0 ? pRgb : sRgb, Math.round(fadeA * 0.8f));
-                }
-            }
-            case PLAGUE_NOVA -> {
-                // #40 T352b Poison : nova venimeuse — 10 aiguillons jaillissent du sol puis retombent,
-                // anneau de contamination au sol et cœur sombre.
-                for (int i = 0; i < 10; i++) {
-                    float ang = i * 0.628f;
-                    float out = 0.25f + 1.85f * Mth.sqrt(t);
-                    float h = 0.75f * Mth.sin(Math.min(1.0f, t * 1.4f) * (float) Math.PI);
-                    emitSteppedVoxelLine(vc, mat, tmp,
-                            cx + Mth.cos(ang) * out * 0.55f, cy - 0.45f, cz + Mth.sin(ang) * out * 0.55f,
-                            cx + Mth.cos(ang) * out, cy - 0.45f + h, cz + Mth.sin(ang) * out,
-                            0.034f, sRgb, pRgb, fadeA);
-                }
-                emitPixelRing3D(vc, mat, tmp, cx, cy - 0.44f, cz, 0.40f + 1.70f * t,
-                        pRgb, sRgb, Math.round(fadeA * 0.85f), PIXEL_RING_DASHED);
-                emitPixelCross3D(vc, mat, tmp, cx, cy - 0.05f, cz, 0.0625f, 3, sRgb, pRgb, fadeA);
-            }
-            case THORN_MAW_ROOT -> {
-                // #31 T352 Bois : 8 ronces en escalier qui montent du sol puis se referment vers le haut,
-                // + anneau de spores vert sombre (aucune forme pleine, uniquement des pixels 3D).
-                int roots = 8;
-                for (int i = 0; i < roots; i++) {
-                    float ang = i * (float) (Math.PI * 2.0 / roots) + 0.25f;
-                    float baseR = 0.55f + 0.55f * (1.0f - t);
-                    float topR = 0.12f + 0.40f * t;
-                    float bx = cx + Mth.cos(ang) * baseR;
-                    float bz = cz + Mth.sin(ang) * baseR;
-                    float tx2 = cx + Mth.cos(ang + 0.5f) * topR;
-                    float tz2 = cz + Mth.sin(ang + 0.5f) * topR;
-                    emitSteppedVoxelLine(vc, mat, tmp, bx, cy - 0.55f, bz, tx2, cy + 0.85f, tz2,
-                            0.040f, sRgb, pRgb, fadeA);
-                    // épines : petits pixels qui dépassent de la ronce
-                    if ((i & 1) == 0) {
-                        emitVoxelCube(vc, mat, tmp, Mth.lerp(0.55f, bx, tx2), cy + 0.10f, Mth.lerp(0.55f, bz, tz2),
-                                0.026f, 0.032f, 0.026f, 0xFFFFFF, Math.round(fadeA * 0.75f));
-                    }
-                }
-                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.52f, cz, 0.45f + 1.35f * t, pRgb, sRgb, Math.round(fadeA * 0.85f));
-            }
-            case SANDSTORM_DUNE -> {
-                // #32 T352 Terre : tempête de sable — 3 bras en spirale qui tournent en s'élargissant,
-                // grains épars au sol et dune soulevée en pixels (ocre, non additif = poussière lisible).
-                for (int armI = 0; armI < 3; armI++) {
-                    float baseAng = armI * 2.094f + t * 7.5f;
-                    for (int seg = 1; seg <= 8; seg++) {
-                        float u = seg / 8.0f;
-                        float rad = Mth.lerp(u, 0.30f, 2.35f * (0.35f + t));
-                        float ang = baseAng + u * 2.8f;
-                        float px = quantize(cx + Mth.cos(ang) * rad, 0.0625f);
-                        float pz = quantize(cz + Mth.sin(ang) * rad, 0.0625f);
-                        float py = quantize(cy - 0.25f + u * (1.15f * t), 0.0625f);
-                        emitVoxelCube(vc, mat, tmp, px, py, pz, 0.038f * (1.2f - 0.5f * u),
-                                0.030f, 0.038f * (1.2f - 0.5f * u),
-                                (seg & 1) == 0 ? pRgb : sRgb, fadeA);
-                    }
-                }
-                emitPixelCircle3D(vc, mat, tmp, cx, cy - 0.48f, cz, 0.55f + 1.85f * t, sRgb, pRgb, Math.round(fadeA * 0.8f));
-            }
-            case ECLIPSE_VEIL -> {
-                // #33 T352 Ombre : éclipse — disque noir pixelisé (cercle de Bresenham) qui grossit,
-                // voile en spirale et triple griffure violette.
-                float disc = 0.55f + 1.25f * t;
-                emitPixelCircleBillboard3D(vc, mat, tmp, cx, cy + 0.35f, cz, disc, sRgb, 0x000000, fadeA);
-                emitPixelCircle3D(vc, mat, tmp, cx, cy + 0.35f, cz, disc * 0.72f, 0x000000, sRgb,
-                        Math.round(fadeA * 0.85f));
-                for (int claw = -1; claw <= 1; claw++) {
-                    float off = claw * 0.26f + 0.10f * t;
-                    emitSteppedVoxelLine(vc, mat, tmp,
-                            cx - 0.70f + off, cy + 0.85f, cz - 0.35f,
-                            cx + 0.70f + off, cy - 0.55f, cz + 0.35f,
-                            0.040f, pRgb, sRgb, fadeA);
-                }
-                emitPixelRing3D(vc, mat, tmp, cx, cy - 0.50f, cz, 0.40f + 1.55f * t, pRgb, sRgb, fadeA, PIXEL_RING_DASHED);
-            }
-            case NULL_RIFT_FISSURE -> {
-                // #34 T352 Vide : faille verticale crénelée qui s'ouvre puis se referme, avec
-                // aspiration circulaire et éclats de vide qui filent vers l'intérieur.
-                float open = Mth.sin(Math.min(1.0f, t * 1.15f) * (float) Math.PI);
-                float half = 0.05f + 0.70f * open;
-                for (int side = -1; side <= 1; side += 2) {
-                    for (int segI = 0; segI < 6; segI++) {
-                        float u = segI / 5.0f;
-                        float w = half * (0.35f + 0.65f * Mth.sin(u * (float) Math.PI));
-                        float jx = (pixelHash(inst.effect.ordinal() + segI, side * 13) - 0.5f) * 0.22f;
-                        emitVoxelCube(vc, mat, tmp,
-                                quantize(cx + side * w + jx, 0.0625f),
-                                quantize(cy - 1.10f + u * 2.35f, 0.0625f),
-                                quantize(cz + side * 0.05f, 0.0625f),
-                                0.032f, 0.045f, 0.032f,
-                                (segI & 1) == 0 ? pRgb : sRgb, fadeA);
-                    }
-                }
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.45f, cz, 0.35f + 1.95f * t,
-                        -t * 4.2f, aRgb, pRgb, 0xFFFFFF, fadeA, true);
-                for (int k = 0; k < 6; k++) {
-                    float ang = k * 1.047f + t * 3.0f;
-                    float rad = 1.45f * (1.0f - t);
-                    emitVoxelCube(vc, mat, tmp,
-                            quantize(cx + Mth.cos(ang) * rad, 0.0625f),
-                            quantize(cy + 0.25f + Mth.sin(ang * 2.0f) * 0.45f, 0.0625f),
-                            quantize(cz + Mth.sin(ang) * rad, 0.0625f),
-                            0.026f, 0.026f, 0.026f, 0xFFFFFF, fadeA);
-                }
-            }
-            case CHAOS_KALEIDO_LOOP -> {
-                // #35 T352 Chaos : boucle kaléidoscopique — trois anneaux runiques qui tournent
-                // dans des teintes différentes sur un fond sombre, plus éclats multicolores.
-                int hueBase = Mth.hsvToRgb((t * 1.35f) % 1.0f, 0.9f, 1.0f);
-                int hueAlt = Mth.hsvToRgb((t * 1.35f + 0.33f) % 1.0f, 0.9f, 1.0f);
-                int hueAlt2 = Mth.hsvToRgb((t * 1.35f + 0.66f) % 1.0f, 0.9f, 1.0f);
-                emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.40f, cz, 0.55f + 2.10f * t,
-                        t * 2.4f, hueBase, sRgb, hueAlt, fadeA, true);
-                emitPixelRing3D(vc, mat, tmp, cx, cy + 0.35f, cz, 0.45f + 1.45f * t,
-                        hueAlt, hueAlt2, Math.round(fadeA * 0.85f), PIXEL_RING_DASHED);
-                emitPixelCircleBillboard3D(vc, mat, tmp, cx, cy + 0.35f, cz, 0.30f + 1.05f * t,
-                        hueAlt2, hueBase, Math.round(fadeA * 0.70f));
-                emitPixelCross3D(vc, mat, tmp, cx, cy + 0.20f, cz, 0.0625f, 4, 0xFFFFFF, hueBase, fadeA);
-            }
-            case ENTROPY_SPHERE -> {
-                // #36 T352 Chaos : sphère d'entropie — 3 cercles orthogonaux (équateur, méridiens)
-                // aux teintes différentes + hélice intérieure : volume bariolé, base sombre.
-                int hueA = Mth.hsvToRgb((t * 1.1f) % 1.0f, 0.85f, 1.0f);
-                int hueB = Mth.hsvToRgb((t * 1.1f + 0.33f) % 1.0f, 0.85f, 1.0f);
-                int hueC = Mth.hsvToRgb((t * 1.1f + 0.66f) % 1.0f, 0.85f, 1.0f);
-                float rad = 0.45f + 1.25f * Mth.sin(t * (float) Math.PI);
-                emitPixelRing3D(vc, mat, tmp, cx, cy, cz, rad, hueA, hueB, fadeA, PIXEL_RING_SOLID);
-                emitPixelCircleBillboard3D(vc, mat, tmp, cx, cy, cz, rad, hueB, hueC, Math.round(fadeA * 0.8f));
-                emitPixelCircleBillboard3D(vc, mat, tmp, cx, cy, cz, rad * 0.92f, hueC, hueA,
-                        Math.round(fadeA * 0.55f));
-                emitVoxelHelix(vc, mat, tmp, cx, cy - rad, cz, rad * 0.55f, rad * 2.0f, t * 5.5f,
-                        hueA, 0xFFFFFF, fadeA);
-            }
-            case BIG_BANG_SCAR -> {
-                // #37 T352 Chaos : déchirure du big bang — 12 rayons bariolés qui jaillissent d'un
-                // cœur blanc, anneau noir d'effondrement et éclats projetés très loin.
-                int rays = 12;
-                for (int i = 0; i < rays; i++) {
-                    float ang = i * (float) (Math.PI * 2.0 / rays) + t * 0.6f;
-                    float len = (0.55f + 2.9f * t) * ((i & 1) == 0 ? 1.0f : 0.72f);
-                    int hue = Mth.hsvToRgb((t * 1.9f + i / (float) rays) % 1.0f, 0.9f, 1.0f);
-                    float elev = (i % 3 == 0) ? 0.55f : ((i % 3 == 1) ? -0.35f : 0.05f);
-                    emitSteppedVoxelLine(vc, mat, tmp, cx, cy, cz,
-                            cx + Mth.cos(ang) * len, cy + elev * len * 0.55f, cz + Mth.sin(ang) * len,
-                            0.045f * (1.0f - 0.45f * t), 0xFFFFFF, hue, fadeA);
-                }
-                emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, 5, 0xFFFFFF, 0xFFFFFF, fadeA);
-                emitPixelRing3D(vc, mat, tmp, cx, cy, cz, 0.45f + 2.55f * t,
-                        0x000000, sRgb, Math.round(fadeA * 0.75f), PIXEL_RING_DASHED);
-                for (int k = 0; k < 8; k++) {
-                    float ang = k * 0.785f - t * 2.5f;
-                    float rad = 3.2f * t;
-                    emitVoxelCube(vc, mat, tmp,
-                            quantize(cx + Mth.cos(ang) * rad, 0.0625f),
-                            quantize(cy + (pixelHash(k, k * 7) - 0.5f) * 1.4f, 0.0625f),
-                            quantize(cz + Mth.sin(ang) * rad, 0.0625f),
-                            0.028f, 0.028f, 0.028f,
-                            Mth.hsvToRgb((t * 2.4f + k * 0.12f) % 1.0f, 0.85f, 1.0f), fadeA);
-                }
-            }
-            default -> {
-                float maxR = (inst.effect == WeaponVisualEffectId.ANNIHILATING_ARC) ? 3.1f : 1.65f;
-                if (inst.effect == WeaponVisualEffectId.ANNIHILATING_ARC) {
-                    emitPixelRunicCircle3D(vc, mat, tmp, cx, cy - 0.35f, cz, 0.45f + maxR * t, t * 3.0f, aRgb, pRgb, sRgb, fadeA, true);
-                } else {
-                    emitPixelCircle3D(vc, mat, tmp, cx, cy, cz, 0.25f + maxR * t, pRgb, sRgb, fadeA);
-                }
-                emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, 3, 0xFFFFFF, pRgb, fadeA);
+        // T362-ELEMENT-IMPACT : une animation PAR ÉLÉMENT, avec son propre déroulé dans le temps.
+        // Avant, presque tout finissait en « disque au sol + croix verticale » : de loin, le feu, la
+        // glace et le vide se ressemblaient. Désormais chaque élément a sa silhouette ET son timing
+        // (le feu monte, l'eau gicle puis retombe en rides, la glace pousse puis se brise, l'éclair
+        // clignote par à-coups, la terre se soulève puis retombe lourdement, la mâchoire se referme,
+        // le vide implose, l'ombre rampe puis se rétracte...).
+        ImpactView iv = new ImpactView(vc, mat, tmp, cx, cy, cz, inst, t,
+                pRgb, sRgb, aRgb, motion, mSalt, fadeA);
+        switch (inst.effect.element()) {
+            case FIRE -> impactFire(iv);
+            case WATER -> impactWater(iv);
+            case THUNDER -> impactThunder(iv);
+            case EARTH -> impactEarth(iv);
+            case METAL -> impactMetal(iv);
+            case WOOD -> impactWood(iv);
+            case POISON -> impactPoison(iv);
+            case LIGHT -> impactLight(iv);
+            case SHADOW -> impactShadow(iv);
+            case BLOOD -> impactBlood(iv);
+            case VOID -> impactVoid(iv);
+            case CHAOS -> impactChaos(iv);
+        }
+    }
+
+    /**
+     * T362-ELEMENT-IMPACT : tout ce qu'il faut à une animation d'impact pour se dessiner, plus une
+     * petite boîte à outils de primitives (cube, dalle, trait, anneau, goutte, gerbe balistique,
+     * éclair) pour que chaque élément s'écrive comme une ANIMATION lisible — et non comme un
+     * enchaînement de primitives identiques d'un élément à l'autre.
+     */
+    private record ImpactView(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                              float cx, float cy, float cz,
+                              VfxInstance inst, float t,
+                              int pRgb, int sRgb, int aRgb,
+                              WeaponVfxMotion.Profile m, int salt, int fadeA) {
+
+        /** Échelle de la grosse animation (taille du mob touché, T359). */
+        float S() {
+            return Mth.clamp(inst.sizeScale, 0.55f, 2.60f);
+        }
+
+        int age() {
+            return inst.age;
+        }
+
+        /** Progression qui démarre vite puis ralentit (jaillissement, ouverture). */
+        float easeOut() {
+            return 1.0f - (1.0f - t) * (1.0f - t);
+        }
+
+        /** Progression qui démarre lentement puis accélère (chute, implosion). */
+        float easeIn() {
+            return t * t;
+        }
+
+        float hash(int a) {
+            return pixelHash(salt, a);
+        }
+
+        /** Mini-cube 3D aligné sur la grille. */
+        void cube(float x, float y, float z, float s, int rgb, int a) {
+            box(x, y, z, s, s, s, rgb, a);
+        }
+
+        /** Cube à dimensions libres (dalles, lames, pétales, éclats). */
+        void box(float x, float y, float z, float hx, float hy, float hz, int rgb, int a) {
+            emitVoxelCube(vc, mat, tmp, quantize(x, 0.0625f), quantize(y, 0.0625f), quantize(z, 0.0625f),
+                    hx, hy, hz, rgb, a);
+        }
+
+        void line(float x0, float y0, float z0, float x1, float y1, float z1,
+                  float hs, int core, int outer, int a) {
+            emitSteppedVoxelLine(vc, mat, tmp, x0, y0, z0, x1, y1, z1, hs, core, outer, a);
+        }
+
+        void ring(float y, float radius, int rgbA, int rgbB, int a, int style) {
+            emitPixelRing3D(vc, mat, tmp, cx, y, cz, radius, rgbA, rgbB, a, style);
+        }
+
+        /** Éclair 3D : le tracé est re-tiré à chaque image (comme un orage qui se re-ramifie). */
+        void bolt(float x0, float y0, float z0, float x1, float y1, float z1,
+                  int nodes, float jitter, int core, int glow, int a, float hs) {
+            long sd = (long) salt * 2654435761L + (long) inst.age * 7919L;
+            emitVoxelLightning(vc, mat, tmp, x0, y0, z0, x1, y1, z1, nodes, jitter, sd, core, glow, a, hs);
+        }
+
+        void drop(float x, float y, float z, float step, int body, int light, int a, int idx) {
+            emitPixelDroplet3D(vc, mat, tmp, quantize(x, 0.0625f), quantize(y, 0.0625f), quantize(z, 0.0625f),
+                    step, body, light, a, salt + idx);
+        }
+
+        void rocks(float x, float y, float z, float step, int count, int crust, int glow, int hot, int a) {
+            emitPixelRockCluster3D(vc, mat, tmp, x, y, z, step, count, crust, glow, hot, a, salt);
+        }
+
+        void cross(int arms, int core, int tip, int a) {
+            emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, arms, core, tip, a);
+        }
+
+        /** L'arc de lame propre à l'enchantement (mouvement T361 conservé). */
+        void slash(float radius, float baseHalf, float sweepDeg, int core, int trail, int accent, int a) {
+            emitMotionSlash(vc, mat, tmp, cx, cy, cz, inst.yawDeg, inst.pitchDeg, inst.tiltRad,
+                    radius * S(), baseHalf, sweepDeg, t, core, trail, accent, a, m, salt, inst.effect.ordinal());
+        }
+
+        /**
+         * Projectile balistique : il part vers le haut puis RETOMBE (gravité) — c'est ce qui distingue
+         * une gerbe d'eau ou une braise d'une étincelle qui fuse en ligne droite.
+         */
+        void lob(float vx, float vy, float vz, float s, int rgb, int a) {
+            float time = t * 0.90f;
+            float g = 4.6f;
+            cube(cx + vx * time * S(),
+                    cy + (vy * time - 0.5f * g * time * time) * S(),
+                    cz + vz * time * S(), s, rgb, a);
+        }
+    }
+
+    // ============================ ANIMATIONS D'IMPACT PAR ÉLÉMENT ============================
+
+    /**
+     * 火 FEU — le feu MONTE : des langues de flamme effilées grandissent en vacillant, des braises
+     * sont projetées puis retombent, et le sol rougeoie. Aucun anneau tournant autour de la cible.
+     */
+    private static void impactFire(ImpactView v) {
+        float t = v.t();
+        float S = v.S();
+        WeaponVisualEffectId fx = v.inst().effect;
+        int arms = Mth.clamp(v.m().arms() + 1, 3, 7);
+        float grow = 0.40f + 1.60f * v.easeOut();
+
+        for (int i = 0; i < arms; i++) {
+            float ang = i * (float) (Math.PI * 2.0 / arms) + v.hash(i * 13) * 0.55f;
+            float rad = (0.18f + 0.50f * v.hash(i * 7)) * S;
+            float h = (0.50f + 0.90f * v.hash(i * 29)) * grow * S;
+            float bx = v.cx() + Mth.cos(ang) * rad;
+            float bz = v.cz() + Mth.sin(ang) * rad;
+            for (int k = 0; k < 6; k++) {
+                float u = k / 6.0f;
+                float sway = Mth.sin(v.age() * 0.55f + u * 4.4f + i * 1.7f) * 0.16f * u * rad;
+                float taper = 1.0f - 0.62f * u;
+                v.cube(bx + sway, v.cy() - 0.42f + u * h, bz + sway * 0.7f,
+                        0.050f * taper * S, u > 0.60f ? 0xFFFFFF : (k % 2 == 0 ? v.pRgb() : v.sRgb()),
+                        Math.round(v.fadeA() * (1.0f - 0.28f * u)));
             }
         }
+
+        // Marque au sol : braises qui rougeoient, l'anneau s'élargit lentement puis s'éteint.
+        v.ring(-0.46f, (0.32f + 1.40f * v.easeOut()) * S, v.pRgb(), v.sRgb(),
+                Math.round(v.fadeA() * 0.72f), PIXEL_RING_DASHED);
+
+        // Braises projetées : elles montent, retombent et s'éteignent (gravité).
+        for (int e = 0; e < 10; e++) {
+            float ang = e * 0.628f + v.hash(e) * 0.6f;
+            float sp = (0.55f + 1.05f * v.hash(e * 31)) * S;
+            v.lob(Mth.cos(ang) * sp, 1.30f + 0.90f * v.hash(e * 17), Mth.sin(ang) * sp,
+                    0.028f + 0.012f * v.hash(e * 5),
+                    (e & 1) == 0 ? 0xFFFFFF : (e % 3 == 0 ? v.pRgb() : v.sRgb()),
+                    Math.round(v.fadeA() * 0.85f));
+        }
+
+        if (fx == WeaponVisualEffectId.BRIMSTONE_METEOR) {
+            // MÉTÉORE : deux blocs de roche en fusion tombent du ciel et éclatent au sol.
+            for (int r = 0; r < 2; r++) {
+                float u = Mth.clamp(t * 1.45f - r * 0.20f, 0.0f, 1.0f);
+                float hy = v.cy() + (1.0f - u) * 3.6f * S;
+                v.rocks(v.cx() + (r - 0.5f) * 0.55f * S, hy, v.cz() + (r * 0.35f - 0.17f) * S,
+                        0.055f * S, 5, v.sRgb(), v.pRgb(), 0xFFFFFF, v.fadeA());
+            }
+        } else if (fx == WeaponVisualEffectId.SOUL_FIRE_CRESCENT) {
+            // FEU D'ÂME : trois âmes pâles tourbillonnent autour de la cible (feu froid, âmes).
+            for (int w = 0; w < 3; w++) {
+                float ang = v.age() * 0.30f + w * 2.10f;
+                float rad = (0.55f + 0.35f * w) * S * (0.60f + 0.50f * t);
+                float yy = v.cy() + 0.25f + Mth.sin(v.age() * 0.25f + w) * 0.35f;
+                v.cube(v.cx() + Mth.cos(ang) * rad, yy, v.cz() + Mth.sin(ang) * rad,
+                        0.045f * S, w == 0 ? 0xFFFFFF : v.aRgb(), v.fadeA());
+            }
+        } else if (fx == WeaponVisualEffectId.MOLTEN_FIRE_WAVE) {
+            // NAPPE ARDENTE : le feu court AU SOL, deux coulées de lave s'écartent de la cible.
+            for (int d = 0; d < 2; d++) {
+                float side = (d == 0) ? 1.0f : -1.0f;
+                v.line(v.cx(), v.cy() - 0.44f, v.cz(),
+                        v.cx() + side * 1.90f * t * S, v.cy() - 0.44f,
+                        v.cz() + (v.hash(d * 7) - 0.5f) * 1.20f * S,
+                        0.045f * S, 0xFFFFFF, v.pRgb(), Math.round(v.fadeA() * 0.80f));
+            }
+        }
+    }
+
+    /**
+     * 水 EAU — gerbe en couronne (gouttes projetées en cloche) + rides concentriques : l'eau gicle
+     * puis retombe en ondes horizontales. Le givre est un cas à part (cristal qui pousse et se brise).
+     */
+    private static void impactWater(ImpactView v) {
+        if (v.inst().effect == WeaponVisualEffectId.PERMAFROST_RIME) {
+            impactIce(v);
+            return;
+        }
+        float t = v.t();
+        float S = v.S();
+        float surge = v.easeOut();
+        boolean maelstrom = v.inst().effect == WeaponVisualEffectId.ABYSSAL_MAELSTROM;
+
+        int drops = maelstrom ? 8 : 16;
+        for (int d = 0; d < drops; d++) {
+            float ang = d * (float) (Math.PI * 2.0 / drops) + v.hash(d * 11) * 0.35f;
+            float sp = (0.60f + 1.30f * v.hash(d * 23)) * S * (0.70f + 0.50f * surge);
+            float vy = (0.95f + 1.10f * v.hash(d * 37)) * (maelstrom ? 0.55f : 1.0f);
+            v.lob(Mth.cos(ang) * sp, vy, Mth.sin(ang) * sp,
+                    0.034f * S, (d & 1) == 0 ? v.pRgb() : v.aRgb(), Math.round(v.fadeA() * 0.90f));
+            if ((d & 3) == 0) {
+                v.cube(v.cx() + Mth.cos(ang) * sp * t * 2.4f, v.cy() + 0.20f + vy * t * 1.5f,
+                        v.cz() + Mth.sin(ang) * sp * t * 2.4f, 0.018f * S, 0xFFFFFF, v.fadeA());
+            }
+        }
+
+        // Rides concentriques : deux ondes plates qui s'élargissent (l'eau est une SURFACE).
+        for (int w = 0; w < 2; w++) {
+            float u = Mth.clamp(t * 1.15f - w * 0.22f, 0.0f, 1.0f);
+            v.ring(-0.44f, (0.30f + 1.85f * u) * S, w == 0 ? v.pRgb() : v.aRgb(), v.sRgb(),
+                    Math.round(v.fadeA() * (0.85f - 0.35f * w)), PIXEL_RING_SOLID);
+        }
+
+        // Embruns : quelques cubes très pâles qui flottent bas et s'évaporent.
+        for (int b = 0; b < 6; b++) {
+            float ang = b * 1.05f + v.age() * 0.12f;
+            float rad = (0.45f + 1.10f * surge) * S * (0.60f + 0.50f * v.hash(b * 19));
+            v.cube(v.cx() + Mth.cos(ang) * rad, v.cy() + 0.10f + 0.35f * v.hash(b * 41) * (1.0f - t),
+                    v.cz() + Mth.sin(ang) * rad, 0.022f * S, 0xA8F0FF,
+                    Math.round(v.fadeA() * 0.45f * (1.0f - 0.50f * t)));
+        }
+
+        if (maelstrom) {
+            // MAELSTRÖM : entonnoir qui tourbillonne et s'enfonce (l'eau tourne et descend).
+            float spin = 0.35f + 0.10f * v.m().spin();
+            for (int k = 0; k < 18; k++) {
+                float u = k / 18.0f;
+                float ang = u * 9.0f + v.age() * spin;
+                float rad = (1.55f - 1.20f * u) * S;
+                v.cube(v.cx() + Mth.cos(ang) * rad, v.cy() + 0.85f - u * 1.30f * S,
+                        v.cz() + Mth.sin(ang) * rad, 0.040f * (1.0f - 0.40f * u) * S,
+                        (k & 1) == 0 ? v.pRgb() : v.aRgb(), v.fadeA());
+            }
+        }
+    }
+
+    /**
+     * 氷 GIVRE (branche EAU) — le cristal POUSSE depuis l'impact (six bras facettés + barbules),
+     * gèle le sol, puis SE BRISE en éclats à la fin de sa vie.
+     */
+    private static void impactIce(ImpactView v) {
+        float t = v.t();
+        float S = v.S();
+        float grow = v.easeOut();
+
+        for (int arm = 0; arm < 6; arm++) {
+            float ang = arm * 1.047f + v.hash(arm) * 0.20f;
+            float len = (0.35f + 1.55f * grow) * S;
+            for (int k = 1; k <= 5; k++) {
+                float u = k / 5.0f;
+                float rad = len * u;
+                v.cube(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.30f + 0.28f * u * u,
+                        v.cz() + Mth.sin(ang) * rad, (0.050f - 0.030f * u) * S,
+                        k == 5 ? 0xFFFFFF : v.pRgb(), Math.round(v.fadeA() * (1.0f - 0.20f * u)));
+                if (k > 1 && (k & 1) == 0) {
+                    float bang = ang + 1.05f;
+                    float brad = rad - len * 0.10f;
+                    v.cube(v.cx() + Mth.cos(bang) * brad, v.cy() - 0.30f + 0.35f * u,
+                            v.cz() + Mth.sin(bang) * brad, 0.024f * S, v.aRgb(),
+                            Math.round(v.fadeA() * 0.75f));
+                }
+            }
+        }
+
+        // Croûte de glace : anneau plat qui gèle le sol autour de la cible.
+        v.ring(-0.45f, (0.30f + 1.30f * grow) * S, v.pRgb(), 0xFFFFFF,
+                Math.round(v.fadeA() * 0.80f), PIXEL_RING_SOLID);
+
+        // Éclatement : après 55 % de la vie, le cristal se brise en éclats qui s'écartent.
+        if (t > 0.55f) {
+            float b = (t - 0.55f) / 0.45f;
+            for (int e = 0; e < 10; e++) {
+                float ang = e * 0.628f + v.hash(e * 7) * 0.5f;
+                float rad = (0.45f + 1.25f * b) * S;
+                v.cube(v.cx() + Mth.cos(ang) * rad,
+                        v.cy() - 0.10f + (v.hash(e * 13) - 0.40f) * 1.10f * b,
+                        v.cz() + Mth.sin(ang) * rad, (0.032f - 0.018f * b) * S,
+                        (e & 1) == 0 ? 0xFFFFFF : v.aRgb(), Math.round(v.fadeA() * (1.0f - b)));
+            }
+        }
+    }
+
+    /**
+     * 雷 FOUDRE — instantané : des branches tombent du ciel et rampent au sol, l'intensité CLIGNOTE
+     * au lieu de croître, et un double anneau de choc part très vite.
+     */
+    private static void impactThunder(ImpactView v) {
+        float t = v.t();
+        float S = v.S();
+        WeaponVisualEffectId fx = v.inst().effect;
+        int flick = Math.round(v.fadeA() * (0.42f + 0.58f * Math.abs(Mth.sin(v.age() * 1.85f))));
+        int forks = Mth.clamp(2 + v.m().arms(), 3, 5);
+
+        for (int f = 0; f < forks; f++) {
+            float ang = f * (float) (Math.PI * 2.0 / forks) + v.hash(f * 3) * 0.70f;
+            float spread = (0.35f + 0.75f * v.hash(f * 11)) * S;
+            // Le coup de foudre TOMBE du ciel jusqu'au point d'impact.
+            v.bolt(v.cx() + Mth.cos(ang) * spread, v.cy() + 3.40f * S, v.cz() + Mth.sin(ang) * spread,
+                    v.cx(), v.cy(), v.cz(), 9, 0.28f, 0xFFFFFF, v.pRgb(), flick, 0.036f * S);
+            // Puis il RAMPES au sol.
+            float reach = (1.30f + 0.60f * v.hash(f * 5)) * S;
+            v.line(v.cx(), v.cy() - 0.42f, v.cz(),
+                    v.cx() + Mth.cos(ang) * reach, v.cy() - 0.42f, v.cz() + Mth.sin(ang) * reach,
+                    0.030f * S, v.sRgb(), v.pRgb(), Math.round(flick * 0.80f));
+        }
+
+        // Onde de choc : deux anneaux plats qui partent très vite (le coup de tonnerre).
+        for (int w = 0; w < 2; w++) {
+            float u = Mth.clamp(t * 1.60f - w * 0.18f, 0.0f, 1.0f);
+            v.ring(-0.42f, (0.35f + 2.10f * u) * S, 0xFFFFFF, v.pRgb(),
+                    Math.round(flick * (0.70f - 0.30f * w)), w == 0 ? PIXEL_RING_SOLID : PIXEL_RING_DASHED);
+        }
+
+        // Étincelles : projetées en ligne droite, elles ne retombent pas (pas de gravité).
+        for (int e = 0; e < 8; e++) {
+            float ang = e * 0.785f + v.hash(e * 9) * 0.40f;
+            float sp = (1.20f + 1.60f * v.hash(e * 15)) * S * v.easeOut();
+            v.cube(v.cx() + Mth.cos(ang) * sp, v.cy() + (v.hash(e * 21) - 0.50f) * 1.20f,
+                    v.cz() + Mth.sin(ang) * sp, 0.028f * S,
+                    (e & 1) == 0 ? 0xFFFFFF : v.aRgb(), flick);
+        }
+
+        if (fx == WeaponVisualEffectId.TWIN_ECHO_SLASH) {
+            // DOUBLE RÉMANENCE : l'entaille est rejouée une seconde fois, décalée et plus pâle.
+            v.slash((1.10f + 0.35f * t) * v.m().scale(), 0.036f, 155.0f,
+                    v.pRgb(), v.sRgb(), v.aRgb(), v.fadeA());
+            v.slash((0.85f + 0.30f * t) * v.m().scale(), 0.024f, 155.0f,
+                    0xFFFFFF, v.sRgb(), v.pRgb(), Math.round(v.fadeA() * 0.55f));
+        } else if (fx == WeaponVisualEffectId.CHAIN_VOLT_ARC) {
+            // CHAÎNE : des arcs secondaires sautent d'une cible à l'autre.
+            for (int c = 0; c < 3; c++) {
+                float ang = c * 2.094f + v.age() * 0.10f;
+                float rad = (0.85f + 0.55f * v.hash(c * 23)) * S;
+                v.bolt(v.cx(), v.cy() + 0.35f, v.cz(),
+                        v.cx() + Mth.cos(ang) * rad, v.cy() + 0.10f, v.cz() + Mth.sin(ang) * rad,
+                        6, 0.22f, 0xFFFFFF, v.aRgb(), Math.round(flick * 0.9f), 0.030f * S);
+            }
+        } else if (fx == WeaponVisualEffectId.OVERCLOCK_CYBER_X) {
+            // SURCADENCE : grande croix de néons qui s'ouvre en escalier.
+            float span = (0.75f + 0.55f * t) * S;
+            v.line(v.cx() - span, v.cy() - span, v.cz(), v.cx() + span, v.cy() + span, v.cz(),
+                    0.042f * S, 0xFFFFFF, v.pRgb(), flick);
+            v.line(v.cx() - span, v.cy() + span, v.cz(), v.cx() + span, v.cy() - span, v.cz(),
+                    0.042f * S, 0xFFFFFF, v.sRgb(), flick);
+        }
+    }
+
+    /**
+     * 土 TERRE — la terre ne jaillit pas : des DALLES de pierre se soulèvent puis retombent
+     * lourdement, le sol se fend en étoile et la poussière reste au ras du sol.
+     */
+    private static void impactEarth(ImpactView v) {
+        float t = v.t();
+        float S = v.S();
+        WeaponVisualEffectId fx = v.inst().effect;
+        float lift = Mth.sin(Mth.clamp(t * 1.15f, 0.0f, 1.0f) * (float) Math.PI);
+        int plates = Mth.clamp(4 + v.m().arms(), 5, 9);
+
+        for (int p = 0; p < plates; p++) {
+            float ang = p * (float) (Math.PI * 2.0 / plates) + v.hash(p * 17) * 0.30f;
+            float rad = (0.55f + 0.85f * v.hash(p * 23)) * S;
+            float w = (0.10f + 0.07f * v.hash(p * 31)) * S;
+            float h = (0.045f + 0.035f * v.hash(p * 37)) * S;
+            float hy = v.cy() - 0.40f + lift * (0.55f + 0.75f * v.hash(p * 43)) * S;
+            v.box(v.cx() + Mth.cos(ang) * rad, hy, v.cz() + Mth.sin(ang) * rad,
+                    w, h, w * 0.80f, (p & 1) == 0 ? v.sRgb() : v.pRgb(), v.fadeA());
+            // poussière qui reste coincée sous la dalle
+            v.cube(v.cx() + Mth.cos(ang) * rad * 1.15f, hy - 0.06f, v.cz() + Mth.sin(ang) * rad * 1.15f,
+                    0.024f * S, v.aRgb(), Math.round(v.fadeA() * 0.70f));
+        }
+
+        // Failles radiales : le sol se fend depuis l'impact.
+        for (int c = 0; c < 8; c++) {
+            float ang = c * 0.785f + v.hash(c * 11) * 0.35f;
+            float len = (0.45f + 1.55f * v.easeOut()) * S;
+            v.line(v.cx(), v.cy() - 0.46f, v.cz(),
+                    v.cx() + Mth.cos(ang) * len, v.cy() - 0.46f, v.cz() + Mth.sin(ang) * len,
+                    0.028f * S, v.sRgb(), v.pRgb(), Math.round(v.fadeA() * 0.85f));
+        }
+
+        if (fx == WeaponVisualEffectId.SANDSTORM_DUNE) {
+            // TEMPÊTE DE SABLE : tourbillon bas de grains qui enveloppe la cible.
+            for (int g = 0; g < 16; g++) {
+                float u = g / 16.0f;
+                float ang = u * 7.5f + v.age() * 0.55f;
+                float rad = (0.55f + 1.15f * u) * S;
+                v.cube(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.40f + u * 1.55f * S,
+                        v.cz() + Mth.sin(ang) * rad, 0.026f * S + 0.012f * v.hash(g * 7),
+                        (g & 1) == 0 ? v.pRgb() : v.aRgb(), v.fadeA());
+            }
+        } else if (fx == WeaponVisualEffectId.WARLORD_RALLY_SIGIL) {
+            // SCEAU DE RALLIEMENT : cercle runique au sol + quatre piliers de bannière.
+            emitPixelRunicCircle3D(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy() - 0.44f, v.cz(),
+                    (0.60f + 1.15f * v.easeOut()) * S, t * 0.80f, v.pRgb(), v.sRgb(), v.aRgb(),
+                    v.fadeA(), true);
+            for (int b = 0; b < 4; b++) {
+                float ang = b * 1.5708f;
+                float rad = 1.05f * S;
+                v.line(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.40f, v.cz() + Mth.sin(ang) * rad,
+                        v.cx() + Mth.cos(ang) * rad, v.cy() + 1.05f * S, v.cz() + Mth.sin(ang) * rad,
+                        0.034f * S, v.aRgb(), v.pRgb(), v.fadeA());
+            }
+        }
+    }
+
+    /**
+     * 金 MÉTAL — le métal est NET : des lames convergent vers la cible puis claquent, avec des
+     * étincelles courtes et une entaille franche. Aucune gerbe molle, aucune fumée.
+     */
+    private static void impactMetal(ImpactView v) {
+        float t = v.t();
+        float S = v.S();
+        WeaponVisualEffectId fx = v.inst().effect;
+        boolean prism = fx == WeaponVisualEffectId.SUPREME_PRISM_EDGE;
+        int blades = prism ? 3 : 6;
+        float snap = (t < 0.55f) ? (1.0f - v.easeIn() * 0.85f) : (0.15f + (t - 0.55f) * 0.35f);
+
+        for (int b = 0; b < blades; b++) {
+            float ang = b * (float) (Math.PI * 2.0 / blades) + v.m().spin() * 0.25f;
+            float rad = (0.55f + 0.75f * snap) * S;
+            int col = prism
+                    ? Mth.hsvToRgb((v.age() * 0.05f + b * 0.33f) % 1.0f, 0.55f, 1.0f)
+                    : v.pRgb();
+            v.box(v.cx() + Mth.cos(ang) * rad, v.cy() + 0.05f, v.cz() + Mth.sin(ang) * rad,
+                    (prism ? 0.045f : 0.020f) * S, (0.30f + 0.20f * v.hash(b * 13)) * S, 0.012f * S,
+                    col, v.fadeA());
+        }
+
+        // L'ENTAILLE elle-même : l'arc de lame de l'enchantement claque au point d'impact.
+        v.slash((0.95f + 0.45f * t) * v.m().scale(), 0.030f, 150.0f,
+                v.pRgb(), v.sRgb(), 0xFFFFFF, v.fadeA());
+
+        // Étincelles de contact : très rapides, très courtes, sans gravité.
+        for (int e = 0; e < 6; e++) {
+            float ang = e * 1.05f + v.hash(e * 29) * 0.80f;
+            float sp = (0.35f + 0.75f * v.hash(e * 7)) * S;
+            v.cube(v.cx() + Mth.cos(ang) * sp, v.cy() + 0.05f + (v.hash(e * 3) - 0.50f) * 0.70f,
+                    v.cz() + Mth.sin(ang) * sp, 0.018f * S, 0xFFFFFF, Math.round(v.fadeA() * 0.95f));
+        }
+
+        if (prism) {
+            // PRISME : éclat arc-en-ciel au centre + croix de pixels.
+            v.cross(4, 0xFFFFFF, Mth.hsvToRgb((v.age() * 0.08f) % 1.0f, 0.60f, 1.0f), v.fadeA());
+        } else if (fx == WeaponVisualEffectId.FOCUSED_BULLSEYE) {
+            // MIRE : un cercle qui se resserre sur la cible (viser), puis se fend.
+            float rad = (t < 0.50f) ? (1.05f - 1.45f * t) : (0.38f + (t - 0.50f) * 1.60f);
+            emitPixelCircleBillboard3D(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), rad * S,
+                    v.sRgb(), v.pRgb(), v.fadeA());
+        } else if (fx == WeaponVisualEffectId.ANNIHILATING_ARC) {
+            // ARC ANNIHILANT : deux arcs croisés géants (la plus grande entaille du jeu).
+            v.slash((1.35f + 0.70f * t) * v.m().scale(), 0.046f, 210.0f,
+                    0xFFFFFF, v.aRgb(), v.pRgb(), v.fadeA());
+        }
+    }
+
+    /**
+     * 木 BOIS — les végétaux POUSSENT depuis l'impact, rampent au sol puis se RECOURBENT sur la
+     * cible jusqu'à la serrer. Le vent (Zéphyr) garde sa propre animation d'enroulement.
+     */
+    private static void impactWood(ImpactView v) {
+        if (v.inst().effect == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) {
+            impactWind(v);
+            return;
+        }
+        float t = v.t();
+        float S = v.S();
+        WeaponVisualEffectId fx = v.inst().effect;
+        boolean maw = fx == WeaponVisualEffectId.THORN_MAW_ROOT;
+        float grow = v.easeOut();
+        float squeeze = (t < 0.55f) ? 1.0f : (1.0f - 0.55f * ((t - 0.55f) / 0.45f));
+        int vines = Mth.clamp(3 + v.m().arms(), 4, 8);
+
+        for (int i = 0; i < vines; i++) {
+            float ang = i * (float) (Math.PI * 2.0 / vines) + v.hash(i * 19) * 0.35f;
+            float rad = (0.30f + 1.35f * grow) * S * squeeze;
+            float gx = v.cx() + Mth.cos(ang) * rad;
+            float gz = v.cz() + Mth.sin(ang) * rad;
+            // liane qui rampe au sol
+            v.line(v.cx(), v.cy() - 0.44f, v.cz(), gx, v.cy() - 0.44f, gz,
+                    0.030f * S, v.sRgb(), v.pRgb(), v.fadeA());
+            // puis qui se redresse en se recourbant vers la cible (l'enlacement)
+            float height = (maw ? 0.85f : 0.55f) * (1.0f + 0.60f * v.hash(i * 23)) * S;
+            float curl = 1.0f - squeeze;
+            float tipX = gx - Mth.cos(ang) * 0.45f * curl * S;
+            float tipZ = gz - Mth.sin(ang) * 0.45f * curl * S;
+            float tipY = v.cy() - 0.44f + height;
+            v.line(gx, v.cy() - 0.44f, gz, tipX, tipY, tipZ, 0.024f * S, v.pRgb(), v.aRgb(), v.fadeA());
+            // épine / feuille au bout de la liane
+            v.box(tipX, tipY, tipZ, 0.018f * S, 0.045f * S, 0.018f * S,
+                    maw ? 0xFFFFFF : v.aRgb(), v.fadeA());
+        }
+
+        if (fx == WeaponVisualEffectId.VERDANT_SAP_BLOOM) {
+            // FLORAISON : des pétales s'ouvrent vers le haut et de la sève perle.
+            for (int p = 0; p < 6; p++) {
+                float ang = p * 1.047f + v.age() * 0.06f;
+                float rad = (0.18f + 0.85f * grow) * S;
+                v.box(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.10f + 0.35f * grow * S,
+                        v.cz() + Mth.sin(ang) * rad, 0.055f * S, 0.016f * S, 0.055f * S,
+                        (p & 1) == 0 ? v.aRgb() : v.pRgb(), v.fadeA());
+            }
+            for (int d = 0; d < 3; d++) {
+                v.drop(v.cx() + (v.hash(d * 5) - 0.50f) * 0.70f * S, v.cy() - 0.05f,
+                        v.cz() + (v.hash(d * 9) - 0.50f) * 0.70f * S,
+                        0.026f * S, v.pRgb(), v.aRgb(), v.fadeA(), d);
+            }
+        }
+    }
+
+    /**
+     * 風 VENT (branche BOIS) — trois rubans hélicoïdaux qui s'enroulent en montant, plus des
+     * feuilles emportées : le vent TOURNE, il ne pousse pas et ne retombe pas.
+     */
+    private static void impactWind(ImpactView v) {
+        float t = v.t();
+        float S = v.S();
+        float spin = 1.60f + 0.50f * Math.abs(v.m().spin());
+
+        for (int arm = 0; arm < 3; arm++) {
+            float phase = arm * 2.094f;
+            for (int k = 0; k < 12; k++) {
+                float u = k / 12.0f;
+                float ang = phase + u * 5.2f + v.age() * spin * 0.12f;
+                float rad = (0.25f + 0.95f * u) * S * (0.65f + 0.50f * t);
+                v.cube(v.cx() + Mth.cos(ang) * rad,
+                        v.cy() - 0.30f + u * 1.85f * S * (0.50f + 0.50f * v.easeOut()),
+                        v.cz() + Mth.sin(ang) * rad, (0.036f - 0.014f * u) * S,
+                        k % 4 == 0 ? 0xFFFFFF : (arm == 0 ? v.pRgb() : v.sRgb()),
+                        Math.round(v.fadeA() * (1.0f - 0.25f * u)));
+            }
+        }
+
+        // Feuilles / plumes emportées : elles tournent autour, elles ne tombent pas.
+        for (int l = 0; l < 7; l++) {
+            float ang = l * 0.90f + v.age() * 0.22f;
+            float rad = (0.55f + 1.25f * v.hash(l * 13)) * S;
+            v.box(v.cx() + Mth.cos(ang) * rad, v.cy() + (v.hash(l * 7) - 0.30f) * 1.50f * S,
+                    v.cz() + Mth.sin(ang) * rad, 0.042f * S, 0.010f * S, 0.042f * S,
+                    (l & 1) == 0 ? v.aRgb() : v.pRgb(), v.fadeA());
+        }
+
+        v.ring(-0.44f, (0.30f + 1.20f * v.easeOut()) * S, v.aRgb(), 0xFFFFFF,
+                Math.round(v.fadeA() * 0.55f), PIXEL_RING_BEADS);
+    }
+
+    /**
+     * 毒 POISON — lourd et lent : des bulles montent en flottant puis éclatent, du venin perle et
+     * tombe, et une MÂCHOIRE de crocs se referme sur la cible.
+     */
+    private static void impactPoison(ImpactView v) {
+        float t = v.t();
+        float S = v.S();
+        WeaponVisualEffectId fx = v.inst().effect;
+
+        for (int b = 0; b < 12; b++) {
+            float ang = b * 0.524f + v.hash(b * 17) * 0.50f;
+            float rad = (0.20f + 1.05f * v.hash(b * 11)) * S;
+            float rise = (0.35f + 1.15f * t) * (0.45f + 0.70f * v.hash(b * 23)) * S;
+            float wob = Mth.sin(v.age() * 0.18f + b * 1.3f) * 0.09f * S;
+            float pop = (t > 0.72f) ? (1.0f - (t - 0.72f) / 0.28f) : 1.0f;
+            v.cube(v.cx() + Mth.cos(ang) * (rad + wob), v.cy() - 0.40f + rise,
+                    v.cz() + Mth.sin(ang) * (rad + wob),
+                    (0.030f + 0.014f * v.hash(b * 5)) * S * pop,
+                    (b % 3 == 0) ? 0xFFFFFF : ((b & 1) == 0 ? v.pRgb() : v.sRgb()),
+                    Math.round(v.fadeA() * pop));
+        }
+
+        if (fx == WeaponVisualEffectId.VENOM_BRIAR_FANG) {
+            // MÂCHOIRE : deux arcs de crocs qui se referment sur la cible.
+            float close = 0.55f + 0.45f * (1.0f - t);
+            for (int side = 0; side < 2; side++) {
+                float sgn = (side == 0) ? 1.0f : -1.0f;
+                for (int f = 0; f < 5; f++) {
+                    float u = f / 4.0f;
+                    float ang = sgn * (0.90f * close);
+                    float rad = (0.35f + 0.85f * u) * S;
+                    v.box(v.cx() + Mth.cos(ang) * rad,
+                            v.cy() + 0.55f * u * close - 0.10f,
+                            v.cz() + Mth.sin(ang) * rad,
+                            0.020f * S, (0.070f - 0.030f * u) * S, 0.020f * S,
+                            (f & 1) == 0 ? 0xFFFFFF : v.aRgb(), v.fadeA());
+                }
+            }
+        }
+
+        // Gouttes de venin : elles perlent puis tombent (accélération gravitaire).
+        for (int d = 0; d < 5; d++) {
+            float ang = d * 1.257f + v.hash(d * 31) * 0.60f;
+            float rad = (0.30f + 0.60f * v.hash(d * 7)) * S;
+            v.drop(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.05f - 0.55f * t * t,
+                    v.cz() + Mth.sin(ang) * rad, 0.024f * S, v.sRgb(), v.aRgb(), v.fadeA(), d);
+        }
+
+        if (fx == WeaponVisualEffectId.MIASMA_SHROUD) {
+            // MIASME : nappe de spores qui s'étale au sol et monte à peine.
+            for (int m = 0; m < 10; m++) {
+                float ang = m * 0.628f + v.age() * 0.06f;
+                float rad = (0.40f + 1.45f * v.easeOut()) * S * (0.60f + 0.50f * v.hash(m * 13));
+                v.cube(v.cx() + Mth.cos(ang) * rad,
+                        v.cy() - 0.30f + 0.22f * v.hash(m * 29) * (1.0f - 0.40f * t),
+                        v.cz() + Mth.sin(ang) * rad, 0.030f * S,
+                        (m & 1) == 0 ? v.pRgb() : v.sRgb(), Math.round(v.fadeA() * 0.55f));
+            }
+        } else if (fx == WeaponVisualEffectId.PLAGUE_NOVA) {
+            // NOVA DE PESTE : éclats projetés très loin, puis nuage qui retombe.
+            for (int e = 0; e < 14; e++) {
+                float ang = e * 0.449f + v.hash(e * 3) * 0.40f;
+                float sp = (0.70f + 1.90f * v.hash(e * 41)) * S * v.easeOut();
+                v.cube(v.cx() + Mth.cos(ang) * sp,
+                        v.cy() + 0.10f + (v.hash(e * 9) - 0.50f) * 0.90f - 0.35f * t * t,
+                        v.cz() + Mth.sin(ang) * sp, 0.026f * S,
+                        (e & 1) == 0 ? v.aRgb() : v.pRgb(), v.fadeA());
+            }
+            v.ring(-0.44f, (0.30f + 2.05f * v.easeOut()) * S, v.pRgb(), v.sRgb(),
+                    Math.round(v.fadeA() * 0.70f), PIXEL_RING_DASHED);
+        }
+    }
+
+    /**
+     * 光 LUMIÈRE — la lumière DESCEND : des rayons convergents tombent du ciel, la couronne s'ouvre
+     * et le cœur devient aveuglant. Elle ne jaillit jamais du sol.
+     */
+    private static void impactLight(ImpactView v) {
+        float t = v.t();
+        float S = v.S();
+        WeaponVisualEffectId fx = v.inst().effect;
+
+        int rays = 8;
+        for (int r = 0; r < rays; r++) {
+            float ang = r * 0.785f + v.age() * 0.04f;
+            float rad = (1.35f + 0.55f * v.hash(r * 7)) * S;
+            float up = (2.55f - 0.85f * t) * S;
+            float appear = Mth.clamp(t * 1.60f - r * 0.04f, 0.0f, 1.0f);
+            v.line(v.cx() + Mth.cos(ang) * rad, v.cy() + up, v.cz() + Mth.sin(ang) * rad,
+                    v.cx() + Mth.cos(ang) * 0.22f * S, v.cy() + 0.10f, v.cz() + Mth.sin(ang) * 0.22f * S,
+                    (0.026f + 0.014f * appear) * S, 0xFFFFFF,
+                    (r & 1) == 0 ? v.pRgb() : v.aRgb(), Math.round(v.fadeA() * appear));
+        }
+
+        v.ring(0.30f, (0.30f + 1.55f * v.easeOut()) * S, 0xFFFFFF, v.pRgb(),
+                Math.round(v.fadeA() * 0.85f), PIXEL_RING_SOLID);
+        // Faisceau : une colonne fine de pixels qui DESCEND du ciel vers la cible (la lumière tombe,
+        // elle ne fuse pas horizontalement comme le métal).
+        float beam = Mth.clamp(t * 1.60f, 0.0f, 1.0f);
+        for (int k = 0; k < 8; k++) {
+            float u = k / 8.0f;
+            float y = v.cy() + 2.35f * S * (1.0f - u * beam);
+            v.cube(v.cx() + (v.hash(k * 7) - 0.50f) * 0.10f * S, y,
+                    v.cz() + (v.hash(k * 11) - 0.50f) * 0.10f * S,
+                    (0.040f - 0.012f * u) * S, u < 0.40f ? 0xFFFFFF : v.pRgb(),
+                    Math.round(v.fadeA() * (0.90f - 0.40f * u)));
+        }
+
+        if (fx == WeaponVisualEffectId.SERAPH_SKY_PILLAR) {
+            // PILIER : colonne verticale de pixels qui relie le ciel à la cible.
+            for (int k = 0; k < 12; k++) {
+                float u = k / 12.0f;
+                v.cube(v.cx() + (v.hash(k * 13) - 0.50f) * 0.22f * S,
+                        v.cy() - 0.30f + u * 3.10f * S,
+                        v.cz() + (v.hash(k * 29) - 0.50f) * 0.22f * S,
+                        (0.048f - 0.018f * u) * S, u > 0.60f ? 0xFFFFFF : v.pRgb(),
+                        Math.round(v.fadeA() * (1.0f - 0.35f * u)));
+            }
+        } else if (fx == WeaponVisualEffectId.ASTRAL_STAR_LANCE) {
+            // LANCE ASTRALE : un trait de lumière qui transperce la cible en diagonale.
+            v.line(v.cx() - 1.60f * S, v.cy() + 2.20f * S, v.cz() - 1.60f * S,
+                    v.cx() + 1.20f * S * t, v.cy() - 0.30f, v.cz() + 1.20f * S * t,
+                    0.040f * S, 0xFFFFFF, v.aRgb(), v.fadeA());
+        } else if (fx == WeaponVisualEffectId.CHRONO_ETERNAL_HALO) {
+            // HALO ÉTERNEL : deux orbites lentes + douze crans d'horloge (le temps s'arrête).
+            for (int o = 0; o < 2; o++) {
+                float rad = (0.55f + 0.25f * o) * S;
+                float ang0 = v.age() * (0.05f + 0.04f * o);
+                for (int k = 0; k < 12; k++) {
+                    float ang = ang0 + k * 0.524f;
+                    v.cube(v.cx() + Mth.cos(ang) * rad, v.cy() + 0.20f + (o == 0 ? 0.18f : -0.16f),
+                            v.cz() + Mth.sin(ang) * rad, (k % 3 == 0 ? 0.032f : 0.020f) * S,
+                            (k % 3 == 0) ? 0xFFFFFF : v.pRgb(), v.fadeA());
+                }
+            }
+        } else if (fx == WeaponVisualEffectId.GOLDEN_CRIT_STAR) {
+            // ÉTOILE CRITIQUE : rayons projetés + anneau de perles en orbite.
+            for (int a = 0; a < 10; a++) {
+                float ang = a * 0.628f + v.age() * 0.10f;
+                float len = (0.35f + 1.25f * v.easeOut()) * S;
+                v.line(v.cx(), v.cy(), v.cz(), v.cx() + Mth.cos(ang) * len, v.cy() + 0.10f,
+                        v.cz() + Mth.sin(ang) * len, 0.028f * S, 0xFFFFFF, v.sRgb(), v.fadeA());
+            }
+            v.ring(0.18f, (0.55f + 0.75f * t) * S, v.pRgb(), 0xFFFFFF,
+                    Math.round(v.fadeA() * 0.80f), PIXEL_RING_BEADS);
+        }
+    }
+
+    /**
+     * 影 OMBRE — l'ombre RAMPE au sol à partir de l'impact, puis se RÉTRACTE : aucun jaillissement,
+     * aucune élévation. La griffure et l'éclipse ont leur propre figure.
+     */
+    private static void impactShadow(ImpactView v) {
+        float t = v.t();
+        float S = v.S();
+        WeaponVisualEffectId fx = v.inst().effect;
+        float crawl = v.easeOut();
+        float retract = (t < 0.45f) ? 1.0f : (1.0f - 0.65f * ((t - 0.45f) / 0.55f));
+        int arms = Mth.clamp(4 + v.m().arms(), 5, 9);
+
+        for (int i = 0; i < arms; i++) {
+            float ang = i * (float) (Math.PI * 2.0 / arms) + v.hash(i * 23) * 0.45f;
+            float len = (0.35f + 1.75f * crawl) * S * retract;
+            float ex = v.cx() + Mth.cos(ang) * len;
+            float ez = v.cz() + Mth.sin(ang) * len;
+            v.line(v.cx(), v.cy() - 0.45f, v.cz(), ex, v.cy() - 0.45f, ez,
+                    0.034f * S, v.sRgb(), v.pRgb(), Math.round(v.fadeA() * 0.90f));
+            v.cube(ex, v.cy() - 0.30f + 0.16f * (1.0f - retract), ez, 0.026f * S,
+                    (i & 1) == 0 ? v.aRgb() : v.pRgb(), v.fadeA());
+        }
+
+        if (fx == WeaponVisualEffectId.WITHER_SHADOW_RIFT) {
+            // GRIFFURE : trois entailles parallèles diagonales (une patte qui lacère).
+            for (int c = 0; c < 3; c++) {
+                float off = (c - 1) * 0.35f * S;
+                v.line(v.cx() - 0.85f * S + off, v.cy() + 0.95f * S, v.cz() - 0.55f * S,
+                        v.cx() + 0.45f * S + off, v.cy() - 0.55f * S, v.cz() + 0.40f * S,
+                        0.030f * S, 0xFFFFFF, v.aRgb(), Math.round(v.fadeA() * 0.90f));
+            }
+        } else if (fx == WeaponVisualEffectId.ECLIPSE_VEIL) {
+            // ÉCLIPSE : un disque noir qui grandit et avale la lumière, cerclé d'une couronne.
+            float rad = (0.25f + 1.15f * crawl) * S;
+            emitPixelCircleBillboard3D(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), rad,
+                    0x120616, 0x2B0B38, Math.round(v.fadeA() * 0.85f));
+            v.ring(0.05f, rad * 1.18f, v.aRgb(), 0xFFFFFF,
+                    Math.round(v.fadeA() * 0.90f), PIXEL_RING_BEADS);
+        } else if (fx == WeaponVisualEffectId.SPECTRAL_REACH) {
+            // ALLONGE : la lame spectrale s'étire vers la cible (la direction EST l'animation).
+            float yawR = -v.inst().yawDeg * Mth.DEG_TO_RAD;
+            float dx = Mth.sin(yawR);
+            float dz = Mth.cos(yawR);
+            float reach = (0.90f + 1.90f * v.easeOut()) * S;
+            v.line(v.cx(), v.cy() + 0.05f, v.cz(), v.cx() + dx * reach, v.cy() + 0.05f,
+                    v.cz() + dz * reach, 0.030f * S, 0xFFFFFF, v.pRgb(), v.fadeA());
+        }
+    }
+
+    /**
+     * 血 SANG — le sang GICLE et PERLE : des veines rampent au sol, les gouttes tombent en
+     * accélérant, et les enchantements de prélèvement ont leur propre circulation (siphon, hélice).
+     */
+    private static void impactBlood(ImpactView v) {
+        float t = v.t();
+        float S = v.S();
+        WeaponVisualEffectId fx = v.inst().effect;
+        int veins = Mth.clamp(3 + v.m().arms(), 4, 7);
+
+        for (int i = 0; i < veins; i++) {
+            float ang = i * (float) (Math.PI * 2.0 / veins) + v.hash(i * 29) * 0.50f;
+            float len = (0.30f + 1.45f * v.easeOut()) * S;
+            float midX = v.cx() + Mth.cos(ang) * len * 0.55f;
+            float midZ = v.cz() + Mth.sin(ang) * len * 0.55f;
+            v.line(v.cx(), v.cy() - 0.44f, v.cz(), midX, v.cy() - 0.44f, midZ,
+                    0.028f * S, v.pRgb(), v.sRgb(), v.fadeA());
+            // bifurcation de la veine
+            float bang = ang + 0.55f;
+            v.line(midX, v.cy() - 0.44f, midZ,
+                    v.cx() + Mth.cos(bang) * len, v.cy() - 0.44f, v.cz() + Mth.sin(bang) * len,
+                    0.020f * S, v.sRgb(), v.pRgb(), Math.round(v.fadeA() * 0.80f));
+        }
+
+        // Gouttes : accélération gravitaire (t²) — le sang tombe, il ne monte pas.
+        for (int d = 0; d < 7; d++) {
+            float ang = d * 0.897f + v.hash(d * 13) * 0.60f;
+            float rad = (0.20f + 1.05f * v.easeOut()) * S * (0.60f + 0.50f * v.hash(d * 7));
+            v.drop(v.cx() + Mth.cos(ang) * rad, v.cy() + 0.45f - 1.55f * t * t,
+                    v.cz() + Mth.sin(ang) * rad, (0.030f - 0.008f * t) * S,
+                    (d & 1) == 0 ? v.pRgb() : v.sRgb(), 0xFF8A8A, v.fadeA(), d);
+        }
+
+        if (fx == WeaponVisualEffectId.GUILLOTINE_CLEAVE) {
+            // GUILLOTINE : une lame large qui DESCEND (colonne d'exécution).
+            float y = v.cy() + 2.30f * S - (2.90f * S) * v.easeIn();
+            v.box(v.cx(), y, v.cz(), 0.42f * S, 0.030f * S, 0.030f * S, 0xFFFFFF, v.fadeA());
+            v.line(v.cx() - 0.42f * S, y, v.cz(), v.cx() + 0.42f * S, y, v.cz(),
+                    0.022f * S, v.sRgb(), v.pRgb(), v.fadeA());
+        } else if (fx == WeaponVisualEffectId.CRIMSON_SIPHON) {
+            // SIPHON : spirale qui ASPIRE (rayon qui rétrécit vers le haut).
+            for (int k = 0; k < 16; k++) {
+                float u = k / 16.0f;
+                float ang = u * 8.5f + v.age() * 0.30f;
+                float rad = (1.25f - 1.05f * u) * S;
+                v.cube(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.35f + u * 1.85f * S,
+                        v.cz() + Mth.sin(ang) * rad, 0.034f * S,
+                        (k & 1) == 0 ? v.pRgb() : v.aRgb(), v.fadeA());
+            }
+        } else if (fx == WeaponVisualEffectId.VITAL_TRANSFUSION) {
+            // TRANSFUSION : double hélice montante (le sang remonte vers le blessé).
+            for (int h = 0; h < 2; h++) {
+                for (int k = 0; k < 10; k++) {
+                    float u = k / 10.0f;
+                    float ang = u * 6.4f + v.age() * 0.22f + h * (float) Math.PI;
+                    float rad = (0.55f - 0.30f * u) * S;
+                    v.cube(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.30f + u * 1.85f * S,
+                            v.cz() + Mth.sin(ang) * rad, 0.030f * S,
+                            h == 0 ? v.pRgb() : 0xFFFFFF, v.fadeA());
+                }
+            }
+        } else if (fx == WeaponVisualEffectId.CARNAGE_BERSERK) {
+            // CARNAGE : très large entaille + gerbe de gouttes.
+            v.slash((1.15f + 0.55f * t) * v.m().scale(), 0.042f, 220.0f,
+                    0xFFFFFF, v.pRgb(), v.aRgb(), v.fadeA());
+        }
+    }
+
+    /**
+     * 虚 VID — le vide IMPLOSE : une sphère de pixels s'effondre vers la cible, l'espace se déforme
+     * puis tout ce qui a été avalé ressort d'un coup. Rien ne s'éloigne avant la fin.
+     */
+    private static void impactVoid(ImpactView v) {
+        float t = v.t();
+        float S = v.S();
+        WeaponVisualEffectId fx = v.inst().effect;
+
+        if (fx == WeaponVisualEffectId.NULL_RIFT_FISSURE) {
+            // FISSURE : une déchirure VERTICALE dont les bords se séparent (rien de circulaire).
+            float open = (0.25f + 0.85f * v.easeOut()) * S;
+            for (int k = 0; k < 9; k++) {
+                float u = k / 9.0f;
+                float y = v.cy() - 1.10f * S + u * 2.30f * S;
+                float wob = Mth.sin(u * 6.0f + v.age() * 0.20f) * 0.10f * S;
+                v.cube(v.cx() - open + wob, y, v.cz(), 0.030f * S, v.pRgb(), v.fadeA());
+                v.cube(v.cx() + open + wob, y, v.cz(), 0.030f * S, v.aRgb(), v.fadeA());
+                if ((k & 1) == 0) {
+                    v.cube(v.cx() + (v.hash(k * 13) - 0.50f) * 0.70f * S, y,
+                            v.cz() + (v.hash(k * 7) - 0.50f) * 0.50f * S,
+                            0.018f * S, 0xFFFFFF, Math.round(v.fadeA() * 0.80f));
+                }
+            }
+            return;
+        }
+
+        // IMPLOSION : une sphère de pixels qui SE REFERME sur la cible et l'écrase.
+        float close = 1.0f - v.easeIn();
+        float radius = (1.75f * close + 0.08f) * S;
+        int pts = 22;
+        for (int i = 0; i < pts; i++) {
+            float u = i / (float) pts;
+            float ang = u * 12.4f + v.age() * 0.16f;
+            float y = v.cy() + Mth.sin(u * 9.3f + v.age() * 0.10f) * radius * 0.85f;
+            float rad = radius * (0.55f + 0.45f * Math.abs(Mth.cos(u * 7.1f)));
+            v.cube(v.cx() + Mth.cos(ang) * rad, y, v.cz() + Mth.sin(ang) * rad,
+                    (0.032f + 0.012f * v.hash(i * 11)) * S,
+                    (i % 4 == 0) ? 0xFFFFFF : ((i & 1) == 0 ? v.pRgb() : v.aRgb()),
+                    Math.round(v.fadeA() * (0.55f + 0.45f * close)));
+        }
+
+        // Lentille gravitationnelle : anneau déformé qui pulse sur place.
+        float pulse = 0.75f + 0.25f * Mth.sin(v.age() * 0.35f);
+        v.ring(0.02f, (0.95f + 0.25f * pulse) * S, v.aRgb(), v.pRgb(),
+                Math.round(v.fadeA() * 0.65f), PIXEL_RING_DASHED);
+
+        if (fx == WeaponVisualEffectId.DRAGON_CHAOS_PRISM) {
+            // PRISME DRACONIQUE : quatre arcs de teintes différentes tournent pendant l'implosion.
+            for (int a = 0; a < 4; a++) {
+                float rad = (1.05f + 0.35f * a) * S * (0.55f + 0.45f * close);
+                float ang0 = v.age() * (0.08f + 0.02f * a) + a * 0.8f;
+                for (int k = 0; k < 9; k++) {
+                    float u = k / 9.0f;
+                    float ang = ang0 + u * 2.6f;
+                    v.cube(v.cx() + Mth.cos(ang) * rad, v.cy() + (-0.45f + 0.90f * u) * S,
+                            v.cz() + Mth.sin(ang) * rad, 0.030f * S,
+                            Mth.hsvToRgb((v.age() * 0.05f + a * 0.25f) % 1.0f, 0.75f, 1.0f), v.fadeA());
+                }
+            }
+        }
+
+        if (t > 0.82f) {
+            // L'ÉCLAT FINAL : tout ce qui a été avalé ressort d'un coup en croix blanche.
+            float b = (t - 0.82f) / 0.18f;
+            v.cross(4, 0xFFFFFF, v.aRgb(), Math.round(v.fadeA() * b));
+            v.ring(0.02f, (1.05f + 0.85f * b) * S, 0xFFFFFF, v.pRgb(),
+                    Math.round(v.fadeA() * b), PIXEL_RING_SOLID);
+        }
+    }
+
+    /**
+     * 混沌 CHAOS — kaléidoscope : huit copies d'un petit glyphe tournent dans des teintes qui
+     * défilent. Le big bang et l'entropie gardent leurs figures propres.
+     */
+    private static void impactChaos(ImpactView v) {
+        float t = v.t();
+        float S = v.S();
+        WeaponVisualEffectId fx = v.inst().effect;
+        int hueA = Mth.hsvToRgb((v.age() * 0.045f) % 1.0f, 0.85f, 1.0f);
+        int hueB = Mth.hsvToRgb((v.age() * 0.045f + 0.33f) % 1.0f, 0.85f, 1.0f);
+        int hueC = Mth.hsvToRgb((v.age() * 0.045f + 0.66f) % 1.0f, 0.85f, 1.0f);
+
+        if (fx == WeaponVisualEffectId.BIG_BANG_SCAR) {
+            // BIG BANG : douze rayons bariolés jaillissent très loin d'un cœur blanc.
+            for (int i = 0; i < 12; i++) {
+                float ang = i * 0.524f + t * 0.60f;
+                float len = (0.55f + 2.90f * t) * S * ((i & 1) == 0 ? 1.0f : 0.72f);
+                float elev = (i % 3 == 0) ? 0.55f : ((i % 3 == 1) ? -0.35f : 0.05f);
+                v.line(v.cx(), v.cy(), v.cz(), v.cx() + Mth.cos(ang) * len,
+                        v.cy() + elev * len * 0.55f, v.cz() + Mth.sin(ang) * len,
+                        0.042f * S * (1.0f - 0.45f * t), 0xFFFFFF,
+                        Mth.hsvToRgb((v.age() * 0.05f + i / 12.0f) % 1.0f, 0.90f, 1.0f), v.fadeA());
+            }
+            v.cross(5, 0xFFFFFF, 0xFFFFFF, v.fadeA());
+            v.ring(0.0f, (0.40f + 2.45f * t) * S, 0x000000, v.sRgb(),
+                    Math.round(v.fadeA() * 0.70f), PIXEL_RING_DASHED);
+            return;
+        }
+
+        if (fx == WeaponVisualEffectId.ENTROPY_SPHERE) {
+            // ENTROPIE : trois anneaux orthogonaux de teintes différentes = une sphère instable.
+            float rad = (0.45f + 1.20f * Mth.sin(t * (float) Math.PI)) * S;
+            v.ring(0.0f, rad, hueA, hueB, v.fadeA(), PIXEL_RING_SOLID);
+            emitPixelCircleBillboard3D(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), rad,
+                    hueB, hueC, Math.round(v.fadeA() * 0.80f));
+            emitPixelCircleBillboard3D(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), rad * 0.92f,
+                    hueC, hueA, Math.round(v.fadeA() * 0.55f));
+            return;
+        }
+
+        // KALÉIDOSCOPE : huit copies d'un petit glyphe, chacune tournée, teinte qui défile.
+        float base = v.age() * (0.10f + 0.05f * Math.abs(v.m().spin()));
+        int copies = 8;
+        for (int c = 0; c < copies; c++) {
+            float ang = base + c * (float) (Math.PI * 2.0 / copies);
+            int hue = Mth.hsvToRgb((v.age() * 0.045f + c / (float) copies) % 1.0f, 0.90f, 1.0f);
+            float rad = (0.45f + 1.05f * v.easeOut()) * S;
+            float cx2 = v.cx() + Mth.cos(ang) * rad;
+            float cz2 = v.cz() + Mth.sin(ang) * rad;
+            for (int k = 0; k < 3; k++) {
+                float a2 = ang + k * 1.047f;
+                float rr = 0.30f * S;
+                v.cube(cx2 + Mth.cos(a2) * rr,
+                        v.cy() + 0.10f + 0.28f * (1.0f - t) * ((k & 1) == 0 ? 1.0f : -1.0f),
+                        cz2 + Mth.sin(a2) * rr, (0.030f - 0.008f * k) * S,
+                        (k == 0) ? 0xFFFFFF : hue, v.fadeA());
+            }
+        }
+
+        v.slash((1.05f + 0.55f * t) * v.m().scale(), 0.038f, 170.0f,
+                0xFFFFFF, hueA, hueB, v.fadeA());
     }
 
     // ==================== PRIMITIVES VOXELS 3D (MINI-CUBES 6 FACES MINECRAFT) ====================
