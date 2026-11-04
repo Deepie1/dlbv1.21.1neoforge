@@ -1,76 +1,162 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DLB — Three Fire Signatures</title><style>body{margin:0;background:#080a0e;color:#f4e9df;font:15px system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:22px}h1{font-size:25px;letter-spacing:.08em;margin:8px 0}h2{font-size:13px;color:#d69d7a;font-weight:500}.bar{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}button{background:#1c232d;color:#f7e8da;border:1px solid #4d3c34;border-radius:7px;padding:9px 13px;cursor:pointer}button.active{background:#84351e;border-color:#ff8a3c}canvas{width:100%;height:610px;display:block;border:1px solid #342a28;border-radius:12px}.controls{display:flex;align-items:center;gap:12px;margin:12px 0}input{flex:1;accent-color:#e8642a}.meta{display:flex;justify-content:space-between;color:#c6b7aa;font-size:13px}.refs{font-size:12px;line-height:1.6;color:#9c918a}a{color:#ffa76e}</style></head><body><main><h2>DEEP LUCKY BLOCK · REFONTE FIRE</h2><h1 id="title">MOLTEN FIRE WAVE</h1><div class="bar"><button class="active" data-v="0">Molten Fire Wave</button><button data-v="1">Soul Fire Crescent</button><button data-v="2">Brimstone Meteor</button></div><canvas id="view"></canvas><div class="controls"><button id="play">Pause</button><button id="resume">Reprendre le temps réel</button><input id="time" type="range" min="0" max="1000" value="0"></div><div class="meta"><span id="phase">Frame vide</span><span id="readout">0 voxel</span></div><p class="refs">Nappes de feu volumétriques, surfaces de combustible, braises et fumée synchronisées avec FireSignatureVfx.java. Première et dernière frames vides. Aucun dégât ajouté.<br>Inspiration : <a href="https://godboyhappy.itch.io/ignis-hd-fire-spell-vfx">IGNIS Fire VFX</a> · <a href="https://pinogames.itch.io/fire-spell-vfx-pack-pixel-art-magic-effects">Pixel Art Fire Spells</a> · <a href="https://sprixen.com/animated-vtt-effects">Animated VFX</a></p></main><script>'use strict';
-const FIRE_COLORS={CRUST:0x28191A,SMOKE:0x41383A,RED:0x8E1D16,ORANGE:0xE34713,AMBER:0xFF8B17,HOT:0xFFD75F,WHITE:0xFFF3C2,SOUL_DARK:0x073C59,SOUL_BLUE:0x087E9C,SOUL_CYAN:0x25D5D4,SOUL_HOT:0x8FFFF0,SOUL_WHITE:0xDCFFFF,ROCK:0x292226,ROCK_HOT:0x713528};
-const clamp=x=>Math.max(0,Math.min(1,x));
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FIRE — Signatures voxel HD · Deep Lucky Block</title>
+<style>
+:root{color-scheme:dark;--bg:#100906;--panel:#1a0e0a;--line:#513023;--ink:#fff0dc;--muted:#bda596;--ember:#ff963c;--gold:#ffd078}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font:14px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}button,input,a{font:inherit}button,a{-webkit-tap-highlight-color:transparent}
+body{display:grid;grid-template-columns:320px 1fr;background:radial-gradient(ellipse at 78% 20%,#3b170d 0,#190d09 45%,#090504 100%)}
+aside{position:relative;z-index:4;display:flex;flex-direction:column;min-height:0;padding:30px 25px 22px;background:linear-gradient(180deg,#1d100bf5,#110906f5);border-right:1px solid #553022;box-shadow:18px 0 60px #0007;overflow:auto}
+.eyebrow{font-size:10px;font-weight:800;letter-spacing:.24em;text-transform:uppercase;color:#e89855}h1{margin:9px 0 4px;font-family:Georgia,serif;font-size:40px;font-weight:500;letter-spacing:.08em;line-height:1;color:#fff0d1}h2{margin:0 0 17px;font-size:15px;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:#d9b494}.intro{margin:0 0 22px;color:var(--muted);font-size:13px}.rule{height:1px;background:linear-gradient(90deg,#a5532b,transparent);margin:0 0 19px}
+.label{display:block;margin:0 0 8px;color:#d0ad8f;font-size:10px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}.variants{display:grid;gap:7px;margin-bottom:19px}.variant{display:grid;grid-template-columns:27px 1fr;align-items:center;gap:9px;width:100%;padding:10px 11px;text-align:left;border:1px solid #4e2d22;border-radius:7px;background:#21120d;color:#cfb5a4;cursor:pointer;transition:.18s}.variant:hover{border-color:#a65d35;background:#2c170f}.variant.active{border-color:#e58339;background:linear-gradient(90deg,#482416,#28150e);color:#fff0da;box-shadow:inset 3px 0 #ff9d45}.variant .num{font-family:Georgia,serif;font-size:19px;color:#b76b3d}.variant.active .num{color:#ffd18d}.variant b{display:block;font-size:12px;letter-spacing:.03em}.variant small{display:block;color:#a98a78;font-size:10px;margin-top:1px}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:15px}.btn{border:1px solid #69402d;border-radius:6px;background:#2b170f;color:#f3dac2;padding:9px 10px;cursor:pointer}.btn:hover{background:#402116;border-color:#c8733c}.btn.primary{background:#ed913f;color:#281005;border-color:#ffc076;font-weight:800}.btn.primary:hover{background:#ffad5c}.timeline{width:100%;accent-color:#f39745;cursor:pointer;margin:0 0 7px}.phase{min-height:36px;color:#d5b79e;font-size:12px}.stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#543225;border:1px solid #543225;border-radius:7px;overflow:hidden;margin:15px 0}.stat{background:#190d09;padding:10px 11px}.stat b{display:block;font-family:Georgia,serif;color:#ffe0b4;font-size:20px;font-weight:500}.stat span{font-size:9px;color:#a98974;letter-spacing:.12em;text-transform:uppercase}
+.legend{display:flex;gap:14px;flex-wrap:wrap;color:#b49580;font-size:10px;margin-bottom:18px}.legend span:before{content:"";display:inline-block;width:8px;height:8px;margin-right:5px;background:var(--c);box-shadow:0 0 8px color-mix(in srgb,var(--c),transparent 50%)}.download{display:block;text-align:center;text-decoration:none;color:#ffe0ba;border:1px solid #91542e;background:#321a10;border-radius:6px;padding:10px;margin-top:auto}.download:hover{background:#4b2715;border-color:#e18a43}.refs{margin:13px 0 0;color:#846a5a;font-size:9px;line-height:1.5}.refs a{color:#b68b68;text-decoration:none}.refs a:hover{color:#f1bd82}
+main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;height:100%;cursor:grab;touch-action:none;outline:none}canvas:active{cursor:grabbing}.topbar{position:absolute;left:24px;right:24px;top:21px;display:flex;justify-content:space-between;align-items:center;pointer-events:none}.chip{padding:7px 10px;border:1px solid #9e694c55;border-radius:4px;background:#160b07cf;color:#e4b98e;font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;backdrop-filter:blur(8px)}.chip.live:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#ff9b47;box-shadow:0 0 10px #ff7a28;margin-right:7px}.hint{position:absolute;left:50%;bottom:19px;transform:translateX(-50%);white-space:nowrap;color:#c0a089;background:#120906d9;border:1px solid #65402e;border-radius:30px;padding:8px 15px;font-size:10px;letter-spacing:.05em;pointer-events:none}.variant-title{position:absolute;right:26px;bottom:24px;text-align:right;pointer-events:none}.variant-title b{display:block;font-family:Georgia,serif;font-size:21px;font-weight:500;color:#ffe2bd}.variant-title span{font-size:10px;color:#ae8c73;letter-spacing:.1em;text-transform:uppercase}
+@media(max-width:850px){body{grid-template-columns:250px 1fr}aside{padding:22px 17px}h1{font-size:32px}.intro{font-size:12px}.variant-title{display:none}.hint{font-size:9px;bottom:12px}.topbar{left:14px;right:14px;top:14px}}
+@media(max-width:620px){html,body{overflow:auto}body{display:block;min-height:100%}aside{position:absolute;left:10px;right:10px;bottom:10px;top:auto;max-height:45vh;padding:14px;border:1px solid #68402c;border-radius:9px;background:#180c08ee}aside .intro,aside .rule,aside .refs,aside .legend,aside .stats{display:none}h1{font-size:25px}h2{font-size:11px;margin-bottom:8px}.eyebrow{font-size:8px}.variants{grid-template-columns:repeat(3,1fr);margin-bottom:10px}.variant{display:block;padding:7px;text-align:center}.variant .num,.variant small{display:none}.variant b{font-size:9px}.controls{grid-template-columns:1fr 1fr;margin-bottom:7px}.download{margin-top:5px;padding:7px}main{height:100vh}.hint{display:none}}
+</style>
+</head>
+<body>
+<aside>
+  <div class="eyebrow">Deep Lucky Block · Fire VFX</div>
+  <h1>FIRE</h1><h2>Signatures HD</h2>
+  <p class="intro">Trois sculptures animées en voxels de toutes tailles : masse de lave texturée, flammes volumétriques ramifiées, braises balistiques et fumée.</p>
+  <div class="rule"></div>
+  <span class="label">Signature de l’enchantement</span>
+  <div class="variants" role="group" aria-label="Variante Fire">
+    <button class="variant active" data-variant="0"><span class="num">Ⅰ</span><span><b>Molten Fire Wave</b><small>Mini-tsunami · crête · splash</small></span></button>
+    <button class="variant" data-variant="1"><span class="num">Ⅱ</span><span><b>Soul Fire Crescent</b><small>Double hélice · feux d’âme</small></span></button>
+    <button class="variant" data-variant="2"><span class="num">Ⅲ</span><span><b>Brimstone Meteor</b><small>Balistique · impact · cratère</small></span></button>
+  </div>
+  <span class="label">Chorégraphie du modèle Java</span>
+  <div class="controls"><button class="btn primary" id="play">Pause</button><button class="btn" id="replay">Rejouer</button></div>
+  <input class="timeline" id="timeline" type="range" min="0" max="1000" value="0" aria-label="Progression de l’animation">
+  <div class="phase" id="phase">01 — La lave prend naissance</div>
+  <div class="stats"><div class="stat"><b id="baseCount">0</b><span>Voxels dans la frame</span></div><div class="stat"><b>15</b><span>Teintes de lave</span></div></div>
+  <div class="legend"><span style="--c:#5c1b14">Croûte</span><span style="--c:#f57a09">Lave</span><span style="--c:#ffdf65">Racine chaude</span></div>
+  <a class="download" href="./DLB_Wood_Three_Signatures_src.zip" download>Télécharger les sources Java · ZIP</a>
+  <p class="refs">Modèles procéduraux originaux après étude des mécanismes publics d’<a href="https://godboyhappy.itch.io/ignis-hd-fire-spell-vfx" target="_blank" rel="noreferrer">IGNIS</a> et des zones de couleur de la lave Minecraft. Aucun asset externe ni code payant n’est intégré.</p>
+</aside>
+<main>
+  <canvas id="scene" aria-label="Signatures Fire animées en voxels. Glisser pour tourner, molette pour zoomer." tabindex="0"></canvas>
+  <div class="topbar"><span class="chip live">Modèle Java synchronisé</span><span class="chip" id="visibleCount">0 voxel visible</span></div>
+  <div class="hint">Glisser pour orbiter · Molette pour zoomer · Espace pour pause</div>
+  <div class="variant-title"><b id="variantName">Molten Fire Wave</b><span id="variantSub">Lave · roulement · gravité</span></div>
+</main>
+<script>'use strict';
+const LAVA=[0x241416,0x3B1715,0x5C1B14,0x7E2114,0xA12B12,0xC23A0E,0xDA4B09,0xEB6208,0xF57A09,0xFF9510,0xFFAF1D,0xFFC83B,0xFFDF65,0xFFEFA0,0xFFF6D2];
+const SOUL_COLORS=[0x061D33,0x07334A,0x07506A,0x08758B,0x079BA8,0x12BCC2,0x2ADBD4,0x62EDDF,0x9BFAE9,0xD7FFF5,0xF1FFFF];
+const ROCK=0x211C20,ROCK_RED=0x4A2522,ROCK_HOT=0x843622,SMOKE=0x342D31,SMOKE_LIGHT=0x554449;
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
 const smooth=x=>{x=clamp(x);return x*x*(3-2*x)};
+const lerp=(a,b,t)=>a+(b-a)*t;
 function hash01(seed,n){let h=(seed^Math.imul(n,0x45D9F3B))|0;h=Math.imul(h^(h>>>16),0x45D9F3B);h=Math.imul(h^(h>>>16),0x45D9F3B);h^=h>>>16;return(h&0xFFFF)/65535}
-function fireRamp(u,core){const C=FIRE_COLORS;return u<.15?(core?C.WHITE:C.HOT):u<.43?(core?C.HOT:C.AMBER):u<.76?(core?C.AMBER:C.ORANGE):(core?C.ORANGE:C.RED)}
-function soulRamp(u,core){const C=FIRE_COLORS;return u<.16?(core?C.SOUL_WHITE:C.SOUL_HOT):u<.48?(core?C.SOUL_HOT:C.SOUL_CYAN):u<.78?(core?C.SOUL_CYAN:C.SOUL_BLUE):(core?C.SOUL_BLUE:C.SOUL_DARK)}
-function buildFire(v,t,salt=42){
- const out=[],C=FIRE_COLORS;if(t<=0||t>=1)return out;
- const cube=(x,y,z,hx,hy,hz,rgb,a)=>{if(a>0&&hx>0&&hy>0&&hz>0)out.push({x,y,z,hx,hy,hz,rgb,a:Math.min(255,a)})};
- const flame=(x,y,z,height,width,windX,windZ,phase,soul,alpha,seed)=>{
-  if(height<=.002||alpha<=0)return;const jitter=hash01(seed,33),segments=13;
-  for(let k=0;k<segments;k++){const u=k/(segments-1),advect=Math.sin(phase-u*5.2+jitter*4)*u*u,curl=Math.sin(phase*.63+u*8+seed)*u,px=x+windX*u*u*height+advect*width*1.8+curl*width*.55,pz=z+windZ*u*u*height+Math.cos(phase-u*4.7+seed)*u*width,py=y+u*height,taper=(1-u*.78)*(.90+.10*Math.sin(phase+u*9)),hs=width*taper;cube(px,py,pz,hs,Math.max(hs,height/segments*.72),hs,soul?soulRamp(u,true):fireRamp(u,true),alpha*(1-u*.30));if(k<segments-2){const outer=hs*.72;cube(px+Math.sin(seed+u*5)*hs*.68,py-height/segments*.18,pz+Math.cos(seed+u*5)*hs*.68,outer,outer*1.12,outer,soul?soulRamp(u,false):fireRamp(u,false),alpha*.72*(1-u*.35))}if(k%3===0){const aura=hs*1.70;cube(px,py,pz,aura,aura*1.16,aura,soul?soulRamp(u,true):fireRamp(u,true),alpha*.13*(1-u*.45))}}
+function buildFire(v,t,salt=42){const out=[];if(t<=0||t>=1)return out;
+ const box=(x,y,z,hx,hy,hz,rgb,a)=>{if(a>5&&hx>.0005&&hy>.0005&&hz>.0005)out.push({x,y,z,hx,hy,hz,rgb,a:Math.min(255,a)})},rotBox=(x,y,z,hx,hy,hz,roll,rgb,a)=>{if(a>5&&hx>.0005&&hy>.0005&&hz>.0005)out.push({x,y,z,hx,hy,hz,roll,rgb,a:Math.min(255,a)})};
+ const soulColor=i=>SOUL_COLORS[clamp(i,0,SOUL_COLORS.length-1)|0];
+ const lavaRgb=(f,l,u,time,seed)=>{const field=Math.sin(f*3.7+l*4.3+time*.70)+.65*Math.sin(f*8.1-l*2.8-u*5+time*1.4)+.35*Math.sin(l*13.7+u*9+(seed&15)),crust=Math.sin(f*2.1-l*3.4+(seed&31)*.17)+Math.sin(l*5.2+u*4.3);if(crust>1.05&&u<.88)return LAVA[1+(seed&2)];if(field>1.45)return LAVA[12+(seed&1)];if(field>.85)return LAVA[10+(seed&1)];if(field>-.10)return LAVA[7+((seed%3)+3)%3];if(field>-.90)return LAVA[4+(seed&2)];return LAVA[2+(seed&1)]};
+ const lavaDropletRgb=h=>h>.80?LAVA[13]:h>.52?LAVA[11]:h>.20?LAVA[8]:LAVA[5];
+ const fireRamp=(u,core)=>u<.14?(core?LAVA[13]:LAVA[10]):u<.38?(core?LAVA[11]:LAVA[8]):u<.70?(core?LAVA[9]:LAVA[7]):u<.90?(core?LAVA[7]:LAVA[5]):(core?LAVA[6]:LAVA[3]);
+ const soulRamp=(u,core)=>u<.14?(core?soulColor(10):soulColor(8)):u<.40?(core?soulColor(8):soulColor(6)):u<.72?(core?soulColor(6):soulColor(4)):(core?soulColor(4):soulColor(1));
+ const waveTravel=t=>-1.20+1.80*smooth((t-.055)/.55),collapse=t=>smooth((t-.69)/.26);
+ const waveFrontLocal=(t,u,lane=0)=>{const curl=smooth((t-.13)/.32),tornLip=.12*Math.sin(lane*1.37+t*3)*u*u;return-.58+.58*u+.82*curl*Math.pow(u,3.2)+tornLip};
+ const waveHeightLocal=(t,u,noise)=>{const birth=smooth((t-.015-u*.055)/.13),height=1.72*noise*birth*(1-.78*collapse(t));return Math.sin(u*2.35)*height-collapse(t)*.34};
+ const flame=(f,y,l,height,width,windF,windL,phase,soul,alpha,seed)=>{
+  if(height<=.003||alpha<=0)return;const jitter=hash01(seed,33),levels=12;
+  for(let k=0;k<levels;k++){const u=k/(levels-1),sway=Math.sin(phase-u*5+jitter*4)*u,curl=Math.cos(phase*.67+u*7+seed)*u,pf=f+windF*u*u*height+sway*width*.85,pl=l+windL*u*u*height+curl*width*.72,py=y+u*height,taper=Math.max(.075,Math.pow(1-u,.62)),w=width*taper*(.92+.08*Math.sin(phase+u*8)),hy=Math.max(height/levels*.74,w*.62),core=soul?soulRamp(u,true):fireRamp(u,true),outer=soul?soulRamp(u,false):fireRamp(u,false);
+   box(pf,py,pl,w*.72,hy,w*.78,core,alpha*(1-u*.18));
+   if(u<.84){box(pf+w*.62,py-hy*.18,pl,w*.64,hy*.88,w*.70,outer,alpha*.88);box(pf-w*.55,py-hy*.10,pl+w*.18,w*.58,hy*.82,w*.62,outer,alpha*.80);box(pf,py-hy*.20,pl+w*.63,w*.62,hy*.85,w*.60,outer,alpha*.76);if(k<7)box(pf-w*.12,py-hy*.24,pl-w*.60,w*.68,hy*.82,w*.62,soul?soulColor(2):LAVA[5+(k&1)],alpha*.72)}
+   if(k>=4&&k<=9&&(k&1)===0){const side=(seed&1)===0?1:-1,branch=(u-.24)*width*side;box(pf+branch,py+hy*.25,pl-branch*.45,w*.46,hy*.68,w*.46,soul?soulColor(5):LAVA[7+(k&3)],alpha*.82)}
+   if(k%3===0){const aura=w*1.48;box(pf,py,pl,aura,hy*1.35,aura,core,alpha*.105*(1-u*.45))}
+  }
  };
- const groundPatch=(x,ground,z,reveal,height,windX,windZ,time,soul,alpha,seed)=>{
-  const h=hash01(seed,17),plate=(.085+h*.025)*reveal,a=alpha*reveal;cube(x,ground+.022,z,plate*1.35,.018*reveal,plate*1.35,soul?C.SOUL_DARK:C.CRUST,a*.64);cube(x,ground+.040,z,plate*.72,.014*reveal,plate*.72,soul?C.SOUL_CYAN:C.AMBER,a*.55);flame(x,ground+.045,z,height*reveal,.026+h*.015,windX*.35,windZ*.35,time*8+h*6.28,soul,a,seed)
+ const groundPatch=(f,ground,l,reveal,height,withFlame,soul,alpha,seed,time)=>{
+  const h=hash01(seed,17),size=(.135+.050*h)*reveal,a=alpha*reveal;box(f,ground+.025,l,size*1.22,.026*reveal,size,soul?soulColor(1):LAVA[(seed&3)+1],a*.88);box(f+size*.15,ground+.051,l-size*.12,size*.76,.018*reveal,size*.68,soul?soulColor(5):LAVA[6+(seed&3)],a*.86);box(f-size*.30,ground+.070,l+size*.16,size*.16,.012*reveal,size*.58,soul?soulColor(8):LAVA[12],a*.90);box(f+size*.35,ground+.071,l-size*.22,size*.34,.013*reveal,size*.14,soul?soulColor(3):LAVA[2],a*.84);if(withFlame)flame(f,ground+.07,l,height*reveal,.060+.025*h,.20,(h-.5)*.35,time*8+h*6.28,soul,a,seed)
  };
- const smokeColumn=(cx,ground,cz,t,start,count,alpha,seed,dirX,dirZ)=>{
-  for(let p=0;p<count;p++){const age=t-start-(p%8)*.018;if(age<=0)continue;const h=hash01(seed,p*67+1200),life=clamp(age/.30),fade=(1-life)*smooth(age/.05),ang=p*2.3999632+life*1.8,radius=.15+h*.75+life*.35,px=cx+Math.cos(ang)*radius+dirX*life*.35,pz=cz+Math.sin(ang)*radius+dirZ*life*.35,py=ground+.22+h*.45+life*1.55,hs=.055+h*.055+life*.05;cube(px,py,pz,hs,hs*.82,hs,C.SMOKE,alpha*fade*.34)}
+ const smoke=(f,ground,l,t,start,count,alpha,seed,spread)=>{
+  for(let p=0;p<count;p++){const age=t-start-(p%8)*.017;if(age<=0)continue;const h=hash01(seed,p*67+3200),life=clamp(age/.31),fade=(1-life)*smooth(age/.05),angle=p*2.3999632+life*1.8,radius=.16+h*spread+life*.38,pf=f+Math.cos(angle)*radius+life*.25,pl=l+Math.sin(angle)*radius,py=ground+.28+h*.48+life*1.65,size=.095+h*.115+life*.075;box(pf,py,pl,size*1.15,size*.82,size,(p&3)===0?SMOKE_LIGHT:SMOKE,alpha*fade*.32);if((p&3)===0)box(pf+size*.55,py-size*.30,pl,size*.62,size*.55,size*.65,SMOKE,alpha*fade*.24)}
  };
+ const meteorF=q=>-3.40+3.40*q,meteorY=q=>{const time=q*1.45;return 6-1.20*time-1.86*time*time};
  if(v===0){
-  const birth=smooth(t/.11),exit=smooth((t-.80)/.20),ground=-.48,travel=-1.65+2.05*smooth((t-.07)/.50),env=birth*(1-exit);
-  for(let lane=-8;lane<=8;lane++){const side=lane*.105,seed=lane*1.713+(salt&31),hn=.88+.12*Math.sin(seed+t*8);for(let k=0;k<26;k++){const u=k/25,curl=.64*u*u*smooth((t-.15)/.30),turb=Math.sin(t*17-u*6.2+seed)*.035*u,forward=travel+curl+turb,localBirth=smooth((t-.018-u*.065)/.11),y=ground+u*1.48*hn*localBirth-exit*1.25;for(let layer=0;layer<2;layer++){const depth=(layer-.5)*.085,hs=(.060+.010*(1-u))*(1-exit*.45);cube(forward+depth,y,side,hs,hs*1.08,hs,fireRamp(u,layer===0),245*env)}}const crestBirth=smooth((t-.083)/.11),crestY=ground+1.43*hn*crestBirth-exit*1.25,crestF=travel+.62*smooth((t-.15)/.30);flame(crestF,crestY,side,.34+.16*hash01(salt,lane+90),.038,.55,0,t*8+seed,false,245*env,salt+lane*19)}
-  for(let row=0;row<7;row++){const along=-1.48+row*.30;for(let lane=-4;lane<=4;lane++){const id=row*23+lane+100,h=hash01(salt,id);if(h<.13&&row>0)continue;const reveal=smooth((t-.20-row*.035-h*.035)/.13);if(reveal<=0)continue;groundPatch(along,ground,lane*.235,reveal*(1-exit),.30+h*.34,1,0,t,false,245,salt+id*17)}}
-  for(let p=0;p<44;p++){const launch=.26+(p%7)*.040,age=t-launch;if(age<=0)continue;const h=hash01(salt,p*43+300),side=(p%11-5)*.18,time=age*2.20,px=travel+.52+(.65+h*.85+side*.32)*time,pz=side+side*.32*time,py=ground+1.10+(1.25+h)*time-2.8*time*time;if(py<ground)continue;const hs=(.028+h*.028)*(1-exit);cube(px,py,pz,hs,hs*1.35,hs,h>.66?C.HOT:h>.25?C.AMBER:C.ORANGE,245*env)}
-  smokeColumn(0,ground,0,t,.68,28,245,salt,1,0);
+  const exit=smooth((t-.82)/.18),env=1-exit,ground=-.48,travel=waveTravel(t);
+  for(let lane=-8;lane<=8;lane++){const lateral=lane*.165,noise=.90+.08*Math.sin(lane*1.37+(salt&31))+.05*Math.sin(t*4+lane*.70);for(let k=0;k<22;k++){const u=k/21,front=travel+waveFrontLocal(t,u,lane),thickness=.26+.22*(1-u)+.62*Math.sin(u*Math.PI),back=front-thickness+.035*Math.sin(lane*1.9)*u,center=(front+back)*.5,halfDepth=Math.max(.055,(front-back)*.5),y=ground+waveHeightLocal(t,u,noise),hy=Math.max(.035,.072*noise*(1-.55*collapse(t))),halfLane=.105,rgb=lavaRgb(center,lateral,u,t,salt+lane*29+k*7);box(center,y,lateral,halfDepth,hy,halfLane,rgb,245*env);const detail=.035+.030*hash01(salt,lane*91+k*17+40),patchY=y+(hash01(salt,k*41+lane)-.5)*hy;box(front+detail*.25,patchY,lateral+(hash01(salt,k+lane*33)-.5)*.07,detail*.52,detail*.90,detail*1.35,lavaRgb(front+.4,lateral,u+.2,t+.17,salt+k),245*env*.96);if(((k+lane)&1)===0){box(back-detail*.20,patchY,lateral+(hash01(salt,k*73+lane*11)-.5)*.06,detail*.60,detail*.82,detail*1.40,lavaRgb(back-.3,lateral,u+.1,t+.30,salt+500+k),245*env*.86);box(center+halfDepth*.25,y+hy*.92,lateral,Math.min(halfDepth*.55,.13),.018,.070,lavaRgb(center,lateral+.3,u,t,salt+800+k),245*env*.88)}}
+   if((lane&1)===0){const u=.67,f=travel+waveFrontLocal(t,u,lane),y=ground+waveHeightLocal(t,u,noise);flame(f,y,lateral,(.48+.30*hash01(salt,lane+100))*(1-collapse(t)),.080+.022*hash01(salt,lane+120),.52,.10*Math.sin(lane),t*9+lane,false,245*env,salt+lane*43)}
+   if((lane+8)%3===0){const f=travel+waveFrontLocal(t,1,lane),y=ground+waveHeightLocal(t,1,noise);flame(f,y,lateral,.34*(1-collapse(t)),.065,-.20,0,t*10+lane*2,false,245*env*.90,salt+lane*67+900)}
+  }
+  for(let row=0;row<7;row++){const along=-1.45+row*.34;for(let lane=-4;lane<=4;lane++){const id=row*31+lane+150,h=hash01(salt,id);if(h<.10&&row>0)continue;const reveal=smooth((t-.13-row*.040-h*.025)/.14);if(reveal<=0)continue;groundPatch(along,ground,lane*.255,reveal*env,.38+h*.34,((row+lane)&1)===0,false,245,salt+id*19,t)}}
+  for(let p=0;p<72;p++){const h=hash01(salt,p*47+1200),launch=.23+(p%8)*.042+h*.018,age=t-launch;if(age<=0)continue;const lane=p%17-8,side=lane*.165+(hash01(salt,p*13)-.5)*.04,originF=waveTravel(launch)+waveFrontLocal(launch,.72,lane),launchNoise=.90+.08*Math.sin(lane*1.37+(salt&31))+.05*Math.sin(launch*4+lane*.70),originY=ground+waveHeightLocal(launch,.72,launchNoise),time=age*5.6,vf=.85+1.25*h,vl=lane*.035+(hash01(salt,p*59)-.5)*.65,vy=1.45+1.85*hash01(salt,p*61),gravity=6.8,f=originF+vf*time,l=side+vl*time,y=originY+vy*time-.5*gravity*time*time,hit=(vy+Math.sqrt(vy*vy+2*gravity*(originY-ground)))/gravity,size=.035+.055*h;
+   if(time<hit){box(f,y,l,size*1.15,size*1.35,size,lavaDropletRgb(h),245*env);box(f-vf*.022,y+size*.65,l-vl*.022,size*.52,size*.55,size*.52,h>.55?LAVA[12]:LAVA[8],245*env*.85)}
+   else if(time<hit+.28){const spread=time-hit;box(f,ground+.035,l,size*(1.4+spread),.025,size*(1.2+spread),LAVA[7+(p&3)],245*env*(1-spread));for(let s=-1;s<=1;s+=2)box(f+s*spread*size*2,ground+.06+spread*.12,l+s*spread*size,size*.38,size*.50,size*.38,LAVA[10],245*env*(1-spread))}
+  }
+  smoke(0,ground,0,t,.69,34,245,salt,.75);
  }else if(v===1){
-  const birth=smooth(t/.10),weaveExit=smooth((t-.42)/.22),slash=smooth((t-.30)/.34),exit=smooth((t-.76)/.24),ground=-.48;
-  for(let strand=0;strand<2;strand++)for(let k=0;k<84;k++){const u=k/83,reveal=smooth((t-u*.19)/.12);if(reveal<=0)continue;const angle=strand*Math.PI+u*9.4+t*7,radius=.48-u*.15,px=Math.cos(angle)*radius,pz=Math.sin(angle)*radius,py=ground+u*1.62,hs=.045*reveal*(1-weaveExit*.65);cube(px,py,pz,hs,hs*1.16,hs,strand===0?C.SOUL_CYAN:C.SOUL_BLUE,245*birth*reveal*(1-weaveExit));if(k%6===0)flame(px,py,pz,.18,.025,Math.cos(angle)*.35,Math.sin(angle)*.35,t*9+k,true,245*birth*(1-weaveExit),salt+k+strand*99)}
-  const center=-.30+.55*slash+.12*smooth((t-.62)/.16),radius=.78+.16*slash;
-  for(let strand=0;strand<2;strand++)for(let k=0;k<96;k++){const u=k/95,reveal=smooth((slash-u*.28)/.20);if(reveal<=0)continue;const angle=-2.28+u*4.56,braid=Math.sin(u*22+strand*Math.PI+t*8)*.035,r=radius+(strand===0?-.045:.045)+braid,lateral=Math.cos(angle)*r,py=Math.sin(angle)*r+.08,px=center,pz=lateral,taper=.40+.60*Math.sin(u*Math.PI),hs=.041*taper*reveal*(1-exit*.65);cube(px,py,pz,hs,hs,hs,strand===0?C.SOUL_CYAN:C.SOUL_BLUE,245*reveal*(1-exit));if(k%4===0)flame(px,py,pz,.14+.13*taper,.024,.75+Math.cos(angle)*.32,0,t*11+angle*2,true,245*reveal*(1-exit),salt+k*13+strand*51)}
-  for(let p=0;p<64;p++){const launch=.40+(p%9)*.025,age=t-launch;if(age<=0)continue;const h=hash01(salt,p*61+500),angle=p*2.3999632+age*4,time=age*1.8,rad=.24+time*(.38+h*.40),px=center+Math.cos(angle)*rad,pz=Math.sin(angle)*rad,py=-.15+h*.70+time*.65,hs=(.018+h*.018)*(1-exit);cube(px,py,pz,hs,hs*1.45,hs,p%9===0?C.SOUL_WHITE:p%3===0?C.SOUL_HOT:C.SOUL_CYAN,245*(1-exit)*(1-age*.45))}
-  smokeColumn(0,ground,0,t,.72,20,245,salt,1,0);
+  const birth=smooth(t/.09),exit=smooth((t-.80)/.20),env=birth*(1-exit),ground=-.48,sweep=smooth((t-.30)/.38),radius=.82+.12*sweep,center=-.16+.24*sweep;
+  for(let strand=0;strand<2;strand++)for(let k=0;k<78;k++){const u=k/77,reveal=smooth((t-u*.12)/.10);if(reveal<=0)continue;const morph=smooth((t-.17-u*.075)/.32),helixAngle=strand*Math.PI+u*10.4+t*7,helixRadius=.49-.12*u,hf=Math.cos(helixAngle)*helixRadius,hl=Math.sin(helixAngle)*helixRadius,hy=ground+.10+u*1.72,arcAngle=-2.34+u*4.68,braid=Math.sin(u*24+strand*Math.PI+t*7),taper=.25+.75*Math.pow(Math.sin(u*Math.PI),.65),ar=radius+(strand===0?-.045:.045)+braid*.050,af=center+braid*.065,al=Math.cos(arcAngle)*ar,ay=Math.sin(arcAngle)*ar+.08,f=lerp(hf,af,morph),l=lerp(hl,al,morph),y=lerp(hy,ay,morph),width=(.038+.048*taper*(.35+.65*morph))*reveal*(1-exit*.50);
+   box(f,y,l,width,width*1.18,width,soulColor(strand===0?6:4),245*env*reveal);box(f+width*.45,y-width*.30,l-width*.40,width*.72,width*.82,width*.72,soulColor(strand===0?3:2),245*env*.84);box(f-width*.40,y+width*.25,l+width*.35,width*.48,width*.55,width*.48,soulColor(k%9===0?9:7),245*env*.90);
+   if(k%4===0){const outwardF=lerp(Math.cos(helixAngle)*.25,.30,morph),outwardL=lerp(Math.sin(helixAngle)*.25,Math.cos(arcAngle)*.48,morph);flame(f,y,l,(.24+.25*taper)*(1-exit*.65),(.055+.025*taper)*(.65+.35*morph),outwardF,outwardL,t*10+k*.7+strand,true,245*env*reveal,salt+k*37+strand*401)}
+  }
+  for(let p=0;p<28;p++){const angle=p*Math.PI*2/28+t*.35,r=.52+.06*Math.sin(t*6+p),hs=(.065+.025*(p&1))*birth*(1-exit);box(Math.cos(angle)*r,ground+.035,Math.sin(angle)*r,hs*1.35,.022,hs,soulColor(p%7===0?7:2),245*env*.60)}
+  for(let p=0;p<86;p++){const launch=.28+(p%10)*.037,age=t-launch;if(age<=0)continue;const h=hash01(salt,p*53+1700),u=(p%39)/38,angle=-2.34+u*4.68,strand=p&1,launchMorph=smooth((launch-.17-u*.075)/.32),launchSweep=smooth((launch-.30)/.38),launchRadius=.82+.12*launchSweep,launchCenter=-.16+.24*launchSweep,helixAngle=strand*Math.PI+u*10.4+launch*7,helixRadius=.49-.12*u,braid=Math.sin(u*24+strand*Math.PI+launch*7),ar=launchRadius+(strand===0?-.045:.045)+braid*.050,originF=lerp(Math.cos(helixAngle)*helixRadius,launchCenter+braid*.065,launchMorph),originL=lerp(Math.sin(helixAngle)*helixRadius,Math.cos(angle)*ar,launchMorph),originY=lerp(ground+.10+u*1.72,Math.sin(angle)*ar+.08,launchMorph),time=age*2.8,f=originF+(h-.5)*time*.35,l=originL+Math.cos(angle)*time*(.12+h*.25),y=originY+time*.32,hs=(.014+.026*h)*(1-exit);box(f,y,l,hs,hs*1.55,hs,soulColor(p%11===0?10:p%3===0?8:6),245*(1-exit)*(1-age*.55))}
+  smoke(0,ground,0,t,.76,24,245,salt,.45);
  }else{
-  const birth=smooth(t/.07),descent=smooth((t-.035)/.39),impact=smooth((t-.425)/.15),exit=smooth((t-.79)/.21),ground=-.48,start=-2.10,mx=start*(1-descent),mz=0,my=ground+(1-descent)*4.50+.40;
-  if(t<.48){const fade=1-smooth((t-.425)/.055),cell=.108*birth;for(let x=-3;x<=3;x++)for(let y=-3;y<=3;y++)for(let z=-3;z<=3;z++){const d=Math.sqrt(x*x+y*y+z*z);if(d>3.35)continue;const h=hash01(salt,(x+5)*113+(y+5)*37+z+20);cube(mx+x*cell,my+y*cell,z*cell,cell*.55,cell*.55,cell*.55,h>.82?C.AMBER:h>.60?C.ROCK_HOT:C.ROCK,245*birth*fade)}for(let k=0;k<22;k++){const u=k/21,tx=mx-start*u*.58,ty=my+u*2.05;for(let l=0;l<6;l++){const ang=l*Math.PI/3+k*.91+t*5,spread=.045+u*.12,hs=(.072-u*.026)*birth;cube(tx+Math.cos(ang)*spread,ty+Math.sin(ang*1.7)*spread,Math.sin(ang)*spread,hs,hs*1.28,hs,u<.20?C.WHITE:u<.55?C.AMBER:u<.84?C.ORANGE:C.RED,245*birth*(1-u*.55))}if(k%3===0)flame(tx,ty,0,.26+u*.22,.035,-.55,0,t*8+k,false,245*birth*(1-u*.55),salt+k*7)}}
-  for(let l=0;l<14;l++){const h=hash01(salt,l*71+800),reveal=smooth((t-.425-(l%4)*.012)/.12);if(reveal<=0)continue;const ang=l*2.3999632,radius=.12+impact*(.48+h*.70),px=Math.cos(ang)*radius,pz=Math.sin(ang)*radius,py=ground+.08+impact*(.20+h*.58);flame(px,py,pz,(.38+h*.58)*reveal,.045+h*.030,Math.cos(ang)*.65,Math.sin(ang)*.65,t*10+l,false,245*reveal*(1-exit),salt+l*31)}
-  for(let p=0;p<36;p++){const h=hash01(salt,p*47+900),ang=p*2.3999632,reveal=smooth((t-.46-(p%6)*.018)/.13);if(reveal<=0||p%11===0)continue;const radius=.40+(p%3)*.30+impact*.20;groundPatch(Math.cos(ang)*radius,ground,Math.sin(ang)*radius,reveal*(1-exit),.24+h*.36,Math.cos(ang),Math.sin(ang),t,false,245,salt+p*29)}
-  for(let p=0;p<54;p++){const age=t-.435-(p%6)*.012;if(age<=0)continue;const h=hash01(salt,p*59+1000),ang=p*2.3999632,time=age*2,speed=.70+h*1.25,px=Math.cos(ang)*speed*time,pz=Math.sin(ang)*speed*time,py=ground+.15+(1.20+h*1.55)*time-3.15*time*time;if(py<ground-.05)continue;const hs=(.025+h*.032)*(1-exit);cube(px,py,pz,hs,hs,hs,p%5===0?C.ROCK:h>.60?C.HOT:C.ORANGE,245*(1-exit))}
-  smokeColumn(0,ground,0,t,.46,48,245,salt,1,0);
+  const ground=-.48,exit=smooth((t-.82)/.18),q=clamp((t-.025)/.375),birth=smooth(t/.055),flightFade=1-smooth((t-.400)/.055),mf=meteorF(q),my=ground+meteorY(q);
+  if(flightFade>0&&q>0){const core=.27*birth;box(mf,my,0,core,core*.94,core,ROCK,245*birth*flightFade);box(mf+core*.35,my+core*.25,0,core*.82,core*.74,core*.85,ROCK_RED,245*birth*flightFade);for(let r=0;r<26;r++){const h=hash01(salt,r*43+2000),angle=r*2.3999632+t*(r&1)*2,band=((r%5)-2)*.105,radial=(.23+.06*h)*birth,size=(.070+.065*h)*birth,f=mf+Math.cos(angle)*radial,l=Math.sin(angle)*radial,y=my+band;box(f,y,l,size,size*(.80+.35*h),size,h>.78?ROCK_HOT:h>.52?ROCK_RED:ROCK,245*birth*flightFade);if((r&3)===0)box(f+size*.62,y+size*.22,l,size*.24,size*.52,size*.30,h>.5?LAVA[12]:LAVA[8],245*birth*flightFade)}
+   const currentTime=q*1.45;for(let k=0;k<34;k++){const age=k*.043,historyTime=currentTime-age;if(historyTime<=0)continue;const hq=historyTime/1.45,f=meteorF(hq),y=ground+meteorY(hq),life=1-age/1.46,base=(.065+.145*life)*birth;for(let lobe=0;lobe<5;lobe++){const angle=lobe*2.3999632+k*.81+t*4,spread=base*(.35+age*.35),size=base*(lobe===0?1:.68),rgb=age<.08?(lobe===0?LAVA[14]:LAVA[12]):age<.35?(lobe===0?LAVA[11]:LAVA[8]):age<.8?LAVA[6+(lobe&1)]:LAVA[3+(lobe&1)];box(f+Math.cos(angle)*spread,y+Math.sin(angle*1.31)*spread,Math.sin(angle)*spread,size*(1+.35*life),size,size,rgb,245*birth*flightFade*(.35+.65*life))}if((k&1)===0&&k<26){const tangent=Math.atan2((-1.20-3.72*historyTime)*1.45,3.40),streak=.14+.22*life;rotBox(f,y,0,streak,base*.26,base*.34,tangent,age<.35?LAVA[11]:LAVA[6],245*birth*flightFade*life*.48)}if(k%4===0&&k<24)flame(f,y,0,.34+.25*life,.070+.035*life,-.65,0,t*11+k,false,245*birth*flightFade*life,salt+k*31)}
+  }
+  const impact=smooth((t-.400)/.16);for(let lobe=0;lobe<18;lobe++){const h=hash01(salt,lobe*71+2300),reveal=smooth((t-.400-(lobe%4)*.012)/.12);if(reveal<=0)continue;const angle=lobe*2.3999632,radius=.10+impact*(.55+h*.85),f=Math.cos(angle)*radius,l=Math.sin(angle)*radius,y=ground+.10+impact*(.25+h*.55),mass=(.10+.13*h)*reveal*(1-exit*.55);box(f,y,l,mass*1.30,mass,mass*1.30,LAVA[5+(lobe%5)],245*reveal*(1-exit)*.82);flame(f,y,l,(.55+.65*h)*reveal*(1-exit*.60),.110+.060*h,Math.cos(angle)*.65,Math.sin(angle)*.65,t*10+lobe,false,245*reveal*(1-exit),salt+lobe*97)}
+  for(let p=0;p<42;p++){const h=hash01(salt,p*47+2600),angle=p*2.3999632,reveal=smooth((t-.43-(p%6)*.017)/.14);if(reveal<=0||p%13===0)continue;const radius=.28+(p%4)*.27+impact*.18;groundPatch(Math.cos(angle)*radius,ground,Math.sin(angle)*radius,reveal*(1-exit),.36+h*.48,(p&1)===0,false,245,salt+p*83,t)}
+  for(let p=0;p<82;p++){const age=t-.405-(p%7)*.010;if(age<=0)continue;const h=hash01(salt,p*59+2900),angle=p*2.3999632,time=age*6.4,speed=.75+1.85*h,f=Math.cos(angle)*speed*time,l=Math.sin(angle)*speed*time,vy=1.65+2.75*hash01(salt,p*61),y=ground+.28+vy*time-3.65*time*time;if(y<ground)continue;const size=(.025+.075*h)*(1-exit);box(f,y,l,size,size*(p%4===0?.8:1.35),size,p%5===0?ROCK_RED:lavaDropletRgb(h),245*(1-exit));if((p&3)===0)box(f-Math.cos(angle)*size,y+size*.7,l-Math.sin(angle)*size,size*.42,size*.42,size*.42,LAVA[12],245*(1-exit)*.80)}
+  smoke(0,ground,0,t,.43,52,245,salt,1);
  }
  return out;
 }
-if(typeof module!=='undefined')module.exports={buildFire,FIRE_COLORS};
+if(typeof module!=='undefined')module.exports={buildFire,LAVA,SOUL_COLORS};
 
-const names=['MOLTEN FIRE WAVE','SOUL FIRE CRESCENT','BRIMSTONE METEOR'];
-const durations=[4.8,4.8,5.6];
-let variant=0,playing=true,start=performance.now(),fixed=null;
-const canvas=document.getElementById('view'),ctx=canvas.getContext('2d');
-function hex(n){return '#'+n.toString(16).padStart(6,'0')}
-function resize(){const d=Math.min(2,devicePixelRatio||1),r=canvas.getBoundingClientRect();canvas.width=r.width*d;canvas.height=r.height*d;ctx.setTransform(d,0,0,d,0,0)}
-addEventListener('resize',resize);resize();
-function project(x,y,z,w,h){const scale=Math.min(w/7.2,h/5.8);return [w*.50+(x-z)*scale*.76,h*.68+(x+z)*scale*.25-y*scale]}
-function drawCube(c,w,h){
- const [x,y]=project(c.x,c.y,c.z,w,h),s=Math.min(w/7.2,h/5.8),hx=c.hx*s*.72,hy=c.hy*s,hz=c.hz*s*.36;
- ctx.globalAlpha=Math.max(0,Math.min(1,c.a/255));ctx.fillStyle=hex(c.rgb);
- ctx.beginPath();ctx.moveTo(x-hx,y-hz);ctx.lineTo(x,y-hz*1.8);ctx.lineTo(x+hx,y-hz);ctx.lineTo(x+hx,y+hy);ctx.lineTo(x,y+hy+hz);ctx.lineTo(x-hx,y+hy);ctx.closePath();ctx.fill();
- ctx.globalAlpha=.22;ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(x-hx,y-hz);ctx.lineTo(x,y-hz*1.8);ctx.lineTo(x+hx,y-hz);ctx.lineTo(x,y);ctx.closePath();ctx.fill();ctx.globalAlpha=1;
+(()=>{
+'use strict';
+const NAMES=['Molten Fire Wave','Soul Fire Crescent','Brimstone Meteor'];
+const SUBS=['Lave · roulement · gravité','Tresse · croissant · braises d’âme','Vitesse · explosion · cratère'];
+const DURATIONS=[5.6,5.6,6.4];
+const canvas=document.getElementById('scene'),ctx=canvas.getContext('2d',{alpha:false});
+const timeline=document.getElementById('timeline'),phaseEl=document.getElementById('phase'),playBtn=document.getElementById('play'),visibleEl=document.getElementById('visibleCount'),countEl=document.getElementById('baseCount');
+let variant=0,t=0,playing=true,last=performance.now(),yaw=.72,pitch=.36,zoomFactor=1,autoRotate=true,drag=false,lastX=0,lastY=0;
+let W=1,H=1,DPR=1,CY=1,SY=0,CP=1,SP=0,SCALE=1,FOCUS=.65,dirty=true,lastRender=0;
+const FACES=[
+ {n:[1,0,0],v:[[1,-1,-1],[1,1,-1],[1,1,1],[1,-1,1]],shade:.77},
+ {n:[-1,0,0],v:[[-1,-1,1],[-1,1,1],[-1,1,-1],[-1,-1,-1]],shade:.65},
+ {n:[0,1,0],v:[[-1,1,-1],[-1,1,1],[1,1,1],[1,1,-1]],shade:1.12},
+ {n:[0,-1,0],v:[[-1,-1,1],[-1,-1,-1],[1,-1,-1],[1,-1,1]],shade:.48},
+ {n:[0,0,1],v:[[1,-1,1],[1,1,1],[-1,1,1],[-1,-1,1]],shade:.89},
+ {n:[0,0,-1],v:[[-1,-1,-1],[-1,1,-1],[1,1,-1],[1,-1,-1]],shade:.71}
+];
+function resize(){const r=canvas.getBoundingClientRect();DPR=Math.min(1.75,window.devicePixelRatio||1);W=Math.max(1,Math.round(r.width*DPR));H=Math.max(1,Math.round(r.height*DPR));if(canvas.width!==W||canvas.height!==H){canvas.width=W;canvas.height=H}}
+new ResizeObserver(resize).observe(canvas);resize();
+function updateCamera(){CY=Math.cos(yaw);SY=Math.sin(yaw);CP=Math.cos(pitch);SP=Math.sin(pitch);if(variant===0){FOCUS=.52;SCALE=Math.min(W/6.15,H/5.0)}else if(variant===1){FOCUS=.40;SCALE=Math.min(W/4.80,H/4.30)}else{const follow=smooth((t-.24)/.30);FOCUS=lerp(2.85,.68,follow);SCALE=Math.min(W/7.15,H/6.75)*(.82+.18*follow)}SCALE*=zoomFactor}
+function project(x,y,z){const yc=y-FOCUS,rx=x*CY-z*SY,rz=x*SY+z*CY,ry=yc*CP-rz*SP,depth=yc*SP+rz*CP;return[W*.52+rx*SCALE,H*.53-ry*SCALE,depth]}
+function rotateNormal(n,roll=0){const cr=Math.cos(roll),sr=Math.sin(roll),x=n[0]*cr-n[1]*sr,y=n[0]*sr+n[1]*cr,z=n[2],rx=x*CY-z*SY,rz=x*SY+z*CY;return[rx,y*CP-rz*SP,y*SP+rz*CP]}
+const RGB_CACHE=new Map();function rgb(n){if(!RGB_CACHE.has(n))RGB_CACHE.set(n,[n>>16&255,n>>8&255,n&255]);return RGB_CACHE.get(n)}
+function shade(n,k,a){const c=rgb(n);return`rgba(${Math.min(255,c[0]*k)|0},${Math.min(255,c[1]*k)|0},${Math.min(255,c[2]*k)|0},${clamp(a)})`}
+function ground(){const points=[];for(let i=0;i<56;i++){const a=i*Math.PI*2/56;points.push(project(Math.cos(a)*2.15,-.50,Math.sin(a)*2.15))}ctx.beginPath();ctx.moveTo(points[0][0],points[0][1]);for(let i=1;i<points.length;i++)ctx.lineTo(points[i][0],points[i][1]);ctx.closePath();const g=ctx.createRadialGradient(W*.52,H*.72,0,W*.52,H*.72,W*.38);g.addColorStop(0,'#74331442');g.addColorStop(1,'#10090600');ctx.fillStyle=g;ctx.fill();ctx.strokeStyle='#b2673b42';ctx.lineWidth=DPR;ctx.stroke()}
+function background(){const g=ctx.createRadialGradient(W*.58,H*.34,0,W*.52,H*.50,Math.max(W,H)*.75);g.addColorStop(0,variant===1?'#102b32':'#421b0e');g.addColorStop(.43,variant===1?'#0b171d':'#1c0e09');g.addColorStop(1,'#070403');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);ctx.fillStyle=variant===1?'#70e4dc40':'#ffb25b42';for(let i=0;i<40;i++){const x=hash01(99,i)*W,y=hash01(177,i)*H*.80,s=(i%3+1)*DPR*.55;ctx.fillRect(x,y,s,s)}ground()}
+function drawGlow(voxels){ctx.save();ctx.globalCompositeOperation='lighter';for(let i=0;i<voxels.length;i+=29){const v=voxels[i],c=rgb(v.rgb),p=project(v.x,v.y,v.z),r=clamp(Math.max(v.hx,v.hy,v.hz)*SCALE*2.8,7*DPR,34*DPR),a=clamp(v.a/255)*.11,g=ctx.createRadialGradient(p[0],p[1],0,p[0],p[1],r);g.addColorStop(0,`rgba(${c[0]},${c[1]},${c[2]},${a})`);g.addColorStop(1,`rgba(${c[0]},${c[1]},${c[2]},0)`);ctx.fillStyle=g;ctx.fillRect(p[0]-r,p[1]-r,r*2,r*2)}ctx.restore()}
+function render(){updateCamera();background();const voxels=buildFire(variant,t),faces=[];drawGlow(voxels);
+ for(const v of voxels){const roll=v.roll||0,cr=Math.cos(roll),sr=Math.sin(roll);for(const f of FACES){const n=rotateNormal(f.n,roll);if(n[2]<=.015)continue;const points=[];let depth=0;for(const q of f.v){const ox=q[0]*v.hx,oy=q[1]*v.hy,rx=ox*cr-oy*sr,ry=ox*sr+oy*cr,p=project(v.x+rx,v.y+ry,v.z+q[2]*v.hz);points.push(p);depth+=p[2]}faces.push({points,depth:depth/4,fill:shade(v.rgb,f.shade,v.a/255)})}}
+ faces.sort((a,b)=>a.depth-b.depth);ctx.lineJoin='round';for(const f of faces){const p=f.points;ctx.beginPath();ctx.moveTo(p[0][0],p[0][1]);for(let i=1;i<4;i++)ctx.lineTo(p[i][0],p[i][1]);ctx.closePath();ctx.fillStyle=f.fill;ctx.fill()}
+ visibleEl.textContent=`${voxels.length} voxels visibles`;countEl.textContent=voxels.length.toLocaleString('fr-FR');
+ let phase;if(t===0||t===1)phase='Frame vide · entrée / sortie propre';else if(variant===0)phase=t<.13?'01 — La nappe de lave prend naissance':t<.46?'02 — Le tsunami enroule sa crête':t<.69?'03 — Splash balistique et sol incendié':'04 — Affaissement, combustion et extinction';else if(variant===1)phase=t<.17?'01 — Deux feux d’âme s’élèvent':t<.50?'02 — Les flammes se tressent en croissant':t<.80?'03 — Croissant volumétrique autour du joueur':'04 — Dissipation en braises d’âme';else phase=t<.40?'01 — Chute balistique · traîne historique':t<.58?'02 — Impact en lobes et projections':t<.82?'03 — Cratère de lave et feux persistants':'04 — Extinction et fumée';
+ phaseEl.textContent=phase;timeline.value=Math.round(t*1000);playBtn.textContent=playing?'Pause':(t>=1?'Rejouer':'Lecture');
 }
-function frame(now){
- if(fixed===null&&playing){let elapsed=(now-start)/1000;if(elapsed>=durations[variant]){start=now;elapsed=0}document.getElementById('time').value=elapsed/durations[variant]*1000}
- const t=fixed!==null?fixed:Number(document.getElementById('time').value)/1000;
- const r=canvas.getBoundingClientRect(),w=r.width,h=r.height;ctx.clearRect(0,0,w,h);
- const grd=ctx.createRadialGradient(w*.5,h*.55,10,w*.5,h*.55,w*.65);grd.addColorStop(0,'#18202a');grd.addColorStop(1,'#07090d');ctx.fillStyle=grd;ctx.fillRect(0,0,w,h);
- ctx.strokeStyle='#28323d';ctx.lineWidth=1;for(let i=-5;i<=5;i++){let a=project(i,-.5,-5,w,h),b=project(i,-.5,5,w,h);ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.stroke();a=project(-5,-.5,i,w,h);b=project(5,-.5,i,w,h);ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.stroke()}
- const cubes=buildFire(variant,t);ctx.save();ctx.globalCompositeOperation='lighter';for(let i=0;i<cubes.length;i+=14){const c=cubes[i],[gx,gy]=project(c.x,c.y,c.z,w,h),gr=ctx.createRadialGradient(gx,gy,0,gx,gy,24);gr.addColorStop(0,hex(c.rgb)+'24');gr.addColorStop(1,hex(c.rgb)+'00');ctx.fillStyle=gr;ctx.fillRect(gx-24,gy-24,48,48)}ctx.restore();cubes.sort((a,b)=>(a.x+a.z+a.y*.04)-(b.x+b.z+b.y*.04));for(const c of cubes)drawCube(c,w,h);
- document.getElementById('readout').textContent=`${(t*durations[variant]).toFixed(2)} / ${durations[variant].toFixed(1)} s · ${cubes.length} voxels`;
- document.getElementById('phase').textContent=t===0||t===1?'Frame vide':variant===0?(t<.20?'01 — Le combustible s\'enflamme':t<.68?'02 — Déferlante et sol incendié':'03 — Extinction des nappes et fumée'):variant===1?(t<.30?'01 — Deux feux d\'âme s\'entrelacent':t<.68?'02 — La tresse forme et déplace le croissant':'03 — Le feu d\'âme se dissipe en braises'):(t<.425?'01 — Météore et couronne de feu':t<.72?'02 — Lobes d\'impact et cratère brûlant':'03 — Extinction et fumée');
- requestAnimationFrame(frame)
-}
-document.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>{variant=Number(b.dataset.v);fixed=null;start=performance.now();document.querySelectorAll('[data-v]').forEach(x=>x.classList.toggle('active',x===b));document.getElementById('title').textContent=names[variant]});
-document.getElementById('play').onclick=()=>{playing=!playing;document.getElementById('play').textContent=playing?'Pause':'Lecture';if(playing)start=performance.now()-Number(document.getElementById('time').value)/1000*durations[variant]*1000};
-document.getElementById('time').oninput=()=>{fixed=Number(document.getElementById('time').value)/1000;playing=false;document.getElementById('play').textContent='Lecture'};
-document.getElementById('resume').onclick=()=>{fixed=null;playing=true;start=performance.now();document.getElementById('play').textContent='Pause'};
-requestAnimationFrame(frame);
-</script></body></html>
+function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;if(playing){t=clamp(t+dt/DURATIONS[variant]);if(t>=1)playing=false;dirty=true}if(autoRotate&&playing&&!drag){yaw+=dt*.065;dirty=true}if(drag)dirty=true;if(dirty&&now-lastRender>=33){render();dirty=false;lastRender=now}requestAnimationFrame(frame)}requestAnimationFrame(frame);
+function setVariant(v){variant=v;t=0;playing=true;zoomFactor=1;dirty=true;document.querySelectorAll('.variant').forEach(b=>b.classList.toggle('active',Number(b.dataset.variant)===v));document.getElementById('variantName').textContent=NAMES[v];document.getElementById('variantSub').textContent=SUBS[v]}
+document.querySelectorAll('.variant').forEach(b=>b.addEventListener('click',()=>setVariant(Number(b.dataset.variant))));
+playBtn.addEventListener('click',()=>{if(t>=1)t=0;playing=!playing;dirty=true});document.getElementById('replay').addEventListener('click',()=>{t=0;playing=true;dirty=true});
+timeline.addEventListener('input',()=>{t=Number(timeline.value)/1000;playing=false;dirty=true});
+canvas.addEventListener('pointerdown',e=>{drag=true;lastX=e.clientX;lastY=e.clientY;canvas.setPointerCapture(e.pointerId)});canvas.addEventListener('pointermove',e=>{if(!drag)return;yaw+=(e.clientX-lastX)*.008;pitch=clamp(pitch+(e.clientY-lastY)*.006,.14,.92);lastX=e.clientX;lastY=e.clientY;dirty=true});canvas.addEventListener('pointerup',()=>drag=false);canvas.addEventListener('pointercancel',()=>drag=false);
+canvas.addEventListener('wheel',e=>{e.preventDefault();zoomFactor=clamp(zoomFactor*Math.exp(-e.deltaY*.001),.55,1.85);dirty=true},{passive:false});canvas.addEventListener('dblclick',()=>{yaw=.72;pitch=.36;zoomFactor=1;dirty=true});
+canvas.addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();playBtn.click()}if(e.key.toLowerCase()==='r'){t=0;playing=true}if(e.key==='ArrowLeft')yaw-=.12;if(e.key==='ArrowRight')yaw+=.12;dirty=true});
+})();
+</script>
+</body>
+</html>

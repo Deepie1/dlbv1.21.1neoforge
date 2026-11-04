@@ -6,29 +6,30 @@ import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
 /**
- * Fire signatures en voxels 3D. Adaptation originale des principes publiquement documentés par
- * IGNIS : surfaces de combustible, nappes de flamme advectées, lobes d'explosion et braises
- * analytiques. Aucun asset ni générateur payant n'est copié ou redistribué.
+ * Signatures Fire HD en voxels de tailles libres. Les masses utilisent de grands blocs, les lobes
+ * des blocs moyens et les veines/braises de petits cubes. Adaptation originale des principes
+ * publics d'IGNIS (combustible, advection, lobes, particules analytiques), sans asset payant.
  */
 public final class FireSignatureVfx {
     public static final int MOLTEN = 0;
     public static final int SOUL = 1;
     public static final int METEOR = 2;
 
-    private static final int CRUST = 0xFF28191A;
-    private static final int SMOKE = 0xFF41383A;
-    private static final int RED = 0xFF8E1D16;
-    private static final int ORANGE = 0xFFE34713;
-    private static final int AMBER = 0xFFFF8B17;
-    private static final int HOT = 0xFFFFD75F;
-    private static final int WHITE = 0xFFFFF3C2;
-    private static final int SOUL_DARK = 0xFF073C59;
-    private static final int SOUL_BLUE = 0xFF087E9C;
-    private static final int SOUL_CYAN = 0xFF25D5D4;
-    private static final int SOUL_HOT = 0xFF8FFFF0;
-    private static final int SOUL_WHITE = 0xFFDCFFFF;
-    private static final int ROCK = 0xFF292226;
-    private static final int ROCK_HOT = 0xFF713528;
+    // Croûte -> rouges -> oranges Minecraft -> veines ambre -> racine blanche.
+    private static final int[] LAVA = {
+            0x241416, 0x3B1715, 0x5C1B14, 0x7E2114, 0xA12B12,
+            0xC23A0E, 0xDA4B09, 0xEB6208, 0xF57A09, 0xFF9510,
+            0xFFAF1D, 0xFFC83B, 0xFFDF65, 0xFFEFA0, 0xFFF6D2
+    };
+    private static final int[] SOUL_COLORS = {
+            0x061D33, 0x07334A, 0x07506A, 0x08758B, 0x079BA8,
+            0x12BCC2, 0x2ADBD4, 0x62EDDF, 0x9BFAE9, 0xD7FFF5, 0xF1FFFF
+    };
+    private static final int ROCK = 0x211C20;
+    private static final int ROCK_RED = 0x4A2522;
+    private static final int ROCK_HOT = 0x843622;
+    private static final int SMOKE = 0x342D31;
+    private static final int SMOKE_LIGHT = 0x554449;
 
     private FireSignatureVfx() { }
 
@@ -42,361 +43,581 @@ public final class FireSignatureVfx {
         else renderMeteor(vc, mat, tmp, cx, cy, cz, t, dirX, dirZ, scale, alpha, salt);
     }
 
-    /** MOLTEN : rassemblement, déferlante, sol incendié en boucle, extinction et fumée. */
+    /** Mini-tsunami : volume plein, crête en surplomb, texture de lave et splash balistique. */
     private static void renderMolten(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                      float cx, float cy, float cz, float t,
-                                     float dirX, float dirZ, float S, int alpha, int salt) {
-        float birth = smooth01(t / 0.11f);
-        float exit = smooth01((t - 0.80f) / 0.20f);
+                                     float dx, float dz, float S, int alpha, int salt) {
+        float exit = smooth01((t - 0.82f) / 0.18f);
+        float env = 1.0f - exit;
         float ground = cy - 0.48f * S;
-        float travel = (-1.65f + 2.05f * smooth01((t - 0.07f) / 0.50f)) * S;
-        float sideX = dirZ, sideZ = -dirX;
-        float env = birth * (1.0f - exit);
+        float travel = waveTravel(t) * S;
 
-        // La nappe principale est pleine et animée : sa crête avance plus vite que sa base.
+        // Le profil (arrière -> face -> crête -> lèvre) est extrudé en VOLUME sur toute la largeur.
         for (int lane = -8; lane <= 8; lane++) {
-            float side = lane * 0.105f * S;
-            float seed = lane * 1.713f + (salt & 31);
-            float heightNoise = 0.88f + 0.12f * Mth.sin(seed + t * 8.0f);
-            for (int k = 0; k < 26; k++) {
-                float u = k / 25.0f;
-                float curl = 0.64f * u * u * smooth01((t - 0.15f) / 0.30f);
-                float turbulence = Mth.sin(t * 17.0f - u * 6.2f + seed) * 0.035f * u * S;
-                float forward = travel + curl * S + turbulence;
-                float localBirth = smooth01((t - 0.018f - u * 0.065f) / 0.11f);
-                float y = ground + u * 1.48f * heightNoise * S * localBirth - exit * 1.25f * S;
-                for (int layer = 0; layer < 2; layer++) {
-                    float depth = (layer - 0.5f) * 0.085f * S;
-                    float half = (0.060f + 0.010f * (1.0f - u)) * S * (1.0f - exit * 0.45f);
-                    int rgb = fireRamp(u, layer == 0);
-                    cube(vc, mat, tmp, cx + dirX * (forward + depth) + sideX * side, y,
-                            cz + dirZ * (forward + depth) + sideZ * side,
-                            half, half * 1.08f, half, rgb, Math.round(alpha * env));
-                }
-            }
-            // Langues réellement ancrées à la crête : elles suivent son déplacement et son advection.
-            float crestBirth = smooth01((t - 0.083f) / 0.11f);
-            float crestY = ground + 1.43f * heightNoise * S * crestBirth - exit * 1.25f * S;
-            float crestForward = travel + 0.62f * S * smooth01((t - 0.15f) / 0.30f);
-            flame(vc, mat, tmp, cx + dirX * crestForward + sideX * side, crestY,
-                    cz + dirZ * crestForward + sideZ * side,
-                    (0.34f + 0.16f * hash01(salt, lane + 90)) * S,
-                    0.038f * S, dirX * 0.55f, dirZ * 0.55f,
-                    t * 8.0f + seed, false, S, Math.round(alpha * env), salt + lane * 19);
-        }
-
-        // Surface de combustible : dalles, nappes et braises persistent après le passage du front.
-        for (int row = 0; row < 7; row++) {
-            float along = (-1.48f + row * 0.30f) * S;
-            for (int lane = -4; lane <= 4; lane++) {
-                int id = row * 23 + lane + 100;
-                float h = hash01(salt, id);
-                if (h < 0.13f && row > 0) continue;
-                float reveal = smooth01((t - 0.20f - row * 0.035f - h * 0.035f) / 0.13f);
-                if (reveal <= 0.0f) continue;
-                float side = lane * 0.235f * S;
-                float px = cx + dirX * along + sideX * side;
-                float pz = cz + dirZ * along + sideZ * side;
-                groundPatch(vc, mat, tmp, px, ground, pz, reveal * (1.0f - exit),
-                        0.30f + h * 0.34f, dirX, dirZ, t, false, S, alpha, salt + id * 17);
-            }
-        }
-
-        // Projection de gouttes de lave issues de la crête, jamais d'une pluie décorative globale.
-        for (int p = 0; p < 44; p++) {
-            float launch = 0.26f + (p % 7) * 0.040f;
-            float age = t - launch;
-            if (age <= 0.0f) continue;
-            float h = hash01(salt, p * 43 + 300);
-            float side = (p % 11 - 5) * 0.18f * S;
-            float time = age * 2.20f;
-            float px = cx + dirX * (travel + 0.52f * S) + sideX * side
-                    + (dirX * (0.65f + h * 0.85f) + sideX * side * 0.32f) * time;
-            float pz = cz + dirZ * (travel + 0.52f * S) + sideZ * side
-                    + (dirZ * (0.65f + h * 0.85f) + sideZ * side * 0.32f) * time;
-            float py = ground + 1.10f * S + (1.25f + h) * S * time - 2.8f * S * time * time;
-            if (py < ground) continue;
-            float hs = (0.028f + h * 0.028f) * S * (1.0f - exit);
-            cube(vc, mat, tmp, px, py, pz, hs, hs * 1.35f, hs,
-                    h > 0.66f ? HOT : h > 0.25f ? AMBER : ORANGE, Math.round(alpha * env));
-        }
-        smokeColumn(vc, mat, tmp, cx, ground, cz, t, 0.68f, 28, S, alpha, salt, dirX, dirZ);
-    }
-
-    /** SOUL : deux flammes s'entortillent, tressent un croissant qui tranche, puis se dissipent. */
-    private static void renderSoul(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                   float cx, float cy, float cz, float t,
-                                   float dirX, float dirZ, float S, int alpha, int salt) {
-        float birth = smooth01(t / 0.10f);
-        float weaveExit = smooth01((t - 0.42f) / 0.22f);
-        float slash = smooth01((t - 0.30f) / 0.34f);
-        float exit = smooth01((t - 0.76f) / 0.24f);
-        float sideX = dirZ, sideZ = -dirX;
-        float ground = cy - 0.48f * S;
-
-        // Entrée logique : deux serpents de feu d'âme montent du sol en double hélice autour du corps.
-        for (int strand = 0; strand < 2; strand++) {
-            for (int k = 0; k < 84; k++) {
-                float u = k / 83.0f;
-                float reveal = smooth01((t - u * 0.19f) / 0.12f);
-                if (reveal <= 0.0f) continue;
-                float angle = strand * (float) Math.PI + u * 9.4f + t * 7.0f;
-                float radius = (0.48f - u * 0.15f) * S;
-                float px = cx + Mth.cos(angle) * radius;
-                float pz = cz + Mth.sin(angle) * radius;
-                float py = ground + u * 1.62f * S;
-                float hs = 0.045f * S * reveal * (1.0f - weaveExit * 0.65f);
-                cube(vc, mat, tmp, px, py, pz, hs, hs * 1.16f, hs,
-                        strand == 0 ? SOUL_CYAN : SOUL_BLUE,
-                        Math.round(alpha * birth * reveal * (1.0f - weaveExit)));
-                if (k % 6 == 0) {
-                    flame(vc, mat, tmp, px, py, pz, 0.18f * S, 0.025f * S,
-                            Mth.cos(angle) * 0.35f, Mth.sin(angle) * 0.35f,
-                            t * 9.0f + k, true, S,
-                            Math.round(alpha * birth * (1.0f - weaveExit)), salt + k + strand * 99);
-                }
-            }
-        }
-
-        // Le croissant n'est plus un anneau plein : deux rubans tressés de flammes le composent.
-        float centerForward = (-0.30f + 0.55f * slash + 0.12f * smooth01((t - 0.62f) / 0.16f)) * S;
-        float radius = (0.78f + 0.16f * slash) * S;
-        for (int strand = 0; strand < 2; strand++) {
-            for (int k = 0; k < 96; k++) {
-                float u = k / 95.0f;
-                float reveal = smooth01((slash - u * 0.28f) / 0.20f);
-                if (reveal <= 0.0f) continue;
-                float angle = -2.28f + u * 4.56f;
-                float braid = Mth.sin(u * 22.0f + strand * (float) Math.PI + t * 8.0f) * 0.035f * S;
-                float r = radius + (strand == 0 ? -0.045f : 0.045f) * S + braid;
-                float lateral = Mth.cos(angle) * r;
-                float py = cy + Mth.sin(angle) * r + 0.08f * S;
-                float px = cx + dirX * centerForward + sideX * lateral;
-                float pz = cz + dirZ * centerForward + sideZ * lateral;
-                float taper = 0.40f + 0.60f * Mth.sin(u * (float) Math.PI);
-                float hs = 0.041f * S * taper * reveal * (1.0f - exit * 0.65f);
-                cube(vc, mat, tmp, px, py, pz, hs, hs, hs,
-                        strand == 0 ? SOUL_CYAN : SOUL_BLUE,
-                        Math.round(alpha * reveal * (1.0f - exit)));
-                if (k % 4 == 0) {
-                    flame(vc, mat, tmp, px, py, pz,
-                            (0.14f + 0.13f * taper) * S, 0.024f * S,
-                            dirX * 0.75f + sideX * Mth.cos(angle) * 0.32f,
-                            dirZ * 0.75f + sideZ * Mth.cos(angle) * 0.32f,
-                            t * 11.0f + angle * 2.0f, true, S,
-                            Math.round(alpha * reveal * (1.0f - exit)), salt + k * 13 + strand * 51);
-                }
-            }
-        }
-
-        // Braises d'âme arrachées par le déplacement du croissant, avec une trajectoire cohérente.
-        for (int p = 0; p < 64; p++) {
-            float launch = 0.40f + (p % 9) * 0.025f;
-            float age = t - launch;
-            if (age <= 0.0f) continue;
-            float h = hash01(salt, p * 61 + 500);
-            float angle = p * 2.3999632f + age * 4.0f;
-            float time = age * 1.8f;
-            float radiusE = (0.24f + time * (0.38f + h * 0.40f)) * S;
-            float px = cx + dirX * centerForward + Mth.cos(angle) * radiusE;
-            float pz = cz + dirZ * centerForward + Mth.sin(angle) * radiusE;
-            float py = cy - 0.15f * S + (h * 0.70f + time * 0.65f) * S;
-            float hs = (0.018f + h * 0.018f) * S * (1.0f - exit);
-            cube(vc, mat, tmp, px, py, pz, hs, hs * 1.45f, hs,
-                    p % 9 == 0 ? SOUL_WHITE : p % 3 == 0 ? SOUL_HOT : SOUL_CYAN,
-                    Math.round(alpha * (1.0f - exit) * (1.0f - age * 0.45f)));
-        }
-        smokeColumn(vc, mat, tmp, cx, ground, cz, t, 0.72f, 20, S, alpha, salt, dirX, dirZ);
-    }
-
-    /** BRIMSTONE : météore à couronne de flammes, impact en lobes, cratère brûlant puis fumée. */
-    private static void renderMeteor(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                     float cx, float cy, float cz, float t,
-                                     float dirX, float dirZ, float S, int alpha, int salt) {
-        float birth = smooth01(t / 0.07f);
-        float descent = smooth01((t - 0.035f) / 0.39f);
-        float impact = smooth01((t - 0.425f) / 0.15f);
-        float exit = smooth01((t - 0.79f) / 0.21f);
-        float ground = cy - 0.48f * S;
-        float start = -2.10f * S;
-        float mx = cx + dirX * start * (1.0f - descent);
-        float mz = cz + dirZ * start * (1.0f - descent);
-        float my = ground + (1.0f - descent) * 4.50f * S + 0.40f * S;
-
-        if (t < 0.48f) {
-            float fade = 1.0f - smooth01((t - 0.425f) / 0.055f);
-            float cell = 0.108f * S * birth;
-            for (int x = -3; x <= 3; x++) for (int y = -3; y <= 3; y++) for (int z = -3; z <= 3; z++) {
-                float d = Mth.sqrt(x * x + y * y + z * z);
-                if (d > 3.35f) continue;
-                float h = hash01(salt, (x + 5) * 113 + (y + 5) * 37 + z + 20);
-                cube(vc, mat, tmp, mx + x * cell, my + y * cell, mz + z * cell,
-                        cell * 0.55f, cell * 0.55f, cell * 0.55f,
-                        h > 0.82f ? AMBER : h > 0.60f ? ROCK_HOT : ROCK,
-                        Math.round(alpha * birth * fade));
-            }
-            // Couronne et traîne volumétrique : chaque lobe suit la position historique du noyau.
+            float lateral = lane * 0.165f * S;
+            float noise = 0.90f + 0.08f * Mth.sin(lane * 1.37f + (salt & 31))
+                    + 0.05f * Mth.sin(t * 4.0f + lane * 0.70f);
             for (int k = 0; k < 22; k++) {
                 float u = k / 21.0f;
-                float tx = mx - dirX * start * u * 0.58f;
-                float tz = mz - dirZ * start * u * 0.58f;
-                float ty = my + u * 2.05f * S;
-                for (int lobe = 0; lobe < 6; lobe++) {
-                    float ang = lobe * (float) (Math.PI / 3.0) + k * 0.91f + t * 5.0f;
-                    float spread = (0.045f + u * 0.12f) * S;
-                    float hs = (0.072f - u * 0.026f) * S * birth;
-                    cube(vc, mat, tmp, tx + Mth.cos(ang) * spread, ty + Mth.sin(ang * 1.7f) * spread,
-                            tz + Mth.sin(ang) * spread, hs, hs * 1.28f, hs,
-                            u < 0.20f ? WHITE : u < 0.55f ? AMBER : u < 0.84f ? ORANGE : RED,
-                            Math.round(alpha * birth * (1.0f - u * 0.55f)));
+                float front = travel + waveFrontLocal(t, u, lane) * S;
+                float thickness = (0.26f + 0.22f * (1.0f - u) + 0.62f * Mth.sin(u * (float) Math.PI)) * S;
+                float back = front - thickness + 0.035f * Mth.sin(lane * 1.9f) * u * S;
+                float center = (front + back) * 0.5f;
+                float halfDepth = Math.max(0.055f * S, (front - back) * 0.5f);
+                float y = ground + waveHeightLocal(t, u, noise) * S;
+                float hy = Math.max(0.035f * S, 0.072f * noise * S * (1.0f - 0.55f * collapse(t)));
+                float halfLane = 0.105f * S;
+                int rgb = lavaRgb(center / S, lateral / S, u, t, salt + lane * 29 + k * 7);
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz, center, y, lateral,
+                        halfDepth, hy, halfLane, rgb, Math.round(alpha * env));
+
+                // Texture cohérente sur la face : petits patchs posés sur les gros volumes.
+                float detail = (0.035f + 0.030f * hash01(salt, lane * 91 + k * 17 + 40)) * S;
+                float patchY = y + (hash01(salt, k * 41 + lane) - 0.5f) * hy;
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        front + detail * 0.25f, patchY,
+                        lateral + (hash01(salt, k + lane * 33) - 0.5f) * 0.07f * S,
+                        detail * 0.52f, detail * 0.90f, detail * 1.35f,
+                        lavaRgb(front / S + 0.4f, lateral / S, u + 0.2f, t + 0.17f, salt + k),
+                        Math.round(alpha * env * 0.96f));
+                if ((k + lane & 1) == 0) {
+                    // La face arrière est aussi texturée : aucun mur uni lorsque la caméra orbite.
+                    localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            back - detail * 0.20f, patchY,
+                            lateral + (hash01(salt, k * 73 + lane * 11) - 0.5f) * 0.06f * S,
+                            detail * 0.60f, detail * 0.82f, detail * 1.40f,
+                            lavaRgb(back / S - 0.3f, lateral / S, u + 0.1f, t + 0.30f, salt + 500 + k),
+                            Math.round(alpha * env * 0.86f));
+                    // Patch supérieur plus large et très plat : les zones sombres restent des zones.
+                    localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            center + halfDepth * 0.25f, y + hy * 0.92f, lateral,
+                            Math.min(halfDepth * 0.55f, 0.13f * S), 0.018f * S, 0.070f * S,
+                            lavaRgb(center / S, lateral / S + 0.3f, u, t, salt + 800 + k),
+                            Math.round(alpha * env * 0.88f));
                 }
-                if (k % 3 == 0) {
-                    flame(vc, mat, tmp, tx, ty, tz, (0.26f + u * 0.22f) * S,
-                            0.035f * S, -dirX * 0.55f, -dirZ * 0.55f,
-                            t * 8.0f + k, false, S,
-                            Math.round(alpha * birth * (1.0f - u * 0.55f)), salt + k * 7);
+            }
+
+            // Deux rangées de flammes épaisses : crête principale et lèvre qui retombe.
+            if ((lane & 1) == 0) {
+                float u = 0.67f;
+                float f = travel + waveFrontLocal(t, u, lane) * S;
+                float y = ground + waveHeightLocal(t, u, noise) * S;
+                flame(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, lateral,
+                        (0.48f + 0.30f * hash01(salt, lane + 100)) * (1.0f - collapse(t)),
+                        0.080f + 0.022f * hash01(salt, lane + 120),
+                        0.52f, 0.10f * Mth.sin(lane), t * 9.0f + lane,
+                        false, S, Math.round(alpha * env), salt + lane * 43);
+            }
+            if ((lane + 8) % 3 == 0) {
+                float f = travel + waveFrontLocal(t, 1.0f, lane) * S;
+                float y = ground + waveHeightLocal(t, 1.0f, noise) * S;
+                flame(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, lateral,
+                        0.34f * (1.0f - collapse(t)), 0.065f,
+                        -0.20f, 0.0f, t * 10.0f + lane * 2.0f,
+                        false, S, Math.round(alpha * env * 0.90f), salt + lane * 67 + 900);
+            }
+        }
+
+        // Combustible laissé par le front : grandes dalles, fissures sombres et feux entretenus.
+        for (int row = 0; row < 7; row++) {
+            float along = (-1.45f + row * 0.34f) * S;
+            for (int lane = -4; lane <= 4; lane++) {
+                int id = row * 31 + lane + 150;
+                float h = hash01(salt, id);
+                if (h < 0.10f && row > 0) continue;
+                float reveal = smooth01((t - 0.13f - row * 0.040f - h * 0.025f) / 0.14f);
+                if (reveal <= 0.0f) continue;
+                groundPatch(vc, mat, tmp, cx, cy, cz, dx, dz, along, ground,
+                        lane * 0.255f * S, reveal * env, 0.38f + h * 0.34f,
+                        (row + lane & 1) == 0, false, S, alpha, salt + id * 19, t);
+            }
+        }
+
+        // Chaque goutte part de la crête À SON INSTANT DE LANCEMENT, puis subit une vraie gravité.
+        for (int p = 0; p < 72; p++) {
+            float h = hash01(salt, p * 47 + 1200);
+            float launch = 0.23f + (p % 8) * 0.042f + h * 0.018f;
+            float age = t - launch;
+            if (age <= 0.0f) continue;
+            int lane = p % 17 - 8;
+            float side = (lane * 0.165f + (hash01(salt, p * 13) - 0.5f) * 0.04f) * S;
+            float originF = (waveTravel(launch) + waveFrontLocal(launch, 0.72f, lane)) * S;
+            float launchNoise = 0.90f + 0.08f * Mth.sin(lane * 1.37f + (salt & 31))
+                    + 0.05f * Mth.sin(launch * 4.0f + lane * 0.70f);
+            float originY = ground + waveHeightLocal(launch, 0.72f, launchNoise) * S;
+            float time = age * 5.6f;
+            float vf = (0.85f + 1.25f * h) * S;
+            float vl = (lane * 0.035f + (hash01(salt, p * 59) - 0.5f) * 0.65f) * S;
+            float vy = (1.45f + 1.85f * hash01(salt, p * 61)) * S;
+            float gravity = 6.8f * S;
+            float f = originF + vf * time;
+            float l = side + vl * time;
+            float y = originY + vy * time - 0.5f * gravity * time * time;
+            float hit = (vy + Mth.sqrt(vy * vy + 2.0f * gravity * (originY - ground))) / gravity;
+            float size = (0.035f + 0.055f * h) * S;
+            if (time < hit) {
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
+                        size * 1.15f, size * 1.35f, size, lavaDropletRgb(h),
+                        Math.round(alpha * env));
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        f - vf * 0.022f, y + size * 0.65f, l - vl * 0.022f,
+                        size * 0.52f, size * 0.55f, size * 0.52f,
+                        h > 0.55f ? LAVA[12] : LAVA[8], Math.round(alpha * env * 0.85f));
+            } else if (time < hit + 0.28f) {
+                // Contact : aplatissement et trois éclats latéraux, pas une téléportation décorative.
+                float spread = (time - hit) * 1.8f;
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz, f, ground + 0.035f * S, l,
+                        size * (1.4f + spread), 0.025f * S, size * (1.2f + spread),
+                        LAVA[7 + (p & 3)], Math.round(alpha * env * (1.0f - spread)));
+                for (int s = -1; s <= 1; s += 2) {
+                    localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            f + s * spread * size * 2.0f, ground + (0.06f + spread * 0.12f) * S,
+                            l + s * spread * size, size * 0.38f, size * 0.50f, size * 0.38f,
+                            LAVA[10], Math.round(alpha * env * (1.0f - spread)));
+                }
+            }
+        }
+        smoke(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, ground, 0.0f,
+                t, 0.69f, 34, S, alpha, salt, 0.75f);
+    }
+
+    /** Les deux flammes se transforment réellement : hélice corporelle -> croissant tressé. */
+    private static void renderSoul(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                   float cx, float cy, float cz, float t,
+                                   float dx, float dz, float S, int alpha, int salt) {
+        float birth = smooth01(t / 0.09f);
+        float exit = smooth01((t - 0.80f) / 0.20f);
+        float env = birth * (1.0f - exit);
+        float ground = cy - 0.48f * S;
+        float sweep = smooth01((t - 0.30f) / 0.38f);
+        float radius = (0.82f + 0.12f * sweep) * S;
+        float center = (-0.16f + 0.24f * sweep) * S;
+
+        for (int strand = 0; strand < 2; strand++) {
+            for (int k = 0; k < 78; k++) {
+                float u = k / 77.0f;
+                float reveal = smooth01((t - u * 0.12f) / 0.10f);
+                if (reveal <= 0.0f) continue;
+                float morph = smooth01((t - 0.17f - u * 0.075f) / 0.32f);
+                float helixAngle = strand * (float) Math.PI + u * 10.4f + t * 7.0f;
+                float helixRadius = (0.49f - 0.12f * u) * S;
+                float hf = Mth.cos(helixAngle) * helixRadius;
+                float hl = Mth.sin(helixAngle) * helixRadius;
+                float hy = ground + (0.10f + u * 1.72f) * S;
+
+                float arcAngle = -2.34f + u * 4.68f;
+                float braid = Mth.sin(u * 24.0f + strand * (float) Math.PI + t * 7.0f);
+                float taper = 0.25f + 0.75f * (float) Math.pow(Mth.sin(u * (float) Math.PI), 0.65f);
+                float ar = radius + (strand == 0 ? -0.045f : 0.045f) * S + braid * 0.050f * S;
+                float af = center + braid * 0.065f * S;
+                float al = Mth.cos(arcAngle) * ar;
+                float ay = cy + Mth.sin(arcAngle) * ar + 0.08f * S;
+                float f = Mth.lerp(morph, hf, af);
+                float l = Mth.lerp(morph, hl, al);
+                float y = Mth.lerp(morph, hy, ay);
+                float width = (0.038f + 0.048f * taper * (0.35f + 0.65f * morph)) * S * reveal * (1.0f - exit * 0.50f);
+
+                // Gros corps + deux lobes latéraux + petit cœur : une flamme, pas un fil géométrique.
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
+                        width, width * 1.18f, width, soulColor(strand == 0 ? 6 : 4),
+                        Math.round(alpha * env * reveal));
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        f + width * 0.45f, y - width * 0.30f, l - width * 0.40f,
+                        width * 0.72f, width * 0.82f, width * 0.72f,
+                        soulColor(strand == 0 ? 3 : 2), Math.round(alpha * env * 0.84f));
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        f - width * 0.40f, y + width * 0.25f, l + width * 0.35f,
+                        width * 0.48f, width * 0.55f, width * 0.48f,
+                        soulColor(k % 9 == 0 ? 9 : 7), Math.round(alpha * env * 0.90f));
+                if (k % 4 == 0) {
+                    float outwardF = Mth.lerp(morph, Mth.cos(helixAngle) * 0.25f, 0.30f);
+                    float outwardL = Mth.lerp(morph, Mth.sin(helixAngle) * 0.25f,
+                            Mth.cos(arcAngle) * 0.48f);
+                    flame(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
+                            (0.24f + 0.25f * taper) * (1.0f - exit * 0.65f),
+                            (0.055f + 0.025f * taper) * (0.65f + 0.35f * morph), outwardF, outwardL,
+                            t * 10.0f + k * 0.7f + strand, true, S,
+                            Math.round(alpha * env * reveal), salt + k * 37 + strand * 401);
                 }
             }
         }
 
-        // Lobes de détonation qui gonflent depuis le point d'impact et refroidissent vers le rouge.
-        for (int lobe = 0; lobe < 14; lobe++) {
-            float h = hash01(salt, lobe * 71 + 800);
-            float reveal = smooth01((t - 0.425f - (lobe % 4) * 0.012f) / 0.12f);
-            if (reveal <= 0.0f) continue;
-            float ang = lobe * 2.3999632f;
-            float radius = (0.12f + impact * (0.48f + h * 0.70f)) * S;
-            float px = cx + Mth.cos(ang) * radius;
-            float pz = cz + Mth.sin(ang) * radius;
-            float py = ground + (0.08f + impact * (0.20f + h * 0.58f)) * S;
-            flame(vc, mat, tmp, px, py, pz, (0.38f + h * 0.58f) * S * reveal,
-                    (0.045f + h * 0.030f) * S, Mth.cos(ang) * 0.65f, Mth.sin(ang) * 0.65f,
-                    t * 10.0f + lobe, false, S,
-                    Math.round(alpha * reveal * (1.0f - exit)), salt + lobe * 31);
+        // Aura de sol segmentée : quelques grandes plaques, jamais une ligne fine pleine.
+        for (int p = 0; p < 28; p++) {
+            float angle = p * (float) (Math.PI * 2.0 / 28.0) + t * 0.35f;
+            float r = (0.52f + 0.06f * Mth.sin(t * 6.0f + p)) * S;
+            float hs = (0.065f + 0.025f * (p & 1)) * S * birth * (1.0f - exit);
+            localBox(vc, mat, tmp, cx, cy, cz, dx, dz, Mth.cos(angle) * r,
+                    ground + 0.035f * S, Mth.sin(angle) * r,
+                    hs * 1.35f, 0.022f * S, hs, soulColor(p % 7 == 0 ? 7 : 2),
+                    Math.round(alpha * env * 0.60f));
         }
 
-        // Cratère de combustible : anneau brisé et flammes basses, avec extinction en fin de vie.
-        for (int p = 0; p < 36; p++) {
-            float h = hash01(salt, p * 47 + 900);
-            float ang = p * 2.3999632f;
-            float reveal = smooth01((t - 0.46f - (p % 6) * 0.018f) / 0.13f);
-            if (reveal <= 0.0f || (p % 11 == 0)) continue;
-            float radius = (0.40f + (p % 3) * 0.30f + impact * 0.20f) * S;
-            float px = cx + Mth.cos(ang) * radius;
-            float pz = cz + Mth.sin(ang) * radius;
-            groundPatch(vc, mat, tmp, px, ground, pz, reveal * (1.0f - exit),
-                    0.24f + h * 0.36f, Mth.cos(ang), Mth.sin(ang), t,
-                    false, S, alpha, salt + p * 29);
-        }
-
-        for (int p = 0; p < 54; p++) {
-            float age = t - 0.435f - (p % 6) * 0.012f;
+        // Braises fermées : elles naissent sur la tresse et héritent de son mouvement angulaire.
+        for (int p = 0; p < 86; p++) {
+            float launch = 0.28f + (p % 10) * 0.037f;
+            float age = t - launch;
             if (age <= 0.0f) continue;
-            float h = hash01(salt, p * 59 + 1000);
-            float ang = p * 2.3999632f;
-            float time = age * 2.0f;
-            float speed = (0.70f + h * 1.25f) * S;
-            float px = cx + Mth.cos(ang) * speed * time;
-            float pz = cz + Mth.sin(ang) * speed * time;
-            float py = ground + 0.15f * S + (1.20f + h * 1.55f) * S * time - 3.15f * S * time * time;
-            if (py < ground - 0.05f * S) continue;
-            float hs = (0.025f + h * 0.032f) * S * (1.0f - exit);
-            cube(vc, mat, tmp, px, py, pz, hs, hs, hs,
-                    p % 5 == 0 ? ROCK : h > 0.60f ? HOT : ORANGE,
-                    Math.round(alpha * (1.0f - exit)));
+            float h = hash01(salt, p * 53 + 1700);
+            float u = (p % 39) / 38.0f;
+            float angle = -2.34f + u * 4.68f;
+            int strand = p & 1;
+            float launchMorph = smooth01((launch - 0.17f - u * 0.075f) / 0.32f);
+            float launchSweep = smooth01((launch - 0.30f) / 0.38f);
+            float launchRadius = (0.82f + 0.12f * launchSweep) * S;
+            float launchCenter = (-0.16f + 0.24f * launchSweep) * S;
+            float helixAngle = strand * (float) Math.PI + u * 10.4f + launch * 7.0f;
+            float helixRadius = (0.49f - 0.12f * u) * S;
+            float braid = Mth.sin(u * 24.0f + strand * (float) Math.PI + launch * 7.0f);
+            float ar = launchRadius + (strand == 0 ? -0.045f : 0.045f) * S + braid * 0.050f * S;
+            float originF = Mth.lerp(launchMorph, Mth.cos(helixAngle) * helixRadius,
+                    launchCenter + braid * 0.065f * S);
+            float originL = Mth.lerp(launchMorph, Mth.sin(helixAngle) * helixRadius, Mth.cos(angle) * ar);
+            float originY = Mth.lerp(launchMorph, ground + (0.10f + u * 1.72f) * S,
+                    cy + Mth.sin(angle) * ar + 0.08f * S);
+            float time = age * 2.8f;
+            float f = originF + (h - 0.5f) * time * 0.35f * S;
+            float l = originL + Mth.cos(angle) * time * (0.12f + h * 0.25f) * S;
+            float y = originY + time * 0.32f * S;
+            float hs = (0.014f + 0.026f * h) * S * (1.0f - exit);
+            localBox(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
+                    hs, hs * 1.55f, hs, soulColor(p % 11 == 0 ? 10 : p % 3 == 0 ? 8 : 6),
+                    Math.round(alpha * (1.0f - exit) * (1.0f - age * 0.55f)));
         }
-        smokeColumn(vc, mat, tmp, cx, ground, cz, t, 0.46f, 48, S, alpha, salt, dirX, dirZ);
+        smoke(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, ground, 0.0f,
+                t, 0.76f, 24, S, alpha, salt, 0.45f);
     }
 
-    /** Surface IGNIS-like : plaque chaude + langue ancrée + lueur basse. reveal pilote entrée/sortie. */
+    /** Météore rapide : traîne = historique exact de la trajectoire, puis explosion et cratère. */
+    private static void renderMeteor(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                     float cx, float cy, float cz, float t,
+                                     float dx, float dz, float S, int alpha, int salt) {
+        float ground = cy - 0.48f * S;
+        float exit = smooth01((t - 0.82f) / 0.18f);
+        float q = Mth.clamp((t - 0.025f) / 0.375f, 0.0f, 1.0f);
+        float birth = smooth01(t / 0.055f);
+        float flightFade = 1.0f - smooth01((t - 0.400f) / 0.055f);
+        float mf = meteorF(q) * S;
+        float my = ground + meteorY(q) * S;
+
+        if (flightFade > 0.0f && q > 0.0f) {
+            // Corps principal en gros blocs ; croûte moyenne et micro-fissures par-dessus.
+            float core = 0.27f * S * birth;
+            localBox(vc, mat, tmp, cx, cy, cz, dx, dz, mf, my, 0.0f,
+                    core, core * 0.94f, core, ROCK, Math.round(alpha * birth * flightFade));
+            localBox(vc, mat, tmp, cx, cy, cz, dx, dz, mf + core * 0.35f, my + core * 0.25f, 0.0f,
+                    core * 0.82f, core * 0.74f, core * 0.85f, ROCK_RED,
+                    Math.round(alpha * birth * flightFade));
+            for (int r = 0; r < 26; r++) {
+                float h = hash01(salt, r * 43 + 2000);
+                float angle = r * 2.3999632f + t * (r & 1) * 2.0f;
+                float band = ((r % 5) - 2) * 0.105f * S;
+                float radial = (0.23f + 0.06f * h) * S * birth;
+                float size = (0.070f + 0.065f * h) * S * birth;
+                float f = mf + Mth.cos(angle) * radial;
+                float l = Mth.sin(angle) * radial;
+                float y = my + band;
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
+                        size, size * (0.80f + 0.35f * h), size,
+                        h > 0.78f ? ROCK_HOT : h > 0.52f ? ROCK_RED : ROCK,
+                        Math.round(alpha * birth * flightFade));
+                if ((r & 3) == 0) {
+                    localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            f + size * 0.62f, y + size * 0.22f, l,
+                            size * 0.24f, size * 0.52f, size * 0.30f,
+                            h > 0.5f ? LAVA[12] : LAVA[8], Math.round(alpha * birth * flightFade));
+                }
+            }
+
+            // 34 échantillons historiques. Aucune droite arbitraire : chacun appelle meteorF/Y.
+            float currentTime = q * 1.45f;
+            for (int k = 0; k < 34; k++) {
+                float age = k * 0.043f;
+                float historyTime = currentTime - age;
+                if (historyTime <= 0.0f) continue;
+                float hq = historyTime / 1.45f;
+                float f = meteorF(hq) * S;
+                float y = ground + meteorY(hq) * S;
+                float life = 1.0f - age / 1.46f;
+                float base = (0.065f + 0.145f * life) * S * birth;
+                for (int lobe = 0; lobe < 5; lobe++) {
+                    float angle = lobe * 2.3999632f + k * 0.81f + t * 4.0f;
+                    float spread = base * (0.35f + age * 0.35f);
+                    float size = base * (lobe == 0 ? 1.0f : 0.68f);
+                    int rgb = age < 0.08f ? (lobe == 0 ? LAVA[14] : LAVA[12])
+                            : age < 0.35f ? (lobe == 0 ? LAVA[11] : LAVA[8])
+                            : age < 0.80f ? LAVA[6 + (lobe & 1)] : LAVA[3 + (lobe & 1)];
+                    localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            f + Mth.cos(angle) * spread,
+                            y + Mth.sin(angle * 1.31f) * spread,
+                            Mth.sin(angle) * spread,
+                            size * (1.0f + 0.35f * life), size, size,
+                            rgb, Math.round(alpha * birth * flightFade * (0.35f + 0.65f * life)));
+                }
+                if ((k & 1) == 0 && k < 26) {
+                    float tangent = Mth.atan2((-1.20f - 3.72f * historyTime) * 1.45f, 3.40f);
+                    float streak = (0.14f + 0.22f * life) * S;
+                    localRotBox(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, 0.0f,
+                            streak, base * 0.26f, base * 0.34f, tangent,
+                            age < 0.35f ? LAVA[11] : LAVA[6],
+                            Math.round(alpha * birth * flightFade * life * 0.48f));
+                }
+                if (k % 4 == 0 && k < 24) {
+                    flame(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, 0.0f,
+                            0.34f + 0.25f * life, 0.070f + 0.035f * life,
+                            -0.65f, 0.0f, t * 11.0f + k,
+                            false, S, Math.round(alpha * birth * flightFade * life), salt + k * 31);
+                }
+            }
+        }
+
+        // Impact : gros lobes expansifs puis flammes épaisses qui refroidissent vers le crimson.
+        float impact = smooth01((t - 0.400f) / 0.16f);
+        for (int lobe = 0; lobe < 18; lobe++) {
+            float h = hash01(salt, lobe * 71 + 2300);
+            float reveal = smooth01((t - 0.400f - (lobe % 4) * 0.012f) / 0.12f);
+            if (reveal <= 0.0f) continue;
+            float angle = lobe * 2.3999632f;
+            float radius = (0.10f + impact * (0.55f + h * 0.85f)) * S;
+            float f = Mth.cos(angle) * radius;
+            float l = Mth.sin(angle) * radius;
+            float y = ground + (0.10f + impact * (0.25f + h * 0.55f)) * S;
+            float mass = (0.10f + 0.13f * h) * S * reveal * (1.0f - exit * 0.55f);
+            localBox(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
+                    mass * 1.30f, mass, mass * 1.30f,
+                    LAVA[5 + (lobe % 5)], Math.round(alpha * reveal * (1.0f - exit) * 0.82f));
+            flame(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
+                    (0.55f + 0.65f * h) * reveal * (1.0f - exit * 0.60f),
+                    0.110f + 0.060f * h, Mth.cos(angle) * 0.65f, Mth.sin(angle) * 0.65f,
+                    t * 10.0f + lobe, false, S,
+                    Math.round(alpha * reveal * (1.0f - exit)), salt + lobe * 97);
+        }
+
+        // Cratère : plaques de combustible étendues et flammes persistantes, puis extinction.
+        for (int p = 0; p < 42; p++) {
+            float h = hash01(salt, p * 47 + 2600);
+            float angle = p * 2.3999632f;
+            float reveal = smooth01((t - 0.43f - (p % 6) * 0.017f) / 0.14f);
+            if (reveal <= 0.0f || p % 13 == 0) continue;
+            float radius = (0.28f + (p % 4) * 0.27f + impact * 0.18f) * S;
+            groundPatch(vc, mat, tmp, cx, cy, cz, dx, dz,
+                    Mth.cos(angle) * radius, ground, Mth.sin(angle) * radius,
+                    reveal * (1.0f - exit), 0.36f + h * 0.48f,
+                    (p & 1) == 0, false, S, alpha, salt + p * 83, t);
+        }
+
+        // Débris et lave de l'impact : trajectoires balistiques et contacts au sol.
+        for (int p = 0; p < 82; p++) {
+            float age = t - 0.405f - (p % 7) * 0.010f;
+            if (age <= 0.0f) continue;
+            float h = hash01(salt, p * 59 + 2900);
+            float angle = p * 2.3999632f;
+            float time = age * 6.4f;
+            float speed = (0.75f + 1.85f * h) * S;
+            float f = Mth.cos(angle) * speed * time;
+            float l = Mth.sin(angle) * speed * time;
+            float vy = (1.65f + 2.75f * hash01(salt, p * 61)) * S;
+            float y = ground + 0.28f * S + vy * time - 3.65f * S * time * time;
+            if (y < ground) continue;
+            float size = (0.025f + 0.075f * h) * S * (1.0f - exit);
+            localBox(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
+                    size, size * (p % 4 == 0 ? 0.8f : 1.35f), size,
+                    p % 5 == 0 ? ROCK_RED : lavaDropletRgb(h),
+                    Math.round(alpha * (1.0f - exit)));
+            if ((p & 3) == 0) {
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        f - Mth.cos(angle) * size, y + size * 0.7f, l - Mth.sin(angle) * size,
+                        size * 0.42f, size * 0.42f, size * 0.42f,
+                        LAVA[12], Math.round(alpha * (1.0f - exit) * 0.80f));
+            }
+        }
+        smoke(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, ground, 0.0f,
+                t, 0.43f, 52, S, alpha, salt, 1.0f);
+    }
+
+    private static float waveTravel(float t) {
+        return -1.20f + 1.80f * smooth01((t - 0.055f) / 0.55f);
+    }
+
+    private static float waveFrontLocal(float t, float u, int lane) {
+        float curl = smooth01((t - 0.13f) / 0.32f);
+        float tornLip = 0.12f * Mth.sin(lane * 1.37f + t * 3.0f) * u * u;
+        return -0.58f + 0.58f * u + 0.82f * curl * (float) Math.pow(u, 3.2f) + tornLip;
+    }
+
+    private static float collapse(float t) {
+        return smooth01((t - 0.69f) / 0.26f);
+    }
+
+    private static float waveHeightLocal(float t, float u, float noise) {
+        float birth = smooth01((t - 0.015f - u * 0.055f) / 0.13f);
+        float height = 1.72f * noise * birth * (1.0f - 0.78f * collapse(t));
+        return Mth.sin(u * 2.35f) * height - collapse(t) * 0.34f;
+    }
+
+    /** Dalles multi-échelles : masse large, fissures moyennes, braises minuscules, flamme pleine. */
     private static void groundPatch(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                    float x, float ground, float z, float reveal, float height,
-                                    float windX, float windZ, float time, boolean soul, float S,
-                                    int alpha, int seed) {
+                                    float cx, float cy, float cz, float dx, float dz,
+                                    float f, float ground, float l, float reveal, float height,
+                                    boolean withFlame, boolean soul, float S, int alpha, int seed, float time) {
         float h = hash01(seed, 17);
-        float plate = (0.085f + h * 0.025f) * S * reveal;
+        float size = (0.135f + 0.050f * h) * S * reveal;
         int a = Math.round(alpha * reveal);
-        cube(vc, mat, tmp, x, ground + 0.022f * S, z, plate * 1.35f, 0.018f * S * reveal,
-                plate * 1.35f, soul ? SOUL_DARK : CRUST, Math.round(a * 0.64f));
-        cube(vc, mat, tmp, x, ground + 0.040f * S, z, plate * 0.72f, 0.014f * S * reveal,
-                plate * 0.72f, soul ? SOUL_CYAN : AMBER, Math.round(a * 0.55f));
-        flame(vc, mat, tmp, x, ground + 0.045f * S, z, height * S * reveal,
-                (0.026f + h * 0.015f) * S, windX * 0.35f, windZ * 0.35f,
-                time * 8.0f + h * 6.28f, soul, S, a, seed);
+        localBox(vc, mat, tmp, cx, cy, cz, dx, dz, f, ground + 0.025f * S, l,
+                size * 1.22f, 0.026f * S * reveal, size,
+                soul ? soulColor(1) : LAVA[(seed & 3) + 1], Math.round(a * 0.88f));
+        localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                f + size * 0.15f, ground + 0.051f * S, l - size * 0.12f,
+                size * 0.76f, 0.018f * S * reveal, size * 0.68f,
+                soul ? soulColor(5) : LAVA[6 + (seed & 3)], Math.round(a * 0.86f));
+        // Deux fissures chaudes et une croûte sombre, posées sur la même dalle.
+        localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                f - size * 0.30f, ground + 0.070f * S, l + size * 0.16f,
+                size * 0.16f, 0.012f * S * reveal, size * 0.58f,
+                soul ? soulColor(8) : LAVA[12], Math.round(a * 0.90f));
+        localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                f + size * 0.35f, ground + 0.071f * S, l - size * 0.22f,
+                size * 0.34f, 0.013f * S * reveal, size * 0.14f,
+                soul ? soulColor(3) : LAVA[2], Math.round(a * 0.84f));
+        if (withFlame) {
+            flame(vc, mat, tmp, cx, cy, cz, dx, dz, f, ground + 0.07f * S, l,
+                    height * reveal, 0.060f + 0.025f * h,
+                    0.20f, (h - 0.5f) * 0.35f, time * 8.0f + h * 6.28f,
+                    soul, S, a, seed);
+        }
     }
 
-    /**
-     * Langue de feu continue : racine blanche, corps orange/ambre, pointe rouge (ou rampe d'âme).
-     * Le bruit est advecté vers le haut et les cubes se recouvrent : aucune ligne de points isolés.
-     */
+    /** Flamme 3D épaisse et ramifiée, construite en gros/moyens/petits voxels advectés. */
     private static void flame(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                              float x, float y, float z, float height, float width,
-                              float windX, float windZ, float phase, boolean soul, float S,
+                              float cx, float cy, float cz, float dx, float dz,
+                              float f, float y, float l, float height, float width,
+                              float windF, float windL, float phase, boolean soul, float S,
                               int alpha, int seed) {
-        if (height <= 0.002f || alpha <= 0) return;
+        if (height <= 0.003f || alpha <= 0) return;
         float jitter = hash01(seed, 33);
-        int segments = 13;
-        for (int k = 0; k < segments; k++) {
-            float u = k / (float) (segments - 1);
-            float advect = Mth.sin(phase - u * 5.2f + jitter * 4.0f) * u * u;
-            float curl = Mth.sin(phase * 0.63f + u * 8.0f + seed) * u;
-            float px = x + (windX * u * u * height + advect * width * 1.8f + curl * width * 0.55f);
-            float pz = z + (windZ * u * u * height + Mth.cos(phase - u * 4.7f + seed) * u * width);
-            float py = y + u * height;
-            float taper = (1.0f - u * 0.78f) * (0.90f + 0.10f * Mth.sin(phase + u * 9.0f));
-            float hs = width * taper;
-            int rgb = soul ? soulRamp(u, true) : fireRamp(u, true);
-            cube(vc, mat, tmp, px, py, pz, hs, Math.max(hs, height / segments * 0.72f), hs,
-                    rgb, Math.round(alpha * (1.0f - u * 0.30f)));
-            // Lobe extérieur lié au même centre : volume irrégulier, sans particule détachée.
-            if (k < segments - 2) {
-                float outer = hs * 0.72f;
-                cube(vc, mat, tmp, px + Mth.sin(seed + u * 5.0f) * hs * 0.68f,
-                        py - height / segments * 0.18f,
-                        pz + Mth.cos(seed + u * 5.0f) * hs * 0.68f,
-                        outer, outer * 1.12f, outer, soul ? soulRamp(u, false) : fireRamp(u, false),
-                        Math.round(alpha * 0.72f * (1.0f - u * 0.35f)));
+        int levels = 12;
+        for (int k = 0; k < levels; k++) {
+            float u = k / (float) (levels - 1);
+            float sway = Mth.sin(phase - u * 5.0f + jitter * 4.0f) * u;
+            float curl = Mth.cos(phase * 0.67f + u * 7.0f + seed) * u;
+            float pf = f + (windF * u * u * height + sway * width * 0.85f) * S;
+            float pl = l + (windL * u * u * height + curl * width * 0.72f) * S;
+            float py = y + u * height * S;
+            float taper = Math.max(0.075f, (float) Math.pow(1.0f - u, 0.62f));
+            float w = width * taper * S * (0.92f + 0.08f * Mth.sin(phase + u * 8.0f));
+            float hy = Math.max(height * S / levels * 0.74f, w * 0.62f);
+            int core = soul ? soulRamp(u, true) : fireRamp(u, true);
+            int outer = soul ? soulRamp(u, false) : fireRamp(u, false);
+            localBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, py, pl,
+                    w * 0.72f, hy, w * 0.78f, core, Math.round(alpha * (1.0f - u * 0.18f)));
+            if (u < 0.84f) {
+                // Quatre lobes en profondeur ; la base est réellement massive, pas une colonne fine.
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        pf + w * 0.62f, py - hy * 0.18f, pl,
+                        w * 0.64f, hy * 0.88f, w * 0.70f, outer, Math.round(alpha * 0.88f));
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        pf - w * 0.55f, py - hy * 0.10f, pl + w * 0.18f,
+                        w * 0.58f, hy * 0.82f, w * 0.62f, outer, Math.round(alpha * 0.80f));
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        pf, py - hy * 0.20f, pl + w * 0.63f,
+                        w * 0.62f, hy * 0.85f, w * 0.60f, outer, Math.round(alpha * 0.76f));
+                if (k < 7) {
+                    localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            pf - w * 0.12f, py - hy * 0.24f, pl - w * 0.60f,
+                            w * 0.68f, hy * 0.82f, w * 0.62f,
+                            soul ? soulColor(2) : LAVA[5 + (k & 1)], Math.round(alpha * 0.72f));
+                }
+            }
+            // Deux branches qui se détachent progressivement du corps avant de se refroidir.
+            if (k >= 4 && k <= 9 && (k & 1) == 0) {
+                float side = (seed & 1) == 0 ? 1.0f : -1.0f;
+                float branch = (u - 0.24f) * width * S * side;
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        pf + branch, py + hy * 0.25f, pl - branch * 0.45f,
+                        w * 0.46f, hy * 0.68f, w * 0.46f,
+                        soul ? soulColor(5) : LAVA[7 + (k & 3)], Math.round(alpha * 0.82f));
             }
             if (k % 3 == 0) {
-                float aura = hs * 1.70f;
-                cube(vc, mat, tmp, px, py, pz, aura, aura * 1.16f, aura, rgb,
-                        Math.round(alpha * 0.13f * (1.0f - u * 0.45f)));
+                float aura = w * 1.48f;
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, py, pl,
+                        aura, hy * 1.35f, aura, core, Math.round(alpha * 0.105f * (1.0f - u * 0.45f)));
             }
         }
+    }
+
+    private static int lavaRgb(float f, float l, float u, float time, int salt) {
+        float field = Mth.sin(f * 3.7f + l * 4.3f + time * 0.70f)
+                + 0.65f * Mth.sin(f * 8.1f - l * 2.8f - u * 5.0f + time * 1.4f)
+                + 0.35f * Mth.sin(l * 13.7f + u * 9.0f + (salt & 15));
+        float crust = Mth.sin(f * 2.1f - l * 3.4f + (salt & 31) * 0.17f)
+                + Mth.sin(l * 5.2f + u * 4.3f);
+        if (crust > 1.05f && u < 0.88f) return LAVA[1 + (salt & 2)];
+        if (field > 1.45f) return LAVA[12 + (salt & 1)];
+        if (field > 0.85f) return LAVA[10 + (salt & 1)];
+        if (field > -0.10f) return LAVA[7 + (salt % 3 + 3) % 3];
+        if (field > -0.90f) return LAVA[4 + (salt & 2)];
+        return LAVA[2 + (salt & 1)];
+    }
+
+    private static int lavaDropletRgb(float h) {
+        return h > 0.80f ? LAVA[13] : h > 0.52f ? LAVA[11] : h > 0.20f ? LAVA[8] : LAVA[5];
     }
 
     private static int fireRamp(float u, boolean core) {
-        if (u < 0.15f) return core ? WHITE : HOT;
-        if (u < 0.43f) return core ? HOT : AMBER;
-        if (u < 0.76f) return core ? AMBER : ORANGE;
-        return core ? ORANGE : RED;
+        if (u < 0.14f) return core ? LAVA[13] : LAVA[10];
+        if (u < 0.38f) return core ? LAVA[11] : LAVA[8];
+        if (u < 0.70f) return core ? LAVA[9] : LAVA[7];
+        if (u < 0.90f) return core ? LAVA[7] : LAVA[5];
+        return core ? LAVA[6] : LAVA[3];
     }
 
     private static int soulRamp(float u, boolean core) {
-        if (u < 0.16f) return core ? SOUL_WHITE : SOUL_HOT;
-        if (u < 0.48f) return core ? SOUL_HOT : SOUL_CYAN;
-        if (u < 0.78f) return core ? SOUL_CYAN : SOUL_BLUE;
-        return core ? SOUL_BLUE : SOUL_DARK;
+        if (u < 0.14f) return core ? soulColor(10) : soulColor(8);
+        if (u < 0.40f) return core ? soulColor(8) : soulColor(6);
+        if (u < 0.72f) return core ? soulColor(6) : soulColor(4);
+        return core ? soulColor(4) : soulColor(1);
     }
 
-    /** Fumée seulement après la combustion : cubes qui montent, s'écartent et disparaissent. */
-    private static void smokeColumn(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                    float cx, float ground, float cz, float t, float start,
-                                    int count, float S, int alpha, int salt, float dirX, float dirZ) {
+    private static int soulColor(int index) {
+        return SOUL_COLORS[Mth.clamp(index, 0, SOUL_COLORS.length - 1)];
+    }
+
+    /** Trajectoire unique du météore ; la traîne réutilise ces deux fonctions dans le passé. */
+    private static float meteorF(float q) {
+        float time = q * 1.45f;
+        return -3.40f + (3.40f / 1.45f) * time;
+    }
+
+    private static float meteorY(float q) {
+        float time = q * 1.45f;
+        return 6.00f - 1.20f * time - 1.86f * time * time;
+    }
+
+    private static void smoke(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                              float cx, float cy, float cz, float dx, float dz,
+                              float f, float ground, float l, float t, float start,
+                              int count, float S, int alpha, int salt, float spread) {
         for (int p = 0; p < count; p++) {
-            float age = t - start - (p % 8) * 0.018f;
+            float age = t - start - (p % 8) * 0.017f;
             if (age <= 0.0f) continue;
-            float h = hash01(salt, p * 67 + 1200);
-            float life = Mth.clamp(age / 0.30f, 0.0f, 1.0f);
+            float h = hash01(salt, p * 67 + 3200);
+            float life = Mth.clamp(age / 0.31f, 0.0f, 1.0f);
             float fade = (1.0f - life) * smooth01(age / 0.05f);
-            float ang = p * 2.3999632f + life * 1.8f;
-            float radius = (0.15f + h * 0.75f + life * 0.35f) * S;
-            float px = cx + Mth.cos(ang) * radius + dirX * life * 0.35f * S;
-            float pz = cz + Mth.sin(ang) * radius + dirZ * life * 0.35f * S;
-            float py = ground + (0.22f + h * 0.45f + life * 1.55f) * S;
-            float hs = (0.055f + h * 0.055f + life * 0.05f) * S;
-            cube(vc, mat, tmp, px, py, pz, hs, hs * 0.82f, hs, SMOKE,
-                    Math.round(alpha * fade * 0.34f));
+            float angle = p * 2.3999632f + life * 1.8f;
+            float radius = (0.16f + h * spread + life * 0.38f) * S;
+            float pf = f + Mth.cos(angle) * radius + life * 0.25f * S;
+            float pl = l + Mth.sin(angle) * radius;
+            float py = ground + (0.28f + h * 0.48f + life * 1.65f) * S;
+            float size = (0.095f + h * 0.115f + life * 0.075f) * S;
+            localBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, py, pl,
+                    size * 1.15f, size * 0.82f, size,
+                    (p & 3) == 0 ? SMOKE_LIGHT : SMOKE, Math.round(alpha * fade * 0.32f));
+            if ((p & 3) == 0) {
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        pf + size * 0.55f, py - size * 0.30f, pl,
+                        size * 0.62f, size * 0.55f, size * 0.65f,
+                        SMOKE, Math.round(alpha * fade * 0.24f));
+            }
         }
     }
 
@@ -413,10 +634,21 @@ public final class FireSignatureVfx {
         return (h & 0xFFFF) / 65535.0f;
     }
 
-    private static void cube(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                             float x, float y, float z, float hx, float hy, float hz,
-                             int rgb, int alpha) {
-        if (alpha <= 0 || hx <= 0.0f || hy <= 0.0f || hz <= 0.0f) return;
-        WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp, x, y, z, hx, hy, hz, rgb, alpha);
+    /** Coordonnées locales : x = attaque, z = latéral. Le voxel garde ses dimensions libres. */
+    private static void localBox(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                 float cx, float cy, float cz, float dx, float dz,
+                                 float f, float y, float l, float hf, float hy, float hl,
+                                 int rgb, int alpha) {
+        if (alpha <= 0 || hf <= 0.0f || hy <= 0.0f || hl <= 0.0f) return;
+        float sideX = -dz, sideZ = dx;
+        float x = cx + dx * f + sideX * l;
+        float z = cz + dz * f + sideZ * l;
+        float yaw = Mth.atan2(-dz, dx);
+        WeaponWorldVfxManager.emitVoxelBoxRotated(vc, mat, tmp, x, y, z, hf, hy, hl,
+                yaw, 0.0f, 0.0f, rgb, alpha);
+    }
+
+    private static int nine() {
+        return 9;
     }
 }
