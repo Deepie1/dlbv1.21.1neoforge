@@ -67,11 +67,15 @@ public final class FireSignatureVfx {
                 int layers = u > 0.82f ? 3 : 6;
                 for (int d = 0; d < layers; d++) {
                     float v = d / (float) (layers - 1);
-                    float f = front - thickness * v;
+                    float roundBack = 0.30f * Mth.sin(v * (float) Math.PI) * (1.0f - 0.35f * u) * S;
+                    float backRoll = 0.06f * Mth.sin(t * 7.0f - v * 3.0f + lane * 0.4f)
+                            * Mth.sin(v * (float) Math.PI) * S;
+                    float f = front - thickness * v - roundBack + backRoll;
+                    float cubeY = y - 0.14f * Mth.sin(v * (float) Math.PI) * (1.0f - u) * S;
                     float h = hash01(salt, lane * 91 + k * 17 + d * 41 + 40);
                     float cube = (u > 0.82f ? 0.085f + 0.012f * h : 0.105f + 0.025f * h) * S;
                     int rgb = lavaRgb(f / S, lateral / S, u, t, salt + lane * 29 + k * 7 + d * 13);
-                    localCube(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, lateral,
+                    localCube(vc, mat, tmp, cx, cy, cz, dx, dz, f, cubeY, lateral,
                             cube, rgb, Math.round(alpha * env));
                     if (d == 0 && ((k + lane) & 1) == 0) {
                         float detail = (0.035f + 0.026f * h) * S;
@@ -129,18 +133,42 @@ public final class FireSignatureVfx {
                     Math.round(alpha * env * reveal * 0.75f));
         }
 
-        // Nappe laissée par le front : elle persiste pendant que la crête perd son énergie.
+        // Sillage : chaque rangée reprend une position PASSÉE du front, avec un retard croissant.
+        // Il avance donc avec la vague et forme des dos arrondis au lieu d'une grille de feu statique.
         for (int row = 0; row < 7; row++) {
-            float along = (-1.45f + row * 0.43f) * S;
-            for (int lane = -4; lane <= 4; lane++) {
+            float history = Math.max(0.0f, t - 0.055f - row * 0.042f);
+            for (int lane = -6; lane <= 6; lane++) {
                 int id = row * 31 + lane + 150;
                 float h = hash01(salt, id);
-                if (h < 0.10f && row > 0) continue;
-                float reveal = smooth01((t - 0.13f - row * 0.040f - h * 0.025f) / 0.14f);
+                float reveal = smooth01((t - 0.10f - row * 0.025f - h * 0.020f) / 0.12f);
                 if (reveal <= 0.0f) continue;
-                groundPatch(vc, mat, tmp, cx, cy, cz, dx, dz, along, ground,
-                        lane * 0.255f * S, reveal * env, 0.38f + h * 0.34f,
-                        (row + lane & 1) == 0, false, S, alpha, salt + id * 19, t);
+                if (h < 0.16f) continue;
+                float along = (waveTravel(history) - 0.70f - row * 0.13f
+                        + 0.10f * Mth.sin(lane * 0.65f + t * 5.0f - row) + (h - 0.5f) * 0.18f) * S;
+                float side = (lane * 0.225f + 0.06f * Mth.sin(t * 4.0f + row + lane * 0.4f)
+                        + (hash01(salt, id + 700) - 0.5f) * 0.12f) * S;
+                float rollerY = ground + (0.075f + 0.05f * h
+                        + 0.035f * Mth.sin(t * 6.0f - row * 0.7f + lane * 0.3f)) * S;
+                float rollerSize = (0.080f + 0.055f * h) * S * reveal;
+                localCube(vc, mat, tmp, cx, cy, cz, dx, dz, along, rollerY, side,
+                        rollerSize, lavaRgb(along / S, side / S, 0.25f, t, salt + id),
+                        Math.round(alpha * reveal * env * 0.94f));
+                localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        along - rollerSize * 0.90f, rollerY - rollerSize * 0.22f,
+                        side + rollerSize * 0.38f, rollerSize * 0.72f,
+                        LAVA[4 + (id & 3)], Math.round(alpha * reveal * env * 0.84f));
+                localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        along + rollerSize * 0.65f, rollerY + rollerSize * 0.38f,
+                        side - rollerSize * 0.30f, rollerSize * 0.48f,
+                        LAVA[9 + (id & 3)], Math.round(alpha * reveal * env * 0.82f));
+                if (h > 0.58f && ((lane + row) & 3) == 0) {
+                    flame(vc, mat, tmp, cx, cy, cz, dx, dz, along + 0.05f * S,
+                            rollerY + rollerSize * 0.65f, side,
+                            (0.20f + 0.24f * h) * reveal * (1.0f - breakup * 0.40f),
+                            0.045f + 0.025f * h, 0.55f + 0.25f * h,
+                            (h - 0.5f) * 0.60f, t * 12.0f + row + lane,
+                            false, S, Math.round(alpha * reveal * env), salt + id * 23);
+                }
             }
         }
 
@@ -420,6 +448,32 @@ public final class FireSignatureVfx {
                             Math.round(alpha * birth * flightFade * trailReveal * life), salt + k * 31);
                 }
             }
+            // Arrachement de la traîne : étincelles de vitesse nées dans le passé du rocher,
+            // dispersées vers l'extérieur et refroidies au lieu d'un ruban de feu rigide.
+            for (int p = 0; p < 64; p++) {
+                float h = hash01(salt, p * 47 + 2180);
+                float life = fract(t * 7.0f + p * 0.381966f + h);
+                float sparkAge = life * 0.42f;
+                float historyTime = currentTime - sparkAge;
+                if (historyTime <= 0.0f) continue;
+                float hq = historyTime / METEOR_FLIGHT_SECONDS;
+                float spread = sparkAge * (0.35f + 0.75f * h) * S;
+                float f = meteorF(hq, salt) * S + (hash01(salt, p * 53 + 2181) - 0.5f) * spread;
+                float l = meteorL(hq, salt) * S + (hash01(salt, p * 59 + 2182) - 0.5f) * spread;
+                float y = ground + meteorY(hq) * S + sparkAge * (0.45f + 0.75f * h) * S;
+                float size = (0.012f + 0.018f * h) * (1.0f - life * 0.55f) * S;
+                int rgb = life < 0.30f ? LAVA[12] : life < 0.68f ? LAVA[9] : LAVA[5];
+                localCube(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l, size, rgb,
+                        Math.round(alpha * birth * flightFade * trailReveal * (1.0f - life) * 0.95f));
+                if ((p & 3) == 0) {
+                    localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            f - meteorF(0.0f, salt) * 0.015f * S,
+                            y + 0.035f * S,
+                            l - meteorL(0.0f, salt) * 0.015f * S,
+                            size * 0.52f, LAVA[7],
+                            Math.round(alpha * birth * flightFade * trailReveal * (1.0f - life) * 0.65f));
+                }
+            }
         }
 
         // Impact déclenché au même instant que l'arrivée exacte au centre de la cible.
@@ -498,7 +552,7 @@ public final class FireSignatureVfx {
     private static float waveFrontLocal(float t, float u, int lane) {
         float breakup = waveBreakup(t);
         float curl = smooth01((t - 0.13f) / 0.32f) * (1.0f - 0.45f * breakup);
-        float tornLip = 0.08f * Mth.sin(lane * 1.37f + t * 3.0f) * u * u;
+        float tornLip = 0.12f * Mth.sin(lane * 1.37f + t * 3.0f) * u * u;
         float laneCurve = -0.26f * (float) Math.pow(Math.abs(lane) / 8.0f, 2.0) * u * u;
         return -0.58f + 0.58f * u + 1.05f * curl * (float) Math.pow(u, 3.2f)
                 + tornLip + laneCurve;
@@ -514,7 +568,8 @@ public final class FireSignatureVfx {
     private static float waveLaneNoise(float t, int lane, int salt) {
         float arch = 1.0f - 0.24f * (float) Math.pow(Math.abs(lane) / 8.0f, 1.5);
         return (0.96f + 0.05f * Mth.sin(lane * 1.37f + (salt & 31))
-                + 0.035f * Mth.sin(t * 4.0f + lane * 0.70f)) * arch;
+                + 0.075f * Mth.sin(t * 4.0f + lane * 0.70f)
+                + 0.040f * Mth.sin(t * 7.0f - lane * 0.50f)) * arch;
     }
 
     private static float waveHeightLocal(float t, float u, float noise) {
@@ -572,20 +627,20 @@ public final class FireSignatureVfx {
         float time = phase;
         float rootF = (valueNoise(time * 0.07f, jitter * 9.0f, 1.7f, seed) - 0.5f) * width * 0.34f * S;
         float rootL = (valueNoise(time * 0.06f, jitter * 7.0f, 8.3f, seed ^ 991) - 0.5f) * width * 0.34f * S;
-        float flick = 0.86f + 0.14f * Mth.sin(time * 1.35f + jitter * 20.0f)
-                + 0.16f * (valueNoise(time * 0.42f, jitter * 10.0f, 0.0f, seed) - 0.5f);
+        float flick = 0.82f + 0.20f * Mth.sin(time * 1.70f + jitter * 20.0f)
+                + 0.22f * (valueNoise(time * 0.42f, jitter * 10.0f, 0.0f, seed) - 0.5f);
         float animatedHeight = height * flick;
         int levels = 11;
         for (int k = 0; k < levels; k++) {
             float u = k / (float) (levels - 1);
             // Deux champs lisses remontent à des vitesses différentes : la silhouette se scinde et
             // se referme au lieu de se balancer comme un objet rigide.
-            float n1 = fbm(jitter * 3.1f + u * 0.55f, u * 1.50f - time * 0.24f,
+            float n1 = fbm(jitter * 3.1f + u * 0.55f, u * 1.50f - time * 0.42f,
                     jitter * 7.0f + time * 0.03f, seed);
-            float n2 = fbm(jitter * 5.7f + u * 1.40f, u * 3.20f - time * 0.42f,
+            float n2 = fbm(jitter * 5.7f + u * 1.40f, u * 3.20f - time * 0.68f,
                     2.7f + time * 0.06f, seed ^ 0x51F2);
-            float warpF = (n1 - 0.5f) * 1.30f * u + (n2 - 0.5f) * 0.35f * u;
-            float warpL = (n2 - 0.5f) * 1.10f * u + (n1 - 0.5f) * 0.30f * u;
+            float warpF = (n1 - 0.5f) * 2.15f * u + (n2 - 0.5f) * 0.55f * u;
+            float warpL = (n2 - 0.5f) * 1.75f * u + (n1 - 0.5f) * 0.50f * u;
             float pf = f + rootF + (windF * u * u * animatedHeight + warpF * width) * S;
             float pl = l + rootL + (windL * u * u * animatedHeight + warpL * width) * S;
             float py = y + u * animatedHeight * S;
@@ -595,8 +650,10 @@ public final class FireSignatureVfx {
             float hy = Math.max(animatedHeight * S / levels * 0.70f, w * 0.58f);
             int core = soul ? soulRamp(u, true) : fireRamp(u, true);
             int outer = soul ? soulRamp(u, false) : fireRamp(u, false);
-            localBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, py, pl,
-                    w * 0.78f, hy, w * 0.82f, core, Math.round(alpha * (1.0f - u * 0.25f)));
+            if (u < 0.84f || n1 + n2 > 0.62f) {
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, py, pl,
+                        w * 0.78f, hy, w * 0.82f, core, Math.round(alpha * (1.0f - u * 0.25f)));
+            }
             if (u < 0.80f) {
                 float breathe = 0.72f + 0.28f * Mth.sin(time * 1.9f + k * 0.8f + jitter * 6.0f);
                 localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
@@ -635,28 +692,46 @@ public final class FireSignatureVfx {
 
         // Flammèches : cycles fermés ascendants, taille 0.42 -> 0.08, turbulence et refroidissement.
         for (int p = 0; p < 5; p++) {
-            float cycle = fract(time * 0.13f + p * 0.217f + jitter);
-            float envelope = smooth01(cycle / 0.12f) * (1.0f - smooth01((cycle - 0.58f) / 0.42f));
+            float cycle = fract(time * (0.34f + 0.08f * jitter) + p * 0.217f + jitter);
+            float envelope = smooth01(cycle / 0.12f) * (1.0f - smooth01((cycle - 0.52f) / 0.48f));
             if (envelope <= 0.0f) continue;
             float h = hash01(seed, p * 47 + 400);
             float turbulenceF = (valueNoise(h * 9.0f, cycle * 2.1f - time * 0.16f, 1.3f, seed + p) - 0.5f)
-                    * width * 2.0f * cycle;
+                    * width * 2.8f * cycle;
             float turbulenceL = (valueNoise(h * 7.0f, cycle * 1.8f - time * 0.13f, 8.1f, seed ^ (p * 997)) - 0.5f)
-                    * width * 1.7f * cycle;
+                    * width * 2.3f * cycle;
             float pf = f + rootF + (windF * animatedHeight * cycle * 0.55f + turbulenceF) * S;
             float pl = l + rootL + (windL * animatedHeight * cycle * 0.55f + turbulenceL) * S;
-            float py = y + animatedHeight * S * (0.18f + cycle * 1.15f);
-            float size = width * S * (0.42f - 0.34f * cycle) * (0.78f + 0.42f * h);
+            float py = y + animatedHeight * S * (0.12f + cycle * 1.42f);
+            float size = width * S * (0.62f - 0.46f * cycle) * (0.82f + 0.36f * h);
             float heat = 0.18f + cycle * 0.78f;
             int rgb = soul ? soulRamp(heat, false) : fireRamp(heat, false);
             localBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, py, pl,
                     size, size * (1.10f + 0.35f * (1.0f - cycle)), size,
-                    rgb, Math.round(alpha * envelope * 0.64f));
+                    rgb, Math.round(alpha * envelope * 0.88f));
             localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
                     pf - size * 0.20f, py + size * 0.25f, pl + size * 0.16f,
                     size * 0.46f, size * 0.62f, size * 0.46f,
                     soul ? soulRamp(heat, true) : fireRamp(heat, true),
-                    Math.round(alpha * envelope * 0.58f));
+                    Math.round(alpha * envelope * 0.78f));
+        }
+        for (int e = 0; e < 3; e++) {
+            float cycle = fract(time * (0.39f + 0.035f * e) + e * 0.319f + jitter * 1.7f);
+            float envelope = smooth01(cycle / 0.06f) * (1.0f - smooth01((cycle - 0.48f) / 0.52f));
+            if (envelope <= 0.0f) continue;
+            float h = hash01(seed, e * 71 + 620);
+            float originU = 0.38f + 0.42f * h;
+            float pf = f + rootF + (windF * animatedHeight * originU
+                    + (h - 0.5f) * width * 2.2f * cycle
+                    + Mth.sin(time + cycle * 5.0f + e) * width * 0.40f) * S;
+            float pl = l + rootL + (windL * animatedHeight * originU
+                    + (hash01(seed, e * 73 + 621) - 0.5f) * width * 2.0f * cycle) * S;
+            float py = y + animatedHeight * S * (originU + cycle * 1.25f);
+            float size = width * S * (0.12f - 0.075f * cycle) * (0.65f + 0.50f * h);
+            float heat = 0.35f + cycle * 0.62f;
+            localCube(vc, mat, tmp, cx, cy, cz, dx, dz, pf, py, pl, size,
+                    soul ? soulRamp(heat, e == 0) : fireRamp(heat, e == 0),
+                    Math.round(alpha * envelope * 0.92f));
         }
     }
 
