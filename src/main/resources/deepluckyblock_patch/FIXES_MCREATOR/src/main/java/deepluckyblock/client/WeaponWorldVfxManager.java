@@ -478,8 +478,11 @@ public final class WeaponWorldVfxManager {
             case ZEPHYR_WIND_LANCE -> 80;
             case THORN_MAW_ROOT -> 96;
             case VERDANT_SAP_BLOOM -> 96;
+            case MOLTEN_FIRE_WAVE -> 72;
+            case SOUL_FIRE_CRESCENT -> 80;
+            case BRIMSTONE_METEOR -> 96;
             case SERAPH_SKY_PILLAR, ABYSSAL_MAELSTROM, WARLORD_RALLY_SIGIL,
-                 DRAGON_CHAOS_PRISM, BRIMSTONE_METEOR, BIG_BANG_SCAR -> 22;
+                 DRAGON_CHAOS_PRISM, BIG_BANG_SCAR -> 22;
             case SANDSTORM_DUNE, ECLIPSE_VEIL, NULL_RIFT_FISSURE,
                  CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE, MIASMA_SHROUD,
                  PLAGUE_NOVA -> 18;
@@ -502,7 +505,7 @@ public final class WeaponWorldVfxManager {
         int burstCount = (fx.category == WeaponVisualEffectId.Category.BLOOD) ? 14 : 10;
         float cubeHalf = (fx.category == WeaponVisualEffectId.Category.BLOOD) ? 0.042f : 0.036f;
         // Chaos ne possède que ses contours structurés : pas de salve colorée sans rapport avec eux.
-        if (fx.element() != DeepElement.CHAOS) {
+        if (fx.element() != DeepElement.CHAOS && fx.element() != DeepElement.FIRE) {
             spawnMiniPixelBurst(fx, x, y, z, burstCount, cubeHalf, 0.18, paletteMask);
         }
     }
@@ -2646,6 +2649,17 @@ public final class WeaponWorldVfxManager {
      * braises projetées qui retombent, et un sol qui rougeoie. Aucune pile de blocs droits.
      */
     private static void impactFire(ImpactView v) {
+        int signature = switch (v.inst().effect) {
+            case MOLTEN_FIRE_WAVE -> FireSignatureVfx.MOLTEN;
+            case SOUL_FIRE_CRESCENT -> FireSignatureVfx.SOUL;
+            case BRIMSTONE_METEOR -> FireSignatureVfx.METEOR;
+            default -> -1;
+        };
+        if (signature >= 0) {
+            FireSignatureVfx.render(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), v.t(),
+                    v.dirX(), v.dirZ(), signature, v.S(), v.fadeA(), v.salt());
+            return;
+        }
         if (v.inst().effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE) {
             impactMoltenFireWave(v);
             return;

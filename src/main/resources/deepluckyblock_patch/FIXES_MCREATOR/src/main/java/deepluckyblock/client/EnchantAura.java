@@ -339,6 +339,8 @@ public final class EnchantAura {
     // Couleur courante, pour les mixins de rendu (contrat du mod d'origine)
     // =======================================================================
     private static int current = 0;
+    private static int currentGradient = 0;
+    private static int currentGradientMode = 0;
 
     /** T311-GLINT-INTENSE : true uniquement pendant la fenêtre active d'attaque/tir/impact. */
     private static boolean currentIntense = false;
@@ -374,6 +376,9 @@ public final class EnchantAura {
     }
 
     public static int currentRgb() { return current; }
+    public static int currentGradientRgb() { return currentGradient; }
+    /** 0 = vertical ; 1 = roue angulaire continue. */
+    public static int currentGradientMode() { return currentGradientMode; }
 
     public static boolean isCurrentIntense() { return currentIntense; }
 
@@ -383,7 +388,7 @@ public final class EnchantAura {
 
     public static void capture(ItemStack stack) {
         int v = auraColor(stack);
-        current = v;
+        applySmoothGlint(stack, v, false);
         currentIntense = false;
         currentTier = glintTier(stack);
         currentWornArmorBoost = false;
@@ -391,6 +396,12 @@ public final class EnchantAura {
         if (DEBUG && stack != null && !stack.isEmpty()) {
             log("capture -> #" + Integer.toHexString(v) + " tier=" + currentTier);
         }
+    }
+
+    private static void applySmoothGlint(ItemStack stack, int target, boolean armorSlot) {
+        current = DeepGlintColor.smoothGlint(stack, target, armorSlot);
+        currentGradient = DeepGlintColor.smoothGlintAccent(stack);
+        currentGradientMode = DeepGlintColor.glintGradientMode(stack);
     }
 
     /**
@@ -412,7 +423,7 @@ public final class EnchantAura {
                 int chosen = (flash != 0) ? flash : base;
                 if (chosen != 0) {
                     // T351-SMOOTH-GLINT : on rejoint la teinte d'éclat en douceur (jamais de saut brutal).
-                    current = DeepGlintColor.smoothGlint(stack, chosen, defensiveArmor);
+                    applySmoothGlint(stack, chosen, defensiveArmor);
                     currentIntense = true;
                     currentTier = tier;
                     currentWornArmorBoost = wornBoost;
@@ -425,7 +436,7 @@ public final class EnchantAura {
             }
         }
         // T351-SMOOTH-GLINT : retour à la couleur de base également progressif.
-        current = DeepGlintColor.smoothGlint(stack, base, defensiveArmor);
+        applySmoothGlint(stack, base, defensiveArmor);
         currentIntense = false;
         currentTier = tier;
         currentWornArmorBoost = wornBoost;
@@ -457,7 +468,7 @@ public final class EnchantAura {
                 int flash = DeepGlintColor.resolveContextualFlash(wearer, stack, defensiveArmor);
                 if (flash != 0) {
                     // T351-SMOOTH-GLINT : glint contextuel lissé, transition progressive uniquement.
-                    current = DeepGlintColor.smoothGlint(stack, flash, defensiveArmor);
+                    applySmoothGlint(stack, flash, defensiveArmor);
                     currentIntense = true;
                     currentTier = tier;
                     currentWornArmorBoost = wornBoost;
@@ -466,7 +477,7 @@ public final class EnchantAura {
             }
         }
         // T351-SMOOTH-GLINT : retour à la couleur de base également progressif.
-        current = DeepGlintColor.smoothGlint(stack, base, defensiveArmor);
+        applySmoothGlint(stack, base, defensiveArmor);
         currentIntense = false;
         currentTier = tier;
         currentWornArmorBoost = wornBoost;
@@ -474,6 +485,8 @@ public final class EnchantAura {
 
     public static void clear() {
         current = 0;
+        currentGradient = 0;
+        currentGradientMode = 0;
         currentIntense = false;
         currentTier = DEFAULT_GLINT_TIER;
         currentWornArmorBoost = false;

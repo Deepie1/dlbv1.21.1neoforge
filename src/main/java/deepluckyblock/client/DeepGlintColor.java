@@ -545,15 +545,94 @@ public final class DeepGlintColor {
     // (Fini le déclenchement générique redondant au simple swing dans le vide ou dégât quelconque.)
     // =======================================================================
     // =======================================================================
-    // PALETTE-LOCK : alternance de rôles exacts, sans interpolation RGB entre éléments.
+    // GLINT SMOOTH GRADIENT : transition temporelle réelle + orientation stable.
     // =======================================================================
+    private static final long GLINT_TRANSITION_NS = 140_000_000L; // 140 ms, volontairement rapide
+    private static final int GLINT_TRANSITION_STEPS = 12;
+    private static final Map<ItemStack, GlintTransition> GLINT_TRANSITIONS = new WeakHashMap<>();
+
+    private static final class GlintTransition {
+        int fromColor;
+        int color;
+        int targetColor;
+        int fromAccent;
+        int accent;
+        int targetAccent;
+        int mode; // 0 = haut/bas, 1 = roue angulaire
+        long startedNs = Long.MIN_VALUE;
+    }
+
     /**
-     * Les cibles sont déjà des rôles de palette exacts. Une interpolation RGB entre deux cibles
-     * créerait une teinte intermédiaire étrangère sur une arme multi-éléments : on alterne donc
-     * directement les couleurs validées, comme dans le moteur de voxels.
+     * Rejoint la cible en douze états interpolés au lieu de faire un switch rouge -> bleu.
+     * Le deuxième pôle est une variation proche de la même famille : le dégradé reste lisible
+     * pendant ET après la transition. L'orientation verticale/roue est stable par item.
      */
     public static int smoothGlint(ItemStack stack, int target, boolean armorSlot) {
-        return target;
+        if (stack == null) return target;
+        long now = System.nanoTime();
+        synchronized (GLINT_TRANSITIONS) {
+            GlintTransition state = GLINT_TRANSITIONS.get(stack);
+            if (state == null) {
+                state = new GlintTransition();
+                state.mode = Math.floorMod(System.identityHashCode(stack) ^ (armorSlot ? 31 : 0), 2);
+                state.color = state.fromColor = state.targetColor = target;
+                state.accent = state.fromAccent = state.targetAccent = gradientAccent(target, state.mode);
+                state.startedNs = now;
+                GLINT_TRANSITIONS.put(stack, state);
+                return state.color;
+            }
+            if (state.targetColor != target) {
+                state.fromColor = state.color;
+                state.fromAccent = state.accent;
+                state.targetColor = target;
+                state.targetAccent = gradientAccent(target, state.mode);
+                state.startedNs = now;
+            }
+            float progress = Math.max(0.0f, Math.min(1.0f,
+                    (now - state.startedNs) / (float) GLINT_TRANSITION_NS));
+            int step = Math.min(GLINT_TRANSITION_STEPS, (int) (progress * GLINT_TRANSITION_STEPS + 0.0001f));
+            float u = step / (float) GLINT_TRANSITION_STEPS;
+            u = u * u * (3.0f - 2.0f * u);
+            state.color = mixArgb(state.fromColor, state.targetColor, u);
+            state.accent = mixArgb(state.fromAccent, state.targetAccent, u);
+            return state.color;
+        }
+    }
+
+    /** Ne fait pas avancer le temps : lecture du second pôle calculé par smoothGlint. */
+    public static int smoothGlintAccent(ItemStack stack) {
+        synchronized (GLINT_TRANSITIONS) {
+            GlintTransition state = GLINT_TRANSITIONS.get(stack);
+            return state == null ? 0 : state.accent;
+        }
+    }
+
+    /** 0 = dégradé haut/bas ; 1 = roue A -> B -> A, sans couture chromatique. */
+    public static int glintGradientMode(ItemStack stack) {
+        synchronized (GLINT_TRANSITIONS) {
+            GlintTransition state = GLINT_TRANSITIONS.get(stack);
+            return state == null ? 0 : state.mode;
+        }
+    }
+
+    private static int mixArgb(int a, int b, float u) {
+        if (a == 0 && b == 0) return 0;
+        int ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+        int br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+        int r = Math.round(ar + (br - ar) * u);
+        int g = Math.round(ag + (bg - ag) * u);
+        int bl = Math.round(ab + (bb - ab) * u);
+        if (r == 0 && g == 0 && bl == 0) return 0;
+        return 0xFF000000 | (r << 16) | (g << 8) | bl;
+    }
+
+    private static int gradientAccent(int argb, int mode) {
+        if (argb == 0) return 0;
+        float[] hsb = java.awt.Color.RGBtoHSB((argb >> 16) & 255, (argb >> 8) & 255, argb & 255, null);
+        hsb[0] = (hsb[0] + (mode == 0 ? 0.045f : -0.055f) + 1.0f) % 1.0f;
+        hsb[1] = Math.min(1.0f, hsb[1] * 0.92f);
+        hsb[2] = Math.min(1.0f, hsb[2] * 1.08f + 0.06f);
+        return 0xFF000000 | (java.awt.Color.HSBtoRGB(hsb[0], hsb[1], hsb[2]) & 0xFFFFFF);
     }
 
     private static final java.util.WeakHashMap<ItemStack, long[]> CONTEXT_GLOW_CACHE = new java.util.WeakHashMap<>();

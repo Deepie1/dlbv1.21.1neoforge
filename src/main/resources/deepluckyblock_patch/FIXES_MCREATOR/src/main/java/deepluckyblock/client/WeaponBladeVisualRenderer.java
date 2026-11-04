@@ -128,6 +128,9 @@ public final class WeaponBladeVisualRenderer {
         // Seuls les éclats d'ACTION (alpha élevé : reflet qui parcourt la lame, charge d'arc, goutte qui
         // tombe...) restent visibles. Hors action, on ne garde donc que les accents animés.
         boolean armActive = isHeldWeaponActive();
+        // Le tirage 15 % mêlée / 40 % distance est fait UNE FOIS au loot dans DeepNbt.
+        // Sans aura persistée, l'item reste propre au repos ; les éclats d'action restent jouables.
+        if (!armActive && !deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(stack)) return;
         WeaponWorldVfxManager.setAlphaFloor(armActive ? 0 : 172);
         WeaponWorldVfxManager.beginFrame(WeaponWorldVfxManager.smoothTimeSeconds());
 

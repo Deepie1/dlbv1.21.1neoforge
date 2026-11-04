@@ -1,0 +1,60 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DLB — Three Fire Signatures</title><style>body{margin:0;background:#080a0e;color:#f4e9df;font:15px system-ui,sans-serif}main{max-width:1180px;margin:auto;padding:22px}h1{font-size:25px;letter-spacing:.08em;margin:8px 0}h2{font-size:13px;color:#d69d7a;font-weight:500}.bar{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}button{background:#1c232d;color:#f7e8da;border:1px solid #4d3c34;border-radius:7px;padding:9px 13px;cursor:pointer}button.active{background:#84351e;border-color:#ff8a3c}canvas{width:100%;height:610px;display:block;border:1px solid #342a28;border-radius:12px}.controls{display:flex;align-items:center;gap:12px;margin:12px 0}input{flex:1;accent-color:#e8642a}.meta{display:flex;justify-content:space-between;color:#c6b7aa;font-size:13px}.refs{font-size:12px;line-height:1.6;color:#9c918a}a{color:#ffa76e}</style></head><body><main><h2>DEEP LUCKY BLOCK · REFONTE FIRE</h2><h1 id="title">MOLTEN FIRE WAVE</h1><div class="bar"><button class="active" data-v="0">Molten Fire Wave</button><button data-v="1">Soul Fire Crescent</button><button data-v="2">Brimstone Meteor</button></div><canvas id="view"></canvas><div class="controls"><button id="play">Pause</button><button id="resume">Reprendre le temps réel</button><input id="time" type="range" min="0" max="1000" value="0"></div><div class="meta"><span id="phase">Frame vide</span><span id="readout">0 voxel</span></div><p class="refs">Modèles procéduraux synchronisés avec FireSignatureVfx.java. Première et dernière frames vides. Aucun dégât ajouté.<br>Inspiration : <a href="https://godboyhappy.itch.io/ignis-hd-fire-spell-vfx">IGNIS Fire VFX</a> · <a href="https://pinogames.itch.io/fire-spell-vfx-pack-pixel-art-magic-effects">Pixel Art Fire Spells</a> · <a href="https://sprixen.com/animated-vtt-effects">Animated VFX</a></p></main><script>'use strict';
+const FIRE_COLORS={CRUST:0x351B19,LAVA_DARK:0x8E2816,LAVA:0xE34B16,HOT:0xFF941F,CORE:0xFFE783,SOUL_DARK:0x07536B,SOUL_BLUE:0x119FAF,SOUL_CYAN:0x43E5DE,SOUL_CORE:0xC4FFFF,ROCK:0x30272A,ROCK_HOT:0x6D3528};
+const clamp=x=>Math.max(0,Math.min(1,x));
+const smooth=x=>{x=clamp(x);return x*x*(3-2*x)};
+function hash01(seed,n){let h=(seed^Math.imul(n,0x45D9F3B))|0;h=Math.imul(h^(h>>>16),0x45D9F3B);h=Math.imul(h^(h>>>16),0x45D9F3B);h^=h>>>16;return(h&0xFFFF)/65535}
+function buildFire(v,t,salt=42){
+ const out=[];if(t<=0||t>=1)return out;const C=FIRE_COLORS;
+ const cube=(x,y,z,hx,hy,hz,rgb,a)=>{if(a>0&&hx>0&&hy>0&&hz>0)out.push({x,y,z,hx,hy,hz,rgb,a:Math.min(255,a)})};
+ if(v===0){
+  const birth=smooth(t/.10),exit=smooth((t-.76)/.24),env=birth*(1-exit),ground=-.48,travel=-1.45+1.85*smooth((t-.05)/.58),a=245*env;
+  for(let lane=-8;lane<=8;lane++){const lw=.88+.12*Math.cos(lane*1.37);for(let k=0;k<28;k++){const u=k/27,crest=.56*u*u*smooth((t-.18)/.34),forward=travel+crest,y=ground+u*1.58*lw*birth-exit*1.45,side=lane*.105;for(let layer=0;layer<2;layer++){const depth=(layer-.5)*.085,h=(.061+.008*(1-u))*(1-.48*exit),rgb=u>.86?C.CORE:u>.65?C.HOT:layer===0?C.LAVA:C.LAVA_DARK;cube(forward+depth,y,side,h,h*1.06,h,rgb,a)}}}
+  for(let row=0;row<7;row++){const reveal=smooth((t-.10-row*.045)/.14);if(reveal<=0)continue;const along=-1.30+row*.31;for(let lane=-4;lane<=4;lane++){const h=hash01(salt,row*31+lane*7+80);if(h<.15&&row>1)continue;const hs=(.095+h*.018)*reveal*(1-exit*.65);cube(along,ground+.025-exit*.24,lane*.205,hs,.022*reveal,hs,h>.72?C.HOT:h>.36?C.LAVA_DARK:C.CRUST,a*(.62+.30*reveal))}}
+  for(let p=0;p<34;p++){const launch=.28+(p%6)*.045,age=t-launch;if(age<=0)continue;const h=hash01(salt,p*43+300),lane=(p%9-4)*.205,time=age*2.15,vx=(.55+h*.75)+lane*.30,vy=1.20+hash01(salt,p*47+12)*.95,px=travel+.48+lane*.0+vx*time,py=ground+1.05+vy*time-2.70*time*time,pz=lane+lane*.30*time;if(py<ground)continue;const hs=(.030+.025*h)*(1-exit);cube(px,py,pz,hs,hs*1.25,hs,h>.68?C.CORE:h>.30?C.HOT:C.LAVA,a*.82)}
+ }else if(v===1){
+  const birth=smooth(t/.10),sweep=smooth((t-.06)/.34),impact=smooth((t-.48)/.18),exit=smooth((t-.72)/.28),center=-1.30+1.45*sweep+.30*impact,radius=.82+.14*impact,a=245*birth*(1-exit)*(1-impact*.42);
+  for(let k=0;k<84;k++){const u=k/83;if(u>sweep)continue;const angle=-2.34+u*4.68,taper=.52+.48*Math.sin(u*Math.PI);for(let thick=-1;thick<=1;thick++){const r=radius+thick*.064*taper,lateral=Math.cos(angle)*r,y=Math.sin(angle)*r+.10,hs=.052*taper*(1-exit*.72);let rgb=thick===0?C.SOUL_CYAN:thick<0?C.SOUL_DARK:C.SOUL_BLUE;if(u>.43&&u<.57&&thick===0)rgb=C.SOUL_CORE;cube(center,y,lateral,hs,hs,hs,rgb,a)}}
+  for(let echo=1;echo<=2;echo++){const back=center-echo*.16;for(let k=0;k<56;k++){const u=k/55;if(u>sweep)continue;const angle=-2.30+u*4.60,lateral=Math.cos(angle)*radius,y=Math.sin(angle)*radius+.10,hs=.030*(1-exit);cube(back,y,lateral,hs,hs,hs,echo===1?C.SOUL_BLUE:C.SOUL_DARK,a*(.36/echo))}}
+  for(let w=0;w<3;w++)for(let k=0;k<30;k++){const u=k/29,reveal=smooth((t-.42-w*.035-u*.10)/.15);if(reveal<=0)continue;const age=clamp((t-.42)/.58),angle=w*2.094+age*5.2+u*1.4,rad=.24+age*(.48+w*.12)+u*.12,px=Math.cos(angle)*rad+.15,pz=Math.sin(angle)*rad,py=-.18+u*.62+age*(.62+w*.15),hs=(.038-u*.012)*reveal*(1-exit);cube(px,py,pz,hs,hs*1.35,hs,k%7===0?C.SOUL_CORE:w===1?C.SOUL_CYAN:C.SOUL_BLUE,245*reveal*(1-exit))}
+ }else{
+  const birth=smooth(t/.07),descent=smooth((t-.04)/.40),impact=smooth((t-.44)/.15),exit=smooth((t-.78)/.22),ground=-.48,start=-1.85,mx=start*(1-descent),mz=0,my=ground+(1-descent)*4.20+.38;
+  if(t<.49){const fade=1-smooth((t-.43)/.06),cell=.105*birth;for(let x=-3;x<=3;x++)for(let y=-3;y<=3;y++)for(let z=-3;z<=3;z++){const d=Math.sqrt(x*x+y*y+z*z);if(d>3.35)continue;const h=hash01(salt,(x+5)*113+(y+5)*37+z+20),rgb=h>.83?C.HOT:h>.63?C.ROCK_HOT:C.ROCK;cube(mx+x*cell,my+y*cell,z*cell,cell*.54,cell*.54,cell*.54,rgb,245*fade*birth)}
+   for(let k=1;k<=20;k++){const u=k/20,tx=mx-start*u*.55,ty=my+u*1.85;for(let l=0;l<3;l++){const ang=l*2.094+k*1.71,hs=(.068-u*.032)*birth;cube(tx+Math.cos(ang)*hs*.70,ty,Math.sin(ang)*hs*.70,hs,hs*1.30,hs,u<.25?C.CORE:u<.68?C.HOT:C.LAVA_DARK,245*birth*(1-u*.65))}}}
+  for(let ring=0;ring<3;ring++){const reveal=smooth((t-.44-ring*.035)/.14);if(reveal<=0)continue;const radius=.32+ring*.34+impact*.34;for(let k=0;k<48;k++){if((k+ring*3)%11===0)continue;const ang=k*Math.PI*2/48,hs=(.055-ring*.008)*reveal*(1-exit*.70);cube(Math.cos(ang)*radius,ground+.035-exit*.28,Math.sin(ang)*radius,hs,.026*reveal,hs,ring===0&&k%4===0?C.CORE:ring===2?C.CRUST:C.HOT,245*reveal*(1-exit)*(.92-ring*.16))}}
+  for(let p=0;p<38;p++){const age=t-.45-(p%5)*.012;if(age<=0)continue;const h=hash01(salt,p*59+700),ang=p*2.3999632,time=age*2,speed=.70+h*1.15,px=Math.cos(ang)*speed*time,pz=Math.sin(ang)*speed*time,py=ground+.16+(1.15+h*1.45)*time-3.10*time*time;if(py<ground-.05)continue;const hs=(.030+h*.035)*(1-exit);cube(px,py,pz,hs,hs,hs,p%4===0?C.ROCK:h>.58?C.HOT:C.LAVA_DARK,245*(1-exit)*.88)}
+ }
+ return out;
+}
+if(typeof module!=='undefined')module.exports={buildFire,FIRE_COLORS};
+
+const names=['MOLTEN FIRE WAVE','SOUL FIRE CRESCENT','BRIMSTONE METEOR'];
+const durations=[3.6,4.0,4.8];
+let variant=0,playing=true,start=performance.now(),fixed=null;
+const canvas=document.getElementById('view'),ctx=canvas.getContext('2d');
+function hex(n){return '#'+n.toString(16).padStart(6,'0')}
+function resize(){const d=Math.min(2,devicePixelRatio||1),r=canvas.getBoundingClientRect();canvas.width=r.width*d;canvas.height=r.height*d;ctx.setTransform(d,0,0,d,0,0)}
+addEventListener('resize',resize);resize();
+function project(x,y,z,w,h){const scale=Math.min(w/7.2,h/5.8);return [w*.50+(x-z)*scale*.76,h*.68+(x+z)*scale*.25-y*scale]}
+function drawCube(c,w,h){
+ const [x,y]=project(c.x,c.y,c.z,w,h),s=Math.min(w/7.2,h/5.8),hx=c.hx*s*.72,hy=c.hy*s,hz=c.hz*s*.36;
+ ctx.globalAlpha=Math.max(0,Math.min(1,c.a/255));ctx.fillStyle=hex(c.rgb);
+ ctx.beginPath();ctx.moveTo(x-hx,y-hz);ctx.lineTo(x,y-hz*1.8);ctx.lineTo(x+hx,y-hz);ctx.lineTo(x+hx,y+hy);ctx.lineTo(x,y+hy+hz);ctx.lineTo(x-hx,y+hy);ctx.closePath();ctx.fill();
+ ctx.globalAlpha=.22;ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(x-hx,y-hz);ctx.lineTo(x,y-hz*1.8);ctx.lineTo(x+hx,y-hz);ctx.lineTo(x,y);ctx.closePath();ctx.fill();ctx.globalAlpha=1;
+}
+function frame(now){
+ if(fixed===null&&playing){let elapsed=(now-start)/1000;if(elapsed>=durations[variant]){start=now;elapsed=0}document.getElementById('time').value=elapsed/durations[variant]*1000}
+ const t=fixed!==null?fixed:Number(document.getElementById('time').value)/1000;
+ const r=canvas.getBoundingClientRect(),w=r.width,h=r.height;ctx.clearRect(0,0,w,h);
+ const grd=ctx.createRadialGradient(w*.5,h*.55,10,w*.5,h*.55,w*.65);grd.addColorStop(0,'#18202a');grd.addColorStop(1,'#07090d');ctx.fillStyle=grd;ctx.fillRect(0,0,w,h);
+ ctx.strokeStyle='#28323d';ctx.lineWidth=1;for(let i=-5;i<=5;i++){let a=project(i,-.5,-5,w,h),b=project(i,-.5,5,w,h);ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.stroke();a=project(-5,-.5,i,w,h);b=project(5,-.5,i,w,h);ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.stroke()}
+ const cubes=buildFire(variant,t);cubes.sort((a,b)=>(a.x+a.z+a.y*.04)-(b.x+b.z+b.y*.04));for(const c of cubes)drawCube(c,w,h);
+ document.getElementById('readout').textContent=`${(t*durations[variant]).toFixed(2)} / ${durations[variant].toFixed(1)} s · ${cubes.length} voxels`;
+ document.getElementById('phase').textContent=t===0||t===1?'Frame vide':variant===0?(t<.28?'01 — La lave monte du sol':t<.70?'02 — La crête avance et déferle':'03 — Retour au sol et refroidissement'):variant===1?(t<.42?'01 — Le croissant spectral se dessine':t<.68?'02 — Balafrе cyan et rémanence':'03 — Les trois âmes se dispersent'):(t<.44?'01 — Chute du noyau de Brimstone':t<.72?'02 — Impact, onde et fragments':'03 — Cratère qui refroidit');
+ requestAnimationFrame(frame)
+}
+document.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>{variant=Number(b.dataset.v);fixed=null;start=performance.now();document.querySelectorAll('[data-v]').forEach(x=>x.classList.toggle('active',x===b));document.getElementById('title').textContent=names[variant]});
+document.getElementById('play').onclick=()=>{playing=!playing;document.getElementById('play').textContent=playing?'Pause':'Lecture';if(playing)start=performance.now()-Number(document.getElementById('time').value)/1000*durations[variant]*1000};
+document.getElementById('time').oninput=()=>{fixed=Number(document.getElementById('time').value)/1000;playing=false;document.getElementById('play').textContent='Lecture'};
+document.getElementById('resume').onclick=()=>{fixed=null;playing=true;start=performance.now();document.getElementById('play').textContent='Pause'};
+requestAnimationFrame(frame);
+</script></body></html>

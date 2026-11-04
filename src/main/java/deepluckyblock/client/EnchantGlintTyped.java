@@ -55,6 +55,8 @@ public final class EnchantGlintTyped {
     public static RenderType currentRenderType(String kind) {
         int rgb = EnchantAura.currentRgb();
         if (rgb == 0) { glintLog(kind, 0, "violet (aucune couleur capturée)"); return null; }
+        int gradientRgb = EnchantAura.currentGradientRgb();
+        int gradientMode = EnchantAura.currentGradientMode();
         boolean intense = EnchantAura.isCurrentIntense();
         int tier = EnchantAura.currentTier();
         boolean wornBoost = "armorEntityGlint".equals(kind) && EnchantAura.isCurrentWornArmorBoost();
@@ -64,12 +66,13 @@ public final class EnchantGlintTyped {
                 ? "N:"
                 : ((wornBoost ? ("W" + EnchantAura.currentWornSlotTag() + ":") : "")
                         + "T" + tier + ":" + (intense ? "I:" : "N:"));
-        String key = tierPrefix + Integer.toHexString(rgb) + ":" + kind;
+        String key = tierPrefix + Integer.toHexString(rgb) + ":" + Integer.toHexString(gradientRgb)
+                + ":G" + gradientMode + ":" + kind;
         if (BUILD_FAILED.contains(key)) { glintLog(kind, rgb, "violet (build déjà raté)"); return null; }
         RenderType cached = RENDER_TYPE_CACHE.get(key);
         if (cached != null) { glintLog(kind, rgb, "OK (cache)"); return cached; }
         try {
-            RenderType built = buildColoredGlint(rgb, kind, params, intense, tier, wornBoost);
+            RenderType built = buildColoredGlint(rgb, gradientRgb, gradientMode, kind, params, intense, tier, wornBoost);
             if (built == null) { BUILD_FAILED.add(key); glintLog(kind, rgb, "violet (build null)"); return null; }
             KNOWN_TYPES.add(built);
             RENDER_TYPE_CACHE.put(key, built);
@@ -130,7 +133,7 @@ public final class EnchantGlintTyped {
         }
     }
 
-    private static RenderType buildColoredGlint(int rgb, String kind, String[] params, boolean intense, int tier, boolean wornBoost) {
+    private static RenderType buildColoredGlint(int rgb, int gradientRgb, int gradientMode, String kind, String[] params, boolean intense, int tier, boolean wornBoost) {
         Class<?> renderTypeClass = RenderType.class;
         Class<?> renderStateClass = RenderStateShard.class;
         Class<?> compositeStateClass;
@@ -164,7 +167,7 @@ public final class EnchantGlintTyped {
         }
 
         try {
-            ResourceLocation texture = getOrCreateTintedTexture(rgb, params[1], kind, intense, tier, wornBoost);
+            ResourceLocation texture = getOrCreateTintedTexture(rgb, gradientRgb, gradientMode, params[1], kind, intense, tier, wornBoost);
             bgl("texture=" + texture);
             if (texture == null) return null;
 
@@ -204,7 +207,8 @@ public final class EnchantGlintTyped {
             bgl("create=" + create);
             if (create == null) return null;
             String name = "dlb_glint_" + (wornBoost ? "w2_" : "") + "t" + tier + "_" + (intense ? "intense_" : "")
-                    + Integer.toHexString(rgb) + "_" + kind.toLowerCase();
+                    + Integer.toHexString(rgb) + "_" + Integer.toHexString(gradientRgb)
+                    + "_g" + gradientMode + "_" + kind.toLowerCase();
             RenderType rt = (RenderType) create.invoke(null, name,
                     DefaultVertexFormat.POSITION_TEX, VertexFormat.Mode.QUADS,
                     256, false, false, compositeState);
@@ -335,30 +339,33 @@ public final class EnchantGlintTyped {
         return null;
     }
 
-    private static ResourceLocation getOrCreateTintedTexture(int rgb, String textureKind,
+    private static ResourceLocation getOrCreateTintedTexture(int rgb, int gradientRgb, int gradientMode, String textureKind,
                                                              String kind, boolean intense, int tier, boolean wornBoost) {
         String tierTag = (!intense && !wornBoost && tier == EnchantAura.DEFAULT_GLINT_TIER)
                 ? "N:"
                 : ((wornBoost ? ("W" + EnchantAura.currentWornSlotTag() + ":") : "")
                         + "T" + tier + ":" + (intense ? "I:" : "N:"));
-        String key = tierTag + Integer.toHexString(rgb) + ":" + textureKind;
+        String key = tierTag + Integer.toHexString(rgb) + ":" + Integer.toHexString(gradientRgb)
+                + ":G" + gradientMode + ":" + textureKind;
         ResourceLocation cached = TEXTURE_CACHE.get(key);
         if (cached != null) return cached;
         try {
             Minecraft mc = Minecraft.getInstance();
             NativeImage img = loadGlint(textureKind);
-            int tr = (rgb >> 16) & 0xFF, tg = (rgb >> 8) & 0xFF, tb = rgb & 0xFF;
             if (intense) {
                 // Fenêtre active (frappe/tir/impact) : surbooste encore d'un cran au-dessus du palier passif
                 double flashBoost = tier > EnchantAura.DEFAULT_GLINT_TIER
                         ? Math.min(0.18, (tier - EnchantAura.DEFAULT_GLINT_TIER) * 0.011)
                         : 0.0;
-                int maxChan = Math.max(1, Math.max(tr, Math.max(tg, tb)));
-                double sr = tr * 255.0 / maxChan;
-                double sg = tg * 255.0 / maxChan;
-                double sb = tb * 255.0 / maxChan;
                 for (int x = 0; x < img.getWidth(); x++) {
                     for (int y = 0; y < img.getHeight(); y++) {
+                        float gradient = gradientPosition(x, y, img.getWidth(), img.getHeight(), gradientMode);
+                        int spatial = mixGradient(rgb, gradientRgb, gradient);
+                        int tr = (spatial >> 16) & 0xFF, tg = (spatial >> 8) & 0xFF, tb = spatial & 0xFF;
+                        int maxChan = Math.max(1, Math.max(tr, Math.max(tg, tb)));
+                        double sr = tr * 255.0 / maxChan;
+                        double sg = tg * 255.0 / maxChan;
+                        double sb = tb * 255.0 / maxChan;
                         int px = img.getPixelRGBA(x, y);
                         int r = px & 0xFF;
                         int g = (px >> 8) & 0xFF;
@@ -378,11 +385,6 @@ public final class EnchantGlintTyped {
                 // enchanted_glint_entity.png est nativement beaucoup plus sombre (~0.38) qu'enchanted_glint_item.png (~0.85)
                 // et subit le blend additif au carré (SRC_COLOR, ONE). On monte uniquement le rendu PORTÉ de +2 crans nets
                 // tout en laissant le rendu item dans l'inventaire/en main strictement intact !
-                int maxChan = Math.max(1, Math.max(tr, Math.max(tg, tb)));
-                double satBlend = tier >= EnchantAura.DEFAULT_GLINT_TIER ? 0.58 : 0.30;
-                double effR = tr + (tr * 255.0 / maxChan - tr) * satBlend;
-                double effG = tg + (tg * 255.0 / maxChan - tg) * satBlend;
-                double effB = tb + (tb * 255.0 / maxChan - tb) * satBlend;
                 int tierDelta = tier - EnchantAura.DEFAULT_GLINT_TIER; // -3 .. +16
                 // T349-GLINT-UNIFORM : la montée en palier était TROP forte (1.88 + 0.045/tier, noyau
                 // jusqu'à +75) et s'appliquait identiquement à toutes les pièces : un plastron de palier
@@ -400,6 +402,14 @@ public final class EnchantGlintTyped {
 
                 for (int x = 0; x < img.getWidth(); x++) {
                     for (int y = 0; y < img.getHeight(); y++) {
+                        float gradient = gradientPosition(x, y, img.getWidth(), img.getHeight(), gradientMode);
+                        int spatial = mixGradient(rgb, gradientRgb, gradient);
+                        int tr = (spatial >> 16) & 0xFF, tg = (spatial >> 8) & 0xFF, tb = spatial & 0xFF;
+                        int maxChan = Math.max(1, Math.max(tr, Math.max(tg, tb)));
+                        double satBlend = tier >= EnchantAura.DEFAULT_GLINT_TIER ? 0.58 : 0.30;
+                        double effR = tr + (tr * 255.0 / maxChan - tr) * satBlend;
+                        double effG = tg + (tg * 255.0 / maxChan - tg) * satBlend;
+                        double effB = tb + (tb * 255.0 / maxChan - tb) * satBlend;
                         int px = img.getPixelRGBA(x, y);
                         int a = (px >> 24) & 0xFF;
                         int r = px & 0xFF;
@@ -423,6 +433,9 @@ public final class EnchantGlintTyped {
             } else if (tier == EnchantAura.DEFAULT_GLINT_TIER) {
                 for (int x = 0; x < img.getWidth(); x++) {
                     for (int y = 0; y < img.getHeight(); y++) {
+                        float gradient = gradientPosition(x, y, img.getWidth(), img.getHeight(), gradientMode);
+                        int spatial = mixGradient(rgb, gradientRgb, gradient);
+                        int tr = (spatial >> 16) & 0xFF, tg = (spatial >> 8) & 0xFF, tb = spatial & 0xFF;
                         int px = img.getPixelRGBA(x, y);
                         int a = (px >> 24) & 0xFF;
                         int r = px & 0xFF;
@@ -440,6 +453,9 @@ public final class EnchantGlintTyped {
                 double scale = 0.36 + 0.16 * tier; // 0.52, 0.68, 0.84
                 for (int x = 0; x < img.getWidth(); x++) {
                     for (int y = 0; y < img.getHeight(); y++) {
+                        float gradient = gradientPosition(x, y, img.getWidth(), img.getHeight(), gradientMode);
+                        int spatial = mixGradient(rgb, gradientRgb, gradient);
+                        int tr = (spatial >> 16) & 0xFF, tg = (spatial >> 8) & 0xFF, tb = spatial & 0xFF;
                         int px = img.getPixelRGBA(x, y);
                         int a = (px >> 24) & 0xFF;
                         int r = px & 0xFF;
@@ -456,11 +472,6 @@ public final class EnchantGlintTyped {
                 // T324-GLINT-TIERS : Paliers 5..20 (/glint +) calibrés pour le blend additif au carré (SRC_COLOR, ONE) !
                 double u = (tier - EnchantAura.DEFAULT_GLINT_TIER)
                         / (double) (EnchantAura.MAX_GLINT_TIER - EnchantAura.DEFAULT_GLINT_TIER); // 1/16 .. 16/16
-                int maxChan = Math.max(1, Math.max(tr, Math.max(tg, tb)));
-                double satBlend = Math.min(1.0, u * 1.15);
-                double effR = tr + (tr * 255.0 / maxChan - tr) * satBlend;
-                double effG = tg + (tg * 255.0 / maxChan - tg) * satBlend;
-                double effB = tb + (tb * 255.0 / maxChan - tb) * satBlend;
                 double gamma = 1.0 - 0.64 * u;                 // 0.96 -> 0.36 (élargit progressivement les ondes)
                 double floor = 0.62 * Math.pow(u, 0.92);       // 0.048 -> 0.62 (halo ambiant permanent sur toute la surface)
                 double gain  = 1.0 + 0.42 * u;                 // 1.026 -> 1.42
@@ -468,6 +479,14 @@ public final class EnchantGlintTyped {
 
                 for (int x = 0; x < img.getWidth(); x++) {
                     for (int y = 0; y < img.getHeight(); y++) {
+                        float gradient = gradientPosition(x, y, img.getWidth(), img.getHeight(), gradientMode);
+                        int spatial = mixGradient(rgb, gradientRgb, gradient);
+                        int tr = (spatial >> 16) & 0xFF, tg = (spatial >> 8) & 0xFF, tb = spatial & 0xFF;
+                        int maxChan = Math.max(1, Math.max(tr, Math.max(tg, tb)));
+                        double satBlend = Math.min(1.0, u * 1.15);
+                        double effR = tr + (tr * 255.0 / maxChan - tr) * satBlend;
+                        double effG = tg + (tg * 255.0 / maxChan - tg) * satBlend;
+                        double effB = tb + (tb * 255.0 / maxChan - tb) * satBlend;
                         int px = img.getPixelRGBA(x, y);
                         int a = (px >> 24) & 0xFF;
                         int r = px & 0xFF;
@@ -488,13 +507,34 @@ public final class EnchantGlintTyped {
             }
             ResourceLocation loc = ResourceLocation.fromNamespaceAndPath("deep_lucky_block",
                     "lucky_glint_" + (wornBoost ? "w2_" : "") + "t" + tier + "_" + (intense ? "intense_" : "")
-                            + kind.toLowerCase() + "_" + Integer.toHexString(rgb) + ".png");
+                            + kind.toLowerCase() + "_" + Integer.toHexString(rgb) + "_"
+                            + Integer.toHexString(gradientRgb) + "_g" + gradientMode + ".png");
             mc.getTextureManager().register(loc, new DynamicTexture(img));
             TEXTURE_CACHE.put(key, loc);
             return loc;
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    private static float gradientPosition(int x, int y, int width, int height, int mode) {
+        if (mode == 0) {
+            float v = y / (float) Math.max(1, height - 1);
+            return v * v * (3.0f - 2.0f * v);
+        }
+        // Roue A -> B -> A : le point 0/360 degrés possède la même couleur, donc aucune couture.
+        float angle = (float) Math.atan2(y - height * 0.5f, x - width * 0.5f);
+        float phase = (angle + (float) Math.PI) / (float) (Math.PI * 2.0);
+        float tri = phase < 0.5f ? phase * 2.0f : 2.0f - phase * 2.0f;
+        return tri * tri * (3.0f - 2.0f * tri);
+    }
+
+    private static int mixGradient(int a, int b, float u) {
+        int ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+        int br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+        return (Math.round(ar + (br - ar) * u) << 16)
+                | (Math.round(ag + (bg - ag) * u) << 8)
+                | Math.round(ab + (bb - ab) * u);
     }
 
     private static NativeImage loadGlint(String textureKind) throws Exception {
