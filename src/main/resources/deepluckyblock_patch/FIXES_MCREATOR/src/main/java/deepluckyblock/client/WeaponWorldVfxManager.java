@@ -462,9 +462,9 @@ public final class WeaponWorldVfxManager {
         // origin et le mob dans target : on conserve ce vecteur pour l'orientation, mais on déplace
         // le pivot géométrique sur le mob. Le second point devient un simple point de visée virtuel.
         if (kind == KIND_SWING_SLASH) {
-            double directionX = tx - x;
-            double directionY = ty - y;
-            double directionZ = tz - z;
+            float directionX = tx - x;
+            float directionY = ty - y;
+            float directionZ = tz - z;
             x = tx;
             y = ty;
             z = tz;
@@ -3197,108 +3197,272 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * 木 BOIS — des <b>lianes courbes</b> poussent depuis l'impact, rampent au sol puis se
-     * recourbent sur la cible jusqu'à la serrer, terminées par des épines facettées.
+     * 木 BOIS — trois signatures indépendantes : lance de Zephyr, mâchoire de racines et
+     * floraison de sève. Aucun tronc ou tourbillon générique ne gomme le titre de l'enchantement.
      */
     private static void impactWood(ImpactView v) {
-        if (v.inst().effect == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) {
-            impactWind(v);
-            return;
+        WeaponVisualEffectId fx = v.inst().effect;
+        if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) {
+            impactZephyrWindLance(v);
+        } else if (fx == WeaponVisualEffectId.THORN_MAW_ROOT) {
+            impactThornMawRoot(v);
+        } else if (fx == WeaponVisualEffectId.VERDANT_SAP_BLOOM) {
+            impactVerdantSapBloom(v);
         }
+    }
+
+    /** ZEPHYR_WIND_LANCE : une lance pneumatique traverse la cible, entourée de trois flux. */
+    private static void impactZephyrWindLance(ImpactView v) {
         float t = v.t();
         float S = v.S();
-        WeaponVisualEffectId fx = v.inst().effect;
-        boolean maw = fx == WeaponVisualEffectId.THORN_MAW_ROOT;
-        float grow = v.easeOut();
-        float squeeze = (t < 0.55f) ? 1.0f : (1.0f - 0.55f * ((t - 0.55f) / 0.45f));
-        int vines = Mth.clamp(3 + v.m().arms(), 4, 8);
+        // Les impacts transportent le vecteur cible -> attaquant : la pointe doit prendre l'inverse.
+        float dirX = -v.dirX(), dirZ = -v.dirZ();
+        float sideX = dirZ, sideZ = -dirX;
+        float thrust = Mth.clamp(t / 0.62f, 0.0f, 1.0f);
+        thrust = 1.0f - (1.0f - thrust) * (1.0f - thrust) * (1.0f - thrust);
+        float head = (-1.40f + 3.20f * thrust) * S;
+        float tail = head - (2.45f + 0.35f * v.easeOut()) * S;
 
-        // T366-VOXEL-SCULPT : tronc/racines PLEINS et noueux, torsadés sur eux-mêmes.
-        v.sculpt(SCULPT_COLUMN, (0.75f + 0.40f * grow) * squeeze, 0.88f);
+        float tailX = v.cx() + dirX * tail;
+        float tailZ = v.cz() + dirZ * tail;
+        float headX = v.cx() + dirX * head;
+        float headZ = v.cz() + dirZ * head;
+        v.line(tailX, v.cy(), tailZ, headX, v.cy(), headZ,
+                0.036f * S, v.high(), v.aRgb(), v.fadeA());
 
-        for (int i = 0; i < vines; i++) {
-            float ang = i * (float) (Math.PI * 2.0 / vines) + v.hash(i * 19) * 0.35f;
-            float rad = (0.30f + 1.40f * grow) * S * squeeze;
-            float gx = v.cx() + Mth.cos(ang) * rad;
-            float gz = v.cz() + Mth.sin(ang) * rad;
-            float height = (maw ? 0.90f : 0.60f) * (1.0f + 0.60f * v.hash(i * 23)) * S;
-            float curl = 1.0f - squeeze;
-            float tipX = gx - Mth.cos(ang) * 0.50f * curl * S;
-            float tipZ = gz - Mth.sin(ang) * 0.50f * curl * S;
-            float tipY = v.cy() - 0.44f + height;
-
-            // liane qui rampe au sol, puis se redresse : une seule COURBE continue
-            v.tendril(v.cx(), v.cy() - 0.44f, v.cz(), tipX, tipY, tipZ,
-                    (0.18f + 0.22f * v.hash(i * 7)) * S, 8, (maw ? 0.034f : 0.028f) * S,
-                    v.sRgb(), v.aRgb(), v.fadeA());
-            // épine au bout (croc pour la mâchoire, simple pointe sinon)
-            v.shard(tipX, tipY, tipZ, (maw ? 0.30f : 0.18f) * S, 0.026f * S,
-                    -Mth.cos(ang) * curl - 0.15f * Mth.cos(ang), 1.0f, -Mth.sin(ang) * curl - 0.15f * Mth.sin(ang),
-                    maw ? v.aRgb() : v.aRgb(), v.aRgb(), v.fadeA(), v.salt() + i * 9);
+        // Trois flux hélicoïdaux serrent le fût : ils dessinent une lance, pas une tornade verticale.
+        for (int arm = 0; arm < 3; arm++) {
+            for (int k = 0; k < 16; k++) {
+                float u = k / 15.0f;
+                float along = Mth.lerp(u, tail, head);
+                float ang = arm * 2.0943951f + u * 8.20f - v.age() * 0.24f;
+                float radius = (0.10f + 0.13f * (1.0f - u)) * S;
+                float lateral = Mth.cos(ang) * radius;
+                float px = v.cx() + dirX * along + sideX * lateral;
+                float pz = v.cz() + dirZ * along + sideZ * lateral;
+                float py = v.cy() + Mth.sin(ang) * radius;
+                float half = (0.026f + 0.012f * u) * S;
+                v.rot(px, py, pz, half * 1.35f, half * 0.70f, half,
+                        v.yawRad(), 0.0f, ang,
+                        v.grad(0.48f + 0.45f * u, arm * 101 + k * 13),
+                        Math.round(v.fadeA() * (0.62f + 0.30f * u)));
+            }
         }
 
-        if (fx == WeaponVisualEffectId.VERDANT_SAP_BLOOM) {
-            // FLORAISON : pétales inclinés qui s'ouvrent vers le haut, sève qui perle.
-            for (int p = 0; p < 7; p++) {
-                float ang = p * 0.897f + v.age() * 0.06f;
-                float rad = (0.18f + 0.90f * grow) * S;
-                v.rot(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.10f + 0.38f * grow * S,
-                        v.cz() + Mth.sin(ang) * rad,
-                        0.060f * S, 0.014f * S, 0.060f * S,
-                        ang, -0.55f * grow, ang * 0.5f,
-                        (p & 1) == 0 ? v.aRgb() : v.pRgb(), v.fadeA());
+        // Pointe effilée et quatre volets de pression : la silhouette reste celle d'une estoc.
+        v.shard(headX - dirX * 0.62f * S, v.cy(), headZ - dirZ * 0.62f * S,
+                0.86f * S, 0.042f * S, dirX, 0.0f, dirZ,
+                v.high(), v.aRgb(), v.fadeA(), v.salt() + 701);
+        for (int blade = 0; blade < 4; blade++) {
+            float ang = blade * 1.5707963f;
+            float lateral = Mth.cos(ang) * 0.24f * S;
+            float baseX = headX - dirX * 0.54f * S + sideX * lateral;
+            float baseZ = headZ - dirZ * 0.54f * S + sideZ * lateral;
+            float baseY = v.cy() + Mth.sin(ang) * 0.24f * S;
+            v.shard(baseX, baseY, baseZ, 0.72f * S, 0.028f * S,
+                    dirX, 0.0f, dirZ, v.pRgb(), v.aRgb(),
+                    Math.round(v.fadeA() * 0.88f), v.salt() + 733 + blade * 17);
+        }
+
+        // L'air comprimé éclate dans le plan perpendiculaire à la lance au moment de la pénétration.
+        float burst = Mth.clamp((t - 0.24f) / 0.58f, 0.0f, 1.0f);
+        if (burst > 0.0f) {
+            float radius = (0.18f + 1.25f * burst) * S;
+            for (int i = 0; i < 12; i++) {
+                float ang = i * 0.5235988f;
+                float px = v.cx() + sideX * Mth.cos(ang) * radius;
+                float pz = v.cz() + sideZ * Mth.cos(ang) * radius;
+                float py = v.cy() + Mth.sin(ang) * radius;
+                float half = (0.030f + 0.012f * (1.0f - burst)) * S;
+                v.cube(px, py, pz, half, v.grad(0.70f, i * 29),
+                        Math.round(v.fadeA() * 0.70f * (1.0f - 0.45f * burst)));
             }
-            for (int d = 0; d < 3; d++) {
-                v.drop(v.cx() + (v.hash(d * 5) - 0.50f) * 0.70f * S, v.cy() - 0.05f,
-                        v.cz() + (v.hash(d * 9) - 0.50f) * 0.70f * S,
-                        0.026f * S, v.pRgb(), v.aRgb(), v.fadeA(), d);
+        }
+
+        // Quelques feuilles sont aspirées dans le sillage, derrière la pointe.
+        for (int leaf = 0; leaf < 7; leaf++) {
+            float u = (leaf + 1) / 8.0f;
+            float along = Mth.lerp(u, tail, head - 0.45f * S);
+            float ang = leaf * 1.73f + v.age() * 0.18f;
+            float lateral = Mth.cos(ang) * (0.24f + 0.06f * leaf) * S;
+            v.rot(v.cx() + dirX * along + sideX * lateral,
+                    v.cy() + Mth.sin(ang) * 0.28f * S,
+                    v.cz() + dirZ * along + sideZ * lateral,
+                    0.052f * S, 0.010f * S, 0.032f * S,
+                    ang, 0.35f, ang * 0.7f,
+                    (leaf & 1) == 0 ? v.pRgb() : v.aRgb(),
+                    Math.round(v.fadeA() * 0.72f));
+        }
+    }
+
+    /** THORN_MAW_ROOT : les racines jaillissent, puis deux mâchoires ligneuses mordent le torse. */
+    private static void impactThornMawRoot(ImpactView v) {
+        float t = v.t();
+        float S = v.S();
+        float grow = Mth.clamp(t / 0.36f, 0.0f, 1.0f);
+        grow = 1.0f - (1.0f - grow) * (1.0f - grow);
+        float bite = Mth.clamp((t - 0.16f) / 0.52f, 0.0f, 1.0f);
+        bite = bite * bite * (3.0f - 2.0f * bite);
+        float dirX = v.dirX(), dirZ = v.dirZ();
+        float sideX = dirZ, sideZ = -dirX;
+        float rootY = v.cy() - 0.54f * S;
+
+        // Six racines rampantes ancrent réellement la mâchoire dans le sol.
+        for (int root = 0; root < 6; root++) {
+            float ang = root * 1.0471976f + v.hash(root * 31) * 0.24f;
+            float length = (0.30f + 1.35f * grow) * S * (0.84f + 0.28f * v.hash(root * 43));
+            float endX = v.cx() + Mth.cos(ang) * length;
+            float endZ = v.cz() + Mth.sin(ang) * length;
+            v.tendril(v.cx(), rootY, v.cz(), endX, rootY + 0.035f * S, endZ,
+                    (root & 1) == 0 ? 0.16f * S : -0.16f * S,
+                    8, 0.042f * S, v.deep(), v.pRgb(), Math.round(v.fadeA() * 0.90f));
+            v.shard(endX, rootY, endZ, 0.24f * S, 0.024f * S,
+                    Mth.cos(ang), 0.45f, Mth.sin(ang), v.pRgb(), v.aRgb(),
+                    Math.round(v.fadeA() * 0.72f), v.salt() + root * 37);
+        }
+
+        // Deux rangées opposées de cinq ronces crochues se referment sur le corps.
+        for (int jaw = 0; jaw < 2; jaw++) {
+            float sign = jaw == 0 ? -1.0f : 1.0f;
+            float jawDistance = (0.20f + 1.02f * (1.0f - bite)) * S;
+            float spineBottomX = v.cx() + sideX * sign * jawDistance - dirX * 0.16f * S;
+            float spineBottomZ = v.cz() + sideZ * sign * jawDistance - dirZ * 0.16f * S;
+            v.tendril(spineBottomX, rootY + 0.08f * S, spineBottomZ,
+                    spineBottomX + dirX * 0.32f * S, rootY + 1.30f * S,
+                    spineBottomZ + dirZ * 0.32f * S,
+                    sign * 0.18f * S, 10, 0.052f * S,
+                    v.deep(), v.pRgb(), v.fadeA());
+
+            for (int f = 0; f < 5; f++) {
+                float y = rootY + (0.18f + f * 0.245f) * S;
+                float rootX = v.cx() + sideX * sign * jawDistance + dirX * (f - 2) * 0.09f * S;
+                float rootZ = v.cz() + sideZ * sign * jawDistance + dirZ * (f - 2) * 0.09f * S;
+                float tipDistance = (0.075f + 0.035f * Math.abs(f - 2)) * S;
+                float tipX = v.cx() + sideX * sign * tipDistance + dirX * (f - 2) * 0.07f * S;
+                float tipZ = v.cz() + sideZ * sign * tipDistance + dirZ * (f - 2) * 0.07f * S;
+                float tipY = y + (0.13f + 0.035f * (2 - Math.abs(f - 2))) * S;
+                v.tendril(rootX, y, rootZ, tipX, tipY, tipZ,
+                        sign * (f - 2) * 0.055f * S, 7, 0.039f * S,
+                        v.sRgb(), v.pRgb(), Math.round(v.fadeA() * 0.94f));
+                v.shard(tipX, tipY, tipZ,
+                        (0.34f + 0.05f * (2 - Math.abs(f - 2))) * S, 0.030f * S,
+                        -sideX * sign, 0.18f, -sideZ * sign,
+                        v.pRgb(), v.aRgb(), v.fadeA(), v.salt() + jaw * 107 + f * 19);
+                v.shard((rootX + tipX) * 0.5f, (y + tipY) * 0.5f, (rootZ + tipZ) * 0.5f,
+                        0.22f * S, 0.020f * S, sideX * sign, 0.70f, sideZ * sign,
+                        v.sRgb(), v.aRgb(), Math.round(v.fadeA() * 0.78f),
+                        v.salt() + jaw * 149 + f * 23);
+            }
+        }
+
+        // La fermeture projette quelques copeaux, jamais une gerbe continue indépendante du titre.
+        float chips = Mth.clamp((t - 0.62f) / 0.38f, 0.0f, 1.0f);
+        if (chips > 0.0f) {
+            for (int i = 0; i < 8; i++) {
+                float ang = i * 0.7853982f + v.hash(i * 17) * 0.25f;
+                float radius = (0.16f + 0.90f * chips) * S;
+                float py = v.cy() + (0.10f + 0.85f * chips - 1.35f * chips * chips) * S;
+                v.shard(v.cx() + Mth.cos(ang) * radius, py, v.cz() + Mth.sin(ang) * radius,
+                        0.24f * S, 0.022f * S, Mth.cos(ang), 0.85f - 2.70f * chips, Mth.sin(ang),
+                        v.pRgb(), v.aRgb(), Math.round(v.fadeA() * 0.72f), v.salt() + 811 + i * 29);
             }
         }
     }
 
-    /**
-     * 風 VENT (branche BOIS) — trois rubans hélicoïdaux faits de <b>plaques inclinées</b> qui
-     * s'enroulent en montant, plus des feuilles emportées : le vent TOURNE, il ne pousse pas.
-     */
-    private static void impactWind(ImpactView v) {
+    /** VERDANT_SAP_BLOOM : écorce éclatée, pousse montante, corolle et gouttes de sève ambrée. */
+    private static void impactVerdantSapBloom(ImpactView v) {
         float t = v.t();
         float S = v.S();
-        float spin = 1.60f + 0.50f * Math.abs(v.m().spin());
 
-        // T366-VOXEL-SCULPT : trois vrilles hélicoïdales PLEINES enlacées (volume, pas de rubans).
-        v.sculpt(SCULPT_TWISTER, 1.00f + 0.12f * v.easeOut(), 0.80f);
+        // Huit éclats d'écorce suivent de vraies trajectoires balistiques autour de la pousse.
+        for (int i = 0; i < 8; i++) {
+            float u = Mth.clamp(t * 1.14f - (i & 1) * 0.035f, 0.0f, 1.0f);
+            if (u <= 0.0f) continue;
+            float h = v.hash(i * 41 + 7);
+            float ang = i * 0.7853982f + h * 0.30f;
+            float dx = Mth.cos(ang), dz = Mth.sin(ang);
+            float ease = 1.0f - (1.0f - u) * (1.0f - u);
+            float range = (1.05f + 0.65f * h) * S;
+            float radius = 0.12f * S + range * ease;
+            float lift = 1.75f + 0.45f * h;
+            float gravity = 2.65f;
+            float py = v.cy() + (-0.12f + lift * u - gravity * u * u) * S;
+            float radialVelocity = 2.0f * range * (1.0f - u);
+            float verticalVelocity = (lift - 2.0f * gravity * u) * S;
+            float norm = Mth.sqrt(radialVelocity * radialVelocity + verticalVelocity * verticalVelocity);
+            float nx = norm > 0.0001f ? dx * radialVelocity / norm : dx;
+            float ny = norm > 0.0001f ? verticalVelocity / norm : 0.0f;
+            float nz = norm > 0.0001f ? dz * radialVelocity / norm : dz;
+            v.shard(v.cx() + dx * radius, py, v.cz() + dz * radius,
+                    (0.34f + 0.20f * h) * S, 0.036f * S, nx, ny, nz,
+                    v.deep(), v.pRgb(), Math.round(v.fadeA() * (0.90f - 0.30f * u)),
+                    v.salt() + 907 + i * 31);
+        }
 
-        for (int arm = 0; arm < 3; arm++) {
-            float phase = arm * 2.094f;
-            for (int k = 0; k < 13; k++) {
-                float u = k / 13.0f;
-                float ang = phase + u * 5.2f + v.age() * spin * 0.12f;
-                float rad = (0.25f + 0.95f * u) * S * (0.65f + 0.50f * t);
-                float half = (0.038f - 0.014f * u) * S;
-                v.rot(v.cx() + Mth.cos(ang) * rad,
-                        v.cy() - 0.30f + u * 1.90f * S * (0.50f + 0.50f * v.easeOut()),
-                        v.cz() + Mth.sin(ang) * rad,
-                        half * 1.8f, half * 0.35f, half,
-                        ang + 1.5708f, 0.25f, u * 1.4f,
-                        mixRgb(v.grad(0.30f + 0.60f * u, k * 11 + arm * 5),
-                                arm == 0 ? v.pRgb() : v.sRgb(), 0.30f),
-                        Math.round(v.fadeA() * (1.0f - 0.25f * u)));
+        float shoot = Mth.clamp((t - 0.08f) / 0.52f, 0.0f, 1.0f);
+        shoot = shoot * shoot * (3.0f - 2.0f * shoot);
+        float baseY = v.cy() - 0.54f * S;
+        float topY = baseY + 1.72f * shoot * S;
+        float topX = v.cx() + 0.10f * shoot * S;
+        float topZ = v.cz() - 0.07f * shoot * S;
+        v.tendril(v.cx(), baseY, v.cz(), topX, topY, topZ,
+                0.14f * S, 11, 0.048f * S, v.deep(), v.pRgb(), v.fadeA());
+
+        // Quatre feuilles s'ouvrent successivement le long de la tige ligneuse.
+        for (int leaf = 0; leaf < 4; leaf++) {
+            float open = Mth.clamp((shoot - 0.24f - leaf * 0.10f) / 0.46f, 0.0f, 1.0f);
+            float ang = leaf * 2.3999632f + 0.35f;
+            float stemY = baseY + (0.38f + leaf * 0.23f) * shoot * S;
+            float stemX = Mth.lerp((stemY - baseY) / Math.max(0.001f, topY - baseY), v.cx(), topX);
+            float stemZ = Mth.lerp((stemY - baseY) / Math.max(0.001f, topY - baseY), v.cz(), topZ);
+            float radius = (0.08f + 0.43f * open) * S;
+            float endX = stemX + Mth.cos(ang) * radius;
+            float endZ = stemZ + Mth.sin(ang) * radius;
+            float endY = stemY + 0.13f * open * S;
+            v.tendril(stemX, stemY, stemZ, endX, endY, endZ,
+                    0.06f * S, 5, 0.024f * S, v.sRgb(), v.pRgb(),
+                    Math.round(v.fadeA() * 0.82f));
+            v.rot(endX, endY, endZ,
+                    (0.035f + 0.105f * open) * S, 0.016f * S, 0.065f * S,
+                    ang, -0.28f * open, 0.20f * (leaf & 1),
+                    v.grad(0.52f + 0.30f * open, leaf * 47),
+                    Math.round(v.fadeA() * 0.90f));
+        }
+
+        // La corolle ne s'ouvre qu'après la croissance : sept pétales d'écorce autour du cœur de sève.
+        float bloom = Mth.clamp((t - 0.38f) / 0.40f, 0.0f, 1.0f);
+        bloom = bloom * bloom * (3.0f - 2.0f * bloom);
+        for (int petal = 0; petal < 7; petal++) {
+            float ang = petal * 0.8975979f;
+            float radius = (0.06f + 0.58f * bloom) * S;
+            float px = topX + Mth.cos(ang) * radius;
+            float pz = topZ + Mth.sin(ang) * radius;
+            float py = topY + (0.02f + 0.10f * bloom) * S;
+            v.rot(px, py, pz,
+                    (0.035f + 0.14f * bloom) * S, 0.022f * S,
+                    (0.030f + 0.055f * bloom) * S,
+                    ang, -0.58f * bloom, 0.16f * Mth.sin(ang),
+                    petal % 3 == 0 ? v.aRgb() : v.grad(0.68f + 0.22f * bloom, petal * 59),
+                    Math.round(v.fadeA() * 0.94f));
+        }
+        v.cube(topX, topY + 0.07f * S, topZ, (0.055f + 0.035f * bloom) * S,
+                v.aRgb(), Math.round(v.fadeA() * bloom));
+
+        // Cinq gouttes ambrées perlent du cœur puis accélèrent vers le sol.
+        float drip = Mth.clamp((t - 0.50f) / 0.50f, 0.0f, 1.0f);
+        if (drip > 0.0f) {
+            for (int d = 0; d < 5; d++) {
+                float ang = d * 1.2566371f + 0.40f;
+                float local = Mth.clamp(drip - d * 0.055f, 0.0f, 1.0f);
+                if (local <= 0.0f) continue;
+                float radius = (0.08f + 0.20f * bloom) * S;
+                float px = topX + Mth.cos(ang) * radius;
+                float pz = topZ + Mth.sin(ang) * radius;
+                float py = topY - (0.05f + 1.10f * local * local) * S;
+                v.drop(px, py, pz, (0.024f + 0.006f * (d & 1)) * S,
+                        v.pRgb(), v.aRgb(), Math.round(v.fadeA() * (0.94f - 0.30f * local)), d + 1201);
             }
         }
-
-        // Feuilles / plumes emportées : inclinées, elles tourbillonnent sans tomber.
-        for (int l = 0; l < 8; l++) {
-            float ang = l * 0.90f + v.age() * 0.22f;
-            float rad = (0.55f + 1.25f * v.hash(l * 13)) * S;
-            v.rot(v.cx() + Mth.cos(ang) * rad, v.cy() + (v.hash(l * 7) - 0.30f) * 1.50f * S,
-                    v.cz() + Mth.sin(ang) * rad,
-                    0.046f * S, 0.010f * S, 0.046f * S,
-                    ang, Mth.sin(v.age() * 0.3f + l) * 0.9f, ang * 1.3f,
-                    (l & 1) == 0 ? v.aRgb() : v.pRgb(), v.fadeA());
-        }
-
-        v.ring(-0.44f, (0.30f + 1.20f * v.easeOut()) * S, v.aRgb(), v.aRgb(),
-                Math.round(v.fadeA() * 0.55f), PIXEL_RING_BEADS);
     }
 
     /**
