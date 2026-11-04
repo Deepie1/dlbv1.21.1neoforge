@@ -8,18 +8,19 @@ import org.joml.Vector3f;
 /**
  * Signatures Fire HD en voxels de tailles libres. Les masses utilisent de grands blocs, les lobes
  * des blocs moyens et les veines/braises de petits cubes. Adaptation originale des principes
- * publics d'IGNIS (combustible, advection, lobes, particules analytiques), sans asset payant.
+ * publics d'IGNIS et de PYROLUX Lite (advection, bruit déformé, puffs et particules analytiques).
+ * Aucun asset, shader ou addon de ces packs n'est redistribué.
  */
 public final class FireSignatureVfx {
     public static final int MOLTEN = 0;
     public static final int SOUL = 1;
     public static final int METEOR = 2;
 
-    // Croûte -> rouges -> oranges Minecraft -> veines ambre -> racine blanche.
+    // Croûte -> rouges/oranges dominants -> îlots ambre et jaune doré de la texture fournie.
     private static final int[] LAVA = {
-            0x241416, 0x3B1715, 0x5C1B14, 0x7E2114, 0xA12B12,
-            0xC23A0E, 0xDA4B09, 0xEB6208, 0xF57A09, 0xFF9510,
-            0xFFAF1D, 0xFFC83B, 0xFFDF65, 0xFFEFA0, 0xFFF6D2
+            0xA92F10, 0xBC3913, 0xC03B16, 0xC14316, 0xC7481A,
+            0xC74D19, 0xCB511C, 0xCD591E, 0xD16221, 0xD26F24,
+            0xD97529, 0xD8852D, 0xE08D34, 0xE4A53F, 0xEDCD59
     };
     private static final int[] SOUL_COLORS = {
             0x061D33, 0x07334A, 0x07506A, 0x08758B, 0x079BA8,
@@ -487,7 +488,10 @@ public final class FireSignatureVfx {
         }
     }
 
-    /** Flamme 3D épaisse et ramifiée, construite en gros/moyens/petits voxels advectés. */
+    /**
+     * Flamme vivante : bruit déformé défilant vers le haut, hauteur variable et flammèches autonomes.
+     * Réimplémentation voxel des principes de la version gratuite PYROLUX Lite, sans reprendre son code.
+     */
     private static void flame(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                               float cx, float cy, float cz, float dx, float dz,
                               float f, float y, float l, float height, float width,
@@ -495,54 +499,128 @@ public final class FireSignatureVfx {
                               int alpha, int seed) {
         if (height <= 0.003f || alpha <= 0) return;
         float jitter = hash01(seed, 33);
-        int levels = 12;
+        float time = phase;
+        float rootF = (valueNoise(time * 0.07f, jitter * 9.0f, 1.7f, seed) - 0.5f) * width * 0.34f * S;
+        float rootL = (valueNoise(time * 0.06f, jitter * 7.0f, 8.3f, seed ^ 991) - 0.5f) * width * 0.34f * S;
+        float flick = 0.86f + 0.14f * Mth.sin(time * 1.35f + jitter * 20.0f)
+                + 0.16f * (valueNoise(time * 0.42f, jitter * 10.0f, 0.0f, seed) - 0.5f);
+        float animatedHeight = height * flick;
+        int levels = 11;
         for (int k = 0; k < levels; k++) {
             float u = k / (float) (levels - 1);
-            float sway = Mth.sin(phase - u * 5.0f + jitter * 4.0f) * u;
-            float curl = Mth.cos(phase * 0.67f + u * 7.0f + seed) * u;
-            float pf = f + (windF * u * u * height + sway * width * 0.85f) * S;
-            float pl = l + (windL * u * u * height + curl * width * 0.72f) * S;
-            float py = y + u * height * S;
-            float taper = Math.max(0.075f, (float) Math.pow(1.0f - u, 0.62f));
-            float w = width * taper * S * (0.92f + 0.08f * Mth.sin(phase + u * 8.0f));
-            float hy = Math.max(height * S / levels * 0.74f, w * 0.62f);
+            // Deux champs lisses remontent à des vitesses différentes : la silhouette se scinde et
+            // se referme au lieu de se balancer comme un objet rigide.
+            float n1 = fbm(jitter * 3.1f + u * 0.55f, u * 1.50f - time * 0.24f,
+                    jitter * 7.0f + time * 0.03f, seed);
+            float n2 = fbm(jitter * 5.7f + u * 1.40f, u * 3.20f - time * 0.42f,
+                    2.7f + time * 0.06f, seed ^ 0x51F2);
+            float warpF = (n1 - 0.5f) * 1.30f * u + (n2 - 0.5f) * 0.35f * u;
+            float warpL = (n2 - 0.5f) * 1.10f * u + (n1 - 0.5f) * 0.30f * u;
+            float pf = f + rootF + (windF * u * u * animatedHeight + warpF * width) * S;
+            float pl = l + rootL + (windL * u * u * animatedHeight + warpL * width) * S;
+            float py = y + u * animatedHeight * S;
+            float profile = Math.max(0.055f, (float) Math.pow(1.0f - u, 0.80f)
+                    * (0.70f + 0.30f * smooth01(u / 0.25f)));
+            float w = width * profile * S * (0.78f + 0.38f * n1);
+            float hy = Math.max(animatedHeight * S / levels * 0.70f, w * 0.58f);
             int core = soul ? soulRamp(u, true) : fireRamp(u, true);
             int outer = soul ? soulRamp(u, false) : fireRamp(u, false);
             localBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, py, pl,
-                    w * 0.72f, hy, w * 0.78f, core, Math.round(alpha * (1.0f - u * 0.18f)));
-            if (u < 0.84f) {
-                // Quatre lobes en profondeur ; la base est réellement massive, pas une colonne fine.
+                    w * 0.78f, hy, w * 0.82f, core, Math.round(alpha * (1.0f - u * 0.25f)));
+            if (u < 0.80f) {
+                float breathe = 0.72f + 0.28f * Mth.sin(time * 1.9f + k * 0.8f + jitter * 6.0f);
                 localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        pf + w * 0.62f, py - hy * 0.18f, pl,
-                        w * 0.64f, hy * 0.88f, w * 0.70f, outer, Math.round(alpha * 0.88f));
+                        pf + w * (0.48f + 0.20f * n2), py - hy * 0.18f, pl + w * (n1 - 0.5f) * 0.35f,
+                        w * 0.65f * breathe, hy * 0.88f, w * 0.70f, outer, Math.round(alpha * 0.84f));
                 localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        pf - w * 0.55f, py - hy * 0.10f, pl + w * 0.18f,
-                        w * 0.58f, hy * 0.82f, w * 0.62f, outer, Math.round(alpha * 0.80f));
-                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        pf, py - hy * 0.20f, pl + w * 0.63f,
-                        w * 0.62f, hy * 0.85f, w * 0.60f, outer, Math.round(alpha * 0.76f));
+                        pf - w * 0.48f, py - hy * 0.12f, pl + w * (0.44f + 0.18f * n1),
+                        w * 0.58f, hy * 0.82f, w * 0.62f, outer, Math.round(alpha * 0.76f));
                 if (k < 7) {
                     localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            pf - w * 0.12f, py - hy * 0.24f, pl - w * 0.60f,
+                            pf + w * (n2 - 0.5f) * 0.4f, py - hy * 0.24f, pl - w * 0.54f,
                             w * 0.68f, hy * 0.82f, w * 0.62f,
-                            soul ? soulColor(2) : LAVA[5 + (k & 1)], Math.round(alpha * 0.72f));
+                            soul ? soulColor(2) : LAVA[5 + (k & 1)], Math.round(alpha * 0.70f));
                 }
             }
-            // Deux branches qui se détachent progressivement du corps avant de se refroidir.
-            if (k >= 4 && k <= 9 && (k & 1) == 0) {
-                float side = (seed & 1) == 0 ? 1.0f : -1.0f;
-                float branch = (u - 0.24f) * width * S * side;
-                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        pf + branch, py + hy * 0.25f, pl - branch * 0.45f,
-                        w * 0.46f, hy * 0.68f, w * 0.46f,
-                        soul ? soulColor(5) : LAVA[7 + (k & 3)], Math.round(alpha * 0.82f));
+            // Le haut se divise en deux langues dont la distance et l'existence varient avec le bruit.
+            if (u > 0.36f && n1 + n2 > 0.72f) {
+                float split = smooth01((u - 0.36f) / 0.64f);
+                float separation = width * S * split * (0.28f + 0.60f * n2);
+                float lobeW = w * (0.36f + 0.18f * n1);
+                for (int sign = -1; sign <= 1; sign += 2) {
+                    localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            pf + separation * sign, py + hy * (0.10f + 0.18f * n2),
+                            pl - separation * sign * 0.42f,
+                            lobeW, hy * 0.64f, lobeW,
+                            soul ? soulColor(4 + (k & 1)) : LAVA[6 + (k & 3)],
+                            Math.round(alpha * (0.45f + 0.35f * n2) * (1.0f - u * 0.35f)));
+                }
             }
             if (k % 3 == 0) {
-                float aura = w * 1.48f;
+                float aura = w * 1.46f;
                 localBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, py, pl,
-                        aura, hy * 1.35f, aura, core, Math.round(alpha * 0.105f * (1.0f - u * 0.45f)));
+                        aura, hy * 1.32f, aura, core, Math.round(alpha * 0.09f * (1.0f - u * 0.45f)));
             }
         }
+
+        // Flammèches : cycles fermés ascendants, taille 0.42 -> 0.08, turbulence et refroidissement.
+        for (int p = 0; p < 5; p++) {
+            float cycle = fract(time * 0.13f + p * 0.217f + jitter);
+            float envelope = smooth01(cycle / 0.12f) * (1.0f - smooth01((cycle - 0.58f) / 0.42f));
+            if (envelope <= 0.0f) continue;
+            float h = hash01(seed, p * 47 + 400);
+            float turbulenceF = (valueNoise(h * 9.0f, cycle * 2.1f - time * 0.16f, 1.3f, seed + p) - 0.5f)
+                    * width * 2.0f * cycle;
+            float turbulenceL = (valueNoise(h * 7.0f, cycle * 1.8f - time * 0.13f, 8.1f, seed ^ (p * 997)) - 0.5f)
+                    * width * 1.7f * cycle;
+            float pf = f + rootF + (windF * animatedHeight * cycle * 0.55f + turbulenceF) * S;
+            float pl = l + rootL + (windL * animatedHeight * cycle * 0.55f + turbulenceL) * S;
+            float py = y + animatedHeight * S * (0.18f + cycle * 1.15f);
+            float size = width * S * (0.42f - 0.34f * cycle) * (0.78f + 0.42f * h);
+            float heat = 0.18f + cycle * 0.78f;
+            int rgb = soul ? soulRamp(heat, false) : fireRamp(heat, false);
+            localBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, py, pl,
+                    size, size * (1.10f + 0.35f * (1.0f - cycle)), size,
+                    rgb, Math.round(alpha * envelope * 0.64f));
+            localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                    pf - size * 0.20f, py + size * 0.25f, pl + size * 0.16f,
+                    size * 0.46f, size * 0.62f, size * 0.46f,
+                    soul ? soulRamp(heat, true) : fireRamp(heat, true),
+                    Math.round(alpha * envelope * 0.58f));
+        }
+    }
+
+    private static float fract(float value) {
+        return value - Mth.floor(value);
+    }
+
+    private static float fbm(float x, float y, float z, int seed) {
+        return valueNoise(x, y, z, seed) * 0.6667f
+                + valueNoise(x * 2.07f + 17.1f, y * 2.07f + 5.3f, z * 2.07f + 11.7f,
+                seed ^ 0x2F6B) * 0.3333f;
+    }
+
+    /** Value noise 3D lisse, indépendant du shader Godot mais fondé sur le même principe public. */
+    private static float valueNoise(float x, float y, float z, int seed) {
+        int xi = Mth.floor(x), yi = Mth.floor(y), zi = Mth.floor(z);
+        float tx = smooth01(x - xi), ty = smooth01(y - yi), tz = smooth01(z - zi);
+        float n000 = lattice(seed, xi, yi, zi);
+        float n100 = lattice(seed, xi + 1, yi, zi);
+        float n010 = lattice(seed, xi, yi + 1, zi);
+        float n110 = lattice(seed, xi + 1, yi + 1, zi);
+        float n001 = lattice(seed, xi, yi, zi + 1);
+        float n101 = lattice(seed, xi + 1, yi, zi + 1);
+        float n011 = lattice(seed, xi, yi + 1, zi + 1);
+        float n111 = lattice(seed, xi + 1, yi + 1, zi + 1);
+        float nx00 = Mth.lerp(tx, n000, n100);
+        float nx10 = Mth.lerp(tx, n010, n110);
+        float nx01 = Mth.lerp(tx, n001, n101);
+        float nx11 = Mth.lerp(tx, n011, n111);
+        return Mth.lerp(tz, Mth.lerp(ty, nx00, nx10), Mth.lerp(ty, nx01, nx11));
+    }
+
+    private static float lattice(int seed, int x, int y, int z) {
+        return hash01(seed ^ x * 73856093 ^ y * 19349663 ^ z * 83492791, 0);
     }
 
     private static int lavaRgb(float f, float l, float u, float time, int salt) {
@@ -646,9 +724,5 @@ public final class FireSignatureVfx {
         float yaw = Mth.atan2(-dz, dx);
         WeaponWorldVfxManager.emitVoxelBoxRotated(vc, mat, tmp, x, y, z, hf, hy, hl,
                 yaw, 0.0f, 0.0f, rgb, alpha);
-    }
-
-    private static int nine() {
-        return 9;
     }
 }

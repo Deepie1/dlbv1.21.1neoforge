@@ -22,7 +22,7 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
 <aside>
   <div class="eyebrow">Deep Lucky Block · Fire VFX</div>
   <h1>FIRE</h1><h2>Signatures HD</h2>
-  <p class="intro">Trois sculptures animées en voxels de toutes tailles : masse de lave texturée, flammes volumétriques ramifiées, braises balistiques et fumée.</p>
+  <p class="intro">Trois sculptures animées en voxels de toutes tailles : masse de lave texturée, flammes au bruit ascendant, flammèches autonomes, braises balistiques et fumée.</p>
   <div class="rule"></div>
   <span class="label">Signature de l’enchantement</span>
   <div class="variants" role="group" aria-label="Variante Fire">
@@ -35,9 +35,9 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
   <input class="timeline" id="timeline" type="range" min="0" max="1000" value="0" aria-label="Progression de l’animation">
   <div class="phase" id="phase">01 — La lave prend naissance</div>
   <div class="stats"><div class="stat"><b id="baseCount">0</b><span>Voxels dans la frame</span></div><div class="stat"><b>15</b><span>Teintes de lave</span></div></div>
-  <div class="legend"><span style="--c:#5c1b14">Croûte</span><span style="--c:#f57a09">Lave</span><span style="--c:#ffdf65">Racine chaude</span></div>
+  <div class="legend"><span style="--c:#bc3913">Croûte</span><span style="--c:#d97529">Lave</span><span style="--c:#edcd59">Îlot doré</span></div>
   <a class="download" href="./DLB_Wood_Three_Signatures_src.zip" download>Télécharger les sources Java · ZIP</a>
-  <p class="refs">Modèles procéduraux originaux après étude des mécanismes publics d’<a href="https://godboyhappy.itch.io/ignis-hd-fire-spell-vfx" target="_blank" rel="noreferrer">IGNIS</a> et des zones de couleur de la lave Minecraft. Aucun asset externe ni code payant n’est intégré.</p>
+  <p class="refs">Modèles procéduraux originaux après étude des mécanismes d’<a href="https://godboyhappy.itch.io/ignis-hd-fire-spell-vfx" target="_blank" rel="noreferrer">IGNIS</a> et de <a href="https://gennai.itch.io/pyrolux-fire-explosion-vfx" target="_blank" rel="noreferrer">PYROLUX Lite</a>. Palette échantillonnée sur la texture de lave fournie. Aucun addon, shader ou asset externe n’est intégré.</p>
 </aside>
 <main>
   <canvas id="scene" aria-label="Signatures Fire animées en voxels. Glisser pour tourner, molette pour zoomer." tabindex="0"></canvas>
@@ -46,7 +46,8 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
   <div class="variant-title"><b id="variantName">Molten Fire Wave</b><span id="variantSub">Lave · roulement · gravité</span></div>
 </main>
 <script>'use strict';
-const LAVA=[0x241416,0x3B1715,0x5C1B14,0x7E2114,0xA12B12,0xC23A0E,0xDA4B09,0xEB6208,0xF57A09,0xFF9510,0xFFAF1D,0xFFC83B,0xFFDF65,0xFFEFA0,0xFFF6D2];
+(() => {
+const LAVA=[0xA92F10,0xBC3913,0xC03B16,0xC14316,0xC7481A,0xC74D19,0xCB511C,0xCD591E,0xD16221,0xD26F24,0xD97529,0xD8852D,0xE08D34,0xE4A53F,0xEDCD59];
 const SOUL_COLORS=[0x061D33,0x07334A,0x07506A,0x08758B,0x079BA8,0x12BCC2,0x2ADBD4,0x62EDDF,0x9BFAE9,0xD7FFF5,0xF1FFFF];
 const ROCK=0x211C20,ROCK_RED=0x4A2522,ROCK_HOT=0x843622,SMOKE=0x342D31,SMOKE_LIGHT=0x554449;
 const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
@@ -63,14 +64,18 @@ function buildFire(v,t,salt=42){const out=[];if(t<=0||t>=1)return out;
  const waveTravel=t=>-1.20+1.80*smooth((t-.055)/.55),collapse=t=>smooth((t-.69)/.26);
  const waveFrontLocal=(t,u,lane=0)=>{const curl=smooth((t-.13)/.32),tornLip=.12*Math.sin(lane*1.37+t*3)*u*u;return-.58+.58*u+.82*curl*Math.pow(u,3.2)+tornLip};
  const waveHeightLocal=(t,u,noise)=>{const birth=smooth((t-.015-u*.055)/.13),height=1.72*noise*birth*(1-.78*collapse(t));return Math.sin(u*2.35)*height-collapse(t)*.34};
+ const fract=value=>value-Math.floor(value),lattice=(seed,x,y,z)=>hash01(seed^Math.imul(x,73856093)^Math.imul(y,19349663)^Math.imul(z,83492791),0);
+ const valueNoise=(x,y,z,seed)=>{const xi=Math.floor(x),yi=Math.floor(y),zi=Math.floor(z),tx=smooth(x-xi),ty=smooth(y-yi),tz=smooth(z-zi),n000=lattice(seed,xi,yi,zi),n100=lattice(seed,xi+1,yi,zi),n010=lattice(seed,xi,yi+1,zi),n110=lattice(seed,xi+1,yi+1,zi),n001=lattice(seed,xi,yi,zi+1),n101=lattice(seed,xi+1,yi,zi+1),n011=lattice(seed,xi,yi+1,zi+1),n111=lattice(seed,xi+1,yi+1,zi+1),nx00=lerp(n000,n100,tx),nx10=lerp(n010,n110,tx),nx01=lerp(n001,n101,tx),nx11=lerp(n011,n111,tx);return lerp(lerp(nx00,nx10,ty),lerp(nx01,nx11,ty),tz)};
+ const fbm=(x,y,z,seed)=>valueNoise(x,y,z,seed)*.6667+valueNoise(x*2.07+17.1,y*2.07+5.3,z*2.07+11.7,seed^0x2F6B)*.3333;
  const flame=(f,y,l,height,width,windF,windL,phase,soul,alpha,seed)=>{
-  if(height<=.003||alpha<=0)return;const jitter=hash01(seed,33),levels=12;
-  for(let k=0;k<levels;k++){const u=k/(levels-1),sway=Math.sin(phase-u*5+jitter*4)*u,curl=Math.cos(phase*.67+u*7+seed)*u,pf=f+windF*u*u*height+sway*width*.85,pl=l+windL*u*u*height+curl*width*.72,py=y+u*height,taper=Math.max(.075,Math.pow(1-u,.62)),w=width*taper*(.92+.08*Math.sin(phase+u*8)),hy=Math.max(height/levels*.74,w*.62),core=soul?soulRamp(u,true):fireRamp(u,true),outer=soul?soulRamp(u,false):fireRamp(u,false);
-   box(pf,py,pl,w*.72,hy,w*.78,core,alpha*(1-u*.18));
-   if(u<.84){box(pf+w*.62,py-hy*.18,pl,w*.64,hy*.88,w*.70,outer,alpha*.88);box(pf-w*.55,py-hy*.10,pl+w*.18,w*.58,hy*.82,w*.62,outer,alpha*.80);box(pf,py-hy*.20,pl+w*.63,w*.62,hy*.85,w*.60,outer,alpha*.76);if(k<7)box(pf-w*.12,py-hy*.24,pl-w*.60,w*.68,hy*.82,w*.62,soul?soulColor(2):LAVA[5+(k&1)],alpha*.72)}
-   if(k>=4&&k<=9&&(k&1)===0){const side=(seed&1)===0?1:-1,branch=(u-.24)*width*side;box(pf+branch,py+hy*.25,pl-branch*.45,w*.46,hy*.68,w*.46,soul?soulColor(5):LAVA[7+(k&3)],alpha*.82)}
-   if(k%3===0){const aura=w*1.48;box(pf,py,pl,aura,hy*1.35,aura,core,alpha*.105*(1-u*.45))}
+  if(height<=.003||alpha<=0)return;const jitter=hash01(seed,33),time=phase,rootF=(valueNoise(time*.07,jitter*9,1.7,seed)-.5)*width*.34,rootL=(valueNoise(time*.06,jitter*7,8.3,seed^991)-.5)*width*.34,flick=.86+.14*Math.sin(time*1.35+jitter*20)+.16*(valueNoise(time*.42,jitter*10,0,seed)-.5),animatedHeight=height*flick,levels=11;
+  for(let k=0;k<levels;k++){const u=k/(levels-1),n1=fbm(jitter*3.1+u*.55,u*1.50-time*.24,jitter*7+time*.03,seed),n2=fbm(jitter*5.7+u*1.40,u*3.20-time*.42,2.7+time*.06,seed^0x51F2),warpF=(n1-.5)*1.30*u+(n2-.5)*.35*u,warpL=(n2-.5)*1.10*u+(n1-.5)*.30*u,pf=f+rootF+windF*u*u*animatedHeight+warpF*width,pl=l+rootL+windL*u*u*animatedHeight+warpL*width,py=y+u*animatedHeight,profile=Math.max(.055,Math.pow(1-u,.80)*(.70+.30*smooth(u/.25))),w=width*profile*(.78+.38*n1),hy=Math.max(animatedHeight/levels*.70,w*.58),core=soul?soulRamp(u,true):fireRamp(u,true),outer=soul?soulRamp(u,false):fireRamp(u,false);
+   box(pf,py,pl,w*.78,hy,w*.82,core,alpha*(1-u*.25));
+   if(u<.80){const breathe=.72+.28*Math.sin(time*1.9+k*.8+jitter*6);box(pf+w*(.48+.20*n2),py-hy*.18,pl+w*(n1-.5)*.35,w*.65*breathe,hy*.88,w*.70,outer,alpha*.84);box(pf-w*.48,py-hy*.12,pl+w*(.44+.18*n1),w*.58,hy*.82,w*.62,outer,alpha*.76);if(k<7)box(pf+w*(n2-.5)*.4,py-hy*.24,pl-w*.54,w*.68,hy*.82,w*.62,soul?soulColor(2):LAVA[5+(k&1)],alpha*.70)}
+   if(u>.36&&n1+n2>.72){const split=smooth((u-.36)/.64),separation=width*split*(.28+.60*n2),lobeW=w*(.36+.18*n1);for(let sign=-1;sign<=1;sign+=2)box(pf+separation*sign,py+hy*(.10+.18*n2),pl-separation*sign*.42,lobeW,hy*.64,lobeW,soul?soulColor(4+(k&1)):LAVA[6+(k&3)],alpha*(.45+.35*n2)*(1-u*.35))}
+   if(k%3===0){const aura=w*1.46;box(pf,py,pl,aura,hy*1.32,aura,core,alpha*.09*(1-u*.45))}
   }
+  for(let p=0;p<5;p++){const cycle=fract(time*.13+p*.217+jitter),envelope=smooth(cycle/.12)*(1-smooth((cycle-.58)/.42));if(envelope<=0)continue;const h=hash01(seed,p*47+400),turbulenceF=(valueNoise(h*9,cycle*2.1-time*.16,1.3,seed+p)-.5)*width*2*cycle,turbulenceL=(valueNoise(h*7,cycle*1.8-time*.13,8.1,seed^(p*997))-.5)*width*1.7*cycle,pf=f+rootF+windF*animatedHeight*cycle*.55+turbulenceF,pl=l+rootL+windL*animatedHeight*cycle*.55+turbulenceL,py=y+animatedHeight*(.18+cycle*1.15),size=width*(.42-.34*cycle)*(.78+.42*h),heat=.18+cycle*.78,rgb=soul?soulRamp(heat,false):fireRamp(heat,false);box(pf,py,pl,size,size*(1.10+.35*(1-cycle)),size,rgb,alpha*envelope*.64);box(pf-size*.20,py+size*.25,pl+size*.16,size*.46,size*.62,size*.46,soul?soulRamp(heat,true):fireRamp(heat,true),alpha*envelope*.58)}
  };
  const groundPatch=(f,ground,l,reveal,height,withFlame,soul,alpha,seed,time)=>{
   const h=hash01(seed,17),size=(.135+.050*h)*reveal,a=alpha*reveal;box(f,ground+.025,l,size*1.22,.026*reveal,size,soul?soulColor(1):LAVA[(seed&3)+1],a*.88);box(f+size*.15,ground+.051,l-size*.12,size*.76,.018*reveal,size*.68,soul?soulColor(5):LAVA[6+(seed&3)],a*.86);box(f-size*.30,ground+.070,l+size*.16,size*.16,.012*reveal,size*.58,soul?soulColor(8):LAVA[12],a*.90);box(f+size*.35,ground+.071,l-size*.22,size*.34,.013*reveal,size*.14,soul?soulColor(3):LAVA[2],a*.84);if(withFlame)flame(f,ground+.07,l,height*reveal,.060+.025*h,.20,(h-.5)*.35,time*8+h*6.28,soul,a,seed)
@@ -114,8 +119,6 @@ function buildFire(v,t,salt=42){const out=[];if(t<=0||t>=1)return out;
 }
 if(typeof module!=='undefined')module.exports={buildFire,LAVA,SOUL_COLORS};
 
-(()=>{
-'use strict';
 const NAMES=['Molten Fire Wave','Soul Fire Crescent','Brimstone Meteor'];
 const SUBS=['Lave · roulement · gravité','Tresse · croissant · braises d’âme','Vitesse · explosion · cratère'];
 const DURATIONS=[5.6,5.6,6.4];
