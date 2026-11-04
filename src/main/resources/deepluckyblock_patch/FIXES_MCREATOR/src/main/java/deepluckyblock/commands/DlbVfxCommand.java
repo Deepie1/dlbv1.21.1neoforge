@@ -614,7 +614,7 @@ public final class DlbVfxCommand {
         DummyTestState st = new DummyTestState();
         st.dummy = dummy;
         st.attackerOrigin = player.position().add(0.0, player.getBbHeight() * 0.62, 0.0);
-        st.targetCenter = dummy.position().add(0.0, dummy.getBbHeight() * 0.55, 0.0);
+        st.targetCenter = dummy.position().add(0.0, dummy.getBbHeight() * 0.50, 0.0);
         st.impactScale = WeaponVfxServerListener.debugBigMeleeScale(dummy);
         DUMMY_TESTS.put(player.getUUID(), st);
 
@@ -642,6 +642,9 @@ public final class DlbVfxCommand {
                 continue;
             }
 
+            // Le centre suit la position réelle du dummy (gravité comprise) et reprend exactement
+            // la hauteur 0.50 utilisée par les impacts de mêlée du pipeline de combat.
+            st.targetCenter = st.dummy.position().add(0.0, st.dummy.getBbHeight() * 0.50, 0.0);
             WeaponVisualEffectId fx = WeaponVisualEffectId.byId(ALL_IDS[st.cursor]);
             if (fx == null) {
                 it.remove();

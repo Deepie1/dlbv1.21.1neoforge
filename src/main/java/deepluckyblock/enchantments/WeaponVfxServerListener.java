@@ -627,9 +627,16 @@ public final class WeaponVfxServerListener {
                     (float) to.x, 0.0f, 0.0f, 0, scale);
             return;
         }
-        broadcastNear(sl, (float) to.x, (float) to.y, (float) to.z, fx.id, kind, lvl,
-                (float) from.x, (float) from.y, (float) from.z,
-                (float) to.x, (float) to.y, (float) to.z, 0, scale);
+        // Mêmes conventions que le combat réel : un impact a son ORIGINE sur la cible et sa
+        // target sur l'attaquant ; un slash part de l'attaquant et regarde la cible. L'ancien
+        // ordre from/to plaçait tous les impacts de démonstration sur le joueur.
+        boolean impact = kind == KIND_IMPACT;
+        Vec3 origin = impact ? to : from;
+        Vec3 target = impact ? from : to;
+        Vec3 reference = kind == KIND_SWING_SLASH ? from : to;
+        broadcastNear(sl, (float) reference.x, (float) reference.y, (float) reference.z, fx.id, kind, lvl,
+                (float) origin.x, (float) origin.y, (float) origin.z,
+                (float) target.x, (float) target.y, (float) target.z, 0, scale);
     }
 
     /** T351 : joue un accent discret précis (test via {@code /dlbvfx subtle}). */

@@ -1532,7 +1532,9 @@ public final class WeaponWorldVfxManager {
                                                VfxInstance inst, float t, float radius,
                                                int coreRgb, int trailRgb, int accentRgb, int alpha) {
         if (alpha <= 8 || radius <= 0.05f) return;
-        float S = Mth.clamp(inst.sizeScale, 0.55f, 2.60f);
+        // Le pivot global de putPosColor applique déjà inst.sizeScale à tous les sommets.
+        // Ne pas multiplier une seconde fois les accents du slash.
+        float S = 1.0f;
         int salt = (int) (inst.seed & 0x7FFFFFFFL) + inst.age * 53;
         float yawRad = -inst.yawDeg * Mth.DEG_TO_RAD;
         float dirX = Mth.sin(yawRad);
@@ -2481,9 +2483,13 @@ public final class WeaponWorldVfxManager {
                               int pRgb, int sRgb, int aRgb,
                               WeaponVfxMotion.Profile m, int salt, int fadeA) {
 
-        /** Échelle de la grosse animation (taille du mob touché, T359). */
+        /**
+         * Géométrie de base non scalée. {@link #putPosColor} applique inst.sizeScale une seule
+         * fois autour du centre du mob, aux positions ET aux dimensions des voxels. Remettre
+         * inst.sizeScale ici produisait une échelle quadratique et déréglait toutes les animations.
+         */
         float S() {
-            return Mth.clamp(inst.sizeScale, 0.55f, 2.60f);
+            return 1.0f;
         }
 
         int age() {
