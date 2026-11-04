@@ -1140,11 +1140,22 @@ public final class WeaponWorldVfxManager {
             TRACKED_PROJECTILES.clear();
         }
         DeepEnchant.rememberClientAccess(level.registryAccess());
+        FireSignatureVfx.beginTerrainTick(level);
 
         for (Iterator<VfxInstance> it = ACTIVE.iterator(); it.hasNext(); ) {
             VfxInstance inst = it.next();
             inst.age++;
-            if (inst.age >= inst.maxAge) it.remove();
+            if (inst.age >= inst.maxAge) {
+                it.remove();
+                continue;
+            }
+            if (inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE
+                    || inst.effect == WeaponVisualEffectId.SOUL_FIRE_CRESCENT
+                    || inst.effect == WeaponVisualEffectId.BRIMSTONE_METEOR) {
+                float fireDx = Mth.sin(-inst.yawDeg * Mth.DEG_TO_RAD);
+                float fireDz = Mth.cos(-inst.yawDeg * Mth.DEG_TO_RAD);
+                FireSignatureVfx.prepareTerrain(level, inst.x, inst.y, inst.z, fireDx, fireDz, inst.sizeScale);
+            }
         }
 
         for (Iterator<FloatingPixel> it = PIXEL_PARTICLES.iterator(); it.hasNext(); ) {
@@ -2659,8 +2670,10 @@ public final class WeaponWorldVfxManager {
             // Graine stable pendant toute la chorégraphie : la direction céleste du météore ne
             // doit pas changer à chaque tick, contrairement au sel animé des impacts génériques.
             int fireSalt = (int) (v.inst().seed & 0x7FFFFFFFL);
-            FireSignatureVfx.render(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), v.t(),
-                    v.dirX(), v.dirZ(), signature, v.S(), v.fadeA(), fireSalt);
+            FireSignatureVfx.render(Minecraft.getInstance().level,
+                    v.inst().x, v.inst().y, v.inst().z,
+                    v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), v.t(),
+                    v.dirX(), v.dirZ(), signature, v.S(), v.inst().sizeScale, v.fadeA(), fireSalt);
             return;
         }
         if (v.inst().effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE) {

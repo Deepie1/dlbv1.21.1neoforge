@@ -1,7 +1,15 @@
 package deepluckyblock.client;
 
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.phys.shapes.VoxelShape;
+
+import java.util.HashMap;
+import java.util.Map;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
@@ -32,39 +40,133 @@ public final class FireSignatureVfx {
     private static final int SMOKE = 0x342D31;
     private static final int SMOKE_LIGHT = 0x554449;
 
+    private static final int TERRAIN_CACHE_LIMIT = 768;
+    private static final Map<Long, Float> TERRAIN_CACHE = new HashMap<>(TERRAIN_CACHE_LIMIT);
+    private static ClientLevel terrainLevel;
+
     private FireSignatureVfx() { }
 
-    public static void render(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+    /** Invalide les hauteurs de la frame précédente : les blocs modifiés sont pris en compte. */
+    public static void beginTerrainTick(ClientLevel level) {
+        if (level == null) return;
+        ensureTerrainLevel(level);
+        TERRAIN_CACHE.clear();
+    }
+
+    /** Précalcule les colonnes utiles au tick, hors de la passe de rendu. */
+    public static void prepareTerrain(ClientLevel level, double worldX, double worldY, double worldZ,
+                                      float dx, float dz, float worldScale) {
+        if (level == null) return;
+        ensureTerrainLevel(level);
+        worldScale = Math.max(0.05f, worldScale);
+        boolean openSky = level.canSeeSky(BlockPos.containing(worldX, worldY + 1.0, worldZ));
+        for (int fi = -4; fi <= 8; fi++) {
+            float f = fi * 0.5f;
+            for (int li = -3; li <= 3; li++) {
+                float l = li * 0.5f;
+                sampleGround(level, worldX + (dx * f - dz * l) * worldScale, worldY,
+                        worldZ + (dz * f + dx * l) * worldScale, openSky);
+            }
+        }
+    }
+
+    private static void ensureTerrainLevel(ClientLevel level) {
+        if (terrainLevel == level) return;
+        terrainLevel = level;
+        TERRAIN_CACHE.clear();
+    }
+
+    /** Hauteur absolue de la surface réelle, avec repli local sous les grottes et structures. */
+    private static float sampleGround(ClientLevel level, double worldX, double originY, double worldZ,
+                                      boolean openSky) {
+        ensureTerrainLevel(level);
+        int x = Mth.floor(worldX);
+        int z = Mth.floor(worldZ);
+        int reference = ((Mth.floor(originY) + 128) << 1) | (openSky ? 1 : 0);
+        long key = ((x & 0x1FFFFFFL) << 39) | ((z & 0x1FFFFFFL) << 14) | (reference & 0x3FFFL);
+        Float cached = TERRAIN_CACHE.get(key);
+        if (cached != null) return cached;
+
+        float fallback = (float) (originY - 0.48);
+        float surface;
+        if (openSky) {
+            // Heightmap Minecraft actualisée : suit collines, escaliers, trous et falaises.
+            surface = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+        } else {
+            // Sous un plafond, la heightmap serait le toit : on cherche le vrai plancher local.
+            surface = fallback;
+            BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+            int start = Mth.floor(originY + 1.0);
+            int end = Mth.floor(originY - 8.0);
+            for (int y = start; y >= end; y--) {
+                pos.set(x, y, z);
+                VoxelShape shape = level.getBlockState(pos).getCollisionShape(level, pos);
+                if (shape.isEmpty()) continue;
+                float top = y + (float) shape.max(Direction.Axis.Y);
+                if (top <= originY + 0.75) {
+                    surface = top;
+                    break;
+                }
+            }
+        }
+        if (TERRAIN_CACHE.size() >= TERRAIN_CACHE_LIMIT) TERRAIN_CACHE.clear();
+        TERRAIN_CACHE.put(key, surface);
+        return surface;
+    }
+
+    /** Convertit la hauteur monde en coordonnées caméra utilisées par le moteur de voxels. */
+    private record TerrainView(ClientLevel level, double worldX, double worldY, double worldZ,
+                               float dx, float dz, float baseGround, float S, float worldScale, boolean openSky) {
+        float at(float f, float l) {
+            if (level == null) return baseGround;
+            float worldGround = sampleGround(level,
+                    worldX + (dx * f - dz * l) * worldScale, worldY,
+                    worldZ + (dz * f + dx * l) * worldScale, openSky);
+            float fallbackWorldGround = (float) (worldY - 0.48 * S * worldScale);
+            return baseGround + (worldGround - fallbackWorldGround) / worldScale;
+        }
+    }
+
+    public static void render(ClientLevel level, double worldX, double worldY, double worldZ,
+                              VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                               float cx, float cy, float cz, float t,
-                              float dirX, float dirZ, int variant, float scale,
+                              float dirX, float dirZ, int variant, float scale, float worldScale,
                               int alpha, int salt) {
         if (t <= 0.0f || t >= 1.0f) return;
-        if (variant == MOLTEN) renderMolten(vc, mat, tmp, cx, cy, cz, t, dirX, dirZ, scale, alpha, salt);
-        else if (variant == SOUL) renderSoul(vc, mat, tmp, cx, cy, cz, t, dirX, dirZ, scale, alpha, salt);
-        else renderMeteor(vc, mat, tmp, cx, cy, cz, t, dirX, dirZ, scale, alpha, salt);
+        boolean openSky = level != null
+                && level.canSeeSky(BlockPos.containing(worldX, worldY + 1.0, worldZ));
+        TerrainView terrain = new TerrainView(level, worldX, worldY, worldZ, dirX, dirZ,
+                cy - 0.48f * scale, scale, Math.max(0.05f, worldScale), openSky);
+        if (variant == MOLTEN) renderMolten(vc, mat, tmp, cx, cy, cz, t,
+                dirX, dirZ, scale, alpha, salt, terrain);
+        else if (variant == SOUL) renderSoul(vc, mat, tmp, cx, cy, cz, t,
+                dirX, dirZ, scale, alpha, salt, terrain);
+        else renderMeteor(vc, mat, tmp, cx, cy, cz, t,
+                dirX, dirZ, scale, alpha, salt, terrain);
     }
 
     /** Mini-tsunami : cubes soudés, crête advectée, déferlement puis dispersion sans chute globale. */
     private static void renderMolten(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                      float cx, float cy, float cz, float t,
-                                     float dx, float dz, float S, int alpha, int salt) {
+                                     float dx, float dz, float S, int alpha, int salt, TerrainView terrain) {
         float exit = smooth01((t - 0.86f) / 0.14f);
         float env = 1.0f - exit;
-        float ground = cy - 0.48f * S;
+        float ground = terrain.at(0.0f, 0.0f);
         float breakup = waveBreakup(t);
 
         // Volume plein : chaque maille est un CUBE (hf=hy=hl), avec chevauchement sur les trois axes.
         // Les petites variations de taille ne créent pas de trous dans le mur de lave.
-        for (int lane = -8; lane <= 8; lane++) {
+        for (int lane = -6; lane <= 6; lane++) {
             float lateral = waveLateral(t, lane) * S;
             float noise = waveLaneNoise(t, lane, salt);
-            for (int k = 0; k < 21; k++) {
-                float u = k / 20.0f;
+            for (int k = 0; k < 15; k++) {
+                float u = k / 14.0f;
                 float front = waveFrontAt(t, u, lane) * S;
                 float thickness = (0.24f + 0.50f * Mth.sin(u * (float) Math.PI)
                         + 0.18f * (1.0f - u)) * (1.0f + 0.35f * breakup) * S;
-                float y = ground + waveHeightLocal(t, u, noise) * S;
-                int layers = u > 0.82f ? 4 : 8;
+                float columnGround = terrain.at(front, lateral);
+                float y = columnGround + waveHeightLocal(t, u, noise) * S;
+                int layers = u > 0.82f ? 3 : 5;
                 float previousF = 0.0f;
                 float previousCubeY = 0.0f;
                 float previousCube = 0.0f;
@@ -77,12 +179,13 @@ public final class FireSignatureVfx {
                     // Courbe portante du dos : le front garde toute sa hauteur, l'arrière retombe
                     // à 18 % suivant un cosinus. La ligne supérieure n'est donc plus horizontale.
                     float depthHeight = 0.18f + 0.82f * Mth.cos(v * (float) Math.PI * 0.5f);
-                    float aboveBase = Math.max(0.0f, y - ground - 0.10f * S);
+                    float aboveBase = Math.max(0.0f, y - columnGround - 0.10f * S);
                     float backUndulation = 0.045f * Mth.sin(t * 6.0f - v * 2.0f + lane * 0.3f)
                             * Mth.sin(v * (float) Math.PI) * S;
-                    float cubeY = y - aboveBase * (1.0f - depthHeight) + backUndulation;
+                    float cubeY = y + terrain.at(f, lateral) - columnGround
+                        - aboveBase * (1.0f - depthHeight) + backUndulation;
                     float h = hash01(salt, lane * 91 + k * 17 + d * 41 + 40);
-                    float cube = (u > 0.82f ? 0.085f + 0.012f * h : 0.105f + 0.025f * h) * S;
+                    float cube = (u > 0.82f ? 0.135f + 0.025f * h : 0.170f + 0.040f * h) * S;
                     int rgb = lavaRgb(f / S, lateral / S, u, t, salt + lane * 29 + k * 7 + d * 13);
                     // Un cube de jonction adapte sa taille aux fortes pentes : la courbe reste pleine.
                     if (d > 0 && Math.abs(cubeY - previousCubeY) > (cube + previousCube) * 0.90f) {
@@ -94,8 +197,8 @@ public final class FireSignatureVfx {
                     }
                     localCube(vc, mat, tmp, cx, cy, cz, dx, dz, f, cubeY, lateral,
                             cube, rgb, Math.round(alpha * env));
-                    if (d == 0 && ((k + lane) & 1) == 0) {
-                        float detail = (0.035f + 0.026f * h) * S;
+                    if (d == 0 && (k + lane) % 3 == 0) {
+                        float detail = (0.045f + 0.030f * h) * S;
                         localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
                                 front + cube * 0.82f,
                                 y + (hash01(salt, k * 41 + lane) - 0.5f) * cube,
@@ -114,16 +217,16 @@ public final class FireSignatureVfx {
             if ((lane & 1) == 0) {
                 float u = 0.67f;
                 float f = waveFrontAt(t, u, lane) * S;
-                float y = ground + waveHeightLocal(t, u, noise) * S;
+                float y = terrain.at(f, lateral) + waveHeightLocal(t, u, noise) * S;
                 flame(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, lateral,
                         (0.48f + 0.30f * hash01(salt, lane + 100)) * (1.0f - breakup * 0.65f),
                         0.080f + 0.022f * hash01(salt, lane + 120),
                         0.52f, 0.10f * Mth.sin(lane), t * 9.0f + lane,
                         false, S, Math.round(alpha * env), salt + lane * 43);
             }
-            if ((lane + 7) % 3 == 0) {
+            if ((lane + 6) % 4 == 0) {
                 float f = waveFrontAt(t, 1.0f, lane) * S;
-                float y = ground + waveHeightLocal(t, 1.0f, noise) * S;
+                float y = terrain.at(f, lateral) + waveHeightLocal(t, 1.0f, noise) * S;
                 flame(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, lateral,
                         0.34f * (1.0f - breakup * 0.75f), 0.065f,
                         -0.20f, 0.0f, t * 10.0f + lane * 2.0f,
@@ -132,17 +235,17 @@ public final class FireSignatureVfx {
         }
 
         // Petits projectiles ENTRAINÉS par la vague : ils suivent sa crête et son déferlement.
-        for (int p = 0; p < 42; p++) {
+        for (int p = 0; p < 24; p++) {
             float h = hash01(salt, p * 47 + 1080);
             float reveal = smooth01((t - 0.16f - (p % 6) * 0.015f) / 0.08f)
                     * (1.0f - smooth01((t - 0.76f) / 0.16f));
             if (reveal <= 0.0f) continue;
-            int lane = p % 17 - 8;
+            int lane = p % 13 - 6;
             float u = 0.55f + 0.38f * h;
             float noise = waveLaneNoise(t, lane, salt);
             float f = (waveFrontAt(t, u, lane) + 0.10f * Mth.sin(t * 12.0f + p)) * S;
             float l = (waveLateral(t, lane) + 0.07f * Mth.cos(t * 9.0f + p)) * S;
-            float y = ground + (waveHeightLocal(t, u, noise)
+            float y = terrain.at(f, l) + (waveHeightLocal(t, u, noise)
                     + 0.12f + 0.08f * Mth.sin(t * 11.0f + p)) * S;
             float size = (0.025f + 0.025f * h) * S;
             localCube(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
@@ -155,19 +258,19 @@ public final class FireSignatureVfx {
 
         // Sillage : chaque rangée reprend une position PASSÉE du front, avec un retard croissant.
         // Il avance donc avec la vague et forme des dos arrondis au lieu d'une grille de feu statique.
-        for (int row = 0; row < 7; row++) {
+        for (int row = 0; row < 5; row++) {
             float history = Math.max(0.0f, t - 0.055f - row * 0.042f);
-            for (int lane = -6; lane <= 6; lane++) {
+            for (int lane = -5; lane <= 5; lane++) {
                 int id = row * 31 + lane + 150;
                 float h = hash01(salt, id);
                 float reveal = smooth01((t - 0.10f - row * 0.025f - h * 0.020f) / 0.12f);
                 if (reveal <= 0.0f) continue;
-                if (h < 0.16f) continue;
+                if (h < 0.20f) continue;
                 float along = (waveTravel(history) - 0.70f - row * 0.13f
                         + 0.10f * Mth.sin(lane * 0.65f + t * 5.0f - row) + (h - 0.5f) * 0.18f) * S;
                 float side = (lane * 0.225f + 0.06f * Mth.sin(t * 4.0f + row + lane * 0.4f)
                         + (hash01(salt, id + 700) - 0.5f) * 0.12f) * S;
-                float rollerY = ground + (0.075f + 0.05f * h
+                float rollerY = terrain.at(along, side) + (0.075f + 0.05f * h
                         + 0.035f * Mth.sin(t * 6.0f - row * 0.7f + lane * 0.3f)) * S;
                 float rollerSize = (0.080f + 0.055f * h) * S * reveal;
                 localCube(vc, mat, tmp, cx, cy, cz, dx, dz, along, rollerY, side,
@@ -193,17 +296,17 @@ public final class FireSignatureVfx {
         }
 
         // Éclats libres : naissent dans la masse à leur instant de lancement, puis gravité réelle.
-        for (int p = 0; p < 72; p++) {
+        for (int p = 0; p < 36; p++) {
             float h = hash01(salt, p * 47 + 1200);
             float launch = 0.23f + (p % 8) * 0.042f + h * 0.018f;
             float age = t - launch;
             if (age <= 0.0f) continue;
-            int lane = p % 17 - 8;
+            int lane = p % 13 - 6;
             float side = (waveLateral(launch, lane)
                     + (hash01(salt, p * 13) - 0.5f) * 0.04f) * S;
             float originF = waveFrontAt(launch, 0.72f, lane) * S;
             float launchNoise = waveLaneNoise(launch, lane, salt);
-            float originY = ground + waveHeightLocal(launch, 0.72f, launchNoise) * S;
+            float originY = terrain.at(originF, side) + waveHeightLocal(launch, 0.72f, launchNoise) * S;
             float time = age * 5.6f;
             float vf = (0.85f + 1.25f * h) * S;
             float vl = (lane * 0.035f + (hash01(salt, p * 59) - 0.5f) * 0.65f) * S;
@@ -212,7 +315,14 @@ public final class FireSignatureVfx {
             float f = originF + vf * time;
             float l = side + vl * time;
             float y = originY + vy * time - 0.5f * gravity * time * time;
-            float hit = (vy + Mth.sqrt(vy * vy + 2.0f * gravity * (originY - ground))) / gravity;
+            float hitF = originF + vf * ((vy + Mth.sqrt(vy * vy)) / gravity);
+            float hitL = side + vl * ((vy + Mth.sqrt(vy * vy)) / gravity);
+            float landingGround = terrain.at(hitF, hitL);
+            float hit = (vy + Mth.sqrt(Math.max(0.0f, vy * vy
+                    + 2.0f * gravity * (originY - landingGround)))) / gravity;
+            hitF = originF + vf * hit;
+            hitL = side + vl * hit;
+            landingGround = terrain.at(hitF, hitL);
             float size = (0.035f + 0.055f * h) * S;
             if (time < hit) {
                 localCube(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
@@ -223,28 +333,31 @@ public final class FireSignatureVfx {
                         Math.round(alpha * env * 0.85f));
             } else if (time < hit + 0.28f) {
                 float spread = (time - hit) * 1.8f;
-                localBox(vc, mat, tmp, cx, cy, cz, dx, dz, f, ground + 0.035f * S, l,
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz, hitF,
+                        landingGround + 0.035f * S, hitL,
                         size * (1.4f + spread), 0.025f * S, size * (1.2f + spread),
                         LAVA[7 + (p & 3)], Math.round(alpha * env * (1.0f - spread)));
                 for (int sign = -1; sign <= 1; sign += 2) {
                     localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            f + sign * spread * size * 2.0f, ground + (0.06f + spread * 0.12f) * S,
-                            l + sign * spread * size, size * 0.38f,
+                            hitF + sign * spread * size * 2.0f,
+                            landingGround + (0.06f + spread * 0.12f) * S,
+                            hitL + sign * spread * size, size * 0.38f,
                             LAVA[10], Math.round(alpha * env * (1.0f - spread)));
                 }
             }
         }
         // Splash du déferlement : la lèvre tombe mais conserve sa vitesse d'avance.
-        for (int p = 0; p < 56; p++) {
+        for (int p = 0; p < 28; p++) {
             float h = hash01(salt, p * 47 + 1450);
             float launch = 0.57f + (p % 8) * 0.028f + h * 0.018f;
             float age = t - launch;
             if (age <= 0.0f) continue;
-            int lane = p % 17 - 8;
+            int lane = p % 13 - 6;
             float u = 0.82f + 0.16f * hash01(salt, p * 43 + 1451);
             float originF = waveFrontAt(launch, u, lane) * S;
-            float originY = ground + waveHeightLocal(launch, u, waveLaneNoise(launch, lane, salt)) * S;
             float side = waveLateral(launch, lane) * S;
+            float originY = terrain.at(originF, side)
+                    + waveHeightLocal(launch, u, waveLaneNoise(launch, lane, salt)) * S;
             float time = age * 5.6f;
             float vf = (1.15f + 1.35f * h) * S;
             float vl = (lane * 0.020f + (hash01(salt, p * 59 + 1452) - 0.5f) * 0.85f) * S;
@@ -253,7 +366,15 @@ public final class FireSignatureVfx {
             float f = originF + vf * time;
             float l = side + vl * time;
             float y = originY + vy * time - 0.5f * gravity * time * time;
-            float hit = (vy + Mth.sqrt(vy * vy + 2.0f * gravity * Math.max(0.0f, originY - ground))) / gravity;
+            float approximateHit = (vy + Mth.sqrt(vy * vy)) / gravity;
+            float hitF = originF + vf * approximateHit;
+            float hitL = side + vl * approximateHit;
+            float landingGround = terrain.at(hitF, hitL);
+            float hit = (vy + Mth.sqrt(Math.max(0.0f, vy * vy
+                    + 2.0f * gravity * (originY - landingGround)))) / gravity;
+            hitF = originF + vf * hit;
+            hitL = side + vl * hit;
+            landingGround = terrain.at(hitF, hitL);
             float size = (0.030f + 0.045f * h) * S;
             if (time < hit) {
                 localCube(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
@@ -263,34 +384,36 @@ public final class FireSignatureVfx {
                         size * 0.48f, LAVA[9 + (p & 3)], Math.round(alpha * env * 0.78f));
             } else if (time < hit + 0.22f) {
                 float spread = (time - hit) * 2.2f;
-                localBox(vc, mat, tmp, cx, cy, cz, dx, dz, f, ground + 0.032f * S, l,
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz, hitF,
+                        landingGround + 0.032f * S, hitL,
                         size * (1.5f + spread), 0.024f * S, size * (1.3f + spread),
                         LAVA[7 + (p & 3)], Math.round(alpha * env * (1.0f - spread)));
                 localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        f + spread * size * 2.0f, ground + (0.05f + spread * 0.10f) * S, l,
+                        hitF + spread * size * 2.0f,
+                        landingGround + (0.05f + spread * 0.10f) * S, hitL,
                         size * 0.42f, LAVA[11], Math.round(alpha * env * (1.0f - spread)));
             }
         }
         smoke(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, ground, 0.0f,
-                t, 0.69f, 34, S, alpha, salt, 0.75f);
+                t, 0.69f, 18, S, alpha, salt, 0.75f);
     }
 
     /** Les deux flammes se transforment réellement : hélice corporelle -> croissant tressé. */
     private static void renderSoul(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                    float cx, float cy, float cz, float t,
-                                   float dx, float dz, float S, int alpha, int salt) {
+                                   float dx, float dz, float S, int alpha, int salt, TerrainView terrain) {
         float birth = smooth01(t / 0.09f);
         float exit = smooth01((t - 0.80f) / 0.20f);
         float env = birth * (1.0f - exit);
-        float ground = cy - 0.48f * S;
+        float ground = terrain.at(0.0f, 0.0f);
         float sweep = smooth01((t - 0.30f) / 0.38f);
         float radius = (0.82f + 0.12f * sweep) * S;
         float center = (-0.16f + 0.24f * sweep) * S;
         float moonCenterY = ground + 1.32f * S;
 
         for (int strand = 0; strand < 2; strand++) {
-            for (int k = 0; k < 78; k++) {
-                float u = k / 77.0f;
+            for (int k = 0; k < 64; k++) {
+                float u = k / 63.0f;
                 float reveal = smooth01((t - u * 0.12f) / 0.10f);
                 if (reveal <= 0.0f) continue;
                 float morph = smooth01((t - 0.17f - u * 0.075f) / 0.32f);
@@ -298,7 +421,7 @@ public final class FireSignatureVfx {
                 float helixRadius = (0.49f - 0.12f * u) * S;
                 float hf = Mth.cos(helixAngle) * helixRadius;
                 float hl = Mth.sin(helixAngle) * helixRadius;
-                float hy = ground + (0.10f + u * 1.72f) * S;
+                float hy = terrain.at(hf, hl) + (0.10f + u * 1.72f) * S;
 
                 float arcAngle = -2.34f + u * 4.68f;
                 float braid = Mth.sin(u * 24.0f + strand * (float) Math.PI + t * 7.0f);
@@ -310,7 +433,7 @@ public final class FireSignatureVfx {
                 float f = Mth.lerp(morph, hf, af);
                 float l = Mth.lerp(morph, hl, al);
                 float y = Mth.lerp(morph, hy, ay);
-                float width = (0.038f + 0.048f * taper * (0.35f + 0.65f * morph)) * S * reveal * (1.0f - exit * 0.50f);
+                float width = (0.058f + 0.066f * taper * (0.35f + 0.65f * morph)) * S * reveal * (1.0f - exit * 0.50f);
 
                 // Gros corps + deux lobes latéraux + petit cœur : une flamme, pas un fil géométrique.
                 localBox(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
@@ -320,11 +443,13 @@ public final class FireSignatureVfx {
                         f + width * 0.45f, y - width * 0.30f, l - width * 0.40f,
                         width * 0.72f, width * 0.82f, width * 0.72f,
                         soulColor(strand == 0 ? 3 : 2), Math.round(alpha * env * 0.84f));
-                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        f - width * 0.40f, y + width * 0.25f, l + width * 0.35f,
-                        width * 0.48f, width * 0.55f, width * 0.48f,
-                        soulColor(k % 9 == 0 ? 9 : 7), Math.round(alpha * env * 0.90f));
-                if (k % 4 == 0) {
+                if ((k & 1) == 0) {
+                    localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            f - width * 0.52f, y + width * 0.30f, l + width * 0.42f,
+                            width * 0.40f, soulColor(k % 9 == 0 ? 9 : 7),
+                            Math.round(alpha * env * 0.90f));
+                }
+                if (k % 8 == 0) {
                     float outwardF = Mth.lerp(morph, Mth.cos(helixAngle) * 0.25f, 0.30f);
                     float outwardL = Mth.lerp(morph, Mth.sin(helixAngle) * 0.25f,
                             Mth.cos(arcAngle) * 0.48f);
@@ -338,23 +463,25 @@ public final class FireSignatureVfx {
         }
 
         // Aura de sol segmentée : quelques grandes plaques, jamais une ligne fine pleine.
-        for (int p = 0; p < 28; p++) {
-            float angle = p * (float) (Math.PI * 2.0 / 28.0) + t * 0.35f;
+        for (int p = 0; p < 16; p++) {
+            float angle = p * (float) (Math.PI * 2.0 / 16.0) + t * 0.35f;
             float r = (0.52f + 0.06f * Mth.sin(t * 6.0f + p)) * S;
             float hs = (0.065f + 0.025f * (p & 1)) * S * birth * (1.0f - exit);
-            localBox(vc, mat, tmp, cx, cy, cz, dx, dz, Mth.cos(angle) * r,
-                    ground + 0.035f * S, Mth.sin(angle) * r,
+            float auraF = Mth.cos(angle) * r;
+            float auraL = Mth.sin(angle) * r;
+            localBox(vc, mat, tmp, cx, cy, cz, dx, dz, auraF,
+                    terrain.at(auraF, auraL) + 0.035f * S, auraL,
                     hs * 1.35f, 0.022f * S, hs, soulColor(p % 7 == 0 ? 7 : 2),
                     Math.round(alpha * env * 0.60f));
         }
 
         // Braises fermées : elles naissent sur la tresse et héritent de son mouvement angulaire.
-        for (int p = 0; p < 86; p++) {
+        for (int p = 0; p < 40; p++) {
             float launch = 0.28f + (p % 10) * 0.037f;
             float age = t - launch;
             if (age <= 0.0f) continue;
             float h = hash01(salt, p * 53 + 1700);
-            float u = (p % 39) / 38.0f;
+            float u = (p % 31) / 30.0f;
             float angle = -2.34f + u * 4.68f;
             int strand = p & 1;
             float launchMorph = smooth01((launch - 0.17f - u * 0.075f) / 0.32f);
@@ -368,8 +495,9 @@ public final class FireSignatureVfx {
             float originF = Mth.lerp(launchMorph, Mth.cos(helixAngle) * helixRadius,
                     launchCenter + braid * 0.065f * S);
             float originL = Mth.lerp(launchMorph, Mth.sin(helixAngle) * helixRadius, Mth.cos(angle) * ar);
-            float originY = Mth.lerp(launchMorph, ground + (0.10f + u * 1.72f) * S,
-                    ground + 1.32f * S + Mth.sin(angle) * ar);
+            float originY = Mth.lerp(launchMorph,
+                    terrain.at(originF, originL) + (0.10f + u * 1.72f) * S,
+                    moonCenterY + Mth.sin(angle) * ar);
             float time = age * 2.8f;
             float f = originF + (h - 0.5f) * time * 0.35f * S;
             float l = originL + Mth.cos(angle) * time * (0.12f + h * 0.25f) * S;
@@ -380,14 +508,14 @@ public final class FireSignatureVfx {
                     Math.round(alpha * (1.0f - exit) * (1.0f - age * 0.55f)));
         }
         smoke(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, ground, 0.0f,
-                t, 0.76f, 24, S, alpha, salt, 0.45f);
+                t, 0.76f, 14, S, alpha, salt, 0.45f);
     }
 
     /** Chute céleste rapide et rectiligne : côté aléatoire stable, impact exact sur la cible. */
     private static void renderMeteor(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                      float cx, float cy, float cz, float t,
-                                     float dx, float dz, float S, int alpha, int salt) {
-        float ground = cy - 0.48f * S;
+                                     float dx, float dz, float S, int alpha, int salt, TerrainView terrain) {
+        float ground = terrain.at(0.0f, 0.0f);
         float exit = smooth01((t - 0.82f) / 0.18f);
         float q = Mth.clamp((t - 0.015f) / 0.220f, 0.0f, 1.0f);
         float birth = smooth01(t / 0.025f);
@@ -403,12 +531,12 @@ public final class FireSignatureVfx {
             localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
                     mf + core * 0.35f, my + core * 0.25f, ml + core * 0.18f,
                     core * 0.78f, ROCK_RED, Math.round(alpha * birth * flightFade));
-            for (int r = 0; r < 26; r++) {
+            for (int r = 0; r < 14; r++) {
                 float h = hash01(salt, r * 43 + 2000);
                 float angle = r * 2.3999632f + t * (r & 1) * 2.0f;
                 float band = ((r % 5) - 2) * 0.105f * S;
                 float radial = (0.23f + 0.06f * h) * S * birth;
-                float size = (0.070f + 0.065f * h) * S * birth;
+                float size = (0.105f + 0.075f * h) * S * birth;
                 float f = mf + Mth.cos(angle) * radial;
                 float l = ml + Mth.sin(angle) * radial;
                 float y = my + band;
@@ -423,82 +551,111 @@ public final class FireSignatureVfx {
                 }
             }
 
-            // Historique strictement passé. La traîne grandit après le départ, jamais devant le rocher.
+            // Grosse combustion advectée : les volumes pulsants suivent le PASSÉ du rocher.
+            // Les petits cubes ne servent qu'à adoucir la silhouette, jamais à construire tout le feu.
             float currentTime = q * METEOR_FLIGHT_SECONDS;
             float trailReveal = smooth01(q / 0.16f);
-            for (int k = 0; k < 30; k++) {
-                float age = k * 0.028f;
+            float meteorDistance = meteorDistance(salt);
+            float backUnitF = meteorF(0.0f, salt) / meteorDistance;
+            float backUnitL = meteorL(0.0f, salt) / meteorDistance;
+            for (int k = 0; k < 20; k++) {
+                float age = k * 0.041f;
                 float historyTime = currentTime - age;
                 if (historyTime <= 0.0f) continue;
                 float hq = historyTime / METEOR_FLIGHT_SECONDS;
-                float f = meteorF(hq, salt) * S;
-                float l = meteorL(hq, salt) * S;
-                float y = ground + meteorY(hq) * S;
-                float life = 1.0f - age / 0.84f;
-                float base = (0.055f + 0.130f * life) * S * birth * trailReveal;
-                for (int lobe = 0; lobe < 5; lobe++) {
-                    float angle = lobe * 2.3999632f + k * 0.81f + t * 4.0f;
-                    float spread = base * (0.35f + age * 0.35f);
-                    float size = base * (lobe == 0 ? 1.0f : 0.68f);
-                    int rgb = age < 0.08f ? (lobe == 0 ? LAVA[14] : LAVA[12])
-                            : age < 0.30f ? (lobe == 0 ? LAVA[11] : LAVA[8])
-                            : age < 0.62f ? LAVA[6 + (lobe & 1)] : LAVA[3 + (lobe & 1)];
-                    localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            f + Mth.cos(angle) * spread,
-                            y + Mth.sin(angle * 1.31f) * spread,
-                            l + Mth.sin(angle) * spread,
-                            size, rgb,
-                            Math.round(alpha * birth * flightFade * trailReveal * (0.35f + 0.65f * life)));
+                float life = Mth.clamp(1.0f - age / 0.82f, 0.0f, 1.0f);
+                float n1 = valueNoise(k * 0.37f, t * 4.6f, 1.7f, salt + 5100);
+                float n2 = valueNoise(k * 0.61f, 8.3f, t * 5.4f, salt + 5200);
+                float pulse = Math.max(0.45f, 0.68f + 0.38f * Mth.sin(t * 27.0f - k * 0.73f)
+                        + 0.45f * (n1 - 0.5f));
+                float base = (0.085f + 0.165f * life) * S * birth * trailReveal * pulse;
+                float spread = (0.060f + age * 0.38f) * S;
+                float billow = (Mth.sin(t * 17.0f - age * 11.0f + k * 0.41f) * age * 0.65f
+                        + (n2 - 0.5f) * age * 0.35f) * S;
+                float f = meteorF(hq, salt) * S + (n1 - 0.5f) * spread * 2.4f
+                        - backUnitL * billow;
+                float l = meteorL(hq, salt) * S + (n2 - 0.5f) * spread * 2.4f
+                        + backUnitF * billow;
+                float y = ground + meteorY(hq) * S
+                        + Mth.sin(t * 19.0f + k * 1.17f) * spread * 0.65f
+                        + Mth.cos(t * 14.0f - age * 9.0f) * age * 0.32f * S;
+                int rgb = age < 0.10f ? LAVA[14] : age < 0.28f ? LAVA[12]
+                        : age < 0.52f ? LAVA[9] : age < 0.70f ? LAVA[6] : LAVA[3];
+                if (k < 8 || (k + Mth.floor(t * 30.0f)) % 5 != 0) {
+                    localCube(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l, base, rgb,
+                            Math.round(alpha * birth * flightFade * trailReveal
+                                    * (0.42f + 0.58f * life) * (0.78f + 0.22f * pulse)));
                 }
-                if ((k & 1) == 0 && k < 24) {
+                if ((k & 1) == 0) {
+                    float detail = base * (0.38f + 0.16f * n2);
+                    localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            f + (n2 - 0.5f) * base * 2.2f,
+                            y + base * (0.35f + 0.45f * n1),
+                            l + (n1 - 0.5f) * base * 2.0f,
+                            detail, age < 0.35f ? LAVA[13] : LAVA[7],
+                            Math.round(alpha * birth * flightFade * trailReveal * life * 0.88f));
+                    localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            f - backUnitF * base * 1.25f, y - base * 0.30f,
+                            l - backUnitL * base * 1.25f,
+                            detail * 0.72f, LAVA[5 + (k & 3)],
+                            Math.round(alpha * birth * flightFade * trailReveal * life * 0.70f));
+                }
+                if (k % 4 == 0) {
                     float aheadQ = Math.min(1.0f, hq + 0.01f);
                     float tangent = Mth.atan2(meteorY(aheadQ) - meteorY(hq),
                             meteorF(aheadQ, salt) - meteorF(hq, salt));
-                    float streak = (0.14f + 0.22f * life) * S * trailReveal;
+                    float streak = (0.18f + 0.25f * life) * S * trailReveal
+                            * (0.82f + 0.30f * n2);
                     localRotBox(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
-                            streak, base * 0.26f, base * 0.34f, tangent,
-                            age < 0.30f ? LAVA[11] : LAVA[6],
-                            Math.round(alpha * birth * flightFade * trailReveal * life * 0.48f));
+                            streak, base * 0.30f, base * 0.42f, tangent,
+                            age < 0.30f ? LAVA[12] : LAVA[6],
+                            Math.round(alpha * birth * flightFade * trailReveal * life * 0.58f));
                 }
-                if (k % 4 == 0 && k < 24) {
+                if (k % 6 == 0) {
                     flame(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
-                            (0.30f + 0.22f * life) * trailReveal, 0.065f + 0.030f * life,
-                            -meteorF(0.0f, salt) * 0.10f, -meteorL(0.0f, salt) * 0.10f,
-                            t * 11.0f + k, false, S,
+                            (0.34f + 0.26f * life) * trailReveal, 0.095f + 0.040f * life,
+                            backUnitF * 1.45f, backUnitL * 1.45f,
+                            t * 17.0f + k * 0.9f, false, S,
                             Math.round(alpha * birth * flightFade * trailReveal * life), salt + k * 31);
                 }
             }
-            // Arrachement de la traîne : étincelles de vitesse nées dans le passé du rocher,
-            // dispersées vers l'extérieur et refroidies au lieu d'un ruban de feu rigide.
-            for (int p = 0; p < 64; p++) {
+
+            // Combustion : chaque braise naît sur la trajectoire, hérite de son déplacement,
+            // puis est soufflé VERS L'ARRIÈRE avec turbulence, rétrécissement et refroidissement.
+            for (int p = 0; p < 56; p++) {
                 float h = hash01(salt, p * 47 + 2180);
-                float life = fract(t * 7.0f + p * 0.381966f + h);
-                float sparkAge = life * 0.42f;
+                float life = fract(t * 5.5f + p * 0.381966f + h);
+                float envelope = smooth01(life / 0.07f)
+                        * (1.0f - smooth01((life - 0.52f) / 0.48f));
+                float sparkAge = life * 0.68f;
                 float historyTime = currentTime - sparkAge;
-                if (historyTime <= 0.0f) continue;
+                if (historyTime <= 0.0f || envelope <= 0.0f) continue;
                 float hq = historyTime / METEOR_FLIGHT_SECONDS;
-                float spread = sparkAge * (0.35f + 0.75f * h) * S;
-                float f = meteorF(hq, salt) * S + (hash01(salt, p * 53 + 2181) - 0.5f) * spread;
-                float l = meteorL(hq, salt) * S + (hash01(salt, p * 59 + 2182) - 0.5f) * spread;
-                float y = ground + meteorY(hq) * S + sparkAge * (0.45f + 0.75f * h) * S;
-                float size = (0.012f + 0.018f * h) * (1.0f - life * 0.55f) * S;
-                int rgb = life < 0.30f ? LAVA[12] : life < 0.68f ? LAVA[9] : LAVA[5];
+                float drag = (sparkAge * (0.90f + 1.10f * h)
+                        + sparkAge * sparkAge * 3.5f) * S;
+                float side = Mth.sin(t * 15.0f + p * 2.17f) * sparkAge * (0.50f + 0.80f * h) * S;
+                float f = meteorF(hq, salt) * S + backUnitF * drag - backUnitL * side;
+                float l = meteorL(hq, salt) * S + backUnitL * drag + backUnitF * side;
+                float y = ground + meteorY(hq) * S + sparkAge * (0.35f + 0.65f * h) * S
+                        + Mth.cos(t * 13.0f + p) * sparkAge * 0.22f * S;
+                float size = (0.025f + 0.050f * h) * (1.0f - life * 0.72f) * S;
+                int rgb = life < 0.24f ? LAVA[14] : life < 0.52f ? LAVA[11]
+                        : life < 0.78f ? LAVA[7] : LAVA[3];
                 localCube(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l, size, rgb,
-                        Math.round(alpha * birth * flightFade * trailReveal * (1.0f - life) * 0.95f));
-                if ((p & 3) == 0) {
+                        Math.round(alpha * birth * flightFade * trailReveal * envelope * 0.96f));
+                if (p % 5 == 0) {
                     localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            f - meteorF(0.0f, salt) * 0.015f * S,
-                            y + 0.035f * S,
-                            l - meteorL(0.0f, salt) * 0.015f * S,
-                            size * 0.52f, LAVA[7],
-                            Math.round(alpha * birth * flightFade * trailReveal * (1.0f - life) * 0.65f));
+                            f + backUnitF * size * 1.8f, y + size * 0.35f,
+                            l + backUnitL * size * 1.8f,
+                            size * 0.48f, LAVA[6],
+                            Math.round(alpha * birth * flightFade * trailReveal * envelope * 0.66f));
                 }
             }
         }
 
         // Impact déclenché au même instant que l'arrivée exacte au centre de la cible.
         float impact = smooth01((t - 0.235f) / 0.16f);
-        for (int lobe = 0; lobe < 18; lobe++) {
+        for (int lobe = 0; lobe < 10; lobe++) {
             float h = hash01(salt, lobe * 71 + 2300);
             float reveal = smooth01((t - 0.235f - (lobe % 4) * 0.012f) / 0.12f);
             if (reveal <= 0.0f) continue;
@@ -506,31 +663,33 @@ public final class FireSignatureVfx {
             float radius = (0.10f + impact * (0.55f + h * 0.85f)) * S;
             float f = Mth.cos(angle) * radius;
             float l = Mth.sin(angle) * radius;
-            float y = ground + (0.10f + impact * (0.25f + h * 0.55f)) * S;
-            float mass = (0.10f + 0.13f * h) * S * reveal * (1.0f - exit * 0.55f);
+            float y = terrain.at(f, l) + (0.10f + impact * (0.25f + h * 0.55f)) * S;
+            float mass = (0.15f + 0.16f * h) * S * reveal * (1.0f - exit * 0.55f);
             localBox(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
                     mass * 1.30f, mass, mass * 1.30f,
                     LAVA[5 + (lobe % 5)], Math.round(alpha * reveal * (1.0f - exit) * 0.82f));
             flame(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
                     (0.55f + 0.65f * h) * reveal * (1.0f - exit * 0.60f),
-                    0.110f + 0.060f * h, Mth.cos(angle) * 0.65f, Mth.sin(angle) * 0.65f,
+                    0.145f + 0.070f * h, Mth.cos(angle) * 0.65f, Mth.sin(angle) * 0.65f,
                     t * 10.0f + lobe, false, S,
                     Math.round(alpha * reveal * (1.0f - exit)), salt + lobe * 97);
         }
 
-        for (int p = 0; p < 42; p++) {
+        for (int p = 0; p < 24; p++) {
             float h = hash01(salt, p * 47 + 2600);
             float angle = p * 2.3999632f;
             float reveal = smooth01((t - 0.265f - (p % 6) * 0.017f) / 0.14f);
             if (reveal <= 0.0f || p % 13 == 0) continue;
             float radius = (0.28f + (p % 4) * 0.27f + impact * 0.18f) * S;
+            float patchF = Mth.cos(angle) * radius;
+            float patchL = Mth.sin(angle) * radius;
             groundPatch(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    Mth.cos(angle) * radius, ground, Mth.sin(angle) * radius,
+                    patchF, terrain.at(patchF, patchL), patchL,
                     reveal * (1.0f - exit), 0.36f + h * 0.48f,
-                    (p & 1) == 0, false, S, alpha, salt + p * 83, t);
+                    p % 3 == 0, false, S, alpha, salt + p * 83, t);
         }
 
-        for (int p = 0; p < 82; p++) {
+        for (int p = 0; p < 44; p++) {
             float age = t - 0.240f - (p % 7) * 0.010f;
             if (age <= 0.0f) continue;
             float h = hash01(salt, p * 59 + 2900);
@@ -541,7 +700,7 @@ public final class FireSignatureVfx {
             float l = Mth.sin(angle) * speed * time;
             float vy = (1.65f + 2.75f * hash01(salt, p * 61)) * S;
             float y = ground + 0.28f * S + vy * time - 3.65f * S * time * time;
-            if (y < ground) continue;
+            if (y < terrain.at(f, l)) continue;
             float size = (0.025f + 0.075f * h) * S * (1.0f - exit);
             localCube(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
                     size, p % 5 == 0 ? ROCK_RED : lavaDropletRgb(h),
@@ -553,7 +712,7 @@ public final class FireSignatureVfx {
             }
         }
         smoke(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, ground, 0.0f,
-                t, 0.238f, 52, S, alpha, salt, 1.0f);
+                t, 0.238f, 28, S, alpha, salt, 1.0f);
     }
 
     private static float waveTravel(float t) {
@@ -566,14 +725,14 @@ public final class FireSignatureVfx {
     }
 
     private static float waveLateral(float t, int lane) {
-        return lane * 0.17f * (1.0f + 0.22f * waveBreakup(t) * waveBreakup(t));
+        return lane * 0.215f * (1.0f + 0.18f * waveBreakup(t) * waveBreakup(t));
     }
 
     private static float waveFrontLocal(float t, float u, int lane) {
         float breakup = waveBreakup(t);
         float curl = smooth01((t - 0.13f) / 0.32f) * (1.0f - 0.45f * breakup);
         float tornLip = 0.12f * Mth.sin(lane * 1.37f + t * 3.0f) * u * u;
-        float laneCurve = -0.26f * (float) Math.pow(Math.abs(lane) / 8.0f, 2.0) * u * u;
+        float laneCurve = -0.26f * (float) Math.pow(Math.abs(lane) / 6.0f, 2.0) * u * u;
         return -0.58f + 0.58f * u + 1.05f * curl * (float) Math.pow(u, 3.2f)
                 + tornLip + laneCurve;
     }
@@ -586,7 +745,7 @@ public final class FireSignatureVfx {
     }
 
     private static float waveLaneNoise(float t, int lane, int salt) {
-        float arch = 1.0f - 0.24f * (float) Math.pow(Math.abs(lane) / 8.0f, 1.5);
+        float arch = 1.0f - 0.24f * (float) Math.pow(Math.abs(lane) / 6.0f, 1.5);
         return (0.96f + 0.05f * Mth.sin(lane * 1.37f + (salt & 31))
                 + 0.075f * Mth.sin(t * 4.0f + lane * 0.70f)
                 + 0.040f * Mth.sin(t * 7.0f - lane * 0.50f)) * arch;
@@ -650,7 +809,7 @@ public final class FireSignatureVfx {
         float flick = 0.82f + 0.20f * Mth.sin(time * 1.70f + jitter * 20.0f)
                 + 0.22f * (valueNoise(time * 0.42f, jitter * 10.0f, 0.0f, seed) - 0.5f);
         float animatedHeight = height * flick;
-        int levels = 11;
+        int levels = 8;
         for (int k = 0; k < levels; k++) {
             float u = k / (float) (levels - 1);
             // Deux champs lisses remontent à des vitesses différentes : la silhouette se scinde et
@@ -674,27 +833,25 @@ public final class FireSignatureVfx {
                 localBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, py, pl,
                         w * 0.78f, hy, w * 0.82f, core, Math.round(alpha * (1.0f - u * 0.25f)));
             }
-            if (u < 0.80f) {
+            if (u < 0.80f && (k & 1) == 0) {
                 float breathe = 0.72f + 0.28f * Mth.sin(time * 1.9f + k * 0.8f + jitter * 6.0f);
                 localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
                         pf + w * (0.48f + 0.20f * n2), py - hy * 0.18f, pl + w * (n1 - 0.5f) * 0.35f,
-                        w * 0.65f * breathe, hy * 0.88f, w * 0.70f, outer, Math.round(alpha * 0.84f));
-                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        pf - w * 0.48f, py - hy * 0.12f, pl + w * (0.44f + 0.18f * n1),
-                        w * 0.58f, hy * 0.82f, w * 0.62f, outer, Math.round(alpha * 0.76f));
-                if (k < 7) {
+                        w * 0.82f * breathe, hy * 0.88f, w * 0.84f, outer, Math.round(alpha * 0.84f));
+                if (k < 6) {
                     localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
                             pf + w * (n2 - 0.5f) * 0.4f, py - hy * 0.24f, pl - w * 0.54f,
-                            w * 0.68f, hy * 0.82f, w * 0.62f,
+                            w * 0.48f, hy * 0.72f, w * 0.48f,
                             soul ? soulColor(2) : LAVA[5 + (k & 1)], Math.round(alpha * 0.70f));
                 }
             }
             // Le haut se divise en deux langues dont la distance et l'existence varient avec le bruit.
-            if (u > 0.36f && n1 + n2 > 0.72f) {
+            if (u > 0.36f && n1 + n2 > 0.86f) {
                 float split = smooth01((u - 0.36f) / 0.64f);
                 float separation = width * S * split * (0.28f + 0.60f * n2);
                 float lobeW = w * (0.36f + 0.18f * n1);
                 for (int sign = -1; sign <= 1; sign += 2) {
+                    if ((k + sign) % 3 == 0) continue;
                     localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
                             pf + separation * sign, py + hy * (0.10f + 0.18f * n2),
                             pl - separation * sign * 0.42f,
@@ -703,7 +860,7 @@ public final class FireSignatureVfx {
                             Math.round(alpha * (0.45f + 0.35f * n2) * (1.0f - u * 0.35f)));
                 }
             }
-            if (k % 3 == 0) {
+            if (k % 4 == 0) {
                 float aura = w * 1.46f;
                 localBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, py, pl,
                         aura, hy * 1.32f, aura, core, Math.round(alpha * 0.09f * (1.0f - u * 0.45f)));
@@ -711,7 +868,7 @@ public final class FireSignatureVfx {
         }
 
         // Flammèches : cycles fermés ascendants, taille 0.42 -> 0.08, turbulence et refroidissement.
-        for (int p = 0; p < 5; p++) {
+        for (int p = 0; p < 3; p++) {
             float cycle = fract(time * (0.34f + 0.08f * jitter) + p * 0.217f + jitter);
             float envelope = smooth01(cycle / 0.12f) * (1.0f - smooth01((cycle - 0.52f) / 0.48f));
             if (envelope <= 0.0f) continue;
@@ -735,7 +892,7 @@ public final class FireSignatureVfx {
                     soul ? soulRamp(heat, true) : fireRamp(heat, true),
                     Math.round(alpha * envelope * 0.78f));
         }
-        for (int e = 0; e < 3; e++) {
+        for (int e = 0; e < 2; e++) {
             float cycle = fract(time * (0.39f + 0.035f * e) + e * 0.319f + jitter * 1.7f);
             float envelope = smooth01(cycle / 0.06f) * (1.0f - smooth01((cycle - 0.48f) / 0.52f));
             if (envelope <= 0.0f) continue;
