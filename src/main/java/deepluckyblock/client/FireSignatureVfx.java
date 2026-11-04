@@ -64,17 +64,34 @@ public final class FireSignatureVfx {
                 float thickness = (0.24f + 0.50f * Mth.sin(u * (float) Math.PI)
                         + 0.18f * (1.0f - u)) * (1.0f + 0.35f * breakup) * S;
                 float y = ground + waveHeightLocal(t, u, noise) * S;
-                int layers = u > 0.82f ? 3 : 6;
+                int layers = u > 0.82f ? 4 : 8;
+                float previousF = 0.0f;
+                float previousCubeY = 0.0f;
+                float previousCube = 0.0f;
                 for (int d = 0; d < layers; d++) {
                     float v = d / (float) (layers - 1);
                     float roundBack = 0.30f * Mth.sin(v * (float) Math.PI) * (1.0f - 0.35f * u) * S;
                     float backRoll = 0.06f * Mth.sin(t * 7.0f - v * 3.0f + lane * 0.4f)
                             * Mth.sin(v * (float) Math.PI) * S;
                     float f = front - thickness * v - roundBack + backRoll;
-                    float cubeY = y - 0.14f * Mth.sin(v * (float) Math.PI) * (1.0f - u) * S;
+                    // Courbe portante du dos : le front garde toute sa hauteur, l'arrière retombe
+                    // à 18 % suivant un cosinus. La ligne supérieure n'est donc plus horizontale.
+                    float depthHeight = 0.18f + 0.82f * Mth.cos(v * (float) Math.PI * 0.5f);
+                    float aboveBase = Math.max(0.0f, y - ground - 0.10f * S);
+                    float backUndulation = 0.045f * Mth.sin(t * 6.0f - v * 2.0f + lane * 0.3f)
+                            * Mth.sin(v * (float) Math.PI) * S;
+                    float cubeY = y - aboveBase * (1.0f - depthHeight) + backUndulation;
                     float h = hash01(salt, lane * 91 + k * 17 + d * 41 + 40);
                     float cube = (u > 0.82f ? 0.085f + 0.012f * h : 0.105f + 0.025f * h) * S;
                     int rgb = lavaRgb(f / S, lateral / S, u, t, salt + lane * 29 + k * 7 + d * 13);
+                    // Un cube de jonction adapte sa taille aux fortes pentes : la courbe reste pleine.
+                    if (d > 0 && Math.abs(cubeY - previousCubeY) > (cube + previousCube) * 0.90f) {
+                        float bridge = Math.max(Math.max(cube, previousCube),
+                                Math.abs(cubeY - previousCubeY) * 0.32f);
+                        localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                (f + previousF) * 0.5f, (cubeY + previousCubeY) * 0.5f, lateral,
+                                bridge, rgb, Math.round(alpha * env));
+                    }
                     localCube(vc, mat, tmp, cx, cy, cz, dx, dz, f, cubeY, lateral,
                             cube, rgb, Math.round(alpha * env));
                     if (d == 0 && ((k + lane) & 1) == 0) {
@@ -88,6 +105,9 @@ public final class FireSignatureVfx {
                                         t + 0.17f, salt + k),
                                 Math.round(alpha * env * 0.96f));
                     }
+                    previousF = f;
+                    previousCubeY = cubeY;
+                    previousCube = cube;
                 }
             }
 
