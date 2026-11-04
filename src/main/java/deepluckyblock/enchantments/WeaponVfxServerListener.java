@@ -359,23 +359,23 @@ public final class WeaponVfxServerListener {
     private static void applyWoodGameplay(LivingEntity attacker, LivingEntity target,
                                           WeaponVisualEffectId fx) {
         if (!(attacker.level() instanceof ServerLevel sl)) return;
-        long now = sl.getGameTime();
+        int now = TestProcedure.currentTick(sl);
         if (fx == WeaponVisualEffectId.THORN_MAW_ROOT) {
-            applyWoodHold(target, now + 60L, true);
+            applyWoodHold(target, now + 60, true);
             return;
         }
         if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) {
-            applyWoodHold(target, now + 60L, false);
+            applyWoodHold(target, now + 60, false);
             return;
         }
         if (fx != WeaponVisualEffectId.VERDANT_SAP_BLOOM) return;
 
-        long holdStart = now + 64L;
-        long holdEnd = now + 82L;
+        int holdStart = now + 64;
+        int holdEnd = now + 82;
         TestProcedure.schedule(sl, holdStart, () -> {
             if (target.isAlive() && target.level() == sl) applyWoodHold(target, holdEnd, false);
         });
-        TestProcedure.schedule(sl, now + 74L, () -> {
+        TestProcedure.schedule(sl, now + 74, () -> {
             if (!target.isAlive() || target.level() != sl) return;
             // Explosion VISUELLE et SONORE uniquement : aucun dégât en plus du coup initial.
             sl.playSound(null, target.getX(), target.getY() + target.getBbHeight() * 0.50f, target.getZ(),

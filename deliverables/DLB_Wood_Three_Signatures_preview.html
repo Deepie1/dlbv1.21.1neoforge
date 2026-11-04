@@ -55,7 +55,7 @@ const MODELS=[unpack(ZEPHYR_PACKED),null,unpack(VERDANT_PACKED)],LEAVES=[420,0,7
 const PALETTE=['#352217','#5a3617','#794723','#a9743c','#d0a061','#153b26','#20552c','#2f7435','#489440','#70b548','#a2cd62','#e3d98a','#ffc65b','#d88a2e','#3b4932','#5e6870','#6e3e68','#b58aa6','#8b4658'];
 const NAMES=['Zephyr Wind Lance','Thorn Maw Root','Verdant Sap Bloom'];
 const SUBS=['Arbre penché · 3 lances · impacts','Ronces · épines · stun 3 s','Arbre sacré · fruits · sève explosive'];
-const DURATIONS=[8,9.6,9.6];
+const DURATIONS=[4,4.8,4.8];
 const canvas=document.getElementById('scene'),ctx=canvas.getContext('2d',{alpha:false});
 const timeline=document.getElementById('timeline'),phaseEl=document.getElementById('phase'),playBtn=document.getElementById('play'),visibleEl=document.getElementById('visibleCount');
 const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),lerp=(a,b,t)=>a+(b-a)*t;
@@ -99,7 +99,7 @@ function fallingLeaves(out,model,start,step,fallDistance){let leaf=0;
 }
 
 function zephyrAccents(out){const model=MODELS[0];fallingLeaves(out,model,.46,6,2.8);
- for(let spear=0;spear<3;spear++){const startTime=.30+spear*.055;let travel=clamp((t-startTime)/.18);if(travel<=0)continue;travel=smooth01(travel);const impactTime=startTime+.18,shaftFade=1-smooth01((t-impactTime)/.16);if(shaftFade<=0)continue;
+ for(let spear=0;spear<3;spear++){const startTime=.30+spear*.055;let travel=clamp((t-startTime)/.11);if(travel<=0)continue;travel=smooth01(travel);const impactTime=startTime+.11,shaftFade=1-smooth01((t-impactTime)/.16);if(shaftFade<=0)continue;
   const angle=hash01(SALT,80+spear*17)*6.2831855+spear*2.0943951,radius=3+.8*hash01(SALT,83+spear*19),sx=Math.cos(angle)*radius,sz=Math.sin(angle)*radius,sy=-.30+1.65*hash01(SALT,89+spear*23);
   const norm=Math.hypot(sx,sy,sz),dx=-sx/norm,dy=-sy/norm,dz=-sz/norm,overrun=Math.max(0,t-impactTime)*3.2,centerX=sx*(1-travel)+dx*overrun,centerY=sy*(1-travel)+dy*overrun,centerZ=sz*(1-travel)+dz*overrun,length=1.62;
   for(let segment=0;segment<42;segment++){const u=segment/41,along=(u-.5)*length;let half=segment>=32?Math.max(.008,.052-(segment-32)*.0048):.048;half*=.40+.60*shaftFade;push(out,centerX+dx*along,centerY+dy*along,centerZ+dz*along,half,half,half,segment>=36?10:(segment&1)===0?8:9,shaftFade)}
@@ -150,7 +150,7 @@ function render(){updateCamera();background();const voxels=[],base=baseVoxels(vo
  for(const v of voxels){for(const f of FACES){const localN=v.rot?rotateLocal(f.n[0],f.n[1],f.n[2],v.rot):f.n,n=rotateNormal(localN);if(n[2]<=.015)continue;const points=[];let depth=0;for(const q of f.v){let local=v.rot?rotateLocal(q[0]*v.hx,q[1]*v.hy,q[2]*v.hz,v.rot):[q[0]*v.hx,q[1]*v.hy,q[2]*v.hz];const p=project(v.x+local[0],v.y+local[1],v.z+local[2]);points.push(p);depth+=p[2]}faces.push({points,depth:depth/4,fill:shade(v.c,f.shade,v.a)})}}
  faces.sort((a,b)=>a.depth-b.depth);ctx.lineJoin='round';for(const f of faces){const p=f.points;ctx.beginPath();ctx.moveTo(p[0][0],p[0][1]);for(let i=1;i<4;i++)ctx.lineTo(p[i][0],p[i][1]);ctx.closePath();ctx.fillStyle=f.fill;ctx.fill()}
  visibleEl.textContent=`${base+extra} voxels visibles`;let phase;
- if(variant===0)phase=t<.30?'01 — Pousse de l’arbre penché':t<.48?'02 — Trois lances convergent':t<.78?'03 — Impacts et chute de feuilles':'04 — L’arbre et les feuilles s’envolent';
+ if(variant===0)phase=t<.30?'01 — Pousse de l’arbre penché':t<.55?'02 — Trois lances convergent':t<.78?'03 — Impacts et chute de feuilles':'04 — L’arbre et les feuilles s’envolent';
  else if(variant===1)phase=t<.34?'01 — Les ronces sortent du sol et convergent':t<.63?'02 — Nœud complet · STUN 3 s':'03 — Les ronces retournent sous terre';
  else phase=t<.38?'01 — Croissance de l’arbre sacré':t<.46?'02 — Fruits dorés et feuilles lentes':t<.64?'03 — Le filament de sève descend':t<.72?'04 — Emprise d’ambre':'05 — Explosion de sève sacrée';
  phaseEl.textContent=phase;timeline.value=Math.round(t*1000);playBtn.textContent=playing?'Pause':(t>=1?'Rejouer':'Lecture');

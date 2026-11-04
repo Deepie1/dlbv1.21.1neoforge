@@ -4523,6 +4523,7 @@ public class UniversalEnchantmentHandler {
         boolean updraftUsed = false;
         int springCoilTicks = 0;
         double lastAirVy = 0.0;
+        int bouncyChain = 0;
         double prevY = Double.NaN;
         int sprintGraceTicks = 0;
         int slideTicksLeft = 0;
@@ -4638,20 +4639,21 @@ public class UniversalEnchantmentHandler {
         if (!grounded) {
             if (dm.y < state.lastAirVy) state.lastAirVy = dm.y;
         } else {
-            // Restitution toujours < 1 : chaque saut perd de l'énergie, quel que soit le niveau.
-            // Pas de vitesse minimale : quand la chute devient trop faible, le rebond s'éteint.
-            double retention = 0.75 + 0.045 * Math.min(3, bouncyLvl); // 0.795..0.885
+            // Restitution toujours < 1 : chaque impact perd nettement de l'énergie.
+            // La chaîne est aussi plafonnée : même une très grande chute rend toujours le sol.
+            double retention = 0.62 + 0.04 * Math.min(3, bouncyLvl); // 0.66..0.74
             double impactSpeed = -state.lastAirVy;
             double bounceVy = impactSpeed * retention;
             if (!state.wasOnGround && bouncyLvl > 0 && !sneaking
                     && !entity.isInWater() && !entity.isInLava()
-                    && impactSpeed > 0.15 && bounceVy >= 0.20) {
+                    && impactSpeed > 0.15 && bounceVy >= 0.18 && state.bouncyChain < 5) {
                 // Laisse la vitesse horizontale intacte : le joueur garde le contrôle en l'air.
                 dm = new Vec3(dm.x, bounceVy, dm.z);
                 entity.setDeltaMovement(dm);
                 entity.setOnGround(false);
                 entity.fallDistance = 0.0F;
                 grounded = false;
+                state.bouncyChain++;
                 state.lastAirVy = 0.0;
                 if (entity.level() instanceof ServerLevel slBounce) {
                     EnchantmentParticleFX.shockwaveRing(slBounce, entity.getX(), entity.getY() + 0.05, entity.getZ(),
@@ -4660,6 +4662,8 @@ public class UniversalEnchantmentHandler {
                             SoundEvents.SLIME_BLOCK_FALL, SoundSource.PLAYERS, 0.80f, 1.08f);
                 }
             } else {
+                // Seuil d'arrêt ou cinquième impact : marche normale immédiatement retrouvée.
+                state.bouncyChain = 0;
                 state.lastAirVy = 0.0;
             }
         }

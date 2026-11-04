@@ -157,10 +157,10 @@ private static float smooth01(float v) {
                                            float cx, float cy, float cz, float t, int alpha, int salt) {
         for (int spear = 0; spear < 3; spear++) {
             float startTime = 0.30f + spear * 0.055f;
-            float travel = Mth.clamp((t - startTime) / 0.18f, 0.0f, 1.0f);
+            float travel = Mth.clamp((t - startTime) / 0.11f, 0.0f, 1.0f);
             if (travel <= 0.0f) continue;
             travel = smooth01(travel);
-            float impactTime = startTime + 0.18f;
+            float impactTime = startTime + 0.11f;
             float shaftFade = 1.0f - smooth01((t - impactTime) / 0.16f);
             if (shaftFade <= 0.0f) continue;
             float angle = hash01(salt, 80 + spear * 17) * 6.2831855f + spear * 2.0943951f;
