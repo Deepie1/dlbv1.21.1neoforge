@@ -64,10 +64,10 @@ public final class WeaponVfxServerListener {
     private static final Map<Integer, Long> LAST_ELEMENT_COMBO_TICK = new ConcurrentHashMap<>();
     /** T349-VFX-FREQUENCY : cooldown réel et aléatoire par (attaquant, effet). */
     private static final Map<String, Long> EFFECT_COOLDOWN = new ConcurrentHashMap<>();
-    /** Emprises Wood côté serveur : position, expiration et état NoAi antérieur à restaurer. */
+    /** Emprises Wood : immobilisation seule ou stun complet, expiration et état NoAi à restaurer. */
     private static final Map<Integer, WoodHold> WOOD_HOLDS = new ConcurrentHashMap<>();
 
-    private record WoodHold(long expires, double x, double y, double z, boolean previousNoAi) { }
+    private record WoodHold(long expires, double x, double y, double z, boolean previousNoAi, boolean fullStun) { }
 
     /** T351 : attaque NORMALE -> 5 % de chance de déclencher l'animation pixel. */
     private static final int NORMAL_TRIGGER_PERCENT = 5;
@@ -355,13 +355,17 @@ public final class WeaponVfxServerListener {
         return true;
     }
 
-    /** THORN = stun 3 s ; VERDANT = emprise puis explosion visuelle, sans dégâts additionnels. */
+    /** ZEPHYR/VERDANT = immobilisation sans bloquer les attaques ; THORN = stun complet 3 s. */
     private static void applyWoodGameplay(LivingEntity attacker, LivingEntity target,
                                           WeaponVisualEffectId fx) {
         if (!(attacker.level() instanceof ServerLevel sl)) return;
         long now = sl.getGameTime();
         if (fx == WeaponVisualEffectId.THORN_MAW_ROOT) {
-            applyWoodHold(target, now + 60L);
+            applyWoodHold(target, now + 60L, true);
+            return;
+        }
+        if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) {
+            applyWoodHold(target, now + 60L, false);
             return;
         }
         if (fx != WeaponVisualEffectId.VERDANT_SAP_BLOOM) return;
@@ -369,7 +373,7 @@ public final class WeaponVfxServerListener {
         long holdStart = now + 64L;
         long holdEnd = now + 82L;
         TestProcedure.schedule(sl, holdStart, () -> {
-            if (target.isAlive() && target.level() == sl) applyWoodHold(target, holdEnd);
+            if (target.isAlive() && target.level() == sl) applyWoodHold(target, holdEnd, false);
         });
         TestProcedure.schedule(sl, now + 74L, () -> {
             if (!target.isAlive() || target.level() != sl) return;
@@ -380,19 +384,21 @@ public final class WeaponVfxServerListener {
         TestProcedure.schedule(sl, holdEnd, () -> releaseWoodHold(target, holdEnd));
     }
 
-    private static void applyWoodHold(LivingEntity target, long expires) {
+    private static void applyWoodHold(LivingEntity target, long expires, boolean fullStun) {
         WoodHold previous = WOOD_HOLDS.get(target.getId());
         boolean previousNoAi = previous != null ? previous.previousNoAi()
                 : target instanceof Mob mob && mob.isNoAi();
         double x = previous != null ? previous.x() : target.getX();
         double y = previous != null ? previous.y() : target.getY();
         double z = previous != null ? previous.z() : target.getZ();
-        WOOD_HOLDS.put(target.getId(), new WoodHold(expires, x, y, z, previousNoAi));
-        if (target instanceof Mob mob) {
-            mob.setNoAi(true);
-            mob.setTarget(null);
+        WOOD_HOLDS.put(target.getId(), new WoodHold(expires, x, y, z, previousNoAi, fullStun));
+        if (fullStun) {
+            if (target instanceof Mob mob) {
+                mob.setNoAi(true);
+                mob.setTarget(null);
+            }
+            target.stopUsingItem();
         }
-        target.stopUsingItem();
         target.setDeltaMovement(Vec3.ZERO);
         target.teleportTo(x, y, z);
         target.fallDistance = 0.0f;
@@ -402,13 +408,13 @@ public final class WeaponVfxServerListener {
         WoodHold hold = WOOD_HOLDS.get(target.getId());
         if (hold == null || hold.expires() != expectedExpiry) return;
         WOOD_HOLDS.remove(target.getId());
-        if (target instanceof Mob mob) mob.setNoAi(hold.previousNoAi());
+        if (hold.fullStun() && target instanceof Mob mob) mob.setNoAi(hold.previousNoAi());
     }
 
-    private static boolean isWoodHeld(Entity entity) {
+    private static boolean isWoodFullyStunned(Entity entity) {
         if (!(entity instanceof LivingEntity living)) return false;
-        WoodHold hold = WOOD_HOLDS.get(entity.getId());
-        return hold != null && entity.level().getGameTime() < hold.expires();
+        WoodHold hold = WOOD_HOLDS.get(living.getId());
+        return hold != null && hold.fullStun() && living.level().getGameTime() < hold.expires();
     }
 
     @SubscribeEvent
@@ -421,11 +427,13 @@ public final class WeaponVfxServerListener {
             releaseWoodHold(target, hold.expires());
             return;
         }
-        if (target instanceof Mob mob) {
-            mob.setNoAi(true);
-            mob.setTarget(null);
+        if (hold.fullStun()) {
+            if (target instanceof Mob mob) {
+                mob.setNoAi(true);
+                mob.setTarget(null);
+            }
+            target.stopUsingItem();
         }
-        target.stopUsingItem();
         target.setDeltaMovement(Vec3.ZERO);
         target.teleportTo(hold.x(), hold.y(), hold.z());
         target.fallDistance = 0.0f;
@@ -433,12 +441,12 @@ public final class WeaponVfxServerListener {
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onWoodHeldAttack(AttackEntityEvent event) {
-        if (isWoodHeld(event.getEntity())) event.setCanceled(true);
+        if (isWoodFullyStunned(event.getEntity())) event.setCanceled(true);
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onWoodHeldDamage(LivingIncomingDamageEvent event) {
-        if (event.getSource().getEntity() instanceof LivingEntity attacker && isWoodHeld(attacker)) {
+        if (event.getSource().getEntity() instanceof LivingEntity attacker && isWoodFullyStunned(attacker)) {
             event.setCanceled(true);
         }
     }
@@ -659,7 +667,7 @@ public final class WeaponVfxServerListener {
     @SubscribeEvent(priority = EventPriority.HIGH)
     public static void onRightClickRallyVisuals(PlayerInteractEvent.RightClickItem event) {
         Player player = event.getEntity();
-        if (isWoodHeld(player)) {
+        if (isWoodFullyStunned(player)) {
             event.setCanceled(true);
             return;
         }
