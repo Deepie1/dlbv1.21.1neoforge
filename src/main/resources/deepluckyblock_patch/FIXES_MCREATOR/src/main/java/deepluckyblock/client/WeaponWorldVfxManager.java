@@ -475,13 +475,13 @@ public final class WeaponWorldVfxManager {
 
         int duration = switch (fx) {
             // Chorégraphies Wood complètes : croissance, impacts, stun et explosion de sève.
-            case ZEPHYR_WIND_LANCE -> 64;
-            case THORN_MAW_ROOT -> 80;
-            case VERDANT_SAP_BLOOM -> 72;
+            case ZEPHYR_WIND_LANCE -> 80;
+            case THORN_MAW_ROOT -> 96;
+            case VERDANT_SAP_BLOOM -> 96;
             case SERAPH_SKY_PILLAR, ABYSSAL_MAELSTROM, WARLORD_RALLY_SIGIL,
                  DRAGON_CHAOS_PRISM, BRIMSTONE_METEOR, BIG_BANG_SCAR -> 22;
-            case THORN_MAW_ROOT, SANDSTORM_DUNE, ECLIPSE_VEIL, NULL_RIFT_FISSURE,
-                 CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE, VERDANT_SAP_BLOOM, MIASMA_SHROUD,
+            case SANDSTORM_DUNE, ECLIPSE_VEIL, NULL_RIFT_FISSURE,
+                 CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE, MIASMA_SHROUD,
                  PLAGUE_NOVA -> 18;
             case ASTRAL_STAR_LANCE, VOID_WARP_SPHERE, SEISMIC_TECTONIC,
                  CRIMSON_SIPHON, CHRONO_ETERNAL_HALO, ANNIHILATING_ARC -> 16;

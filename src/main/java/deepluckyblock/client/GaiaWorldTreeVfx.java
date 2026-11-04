@@ -67,9 +67,11 @@ public final class GaiaWorldTreeVfx {
         return out;
     }
 
-    public static void render(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+public static void render(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                               float cx, float cy, float cz, float t,
                               float dirX, float dirZ, int variant, int alpha, int salt) {
+        // Les deux images exactes de la timeline sont vides : aucune silhouette résiduelle.
+        if (t <= 0.0f || t >= 1.0f) return;
         if (variant == THORN) {
             renderThornMaw(vc, mat, tmp, cx, cy, cz, t, dirX, dirZ, alpha, salt);
             return;
@@ -78,7 +80,7 @@ public final class GaiaWorldTreeVfx {
         float growDuration = variant == ZEPHYR ? 0.30f : 0.46f;
         float raw = Mth.clamp(t / growDuration, 0.0f, 1.0f);
         float growth = 1.0f - (1.0f - raw) * (1.0f - raw) * (1.0f - raw);
-        renderTree(vc, mat, tmp, model, cx, cy, cz, growth, variant, alpha, salt);
+        renderTree(vc, mat, tmp, model, cx, cy, cz, growth, t, variant, alpha, salt);
         if (variant == ZEPHYR) {
             renderFallingLeaves(vc, mat, tmp, model, cx, cy, cz, t, 0.46f,
                     6, 2.80f, variant, alpha, salt);
@@ -91,18 +93,46 @@ public final class GaiaWorldTreeVfx {
         }
     }
 
+
+private static float smooth01(float v) {
+        float x = Mth.clamp(v, 0.0f, 1.0f);
+        return x * x * (3.0f - 2.0f * x);
+    }
+
+    private static float treeExit(float t, int variant) {
+        return smooth01((t - (variant == ZEPHYR ? 0.78f : 0.86f)) / 0.13f);
+    }
+
+    private static float treeOffsetX(int variant, float sourceY, float exit) {
+        return variant == ZEPHYR ? exit * exit * (0.75f + Math.max(0.0f, sourceY) * 0.22f) : 0.0f;
+    }
+
+    private static float treeOffsetY(int variant, float sourceY, float exit) {
+        if (variant == ZEPHYR) return exit * exit * (0.35f + Math.max(0.0f, sourceY) * 0.18f);
+        // Verdant retourne sous le sol au lieu de s'arrêter brutalement sur une image pleine.
+        return -exit * (sourceY + 1.05f);
+    }
+
+    private static float treeOffsetZ(int variant, float sourceY, float exit) {
+        return variant == ZEPHYR ? exit * exit * (0.12f + Math.max(0.0f, sourceY) * 0.08f) : 0.0f;
+    }
+
     private static void renderTree(VertexConsumer vc, Matrix4f mat, Vector3f tmp, float[] model,
-                                   float cx, float cy, float cz, float growth,
+                                   float cx, float cy, float cz, float growth, float t,
                                    int variant, int alpha, int salt) {
         float spread = 0.18f + 0.82f * growth;
+        float exit = treeExit(t, variant);
+        float fade = (1.0f - exit) * (1.0f - exit);
+        float sizeFade = 1.0f - 0.70f * exit;
         for (int i = 0; i < model.length; i += STRIDE) {
             float reveal = Mth.clamp((growth - model[i + 6]) / 0.14f, 0.0f, 1.0f);
-            if (reveal <= 0.0f) continue;
+            if (reveal <= 0.0f || fade <= 0.0f) continue;
             float appear = 1.0f - (1.0f - reveal) * (1.0f - reveal);
             int role = (int) model[i + 7];
-            float x = model[i] * spread;
-            float y = BASE + (model[i + 1] - BASE) * growth;
-            float z = model[i + 2] * spread;
+            float sourceY = model[i + 1];
+            float x = model[i] * spread + treeOffsetX(variant, sourceY, exit);
+            float y = BASE + (sourceY - BASE) * growth + treeOffsetY(variant, sourceY, exit);
+            float z = model[i + 2] * spread + treeOffsetZ(variant, sourceY, exit);
             if (role >= 5) {
                 float sway = Mth.sin(growth * 8.5f + (salt & 63) * 0.065f
                         + model[i] * 2.1f + model[i + 2]) * 0.026f * growth;
@@ -112,46 +142,54 @@ public final class GaiaWorldTreeVfx {
             }
             int mapped = role;
             if (variant == VERDANT && role >= 5 && role <= 10) mapped = Math.min(10, role + 1);
-            int a = Math.round(alpha * Mth.clamp(reveal * 1.6f, 0.0f, 1.0f));
+            int a = Math.round(alpha * Mth.clamp(reveal * 1.6f, 0.0f, 1.0f) * fade);
+            if (a <= 0) continue;
             cube(vc, mat, tmp, cx + x, cy + y, cz + z,
-                    model[i + 3] * appear, model[i + 4] * appear, model[i + 5] * appear,
-                    PALETTE[mapped], a);
+                    model[i + 3] * appear * sizeFade, model[i + 4] * appear * sizeFade,
+                    model[i + 5] * appear * sizeFade, PALETTE[mapped], a);
         }
     }
 
+
     /** ZEPHYR : trois lances serrées et pointues, trois poses pseudo-aléatoires, centre à l'abdomen. */
+/** ZEPHYR : trois lances jointives, pénétration, impact puis dissolution dans le vent. */
     private static void renderZephyrLances(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                            float cx, float cy, float cz, float t, int alpha, int salt) {
         for (int spear = 0; spear < 3; spear++) {
             float startTime = 0.30f + spear * 0.055f;
             float travel = Mth.clamp((t - startTime) / 0.18f, 0.0f, 1.0f);
             if (travel <= 0.0f) continue;
-            travel = travel * travel * (3.0f - 2.0f * travel);
+            travel = smooth01(travel);
+            float impactTime = startTime + 0.18f;
+            float shaftFade = 1.0f - smooth01((t - impactTime) / 0.16f);
+            if (shaftFade <= 0.0f) continue;
             float angle = hash01(salt, 80 + spear * 17) * 6.2831855f + spear * 2.0943951f;
             float radius = 3.00f + 0.80f * hash01(salt, 83 + spear * 19);
             float startX = Mth.cos(angle) * radius;
             float startZ = Mth.sin(angle) * radius;
             float startY = -0.30f + 1.65f * hash01(salt, 89 + spear * 23);
-            float centerX = startX * (1.0f - travel);
-            float centerY = startY * (1.0f - travel);
-            float centerZ = startZ * (1.0f - travel);
             float norm = Mth.sqrt(startX * startX + startY * startY + startZ * startZ);
             float dx = -startX / norm, dy = -startY / norm, dz = -startZ / norm;
+            float overrun = Math.max(0.0f, t - impactTime) * 3.2f;
+            float centerX = startX * (1.0f - travel) + dx * overrun;
+            float centerY = startY * (1.0f - travel) + dy * overrun;
+            float centerZ = startZ * (1.0f - travel) + dz * overrun;
             float length = 1.62f;
             for (int segment = 0; segment < 42; segment++) {
                 float u = segment / 41.0f;
                 float along = (u - 0.5f) * length;
-                // Pas de 0,0395 : les cubes de 0,096 de diamètre se chevauchent réellement.
                 float half = segment >= 32
                         ? Math.max(0.008f, 0.052f - (segment - 32) * 0.0048f) : 0.048f;
+                half *= 0.40f + 0.60f * shaftFade;
                 cube(vc, mat, tmp, cx + centerX + dx * along, cy + centerY + dy * along,
                         cz + centerZ + dz * along, half, half, half,
-                        PALETTE[segment >= 36 ? 10 : (segment & 1) == 0 ? 8 : 9], alpha);
+                        PALETTE[segment >= 36 ? 10 : (segment & 1) == 0 ? 8 : 9],
+                        Math.round(alpha * shaftFade));
             }
 
-            float impactTime = startTime + 0.18f;
             float impactAge = (t - impactTime) / 0.20f;
-            if (impactAge >= 0.0f && impactAge <= 1.0f) {
+            if (impactAge >= 0.0f && impactAge < 1.0f) {
+                float sprayFade = 1.0f - impactAge;
                 for (int p = 0; p < 18; p++) {
                     float a = hash01(salt + spear * 131, p * 37 + 3) * 6.2831855f;
                     float lift = 0.25f + 1.10f * hash01(salt, p * 41 + spear * 59);
@@ -159,16 +197,18 @@ public final class GaiaWorldTreeVfx {
                     float px = cx + Mth.cos(a) * speed * impactAge;
                     float pz = cz + Mth.sin(a) * speed * impactAge;
                     float py = cy + lift * impactAge - 1.25f * impactAge * impactAge;
-                    float half = (0.025f + 0.025f * hash01(salt, p * 47 + spear)) * (1.0f - 0.45f * impactAge);
+                    float half = (0.025f + 0.025f * hash01(salt, p * 47 + spear)) * sprayFade;
                     cube(vc, mat, tmp, px, py, pz, half, half, half,
                             PALETTE[p % 3 == 0 ? 4 : p % 3 == 1 ? 9 : 10],
-                            Math.round(alpha * (1.0f - impactAge)));
+                            Math.round(alpha * sprayFade * sprayFade));
                 }
             }
         }
     }
 
+
     /** Feuilles détachées avec trajectoires lentes, oscillation et vitesse propre à chaque cube. */
+/** Feuilles miniatures : chute lente, rotation 3D puis envol et fondu avant la dernière image. */
     private static void renderFallingLeaves(VertexConsumer vc, Matrix4f mat, Vector3f tmp, float[] model,
                                             float cx, float cy, float cz, float t, float start,
                                             int sampleStep, float fallDistance, int variant, int alpha, int salt) {
@@ -178,14 +218,17 @@ public final class GaiaWorldTreeVfx {
             if (role < 5) continue;
             int ordinal = leaf++;
             if (ordinal % sampleStep != 0) continue;
-            float delay = hash01(salt, i + 311) * (variant == VERDANT ? 0.22f : 0.10f);
-            float age = (t - start - delay) / Math.max(0.05f, 1.0f - start - delay);
-            if (age <= 0.0f) continue;
-            age = Mth.clamp(age, 0.0f, 1.0f);
+            float delay = hash01(salt, i + 311) * (variant == VERDANT ? 0.18f : 0.10f);
+            float age = (t - start - delay) / Math.max(0.05f, 0.97f - start - delay);
+            if (age <= 0.0f || age >= 1.0f) continue;
+            float fade = smooth01(age / 0.07f) * (1.0f - smooth01((age - 0.66f) / 0.34f));
+            if (fade <= 0.0f) continue;
+            float lift = smooth01((age - 0.64f) / 0.36f);
             float speed = 0.62f + 0.76f * hash01(salt, i + 337);
             float sway = Mth.sin(age * 8.0f + ordinal * 1.73f) * (0.12f + 0.20f * age);
-            float px = cx + model[i] + sway + (variant == ZEPHYR ? age * 0.55f : age * 0.16f);
-            float py = cy + model[i + 1] - age * fallDistance * speed;
+            float px = cx + model[i] + sway + (variant == ZEPHYR ? age * 0.55f : age * 0.16f)
+                    + lift * (variant == ZEPHYR ? 1.10f : 0.35f);
+            float py = cy + model[i + 1] - age * fallDistance * speed + lift * 0.85f;
             float pz = cz + model[i + 2] + Mth.cos(age * 7.0f + ordinal) * 0.18f * age;
             float half = model[i + 3] * 0.24f;
             int mapped = variant == VERDANT ? Math.min(10, role + 1) : role;
@@ -194,98 +237,121 @@ public final class GaiaWorldTreeVfx {
             float leafRoll = age * 4.0f + ordinal * 0.31f;
             WeaponWorldVfxManager.emitVoxelBoxRotated(vc, mat, tmp, px, py, pz,
                     half, model[i + 4] * 0.18f, half, leafYaw, leafPitch, leafRoll,
-                    PALETTE[mapped], Math.round(alpha * (0.92f - 0.38f * age)));
+                    PALETTE[mapped], Math.round(alpha * fade));
         }
     }
 
+
     /** VERDANT : fruits dorés/ambres uniquement dans la partie haute de la couronne. */
+/** VERDANT : fruits dorés/ambres solidaires de la couronne, y compris pendant sa disparition. */
     private static void renderGoldenFruits(VertexConsumer vc, Matrix4f mat, Vector3f tmp, float[] model,
                                            float cx, float cy, float cz, float t, float growth, int alpha, int salt) {
-        float open = Mth.clamp((t - 0.38f) / 0.20f, 0.0f, 1.0f);
-        if (open <= 0.0f) return;
+        float open = smooth01((t - 0.38f) / 0.20f);
+        float exit = treeExit(t, VERDANT);
+        float fade = (1.0f - exit) * (1.0f - exit);
+        if (open <= 0.0f || fade <= 0.0f) return;
         int leaf = 0;
         for (int i = 0; i < model.length; i += STRIDE) {
             int role = (int) model[i + 7];
             if (role < 5) continue;
             int ordinal = leaf++;
             if (ordinal % 15 != 0 || model[i + 1] < 2.40f) continue;
-            float half = (0.052f + 0.025f * hash01(salt, i + 401)) * open;
+            float sourceY = model[i + 1];
+            float half = (0.052f + 0.025f * hash01(salt, i + 401)) * open * (1.0f - 0.70f * exit);
             for (int bead = 0; bead < 2; bead++) {
-                cube(vc, mat, tmp, cx + model[i] + bead * 0.075f,
-                        cy + model[i + 1] - 0.08f - bead * 0.065f, cz + model[i + 2],
+                cube(vc, mat, tmp, cx + model[i] + bead * 0.075f + treeOffsetX(VERDANT, sourceY, exit),
+                        cy + sourceY - 0.08f - bead * 0.065f + treeOffsetY(VERDANT, sourceY, exit),
+                        cz + model[i + 2] + treeOffsetZ(VERDANT, sourceY, exit),
                         half, half * 1.20f, half, PALETTE[bead == 0 ? 12 : 13],
-                        Math.round(alpha * open));
+                        Math.round(alpha * open * fade));
             }
         }
     }
 
+
     /** VERDANT : la sève quitte les feuilles, glisse le long du tronc, s'accumule puis explose. */
+/** VERDANT : filets continus feuilles -> tronc -> sol, bulle englobante, explosion sans dégâts. */
     private static void renderSacredSap(VertexConsumer vc, Matrix4f mat, Vector3f tmp, float[] model,
                                         float cx, float cy, float cz, float t, int alpha, int salt) {
         int leaf = 0;
-        for (int i = 0; i < model.length; i += STRIDE) {
-            int role = (int) model[i + 7];
-            if (role < 5) continue;
-            int ordinal = leaf++;
-            if (ordinal % 67 != 0 || model[i + 1] < 2.40f) continue;
-            float delay = (ordinal % 4) * 0.012f;
+        float sapFade = 1.0f - smooth01((t - 0.70f) / 0.07f);
+        if (sapFade > 0.0f) {
+            for (int i = 0; i < model.length; i += STRIDE) {
+                int role = (int) model[i + 7];
+                if (role < 5) continue;
+                int ordinal = leaf++;
+                if (ordinal % 47 != 0 || model[i + 1] < 3.00f
+                        || model[i] * model[i] + model[i + 2] * model[i + 2] < 0.64f) continue;
+                float delay = hash01(salt, i + 433) * 0.025f;
+                float sourceY = model[i + 1] + 0.13f;
+                float attachY = Math.min(3.05f, sourceY - 0.18f);
+                float trunkAngle = ordinal * 2.3999632f;
+                float trunkX = Mth.cos(trunkAngle) * 0.22f;
+                float trunkZ = Mth.sin(trunkAngle) * 0.22f;
 
-            // 1) Perlement dans la couronne puis glissement horizontal jusqu'au tronc.
-            float flow = Mth.clamp((t - 0.40f - delay) / 0.18f, 0.0f, 1.0f);
-            if (flow > 0.0f && t < 0.62f) {
-                for (int bead = 0; bead < 8; bead++) {
-                    float u = bead / 7.0f;
-                    if (u > flow) continue;
-                    float px = cx + Mth.lerp(u, model[i], 0.0f);
-                    float py = cy + model[i + 1] - 0.10f - 0.12f * u;
-                    float pz = cz + Mth.lerp(u, model[i + 2], 0.0f);
-                    float half = 0.026f + 0.008f * (bead & 1);
-                    cube(vc, mat, tmp, px, py, pz, half, half * 1.30f, half,
-                            PALETTE[bead % 3 == 0 ? 12 : 13], Math.round(alpha * flow));
+                // 1) Une fine coulée jointive quitte le haut de la couronne et rejoint l'écorce.
+                float flow = Mth.clamp((t - 0.42f - delay) / 0.14f, 0.0f, 1.0f);
+                if (flow > 0.0f) {
+                    for (int bead = 0; bead < 52; bead++) {
+                        float u = bead / 51.0f;
+                        float reveal = smooth01((flow - u) / 0.055f);
+                        if (reveal <= 0.0f) continue;
+                        float bow = Mth.sin(u * 3.1415927f);
+                        float px = Mth.lerp(u, model[i], trunkX) + model[i] * 0.18f * bow;
+                        float py = Mth.lerp(u, sourceY, attachY) - 0.22f * bow;
+                        float pz = Mth.lerp(u, model[i + 2], trunkZ) + model[i + 2] * 0.18f * bow;
+                        float half = (0.036f + 0.005f * (bead & 1)) * reveal;
+                        cube(vc, mat, tmp, cx + px, cy + py, cz + pz, half, half * 1.15f, half,
+                                PALETTE[bead % 5 == 0 ? 11 : (bead & 1) == 0 ? 12 : 13], Math.round(alpha * sapFade * reveal));
+                    }
                 }
-            }
 
-            // 2) Rivulets descendants collés à l'écorce : aucun jet vertical apparu d'un coup.
-            float down = Mth.clamp((t - 0.50f - delay * 0.35f) / 0.14f, 0.0f, 1.0f);
-            if (down > 0.0f && t < 0.68f) {
-                float sourceY = model[i + 1] - 0.22f;
-                for (int bead = 0; bead < 10; bead++) {
-                    float u = bead / 9.0f;
-                    if (u > down) continue;
-                    float y = Mth.lerp(u, sourceY, 0.0f);
-                    float px = cx + Mth.sin(u * 8.0f + ordinal) * 0.055f;
-                    float pz = cz + Mth.cos(u * 7.0f + ordinal) * 0.055f;
-                    float half = 0.025f + 0.007f * Mth.sin(u * 11.0f);
-                    cube(vc, mat, tmp, px, cy + y, pz, half, 0.065f, half,
-                            PALETTE[bead % 4 == 0 ? 12 : 13], Math.round(alpha * 0.94f));
-                }
-            }
-        }
-
-        // 3) Amas volumétrique qui grossit autour du bas du torse et emprisonne sans dégâts.
-        float mass = Mth.clamp((t - 0.62f) / 0.10f, 0.0f, 1.0f);
-        if (mass > 0.0f && t < 0.74f) {
-            mass = mass * mass * (3.0f - 2.0f * mass);
-            for (int ix = -2; ix <= 2; ix++) {
-                for (int iy = -2; iy <= 2; iy++) {
-                    for (int iz = -2; iz <= 2; iz++) {
-                        float d = ix * ix / 4.0f + iy * iy / 5.0f + iz * iz / 4.0f;
-                        if (d > 1.0f) continue;
-                        int key = (ix + 3) * 97 + (iy + 3) * 37 + (iz + 3) * 17;
-                        float px = cx + ix * 0.19f * mass;
-                        float py = cy - 0.16f + iy * 0.16f * mass;
-                        float pz = cz + iz * 0.19f * mass;
-                        float half = (0.045f + 0.022f * hash01(salt, key)) * (0.35f + 0.65f * mass);
-                        cube(vc, mat, tmp, px, py, pz, half, half * 1.15f, half,
-                                PALETTE[key % 4 == 0 ? 12 : 13], Math.round(alpha * 0.88f * mass));
+                // 2) Le filet reste collé au tronc et descend réellement jusqu'au pied de l'ennemi.
+                float down = Mth.clamp((t - 0.53f - delay * 0.30f) / 0.17f, 0.0f, 1.0f);
+                if (down > 0.0f) {
+                    for (int bead = 0; bead < 48; bead++) {
+                        float u = bead / 47.0f;
+                        float reveal = smooth01((down - u) / 0.045f);
+                        if (reveal <= 0.0f) continue;
+                        float y = Mth.lerp(u, attachY, -0.48f);
+                        float angle = trunkAngle + u * (0.85f + 0.35f * hash01(salt, ordinal + 457));
+                        float px = Mth.cos(angle) * 0.22f + Mth.sin(u * 13.0f + ordinal) * 0.025f;
+                        float pz = Mth.sin(angle) * 0.22f;
+                        float half = (0.027f + 0.004f * (bead & 1)) * reveal;
+                        cube(vc, mat, tmp, cx + px, cy + y, cz + pz, half, 0.057f * reveal, half,
+                                PALETTE[bead % 6 == 0 ? 12 : 13], Math.round(alpha * sapFade * reveal));
                     }
                 }
             }
         }
 
-        // 4) Explosion purement visuelle : le serveur ne rajoute aucun dégât au coup initial.
-        float blast = (t - 0.74f) / 0.26f;
-        if (blast >= 0.0f && blast <= 1.0f) {
+        // 3) Une bulle/amas amber monte du sol et englobe le torse, sans aucun dégât ajouté.
+        float mass = smooth01((t - 0.66f) / 0.09f);
+        if (mass > 0.0f && t < 0.77f) {
+            for (int ix = -3; ix <= 3; ix++) {
+                for (int iy = -4; iy <= 4; iy++) {
+                    for (int iz = -3; iz <= 3; iz++) {
+                        float d = ix * ix / 10.0f + iy * iy / 18.0f + iz * iz / 10.0f;
+                        if (d > 1.12f || d < 0.28f) continue;
+                        float level = (iy + 4) / 8.0f;
+                        float fill = smooth01((mass - level * 0.62f) / 0.38f);
+                        if (fill <= 0.0f) continue;
+                        int key = (ix + 4) * 97 + (iy + 5) * 37 + (iz + 4) * 17;
+                        float px = cx + ix * 0.17f * mass;
+                        float py = cy - 0.55f * (1.0f - mass) + iy * 0.17f * mass;
+                        float pz = cz + iz * 0.17f * mass;
+                        float half = (0.087f + 0.016f * hash01(salt, key)) * fill;
+                        cube(vc, mat, tmp, px, py, pz, half, half * 1.08f, half,
+                                PALETTE[key % 5 == 0 ? 12 : 13], Math.round(alpha * 0.90f * fill));
+                    }
+                }
+            }
+        }
+
+        // 4) L'explosion se réduit et s'estompe entièrement ; jamais de dernier éclat figé.
+        float blast = (t - 0.77f) / 0.19f;
+        if (blast > 0.0f && blast < 1.0f) {
+            float fade = 1.0f - blast;
             for (int p = 0; p < 70; p++) {
                 float angle = hash01(salt, p * 47 + 503) * 6.2831855f;
                 float speed = 0.45f + 2.20f * hash01(salt, p * 53 + 509);
@@ -293,94 +359,137 @@ public final class GaiaWorldTreeVfx {
                 float px = cx + Mth.cos(angle) * speed * blast;
                 float pz = cz + Mth.sin(angle) * speed * blast;
                 float py = cy + lift * blast - 2.20f * blast * blast;
-                float half = (0.025f + 0.045f * hash01(salt, p * 61 + 523)) * (1.0f - 0.50f * blast);
+                float half = (0.025f + 0.045f * hash01(salt, p * 61 + 523)) * fade;
                 cube(vc, mat, tmp, px, py, pz, half, half, half,
                         PALETTE[p % 4 == 0 ? 9 : p % 3 == 0 ? 4 : p % 2 == 0 ? 12 : 13],
-                        Math.round(alpha * (1.0f - 0.65f * blast)));
+                        Math.round(alpha * fade * fade));
             }
         }
     }
 
+
     /** THORN : cinq ronces noueuses s'entrelacent en boule, hérissées d'épines et de feuilles. */
+/**
+     * THORN : six branches complètes surgissent du sous-sol, convergent puis s'enroulent en nœud.
+     * Tiges, épines, excroissances et feuilles partagent exactement le même point porteur animé.
+     */
+    private static void thornPoint(int strand, float u, float t, float dirX, float dirZ,
+                                   int salt, float[] out) {
+        float sideX = dirZ, sideZ = -dirX;
+        float phase = strand * 2.3999632f + hash01(salt, 701 + strand * 31) * 0.60f;
+        float startRadius = 2.05f + 0.65f * hash01(salt, 709 + strand * 37);
+        float approach = Mth.clamp(u / 0.38f, 0.0f, 1.0f);
+        float wrap = Mth.clamp((u - 0.38f) / 0.62f, 0.0f, 1.0f);
+        float easedApproach = smooth01(approach);
+        float radius = Mth.lerp(easedApproach, startRadius, 0.58f);
+        if (wrap > 0.0f) {
+            radius = 0.58f + 0.10f * Mth.sin(wrap * 3.1415927f)
+                    + 0.035f * Mth.sin(wrap * 13.0f + phase);
+        }
+        float direction = (strand & 1) == 0 ? 1.0f : -1.0f;
+        float angle = phase + (1.0f - approach) * 0.20f * Mth.sin(approach * 5.0f + phase)
+                + wrap * (9.20f + strand * 0.28f) * direction + 0.055f * Mth.sin(u * 17.0f + phase);
+        float x = Mth.cos(angle) * radius;
+        float z = Mth.sin(angle) * radius;
+        float y;
+        if (wrap <= 0.0f) {
+            y = Mth.lerp(easedApproach, -1.35f, 0.02f)
+                    + 0.09f * Mth.sin(approach * 9.424778f + phase) * Mth.sin(approach * 3.1415927f);
+        } else {
+            y = 0.02f + 1.12f * wrap
+                    + 0.10f * Mth.sin(wrap * 12.566371f + phase) * Mth.sin(wrap * 3.1415927f);
+        }
+
+        // Chaque famille s'incline différemment : les tiges se croisent en volume autour du mob.
+        float tilt = (strand - 2.5f) * 0.29f;
+        float tiltWeight = easedApproach;
+        float cosTilt = Mth.cos(tilt), sinTilt = Mth.sin(tilt);
+        float centeredY = y - 0.48f;
+        float tiltedX = x * cosTilt - centeredY * sinTilt;
+        float tiltedY = x * sinTilt + centeredY * cosTilt + 0.48f;
+        x = Mth.lerp(tiltWeight, x, tiltedX);
+        y = Mth.lerp(tiltWeight, y, tiltedY);
+
+        // Très légère mobilité organique ; tous les accessoires reçoivent ensuite ce même point.
+        float live = smooth01((t - 0.04f) / 0.18f);
+        float sway = Mth.sin(t * 10.0f + strand * 1.7f + u * 9.0f) * 0.035f * u * live;
+        x += sway * Mth.cos(phase + 1.2f);
+        z += sway * Mth.sin(phase + 1.2f);
+        y += Mth.sin(t * 8.0f + u * 11.0f + phase) * 0.018f * u * live;
+        float retract = smooth01((t - 0.63f) / 0.32f);
+        y -= retract * (1.85f + 0.30f * hash01(salt, 719 + strand * 41));
+
+        out[0] = sideX * x + dirX * z;
+        out[1] = y;
+        out[2] = sideZ * x + dirZ * z;
+    }
+
     private static void renderThornMaw(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                        float cx, float cy, float cz, float t,
                                        float dirX, float dirZ, int alpha, int salt) {
-        float sideX = dirZ, sideZ = -dirX;
-        float bite = Mth.clamp(t / 0.20f, 0.0f, 1.0f);
-        bite = bite * bite * (3.0f - 2.0f * bite);
-        float release = Mth.clamp((t - 0.75f) / 0.20f, 0.0f, 1.0f);
+        float retract = smooth01((t - 0.63f) / 0.32f);
+        float fade = (1.0f - retract) * (1.0f - retract);
+        if (fade <= 0.0f) return;
+        float[] point = new float[3];
+        for (int strand = 0; strand < 6; strand++) {
+            float delay = strand * 0.012f + hash01(salt, 733 + strand * 43) * 0.012f;
+            float growth = Mth.clamp((t - delay) / (0.25f + hash01(salt, 739 + strand * 47) * 0.035f), 0.0f, 1.0f);
+            for (int k = 0; k < 128; k++) {
+                float u = k / 127.0f;
+                float reveal = smooth01((growth - u) / 0.045f);
+                if (reveal <= 0.0f) continue;
+                thornPoint(strand, u, t, dirX, dirZ, salt, point);
+                float px = cx + point[0], py = cy + point[1], pz = cz + point[2];
+                float knot = k % 13 == 0 ? 1.20f : 1.0f;
+                float half = (0.062f + 0.008f * hash01(salt, strand * 101 + k)) * knot * reveal;
+                int shade = (k + strand * 3) % 17;
+                int role = shade == 0 ? 15 : shade == 1 ? 0 : shade <= 6 ? 14 : shade <= 9 ? 5 : shade <= 13 ? 1 : 0;
+                int a = Math.round(alpha * reveal * fade);
+                cube(vc, mat, tmp, px, py, pz, half, half, half, PALETTE[role], a);
 
-        for (int strand = 0; strand < 5; strand++) {
-            float sign = (strand & 1) == 0 ? -1.0f : 1.0f;
-            float phase = strand * 1.2566371f;
-            float tilt = (strand - 2) * 0.38f;
-            float cosTilt = Mth.cos(tilt), sinTilt = Mth.sin(tilt);
-            float knotOffset = sign * (1.05f * (1.0f - bite) + 0.75f * release);
-            for (int k = 0; k < 48; k++) {
-                float u = k / 47.0f;
-                float phi = u * 3.1415927f;
-                float theta = u * 12.566371f + phase + 0.22f * Mth.sin(u * 19.0f + strand);
-                float shell = Mth.sin(phi);
-                float radius = 0.54f + 0.08f * Mth.sin(u * 9.0f + phase)
-                        + 0.92f * (1.0f - bite) + 0.72f * release;
-                float lx = shell * Mth.cos(theta) * radius;
-                float lz = shell * Mth.sin(theta) * radius;
-                float ly = Mth.cos(phi) * radius * 0.90f + 0.15f;
-                // Inclinaison différente par tige : les cinq familles de cubes se croisent réellement.
-                float rx = lx * cosTilt - ly * sinTilt;
-                float ry = lx * sinTilt + ly * cosTilt;
-                float px = cx + sideX * (knotOffset + rx) + dirX * lz;
-                float pz = cz + sideZ * (knotOffset + rx) + dirZ * lz;
-                float py = cy + ry;
-                float knot = k % 7 == 0 ? 1.38f : 1.0f;
-                float half = (0.050f + 0.022f * hash01(salt, strand * 101 + k)) * knot;
-                int shade = (k + strand * 3) % 11;
-                int role = shade == 0 ? 15 : shade == 1 ? 16 : shade <= 3 ? 14 : shade <= 5 ? 5 : shade <= 8 ? 1 : 0;
-                cube(vc, mat, tmp, px, py, pz, half * 1.12f, half, half * 1.12f, PALETTE[role], alpha);
+                float norm = Mth.sqrt(point[0] * point[0] + (point[1] - 0.45f) * (point[1] - 0.45f)
+                        + point[2] * point[2]);
+                float nx = norm > 0.001f ? point[0] / norm : 0.0f;
+                float ny = norm > 0.001f ? (point[1] - 0.45f) / norm : 0.5f;
+                float nz = norm > 0.001f ? point[2] / norm : 0.0f;
 
-                // Trois cubes qui s'affinent : une vraie pointe claire/violette hors de la tige.
-                if (k % 3 == 0) {
-                    float norm = Mth.sqrt(rx * rx + (ry - 0.12f) * (ry - 0.12f) + lz * lz);
-                    float nx = norm > 0.001f ? rx / norm : 0.0f;
-                    float ny = norm > 0.001f ? (ry - 0.12f) / norm : 0.5f;
-                    float nz = norm > 0.001f ? lz / norm : 0.0f;
-                    for (int spike = 0; spike < 3; spike++) {
-                        float reach = 0.065f + spike * 0.052f;
-                        float sx = px + sideX * nx * reach + dirX * nz * reach;
-                        float sz = pz + sideZ * nx * reach + dirZ * nz * reach;
-                        float sy = py + ny * reach;
-                        float sh = 0.034f - spike * 0.0085f;
-                        cube(vc, mat, tmp, sx, sy, sz, sh, sh * 1.22f, sh,
-                                PALETTE[spike == 2 ? 17 : (k + strand) % 4 == 0 ? 18 : 4], alpha);
+                // Base enfoncée dans l'écorce et pointe minuscule : les pics ne deviennent pas des paddles.
+                if (k % 4 == 0) {
+                    for (int spike = 0; spike < 2; spike++) {
+                        float reach = half * (spike == 0 ? 0.60f : 0.91f);
+                        float sh = (spike == 0 ? 0.023f : 0.013f) * reveal;
+                        cube(vc, mat, tmp, px + nx * reach, py + ny * reach, pz + nz * reach,
+                                sh, sh, sh, PALETTE[spike == 1 ? 17 : (k + strand) % 5 == 0 ? 18 : 4], a);
                     }
                 }
 
-                // Excroissance courte et tordue : la branche n'est pas une simple hélice régulière.
-                if (k % 8 == 0) {
+                // Courte excroissance crochue ; ses deux feuilles sont fixées à SON extrémité.
+                if (k % 12 == 0) {
+                    float tx = nx * 0.55f - nz * 0.45f;
+                    float tz = nz * 0.55f + nx * 0.45f;
+                    float ty = 0.35f + 0.20f * hash01(salt, strand * 151 + k);
+                    float endX = px, endY = py, endZ = pz;
                     for (int twig = 1; twig <= 4; twig++) {
-                        float reach = twig * 0.055f;
-                        float tx = px + sideX * Mth.cos(theta + twig * 0.45f) * reach;
-                        float tz = pz + dirX * Mth.sin(theta + twig * 0.45f) * reach;
-                        float ty = py + twig * 0.035f;
-                        float th = 0.041f - twig * 0.005f;
-                        cube(vc, mat, tmp, tx, ty, tz, th, th, th,
-                                PALETTE[twig == 4 ? 16 : 14], alpha);
+                        float reach = twig * 0.036f;
+                        endX = px + tx * reach;
+                        endY = py + ty * reach + 0.012f * Mth.sin(twig * 1.7f + k);
+                        endZ = pz + tz * reach;
+                        float th = (0.041f - twig * 0.003f) * reveal;
+                        cube(vc, mat, tmp, endX, endY, endZ, th, th, th,
+                                PALETTE[twig == 4 ? 0 : 14], a);
                     }
-                }
-
-                // Petits groupes de feuilles vives, jamais une couronne d'arbre.
-                if (k % 9 == 0) {
-                    for (int leaf = 0; leaf < 2; leaf++) {
-                        float lh = 0.030f + leaf * 0.008f;
-                        cube(vc, mat, tmp, px + sideX * (0.07f + leaf * 0.045f),
-                                py + 0.035f + leaf * 0.045f, pz + dirX * 0.04f,
-                                lh * 1.35f, lh * 0.45f, lh,
-                                PALETTE[(k + leaf) % 2 == 0 ? 8 : 9], alpha);
+                    for (int smallLeaf = 0; smallLeaf < 2; smallLeaf++) {
+                        float lh = (0.026f + smallLeaf * 0.007f) * reveal;
+                        cube(vc, mat, tmp, endX + nx * smallLeaf * 0.030f,
+                                endY + 0.025f + smallLeaf * 0.027f, endZ + nz * smallLeaf * 0.030f,
+                                lh * 1.25f, lh * 0.55f, lh,
+                                PALETTE[(k + smallLeaf) % 2 == 0 ? 8 : 9], a);
                     }
                 }
             }
         }
     }
+
 
     private static void cube(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                              float x, float y, float z, float hx, float hy, float hz, int rgb, int alpha) {

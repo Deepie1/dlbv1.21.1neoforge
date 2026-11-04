@@ -55,7 +55,7 @@ const MODELS=[unpack(ZEPHYR_PACKED),null,unpack(VERDANT_PACKED)],LEAVES=[420,0,7
 const PALETTE=['#352217','#5a3617','#794723','#a9743c','#d0a061','#153b26','#20552c','#2f7435','#489440','#70b548','#a2cd62','#e3d98a','#ffc65b','#d88a2e','#3b4932','#5e6870','#6e3e68','#b58aa6','#8b4658'];
 const NAMES=['Zephyr Wind Lance','Thorn Maw Root','Verdant Sap Bloom'];
 const SUBS=['Arbre penché · 3 lances · impacts','Ronces · épines · stun 3 s','Arbre sacré · fruits · sève explosive'];
-const DURATIONS=[6.4,8,7.2];
+const DURATIONS=[8,9.6,9.6];
 const canvas=document.getElementById('scene'),ctx=canvas.getContext('2d',{alpha:false});
 const timeline=document.getElementById('timeline'),phaseEl=document.getElementById('phase'),playBtn=document.getElementById('play'),visibleEl=document.getElementById('visibleCount');
 const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),lerp=(a,b,t)=>a+(b-a)*t;
@@ -75,63 +75,71 @@ new ResizeObserver(resize).observe(canvas);resize();
 function growthAt(time){const duration=variant===0?.30:.46,r=clamp(time/duration);return 1-Math.pow(1-r,3)}
 function colorRole(role){return variant===2&&role>=5&&role<=10?Math.min(10,role+1):role}
 function push(out,x,y,z,hx,hy,hz,c,a=1){out.push({x,y,z,hx,hy,hz,c:PALETTE[c],a})}
-function baseVoxels(out){const model=MODELS[variant];if(!model)return 0;const growth=growthAt(t),spread=.18+.82*growth;let visible=0;
- for(let i=0;i<model.length;i+=STRIDE){const reveal=clamp((growth-model[i+6])/.14);if(reveal<=0)continue;const appear=1-Math.pow(1-reveal,2),role=model[i+7]|0;
-  let x=model[i]*spread,y=BASE+(model[i+1]-BASE)*growth,z=model[i+2]*spread;
+function smooth01(v){const x=clamp(v);return x*x*(3-2*x)}
+function treeExit(time,v=variant){return smooth01((time-(v===0?.78:.86))/.13)}
+function treeOffsetX(v,sourceY,exit){return v===0?exit*exit*(.75+Math.max(0,sourceY)*.22):0}
+function treeOffsetY(v,sourceY,exit){return v===0?exit*exit*(.35+Math.max(0,sourceY)*.18):-exit*(sourceY+1.05)}
+function treeOffsetZ(v,sourceY,exit){return v===0?exit*exit*(.12+Math.max(0,sourceY)*.08):0}
+function baseVoxels(out){const model=MODELS[variant];if(!model||t<=0||t>=1)return 0;const growth=growthAt(t),spread=.18+.82*growth,exit=treeExit(t),fade=(1-exit)*(1-exit),sizeFade=1-.70*exit;let visible=0;
+ for(let i=0;i<model.length;i+=STRIDE){const reveal=clamp((growth-model[i+6])/.14);if(reveal<=0||fade<=0)continue;const appear=1-Math.pow(1-reveal,2),role=model[i+7]|0,sourceY=model[i+1];
+  let x=model[i]*spread+treeOffsetX(variant,sourceY,exit),y=BASE+(sourceY-BASE)*growth+treeOffsetY(variant,sourceY,exit),z=model[i+2]*spread+treeOffsetZ(variant,sourceY,exit);
   if(role>=5){const sway=Math.sin(growth*8.5+(SALT&63)*.065+model[i]*2.1+model[i+2])*.026*growth;x+=sway;z+=sway*.55;y+=sway*.25}
-  push(out,x,y,z,model[i+3]*appear,model[i+4]*appear,model[i+5]*appear,colorRole(role),clamp(reveal*1.6));visible++;
+  const a=clamp(reveal*1.6)*fade;if(a<=0)continue;push(out,x,y,z,model[i+3]*appear*sizeFade,model[i+4]*appear*sizeFade,model[i+5]*appear*sizeFade,colorRole(role),a);visible++;
  }return visible;
 }
+
 function fallingLeaves(out,model,start,step,fallDistance){let leaf=0;
  for(let i=0;i<model.length;i+=STRIDE){const role=model[i+7]|0;if(role<5)continue;const ordinal=leaf++;if(ordinal%step!==0)continue;
-  const delay=hash01(SALT,i+311)*(variant===2?.22:.10);let age=(t-start-delay)/Math.max(.05,1-start-delay);if(age<=0)continue;age=clamp(age);
-  const speed=.62+.76*hash01(SALT,i+337),sway=Math.sin(age*8+ordinal*1.73)*(.12+.20*age),half=model[i+3]*.24;
-  push(out,model[i]+sway+(variant===0?age*.55:age*.16),model[i+1]-age*fallDistance*speed,model[i+2]+Math.cos(age*7+ordinal)*.18*age,
-   half,model[i+4]*.18,half,colorRole(role),.92-.38*age);
+  const delay=hash01(SALT,i+311)*(variant===2?.18:.10),age=(t-start-delay)/Math.max(.05,.97-start-delay);if(age<=0||age>=1)continue;
+  const fade=smooth01(age/.07)*(1-smooth01((age-.66)/.34));if(fade<=0)continue;const lift=smooth01((age-.64)/.36),speed=.62+.76*hash01(SALT,i+337),sway=Math.sin(age*8+ordinal*1.73)*(.12+.20*age),half=model[i+3]*.24;
+  push(out,model[i]+sway+(variant===0?age*.55:age*.16)+lift*(variant===0?1.10:.35),model[i+1]-age*fallDistance*speed+lift*.85,model[i+2]+Math.cos(age*7+ordinal)*.18*age,
+   half,model[i+4]*.18,half,colorRole(role),fade);
   out[out.length-1].rot=[age*6.2831855*(ordinal%2===0?1:-1)+ordinal,Math.sin(age*9+ordinal)*1.20,age*4+ordinal*.31];
  }
 }
+
 function zephyrAccents(out){const model=MODELS[0];fallingLeaves(out,model,.46,6,2.8);
- for(let spear=0;spear<3;spear++){const startTime=.30+spear*.055;let travel=clamp((t-startTime)/.18);if(travel<=0)continue;travel=travel*travel*(3-2*travel);
+ for(let spear=0;spear<3;spear++){const startTime=.30+spear*.055;let travel=clamp((t-startTime)/.18);if(travel<=0)continue;travel=smooth01(travel);const impactTime=startTime+.18,shaftFade=1-smooth01((t-impactTime)/.16);if(shaftFade<=0)continue;
   const angle=hash01(SALT,80+spear*17)*6.2831855+spear*2.0943951,radius=3+.8*hash01(SALT,83+spear*19),sx=Math.cos(angle)*radius,sz=Math.sin(angle)*radius,sy=-.30+1.65*hash01(SALT,89+spear*23);
-  const centerX=sx*(1-travel),centerY=sy*(1-travel),centerZ=sz*(1-travel),norm=Math.hypot(sx,sy,sz),dx=-sx/norm,dy=-sy/norm,dz=-sz/norm,length=1.62;
-  for(let segment=0;segment<42;segment++){const u=segment/41,along=(u-.5)*length,half=segment>=32?Math.max(.008,.052-(segment-32)*.0048):.048;push(out,centerX+dx*along,centerY+dy*along,centerZ+dz*along,half,half,half,segment>=36?10:(segment&1)===0?8:9)}
-  const impactTime=startTime+.18,impactAge=(t-impactTime)/.20;if(impactAge>=0&&impactAge<=1)for(let p=0;p<18;p++){
-   const a=hash01(SALT+spear*131,p*37+3)*6.2831855,lift=.25+1.10*hash01(SALT,p*41+spear*59),speed=.45+1.45*hash01(SALT+spear*71,p*43+7),half=(.025+.025*hash01(SALT,p*47+spear))*(1-.45*impactAge);
-   push(out,Math.cos(a)*speed*impactAge,lift*impactAge-1.25*impactAge*impactAge,Math.sin(a)*speed*impactAge,half,half,half,p%3===0?4:p%3===1?9:10,1-impactAge);
-  }
+  const norm=Math.hypot(sx,sy,sz),dx=-sx/norm,dy=-sy/norm,dz=-sz/norm,overrun=Math.max(0,t-impactTime)*3.2,centerX=sx*(1-travel)+dx*overrun,centerY=sy*(1-travel)+dy*overrun,centerZ=sz*(1-travel)+dz*overrun,length=1.62;
+  for(let segment=0;segment<42;segment++){const u=segment/41,along=(u-.5)*length;let half=segment>=32?Math.max(.008,.052-(segment-32)*.0048):.048;half*=.40+.60*shaftFade;push(out,centerX+dx*along,centerY+dy*along,centerZ+dz*along,half,half,half,segment>=36?10:(segment&1)===0?8:9,shaftFade)}
+  const impactAge=(t-impactTime)/.20;if(impactAge>=0&&impactAge<1){const sprayFade=1-impactAge;for(let p=0;p<18;p++){
+   const a=hash01(SALT+spear*131,p*37+3)*6.2831855,lift=.25+1.10*hash01(SALT,p*41+spear*59),speed=.45+1.45*hash01(SALT+spear*71,p*43+7),half=(.025+.025*hash01(SALT,p*47+spear))*sprayFade;
+   push(out,Math.cos(a)*speed*impactAge,lift*impactAge-1.25*impactAge*impactAge,Math.sin(a)*speed*impactAge,half,half,half,p%3===0?4:p%3===1?9:10,sprayFade*sprayFade);
+  }}
  }
 }
-function goldenFruits(out,model,growth){const open=clamp((t-.38)/.20);if(open<=0)return;let leaf=0;
- for(let i=0;i<model.length;i+=STRIDE){const role=model[i+7]|0;if(role<5)continue;const ordinal=leaf++;if(ordinal%15!==0||model[i+1]<2.40)continue;const half=(.052+.025*hash01(SALT,i+401))*open;
-  for(let bead=0;bead<2;bead++)push(out,model[i]+bead*.075,model[i+1]-.08-bead*.065,model[i+2],half,half*1.20,half,bead===0?12:13,open);
+
+function goldenFruits(out,model,growth){const open=smooth01((t-.38)/.20),exit=treeExit(t,2),fade=(1-exit)*(1-exit);if(open<=0||fade<=0)return;let leaf=0;
+ for(let i=0;i<model.length;i+=STRIDE){const role=model[i+7]|0;if(role<5)continue;const ordinal=leaf++;if(ordinal%15!==0||model[i+1]<2.40)continue;const sourceY=model[i+1],half=(.052+.025*hash01(SALT,i+401))*open*(1-.70*exit);
+  for(let bead=0;bead<2;bead++)push(out,model[i]+bead*.075+treeOffsetX(2,sourceY,exit),sourceY-.08-bead*.065+treeOffsetY(2,sourceY,exit),model[i+2]+treeOffsetZ(2,sourceY,exit),half,half*1.20,half,bead===0?12:13,open*fade);
  }
 }
-function sacredSap(out,model){let leaf=0;
- for(let i=0;i<model.length;i+=STRIDE){const role=model[i+7]|0;if(role<5)continue;const ordinal=leaf++;if(ordinal%67!==0||model[i+1]<2.40)continue;const delay=(ordinal%4)*.012;
-  const flow=clamp((t-.40-delay)/.18);if(flow>0&&t<.62)for(let bead=0;bead<8;bead++){const u=bead/7;if(u>flow)continue;const half=.026+.008*(bead&1);push(out,lerp(model[i],0,u),model[i+1]-.10-.12*u,lerp(model[i+2],0,u),half,half*1.30,half,bead%3===0?12:13,flow)}
-  const down=clamp((t-.50-delay*.35)/.14);if(down>0&&t<.68){const sourceY=model[i+1]-.22;for(let bead=0;bead<10;bead++){const u=bead/9;if(u>down)continue;const y=lerp(sourceY,0,u),half=.025+.007*Math.sin(u*11);push(out,Math.sin(u*8+ordinal)*.055,y,Math.cos(u*7+ordinal)*.055,half,.065,half,bead%4===0?12:13,.94)}}
+
+function sacredSap(out,model){let leaf=0;const sapFade=1-smooth01((t-.70)/.07);if(sapFade>0)for(let i=0;i<model.length;i+=STRIDE){const role=model[i+7]|0;if(role<5)continue;const ordinal=leaf++;if(ordinal%47!==0||model[i+1]<3.00||model[i]*model[i]+model[i+2]*model[i+2]<.64)continue;const delay=hash01(SALT,i+433)*.025,sourceY=model[i+1]+.13,attachY=Math.min(3.05,sourceY-.18),trunkAngle=ordinal*2.3999632,trunkX=Math.cos(trunkAngle)*.22,trunkZ=Math.sin(trunkAngle)*.22;
+  const flow=clamp((t-.42-delay)/.14);if(flow>0)for(let bead=0;bead<52;bead++){const u=bead/51,reveal=smooth01((flow-u)/.055);if(reveal<=0)continue;const bow=Math.sin(u*Math.PI),px=lerp(model[i],trunkX,u)+model[i]*.18*bow,py=lerp(sourceY,attachY,u)-.22*bow,pz=lerp(model[i+2],trunkZ,u)+model[i+2]*.18*bow,half=(.036+.005*(bead&1))*reveal;push(out,px,py,pz,half,half*1.15,half,bead%5===0?11:(bead&1)===0?12:13,sapFade*reveal)}
+  const down=clamp((t-.53-delay*.30)/.17);if(down>0)for(let bead=0;bead<48;bead++){const u=bead/47,reveal=smooth01((down-u)/.045);if(reveal<=0)continue;const y=lerp(attachY,-.48,u),angle=trunkAngle+u*(.85+.35*hash01(SALT,ordinal+457)),px=Math.cos(angle)*.22+Math.sin(u*13+ordinal)*.025,pz=Math.sin(angle)*.22,half=(.027+.004*(bead&1))*reveal;push(out,px,y,pz,half,.057*reveal,half,bead%6===0?12:13,sapFade*reveal)}
  }
- let mass=clamp((t-.62)/.10);if(mass>0&&t<.74){mass=mass*mass*(3-2*mass);for(let ix=-2;ix<=2;ix++)for(let iy=-2;iy<=2;iy++)for(let iz=-2;iz<=2;iz++){const d=ix*ix/4+iy*iy/5+iz*iz/4;if(d>1)continue;const key=(ix+3)*97+(iy+3)*37+(iz+3)*17,half=(.045+.022*hash01(SALT,key))*(.35+.65*mass);push(out,ix*.19*mass,-.16+iy*.16*mass,iz*.19*mass,half,half*1.15,half,key%4===0?12:13,.88*mass)}}
- const blast=(t-.74)/.26;if(blast>=0&&blast<=1)for(let p=0;p<70;p++){const angle=hash01(SALT,p*47+503)*6.2831855,speed=.45+2.20*hash01(SALT,p*53+509),lift=.30+2.10*hash01(SALT,p*59+521),half=(.025+.045*hash01(SALT,p*61+523))*(1-.50*blast);push(out,Math.cos(angle)*speed*blast,lift*blast-2.20*blast*blast,Math.sin(angle)*speed*blast,half,half,half,p%4===0?9:p%3===0?4:p%2===0?12:13,1-.65*blast)}
+ const mass=smooth01((t-.66)/.09);if(mass>0&&t<.77)for(let ix=-3;ix<=3;ix++)for(let iy=-4;iy<=4;iy++)for(let iz=-3;iz<=3;iz++){const d=ix*ix/10+iy*iy/18+iz*iz/10;if(d>1.12||d<.28)continue;const level=(iy+4)/8,fill=smooth01((mass-level*.62)/.38);if(fill<=0)continue;const key=(ix+4)*97+(iy+5)*37+(iz+4)*17,half=(.087+.016*hash01(SALT,key))*fill;push(out,ix*.17*mass,-.55*(1-mass)+iy*.17*mass,iz*.17*mass,half,half*1.08,half,key%5===0?12:13,.90*fill)}
+ const blast=(t-.77)/.19;if(blast>0&&blast<1){const fade=1-blast;for(let p=0;p<70;p++){const angle=hash01(SALT,p*47+503)*6.2831855,speed=.45+2.20*hash01(SALT,p*53+509),lift=.30+2.10*hash01(SALT,p*59+521),half=(.025+.045*hash01(SALT,p*61+523))*fade;push(out,Math.cos(angle)*speed*blast,lift*blast-2.20*blast*blast,Math.sin(angle)*speed*blast,half,half,half,p%4===0?9:p%3===0?4:p%2===0?12:13,fade*fade)}}
 }
+
 function verdantAccents(out){const model=MODELS[2],growth=growthAt(t);goldenFruits(out,model,growth);fallingLeaves(out,model,.34,7,2.35);sacredSap(out,model)}
-function thornAccents(out){let bite=clamp(t/.20);bite=bite*bite*(3-2*bite);const release=clamp((t-.75)/.20);
- for(let strand=0;strand<5;strand++){const sign=(strand&1)===0?-1:1,phase=strand*1.2566371,tilt=(strand-2)*.38,cosTilt=Math.cos(tilt),sinTilt=Math.sin(tilt),knotOffset=sign*(1.05*(1-bite)+.75*release);
-  for(let k=0;k<48;k++){const u=k/47,phi=u*Math.PI,theta=u*12.566371+phase+.22*Math.sin(u*19+strand),shell=Math.sin(phi),radius=.54+.08*Math.sin(u*9+phase)+.92*(1-bite)+.72*release;
-   const lx=shell*Math.cos(theta)*radius,lz=shell*Math.sin(theta)*radius,ly=Math.cos(phi)*radius*.90+.15,rx=lx*cosTilt-ly*sinTilt,ry=lx*sinTilt+ly*cosTilt;
-   // Direction d'attaque de la preview = +X, direction latérale = -Z.
-   const px=lz,pz=-(knotOffset+rx),py=ry,knot=k%7===0?1.38:1,half=(.050+.022*hash01(SALT,strand*101+k))*knot,shade=(k+strand*3)%11,role=shade===0?15:shade===1?16:shade<=3?14:shade<=5?5:shade<=8?1:0;
-   push(out,px,py,pz,half*1.12,half,half*1.12,role);
-   if(k%3===0){const norm=Math.hypot(rx,ry-.12,lz),nx=norm>.001?rx/norm:0,ny=norm>.001?(ry-.12)/norm:.5,nz=norm>.001?lz/norm:0;for(let spike=0;spike<3;spike++){const reach=.065+spike*.052,sh=.034-spike*.0085;push(out,px+nz*reach,py+ny*reach,pz-nx*reach,sh,sh*1.22,sh,spike===2?17:(k+strand)%4===0?18:4)}}
-   if(k%8===0)for(let twig=1;twig<=4;twig++){const reach=twig*.055,th=.041-twig*.005;push(out,px,py+twig*.035,pz+Math.sin(theta+twig*.45)*reach,th,th,th,twig===4?16:14)}
-   if(k%9===0)for(let leaf=0;leaf<2;leaf++){const lh=.030+leaf*.008;push(out,px,py+.035+leaf*.045,pz+.04,lh*1.35,lh*.45,lh,(k+leaf)%2===0?8:9)}
+function thornPoint(strand,u){const phase=strand*2.3999632+hash01(SALT,701+strand*31)*.60,startRadius=2.05+.65*hash01(SALT,709+strand*37),approach=clamp(u/.38),wrap=clamp((u-.38)/.62),easedApproach=smooth01(approach);let radius=lerp(startRadius,.58,easedApproach);if(wrap>0)radius=.58+.10*Math.sin(wrap*Math.PI)+.035*Math.sin(wrap*13+phase);const direction=(strand&1)===0?1:-1,angle=phase+(1-approach)*.20*Math.sin(approach*5+phase)+wrap*(9.20+strand*.28)*direction+.055*Math.sin(u*17+phase);let x=Math.cos(angle)*radius,z=Math.sin(angle)*radius,y;if(wrap<=0)y=lerp(-1.35,.02,easedApproach)+.09*Math.sin(approach*9.424778+phase)*Math.sin(approach*Math.PI);else y=.02+1.12*wrap+.10*Math.sin(wrap*12.566371+phase)*Math.sin(wrap*Math.PI);const tilt=(strand-2.5)*.29,tiltWeight=easedApproach,cosTilt=Math.cos(tilt),sinTilt=Math.sin(tilt),centeredY=y-.48,tiltedX=x*cosTilt-centeredY*sinTilt,tiltedY=x*sinTilt+centeredY*cosTilt+.48;x=lerp(x,tiltedX,tiltWeight);y=lerp(y,tiltedY,tiltWeight);const live=smooth01((t-.04)/.18),sway=Math.sin(t*10+strand*1.7+u*9)*.035*u*live;x+=sway*Math.cos(phase+1.2);z+=sway*Math.sin(phase+1.2);y+=Math.sin(t*8+u*11+phase)*.018*u*live;const retract=smooth01((t-.63)/.32);y-=retract*(1.85+.30*hash01(SALT,719+strand*41));return[x,y,z]}
+function thornAccents(out){const retract=smooth01((t-.63)/.32),fade=(1-retract)*(1-retract);if(t<=0||t>=1||fade<=0)return;
+ for(let strand=0;strand<6;strand++){const delay=strand*.012+hash01(SALT,733+strand*43)*.012,growth=clamp((t-delay)/(.25+hash01(SALT,739+strand*47)*.035));
+  for(let k=0;k<128;k++){const u=k/127,reveal=smooth01((growth-u)/.045);if(reveal<=0)continue;const point=thornPoint(strand,u),px=point[0],py=point[1],pz=point[2],knot=k%13===0?1.20:1,half=(.062+.008*hash01(SALT,strand*101+k))*knot*reveal,shade=(k+strand*3)%17,role=shade===0?15:shade===1?0:shade<=6?14:shade<=9?5:shade<=13?1:0,a=reveal*fade;
+   push(out,px,py,pz,half,half,half,role,a);const norm=Math.hypot(point[0],point[1]-.45,point[2]),nx=norm>.001?point[0]/norm:0,ny=norm>.001?(point[1]-.45)/norm:.5,nz=norm>.001?point[2]/norm:0;
+   if(k%4===0)for(let spike=0;spike<2;spike++){const reach=half*(spike===0?.60:.91),sh=(spike===0?.023:.013)*reveal;push(out,px+nx*reach,py+ny*reach,pz+nz*reach,sh,sh,sh,spike===1?17:(k+strand)%5===0?18:4,a)}
+   if(k%12===0){const tx=nx*.55-nz*.45,tz=nz*.55+nx*.45,ty=.35+.20*hash01(SALT,strand*151+k);let endX=px,endY=py,endZ=pz;for(let twig=1;twig<=4;twig++){const reach=twig*.036;endX=px+tx*reach;endY=py+ty*reach+.012*Math.sin(twig*1.7+k);endZ=pz+tz*reach;const th=(.041-twig*.003)*reveal;push(out,endX,endY,endZ,th,th,th,twig===4?0:14,a)}for(let smallLeaf=0;smallLeaf<2;smallLeaf++){const lh=(.026+smallLeaf*.007)*reveal;push(out,endX+nx*smallLeaf*.030,endY+.025+smallLeaf*.027,endZ+nz*smallLeaf*.030,lh*1.25,lh*.55,lh,(k+smallLeaf)%2===0?8:9,a)}}
   }
  }
 }
-function accents(out){if(variant===0)zephyrAccents(out);else if(variant===1)thornAccents(out);else verdantAccents(out)}
+
+function accents(out){if(t<=0||t>=1)return;if(variant===0)zephyrAccents(out);else if(variant===1)thornAccents(out);else verdantAccents(out)}
+
 function rotateLocal(x,y,z,r){if(!r)return[x,y,z];const cr=Math.cos(r[2]),sr=Math.sin(r[2]),cp=Math.cos(r[1]),sp=Math.sin(r[1]),cy=Math.cos(r[0]),sy=Math.sin(r[0]),x1=x*cr-y*sr,y1=x*sr+y*cr,y2=y1*cp-z*sp,z2=y1*sp+z*cp;return[x1*cy+z2*sy,y2,-x1*sy+z2*cy]}
-function updateCamera(){CY=Math.cos(yaw);SY=Math.sin(yaw);CP=Math.cos(pitch);SP=Math.sin(pitch);FOCUS=[1.05,.28,1.85][variant];SCALE=Math.min(W/[5.3,3.8,5.8][variant],H/[4.3,3.3,6.25][variant])*zoomFactor}
+function updateCamera(){CY=Math.cos(yaw);SY=Math.sin(yaw);CP=Math.cos(pitch);SP=Math.sin(pitch);FOCUS=[1.05,.28,1.85][variant];SCALE=Math.min(W/[5.3,5.8,5.8][variant],H/[4.3,4.3,6.25][variant])*zoomFactor}
 function project(x,y,z){const yc=y-FOCUS,rx=x*CY-z*SY,rz=x*SY+z*CY,ry=yc*CP-rz*SP,depth=yc*SP+rz*CP;return[W*.52+rx*SCALE,H*.52-ry*SCALE,depth]}
 function rotateNormal(n){const rx=n[0]*CY-n[2]*SY,rz=n[0]*SY+n[2]*CY;return[rx,n[1]*CP-rz*SP,n[1]*SP+rz*CP]}
 const RGB_CACHE=new Map();function hexRgb(hex){if(!RGB_CACHE.has(hex))RGB_CACHE.set(hex,[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)]);return RGB_CACHE.get(hex)}
@@ -142,9 +150,9 @@ function render(){updateCamera();background();const voxels=[],base=baseVoxels(vo
  for(const v of voxels){for(const f of FACES){const localN=v.rot?rotateLocal(f.n[0],f.n[1],f.n[2],v.rot):f.n,n=rotateNormal(localN);if(n[2]<=.015)continue;const points=[];let depth=0;for(const q of f.v){let local=v.rot?rotateLocal(q[0]*v.hx,q[1]*v.hy,q[2]*v.hz,v.rot):[q[0]*v.hx,q[1]*v.hy,q[2]*v.hz];const p=project(v.x+local[0],v.y+local[1],v.z+local[2]);points.push(p);depth+=p[2]}faces.push({points,depth:depth/4,fill:shade(v.c,f.shade,v.a)})}}
  faces.sort((a,b)=>a.depth-b.depth);ctx.lineJoin='round';for(const f of faces){const p=f.points;ctx.beginPath();ctx.moveTo(p[0][0],p[0][1]);for(let i=1;i<4;i++)ctx.lineTo(p[i][0],p[i][1]);ctx.closePath();ctx.fillStyle=f.fill;ctx.fill()}
  visibleEl.textContent=`${base+extra} voxels visibles`;let phase;
- if(variant===0)phase=t<.30?'01 — Pousse de l’arbre penché':t<.48?'02 — Trois lances convergent':'03 — Impacts et chute de feuilles';
- else if(variant===1)phase=t<.18?'01 — Les mâchoires de ronces se ferment':t<.75?'02 — Emprise complète · STUN 3 s':'03 — Les ronces se retirent';
- else phase=t<.38?'01 — Croissance de l’arbre sacré':t<.46?'02 — Fruits dorés et feuilles lentes':t<.64?'03 — La sève glisse des feuilles au tronc':t<.72?'04 — Amas de sève autour du mob':'05 — Explosion visuelle · sans dégâts bonus';
+ if(variant===0)phase=t<.30?'01 — Pousse de l’arbre penché':t<.48?'02 — Trois lances convergent':t<.78?'03 — Impacts et chute de feuilles':'04 — L’arbre et les feuilles s’envolent';
+ else if(variant===1)phase=t<.34?'01 — Les ronces sortent du sol et convergent':t<.63?'02 — Nœud complet · STUN 3 s':'03 — Les ronces retournent sous terre';
+ else phase=t<.38?'01 — Croissance de l’arbre sacré':t<.46?'02 — Fruits dorés et feuilles lentes':t<.64?'03 — Le filament de sève descend':t<.72?'04 — Emprise d’ambre':'05 — Explosion de sève sacrée';
  phaseEl.textContent=phase;timeline.value=Math.round(t*1000);playBtn.textContent=playing?'Pause':(t>=1?'Rejouer':'Lecture');
 }
 function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;if(playing){t=clamp(t+dt/DURATIONS[variant]);if(t>=1)playing=false}if(autoRotate&&!drag)yaw+=dt*.09;render();requestAnimationFrame(frame)}requestAnimationFrame(frame);

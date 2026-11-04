@@ -366,12 +366,12 @@ public final class WeaponVfxServerListener {
         }
         if (fx != WeaponVisualEffectId.VERDANT_SAP_BLOOM) return;
 
-        long holdStart = now + 44L;
-        long holdEnd = now + 56L;
+        long holdStart = now + 64L;
+        long holdEnd = now + 82L;
         TestProcedure.schedule(sl, holdStart, () -> {
             if (target.isAlive() && target.level() == sl) applyWoodHold(target, holdEnd);
         });
-        TestProcedure.schedule(sl, now + 53L, () -> {
+        TestProcedure.schedule(sl, now + 74L, () -> {
             if (!target.isAlive() || target.level() != sl) return;
             // Explosion VISUELLE et SONORE uniquement : aucun dégât en plus du coup initial.
             sl.playSound(null, target.getX(), target.getY() + target.getBbHeight() * 0.50f, target.getZ(),

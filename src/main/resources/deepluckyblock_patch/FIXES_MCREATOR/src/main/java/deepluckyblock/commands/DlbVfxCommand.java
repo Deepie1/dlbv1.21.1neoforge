@@ -144,9 +144,9 @@ public final class DlbVfxCommand {
     private static final int DUMMY_NEXT_EFFECT_TICK = 62;
 
     private static int dummyNextEffectTick(WeaponVisualEffectId fx) {
-        if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) return 98;  // impact 30 + 64 + marge
-        if (fx == WeaponVisualEffectId.THORN_MAW_ROOT) return 114;   // impact 30 + 80 + marge
-        if (fx == WeaponVisualEffectId.VERDANT_SAP_BLOOM) return 106; // impact 30 + 72 + marge
+        if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) return 114; // impact 30 + 80 + marge
+        if (fx == WeaponVisualEffectId.THORN_MAW_ROOT) return 130;  // impact 30 + 96 + marge
+        if (fx == WeaponVisualEffectId.VERDANT_SAP_BLOOM) return 130; // impact 30 + 96 + marge
         return DUMMY_NEXT_EFFECT_TICK;
     }
 
