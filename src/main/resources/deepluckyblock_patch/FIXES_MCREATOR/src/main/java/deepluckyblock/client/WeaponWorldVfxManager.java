@@ -2656,8 +2656,11 @@ public final class WeaponWorldVfxManager {
             default -> -1;
         };
         if (signature >= 0) {
+            // Graine stable pendant toute la chorégraphie : la direction céleste du météore ne
+            // doit pas changer à chaque tick, contrairement au sel animé des impacts génériques.
+            int fireSalt = (int) (v.inst().seed & 0x7FFFFFFFL);
             FireSignatureVfx.render(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), v.t(),
-                    v.dirX(), v.dirZ(), signature, v.S(), v.fadeA(), v.salt());
+                    v.dirX(), v.dirZ(), signature, v.S(), v.fadeA(), fireSalt);
             return;
         }
         if (v.inst().effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE) {

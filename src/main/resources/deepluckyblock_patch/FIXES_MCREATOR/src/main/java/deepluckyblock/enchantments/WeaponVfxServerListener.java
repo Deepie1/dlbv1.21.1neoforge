@@ -66,8 +66,12 @@ public final class WeaponVfxServerListener {
     private static final Map<String, Long> EFFECT_COOLDOWN = new ConcurrentHashMap<>();
     /** Emprises Wood : immobilisation seule ou stun complet, expiration et état NoAi à restaurer. */
     private static final Map<Integer, WoodHold> WOOD_HOLDS = new ConcurrentHashMap<>();
+    /** Soul Fire : montée, maintien au centre de la lune, descente et restauration de l'IA. */
+    private static final Map<Integer, SoulHold> SOUL_HOLDS = new ConcurrentHashMap<>();
 
     private record WoodHold(long expires, double x, double y, double z, boolean previousNoAi, boolean fullStun) { }
+    private record SoulHold(long expires, long riseStart, long riseEnd, long descendStart,
+                            double x, double baseY, double targetY, double z, boolean previousNoAi) { }
 
     /** T351 : attaque NORMALE -> 5 % de chance de déclencher l'animation pixel. */
     private static final int NORMAL_TRIGGER_PERCENT = 5;
@@ -169,13 +173,14 @@ public final class WeaponVfxServerListener {
         // T352-ELEMENT-COMBO : combo possible uniquement quand le tirage a choisi une vraie grosse anim.
         tryElementCombo(sl, attacker.getId(), attacker.getMainHandItem(), cx, cy, cz,
                 (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ(),
-                sizeScaleOf(target));
+                sizeScaleOf(target), target);
 
         // Grosse animation jouée -> le dégât de ce coup sera amplifié de 5 % (voir onLivingHurtVisuals).
         LAST_BIG_ANIM_TICK.put(attacker.getId(), now);
         broadcastNear(sl, cx, cy, cz, fx.id, KIND_IMPACT, Math.max(2, intensity),
                 cx, cy, cz, (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ(),
                 paletteOf(attacker.getMainHandItem(), fx), sizeScaleOf(target));
+        applyFireGameplay(target, fx, sizeScaleOf(target));
     }
 
     /** Appelé lors d'un rebond d'éclair en chaîne entre deux entités. */
@@ -283,14 +288,15 @@ public final class WeaponVfxServerListener {
      */
     private static boolean tryElementCombo(ServerLevel sl, int attackerId, ItemStack weapon,
                                            float tx, float ty, float tz,
-                                           float ax, float ay, float az) {
-        return tryElementCombo(sl, attackerId, weapon, tx, ty, tz, ax, ay, az, 1.0f);
+                                           float ax, float ay, float az, LivingEntity target) {
+        return tryElementCombo(sl, attackerId, weapon, tx, ty, tz, ax, ay, az, 1.0f, target);
     }
 
     /** T359-BIG-ANIM-SCALE : variante qui applique l'échelle de la cible à chacune des signatures. */
     private static boolean tryElementCombo(ServerLevel sl, int attackerId, ItemStack weapon,
                                            float tx, float ty, float tz,
-                                           float ax, float ay, float az, float sizeScale) {
+                                           float ax, float ay, float az, float sizeScale,
+                                           LivingEntity target) {
         // Un seul combo par coup : le critique et le handler d'impact peuvent viser le même tick.
         long now = sl.getGameTime();
         Long last = LAST_ELEMENT_COMBO_TICK.get(attackerId);
@@ -309,6 +315,7 @@ public final class WeaponVfxServerListener {
             if (sig == null) continue;
             broadcastNear(sl, tx, ty, tz, sig.id, KIND_IMPACT, 3,
                     tx, ty, tz, ax, ay, az, 1 << el.ordinal(), sizeScale);
+            applyFireGameplay(target, sig, sizeScale);
             // Étincelles de la famille, une par élément : le mélange de couleurs se voit tout de suite.
             WeaponVfxSubtle.Subtle accent = WeaponVfxSubtle.pick(el, sl.random.nextLong());
             broadcastNear(sl, tx, ty, tz, 0, WeaponVfxSubtle.NET_KIND_BASE + accent.index(), 1,
@@ -353,6 +360,38 @@ public final class WeaponVfxServerListener {
             EFFECT_COOLDOWN.clear();
         }
         return true;
+    }
+
+    /** La cible est stupéfaite, élevée au centre du croissant puis redescendue avant libération. */
+    private static void applyFireGameplay(LivingEntity target, WeaponVisualEffectId fx, float visualScale) {
+        if (fx != WeaponVisualEffectId.SOUL_FIRE_CRESCENT || !(target.level() instanceof ServerLevel sl)) return;
+        long now = sl.getGameTime();
+        SoulHold previous = SOUL_HOLDS.get(target.getId());
+        if (previous != null && previous.expires() > now) return;
+        boolean previousNoAi = previous != null ? previous.previousNoAi()
+                : target instanceof Mob mob && mob.isNoAi();
+        double x = target.getX(), baseY = target.getY(), z = target.getZ();
+        // FireSignatureVfx : centre = cy + 0.84 * S ; cy est le centre initial de la hitbox.
+        double targetY = baseY + 0.84 * net.minecraft.util.Mth.clamp(visualScale, 0.30f, 4.0f);
+        SOUL_HOLDS.put(target.getId(), new SoulHold(now + 104, now + 12, now + 22,
+                now + 90, x, baseY, targetY, z, previousNoAi));
+        if (target instanceof Mob mob) {
+            mob.setNoAi(true);
+            mob.setTarget(null);
+        }
+        target.stopUsingItem();
+        target.setDeltaMovement(Vec3.ZERO);
+        target.fallDistance = 0.0f;
+    }
+
+    private static void releaseSoulHold(LivingEntity target, long expectedExpiry) {
+        SoulHold hold = SOUL_HOLDS.get(target.getId());
+        if (hold == null || hold.expires() != expectedExpiry) return;
+        SOUL_HOLDS.remove(target.getId());
+        if (target instanceof Mob mob) mob.setNoAi(hold.previousNoAi());
+        target.teleportTo(hold.x(), hold.baseY(), hold.z());
+        target.setDeltaMovement(Vec3.ZERO);
+        target.fallDistance = 0.0f;
     }
 
     /** ZEPHYR/VERDANT = immobilisation sans bloquer les attaques ; THORN = stun complet 3 s. */
@@ -411,15 +450,19 @@ public final class WeaponVfxServerListener {
         if (hold.fullStun() && target instanceof Mob mob) mob.setNoAi(hold.previousNoAi());
     }
 
-    private static boolean isWoodFullyStunned(Entity entity) {
+    private static boolean isSignatureFullyStunned(Entity entity) {
         if (!(entity instanceof LivingEntity living)) return false;
-        WoodHold hold = WOOD_HOLDS.get(living.getId());
-        return hold != null && hold.fullStun() && living.level().getGameTime() < hold.expires();
+        long now = living.level().getGameTime();
+        WoodHold wood = WOOD_HOLDS.get(living.getId());
+        SoulHold soul = SOUL_HOLDS.get(living.getId());
+        return (wood != null && wood.fullStun() && now < wood.expires())
+                || (soul != null && now < soul.expires());
     }
 
     @SubscribeEvent
-    public static void onWoodHoldTick(EntityTickEvent.Post event) {
+    public static void onSignatureHoldTick(EntityTickEvent.Post event) {
         if (!(event.getEntity() instanceof LivingEntity target) || target.level().isClientSide()) return;
+        tickSoulHold(target);
         WoodHold hold = WOOD_HOLDS.get(target.getId());
         if (hold == null) return;
         long now = target.level().getGameTime();
@@ -439,14 +482,49 @@ public final class WeaponVfxServerListener {
         target.fallDistance = 0.0f;
     }
 
+    private static void tickSoulHold(LivingEntity target) {
+        SoulHold hold = SOUL_HOLDS.get(target.getId());
+        if (hold == null) return;
+        long now = target.level().getGameTime();
+        if (!target.isAlive() || now >= hold.expires()) {
+            releaseSoulHold(target, hold.expires());
+            return;
+        }
+        if (target instanceof Mob mob) {
+            mob.setNoAi(true);
+            mob.setTarget(null);
+        }
+        target.stopUsingItem();
+        double y;
+        if (now < hold.riseStart()) {
+            y = hold.baseY();
+        } else if (now < hold.riseEnd()) {
+            y = net.minecraft.util.Mth.lerp(smoothTick(now, hold.riseStart(), hold.riseEnd()),
+                    hold.baseY(), hold.targetY());
+        } else if (now < hold.descendStart()) {
+            y = hold.targetY();
+        } else {
+            y = net.minecraft.util.Mth.lerp(smoothTick(now, hold.descendStart(), hold.expires()),
+                    hold.targetY(), hold.baseY());
+        }
+        target.setDeltaMovement(Vec3.ZERO);
+        target.teleportTo(hold.x(), y, hold.z());
+        target.fallDistance = 0.0f;
+    }
+
+    private static float smoothTick(long now, long start, long end) {
+        float x = net.minecraft.util.Mth.clamp((now - start) / (float) Math.max(1L, end - start), 0.0f, 1.0f);
+        return x * x * (3.0f - 2.0f * x);
+    }
+
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onWoodHeldAttack(AttackEntityEvent event) {
-        if (isWoodFullyStunned(event.getEntity())) event.setCanceled(true);
+        if (isSignatureFullyStunned(event.getEntity())) event.setCanceled(true);
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onWoodHeldDamage(LivingIncomingDamageEvent event) {
-        if (event.getSource().getEntity() instanceof LivingEntity attacker && isWoodFullyStunned(attacker)) {
+        if (event.getSource().getEntity() instanceof LivingEntity attacker && isSignatureFullyStunned(attacker)) {
             event.setCanceled(true);
         }
     }
@@ -493,6 +571,7 @@ public final class WeaponVfxServerListener {
             broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, layer.level(),
                     tx, ty, tz, ax, ay, az, palette, bigScale);
             applyWoodGameplay(attacker, target, fx);
+            applyFireGameplay(target, fx, bigScale);
         }
     }
 
@@ -605,7 +684,7 @@ public final class WeaponVfxServerListener {
             // T352-ELEMENT-COMBO : arme multi-éléments -> parfois une animation de CHAQUE élément.
             if (!elementComboDone) {
                 elementComboDone = tryElementCombo(sl, attacker.getId(), weapon, tx, ty, tz, ax, ay, az,
-                        sizeScaleOf(target));
+                        sizeScaleOf(target), target);
             }
 
             // T351-BIG-BONUS : les 10 % de grosses animations amplifient de 5 % les dégâts subis
@@ -625,6 +704,7 @@ public final class WeaponVfxServerListener {
                 int boost = (arrowCrit && fx.category == WeaponVisualEffectId.Category.CRIT) ? layer.level() + 1 : layer.level();
                 broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, boost,
                         tx, ty, tz, ax, ay, az, palette, sizeScaleOf(target));
+                applyFireGameplay(target, fx, sizeScaleOf(target));
             }
         }
     }
@@ -667,7 +747,7 @@ public final class WeaponVfxServerListener {
     @SubscribeEvent(priority = EventPriority.HIGH)
     public static void onRightClickRallyVisuals(PlayerInteractEvent.RightClickItem event) {
         Player player = event.getEntity();
-        if (isWoodFullyStunned(player)) {
+        if (isSignatureFullyStunned(player)) {
             event.setCanceled(true);
             return;
         }
