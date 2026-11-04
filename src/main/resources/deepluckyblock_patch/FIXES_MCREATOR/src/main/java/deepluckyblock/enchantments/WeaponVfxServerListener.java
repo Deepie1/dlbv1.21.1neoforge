@@ -117,6 +117,11 @@ public final class WeaponVfxServerListener {
         return BIG_VISUAL_BASE_SCALE + BIG_VISUAL_MEASURED_FACTOR * measuredScale;
     }
 
+    /** Échelle exacte d'une grosse frappe de mêlée sur cette cible, pour {@code /dummytest}. */
+    public static float debugBigMeleeScale(Entity target) {
+        return bigMeleeVisualScale(sizeScaleOf(target));
+    }
+
     /** Marque le coup critique du tick ; l'animation correspondante est choisie une seule fois dans onLivingHurtVisuals. */
     public static void markMeleeCrit(Player attacker) {
         if (attacker == null || !(attacker.level() instanceof ServerLevel sl)) return;
@@ -608,7 +613,7 @@ public final class WeaponVfxServerListener {
         playDebug(player, fx, kind, intensity, from, to, 1.0f);
     }
 
-    /** T367 : intensité/échelle explicites pour montrer la petite puis la grande animation en démo. */
+    /** Intensité et échelle explicites pour les tests visuels, sans second passage artificiel. */
     public static void playDebug(ServerPlayer player, WeaponVisualEffectId fx, int kind, int intensity,
                                  Vec3 from, Vec3 to, float sizeScale) {
         if (player == null || fx == null) return;

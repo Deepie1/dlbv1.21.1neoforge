@@ -127,6 +127,22 @@ public final class DlbVfxCommand {
 
     private static final Map<UUID, DemoState> DEMOS = new ConcurrentHashMap<>();
 
+    /** Test frontal : slash terminé avant l'impact, puis pause avant l'ID suivant. */
+    private static final class DummyTestState {
+        LivingEntity dummy;
+        Vec3 attackerOrigin;
+        Vec3 targetCenter;
+        int cursor;
+        int tick;
+        float impactScale;
+    }
+
+    private static final Map<UUID, DummyTestState> DUMMY_TESTS = new ConcurrentHashMap<>();
+    /** 22 ticks maximum + écho du TWIN_ECHO à +4, avec marge de sécurité. */
+    private static final int DUMMY_IMPACT_TICK = 30;
+    /** 22 ticks maximum pour l'impact, puis dix ticks sans aucun effet. */
+    private static final int DUMMY_NEXT_EFFECT_TICK = 62;
+
     /** T350 : noms (et couleurs) des familles élémentaires proposées par la commande. */
     private static final SuggestionProvider<CommandSourceStack> SUGGEST_FAMILIES =
             (ctx, builder) -> SharedSuggestionProvider.suggest(
@@ -295,6 +311,13 @@ public final class DlbVfxCommand {
                 .then(Commands.literal("clear").executes(DlbVfxCommand::clear));
 
         event.getDispatcher().register(root);
+
+        LiteralArgumentBuilder<CommandSourceStack> dummyTest = Commands.literal("dummytest");
+        if (opOnly()) {
+            dummyTest.requires(src -> src.hasPermission(2));
+        }
+        dummyTest.executes(DlbVfxCommand::startDummyTest);
+        event.getDispatcher().register(dummyTest);
     }
 
     // =====================================================================
@@ -337,8 +360,9 @@ public final class DlbVfxCommand {
         src.sendSuccess(() -> Component.literal("§b§l/dlbvfx §7— test des " + WeaponVisualEffectId.values().length + " effets visuels d'armes"), false);
         line(src, "§e/dlbvfx list", "liste des effets + enchant à utiliser");
         line(src, "§e/dlbvfx play <effet> [impact|swing|beam|proj] [niveau]", "joue l'effet devant toi (aucune action requise)");
-        line(src, "§e/dlbvfx all [kind]", "petit puis grand pour chaque effet, au point fixe devant toi");
-        line(src, "§e/dlbvfx demo", "petit puis grand pour chaque effet, au point fixe (tu peux te déplacer)");
+        line(src, "§e/dlbvfx all [kind]", "une chorégraphie par effet, au point fixe devant toi");
+        line(src, "§e/dlbvfx demo", "une chorégraphie par effet en boucle, au point fixe (tu peux te déplacer)");
+        line(src, "§e/dummytest", "dummy frontal : slash puis impact réel pour chaque effet, sans chevauchement");
         line(src, "§e/dlbvfx crit [effet] [niveau]", "force le chemin CRITIQUE (nécessite normalement un saut/sprint)");
         line(src, "§e/dlbvfx hit [nombre]", "vraies frappes sur la cible d'entraînement (impact + crit réels)");
         line(src, "§e/dlbvfx dummy", "invoque / retire la cible d'entraînement");
@@ -509,16 +533,17 @@ public final class DlbVfxCommand {
     private static int startShow(CommandContext<CommandSourceStack> ctx, int kind, boolean loop)
             throws CommandSyntaxException {
         ServerPlayer player = requirePlayer(ctx);
+        DUMMY_TESTS.remove(player.getUUID());
         DemoState st = new DemoState();
         st.cursor = 0;
         st.cooldown = 2;
-        st.remaining = ALL_IDS.length * 2;
+        st.remaining = ALL_IDS.length;
         st.loop = loop;
         st.kind = (kind == -1) ? WeaponVfxServerListener.KIND_IMPACT : kind;
         captureDemoAnchor(st, player);
         DEMOS.put(player.getUUID(), st);
         ctx.getSource().sendSuccess(() -> Component.literal(
-                "§b[Démo VFX] §fpetite puis grande animation, ancrées au point de départ §7— tu peux te déplacer librement; §f/dlbvfx stop §7pour arrêter."), false);
+                "§b[Démo VFX] §fune animation par ID, ancrée au point de départ §7— tu peux te déplacer librement; §f/dlbvfx stop §7pour arrêter."), false);
         return 1;
     }
 
@@ -529,6 +554,7 @@ public final class DlbVfxCommand {
             ctx.getSource().sendSuccess(() -> Component.literal("§7[Démo VFX] arrêtée."), false);
             return 1;
         }
+        DUMMY_TESTS.remove(player.getUUID());
         DemoState st = new DemoState();
         st.cursor = 0;
         st.cooldown = 2;
@@ -538,21 +564,118 @@ public final class DlbVfxCommand {
         captureDemoAnchor(st, player);
         DEMOS.put(player.getUUID(), st);
         ctx.getSource().sendSuccess(() -> Component.literal(
-                "§b[Démo VFX] §fboucle petite/grande lancée au point de départ (" + WeaponVisualEffectId.values().length + " effets) §7— tu peux observer en bougeant; §f/dlbvfx demo §7pour arrêter."), false);
+                "§b[Démo VFX] §fboucle lancée au point de départ, une animation par ID (" + WeaponVisualEffectId.values().length + " effets) §7— tu peux observer en bougeant; §f/dlbvfx demo §7pour arrêter."), false);
         return 1;
     }
 
     private static int stopDemo(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
         ServerPlayer player = requirePlayer(ctx);
         boolean removed = DEMOS.remove(player.getUUID()) != null;
-        ctx.getSource().sendSuccess(() -> Component.literal(removed
+        removed |= DUMMY_TESTS.remove(player.getUUID()) != null;
+        final boolean stopped = removed;
+        ctx.getSource().sendSuccess(() -> Component.literal(stopped
                 ? "§7[Démo VFX] arrêtée."
                 : "§7[Démo VFX] aucune démo en cours."), false);
-        return removed ? 1 : 0;
+        return stopped ? 1 : 0;
+    }
+
+    // =====================================================================
+    // /dummytest — slash frontal, impact mesuré, puis effet suivant
+    // =====================================================================
+
+    private static int startDummyTest(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer player = requirePlayer(ctx);
+        LivingEntity dummy = ensureDummy(player);
+        if (dummy == null) {
+            ctx.getSource().sendFailure(Component.literal("§cImpossible de créer la cible d'entraînement."));
+            return 0;
+        }
+
+        // Une seule présentation à la fois, y compris avec les anciennes démos /dlbvfx.
+        DEMOS.remove(player.getUUID());
+        DUMMY_TESTS.remove(player.getUUID());
+
+        // Replace même une cible existante exactement devant le joueur et la rend immobile.
+        Vec3 look = player.getLookAngle();
+        Vec3 flat = new Vec3(look.x, 0.0, look.z);
+        if (flat.lengthSqr() < 1.0e-4) flat = new Vec3(0.0, 0.0, 1.0);
+        flat = flat.normalize();
+        double dist = 2.5;
+        HitResult ahead = player.pick(3.2, 0.0f, false);
+        if (ahead.getType() == HitResult.Type.BLOCK) {
+            dist = Math.max(1.0, Math.sqrt(ahead.getLocation().distanceToSqr(player.getEyePosition())) - 0.9);
+        }
+        dummy.moveTo(player.getX() + flat.x * dist, player.getY(), player.getZ() + flat.z * dist,
+                player.getYRot() + 180.0f, 0.0f);
+        dummy.setDeltaMovement(Vec3.ZERO);
+        dummy.fallDistance = 0.0f;
+        if (dummy instanceof Mob mob) mob.setNoAi(true);
+
+        DummyTestState st = new DummyTestState();
+        st.dummy = dummy;
+        st.attackerOrigin = player.position().add(0.0, player.getBbHeight() * 0.62, 0.0);
+        st.targetCenter = dummy.position().add(0.0, dummy.getBbHeight() * 0.55, 0.0);
+        st.impactScale = WeaponVfxServerListener.debugBigMeleeScale(dummy);
+        DUMMY_TESTS.put(player.getUUID(), st);
+
+        final float shownScale = st.impactScale;
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "§b[DummyTest] §f" + ALL_IDS.length + " IDs §7— slash puis impact, un seul à la fois. "
+                        + "Échelle d'impact §f×" + String.format(Locale.ROOT, "%.2f", shownScale)
+                        + "§7. §e/dlbvfx stop §7pour arrêter."), false);
+        return 1;
+    }
+
+    private static void tickDummyTests(ServerTickEvent.Post event) {
+        if (DUMMY_TESTS.isEmpty()) return;
+        Iterator<Map.Entry<UUID, DummyTestState>> it = DUMMY_TESTS.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<UUID, DummyTestState> entry = it.next();
+            ServerPlayer player = event.getServer().getPlayerList().getPlayer(entry.getKey());
+            DummyTestState st = entry.getValue();
+            if (player == null || st.dummy == null || !st.dummy.isAlive() || st.dummy.isRemoved()
+                    || st.dummy.level() != player.level()) {
+                it.remove();
+                if (player != null) {
+                    player.displayClientMessage(Component.literal("§7[DummyTest] interrompu : cible absente."), true);
+                }
+                continue;
+            }
+
+            WeaponVisualEffectId fx = WeaponVisualEffectId.byId(ALL_IDS[st.cursor]);
+            if (fx == null) {
+                it.remove();
+                continue;
+            }
+            if (st.tick == 0) {
+                WeaponVfxServerListener.playDebug(player, fx, WeaponVfxServerListener.KIND_SWING_SLASH,
+                        6, st.attackerOrigin, st.targetCenter, 1.0f);
+                announce(player, "§b[DummyTest] §f#" + fx.id + " " + fx.name()
+                        + " §7· SLASH §8· " + (st.cursor + 1) + "/" + ALL_IDS.length);
+            } else if (st.tick == DUMMY_IMPACT_TICK) {
+                WeaponVfxServerListener.playDebug(player, fx, WeaponVfxServerListener.KIND_IMPACT,
+                        6, st.attackerOrigin, st.targetCenter, st.impactScale);
+                announce(player, "§b[DummyTest] §f#" + fx.id + " " + fx.name()
+                        + " §7· IMPACT ×" + String.format(Locale.ROOT, "%.2f", st.impactScale));
+            }
+
+            st.tick++;
+            if (st.tick >= DUMMY_NEXT_EFFECT_TICK) {
+                st.tick = 0;
+                st.cursor++;
+                if (st.cursor >= ALL_IDS.length) {
+                    it.remove();
+                    player.displayClientMessage(Component.literal(
+                            "§a[DummyTest] terminé §7— " + ALL_IDS.length + " slashes et "
+                                    + ALL_IDS.length + " impacts, sans doublon d'échelle."), false);
+                }
+            }
+        }
     }
 
     @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event) {
+        tickDummyTests(event);
         if (DEMOS.isEmpty()) return;
         Iterator<Map.Entry<UUID, DemoState>> it = DEMOS.entrySet().iterator();
         while (it.hasNext()) {
@@ -573,8 +696,7 @@ public final class DlbVfxCommand {
             }
             st.remaining--;
 
-            int phase = st.cursor & 1; // chaque animation : petite taille, puis grande taille
-            int itemIndex = st.cursor >> 1;
+            int itemIndex = st.cursor;
             WeaponVisualEffectId fx;
             String densLabel = "";
             if (st.mode == 2) {
@@ -588,15 +710,13 @@ public final class DlbVfxCommand {
             if (fx == null) continue;
 
             // Position et direction immuables capturées à la commande, sans suivre le joueur.
+            // Un ID = une seule chorégraphie : la taille n'est plus une fausse seconde animation.
             Vec3 from = st.ringCenter.add(0.0, 1.0, 0.0);
             Vec3 to = from.add(st.lookDirection.scale(2.0));
-            int level = phase == 0 ? 2 : 10;
-            float sizeScale = phase == 0 ? 0.62f : 1.85f;
-            WeaponVfxServerListener.playDebug(player, fx, st.kind, level, from, to, sizeScale);
+            WeaponVfxServerListener.playDebug(player, fx, st.kind, 6, from, to, 1.0f);
             final String extra = densLabel;
-            final String tier = phase == 0 ? "petite" : "GRANDE";
-            announce(player, "§b#%02d §f%s §8(%s · %s · %s)".formatted(fx.id, fx.name(),
-                    fx.element.displayName, fx.category.name().toLowerCase(Locale.ROOT), tier) + extra);
+            announce(player, "§b#%02d §f%s §8(%s · %s)".formatted(fx.id, fx.name(),
+                    fx.element.displayName, fx.category.name().toLowerCase(Locale.ROOT)) + extra);
         }
     }
 
@@ -647,7 +767,7 @@ public final class DlbVfxCommand {
         DemoState st = new DemoState();
         st.cursor = 0;
         st.cooldown = 2;
-        st.remaining = ALL_IDS.length * 2;
+        st.remaining = ALL_IDS.length;
         st.loop = true;
         st.kind = WeaponVfxServerListener.KIND_IMPACT;
         st.mode = 1;
@@ -776,7 +896,7 @@ public final class DlbVfxCommand {
         DemoState st = new DemoState();
         st.cursor = 0;
         st.cooldown = 2;
-        st.remaining = WeaponVfxVariant.COUNT * 2;
+        st.remaining = WeaponVfxVariant.COUNT;
         st.loop = true;
         st.kind = WeaponVfxServerListener.KIND_IMPACT;
         st.mode = 2;
@@ -964,6 +1084,7 @@ public final class DlbVfxCommand {
             }
         }
         DEMOS.remove(player.getUUID());
+        DUMMY_TESTS.remove(player.getUUID());
         final int n = removed;
         ctx.getSource().sendSuccess(() -> Component.literal("§7[Cible] " + n + " cible(s) supprimée(s)."), false);
         return 1;

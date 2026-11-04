@@ -503,7 +503,10 @@ public final class WeaponWorldVfxManager {
         // Éclaboussure de vrais mini-pixels 3D cubiques animés sous la physique !
         int burstCount = (fx.category == WeaponVisualEffectId.Category.BLOOD) ? 14 : 10;
         float cubeHalf = (fx.category == WeaponVisualEffectId.Category.BLOOD) ? 0.042f : 0.036f;
-        spawnMiniPixelBurst(fx, x, y, z, burstCount, cubeHalf, 0.18, paletteMask);
+        // Chaos ne possède que ses contours structurés : pas de salve colorée sans rapport avec eux.
+        if (fx.element() != DeepElement.CHAOS) {
+            spawnMiniPixelBurst(fx, x, y, z, burstCount, cubeHalf, 0.18, paletteMask);
+        }
     }
 
     public static void spawnMiniPixelBurst(WeaponVisualEffectId fx, double x, double y, double z,
@@ -1502,6 +1505,12 @@ public final class WeaponWorldVfxManager {
         int arcCore = pal[0];
         int arcTrail = ((inst.variant() & 1) == 0) ? pal[1] : pal[2];
         int accent = pal[2];
+        if (inst.effect.element() == DeepElement.CHAOS) {
+            // La lame reste sombre même sur une arme multi-éléments ; seul son cadre porte le spectre.
+            arcCore = DeepElement.CHAOS.primary;
+            arcTrail = DeepElement.CHAOS.secondary;
+            accent = DeepElement.CHAOS.highlight;
+        }
 
         int motionSalt = (int) (inst.seed & 0x7FFFFFFFL) + inst.age * 31 + inst.effect.ordinal() * 977;
         emitMotionSlash(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, inst.tiltRad,
@@ -1686,19 +1695,10 @@ public final class WeaponWorldVfxManager {
                 }
             }
             case CHAOS -> {
-                // Éclats arc-en-ciel inclinés en orbite autour de l'entaille.
-                for (int i = 0; i < 6; i++) {
-                    float ang = i * 1.047f + inst.age * 0.35f;
-                    float rad = radius * 0.55f;
-                    emitVoxelBoxRotated(vc, mat, tmp,
-                            quantize(cx + Mth.cos(ang) * rad, 0.0625f),
-                            quantize(cy + Mth.sin(ang * 2.0f) * rad * 0.40f, 0.0625f),
-                            quantize(cz + Mth.sin(ang) * rad, 0.0625f),
-                            0.024f, 0.030f, 0.020f,
-                            ang, ang * 1.7f, inst.age * 0.3f,
-                            DeepElement.chaosEdge(inst.age * 0.05f, i / 6.0f),
-                            Math.round(alpha * 0.90f));
-                }
+                // Une bordure de blocs synchronisée autour de la lame sombre, jamais des satellites.
+                emitChaosVoxelFrame(vc, mat, tmp, cx, cy, cz, radius * 0.72f * S,
+                        yawRad + inst.age * 0.03f, 0.35f, inst.age * 0.025f,
+                        inst.age * 0.05f, Math.round(alpha * 0.90f));
             }
         }
     }
@@ -3727,21 +3727,24 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * 混沌 CHAOS — kaléidoscope : huit contours de glyphes présentent plusieurs teintes à la fois.
-     * Le cœur reste très sombre et stable; big bang et entropie gardent leurs figures propres.
+     * 混沌 CHAOS — corps sombre stable, cerné par de vrais blocs voxel lumineux.
+     * Kaléidoscope = deux cadres rotatifs, entropie = trois plans orbitaux, big bang = expansion.
+     * Aucun satellite multicolore isolé : chaque pixel coloré appartient à une arête synchronisée.
      */
     private static void impactChaos(ImpactView v) {
         float t = v.t();
         float S = v.S();
         float time = v.age() * 0.05f;
         WeaponVisualEffectId fx = v.inst().effect;
-        int hueA = DeepElement.chaosEdge(time, 0.00f);
-        int hueB = DeepElement.chaosEdge(time, 0.33f);
-        int hueC = DeepElement.chaosEdge(time, 0.66f);
+        int shape = fx == WeaponVisualEffectId.BIG_BANG_SCAR ? SCULPT_BURST : SCULPT_ORB;
 
-        // Le volume principal reste toujours dans la triplette sombre et stable de Chaos.
-        v.sculpt(fx == WeaponVisualEffectId.BIG_BANG_SCAR ? SCULPT_BURST : SCULPT_ORB,
-                0.92f + 0.32f * t, 0.88f);
+        // La palette d'une arme multi-éléments ne doit jamais colorer la masse centrale de Chaos.
+        emitVoxelSculpt(v.vc(), v.mat(), v.tmp(), shape, v.cx(), v.cy(), v.cz(),
+                (0.92f + 0.32f * t) * S, v.yawRad() + v.age() * 0.045f, t,
+                shadeRgb(DeepElement.CHAOS.secondary, 0.52f), DeepElement.CHAOS.primary,
+                shadeRgb(DeepElement.CHAOS.highlight, 0.82f), DeepElement.CHAOS.highlight,
+                v.salt(), Math.round(v.fadeA() * 0.88f),
+                Math.min(1600, Math.max(280, HARD_CUBE_CAP_PER_FRAME - cubesSinceFlush)));
 
         if (fx == WeaponVisualEffectId.BIG_BANG_SCAR) {
             for (int i = 0; i < 14; i++) {
@@ -3750,93 +3753,106 @@ public final class WeaponWorldVfxManager {
                 float elev = (i % 3 == 0) ? 0.55f : ((i % 3 == 1) ? -0.35f : 0.05f);
                 v.shard(v.cx(), v.cy(), v.cz(), len, 0.030f * S,
                         Mth.cos(ang), elev * 0.55f, Mth.sin(ang),
-                        v.pRgb(), DeepElement.chaosEdge(time, i / 14.0f),
+                        DeepElement.CHAOS.primary, DeepElement.chaosEdge(time, i / 14.0f),
                         Math.round(v.fadeA() * 0.82f), v.salt() + i * 19);
             }
-            v.cross(5, v.pRgb(), v.aRgb(), v.fadeA());
-            emitChaosContour(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(),
-                    (0.40f + 2.45f * t) * S, time, Math.round(v.fadeA() * 0.78f), v.salt());
+            v.cross(5, DeepElement.CHAOS.primary, DeepElement.CHAOS.secondary, v.fadeA());
+            float half = (1.05f + 1.85f * t) * S;
+            emitChaosVoxelFrame(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), half,
+                    time * 0.32f, time * 0.18f, time * 0.24f, time,
+                    Math.round(v.fadeA() * 0.92f));
+            emitChaosVoxelFrame(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), half * 0.72f,
+                    -time * 0.41f, 0.785f, -time * 0.28f, time,
+                    Math.round(v.fadeA() * 0.82f));
             return;
         }
 
         if (fx == WeaponVisualEffectId.ENTROPY_SPHERE) {
-            float rad = (0.45f + 1.20f * Mth.sin(t * (float) Math.PI)) * S;
-            // Trois familles de phase colorent simultanément le pourtour du volume sombre.
-            v.holoSphere(rad, time * 0.55f, hueB, hueC, Math.round(v.fadeA() * 0.72f));
-            emitChaosContour(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(),
-                    rad * 1.08f, time, Math.round(v.fadeA() * 0.82f), v.salt());
-            for (int i = 0; i < 12; i++) {
-                float u = i / 12.0f;
-                float ang = u * 6.283f + time * 1.50f;
-                float th = u * (float) Math.PI - 1.5708f;
-                float rr = rad * Mth.cos(th);
-                v.rot(v.cx() + Mth.cos(ang) * rr, v.cy() + rad * Mth.sin(th), v.cz() + Mth.sin(ang) * rr,
-                        0.030f * S, 0.030f * S, 0.030f * S,
-                        ang, th, time * 1.0f,
-                        DeepElement.chaosEdge(time, u + (i % 3) / 3.0f),
-                        Math.round(v.fadeA() * (0.58f + 0.18f * Mth.sin(time * 2.0f + u * 6.283f))));
-            }
+            float rad = (1.02f + 0.55f * Mth.sin(t * (float) Math.PI)) * S;
+            emitChaosVoxelFrame(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), rad,
+                    time * 0.42f, 0.0f, time * 0.22f, time, Math.round(v.fadeA() * 0.90f));
+            emitChaosVoxelFrame(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), rad,
+                    time * 0.42f + 1.5708f, 1.5708f, -time * 0.18f, time,
+                    Math.round(v.fadeA() * 0.82f));
+            emitChaosVoxelFrame(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), rad,
+                    -time * 0.36f, 1.5708f, 1.5708f + time * 0.20f, time,
+                    Math.round(v.fadeA() * 0.82f));
             return;
         }
 
-        // Huit petits contours de glyphes : plusieurs teintes coexistent, sans remplir le corps.
-        float base = time * (0.50f + 0.25f * Math.abs(v.m().spin()));
-        int copies = 8;
-        float glyphRadius = (0.45f + 1.05f * v.easeOut()) * S;
-        for (int c = 0; c < copies; c++) {
-            float ang = base + c * (float) (Math.PI * 2.0 / copies);
-            float cx2 = v.cx() + Mth.cos(ang) * glyphRadius;
-            float cz2 = v.cz() + Mth.sin(ang) * glyphRadius;
-            for (int k = 0; k < 3; k++) {
-                float a2 = ang + k * 1.047f;
-                float rr = 0.30f * S;
-                float phase = c / (float) copies + k / 3.0f;
-                v.rot(cx2 + Mth.cos(a2) * rr,
-                        v.cy() + 0.10f + 0.28f * (1.0f - t) * ((k & 1) == 0 ? 1.0f : -1.0f),
-                        cz2 + Mth.sin(a2) * rr,
-                        (0.034f - 0.008f * k) * S, 0.026f * S, (0.034f - 0.008f * k) * S,
-                        a2, 0.7f + k * 0.5f, ang,
-                        DeepElement.chaosEdge(time, phase),
-                        Math.round(v.fadeA() * (0.52f + 0.16f * k)));
-            }
-        }
-
-        v.cage((0.90f + 0.55f * v.easeOut()) * S, time * 0.45f, time * 0.25f, time * 0.15f,
-                hueA, hueB, Math.round(v.fadeA() * 0.62f));
-        // La lame elle-même reste sombre; ses satellites et la cage portent le spectre animé.
-        v.slash((1.05f + 0.55f * t) * v.m().scale(), 0.038f, 170.0f,
-                v.pRgb(), v.sRgb(), v.aRgb(), v.fadeA());
-        emitChaosContour(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(),
-                (0.75f + 0.45f * v.easeOut()) * S, time,
-                Math.round(v.fadeA() * 0.68f), v.salt() + 91);
+        float half = (0.95f + 0.75f * v.easeOut()) * S;
+        emitChaosVoxelFrame(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), half,
+                time * 0.45f, 0.48f + time * 0.25f, time * 0.15f, time,
+                Math.round(v.fadeA() * 0.94f));
+        emitChaosVoxelFrame(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), half * 0.72f,
+                -time * 0.38f, -0.62f, 0.785f + time * 0.32f, time,
+                Math.round(v.fadeA() * 0.84f));
     }
 
     /**
-     * Trois bandes voxel concentriques dont les phases parcourent le pourtour en synchronie.
-     * Les teintes changent avec la position ET le temps : plusieurs couleurs sont donc visibles
-     * ensemble, tandis que l'alpha reste modulé lentement et déterministement.
+     * Douze arêtes épaisses en mini-cubes, pas un nuage de particules. Une phase continue parcourt
+     * chaque arête et tous les cadres partagent la même horloge : les teintes radiant ainsi de
+     * manière synchronisée tout en restant simultanément multicolores.
      */
-    private static void emitChaosContour(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                         float cx, float cy, float cz, float radius,
-                                         float time, int alpha, int salt) {
-        if (alpha <= 6 || radius <= 0.08f) return;
-        float grid = radius < 0.90f ? 0.0625f : 0.09375f;
-        int segments = Mth.clamp(Math.round(radius * 18.0f), 12, 40);
-        for (int band = 0; band < 3; band++) {
-            float r = radius + (band - 1) * grid * 0.72f;
-            for (int i = 0; i < segments; i++) {
-                float u = i / (float) segments;
-                float ang = u * 6.2831855f + time * 0.42f;
-                float px = quantize(cx + Mth.cos(ang) * r, grid);
-                float pz = quantize(cz + Mth.sin(ang) * r, grid);
-                float py = quantize(cy + (band - 1) * grid * 0.34f, grid * 0.5f);
-                int rgb = DeepElement.chaosEdge(time, u + band / 3.0f);
-                float wave = 0.5f + 0.5f * Mth.sin(time * 1.7f + u * 6.2831855f + band * 2.094f);
-                int a = Math.round(alpha * (0.42f + 0.20f * band + 0.16f * wave));
-                float hs = grid * (0.30f + 0.06f * band);
-                emitVoxelBoxRotated(vc, mat, tmp, px, py, pz,
-                        hs, hs * 0.72f, hs, ang, 0.0f, band * 0.35f, rgb, a);
+    private static void emitChaosVoxelFrame(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                            float cx, float cy, float cz, float half,
+                                            float yaw, float pitch, float roll,
+                                            float time, int alpha) {
+        if (alpha <= 6 || half <= 0.08f) return;
+        float cr = Mth.cos(roll), sr = Mth.sin(roll);
+        float cp = Mth.cos(pitch), sp = Mth.sin(pitch);
+        float cyw = Mth.cos(yaw), syw = Mth.sin(yaw);
+        float[] p = ROT_CORNERS;
+        for (int i = 0; i < 8; i++) {
+            float ox = ((i & 4) == 0) ? -half : half;
+            float oy = ((i & 2) == 0) ? -half : half;
+            float oz = ((i & 1) == 0) ? -half : half;
+            rotWrite(ox, oy, oz, cr, sr, cp, sp, cyw, syw, p, i * 3);
+            p[i * 3] += cx;
+            p[i * 3 + 1] += cy;
+            p[i * 3 + 2] += cz;
+        }
+
+        int steps = Mth.clamp(Math.round(half * 6.0f), 6, 12);
+        float blockHalf = Mth.clamp(half * 0.044f, 0.026f, 0.070f);
+        for (int axis = 0; axis < 3; axis++) {
+            for (int a = 0; a < 2; a++) {
+                for (int b = 0; b < 2; b++) {
+                    int i0;
+                    int i1;
+                    if (axis == 0) {
+                        i0 = (a << 1) | b;
+                        i1 = (1 << 2) | (a << 1) | b;
+                    } else if (axis == 1) {
+                        i0 = (a << 2) | b;
+                        i1 = (a << 2) | (1 << 1) | b;
+                    } else {
+                        i0 = (a << 2) | (b << 1);
+                        i1 = (a << 2) | (b << 1) | 1;
+                    }
+                    int edge = axis * 4 + a * 2 + b;
+                    for (int s = 1; s < steps; s++) {
+                        float u = s / (float) steps;
+                        float px = Mth.lerp(u, p[i0 * 3], p[i1 * 3]);
+                        float py = Mth.lerp(u, p[i0 * 3 + 1], p[i1 * 3 + 1]);
+                        float pz = Mth.lerp(u, p[i0 * 3 + 2], p[i1 * 3 + 2]);
+                        float phase = edge / 12.0f + u * 0.28f;
+                        float wave = 0.90f + 0.10f * Mth.sin(time * 2.4f + phase * 6.2831855f);
+                        int rgb = DeepElement.chaosEdge(time, phase);
+                        int edgeAlpha = depthAlpha(Math.round(alpha * wave), nearness(cx, cy, cz, px, py, pz));
+                        emitVoxelCube(vc, mat, tmp, px, py, pz,
+                                blockHalf, blockHalf, blockHalf, rgb, edgeAlpha);
+                    }
+                }
             }
+        }
+        // Les huit coins sont des blocs renforcés : la silhouette du cadre reste lisible de loin.
+        for (int i = 0; i < 8; i++) {
+            float px = p[i * 3], py = p[i * 3 + 1], pz = p[i * 3 + 2];
+            int rgb = DeepElement.chaosEdge(time, i / 8.0f + 0.08f);
+            int cornerAlpha = depthAlpha(alpha, nearness(cx, cy, cz, px, py, pz));
+            emitVoxelCube(vc, mat, tmp, px, py, pz,
+                    blockHalf * 1.45f, blockHalf * 1.45f, blockHalf * 1.45f, rgb, cornerAlpha);
         }
     }
 
