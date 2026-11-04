@@ -16,7 +16,8 @@ public final class GaiaWorldTreeVfx {
     private static final int[] PALETTE = {
             0xFF352217, 0xFF5A3617, 0xFF794723, 0xFFA9743C, 0xFFD0A061,
             0xFF153B26, 0xFF20552C, 0xFF2F7435, 0xFF489440, 0xFF70B548,
-            0xFFA2CD62, 0xFFE3D98A, 0xFFFFC65B, 0xFFD88A2E
+            0xFFA2CD62, 0xFFE3D98A, 0xFFFFC65B, 0xFFD88A2E,
+            0xFF3B4932, 0xFF5E6870, 0xFF6E3E68, 0xFFB58AA6, 0xFF8B4658
     };
 
     private static final String ZEPHYR_PACKED =
@@ -86,7 +87,7 @@ public final class GaiaWorldTreeVfx {
             renderGoldenFruits(vc, mat, tmp, model, cx, cy, cz, t, growth, alpha, salt);
             renderFallingLeaves(vc, mat, tmp, model, cx, cy, cz, t, 0.34f,
                     7, 2.35f, variant, alpha, salt);
-            renderSacredSap(vc, mat, tmp, cx, cy, cz, t, alpha, salt);
+            renderSacredSap(vc, mat, tmp, model, cx, cy, cz, t, alpha, salt);
         }
     }
 
@@ -137,13 +138,15 @@ public final class GaiaWorldTreeVfx {
             float norm = Mth.sqrt(startX * startX + startY * startY + startZ * startZ);
             float dx = -startX / norm, dy = -startY / norm, dz = -startZ / norm;
             float length = 1.62f;
-            for (int segment = 0; segment < 14; segment++) {
-                float u = segment / 13.0f;
+            for (int segment = 0; segment < 42; segment++) {
+                float u = segment / 41.0f;
                 float along = (u - 0.5f) * length;
-                float half = segment >= 10 ? 0.034f - (segment - 10) * 0.0075f : 0.030f;
+                // Pas de 0,0395 : les cubes de 0,096 de diamètre se chevauchent réellement.
+                float half = segment >= 32
+                        ? Math.max(0.008f, 0.052f - (segment - 32) * 0.0048f) : 0.048f;
                 cube(vc, mat, tmp, cx + centerX + dx * along, cy + centerY + dy * along,
                         cz + centerZ + dz * along, half, half, half,
-                        PALETTE[segment >= 11 ? 10 : (segment & 1) == 0 ? 8 : 9], alpha);
+                        PALETTE[segment >= 36 ? 10 : (segment & 1) == 0 ? 8 : 9], alpha);
             }
 
             float impactTime = startTime + 0.18f;
@@ -184,9 +187,13 @@ public final class GaiaWorldTreeVfx {
             float px = cx + model[i] + sway + (variant == ZEPHYR ? age * 0.55f : age * 0.16f);
             float py = cy + model[i + 1] - age * fallDistance * speed;
             float pz = cz + model[i + 2] + Mth.cos(age * 7.0f + ordinal) * 0.18f * age;
-            float half = model[i + 3] * 0.72f;
+            float half = model[i + 3] * 0.24f;
             int mapped = variant == VERDANT ? Math.min(10, role + 1) : role;
-            cube(vc, mat, tmp, px, py, pz, half, model[i + 4] * 0.55f, half,
+            float leafYaw = age * 6.2831855f * (ordinal % 2 == 0 ? 1.0f : -1.0f) + ordinal;
+            float leafPitch = Mth.sin(age * 9.0f + ordinal) * 1.20f;
+            float leafRoll = age * 4.0f + ordinal * 0.31f;
+            WeaponWorldVfxManager.emitVoxelBoxRotated(vc, mat, tmp, px, py, pz,
+                    half, model[i + 4] * 0.18f, half, leafYaw, leafPitch, leafRoll,
                     PALETTE[mapped], Math.round(alpha * (0.92f - 0.38f * age)));
         }
     }
@@ -212,41 +219,72 @@ public final class GaiaWorldTreeVfx {
         }
     }
 
-    /** VERDANT : long filament de sève, cage d'emprisonnement, puis explosion sacrée localisée. */
-    private static void renderSacredSap(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+    /** VERDANT : la sève quitte les feuilles, glisse le long du tronc, s'accumule puis explose. */
+    private static void renderSacredSap(VertexConsumer vc, Matrix4f mat, Vector3f tmp, float[] model,
                                         float cx, float cy, float cz, float t, int alpha, int salt) {
-        float pour = Mth.clamp((t - 0.46f) / 0.20f, 0.0f, 1.0f);
-        if (pour > 0.0f && t < 0.72f) {
-            float endY = Mth.lerp(pour, 4.35f, 0.0f);
-            for (int k = 0; k < 32; k++) {
-                float u = k / 31.0f;
-                float y = Mth.lerp(u, 4.35f, endY);
-                float px = cx + Mth.sin(u * 9.0f + t * 8.0f) * 0.045f;
-                float pz = cz + Mth.cos(u * 8.0f + t * 7.0f) * 0.045f;
-                float half = 0.024f + 0.008f * Mth.sin(u * 13.0f);
-                cube(vc, mat, tmp, px, cy + y, pz, half, 0.070f, half,
-                        PALETTE[k % 4 == 0 ? 12 : 13], Math.round(alpha * 0.94f));
-            }
-        }
-        if (t >= 0.64f && t < 0.72f) {
-            for (int ring = 0; ring < 2; ring++) {
-                float y = ring == 0 ? -0.42f : 0.42f;
-                for (int k = 0; k < 16; k++) {
-                    float a = k * 0.3926991f;
-                    cube(vc, mat, tmp, cx + Mth.cos(a) * 0.46f, cy + y, cz + Mth.sin(a) * 0.46f,
-                            0.038f, 0.038f, 0.038f, PALETTE[12], alpha);
+        int leaf = 0;
+        for (int i = 0; i < model.length; i += STRIDE) {
+            int role = (int) model[i + 7];
+            if (role < 5) continue;
+            int ordinal = leaf++;
+            if (ordinal % 67 != 0 || model[i + 1] < 2.40f) continue;
+            float delay = (ordinal % 4) * 0.012f;
+
+            // 1) Perlement dans la couronne puis glissement horizontal jusqu'au tronc.
+            float flow = Mth.clamp((t - 0.40f - delay) / 0.18f, 0.0f, 1.0f);
+            if (flow > 0.0f && t < 0.62f) {
+                for (int bead = 0; bead < 8; bead++) {
+                    float u = bead / 7.0f;
+                    if (u > flow) continue;
+                    float px = cx + Mth.lerp(u, model[i], 0.0f);
+                    float py = cy + model[i + 1] - 0.10f - 0.12f * u;
+                    float pz = cz + Mth.lerp(u, model[i + 2], 0.0f);
+                    float half = 0.026f + 0.008f * (bead & 1);
+                    cube(vc, mat, tmp, px, py, pz, half, half * 1.30f, half,
+                            PALETTE[bead % 3 == 0 ? 12 : 13], Math.round(alpha * flow));
                 }
             }
-            for (int bar = 0; bar < 6; bar++) {
-                float a = bar * 1.0471976f;
-                for (int k = 0; k < 6; k++) {
-                    float y = -0.36f + k * 0.145f;
-                    cube(vc, mat, tmp, cx + Mth.cos(a) * 0.46f, cy + y, cz + Mth.sin(a) * 0.46f,
-                            0.030f, 0.060f, 0.030f, PALETTE[13], alpha);
+
+            // 2) Rivulets descendants collés à l'écorce : aucun jet vertical apparu d'un coup.
+            float down = Mth.clamp((t - 0.50f - delay * 0.35f) / 0.14f, 0.0f, 1.0f);
+            if (down > 0.0f && t < 0.68f) {
+                float sourceY = model[i + 1] - 0.22f;
+                for (int bead = 0; bead < 10; bead++) {
+                    float u = bead / 9.0f;
+                    if (u > down) continue;
+                    float y = Mth.lerp(u, sourceY, 0.0f);
+                    float px = cx + Mth.sin(u * 8.0f + ordinal) * 0.055f;
+                    float pz = cz + Mth.cos(u * 7.0f + ordinal) * 0.055f;
+                    float half = 0.025f + 0.007f * Mth.sin(u * 11.0f);
+                    cube(vc, mat, tmp, px, cy + y, pz, half, 0.065f, half,
+                            PALETTE[bead % 4 == 0 ? 12 : 13], Math.round(alpha * 0.94f));
                 }
             }
         }
-        float blast = (t - 0.72f) / 0.28f;
+
+        // 3) Amas volumétrique qui grossit autour du bas du torse et emprisonne sans dégâts.
+        float mass = Mth.clamp((t - 0.62f) / 0.10f, 0.0f, 1.0f);
+        if (mass > 0.0f && t < 0.74f) {
+            mass = mass * mass * (3.0f - 2.0f * mass);
+            for (int ix = -2; ix <= 2; ix++) {
+                for (int iy = -2; iy <= 2; iy++) {
+                    for (int iz = -2; iz <= 2; iz++) {
+                        float d = ix * ix / 4.0f + iy * iy / 5.0f + iz * iz / 4.0f;
+                        if (d > 1.0f) continue;
+                        int key = (ix + 3) * 97 + (iy + 3) * 37 + (iz + 3) * 17;
+                        float px = cx + ix * 0.19f * mass;
+                        float py = cy - 0.16f + iy * 0.16f * mass;
+                        float pz = cz + iz * 0.19f * mass;
+                        float half = (0.045f + 0.022f * hash01(salt, key)) * (0.35f + 0.65f * mass);
+                        cube(vc, mat, tmp, px, py, pz, half, half * 1.15f, half,
+                                PALETTE[key % 4 == 0 ? 12 : 13], Math.round(alpha * 0.88f * mass));
+                    }
+                }
+            }
+        }
+
+        // 4) Explosion purement visuelle : le serveur ne rajoute aucun dégât au coup initial.
+        float blast = (t - 0.74f) / 0.26f;
         if (blast >= 0.0f && blast <= 1.0f) {
             for (int p = 0; p < 70; p++) {
                 float angle = hash01(salt, p * 47 + 503) * 6.2831855f;
@@ -263,74 +301,82 @@ public final class GaiaWorldTreeVfx {
         }
     }
 
-    /** THORN : aucun arbre ; deux mâchoires de ronces, des épines et une cage complète pendant le stun. */
+    /** THORN : cinq ronces noueuses s'entrelacent en boule, hérissées d'épines et de feuilles. */
     private static void renderThornMaw(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                        float cx, float cy, float cz, float t,
                                        float dirX, float dirZ, int alpha, int salt) {
         float sideX = dirZ, sideZ = -dirX;
-        float bite = Mth.clamp(t / 0.18f, 0.0f, 1.0f);
+        float bite = Mth.clamp(t / 0.20f, 0.0f, 1.0f);
         bite = bite * bite * (3.0f - 2.0f * bite);
         float release = Mth.clamp((t - 0.75f) / 0.20f, 0.0f, 1.0f);
-        float jawDistance = 0.18f + 1.00f * (1.0f - bite) + 0.85f * release;
 
-        for (int root = 0; root < 8; root++) {
-            float angle = root * 0.7853982f + hash01(salt, root * 31) * 0.22f;
-            for (int k = 0; k < 7; k++) {
-                float u = k / 6.0f;
-                float radius = Mth.lerp(u, 1.75f + 0.45f * release, 0.28f * (1.0f - bite) + 0.18f);
-                float px = cx + Mth.cos(angle) * radius;
-                float pz = cz + Mth.sin(angle) * radius;
-                float py = cy + BASE + 0.06f + Mth.sin(u * 3.1415927f) * 0.16f;
-                float half = 0.075f - u * 0.030f;
-                cube(vc, mat, tmp, px, py, pz, half, half * 0.80f, half,
-                        PALETTE[k % 3 == 0 ? 0 : 1], alpha);
-            }
-        }
+        for (int strand = 0; strand < 5; strand++) {
+            float sign = (strand & 1) == 0 ? -1.0f : 1.0f;
+            float phase = strand * 1.2566371f;
+            float tilt = (strand - 2) * 0.38f;
+            float cosTilt = Mth.cos(tilt), sinTilt = Mth.sin(tilt);
+            float knotOffset = sign * (1.05f * (1.0f - bite) + 0.75f * release);
+            for (int k = 0; k < 48; k++) {
+                float u = k / 47.0f;
+                float phi = u * 3.1415927f;
+                float theta = u * 12.566371f + phase + 0.22f * Mth.sin(u * 19.0f + strand);
+                float shell = Mth.sin(phi);
+                float radius = 0.54f + 0.08f * Mth.sin(u * 9.0f + phase)
+                        + 0.92f * (1.0f - bite) + 0.72f * release;
+                float lx = shell * Mth.cos(theta) * radius;
+                float lz = shell * Mth.sin(theta) * radius;
+                float ly = Mth.cos(phi) * radius * 0.90f + 0.15f;
+                // Inclinaison différente par tige : les cinq familles de cubes se croisent réellement.
+                float rx = lx * cosTilt - ly * sinTilt;
+                float ry = lx * sinTilt + ly * cosTilt;
+                float px = cx + sideX * (knotOffset + rx) + dirX * lz;
+                float pz = cz + sideZ * (knotOffset + rx) + dirZ * lz;
+                float py = cy + ry;
+                float knot = k % 7 == 0 ? 1.38f : 1.0f;
+                float half = (0.050f + 0.022f * hash01(salt, strand * 101 + k)) * knot;
+                int shade = (k + strand * 3) % 11;
+                int role = shade == 0 ? 15 : shade == 1 ? 16 : shade <= 3 ? 14 : shade <= 5 ? 5 : shade <= 8 ? 1 : 0;
+                cube(vc, mat, tmp, px, py, pz, half * 1.12f, half, half * 1.12f, PALETTE[role], alpha);
 
-        for (int jaw = 0; jaw < 2; jaw++) {
-            float sign = jaw == 0 ? -1.0f : 1.0f;
-            for (int tooth = 0; tooth < 7; tooth++) {
-                float baseY = -0.35f + tooth * 0.185f;
-                float tipDistance = 0.065f + 0.025f * Math.abs(tooth - 3);
-                for (int k = 1; k <= 8; k++) {
-                    float u = k / 8.0f;
-                    float distance = Mth.lerp(u, jawDistance, tipDistance + release * 0.60f);
-                    float forward = (tooth - 3) * 0.075f;
-                    float px = cx + sideX * sign * distance + dirX * forward;
-                    float pz = cz + sideZ * sign * distance + dirZ * forward;
-                    float py = cy + baseY + u * (0.20f + 0.04f * (3 - Math.abs(tooth - 3)));
-                    float half = k >= 7 ? 0.064f - (k - 6) * 0.014f : 0.055f;
-                    cube(vc, mat, tmp, px, py, pz, half, half * 1.30f, half,
-                            PALETTE[k == 8 ? 4 : k >= 6 ? 3 : (tooth & 1) == 0 ? 1 : 2], alpha);
+                // Trois cubes qui s'affinent : une vraie pointe claire/violette hors de la tige.
+                if (k % 3 == 0) {
+                    float norm = Mth.sqrt(rx * rx + (ry - 0.12f) * (ry - 0.12f) + lz * lz);
+                    float nx = norm > 0.001f ? rx / norm : 0.0f;
+                    float ny = norm > 0.001f ? (ry - 0.12f) / norm : 0.5f;
+                    float nz = norm > 0.001f ? lz / norm : 0.0f;
+                    for (int spike = 0; spike < 3; spike++) {
+                        float reach = 0.065f + spike * 0.052f;
+                        float sx = px + sideX * nx * reach + dirX * nz * reach;
+                        float sz = pz + sideZ * nx * reach + dirZ * nz * reach;
+                        float sy = py + ny * reach;
+                        float sh = 0.034f - spike * 0.0085f;
+                        cube(vc, mat, tmp, sx, sy, sz, sh, sh * 1.22f, sh,
+                                PALETTE[spike == 2 ? 17 : (k + strand) % 4 == 0 ? 18 : 4], alpha);
+                    }
                 }
-                // Epines latérales sur chaque dent, distinctes de la pointe principale.
-                float mid = (jawDistance + tipDistance) * 0.5f;
-                for (int thorn = 0; thorn < 3; thorn++) {
-                    float u = (thorn + 1) / 3.0f;
-                    float px = cx + sideX * sign * (mid + u * 0.16f) + dirX * (tooth - 3) * 0.075f;
-                    float pz = cz + sideZ * sign * (mid + u * 0.16f) + dirZ * (tooth - 3) * 0.075f;
-                    float py = cy + baseY + 0.13f + u * 0.15f;
-                    float half = 0.042f - thorn * 0.010f;
-                    cube(vc, mat, tmp, px, py, pz, half, half, half, PALETTE[thorn == 2 ? 4 : 2], alpha);
-                }
-            }
-        }
 
-        // Cage supérieure et inférieure : l'emprise entoure tout le corps, pas seulement la face avant.
-        if (bite > 0.65f && release < 0.95f) {
-            for (int ring = 0; ring < 2; ring++) {
-                float y = ring == 0 ? -0.42f : 0.92f;
-                for (int k = 0; k < 20; k++) {
-                    float a = k * 0.31415927f;
-                    cube(vc, mat, tmp, cx + Mth.cos(a) * 0.48f, cy + y, cz + Mth.sin(a) * 0.48f,
-                            0.040f, 0.040f, 0.040f, PALETTE[k % 4 == 0 ? 3 : 1], alpha);
+                // Excroissance courte et tordue : la branche n'est pas une simple hélice régulière.
+                if (k % 8 == 0) {
+                    for (int twig = 1; twig <= 4; twig++) {
+                        float reach = twig * 0.055f;
+                        float tx = px + sideX * Mth.cos(theta + twig * 0.45f) * reach;
+                        float tz = pz + dirX * Mth.sin(theta + twig * 0.45f) * reach;
+                        float ty = py + twig * 0.035f;
+                        float th = 0.041f - twig * 0.005f;
+                        cube(vc, mat, tmp, tx, ty, tz, th, th, th,
+                                PALETTE[twig == 4 ? 16 : 14], alpha);
+                    }
                 }
-            }
-            for (int bar = 0; bar < 6; bar++) {
-                float a = bar * 1.0471976f;
-                for (int k = 0; k < 7; k++) {
-                    cube(vc, mat, tmp, cx + Mth.cos(a) * 0.48f, cy - 0.35f + k * 0.19f,
-                            cz + Mth.sin(a) * 0.48f, 0.032f, 0.065f, 0.032f, PALETTE[1], alpha);
+
+                // Petits groupes de feuilles vives, jamais une couronne d'arbre.
+                if (k % 9 == 0) {
+                    for (int leaf = 0; leaf < 2; leaf++) {
+                        float lh = 0.030f + leaf * 0.008f;
+                        cube(vc, mat, tmp, px + sideX * (0.07f + leaf * 0.045f),
+                                py + 0.035f + leaf * 0.045f, pz + dirX * 0.04f,
+                                lh * 1.35f, lh * 0.45f, lh,
+                                PALETTE[(k + leaf) % 2 == 0 ? 8 : 9], alpha);
+                    }
                 }
             }
         }

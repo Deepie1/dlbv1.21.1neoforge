@@ -66,7 +66,6 @@ public final class WeaponVfxServerListener {
     private static final Map<String, Long> EFFECT_COOLDOWN = new ConcurrentHashMap<>();
     /** Emprises Wood côté serveur : position, expiration et état NoAi antérieur à restaurer. */
     private static final Map<Integer, WoodHold> WOOD_HOLDS = new ConcurrentHashMap<>();
-    private static final ThreadLocal<Boolean> WOOD_DAMAGE_GUARD = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
     private record WoodHold(long expires, double x, double y, double z, boolean previousNoAi) { }
 
@@ -356,9 +355,10 @@ public final class WeaponVfxServerListener {
         return true;
     }
 
-    /** THORN = stun 3 s ; VERDANT = emprise de sève puis explosion localisée synchronisée. */
-    private static void applyWoodGameplay(ServerLevel sl, LivingEntity attacker, LivingEntity target,
-                                          WeaponVisualEffectId fx, int intensity, float baseDamage) {
+    /** THORN = stun 3 s ; VERDANT = emprise puis explosion visuelle, sans dégâts additionnels. */
+    private static void applyWoodGameplay(LivingEntity attacker, LivingEntity target,
+                                          WeaponVisualEffectId fx) {
+        if (!(attacker.level() instanceof ServerLevel sl)) return;
         long now = sl.getGameTime();
         if (fx == WeaponVisualEffectId.THORN_MAW_ROOT) {
             applyWoodHold(target, now + 60L);
@@ -366,22 +366,14 @@ public final class WeaponVfxServerListener {
         }
         if (fx != WeaponVisualEffectId.VERDANT_SAP_BLOOM) return;
 
-        long holdStart = now + 34L;
-        long holdEnd = now + 54L;
-        float sapDamage = Math.max(4.0f, baseDamage * (0.55f + 0.08f * Math.max(1, intensity)));
+        long holdStart = now + 44L;
+        long holdEnd = now + 56L;
         TestProcedure.schedule(sl, holdStart, () -> {
             if (target.isAlive() && target.level() == sl) applyWoodHold(target, holdEnd);
         });
-        TestProcedure.schedule(sl, now + 52L, () -> {
+        TestProcedure.schedule(sl, now + 53L, () -> {
             if (!target.isAlive() || target.level() != sl) return;
-            DamageSource source = attacker instanceof Player player
-                    ? sl.damageSources().playerAttack(player) : sl.damageSources().mobAttack(attacker);
-            WOOD_DAMAGE_GUARD.set(true);
-            try {
-                target.hurt(source, sapDamage);
-            } finally {
-                WOOD_DAMAGE_GUARD.set(false);
-            }
+            // Explosion VISUELLE et SONORE uniquement : aucun dégât en plus du coup initial.
             sl.playSound(null, target.getX(), target.getY() + target.getBbHeight() * 0.50f, target.getZ(),
                     SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.70f, 1.35f);
         });
@@ -492,13 +484,12 @@ public final class WeaponVfxServerListener {
         } else {
             broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, layer.level(),
                     tx, ty, tz, ax, ay, az, palette, bigScale);
-            applyWoodGameplay(sl, attacker, target, fx, layer.level(), event.getAmount());
+            applyWoodGameplay(attacker, target, fx);
         }
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onLivingHurtVisuals(LivingIncomingDamageEvent event) {
-        if (WOOD_DAMAGE_GUARD.get()) return;
         // Note : on autorise event.getAmount() == 0.0f pour blood_transfusion (#11), curse_of_mercy et toy !
         if (event.isCanceled()) return;
         LivingEntity target = event.getEntity();

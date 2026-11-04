@@ -52,7 +52,7 @@ const ZEPHYR_PACKED='0.000,-0.330,0.000,0.270,0.140,0.221,0.029,4;0.230,-0.323,0
 const STRIDE=8,BASE=-.48,SALT=777;
 const unpack=s=>new Float32Array(s.split(';').flatMap(row=>row.split(',').map(Number)));
 const MODELS=[unpack(ZEPHYR_PACKED),null,unpack(VERDANT_PACKED)],LEAVES=[420,0,700];
-const PALETTE=['#352217','#5a3617','#794723','#a9743c','#d0a061','#153b26','#20552c','#2f7435','#489440','#70b548','#a2cd62','#e3d98a','#ffc65b','#d88a2e'];
+const PALETTE=['#352217','#5a3617','#794723','#a9743c','#d0a061','#153b26','#20552c','#2f7435','#489440','#70b548','#a2cd62','#e3d98a','#ffc65b','#d88a2e','#3b4932','#5e6870','#6e3e68','#b58aa6','#8b4658'];
 const NAMES=['Zephyr Wind Lance','Thorn Maw Root','Verdant Sap Bloom'];
 const SUBS=['Arbre penché · 3 lances · impacts','Ronces · épines · stun 3 s','Arbre sacré · fruits · sève explosive'];
 const DURATIONS=[6.4,8,7.2];
@@ -85,16 +85,17 @@ function baseVoxels(out){const model=MODELS[variant];if(!model)return 0;const gr
 function fallingLeaves(out,model,start,step,fallDistance){let leaf=0;
  for(let i=0;i<model.length;i+=STRIDE){const role=model[i+7]|0;if(role<5)continue;const ordinal=leaf++;if(ordinal%step!==0)continue;
   const delay=hash01(SALT,i+311)*(variant===2?.22:.10);let age=(t-start-delay)/Math.max(.05,1-start-delay);if(age<=0)continue;age=clamp(age);
-  const speed=.62+.76*hash01(SALT,i+337),sway=Math.sin(age*8+ordinal*1.73)*(.12+.20*age),half=model[i+3]*.72;
+  const speed=.62+.76*hash01(SALT,i+337),sway=Math.sin(age*8+ordinal*1.73)*(.12+.20*age),half=model[i+3]*.24;
   push(out,model[i]+sway+(variant===0?age*.55:age*.16),model[i+1]-age*fallDistance*speed,model[i+2]+Math.cos(age*7+ordinal)*.18*age,
-   half,model[i+4]*.55,half,colorRole(role),.92-.38*age);
+   half,model[i+4]*.18,half,colorRole(role),.92-.38*age);
+  out[out.length-1].rot=[age*6.2831855*(ordinal%2===0?1:-1)+ordinal,Math.sin(age*9+ordinal)*1.20,age*4+ordinal*.31];
  }
 }
 function zephyrAccents(out){const model=MODELS[0];fallingLeaves(out,model,.46,6,2.8);
  for(let spear=0;spear<3;spear++){const startTime=.30+spear*.055;let travel=clamp((t-startTime)/.18);if(travel<=0)continue;travel=travel*travel*(3-2*travel);
   const angle=hash01(SALT,80+spear*17)*6.2831855+spear*2.0943951,radius=3+.8*hash01(SALT,83+spear*19),sx=Math.cos(angle)*radius,sz=Math.sin(angle)*radius,sy=-.30+1.65*hash01(SALT,89+spear*23);
   const centerX=sx*(1-travel),centerY=sy*(1-travel),centerZ=sz*(1-travel),norm=Math.hypot(sx,sy,sz),dx=-sx/norm,dy=-sy/norm,dz=-sz/norm,length=1.62;
-  for(let segment=0;segment<14;segment++){const u=segment/13,along=(u-.5)*length,half=segment>=10?.034-(segment-10)*.0075:.030;push(out,centerX+dx*along,centerY+dy*along,centerZ+dz*along,half,half,half,segment>=11?10:(segment&1)===0?8:9)}
+  for(let segment=0;segment<42;segment++){const u=segment/41,along=(u-.5)*length,half=segment>=32?Math.max(.008,.052-(segment-32)*.0048):.048;push(out,centerX+dx*along,centerY+dy*along,centerZ+dz*along,half,half,half,segment>=36?10:(segment&1)===0?8:9)}
   const impactTime=startTime+.18,impactAge=(t-impactTime)/.20;if(impactAge>=0&&impactAge<=1)for(let p=0;p<18;p++){
    const a=hash01(SALT+spear*131,p*37+3)*6.2831855,lift=.25+1.10*hash01(SALT,p*41+spear*59),speed=.45+1.45*hash01(SALT+spear*71,p*43+7),half=(.025+.025*hash01(SALT,p*47+spear))*(1-.45*impactAge);
    push(out,Math.cos(a)*speed*impactAge,lift*impactAge-1.25*impactAge*impactAge,Math.sin(a)*speed*impactAge,half,half,half,p%3===0?4:p%3===1?9:10,1-impactAge);
@@ -106,21 +107,30 @@ function goldenFruits(out,model,growth){const open=clamp((t-.38)/.20);if(open<=0
   for(let bead=0;bead<2;bead++)push(out,model[i]+bead*.075,model[i+1]-.08-bead*.065,model[i+2],half,half*1.20,half,bead===0?12:13,open);
  }
 }
-function sacredSap(out){const pour=clamp((t-.46)/.20);
- if(pour>0&&t<.72){const endY=lerp(4.35,0,pour);for(let k=0;k<32;k++){const u=k/31,y=lerp(4.35,endY,u),half=.024+.008*Math.sin(u*13);push(out,Math.sin(u*9+t*8)*.045,y,Math.cos(u*8+t*7)*.045,half,.070,half,k%4===0?12:13,.94)}}
- if(t>=.64&&t<.72){for(let ring=0;ring<2;ring++){const y=ring===0?-.42:.42;for(let k=0;k<16;k++){const a=k*.3926991;push(out,Math.cos(a)*.46,y,Math.sin(a)*.46,.038,.038,.038,12)}}for(let bar=0;bar<6;bar++){const a=bar*1.0471976;for(let k=0;k<6;k++)push(out,Math.cos(a)*.46,-.36+k*.145,Math.sin(a)*.46,.030,.060,.030,13)}}
- const blast=(t-.72)/.28;if(blast>=0&&blast<=1)for(let p=0;p<70;p++){const angle=hash01(SALT,p*47+503)*6.2831855,speed=.45+2.20*hash01(SALT,p*53+509),lift=.30+2.10*hash01(SALT,p*59+521),half=(.025+.045*hash01(SALT,p*61+523))*(1-.50*blast);push(out,Math.cos(angle)*speed*blast,lift*blast-2.20*blast*blast,Math.sin(angle)*speed*blast,half,half,half,p%4===0?9:p%3===0?4:p%2===0?12:13,1-.65*blast)}
+function sacredSap(out,model){let leaf=0;
+ for(let i=0;i<model.length;i+=STRIDE){const role=model[i+7]|0;if(role<5)continue;const ordinal=leaf++;if(ordinal%67!==0||model[i+1]<2.40)continue;const delay=(ordinal%4)*.012;
+  const flow=clamp((t-.40-delay)/.18);if(flow>0&&t<.62)for(let bead=0;bead<8;bead++){const u=bead/7;if(u>flow)continue;const half=.026+.008*(bead&1);push(out,lerp(model[i],0,u),model[i+1]-.10-.12*u,lerp(model[i+2],0,u),half,half*1.30,half,bead%3===0?12:13,flow)}
+  const down=clamp((t-.50-delay*.35)/.14);if(down>0&&t<.68){const sourceY=model[i+1]-.22;for(let bead=0;bead<10;bead++){const u=bead/9;if(u>down)continue;const y=lerp(sourceY,0,u),half=.025+.007*Math.sin(u*11);push(out,Math.sin(u*8+ordinal)*.055,y,Math.cos(u*7+ordinal)*.055,half,.065,half,bead%4===0?12:13,.94)}}
+ }
+ let mass=clamp((t-.62)/.10);if(mass>0&&t<.74){mass=mass*mass*(3-2*mass);for(let ix=-2;ix<=2;ix++)for(let iy=-2;iy<=2;iy++)for(let iz=-2;iz<=2;iz++){const d=ix*ix/4+iy*iy/5+iz*iz/4;if(d>1)continue;const key=(ix+3)*97+(iy+3)*37+(iz+3)*17,half=(.045+.022*hash01(SALT,key))*(.35+.65*mass);push(out,ix*.19*mass,-.16+iy*.16*mass,iz*.19*mass,half,half*1.15,half,key%4===0?12:13,.88*mass)}}
+ const blast=(t-.74)/.26;if(blast>=0&&blast<=1)for(let p=0;p<70;p++){const angle=hash01(SALT,p*47+503)*6.2831855,speed=.45+2.20*hash01(SALT,p*53+509),lift=.30+2.10*hash01(SALT,p*59+521),half=(.025+.045*hash01(SALT,p*61+523))*(1-.50*blast);push(out,Math.cos(angle)*speed*blast,lift*blast-2.20*blast*blast,Math.sin(angle)*speed*blast,half,half,half,p%4===0?9:p%3===0?4:p%2===0?12:13,1-.65*blast)}
 }
-function verdantAccents(out){const model=MODELS[2],growth=growthAt(t);goldenFruits(out,model,growth);fallingLeaves(out,model,.34,7,2.35);sacredSap(out)}
-function thornAccents(out){let bite=clamp(t/.18);bite=bite*bite*(3-2*bite);const release=clamp((t-.75)/.20),jawDistance=.18+1*(1-bite)+.85*release;
- for(let root=0;root<8;root++){const angle=root*.7853982+hash01(SALT,root*31)*.22;for(let k=0;k<7;k++){const u=k/6,radius=lerp(1.75+.45*release,.28*(1-bite)+.18,u),half=.075-u*.030;push(out,Math.cos(angle)*radius,BASE+.06+Math.sin(u*Math.PI)*.16,Math.sin(angle)*radius,half,half*.80,half,k%3===0?0:1)}}
- for(let jaw=0;jaw<2;jaw++){const sign=jaw===0?-1:1;for(let tooth=0;tooth<7;tooth++){const baseY=-.35+tooth*.185,tip=.065+.025*Math.abs(tooth-3);
-  for(let k=1;k<=8;k++){const u=k/8,d=lerp(jawDistance,tip+release*.60,u),forward=(tooth-3)*.075,half=k>=7?.064-(k-6)*.014:.055;push(out,forward,baseY+u*(.20+.04*(3-Math.abs(tooth-3))),-sign*d,half,half*1.30,half,k===8?4:k>=6?3:(tooth&1)===0?1:2)}
-  const mid=(jawDistance+tip)*.5;for(let thorn=0;thorn<3;thorn++){const u=(thorn+1)/3,half=.042-thorn*.010;push(out,(tooth-3)*.075,baseY+.13+u*.15,-sign*(mid+u*.16),half,half,half,thorn===2?4:2)}
- }}
- if(bite>.65&&release<.95){for(let ring=0;ring<2;ring++){const y=ring===0?-.42:.92;for(let k=0;k<20;k++){const a=k*.31415927;push(out,Math.cos(a)*.48,y,Math.sin(a)*.48,.040,.040,.040,k%4===0?3:1)}}for(let bar=0;bar<6;bar++){const a=bar*1.0471976;for(let k=0;k<7;k++)push(out,Math.cos(a)*.48,-.35+k*.19,Math.sin(a)*.48,.032,.065,.032,1)}}
+function verdantAccents(out){const model=MODELS[2],growth=growthAt(t);goldenFruits(out,model,growth);fallingLeaves(out,model,.34,7,2.35);sacredSap(out,model)}
+function thornAccents(out){let bite=clamp(t/.20);bite=bite*bite*(3-2*bite);const release=clamp((t-.75)/.20);
+ for(let strand=0;strand<5;strand++){const sign=(strand&1)===0?-1:1,phase=strand*1.2566371,tilt=(strand-2)*.38,cosTilt=Math.cos(tilt),sinTilt=Math.sin(tilt),knotOffset=sign*(1.05*(1-bite)+.75*release);
+  for(let k=0;k<48;k++){const u=k/47,phi=u*Math.PI,theta=u*12.566371+phase+.22*Math.sin(u*19+strand),shell=Math.sin(phi),radius=.54+.08*Math.sin(u*9+phase)+.92*(1-bite)+.72*release;
+   const lx=shell*Math.cos(theta)*radius,lz=shell*Math.sin(theta)*radius,ly=Math.cos(phi)*radius*.90+.15,rx=lx*cosTilt-ly*sinTilt,ry=lx*sinTilt+ly*cosTilt;
+   // Direction d'attaque de la preview = +X, direction latérale = -Z.
+   const px=lz,pz=-(knotOffset+rx),py=ry,knot=k%7===0?1.38:1,half=(.050+.022*hash01(SALT,strand*101+k))*knot,shade=(k+strand*3)%11,role=shade===0?15:shade===1?16:shade<=3?14:shade<=5?5:shade<=8?1:0;
+   push(out,px,py,pz,half*1.12,half,half*1.12,role);
+   if(k%3===0){const norm=Math.hypot(rx,ry-.12,lz),nx=norm>.001?rx/norm:0,ny=norm>.001?(ry-.12)/norm:.5,nz=norm>.001?lz/norm:0;for(let spike=0;spike<3;spike++){const reach=.065+spike*.052,sh=.034-spike*.0085;push(out,px+nz*reach,py+ny*reach,pz-nx*reach,sh,sh*1.22,sh,spike===2?17:(k+strand)%4===0?18:4)}}
+   if(k%8===0)for(let twig=1;twig<=4;twig++){const reach=twig*.055,th=.041-twig*.005;push(out,px,py+twig*.035,pz+Math.sin(theta+twig*.45)*reach,th,th,th,twig===4?16:14)}
+   if(k%9===0)for(let leaf=0;leaf<2;leaf++){const lh=.030+leaf*.008;push(out,px,py+.035+leaf*.045,pz+.04,lh*1.35,lh*.45,lh,(k+leaf)%2===0?8:9)}
+  }
+ }
 }
 function accents(out){if(variant===0)zephyrAccents(out);else if(variant===1)thornAccents(out);else verdantAccents(out)}
+function rotateLocal(x,y,z,r){if(!r)return[x,y,z];const cr=Math.cos(r[2]),sr=Math.sin(r[2]),cp=Math.cos(r[1]),sp=Math.sin(r[1]),cy=Math.cos(r[0]),sy=Math.sin(r[0]),x1=x*cr-y*sr,y1=x*sr+y*cr,y2=y1*cp-z*sp,z2=y1*sp+z*cp;return[x1*cy+z2*sy,y2,-x1*sy+z2*cy]}
 function updateCamera(){CY=Math.cos(yaw);SY=Math.sin(yaw);CP=Math.cos(pitch);SP=Math.sin(pitch);FOCUS=[1.05,.28,1.85][variant];SCALE=Math.min(W/[5.3,3.8,5.8][variant],H/[4.3,3.3,6.25][variant])*zoomFactor}
 function project(x,y,z){const yc=y-FOCUS,rx=x*CY-z*SY,rz=x*SY+z*CY,ry=yc*CP-rz*SP,depth=yc*SP+rz*CP;return[W*.52+rx*SCALE,H*.52-ry*SCALE,depth]}
 function rotateNormal(n){const rx=n[0]*CY-n[2]*SY,rz=n[0]*SY+n[2]*CY;return[rx,n[1]*CP-rz*SP,n[1]*SP+rz*CP]}
@@ -129,12 +139,12 @@ function shade(hex,k,a){const c=hexRgb(hex);return`rgba(${Math.min(255,c[0]*k)|0
 function ground(){const points=[];for(let i=0;i<48;i++){const a=i*Math.PI*2/48;points.push(project(Math.cos(a)*2.05,BASE-.13,Math.sin(a)*2.05))}ctx.beginPath();ctx.moveTo(points[0][0],points[0][1]);for(let i=1;i<points.length;i++)ctx.lineTo(points[i][0],points[i][1]);ctx.closePath();const g=ctx.createRadialGradient(W*.52,H*.72,0,W*.52,H*.72,W*.35);g.addColorStop(0,'#29463188');g.addColorStop(1,'#07100c00');ctx.fillStyle=g;ctx.fill();ctx.strokeStyle='#607b4550';ctx.lineWidth=DPR;ctx.stroke()}
 function background(){const g=ctx.createRadialGradient(W*.57,H*.35,0,W*.52,H*.5,Math.max(W,H)*.72);g.addColorStop(0,'#1d3a29');g.addColorStop(.43,'#0d1e16');g.addColorStop(1,'#050b08');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);ctx.fillStyle='#b9d98a55';for(let i=0;i<34;i++){const x=(hash01(99,i)*W)|0,y=(hash01(177,i)*H*.78)|0,s=(i%3+1)*DPR*.55;ctx.fillRect(x,y,s,s)}ground()}
 function render(){updateCamera();background();const voxels=[],base=baseVoxels(voxels);accents(voxels);const extra=voxels.length-base,faces=[];
- for(const v of voxels){for(const f of FACES){const n=rotateNormal(f.n);if(n[2]<=.015)continue;const points=[];let depth=0;for(const q of f.v){const p=project(v.x+q[0]*v.hx,v.y+q[1]*v.hy,v.z+q[2]*v.hz);points.push(p);depth+=p[2]}faces.push({points,depth:depth/4,fill:shade(v.c,f.shade,v.a)})}}
+ for(const v of voxels){for(const f of FACES){const localN=v.rot?rotateLocal(f.n[0],f.n[1],f.n[2],v.rot):f.n,n=rotateNormal(localN);if(n[2]<=.015)continue;const points=[];let depth=0;for(const q of f.v){let local=v.rot?rotateLocal(q[0]*v.hx,q[1]*v.hy,q[2]*v.hz,v.rot):[q[0]*v.hx,q[1]*v.hy,q[2]*v.hz];const p=project(v.x+local[0],v.y+local[1],v.z+local[2]);points.push(p);depth+=p[2]}faces.push({points,depth:depth/4,fill:shade(v.c,f.shade,v.a)})}}
  faces.sort((a,b)=>a.depth-b.depth);ctx.lineJoin='round';for(const f of faces){const p=f.points;ctx.beginPath();ctx.moveTo(p[0][0],p[0][1]);for(let i=1;i<4;i++)ctx.lineTo(p[i][0],p[i][1]);ctx.closePath();ctx.fillStyle=f.fill;ctx.fill()}
  visibleEl.textContent=`${base+extra} voxels visibles`;let phase;
  if(variant===0)phase=t<.30?'01 — Pousse de l’arbre penché':t<.48?'02 — Trois lances convergent':'03 — Impacts et chute de feuilles';
  else if(variant===1)phase=t<.18?'01 — Les mâchoires de ronces se ferment':t<.75?'02 — Emprise complète · STUN 3 s':'03 — Les ronces se retirent';
- else phase=t<.38?'01 — Croissance de l’arbre sacré':t<.46?'02 — Fruits dorés et feuilles lentes':t<.64?'03 — Le filament de sève descend':t<.72?'04 — Emprise d’ambre':'05 — Explosion de sève sacrée';
+ else phase=t<.38?'01 — Croissance de l’arbre sacré':t<.46?'02 — Fruits dorés et feuilles lentes':t<.64?'03 — La sève glisse des feuilles au tronc':t<.72?'04 — Amas de sève autour du mob':'05 — Explosion visuelle · sans dégâts bonus';
  phaseEl.textContent=phase;timeline.value=Math.round(t*1000);playBtn.textContent=playing?'Pause':(t>=1?'Rejouer':'Lecture');
 }
 function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;if(playing){t=clamp(t+dt/DURATIONS[variant]);if(t>=1)playing=false}if(autoRotate&&!drag)yaw+=dt*.09;render();requestAnimationFrame(frame)}requestAnimationFrame(frame);
