@@ -478,9 +478,9 @@ public final class WeaponWorldVfxManager {
             case ZEPHYR_WIND_LANCE -> 80;
             case THORN_MAW_ROOT -> 96;
             case VERDANT_SAP_BLOOM -> 96;
-            case MOLTEN_FIRE_WAVE -> 72;
-            case SOUL_FIRE_CRESCENT -> 80;
-            case BRIMSTONE_METEOR -> 96;
+            case MOLTEN_FIRE_WAVE -> 96;
+            case SOUL_FIRE_CRESCENT -> 96;
+            case BRIMSTONE_METEOR -> 112;
             case SERAPH_SKY_PILLAR, ABYSSAL_MAELSTROM, WARLORD_RALLY_SIGIL,
                  DRAGON_CHAOS_PRISM, BIG_BANG_SCAR -> 22;
             case SANDSTORM_DUNE, ECLIPSE_VEIL, NULL_RIFT_FISSURE,
