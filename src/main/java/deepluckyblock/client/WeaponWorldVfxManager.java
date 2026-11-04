@@ -67,7 +67,6 @@ public final class WeaponWorldVfxManager {
 
     private static final List<VfxInstance> ACTIVE = new ArrayList<>(144);
     private static final List<FloatingPixel> PIXEL_PARTICLES = new ArrayList<>(1400);
-    private static final List<PendingEcho> PENDING_ECHOES = new ArrayList<>(16);
     private static final Map<Integer, TrackedProjectile> TRACKED_PROJECTILES = new HashMap<>(32);
 
     private static final Map<Integer, Boolean> PLAYER_WAS_DRAWING = new HashMap<>(16);
@@ -214,16 +213,6 @@ public final class WeaponWorldVfxManager {
             this.maxAge = Math.max(4, maxAge);
             this.detailSalt = detailSalt;
         }
-    }
-
-    private static final class PendingEcho {
-        int ticksLeft;
-        WeaponVisualEffectId effect;
-        int intensity;
-        /** T351-ELEMENT-BLEND : palette élémentaire de l'arme au moment du coup. */
-        int paletteMask;
-        double x, y, z;
-        float yaw, pitch, tiltRad;
     }
 
     private static final class VfxInstance {
@@ -469,6 +458,21 @@ public final class WeaponWorldVfxManager {
             return;
         }
 
+        // Tout slash est centré sur le torse de l'ennemi. Le serveur transmet l'attaquant dans
+        // origin et le mob dans target : on conserve ce vecteur pour l'orientation, mais on déplace
+        // le pivot géométrique sur le mob. Le second point devient un simple point de visée virtuel.
+        if (kind == KIND_SWING_SLASH) {
+            double directionX = tx - x;
+            double directionY = ty - y;
+            double directionZ = tz - z;
+            x = tx;
+            y = ty;
+            z = tz;
+            tx = x + directionX;
+            ty = y + directionY;
+            tz = z + directionZ;
+        }
+
         int duration = switch (fx) {
             case SERAPH_SKY_PILLAR, ABYSSAL_MAELSTROM, WARLORD_RALLY_SIGIL,
                  DRAGON_CHAOS_PRISM, BRIMSTONE_METEOR, BIG_BANG_SCAR -> 22;
@@ -488,17 +492,7 @@ public final class WeaponWorldVfxManager {
         pushInstance(new VfxInstance(fx, kind, intensity, x, y, z, tx, ty, tz, yaw, 0.0f, 0.25f,
                 duration, seed, paletteMask, sizeScale));
 
-        // T351 : l'entaille est pilotée par le serveur ; l'écho du TWIN_ECHO est donc reproduit ici.
-        if (kind == KIND_SWING_SLASH && fx == WeaponVisualEffectId.TWIN_ECHO_SLASH && PENDING_ECHOES.size() < 16) {
-            PendingEcho pe = new PendingEcho();
-            pe.ticksLeft = 4;
-            pe.effect = WeaponVisualEffectId.TWIN_ECHO_SLASH;
-            pe.intensity = intensity;
-            pe.x = x; pe.y = y; pe.z = z;
-            pe.yaw = yaw; pe.pitch = 0.0f; pe.tiltRad = -0.34f;
-            pe.paletteMask = paletteMask;
-            PENDING_ECHOES.add(pe);
-        }
+        // Un paquet de slash ne programme aucun second slash différé : un coup = un arc principal.
 
         // Éclaboussure de vrais mini-pixels 3D cubiques animés sous la physique !
         int burstCount = (fx.category == WeaponVisualEffectId.Category.BLOOD) ? 14 : 10;
@@ -1125,7 +1119,6 @@ public final class WeaponWorldVfxManager {
         if (level == null || viewer == null) {
             ACTIVE.clear();
             PIXEL_PARTICLES.clear();
-            PENDING_ECHOES.clear();
             TRACKED_PROJECTILES.clear();
             trackedLevel = null;
             return;
@@ -1137,7 +1130,6 @@ public final class WeaponWorldVfxManager {
             trackedLevel = level;
             ACTIVE.clear();
             PIXEL_PARTICLES.clear();
-            PENDING_ECHOES.clear();
             TRACKED_PROJECTILES.clear();
         }
         DeepEnchant.rememberClientAccess(level.registryAccess());
@@ -1161,18 +1153,6 @@ public final class WeaponWorldVfxManager {
             fp.vy -= fp.gravity;
             fp.vx *= 0.90;
             fp.vz *= 0.90;
-        }
-
-        for (Iterator<PendingEcho> it = PENDING_ECHOES.iterator(); it.hasNext(); ) {
-            PendingEcho pe = it.next();
-            pe.ticksLeft--;
-            if (pe.ticksLeft <= 0) {
-                pushInstance(new VfxInstance(
-                        pe.effect, KIND_SWING_SLASH, pe.intensity,
-                        pe.x, pe.y, pe.z, pe.x, pe.y, pe.z,
-                        pe.yaw, pe.pitch, -pe.tiltRad, 9, System.nanoTime(), pe.paletteMask));
-                it.remove();
-            }
         }
 
         // Sillage continu de mini-cubes 3D derrière chaque flèche / carreau / trident enchanté en vol !
@@ -2134,9 +2114,6 @@ public final class WeaponWorldVfxManager {
                                     quantize(Mth.lerp(suck, pz, cz), 0.0625f),
                                     hs * 0.45f, hs * 0.45f, hs * 0.45f, accentRgb, Math.round(a * 0.8f));
                         }
-                        case WeaponVfxMotion.SHAPE_DOUBLE_ARC, WeaponVfxMotion.SHAPE_PRISM -> {
-                            // géré hors boucle (arcs multiples) — rien ici
-                        }
                         default -> {
                             // CRESCENT (et repli) : arc plein + épaisseur + éclat de tranche
                             emitVoxelCube(vc, mat, tmp, px, py, pz, hs,
@@ -2155,38 +2132,14 @@ public final class WeaponWorldVfxManager {
                                             hs * 0.32f, hs * 0.26f, hs * 0.32f, accentRgb, Math.round(a * 0.55f));
                                 }
                             }
-                            // couche supplémentaire (2e bras : flamme d'âme, furie...)
-                            if (prof.arms() >= 2) {
-                                emitVoxelCube(vc, mat, tmp,
-                                        quantize(px + sx * hs * 2.0f, 0.0625f),
-                                        quantize(py + sy * hs * 2.0f + rise * progress * 0.6f, 0.0625f),
-                                        quantize(pz + sz * hs * 2.0f, 0.0625f),
-                                        hs * 0.55f, hs * 0.8f, hs * 0.55f, accentRgb, Math.round(a * 0.7f));
-                            }
+                            // Une seule ligne de lame : les bras supplémentaires du profil ne
+                            // déclenchent plus un deuxième arc générique superposé.
                         }
                     }
                 }
 
-                // Les familles à arcs multiples dessinent leur arc principal + les secondaires.
-                if (prof.shape() == WeaponVfxMotion.SHAPE_DOUBLE_ARC
-                        || prof.shape() == WeaponVfxMotion.SHAPE_PRISM) {
-                    emitMotionSlash(vc, mat, tmp, cx, cy, cz, yawDeg, pitchDeg, -tiltRad * 0.85f,
-                            radius * 0.80f, baseHalf * 0.82f, sweepDeg * 0.90f, progress,
-                            trailRgb, coreRgb, accentRgb, Math.round(peakAlpha * 0.85f),
-                            WeaponVfxMotion.crescent(1, wobble * 0.6f), salt + 17, effectIdx);
-                    if (prof.shape() == WeaponVfxMotion.SHAPE_PRISM) {
-                        int extra = Math.max(1, Math.min(3, prof.arms() - 1));
-                        for (int layer = 1; layer <= extra; layer++) {
-                            float roleMix = 0.18f + 0.64f * ((progress * prof.spin() + layer * 0.27f) % 1.0f);
-                            int c = mixRgb(coreRgb, accentRgb, roleMix);
-                            emitMotionSlash(vc, mat, tmp, cx, cy, cz, yawDeg, pitchDeg, tiltRad * (0.6f * layer),
-                                    radius * (1.0f - 0.14f * layer), baseHalf * (0.8f - 0.12f * layer),
-                                    sweepDeg * (0.94f - 0.06f * layer), progress,
-                                    c, coreRgb, accentRgb, Math.round(peakAlpha * (0.7f - 0.12f * layer)),
-                                    WeaponVfxMotion.crescent(1, 0.0f), salt + 31 * layer, effectIdx);
-                        }
-                    }
-                }
+                // DOUBLE_ARC et PRISM utilisent eux aussi leur seul arc principal : aucune
+                // récursion ne crée de lignes de lame secondaires ou successives.
             }
         }
     }
@@ -3091,8 +3044,9 @@ public final class WeaponWorldVfxManager {
         if (fx == WeaponVisualEffectId.TWIN_ECHO_SLASH) {
             v.slash((1.10f + 0.35f * t) * v.m().scale(), 0.036f, 155.0f,
                     v.pRgb(), v.sRgb(), v.aRgb(), v.fadeA());
-            v.slash((0.85f + 0.30f * t) * v.m().scale(), 0.024f, 155.0f,
-                    v.aRgb(), v.sRgb(), v.pRgb(), Math.round(v.fadeA() * 0.55f));
+            // L'écho devient un anneau discret, pas une deuxième ligne de slash.
+            v.ring(v.cy(), (0.85f + 0.30f * t) * S, v.aRgb(), v.pRgb(),
+                    Math.round(v.fadeA() * 0.45f), PIXEL_RING_DASHED);
         } else if (fx == WeaponVisualEffectId.CHAIN_VOLT_ARC) {
             for (int c = 0; c < 3; c++) {
                 float ang = c * 2.094f + v.age() * 0.10f;
