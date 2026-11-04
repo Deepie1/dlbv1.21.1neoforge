@@ -110,6 +110,18 @@ public final class ElementalEnchantEffects {
                 target.getZ(), count, 0.30, 0.30, 0.30, 0.02);
     }
 
+    /** Contour Chaos secondaire : trois teintes synchronisées, sans changer le budget de pixels. */
+    private static void chaosPuff(ServerLevel sl, LivingEntity target, int count) {
+        double x = target.getX(), y = target.getY() + target.getBbHeight() * 0.55, z = target.getZ();
+        for (int band = 0; band < 3; band++) {
+            int n = count / 3 + (band < count % 3 ? 1 : 0);
+            if (n > 0) {
+                PixelFx.send(sl, dust(DeepElement.chaosEdge(sl.getGameTime() * 0.05f, band / 3.0f)),
+                        x, y, z, n, 0.30, 0.30, 0.30, 0.02);
+            }
+        }
+    }
+
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onElementalHit(LivingIncomingDamageEvent event) {
         if (event.isCanceled() || event.getAmount() <= 0.0f) return;
@@ -222,8 +234,7 @@ public final class ElementalEnchantEffects {
         if (entropy > 0 && sl.random.nextInt(100) < 35) {
             Holder<MobEffect> malus = ENTROPY_MALUS[sl.random.nextInt(ENTROPY_MALUS.length)];
             target.addEffect(new MobEffectInstance(malus, 40 + 10 * entropy, 0, true, false));
-            int rgb = net.minecraft.util.Mth.hsvToRgb((sl.getGameTime() * 0.01f) % 1.0f, 0.85f, 1.0f);
-            puff(sl, target, rgb, 10);
+            chaosPuff(sl, target, 10);
         }
     }
 }

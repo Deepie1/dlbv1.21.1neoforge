@@ -10,6 +10,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -48,12 +49,7 @@ public final class CosmeticAuraClientTicker {
     public static final int F_ENCH_RADIANT_AEGIS    = 1 << 8;
     public static final int F_ENCH_WINGED_ENDURANCE = 1 << 9;
     public static final int F_ENCH_DREAD_AURA       = 1 << 10;
-    /**
-     * T360-HALO-CONTINU : halo pixel <b>permanent</b> accordé à tout porteur d'équipement enchanté.
-     * Avant, seuls 6 combos et 5 enchantements d'armure déclenchaient un halo : les autres joueurs
-     * n'avaient qu'une salve de particules vanilla ponctuelle (le fameux « le halo spawn une fois
-     * et disparaît sans revenir »).
-     */
+    /** Halo générique, limité aux armes dont le choix Lucky Block persisté l'autorise. */
     public static final int F_HALO_CONTINUOUS       = 1 << 11;
 
     /** T349 : rayon de collecte des profils cosmétiques (rendu fait par CosmeticPixelAura). */
@@ -149,13 +145,22 @@ public final class CosmeticAuraClientTicker {
         if (UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:wing_toughness_armor") > 0) f |= F_ENCH_WINGED_ENDURANCE;
         if (UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:dread_aura") > 0) f |= F_ENCH_DREAD_AURA;
 
-        // T360-HALO-CONTINU : le halo pixel ne dépend plus d'une liste fermée d'enchantements.
-        // Tout joueur portant au moins une pièce enchantée garde une couronne de pixels dessinée
-        // à CHAQUE frame (aucune salve, aucune particule, aucun risque de disparition).
-        if (equipped && f == 0) f |= F_HALO_CONTINUOUS;
+        // Plus d'aura constante pour toute arme non à distance : lecture du choix persisté au loot.
+        // Les tridents enchantés conservent explicitement leur comportement antérieur, sans tirage.
+        if (f == 0 && hasContinuousWeaponHalo(entity)) f |= F_HALO_CONTINUOUS;
 
         cp.flags = f;
         return f;
+    }
+
+    /** Aucun aléa ici : seulement deux lectures d'items et le marqueur NBT déjà synchronisé. */
+    private static boolean hasContinuousWeaponHalo(LivingEntity entity) {
+        ItemStack main = entity.getMainHandItem();
+        ItemStack off = entity.getOffhandItem();
+        if (main.getItem() instanceof net.minecraft.world.item.TridentItem && main.isEnchanted()) return true;
+        if (off.getItem() instanceof net.minecraft.world.item.TridentItem && off.isEnchanted()) return true;
+        return deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(main)
+                || deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(off);
     }
 
     /**

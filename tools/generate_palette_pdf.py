@@ -90,7 +90,8 @@ styles.add(ParagraphStyle(name="FootFR", parent=styles["Normal"], fontName="DLBR
 class PaletteDoc(BaseDocTemplate):
     def __init__(self, filename):
         super().__init__(filename, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm,
-                         topMargin=15*mm, bottomMargin=14*mm, title="Palettes de couleurs des animations élémentaires — T374",
+                         topMargin=15*mm, bottomMargin=14*mm,
+                         title="Palettes de couleurs des animations élémentaires — correction chromatique",
                          author="Deep Lucky Block")
         frame = Frame(self.leftMargin, self.bottomMargin, self.width, self.height,
                       leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0, id="main")
@@ -105,7 +106,7 @@ class PaletteDoc(BaseDocTemplate):
         canvas.line(15*mm, 10*mm, w-15*mm, 10*mm)
         canvas.setFont(FONT_REGULAR, 7)
         canvas.setFillColor(MUTED)
-        canvas.drawString(15*mm, 6.2*mm, "RÉFÉRENCE CHROMATIQUE · MISE À JOUR T374")
+        canvas.drawString(15*mm, 6.2*mm, "RÉFÉRENCE CHROMATIQUE · PALETTES CORRIGÉES")
         canvas.drawRightString(w-15*mm, 6.2*mm, f"{doc.page} / 3")
         canvas.restoreState()
 
@@ -171,9 +172,10 @@ def main():
     elements, effects = parse_java()
     story = [Spacer(1, 3*mm),
              Paragraph("Palettes des animations élémentaires", styles['TitleFR']),
-             Paragraph("Référence exacte des couleurs de combat · mise à jour corrective T374", styles['SubFR']),
-             Paragraph("Chaque rôle d’animation reprend sa couleur de famille : <b>primaire</b> pour le cœur, <b>secondaire</b> pour la traînée et <b>surbrillance</b> pour l’accent. Les carrés donnent les valeurs HEX effectivement utilisées.", styles['BodyFR']),
-             Paragraph("Verrouillage T374 : les variantes n’altèrent que la luminosité; aucun décalage de teinte ne peut injecter une couleur étrangère. Les accents des 40 effets sont recalculés depuis la surbrillance de leur élément. Les armes multi-éléments alternent entre familles au sein d’un même rôle, sans mélanger leurs teintes RGB. Chaos conserve son traitement prismatique dédié.", styles['BodyFR']),
+             Paragraph("Référence exacte des couleurs de combat · correction complète des animations d’armes", styles['SubFR']),
+             Paragraph("Chaque rôle d’animation reprend sa couleur de famille : <b>primaire</b> pour le cœur, <b>secondaire</b> pour la traînée et <b>surbrillance</b> pour l’accent. Les rectangles remplis donnent les valeurs HEX exactes lues dans le Java canonique.", styles['BodyFR']),
+             Paragraph("Les variantes et le jitter n’altèrent que la luminosité. Les 40 effets reprennent les trois rôles de leur famille, y compris lames, reflets, projectiles, impacts et pixels secondaires. Les armes multi-éléments alternent des couleurs de même rôle, sans interpolation entre familles. Le Sang reste exclusivement rouge : aucun orange, rose, jaune ou blanc.", styles['BodyFR']),
+             Paragraph("Métal utilise trois gris neutres distincts, sans noir ni blanc pur. Eau utilise des bleus clairs translucides; seule une écume blanche très discontinue peut apparaître sur la lèvre des vagues. Chaos garde un cœur très sombre stable : ses contours synchronisés présentent plusieurs bandes de teintes simultanées, avec une luminosité déterministe, jamais un cycle de teinte sur tout le corps.", styles['BodyFR']),
              Paragraph("Palettes canoniques", styles['SectionFR']), palette_table(elements), Spacer(1, 3*mm),
              Paragraph("Contrôle Sang : primaire, secondaire et accent restent rouges (aucun orange ajouté par les animations).", styles['TinyFR']),
              PageBreak(),
@@ -183,7 +185,7 @@ def main():
              Paragraph("Accents recalculés · effets 21 à 40", styles['SectionFR']),
              Paragraph("Les mêmes rôles de couleur sont appliqués à toutes les animations et aux couches de pixels secondaires.", styles['SubFR']),
              effect_table(effects[20:]), Spacer(1, 2*mm),
-             Paragraph("Source des données : DeepElement.java et WeaponVisualEffectId.java · T374", styles['FootFR'])]
+             Paragraph("Source des données : DeepElement.java et WeaponVisualEffectId.java · 12 familles / 40 effets", styles['FootFR'])]
     PDF_OUT.parent.mkdir(parents=True, exist_ok=True)
     PaletteDoc(str(PDF_OUT)).build(story)
     print(f"Generated {PDF_OUT} ({len(elements)} families, {len(effects)} effects)")

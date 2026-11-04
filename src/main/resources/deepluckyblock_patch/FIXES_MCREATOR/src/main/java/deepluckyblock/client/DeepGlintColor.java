@@ -24,20 +24,21 @@ public final class DeepGlintColor {
 
     // Couleurs "pleines" (0xFFRRGGBB) par famille.
     private static final int CURSE    = 0xFFFF5555;
-    private static final int NATURE   = 0xFF28B440;
-    private static final int FIRE     = 0xFFFF5C08;
-    private static final int WATER    = 0xFF286EFF;
-    private static final int POISON   = 0xFF1C8C40;
+    private static final int NATURE   = 0xFF000000 | deepluckyblock.enchantments.DeepElement.WOOD.primary;
+    private static final int FIRE     = 0xFF000000 | deepluckyblock.enchantments.DeepElement.FIRE.primary;
+    private static final int WATER    = 0xFF000000 | deepluckyblock.enchantments.DeepElement.WATER.primary;
+    private static final int POISON   = 0xFF000000 | deepluckyblock.enchantments.DeepElement.POISON.primary;
     private static final int SPEED    = 0xFF3A2E80;
-    private static final int SHADOW   = 0xFF1E1030;
-    private static final int DRAGON   = 0xFFB28CFF;
+    private static final int SHADOW   = 0xFF000000 | deepluckyblock.enchantments.DeepElement.SHADOW.primary;
+    private static final int CHAOS_BASE = 0xFF000000 | deepluckyblock.enchantments.DeepElement.CHAOS.primary;
+    private static final int DRAGON   = 0xFF000000 | deepluckyblock.enchantments.DeepElement.VOID.primary;
     private static final int AIR      = 0xFFDAE8F4;
     private static final int WIND     = 0xFF969CA6;
-    private static final int DAMAGE   = 0xFFC8CDD8;
+    private static final int DAMAGE   = 0xFF000000 | deepluckyblock.enchantments.DeepElement.METAL.primary;
     private static final int FORCE    = 0xFFFF7A14;
-    private static final int UNDEAD   = 0xFF3A5C46;
-    private static final int LIGHT    = 0xFFF8F8D4;
-    private static final int ECHO     = 0xFF50C4CE;
+    private static final int UNDEAD   = 0xFF000000 | deepluckyblock.enchantments.DeepElement.BLOOD.primary;
+    private static final int LIGHT    = 0xFF000000 | deepluckyblock.enchantments.DeepElement.LIGHT.primary;
+    private static final int ECHO     = 0xFF000000 | deepluckyblock.enchantments.DeepElement.THUNDER.primary;
     private static final int MAGIC    = 0xFF8252CC;
     private static final int CHRONO   = 0xFF969EB2;
     private static final int LOOT     = 0xFFFFD656;
@@ -127,11 +128,24 @@ public final class DeepGlintColor {
 
     /** Couleur "famille", non modulée, à partir des mots-clés de l'id. */
     private static int baseColor(String s) {
-        // Feu / lave / météore / phénix / foudre / heat
+        // Les familles canoniques sont résolues avant les catégories utilitaires génériques.
+        // En particulier, la foudre ne doit plus passer par le Feu et l'exécution par le Métal.
+        if (s.contains("thunder") || s.contains("lightning") || s.contains("storm")
+                || s.contains("channeling") || s.contains("electric") || s.contains("overclock")
+                || s.contains("overcharge") || s.contains("sonic") || s.contains("voltaic")
+                || s.contains("galvan") || s.contains("discharge")) return ECHO;
+        if (s.contains("blood") || s.contains("leech") || s.contains("vamp")
+                || s.contains("devour") || s.contains("execute") || s.contains("behead")
+                || s.contains("decapit") || s.contains("guillotine") || s.contains("carnage")
+                || s.contains("siphon") || s.contains("undead")) return UNDEAD;
+        if (s.contains("chaos") || s.contains("entropy") || s.contains("prism")
+                || s.contains("discord") || s.contains("anarch") || s.contains("kaleido")
+                || s.contains("pandemon") || s.contains("mirage")) return CHAOS_BASE;
+
+        // Feu / lave / météore / phénix / heat
         if (s.contains("fire") || s.contains("flame") || s.contains("blaze")
                 || s.contains("lava") || s.contains("magma") || s.contains("sweeping_fire")
-                || s.contains("meteor") || s.contains("phoenix") || s.contains("thunder")
-                || s.contains("lightning") || s.contains("storm") || s.contains("scorch")
+                || s.contains("meteor") || s.contains("phoenix") || s.contains("scorch")
                 || s.contains("ember") || s.contains("infernal") || s.contains("ember")
                 || s.contains("trailblazer") || s.contains("campfire")) return FIRE;
 
@@ -200,9 +214,7 @@ public final class DeepGlintColor {
                 || s.contains("heavy") || s.contains("bash")) return FORCE;
 
         // Mort-vivant / âme / soul / undead / lifesteal
-        if (s.contains("soul") || s.contains("undead") || s.contains("blood")
-                || s.contains("leech") || s.contains("life") || s.contains("devour")
-                || s.contains("vamp") || s.contains("wither_edge")) return UNDEAD;
+        if (s.contains("soul") || s.contains("life") || s.contains("wither_edge")) return UNDEAD;
 
         // Lumière / bénédiction / holy / bless / divine
         if (s.contains("bless") || s.contains("divine") || s.contains("holy")
@@ -301,28 +313,15 @@ public final class DeepGlintColor {
     }
 
     /**
-     * Module la teinte de base selon la force :
-     *  - s <= 0.5 : mélange blanc → teinte (plus la force monte, plus c'est coloré) ;
-     *  - s > 0.5  : assombrit vers 52 % de luminosité (fort = plus profond).
+     * Module seulement la luminosité selon la force : la teinte reste strictement inchangée.
      */
     private static int shade(int rgb, double s) {
-        int r = (rgb >> 16) & 0xFF;
-        int g = (rgb >> 8) & 0xFF;
-        int b = rgb & 0xFF;
-        int outR, outG, outB;
-        if (s <= 0.5) {
-            double t = s * 2.0;   // 0..1
-            outR = (int) (255 + (r - 255) * t);
-            outG = (int) (255 + (g - 255) * t);
-            outB = (int) (255 + (b - 255) * t);
-        } else {
-            double t = (s - 0.5) * 2.0; // 0..1
-            double lum = 1.0 - 0.48 * t;  // 1.0 → 0.52
-            outR = (int) (r * lum);
-            outG = (int) (g * lum);
-            outB = (int) (b * lum);
-        }
-        outR = clamp255(outR); outG = clamp255(outG); outB = clamp255(outB);
+        // Variation de luminosité uniquement : le niveau ne désature jamais vers du blanc
+        // et ne peut donc plus transformer le Sang en rose ni créer une teinte étrangère.
+        double lum = (s <= 0.5) ? 0.70 + 0.60 * s : 1.0 - 0.48 * (s - 0.5) * 2.0;
+        int outR = clamp255((int) (((rgb >> 16) & 0xFF) * lum));
+        int outG = clamp255((int) (((rgb >> 8) & 0xFF) * lum));
+        int outB = clamp255((int) ((rgb & 0xFF) * lum));
         return 0xFF000000 | (outR << 16) | (outG << 8) | outB;
     }
 
@@ -338,16 +337,16 @@ public final class DeepGlintColor {
     // branchée directement sur CE moteur DeepGlintColor (0 nouveau système,
     // palette bornée aux constantes de famille -> cache EnchantGlintTyped fixe).
     // =======================================================================
-    private static final int FLASH_POISON  = 0xFF28EE58; // Vert émeraude toxique vif
-    private static final int FLASH_FIRE    = 0xFFFF5C08; // Orange ardent (FIRE)
-    private static final int FLASH_ECHO    = 0xFF38EEFF; // Cyan électrique / foudre / sonique
-    private static final int FLASH_WATER   = 0xFF2888FF; // Azur polaire / océan
-    private static final int FLASH_BLOOD   = 0xFFFF1E38; // Rouge sang / vampirisme / exécution
-    private static final int FLASH_SHADOW  = 0xFF9B38FF; // Violet ombre / Wither
-    private static final int FLASH_DRAGON  = 0xFFC47AFF; // Magenta Ender / vide / téléport
-    private static final int FLASH_LIGHT   = 0xFFFFE048; // Or solaire sacré
-    private static final int FLASH_NATURE  = 0xFF28D848; // Vert sylvestre / récolte
-    private static final int FLASH_MAGIC   = 0xFF9E58FF; // Violet arcanique
+    private static final int FLASH_POISON  = 0xFF000000 | deepluckyblock.enchantments.DeepElement.POISON.highlight; // Vert émeraude toxique vif
+    private static final int FLASH_FIRE    = 0xFF000000 | deepluckyblock.enchantments.DeepElement.FIRE.highlight; // Orange ardent (FIRE)
+    private static final int FLASH_ECHO    = 0xFF000000 | deepluckyblock.enchantments.DeepElement.THUNDER.highlight; // Foudre : jaune pâle canonique, sans accent cyan
+    private static final int FLASH_WATER   = 0xFF000000 | deepluckyblock.enchantments.DeepElement.WATER.highlight; // Eau : bleu très clair canonique
+    private static final int FLASH_BLOOD   = 0xFF000000 | deepluckyblock.enchantments.DeepElement.BLOOD.highlight; // Rouge sang / vampirisme / exécution
+    private static final int FLASH_SHADOW  = 0xFF000000 | deepluckyblock.enchantments.DeepElement.SHADOW.highlight; // Violet ombre / Wither
+    private static final int FLASH_DRAGON  = 0xFF000000 | deepluckyblock.enchantments.DeepElement.VOID.highlight; // Gris Ender / vide / téléport
+    private static final int FLASH_LIGHT   = 0xFF000000 | deepluckyblock.enchantments.DeepElement.LIGHT.highlight; // Or solaire sacré
+    private static final int FLASH_NATURE  = 0xFF000000 | deepluckyblock.enchantments.DeepElement.WOOD.highlight; // Bois clair / récolte
+    private static final int FLASH_MAGIC   = 0xFF000000 | deepluckyblock.enchantments.DeepElement.CHAOS.highlight; // Violet arcanique
     private static final int FLASH_AIR     = 0xFFD8F2FF; // Blanc céleste / bourrasque
     private static final int FLASH_FORCE   = 0xFFFF8418; // Ambre cinétique / impact lourd
     private static final int FLASH_SPEED   = 0xFF4C7CFF; // Cobalt vélocité
@@ -380,7 +379,7 @@ public final class DeepGlintColor {
         // « force » (qui se lit comme du feu) : seule une famille élémentaire la colore.
         boolean rangedWeapon = isRangedWeapon(stack);
 
-        int[] tier1 = new int[8];
+        int[] tier1 = new int[10];
         int tier1Count = 0;
         int bestTier2Color = 0;
         int bestTier2Lvl = -1;
@@ -446,7 +445,7 @@ public final class DeepGlintColor {
                 || s.contains("fang") || s.contains("scorpion") || s.contains("briar")) {
             return FLASH_POISON;
         }
-        // Foudre / électrique / surcadencé / onde sonique -> Cyan électrique
+        // Foudre / électrique / surcadencé / onde sonique -> surbrillance jaune pâle
         if (s.contains("thunder") || s.contains("lightning") || s.contains("storm")
                 || s.contains("channeling") || s.contains("electric") || s.contains("overclock")
                 || s.contains("overcharge") || s.contains("hydro_shock")
@@ -481,7 +480,7 @@ public final class DeepGlintColor {
                 || s.contains("dread") || s.contains("stealth") || s.contains("soul")) {
             return FLASH_SHADOW;
         }
-        // Dragon / Ender / vide / téléport / phase -> Magenta Ender
+        // Dragon / Ender / vide / téléport / phase -> gris canonique du Vide
         if (s.contains("dragon") || s.contains("ender") || s.contains("void")
                 || s.contains("teleport") || s.contains("swap_arrow") || s.contains("warp")
                 || s.contains("phasing") || s.contains("dimension")) {
@@ -546,48 +545,15 @@ public final class DeepGlintColor {
     // (Fini le déclenchement générique redondant au simple swing dans le vide ou dégât quelconque.)
     // =======================================================================
     // =======================================================================
-    // T351-SMOOTH-GLINT : aucun à-coup de couleur sur le glint / l'aura. La couleur
-    // affichée rejoint TOUJOURS sa cible progressivement (interpolation), donc on ne
-    // voit jamais de « flash » d'une teinte à l'autre, ni en multi-élément.
+    // PALETTE-LOCK : alternance de rôles exacts, sans interpolation RGB entre éléments.
     // =======================================================================
-    private static final java.util.Map<Integer, int[]> SMOOTH_GLINT = new java.util.HashMap<>();
-    /** Facteur d'interpolation par frame (~0.35 s pour rejoindre la cible). */
-    private static final float SMOOTH_GLINT_K = 0.075f;
-
-    /** Interpole la couleur de glint vers {@code target} (retourne la couleur lissée). */
+    /**
+     * Les cibles sont déjà des rôles de palette exacts. Une interpolation RGB entre deux cibles
+     * créerait une teinte intermédiaire étrangère sur une arme multi-éléments : on alterne donc
+     * directement les couleurs validées, comme dans le moteur de voxels.
+     */
     public static int smoothGlint(ItemStack stack, int target, boolean armorSlot) {
-        if (stack == null || stack.isEmpty() || target == 0) return target;
-        int key = System.identityHashCode(stack) ^ (armorSlot ? 0x5BD1E995 : 0);
-        synchronized (SMOOTH_GLINT) {
-            int[] prev = SMOOTH_GLINT.get(key);
-            if (prev == null || prev.length < 3 || prev[2] != target) {
-                // Nouvelle cible : on garde la couleur précédente et on la fait voyager vers la cible.
-                int from = (prev == null || prev.length < 1) ? target : prev[0];
-                prev = new int[]{from, target, target};
-                SMOOTH_GLINT.put(key, prev);
-            }
-            int from = prev[0];
-            int to = prev[1];
-            int r = lerpChannel((from >> 16) & 0xFF, (to >> 16) & 0xFF, SMOOTH_GLINT_K);
-            int g = lerpChannel((from >> 8) & 0xFF, (to >> 8) & 0xFF, SMOOTH_GLINT_K);
-            int b = lerpChannel(from & 0xFF, to & 0xFF, SMOOTH_GLINT_K);
-            int out = 0xFF000000 | (r << 16) | (g << 8) | b;
-            if (Math.abs(r - ((to >> 16) & 0xFF)) <= 1
-                    && Math.abs(g - ((to >> 8) & 0xFF)) <= 1
-                    && Math.abs(b - (to & 0xFF)) <= 1) {
-                out = to;
-            }
-            prev[0] = out;
-            if (SMOOTH_GLINT.size() > 256) {
-                SMOOTH_GLINT.clear();
-            }
-            return out;
-        }
-    }
-
-    private static int lerpChannel(int a, int b, float k) {
-        int v = Math.round(a + (b - a) * k);
-        return v < 0 ? 0 : Math.min(255, v);
+        return target;
     }
 
     private static final java.util.WeakHashMap<ItemStack, long[]> CONTEXT_GLOW_CACHE = new java.util.WeakHashMap<>();
@@ -621,7 +587,7 @@ public final class DeepGlintColor {
         // T359-GLINT-NO-FAKE-FIRE : même règle pour l'éclat contextuel.
         boolean rangedWeapon = isRangedWeapon(stack);
 
-        int[] activeColors = new int[8];
+        int[] activeColors = new int[16];
         int activeCount = 0;
 
         for (Map.Entry<net.minecraft.world.item.enchantment.Enchantment, Integer> e : enchants.entrySet()) {
@@ -674,9 +640,10 @@ public final class DeepGlintColor {
     }
 
     private static int brightenForFlash(int rgb) {
-        int r = Math.min(255, ((rgb >> 16) & 0xFF) + 55);
-        int g = Math.min(255, ((rgb >> 8) & 0xFF) + 55);
-        int b = Math.min(255, (rgb & 0xFF) + 55);
+        float scale = 1.18f;
+        int r = Math.min(255, Math.round(((rgb >> 16) & 0xFF) * scale));
+        int g = Math.min(255, Math.round(((rgb >> 8) & 0xFF) * scale));
+        int b = Math.min(255, Math.round((rgb & 0xFF) * scale));
         return (r << 16) | (g << 8) | b;
     }
 

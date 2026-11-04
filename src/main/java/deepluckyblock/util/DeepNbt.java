@@ -134,21 +134,46 @@ public final class DeepNbt {
      * ou généré/enchanté via une commande du mod.
      */
     public static final String LUCKY_ITEM_NBT_KEY = "dlbLuckyItem";
+    /** Décision d'aura persistée au loot : false est une décision, pas une absence de données. */
+    public static final String WEAPON_AURA_NBT_KEY = "dlbWeaponAura";
+    private static final int LUCKY_MELEE_AURA_PERCENT = 15;
+    private static final int LUCKY_RANGED_AURA_PERCENT = 40;
 
     /**
-     * T331-LUCKY-ITEM-ORIGIN : Estampille l'item comme issu du Lucky Block ou d'une commande
-     * du mod, puis force la synchronisation réseau via {@link #commit}.
+     * Estampille l'item et décide UNE FOIS, à sa création, si une arme éligible possède l'aura.
+     * Les tridents sont exclus pour conserver leur comportement antérieur. Aucun tirage n'a lieu
+     * lors d'un équipement, d'un tick ou d'une frame : la présence du booléen bloque tout reroll.
      */
     public static void markLuckyBlockOrigin(@Nullable ItemStack stack) {
         if (stack == null || stack.isEmpty()) return;
         try {
             CompoundTag tag = getOrCreateTag(stack);
+            boolean changed = false;
             if (!tag.getBoolean(LUCKY_ITEM_NBT_KEY)) {
                 tag.putBoolean(LUCKY_ITEM_NBT_KEY, true);
-                commit(stack, tag);
+                changed = true;
             }
+            boolean trident = stack.getItem() instanceof net.minecraft.world.item.TridentItem;
+            if (!trident && deepluckyblock.enchantments.WeaponVisualEffectId.isWeaponItem(stack)
+                    && !tag.contains(WEAPON_AURA_NBT_KEY, Tag.TAG_BYTE)) {
+                int chance = stack.getItem() instanceof net.minecraft.world.item.ProjectileWeaponItem
+                        ? LUCKY_RANGED_AURA_PERCENT : LUCKY_MELEE_AURA_PERCENT;
+                boolean aura = java.util.concurrent.ThreadLocalRandom.current().nextInt(100) < chance;
+                tag.putBoolean(WEAPON_AURA_NBT_KEY, aura);
+                changed = true;
+            }
+            if (changed) commit(stack, tag);
         } catch (Throwable ignored) {
         }
+    }
+
+    /** Lecture seule du choix persisté; ne crée jamais de NBT et ne tire jamais de nombre aléatoire. */
+    public static boolean hasLuckyWeaponAura(@Nullable ItemStack stack) {
+        if (!isLuckyBlockOrigin(stack) || stack.getItem() instanceof net.minecraft.world.item.TridentItem) {
+            return false;
+        }
+        CompoundTag tag = tag(stack);
+        return tag != null && tag.getBoolean(WEAPON_AURA_NBT_KEY);
     }
 
     /**

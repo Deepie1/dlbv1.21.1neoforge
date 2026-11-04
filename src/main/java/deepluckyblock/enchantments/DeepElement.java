@@ -11,7 +11,7 @@ import java.util.Locale;
  * mélange d'animations très différentes qui semblaient sortir « n'importe quand ». On trie maintenant
  * par <b>famille élémentaire</b>, ce qui donne une couleur et une ambiance cohérentes :
  * feu = rouge/orange, poison & nature = vert, eau & givre = bleu, foudre = violet/bleu avec surbrillance jaune pâle,
- * métal = argent/or, terre = vert clair/terre, lumière = blanc doré, ombre = violet/noir, sang = rouge, vide = gris/noir.</p>
+ * métal = gris neutres, terre = vert clair/terre, lumière = blanc doré, ombre = violet/noir, sang = rouge, vide = gris/noir.</p>
  *
  * <p>Les cinq éléments chinois classiques sont présents (Bois, Feu, Terre, Métal, Eau), complétés par
  * Foudre, Lumière et Ombre (demandés explicitement), plus Sang et Vide qui existaient déjà dans le mod.</p>
@@ -32,10 +32,10 @@ public enum DeepElement {
     FIRE("Feu", 0xFF4A10, 0xB01B00, 0xFFE08A),
     /** 土 Terre / sol / séisme / sable — <b>VERT CLAIR + BRUN</b> (herbe sur terre, T352b). */
     EARTH("Terre", 0x9FC25E, 0x5C3B1A, 0xD6E39B),
-    /** 金 Métal / acier / or / tranchant (argent & or). */
-    METAL("Métal", 0xE9F1FF, 0x7F93AE, 0xFFFFFF),
-    /** 水 Eau / glace / océan / givre (bleu). */
-    WATER("Eau", 0x1CC8FF, 0x0A4FA8, 0xA8F0FF),
+    /** 金 Métal / acier / tranchant — trois gris neutres distincts, sans blanc ni noir pur. */
+    METAL("Métal", 0x9EA3AA, 0x747A82, 0xC4C8CD),
+    /** 水 Eau / glace / océan / givre — bleus clairs, rendus translucides par le matériau. */
+    WATER("Eau", 0x62C7E8, 0x92DDF1, 0xD4F3FB),
     /** T373 : 雷 Foudre / éclair / surcadence (violet électrique, bleu profond, surbrillance jaune pâle). */
     THUNDER("Foudre", 0x5E3AFF, 0x1E26FF, 0xFCFFBA),
     /** 光 Lumière / saint / astral / or radieux. */
@@ -47,12 +47,11 @@ public enum DeepElement {
     /** T373 : Vide / ender / dragon / warp (gris charbon, noir et gris clair). */
     VOID("Vide", 0x444444, 0x000000, 0x5B5B5B),
     /**
-     * T352-CHAOS-ELEMENT : 乱 Chaos / entropie / discordance prismatique.
-     * Base volontairement <b>très sombre</b> (noir violacé) pour que les effets chaos restent
-     * « dark », avec un accent multicolore : les animations chaos font défiler la teinte (HSV)
-     * sur toute la roue chromatique par-dessus cette base sombre.
+     * 乱 Chaos / entropie / discordance prismatique.
+     * Le corps conserve une base très sombre et stable. Seuls les contours reçoivent les teintes
+     * dynamiques de {@link #chaosEdge(float, float)}, avec plusieurs phases visibles simultanément.
      */
-    CHAOS("Chaos", 0x2B0B38, 0x120616, 0xFF4FD8);
+    CHAOS("Chaos", 0x2B0B38, 0x120616, 0x5B2A68);
 
     public final String displayName;
     public final int primary;
@@ -179,14 +178,18 @@ public enum DeepElement {
     /** Masque de bits des familles (bit {@code ordinal()}). */
     public static final int MASK_ALL = (1 << COUNT) - 1;
 
-    /** Couleur multicolore du chaos : teinte qui tourne sur toute la roue (base sombre conservée). */
-    public static int chaosHue(float timeSeconds, float offset, int baseRgb) {
-        int hsv = net.minecraft.util.Mth.hsvToRgb((timeSeconds * 0.33f + offset) % 1.0f, 0.85f, 1.0f);
-        // 25 % seulement de la couleur vive : le chaos reste sombre, mais bariolé.
-        int r = (int) (((baseRgb >> 16) & 0xFF) * 0.75f + ((hsv >> 16) & 0xFF) * 0.25f);
-        int g = (int) (((baseRgb >> 8) & 0xFF) * 0.75f + ((hsv >> 8) & 0xFF) * 0.25f);
-        int b = (int) ((baseRgb & 0xFF) * 0.75f + (hsv & 0xFF) * 0.25f);
-        return (r << 16) | (g << 8) | b;
+    /**
+     * Couleur d'un CONTOUR de Chaos. La phase spatiale {@code offset} permet à plusieurs bandes
+     * colorées de coexister sur le même pourtour; le temps les déplace ensemble, sans aléa par frame.
+     * La luminosité reste contrôlée et la base de l'effet n'entre pas dans ce calcul : elle doit
+     * continuer à utiliser les trois rôles sombres ci-dessus. Réservé exclusivement à Chaos.
+     */
+    public static int chaosEdge(float timeSeconds, float offset) {
+        float hue = (timeSeconds * 0.18f + offset) % 1.0f;
+        if (hue < 0.0f) hue += 1.0f;
+        float pulse = (float) Math.sin((timeSeconds * 0.45f + offset) * Math.PI * 2.0);
+        float brightness = 0.80f + 0.12f * pulse;
+        return net.minecraft.util.Mth.hsvToRgb(hue, 0.84f, brightness);
     }
 
     /** Adoucit un pixel vers la surbrillance déclarée de sa famille, sans injecter de blanc neutre. */

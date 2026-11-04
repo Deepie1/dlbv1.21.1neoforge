@@ -18,7 +18,6 @@ import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.CrossbowItem;
@@ -71,10 +70,6 @@ public final class WeaponWorldVfxManager {
     private static final List<PendingEcho> PENDING_ECHOES = new ArrayList<>(16);
     private static final Map<Integer, TrackedProjectile> TRACKED_PROJECTILES = new HashMap<>(32);
 
-    private static final Map<Integer, Boolean> PLAYER_WAS_SWINGING = new HashMap<>(16);
-    private static final Map<Integer, Integer> PLAYER_SWING_PARITY = new HashMap<>(16);
-    /** T349-VFX-FREQUENCY : cooldown aléatoire de la traînée de coup (par joueur). */
-    private static final Map<Integer, Long> PLAYER_SWING_READY = new HashMap<>(16);
     private static final Map<Integer, Boolean> PLAYER_WAS_DRAWING = new HashMap<>(16);
     private static final Map<Integer, Boolean> PLAYER_WAS_CB_CHARGED = new HashMap<>(16);
 
@@ -197,11 +192,20 @@ public final class WeaponWorldVfxManager {
         int age;
         int maxAge;
         int detailSalt;
+        /** Transparence réelle des particules secondaires (notamment les bleus d'Eau). */
+        final float alphaScale;
 
         FloatingPixel(boolean additive, double x, double y, double z,
                       double vx, double vy, double vz, float gravity,
                       float halfSize, int rgb, int maxAge, int detailSalt) {
-            this.additive = additive;
+            this(additive, x, y, z, vx, vy, vz, gravity, halfSize, rgb, maxAge, detailSalt, 1.0f);
+        }
+
+        FloatingPixel(boolean additive, double x, double y, double z,
+                      double vx, double vy, double vz, float gravity,
+                      float halfSize, int rgb, int maxAge, int detailSalt, float alphaScale) {
+            this.alphaScale = Mth.clamp(alphaScale, 0.05f, 1.0f);
+            this.additive = additive && this.alphaScale >= 0.999f;
             this.x = x; this.y = y; this.z = z;
             this.vx = vx; this.vy = vy; this.vz = vz;
             this.gravity = gravity;
@@ -248,12 +252,12 @@ public final class WeaponWorldVfxManager {
         /** Couleur secondaire, issue du même rôle chromatique pour chaque famille portée. */
         int secondary() {
             return (paletteMask == 0) ? effect.secondaryRgb
-                    : paletteColor(paletteMask, effect.secondaryRgb, palettePhase(frameTimeSeconds + 3.1f), 1);
+                    : paletteColor(paletteMask, effect.secondaryRgb, palettePhase(frameTimeSeconds), 1);
         }
 
         int highlight() {
             return (paletteMask == 0) ? effect.highlightRgb
-                    : paletteColor(paletteMask, effect.highlightRgb, palettePhase(frameTimeSeconds + 1.55f), 2);
+                    : paletteColor(paletteMask, effect.highlightRgb, palettePhase(frameTimeSeconds), 2);
         }
 
         /** T349-VARIATION : variante 0..7 tirée au déclenchement (forme, sens, luminosité). */
@@ -322,8 +326,8 @@ public final class WeaponWorldVfxManager {
         cubeGloss = 0.0f;
         switch (voxelElement) {
             case WATER -> {
-                // L'eau est un volume translucide, mais le givre est un cristal opaque.
-                cubeVeil = fx == WeaponVisualEffectId.PERMAFROST_RIME ? 1.0f : 0.58f;
+                // L'eau est un volume translucide; le givre reste cristallin mais laisse aussi passer la lumière.
+                cubeVeil = fx == WeaponVisualEffectId.PERMAFROST_RIME ? 0.78f : 0.62f;
                 cubeTex = fx == WeaponVisualEffectId.PERMAFROST_RIME ? 0.075f : 0.035f;
             }
             case FIRE -> cubeTex = 0.075f;       // flamme = panaches lisses, non une pierre brillante
@@ -538,11 +542,14 @@ public final class WeaponWorldVfxManager {
                 // Répartition des pixels entre familles sans changer leur rôle chromatique.
                 float phase = (count <= 1) ? 0.5f : (float) i / (float) (count - 1);
                 rgb = paletteColor(paletteMask, rgb, phase, role);
+            } else if (fx.element() == DeepElement.CHAOS && role == 2) {
+                rgb = DeepElement.chaosEdge(frameTimeSeconds, (float) i / Math.max(1, count));
             }
             // Tailles multi-échelles : quelques gros pixels, beaucoup de micro-éclats (jamais uniforme)
             float sz = halfSize * (0.42f + rand.nextFloat() * 1.05f);
             PIXEL_PARTICLES.add(new FloatingPixel(fx.additive, x, y, z, vx, vy, vz, grav, sz, rgb,
-                    10 + rand.nextInt(10), rand.nextInt(Integer.MAX_VALUE)));
+                    10 + rand.nextInt(10), rand.nextInt(Integer.MAX_VALUE),
+                    fx.element() == DeepElement.WATER ? 0.68f : 1.0f));
         }
     }
 
@@ -800,13 +807,19 @@ public final class WeaponWorldVfxManager {
             if (echo.motion() == deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_STAR
                     || echo.motion() == deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_PRISM
                     || echo.motion() == deepluckyblock.enchantments.WeaponVfxSubtleEcho.MOTION_HALO) {
-                rgb = mixRgb(rgb, echo.element().highlight, 0.35f);
+                rgb = (paletteMask != 0) ? paletteColor(paletteMask, echo.element().highlight, t, 2)
+                            : echo.element().highlight;
+            }
+            if (echo.element() == DeepElement.CHAOS && paletteRole == 2
+                    && Integer.bitCount(paletteMask & DeepElement.MASK_ALL) <= 1) {
+                rgb = DeepElement.chaosEdge(frameTimeSeconds, t);
             }
 
             float sz = echo.size() * (0.7f + rand.nextFloat() * 0.6f);
             PIXEL_PARTICLES.add(new FloatingPixel(additive,
                     x + ox, y + oy, z + oz, vx, vy, vz, echo.gravity(), sz, rgb,
-                    echo.life() + rand.nextInt(3), rand.nextInt(Integer.MAX_VALUE)));
+                    echo.life() + rand.nextInt(3), rand.nextInt(Integer.MAX_VALUE),
+                    echo.element() == DeepElement.WATER ? 0.68f : 1.0f));
         }
     }
 
@@ -984,14 +997,22 @@ public final class WeaponWorldVfxManager {
             }
             if (sub.shape() == deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_GLINT
                     || sub.shape() == deepluckyblock.enchantments.WeaponVfxSubtle.SHAPE_SHARD) {
-                rgb = mixRgb(rgb, sub.element().highlight, 0.45f);
+                float phase = (count <= 1) ? 0.5f : (float) i / (float) (count - 1);
+                rgb = (paletteMask != 0) ? paletteColor(paletteMask, sub.element().highlight, phase, 2)
+                        : sub.element().highlight;
+            }
+            if (sub.element() == DeepElement.CHAOS && paletteRole == 2
+                    && Integer.bitCount(paletteMask & DeepElement.MASK_ALL) <= 1) {
+                float phase = (count <= 1) ? 0.5f : (float) i / (float) (count - 1);
+                rgb = DeepElement.chaosEdge(frameTimeSeconds, phase);
             }
             // T370 : les accents étaient sub-pixel (diamètre < 1 px pour les tiers discrets).
             // Agrandissement modéré : ils restent petits, mais sont réellement visibles en jeu.
             float sz = sub.size() * (1.6f + rand.nextFloat() * 0.8f);
             PIXEL_PARTICLES.add(new FloatingPixel(additive,
                     x + ox, y + oy, z + oz, vx, vy, vz, sub.gravity(), sz, rgb,
-                    sub.life() + rand.nextInt(4), rand.nextInt(Integer.MAX_VALUE)));
+                    sub.life() + rand.nextInt(4), rand.nextInt(Integer.MAX_VALUE),
+                    sub.element() == DeepElement.WATER ? 0.68f : 1.0f));
         }
     }
 
@@ -1064,11 +1085,18 @@ public final class WeaponWorldVfxManager {
         float tri = cycle < 1.0f ? cycle : 2.0f - cycle;
         int index = Math.min(els.size() - 1, Math.max(0, Math.round(tri * (els.size() - 1))));
         deepluckyblock.enchantments.DeepElement selected = els.get(index);
-        int target = elementRoleColor(selected, role);
-        if (selected == deepluckyblock.enchantments.DeepElement.CHAOS) {
-            return deepluckyblock.enchantments.DeepElement.chaosHue(timeSeconds, role * 0.23f, target);
-        }
-        return target;
+        return elementRoleColor(selected, role);
+    }
+
+    /** Famille actuellement sélectionnée pour une arme multi-éléments (alternance sans interpolation). */
+    public static deepluckyblock.enchantments.DeepElement gradientElementFor(
+            net.minecraft.world.item.ItemStack stack, float timeSeconds) {
+        List<deepluckyblock.enchantments.DeepElement> els = WeaponVisualEffectId.elementsOf(stack);
+        if (els.isEmpty()) return null;
+        float cycle = (timeSeconds * 0.16f) % 2.0f;
+        float tri = cycle < 1.0f ? cycle : 2.0f - cycle;
+        int index = Math.min(els.size() - 1, Math.max(0, Math.round(tri * (els.size() - 1))));
+        return els.get(index);
     }
 
     private static int elementRoleColor(deepluckyblock.enchantments.DeepElement element, int role) {
@@ -1096,7 +1124,6 @@ public final class WeaponWorldVfxManager {
             PIXEL_PARTICLES.clear();
             PENDING_ECHOES.clear();
             TRACKED_PROJECTILES.clear();
-            PLAYER_WAS_SWINGING.clear();
             trackedLevel = null;
             return;
         }
@@ -1109,7 +1136,6 @@ public final class WeaponWorldVfxManager {
             PIXEL_PARTICLES.clear();
             PENDING_ECHOES.clear();
             TRACKED_PROJECTILES.clear();
-            PLAYER_WAS_SWINGING.clear();
         }
         DeepEnchant.rememberClientAccess(level.registryAccess());
 
@@ -1180,6 +1206,8 @@ public final class WeaponWorldVfxManager {
                     // Le mélange de familles conserve le rôle chromatique de chaque pixel.
                     float phase = ((now & 15L) / 15.0f) * 0.5f + step * 0.5f;
                     rgb = paletteColor(tp.paletteMask(), rgb, phase, role);
+                } else if (tp.effect().element() == DeepElement.CHAOS && role == 2) {
+                    rgb = DeepElement.chaosEdge(frameTimeSeconds, (now & 15L) / 15.0f);
                 }
                 PIXEL_PARTICLES.add(new FloatingPixel(
                         tp.effect().additive, px, py, pz,
@@ -1187,7 +1215,8 @@ public final class WeaponWorldVfxManager {
                         (level.random.nextDouble() - 0.5) * 0.02,
                         (level.random.nextDouble() - 0.5) * 0.02,
                         0.0f, 0.032f * (0.55f + level.random.nextFloat() * 0.9f), rgb, 9,
-                        level.random.nextInt(Integer.MAX_VALUE)));
+                        level.random.nextInt(Integer.MAX_VALUE),
+                        tp.effect().element() == DeepElement.WATER ? 0.68f : 1.0f));
             }
         }
 
@@ -1196,12 +1225,7 @@ public final class WeaponWorldVfxManager {
             if (!p.isAlive() || p.isSpectator()) continue;
             if (p != viewer && p.distanceToSqr(viewer) > 32.0 * 32.0) continue;
 
-            boolean swinging = p.swinging && p.swingTime <= 2;
-            boolean prevSwing = PLAYER_WAS_SWINGING.getOrDefault(p.getId(), false);
-            PLAYER_WAS_SWINGING.put(p.getId(), p.swinging);
-            if (swinging && !prevSwing) {
-                onPlayerWeaponSwing(p);
-            }
+            // Aucun tirage local de slash : seul le jet serveur 77/20/3 déclenche la mêlée.
 
             // Détection relâchement d'arc ou tir d'arbalète -> salve de mini-pixels 3D devant l'arme !
             ItemStack main = p.getMainHandItem();
@@ -1238,85 +1262,16 @@ public final class WeaponWorldVfxManager {
                 WeaponVisualEffectId.elementMaskOf(ranged));
     }
 
-    private static void onPlayerWeaponSwing(Player p) {
-        // T351/T359-TRIGGER-LAW : le serveur décide du vrai déclenchement (5 % coup normal / 76 % critique).
-        // Côté client on ne garde qu'une « respiration » très rare (5 % + long cooldown) pour donner un
-        // retour visuel même dans le vide (coup dans l'air), sans jamais doubler l'animation d'impact.
-        long nowTick = p.level().getGameTime();
-        Long swingReady = PLAYER_SWING_READY.get(p.getId());
-        if (swingReady != null && nowTick < swingReady) return;
-        if (p.level().random.nextInt(100) >= 5) {
-            PLAYER_SWING_READY.put(p.getId(), nowTick + 4L + p.level().random.nextInt(5));
-            return;
-        }
-        PLAYER_SWING_READY.put(p.getId(), nowTick + 24L + p.level().random.nextInt(24));
-        if (PLAYER_SWING_READY.size() > 256) {
-            PLAYER_SWING_READY.clear();
-        }
-
-        InteractionHand hand = p.swingingArm == null ? InteractionHand.MAIN_HAND : p.swingingArm;
-        ItemStack stack = p.getItemInHand(hand);
-
-        List<WeaponVisualEffectId.ResolvedLayer> layers;
-        if (stack.isEmpty()) {
-            layers = WeaponVisualEffectId.resolveBareHandGauntletLayers(p, 2);
-        } else if (stack.getItem() instanceof ProjectileWeaponItem) {
-            return;
-        } else {
-            layers = WeaponVisualEffectId.resolveLayers(stack, 2);
-        }
-        if (layers.isEmpty()) return;
-
-        int parity = PLAYER_SWING_PARITY.merge(p.getId(), 1, Integer::sum);
-        float baseTilt = ((parity & 1) == 0) ? 0.36f : -0.34f;
-        Vec3 eye = p.getEyePosition();
-        Vec3 look = p.getLookAngle();
-        double ox = eye.x + look.x * 0.55;
-        double oy = eye.y - 0.16 + look.y * 0.35;
-        double oz = eye.z + look.z * 0.55;
-
-        WeaponVisualEffectId.ResolvedLayer primary = layers.get(0);
-        WeaponVisualEffectId fx = primary.effect();
-        int duration = (fx == WeaponVisualEffectId.ANNIHILATING_ARC || fx == WeaponVisualEffectId.CARNAGE_BERSERK) ? 11 : 8;
-        float tilt = (fx == WeaponVisualEffectId.GUILLOTINE_CLEAVE) ? 1.48f : baseTilt;
-
-        // T351-ELEMENT-BLEND : palette de l'arme tenue (feu + eau = entaille bicolore).
-        int localPalette = WeaponVisualEffectId.elementMaskOf(stack);
-        pushInstance(new VfxInstance(
-                fx, KIND_SWING_SLASH, primary.level(),
-                ox, oy, oz, ox + look.x * 3.4, oy + look.y * 3.4, oz + look.z * 3.4,
-                p.getYRot(), p.getXRot(), tilt, duration, System.nanoTime(), localPalette));
-
-        // Quelques mini-pixels 3D détachés le long du coup
-        spawnMiniPixelBurst(fx, ox + look.x * 1.1, oy + look.y * 1.1, oz + look.z * 1.1,
-                5, 0.026f, 0.09, localPalette);
-
-        boolean hasEcho = fx == WeaponVisualEffectId.TWIN_ECHO_SLASH
-                || (layers.size() > 1 && layers.get(1).effect() == WeaponVisualEffectId.TWIN_ECHO_SLASH);
-        if (hasEcho && PENDING_ECHOES.size() < 16) {
-            PendingEcho pe = new PendingEcho();
-            pe.ticksLeft = 4;
-            pe.effect = WeaponVisualEffectId.TWIN_ECHO_SLASH;
-            pe.intensity = primary.level();
-            pe.x = ox; pe.y = oy; pe.z = oz;
-            pe.yaw = p.getYRot(); pe.pitch = p.getXRot(); pe.tiltRad = baseTilt;
-            pe.paletteMask = localPalette;
-            PENDING_ECHOES.add(pe);
-        }
-    }
-
     /** Budget de cubes par batch : évite de saturer le ByteBufferBuilder partagé de renderBuffers(). */
     private static final int MAX_CUBES_PER_BATCH = 900;
     /** Plafond dur par frame : au-delà, on arrête simplement d'émettre (jamais de pic incontrôlé). */
     private static final int HARD_CUBE_CAP_PER_FRAME = 7000;
+    /** Écume blanche réservée à quelques cubes sur la lèvre supérieure des vagues. */
+    private static final int WATER_FOAM_RGB = 0xF4FDFF;
     /** Distance au-delà de laquelle un effet n'est plus dessiné (FPS + taille des batches). */
     private static final double MAX_VFX_RENDER_DISTANCE_SQR = 96.0 * 96.0;
 
     private static int cubesSinceFlush;
-    /** Palette active pendant le dessin d'une instance : pare-feu contre les RGB hors famille. */
-    private static int[] activeRenderPalette;
-    private static boolean activePaletteAllowsSpectrum;
-
     @SubscribeEvent
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_PARTICLES) return;
@@ -1381,7 +1336,7 @@ public final class WeaponWorldVfxManager {
             float ry = (float) dy;
             float rz = (float) dz;
             float sz = fp.halfSize * (1.0f - t * 0.45f);
-            int alpha = Math.round(235.0f * (1.0f - t));
+            int alpha = Math.round(235.0f * (1.0f - t) * fp.alphaScale);
 
             VertexConsumer pvc = fp.additive ? addVc : alphaVc;
             if (pvc == null) {
@@ -1454,8 +1409,6 @@ public final class WeaponWorldVfxManager {
             mobPivotX = (float) (inst.x - camPos.x);
             mobPivotY = (float) (inst.y - camPos.y);
             mobPivotZ = (float) (inst.z - camPos.z);
-            activeRenderPalette = new int[]{inst.primary(), inst.secondary(), inst.highlight()};
-            activePaletteAllowsSpectrum = inst.effect.element() == DeepElement.CHAOS;
             try {
                 if (inst.kind == KIND_SWING_SLASH) {
                     renderVoxelSwingSlash(vc, mat, tmp, camPos, inst, t);
@@ -1473,8 +1426,6 @@ public final class WeaponWorldVfxManager {
                 cubeGloss = 0.0f;
                 cubeTex = 0.10f;
                 voxelElement = DeepElement.EARTH;
-                activeRenderPalette = null;
-                activePaletteAllowsSpectrum = false;
             }
         }
 
@@ -1590,7 +1541,7 @@ public final class WeaponWorldVfxManager {
                             (0.35f + 0.45f * t) * S * (0.7f + 0.4f * pixelHash(salt, i * 7)),
                             (0.040f + 0.012f * pixelHash(salt, i * 3)) * S,
                             0.06f * S, inst.age * 0.6f + i * 1.9f,
-                            coreRgb, 0xFFFFFF, Math.round(alpha * (0.95f - 0.35f * t)), salt + i);
+                            coreRgb, accentRgb, Math.round(alpha * (0.95f - 0.35f * t)), salt + i);
                 }
             }
             case WATER -> {
@@ -1598,7 +1549,7 @@ public final class WeaponWorldVfxManager {
                 emitPixelWave3D(vc, mat, tmp,
                         cx - dirX * 0.25f * S, cy - 0.30f * S, cz - dirZ * 0.25f * S,
                         radius * 0.55f, (0.35f + 0.45f * t) * S, yawRad, 0.75f, t,
-                        coreRgb, accentRgb, 0xFFFFFF,
+                        coreRgb, accentRgb, WATER_FOAM_RGB,
                         Math.round(alpha * (0.85f - 0.35f * t)), salt);
                 for (int i = 0; i < 4; i++) {
                     float along = ((i / 3.0f) - 0.5f) * radius * 1.2f;
@@ -1606,7 +1557,7 @@ public final class WeaponWorldVfxManager {
                             quantize(cx + dirX * along, 0.0625f),
                             quantize(cy - 0.55f * t * t * S, 0.0625f),
                             quantize(cz + dirZ * along, 0.0625f),
-                            0.024f, (i & 1) == 0 ? coreRgb : accentRgb, 0xA8F0FF,
+                            0.024f, (i & 1) == 0 ? coreRgb : accentRgb, accentRgb,
                             Math.round(alpha * 0.90f), salt + i);
                 }
             }
@@ -1618,14 +1569,14 @@ public final class WeaponWorldVfxManager {
                     float tz = cz + perpZ * sgn * radius * 0.55f;
                     emitVoxelLightning(vc, mat, tmp, tx, cy + 0.25f * S, tz,
                             tx + perpX * sgn * 0.55f * S, cy - 0.35f * S, tz + perpZ * sgn * 0.55f * S,
-                            5, 0.18f, (long) salt * 131L + inst.age, 0xFFFFFF, trailRgb,
+                            5, 0.18f, (long) salt * 131L + inst.age, accentRgb, trailRgb,
                             Math.round(alpha * 0.90f), 0.030f);
                 }
                 for (int i = 0; i < 4; i++) {
                     float ang = pixelHash(salt, i * 19) * 6.283f;
                     emitPixelShard3D(vc, mat, tmp, cx, cy, cz, 0.30f * S, 0.014f,
                             Mth.cos(ang), (pixelHash(salt, i * 5) - 0.5f) * 0.6f, Mth.sin(ang),
-                            0xFFFFFF, accentRgb, Math.round(alpha * 0.9f), salt + i);
+                            accentRgb, accentRgb, Math.round(alpha * 0.9f), salt + i);
                 }
             }
             case EARTH -> {
@@ -1645,13 +1596,13 @@ public final class WeaponWorldVfxManager {
             case METAL -> {
                 // Étincelles de contact : éclats fins projetés en ligne droite (aucune gravité).
                 emitVoxelBoxRotated(vc, mat, tmp, cx, cy, cz, 0.050f, 0.050f, 0.050f,
-                        inst.age * 0.2f, 0.6f, 0.4f, 0xFFFFFF, alpha);
+                        inst.age * 0.2f, 0.6f, 0.4f, accentRgb, alpha);
                 for (int i = 0; i < 5; i++) {
                     float ang = pixelHash(salt, i * 19) * 6.283f;
                     float sp = 0.65f * S;
                     emitPixelShard3D(vc, mat, tmp, cx, cy, cz, sp, 0.013f,
                             Mth.cos(ang), (pixelHash(salt, i * 23) - 0.5f) * 0.9f, Mth.sin(ang),
-                            0xFFFFFF, accentRgb, Math.round(alpha * 0.95f), salt + i * 7);
+                            accentRgb, accentRgb, Math.round(alpha * 0.95f), salt + i * 7);
                 }
             }
             case WOOD -> {
@@ -1681,7 +1632,7 @@ public final class WeaponWorldVfxManager {
                             (i & 1) == 0 ? coreRgb : accentRgb, Math.round(alpha * 0.80f));
                 }
                 emitPixelShard3D(vc, mat, tmp, cx, cy - 0.10f, cz, 0.22f * S, 0.016f,
-                        0.0f, -1.0f, 0.0f, 0xFFFFFF, accentRgb,
+                        0.0f, -1.0f, 0.0f, accentRgb, accentRgb,
                         Math.round(alpha * 0.85f), salt + 3);
             }
             case LIGHT -> {
@@ -1693,7 +1644,7 @@ public final class WeaponWorldVfxManager {
                             quantize(cx + dirX * along, 0.0625f), quantize(cy + rise, 0.0625f),
                             quantize(cz + dirZ * along, 0.0625f),
                             0.034f, 0.008f, 0.020f, yawRad + i * 0.4f, 0.4f, 0.6f,
-                            i % 2 == 0 ? 0xFFFFFF : coreRgb, Math.round(alpha * 0.90f));
+                            i % 2 == 0 ? accentRgb : coreRgb, Math.round(alpha * 0.90f));
                 }
             }
             case SHADOW -> {
@@ -1703,7 +1654,7 @@ public final class WeaponWorldVfxManager {
                     emitPixelTendril3D(vc, mat, tmp,
                             cx + dirX * along, cy, cz + dirZ * along,
                             cx + dirX * along + 0.10f * S, cy - 0.45f * t * S, cz + dirZ * along,
-                            0.12f * S, 5, 0.026f * S, trailRgb, 0x25073F,
+                            0.12f * S, 5, 0.026f * S, trailRgb, accentRgb,
                             Math.round(alpha * (1.0f - 0.55f * t)), salt + i);
                 }
             }
@@ -1715,7 +1666,7 @@ public final class WeaponWorldVfxManager {
                             quantize(cx + dirX * along, 0.0625f),
                             quantize(cy - 0.45f * t * t * S, 0.0625f),
                             quantize(cz + dirZ * along, 0.0625f),
-                            0.028f, (i & 1) == 0 ? coreRgb : accentRgb, 0xFF8A8A,
+                            0.028f, (i & 1) == 0 ? coreRgb : accentRgb, accentRgb,
                             Math.round(alpha * 0.90f), salt + i);
                 }
             }
@@ -1745,7 +1696,7 @@ public final class WeaponWorldVfxManager {
                             quantize(cz + Mth.sin(ang) * rad, 0.0625f),
                             0.024f, 0.030f, 0.020f,
                             ang, ang * 1.7f, inst.age * 0.3f,
-                            Mth.hsvToRgb((inst.age * 0.05f + i / 6.0f) % 1.0f, 0.90f, 1.0f),
+                            DeepElement.chaosEdge(inst.age * 0.05f, i / 6.0f),
                             Math.round(alpha * 0.90f));
                 }
             }
@@ -1805,7 +1756,7 @@ public final class WeaponWorldVfxManager {
                     int c1 = (r == 0) ? coreRgb : ((r == 1) ? trailRgb : accentRgb);
                     int c2 = (r == 0) ? trailRgb : ((r == 1) ? accentRgb : coreRgb);
                     emitPixelRunicCircle3D(vc, mat, tmp, cx, cy2, cz, rr,
-                            prof.spin() * progress * 2.2f + r * 1.1f, c1, c2, 0xFFFFFF,
+                            prof.spin() * progress * 2.2f + r * 1.1f, c1, c2, accentRgb,
                             Math.round(peakAlpha * (1.0f - 0.18f * r)), r == 0);
                     if (Math.abs(Mth.cos(tilt)) > 0.35f) {
                         // second anneau incliné : donne un vrai volume d'orbite
@@ -1817,14 +1768,14 @@ public final class WeaponWorldVfxManager {
                                     quantize(cy2 + Mth.sin(ang) * ir * tilt, 0.0625f),
                                     quantize(cz + Mth.sin(ang) * ir * Mth.cos(tilt), 0.0625f),
                                     baseHalf * 0.72f, baseHalf * 0.72f, baseHalf * 0.72f,
-                                    (i & 1) == 0 ? c2 : 0xFFFFFF,
+                                    (i & 1) == 0 ? c2 : accentRgb,
                                     Math.round(peakAlpha * 0.8f));
                         }
                     }
                 }
                 if (prof.arms() >= 2) {
                     emitPixelCross3D(vc, mat, tmp, cx, cy + rise * progress, cz,
-                            0.0625f, Math.min(4, prof.arms()), 0xFFFFFF, coreRgb, peakAlpha);
+                            0.0625f, Math.min(4, prof.arms()), accentRgb, coreRgb, peakAlpha);
                 }
             }
 
@@ -1835,11 +1786,11 @@ public final class WeaponWorldVfxManager {
                 float ty = cy + fy * len + rise * progress;
                 float tz2 = cz + fz * len;
                 emitSteppedVoxelLine(vc, mat, tmp, cx, cy, cz, tx, ty, tz2,
-                        baseHalf * (1.0f - 0.35f * progress), 0xFFFFFF, coreRgb, peakAlpha);
+                        baseHalf * (1.0f - 0.35f * progress), accentRgb, coreRgb, peakAlpha);
                 emitSteppedVoxelLine(vc, mat, tmp, cx, cy, cz, tx * 0.94f, ty * 0.94f, tz2 * 0.94f,
                         baseHalf * 0.5f, trailRgb, accentRgb, Math.round(peakAlpha * 0.55f));
                 if (prof.arms() >= 2) {
-                    emitPixelCross3D(vc, mat, tmp, tx, ty, tz2, 0.0625f, 4, 0xFFFFFF, trailRgb, peakAlpha);
+                    emitPixelCross3D(vc, mat, tmp, tx, ty, tz2, 0.0625f, 4, accentRgb, trailRgb, peakAlpha);
                 }
                 // éclats arrachés le long de l'estoc
                 for (int i = 1; i <= 5; i++) {
@@ -1865,7 +1816,7 @@ public final class WeaponWorldVfxManager {
                     float jz = (pixelHash(salt + li * 3, li * 11) - 0.5f) * w;
                     emitVoxelCube(vc, mat, tmp, quantize(cx + jx, 0.0625f), quantize(y, 0.0625f),
                             quantize(cz + jz, 0.0625f), w * 0.55f, w * 0.42f, w * 0.55f,
-                            (li % 4 == 0) ? 0xFFFFFF : ((li & 1) == 0 ? coreRgb : trailRgb),
+                            (li % 4 == 0) ? accentRgb : ((li & 1) == 0 ? coreRgb : trailRgb),
                             Math.round(peakAlpha * (1.0f - 0.5f * lu)));
                 }
                 emitPixelRing3D(vc, mat, tmp, cx, cy - 0.42f, cz, 0.45f + 1.9f * progress,
@@ -1885,7 +1836,7 @@ public final class WeaponWorldVfxManager {
                     float uy = cy - 0.42f + rise * progress;
                     emitVoxelCube(vc, mat, tmp, quantize(ux, 0.0625f), quantize(uy + 0.05f, 0.0625f),
                             quantize(uz, 0.0625f), baseHalf * 0.9f, baseHalf * 1.5f, baseHalf * 0.9f,
-                            0xFFFFFF, Math.round(peakAlpha * 0.85f));
+                            accentRgb, Math.round(peakAlpha * 0.85f));
                     emitVoxelCube(vc, mat, tmp, quantize(ux, 0.0625f), quantize(uy + 0.22f, 0.0625f),
                             quantize(uz, 0.0625f), baseHalf * 0.5f, baseHalf * 0.9f, baseHalf * 0.5f,
                             accentRgb, Math.round(peakAlpha * 0.6f));
@@ -1909,10 +1860,10 @@ public final class WeaponWorldVfxManager {
                     int c = (i % 3 == 0) ? coreRgb : ((i % 3 == 1) ? trailRgb : accentRgb);
                     emitSteppedVoxelLine(vc, mat, tmp, cx, cy, cz,
                             cx + Mth.cos(ang) * len, cy + elev * len * 0.55f, cz + Mth.sin(ang) * len,
-                            baseHalf * (1.0f - 0.45f * progress), 0xFFFFFF, c, peakAlpha);
+                            baseHalf * (1.0f - 0.45f * progress), accentRgb, c, peakAlpha);
                 }
                 emitPixelCross3D(vc, mat, tmp, cx, cy + rise * progress, cz, 0.0625f,
-                        Math.min(5, prof.arms()), 0xFFFFFF, 0xFFFFFF, peakAlpha);
+                        Math.min(5, prof.arms()), accentRgb, accentRgb, peakAlpha);
                 for (int k = 0; k < 8; k++) {
                     float ang = k * 0.785f - progress * 2.5f;
                     float rr = radius * 2.2f * progress;
@@ -1931,7 +1882,7 @@ public final class WeaponWorldVfxManager {
                 // T365-HOLOGRAM : le disque de l'éclipse a maintenant une ÉPAISSEUR (3 anneaux
                 // inclinés + cœur suspendu) au lieu d'être un plan face caméra.
                 emitPixelHoloDisc3D(vc, mat, tmp, cx, cy + 0.32f + rise * progress, cz, disc,
-                        yawRad, pitchRad + 1.35f, trailRgb, 0x000000, peakAlpha, salt);
+                        yawRad, pitchRad + 1.35f, trailRgb, trailRgb, peakAlpha, salt);
                 emitPixelRing3D(vc, mat, tmp, cx, cy + 0.32f + rise * progress, cz, disc,
                         coreRgb, accentRgb, peakAlpha, PIXEL_RING_SOLID);
                 for (int claw = -1; claw <= 1; claw++) {
@@ -1969,7 +1920,7 @@ public final class WeaponWorldVfxManager {
                             quantize(cx + Mth.cos(ang) * rr, 0.0625f),
                             quantize(cy + 0.25f + Mth.sin(ang * 2.0f) * 0.45f, 0.0625f),
                             quantize(cz + Mth.sin(ang) * rr, 0.0625f),
-                            baseHalf * 0.55f, baseHalf * 0.55f, baseHalf * 0.55f, 0xFFFFFF,
+                            baseHalf * 0.55f, baseHalf * 0.55f, baseHalf * 0.55f, accentRgb,
                             Math.round(peakAlpha * 0.9f));
                 }
                 emitPixelRing3D(vc, mat, tmp, cx, cy - 0.45f, cz, 0.35f + radius * progress,
@@ -1989,7 +1940,7 @@ public final class WeaponWorldVfxManager {
                             Mth.lerp(grow, cz - 0.30f, cz + 0.30f),
                             baseHalf * 1.1f, accentRgb, coreRgb, peakAlpha);
                 }
-                emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, 2, 0xFFFFFF, accentRgb,
+                emitPixelCross3D(vc, mat, tmp, cx, cy, cz, 0.0625f, 2, accentRgb, accentRgb,
                         Math.round(peakAlpha * 0.7f));
             }
 
@@ -2040,9 +1991,9 @@ public final class WeaponWorldVfxManager {
                     // T364-GRADIENTS : l'entaille n'a plus deux bandes de couleur franches mais un
                     // DÉGRADÉ continu le long de la lame : blanc incandescent à la tête, cœur de
                     // l'élément au milieu, accent sombre dans la traînée.
-                    int rgb = isHead ? 0xFFFFFF
+                    int rgb = isHead ? accentRgb
                             : jitterRgb(rampRgb(Mth.clamp(1.0f - Math.max(0.0f, distBehind), 0.0f, 1.0f),
-                                    accentRgb, trailRgb, coreRgb, 0xFFFFFF), salt + i * 41, 0.045f);
+                                    accentRgb, trailRgb, coreRgb, accentRgb), salt + i * 41, 0.045f);
                     int a = Math.round(peakAlpha * Math.max(0.18f, 1.0f - Math.max(0.0f, distBehind) * 1.35f));
 
                     switch (prof.shape()) {
@@ -2056,7 +2007,7 @@ public final class WeaponWorldVfxManager {
                                         quantize(cy + dirY * localR * k + rise * progress * u + sh * 0.03f, 0.0625f),
                                         quantize(cz + dirZ * localR * k, 0.0625f),
                                         sz2 * 0.62f, sz2 * (1.5f - 0.25f * sh), sz2 * 0.62f,
-                                        jitterRgb(rampRgb(sh / 2.0f, accentRgb, coreRgb, trailRgb, 0xFFFFFF),
+                                        jitterRgb(rampRgb(sh / 2.0f, accentRgb, coreRgb, trailRgb, accentRgb),
                                                 salt + sh * 13 + i, 0.04f),
                                         Math.round(a * (1.0f - 0.22f * sh)));
                             }
@@ -2068,12 +2019,12 @@ public final class WeaponWorldVfxManager {
                             float inY = cy + dirY * localR * close + rise * progress;
                             float inZ = cz + dirZ * localR * close;
                             emitSteppedVoxelLine(vc, mat, tmp, px, py, pz, inX, inY, inZ,
-                                    baseHalf * 0.6f, (i & 1) == 0 ? 0xFFFFFF : coreRgb, accentRgb, a);
+                                    baseHalf * 0.6f, (i & 1) == 0 ? accentRgb : coreRgb, accentRgb, a);
                         }
                         case WeaponVfxMotion.SHAPE_DRIP -> {
                             // goutte + traînée qui tombe (le sang, le venin)
                             emitPixelDroplet3D(vc, mat, tmp, px, py, pz, hs,
-                                    (i & 1) == 0 ? coreRgb : trailRgb, 0xFF8A8A, a, salt + i);
+                                    (i & 1) == 0 ? coreRgb : trailRgb, accentRgb, a, salt + i);
                             float fall = 0.35f + 0.55f * progress * (1.0f + taper);
                             emitVoxelCube(vc, mat, tmp, px, quantize(py - fall, 0.0625f), pz,
                                     hs * 0.42f, hs * 0.30f, hs * 0.42f, accentRgb,
@@ -2087,7 +2038,7 @@ public final class WeaponWorldVfxManager {
                                 float cy2 = py + (rise >= 0.0f ? 1.0f : -1.0f) * (c2 * 0.16f);
                                 emitVoxelCube(vc, mat, tmp, px, quantize(cy2, 0.0625f), pz,
                                         hs * (1.0f - 0.10f * c2), hs * 0.85f, hs * (1.0f - 0.10f * c2),
-                                        (c2 == 0) ? 0xFFFFFF : ((c2 & 1) == 0 ? coreRgb : accentRgb),
+                                        (c2 == 0) ? accentRgb : ((c2 & 1) == 0 ? coreRgb : accentRgb),
                                         Math.round(a * (1.0f - 0.10f * c2)));
                             }
                         }
@@ -2120,13 +2071,13 @@ public final class WeaponWorldVfxManager {
                                     quantize(py + sy * jag + uy0 * jag * 0.6f, 0.0625f),
                                     quantize(pz + sz * jag, 0.0625f),
                                     hs * (0.7f + 0.5f * pixelHash(i, salt)), hs * 0.75f, hs * 0.85f,
-                                    (Math.abs(distBehind) < 0.05f) ? 0xFFFFFF : ((i & 1) == 0 ? coreRgb : trailRgb), a);
+                                    (Math.abs(distBehind) < 0.05f) ? accentRgb : ((i & 1) == 0 ? coreRgb : trailRgb), a);
                             if ((i & 3) == 0) {
                                 emitVoxelCube(vc, mat, tmp,
                                         quantize(px + sx * jag * 1.8f, 0.0625f),
                                         quantize(py + sy * jag * 1.8f, 0.0625f),
                                         quantize(pz + sz * jag * 1.8f, 0.0625f),
-                                        hs * 0.3f, hs * 0.3f, hs * 0.3f, 0xFFFFFF, Math.round(a * 0.6f));
+                                        hs * 0.3f, hs * 0.3f, hs * 0.3f, accentRgb, Math.round(a * 0.6f));
                             }
                         }
                         case WeaponVfxMotion.SHAPE_DUNE -> {
@@ -2167,7 +2118,7 @@ public final class WeaponWorldVfxManager {
                                         quantize(py + 0.10f * open + rise * progress * u, 0.0625f),
                                         quantize(pz + Mth.sin(pa) * pr2, 0.0625f),
                                         hs * 0.62f, hs * 0.9f, hs * 0.62f,
-                                        (petal == 0) ? 0xFFFFFF : ((petal & 1) == 0 ? coreRgb : accentRgb),
+                                        (petal == 0) ? accentRgb : ((petal & 1) == 0 ? coreRgb : accentRgb),
                                         Math.round(a * 0.9f));
                             }
                         }
@@ -2179,7 +2130,7 @@ public final class WeaponWorldVfxManager {
                                     quantize(Mth.lerp(suck, px, cx), 0.0625f),
                                     quantize(Mth.lerp(suck, py, cy), 0.0625f),
                                     quantize(Mth.lerp(suck, pz, cz), 0.0625f),
-                                    hs * 0.45f, hs * 0.45f, hs * 0.45f, 0xFFFFFF, Math.round(a * 0.8f));
+                                    hs * 0.45f, hs * 0.45f, hs * 0.45f, accentRgb, Math.round(a * 0.8f));
                         }
                         case WeaponVfxMotion.SHAPE_DOUBLE_ARC, WeaponVfxMotion.SHAPE_PRISM -> {
                             // géré hors boucle (arcs multiples) — rien ici
@@ -2199,7 +2150,7 @@ public final class WeaponWorldVfxManager {
                                             quantize(cx + dirX * (localR + baseHalf * 1.4f), 0.03125f),
                                             quantize(cy + dirY * (localR + baseHalf * 1.4f) + rise * progress * u, 0.03125f),
                                             quantize(cz + dirZ * (localR + baseHalf * 1.4f), 0.03125f),
-                                            hs * 0.32f, hs * 0.26f, hs * 0.32f, 0xFFFFFF, Math.round(a * 0.55f));
+                                            hs * 0.32f, hs * 0.26f, hs * 0.32f, accentRgb, Math.round(a * 0.55f));
                                 }
                             }
                             // couche supplémentaire (2e bras : flamme d'âme, furie...)
@@ -2292,7 +2243,7 @@ public final class WeaponWorldVfxManager {
             boolean isHead = Math.abs(distBehind) < 0.12f;
             float hs = baseHalfSize * (0.55f + 0.75f * taper) * (isHead ? 1.25f : 1.0f)
                     * (0.82f + 0.34f * pixelHash(salt, i * 13));
-            int rgb = isHead ? 0xFFFFFF : (distBehind < 0.28f ? coreRgb : trailRgb);
+            int rgb = isHead ? coreRgb : (distBehind < 0.28f ? coreRgb : trailRgb);
             int a = Math.round(peakAlpha * Math.max(0.2f, 1.0f - Math.max(0.0f, distBehind) * 1.35f));
 
             emitVoxelCube(vc, mat, tmp, px, py, pz, hs,
@@ -2309,7 +2260,7 @@ public final class WeaponWorldVfxManager {
                             quantize(cx + dirX * (radius + baseHalfSize * 1.4f), 0.03125f),
                             quantize(cy + dirY * (radius + baseHalfSize * 1.4f), 0.03125f),
                             quantize(cz + dirZ * (radius + baseHalfSize * 1.4f), 0.03125f),
-                            hs * 0.32f, hs * 0.26f, hs * 0.32f, 0xFFFFFF, Math.round(a * 0.55f));
+                            hs * 0.32f, hs * 0.26f, hs * 0.32f, coreRgb, Math.round(a * 0.55f));
                 }
             }
         }
@@ -2328,6 +2279,7 @@ public final class WeaponWorldVfxManager {
         int alpha = Math.round(240.0f * (1.0f - t));
         int pRgb = inst.primary();
         int sRgb = inst.secondary();
+        int aRgb = inst.highlight();
         int salt = (int) (inst.seed & 0x7FFFFFFFL) + inst.age * 17;
 
         float dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
@@ -2378,7 +2330,7 @@ public final class WeaponWorldVfxManager {
             }
             case WeaponVfxMotion.SHAPE_BOLT -> {
                 emitVoxelLightning(vc, mat, tmp, x0, y0, z0, x1, y1, z1, 11, 0.30f,
-                        inst.seed + inst.age / 2, 0xFFFFFF, pRgb, alpha, 0.036f);
+                        inst.seed + inst.age / 2, aRgb, pRgb, alpha, 0.036f);
                 for (int b = 0; b < 2; b++) {
                     float off = (b == 0 ? 1.0f : -1.0f) * 0.28f;
                     emitVoxelLightning(vc, mat, tmp, x0 + px * off, y0, z0 + pz * off,
@@ -2403,7 +2355,7 @@ public final class WeaponWorldVfxManager {
                             quantize(Mth.lerp(u, x0, x1) - px * wob * 0.8f, 0.0625f),
                             quantize(Mth.lerp(u, y0, y1) - wob * 0.5f + 0.05f, 0.0625f),
                             quantize(Mth.lerp(u, z0, z1) - pz * wob * 0.8f, 0.0625f),
-                            0.024f, 0.024f, 0.024f, 0xFFFFFF, Math.round(alpha * 0.5f));
+                            0.024f, 0.024f, 0.024f, aRgb, Math.round(alpha * 0.5f));
                 }
             }
             case WeaponVfxMotion.SHAPE_SHARDS -> {
@@ -2420,13 +2372,13 @@ public final class WeaponWorldVfxManager {
                         float spike = 0.22f;
                         emitSteppedVoxelLine(vc, mat, tmp, bx, by, bz,
                                 bx + px * spike, by + 0.16f, bz + pz * spike,
-                                0.024f, 0xFFFFFF, sRgb, Math.round(alpha * 0.7f));
+                                0.024f, aRgb, sRgb, Math.round(alpha * 0.7f));
                     }
                 }
             }
             case WeaponVfxMotion.SHAPE_PILLAR -> {
                 // colonne de lumière : le rayon est épais, crénelé, avec halo large
-                emitSteppedVoxelLine(vc, mat, tmp, x0, y0, z0, x1, y1, z1, 0.075f, 0xFFFFFF, pRgb, alpha);
+                emitSteppedVoxelLine(vc, mat, tmp, x0, y0, z0, x1, y1, z1, 0.075f, aRgb, pRgb, alpha);
                 emitSteppedVoxelLine(vc, mat, tmp, x0, y0 + 0.12f, z0, x1, y1 + 0.12f, z1,
                         0.040f, pRgb, sRgb, Math.round(alpha * 0.6f));
             }
@@ -2444,7 +2396,7 @@ public final class WeaponWorldVfxManager {
                         float fall = 0.18f + 0.5f * u * (0.6f + pixelHash(salt, i));
                         emitPixelDroplet3D(vc, mat, tmp,
                                 quantize(bx, 0.0625f), quantize(by - fall, 0.0625f), quantize(bz, 0.0625f),
-                                0.026f, sRgb, 0xFF8A8A, Math.round(alpha * 0.7f), salt + i);
+                                0.026f, sRgb, aRgb, Math.round(alpha * 0.7f), salt + i);
                     }
                 }
             }
@@ -2459,16 +2411,16 @@ public final class WeaponWorldVfxManager {
                         emitSteppedVoxelLine(vc, mat, tmp,
                                 bx + px * 0.22f * side, by + 0.20f, bz + pz * 0.22f * side,
                                 bx + px * 0.05f * side, by - 0.10f, bz + pz * 0.05f * side,
-                                0.030f, (jaw & 1) == 0 ? pRgb : sRgb, 0xFFFFFF, alpha);
+                                0.030f, (jaw & 1) == 0 ? pRgb : sRgb, aRgb, alpha);
                     }
                 }
             }
             default -> {
                 // estoc fin et net + étoile à l'impact
                 emitSteppedVoxelLine(vc, mat, tmp, x0, y0, z0, x1, y1, z1,
-                        0.036f * (1.0f - t * 0.45f), 0xFFFFFF, pRgb, alpha);
+                        0.036f * (1.0f - t * 0.45f), aRgb, pRgb, alpha);
                 emitPixelCross3D(vc, mat, tmp, x1, y1, z1, 0.0625f,
-                        Math.min(4, 2 + inst.intensity / 4), 0xFFFFFF, sRgb, alpha);
+                        Math.min(4, 2 + inst.intensity / 4), aRgb, sRgb, alpha);
             }
         }
     }
@@ -2571,10 +2523,9 @@ public final class WeaponWorldVfxManager {
             return shadeRgb(mixRgb(brighter, aRgb, 0.35f), 1.08f);
         }
 
-        /** Pointe presque blanche (écume, braise, éclat) : le point le plus chaud de la forme. */
+        /** Pointe lumineuse : toujours la surbrillance exacte de la famille active. */
         int tip() {
-            // Pointe quasi blanche : c'est là que la forme « brûle » (écume, braise, pointe d'éclat).
-            return mixRgb(0xFFFFFF, high(), 0.28f);
+            return aRgb;
         }
 
         /** Dégradé continu de l'élément, u = 0 (creux) .. 1 (pointe). */
@@ -2749,7 +2700,7 @@ public final class WeaponWorldVfxManager {
             float bz = v.cz() + Mth.sin(ang) * rad;
             v.lick(bx, v.cy() - 0.42f, bz, h, (0.052f + 0.014f * v.hash(i * 5)) * S,
                     (0.10f + 0.09f * v.hash(i * 11)) * S, v.age() * 0.50f + i * 1.7f,
-                    0xFFFFFF, Math.round(v.fadeA() * (0.90f - 0.20f * t)));
+                    v.aRgb(), Math.round(v.fadeA() * (0.90f - 0.20f * t)));
         }
 
         // Sol qui rougeoie : braises qui s'élargissent lentement puis s'éteignent.
@@ -2762,7 +2713,7 @@ public final class WeaponWorldVfxManager {
             float sp = (0.55f + 1.05f * v.hash(e * 31)) * S;
             v.lob(Mth.cos(ang) * sp, 1.30f + 0.90f * v.hash(e * 17), Mth.sin(ang) * sp,
                     0.022f + 0.016f * v.hash(e * 5),
-                    (e & 1) == 0 ? 0xFFFFFF : (e % 3 == 0 ? v.pRgb() : v.sRgb()),
+                    (e & 1) == 0 ? v.aRgb() : (e % 3 == 0 ? v.pRgb() : v.sRgb()),
                     Math.round(v.fadeA() * (0.55f + 0.40f * v.hash(e * 3))));
         }
 
@@ -2772,7 +2723,7 @@ public final class WeaponWorldVfxManager {
                 float u = Mth.clamp(t * 1.45f - r * 0.20f, 0.0f, 1.0f);
                 float hy = v.cy() + (1.0f - u) * 3.6f * S;
                 v.rocks(v.cx() + (r - 0.5f) * 0.55f * S, hy, v.cz() + (r * 0.35f - 0.17f) * S,
-                        0.055f * S, 5, v.sRgb(), v.pRgb(), 0xFFFFFF, v.fadeA());
+                        0.055f * S, 5, v.sRgb(), v.pRgb(), v.aRgb(), v.fadeA());
             }
         } else if (fx == WeaponVisualEffectId.SOUL_FIRE_CRESCENT) {
             // FEU D'ÂME : trois âmes tourbillonnantes en cubes inclinés (feu froid).
@@ -2784,7 +2735,7 @@ public final class WeaponWorldVfxManager {
                     v.rot(v.cx() + Mth.cos(ang + u) * rad, v.cy() + 0.15f + u * 0.45f * S,
                             v.cz() + Mth.sin(ang + u) * rad,
                             0.040f * S * (1.0f - 0.3f * u), 0.055f * S, 0.030f * S,
-                            ang, u * 0.8f, ang * 0.5f, w == 0 ? 0xFFFFFF : v.aRgb(),
+                            ang, u * 0.8f, ang * 0.5f, w == 0 ? v.aRgb() : v.aRgb(),
                             Math.round(v.fadeA() * (1.0f - 0.3f * u)));
                 }
             }
@@ -2795,7 +2746,7 @@ public final class WeaponWorldVfxManager {
                 v.line(v.cx(), v.cy() - 0.44f, v.cz(),
                         v.cx() + side * 1.90f * t * S, v.cy() - 0.44f,
                         v.cz() + (v.hash(d * 7) - 0.5f) * 1.20f * S,
-                        0.045f * S, 0xFFFFFF, v.pRgb(), Math.round(v.fadeA() * 0.80f));
+                        0.045f * S, v.aRgb(), v.pRgb(), Math.round(v.fadeA() * 0.80f));
             }
         }
     }
@@ -2823,7 +2774,7 @@ public final class WeaponWorldVfxManager {
         float advance = (1.35f - 2.10f * surge) * S;
         float waveH = (0.85f + 0.95f * surge) * (maelstrom ? 0.55f : 1.0f) * S;
         v.wave(v.cx() - v.dirX() * advance, v.cy() - 0.44f, v.cz() - v.dirZ() * advance,
-                (0.85f + 0.90f * surge) * S, waveH, 0.90f, v.sRgb(), 0xFFFFFF, v.fadeA());
+                (0.85f + 0.90f * surge) * S, waveH, 0.90f, v.sRgb(), WATER_FOAM_RGB, v.fadeA());
 
         // ÉCUME : petites crêtes en cubes presque opaques, séparées du volume d'eau translucide.
         // Pas de reflet global : l'écume est blanche, discontinue, et ne vit que sur la lèvre.
@@ -2833,18 +2784,19 @@ public final class WeaponWorldVfxManager {
             cubeTex = 0.015f;
             cubeGloss = 0.0f;
             try {
-                int count = 13;
+                int count = 9;
                 float fade = Mth.clamp(1.0f - t * 1.20f, 0.0f, 1.0f);
                 for (int i = 0; i < count; i++) {
                     float u = (i / (float) (count - 1)) * 2.0f - 1.0f;
                     float jitter = v.hash(0xF04A + i) - 0.5f;
-                    if (v.hash(0xA11 + i) < 0.20f) continue; // interruptions irrégulières de l'écume
+                    // Deux ou trois cubes seulement : jamais une couverture blanche permanente.
+                    if ((i & 3) != 0 || v.hash(0xA11 + i) < 0.25f) continue;
                     float fx = v.cx() + u * 0.82f * S - v.dirX() * advance;
                     float fz = v.cz() + u * 0.82f * S - v.dirZ() * advance;
                     float fy = v.cy() - 0.44f + waveH * (0.58f + 0.18f * (1.0f - Math.abs(u)))
                             + jitter * 0.10f * S;
                     float hs = (0.040f + 0.020f * v.hash(i * 19)) * S;
-                    int foamRgb = mixRgb(v.sRgb(), 0xEAFBFF, 0.78f);
+                    int foamRgb = WATER_FOAM_RGB;
                     emitVoxelCube(v.vc(), v.mat(), v.tmp(), fx, fy, fz,
                             hs, hs * (0.72f + 0.28f * v.hash(i * 7)), hs,
                             foamRgb, Math.round(v.fadeA() * fade * 0.90f));
@@ -2861,7 +2813,7 @@ public final class WeaponWorldVfxManager {
             float u = (t - 0.32f) / 0.68f;
             v.wave(v.cx() + v.dirX() * u * 1.15f * S, v.cy() - 0.44f, v.cz() + v.dirZ() * u * 1.15f * S,
                     (1.15f * (1.0f - 0.35f * u)) * S, (0.75f * (1.0f - 0.55f * u)) * S,
-                    0.55f, v.sRgb(), 0xFFFFFF, Math.round(v.fadeA() * (1.0f - 0.75f * u)));
+                    0.55f, v.sRgb(), WATER_FOAM_RGB, Math.round(v.fadeA() * (1.0f - 0.75f * u)));
         }
 
         // 3) Rides concentriques : deux ondes plates qui s'élargissent (l'eau est une SURFACE).
@@ -2916,19 +2868,19 @@ public final class WeaponWorldVfxManager {
             float len = (0.45f + 1.60f * grow) * S;
             float rise = 0.25f + 0.55f * v.hash(arm * 17);
             v.shard(v.cx(), v.cy() - 0.34f, v.cz(), len, 0.042f * S,
-                    Mth.cos(ang), rise, Mth.sin(ang), v.pRgb(), 0xFFFFFF, v.fadeA(), v.salt() + arm);
+                    Mth.cos(ang), rise, Mth.sin(ang), v.pRgb(), v.aRgb(), v.fadeA(), v.salt() + arm);
             // barbules latérales : petits éclats greffés sur la hampe
             if ((arm & 1) == 0) {
                 float bang = ang + 1.05f;
                 v.shard(v.cx() + Mth.cos(ang) * len * 0.55f, v.cy() - 0.20f,
                         v.cz() + Mth.sin(ang) * len * 0.55f, len * 0.45f, 0.028f * S,
-                        Mth.cos(bang), 0.55f, Mth.sin(bang), v.aRgb(), 0xFFFFFF,
+                        Mth.cos(bang), 0.55f, Mth.sin(bang), v.aRgb(), v.aRgb(),
                         Math.round(v.fadeA() * 0.80f), v.salt() + arm * 7);
             }
         }
 
         // Croûte de glace : anneau plat qui gèle le sol autour de la cible.
-        v.ring(-0.45f, (0.30f + 1.30f * grow) * S, v.pRgb(), 0xFFFFFF,
+        v.ring(-0.45f, (0.30f + 1.30f * grow) * S, v.pRgb(), v.aRgb(),
                 Math.round(v.fadeA() * 0.80f), PIXEL_RING_SOLID);
 
         // Éclatement : le cristal se brise et les fragments s'écartent en tournoyant.
@@ -2941,7 +2893,7 @@ public final class WeaponWorldVfxManager {
                         v.cy() - 0.10f + (v.hash(e * 13) - 0.40f) * 1.20f * b,
                         v.cz() + Mth.sin(ang) * rad,
                         (0.034f - 0.020f * b) * S, (0.026f - 0.014f * b) * S, (0.030f - 0.016f * b) * S,
-                        ang, b * 2.2f + e, b * 1.7f, (e & 1) == 0 ? 0xFFFFFF : v.aRgb(),
+                        ang, b * 2.2f + e, b * 1.7f, (e & 1) == 0 ? v.aRgb() : v.aRgb(),
                         Math.round(v.fadeA() * (1.0f - b)));
             }
         }
@@ -2965,7 +2917,7 @@ public final class WeaponWorldVfxManager {
             float ang = f * (float) (Math.PI * 2.0 / forks) + v.hash(f * 3) * 0.70f;
             float spread = (0.35f + 0.75f * v.hash(f * 11)) * S;
             v.bolt(v.cx() + Mth.cos(ang) * spread, v.cy() + 3.40f * S, v.cz() + Mth.sin(ang) * spread,
-                    v.cx(), v.cy(), v.cz(), 9, 0.28f, 0xFFFFFF, v.pRgb(), flick, 0.036f * S);
+                    v.cx(), v.cy(), v.cz(), 9, 0.28f, v.aRgb(), v.pRgb(), flick, 0.036f * S);
             float reach = (1.30f + 0.60f * v.hash(f * 5)) * S;
             v.line(v.cx(), v.cy() - 0.42f, v.cz(),
                     v.cx() + Mth.cos(ang) * reach, v.cy() - 0.42f, v.cz() + Mth.sin(ang) * reach,
@@ -2975,7 +2927,7 @@ public final class WeaponWorldVfxManager {
         // Onde de choc : deux anneaux plats qui partent très vite (le coup de tonnerre).
         for (int w = 0; w < 2; w++) {
             float u = Mth.clamp(t * 1.60f - w * 0.18f, 0.0f, 1.0f);
-            v.ring(-0.42f, (0.35f + 2.10f * u) * S, 0xFFFFFF, v.pRgb(),
+            v.ring(-0.42f, (0.35f + 2.10f * u) * S, v.aRgb(), v.pRgb(),
                     Math.round(flick * (0.70f - 0.30f * w)), w == 0 ? PIXEL_RING_SOLID : PIXEL_RING_DASHED);
         }
 
@@ -2987,31 +2939,31 @@ public final class WeaponWorldVfxManager {
             v.shard(v.cx(), v.cy() + (v.hash(e * 21) - 0.50f) * 1.30f, v.cz(),
                     0.55f * S, 0.024f * S,
                     Mth.cos(ang) * (0.6f + sp * 0.4f), yy * 0.05f, Mth.sin(ang) * (0.6f + sp * 0.4f),
-                    0xFFFFFF, v.aRgb(), flick, v.salt() + e * 11);
+                    v.aRgb(), v.aRgb(), flick, v.salt() + e * 11);
         }
 
         if (fx == WeaponVisualEffectId.TWIN_ECHO_SLASH) {
             v.slash((1.10f + 0.35f * t) * v.m().scale(), 0.036f, 155.0f,
                     v.pRgb(), v.sRgb(), v.aRgb(), v.fadeA());
             v.slash((0.85f + 0.30f * t) * v.m().scale(), 0.024f, 155.0f,
-                    0xFFFFFF, v.sRgb(), v.pRgb(), Math.round(v.fadeA() * 0.55f));
+                    v.aRgb(), v.sRgb(), v.pRgb(), Math.round(v.fadeA() * 0.55f));
         } else if (fx == WeaponVisualEffectId.CHAIN_VOLT_ARC) {
             for (int c = 0; c < 3; c++) {
                 float ang = c * 2.094f + v.age() * 0.10f;
                 float rad = (0.85f + 0.55f * v.hash(c * 23)) * S;
                 v.bolt(v.cx(), v.cy() + 0.35f, v.cz(),
                         v.cx() + Mth.cos(ang) * rad, v.cy() + 0.10f, v.cz() + Mth.sin(ang) * rad,
-                        6, 0.22f, 0xFFFFFF, v.aRgb(), Math.round(flick * 0.9f), 0.030f * S);
+                        6, 0.22f, v.aRgb(), v.aRgb(), Math.round(flick * 0.9f), 0.030f * S);
             }
         } else if (fx == WeaponVisualEffectId.OVERCLOCK_CYBER_X) {
             float span = (0.75f + 0.55f * t) * S;
             v.line(v.cx() - span, v.cy() - span, v.cz(), v.cx() + span, v.cy() + span, v.cz(),
-                    0.042f * S, 0xFFFFFF, v.pRgb(), flick);
+                    0.042f * S, v.aRgb(), v.pRgb(), flick);
             v.line(v.cx() - span, v.cy() + span, v.cz(), v.cx() + span, v.cy() - span, v.cz(),
-                    0.042f * S, 0xFFFFFF, v.sRgb(), flick);
+                    0.042f * S, v.aRgb(), v.sRgb(), flick);
             // T365-HOLOGRAM : grille cubique de surcadence (volume néon).
             v.cage(span * 0.95f, v.age() * 0.07f, 0.50f, v.age() * 0.05f,
-                    v.pRgb(), 0xFFFFFF, Math.round(flick * 0.75f));
+                    v.pRgb(), v.aRgb(), Math.round(flick * 0.75f));
         }
     }
 
@@ -3112,12 +3064,12 @@ public final class WeaponWorldVfxManager {
             // contre-lame plus petite, croisée
             v.rot(v.cx() + Mth.cos(ang) * rad * 0.80f, v.cy() + 0.12f, v.cz() + Mth.sin(ang) * rad * 0.80f,
                     0.012f * S, (0.16f + 0.10f * v.hash(b * 19)) * S, 0.010f * S,
-                    ang, -0.7f, 0.30f, 0xFFFFFF, Math.round(v.fadeA() * 0.85f));
+                    ang, -0.7f, 0.30f, v.aRgb(), Math.round(v.fadeA() * 0.85f));
         }
 
         // L'ENTAILLE elle-même : l'arc de lame de l'enchantement claque au point d'impact.
         v.slash((0.95f + 0.45f * t) * v.m().scale(), 0.030f, 150.0f,
-                v.pRgb(), v.sRgb(), 0xFFFFFF, v.fadeA());
+                v.pRgb(), v.sRgb(), v.aRgb(), v.fadeA());
 
         // Étincelles de contact : éclats fins, très rapides, sans gravité.
         for (int e = 0; e < 8; e++) {
@@ -3125,7 +3077,7 @@ public final class WeaponWorldVfxManager {
             float sp = (0.35f + 0.85f * v.hash(e * 7)) * S;
             v.shard(v.cx(), v.cy() + 0.05f, v.cz(), sp, 0.014f * S,
                     Mth.cos(ang), (v.hash(e * 3) - 0.5f) * 0.8f, Mth.sin(ang),
-                    0xFFFFFF, v.aRgb(), Math.round(v.fadeA() * 0.95f), v.salt() + e * 5);
+                    v.aRgb(), v.aRgb(), Math.round(v.fadeA() * 0.95f), v.salt() + e * 5);
         }
 
         if (prism) {
@@ -3140,7 +3092,7 @@ public final class WeaponWorldVfxManager {
             v.holoDisc(rad * S, v.sRgb(), v.pRgb(), v.fadeA());
         } else if (fx == WeaponVisualEffectId.ANNIHILATING_ARC) {
             v.slash((1.35f + 0.70f * t) * v.m().scale(), 0.046f, 210.0f,
-                    0xFFFFFF, v.aRgb(), v.pRgb(), v.fadeA());
+                    v.aRgb(), v.aRgb(), v.pRgb(), v.fadeA());
         }
     }
 
@@ -3182,7 +3134,7 @@ public final class WeaponWorldVfxManager {
             // épine au bout (croc pour la mâchoire, simple pointe sinon)
             v.shard(tipX, tipY, tipZ, (maw ? 0.30f : 0.18f) * S, 0.026f * S,
                     -Mth.cos(ang) * curl - 0.15f * Mth.cos(ang), 1.0f, -Mth.sin(ang) * curl - 0.15f * Mth.sin(ang),
-                    maw ? 0xFFFFFF : v.aRgb(), 0xFFFFFF, v.fadeA(), v.salt() + i * 9);
+                    maw ? v.aRgb() : v.aRgb(), v.aRgb(), v.fadeA(), v.salt() + i * 9);
         }
 
         if (fx == WeaponVisualEffectId.VERDANT_SAP_BLOOM) {
@@ -3245,7 +3197,7 @@ public final class WeaponWorldVfxManager {
                     (l & 1) == 0 ? v.aRgb() : v.pRgb(), v.fadeA());
         }
 
-        v.ring(-0.44f, (0.30f + 1.20f * v.easeOut()) * S, v.aRgb(), 0xFFFFFF,
+        v.ring(-0.44f, (0.30f + 1.20f * v.easeOut()) * S, v.aRgb(), v.aRgb(),
                 Math.round(v.fadeA() * 0.55f), PIXEL_RING_BEADS);
     }
 
@@ -3287,7 +3239,7 @@ public final class WeaponWorldVfxManager {
                     float fy = v.cy() + 0.60f * u * close - 0.10f;
                     v.shard(fx2, fy, fz, (0.26f - 0.10f * u) * S, 0.026f * S,
                             -Mth.cos(ang) * 0.55f, -1.0f * sgn, -Mth.sin(ang) * 0.55f,
-                            (f & 1) == 0 ? 0xFFFFFF : v.aRgb(), 0xFFFFFF, v.fadeA(), v.salt() + f * 3 + side);
+                            (f & 1) == 0 ? v.aRgb() : v.aRgb(), v.aRgb(), v.fadeA(), v.salt() + f * 3 + side);
                 }
             }
         }
@@ -3367,7 +3319,7 @@ public final class WeaponWorldVfxManager {
             }
         }
 
-        v.ring(0.30f, (0.30f + 1.55f * v.easeOut()) * S, 0xFFFFFF, v.pRgb(),
+        v.ring(0.30f, (0.30f + 1.55f * v.easeOut()) * S, v.aRgb(), v.pRgb(),
                 Math.round(v.fadeA() * 0.85f), PIXEL_RING_SOLID);
 
         // Faisceau : une colonne fine de pixels qui DESCEND du ciel vers la cible.
@@ -3377,30 +3329,30 @@ public final class WeaponWorldVfxManager {
             float y = v.cy() + 2.35f * S * (1.0f - u * beam);
             v.cube(v.cx() + (v.hash(k * 7) - 0.50f) * 0.10f * S, y,
                     v.cz() + (v.hash(k * 11) - 0.50f) * 0.10f * S,
-                    (0.040f - 0.012f * u) * S, u < 0.40f ? 0xFFFFFF : v.pRgb(),
+                    (0.040f - 0.012f * u) * S, u < 0.40f ? v.aRgb() : v.pRgb(),
                     Math.round(v.fadeA() * (0.90f - 0.40f * u)));
         }
 
         if (fx == WeaponVisualEffectId.SERAPH_SKY_PILLAR) {
             // T365-HOLOGRAM : globe de lumière en volume au-dessus de la cible.
             v.holoSphere((0.80f + 0.45f * v.easeOut()) * S, v.age() * 0.06f,
-                    v.pRgb(), 0xFFFFFF, Math.round(v.fadeA() * 0.85f));
+                    v.pRgb(), v.aRgb(), Math.round(v.fadeA() * 0.85f));
             for (int k = 0; k < 12; k++) {
                 float u = k / 12.0f;
                 v.cube(v.cx() + (v.hash(k * 13) - 0.50f) * 0.22f * S,
                         v.cy() - 0.30f + u * 3.10f * S,
                         v.cz() + (v.hash(k * 29) - 0.50f) * 0.22f * S,
-                        (0.048f - 0.018f * u) * S, u > 0.60f ? 0xFFFFFF : v.pRgb(),
+                        (0.048f - 0.018f * u) * S, u > 0.60f ? v.aRgb() : v.pRgb(),
                         Math.round(v.fadeA() * (1.0f - 0.35f * u)));
             }
         } else if (fx == WeaponVisualEffectId.ASTRAL_STAR_LANCE) {
             // LANCE ASTRALE : un trait de lumière facetté qui transperce la cible en diagonale.
             v.shard(v.cx() - 1.30f * S, v.cy() + 1.85f * S, v.cz() - 1.30f * S,
                     3.4f * S, 0.060f * S, 1.0f, -1.15f, 1.0f,
-                    0xFFFFFF, v.aRgb(), v.fadeA(), v.salt());
+                    v.aRgb(), v.aRgb(), v.fadeA(), v.salt());
             // T365-HOLOGRAM : cage stellaire qui tourne autour de l'impact.
             v.cage((0.85f + 0.50f * v.easeOut()) * S, v.age() * 0.045f, 0.55f, v.age() * 0.02f,
-                    v.aRgb(), 0xFFFFFF, Math.round(v.fadeA() * 0.75f));
+                    v.aRgb(), v.aRgb(), Math.round(v.fadeA() * 0.75f));
         } else if (fx == WeaponVisualEffectId.CHRONO_ETERNAL_HALO) {
             for (int o = 0; o < 2; o++) {
                 float rad = (0.55f + 0.25f * o) * S;
@@ -3412,7 +3364,7 @@ public final class WeaponWorldVfxManager {
                             (k % 3 == 0 ? 0.034f : 0.021f) * S, 0.014f * S,
                             (k % 3 == 0 ? 0.034f : 0.021f) * S,
                             ang, 0.0f, o == 0 ? 0.35f : -0.35f,
-                            (k % 3 == 0) ? 0xFFFFFF : v.pRgb(), v.fadeA());
+                            (k % 3 == 0) ? v.aRgb() : v.pRgb(), v.fadeA());
                 }
             }
         } else if (fx == WeaponVisualEffectId.GOLDEN_CRIT_STAR) {
@@ -3421,9 +3373,9 @@ public final class WeaponWorldVfxManager {
                 float len = (0.40f + 1.30f * v.easeOut()) * S;
                 v.shard(v.cx(), v.cy(), v.cz(), len, 0.026f * S,
                         Mth.cos(ang), 0.16f, Mth.sin(ang),
-                        0xFFFFFF, v.sRgb(), v.fadeA(), v.salt() + a * 13);
+                        v.aRgb(), v.sRgb(), v.fadeA(), v.salt() + a * 13);
             }
-            v.ring(0.18f, (0.55f + 0.75f * t) * S, v.pRgb(), 0xFFFFFF,
+            v.ring(0.18f, (0.55f + 0.75f * t) * S, v.pRgb(), v.aRgb(),
                     Math.round(v.fadeA() * 0.80f), PIXEL_RING_BEADS);
         }
     }
@@ -3464,21 +3416,21 @@ public final class WeaponWorldVfxManager {
                 float off = (c - 1) * 0.35f * S;
                 v.shard(v.cx() - 0.85f * S + off, v.cy() + 0.95f * S, v.cz() - 0.55f * S,
                         1.85f * S, 0.026f * S, 0.72f, -1.0f, 0.55f,
-                        0xFFFFFF, v.aRgb(), Math.round(v.fadeA() * 0.90f), v.salt() + c * 17);
+                        v.aRgb(), v.aRgb(), Math.round(v.fadeA() * 0.90f), v.salt() + c * 17);
             }
         } else if (fx == WeaponVisualEffectId.ECLIPSE_VEIL) {
             float rad = (0.25f + 1.15f * crawl) * S;
             // T365-HOLOGRAM : l'éclipse devient un volume (disque épais + cage qui l'enserre).
-            v.holoDisc(rad, 0x120616, 0x2B0B38, Math.round(v.fadeA() * 0.85f));
+            v.holoDisc(rad, DeepElement.SHADOW.secondary, DeepElement.SHADOW.primary, Math.round(v.fadeA() * 0.85f));
             v.cage(rad * 1.15f, v.age() * 0.03f, 0.95f, v.age() * 0.02f,
-                    v.aRgb(), 0xFFFFFF, Math.round(v.fadeA() * 0.70f));
-            v.ring(0.05f, rad * 1.18f, v.aRgb(), 0xFFFFFF,
+                    v.aRgb(), v.aRgb(), Math.round(v.fadeA() * 0.70f));
+            v.ring(0.05f, rad * 1.18f, v.aRgb(), v.aRgb(),
                     Math.round(v.fadeA() * 0.90f), PIXEL_RING_BEADS);
         } else if (fx == WeaponVisualEffectId.SPECTRAL_REACH) {
             float reach = (0.90f + 1.90f * v.easeOut()) * S;
             v.tendril(v.cx(), v.cy() + 0.05f, v.cz(),
                     v.cx() + v.dirX() * reach, v.cy() + 0.05f, v.cz() + v.dirZ() * reach,
-                    0.10f * S, 7, 0.030f * S, 0xFFFFFF, v.pRgb(), v.fadeA());
+                    0.10f * S, 7, 0.030f * S, v.aRgb(), v.pRgb(), v.fadeA());
         }
     }
 
@@ -3514,7 +3466,7 @@ public final class WeaponWorldVfxManager {
             float rad = (0.20f + 1.05f * v.easeOut()) * S * (0.60f + 0.50f * v.hash(d * 7));
             v.drop(v.cx() + Mth.cos(ang) * rad, v.cy() + 0.45f - 1.55f * t * t,
                     v.cz() + Mth.sin(ang) * rad, (0.030f - 0.008f * t) * S,
-                    (d & 1) == 0 ? v.pRgb() : v.sRgb(), 0xFF8A8A,
+                    (d & 1) == 0 ? v.pRgb() : v.sRgb(), v.aRgb(),
                     Math.round(v.fadeA() * (0.85f - 0.25f * t)), d);
         }
 
@@ -3522,7 +3474,7 @@ public final class WeaponWorldVfxManager {
             // GUILLOTINE : une lame large qui DESCEND (colonne d'exécution), légèrement inclinée.
             float y = v.cy() + 2.30f * S - (2.90f * S) * v.easeIn();
             v.rot(v.cx(), y, v.cz(), 0.44f * S, 0.032f * S, 0.030f * S, 0.0f, 0.10f, 0.05f,
-                    0xFFFFFF, v.fadeA());
+                    v.aRgb(), v.fadeA());
             v.line(v.cx() - 0.44f * S, y, v.cz(), v.cx() + 0.44f * S, y, v.cz(),
                     0.022f * S, v.sRgb(), v.pRgb(), v.fadeA());
         } else if (fx == WeaponVisualEffectId.CRIMSON_SIPHON) {
@@ -3544,12 +3496,12 @@ public final class WeaponWorldVfxManager {
                     v.rot(v.cx() + Mth.cos(ang) * rad, v.cy() - 0.30f + u * 1.90f * S,
                             v.cz() + Mth.sin(ang) * rad,
                             0.032f * S, 0.026f * S, 0.032f * S,
-                            ang, 0.8f, 0.5f, h == 0 ? v.pRgb() : 0xFFFFFF, v.fadeA());
+                            ang, 0.8f, 0.5f, h == 0 ? v.pRgb() : v.aRgb(), v.fadeA());
                 }
             }
         } else if (fx == WeaponVisualEffectId.CARNAGE_BERSERK) {
             v.slash((1.15f + 0.55f * t) * v.m().scale(), 0.042f, 220.0f,
-                    0xFFFFFF, v.pRgb(), v.aRgb(), v.fadeA());
+                    v.aRgb(), v.pRgb(), v.aRgb(), v.fadeA());
         }
     }
 
@@ -3577,7 +3529,7 @@ public final class WeaponWorldVfxManager {
                             v.cz() + (v.hash(k * 7) - 0.50f) * 0.50f * S,
                             0.018f * S, 0.018f * S, 0.018f * S,
                             v.age() * 0.4f, 0.6f, 0.6f,
-                            0xFFFFFF, Math.round(v.fadeA() * 0.80f));
+                            v.aRgb(), Math.round(v.fadeA() * 0.80f));
                 }
             }
             return;
@@ -3604,7 +3556,7 @@ public final class WeaponWorldVfxManager {
 
         // T365-HOLOGRAM : cage qui s'EFFONDRE avec la sphère (elle se replie sur la cible).
         v.cage((1.55f * close + 0.10f) * S, v.age() * 0.12f, 0.75f, v.age() * 0.07f,
-                v.aRgb(), 0xFFFFFF, Math.round(v.fadeA() * 0.80f));
+                v.aRgb(), v.aRgb(), Math.round(v.fadeA() * 0.80f));
 
         float pulse = 0.75f + 0.25f * Mth.sin(v.age() * 0.35f);
         v.ring(0.02f, (0.95f + 0.25f * pulse) * S, v.aRgb(), v.pRgb(),
@@ -3621,32 +3573,33 @@ public final class WeaponWorldVfxManager {
                             v.cz() + Mth.sin(ang) * rad,
                             0.032f * S, 0.022f * S, 0.032f * S,
                             ang, 0.9f, 0.6f,
-                            Mth.hsvToRgb((v.age() * 0.05f + a * 0.25f) % 1.0f, 0.75f, 1.0f), v.fadeA());
+                            ((a + k) & 1) == 0 ? v.aRgb() : v.pRgb(), v.fadeA());
                 }
             }
         }
 
         if (t > 0.82f) {
             float b = (t - 0.82f) / 0.18f;
-            v.cross(4, 0xFFFFFF, v.aRgb(), Math.round(v.fadeA() * b));
-            v.ring(0.02f, (1.05f + 0.85f * b) * S, 0xFFFFFF, v.pRgb(),
+            v.cross(4, v.aRgb(), v.aRgb(), Math.round(v.fadeA() * b));
+            v.ring(0.02f, (1.05f + 0.85f * b) * S, v.aRgb(), v.pRgb(),
                     Math.round(v.fadeA() * b), PIXEL_RING_SOLID);
         }
     }
 
     /**
-     * 混沌 CHAOS — kaléidoscope : huit copies <b>inclinées</b> d'un petit glyphe tournent dans des
-     * teintes qui défilent ; big bang et entropie gardent leurs figures propres.
+     * 混沌 CHAOS — kaléidoscope : huit contours de glyphes présentent plusieurs teintes à la fois.
+     * Le cœur reste très sombre et stable; big bang et entropie gardent leurs figures propres.
      */
     private static void impactChaos(ImpactView v) {
         float t = v.t();
         float S = v.S();
+        float time = v.age() * 0.05f;
         WeaponVisualEffectId fx = v.inst().effect;
-        int hueA = Mth.hsvToRgb((v.age() * 0.045f) % 1.0f, 0.85f, 1.0f);
-        int hueB = Mth.hsvToRgb((v.age() * 0.045f + 0.33f) % 1.0f, 0.85f, 1.0f);
-        int hueC = Mth.hsvToRgb((v.age() * 0.045f + 0.66f) % 1.0f, 0.85f, 1.0f);
+        int hueA = DeepElement.chaosEdge(time, 0.00f);
+        int hueB = DeepElement.chaosEdge(time, 0.33f);
+        int hueC = DeepElement.chaosEdge(time, 0.66f);
 
-        // T366-VOXEL-SCULPT : la masse chaotique est PLEINE (orbe/étoile sculptée, pas un treillis).
+        // Le volume principal reste toujours dans la triplette sombre et stable de Chaos.
         v.sculpt(fx == WeaponVisualEffectId.BIG_BANG_SCAR ? SCULPT_BURST : SCULPT_ORB,
                 0.92f + 0.32f * t, 0.88f);
 
@@ -3657,62 +3610,94 @@ public final class WeaponWorldVfxManager {
                 float elev = (i % 3 == 0) ? 0.55f : ((i % 3 == 1) ? -0.35f : 0.05f);
                 v.shard(v.cx(), v.cy(), v.cz(), len, 0.030f * S,
                         Mth.cos(ang), elev * 0.55f, Mth.sin(ang),
-                        0xFFFFFF, Mth.hsvToRgb((v.age() * 0.05f + i / 14.0f) % 1.0f, 0.90f, 1.0f),
-                        v.fadeA(), v.salt() + i * 19);
+                        v.pRgb(), DeepElement.chaosEdge(time, i / 14.0f),
+                        Math.round(v.fadeA() * 0.82f), v.salt() + i * 19);
             }
-            v.cross(5, 0xFFFFFF, 0xFFFFFF, v.fadeA());
-            v.ring(0.0f, (0.40f + 2.45f * t) * S, 0x000000, v.sRgb(),
-                    Math.round(v.fadeA() * 0.70f), PIXEL_RING_DASHED);
+            v.cross(5, v.pRgb(), v.aRgb(), v.fadeA());
+            emitChaosContour(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(),
+                    (0.40f + 2.45f * t) * S, time, Math.round(v.fadeA() * 0.78f), v.salt());
             return;
         }
 
         if (fx == WeaponVisualEffectId.ENTROPY_SPHERE) {
-            // ENTROPIE : trois anneaux orthogonaux + coquille de cubes inclinés = sphère instable.
             float rad = (0.45f + 1.20f * Mth.sin(t * (float) Math.PI)) * S;
-            v.ring(0.0f, rad, hueA, hueB, v.fadeA(), PIXEL_RING_SOLID);
-            // T365-HOLOGRAM : globe en volume (le billboard plat est remplacé).
-            v.holoSphere(rad, v.age() * 0.10f, hueB, hueC, Math.round(v.fadeA() * 0.90f));
+            // Trois familles de phase colorent simultanément le pourtour du volume sombre.
+            v.holoSphere(rad, time * 0.55f, hueB, hueC, Math.round(v.fadeA() * 0.72f));
+            emitChaosContour(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(),
+                    rad * 1.08f, time, Math.round(v.fadeA() * 0.82f), v.salt());
             for (int i = 0; i < 12; i++) {
                 float u = i / 12.0f;
-                float ang = u * 6.283f + v.age() * 0.30f;
+                float ang = u * 6.283f + time * 1.50f;
                 float th = u * (float) Math.PI - 1.5708f;
                 float rr = rad * Mth.cos(th);
                 v.rot(v.cx() + Mth.cos(ang) * rr, v.cy() + rad * Mth.sin(th), v.cz() + Mth.sin(ang) * rr,
                         0.030f * S, 0.030f * S, 0.030f * S,
-                        ang, th, v.age() * 0.2f,
-                        i % 3 == 0 ? 0xFFFFFF : (i % 3 == 1 ? hueB : hueC),
-                        Math.round(v.fadeA() * 0.85f));
+                        ang, th, time * 1.0f,
+                        DeepElement.chaosEdge(time, u + (i % 3) / 3.0f),
+                        Math.round(v.fadeA() * (0.58f + 0.18f * Mth.sin(time * 2.0f + u * 6.283f))));
             }
             return;
         }
 
-        // KALÉIDOSCOPE : huit copies inclinées d'un glyphe, chacune tournée, teinte qui défile.
-        float base = v.age() * (0.10f + 0.05f * Math.abs(v.m().spin()));
+        // Huit petits contours de glyphes : plusieurs teintes coexistent, sans remplir le corps.
+        float base = time * (0.50f + 0.25f * Math.abs(v.m().spin()));
         int copies = 8;
+        float glyphRadius = (0.45f + 1.05f * v.easeOut()) * S;
         for (int c = 0; c < copies; c++) {
             float ang = base + c * (float) (Math.PI * 2.0 / copies);
-            int hue = Mth.hsvToRgb((v.age() * 0.045f + c / (float) copies) % 1.0f, 0.90f, 1.0f);
-            float rad = (0.45f + 1.05f * v.easeOut()) * S;
-            float cx2 = v.cx() + Mth.cos(ang) * rad;
-            float cz2 = v.cz() + Mth.sin(ang) * rad;
+            float cx2 = v.cx() + Mth.cos(ang) * glyphRadius;
+            float cz2 = v.cz() + Mth.sin(ang) * glyphRadius;
             for (int k = 0; k < 3; k++) {
                 float a2 = ang + k * 1.047f;
                 float rr = 0.30f * S;
+                float phase = c / (float) copies + k / 3.0f;
                 v.rot(cx2 + Mth.cos(a2) * rr,
                         v.cy() + 0.10f + 0.28f * (1.0f - t) * ((k & 1) == 0 ? 1.0f : -1.0f),
                         cz2 + Mth.sin(a2) * rr,
                         (0.034f - 0.008f * k) * S, 0.026f * S, (0.034f - 0.008f * k) * S,
                         a2, 0.7f + k * 0.5f, ang,
-                        (k == 0) ? 0xFFFFFF : jitterRgb(mixRgb(hue, v.pRgb(), 0.35f), v.salt() + c * 7 + k, 0.05f),
-                        Math.round(v.fadeA() * (0.55f + 0.45f * v.hash(c * 5 + k))));
+                        DeepElement.chaosEdge(time, phase),
+                        Math.round(v.fadeA() * (0.52f + 0.16f * k)));
             }
         }
 
-        // T365-HOLOGRAM : cage kaléidoscopique en volume (teintes qui défilent).
-        v.cage((0.90f + 0.55f * v.easeOut()) * S, v.age() * 0.09f, v.age() * 0.05f, v.age() * 0.03f,
-                hueA, 0xFFFFFF, Math.round(v.fadeA() * 0.70f));
+        v.cage((0.90f + 0.55f * v.easeOut()) * S, time * 0.45f, time * 0.25f, time * 0.15f,
+                hueA, hueB, Math.round(v.fadeA() * 0.62f));
+        // La lame elle-même reste sombre; ses satellites et la cage portent le spectre animé.
         v.slash((1.05f + 0.55f * t) * v.m().scale(), 0.038f, 170.0f,
-                0xFFFFFF, hueA, hueB, v.fadeA());
+                v.pRgb(), v.sRgb(), v.aRgb(), v.fadeA());
+        emitChaosContour(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(),
+                (0.75f + 0.45f * v.easeOut()) * S, time,
+                Math.round(v.fadeA() * 0.68f), v.salt() + 91);
+    }
+
+    /**
+     * Trois bandes voxel concentriques dont les phases parcourent le pourtour en synchronie.
+     * Les teintes changent avec la position ET le temps : plusieurs couleurs sont donc visibles
+     * ensemble, tandis que l'alpha reste modulé lentement et déterministement.
+     */
+    private static void emitChaosContour(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                         float cx, float cy, float cz, float radius,
+                                         float time, int alpha, int salt) {
+        if (alpha <= 6 || radius <= 0.08f) return;
+        float grid = radius < 0.90f ? 0.0625f : 0.09375f;
+        int segments = Mth.clamp(Math.round(radius * 18.0f), 12, 40);
+        for (int band = 0; band < 3; band++) {
+            float r = radius + (band - 1) * grid * 0.72f;
+            for (int i = 0; i < segments; i++) {
+                float u = i / (float) segments;
+                float ang = u * 6.2831855f + time * 0.42f;
+                float px = quantize(cx + Mth.cos(ang) * r, grid);
+                float pz = quantize(cz + Mth.sin(ang) * r, grid);
+                float py = quantize(cy + (band - 1) * grid * 0.34f, grid * 0.5f);
+                int rgb = DeepElement.chaosEdge(time, u + band / 3.0f);
+                float wave = 0.5f + 0.5f * Mth.sin(time * 1.7f + u * 6.2831855f + band * 2.094f);
+                int a = Math.round(alpha * (0.42f + 0.20f * band + 0.16f * wave));
+                float hs = grid * (0.30f + 0.06f * band);
+                emitVoxelBoxRotated(vc, mat, tmp, px, py, pz,
+                        hs, hs * 0.72f, hs, ang, 0.0f, band * 0.35f, rgb, a);
+            }
+        }
     }
 
     // ==================== PRIMITIVES VOXELS 3D (MINI-CUBES 6 FACES MINECRAFT) ====================
@@ -3766,7 +3751,7 @@ public final class WeaponWorldVfxManager {
         int rBot = shadeRgb(rgb, 0.62f);
         // Reflet : les faces du dessus attrapent la lumière (métal, glace, lumière).
         int rSpec = cubeGloss > 0.02f
-                ? mixRgb(rTop, 0xFFFFFF, 0.30f * cubeGloss)
+                ? shadeRgb(rTop, 1.0f + 0.30f * cubeGloss)
                 : rTop;
 
         // UP
@@ -3904,7 +3889,7 @@ public final class WeaponWorldVfxManager {
         int col = shadeRgb(rgb, 0.58f + 0.42f * lit);
         // Reflet : les faces tournées vers le ciel s'éclaircissent (métal, glace, lumière).
         if (cubeGloss > 0.02f && ROT_NORMAL[1] > 0.25f) {
-            col = mixRgb(col, 0xFFFFFF, 0.26f * cubeGloss * ROT_NORMAL[1]);
+            col = shadeRgb(col, 1.0f + 0.26f * cubeGloss * ROT_NORMAL[1]);
         }
         // T367-VOXEL-TEXTURE : chaque coin garde sa nuance, même sur un cube incliné.
         putQuad(vc, mat, tmp,
@@ -4445,7 +4430,8 @@ public final class WeaponWorldVfxManager {
         // Base de la vague : toujours nettement plus sombre que le corps (effet de profondeur).
         int darkerTone = (luminanceRgb(deepRgb) <= luminanceRgb(bodyRgb)) ? deepRgb : bodyRgb;
         int deepTone = shadeRgb(mixRgb(darkerTone, bodyRgb, 0.25f), 0.55f);
-        int midTone = mixRgb(bodyRgb, foamRgb, 0.55f);
+        int midTone = mixRgb(bodyRgb, foamRgb, 0.12f);
+        int crestTone = mixRgb(bodyRgb, foamRgb, 0.28f);
         int steps = 15;
         int levels = 4;
 
@@ -4464,8 +4450,8 @@ public final class WeaponWorldVfxManager {
                 float pz = cz + sideZ * (lateral + wob) + dirZ * lean;
                 float py = cy + v * h;
                 float half = (0.055f - 0.018f * v) * (0.70f + 0.45f * env);
-                // Dégradé CONTINU du creux (bleu profond) vers la crête (écume blanche)
-                int col = rampRgb(v, deepTone, bodyRgb, midTone, foamRgb);
+                // Dégradé de bleus clairs; l'écume réelle est un accent séparé et discontinu.
+                int col = rampRgb(v, deepTone, bodyRgb, midTone, crestTone);
                 // éclairage directionnel : le flanc tourné vers la lumière est plus clair -> volume
                 float lit = 0.84f + 0.26f * (0.5f + 0.5f * Mth.cos(u * 6.2831855f - 0.6f));
                 col = shadeRgb(jitterRgb(col, salt + i * 31 + l, 0.055f), lit);
@@ -4477,8 +4463,8 @@ public final class WeaponWorldVfxManager {
                         yawRad, pitch, roll, col, a);
             }
 
-            // Écume : au sommet de la crête, cubes blancs plus gros, un peu détachés (ça mousse).
-            if (env > 0.42f) {
+            // Écume : rare, uniquement sur la lèvre supérieure, jamais sur toute la vague.
+            if (env > 0.62f && ((i + salt) & 3) == 0) {
                 float lean = curl * 0.70f * radius;
                 float px = cx + sideX * lateral + dirX * lean;
                 float pz = cz + sideZ * lateral + dirZ * lean;
@@ -4500,7 +4486,7 @@ public final class WeaponWorldVfxManager {
                     quantize(px, 0.0625f), quantize(cy + height * 0.80f + up, 0.0625f),
                     quantize(pz, 0.0625f),
                     0.024f, 0.034f, 0.024f, yawRad, 0.6f * tt, 0.4f,
-                    foamRgb, Math.round(alpha * 0.85f));
+                    s == 2 ? foamRgb : bodyRgb, Math.round(alpha * 0.85f));
         }
     }
 
@@ -4643,9 +4629,9 @@ public final class WeaponWorldVfxManager {
         int primaryTarget = (paletteMask == 0) ? fx.primaryRgb
                 : paletteColor(paletteMask, fx.primaryRgb, palettePhase(frameTimeSeconds), 0);
         int secondaryTarget = (paletteMask == 0) ? fx.secondaryRgb
-                : paletteColor(paletteMask, fx.secondaryRgb, palettePhase(frameTimeSeconds + 3.1f), 1);
+                : paletteColor(paletteMask, fx.secondaryRgb, palettePhase(frameTimeSeconds), 1);
         int highlightTarget = (paletteMask == 0) ? fx.highlightRgb
-                : paletteColor(paletteMask, fx.highlightRgb, palettePhase(frameTimeSeconds + 1.55f), 2);
+                : paletteColor(paletteMask, fx.highlightRgb, palettePhase(frameTimeSeconds), 2);
         int core = (paletteMask == 0) ? smoothColor(fx.id, primaryTarget) : primaryTarget;
         int glow = (paletteMask == 0) ? smoothColor(1000 + fx.id, secondaryTarget) : secondaryTarget;
         int highlight = (paletteMask == 0) ? smoothColor(2000 + fx.id, highlightTarget) : highlightTarget;
@@ -4712,7 +4698,7 @@ public final class WeaponWorldVfxManager {
         float hs = stepSize * 0.46f;
         int salt = Math.round(cx * 811.0f + cy * 457.0f + cz * 293.0f);
 
-        emitVoxelCube(vc, mat, tmp, cx, cy, cz, hs * 1.24f, hs * 1.30f, hs * 1.24f, 0xFFFFFF, alpha);
+        emitVoxelCube(vc, mat, tmp, cx, cy, cz, hs * 1.24f, hs * 1.30f, hs * 1.24f, coreRgb, alpha);
         emitVoxelCube(vc, mat, tmp, cx, cy - hs * 0.9f, cz, hs * 0.72f, hs * 0.42f, hs * 0.72f, coreRgb,
                 Math.round(alpha * 0.85f));
         for (int d = 0; d < 4; d++) {
@@ -4748,7 +4734,7 @@ public final class WeaponWorldVfxManager {
         emitVoxelCube(vc, mat, tmp, px, py, pz, s, jy, jz, rgb, alpha);
         if ((face & 1) == 0) {
             emitVoxelCube(vc, mat, tmp, px, py + jy * 0.94f, pz, s * 0.34f, s * 0.26f, s * 0.34f,
-                    0xFFFFFF, Math.round(alpha * 0.68f));
+                    shadeRgb(rgb, 1.10f), Math.round(alpha * 0.68f));
         }
     }
 
@@ -4800,7 +4786,7 @@ public final class WeaponWorldVfxManager {
                     halfSize * jit, rgb, alpha);
             if ((i & 3) == 1) {
                 emitVoxelCube(vc, mat, tmp, px, py + halfSize * 1.12f, pz,
-                        halfSize * 0.33f, halfSize * 0.27f, halfSize * 0.33f, 0xFFFFFF,
+                        halfSize * 0.33f, halfSize * 0.27f, halfSize * 0.33f, shadeRgb(coreRgb, 1.10f),
                         Math.round(alpha * 0.7f));
             }
             prevX = px; prevY = py; prevZ = pz;
@@ -4985,10 +4971,10 @@ public final class WeaponWorldVfxManager {
             if (p <= 1) break;
             int a2 = Math.round(alpha * (tk == 1 ? 1.0f : 0.62f));
             float s = hs * (tk == 1 ? 1.05f : 0.56f);
-            billboardRaw(vc, mat, tmp, cx, cy, cz, rx, rz, p, 0, grid, s, 0xFFFFFF, a2);
-            billboardRaw(vc, mat, tmp, cx, cy, cz, rx, rz, -p, 0, grid, s, 0xFFFFFF, a2);
-            billboardRaw(vc, mat, tmp, cx, cy, cz, rx, rz, 0, p, grid, s, 0xFFFFFF, a2);
-            billboardRaw(vc, mat, tmp, cx, cy, cz, rx, rz, 0, -p, grid, s, 0xFFFFFF, a2);
+            billboardRaw(vc, mat, tmp, cx, cy, cz, rx, rz, p, 0, grid, s, rgbA, a2);
+            billboardRaw(vc, mat, tmp, cx, cy, cz, rx, rz, -p, 0, grid, s, rgbA, a2);
+            billboardRaw(vc, mat, tmp, cx, cy, cz, rx, rz, 0, p, grid, s, rgbA, a2);
+            billboardRaw(vc, mat, tmp, cx, cy, cz, rx, rz, 0, -p, grid, s, rgbA, a2);
         }
         int diag = Math.max(2, Math.round(rPix * 0.70f));
         for (int d = 0; d < 4; d++) {
@@ -5015,7 +5001,7 @@ public final class WeaponWorldVfxManager {
         }
         if (edge) {
             emitVoxelCube(vc, mat, tmp, px + rx * grid * 0.30f, py + grid * 0.24f, pz + rz * grid * 0.30f,
-                    grid * 0.14f, grid * 0.11f, grid * 0.14f, 0xFFFFFF, Math.round(alpha * 0.75f));
+                    grid * 0.14f, grid * 0.11f, grid * 0.14f, rgbAlt, Math.round(alpha * 0.75f));
         }
     }
 
@@ -5067,7 +5053,7 @@ public final class WeaponWorldVfxManager {
                 float rx = quantize(cx + Mth.cos(ang) * beadR, 0.03125f);
                 float rz = quantize(cz + Mth.sin(ang) * beadR, 0.03125f);
                 emitPixelRune3D(vc, mat, tmp, rx, cy + 0.022f, rz, r + phaseIdx, step,
-                        -ang + (float) (Math.PI * 0.5), runeRgb, (r & 1) == 0 ? 0xFFFFFF : innerRgb, alpha);
+                        -ang + (float) (Math.PI * 0.5), runeRgb, (r & 1) == 0 ? runeRgb : innerRgb, alpha);
             }
         }
 
@@ -5083,7 +5069,7 @@ public final class WeaponWorldVfxManager {
                         lineHalf, (k & 1) == 0 ? runeRgb : innerRgb, outerRgb, Math.round(alpha * 0.86f));
             }
             emitVoxelCube(vc, mat, tmp, cx, cy + lineHalf * 0.4f, cz,
-                    lineHalf * 1.5f, lineHalf * 1.2f, lineHalf * 1.5f, 0xFFFFFF, Math.round(alpha * 0.9f));
+                    lineHalf * 1.5f, lineHalf * 1.2f, lineHalf * 1.5f, runeRgb, Math.round(alpha * 0.9f));
         }
 
         // 6) Accents cardinaux : micro-pixels blancs pour le piqué pixel-art
@@ -5093,7 +5079,7 @@ public final class WeaponWorldVfxManager {
                 float px = quantize(cx + Mth.cos(a) * outerRadius, 0.03125f);
                 float pz = quantize(cz + Mth.sin(a) * outerRadius, 0.03125f);
                 float s = Mth.clamp(outerRadius * 0.028f, 0.010f, 0.030f);
-                emitVoxelCube(vc, mat, tmp, px, cy + s * 1.1f, pz, s, s * 0.85f, s, 0xFFFFFF,
+                emitVoxelCube(vc, mat, tmp, px, cy + s * 1.1f, pz, s, s * 0.85f, s, runeRgb,
                         Math.round(alpha * 0.85f));
             }
         }
@@ -5161,7 +5147,7 @@ public final class WeaponWorldVfxManager {
                     Math.round(alpha * (i <= 2 ? 0.92f : 1.0f)));
         }
         emitVoxelCube(vc, mat, tmp, cx - pixelStep * 0.55f, cy + pixelStep * 0.9f, cz - pixelStep * 0.1f,
-                pixelStep * 0.13f, pixelStep * 0.13f, pixelStep * 0.13f, 0xFFE0E0, Math.round(alpha * 0.85f));
+                pixelStep * 0.13f, pixelStep * 0.13f, pixelStep * 0.13f, lightRgb, Math.round(alpha * 0.85f));
         emitVoxelCube(vc, mat, tmp, cx + pixelStep * 1.15f, cy + pixelStep * 2.0f, cz + pixelStep * 0.35f,
                 pixelStep * 0.11f, pixelStep * 0.11f, pixelStep * 0.11f, bodyRgb, Math.round(alpha * 0.8f));
         emitVoxelCube(vc, mat, tmp, cx - pixelStep * 1.05f, cy - pixelStep * 0.9f, cz + pixelStep * 0.5f,
@@ -5337,31 +5323,8 @@ public final class WeaponWorldVfxManager {
         putPosColor(vc, mat, tmp, x3, y3, z3, rgb3, a3);
     }
 
-    private static int keepWithinActivePalette(int rgb) {
-        if (activeRenderPalette == null || activePaletteAllowsSpectrum) return rgb;
-        int best = activeRenderPalette[0];
-        long bestDistance = Long.MAX_VALUE;
-        for (int candidate : activeRenderPalette) {
-            int dr = ((rgb >>> 16) & 0xFF) - ((candidate >>> 16) & 0xFF);
-            int dg = ((rgb >>> 8) & 0xFF) - ((candidate >>> 8) & 0xFF);
-            int db = (rgb & 0xFF) - (candidate & 0xFF);
-            long distance = 2L * dr * dr + 4L * dg * dg + db * db;
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                best = candidate;
-            }
-        }
-        float sourceLuma = 0.2126f * ((rgb >>> 16) & 0xFF)
-                + 0.7152f * ((rgb >>> 8) & 0xFF) + 0.0722f * (rgb & 0xFF);
-        float baseLuma = 0.2126f * ((best >>> 16) & 0xFF)
-                + 0.7152f * ((best >>> 8) & 0xFF) + 0.0722f * (best & 0xFF);
-        float shade = baseLuma < 1.0f ? 1.0f : Mth.clamp(sourceLuma / baseLuma, 0.45f, 1.14f);
-        return shadeRgb(best, shade);
-    }
-
     public static void putPosColor(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                    float x, float y, float z, int rgb, int a) {
-        rgb = keepWithinActivePalette(rgb);
         // T359-BIG-ANIM-SCALE : unique point de sortie de TOUTE la géométrie (cubes, anneaux,
         // cercles, lignes, hélices, réticules) -> une seule transformation suffit à faire
         // grossir/rétrécir l'animation entière autour de son point d'impact.

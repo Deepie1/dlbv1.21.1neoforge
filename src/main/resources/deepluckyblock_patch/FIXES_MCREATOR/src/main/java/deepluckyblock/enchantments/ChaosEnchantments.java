@@ -67,14 +67,25 @@ public final class ChaosEnchantments {
 
     private ChaosEnchantments() {}
 
-    /** Couleur prismatique : la teinte tourne avec le temps (aucun clignotement brutal). */
+    /** Une bande de contour Chaos, synchronisée avec le rendu client et sans phase aléatoire. */
     private static DustParticleOptions prismatic(ServerLevel sl, float phase) {
-        int rgb = net.minecraft.util.Mth.hsvToRgb(
-                (sl.getGameTime() * 0.008f + phase) % 1.0f, 0.85f, 1.0f);
+        int rgb = DeepElement.chaosEdge(sl.getGameTime() * 0.05f, phase);
         return new DustParticleOptions(new Vector3f(
                 ((rgb >> 16) & 0xFF) / 255.0f,
                 ((rgb >> 8) & 0xFF) / 255.0f,
                 (rgb & 0xFF) / 255.0f), 0.95f);
+    }
+
+    /** Trois phases simultanées, avec exactement le même budget total de pixels qu'auparavant. */
+    private static void prismaticBurst(ServerLevel sl, double x, double y, double z,
+                                       int count, double spread, double speed) {
+        for (int band = 0; band < 3; band++) {
+            int n = count / 3 + (band < count % 3 ? 1 : 0);
+            if (n > 0) {
+                PixelFx.send(sl, prismatic(sl, band / 3.0f), x, y, z,
+                        n, spread, spread, spread, speed);
+            }
+        }
     }
 
     /** Niveau d'un enchantement du mod sur la pile (0 si absent). */
@@ -128,8 +139,7 @@ public final class ChaosEnchantments {
             Holder<MobEffect> effect = ENTROPY_EFFECTS[sl.random.nextInt(ENTROPY_EFFECTS.length)];
             int dur = 40 + 10 * entropy;
             target.addEffect(new MobEffectInstance(effect, dur, 0, true, false));
-            PixelFx.send(sl, prismatic(sl, sl.random.nextFloat()), tx, ty, tz,
-                    10, 0.35, 0.35, 0.35, 0.02);
+            prismaticBurst(sl, tx, ty, tz, 10, 0.35, 0.02);
         }
 
         // ── 2. Nexus : propage une fraction des dégâts aux cibles voisines (max 2) ──
@@ -141,13 +151,12 @@ public final class ChaosEnchantments {
                 if (hits >= 2) break;
                 if (!isValidVictim(other, attacker)) continue;
                 other.hurt(sl.damageSources().playerAttack(attacker), share);
-                PixelFx.send(sl, prismatic(sl, 0.33f), other.getX(),
-                        other.getY() + other.getBbHeight() * 0.5, other.getZ(),
-                        6, 0.25, 0.25, 0.25, 0.01);
+                prismaticBurst(sl, other.getX(), other.getY() + other.getBbHeight() * 0.5,
+                        other.getZ(), 6, 0.25, 0.01);
                 hits++;
             }
             if (hits > 0) {
-                PixelFx.send(sl, ParticleTypes.WITCH, tx, ty, tz, 8, 0.3, 0.3, 0.3, 0.02);
+                prismaticBurst(sl, tx, ty, tz, 8, 0.30, 0.02);
             }
         }
 
@@ -158,7 +167,7 @@ public final class ChaosEnchantments {
             if (crit) {
                 event.setAmount(event.getAmount() + 1.5f * rupture);
                 target.addEffect(new MobEffectInstance(MobEffects.WITHER, 30 + 10 * rupture, 0, true, false));
-                PixelFx.send(sl, prismatic(sl, 0.66f), tx, ty, tz, 14, 0.45, 0.35, 0.45, 0.03);
+                prismaticBurst(sl, tx, ty, tz, 14, 0.40, 0.03);
             }
         }
 
@@ -169,7 +178,7 @@ public final class ChaosEnchantments {
             if (until > now) {
                 int lvl = Math.max(1, target.getPersistentData().getInt(BRAND_LEVEL));
                 event.setAmount(event.getAmount() * (1.0f + 0.06f * lvl));
-                PixelFx.send(sl, prismatic(sl, 0.5f), tx, ty, tz, 5, 0.25, 0.25, 0.25, 0.01);
+                prismaticBurst(sl, tx, ty, tz, 5, 0.25, 0.01);
             }
             target.getPersistentData().putLong(BRAND_UNTIL, now + 80L);
             target.getPersistentData().putInt(BRAND_LEVEL, Math.min(5, brand));

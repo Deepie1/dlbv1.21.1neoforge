@@ -66,8 +66,15 @@ public final class WeaponVfxServerListener {
     private static final int CRIT_TRIGGER_PERCENT = 76;
     /** T351 : part des déclenchements qui jouent un accent discret. */
     private static final int SUBTLE_SHARE_PERCENT = 90;
-    /** T351-BIG-BONUS : une grosse animation (les 10 % restants) amplifie les dégâts de 5 %. */
+    /** Ancien bonus du pipeline projectile/critique manuel, conservé hors de la nouvelle mêlée. */
     private static final float BIG_ANIM_DAMAGE_BONUS = 1.05f;
+    /** Mêlée éligible : un seul jet 0..99 = normal 0..76, slash 77..96, grande forme 97..99. */
+    private static final int MELEE_NORMAL_MAX_ROLL = 76;
+    private static final int MELEE_SLASH_MAX_ROLL = 96;
+    private static final float MELEE_SLASH_DAMAGE_MULTIPLIER = 1.05f;
+    /** Toute grande forme reste réellement agrandie, même sur une très petite cible. */
+    private static final float BIG_VISUAL_BASE_SCALE = 1.20f;
+    private static final float BIG_VISUAL_MEASURED_FACTOR = 0.55f;
     /**
      * T352-ELEMENT-COMBO : sur une arme portant PLUSIEURS éléments, 6 % de chance de jouer en
      * simultané une grosse animation de CHAQUE famille présente (une couleur par élément).
@@ -93,6 +100,21 @@ public final class WeaponVfxServerListener {
         double reference = 0.6 * 0.6 * 1.8;                 // joueur / zombie standard
         float scale = (float) Math.sqrt(volume / reference);
         return net.minecraft.util.Mth.clamp(scale, 0.30f, 4.0f);
+    }
+
+    /**
+     * Classe l'échelle mesurée dans l'intervalle existant 0.30..4.0, puis la convertit en bonus
+     * entier de 5 à 15 %. Aucun second tirage : une cible plus grande donne toujours un bonus
+     * supérieur ou égal, et le même résultat pilote la taille de la grande animation.
+     */
+    private static int bigMeleeBonusPercent(float measuredScale) {
+        float rank = (measuredScale - 0.30f) / (4.0f - 0.30f);
+        return 5 + Math.round(net.minecraft.util.Mth.clamp(rank, 0.0f, 1.0f) * 10.0f);
+    }
+
+    /** Échelle visuelle monotone 1.365..3.40 : toujours une GRANDE animation, jamais une miniature. */
+    private static float bigMeleeVisualScale(float measuredScale) {
+        return BIG_VISUAL_BASE_SCALE + BIG_VISUAL_MEASURED_FACTOR * measuredScale;
     }
 
     /** Marque le coup critique du tick ; l'animation correspondante est choisie une seule fois dans onLivingHurtVisuals. */
@@ -319,6 +341,50 @@ public final class WeaponVfxServerListener {
         return true;
     }
 
+    /**
+     * Mêlée directe éligible : exactement UN jet serveur par événement de dégâts accepté.
+     * 77 % normal / 20 % slash +5 % / 3 % grande animation +5..15 % selon la taille mesurée.
+     * Aucun appel aux anciens tirages de couches, accents, critiques ou combos dans cette branche.
+     */
+    private static void handleEligibleMelee(ServerLevel sl, LivingIncomingDamageEvent event,
+                                            LivingEntity attacker, LivingEntity target, ItemStack weapon,
+                                            List<WeaponVisualEffectId.ResolvedLayer> layers) {
+        int roll = sl.random.nextInt(100);
+        if (roll <= MELEE_NORMAL_MAX_ROLL) return;
+
+        WeaponVisualEffectId.ResolvedLayer layer = layers.get(0);
+        WeaponVisualEffectId fx = layer.effect();
+        int palette = paletteOf(weapon, fx);
+        float tx = (float) target.getX();
+        float ty = (float) (target.getY() + target.getBbHeight() * 0.5f);
+        float tz = (float) target.getZ();
+        float ax = (float) attacker.getX();
+        float ay = (float) (attacker.getY() + attacker.getBbHeight() * 0.62f);
+        float az = (float) attacker.getZ();
+
+        if (roll <= MELEE_SLASH_MAX_ROLL) {
+            event.setAmount(event.getAmount() * MELEE_SLASH_DAMAGE_MULTIPLIER);
+            broadcastNear(sl, ax, ay, az, fx.id, KIND_SWING_SLASH, layer.level(),
+                    ax, ay, az, tx, ty, tz, palette);
+            return;
+        }
+
+        float measuredScale = sizeScaleOf(target);
+        int bonusPercent = bigMeleeBonusPercent(measuredScale);
+        event.setAmount(event.getAmount() * (1.0f + bonusPercent / 100.0f));
+        float bigScale = bigMeleeVisualScale(measuredScale);
+        if (fx == WeaponVisualEffectId.CRIMSON_SIPHON) {
+            broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
+                    tx, ty, tz, ax, ay, az, palette, bigScale);
+        } else if (fx == WeaponVisualEffectId.ASTRAL_STAR_LANCE && attacker.distanceToSqr(target) > 9.0) {
+            broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
+                    ax, (float) attacker.getEyeY() - 0.12f, az, tx, ty, tz, palette, bigScale);
+        } else {
+            broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, layer.level(),
+                    tx, ty, tz, ax, ay, az, palette, bigScale);
+        }
+    }
+
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onLivingHurtVisuals(LivingIncomingDamageEvent event) {
         // Note : on autorise event.getAmount() == 0.0f pour blood_transfusion (#11), curse_of_mercy et toy !
@@ -355,6 +421,12 @@ public final class WeaponVfxServerListener {
         ItemStack weapon = resolveImpactWeapon(attacker, direct);
         List<WeaponVisualEffectId.ResolvedLayer> layers = resolveAttackerLayers(attacker, weapon, 2);
         if (layers.isEmpty()) return;
+
+        // playerAttack/mobAttack direct uniquement : les projectiles et dégâts différés ne rerollent pas.
+        if (!isProjectileHit && direct == attacker) {
+            handleEligibleMelee(sl, event, attacker, target, weapon, layers);
+            return;
+        }
 
         float tx = (float) target.getX();
         float ty = (float) (target.getY() + target.getBbHeight() * 0.5);
