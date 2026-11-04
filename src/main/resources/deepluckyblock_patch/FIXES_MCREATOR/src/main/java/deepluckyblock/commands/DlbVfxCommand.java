@@ -140,8 +140,15 @@ public final class DlbVfxCommand {
     private static final Map<UUID, DummyTestState> DUMMY_TESTS = new ConcurrentHashMap<>();
     /** 22 ticks maximum + écho du TWIN_ECHO à +4, avec marge de sécurité. */
     private static final int DUMMY_IMPACT_TICK = 30;
-    /** 22 ticks maximum pour l'impact, puis dix ticks sans aucun effet. */
+    /** Durée par défaut ; les trois chorégraphies Wood possèdent un créneau complet dédié. */
     private static final int DUMMY_NEXT_EFFECT_TICK = 62;
+
+    private static int dummyNextEffectTick(WeaponVisualEffectId fx) {
+        if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) return 98;  // impact 30 + 64 + marge
+        if (fx == WeaponVisualEffectId.THORN_MAW_ROOT) return 114;   // impact 30 + 80 + marge
+        if (fx == WeaponVisualEffectId.VERDANT_SAP_BLOOM) return 106; // impact 30 + 72 + marge
+        return DUMMY_NEXT_EFFECT_TICK;
+    }
 
     /** T350 : noms (et couleurs) des familles élémentaires proposées par la commande. */
     private static final SuggestionProvider<CommandSourceStack> SUGGEST_FAMILIES =
@@ -663,7 +670,7 @@ public final class DlbVfxCommand {
             }
 
             st.tick++;
-            if (st.tick >= DUMMY_NEXT_EFFECT_TICK) {
+            if (st.tick >= dummyNextEffectTick(fx)) {
                 st.tick = 0;
                 st.cursor++;
                 if (st.cursor >= ALL_IDS.length) {

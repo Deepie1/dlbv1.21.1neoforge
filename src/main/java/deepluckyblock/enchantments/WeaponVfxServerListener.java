@@ -7,9 +7,12 @@ import deepluckyblock.network.DeepPayloads;
 import deepluckyblock.procedures.TestProcedure;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.entity.projectile.Projectile;
@@ -23,7 +26,9 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
+import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
+import net.neoforged.neoforge.event.tick.EntityTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.List;
@@ -59,6 +64,11 @@ public final class WeaponVfxServerListener {
     private static final Map<Integer, Long> LAST_ELEMENT_COMBO_TICK = new ConcurrentHashMap<>();
     /** T349-VFX-FREQUENCY : cooldown réel et aléatoire par (attaquant, effet). */
     private static final Map<String, Long> EFFECT_COOLDOWN = new ConcurrentHashMap<>();
+    /** Emprises Wood côté serveur : position, expiration et état NoAi antérieur à restaurer. */
+    private static final Map<Integer, WoodHold> WOOD_HOLDS = new ConcurrentHashMap<>();
+    private static final ThreadLocal<Boolean> WOOD_DAMAGE_GUARD = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
+    private record WoodHold(long expires, double x, double y, double z, boolean previousNoAi) { }
 
     /** T351 : attaque NORMALE -> 5 % de chance de déclencher l'animation pixel. */
     private static final int NORMAL_TRIGGER_PERCENT = 5;
@@ -346,6 +356,101 @@ public final class WeaponVfxServerListener {
         return true;
     }
 
+    /** THORN = stun 3 s ; VERDANT = emprise de sève puis explosion localisée synchronisée. */
+    private static void applyWoodGameplay(ServerLevel sl, LivingEntity attacker, LivingEntity target,
+                                          WeaponVisualEffectId fx, int intensity, float baseDamage) {
+        long now = sl.getGameTime();
+        if (fx == WeaponVisualEffectId.THORN_MAW_ROOT) {
+            applyWoodHold(target, now + 60L);
+            return;
+        }
+        if (fx != WeaponVisualEffectId.VERDANT_SAP_BLOOM) return;
+
+        long holdStart = now + 34L;
+        long holdEnd = now + 54L;
+        float sapDamage = Math.max(4.0f, baseDamage * (0.55f + 0.08f * Math.max(1, intensity)));
+        TestProcedure.schedule(sl, holdStart, () -> {
+            if (target.isAlive() && target.level() == sl) applyWoodHold(target, holdEnd);
+        });
+        TestProcedure.schedule(sl, now + 52L, () -> {
+            if (!target.isAlive() || target.level() != sl) return;
+            DamageSource source = attacker instanceof Player player
+                    ? sl.damageSources().playerAttack(player) : sl.damageSources().mobAttack(attacker);
+            WOOD_DAMAGE_GUARD.set(true);
+            try {
+                target.hurt(source, sapDamage);
+            } finally {
+                WOOD_DAMAGE_GUARD.set(false);
+            }
+            sl.playSound(null, target.getX(), target.getY() + target.getBbHeight() * 0.50f, target.getZ(),
+                    SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.70f, 1.35f);
+        });
+        TestProcedure.schedule(sl, holdEnd, () -> releaseWoodHold(target, holdEnd));
+    }
+
+    private static void applyWoodHold(LivingEntity target, long expires) {
+        WoodHold previous = WOOD_HOLDS.get(target.getId());
+        boolean previousNoAi = previous != null ? previous.previousNoAi()
+                : target instanceof Mob mob && mob.isNoAi();
+        double x = previous != null ? previous.x() : target.getX();
+        double y = previous != null ? previous.y() : target.getY();
+        double z = previous != null ? previous.z() : target.getZ();
+        WOOD_HOLDS.put(target.getId(), new WoodHold(expires, x, y, z, previousNoAi));
+        if (target instanceof Mob mob) {
+            mob.setNoAi(true);
+            mob.setTarget(null);
+        }
+        target.stopUsingItem();
+        target.setDeltaMovement(Vec3.ZERO);
+        target.teleportTo(x, y, z);
+        target.fallDistance = 0.0f;
+    }
+
+    private static void releaseWoodHold(LivingEntity target, long expectedExpiry) {
+        WoodHold hold = WOOD_HOLDS.get(target.getId());
+        if (hold == null || hold.expires() != expectedExpiry) return;
+        WOOD_HOLDS.remove(target.getId());
+        if (target instanceof Mob mob) mob.setNoAi(hold.previousNoAi());
+    }
+
+    private static boolean isWoodHeld(Entity entity) {
+        if (!(entity instanceof LivingEntity living)) return false;
+        WoodHold hold = WOOD_HOLDS.get(entity.getId());
+        return hold != null && entity.level().getGameTime() < hold.expires();
+    }
+
+    @SubscribeEvent
+    public static void onWoodHoldTick(EntityTickEvent.Post event) {
+        if (!(event.getEntity() instanceof LivingEntity target) || target.level().isClientSide()) return;
+        WoodHold hold = WOOD_HOLDS.get(target.getId());
+        if (hold == null) return;
+        long now = target.level().getGameTime();
+        if (!target.isAlive() || now >= hold.expires()) {
+            releaseWoodHold(target, hold.expires());
+            return;
+        }
+        if (target instanceof Mob mob) {
+            mob.setNoAi(true);
+            mob.setTarget(null);
+        }
+        target.stopUsingItem();
+        target.setDeltaMovement(Vec3.ZERO);
+        target.teleportTo(hold.x(), hold.y(), hold.z());
+        target.fallDistance = 0.0f;
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onWoodHeldAttack(AttackEntityEvent event) {
+        if (isWoodHeld(event.getEntity())) event.setCanceled(true);
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onWoodHeldDamage(LivingIncomingDamageEvent event) {
+        if (event.getSource().getEntity() instanceof LivingEntity attacker && isWoodHeld(attacker)) {
+            event.setCanceled(true);
+        }
+    }
+
     /**
      * Mêlée directe éligible : exactement UN jet serveur par événement de dégâts accepté.
      * 77 % normal / 20 % slash +5 % / 3 % grande animation +5..15 % selon la taille mesurée.
@@ -387,11 +492,13 @@ public final class WeaponVfxServerListener {
         } else {
             broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, layer.level(),
                     tx, ty, tz, ax, ay, az, palette, bigScale);
+            applyWoodGameplay(sl, attacker, target, fx, layer.level(), event.getAmount());
         }
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onLivingHurtVisuals(LivingIncomingDamageEvent event) {
+        if (WOOD_DAMAGE_GUARD.get()) return;
         // Note : on autorise event.getAmount() == 0.0f pour blood_transfusion (#11), curse_of_mercy et toy !
         if (event.isCanceled()) return;
         LivingEntity target = event.getEntity();
@@ -561,6 +668,10 @@ public final class WeaponVfxServerListener {
     @SubscribeEvent(priority = EventPriority.HIGH)
     public static void onRightClickRallyVisuals(PlayerInteractEvent.RightClickItem event) {
         Player player = event.getEntity();
+        if (isWoodHeld(player)) {
+            event.setCanceled(true);
+            return;
+        }
         if (!(player.level() instanceof ServerLevel sl)) return;
         ItemStack stack = event.getItemStack();
         if (stack.isEmpty() || player.getCooldowns().isOnCooldown(stack.getItem())) return;

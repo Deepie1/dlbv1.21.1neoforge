@@ -474,8 +474,10 @@ public final class WeaponWorldVfxManager {
         }
 
         int duration = switch (fx) {
-            // GAIA : la pousse et la couronne restent lisibles pendant tout le slot du dummytest.
-            case ZEPHYR_WIND_LANCE, THORN_MAW_ROOT, VERDANT_SAP_BLOOM -> 32;
+            // Chorégraphies Wood complètes : croissance, impacts, stun et explosion de sève.
+            case ZEPHYR_WIND_LANCE -> 64;
+            case THORN_MAW_ROOT -> 80;
+            case VERDANT_SAP_BLOOM -> 72;
             case SERAPH_SKY_PILLAR, ABYSSAL_MAELSTROM, WARLORD_RALLY_SIGIL,
                  DRAGON_CHAOS_PRISM, BRIMSTONE_METEOR, BIG_BANG_SCAR -> 22;
             case THORN_MAW_ROOT, SANDSTORM_DUNE, ECLIPSE_VEIL, NULL_RIFT_FISSURE,
