@@ -186,6 +186,43 @@ public final class FireSignatureVfx {
                 }
             }
         }
+        // Splash du déferlement : la lèvre tombe mais conserve sa vitesse d'avance.
+        for (int p = 0; p < 56; p++) {
+            float h = hash01(salt, p * 47 + 1450);
+            float launch = 0.57f + (p % 8) * 0.028f + h * 0.018f;
+            float age = t - launch;
+            if (age <= 0.0f) continue;
+            int lane = p % 17 - 8;
+            float u = 0.82f + 0.16f * hash01(salt, p * 43 + 1451);
+            float originF = waveFrontAt(launch, u, lane) * S;
+            float originY = ground + waveHeightLocal(launch, u, waveLaneNoise(launch, lane, salt)) * S;
+            float side = waveLateral(launch, lane) * S;
+            float time = age * 5.6f;
+            float vf = (1.15f + 1.35f * h) * S;
+            float vl = (lane * 0.020f + (hash01(salt, p * 59 + 1452) - 0.5f) * 0.85f) * S;
+            float vy = (0.65f + 1.25f * hash01(salt, p * 61 + 1453)) * S;
+            float gravity = 7.4f * S;
+            float f = originF + vf * time;
+            float l = side + vl * time;
+            float y = originY + vy * time - 0.5f * gravity * time * time;
+            float hit = (vy + Mth.sqrt(vy * vy + 2.0f * gravity * Math.max(0.0f, originY - ground))) / gravity;
+            float size = (0.030f + 0.045f * h) * S;
+            if (time < hit) {
+                localCube(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
+                        size, lavaDropletRgb(h), Math.round(alpha * env));
+                localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        f - vf * 0.025f, y + size * 0.30f, l - vl * 0.025f,
+                        size * 0.48f, LAVA[9 + (p & 3)], Math.round(alpha * env * 0.78f));
+            } else if (time < hit + 0.22f) {
+                float spread = (time - hit) * 2.2f;
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz, f, ground + 0.032f * S, l,
+                        size * (1.5f + spread), 0.024f * S, size * (1.3f + spread),
+                        LAVA[7 + (p & 3)], Math.round(alpha * env * (1.0f - spread)));
+                localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        f + spread * size * 2.0f, ground + (0.05f + spread * 0.10f) * S, l,
+                        size * 0.42f, LAVA[11], Math.round(alpha * env * (1.0f - spread)));
+            }
+        }
         smoke(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, ground, 0.0f,
                 t, 0.69f, 34, S, alpha, salt, 0.75f);
     }
@@ -446,9 +483,8 @@ public final class FireSignatureVfx {
     }
 
     private static float waveTravel(float t) {
-        float x = Mth.clamp(t / 0.95f, 0.0f, 1.0f);
-        float easeOut = 1.0f - (1.0f - x) * (1.0f - x) * (1.0f - x);
-        return -1.25f + 2.75f * easeOut;
+        // Translation positive jusqu'à la dernière frame : la vague quitte la zone, elle ne s'arrête pas.
+        return -1.25f + 3.75f * t;
     }
 
     private static float waveBreakup(float t) {
@@ -485,7 +521,7 @@ public final class FireSignatureVfx {
         float birth = smooth01((t - 0.015f - u * 0.055f) / 0.13f);
         float breakup = waveBreakup(t);
         float energy = 1.0f - 0.72f * breakup * (0.25f + 0.75f * u);
-        float lipFall = 0.52f * breakup * breakup * u * u * u;
+        float lipFall = 0.85f * breakup * breakup * u * u * u;
         float profile = Mth.sin(u * 2.55f) * 1.72f * noise * birth * energy;
         return 0.10f + Math.max(0.0f, profile - lipFall);
     }
