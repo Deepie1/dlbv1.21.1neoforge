@@ -2683,6 +2683,10 @@ public final class WeaponWorldVfxManager {
      * braises projetées qui retombent, et un sol qui rougeoie. Aucune pile de blocs droits.
      */
     private static void impactFire(ImpactView v) {
+        if (v.inst().effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE) {
+            impactMoltenFireWave(v);
+            return;
+        }
         float t = v.t();
         float S = v.S();
         WeaponVisualEffectId fx = v.inst().effect;
@@ -2739,14 +2743,150 @@ public final class WeaponWorldVfxManager {
                             Math.round(v.fadeA() * (1.0f - 0.3f * u)));
                 }
             }
-        } else if (fx == WeaponVisualEffectId.MOLTEN_FIRE_WAVE) {
-            // NAPPE ARDENTE : le feu court AU SOL, deux coulées de lave s'écartent de la cible.
-            for (int d = 0; d < 2; d++) {
-                float side = (d == 0) ? 1.0f : -1.0f;
-                v.line(v.cx(), v.cy() - 0.44f, v.cz(),
-                        v.cx() + side * 1.90f * t * S, v.cy() - 0.44f,
-                        v.cz() + (v.hash(d * 7) - 0.5f) * 1.20f * S,
-                        0.045f * S, v.aRgb(), v.pRgb(), Math.round(v.fadeA() * 0.80f));
+        }
+    }
+
+    /**
+     * MOLTEN FIRE WAVE — une véritable déferlante de lave, et non la colonne de feu générique.
+     * La sculpture monte depuis le sol, avance vers la cible, enroule sa crête puis s'affaisse.
+     * La nappe au sol et les quelques projections naissent de cette même masse : aucune pluie de
+     * particules décorative ne vient brouiller la silhouette de la vague.
+     */
+    private static void impactMoltenFireWave(ImpactView v) {
+        float t = v.t();
+        float S = v.S();
+        float riseU = Mth.clamp(t / 0.48f, 0.0f, 1.0f);
+        float rise = riseU * riseU * (3.0f - 2.0f * riseU);
+        float curlU = Mth.clamp((t - 0.24f) / 0.44f, 0.0f, 1.0f);
+        float curl = curlU * curlU * (3.0f - 2.0f * curlU);
+        float collapseU = Mth.clamp((t - 0.68f) / 0.32f, 0.0f, 1.0f);
+        float collapse = collapseU * collapseU * (3.0f - 2.0f * collapseU);
+        float birthU = Mth.clamp(t / 0.18f, 0.0f, 1.0f);
+        float birth = birthU * birthU * (3.0f - 2.0f * birthU);
+        float sinkU = Mth.clamp((t - 0.76f) / 0.24f, 0.0f, 1.0f);
+        float sink = sinkU * sinkU * (3.0f - 2.0f * sinkU);
+        float envelope = birth * (1.0f - sink);
+        int effectA = Math.round(v.fadeA() * envelope);
+        // Hors sol au début comme à la fin : même à alpha nul, aucune géométrie ne dépasse.
+        float depthOffset = -((1.0f - birth) + sink) * 1.90f * S;
+
+        // 1) MASSE PRINCIPALE : une large muraille creusée sous sa lèvre. Elle se déplace dans
+        // l'axe de l'attaque pendant que son SDF fait monter, enrouler puis abaisser la crête.
+        float travel = (-0.30f + 1.45f * v.easeOut()) * S;
+        float wx = v.cx() + v.dirX() * travel;
+        float wz = v.cz() + v.dirZ() * travel;
+        float radius = (1.12f + 0.18f * rise) * S;
+        emitVoxelSculpt(v.vc(), v.mat(), v.tmp(), SCULPT_MOLTEN_WAVE,
+                wx, v.cy() + 0.20f * S + depthOffset, wz, radius, v.yawRad(), t,
+                v.deep(), v.pRgb(), v.high(), v.tip(), v.salt(),
+                Math.round(effectA * 0.98f), 1100);
+
+        // 2) CONTACT SOL : des dalles de lave s'ouvrent derrière le front, jamais deux simples
+        // lignes. Chaque dalle a une croûte sombre et un cœur chaud légèrement surélevé.
+        float lateralX = v.dirZ();
+        float lateralZ = -v.dirX();
+        float groundY = v.cy() - 0.48f * S + depthOffset;
+        for (int row = 0; row < 6; row++) {
+            float reveal = Mth.clamp((t - row * 0.055f) / 0.20f, 0.0f, 1.0f);
+            if (reveal <= 0.0f) continue;
+            float along = (-0.42f + row * 0.30f + 0.20f * v.easeOut()) * S;
+            for (int col = -3; col <= 3; col++) {
+                float h = v.hash(row * 41 + col * 17 + 100);
+                if (h < 0.16f && row > 1) continue;
+                float side = col * 0.245f * S;
+                float px = v.cx() + v.dirX() * along + lateralX * side;
+                float pz = v.cz() + v.dirZ() * along + lateralZ * side;
+                float hs = (0.105f + 0.025f * h) * S * reveal;
+                int crust = shadeRgb(v.sRgb(), 0.62f + 0.16f * h);
+                v.rot(px, groundY, pz, hs, 0.030f * S, hs * 0.90f,
+                        v.yawRad(), 0.0f, 0.0f, crust,
+                        Math.round(effectA * (0.72f + 0.20f * reveal)));
+                if ((row + col & 1) == 0) {
+                    v.box(px, groundY + 0.040f * S, pz,
+                            hs * 0.48f, 0.018f * S, hs * 0.62f,
+                            h > 0.72f ? v.aRgb() : v.pRgb(),
+                            Math.round(effectA * 0.88f * reveal));
+                }
+            }
+        }
+
+        // 3) SPLASH LIQUIDE : 35 parcels, pas des tiges de flamme. Chaque parcel part de la
+        // position historique de la crête, avec sa propre force. Les blobs soudés se séparent en
+        // gouttes, subissent la gravité puis fusionnent en une flaque lors du contact avec le sol.
+        float contactGround = v.cy() - 0.48f * S;
+        for (int p = 0; p < 35; p++) {
+            int lane = p % 7 - 3;
+            int burst = p / 7;
+            float h = v.hash(p * 37 + 300);
+            float launch = 0.24f + burst * 0.045f + h * 0.025f;
+            float age = t - launch;
+            if (age < 0.0f) continue;
+
+            float launchRiseU = Mth.clamp(launch / 0.48f, 0.0f, 1.0f);
+            float launchRise = launchRiseU * launchRiseU * (3.0f - 2.0f * launchRiseU);
+            float launchCurlU = Mth.clamp((launch - 0.24f) / 0.44f, 0.0f, 1.0f);
+            float launchCurl = launchCurlU * launchCurlU * (3.0f - 2.0f * launchCurlU);
+            float launchTravel = -0.30f + 1.45f * (1.0f - (1.0f - launch) * (1.0f - launch));
+            float launchForward = launchTravel + 0.52f + 0.54f * launchCurl;
+            float side = (lane * 0.24f + (v.hash(p * 17 + 8) - 0.5f) * 0.04f) * S;
+            float ox = v.cx() + v.dirX() * launchForward * S + lateralX * side;
+            float oy = v.cy() + (0.48f + 0.72f * launchRise) * S;
+            float oz = v.cz() + v.dirZ() * launchForward * S + lateralZ * side;
+
+            float force = 0.72f + 0.62f * h;
+            float vf = (1.00f + 1.25f * v.hash(p * 41 + 11)) * force * S;
+            float vy = (1.75f + 0.85f * v.hash(p * 43 + 19)) * force * S;
+            float vs = (lane * 0.055f + (v.hash(p * 47 + 23) - 0.5f) * 0.28f) * S;
+            float vx = v.dirX() * vf + lateralX * vs;
+            float vz = v.dirZ() * vf + lateralZ * vs;
+            float gravity = 6.60f * S;
+            float time = age * 1.90f;
+            float hitTime = (vy + Mth.sqrt(vy * vy + 2.0f * gravity * (oy - contactGround))) / gravity;
+
+            if (time >= hitTime) {
+                // Contact : expansion courte et aplatie, puis fusion visuelle avec les dalles.
+                float since = time - hitTime;
+                if (since > 0.16f) continue;
+                float px = ox + vx * hitTime;
+                float pz = oz + vz * hitTime;
+                float spread = 1.0f + since * 10.0f;
+                float hs = (0.055f + 0.025f * h) * S * spread;
+                int col = mixRgb(v.sRgb(), v.pRgb(), 0.45f + 0.30f * h);
+                v.box(px, contactGround + 0.018f * S, pz, hs, 0.015f * S, hs * 0.75f,
+                        col, Math.round(effectA * 0.55f * (1.0f - since / 0.16f)));
+                continue;
+            }
+
+            float breakup = Mth.clamp(age / 0.20f, 0.0f, 1.0f);
+            float px = ox + vx * time;
+            float py = oy + vy * time - 0.5f * gravity * time * time;
+            float pz = oz + vz * time;
+            float vyNow = vy - gravity * time;
+            float speed = Mth.sqrt(vx * vx + vyNow * vyNow + vz * vz);
+            float size = (0.040f + 0.022f * h + 0.030f * (1.0f - breakup)) * S;
+            float heat = (1.0f - breakup) * (0.55f + 0.35f * h);
+            int col = mixRgb(v.pRgb(), v.aRgb(), 0.15f + 0.65f * heat);
+            if (breakup > 0.65f) col = mixRgb(col, v.sRgb(), (breakup - 0.65f) * 0.80f);
+            float pulse = 0.94f + 0.06f * Mth.sin(frameTimeSeconds * 3.0f + px * 2.1f + py * 3.7f + pz * 2.9f);
+            col = shadeRgb(col, pulse);
+            int alpha = Math.round(effectA * (0.50f + 0.42f * h) * (1.0f - 0.25f * breakup));
+            float yaw = (float) Math.atan2(vx, vz);
+            float pitch = (float) Math.acos(Mth.clamp(vyNow / Math.max(0.001f, speed), -1.0f, 1.0f));
+            v.rot(px, py, pz, size, size * (1.05f + 0.25f * Math.abs(vyNow) / Math.max(0.01f, vy)),
+                    size * 0.95f, yaw, pitch, 0.0f, col, alpha);
+
+            // Satellite lié au blob au départ, puis séparation et refroidissement indépendants.
+            float invSpeed = 1.0f / Math.max(0.001f, speed);
+            float separation = size * (0.55f + 1.45f * breakup);
+            float satSize = size * (0.52f + 0.18f * h);
+            int satCol = mixRgb(col, v.sRgb(), 0.20f + 0.25f * breakup);
+            v.cube(px - vx * invSpeed * separation, py - vyNow * invSpeed * separation,
+                    pz - vz * invSpeed * separation, satSize, satCol,
+                    Math.round(alpha * (0.42f + 0.25f * (1.0f - breakup))));
+            if (h > 0.58f && breakup > 0.30f) {
+                v.cube(px + lateralX * size * breakup * 1.4f, py + size * 0.35f,
+                        pz + lateralZ * size * breakup * 1.4f, size * 0.38f,
+                        mixRgb(v.pRgb(), v.aRgb(), 0.30f), Math.round(alpha * 0.32f));
             }
         }
     }
@@ -3931,6 +4071,8 @@ public final class WeaponWorldVfxManager {
     private static final int SCULPT_BURST = 5;
     /** Sculpture : vrilles hélicoïdales enroulées (vent, maelström, ombre). */
     private static final int SCULPT_TWISTER = 6;
+    /** Sculpture : muraille de lave animée, large crête enroulée puis affaissée. */
+    private static final int SCULPT_MOLTEN_WAVE = 7;
 
     /** Grille maximale d'une sculpture (24³ = 13 824 échantillons, calculés une seule fois). */
     private static final int SCULPT_MAX_RES = 24;
@@ -3992,6 +4134,41 @@ public final class WeaponWorldVfxManager {
                 float d = Math.max(dmin, Math.abs(x) - w);
                 d = Math.max(d, Math.max(y - 1.02f, -y - 1.06f));
                 return d + (voxNoise(salt, x * 3.6f, y * 3.6f, z * 3.6f) - 0.5f) * 0.15f;
+            }
+            case SCULPT_MOLTEN_WAVE -> {
+                // La lave est large et lourde : une base épaisse porte une crête qui avance et
+                // retombe devant elle. Le vide sous la lèvre reste ouvert pour donner une silhouette
+                // de déferlante, y compris en miniature et sans lire le nom de l'effet.
+                float riseU = Mth.clamp(t / 0.48f, 0.0f, 1.0f);
+                float rise = riseU * riseU * (3.0f - 2.0f * riseU);
+                float curlU = Mth.clamp((t - 0.24f) / 0.44f, 0.0f, 1.0f);
+                float curl = curlU * curlU * (3.0f - 2.0f * curlU);
+                float collapseU = Mth.clamp((t - 0.68f) / 0.32f, 0.0f, 1.0f);
+                float collapse = collapseU * collapseU * (3.0f - 2.0f * collapseU);
+                float height = 0.16f + 0.84f * rise * (1.0f - 0.58f * collapse);
+                float crestY = -0.78f + 1.62f * height;
+                float backZ = 0.46f - 0.18f * rise;
+                float shoulderZ = 0.20f - 0.20f * curl;
+                float crestZ = -0.12f - 0.42f * curl;
+                float lipZ = crestZ - 0.32f - 0.28f * curl;
+                float lipY = crestY - (0.22f + 0.60f * curl + 0.35f * collapse);
+
+                float dmin = 1.0e9f;
+                dmin = Math.min(dmin, segDist2(z, y, backZ, -0.98f, backZ, -0.28f + 0.20f * rise) - 0.29f);
+                dmin = Math.min(dmin, segDist2(z, y, backZ, -0.28f + 0.20f * rise,
+                        shoulderZ, crestY - 0.36f) - 0.25f);
+                dmin = Math.min(dmin, segDist2(z, y, shoulderZ, crestY - 0.36f,
+                        crestZ, crestY) - 0.22f);
+                dmin = Math.min(dmin, segDist2(z, y, crestZ, crestY, lipZ, lipY) - 0.17f);
+                dmin = Math.min(dmin, segDist2(z, y, lipZ, lipY,
+                        lipZ + 0.08f, Math.max(-0.92f, lipY - 0.28f)) - 0.11f);
+                // Semelle large qui relie visuellement la vague aux dalles de lave au sol.
+                float base = Math.max(Math.abs(y + 0.88f) - 0.15f, Math.abs(z - 0.02f) - 0.64f);
+                dmin = Math.min(dmin, base);
+                float width = 0.84f - 0.16f * Mth.clamp((y + 1.0f) * 0.5f, 0.0f, 1.0f);
+                float d = Math.max(dmin, Math.abs(x) - width);
+                d = Math.max(d, Math.max(y - 1.04f, -y - 1.06f));
+                return d + (voxNoise(salt, x * 4.4f, y * 4.4f, z * 4.4f) - 0.5f) * 0.12f;
             }
             case SCULPT_ORB -> {
                 float rr = Mth.sqrt(x * x * 0.97f + y * y + z * z * 0.97f);
@@ -4147,6 +4324,34 @@ public final class WeaponWorldVfxManager {
         return n;
     }
 
+    /** Matière propre à MOLTEN_FIRE_WAVE : croûte sombre, plaques orange et fissures très chaudes. */
+    private static int moltenLavaRgb(float nx, float ny, float nz, float u, int salt,
+                                     int deep, int body, int high, int tip) {
+        float warp = voxNoise(salt + 0x1A7A, nx * 2.3f, ny * 2.3f, nz * 2.3f) - 0.5f;
+        float plates = voxNoise(salt + 0x1A73,
+                nx * 6.4f + warp * 1.8f, ny * 6.4f + nx * 0.6f, nz * 6.4f - warp * 1.8f);
+        float grain = voxNoise(salt + 0x51A9, nx * 15.0f, ny * 15.0f, nz * 15.0f);
+        float crack = Math.abs(plates - 0.5f);
+        int rgb;
+        if (crack < 0.075f) {
+            float heat = 1.0f - crack / 0.075f;
+            rgb = mixRgb(body, tip, 0.35f + 0.55f * heat);
+        } else if (plates > 0.61f) {
+            rgb = mixRgb(deep, body, 0.25f + 0.20f * grain);
+        } else if (plates < 0.39f) {
+            rgb = mixRgb(body, high, 0.42f + 0.30f * grain);
+        } else {
+            rgb = mixRgb(body, high, 0.20f + 0.40f * grain);
+        }
+        float crustMask = voxNoise(salt + 0xC057, nx * 3.8f, ny * 3.8f, nz * 3.8f);
+        if (crustMask > 0.64f && crack > 0.08f) {
+            rgb = mixRgb(rgb, mixRgb(deep, body, 0.18f), 0.55f);
+        }
+        // Jeu de lumière local : seule l'intensité respire, sans rotation de teinte ni scintillement.
+        float pulse = 0.94f + 0.06f * Mth.sin(frameTimeSeconds * 3.0f + nx * 5.1f + ny * 3.7f + nz * 4.3f);
+        return shadeRgb(rgb, pulse);
+    }
+
     /**
      * T366-VOXEL-SCULPT : émet une <b>vraie sculpture voxel</b> dense à cet endroit.
      *
@@ -4186,6 +4391,16 @@ public final class WeaponWorldVfxManager {
             fillSculpt(shape, res, t, salt, cyaw, syaw);
             skin = countSculptSkin(res);
         }
+        // La nouvelle vague de lave garantit aussi son budget APRÈS l'agrandissement automatique.
+        // Ce second contrôle est volontairement local à cette sculpture : aucune autre animation
+        // ne change de résolution ou de densité.
+        if (shape == SCULPT_MOLTEN_WAVE) {
+            while (skin > maxCubes && res > 8) {
+                res--;
+                fillSculpt(shape, res, t, salt, cyaw, syaw);
+                skin = countSculptSkin(res);
+            }
+        }
         if (skin <= 0) return 0;
 
         float step = 2.0f / res;
@@ -4205,7 +4420,11 @@ public final class WeaponWorldVfxManager {
                     // avec une nuance par voxel (la sculpture n'est jamais monochrome).
                     float u = Mth.clamp(0.42f + 0.62f * (ny * 0.5f + 0.5f) + 0.20f * sz, 0.0f, 1.0f);
                     int rgb = rampRgb(u, deep, body, high, tip);
-                    rgb = jitterRgb(rgb, voxSalt, 0.050f);
+                    if (shape == SCULPT_MOLTEN_WAVE) {
+                        rgb = moltenLavaRgb(nx, ny, nz, u, salt, deep, body, high, tip);
+                    } else {
+                        rgb = jitterRgb(rgb, voxSalt, 0.050f);
+                    }
 
 
                     if (pixelDensity < 0.999f && alpha < 200) {
