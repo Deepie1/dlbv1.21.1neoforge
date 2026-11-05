@@ -798,8 +798,9 @@ public final class FireSignatureVfx {
     }
 
     private static float waveTravel(float t) {
-        // Six blocs de translation positive : front = -2 .. +4, avec hauteur du terrain à chaque maille.
-        return -2.0f + 6.0f * t;
+        // Neuf blocs de translation positive : front = -2 .. +7, terrain suivi à chaque maille.
+        // Sur 92 ticks au lieu de 112, l'avance est environ 1,83 fois plus rapide qu'avant.
+        return -2.0f + 9.0f * t;
     }
 
     private static float waveBreakup(float t) {

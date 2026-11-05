@@ -630,7 +630,7 @@ public final class DlbVfxCommand {
         DEMOS.remove(player.getUUID());
         DUMMY_TESTS.remove(player.getUUID());
 
-        // Replace même une cible existante exactement devant le joueur sans désactiver son IA.
+        // Replace la cible devant le joueur et la fige pour que chaque coup soit facile à placer.
         Vec3 look = player.getLookAngle();
         Vec3 flat = new Vec3(look.x, 0.0, look.z);
         if (flat.lengthSqr() < 1.0e-4) flat = new Vec3(0.0, 0.0, 1.0);
@@ -644,7 +644,10 @@ public final class DlbVfxCommand {
                 player.getYRot() + 180.0f, 0.0f);
         dummy.setDeltaMovement(Vec3.ZERO);
         dummy.fallDistance = 0.0f;
-        if (dummy instanceof Mob mob) mob.setNoAi(false);
+        if (dummy instanceof Mob mob) {
+            mob.setNoAi(true);
+            mob.setTarget(null);
+        }
 
         DummyTestState st = new DummyTestState();
         st.dummy = dummy;
@@ -1062,9 +1065,13 @@ public final class DlbVfxCommand {
         if (!existing.isEmpty()) {
             existing.sort((a, b) -> Double.compare(a.distanceToSqr(player), b.distanceToSqr(player)));
             LivingEntity dummy = existing.get(0);
-            // Répare aussi les cibles créées par les anciennes versions (NoAi + Silent persistants).
+            // Répare aussi les anciennes cibles : immobiles pour le test, jamais silencieuses.
             dummy.setSilent(false);
-            if (dummy instanceof Mob mob) mob.setNoAi(false);
+            if (dummy instanceof Mob mob) {
+                mob.setNoAi(true);
+                mob.setTarget(null);
+            }
+            dummy.setDeltaMovement(Vec3.ZERO);
             return dummy;
         }
 
@@ -1089,8 +1096,9 @@ public final class DlbVfxCommand {
         double x = player.getX() + look.x * dist;
         double z = player.getZ() + look.z * dist;
         mob.moveTo(x, player.getY(), z, player.getYRot() + 180.0f, 0.0f);
-        // La cible conserve ses réactions vanilla : IA, gravité et bruits de hurt restent actifs.
-        mob.setNoAi(false);
+        // NoAi fige les déplacements autonomes, mais n'empêche ni les dégâts ni les bruits vanilla.
+        mob.setNoAi(true);
+        mob.setTarget(null);
         mob.setSilent(false);
         mob.setPersistenceRequired();
         mob.setCustomName(Component.literal("§bDLB §7· Cible VFX"));

@@ -18,11 +18,17 @@ import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.MaceItem;
 import net.minecraft.world.item.ProjectileWeaponItem;
+import net.minecraft.world.item.SwordItem;
+import net.minecraft.world.item.TieredItem;
+import net.minecraft.world.item.TridentItem;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -70,6 +76,10 @@ public final class WeaponWorldVfxManager {
     private static final List<FloatingPixel> PIXEL_PARTICLES = new ArrayList<>(1400);
     private static final Map<Integer, TrackedProjectile> TRACKED_PROJECTILES = new HashMap<>(32);
 
+    // Déclenchement originel des entailles (T342, commit 4d4182e) : au swing, pas au contact.
+    private static final List<PendingEcho> PENDING_ECHOES = new ArrayList<>(16);
+    private static final Map<Integer, Boolean> PLAYER_WAS_SWINGING = new HashMap<>(16);
+    private static final Map<Integer, Integer> PLAYER_SWING_PARITY = new HashMap<>(16);
     private static final Map<Integer, Boolean> PLAYER_WAS_DRAWING = new HashMap<>(16);
     private static final Map<Integer, Boolean> PLAYER_WAS_CB_CHARGED = new HashMap<>(16);
 
@@ -216,6 +226,16 @@ public final class WeaponWorldVfxManager {
             this.maxAge = Math.max(4, maxAge);
             this.detailSalt = detailSalt;
         }
+    }
+
+    /** Seconde lame différée de TWIN_ECHO_SLASH, reprise de l'implémentation originelle. */
+    private static final class PendingEcho {
+        int ticksLeft;
+        WeaponVisualEffectId effect;
+        int intensity;
+        double x, y, z;
+        float yaw, pitch, tiltRad;
+        int paletteMask;
     }
 
     private static final class VfxInstance {
@@ -471,7 +491,7 @@ public final class WeaponWorldVfxManager {
             case ZEPHYR_WIND_LANCE -> 80;
             case THORN_MAW_ROOT -> 96;
             case VERDANT_SAP_BLOOM -> 96;
-            case MOLTEN_FIRE_WAVE -> 112;
+            case MOLTEN_FIRE_WAVE -> 92;
             case SOUL_FIRE_CRESCENT -> 112;
             case BRIMSTONE_METEOR -> 128;
             case SERAPH_SKY_PILLAR, ABYSSAL_MAELSTROM, WARLORD_RALLY_SIGIL,
@@ -1146,6 +1166,8 @@ public final class WeaponWorldVfxManager {
             ACTIVE.clear();
             PIXEL_PARTICLES.clear();
             TRACKED_PROJECTILES.clear();
+            PENDING_ECHOES.clear();
+            PLAYER_WAS_SWINGING.clear();
             trackedLevel = null;
             return;
         }
@@ -1157,6 +1179,8 @@ public final class WeaponWorldVfxManager {
             ACTIVE.clear();
             PIXEL_PARTICLES.clear();
             TRACKED_PROJECTILES.clear();
+            PENDING_ECHOES.clear();
+            PLAYER_WAS_SWINGING.clear();
         }
         DeepEnchant.rememberClientAccess(level.registryAccess());
         FireSignatureVfx.beginTerrainTick(level);
@@ -1187,6 +1211,19 @@ public final class WeaponWorldVfxManager {
                             inst.z + fireDz * waveShift, fireDx, fireDz,
                             inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE ? 1.0f : inst.sizeScale);
                 }
+            }
+        }
+
+        // Déclenche les entailles d'écho différées (#04 TWIN_ECHO_SLASH), comme dans T342.
+        for (Iterator<PendingEcho> it = PENDING_ECHOES.iterator(); it.hasNext(); ) {
+            PendingEcho pe = it.next();
+            pe.ticksLeft--;
+            if (pe.ticksLeft <= 0) {
+                pushInstance(new VfxInstance(
+                        pe.effect, KIND_SWING_SLASH, pe.intensity,
+                        pe.x, pe.y, pe.z, pe.x, pe.y, pe.z,
+                        pe.yaw, pe.pitch, -pe.tiltRad, 8, System.nanoTime(), pe.paletteMask));
+                it.remove();
             }
         }
 
@@ -1258,7 +1295,14 @@ public final class WeaponWorldVfxManager {
             if (!p.isAlive() || p.isSpectator()) continue;
             if (p != viewer && p.distanceToSqr(viewer) > 32.0 * 32.0) continue;
 
-            // Aucun tirage local de slash : seul le jet serveur 77/20/3 déclenche la mêlée.
+            // T342 originel : détecte le début du swing, y compris dans l'air, sans attendre un
+            // LivingIncomingDamageEvent. Le rayon part donc de l'arme au moment du geste.
+            boolean swinging = p.swinging && p.swingTime <= 2;
+            boolean previousSwing = PLAYER_WAS_SWINGING.getOrDefault(p.getId(), false);
+            PLAYER_WAS_SWINGING.put(p.getId(), p.swinging);
+            if (swinging && !previousSwing) {
+                onPlayerWeaponSwing(p);
+            }
 
             // Détection relâchement d'arc ou tir d'arbalète -> salve de mini-pixels 3D devant l'arme !
             ItemStack main = p.getMainHandItem();
@@ -1293,6 +1337,97 @@ public final class WeaponWorldVfxManager {
         WeaponVisualEffectId fx = layers.get(0).effect();
         spawnMiniPixelBurst(fx, mx, my, mz, 10, 0.030f, 0.12,
                 WeaponVisualEffectId.elementMaskOf(ranged));
+    }
+
+    /**
+     * Déclencheur originel restauré depuis le commit GitHub 4d4182e (T342).
+     * L'arc naît devant les yeux, orienté par le regard, et reste hors de la cible : il n'est
+     * jamais téléporté vers le torse du mob. Les épées /anim réutilisent ce même swing visuel.
+     */
+    private static void onPlayerWeaponSwing(Player p) {
+        InteractionHand hand = p.swingingArm == null ? InteractionHand.MAIN_HAND : p.swingingArm;
+        ItemStack stack = p.getItemInHand(hand);
+        if (!isMeleeSlashWeapon(stack)) return;
+
+        List<WeaponVisualEffectId.ResolvedLayer> layers = WeaponVisualEffectId.resolveLayers(stack, 2);
+        String animFamily = null;
+        var tag = deepluckyblock.util.DeepNbt.tag(stack);
+        if (tag != null) {
+            String candidate = tag.getString("DlbAnimFamily");
+            if (candidate.equals("feu") || candidate.equals("gaia")) animFamily = candidate;
+        }
+        if (layers.isEmpty() && animFamily == null) return;
+
+        int parity = PLAYER_SWING_PARITY.merge(p.getId(), 1, Integer::sum);
+        float baseTilt = ((parity & 1) == 0) ? 0.36f : -0.34f;
+        Vec3 eye = p.getEyePosition();
+        Vec3 look = p.getLookAngle();
+        double ox = eye.x + look.x * 0.55;
+        double oy = eye.y - 0.16 + look.y * 0.35;
+        double oz = eye.z + look.z * 0.55;
+        int arcCount = animFamily == null ? 1 : 1 + p.level().random.nextInt(3);
+
+        for (int arc = 0; arc < arcCount; arc++) {
+            WeaponVisualEffectId.ResolvedLayer primary = layers.isEmpty() ? null : layers.get(0);
+            WeaponVisualEffectId fx = primary != null ? primary.effect()
+                    : animationSlashEffect(animFamily, p.level().random.nextInt(3));
+            int intensity = primary != null ? primary.level() : 6;
+            int paletteMask = WeaponVisualEffectId.elementMaskOf(stack);
+            if (paletteMask == 0) paletteMask = 1 << fx.element().ordinal();
+            int duration = (fx == WeaponVisualEffectId.ANNIHILATING_ARC
+                    || fx == WeaponVisualEffectId.CARNAGE_BERSERK) ? 11 : 8;
+            float tilt = (fx == WeaponVisualEffectId.GUILLOTINE_CLEAVE) ? 1.48f
+                    : baseTilt + (animFamily == null ? 0.0f : (arc - (arcCount - 1) * 0.5f) * 0.20f);
+
+            pushInstance(new VfxInstance(
+                    fx, KIND_SWING_SLASH, intensity,
+                    ox, oy, oz, ox + look.x * 3.2, oy + look.y * 3.2, oz + look.z * 3.2,
+                    p.getYRot(), p.getXRot(), tilt, duration, System.nanoTime(), paletteMask));
+        }
+
+        if (layers.isEmpty()) return;
+        WeaponVisualEffectId primaryEffect = layers.get(0).effect();
+        boolean hasEcho = primaryEffect == WeaponVisualEffectId.TWIN_ECHO_SLASH
+                || (layers.size() > 1 && layers.get(1).effect() == WeaponVisualEffectId.TWIN_ECHO_SLASH);
+        if (hasEcho && PENDING_ECHOES.size() < 16) {
+            PendingEcho pe = new PendingEcho();
+            pe.ticksLeft = 4;
+            pe.effect = WeaponVisualEffectId.TWIN_ECHO_SLASH;
+            pe.intensity = layers.get(0).level();
+            pe.x = ox;
+            pe.y = oy;
+            pe.z = oz;
+            pe.yaw = p.getYRot();
+            pe.pitch = p.getXRot();
+            pe.tiltRad = baseTilt;
+            pe.paletteMask = WeaponVisualEffectId.elementMaskOf(stack);
+            PENDING_ECHOES.add(pe);
+        }
+    }
+
+    private static WeaponVisualEffectId animationSlashEffect(String family, int index) {
+        if (family.equals("feu")) {
+            return switch (index) {
+                case 0 -> WeaponVisualEffectId.MOLTEN_FIRE_WAVE;
+                case 1 -> WeaponVisualEffectId.SOUL_FIRE_CRESCENT;
+                default -> WeaponVisualEffectId.BRIMSTONE_METEOR;
+            };
+        }
+        return switch (index) {
+            case 0 -> WeaponVisualEffectId.ZEPHYR_WIND_LANCE;
+            case 1 -> WeaponVisualEffectId.THORN_MAW_ROOT;
+            default -> WeaponVisualEffectId.VERDANT_SAP_BLOOM;
+        };
+    }
+
+    private static boolean isMeleeSlashWeapon(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        var item = stack.getItem();
+        if (item instanceof SwordItem || item instanceof AxeItem
+                || item instanceof TridentItem || item instanceof MaceItem) {
+            return true;
+        }
+        return item instanceof TieredItem && WeaponVisualEffectId.isWeaponItem(stack);
     }
 
     /** Budget de cubes par batch : évite de saturer le ByteBufferBuilder partagé de renderBuffers(). */
@@ -1494,15 +1629,11 @@ public final class WeaponWorldVfxManager {
 
     private static void renderVoxelSwingSlash(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                               Vec3 cam, VfxInstance inst, float t) {
-        // Le slash est un projectile de lame : naissance à l'épée puis translation à vitesse
-        // constante vers la cible. Ne jamais recentrer ce pivot sur le torse du mob.
-        float rx = (float) (Mth.lerp(t, inst.x, inst.tx) - cam.x);
-        float ry = (float) (Mth.lerp(t, inst.y, inst.ty) - cam.y);
-        float rz = (float) (Mth.lerp(t, inst.z, inst.tz) - cam.z);
-        // La scale propre à l'arc suit elle aussi son centre déplacé.
-        mobPivotX = rx;
-        mobPivotY = ry;
-        mobPivotZ = rz;
+        // Emplacement originel T342 : l'arc balaie devant l'arme, à son point de naissance.
+        // Ne jamais l'interpoler vers (tx,ty,tz) : cela l'enfouit dans le mob au lieu de le montrer.
+        float rx = (float) (inst.x - cam.x);
+        float ry = (float) (inst.y - cam.y);
+        float rz = (float) (inst.z - cam.z);
 
         // T361-MOTIONS-UNIQUES : chaque enchantement a SA trajectoire (22 familles de mouvement).
         // Deux attaques ne se ressemblent plus, même à couleur identique : l'une balaie, l'autre

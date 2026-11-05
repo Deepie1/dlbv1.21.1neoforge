@@ -461,7 +461,7 @@ public final class WeaponVfxServerListener {
         scheduleFireSoundtrack(sl, attacker, target, fx, scheduleTick);
 
         // La fin de chorégraphie réapplique exactement quatre secondes de feu à la cible.
-        int duration = meteor ? 128 : 112;
+        int duration = meteor ? 128 : (molten ? 92 : 112);
         TestProcedure.schedule(sl, scheduleTick + duration, () -> {
             if (!target.isAlive() || target.level() != sl) return;
             if (soul) igniteSoulForFourSeconds(target);
@@ -558,7 +558,7 @@ public final class WeaponVfxServerListener {
                 primaryTarget.getZ() + dirZ * shift, dirX, dirZ);
     }
 
-    /** Corridor de six blocs : front = -2 .. +4, largeur = trois blocs. */
+    /** Corridor de neuf blocs : front = -2 .. +7, largeur = trois blocs, durée = 92 ticks. */
     private static void scheduleWaveIgnition(ServerLevel sl, LivingEntity attacker,
                                              LivingEntity primaryTarget, int now, float weaponDamage) {
         WaveOrigin origin = waveOrigin(attacker, primaryTarget);
@@ -568,8 +568,8 @@ public final class WeaponVfxServerListener {
         int primaryId = primaryTarget.getId();
 
         // Un contact toutes les 0,35 s, tant que le corps reste dans le rouleau animé et sa queue.
-        for (int delay = 7; delay <= 105; delay += 7) {
-            double front = -2.0 + 6.0 * (delay / 112.0);
+        for (int delay = 7; delay <= 91; delay += 7) {
+            double front = -2.0 + 9.0 * (delay / 92.0);
             TestProcedure.schedule(sl, now + delay, () -> {
                 double centerX = originX + dirX * (front - 0.65);
                 double centerZ = originZ + dirZ * (front - 0.65);
@@ -646,9 +646,9 @@ public final class WeaponVfxServerListener {
                                                LivingEntity target, WeaponVisualEffectId fx, int now) {
         if (fx == WeaponVisualEffectId.MOLTEN_FIRE_WAVE) {
             WaveOrigin origin = waveOrigin(attacker, target);
-            int[] lavaTicks = {0, 20, 40, 60, 80, 100};
+            int[] lavaTicks = {0, 16, 32, 48, 64, 80};
             for (int delay : lavaTicks) {
-                double front = -2.0 + 6.0 * (delay / 112.0);
+                double front = -2.0 + 9.0 * (delay / 92.0);
                 double x = origin.x() + origin.dirX() * front;
                 double z = origin.z() + origin.dirZ() * front;
                 TestProcedure.schedule(sl, now + delay, () -> sl.playSound(null, x, origin.y(), z,
@@ -656,7 +656,7 @@ public final class WeaponVfxServerListener {
             }
             TestProcedure.schedule(sl, now, () -> sl.playSound(null, target.getX(), target.getY(), target.getZ(),
                     SoundEvents.FIRE_AMBIENT, SoundSource.PLAYERS, 0.58f, 1.25f));
-            TestProcedure.schedule(sl, now + 100, () -> sl.playSound(null,
+            TestProcedure.schedule(sl, now + 86, () -> sl.playSound(null,
                     target.getX(), target.getY(), target.getZ(),
                     SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.72f, 1.10f));
             return;
@@ -979,28 +979,9 @@ public final class WeaponVfxServerListener {
             return;
         }
 
-        double dx = tx - ax, dz = tz - az;
-        double length = Math.sqrt(dx * dx + dz * dz);
-        if (length < 0.001) { dx = 1.0; dz = 0.0; length = 1.0; }
-        double dirX = dx / length, dirZ = dz / length;
-        double sideX = -dirZ, sideZ = dirX;
-        int count = 1 + sl.random.nextInt(3);
-        for (int arc = 0; arc < count; arc++) {
-            WeaponVisualEffectId fx = pool[sl.random.nextInt(pool.length)];
-            float slashLength = 2.0f + sl.random.nextFloat() * 3.0f;
-            float spacing = (sl.random.nextFloat() - 0.5f) * 0.90f;
-            float contact = (sl.random.nextFloat() - 0.5f) * 0.65f;
-            float scale = 0.75f + sl.random.nextFloat() * 0.75f;
-            float fromX = (float) (ax + dirX * 0.55 + sideX * spacing);
-            float fromY = ay + (sl.random.nextFloat() - 0.5f) * 0.35f;
-            float fromZ = (float) (az + dirZ * 0.55 + sideZ * spacing);
-            float endX = (float) (ax + dirX * slashLength + sideX * contact);
-            float endY = ty + (sl.random.nextFloat() - 0.5f) * target.getBbHeight() * 0.35f;
-            float endZ = (float) (az + dirZ * slashLength + sideZ * contact);
-            broadcastNear(sl, fromX, fromY, fromZ, fx.id, KIND_SWING_SLASH,
-                    2 + sl.random.nextInt(7), fromX, fromY, fromZ, endX, endY, endZ,
-                    1 << fx.element.ordinal(), scale);
-        }
+        // Les 1 à 3 arcs sont produits au swing par le déclencheur client originel T342,
+        // y compris dans le vide. Ne pas en renvoyer ici au contact : cela les doublait et
+        // donnait l'impression que le slash dépendait uniquement de la cible touchée.
         event.setAmount(event.getAmount() * MELEE_SLASH_DAMAGE_MULTIPLIER);
     }
 
@@ -1028,8 +1009,8 @@ public final class WeaponVfxServerListener {
 
         if (roll <= MELEE_SLASH_MAX_ROLL) {
             event.setAmount(event.getAmount() * MELEE_SLASH_DAMAGE_MULTIPLIER);
-            broadcastNear(sl, ax, ay, az, fx.id, KIND_SWING_SLASH, layer.level(),
-                    ax, ay, az, tx, ty, tz, palette);
+            // Le visuel est déclenché au swing par le geste originel du joueur, pas par ce
+            // événement de dégâts : il reste donc identique sur un mob et dans le vide.
             return;
         }
 
