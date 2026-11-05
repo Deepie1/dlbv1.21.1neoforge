@@ -731,9 +731,9 @@ public final class WeaponVfxServerListener {
                     hurtWithCapturedWeapon(sl, attackerId, target, weaponDamage * randomPart);
                 });
             }
-            sl.playSound(null, x, y, z, SoundEvents.WOOD_BREAK.value(), SoundSource.PLAYERS, 0.72f, 0.72f);
+            sl.playSound(null, x, y, z, SoundEvents.WOOD_BREAK, SoundSource.PLAYERS, 0.72f, 0.72f);
             TestProcedure.schedule(sl, now + 20, () -> sl.playSound(null, x, y, z,
-                    SoundEvents.GRASS_BREAK.value(), SoundSource.PLAYERS, 0.58f, 0.82f));
+                    SoundEvents.GRASS_BREAK, SoundSource.PLAYERS, 0.58f, 0.82f));
             return;
         }
         if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) {
