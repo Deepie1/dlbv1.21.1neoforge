@@ -20,6 +20,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.CrossbowItem;
@@ -29,6 +30,7 @@ import net.minecraft.world.item.ProjectileWeaponItem;
 import net.minecraft.world.item.SwordItem;
 import net.minecraft.world.item.TieredItem;
 import net.minecraft.world.item.TridentItem;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -71,6 +73,8 @@ public final class WeaponWorldVfxManager {
     public static final int KIND_BEAM_SIPHON       = 2;
     public static final int KIND_PROJECTILE_ATTACH = 3;
     public static final int KIND_METEOR_TRACK = 4;
+    public static final int KIND_MIASMA_DEFENSE = 5;
+    public static final int KIND_PLAGUE_CONTAGION = 6;
 
     private static final List<VfxInstance> ACTIVE = new ArrayList<>(144);
     private static final List<FloatingPixel> PIXEL_PARTICLES = new ArrayList<>(1400);
@@ -255,6 +259,9 @@ public final class WeaponWorldVfxManager {
         final float sizeScale;
         int age;
         int homingTargetId = -1;
+        int followEntityId = 0;
+        boolean followInitialized;
+        double dragX, dragZ;
 
         /** Couleur primaire de l'effet ou d'une famille sélectionnée dans la palette de l'arme. */
         int primary() {
@@ -486,7 +493,8 @@ public final class WeaponWorldVfxManager {
             return;
         }
 
-        int duration = switch (fx) {
+        int duration = kind == KIND_MIASMA_DEFENSE ? 20
+                : kind == KIND_PLAGUE_CONTAGION ? 48 : switch (fx) {
             // Chorégraphies Wood complètes : croissance, impacts, stun et explosion de sève.
             case ZEPHYR_WIND_LANCE -> 80;
             case THORN_MAW_ROOT -> 96;
@@ -498,9 +506,9 @@ public final class WeaponWorldVfxManager {
                  DRAGON_CHAOS_PRISM, BIG_BANG_SCAR -> 22;
             case SANDSTORM_DUNE, ECLIPSE_VEIL, NULL_RIFT_FISSURE,
                  CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE -> 18;
-            case VENOM_BRIAR_FANG -> 88;
-            case MIASMA_SHROUD -> 112;
-            case PLAGUE_NOVA -> 96;
+            case VENOM_BRIAR_FANG -> 112;
+            case MIASMA_SHROUD -> 140;
+            case PLAGUE_NOVA -> 128;
             case ASTRAL_STAR_LANCE, VOID_WARP_SPHERE, SEISMIC_TECTONIC,
                  CRIMSON_SIPHON, CHRONO_ETERNAL_HALO, ANNIHILATING_ARC -> 16;
             case CHAIN_VOLT_ARC -> 11;
@@ -511,8 +519,17 @@ public final class WeaponWorldVfxManager {
         float dz = tz - z;
         float yaw = (float) (Mth.atan2(dz, dx) * (180.0 / Math.PI)) - 90.0f;
         long seed = Double.doubleToLongBits(x * 31.0 + y * 17.0 + z * 13.0) ^ System.nanoTime();
-        pushInstance(new VfxInstance(fx, kind, intensity, x, y, z, tx, ty, tz, yaw, 0.0f, 0.25f,
-                duration, seed, paletteMask, sizeScale));
+        // Miasma défend le lanceur et Plague charge dans SON torse, pas dans le corps de la cible.
+        if (kind == KIND_IMPACT && (fx == WeaponVisualEffectId.MIASMA_SHROUD
+                || fx == WeaponVisualEffectId.PLAGUE_NOVA)) {
+            x = tx;
+            y = ty - 0.12;
+            z = tz;
+        }
+        VfxInstance instance = new VfxInstance(fx, kind, intensity, x, y, z, tx, ty, tz,
+                yaw, 0.0f, 0.25f, duration, seed, paletteMask, sizeScale);
+        if (kind == KIND_PLAGUE_CONTAGION) instance.homingTargetId = Math.round(tx);
+        pushInstance(instance);
 
         // Un paquet de slash ne programme aucun second slash différé : un coup = un arc principal.
 
@@ -524,6 +541,52 @@ public final class WeaponWorldVfxManager {
                 && fx.element() != DeepElement.POISON) {
             spawnMiniPixelBurst(fx, x, y, z, burstCount, cubeHalf, 0.18, paletteMask);
         }
+    }
+
+    /** Miasma suit son porteur avec inertie ; Plague se fige au snap ; la contagion suit sa cible. */
+    private static void updatePoisonFollow(ClientLevel level, VfxInstance inst) {
+        if (inst.kind == KIND_PLAGUE_CONTAGION) {
+            if (level.getEntity(inst.homingTargetId) instanceof LivingEntity living) {
+                inst.x = living.getX();
+                inst.y = living.getY() + living.getBbHeight() * 0.50;
+                inst.z = living.getZ();
+            }
+            return;
+        }
+        if (inst.kind != KIND_IMPACT || (inst.effect != WeaponVisualEffectId.MIASMA_SHROUD
+                && inst.effect != WeaponVisualEffectId.PLAGUE_NOVA)) return;
+        if (inst.effect == WeaponVisualEffectId.PLAGUE_NOVA && inst.age >= 30) {
+            inst.dragX = 0.0;
+            inst.dragZ = 0.0;
+            return;
+        }
+        if (inst.followEntityId <= 0) {
+            AABB search = new AABB(inst.tx - 2.5, inst.ty - 2.0, inst.tz - 2.5,
+                    inst.tx + 2.5, inst.ty + 2.0, inst.tz + 2.5);
+            double best = 12.0;
+            LivingEntity nearest = null;
+            for (LivingEntity living : level.getEntitiesOfClass(LivingEntity.class, search)) {
+                double distance = living.distanceToSqr(inst.tx, inst.ty, inst.tz);
+                if (distance < best) { best = distance; nearest = living; }
+            }
+            if (nearest != null) inst.followEntityId = nearest.getId();
+        }
+        if (inst.followEntityId <= 0
+                || !(level.getEntity(inst.followEntityId) instanceof LivingEntity living)) return;
+        double targetX = living.getX();
+        double targetY = living.getY() + living.getBbHeight() * 0.50;
+        double targetZ = living.getZ();
+        if (!inst.followInitialized) {
+            inst.x = targetX; inst.y = targetY; inst.z = targetZ;
+            inst.followInitialized = true;
+        } else {
+            float catchup = inst.effect == WeaponVisualEffectId.MIASMA_SHROUD ? 0.24f : 0.48f;
+            inst.x = Mth.lerp(catchup, inst.x, targetX);
+            inst.y = Mth.lerp(catchup, inst.y, targetY);
+            inst.z = Mth.lerp(catchup, inst.z, targetZ);
+        }
+        inst.dragX = inst.x - targetX;
+        inst.dragZ = inst.z - targetZ;
     }
 
     private static void updateMeteorTracking(int targetId, float x, float y, float z) {
@@ -1187,13 +1250,18 @@ public final class WeaponWorldVfxManager {
         }
         DeepEnchant.rememberClientAccess(level.registryAccess());
         FireSignatureVfx.beginTerrainTick(level);
+        PoisonSignatureVfx.beginTerrainTick(level);
 
         for (Iterator<VfxInstance> it = ACTIVE.iterator(); it.hasNext(); ) {
             VfxInstance inst = it.next();
             inst.age++;
+            updatePoisonFollow(level, inst);
             if (inst.age >= inst.maxAge) {
                 it.remove();
                 continue;
+            }
+            if (inst.kind == KIND_IMPACT && inst.effect.element() == DeepElement.POISON) {
+                PoisonSignatureVfx.prepareTerrain(level, inst.x, inst.y, inst.z, inst.sizeScale);
             }
             if (inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE
                     || inst.effect == WeaponVisualEffectId.SOUL_FIRE_CRESCENT
@@ -1572,8 +1640,10 @@ public final class WeaponWorldVfxManager {
             }
 
             // T350-VFX-VARIATIONS : chaque déclinaison a sa densité de pixels et sa taille.
-            pixelDensity = inst.variantEntry.density();
-            variantScale = inst.variantEntry.scale();
+            boolean detailedPoison = inst.effect.element() == DeepElement.POISON
+                    && inst.kind != KIND_SWING_SLASH;
+            pixelDensity = detailedPoison ? 1.0f : inst.variantEntry.density();
+            variantScale = detailedPoison ? 1.0f : inst.variantEntry.scale();
             // T359-BIG-ANIM-SCALE : échelle propre à l'instance (taille du mob touché).
             // Molten garde son corridor monde verrouillé : le scale des voxels est local à sa maille.
             mobScale = inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE ? 1.0f : inst.sizeScale;
@@ -3236,14 +3306,35 @@ public final class WeaponWorldVfxManager {
         }
     }
 
-    /** POISON : trois signatures longues, dirigées par leur titre plutôt que par un socle commun. */
+    /** POISON : signatures suivies, réactives et adaptées aux colliders du niveau. */
     private static void impactPoison(ImpactView v) {
         WeaponVisualEffectId fx = v.inst().effect;
-        int variant = fx == WeaponVisualEffectId.VENOM_BRIAR_FANG ? PoisonSignatureVfx.VENOM
-                : fx == WeaponVisualEffectId.MIASMA_SHROUD ? PoisonSignatureVfx.MIASMA
-                : PoisonSignatureVfx.PLAGUE;
-        PoisonSignatureVfx.render(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), v.t(),
-                v.dirX(), v.dirZ(), variant, v.fadeA(), v.salt());
+        int stableSalt = (int) (v.inst().seed & 0x7FFFFFFFL);
+        boolean previousPulse = voxelPulseEnabled;
+        voxelPulseEnabled = false;
+        try {
+            if (v.inst().kind == KIND_MIASMA_DEFENSE) {
+                PoisonSignatureVfx.renderDefensePulse(v.vc(), v.mat(), v.tmp(),
+                        v.cx(), v.cy(), v.cz(), v.t(), v.dirX(), v.dirZ(), 245, stableSalt);
+                return;
+            }
+            if (v.inst().kind == KIND_PLAGUE_CONTAGION) {
+                PoisonSignatureVfx.renderContagion(v.vc(), v.mat(), v.tmp(),
+                        v.cx(), v.cy(), v.cz(), v.t(), 245, stableSalt);
+                return;
+            }
+            int variant = fx == WeaponVisualEffectId.VENOM_BRIAR_FANG ? PoisonSignatureVfx.VENOM
+                    : fx == WeaponVisualEffectId.MIASMA_SHROUD ? PoisonSignatureVfx.MIASMA
+                    : PoisonSignatureVfx.PLAGUE;
+            PoisonSignatureVfx.render(Minecraft.getInstance().level,
+                    v.inst().x, v.inst().y, v.inst().z,
+                    v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), v.t(),
+                    v.dirX(), v.dirZ(), variant, v.inst().intensity,
+                    (float) v.inst().dragX, (float) v.inst().dragZ, v.inst().sizeScale,
+                    245, stableSalt);
+        } finally {
+            voxelPulseEnabled = previousPulse;
+        }
     }
 
     /**

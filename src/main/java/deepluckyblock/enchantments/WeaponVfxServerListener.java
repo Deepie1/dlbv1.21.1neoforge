@@ -61,6 +61,8 @@ public final class WeaponVfxServerListener {
     public static final int KIND_BEAM_SIPHON       = 2;
     public static final int KIND_PROJECTILE_ATTACH = 3;
     public static final int KIND_METEOR_TRACK = 4;
+    public static final int KIND_MIASMA_DEFENSE = 5;
+    public static final int KIND_PLAGUE_CONTAGION = 6;
 
     private static final Map<Integer, Long> LAST_ATTACKER_HIT_TICK = new ConcurrentHashMap<>();
     private static final Map<Integer, Long> LAST_PROJECTILE_HIT_TICK = new ConcurrentHashMap<>();
@@ -80,6 +82,8 @@ public final class WeaponVfxServerListener {
     private static final Map<Integer, Boolean> SIGNATURE_BASELINE_NO_AI = new ConcurrentHashMap<>();
     /** Combustion Soul réelle : 80 ticks de flammes bleues et de dégâts périodiques. */
     private static final Map<Integer, SoulBurn> SOUL_BURNS = new ConcurrentHashMap<>();
+    /** Porteurs du shroud : les hits reçus pendant cette fenêtre déclenchent sa réaction visuelle. */
+    private static final Map<Integer, Long> MIASMA_SHIELDS = new ConcurrentHashMap<>();
     private static final int SIGNATURE_FIRE_TICKS = 80;
     private static final int METEOR_AOE_FIRE_TICKS = 60;
     private static final int METEOR_IMPACT_TICKS = 30;
@@ -719,7 +723,7 @@ public final class WeaponVfxServerListener {
         target.fallDistance = 0.0f;
     }
 
-    /** Gameplay Poison synchronisé avec la morsure, le passage du miasme et l'impulsion de nova. */
+    /** Gameplay Poison synchronisé avec la perforation, le shroud et le front de contagion. */
     private static void applyPoisonGameplay(LivingEntity attacker, LivingEntity target,
                                             WeaponVisualEffectId fx) {
         if (target == null || !(target.level() instanceof ServerLevel sl)) return;
@@ -727,65 +731,142 @@ public final class WeaponVfxServerListener {
                 && fx != WeaponVisualEffectId.MIASMA_SHROUD
                 && fx != WeaponVisualEffectId.PLAGUE_NOVA) return;
         int now = TestProcedure.currentTick(sl);
-        double x = target.getX(), y = target.getY() + target.getBbHeight() * 0.50f, z = target.getZ();
+        long gameNow = sl.getGameTime();
+        LivingEntity bearer = attacker != null ? attacker : target;
 
         if (fx == WeaponVisualEffectId.VENOM_BRIAR_FANG) {
-            TestProcedure.schedule(sl, now + 8, () -> sl.playSound(null, x, y, z,
-                    SoundEvents.SLIME_SQUISH, SoundSource.PLAYERS, 0.62f, 0.72f));
-            TestProcedure.schedule(sl, now + 34, () -> sl.playSound(null, x, y, z,
-                    SoundEvents.SPIDER_AMBIENT, SoundSource.PLAYERS, 0.48f, 0.66f));
-            TestProcedure.schedule(sl, now + 38, () -> {
+            double x = target.getX(), y = target.getY() + target.getBbHeight() * 0.50, z = target.getZ();
+            TestProcedure.schedule(sl, now + 7, () -> sl.playSound(null, x, y, z,
+                    SoundEvents.SLIME_SQUISH, SoundSource.PLAYERS, 0.52f, 0.70f));
+            TestProcedure.schedule(sl, now + 26, () -> {
                 if (target.isAlive() && target.level() == sl) {
-                    target.addEffect(new MobEffectInstance(MobEffects.POISON, 90, 0, true, false));
+                    target.addEffect(new MobEffectInstance(MobEffects.POISON, 110, 0, true, false));
                 }
+                sl.playSound(null, x, y, z, SoundEvents.SPIDER_AMBIENT,
+                        SoundSource.PLAYERS, 0.52f, 0.64f);
                 sl.playSound(null, x, y, z, SoundEvents.SLIME_SQUISH,
-                        SoundSource.PLAYERS, 0.82f, 1.32f);
+                        SoundSource.PLAYERS, 0.86f, 1.28f);
             });
-            for (int delay = 54; delay <= 76; delay += 11) {
-                TestProcedure.schedule(sl, now + delay, () -> sl.playSound(null, x, y, z,
-                        SoundEvents.SLIME_JUMP, SoundSource.PLAYERS, 0.20f, 1.65f));
+            TestProcedure.schedule(sl, now + 35, () -> sl.playSound(null, x, target.getY(), z,
+                    SoundEvents.SLIME_JUMP, SoundSource.PLAYERS, 0.38f, 0.72f));
+            TestProcedure.schedule(sl, now + 48, () -> sl.playSound(null, x, target.getY(), z,
+                    SoundEvents.GRASS_BREAK, SoundSource.PLAYERS, 0.56f, 0.64f));
+            for (int delay = 56; delay <= 84; delay += 14) {
+                TestProcedure.schedule(sl, now + delay, () -> sl.playSound(null, x, target.getY(), z,
+                        SoundEvents.WITCH_DRINK, SoundSource.PLAYERS, 0.20f, 1.35f));
             }
+            TestProcedure.schedule(sl, now + 98, () -> sl.playSound(null, x, target.getY(), z,
+                    SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.34f, 0.52f));
             return;
         }
 
         if (fx == WeaponVisualEffectId.MIASMA_SHROUD) {
-            sl.playSound(null, x, y, z, SoundEvents.WITCH_DRINK, SoundSource.PLAYERS, 0.46f, 0.62f);
-            int[] pulses = {18, 42, 66, 88};
+            MIASMA_SHIELDS.put(bearer.getId(), gameNow + 122);
+            if (MIASMA_SHIELDS.size() > 256) MIASMA_SHIELDS.clear();
+            double x = bearer.getX(), y = bearer.getY() + bearer.getBbHeight() * 0.50, z = bearer.getZ();
+            sl.playSound(null, x, y, z, SoundEvents.WITCH_DRINK, SoundSource.PLAYERS, 0.52f, 0.54f);
+            TestProcedure.schedule(sl, now + 10, () -> sl.playSound(null, x, y, z,
+                    SoundEvents.SLIME_SQUISH, SoundSource.PLAYERS, 0.38f, 0.58f));
+            int[] pulses = {20, 48, 76, 102};
             for (int pulse = 0; pulse < pulses.length; pulse++) {
-                float pitch = 0.58f + pulse * 0.12f;
+                float pitch = 0.56f + pulse * 0.11f;
                 TestProcedure.schedule(sl, now + pulses[pulse], () -> {
-                    poisonNear(sl, target, x, y, z, 2.65, 52);
-                    sl.playSound(null, x, y, z, SoundEvents.SLIME_SQUISH,
-                            SoundSource.PLAYERS, 0.38f, pitch);
+                    if (!bearer.isAlive() || bearer.level() != sl) return;
+                    double bx = bearer.getX(), by = bearer.getY() + bearer.getBbHeight() * 0.50, bz = bearer.getZ();
+                    poisonNear(sl, target, bearer, bx, by, bz, 2.65, 52);
+                    sl.playSound(null, bx, by, bz, SoundEvents.SLIME_SQUISH,
+                            SoundSource.PLAYERS, 0.30f, pitch);
                 });
             }
-            TestProcedure.schedule(sl, now + 102, () -> sl.playSound(null, x, y, z,
-                    SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.44f, 0.58f));
+            TestProcedure.schedule(sl, now + 122, () -> {
+                MIASMA_SHIELDS.remove(bearer.getId(), gameNow + 122);
+                sl.playSound(null, bearer.getX(), bearer.getY(), bearer.getZ(),
+                        SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.54f, 0.46f);
+            });
             return;
         }
 
-        TestProcedure.schedule(sl, now + 10, () -> sl.playSound(null, x, y, z,
-                SoundEvents.CREEPER_PRIMED, SoundSource.PLAYERS, 0.46f, 1.48f));
-        TestProcedure.schedule(sl, now + 26, () -> {
-            poisonNear(sl, target, x, y, z, 3.25, 100);
-            sl.playSound(null, x, y, z, SoundEvents.GENERIC_EXPLODE.value(),
-                    SoundSource.PLAYERS, 0.66f, 1.52f);
-            sl.playSound(null, x, y, z, SoundEvents.SLIME_JUMP,
-                    SoundSource.PLAYERS, 0.72f, 0.70f);
-        });
-        TestProcedure.schedule(sl, now + 72, () -> sl.playSound(null, x, y, z,
-                SoundEvents.SLIME_SQUISH, SoundSource.PLAYERS, 0.34f, 0.86f));
+        // Plague : le centre est figé au snap ; chaque front élargit la contagion déjà visible.
+        double[] blast = {bearer.getX(), bearer.getY() + bearer.getBbHeight() * 0.50, bearer.getZ()};
+        Set<Integer> infected = new HashSet<>();
+        TestProcedure.schedule(sl, now + 4, () -> sl.playSound(null, blast[0], blast[1], blast[2],
+                SoundEvents.SLIME_SQUISH, SoundSource.PLAYERS, 0.50f, 0.52f));
+        TestProcedure.schedule(sl, now + 18, () -> sl.playSound(null, blast[0], blast[1], blast[2],
+                SoundEvents.WITCH_DRINK, SoundSource.PLAYERS, 0.52f, 0.62f));
+        int[] waveTicks = {30, 38, 46, 54};
+        double[] radii = {1.20, 2.20, 3.25, 4.20};
+        for (int wave = 0; wave < waveTicks.length; wave++) {
+            final int waveIndex = wave;
+            TestProcedure.schedule(sl, now + waveTicks[wave], () -> {
+                if (waveIndex == 0) {
+                    blast[0] = bearer.getX();
+                    blast[1] = bearer.getY() + bearer.getBbHeight() * 0.50;
+                    blast[2] = bearer.getZ();
+                    sl.playSound(null, blast[0], blast[1], blast[2], SoundEvents.GENERIC_EXPLODE.value(),
+                            SoundSource.PLAYERS, 0.78f, 1.38f);
+                    sl.playSound(null, blast[0], blast[1], blast[2], SoundEvents.SLIME_SQUISH,
+                            SoundSource.PLAYERS, 0.88f, 0.58f);
+                } else {
+                    sl.playSound(null, blast[0], blast[1], blast[2], SoundEvents.WITCH_DRINK,
+                            SoundSource.PLAYERS, 0.28f, 0.82f + waveIndex * 0.12f);
+                }
+                poisonNovaWave(sl, target, bearer, blast[0], blast[1], blast[2],
+                        radii[waveIndex], 100, infected);
+            });
+        }
+        TestProcedure.schedule(sl, now + 102, () -> sl.playSound(null, blast[0], blast[1], blast[2],
+                SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.42f, 0.54f));
     }
 
-    /** Le centre reste celui de la signature ; les cibles peuvent sortir du nuage entre deux pulses. */
-    private static void poisonNear(ServerLevel sl, LivingEntity primary,
+    /** Le shroud n'empoisonne jamais son porteur ; la victime de test reste incluse même non-hostile. */
+    private static void poisonNear(ServerLevel sl, LivingEntity primary, LivingEntity bearer,
                                    double x, double y, double z, double radius, int duration) {
         for (LivingEntity living : sl.getEntitiesOfClass(LivingEntity.class,
                 new AABB(x - radius, y - 1.5, z - radius, x + radius, y + 2.0, z + radius))) {
-            if (!living.isAlive() || living.distanceToSqr(x, y, z) > radius * radius) continue;
+            if (!living.isAlive() || living == bearer || living.distanceToSqr(x, y, z) > radius * radius) continue;
             if (living != primary && !(living instanceof Enemy)) continue;
             living.addEffect(new MobEffectInstance(MobEffects.POISON, duration, 0, true, false));
         }
+    }
+
+    /** Front de nova : poison + enveloppe de contagion suivie côté client, une seule fois par cible. */
+    private static void poisonNovaWave(ServerLevel sl, LivingEntity victim, LivingEntity caster,
+                                       double x, double y, double z, double radius, int duration,
+                                       Set<Integer> infected) {
+        for (LivingEntity living : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(x - radius, y - 1.8, z - radius, x + radius, y + 2.2, z + radius))) {
+            if (!living.isAlive() || living == caster || living.distanceToSqr(x, y, z) > radius * radius) continue;
+            if (living != victim && !(living instanceof Enemy)) continue;
+            living.addEffect(new MobEffectInstance(MobEffects.POISON, duration, 0, true, false));
+            if (!infected.add(living.getId())) continue;
+            float lx = (float) living.getX();
+            float ly = (float) (living.getY() + living.getBbHeight() * 0.50);
+            float lz = (float) living.getZ();
+            broadcastNear(sl, lx, ly, lz, WeaponVisualEffectId.PLAGUE_NOVA.id,
+                    KIND_PLAGUE_CONTAGION, 3, lx, ly, lz,
+                    living.getId(), 0.0f, 0.0f,
+                    1 << DeepElement.POISON.ordinal(), sizeScaleOf(living));
+        }
+    }
+
+    /** Flare vert + ring violet déclenchés par un vrai hit reçu, sans changer les dégâts vanilla. */
+    private static void triggerMiasmaDefense(ServerLevel sl, LivingEntity bearer, Entity source) {
+        Long expiry = MIASMA_SHIELDS.get(bearer.getId());
+        if (expiry == null) return;
+        if (sl.getGameTime() > expiry) {
+            MIASMA_SHIELDS.remove(bearer.getId());
+            return;
+        }
+        float x = (float) bearer.getX();
+        float y = (float) (bearer.getY() + bearer.getBbHeight() * 0.50);
+        float z = (float) bearer.getZ();
+        float sx = source != null ? (float) source.getX() : x;
+        float sy = source != null ? (float) source.getY() : y;
+        float sz = source != null ? (float) source.getZ() : z;
+        broadcastNear(sl, x, y, z, WeaponVisualEffectId.MIASMA_SHROUD.id,
+                KIND_MIASMA_DEFENSE, 4, x, y, z, sx, sy, sz,
+                1 << DeepElement.POISON.ordinal(), sizeScaleOf(bearer));
+        sl.playSound(null, x, y, z, SoundEvents.SLIME_SQUISH, SoundSource.PLAYERS, 0.34f, 1.42f);
     }
 
     /** ZEPHYR/VERDANT = immobilisation sans bloquer les attaques ; THORN = stun complet 3 s. */
@@ -1122,6 +1203,7 @@ public final class WeaponVfxServerListener {
         DamageSource src = event.getSource();
         Entity attackerEntity = src.getEntity();
         if (!(attackerEntity instanceof LivingEntity attacker)) return;
+        if (attacker != target) triggerMiasmaDefense(sl, target, attackerEntity);
 
         long now = sl.getGameTime();
         Entity direct = src.getDirectEntity();
