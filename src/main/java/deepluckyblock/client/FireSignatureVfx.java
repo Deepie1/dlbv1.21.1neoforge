@@ -149,7 +149,7 @@ public final class FireSignatureVfx {
     private static void renderMolten(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                      float cx, float cy, float cz, float t,
                                      float dx, float dz, float S, int alpha, int salt, TerrainView terrain) {
-        float exit = smooth01((t - 0.86f) / 0.14f);
+        float exit = smooth01((t - 0.94f) / 0.06f);
         float env = 1.0f - exit;
         float ground = terrain.at(0.0f, 0.0f);
         float breakup = waveBreakup(t);
@@ -189,8 +189,8 @@ public final class FireSignatureVfx {
                     int rgb = lavaRgb(f / S, lateral / S, u, t, salt + lane * 29 + k * 7 + d * 13);
                     // Un cube de jonction adapte sa taille aux fortes pentes : la courbe reste pleine.
                     if (d > 0 && Math.abs(cubeY - previousCubeY) > (cube + previousCube) * 0.90f) {
-                        float bridge = Math.max(Math.max(cube, previousCube),
-                                Math.abs(cubeY - previousCubeY) * 0.32f);
+                        float bridge = Math.min(0.21f * S, Math.max(Math.max(cube, previousCube),
+                                Math.abs(cubeY - previousCubeY) * 0.32f));
                         localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
                                 (f + previousF) * 0.5f, (cubeY + previousCubeY) * 0.5f, lateral,
                                 bridge, rgb, Math.round(alpha * env));
@@ -717,7 +717,7 @@ public final class FireSignatureVfx {
 
     private static float waveTravel(float t) {
         // Translation positive jusqu'à la dernière frame : la vague quitte la zone, elle ne s'arrête pas.
-        return -1.25f + 3.75f * t;
+        return -2.0f + 4.0f * t;
     }
 
     private static float waveBreakup(float t) {
@@ -725,7 +725,8 @@ public final class FireSignatureVfx {
     }
 
     private static float waveLateral(float t, int lane) {
-        return lane * 0.215f * (1.0f + 0.18f * waveBreakup(t) * waveBreakup(t));
+        // Treize rangées de 0.215 + les demi-cubes : largeur verrouillée à 3 blocs.
+        return lane * 0.215f;
     }
 
     private static float waveFrontLocal(float t, float u, int lane) {
@@ -757,7 +758,8 @@ public final class FireSignatureVfx {
         float energy = 1.0f - 0.72f * breakup * (0.25f + 0.75f * u);
         float lipFall = 0.85f * breakup * breakup * u * u * u;
         float profile = Mth.sin(u * 2.55f) * 1.72f * noise * birth * energy;
-        return 0.10f + Math.max(0.0f, profile - lipFall);
+        float sink = smooth01((t - 0.82f) / 0.18f);
+        return 0.10f + Math.max(0.0f, profile - lipFall) - 2.40f * sink;
     }
 
     /** Dalles multi-échelles : masse large, fissures moyennes, braises minuscules, flamme pleine. */

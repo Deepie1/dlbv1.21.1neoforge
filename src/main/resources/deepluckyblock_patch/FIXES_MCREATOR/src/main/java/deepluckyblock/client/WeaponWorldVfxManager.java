@@ -1154,7 +1154,12 @@ public final class WeaponWorldVfxManager {
                     || inst.effect == WeaponVisualEffectId.BRIMSTONE_METEOR) {
                 float fireDx = Mth.sin(-inst.yawDeg * Mth.DEG_TO_RAD);
                 float fireDz = Mth.cos(-inst.yawDeg * Mth.DEG_TO_RAD);
-                FireSignatureVfx.prepareTerrain(level, inst.x, inst.y, inst.z, fireDx, fireDz, inst.sizeScale);
+                if (inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE) {
+                    fireDx = -fireDx;
+                    fireDz = -fireDz;
+                }
+                FireSignatureVfx.prepareTerrain(level, inst.x, inst.y, inst.z, fireDx, fireDz,
+                        inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE ? 1.0f : inst.sizeScale);
             }
         }
 
@@ -1402,7 +1407,7 @@ public final class WeaponWorldVfxManager {
             pixelDensity = inst.variantEntry.density();
             variantScale = inst.variantEntry.scale();
             // T359-BIG-ANIM-SCALE : échelle propre à l'instance (taille du mob touché).
-            mobScale = inst.sizeScale;
+            mobScale = inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE ? 1.0f : inst.sizeScale;
             mobScaleActive = Math.abs(mobScale - 1.0f) > 0.02f;
             // Les sommets déjà émis par les rendus sont en coordonnées RELATIVES à la caméra.
             // Le pivot doit être dans le même repère : utiliser ici la position monde de l'effet
@@ -2670,10 +2675,13 @@ public final class WeaponWorldVfxManager {
             // Graine stable pendant toute la chorégraphie : la direction céleste du météore ne
             // doit pas changer à chaque tick, contrairement au sel animé des impacts génériques.
             int fireSalt = (int) (v.inst().seed & 0x7FFFFFFFL);
+            float fireDirX = signature == FireSignatureVfx.MOLTEN ? -v.dirX() : v.dirX();
+            float fireDirZ = signature == FireSignatureVfx.MOLTEN ? -v.dirZ() : v.dirZ();
             FireSignatureVfx.render(Minecraft.getInstance().level,
                     v.inst().x, v.inst().y, v.inst().z,
                     v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), v.t(),
-                    v.dirX(), v.dirZ(), signature, v.S(), v.inst().sizeScale, v.fadeA(), fireSalt);
+                    fireDirX, fireDirZ, signature, v.S(),
+                    signature == FireSignatureVfx.MOLTEN ? 1.0f : v.inst().sizeScale, v.fadeA(), fireSalt);
             return;
         }
         if (v.inst().effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE) {

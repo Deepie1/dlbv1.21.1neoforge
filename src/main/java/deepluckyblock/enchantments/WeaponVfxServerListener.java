@@ -9,15 +9,18 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.entity.projectile.ThrownTrident;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.EventPriority;
@@ -31,8 +34,10 @@ import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -68,10 +73,14 @@ public final class WeaponVfxServerListener {
     private static final Map<Integer, WoodHold> WOOD_HOLDS = new ConcurrentHashMap<>();
     /** Soul Fire : montée, maintien au centre de la lune, descente et restauration de l'IA. */
     private static final Map<Integer, SoulHold> SOUL_HOLDS = new ConcurrentHashMap<>();
+    /** Combustion Soul réelle : 80 ticks de flammes bleues et de dégâts périodiques. */
+    private static final Map<Integer, SoulBurn> SOUL_BURNS = new ConcurrentHashMap<>();
+    private static final int SIGNATURE_FIRE_TICKS = 80;
 
     private record WoodHold(long expires, double x, double y, double z, boolean previousNoAi, boolean fullStun) { }
     private record SoulHold(long expires, long riseStart, long riseEnd, long descendStart,
                             double x, double baseY, double targetY, double z, boolean previousNoAi) { }
+    private record SoulBurn(long expires, long nextDamage) { }
 
     /** T351 : attaque NORMALE -> 5 % de chance de déclencher l'animation pixel. */
     private static final int NORMAL_TRIGGER_PERCENT = 5;
@@ -180,7 +189,7 @@ public final class WeaponVfxServerListener {
         broadcastNear(sl, cx, cy, cz, fx.id, KIND_IMPACT, Math.max(2, intensity),
                 cx, cy, cz, (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ(),
                 paletteOf(attacker.getMainHandItem(), fx), sizeScaleOf(target));
-        applyFireGameplay(target, fx, sizeScaleOf(target));
+        applyFireGameplay(attacker, target, fx, sizeScaleOf(target));
     }
 
     /** Appelé lors d'un rebond d'éclair en chaîne entre deux entités. */
@@ -315,7 +324,8 @@ public final class WeaponVfxServerListener {
             if (sig == null) continue;
             broadcastNear(sl, tx, ty, tz, sig.id, KIND_IMPACT, 3,
                     tx, ty, tz, ax, ay, az, 1 << el.ordinal(), sizeScale);
-            applyFireGameplay(target, sig, sizeScale);
+            applyFireGameplay(sl.getEntityById(attackerId) instanceof LivingEntity comboAttacker
+                    ? comboAttacker : null, target, sig, sizeScale);
             // Étincelles de la famille, une par élément : le mélange de couleurs se voit tout de suite.
             WeaponVfxSubtle.Subtle accent = WeaponVfxSubtle.pick(el, sl.random.nextLong());
             broadcastNear(sl, tx, ty, tz, 0, WeaponVfxSubtle.NET_KIND_BASE + accent.index(), 1,
@@ -362,10 +372,28 @@ public final class WeaponVfxServerListener {
         return true;
     }
 
-    /** La cible est stupéfaite, élevée au centre du croissant puis redescendue avant libération. */
-    private static void applyFireGameplay(LivingEntity target, WeaponVisualEffectId fx, float visualScale) {
-        if (fx != WeaponVisualEffectId.SOUL_FIRE_CRESCENT || !(target.level() instanceof ServerLevel sl)) return;
+    /** Direction, contacts hostiles et combustion finale des trois signatures Fire. */
+    private static void applyFireGameplay(LivingEntity attacker, LivingEntity target,
+                                          WeaponVisualEffectId fx, float visualScale) {
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        boolean molten = fx == WeaponVisualEffectId.MOLTEN_FIRE_WAVE;
+        boolean soul = fx == WeaponVisualEffectId.SOUL_FIRE_CRESCENT;
+        boolean meteor = fx == WeaponVisualEffectId.BRIMSTONE_METEOR;
+        if (!molten && !soul && !meteor) return;
+
         long now = sl.getGameTime();
+        int scheduleTick = TestProcedure.currentTick(sl);
+        if (molten) scheduleWaveIgnition(sl, attacker, target, scheduleTick);
+
+        // La fin de chorégraphie réapplique exactement quatre secondes de feu à la cible.
+        int duration = meteor ? 128 : 112;
+        TestProcedure.schedule(sl, scheduleTick + duration, () -> {
+            if (!target.isAlive() || target.level() != sl) return;
+            if (soul) igniteSoulForFourSeconds(target);
+            else igniteNormalForFourSeconds(target);
+        });
+
+        if (!soul) return;
         SoulHold previous = SOUL_HOLDS.get(target.getId());
         if (previous != null && previous.expires() > now) return;
         boolean previousNoAi = previous != null ? previous.previousNoAi()
@@ -382,6 +410,91 @@ public final class WeaponVfxServerListener {
         target.stopUsingItem();
         target.setDeltaMovement(Vec3.ZERO);
         target.fallDistance = 0.0f;
+    }
+
+    private static void igniteNormalForFourSeconds(LivingEntity target) {
+        SOUL_BURNS.remove(target.getId());
+        target.setRemainingFireTicks(Math.max(target.getRemainingFireTicks(), SIGNATURE_FIRE_TICKS));
+    }
+
+    private static void igniteSoulForFourSeconds(LivingEntity target) {
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        long now = sl.getGameTime();
+        SoulBurn previous = SOUL_BURNS.get(target.getId());
+        long nextDamage = previous != null && previous.expires() > now ? previous.nextDamage() : now;
+        SOUL_BURNS.put(target.getId(), new SoulBurn(now + SIGNATURE_FIRE_TICKS, nextDamage));
+        // La flamme orange vanilla est remplacée par notre combustion Soul bleue.
+        target.setRemainingFireTicks(0);
+        emitSoulBurnParticles(target, 10);
+    }
+
+    private static void emitSoulBurnParticles(LivingEntity target, int count) {
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        sl.sendParticles(ParticleTypes.SOUL_FIRE_FLAME,
+                target.getX(), target.getY() + target.getBbHeight() * 0.48, target.getZ(), count,
+                Math.max(0.08, target.getBbWidth() * 0.24), target.getBbHeight() * 0.30,
+                Math.max(0.08, target.getBbWidth() * 0.24), 0.012);
+    }
+
+    private static void tickSoulBurn(LivingEntity target) {
+        SoulBurn burn = SOUL_BURNS.get(target.getId());
+        if (burn == null || !(target.level() instanceof ServerLevel sl)) return;
+        long now = sl.getGameTime();
+        if (!target.isAlive() || now >= burn.expires()) {
+            SOUL_BURNS.remove(target.getId());
+            return;
+        }
+        target.setRemainingFireTicks(0);
+        if (now % 3L == 0L) emitSoulBurnParticles(target, 4);
+        if (now >= burn.nextDamage()) {
+            target.hurt(target.damageSources().onFire(), 1.0f);
+            SOUL_BURNS.put(target.getId(), new SoulBurn(burn.expires(), now + 20L));
+        }
+    }
+
+    /** Corridor de quatre blocs : front = -2 .. +2, largeur = trois blocs. */
+    private static void scheduleWaveIgnition(ServerLevel sl, LivingEntity attacker,
+                                             LivingEntity primaryTarget, int now) {
+        double originX = primaryTarget.getX();
+        double originY = primaryTarget.getY();
+        double originZ = primaryTarget.getZ();
+        double dx = attacker == null ? 1.0 : primaryTarget.getX() - attacker.getX();
+        double dz = attacker == null ? 0.0 : primaryTarget.getZ() - attacker.getZ();
+        double length = Math.sqrt(dx * dx + dz * dz);
+        if (length < 0.001) {
+            dx = 1.0;
+            dz = 0.0;
+            length = 1.0;
+        }
+        final double dirX = dx / length;
+        final double dirZ = dz / length;
+        int attackerId = attacker == null ? -1 : attacker.getId();
+        int primaryId = primaryTarget.getId();
+        Set<Integer> ignited = new HashSet<>();
+
+        for (int delay = 0; delay <= 112; delay += 4) {
+            double front = -2.0 + 4.0 * (delay / 112.0);
+            TestProcedure.schedule(sl, now + delay, () -> {
+                double centerX = originX + dirX * front;
+                double centerZ = originZ + dirZ * front;
+                AABB query = new AABB(centerX - 2.4, originY - 2.5, centerZ - 2.4,
+                        centerX + 2.4, originY + 3.5, centerZ + 2.4);
+                for (LivingEntity entity : sl.getEntitiesOfClass(LivingEntity.class, query)) {
+                    if (!entity.isAlive() || ignited.contains(entity.getId())) continue;
+                    boolean primary = entity.getId() == primaryId;
+                    if (!primary && (entity.getId() == attackerId || !(entity instanceof Enemy))) continue;
+                    double rx = entity.getX() - originX;
+                    double rz = entity.getZ() - originZ;
+                    double along = rx * dirX + rz * dirZ;
+                    double lateral = rx * -dirZ + rz * dirX;
+                    double radius = entity.getBbWidth() * 0.5;
+                    if (Math.abs(along - front) > 0.90 + radius
+                            || Math.abs(lateral) > 1.50 + radius) continue;
+                    ignited.add(entity.getId());
+                    igniteNormalForFourSeconds(entity);
+                }
+            });
+        }
     }
 
     private static void releaseSoulHold(LivingEntity target, long expectedExpiry) {
@@ -462,6 +575,7 @@ public final class WeaponVfxServerListener {
     @SubscribeEvent
     public static void onSignatureHoldTick(EntityTickEvent.Post event) {
         if (!(event.getEntity() instanceof LivingEntity target) || target.level().isClientSide()) return;
+        tickSoulBurn(target);
         tickSoulHold(target);
         WoodHold hold = WOOD_HOLDS.get(target.getId());
         if (hold == null) return;
@@ -571,7 +685,7 @@ public final class WeaponVfxServerListener {
             broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, layer.level(),
                     tx, ty, tz, ax, ay, az, palette, bigScale);
             applyWoodGameplay(attacker, target, fx);
-            applyFireGameplay(target, fx, bigScale);
+            applyFireGameplay(attacker, target, fx, bigScale);
         }
     }
 
@@ -704,7 +818,7 @@ public final class WeaponVfxServerListener {
                 int boost = (arrowCrit && fx.category == WeaponVisualEffectId.Category.CRIT) ? layer.level() + 1 : layer.level();
                 broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, boost,
                         tx, ty, tz, ax, ay, az, palette, sizeScaleOf(target));
-                applyFireGameplay(target, fx, sizeScaleOf(target));
+                applyFireGameplay(attacker, target, fx, sizeScaleOf(target));
             }
         }
     }
