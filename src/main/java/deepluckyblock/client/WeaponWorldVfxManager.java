@@ -519,12 +519,11 @@ public final class WeaponWorldVfxManager {
         float dz = tz - z;
         float yaw = (float) (Mth.atan2(dz, dx) * (180.0 / Math.PI)) - 90.0f;
         long seed = Double.doubleToLongBits(x * 31.0 + y * 17.0 + z * 13.0) ^ System.nanoTime();
-        // Miasma défend le lanceur et Plague charge dans SON torse, pas dans le corps de la cible.
-        if (kind == KIND_IMPACT && (fx == WeaponVisualEffectId.MIASMA_SHROUD
-                || fx == WeaponVisualEffectId.PLAGUE_NOVA)) {
-            x = tx;
-            y = ty - 0.12f;
-            z = tz;
+        // Toutes les signatures restent centrées sur le mob touché. Plague possède déjà un
+        // grand rayon monde : son échelle est donc plafonnée plus fortement que les deux autres.
+        if (kind == KIND_IMPACT && fx.element() == DeepElement.POISON) {
+            float maximum = fx == WeaponVisualEffectId.PLAGUE_NOVA ? 1.0f : 1.15f;
+            sizeScale = Mth.clamp(sizeScale, 0.60f, maximum);
         }
         VfxInstance instance = new VfxInstance(fx, kind, intensity, x, y, z, tx, ty, tz,
                 yaw, 0.0f, 0.25f, duration, seed, paletteMask, sizeScale);
@@ -543,7 +542,7 @@ public final class WeaponWorldVfxManager {
         }
     }
 
-    /** Miasma suit son porteur avec inertie ; Plague se fige au snap ; la contagion suit sa cible. */
+    /** Miasma suit le MOB TOUCHÉ avec inertie ; Plague se fige au snap ; la contagion suit sa cible. */
     private static void updatePoisonFollow(ClientLevel level, VfxInstance inst) {
         if (inst.kind == KIND_PLAGUE_CONTAGION) {
             if (level.getEntity(inst.homingTargetId) instanceof LivingEntity living) {
@@ -561,12 +560,12 @@ public final class WeaponWorldVfxManager {
             return;
         }
         if (inst.followEntityId <= 0) {
-            AABB search = new AABB(inst.tx - 2.5, inst.ty - 2.0, inst.tz - 2.5,
-                    inst.tx + 2.5, inst.ty + 2.0, inst.tz + 2.5);
+            AABB search = new AABB(inst.x - 2.5, inst.y - 2.0, inst.z - 2.5,
+                    inst.x + 2.5, inst.y + 2.0, inst.z + 2.5);
             double best = 12.0;
             LivingEntity nearest = null;
             for (LivingEntity living : level.getEntitiesOfClass(LivingEntity.class, search)) {
-                double distance = living.distanceToSqr(inst.tx, inst.ty, inst.tz);
+                double distance = living.distanceToSqr(inst.x, inst.y, inst.z);
                 if (distance < best) { best = distance; nearest = living; }
             }
             if (nearest != null) inst.followEntityId = nearest.getId();

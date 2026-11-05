@@ -732,7 +732,11 @@ public final class WeaponVfxServerListener {
                 && fx != WeaponVisualEffectId.PLAGUE_NOVA) return;
         int now = TestProcedure.currentTick(sl);
         long gameNow = sl.getGameTime();
-        LivingEntity bearer = attacker != null ? attacker : target;
+        // Les trois signatures sont des effets sur le MOB TOUCHÉ, jamais sur le joueur.
+        LivingEntity bearer = target;
+        LivingEntity caster = attacker;
+        int casterId = attacker == null ? -1 : attacker.getId();
+        float plaguePulseDamage = Math.max(0.25f, estimatedWeaponDamage(attacker) * 0.16f);
 
         if (fx == WeaponVisualEffectId.VENOM_BRIAR_FANG) {
             double x = target.getX(), y = target.getY() + target.getBbHeight() * 0.50, z = target.getZ();
@@ -773,7 +777,7 @@ public final class WeaponVfxServerListener {
                 TestProcedure.schedule(sl, now + pulses[pulse], () -> {
                     if (!bearer.isAlive() || bearer.level() != sl) return;
                     double bx = bearer.getX(), by = bearer.getY() + bearer.getBbHeight() * 0.50, bz = bearer.getZ();
-                    poisonNear(sl, target, bearer, bx, by, bz, 2.65, 52);
+                    poisonNear(sl, target, caster, bx, by, bz, 2.65, 52);
                     sl.playSound(null, bx, by, bz, SoundEvents.SLIME_SQUISH,
                             SoundSource.PLAYERS, 0.30f, pitch);
                 });
@@ -793,8 +797,8 @@ public final class WeaponVfxServerListener {
                 SoundEvents.SLIME_SQUISH, SoundSource.PLAYERS, 0.50f, 0.52f));
         TestProcedure.schedule(sl, now + 18, () -> sl.playSound(null, blast[0], blast[1], blast[2],
                 SoundEvents.WITCH_DRINK, SoundSource.PLAYERS, 0.52f, 0.62f));
-        int[] waveTicks = {30, 38, 46, 54};
-        double[] radii = {1.20, 2.20, 3.25, 4.20};
+        int[] waveTicks = {30, 38, 46, 54, 62, 70, 78, 86, 94, 102};
+        double[] radii = {1.20, 2.20, 3.25, 4.20, 4.20, 4.20, 4.20, 4.20, 4.20, 4.20};
         for (int wave = 0; wave < waveTicks.length; wave++) {
             final int waveIndex = wave;
             TestProcedure.schedule(sl, now + waveTicks[wave], () -> {
@@ -810,35 +814,36 @@ public final class WeaponVfxServerListener {
                     sl.playSound(null, blast[0], blast[1], blast[2], SoundEvents.WITCH_DRINK,
                             SoundSource.PLAYERS, 0.28f, 0.82f + waveIndex * 0.12f);
                 }
-                poisonNovaWave(sl, target, bearer, blast[0], blast[1], blast[2],
-                        radii[waveIndex], 100, infected);
+                poisonNovaWave(sl, target, caster, blast[0], blast[1], blast[2],
+                        radii[waveIndex], 100, plaguePulseDamage, casterId, infected);
             });
         }
         TestProcedure.schedule(sl, now + 102, () -> sl.playSound(null, blast[0], blast[1], blast[2],
                 SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.42f, 0.54f));
     }
 
-    /** Le shroud n'empoisonne jamais son porteur ; la victime de test reste incluse même non-hostile. */
-    private static void poisonNear(ServerLevel sl, LivingEntity primary, LivingEntity bearer,
+    /** Le shroud n'empoisonne jamais l'attaquant ; la victime de test reste incluse même non-hostile. */
+    private static void poisonNear(ServerLevel sl, LivingEntity primary, LivingEntity caster,
                                    double x, double y, double z, double radius, int duration) {
         for (LivingEntity living : sl.getEntitiesOfClass(LivingEntity.class,
                 new AABB(x - radius, y - 1.5, z - radius, x + radius, y + 2.0, z + radius))) {
-            if (!living.isAlive() || living == bearer || living.distanceToSqr(x, y, z) > radius * radius) continue;
+            if (!living.isAlive() || living == caster || living.distanceToSqr(x, y, z) > radius * radius) continue;
             if (living != primary && !(living instanceof Enemy)) continue;
             living.addEffect(new MobEffectInstance(MobEffects.POISON, duration, 0, true, false));
         }
     }
 
-    /** Front de nova : poison + enveloppe de contagion suivie côté client, une seule fois par cible. */
+    /** Pulse de nova : dégâts constants + poison ; enveloppe visuelle une seule fois par cible. */
     private static void poisonNovaWave(ServerLevel sl, LivingEntity victim, LivingEntity caster,
                                        double x, double y, double z, double radius, int duration,
-                                       Set<Integer> infected) {
+                                       float pulseDamage, int casterId, Set<Integer> infected) {
         for (LivingEntity living : sl.getEntitiesOfClass(LivingEntity.class,
                 new AABB(x - radius, y - 1.8, z - radius, x + radius, y + 2.2, z + radius))) {
             if (!living.isAlive() || living == caster || living.distanceToSqr(x, y, z) > radius * radius) continue;
             if (living != victim && !(living instanceof Enemy)) continue;
             living.addEffect(new MobEffectInstance(MobEffects.POISON, duration, 0, true, false));
-            if (!infected.add(living.getId())) continue;
+            hurtWithCapturedWeapon(sl, casterId, living, pulseDamage);
+            if (!living.isAlive() || !infected.add(living.getId())) continue;
             float lx = (float) living.getX();
             float ly = (float) (living.getY() + living.getBbHeight() * 0.50);
             float lz = (float) living.getZ();
