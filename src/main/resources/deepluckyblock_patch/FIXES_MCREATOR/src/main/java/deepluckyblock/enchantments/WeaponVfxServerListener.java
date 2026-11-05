@@ -15,6 +15,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.entity.projectile.Projectile;
@@ -122,6 +124,10 @@ public final class WeaponVfxServerListener {
     private static final WeaponVisualEffectId[] ANIM_GAIA = {
             WeaponVisualEffectId.ZEPHYR_WIND_LANCE, WeaponVisualEffectId.THORN_MAW_ROOT,
             WeaponVisualEffectId.VERDANT_SAP_BLOOM
+    };
+    private static final WeaponVisualEffectId[] ANIM_POISON = {
+            WeaponVisualEffectId.VENOM_BRIAR_FANG, WeaponVisualEffectId.MIASMA_SHROUD,
+            WeaponVisualEffectId.PLAGUE_NOVA
     };
 
     private WeaponVfxServerListener() {}
@@ -248,6 +254,7 @@ public final class WeaponVfxServerListener {
         if (livingTarget != null) {
             applyFireGameplay(attacker, livingTarget, fx, sizeScaleOf(target));
             applyWoodGameplay(attacker, livingTarget, fx, sizeScaleOf(target), estimatedWeaponDamage(attacker));
+            applyPoisonGameplay(attacker, livingTarget, fx);
         }
     }
 
@@ -388,6 +395,7 @@ public final class WeaponVfxServerListener {
             LivingEntity comboAttacker = sl.getEntity(attackerId) instanceof LivingEntity living ? living : null;
             applyFireGameplay(comboAttacker, target, sig, sizeScale, weaponDamage);
             applyWoodGameplay(comboAttacker, target, sig, sizeScale, weaponDamage);
+            applyPoisonGameplay(comboAttacker, target, sig);
             // Étincelles de la famille, une par élément : le mélange de couleurs se voit tout de suite.
             WeaponVfxSubtle.Subtle accent = WeaponVfxSubtle.pick(el, sl.random.nextLong());
             broadcastNear(sl, tx, ty, tz, 0, WeaponVfxSubtle.NET_KIND_BASE + accent.index(), 1,
@@ -711,6 +719,75 @@ public final class WeaponVfxServerListener {
         target.fallDistance = 0.0f;
     }
 
+    /** Gameplay Poison synchronisé avec la morsure, le passage du miasme et l'impulsion de nova. */
+    private static void applyPoisonGameplay(LivingEntity attacker, LivingEntity target,
+                                            WeaponVisualEffectId fx) {
+        if (target == null || !(target.level() instanceof ServerLevel sl)) return;
+        if (fx != WeaponVisualEffectId.VENOM_BRIAR_FANG
+                && fx != WeaponVisualEffectId.MIASMA_SHROUD
+                && fx != WeaponVisualEffectId.PLAGUE_NOVA) return;
+        int now = TestProcedure.currentTick(sl);
+        double x = target.getX(), y = target.getY() + target.getBbHeight() * 0.50f, z = target.getZ();
+
+        if (fx == WeaponVisualEffectId.VENOM_BRIAR_FANG) {
+            TestProcedure.schedule(sl, now + 8, () -> sl.playSound(null, x, y, z,
+                    SoundEvents.SLIME_SQUISH, SoundSource.PLAYERS, 0.62f, 0.72f));
+            TestProcedure.schedule(sl, now + 34, () -> sl.playSound(null, x, y, z,
+                    SoundEvents.SPIDER_AMBIENT, SoundSource.PLAYERS, 0.48f, 0.66f));
+            TestProcedure.schedule(sl, now + 38, () -> {
+                if (target.isAlive() && target.level() == sl) {
+                    target.addEffect(new MobEffectInstance(MobEffects.POISON, 90, 0, true, false));
+                }
+                sl.playSound(null, x, y, z, SoundEvents.SLIME_SQUISH,
+                        SoundSource.PLAYERS, 0.82f, 1.32f);
+            });
+            for (int delay = 54; delay <= 76; delay += 11) {
+                TestProcedure.schedule(sl, now + delay, () -> sl.playSound(null, x, y, z,
+                        SoundEvents.SLIME_JUMP, SoundSource.PLAYERS, 0.20f, 1.65f));
+            }
+            return;
+        }
+
+        if (fx == WeaponVisualEffectId.MIASMA_SHROUD) {
+            sl.playSound(null, x, y, z, SoundEvents.WITCH_DRINK, SoundSource.PLAYERS, 0.46f, 0.62f);
+            int[] pulses = {18, 42, 66, 88};
+            for (int pulse = 0; pulse < pulses.length; pulse++) {
+                float pitch = 0.58f + pulse * 0.12f;
+                TestProcedure.schedule(sl, now + pulses[pulse], () -> {
+                    poisonNear(sl, target, x, y, z, 2.65, 52);
+                    sl.playSound(null, x, y, z, SoundEvents.SLIME_SQUISH,
+                            SoundSource.PLAYERS, 0.38f, pitch);
+                });
+            }
+            TestProcedure.schedule(sl, now + 102, () -> sl.playSound(null, x, y, z,
+                    SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.44f, 0.58f));
+            return;
+        }
+
+        TestProcedure.schedule(sl, now + 10, () -> sl.playSound(null, x, y, z,
+                SoundEvents.CREEPER_PRIMED, SoundSource.PLAYERS, 0.46f, 1.48f));
+        TestProcedure.schedule(sl, now + 26, () -> {
+            poisonNear(sl, target, x, y, z, 3.25, 100);
+            sl.playSound(null, x, y, z, SoundEvents.GENERIC_EXPLODE.value(),
+                    SoundSource.PLAYERS, 0.66f, 1.52f);
+            sl.playSound(null, x, y, z, SoundEvents.SLIME_JUMP,
+                    SoundSource.PLAYERS, 0.72f, 0.70f);
+        });
+        TestProcedure.schedule(sl, now + 72, () -> sl.playSound(null, x, y, z,
+                SoundEvents.SLIME_SQUISH, SoundSource.PLAYERS, 0.34f, 0.86f));
+    }
+
+    /** Le centre reste celui de la signature ; les cibles peuvent sortir du nuage entre deux pulses. */
+    private static void poisonNear(ServerLevel sl, LivingEntity primary,
+                                   double x, double y, double z, double radius, int duration) {
+        for (LivingEntity living : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(x - radius, y - 1.5, z - radius, x + radius, y + 2.0, z + radius))) {
+            if (!living.isAlive() || living.distanceToSqr(x, y, z) > radius * radius) continue;
+            if (living != primary && !(living instanceof Enemy)) continue;
+            living.addEffect(new MobEffectInstance(MobEffects.POISON, duration, 0, true, false));
+        }
+    }
+
     /** ZEPHYR/VERDANT = immobilisation sans bloquer les attaques ; THORN = stun complet 3 s. */
     private static void applyWoodGameplay(LivingEntity attacker, LivingEntity target,
                                           WeaponVisualEffectId fx) {
@@ -942,7 +1019,7 @@ public final class WeaponVfxServerListener {
         var tag = deepluckyblock.util.DeepNbt.tag(weapon);
         if (tag == null) return null;
         String family = tag.getString("DlbAnimFamily");
-        return family.equals("feu") || family.equals("gaia") ? family : null;
+        return family.equals("feu") || family.equals("gaia") || family.equals("poison") ? family : null;
     }
 
     /**
@@ -961,7 +1038,8 @@ public final class WeaponVfxServerListener {
         float tx = (float) target.getX();
         float ty = (float) (target.getY() + target.getBbHeight() * 0.50f);
         float tz = (float) target.getZ();
-        WeaponVisualEffectId[] pool = family.equals("feu") ? ANIM_FIRE : ANIM_GAIA;
+        WeaponVisualEffectId[] pool = family.equals("feu") ? ANIM_FIRE
+                : family.equals("poison") ? ANIM_POISON : ANIM_GAIA;
 
         if (roll >= 60) {
             var tag = deepluckyblock.util.DeepNbt.getOrCreateTag(weapon);
@@ -976,6 +1054,7 @@ public final class WeaponVfxServerListener {
                     tx, ty, tz, ax, ay, az, 1 << fx.element.ordinal(), bigScale);
             applyWoodGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyFireGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
+            applyPoisonGameplay(attacker, target, fx);
             return;
         }
 
@@ -1028,6 +1107,7 @@ public final class WeaponVfxServerListener {
                     tx, ty, tz, ax, ay, az, palette, bigScale);
             applyWoodGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyFireGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
+            applyPoisonGameplay(attacker, target, fx);
         }
     }
 
@@ -1168,6 +1248,7 @@ public final class WeaponVfxServerListener {
                         tx, ty, tz, ax, ay, az, palette, sizeScaleOf(target));
                 applyFireGameplay(attacker, target, fx, sizeScaleOf(target), Math.max(0.0f, event.getAmount()));
                 applyWoodGameplay(attacker, target, fx, sizeScaleOf(target), Math.max(0.0f, event.getAmount()));
+                applyPoisonGameplay(attacker, target, fx);
             }
         }
     }

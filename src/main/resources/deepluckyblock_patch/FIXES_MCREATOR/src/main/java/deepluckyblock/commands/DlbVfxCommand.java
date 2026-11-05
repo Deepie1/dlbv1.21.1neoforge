@@ -331,7 +331,8 @@ public final class DlbVfxCommand {
             anim.requires(src -> src.hasPermission(2));
         }
         anim.then(Commands.literal("feu").executes(ctx -> giveAnimationSword(ctx, "feu")))
-                .then(Commands.literal("gaia").executes(ctx -> giveAnimationSword(ctx, "gaia")));
+                .then(Commands.literal("gaia").executes(ctx -> giveAnimationSword(ctx, "gaia")))
+                .then(Commands.literal("poison").executes(ctx -> giveAnimationSword(ctx, "poison")));
         event.getDispatcher().register(anim);
     }
 
@@ -344,7 +345,8 @@ public final class DlbVfxCommand {
         tag.putInt("DlbAnimNext", 0);
         deepluckyblock.util.DeepNbt.commit(sword, tag);
         sword.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
-                Component.literal((family.equals("feu") ? "§cAnimation Feu" : "§aAnimation Gaia")
+                Component.literal((family.equals("feu") ? "§cAnimation Feu"
+                        : family.equals("poison") ? "§2Animation Poison" : "§aAnimation Gaia")
                         + " §7— §f60 / 40"));
         if (!player.getInventory().add(sword)) {
             player.drop(sword, false);

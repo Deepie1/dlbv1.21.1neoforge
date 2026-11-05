@@ -497,8 +497,10 @@ public final class WeaponWorldVfxManager {
             case SERAPH_SKY_PILLAR, ABYSSAL_MAELSTROM, WARLORD_RALLY_SIGIL,
                  DRAGON_CHAOS_PRISM, BIG_BANG_SCAR -> 22;
             case SANDSTORM_DUNE, ECLIPSE_VEIL, NULL_RIFT_FISSURE,
-                 CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE, MIASMA_SHROUD,
-                 PLAGUE_NOVA -> 18;
+                 CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE -> 18;
+            case VENOM_BRIAR_FANG -> 88;
+            case MIASMA_SHROUD -> 112;
+            case PLAGUE_NOVA -> 96;
             case ASTRAL_STAR_LANCE, VOID_WARP_SPHERE, SEISMIC_TECTONIC,
                  CRIMSON_SIPHON, CHRONO_ETERNAL_HALO, ANNIHILATING_ARC -> 16;
             case CHAIN_VOLT_ARC -> 11;
@@ -517,8 +519,9 @@ public final class WeaponWorldVfxManager {
         // Éclaboussure de vrais mini-pixels 3D cubiques animés sous la physique !
         int burstCount = (fx.category == WeaponVisualEffectId.Category.BLOOD) ? 14 : 10;
         float cubeHalf = (fx.category == WeaponVisualEffectId.Category.BLOOD) ? 0.042f : 0.036f;
-        // Chaos ne possède que ses contours structurés : pas de salve colorée sans rapport avec eux.
-        if (fx.element() != DeepElement.CHAOS && fx.element() != DeepElement.FIRE) {
+        // Fire, Chaos et Poison possèdent leurs seules formes structurées : aucune salve générique.
+        if (fx.element() != DeepElement.CHAOS && fx.element() != DeepElement.FIRE
+                && fx.element() != DeepElement.POISON) {
             spawnMiniPixelBurst(fx, x, y, z, burstCount, cubeHalf, 0.18, paletteMask);
         }
     }
@@ -1354,7 +1357,7 @@ public final class WeaponWorldVfxManager {
         var tag = deepluckyblock.util.DeepNbt.tag(stack);
         if (tag != null) {
             String candidate = tag.getString("DlbAnimFamily");
-            if (candidate.equals("feu") || candidate.equals("gaia")) animFamily = candidate;
+            if (candidate.equals("feu") || candidate.equals("gaia") || candidate.equals("poison")) animFamily = candidate;
         }
         if (layers.isEmpty() && animFamily == null) return;
 
@@ -1407,6 +1410,13 @@ public final class WeaponWorldVfxManager {
                 case 0 -> WeaponVisualEffectId.MOLTEN_FIRE_WAVE;
                 case 1 -> WeaponVisualEffectId.SOUL_FIRE_CRESCENT;
                 default -> WeaponVisualEffectId.BRIMSTONE_METEOR;
+            };
+        }
+        if (family.equals("poison")) {
+            return switch (index) {
+                case 0 -> WeaponVisualEffectId.VENOM_BRIAR_FANG;
+                case 1 -> WeaponVisualEffectId.MIASMA_SHROUD;
+                default -> WeaponVisualEffectId.PLAGUE_NOVA;
             };
         }
         return switch (index) {
@@ -3226,204 +3236,14 @@ public final class WeaponWorldVfxManager {
         }
     }
 
-    /**
-     * 毒 POISON — trois silhouettes indépendantes : mâchoire de ronces, voile de miasme et nova
-     * de dards. Aucun socle commun de bulles aléatoires ne vient effacer l'identité des titres.
-     */
+    /** POISON : trois signatures longues, dirigées par leur titre plutôt que par un socle commun. */
     private static void impactPoison(ImpactView v) {
         WeaponVisualEffectId fx = v.inst().effect;
-        if (fx == WeaponVisualEffectId.VENOM_BRIAR_FANG) {
-            impactVenomBriarFang(v);
-        } else if (fx == WeaponVisualEffectId.MIASMA_SHROUD) {
-            impactMiasmaShroud(v);
-        } else if (fx == WeaponVisualEffectId.PLAGUE_NOVA) {
-            impactPlagueNova(v);
-        }
-    }
-
-    /** VENOM_BRIAR_FANG : deux rangées de crocs se ferment, portées par des ronces venimeuses. */
-    private static void impactVenomBriarFang(ImpactView v) {
-        float t = v.t();
-        float S = v.S();
-        float bite = Mth.clamp((t - 0.10f) / 0.58f, 0.0f, 1.0f);
-        bite = bite * bite * (3.0f - 2.0f * bite);
-        float open = 1.0f - bite;
-        float dirX = v.dirX(), dirZ = v.dirZ();
-        float sideX = dirZ, sideZ = -dirX;
-
-        for (int jaw = 0; jaw < 2; jaw++) {
-            float sgn = jaw == 0 ? 1.0f : -1.0f;
-            float rootY = v.cy() + sgn * (0.16f + 0.78f * open) * S;
-            float rootForward = -0.30f * S;
-            for (int f = 0; f < 5; f++) {
-                float across = (f - 2) * 0.34f * S;
-                float rootX = v.cx() + dirX * rootForward + sideX * across;
-                float rootZ = v.cz() + dirZ * rootForward + sideZ * across;
-                float length = (f == 2 ? 0.88f : (f == 1 || f == 3 ? 0.72f : 0.55f)) * S;
-                v.shard(rootX, rootY, rootZ, length, 0.050f * S,
-                        dirX * 0.22f, -sgn, dirZ * 0.22f,
-                        v.pRgb(), v.aRgb(), v.fadeA(), v.salt() + jaw * 41 + f * 7);
-            }
-
-            float leftX = v.cx() + dirX * rootForward - sideX * 0.82f * S;
-            float leftZ = v.cz() + dirZ * rootForward - sideZ * 0.82f * S;
-            float rightX = v.cx() + dirX * rootForward + sideX * 0.82f * S;
-            float rightZ = v.cz() + dirZ * rootForward + sideZ * 0.82f * S;
-            v.line(leftX, rootY, leftZ, rightX, rootY, rightZ,
-                    0.065f * S, v.sRgb(), v.pRgb(), Math.round(v.fadeA() * 0.92f));
-
-            // Les deux ronces prolongent la mâchoire : ce ne sont pas des crocs posés dans le vide.
-            for (int side = 0; side < 2; side++) {
-                float lateral = side == 0 ? -1.0f : 1.0f;
-                float startX = v.cx() + dirX * rootForward + sideX * lateral * 0.82f * S;
-                float startZ = v.cz() + dirZ * rootForward + sideZ * lateral * 0.82f * S;
-                float endX = startX - dirX * 0.95f * S + sideX * lateral * 0.36f * S;
-                float endY = rootY - sgn * 0.30f * S;
-                float endZ = startZ - dirZ * 0.95f * S + sideZ * lateral * 0.36f * S;
-                v.tendril(startX, rootY, startZ, endX, endY, endZ,
-                        lateral * 0.28f * S, 8, 0.038f * S, v.sRgb(), v.pRgb(),
-                        Math.round(v.fadeA() * 0.86f));
-                v.shard(endX, endY, endZ, 0.28f * S, 0.022f * S,
-                        -dirX + sideX * lateral * 0.35f, -sgn * 0.30f,
-                        -dirZ + sideZ * lateral * 0.35f,
-                        v.pRgb(), v.aRgb(), Math.round(v.fadeA() * 0.88f),
-                        v.salt() + jaw * 73 + side * 19);
-            }
-        }
-
-        // Après la morsure, le venin tombe des crocs avec une vraie accélération gravitaire.
-        float drip = Mth.clamp((t - 0.42f) / 0.58f, 0.0f, 1.0f);
-        if (drip > 0.0f) {
-            for (int d = 0; d < 6; d++) {
-                float across = (d - 2.5f) * 0.25f * S;
-                float px = v.cx() - dirX * 0.08f * S + sideX * across;
-                float pz = v.cz() - dirZ * 0.08f * S + sideZ * across;
-                float py = v.cy() + (0.10f - 0.82f * drip * drip) * S;
-                v.drop(px, py, pz, 0.026f * S, v.sRgb(), v.aRgb(),
-                        Math.round(v.fadeA() * (0.90f - 0.35f * drip)), d + 101);
-            }
-            v.ring(v.cy() - 0.58f * S, (0.28f + 0.92f * drip) * S, v.sRgb(), v.pRgb(),
-                    Math.round(v.fadeA() * 0.42f * drip), PIXEL_RING_BEADS);
-        }
-    }
-
-    /** MIASMA_SHROUD : un voile 3D épais qui s'ouvre, roule et rampe autour de la cible. */
-    private static void impactMiasmaShroud(ImpactView v) {
-        float t = v.t();
-        float S = v.S();
-        float time = v.age() * 0.05f;
-        float spread = v.easeOut();
-
-        // Un cœur et sept billows liés : le volume enveloppe réellement le dummy au lieu de
-        // dessiner une douzaine de pixels presque invisibles au sol.
-        for (int b = 0; b < 8; b++) {
-            float h = v.hash(b * 37 + 5);
-            float ang = b * 0.898f + time * 0.34f;
-            float radiusFromCenter = b == 0 ? 0.0f : (0.28f + 1.12f * spread) * S * (0.78f + 0.28f * h);
-            float bx = v.cx() + Mth.cos(ang) * radiusFromCenter;
-            float bz = v.cz() + Mth.sin(ang) * radiusFromCenter;
-            float by = v.cy() - 0.24f * S + (0.18f + 0.34f * h + 0.28f * t) * S
-                    + Mth.sin(time * 1.4f + b) * 0.10f * S;
-            float billowRadius = (b == 0 ? 0.62f : 0.38f + 0.18f * h) * S * (0.72f + 0.38f * spread);
-            emitPoisonBillow(v, bx, by, bz, billowRadius, time, b * 977,
-                    Math.round(v.fadeA() * (b == 0 ? 0.72f : 0.62f)));
-        }
-
-        // Quelques spores lumineuses montent du voile ; elles restent attachées visuellement à lui.
-        for (int s = 0; s < 7; s++) {
-            float ang = s * 0.897f + time * 0.25f;
-            float rad = (0.35f + 0.95f * spread) * S;
-            float rise = (0.20f + (0.45f + 0.55f * v.hash(s * 17)) * t) * S;
-            float wob = Mth.sin(time * 2.0f + s * 1.7f) * 0.10f * S;
-            float size = (0.020f + 0.014f * v.hash(s * 29)) * S;
-            v.rot(v.cx() + Mth.cos(ang) * rad + wob, v.cy() + rise,
-                    v.cz() + Mth.sin(ang) * rad - wob,
-                    size, size * 1.25f, size, ang, 0.35f, time,
-                    v.grad(0.70f + 0.25f * v.hash(s * 11), s * 43),
-                    Math.round(v.fadeA() * 0.72f));
-        }
-        v.ring(v.cy() - 0.58f * S, (0.45f + 1.70f * spread) * S, v.sRgb(), v.pRgb(),
-                Math.round(v.fadeA() * 0.46f), PIXEL_RING_DASHED);
-    }
-
-    /** Un billow voxel volumétrique : cubes qui se chevauchent légèrement, opacité et taille variées. */
-    private static void emitPoisonBillow(ImpactView v, float cx, float cy, float cz,
-                                         float radius, float time, int seed, int alpha) {
-        if (alpha <= 6 || radius <= 0.04f) return;
-        float cell = radius * 0.48f;
-        for (int ix = -2; ix <= 2; ix++) {
-            for (int iy = -2; iy <= 2; iy++) {
-                for (int iz = -2; iz <= 2; iz++) {
-                    float nx = ix / 2.15f;
-                    float ny = iy / 1.65f;
-                    float nz = iz / 2.15f;
-                    float d = nx * nx + ny * ny + nz * nz;
-                    if (d > 1.10f) continue;
-                    int key = seed + ix * 733 + iy * 379 + iz * 191;
-                    float h = v.hash(key);
-                    if (d < 0.22f && h < 0.32f) continue; // cavités d'air dans la vapeur
-                    float drift = Mth.sin(time * 1.6f + ix * 0.8f + iz + seed * 0.013f) * cell * 0.14f;
-                    float px = cx + ix * cell + drift;
-                    float py = cy + iy * cell * 0.72f + drift * 0.35f;
-                    float pz = cz + iz * cell - drift * 0.60f;
-                    float half = cell * (0.48f + 0.17f * h);
-                    float shade = Mth.clamp(0.16f + 0.12f * (iy + 2) + 0.24f * h, 0.0f, 1.0f);
-                    int a = Math.round(alpha * (0.40f + 0.48f * h) * (1.0f - 0.24f * d));
-                    v.rot(px, py, pz, half, half * 0.82f, half,
-                            time * 0.18f + h, h * 0.55f, time * 0.12f,
-                            v.grad(shade, key), a);
-                }
-            }
-        }
-    }
-
-    /** PLAGUE_NOVA : exactement dix longs dards, projetés radialement puis retombant sous gravité. */
-    private static void impactPlagueNova(ImpactView v) {
-        float t = v.t();
-        float S = v.S();
-        float spin = v.yawRad() + 0.12f * t;
-        for (int i = 0; i < 10; i++) {
-            float u = Mth.clamp(t * 1.12f - (i & 1) * 0.035f, 0.0f, 1.0f);
-            if (u <= 0.0f) continue;
-            float h = v.hash(i * 47 + 9);
-            float ang = spin + i * 0.62831855f;
-            float dx = Mth.cos(ang), dz = Mth.sin(ang);
-            float range = (1.90f + 0.55f * h) * S;
-            float lift = 2.75f + 0.55f * h;
-            float gravity = lift + 0.70f; // fin à -0.64 S : retour au sol autour de la cible
-            float ease = 1.0f - (1.0f - u) * (1.0f - u);
-            float rad = 0.18f * S + range * ease;
-            float py = v.cy() + (0.06f + lift * u - gravity * u * u) * S;
-            float px = v.cx() + dx * rad;
-            float pz = v.cz() + dz * rad;
-
-            // La tangente oriente le dard : horizontal au départ, puis pointe vers le sol.
-            float radialVelocity = 2.0f * range * (1.0f - u);
-            float verticalVelocity = (lift - 2.0f * gravity * u) * S;
-            float vx = dx * radialVelocity, vz = dz * radialVelocity;
-            float norm = Mth.sqrt(vx * vx + verticalVelocity * verticalVelocity + vz * vz);
-            float length = (0.68f + 0.22f * h) * S;
-            if (norm > 0.0001f) {
-                float nx = vx / norm, ny = verticalVelocity / norm, nz = vz / norm;
-                v.shard(px - nx * length * 0.45f, py - ny * length * 0.45f,
-                        pz - nz * length * 0.45f, length, 0.030f * S,
-                        nx, ny, nz, v.pRgb(), v.aRgb(), v.fadeA(), v.salt() + i * 61);
-            }
-
-            // Trois fragments de trajectoire, strictement derrière chaque dard (pas une gerbe random).
-            for (int trail = 1; trail <= 3; trail++) {
-                float pu = Math.max(0.0f, u - trail * 0.055f);
-                float pe = 1.0f - (1.0f - pu) * (1.0f - pu);
-                float pr = 0.18f * S + range * pe;
-                float ty = v.cy() + (0.06f + lift * pu - gravity * pu * pu) * S;
-                float hs = (0.023f - trail * 0.0035f) * S;
-                v.cube(v.cx() + dx * pr, ty, v.cz() + dz * pr, hs,
-                        v.grad(0.42f + 0.28f * h, i * 31 + trail),
-                        Math.round(v.fadeA() * (0.48f - trail * 0.10f)));
-            }
-        }
-        v.ring(v.cy() - 0.58f * S, (0.35f + 2.20f * v.easeOut()) * S, v.pRgb(), v.sRgb(),
-                Math.round(v.fadeA() * 0.66f), PIXEL_RING_DASHED);
+        int variant = fx == WeaponVisualEffectId.VENOM_BRIAR_FANG ? PoisonSignatureVfx.VENOM
+                : fx == WeaponVisualEffectId.MIASMA_SHROUD ? PoisonSignatureVfx.MIASMA
+                : PoisonSignatureVfx.PLAGUE;
+        PoisonSignatureVfx.render(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), v.t(),
+                v.dirX(), v.dirZ(), variant, v.fadeA(), v.salt());
     }
 
     /**
