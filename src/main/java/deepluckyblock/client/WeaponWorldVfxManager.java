@@ -523,7 +523,7 @@ public final class WeaponWorldVfxManager {
         if (kind == KIND_IMPACT && (fx == WeaponVisualEffectId.MIASMA_SHROUD
                 || fx == WeaponVisualEffectId.PLAGUE_NOVA)) {
             x = tx;
-            y = ty - 0.12;
+            y = ty - 0.12f;
             z = tz;
         }
         VfxInstance instance = new VfxInstance(fx, kind, intensity, x, y, z, tx, ty, tz,
