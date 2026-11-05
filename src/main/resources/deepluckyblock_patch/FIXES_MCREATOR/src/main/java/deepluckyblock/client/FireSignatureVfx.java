@@ -5,7 +5,6 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
-import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.HashMap;
@@ -89,45 +88,42 @@ public final class FireSignatureVfx {
         TERRAIN_CACHE.clear();
     }
 
-    /** Hauteur absolue de la surface réelle, avec repli local sous les grottes et structures. */
+    /**
+     * Surface de support autour de la cible. On ne consulte JAMAIS la heightmap open-sky : sur un
+     * monde plat ou sous une plateforme, elle peut désigner une tout autre colonne (bedrock/toit).
+     * Le scan part du niveau du mob et descend jusqu'au premier vrai collider rencontré.
+     */
     private static float sampleGround(ClientLevel level, double worldX, double originY, double worldZ) {
         ensureTerrainLevel(level);
         int x = Mth.floor(worldX);
         int z = Mth.floor(worldZ);
-        boolean openSky = level.canSeeSky(BlockPos.containing(worldX, originY + 1.0, worldZ));
-        int reference = ((Mth.floor(originY) + 128) << 1) | (openSky ? 1 : 0);
-        long key = ((x & 0x1FFFFFFL) << 39) | ((z & 0x1FFFFFFL) << 14) | (reference & 0x3FFFL);
+        int originBlockY = Mth.floor(originY);
+        long key = (((long) x & 0x3FFFFFFL) << 38)
+                ^ (((long) z & 0x3FFFFFFL) << 12)
+                ^ ((long) (originBlockY + 2048) & 0xFFFL);
         Float cached = TERRAIN_CACHE.get(key);
         if (cached != null) return cached;
 
-        float fallback = (float) (originY - 0.48);
-        float surface;
-        if (openSky) {
-            // Heightmap Minecraft actualisée : suit collines, escaliers, trous et falaises.
-            surface = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-        } else {
-            // Sous un plafond, la heightmap serait le toit : on cherche le vrai plancher local.
-            surface = fallback;
-            BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-            int start = Mth.floor(originY + 1.0);
-            int end = Mth.floor(originY - 8.0);
-            for (int y = start; y >= end; y--) {
-                pos.set(x, y, z);
-                VoxelShape shape = level.getBlockState(pos).getCollisionShape(level, pos);
-                if (shape.isEmpty()) continue;
-                float top = y + (float) shape.max(Direction.Axis.Y);
-                if (top <= originY + 0.75) {
-                    surface = top;
-                    break;
-                }
-            }
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        int maxY = Math.min(level.getMaxBuildHeight() - 1, Mth.floor(originY + 0.75));
+        int minY = Math.max(level.getMinBuildHeight(), Mth.floor(originY - 24.0));
+        float surface = (float) originY; // repli sûr : niveau de la cible, jamais la bedrock.
+        for (int y = maxY; y >= minY; y--) {
+            pos.set(x, y, z);
+            VoxelShape shape = level.getBlockState(pos).getCollisionShape(level, pos);
+            if (shape.isEmpty()) continue;
+            double top = shape.max(Direction.Axis.Y);
+            if (!Double.isFinite(top)) continue;
+            double candidate = y + top;
+            if (candidate > originY + 0.751 || candidate < originY - 24.0) continue;
+            surface = (float) candidate;
+            break;
         }
         if (TERRAIN_CACHE.size() >= TERRAIN_CACHE_LIMIT) TERRAIN_CACHE.clear();
         TERRAIN_CACHE.put(key, surface);
         return surface;
     }
 
-    /** Convertit la hauteur monde en coordonnées caméra utilisées par le moteur de voxels. */
     private record TerrainView(ClientLevel level, double worldX, double worldY, double worldZ,
                                float dx, float dz, float baseGround, float S, float worldScale) {
         float at(float f, float l) {
@@ -196,7 +192,7 @@ public final class FireSignatureVfx {
                     float cubeY = y + terrain.at(f, lateral) - columnGround
                         - aboveBase * (1.0f - depthHeight) + backUndulation;
                     float h = hash01(salt, lane * 91 + k * 17 + d * 41 + 40);
-                    float cube = (u > 0.82f ? 0.135f + 0.025f * h : 0.170f + 0.040f * h) * S;
+                    float cube = (u > 0.82f ? 0.180f + 0.030f * h : 0.240f + 0.040f * h) * S;
                     int rgb = lavaRgb(f / S, lateral / S, u, t, salt + lane * 29 + k * 7 + d * 13);
                     // Le connecteur épouse le dénivelé réel : montée et descente restent continues.
                     float heightGap = Math.abs(cubeY - previousCubeY);
@@ -811,7 +807,7 @@ public final class FireSignatureVfx {
     }
 
     private static float waveLateral(float t, int lane) {
-        // Treize rangées de 0.215 + les demi-cubes : largeur verrouillée à 3 blocs.
+        // Treize rangées resserrées : les cubes élargis se chevauchent au lieu de faire des îlots.
         return lane * 0.215f;
     }
 

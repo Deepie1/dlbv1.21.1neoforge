@@ -466,21 +466,6 @@ public final class WeaponWorldVfxManager {
             return;
         }
 
-        // Tout slash est centré sur le torse de l'ennemi. Le serveur transmet l'attaquant dans
-        // origin et le mob dans target : on conserve ce vecteur pour l'orientation, mais on déplace
-        // le pivot géométrique sur le mob. Le second point devient un simple point de visée virtuel.
-        if (kind == KIND_SWING_SLASH) {
-            float directionX = tx - x;
-            float directionY = ty - y;
-            float directionZ = tz - z;
-            x = tx;
-            y = ty;
-            z = tz;
-            tx = x + directionX;
-            ty = y + directionY;
-            tz = z + directionZ;
-        }
-
         int duration = switch (fx) {
             // Chorégraphies Wood complètes : croissance, impacts, stun et explosion de sève.
             case ZEPHYR_WIND_LANCE -> 80;
@@ -1449,6 +1434,7 @@ public final class WeaponWorldVfxManager {
             pixelDensity = inst.variantEntry.density();
             variantScale = inst.variantEntry.scale();
             // T359-BIG-ANIM-SCALE : échelle propre à l'instance (taille du mob touché).
+            // Molten garde son corridor monde verrouillé : le scale des voxels est local à sa maille.
             mobScale = inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE ? 1.0f : inst.sizeScale;
             mobScaleActive = Math.abs(mobScale - 1.0f) > 0.02f;
             // Les sommets déjà émis par les rendus sont en coordonnées RELATIVES à la caméra.
@@ -1508,9 +1494,15 @@ public final class WeaponWorldVfxManager {
 
     private static void renderVoxelSwingSlash(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                               Vec3 cam, VfxInstance inst, float t) {
-        float rx = (float) (inst.x - cam.x);
-        float ry = (float) (inst.y - cam.y);
-        float rz = (float) (inst.z - cam.z);
+        // Le slash est un projectile de lame : naissance à l'épée puis translation à vitesse
+        // constante vers la cible. Ne jamais recentrer ce pivot sur le torse du mob.
+        float rx = (float) (Mth.lerp(t, inst.x, inst.tx) - cam.x);
+        float ry = (float) (Mth.lerp(t, inst.y, inst.ty) - cam.y);
+        float rz = (float) (Mth.lerp(t, inst.z, inst.tz) - cam.z);
+        // La scale propre à l'arc suit elle aussi son centre déplacé.
+        mobPivotX = rx;
+        mobPivotY = ry;
+        mobPivotZ = rz;
 
         // T361-MOTIONS-UNIQUES : chaque enchantement a SA trajectoire (22 familles de mouvement).
         // Deux attaques ne se ressemblent plus, même à couleur identique : l'une balaie, l'autre
@@ -2730,12 +2722,21 @@ public final class WeaponWorldVfxManager {
             float fireDirZ = signature == FireSignatureVfx.MOLTEN || signature == FireSignatureVfx.SOUL
                     ? -v.dirZ() : v.dirZ();
             float waveShift = signature == FireSignatureVfx.MOLTEN ? fireWaveOriginShift(v.inst()) : 0.0f;
-            FireSignatureVfx.render(Minecraft.getInstance().level,
-                    v.inst().x + fireDirX * waveShift, v.inst().y, v.inst().z + fireDirZ * waveShift,
-                    v.vc(), v.mat(), v.tmp(), v.cx() + fireDirX * waveShift, v.cy(),
-                    v.cz() + fireDirZ * waveShift, v.t(),
-                    fireDirX, fireDirZ, signature, v.S(),
-                    signature == FireSignatureVfx.MOLTEN ? 1.0f : v.inst().sizeScale, v.fadeA(), fireSalt);
+            boolean previousPulse = voxelPulseEnabled;
+            // La vague doit rester un volume soudé : la pulsation globale ouvrait des trous entre
+            // les mailles. Les trajectoires et la lave restent animées, les dimensions sont stables.
+            voxelPulseEnabled = false;
+            try {
+                FireSignatureVfx.render(Minecraft.getInstance().level,
+                        v.inst().x + fireDirX * waveShift, v.inst().y, v.inst().z + fireDirZ * waveShift,
+                        v.vc(), v.mat(), v.tmp(), v.cx() + fireDirX * waveShift, v.cy(),
+                        v.cz() + fireDirZ * waveShift, v.t(),
+                        fireDirX, fireDirZ, signature, v.S(),
+                        signature == FireSignatureVfx.MOLTEN ? 1.0f : v.inst().sizeScale,
+                        v.fadeA(), fireSalt);
+            } finally {
+                voxelPulseEnabled = previousPulse;
+            }
             return;
         }
         if (v.inst().effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE) {

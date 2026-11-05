@@ -74,6 +74,8 @@ public final class WeaponVfxServerListener {
     private static final Map<Integer, WoodHold> WOOD_HOLDS = new ConcurrentHashMap<>();
     /** Soul Fire : montée, maintien au centre de la lune, descente et restauration de l'IA. */
     private static final Map<Integer, SoulHold> SOUL_HOLDS = new ConcurrentHashMap<>();
+    /** Etat NoAi vanilla avant la premiere emprise concurrente, restaure apres la derniere. */
+    private static final Map<Integer, Boolean> SIGNATURE_BASELINE_NO_AI = new ConcurrentHashMap<>();
     /** Combustion Soul réelle : 80 ticks de flammes bleues et de dégâts périodiques. */
     private static final Map<Integer, SoulBurn> SOUL_BURNS = new ConcurrentHashMap<>();
     private static final int SIGNATURE_FIRE_TICKS = 80;
@@ -469,11 +471,14 @@ public final class WeaponVfxServerListener {
         if (!soul) return;
         SoulHold previous = SOUL_HOLDS.get(target.getId());
         if (previous != null && previous.expires() > now) return;
+        rememberSignatureAi(target);
         boolean previousNoAi = previous != null ? previous.previousNoAi()
                 : target instanceof Mob mob && mob.isNoAi();
         double x = target.getX(), baseY = target.getY(), z = target.getZ();
-        // FireSignatureVfx : centre = cy + 0.84 * S ; cy est le centre initial de la hitbox.
-        double targetY = baseY + 0.84 * net.minecraft.util.Mth.clamp(visualScale, 0.30f, 4.0f);
+        // FireSignatureVfx place la lune à 1.32 * scale au-dessus du sol local. Le centre du
+        // corps doit coïncider avec elle : on convertit donc cette hauteur en Y des pieds.
+        double targetY = baseY + 1.32 * net.minecraft.util.Mth.clamp(visualScale, 0.30f, 4.0f)
+                - target.getBbHeight() * 0.50;
         SOUL_HOLDS.put(target.getId(), new SoulHold(now + 104, now + 12, now + 22,
                 now + 90, x, baseY, targetY, z, previousNoAi, attackerId, weaponDamage));
         if (target instanceof Mob mob) {
@@ -700,7 +705,7 @@ public final class WeaponVfxServerListener {
         SoulHold hold = SOUL_HOLDS.get(target.getId());
         if (hold == null || hold.expires() != expectedExpiry) return;
         SOUL_HOLDS.remove(target.getId());
-        if (target instanceof Mob mob) mob.setNoAi(hold.previousNoAi());
+        refreshSignatureAi(target);
         target.teleportTo(hold.x(), hold.baseY(), hold.z());
         target.setDeltaMovement(Vec3.ZERO);
         target.fallDistance = 0.0f;
@@ -716,15 +721,18 @@ public final class WeaponVfxServerListener {
                                           WeaponVisualEffectId fx, float visualScale,
                                           float weaponDamage) {
         if (!(target.level() instanceof ServerLevel sl)) return;
-        int now = TestProcedure.currentTick(sl);
+        // Les tâches utilisent le tickCount du serveur, mais les emprises sont relâchées par le
+        // gameTime du niveau. Mélanger ces deux horloges pouvait laisser Thorn actif très longtemps.
+        int scheduleNow = TestProcedure.currentTick(sl);
+        long gameNow = sl.getGameTime();
         int attackerId = attacker == null ? -1 : attacker.getId();
         double x = target.getX(), y = target.getY() + target.getBbHeight() * 0.50f, z = target.getZ();
         if (fx == WeaponVisualEffectId.THORN_MAW_ROOT) {
             // Le centre visuel du nœud est cy + 0,48 * échelle : on y place le centre du corps.
             double liftedY = target.getY() + 0.48 * net.minecraft.util.Mth.clamp(visualScale, 0.30f, 4.0f);
-            applyWoodHold(target, now + 60, true, liftedY);
+            applyWoodHold(target, gameNow + 60, true, liftedY);
             for (int delay = 7; delay <= 56; delay += 7) {
-                TestProcedure.schedule(sl, now + delay, () -> {
+                TestProcedure.schedule(sl, scheduleNow + delay, () -> {
                     WoodHold hold = WOOD_HOLDS.get(target.getId());
                     if (!target.isAlive() || target.level() != sl || hold == null || !hold.fullStun()) return;
                     float randomPart = 0.0010f + sl.random.nextFloat() * 0.0005f;
@@ -732,41 +740,52 @@ public final class WeaponVfxServerListener {
                 });
             }
             sl.playSound(null, x, y, z, SoundEvents.WOOD_BREAK, SoundSource.PLAYERS, 0.72f, 0.72f);
-            TestProcedure.schedule(sl, now + 20, () -> sl.playSound(null, x, y, z,
+            TestProcedure.schedule(sl, scheduleNow + 20, () -> sl.playSound(null, x, y, z,
                     SoundEvents.GRASS_BREAK, SoundSource.PLAYERS, 0.58f, 0.82f));
             return;
         }
         if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) {
-            applyWoodHold(target, now + 60, false);
-            sl.playSound(null, x, y, z, SoundEvents.TRIDENT_THROW, SoundSource.PLAYERS, 0.55f, 1.35f);
-            int[] impacts = {33, 37, 42}; // mêmes contacts que les trois lances à 80 ticks.
-            for (int delay : impacts) {
-                TestProcedure.schedule(sl, now + delay, () -> {
+            applyWoodHold(target, gameNow + 60, false);
+            sl.playSound(null, x, y, z, SoundEvents.WARDEN_EMERGE,
+                    SoundSource.PLAYERS, 0.40f, 0.75f);
+            // Zephyr : trois lances indépendantes, chacune avec SON départ et SON impact.
+            int[] launches = {24, 28, 33};
+            int[] impacts = {33, 37, 42};
+            for (int spear = 0; spear < launches.length; spear++) {
+                int launchDelay = launches[spear];
+                int impactDelay = impacts[spear];
+                float pitch = 1.22f + spear * 0.08f;
+                TestProcedure.schedule(sl, scheduleNow + launchDelay, () -> sl.playSound(null,
+                        x, y, z, SoundEvents.TRIDENT_THROW, SoundSource.PLAYERS, 0.46f, pitch));
+                TestProcedure.schedule(sl, scheduleNow + impactDelay, () -> {
                     if (!target.isAlive() || target.level() != sl) return;
                     if (signatureContact(target, x, y, z, 0.65)) {
                         hurtWithCapturedWeapon(sl, attackerId, target, weaponDamage * 0.5f);
                     }
                     sl.playSound(null, x, y, z, SoundEvents.PLAYER_ATTACK_SWEEP,
-                            SoundSource.PLAYERS, 0.52f, 1.30f + delay * 0.002f);
+                            SoundSource.PLAYERS, 0.52f, pitch + 0.08f);
                 });
             }
             return;
         }
         if (fx != WeaponVisualEffectId.VERDANT_SAP_BLOOM) return;
 
-        int holdStart = now + 64;
-        int holdEnd = now + 82;
+        long holdEndGame = gameNow + 82;
+        int holdStartSchedule = scheduleNow + 64;
+        int holdEndSchedule = scheduleNow + 82;
+        sl.playSound(null, x, y, z, SoundEvents.WARDEN_EMERGE,
+                SoundSource.PLAYERS, 0.40f, 0.75f);
         sl.playSound(null, x, y, z, SoundEvents.BONE_MEAL_USE, SoundSource.PLAYERS, 0.72f, 0.82f);
-        TestProcedure.schedule(sl, holdStart, () -> {
-            if (target.isAlive() && target.level() == sl) applyWoodHold(target, holdEnd, false);
+        TestProcedure.schedule(sl, holdStartSchedule, () -> {
+            if (target.isAlive() && target.level() == sl) applyWoodHold(target, holdEndGame, false);
         });
-        TestProcedure.schedule(sl, now + 74, () -> {
+        TestProcedure.schedule(sl, scheduleNow + 74, () -> {
             if (!target.isAlive() || target.level() != sl) return;
             hurtWithCapturedWeapon(sl, attackerId, target, weaponDamage * 2.0f);
             sl.playSound(null, x, y, z,
                     SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.70f, 1.35f);
         });
-        TestProcedure.schedule(sl, holdEnd, () -> releaseWoodHold(target, holdEnd));
+        TestProcedure.schedule(sl, holdEndSchedule, () -> releaseWoodHold(target, holdEndGame));
     }
 
     private static void applyWoodHold(LivingEntity target, long expires, boolean fullStun) {
@@ -775,6 +794,7 @@ public final class WeaponVfxServerListener {
 
     private static void applyWoodHold(LivingEntity target, long expires, boolean fullStun,
                                       double requestedY) {
+        rememberSignatureAi(target);
         WoodHold previous = WOOD_HOLDS.get(target.getId());
         boolean previousNoAi = previous != null ? previous.previousNoAi()
                 : target instanceof Mob mob && mob.isNoAi();
@@ -789,17 +809,46 @@ public final class WeaponVfxServerListener {
                 mob.setTarget(null);
             }
             target.stopUsingItem();
+        } else {
+            // Si Thorn etait deja actif, une emprise non-stun ne doit pas conserver son NoAi.
+            refreshSignatureAi(target);
         }
         target.setDeltaMovement(Vec3.ZERO);
         target.teleportTo(x, y, z);
         target.fallDistance = 0.0f;
     }
 
+    private static void rememberSignatureAi(LivingEntity target) {
+        if (target instanceof Mob mob) {
+            SIGNATURE_BASELINE_NO_AI.computeIfAbsent(target.getId(), ignored -> mob.isNoAi());
+        }
+    }
+
+    /** Une emprise qui se termine ne doit jamais réveiller un mob encore tenu par une autre. */
+    private static void refreshSignatureAi(LivingEntity target) {
+        if (!(target instanceof Mob mob)) return;
+        int id = target.getId();
+        WoodHold wood = WOOD_HOLDS.get(id);
+        boolean soul = SOUL_HOLDS.containsKey(id);
+        if (wood == null && !soul) {
+            Boolean baseline = SIGNATURE_BASELINE_NO_AI.remove(id);
+            if (baseline != null) mob.setNoAi(baseline);
+            return;
+        }
+        boolean baseline = SIGNATURE_BASELINE_NO_AI.getOrDefault(id, mob.isNoAi());
+        boolean fullyDisabled = soul || (wood != null && wood.fullStun());
+        mob.setNoAi(baseline || fullyDisabled);
+    }
+
     private static void releaseWoodHold(LivingEntity target, long expectedExpiry) {
         WoodHold hold = WOOD_HOLDS.get(target.getId());
         if (hold == null || hold.expires() != expectedExpiry) return;
         WOOD_HOLDS.remove(target.getId());
-        if (hold.fullStun() && target instanceof Mob mob) mob.setNoAi(hold.previousNoAi());
+        refreshSignatureAi(target);
+        // La gravité vanilla reprend immédiatement ; aucune vélocité résiduelle ne maintient le mob.
+        target.setDeltaMovement(Vec3.ZERO);
+        target.fallDistance = 0.0f;
+        target.hurtMarked = true;
     }
 
     private static boolean isSignatureFullyStunned(Entity entity) {
@@ -942,9 +991,9 @@ public final class WeaponVfxServerListener {
             float spacing = (sl.random.nextFloat() - 0.5f) * 0.90f;
             float contact = (sl.random.nextFloat() - 0.5f) * 0.65f;
             float scale = 0.75f + sl.random.nextFloat() * 0.75f;
-            float fromX = (float) (ax + sideX * spacing);
+            float fromX = (float) (ax + dirX * 0.55 + sideX * spacing);
             float fromY = ay + (sl.random.nextFloat() - 0.5f) * 0.35f;
-            float fromZ = (float) (az + sideZ * spacing);
+            float fromZ = (float) (az + dirZ * 0.55 + sideZ * spacing);
             float endX = (float) (ax + dirX * slashLength + sideX * contact);
             float endY = ty + (sl.random.nextFloat() - 0.5f) * target.getBbHeight() * 0.35f;
             float endZ = (float) (az + dirZ * slashLength + sideZ * contact);
