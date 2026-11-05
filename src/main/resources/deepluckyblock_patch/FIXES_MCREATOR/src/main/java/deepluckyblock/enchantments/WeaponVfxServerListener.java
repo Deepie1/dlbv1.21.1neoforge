@@ -83,8 +83,12 @@ public final class WeaponVfxServerListener {
 
     private record WoodHold(long expires, double x, double y, double z, boolean previousNoAi, boolean fullStun) { }
     private record SoulHold(long expires, long riseStart, long riseEnd, long descendStart,
-                            double x, double baseY, double targetY, double z, boolean previousNoAi) { }
-    private record SoulBurn(long expires, long nextDamage) { }
+                            double x, double baseY, double targetY, double z, boolean previousNoAi,
+                            int attackerId, float weaponDamage) { }
+    private record SoulBurn(long expires, long nextDamage, int attackerId,
+                            float weaponDamage, int period) { }
+    /** Empêche les dégâts différés d'une signature de relancer une nouvelle salve d'attaque. */
+    private static final Set<Integer> INTERNAL_SIGNATURE_DAMAGE = new HashSet<>();
 
     /** T351 : attaque NORMALE -> 5 % de chance de déclencher l'animation pixel. */
     private static final int NORMAL_TRIGGER_PERCENT = 5;
@@ -109,6 +113,15 @@ public final class WeaponVfxServerListener {
     /** Garde-fou : au-delà de 6 éléments, on se limite aux 6 plus prioritaires (anti-spam réseau). */
     private static final int ELEMENT_COMBO_MAX = 6;
 
+    private static final WeaponVisualEffectId[] ANIM_FIRE = {
+            WeaponVisualEffectId.MOLTEN_FIRE_WAVE, WeaponVisualEffectId.SOUL_FIRE_CRESCENT,
+            WeaponVisualEffectId.BRIMSTONE_METEOR
+    };
+    private static final WeaponVisualEffectId[] ANIM_GAIA = {
+            WeaponVisualEffectId.ZEPHYR_WIND_LANCE, WeaponVisualEffectId.THORN_MAW_ROOT,
+            WeaponVisualEffectId.VERDANT_SAP_BLOOM
+    };
+
     private WeaponVfxServerListener() {}
 
     /**
@@ -118,6 +131,40 @@ public final class WeaponVfxServerListener {
      * rapport de volume, borné entre <b>0.30</b> (poulet, poisson, silverfish : animation
      * minuscule) et <b>4.0</b> (ravager, wither, dragon : animation énorme).</p>
      */
+    /** Valeur de repli pour les déclencheurs de démonstration hors LivingIncomingDamageEvent. */
+    private static float estimatedWeaponDamage(LivingEntity attacker) {
+        if (attacker == null) return 0.0f;
+        var attribute = attacker.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_DAMAGE);
+        return attribute == null ? 1.0f : Math.max(0.0f, (float) attribute.getValue());
+    }
+
+    /**
+     * Dégât normal Minecraft : armure, résistance, enchantements de protection et attributs de
+     * défense restent appliqués. Seules les i-frames sont réarmées pour permettre le rythme demandé
+     * de 6/7 ticks. Le marqueur évite toute récursion dans le pipeline VFX de l'attaquant.
+     */
+    private static boolean hurtWithCapturedWeapon(ServerLevel sl, int attackerId,
+                                                   LivingEntity target, float amount) {
+        if (!target.isAlive() || target.level() != sl || !(amount > 0.0f)) return false;
+        LivingEntity attacker = sl.getEntity(attackerId) instanceof LivingEntity living ? living : null;
+        DamageSource source = attacker instanceof Player player
+                ? target.damageSources().playerAttack(player)
+                : attacker != null ? target.damageSources().mobAttack(attacker)
+                : target.damageSources().generic();
+        INTERNAL_SIGNATURE_DAMAGE.add(target.getId());
+        try {
+            target.invulnerableTime = 0;
+            return target.hurt(source, amount);
+        } finally {
+            INTERNAL_SIGNATURE_DAMAGE.remove(target.getId());
+        }
+    }
+
+    private static boolean signatureContact(LivingEntity entity, double x, double y, double z,
+                                            double radius) {
+        return entity.getBoundingBox().inflate(radius).contains(x, y, z);
+    }
+
     private static float sizeScaleOf(Entity entity) {
         if (entity == null) return 1.0f;
         double width = Math.max(0.05, entity.getBbWidth());
@@ -188,7 +235,7 @@ public final class WeaponVfxServerListener {
         if (livingTarget != null) {
             tryElementCombo(sl, attacker.getId(), attacker.getMainHandItem(), cx, cy, cz,
                     (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ(),
-                    sizeScaleOf(target), livingTarget);
+                    sizeScaleOf(target), livingTarget, estimatedWeaponDamage(attacker));
         }
 
         // Grosse animation jouée -> le dégât de ce coup sera amplifié de 5 % (voir onLivingHurtVisuals).
@@ -196,7 +243,10 @@ public final class WeaponVfxServerListener {
         broadcastNear(sl, cx, cy, cz, fx.id, KIND_IMPACT, Math.max(2, intensity),
                 cx, cy, cz, (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ(),
                 paletteOf(attacker.getMainHandItem(), fx), sizeScaleOf(target));
-        if (livingTarget != null) applyFireGameplay(attacker, livingTarget, fx, sizeScaleOf(target));
+        if (livingTarget != null) {
+            applyFireGameplay(attacker, livingTarget, fx, sizeScaleOf(target));
+            applyWoodGameplay(attacker, livingTarget, fx, sizeScaleOf(target), estimatedWeaponDamage(attacker));
+        }
     }
 
     /** Appelé lors d'un rebond d'éclair en chaîne entre deux entités. */
@@ -305,14 +355,16 @@ public final class WeaponVfxServerListener {
     private static boolean tryElementCombo(ServerLevel sl, int attackerId, ItemStack weapon,
                                            float tx, float ty, float tz,
                                            float ax, float ay, float az, LivingEntity target) {
-        return tryElementCombo(sl, attackerId, weapon, tx, ty, tz, ax, ay, az, 1.0f, target);
+        LivingEntity attacker = sl.getEntity(attackerId) instanceof LivingEntity living ? living : null;
+        return tryElementCombo(sl, attackerId, weapon, tx, ty, tz, ax, ay, az, 1.0f, target,
+                estimatedWeaponDamage(attacker));
     }
 
     /** T359-BIG-ANIM-SCALE : variante qui applique l'échelle de la cible à chacune des signatures. */
     private static boolean tryElementCombo(ServerLevel sl, int attackerId, ItemStack weapon,
                                            float tx, float ty, float tz,
                                            float ax, float ay, float az, float sizeScale,
-                                           LivingEntity target) {
+                                           LivingEntity target, float weaponDamage) {
         // Un seul combo par coup : le critique et le handler d'impact peuvent viser le même tick.
         long now = sl.getGameTime();
         Long last = LAST_ELEMENT_COMBO_TICK.get(attackerId);
@@ -331,8 +383,9 @@ public final class WeaponVfxServerListener {
             if (sig == null) continue;
             broadcastNear(sl, tx, ty, tz, sig.id, KIND_IMPACT, 3,
                     tx, ty, tz, ax, ay, az, 1 << el.ordinal(), sizeScale);
-            applyFireGameplay(sl.getEntity(attackerId) instanceof LivingEntity comboAttacker
-                    ? comboAttacker : null, target, sig, sizeScale);
+            LivingEntity comboAttacker = sl.getEntity(attackerId) instanceof LivingEntity living ? living : null;
+            applyFireGameplay(comboAttacker, target, sig, sizeScale, weaponDamage);
+            applyWoodGameplay(comboAttacker, target, sig, sizeScale, weaponDamage);
             // Étincelles de la famille, une par élément : le mélange de couleurs se voit tout de suite.
             WeaponVfxSubtle.Subtle accent = WeaponVfxSubtle.pick(el, sl.random.nextLong());
             broadcastNear(sl, tx, ty, tz, 0, WeaponVfxSubtle.NET_KIND_BASE + accent.index(), 1,
@@ -382,7 +435,15 @@ public final class WeaponVfxServerListener {
     /** Direction, contacts hostiles et combustion finale des trois signatures Fire. */
     private static void applyFireGameplay(LivingEntity attacker, LivingEntity target,
                                           WeaponVisualEffectId fx, float visualScale) {
+        applyFireGameplay(attacker, target, fx, visualScale, estimatedWeaponDamage(attacker));
+    }
+
+    private static void applyFireGameplay(LivingEntity attacker, LivingEntity target,
+                                          WeaponVisualEffectId fx, float visualScale,
+                                          float weaponDamage) {
         if (!(target.level() instanceof ServerLevel sl)) return;
+        int attackerId = attacker == null ? -1 : attacker.getId();
+        weaponDamage = Math.max(0.0f, weaponDamage);
         boolean molten = fx == WeaponVisualEffectId.MOLTEN_FIRE_WAVE;
         boolean soul = fx == WeaponVisualEffectId.SOUL_FIRE_CRESCENT;
         boolean meteor = fx == WeaponVisualEffectId.BRIMSTONE_METEOR;
@@ -390,10 +451,10 @@ public final class WeaponVfxServerListener {
 
         long now = sl.getGameTime();
         int scheduleTick = TestProcedure.currentTick(sl);
-        if (molten) scheduleWaveIgnition(sl, attacker, target, scheduleTick);
+        if (molten) scheduleWaveIgnition(sl, attacker, target, scheduleTick, weaponDamage);
         if (meteor) {
             scheduleMeteorTracking(sl, target, scheduleTick);
-            scheduleMeteorExplosionZone(sl, attacker, target, scheduleTick);
+            scheduleMeteorExplosionZone(sl, attacker, target, scheduleTick, weaponDamage);
         }
         scheduleFireSoundtrack(sl, attacker, target, fx, scheduleTick);
 
@@ -414,7 +475,7 @@ public final class WeaponVfxServerListener {
         // FireSignatureVfx : centre = cy + 0.84 * S ; cy est le centre initial de la hitbox.
         double targetY = baseY + 0.84 * net.minecraft.util.Mth.clamp(visualScale, 0.30f, 4.0f);
         SOUL_HOLDS.put(target.getId(), new SoulHold(now + 104, now + 12, now + 22,
-                now + 90, x, baseY, targetY, z, previousNoAi));
+                now + 90, x, baseY, targetY, z, previousNoAi, attackerId, weaponDamage));
         if (target instanceof Mob mob) {
             mob.setNoAi(true);
             mob.setTarget(null);
@@ -438,7 +499,7 @@ public final class WeaponVfxServerListener {
         long now = sl.getGameTime();
         SoulBurn previous = SOUL_BURNS.get(target.getId());
         long nextDamage = previous != null && previous.expires() > now ? previous.nextDamage() : now;
-        SOUL_BURNS.put(target.getId(), new SoulBurn(now + SIGNATURE_FIRE_TICKS, nextDamage));
+        SOUL_BURNS.put(target.getId(), new SoulBurn(now + SIGNATURE_FIRE_TICKS, nextDamage, -1, 1.0f, 20));
         // La flamme orange vanilla est remplacée par notre combustion Soul bleue.
         target.setRemainingFireTicks(0);
         emitSoulBurnParticles(target, 10);
@@ -463,8 +524,13 @@ public final class WeaponVfxServerListener {
         target.setRemainingFireTicks(0);
         if (now % 3L == 0L) emitSoulBurnParticles(target, 4);
         if (now >= burn.nextDamage()) {
-            target.hurt(target.damageSources().onFire(), 1.0f);
-            SOUL_BURNS.put(target.getId(), new SoulBurn(burn.expires(), now + 20L));
+            if (burn.attackerId() >= 0 && burn.period() == 6) {
+                hurtWithCapturedWeapon(sl, burn.attackerId(), target, burn.weaponDamage() * 0.001f);
+            } else {
+                target.hurt(target.damageSources().onFire(), 1.0f);
+            }
+            SOUL_BURNS.put(target.getId(), new SoulBurn(burn.expires(), now + burn.period(),
+                    burn.attackerId(), burn.weaponDamage(), burn.period()));
         }
     }
 
@@ -489,36 +555,35 @@ public final class WeaponVfxServerListener {
 
     /** Corridor de six blocs : front = -2 .. +4, largeur = trois blocs. */
     private static void scheduleWaveIgnition(ServerLevel sl, LivingEntity attacker,
-                                             LivingEntity primaryTarget, int now) {
+                                             LivingEntity primaryTarget, int now, float weaponDamage) {
         WaveOrigin origin = waveOrigin(attacker, primaryTarget);
         double originX = origin.x(), originY = origin.y(), originZ = origin.z();
         double dirX = origin.dirX(), dirZ = origin.dirZ();
         int attackerId = attacker == null ? -1 : attacker.getId();
         int primaryId = primaryTarget.getId();
-        Set<Integer> ignited = new HashSet<>();
 
-        for (int delay = 0; delay <= 112; delay += 4) {
+        // Un contact toutes les 0,35 s, tant que le corps reste dans le rouleau animé et sa queue.
+        for (int delay = 7; delay <= 105; delay += 7) {
             double front = -2.0 + 6.0 * (delay / 112.0);
             TestProcedure.schedule(sl, now + delay, () -> {
-                double centerX = originX + dirX * front;
-                double centerZ = originZ + dirZ * front;
-                // Le volume vertical couvre les collines et descentes suivies par le rendu.
-                AABB query = new AABB(centerX - 2.4, originY - 8.0, centerZ - 2.4,
-                        centerX + 2.4, originY + 8.0, centerZ + 2.4);
+                double centerX = originX + dirX * (front - 0.65);
+                double centerZ = originZ + dirZ * (front - 0.65);
+                AABB query = new AABB(centerX - 3.6, originY - 8.0, centerZ - 3.6,
+                        centerX + 3.6, originY + 8.0, centerZ + 3.6);
                 for (LivingEntity entity : sl.getEntitiesOfClass(LivingEntity.class, query)) {
-                    if (!entity.isAlive() || ignited.contains(entity.getId())) continue;
+                    if (!entity.isAlive()) continue;
                     boolean primary = entity.getId() == primaryId;
-                    // Le joueur à l'origine ne peut jamais être touché par sa propre lave.
                     if (!primary && (entity.getId() == attackerId || !(entity instanceof Enemy))) continue;
                     double rx = entity.getX() - originX;
                     double rz = entity.getZ() - originZ;
                     double along = rx * dirX + rz * dirZ;
                     double lateral = rx * -dirZ + rz * dirX;
                     double radius = entity.getBbWidth() * 0.5;
-                    if (Math.abs(along - front) > 0.90 + radius
+                    if (along > front + 0.90 + radius || along < front - 2.20 - radius
                             || Math.abs(lateral) > 1.50 + radius) continue;
-                    ignited.add(entity.getId());
-                    igniteNormalForFourSeconds(entity);
+                    hurtWithCapturedWeapon(sl, attackerId, entity, weaponDamage * 0.001f);
+                    // Non cumulatif : la durée restante ne dépasse jamais dix secondes.
+                    igniteNormalForTicks(entity, 200);
                 }
             });
         }
@@ -541,12 +606,17 @@ public final class WeaponVfxServerListener {
 
     /** Zone persistante de trois secondes ; chaque ennemi touché brûle trois secondes. */
     private static void scheduleMeteorExplosionZone(ServerLevel sl, LivingEntity attacker,
-                                                    LivingEntity primaryTarget, int now) {
+                                                    LivingEntity primaryTarget, int now,
+                                                    float weaponDamage) {
         int attackerId = attacker == null ? -1 : attacker.getId();
         int primaryId = primaryTarget.getId();
         TestProcedure.schedule(sl, now + METEOR_IMPACT_TICKS, () -> {
             if (primaryTarget.level() != sl) return;
             double x = primaryTarget.getX(), y = primaryTarget.getY(), z = primaryTarget.getZ();
+            // Le rocher touche directement le mob suivi au tick visuel 30, sans stun.
+            if (primaryTarget.isAlive()) {
+                hurtWithCapturedWeapon(sl, attackerId, primaryTarget, weaponDamage * 2.0f);
+            }
             Set<Integer> zoneIgnited = new HashSet<>();
             for (int delay = 0; delay <= METEOR_AOE_FIRE_TICKS; delay += 10) {
                 TestProcedure.schedule(sl, now + METEOR_IMPACT_TICKS + delay, () -> {
@@ -639,38 +709,78 @@ public final class WeaponVfxServerListener {
     /** ZEPHYR/VERDANT = immobilisation sans bloquer les attaques ; THORN = stun complet 3 s. */
     private static void applyWoodGameplay(LivingEntity attacker, LivingEntity target,
                                           WeaponVisualEffectId fx) {
-        if (!(attacker.level() instanceof ServerLevel sl)) return;
+        applyWoodGameplay(attacker, target, fx, sizeScaleOf(target), estimatedWeaponDamage(attacker));
+    }
+
+    private static void applyWoodGameplay(LivingEntity attacker, LivingEntity target,
+                                          WeaponVisualEffectId fx, float visualScale,
+                                          float weaponDamage) {
+        if (!(target.level() instanceof ServerLevel sl)) return;
         int now = TestProcedure.currentTick(sl);
+        int attackerId = attacker == null ? -1 : attacker.getId();
+        double x = target.getX(), y = target.getY() + target.getBbHeight() * 0.50f, z = target.getZ();
         if (fx == WeaponVisualEffectId.THORN_MAW_ROOT) {
-            applyWoodHold(target, now + 60, true);
+            // Le centre visuel du nœud est cy + 0,48 * échelle : on y place le centre du corps.
+            double liftedY = target.getY() + 0.48 * net.minecraft.util.Mth.clamp(visualScale, 0.30f, 4.0f);
+            applyWoodHold(target, now + 60, true, liftedY);
+            for (int delay = 7; delay <= 56; delay += 7) {
+                TestProcedure.schedule(sl, now + delay, () -> {
+                    WoodHold hold = WOOD_HOLDS.get(target.getId());
+                    if (!target.isAlive() || target.level() != sl || hold == null || !hold.fullStun()) return;
+                    float randomPart = 0.0010f + sl.random.nextFloat() * 0.0005f;
+                    hurtWithCapturedWeapon(sl, attackerId, target, weaponDamage * randomPart);
+                });
+            }
+            sl.playSound(null, x, y, z, SoundEvents.WOOD_BREAK.value(), SoundSource.PLAYERS, 0.72f, 0.72f);
+            TestProcedure.schedule(sl, now + 20, () -> sl.playSound(null, x, y, z,
+                    SoundEvents.GRASS_BREAK.value(), SoundSource.PLAYERS, 0.58f, 0.82f));
             return;
         }
         if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) {
             applyWoodHold(target, now + 60, false);
+            sl.playSound(null, x, y, z, SoundEvents.TRIDENT_THROW, SoundSource.PLAYERS, 0.55f, 1.35f);
+            int[] impacts = {33, 37, 42}; // mêmes contacts que les trois lances à 80 ticks.
+            for (int delay : impacts) {
+                TestProcedure.schedule(sl, now + delay, () -> {
+                    if (!target.isAlive() || target.level() != sl) return;
+                    if (signatureContact(target, x, y, z, 0.65)) {
+                        hurtWithCapturedWeapon(sl, attackerId, target, weaponDamage * 0.5f);
+                    }
+                    sl.playSound(null, x, y, z, SoundEvents.PLAYER_ATTACK_SWEEP,
+                            SoundSource.PLAYERS, 0.52f, 1.30f + delay * 0.002f);
+                });
+            }
             return;
         }
         if (fx != WeaponVisualEffectId.VERDANT_SAP_BLOOM) return;
 
         int holdStart = now + 64;
         int holdEnd = now + 82;
+        sl.playSound(null, x, y, z, SoundEvents.BONE_MEAL_USE, SoundSource.PLAYERS, 0.72f, 0.82f);
         TestProcedure.schedule(sl, holdStart, () -> {
             if (target.isAlive() && target.level() == sl) applyWoodHold(target, holdEnd, false);
         });
         TestProcedure.schedule(sl, now + 74, () -> {
             if (!target.isAlive() || target.level() != sl) return;
-            // Explosion VISUELLE et SONORE uniquement : aucun dégât en plus du coup initial.
-            sl.playSound(null, target.getX(), target.getY() + target.getBbHeight() * 0.50f, target.getZ(),
+            hurtWithCapturedWeapon(sl, attackerId, target, weaponDamage * 2.0f);
+            sl.playSound(null, x, y, z,
                     SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.70f, 1.35f);
         });
         TestProcedure.schedule(sl, holdEnd, () -> releaseWoodHold(target, holdEnd));
     }
 
     private static void applyWoodHold(LivingEntity target, long expires, boolean fullStun) {
+        applyWoodHold(target, expires, fullStun, Double.NaN);
+    }
+
+    private static void applyWoodHold(LivingEntity target, long expires, boolean fullStun,
+                                      double requestedY) {
         WoodHold previous = WOOD_HOLDS.get(target.getId());
         boolean previousNoAi = previous != null ? previous.previousNoAi()
                 : target instanceof Mob mob && mob.isNoAi();
         double x = previous != null ? previous.x() : target.getX();
-        double y = previous != null ? previous.y() : target.getY();
+        double y = Double.isNaN(requestedY)
+                ? (previous != null ? previous.y() : target.getY()) : requestedY;
         double z = previous != null ? previous.z() : target.getZ();
         WOOD_HOLDS.put(target.getId(), new WoodHold(expires, x, y, z, previousNoAi, fullStun));
         if (fullStun) {
@@ -738,6 +848,13 @@ public final class WeaponVfxServerListener {
             mob.setTarget(null);
         }
         target.stopUsingItem();
+        if (now >= hold.riseEnd() && target.level() instanceof ServerLevel sl) {
+            SoulBurn current = SOUL_BURNS.get(target.getId());
+            if (current == null || current.expires() < hold.expires() || current.period() != 6) {
+                SOUL_BURNS.put(target.getId(), new SoulBurn(hold.expires(), now,
+                        hold.attackerId(), hold.weaponDamage(), 6));
+            }
+        }
         double y;
         if (now < hold.riseStart()) {
             y = hold.baseY();
@@ -772,6 +889,50 @@ public final class WeaponVfxServerListener {
         }
     }
 
+    private static String animationFamily(ItemStack weapon) {
+        var tag = deepluckyblock.util.DeepNbt.tag(weapon);
+        if (tag == null) return null;
+        String family = tag.getString("DlbAnimFamily");
+        return family.equals("feu") || family.equals("gaia") ? family : null;
+    }
+
+    /** Épées /anim : 60 %, nombre/longueur/espacement/contact réellement retirés à chaque coup. */
+    private static void handleAnimMelee(ServerLevel sl, LivingIncomingDamageEvent event,
+                                        LivingEntity attacker, LivingEntity target,
+                                        ItemStack weapon, String family) {
+        if (sl.random.nextInt(100) >= 60) return;
+        float ax = (float) attacker.getX();
+        float ay = (float) (attacker.getY() + attacker.getBbHeight() * 0.62f);
+        float az = (float) attacker.getZ();
+        float tx = (float) target.getX();
+        float ty = (float) (target.getY() + target.getBbHeight() * 0.50f);
+        float tz = (float) target.getZ();
+        double dx = tx - ax, dz = tz - az;
+        double length = Math.sqrt(dx * dx + dz * dz);
+        if (length < 0.001) { dx = 1.0; dz = 0.0; length = 1.0; }
+        double dirX = dx / length, dirZ = dz / length;
+        double sideX = -dirZ, sideZ = dirX;
+        WeaponVisualEffectId[] pool = family.equals("feu") ? ANIM_FIRE : ANIM_GAIA;
+        int count = 1 + sl.random.nextInt(3);
+        for (int arc = 0; arc < count; arc++) {
+            WeaponVisualEffectId fx = pool[sl.random.nextInt(pool.length)];
+            float slashLength = 2.0f + sl.random.nextFloat() * 3.0f;
+            float spacing = (sl.random.nextFloat() - 0.5f) * 0.90f;
+            float contact = (sl.random.nextFloat() - 0.5f) * 0.65f;
+            float scale = 0.75f + sl.random.nextFloat() * 0.75f;
+            float fromX = (float) (ax + sideX * spacing);
+            float fromY = ay + (sl.random.nextFloat() - 0.5f) * 0.35f;
+            float fromZ = (float) (az + sideZ * spacing);
+            float endX = (float) (ax + dirX * slashLength + sideX * contact);
+            float endY = ty + (sl.random.nextFloat() - 0.5f) * target.getBbHeight() * 0.35f;
+            float endZ = (float) (az + dirZ * slashLength + sideZ * contact);
+            broadcastNear(sl, fromX, fromY, fromZ, fx.id, KIND_SWING_SLASH,
+                    2 + sl.random.nextInt(7), fromX, fromY, fromZ, endX, endY, endZ,
+                    1 << fx.element.ordinal(), scale);
+        }
+        event.setAmount(event.getAmount() * MELEE_SLASH_DAMAGE_MULTIPLIER);
+    }
+
     /**
      * Mêlée directe éligible : exactement UN jet serveur par événement de dégâts accepté.
      * 77 % normal / 20 % slash +5 % / 3 % grande animation +5..15 % selon la taille mesurée.
@@ -780,6 +941,7 @@ public final class WeaponVfxServerListener {
     private static void handleEligibleMelee(ServerLevel sl, LivingIncomingDamageEvent event,
                                             LivingEntity attacker, LivingEntity target, ItemStack weapon,
                                             List<WeaponVisualEffectId.ResolvedLayer> layers) {
+        float capturedWeaponDamage = Math.max(0.0f, event.getAmount());
         int roll = sl.random.nextInt(100);
         if (roll <= MELEE_NORMAL_MAX_ROLL) return;
 
@@ -813,8 +975,8 @@ public final class WeaponVfxServerListener {
         } else {
             broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, layer.level(),
                     tx, ty, tz, ax, ay, az, palette, bigScale);
-            applyWoodGameplay(attacker, target, fx);
-            applyFireGameplay(attacker, target, fx, bigScale);
+            applyWoodGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
+            applyFireGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
         }
     }
 
@@ -823,6 +985,7 @@ public final class WeaponVfxServerListener {
         // Note : on autorise event.getAmount() == 0.0f pour blood_transfusion (#11), curse_of_mercy et toy !
         if (event.isCanceled()) return;
         LivingEntity target = event.getEntity();
+        if (INTERNAL_SIGNATURE_DAMAGE.contains(target.getId())) return;
         if (!(target.level() instanceof ServerLevel sl)) return;
 
         DamageSource src = event.getSource();
@@ -852,6 +1015,11 @@ public final class WeaponVfxServerListener {
         }
 
         ItemStack weapon = resolveImpactWeapon(attacker, direct);
+        String animFamily = animationFamily(weapon);
+        if (animFamily != null && !isProjectileHit && direct == attacker) {
+            handleAnimMelee(sl, event, attacker, target, weapon, animFamily);
+            return;
+        }
         List<WeaponVisualEffectId.ResolvedLayer> layers = resolveAttackerLayers(attacker, weapon, 2);
         if (layers.isEmpty()) return;
 
@@ -927,7 +1095,7 @@ public final class WeaponVfxServerListener {
             // T352-ELEMENT-COMBO : arme multi-éléments -> parfois une animation de CHAQUE élément.
             if (!elementComboDone) {
                 elementComboDone = tryElementCombo(sl, attacker.getId(), weapon, tx, ty, tz, ax, ay, az,
-                        sizeScaleOf(target), target);
+                        sizeScaleOf(target), target, Math.max(0.0f, event.getAmount()));
             }
 
             // T351-BIG-BONUS : les 10 % de grosses animations amplifient de 5 % les dégâts subis
@@ -947,7 +1115,8 @@ public final class WeaponVfxServerListener {
                 int boost = (arrowCrit && fx.category == WeaponVisualEffectId.Category.CRIT) ? layer.level() + 1 : layer.level();
                 broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, boost,
                         tx, ty, tz, ax, ay, az, palette, sizeScaleOf(target));
-                applyFireGameplay(attacker, target, fx, sizeScaleOf(target));
+                applyFireGameplay(attacker, target, fx, sizeScaleOf(target), Math.max(0.0f, event.getAmount()));
+                applyWoodGameplay(attacker, target, fx, sizeScaleOf(target), Math.max(0.0f, event.getAmount()));
             }
         }
     }

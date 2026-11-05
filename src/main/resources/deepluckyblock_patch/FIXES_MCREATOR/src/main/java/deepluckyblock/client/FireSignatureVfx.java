@@ -59,13 +59,12 @@ public final class FireSignatureVfx {
         if (level == null) return;
         ensureTerrainLevel(level);
         worldScale = Math.max(0.05f, worldScale);
-        boolean openSky = level.canSeeSky(BlockPos.containing(worldX, worldY + 1.0, worldZ));
         for (int fi = -4; fi <= 8; fi++) {
             float f = fi * 0.5f;
             for (int li = -3; li <= 3; li++) {
                 float l = li * 0.5f;
                 sampleGround(level, worldX + (dx * f - dz * l) * worldScale, worldY,
-                        worldZ + (dz * f + dx * l) * worldScale, openSky);
+                        worldZ + (dz * f + dx * l) * worldScale);
             }
         }
     }
@@ -76,11 +75,10 @@ public final class FireSignatureVfx {
         if (level == null) return;
         ensureTerrainLevel(level);
         worldScale = Math.max(0.05f, worldScale);
-        boolean openSky = level.canSeeSky(BlockPos.containing(worldX, worldY + 1.0, worldZ));
         for (int fi = -8; fi <= 8; fi++) {
             for (int li = -8; li <= 8; li++) {
                 sampleGround(level, worldX + fi * 0.5 * worldScale, worldY,
-                        worldZ + li * 0.5 * worldScale, openSky);
+                        worldZ + li * 0.5 * worldScale);
             }
         }
     }
@@ -92,11 +90,11 @@ public final class FireSignatureVfx {
     }
 
     /** Hauteur absolue de la surface réelle, avec repli local sous les grottes et structures. */
-    private static float sampleGround(ClientLevel level, double worldX, double originY, double worldZ,
-                                      boolean openSky) {
+    private static float sampleGround(ClientLevel level, double worldX, double originY, double worldZ) {
         ensureTerrainLevel(level);
         int x = Mth.floor(worldX);
         int z = Mth.floor(worldZ);
+        boolean openSky = level.canSeeSky(BlockPos.containing(worldX, originY + 1.0, worldZ));
         int reference = ((Mth.floor(originY) + 128) << 1) | (openSky ? 1 : 0);
         long key = ((x & 0x1FFFFFFL) << 39) | ((z & 0x1FFFFFFL) << 14) | (reference & 0x3FFFL);
         Float cached = TERRAIN_CACHE.get(key);
@@ -131,12 +129,12 @@ public final class FireSignatureVfx {
 
     /** Convertit la hauteur monde en coordonnées caméra utilisées par le moteur de voxels. */
     private record TerrainView(ClientLevel level, double worldX, double worldY, double worldZ,
-                               float dx, float dz, float baseGround, float S, float worldScale, boolean openSky) {
+                               float dx, float dz, float baseGround, float S, float worldScale) {
         float at(float f, float l) {
             if (level == null) return baseGround;
             float worldGround = sampleGround(level,
                     worldX + (dx * f - dz * l) * worldScale, worldY,
-                    worldZ + (dz * f + dx * l) * worldScale, openSky);
+                    worldZ + (dz * f + dx * l) * worldScale);
             float fallbackWorldGround = (float) (worldY - 0.48 * S * worldScale);
             return baseGround + (worldGround - fallbackWorldGround) / worldScale;
         }
@@ -148,10 +146,8 @@ public final class FireSignatureVfx {
                               float dirX, float dirZ, int variant, float scale, float worldScale,
                               int alpha, int salt) {
         if (t <= 0.0f || t >= 1.0f) return;
-        boolean openSky = level != null
-                && level.canSeeSky(BlockPos.containing(worldX, worldY + 1.0, worldZ));
         TerrainView terrain = new TerrainView(level, worldX, worldY, worldZ, dirX, dirZ,
-                cy - 0.48f * scale, scale, Math.max(0.05f, worldScale), openSky);
+                cy - 0.48f * scale, scale, Math.max(0.05f, worldScale));
         if (variant == MOLTEN) renderMolten(vc, mat, tmp, cx, cy, cz, t,
                 dirX, dirZ, scale, alpha, salt, terrain);
         else if (variant == SOUL) renderSoul(vc, mat, tmp, cx, cy, cz, t,
@@ -533,15 +529,17 @@ public final class FireSignatureVfx {
                                      float dx, float dz, float S, int alpha, int salt, TerrainView terrain) {
         float ground = terrain.at(0.0f, 0.0f);
         float exit = smooth01((t - 0.82f) / 0.18f);
-        float q = Mth.clamp((t - 0.015f) / 0.220f, 0.0f, 1.0f);
+        float q = Mth.clamp((t - 0.015f) / (METEOR_IMPACT_PHASE - 0.015f), 0.0f, 1.0f);
         float birth = smooth01(t / 0.025f);
-        float flightFade = 1.0f - smooth01((t - 0.235f) / 0.025f);
+        float flightFade = 1.0f - smooth01((t - METEOR_IMPACT_PHASE) / 0.025f);
         float mf = meteorF(q, salt) * S;
         float ml = meteorL(q, salt) * S;
-        float my = ground + meteorY(q) * S;
+        // Le point final est le centre actuel du mob, quelle que soit sa hitbox ou son échelle.
+        float impactY = (cy - ground) / Math.max(0.05f, S);
+        float my = ground + meteorY(q, impactY) * S;
 
         if (flightFade > 0.0f && q > 0.0f) {
-            float core = 0.27f * S * birth;
+            float core = 0.68f * S * birth;
             localCube(vc, mat, tmp, cx, cy, cz, dx, dz, mf, my, ml,
                     core, ROCK, Math.round(alpha * birth * flightFade));
             localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
@@ -550,9 +548,9 @@ public final class FireSignatureVfx {
             for (int r = 0; r < 14; r++) {
                 float h = hash01(salt, r * 43 + 2000);
                 float angle = r * 2.3999632f + t * (r & 1) * 2.0f;
-                float band = ((r % 5) - 2) * 0.105f * S;
-                float radial = (0.23f + 0.06f * h) * S * birth;
-                float size = (0.105f + 0.075f * h) * S * birth;
+                float band = ((r % 5) - 2) * 0.235f * S;
+                float radial = (0.56f + 0.13f * h) * S * birth;
+                float size = (0.205f + 0.115f * h) * S * birth;
                 float f = mf + Mth.cos(angle) * radial;
                 float l = ml + Mth.sin(angle) * radial;
                 float y = my + band;
@@ -592,7 +590,7 @@ public final class FireSignatureVfx {
                         - backUnitL * billow;
                 float l = meteorL(hq, salt) * S + (n2 - 0.5f) * spread * 2.4f
                         + backUnitF * billow;
-                float y = ground + meteorY(hq) * S
+                float y = ground + meteorY(hq, impactY) * S
                         + Mth.sin(t * 19.0f + k * 1.17f) * spread * 0.65f
                         + Mth.cos(t * 14.0f - age * 9.0f) * age * 0.32f * S;
                 int rgb = age < 0.10f ? LAVA[14] : age < 0.28f ? LAVA[12]
@@ -618,7 +616,7 @@ public final class FireSignatureVfx {
                 }
                 if (k % 4 == 0) {
                     float aheadQ = Math.min(1.0f, hq + 0.01f);
-                    float tangent = (float) Mth.atan2(meteorY(aheadQ) - meteorY(hq),
+                    float tangent = (float) Mth.atan2(meteorY(aheadQ, impactY) - meteorY(hq, impactY),
                             meteorF(aheadQ, salt) - meteorF(hq, salt));
                     float streak = (0.18f + 0.25f * life) * S * trailReveal
                             * (0.82f + 0.30f * n2);
@@ -652,7 +650,7 @@ public final class FireSignatureVfx {
                 float side = Mth.sin(t * 15.0f + p * 2.17f) * sparkAge * (0.50f + 0.80f * h) * S;
                 float f = meteorF(hq, salt) * S + backUnitF * drag - backUnitL * side;
                 float l = meteorL(hq, salt) * S + backUnitL * drag + backUnitF * side;
-                float y = ground + meteorY(hq) * S + sparkAge * (0.35f + 0.65f * h) * S
+                float y = ground + meteorY(hq, impactY) * S + sparkAge * (0.35f + 0.65f * h) * S
                         + Mth.cos(t * 13.0f + p) * sparkAge * 0.22f * S;
                 float size = (0.025f + 0.050f * h) * (1.0f - life * 0.72f) * S;
                 int rgb = life < 0.24f ? LAVA[14] : life < 0.52f ? LAVA[11]
@@ -706,7 +704,7 @@ public final class FireSignatureVfx {
     private static void meteorGroundFire(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                          float cx, float cy, float cz, float dx, float dz,
                                          float t, float S, int alpha, int salt, TerrainView terrain) {
-        float impact = smooth01((t - 0.235f) / 0.16f);
+        float impact = smooth01((t - METEOR_IMPACT_PHASE) / 0.16f);
         if (impact <= 0.0f) return;
         float exit = smooth01((t - 0.82f) / 0.18f);
         float burn = impact * (1.0f - smooth01((t - 0.64f) / 0.18f));
@@ -1073,6 +1071,7 @@ public final class FireSignatureVfx {
     }
 
     private static final float METEOR_FLIGHT_SECONDS = 1.408f;
+    private static final float METEOR_IMPACT_PHASE = 30.0f / 128.0f;
 
     /** Trajectoire droite stable : le côté du ciel dépend de la graine de l'instance, pas du tick. */
     private static float meteorDistance(int salt) {
@@ -1091,8 +1090,8 @@ public final class FireSignatureVfx {
         return Mth.sin(angle) * distance * (1.0f - q);
     }
 
-    private static float meteorY(float q) {
-        return 0.12f + 13.50f * (1.0f - q);
+    private static float meteorY(float q, float impactY) {
+        return impactY + (13.50f + 0.12f - impactY) * (1.0f - q);
     }
 
     private static void smoke(VertexConsumer vc, Matrix4f mat, Vector3f tmp,

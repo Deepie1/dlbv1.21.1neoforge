@@ -26,9 +26,9 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
   <div class="rule"></div>
   <span class="label">Signature de l’enchantement</span>
   <div class="variants" role="group" aria-label="Variante Wood">
-    <button class="variant" data-variant="0"><span class="num">Ⅰ</span><span><b>Zephyr Wind Lance</b><small>Flux de vent dans les branches</small></span></button>
-    <button class="variant active" data-variant="1"><span class="num">Ⅱ</span><span><b>Thorn Maw Root</b><small>Mâchoire de racines refermée</small></span></button>
-    <button class="variant" data-variant="2"><span class="num">Ⅲ</span><span><b>Verdant Sap Bloom</b><small>Fleurs et sève ambrée</small></span></button>
+    <button class="variant" data-variant="0"><span class="num">Ⅰ</span><span><b>Zephyr Wind Lance</b><small>Trois lances · 0,5× chacune</small></span></button>
+    <button class="variant active" data-variant="1"><span class="num">Ⅱ</span><span><b>Thorn Maw Root</b><small>Nœud centré · dégâts rythmés</small></span></button>
+    <button class="variant" data-variant="2"><span class="num">Ⅲ</span><span><b>Verdant Sap Bloom</b><small>Fleurs et sève ambrée · impact 2×</small></span></button>
   </div>
   <span class="label">Croissance du modèle partagé</span>
   <div class="controls"><button class="btn primary" id="play">Pause</button><button class="btn" id="replay">Rejouer</button></div>
@@ -36,7 +36,7 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
   <div class="phase" id="phase">01 — Racines et tronc</div>
   <div class="stats"><div class="stat"><b id="baseCount">1167</b><span>Voxels de l’arbre</span></div><div class="stat"><b>900</b><span>Cubes de feuilles</span></div></div>
   <div class="legend"><span style="--c:#8c542d">Écorce</span><span style="--c:#70b548">Feuillage</span><span style="--c:#e3d98a">Accent</span></div>
-  <a class="download" href="./DLB_Gaia_World_Tree_src.zip" download>Télécharger les sources Java · ZIP</a>
+  <a class="download" href="./DLB_Wood_Three_Signatures_src.zip" download>Télécharger les sources Java · ZIP</a>
   <p class="refs">Modèle procédural original après étude de silhouettes voxel : <a href="https://sketchfab.com/3d-models/giant-oak-tree-voxel-d62cf4c17f3e447daaf31a0a57777268" target="_blank" rel="noreferrer">Giant Oak Tree Voxel</a> et <a href="https://studio.tripo3d.ai/3d-model-gallery/voxel-tree" target="_blank" rel="noreferrer">couronnes denses en cubes</a>. Aucun asset externe n’est requis.</p>
 </aside>
 <main>
@@ -75,7 +75,7 @@ function growthAt(time){const r=clamp(time/.72);return 1-Math.pow(1-r,3)}
 function baseVoxels(out){const growth=growthAt(t),spread=.18+.82*growth;let visible=0;
  for(let i=0;i<DATA.length;i+=STRIDE){const stage=DATA[i+6],reveal=clamp((growth-stage)/.14);if(reveal<=0)continue;
   const appear=1-Math.pow(1-reveal,2),role=DATA[i+7]|0;let x=DATA[i]*spread,y=BASE+(DATA[i+1]-BASE)*growth,z=DATA[i+2]*spread;
-  if(role>=5){const sway=Math.sin((growth*1.7+(SALT&63)*.013)*5+DATA[i]*2.1+DATA[i+2])*.026*growth;x+=sway;z+=sway*.55;y+=sway*.25}
+  if(role>=5&&variant===2){const sway=Math.sin((growth*1.7+(SALT&63)*.013)*5+DATA[i]*2.1+DATA[i+2])*.026*growth;x+=sway;z+=sway*.55;y+=sway*.25}
   out.push({x,y,z,hx:DATA[i+3]*appear,hy:DATA[i+4]*appear,hz:DATA[i+5]*appear,c:PALETTE[colorRole(role)],a:clamp(reveal*1.6)});visible++;
  }
  return visible;

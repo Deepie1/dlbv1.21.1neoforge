@@ -83,6 +83,8 @@ public final class WeaponWorldVfxManager {
     private static float frameTimeSeconds;
     /** T349-PIXEL-VARIATION : échelle douce globale de tous les pixels. */
     private static float framePixelScale = 1.0f;
+    /** Les signatures Gaia utilisent des dimensions stables; seules leurs trajectoires bougent. */
+    private static boolean voxelPulseEnabled = true;
 
     // ============================================================================================
     // T367-VOXEL-MATERIAL — matière des cubes : voile (transparence), reflet (gloss), grain (texture)
@@ -1186,7 +1188,8 @@ public final class WeaponWorldVfxManager {
                     || inst.effect == WeaponVisualEffectId.BRIMSTONE_METEOR) {
                 float fireDx = Mth.sin(-inst.yawDeg * Mth.DEG_TO_RAD);
                 float fireDz = Mth.cos(-inst.yawDeg * Mth.DEG_TO_RAD);
-                if (inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE) {
+                if (inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE
+                        || inst.effect == WeaponVisualEffectId.SOUL_FIRE_CRESCENT) {
                     fireDx = -fireDx;
                     fireDz = -fireDz;
                 }
@@ -2722,8 +2725,10 @@ public final class WeaponWorldVfxManager {
             // Graine stable pendant toute la chorégraphie : la direction céleste du météore ne
             // doit pas changer à chaque tick, contrairement au sel animé des impacts génériques.
             int fireSalt = (int) (v.inst().seed & 0x7FFFFFFFL);
-            float fireDirX = signature == FireSignatureVfx.MOLTEN ? -v.dirX() : v.dirX();
-            float fireDirZ = signature == FireSignatureVfx.MOLTEN ? -v.dirZ() : v.dirZ();
+            float fireDirX = signature == FireSignatureVfx.MOLTEN || signature == FireSignatureVfx.SOUL
+                    ? -v.dirX() : v.dirX();
+            float fireDirZ = signature == FireSignatureVfx.MOLTEN || signature == FireSignatureVfx.SOUL
+                    ? -v.dirZ() : v.dirZ();
             float waveShift = signature == FireSignatureVfx.MOLTEN ? fireWaveOriginShift(v.inst()) : 0.0f;
             FireSignatureVfx.render(Minecraft.getInstance().level,
                     v.inst().x + fireDirX * waveShift, v.inst().y, v.inst().z + fireDirZ * waveShift,
@@ -3295,8 +3300,14 @@ public final class WeaponWorldVfxManager {
                 : GaiaWorldTreeVfx.VERDANT;
         // Les impacts transportent cible -> attaquant ; les accents dirigés utilisent l'inverse.
         float dirX = -v.dirX(), dirZ = -v.dirZ();
-        GaiaWorldTreeVfx.render(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), v.t(),
-                dirX, dirZ, variant, v.fadeA(), v.salt());
+        boolean previousPulse = voxelPulseEnabled;
+        voxelPulseEnabled = false;
+        try {
+            GaiaWorldTreeVfx.render(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), v.t(),
+                    dirX, dirZ, variant, v.fadeA(), v.salt());
+        } finally {
+            voxelPulseEnabled = previousPulse;
+        }
     }
 
     /**
@@ -3949,7 +3960,7 @@ public final class WeaponWorldVfxManager {
         cubesSinceFlush++;
 
         // T349-PIXEL-VARIATION : la taille respire doucement dans le temps…
-        float scale = framePixelScale * smoothPulse(cx, cy, cz) * variantScale;
+        float scale = (voxelPulseEnabled ? framePixelScale * smoothPulse(cx, cy, cz) : 1.0f) * variantScale;
         // …T367 : …et chaque cube a en plus sa PROPRE taille (aucun n'est identique à son voisin).
         int sizeSeed = (int) (cx * 911.0f + cy * 577.0f + cz * 331.0f);
         scale *= 0.82f + 0.34f * pixelHash(0x51C3, sizeSeed);
@@ -4047,7 +4058,7 @@ public final class WeaponWorldVfxManager {
         if (cubesSinceFlush >= HARD_CUBE_CAP_PER_FRAME) return;
         cubesSinceFlush++;
 
-        float scale = framePixelScale * smoothPulse(cx, cy, cz) * variantScale;
+        float scale = (voxelPulseEnabled ? framePixelScale * smoothPulse(cx, cy, cz) : 1.0f) * variantScale;
         int sizeSeed = (int) (cx * 911.0f + cy * 577.0f + cz * 331.0f);
         scale *= 0.82f + 0.34f * pixelHash(0x51C3, sizeSeed);
         hx *= scale;

@@ -325,6 +325,32 @@ public final class DlbVfxCommand {
         }
         dummyTest.executes(DlbVfxCommand::startDummyTest);
         event.getDispatcher().register(dummyTest);
+
+        LiteralArgumentBuilder<CommandSourceStack> anim = Commands.literal("anim");
+        if (opOnly()) {
+            anim.requires(src -> src.hasPermission(2));
+        }
+        anim.then(Commands.literal("feu").executes(ctx -> giveAnimationSword(ctx, "feu")))
+                .then(Commands.literal("gaia").executes(ctx -> giveAnimationSword(ctx, "gaia")));
+        event.getDispatcher().register(anim);
+    }
+
+    private static int giveAnimationSword(CommandContext<CommandSourceStack> ctx, String family)
+            throws CommandSyntaxException {
+        ServerPlayer player = requirePlayer(ctx);
+        ItemStack sword = new ItemStack(Items.NETHERITE_SWORD);
+        var tag = deepluckyblock.util.DeepNbt.getOrCreateTag(sword);
+        tag.putString("DlbAnimFamily", family);
+        deepluckyblock.util.DeepNbt.commit(sword, tag);
+        sword.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+                Component.literal((family.equals("feu") ? "§cAnimation Feu" : "§aAnimation Gaia")
+                        + " §7— §f60%"));
+        if (!player.getInventory().add(sword)) {
+            player.drop(sword, false);
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("§b[/anim " + family + "] §fÉpée donnée : "
+                + "§e60% §fde déclenchement, §f1 à 3 arcs§7, longueur, espacement et contact aléatoires."), false);
+        return 1;
     }
 
     // =====================================================================

@@ -133,7 +133,7 @@ private static float smooth01(float v) {
             float x = model[i] * spread + treeOffsetX(variant, sourceY, exit);
             float y = BASE + (sourceY - BASE) * growth + treeOffsetY(variant, sourceY, exit);
             float z = model[i + 2] * spread + treeOffsetZ(variant, sourceY, exit);
-            if (role >= 5) {
+            if (role >= 5 && variant == VERDANT) {
                 float sway = Mth.sin(growth * 8.5f + (salt & 63) * 0.065f
                         + model[i] * 2.1f + model[i + 2]) * 0.026f * growth;
                 x += sway;
@@ -325,7 +325,7 @@ private static float smooth01(float v) {
             }
         }
 
-        // 3) Une bulle/amas amber monte du sol et englobe le torse, sans aucun dégât ajouté.
+        // 3) Une bulle/amas ambre monte du sol et englobe le torse avant l'explosion.
         float mass = smooth01((t - 0.66f) / 0.09f);
         if (mass > 0.0f && t < 0.77f) {
             for (int ix = -3; ix <= 3; ix++) {
@@ -410,12 +410,7 @@ private static float smooth01(float v) {
         x = Mth.lerp(tiltWeight, x, tiltedX);
         y = Mth.lerp(tiltWeight, y, tiltedY);
 
-        // Très légère mobilité organique ; tous les accessoires reçoivent ensuite ce même point.
-        float live = smooth01((t - 0.04f) / 0.18f);
-        float sway = Mth.sin(t * 10.0f + strand * 1.7f + u * 9.0f) * 0.035f * u * live;
-        x += sway * Mth.cos(phase + 1.2f);
-        z += sway * Mth.sin(phase + 1.2f);
-        y += Mth.sin(t * 8.0f + u * 11.0f + phase) * 0.018f * u * live;
+        // Géométrie stable : croissance/rétraction uniquement, aucun tremblement du nœud.
         float retract = smooth01((t - 0.63f) / 0.32f);
         y -= retract * (1.85f + 0.30f * hash01(salt, 719 + strand * 41));
 
