@@ -896,23 +896,45 @@ public final class WeaponVfxServerListener {
         return family.equals("feu") || family.equals("gaia") ? family : null;
     }
 
-    /** Épées /anim : 60 %, nombre/longueur/espacement/contact réellement retirés à chaque coup. */
+    /**
+     * Épées /anim : un seul jet par coup. 0..59 = slashes aléatoires ; 60..99 = grosse
+     * signature réelle. Seule une grosse animation fait avancer le compteur NBT de l'épée :
+     * les trois signatures tournent donc dans l'ordre, sans reroll et sans répétition aléatoire.
+     */
     private static void handleAnimMelee(ServerLevel sl, LivingIncomingDamageEvent event,
                                         LivingEntity attacker, LivingEntity target,
                                         ItemStack weapon, String family) {
-        if (sl.random.nextInt(100) >= 60) return;
+        float capturedWeaponDamage = Math.max(0.0f, event.getAmount());
+        int roll = sl.random.nextInt(100);
         float ax = (float) attacker.getX();
         float ay = (float) (attacker.getY() + attacker.getBbHeight() * 0.62f);
         float az = (float) attacker.getZ();
         float tx = (float) target.getX();
         float ty = (float) (target.getY() + target.getBbHeight() * 0.50f);
         float tz = (float) target.getZ();
+        WeaponVisualEffectId[] pool = family.equals("feu") ? ANIM_FIRE : ANIM_GAIA;
+
+        if (roll >= 60) {
+            var tag = deepluckyblock.util.DeepNbt.getOrCreateTag(weapon);
+            int sequence = Math.floorMod(tag.getInt("DlbAnimNext"), pool.length);
+            tag.putInt("DlbAnimNext", (sequence + 1) % pool.length);
+            deepluckyblock.util.DeepNbt.commit(weapon, tag);
+            WeaponVisualEffectId fx = pool[sequence];
+            float measuredScale = sizeScaleOf(target);
+            float bigScale = bigMeleeVisualScale(measuredScale);
+            event.setAmount(event.getAmount() * (1.0f + bigMeleeBonusPercent(measuredScale) / 100.0f));
+            broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, 6,
+                    tx, ty, tz, ax, ay, az, 1 << fx.element.ordinal(), bigScale);
+            applyWoodGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
+            applyFireGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
+            return;
+        }
+
         double dx = tx - ax, dz = tz - az;
         double length = Math.sqrt(dx * dx + dz * dz);
         if (length < 0.001) { dx = 1.0; dz = 0.0; length = 1.0; }
         double dirX = dx / length, dirZ = dz / length;
         double sideX = -dirZ, sideZ = dirX;
-        WeaponVisualEffectId[] pool = family.equals("feu") ? ANIM_FIRE : ANIM_GAIA;
         int count = 1 + sl.random.nextInt(3);
         for (int arc = 0; arc < count; arc++) {
             WeaponVisualEffectId fx = pool[sl.random.nextInt(pool.length)];

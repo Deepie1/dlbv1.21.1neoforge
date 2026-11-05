@@ -341,15 +341,17 @@ public final class DlbVfxCommand {
         ItemStack sword = new ItemStack(Items.NETHERITE_SWORD);
         var tag = deepluckyblock.util.DeepNbt.getOrCreateTag(sword);
         tag.putString("DlbAnimFamily", family);
+        tag.putInt("DlbAnimNext", 0);
         deepluckyblock.util.DeepNbt.commit(sword, tag);
         sword.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
                 Component.literal((family.equals("feu") ? "§cAnimation Feu" : "§aAnimation Gaia")
-                        + " §7— §f60%"));
+                        + " §7— §f60 / 40"));
         if (!player.getInventory().add(sword)) {
             player.drop(sword, false);
         }
         ctx.getSource().sendSuccess(() -> Component.literal("§b[/anim " + family + "] §fÉpée donnée : "
-                + "§e60% §fde déclenchement, §f1 à 3 arcs§7, longueur, espacement et contact aléatoires."), false);
+                + "§e60% slashes §f(1 à 3 arcs aléatoires) + §e40% grosses animations§f, "
+                + "dans l’ordre et en boucle."), false);
         return 1;
     }
 
