@@ -58,6 +58,7 @@ public final class WeaponVfxServerListener {
     public static final int KIND_IMPACT            = 1;
     public static final int KIND_BEAM_SIPHON       = 2;
     public static final int KIND_PROJECTILE_ATTACH = 3;
+    public static final int KIND_METEOR_TRACK = 4;
 
     private static final Map<Integer, Long> LAST_ATTACKER_HIT_TICK = new ConcurrentHashMap<>();
     private static final Map<Integer, Long> LAST_PROJECTILE_HIT_TICK = new ConcurrentHashMap<>();
@@ -76,6 +77,9 @@ public final class WeaponVfxServerListener {
     /** Combustion Soul réelle : 80 ticks de flammes bleues et de dégâts périodiques. */
     private static final Map<Integer, SoulBurn> SOUL_BURNS = new ConcurrentHashMap<>();
     private static final int SIGNATURE_FIRE_TICKS = 80;
+    private static final int METEOR_AOE_FIRE_TICKS = 60;
+    private static final int METEOR_IMPACT_TICKS = 30;
+    private static final double METEOR_FIRE_RADIUS = 4.0;
 
     private record WoodHold(long expires, double x, double y, double z, boolean previousNoAi, boolean fullStun) { }
     private record SoulHold(long expires, long riseStart, long riseEnd, long descendStart,
@@ -384,6 +388,11 @@ public final class WeaponVfxServerListener {
         long now = sl.getGameTime();
         int scheduleTick = TestProcedure.currentTick(sl);
         if (molten) scheduleWaveIgnition(sl, attacker, target, scheduleTick);
+        if (meteor) {
+            scheduleMeteorTracking(sl, target, scheduleTick);
+            scheduleMeteorExplosionZone(sl, attacker, target, scheduleTick);
+        }
+        scheduleFireSoundtrack(sl, attacker, target, fx, scheduleTick);
 
         // La fin de chorégraphie réapplique exactement quatre secondes de feu à la cible.
         int duration = meteor ? 128 : 112;
@@ -413,8 +422,12 @@ public final class WeaponVfxServerListener {
     }
 
     private static void igniteNormalForFourSeconds(LivingEntity target) {
+        igniteNormalForTicks(target, SIGNATURE_FIRE_TICKS);
+    }
+
+    private static void igniteNormalForTicks(LivingEntity target, int ticks) {
         SOUL_BURNS.remove(target.getId());
-        target.setRemainingFireTicks(Math.max(target.getRemainingFireTicks(), SIGNATURE_FIRE_TICKS));
+        target.setRemainingFireTicks(Math.max(target.getRemainingFireTicks(), ticks));
     }
 
     private static void igniteSoulForFourSeconds(LivingEntity target) {
@@ -452,12 +465,10 @@ public final class WeaponVfxServerListener {
         }
     }
 
-    /** Corridor de quatre blocs : front = -2 .. +2, largeur = trois blocs. */
-    private static void scheduleWaveIgnition(ServerLevel sl, LivingEntity attacker,
-                                             LivingEntity primaryTarget, int now) {
-        double originX = primaryTarget.getX();
-        double originY = primaryTarget.getY();
-        double originZ = primaryTarget.getZ();
+    private record WaveOrigin(double x, double y, double z, double dirX, double dirZ) { }
+
+    /** Départ un bloc devant le joueur en mêlée, sans rapprocher la vague d'une cible distante. */
+    private static WaveOrigin waveOrigin(LivingEntity attacker, LivingEntity primaryTarget) {
         double dx = attacker == null ? 1.0 : primaryTarget.getX() - attacker.getX();
         double dz = attacker == null ? 0.0 : primaryTarget.getZ() - attacker.getZ();
         double length = Math.sqrt(dx * dx + dz * dz);
@@ -466,8 +477,19 @@ public final class WeaponVfxServerListener {
             dz = 0.0;
             length = 1.0;
         }
-        final double dirX = dx / length;
-        final double dirZ = dz / length;
+        double dirX = dx / length;
+        double dirZ = dz / length;
+        double shift = Math.max(0.0, 3.0 - length);
+        return new WaveOrigin(primaryTarget.getX() + dirX * shift, primaryTarget.getY(),
+                primaryTarget.getZ() + dirZ * shift, dirX, dirZ);
+    }
+
+    /** Corridor de quatre blocs : front = -2 .. +2, largeur = trois blocs. */
+    private static void scheduleWaveIgnition(ServerLevel sl, LivingEntity attacker,
+                                             LivingEntity primaryTarget, int now) {
+        WaveOrigin origin = waveOrigin(attacker, primaryTarget);
+        double originX = origin.x(), originY = origin.y(), originZ = origin.z();
+        double dirX = origin.dirX(), dirZ = origin.dirZ();
         int attackerId = attacker == null ? -1 : attacker.getId();
         int primaryId = primaryTarget.getId();
         Set<Integer> ignited = new HashSet<>();
@@ -482,6 +504,7 @@ public final class WeaponVfxServerListener {
                 for (LivingEntity entity : sl.getEntitiesOfClass(LivingEntity.class, query)) {
                     if (!entity.isAlive() || ignited.contains(entity.getId())) continue;
                     boolean primary = entity.getId() == primaryId;
+                    // Le joueur à l'origine ne peut jamais être touché par sa propre lave.
                     if (!primary && (entity.getId() == attackerId || !(entity instanceof Enemy))) continue;
                     double rx = entity.getX() - originX;
                     double rz = entity.getZ() - originZ;
@@ -495,6 +518,108 @@ public final class WeaponVfxServerListener {
                 }
             });
         }
+    }
+
+    /** La tête chercheuse suit la cible sans la stun, puis s'arrête à l'impact. */
+    private static void scheduleMeteorTracking(ServerLevel sl, LivingEntity target, int now) {
+        int targetId = target.getId();
+        for (int delay = 0; delay <= METEOR_IMPACT_TICKS; delay += 2) {
+            TestProcedure.schedule(sl, now + delay, () -> {
+                if (!target.isAlive() || target.level() != sl) return;
+                float x = (float) target.getX();
+                float y = (float) (target.getY() + target.getBbHeight() * 0.5);
+                float z = (float) target.getZ();
+                broadcastNear(sl, x, y, z, WeaponVisualEffectId.BRIMSTONE_METEOR.id,
+                        KIND_METEOR_TRACK, 0, x, y, z, targetId, 0.0f, 0.0f);
+            });
+        }
+    }
+
+    /** Zone persistante de trois secondes ; chaque ennemi touché brûle trois secondes. */
+    private static void scheduleMeteorExplosionZone(ServerLevel sl, LivingEntity attacker,
+                                                    LivingEntity primaryTarget, int now) {
+        int attackerId = attacker == null ? -1 : attacker.getId();
+        int primaryId = primaryTarget.getId();
+        TestProcedure.schedule(sl, now + METEOR_IMPACT_TICKS, () -> {
+            if (primaryTarget.level() != sl) return;
+            double x = primaryTarget.getX(), y = primaryTarget.getY(), z = primaryTarget.getZ();
+            Set<Integer> zoneIgnited = new HashSet<>();
+            for (int delay = 0; delay <= METEOR_AOE_FIRE_TICKS; delay += 10) {
+                TestProcedure.schedule(sl, now + METEOR_IMPACT_TICKS + delay, () -> {
+                    AABB area = new AABB(x - METEOR_FIRE_RADIUS, y - 2.0, z - METEOR_FIRE_RADIUS,
+                            x + METEOR_FIRE_RADIUS, y + 3.0, z + METEOR_FIRE_RADIUS);
+                    for (LivingEntity entity : sl.getEntitiesOfClass(LivingEntity.class, area)) {
+                        if (!entity.isAlive() || zoneIgnited.contains(entity.getId())) continue;
+                        boolean primary = entity.getId() == primaryId;
+                        if (!primary && (entity.getId() == attackerId || !(entity instanceof Enemy))) continue;
+                        double dx = entity.getX() - x, dz = entity.getZ() - z;
+                        if (dx * dx + dz * dz > METEOR_FIRE_RADIUS * METEOR_FIRE_RADIUS) continue;
+                        zoneIgnited.add(entity.getId());
+                        igniteNormalForTicks(entity, METEOR_AOE_FIRE_TICKS);
+                    }
+                });
+            }
+        });
+    }
+
+    /** Bruitages vanilla placés sur les phases et les positions réelles des animations. */
+    private static void scheduleFireSoundtrack(ServerLevel sl, LivingEntity attacker,
+                                               LivingEntity target, WeaponVisualEffectId fx, int now) {
+        if (fx == WeaponVisualEffectId.MOLTEN_FIRE_WAVE) {
+            WaveOrigin origin = waveOrigin(attacker, target);
+            int[] lavaTicks = {0, 20, 40, 60, 80};
+            for (int delay : lavaTicks) {
+                double front = -2.0 + 4.0 * (delay / 112.0);
+                double x = origin.x() + origin.dirX() * front;
+                double z = origin.z() + origin.dirZ() * front;
+                TestProcedure.schedule(sl, now + delay, () -> sl.playSound(null, x, origin.y(), z,
+                        SoundEvents.LAVA_AMBIENT, SoundSource.PLAYERS, 0.72f, 1.05f + delay * 0.0015f));
+            }
+            TestProcedure.schedule(sl, now, () -> sl.playSound(null, target.getX(), target.getY(), target.getZ(),
+                    SoundEvents.FIRE_AMBIENT, SoundSource.PLAYERS, 0.58f, 1.25f));
+            TestProcedure.schedule(sl, now + 100, () -> sl.playSound(null,
+                    target.getX(), target.getY(), target.getZ(),
+                    SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.72f, 1.10f));
+            return;
+        }
+        if (fx == WeaponVisualEffectId.SOUL_FIRE_CRESCENT) {
+            TestProcedure.schedule(sl, now, () -> sl.playSound(null, target.getX(), target.getY(), target.getZ(),
+                    SoundEvents.FIRE_AMBIENT, SoundSource.PLAYERS, 0.48f, 1.75f));
+            TestProcedure.schedule(sl, now + 22, () -> sl.playSound(null,
+                    target.getX(), target.getY() + 0.8, target.getZ(),
+                    SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 0.42f, 1.65f));
+            for (int delay : new int[]{46, 74}) {
+                TestProcedure.schedule(sl, now + delay, () -> sl.playSound(null,
+                        target.getX(), target.getY(), target.getZ(),
+                        SoundEvents.FIRE_AMBIENT, SoundSource.PLAYERS, 0.36f, 1.85f));
+            }
+            TestProcedure.schedule(sl, now + 104, () -> sl.playSound(null,
+                    target.getX(), target.getY(), target.getZ(),
+                    SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.50f, 1.70f));
+            return;
+        }
+        if (fx != WeaponVisualEffectId.BRIMSTONE_METEOR) return;
+        TestProcedure.schedule(sl, now, () -> {
+            sl.playSound(null, target.getX(), target.getY() + 6.0, target.getZ(),
+                    SoundEvents.FIREWORK_ROCKET_LAUNCH, SoundSource.PLAYERS, 0.90f, 0.65f);
+            sl.playSound(null, target.getX(), target.getY() + 4.0, target.getZ(),
+                    SoundEvents.ENDER_DRAGON_FLAP, SoundSource.PLAYERS, 0.40f, 1.65f);
+        });
+        TestProcedure.schedule(sl, now + 12, () -> sl.playSound(null,
+                target.getX(), target.getY() + 2.0, target.getZ(),
+                SoundEvents.FIRE_AMBIENT, SoundSource.PLAYERS, 0.46f, 0.80f));
+        TestProcedure.schedule(sl, now + METEOR_IMPACT_TICKS, () -> {
+            sl.playSound(null, target.getX(), target.getY(), target.getZ(),
+                    SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 1.10f, 0.82f);
+            sl.playSound(null, target.getX(), target.getY(), target.getZ(),
+                    SoundEvents.LAVA_AMBIENT, SoundSource.PLAYERS, 0.78f, 0.85f);
+        });
+        TestProcedure.schedule(sl, now + 50, () -> sl.playSound(null, target.getX(), target.getY(), target.getZ(),
+                SoundEvents.FIRE_AMBIENT, SoundSource.PLAYERS, 0.48f, 0.95f));
+        TestProcedure.schedule(sl, now + 70, () -> sl.playSound(null, target.getX(), target.getY(), target.getZ(),
+                SoundEvents.LAVA_AMBIENT, SoundSource.PLAYERS, 0.42f, 1.15f));
+        TestProcedure.schedule(sl, now + 90, () -> sl.playSound(null, target.getX(), target.getY(), target.getZ(),
+                SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.42f, 0.95f));
     }
 
     private static void releaseSoulHold(LivingEntity target, long expectedExpiry) {

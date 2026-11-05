@@ -660,7 +660,7 @@ public final class FireSignatureVfx {
             float reveal = smooth01((t - 0.235f - (lobe % 4) * 0.012f) / 0.12f);
             if (reveal <= 0.0f) continue;
             float angle = lobe * 2.3999632f;
-            float radius = (0.10f + impact * (0.55f + h * 0.85f)) * S;
+            float radius = (0.20f + impact * (1.80f + h * 2.00f)) * S;
             float f = Mth.cos(angle) * radius;
             float l = Mth.sin(angle) * radius;
             float y = terrain.at(f, l) + (0.10f + impact * (0.25f + h * 0.55f)) * S;
@@ -680,7 +680,7 @@ public final class FireSignatureVfx {
             float angle = p * 2.3999632f;
             float reveal = smooth01((t - 0.265f - (p % 6) * 0.017f) / 0.14f);
             if (reveal <= 0.0f || p % 13 == 0) continue;
-            float radius = (0.28f + (p % 4) * 0.27f + impact * 0.18f) * S;
+            float radius = (0.35f + (p % 4) * 0.45f + impact * 2.20f) * S;
             float patchF = Mth.cos(angle) * radius;
             float patchL = Mth.sin(angle) * radius;
             groundPatch(vc, mat, tmp, cx, cy, cz, dx, dz,
@@ -695,7 +695,7 @@ public final class FireSignatureVfx {
             float h = hash01(salt, p * 59 + 2900);
             float angle = p * 2.3999632f;
             float time = age * 6.4f;
-            float speed = (0.75f + 1.85f * h) * S;
+            float speed = (1.40f + 3.00f * h) * S;
             float f = Mth.cos(angle) * speed * time;
             float l = Mth.sin(angle) * speed * time;
             float vy = (1.65f + 2.75f * hash01(salt, p * 61)) * S;
@@ -1011,23 +1011,40 @@ public final class FireSignatureVfx {
             float age = t - start - (p % 8) * 0.017f;
             if (age <= 0.0f) continue;
             float h = hash01(salt, p * 67 + 3200);
-            float life = Mth.clamp(age / 0.31f, 0.0f, 1.0f);
-            float fade = (1.0f - life) * smooth01(age / 0.05f);
-            float angle = p * 2.3999632f + life * 1.8f;
-            float radius = (0.16f + h * spread + life * 0.38f) * S;
-            float pf = f + Mth.cos(angle) * radius + life * 0.25f * S;
-            float pl = l + Mth.sin(angle) * radius;
-            float py = ground + (0.28f + h * 0.48f + life * 1.65f) * S;
-            float size = (0.095f + h * 0.115f + life * 0.075f) * S;
-            localBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, py, pl,
-                    size * 1.15f, size * 0.82f, size,
-                    (p & 3) == 0 ? SMOKE_LIGHT : SMOKE, Math.round(alpha * fade * 0.32f));
-            if ((p & 3) == 0) {
-                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        pf + size * 0.55f, py - size * 0.30f, pl,
-                        size * 0.62f, size * 0.55f, size * 0.65f,
-                        SMOKE, Math.round(alpha * fade * 0.24f));
+            boolean large = (p & 3) == 0;
+            float lifetime = large ? 0.12f + 0.16f * h : 0.24f + 0.16f * h;
+            float life = Mth.clamp(age / lifetime, 0.0f, 1.0f);
+            if (!large && life >= 1.0f) continue;
+
+            if (!large || life < 1.0f) {
+                float fade = (1.0f - smooth01((life - 0.45f) / 0.55f)) * smooth01(age / 0.04f);
+                float angle = p * 2.3999632f + life * 1.8f;
+                float radius = (0.16f + h * spread + life * 0.38f) * S;
+                float pf = f + Mth.cos(angle) * radius + life * 0.25f * S;
+                float pl = l + Mth.sin(angle) * radius;
+                float py = ground + (0.28f + h * 0.48f + life * 1.65f) * S;
+                float size = (0.095f + h * 0.115f + life * 0.075f) * S;
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, py, pl,
+                        size * 1.15f, size * 0.82f, size,
+                        large ? ROCK_HOT : SMOKE, Math.round(alpha * fade * 0.32f));
             }
+            if (!large) continue;
+
+            // Le petit résidu survit au gros puff orange et s'éteint à son propre seuil aléatoire.
+            float residualLife = Mth.clamp(age / (0.30f + 0.16f * h), 0.0f, 1.0f);
+            if (residualLife >= 1.0f) continue;
+            float residualFade = (1.0f - smooth01((residualLife - 0.45f) / 0.55f))
+                    * smooth01(age / 0.04f);
+            float angle = p * 2.3999632f + residualLife * 1.8f;
+            float radius = (0.16f + h * spread + residualLife * 0.38f) * S;
+            float pf = f + Mth.cos(angle) * radius + residualLife * 0.25f * S;
+            float pl = l + Mth.sin(angle) * radius;
+            float py = ground + (0.28f + h * 0.48f + residualLife * 1.65f) * S;
+            float size = (0.095f + h * 0.115f + residualLife * 0.075f) * S;
+            localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                    pf + size * 0.55f, py - size * 0.30f, pl,
+                    size * 0.62f, size * 0.55f, size * 0.65f,
+                    SMOKE, Math.round(alpha * residualFade * 0.24f));
         }
     }
 

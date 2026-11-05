@@ -64,6 +64,7 @@ public final class WeaponWorldVfxManager {
     public static final int KIND_IMPACT            = 1;
     public static final int KIND_BEAM_SIPHON       = 2;
     public static final int KIND_PROJECTILE_ATTACH = 3;
+    public static final int KIND_METEOR_TRACK = 4;
 
     private static final List<VfxInstance> ACTIVE = new ArrayList<>(144);
     private static final List<FloatingPixel> PIXEL_PARTICLES = new ArrayList<>(1400);
@@ -219,7 +220,7 @@ public final class WeaponWorldVfxManager {
         final WeaponVisualEffectId effect;
         final int kind;
         final int intensity;
-        final double x, y, z;
+        double x, y, z;
         final double tx, ty, tz;
         final float yawDeg, pitchDeg, tiltRad;
         final int maxAge;
@@ -231,6 +232,7 @@ public final class WeaponWorldVfxManager {
         /** T359-BIG-ANIM-SCALE : échelle de la grosse animation (taille du mob touché). */
         final float sizeScale;
         int age;
+        int homingTargetId = -1;
 
         /** Couleur primaire de l'effet ou d'une famille sélectionnée dans la palette de l'arme. */
         int primary() {
@@ -446,6 +448,10 @@ public final class WeaponWorldVfxManager {
 
         WeaponVisualEffectId fx = WeaponVisualEffectId.byId(vfxId);
         if (fx == null) return;
+        if (kind == KIND_METEOR_TRACK) {
+            updateMeteorTracking(Math.round(tx), x, y, z);
+            return;
+        }
 
         // Attachement en direct d'un sillage de mini-pixels 3D à un projectile en vol !
         if (kind == KIND_PROJECTILE_ATTACH) {
@@ -508,6 +514,32 @@ public final class WeaponWorldVfxManager {
         if (fx.element() != DeepElement.CHAOS && fx.element() != DeepElement.FIRE) {
             spawnMiniPixelBurst(fx, x, y, z, burstCount, cubeHalf, 0.18, paletteMask);
         }
+    }
+
+    private static void updateMeteorTracking(int targetId, float x, float y, float z) {
+        VfxInstance tracked = null;
+        double bestDistance = 64.0;
+        for (int i = ACTIVE.size() - 1; i >= 0; i--) {
+            VfxInstance candidate = ACTIVE.get(i);
+            if (candidate.effect != WeaponVisualEffectId.BRIMSTONE_METEOR) continue;
+            if (candidate.homingTargetId == targetId) {
+                tracked = candidate;
+                break;
+            }
+            if (candidate.homingTargetId < 0) {
+                double dx = candidate.x - x, dy = candidate.y - y, dz = candidate.z - z;
+                double distance = dx * dx + dy * dy + dz * dz;
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    tracked = candidate;
+                }
+            }
+        }
+        if (tracked == null) return;
+        tracked.homingTargetId = targetId;
+        tracked.x = x;
+        tracked.y = y;
+        tracked.z = z;
     }
 
     public static void spawnMiniPixelBurst(WeaponVisualEffectId fx, double x, double y, double z,
@@ -1158,7 +1190,10 @@ public final class WeaponWorldVfxManager {
                     fireDx = -fireDx;
                     fireDz = -fireDz;
                 }
-                FireSignatureVfx.prepareTerrain(level, inst.x, inst.y, inst.z, fireDx, fireDz,
+                float waveShift = inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE
+                        ? fireWaveOriginShift(inst) : 0.0f;
+                FireSignatureVfx.prepareTerrain(level, inst.x + fireDx * waveShift, inst.y,
+                        inst.z + fireDz * waveShift, fireDx, fireDz,
                         inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE ? 1.0f : inst.sizeScale);
             }
         }
@@ -2664,6 +2699,14 @@ public final class WeaponWorldVfxManager {
      * 火 FEU — des langues de flamme <b>courbes et inclinées</b> qui montent en vacillant, des
      * braises projetées qui retombent, et un sol qui rougeoie. Aucune pile de blocs droits.
      */
+    /** Origine décalée pour que la vague naisse devant le joueur, jamais sur lui. */
+    private static float fireWaveOriginShift(VfxInstance inst) {
+        double dx = inst.tx - inst.x;
+        double dz = inst.tz - inst.z;
+        float attackerDistance = (float) Math.sqrt(dx * dx + dz * dz);
+        return Math.max(0.0f, 3.0f - attackerDistance);
+    }
+
     private static void impactFire(ImpactView v) {
         int signature = switch (v.inst().effect) {
             case MOLTEN_FIRE_WAVE -> FireSignatureVfx.MOLTEN;
@@ -2677,9 +2720,11 @@ public final class WeaponWorldVfxManager {
             int fireSalt = (int) (v.inst().seed & 0x7FFFFFFFL);
             float fireDirX = signature == FireSignatureVfx.MOLTEN ? -v.dirX() : v.dirX();
             float fireDirZ = signature == FireSignatureVfx.MOLTEN ? -v.dirZ() : v.dirZ();
+            float waveShift = signature == FireSignatureVfx.MOLTEN ? fireWaveOriginShift(v.inst()) : 0.0f;
             FireSignatureVfx.render(Minecraft.getInstance().level,
-                    v.inst().x, v.inst().y, v.inst().z,
-                    v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), v.t(),
+                    v.inst().x + fireDirX * waveShift, v.inst().y, v.inst().z + fireDirZ * waveShift,
+                    v.vc(), v.mat(), v.tmp(), v.cx() + fireDirX * waveShift, v.cy(),
+                    v.cz() + fireDirZ * waveShift, v.t(),
                     fireDirX, fireDirZ, signature, v.S(),
                     signature == FireSignatureVfx.MOLTEN ? 1.0f : v.inst().sizeScale, v.fadeA(), fireSalt);
             return;

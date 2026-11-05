@@ -22,13 +22,13 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
 <aside>
   <div class="eyebrow">Deep Lucky Block · Fire VFX</div>
   <h1>FIRE</h1><h2>Signatures HD</h2>
-  <p class="intro">Trois chorégraphies physiques : vague de cubes soudés et déferlement progressif, lune suspendue avec cible stupéfaite, météore céleste rapide à trajectoire droite.</p>
+  <p class="intro">Trois chorégraphies physiques : vague de cubes soudés et déferlement progressif, lune suspendue avec cible stupéfaite, météore à tête chercheuse, large zone de feu et fumée à extinction progressive.</p>
   <div class="rule"></div>
   <span class="label">Signature de l’enchantement</span>
   <div class="variants" role="group" aria-label="Variante Fire">
     <button class="variant active" data-variant="0"><span class="num">Ⅰ</span><span><b>Molten Fire Wave</b><small>Mini-tsunami · crête · splash</small></span></button>
     <button class="variant" data-variant="1"><span class="num">Ⅱ</span><span><b>Soul Fire Crescent</b><small>Lune suspendue · cible stun</small></span></button>
-    <button class="variant" data-variant="2"><span class="num">Ⅲ</span><span><b>Brimstone Meteor</b><small>Chute céleste · impact · cratère</small></span></button>
+    <button class="variant" data-variant="2"><span class="num">Ⅲ</span><span><b>Brimstone Meteor</b><small>Tête chercheuse · AOE · fumée progressive</small></span></button>
   </div>
   <span class="label">Chorégraphie du modèle Java</span>
   <div class="controls"><button class="btn primary" id="play">Pause</button><button class="btn" id="replay">Rejouer</button></div>
@@ -85,7 +85,10 @@ function buildFire(v,t,salt=42,groundFn=null){const out=[];if(t<=0||t>=1)return 
   const h=hash01(seed,17),size=(.135+.050*h)*reveal,a=alpha*reveal;box(f,ground+.025,l,size*1.22,.026*reveal,size,soul?soulColor(1):LAVA[(seed&3)+1],a*.88);box(f+size*.15,ground+.051,l-size*.12,size*.76,.018*reveal,size*.68,soul?soulColor(5):LAVA[6+(seed&3)],a*.86);box(f-size*.30,ground+.070,l+size*.16,size*.16,.012*reveal,size*.58,soul?soulColor(8):LAVA[12],a*.90);box(f+size*.35,ground+.071,l-size*.22,size*.34,.013*reveal,size*.14,soul?soulColor(3):LAVA[2],a*.84);if(withFlame)flame(f,ground+.07,l,height*reveal,.060+.025*h,.20,(h-.5)*.35,time*8+h*6.28,soul,a,seed)
  };
  const smoke=(f,ground,l,t,start,count,alpha,seed,spread)=>{
-  for(let p=0;p<count;p++){const age=t-start-(p%8)*.017;if(age<=0)continue;const h=hash01(seed,p*67+3200),life=clamp(age/.31),fade=(1-life)*smooth(age/.05),angle=p*2.3999632+life*1.8,radius=.16+h*spread+life*.38,pf=f+Math.cos(angle)*radius+life*.25,pl=l+Math.sin(angle)*radius,py=ground+.28+h*.48+life*1.65,size=.095+h*.115+life*.075;box(pf,py,pl,size*1.15,size*.82,size,(p&3)===0?SMOKE_LIGHT:SMOKE,alpha*fade*.32);if((p&3)===0)box(pf+size*.55,py-size*.30,pl,size*.62,size*.55,size*.65,SMOKE,alpha*fade*.24)}
+  for(let p=0;p<count;p++){const age=t-start-(p%8)*.017;if(age<=0)continue;const h=hash01(seed,p*67+3200),large=(p&3)===0,lifetime=large?.12+.16*h:.24+.16*h,life=clamp(age/lifetime);if(!large&&life>=1)continue;
+   if(!large||life<1){const fade=(1-smooth((life-.45)/.55))*smooth(age/.04),angle=p*2.3999632+life*1.8,radius=.16+h*spread+life*.38,pf=f+Math.cos(angle)*radius+life*.25,pl=l+Math.sin(angle)*radius,py=ground+.28+h*.48+life*1.65,size=.095+h*.115+life*.075;box(pf,py,pl,size*1.15,size*.82,size,large?ROCK_HOT:SMOKE,alpha*fade*.32)}
+   if(!large)continue;const residualLife=clamp(age/(.30+.16*h));if(residualLife>=1)continue;const residualFade=(1-smooth((residualLife-.45)/.55))*smooth(age/.04),angle=p*2.3999632+residualLife*1.8,radius=.16+h*spread+residualLife*.38,pf=f+Math.cos(angle)*radius+residualLife*.25,pl=l+Math.sin(angle)*radius,py=ground+.28+h*.48+residualLife*1.65,size=.095+h*.115+residualLife*.075;box(pf+size*.55,py-size*.30,pl,size*.62,size*.55,size*.65,SMOKE,alpha*residualFade*.24)
+  }
  };
  const METEOR_FLIGHT_SECONDS=1.408,meteorAngle=salt=>hash01(salt,9100)*Math.PI*2,meteorDistance=salt=>3.20+1.40*hash01(salt,9101),meteorF=(q,salt)=>Math.cos(meteorAngle(salt))*meteorDistance(salt)*(1-q),meteorL=(q,salt)=>Math.sin(meteorAngle(salt))*meteorDistance(salt)*(1-q),meteorY=q=>.12+13.50*(1-q);
  if(v===0){
@@ -126,9 +129,9 @@ function buildFire(v,t,salt=42,groundFn=null){const out=[];if(t<=0||t>=1)return 
    for(let p=0;p<56;p++){const h=hash01(salt,p*47+2180),life=fract(t*5.5+p*.381966+h),envelope=smooth(life/.07)*(1-smooth((life-.52)/.48)),sparkAge=life*.68,historyTime=currentTime-sparkAge;if(historyTime<=0||envelope<=0)continue;const hq=historyTime/METEOR_FLIGHT_SECONDS,drag=sparkAge*(.90+1.10*h)+sparkAge*sparkAge*3.5,side=Math.sin(t*15+p*2.17)*sparkAge*(.50+.80*h),f=meteorF(hq,salt)+backUnitF*drag-backUnitL*side,l=meteorL(hq,salt)+backUnitL*drag+backUnitF*side,y=ground+meteorY(hq)+sparkAge*(.35+.65*h)+Math.cos(t*13+p)*sparkAge*.22,size=(.025+.050*h)*(1-life*.72),rgb=life<.24?LAVA[14]:life<.52?LAVA[11]:life<.78?LAVA[7]:LAVA[3];cube(f,y,l,size,rgb,245*birth*flightFade*trailReveal*envelope*.96);if(p%5===0)cube(f+backUnitF*size*1.8,y+size*.35,l+backUnitL*size*1.8,size*.48,LAVA[6],245*birth*flightFade*trailReveal*envelope*.66)}
 
   }
-  const impact=smooth((t-.235)/.16);for(let lobe=0;lobe<10;lobe++){const h=hash01(salt,lobe*71+2300),reveal=smooth((t-.235-(lobe%4)*.012)/.12);if(reveal<=0)continue;const angle=lobe*2.3999632,radius=.10+impact*(.55+h*.85),f=Math.cos(angle)*radius,l=Math.sin(angle)*radius,y=terrain.at(f,l)+.10+impact*(.25+h*.55),mass=(.15+.16*h)*reveal*(1-exit*.55);box(f,y,l,mass*1.30,mass,mass*1.30,LAVA[5+(lobe%5)],245*reveal*(1-exit)*.82);flame(f,y,l,(.55+.65*h)*reveal*(1-exit*.60),.145+.070*h,Math.cos(angle)*.65,Math.sin(angle)*.65,t*10+lobe,false,245*reveal*(1-exit),salt+lobe*97)}
-  for(let p=0;p<24;p++){const h=hash01(salt,p*47+2600),angle=p*2.3999632,reveal=smooth((t-.265-(p%6)*.017)/.14);if(reveal<=0||p%13===0)continue;const radius=.28+(p%4)*.27+impact*.18;const patchF=Math.cos(angle)*radius,patchL=Math.sin(angle)*radius;groundPatch(patchF,terrain.at(patchF,patchL),patchL,reveal*(1-exit),.36+h*.48,p%3===0,false,245,salt+p*83,t)}
-  for(let p=0;p<44;p++){const age=t-.240-(p%7)*.010;if(age<=0)continue;const h=hash01(salt,p*59+2900),angle=p*2.3999632,time=age*6.4,speed=.75+1.85*h,f=Math.cos(angle)*speed*time,l=Math.sin(angle)*speed*time,vy=1.65+2.75*hash01(salt,p*61),y=ground+.28+vy*time-3.65*time*time;if(y<terrain.at(f,l))continue;const size=(.025+.075*h)*(1-exit);cube(f,y,l,size,p%5===0?ROCK_RED:lavaDropletRgb(h),245*(1-exit));if((p&3)===0)cube(f-Math.cos(angle)*size,y+size*.7,l-Math.sin(angle)*size,size*.42,LAVA[12],245*(1-exit)*.80)}
+  const impact=smooth((t-.235)/.16);for(let lobe=0;lobe<10;lobe++){const h=hash01(salt,lobe*71+2300),reveal=smooth((t-.235-(lobe%4)*.012)/.12);if(reveal<=0)continue;const angle=lobe*2.3999632,radius=.20+impact*(1.80+h*2.00),f=Math.cos(angle)*radius,l=Math.sin(angle)*radius,y=terrain.at(f,l)+.10+impact*(.25+h*.55),mass=(.15+.16*h)*reveal*(1-exit*.55);box(f,y,l,mass*1.30,mass,mass*1.30,LAVA[5+(lobe%5)],245*reveal*(1-exit)*.82);flame(f,y,l,(.55+.65*h)*reveal*(1-exit*.60),.145+.070*h,Math.cos(angle)*.65,Math.sin(angle)*.65,t*10+lobe,false,245*reveal*(1-exit),salt+lobe*97)}
+  for(let p=0;p<24;p++){const h=hash01(salt,p*47+2600),angle=p*2.3999632,reveal=smooth((t-.265-(p%6)*.017)/.14);if(reveal<=0||p%13===0)continue;const radius=.35+(p%4)*.45+impact*2.20;const patchF=Math.cos(angle)*radius,patchL=Math.sin(angle)*radius;groundPatch(patchF,terrain.at(patchF,patchL),patchL,reveal*(1-exit),.36+h*.48,p%3===0,false,245,salt+p*83,t)}
+  for(let p=0;p<44;p++){const age=t-.240-(p%7)*.010;if(age<=0)continue;const h=hash01(salt,p*59+2900),angle=p*2.3999632,time=age*6.4,speed=1.40+3.00*h,f=Math.cos(angle)*speed*time,l=Math.sin(angle)*speed*time,vy=1.65+2.75*hash01(salt,p*61),y=ground+.28+vy*time-3.65*time*time;if(y<terrain.at(f,l))continue;const size=(.025+.075*h)*(1-exit);cube(f,y,l,size,p%5===0?ROCK_RED:lavaDropletRgb(h),245*(1-exit));if((p&3)===0)cube(f-Math.cos(angle)*size,y+size*.7,l-Math.sin(angle)*size,size*.42,LAVA[12],245*(1-exit)*.80)}
   smoke(0,ground,0,t,.238,28,245,salt,1);
  }
 
@@ -137,7 +140,7 @@ function buildFire(v,t,salt=42,groundFn=null){const out=[];if(t<=0||t>=1)return 
 if(typeof module!=='undefined')module.exports={buildFire,LAVA,SOUL_COLORS};
 
 const NAMES=['Molten Fire Wave','Soul Fire Crescent','Brimstone Meteor'];
-const SUBS=['Cubes · roulement · déferlement','Lune suspendue · cible stun','Chute droite · explosion · cratère'];
+const SUBS=['Cubes · roulement · déferlement','Lune suspendue · cible stun','Tête chercheuse · AOE · fumée progressive'];
 const DURATIONS=[5.6,5.6,6.4];
 const canvas=document.getElementById('scene'),ctx=canvas.getContext('2d',{alpha:false});
 const timeline=document.getElementById('timeline'),phaseEl=document.getElementById('phase'),playBtn=document.getElementById('play'),visibleEl=document.getElementById('visibleCount'),countEl=document.getElementById('baseCount');

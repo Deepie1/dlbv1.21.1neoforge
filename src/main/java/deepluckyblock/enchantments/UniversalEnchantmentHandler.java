@@ -30,6 +30,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LightningBolt;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.entity.monster.Pillager;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.entity.player.Player;
@@ -3571,7 +3572,7 @@ public class UniversalEnchantmentHandler {
             });
         }
 
-        // Soufre (brimstone) : déflagration soufrée ennemie uniquement (zéro auto-explosion ni perte d'i-frames) + Feu + Wither scalant I..V !
+        // Soufre (brimstone) : zone hostile uniquement, feu de 3 s (60 ticks), (zéro auto-explosion ni perte d'i-frames) + Feu + Wither scalant I..V !
         int brimLvl = getEnchantLvl(bow, "deep_lucky_block:brimstone");
         if (brimLvl > 0 && (!isExtraProj || arrow.getId() % 2 == 0) && player.level() instanceof ServerLevel slbrm) {
             double bRad = deepluckyblock.procedures.EnchantmentLevelAuditProcedure.Scaling.radius(2.8, 0.65, brimLvl);
@@ -3584,15 +3585,15 @@ public class UniversalEnchantmentHandler {
             int witherDur = 60 + 20 * Math.min(6, brimLvl);
             int witherAmp = Math.min(2, brimLvl - 1);
             for (LivingEntity le : slbrm.getEntitiesOfClass(LivingEntity.class, new AABB(hitLoc, hitLoc).inflate(bRad, 2.6, bRad))) {
-                if (isValidRangedEnemy(le, player)) {
+                if (le instanceof Enemy && isValidRangedEnemy(le, player)) {
                     hurtProjectileBonus(le, player.damageSources().onFire(), brimDmg);
-                    le.setRemainingFireTicks(Math.max(le.getRemainingFireTicks(), (4 + Math.min(5, brimLvl)) * 20));
+                    le.setRemainingFireTicks(Math.max(le.getRemainingFireTicks(), 60));
                     le.addEffect(new MobEffectInstance(MobEffects.WITHER, witherDur, witherAmp));
                 }
             }
         }
 
-        // Météore (meteor) : chute céleste ardente animée sur 12 ticks, zéro grief de feu au sol et zéro auto-explosion du tireur !
+        // Météore (meteor) : chute ardente, zone hostile, feu AOE de 3 s, zéro grief ni auto-explosion !
         int meteorLvl = getEnchantLvl(bow, "deep_lucky_block:meteor");
         if (meteorLvl > 0 && !isExtraProj && player.level() instanceof ServerLevel slmet) {
             final Vec3 mLoc = hitLoc;
@@ -3618,8 +3619,8 @@ public class UniversalEnchantmentHandler {
                 EnchantmentParticleFX.shockwaveRing(slmet, mLoc.x, mLoc.y + 0.22, mLoc.z, EnchantmentParticleFX.SCARLET_MIST, 3.2, 18, 0.05);
                 slmet.playSound(null, mLoc.x, mLoc.y, mLoc.z, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 1.0f, 0.80f);
                 for (LivingEntity le : slmet.getEntitiesOfClass(LivingEntity.class, new AABB(mLoc, mLoc).inflate(4.0, 3.0, 4.0))) {
-                    if (isValidRangedEnemy(le, mOwner)) {
-                        le.setRemainingFireTicks(Math.max(le.getRemainingFireTicks(), 120));
+                    if (le instanceof Enemy && isValidRangedEnemy(le, mOwner)) {
+                        le.setRemainingFireTicks(Math.max(le.getRemainingFireTicks(), 60));
                         hurtProjectileBonus(le, mOwner.damageSources().explosion(mOwner, mOwner), mDmg);
                     }
                 }
