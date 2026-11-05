@@ -1192,9 +1192,13 @@ public final class WeaponWorldVfxManager {
                 }
                 float waveShift = inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE
                         ? fireWaveOriginShift(inst) : 0.0f;
-                FireSignatureVfx.prepareTerrain(level, inst.x + fireDx * waveShift, inst.y,
-                        inst.z + fireDz * waveShift, fireDx, fireDz,
-                        inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE ? 1.0f : inst.sizeScale);
+                if (inst.effect == WeaponVisualEffectId.BRIMSTONE_METEOR) {
+                    FireSignatureVfx.prepareMeteorTerrain(level, inst.x, inst.y, inst.z, inst.sizeScale);
+                } else {
+                    FireSignatureVfx.prepareTerrain(level, inst.x + fireDx * waveShift, inst.y,
+                            inst.z + fireDz * waveShift, fireDx, fireDz,
+                            inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE ? 1.0f : inst.sizeScale);
+                }
             }
         }
 

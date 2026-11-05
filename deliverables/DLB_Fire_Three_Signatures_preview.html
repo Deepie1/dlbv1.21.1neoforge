@@ -22,13 +22,13 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
 <aside>
   <div class="eyebrow">Deep Lucky Block · Fire VFX</div>
   <h1>FIRE</h1><h2>Signatures HD</h2>
-  <p class="intro">Trois chorégraphies physiques : vague de cubes soudés et déferlement progressif, lune suspendue avec cible stupéfaite, météore à tête chercheuse, large zone de feu et fumée à extinction progressive.</p>
+  <p class="intro">Trois chorégraphies physiques : vague de cubes soudés et déferlement progressif, lune suspendue avec cible stupéfaite, météore à tête chercheuse, nappe de feu au sol et fissures incandescentes.</p>
   <div class="rule"></div>
   <span class="label">Signature de l’enchantement</span>
   <div class="variants" role="group" aria-label="Variante Fire">
     <button class="variant active" data-variant="0"><span class="num">Ⅰ</span><span><b>Molten Fire Wave</b><small>Mini-tsunami · crête · splash</small></span></button>
     <button class="variant" data-variant="1"><span class="num">Ⅱ</span><span><b>Soul Fire Crescent</b><small>Lune suspendue · cible stun</small></span></button>
-    <button class="variant" data-variant="2"><span class="num">Ⅲ</span><span><b>Brimstone Meteor</b><small>Tête chercheuse · AOE · fumée progressive</small></span></button>
+    <button class="variant" data-variant="2"><span class="num">Ⅲ</span><span><b>Brimstone Meteor</b><small>Tête chercheuse · sol embrasé · fissures</small></span></button>
   </div>
   <span class="label">Chorégraphie du modèle Java</span>
   <div class="controls"><button class="btn primary" id="play">Pause</button><button class="btn" id="replay">Rejouer</button></div>
@@ -90,6 +90,12 @@ function buildFire(v,t,salt=42,groundFn=null){const out=[];if(t<=0||t>=1)return 
    if(!large)continue;const residualLife=clamp(age/(.30+.16*h));if(residualLife>=1)continue;const residualFade=(1-smooth((residualLife-.45)/.55))*smooth(age/.04),angle=p*2.3999632+residualLife*1.8,radius=.16+h*spread+residualLife*.38,pf=f+Math.cos(angle)*radius+residualLife*.25,pl=l+Math.sin(angle)*radius,py=ground+.28+h*.48+residualLife*1.65,size=.095+h*.115+residualLife*.075;box(pf+size*.55,py-size*.30,pl,size*.62,size*.55,size*.65,SMOKE,alpha*residualFade*.24)
   }
  };
+ const meteorGroundFire=(t,alpha,salt,terrain)=>{
+  const impact=smooth((t-.235)/.16);if(impact<=0)return;const exit=smooth((t-.82)/.18),burn=impact*(1-smooth((t-.64)/.18)),scorch=impact*(1-exit),cell=.32;
+  for(let ix=-12;ix<=12;ix++)for(let iz=-12;iz<=12;iz++){const baseF=ix*.32,baseL=iz*.32,distance=Math.hypot(baseF,baseL),edgeNoise=fbm(baseF*.65,1.7,baseL*.65,salt+6200);if(distance+(edgeNoise-.5)*.55>4*impact)continue;const cellId=(ix+16)*64+iz+16,h=hash01(salt,cellId+6300),spots=smooth((fbm(baseF*1.9,3.1,baseL*1.9,salt+6400)-.46)/.28),f=ix*cell,l=iz*cell,ground=terrain.at(f,l),edgeCool=1-smooth((distance-2.8)/1.2),heat=burn*spots*edgeCool,crust=heat>.55?ROCK_HOT:spots>.40?ROCK_RED:ROCK;box(f,ground+.026,l,.166,.025*scorch,.166,crust,alpha*scorch*(.62+.20*edgeNoise));if(heat>.035)box(f,ground+.055,l,.105,.012,.105,heat>.62?LAVA[8]:heat>.28?LAVA[5]:LAVA[2],alpha*heat*.72);if(burn>.015&&distance<3.85&&h>.94){const height=(.32+.98*h)*(.72+.28*edgeCool)*burn;flame(f,ground+.075,l,height,.055+.050*h,.18+.18*h,(h-.5)*.35,t*12+h*6.28,false,alpha*burn*.88,salt+cellId*37)}}
+  for(let crack=0;crack<9;crack++){const h=hash01(salt,crack*83+6500),baseAngle=crack*2.3999632+(h-.5)*.55;let f=0,l=0;for(let step=0;step<12;step++){const turn=(hash01(salt,crack*191+step*17+6510)-.5)*.72,angle=baseAngle+turn;f+=Math.cos(angle)*.31;l+=Math.sin(angle)*.31;if(f*f+l*l>16)continue;const reveal=smooth((t-.58-crack*.009-step*.006)/.10)*(1-exit);if(reveal<=0)continue;const ground=terrain.at(f,l),half=.090+.035*h;box(f,ground+.077,l,half,.018,half,ROCK,alpha*reveal*.92);box(f,ground+.091,l,half*.42,.020,half*.42,t<.78?LAVA[11]:LAVA[6],alpha*reveal*.95);if(step>3&&(step&3)===0){const bf=f+Math.cos(angle+1.5708)*.17,bl=l+Math.sin(angle+1.5708)*.17;box(bf,terrain.at(bf,bl)+.086,bl,half*.56,.019,half*.56,LAVA[4],alpha*reveal*.78)}}}
+  for(let p=0;p<28;p++){const h=hash01(salt,p*47+6700),cycle=fract(t*3.1+p*.381966+h),envelope=smooth(cycle/.08)*(1-smooth((cycle-.62)/.38));if(burn*envelope<=0)continue;const angle=p*2.3999632+h,radius=Math.sqrt(hash01(salt,p*59+6710))*3.75,f=Math.cos(angle)*radius,l=Math.sin(angle)*radius,ground=terrain.at(f,l),size=.018+.022*h;cube(f+cycle*.18,ground+.16+cycle*(.75+h),l,size,cycle<.35?LAVA[12]:LAVA[7],alpha*burn*envelope*.90)}
+ };
  const METEOR_FLIGHT_SECONDS=1.408,meteorAngle=salt=>hash01(salt,9100)*Math.PI*2,meteorDistance=salt=>3.20+1.40*hash01(salt,9101),meteorF=(q,salt)=>Math.cos(meteorAngle(salt))*meteorDistance(salt)*(1-q),meteorL=(q,salt)=>Math.sin(meteorAngle(salt))*meteorDistance(salt)*(1-q),meteorY=q=>.12+13.50*(1-q);
  if(v===0){
   const exit=smooth((t-.94)/.06),env=1-exit,ground=terrain.at(0,0),breakup=waveBreakup(t);
@@ -129,8 +135,7 @@ function buildFire(v,t,salt=42,groundFn=null){const out=[];if(t<=0||t>=1)return 
    for(let p=0;p<56;p++){const h=hash01(salt,p*47+2180),life=fract(t*5.5+p*.381966+h),envelope=smooth(life/.07)*(1-smooth((life-.52)/.48)),sparkAge=life*.68,historyTime=currentTime-sparkAge;if(historyTime<=0||envelope<=0)continue;const hq=historyTime/METEOR_FLIGHT_SECONDS,drag=sparkAge*(.90+1.10*h)+sparkAge*sparkAge*3.5,side=Math.sin(t*15+p*2.17)*sparkAge*(.50+.80*h),f=meteorF(hq,salt)+backUnitF*drag-backUnitL*side,l=meteorL(hq,salt)+backUnitL*drag+backUnitF*side,y=ground+meteorY(hq)+sparkAge*(.35+.65*h)+Math.cos(t*13+p)*sparkAge*.22,size=(.025+.050*h)*(1-life*.72),rgb=life<.24?LAVA[14]:life<.52?LAVA[11]:life<.78?LAVA[7]:LAVA[3];cube(f,y,l,size,rgb,245*birth*flightFade*trailReveal*envelope*.96);if(p%5===0)cube(f+backUnitF*size*1.8,y+size*.35,l+backUnitL*size*1.8,size*.48,LAVA[6],245*birth*flightFade*trailReveal*envelope*.66)}
 
   }
-  const impact=smooth((t-.235)/.16);for(let lobe=0;lobe<10;lobe++){const h=hash01(salt,lobe*71+2300),reveal=smooth((t-.235-(lobe%4)*.012)/.12);if(reveal<=0)continue;const angle=lobe*2.3999632,radius=.20+impact*(1.80+h*2.00),f=Math.cos(angle)*radius,l=Math.sin(angle)*radius,y=terrain.at(f,l)+.10+impact*(.25+h*.55),mass=(.15+.16*h)*reveal*(1-exit*.55);box(f,y,l,mass*1.30,mass,mass*1.30,LAVA[5+(lobe%5)],245*reveal*(1-exit)*.82);flame(f,y,l,(.55+.65*h)*reveal*(1-exit*.60),.145+.070*h,Math.cos(angle)*.65,Math.sin(angle)*.65,t*10+lobe,false,245*reveal*(1-exit),salt+lobe*97)}
-  for(let p=0;p<24;p++){const h=hash01(salt,p*47+2600),angle=p*2.3999632,reveal=smooth((t-.265-(p%6)*.017)/.14);if(reveal<=0||p%13===0)continue;const radius=.35+(p%4)*.45+impact*2.20;const patchF=Math.cos(angle)*radius,patchL=Math.sin(angle)*radius;groundPatch(patchF,terrain.at(patchF,patchL),patchL,reveal*(1-exit),.36+h*.48,p%3===0,false,245,salt+p*83,t)}
+  meteorGroundFire(t,245,salt,terrain);
   for(let p=0;p<44;p++){const age=t-.240-(p%7)*.010;if(age<=0)continue;const h=hash01(salt,p*59+2900),angle=p*2.3999632,time=age*6.4,speed=1.40+3.00*h,f=Math.cos(angle)*speed*time,l=Math.sin(angle)*speed*time,vy=1.65+2.75*hash01(salt,p*61),y=ground+.28+vy*time-3.65*time*time;if(y<terrain.at(f,l))continue;const size=(.025+.075*h)*(1-exit);cube(f,y,l,size,p%5===0?ROCK_RED:lavaDropletRgb(h),245*(1-exit));if((p&3)===0)cube(f-Math.cos(angle)*size,y+size*.7,l-Math.sin(angle)*size,size*.42,LAVA[12],245*(1-exit)*.80)}
   smoke(0,ground,0,t,.238,28,245,salt,1);
  }
@@ -140,7 +145,7 @@ function buildFire(v,t,salt=42,groundFn=null){const out=[];if(t<=0||t>=1)return 
 if(typeof module!=='undefined')module.exports={buildFire,LAVA,SOUL_COLORS};
 
 const NAMES=['Molten Fire Wave','Soul Fire Crescent','Brimstone Meteor'];
-const SUBS=['Cubes · roulement · déferlement','Lune suspendue · cible stun','Tête chercheuse · AOE · fumée progressive'];
+const SUBS=['Cubes · roulement · déferlement','Lune suspendue · cible stun','Tête chercheuse · sol embrasé · fissures'];
 const DURATIONS=[5.6,5.6,6.4];
 const canvas=document.getElementById('scene'),ctx=canvas.getContext('2d',{alpha:false});
 const timeline=document.getElementById('timeline'),phaseEl=document.getElementById('phase'),playBtn=document.getElementById('play'),visibleEl=document.getElementById('visibleCount'),countEl=document.getElementById('baseCount');
@@ -168,7 +173,7 @@ function render(){updateCamera();background();const voxels=buildFire(variant,t),
  for(const v of voxels){const roll=v.roll||0,cr=Math.cos(roll),sr=Math.sin(roll);for(const f of FACES){const n=rotateNormal(f.n,roll);if(n[2]<=.015)continue;const points=[];let depth=0;for(const q of f.v){const ox=q[0]*v.hx,oy=q[1]*v.hy,rx=ox*cr-oy*sr,ry=ox*sr+oy*cr,p=project(v.x+rx,v.y+ry,v.z+q[2]*v.hz);points.push(p);depth+=p[2]}faces.push({points,depth:depth/4,fill:shade(v.rgb,f.shade,v.a/255)})}}
  faces.sort((a,b)=>a.depth-b.depth);ctx.lineJoin='round';for(const f of faces){const p=f.points;ctx.beginPath();ctx.moveTo(p[0][0],p[0][1]);for(let i=1;i<4;i++)ctx.lineTo(p[i][0],p[i][1]);ctx.closePath();ctx.fillStyle=f.fill;ctx.fill()}
  visibleEl.textContent=`${voxels.length} voxels visibles`;countEl.textContent=voxels.length.toLocaleString('fr-FR');
- let phase;if(t===0||t===1)phase='Frame vide · entrée / sortie propre';else if(variant===0)phase=t<.13?'01 — La nappe de lave prend naissance':t<.46?'02 — Le tsunami enroule sa crête':t<.69?'03 — Splash balistique et sol incendié':'04 — Déferlement, dispersion et extinction';else if(variant===1)phase=t<.17?'01 — Deux feux d’âme s’élèvent':t<.50?'02 — Les flammes se tressent en croissant':t<.80?'03 — Croissant volumétrique autour du joueur':'04 — Dissipation en braises d’âme';else phase=t<.235?'01 — Chute céleste rapide · traîne historique':t<.50?'02 — Impact en lobes et projections':t<.82?'03 — Cratère de lave et feux persistants':'04 — Extinction et fumée';
+ let phase;if(t===0||t===1)phase='Frame vide · entrée / sortie propre';else if(variant===0)phase=t<.13?'01 — La nappe de lave prend naissance':t<.46?'02 — Le tsunami enroule sa crête':t<.69?'03 — Splash balistique et sol incendié':'04 — Déferlement, dispersion et extinction';else if(variant===1)phase=t<.17?'01 — Deux feux d’âme s’élèvent':t<.50?'02 — Les flammes se tressent en croissant':t<.80?'03 — Croissant volumétrique autour du joueur':'04 — Dissipation en braises d’âme';else phase=t<.235?'01 — Chute céleste rapide · traîne historique':t<.50?'02 — Nappe de feu et projections':t<.82?'03 — Flammes persistantes et fissures au sol':'04 — Refroidissement de la marque brûlée';
  phaseEl.textContent=phase;timeline.value=Math.round(t*1000);playBtn.textContent=playing?'Pause':(t>=1?'Rejouer':'Lecture');
 }
 function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;if(playing){t=clamp(t+dt/DURATIONS[variant]);if(t>=1)playing=false;dirty=true}if(autoRotate&&playing&&!drag){yaw+=dt*.065;dirty=true}if(drag)dirty=true;if(dirty&&now-lastRender>=33){render();dirty=false;lastRender=now}requestAnimationFrame(frame)}requestAnimationFrame(frame);

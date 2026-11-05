@@ -70,6 +70,21 @@ public final class FireSignatureVfx {
         }
     }
 
+    /** Préchauffe le disque AOE complet afin d'éviter les requêtes de terrain dans la passe de rendu. */
+    public static void prepareMeteorTerrain(ClientLevel level, double worldX, double worldY, double worldZ,
+                                            float worldScale) {
+        if (level == null) return;
+        ensureTerrainLevel(level);
+        worldScale = Math.max(0.05f, worldScale);
+        boolean openSky = level.canSeeSky(BlockPos.containing(worldX, worldY + 1.0, worldZ));
+        for (int fi = -8; fi <= 8; fi++) {
+            for (int li = -8; li <= 8; li++) {
+                sampleGround(level, worldX + fi * 0.5 * worldScale, worldY,
+                        worldZ + li * 0.5 * worldScale, openSky);
+            }
+        }
+    }
+
     private static void ensureTerrainLevel(ClientLevel level) {
         if (terrainLevel == level) return;
         terrainLevel = level;
@@ -653,41 +668,8 @@ public final class FireSignatureVfx {
             }
         }
 
-        // Impact déclenché au même instant que l'arrivée exacte au centre de la cible.
-        float impact = smooth01((t - 0.235f) / 0.16f);
-        for (int lobe = 0; lobe < 10; lobe++) {
-            float h = hash01(salt, lobe * 71 + 2300);
-            float reveal = smooth01((t - 0.235f - (lobe % 4) * 0.012f) / 0.12f);
-            if (reveal <= 0.0f) continue;
-            float angle = lobe * 2.3999632f;
-            float radius = (0.20f + impact * (1.80f + h * 2.00f)) * S;
-            float f = Mth.cos(angle) * radius;
-            float l = Mth.sin(angle) * radius;
-            float y = terrain.at(f, l) + (0.10f + impact * (0.25f + h * 0.55f)) * S;
-            float mass = (0.15f + 0.16f * h) * S * reveal * (1.0f - exit * 0.55f);
-            localBox(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
-                    mass * 1.30f, mass, mass * 1.30f,
-                    LAVA[5 + (lobe % 5)], Math.round(alpha * reveal * (1.0f - exit) * 0.82f));
-            flame(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
-                    (0.55f + 0.65f * h) * reveal * (1.0f - exit * 0.60f),
-                    0.145f + 0.070f * h, Mth.cos(angle) * 0.65f, Mth.sin(angle) * 0.65f,
-                    t * 10.0f + lobe, false, S,
-                    Math.round(alpha * reveal * (1.0f - exit)), salt + lobe * 97);
-        }
-
-        for (int p = 0; p < 24; p++) {
-            float h = hash01(salt, p * 47 + 2600);
-            float angle = p * 2.3999632f;
-            float reveal = smooth01((t - 0.265f - (p % 6) * 0.017f) / 0.14f);
-            if (reveal <= 0.0f || p % 13 == 0) continue;
-            float radius = (0.35f + (p % 4) * 0.45f + impact * 2.20f) * S;
-            float patchF = Mth.cos(angle) * radius;
-            float patchL = Mth.sin(angle) * radius;
-            groundPatch(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    patchF, terrain.at(patchF, patchL), patchL,
-                    reveal * (1.0f - exit), 0.36f + h * 0.48f,
-                    p % 3 == 0, false, S, alpha, salt + p * 83, t);
-        }
+        // Conversion voxel du sol NAPALM : nappe basse continue, langues autonomes et scorch crénelé.
+        meteorGroundFire(vc, mat, tmp, cx, cy, cz, dx, dz, t, S, alpha, salt, terrain);
 
         for (int p = 0; p < 44; p++) {
             float age = t - 0.240f - (p % 7) * 0.010f;
@@ -713,6 +695,111 @@ public final class FireSignatureVfx {
         }
         smoke(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, ground, 0.0f,
                 t, 0.238f, 28, S, alpha, salt, 1.0f);
+    }
+
+    /**
+     * AOE de sol inspirée des mécanismes NAPALM/SCORCH : distribution en disque, bords bruités,
+     * langues basses, braises et fissures qui se révèlent pendant le refroidissement.
+     * Toutes les surfaces sont des boîtes carrées fines posées sur la hauteur réelle du terrain.
+     */
+    private static void meteorGroundFire(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                         float cx, float cy, float cz, float dx, float dz,
+                                         float t, float S, int alpha, int salt, TerrainView terrain) {
+        float impact = smooth01((t - 0.235f) / 0.16f);
+        if (impact <= 0.0f) return;
+        float exit = smooth01((t - 0.82f) / 0.18f);
+        float burn = impact * (1.0f - smooth01((t - 0.64f) / 0.18f));
+        float scorch = impact * (1.0f - exit);
+        float cell = 0.32f * S;
+
+        // Nappe continue : les dalles se chevauchent légèrement, sans gros cubes verticaux.
+        for (int ix = -12; ix <= 12; ix++) {
+            for (int iz = -12; iz <= 12; iz++) {
+                float baseF = ix * 0.32f, baseL = iz * 0.32f;
+                float distance = (float) Math.sqrt(baseF * baseF + baseL * baseL);
+                float edgeNoise = fbm(baseF * 0.65f, 1.7f, baseL * 0.65f, salt + 6200);
+                if (distance + (edgeNoise - 0.5f) * 0.55f > 4.0f * impact) continue;
+                int cellId = (ix + 16) * 64 + iz + 16;
+                float h = hash01(salt, cellId + 6300);
+                float spots = smooth01((fbm(baseF * 1.9f, 3.1f, baseL * 1.9f, salt + 6400)
+                        - 0.46f) / 0.28f);
+                float f = ix * cell, l = iz * cell;
+                float ground = terrain.at(f, l);
+                float edgeCool = 1.0f - smooth01((distance - 2.8f) / 1.2f);
+                float heat = burn * spots * edgeCool;
+                int crust = heat > 0.55f ? ROCK_HOT : spots > 0.40f ? ROCK_RED : ROCK;
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        f, ground + 0.026f * S, l,
+                        0.166f * S, 0.025f * S * scorch, 0.166f * S,
+                        crust, Math.round(alpha * scorch * (0.62f + 0.20f * edgeNoise)));
+                if (heat > 0.035f) {
+                    localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            f, ground + 0.055f * S, l,
+                            0.105f * S, 0.012f * S, 0.105f * S,
+                            heat > 0.62f ? LAVA[8] : heat > 0.28f ? LAVA[5] : LAVA[2],
+                            Math.round(alpha * heat * 0.72f));
+                }
+                // Environ 6 % des dalles portent une vraie langue, répartie dans tout le disque.
+                if (burn > 0.015f && distance < 3.85f && h > 0.94f) {
+                    float height = (0.32f + 0.98f * h) * (0.72f + 0.28f * edgeCool) * burn;
+                    flame(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            f, ground + 0.075f * S, l, height, 0.055f + 0.050f * h,
+                            0.18f + 0.18f * h, (h - 0.5f) * 0.35f,
+                            t * 12.0f + h * 6.28f, false, S,
+                            Math.round(alpha * burn * 0.88f), salt + cellId * 37);
+                }
+            }
+        }
+
+        // Fissures ramifiées de fin : marche aléatoire déterministe, aucune ligne parfaite.
+        for (int crack = 0; crack < 9; crack++) {
+            float h = hash01(salt, crack * 83 + 6500);
+            float baseAngle = crack * 2.3999632f + (h - 0.5f) * 0.55f;
+            float f = 0.0f, l = 0.0f;
+            for (int step = 0; step < 12; step++) {
+                float turn = (hash01(salt, crack * 191 + step * 17 + 6510) - 0.5f) * 0.72f;
+                float angle = baseAngle + turn;
+                f += Mth.cos(angle) * 0.31f * S;
+                l += Mth.sin(angle) * 0.31f * S;
+                if (f * f + l * l > 16.0f * S * S) continue;
+                float reveal = smooth01((t - 0.58f - crack * 0.009f - step * 0.006f) / 0.10f)
+                        * (1.0f - exit);
+                if (reveal <= 0.0f) continue;
+                float ground = terrain.at(f, l);
+                float half = (0.090f + 0.035f * h) * S;
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        f, ground + 0.077f * S, l, half, 0.018f * S, half,
+                        ROCK, Math.round(alpha * reveal * 0.92f));
+                localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        f, ground + 0.091f * S, l, half * 0.42f, 0.020f * S, half * 0.42f,
+                        t < 0.78f ? LAVA[11] : LAVA[6], Math.round(alpha * reveal * 0.95f));
+                if (step > 3 && (step & 3) == 0) {
+                    float bf = f + Mth.cos(angle + 1.5708f) * 0.17f * S;
+                    float bl = l + Mth.sin(angle + 1.5708f) * 0.17f * S;
+                    localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            bf, terrain.at(bf, bl) + 0.086f * S, bl,
+                            half * 0.56f, 0.019f * S, half * 0.56f,
+                            LAVA[4], Math.round(alpha * reveal * 0.78f));
+                }
+            }
+        }
+
+        // Braises qui naissent dans la nappe plutôt que sur un anneau artificiel.
+        for (int p = 0; p < 28; p++) {
+            float h = hash01(salt, p * 47 + 6700);
+            float cycle = fract(t * 3.1f + p * 0.381966f + h);
+            float envelope = smooth01(cycle / 0.08f) * (1.0f - smooth01((cycle - 0.62f) / 0.38f));
+            if (burn * envelope <= 0.0f) continue;
+            float angle = p * 2.3999632f + h;
+            float radius = (float) Math.sqrt(hash01(salt, p * 59 + 6710)) * 3.75f * S;
+            float f = Mth.cos(angle) * radius, l = Mth.sin(angle) * radius;
+            float ground = terrain.at(f, l);
+            float size = (0.018f + 0.022f * h) * S;
+            localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
+                    f + cycle * 0.18f * S, ground + (0.16f + cycle * (0.75f + h)) * S, l,
+                    size, cycle < 0.35f ? LAVA[12] : LAVA[7],
+                    Math.round(alpha * burn * envelope * 0.90f));
+        }
     }
 
     private static float waveTravel(float t) {
