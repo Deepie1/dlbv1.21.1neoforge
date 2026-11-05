@@ -158,6 +158,7 @@ public final class WeaponVfxServerListener {
     public static void notifyMeleeCrit(Player attacker, Entity target,
                                        WeaponVisualEffectId critStyle, int intensity) {
         if (attacker == null || target == null) return;
+        LivingEntity livingTarget = target instanceof LivingEntity living ? living : null;
         if (!(attacker.level() instanceof ServerLevel sl)) return;
         long now = sl.getGameTime();
         LAST_CRIT_TICK.put(attacker.getId(), now);
@@ -184,16 +185,18 @@ public final class WeaponVfxServerListener {
         }
 
         // T352-ELEMENT-COMBO : combo possible uniquement quand le tirage a choisi une vraie grosse anim.
-        tryElementCombo(sl, attacker.getId(), attacker.getMainHandItem(), cx, cy, cz,
-                (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ(),
-                sizeScaleOf(target), target);
+        if (livingTarget != null) {
+            tryElementCombo(sl, attacker.getId(), attacker.getMainHandItem(), cx, cy, cz,
+                    (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ(),
+                    sizeScaleOf(target), livingTarget);
+        }
 
         // Grosse animation jouée -> le dégât de ce coup sera amplifié de 5 % (voir onLivingHurtVisuals).
         LAST_BIG_ANIM_TICK.put(attacker.getId(), now);
         broadcastNear(sl, cx, cy, cz, fx.id, KIND_IMPACT, Math.max(2, intensity),
                 cx, cy, cz, (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ(),
                 paletteOf(attacker.getMainHandItem(), fx), sizeScaleOf(target));
-        applyFireGameplay(attacker, target, fx, sizeScaleOf(target));
+        if (livingTarget != null) applyFireGameplay(attacker, livingTarget, fx, sizeScaleOf(target));
     }
 
     /** Appelé lors d'un rebond d'éclair en chaîne entre deux entités. */
@@ -328,7 +331,7 @@ public final class WeaponVfxServerListener {
             if (sig == null) continue;
             broadcastNear(sl, tx, ty, tz, sig.id, KIND_IMPACT, 3,
                     tx, ty, tz, ax, ay, az, 1 << el.ordinal(), sizeScale);
-            applyFireGameplay(sl.getEntityById(attackerId) instanceof LivingEntity comboAttacker
+            applyFireGameplay(sl.getEntity(attackerId) instanceof LivingEntity comboAttacker
                     ? comboAttacker : null, target, sig, sizeScale);
             // Étincelles de la famille, une par élément : le mélange de couleurs se voit tout de suite.
             WeaponVfxSubtle.Subtle accent = WeaponVfxSubtle.pick(el, sl.random.nextLong());
@@ -484,7 +487,7 @@ public final class WeaponVfxServerListener {
                 primaryTarget.getZ() + dirZ * shift, dirX, dirZ);
     }
 
-    /** Corridor de quatre blocs : front = -2 .. +2, largeur = trois blocs. */
+    /** Corridor de six blocs : front = -2 .. +4, largeur = trois blocs. */
     private static void scheduleWaveIgnition(ServerLevel sl, LivingEntity attacker,
                                              LivingEntity primaryTarget, int now) {
         WaveOrigin origin = waveOrigin(attacker, primaryTarget);
@@ -495,12 +498,13 @@ public final class WeaponVfxServerListener {
         Set<Integer> ignited = new HashSet<>();
 
         for (int delay = 0; delay <= 112; delay += 4) {
-            double front = -2.0 + 4.0 * (delay / 112.0);
+            double front = -2.0 + 6.0 * (delay / 112.0);
             TestProcedure.schedule(sl, now + delay, () -> {
                 double centerX = originX + dirX * front;
                 double centerZ = originZ + dirZ * front;
-                AABB query = new AABB(centerX - 2.4, originY - 2.5, centerZ - 2.4,
-                        centerX + 2.4, originY + 3.5, centerZ + 2.4);
+                // Le volume vertical couvre les collines et descentes suivies par le rendu.
+                AABB query = new AABB(centerX - 2.4, originY - 8.0, centerZ - 2.4,
+                        centerX + 2.4, originY + 8.0, centerZ + 2.4);
                 for (LivingEntity entity : sl.getEntitiesOfClass(LivingEntity.class, query)) {
                     if (!entity.isAlive() || ignited.contains(entity.getId())) continue;
                     boolean primary = entity.getId() == primaryId;
@@ -567,9 +571,9 @@ public final class WeaponVfxServerListener {
                                                LivingEntity target, WeaponVisualEffectId fx, int now) {
         if (fx == WeaponVisualEffectId.MOLTEN_FIRE_WAVE) {
             WaveOrigin origin = waveOrigin(attacker, target);
-            int[] lavaTicks = {0, 20, 40, 60, 80};
+            int[] lavaTicks = {0, 20, 40, 60, 80, 100};
             for (int delay : lavaTicks) {
-                double front = -2.0 + 4.0 * (delay / 112.0);
+                double front = -2.0 + 6.0 * (delay / 112.0);
                 double x = origin.x() + origin.dirX() * front;
                 double z = origin.z() + origin.dirZ() * front;
                 TestProcedure.schedule(sl, now + delay, () -> sl.playSound(null, x, origin.y(), z,

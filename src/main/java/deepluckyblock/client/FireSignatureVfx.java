@@ -202,13 +202,14 @@ public final class FireSignatureVfx {
                     float h = hash01(salt, lane * 91 + k * 17 + d * 41 + 40);
                     float cube = (u > 0.82f ? 0.135f + 0.025f * h : 0.170f + 0.040f * h) * S;
                     int rgb = lavaRgb(f / S, lateral / S, u, t, salt + lane * 29 + k * 7 + d * 13);
-                    // Un cube de jonction adapte sa taille aux fortes pentes : la courbe reste pleine.
-                    if (d > 0 && Math.abs(cubeY - previousCubeY) > (cube + previousCube) * 0.90f) {
-                        float bridge = Math.min(0.21f * S, Math.max(Math.max(cube, previousCube),
-                                Math.abs(cubeY - previousCubeY) * 0.32f));
-                        localCube(vc, mat, tmp, cx, cy, cz, dx, dz,
+                    // Le connecteur épouse le dénivelé réel : montée et descente restent continues.
+                    float heightGap = Math.abs(cubeY - previousCubeY);
+                    if (d > 0 && heightGap > (cube + previousCube) * 0.90f) {
+                        float bridgeHalf = Math.max(cube, previousCube) * 0.82f;
+                        float bridgeHeight = heightGap * 0.5f + Math.min(cube, previousCube) * 0.55f;
+                        localBox(vc, mat, tmp, cx, cy, cz, dx, dz,
                                 (f + previousF) * 0.5f, (cubeY + previousCubeY) * 0.5f, lateral,
-                                bridge, rgb, Math.round(alpha * env));
+                                bridgeHalf, bridgeHeight, bridgeHalf, rgb, Math.round(alpha * env));
                     }
                     localCube(vc, mat, tmp, cx, cy, cz, dx, dz, f, cubeY, lateral,
                             cube, rgb, Math.round(alpha * env));
@@ -617,7 +618,7 @@ public final class FireSignatureVfx {
                 }
                 if (k % 4 == 0) {
                     float aheadQ = Math.min(1.0f, hq + 0.01f);
-                    float tangent = Mth.atan2(meteorY(aheadQ) - meteorY(hq),
+                    float tangent = (float) Mth.atan2(meteorY(aheadQ) - meteorY(hq),
                             meteorF(aheadQ, salt) - meteorF(hq, salt));
                     float streak = (0.18f + 0.25f * life) * S * trailReveal
                             * (0.82f + 0.30f * n2);
@@ -803,8 +804,8 @@ public final class FireSignatureVfx {
     }
 
     private static float waveTravel(float t) {
-        // Translation positive jusqu'à la dernière frame : la vague quitte la zone, elle ne s'arrête pas.
-        return -2.0f + 4.0f * t;
+        // Six blocs de translation positive : front = -2 .. +4, avec hauteur du terrain à chaque maille.
+        return -2.0f + 6.0f * t;
     }
 
     private static float waveBreakup(float t) {
@@ -1074,6 +1075,10 @@ public final class FireSignatureVfx {
     private static final float METEOR_FLIGHT_SECONDS = 1.408f;
 
     /** Trajectoire droite stable : le côté du ciel dépend de la graine de l'instance, pas du tick. */
+    private static float meteorDistance(int salt) {
+        return 3.20f + 1.40f * hash01(salt, 9101);
+    }
+
     private static float meteorF(float q, int salt) {
         float angle = hash01(salt, 9100) * (float) (Math.PI * 2.0);
         float distance = 3.20f + 1.40f * hash01(salt, 9101);
@@ -1154,6 +1159,20 @@ public final class FireSignatureVfx {
         localBox(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l, half, half, half, rgb, alpha);
     }
 
+    /** Variante inclinée utilisée par les stries de combustion du météore. */
+    private static void localRotBox(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                    float cx, float cy, float cz, float dx, float dz,
+                                    float f, float y, float l, float hf, float hy, float hl,
+                                    float roll, int rgb, int alpha) {
+        if (alpha <= 0 || hf <= 0.0f || hy <= 0.0f || hl <= 0.0f) return;
+        float sideX = -dz, sideZ = dx;
+        float x = cx + dx * f + sideX * l;
+        float z = cz + dz * f + sideZ * l;
+        float yaw = (float) Mth.atan2(-dz, dx);
+        WeaponWorldVfxManager.emitVoxelBoxRotated(vc, mat, tmp, x, y, z, hf, hy, hl,
+                yaw, 0.0f, roll, rgb, alpha);
+    }
+
     /** Coordonnées locales : x = attaque, z = latéral. Le voxel garde ses dimensions libres. */
     private static void localBox(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                  float cx, float cy, float cz, float dx, float dz,
@@ -1163,7 +1182,7 @@ public final class FireSignatureVfx {
         float sideX = -dz, sideZ = dx;
         float x = cx + dx * f + sideX * l;
         float z = cz + dz * f + sideZ * l;
-        float yaw = Mth.atan2(-dz, dx);
+        float yaw = (float) Mth.atan2(-dz, dx);
         WeaponWorldVfxManager.emitVoxelBoxRotated(vc, mat, tmp, x, y, z, hf, hy, hl,
                 yaw, 0.0f, 0.0f, rgb, alpha);
     }

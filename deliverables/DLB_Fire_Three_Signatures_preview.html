@@ -22,11 +22,11 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
 <aside>
   <div class="eyebrow">Deep Lucky Block · Fire VFX</div>
   <h1>FIRE</h1><h2>Signatures HD</h2>
-  <p class="intro">Trois chorégraphies physiques : vague de cubes soudés et déferlement progressif, lune suspendue avec cible stupéfaite, météore à tête chercheuse, nappe de feu au sol et fissures incandescentes.</p>
+  <p class="intro">Trois chorégraphies physiques : vague de lave sur six blocs suivant le relief, lune suspendue avec cible stupéfaite, météore à tête chercheuse, nappe de feu au sol et fissures incandescentes.</p>
   <div class="rule"></div>
   <span class="label">Signature de l’enchantement</span>
   <div class="variants" role="group" aria-label="Variante Fire">
-    <button class="variant active" data-variant="0"><span class="num">Ⅰ</span><span><b>Molten Fire Wave</b><small>Mini-tsunami · crête · splash</small></span></button>
+    <button class="variant active" data-variant="0"><span class="num">Ⅰ</span><span><b>Molten Fire Wave</b><small>6 blocs · suit le sol · crête</small></span></button>
     <button class="variant" data-variant="1"><span class="num">Ⅱ</span><span><b>Soul Fire Crescent</b><small>Lune suspendue · cible stun</small></span></button>
     <button class="variant" data-variant="2"><span class="num">Ⅲ</span><span><b>Brimstone Meteor</b><small>Tête chercheuse · sol embrasé · fissures</small></span></button>
   </div>
@@ -62,7 +62,7 @@ function buildFire(v,t,salt=42,groundFn=null){const out=[];if(t<=0||t>=1)return 
  const lavaDropletRgb=h=>h>.80?LAVA[13]:h>.52?LAVA[11]:h>.20?LAVA[8]:LAVA[5];
  const fireRamp=(u,core)=>u<.14?(core?LAVA[13]:LAVA[10]):u<.38?(core?LAVA[11]:LAVA[8]):u<.70?(core?LAVA[9]:LAVA[7]):u<.90?(core?LAVA[7]:LAVA[5]):(core?LAVA[6]:LAVA[3]);
  const soulRamp=(u,core)=>u<.14?(core?soulColor(10):soulColor(8)):u<.40?(core?soulColor(8):soulColor(6)):u<.72?(core?soulColor(6):soulColor(4)):(core?soulColor(4):soulColor(1));
- const waveTravel=t=>-2+4*t,waveBreakup=t=>smooth((t-.57)/.36),waveLateral=(t,lane)=>lane*.215;
+ const waveTravel=t=>-2+6*t,waveBreakup=t=>smooth((t-.57)/.36),waveLateral=(t,lane)=>lane*.215;
  const waveFrontLocal=(t,u,lane=0)=>{const breakup=waveBreakup(t),curl=smooth((t-.13)/.32)*(1-.45*breakup),tornLip=.12*Math.sin(lane*1.37+t*3)*u*u,laneCurve=-.26*Math.pow(Math.abs(lane)/6,2)*u*u;return-.58+.58*u+1.05*curl*Math.pow(u,3.2)+tornLip+laneCurve};
  const waveFrontAt=(t,u,lane=0)=>{const breakup=waveBreakup(t);return waveTravel(t)+waveFrontLocal(t,u,lane)+breakup*breakup*(.18+.75*u*u*u)};
  const waveLaneNoise=(t,lane,salt)=>{const arch=1-.24*Math.pow(Math.abs(lane)/6,1.5);return(.96+.05*Math.sin(lane*1.37+(salt&31))+.075*Math.sin(t*4+lane*.70)+.040*Math.sin(t*7-lane*.50))*arch};
@@ -99,7 +99,7 @@ function buildFire(v,t,salt=42,groundFn=null){const out=[];if(t<=0||t>=1)return 
  const METEOR_FLIGHT_SECONDS=1.408,meteorAngle=salt=>hash01(salt,9100)*Math.PI*2,meteorDistance=salt=>3.20+1.40*hash01(salt,9101),meteorF=(q,salt)=>Math.cos(meteorAngle(salt))*meteorDistance(salt)*(1-q),meteorL=(q,salt)=>Math.sin(meteorAngle(salt))*meteorDistance(salt)*(1-q),meteorY=q=>.12+13.50*(1-q);
  if(v===0){
   const exit=smooth((t-.94)/.06),env=1-exit,ground=terrain.at(0,0),breakup=waveBreakup(t);
-  for(let lane=-6;lane<=6;lane++){const lateral=waveLateral(t,lane),noise=waveLaneNoise(t,lane,salt);for(let k=0;k<15;k++){const u=k/14,front=waveFrontAt(t,u,lane),thickness=(.24+.50*Math.sin(u*Math.PI)+.18*(1-u))*(1+.35*breakup),columnGround=terrain.at(front,lateral),y=columnGround+waveHeightLocal(t,u,noise),layers=u>.82?3:5;let previousF=0,previousCubeY=0,previousCube=0;for(let d=0;d<layers;d++){const v=d/(layers-1),roundBack=.30*Math.sin(v*Math.PI)*(1-.35*u),backRoll=.06*Math.sin(t*7-v*3+lane*.4)*Math.sin(v*Math.PI),f=front-thickness*v-roundBack+backRoll,depthHeight=.18+.82*Math.cos(v*Math.PI*.5),aboveBase=Math.max(0,y-columnGround-.10),backUndulation=.045*Math.sin(t*6-v*2+lane*.3)*Math.sin(v*Math.PI),cubeY=y+terrain.at(f,lateral)-columnGround-aboveBase*(1-depthHeight)+backUndulation,h=hash01(salt,lane*91+k*17+d*41+40),size=(u>.82?.135+.025*h:.170+.040*h),rgb=lavaRgb(f,lateral,u,t,salt+lane*29+k*7+d*13);if(d>0&&Math.abs(cubeY-previousCubeY)>(size+previousCube)*.90){const bridge=Math.min(.21,Math.max(Math.max(size,previousCube),Math.abs(cubeY-previousCubeY)*.32));cube((f+previousF)*.5,(cubeY+previousCubeY)*.5,lateral,bridge,rgb,245*env)}cube(f,cubeY,lateral,size,rgb,245*env);if(d===0&&(k+lane)%3===0){const detail=.045+.030*h;cube(front+size*.82,y+(hash01(salt,k*41+lane)-.5)*size,lateral+(hash01(salt,k+lane*33)-.5)*size,detail,lavaRgb(front+.4,lateral,u+.2,t+.17,salt+k),245*env*.96)}previousF=f;previousCubeY=cubeY;previousCube=size}}
+  for(let lane=-6;lane<=6;lane++){const lateral=waveLateral(t,lane),noise=waveLaneNoise(t,lane,salt);for(let k=0;k<15;k++){const u=k/14,front=waveFrontAt(t,u,lane),thickness=(.24+.50*Math.sin(u*Math.PI)+.18*(1-u))*(1+.35*breakup),columnGround=terrain.at(front,lateral),y=columnGround+waveHeightLocal(t,u,noise),layers=u>.82?3:5;let previousF=0,previousCubeY=0,previousCube=0;for(let d=0;d<layers;d++){const v=d/(layers-1),roundBack=.30*Math.sin(v*Math.PI)*(1-.35*u),backRoll=.06*Math.sin(t*7-v*3+lane*.4)*Math.sin(v*Math.PI),f=front-thickness*v-roundBack+backRoll,depthHeight=.18+.82*Math.cos(v*Math.PI*.5),aboveBase=Math.max(0,y-columnGround-.10),backUndulation=.045*Math.sin(t*6-v*2+lane*.3)*Math.sin(v*Math.PI),cubeY=y+terrain.at(f,lateral)-columnGround-aboveBase*(1-depthHeight)+backUndulation,h=hash01(salt,lane*91+k*17+d*41+40),size=(u>.82?.135+.025*h:.170+.040*h),rgb=lavaRgb(f,lateral,u,t,salt+lane*29+k*7+d*13);const heightGap=Math.abs(cubeY-previousCubeY);if(d>0&&heightGap>(size+previousCube)*.90){const bridgeHalf=Math.max(size,previousCube)*.82,bridgeHeight=heightGap*.5+Math.min(size,previousCube)*.55;box((f+previousF)*.5,(cubeY+previousCubeY)*.5,lateral,bridgeHalf,bridgeHeight,bridgeHalf,rgb,245*env)}cube(f,cubeY,lateral,size,rgb,245*env);if(d===0&&(k+lane)%3===0){const detail=.045+.030*h;cube(front+size*.82,y+(hash01(salt,k*41+lane)-.5)*size,lateral+(hash01(salt,k+lane*33)-.5)*size,detail,lavaRgb(front+.4,lateral,u+.2,t+.17,salt+k),245*env*.96)}previousF=f;previousCubeY=cubeY;previousCube=size}}
    if((lane&1)===0){const u=.67,f=waveFrontAt(t,u,lane),y=terrain.at(f,lateral)+waveHeightLocal(t,u,noise);flame(f,y,lateral,(.48+.30*hash01(salt,lane+100))*(1-breakup*.65),.080+.022*hash01(salt,lane+120),.52,.10*Math.sin(lane),t*9+lane,false,245*env,salt+lane*43)}
    if((lane+6)%4===0){const f=waveFrontAt(t,1,lane),y=terrain.at(f,lateral)+waveHeightLocal(t,1,noise);flame(f,y,lateral,.34*(1-breakup*.75),.065,-.20,0,t*10+lane*2,false,245*env*.90,salt+lane*67+900)}
   }
@@ -145,12 +145,12 @@ function buildFire(v,t,salt=42,groundFn=null){const out=[];if(t<=0||t>=1)return 
 if(typeof module!=='undefined')module.exports={buildFire,LAVA,SOUL_COLORS};
 
 const NAMES=['Molten Fire Wave','Soul Fire Crescent','Brimstone Meteor'];
-const SUBS=['Cubes · roulement · déferlement','Lune suspendue · cible stun','Tête chercheuse · sol embrasé · fissures'];
+const SUBS=['6 blocs · terrain · roulement','Lune suspendue · cible stun','Tête chercheuse · sol embrasé · fissures'];
 const DURATIONS=[5.6,5.6,6.4];
 const canvas=document.getElementById('scene'),ctx=canvas.getContext('2d',{alpha:false});
 const timeline=document.getElementById('timeline'),phaseEl=document.getElementById('phase'),playBtn=document.getElementById('play'),visibleEl=document.getElementById('visibleCount'),countEl=document.getElementById('baseCount');
 let variant=0,t=0,playing=true,last=performance.now(),yaw=.72,pitch=.36,zoomFactor=1,autoRotate=true,drag=false,lastX=0,lastY=0;
-let W=1,H=1,DPR=1,CY=1,SY=0,CP=1,SP=0,SCALE=1,FOCUS=.65,dirty=true,lastRender=0;
+let W=1,H=1,DPR=1,CY=1,SY=0,CP=1,SP=0,SCALE=1,FOCUS=.65,FOCUS_F=0,FOCUS_L=0,dirty=true,lastRender=0;
 const FACES=[
  {n:[1,0,0],v:[[1,-1,-1],[1,1,-1],[1,1,1],[1,-1,1]],shade:.77},
  {n:[-1,0,0],v:[[-1,-1,1],[-1,1,1],[-1,1,-1],[-1,-1,-1]],shade:.65},
@@ -161,8 +161,8 @@ const FACES=[
 ];
 function resize(){const r=canvas.getBoundingClientRect();DPR=Math.min(1.75,window.devicePixelRatio||1);W=Math.max(1,Math.round(r.width*DPR));H=Math.max(1,Math.round(r.height*DPR));if(canvas.width!==W||canvas.height!==H){canvas.width=W;canvas.height=H}}
 new ResizeObserver(resize).observe(canvas);resize();
-function updateCamera(){CY=Math.cos(yaw);SY=Math.sin(yaw);CP=Math.cos(pitch);SP=Math.sin(pitch);if(variant===0){FOCUS=.52;SCALE=Math.min(W/6.15,H/5.0)}else if(variant===1){FOCUS=.72;SCALE=Math.min(W/4.80,H/4.30)}else{const dive=smooth((t-.16)/.30);FOCUS=lerp(6.40,.68,dive);const wide=Math.min(W/11.80,H/15.0),close=Math.min(W/7.15,H/6.75);SCALE=lerp(wide,close,dive)*(.82+.18*dive)}SCALE*=zoomFactor}
-function project(x,y,z){const yc=y-FOCUS,rx=x*CY-z*SY,rz=x*SY+z*CY,ry=yc*CP-rz*SP,depth=yc*SP+rz*CP;return[W*.52+rx*SCALE,H*.53-ry*SCALE,depth]}
+function updateCamera(){CY=Math.cos(yaw);SY=Math.sin(yaw);CP=Math.cos(pitch);SP=Math.sin(pitch);FOCUS_F=0;FOCUS_L=0;if(variant===0){FOCUS=.60-.85*smooth((t-.82)/.18);FOCUS_F=(-2+6*t)*.80;SCALE=Math.min(W/8.2,H/5.2)}else if(variant===1){FOCUS=.72;SCALE=Math.min(W/4.80,H/4.30)}else{const dive=smooth((t-.16)/.30);FOCUS=lerp(6.40,.68,dive);const wide=Math.min(W/11.80,H/15.0),close=Math.min(W/7.15,H/6.75);SCALE=lerp(wide,close,dive)*(.82+.18*dive)}SCALE*=zoomFactor}
+function project(x,y,z){const yc=y-FOCUS,rx=(x-FOCUS_F)*CY-(z-FOCUS_L)*SY,rz=(x-FOCUS_F)*SY+(z-FOCUS_L)*CY,ry=yc*CP-rz*SP,depth=yc*SP+rz*CP;return[W*.52+rx*SCALE,H*.53-ry*SCALE,depth]}
 function rotateNormal(n,roll=0){const cr=Math.cos(roll),sr=Math.sin(roll),x=n[0]*cr-n[1]*sr,y=n[0]*sr+n[1]*cr,z=n[2],rx=x*CY-z*SY,rz=x*SY+z*CY;return[rx,y*CP-rz*SP,y*SP+rz*CP]}
 const RGB_CACHE=new Map();function rgb(n){if(!RGB_CACHE.has(n))RGB_CACHE.set(n,[n>>16&255,n>>8&255,n&255]);return RGB_CACHE.get(n)}
 function shade(n,k,a){const c=rgb(n);return`rgba(${Math.min(255,c[0]*k)|0},${Math.min(255,c[1]*k)|0},${Math.min(255,c[2]*k)|0},${clamp(a)})`}

@@ -5,6 +5,7 @@ import net.minecraft.world.item.ItemStack;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.WeakHashMap;
 
 /**
  * DeepGlintColor — résolveur de COULEUR DE THÈME pour les enchantements de
