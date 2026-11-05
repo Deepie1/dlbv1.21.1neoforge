@@ -29,6 +29,9 @@ public final class PoisonSignatureVfx {
     private static final int ROT = 0x17130D;
     private static final int STONE = 0x302D2A;
     private static final int BLOOD = 0x8C2430;
+    private static final int FANG_ROOT = 0x8FBF73;
+    private static final int FANG_IVORY = 0xD6FFB1;
+    private static final int FANG_TIP = 0xF2FFD8;
 
     private static final int CACHE_LIMIT = 1536;
     private static final Map<Long, Float> GROUND_CACHE = new HashMap<>(CACHE_LIMIT);
@@ -78,47 +81,34 @@ public final class PoisonSignatureVfx {
     private static void renderVenom(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                     float cx, float cy, float cz, float t,
                                     float dx, float dz, int alpha, int salt, TerrainView terrain) {
-        float thrust = smooth(t / 0.20f);
+        float thrust = smooth((t - 0.035f) / 0.145f);
+        thrust = (float) Math.pow(thrust, 0.68f); // accélération sèche de la poussée
         float impact = smooth((t - 0.20f) / 0.075f);
         float patch = smooth((t - 0.255f) / 0.22f);
         float rot = smooth((t - 0.80f) / 0.20f);
         float spectral = smooth(t / 0.07f) * (1.0f - smooth((t - 0.56f) / 0.20f));
         float ground = terrain.at(0.0f, 0.0f);
-        float mawF = -1.90f + 1.90f * thrust;
+        float mawF = -2.05f + 2.05f * thrust + 0.10f * impact * (1.0f - impact);
+        float biteClose = smooth((t - 0.196f) / 0.042f);
+        float biteRebound = 0.13f * smooth((t - 0.252f) / 0.035f)
+                * (1.0f - smooth((t - 0.315f) / 0.075f));
+        float gape = smooth(t / 0.085f) * (1.0f - biteClose) + biteRebound;
         int briar = color(BODY, ROT, rot);
 
-        // Mâchoire spectrale autour de la lame : arcade, crocs et volume crânien translucide.
-        for (int jaw = 0; jaw < 2; jaw++) {
-            float sign = jaw == 0 ? 1.0f : -1.0f;
-            float jawY = cy + sign * (0.16f + 0.52f * (1.0f - impact));
-            for (int tooth = 0; tooth < 9; tooth++) {
-                float lateral = (tooth - 4) * 0.20f;
-                float f = mawF + 0.10f * (1.0f - Math.abs(lateral));
-                cube(vc, mat, tmp, cx, jawY, cz, dx, dz, f, lateral, 0.080f,
-                        color(PURPLE, BODY, tooth / 8.0f), Math.round(alpha * spectral * 0.72f));
-                float fang = tooth == 4 ? 0.66f : (tooth == 3 || tooth == 5 ? 0.54f : 0.38f);
-                link(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        f + 0.06f, jawY, lateral, f + 0.17f, jawY - sign * fang, lateral * 0.91f,
-                        0.037f, BODY, TIP, Math.round(alpha * spectral * 0.88f));
-            }
-            // Deux traces de plasma jumelles suivent exactement la poussée.
-            for (int trail = 0; trail < 22; trail++) {
-                float u = trail / 21.0f;
-                float f = Mth.lerp(u, -1.95f, mawF + 0.10f);
-                float y = cy + sign * (0.28f + 0.06f * Mth.sin(u * 7.0f + t * 14.0f));
-                float l = sign * 0.43f;
+        // Crâne de HellHound et mandibule articulée : toutes les dents suivent la morsure.
+        renderHellhoundMaw(vc, mat, tmp, cx, cy, cz, dx, dz,
+                mawF, gape, spectral, alpha, salt);
+        for (int side = 0; side < 2; side++) {
+            float sign = side == 0 ? -1.0f : 1.0f;
+            for (int trail = 0; trail < 24; trail++) {
+                float u = trail / 23.0f;
+                float f = Mth.lerp(u, -2.05f, mawF + 0.18f);
+                float y = cy + 0.20f - 0.42f * u + 0.035f * Mth.sin(u * 9.0f + t * 18.0f);
+                float l = sign * (0.36f - 0.10f * u);
                 cube(vc, mat, tmp, cx, y, cz, dx, dz, f, l,
-                        0.022f + 0.018f * u, u > 0.78f ? TIP : ACID,
-                        Math.round(alpha * spectral * (0.25f + 0.70f * u)));
+                        0.018f + 0.022f * u, u > 0.80f ? FANG_TIP : ACID,
+                        Math.round(alpha * spectral * (0.18f + 0.78f * u)));
             }
-        }
-        for (int i = 0; i < 18; i++) {
-            float u = i / 17.0f;
-            float f = mawF - 0.62f + 0.48f * u;
-            float y = cy + 0.18f * Mth.sin(u * 3.14159f);
-            float l = (hash(salt, i * 31) - 0.5f) * (0.75f - 0.35f * u);
-            cube(vc, mat, tmp, cx, y, cz, dx, dz, f, l, 0.055f,
-                    i % 3 == 0 ? VIOLET : BODY, Math.round(alpha * spectral * 0.26f));
         }
 
         // Ronces enroulées autour du bras et de l'arme pendant la poussée.
@@ -238,6 +228,190 @@ public final class PoisonSignatureVfx {
             cube(vc, mat, tmp, cx, y, cz, dx, dz, f, l, 0.014f + 0.015f * h,
                     rgb, Math.round(alpha * smooth((t - 0.62f) / 0.15f) * (1.0f - 0.55f * rot)));
         }
+    }
+
+    /** Crâne canin allongé, crocs recourbés multi-voxels et morsure autour d'une charnière arrière. */
+    private static void renderHellhoundMaw(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                           float cx, float cy, float cz, float dx, float dz,
+                                           float mawF, float open, float spectral, int alpha, int salt) {
+        int bone = color(PURPLE_DEEP, BODY, 0.55f);
+        int gum = color(PURPLE, VIOLET, 0.35f);
+        int boneAlpha = Math.round(alpha * spectral * 0.66f);
+        int toothAlpha = Math.round(alpha * spectral * 0.98f);
+
+        for (int side = 0; side < 2; side++) {
+            float sign = side == 0 ? -1.0f : 1.0f;
+            // Maxille, museau et arcade zygomatique : la tête ne se résume pas à deux barres de dents.
+            jawLink(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, false,
+                    -0.76f, 0.27f, sign * 0.43f, -0.26f, 0.38f, sign * 0.39f,
+                    0.085f, bone, BODY, boneAlpha);
+            jawLink(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, false,
+                    -0.26f, 0.38f, sign * 0.39f, 0.52f, 0.20f, sign * 0.21f,
+                    0.070f, bone, BODY, boneAlpha);
+            jawLink(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, false,
+                    -0.70f, 0.10f, sign * 0.46f, 0.50f, 0.10f, sign * 0.22f,
+                    0.075f, gum, BODY, boneAlpha);
+            jawLink(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, false,
+                    -0.75f, 0.02f, sign * 0.49f, -0.37f, 0.13f, sign * 0.55f,
+                    0.060f, PURPLE_DEEP, VIOLET, boneAlpha);
+            jawLink(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, false,
+                    -0.37f, 0.13f, sign * 0.55f, -0.05f, 0.20f, sign * 0.41f,
+                    0.048f, PURPLE_DEEP, BODY, boneAlpha);
+
+            // Mandibule : branche horizontale, ramus remontant à la charnière et menton pointu.
+            jawLink(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, true,
+                    -0.68f, -0.09f, sign * 0.43f, -0.36f, -0.34f, sign * 0.42f,
+                    0.070f, bone, BODY, boneAlpha);
+            jawLink(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, true,
+                    -0.36f, -0.34f, sign * 0.42f, 0.46f, -0.24f, sign * 0.22f,
+                    0.072f, bone, BODY, boneAlpha);
+            jawLink(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, true,
+                    -0.68f, -0.09f, sign * 0.43f, -0.48f, 0.18f, sign * 0.43f,
+                    0.055f, PURPLE_DEEP, VIOLET, boneAlpha);
+            jawLink(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, true,
+                    -0.40f, -0.23f, sign * 0.40f, 0.48f, -0.18f, sign * 0.22f,
+                    0.048f, gum, BODY, boneAlpha);
+
+            // Orbites sombres et pupille toxique, placées sur les côtés du crâne.
+            jawCube(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, false,
+                    -0.43f, 0.34f, sign * 0.43f, 0.115f, PURPLE_DEEP,
+                    Math.round(alpha * spectral * 0.88f));
+            jawCube(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, false,
+                    -0.37f, 0.35f, sign * 0.49f, 0.037f, ACID,
+                    Math.round(alpha * spectral));
+            jawCube(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, false,
+                    -0.34f, 0.36f, sign * 0.51f, 0.015f, FANG_TIP,
+                    Math.round(alpha * spectral));
+
+            // Cornes crâniennes arrière, angulées vers l'extérieur : silhouette HellHound.
+            hellFang(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, false,
+                    new float[]{-0.68f, -0.82f, -0.98f},
+                    new float[]{0.29f, 0.48f, 0.57f},
+                    new float[]{sign * 0.39f, sign * 0.46f, sign * 0.52f},
+                    0.048f, PURPLE, VIOLET, Math.round(alpha * spectral * 0.72f));
+
+            // Canine supérieure : six sections, racine épaisse, courbure arrière et rentrante.
+            hellFang(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, false,
+                    new float[]{0.25f, 0.28f, 0.27f, 0.23f, 0.17f, 0.08f},
+                    new float[]{0.13f, 0.01f, -0.13f, -0.27f, -0.41f, -0.55f},
+                    new float[]{sign * 0.34f, sign * 0.36f, sign * 0.35f,
+                            sign * 0.32f, sign * 0.28f, sign * 0.23f},
+                    0.078f, FANG_ROOT, FANG_TIP, toothAlpha);
+
+            // Canine inférieure plus courte, à l'EXTÉRIEUR de la supérieure à la fermeture.
+            hellFang(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, true,
+                    new float[]{0.29f, 0.34f, 0.34f, 0.28f, 0.18f},
+                    new float[]{-0.22f, -0.08f, 0.07f, 0.21f, 0.32f},
+                    new float[]{sign * 0.40f, sign * 0.43f, sign * 0.43f,
+                            sign * 0.39f, sign * 0.33f},
+                    0.066f, FANG_ROOT, FANG_TIP, toothAlpha);
+
+            // Prémolaires et carnassières : angles alternés pour imbriquer les deux rangées.
+            for (int tooth = 0; tooth < 4; tooth++) {
+                float f = 0.04f - tooth * 0.18f;
+                float upperL = sign * (0.35f + tooth * 0.026f);
+                float length = tooth == 3 ? 0.42f : 0.27f + 0.025f * tooth;
+                hellFang(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, false,
+                        new float[]{f, f - 0.025f, f - 0.075f, f - 0.13f},
+                        new float[]{0.10f, -0.03f, -length * 0.62f, -length},
+                        new float[]{upperL, upperL + sign * 0.018f,
+                                upperL + sign * 0.005f, upperL - sign * 0.035f},
+                        tooth == 3 ? 0.058f : 0.046f, FANG_ROOT, FANG_IVORY, toothAlpha);
+                float lowerF = f + 0.085f;
+                float lowerL = sign * (0.38f + tooth * 0.022f);
+                hellFang(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, true,
+                        new float[]{lowerF, lowerF + 0.035f, lowerF + 0.065f},
+                        new float[]{-0.20f, -0.07f, 0.09f + tooth * 0.018f},
+                        new float[]{lowerL, lowerL + sign * 0.025f, lowerL + sign * 0.015f},
+                        tooth == 3 ? 0.052f : 0.039f, FANG_ROOT, FANG_IVORY, toothAlpha);
+            }
+        }
+
+        // Incisives avant, petites mais elles aussi épaisses et inclinées vers l'arrière.
+        for (int incisor = 0; incisor < 6; incisor++) {
+            float l = (incisor - 2.5f) * 0.065f;
+            hellFang(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, false,
+                    new float[]{0.49f, 0.48f, 0.43f},
+                    new float[]{0.10f, -0.01f, -0.15f},
+                    new float[]{l, l, l * 0.92f},
+                    0.033f, FANG_ROOT, FANG_TIP, toothAlpha);
+            hellFang(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, true,
+                    new float[]{0.46f, 0.47f, 0.42f},
+                    new float[]{-0.18f, -0.08f, 0.035f},
+                    new float[]{l, l, l * 0.92f},
+                    0.028f, FANG_ROOT, FANG_IVORY, toothAlpha);
+        }
+
+        // Palais, menton et truffe donnent une largeur réelle au museau vu de trois quarts.
+        jawLink(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, false,
+                -0.66f, 0.11f, -0.44f, -0.66f, 0.11f, 0.44f, 0.055f, bone, BODY, boneAlpha);
+        jawLink(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, false,
+                0.47f, 0.10f, -0.22f, 0.47f, 0.10f, 0.22f, 0.048f, gum, BODY, boneAlpha);
+        jawLink(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, true,
+                0.43f, -0.22f, -0.22f, 0.43f, -0.22f, 0.22f, 0.050f, bone, BODY, boneAlpha);
+        jawCube(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, false,
+                0.57f, 0.19f, 0.0f, 0.115f, PURPLE_DEEP, Math.round(alpha * spectral * 0.88f));
+        for (int side = 0; side < 2; side++) {
+            float sign = side == 0 ? -1.0f : 1.0f;
+            jawCube(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, false,
+                    0.64f, 0.20f, sign * 0.065f, 0.025f, ACID, Math.round(alpha * spectral));
+        }
+    }
+
+    /** Une dent = plusieurs volumes orientés + articulations voxel + arête lumineuse. */
+    private static void hellFang(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                 float cx, float cy, float cz, float dx, float dz,
+                                 float mawF, float open, boolean lower,
+                                 float[] fs, float[] ys, float[] ls, float rootHalf,
+                                 int rootRgb, int tipRgb, int alpha) {
+        for (int k = 0; k < fs.length - 1; k++) {
+            float u = k / (float) Math.max(1, fs.length - 2);
+            float half = rootHalf * (1.0f - 0.80f * u);
+            int rgb = color(rootRgb, tipRgb, 0.22f + 0.78f * u);
+            jawLink(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, lower,
+                    fs[k], ys[k], ls[k], fs[k + 1], ys[k + 1], ls[k + 1],
+                    half, rgb, tipRgb, Math.round(alpha * (0.92f + 0.08f * u)));
+            if (k < fs.length - 2) {
+                jawCube(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, lower,
+                        fs[k], ys[k], ls[k], half * 0.82f, rgb, Math.round(alpha * 0.88f));
+                // Petit voxel d'arête sur la face avant : la dent accroche la lumière par facettes.
+                jawCube(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, lower,
+                        fs[k] + half * 0.55f, ys[k], ls[k], half * 0.30f,
+                        color(rgb, FANG_TIP, 0.45f), Math.round(alpha * 0.74f));
+            }
+        }
+        int tip = fs.length - 1;
+        jawCube(vc, mat, tmp, cx, cy, cz, dx, dz, mawF, open, lower,
+                fs[tip], ys[tip], ls[tip], rootHalf * 0.16f, tipRgb, alpha);
+    }
+
+    private static void jawLink(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                float cx, float cy, float cz, float dx, float dz,
+                                float mawF, float open, boolean lower,
+                                float f0, float y0, float l0, float f1, float y1, float l1,
+                                float half, int rgb, int tip, int alpha) {
+        float angle = lower ? -0.88f * open : 0.16f * open;
+        float cos = Mth.cos(angle), sin = Mth.sin(angle);
+        float rf0 = f0 + 0.68f, rf1 = f1 + 0.68f;
+        float ry0 = y0 + 0.08f, ry1 = y1 + 0.08f;
+        float tf0 = mawF - 0.68f + cos * rf0 - sin * ry0;
+        float tf1 = mawF - 0.68f + cos * rf1 - sin * ry1;
+        float ty0 = -0.08f + sin * rf0 + cos * ry0;
+        float ty1 = -0.08f + sin * rf1 + cos * ry1;
+        link(vc, mat, tmp, cx, cy, cz, dx, dz, tf0, cy + ty0, l0, tf1, cy + ty1, l1,
+                half, rgb, tip, alpha);
+    }
+
+    private static void jawCube(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                float cx, float cy, float cz, float dx, float dz,
+                                float mawF, float open, boolean lower,
+                                float f, float y, float lateral, float half, int rgb, int alpha) {
+        float angle = lower ? -0.88f * open : 0.16f * open;
+        float cos = Mth.cos(angle), sin = Mth.sin(angle);
+        float rf = f + 0.68f, ry = y + 0.08f;
+        float tf = mawF - 0.68f + cos * rf - sin * ry;
+        float ty = -0.08f + sin * rf + cos * ry;
+        cube(vc, mat, tmp, cx, cy + ty, cz, dx, dz, tf, lateral, half, rgb, alpha);
     }
 
     /** MIASMA : cylindre violet/vert, suivi avec inertie, cendres, terrain et implosion. */
