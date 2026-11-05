@@ -979,9 +979,8 @@ public final class WeaponVfxServerListener {
             return;
         }
 
-        // Les 1 à 3 arcs sont produits au swing par le déclencheur client originel T342,
-        // y compris dans le vide. Ne pas en renvoyer ici au contact : cela les doublait et
-        // donnait l'impression que le slash dépendait uniquement de la cible touchée.
+        // L'arc originel unique est produit au swing par le client, y compris dans le vide.
+        // Ne pas en renvoyer ici au contact : cela créait une seconde copie dans l'espace.
         event.setAmount(event.getAmount() * MELEE_SLASH_DAMAGE_MULTIPLIER);
     }
 

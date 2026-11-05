@@ -1365,25 +1365,21 @@ public final class WeaponWorldVfxManager {
         double ox = eye.x + look.x * 0.55;
         double oy = eye.y - 0.16 + look.y * 0.35;
         double oz = eye.z + look.z * 0.55;
-        int arcCount = animFamily == null ? 1 : 1 + p.level().random.nextInt(3);
+        WeaponVisualEffectId.ResolvedLayer primary = layers.isEmpty() ? null : layers.get(0);
+        WeaponVisualEffectId fx = primary != null ? primary.effect()
+                : animationSlashEffect(animFamily, p.level().random.nextInt(3));
+        int intensity = primary != null ? primary.level() : 6;
+        int paletteMask = WeaponVisualEffectId.elementMaskOf(stack);
+        if (paletteMask == 0) paletteMask = 1 << fx.element().ordinal();
+        int duration = (fx == WeaponVisualEffectId.ANNIHILATING_ARC
+                || fx == WeaponVisualEffectId.CARNAGE_BERSERK) ? 11 : 8;
+        float tilt = (fx == WeaponVisualEffectId.GUILLOTINE_CLEAVE) ? 1.48f : baseTilt;
 
-        for (int arc = 0; arc < arcCount; arc++) {
-            WeaponVisualEffectId.ResolvedLayer primary = layers.isEmpty() ? null : layers.get(0);
-            WeaponVisualEffectId fx = primary != null ? primary.effect()
-                    : animationSlashEffect(animFamily, p.level().random.nextInt(3));
-            int intensity = primary != null ? primary.level() : 6;
-            int paletteMask = WeaponVisualEffectId.elementMaskOf(stack);
-            if (paletteMask == 0) paletteMask = 1 << fx.element().ordinal();
-            int duration = (fx == WeaponVisualEffectId.ANNIHILATING_ARC
-                    || fx == WeaponVisualEffectId.CARNAGE_BERSERK) ? 11 : 8;
-            float tilt = (fx == WeaponVisualEffectId.GUILLOTINE_CLEAVE) ? 1.48f
-                    : baseTilt + (animFamily == null ? 0.0f : (arc - (arcCount - 1) * 0.5f) * 0.20f);
-
-            pushInstance(new VfxInstance(
-                    fx, KIND_SWING_SLASH, intensity,
-                    ox, oy, oz, ox + look.x * 3.2, oy + look.y * 3.2, oz + look.z * 3.2,
-                    p.getYRot(), p.getXRot(), tilt, duration, System.nanoTime(), paletteMask));
-        }
+        // UN SEUL VfxInstance par swing, exactement comme l'ancien déclencheur T342.
+        pushInstance(new VfxInstance(
+                fx, KIND_SWING_SLASH, intensity,
+                ox, oy, oz, ox + look.x * 3.2, oy + look.y * 3.2, oz + look.z * 3.2,
+                p.getYRot(), p.getXRot(), tilt, duration, System.nanoTime(), paletteMask));
 
         if (layers.isEmpty()) return;
         WeaponVisualEffectId primaryEffect = layers.get(0).effect();
@@ -1629,249 +1625,114 @@ public final class WeaponWorldVfxManager {
 
     private static void renderVoxelSwingSlash(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                               Vec3 cam, VfxInstance inst, float t) {
-        // Emplacement originel T342 : l'arc balaie devant l'arme, à son point de naissance.
-        // Ne jamais l'interpoler vers (tx,ty,tz) : cela l'enfouit dans le mob au lieu de le montrer.
         float rx = (float) (inst.x - cam.x);
         float ry = (float) (inst.y - cam.y);
         float rz = (float) (inst.z - cam.z);
 
-        // T361-MOTIONS-UNIQUES : chaque enchantement a SA trajectoire (22 familles de mouvement).
-        // Deux attaques ne se ressemblent plus, même à couleur identique : l'une balaie, l'autre
-        // monte, l'autre aspire, l'autre se referme, l'autre tombe...
-        WeaponVfxMotion.Profile prof = WeaponVfxMotion.of(inst.effect);
+        if (inst.effect == WeaponVisualEffectId.SPECTRAL_REACH) {
+            float tx = (float) (inst.tx - cam.x);
+            float ty = (float) (inst.ty - cam.y);
+            float tz = (float) (inst.tz - cam.z);
+            float reach = Math.min(1.0f, t * 2.3f);
+            emitSteppedVoxelLine(vc, mat, tmp, rx, ry, rz,
+                    Mth.lerp(reach, rx, tx), Mth.lerp(reach, ry, ty), Mth.lerp(reach, rz, tz),
+                    0.045f, 0xFFFFFF, inst.effect.primaryRgb, Math.round(230 * (1.0f - t)));
+            return;
+        }
 
-        float sweepDeg = switch (prof.shape()) {
-            case WeaponVfxMotion.SHAPE_CRESCENT -> 118.0f;
-            case WeaponVfxMotion.SHAPE_DOUBLE_ARC, WeaponVfxMotion.SHAPE_PRISM -> 150.0f;
-            case WeaponVfxMotion.SHAPE_WAVE -> 165.0f;
-            case WeaponVfxMotion.SHAPE_ASH -> 190.0f;
-            case WeaponVfxMotion.SHAPE_MAW -> 130.0f;
-            case WeaponVfxMotion.SHAPE_SHARDS -> 140.0f;
-            default -> 130.0f;
+        float sweepDeg = switch (inst.effect) {
+            case CARNAGE_BERSERK -> 320.0f;
+            case ANNIHILATING_ARC -> 175.0f;
+            case MOLTEN_FIRE_WAVE, SOUL_FIRE_CRESCENT -> 150.0f;
+            default -> 125.0f;
         };
-        if (inst.effect == WeaponVisualEffectId.CARNAGE_BERSERK) sweepDeg = 318.0f;
-        if (inst.effect == WeaponVisualEffectId.ANNIHILATING_ARC) sweepDeg = 205.0f;
-        if (inst.effect == WeaponVisualEffectId.FOCUSED_BULLSEYE) sweepDeg = 62.0f;
-
-        float radius = 1.32f + 0.22f * t;
-        float voxelHalf = 0.038f;
-        if (inst.effect == WeaponVisualEffectId.RAZOR_GLEAM) voxelHalf = 0.030f;
-        if (inst.effect == WeaponVisualEffectId.ANNIHILATING_ARC) voxelHalf = 0.056f;
-        radius *= prof.scale();
-        voxelHalf *= (0.90f + 0.10f * (prof.scale() - 1.0f));
-
-        // T349-VARIATION : chaque déclenchement diffère un peu — amplitude, ouverture et grain.
-        int v = inst.variant();
-        float varSpan = 0.90f + (v & 3) * 0.06f;          // 0.90 .. 1.08
-        float varSweep = 0.92f + ((v >> 1) & 3) * 0.05f;  // 0.92 .. 1.07
-        radius *= varSpan;
-        sweepDeg *= varSweep;
-        voxelHalf *= 0.88f + (v & 1) * 0.10f;
+        float radius = switch (inst.effect) {
+            case ANNIHILATING_ARC -> 2.10f + 0.95f * t;
+            case MOLTEN_FIRE_WAVE, SOUL_FIRE_CRESCENT, CARNAGE_BERSERK -> 1.60f + 0.45f * t;
+            default -> 1.35f + 0.22f * t;
+        };
+        float voxelHalf = switch (inst.effect) {
+            case RAZOR_GLEAM -> 0.032f;
+            case ANNIHILATING_ARC -> 0.058f;
+            case MOLTEN_FIRE_WAVE, SOUL_FIRE_CRESCENT, CARNAGE_BERSERK, SEISMIC_TECTONIC -> 0.048f;
+            default -> 0.038f;
+        };
 
         int alpha = Math.round(238.0f * (1.0f - t * t));
-        int[] pal = palette(inst.effect, inst.variant(), inst.paletteMask);
-        int arcCore = pal[0];
-        int arcTrail = ((inst.variant() & 1) == 0) ? pal[1] : pal[2];
-        int accent = pal[2];
-        if (inst.effect.element() == DeepElement.CHAOS) {
-            // La lame reste sombre même sur une arme multi-éléments ; seul son cadre porte le spectre.
-            arcCore = DeepElement.CHAOS.primary;
-            arcTrail = DeepElement.CHAOS.secondary;
-            accent = DeepElement.CHAOS.highlight;
-        }
+        emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, inst.tiltRad,
+                radius, voxelHalf, sweepDeg, t, inst.effect.primaryRgb, inst.effect.secondaryRgb, alpha);
 
-        int motionSalt = (int) (inst.seed & 0x7FFFFFFFL) + inst.age * 31 + inst.effect.ordinal() * 977;
-        emitMotionSlash(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, inst.tiltRad,
-                radius, voxelHalf, sweepDeg, t, arcCore, arcTrail, accent, alpha,
-                prof, motionSalt, inst.effect.ordinal());
-        // T362-ELEMENT-SLASH : la trajectoire reste celle de l'enchantement (T361), mais elle est
-        // désormais HABITÉE par son élément — le feu laisse des braises qui montent, l'eau des
-        // gouttes qui retombent, la foudre des fourches aux extrémités, le vide des pixels qui
-        // convergent, etc. Deux attaques ne racontent donc plus la même chose.
-        emitSlashElementAccent(vc, mat, tmp, rx, ry, rz, inst, t, radius, arcCore, arcTrail, accent, alpha);
+        if (inst.effect == WeaponVisualEffectId.SUPREME_PRISM_EDGE) {
+            emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, -inst.tiltRad * 0.85f,
+                    radius * 0.92f, voxelHalf * 0.85f, sweepDeg * 0.88f, t,
+                    inst.effect.secondaryRgb, 0xFFFFFF, Math.round(alpha * 0.85f));
+        }
     }
 
-    /**
-     * T362-ELEMENT-SLASH : petite signature élémentaire ajoutée au bout de CHAQUE trajectoire de
-     * lame. Volontairement discrète (4 à 6 cubes) : c'est une ponctuation, pas une seconde attaque.
-     */
-    private static void emitSlashElementAccent(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                               float cx, float cy, float cz,
-                                               VfxInstance inst, float t, float radius,
-                                               int coreRgb, int trailRgb, int accentRgb, int alpha) {
-        if (alpha <= 8 || radius <= 0.05f) return;
-        // Le pivot global de putPosColor applique déjà inst.sizeScale à tous les sommets.
-        // Ne pas multiplier une seconde fois les accents du slash.
-        float S = 1.0f;
-        int salt = (int) (inst.seed & 0x7FFFFFFFL) + inst.age * 53;
-        float yawRad = -inst.yawDeg * Mth.DEG_TO_RAD;
-        float dirX = Mth.sin(yawRad);
-        float dirZ = Mth.cos(yawRad);
-        float perpX = Mth.cos(yawRad);
-        float perpZ = -Mth.sin(yawRad);
+    private static void emitVoxelSlashArc(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                          float cx, float cy, float cz,
+                                          float yawDeg, float pitchDeg, float tiltRad,
+                                          float radius, float baseHalfSize, float sweepDeg, float progress,
+                                          int coreRgb, int trailRgb, int peakAlpha) {
+        if (peakAlpha <= 6) return;
+        float yawRad = -yawDeg * Mth.DEG_TO_RAD;
+        float pitchRad = pitchDeg * Mth.DEG_TO_RAD;
 
-        switch (inst.effect.element()) {
-            case FIRE -> {
-                // Trois petites LANGUES de flamme accrochées à l'entaille (elles montent).
-                for (int i = 0; i < 3; i++) {
-                    float along = ((i / 2.0f) - 0.5f) * radius * 1.30f;
-                    emitPixelFlameLick3D(vc, mat, tmp,
-                            cx + dirX * along, cy - 0.05f, cz + dirZ * along,
-                            (0.35f + 0.45f * t) * S * (0.7f + 0.4f * pixelHash(salt, i * 7)),
-                            (0.040f + 0.012f * pixelHash(salt, i * 3)) * S,
-                            0.06f * S, inst.age * 0.6f + i * 1.9f,
-                            coreRgb, accentRgb, Math.round(alpha * (0.95f - 0.35f * t)), salt + i);
-                }
-            }
-            case WATER -> {
-                // Une petite CRÊTE d'eau qui se recourbe à la suite de la lame + gouttes qui tombent.
-                emitPixelWave3D(vc, mat, tmp,
-                        cx - dirX * 0.25f * S, cy - 0.30f * S, cz - dirZ * 0.25f * S,
-                        radius * 0.55f, (0.35f + 0.45f * t) * S, yawRad, 0.75f, t,
-                        coreRgb, accentRgb, WATER_FOAM_RGB,
-                        Math.round(alpha * (0.85f - 0.35f * t)), salt);
-                for (int i = 0; i < 4; i++) {
-                    float along = ((i / 3.0f) - 0.5f) * radius * 1.2f;
-                    emitPixelDroplet3D(vc, mat, tmp,
-                            quantize(cx + dirX * along, 0.0625f),
-                            quantize(cy - 0.55f * t * t * S, 0.0625f),
-                            quantize(cz + dirZ * along, 0.0625f),
-                            0.024f, (i & 1) == 0 ? coreRgb : accentRgb, accentRgb,
-                            Math.round(alpha * 0.90f), salt + i);
-                }
-            }
-            case THUNDER -> {
-                // Fourches qui claquent aux deux extrémités + éclats crénelés projetés.
-                for (int i = 0; i < 2; i++) {
-                    float sgn = (i == 0) ? 1.0f : -1.0f;
-                    float tx = cx + perpX * sgn * radius * 0.55f;
-                    float tz = cz + perpZ * sgn * radius * 0.55f;
-                    emitVoxelLightning(vc, mat, tmp, tx, cy + 0.25f * S, tz,
-                            tx + perpX * sgn * 0.55f * S, cy - 0.35f * S, tz + perpZ * sgn * 0.55f * S,
-                            5, 0.18f, (long) salt * 131L + inst.age, accentRgb, trailRgb,
-                            Math.round(alpha * 0.90f), 0.030f);
-                }
-                for (int i = 0; i < 4; i++) {
-                    float ang = pixelHash(salt, i * 19) * 6.283f;
-                    emitPixelShard3D(vc, mat, tmp, cx, cy, cz, 0.30f * S, 0.014f,
-                            Mth.cos(ang), (pixelHash(salt, i * 5) - 0.5f) * 0.6f, Mth.sin(ang),
-                            accentRgb, accentRgb, Math.round(alpha * 0.9f), salt + i);
-                }
-            }
-            case EARTH -> {
-                // Éclats de pierre INCLINÉS qui tombent le long de l'entaille.
-                for (int i = 0; i < 5; i++) {
-                    float along = (pixelHash(salt, i * 11) - 0.5f) * radius * 1.3f;
-                    float fall = (0.30f + 0.55f * t) * S;
-                    emitVoxelBoxRotated(vc, mat, tmp,
-                            quantize(cx + dirX * along, 0.0625f),
-                            quantize(cy + 0.30f * S - fall, 0.0625f),
-                            quantize(cz + dirZ * along, 0.0625f),
-                            0.034f, 0.020f, 0.030f,
-                            along, t * 2.0f + i, 0.6f + i * 0.3f,
-                            (i & 1) == 0 ? trailRgb : coreRgb, Math.round(alpha * 0.85f));
-                }
-            }
-            case METAL -> {
-                // Étincelles de contact : éclats fins projetés en ligne droite (aucune gravité).
-                emitVoxelBoxRotated(vc, mat, tmp, cx, cy, cz, 0.050f, 0.050f, 0.050f,
-                        inst.age * 0.2f, 0.6f, 0.4f, accentRgb, alpha);
-                for (int i = 0; i < 5; i++) {
-                    float ang = pixelHash(salt, i * 19) * 6.283f;
-                    float sp = 0.65f * S;
-                    emitPixelShard3D(vc, mat, tmp, cx, cy, cz, sp, 0.013f,
-                            Mth.cos(ang), (pixelHash(salt, i * 23) - 0.5f) * 0.9f, Mth.sin(ang),
-                            accentRgb, accentRgb, Math.round(alpha * 0.95f), salt + i * 7);
-                }
-            }
-            case WOOD -> {
-                // Deux vrilles courtes qui sortent de la lame, feuilles plates au bout.
-                for (int i = 0; i < 2; i++) {
-                    float sgn = (i == 0) ? 1.0f : -1.0f;
-                    float ex = cx + perpX * sgn * radius * 0.45f;
-                    float ez = cz + perpZ * sgn * radius * 0.45f;
-                    emitPixelTendril3D(vc, mat, tmp, cx, cy, cz, ex, cy + 0.20f * S, ez,
-                            0.16f * S, 5, 0.024f * S, trailRgb, accentRgb,
-                            Math.round(alpha * 0.85f), salt + i);
-                    emitVoxelBoxRotated(vc, mat, tmp, ex, cy + 0.22f * S, ez,
-                            0.036f, 0.008f, 0.036f, sgn * 0.6f, 0.5f, sgn * 0.9f,
-                            accentRgb, Math.round(alpha * 0.8f));
-                }
-            }
-            case POISON -> {
-                // Bulles lourdes qui montent + un petit croc qui perle.
-                for (int i = 0; i < 4; i++) {
-                    float along = ((i / 3.0f) - 0.5f) * radius;
-                    float rise = (0.20f + 0.55f * pixelHash(salt, i * 29)) * t * S;
-                    float wob = Mth.sin(inst.age * 0.20f + i * 1.4f) * 0.05f;
-                    emitVoxelBoxRotated(vc, mat, tmp,
-                            quantize(cx + dirX * along + wob, 0.0625f), quantize(cy + rise, 0.0625f),
-                            quantize(cz + dirZ * along + wob, 0.0625f),
-                            0.026f, 0.032f, 0.026f, wob * 8.0f, 0.4f, 0.5f,
-                            (i & 1) == 0 ? coreRgb : accentRgb, Math.round(alpha * 0.80f));
-                }
-                emitPixelShard3D(vc, mat, tmp, cx, cy - 0.10f, cz, 0.22f * S, 0.016f,
-                        0.0f, -1.0f, 0.0f, accentRgb, accentRgb,
-                        Math.round(alpha * 0.85f), salt + 3);
-            }
-            case LIGHT -> {
-                // Motes de lumière en plaques fines qui s'élèvent (aura « hologramme »).
-                for (int i = 0; i < 5; i++) {
-                    float along = ((i / 4.0f) - 0.5f) * radius * 1.2f;
-                    float rise = (0.10f + 0.45f * t) * S;
-                    emitVoxelBoxRotated(vc, mat, tmp,
-                            quantize(cx + dirX * along, 0.0625f), quantize(cy + rise, 0.0625f),
-                            quantize(cz + dirZ * along, 0.0625f),
-                            0.034f, 0.008f, 0.020f, yawRad + i * 0.4f, 0.4f, 0.6f,
-                            i % 2 == 0 ? accentRgb : coreRgb, Math.round(alpha * 0.90f));
-                }
-            }
-            case SHADOW -> {
-                // Volutes sombres en tentacules courts qui coulent vers le bas.
-                for (int i = 0; i < 3; i++) {
-                    float along = ((i / 2.0f) - 0.5f) * radius * 1.1f;
-                    emitPixelTendril3D(vc, mat, tmp,
-                            cx + dirX * along, cy, cz + dirZ * along,
-                            cx + dirX * along + 0.10f * S, cy - 0.45f * t * S, cz + dirZ * along,
-                            0.12f * S, 5, 0.026f * S, trailRgb, accentRgb,
-                            Math.round(alpha * (1.0f - 0.55f * t)), salt + i);
-                }
-            }
-            case BLOOD -> {
-                // Gouttes qui perlent puis tombent de la lame.
-                for (int i = 0; i < 4; i++) {
-                    float along = ((i / 3.0f) - 0.5f) * radius;
-                    emitPixelDroplet3D(vc, mat, tmp,
-                            quantize(cx + dirX * along, 0.0625f),
-                            quantize(cy - 0.45f * t * t * S, 0.0625f),
-                            quantize(cz + dirZ * along, 0.0625f),
-                            0.028f, (i & 1) == 0 ? coreRgb : accentRgb, accentRgb,
-                            Math.round(alpha * 0.90f), salt + i);
-                }
-            }
-            case VOID -> {
-                // Cubes inclinés qui CONVERGENT vers le centre (le vide avale l'entaille).
-                for (int i = 0; i < 6; i++) {
-                    float ang = i * 1.047f + inst.age * 0.20f;
-                    float rad = radius * (1.0f - t) * 0.90f;
-                    emitVoxelBoxRotated(vc, mat, tmp,
-                            quantize(cx + Mth.cos(ang) * rad, 0.0625f),
-                            quantize(cy + Mth.sin(ang) * rad * 0.55f, 0.0625f),
-                            quantize(cz + Mth.sin(ang) * rad, 0.0625f),
-                            0.026f, 0.026f, 0.026f,
-                            ang, t * 3.0f, ang * 0.7f,
-                            (i & 1) == 0 ? coreRgb : accentRgb,
-                            Math.round(alpha * (0.5f + 0.5f * t)));
-                }
-            }
-            case CHAOS -> {
-                // Une bordure de blocs synchronisée autour de la lame sombre, jamais des satellites.
-                emitChaosVoxelFrame(vc, mat, tmp, cx, cy, cz, radius * 0.72f * S,
-                        yawRad + inst.age * 0.03f, 0.35f, inst.age * 0.025f,
-                        inst.age * 0.05f, Math.round(alpha * 0.90f));
+        float fx = Mth.sin(yawRad) * Mth.cos(pitchRad);
+        float fy = -Mth.sin(pitchRad);
+        float fz = Mth.cos(yawRad) * Mth.cos(pitchRad);
+
+        float rx0 = Mth.cos(yawRad);
+        float rz0 = -Mth.sin(yawRad);
+        float ux0 = -Mth.sin(yawRad) * Mth.sin(pitchRad);
+        float uy0 = Mth.cos(pitchRad);
+        float uz0 = -Mth.cos(yawRad) * Mth.sin(pitchRad);
+
+        float cosT = Mth.cos(tiltRad);
+        float sinT = Mth.sin(tiltRad);
+        float sx = rx0 * cosT + ux0 * sinT;
+        float sy = uy0 * sinT;
+        float sz = rz0 * cosT + uz0 * sinT;
+
+        int pixelSteps = Math.max(14, Math.round(sweepDeg / 6.5f));
+        float halfArc = (sweepDeg * 0.5f) * Mth.DEG_TO_RAD;
+        float headU = Mth.clamp(progress * 1.35f, 0.0f, 1.0f);
+
+        for (int i = 0; i <= pixelSteps; i++) {
+            float u = (float) i / pixelSteps;
+            if (u > headU + 0.15f) break;
+
+            float distBehind = headU - u;
+            if (distBehind > 0.68f) continue;
+
+            float ang = (u - 0.5f) * 2.0f * halfArc;
+            float ca = Mth.cos(ang);
+            float sa = Mth.sin(ang);
+            float dirX = fx * ca + sx * sa;
+            float dirY = fy * ca + sy * sa;
+            float dirZ = fz * ca + sz * sa;
+
+            float taper = Mth.sin(u * (float) Math.PI);
+            float px = quantize(cx + dirX * radius, 0.0625f);
+            float py = quantize(cy + dirY * radius, 0.0625f);
+            float pz = quantize(cz + dirZ * radius, 0.0625f);
+
+            boolean isHead = Math.abs(distBehind) < 0.12f;
+            float hs = baseHalfSize * (0.55f + 0.75f * taper) * (isHead ? 1.25f : 1.0f);
+            int rgb = isHead ? 0xFFFFFF : (distBehind < 0.28f ? coreRgb : trailRgb);
+            int a = Math.round(peakAlpha * Math.max(0.2f, 1.0f - Math.max(0.0f, distBehind) * 1.35f));
+
+            emitVoxelCube(vc, mat, tmp, px, py, pz, hs, hs, hs, rgb, a);
+            // Épaisseur blocky doublée d'un mini-cube intérieur décalé d'un pixel 1/16
+            if (taper > 0.45f) {
+                float pxIn = quantize(cx + dirX * (radius - baseHalfSize * 2.2f), 0.0625f);
+                float pyIn = quantize(cy + dirY * (radius - baseHalfSize * 2.2f), 0.0625f);
+                float pzIn = quantize(cz + dirZ * (radius - baseHalfSize * 2.2f), 0.0625f);
+                emitVoxelCube(vc, mat, tmp, pxIn, pyIn, pzIn, hs * 0.78f, hs * 0.78f, hs * 0.78f, trailRgb, Math.round(a * 0.8f));
             }
         }
     }
+
 
     /**
      * T361-MOTIONS-UNIQUES : dessine UNE trajectoire de mouvement (une des 22 familles).

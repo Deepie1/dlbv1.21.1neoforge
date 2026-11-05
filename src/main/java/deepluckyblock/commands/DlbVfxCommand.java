@@ -350,7 +350,7 @@ public final class DlbVfxCommand {
             player.drop(sword, false);
         }
         ctx.getSource().sendSuccess(() -> Component.literal("§b[/anim " + family + "] §fÉpée donnée : "
-                + "§e60% slashes §f(1 à 3 arcs aléatoires) + §e40% grosses animations§f, "
+                + "§e60% slash originel §f(un seul arc) + §e40% grosses animations§f, "
                 + "dans l’ordre et en boucle."), false);
         return 1;
     }
