@@ -68,7 +68,7 @@ public final class WeaponVfxServerListener {
 
     private static final int MIASMA_HOST_TICKS = 120;
     private static final int MIASMA_SWAP_TICKS = 60;
-    private static final int MIASMA_MAX_HOSTS = 5;
+    private static final int MIASMA_TRAVEL_TICKS = 20;
     private static final int MIASMA_MAX_TOTAL_TICKS = 600;
     private static int NEXT_MIASMA_CHAIN_ID = 1;
 
@@ -81,7 +81,15 @@ public final class WeaponVfxServerListener {
         final Set<Integer> visited = new HashSet<>();
         LivingEntity host;
         int generation;
+        int hostStartedAt;
         long shieldExpiry;
+        double cloudX;
+        double cloudY;
+        double cloudZ;
+        double travelFromX;
+        double travelFromY;
+        double travelFromZ;
+        boolean traveling;
         boolean active = true;
 
         MiasmaChain(int id, int casterId, int startedAt, float pulseDamage) {
@@ -899,7 +907,10 @@ public final class WeaponVfxServerListener {
         }
     }
 
-    /** Début d'un hôte : 6 s maximum, tentative de saut à 3 s et quatre pulses de dégâts/poison. */
+    /**
+     * Début d'un hôte : 6 s maximum sans relais. Après 3 s, les cibles sont recherchées
+     * chaque tick depuis la position courante du nuage ; seule la limite globale de 30 s demeure.
+     */
     private static void beginMiasmaHost(ServerLevel sl, MiasmaChain chain,
                                         LivingEntity host, int now) {
         if (!chain.active || host == null) return;
@@ -907,20 +918,34 @@ public final class WeaponVfxServerListener {
             finishMiasmaChain(sl, chain, chain.generation);
             return;
         }
+        LivingEntity previousHost = chain.host;
+        if (previousHost != null && previousHost != host) {
+            chain.travelFromX = chain.cloudX;
+            chain.travelFromY = chain.cloudY;
+            chain.travelFromZ = chain.cloudZ;
+            chain.traveling = true;
+        } else {
+            chain.traveling = false;
+        }
         chain.host = host;
+        chain.hostStartedAt = now;
+        refreshMiasmaCloudPosition(chain, now);
         int generation = ++chain.generation;
         chain.shieldExpiry = sl.getGameTime() + MIASMA_HOST_TICKS;
         MIASMA_SHIELDS.put(host.getId(), chain.shieldExpiry);
         if (MIASMA_SHIELDS.size() > 256) MIASMA_SHIELDS.clear();
         applyVisiblePoison(sl, chain.casterId, host, 100);
         broadcastMiasmaChain(sl, chain, host, false);
+        TestProcedure.schedule(sl, now + 1,
+                () -> tickMiasmaCloud(sl, chain, generation, host));
 
         int[] pulseOffsets = {20, 48, 76, 102};
         for (int pulse = 0; pulse < pulseOffsets.length; pulse++) {
             float pitch = 0.56f + pulse * 0.11f;
             TestProcedure.schedule(sl, now + pulseOffsets[pulse], () -> {
                 if (!isCurrentMiasmaHost(chain, generation, host)) return;
-                double x = host.getX(), y = host.getY() + host.getBbHeight() * 0.50, z = host.getZ();
+                refreshMiasmaCloudPosition(chain, (int) sl.getGameTime());
+                double x = chain.cloudX, y = chain.cloudY, z = chain.cloudZ;
                 miasmaDamagePulse(sl, chain, host, x, y, z);
                 sl.playSound(null, x, y, z, SoundEvents.SLIME_SQUISH,
                         SoundSource.PLAYERS, 0.30f, pitch);
@@ -936,20 +961,63 @@ public final class WeaponVfxServerListener {
         TestProcedure.schedule(sl, now + 100, () -> {
             if (isCurrentMiasmaHost(chain, generation, host)) broadcastMiasmaChain(sl, chain, host, true);
         });
-        TestProcedure.schedule(sl, now + MIASMA_SWAP_TICKS, () -> {
-            if (!isCurrentMiasmaHost(chain, generation, host)) return;
-            if (chain.visited.size() >= MIASMA_MAX_HOSTS) return;
-            LivingEntity next = findNextMiasmaHost(sl, chain, host);
-            if (next == null) return; // Sans nouveau mob, la base de 6 s se termine normalement.
-            applyVisiblePoison(sl, chain.casterId, host, 100); // 5 s à l'hôte quitté.
-            MIASMA_SHIELDS.remove(host.getId(), chain.shieldExpiry);
-            chain.visited.add(next.getId());
-            sl.playSound(null, next.getX(), next.getY() + next.getBbHeight() * 0.50, next.getZ(),
-                    SoundEvents.WITCH_DRINK, SoundSource.PLAYERS, 0.42f, 0.72f);
-            beginMiasmaHost(sl, chain, next, now + MIASMA_SWAP_TICKS); // 5 s aussi au nouvel hôte.
-        });
         TestProcedure.schedule(sl, now + MIASMA_HOST_TICKS,
                 () -> finishMiasmaChain(sl, chain, generation));
+    }
+
+    /**
+     * Position autoritaire recalculée à chaque tick. Pendant le transfert, elle suit le même
+     * smoothstep et le même arc que le rendu ; ensuite elle épouse la position actuelle de l'hôte.
+     * À partir de 3 s, une nouvelle liste d'entités est demandée au monde à chaque tick.
+     */
+    private static void tickMiasmaCloud(ServerLevel sl, MiasmaChain chain, int generation,
+                                        LivingEntity host) {
+        if (!isCurrentMiasmaHost(chain, generation, host)) return;
+        int now = (int) sl.getGameTime();
+        refreshMiasmaCloudPosition(chain, now);
+        int hostAge = now - chain.hostStartedAt;
+        if (now - chain.startedAt >= MIASMA_MAX_TOTAL_TICKS || hostAge >= MIASMA_HOST_TICKS) {
+            finishMiasmaChain(sl, chain, generation);
+            return;
+        }
+        boolean canFinishTravel = now + MIASMA_TRAVEL_TICKS
+                <= chain.startedAt + MIASMA_MAX_TOTAL_TICKS;
+        if (hostAge >= MIASMA_SWAP_TICKS && canFinishTravel) {
+            LivingEntity next = findNextMiasmaHost(sl, chain, host);
+            if (next != null) {
+                applyVisiblePoison(sl, chain.casterId, host, 100); // 5 s à l'hôte quitté.
+                MIASMA_SHIELDS.remove(host.getId(), chain.shieldExpiry);
+                chain.visited.add(next.getId());
+                sl.playSound(null, next.getX(), next.getY() + next.getBbHeight() * 0.50, next.getZ(),
+                        SoundEvents.WITCH_DRINK, SoundSource.PLAYERS, 0.42f, 0.72f);
+                beginMiasmaHost(sl, chain, next, now); // Aucun plafond de nombre d'hôtes.
+                return;
+            }
+            // Aucun mob pour le moment : nouvelle recherche au tick suivant jusqu'à la fin des 6 s.
+        }
+        TestProcedure.schedule(sl, now + 1, () -> tickMiasmaCloud(sl, chain, generation, host));
+    }
+
+    private static void refreshMiasmaCloudPosition(MiasmaChain chain, int now) {
+        LivingEntity host = chain.host;
+        if (host == null) return;
+        double targetX = host.getX();
+        double targetY = host.getY() + host.getBbHeight() * 0.50;
+        double targetZ = host.getZ();
+        if (!chain.traveling) {
+            chain.cloudX = targetX;
+            chain.cloudY = targetY;
+            chain.cloudZ = targetZ;
+            return;
+        }
+        float progress = Math.max(0.0f, Math.min(1.0f,
+                (now - chain.hostStartedAt) / (float) MIASMA_TRAVEL_TICKS));
+        float glide = progress * progress * (3.0f - 2.0f * progress);
+        chain.cloudX = chain.travelFromX + (targetX - chain.travelFromX) * glide;
+        chain.cloudY = chain.travelFromY + (targetY - chain.travelFromY) * glide
+                + Math.sin(progress * Math.PI) * 0.65;
+        chain.cloudZ = chain.travelFromZ + (targetZ - chain.travelFromZ) * glide;
+        if (progress >= 1.0f) chain.traveling = false;
     }
 
     /** Usure réelle des quatre pièces ; après 2 s, très faible dégât magique hors armure. */
@@ -977,9 +1045,13 @@ public final class WeaponVfxServerListener {
         return chain.active && chain.generation == generation && chain.host == host;
     }
 
-    /** Recherche sphère stricte < 5 blocs : joueurs et mobs, jamais un hôte déjà visité. */
+    /**
+     * Recherche sphère stricte < 5 blocs depuis le centre actuel du nuage, jamais depuis une
+     * ancienne coordonnée. Le monde fournit une nouvelle liste à chaque appel ; PvP inclus.
+     */
     private static LivingEntity findNextMiasmaHost(ServerLevel sl, MiasmaChain chain, LivingEntity host) {
-        double x = host.getX(), y = host.getY() + host.getBbHeight() * 0.50, z = host.getZ();
+        refreshMiasmaCloudPosition(chain, (int) sl.getGameTime());
+        double x = chain.cloudX, y = chain.cloudY, z = chain.cloudZ;
         LivingEntity nearest = null;
         double best = 25.0;
         for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,

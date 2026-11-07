@@ -599,7 +599,7 @@ public final class WeaponWorldVfxManager {
         chain.maxAge = 600;
     }
 
-    /** Miasma suit le MOB TOUCHÉ avec inertie ; Plague se fige au snap ; la contagion suit sa cible. */
+    /** Miasma suit le vol puis le centre serveur exact ; Plague se fige au snap ; contagion sur cible. */
     private static void updatePoisonFollow(ClientLevel level, VfxInstance inst) {
         if (inst.kind == KIND_PLAGUE_CONTAGION) {
             if (level.getEntity(inst.homingTargetId) instanceof LivingEntity living) {
@@ -649,7 +649,8 @@ public final class WeaponWorldVfxManager {
             inst.x = targetX; inst.y = targetY; inst.z = targetZ;
             inst.followInitialized = true;
         } else {
-            float catchup = inst.effect == WeaponVisualEffectId.MIASMA_SHROUD ? 0.24f : 0.48f;
+            // Après le vol, aucun décalage résiduel entre le centre des dégâts et le nuage visible.
+            float catchup = inst.effect == WeaponVisualEffectId.MIASMA_SHROUD ? 1.0f : 0.48f;
             inst.x = Mth.lerp(catchup, inst.x, targetX);
             inst.y = Mth.lerp(catchup, inst.y, targetY);
             inst.z = Mth.lerp(catchup, inst.z, targetZ);
