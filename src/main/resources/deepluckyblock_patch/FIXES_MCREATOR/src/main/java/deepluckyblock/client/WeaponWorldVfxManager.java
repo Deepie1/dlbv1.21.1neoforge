@@ -1326,6 +1326,7 @@ public final class WeaponWorldVfxManager {
         FireSignatureVfx.beginTerrainTick(level);
         PoisonSignatureVfx.beginTerrainTick(level);
         EarthSignatureVfx.beginTerrainTick(level);
+        SeismicTerrainVfx.beginTerrainTick(level);
 
         for (Iterator<VfxInstance> it = ACTIVE.iterator(); it.hasNext(); ) {
             VfxInstance inst = it.next();
@@ -1339,8 +1340,13 @@ public final class WeaponWorldVfxManager {
             if (inst.kind == KIND_IMPACT && inst.effect.element() == DeepElement.POISON) {
                 PoisonSignatureVfx.prepareTerrain(level, inst.x, inst.y, inst.z, inst.sizeScale);
             }
-            if (inst.kind == KIND_IMPACT && (inst.effect == WeaponVisualEffectId.SEISMIC_TECTONIC
-                    || inst.effect == WeaponVisualEffectId.SANDSTORM_DUNE
+            if (inst.kind == KIND_IMPACT && inst.effect == WeaponVisualEffectId.SEISMIC_TECTONIC) {
+                float seismicDx = Mth.sin(-inst.yawDeg * Mth.DEG_TO_RAD);
+                float seismicDz = Mth.cos(-inst.yawDeg * Mth.DEG_TO_RAD);
+                SeismicTerrainVfx.prepare(level, inst.x, inst.y, inst.z,
+                        seismicDx, seismicDz, inst.sizeScale, (int) (inst.seed & 0x7FFFFFFFL));
+            }
+            if (inst.kind == KIND_IMPACT && (inst.effect == WeaponVisualEffectId.SANDSTORM_DUNE
                     || inst.effect == WeaponVisualEffectId.WARLORD_RALLY_SIGIL)) {
                 EarthSignatureVfx.prepareTerrain(level, inst.x, inst.y, inst.z, inst.sizeScale);
             }
@@ -1618,7 +1624,7 @@ public final class WeaponWorldVfxManager {
         // T348-BUFFER-SAFETY : tout le rendu est encapsulé. Un BufferBuilder partagé qui aurait été
         // vidé/recyclé par un autre listener ne doit JAMAIS faire crasher le jeu ("Not building!").
         try {
-            renderVfxFrame(mc, buffers, mat, tmp, camPos);
+            renderVfxFrame(mc, buffers, poseStack, mat, tmp, camPos);
         } catch (RuntimeException ex) {
             releaseBatches(buffers);
             PIXEL_PARTICLES.clear();
@@ -1629,10 +1635,26 @@ public final class WeaponWorldVfxManager {
     }
 
     private static void renderVfxFrame(Minecraft mc, MultiBufferSource.BufferSource buffers,
-                                       Matrix4f mat, Vector3f tmp, Vec3 camPos) {
+                                       PoseStack poseStack, Matrix4f mat, Vector3f tmp, Vec3 camPos) {
         float subTick = mc.isPaused()
                 ? 0.0f
                 : Mth.clamp((System.nanoTime() - lastTickNanos) / 50_000_000.0f, 0.0f, 1.0f);
+
+        // Passe Seismic dédiée : les vrais BlockState capturés sont rendus opaque AVANT les voxels.
+        // Le batch est terminé ici pour ne jamais mélanger leurs RenderTypes à ceux des autres VFX.
+        boolean seismicTerrainRendered = false;
+        for (VfxInstance inst : ACTIVE) {
+            if (inst.kind != KIND_IMPACT || inst.effect != WeaponVisualEffectId.SEISMIC_TECTONIC) continue;
+            float t = Mth.clamp((inst.age + subTick) / (float) inst.maxAge, 0.0f, 1.0f);
+            double dx = inst.x - camPos.x, dy = inst.y - camPos.y, dz = inst.z - camPos.z;
+            if (dx * dx + dy * dy + dz * dz > MAX_VFX_RENDER_DISTANCE_SQR) continue;
+            float dirX = Mth.sin(-inst.yawDeg * Mth.DEG_TO_RAD);
+            float dirZ = Mth.cos(-inst.yawDeg * Mth.DEG_TO_RAD);
+            seismicTerrainRendered |= SeismicTerrainVfx.render(mc, buffers, poseStack, camPos,
+                    inst.x, inst.y, inst.z, dirX, dirZ, inst.sizeScale,
+                    (int) (inst.seed & 0x7FFFFFFFL), t);
+        }
+        if (seismicTerrainRendered) buffers.endBatch();
 
         VertexConsumer addVc = null;
         VertexConsumer alphaVc = null;
