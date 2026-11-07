@@ -26,7 +26,7 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
   <div class="rule"></div>
   <span class="label">Signature de l’enchantement</span>
   <div class="variants" role="group" aria-label="Variante Terre">
-    <button class="variant active" data-variant="0"><span class="num">Ⅰ</span><span><b>Seismic Tectonic</b><small>5,6 s · 63 surfaces · 4 couches</small></span></button>
+    <button class="variant active" data-variant="0"><span class="num">Ⅰ</span><span><b>Seismic Tectonic</b><small>5,6 s · 121 surfaces · 4 couches</small></span></button>
     <button class="variant" data-variant="1"><span class="num">Ⅱ</span><span><b>Sandstorm Dune</b><small>7 s · dune · triple vortex</small></span></button>
     <button class="variant" data-variant="2"><span class="num">Ⅲ</span><span><b>Warlord Rally Sigil</b><small>6 s · runes · 4 étendards</small></span></button>
   </div>
@@ -37,7 +37,7 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
   <div class="stats"><div class="stat"><b id="baseCount">0</b><span>Blocs / voxels dans la frame</span></div><div class="stat"><b id="duration">5,6 s</b><span>Durée en jeu</span></div></div>
   <div class="legend"><span style="--c:#5c3b1a">Terre</span><span style="--c:#9fc25e">Énergie</span><span style="--c:#ddbe78">Sable</span><span style="--c:#d9a83e">Commandement</span></div>
   <a class="download" href="./DLB_Earth_Three_Signatures_src.zip" download>Télécharger les sources Terre + épée · ZIP</a>
-  <p class="refs">Seismic : snapshot des vrais BlockState, colonnes de 4 couches et reprint opaque texturé. Sandstorm/Rally : voxels procéduraux. Aucune destruction du monde, aucun asset externe.<br>Épée : <b>/anim terre</b> (alias <b>/anim earth</b>) · pointe verte #79A74B · arc en cinq bruns grass block.</p>
+  <p class="refs">Seismic : snapshot des vrais BlockState, 121 colonnes de 4 couches, aucun masque noir et reprint texturé. Sandstorm/Rally : voxels procéduraux. Aucune destruction du monde, aucun asset externe.<br>Épée : <b>/anim terre</b> (alias <b>/anim earth</b>) · pointe verte #79A74B · arc en cinq bruns grass block.</p>
 </aside>
 <main>
   <canvas id="scene" tabindex="0" aria-label="Aperçu animé des trois signatures Terre"></canvas>
@@ -60,31 +60,24 @@ function buildEarth(variant,t,salt=42,groundFn=null){const out=[];if(t<=0||t>=1)
     // SEISMIC — maquette du snapshot : chaque entrée est un bloc complet, jamais une particule de sol.
     function seismicTerrain(t,salt,terrain){
       const fractures=buildFractures(salt);
-      for(let ix=-4;ix<=4;ix++)for(let iz=-3;iz<=3;iz++){
-        const f=ix,l=iz,index=(ix+4)*17+iz+3,h=hash(salt,index*19349663),influence=nearestFracture(fractures,f,l),fracture=influence.fracture;
-        const distance=influence.distance,side=influence.signedDistance<0?-1:1,progress=clamp(influence.u/fracture.length);
-        const start=fracture.delay+progress*.045+h*.014,open=Math.max(0,outBack((t-start)/(.070+fracture.depth*.028))*(1-smooth((t-.835-h*.018)/.145))),voidOpen=influence.inside?clamp(open):0;
-        const ground=terrain.at(f,l),radial=Math.hypot(f,l),p=damped(t-.018-radial*.0045,96,49)*.024,shear=damped(t-.145-radial*.008,47,15)*.060;
+      for(let ix=-5;ix<=5;ix++)for(let iz=-5;iz<=5;iz++){
+        const f=ix,l=iz,index=(ix+5)*31+iz+5,h=hash(salt,index*19349663),influence=nearestFracture(fractures,f,l),fracture=influence.fracture;
+        const distance=influence.distance,side=influence.signedDistance<0?-1:1,progress=clamp(influence.u/fracture.length),start=fracture.delay+progress*.045+h*.014;
+        const envelope=smooth((t-start)/(.105+fracture.depth*.025))*(1-smooth((t-.835-h*.018)/.145)),ground=terrain.at(f,l),radial=Math.hypot(f,l),p=damped(t-.018-radial*.0045,96,49)*.024,shear=damped(t-.145-radial*.008,47,15)*.022*side;
         const attenuation=1/(1+radial*.18);let rayleigh=0;
-        for(let wave=0;wave<3;wave++){const arrival=.285+wave*.155+radial*(.021-wave*.002);rayleigh+=damped(t-arrival,27-wave*3,10.5+wave*2)*(.115-wave*.018)*attenuation;}
-        const near=clamp(1-distance/2.40),after=damped(t-.515-h*.025,39,17)*.065*near+damped(t-.690-h*.018,44,20)*.045*near,bank=clamp(1-Math.max(0,distance-influence.width)/1.75);
-        const uplift=(.10+bank*(.34+fracture.depth*.36+h*.20))*(.82+noise1(f*.72+l*.31,salt+303)*.36),rise=open*uplift+p+rayleigh+after;
-        const separation=side*open*(.055+bank*(.16+influence.width*.22)),normalF=-Math.sin(fracture.angle),normalL=Math.cos(fracture.angle),localF=normalF*separation+rayleigh*.30+shear*.24,localL=normalL*separation+shear*(.45+bank*.55);
-        const roll=side*open*(.035+bank*(.10+h*.10))+shear*.70,pitch=rayleigh*.34+(h-.5)*open*bank*.11,yaw=shear*.32+(h-.5)*open*.055;
-        if(voidOpen>.015){
-          box(f,ground+.006,l,.506,.012,.506,0x080808,255);const cavity=out[out.length-1];cavity.voidCell=true;
-          cavity.fractureId=fracture.id;cavity.fractureWidth=influence.width;cavity.fractureDepth=fracture.depth;cavity.fractureAngle=fracture.angle;
-        }
-        if(voidOpen>.975)continue;
-        const drop=voidOpen>.015?(1-voidOpen)*(.45+fracture.depth*.65):0,mat=hash(salt,9000+index),variation=hash(salt,9100+index);
+        for(let wave=0;wave<3;wave++){const arrival=.285+wave*.155+radial*(.021-wave*.002);rayleigh+=damped(t-arrival,27-wave*3,10.5+wave*2)*(.090-wave*.014)*attenuation;}
+        const near=clamp(1-distance/2.40),after=damped(t-.515-h*.025,39,17)*.050*near+damped(t-.690-h*.018,44,20)*.035*near,bank=clamp(1-Math.max(0,distance-influence.width)/1.75);
+        let uplift=.20+bank*(.30+fracture.depth*.22)+h*.12;if(influence.inside)uplift*=.12;
+        const rise=Math.max(0,envelope*uplift+p+shear+rayleigh+after),mat=hash(salt,9000+index),variation=hash(salt,9100+index);
         let top,sideRgb;
         if(mat<.48){top=mix(0x59663A,0x7C8752,variation);sideRgb=mix(0x3D291B,0x654429,variation);}
         else if(mat<.66){top=mix(0x4B301C,0x765034,variation);sideRgb=mix(0x382319,0x5B3A24,variation);}
         else if(mat<.88){top=mix(0x555852,0x777B72,variation);sideRgb=mix(0x41443F,0x62665E,variation);}
         else{top=mix(0x967746,0xBE9E64,variation);sideRgb=mix(0x80643B,0xA98A52,variation);}
         for(let depth=0;depth<4;depth++){
-          capturedBlock(f+localF,ground-.5-depth+rise+.012-drop,l+localL,.501,.5,.501,depth===0?top:sideRgb,sideRgb,yaw,pitch,roll,9000+index);
-          out[out.length-1].columnDepth=depth;
+          capturedBlock(f,ground-.5-depth+rise+.012,l,.5,.5,.5,depth===0?top:sideRgb,sideRgb,0,0,0,9000+index);
+          const block=out[out.length-1];block.columnDepth=depth;block.seismicRise=rise;
+          if(depth===0){block.fractureId=fracture.id;block.fractureInside=influence.inside;}
         }
       }
     }
@@ -112,7 +105,6 @@ function buildEarth(variant,t,salt=42,groundFn=null){const out=[];if(t<=0||t>=1)
       return best;
     }
     function noise1(x,seed){const i=Math.floor(x),u=smooth(x-i),a=hash(seed,i*73856093),b=hash(seed,(i+1)*73856093);return a+(b-a)*u;}
-    function outBack(x){x=clamp(x);const u=x-1;return 1+2.70158*u*u*u+1.70158*u*u;}
     function damped(age,frequency,decay){return age<=0?0:Math.sin(age*frequency)*Math.exp(-age*decay);}
  if(variant===0){seismicTerrain(t,731,terrain);
  }else if(variant===1){
@@ -140,7 +132,7 @@ const canvas=document.getElementById('scene'),ctx=canvas.getContext('2d',{alpha:
 let variant=0,t=0,playing=true,last=performance.now(),yaw=.72,pitch=.36,zoomFactor=1,drag=false,lastX=0,lastY=0,W=1,H=1,DPR=1,CY=1,SY=0,CP=1,SP=0,SCALE=1,dirty=true,lastRender=0;
 const FACES=[{n:[1,0,0],v:[[1,-1,-1],[1,1,-1],[1,1,1],[1,-1,1]],s:.77},{n:[-1,0,0],v:[[-1,-1,1],[-1,1,1],[-1,1,-1],[-1,-1,-1]],s:.65},{n:[0,1,0],v:[[-1,1,-1],[-1,1,1],[1,1,1],[1,1,-1]],s:1.12},{n:[0,-1,0],v:[[-1,-1,1],[1,-1,1],[1,-1,-1],[-1,-1,-1]],s:.48},{n:[0,0,1],v:[[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]],s:.89},{n:[0,0,-1],v:[[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,-1]],s:.71}];
 function resize(){const r=canvas.getBoundingClientRect();DPR=Math.min(1.75,devicePixelRatio||1);W=Math.max(1,Math.round(r.width*DPR));H=Math.max(1,Math.round(r.height*DPR));canvas.width=W;canvas.height=H;dirty=true}new ResizeObserver(resize).observe(canvas);resize();
-function updateCamera(){CY=Math.cos(yaw);SY=Math.sin(yaw);CP=Math.cos(pitch);SP=Math.sin(pitch);SCALE=Math.min(W/6.4,H/4.4)*zoomFactor*(variant===0?.52:1)}
+function updateCamera(){CY=Math.cos(yaw);SY=Math.sin(yaw);CP=Math.cos(pitch);SP=Math.sin(pitch);SCALE=Math.min(W/6.4,H/4.4)*zoomFactor*(variant===0?.42:1)}
 function project(x,y,z){const yc=y-.60,rx=x*CY-z*SY,rz=x*SY+z*CY,ry=yc*CP-rz*SP,depth=yc*SP+rz*CP;return[W*.52+rx*SCALE,H*.53-ry*SCALE,depth]}
 function rotateBlock(x,y,z,v){const cy=Math.cos(v.roll||0),sy=Math.sin(v.roll||0),cp=Math.cos(v.pitch||0),sp=Math.sin(v.pitch||0),cr=Math.cos(v.roll3d||0),sr=Math.sin(v.roll3d||0);let x1=x*cr-y*sr,y1=x*sr+y*cr,z1=z,y2=y1*cp-z1*sp,z2=y1*sp+z1*cp;return[x1*cy-z2*sy,y2,x1*sy+z2*cy]}
 function normal(n,roll,v){let x,y,z;if(v&&v.terrainBlock)[x,y,z]=rotateBlock(n[0],n[1],n[2],v);else{const c=Math.cos(roll),s=Math.sin(roll);x=n[0]*c-n[1]*s;y=n[0]*s+n[1]*c;z=n[2]}const rx=x*CY-z*SY,rz=x*SY+z*CY;return[rx,y*CP-rz*SP,y*SP+rz*CP]}

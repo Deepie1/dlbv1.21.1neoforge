@@ -1,8 +1,6 @@
 package deepluckyblock.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
@@ -17,8 +15,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.client.model.data.ModelData;
-import org.joml.Matrix4f;
-import org.joml.Vector3f;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -29,21 +25,19 @@ import java.util.Map;
 /**
  * SEISMIC — capture et reprojection du terrain réel, exclusivement côté client.
  *
- * <p>Au premier tick, les BlockState, ModelData, positions et lumières de la zone sont figés.
- * La passe de rendu réimprime ensuite les vrais modèles via l'atlas de blocs. Les cellules de la
- * faille sont omises : ce ne sont ni des particules de sol, ni des roches génériques. Les lèvres
- * se séparent et pivotent avec leurs faces latérales visibles. Un support sombre occulte le haut
- * du terrain original dans les cellules retirées ; le monde et ses collisions restent intacts.</p>
+ * <p>Au premier tick, les BlockState, ModelData, positions et lumières de 144 colonnes maximum de quatre
+ * couches sont figés. La passe de rendu réimprime les vrais modèles via l'atlas de blocs, sans
+ * supprimer le terrain original. Les colonnes restent axis-aligned : seule leur hauteur change.
+ * Aucun masque, aucune cellule omise, aucune particule de sol ni roche générique.</p>
  *
- * <p>Techniques étudiées : AcademyCraft GroundHeaveClient (renderSingleBlock et léger agrandissement
- * anti-z-fighting), FDBosses Geburah/RadialEarthquake (BlockState capturé, pivot et phases de
- * soulèvement), NuclearCraft ShockwaveDebrisEmitter (ModelData et rendu monde). La chronologie
+ * <p>Techniques étudiées : AcademyCraft GroundHeaveClient (renderSingleBlock au-dessus du monde intact),
+ * FDBosses Geburah/RadialEarthquake (BlockState capturé, montée, maintien et descente), NuclearCraft ShockwaveDebrisEmitter (ModelData et rendu monde). La chronologie
  * P/S/Rayleigh suit les références pédagogiques IRIS ; le champ de faille et les rythmes sont propres
  * à Deep Lucky Block.</p>
  */
 public final class SeismicTerrainVfx {
     private static final int MAX_SNAPSHOTS = 8;
-    private static final int MAX_BLOCKS_PER_SNAPSHOT = 288;
+    private static final int MAX_BLOCKS_PER_SNAPSHOT = 576;
     private static final int COLUMN_DEPTH = 4;
     private static final float REPRINT_EPSILON = 0.012f;
     private static final Map<SnapshotKey, TerrainSnapshot> SNAPSHOTS = new LinkedHashMap<>();
@@ -69,9 +63,9 @@ public final class SeismicTerrainVfx {
         if (length < 0.001f) { dirX = 0.0f; dirZ = 1.0f; }
         else { dirX /= length; dirZ /= length; }
         worldScale = Math.max(0.05f, worldScale);
-        int radius = Mth.clamp(Mth.ceil(4.25f * worldScale), 4, 6);
+        int radius = Mth.clamp(Mth.ceil(5.50f * worldScale), 6, 7);
         int originY = Mth.floor(y);
-        List<CapturedBlock> blocks = new ArrayList<>(256);
+        List<CapturedBlock> blocks = new ArrayList<>(484);
         BlockRenderDispatcher dispatcher = Minecraft.getInstance().getBlockRenderer();
 
         captureColumns:
@@ -83,7 +77,7 @@ public final class SeismicTerrainVfx {
             double relZ = (surface.getZ() + 0.5 - z) / worldScale;
             float f = (float) (dirX * relX + dirZ * relZ);
             float l = (float) (-dirZ * relX + dirX * relZ);
-            if (Math.abs(f) > 4.20f || Math.abs(l) > 3.20f) continue;
+            if (Math.abs(f) > 5.20f || Math.abs(l) > 5.20f) continue;
 
             int light = LevelRenderer.getLightColor(level, surface.above());
             float columnHash = hash(salt, surface.getX() * 73856093 ^ surface.getY() * 19349663
@@ -121,34 +115,14 @@ public final class SeismicTerrainVfx {
         if (snapshot == null || snapshot.level != level || snapshot.blocks.isEmpty()) return false;
 
         BlockRenderDispatcher dispatcher = mc.getBlockRenderer();
-        VertexConsumer voidVc = null;
-        Vector3f voidTmp = new Vector3f();
         boolean emitted = false;
         for (CapturedBlock block : snapshot.blocks) {
-            Motion motion = motionAt(snapshot, block, t);
-            // Aucun masque sous les berges : les vraies couches capturées bouchent le volume.
-            // Seule la cellule de surface réellement retirée reçoit une occultation sombre.
-            if (block.columnDepth == 0 && motion.voidOpen > 0.015f) {
-                if (voidVc == null) voidVc = buffers.getBuffer(WeaponWorldVfxManager.getTranslucentRenderType());
-                emitVoidCell(voidVc, pose.last().pose(), voidTmp, snapshot, block,
-                        camera, motion.voidOpen);
-                emitted = true;
-            }
-            if (motion.voidOpen > 0.975f) continue;
-
-            double drop = motion.voidOpen > 0.015f ? (1.0f - motion.voidOpen) * (0.45f + motion.depth * 0.65f) : 0.0f;
-            double worldX = block.pos.getX() + motion.offsetX;
-            double worldY = block.pos.getY() + motion.rise + REPRINT_EPSILON - drop;
-            double worldZ = block.pos.getZ() + motion.offsetZ;
+            float rise = riseAt(snapshot, block, t);
             pose.pushPose();
-            pose.translate(worldX - camera.x, worldY - camera.y, worldZ - camera.z);
-            pose.translate(0.5f, 0.0f, 0.5f);
-            pose.mulPose(Axis.YP.rotation(motion.yaw));
-            pose.mulPose(Axis.XP.rotation(motion.pitch));
-            pose.mulPose(Axis.ZP.rotation(motion.roll));
-            // Recouvre la surface source sans z-fighting, sans changer la silhouette du modèle.
-            pose.scale(1.002f, 1.0f, 1.002f);
-            pose.translate(-0.5f, 0.0f, -0.5f);
+            pose.translate(block.pos.getX() - camera.x,
+                    block.pos.getY() + rise + REPRINT_EPSILON - camera.y,
+                    block.pos.getZ() - camera.z);
+            // Aucun scale, yaw, pitch ou roll : modèle exact et volumes toujours axis-aligned.
             dispatcher.renderSingleBlock(block.state, pose, buffers, block.light,
                     OverlayTexture.NO_OVERLAY, block.modelData, null);
             pose.popPose();
@@ -157,8 +131,8 @@ public final class SeismicTerrainVfx {
         return emitted;
     }
 
-    /** P précoce, S transversal, graphe de rupture, Rayleigh puis répliques. */
-    private static Motion motionAt(TerrainSnapshot snapshot, CapturedBlock block, float t) {
+    /** Montée verticale sans rotation ni translation latérale : les volumes restent sur leur grille. */
+    private static float riseAt(TerrainSnapshot snapshot, CapturedBlock block, float t) {
         float f = block.f, l = block.l, h = block.hash;
         FractureInfluence influence = nearestFracture(snapshot.fractures, f, l);
         Fracture fracture = influence.fracture;
@@ -166,42 +140,30 @@ public final class SeismicTerrainVfx {
         float side = influence.signedDistance < 0.0f ? -1.0f : 1.0f;
         float progress = clamp(influence.u / fracture.length);
         float start = fracture.delay + progress * 0.045f + h * 0.014f;
-        float open = outBack((t - start) / (0.070f + fracture.depth * 0.028f))
+        float envelope = smooth((t - start) / (0.105f + fracture.depth * 0.025f))
                 * (1.0f - smooth((t - 0.835f - h * 0.018f) / 0.145f));
-        open = Math.max(0.0f, open);
-        float voidOpen = influence.inside ? clamp(open) : 0.0f;
 
         float radial = Mth.sqrt(f * f + l * l);
+        // P : compression verticale courte. S : différentiel vertical de part et d'autre.
         float p = damped(t - 0.018f - radial * 0.0045f, 96.0f, 49.0f) * 0.024f;
-        float shear = damped(t - 0.145f - radial * 0.0080f, 47.0f, 15.0f) * 0.060f;
+        float shear = damped(t - 0.145f - radial * 0.0080f, 47.0f, 15.0f) * 0.022f * side;
         float attenuation = 1.0f / (1.0f + radial * 0.18f);
         float rayleigh = 0.0f;
         for (int wave = 0; wave < 3; wave++) {
             float arrival = 0.285f + wave * 0.155f + radial * (0.021f - wave * 0.002f);
             rayleigh += damped(t - arrival, 27.0f - wave * 3.0f, 10.5f + wave * 2.0f)
-                    * (0.115f - wave * 0.018f) * attenuation;
+                    * (0.090f - wave * 0.014f) * attenuation;
         }
         float near = clamp(1.0f - distance / 2.40f);
-        float aftershocks = damped(t - 0.515f - h * 0.025f, 39.0f, 17.0f) * 0.065f * near
-                + damped(t - 0.690f - h * 0.018f, 44.0f, 20.0f) * 0.045f * near;
+        float aftershocks = damped(t - 0.515f - h * 0.025f, 39.0f, 17.0f) * 0.050f * near
+                + damped(t - 0.690f - h * 0.018f, 44.0f, 20.0f) * 0.035f * near;
 
         float bank = clamp(1.0f - Math.max(0.0f, distance - influence.width) / 1.75f);
-        float uplift = (0.10f + bank * (0.34f + fracture.depth * 0.36f + h * 0.20f))
-                * (0.82f + noise1(f * 0.72f + l * 0.31f, snapshot.salt + 303) * 0.36f);
-        float rise = open * uplift + p + rayleigh + aftershocks;
-        float separation = side * open * (0.055f + bank * (0.16f + influence.width * 0.22f));
-        float normalF = -Mth.sin(fracture.angle), normalL = Mth.cos(fracture.angle);
-        float shearOffset = shear * (0.45f + bank * 0.55f);
-        float localF = normalF * separation + rayleigh * 0.30f + shear * 0.24f;
-        float localL = normalL * separation + shearOffset;
-
-        float offsetX = (snapshot.dirX * localF - snapshot.dirZ * localL) * snapshot.worldScale;
-        float offsetZ = (snapshot.dirZ * localF + snapshot.dirX * localL) * snapshot.worldScale;
-        float roll = side * open * (0.035f + bank * (0.10f + h * 0.10f)) + shear * 0.70f;
-        float pitch = rayleigh * 0.34f + (h - 0.5f) * open * bank * 0.11f;
-        float yaw = shear * 0.32f + (h - 0.5f) * open * 0.055f;
-        return new Motion(offsetX, rise * snapshot.worldScale, offsetZ,
-                yaw, pitch, roll, voidOpen, fracture.depth);
+        float uplift = 0.20f + bank * (0.30f + fracture.depth * 0.22f) + h * 0.12f;
+        // Les lignes de fracture restent basses, les berges montent : aucun trou artificiel.
+        if (influence.inside) uplift *= 0.12f;
+        float rise = envelope * uplift + p + shear + rayleigh + aftershocks;
+        return Math.max(0.0f, rise * snapshot.worldScale);
     }
 
     /** Quatre racines indépendantes, six filles et trois tertiaires : aucune faille dominante. */
@@ -287,32 +249,6 @@ public final class SeismicTerrainVfx {
         return best;
     }
 
-    /** Masque opaque de la cellule source retirée ; les berges surélevées fournissent la profondeur. */
-    private static void emitVoidCell(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                     TerrainSnapshot snapshot, CapturedBlock block,
-                                     Vec3 camera, float open) {
-        float x0 = (float) (block.pos.getX() - camera.x) - 0.006f;
-        float x1 = x0 + 1.012f;
-        float z0 = (float) (block.pos.getZ() - camera.z) - 0.006f;
-        float z1 = z0 + 1.012f;
-        VoxelShape shape = block.state.getCollisionShape(snapshot.level, block.pos);
-        float top = shape.isEmpty() ? 1.0f : (float) shape.max(Direction.Axis.Y);
-        float y = (float) (block.pos.getY() + top - camera.y) + 0.006f;
-        int shade = Math.round(7 + 7 * (1.0f - open));
-        int argb = 0xFF000000 | (shade << 16) | (shade << 8) | shade;
-        put(vc, mat, tmp, x0, y, z0, argb);
-        put(vc, mat, tmp, x0, y, z1, argb);
-        put(vc, mat, tmp, x1, y, z1, argb);
-        put(vc, mat, tmp, x1, y, z0, argb);
-    }
-
-    private static void put(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                            float x, float y, float z, int argb) {
-        mat.transformPosition(x, y, z, tmp);
-        vc.addVertex(tmp.x(), tmp.y(), tmp.z())
-                .setColor((argb >>> 16) & 0xFF, (argb >>> 8) & 0xFF, argb & 0xFF, (argb >>> 24) & 0xFF);
-    }
-
     private static BlockPos findSurface(ClientLevel level, int x, int originY, int z, double worldY) {
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         int maxY = Math.min(level.getMaxBuildHeight() - 1, Mth.floor(worldY + 0.75));
@@ -345,12 +281,6 @@ public final class SeismicTerrainVfx {
         return (h & 0xFFFF) / 65535.0f;
     }
 
-    private static float outBack(float x) {
-        x = clamp(x);
-        float u = x - 1.0f;
-        return 1.0f + 2.70158f * u * u * u + 1.70158f * u * u;
-    }
-
     private static float damped(float age, float frequency, float decay) {
         return age <= 0.0f ? 0.0f : Mth.sin(age * frequency) * (float) Math.exp(-age * decay);
     }
@@ -379,6 +309,4 @@ public final class SeismicTerrainVfx {
                             int seed, int generation) { }
     private record FractureInfluence(Fracture fracture, float u, float signedDistance,
                                      float distance, float width, boolean inside) { }
-    private record Motion(float offsetX, float rise, float offsetZ,
-                          float yaw, float pitch, float roll, float voidOpen, float depth) { }
 }
