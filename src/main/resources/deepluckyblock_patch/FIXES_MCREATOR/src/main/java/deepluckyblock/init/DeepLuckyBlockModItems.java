@@ -75,6 +75,7 @@ public class DeepLuckyBlockModItems {
 	public static final DeferredHolder<Item, Item> LUNETTES_DU_PATRON_HELMET;
 	public static final DeferredHolder<Item, Item> SAMOUSS_HELMET;
 	public static final DeferredHolder<Item, Item> SAMOUSS_CHESTPLATE;
+	public static final DeferredHolder<Item, Item> SAMOUSS_LEGGINGS;
 	public static final DeferredHolder<Item, Item> SAMOUSS_BOOTS;
 	public static final DeferredHolder<Item, Item> SAMOUSS_BOSS_SPAWN_EGG;
 	public static final DeferredHolder<Item, Item> JERRY_SPAWN_EGG;
@@ -96,6 +97,7 @@ public class DeepLuckyBlockModItems {
 		LUNETTES_DU_PATRON_HELMET = REGISTRY.register("lunettes_du_patron_helmet", LunettesDuPatronItem.Helmet::new);
 		SAMOUSS_HELMET = REGISTRY.register("samouss_helmet", SamoussItem.Helmet::new);
 		SAMOUSS_CHESTPLATE = REGISTRY.register("samouss_chestplate", SamoussItem.Chestplate::new);
+		SAMOUSS_LEGGINGS = REGISTRY.register("samouss_leggings", SamoussItem.Leggings::new);
 		SAMOUSS_BOOTS = REGISTRY.register("samouss_boots", SamoussItem.Boots::new);
 		SAMOUSS_BOSS_SPAWN_EGG = REGISTRY.register("samouss_boss_spawn_egg", () -> new DeferredSpawnEggItem(DeepLuckyBlockModEntities.SAMOUSS_BOSS, -987, -15987, new Item.Properties()));
 		JERRY_SPAWN_EGG = REGISTRY.register("jerry_spawn_egg", () -> new DeferredSpawnEggItem(DeepLuckyBlockModEntities.JERRY, -1, -1, new Item.Properties()));

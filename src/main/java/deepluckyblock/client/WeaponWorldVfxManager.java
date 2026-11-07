@@ -265,6 +265,8 @@ public final class WeaponWorldVfxManager {
         int miasmaChainId = -1;
         int miasmaHostAge;
         int miasmaEndAge = -1;
+        int miasmaTravelAge = -1;
+        double miasmaTravelX, miasmaTravelY, miasmaTravelZ;
         double dragX, dragZ;
 
         /** Couleur primaire de l'effet ou d'une famille sélectionnée dans la palette de l'arme. */
@@ -581,9 +583,18 @@ public final class WeaponWorldVfxManager {
         boolean firstAssignment = chain.miasmaChainId != chainId;
         chain.miasmaChainId = chainId;
         chain.followEntityId = hostEntityId;
-        if (firstAssignment) chain.followInitialized = false;
-        // Lors d'un swap, followInitialized reste vrai : le volume voyage avec inertie vers le nouvel hôte.
-        chain.miasmaHostAge = 0;
+        if (firstAssignment) {
+            chain.followInitialized = false;
+            chain.miasmaHostAge = 0;
+            chain.miasmaTravelAge = -1;
+        } else {
+            // Vol visible d'une seconde : la position courante devient le départ, jamais un snap.
+            chain.miasmaTravelX = chain.x;
+            chain.miasmaTravelY = chain.y;
+            chain.miasmaTravelZ = chain.z;
+            chain.miasmaTravelAge = 0;
+            chain.miasmaHostAge = Math.max(20, chain.miasmaHostAge);
+        }
         chain.miasmaEndAge = -1;
         chain.maxAge = 600;
     }
@@ -621,6 +632,19 @@ public final class WeaponWorldVfxManager {
         double targetX = living.getX();
         double targetY = living.getY() + living.getBbHeight() * 0.50;
         double targetZ = living.getZ();
+        if (inst.effect == WeaponVisualEffectId.MIASMA_SHROUD && inst.miasmaTravelAge >= 0) {
+            inst.miasmaTravelAge++;
+            float u = Mth.clamp(inst.miasmaTravelAge / 20.0f, 0.0f, 1.0f);
+            float glide = u * u * (3.0f - 2.0f * u);
+            inst.x = Mth.lerp(glide, inst.miasmaTravelX, targetX);
+            inst.y = Mth.lerp(glide, inst.miasmaTravelY, targetY)
+                    + Mth.sin(u * (float) Math.PI) * 0.65f;
+            inst.z = Mth.lerp(glide, inst.miasmaTravelZ, targetZ);
+            inst.dragX = inst.x - targetX;
+            inst.dragZ = inst.z - targetZ;
+            if (u >= 1.0f) inst.miasmaTravelAge = -1;
+            return;
+        }
         if (!inst.followInitialized) {
             inst.x = targetX; inst.y = targetY; inst.z = targetZ;
             inst.followInitialized = true;

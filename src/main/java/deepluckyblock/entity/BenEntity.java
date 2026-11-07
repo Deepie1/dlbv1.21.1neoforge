@@ -47,7 +47,7 @@ public class BenEntity extends Monster {
 		// Elles ne sont PAS visibles : le renderer de ce mob n'ajoute plus de
 		// HumanoidArmorLayer (voir BenRenderer / JerryRenderer / SamoussBossRenderer).
 		// dropChance = 0 : cette armure technique n'est jamais lachee, le loot
-		// reste la piece Samouss geree par dropCustomDeathLoot().
+		// reste la piece Samouss geree par la table commune LivingDropsEvent.
 		deepluckyblock.procedures.GenerateLuckyItemProcedure
 				.equipHiddenEnchantedArmor(this, 10, 100, this.random);
 	}
@@ -84,39 +84,6 @@ public class BenEntity extends Monster {
 		return BuiltInRegistries.SOUND_EVENT.get(ResourceLocation.parse("entity.generic.death"));
 	}
 
-	/*
-	 * A la mort : 30% de chances de dropper UNE piece d'armure Samouss aleatoire
-	 * (casque, plastron ou bottes). Ajuste 0.30f pour changer la probabilite.
-	 */
-	@Override
-	protected void dropCustomDeathLoot(ServerLevel level, DamageSource source, boolean recentlyHit) {
-		super.dropCustomDeathLoot(level, source, recentlyHit);
-		if (!this.level().isClientSide && this.random.nextFloat() < 0.30f) {
-			ItemStack piece;
-			net.minecraft.world.entity.EquipmentSlot pieceSlot;
-			switch (this.random.nextInt(3)) {
-				case 0:
-					piece = new ItemStack(DeepLuckyBlockModItems.SAMOUSS_HELMET.get());
-					pieceSlot = net.minecraft.world.entity.EquipmentSlot.HEAD;
-					break;
-				case 1:
-					piece = new ItemStack(DeepLuckyBlockModItems.SAMOUSS_CHESTPLATE.get());
-					pieceSlot = net.minecraft.world.entity.EquipmentSlot.CHEST;
-					break;
-				default:
-					piece = new ItemStack(DeepLuckyBlockModItems.SAMOUSS_BOOTS.get());
-					pieceSlot = net.minecraft.world.entity.EquipmentSlot.FEET;
-					break;
-			}
-			// La piece Samouss lachee est enchantee avec un luck aleatoire 15-100.
-			// L'item reste une piece Samouss : seuls les enchantements et le nom
-			// colore sont ajoutes par GenerateLuckyItemProcedure.
-			int lootLuck = 15 + this.random.nextInt(86); // 15 a 100 inclus
-			deepluckyblock.procedures.GenerateLuckyItemProcedure
-					.enchantExistingArmor(piece, lootLuck, pieceSlot, this.random);
-			this.spawnAtLocation(piece);
-		}
-	}
 
 	@Override
 	public boolean canCollideWith(Entity entity) {

@@ -34,6 +34,7 @@ public class DeepLuckyBlockModTabs {
 			tabData.accept(DeepLuckyBlockModItems.LUNETTES_DU_PATRON_HELMET.get());
 			tabData.accept(DeepLuckyBlockModItems.SAMOUSS_HELMET.get());
 			tabData.accept(DeepLuckyBlockModItems.SAMOUSS_CHESTPLATE.get());
+			tabData.accept(DeepLuckyBlockModItems.SAMOUSS_LEGGINGS.get());
 			tabData.accept(DeepLuckyBlockModItems.SAMOUSS_BOOTS.get());
 		}
 	}

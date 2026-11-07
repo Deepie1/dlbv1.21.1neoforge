@@ -37,7 +37,7 @@ public class SamoussBossEntity extends Raider {
 	/*
 	 * Équipe le boss avec l'armure Samouss complète (casque + plastron + bottes).
 	 * Le drop normal de l'armure est désactivé (0%) : les pièces ne tombent que
-	 * via le drop aléatoire de 15% dans dropCustomDeathLoot.
+	 * via la table commune : 50% et uniquement plastron, leggings ou bottes.
 	 */
 	private boolean equipmentApplied = false;
 
@@ -275,29 +275,6 @@ public class SamoussBossEntity extends Raider {
 		return SoundEvents.EMPTY;
 	}
 
-	/*
-	 * À la mort : 15% de chances de dropper UNE pièce d'armure aléatoire
-	 * (casque, plastron ou bottes). Ajuste 0.15f pour changer la probabilité.
-	 */
-	@Override
-	protected void dropCustomDeathLoot(ServerLevel level, DamageSource source, boolean recentlyHit) {
-		super.dropCustomDeathLoot(level, source, recentlyHit);
-		if (!this.level().isClientSide && this.random.nextFloat() < 0.15f) {
-			ItemStack piece;
-			switch (this.random.nextInt(3)) {
-				case 0:
-					piece = new ItemStack(DeepLuckyBlockModItems.SAMOUSS_HELMET.get());
-					break;
-				case 1:
-					piece = new ItemStack(DeepLuckyBlockModItems.SAMOUSS_CHESTPLATE.get());
-					break;
-				default:
-					piece = new ItemStack(DeepLuckyBlockModItems.SAMOUSS_BOOTS.get());
-					break;
-			}
-			this.spawnAtLocation(piece);
-		}
-	}
 
 	public static void init() {
 		// PORT 1.21.1 : Raid.RaiderType.create() supprime -> enumExtensions

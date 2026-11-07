@@ -5044,38 +5044,22 @@ public class GenerateBadProcedure {
     // lucky block).
     //
     // Anti-doublon : si une pièce Samouss est DÉJÀ dans les drops (posée par
-    // la logique propre de l'entité, ex. dropCustomDeathLoot), on n'en ajoute
+    // une autre table), on n'en ajoute
     // pas une deuxième — on garantit simplement qu'elle est enchantée.
     //
-    // Les items du set sont retrouvés par nom dans le registre
-    // (deep_lucky_block:*samouss*_helmet/_chestplate/_leggings/_boots).
-    // Si un item est introuvable, fallback diamant + message d'erreur console.
+    // Les trois items sont résolus directement via leurs DeferredHolder :
+    // samouss_chestplate / samouss_leggings / samouss_boots uniquement.
+    // Aucun fallback diamant : les trois DeferredHolder sont obligatoires et enregistrés.
 
-    private static final Item[] SAMOUSS_LOOT_PIECES = new Item[4];
+    private static final Item[] SAMOUSS_LOOT_PIECES = new Item[3];
     private static boolean samoussLootCacheReady = false;
 
     private static void initSamoussLootCache() {
         if (samoussLootCacheReady) return;
         samoussLootCacheReady = true;
-        String[] suffixes = {"_helmet", "_chestplate", "_leggings", "_boots"};
-        Item[] fallback = {Items.DIAMOND_HELMET, Items.DIAMOND_CHESTPLATE,
-                           Items.DIAMOND_LEGGINGS, Items.DIAMOND_BOOTS};
-        for (int i = 0; i < 4; i++) {
-            for (Item item : BuiltInRegistries.ITEM) {
-                ResourceLocation key = BuiltInRegistries.ITEM.getKey(item);
-                if (key != null && "deep_lucky_block".equals(key.getNamespace())
-                        && key.getPath().contains("samouss")
-                        && key.getPath().endsWith(suffixes[i])) {
-                    SAMOUSS_LOOT_PIECES[i] = item;
-                    break;
-                }
-            }
-            if (SAMOUSS_LOOT_PIECES[i] == null) {
-                SAMOUSS_LOOT_PIECES[i] = fallback[i];
-                deepluckyblock.util.DebugLog.err("[deep_lucky_block] Item Samouss introuvable pour "
-                        + suffixes[i] + " -> fallback diamant");
-            }
-        }
+        SAMOUSS_LOOT_PIECES[0] = DeepLuckyBlockModItems.SAMOUSS_CHESTPLATE.get();
+        SAMOUSS_LOOT_PIECES[1] = DeepLuckyBlockModItems.SAMOUSS_LEGGINGS.get();
+        SAMOUSS_LOOT_PIECES[2] = DeepLuckyBlockModItems.SAMOUSS_BOOTS.get();
     }
 
     private static boolean isSamoussLootPiece(Item item) {
@@ -5086,9 +5070,8 @@ public class GenerateBadProcedure {
 
     private static EquipmentSlot slotForSamoussPiece(Item item) {
         initSamoussLootCache();
-        if (item == SAMOUSS_LOOT_PIECES[0]) return EquipmentSlot.HEAD;
-        if (item == SAMOUSS_LOOT_PIECES[1]) return EquipmentSlot.CHEST;
-        if (item == SAMOUSS_LOOT_PIECES[2]) return EquipmentSlot.LEGS;
+        if (item == SAMOUSS_LOOT_PIECES[0]) return EquipmentSlot.CHEST;
+        if (item == SAMOUSS_LOOT_PIECES[1]) return EquipmentSlot.LEGS;
         return EquipmentSlot.FEET;
     }
 
@@ -5122,11 +5105,10 @@ public class GenerateBadProcedure {
             // Sinon : 50 % de chance de lâcher une pièce aléatoire enchantée.
             if (random.nextInt(100) >= 50) return;
 
-            int pieceIndex = random.nextInt(4);
+            int pieceIndex = random.nextInt(3);
             EquipmentSlot slot = switch (pieceIndex) {
-                case 0 -> EquipmentSlot.HEAD;
-                case 1 -> EquipmentSlot.CHEST;
-                case 2 -> EquipmentSlot.LEGS;
+                case 0 -> EquipmentSlot.CHEST;
+                case 1 -> EquipmentSlot.LEGS;
                 default -> EquipmentSlot.FEET;
             };
             ItemStack piece = new ItemStack(SAMOUSS_LOOT_PIECES[pieceIndex]);
