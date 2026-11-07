@@ -512,9 +512,9 @@ public final class WeaponWorldVfxManager {
             case MOLTEN_FIRE_WAVE -> 92;
             case SOUL_FIRE_CRESCENT -> 112;
             case BRIMSTONE_METEOR -> 128;
-            // Terre : rupture, tempête puis ralliement disposent de chorégraphies complètes.
+            // Terre : rupture, main de colosse puis ralliement ; Sandstorm conserve sa durée archivée.
             case SEISMIC_TECTONIC -> 112;
-            case SANDSTORM_DUNE -> 140;
+            case TITAN_GRASP, SANDSTORM_DUNE -> 140;
             case WARLORD_RALLY_SIGIL -> 120;
             case SERAPH_SKY_PILLAR, ABYSSAL_MAELSTROM,
                  DRAGON_CHAOS_PRISM, BIG_BANG_SCAR -> 22;
@@ -1346,7 +1346,8 @@ public final class WeaponWorldVfxManager {
                 SeismicTerrainVfx.prepare(level, inst.x, inst.y, inst.z,
                         seismicDx, seismicDz, inst.sizeScale, (int) (inst.seed & 0x7FFFFFFFL));
             }
-            if (inst.kind == KIND_IMPACT && (inst.effect == WeaponVisualEffectId.SANDSTORM_DUNE
+            if (inst.kind == KIND_IMPACT && (inst.effect == WeaponVisualEffectId.TITAN_GRASP
+                    || inst.effect == WeaponVisualEffectId.SANDSTORM_DUNE
                     || inst.effect == WeaponVisualEffectId.WARLORD_RALLY_SIGIL)) {
                 EarthSignatureVfx.prepareTerrain(level, inst.x, inst.y, inst.z, inst.sizeScale);
             }
@@ -1578,7 +1579,7 @@ public final class WeaponWorldVfxManager {
         if (family.equals("terre")) {
             return switch (index) {
                 case 0 -> WeaponVisualEffectId.SEISMIC_TECTONIC;
-                case 1 -> WeaponVisualEffectId.SANDSTORM_DUNE;
+                case 1 -> WeaponVisualEffectId.TITAN_GRASP;
                 default -> WeaponVisualEffectId.WARLORD_RALLY_SIGIL;
             };
         }
@@ -3350,6 +3351,7 @@ public final class WeaponWorldVfxManager {
     private static void impactEarth(ImpactView v) {
         int signature = switch (v.inst().effect) {
             case SEISMIC_TECTONIC -> EarthSignatureVfx.SEISMIC;
+            case TITAN_GRASP -> EarthSignatureVfx.TITAN;
             case SANDSTORM_DUNE -> EarthSignatureVfx.SANDSTORM;
             case WARLORD_RALLY_SIGIL -> EarthSignatureVfx.RALLY;
             default -> -1;

@@ -79,8 +79,10 @@ public enum WeaponVisualEffectId {
     // et les 3 signatures du nouveau élément CHAOS (sombre + multicolore) ===
     /** #31 Bois : mâchoire de ronces qui se referme autour de la cible (vert sombre). */
     THORN_MAW_ROOT(31, Category.ELEMENT, 71, false, DeepElement.WOOD),
-    /** #32 Terre : tempête de sable en spirale + dune soulevée (ocre). */
-    SANDSTORM_DUNE(32, Category.ELEMENT, 72, false, DeepElement.EARTH),
+    /** #32 Terre : main de colosse complète, cinq doigts articulés puis effritement. */
+    TITAN_GRASP(32, Category.ELEMENT, 72, false, DeepElement.EARTH),
+    /** #41 Archive Wind : code conservé pour une refonte ultérieure, hors rotation et sans mapping actif. */
+    SANDSTORM_DUNE(41, Category.ELEMENT, 72, false, DeepElement.EARTH),
     /** #33 Ombre : éclipse — disque noir, voile et triple griffure (palette violet/noir T373). */
     ECLIPSE_VEIL(33, Category.ELEMENT, 74, false, DeepElement.SHADOW),
     /** #34 Vide : faille verticale qui aspire la lumière, puis se referme (gris/noir T373). */
@@ -246,8 +248,9 @@ public enum WeaponVisualEffectId {
         // === T352-ELEMENT-COMPLET : 3es animations + signatures du CHAOS ===
         // #31 Bois
         register(THORN_MAW_ROOT, "thorn_maw", "briar_cage", "rooted_grasp", "overgrowth");
-        // #32 Terre
-        register(SANDSTORM_DUNE, "sandstorm", "dune_surge", "dust_devil", "sahara_wrath");
+        // #32 Terre : les anciens déclencheurs de tempête utilisent désormais Titan's Grasp.
+        // Sandstorm Dune reste volontairement non enregistrée : archive Wind inactive.
+        register(TITAN_GRASP, "sandstorm", "dune_surge", "dust_devil", "sahara_wrath");
         // #33 Ombre
         register(ECLIPSE_VEIL, "eclipse_veil", "nightfall", "umbral_veil", "blackout");
         // #34 Vide
@@ -476,7 +479,7 @@ public enum WeaponVisualEffectId {
     public static WeaponVisualEffectId signatureFor(DeepElement el) {
         WeaponVisualEffectId best = null;
         for (WeaponVisualEffectId fx : values()) {
-            if (fx.element != el) continue;
+            if (fx.element != el || fx == SANDSTORM_DUNE) continue;
             if (best == null || fx.priority > best.priority) best = fx;
         }
         return best;
@@ -484,9 +487,14 @@ public enum WeaponVisualEffectId {
 
     /** Toutes les grosses animations d'une famille (au moins 3 garanties depuis T352). */
     public static List<WeaponVisualEffectId> animationsOf(DeepElement el) {
+        // Ordre de rotation Terre confirmé, indépendant des identifiants historiques de l'énumération.
+        if (el == DeepElement.EARTH) {
+            return new ArrayList<>(List.of(SEISMIC_TECTONIC, TITAN_GRASP, WARLORD_RALLY_SIGIL));
+        }
         List<WeaponVisualEffectId> out = new ArrayList<>(4);
         for (WeaponVisualEffectId fx : values()) {
-            if (fx.element == el) out.add(fx);
+            // Archive Wind : ni Terre active, ni combo, ni commande de famille.
+            if (fx.element == el && fx != SANDSTORM_DUNE) out.add(fx);
         }
         return out;
     }

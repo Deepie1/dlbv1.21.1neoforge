@@ -12,11 +12,12 @@ import org.joml.Vector3f;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Trois chorégraphies Terre : rupture tectonique, tempête de sable et sceau de ralliement. */
+/** Terre active : Seismic, Titan's Grasp et Rally. Sandstorm est une archive Wind inactive. */
 public final class EarthSignatureVfx {
     public static final int SEISMIC = 0;
-    public static final int SANDSTORM = 1;
+    public static final int TITAN = 1;
     public static final int RALLY = 2;
+    public static final int SANDSTORM = 3; // ARCHIVE WIND — conserver pour la refonte ultérieure.
 
     private static final int FAULT = 0x160F0B;
     private static final int SOIL_DARK = 0x3B2616;
@@ -73,14 +74,118 @@ public final class EarthSignatureVfx {
             // Le sol réel est capturé/reprojeté par SeismicTerrainVfx dans une passe opaque dédiée.
             // Aucune particule ou roche générique ne doit être ajoutée ici.
             return;
+        } else if (variant == TITAN) {
+            renderTitanGrasp(vc, mat, tmp, cx, cy, cz, t, dirX, dirZ, alpha, salt, terrain);
         } else if (variant == SANDSTORM) {
+            // Archive Wind : volontairement hors de la rotation Terre, code conservé pour plus tard.
             renderSandstorm(vc, mat, tmp, cx, cy, cz, t, dirX, dirZ, alpha, salt, terrain);
         } else {
             renderRally(vc, mat, tmp, cx, cy, cz, t, dirX, dirZ, alpha, salt, terrain);
         }
     }
 
-    /** SANDSTORM : dune migratrice, vortex à trois bras, nappes de vent et retombée des grains. */
+    /** TITAN'S GRASP : avant-bras, paume pleine, quatre doigts à trois phalanges et pouce opposable. */
+    private static void renderTitanGrasp(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                         float cx, float cy, float cz, float t,
+                                         float dx, float dz, int alpha, int salt, TerrainView terrain) {
+        float rise = smooth(t / 0.22f);
+        float close = smooth((t - 0.25f) / 0.30f);
+        float crumble = smooth((t - 0.81f) / 0.19f);
+        float env = rise * (1.0f - crumble);
+        if (env <= 0.0f) return;
+        int a = Math.round(alpha * env);
+        float ground = terrain.at(0.0f, 0.0f);
+        float base = ground - 1.55f + rise * 1.55f - crumble * 1.10f;
+        float sizeFade = 1.0f - crumble * 0.45f;
+
+        // Avant-bras massif : cinq sections pleines, coins arrondis sans cavités internes.
+        for (int layer = 0; layer < 5; layer++) for (int ix = -2; ix <= 2; ix++) for (int iz = -2; iz <= 2; iz++) {
+            if (ix * ix + iz * iz > 6) continue;
+            float h = hash(salt, 4100 + layer * 97 + ix * 31 + iz * 17);
+            float f = ix * 0.18f, l = iz * 0.18f;
+            float y = base - 0.72f + layer * 0.17f;
+            float scatter = crumble * crumble;
+            box(vc, mat, tmp, cx, y - scatter * (0.25f + h * 0.45f), cz, dx, dz,
+                    f + (h - 0.5f) * scatter * 0.55f, l + (0.5f - h) * scatter * 0.45f,
+                    0.105f * sizeFade, 0.108f * sizeFade, 0.105f * sizeFade,
+                    color(STONE_DARK, STONE_LIGHT, 0.22f + h * 0.42f), a);
+        }
+
+        // Paume en volume : cinq strates jointives, bords arrondis, aucun trou dans la structure.
+        for (int layer = 0; layer < 5; layer++) for (int ix = -3; ix <= 3; ix++) for (int iz = -2; iz <= 2; iz++) {
+            float shape = ix * ix / 10.5f + iz * iz / 5.2f;
+            if (shape > 1.0f) continue;
+            float h = hash(salt, 4400 + layer * 101 + ix * 37 + iz * 19);
+            float scatter = crumble * crumble;
+            box(vc, mat, tmp, cx, base + 0.10f + layer * 0.17f - scatter * h * 0.40f, cz, dx, dz,
+                    ix * 0.16f + (h - 0.5f) * scatter * 0.60f,
+                    iz * 0.16f + (0.5f - h) * scatter * 0.50f,
+                    0.094f * sizeFade, 0.099f * sizeFade, 0.094f * sizeFade,
+                    color(STONE_DARK, STONE_LIGHT, 0.42f + layer * 0.07f + h * 0.20f), a);
+        }
+
+        // Quatre doigts indépendants, chacun composé de trois volumes jointifs et d'un ongle terminal.
+        float[] lengths = {0.42f, 0.50f, 0.47f, 0.39f};
+        for (int finger = 0; finger < 4; finger++) {
+            float lateral = (finger - 1.5f) * 0.245f;
+            float f = 0.48f, y = base + 0.84f, l = lateral;
+            float lengthScale = lengths[finger] / 0.36f;
+            for (int segment = 0; segment < 3; segment++) {
+                float theta = (0.10f + segment * 0.12f)
+                        + close * (0.58f + segment * 0.78f);
+                float length = (0.34f - segment * 0.025f) * lengthScale;
+                float nextF = f - Mth.sin(theta) * length;
+                float nextY = y + Mth.cos(theta) * length;
+                float half = (0.082f - segment * 0.009f) * sizeFade;
+                link(vc, mat, tmp, cx, (y + nextY) * 0.5f, cz, dx, dz,
+                        f, y, l, nextF, nextY, l, half,
+                        color(STONE_DARK, STONE, 0.64f + finger * 0.05f), STONE_LIGHT, a);
+                cube(vc, mat, tmp, cx, nextY, cz, dx, dz, nextF, l, half * 1.04f,
+                        color(STONE, STONE_LIGHT, 0.32f + segment * 0.15f), a);
+                f = nextF;
+                y = nextY;
+            }
+            box(vc, mat, tmp, cx, y + 0.018f, cz, dx, dz, f - 0.025f, l,
+                    0.048f * sizeFade, 0.030f * sizeFade, 0.065f * sizeFade,
+                    STONE_LIGHT, a);
+        }
+
+        // Pouce opposable : deux phalanges qui viennent réellement fermer la prise sur le côté.
+        float tf = -0.08f, ty = base + 0.42f, tl = -0.52f;
+        float mf = -0.22f - close * 0.12f, my = ty + 0.30f, ml = -0.43f + close * 0.18f;
+        float ef = -0.40f - close * 0.06f, ey = my - 0.08f - close * 0.18f, el = ml + 0.24f + close * 0.08f;
+        link(vc, mat, tmp, cx, (ty + my) * 0.5f, cz, dx, dz, tf, ty, tl, mf, my, ml,
+                0.095f * sizeFade, STONE, STONE_LIGHT, a);
+        link(vc, mat, tmp, cx, (my + ey) * 0.5f, cz, dx, dz, mf, my, ml, ef, ey, el,
+                0.078f * sizeFade, STONE, STONE_LIGHT, a);
+        cube(vc, mat, tmp, cx, ey, cz, dx, dz, ef, el, 0.070f * sizeFade, STONE_LIGHT, a);
+
+        // Veines minérales encastrées dans la paume : détail terrestre, sans reprendre les runes de Rally.
+        for (int vein = 0; vein < 11; vein++) {
+            float u = vein / 10.0f;
+            float f = -0.31f + u * 0.62f;
+            float l = Mth.sin(u * 5.4f) * 0.12f;
+            cube(vc, mat, tmp, cx, base + 0.80f, cz, dx, dz, f, l,
+                    (0.022f + 0.009f * (vein & 1)) * sizeFade,
+                    vein % 4 == 0 ? EARTH_LIGHT : EARTH, Math.round(a * 0.82f));
+        }
+
+        // Éclats lourds à l'émergence et à l'effritement, jamais de sable ni de vortex.
+        for (int chip = 0; chip < 72; chip++) {
+            float h = hash(salt, 4800 + chip * 43);
+            float angle = chip * 2.3999632f;
+            float radius = 0.60f + h * 1.15f + crumble * 0.65f;
+            float f = Mth.cos(angle) * radius, l = Mth.sin(angle) * radius;
+            float arc = Mth.sin(clamp(t * 2.2f + h * 0.35f) * 3.1415927f);
+            float y = terrain.at(f, l) + 0.05f + arc * (0.20f + h * 0.65f) - crumble * 0.45f;
+            float size = (0.025f + h * 0.045f) * (1.0f - crumble * 0.55f);
+            rot(vc, mat, tmp, cx, y, cz, dx, dz, f, l, size, size * 0.75f, size * 1.15f,
+                    angle + t * 2.0f, h * 1.2f, t * 1.4f,
+                    chip % 7 == 0 ? EARTH : STONE, Math.round(a * (0.35f + h * 0.45f)));
+        }
+    }
+
+    /** ARCHIVE WIND — SANDSTORM : dune migratrice, vortex et grains, reprise ultérieurement. */
     private static void renderSandstorm(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                         float cx, float cy, float cz, float t,
                                         float dx, float dz, int alpha, int salt, TerrainView terrain) {
@@ -190,7 +295,7 @@ public final class EarthSignatureVfx {
         }
     }
 
-    /** RALLY : cercle runique, étendards montants, glaive central et chevrons de commandement. */
+    /** RALLY : sceau fermé, quatre étendards manufacturés et glaive de commandement complet. */
     private static void renderRally(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                     float cx, float cy, float cz, float t,
                                     float dx, float dz, int alpha, int salt, TerrainView terrain) {
@@ -201,19 +306,18 @@ public final class EarthSignatureVfx {
         float circle = smooth((t - 0.025f) / 0.24f);
         float radius = 0.35f + 1.45f * circle;
 
-        // Double cercle runique ancré sur le sol ; les segments vides sont volontaires.
-        for (int ring = 0; ring < 2; ring++) for (int i = 0; i < 72; i++) {
-            if ((i + ring * 2) % (ring == 0 ? 8 : 11) == 0) continue;
-            float angle = i * (float) (Math.PI * 2.0 / 72.0) + ring * 0.04f;
+        // Deux cercles jointifs et CONTINUS : plus aucun secteur vide ne dessine un faux trou.
+        for (int ring = 0; ring < 2; ring++) for (int i = 0; i < 96; i++) {
+            float angle = i * (float) (Math.PI * 2.0 / 96.0) + ring * 0.025f;
             float r = radius - ring * 0.17f;
             float f = Mth.cos(angle) * r, l = Mth.sin(angle) * r;
             float y = terrain.at(f, l) + 0.030f;
             rot(vc, mat, tmp, cx, y, cz, dx, dz, f, l,
-                    0.070f, 0.014f, 0.026f, angle, 0.0f, 0.0f,
-                    ring == 0 ? GOLD : EARTH, Math.round(a * circle * 0.80f));
+                    0.066f, 0.014f, 0.030f, angle, 0.0f, 0.0f,
+                    ring == 0 ? GOLD : EARTH, Math.round(a * circle * 0.84f));
         }
 
-        // Huit glyphes angulaires, chacun formé de trois traits plats et non d'un point générique.
+        // Huit glyphes fermés et leur rayonnement intérieur, tous ancrés sur le collider du sol.
         for (int rune = 0; rune < 8; rune++) {
             float reveal = smooth((t - 0.10f - rune * 0.014f) / 0.16f);
             if (reveal <= 0.0f) continue;
@@ -222,9 +326,13 @@ public final class EarthSignatureVfx {
             groundRune(vc, mat, tmp, cx, cz, dx, dz, f, l, angle + t * 0.20f,
                     0.16f * reveal, rune % 2 == 0 ? EARTH_LIGHT : GOLD,
                     Math.round(a * reveal), terrain);
+            groundLink(vc, mat, tmp, cx, cz, dx, dz,
+                    Mth.cos(angle) * 0.88f, Mth.sin(angle) * 0.88f,
+                    Mth.cos(angle) * 1.08f, Mth.sin(angle) * 1.08f,
+                    0.018f, EARTH, Math.round(a * reveal * 0.72f), terrain);
         }
 
-        // Emblème central : deux glaives croisés au sol, encadrés par un carré brisé.
+        // Emblème central : deux glaives croisés dans un cadre carré entièrement fermé.
         float emblem = smooth((t - 0.13f) / 0.20f);
         for (int sign = -1; sign <= 1; sign += 2) {
             groundLink(vc, mat, tmp, cx, cz, dx, dz, -0.55f, sign * -0.55f,
@@ -237,55 +345,101 @@ public final class EarthSignatureVfx {
             float f0 = Mth.cos(angle) * 0.83f, l0 = Mth.sin(angle) * 0.83f;
             float f1 = Mth.cos(angle + 1.5707963f) * 0.83f, l1 = Mth.sin(angle + 1.5707963f) * 0.83f;
             groundLink(vc, mat, tmp, cx, cz, dx, dz, f0, l0, f1, l1,
-                    0.018f, EARTH, Math.round(a * emblem * 0.68f), terrain);
+                    0.018f, EARTH, Math.round(a * emblem * 0.72f), terrain);
         }
 
-        // Quatre étendards montent séquentiellement ; le tissu ondule en cubes articulés.
+        // Quatre étendards complets : socle, mât, barre, finial, tissu, emblème et franges.
         for (int banner = 0; banner < 4; banner++) {
             float reveal = smooth((t - 0.17f - banner * 0.035f) / 0.22f);
             if (reveal <= 0.0f) continue;
             float angle = banner * 1.5707963f;
+            float tangentF = Mth.cos(angle + 1.5707963f), tangentL = Mth.sin(angle + 1.5707963f);
             float f = Mth.cos(angle) * 1.45f, l = Mth.sin(angle) * 1.45f;
             float ground = terrain.at(f, l);
-            float height = 1.42f * reveal;
-            for (int part = 0; part < 9; part++) {
-                float u = part / 8.0f;
-                if (u > reveal) continue;
-                cube(vc, mat, tmp, cx, ground + 0.08f + u * height, cz, dx, dz, f, l,
-                        0.035f, part == 8 ? GOLD : STONE_LIGHT, Math.round(a * 0.90f));
+            float height = 1.65f * reveal;
+
+            // Socle pierreux en deux couches pleines, avec couronne dorée.
+            for (int layer = 0; layer < 2; layer++) for (int ix = -1; ix <= 1; ix++) for (int iz = -1; iz <= 1; iz++) {
+                box(vc, mat, tmp, cx, ground + 0.055f + layer * 0.105f, cz, dx, dz,
+                        f + ix * 0.17f, l + iz * 0.17f, 0.105f, 0.065f, 0.105f,
+                        layer == 1 && (ix == 0 || iz == 0) ? GOLD : STONE, Math.round(a * reveal));
             }
-            for (int row = 0; row < 4; row++) for (int col = 0; col < 5; col++) {
-                float u = col / 4.0f;
-                float wave = Mth.sin(t * 10.0f + col * 0.85f + banner) * 0.045f * reveal;
-                float clothF = f + Mth.cos(angle + 1.5707963f) * (0.10f + col * 0.12f);
-                float clothL = l + Mth.sin(angle + 1.5707963f) * (0.10f + col * 0.12f);
-                float y = ground + height - 0.12f - row * 0.115f + wave;
-                int rgb = row == 0 || col == 4 ? GOLD : ((row + col) % 5 == 0 ? EARTH : BANNER);
+            // Mât continu : les volumes se chevauchent légèrement à chaque joint.
+            for (int part = 0; part < 14; part++) {
+                float u = part / 13.0f;
+                box(vc, mat, tmp, cx, ground + 0.18f + u * height, cz, dx, dz, f, l,
+                        0.032f, Math.max(0.025f, height / 13.0f * 0.62f), 0.032f,
+                        part == 13 ? GOLD : STONE_LIGHT, Math.round(a * reveal));
+            }
+            float top = ground + 0.18f + height;
+            cube(vc, mat, tmp, cx, top + 0.095f, cz, dx, dz, f, l, 0.065f,
+                    GOLD, Math.round(a * reveal));
+            box(vc, mat, tmp, cx, top + 0.19f, cz, dx, dz, f, l,
+                    0.028f, 0.065f, 0.028f, EARTH_LIGHT, Math.round(a * reveal));
+
+            float clothReveal = smooth((reveal - 0.32f) / 0.68f);
+            // Barre transversale qui porte réellement toute la largeur du tissu.
+            for (int bar = 0; bar < 9; bar++) {
+                float offset = bar * 0.105f;
+                box(vc, mat, tmp, cx, top - 0.025f, cz, dx, dz,
+                        f + tangentF * offset, l + tangentL * offset,
+                        0.060f, 0.032f, 0.032f, GOLD, Math.round(a * clothReveal));
+            }
+            // Tissu 7×7 sans cellule manquante ; bordure, croix et losange sont tissés dans la trame.
+            for (int row = 0; row < 7; row++) for (int col = 0; col < 7; col++) {
+                float offset = 0.045f + col * 0.105f;
+                float wave = Mth.sin(t * 9.0f + col * 0.62f + banner) * 0.022f * clothReveal;
+                float clothF = f + tangentF * offset + Mth.cos(angle) * wave;
+                float clothL = l + tangentL * offset + Mth.sin(angle) * wave;
+                float y = top - 0.13f - row * 0.105f;
+                boolean border = row == 0 || col == 0 || col == 6;
+                boolean cross = col == 3 || row == 3;
+                boolean diamond = Math.abs(col - 3) + Math.abs(row - 3) == 2;
+                int rgb = border ? GOLD : (cross || diamond) ? EARTH_LIGHT : BANNER;
                 rot(vc, mat, tmp, cx, y, cz, dx, dz, clothF, clothL,
-                        0.070f, 0.065f, 0.022f, angle, wave * 3.0f, wave * 2.0f,
-                        rgb, Math.round(a * reveal * (0.80f + u * 0.15f)));
+                        0.061f * clothReveal, 0.061f * clothReveal, 0.020f * clothReveal,
+                        angle, wave * 1.8f, wave * 1.2f, rgb, Math.round(a * clothReveal * 0.94f));
+            }
+            // Franges inférieures attachées à chaque colonne, plus aucun bas de tissu coupé.
+            for (int col = 0; col < 7; col++) {
+                float offset = 0.045f + col * 0.105f;
+                box(vc, mat, tmp, cx, top - 0.13f - 7 * 0.105f, cz, dx, dz,
+                        f + tangentF * offset, l + tangentL * offset,
+                        0.035f * clothReveal, 0.075f * clothReveal, 0.022f * clothReveal,
+                        col % 2 == 0 ? GOLD : EARTH, Math.round(a * clothReveal));
             }
         }
 
-        // Glaive de commandement central : lame claire, garde dorée et pommeau terrestre.
+        // Glaive central complet : lame à fuller, pointe, quillons, grip et pommeau.
         float swordRise = smooth((t - 0.25f) / 0.24f);
         float ground = terrain.at(0.0f, 0.0f);
         float swordBase = ground - 0.35f + swordRise * 0.45f;
-        for (int part = 0; part < 10; part++) {
-            float u = part / 9.0f;
-            float half = part > 7 ? 0.065f - (part - 7) * 0.016f : 0.065f;
-            cube(vc, mat, tmp, cx, swordBase + 0.40f + u * 1.05f, cz, dx, dz, 0.0f, 0.0f,
-                    Math.max(0.022f, half), part % 3 == 0 ? EARTH_LIGHT : STONE_LIGHT,
-                    Math.round(a * swordRise * 0.92f));
+        for (int part = 0; part < 14; part++) {
+            float u = part / 13.0f;
+            float half = part >= 11 ? Math.max(0.018f, 0.067f - (part - 10) * 0.016f) : 0.067f;
+            float y = swordBase + 0.43f + u * 1.16f;
+            box(vc, mat, tmp, cx, y, cz, dx, dz, 0.0f, 0.0f,
+                    half, 0.065f, 0.038f, part % 4 == 0 ? EARTH_LIGHT : STONE_LIGHT,
+                    Math.round(a * swordRise * 0.96f));
+            if (part < 11) {
+                box(vc, mat, tmp, cx, y, cz, dx, dz, 0.0f, -0.041f,
+                        0.018f, 0.060f, 0.010f, EARTH, Math.round(a * swordRise * 0.84f));
+            }
         }
-        for (int guard = -3; guard <= 3; guard++) {
-            cube(vc, mat, tmp, cx, swordBase + 0.37f, cz, dx, dz,
-                    0.0f, guard * 0.085f, 0.045f, GOLD, Math.round(a * swordRise));
+        for (int guard = -4; guard <= 4; guard++) {
+            box(vc, mat, tmp, cx, swordBase + 0.37f - Math.abs(guard) * 0.012f, cz, dx, dz,
+                    0.0f, guard * 0.075f, 0.048f, 0.042f, 0.048f,
+                    Math.abs(guard) == 4 ? EARTH_LIGHT : GOLD, Math.round(a * swordRise));
         }
-        for (int grip = 0; grip < 4; grip++) {
-            cube(vc, mat, tmp, cx, swordBase + 0.27f - grip * 0.10f, cz, dx, dz,
-                    0.0f, 0.0f, 0.042f, grip == 3 ? EARTH : SOIL_DARK, Math.round(a * swordRise));
+        for (int grip = 0; grip < 5; grip++) {
+            box(vc, mat, tmp, cx, swordBase + 0.27f - grip * 0.085f, cz, dx, dz,
+                    0.0f, 0.0f, 0.044f, 0.052f, 0.044f,
+                    grip % 2 == 0 ? SOIL_DARK : GOLD, Math.round(a * swordRise));
         }
+        cube(vc, mat, tmp, cx, swordBase - 0.18f, cz, dx, dz, 0.0f, 0.0f,
+                0.075f, EARTH, Math.round(a * swordRise));
+        cube(vc, mat, tmp, cx, swordBase - 0.25f, cz, dx, dz, 0.0f, 0.0f,
+                0.045f, GOLD, Math.round(a * swordRise));
 
         // Impulsion de ralliement : chevrons qui partent dans quatre directions à 0,44 de la piste.
         float rally = clamp((t - 0.44f) / 0.34f);
@@ -310,7 +464,7 @@ public final class EarthSignatureVfx {
             }
         }
 
-        // Motes de moral ascendants : ils apparaissent après le sceau et s'envolent en spirale.
+        // Motes de moral ascendants, déterministes et entièrement éteints à la fermeture.
         for (int i = 0; i < 64; i++) {
             float h = hash(salt, 3600 + i * 43);
             float cycle = fract(t * (0.65f + h * 0.45f) + i * 0.381966f);
@@ -337,6 +491,7 @@ public final class EarthSignatureVfx {
         groundLink(vc, mat, tmp, cx, cz, dx, dz, ax, az, bx, bz, 0.022f, rgb, alpha, terrain);
         groundLink(vc, mat, tmp, cx, cz, dx, dz, bx, bz, cx2, cz2, 0.022f, rgb, alpha, terrain);
         groundLink(vc, mat, tmp, cx, cz, dx, dz, cx2, cz2, dx2, dz2, 0.022f, rgb, alpha, terrain);
+        groundLink(vc, mat, tmp, cx, cz, dx, dz, dx2, dz2, ax, az, 0.022f, rgb, alpha, terrain);
     }
 
     private static void groundLink(VertexConsumer vc, Matrix4f mat, Vector3f tmp,

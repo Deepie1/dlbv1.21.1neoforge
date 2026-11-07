@@ -140,13 +140,16 @@ public final class DlbVfxCommand {
     private static final Map<UUID, DummyTestState> DUMMY_TESTS = new ConcurrentHashMap<>();
     /** 22 ticks maximum + écho du TWIN_ECHO à +4, avec marge de sécurité. */
     private static final int DUMMY_IMPACT_TICK = 30;
-    /** Durée par défaut ; les trois chorégraphies Wood possèdent un créneau complet dédié. */
+    /** Durée par défaut ; les longues chorégraphies Wood/Earth possèdent un créneau complet dédié. */
     private static final int DUMMY_NEXT_EFFECT_TICK = 62;
 
     private static int dummyNextEffectTick(WeaponVisualEffectId fx) {
         if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) return 114; // impact 30 + 80 + marge
         if (fx == WeaponVisualEffectId.THORN_MAW_ROOT) return 130;  // impact 30 + 96 + marge
         if (fx == WeaponVisualEffectId.VERDANT_SAP_BLOOM) return 130; // impact 30 + 96 + marge
+        if (fx == WeaponVisualEffectId.SEISMIC_TECTONIC) return 150; // impact 30 + 112 + marge
+        if (fx == WeaponVisualEffectId.TITAN_GRASP) return 178;      // impact 30 + 140 + marge
+        if (fx == WeaponVisualEffectId.WARLORD_RALLY_SIGIL) return 158; // impact 30 + 120 + marge
         return DUMMY_NEXT_EFFECT_TICK;
     }
 

@@ -111,7 +111,7 @@ public final class WeaponVfxServerListener {
     /** T349-VFX-FREQUENCY : cooldown réel et aléatoire par (attaquant, effet). */
     private static final Map<String, Long> EFFECT_COOLDOWN = new ConcurrentHashMap<>();
     /** Emprises Wood : immobilisation seule ou stun complet, expiration et état NoAi à restaurer. */
-    private static final Map<Integer, WoodHold> WOOD_HOLDS = new ConcurrentHashMap<>();
+    private static final Map<Integer, MovementHold> MOVEMENT_HOLDS = new ConcurrentHashMap<>();
     /** Soul Fire : montée, maintien au centre de la lune, descente et restauration de l'IA. */
     private static final Map<Integer, SoulHold> SOUL_HOLDS = new ConcurrentHashMap<>();
     /** Etat NoAi vanilla avant la premiere emprise concurrente, restaure apres la derniere. */
@@ -127,7 +127,8 @@ public final class WeaponVfxServerListener {
     private static final int METEOR_IMPACT_TICKS = 30;
     private static final double METEOR_FIRE_RADIUS = 4.0;
 
-    private record WoodHold(long expires, double x, double y, double z, boolean previousNoAi, boolean fullStun) { }
+    private record MovementHold(long expires, double x, double y, double z, boolean previousNoAi,
+                                  boolean fullStun, double releaseY) { }
     private record SoulHold(long expires, long riseStart, long riseEnd, long descendStart,
                             double x, double baseY, double targetY, double z, boolean previousNoAi,
                             int attackerId, float weaponDamage) { }
@@ -173,7 +174,7 @@ public final class WeaponVfxServerListener {
             WeaponVisualEffectId.PLAGUE_NOVA
     };
     private static final WeaponVisualEffectId[] ANIM_EARTH = {
-            WeaponVisualEffectId.SEISMIC_TECTONIC, WeaponVisualEffectId.SANDSTORM_DUNE,
+            WeaponVisualEffectId.SEISMIC_TECTONIC, WeaponVisualEffectId.TITAN_GRASP,
             WeaponVisualEffectId.WARLORD_RALLY_SIGIL
     };
 
@@ -309,6 +310,7 @@ public final class WeaponVfxServerListener {
         if (livingTarget != null) {
             applyFireGameplay(attacker, livingTarget, fx, sizeScaleOf(target));
             applyWoodGameplay(attacker, livingTarget, fx, sizeScaleOf(target), estimatedWeaponDamage(attacker));
+            applyEarthGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker));
             applyPoisonGameplay(attacker, livingTarget, fx);
         }
     }
@@ -450,6 +452,7 @@ public final class WeaponVfxServerListener {
             LivingEntity comboAttacker = sl.getEntity(attackerId) instanceof LivingEntity living ? living : null;
             applyFireGameplay(comboAttacker, target, sig, sizeScale, weaponDamage);
             applyWoodGameplay(comboAttacker, target, sig, sizeScale, weaponDamage);
+            applyEarthGameplay(comboAttacker, target, sig, weaponDamage);
             applyPoisonGameplay(comboAttacker, target, sig);
             // Étincelles de la famille, une par élément : le mélange de couleurs se voit tout de suite.
             WeaponVfxSubtle.Subtle accent = WeaponVfxSubtle.pick(el, sl.random.nextLong());
@@ -1150,6 +1153,38 @@ public final class WeaponVfxServerListener {
         sl.playSound(null, x, y, z, SoundEvents.SLIME_SQUISH, SoundSource.PLAYERS, 0.34f, 1.42f);
     }
 
+    /** SEISMIC : enfouissement temporaire, faibles dégâts rythmés puis restitution et Lenteur III. */
+    private static void applyEarthGameplay(LivingEntity attacker, LivingEntity target,
+                                           WeaponVisualEffectId fx, float weaponDamage) {
+        if (fx != WeaponVisualEffectId.SEISMIC_TECTONIC || !(target.level() instanceof ServerLevel sl)) return;
+        long gameNow = sl.getGameTime();
+        long holdEndGame = gameNow + 112;
+        int scheduleNow = TestProcedure.currentTick(sl);
+        int attackerId = attacker == null ? -1 : attacker.getId();
+        double originalY = target.getY();
+        applyMovementHold(target, holdEndGame, true, originalY - 1.0, originalY);
+
+        // Dix-huit petits pulses sur 5,6 s, bornés pour rester faibles même avec une grosse arme.
+        float pulseDamage = net.minecraft.util.Mth.clamp(Math.max(0.0f, weaponDamage) * 0.030f, 0.06f, 0.30f);
+        for (int delay = 6; delay < 112; delay += 6) {
+            TestProcedure.schedule(sl, scheduleNow + delay, () -> {
+                if (!target.isAlive() || target.level() != sl) return;
+                MovementHold hold = MOVEMENT_HOLDS.get(target.getId());
+                if (hold == null || hold.expires() != holdEndGame) return;
+                hurtWithCapturedWeapon(sl, attackerId, target, pulseDamage);
+            });
+        }
+        TestProcedure.schedule(sl, scheduleNow + 112, () -> {
+            if (!target.isAlive() || target.level() != sl) return;
+            MovementHold hold = MOVEMENT_HOLDS.get(target.getId());
+            // Une autre emprise a remplacé Seismic : ne pas la libérer ni appliquer son aftermath.
+            if (hold != null && hold.expires() != holdEndGame) return;
+            if (hold != null) releaseMovementHold(target, holdEndGame);
+            target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                    600, 2, false, true, true)); // 30 s, amplifier 2 = Lenteur III.
+        });
+    }
+
     /** ZEPHYR/VERDANT = immobilisation sans bloquer les attaques ; THORN = stun complet 3 s. */
     private static void applyWoodGameplay(LivingEntity attacker, LivingEntity target,
                                           WeaponVisualEffectId fx) {
@@ -1169,10 +1204,10 @@ public final class WeaponVfxServerListener {
         if (fx == WeaponVisualEffectId.THORN_MAW_ROOT) {
             // Le centre visuel du nœud est cy + 0,48 * échelle : on y place le centre du corps.
             double liftedY = target.getY() + 0.48 * net.minecraft.util.Mth.clamp(visualScale, 0.30f, 4.0f);
-            applyWoodHold(target, gameNow + 60, true, liftedY);
+            applyMovementHold(target, gameNow + 60, true, liftedY);
             for (int delay = 7; delay <= 56; delay += 7) {
                 TestProcedure.schedule(sl, scheduleNow + delay, () -> {
-                    WoodHold hold = WOOD_HOLDS.get(target.getId());
+                    MovementHold hold = MOVEMENT_HOLDS.get(target.getId());
                     if (!target.isAlive() || target.level() != sl || hold == null || !hold.fullStun()) return;
                     float randomPart = 0.0010f + sl.random.nextFloat() * 0.0005f;
                     hurtWithCapturedWeapon(sl, attackerId, target, weaponDamage * randomPart);
@@ -1185,7 +1220,7 @@ public final class WeaponVfxServerListener {
         }
         if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) {
             // L'arbre dure 80 ticks : la cible reste centrée et immobile du début à la fin.
-            applyWoodHold(target, gameNow + 80, false);
+            applyMovementHold(target, gameNow + 80, false);
             sl.playSound(null, x, y, z, SoundEvents.WARDEN_EMERGE,
                     SoundSource.PLAYERS, 0.40f, 0.75f);
             // Zephyr : trois lances indépendantes, chacune avec SON départ et SON impact.
@@ -1213,7 +1248,7 @@ public final class WeaponVfxServerListener {
         long holdEndGame = gameNow + 96;
         int holdEndSchedule = scheduleNow + 96;
         // Verdant dure 96 ticks : ne pas laisser le mob libre pendant la croissance (0..63).
-        applyWoodHold(target, holdEndGame, false);
+        applyMovementHold(target, holdEndGame, false);
         sl.playSound(null, x, y, z, SoundEvents.WARDEN_EMERGE,
                 SoundSource.PLAYERS, 0.40f, 0.75f);
         sl.playSound(null, x, y, z, SoundEvents.BONE_MEAL_USE, SoundSource.PLAYERS, 0.72f, 0.82f);
@@ -1224,24 +1259,29 @@ public final class WeaponVfxServerListener {
             sl.playSound(null, x, y, z,
                     SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.70f, 1.35f);
         });
-        TestProcedure.schedule(sl, holdEndSchedule, () -> releaseWoodHold(target, holdEndGame));
+        TestProcedure.schedule(sl, holdEndSchedule, () -> releaseMovementHold(target, holdEndGame));
     }
 
-    private static void applyWoodHold(LivingEntity target, long expires, boolean fullStun) {
-        applyWoodHold(target, expires, fullStun, Double.NaN);
+    private static void applyMovementHold(LivingEntity target, long expires, boolean fullStun) {
+        applyMovementHold(target, expires, fullStun, Double.NaN);
     }
 
-    private static void applyWoodHold(LivingEntity target, long expires, boolean fullStun,
-                                      double requestedY) {
+    private static void applyMovementHold(LivingEntity target, long expires, boolean fullStun,
+                                          double requestedY) {
+        applyMovementHold(target, expires, fullStun, requestedY, Double.NaN);
+    }
+
+    private static void applyMovementHold(LivingEntity target, long expires, boolean fullStun,
+                                          double requestedY, double releaseY) {
         rememberSignatureAi(target);
-        WoodHold previous = WOOD_HOLDS.get(target.getId());
+        MovementHold previous = MOVEMENT_HOLDS.get(target.getId());
         boolean previousNoAi = previous != null ? previous.previousNoAi()
                 : target instanceof Mob mob && mob.isNoAi();
         double x = previous != null ? previous.x() : target.getX();
         double y = Double.isNaN(requestedY)
                 ? (previous != null ? previous.y() : target.getY()) : requestedY;
         double z = previous != null ? previous.z() : target.getZ();
-        WOOD_HOLDS.put(target.getId(), new WoodHold(expires, x, y, z, previousNoAi, fullStun));
+        MOVEMENT_HOLDS.put(target.getId(), new MovementHold(expires, x, y, z, previousNoAi, fullStun, releaseY));
         if (fullStun) {
             if (target instanceof Mob mob) {
                 mob.setNoAi(true);
@@ -1267,7 +1307,7 @@ public final class WeaponVfxServerListener {
     private static void refreshSignatureAi(LivingEntity target) {
         if (!(target instanceof Mob mob)) return;
         int id = target.getId();
-        WoodHold wood = WOOD_HOLDS.get(id);
+        MovementHold wood = MOVEMENT_HOLDS.get(id);
         boolean soul = SOUL_HOLDS.containsKey(id);
         if (wood == null && !soul) {
             Boolean baseline = SIGNATURE_BASELINE_NO_AI.remove(id);
@@ -1279,11 +1319,13 @@ public final class WeaponVfxServerListener {
         mob.setNoAi(baseline || fullyDisabled);
     }
 
-    private static void releaseWoodHold(LivingEntity target, long expectedExpiry) {
-        WoodHold hold = WOOD_HOLDS.get(target.getId());
+    private static void releaseMovementHold(LivingEntity target, long expectedExpiry) {
+        MovementHold hold = MOVEMENT_HOLDS.get(target.getId());
         if (hold == null || hold.expires() != expectedExpiry) return;
-        WOOD_HOLDS.remove(target.getId());
+        MOVEMENT_HOLDS.remove(target.getId());
         refreshSignatureAi(target);
+        // Seismic restitue son point d'origine ; les autres emprises conservent leur comportement.
+        if (!Double.isNaN(hold.releaseY())) target.teleportTo(hold.x(), hold.releaseY(), hold.z());
         // La gravité vanilla reprend immédiatement ; aucune vélocité résiduelle ne maintient le mob.
         target.setDeltaMovement(Vec3.ZERO);
         target.fallDistance = 0.0f;
@@ -1293,7 +1335,7 @@ public final class WeaponVfxServerListener {
     private static boolean isSignatureFullyStunned(Entity entity) {
         if (!(entity instanceof LivingEntity living)) return false;
         long now = living.level().getGameTime();
-        WoodHold wood = WOOD_HOLDS.get(living.getId());
+        MovementHold wood = MOVEMENT_HOLDS.get(living.getId());
         SoulHold soul = SOUL_HOLDS.get(living.getId());
         return (wood != null && wood.fullStun() && now < wood.expires())
                 || (soul != null && now < soul.expires());
@@ -1305,11 +1347,11 @@ public final class WeaponVfxServerListener {
         tickSignaturePoison(target);
         tickSoulBurn(target);
         tickSoulHold(target);
-        WoodHold hold = WOOD_HOLDS.get(target.getId());
+        MovementHold hold = MOVEMENT_HOLDS.get(target.getId());
         if (hold == null) return;
         long now = target.level().getGameTime();
         if (!target.isAlive() || now >= hold.expires()) {
-            releaseWoodHold(target, hold.expires());
+            releaseMovementHold(target, hold.expires());
             return;
         }
         if (hold.fullStun()) {
@@ -1418,6 +1460,7 @@ public final class WeaponVfxServerListener {
             broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, 6,
                     tx, ty, tz, ax, ay, az, 1 << fx.element.ordinal(), bigScale);
             applyWoodGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
+            applyEarthGameplay(attacker, target, fx, capturedWeaponDamage);
             applyFireGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyPoisonGameplay(attacker, target, fx);
             return;
@@ -1471,6 +1514,7 @@ public final class WeaponVfxServerListener {
             broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, layer.level(),
                     tx, ty, tz, ax, ay, az, palette, bigScale);
             applyWoodGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
+            applyEarthGameplay(attacker, target, fx, capturedWeaponDamage);
             applyFireGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyPoisonGameplay(attacker, target, fx);
         }
@@ -1614,6 +1658,7 @@ public final class WeaponVfxServerListener {
                         tx, ty, tz, ax, ay, az, palette, sizeScaleOf(target));
                 applyFireGameplay(attacker, target, fx, sizeScaleOf(target), Math.max(0.0f, event.getAmount()));
                 applyWoodGameplay(attacker, target, fx, sizeScaleOf(target), Math.max(0.0f, event.getAmount()));
+                applyEarthGameplay(attacker, target, fx, Math.max(0.0f, event.getAmount()));
                 applyPoisonGameplay(attacker, target, fx);
             }
         }

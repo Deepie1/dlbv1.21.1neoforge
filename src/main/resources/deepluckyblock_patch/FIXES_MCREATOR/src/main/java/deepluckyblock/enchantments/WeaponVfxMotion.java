@@ -147,6 +147,7 @@ public final class WeaponVfxMotion {
 
             // --- VII. T352 : 3es animations ------------------------------------------------
             case THORN_MAW_ROOT -> p(SHAPE_MAW, 5, 0.00f, 0.55f, 1.25f, 0.060f);
+            case TITAN_GRASP -> p(SHAPE_MAW, 5, 0.00f, 0.20f, 1.35f, 0.075f);
             case SANDSTORM_DUNE -> p(SHAPE_DUNE, 5, 1.90f, 0.85f, 1.40f, 0.130f);
             case ECLIPSE_VEIL -> p(SHAPE_ECLIPSE, 1, -0.35f, 0.30f, 1.20f, 0.020f);
             case NULL_RIFT_FISSURE -> p(SHAPE_RIFT, 1, 0.00f, 0.00f, 1.15f, 0.045f);
