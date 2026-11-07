@@ -1784,14 +1784,37 @@ public final class WeaponWorldVfxManager {
             default -> 0.038f;
         };
 
+        // La graine est propre au SWING : six silhouettes franches + variations continues. Elle ne
+        // change pas pendant les huit ticks, donc la lame ne sautille pas entre plusieurs formes.
+        int randomSalt = (int) (inst.seed ^ (inst.seed >>> 32) ^ (inst.seed >>> 17));
+        int style = Math.floorMod(randomSalt, 6);
+        radius *= 0.82f + 0.40f * pixelHash(0x5A17, randomSalt);
+        voxelHalf *= 0.78f + 0.55f * pixelHash(0x71C3, randomSalt);
+        sweepDeg *= 0.88f + 0.24f * pixelHash(0x39B1, randomSalt);
+        float randomTilt = inst.tiltRad
+                + (pixelHash(0x11D7, randomSalt) - 0.5f) * 0.70f;
+        switch (style) {
+            case 1 -> { radius *= 1.20f; voxelHalf *= 0.60f; sweepDeg *= 1.10f; } // estoc long et fin
+            case 2 -> { radius *= 0.88f; voxelHalf *= 1.75f; sweepDeg *= 0.88f; } // cleaver massif
+            case 3 -> { radius *= 1.06f; voxelHalf *= 0.82f; }                     // segments espacés
+            case 4 -> { radius *= 1.08f; voxelHalf *= 0.92f; }                     // double lame soudée
+            case 5 -> { radius *= 1.26f; voxelHalf *= 1.20f; sweepDeg *= 0.72f; } // croissant court
+            default -> { }                                                          // arc continu classique
+        }
+
         int alpha = Math.round(238.0f * (1.0f - t * t));
-        emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, inst.tiltRad,
-                radius, voxelHalf, sweepDeg, t, inst.effect.primaryRgb, inst.effect.secondaryRgb, alpha);
+        emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, randomTilt,
+                radius, voxelHalf, sweepDeg, t, inst.effect.primaryRgb, inst.effect.secondaryRgb, alpha, style);
+        if (style == 4) {
+            emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, randomTilt + 0.08f,
+                    radius * 0.86f, voxelHalf * 0.62f, sweepDeg * 0.96f, t,
+                    inst.effect.secondaryRgb, inst.effect.primaryRgb, Math.round(alpha * 0.82f), 0);
+        }
 
         if (inst.effect == WeaponVisualEffectId.SUPREME_PRISM_EDGE) {
-            emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, -inst.tiltRad * 0.85f,
+            emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, -randomTilt * 0.85f,
                     radius * 0.92f, voxelHalf * 0.85f, sweepDeg * 0.88f, t,
-                    inst.effect.secondaryRgb, 0xFFFFFF, Math.round(alpha * 0.85f));
+                    inst.effect.secondaryRgb, 0xFFFFFF, Math.round(alpha * 0.85f), style);
         }
     }
 
@@ -1799,7 +1822,7 @@ public final class WeaponWorldVfxManager {
                                           float cx, float cy, float cz,
                                           float yawDeg, float pitchDeg, float tiltRad,
                                           float radius, float baseHalfSize, float sweepDeg, float progress,
-                                          int coreRgb, int trailRgb, int peakAlpha) {
+                                          int coreRgb, int trailRgb, int peakAlpha, int connectionStyle) {
         if (peakAlpha <= 6) return;
         float yawRad = -yawDeg * Mth.DEG_TO_RAD;
         float pitchRad = pitchDeg * Mth.DEG_TO_RAD;
@@ -1820,7 +1843,16 @@ public final class WeaponWorldVfxManager {
         float sy = uy0 * sinT;
         float sz = rz0 * cosT + uz0 * sinT;
 
-        int pixelSteps = Math.max(14, Math.round(sweepDeg / 6.5f));
+        float degreesPerVoxel = switch (connectionStyle) {
+            case 0, 4 -> 3.4f;  // mailles rapprochées + liaisons réelles entre elles
+            case 1 -> 3.0f;     // ligne fine mais continue
+            case 2 -> 4.2f;     // gros voxels qui se chevauchent
+            case 3 -> 8.0f;     // chaîne volontairement segmentée
+            default -> 4.8f;
+        };
+        int pixelSteps = Math.max(14, Math.round(sweepDeg / degreesPerVoxel));
+        boolean hasPrevious = false;
+        float previousX = 0.0f, previousY = 0.0f, previousZ = 0.0f;
         float halfArc = (sweepDeg * 0.5f) * Mth.DEG_TO_RAD;
         float headU = Mth.clamp(progress * 1.35f, 0.0f, 1.0f);
 
@@ -1830,6 +1862,7 @@ public final class WeaponWorldVfxManager {
 
             float distBehind = headU - u;
             if (distBehind > 0.68f) continue;
+            if (connectionStyle == 3 && i % 4 == 1 && distBehind > 0.08f) continue;
 
             float ang = (u - 0.5f) * 2.0f * halfArc;
             float ca = Mth.cos(ang);
@@ -1839,9 +1872,10 @@ public final class WeaponWorldVfxManager {
             float dirZ = fz * ca + sz * sa;
 
             float taper = Mth.sin(u * (float) Math.PI);
-            float px = quantize(cx + dirX * radius, 0.0625f);
-            float py = quantize(cy + dirY * radius, 0.0625f);
-            float pz = quantize(cz + dirZ * radius, 0.0625f);
+            float shapedRadius = connectionStyle == 5 ? radius * (0.82f + 0.28f * taper) : radius;
+            float px = quantize(cx + dirX * shapedRadius, 0.0625f);
+            float py = quantize(cy + dirY * shapedRadius, 0.0625f);
+            float pz = quantize(cz + dirZ * shapedRadius, 0.0625f);
 
             boolean isHead = Math.abs(distBehind) < 0.12f;
             float hs = baseHalfSize * (0.55f + 0.75f * taper) * (isHead ? 1.25f : 1.0f);
@@ -1849,13 +1883,24 @@ public final class WeaponWorldVfxManager {
             int a = Math.round(peakAlpha * Math.max(0.2f, 1.0f - Math.max(0.0f, distBehind) * 1.35f));
 
             emitVoxelCube(vc, mat, tmp, px, py, pz, hs, hs, hs, rgb, a);
-            // Épaisseur blocky doublée d'un mini-cube intérieur décalé d'un pixel 1/16
-            if (taper > 0.45f) {
-                float pxIn = quantize(cx + dirX * (radius - baseHalfSize * 2.2f), 0.0625f);
-                float pyIn = quantize(cy + dirY * (radius - baseHalfSize * 2.2f), 0.0625f);
-                float pzIn = quantize(cz + dirZ * (radius - baseHalfSize * 2.2f), 0.0625f);
-                emitVoxelCube(vc, mat, tmp, pxIn, pyIn, pzIn, hs * 0.78f, hs * 0.78f, hs * 0.78f, trailRgb, Math.round(a * 0.8f));
+            if ((connectionStyle == 0 || connectionStyle == 4) && hasPrevious) {
+                emitSteppedVoxelLine(vc, mat, tmp, previousX, previousY, previousZ, px, py, pz,
+                        hs * 0.48f, coreRgb, trailRgb, Math.round(a * 0.72f));
             }
+            // Une estoc n'a qu'une arête ; le cleaver en a trois, avec une section réellement massive.
+            int radialLayers = connectionStyle == 2 ? 3 : (connectionStyle == 1 ? 1 : 2);
+            for (int layer = 1; layer < radialLayers; layer++) {
+                if (taper < 0.20f) continue;
+                float inset = baseHalfSize * (1.65f + 0.55f * (layer - 1));
+                float layerHalf = hs * (layer == 1 ? 0.78f : 0.64f);
+                float pxIn = quantize(cx + dirX * (shapedRadius - inset), 0.0625f);
+                float pyIn = quantize(cy + dirY * (shapedRadius - inset), 0.0625f);
+                float pzIn = quantize(cz + dirZ * (shapedRadius - inset), 0.0625f);
+                emitVoxelCube(vc, mat, tmp, pxIn, pyIn, pzIn,
+                        layerHalf, layerHalf, layerHalf, trailRgb, Math.round(a * (0.80f - layer * 0.10f)));
+            }
+            previousX = px; previousY = py; previousZ = pz;
+            hasPrevious = true;
         }
     }
 

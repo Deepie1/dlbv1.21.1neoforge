@@ -12,6 +12,7 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.Enemy;
@@ -926,6 +927,12 @@ public final class WeaponVfxServerListener {
             });
         }
 
+        for (int corrosionOffset = 20; corrosionOffset <= 100; corrosionOffset += 20) {
+            final int elapsed = corrosionOffset;
+            TestProcedure.schedule(sl, now + elapsed,
+                    () -> corrodeMiasmaHost(sl, chain, generation, host, elapsed));
+        }
+
         TestProcedure.schedule(sl, now + 100, () -> {
             if (isCurrentMiasmaHost(chain, generation, host)) broadcastMiasmaChain(sl, chain, host, true);
         });
@@ -943,6 +950,27 @@ public final class WeaponVfxServerListener {
         });
         TestProcedure.schedule(sl, now + MIASMA_HOST_TICKS,
                 () -> finishMiasmaChain(sl, chain, generation));
+    }
+
+    /** Usure réelle des quatre pièces ; après 2 s, très faible dégât magique hors armure. */
+    private static void corrodeMiasmaHost(ServerLevel sl, MiasmaChain chain, int generation,
+                                          LivingEntity host, int elapsedTicks) {
+        if (!isCurrentMiasmaHost(chain, generation, host) || !host.isAlive() || host.level() != sl) return;
+        for (EquipmentSlot slot : new EquipmentSlot[]{EquipmentSlot.HEAD, EquipmentSlot.CHEST,
+                EquipmentSlot.LEGS, EquipmentSlot.FEET}) {
+            ItemStack armor = host.getItemBySlot(slot);
+            if (!armor.isEmpty() && armor.isDamageableItem()) {
+                armor.hurtAndBreak(1, sl, host, item -> { });
+            }
+        }
+        if (elapsedTicks < 40) return;
+        INTERNAL_SIGNATURE_DAMAGE.add(host.getId());
+        try {
+            host.invulnerableTime = 0;
+            if (host.hurt(host.damageSources().magic(), 0.05f)) host.invulnerableTime = 0;
+        } finally {
+            INTERNAL_SIGNATURE_DAMAGE.remove(host.getId());
+        }
     }
 
     private static boolean isCurrentMiasmaHost(MiasmaChain chain, int generation, LivingEntity host) {

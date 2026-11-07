@@ -98,35 +98,29 @@ public final class PoisonSignatureVfx {
         // Crâne de HellHound et mandibule articulée : toutes les dents suivent la morsure.
         renderHellhoundMaw(vc, mat, tmp, cx, cy, cz, dx, dz,
                 mawF, gape, spectral, alpha, salt);
-        for (int side = 0; side < 2; side++) {
-            float sign = side == 0 ? -1.0f : 1.0f;
-            for (int trail = 0; trail < 24; trail++) {
-                float u = trail / 23.0f;
-                float f = Mth.lerp(u, -2.05f, mawF + 0.18f);
-                float y = cy + 0.20f - 0.42f * u + 0.035f * Mth.sin(u * 9.0f + t * 18.0f);
-                float l = sign * (0.36f - 0.10f * u);
-                cube(vc, mat, tmp, cx, y, cz, dx, dz, f, l,
-                        0.018f + 0.022f * u, u > 0.80f ? FANG_TIP : ACID,
-                        Math.round(alpha * spectral * (0.18f + 0.78f * u)));
-            }
-        }
-
-        // Ronces enroulées autour du bras et de l'arme pendant la poussée.
-        for (int vine = 0; vine < 2; vine++) {
-            float previousF = -1.90f, previousY = cy, previousL = 0.0f;
-            for (int k = 1; k <= 20; k++) {
-                float u = k / 20.0f;
-                float f = Mth.lerp(u, -1.90f, -0.34f);
-                float angle = u * 10.0f + vine * 3.14159f;
-                float y = cy + 0.19f * Mth.sin(angle);
-                float l = 0.19f * Mth.cos(angle);
-                link(vc, mat, tmp, cx, cy, cz, dx, dz, previousF, previousY, previousL, f, y, l,
-                        0.030f, STEM, briar, Math.round(alpha * spectral * 0.94f));
-                if (k % 4 == 0) {
-                    cube(vc, mat, tmp, cx, y + 0.055f, cz, dx, dz, f + 0.04f, l,
-                            0.028f, ACID, Math.round(alpha * spectral));
-                }
-                previousF = f; previousY = y; previousL = l;
+        // Colonne vertébrale : elle POUSSE vers l'arrière depuis le quart postérieur du crâne.
+        // Aucun rail fixe ne traverse le museau : les segments lointains ne sont révélés qu'après
+        // ceux qui sont attachés à la tête, et toute la structure suit mawF sans changer la morsure.
+        float spineGrowth = smooth((t - 0.055f) / 0.30f);
+        for (int vertebra = 0; vertebra < 24; vertebra++) {
+            float u = vertebra / 23.0f;
+            float reveal = smooth((spineGrowth - u * 0.82f) / 0.18f);
+            if (reveal <= 0.0f) continue;
+            float f = mawF - 0.78f - 1.72f * u;
+            float y = cy + 0.12f - 0.24f * u + 0.055f * Mth.sin(u * 10.0f + t * 8.0f);
+            float l = 0.065f * Mth.sin(u * 11.0f + t * 4.0f);
+            float half = 0.020f + 0.018f * u;
+            int rgb = vertebra % 4 == 0 ? ACID : color(STEM, briar, 0.35f + 0.65f * u);
+            cube(vc, mat, tmp, cx, y, cz, dx, dz, f, l, half, rgb,
+                    Math.round(alpha * spectral * reveal * (0.48f + 0.52f * u)));
+            // Côtes courtes et alternées : une colonne organique, pas deux rails ADN continus.
+            if (vertebra % 3 == 0) {
+                float sign = (vertebra & 1) == 0 ? -1.0f : 1.0f;
+                float rib = 0.13f + 0.07f * u;
+                link(vc, mat, tmp, cx, cy, cz, dx, dz, f, y, l,
+                        f - 0.045f, y + 0.025f, l + sign * rib,
+                        0.014f + 0.006f * u, STEM, ACID,
+                        Math.round(alpha * spectral * reveal * 0.74f));
             }
         }
 
