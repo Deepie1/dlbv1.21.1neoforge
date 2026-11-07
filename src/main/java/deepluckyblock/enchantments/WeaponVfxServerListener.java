@@ -63,6 +63,33 @@ public final class WeaponVfxServerListener {
     public static final int KIND_METEOR_TRACK = 4;
     public static final int KIND_MIASMA_DEFENSE = 5;
     public static final int KIND_PLAGUE_CONTAGION = 6;
+    public static final int KIND_MIASMA_CHAIN = 7;
+
+    private static final int MIASMA_HOST_TICKS = 120;
+    private static final int MIASMA_SWAP_TICKS = 60;
+    private static final int MIASMA_MAX_HOSTS = 5;
+    private static final int MIASMA_MAX_TOTAL_TICKS = 600;
+    private static int NEXT_MIASMA_CHAIN_ID = 1;
+
+    /** Une brume serveur unique, avec hôte courant, historique et génération annulant les anciennes tâches. */
+    private static final class MiasmaChain {
+        final int id;
+        final int casterId;
+        final int startedAt;
+        final float pulseDamage;
+        final Set<Integer> visited = new HashSet<>();
+        LivingEntity host;
+        int generation;
+        long shieldExpiry;
+        boolean active = true;
+
+        MiasmaChain(int id, int casterId, int startedAt, float pulseDamage) {
+            this.id = id;
+            this.casterId = casterId;
+            this.startedAt = startedAt;
+            this.pulseDamage = pulseDamage;
+        }
+    }
 
     private static final Map<Integer, Long> LAST_ATTACKER_HIT_TICK = new ConcurrentHashMap<>();
     private static final Map<Integer, Long> LAST_PROJECTILE_HIT_TICK = new ConcurrentHashMap<>();
@@ -170,6 +197,14 @@ public final class WeaponVfxServerListener {
         } finally {
             INTERNAL_SIGNATURE_DAMAGE.remove(target.getId());
         }
+    }
+
+    /** Les pulses Poison ne doivent pas masquer le tick vanilla de poison qui suit quelques ticks après. */
+    private static boolean hurtPoisonPulse(ServerLevel sl, int attackerId,
+                                           LivingEntity target, float amount) {
+        boolean hurt = hurtWithCapturedWeapon(sl, attackerId, target, amount);
+        if (hurt && target.isAlive()) target.invulnerableTime = 0;
+        return hurt;
     }
 
     private static boolean signatureContact(LivingEntity entity, double x, double y, double z,
@@ -731,8 +766,7 @@ public final class WeaponVfxServerListener {
                 && fx != WeaponVisualEffectId.MIASMA_SHROUD
                 && fx != WeaponVisualEffectId.PLAGUE_NOVA) return;
         int now = TestProcedure.currentTick(sl);
-        long gameNow = sl.getGameTime();
-        // Les trois signatures sont des effets sur le MOB TOUCHÉ, jamais sur le joueur.
+        // Les signatures sont centrées sur la cible touchée, pas sur l'attaquant.
         LivingEntity bearer = target;
         LivingEntity caster = attacker;
         int casterId = attacker == null ? -1 : attacker.getId();
@@ -744,7 +778,7 @@ public final class WeaponVfxServerListener {
                     SoundEvents.SLIME_SQUISH, SoundSource.PLAYERS, 0.52f, 0.70f));
             TestProcedure.schedule(sl, now + 26, () -> {
                 if (target.isAlive() && target.level() == sl) {
-                    target.addEffect(new MobEffectInstance(MobEffects.POISON, 110, 0, true, false));
+                    applyVisiblePoison(sl, casterId, target, 110);
                 }
                 sl.playSound(null, x, y, z, SoundEvents.SPIDER_AMBIENT,
                         SoundSource.PLAYERS, 0.52f, 0.64f);
@@ -765,28 +799,16 @@ public final class WeaponVfxServerListener {
         }
 
         if (fx == WeaponVisualEffectId.MIASMA_SHROUD) {
-            MIASMA_SHIELDS.put(bearer.getId(), gameNow + 122);
-            if (MIASMA_SHIELDS.size() > 256) MIASMA_SHIELDS.clear();
-            double x = bearer.getX(), y = bearer.getY() + bearer.getBbHeight() * 0.50, z = bearer.getZ();
-            sl.playSound(null, x, y, z, SoundEvents.WITCH_DRINK, SoundSource.PLAYERS, 0.52f, 0.54f);
-            TestProcedure.schedule(sl, now + 10, () -> sl.playSound(null, x, y, z,
-                    SoundEvents.SLIME_SQUISH, SoundSource.PLAYERS, 0.38f, 0.58f));
-            int[] pulses = {20, 48, 76, 102};
-            for (int pulse = 0; pulse < pulses.length; pulse++) {
-                float pitch = 0.56f + pulse * 0.11f;
-                TestProcedure.schedule(sl, now + pulses[pulse], () -> {
-                    if (!bearer.isAlive() || bearer.level() != sl) return;
-                    double bx = bearer.getX(), by = bearer.getY() + bearer.getBbHeight() * 0.50, bz = bearer.getZ();
-                    poisonNear(sl, target, caster, bx, by, bz, 2.65, 52);
-                    sl.playSound(null, bx, by, bz, SoundEvents.SLIME_SQUISH,
-                            SoundSource.PLAYERS, 0.30f, pitch);
-                });
-            }
-            TestProcedure.schedule(sl, now + 122, () -> {
-                MIASMA_SHIELDS.remove(bearer.getId(), gameNow + 122);
-                sl.playSound(null, bearer.getX(), bearer.getY(), bearer.getZ(),
-                        SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.54f, 0.46f);
-            });
+            int chainId = NEXT_MIASMA_CHAIN_ID++;
+            if (NEXT_MIASMA_CHAIN_ID <= 0 || NEXT_MIASMA_CHAIN_ID > 1_000_000) NEXT_MIASMA_CHAIN_ID = 1;
+            float pulseDamage = Math.max(0.25f, estimatedWeaponDamage(attacker) * 0.12f);
+            MiasmaChain chain = new MiasmaChain(chainId, casterId, now, pulseDamage);
+            chain.visited.add(target.getId());
+            sl.playSound(null, target.getX(), target.getY() + target.getBbHeight() * 0.50, target.getZ(),
+                    SoundEvents.WITCH_DRINK, SoundSource.PLAYERS, 0.52f, 0.54f);
+            beginMiasmaHost(sl, chain, target, now);
+            TestProcedure.schedule(sl, now + MIASMA_MAX_TOTAL_TICKS,
+                    () -> finishMiasmaChain(sl, chain, chain.generation));
             return;
         }
 
@@ -822,15 +844,121 @@ public final class WeaponVfxServerListener {
                 SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.42f, 0.54f));
     }
 
-    /** Le shroud n'empoisonne jamais l'attaquant ; la victime de test reste incluse même non-hostile. */
-    private static void poisonNear(ServerLevel sl, LivingEntity primary, LivingEntity caster,
-                                   double x, double y, double z, double radius, int duration) {
-        for (LivingEntity living : sl.getEntitiesOfClass(LivingEntity.class,
-                new AABB(x - radius, y - 1.5, z - radius, x + radius, y + 2.0, z + radius))) {
-            if (!living.isAlive() || living == caster || living.distanceToSqr(x, y, z) > radius * radius) continue;
-            if (living != primary && !(living instanceof Enemy)) continue;
-            living.addEffect(new MobEffectInstance(MobEffects.POISON, duration, 0, true, false));
+    /** Poison vanilla réellement visible dans le HUD et sur l'entité, avec source PvP conservée. */
+    private static boolean applyVisiblePoison(ServerLevel sl, int casterId,
+                                               LivingEntity target, int durationTicks) {
+        if (target == null || !target.isAlive() || target.level() != sl) return false;
+        LivingEntity caster = sl.getEntity(casterId) instanceof LivingEntity living ? living : null;
+        return target.addEffect(new MobEffectInstance(MobEffects.POISON,
+                Math.max(1, durationTicks), 0, false, true, true), caster);
+    }
+
+    /** Début d'un hôte : 6 s maximum, tentative de saut à 3 s et quatre pulses de dégâts/poison. */
+    private static void beginMiasmaHost(ServerLevel sl, MiasmaChain chain,
+                                        LivingEntity host, int now) {
+        if (!chain.active || host == null) return;
+        if (now - chain.startedAt >= MIASMA_MAX_TOTAL_TICKS) {
+            finishMiasmaChain(sl, chain, chain.generation);
+            return;
         }
+        chain.host = host;
+        int generation = ++chain.generation;
+        chain.shieldExpiry = sl.getGameTime() + MIASMA_HOST_TICKS;
+        MIASMA_SHIELDS.put(host.getId(), chain.shieldExpiry);
+        if (MIASMA_SHIELDS.size() > 256) MIASMA_SHIELDS.clear();
+        applyVisiblePoison(sl, chain.casterId, host, 100);
+        broadcastMiasmaChain(sl, chain, host, false);
+
+        int[] pulseOffsets = {20, 48, 76, 102};
+        for (int pulse = 0; pulse < pulseOffsets.length; pulse++) {
+            float pitch = 0.56f + pulse * 0.11f;
+            TestProcedure.schedule(sl, now + pulseOffsets[pulse], () -> {
+                if (!isCurrentMiasmaHost(chain, generation, host)) return;
+                double x = host.getX(), y = host.getY() + host.getBbHeight() * 0.50, z = host.getZ();
+                miasmaDamagePulse(sl, chain, host, x, y, z);
+                sl.playSound(null, x, y, z, SoundEvents.SLIME_SQUISH,
+                        SoundSource.PLAYERS, 0.30f, pitch);
+            });
+        }
+
+        TestProcedure.schedule(sl, now + 100, () -> {
+            if (isCurrentMiasmaHost(chain, generation, host)) broadcastMiasmaChain(sl, chain, host, true);
+        });
+        TestProcedure.schedule(sl, now + MIASMA_SWAP_TICKS, () -> {
+            if (!isCurrentMiasmaHost(chain, generation, host)) return;
+            if (chain.visited.size() >= MIASMA_MAX_HOSTS) return;
+            LivingEntity next = findNextMiasmaHost(sl, chain, host);
+            if (next == null) return; // Sans nouveau mob, la base de 6 s se termine normalement.
+            applyVisiblePoison(sl, chain.casterId, host, 100); // 5 s à l'hôte quitté.
+            MIASMA_SHIELDS.remove(host.getId(), chain.shieldExpiry);
+            chain.visited.add(next.getId());
+            sl.playSound(null, next.getX(), next.getY() + next.getBbHeight() * 0.50, next.getZ(),
+                    SoundEvents.WITCH_DRINK, SoundSource.PLAYERS, 0.42f, 0.72f);
+            beginMiasmaHost(sl, chain, next, now + MIASMA_SWAP_TICKS); // 5 s aussi au nouvel hôte.
+        });
+        TestProcedure.schedule(sl, now + MIASMA_HOST_TICKS,
+                () -> finishMiasmaChain(sl, chain, generation));
+    }
+
+    private static boolean isCurrentMiasmaHost(MiasmaChain chain, int generation, LivingEntity host) {
+        return chain.active && chain.generation == generation && chain.host == host;
+    }
+
+    /** Recherche sphère stricte < 5 blocs : joueurs et mobs, jamais un hôte déjà visité. */
+    private static LivingEntity findNextMiasmaHost(ServerLevel sl, MiasmaChain chain, LivingEntity host) {
+        double x = host.getX(), y = host.getY() + host.getBbHeight() * 0.50, z = host.getZ();
+        LivingEntity nearest = null;
+        double best = 25.0;
+        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(x - 5.0, y - 5.0, z - 5.0, x + 5.0, y + 5.0, z + 5.0))) {
+            if (!candidate.isAlive() || candidate == host || candidate.getId() == chain.casterId
+                    || chain.visited.contains(candidate.getId())) continue;
+            double distance = candidate.distanceToSqr(x, y, z);
+            if (distance < best) {
+                best = distance;
+                nearest = candidate;
+            }
+        }
+        return nearest;
+    }
+
+    /** Pulse AoE : aucun filtre Enemy, donc les joueurs PvP sont des cibles comme les mobs. */
+    private static void miasmaDamagePulse(ServerLevel sl, MiasmaChain chain, LivingEntity host,
+                                          double x, double y, double z) {
+        double radius = 2.65;
+        for (LivingEntity living : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(x - radius, y - 2.0, z - radius, x + radius, y + 2.0, z + radius))) {
+            if (!living.isAlive() || living.getId() == chain.casterId
+                    || living.distanceToSqr(x, y, z) > radius * radius) continue;
+            applyVisiblePoison(sl, chain.casterId, living, 100);
+            hurtPoisonPulse(sl, chain.casterId, living, chain.pulseDamage);
+        }
+        applyVisiblePoison(sl, chain.casterId, host, 100);
+    }
+
+    /** Dissipation après au plus 6 s sans saut : poison final de 10 s sur le dernier hôte. */
+    private static void finishMiasmaChain(ServerLevel sl, MiasmaChain chain, int generation) {
+        if (!chain.active || chain.generation != generation) return;
+        chain.active = false;
+        LivingEntity host = chain.host;
+        if (host != null) {
+            applyVisiblePoison(sl, chain.casterId, host, 200);
+            MIASMA_SHIELDS.remove(host.getId(), chain.shieldExpiry);
+            broadcastMiasmaChain(sl, chain, host, true);
+            sl.playSound(null, host.getX(), host.getY(), host.getZ(),
+                    SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.54f, 0.46f);
+        }
+    }
+
+    private static void broadcastMiasmaChain(ServerLevel sl, MiasmaChain chain,
+                                             LivingEntity host, boolean ending) {
+        float x = (float) host.getX();
+        float y = (float) (host.getY() + host.getBbHeight() * 0.50);
+        float z = (float) host.getZ();
+        broadcastNear(sl, x, y, z, WeaponVisualEffectId.MIASMA_SHROUD.id,
+                KIND_MIASMA_CHAIN, 3, x, y, z,
+                chain.id, host.getId(), ending ? 1.0f : 0.0f,
+                1 << DeepElement.POISON.ordinal(), sizeScaleOf(host));
     }
 
     /** Pulse de nova : dégâts constants + poison ; enveloppe visuelle une seule fois par cible. */
@@ -840,9 +968,8 @@ public final class WeaponVfxServerListener {
         for (LivingEntity living : sl.getEntitiesOfClass(LivingEntity.class,
                 new AABB(x - radius, y - 1.8, z - radius, x + radius, y + 2.2, z + radius))) {
             if (!living.isAlive() || living == caster || living.distanceToSqr(x, y, z) > radius * radius) continue;
-            if (living != victim && !(living instanceof Enemy)) continue;
-            living.addEffect(new MobEffectInstance(MobEffects.POISON, duration, 0, true, false));
-            hurtWithCapturedWeapon(sl, casterId, living, pulseDamage);
+            applyVisiblePoison(sl, casterId, living, duration);
+            hurtPoisonPulse(sl, casterId, living, pulseDamage);
             if (!living.isAlive() || !infected.add(living.getId())) continue;
             float lx = (float) living.getX();
             float ly = (float) (living.getY() + living.getBbHeight() * 0.50);

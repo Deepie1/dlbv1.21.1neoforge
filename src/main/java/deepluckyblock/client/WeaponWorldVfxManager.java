@@ -75,6 +75,7 @@ public final class WeaponWorldVfxManager {
     public static final int KIND_METEOR_TRACK = 4;
     public static final int KIND_MIASMA_DEFENSE = 5;
     public static final int KIND_PLAGUE_CONTAGION = 6;
+    public static final int KIND_MIASMA_CHAIN = 7;
 
     private static final List<VfxInstance> ACTIVE = new ArrayList<>(144);
     private static final List<FloatingPixel> PIXEL_PARTICLES = new ArrayList<>(1400);
@@ -249,7 +250,7 @@ public final class WeaponWorldVfxManager {
         double x, y, z;
         final double tx, ty, tz;
         final float yawDeg, pitchDeg, tiltRad;
-        final int maxAge;
+        int maxAge;
         final long seed;
         /** T350-VFX-VARIATIONS : déclinaison tirée au déclenchement (pleine ou allégée). */
         final deepluckyblock.enchantments.WeaponVfxVariant.Entry variantEntry;
@@ -261,6 +262,9 @@ public final class WeaponWorldVfxManager {
         int homingTargetId = -1;
         int followEntityId = 0;
         boolean followInitialized;
+        int miasmaChainId = -1;
+        int miasmaHostAge;
+        int miasmaEndAge = -1;
         double dragX, dragZ;
 
         /** Couleur primaire de l'effet ou d'une famille sélectionnée dans la palette de l'arme. */
@@ -477,6 +481,10 @@ public final class WeaponWorldVfxManager {
 
         WeaponVisualEffectId fx = WeaponVisualEffectId.byId(vfxId);
         if (fx == null) return;
+        if (kind == KIND_MIASMA_CHAIN) {
+            updateMiasmaChain(x, y, z, Math.round(tx), Math.round(ty), tz >= 0.5f);
+            return;
+        }
         if (kind == KIND_METEOR_TRACK) {
             updateMeteorTracking(Math.round(tx), x, y, z);
             return;
@@ -507,7 +515,7 @@ public final class WeaponWorldVfxManager {
             case SANDSTORM_DUNE, ECLIPSE_VEIL, NULL_RIFT_FISSURE,
                  CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE -> 18;
             case VENOM_BRIAR_FANG -> 112;
-            case MIASMA_SHROUD -> 140;
+            case MIASMA_SHROUD -> 600; // Le serveur raccourcit à 6 s ou enchaîne jusqu'à 30 s.
             case PLAGUE_NOVA -> 128;
             case ASTRAL_STAR_LANCE, VOID_WARP_SPHERE, SEISMIC_TECTONIC,
                  CRIMSON_SIPHON, CHRONO_ETERNAL_HALO, ANNIHILATING_ARC -> 16;
@@ -540,6 +548,44 @@ public final class WeaponWorldVfxManager {
                 && fx.element() != DeepElement.POISON) {
             spawnMiniPixelBurst(fx, x, y, z, burstCount, cubeHalf, 0.18, paletteMask);
         }
+    }
+
+    /** Paquets serveur de la brume : hôte initial, transferts sans snap et dissipation anticipée. */
+    private static void updateMiasmaChain(float x, float y, float z, int chainId,
+                                          int hostEntityId, boolean ending) {
+        VfxInstance chain = null;
+        double best = 16.0;
+        for (VfxInstance candidate : ACTIVE) {
+            if (candidate.kind != KIND_IMPACT || candidate.effect != WeaponVisualEffectId.MIASMA_SHROUD) continue;
+            if (candidate.miasmaChainId == chainId) {
+                chain = candidate;
+                break;
+            }
+            if (candidate.miasmaChainId < 0) {
+                double dx = candidate.x - x, dy = candidate.y - y, dz = candidate.z - z;
+                double distance = dx * dx + dy * dy + dz * dz;
+                if (distance < best) {
+                    best = distance;
+                    chain = candidate;
+                }
+            }
+        }
+        if (chain == null) return;
+        if (ending) {
+            if (chain.miasmaChainId == chainId && chain.miasmaEndAge < 0) {
+                chain.miasmaEndAge = chain.age;
+                chain.maxAge = chain.age + 20; // Collapse visible au lieu d'une coupure sèche.
+            }
+            return;
+        }
+        boolean firstAssignment = chain.miasmaChainId != chainId;
+        chain.miasmaChainId = chainId;
+        chain.followEntityId = hostEntityId;
+        if (firstAssignment) chain.followInitialized = false;
+        // Lors d'un swap, followInitialized reste vrai : le volume voyage avec inertie vers le nouvel hôte.
+        chain.miasmaHostAge = 0;
+        chain.miasmaEndAge = -1;
+        chain.maxAge = 600;
     }
 
     /** Miasma suit le MOB TOUCHÉ avec inertie ; Plague se fige au snap ; la contagion suit sa cible. */
@@ -1254,6 +1300,7 @@ public final class WeaponWorldVfxManager {
         for (Iterator<VfxInstance> it = ACTIVE.iterator(); it.hasNext(); ) {
             VfxInstance inst = it.next();
             inst.age++;
+            if (inst.miasmaChainId >= 0) inst.miasmaHostAge++;
             updatePoisonFollow(level, inst);
             if (inst.age >= inst.maxAge) {
                 it.remove();
@@ -2439,6 +2486,16 @@ public final class WeaponWorldVfxManager {
         float cy = quantize((float) (inst.y - cam.y), 0.0625f);
         float cz = quantize((float) (inst.z - cam.z), 0.0625f);
         int fadeA = Math.round(240.0f * (1.0f - t));
+        if (inst.effect == WeaponVisualEffectId.MIASMA_SHROUD && inst.miasmaChainId >= 0) {
+            if (inst.miasmaEndAge >= 0) {
+                float endT = Mth.clamp((inst.age - inst.miasmaEndAge) / 20.0f, 0.0f, 1.0f);
+                t = 0.86f + 0.14f * endT;
+                fadeA = Math.round(240.0f * (1.0f - endT));
+            } else {
+                t = Math.min(0.85f, inst.miasmaHostAge / 120.0f);
+                fadeA = 240;
+            }
+        }
         // T349-PALETTE : trois teintes par enchantement (cœur / halo / accent) au lieu de deux
         int[] pal = palette(inst.effect, inst.variant(), inst.paletteMask);
         int pRgb = pal[0];
