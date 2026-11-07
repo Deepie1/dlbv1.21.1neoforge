@@ -78,126 +78,344 @@ public final class EarthSignatureVfx {
         }
     }
 
-    /** SEISMIC : onde horizontale, failles branchées, dalles arrachées puis gravité et poussière. */
+    /**
+     * SEISMIC : rupture tectonique asymétrique. La chronologie n'est pas une sinusoïde :
+     * anticipation, rupture sèche, propagation à vitesse décroissante, répliques amorties puis
+     * sédimentation. Techniques étudiées dans Monumenta (retards par fronts), Arena-Brawl (poses
+     * interpolées et ground sampling), MutantBeasts/Goety (progression par terrain), Fire/Poison
+     * (colliders, volumes à cavités et collisions balistiques). Géométrie entièrement procédurale.
+     */
     private static void renderSeismic(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                       float cx, float cy, float cz, float t,
                                       float dx, float dz, int alpha, int salt, TerrainView terrain) {
-        float birth = smooth(t / 0.045f);
-        float exit = smooth((t - 0.84f) / 0.16f);
-        float impact = smooth((t - 0.095f) / 0.065f);
-        float settle = smooth((t - 0.68f) / 0.22f);
-        float env = birth * (1.0f - exit);
-        int a = Math.round(alpha * env);
+        float birth = smooth(t / 0.035f);
+        float exit = smooth((t - 0.87f) / 0.13f);
+        int a = Math.round(alpha * birth * (1.0f - exit));
 
-        // Trois fronts plats suivent le terrain ; les segments sont orientés tangentiellement.
-        for (int wave = 0; wave < 3; wave++) {
-            float progress = clamp((t - 0.10f - wave * 0.055f) / 0.34f);
-            if (progress <= 0.0f || progress >= 1.0f) continue;
-            float radius = 0.35f + progress * (3.25f + wave * 0.30f);
-            float fade = (1.0f - progress) * (1.0f - wave * 0.18f);
-            for (int i = 0; i < 72; i++) {
-                if ((i + wave) % 9 == 0 && progress > 0.55f) continue;
-                float angle = i * (float) (Math.PI * 2.0 / 72.0);
+        // Quelques graviers tremblent AVANT la rupture, avec une fréquence qui décroît brutalement.
+        float anticipation = 1.0f - smooth((t - 0.055f) / 0.035f);
+        if (anticipation > 0.0f) {
+            for (int p = 0; p < 22; p++) {
+                float h = hash(salt, 5000 + p * 41);
+                float angle = p * 2.3999632f;
+                float radius = 0.18f + h * 0.85f;
                 float f = Mth.cos(angle) * radius, l = Mth.sin(angle) * radius;
-                float y = terrain.at(f, l) + 0.035f;
-                rot(vc, mat, tmp, cx, y, cz, dx, dz, f, l,
-                        0.075f, 0.018f, 0.030f, angle, 0.0f, 0.0f,
-                        wave == 0 ? EARTH_LIGHT : STONE_LIGHT, Math.round(a * fade * 0.72f));
+                float jitter = Mth.sin(t * 145.0f + p * 2.7f) * 0.022f * anticipation;
+                float y = terrain.at(f, l) + 0.035f + Math.abs(jitter) * 1.8f;
+                cube(vc, mat, tmp, cx, y, cz, dx, dz, f + jitter, l - jitter * 0.6f,
+                        0.018f + h * 0.020f, p % 4 == 0 ? SOIL : STONE_DARK,
+                        Math.round(a * anticipation * 0.78f));
             }
         }
 
-        // Les failles restent après les ondes, puis sont comblées progressivement.
-        for (int arm = 0; arm < 9; arm++) {
-            float angle = arm * 2.3999632f + (hash(salt, arm * 17) - 0.5f) * 0.30f;
-            float reveal = smooth((t - 0.115f - arm * 0.006f) / 0.18f);
-            float decay = smooth((t - 0.78f - (arm % 3) * 0.018f) / 0.18f);
-            float length = 2.15f + 1.15f * hash(salt, 100 + arm * 31);
-            groundCrack(vc, mat, tmp, cx, cz, dx, dz, angle, length, reveal, decay,
-                    salt + arm * 113, terrain, a);
-            if (arm % 2 == 0 && reveal > 0.35f) {
-                groundCrack(vc, mat, tmp, cx, cz, dx, dz, angle + 0.42f, length * 0.48f,
-                        smooth((reveal - 0.35f) / 0.65f), decay,
-                        salt + 1200 + arm * 79, terrain, Math.round(a * 0.72f));
-            }
-        }
+        // La faille est une tranchée irrégulière orientée, pas une étoile de droites parfaites.
+        renderMainFault(vc, mat, tmp, cx, cz, dx, dz, t, a, salt, terrain);
 
-        // Sept dalles en éventail. Chaque plaque a une épaisseur, un dessus terreux et un basculement.
-        for (int plate = 0; plate < 7; plate++) {
-            float h = hash(salt, 300 + plate * 37);
-            float start = 0.13f + plate * 0.024f;
-            float rise = smooth((t - start) / 0.18f);
-            float drop = smooth((t - 0.61f - plate * 0.012f) / 0.19f);
-            float lift = rise * (1.0f - drop);
-            if (lift <= 0.002f && t < start) continue;
-            float f = -0.30f + plate * 0.50f;
-            float l = (plate % 2 == 0 ? -0.42f : 0.42f) + (h - 0.5f) * 0.32f;
+        // Six masses rocheuses distinctes naissent le long de la faille. Leur peau 3D érodée,
+        // leurs strates et leur pivot commun évitent complètement la rangée de plaques rectangulaires.
+        for (int chunk = 0; chunk < 6; chunk++) {
+            float h = hash(salt, 5200 + chunk * 53);
+            float f = -0.62f + chunk * 0.64f + (h - 0.5f) * 0.20f;
+            float side = chunk % 2 == 0 ? -1.0f : 1.0f;
+            float l = faultLateral(f, salt) + side * (0.10f + 0.14f * h);
+            float start = 0.074f + chunk * 0.027f + h * 0.018f;
+            float local = clamp((t - start) / (0.15f + h * 0.055f));
+            if (local <= 0.0f) continue;
+            float rise = outBack(local);
+            float collapse = easeIn((t - 0.71f - chunk * 0.009f) / 0.19f);
+            float afterAge = Math.max(0.0f, t - start - 0.20f);
+            float aftershock = damped(afterAge, 37.0f, 13.0f) * 0.075f
+                    + damped(Math.max(0.0f, t - 0.48f - chunk * 0.006f), 43.0f, 18.0f) * 0.035f;
             float ground = terrain.at(f, l);
-            float y = ground + lift * (0.60f + h * 0.75f) - drop * 0.10f;
-            float tilt = (plate % 2 == 0 ? -1.0f : 1.0f) * lift * (0.45f + h * 0.35f);
-            for (int ix = -1; ix <= 1; ix++) for (int iz = -1; iz <= 0; iz++) {
-                float localF = f + ix * 0.22f;
-                float localL = l + iz * 0.24f;
-                float blockY = y + ix * tilt * 0.10f;
-                int rgb = (ix + iz + plate & 2) == 0 ? STONE : STONE_DARK;
-                rot(vc, mat, tmp, cx, blockY, cz, dx, dz, localF, localL,
-                        0.125f, 0.065f, 0.135f, tilt * 0.22f, tilt, tilt * 0.35f,
-                        rgb, Math.round(a * (0.80f + h * 0.18f)));
-                if ((ix + plate) % 2 == 0) {
-                    rot(vc, mat, tmp, cx, blockY + 0.070f, cz, dx, dz, localF, localL,
-                            0.112f, 0.018f, 0.120f, tilt * 0.22f, tilt, tilt * 0.35f,
-                            plate % 3 == 0 ? EARTH : SOIL, Math.round(a * 0.82f));
-                }
-            }
-            if (rise > 0.12f && drop < 0.85f) {
-                for (int puff = 0; puff < 3; puff++) {
-                    float side = (puff - 1) * 0.32f;
-                    billow(vc, mat, tmp, cx, cz, dx, dz, f + side * 0.2f,
-                            ground + 0.13f + rise * 0.15f, l + side,
-                            0.18f + rise * 0.08f, 0.70f, t * 7.0f + puff,
-                            salt + plate * 97 + puff, SOIL_DARK, DUST,
-                            Math.round(a * rise * (1.0f - drop) * 0.36f), 1, terrain);
-                }
+            float y = ground - 0.18f + rise * (0.20f + h * 0.30f)
+                    + aftershock - collapse * 0.36f;
+            float tilt = side * (0.18f + h * 0.42f) * rise
+                    + damped(afterAge, 29.0f, 11.0f) * 0.10f;
+            float yaw = (hash(salt, 5210 + chunk * 59) - 0.5f) * 1.35f;
+            float cell = 0.075f + h * 0.065f;
+            float chunkAlpha = (1.0f - smooth((t - 0.82f) / 0.16f));
+            roughTectonicChunk(vc, mat, tmp, cx, cz, dx, dz, f, y, l,
+                    cell, yaw, tilt, salt + 5300 + chunk * 211,
+                    Math.round(a * chunkAlpha), terrain);
+
+            // Chaque rupture chasse un nuage latéral, après le soulèvement et non en boucle fixe.
+            for (int puff = 0; puff < 3; puff++) {
+                float age = t - start - 0.035f - puff * 0.018f;
+                if (age <= 0.0f) continue;
+                float life = clamp(age / (0.22f + h * 0.08f));
+                if (life >= 1.0f) continue;
+                float spread = side * (0.18f + life * (0.48f + puff * 0.15f));
+                float pf = f + (puff - 1) * 0.15f + life * 0.18f;
+                float pl = l + spread;
+                float py = terrain.at(pf, pl) + 0.11f + life * 0.24f;
+                billow(vc, mat, tmp, cx, cz, dx, dz, pf, py, pl,
+                        0.16f + life * 0.24f, 0.58f, t * 5.0f + puff,
+                        salt + 5600 + chunk * 71 + puff, STONE_DARK, DUST,
+                        Math.round(a * smooth(age / 0.035f) * (1.0f - life) * 0.42f),
+                        puff == 0 ? 2 : 1, terrain);
             }
         }
 
-        // Les fragments sont réellement balistiques et disparaissent au contact du sol local.
-        for (int p = 0; p < 44; p++) {
-            float h = hash(salt, 600 + p * 43);
-            float launch = 0.13f + (p % 9) * 0.010f;
+        // Front de pression : uniquement poussière et gravillons, irrégulier et incomplet.
+        float pressure = easeOut((t - 0.082f) / 0.34f);
+        if (pressure > 0.0f && pressure < 1.0f) {
+            for (int i = 0; i < 104; i++) {
+                float h = hash(salt, 5900 + i * 37);
+                if (h < 0.30f) continue;
+                float angle = i * 2.3999632f;
+                float radius = (0.30f + pressure * 3.45f)
+                        * (0.82f + 0.24f * noise1(angle * 1.7f + pressure * 2.0f, salt + 5901));
+                float f = Mth.cos(angle) * radius + pressure * 0.35f;
+                float l = Mth.sin(angle) * radius * (0.84f + h * 0.20f);
+                float y = terrain.at(f, l) + 0.045f + h * 0.055f;
+                float size = 0.025f + h * 0.050f;
+                rot(vc, mat, tmp, cx, y, cz, dx, dz, f, l,
+                        size * 1.6f, size * 0.45f, size, angle, h * 0.3f, 0.0f,
+                        i % 5 == 0 ? DUST : STONE_LIGHT,
+                        Math.round(a * (1.0f - pressure) * (0.18f + h * 0.24f)));
+            }
+        }
+
+        // Débris issus des différents points de rupture, avec gravité, contact, rebond et repos.
+        for (int p = 0; p < 96; p++) {
+            float h = hash(salt, 6200 + p * 43);
+            float originF = -1.85f + hash(salt, 6201 + p * 47) * 4.55f;
+            float side = p % 2 == 0 ? -1.0f : 1.0f;
+            float originL = faultLateral(originF, salt) + side * 0.08f;
+            float launch = 0.082f + (originF + 1.85f) * 0.036f
+                    + hash(salt, 6202 + p * 53) * 0.065f;
             float age = t - launch;
             if (age <= 0.0f) continue;
-            float angle = p * 2.3999632f;
             float time = age * 5.6f;
-            float speed = 0.70f + 1.55f * h;
-            float vf = Mth.cos(angle) * speed;
-            float vl = Mth.sin(angle) * speed;
-            float vy = 0.85f + 1.65f * hash(salt, 610 + p * 47);
-            float gravity = 5.8f;
-            float originY = terrain.at(0.0f, 0.0f) + 0.10f;
-            float f = vf * time, l = vl * time;
+            float vf = (hash(salt, 6203 + p * 59) - 0.35f) * (0.45f + h * 0.85f);
+            float vl = side * (0.35f + h * 1.25f);
+            float vy = 0.70f + 2.05f * hash(salt, 6204 + p * 61);
+            float gravity = 7.4f;
+            float originY = terrain.at(originF, originL) + 0.06f;
+            float f = originF + vf * time, l = originL + vl * time;
             float landing = terrain.at(f, l);
             float hit = (vy + Mth.sqrt(Math.max(0.0f, vy * vy
                     + 2.0f * gravity * (originY - landing)))) / gravity;
-            if (time >= hit) continue;
-            float y = originY + vy * time - 0.5f * gravity * time * time;
-            float size = 0.026f + 0.052f * h;
-            rot(vc, mat, tmp, cx, y, cz, dx, dz, f, l,
-                    size, size * 0.72f, size * 1.15f,
-                    time * 2.0f + p, time * 1.4f, time * 0.8f,
-                    p % 5 == 0 ? SOIL : STONE, Math.round(a * (0.65f + 0.30f * h)));
+            float hitF = originF + vf * hit, hitL = originL + vl * hit;
+            landing = terrain.at(hitF, hitL);
+            boolean large = p % 8 == 0;
+            float size = large ? 0.075f + h * 0.065f : 0.018f + h * 0.045f;
+            float drawX, drawY, drawZ, spin;
+            if (time < hit) {
+                drawX = f; drawZ = l;
+                drawY = originY + vy * time - 0.5f * gravity * time * time;
+                spin = time * (2.0f + h * 4.0f);
+            } else {
+                float since = time - hit;
+                if (since > 0.85f + h * 0.45f) continue;
+                float slide = Math.min(since, 0.32f);
+                drawX = hitF + vf * slide * 0.16f;
+                drawZ = hitL + vl * slide * 0.16f;
+                landing = terrain.at(drawX, drawZ);
+                float bounce = since < 0.30f
+                        ? Math.abs(Mth.sin(since * 19.0f)) * (float) Math.exp(-since * 9.0f) * 0.16f : 0.0f;
+                drawY = landing + size * 0.70f + bounce;
+                spin = hit * (2.0f + h * 4.0f) + slide * 1.4f;
+            }
+            float fade = time < hit ? 1.0f : 1.0f - smooth((time - hit - 0.62f) / 0.60f);
+            rot(vc, mat, tmp, cx, drawY, cz, dx, dz, drawX, drawZ,
+                    size, size * (0.55f + h * 0.35f), size * (0.75f + h * 0.45f),
+                    spin + p, spin * 0.72f, spin * 0.41f,
+                    p % 5 == 0 ? SOIL_DARK : (large ? STONE : STONE_LIGHT),
+                    Math.round(a * fade * 0.90f));
+            if (large) {
+                cube(vc, mat, tmp, cx, drawY + size * 0.42f, cz, dx, dz,
+                        drawX + size * 0.65f, drawZ - size * 0.35f, size * 0.52f,
+                        STONE_DARK, Math.round(a * fade * 0.82f));
+            }
         }
 
-        // Une brume basse marque le poids de l'impact sans cacher les failles.
-        for (int p = 0; p < 14; p++) {
-            float angle = p * 2.3999632f;
-            float reveal = smooth((t - 0.12f - (p % 5) * 0.012f) / 0.15f);
-            float fade = reveal * (1.0f - smooth((t - 0.48f) / 0.28f));
-            float f = Mth.cos(angle) * (0.35f + reveal * 0.90f);
-            float l = Mth.sin(angle) * (0.35f + reveal * 0.90f);
-            billow(vc, mat, tmp, cx, cz, dx, dz, f, terrain.at(f, l) + 0.16f, l,
-                    0.24f + 0.08f * reveal, 0.55f, t * 5.0f + p,
-                    salt + 900 + p, SOIL_DARK, DUST, Math.round(a * fade * 0.28f), 1, terrain);
+        // Deux répliques tardives rouvrent partiellement quelques branches et soulèvent la poussière.
+        for (int echo = 0; echo < 2; echo++) {
+            float start = 0.43f + echo * 0.16f;
+            float age = t - start;
+            if (age <= 0.0f || age > 0.22f) continue;
+            float pulse = damped(age, 42.0f, 17.0f);
+            for (int p = 0; p < 9; p++) {
+                float f = -1.50f + p * 0.42f;
+                float l = faultLateral(f, salt) + (p % 2 == 0 ? -0.32f : 0.32f);
+                float y = terrain.at(f, l) + 0.09f + Math.abs(pulse) * 0.12f;
+                billow(vc, mat, tmp, cx, cz, dx, dz, f, y, l,
+                        0.13f + Math.abs(pulse) * 0.08f, 0.48f, t * 7.0f + p,
+                        salt + 6800 + echo * 300 + p, SOIL_DARK, DUST,
+                        Math.round(a * Math.abs(pulse) * 0.28f), 1, terrain);
+            }
         }
+    }
+
+    /** Tranchée principale : deux lèvres indépendantes, parois verticales et fond sombre. */
+    private static void renderMainFault(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                        float cx, float cz, float dx, float dz,
+                                        float t, int alpha, int salt, TerrainView terrain) {
+        float close = smooth((t - 0.86f) / 0.14f);
+        for (int step = 0; step < 40; step++) {
+            float f = -2.55f + step * 0.145f;
+            float reveal = smooth((t - 0.050f - step * 0.0032f) / 0.065f);
+            if (reveal <= 0.0f) continue;
+            float center = faultLateral(f, salt);
+            float n = noise1(f * 2.7f, salt + 7001);
+            float width = (0.018f + n * 0.065f + 0.11f * (float) Math.exp(-f * f * 0.42f))
+                    * reveal * (1.0f - close * 0.82f);
+            float y = terrain.at(f, center);
+            float floorY = y - 0.18f * reveal * (1.0f - close);
+            box(vc, mat, tmp, cx, floorY, cz, dx, dz, f, center,
+                    0.085f, 0.025f, Math.max(0.012f, width * 1.25f), FAULT,
+                    Math.round(alpha * reveal * (1.0f - close * 0.55f) * 0.94f));
+            for (int side = -1; side <= 1; side += 2) {
+                float bankL = center + side * (width + 0.035f);
+                float bankY = terrain.at(f, bankL);
+                float wallHeight = 0.07f + reveal * (0.08f + n * 0.07f);
+                box(vc, mat, tmp, cx, bankY - wallHeight * 0.45f, cz, dx, dz, f, bankL,
+                        0.080f, wallHeight, 0.025f + width * 0.25f,
+                        side < 0 ? STONE_DARK : SOIL_DARK,
+                        Math.round(alpha * reveal * (1.0f - close * 0.65f) * 0.88f));
+                // Une lèvre sur deux possède une croûte plus claire, jamais un liseré magique symétrique.
+                if ((step + side) % 3 != 0) {
+                    box(vc, mat, tmp, cx, bankY + 0.012f, cz, dx, dz,
+                            f, bankL + side * 0.035f, 0.078f, 0.014f, 0.030f,
+                            step % 5 == 0 ? CLAY : STONE_LIGHT,
+                            Math.round(alpha * reveal * (1.0f - close) * 0.64f));
+                }
+            }
+        }
+
+        // Les branches naissent de la faille principale avec des angles et des longueurs variés.
+        for (int branch = 0; branch < 18; branch++) {
+            float h = hash(salt, 7100 + branch * 43);
+            float startF = -2.15f + h * 4.70f;
+            float side = branch % 2 == 0 ? -1.0f : 1.0f;
+            float startL = faultLateral(startF, salt);
+            float reveal = smooth((t - 0.10f - (startF + 2.15f) * 0.025f
+                    - hash(salt, 7101 + branch * 47) * 0.08f) / 0.15f);
+            float decay = smooth((t - 0.80f - (branch % 4) * 0.018f) / 0.18f);
+            faultBranch(vc, mat, tmp, cx, cz, dx, dz, startF, startL, side,
+                    0.45f + h * 1.05f, reveal, decay, salt + 7200 + branch * 89,
+                    Math.round(alpha * (0.52f + h * 0.35f)), terrain);
+        }
+    }
+
+    private static void faultBranch(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                    float cx, float cz, float dx, float dz,
+                                    float startF, float startL, float side, float length,
+                                    float reveal, float decay, int seed, int alpha, TerrainView terrain) {
+        if (reveal <= 0.0f || alpha <= 4) return;
+        float f = startF, l = startL;
+        float directionF = (hash(seed, 1) - 0.5f) * 0.85f;
+        float directionL = side * (0.70f + hash(seed, 2) * 0.55f);
+        int visible = Math.round((7 + Math.round(hash(seed, 3) * 6)) * reveal);
+        for (int step = 1; step <= visible; step++) {
+            float turn = (noise1(step * 0.83f, seed) - 0.5f) * 0.65f;
+            float stride = length / 11.0f;
+            f += (directionF + turn) * stride;
+            l += (directionL - turn * side * 0.45f) * stride;
+            float y = terrain.at(f, l) + 0.018f;
+            float taper = 1.0f - step / 15.0f;
+            float size = (0.022f + 0.028f * hash(seed, step * 31)) * taper * (1.0f - decay * 0.72f);
+            float angle = (float) Math.atan2(directionF + turn, directionL);
+            rot(vc, mat, tmp, cx, y, cz, dx, dz, f, l,
+                    size * 1.55f, 0.010f, Math.max(0.008f, size * 0.48f),
+                    angle, 0.0f, 0.0f, FAULT,
+                    Math.round(alpha * reveal * (1.0f - decay * 0.70f)));
+            if (step % 4 == 0) {
+                box(vc, mat, tmp, cx, y + 0.008f, cz, dx, dz,
+                        f + side * size, l, size * 0.55f, 0.012f, size * 0.40f,
+                        SOIL_DARK, Math.round(alpha * reveal * (1.0f - decay) * 0.60f));
+            }
+        }
+    }
+
+    /** Volume rocheux irrégulier : seule la peau est émise, les strates restent lisibles en coupe. */
+    private static void roughTectonicChunk(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                           float cx, float cz, float dx, float dz,
+                                           float centerF, float centerY, float centerL,
+                                           float cell, float yaw, float tilt,
+                                           int seed, int alpha, TerrainView terrain) {
+        float cyaw = Mth.cos(yaw), syaw = Mth.sin(yaw);
+        float ct = Mth.cos(tilt), st = Mth.sin(tilt);
+        for (int x = -3; x <= 3; x++) for (int y = 0; y <= 6; y++) for (int z = -3; z <= 3; z++) {
+            if (!rockSolid(x, y, z, seed) || !rockSkin(x, y, z, seed)) continue;
+            float h = hash(seed, x * 733 + y * 379 + z * 191);
+            float lx = x * cell, ly = y * cell, lz = z * cell;
+            float tiltedX = lx * ct - ly * st;
+            float tiltedY = lx * st + ly * ct;
+            float rf = tiltedX * cyaw - lz * syaw;
+            float rl = tiltedX * syaw + lz * cyaw;
+            float f = centerF + rf, l = centerL + rl;
+            float py = centerY + tiltedY;
+            if (terrain.blocked(f, py, l)) continue;
+            int rgb;
+            int top = 3 + Mth.floor(hash(seed, 17) * 4.0f);
+            if (y >= top - 1 && h > 0.30f) rgb = h > 0.94f ? STONE_LIGHT : SOIL;
+            else if (y <= 1) rgb = h > 0.55f ? SOIL_DARK : STONE_DARK;
+            else if (y == 3 && h > 0.40f) rgb = CLAY;
+            else rgb = h > 0.72f ? STONE_LIGHT : (h < 0.24f ? STONE_DARK : STONE);
+            float half = cell * (0.53f + h * 0.08f);
+            rot(vc, mat, tmp, cx, py, cz, dx, dz, f, l,
+                    half, half * (0.88f + h * 0.18f), half,
+                    yaw + h * 0.08f, tilt, tilt * 0.35f, rgb,
+                    Math.round(alpha * (0.82f + h * 0.16f)));
+        }
+    }
+
+    private static boolean rockSkin(int x, int y, int z, int seed) {
+        return !rockSolid(x + 1, y, z, seed) || !rockSolid(x - 1, y, z, seed)
+                || !rockSolid(x, y + 1, z, seed) || !rockSolid(x, y - 1, z, seed)
+                || !rockSolid(x, y, z + 1, seed) || !rockSolid(x, y, z - 1, seed);
+    }
+
+    private static boolean rockSolid(int x, int y, int z, int seed) {
+        if (y < 0 || y > 6 || Math.abs(x) > 3 || Math.abs(z) > 3) return false;
+        float ny = y / 6.0f;
+        float shift = Mth.sin(y * 1.17f + (seed & 15)) * 0.42f;
+        float nx = (x - shift) / 3.15f;
+        float nz = (z + shift * 0.45f) / 3.05f;
+        float taper = 0.76f + hash(seed, 23) * 0.30f - ny * 0.56f;
+        float erosion = (hash(seed, x * 73856093 ^ y * 19349663 ^ z * 83492791) - 0.5f) * 0.32f;
+        float shape = nx * nx * (0.90f + ny * 0.32f) + nz * nz * (1.05f - ny * 0.18f);
+        int maxHeight = 3 + Mth.floor(hash(seed, 17) * 4.0f);
+        return shape < taper + erosion && y <= maxHeight - Mth.floor(Math.abs(nx + nz) * 2.0f);
+    }
+
+    private static float faultLateral(float f, int salt) {
+        float phase = (salt & 63) * 0.17f;
+        return Mth.sin(f * 1.62f + phase) * 0.24f
+                + Mth.sin(f * 4.35f + phase * 0.63f) * 0.085f
+                + (noise1(f * 2.15f, salt + 7000) - 0.5f) * 0.16f;
+    }
+
+    private static float noise1(float x, int seed) {
+        int i = Mth.floor(x);
+        float u = smooth(x - i);
+        float a = hash(seed, i * 73856093);
+        float b = hash(seed, (i + 1) * 73856093);
+        return a + (b - a) * u;
+    }
+
+    private static float easeOut(float x) {
+        x = clamp(x);
+        return 1.0f - (1.0f - x) * (1.0f - x) * (1.0f - x);
+    }
+
+    private static float easeIn(float x) {
+        x = clamp(x);
+        return x * x * x;
+    }
+
+    private static float outBack(float x) {
+        x = clamp(x);
+        float c = 1.70158f;
+        float u = x - 1.0f;
+        return 1.0f + (c + 1.0f) * u * u * u + c * u * u;
+    }
+
+    private static float damped(float age, float frequency, float decay) {
+        if (age <= 0.0f) return 0.0f;
+        return Mth.sin(age * frequency) * (float) Math.exp(-age * decay);
     }
 
     /** SANDSTORM : dune migratrice, vortex à trois bras, nappes de vent et retombée des grains. */
@@ -442,38 +660,6 @@ public final class EarthSignatureVfx {
             float size = 0.014f + h * 0.020f;
             cube(vc, mat, tmp, cx, y, cz, dx, dz, f, l, size,
                     i % 4 == 0 ? GOLD : EARTH_LIGHT, Math.round(a * fade * 0.68f));
-        }
-    }
-
-    private static void groundCrack(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                    float cx, float cz, float dx, float dz,
-                                    float angle, float length, float reveal, float decay,
-                                    int seed, TerrainView terrain, int alpha) {
-        if (reveal <= 0.0f || alpha <= 4) return;
-        float f = 0.0f, l = 0.0f;
-        int visible = Math.round(13 * reveal);
-        for (int step = 1; step <= visible; step++) {
-            float turn = (hash(seed, step * 31) - 0.5f) * 0.52f;
-            float distance = length / 13.0f;
-            f += Mth.cos(angle + turn) * distance;
-            l += Mth.sin(angle + turn) * distance;
-            float y = terrain.at(f, l) + 0.022f + decay * 0.012f;
-            float size = (0.055f + 0.035f * hash(seed, step * 47)) * (1.0f - decay * 0.65f);
-            rot(vc, mat, tmp, cx, y, cz, dx, dz, f, l,
-                    size * 1.25f, 0.014f, size * 0.62f, angle + turn, 0.0f, 0.0f,
-                    FAULT, Math.round(alpha * reveal * (1.0f - decay * 0.45f)));
-            box(vc, mat, tmp, cx, y + 0.012f, cz, dx, dz, f, l,
-                    size * 0.36f, 0.009f, size * 0.26f,
-                    decay > 0.60f ? SOIL : EARTH,
-                    Math.round(alpha * reveal * (1.0f - decay) * 0.66f));
-            if (step % 4 == 0) {
-                float side = step % 8 == 0 ? -1.0f : 1.0f;
-                box(vc, mat, tmp, cx, y + 0.006f, cz, dx, dz,
-                        f + Mth.cos(angle + 1.5707963f) * size * side,
-                        l + Mth.sin(angle + 1.5707963f) * size * side,
-                        size * 0.72f, 0.018f, size * 0.45f, SOIL_DARK,
-                        Math.round(alpha * reveal * (1.0f - decay * 0.70f) * 0.72f));
-            }
         }
     }
 
