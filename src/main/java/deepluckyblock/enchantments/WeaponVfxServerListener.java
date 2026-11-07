@@ -111,6 +111,8 @@ public final class WeaponVfxServerListener {
     private static final Map<Integer, SoulBurn> SOUL_BURNS = new ConcurrentHashMap<>();
     /** Porteurs du shroud : les hits reçus pendant cette fenêtre déclenchent sa réaction visuelle. */
     private static final Map<Integer, Long> MIASMA_SHIELDS = new ConcurrentHashMap<>();
+    /** Poison de secours pour les cibles immunisées (notamment le Husk du dummy), jamais létal seul. */
+    private static final Map<Integer, SignaturePoison> SIGNATURE_POISONS = new ConcurrentHashMap<>();
     private static final int SIGNATURE_FIRE_TICKS = 80;
     private static final int METEOR_AOE_FIRE_TICKS = 60;
     private static final int METEOR_IMPACT_TICKS = 30;
@@ -122,6 +124,7 @@ public final class WeaponVfxServerListener {
                             int attackerId, float weaponDamage) { }
     private record SoulBurn(long expires, long nextDamage, int attackerId,
                             float weaponDamage, int period) { }
+    private record SignaturePoison(long expires, long nextDamage, int casterId) { }
     /** Empêche les dégâts différés d'une signature de relancer une nouvelle salve d'attaque. */
     private static final Set<Integer> INTERNAL_SIGNATURE_DAMAGE = new HashSet<>();
 
@@ -849,8 +852,50 @@ public final class WeaponVfxServerListener {
                                                LivingEntity target, int durationTicks) {
         if (target == null || !target.isAlive() || target.level() != sl) return false;
         LivingEntity caster = sl.getEntity(casterId) instanceof LivingEntity living ? living : null;
-        return target.addEffect(new MobEffectInstance(MobEffects.POISON,
-                Math.max(1, durationTicks), 0, false, true, true), caster);
+        int duration = Math.max(1, durationTicks);
+        boolean vanilla = target.addEffect(new MobEffectInstance(MobEffects.POISON,
+                duration, 0, false, true, true), caster);
+        if (vanilla || target.hasEffect(MobEffects.POISON)) {
+            SIGNATURE_POISONS.remove(target.getId());
+            return true;
+        }
+        // Un Husk est immunisé : le vrai DoT de la signature prend le relais au même rythme que Poison I.
+        long now = sl.getGameTime();
+        SignaturePoison previous = SIGNATURE_POISONS.get(target.getId());
+        long nextDamage = previous != null && previous.expires() > now
+                ? previous.nextDamage() : now + 25L;
+        SIGNATURE_POISONS.put(target.getId(), new SignaturePoison(now + duration, nextDamage, casterId));
+        emitSignaturePoisonParticles(target, 5);
+        return true;
+    }
+
+    private static void emitSignaturePoisonParticles(LivingEntity target, int count) {
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        sl.sendParticles(ParticleTypes.HAPPY_VILLAGER,
+                target.getX(), target.getY() + target.getBbHeight() * 0.52, target.getZ(), count,
+                Math.max(0.08, target.getBbWidth() * 0.32), target.getBbHeight() * 0.34,
+                Math.max(0.08, target.getBbWidth() * 0.32), 0.02);
+    }
+
+    private static void tickSignaturePoison(LivingEntity target) {
+        SignaturePoison poison = SIGNATURE_POISONS.get(target.getId());
+        if (poison == null || !(target.level() instanceof ServerLevel sl)) return;
+        long now = sl.getGameTime();
+        if (!target.isAlive() || now >= poison.expires()) {
+            SIGNATURE_POISONS.remove(target.getId());
+            return;
+        }
+        if (now % 5L == 0L) emitSignaturePoisonParticles(target, 2);
+        if (now < poison.nextDamage()) return;
+        // Comme le poison vanilla, ce DoT seul laisse au moins un demi-cœur.
+        float amount = Math.min(1.0f, Math.max(0.0f, target.getHealth() - 1.0f));
+        if (amount > 0.0f) hurtPoisonPulse(sl, poison.casterId(), target, amount);
+        if (target.isAlive()) {
+            SIGNATURE_POISONS.put(target.getId(),
+                    new SignaturePoison(poison.expires(), now + 25L, poison.casterId()));
+        } else {
+            SIGNATURE_POISONS.remove(target.getId());
+        }
     }
 
     /** Début d'un hôte : 6 s maximum, tentative de saut à 3 s et quatre pulses de dégâts/poison. */
@@ -1153,6 +1198,7 @@ public final class WeaponVfxServerListener {
     @SubscribeEvent
     public static void onSignatureHoldTick(EntityTickEvent.Post event) {
         if (!(event.getEntity() instanceof LivingEntity target) || target.level().isClientSide()) return;
+        tickSignaturePoison(target);
         tickSoulBurn(target);
         tickSoulHold(target);
         WoodHold hold = WOOD_HOLDS.get(target.getId());
