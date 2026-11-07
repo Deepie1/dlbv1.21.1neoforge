@@ -172,6 +172,10 @@ public final class WeaponVfxServerListener {
             WeaponVisualEffectId.VENOM_BRIAR_FANG, WeaponVisualEffectId.MIASMA_SHROUD,
             WeaponVisualEffectId.PLAGUE_NOVA
     };
+    private static final WeaponVisualEffectId[] ANIM_EARTH = {
+            WeaponVisualEffectId.SEISMIC_TECTONIC, WeaponVisualEffectId.SANDSTORM_DUNE,
+            WeaponVisualEffectId.WARLORD_RALLY_SIGIL
+    };
 
     private WeaponVfxServerListener() {}
 
@@ -1378,7 +1382,8 @@ public final class WeaponVfxServerListener {
         var tag = deepluckyblock.util.DeepNbt.tag(weapon);
         if (tag == null) return null;
         String family = tag.getString("DlbAnimFamily");
-        return family.equals("feu") || family.equals("gaia") || family.equals("poison") ? family : null;
+        return family.equals("feu") || family.equals("gaia") || family.equals("poison")
+                || family.equals("terre") ? family : null;
     }
 
     /**
@@ -1398,7 +1403,8 @@ public final class WeaponVfxServerListener {
         float ty = (float) (target.getY() + target.getBbHeight() * 0.50f);
         float tz = (float) target.getZ();
         WeaponVisualEffectId[] pool = family.equals("feu") ? ANIM_FIRE
-                : family.equals("poison") ? ANIM_POISON : ANIM_GAIA;
+                : family.equals("poison") ? ANIM_POISON
+                : family.equals("terre") ? ANIM_EARTH : ANIM_GAIA;
 
         if (roll >= 60) {
             var tag = deepluckyblock.util.DeepNbt.getOrCreateTag(weapon);

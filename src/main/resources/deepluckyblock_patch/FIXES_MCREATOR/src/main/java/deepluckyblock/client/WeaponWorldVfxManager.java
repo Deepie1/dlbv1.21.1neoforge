@@ -1512,7 +1512,8 @@ public final class WeaponWorldVfxManager {
         var tag = deepluckyblock.util.DeepNbt.tag(stack);
         if (tag != null) {
             String candidate = tag.getString("DlbAnimFamily");
-            if (candidate.equals("feu") || candidate.equals("gaia") || candidate.equals("poison")) animFamily = candidate;
+            if (candidate.equals("feu") || candidate.equals("gaia") || candidate.equals("poison")
+                    || candidate.equals("terre")) animFamily = candidate;
         }
         if (layers.isEmpty() && animFamily == null) return;
 
@@ -1572,6 +1573,13 @@ public final class WeaponWorldVfxManager {
                 case 0 -> WeaponVisualEffectId.VENOM_BRIAR_FANG;
                 case 1 -> WeaponVisualEffectId.MIASMA_SHROUD;
                 default -> WeaponVisualEffectId.PLAGUE_NOVA;
+            };
+        }
+        if (family.equals("terre")) {
+            return switch (index) {
+                case 0 -> WeaponVisualEffectId.SEISMIC_TECTONIC;
+                case 1 -> WeaponVisualEffectId.SANDSTORM_DUNE;
+                default -> WeaponVisualEffectId.WARLORD_RALLY_SIGIL;
             };
         }
         return switch (index) {
@@ -1860,18 +1868,24 @@ public final class WeaponWorldVfxManager {
         }
 
         int alpha = Math.round(238.0f * (1.0f - t * t));
+        boolean earthSlash = inst.effect.element() == DeepElement.EARTH;
+        int slashCore = earthSlash ? 0x6B4526 : inst.effect.primaryRgb;
+        int slashTrail = earthSlash ? 0x3B2616 : inst.effect.secondaryRgb;
+        int slashTip = earthSlash ? 0x79A74B : 0xFFFFFF;
         emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, randomTilt,
-                radius, voxelHalf, sweepDeg, t, inst.effect.primaryRgb, inst.effect.secondaryRgb, alpha, style);
+                radius, voxelHalf, sweepDeg, t, slashCore, slashTrail, alpha, style, slashTip, earthSlash);
         if (style == 4) {
             emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, randomTilt + 0.08f,
                     radius * 0.86f, voxelHalf * 0.62f, sweepDeg * 0.96f, t,
-                    inst.effect.secondaryRgb, inst.effect.primaryRgb, Math.round(alpha * 0.82f), 0);
+                    earthSlash ? 0x76502D : inst.effect.secondaryRgb,
+                    earthSlash ? 0x402417 : inst.effect.primaryRgb,
+                    Math.round(alpha * 0.82f), 0, slashTip, earthSlash);
         }
 
         if (inst.effect == WeaponVisualEffectId.SUPREME_PRISM_EDGE) {
             emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, -randomTilt * 0.85f,
                     radius * 0.92f, voxelHalf * 0.85f, sweepDeg * 0.88f, t,
-                    inst.effect.secondaryRgb, 0xFFFFFF, Math.round(alpha * 0.85f), style);
+                    inst.effect.secondaryRgb, 0xFFFFFF, Math.round(alpha * 0.85f), style, 0xFFFFFF, false);
         }
     }
 
@@ -1879,7 +1893,8 @@ public final class WeaponWorldVfxManager {
                                           float cx, float cy, float cz,
                                           float yawDeg, float pitchDeg, float tiltRad,
                                           float radius, float baseHalfSize, float sweepDeg, float progress,
-                                          int coreRgb, int trailRgb, int peakAlpha, int connectionStyle) {
+                                          int coreRgb, int trailRgb, int peakAlpha, int connectionStyle,
+                                          int tipRgb, boolean grassTexture) {
         if (peakAlpha <= 6) return;
         float yawRad = -yawDeg * Mth.DEG_TO_RAD;
         float pitchRad = pitchDeg * Mth.DEG_TO_RAD;
@@ -1936,7 +1951,18 @@ public final class WeaponWorldVfxManager {
 
             boolean isHead = Math.abs(distBehind) < 0.12f;
             float hs = baseHalfSize * (0.55f + 0.75f * taper) * (isHead ? 1.25f : 1.0f);
-            int rgb = isHead ? 0xFFFFFF : (distBehind < 0.28f ? coreRgb : trailRgb);
+            int rgb = isHead ? tipRgb : (distBehind < 0.28f ? coreRgb : trailRgb);
+            if (grassTexture && !isHead) {
+                // Dessus vert uniquement sur la pointe ; le corps reprend les bruns du grass block.
+                int tone = Math.min(4, (int) (pixelHash(0xE471, i * 31 + connectionStyle * 137) * 5.0f));
+                rgb = switch (tone) {
+                    case 0 -> 0x352116;
+                    case 1 -> 0x4A2D1A;
+                    case 2 -> 0x5C3B1A;
+                    case 3 -> 0x6B4526;
+                    default -> 0x80532E;
+                };
+            }
             int a = Math.round(peakAlpha * Math.max(0.2f, 1.0f - Math.max(0.0f, distBehind) * 1.35f));
 
             emitVoxelCube(vc, mat, tmp, px, py, pz, hs, hs, hs, rgb, a);

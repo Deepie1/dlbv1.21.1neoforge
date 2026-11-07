@@ -95,7 +95,7 @@ public final class SeismicTerrainVfx {
         }
 
         TerrainSnapshot snapshot = new TerrainSnapshot(level, x, y, z, dirX, dirZ, worldScale,
-                salt, List.copyOf(blocks));
+                salt, List.copyOf(blocks), buildFractures(salt));
         SNAPSHOTS.put(key, snapshot);
         while (SNAPSHOTS.size() > MAX_SNAPSHOTS) {
             Iterator<SnapshotKey> it = SNAPSHOTS.keySet().iterator();
@@ -128,7 +128,7 @@ public final class SeismicTerrainVfx {
             }
             if (motion.voidOpen > 0.975f) continue;
 
-            double drop = motion.voidOpen > 0.015f ? (1.0f - motion.voidOpen) * 0.86f : 0.0f;
+            double drop = motion.voidOpen > 0.015f ? (1.0f - motion.voidOpen) * (0.45f + motion.depth * 0.65f) : 0.0f;
             double worldX = block.pos.getX() + motion.offsetX;
             double worldY = block.pos.getY() + motion.rise + REPRINT_EPSILON - drop;
             double worldZ = block.pos.getZ() + motion.offsetZ;
@@ -149,30 +149,23 @@ public final class SeismicTerrainVfx {
         return emitted;
     }
 
-    /** P précoce et rapide, S transversal, rupture, trois trains Rayleigh puis deux répliques. */
+    /** P précoce, S transversal, graphe de rupture, Rayleigh puis répliques. */
     private static Motion motionAt(TerrainSnapshot snapshot, CapturedBlock block, float t) {
         float f = block.f, l = block.l, h = block.hash;
-        float center = faultCenter(f, snapshot.salt);
-        float signed = l - center;
-        float distance = Math.abs(signed);
-        float side = signed < 0.0f ? -1.0f : 1.0f;
-        float start = 0.060f + (f + 4.2f) * 0.0205f + h * 0.026f;
-        float open = outBack((t - start) / 0.095f)
+        FractureInfluence influence = nearestFracture(snapshot.fractures, f, l);
+        Fracture fracture = influence.fracture;
+        float distance = influence.distance;
+        float side = influence.signedDistance < 0.0f ? -1.0f : 1.0f;
+        float progress = clamp(influence.u / fracture.length);
+        float start = fracture.delay + progress * 0.045f + h * 0.014f;
+        float open = outBack((t - start) / (0.070f + fracture.depth * 0.028f))
                 * (1.0f - smooth((t - 0.835f - h * 0.018f) / 0.145f));
         open = Math.max(0.0f, open);
-
-        float width = 0.37f + 0.19f * noise1(f * 1.83f, snapshot.salt + 101);
-        boolean mainCrack = Math.abs(f) < 3.95f && distance < width;
-        boolean branch = isBranch(f, l, center, snapshot.salt);
-        float voidOpen = (mainCrack || branch) ? clamp(open) : 0.0f;
+        float voidOpen = influence.inside ? clamp(open) : 0.0f;
 
         float radial = Mth.sqrt(f * f + l * l);
-        // P : petite impulsion verticale, antérieure à la rupture.
         float p = damped(t - 0.018f - radial * 0.0045f, 96.0f, 49.0f) * 0.024f;
-        // S : cisaillement latéral différé, plus ample et moins rapide.
-        float sAge = t - 0.145f - radial * 0.0080f;
-        float shear = damped(sAge, 47.0f, 15.0f) * 0.060f;
-        // Rayleigh : roulement vertical + horizontal, atténué avec la distance.
+        float shear = damped(t - 0.145f - radial * 0.0080f, 47.0f, 15.0f) * 0.060f;
         float attenuation = 1.0f / (1.0f + radial * 0.18f);
         float rayleigh = 0.0f;
         for (int wave = 0; wave < 3; wave++) {
@@ -180,41 +173,111 @@ public final class SeismicTerrainVfx {
             rayleigh += damped(t - arrival, 27.0f - wave * 3.0f, 10.5f + wave * 2.0f)
                     * (0.115f - wave * 0.018f) * attenuation;
         }
-        // Deux répliques non périodiques, localisées près de la faille.
-        float near = clamp(1.0f - distance / 2.75f);
+        float near = clamp(1.0f - distance / 2.40f);
         float aftershocks = damped(t - 0.515f - h * 0.025f, 39.0f, 17.0f) * 0.065f * near
                 + damped(t - 0.690f - h * 0.018f, 44.0f, 20.0f) * 0.045f * near;
 
-        float bank = clamp(1.0f - distance / 2.35f);
-        float uplift = (0.16f + bank * (0.48f + h * 0.31f)) * (0.82f + noise1(f * 0.72f, snapshot.salt + 303) * 0.36f);
+        float bank = clamp(1.0f - Math.max(0.0f, distance - influence.width) / 1.75f);
+        float uplift = (0.10f + bank * (0.34f + fracture.depth * 0.36f + h * 0.20f))
+                * (0.82f + noise1(f * 0.72f + l * 0.31f, snapshot.salt + 303) * 0.36f);
         float rise = open * uplift + p + rayleigh + aftershocks;
-        float separation = side * open * (0.08f + bank * 0.26f);
+        float separation = side * open * (0.055f + bank * (0.16f + influence.width * 0.22f));
+        float normalF = -Mth.sin(fracture.angle), normalL = Mth.cos(fracture.angle);
         float shearOffset = shear * (0.45f + bank * 0.55f);
-        float localL = separation + shearOffset;
-        float localF = rayleigh * 0.30f + shear * 0.24f;
+        float localF = normalF * separation + rayleigh * 0.30f + shear * 0.24f;
+        float localL = normalL * separation + shearOffset;
 
         float offsetX = (snapshot.dirX * localF - snapshot.dirZ * localL) * snapshot.worldScale;
         float offsetZ = (snapshot.dirZ * localF + snapshot.dirX * localL) * snapshot.worldScale;
-        float roll = side * open * (0.045f + bank * (0.12f + h * 0.10f)) + shear * 0.70f;
-        float pitch = rayleigh * 0.34f + (h - 0.5f) * open * bank * 0.09f;
-        float yaw = shear * 0.32f + (h - 0.5f) * open * 0.035f;
+        float roll = side * open * (0.035f + bank * (0.10f + h * 0.10f)) + shear * 0.70f;
+        float pitch = rayleigh * 0.34f + (h - 0.5f) * open * bank * 0.11f;
+        float yaw = shear * 0.32f + (h - 0.5f) * open * 0.055f;
         float occlusion = Math.max(voidOpen, clamp(open));
         return new Motion(offsetX, rise * snapshot.worldScale, offsetZ,
-                yaw, pitch, roll, voidOpen, occlusion);
+                yaw, pitch, roll, voidOpen, occlusion, fracture.depth);
     }
 
-    private static boolean isBranch(float f, float l, float mainCenter, int salt) {
-        for (int branch = 0; branch < 3; branch++) {
-            float startF = -2.45f + branch * 2.10f + (hash(salt, 810 + branch) - 0.5f) * 0.55f;
-            float side = branch % 2 == 0 ? -1.0f : 1.0f;
-            float startL = faultCenter(startF, salt);
-            float df = f - startF;
-            if (df < 0.0f || df > 1.75f) continue;
-            float target = startL + side * df * (0.62f + branch * 0.09f)
-                    + (noise1(df * 3.1f, salt + 820 + branch) - 0.5f) * 0.28f;
-            if (Math.abs(l - target) < 0.26f) return true;
+    /** Quatre racines indépendantes, six filles et trois tertiaires : aucune faille dominante. */
+    private static List<Fracture> buildFractures(int salt) {
+        List<Fracture> out = new ArrayList<>(13);
+        float[] rootAngles = {0.18f, 2.22f, -1.96f};
+        for (int root = 0; root < 3; root++) {
+            float rf = (root == 0 ? -2.65f : root == 1 ? 2.10f : 1.90f)
+                    + (hash(salt, 1000 + root * 31) - 0.5f) * 0.45f;
+            float rl = (root == 0 ? -1.25f : root == 1 ? 1.35f : -1.55f)
+                    + (hash(salt, 1001 + root * 37) - 0.5f) * 0.45f;
+            float angle = rootAngles[root] + (hash(salt, 1002 + root * 41) - 0.5f) * 0.70f;
+            float length = 2.65f + hash(salt, 1003 + root * 43) * 1.00f;
+            float width = 0.36f + hash(salt, 1004 + root * 47) * 0.20f;
+            float depth = 0.76f + hash(salt, 1005 + root * 53) * 0.46f;
+            float delay = 0.052f + root * 0.027f + hash(salt, 1006 + root * 59) * 0.018f;
+            float curvature = (hash(salt, 1007 + root * 61) - 0.5f) * 0.92f;
+            Fracture parent = new Fracture(out.size(), rf, rl, angle, length, width, depth,
+                    delay, curvature, salt + 1100 + root * 101, 0);
+            out.add(parent);
+            for (int child = 0; child < 2; child++) {
+                float at = 0.31f + child * 0.35f + (hash(salt, 1200 + root * 67 + child) - 0.5f) * 0.12f;
+                float[] origin = pointOn(parent, at);
+                float sign = child == 0 ? -1.0f : 1.0f;
+                float childAngle = angle + sign * (0.72f + hash(salt, 1201 + root * 71 + child) * 0.82f)
+                        + (hash(salt, 1202 + root * 73 + child) - 0.5f) * 0.34f;
+                float childLength = 0.90f + hash(salt, 1203 + root * 79 + child) * 1.15f;
+                float childWidth = width * (0.48f + hash(salt, 1204 + root * 83 + child) * 0.24f);
+                float childDepth = depth * (0.64f + hash(salt, 1205 + root * 89 + child) * 0.24f);
+                Fracture branch = new Fracture(out.size(), origin[0], origin[1], childAngle,
+                        childLength, childWidth, childDepth, delay + 0.035f + at * 0.050f,
+                        (hash(salt, 1206 + root * 97 + child) - 0.5f) * 0.66f,
+                        salt + 1300 + root * 131 + child * 17, 1);
+                out.add(branch);
+                if ((root + child) % 2 == 0) {
+                    float[] tip = pointOn(branch, 0.52f + hash(salt, 1400 + root * 101 + child) * 0.20f);
+                    float tertiaryAngle = childAngle - sign * (0.66f + hash(salt, 1401 + root * 103 + child) * 0.62f);
+                    out.add(new Fracture(out.size(), tip[0], tip[1], tertiaryAngle,
+                            0.55f + hash(salt, 1402 + root * 107 + child) * 0.70f,
+                            childWidth * (0.52f + hash(salt, 1403 + root * 109 + child) * 0.18f),
+                            childDepth * 0.72f, branch.delay + 0.052f,
+                            (hash(salt, 1404 + root * 113 + child) - 0.5f) * 0.42f,
+                            salt + 1500 + root * 137 + child * 19, 2));
+                }
+            }
         }
-        return false;
+        // Une quatrième rupture excentrée traverse le réseau sans partager son origine.
+        out.add(new Fracture(out.size(), -2.40f, 1.85f, -0.12f, 1.90f, 0.25f, 0.68f,
+                0.155f, 0.31f, salt + 1700, 0));
+        return List.copyOf(out);
+    }
+
+    private static float[] pointOn(Fracture fracture, float u) {
+        float along = fracture.length * u;
+        float bend = Mth.sin(u * (float) Math.PI) * fracture.curvature;
+        float dx = Mth.cos(fracture.angle), dl = Mth.sin(fracture.angle);
+        return new float[]{fracture.startF + dx * along - dl * bend,
+                fracture.startL + dl * along + dx * bend};
+    }
+
+    private static FractureInfluence nearestFracture(List<Fracture> fractures, float f, float l) {
+        FractureInfluence best = null;
+        float bestScore = Float.MAX_VALUE;
+        for (Fracture fracture : fractures) {
+            float dx = Mth.cos(fracture.angle), dl = Mth.sin(fracture.angle);
+            float rf = f - fracture.startF, rl = l - fracture.startL;
+            float rawU = rf * dx + rl * dl;
+            float u = Mth.clamp(rawU, 0.0f, fracture.length);
+            float bend = Mth.sin(u / fracture.length * (float) Math.PI) * fracture.curvature;
+            float signed = -rf * dl + rl * dx - bend;
+            float outside = Math.abs(rawU - u);
+            float distance = Mth.sqrt(signed * signed + outside * outside);
+            float width = fracture.width
+                    * (0.64f + 0.36f * Mth.sin(u / fracture.length * (float) Math.PI))
+                    * (0.80f + 0.36f * noise1(u * 2.15f, fracture.seed));
+            width = Math.max(0.055f, width);
+            float score = distance - width;
+            if (score >= bestScore) continue;
+            boolean inside = rawU >= 0.0f && rawU <= fracture.length && Math.abs(signed) < width;
+            best = new FractureInfluence(fracture, u, signed, distance, width, inside);
+            bestScore = score;
+        }
+        return best;
     }
 
     /** Masque opaque de la cellule source retirée ; les berges surélevées fournissent la profondeur. */
@@ -256,11 +319,6 @@ public final class SeismicTerrainVfx {
             return pos.immutable();
         }
         return null;
-    }
-
-    private static float faultCenter(float f, int salt) {
-        return (noise1(f * 1.37f, salt + 41) - 0.5f) * 0.82f
-                + (noise1(f * 3.91f, salt + 42) - 0.5f) * 0.31f;
     }
 
     private static float noise1(float x, int seed) {
@@ -307,7 +365,13 @@ public final class SeismicTerrainVfx {
                                  int light, float f, float l, float hash) { }
     private record TerrainSnapshot(ClientLevel level, double x, double y, double z,
                                    float dirX, float dirZ, float worldScale, int salt,
-                                   List<CapturedBlock> blocks) { }
+                                   List<CapturedBlock> blocks, List<Fracture> fractures) { }
+    private record Fracture(int id, float startF, float startL, float angle, float length,
+                            float width, float depth, float delay, float curvature,
+                            int seed, int generation) { }
+    private record FractureInfluence(Fracture fracture, float u, float signedDistance,
+                                     float distance, float width, boolean inside) { }
     private record Motion(float offsetX, float rise, float offsetZ,
-                          float yaw, float pitch, float roll, float voidOpen, float occlusion) { }
+                          float yaw, float pitch, float roll, float voidOpen, float occlusion,
+                          float depth) { }
 }

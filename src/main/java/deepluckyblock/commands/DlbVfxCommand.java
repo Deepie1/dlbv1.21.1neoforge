@@ -332,7 +332,9 @@ public final class DlbVfxCommand {
         }
         anim.then(Commands.literal("feu").executes(ctx -> giveAnimationSword(ctx, "feu")))
                 .then(Commands.literal("gaia").executes(ctx -> giveAnimationSword(ctx, "gaia")))
-                .then(Commands.literal("poison").executes(ctx -> giveAnimationSword(ctx, "poison")));
+                .then(Commands.literal("poison").executes(ctx -> giveAnimationSword(ctx, "poison")))
+                .then(Commands.literal("terre").executes(ctx -> giveAnimationSword(ctx, "terre")))
+                .then(Commands.literal("earth").executes(ctx -> giveAnimationSword(ctx, "terre")));
         event.getDispatcher().register(anim);
     }
 
@@ -344,10 +346,14 @@ public final class DlbVfxCommand {
         tag.putString("DlbAnimFamily", family);
         tag.putInt("DlbAnimNext", 0);
         deepluckyblock.util.DeepNbt.commit(sword, tag);
+        String displayName = switch (family) {
+            case "feu" -> "§cAnimation Feu";
+            case "poison" -> "§2Animation Poison";
+            case "terre" -> "§6Animation §aTerre";
+            default -> "§aAnimation Gaia";
+        };
         sword.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
-                Component.literal((family.equals("feu") ? "§cAnimation Feu"
-                        : family.equals("poison") ? "§2Animation Poison" : "§aAnimation Gaia")
-                        + " §7— §f60 / 40"));
+                Component.literal(displayName + " §7— §f60 / 40"));
         if (!player.getInventory().add(sword)) {
             player.drop(sword, false);
         }
