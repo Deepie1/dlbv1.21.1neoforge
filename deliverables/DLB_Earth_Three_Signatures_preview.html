@@ -26,7 +26,7 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
   <div class="rule"></div>
   <span class="label">Signature de l’enchantement</span>
   <div class="variants" role="group" aria-label="Variante Terre">
-    <button class="variant active" data-variant="0"><span class="num">Ⅰ</span><span><b>Seismic Tectonic</b><small>5,6 s · 121 surfaces · 4 couches</small></span></button>
+    <button class="variant active" data-variant="0"><span class="num">Ⅰ</span><span><b>Seismic Tectonic</b><small>5,6 s · empreinte asymétrique · 4 couches</small></span></button>
     <button class="variant" data-variant="1"><span class="num">Ⅱ</span><span><b>Sandstorm Dune</b><small>7 s · dune · triple vortex</small></span></button>
     <button class="variant" data-variant="2"><span class="num">Ⅲ</span><span><b>Warlord Rally Sigil</b><small>6 s · runes · 4 étendards</small></span></button>
   </div>
@@ -37,7 +37,7 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
   <div class="stats"><div class="stat"><b id="baseCount">0</b><span>Blocs / voxels dans la frame</span></div><div class="stat"><b id="duration">5,6 s</b><span>Durée en jeu</span></div></div>
   <div class="legend"><span style="--c:#5c3b1a">Terre</span><span style="--c:#9fc25e">Énergie</span><span style="--c:#ddbe78">Sable</span><span style="--c:#d9a83e">Commandement</span></div>
   <a class="download" href="./DLB_Earth_Three_Signatures_src.zip" download>Télécharger les sources Terre + épée · ZIP</a>
-  <p class="refs">Seismic : snapshot des vrais BlockState, 121 colonnes articulées de 4 couches, fissure centrale et branches, précalcul des contacts OBB/SAT, aucun masque noir. Sandstorm/Rally : voxels procéduraux. Aucune destruction du monde, aucun asset externe.<br>Épée : <b>/anim terre</b> (alias <b>/anim earth</b>) · pointe verte #79A74B · arc en cinq bruns grass block.</p>
+  <p class="refs">Seismic : snapshot des vrais BlockState, empreinte asymétrique à bords non réimprimés, colonnes articulées de 4 couches, fissure centrale et branches, précalcul des contacts OBB/SAT, aucun masque noir. Sandstorm/Rally : voxels procéduraux. Aucune destruction du monde, aucun asset externe.<br>Épée : <b>/anim terre</b> (alias <b>/anim earth</b>) · pointe verte #79A74B · arc en cinq bruns grass block.</p>
 </aside>
 <main>
   <canvas id="scene" tabindex="0" aria-label="Aperçu animé des trois signatures Terre"></canvas>
@@ -62,7 +62,9 @@ function buildEarth(variant,t,salt=42,groundFn=null){const out=[];if(t<=0||t>=1)
     function seismicTerrain(t,salt,terrain,target=out,resolve=true){
       const fractures=buildFractures(salt);
       for(let ix=-5;ix<=5;ix++)for(let iz=-5;iz<=5;iz++){
-        const f=ix,l=iz,index=(ix+5)*31+iz+5,h=hash(salt,index*19349663),ground=terrain.at(f,l),deformation=deformationAt(fractures,f,l,h,t),dirX=deformation.dirF,dirZ=deformation.dirL,topAngle=deformation.angle,rise=deformation.rise;
+        const f=ix,l=iz,index=(ix+5)*31+iz+5,h=hash(salt,index*19349663),ground=terrain.at(f,l),edge=edgeFactor(f,l,salt);
+        if(edge<=0)continue;
+        const deformation=deformationAt(fractures,f,l,h,t,edge),dirX=deformation.dirF,dirZ=deformation.dirL,topAngle=deformation.angle,rise=deformation.rise;
         const mat=hash(salt,9000+index),variation=hash(salt,9100+index),mainInfluence=influenceOn(fractures[0],f,l);
         let top,sideRgb;
         if(mat<.48){top=mix(0x59663A,0x7C8752,variation);sideRgb=mix(0x3D291B,0x654429,variation);}
@@ -72,8 +74,8 @@ function buildEarth(variant,t,salt=42,groundFn=null){const out=[];if(t<=0||t>=1)
         for(let depth=0;depth<4;depth++){
           let x=f,y=ground-3.5+rise,z=l;const targetAngle=topAngle*tiltFactor(depth);
           for(let layer=2;layer>=depth;layer--){const belowAngle=topAngle*tiltFactor(layer+1),currentAngle=topAngle*tiltFactor(layer);x+=(Math.sin(belowAngle)+Math.sin(currentAngle))*.5*dirX;y+=(Math.cos(belowAngle)+Math.cos(currentAngle))*.5;z+=(Math.sin(belowAngle)+Math.sin(currentAngle))*.5*dirZ;}
-          capturedBlock(x,y+.012,z,.5,.5,.5,depth===0?top:sideRgb,sideRgb,0,0,0,9000+index,target);
-          const block=target[target.length-1];block.columnDepth=depth;block.seismicRise=rise;block.deformationEnvelope=deformation.envelope;block.tiltAngle=targetAngle;block.tiltX=dirX;block.tiltZ=dirZ;block.localF=f;block.localL=l;
+          capturedBlock(x,y+.012*deformation.weight,z,.5,.5,.5,depth===0?top:sideRgb,sideRgb,0,0,0,9000+index,target);
+          const block=target[target.length-1];block.columnDepth=depth;block.seismicRise=rise;block.deformationEnvelope=deformation.envelope;block.seismicWeight=deformation.weight;block.edgeFactor=edge;block.tiltAngle=targetAngle;block.tiltX=dirX;block.tiltZ=dirZ;block.localF=f;block.localL=l;
           if(depth===0){block.fractureId=deformation.nearest.fracture.id;block.mainSigned=mainInfluence.signedDistance;block.mainDistance=mainInfluence.distance;block.mainNormalF=-Math.sin(fractures[0].angle);block.mainNormalL=Math.cos(fractures[0].angle);}
         }
       }
@@ -81,18 +83,24 @@ function buildEarth(variant,t,salt=42,groundFn=null){const out=[];if(t<=0||t>=1)
         const cache=seismicCollisionCache,key=salt+'|'+terrain.cacheKey;
         if(!cache.has(key)){const open=[];seismicTerrain(.45,salt,terrain,open,false);cache.set(key,solveSeismicCollisions(open));}
         const corrections=cache.get(key);for(let i=0;i<target.length;i++){const block=target[i],c=corrections[i],e=block.deformationEnvelope;block.x+=c.x*e;block.y+=c.y*e;block.z+=c.z*e;block.collisionOffset=Math.hypot(c.x,c.y,c.z)*e;}
+        // Hors influence, le terrain original se suffit : aucun doublon, aucun contour de capture.
+        let write=0;for(let read=0;read<target.length;read++){const block=target[read];if(block.seismicWeight>.0001)target[write++]=block;}target.length=write;
       }
     }
     function tiltFactor(depth){return depth===0?1:depth===1?.58:depth===2?.24:0;}
-    function deformationAt(fractures,f,l,h,t){
-      const nearest=nearestFracture(fractures,f,l),start=nearest.fracture.delay+clamp(nearest.u/nearest.fracture.length)*.045+h*.014,envelope=smooth((t-start)/.135)*(1-smooth((t-.835-h*.018)/.145));
+    function deformationAt(fractures,f,l,h,t,edge){
+      const nearest=nearestFracture(fractures,f,l),start=nearest.fracture.delay+clamp(nearest.u/nearest.fracture.length)*.045+h*.014;
+      const closure=1-smooth((t-.825-h*.018)/.145);let envelope=smooth((t-start)/.135)*closure;
       let vectorF=0,vectorL=0,uplift=0,activity=0;
       for(const fracture of fractures){const influence=influenceOn(fracture,f,l),range=fracture.generation===0?2.80:1.55,weight=1-smooth(influence.distance/range);if(weight<=0)continue;const side=Math.abs(influence.signedDistance)<.0001?(h<.5?-1:1):(influence.signedDistance<0?-1:1),strength=weight*fracture.depth*(fracture.generation===0?1:.62);vectorF+=-Math.sin(fracture.angle)*side*strength;vectorL+=Math.cos(fracture.angle)*side*strength;uplift+=weight*weight*fracture.depth*(fracture.generation===0?.38:.16);activity=Math.max(activity,weight);}
-      const magnitude=Math.hypot(vectorF,vectorL),dirF=magnitude>.0001?vectorF/magnitude:0,dirL=magnitude>.0001?vectorL/magnitude:0,angle=Math.min(.38,magnitude*.34)*envelope,radial=Math.hypot(f,l),p=damped(t-.018-radial*.0045,96,49)*.024,shear=damped(t-.145-radial*.008,47,15)*.018,attenuation=1/(1+radial*.18);let rayleigh=0;
+      const magnitude=Math.hypot(vectorF,vectorL),dirF=magnitude>.0001?vectorF/magnitude:0,dirL=magnitude>.0001?vectorL/magnitude:0,radial=Math.hypot(f,l),p=damped(t-.018-radial*.0045,96,49)*.024,shear=damped(t-.145-radial*.008,47,15)*.018,attenuation=1/(1+radial*.18);let rayleigh=0,angle=Math.min(.38,magnitude*.34)*envelope;
       for(let wave=0;wave<3;wave++){const arrival=.285+wave*.155+radial*(.021-wave*.002);rayleigh+=damped(t-arrival,27-wave*3,10.5+wave*2)*(.075-wave*.012)*attenuation;}
-      const after=damped(t-.515-h*.025,39,17)*.040*activity+damped(t-.690-h*.018,44,20)*.028*activity,rise=Math.max(0,envelope*Math.min(.72,uplift)+(p+shear+rayleigh)*activity+after);
-      return{dirF,dirL,angle,rise,nearest,envelope};
+      const after=damped(t-.515-h*.025,39,17)*.040*activity+damped(t-.690-h*.018,44,20)*.028*activity;
+      let rise=Math.max(0,(envelope*Math.min(.72,uplift)+closure*((p+shear+rayleigh)*activity+after))*edge);angle*=edge;envelope*=edge;
+      const weight=Math.max(activity*envelope,angle*4,rise*20);
+      return{dirF,dirL,angle,rise,nearest,envelope,weight};
     }
+    function edgeFactor(f,l,salt){const af=f+.26*l,al=l-.19*f,radial=Math.hypot(af/5.25,al/4.75),boundary=1+.16*(noise1(f*.57+l*.31,salt+3100)-.5)+.06*Math.sin(f*.83-l*.47),ratio=radial/boundary;return 1-smooth((ratio-.52)/.30);}
     function capturedBlock(x,y,z,hx,hy,hz,top,side,yaw,pitch,roll,seed,target=out){
       box(x,y,z,hx,hy,hz,side,245,yaw);const v=out.pop();if(!v)return;target.push(v);
       v.terrainBlock=true;v.topRgb=top;v.sideRgb=side;v.pitch=pitch;v.roll3d=roll;v.textureSeed=seed;
@@ -101,12 +109,12 @@ function buildEarth(variant,t,salt=42,groundFn=null){const out=[];if(t<=0||t>=1)
       const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],norm=a=>{const d=Math.hypot(...a);return d<1e-8?null:a.map(x=>x/d)};
       for(const b of blocks){b.collisionAxes=collisionAxes(b);b.baseX=b.x;b.baseY=b.y;b.baseZ=b.z;}
       for(let iteration=0;iteration<12;iteration++)for(let i=0;i<blocks.length;i++)for(let j=i+1;j<blocks.length;j++){
-        const a=blocks[i],b=blocks[j];if(Math.abs(a.localF-b.localF)>1.6||Math.abs(a.localL-b.localL)>1.6)continue;
+        const a=blocks[i],b=blocks[j];if(a.seismicWeight<=.0001||b.seismicWeight<=.0001||Math.abs(a.localF-b.localF)>1.6||Math.abs(a.localL-b.localL)>1.6)continue;
         const overlap=collisionOverlap(a,b,dot,cross,norm);if(!overlap||overlap.depth<.08)continue;
-        const aw=a.columnDepth===3?0:1,bw=b.columnDepth===3?0:1,total=aw+bw;if(!total)continue;const amount=Math.min(.10,overlap.depth+.0001);
+        const aw=a.columnDepth===3?0:a.edgeFactor,bw=b.columnDepth===3?0:b.edgeFactor,total=aw+bw;if(!total)continue;const amount=Math.min(.10,overlap.depth+.0001);
         for(const k of ['x','y','z']){const axis=k==='x'?0:k==='y'?1:2,delta=overlap.axis[axis]*amount;a[k]-=delta*aw/total;b[k]+=delta*bw/total;}
       }
-      return blocks.map(b=>({x:b.x-b.baseX,y:b.y-b.baseY,z:b.z-b.baseZ}));
+      return blocks.map(b=>({x:(b.x-b.baseX)/b.edgeFactor,y:(b.y-b.baseY)/b.edgeFactor,z:(b.z-b.baseZ)/b.edgeFactor}));
     }
     function collisionAxes(b){
       if(!b.tiltAngle)return[[1,0,0],[0,1,0],[0,0,1]];const ax=b.tiltZ,az=-b.tiltX,c=Math.cos(b.tiltAngle),s=Math.sin(b.tiltAngle),k=1-c;

@@ -82,6 +82,9 @@ public final class SeismicTerrainVfx {
             float f = (float) (dirX * relX + dirZ * relZ);
             float l = (float) (-dirZ * relX + dirX * relZ);
             if (Math.abs(f) > 5.20f || Math.abs(l) > 5.20f) continue;
+            float edgeFactor = edgeFactor(f, l, salt);
+            // Le pourtour n'est pas réimprimé : le vrai sol reste seul visible, sans cadre carré.
+            if (edgeFactor <= 0.0f) continue;
 
             int light = LevelRenderer.getLightColor(level, surface.above());
             float columnHash = hash(salt, surface.getX() * 73856093 ^ surface.getY() * 19349663
@@ -94,7 +97,7 @@ public final class SeismicTerrainVfx {
                 BakedModel model = dispatcher.getBlockModel(state);
                 ModelData modelData = model.getModelData(level, pos, state, ModelData.EMPTY);
                 blocks.add(new CapturedBlock(pos.immutable(), state, modelData, light, f, l,
-                        columnHash, depth, 0.0f, 0.0f, 0.0f));
+                        columnHash, depth, edgeFactor, 0.0f, 0.0f, 0.0f));
             }
             if (blocks.size() >= MAX_BLOCKS_PER_SNAPSHOT) break captureColumns;
         }
@@ -123,6 +126,9 @@ public final class SeismicTerrainVfx {
         boolean emitted = false;
         for (CapturedBlock block : snapshot.blocks) {
             BlockTransform transform = transformAt(snapshot, block, t);
+            // Une colonne revenue à zéro n'est pas dessinée par-dessus le terrain d'origine.
+            // Cela supprime aussi le carré fantôme autour de la zone capturée.
+            if (transform.weight <= 0.0001f) continue;
             pose.pushPose();
             pose.translate(transform.x - camera.x, transform.y - camera.y, transform.z - camera.z);
             pose.mulPose(transform.rotation);
@@ -160,7 +166,8 @@ public final class SeismicTerrainVfx {
         x += block.collisionX * deformation.envelope;
         y += block.collisionY * deformation.envelope;
         z += block.collisionZ * deformation.envelope;
-        return new BlockTransform(x, y + REPRINT_EPSILON, z, rotation);
+        return new BlockTransform(x, y + REPRINT_EPSILON * deformation.weight, z, rotation,
+                deformation.weight);
     }
 
     private static float tiltFactor(int depth) {
@@ -176,8 +183,8 @@ public final class SeismicTerrainVfx {
         float f = block.f, l = block.l, h = block.hash;
         FractureInfluence nearest = nearestFracture(snapshot.fractures, f, l);
         float start = nearest.fracture.delay + clamp(nearest.u / nearest.fracture.length) * 0.045f + h * 0.014f;
-        float envelope = smooth((t - start) / 0.135f)
-                * (1.0f - smooth((t - 0.835f - h * 0.018f) / 0.145f));
+        float closure = 1.0f - smooth((t - 0.825f - h * 0.018f) / 0.145f);
+        float envelope = smooth((t - start) / 0.135f) * closure;
 
         float vectorF = 0.0f, vectorL = 0.0f, uplift = 0.0f, activity = 0.0f;
         for (Fracture fracture : snapshot.fractures) {
@@ -210,9 +217,14 @@ public final class SeismicTerrainVfx {
         }
         float aftershocks = damped(t - 0.515f - h * 0.025f, 39.0f, 17.0f) * 0.040f * activity
                 + damped(t - 0.690f - h * 0.018f, 44.0f, 20.0f) * 0.028f * activity;
-        float rise = envelope * Math.min(0.72f, uplift)
-                + (p + shear + rayleigh) * activity + aftershocks;
-        return new Deformation(dirF, dirL, angle, Math.max(0.0f, rise * snapshot.worldScale), envelope);
+        float edge = block.edgeFactor;
+        float rise = (envelope * Math.min(0.72f, uplift)
+                + closure * ((p + shear + rayleigh) * activity + aftershocks)) * edge;
+        angle *= edge;
+        envelope *= edge;
+        rise = Math.max(0.0f, rise * snapshot.worldScale);
+        float weight = Math.max(activity * envelope, Math.max(angle * 4.0f, rise * 20.0f));
+        return new Deformation(dirF, dirL, angle, rise, envelope, weight);
     }
 
     /** Une grande fissure centrée sur le mob, puis deux ou trois filles aléatoires. */
@@ -255,13 +267,15 @@ public final class SeismicTerrainVfx {
         for (int iteration = 0; iteration < 12; iteration++) {
             for (int i = 0; i < size; i++) {
                 CapturedBlock aBlock = snapshot.blocks.get(i);
+                if (base[i].weight <= 0.0001f) continue;
                 for (int j = i + 1; j < size; j++) {
+                    if (base[j].weight <= 0.0001f) continue;
                     CapturedBlock bBlock = snapshot.blocks.get(j);
                     if (Math.abs(aBlock.f - bBlock.f) > 1.6f || Math.abs(aBlock.l - bBlock.l) > 1.6f) continue;
                     Overlap overlap = collisionOverlap(boxes[i], boxes[j]);
                     if (overlap == null || overlap.depth < 0.08f) continue;
-                    float aWeight = aBlock.columnDepth == COLUMN_DEPTH - 1 ? 0.0f : 1.0f;
-                    float bWeight = bBlock.columnDepth == COLUMN_DEPTH - 1 ? 0.0f : 1.0f;
+                    float aWeight = aBlock.columnDepth == COLUMN_DEPTH - 1 ? 0.0f : aBlock.edgeFactor;
+                    float bWeight = bBlock.columnDepth == COLUMN_DEPTH - 1 ? 0.0f : bBlock.edgeFactor;
                     float total = aWeight + bWeight;
                     if (total <= 0.0f) continue;
                     float amount = Math.min(0.10f, overlap.depth + 0.0001f);
@@ -278,8 +292,10 @@ public final class SeismicTerrainVfx {
         for (int i = 0; i < size; i++) {
             CapturedBlock block = snapshot.blocks.get(i);
             corrected.add(new CapturedBlock(block.pos, block.state, block.modelData, block.light,
-                    block.f, block.l, block.hash, block.columnDepth,
-                    boxes[i].x - base[i].x, boxes[i].y - base[i].y, boxes[i].z - base[i].z));
+                    block.f, block.l, block.hash, block.columnDepth, block.edgeFactor,
+                    (boxes[i].x - base[i].x) / block.edgeFactor,
+                    (boxes[i].y - base[i].y) / block.edgeFactor,
+                    (boxes[i].z - base[i].z) / block.edgeFactor));
         }
         return new TerrainSnapshot(snapshot.level, snapshot.x, snapshot.y, snapshot.z,
                 snapshot.dirX, snapshot.dirZ, snapshot.worldScale, snapshot.salt,
@@ -364,6 +380,19 @@ public final class SeismicTerrainVfx {
         return new FractureInfluence(fracture, u, signed, distance, width, inside);
     }
 
+    /** Empreinte asymétrique : déformation nulle bien avant la limite de capture. */
+    private static float edgeFactor(float f, float l, int salt) {
+        float asymmetricF = f + 0.26f * l;
+        float asymmetricL = l - 0.19f * f;
+        float radial = Mth.sqrt((asymmetricF / 5.25f) * (asymmetricF / 5.25f)
+                + (asymmetricL / 4.75f) * (asymmetricL / 4.75f));
+        float boundary = 1.0f
+                + 0.16f * (noise1(f * 0.57f + l * 0.31f, salt + 3100) - 0.5f)
+                + 0.06f * Mth.sin(f * 0.83f - l * 0.47f);
+        float ratio = radial / boundary;
+        return 1.0f - smooth((ratio - 0.52f) / 0.30f);
+    }
+
     private static float noise1(float x, int seed) {
         int i = Mth.floor(x);
         float u = smooth(x - i);
@@ -400,7 +429,7 @@ public final class SeismicTerrainVfx {
     private record SnapshotKey(int x, int y, int z, int salt) { }
     private record CapturedBlock(BlockPos pos, BlockState state, ModelData modelData,
                                  int light, float f, float l, float hash, int columnDepth,
-                                 float collisionX, float collisionY, float collisionZ) { }
+                                 float edgeFactor, float collisionX, float collisionY, float collisionZ) { }
     private record TerrainSnapshot(ClientLevel level, double x, double y, double z,
                                    float dirX, float dirZ, float worldScale, int salt,
                                    List<CapturedBlock> blocks, List<Fracture> fractures) { }
@@ -423,6 +452,7 @@ public final class SeismicTerrainVfx {
         void move(float dx, float dy, float dz) { this.x += dx; this.y += dy; this.z += dz; }
     }
     private record Overlap(float depth, Vector3f axis) { }
-    private record Deformation(float dirF, float dirL, float angle, float rise, float envelope) { }
-    private record BlockTransform(float x, float y, float z, Quaternionf rotation) { }
+    private record Deformation(float dirF, float dirL, float angle, float rise,
+                               float envelope, float weight) { }
+    private record BlockTransform(float x, float y, float z, Quaternionf rotation, float weight) { }
 }

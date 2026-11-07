@@ -1184,7 +1184,8 @@ public final class WeaponVfxServerListener {
             return;
         }
         if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) {
-            applyWoodHold(target, gameNow + 60, false);
+            // L'arbre dure 80 ticks : la cible reste centrée et immobile du début à la fin.
+            applyWoodHold(target, gameNow + 80, false);
             sl.playSound(null, x, y, z, SoundEvents.WARDEN_EMERGE,
                     SoundSource.PLAYERS, 0.40f, 0.75f);
             // Zephyr : trois lances indépendantes, chacune avec SON départ et SON impact.
@@ -1209,15 +1210,14 @@ public final class WeaponVfxServerListener {
         }
         if (fx != WeaponVisualEffectId.VERDANT_SAP_BLOOM) return;
 
-        long holdEndGame = gameNow + 82;
-        int holdStartSchedule = scheduleNow + 64;
-        int holdEndSchedule = scheduleNow + 82;
+        long holdEndGame = gameNow + 96;
+        int holdEndSchedule = scheduleNow + 96;
+        // Verdant dure 96 ticks : ne pas laisser le mob libre pendant la croissance (0..63).
+        applyWoodHold(target, holdEndGame, false);
         sl.playSound(null, x, y, z, SoundEvents.WARDEN_EMERGE,
                 SoundSource.PLAYERS, 0.40f, 0.75f);
         sl.playSound(null, x, y, z, SoundEvents.BONE_MEAL_USE, SoundSource.PLAYERS, 0.72f, 0.82f);
-        TestProcedure.schedule(sl, holdStartSchedule, () -> {
-            if (target.isAlive() && target.level() == sl) applyWoodHold(target, holdEndGame, false);
-        });
+        // Le maintien existe déjà depuis le tick 0 : on programme uniquement sa libération.
         TestProcedure.schedule(sl, scheduleNow + 74, () -> {
             if (!target.isAlive() || target.level() != sl) return;
             hurtWithCapturedWeapon(sl, attackerId, target, weaponDamage * 2.0f);
