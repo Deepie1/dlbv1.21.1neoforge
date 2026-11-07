@@ -1,6 +1,7 @@
 package deepluckyblock.procedures;
 
 import deepluckyblock.enchantments.PixelFx;
+import deepluckyblock.init.DeepLuckyBlockModItems;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleOptions;
