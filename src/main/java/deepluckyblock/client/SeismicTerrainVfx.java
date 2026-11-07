@@ -14,6 +14,8 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 import net.neoforged.neoforge.client.model.data.ModelData;
 
 import java.util.ArrayList;
@@ -27,7 +29,9 @@ import java.util.Map;
  *
  * <p>Au premier tick, les BlockState, ModelData, positions et lumières de 144 colonnes maximum de quatre
  * couches sont figés. La passe de rendu réimprime les vrais modèles via l'atlas de blocs, sans
- * supprimer le terrain original. Les colonnes restent axis-aligned : seule leur hauteur change.
+ * supprimer le terrain original. Une fissure principale centrée et deux/trois branches pilotent
+ * un champ continu d'inclinaison. Chaque colonne est articulée du bas plat vers son top écarté.
+ * Un précalcul OBB/SAT résout les contacts importants entre voisins sans déplacer la base.
  * Aucun masque, aucune cellule omise, aucune particule de sol ni roche générique.</p>
  *
  * <p>Techniques étudiées : AcademyCraft GroundHeaveClient (renderSingleBlock au-dessus du monde intact),
@@ -90,13 +94,14 @@ public final class SeismicTerrainVfx {
                 BakedModel model = dispatcher.getBlockModel(state);
                 ModelData modelData = model.getModelData(level, pos, state, ModelData.EMPTY);
                 blocks.add(new CapturedBlock(pos.immutable(), state, modelData, light, f, l,
-                        columnHash, depth));
+                        columnHash, depth, 0.0f, 0.0f, 0.0f));
             }
             if (blocks.size() >= MAX_BLOCKS_PER_SNAPSHOT) break captureColumns;
         }
 
         TerrainSnapshot snapshot = new TerrainSnapshot(level, x, y, z, dirX, dirZ, worldScale,
                 salt, List.copyOf(blocks), buildFractures(salt));
+        snapshot = withCollisionCorrections(snapshot);
         SNAPSHOTS.put(key, snapshot);
         while (SNAPSHOTS.size() > MAX_SNAPSHOTS) {
             Iterator<SnapshotKey> it = SNAPSHOTS.keySet().iterator();
@@ -117,12 +122,12 @@ public final class SeismicTerrainVfx {
         BlockRenderDispatcher dispatcher = mc.getBlockRenderer();
         boolean emitted = false;
         for (CapturedBlock block : snapshot.blocks) {
-            float rise = riseAt(snapshot, block, t);
+            BlockTransform transform = transformAt(snapshot, block, t);
             pose.pushPose();
-            pose.translate(block.pos.getX() - camera.x,
-                    block.pos.getY() + rise + REPRINT_EPSILON - camera.y,
-                    block.pos.getZ() - camera.z);
-            // Aucun scale, yaw, pitch ou roll : modèle exact et volumes toujours axis-aligned.
+            pose.translate(transform.x - camera.x, transform.y - camera.y, transform.z - camera.z);
+            pose.mulPose(transform.rotation);
+            pose.translate(-0.5f, -0.5f, -0.5f);
+            // Modèle et dimensions exacts ; la rotation est limitée et transmise aux voisins.
             dispatcher.renderSingleBlock(block.state, pose, buffers, block.light,
                     OverlayTexture.NO_OVERLAY, block.modelData, null);
             pose.popPose();
@@ -131,89 +136,194 @@ public final class SeismicTerrainVfx {
         return emitted;
     }
 
-    /** Montée verticale sans rotation ni translation latérale : les volumes restent sur leur grille. */
-    private static float riseAt(TerrainSnapshot snapshot, CapturedBlock block, float t) {
+    /** Colonne articulée du bas vers le haut : base plane, tops écartés, voisinage continu. */
+    private static BlockTransform transformAt(TerrainSnapshot snapshot, CapturedBlock block, float t) {
+        Deformation deformation = deformationAt(snapshot, block, t);
+        float dirX = snapshot.dirX * deformation.dirF - snapshot.dirZ * deformation.dirL;
+        float dirZ = snapshot.dirZ * deformation.dirF + snapshot.dirX * deformation.dirL;
+        float topAngle = deformation.angle;
+        float rise = deformation.rise;
+
+        float x = block.pos.getX() + 0.5f;
+        float y = block.pos.getY() + block.columnDepth - (COLUMN_DEPTH - 1) + 0.5f + rise;
+        float z = block.pos.getZ() + 0.5f;
+        float targetAngle = topAngle * tiltFactor(block.columnDepth);
+        for (int layer = COLUMN_DEPTH - 2; layer >= block.columnDepth; layer--) {
+            float belowAngle = topAngle * tiltFactor(layer + 1);
+            float currentAngle = topAngle * tiltFactor(layer);
+            x += (Mth.sin(belowAngle) + Mth.sin(currentAngle)) * 0.5f * dirX;
+            y += (Mth.cos(belowAngle) + Mth.cos(currentAngle)) * 0.5f;
+            z += (Mth.sin(belowAngle) + Mth.sin(currentAngle)) * 0.5f * dirZ;
+        }
+        Quaternionf rotation = targetAngle <= 0.0001f ? new Quaternionf()
+                : new Quaternionf().setAngleAxis(targetAngle, dirZ, 0.0f, -dirX);
+        x += block.collisionX * deformation.envelope;
+        y += block.collisionY * deformation.envelope;
+        z += block.collisionZ * deformation.envelope;
+        return new BlockTransform(x, y + REPRINT_EPSILON, z, rotation);
+    }
+
+    private static float tiltFactor(int depth) {
+        return switch (depth) {
+            case 0 -> 1.0f;
+            case 1 -> 0.58f;
+            case 2 -> 0.24f;
+            default -> 0.0f;
+        };
+    }
+
+    private static Deformation deformationAt(TerrainSnapshot snapshot, CapturedBlock block, float t) {
         float f = block.f, l = block.l, h = block.hash;
-        FractureInfluence influence = nearestFracture(snapshot.fractures, f, l);
-        Fracture fracture = influence.fracture;
-        float distance = influence.distance;
-        float side = influence.signedDistance < 0.0f ? -1.0f : 1.0f;
-        float progress = clamp(influence.u / fracture.length);
-        float start = fracture.delay + progress * 0.045f + h * 0.014f;
-        float envelope = smooth((t - start) / (0.105f + fracture.depth * 0.025f))
+        FractureInfluence nearest = nearestFracture(snapshot.fractures, f, l);
+        float start = nearest.fracture.delay + clamp(nearest.u / nearest.fracture.length) * 0.045f + h * 0.014f;
+        float envelope = smooth((t - start) / 0.135f)
                 * (1.0f - smooth((t - 0.835f - h * 0.018f) / 0.145f));
 
+        float vectorF = 0.0f, vectorL = 0.0f, uplift = 0.0f, activity = 0.0f;
+        for (Fracture fracture : snapshot.fractures) {
+            FractureInfluence influence = influenceOn(fracture, f, l);
+            float range = fracture.generation == 0 ? 2.80f : 1.55f;
+            float weight = 1.0f - smooth(influence.distance / range);
+            if (weight <= 0.0f) continue;
+            float side = Math.abs(influence.signedDistance) < 0.0001f
+                    ? (h < 0.5f ? -1.0f : 1.0f) : (influence.signedDistance < 0.0f ? -1.0f : 1.0f);
+            float strength = weight * fracture.depth * (fracture.generation == 0 ? 1.0f : 0.62f);
+            vectorF += -Mth.sin(fracture.angle) * side * strength;
+            vectorL += Mth.cos(fracture.angle) * side * strength;
+            uplift += weight * weight * fracture.depth * (fracture.generation == 0 ? 0.38f : 0.16f);
+            activity = Math.max(activity, weight);
+        }
+        float magnitude = Mth.sqrt(vectorF * vectorF + vectorL * vectorL);
+        float dirF = magnitude > 0.0001f ? vectorF / magnitude : 0.0f;
+        float dirL = magnitude > 0.0001f ? vectorL / magnitude : 0.0f;
+        float angle = Math.min(0.38f, magnitude * 0.34f) * envelope;
+
         float radial = Mth.sqrt(f * f + l * l);
-        // P : compression verticale courte. S : différentiel vertical de part et d'autre.
         float p = damped(t - 0.018f - radial * 0.0045f, 96.0f, 49.0f) * 0.024f;
-        float shear = damped(t - 0.145f - radial * 0.0080f, 47.0f, 15.0f) * 0.022f * side;
+        float shear = damped(t - 0.145f - radial * 0.0080f, 47.0f, 15.0f) * 0.018f;
         float attenuation = 1.0f / (1.0f + radial * 0.18f);
         float rayleigh = 0.0f;
         for (int wave = 0; wave < 3; wave++) {
             float arrival = 0.285f + wave * 0.155f + radial * (0.021f - wave * 0.002f);
             rayleigh += damped(t - arrival, 27.0f - wave * 3.0f, 10.5f + wave * 2.0f)
-                    * (0.090f - wave * 0.014f) * attenuation;
+                    * (0.075f - wave * 0.012f) * attenuation;
         }
-        float near = clamp(1.0f - distance / 2.40f);
-        float aftershocks = damped(t - 0.515f - h * 0.025f, 39.0f, 17.0f) * 0.050f * near
-                + damped(t - 0.690f - h * 0.018f, 44.0f, 20.0f) * 0.035f * near;
-
-        float bank = clamp(1.0f - Math.max(0.0f, distance - influence.width) / 1.75f);
-        float uplift = 0.20f + bank * (0.30f + fracture.depth * 0.22f) + h * 0.12f;
-        // Les lignes de fracture restent basses, les berges montent : aucun trou artificiel.
-        if (influence.inside) uplift *= 0.12f;
-        float rise = envelope * uplift + p + shear + rayleigh + aftershocks;
-        return Math.max(0.0f, rise * snapshot.worldScale);
+        float aftershocks = damped(t - 0.515f - h * 0.025f, 39.0f, 17.0f) * 0.040f * activity
+                + damped(t - 0.690f - h * 0.018f, 44.0f, 20.0f) * 0.028f * activity;
+        float rise = envelope * Math.min(0.72f, uplift)
+                + (p + shear + rayleigh) * activity + aftershocks;
+        return new Deformation(dirF, dirL, angle, Math.max(0.0f, rise * snapshot.worldScale), envelope);
     }
 
-    /** Quatre racines indépendantes, six filles et trois tertiaires : aucune faille dominante. */
+    /** Une grande fissure centrée sur le mob, puis deux ou trois filles aléatoires. */
     private static List<Fracture> buildFractures(int salt) {
-        List<Fracture> out = new ArrayList<>(13);
-        float[] rootAngles = {0.18f, 2.22f, -1.96f};
-        for (int root = 0; root < 3; root++) {
-            float rf = (root == 0 ? -2.65f : root == 1 ? 2.10f : 1.90f)
-                    + (hash(salt, 1000 + root * 31) - 0.5f) * 0.45f;
-            float rl = (root == 0 ? -1.25f : root == 1 ? 1.35f : -1.55f)
-                    + (hash(salt, 1001 + root * 37) - 0.5f) * 0.45f;
-            float angle = rootAngles[root] + (hash(salt, 1002 + root * 41) - 0.5f) * 0.70f;
-            float length = 2.65f + hash(salt, 1003 + root * 43) * 1.00f;
-            float width = 0.36f + hash(salt, 1004 + root * 47) * 0.20f;
-            float depth = 0.76f + hash(salt, 1005 + root * 53) * 0.46f;
-            float delay = 0.052f + root * 0.027f + hash(salt, 1006 + root * 59) * 0.018f;
-            float curvature = (hash(salt, 1007 + root * 61) - 0.5f) * 0.92f;
-            Fracture parent = new Fracture(out.size(), rf, rl, angle, length, width, depth,
-                    delay, curvature, salt + 1100 + root * 101, 0);
-            out.add(parent);
-            for (int child = 0; child < 2; child++) {
-                float at = 0.31f + child * 0.35f + (hash(salt, 1200 + root * 67 + child) - 0.5f) * 0.12f;
-                float[] origin = pointOn(parent, at);
-                float sign = child == 0 ? -1.0f : 1.0f;
-                float childAngle = angle + sign * (0.72f + hash(salt, 1201 + root * 71 + child) * 0.82f)
-                        + (hash(salt, 1202 + root * 73 + child) - 0.5f) * 0.34f;
-                float childLength = 0.90f + hash(salt, 1203 + root * 79 + child) * 1.15f;
-                float childWidth = width * (0.48f + hash(salt, 1204 + root * 83 + child) * 0.24f);
-                float childDepth = depth * (0.64f + hash(salt, 1205 + root * 89 + child) * 0.24f);
-                Fracture branch = new Fracture(out.size(), origin[0], origin[1], childAngle,
-                        childLength, childWidth, childDepth, delay + 0.035f + at * 0.050f,
-                        (hash(salt, 1206 + root * 97 + child) - 0.5f) * 0.66f,
-                        salt + 1300 + root * 131 + child * 17, 1);
-                out.add(branch);
-                if ((root + child) % 2 == 0) {
-                    float[] tip = pointOn(branch, 0.52f + hash(salt, 1400 + root * 101 + child) * 0.20f);
-                    float tertiaryAngle = childAngle - sign * (0.66f + hash(salt, 1401 + root * 103 + child) * 0.62f);
-                    out.add(new Fracture(out.size(), tip[0], tip[1], tertiaryAngle,
-                            0.55f + hash(salt, 1402 + root * 107 + child) * 0.70f,
-                            childWidth * (0.52f + hash(salt, 1403 + root * 109 + child) * 0.18f),
-                            childDepth * 0.72f, branch.delay + 0.052f,
-                            (hash(salt, 1404 + root * 113 + child) - 0.5f) * 0.42f,
-                            salt + 1500 + root * 137 + child * 19, 2));
+        float mainAngle = hash(salt, 2000) * (float) Math.PI * 2.0f;
+        float mainLength = 6.20f + hash(salt, 2001) * 1.40f;
+        float dx = Mth.cos(mainAngle), dl = Mth.sin(mainAngle);
+        List<Fracture> out = new ArrayList<>(4);
+        Fracture main = new Fracture(0, -dx * mainLength * 0.5f, -dl * mainLength * 0.5f,
+                mainAngle, mainLength, 0.32f, 1.0f, 0.055f, 0.0f, salt + 2100, 0);
+        out.add(main);
+        int branches = 2 + (hash(salt, 2002) >= 0.5f ? 1 : 0);
+        for (int branch = 0; branch < branches; branch++) {
+            float at = 0.30f + branch * (0.40f / (branches - 1))
+                    + (hash(salt, 2010 + branch * 41) - 0.5f) * 0.08f;
+            float[] origin = pointOn(main, at);
+            float side = hash(salt, 2011 + branch * 43) < 0.5f ? -1.0f : 1.0f;
+            float angle = mainAngle + side * (0.70f + hash(salt, 2012 + branch * 47) * 1.10f)
+                    + (hash(salt, 2013 + branch * 53) - 0.5f) * 0.30f;
+            out.add(new Fracture(out.size(), origin[0], origin[1], angle,
+                    1.35f + hash(salt, 2014 + branch * 59) * 1.60f,
+                    0.16f + hash(salt, 2015 + branch * 61) * 0.09f,
+                    0.38f + hash(salt, 2016 + branch * 67) * 0.34f,
+                    0.10f + branch * 0.035f + hash(salt, 2017 + branch * 71) * 0.025f,
+                    (hash(salt, 2018 + branch * 73) - 0.5f) * 0.38f,
+                    salt + 2200 + branch * 101, 1));
+        }
+        return List.copyOf(out);
+    }
+
+    /** Précalcul unique à ouverture maximale ; seules les pénétrations visibles sont corrigées. */
+    private static TerrainSnapshot withCollisionCorrections(TerrainSnapshot snapshot) {
+        int size = snapshot.blocks.size();
+        BlockTransform[] base = new BlockTransform[size];
+        CollisionBox[] boxes = new CollisionBox[size];
+        for (int i = 0; i < size; i++) {
+            base[i] = transformAt(snapshot, snapshot.blocks.get(i), 0.45f);
+            boxes[i] = new CollisionBox(base[i]);
+        }
+        for (int iteration = 0; iteration < 12; iteration++) {
+            for (int i = 0; i < size; i++) {
+                CapturedBlock aBlock = snapshot.blocks.get(i);
+                for (int j = i + 1; j < size; j++) {
+                    CapturedBlock bBlock = snapshot.blocks.get(j);
+                    if (Math.abs(aBlock.f - bBlock.f) > 1.6f || Math.abs(aBlock.l - bBlock.l) > 1.6f) continue;
+                    Overlap overlap = collisionOverlap(boxes[i], boxes[j]);
+                    if (overlap == null || overlap.depth < 0.08f) continue;
+                    float aWeight = aBlock.columnDepth == COLUMN_DEPTH - 1 ? 0.0f : 1.0f;
+                    float bWeight = bBlock.columnDepth == COLUMN_DEPTH - 1 ? 0.0f : 1.0f;
+                    float total = aWeight + bWeight;
+                    if (total <= 0.0f) continue;
+                    float amount = Math.min(0.10f, overlap.depth + 0.0001f);
+                    boxes[i].move(-overlap.axis.x() * amount * aWeight / total,
+                            -overlap.axis.y() * amount * aWeight / total,
+                            -overlap.axis.z() * amount * aWeight / total);
+                    boxes[j].move(overlap.axis.x() * amount * bWeight / total,
+                            overlap.axis.y() * amount * bWeight / total,
+                            overlap.axis.z() * amount * bWeight / total);
                 }
             }
         }
-        // Une quatrième rupture excentrée traverse le réseau sans partager son origine.
-        out.add(new Fracture(out.size(), -2.40f, 1.85f, -0.12f, 1.90f, 0.25f, 0.68f,
-                0.155f, 0.31f, salt + 1700, 0));
-        return List.copyOf(out);
+        List<CapturedBlock> corrected = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            CapturedBlock block = snapshot.blocks.get(i);
+            corrected.add(new CapturedBlock(block.pos, block.state, block.modelData, block.light,
+                    block.f, block.l, block.hash, block.columnDepth,
+                    boxes[i].x - base[i].x, boxes[i].y - base[i].y, boxes[i].z - base[i].z));
+        }
+        return new TerrainSnapshot(snapshot.level, snapshot.x, snapshot.y, snapshot.z,
+                snapshot.dirX, snapshot.dirZ, snapshot.worldScale, snapshot.salt,
+                List.copyOf(corrected), snapshot.fractures);
+    }
+
+    private static Overlap collisionOverlap(CollisionBox a, CollisionBox b) {
+        Vector3f delta = new Vector3f(b.x - a.x, b.y - a.y, b.z - a.z);
+        float best = Float.MAX_VALUE;
+        Vector3f bestAxis = null;
+        for (int i = 0; i < 3; i++) {
+            Overlap hit = penetrationAxis(a, b, delta, a.axes[i], best, bestAxis);
+            if (hit == null) return null;
+            best = hit.depth;
+            bestAxis = hit.axis;
+            hit = penetrationAxis(a, b, delta, b.axes[i], best, bestAxis);
+            if (hit == null) return null;
+            best = hit.depth;
+            bestAxis = hit.axis;
+        }
+        for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) {
+            Vector3f cross = new Vector3f(a.axes[i]).cross(b.axes[j]);
+            if (cross.lengthSquared() < 1.0E-8f) continue;
+            cross.normalize();
+            Overlap hit = penetrationAxis(a, b, delta, cross, best, bestAxis);
+            if (hit == null) return null;
+            best = hit.depth;
+            bestAxis = hit.axis;
+        }
+        return bestAxis == null ? null : new Overlap(best, bestAxis);
+    }
+
+    private static Overlap penetrationAxis(CollisionBox a, CollisionBox b, Vector3f delta,
+                                           Vector3f axis, float best, Vector3f bestAxis) {
+        float radiusA = 0.5f * (Math.abs(a.axes[0].dot(axis)) + Math.abs(a.axes[1].dot(axis))
+                + Math.abs(a.axes[2].dot(axis)));
+        float radiusB = 0.5f * (Math.abs(b.axes[0].dot(axis)) + Math.abs(b.axes[1].dot(axis))
+                + Math.abs(b.axes[2].dot(axis)));
+        float distance = delta.dot(axis);
+        float penetration = radiusA + radiusB - Math.abs(distance);
+        if (penetration <= 0.00001f) return null;
+        if (penetration >= best) return new Overlap(best, bestAxis);
+        Vector3f oriented = distance < 0.0f ? new Vector3f(axis).negate() : new Vector3f(axis);
+        return new Overlap(penetration, oriented);
     }
 
     private static float[] pointOn(Fracture fracture, float u) {
@@ -228,41 +338,30 @@ public final class SeismicTerrainVfx {
         FractureInfluence best = null;
         float bestScore = Float.MAX_VALUE;
         for (Fracture fracture : fractures) {
-            float dx = Mth.cos(fracture.angle), dl = Mth.sin(fracture.angle);
-            float rf = f - fracture.startF, rl = l - fracture.startL;
-            float rawU = rf * dx + rl * dl;
-            float u = Mth.clamp(rawU, 0.0f, fracture.length);
-            float bend = Mth.sin(u / fracture.length * (float) Math.PI) * fracture.curvature;
-            float signed = -rf * dl + rl * dx - bend;
-            float outside = Math.abs(rawU - u);
-            float distance = Mth.sqrt(signed * signed + outside * outside);
-            float width = fracture.width
-                    * (0.64f + 0.36f * Mth.sin(u / fracture.length * (float) Math.PI))
-                    * (0.80f + 0.36f * noise1(u * 2.15f, fracture.seed));
-            width = Math.max(0.055f, width);
-            float score = distance - width;
+            FractureInfluence candidate = influenceOn(fracture, f, l);
+            float score = candidate.distance - candidate.width;
             if (score >= bestScore) continue;
-            boolean inside = rawU >= 0.0f && rawU <= fracture.length && Math.abs(signed) < width;
-            best = new FractureInfluence(fracture, u, signed, distance, width, inside);
+            best = candidate;
             bestScore = score;
         }
         return best;
     }
 
-    private static BlockPos findSurface(ClientLevel level, int x, int originY, int z, double worldY) {
-        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-        int maxY = Math.min(level.getMaxBuildHeight() - 1, Mth.floor(worldY + 0.75));
-        int minY = Math.max(level.getMinBuildHeight(), Mth.floor(worldY - 24.0));
-        for (int y = maxY; y >= minY; y--) {
-            pos.set(x, y, z);
-            BlockState state = level.getBlockState(pos);
-            VoxelShape shape = state.getCollisionShape(level, pos);
-            if (shape.isEmpty()) continue;
-            double top = shape.max(Direction.Axis.Y);
-            if (!Double.isFinite(top) || top <= 0.0) continue;
-            return pos.immutable();
-        }
-        return null;
+    private static FractureInfluence influenceOn(Fracture fracture, float f, float l) {
+        float dx = Mth.cos(fracture.angle), dl = Mth.sin(fracture.angle);
+        float rf = f - fracture.startF, rl = l - fracture.startL;
+        float rawU = rf * dx + rl * dl;
+        float u = Mth.clamp(rawU, 0.0f, fracture.length);
+        float bend = Mth.sin(u / fracture.length * (float) Math.PI) * fracture.curvature;
+        float signed = -rf * dl + rl * dx - bend;
+        float outside = Math.abs(rawU - u);
+        float distance = Mth.sqrt(signed * signed + outside * outside);
+        float width = fracture.width
+                * (0.64f + 0.36f * Mth.sin(u / fracture.length * (float) Math.PI))
+                * (0.80f + 0.36f * noise1(u * 2.15f, fracture.seed));
+        width = Math.max(0.055f, width);
+        boolean inside = rawU >= 0.0f && rawU <= fracture.length && Math.abs(signed) < width;
+        return new FractureInfluence(fracture, u, signed, distance, width, inside);
     }
 
     private static float noise1(float x, int seed) {
@@ -300,7 +399,8 @@ public final class SeismicTerrainVfx {
 
     private record SnapshotKey(int x, int y, int z, int salt) { }
     private record CapturedBlock(BlockPos pos, BlockState state, ModelData modelData,
-                                 int light, float f, float l, float hash, int columnDepth) { }
+                                 int light, float f, float l, float hash, int columnDepth,
+                                 float collisionX, float collisionY, float collisionZ) { }
     private record TerrainSnapshot(ClientLevel level, double x, double y, double z,
                                    float dirX, float dirZ, float worldScale, int salt,
                                    List<CapturedBlock> blocks, List<Fracture> fractures) { }
@@ -309,4 +409,20 @@ public final class SeismicTerrainVfx {
                             int seed, int generation) { }
     private record FractureInfluence(Fracture fracture, float u, float signedDistance,
                                      float distance, float width, boolean inside) { }
+    private static final class CollisionBox {
+        float x, y, z;
+        final Vector3f[] axes;
+        CollisionBox(BlockTransform transform) {
+            this.x = transform.x;
+            this.y = transform.y;
+            this.z = transform.z;
+            this.axes = new Vector3f[]{new Vector3f(1.0f, 0.0f, 0.0f).rotate(transform.rotation),
+                    new Vector3f(0.0f, 1.0f, 0.0f).rotate(transform.rotation),
+                    new Vector3f(0.0f, 0.0f, 1.0f).rotate(transform.rotation)};
+        }
+        void move(float dx, float dy, float dz) { this.x += dx; this.y += dy; this.z += dz; }
+    }
+    private record Overlap(float depth, Vector3f axis) { }
+    private record Deformation(float dirF, float dirL, float angle, float rise, float envelope) { }
+    private record BlockTransform(float x, float y, float z, Quaternionf rotation) { }
 }
