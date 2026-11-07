@@ -2,6 +2,7 @@ package deepluckyblock.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
@@ -16,7 +17,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.client.model.data.ModelData;
-import org.joml.Axis;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
@@ -302,7 +302,8 @@ public final class SeismicTerrainVfx {
     private static void put(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                             float x, float y, float z, int argb) {
         mat.transformPosition(x, y, z, tmp);
-        vc.addVertex(tmp.x(), tmp.y(), tmp.z(), argb);
+        vc.addVertex(tmp.x(), tmp.y(), tmp.z())
+                .setColor((argb >>> 16) & 0xFF, (argb >>> 8) & 0xFF, argb & 0xFF, (argb >>> 24) & 0xFF);
     }
 
     private static BlockPos findSurface(ClientLevel level, int x, int originY, int z, double worldY) {
