@@ -512,14 +512,18 @@ public final class WeaponWorldVfxManager {
             case MOLTEN_FIRE_WAVE -> 92;
             case SOUL_FIRE_CRESCENT -> 112;
             case BRIMSTONE_METEOR -> 128;
-            case SERAPH_SKY_PILLAR, ABYSSAL_MAELSTROM, WARLORD_RALLY_SIGIL,
+            // Terre : rupture, tempête puis ralliement disposent de chorégraphies complètes.
+            case SEISMIC_TECTONIC -> 112;
+            case SANDSTORM_DUNE -> 140;
+            case WARLORD_RALLY_SIGIL -> 120;
+            case SERAPH_SKY_PILLAR, ABYSSAL_MAELSTROM,
                  DRAGON_CHAOS_PRISM, BIG_BANG_SCAR -> 22;
-            case SANDSTORM_DUNE, ECLIPSE_VEIL, NULL_RIFT_FISSURE,
+            case ECLIPSE_VEIL, NULL_RIFT_FISSURE,
                  CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE -> 18;
             case VENOM_BRIAR_FANG -> 112;
             case MIASMA_SHROUD -> 600; // Le serveur raccourcit à 6 s ou enchaîne jusqu'à 30 s.
             case PLAGUE_NOVA -> 128;
-            case ASTRAL_STAR_LANCE, VOID_WARP_SPHERE, SEISMIC_TECTONIC,
+            case ASTRAL_STAR_LANCE, VOID_WARP_SPHERE,
                  CRIMSON_SIPHON, CHRONO_ETERNAL_HALO, ANNIHILATING_ARC -> 16;
             case CHAIN_VOLT_ARC -> 11;
             default -> 14;
@@ -1321,6 +1325,7 @@ public final class WeaponWorldVfxManager {
         DeepEnchant.rememberClientAccess(level.registryAccess());
         FireSignatureVfx.beginTerrainTick(level);
         PoisonSignatureVfx.beginTerrainTick(level);
+        EarthSignatureVfx.beginTerrainTick(level);
 
         for (Iterator<VfxInstance> it = ACTIVE.iterator(); it.hasNext(); ) {
             VfxInstance inst = it.next();
@@ -1333,6 +1338,11 @@ public final class WeaponWorldVfxManager {
             }
             if (inst.kind == KIND_IMPACT && inst.effect.element() == DeepElement.POISON) {
                 PoisonSignatureVfx.prepareTerrain(level, inst.x, inst.y, inst.z, inst.sizeScale);
+            }
+            if (inst.kind == KIND_IMPACT && (inst.effect == WeaponVisualEffectId.SEISMIC_TECTONIC
+                    || inst.effect == WeaponVisualEffectId.SANDSTORM_DUNE
+                    || inst.effect == WeaponVisualEffectId.WARLORD_RALLY_SIGIL)) {
+                EarthSignatureVfx.prepareTerrain(level, inst.x, inst.y, inst.z, inst.sizeScale);
             }
             if (inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE
                     || inst.effect == WeaponVisualEffectId.SOUL_FIRE_CRESCENT
@@ -3290,6 +3300,26 @@ public final class WeaponWorldVfxManager {
      * sol se fend en étoile, et des blocs de roche sont arrachés (éclats facettés).
      */
     private static void impactEarth(ImpactView v) {
+        int signature = switch (v.inst().effect) {
+            case SEISMIC_TECTONIC -> EarthSignatureVfx.SEISMIC;
+            case SANDSTORM_DUNE -> EarthSignatureVfx.SANDSTORM;
+            case WARLORD_RALLY_SIGIL -> EarthSignatureVfx.RALLY;
+            default -> -1;
+        };
+        if (signature >= 0) {
+            boolean previousPulse = voxelPulseEnabled;
+            voxelPulseEnabled = false; // Dalles, runes et vortex restent jointifs pendant leur mouvement.
+            try {
+                EarthSignatureVfx.render(Minecraft.getInstance().level,
+                        v.inst().x, v.inst().y, v.inst().z,
+                        v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), v.t(),
+                        v.dirX(), v.dirZ(), signature, v.inst().sizeScale,
+                        v.fadeA(), (int) (v.inst().seed & 0x7FFFFFFFL));
+            } finally {
+                voxelPulseEnabled = previousPulse;
+            }
+            return;
+        }
         float t = v.t();
         float S = v.S();
         WeaponVisualEffectId fx = v.inst().effect;
