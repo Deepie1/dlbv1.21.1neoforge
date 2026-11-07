@@ -43,7 +43,8 @@ import java.util.Map;
  */
 public final class SeismicTerrainVfx {
     private static final int MAX_SNAPSHOTS = 8;
-    private static final int MAX_BLOCKS_PER_SNAPSHOT = 144;
+    private static final int MAX_BLOCKS_PER_SNAPSHOT = 288;
+    private static final int COLUMN_DEPTH = 4;
     private static final float REPRINT_EPSILON = 0.012f;
     private static final Map<SnapshotKey, TerrainSnapshot> SNAPSHOTS = new LinkedHashMap<>();
     private static ClientLevel trackedLevel;
@@ -70,9 +71,10 @@ public final class SeismicTerrainVfx {
         worldScale = Math.max(0.05f, worldScale);
         int radius = Mth.clamp(Mth.ceil(4.25f * worldScale), 4, 6);
         int originY = Mth.floor(y);
-        List<CapturedBlock> blocks = new ArrayList<>(96);
+        List<CapturedBlock> blocks = new ArrayList<>(256);
         BlockRenderDispatcher dispatcher = Minecraft.getInstance().getBlockRenderer();
 
+        captureColumns:
         for (int ix = -radius; ix <= radius; ix++) for (int iz = -radius; iz <= radius; iz++) {
             int bx = Mth.floor(x) + ix, bz = Mth.floor(z) + iz;
             BlockPos surface = findSurface(level, bx, originY, bz, y);
@@ -83,15 +85,20 @@ public final class SeismicTerrainVfx {
             float l = (float) (-dirZ * relX + dirX * relZ);
             if (Math.abs(f) > 4.20f || Math.abs(l) > 3.20f) continue;
 
-            BlockState state = level.getBlockState(surface);
-            if (state.isAir()) continue;
-            BakedModel model = dispatcher.getBlockModel(state);
-            ModelData modelData = model.getModelData(level, surface, state, ModelData.EMPTY);
             int light = LevelRenderer.getLightColor(level, surface.above());
-            blocks.add(new CapturedBlock(surface.immutable(), state, modelData, light, f, l,
-                    hash(salt, surface.getX() * 73856093 ^ surface.getY() * 19349663
-                            ^ surface.getZ() * 83492791)));
-            if (blocks.size() >= MAX_BLOCKS_PER_SNAPSHOT) break;
+            float columnHash = hash(salt, surface.getX() * 73856093 ^ surface.getY() * 19349663
+                    ^ surface.getZ() * 83492791);
+            // La surface et ses trois supports partagent f/l/hash : aucune couche ne se désynchronise.
+            for (int depth = 0; depth < COLUMN_DEPTH; depth++) {
+                BlockPos pos = surface.below(depth);
+                BlockState state = level.getBlockState(pos);
+                if (state.isAir()) break;
+                BakedModel model = dispatcher.getBlockModel(state);
+                ModelData modelData = model.getModelData(level, pos, state, ModelData.EMPTY);
+                blocks.add(new CapturedBlock(pos.immutable(), state, modelData, light, f, l,
+                        columnHash, depth));
+            }
+            if (blocks.size() >= MAX_BLOCKS_PER_SNAPSHOT) break captureColumns;
         }
 
         TerrainSnapshot snapshot = new TerrainSnapshot(level, x, y, z, dirX, dirZ, worldScale,
@@ -119,11 +126,12 @@ public final class SeismicTerrainVfx {
         boolean emitted = false;
         for (CapturedBlock block : snapshot.blocks) {
             Motion motion = motionAt(snapshot, block, t);
-            if (motion.occlusion > 0.015f) {
+            // Aucun masque sous les berges : les vraies couches capturées bouchent le volume.
+            // Seule la cellule de surface réellement retirée reçoit une occultation sombre.
+            if (block.columnDepth == 0 && motion.voidOpen > 0.015f) {
                 if (voidVc == null) voidVc = buffers.getBuffer(WeaponWorldVfxManager.getTranslucentRenderType());
-                // Occulte aussi la source sous les blocs déplacés : pas de « doublon » original/reprint.
                 emitVoidCell(voidVc, pose.last().pose(), voidTmp, snapshot, block,
-                        camera, motion.occlusion);
+                        camera, motion.voidOpen);
                 emitted = true;
             }
             if (motion.voidOpen > 0.975f) continue;
@@ -192,9 +200,8 @@ public final class SeismicTerrainVfx {
         float roll = side * open * (0.035f + bank * (0.10f + h * 0.10f)) + shear * 0.70f;
         float pitch = rayleigh * 0.34f + (h - 0.5f) * open * bank * 0.11f;
         float yaw = shear * 0.32f + (h - 0.5f) * open * 0.055f;
-        float occlusion = Math.max(voidOpen, clamp(open));
         return new Motion(offsetX, rise * snapshot.worldScale, offsetZ,
-                yaw, pitch, roll, voidOpen, occlusion, fracture.depth);
+                yaw, pitch, roll, voidOpen, fracture.depth);
     }
 
     /** Quatre racines indépendantes, six filles et trois tertiaires : aucune faille dominante. */
@@ -363,7 +370,7 @@ public final class SeismicTerrainVfx {
 
     private record SnapshotKey(int x, int y, int z, int salt) { }
     private record CapturedBlock(BlockPos pos, BlockState state, ModelData modelData,
-                                 int light, float f, float l, float hash) { }
+                                 int light, float f, float l, float hash, int columnDepth) { }
     private record TerrainSnapshot(ClientLevel level, double x, double y, double z,
                                    float dirX, float dirZ, float worldScale, int salt,
                                    List<CapturedBlock> blocks, List<Fracture> fractures) { }
@@ -373,6 +380,5 @@ public final class SeismicTerrainVfx {
     private record FractureInfluence(Fracture fracture, float u, float signedDistance,
                                      float distance, float width, boolean inside) { }
     private record Motion(float offsetX, float rise, float offsetZ,
-                          float yaw, float pitch, float roll, float voidOpen, float occlusion,
-                          float depth) { }
+                          float yaw, float pitch, float roll, float voidOpen, float depth) { }
 }

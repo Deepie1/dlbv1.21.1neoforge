@@ -26,7 +26,7 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
   <div class="rule"></div>
   <span class="label">Signature de l’enchantement</span>
   <div class="variants" role="group" aria-label="Variante Terre">
-    <button class="variant active" data-variant="0"><span class="num">Ⅰ</span><span><b>Seismic Tectonic</b><small>5,6 s · snapshot · 63 blocs</small></span></button>
+    <button class="variant active" data-variant="0"><span class="num">Ⅰ</span><span><b>Seismic Tectonic</b><small>5,6 s · 63 surfaces · 4 couches</small></span></button>
     <button class="variant" data-variant="1"><span class="num">Ⅱ</span><span><b>Sandstorm Dune</b><small>7 s · dune · triple vortex</small></span></button>
     <button class="variant" data-variant="2"><span class="num">Ⅲ</span><span><b>Warlord Rally Sigil</b><small>6 s · runes · 4 étendards</small></span></button>
   </div>
@@ -37,7 +37,7 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
   <div class="stats"><div class="stat"><b id="baseCount">0</b><span>Blocs / voxels dans la frame</span></div><div class="stat"><b id="duration">5,6 s</b><span>Durée en jeu</span></div></div>
   <div class="legend"><span style="--c:#5c3b1a">Terre</span><span style="--c:#9fc25e">Énergie</span><span style="--c:#ddbe78">Sable</span><span style="--c:#d9a83e">Commandement</span></div>
   <a class="download" href="./DLB_Earth_Three_Signatures_src.zip" download>Télécharger les sources Terre + épée · ZIP</a>
-  <p class="refs">Seismic : snapshot des vrais BlockState et reprint opaque texturé. Sandstorm/Rally : voxels procéduraux. Aucune destruction du monde, aucun asset externe.<br>Épée : <b>/anim terre</b> (alias <b>/anim earth</b>) · pointe verte #79A74B · arc en cinq bruns grass block.</p>
+  <p class="refs">Seismic : snapshot des vrais BlockState, colonnes de 4 couches et reprint opaque texturé. Sandstorm/Rally : voxels procéduraux. Aucune destruction du monde, aucun asset externe.<br>Épée : <b>/anim terre</b> (alias <b>/anim earth</b>) · pointe verte #79A74B · arc en cinq bruns grass block.</p>
 </aside>
 <main>
   <canvas id="scene" tabindex="0" aria-label="Aperçu animé des trois signatures Terre"></canvas>
@@ -74,15 +74,18 @@ function buildEarth(variant,t,salt=42,groundFn=null){const out=[];if(t<=0||t>=1)
         if(voidOpen>.015){
           box(f,ground+.006,l,.506,.012,.506,0x080808,255);const cavity=out[out.length-1];cavity.voidCell=true;
           cavity.fractureId=fracture.id;cavity.fractureWidth=influence.width;cavity.fractureDepth=fracture.depth;cavity.fractureAngle=fracture.angle;
-          if(voidOpen>.975)continue;
         }
+        if(voidOpen>.975)continue;
         const drop=voidOpen>.015?(1-voidOpen)*(.45+fracture.depth*.65):0,mat=hash(salt,9000+index),variation=hash(salt,9100+index);
         let top,sideRgb;
         if(mat<.48){top=mix(0x59663A,0x7C8752,variation);sideRgb=mix(0x3D291B,0x654429,variation);}
         else if(mat<.66){top=mix(0x4B301C,0x765034,variation);sideRgb=mix(0x382319,0x5B3A24,variation);}
         else if(mat<.88){top=mix(0x555852,0x777B72,variation);sideRgb=mix(0x41443F,0x62665E,variation);}
         else{top=mix(0x967746,0xBE9E64,variation);sideRgb=mix(0x80643B,0xA98A52,variation);}
-        capturedBlock(f+localF,ground-.5+rise+.012-drop,l+localL,.501,.5,.501,top,sideRgb,yaw,pitch,roll,9000+index);
+        for(let depth=0;depth<4;depth++){
+          capturedBlock(f+localF,ground-.5-depth+rise+.012-drop,l+localL,.501,.5,.501,depth===0?top:sideRgb,sideRgb,yaw,pitch,roll,9000+index);
+          out[out.length-1].columnDepth=depth;
+        }
       }
     }
     function capturedBlock(x,y,z,hx,hy,hz,top,side,yaw,pitch,roll,seed){
