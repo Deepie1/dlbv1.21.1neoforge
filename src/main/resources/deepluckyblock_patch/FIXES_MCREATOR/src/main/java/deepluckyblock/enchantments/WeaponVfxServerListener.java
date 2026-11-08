@@ -1165,70 +1165,144 @@ public final class WeaponVfxServerListener {
         sl.playSound(null, x, y, z, SoundEvents.SLIME_SQUISH, SoundSource.PLAYERS, 0.34f, 1.42f);
     }
 
-    /** Gameplay Métal : perforation précise, deux ricochets secondaires et contrôle circulaire. */
+    /**
+     * Gameplay Métal : trois rôles volontairement différents.
+     * Razor = une cible et perforation ; Prism = containment principal + deux ricochets ;
+     * Arc = contrôle de six ennemis maximum, sans ajouter un second dégât à Annihilating Sweep.
+     */
     private static void applyMetalGameplay(LivingEntity attacker, LivingEntity target,
                                            WeaponVisualEffectId fx, float weaponDamage) {
         if (fx != WeaponVisualEffectId.RAZOR_GLEAM && fx != WeaponVisualEffectId.SUPREME_PRISM_EDGE
                 && fx != WeaponVisualEffectId.ANNIHILATING_ARC) return;
         if (!(target.level() instanceof ServerLevel sl)) return;
         int now = TestProcedure.currentTick(sl);
+        long gameNow = sl.getGameTime();
         int attackerId = attacker == null ? -1 : attacker.getId();
         double x = target.getX(), y = target.getY() + target.getBbHeight() * 0.5, z = target.getZ();
 
         if (fx == WeaponVisualEffectId.RAZOR_GLEAM) {
-            float piercing = net.minecraft.util.Mth.clamp(Math.max(0.0f, weaponDamage) * 0.12f, 0.08f, 0.75f);
-            metalSound(sl, x, y, z, now, 0, SoundEvents.PLAYER_ATTACK_SWEEP, 0.48f, 1.65f);
-            metalSound(sl, x, y, z, now, 12, SoundEvents.ANVIL_PLACE, 0.24f, 1.85f);
+            // Une seule cible. Le hit-stun de 0,6 s garantit la lecture du iaido sans devenir un stun-lock.
+            float piercing = net.minecraft.util.Mth.clamp(Math.max(0.0f, weaponDamage) * 0.35f, 0.20f, 3.00f);
+            long holdExpiry = gameNow + 13;
+            boolean heldByMetal = tryMetalHold(target, holdExpiry, true);
+            metalSound(sl, x, y, z, now, 0, SoundEvents.ANVIL_PLACE, 0.10f, 0.95f); // clic du saya.
+            metalSound(sl, x, y, z, now, 8, SoundEvents.PLAYER_ATTACK_SWEEP, 0.46f, 1.90f); // dégainage.
+            metalSound(sl, x, y, z, now, 12, SoundEvents.PLAYER_ATTACK_CRIT, 0.58f, 1.60f);
+            metalSound(sl, x, y, z, now, 12, SoundEvents.ANVIL_PLACE, 0.14f, 2.00f); // reflet métallique.
             TestProcedure.schedule(sl, now + 12, () -> {
-                if (target.isAlive() && target.level() == sl) target.hurt(sl.damageSources().magic(), piercing);
+                if (target.isAlive() && target.level() == sl) {
+                    hurtMetalPiercing(sl, attackerId, target, piercing);
+                }
+                if (heldByMetal) releaseMovementHold(target, holdExpiry);
             });
             return;
         }
 
         if (fx == WeaponVisualEffectId.SUPREME_PRISM_EDGE) {
-            float ricochetDamage = net.minecraft.util.Mth.clamp(Math.max(0.0f, weaponDamage) * 0.30f, 0.10f, 2.50f);
-            metalSound(sl, x, y, z, now, 0, SoundEvents.ANVIL_PLACE, 0.32f, 1.55f);
+            // La primaire sert de prisme, mais ne subit aucun dégât additionnel. Deux secondaires à 30 %.
+            float ricochetDamage = net.minecraft.util.Mth.clamp(Math.max(0.0f, weaponDamage) * 0.30f, 0.15f, 2.50f);
+            long holdExpiry = gameNow + 31;
+            boolean heldByMetal = tryMetalHold(target, holdExpiry, false); // Position fixe, attaques conservées.
+            metalSound(sl, x, y, z, now, 0, SoundEvents.AMETHYST_BLOCK_CHIME, 0.40f, 1.10f);
+            metalSound(sl, x, y, z, now, 18, SoundEvents.AMETHYST_BLOCK_CHIME, 0.24f, 1.55f);
+            metalSound(sl, x, y, z, now, 30, SoundEvents.NOTE_BLOCK_BELL.value(), 0.38f, 1.35f);
             TestProcedure.schedule(sl, now + 30, () -> {
                 List<LivingEntity> targets = new ArrayList<>(sl.getEntitiesOfClass(LivingEntity.class,
-                        new AABB(x - 4.0, y - 3.0, z - 4.0, x + 4.0, y + 3.0, z + 4.0)));
+                        new AABB(x - 4.5, y - 3.0, z - 4.5, x + 4.5, y + 3.0, z + 4.5)));
                 targets.removeIf(candidate -> !(candidate instanceof Enemy) || !candidate.isAlive()
                         || candidate.getId() == target.getId() || candidate.getId() == attackerId
-                        || candidate.distanceToSqr(x, y, z) > 16.0);
+                        || candidate.distanceToSqr(x, y, z) > 20.25
+                        || !target.hasLineOfSight(candidate));
                 targets.sort((a, b) -> Double.compare(a.distanceToSqr(x, y, z), b.distanceToSqr(x, y, z)));
-                for (int i = 0; i < Math.min(2, targets.size()); i++) {
+                int ricochets = Math.min(2, targets.size());
+                for (int i = 0; i < ricochets; i++) {
                     LivingEntity secondary = targets.get(i);
-                    hurtWithCapturedWeapon(sl, attackerId, secondary, ricochetDamage);
+                    if (!hurtWithCapturedWeapon(sl, attackerId, secondary, ricochetDamage)) continue;
                     broadcastNear(sl, (float) x, (float) y, (float) z,
                             WeaponVisualEffectId.SUPREME_PRISM_EDGE.id, KIND_BEAM_SIPHON, 1,
                             (float) x, (float) y, (float) z,
                             (float) secondary.getX(), (float) (secondary.getY() + secondary.getBbHeight() * 0.5),
                             (float) secondary.getZ(), 1 << DeepElement.METAL.ordinal());
+                    // Un timbre par ricochet, à la position de la cible touchée et non en boucle au centre.
+                    sl.playSound(null, secondary.getX(), secondary.getY(), secondary.getZ(),
+                            SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS,
+                            0.30f, 1.50f + i * 0.35f);
                 }
-                sl.playSound(null, x, y, z, SoundEvents.PLAYER_ATTACK_SWEEP,
-                        SoundSource.PLAYERS, 0.55f, 1.30f);
+                if (heldByMetal) releaseMovementHold(target, holdExpiry);
             });
             return;
         }
 
-        // Annihilating Sweep inflige déjà son dégât en zone : ici uniquement le contrôle, aucun doublon.
-        metalSound(sl, x, y, z, now, 0, SoundEvents.ANVIL_LAND, 0.38f, 0.86f);
+        // Arc sélectionne au plus six ennemis à l'ouverture. Aucun mob entrant plus tard n'est ajouté.
+        double radius = 4.0;
+        List<LivingEntity> controlled = new ArrayList<>(sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(x - radius, y - 3.0, z - radius, x + radius, y + 3.0, z + radius)));
+        controlled.removeIf(candidate -> !(candidate instanceof Enemy) || !candidate.isAlive()
+                || candidate.getId() == attackerId || candidate.distanceToSqr(x, y, z) > radius * radius);
+        controlled.sort((a, b) -> Double.compare(a.distanceToSqr(x, y, z), b.distanceToSqr(x, y, z)));
+        if (controlled.size() > 6) controlled = new ArrayList<>(controlled.subList(0, 6));
+        long holdExpiry = gameNow + 31;
+        Set<Integer> metalHeld = new HashSet<>();
+        for (LivingEntity candidate : controlled) {
+            // Maintien de position sans NoAI : le groupe peut toujours attaquer pendant la charge.
+            if (tryMetalHold(candidate, holdExpiry, false)) metalHeld.add(candidate.getId());
+        }
+        metalSound(sl, x, y, z, now, 0, SoundEvents.ANVIL_PLACE, 0.20f, 0.65f); // cliquetis du mécanisme.
+        metalSound(sl, x, y, z, now, 12, SoundEvents.ANVIL_PLACE, 0.16f, 0.82f);
+        metalSound(sl, x, y, z, now, 24, SoundEvents.PLAYER_ATTACK_SWEEP, 0.28f, 0.62f);
+        metalSound(sl, x, y, z, now, 30, SoundEvents.PLAYER_ATTACK_SWEEP, 0.82f, 0.65f);
+        metalSound(sl, x, y, z, now, 30, SoundEvents.ANVIL_LAND, 0.42f, 0.78f);
+        metalSound(sl, x, y, z, now, 46, SoundEvents.PLAYER_ATTACK_SWEEP, 0.40f, 0.95f);
         TestProcedure.schedule(sl, now + 30, () -> {
-            double radius = 4.0;
-            for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
-                    new AABB(x - radius, y - 3.0, z - radius, x + radius, y + 3.0, z + radius))) {
-                if (!(candidate instanceof Enemy) || !candidate.isAlive()
-                        || candidate.getId() == attackerId
-                        || candidate.distanceToSqr(x, y, z) > radius * radius) continue;
+            for (LivingEntity candidate : controlled) {
+                if (!candidate.isAlive() || candidate.level() != sl
+                        || candidate.distanceToSqr(x, y, z) > 20.25) continue;
+                MovementHold active = MOVEMENT_HOLDS.get(candidate.getId());
+                // Ne jamais libérer ou combattre une emprise Earth/Poison, même à expiration identique.
+                if (!metalHeld.contains(candidate.getId()) && active != null) continue;
+                if (metalHeld.contains(candidate.getId()) && active != null && active.expires() == holdExpiry) {
+                    releaseMovementHold(candidate, holdExpiry);
+                }
                 double dx = candidate.getX() - x, dz = candidate.getZ() - z;
-                double length = Math.max(0.05, Math.sqrt(dx * dx + dz * dz));
-                double force = 0.70 + 0.45 * (1.0 - length / radius);
+                double length = Math.sqrt(dx * dx + dz * dz);
+                if (length < 0.05) {
+                    double angle = candidate.getId() * 2.3999632;
+                    dx = Math.cos(angle) * 0.05;
+                    dz = Math.sin(angle) * 0.05;
+                    length = 0.05;
+                }
+                double force = 0.70 + 0.45 * (1.0 - Math.min(radius, length) / radius);
                 candidate.push(dx / length * force, 0.30, dz / length * force);
+                candidate.fallDistance = 0.0f;
                 candidate.hurtMarked = true;
             }
-            sl.playSound(null, x, y, z, SoundEvents.PLAYER_ATTACK_SWEEP,
-                    SoundSource.PLAYERS, 0.82f, 0.72f);
-            sl.playSound(null, x, y, z, SoundEvents.ANVIL_LAND, SoundSource.PLAYERS, 0.46f, 0.92f);
         });
+    }
+
+    /** Les contrôles Métal ignorent joueurs, boss et Warden et n'écrasent jamais une emprise existante. */
+    private static boolean tryMetalHold(LivingEntity target, long expiry, boolean fullStun) {
+        if (!(target instanceof Enemy) || target.getType() == net.minecraft.world.entity.EntityType.ENDER_DRAGON
+                || target.getType() == net.minecraft.world.entity.EntityType.WITHER
+                || target.getType() == net.minecraft.world.entity.EntityType.WARDEN
+                || MOVEMENT_HOLDS.containsKey(target.getId())) return false;
+        applyMovementHold(target, expiry, fullStun);
+        return true;
+    }
+
+    /** Perforation Razor avec crédit du kill et marqueur anti-récursion, sans passer par l'armure. */
+    private static boolean hurtMetalPiercing(ServerLevel sl, int attackerId,
+                                             LivingEntity target, float amount) {
+        if (!target.isAlive() || target.level() != sl || !(amount > 0.0f)) return false;
+        LivingEntity attacker = sl.getEntity(attackerId) instanceof LivingEntity living ? living : null;
+        DamageSource source = attacker != null
+                ? sl.damageSources().indirectMagic(attacker, attacker) : sl.damageSources().magic();
+        INTERNAL_SIGNATURE_DAMAGE.add(target.getId());
+        try {
+            target.invulnerableTime = 0;
+            return target.hurt(source, amount);
+        } finally {
+            INTERNAL_SIGNATURE_DAMAGE.remove(target.getId());
+        }
     }
 
     private static void metalSound(ServerLevel sl, double x, double y, double z,
