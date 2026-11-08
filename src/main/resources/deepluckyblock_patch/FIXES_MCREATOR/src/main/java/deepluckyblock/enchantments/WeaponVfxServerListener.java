@@ -180,6 +180,10 @@ public final class WeaponVfxServerListener {
             WeaponVisualEffectId.SEISMIC_TECTONIC, WeaponVisualEffectId.TITAN_GRASP,
             WeaponVisualEffectId.WARLORD_RALLY_SIGIL
     };
+    private static final WeaponVisualEffectId[] ANIM_METAL = {
+            WeaponVisualEffectId.RAZOR_GLEAM, WeaponVisualEffectId.SUPREME_PRISM_EDGE,
+            WeaponVisualEffectId.ANNIHILATING_ARC
+    };
 
     private WeaponVfxServerListener() {}
 
@@ -314,6 +318,7 @@ public final class WeaponVfxServerListener {
             applyFireGameplay(attacker, livingTarget, fx, sizeScaleOf(target));
             applyWoodGameplay(attacker, livingTarget, fx, sizeScaleOf(target), estimatedWeaponDamage(attacker));
             applyEarthGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker));
+            applyMetalGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker));
             applyPoisonGameplay(attacker, livingTarget, fx);
         }
     }
@@ -456,6 +461,7 @@ public final class WeaponVfxServerListener {
             applyFireGameplay(comboAttacker, target, sig, sizeScale, weaponDamage);
             applyWoodGameplay(comboAttacker, target, sig, sizeScale, weaponDamage);
             applyEarthGameplay(comboAttacker, target, sig, weaponDamage);
+            applyMetalGameplay(comboAttacker, target, sig, weaponDamage);
             applyPoisonGameplay(comboAttacker, target, sig);
             // Étincelles de la famille, une par élément : le mélange de couleurs se voit tout de suite.
             WeaponVfxSubtle.Subtle accent = WeaponVfxSubtle.pick(el, sl.random.nextLong());
@@ -1159,6 +1165,78 @@ public final class WeaponVfxServerListener {
         sl.playSound(null, x, y, z, SoundEvents.SLIME_SQUISH, SoundSource.PLAYERS, 0.34f, 1.42f);
     }
 
+    /** Gameplay Métal : perforation précise, deux ricochets secondaires et contrôle circulaire. */
+    private static void applyMetalGameplay(LivingEntity attacker, LivingEntity target,
+                                           WeaponVisualEffectId fx, float weaponDamage) {
+        if (fx != WeaponVisualEffectId.RAZOR_GLEAM && fx != WeaponVisualEffectId.SUPREME_PRISM_EDGE
+                && fx != WeaponVisualEffectId.ANNIHILATING_ARC) return;
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        int now = TestProcedure.currentTick(sl);
+        int attackerId = attacker == null ? -1 : attacker.getId();
+        double x = target.getX(), y = target.getY() + target.getBbHeight() * 0.5, z = target.getZ();
+
+        if (fx == WeaponVisualEffectId.RAZOR_GLEAM) {
+            float piercing = net.minecraft.util.Mth.clamp(Math.max(0.0f, weaponDamage) * 0.12f, 0.08f, 0.75f);
+            metalSound(sl, x, y, z, now, 0, SoundEvents.PLAYER_ATTACK_SWEEP, 0.48f, 1.65f);
+            metalSound(sl, x, y, z, now, 10, SoundEvents.ANVIL_PLACE, 0.24f, 1.85f);
+            TestProcedure.schedule(sl, now + 10, () -> {
+                if (target.isAlive() && target.level() == sl) target.hurt(sl.damageSources().magic(), piercing);
+            });
+            return;
+        }
+
+        if (fx == WeaponVisualEffectId.SUPREME_PRISM_EDGE) {
+            float ricochetDamage = net.minecraft.util.Mth.clamp(Math.max(0.0f, weaponDamage) * 0.30f, 0.10f, 2.50f);
+            metalSound(sl, x, y, z, now, 0, SoundEvents.ANVIL_PLACE, 0.32f, 1.55f);
+            TestProcedure.schedule(sl, now + 34, () -> {
+                List<LivingEntity> targets = new ArrayList<>(sl.getEntitiesOfClass(LivingEntity.class,
+                        new AABB(x - 4.0, y - 3.0, z - 4.0, x + 4.0, y + 3.0, z + 4.0)));
+                targets.removeIf(candidate -> !(candidate instanceof Enemy) || !candidate.isAlive()
+                        || candidate.getId() == target.getId() || candidate.getId() == attackerId
+                        || candidate.distanceToSqr(x, y, z) > 16.0);
+                targets.sort((a, b) -> Double.compare(a.distanceToSqr(x, y, z), b.distanceToSqr(x, y, z)));
+                for (int i = 0; i < Math.min(2, targets.size()); i++) {
+                    LivingEntity secondary = targets.get(i);
+                    hurtWithCapturedWeapon(sl, attackerId, secondary, ricochetDamage);
+                    broadcastNear(sl, (float) x, (float) y, (float) z,
+                            WeaponVisualEffectId.SUPREME_PRISM_EDGE.id, KIND_BEAM_SIPHON, 1,
+                            (float) x, (float) y, (float) z,
+                            (float) secondary.getX(), (float) (secondary.getY() + secondary.getBbHeight() * 0.5),
+                            (float) secondary.getZ(), 1 << DeepElement.METAL.ordinal());
+                }
+                sl.playSound(null, x, y, z, SoundEvents.PLAYER_ATTACK_SWEEP,
+                        SoundSource.PLAYERS, 0.55f, 1.30f);
+            });
+            return;
+        }
+
+        // Annihilating Sweep inflige déjà son dégât en zone : ici uniquement le contrôle, aucun doublon.
+        metalSound(sl, x, y, z, now, 0, SoundEvents.ANVIL_LAND, 0.38f, 0.86f);
+        TestProcedure.schedule(sl, now + 32, () -> {
+            double radius = 4.0;
+            for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
+                    new AABB(x - radius, y - 3.0, z - radius, x + radius, y + 3.0, z + radius))) {
+                if (!(candidate instanceof Enemy) || !candidate.isAlive()
+                        || candidate.getId() == attackerId
+                        || candidate.distanceToSqr(x, y, z) > radius * radius) continue;
+                double dx = candidate.getX() - x, dz = candidate.getZ() - z;
+                double length = Math.max(0.05, Math.sqrt(dx * dx + dz * dz));
+                double force = 0.70 + 0.45 * (1.0 - length / radius);
+                candidate.push(dx / length * force, 0.30, dz / length * force);
+                candidate.hurtMarked = true;
+            }
+            sl.playSound(null, x, y, z, SoundEvents.PLAYER_ATTACK_SWEEP,
+                    SoundSource.PLAYERS, 0.82f, 0.72f);
+            sl.playSound(null, x, y, z, SoundEvents.ANVIL_LAND, SoundSource.PLAYERS, 0.46f, 0.92f);
+        });
+    }
+
+    private static void metalSound(ServerLevel sl, double x, double y, double z,
+                                   int now, int delay, SoundEvent sound, float volume, float pitch) {
+        TestProcedure.schedule(sl, now + delay,
+                () -> sl.playSound(null, x, y, z, sound, SoundSource.PLAYERS, volume, pitch));
+    }
+
     /** Une seule piste sonore par activation, même lorsque Seismic enterre plusieurs ennemis. */
     private static void scheduleEarthSoundtrack(ServerLevel sl, LivingEntity target,
                                                 WeaponVisualEffectId fx) {
@@ -1597,7 +1675,7 @@ public final class WeaponVfxServerListener {
         if (tag == null) return null;
         String family = tag.getString("DlbAnimFamily");
         return family.equals("feu") || family.equals("gaia") || family.equals("poison")
-                || family.equals("terre") ? family : null;
+                || family.equals("terre") || family.equals("metal") ? family : null;
     }
 
     /**
@@ -1618,7 +1696,8 @@ public final class WeaponVfxServerListener {
         float tz = (float) target.getZ();
         WeaponVisualEffectId[] pool = family.equals("feu") ? ANIM_FIRE
                 : family.equals("poison") ? ANIM_POISON
-                : family.equals("terre") ? ANIM_EARTH : ANIM_GAIA;
+                : family.equals("terre") ? ANIM_EARTH
+                : family.equals("metal") ? ANIM_METAL : ANIM_GAIA;
 
         if (roll >= 60) {
             var tag = deepluckyblock.util.DeepNbt.getOrCreateTag(weapon);
@@ -1633,6 +1712,7 @@ public final class WeaponVfxServerListener {
                     tx, ty, tz, ax, ay, az, 1 << fx.element.ordinal(), bigScale);
             applyWoodGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyEarthGameplay(attacker, target, fx, capturedWeaponDamage);
+            applyMetalGameplay(attacker, target, fx, capturedWeaponDamage);
             applyFireGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyPoisonGameplay(attacker, target, fx);
             return;
@@ -1687,6 +1767,7 @@ public final class WeaponVfxServerListener {
                     tx, ty, tz, ax, ay, az, palette, bigScale);
             applyWoodGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyEarthGameplay(attacker, target, fx, capturedWeaponDamage);
+            applyMetalGameplay(attacker, target, fx, capturedWeaponDamage);
             applyFireGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyPoisonGameplay(attacker, target, fx);
         }
@@ -1831,6 +1912,7 @@ public final class WeaponVfxServerListener {
                 applyFireGameplay(attacker, target, fx, sizeScaleOf(target), Math.max(0.0f, event.getAmount()));
                 applyWoodGameplay(attacker, target, fx, sizeScaleOf(target), Math.max(0.0f, event.getAmount()));
                 applyEarthGameplay(attacker, target, fx, Math.max(0.0f, event.getAmount()));
+                applyMetalGameplay(attacker, target, fx, Math.max(0.0f, event.getAmount()));
                 applyPoisonGameplay(attacker, target, fx);
             }
         }

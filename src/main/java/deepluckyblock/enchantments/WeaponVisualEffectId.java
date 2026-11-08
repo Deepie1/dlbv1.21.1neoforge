@@ -491,6 +491,9 @@ public enum WeaponVisualEffectId {
         if (el == DeepElement.EARTH) {
             return new ArrayList<>(List.of(SEISMIC_TECTONIC, TITAN_GRASP, WARLORD_RALLY_SIGIL));
         }
+        if (el == DeepElement.METAL) {
+            return new ArrayList<>(List.of(RAZOR_GLEAM, SUPREME_PRISM_EDGE, ANNIHILATING_ARC));
+        }
         List<WeaponVisualEffectId> out = new ArrayList<>(4);
         for (WeaponVisualEffectId fx : values()) {
             // Archive Wind : ni Terre active, ni combo, ni commande de famille.

@@ -503,7 +503,8 @@ public final class WeaponWorldVfxManager {
             return;
         }
 
-        int duration = kind == KIND_MIASMA_DEFENSE ? 20
+        int duration = kind == KIND_BEAM_SIPHON && fx == WeaponVisualEffectId.SUPREME_PRISM_EDGE ? 18
+                : kind == KIND_MIASMA_DEFENSE ? 20
                 : kind == KIND_PLAGUE_CONTAGION ? 48 : switch (fx) {
             // Chorégraphies Wood complètes : croissance, impacts, stun et explosion de sève.
             case ZEPHYR_WIND_LANCE -> 80;
@@ -516,6 +517,9 @@ public final class WeaponWorldVfxManager {
             case SEISMIC_TECTONIC -> 112;
             case TITAN_GRASP, SANDSTORM_DUNE -> 140;
             case WARLORD_RALLY_SIGIL -> 120;
+            case RAZOR_GLEAM -> 56;
+            case SUPREME_PRISM_EDGE -> 96;
+            case ANNIHILATING_ARC -> 112;
             case SERAPH_SKY_PILLAR, ABYSSAL_MAELSTROM,
                  DRAGON_CHAOS_PRISM, BIG_BANG_SCAR -> 22;
             case ECLIPSE_VEIL, NULL_RIFT_FISSURE,
@@ -524,7 +528,7 @@ public final class WeaponWorldVfxManager {
             case MIASMA_SHROUD -> 600; // Le serveur raccourcit à 6 s ou enchaîne jusqu'à 30 s.
             case PLAGUE_NOVA -> 128;
             case ASTRAL_STAR_LANCE, VOID_WARP_SPHERE,
-                 CRIMSON_SIPHON, CHRONO_ETERNAL_HALO, ANNIHILATING_ARC -> 16;
+                 CRIMSON_SIPHON, CHRONO_ETERNAL_HALO -> 16;
             case CHAIN_VOLT_ARC -> 11;
             default -> 14;
         };
@@ -1518,7 +1522,7 @@ public final class WeaponWorldVfxManager {
         if (tag != null) {
             String candidate = tag.getString("DlbAnimFamily");
             if (candidate.equals("feu") || candidate.equals("gaia") || candidate.equals("poison")
-                    || candidate.equals("terre")) animFamily = candidate;
+                    || candidate.equals("terre") || candidate.equals("metal")) animFamily = candidate;
         }
         if (layers.isEmpty() && animFamily == null) return;
 
@@ -1585,6 +1589,13 @@ public final class WeaponWorldVfxManager {
                 case 0 -> WeaponVisualEffectId.SEISMIC_TECTONIC;
                 case 1 -> WeaponVisualEffectId.TITAN_GRASP;
                 default -> WeaponVisualEffectId.WARLORD_RALLY_SIGIL;
+            };
+        }
+        if (family.equals("metal")) {
+            return switch (index) {
+                case 0 -> WeaponVisualEffectId.RAZOR_GLEAM;
+                case 1 -> WeaponVisualEffectId.SUPREME_PRISM_EDGE;
+                default -> WeaponVisualEffectId.ANNIHILATING_ARC;
             };
         }
         return switch (index) {
@@ -3450,6 +3461,23 @@ public final class WeaponWorldVfxManager {
      * étincelles courtes et une entaille franche. Aucune gerbe molle, aucune fumée.
      */
     private static void impactMetal(ImpactView v) {
+        int signature = switch (v.inst().effect) {
+            case RAZOR_GLEAM -> MetalSignatureVfx.RAZOR;
+            case SUPREME_PRISM_EDGE -> MetalSignatureVfx.PRISM;
+            case ANNIHILATING_ARC -> MetalSignatureVfx.ANNIHILATE;
+            default -> -1;
+        };
+        if (signature >= 0) {
+            boolean previousPulse = voxelPulseEnabled;
+            voxelPulseEnabled = false;
+            try {
+                MetalSignatureVfx.render(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), v.t(),
+                        v.dirX(), v.dirZ(), signature, v.fadeA(), (int) (v.inst().seed & 0x7FFFFFFFL));
+            } finally {
+                voxelPulseEnabled = previousPulse;
+            }
+            return;
+        }
         float t = v.t();
         float S = v.S();
         WeaponVisualEffectId fx = v.inst().effect;
