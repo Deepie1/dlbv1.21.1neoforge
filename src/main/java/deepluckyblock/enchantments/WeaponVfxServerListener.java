@@ -1178,8 +1178,8 @@ public final class WeaponVfxServerListener {
         if (fx == WeaponVisualEffectId.RAZOR_GLEAM) {
             float piercing = net.minecraft.util.Mth.clamp(Math.max(0.0f, weaponDamage) * 0.12f, 0.08f, 0.75f);
             metalSound(sl, x, y, z, now, 0, SoundEvents.PLAYER_ATTACK_SWEEP, 0.48f, 1.65f);
-            metalSound(sl, x, y, z, now, 14, SoundEvents.ANVIL_PLACE, 0.24f, 1.85f);
-            TestProcedure.schedule(sl, now + 14, () -> {
+            metalSound(sl, x, y, z, now, 12, SoundEvents.ANVIL_PLACE, 0.24f, 1.85f);
+            TestProcedure.schedule(sl, now + 12, () -> {
                 if (target.isAlive() && target.level() == sl) target.hurt(sl.damageSources().magic(), piercing);
             });
             return;
@@ -1188,7 +1188,7 @@ public final class WeaponVfxServerListener {
         if (fx == WeaponVisualEffectId.SUPREME_PRISM_EDGE) {
             float ricochetDamage = net.minecraft.util.Mth.clamp(Math.max(0.0f, weaponDamage) * 0.30f, 0.10f, 2.50f);
             metalSound(sl, x, y, z, now, 0, SoundEvents.ANVIL_PLACE, 0.32f, 1.55f);
-            TestProcedure.schedule(sl, now + 42, () -> {
+            TestProcedure.schedule(sl, now + 30, () -> {
                 List<LivingEntity> targets = new ArrayList<>(sl.getEntitiesOfClass(LivingEntity.class,
                         new AABB(x - 4.0, y - 3.0, z - 4.0, x + 4.0, y + 3.0, z + 4.0)));
                 targets.removeIf(candidate -> !(candidate instanceof Enemy) || !candidate.isAlive()
@@ -1212,7 +1212,7 @@ public final class WeaponVfxServerListener {
 
         // Annihilating Sweep inflige déjà son dégât en zone : ici uniquement le contrôle, aucun doublon.
         metalSound(sl, x, y, z, now, 0, SoundEvents.ANVIL_LAND, 0.38f, 0.86f);
-        TestProcedure.schedule(sl, now + 42, () -> {
+        TestProcedure.schedule(sl, now + 30, () -> {
             double radius = 4.0;
             for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
                     new AABB(x - radius, y - 3.0, z - radius, x + radius, y + 3.0, z + radius))) {

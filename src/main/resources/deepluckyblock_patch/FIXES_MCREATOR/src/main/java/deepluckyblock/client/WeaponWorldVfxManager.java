@@ -517,9 +517,9 @@ public final class WeaponWorldVfxManager {
             case SEISMIC_TECTONIC -> 112;
             case TITAN_GRASP, SANDSTORM_DUNE -> 140;
             case WARLORD_RALLY_SIGIL -> 120;
-            case RAZOR_GLEAM -> 72;
-            case SUPREME_PRISM_EDGE -> 120;
-            case ANNIHILATING_ARC -> 140;
+            case RAZOR_GLEAM -> 48;
+            case SUPREME_PRISM_EDGE -> 84;
+            case ANNIHILATING_ARC -> 96;
             case SERAPH_SKY_PILLAR, ABYSSAL_MAELSTROM,
                  DRAGON_CHAOS_PRISM, BIG_BANG_SCAR -> 22;
             case ECLIPSE_VEIL, NULL_RIFT_FISSURE,

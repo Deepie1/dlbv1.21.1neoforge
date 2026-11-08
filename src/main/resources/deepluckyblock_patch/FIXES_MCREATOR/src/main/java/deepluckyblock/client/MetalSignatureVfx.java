@@ -43,22 +43,25 @@ public final class MetalSignatureVfx {
 
     /**
      * RAZOR GLEAM — un iaido complet : saya, lame courbe à hamon, tsuba, tsuka tressé,
-     * déplacement du reflet puis une seule section diagonale. Impact serveur : 14/72.
+     * déplacement du reflet puis une seule section diagonale. Impact serveur : 12/48.
      */
     private static void renderRazor(Voxels v, float t, int alpha, int salt) {
         float enter = smooth(t / 0.065f);
-        float exit = 1.0f - smooth((t - 0.78f) / 0.22f);
+        float exit = 1.0f - smooth((t - 0.62f) / 0.26f);
         int a = Math.round(alpha * enter * exit);
-        float draw = smooth((t - 0.065f) / 0.13f);
-        float recoil = smooth((t - 0.38f) / 0.35f);
-        float bladeBase = -2.15f + draw * 3.65f - recoil * 0.35f;
-        float bladeY = 0.32f + Mth.sin(draw * (float) Math.PI) * 0.42f;
+        float anticipation = smooth(t / 0.12f);
+        float draw = easeIn((t - 0.12f) / 0.13f);
+        float recoil = easeOut((t - 0.25f) / 0.20f);
+        float bladeBase = -2.15f - anticipation * 0.28f + draw * 3.95f - recoil * 0.45f;
+        float bladeY = 0.22f - anticipation * 0.12f
+                + Mth.sin(draw * (float) Math.PI) * 0.28f + draw * 0.14f;
+        float sayaShift = easeOut((t - 0.08f) / 0.18f) * 0.70f;
 
         // Le fourreau reste derrière : la sortie de lame est lisible avant l'impact.
-        float sayaAlpha = 1.0f - smooth((t - 0.28f) / 0.35f) * 0.72f;
+        float sayaAlpha = 1.0f - smooth((t - 0.10f) / 0.17f);
         for (int part = 0; part < 30; part++) {
             float u = part / 29.0f;
-            float f = -2.55f + u * 3.25f;
+            float f = -2.55f + u * 3.25f - sayaShift;
             float y = 0.05f + u * u * 0.22f;
             v.rot(f, y, 0.0f, 0.070f, 0.095f, 0.115f, 0.0f, 0.0f, -0.06f * u,
                     part % 6 == 0 ? STEEL_DARK : LACQUER, Math.round(a * sayaAlpha));
@@ -66,7 +69,7 @@ public final class MetalSignatureVfx {
                     part % 5 == 0 ? EDGE : STEEL, Math.round(a * sayaAlpha * 0.72f));
         }
         for (int ring = 0; ring < 3; ring++) {
-            float f = -2.38f + ring * 1.22f;
+            float f = -2.38f + ring * 1.22f - sayaShift;
             for (int side = 0; side < 12; side++) {
                 float angle = side * TAU / 12.0f;
                 v.box(f, 0.10f + Mth.sin(angle) * 0.14f, Mth.cos(angle) * 0.14f,
@@ -78,7 +81,7 @@ public final class MetalSignatureVfx {
         for (int cord = 0; cord < 2; cord++) {
             for (int i = 0; i < 24; i++) {
                 float u = i / 23.0f;
-                float f = -1.65f + cord * 0.55f + Mth.cos(u * TAU) * (0.28f + cord * 0.08f);
+                float f = -1.65f + cord * 0.55f + Mth.cos(u * TAU) * (0.28f + cord * 0.08f) - sayaShift;
                 float y = -0.18f - Mth.sin(u * TAU) * (0.30f + cord * 0.08f);
                 v.box(f, y, 0.03f + cord * 0.04f, 0.022f, 0.022f, 0.022f,
                         cord == 0 ? STEEL_DARK : BRONZE, Math.round(a * sayaAlpha * 0.85f));
@@ -88,7 +91,7 @@ public final class MetalSignatureVfx {
         razorKatana(v, bladeBase, bladeY, a);
 
         // Un seul reflet parcourt la courbure ; il ne devient jamais une seconde lame.
-        float gleamTravel = clamp((t - 0.09f) / 0.48f);
+        float gleamTravel = clamp((t - 0.16f) / 0.18f);
         if (gleamTravel > 0.0f && gleamTravel < 1.0f) {
             float f = bladeBase + 0.20f + gleamTravel * 3.05f;
             float y = bladeY + katanaCurve(gleamTravel) - 0.11f;
@@ -102,27 +105,24 @@ public final class MetalSignatureVfx {
             }
         }
 
-        // La coupe est une section continue, pas une gerbe de slashes concentriques.
-        float cut = smooth((t - 0.175f) / 0.105f);
-        if (cut > 0.0f && cut < 1.0f) {
-            int visible = Math.round(cut * 72);
-            for (int i = 0; i < visible; i++) {
-                float u = i / 71.0f;
-                float f = -2.55f + u * 5.10f;
-                float y = -1.02f + u * 2.18f;
-                float fade = 1.0f - cut * 0.38f;
-                v.rot(f, y, 0.0f, 0.052f, 0.022f, 0.018f, 0.0f, 0.0f, 0.405f,
-                        i % 8 == 0 ? GLINT : EDGE, Math.round(a * fade));
-                v.box(f, y + 0.045f, 0.035f, 0.040f, 0.010f, 0.012f,
-                        SILVER, Math.round(a * fade * 0.48f));
-                if (i % 9 == 0) {
-                    v.link(f - 0.06f, y - 0.10f, -0.015f, f + 0.06f, y + 0.10f, 0.015f,
-                            0.012f, GLINT, SILVER, Math.round(a * fade * 0.75f));
-                }
+        // Une tête et une queue courtes : la section suit le geste puis disparaît en quelques ticks.
+        float cutHead = easeOut((t - 0.238f) / 0.055f);
+        float cutTail = clamp((t - 0.275f) / 0.055f);
+        float cutLife = 1.0f - smooth((t - 0.285f) / 0.065f);
+        if (cutHead > 0.0f && cutLife > 0.0f) {
+            for (int i = 0; i < 48; i++) {
+                float u = i / 47.0f;
+                if (u > cutHead || u < cutTail) continue;
+                float f = -1.65f + u * 3.30f;
+                float y = -0.65f + u * 1.50f;
+                float trail = clamp((u - cutTail) / 0.22f);
+                int cutAlpha = Math.round(a * cutLife * (0.20f + trail * 0.80f));
+                v.rot(f, y, 0.0f, 0.032f, 0.012f, 0.010f, 0.0f, 0.0f, 0.405f,
+                        i % 8 == 0 ? GLINT : EDGE, cutAlpha);
             }
         }
 
-        float flash = 1.0f - smooth(Math.abs(t - 14.0f / 72.0f) / 0.095f);
+        float flash = 1.0f - smooth(Math.abs(t - 12.0f / 48.0f) / 0.060f);
         if (flash > 0.0f) {
             for (int axis = 0; axis < 8; axis++) {
                 float angle = axis * TAU / 8.0f;
@@ -140,9 +140,9 @@ public final class MetalSignatureVfx {
         }
 
         // Limaille arrachée à la section, avec trajectoires individuelles déterministes.
-        for (int i = 0; i < 54; i++) {
+        for (int i = 0; i < 40; i++) {
             float h = hash(salt, 100 + i * 37);
-            float age = clamp((t - 0.19f) / 0.55f);
+            float age = clamp((t - 0.25f) / 0.32f);
             if (age <= 0.0f) continue;
             float angle = i * 2.3999632f;
             float r = age * (0.45f + h * 1.75f);
@@ -209,15 +209,15 @@ public final class MetalSignatureVfx {
 
     /**
      * SUPREME PRISM EDGE — double prisme triangulaire à facettes, trois lames taillées,
-     * lumière incidente et spectres brisés. Ricochets serveur : 42/120.
+     * lumière incidente et spectres brisés. Ricochets serveur : 30/84.
      */
     private static void renderPrism(Voxels v, float t, int alpha, int salt) {
         float birth = smooth(t / 0.085f);
-        float exit = 1.0f - smooth((t - 0.82f) / 0.18f);
+        float exit = 1.0f - smooth((t - 0.68f) / 0.22f);
         int a = Math.round(alpha * birth * exit);
-        float open = smooth((t - 0.025f) / 0.20f);
-        float strike = smooth((t - 0.31f) / 0.09f);
-        float spin = t * 3.1f;
+        float open = easeOut((t - 0.02f) / 0.16f);
+        float strike = easeOut((t - 0.335f) / 0.065f);
+        float spin = 0.85f * easeOut(t / 0.24f) + 0.35f * smooth((t - 0.22f) / 0.10f);
         float prismY = 0.48f + open * 0.28f;
         float radius = 0.30f + open * 0.86f;
         float halfHeight = 0.45f + open * 0.86f;
@@ -256,56 +256,67 @@ public final class MetalSignatureVfx {
             }
         }
 
-        float converge = smooth((t - 0.07f) / 0.22f);
+        float converge = easeIn((t - 0.08f) / 0.22f);
         for (int blade = 0; blade < 3; blade++) {
             float angle = blade * TAU / 3.0f + spin * 0.34f;
             float bladeRadius = Mth.lerp(converge, 3.05f, 1.65f) + strike * 0.72f;
-            prismBlade(v, angle, bladeRadius, 0.10f + blade * 0.36f, a, blade);
+            prismBlade(v, angle, bladeRadius, 0.10f + blade * 0.36f,
+                    Math.round(a * (1.0f - smooth((t - 0.34f) / 0.08f) * 0.55f)), blade);
         }
 
-        // Rayon incident blanc, puis séparation visible en deux ricochets et un spectre libre.
-        float incident = smooth((t - 0.20f) / 0.11f);
-        if (incident > 0.0f && incident < 1.0f) {
+        // L'incident et les deux ricochets sont des comètes courtes, jamais des lignes permanentes.
+        float incidentHead = easeOut((t - 0.19f) / 0.08f);
+        float incidentTail = clamp((t - 0.235f) / 0.08f);
+        float incidentLife = 1.0f - smooth((t - 0.29f) / 0.05f);
+        if (incidentHead > 0.0f && incidentLife > 0.0f) {
             for (int i = 0; i < 38; i++) {
                 float u = i / 37.0f;
-                if (u > incident) continue;
+                if (u > incidentHead || u < incidentTail) continue;
+                float trail = clamp((u - incidentTail) / 0.25f);
                 v.box(-4.5f + u * 4.1f, prismY, 0.0f, 0.065f, 0.035f, 0.035f,
-                        i % 6 == 0 ? GLINT : EDGE, Math.round(a * (0.45f + u * 0.55f)));
+                        i % 6 == 0 ? GLINT : EDGE, Math.round(a * incidentLife * (0.25f + trail * 0.75f)));
             }
         }
-        if (strike > 0.0f) {
-            for (int ray = 0; ray < 3; ray++) {
+        float rayHead = easeOut((t - 0.335f) / 0.065f);
+        float rayTail = clamp((t - 0.365f) / 0.065f);
+        float rayLife = 1.0f - smooth((t - 0.405f) / 0.065f);
+        if (rayHead > 0.0f && rayLife > 0.0f) {
+            for (int ray = 0; ray < 2; ray++) {
                 float angle = ray * TAU / 3.0f + spin * 0.20f;
                 for (int strand = 0; strand < 3; strand++) {
                     int rgb = strand == 0 ? PRISM_CYAN : strand == 1 ? EDGE : PRISM_ROSE;
                     for (int i = 0; i < 32; i++) {
                         float u = i / 31.0f;
-                        if (u > strike) continue;
-                        float r = 0.72f + u * (ray == 2 ? 3.25f : 3.85f);
+                        if (u > rayHead || u < rayTail) continue;
+                        float trail = clamp((u - rayTail) / 0.24f);
+                        float r = 0.72f + u * 3.85f;
                         float bend = Mth.sin(u * (float) Math.PI * 2.0f) * (0.12f + strand * 0.035f);
-                        float y = prismY + (ray - 1) * 0.25f + (strand - 1) * 0.065f
+                        float y = prismY + (ray - 0.5f) * 0.30f + (strand - 1) * 0.065f
                                 + Mth.sin(u * 5.0f + ray) * 0.10f;
                         float f = Mth.cos(angle) * r - Mth.sin(angle) * bend;
                         float l = Mth.sin(angle) * r + Mth.cos(angle) * bend;
+                        int rayAlpha = Math.round(a * rayLife * (0.20f + trail * 0.80f));
                         v.rot(f, y, l, 0.045f, 0.018f, 0.026f, angle, 0.0f, 0.0f,
-                                i % 8 == 0 ? GLINT : rgb, Math.round(a * (1.0f - u * 0.46f)));
+                                i % 8 == 0 ? GLINT : rgb, rayAlpha);
                     }
                 }
             }
-            // Deux éclats terminaux matérialisent les cibles secondaires, jamais la cible principale.
+        }
+        float endpointFlash = 1.0f - smooth(Math.abs(t - 0.365f) / 0.065f);
+        if (endpointFlash > 0.0f) {
             for (int end = 0; end < 2; end++) {
                 float angle = end * TAU / 3.0f + spin * 0.20f;
                 float f = Mth.cos(angle) * 4.55f, l = Mth.sin(angle) * 4.55f;
-                crystalBurst(v, f, prismY + (end - 0.5f) * 0.50f, l, 0.28f + strike * 0.22f,
-                        spin + end, Math.round(a * strike), spectrum[end * 2]);
+                crystalBurst(v, f, prismY + (end - 0.5f) * 0.50f, l, 0.34f + endpointFlash * 0.18f,
+                        spin + end, Math.round(a * endpointFlash), spectrum[end * 2]);
             }
         }
 
         // Petites facettes orbitales : elles tournent sur elles-mêmes et autour du prisme.
-        for (int shard = 0; shard < 48; shard++) {
+        for (int shard = 0; shard < 32; shard++) {
             float h = hash(salt, 500 + shard * 41);
             float angle = shard * 2.3999632f + spin * (0.25f + h * 0.35f);
-            float r = 1.45f + h * 1.55f + strike * 0.55f;
+            float r = 1.45f + h * 1.55f + strike * 0.25f;
             float y = prismY + Mth.sin(angle * 1.7f) * (0.55f + h * 0.65f);
             v.rot(Mth.cos(angle) * r, y, Mth.sin(angle) * r,
                     0.025f + h * 0.035f, 0.055f, 0.018f,
@@ -390,31 +401,33 @@ public final class MetalSignatureVfx {
 
     /**
      * ANNIHILATING ARC — deux croissants-guillotines mécaniques se déplient en fronts
-     * horizontaux. Chaque maillon possède corps, arête, dent et rivet. Repoussement : 42/140.
+     * horizontaux. Chaque maillon possède corps, arête, dent et rivet. Repoussement : 30/96.
      */
     private static void renderAnnihilatingArc(Voxels v, float t, int alpha, int salt) {
         float birth = smooth(t / 0.055f);
-        float exit = 1.0f - smooth((t - 0.85f) / 0.15f);
+        float exit = 1.0f - smooth((t - 0.70f) / 0.20f);
         int a = Math.round(alpha * birth * exit);
-        float charge = smooth((t - 0.02f) / 0.24f);
-        float release = smooth((t - 0.30f) / 0.24f);
-        float counter = smooth((t - 0.52f) / 0.25f);
-        float mechanismAlpha = 1.0f - release * 0.74f;
+        float charge = easeInOut((t - 0.02f) / 0.26f);
+        float release = easeOut((t - 0.3125f) / 0.11f);
+        float counter = easeOut((t - 0.43f) / 0.10f);
+        float mechanismAlpha = 1.0f - smooth((t - 0.31f) / 0.10f);
+        float jawAlpha = 1.0f - smooth((t - 0.35f) / 0.11f);
 
         arcMechanism(v, charge, release, Math.round(a * mechanismAlpha));
 
         // Les mâchoires commencent verticales, puis s'aplatissent en devenant les fronts.
         for (int jaw = 0; jaw < 2; jaw++) {
-            float yaw = jaw * (float) Math.PI + charge * 1.35f;
+            float yaw = jaw * (float) Math.PI + Mth.sin(charge * (float) Math.PI) * 0.25f;
             for (int part = 0; part < 58; part++) {
                 float u = part / 57.0f;
-                float angle = yaw - 2.32f + u * 4.64f;
-                float radius = 2.75f - charge * 0.45f + release * 0.55f;
+                float angle = yaw - 1.18f + u * 2.36f;
+                float radius = 2.45f + Mth.sin(charge * (float) Math.PI) * 0.35f + release * 0.55f;
                 float vertical = (1.0f - release) * 0.88f;
                 float f = Mth.cos(angle) * radius;
-                float l = Mth.sin(angle) * radius * (jaw == 0 ? 1.0f : -1.0f);
-                float y = 0.40f + jaw * 0.46f + Mth.sin(angle) * radius * vertical;
-                float fade = 1.0f - release * 0.78f;
+                float l = Mth.sin(angle) * radius * release
+                        + (jaw == 0 ? -0.45f : 0.45f) * (1.0f - release);
+                float y = 0.40f + jaw * 0.32f + Mth.sin(angle) * radius * vertical;
+                float fade = jawAlpha;
                 // Dos épais, corps riveté et arête intérieure claire.
                 v.rot(f * 1.035f, y + 0.045f, l * 1.035f, 0.065f, 0.075f, 0.145f,
                         angle, 0.0f, 0.0f, BLACK_STEEL, Math.round(a * fade));
@@ -439,11 +452,11 @@ public final class MetalSignatureVfx {
         }
 
         // Front principal : 96 lames tangentes articulées, dents extérieures et contre-arête.
-        if (release > 0.0f && release < 1.0f) {
+        if (release > 0.0f && t < 0.47f) {
             float radius = 0.72f + release * 4.85f;
-            int ringAlpha = Math.round(a * (1.0f - release * 0.68f));
+            int ringAlpha = Math.round(a * (1.0f - smooth((t - 0.39f) / 0.08f)));
             for (int part = 0; part < 96; part++) {
-                float angle = part * TAU / 96.0f + release * 1.15f;
+                float angle = part * TAU / 96.0f + release * 0.65f;
                 float f = Mth.cos(angle) * radius, l = Mth.sin(angle) * radius;
                 v.rot(f, 0.20f, l, 0.055f, 0.048f, radius * TAU / 192.0f * 1.10f,
                         angle, 0.0f, 0.0f, part % 8 == 0 ? SILVER : STEEL, ringAlpha);
@@ -461,11 +474,11 @@ public final class MetalSignatureVfx {
         }
 
         // Contre-arc oblique : chevrons doubles, rotation inverse et hauteur différente.
-        if (counter > 0.0f && counter < 1.0f) {
+        if (counter > 0.0f && t < 0.59f) {
             float radius = 0.95f + counter * 4.30f;
-            int ringAlpha = Math.round(a * (1.0f - counter * 0.74f));
+            int ringAlpha = Math.round(a * (1.0f - smooth((t - 0.51f) / 0.08f)));
             for (int part = 0; part < 80; part++) {
-                float angle = -part * TAU / 80.0f - counter * 1.55f;
+                float angle = -part * TAU / 80.0f - counter * 0.90f;
                 float f = Mth.cos(angle) * radius, l = Mth.sin(angle) * radius;
                 float y = 0.72f + Mth.sin(angle * 2.0f) * 0.10f;
                 v.rot(f, y, l, 0.040f, 0.032f, 0.115f,
@@ -476,9 +489,9 @@ public final class MetalSignatureVfx {
         }
 
         // Éclats lourds tangentiels, nettement différents des limailles fines de Razor.
-        for (int i = 0; i < 76; i++) {
+        for (int i = 0; i < 56; i++) {
             float h = hash(salt, 900 + i * 43);
-            float age = clamp((t - 0.30f) / 0.56f);
+            float age = clamp((t - 0.31f) / 0.35f);
             if (age <= 0.0f) continue;
             float angle = i * 2.3999632f + age * 0.55f;
             float r = age * (2.0f + h * 3.65f);
@@ -560,6 +573,21 @@ public final class MetalSignatureVfx {
 
     private static int color(int dark, int light, float u) {
         return WeaponWorldVfxManager.mixRgb(dark, light, Mth.clamp(u, 0.0f, 1.0f));
+    }
+
+    private static float easeOut(float x) {
+        x = Mth.clamp(x, 0.0f, 1.0f);
+        return 1.0f - (1.0f - x) * (1.0f - x) * (1.0f - x);
+    }
+
+    private static float easeIn(float x) {
+        x = Mth.clamp(x, 0.0f, 1.0f);
+        return x * x * x;
+    }
+
+    private static float easeInOut(float x) {
+        x = Mth.clamp(x, 0.0f, 1.0f);
+        return x < 0.5f ? 4.0f * x * x * x : 1.0f - (float) Math.pow(-2.0f * x + 2.0f, 3.0f) * 0.5f;
     }
 
     private static float smooth(float x) {
