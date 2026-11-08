@@ -1241,9 +1241,11 @@ public final class WeaponVfxServerListener {
                 || candidate.getId() == attackerId || candidate.distanceToSqr(x, y, z) > radius * radius);
         controlled.sort((a, b) -> Double.compare(a.distanceToSqr(x, y, z), b.distanceToSqr(x, y, z)));
         if (controlled.size() > 6) controlled = new ArrayList<>(controlled.subList(0, 6));
+        // La sélection capturée par la lambda doit être finale : controlled vient d'être borné/réaffecté.
+        final List<LivingEntity> controlledTargets = List.copyOf(controlled);
         long holdExpiry = gameNow + 31;
         Set<Integer> metalHeld = new HashSet<>();
-        for (LivingEntity candidate : controlled) {
+        for (LivingEntity candidate : controlledTargets) {
             // Maintien de position sans NoAI : le groupe peut toujours attaquer pendant la charge.
             if (tryMetalHold(candidate, holdExpiry, false)) metalHeld.add(candidate.getId());
         }
@@ -1254,7 +1256,7 @@ public final class WeaponVfxServerListener {
         metalSound(sl, x, y, z, now, 30, SoundEvents.ANVIL_LAND, 0.42f, 0.78f);
         metalSound(sl, x, y, z, now, 46, SoundEvents.PLAYER_ATTACK_SWEEP, 0.40f, 0.95f);
         TestProcedure.schedule(sl, now + 30, () -> {
-            for (LivingEntity candidate : controlled) {
+            for (LivingEntity candidate : controlledTargets) {
                 if (!candidate.isAlive() || candidate.level() != sl
                         || candidate.distanceToSqr(x, y, z) > 20.25) continue;
                 MovementHold active = MOVEMENT_HOLDS.get(candidate.getId());
