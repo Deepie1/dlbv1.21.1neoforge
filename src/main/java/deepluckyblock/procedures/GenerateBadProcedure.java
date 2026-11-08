@@ -5049,7 +5049,7 @@ public class GenerateBadProcedure {
     // pas une deuxième — on garantit simplement qu'elle est enchantée.
     //
     // Les trois items sont résolus directement via leurs DeferredHolder :
-    // samouss_chestplate / samouss_leggings / samouss_boots uniquement.
+    // samouss_helmet / samouss_chestplate / samouss_boots uniquement.
     // Aucun fallback diamant : les trois DeferredHolder sont obligatoires et enregistrés.
 
     private static final Item[] SAMOUSS_LOOT_PIECES = new Item[3];
@@ -5058,8 +5058,8 @@ public class GenerateBadProcedure {
     private static void initSamoussLootCache() {
         if (samoussLootCacheReady) return;
         samoussLootCacheReady = true;
-        SAMOUSS_LOOT_PIECES[0] = DeepLuckyBlockModItems.SAMOUSS_CHESTPLATE.get();
-        SAMOUSS_LOOT_PIECES[1] = DeepLuckyBlockModItems.SAMOUSS_LEGGINGS.get();
+        SAMOUSS_LOOT_PIECES[0] = DeepLuckyBlockModItems.SAMOUSS_HELMET.get();
+        SAMOUSS_LOOT_PIECES[1] = DeepLuckyBlockModItems.SAMOUSS_CHESTPLATE.get();
         SAMOUSS_LOOT_PIECES[2] = DeepLuckyBlockModItems.SAMOUSS_BOOTS.get();
     }
 
@@ -5071,8 +5071,8 @@ public class GenerateBadProcedure {
 
     private static EquipmentSlot slotForSamoussPiece(Item item) {
         initSamoussLootCache();
-        if (item == SAMOUSS_LOOT_PIECES[0]) return EquipmentSlot.CHEST;
-        if (item == SAMOUSS_LOOT_PIECES[1]) return EquipmentSlot.LEGS;
+        if (item == SAMOUSS_LOOT_PIECES[0]) return EquipmentSlot.HEAD;
+        if (item == SAMOUSS_LOOT_PIECES[1]) return EquipmentSlot.CHEST;
         return EquipmentSlot.FEET;
     }
 
@@ -5108,8 +5108,8 @@ public class GenerateBadProcedure {
 
             int pieceIndex = random.nextInt(3);
             EquipmentSlot slot = switch (pieceIndex) {
-                case 0 -> EquipmentSlot.CHEST;
-                case 1 -> EquipmentSlot.LEGS;
+                case 0 -> EquipmentSlot.HEAD;
+                case 1 -> EquipmentSlot.CHEST;
                 default -> EquipmentSlot.FEET;
             };
             ItemStack piece = new ItemStack(SAMOUSS_LOOT_PIECES[pieceIndex]);

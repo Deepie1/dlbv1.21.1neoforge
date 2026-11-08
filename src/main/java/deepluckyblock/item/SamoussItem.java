@@ -150,45 +150,6 @@ public abstract class SamoussItem extends ArmorItem {
 		}
 	}
 
-	public static class Leggings extends SamoussItem {
-		public Leggings() {
-			super(ArmorItem.Type.LEGGINGS, new Item.Properties().rarity(Rarity.RARE));
-		}
-
-		@Override
-		public void initializeClient(Consumer<IClientItemExtensions> consumer) {
-			consumer.accept(new IClientItemExtensions() {
-				private HumanoidModel armorModel = null;
-
-				@Override
-				@OnlyIn(Dist.CLIENT)
-				public HumanoidModel getHumanoidArmorModel(LivingEntity living, ItemStack stack, EquipmentSlot slot, HumanoidModel defaultModel) {
-					if (armorModel == null) {
-						Modelsamouss model = new Modelsamouss(Minecraft.getInstance().getEntityModels().bakeLayer(Modelsamouss.LAYER_LOCATION));
-						armorModel = new HumanoidModel(new ModelPart(Collections.emptyList(),
-								Map.of("left_leg", model.leftleg1, "right_leg", model.rightleg1, "head", new ModelPart(Collections.emptyList(), Collections.emptyMap()), "hat", new ModelPart(Collections.emptyList(), Collections.emptyMap()), "body",
-										new ModelPart(Collections.emptyList(), Collections.emptyMap()), "right_arm", new ModelPart(Collections.emptyList(), Collections.emptyMap()), "left_arm",
-										new ModelPart(Collections.emptyList(), Collections.emptyMap()))));
-					}
-					armorModel.crouching = living.isShiftKeyDown();
-					armorModel.riding = defaultModel.riding;
-					armorModel.young = living.isBaby();
-					return armorModel;
-				}
-			});
-		}
-
-		@Override
-		public net.minecraft.resources.ResourceLocation getArmorTexture(ItemStack stack, Entity entity, EquipmentSlot slot, ArmorMaterial.Layer layer, boolean isInner) {
-			return net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("deep_lucky_block", "textures/entities/texture.png");
-		}
-
-		@Override
-		public boolean makesPiglinsNeutral(ItemStack itemstack, LivingEntity entity) {
-			return true;
-		}
-	}
-
 	public static class Boots extends SamoussItem {
 		public Boots() {
 			super(ArmorItem.Type.BOOTS, new Item.Properties().rarity(Rarity.RARE));
