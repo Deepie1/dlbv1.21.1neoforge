@@ -46,6 +46,9 @@ public final class SeismicTerrainVfx {
     private static final int MAX_MOUNTAIN_SNAPSHOTS = 4;
     private static final int MAX_BLOCKS_PER_SNAPSHOT = 576;
     private static final int COLUMN_DEPTH = 4;
+    private static final float MOUNTAIN_SCALE = 0.50f;
+    private static final int MOUNTAIN_LAYERS = 16; // 16 × 0,50 = 8 blocs, sous la limite de 9.
+    private static final int MOUNTAIN_SHELL = 3;
     private static final float REPRINT_EPSILON = 0.012f;
     private static final Map<SnapshotKey, TerrainSnapshot> SNAPSHOTS = new LinkedHashMap<>();
     private static final Map<SnapshotKey, MountainSnapshot> MOUNTAIN_SNAPSHOTS = new LinkedHashMap<>();
@@ -193,10 +196,11 @@ public final class SeismicTerrainVfx {
         BlockTemplate stoneFallback = captureTemplate(dispatcher, level, center,
                 Blocks.STONE.defaultBlockState(), centerLight);
         List<MountainBlock> mountain = new ArrayList<>(1024);
-        for (int ix = -8; ix <= 8; ix++) for (int iz = -8; iz <= 8; iz++) {
+        for (int ix = -5; ix <= 5; ix++) for (int iz = -5; iz <= 5; iz++) {
             int height = mountainHeight(ix, iz, salt);
             if (height <= 0) continue;
             for (int layer = 0; layer < height; layer++) {
+                if (!isMountainShell(ix, iz, layer, height, salt)) continue;
                 float h = hash(salt, 7000 + ix * 73856093 ^ iz * 19349663 ^ layer * 83492791);
                 boolean top = layer == height - 1;
                 boolean grassLedge = !top && layer >= height - 6 && layer % 5 == 0 && h > 0.80f;
@@ -242,22 +246,24 @@ public final class SeismicTerrainVfx {
         MountainSnapshot snapshot = MOUNTAIN_SNAPSHOTS.get(key(x, y, z, salt));
         if (snapshot == null || snapshot.level != level) return false;
         float growth = smooth((t - (2.0f / 3.0f)) / (1.0f / 6.0f));
-        float front = growth * 30.0f;
-        float sink = smooth((t - 0.90f) / 0.10f) * 31.0f;
+        float front = growth * MOUNTAIN_LAYERS;
+        float sink = smooth((t - 0.90f) / 0.10f) * 8.25f;
         BlockRenderDispatcher dispatcher = mc.getBlockRenderer();
         boolean emitted = false;
         for (MountainBlock block : snapshot.blocks) {
-            if (block.layer > front || block.layer + 1.0f - sink <= 0.0f) continue;
+            if (block.layer > front || (block.layer + 1.0f) * MOUNTAIN_SCALE - sink <= 0.0f) continue;
             emitted |= renderMountainTemplate(dispatcher, buffers, pose, camera,
-                    snapshot.x + block.ix, snapshot.baseY + block.layer + 0.5 - sink,
-                    snapshot.z + block.iz, block.template);
+                    snapshot.x + block.ix * MOUNTAIN_SCALE,
+                    snapshot.baseY + (block.layer + 0.5) * MOUNTAIN_SCALE - sink,
+                    snapshot.z + block.iz * MOUNTAIN_SCALE, block.template);
         }
         if (growth > 0.92f) {
             for (MountainPlant plant : snapshot.plants) {
-                if (plant.height > front || plant.height + 1.0f - sink <= 0.0f) continue;
+                if (plant.height > front || (plant.height + 1.0f) * MOUNTAIN_SCALE - sink <= 0.0f) continue;
                 emitted |= renderMountainTemplate(dispatcher, buffers, pose, camera,
-                        snapshot.x + plant.ix, snapshot.baseY + plant.height + 0.5 - sink,
-                        snapshot.z + plant.iz, plant.template);
+                        snapshot.x + plant.ix * MOUNTAIN_SCALE,
+                        snapshot.baseY + (plant.height + 0.5) * MOUNTAIN_SCALE - sink,
+                        snapshot.z + plant.iz * MOUNTAIN_SCALE, plant.template);
             }
         }
         return emitted;
@@ -269,6 +275,7 @@ public final class SeismicTerrainVfx {
                                                   double x, double y, double z, BlockTemplate template) {
         pose.pushPose();
         pose.translate(x - camera.x, y - camera.y, z - camera.z);
+        pose.scale(MOUNTAIN_SCALE, MOUNTAIN_SCALE, MOUNTAIN_SCALE);
         pose.translate(-0.5f, -0.5f, -0.5f);
         dispatcher.renderSingleBlock(template.state, pose, buffers, template.light,
                 OverlayTexture.NO_OVERLAY, template.modelData, null);
@@ -289,19 +296,31 @@ public final class SeismicTerrainVfx {
         return captured.get(Math.min(captured.size() - 1, Mth.floor(hash * captured.size())));
     }
 
-    /** Heightfield en marches de blocs : large base irrégulière et plateau sommital de 30 blocs. */
+    /** Heightfield détaillé : petits modèles réels, huit blocs de haut et coque de trois couches. */
     private static int mountainHeight(int ix, int iz, int salt) {
         double radial = Math.sqrt(ix * ix + iz * iz);
-        if (radial > 8.20) return 0;
-        double normalized = radial / 8.20;
+        if (radial > 5.20) return 0;
+        double normalized = radial / 5.20;
         double edge = 1.0 - normalized;
-        double base = 30.0 * (1.0 - normalized * normalized);
+        double base = MOUNTAIN_LAYERS * (1.0 - normalized * normalized);
         double noise = (Math.sin(ix * 1.73 + iz * 0.81 + salt * 0.013) * 1.25
                 + Math.cos(ix * 0.67 - iz * 1.41 + salt * 0.007) * 0.75) * edge;
         int height = Mth.floor(base + noise);
-        if (ix == 0 && iz == 0) height = 30;
-        else if (Math.abs(ix) <= 1 && Math.abs(iz) <= 1) height = Math.max(height, 29);
-        return Mth.clamp(height, 0, 30);
+        if (ix == 0 && iz == 0) height = MOUNTAIN_LAYERS;
+        else if (Math.abs(ix) <= 1 && Math.abs(iz) <= 1) height = Math.max(height, MOUNTAIN_LAYERS - 1);
+        return Mth.clamp(height, 0, MOUNTAIN_LAYERS);
+    }
+
+    /** Trois mini-blocs sous le sommet et trois autour des parois ; intérieur réellement creux. */
+    private static boolean isMountainShell(int ix, int iz, int layer, int height, int salt) {
+        if (layer >= height - MOUNTAIN_SHELL) return true;
+        for (int distance = 1; distance <= MOUNTAIN_SHELL; distance++) {
+            if (mountainHeight(ix - distance, iz, salt) <= layer
+                    || mountainHeight(ix + distance, iz, salt) <= layer
+                    || mountainHeight(ix, iz - distance, salt) <= layer
+                    || mountainHeight(ix, iz + distance, salt) <= layer) return true;
+        }
+        return false;
     }
 
     /**

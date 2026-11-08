@@ -38,6 +38,7 @@ import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -1164,27 +1165,28 @@ public final class WeaponVfxServerListener {
         int now = TestProcedure.currentTick(sl);
         double x = target.getX(), y = target.getY(), z = target.getZ();
         if (fx == WeaponVisualEffectId.TITAN_GRASP) {
-            earthSound(sl, x, y, z, now, 0, SoundEvents.WARDEN_ROAR, 0.72f, 0.72f); // awaken.
+            earthSound(sl, x, y, z, now, 0, SoundEvents.WARDEN_EMERGE, 0.72f, 0.55f / 1.2f); // awaken.
             earthSound(sl, x, y, z, now, 8, SoundEvents.WARDEN_EMERGE, 0.88f, 0.82f); // main hors de terre.
             earthSound(sl, x, y, z, now, 10, SoundEvents.GRASS_BREAK, 0.62f, 0.58f);
             for (int delay = 120; delay < 312; delay += 40) {
-                earthSound(sl, x, y, z, now, delay, SoundEvents.GRASS_BREAK, 0.20f, 0.50f);
+                earthSound(sl, x, y, z, now, delay, SoundEvents.ROOTED_DIRT_BREAK, 0.20f, 0.50f);
             }
             earthSound(sl, x, y, z, now, 312, SoundEvents.GRASS_BREAK, 0.44f, 0.82f);
             return;
         }
         if (fx == WeaponVisualEffectId.SEISMIC_TECTONIC) {
-            earthSound(sl, x, y, z, now, 0, SoundEvents.WARDEN_ROAR, 0.64f, 0.78f); // awaken.
+            earthSound(sl, x, y, z, now, 0, SoundEvents.WARDEN_EMERGE, 0.64f, 0.55f / 1.2f); // awaken.
             earthSound(sl, x, y, z, now, 4, SoundEvents.GRASS_BREAK, 0.68f, 0.54f);
             earthSound(sl, x, y, z, now, 12, SoundEvents.GENERIC_EXPLODE.value(), 0.40f, 0.70f);
-            earthSound(sl, x, y, z, now, 30, SoundEvents.GRASS_BREAK, 0.30f, 0.62f);
+            earthSound(sl, x, y, z, now, 30, SoundEvents.ROOTED_DIRT_BREAK, 0.34f, 0.62f);
             return;
         }
         if (fx == WeaponVisualEffectId.WARLORD_RALLY_SIGIL) {
             earthSound(sl, x, y, z, now, 80, SoundEvents.GENERIC_EXPLODE.value(), 0.56f, 0.58f);
             earthSound(sl, x, y, z, now, 80, SoundEvents.GRASS_BREAK, 0.72f, 0.52f);
-            earthSound(sl, x, y, z, now, 90, SoundEvents.GRASS_BREAK, 0.48f, 0.62f);
-            earthSound(sl, x, y, z, now, 100, SoundEvents.GRASS_BREAK, 0.40f, 0.76f);
+            earthSound(sl, x, y, z, now, 80, SoundEvents.WARDEN_STEP, 0.52f, 0.64f);
+            earthSound(sl, x, y, z, now, 90, SoundEvents.WARDEN_STEP, 0.34f, 0.72f);
+            earthSound(sl, x, y, z, now, 100, SoundEvents.ROOTED_DIRT_BREAK, 0.40f, 0.76f);
             earthSound(sl, x, y, z, now, 110, SoundEvents.GRASS_BREAK, 0.26f, 0.50f);
         }
     }
@@ -1218,31 +1220,62 @@ public final class WeaponVfxServerListener {
         TestProcedure.schedule(sl, scheduleNow + 312, () -> releaseMovementHold(target, holdEndGame));
     }
 
-    /** RALLY : Weakness I dans le cercle, puis montagne à 4 s et projection réelle de 30 blocs. */
+    /** RALLY : tous les mobs du cercle sont gelés, puis libérés et propulsés au tick 80. */
     private static void applyRallyGameplay(LivingEntity target, ServerLevel sl) {
         double x = target.getX(), y = target.getY(), z = target.getZ();
-        double radius = 2.0;
-        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
-                new AABB(x - radius, y - radius, z - radius, x + radius, y + radius, z + radius))) {
-            if (!(candidate instanceof Enemy) || !candidate.isAlive()
-                    || candidate.distanceToSqr(x, y, z) > radius * radius) continue;
-            candidate.addEffect(new MobEffectInstance(MobEffects.WEAKNESS,
-                    600, 0, false, true, true)); // Weakness I, 30 secondes.
-        }
-
+        double radius = 1.80; // Rayon exact du cercle lumineux complètement déployé.
         int scheduleNow = TestProcedure.currentTick(sl);
         long gameNow = sl.getGameTime();
-        long launchStartGame = gameNow + 80;
-        long launchEndGame = gameNow + 120;
+        long freezeExpiry = gameNow + 81; // Libération programmée à 80, avant l'expiration automatique.
+        List<LivingEntity> rallied = new ArrayList<>();
+        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(x - radius, y - radius, z - radius, x + radius, y + radius, z + radius))) {
+            if (!candidate.isAlive() || candidate.distanceToSqr(x, y, z) > radius * radius) continue;
+            // Tous les mobs sont concernés ; le joueur qui déclenche le sceau reste libre.
+            if (!(candidate instanceof Mob)) continue;
+            if (candidate instanceof Enemy) {
+                candidate.addEffect(new MobEffectInstance(MobEffects.WEAKNESS,
+                        600, 0, false, true, true)); // Weakness I, 30 secondes.
+            }
+            rallied.add(candidate);
+            applyMovementHold(candidate, freezeExpiry, true);
+        }
+
         TestProcedure.schedule(sl, scheduleNow + 80, () -> {
-            if (!target.isAlive() || target.level() != sl) return;
-            double baseY = target.getY();
-            // burialDepth négatif = trajectoire ascendante de 30 blocs sur les ticks 80..100.
-            applyMovementHold(target, launchEndGame, false, baseY, baseY + 30.0,
-                    launchStartGame, -30.0);
+            for (LivingEntity entity : rallied) {
+                if (!entity.isAlive() || entity.level() != sl) continue;
+                MovementHold hold = MOVEMENT_HOLDS.get(entity.getId());
+                if (hold == null || hold.expires() != freezeExpiry) continue;
+                // L'IA et le contrôle sont rendus AVANT la propulsion : plus aucun maintien Rally.
+                releaseMovementHold(entity, freezeExpiry);
+                launchRallyEntity(entity);
+            }
         });
-        // À 6 s, la cible reste à +30 et la gravité reprend : aucune restitution téléportée au sol.
-        TestProcedure.schedule(sl, scheduleNow + 120, () -> releaseMovementHold(target, launchEndGame));
+    }
+
+    private static final double RALLY_LAUNCH_VELOCITY = upwardVelocityForHeight(30.0);
+
+    /** Vélocité vanilla approximant une apex de 30 blocs, sans téléportation ni maintien horizontal. */
+    private static void launchRallyEntity(LivingEntity entity) {
+        entity.setDeltaMovement(0.0, RALLY_LAUNCH_VELOCITY, 0.0);
+        entity.fallDistance = 0.0f;
+        entity.hurtMarked = true;
+    }
+
+    private static double upwardVelocityForHeight(double wantedHeight) {
+        double low = 0.0, high = 5.0;
+        for (int iteration = 0; iteration < 32; iteration++) {
+            double velocity = (low + high) * 0.5;
+            double height = 0.0, apex = 0.0;
+            for (int tick = 0; tick < 200 && velocity > 0.0; tick++) {
+                height += velocity;
+                apex = Math.max(apex, height);
+                velocity = (velocity - 0.08) * 0.98; // Gravité et friction vanilla des LivingEntity.
+            }
+            if (apex < wantedHeight) low = (low + high) * 0.5;
+            else high = (low + high) * 0.5;
+        }
+        return high;
     }
 
     /** SEISMIC : enterre uniquement les ennemis au contact ou très proches de la fissure centrale. */
@@ -1860,6 +1893,8 @@ public final class WeaponVfxServerListener {
                 float pz = (float) player.getZ();
                 broadcastNear(sl, px, py, pz, WeaponVisualEffectId.WARLORD_RALLY_SIGIL.id, KIND_IMPACT, l.level(),
                         px, py, pz, px, py + 1.0f, pz);
+                scheduleEarthSoundtrack(sl, player, WeaponVisualEffectId.WARLORD_RALLY_SIGIL);
+                applyRallyGameplay(player, sl);
                 break;
             }
         }
