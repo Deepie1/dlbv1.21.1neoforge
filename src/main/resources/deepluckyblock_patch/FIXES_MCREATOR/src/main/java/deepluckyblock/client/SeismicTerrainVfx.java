@@ -11,6 +11,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.util.Mth;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.FlowerBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
@@ -41,10 +43,12 @@ import java.util.Map;
  */
 public final class SeismicTerrainVfx {
     private static final int MAX_SNAPSHOTS = 8;
+    private static final int MAX_MOUNTAIN_SNAPSHOTS = 4;
     private static final int MAX_BLOCKS_PER_SNAPSHOT = 576;
     private static final int COLUMN_DEPTH = 4;
     private static final float REPRINT_EPSILON = 0.012f;
     private static final Map<SnapshotKey, TerrainSnapshot> SNAPSHOTS = new LinkedHashMap<>();
+    private static final Map<SnapshotKey, MountainSnapshot> MOUNTAIN_SNAPSHOTS = new LinkedHashMap<>();
     private static ClientLevel trackedLevel;
 
     private SeismicTerrainVfx() { }
@@ -53,6 +57,7 @@ public final class SeismicTerrainVfx {
         if (trackedLevel == level) return;
         trackedLevel = level;
         SNAPSHOTS.clear();
+        MOUNTAIN_SNAPSHOTS.clear();
     }
 
     /** Capture unique : les ticks suivants ne remplacent jamais le « screen » initial. */
@@ -140,6 +145,163 @@ public final class SeismicTerrainVfx {
             emitted = true;
         }
         return emitted;
+    }
+
+    /** RALLY — capture les mêmes BlockState/ModelData que Seismic pour une montagne de vrais faux blocs. */
+    public static void prepareRallyMountain(ClientLevel level, double x, double y, double z, int salt) {
+        if (level == null) return;
+        beginTerrainTick(level);
+        SnapshotKey key = key(x, y, z, salt);
+        if (MOUNTAIN_SNAPSHOTS.containsKey(key)) return;
+        int originY = Mth.floor(y);
+        BlockPos center = findSurface(level, Mth.floor(x), originY, Mth.floor(z), y);
+        if (center == null) return;
+        VoxelShape centerShape = level.getBlockState(center).getCollisionShape(level, center);
+        double baseY = center.getY() + centerShape.max(Direction.Axis.Y);
+        BlockRenderDispatcher dispatcher = Minecraft.getInstance().getBlockRenderer();
+        List<BlockTemplate> surfaces = new ArrayList<>();
+        List<BlockTemplate> soils = new ArrayList<>();
+        List<BlockTemplate> rocks = new ArrayList<>();
+        List<BlockTemplate> flowers = new ArrayList<>();
+
+        for (int ix = -6; ix <= 6; ix++) for (int iz = -6; iz <= 6; iz++) {
+            int bx = Mth.floor(x) + ix, bz = Mth.floor(z) + iz;
+            BlockPos surface = findSurface(level, bx, originY, bz, y);
+            if (surface == null) continue;
+            int light = LevelRenderer.getLightColor(level, surface.above());
+            for (int depth = 0; depth < COLUMN_DEPTH; depth++) {
+                BlockPos pos = surface.below(depth);
+                BlockState state = level.getBlockState(pos);
+                if (state.isAir()) break;
+                BlockTemplate template = captureTemplate(dispatcher, level, pos, state, light);
+                if (depth == 0) surfaces.add(template);
+                else if (depth == 1) soils.add(template);
+                else rocks.add(template);
+            }
+            BlockPos plantPos = surface.above();
+            BlockState plant = level.getBlockState(plantPos);
+            if (plant.getBlock() instanceof FlowerBlock) {
+                flowers.add(captureTemplate(dispatcher, level, plantPos, plant, light));
+            }
+        }
+
+        int centerLight = LevelRenderer.getLightColor(level, center.above());
+        BlockTemplate grassFallback = captureTemplate(dispatcher, level, center,
+                Blocks.GRASS_BLOCK.defaultBlockState(), centerLight);
+        BlockTemplate dirtFallback = captureTemplate(dispatcher, level, center,
+                Blocks.DIRT.defaultBlockState(), centerLight);
+        BlockTemplate stoneFallback = captureTemplate(dispatcher, level, center,
+                Blocks.STONE.defaultBlockState(), centerLight);
+        List<MountainBlock> mountain = new ArrayList<>(1024);
+        for (int ix = -8; ix <= 8; ix++) for (int iz = -8; iz <= 8; iz++) {
+            int height = mountainHeight(ix, iz, salt);
+            if (height <= 0) continue;
+            for (int layer = 0; layer < height; layer++) {
+                float h = hash(salt, 7000 + ix * 73856093 ^ iz * 19349663 ^ layer * 83492791);
+                boolean top = layer == height - 1;
+                boolean grassLedge = !top && layer >= height - 6 && layer % 5 == 0 && h > 0.80f;
+                boolean stone = !top && !grassLedge && layer < height - 3 && h < 0.16f;
+                BlockTemplate template = top || grassLedge
+                        ? chooseTemplate(surfaces, grassFallback, h)
+                        : stone ? chooseTemplate(rocks, stoneFallback, h)
+                        : chooseTemplate(soils, dirtFallback, h);
+                mountain.add(new MountainBlock(ix, iz, layer, template));
+            }
+        }
+
+        BlockTemplate[] flowerFallbacks = {
+                captureTemplate(dispatcher, level, center.above(), Blocks.POPPY.defaultBlockState(), centerLight),
+                captureTemplate(dispatcher, level, center.above(), Blocks.DANDELION.defaultBlockState(), centerLight),
+                captureTemplate(dispatcher, level, center.above(), Blocks.CORNFLOWER.defaultBlockState(), centerLight),
+                captureTemplate(dispatcher, level, center.above(), Blocks.OXEYE_DAISY.defaultBlockState(), centerLight)
+        };
+        int[][] plantColumns = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {-1, 1}, {1, -1}, {-1, -1}};
+        List<MountainPlant> plants = new ArrayList<>(plantColumns.length);
+        for (int i = 0; i < plantColumns.length; i++) {
+            int ix = plantColumns[i][0], iz = plantColumns[i][1];
+            BlockTemplate fallback = flowerFallbacks[i % flowerFallbacks.length];
+            BlockTemplate template = flowers.isEmpty() ? fallback : flowers.get(i % flowers.size());
+            plants.add(new MountainPlant(ix, iz, mountainHeight(ix, iz, salt), template));
+        }
+
+        MOUNTAIN_SNAPSHOTS.put(key, new MountainSnapshot(level, x, baseY, z,
+                List.copyOf(mountain), List.copyOf(plants)));
+        while (MOUNTAIN_SNAPSHOTS.size() > MAX_MOUNTAIN_SNAPSHOTS) {
+            Iterator<SnapshotKey> it = MOUNTAIN_SNAPSHOTS.keySet().iterator();
+            it.next();
+            it.remove();
+        }
+    }
+
+    /** Passe opaque Rally : aucune particule de montagne et aucune modification du monde. */
+    public static boolean renderRallyMountain(Minecraft mc, MultiBufferSource.BufferSource buffers,
+                                              PoseStack pose, Vec3 camera, double x, double y, double z,
+                                              int salt, float t) {
+        ClientLevel level = mc.level;
+        if (level == null || t <= 2.0f / 3.0f || t >= 1.0f) return false;
+        MountainSnapshot snapshot = MOUNTAIN_SNAPSHOTS.get(key(x, y, z, salt));
+        if (snapshot == null || snapshot.level != level) return false;
+        float growth = smooth((t - (2.0f / 3.0f)) / (1.0f / 6.0f));
+        float front = growth * 30.0f;
+        float sink = smooth((t - 0.90f) / 0.10f) * 31.0f;
+        BlockRenderDispatcher dispatcher = mc.getBlockRenderer();
+        boolean emitted = false;
+        for (MountainBlock block : snapshot.blocks) {
+            if (block.layer > front || block.layer + 1.0f - sink <= 0.0f) continue;
+            emitted |= renderMountainTemplate(dispatcher, buffers, pose, camera,
+                    snapshot.x + block.ix, snapshot.baseY + block.layer + 0.5 - sink,
+                    snapshot.z + block.iz, block.template);
+        }
+        if (growth > 0.92f) {
+            for (MountainPlant plant : snapshot.plants) {
+                if (plant.height > front || plant.height + 1.0f - sink <= 0.0f) continue;
+                emitted |= renderMountainTemplate(dispatcher, buffers, pose, camera,
+                        snapshot.x + plant.ix, snapshot.baseY + plant.height + 0.5 - sink,
+                        snapshot.z + plant.iz, plant.template);
+            }
+        }
+        return emitted;
+    }
+
+    private static boolean renderMountainTemplate(BlockRenderDispatcher dispatcher,
+                                                  MultiBufferSource.BufferSource buffers,
+                                                  PoseStack pose, Vec3 camera,
+                                                  double x, double y, double z, BlockTemplate template) {
+        pose.pushPose();
+        pose.translate(x - camera.x, y - camera.y, z - camera.z);
+        pose.translate(-0.5f, -0.5f, -0.5f);
+        dispatcher.renderSingleBlock(template.state, pose, buffers, template.light,
+                OverlayTexture.NO_OVERLAY, template.modelData, null);
+        pose.popPose();
+        return true;
+    }
+
+    private static BlockTemplate captureTemplate(BlockRenderDispatcher dispatcher, ClientLevel level,
+                                                 BlockPos pos, BlockState state, int light) {
+        BakedModel model = dispatcher.getBlockModel(state);
+        ModelData modelData = model.getModelData(level, pos, state, ModelData.EMPTY);
+        return new BlockTemplate(state, modelData, light);
+    }
+
+    private static BlockTemplate chooseTemplate(List<BlockTemplate> captured,
+                                                BlockTemplate fallback, float hash) {
+        if (captured.isEmpty()) return fallback;
+        return captured.get(Math.min(captured.size() - 1, Mth.floor(hash * captured.size())));
+    }
+
+    /** Heightfield en marches de blocs : large base irrégulière et plateau sommital de 30 blocs. */
+    private static int mountainHeight(int ix, int iz, int salt) {
+        double radial = Math.sqrt(ix * ix + iz * iz);
+        if (radial > 8.20) return 0;
+        double normalized = radial / 8.20;
+        double edge = 1.0 - normalized;
+        double base = 30.0 * (1.0 - normalized * normalized);
+        double noise = (Math.sin(ix * 1.73 + iz * 0.81 + salt * 0.013) * 1.25
+                + Math.cos(ix * 0.67 - iz * 1.41 + salt * 0.007) * 0.75) * edge;
+        int height = Mth.floor(base + noise);
+        if (ix == 0 && iz == 0) height = 30;
+        else if (Math.abs(ix) <= 1 && Math.abs(iz) <= 1) height = Math.max(height, 29);
+        return Mth.clamp(height, 0, 30);
     }
 
     /**
@@ -452,6 +614,11 @@ public final class SeismicTerrainVfx {
     private record TerrainSnapshot(ClientLevel level, double x, double y, double z,
                                    float dirX, float dirZ, float worldScale, int salt,
                                    List<CapturedBlock> blocks, List<Fracture> fractures) { }
+    private record BlockTemplate(BlockState state, ModelData modelData, int light) { }
+    private record MountainBlock(int ix, int iz, int layer, BlockTemplate template) { }
+    private record MountainPlant(int ix, int iz, int height, BlockTemplate template) { }
+    private record MountainSnapshot(ClientLevel level, double x, double baseY, double z,
+                                    List<MountainBlock> blocks, List<MountainPlant> plants) { }
     private record Fracture(int id, float startF, float startL, float angle, float length,
                             float width, float depth, float delay, float curvature,
                             int seed, int generation) { }

@@ -7,6 +7,7 @@ import deepluckyblock.network.DeepPayloads;
 import deepluckyblock.procedures.TestProcedure;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.core.particles.ParticleTypes;
@@ -1157,6 +1158,43 @@ public final class WeaponVfxServerListener {
         sl.playSound(null, x, y, z, SoundEvents.SLIME_SQUISH, SoundSource.PLAYERS, 0.34f, 1.42f);
     }
 
+    /** Une seule piste sonore par activation, même lorsque Seismic enterre plusieurs ennemis. */
+    private static void scheduleEarthSoundtrack(ServerLevel sl, LivingEntity target,
+                                                WeaponVisualEffectId fx) {
+        int now = TestProcedure.currentTick(sl);
+        double x = target.getX(), y = target.getY(), z = target.getZ();
+        if (fx == WeaponVisualEffectId.TITAN_GRASP) {
+            earthSound(sl, x, y, z, now, 0, SoundEvents.WARDEN_ROAR, 0.72f, 0.72f); // awaken.
+            earthSound(sl, x, y, z, now, 8, SoundEvents.WARDEN_EMERGE, 0.88f, 0.82f); // main hors de terre.
+            earthSound(sl, x, y, z, now, 10, SoundEvents.GRASS_BREAK, 0.62f, 0.58f);
+            for (int delay = 120; delay < 312; delay += 40) {
+                earthSound(sl, x, y, z, now, delay, SoundEvents.GRASS_BREAK, 0.20f, 0.50f);
+            }
+            earthSound(sl, x, y, z, now, 312, SoundEvents.GRASS_BREAK, 0.44f, 0.82f);
+            return;
+        }
+        if (fx == WeaponVisualEffectId.SEISMIC_TECTONIC) {
+            earthSound(sl, x, y, z, now, 0, SoundEvents.WARDEN_ROAR, 0.64f, 0.78f); // awaken.
+            earthSound(sl, x, y, z, now, 4, SoundEvents.GRASS_BREAK, 0.68f, 0.54f);
+            earthSound(sl, x, y, z, now, 12, SoundEvents.GENERIC_EXPLODE.value(), 0.40f, 0.70f);
+            earthSound(sl, x, y, z, now, 30, SoundEvents.GRASS_BREAK, 0.30f, 0.62f);
+            return;
+        }
+        if (fx == WeaponVisualEffectId.WARLORD_RALLY_SIGIL) {
+            earthSound(sl, x, y, z, now, 80, SoundEvents.GENERIC_EXPLODE.value(), 0.56f, 0.58f);
+            earthSound(sl, x, y, z, now, 80, SoundEvents.GRASS_BREAK, 0.72f, 0.52f);
+            earthSound(sl, x, y, z, now, 90, SoundEvents.GRASS_BREAK, 0.48f, 0.62f);
+            earthSound(sl, x, y, z, now, 100, SoundEvents.GRASS_BREAK, 0.40f, 0.76f);
+            earthSound(sl, x, y, z, now, 110, SoundEvents.GRASS_BREAK, 0.26f, 0.50f);
+        }
+    }
+
+    private static void earthSound(ServerLevel sl, double x, double y, double z,
+                                   int now, int delay, SoundEvent sound, float volume, float pitch) {
+        TestProcedure.schedule(sl, now + delay,
+                () -> sl.playSound(null, x, y, z, sound, SoundSource.PLAYERS, volume, pitch));
+    }
+
     /** TITAN : trois blocs sous terre, dix secondes de maintien après l'enfouissement, puis sortie. */
     private static void applyTitanGameplay(LivingEntity attacker, LivingEntity target,
                                            ServerLevel sl, float weaponDamage) {
@@ -1255,6 +1293,7 @@ public final class WeaponVfxServerListener {
     private static void applyEarthGameplay(LivingEntity attacker, LivingEntity target,
                                            WeaponVisualEffectId fx, float weaponDamage) {
         if (!(target.level() instanceof ServerLevel sl)) return;
+        scheduleEarthSoundtrack(sl, target, fx);
         if (fx == WeaponVisualEffectId.TITAN_GRASP) {
             applyTitanGameplay(attacker, target, sl, weaponDamage);
             return;

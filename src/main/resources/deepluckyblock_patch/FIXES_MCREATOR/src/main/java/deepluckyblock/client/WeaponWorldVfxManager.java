@@ -1351,6 +1351,10 @@ public final class WeaponWorldVfxManager {
                     || inst.effect == WeaponVisualEffectId.WARLORD_RALLY_SIGIL)) {
                 EarthSignatureVfx.prepareTerrain(level, inst.x, inst.y, inst.z, inst.sizeScale);
             }
+            if (inst.kind == KIND_IMPACT && inst.effect == WeaponVisualEffectId.WARLORD_RALLY_SIGIL) {
+                SeismicTerrainVfx.prepareRallyMountain(level, inst.x, inst.y, inst.z,
+                        (int) (inst.seed & 0x7FFFFFFFL));
+            }
             if (inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE
                     || inst.effect == WeaponVisualEffectId.SOUL_FIRE_CRESCENT
                     || inst.effect == WeaponVisualEffectId.BRIMSTONE_METEOR) {
@@ -1649,21 +1653,27 @@ public final class WeaponWorldVfxManager {
                 ? 0.0f
                 : Mth.clamp((System.nanoTime() - lastTickNanos) / 50_000_000.0f, 0.0f, 1.0f);
 
-        // Passe Seismic dédiée : les vrais BlockState capturés sont rendus opaque AVANT les voxels.
+        // Passes Seismic/Rally dédiées : vrais BlockState capturés, opaques et AVANT les voxels.
         // Le batch est terminé ici pour ne jamais mélanger leurs RenderTypes à ceux des autres VFX.
-        boolean seismicTerrainRendered = false;
+        boolean opaqueTerrainRendered = false;
         for (VfxInstance inst : ACTIVE) {
-            if (inst.kind != KIND_IMPACT || inst.effect != WeaponVisualEffectId.SEISMIC_TECTONIC) continue;
+            if (inst.kind != KIND_IMPACT || (inst.effect != WeaponVisualEffectId.SEISMIC_TECTONIC
+                    && inst.effect != WeaponVisualEffectId.WARLORD_RALLY_SIGIL)) continue;
             float t = Mth.clamp((inst.age + subTick) / (float) inst.maxAge, 0.0f, 1.0f);
             double dx = inst.x - camPos.x, dy = inst.y - camPos.y, dz = inst.z - camPos.z;
             if (dx * dx + dy * dy + dz * dz > MAX_VFX_RENDER_DISTANCE_SQR) continue;
-            float dirX = Mth.sin(-inst.yawDeg * Mth.DEG_TO_RAD);
-            float dirZ = Mth.cos(-inst.yawDeg * Mth.DEG_TO_RAD);
-            seismicTerrainRendered |= SeismicTerrainVfx.render(mc, buffers, poseStack, camPos,
-                    inst.x, inst.y, inst.z, dirX, dirZ, inst.sizeScale,
-                    (int) (inst.seed & 0x7FFFFFFFL), t);
+            if (inst.effect == WeaponVisualEffectId.SEISMIC_TECTONIC) {
+                float dirX = Mth.sin(-inst.yawDeg * Mth.DEG_TO_RAD);
+                float dirZ = Mth.cos(-inst.yawDeg * Mth.DEG_TO_RAD);
+                opaqueTerrainRendered |= SeismicTerrainVfx.render(mc, buffers, poseStack, camPos,
+                        inst.x, inst.y, inst.z, dirX, dirZ, inst.sizeScale,
+                        (int) (inst.seed & 0x7FFFFFFFL), t);
+            } else {
+                opaqueTerrainRendered |= SeismicTerrainVfx.renderRallyMountain(mc, buffers, poseStack, camPos,
+                        inst.x, inst.y, inst.z, (int) (inst.seed & 0x7FFFFFFFL), t);
+            }
         }
-        if (seismicTerrainRendered) buffers.endBatch();
+        if (opaqueTerrainRendered) buffers.endBatch();
 
         VertexConsumer addVc = null;
         VertexConsumer alphaVc = null;

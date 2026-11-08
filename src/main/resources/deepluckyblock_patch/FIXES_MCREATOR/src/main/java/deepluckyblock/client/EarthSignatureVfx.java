@@ -451,7 +451,7 @@ public final class EarthSignatureVfx {
         // Glaive central complet : lame à fuller, pointe, quillons, grip et pommeau.
         float swordRise = smooth((t - 0.25f) / 0.24f);
         float ground = terrain.at(0.0f, 0.0f);
-        float swordBase = ground - 0.35f + swordRise * 0.45f;
+        float swordBase = ground + 0.65f + swordRise * 0.45f;
         for (int part = 0; part < 14; part++) {
             float u = part / 13.0f;
             float half = part >= 11 ? Math.max(0.018f, 0.067f - (part - 10) * 0.016f) : 0.067f;
@@ -480,8 +480,6 @@ public final class EarthSignatureVfx {
                 0.075f, EARTH, Math.round(a * swordRise));
         cube(vc, mat, tmp, cx, swordBase - 0.25f, cz, dx, dz, 0.0f, 0.0f,
                 0.045f, GOLD, Math.round(a * swordRise));
-
-        renderRallyMountain(vc, mat, tmp, cx, cy, cz, t, dx, dz, a, salt, terrain);
 
         // Impulsion de ralliement : chevrons qui partent dans quatre directions à 0,44 de la piste.
         float rally = clamp((t - 0.44f) / 0.34f);
@@ -518,62 +516,6 @@ public final class EarthSignatureVfx {
             float size = 0.014f + h * 0.020f;
             cube(vc, mat, tmp, cx, y, cz, dx, dz, f, l, size,
                     i % 4 == 0 ? GOLD : EARTH_LIGHT, Math.round(a * fade * 0.68f));
-        }
-    }
-
-    /** Montagne client uniquement : soixante strates de terre, herbe, peu de pierre et fleurs. */
-    private static void renderRallyMountain(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                            float cx, float cy, float cz, float t,
-                                            float dx, float dz, int alpha, int salt, TerrainView terrain) {
-        float growth = smooth((t - (2.0f / 3.0f)) / (1.0f / 6.0f));
-        if (growth <= 0.0f || alpha <= 0) return;
-        int a = Math.round(alpha * smooth(growth * 4.0f));
-        float ground = terrain.at(0.0f, 0.0f);
-        // Le sommet atteint +30 au tick 100, exactement comme la trajectoire serveur de la cible.
-        for (int layer = 0; layer < 60; layer++) {
-            float u = layer / 59.0f;
-            float radius = 2.35f * (1.0f - u) + 0.22f;
-            int segments = 16 + Math.round((1.0f - u) * 20.0f);
-            for (int i = 0; i < segments; i++) {
-                float angle = i * (float) (Math.PI * 2.0 / segments) + (layer & 1) * 0.12f;
-                float h = hash(salt, 6200 + layer * 71 + i * 37);
-                float f = Mth.cos(angle) * radius, l = Mth.sin(angle) * radius;
-                float y = ground + layer * 0.50f * growth;
-                boolean grass = layer >= 56 || (layer % 11 == 0 && h > 0.72f);
-                int rgb = grass ? color(EARTH, EARTH_LIGHT, h * 0.45f)
-                        : h < 0.10f ? color(STONE_DARK, STONE_LIGHT, 0.35f + h * 3.0f)
-                        : color(SOIL_DARK, CLAY, 0.30f + h * 0.55f);
-                box(vc, mat, tmp, cx, y, cz, dx, dz, f, l,
-                        0.32f, 0.30f * Math.max(0.20f, growth), 0.32f, rgb, a);
-            }
-        }
-        // Sommet plein : la cible est portée par une vraie surface, pas par un anneau creux.
-        for (int ix = -2; ix <= 2; ix++) for (int iz = -2; iz <= 2; iz++) {
-            float h = hash(salt, 6900 + ix * 37 + iz * 19);
-            box(vc, mat, tmp, cx, ground + 29.80f * growth, cz, dx, dz,
-                    ix * 0.27f, iz * 0.27f, 0.32f, 0.30f * Math.max(0.20f, growth), 0.32f,
-                    color(EARTH, EARTH_LIGHT, 0.20f + h * 0.40f), a);
-        }
-        float flowerReveal = smooth((growth - 0.75f) / 0.25f);
-        if (flowerReveal > 0.0f) {
-            for (int flower = 0; flower < 8; flower++) {
-                float angle = flower * 2.3999632f;
-                float radius = 0.32f + (flower % 3) * 0.16f;
-                float f = Mth.cos(angle) * radius, l = Mth.sin(angle) * radius;
-                float stemY = ground + 30.0f * growth + 0.22f * flowerReveal;
-                box(vc, mat, tmp, cx, stemY, cz, dx, dz, f, l,
-                        0.025f, 0.22f * flowerReveal, 0.025f, EARTH, a);
-                int petal = flower % 3 == 0 ? GOLD : flower % 3 == 1 ? DUST : CLAY;
-                for (int side = 0; side < 4; side++) {
-                    float pa = side * 1.5707963f;
-                    box(vc, mat, tmp, cx, stemY + 0.24f * flowerReveal, cz, dx, dz,
-                            f + Mth.cos(pa) * 0.065f, l + Mth.sin(pa) * 0.065f,
-                            0.055f * flowerReveal, 0.035f * flowerReveal, 0.055f * flowerReveal,
-                            petal, a);
-                }
-                cube(vc, mat, tmp, cx, stemY + 0.25f * flowerReveal, cz, dx, dz, f, l,
-                        0.035f * flowerReveal, GOLD, a);
-            }
         }
     }
 
