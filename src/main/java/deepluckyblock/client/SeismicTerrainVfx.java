@@ -142,6 +142,25 @@ public final class SeismicTerrainVfx {
         return emitted;
     }
 
+    /**
+     * Retourne le bloc dont le collider forme la vraie surface sous la cible. Les plantes et autres
+     * volumes sans collision sont ignorés ; les dalles gardent leur hauteur de collider exacte.
+     */
+    private static BlockPos findSurface(ClientLevel level, int bx, int originY, int bz, double y) {
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        int maxY = Math.min(level.getMaxBuildHeight() - 1, originY + 1);
+        int minY = Math.max(level.getMinBuildHeight(), originY - 24);
+        for (int sy = maxY; sy >= minY; sy--) {
+            pos.set(bx, sy, bz);
+            VoxelShape shape = level.getBlockState(pos).getCollisionShape(level, pos);
+            if (shape.isEmpty()) continue;
+            double top = sy + shape.max(Direction.Axis.Y);
+            if (!Double.isFinite(top) || top > y + 0.751 || top < y - 24.0) continue;
+            return pos.immutable();
+        }
+        return null;
+    }
+
     /** Colonne articulée du bas vers le haut : base plane, tops écartés, voisinage continu. */
     private static BlockTransform transformAt(TerrainSnapshot snapshot, CapturedBlock block, float t) {
         Deformation deformation = deformationAt(snapshot, block, t);
