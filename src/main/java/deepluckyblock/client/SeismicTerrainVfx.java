@@ -47,7 +47,7 @@ public final class SeismicTerrainVfx {
     private static final int MAX_BLOCKS_PER_SNAPSHOT = 576;
     private static final int COLUMN_DEPTH = 4;
     private static final float MOUNTAIN_SCALE = 0.50f;
-    private static final int MOUNTAIN_LAYERS = 16; // 16 × 0,50 = 8 blocs, sous la limite de 9.
+    private static final int MOUNTAIN_LAYERS = 8; // 8 × 0,50 = 4 blocs seulement.
     private static final int MOUNTAIN_SHELL = 3;
     private static final float REPRINT_EPSILON = 0.012f;
     private static final Map<SnapshotKey, TerrainSnapshot> SNAPSHOTS = new LinkedHashMap<>();
@@ -245,7 +245,7 @@ public final class SeismicTerrainVfx {
         if (level == null || t <= 2.0f / 3.0f || t >= 1.0f) return false;
         MountainSnapshot snapshot = MOUNTAIN_SNAPSHOTS.get(key(x, y, z, salt));
         if (snapshot == null || snapshot.level != level) return false;
-        float growth = smooth((t - (2.0f / 3.0f)) / (1.0f / 6.0f));
+        float growth = smooth((t - (2.0f / 3.0f)) / (4.0f / 120.0f)); // Poussée explosive en quatre ticks.
         float front = growth * MOUNTAIN_LAYERS;
         float sink = smooth((t - 0.90f) / 0.10f) * 8.25f;
         BlockRenderDispatcher dispatcher = mc.getBlockRenderer();
@@ -296,7 +296,7 @@ public final class SeismicTerrainVfx {
         return captured.get(Math.min(captured.size() - 1, Mth.floor(hash * captured.size())));
     }
 
-    /** Heightfield détaillé : petits modèles réels, huit blocs de haut et coque de trois couches. */
+    /** Heightfield détaillé : petits modèles réels, quatre blocs de haut et coque de trois couches. */
     private static int mountainHeight(int ix, int iz, int salt) {
         double radial = Math.sqrt(ix * ix + iz * iz);
         if (radial > 5.20) return 0;
