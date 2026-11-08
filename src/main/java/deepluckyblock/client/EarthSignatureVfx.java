@@ -84,104 +84,137 @@ public final class EarthSignatureVfx {
         }
     }
 
-    /** TITAN'S GRASP : avant-bras, paume pleine, quatre doigts à trois phalanges et pouce opposable. */
+    /** TITAN : proportions étudiées d'après la référence Stone Golem Hand (Free3D #6418), retranscrites en voxels. */
     private static void renderTitanGrasp(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                          float cx, float cy, float cz, float t,
                                          float dx, float dz, int alpha, int salt, TerrainView terrain) {
         float rise = smooth(t / 0.22f);
-        float close = smooth((t - 0.25f) / 0.30f);
-        float crumble = smooth((t - 0.81f) / 0.19f);
+        float close = smooth((t - 0.25f) / 0.18f);
+        float pull = smooth((t - 0.43f) / 0.37f);
+        float crumble = smooth((t - 0.86f) / 0.14f);
         float env = rise * (1.0f - crumble);
         if (env <= 0.0f) return;
         int a = Math.round(alpha * env);
         float ground = terrain.at(0.0f, 0.0f);
-        float base = ground - 1.55f + rise * 1.55f - crumble * 1.10f;
-        float sizeFade = 1.0f - crumble * 0.45f;
+        // La paume reste derrière le mob (f = 0,85) ; les doigts se referment vers f = 0.
+        float base = ground - 2.40f + rise * 2.40f - pull * 3.0f;
+        float sizeFade = 1.0f - crumble * 0.30f;
+        float originF = 0.85f;
 
-        // Avant-bras massif : cinq sections pleines, coins arrondis sans cavités internes.
-        for (int layer = 0; layer < 5; layer++) for (int ix = -2; ix <= 2; ix++) for (int iz = -2; iz <= 2; iz++) {
-            if (ix * ix + iz * iz > 6) continue;
+        // Avant-bras large et plein : huit sections qui se chevauchent, sans cavités internes.
+        for (int layer = 0; layer < 8; layer++) for (int ix = -3; ix <= 3; ix++) for (int iz = -3; iz <= 3; iz++) {
+            if (ix * ix + iz * iz > 10) continue;
             float h = hash(salt, 4100 + layer * 97 + ix * 31 + iz * 17);
-            float f = ix * 0.18f, l = iz * 0.18f;
-            float y = base - 0.72f + layer * 0.17f;
             float scatter = crumble * crumble;
+            float f = originF + ix * 0.22f;
+            float y = base - 1.50f + layer * 0.20f;
             box(vc, mat, tmp, cx, y - scatter * (0.25f + h * 0.45f), cz, dx, dz,
-                    f + (h - 0.5f) * scatter * 0.55f, l + (0.5f - h) * scatter * 0.45f,
-                    0.105f * sizeFade, 0.108f * sizeFade, 0.105f * sizeFade,
-                    color(STONE_DARK, STONE_LIGHT, 0.22f + h * 0.42f), a);
+                    f + (h - 0.5f) * scatter * 0.55f, iz * 0.22f + (0.5f - h) * scatter * 0.45f,
+                    0.135f * sizeFade, 0.125f * sizeFade, 0.135f * sizeFade,
+                    color(STONE_DARK, STONE_LIGHT, 0.42f + layer * 0.035f + h * 0.24f), a);
         }
 
-        // Paume en volume : cinq strates jointives, bords arrondis, aucun trou dans la structure.
-        for (int layer = 0; layer < 5; layer++) for (int ix = -3; ix <= 3; ix++) for (int iz = -2; iz <= 2; iz++) {
-            float shape = ix * ix / 10.5f + iz * iz / 5.2f;
-            if (shape > 1.0f) continue;
+        // Paume verticale pleine : trois couches d'épaisseur, sept de haut et neuf de large.
+        for (int layer = 0; layer < 7; layer++) for (int ix = -1; ix <= 1; ix++) for (int iz = -4; iz <= 4; iz++) {
+            if (Math.abs(iz) == 4 && (layer == 0 || layer == 6)) continue;
             float h = hash(salt, 4400 + layer * 101 + ix * 37 + iz * 19);
             float scatter = crumble * crumble;
-            box(vc, mat, tmp, cx, base + 0.10f + layer * 0.17f - scatter * h * 0.40f, cz, dx, dz,
-                    ix * 0.16f + (h - 0.5f) * scatter * 0.60f,
-                    iz * 0.16f + (0.5f - h) * scatter * 0.50f,
-                    0.094f * sizeFade, 0.099f * sizeFade, 0.094f * sizeFade,
-                    color(STONE_DARK, STONE_LIGHT, 0.42f + layer * 0.07f + h * 0.20f), a);
+            box(vc, mat, tmp, cx, base + layer * 0.21f - scatter * h * 0.40f, cz, dx, dz,
+                    originF + ix * 0.20f + (h - 0.5f) * scatter * 0.60f,
+                    iz * 0.22f + (0.5f - h) * scatter * 0.50f,
+                    0.130f * sizeFade, 0.125f * sizeFade, 0.130f * sizeFade,
+                    color(STONE_DARK, STONE_LIGHT, 0.52f + layer * 0.035f + h * 0.20f), a);
         }
 
-        // Quatre doigts indépendants, chacun composé de trois volumes jointifs et d'un ongle terminal.
-        float[] lengths = {0.42f, 0.50f, 0.47f, 0.39f};
+        // Quatre doigts massifs : chaque phalange possède un corps et deux joues latérales.
+        float[] lengths = {0.50f, 0.55f, 0.52f, 0.44f};
         for (int finger = 0; finger < 4; finger++) {
-            float lateral = (finger - 1.5f) * 0.245f;
-            float f = 0.48f, y = base + 0.84f, l = lateral;
-            float lengthScale = lengths[finger] / 0.36f;
+            float lateral = (finger - 1.5f) * 0.50f;
+            float f = 0.94f, y = base + 1.38f, l = lateral;
+            float lengthScale = lengths[finger] / 0.50f;
+            int rgb = color(STONE_DARK, STONE_LIGHT, 0.68f + finger * 0.045f);
             for (int segment = 0; segment < 3; segment++) {
-                float theta = (0.10f + segment * 0.12f)
-                        + close * (0.58f + segment * 0.78f);
-                float length = (0.34f - segment * 0.025f) * lengthScale;
+                float theta = 0.08f + segment * 0.10f + close * (0.85f + segment * 0.75f);
+                float length = (0.50f - segment * 0.06f) * lengthScale;
                 float nextF = f - Mth.sin(theta) * length;
                 float nextY = y + Mth.cos(theta) * length;
-                float half = (0.082f - segment * 0.009f) * sizeFade;
-                link(vc, mat, tmp, cx, (y + nextY) * 0.5f, cz, dx, dz,
-                        f, y, l, nextF, nextY, l, half,
-                        color(STONE_DARK, STONE, 0.64f + finger * 0.05f), STONE_LIGHT, a);
-                cube(vc, mat, tmp, cx, nextY, cz, dx, dz, nextF, l, half * 1.04f,
-                        color(STONE, STONE_LIGHT, 0.32f + segment * 0.15f), a);
+                float half = (0.170f - finger * 0.007f - segment * 0.015f) * sizeFade;
+                golemSegment(vc, mat, tmp, cx, cz, dx, dz, f, y, l, nextF, nextY, l, half, rgb, a);
                 f = nextF;
                 y = nextY;
             }
-            box(vc, mat, tmp, cx, y + 0.018f, cz, dx, dz, f - 0.025f, l,
-                    0.048f * sizeFade, 0.030f * sizeFade, 0.065f * sizeFade,
-                    STONE_LIGHT, a);
+            // Capuchon terminal large et plat : pas un ongle pointu humain.
+            for (int side = -1; side <= 1; side++) {
+                box(vc, mat, tmp, cx, y + 0.015f, cz, dx, dz, f - 0.035f, l + side * 0.085f,
+                        0.065f * sizeFade, 0.045f * sizeFade, 0.070f * sizeFade, STONE_LIGHT, a);
+            }
         }
 
-        // Pouce opposable : deux phalanges qui viennent réellement fermer la prise sur le côté.
-        float tf = -0.08f, ty = base + 0.42f, tl = -0.52f;
-        float mf = -0.22f - close * 0.12f, my = ty + 0.30f, ml = -0.43f + close * 0.18f;
-        float ef = -0.40f - close * 0.06f, ey = my - 0.08f - close * 0.18f, el = ml + 0.24f + close * 0.08f;
-        link(vc, mat, tmp, cx, (ty + my) * 0.5f, cz, dx, dz, tf, ty, tl, mf, my, ml,
-                0.095f * sizeFade, STONE, STONE_LIGHT, a);
-        link(vc, mat, tmp, cx, (my + ey) * 0.5f, cz, dx, dz, mf, my, ml, ef, ey, el,
-                0.078f * sizeFade, STONE, STONE_LIGHT, a);
-        cube(vc, mat, tmp, cx, ey, cz, dx, dz, ef, el, 0.070f * sizeFade, STONE_LIGHT, a);
+        // Pouce opposable à trois phalanges, assez long pour verrouiller la prise sur le côté.
+        float tf = 0.82f, ty = base + 0.52f, tl = -0.94f;
+        float mf = 0.50f - close * 0.05f, my = base + 0.82f, ml = -0.78f + close * 0.04f;
+        float ef = 0.12f - close * 0.04f, ey = base + 1.00f - close * 0.08f, el = -0.55f + close * 0.16f;
+        float xf = -0.12f, xy = base + 0.88f - close * 0.14f, xl = -0.25f + close * 0.10f;
+        golemSegment(vc, mat, tmp, cx, cz, dx, dz, tf, ty, tl, mf, my, ml,
+                0.180f * sizeFade, STONE, a);
+        golemSegment(vc, mat, tmp, cx, cz, dx, dz, mf, my, ml, ef, ey, el,
+                0.165f * sizeFade, STONE, a);
+        golemSegment(vc, mat, tmp, cx, cz, dx, dz, ef, ey, el, xf, xy, xl,
+                0.145f * sizeFade, STONE_LIGHT, a);
 
-        // Veines minérales encastrées dans la paume : détail terrestre, sans reprendre les runes de Rally.
-        for (int vein = 0; vein < 11; vein++) {
-            float u = vein / 10.0f;
-            float f = -0.31f + u * 0.62f;
-            float l = Mth.sin(u * 5.4f) * 0.12f;
-            cube(vc, mat, tmp, cx, base + 0.80f, cz, dx, dz, f, l,
-                    (0.022f + 0.009f * (vein & 1)) * sizeFade,
-                    vein % 4 == 0 ? EARTH_LIGHT : EARTH, Math.round(a * 0.82f));
+        // Plaques minérales, fissures et mousse sont posées sur la face de la paume, jamais en lévitation.
+        for (int detail = 0; detail < 24; detail++) {
+            int row = detail / 6, col = detail % 6;
+            float h = hash(salt, 4650 + detail * 41);
+            float f = 1.185f;
+            float l = -0.55f + col * 0.22f;
+            float y = base + 0.18f + row * 0.27f;
+            float size = 0.025f + h * 0.035f;
+            box(vc, mat, tmp, cx, y, cz, dx, dz, f, l,
+                    0.018f, size * (detail % 3 == 0 ? 1.8f : 0.8f), size,
+                    detail % 5 == 0 ? EARTH : detail % 3 == 0 ? SOIL_DARK : STONE_LIGHT,
+                    Math.round(a * 0.88f));
+        }
+        // Gros éclats de surface sur l'avant-bras, raccordés à sa face frontale.
+        for (int plate = 0; plate < 24; plate++) {
+            int layer = plate / 4, col = plate % 4;
+            float h = hash(salt, 4720 + plate * 43);
+            box(vc, mat, tmp, cx, base - 1.38f + layer * 0.22f, cz, dx, dz,
+                    1.64f, -0.33f + col * 0.22f,
+                    0.035f, 0.075f + h * 0.035f, 0.085f,
+                    plate % 6 == 0 ? EARTH : color(STONE, STONE_LIGHT, h), Math.round(a * 0.90f));
         }
 
-        // Éclats lourds à l'émergence et à l'effritement, jamais de sable ni de vortex.
-        for (int chip = 0; chip < 72; chip++) {
+        // Éclats lourds à l'émergence, à l'enfouissement et à l'effritement.
+        for (int chip = 0; chip < 96; chip++) {
             float h = hash(salt, 4800 + chip * 43);
             float angle = chip * 2.3999632f;
-            float radius = 0.60f + h * 1.15f + crumble * 0.65f;
+            float radius = 0.75f + h * 1.45f + pull * 0.35f;
             float f = Mth.cos(angle) * radius, l = Mth.sin(angle) * radius;
             float arc = Mth.sin(clamp(t * 2.2f + h * 0.35f) * 3.1415927f);
-            float y = terrain.at(f, l) + 0.05f + arc * (0.20f + h * 0.65f) - crumble * 0.45f;
-            float size = (0.025f + h * 0.045f) * (1.0f - crumble * 0.55f);
+            float y = terrain.at(f, l) + 0.05f + arc * (0.25f + h * 0.80f) - pull * 0.35f;
+            float size = (0.030f + h * 0.055f) * (1.0f - crumble * 0.45f);
             rot(vc, mat, tmp, cx, y, cz, dx, dz, f, l, size, size * 0.75f, size * 1.15f,
                     angle + t * 2.0f, h * 1.2f, t * 1.4f,
                     chip % 7 == 0 ? EARTH : STONE, Math.round(a * (0.35f + h * 0.45f)));
+        }
+    }
+
+    /** Phalange de golem : trois volumes longitudinaux et trois volumes d'articulation jointifs. */
+    private static void golemSegment(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                     float cx, float cz, float dx, float dz,
+                                     float f0, float y0, float l0, float f1, float y1, float l1,
+                                     float half, int rgb, int alpha) {
+        for (int side = -1; side <= 1; side++) {
+            float offset = side * half * 0.62f;
+            link(vc, mat, tmp, cx, (y0 + y1) * 0.5f, cz, dx, dz,
+                    f0, y0, l0 + offset, f1, y1, l1 + offset,
+                    half * (side == 0 ? 1.0f : 0.64f), rgb, STONE_LIGHT, alpha);
+        }
+        cube(vc, mat, tmp, cx, y1, cz, dx, dz, f1, l1, half * 1.08f, rgb, alpha);
+        for (int side = -1; side <= 1; side += 2) {
+            cube(vc, mat, tmp, cx, y1, cz, dx, dz, f1, l1 + side * half * 0.62f,
+                    half * 0.58f, color(STONE, STONE_LIGHT, 0.35f), alpha);
         }
     }
 
@@ -313,7 +346,7 @@ public final class EarthSignatureVfx {
             float f = Mth.cos(angle) * r, l = Mth.sin(angle) * r;
             float y = terrain.at(f, l) + 0.030f;
             rot(vc, mat, tmp, cx, y, cz, dx, dz, f, l,
-                    0.066f, 0.014f, 0.030f, angle, 0.0f, 0.0f,
+                    0.040f, 0.018f, 0.070f, angle, 0.0f, 0.0f,
                     ring == 0 ? GOLD : EARTH, Math.round(a * circle * 0.84f));
         }
 
@@ -354,6 +387,7 @@ public final class EarthSignatureVfx {
             if (reveal <= 0.0f) continue;
             float angle = banner * 1.5707963f;
             float tangentF = Mth.cos(angle + 1.5707963f), tangentL = Mth.sin(angle + 1.5707963f);
+            float radialF = Math.abs(Mth.cos(angle)), radialL = Math.abs(Mth.sin(angle));
             float f = Mth.cos(angle) * 1.45f, l = Mth.sin(angle) * 1.45f;
             float ground = terrain.at(f, l);
             float height = 1.65f * reveal;
@@ -372,7 +406,7 @@ public final class EarthSignatureVfx {
                         part == 13 ? GOLD : STONE_LIGHT, Math.round(a * reveal));
             }
             float top = ground + 0.18f + height;
-            cube(vc, mat, tmp, cx, top + 0.095f, cz, dx, dz, f, l, 0.065f,
+            cube(vc, mat, tmp, cx, top + 0.095f, cz, dx, dz, f, l, 0.085f,
                     GOLD, Math.round(a * reveal));
             box(vc, mat, tmp, cx, top + 0.19f, cz, dx, dz, f, l,
                     0.028f, 0.065f, 0.028f, EARTH_LIGHT, Math.round(a * reveal));
@@ -380,32 +414,36 @@ public final class EarthSignatureVfx {
             float clothReveal = smooth((reveal - 0.32f) / 0.68f);
             // Barre transversale qui porte réellement toute la largeur du tissu.
             for (int bar = 0; bar < 9; bar++) {
-                float offset = bar * 0.105f;
+                float offset = bar * 0.10f;
                 box(vc, mat, tmp, cx, top - 0.025f, cz, dx, dz,
                         f + tangentF * offset, l + tangentL * offset,
-                        0.060f, 0.032f, 0.032f, GOLD, Math.round(a * clothReveal));
+                        0.045f * radialF + 0.068f * radialL, 0.045f,
+                        0.045f * radialL + 0.068f * radialF, GOLD, Math.round(a * clothReveal));
             }
             // Tissu 7×7 sans cellule manquante ; bordure, croix et losange sont tissés dans la trame.
             for (int row = 0; row < 7; row++) for (int col = 0; col < 7; col++) {
-                float offset = 0.045f + col * 0.105f;
+                float offset = 0.045f + col * 0.10f;
                 float wave = Mth.sin(t * 9.0f + col * 0.62f + banner) * 0.022f * clothReveal;
                 float clothF = f + tangentF * offset + Mth.cos(angle) * wave;
                 float clothL = l + tangentL * offset + Mth.sin(angle) * wave;
-                float y = top - 0.13f - row * 0.105f;
+                float y = top - 0.13f - row * 0.10f;
                 boolean border = row == 0 || col == 0 || col == 6;
                 boolean cross = col == 3 || row == 3;
                 boolean diamond = Math.abs(col - 3) + Math.abs(row - 3) == 2;
                 int rgb = border ? GOLD : (cross || diamond) ? EARTH_LIGHT : BANNER;
-                rot(vc, mat, tmp, cx, y, cz, dx, dz, clothF, clothL,
-                        0.061f * clothReveal, 0.061f * clothReveal, 0.020f * clothReveal,
-                        angle, wave * 1.8f, wave * 1.2f, rgb, Math.round(a * clothReveal * 0.94f));
+                box(vc, mat, tmp, cx, y, cz, dx, dz, clothF, clothL,
+                        (0.022f * radialF + 0.066f * radialL) * clothReveal,
+                        0.072f * clothReveal,
+                        (0.022f * radialL + 0.066f * radialF) * clothReveal,
+                        rgb, Math.round(a * clothReveal * 0.94f));
             }
             // Franges inférieures attachées à chaque colonne, plus aucun bas de tissu coupé.
             for (int col = 0; col < 7; col++) {
-                float offset = 0.045f + col * 0.105f;
-                box(vc, mat, tmp, cx, top - 0.13f - 7 * 0.105f, cz, dx, dz,
+                float offset = 0.045f + col * 0.10f;
+                box(vc, mat, tmp, cx, top - 0.13f - 7 * 0.10f, cz, dx, dz,
                         f + tangentF * offset, l + tangentL * offset,
-                        0.035f * clothReveal, 0.075f * clothReveal, 0.022f * clothReveal,
+                        (0.024f * radialF + 0.058f * radialL) * clothReveal, 0.075f * clothReveal,
+                        (0.024f * radialL + 0.058f * radialF) * clothReveal,
                         col % 2 == 0 ? GOLD : EARTH, Math.round(a * clothReveal));
             }
         }
@@ -426,6 +464,8 @@ public final class EarthSignatureVfx {
                         0.018f, 0.060f, 0.010f, EARTH, Math.round(a * swordRise * 0.84f));
             }
         }
+        box(vc, mat, tmp, cx, swordBase + 1.67f, cz, dx, dz, 0.0f, 0.0f,
+                0.028f, 0.050f, 0.028f, EARTH_LIGHT, Math.round(a * swordRise * 0.96f));
         for (int guard = -4; guard <= 4; guard++) {
             box(vc, mat, tmp, cx, swordBase + 0.37f - Math.abs(guard) * 0.012f, cz, dx, dz,
                     0.0f, guard * 0.075f, 0.048f, 0.042f, 0.048f,

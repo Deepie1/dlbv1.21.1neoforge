@@ -70,6 +70,7 @@ public final class WeaponVfxServerListener {
     private static final int MIASMA_SWAP_TICKS = 60;
     private static final int MIASMA_TRAVEL_TICKS = 20;
     private static final int MIASMA_MAX_TOTAL_TICKS = 600;
+    private static final double MIASMA_DETECTION_RADIUS = 8.0;
     private static int NEXT_MIASMA_CHAIN_ID = 1;
 
     /** Une brume serveur unique, avec hôte courant, historique et génération annulant les anciennes tâches. */
@@ -128,7 +129,7 @@ public final class WeaponVfxServerListener {
     private static final double METEOR_FIRE_RADIUS = 4.0;
 
     private record MovementHold(long expires, double x, double y, double z, boolean previousNoAi,
-                                  boolean fullStun, double releaseY) { }
+                                  boolean fullStun, double releaseY, long started, double burialDepth) { }
     private record SoulHold(long expires, long riseStart, long riseEnd, long descendStart,
                             double x, double baseY, double targetY, double z, boolean previousNoAi,
                             int attackerId, float weaponDamage) { }
@@ -951,7 +952,7 @@ public final class WeaponVfxServerListener {
             float pitch = 0.56f + pulse * 0.11f;
             TestProcedure.schedule(sl, now + pulseOffsets[pulse], () -> {
                 if (!isCurrentMiasmaHost(chain, generation, host)) return;
-                refreshMiasmaCloudPosition(chain, (int) sl.getGameTime());
+                refreshMiasmaCloudPosition(chain, TestProcedure.currentTick(sl));
                 double x = chain.cloudX, y = chain.cloudY, z = chain.cloudZ;
                 miasmaDamagePulse(sl, chain, host, x, y, z);
                 sl.playSound(null, x, y, z, SoundEvents.SLIME_SQUISH,
@@ -980,7 +981,9 @@ public final class WeaponVfxServerListener {
     private static void tickMiasmaCloud(ServerLevel sl, MiasmaChain chain, int generation,
                                         LivingEntity host) {
         if (!isCurrentMiasmaHost(chain, generation, host)) return;
-        int now = (int) sl.getGameTime();
+        // Le cycle et les tâches utilisent tous les deux le tickCount du scheduler. Le gameTime
+        // du niveau possède une autre origine et pouvait empêcher hostAge d'atteindre 60 ticks.
+        int now = TestProcedure.currentTick(sl);
         refreshMiasmaCloudPosition(chain, now);
         int hostAge = now - chain.hostStartedAt;
         if (now - chain.startedAt >= MIASMA_MAX_TOTAL_TICKS || hostAge >= MIASMA_HOST_TICKS) {
@@ -989,7 +992,7 @@ public final class WeaponVfxServerListener {
         }
         boolean canFinishTravel = now + MIASMA_TRAVEL_TICKS
                 <= chain.startedAt + MIASMA_MAX_TOTAL_TICKS;
-        if (hostAge >= MIASMA_SWAP_TICKS && canFinishTravel) {
+        if ((!host.isAlive() || hostAge >= MIASMA_SWAP_TICKS) && canFinishTravel) {
             LivingEntity next = findNextMiasmaHost(sl, chain, host);
             if (next != null) {
                 applyVisiblePoison(sl, chain.casterId, host, 100); // 5 s à l'hôte quitté.
@@ -1053,16 +1056,17 @@ public final class WeaponVfxServerListener {
     }
 
     /**
-     * Recherche sphère stricte < 5 blocs depuis le centre actuel du nuage, jamais depuis une
+     * Recherche sphère stricte de 8 blocs depuis le centre actuel du nuage, jamais depuis une
      * ancienne coordonnée. Le monde fournit une nouvelle liste à chaque appel ; PvP inclus.
      */
     private static LivingEntity findNextMiasmaHost(ServerLevel sl, MiasmaChain chain, LivingEntity host) {
-        refreshMiasmaCloudPosition(chain, (int) sl.getGameTime());
+        refreshMiasmaCloudPosition(chain, TestProcedure.currentTick(sl));
         double x = chain.cloudX, y = chain.cloudY, z = chain.cloudZ;
         LivingEntity nearest = null;
-        double best = 25.0;
+        double best = MIASMA_DETECTION_RADIUS * MIASMA_DETECTION_RADIUS;
+        double r = MIASMA_DETECTION_RADIUS;
         for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
-                new AABB(x - 5.0, y - 5.0, z - 5.0, x + 5.0, y + 5.0, z + 5.0))) {
+                new AABB(x - r, y - r, z - r, x + r, y + r, z + r))) {
             if (!candidate.isAlive() || candidate == host || candidate.getId() == chain.casterId
                     || chain.visited.contains(candidate.getId())) continue;
             double distance = candidate.distanceToSqr(x, y, z);
@@ -1153,10 +1157,25 @@ public final class WeaponVfxServerListener {
         sl.playSound(null, x, y, z, SoundEvents.SLIME_SQUISH, SoundSource.PLAYERS, 0.34f, 1.42f);
     }
 
+    /** TITAN : la main saisit la cible puis l'enterre de trois blocs avant de la restituer. */
+    private static void applyTitanGameplay(LivingEntity target, ServerLevel sl) {
+        long gameNow = sl.getGameTime();
+        long holdEndGame = gameNow + 140;
+        double originalY = target.getY();
+        applyMovementHold(target, holdEndGame, true, originalY, originalY, gameNow, 3.0);
+        TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 140,
+                () -> releaseMovementHold(target, holdEndGame));
+    }
+
     /** SEISMIC : enfouissement temporaire, faibles dégâts rythmés puis restitution et Lenteur III. */
     private static void applyEarthGameplay(LivingEntity attacker, LivingEntity target,
                                            WeaponVisualEffectId fx, float weaponDamage) {
-        if (fx != WeaponVisualEffectId.SEISMIC_TECTONIC || !(target.level() instanceof ServerLevel sl)) return;
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        if (fx == WeaponVisualEffectId.TITAN_GRASP) {
+            applyTitanGameplay(target, sl);
+            return;
+        }
+        if (fx != WeaponVisualEffectId.SEISMIC_TECTONIC) return;
         long gameNow = sl.getGameTime();
         long holdEndGame = gameNow + 112;
         int scheduleNow = TestProcedure.currentTick(sl);
@@ -1273,6 +1292,12 @@ public final class WeaponVfxServerListener {
 
     private static void applyMovementHold(LivingEntity target, long expires, boolean fullStun,
                                           double requestedY, double releaseY) {
+        applyMovementHold(target, expires, fullStun, requestedY, releaseY, 0L, 0.0);
+    }
+
+    private static void applyMovementHold(LivingEntity target, long expires, boolean fullStun,
+                                          double requestedY, double releaseY,
+                                          long started, double burialDepth) {
         rememberSignatureAi(target);
         MovementHold previous = MOVEMENT_HOLDS.get(target.getId());
         boolean previousNoAi = previous != null ? previous.previousNoAi()
@@ -1281,7 +1306,8 @@ public final class WeaponVfxServerListener {
         double y = Double.isNaN(requestedY)
                 ? (previous != null ? previous.y() : target.getY()) : requestedY;
         double z = previous != null ? previous.z() : target.getZ();
-        MOVEMENT_HOLDS.put(target.getId(), new MovementHold(expires, x, y, z, previousNoAi, fullStun, releaseY));
+        MOVEMENT_HOLDS.put(target.getId(), new MovementHold(expires, x, y, z, previousNoAi,
+                fullStun, releaseY, started, burialDepth));
         if (fullStun) {
             if (target instanceof Mob mob) {
                 mob.setNoAi(true);
@@ -1362,7 +1388,13 @@ public final class WeaponVfxServerListener {
             target.stopUsingItem();
         }
         target.setDeltaMovement(Vec3.ZERO);
-        target.teleportTo(hold.x(), hold.y(), hold.z());
+        double heldY = hold.y();
+        if (hold.burialDepth() > 0.0) {
+            // Même smoothstep que la main : prise jusqu'à 60, descente de trois blocs jusqu'à 112.
+            heldY = hold.releaseY() - hold.burialDepth()
+                    * smoothTick(now, hold.started() + 60, hold.started() + 112);
+        }
+        target.teleportTo(hold.x(), heldY, hold.z());
         target.fallDistance = 0.0f;
     }
 
