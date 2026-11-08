@@ -1157,25 +1157,73 @@ public final class WeaponVfxServerListener {
         sl.playSound(null, x, y, z, SoundEvents.SLIME_SQUISH, SoundSource.PLAYERS, 0.34f, 1.42f);
     }
 
-    /** TITAN : la main saisit la cible puis l'enterre de trois blocs avant de la restituer. */
-    private static void applyTitanGameplay(LivingEntity target, ServerLevel sl) {
+    /** TITAN : trois blocs sous terre, dix secondes de maintien après l'enfouissement, puis sortie. */
+    private static void applyTitanGameplay(LivingEntity attacker, LivingEntity target,
+                                           ServerLevel sl, float weaponDamage) {
         long gameNow = sl.getGameTime();
-        long holdEndGame = gameNow + 140;
+        long holdEndGame = gameNow + 312; // 112 ticks de chorégraphie + 200 ticks entièrement enterré.
+        int scheduleNow = TestProcedure.currentTick(sl);
+        int attackerId = attacker == null ? -1 : attacker.getId();
         double originalY = target.getY();
         applyMovementHold(target, holdEndGame, true, originalY, originalY, gameNow, 3.0);
-        TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 140,
-                () -> releaseMovementHold(target, holdEndGame));
+
+        // Vingt petits pulses, uniquement pendant les dix secondes passées à trois blocs sous terre.
+        float pulseDamage = net.minecraft.util.Mth.clamp(Math.max(0.0f, weaponDamage) * 0.020f, 0.04f, 0.20f);
+        for (int delay = 112; delay < 312; delay += 10) {
+            TestProcedure.schedule(sl, scheduleNow + delay, () -> {
+                if (!target.isAlive() || target.level() != sl) return;
+                MovementHold hold = MOVEMENT_HOLDS.get(target.getId());
+                if (hold == null || hold.expires() != holdEndGame) return;
+                hurtWithCapturedWeapon(sl, attackerId, target, pulseDamage);
+            });
+        }
+        TestProcedure.schedule(sl, scheduleNow + 312, () -> releaseMovementHold(target, holdEndGame));
+    }
+
+    /** RALLY : Weakness I dans le cercle, puis montagne à 4 s et projection réelle de 30 blocs. */
+    private static void applyRallyGameplay(LivingEntity target, ServerLevel sl) {
+        double x = target.getX(), y = target.getY(), z = target.getZ();
+        double radius = 2.0;
+        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(x - radius, y - radius, z - radius, x + radius, y + radius, z + radius))) {
+            if (!(candidate instanceof Enemy) || !candidate.isAlive()
+                    || candidate.distanceToSqr(x, y, z) > radius * radius) continue;
+            candidate.addEffect(new MobEffectInstance(MobEffects.WEAKNESS,
+                    600, 0, false, true, true)); // Weakness I, 30 secondes.
+        }
+
+        int scheduleNow = TestProcedure.currentTick(sl);
+        long gameNow = sl.getGameTime();
+        long launchStartGame = gameNow + 80;
+        long launchEndGame = gameNow + 120;
+        TestProcedure.schedule(sl, scheduleNow + 80, () -> {
+            if (!target.isAlive() || target.level() != sl) return;
+            double baseY = target.getY();
+            // burialDepth négatif = trajectoire ascendante de 30 blocs sur les ticks 80..100.
+            applyMovementHold(target, launchEndGame, false, baseY, baseY + 30.0,
+                    launchStartGame, -30.0);
+        });
+        // À 6 s, la cible reste à +30 et la gravité reprend : aucune restitution téléportée au sol.
+        TestProcedure.schedule(sl, scheduleNow + 120, () -> releaseMovementHold(target, launchEndGame));
+    }
+
+    /** SEISMIC : enterre uniquement les ennemis au contact ou très proches de la fissure centrale. */
+    private static void applySeismicToNearbyEnemies(LivingEntity attacker, LivingEntity target,
+                                                    ServerLevel sl, float weaponDamage) {
+        double x = target.getX(), y = target.getY(), z = target.getZ();
+        double radius = 2.0;
+        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(x - radius, y - radius, z - radius, x + radius, y + radius, z + radius))) {
+            // Enemy exclut les animaux passifs, les animaux apprivoisés et les joueurs.
+            if (!(candidate instanceof Enemy) || !candidate.isAlive()
+                    || candidate.distanceToSqr(x, y, z) > radius * radius) continue;
+            applySeismicGameplay(attacker, candidate, sl, weaponDamage);
+        }
     }
 
     /** SEISMIC : enfouissement temporaire, faibles dégâts rythmés puis restitution et Lenteur III. */
-    private static void applyEarthGameplay(LivingEntity attacker, LivingEntity target,
-                                           WeaponVisualEffectId fx, float weaponDamage) {
-        if (!(target.level() instanceof ServerLevel sl)) return;
-        if (fx == WeaponVisualEffectId.TITAN_GRASP) {
-            applyTitanGameplay(target, sl);
-            return;
-        }
-        if (fx != WeaponVisualEffectId.SEISMIC_TECTONIC) return;
+    private static void applySeismicGameplay(LivingEntity attacker, LivingEntity target,
+                                             ServerLevel sl, float weaponDamage) {
         long gameNow = sl.getGameTime();
         long holdEndGame = gameNow + 112;
         int scheduleNow = TestProcedure.currentTick(sl);
@@ -1202,6 +1250,22 @@ public final class WeaponVfxServerListener {
             target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
                     600, 2, false, true, true)); // 30 s, amplifier 2 = Lenteur III.
         });
+    }
+
+    private static void applyEarthGameplay(LivingEntity attacker, LivingEntity target,
+                                           WeaponVisualEffectId fx, float weaponDamage) {
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        if (fx == WeaponVisualEffectId.TITAN_GRASP) {
+            applyTitanGameplay(attacker, target, sl, weaponDamage);
+            return;
+        }
+        if (fx == WeaponVisualEffectId.WARLORD_RALLY_SIGIL) {
+            applyRallyGameplay(target, sl);
+            return;
+        }
+        if (fx == WeaponVisualEffectId.SEISMIC_TECTONIC) {
+            applySeismicToNearbyEnemies(attacker, target, sl, weaponDamage);
+        }
     }
 
     /** ZEPHYR/VERDANT = immobilisation sans bloquer les attaques ; THORN = stun complet 3 s. */
@@ -1393,6 +1457,10 @@ public final class WeaponVfxServerListener {
             // Même smoothstep que la main : prise jusqu'à 60, descente de trois blocs jusqu'à 112.
             heldY = hold.releaseY() - hold.burialDepth()
                     * smoothTick(now, hold.started() + 60, hold.started() + 112);
+        } else if (hold.burialDepth() < 0.0) {
+            // Rally : trente blocs ascendants en vingt ticks, puis chute naturelle après libération.
+            heldY = hold.y() - hold.burialDepth()
+                    * smoothTick(now, hold.started(), hold.started() + 20);
         }
         target.teleportTo(hold.x(), heldY, hold.z());
         target.fallDistance = 0.0f;
