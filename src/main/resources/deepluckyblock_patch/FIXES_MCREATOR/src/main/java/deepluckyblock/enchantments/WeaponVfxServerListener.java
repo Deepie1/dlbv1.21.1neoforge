@@ -1199,9 +1199,9 @@ public final class WeaponVfxServerListener {
             lightSound(sl, x, y, z, now, 12, SoundEvents.BEACON_ACTIVATE, 0.38f, 1.65f);
             for (int delay = 12; delay <= 92; delay += 4) {
                 TestProcedure.schedule(sl, now + delay, () -> {
-                    // Le cylindre translucide a un rayon extérieur de 0,48 + 0,09 = 0,57 ;
-                    // 0,58 couvre ce contour, puis la collision mesure la distance à l'AABB réelle.
-                    double radius = 0.58 * lightScale;
+                    // Le diamètre de dégâts suit la même ouverture/refermeture que le rendu.
+                    // Les 0,04 ajoutés couvrent le demi-volume des huit arêtes translucides.
+                    double radius = seraphServerRadius(delay) * lightScale;
                     // Recherche nouvelle à CHAQUE pulse : entrer dans le rayon expose aussitôt,
                     // en sortir interrompt les dégâts. Aucune liste de cibles figée à l'activation.
                     for (LivingEntity entity : sl.getEntitiesOfClass(LivingEntity.class,
@@ -1281,9 +1281,12 @@ public final class WeaponVfxServerListener {
                 if (!lightTarget(entity, target, attackerId) || !cylinderContact(entity, x, y, z, radius, lightScale)) continue;
                 boolean primary = entity.getId() == target.getId();
                 float amount = primary
-                        ? net.minecraft.util.Mth.clamp(captured * 0.38f, 0.20f, 3.25f)
-                        : net.minecraft.util.Mth.clamp(captured * 0.16f, 0.10f, 1.50f);
+                        ? net.minecraft.util.Mth.clamp(captured * 0.24f, 0.12f, 2.00f)
+                        : net.minecraft.util.Mth.clamp(captured * 0.10f, 0.06f, 1.10f);
                 if (!hurtWithCapturedWeapon(sl, attackerId, entity, amount)) continue;
+                // La santé est lue APRÈS la dette. La même entité devient bébé : aucun respawn,
+                // donc aucun transfert approximatif d'équipement, d'effets ou d'identifiant.
+                if (entity.isAlive()) rejuvenateIfVanillaBabyExists(entity);
                 double dx = entity.getX() - x, dz = entity.getZ() - z;
                 double len = Math.max(0.15, Math.sqrt(dx * dx + dz * dz));
                 entity.push(dx / len * 0.07, 0.04, dz / len * 0.07);
@@ -1296,6 +1299,38 @@ public final class WeaponVfxServerListener {
     private static boolean lightTarget(LivingEntity entity, LivingEntity primary, int attackerId) {
         if (!entity.isAlive() || entity.getId() == attackerId) return false;
         return entity.getId() == primary.getId() || (entity instanceof Enemy && !(entity instanceof Player));
+    }
+
+    /** Même courbe que LightSignatureVfx.seraphBeamRadius, plus le demi-volume de 0,04. */
+    private static float seraphServerRadius(int delay) {
+        float open = net.minecraft.util.Mth.clamp((delay - 12) / 20.0f, 0.0f, 1.0f);
+        float close = net.minecraft.util.Mth.clamp((delay - 74) / 20.0f, 0.0f, 1.0f);
+        open = open * open * (3.0f - 2.0f * open);
+        close = close * close * (3.0f - 2.0f * close);
+        return 0.14f + 0.68f * open * (1.0f - close);
+    }
+
+    /**
+     * Rajeunit sans remplacer l'entité. Zombie couvre aussi Husk, Drowned, ZombieVillager et
+     * ZombifiedPiglin ; Piglin et AgeableMob ont leurs propres données bébé vanilla. Skeleton,
+     * Wither, Warden et les autres types sans forme bébé ne sont volontairement pas fabriqués.
+     */
+    private static boolean rejuvenateIfVanillaBabyExists(LivingEntity entity) {
+        float healthAfterDebt = entity.getHealth();
+        if (entity instanceof net.minecraft.world.entity.monster.Zombie zombie) {
+            zombie.setBaby(true);
+        } else if (entity instanceof net.minecraft.world.entity.monster.piglin.Piglin piglin) {
+            piglin.setBaby(true);
+        } else if (entity instanceof net.minecraft.world.entity.AgeableMob ageable) {
+            ageable.setBaby(true);
+        } else {
+            return false;
+        }
+        // setBaby ne doit ni soigner ni infliger de dégâts. On restaure explicitement les PV
+        // restants après la dette, sans jamais dépasser le maximum courant de l'entité.
+        entity.setHealth(Math.min(healthAfterDebt, entity.getMaxHealth()));
+        entity.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 105, 0, false, true, true));
+        return true;
     }
 
     /** Collision propre au grand rayon vertical de Séraphin. */

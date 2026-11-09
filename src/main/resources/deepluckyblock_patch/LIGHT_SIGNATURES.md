@@ -1,58 +1,96 @@
-# Lumière V2 — trois signatures et nettoyage du log
+# Lumière V3 — pilier de lumière, constellations et rajeunissement
 
 ## Fichiers à conserver synchronisés
 
 Le dossier `FIXES_MCREATOR/src/main` contient les mêmes copies que le `src/main` principal :
 
-- `client/LightSignatureVfx.java` — géométrie des trois animations V2 ;
-- `client/WeaponWorldVfxManager.java` — durées, double passe alpha/additive et `/anim light` côté client ;
-- `enchantments/WeaponVfxServerListener.java` — dégâts serveur, protections, sons et rotation ;
+- `client/LightSignatureVfx.java` — géométrie des trois animations V3 ;
+- `client/WeaponWorldVfxManager.java` — durées, double passe alpha/additive, fondu propre à Séraphin et `/anim light` côté client ;
+- `enchantments/WeaponVfxServerListener.java` — dégâts serveur, diamètre du pilier, rajeunissement, protections, sons et rotation ;
 - `commands/DlbVfxCommand.java` — commande `/anim light` ;
 - `resources/deep_lucky_block.mixins.json` — suppression du refmap inexistant ;
 - `resources/licenses/pixel_musketeer.txt` — licence déplacée hors du resource pack ;
 - `resources/assets/deep_lucky_block/textures/item/lunettesdupatron.png` — texture 256×256.
 
-`WeaponVisualEffectId.java` ne change pas : les titres et mappings Lumière existaient déjà. Les comportements Metal et Arc ne sont pas modifiés par cette V2.
+`WeaponVisualEffectId.java` ne change pas : les titres et mappings Lumière existaient déjà. Les comportements Metal et Arc ne sont pas modifiés par cette V3.
 
 > **Suppression manuelle lors d'une copie par-dessus un ancien projet :** supprimer `src/main/resources/assets/deep_lucky_block/font/PIXEL_MUSKETEER_LICENSE.txt`. Un ZIP de sources ne peut pas représenter cette suppression ; la nouvelle licence est dans `src/main/resources/licenses/pixel_musketeer.txt`.
 
-## Chorégraphie et dégâts
+## Budget visuel et double passe
 
-Les durées sont de 100 ticks pour Seraph Sky Pillar, 80 pour Astral Star Lance et 100 pour Chrono Eternal Halo. Les trois rendus emploient des primitives cubiques/translucides, une passe alpha et une passe additive distincte, ainsi que des contours de cubes dont les douze arêtes sont animées.
+Les durées restent de 100 ticks pour Seraph Sky Pillar, 80 pour Astral Star Lance et 100 pour Chrono Eternal Halo. Les trois rendus utilisent des primitives cubiques/translucides, une passe alpha et une passe additive distincte, ainsi que des contours de cubes animés.
 
-### Seraph Sky Pillar — rayon céleste continu
+Les pics mesurés sur 1 001 frames de l'aperçu sont :
 
-L'ancienne conception à ailes, plumes, lances et grand sceau est entièrement supprimée. Un fin noyau blanc tombe du ciel pendant les 12 premiers ticks, entouré de trois filaments. Le rayon actif possède une enveloppe cylindrique translucide à douze faces, 48 niveaux légers, 18 paquets descendants et 26 motes basses. La diffusion terminale reste volontairement faible : 24 rayons au sol, au maximum environ 1,55 bloc, purement décoratifs.
+| Signature | Pic V2 | Pic V3 | Réduction |
+|---|---:|---:|---:|
+| Séraphin | 699 | **220 voxels** | −68,5 % |
+| Astral | 2 342 | **533 voxels** | −77,2 % |
+| Chrono | 1 084 | **799 voxels** | −26,3 % |
 
-**Le rayon est la zone de dégâts.** Le serveur effectue une nouvelle recherche d'entités toutes les 4 ticks, aux ticks **12, 16, …, 92**, soit **21 pulses**. Il ne conserve aucune liste de victimes figée à l'activation :
+Ces chiffres décrivent la géométrie soumise au rendu, pas un framerate garanti en jeu. Séraphin supprime surtout les centaines de volumes translucides superposés qui causaient de l'overdraw. Astral remplace les cages et arcs chaotiques par des pièces de lame lisibles. Chrono conserve son cadran avec moins de maillons et sans cube complexe dans chaque engrenage.
 
-- entrer dans le rayon après son apparition expose dès le prochain pulse ;
-- rester dedans maintient les dégâts ;
-- en sortir interrompt immédiatement les pulses suivants ;
-- plusieurs ennemis peuvent être touchés simultanément dans le même rayon.
+## Seraph Sky Pillar — dilatation puis refermeture
 
-Chaque pulse applique 6 % de l'attaque capturée, borné entre 0,04 et 0,55 point de dégâts, ou 9 %, borné entre 0,06 et 0,80 point, contre les types `sensitive_to_smite`. Glowing est rafraîchi pour 10 ticks après une touche réussie. Aucun knockback n'éjecte artificiellement les cibles.
+La composition reprend les points communs des références fournies : une **source céleste circulaire**, une étoile inscrite, un centre blanc et une longue colonne verticale blanc/jaune. Les deux couronnes tournent en sens opposés ; huit petits motifs orbitent autour de la source. Le décor de la source ne crée aucune zone de dégâts supplémentaire.
 
-Le contour visuel atteint 0,48 + 0,09 = 0,57 bloc ; le cylindre serveur utilise **0,58 bloc**, multiplié par l'échelle visuelle, puis mesure la distance horizontale à l'AABB réelle de chaque occupant. Verticalement, la zone suit le rayon de −1,17 à +9,51 blocs (recouvrement de 3 % des prismes inclus) autour du centre capturé, avec la même échelle. Une cible n'est donc pas touchée uniquement parce qu'elle se trouvait à l'impact initial.
+Le rayon suit cette chorégraphie :
 
-### Astral Star Lance — projectile astronomique détaillé
+1. un filet blanc descend pendant les premiers ticks ;
+2. à partir du tick 12, le diamètre s'ouvre progressivement pendant 20 ticks ;
+3. le pilier reste largement ouvert au centre de l'animation ;
+4. à partir du tick 74, il se referme pendant 20 ticks ;
+5. redevenu très fin, il s'éteint avec son propre fondu terminal.
 
-Le concept de lance et sa collision sont conservés, avec une construction beaucoup plus dense : constellation initiale, trois cages/portails octogonaux, huit nœuds gravés et reliés, fût octogonal de 34 segments, huit plaques longitudinales de neuf sections, pointe de 14 sections, trois hélices, six ailettes nervurées, six arcs orbitaux de douze voxels et un sillage de 48 éclats. À la perforation, deux fronts de 56 maillons — l'un transversal, l'autre horizontal — accompagnent la diffraction. Ces décorations n'agrandissent pas silencieusement la collision.
+Le cœur blanc reste fin même à pleine ouverture. Huit arêtes ivoire/or, trois filaments et quatre jonctions suffisent à rendre le volume. Le bas ne comporte que douze filets et huit motes décoratifs.
 
-Au tick 24, un segment de **8,70 blocs**, centré sur la cible et orienté par l'attaque, est testé par collision continue segment/AABB : 30 % sur la primaire, 18 % sur les ennemis traversés. Les collatéraux exigent une ligne de vue. Le corridor visible et la zone utilisent la même échelle que le rendu. Le test par slabs évite le tunneling entre les deux extrémités.
+### Collision et dégâts
 
-### Chrono Eternal Halo — horloge, arrêt et rembobinage
+Le serveur effectue toujours une nouvelle recherche d'occupants toutes les 4 ticks, aux ticks **12, 16, …, 92**, soit 21 pulses. Entrer tardivement expose au prochain pulse ; sortir interrompt les touches suivantes ; plusieurs ennemis peuvent partager le rayon.
 
-L'armillaire abstraite est remplacée par une horloge frontale immédiatement identifiable :
+**Le rayon de collision grandit et rétrécit avec le rendu.** La géométrie visible utilise un rayon de 0,10 à 0,78 bloc ; le serveur ajoute le demi-volume de 0,04 des arêtes, soit **0,14 à 0,82 bloc**, multiplié par l'échelle visuelle. La même double courbe smoothstep d'ouverture et de refermeture est implémentée des deux côtés.
 
-- chiffres **1 à 12** dessinés en voxels avec une fonte 3×5 ;
-- **60 graduations** et double cadran de 120 maillons ;
-- trois aiguilles de longueurs et rapports de vitesse différents ;
-- quatre engrenages de 12 ou 16 dents, à sens alternés ;
-- pendule animé, dont la masse est un cube à contours scannés ;
-- fracture en douze directions à la dette et 42 éclats de mémoire.
+Chaque pulse applique 6 % de l'attaque capturée, borné entre 0,04 et 0,55 point de dégâts, ou 9 %, borné entre 0,06 et 0,80 point, contre les types `sensitive_to_smite`. Glowing est rafraîchi pour 10 ticks après une touche réussie. Aucun knockback n'éjecte les cibles. La hauteur de collision reste de −1,17 à +9,51 blocs, recouvrement des prismes inclus.
 
-Les aiguilles avancent par crans. À la dette, aiguilles, engrenages et pendule s'arrêtent net ; ils repartent ensuite en arrière pendant le rembobinage. Les ennemis non-boss reçoivent Lenteur II ; Warden, Wither et Ender Dragon gardent leur contrôle. La dette unique arrive au tick 55 : 38 % sur la primaire, 16 % dans 1,55 bloc.
+## Astral Star Lance — vraies constellations et lame sacrée
+
+Les anciennes cages, plaques nombreuses et arcs orbitaux sont supprimés. La nouvelle composition conserve une silhouette simple et lisible :
+
+- **Grande Ourse** : sept étoiles et les liaisons du chariot ;
+- **Cassiopée** : cinq étoiles en W ;
+- **Orion** : sept étoiles, dont les trois de la ceinture ;
+- trois canaux de lumière et six paquets qui convergent réellement vers la base de la lame pendant sa charge ;
+- fût quadrangulaire de vingt sections et quatre rails continus ;
+- lame en losange de sept sections, quatre arêtes longitudinales et pointe blanche ;
+- croisée d'or à quatre ailettes angulaires, six gravures et trois hélices discrètes ;
+- sillage limité à vingt étoiles et reflet circulaire au sol à l'impact.
+
+Les constellations ne sont donc pas seulement décoratives : leur lumière forge la lance. Le reflet au sol et les huit rayons d'impact restent décoratifs et n'agrandissent pas la zone de dégâts.
+
+Au tick 24, le segment continu de **8,70 blocs**, centré sur la cible et orienté par l'attaque, conserve exactement sa collision segment/AABB : 30 % sur la primaire, 18 % sur les ennemis traversés. Les collatéraux exigent une ligne de vue. Le corridor visible et la zone utilisent la même échelle.
+
+## Chrono Eternal Halo — dette faible et forme bébé
+
+L'horloge frontale conserve ses chiffres **1 à 12**, ses 60 graduations, trois aiguilles, quatre engrenages et son pendule. Les maillons du double cadran passent de 120 à 72 par couronne ; les engrenages gardent leurs dents et leurs rotations. Aiguilles, engrenages et pendule s'arrêtent à la dette puis repartent en arrière.
+
+Les ennemis non-boss reçoivent toujours Lenteur II ; Warden, Wither et Ender Dragon gardent leur contrôle. La dette du tick 55 devient volontairement plus faible :
+
+- **24 %** de l'attaque capturée sur la primaire, borné entre 0,12 et 2,00 points ;
+- **10 %** sur les touches secondaires dans 1,55 bloc, borné entre 0,06 et 1,10 point.
+
+### Rajeunissement sans remplacement d'entité
+
+Après une touche réussie, si la cible est encore vivante et possède une forme bébé vanilla prise en charge, **la même entité** reçoit cette forme :
+
+- `Zombie`, donc également Husk, Drowned, ZombieVillager et ZombifiedPiglin ;
+- `Piglin` ;
+- `AgeableMob`, pour les créatures vanilla/mod compatibles avec cette API.
+
+Il n'y a aucun `spawn`, aucune suppression et aucune copie approximative d'inventaire. L'UUID, les objets en main, l'armure, les effets, la persistence et les autres données de l'entité restent donc attachés à elle. La santé est lue **après les dégâts**, puis explicitement restaurée à cette valeur, bornée par le maximum courant : rajeunir ne soigne pas et n'inflige pas une seconde dette.
+
+La cible rajeunie reçoit aussi **Faiblesse I pendant 105 ticks**. Les règles vanilla propres à chaque forme restent actives : un bébé zombie garde son comportement de bébé zombie, et une créature `AgeableMob` peut grandir selon son âge vanilla.
+
+**Skeleton n'a pas de forme bébé vanilla.** Il n'est donc pas transformé, pas plus que les boss ou les types sans API bébé. Aucun faux modèle ou remplacement risqué n'est fabriqué.
 
 Tous les dégâts différés passent par `hurtWithCapturedWeapon` : crédit du tueur, armure/protections et verrou anti-récursion. Les touches secondaires excluent l'attaquant, les joueurs et les non-ennemis. Aucun `setNoAi`, déplacement forcé ou nouveau hold n'est ajouté par la Lumière.
 
@@ -69,4 +107,6 @@ Ces changements ne prétendent pas réparer les diagnostics appartenant à vanil
 
 `deliverables/DLB_Light_Three_Signatures_preview.html` est autonome, sans réseau ni dépendance externe. Il permet de lire, mettre en pause, scrubber, orbiter, zoomer et comparer les trois modèles. Le ZIP `DLB_Light_Three_Signatures_src.zip` contient les sources principales, les miroirs MCreator et les correctifs de ressources.
 
-Le workspace ne contient pas le JDK/Gradle/MCreator nécessaire à une compilation NeoForge. Les audits de syntaxe Java, les modèles numériques, les collisions simulées et Chromium ne remplacent pas une compilation ou un test en jeu. Après copie des sources et miroirs, lancer `runClient` sous Windows/MCreator, puis `/anim light`. Vérifier en particulier qu'un ennemi qui entre tardivement dans Séraphin est touché, et qu'un ennemi qui en sort cesse de l'être.
+Le workspace ne contient pas le JDK/Gradle/MCreator nécessaire à une compilation NeoForge. Les audits de syntaxe Java, les modèles numériques, les collisions simulées et Chromium ne remplacent pas une compilation ou un test en jeu. Après copie des sources et miroirs, lancer `runClient` sous Windows/MCreator, puis `/anim light`.
+
+Tests prioritaires en jeu : vérifier le diamètre de Séraphin au début, au milieu et à la fin ; faire entrer/sortir un ennemi du rayon ; inspecter un zombie équipé après Chrono pour confirmer qu'il est bébé avec les mêmes PV restants et le même équipement ; vérifier qu'un squelette n'est pas converti.

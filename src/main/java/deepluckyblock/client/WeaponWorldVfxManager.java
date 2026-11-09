@@ -3622,7 +3622,10 @@ public final class WeaponWorldVfxManager {
             try {
                 LightSignatureVfx.render(v.vc(), lightBody, v.mat(), v.tmp(),
                         v.cx(), v.cy(), v.cz(), t, v.dirX(), v.dirZ(), signature,
-                        v.fadeA(), (int) (v.inst().seed & 0x7FFFFFFFL));
+                        // Séraphin possède son propre fondu terminal : il doit rester lumineux
+                        // pendant la refermeture au lieu de disparaître avant de devenir fin.
+                        signature == LightSignatureVfx.SERAPH ? 240 : v.fadeA(),
+                        (int) (v.inst().seed & 0x7FFFFFFFL));
             } finally {
                 voxelPulseEnabled = previousPulse;
             }
