@@ -127,6 +127,8 @@ public final class WeaponWorldVfxManager {
     private static float pixelDensity = 1.0f;
     /** T350 : échelle de taille de la déclinaison en cours (0.80 .. 1.0). */
     private static float variantScale = 1.0f;
+    /** Séraphin V4 : dimensions monde contractuelles, sans respiration ni taille pseudo-aléatoire. */
+    private static boolean voxelSizeLocked = false;
 
     // ── T359-BIG-ANIM-SCALE : échelle des grosses animations, pilotée par la taille du mob touché ──
     /** Échelle courante (1 = normale) ; appliquée à TOUTE la géométrie d'une instance. */
@@ -518,7 +520,8 @@ public final class WeaponWorldVfxManager {
             case TITAN_GRASP, SANDSTORM_DUNE -> 140;
             case WARLORD_RALLY_SIGIL -> 120;
             case RAZOR_GLEAM -> 48;
-            case SERAPH_SKY_PILLAR, CHRONO_ETERNAL_HALO -> 100;
+            case SERAPH_SKY_PILLAR -> 30;
+            case CHRONO_ETERNAL_HALO -> 100;
             case ASTRAL_STAR_LANCE -> 80;
             case SUPREME_PRISM_EDGE -> 84;
             case ANNIHILATING_ARC -> 96;
@@ -3618,16 +3621,36 @@ public final class WeaponWorldVfxManager {
         };
         if (signature >= 0) {
             boolean previousPulse = voxelPulseEnabled;
+            boolean previousMobScaleActive = mobScaleActive;
+            boolean previousSizeLocked = voxelSizeLocked;
+            float previousVariantScale = variantScale;
+            float previousPixelDensity = pixelDensity;
             voxelPulseEnabled = false;
+            if (signature == LightSignatureVfx.SERAPH) {
+                // Ni mob, ni variante, ni hash de voxel : 0,05 / 0,60 × 16 monde exacts.
+                mobScaleActive = false;
+                variantScale = 1.0f;
+                pixelDensity = 1.0f;
+                voxelSizeLocked = true;
+            }
+            float lightDx = v.dirX(), lightDz = v.dirZ();
+            if (signature == LightSignatureVfx.CHRONO) {
+                // L'horloge suit la caméra : le cadran ne se présente jamais par la tranche.
+                lightDx = -v.cx(); lightDz = -v.cz();
+            }
             try {
                 LightSignatureVfx.render(v.vc(), lightBody, v.mat(), v.tmp(),
-                        v.cx(), v.cy(), v.cz(), t, v.dirX(), v.dirZ(), signature,
+                        v.cx(), v.cy(), v.cz(), t, lightDx, lightDz, signature,
                         // Séraphin possède son propre fondu terminal : il doit rester lumineux
                         // pendant la refermeture au lieu de disparaître avant de devenir fin.
                         signature == LightSignatureVfx.SERAPH ? 240 : v.fadeA(),
                         (int) (v.inst().seed & 0x7FFFFFFFL));
             } finally {
                 voxelPulseEnabled = previousPulse;
+                mobScaleActive = previousMobScaleActive;
+                voxelSizeLocked = previousSizeLocked;
+                variantScale = previousVariantScale;
+                pixelDensity = previousPixelDensity;
             }
             return;
         }
@@ -4074,10 +4097,11 @@ public final class WeaponWorldVfxManager {
         cubesSinceFlush++;
 
         // T349-PIXEL-VARIATION : la taille respire doucement dans le temps…
-        float scale = (voxelPulseEnabled ? framePixelScale * smoothPulse(cx, cy, cz) : 1.0f) * variantScale;
+        float scale = voxelSizeLocked ? 1.0f
+                : (voxelPulseEnabled ? framePixelScale * smoothPulse(cx, cy, cz) : 1.0f) * variantScale;
         // …T367 : …et chaque cube a en plus sa PROPRE taille (aucun n'est identique à son voisin).
         int sizeSeed = (int) (cx * 911.0f + cy * 577.0f + cz * 331.0f);
-        scale *= 0.82f + 0.34f * pixelHash(0x51C3, sizeSeed);
+        if (!voxelSizeLocked) scale *= 0.82f + 0.34f * pixelHash(0x51C3, sizeSeed);
         hx *= scale;
         hy *= scale;
         hz *= scale;
@@ -4172,9 +4196,10 @@ public final class WeaponWorldVfxManager {
         if (cubesSinceFlush >= HARD_CUBE_CAP_PER_FRAME) return;
         cubesSinceFlush++;
 
-        float scale = (voxelPulseEnabled ? framePixelScale * smoothPulse(cx, cy, cz) : 1.0f) * variantScale;
+        float scale = voxelSizeLocked ? 1.0f
+                : (voxelPulseEnabled ? framePixelScale * smoothPulse(cx, cy, cz) : 1.0f) * variantScale;
         int sizeSeed = (int) (cx * 911.0f + cy * 577.0f + cz * 331.0f);
-        scale *= 0.82f + 0.34f * pixelHash(0x51C3, sizeSeed);
+        if (!voxelSizeLocked) scale *= 0.82f + 0.34f * pixelHash(0x51C3, sizeSeed);
         hx *= scale;
         hy *= scale;
         hz *= scale;

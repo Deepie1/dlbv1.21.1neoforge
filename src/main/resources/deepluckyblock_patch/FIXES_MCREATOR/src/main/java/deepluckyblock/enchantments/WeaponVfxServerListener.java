@@ -1195,38 +1195,61 @@ public final class WeaponVfxServerListener {
         double x = target.getX(), y = target.getY() + target.getBbHeight() * 0.50, z = target.getZ();
 
         if (fx == WeaponVisualEffectId.SERAPH_SKY_PILLAR) {
-            lightSound(sl, x, y, z, now, 0, SoundEvents.AMETHYST_BLOCK_CHIME, 0.26f, 1.25f);
-            lightSound(sl, x, y, z, now, 12, SoundEvents.BEACON_ACTIVATE, 0.38f, 1.65f);
-            for (int delay = 12; delay <= 92; delay += 4) {
-                TestProcedure.schedule(sl, now + delay, () -> {
-                    // Le diamètre de dégâts suit la même ouverture/refermeture que le rendu.
-                    // Les 0,04 ajoutés couvrent le demi-volume des huit arêtes translucides.
-                    double radius = seraphServerRadius(delay) * lightScale;
-                    // Recherche nouvelle à CHAQUE pulse : entrer dans le rayon expose aussitôt,
-                    // en sortir interrompt les dégâts. Aucune liste de cibles figée à l'activation.
-                    for (LivingEntity entity : sl.getEntitiesOfClass(LivingEntity.class,
-                            new AABB(x - radius - 1.0, y - 1.25 * lightScale, z - radius - 1.0,
-                                    x + radius + 1.0, y + 10.0 * lightScale, z + radius + 1.0))) {
-                        if (!lightTarget(entity, target, attackerId)
-                                || !seraphRayContact(entity, x, y, z, radius, lightScale)) continue;
-                        boolean undead = entity.getType().is(net.minecraft.tags.EntityTypeTags.SENSITIVE_TO_SMITE);
-                        float amount = undead
-                                ? net.minecraft.util.Mth.clamp(captured * 0.09f, 0.06f, 0.80f)
-                                : net.minecraft.util.Mth.clamp(captured * 0.06f, 0.04f, 0.55f);
-                        if (!hurtWithCapturedWeapon(sl, attackerId, entity, amount)) continue;
-                        entity.addEffect(new MobEffectInstance(MobEffects.GLOWING, 10, 0, false, true, true));
-                        // Aucun knockback : la cible n'est pas éjectée artificiellement du DoT.
-                    }
-                });
+            List<LivingEntity> beamTargets = new ArrayList<>();
+            beamTargets.add(target);
+            for (LivingEntity nearby : sl.getEntitiesOfClass(LivingEntity.class,
+                    new AABB(x - 10.0, y - 10.0, z - 10.0, x + 10.0, y + 10.0, z + 10.0))) {
+                if (nearby.getId() == target.getId() || nearby.getId() == attackerId
+                        || !(nearby instanceof Enemy) || nearby instanceof Player || !nearby.isAlive()) continue;
+                if (nearby.distanceToSqr(x, y, z) <= 100.0) beamTargets.add(nearby);
             }
-            for (int delay = 32; delay <= 92; delay += 20) {
-                lightSound(sl, x, y, z, now, delay, SoundEvents.AMETHYST_BLOCK_CHIME,
-                        0.12f, 1.35f + delay * 0.004f);
+            beamTargets.sort((a, b) -> Integer.compare(a.getId(), b.getId()));
+            for (LivingEntity beamTarget : beamTargets) {
+                boolean primary = beamTarget.getId() == target.getId();
+                double bx = beamTarget.getX();
+                double by = beamTarget.getY() + beamTarget.getBbHeight() * 0.50;
+                double bz = beamTarget.getZ();
+                // Position fixe pendant le cast et les quatre ticks actifs, attaques conservées.
+                applyMovementHold(beamTarget, sl.getGameTime() + 15L, false);
+                if (!primary) {
+                    double ax = attacker == null ? bx : attacker.getX();
+                    double ay = attacker == null ? by + 1.0 : attacker.getEyeY();
+                    double az = attacker == null ? bz + 1.0 : attacker.getZ();
+                    broadcastNear(sl, bx, by, bz, fx.id, KIND_IMPACT, 6,
+                            bx, by, bz, ax, ay, az,
+                            attacker == null ? 1 << fx.element.ordinal()
+                                    : paletteOf(attacker.getMainHandItem(), fx), 1.0f);
+                }
+                lightSound(sl, bx, by, bz, now, 0, SoundEvents.AMETHYST_BLOCK_CHIME,
+                        primary ? 0.34f : 0.16f, primary ? 1.30f : 1.65f);
+                lightSound(sl, bx, by, bz, now, 9, SoundEvents.BEACON_ACTIVATE,
+                        primary ? 0.52f : 0.22f, primary ? 1.55f : 1.85f);
+                lightSound(sl, bx, by, bz, now, 10, SoundEvents.TOTEM_USE,
+                        primary ? 0.38f : 0.16f, 1.80f);
+                lightSound(sl, bx, by, bz, now, 12, SoundEvents.NOTE_BLOCK_BELL.value(),
+                        primary ? 0.30f : 0.12f, 2.00f);
+                lightSound(sl, bx, by, bz, now, 24, SoundEvents.BEACON_DEACTIVATE,
+                        primary ? 0.30f : 0.12f, 1.55f);
+                for (int delay = 10; delay <= 14; delay += 2) {
+                    TestProcedure.schedule(sl, now + delay, () -> {
+                        if (!beamTarget.isAlive() || beamTarget.level() != sl
+                                || !seraphRayContact(beamTarget, bx, by, bz, 0.60, 1.0f)) return;
+                        boolean undead = beamTarget.getType().is(net.minecraft.tags.EntityTypeTags.SENSITIVE_TO_SMITE);
+                        float factor = (undead ? 0.25f : 0.18f) * (primary ? 1.0f : 0.70f);
+                        float cap = (undead ? 1.75f : 1.25f) * (primary ? 1.0f : 0.70f);
+                        float amount = net.minecraft.util.Mth.clamp(captured * factor,
+                                primary ? 0.10f : 0.07f, cap);
+                        if (!hurtWithCapturedWeapon(sl, attackerId, beamTarget, amount)) return;
+                        beamTarget.addEffect(new MobEffectInstance(MobEffects.GLOWING, 10, 0, false, true, true));
+                    });
+                }
             }
             return;
         }
 
         if (fx == WeaponVisualEffectId.ASTRAL_STAR_LANCE) {
+            // La constellation garde sa cible sans désactiver les attaques de celle-ci.
+            applyMovementHold(target, sl.getGameTime() + 25L, false);
             double rawX = attacker == null ? 0.0 : target.getX() - attacker.getX();
             double rawZ = attacker == null ? 1.0 : target.getZ() - attacker.getZ();
             double len = Math.max(0.001, Math.sqrt(rawX * rawX + rawZ * rawZ));
@@ -1234,10 +1257,16 @@ public final class WeaponVfxServerListener {
             double startX = x - dirX * 4.35 * lightScale;
             double startZ = z - dirZ * 4.35 * lightScale;
             double endX = x + dirX * 4.35 * lightScale, endZ = z + dirZ * 4.35 * lightScale;
-            lightSound(sl, x, y, z, now, 0, SoundEvents.AMETHYST_BLOCK_CHIME, 0.32f, 1.45f);
+            for (int chime = 0; chime <= 12; chime += 4) {
+                lightSound(sl, x, y, z, now, chime, SoundEvents.AMETHYST_BLOCK_CHIME,
+                        0.18f, 1.35f + chime * 0.035f);
+            }
             lightSound(sl, x, y, z, now, 15, SoundEvents.CHORUS_FRUIT_TELEPORT, 0.30f, 1.70f);
+            lightSound(sl, x, y, z, now, 20, SoundEvents.TRIDENT_THROW, 0.42f, 1.45f);
             lightSound(sl, x, y, z, now, 24, SoundEvents.PLAYER_ATTACK_CRIT, 0.52f, 1.80f);
+            lightSound(sl, x, y, z, now, 30, SoundEvents.ANVIL_PLACE, 0.20f, 1.75f);
             lightSound(sl, x, y, z, now, 48, SoundEvents.AMETHYST_BLOCK_CHIME, 0.28f, 1.85f);
+            lightSound(sl, x, y, z, now, 64, SoundEvents.CHORUS_FRUIT_TELEPORT, 0.18f, 1.25f);
             TestProcedure.schedule(sl, now + 24, () -> {
                 List<LivingEntity> candidates = new ArrayList<>(sl.getEntitiesOfClass(LivingEntity.class,
                         new AABB(Math.min(startX, endX) - 1.0, y - 2.5, Math.min(startZ, endZ) - 1.0,
@@ -1264,6 +1293,8 @@ public final class WeaponVfxServerListener {
             return;
         }
 
+        // Verrou de position de dix secondes, sans NoAi : le mob peut toujours attaquer.
+        applyMovementHold(target, sl.getGameTime() + 200L, false);
         // Chrono ralentit seulement les ennemis non-boss ; Warden, Wither et Dragon gardent leur IA.
         if (target instanceof Enemy && target.getType() != EntityType.ENDER_DRAGON
                 && target.getType() != EntityType.WITHER && target.getType() != EntityType.WARDEN) {
@@ -1271,8 +1302,17 @@ public final class WeaponVfxServerListener {
                     105, 1, false, true, true));
         }
         lightSound(sl, x, y, z, now, 0, SoundEvents.AMETHYST_BLOCK_CHIME, 0.30f, 0.75f);
+        lightSound(sl, x, y, z, now, 0, SoundEvents.ENDERMAN_TELEPORT, 0.20f, 1.35f);
+        for (int bell = 15; bell <= 45; bell += 15) {
+            lightSound(sl, x, y, z, now, bell, SoundEvents.NOTE_BLOCK_BELL.value(),
+                    0.16f, 0.85f + bell * 0.012f);
+        }
         lightSound(sl, x, y, z, now, 55, SoundEvents.NOTE_BLOCK_BELL.value(), 0.55f, 1.55f);
+        lightSound(sl, x, y, z, now, 55, SoundEvents.CHORUS_FRUIT_TELEPORT, 0.24f, 1.45f);
+        lightSound(sl, x, y, z, now, 58, SoundEvents.BONE_MEAL_USE, 0.26f, 1.60f);
         lightSound(sl, x, y, z, now, 86, SoundEvents.CHORUS_FRUIT_TELEPORT, 0.25f, 0.90f);
+        lightSound(sl, x, y, z, now, 100, SoundEvents.BEACON_DEACTIVATE, 0.22f, 1.25f);
+        lightSound(sl, x, y, z, now, 200, SoundEvents.BEACON_DEACTIVATE, 0.30f, 0.85f);
         TestProcedure.schedule(sl, now + 55, () -> {
             double radius = 1.55 * lightScale;
             for (LivingEntity entity : sl.getEntitiesOfClass(LivingEntity.class,
@@ -1299,15 +1339,6 @@ public final class WeaponVfxServerListener {
     private static boolean lightTarget(LivingEntity entity, LivingEntity primary, int attackerId) {
         if (!entity.isAlive() || entity.getId() == attackerId) return false;
         return entity.getId() == primary.getId() || (entity instanceof Enemy && !(entity instanceof Player));
-    }
-
-    /** Même courbe que LightSignatureVfx.seraphBeamRadius, plus le demi-volume de 0,04. */
-    private static float seraphServerRadius(int delay) {
-        float open = net.minecraft.util.Mth.clamp((delay - 12) / 20.0f, 0.0f, 1.0f);
-        float close = net.minecraft.util.Mth.clamp((delay - 74) / 20.0f, 0.0f, 1.0f);
-        open = open * open * (3.0f - 2.0f * open);
-        close = close * close * (3.0f - 2.0f * close);
-        return 0.14f + 0.68f * open * (1.0f - close);
     }
 
     /**
@@ -1337,7 +1368,7 @@ public final class WeaponVfxServerListener {
     private static boolean seraphRayContact(LivingEntity entity, double x, double y, double z,
                                             double radius, float lightScale) {
         AABB box = entity.getBoundingBox();
-        if (box.maxY < y - 1.17 * lightScale || box.minY > y + 9.51 * lightScale) return false;
+        if (box.maxY < y - 0.90 * lightScale || box.minY > y + 15.10 * lightScale) return false;
         return discContact(box, x, z, radius);
     }
 
