@@ -1167,8 +1167,8 @@ public final class WeaponVfxServerListener {
 
     /**
      * Gameplay Métal : trois rôles volontairement différents.
-     * Razor = une cible et perforation ; Prism = containment principal + deux ricochets ;
-     * Arc = contrôle de six ennemis maximum, sans ajouter un second dégât à Annihilating Sweep.
+     * Razor = lame perforante joueur → ennemi + slash AoE ; Prism = trois lames + deux ricochets ;
+     * Arc = contact des lames + contrôle de six ennemis maximum. Aucun second Annihilating Sweep.
      */
     private static void applyMetalGameplay(LivingEntity attacker, LivingEntity target,
                                            WeaponVisualEffectId fx, float weaponDamage) {
@@ -1179,19 +1179,35 @@ public final class WeaponVfxServerListener {
         long gameNow = sl.getGameTime();
         int attackerId = attacker == null ? -1 : attacker.getId();
         double x = target.getX(), y = target.getY() + target.getBbHeight() * 0.5, z = target.getZ();
+        float bladeScale = sizeScaleOf(target);
+        double rawAttackX = attacker == null ? 0.0 : target.getX() - attacker.getX();
+        double rawAttackZ = attacker == null ? 1.0 : target.getZ() - attacker.getZ();
+        double attackLength = Math.max(0.001, Math.sqrt(rawAttackX * rawAttackX + rawAttackZ * rawAttackZ));
+        final double attackX = rawAttackX / attackLength;
+        final double attackZ = rawAttackZ / attackLength;
+        double prismX = -attackX, prismZ = -attackZ;
 
         if (fx == WeaponVisualEffectId.RAZOR_GLEAM) {
-            // Une seule cible. Le hit-stun de 0,6 s garantit la lecture du iaido sans devenir un stun-lock.
+            // Contact réel de la percée puis du slash de 95°. Un mob ne reçoit qu'un hit par activation.
             float piercing = net.minecraft.util.Mth.clamp(Math.max(0.0f, weaponDamage) * 0.35f, 0.20f, 3.00f);
             long holdExpiry = gameNow + 13;
             boolean heldByMetal = tryMetalHold(target, holdExpiry, true);
-            metalSound(sl, x, y, z, now, 0, SoundEvents.ANVIL_PLACE, 0.10f, 0.95f); // clic du saya.
-            metalSound(sl, x, y, z, now, 8, SoundEvents.PLAYER_ATTACK_SWEEP, 0.46f, 1.90f); // dégainage.
+            Set<Integer> bladeHits = new HashSet<>();
+            for (int delay = 4; delay <= 44; delay++) {
+                int age = delay;
+                TestProcedure.schedule(sl, now + delay, () -> tickRazorBlade(sl, attackerId,
+                        x, y, z, attackX, attackZ, age, piercing, bladeScale, bladeHits));
+            }
+            metalSound(sl, x, y, z, now, 0, SoundEvents.ANVIL_PLACE, 0.10f, 0.95f);
+            metalSound(sl, x, y, z, now, 8, SoundEvents.PLAYER_ATTACK_SWEEP, 0.46f, 1.90f);
             metalSound(sl, x, y, z, now, 12, SoundEvents.PLAYER_ATTACK_CRIT, 0.58f, 1.60f);
-            metalSound(sl, x, y, z, now, 12, SoundEvents.ANVIL_PLACE, 0.14f, 2.00f); // reflet métallique.
+            metalSound(sl, x, y, z, now, 12, SoundEvents.ANVIL_PLACE, 0.14f, 2.00f);
             TestProcedure.schedule(sl, now + 12, () -> {
-                if (target.isAlive() && target.level() == sl) {
-                    hurtMetalPiercing(sl, attackerId, target, piercing);
+                // Garantie de la primaire si sa hitbox spécifique a glissé entre deux segments voxel.
+                if (target.isAlive() && target.level() == sl
+                        && hurtMetalContact(sl, attackerId, target, piercing, true, bladeHits)) {
+                    target.push(attackX * 0.28, 0.12, attackZ * 0.28);
+                    target.hurtMarked = true;
                 }
                 if (heldByMetal) releaseMovementHold(target, holdExpiry);
             });
@@ -1203,6 +1219,18 @@ public final class WeaponVfxServerListener {
             float ricochetDamage = net.minecraft.util.Mth.clamp(Math.max(0.0f, weaponDamage) * 0.30f, 0.15f, 2.50f);
             long holdExpiry = gameNow + 31;
             boolean heldByMetal = tryMetalHold(target, holdExpiry, false); // Position fixe, attaques conservées.
+            float bladeDamage = net.minecraft.util.Mth.clamp(Math.max(0.0f, weaponDamage) * 0.20f, 0.10f, 1.75f);
+            Set<Integer> bladeHits = new HashSet<>();
+            for (int delay = 4; delay <= 36; delay++) {
+                int age = delay;
+                TestProcedure.schedule(sl, now + delay, () -> tickPrismBlades(sl, attackerId,
+                        x, y, z, prismX, prismZ, age, bladeDamage, bladeScale, bladeHits));
+            }
+            TestProcedure.schedule(sl, now + 20, () -> {
+                if (target.isAlive() && target.level() == sl) {
+                    hurtMetalContact(sl, attackerId, target, bladeDamage, false, bladeHits);
+                }
+            });
             metalSound(sl, x, y, z, now, 0, SoundEvents.AMETHYST_BLOCK_CHIME, 0.40f, 1.10f);
             metalSound(sl, x, y, z, now, 18, SoundEvents.AMETHYST_BLOCK_CHIME, 0.24f, 1.55f);
             metalSound(sl, x, y, z, now, 30, SoundEvents.NOTE_BLOCK_BELL.value(), 0.38f, 1.35f);
@@ -1232,6 +1260,20 @@ public final class WeaponVfxServerListener {
             });
             return;
         }
+
+        // Les lames d'Arc blessent par contact, indépendamment des six mobs retenus pour le contrôle.
+        float bladeDamage = net.minecraft.util.Mth.clamp(Math.max(0.0f, weaponDamage) * 0.18f, 0.10f, 2.00f);
+        Set<Integer> bladeHits = new HashSet<>();
+        for (int delay = 2; delay <= 58; delay++) {
+            int age = delay;
+            TestProcedure.schedule(sl, now + delay, () -> tickArcBlades(sl, attackerId,
+                    x, y, z, prismX, prismZ, age, bladeDamage, bladeScale, bladeHits));
+        }
+        TestProcedure.schedule(sl, now + 34, () -> {
+            if (target.isAlive() && target.level() == sl) {
+                hurtMetalContact(sl, attackerId, target, bladeDamage, false, bladeHits);
+            }
+        });
 
         // Arc sélectionne au plus six ennemis à l'ouverture. Aucun mob entrant plus tard n'est ajouté.
         double radius = 4.0;
@@ -1281,6 +1323,176 @@ public final class WeaponVfxServerListener {
         });
     }
 
+    /**
+     * Contact des lames Métal : les tests suivent les segments voxel du renderer, côté serveur.
+     * Une activation possède son propre set d'IDs ; un mob ne peut donc pas être frappé chaque tick.
+     */
+    private static List<LivingEntity> metalContactTargets(ServerLevel level, int attackerId,
+                                                           double x, double y, double z, double radius) {
+        return level.getEntitiesOfClass(LivingEntity.class,
+                new AABB(x - radius, y - 3.0, z - radius, x + radius, y + 3.0, z + radius),
+                e -> e.isAlive() && e.getId() != attackerId
+                        && !(e instanceof Player) && e.getType() != EntityType.ARMOR_STAND);
+    }
+
+    private static LivingEntity metalAttacker(ServerLevel level, int attackerId) {
+        Entity entity = level.getEntity(attackerId);
+        return entity instanceof LivingEntity living && living.isAlive() ? living : null;
+    }
+
+    private static boolean hurtMetalContact(ServerLevel level, int attackerId, LivingEntity target,
+                                            float amount, boolean sharp, Set<Integer> hitIds) {
+        if (target == null || !target.isAlive() || target.level() != level
+                || target.getId() == attackerId || target instanceof Player
+                || target.getType() == EntityType.ARMOR_STAND || !hitIds.add(target.getId())) return false;
+        LivingEntity attacker = metalAttacker(level, attackerId);
+        if (attacker != null && target.isAlliedTo(attacker)) return false;
+        return hurtMetalEntity(level, attacker, target, amount, sharp);
+    }
+
+    private static boolean bladeSegmentHit(LivingEntity target, double centerX, double centerY, double centerZ,
+                                           double angle, double length, double halfWidth, double scale) {
+        double cos = Math.cos(angle), sin = Math.sin(angle);
+        double dx = target.getX() - centerX, dz = target.getZ() - centerZ;
+        double forward = dx * cos + dz * sin;
+        double lateral = -dx * sin + dz * cos;
+        double padding = halfWidth * scale + 0.12 + target.getBbWidth() * 0.5;
+        double verticalPadding = 0.22 * scale;
+        double targetBottom = target.getY(), targetTop = targetBottom + target.getBbHeight();
+        return forward >= -padding && forward <= length * scale + padding
+                && Math.abs(lateral) <= padding
+                && targetTop >= centerY - 1.15 * scale - verticalPadding
+                && targetBottom <= centerY + 1.15 * scale + verticalPadding;
+    }
+
+    private static double contactEaseOut(double value) {
+        value = net.minecraft.util.Mth.clamp(value, 0.0, 1.0);
+        return 1.0 - Math.pow(1.0 - value, 3.0);
+    }
+
+    private static double contactEaseInOut(double value) {
+        value = net.minecraft.util.Mth.clamp(value, 0.0, 1.0);
+        return value < 0.5 ? 4.0 * value * value * value
+                : 1.0 - Math.pow(-2.0 * value + 2.0, 3.0) * 0.5;
+    }
+
+    private static double contactEaseIn(double value) {
+        value = net.minecraft.util.Mth.clamp(value, 0.0, 1.0);
+        return value * value * value;
+    }
+
+    private static double contactSmooth(double value) {
+        value = net.minecraft.util.Mth.clamp(value, 0.0, 1.0);
+        return value * value * (3.0 - 2.0 * value);
+    }
+
+    private static boolean bladePointHit(LivingEntity target, double x, double y, double z,
+                                         double horizontal, double vertical, double scale) {
+        double dx = target.getX() - x, dz = target.getZ() - z;
+        double radius = horizontal * scale + target.getBbWidth() * 0.5;
+        return dx * dx + dz * dz <= radius * radius
+                && target.getY() + target.getBbHeight() >= y - vertical * scale
+                && target.getY() <= y + vertical * scale;
+    }
+
+    private static void tickRazorBlade(ServerLevel level, int attackerId,
+                                       double x, double y, double z, double dirX, double dirZ,
+                                       int age, float amount, float scale, Set<Integer> hitIds) {
+        double t = age / 48.0;
+        if (t > 0.88) return;
+        double rush = contactEaseOut(t / 0.14);
+        double centerX = x - dirX * 4.0 * scale * (1.0 - rush);
+        double centerZ = z - dirZ * 4.0 * scale * (1.0 - rush);
+        double anticipation = contactSmooth(t / 0.12);
+        double draw = contactEaseIn((t - 0.12) / 0.13);
+        double recoil = contactEaseOut((t - 0.25) / 0.20);
+        double bladeBase = -2.15 - anticipation * 0.28 + draw * 3.95 - recoil * 0.45;
+        double angle = Math.atan2(dirZ, dirX);
+        if (t > 0.25) angle += contactEaseInOut((t - 0.25) / 0.13) * 1.65;
+        double root = bladeBase + 0.12;
+        double rootX = centerX + Math.cos(angle) * root * scale;
+        double rootZ = centerZ + Math.sin(angle) * root * scale;
+        for (LivingEntity target : metalContactTargets(level, attackerId, centerX, y, centerZ, 6.0 * scale)) {
+            if (!bladeSegmentHit(target, rootX, y - 1.15 * scale, rootZ,
+                    angle, 3.30, 0.34, scale)) continue;
+            if (hurtMetalContact(level, attackerId, target, amount, true, hitIds)) {
+                // Projection légère, vers l'ennemi et non vers le joueur.
+                target.push(dirX * 0.28, 0.12, dirZ * 0.28);
+                target.hurtMarked = true;
+            }
+        }
+    }
+
+    private static void tickPrismBlades(ServerLevel level, int attackerId,
+                                        double x, double y, double z, double dirX, double dirZ,
+                                        int age, float amount, float scale, Set<Integer> hitIds) {
+        double t = age / 84.0;
+        if (t > 0.43) return;
+        double converge = contactEaseIn((t - 0.08) / 0.22);
+        double strike = contactEaseOut((t - 0.335) / 0.065);
+        double radius = (3.05 + (1.65 - 3.05) * converge + strike * 0.72) * scale;
+        double spin = 0.85 * contactEaseOut(t / 0.24) + 0.35 * contactSmooth((t - 0.22) / 0.10);
+        for (LivingEntity target : metalContactTargets(level, attackerId, x, y, z, 5.0 * scale)) {
+            for (int blade = 0; blade < 3; blade++) {
+                double angle = blade * Math.PI * 2.0 / 3.0 + spin * 0.34;
+                double bladeX = dirX * Math.cos(angle) - dirZ * Math.sin(angle);
+                double bladeZ = dirZ * Math.cos(angle) + dirX * Math.sin(angle);
+                double outerX = x + bladeX * radius, outerZ = z + bladeZ * radius;
+                // prismBlade dessine du rayon extérieur vers radius - 1.62 (lame entrante).
+                if (bladeSegmentHit(target, outerX, y - 1.05 * scale, outerZ,
+                        Math.atan2(-bladeZ, -bladeX), 1.62, 0.42, scale)) {
+                    hurtMetalContact(level, attackerId, target, amount, false, hitIds);
+                    break;
+                }
+            }
+        }
+    }
+
+    private static void tickArcBlades(ServerLevel level, int attackerId,
+                                      double x, double y, double z, double dirX, double dirZ,
+                                      int age, float amount, float scale, Set<Integer> hitIds) {
+        double t = age / 96.0;
+        double charge = contactEaseInOut((t - 0.02) / 0.26);
+        double release = contactEaseOut((t - 0.3125) / 0.11);
+        double counter = contactEaseOut((t - 0.43) / 0.10);
+        for (LivingEntity target : metalContactTargets(level, attackerId, x, y, z, 6.0 * scale)) {
+            boolean touched = false;
+            // Deux mâchoires courbes, avec le même déploiement vertical que les 58 maillons voxel.
+            if (t >= 0.02 && t <= 0.46) {
+                double radius = 2.45 + Math.sin(charge * Math.PI) * 0.35 + release * 0.55;
+                for (int jaw = 0; jaw < 2 && !touched; jaw++) {
+                    double yaw = jaw * Math.PI + Math.sin(charge * Math.PI) * 0.25;
+                    for (int part = 0; part < 24 && !touched; part++) {
+                        double angle = yaw - 1.18 + part / 23.0 * 2.36;
+                        double f = Math.cos(angle) * radius;
+                        double l = Math.sin(angle) * radius * release
+                                + (jaw == 0 ? -0.45 : 0.45) * (1.0 - release);
+                        double localY = 0.40 + jaw * 0.32 + Math.sin(angle) * radius * (1.0 - release) * 0.88;
+                        touched = bladePointHit(target, x + (dirX * f - dirZ * l) * scale,
+                                y + localY * scale, z + (dirZ * f + dirX * l) * scale,
+                                0.34, 0.38, scale);
+                    }
+                }
+            }
+            // Front principal : anneau de 96 lames, puis contre-arc de 80 lames.
+            if (!touched && release > 0.0 && t < 0.47) {
+                double radius = (0.72 + release * 4.85) * scale;
+                double dx = target.getX() - x, dz = target.getZ() - z;
+                double radial = Math.sqrt(dx * dx + dz * dz);
+                touched = Math.abs(radial - radius) <= 0.34 * scale + target.getBbWidth() * 0.5
+                        && bladePointHit(target, target.getX(), y + 0.20 * scale, target.getZ(), 0.0, 0.34, scale);
+            }
+            if (!touched && counter > 0.0 && t < 0.59) {
+                double radius = (0.95 + counter * 4.30) * scale;
+                double dx = target.getX() - x, dz = target.getZ() - z;
+                double radial = Math.sqrt(dx * dx + dz * dz);
+                touched = Math.abs(radial - radius) <= 0.34 * scale + target.getBbWidth() * 0.5
+                        && bladePointHit(target, target.getX(), y + 0.72 * scale, target.getZ(), 0.0, 0.38, scale);
+            }
+            if (touched) hurtMetalContact(level, attackerId, target, amount, false, hitIds);
+        }
+    }
+
     /** Les contrôles Métal ignorent joueurs, boss et Warden et n'écrasent jamais une emprise existante. */
     private static boolean tryMetalHold(LivingEntity target, long expiry, boolean fullStun) {
         if (!(target instanceof Enemy) || target.getType() == net.minecraft.world.entity.EntityType.ENDER_DRAGON
@@ -1291,11 +1503,11 @@ public final class WeaponVfxServerListener {
         return true;
     }
 
-    /** Perforation Razor avec crédit du kill et marqueur anti-récursion, sans passer par l'armure. */
-    private static boolean hurtMetalPiercing(ServerLevel sl, int attackerId,
-                                             LivingEntity target, float amount) {
+    /** Un hit de contact conserve le crédit du tueur et le verrou anti-récursion. */
+    private static boolean hurtMetalEntity(ServerLevel sl, LivingEntity attacker,
+                                           LivingEntity target, float amount, boolean sharp) {
         if (!target.isAlive() || target.level() != sl || !(amount > 0.0f)) return false;
-        LivingEntity attacker = sl.getEntity(attackerId) instanceof LivingEntity living ? living : null;
+        if (!sharp) return hurtWithCapturedWeapon(sl, attacker == null ? -1 : attacker.getId(), target, amount);
         DamageSource source = attacker != null
                 ? sl.damageSources().indirectMagic(attacker, attacker) : sl.damageSources().magic();
         INTERNAL_SIGNATURE_DAMAGE.add(target.getId());

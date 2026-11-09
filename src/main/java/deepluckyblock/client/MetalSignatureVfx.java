@@ -35,6 +35,7 @@ public final class MetalSignatureVfx {
         float length = Mth.sqrt(dx * dx + dz * dz);
         if (length < 0.001f) { dx = 0.0f; dz = 1.0f; }
         else { dx /= length; dz /= length; }
+        if (variant == RAZOR) { dx = -dx; dz = -dz; }
         Voxels v = new Voxels(vc, mat, tmp, cx, cy, cz, dx, dz);
         if (variant == RAZOR) renderRazor(v, t, alpha, salt);
         else if (variant == PRISM) renderPrism(v, t, alpha, salt);
@@ -88,24 +89,27 @@ public final class MetalSignatureVfx {
             }
         }
 
-        razorKatana(v, bladeBase, bladeY, a);
+        // Après la percée, la MÊME grande épée pivote de 95° : c'est ce slash qui touche en AoE.
+        float slash = easeInOut((t - 0.25f) / 0.13f);
+        Voxels bladeFrame = slash > 0.0f ? v.turned(slash * 1.65f) : v;
+        razorKatana(bladeFrame, bladeBase, bladeY, a);
 
         // Un seul reflet parcourt la courbure ; il ne devient jamais une seconde lame.
         float gleamTravel = clamp((t - 0.16f) / 0.18f);
         if (gleamTravel > 0.0f && gleamTravel < 1.0f) {
             float f = bladeBase + 0.20f + gleamTravel * 3.05f;
             float y = bladeY + katanaCurve(gleamTravel) - 0.11f;
-            v.rot(f, y, 0.0f, 0.15f, 0.035f, 0.045f, 0.0f, 0.0f, 0.70f,
+            bladeFrame.rot(f, y, 0.0f, 0.15f, 0.035f, 0.045f, 0.0f, 0.0f, 0.70f,
                     GLINT, a);
             for (int axis = 0; axis < 4; axis++) {
                 float angle = axis * TAU / 4.0f + 0.7853982f;
-                v.link(f - Mth.cos(angle) * 0.20f, y - Mth.sin(angle) * 0.20f, 0.0f,
+                bladeFrame.link(f - Mth.cos(angle) * 0.20f, y - Mth.sin(angle) * 0.20f, 0.0f,
                         f + Mth.cos(angle) * 0.20f, y + Mth.sin(angle) * 0.20f, 0.0f,
                         0.018f, GLINT, EDGE, a);
             }
         }
 
-        // Une tête et une queue courtes : la section suit le geste puis disparaît en quelques ticks.
+        // Traînée courte du slash horizontal, alignée sur la rotation réelle de la grande épée.
         float cutHead = easeOut((t - 0.238f) / 0.055f);
         float cutTail = clamp((t - 0.275f) / 0.055f);
         float cutLife = 1.0f - smooth((t - 0.285f) / 0.065f);
@@ -113,11 +117,12 @@ public final class MetalSignatureVfx {
             for (int i = 0; i < 48; i++) {
                 float u = i / 47.0f;
                 if (u > cutHead || u < cutTail) continue;
-                float f = -1.65f + u * 3.30f;
-                float y = -0.65f + u * 1.50f;
+                float angle = u * 1.65f;
+                float radius = 2.65f;
                 float trail = clamp((u - cutTail) / 0.22f);
                 int cutAlpha = Math.round(a * cutLife * (0.20f + trail * 0.80f));
-                v.rot(f, y, 0.0f, 0.032f, 0.012f, 0.010f, 0.0f, 0.0f, 0.405f,
+                v.rot(Mth.cos(angle) * radius, 0.38f, Mth.sin(angle) * radius,
+                        0.025f, 0.012f, 0.075f, angle, 0.0f, 0.0f,
                         i % 8 == 0 ? GLINT : EDGE, cutAlpha);
             }
         }
@@ -538,6 +543,12 @@ public final class MetalSignatureVfx {
     /** Coordonnées locales orientées ; toutes les primitives ajoutent exactement une fois cy. */
     private record Voxels(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                           float cx, float cy, float cz, float dx, float dz) {
+        Voxels turned(float yaw) {
+            float cos = Mth.cos(yaw), sin = Mth.sin(yaw);
+            return new Voxels(vc, mat, tmp, cx, cy, cz,
+                    dx * cos - dz * sin, dz * cos + dx * sin);
+        }
+
         void cube(float f, float y, float l, float half, int rgb, int alpha) {
             box(f, y, l, half, half, half, rgb, alpha);
         }
