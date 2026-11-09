@@ -1168,7 +1168,7 @@ public final class WeaponVfxServerListener {
     /**
      * Gameplay Métal : trois rôles volontairement différents.
      * Razor = lame perforante joueur → ennemi + slash AoE ; Prism = trois lames + deux ricochets ;
-     * Arc = contact des lames + contrôle de six ennemis maximum. Aucun second Annihilating Sweep.
+     * Arc = dégâts cumulables par lame + contrôle de six ennemis maximum. Aucun second Annihilating Sweep.
      */
     private static void applyMetalGameplay(LivingEntity attacker, LivingEntity target,
                                            WeaponVisualEffectId fx, float weaponDamage) {
@@ -1263,18 +1263,12 @@ public final class WeaponVfxServerListener {
 
         // Les lames d'Arc blessent par contact, indépendamment des six mobs retenus pour le contrôle.
         float bladeDamage = net.minecraft.util.Mth.clamp(Math.max(0.0f, weaponDamage) * 0.18f, 0.10f, 2.00f);
-        Set<Integer> bladeHits = new HashSet<>();
+        Set<ArcBladeHit> bladeHits = new HashSet<>();
         for (int delay = 2; delay <= 58; delay++) {
             int age = delay;
             TestProcedure.schedule(sl, now + delay, () -> tickArcBlades(sl, attackerId,
                     x, y, z, prismX, prismZ, age, bladeDamage, bladeScale, bladeHits));
         }
-        TestProcedure.schedule(sl, now + 34, () -> {
-            if (target.isAlive() && target.level() == sl) {
-                hurtMetalContact(sl, attackerId, target, bladeDamage, false, bladeHits);
-            }
-        });
-
         // Arc sélectionne au plus six ennemis à l'ouverture. Aucun mob entrant plus tard n'est ajouté.
         double radius = 4.0;
         List<LivingEntity> controlled = new ArrayList<>(sl.getEntitiesOfClass(LivingEntity.class,
@@ -1325,7 +1319,7 @@ public final class WeaponVfxServerListener {
 
     /**
      * Contact des lames Métal : les tests suivent les segments voxel du renderer, côté serveur.
-     * Une activation possède son propre set d'IDs ; un mob ne peut donc pas être frappé chaque tick.
+     * Razor/Prism utilisent un set par mob ; Arc utilise une clé (mob, lame) pour cumuler les lames.
      */
     private static List<LivingEntity> metalContactTargets(ServerLevel level, int attackerId,
                                                            double x, double y, double z, double radius) {
@@ -1338,6 +1332,31 @@ public final class WeaponVfxServerListener {
     private static LivingEntity metalAttacker(ServerLevel level, int attackerId) {
         Entity entity = level.getEntity(attackerId);
         return entity instanceof LivingEntity living && living.isAlive() ? living : null;
+    }
+
+    /** Une clé par mob ET par lame physique : les hits de lames différentes sont cumulables. */
+    private record ArcBladeHit(int entityId, int bladeId) { }
+
+    private static boolean hurtArcBladeContact(ServerLevel level, int attackerId, LivingEntity target,
+                                               float amount, int bladeId, Set<ArcBladeHit> hitIds,
+                                               double contactX, double contactZ) {
+        if (target == null || !target.isAlive() || target.level() != level
+                || target.getId() == attackerId || target instanceof Player
+                || target.getType() == EntityType.ARMOR_STAND
+                || !hitIds.add(new ArcBladeHit(target.getId(), bladeId))) return false;
+        LivingEntity attacker = metalAttacker(level, attackerId);
+        if (attacker != null && target.isAlliedTo(attacker)) return false;
+        boolean hurt = hurtMetalEntity(level, attacker, target, amount, false);
+        if (hurt) {
+            // Petite projection locale par lame ; le grand push radial de tick 30 reste indépendant.
+            double dx = target.getX() - contactX, dz = target.getZ() - contactZ;
+            double length = Math.sqrt(dx * dx + dz * dz);
+            if (length < 0.001) { dx = target.getX(); dz = target.getZ(); length = Math.sqrt(dx * dx + dz * dz); }
+            if (length < 0.001) { dx = 1.0; dz = 0.0; length = 1.0; }
+            target.push(dx / length * 0.055, 0.035, dz / length * 0.055);
+            target.hurtMarked = true;
+        }
+        return hurt;
     }
 
     private static boolean hurtMetalContact(ServerLevel level, int attackerId, LivingEntity target,
@@ -1450,46 +1469,62 @@ public final class WeaponVfxServerListener {
 
     private static void tickArcBlades(ServerLevel level, int attackerId,
                                       double x, double y, double z, double dirX, double dirZ,
-                                      int age, float amount, float scale, Set<Integer> hitIds) {
+                                      int age, float amount, float scale, Set<ArcBladeHit> hitIds) {
         double t = age / 96.0;
         double charge = contactEaseInOut((t - 0.02) / 0.26);
         double release = contactEaseOut((t - 0.3125) / 0.11);
         double counter = contactEaseOut((t - 0.43) / 0.10);
         for (LivingEntity target : metalContactTargets(level, attackerId, x, y, z, 6.0 * scale)) {
-            boolean touched = false;
-            // Deux mâchoires courbes, avec le même déploiement vertical que les 58 maillons voxel.
+            // Chaque maillon est une mini-lame réelle : pas de booléen global ni de break après un hit.
             if (t >= 0.02 && t <= 0.46) {
                 double radius = 2.45 + Math.sin(charge * Math.PI) * 0.35 + release * 0.55;
-                for (int jaw = 0; jaw < 2 && !touched; jaw++) {
+                for (int jaw = 0; jaw < 2; jaw++) {
                     double yaw = jaw * Math.PI + Math.sin(charge * Math.PI) * 0.25;
-                    for (int part = 0; part < 24 && !touched; part++) {
-                        double angle = yaw - 1.18 + part / 23.0 * 2.36;
+                    for (int part = 0; part < 58; part++) {
+                        double angle = yaw - 1.18 + part / 57.0 * 2.36;
                         double f = Math.cos(angle) * radius;
                         double l = Math.sin(angle) * radius * release
                                 + (jaw == 0 ? -0.45 : 0.45) * (1.0 - release);
                         double localY = 0.40 + jaw * 0.32 + Math.sin(angle) * radius * (1.0 - release) * 0.88;
-                        touched = bladePointHit(target, x + (dirX * f - dirZ * l) * scale,
-                                y + localY * scale, z + (dirZ * f + dirX * l) * scale,
-                                0.34, 0.38, scale);
+                        double contactX = x + (dirX * f - dirZ * l) * scale;
+                        double contactZ = z + (dirZ * f + dirX * l) * scale;
+                        if (bladePointHit(target, contactX, y + localY * scale, contactZ,
+                                0.22, 0.28, scale)) {
+                            hurtArcBladeContact(level, attackerId, target, amount,
+                                    jaw * 58 + part, hitIds, contactX, contactZ);
+                        }
                     }
                 }
             }
-            // Front principal : anneau de 96 lames, puis contre-arc de 80 lames.
-            if (!touched && release > 0.0 && t < 0.47) {
+            // Front principal : les 96 lames ont chacune leur propre hit cumulable.
+            if (release > 0.0 && t < 0.47) {
                 double radius = (0.72 + release * 4.85) * scale;
-                double dx = target.getX() - x, dz = target.getZ() - z;
-                double radial = Math.sqrt(dx * dx + dz * dz);
-                touched = Math.abs(radial - radius) <= 0.34 * scale + target.getBbWidth() * 0.5
-                        && bladePointHit(target, target.getX(), y + 0.20 * scale, target.getZ(), 0.0, 0.34, scale);
+                for (int part = 0; part < 96; part++) {
+                    double angle = part * Math.PI * 2.0 / 96.0 + release * 0.65;
+                    double contactX = x + Math.cos(angle) * radius;
+                    double contactZ = z + Math.sin(angle) * radius;
+                    if (bladePointHit(target, contactX, y + 0.20 * scale, contactZ,
+                            0.22, 0.28, scale)) {
+                        hurtArcBladeContact(level, attackerId, target, amount,
+                                1000 + part, hitIds, contactX, contactZ);
+                    }
+                }
             }
-            if (!touched && counter > 0.0 && t < 0.59) {
+            // Contre-arc : les 80 mini-lames obliques sont également indépendantes.
+            if (counter > 0.0 && t < 0.59) {
                 double radius = (0.95 + counter * 4.30) * scale;
-                double dx = target.getX() - x, dz = target.getZ() - z;
-                double radial = Math.sqrt(dx * dx + dz * dz);
-                touched = Math.abs(radial - radius) <= 0.34 * scale + target.getBbWidth() * 0.5
-                        && bladePointHit(target, target.getX(), y + 0.72 * scale, target.getZ(), 0.0, 0.38, scale);
+                for (int part = 0; part < 80; part++) {
+                    double angle = -part * Math.PI * 2.0 / 80.0 - counter * 0.90;
+                    double contactX = x + Math.cos(angle) * radius;
+                    double contactZ = z + Math.sin(angle) * radius;
+                    double localY = 0.72 + Math.sin(angle * 2.0) * 0.10;
+                    if (bladePointHit(target, contactX, y + localY * scale, contactZ,
+                            0.22, 0.28, scale)) {
+                        hurtArcBladeContact(level, attackerId, target, amount,
+                                2000 + part, hitIds, contactX, contactZ);
+                    }
+                }
             }
-            if (touched) hurtMetalContact(level, attackerId, target, amount, false, hitIds);
         }
     }
 
