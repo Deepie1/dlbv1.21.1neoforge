@@ -1,5 +1,9 @@
 # ⚠️ LIRE ÇA (IMPORTANT) — Deep Lucky Block 1.21.1
 
+## Mise à jour Lumière et avertissements du log
+
+Les trois signatures Lumière, `/anim light`, leurs dégâts serveur et les corrections de ressources sont documentés dans **`LIGHT_SIGNATURES.md`**. Les copies Java et ressources se trouvent comme précédemment sous `FIXES_MCREATOR/src/main`.
+
 ## Bonne nouvelle : la réparation est maintenant AUTOMATIQUE
 
 Dans `build.gradle` il y a un bloc **"PATCH AUTOMATIQUE — MCREATOR 1.21.1"**

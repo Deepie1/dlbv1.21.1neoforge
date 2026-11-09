@@ -338,7 +338,8 @@ public final class DlbVfxCommand {
                 .then(Commands.literal("poison").executes(ctx -> giveAnimationSword(ctx, "poison")))
                 .then(Commands.literal("terre").executes(ctx -> giveAnimationSword(ctx, "terre")))
                 .then(Commands.literal("earth").executes(ctx -> giveAnimationSword(ctx, "terre")))
-                .then(Commands.literal("metal").executes(ctx -> giveAnimationSword(ctx, "metal")));
+                .then(Commands.literal("metal").executes(ctx -> giveAnimationSword(ctx, "metal")))
+                .then(Commands.literal("light").executes(ctx -> giveAnimationSword(ctx, "light")));
         event.getDispatcher().register(anim);
     }
 
@@ -355,6 +356,7 @@ public final class DlbVfxCommand {
             case "poison" -> "§2Animation Poison";
             case "terre" -> "§6Animation §aTerre";
             case "metal" -> "§7Animation Métal";
+            case "light" -> "§eAnimation Lumière";
             default -> "§aAnimation Gaia";
         };
         sword.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,

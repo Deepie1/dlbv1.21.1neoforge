@@ -1,0 +1,21 @@
+{
+  "required": true,
+  "minVersion": "0.8.5",
+  "package": "deepluckyblock.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "plugin": "deepluckyblock.mixin.DlbMixinPlugin",
+  "mixins": [],
+  "client": [
+    "ItemRendererEnchantMixin",
+    "RenderTypeEnchantMixin",
+    "HumanoidArmorLayerEnchantMixin",
+    "RenderStateShardConstantAccessor",
+    "RenderStateShardShaderAccessor",
+    "BlockXrayMixin",
+    "LiquidBlockRendererXrayMixin",
+    "SectionCompilerXrayMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

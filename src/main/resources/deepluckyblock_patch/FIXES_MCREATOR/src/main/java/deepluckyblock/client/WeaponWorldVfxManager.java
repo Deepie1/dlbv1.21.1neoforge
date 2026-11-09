@@ -518,17 +518,17 @@ public final class WeaponWorldVfxManager {
             case TITAN_GRASP, SANDSTORM_DUNE -> 140;
             case WARLORD_RALLY_SIGIL -> 120;
             case RAZOR_GLEAM -> 48;
+            case SERAPH_SKY_PILLAR, CHRONO_ETERNAL_HALO -> 100;
+            case ASTRAL_STAR_LANCE -> 80;
             case SUPREME_PRISM_EDGE -> 84;
             case ANNIHILATING_ARC -> 96;
-            case SERAPH_SKY_PILLAR, ABYSSAL_MAELSTROM,
-                 DRAGON_CHAOS_PRISM, BIG_BANG_SCAR -> 22;
+            case ABYSSAL_MAELSTROM, DRAGON_CHAOS_PRISM, BIG_BANG_SCAR -> 22;
             case ECLIPSE_VEIL, NULL_RIFT_FISSURE,
                  CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE -> 18;
             case VENOM_BRIAR_FANG -> 112;
             case MIASMA_SHROUD -> 600; // Le serveur raccourcit à 6 s ou enchaîne jusqu'à 30 s.
             case PLAGUE_NOVA -> 128;
-            case ASTRAL_STAR_LANCE, VOID_WARP_SPHERE,
-                 CRIMSON_SIPHON, CHRONO_ETERNAL_HALO -> 16;
+            case VOID_WARP_SPHERE, CRIMSON_SIPHON -> 16;
             case CHAIN_VOLT_ARC -> 11;
             default -> 14;
         };
@@ -542,6 +542,12 @@ public final class WeaponWorldVfxManager {
         if (kind == KIND_IMPACT && fx.element() == DeepElement.POISON) {
             float maximum = fx == WeaponVisualEffectId.PLAGUE_NOVA ? 1.0f : 1.15f;
             sizeScale = Mth.clamp(sizeScale, 0.60f, maximum);
+        }
+        // Astral conserve sa direction attaquant -> cible, mais sa nouvelle lance est centrée sur
+        // l'impact et suit la même chronologie en mêlée, à distance et sur un bloc.
+        if (fx == WeaponVisualEffectId.ASTRAL_STAR_LANCE && kind == KIND_BEAM_SIPHON) {
+            kind = KIND_IMPACT;
+            x = tx; y = ty; z = tz;
         }
         VfxInstance instance = new VfxInstance(fx, kind, intensity, x, y, z, tx, ty, tz,
                 yaw, 0.0f, 0.25f, duration, seed, paletteMask, sizeScale);
@@ -1522,7 +1528,7 @@ public final class WeaponWorldVfxManager {
         if (tag != null) {
             String candidate = tag.getString("DlbAnimFamily");
             if (candidate.equals("feu") || candidate.equals("gaia") || candidate.equals("poison")
-                    || candidate.equals("terre") || candidate.equals("metal")) animFamily = candidate;
+                    || candidate.equals("terre") || candidate.equals("metal") || candidate.equals("light")) animFamily = candidate;
         }
         if (layers.isEmpty() && animFamily == null) return;
 
@@ -1589,6 +1595,13 @@ public final class WeaponWorldVfxManager {
                 case 0 -> WeaponVisualEffectId.SEISMIC_TECTONIC;
                 case 1 -> WeaponVisualEffectId.TITAN_GRASP;
                 default -> WeaponVisualEffectId.WARLORD_RALLY_SIGIL;
+            };
+        }
+        if (family.equals("light")) {
+            return switch (index) {
+                case 0 -> WeaponVisualEffectId.SERAPH_SKY_PILLAR;
+                case 1 -> WeaponVisualEffectId.ASTRAL_STAR_LANCE;
+                default -> WeaponVisualEffectId.CHRONO_ETERNAL_HALO;
             };
         }
         if (family.equals("metal")) {
@@ -1772,6 +1785,14 @@ public final class WeaponWorldVfxManager {
                 vc = alphaVc;
             }
 
+            VertexConsumer lightBody = null;
+            if (inst.effect == WeaponVisualEffectId.SERAPH_SKY_PILLAR
+                    || inst.effect == WeaponVisualEffectId.ASTRAL_STAR_LANCE
+                    || inst.effect == WeaponVisualEffectId.CHRONO_ETERNAL_HALO) {
+                if (alphaVc == null) alphaVc = buffers.getBuffer(getTranslucentRenderType());
+                lightBody = alphaVc;
+            }
+
             // T350-VFX-VARIATIONS : chaque déclinaison a sa densité de pixels et sa taille.
             boolean detailedPoison = inst.effect.element() == DeepElement.POISON
                     && inst.kind != KIND_SWING_SLASH;
@@ -1793,7 +1814,7 @@ public final class WeaponWorldVfxManager {
                 } else if (inst.kind == KIND_BEAM_SIPHON) {
                     renderVoxelBeamOrSiphon(vc, mat, tmp, camPos, inst, t);
                 } else {
-                    renderVoxelImpact(vc, mat, tmp, camPos, inst, t);
+                    renderVoxelImpact(vc, mat, tmp, camPos, inst, t, lightBody);
                 }
             } finally {
                 pixelDensity = 1.0f;
@@ -2631,7 +2652,7 @@ public final class WeaponWorldVfxManager {
     // ==================== 3. IMPACTS, CRITIQUES & EFFETS GRANDIOSES EN MINI-PIXELS 3D ====================
 
     private static void renderVoxelImpact(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                          Vec3 cam, VfxInstance inst, float t) {
+                                          Vec3 cam, VfxInstance inst, float t, VertexConsumer lightBody) {
         float cx = quantize((float) (inst.x - cam.x), 0.0625f);
         float cy = quantize((float) (inst.y - cam.y), 0.0625f);
         float cz = quantize((float) (inst.z - cam.z), 0.0625f);
@@ -2672,7 +2693,7 @@ public final class WeaponWorldVfxManager {
             case METAL -> impactMetal(iv);
             case WOOD -> impactWood(iv);
             case POISON -> impactPoison(iv);
-            case LIGHT -> impactLight(iv);
+            case LIGHT -> impactLight(iv, lightBody);
             case SHADOW -> impactShadow(iv);
             case BLOOD -> impactBlood(iv);
             case VOID -> impactVoid(iv);
@@ -3585,11 +3606,30 @@ public final class WeaponWorldVfxManager {
      * 光 LUMIÈRE — la lumière DESCEND : des rayons en plaques inclinées tombent du ciel et
      * convergent, la couronne s'ouvre, un faisceau relie le ciel à la cible.
      */
-    private static void impactLight(ImpactView v) {
+    private static void impactLight(ImpactView v, VertexConsumer lightBody) {
         float t = v.t();
         float S = v.S();
         WeaponVisualEffectId fx = v.inst().effect;
+        int signature = switch (fx) {
+            case SERAPH_SKY_PILLAR -> LightSignatureVfx.SERAPH;
+            case ASTRAL_STAR_LANCE -> LightSignatureVfx.ASTRAL;
+            case CHRONO_ETERNAL_HALO -> LightSignatureVfx.CHRONO;
+            default -> -1;
+        };
+        if (signature >= 0) {
+            boolean previousPulse = voxelPulseEnabled;
+            voxelPulseEnabled = false;
+            try {
+                LightSignatureVfx.render(v.vc(), lightBody, v.mat(), v.tmp(),
+                        v.cx(), v.cy(), v.cz(), t, v.dirX(), v.dirZ(), signature,
+                        v.fadeA(), (int) (v.inst().seed & 0x7FFFFFFFL));
+            } finally {
+                voxelPulseEnabled = previousPulse;
+            }
+            return;
+        }
 
+        // GOLDEN_CRIT_STAR conserve son accent critique historique.
         // T366-VOXEL-SCULPT : colonne de lumière PLEINE (masse de cristal, pas un faisceau de fils).
         v.sculpt(SCULPT_COLUMN, 0.78f + 0.42f * t, 0.88f);
 

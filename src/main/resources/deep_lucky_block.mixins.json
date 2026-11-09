@@ -3,7 +3,6 @@
   "minVersion": "0.8.5",
   "package": "deepluckyblock.mixin",
   "compatibilityLevel": "JAVA_21",
-  "refmap": "deep_lucky_block.refmap.json",
   "plugin": "deepluckyblock.mixin.DlbMixinPlugin",
   "mixins": [],
   "client": [

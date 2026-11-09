@@ -185,6 +185,10 @@ public final class WeaponVfxServerListener {
             WeaponVisualEffectId.RAZOR_GLEAM, WeaponVisualEffectId.SUPREME_PRISM_EDGE,
             WeaponVisualEffectId.ANNIHILATING_ARC
     };
+    private static final WeaponVisualEffectId[] ANIM_LIGHT = {
+            WeaponVisualEffectId.SERAPH_SKY_PILLAR, WeaponVisualEffectId.ASTRAL_STAR_LANCE,
+            WeaponVisualEffectId.CHRONO_ETERNAL_HALO
+    };
 
     private WeaponVfxServerListener() {}
 
@@ -320,6 +324,7 @@ public final class WeaponVfxServerListener {
             applyWoodGameplay(attacker, livingTarget, fx, sizeScaleOf(target), estimatedWeaponDamage(attacker));
             applyEarthGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker));
             applyMetalGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker));
+            applyLightGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker), sizeScaleOf(target));
             applyPoisonGameplay(attacker, livingTarget, fx);
         }
     }
@@ -463,6 +468,7 @@ public final class WeaponVfxServerListener {
             applyWoodGameplay(comboAttacker, target, sig, sizeScale, weaponDamage);
             applyEarthGameplay(comboAttacker, target, sig, weaponDamage);
             applyMetalGameplay(comboAttacker, target, sig, weaponDamage);
+            applyLightGameplay(comboAttacker, target, sig, weaponDamage, sizeScale);
             applyPoisonGameplay(comboAttacker, target, sig);
             // Étincelles de la famille, une par élément : le mélange de couleurs se voit tout de suite.
             WeaponVfxSubtle.Subtle accent = WeaponVfxSubtle.pick(el, sl.random.nextLong());
@@ -1171,6 +1177,163 @@ public final class WeaponVfxServerListener {
      * Razor = lame perforante joueur → ennemi + slash AoE ; Prism = trois lames + deux ricochets ;
      * Arc = dégâts cumulables par lame + contrôle de six ennemis maximum. Aucun second Annihilating Sweep.
      */
+
+    /**
+     * Gameplay Lumière synchronisé avec la géométrie visible. Les dégâts utilisent le montant de
+     * l'attaque capturé, conservent le crédit du tueur et passent par le verrou anti-récursion.
+     */
+    private static void applyLightGameplay(LivingEntity attacker, LivingEntity target,
+                                           WeaponVisualEffectId fx, float weaponDamage, float visualScale) {
+        if (target == null || !(target.level() instanceof ServerLevel sl)) return;
+        if (fx != WeaponVisualEffectId.SERAPH_SKY_PILLAR
+                && fx != WeaponVisualEffectId.ASTRAL_STAR_LANCE
+                && fx != WeaponVisualEffectId.CHRONO_ETERNAL_HALO) return;
+        int now = TestProcedure.currentTick(sl);
+        int attackerId = attacker == null ? -1 : attacker.getId();
+        float captured = Math.max(0.0f, weaponDamage);
+        visualScale = net.minecraft.util.Mth.clamp(visualScale, 0.20f, 6.0f);
+        double x = target.getX(), y = target.getY() + target.getBbHeight() * 0.50, z = target.getZ();
+
+        if (fx == WeaponVisualEffectId.SERAPH_SKY_PILLAR) {
+            lightSound(sl, x, y, z, now, 0, SoundEvents.AMETHYST_BLOCK_CHIME, 0.42f, 0.82f);
+            lightSound(sl, x, y, z, now, 28, SoundEvents.BEACON_ACTIVATE, 0.55f, 1.35f);
+            lightSound(sl, x, y, z, now, 40, SoundEvents.TOTEM_USE, 0.42f, 1.70f);
+            lightSound(sl, x, y, z, now, 70, SoundEvents.AMETHYST_BLOCK_CHIME, 0.32f, 1.65f);
+            TestProcedure.schedule(sl, now + 40, () -> {
+                double radius = 1.65 * visualScale;
+                for (LivingEntity entity : sl.getEntitiesOfClass(LivingEntity.class,
+                        new AABB(x - radius - 1.0, y - 2.0, z - radius - 1.0,
+                                x + radius + 1.0, y + 3.5, z + radius + 1.0))) {
+                    if (!lightTarget(entity, target, attackerId) || !cylinderContact(entity, x, y, z, radius, visualScale)) continue;
+                    boolean primary = entity.getId() == target.getId();
+                    boolean undead = entity.getType().is(net.minecraft.tags.EntityTypeTags.SENSITIVE_TO_SMITE);
+                    float amount = primary
+                            ? net.minecraft.util.Mth.clamp(captured * (undead ? 0.49f : 0.34f), 0.20f, 3.25f)
+                            : net.minecraft.util.Mth.clamp(captured * (undead ? 0.26f : 0.18f), 0.10f, 1.75f);
+                    if (!hurtWithCapturedWeapon(sl, attackerId, entity, amount)) continue;
+                    entity.addEffect(new MobEffectInstance(MobEffects.GLOWING, 100, 0, false, true, true));
+                    double dx = entity.getX() - x, dz = entity.getZ() - z;
+                    double len = Math.max(0.15, Math.sqrt(dx * dx + dz * dz));
+                    double force = primary ? 0.08 : 0.14;
+                    entity.push(dx / len * force, primary ? 0.16 : 0.09, dz / len * force);
+                    entity.hurtMarked = true;
+                }
+            });
+            return;
+        }
+
+        if (fx == WeaponVisualEffectId.ASTRAL_STAR_LANCE) {
+            double rawX = attacker == null ? 0.0 : target.getX() - attacker.getX();
+            double rawZ = attacker == null ? 1.0 : target.getZ() - attacker.getZ();
+            double len = Math.max(0.001, Math.sqrt(rawX * rawX + rawZ * rawZ));
+            double dirX = rawX / len, dirZ = rawZ / len;
+            double startX = x - dirX * 4.35 * visualScale;
+            double startZ = z - dirZ * 4.35 * visualScale;
+            double endX = x + dirX * 4.35 * visualScale, endZ = z + dirZ * 4.35 * visualScale;
+            lightSound(sl, x, y, z, now, 0, SoundEvents.AMETHYST_BLOCK_CHIME, 0.32f, 1.45f);
+            lightSound(sl, x, y, z, now, 15, SoundEvents.CHORUS_FRUIT_TELEPORT, 0.30f, 1.70f);
+            lightSound(sl, x, y, z, now, 24, SoundEvents.PLAYER_ATTACK_CRIT, 0.52f, 1.80f);
+            lightSound(sl, x, y, z, now, 48, SoundEvents.AMETHYST_BLOCK_CHIME, 0.28f, 1.85f);
+            TestProcedure.schedule(sl, now + 24, () -> {
+                List<LivingEntity> candidates = new ArrayList<>(sl.getEntitiesOfClass(LivingEntity.class,
+                        new AABB(Math.min(startX, endX) - 1.0, y - 2.5, Math.min(startZ, endZ) - 1.0,
+                                Math.max(startX, endX) + 1.0, y + 2.5, Math.max(startZ, endZ) + 1.0)));
+                LivingEntity lineAttacker = attacker;
+                candidates.removeIf(entity -> !lightTarget(entity, target, attackerId)
+                        || !segmentHitsEntity(startX, y, startZ, endX, y, endZ, entity, 0.16)
+                        || (entity.getId() != target.getId() && lineAttacker != null
+                            && !lineAttacker.hasLineOfSight(entity)));
+                candidates.sort((a, b) -> Double.compare(
+                        (a.getX() - startX) * dirX + (a.getZ() - startZ) * dirZ,
+                        (b.getX() - startX) * dirX + (b.getZ() - startZ) * dirZ));
+                for (LivingEntity entity : candidates) {
+                    boolean primary = entity.getId() == target.getId();
+                    float amount = primary
+                            ? net.minecraft.util.Mth.clamp(captured * 0.30f, 0.15f, 2.75f)
+                            : net.minecraft.util.Mth.clamp(captured * 0.18f, 0.10f, 1.75f);
+                    if (!hurtWithCapturedWeapon(sl, attackerId, entity, amount)) continue;
+                    entity.addEffect(new MobEffectInstance(MobEffects.GLOWING, 100, 0, false, true, true));
+                    entity.push(dirX * (primary ? 0.16 : 0.09), 0.07, dirZ * (primary ? 0.16 : 0.09));
+                    entity.hurtMarked = true;
+                }
+            });
+            return;
+        }
+
+        // Chrono ralentit seulement les ennemis non-boss ; Warden, Wither et Dragon gardent leur IA.
+        if (target instanceof Enemy && target.getType() != EntityType.ENDER_DRAGON
+                && target.getType() != EntityType.WITHER && target.getType() != EntityType.WARDEN) {
+            target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                    105, 1, false, true, true));
+        }
+        lightSound(sl, x, y, z, now, 0, SoundEvents.AMETHYST_BLOCK_CHIME, 0.30f, 0.75f);
+        lightSound(sl, x, y, z, now, 55, SoundEvents.NOTE_BLOCK_BELL.value(), 0.55f, 1.55f);
+        lightSound(sl, x, y, z, now, 86, SoundEvents.CHORUS_FRUIT_TELEPORT, 0.25f, 0.90f);
+        TestProcedure.schedule(sl, now + 55, () -> {
+            double radius = 1.55 * visualScale;
+            for (LivingEntity entity : sl.getEntitiesOfClass(LivingEntity.class,
+                    new AABB(x - radius - 1.0, y - 2.0, z - radius - 1.0,
+                            x + radius + 1.0, y + 2.5, z + radius + 1.0))) {
+                if (!lightTarget(entity, target, attackerId) || !cylinderContact(entity, x, y, z, radius, visualScale)) continue;
+                boolean primary = entity.getId() == target.getId();
+                float amount = primary
+                        ? net.minecraft.util.Mth.clamp(captured * 0.38f, 0.20f, 3.25f)
+                        : net.minecraft.util.Mth.clamp(captured * 0.16f, 0.10f, 1.50f);
+                if (!hurtWithCapturedWeapon(sl, attackerId, entity, amount)) continue;
+                double dx = entity.getX() - x, dz = entity.getZ() - z;
+                double len = Math.max(0.15, Math.sqrt(dx * dx + dz * dz));
+                entity.push(dx / len * 0.07, 0.04, dz / len * 0.07);
+                entity.hurtMarked = true;
+            }
+        });
+    }
+
+    /** La primaire conserve son éligibilité PvP ; les touches collatérales restent enemies-only. */
+    private static boolean lightTarget(LivingEntity entity, LivingEntity primary, int attackerId) {
+        if (!entity.isAlive() || entity.getId() == attackerId) return false;
+        return entity.getId() == primary.getId() || (entity instanceof Enemy && !(entity instanceof Player));
+    }
+
+    private static boolean cylinderContact(LivingEntity entity, double x, double y, double z,
+                                           double radius, float visualScale) {
+        AABB box = entity.getBoundingBox();
+        if (box.maxY < y - 1.5 * visualScale || box.minY > y + 2.0 * visualScale) return false;
+        double nearestX = net.minecraft.util.Mth.clamp(x, box.minX, box.maxX);
+        double nearestZ = net.minecraft.util.Mth.clamp(z, box.minZ, box.maxZ);
+        double dx = x - nearestX, dz = z - nearestZ;
+        return dx * dx + dz * dz <= radius * radius;
+    }
+
+    /** Collision segment/AABB par la méthode des slabs : aucun tunneling entre deux positions. */
+    private static boolean segmentHitsEntity(double x0, double y0, double z0,
+                                             double x1, double y1, double z1,
+                                             LivingEntity entity, double padding) {
+        AABB box = entity.getBoundingBox().inflate(padding);
+        double dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
+        double min = 0.0, max = 1.0;
+        double[] origin = {x0, y0, z0}, delta = {dx, dy, dz};
+        double[] lower = {box.minX, box.minY, box.minZ}, upper = {box.maxX, box.maxY, box.maxZ};
+        for (int axis = 0; axis < 3; axis++) {
+            if (Math.abs(delta[axis]) < 1.0E-8) {
+                if (origin[axis] < lower[axis] || origin[axis] > upper[axis]) return false;
+                continue;
+            }
+            double a = (lower[axis] - origin[axis]) / delta[axis];
+            double b = (upper[axis] - origin[axis]) / delta[axis];
+            if (a > b) { double swap = a; a = b; b = swap; }
+            min = Math.max(min, a);
+            max = Math.min(max, b);
+            if (min > max) return false;
+        }
+        return max >= 0.0 && min <= 1.0;
+    }
+
+    private static void lightSound(ServerLevel sl, double x, double y, double z,
+                                   int now, int delay, SoundEvent sound, float volume, float pitch) {
+        TestProcedure.schedule(sl, now + delay,
+                () -> sl.playSound(null, x, y, z, sound, SoundSource.PLAYERS, volume, pitch));
+    }
+
     private static void applyMetalGameplay(LivingEntity attacker, LivingEntity target,
                                            WeaponVisualEffectId fx, float weaponDamage) {
         if (fx != WeaponVisualEffectId.RAZOR_GLEAM && fx != WeaponVisualEffectId.SUPREME_PRISM_EDGE
@@ -2077,7 +2240,7 @@ public final class WeaponVfxServerListener {
         if (tag == null) return null;
         String family = tag.getString("DlbAnimFamily");
         return family.equals("feu") || family.equals("gaia") || family.equals("poison")
-                || family.equals("terre") || family.equals("metal") ? family : null;
+                || family.equals("terre") || family.equals("metal") || family.equals("light") ? family : null;
     }
 
     /**
@@ -2099,7 +2262,8 @@ public final class WeaponVfxServerListener {
         WeaponVisualEffectId[] pool = family.equals("feu") ? ANIM_FIRE
                 : family.equals("poison") ? ANIM_POISON
                 : family.equals("terre") ? ANIM_EARTH
-                : family.equals("metal") ? ANIM_METAL : ANIM_GAIA;
+                : family.equals("metal") ? ANIM_METAL
+                : family.equals("light") ? ANIM_LIGHT : ANIM_GAIA;
 
         if (roll >= 60) {
             var tag = deepluckyblock.util.DeepNbt.getOrCreateTag(weapon);
@@ -2115,6 +2279,7 @@ public final class WeaponVfxServerListener {
             applyWoodGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyEarthGameplay(attacker, target, fx, capturedWeaponDamage);
             applyMetalGameplay(attacker, target, fx, capturedWeaponDamage);
+            applyLightGameplay(attacker, target, fx, capturedWeaponDamage, bigScale);
             applyFireGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyPoisonGameplay(attacker, target, fx);
             return;
@@ -2164,12 +2329,14 @@ public final class WeaponVfxServerListener {
         } else if (fx == WeaponVisualEffectId.ASTRAL_STAR_LANCE && attacker.distanceToSqr(target) > 9.0) {
             broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
                     ax, (float) attacker.getEyeY() - 0.12f, az, tx, ty, tz, palette, bigScale);
+            applyLightGameplay(attacker, target, fx, capturedWeaponDamage, bigScale);
         } else {
             broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, layer.level(),
                     tx, ty, tz, ax, ay, az, palette, bigScale);
             applyWoodGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyEarthGameplay(attacker, target, fx, capturedWeaponDamage);
             applyMetalGameplay(attacker, target, fx, capturedWeaponDamage);
+            applyLightGameplay(attacker, target, fx, capturedWeaponDamage, bigScale);
             applyFireGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyPoisonGameplay(attacker, target, fx);
         }
@@ -2306,7 +2473,8 @@ public final class WeaponVfxServerListener {
                         tx, ty, tz, ax, ay, az, palette, sizeScaleOf(target));
             } else if (fx == WeaponVisualEffectId.ASTRAL_STAR_LANCE && attacker.distanceToSqr(target) > 9.0) {
                 broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
-                        ax, (float) attacker.getEyeY() - 0.12f, az, tx, ty, tz, palette);
+                        ax, (float) attacker.getEyeY() - 0.12f, az, tx, ty, tz, palette, sizeScaleOf(target));
+                applyLightGameplay(attacker, target, fx, Math.max(0.0f, event.getAmount()), sizeScaleOf(target));
             } else {
                 int boost = (arrowCrit && fx.category == WeaponVisualEffectId.Category.CRIT) ? layer.level() + 1 : layer.level();
                 broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, boost,
@@ -2315,6 +2483,7 @@ public final class WeaponVfxServerListener {
                 applyWoodGameplay(attacker, target, fx, sizeScaleOf(target), Math.max(0.0f, event.getAmount()));
                 applyEarthGameplay(attacker, target, fx, Math.max(0.0f, event.getAmount()));
                 applyMetalGameplay(attacker, target, fx, Math.max(0.0f, event.getAmount()));
+                applyLightGameplay(attacker, target, fx, Math.max(0.0f, event.getAmount()), sizeScaleOf(target));
                 applyPoisonGameplay(attacker, target, fx);
             }
         }
