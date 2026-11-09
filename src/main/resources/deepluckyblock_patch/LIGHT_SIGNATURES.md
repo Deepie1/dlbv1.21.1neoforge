@@ -42,9 +42,9 @@ Pour Séraphin, l'échelle du mob, l'échelle de variante, la densité aléatoir
 4. **Ticks 14–16 :** le beam se referme et s'éteint. Aucun dégât n'est programmé après le tick 14.
 5. **Jusqu'au tick 30 :** le sceau divin supérieur termine son propre fondu, sans hitbox.
 
-Le beam comprend un cœur alpha, huit panneaux tangentiels, douze arêtes et quatre jonctions. Un zombie standard tient dans son volume horizontal. Le cylindre serveur teste le point le plus proche de l'AABB : une hitbox qui entre dans le rayon compte même si son centre est légèrement à l'extérieur.
+Le beam comprend un cœur alpha, huit panneaux tangentiels, douze arêtes et quatre jonctions. **Son trait blanc central grandit progressivement de 0,05 à 0,16 bloc de rayon entre les ticks 10 et 14**, sans changer le rayon extérieur de 0,60. Un zombie standard tient dans son volume horizontal. Le cylindre serveur teste le point le plus proche de l'AABB : une hitbox qui entre dans le rayon compte même si son centre est légèrement à l'extérieur.
 
-Le cercle supérieur est reconstruit comme un **sceau divin animé** : trois couronnes contrarotatives, deux étoiles à seize branches, huit runes, trois petits cercles satellites et un cœur blanc. Il est orienté dans le plan visible, au-dessus du beam. Aucun décor du sceau n'ajoute de dégâts.
+Le cercle supérieur est reconstruit comme un **sceau divin animé horizontal** : trois couronnes contrarotatives, deux étoiles à seize branches, huit runes, trois petits cercles satellites et un cœur blanc. Toutes ces pièces sont dessinées dans le plan X/Z à hauteur fixe, au-dessus du beam ; le disque n'est donc plus vertical. Aucun décor du sceau n'ajoute de dégâts.
 
 ### Un beam par hostile, murs compris
 
@@ -95,18 +95,22 @@ L'horloge conserve ses chiffres **1 à 12**, ses 60 graduations, trois aiguilles
 
 Le manager calcule à chaque frame la direction de la position de l'effet vers la caméra. Le plan du cadran suit cette direction, ce qui évite de présenter l'horloge par la tranche lorsque le joueur se déplace.
 
-La cible est verrouillée en position pendant exactement **200 ticks = 10 secondes**. L'emprise utilise `fullStun=false` : aucun `NoAi`, aucun retrait de cible et aucun `stopUsingItem` ne sont appliqués par cette emprise. Le mob peut donc continuer à attaquer. Le tick serveur replace seulement sa position et annule sa vélocité ; la gravité et les déplacements redeviennent normaux à la libération.
+Chrono est maintenant une **AoE de 10 blocs** autour de la cible touchée. Toutes les créatures vivantes non-joueurs dans cette sphère, hostiles ou passives, reçoivent leur propre instance d'horloge. L'attaquant est exclu. Les cibles sont triées par identifiant pour un traitement déterministe.
 
-Les ennemis non-boss reçoivent toujours Lenteur II ; Warden, Wither et Ender Dragon gardent leur contrôle. La dette du tick 55 reste :
+**Chaque mob de l'AoE** est verrouillé en position pendant exactement **200 ticks = 10 secondes**. L'emprise utilise `fullStun=false` : aucun `NoAi`, aucun retrait de cible et aucun `stopUsingItem` ne sont appliqués par cette emprise. Les mobs peuvent donc continuer à attaquer. Le tick serveur replace seulement leur position et annule leur vélocité ; la gravité et les déplacements redeviennent normaux à la libération.
+
+Les ennemis non-boss de l'AoE reçoivent toujours Lenteur II ; Warden, Wither et Ender Dragon gardent leur contrôle. Au tick 55, chaque cible reçoit sa dette :
 
 - **24 %** de l'attaque capturée sur la primaire, bornée entre 0,12 et 2,00 points ;
-- **10 %** sur les touches secondaires dans 1,55 bloc, bornée entre 0,06 et 1,10 point.
+- **10 %** sur chaque autre mob dans les 10 blocs, bornée entre 0,06 et 1,10 point.
+
+Après une touche réussie, le rajeunissement est appliqué individuellement à chaque mob encore vivant. L'ancienne zone secondaire de 1,55 bloc et l'ancien déplacement radial sont supprimés.
 
 Sons vanilla : améthyste et téléportation au tick 0, cloches aux ticks 15/30/45/55, `CHORUS_FRUIT_TELEPORT` aux ticks 55 et 86, `BONE_MEAL_USE` au tick 58, extinction de balise au tick 100 et son de libération au tick 200.
 
 ### Rajeunissement sans remplacement d'entité
 
-Après une touche réussie, si la cible est encore vivante et possède une forme bébé vanilla prise en charge, **la même entité** reçoit cette forme :
+Après une touche réussie, si un mob de l'AoE est encore vivant et possède une forme bébé vanilla prise en charge, **la même entité** reçoit cette forme :
 
 - `Zombie`, donc également Husk, Drowned, ZombieVillager et ZombifiedPiglin ;
 - `Piglin` ;
@@ -116,7 +120,7 @@ Il n'y a aucun `spawn`, aucune suppression et aucune copie approximative d'inven
 
 La cible rajeunie reçoit aussi **Faiblesse I pendant 105 ticks**. Les règles vanilla propres à chaque forme restent actives. **Skeleton n'a pas de forme bébé vanilla** et n'est donc pas transformé, pas plus que les boss ou les types sans API bébé.
 
-Tous les dégâts différés passent par `hurtWithCapturedWeapon` : crédit du tueur, armure/protections et verrou anti-récursion. Les touches secondaires d'Astral et Chrono excluent l'attaquant, les joueurs et les non-ennemis.
+Tous les dégâts différés passent par `hurtWithCapturedWeapon` : crédit du tueur, armure/protections et verrou anti-récursion. Les touches secondaires d'Astral excluent les non-ennemis. Chrono exclut l'attaquant et les joueurs, mais inclut bien tous les autres mobs vivants dans ses 10 blocs.
 
 ## Corrections du log prises en charge par le mod
 
@@ -137,6 +141,6 @@ Tests prioritaires en jeu :
 
 1. Séraphin : vérifier 0,5 s sans dégâts, le beam de 1,20 × 16, la fin des dégâts au tick 14 et plusieurs hostiles derrière un mur dans les 10 blocs ; mesurer le rapport secondaire/primaire de 0,70.
 2. Astral : orbiter autour des constellations pour voir leurs profondeurs, vérifier leurs rotations et l'impact du corridor au tick 24.
-3. Chrono : tourner autour du cadran, vérifier le pendule au-dessus du sol, laisser le mob attaquer pendant les 10 s de verrou et contrôler la libération.
-4. Rajeunissement : inspecter un zombie équipé après Chrono — même entité, mêmes objets, PV post-dégâts — et vérifier qu'un squelette n'est pas converti.
+3. Chrono : placer plusieurs zombies et animaux dans les 10 blocs, vérifier qu'ils ont tous une horloge et un verrou de 10 s, qu'ils peuvent attaquer, puis contrôler leur libération.
+4. Rajeunissement : inspecter plusieurs zombies équipés et un animal après Chrono — mêmes entités, mêmes objets, PV post-dégâts — et vérifier qu'un squelette n'est pas converti.
 5. Vérifier l'audition des sons vanilla et mesurer le framerate avec plusieurs beams secondaires dans la scène réelle.

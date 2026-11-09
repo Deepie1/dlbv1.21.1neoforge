@@ -1293,46 +1293,63 @@ public final class WeaponVfxServerListener {
             return;
         }
 
-        // Verrou de position de dix secondes, sans NoAi : le mob peut toujours attaquer.
-        applyMovementHold(target, sl.getGameTime() + 200L, false);
-        // Chrono ralentit seulement les ennemis non-boss ; Warden, Wither et Dragon gardent leur IA.
-        if (target instanceof Enemy && target.getType() != EntityType.ENDER_DRAGON
-                && target.getType() != EntityType.WITHER && target.getType() != EntityType.WARDEN) {
-            target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
-                    105, 1, false, true, true));
+        // Chrono V4 AoE : chaque mob non-joueur dans dix blocs reçoit sa propre horloge,
+        // sa dette et son verrou. Les animaux AgeableMob peuvent donc aussi rajeunir.
+        List<LivingEntity> chronoTargets = new ArrayList<>();
+        chronoTargets.add(target);
+        for (LivingEntity nearby : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(x - 10.0, y - 10.0, z - 10.0, x + 10.0, y + 10.0, z + 10.0))) {
+            if (nearby.getId() == target.getId() || nearby.getId() == attackerId
+                    || nearby instanceof Player || !nearby.isAlive()) continue;
+            if (nearby.distanceToSqr(x, y, z) <= 100.0) chronoTargets.add(nearby);
         }
-        lightSound(sl, x, y, z, now, 0, SoundEvents.AMETHYST_BLOCK_CHIME, 0.30f, 0.75f);
-        lightSound(sl, x, y, z, now, 0, SoundEvents.ENDERMAN_TELEPORT, 0.20f, 1.35f);
-        for (int bell = 15; bell <= 45; bell += 15) {
-            lightSound(sl, x, y, z, now, bell, SoundEvents.NOTE_BLOCK_BELL.value(),
-                    0.16f, 0.85f + bell * 0.012f);
-        }
-        lightSound(sl, x, y, z, now, 55, SoundEvents.NOTE_BLOCK_BELL.value(), 0.55f, 1.55f);
-        lightSound(sl, x, y, z, now, 55, SoundEvents.CHORUS_FRUIT_TELEPORT, 0.24f, 1.45f);
-        lightSound(sl, x, y, z, now, 58, SoundEvents.BONE_MEAL_USE, 0.26f, 1.60f);
-        lightSound(sl, x, y, z, now, 86, SoundEvents.CHORUS_FRUIT_TELEPORT, 0.25f, 0.90f);
-        lightSound(sl, x, y, z, now, 100, SoundEvents.BEACON_DEACTIVATE, 0.22f, 1.25f);
-        lightSound(sl, x, y, z, now, 200, SoundEvents.BEACON_DEACTIVATE, 0.30f, 0.85f);
-        TestProcedure.schedule(sl, now + 55, () -> {
-            double radius = 1.55 * lightScale;
-            for (LivingEntity entity : sl.getEntitiesOfClass(LivingEntity.class,
-                    new AABB(x - radius - 1.0, y - 2.0, z - radius - 1.0,
-                            x + radius + 1.0, y + 2.5, z + radius + 1.0))) {
-                if (!lightTarget(entity, target, attackerId) || !cylinderContact(entity, x, y, z, radius, lightScale)) continue;
-                boolean primary = entity.getId() == target.getId();
+        chronoTargets.sort((a, b) -> Integer.compare(a.getId(), b.getId()));
+        for (LivingEntity chronoTarget : chronoTargets) {
+            boolean primary = chronoTarget.getId() == target.getId();
+            double cx = chronoTarget.getX();
+            double cy = chronoTarget.getY() + chronoTarget.getBbHeight() * 0.50;
+            double cz = chronoTarget.getZ();
+            // Dix secondes de position fixe, sans NoAi : chaque mob peut toujours attaquer.
+            applyMovementHold(chronoTarget, sl.getGameTime() + 200L, false);
+            if (!primary) {
+                double ax = attacker == null ? cx : attacker.getX();
+                double ay = attacker == null ? cy + 1.0 : attacker.getEyeY();
+                double az = attacker == null ? cz + 1.0 : attacker.getZ();
+                broadcastNear(sl, cx, cy, cz, fx.id, KIND_IMPACT, 6,
+                        cx, cy, cz, ax, ay, az,
+                        attacker == null ? 1 << fx.element.ordinal()
+                                : paletteOf(attacker.getMainHandItem(), fx), sizeScaleOf(chronoTarget));
+            }
+            // Warden, Wither et Dragon restent insensibles au ralentissement, comme auparavant.
+            if (chronoTarget instanceof Enemy && chronoTarget.getType() != EntityType.ENDER_DRAGON
+                    && chronoTarget.getType() != EntityType.WITHER && chronoTarget.getType() != EntityType.WARDEN) {
+                chronoTarget.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                        105, 1, false, true, true));
+            }
+            float soundScale = primary ? 1.0f : 0.45f;
+            lightSound(sl, cx, cy, cz, now, 0, SoundEvents.AMETHYST_BLOCK_CHIME, 0.30f * soundScale, 0.75f);
+            lightSound(sl, cx, cy, cz, now, 0, SoundEvents.ENDERMAN_TELEPORT, 0.20f * soundScale, 1.35f);
+            for (int bell = 15; bell <= 45; bell += 15) {
+                lightSound(sl, cx, cy, cz, now, bell, SoundEvents.NOTE_BLOCK_BELL.value(),
+                        0.16f * soundScale, 0.85f + bell * 0.012f);
+            }
+            lightSound(sl, cx, cy, cz, now, 55, SoundEvents.NOTE_BLOCK_BELL.value(), 0.55f * soundScale, 1.55f);
+            lightSound(sl, cx, cy, cz, now, 55, SoundEvents.CHORUS_FRUIT_TELEPORT, 0.24f * soundScale, 1.45f);
+            lightSound(sl, cx, cy, cz, now, 58, SoundEvents.BONE_MEAL_USE, 0.26f * soundScale, 1.60f);
+            lightSound(sl, cx, cy, cz, now, 86, SoundEvents.CHORUS_FRUIT_TELEPORT, 0.25f * soundScale, 0.90f);
+            lightSound(sl, cx, cy, cz, now, 100, SoundEvents.BEACON_DEACTIVATE, 0.22f * soundScale, 1.25f);
+            lightSound(sl, cx, cy, cz, now, 200, SoundEvents.BEACON_DEACTIVATE, 0.30f * soundScale, 0.85f);
+            TestProcedure.schedule(sl, now + 55, () -> {
+                if (!chronoTarget.isAlive() || chronoTarget.level() != sl) return;
                 float amount = primary
                         ? net.minecraft.util.Mth.clamp(captured * 0.24f, 0.12f, 2.00f)
                         : net.minecraft.util.Mth.clamp(captured * 0.10f, 0.06f, 1.10f);
-                if (!hurtWithCapturedWeapon(sl, attackerId, entity, amount)) continue;
-                // La santé est lue APRÈS la dette. La même entité devient bébé : aucun respawn,
-                // donc aucun transfert approximatif d'équipement, d'effets ou d'identifiant.
-                if (entity.isAlive()) rejuvenateIfVanillaBabyExists(entity);
-                double dx = entity.getX() - x, dz = entity.getZ() - z;
-                double len = Math.max(0.15, Math.sqrt(dx * dx + dz * dz));
-                entity.push(dx / len * 0.07, 0.04, dz / len * 0.07);
-                entity.hurtMarked = true;
-            }
-        });
+                if (!hurtWithCapturedWeapon(sl, attackerId, chronoTarget, amount)) return;
+                // Santé post-dégâts, même entité et équipement préservé pour CHAQUE cible de l'AoE.
+                if (chronoTarget.isAlive()) rejuvenateIfVanillaBabyExists(chronoTarget);
+                chronoTarget.hurtMarked = true;
+            });
+        }
     }
 
     /** La primaire conserve son éligibilité PvP ; les touches collatérales restent enemies-only. */
@@ -1369,14 +1386,6 @@ public final class WeaponVfxServerListener {
                                             double radius, float lightScale) {
         AABB box = entity.getBoundingBox();
         if (box.maxY < y - 0.90 * lightScale || box.minY > y + 15.10 * lightScale) return false;
-        return discContact(box, x, z, radius);
-    }
-
-    /** Zone basse de Chrono : ses limites verticales V1 restent strictement inchangées. */
-    private static boolean cylinderContact(LivingEntity entity, double x, double y, double z,
-                                           double radius, float lightScale) {
-        AABB box = entity.getBoundingBox();
-        if (box.maxY < y - 1.5 * lightScale || box.minY > y + 2.0 * lightScale) return false;
         return discContact(box, x, z, radius);
     }
 

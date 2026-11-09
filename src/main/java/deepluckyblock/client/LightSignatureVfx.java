@@ -54,56 +54,58 @@ public final class LightSignatureVfx {
         float beam = open * (1.0f - close);
         float seal = smooth(t / 0.08f) * (1.0f - smooth((t - damageEnd) / (1.0f - damageEnd)));
         float lineAlpha = line * (1.0f - open);
+        float coreGrowth = smooth((t - castEnd) / (damageEnd - castEnd));
+        float coreRadius = 0.050f + 0.110f * coreGrowth;
         int a = Math.round(alpha * smooth(t / 0.025f) * (1.0f - smooth((t - 0.92f) / 0.075f)));
 
-        // Cercle divin vertical, face au lanceur : trois cercles concentriques, double étoile
-        // à huit branches, trois satellites et runes diamant. Le mouvement est dans les plans
-        // du sceau, pas dans une accumulation de volumes translucides.
+        // Sceau divin HORIZONTAL : toutes les couronnes, étoiles et runes sont dans le plan
+        // local f/l à Y constant. La transformation joueur ne fait donc que tourner le disque.
         float cy = 14.50f;
         for (int ring = 0; ring < 3; ring++) {
             float radius = 1.92f - ring * 0.31f;
             float spin = (ring % 2 == 0 ? 1.0f : -1.0f) * t * (0.60f + ring * 0.18f);
+            float y = cy + ring * 0.025f;
             for (int part = 0; part < 32; part++) {
                 float angle = part * TAU / 32.0f + spin, next = (part + 1) * TAU / 32.0f + spin;
-                v.glowLink(Mth.cos(angle) * radius, cy + Mth.sin(angle) * radius, -0.12f - ring * 0.025f,
-                        Mth.cos(next) * radius, cy + Mth.sin(next) * radius, -0.12f - ring * 0.025f,
+                v.glowLink(Mth.cos(angle) * radius, y, Mth.sin(angle) * radius,
+                        Mth.cos(next) * radius, y, Mth.sin(next) * radius,
                         ring == 0 ? 0.022f : 0.014f, ring == 1 ? IVORY : GOLD,
                         WHITE, Math.round(a * seal * (0.82f - ring * 0.10f)));
             }
         }
         for (int layer = 0; layer < 2; layer++) {
             float rotation = layer * TAU / 16.0f + (layer == 0 ? t * 0.32f : -t * 0.24f);
+            float y = cy + 0.09f + layer * 0.025f;
             for (int point = 0; point < 16; point++) {
                 float a0 = point * TAU / 16.0f + rotation, a1 = (point + 1) * TAU / 16.0f + rotation;
                 float r0 = point % 2 == 0 ? 1.55f : 0.66f;
                 float r1 = (point + 1) % 2 == 0 ? 1.55f : 0.66f;
-                v.glowLink(Mth.cos(a0) * r0, cy + Mth.sin(a0) * r0, -0.18f,
-                        Mth.cos(a1) * r1, cy + Mth.sin(a1) * r1, -0.18f,
+                v.glowLink(Mth.cos(a0) * r0, y, Mth.sin(a0) * r0,
+                        Mth.cos(a1) * r1, y, Mth.sin(a1) * r1,
                         layer == 0 ? 0.020f : 0.013f,
                         layer == 0 ? HONEY : IVORY, WHITE, Math.round(a * seal * 0.84f));
             }
         }
         for (int rune = 0; rune < 8; rune++) {
             float angle = rune * TAU / 8.0f + t * 0.60f;
-            float f = Mth.cos(angle) * 1.92f, y = cy + Mth.sin(angle) * 1.92f;
-            v.glowLink(f - 0.09f, y, -0.14f, f, y + 0.09f, -0.14f, 0.012f, GOLD, WHITE, Math.round(a * seal));
-            v.glowLink(f, y + 0.09f, -0.14f, f + 0.09f, y, -0.14f, 0.012f, GOLD, WHITE, Math.round(a * seal));
-            v.glowLink(f + 0.09f, y, -0.14f, f, y - 0.09f, -0.14f, 0.012f, GOLD, WHITE, Math.round(a * seal));
-            v.glowLink(f, y - 0.09f, -0.14f, f - 0.09f, y, -0.14f, 0.012f, GOLD, WHITE, Math.round(a * seal));
+            float f = Mth.cos(angle) * 1.92f, l = Mth.sin(angle) * 1.92f, y = cy + 0.15f;
+            v.glowLink(f - 0.09f, y, l, f, y, l + 0.09f, 0.012f, GOLD, WHITE, Math.round(a * seal));
+            v.glowLink(f, y, l + 0.09f, f + 0.09f, y, l, 0.012f, GOLD, WHITE, Math.round(a * seal));
+            v.glowLink(f + 0.09f, y, l, f, y, l - 0.09f, 0.012f, GOLD, WHITE, Math.round(a * seal));
+            v.glowLink(f, y, l - 0.09f, f - 0.09f, y, l, 0.012f, GOLD, WHITE, Math.round(a * seal));
         }
         for (int satellite = 0; satellite < 3; satellite++) {
             float angle = satellite * TAU / 3.0f + (float) Math.PI / 2.0f - t * 0.20f;
-            float cf = Mth.cos(angle) * 1.92f, sy = cy + Mth.sin(angle) * 1.92f;
+            float cf = Mth.cos(angle) * 1.92f, cl = Mth.sin(angle) * 1.92f, y = cy + 0.12f;
             for (int part = 0; part < 12; part++) {
                 float p0 = part * TAU / 12.0f - t, p1 = (part + 1) * TAU / 12.0f - t;
-                v.glowLink(cf + Mth.cos(p0) * 0.23f, sy + Mth.sin(p0) * 0.23f, -0.14f,
-                        cf + Mth.cos(p1) * 0.23f, sy + Mth.sin(p1) * 0.23f, -0.14f,
+                v.glowLink(cf + Mth.cos(p0) * 0.23f, y, cl + Mth.sin(p0) * 0.23f,
+                        cf + Mth.cos(p1) * 0.23f, y, cl + Mth.sin(p1) * 0.23f,
                         0.012f, IVORY, WHITE, Math.round(a * seal * 0.76f));
             }
         }
-        v.bodyBox(0.0f, cy, -0.10f, 0.28f, 0.28f, 0.06f, WHITE, Math.round(a * seal * 0.28f));
-        astralShell(v, 0.0f, cy, -0.16f, 0.22f, Math.round(a * seal), t * 18.0f);
-
+        v.bodyBox(0.0f, cy, 0.0f, 0.28f, 0.03f, 0.28f, WHITE, Math.round(a * seal * 0.28f));
+        astralShell(v, 0.0f, cy + 0.03f, 0.0f, 0.22f, Math.round(a * seal), t * 18.0f);
         // ÉTAPE 1 : ligne 0,05, purement visuelle, strictement avant le tick 10.
         if (lineAlpha > 0.0f) {
             v.lightLink(0.0f, 15.10f, 0.0f, 0.0f, -0.90f, 0.0f,
@@ -121,8 +123,9 @@ public final class LightSignatureVfx {
                         0.225f, 8.0f, 0.012f, IVORY, Math.round(a * beam * 0.16f),
                         -angle - Mth.HALF_PI, 0.0f, 0.0f);
             }
+            // Le cœur blanc grandit progressivement de 0,05 à 0,16 pendant les quatre ticks.
             v.lightLink(0.0f, 15.10f, 0.0f, 0.0f, -0.90f, 0.0f,
-                    0.075f, WHITE, IVORY, Math.round(a * beam));
+                    coreRadius, WHITE, IVORY, Math.round(a * beam));
             for (int strand = 0; strand < 3; strand++) {
                 float angle = strand * TAU / 3.0f + t * 2.0f;
                 float f = Mth.cos(angle) * 0.17f, l = Mth.sin(angle) * 0.17f;
