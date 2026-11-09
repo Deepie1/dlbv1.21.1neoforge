@@ -1191,34 +1191,38 @@ public final class WeaponVfxServerListener {
         int now = TestProcedure.currentTick(sl);
         int attackerId = attacker == null ? -1 : attacker.getId();
         float captured = Math.max(0.0f, weaponDamage);
-        visualScale = net.minecraft.util.Mth.clamp(visualScale, 0.20f, 6.0f);
+        final float lightScale = net.minecraft.util.Mth.clamp(visualScale, 0.20f, 6.0f);
         double x = target.getX(), y = target.getY() + target.getBbHeight() * 0.50, z = target.getZ();
 
         if (fx == WeaponVisualEffectId.SERAPH_SKY_PILLAR) {
-            lightSound(sl, x, y, z, now, 0, SoundEvents.AMETHYST_BLOCK_CHIME, 0.42f, 0.82f);
-            lightSound(sl, x, y, z, now, 28, SoundEvents.BEACON_ACTIVATE, 0.55f, 1.35f);
-            lightSound(sl, x, y, z, now, 40, SoundEvents.TOTEM_USE, 0.42f, 1.70f);
-            lightSound(sl, x, y, z, now, 70, SoundEvents.AMETHYST_BLOCK_CHIME, 0.32f, 1.65f);
-            TestProcedure.schedule(sl, now + 40, () -> {
-                double radius = 1.65 * visualScale;
-                for (LivingEntity entity : sl.getEntitiesOfClass(LivingEntity.class,
-                        new AABB(x - radius - 1.0, y - 2.0, z - radius - 1.0,
-                                x + radius + 1.0, y + 3.5, z + radius + 1.0))) {
-                    if (!lightTarget(entity, target, attackerId) || !cylinderContact(entity, x, y, z, radius, visualScale)) continue;
-                    boolean primary = entity.getId() == target.getId();
-                    boolean undead = entity.getType().is(net.minecraft.tags.EntityTypeTags.SENSITIVE_TO_SMITE);
-                    float amount = primary
-                            ? net.minecraft.util.Mth.clamp(captured * (undead ? 0.49f : 0.34f), 0.20f, 3.25f)
-                            : net.minecraft.util.Mth.clamp(captured * (undead ? 0.26f : 0.18f), 0.10f, 1.75f);
-                    if (!hurtWithCapturedWeapon(sl, attackerId, entity, amount)) continue;
-                    entity.addEffect(new MobEffectInstance(MobEffects.GLOWING, 100, 0, false, true, true));
-                    double dx = entity.getX() - x, dz = entity.getZ() - z;
-                    double len = Math.max(0.15, Math.sqrt(dx * dx + dz * dz));
-                    double force = primary ? 0.08 : 0.14;
-                    entity.push(dx / len * force, primary ? 0.16 : 0.09, dz / len * force);
-                    entity.hurtMarked = true;
-                }
-            });
+            lightSound(sl, x, y, z, now, 0, SoundEvents.AMETHYST_BLOCK_CHIME, 0.26f, 1.25f);
+            lightSound(sl, x, y, z, now, 12, SoundEvents.BEACON_ACTIVATE, 0.38f, 1.65f);
+            for (int delay = 12; delay <= 92; delay += 4) {
+                TestProcedure.schedule(sl, now + delay, () -> {
+                    // Le cylindre translucide a un rayon extérieur de 0,48 + 0,09 = 0,57 ;
+                    // 0,58 couvre ce contour, puis la collision mesure la distance à l'AABB réelle.
+                    double radius = 0.58 * lightScale;
+                    // Recherche nouvelle à CHAQUE pulse : entrer dans le rayon expose aussitôt,
+                    // en sortir interrompt les dégâts. Aucune liste de cibles figée à l'activation.
+                    for (LivingEntity entity : sl.getEntitiesOfClass(LivingEntity.class,
+                            new AABB(x - radius - 1.0, y - 1.25 * lightScale, z - radius - 1.0,
+                                    x + radius + 1.0, y + 10.0 * lightScale, z + radius + 1.0))) {
+                        if (!lightTarget(entity, target, attackerId)
+                                || !seraphRayContact(entity, x, y, z, radius, lightScale)) continue;
+                        boolean undead = entity.getType().is(net.minecraft.tags.EntityTypeTags.SENSITIVE_TO_SMITE);
+                        float amount = undead
+                                ? net.minecraft.util.Mth.clamp(captured * 0.09f, 0.06f, 0.80f)
+                                : net.minecraft.util.Mth.clamp(captured * 0.06f, 0.04f, 0.55f);
+                        if (!hurtWithCapturedWeapon(sl, attackerId, entity, amount)) continue;
+                        entity.addEffect(new MobEffectInstance(MobEffects.GLOWING, 10, 0, false, true, true));
+                        // Aucun knockback : la cible n'est pas éjectée artificiellement du DoT.
+                    }
+                });
+            }
+            for (int delay = 32; delay <= 92; delay += 20) {
+                lightSound(sl, x, y, z, now, delay, SoundEvents.AMETHYST_BLOCK_CHIME,
+                        0.12f, 1.35f + delay * 0.004f);
+            }
             return;
         }
 
@@ -1227,9 +1231,9 @@ public final class WeaponVfxServerListener {
             double rawZ = attacker == null ? 1.0 : target.getZ() - attacker.getZ();
             double len = Math.max(0.001, Math.sqrt(rawX * rawX + rawZ * rawZ));
             double dirX = rawX / len, dirZ = rawZ / len;
-            double startX = x - dirX * 4.35 * visualScale;
-            double startZ = z - dirZ * 4.35 * visualScale;
-            double endX = x + dirX * 4.35 * visualScale, endZ = z + dirZ * 4.35 * visualScale;
+            double startX = x - dirX * 4.35 * lightScale;
+            double startZ = z - dirZ * 4.35 * lightScale;
+            double endX = x + dirX * 4.35 * lightScale, endZ = z + dirZ * 4.35 * lightScale;
             lightSound(sl, x, y, z, now, 0, SoundEvents.AMETHYST_BLOCK_CHIME, 0.32f, 1.45f);
             lightSound(sl, x, y, z, now, 15, SoundEvents.CHORUS_FRUIT_TELEPORT, 0.30f, 1.70f);
             lightSound(sl, x, y, z, now, 24, SoundEvents.PLAYER_ATTACK_CRIT, 0.52f, 1.80f);
@@ -1270,11 +1274,11 @@ public final class WeaponVfxServerListener {
         lightSound(sl, x, y, z, now, 55, SoundEvents.NOTE_BLOCK_BELL.value(), 0.55f, 1.55f);
         lightSound(sl, x, y, z, now, 86, SoundEvents.CHORUS_FRUIT_TELEPORT, 0.25f, 0.90f);
         TestProcedure.schedule(sl, now + 55, () -> {
-            double radius = 1.55 * visualScale;
+            double radius = 1.55 * lightScale;
             for (LivingEntity entity : sl.getEntitiesOfClass(LivingEntity.class,
                     new AABB(x - radius - 1.0, y - 2.0, z - radius - 1.0,
                             x + radius + 1.0, y + 2.5, z + radius + 1.0))) {
-                if (!lightTarget(entity, target, attackerId) || !cylinderContact(entity, x, y, z, radius, visualScale)) continue;
+                if (!lightTarget(entity, target, attackerId) || !cylinderContact(entity, x, y, z, radius, lightScale)) continue;
                 boolean primary = entity.getId() == target.getId();
                 float amount = primary
                         ? net.minecraft.util.Mth.clamp(captured * 0.38f, 0.20f, 3.25f)
@@ -1294,10 +1298,23 @@ public final class WeaponVfxServerListener {
         return entity.getId() == primary.getId() || (entity instanceof Enemy && !(entity instanceof Player));
     }
 
-    private static boolean cylinderContact(LivingEntity entity, double x, double y, double z,
-                                           double radius, float visualScale) {
+    /** Collision propre au grand rayon vertical de Séraphin. */
+    private static boolean seraphRayContact(LivingEntity entity, double x, double y, double z,
+                                            double radius, float lightScale) {
         AABB box = entity.getBoundingBox();
-        if (box.maxY < y - 1.5 * visualScale || box.minY > y + 2.0 * visualScale) return false;
+        if (box.maxY < y - 1.17 * lightScale || box.minY > y + 9.51 * lightScale) return false;
+        return discContact(box, x, z, radius);
+    }
+
+    /** Zone basse de Chrono : ses limites verticales V1 restent strictement inchangées. */
+    private static boolean cylinderContact(LivingEntity entity, double x, double y, double z,
+                                           double radius, float lightScale) {
+        AABB box = entity.getBoundingBox();
+        if (box.maxY < y - 1.5 * lightScale || box.minY > y + 2.0 * lightScale) return false;
+        return discContact(box, x, z, radius);
+    }
+
+    private static boolean discContact(AABB box, double x, double z, double radius) {
         double nearestX = net.minecraft.util.Mth.clamp(x, box.minX, box.maxX);
         double nearestZ = net.minecraft.util.Mth.clamp(z, box.minZ, box.maxZ);
         double dx = x - nearestX, dz = z - nearestZ;
