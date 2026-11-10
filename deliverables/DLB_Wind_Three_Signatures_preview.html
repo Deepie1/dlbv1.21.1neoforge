@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>VENT — Trois signatures voxel · Deep Lucky Block</title>
 <style>
+.build{display:inline-block;margin:0 0 10px;padding:3px 8px;border:1px solid #2b4a5c;border-radius:6px;background:#0d1e26;color:#7fd0e8;font-size:11px;letter-spacing:.02em}
 :root{color-scheme:dark;--bg:#060b0e;--panel:#0b141a;--line:#2a4653;--ink:#eaf8ff;--muted:#9fb9c4;--wind:#8fd3ea;--gold:#d9a83e}
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font:14px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}button,input,a{font:inherit}button,a{-webkit-tap-highlight-color:transparent}
 body{display:grid;grid-template-columns:320px 1fr;background:radial-gradient(ellipse at 72% 22%,#1b2b33 0,#0e161b 45%,#050a0d 100%)}
@@ -19,8 +20,10 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
 .zipnote{margin:7px 0 0;color:#9b9285;font-size:9px;line-height:1.45}.zipnote code{color:#e2cd97;font-size:9px;word-break:break-all}/* DLB-DOWNLOAD-REACH : la barre laterale defile et le bouton reste colle en bas, donc toujours visible et cliquable quelle que soit la hauteur de fenetre. */aside{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}.zipnote{flex:0 0 auto}@media(max-width:620px){aside{overflow-y:auto}}.zipnote{margin:8px 0 0;color:#7f9aa6;font-size:9px;line-height:1.45}.zipnote code{color:#a9e2f2;font-size:9px;word-break:break-all}</style>
 </head>
 <body>
+<noscript><div style="margin:12px;padding:12px;border:1px solid #b9821f;border-radius:8px;background:#241a06;color:#ffd98a;font:13px system-ui">Le JavaScript est désactivé dans ce lecteur : l’animation ne peut pas démarrer. Télécharge l’aperçu et ouvre-le dans un navigateur, ou récupère les sources via ce lien direct : <a style="color:#8fd8ff" href="https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_src.zip" rel="noopener">DLB_Wind_Three_Signatures_src.zip</a></div></noscript>
 <aside>
   <div class="eyebrow">Deep Lucky Block · Wind VFX</div>
+  <div class="build">build v3 · 4 novembre 2026 — lances de cristal détaillées · sable à sens unique · blocs arrachés au cyclone</div>
   <h1>VENT</h1><h2>Trois signatures</h2>
   <p class="intro">Refonte complète de l’élément vent : trois lances d’air comprimé qui convergent, une tempête de sable ocre qui tourbillonne, et un œil de cyclone à deux entonnoirs contra-rotatifs. Un seul moteur voxel (<code>WindSignatureVfx</code>), zéro RenderType supplémentaire.</p>
   <div class="rule"></div>
@@ -40,12 +43,12 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
   
   <p class="refs"><b>Moteur :</b> <code>WindSignatureVfx</code> — Zéphyr (#22), Tempête de sable (#41, sortie de l’archive Terre), Œil du cyclone (#42, nouvelle signature). Le vent ne passe plus par GaiaWorldTreeVfx ni par EarthSignatureVfx. Toutes les pièces sont émises par les émetteurs voxel du manager, qui possède depuis V6.4 sa propre source de buffers : aucun RenderType supplémentaire, aucun <code>Not building!</code>. Gameplay, dégâts, collision et sons inchangés.<br>Tests : <b>/dlbvfx play 22</b> · <b>/dlbvfx play 41</b> · <b>/dlbvfx play 42</b> · <b>/dlbvfx stop</b></p>
   
-  <a class="download" id="srcZip" href="./DLB_Wind_Three_Signatures_src.zip" download="DLB_Wind_Three_Signatures_src.zip">Télécharger les sources Vent · ZIP</a>
+  <a class="download" id="srcZip" href="https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_src.zip" download="DLB_Wind_Three_Signatures_src.zip" rel="noopener">Télécharger les sources Vent · ZIP</a>
   <div class="zipnote">ZIP autonome embarqué dans cette page — 19 entrées, 306056 octets, SHA-256 <code>5cd5aab61219bf34f74f2d0dca9a0fc9298c8bb32ada9c597021f6ec64f46b30</code>. Si l’aperçu intégré bloque le téléchargement, ouvre cette page dans un onglet du navigateur ou récupère le même fichier dans <code>deliverables/</code>.</div>
 </aside>
 <main>
   <canvas id="scene" tabindex="0" aria-label="Aperçu animé des trois signatures Vent"></canvas>
-  <div class="topbar"><span class="chip live">Modèle Java V1 · WindSignatureVfx</span><span class="right"><a class="chip zipchip" id="srcZipTop" href="./DLB_Wind_Three_Signatures_src.zip" download="DLB_Wind_Three_Signatures_src.zip">ZIP sources</a><span class="chip" id="visibleCount">0 voxels visibles</span></span></div>
+  <div class="topbar"><span class="chip live">Modèle Java V1 · WindSignatureVfx</span><span class="right"><a class="chip zipchip" id="srcZipTop" href="https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_src.zip" download="DLB_Wind_Three_Signatures_src.zip" rel="noopener">ZIP sources</a><span class="chip" id="visibleCount">0 voxels visibles</span></span></div>
   <div class="hint">Glisser pour orbiter · Molette pour zoomer · Espace pour pause</div>
   <div class="variant-title"><b id="variantName">Zéphyr — Lance de zéphyr</b><span id="variantSub">3 lances convergentes · rubans · plumes</span></div>
 </main>
