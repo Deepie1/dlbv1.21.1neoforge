@@ -1218,16 +1218,16 @@ public final class WeaponVfxServerListener {
             beamTargets.sort((a, b) -> Integer.compare(a.getId(), b.getId()));
             for (LivingEntity beamTarget : beamTargets) {
                 boolean primary = beamTarget.getId() == target.getId();
-                double bx = beamTarget.getX();
-                double by = beamTarget.getY() + beamTarget.getBbHeight() * 0.50;
-                double bz = beamTarget.getZ();
+                float bx = (float) beamTarget.getX();
+                float by = (float) (beamTarget.getY() + beamTarget.getBbHeight() * 0.50);
+                float bz = (float) beamTarget.getZ();
                 float beamWidth = seraphBeamWidthOf(beamTarget);
                 // Position fixe pendant le cast et les quatre ticks actifs, attaques conservées.
                 applyMovementHold(beamTarget, sl.getGameTime() + 15L, false);
                 if (!primary) {
-                    double ax = attacker == null ? bx : attacker.getX();
-                    double ay = attacker == null ? by + 1.0 : attacker.getEyeY();
-                    double az = attacker == null ? bz + 1.0 : attacker.getZ();
+                    float ax = (float) (attacker == null ? bx : attacker.getX());
+                    float ay = (float) (attacker == null ? by + 1.0 : attacker.getEyeY());
+                    float az = (float) (attacker == null ? bz + 1.0 : attacker.getZ());
                     broadcastNear(sl, bx, by, bz, fx.id, KIND_IMPACT, 6,
                             bx, by, bz, ax, ay, az,
                             attacker == null ? 1 << fx.element.ordinal()
@@ -1279,14 +1279,14 @@ public final class WeaponVfxServerListener {
                 lightSound(sl, x, y, z, now, chime, SoundEvents.AMETHYST_BLOCK_CHIME,
                         0.18f, 1.35f + chime * 0.035f);
             }
-            lightSound(sl, x, y, z, now, 4, SoundEvents.TRIDENT_THROW, 0.30f, 1.20f);
+            lightSound(sl, x, y, z, now, 4, SoundEvents.TRIDENT_THROW.value(), 0.30f, 1.20f);
             lightSound(sl, x, y, z, now, 14, SoundEvents.PLAYER_ATTACK_SWEEP, 0.25f, 1.50f);
             lightSound(sl, x, y, z, now, 15, SoundEvents.CHORUS_FRUIT_TELEPORT, 0.30f, 1.70f);
-            lightSound(sl, x, y, z, now, 20, SoundEvents.TRIDENT_THROW, 0.42f, 1.45f);
+            lightSound(sl, x, y, z, now, 20, SoundEvents.TRIDENT_THROW.value(), 0.42f, 1.45f);
             lightSound(sl, x, y, z, now, 24, SoundEvents.PLAYER_ATTACK_CRIT, 0.52f, 1.80f);
             lightSound(sl, x, y, z, now, 30, SoundEvents.ANVIL_PLACE, 0.20f, 1.75f);
             lightSound(sl, x, y, z, now, 36, SoundEvents.PLAYER_ATTACK_SWEEP, 0.20f, 1.90f);
-            lightSound(sl, x, y, z, now, 40, SoundEvents.TRIDENT_THROW, 0.25f, 1.80f);
+            lightSound(sl, x, y, z, now, 40, SoundEvents.TRIDENT_THROW.value(), 0.25f, 1.80f);
             lightSound(sl, x, y, z, now, 48, SoundEvents.AMETHYST_BLOCK_CHIME, 0.28f, 1.85f);
             lightSound(sl, x, y, z, now, 64, SoundEvents.CHORUS_FRUIT_TELEPORT, 0.18f, 1.25f);
             Set<Integer> spearHits = new HashSet<>();
@@ -1311,15 +1311,15 @@ public final class WeaponVfxServerListener {
         chronoTargets.sort((a, b) -> Integer.compare(a.getId(), b.getId()));
         for (LivingEntity chronoTarget : chronoTargets) {
             boolean primary = chronoTarget.getId() == target.getId();
-            double cx = chronoTarget.getX();
-            double cy = chronoTarget.getY() + chronoTarget.getBbHeight() * 0.50;
-            double cz = chronoTarget.getZ();
+            float cx = (float) chronoTarget.getX();
+            float cy = (float) (chronoTarget.getY() + chronoTarget.getBbHeight() * 0.50);
+            float cz = (float) chronoTarget.getZ();
             // Dix secondes de position fixe, sans NoAi : chaque mob peut toujours attaquer.
             applyMovementHold(chronoTarget, sl.getGameTime() + 200L, false);
             if (!primary) {
-                double ax = attacker == null ? cx : attacker.getX();
-                double ay = attacker == null ? cy + 1.0 : attacker.getEyeY();
-                double az = attacker == null ? cz + 1.0 : attacker.getZ();
+                float ax = (float) (attacker == null ? cx : attacker.getX());
+                float ay = (float) (attacker == null ? cy + 1.0 : attacker.getEyeY());
+                float az = (float) (attacker == null ? cz + 1.0 : attacker.getZ());
                 broadcastNear(sl, cx, cy, cz, fx.id, KIND_IMPACT, 6,
                         cx, cy, cz, ax, ay, az,
                         attacker == null ? 1 << fx.element.ordinal()
@@ -2587,7 +2587,7 @@ public final class WeaponVfxServerListener {
                 && sl.random.nextInt(100) < CRIT_TRIGGER_PERCENT) {
             if (!playSubtleAccent(sl, weapon, WeaponVisualEffectId.GOLDEN_CRIT_STAR, tx, ty, tz, ax, ay, az)) {
                 broadcastNear(sl, tx, ty, tz, WeaponVisualEffectId.GOLDEN_CRIT_STAR.id, KIND_IMPACT, 2,
-                        tx, ty, tz, ax, ay, az, palette, lightVisualScaleOf(fx, target, sizeScaleOf(target)));
+                        tx, ty, tz, ax, ay, az, palette, sizeScaleOf(target));
             }
         }
 

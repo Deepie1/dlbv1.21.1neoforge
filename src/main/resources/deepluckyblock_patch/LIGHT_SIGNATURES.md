@@ -1,4 +1,4 @@
-# Lumière V6 — pilier rétractile, disque céleste et charge de lance
+# Lumière V6.1 — pilier rétractile, disque céleste et charge de lance
 
 ## Fichiers synchronisés
 
@@ -151,6 +151,16 @@ Tous les dégâts différés passent par `hurtWithCapturedWeapon` : crédit du t
 - Niveau de log client MCreator ramené de `DEBUG` à `INFO`.
 
 Ces changements ne prétendent pas réparer les diagnostics vanilla/NeoForge : `/teleport`, schéma d’URL des assets de développement, sons de corne de chèvre, shader `Sampler2` ou contenu généré de `run/config/fml.toml`. Aucun shader vanilla n’est remplacé.
+
+## Correctif de compilation V6.1 — six erreurs `runClient`
+
+Le retour MCreator/NeoForge 1.21.1 a permis de corriger les types mappings qui ne sont pas détectables par tree-sitter :
+
+- les coordonnées des instances secondaires de Séraphin et Chrono sont converties en `float`, conformément aux paramètres réseau de `broadcastNear` ;
+- les trois appels Astral utilisent `SoundEvents.TRIDENT_THROW.value()` car `lightSound` attend un `SoundEvent` et non un `Holder<SoundEvent>` ;
+- la branche indépendante `GOLDEN_CRIT_STAR` réutilise `sizeScaleOf(target)` : elle ne possède pas de variable `fx` et ne doit pas appeler le helper propre à Séraphin.
+
+Aucune géométrie, durée, trajectoire, valeur de dégâts ou séquence sonore n’est modifiée par ce correctif de compilation.
 
 ## Aperçu hors ligne et limites de validation
 
