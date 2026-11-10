@@ -212,11 +212,13 @@ public final class LightSignatureVfx {
             sky(new SkyStar("Regulus", 10.140, 11.967)), sky(new SkyStar("Antares", 16.490, -26.432)),
             sky(new SkyStar("Deneb", 20.690, 45.280)), sky(new SkyStar("Polaris", 2.530, 89.264))};
 
-    /** ASTRAL V6 — disque céleste de 18 blocs, constellations variables et charge épaissie. */
+    /** ASTRAL V6.5 — disque céleste de 18 blocs, constellations variables et lance effilée en fondu. */
     private static void renderAstral(Voxels v, float t, int alpha, int salt) {
         int a = Math.round(alpha * smooth(t / 0.045f) * (1.0f - smooth((t - 0.86f) / 0.14f)));
-        float travel = easeInOut((t - 0.04f) / 0.26f), after = easeOut((t - 0.30f) / 0.30f);
-        float head = -18.0f + travel * 18.0f + after * 18.0f;
+        // Course : 18 blocs d'élan jusqu'à la cible, puis 26 blocs de poursuite pendant le fondu.
+        // La course s'achève exactement quand lanceAlpha atteint 0 : aucune disparition sèche.
+        float travel = easeInOut((t - 0.04f) / 0.26f), after = easeOut((t - 0.30f) / 0.42f);
+        float head = -18.0f + travel * 18.0f + after * 26.0f;
         float impact = 1.0f - smooth(Math.abs(t - 0.30f) / 0.095f);
         float charge = smooth((t - 0.04f) / 0.13f) * (1.0f - smooth((t - 0.27f) / 0.15f));
         float skyRadius = 18.0f;
@@ -307,8 +309,9 @@ public final class LightSignatureVfx {
             }
         }
 
-        float lanceAlpha = smooth(t / 0.10f) * (1.0f - smooth((t - 0.78f) / 0.22f));
-        float thickness = 1.0f + 1.20f * smooth(t / 0.30f);
+        float lanceAlpha = smooth(t / 0.10f) * (1.0f - smooth((t - 0.46f) / 0.26f));
+        // Lance fine : la charge ne gonfle plus le fût de ×2,2 (rendu « giga épais » signalé en jeu).
+        float thickness = 1.0f + 0.18f * smooth(t / 0.30f);
         float tail = head - 9.0f, socket = head - 1.10f;
         // Manche octogonal CONTINU : aucune pile de segments cubiques visibles.
         v.bodyLink(tail, 0.0f, 0.0f, socket, 0.0f, 0.0f,
@@ -345,11 +348,11 @@ public final class LightSignatureVfx {
         for (int ray = 0; ray < 4; ray++) {
             float angle = ray * TAU / 4.0f;
             v.glowLink(tail - 0.20f, 0.0f, 0.0f, tail - 0.55f,
-                    Mth.cos(angle) * 0.48f, Mth.sin(angle) * 0.48f,
+                    Mth.cos(angle) * 0.34f, Mth.sin(angle) * 0.34f,
                     0.022f * thickness, GOLD, WHITE, Math.round(a * lanceAlpha));
         }
 
-        // Très large lame de 2,30 blocs : douze sections, quatre faces et une arête centrale.
+        // Lame effilée de 2,30 blocs : douze sections, quatre faces et une arête centrale.
         for (int section = 0; section < 12; section++) {
             float u0 = section / 12.0f, u1 = (section + 1) / 12.0f;
             float f0 = socket + u0 * 2.30f, f1 = socket + u1 * 2.30f;
@@ -380,8 +383,8 @@ public final class LightSignatureVfx {
                 0.022f * thickness, BLUE, CYAN, Math.round(a * lanceAlpha * 0.84f));
         for (int wing = 0; wing < 4; wing++) {
             float angle = wing * TAU / 4.0f;
-            float y0 = Mth.cos(angle) * 0.22f, l0 = Mth.sin(angle) * 0.22f;
-            float y1 = Mth.cos(angle) * 0.95f, l1 = Mth.sin(angle) * 0.95f;
+            float y0 = Mth.cos(angle) * 0.16f, l0 = Mth.sin(angle) * 0.16f;
+            float y1 = Mth.cos(angle) * 0.58f, l1 = Mth.sin(angle) * 0.58f;
             v.glowLink(socket - 0.10f, y0, l0, socket - 0.30f, y1, l1, 0.030f * thickness, GOLD, IVORY, Math.round(a * lanceAlpha));
             v.glowLink(socket - 0.30f, y1, l1, socket + 0.18f, y1 * 0.72f, l1 * 0.72f, 0.026f * thickness, GOLD, WHITE, Math.round(a * lanceAlpha));
             v.glowLink(socket + 0.18f, y1 * 0.72f, l1 * 0.72f, socket + 0.28f, y0, l0, 0.022f * thickness, HONEY, WHITE, Math.round(a * lanceAlpha));
@@ -394,7 +397,7 @@ public final class LightSignatureVfx {
             v.glowLink(f + 0.07f, y, 0.0f, f, y - 0.07f, 0.0f, 0.012f * thickness, GOLD, WHITE, Math.round(a * lanceAlpha));
             v.glowLink(f, y - 0.07f, 0.0f, f - 0.07f, y, 0.0f, 0.012f * thickness, GOLD, WHITE, Math.round(a * lanceAlpha));
         }
-        float wake = smooth((t - 0.10f) / 0.17f) * (1.0f - smooth((t - 0.62f) / 0.24f));
+        float wake = smooth((t - 0.10f) / 0.17f) * (1.0f - smooth((t - 0.46f) / 0.26f));
         for (int trail = 0; trail < 20; trail++) {
             float u = trail / 19.0f, h = hash(salt, 540 + trail * 29), angle = trail * 2.3999632f - t * 3.0f;
             float r = (0.16f + u * 0.35f) * (0.65f + h * 0.35f);
@@ -432,9 +435,10 @@ public final class LightSignatureVfx {
         }
     }
 
+    /** Profil de lame : pointe effilée de 0,42 bloc de demi-largeur (0,84 bloc de diamètre). */
     private static float bladeWidth(float u) {
-        return u < 0.35f ? 0.24f + u / 0.35f * 0.86f
-                : 1.10f * (1.0f - (u - 0.35f) / 0.65f) + 0.008f;
+        return u < 0.35f ? 0.09f + u / 0.35f * 0.33f
+                : 0.42f * (1.0f - (u - 0.35f) / 0.65f) + 0.006f;
     }
 
     /** Projection sphérique rigide : rotations X/Y/Z, sans changer les distances angulaires. */

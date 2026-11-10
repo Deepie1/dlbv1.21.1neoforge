@@ -1,4 +1,4 @@
-# Lumière V6.4 — buffers possédés et rendu effectif des signatures
+# Lumière V6.5 — lance effilée, poursuite en fondu continu et buffers possédés
 
 ## Fichiers synchronisés
 
@@ -70,11 +70,11 @@ La cible principale reçoit son instance. Tous les autres `LivingEntity` qui son
 
 Chaque pilier joue `AMETHYST_BLOCK_CHIME` et `BEACON_AMBIENT` aigu au tick 0, `BEACON_ACTIVATE` au tick 9, `TOTEM_USE` et un second `BEACON_AMBIENT` au tick 10, `NOTE_BLOCK_BELL` au tick 12, `BEACON_POWER_SELECT` au tick 14 et `BEACON_DEACTIVATE` au tick 24. Les volumes secondaires sont réduits. Les horaires sont vérifiés statiquement ; l’audition NeoForge reste à contrôler dans `runClient`.
 
-## Astral Star Lance — disque céleste, constellations variables et charge épaissie
+## Astral Star Lance — disque céleste, constellations variables et lance effilée
 
 ### Zone circulaire de 18 blocs
 
-La lance part toujours de **−18 blocs à gauche**, atteint la cible à 0 puis continue à **+18 blocs à droite**. Un cercle horizontal de **18 blocs de rayon**, donc 36 blocs de diamètre, matérialise toute la zone entre le départ et la cible. La caméra de l’aperçu garde maintenant ce cercle entier dans le cadre au lieu de suivre uniquement la pointe.
+La lance part de **−18 blocs à gauche**, atteint la cible à 0 puis **poursuit 26 blocs au-delà de la cible** (soit 44 blocs de course) en s’effaçant continûment. Un cercle horizontal de **18 blocs de rayon**, donc 36 blocs de diamètre, matérialise toute la zone entre le départ et la cible. La caméra de l’aperçu garde maintenant ce cercle entier dans le cadre au lieu de suivre uniquement la pointe.
 
 Le disque contient **72 étoiles** : les douze étoiles nommées, dont **Polaris**, puis soixante points répartis uniformément par racine du rayon aléatoire. Leurs coordonnées F/L restent dans le cercle et leurs hauteurs varient. Polaris conserve son noyau et sa croix plus lumineux.
 
@@ -91,17 +91,24 @@ Un mélange déterministe de la seed choisit **2, 3 ou 4 constellations uniques*
 
 Les centres et échelles sont tirés dans le disque en laissant la place à la constellation complète. Le tirage reste stable pendant toute l’animation : les constellations ne changent pas à chaque frame. Chaque constellation sélectionnée alimente la charge par un canal et deux paquets lumineux.
 
-### Fade in, charge ×2,2 et fade out
+### Fade in, lame effilée et poursuite en fondu
 
 La lance apparaît progressivement pendant les premiers ticks au lieu d’être instantanément présente. Tous ses traits principaux — âme et rails du manche, bagues, hélices, arêtes de lame, fuller, croisée, runes et contours des gemmes — utilisent :
 
 ```text
-épaisseur = épaisseur V5 × (1 + 1,2 × smooth(t / 0,30))
+épaisseur  = 1 + 0,18 × smooth(t / 0,30)      // ×1 → ×1,18, plus ×2,2
+demi-lame  = 0,42 bloc au maximum             // 0,84 bloc de diamètre
 ```
 
-Le facteur commence donc à **×1** et atteint exactement **×2,2 à l’impact du tick 24**. La géométrie conserve son manche octogonal continu de 9 blocs, sa lame de 2,30 blocs et sa longueur totale de 10,2 blocs.
+Le facteur de charge ne gonfle plus le fût : il plafonne à **×1,18** au lieu de **×2,2**. La lame garde ses douze sections et sa longueur de 2,30 blocs, mais son profil maximal passe de **1,10 à 0,42 bloc de demi-largeur**, la garde de 0,95 à 0,58 et les rayons de douille de 0,48 à 0,34. Le manche octogonal continu de 9 blocs et la longueur totale de 10,2 blocs sont conservés : la lance redevient une arme fine au lieu d’un bloc de glace de près de 5 blocs de large.
 
-Après la course vers la droite, `lanceAlpha` effectue un fondu de sortie de **t = 0,78 à t = 1**. Un second fondu global termine le ciel, les constellations, les météores et les particules. La frame 80 est vide ; il n’y a plus de disparition anticipée à 88 % ni de cut instantané. Le manager transmet alpha 240 à Astral et laisse cette chorégraphie gérer le fondu, sans seconde atténuation linéaire.
+La course est allongée : `after = easeOut((t − 0,30) / 0,42)` pousse la pointe de **0 à +26 blocs** au-delà de la cible, et `lanceAlpha` vaut :
+
+```text
+lanceAlpha = smooth(t / 0,10) × (1 − smooth((t − 0,46) / 0,26))
+```
+
+Le fondu démarre dès **t = 0,46** — la lance reste donc pleinement lumineuse pendant les deux tiers de sa poursuite — et atteint **exactement 0 à t = 0,72**, instant où la course s’arrête : la lance glisse hors de la cible en s’effaçant, sans temps d’arrêt visible et sans cut. Le sillage suit le même profil (`t = 0,46 → 0,72`). Un second fondu global termine ensuite le ciel, les constellations, les météores et les particules. Le manager transmet alpha 240 à Astral et laisse cette chorégraphie gérer le fondu, sans seconde atténuation linéaire.
 
 ### Gameplay et sons inchangés
 
@@ -216,6 +223,29 @@ Aucun voxel, rayon, timing, fade, dégât, son ou comportement serveur n’est c
 
 Le slash doit maintenant apparaître seul ; la lance doit montrer son manche, sa lame et son ciel ; l’horloge doit montrer son cadran et ses contours. La vérification GPU réelle reste indispensable : les audits hors ligne valident la structure et les modèles, pas le framebuffer NeoForge/Intel.
 
+## Correctif V6.5 — épaisseur de la lance et fin de course
+
+Retour `runClient` après V6.4 : les effets sont **visibles** (plus aucun `Not building!`), les constellations et les étoiles sont validées, mais deux défauts restent sur Astral.
+
+### 1. « La lance est beaucoup trop grosse »
+
+La charge multipliait toutes les épaisseurs par **×2,2** (`1 + 1,2 × smooth`). Combinée au profil de lame de **1,10 bloc de demi-largeur**, elle produisait une lame de **2,42 blocs de demi-largeur, soit près de 5 blocs de diamètre** — d’où l’impression de bloc de glace.
+
+- facteur de charge : `1 + 1,2 × smooth` → `1 + 0,18 × smooth` (**×1 → ×1,18**) ;
+- profil de lame : `1,10` → `0,42` bloc de demi-largeur (**0,84 bloc de diamètre**) ;
+- garde : `0,95` → `0,58` bloc ; rayons de douille : `0,48` → `0,34` bloc ;
+- manche octogonal, longueur de lame (2,30 blocs), runes, gemmes, fuller et croisée conservés.
+
+### 2. « La lance va en fin de piste, puis disparaît »
+
+La pointe s’arrêtait à **+18 blocs** à `t = 0,60` alors que le fondu ne commençait qu’à `t = 0,78` : la lance restait figée un quart de l’animation avant de s’éteindre.
+
+- poursuite portée à **26 blocs au-delà de la cible** (`easeOut((t − 0,30) / 0,42)`, course totale 44 blocs) ;
+- `lanceAlpha` : `smooth(t / 0,10) × (1 − smooth((t − 0,46) / 0,26))`, donc fondu **continu pendant la poursuite**, nul pile à `t = 0,72` quand la course s’achève ;
+- sillage aligné sur le même fondu ; ciel, étoiles, météores, constellations et impact inchangés.
+
+Aucun impact gameplay : les dégâts (30 % primaire au tick 24, 50 % + push au-delà), la zone de collision, les sons et le verrou de 40 ticks ne dépendent ni de l’épaisseur ni de la distance parcourue.
+
 ## Correctif de rendu V6.4 — cause racine : deux consommateurs sur un seul BufferBuilder
 
 Le journal `[DLB-VFX] World render batch aborted` de V6.3 a fourni la preuve manquante. Pour le slash, Séraphin, Astral et Chrono, la première écriture de sommet lève :
@@ -275,7 +305,7 @@ Le workspace ne contient pas le JDK/Gradle/MCreator nécessaire à une compilati
 Tests prioritaires en jeu :
 
 1. Séraphin : tester plusieurs largeurs de hitbox, dont 1,5 / 2 / 1 ; mesurer le beam et le sceau 2,5×, la rétraction ticks 14–22, le fondu global 22–30 et l’absence de dégâts après le tick 14.
-2. Astral : vérifier le disque de 18 blocs, les 72 étoiles, les météores variables, le tirage de 2–4 constellations uniques, l’épaisseur ×2,2 au tick 24 et les fondus ; contrôler une seule touche et 50 % + push sur les ennemis avant/après.
+2. Astral : vérifier le disque de 18 blocs, les 72 étoiles, les météores variables, le tirage de 2–4 constellations uniques, la **lame fine de 0,84 bloc** et la **poursuite de 26 blocs en fondu continu jusqu’à 0** ; contrôler une seule touche et 50 % + push sur les ennemis avant/après.
 3. Chrono : placer zombies et animaux dans les 10 blocs, vérifier les horloges individuelles, le verrou de 10 s, les attaques conservées et la synchronisation des ticks avant/retour avec les aiguilles.
 4. Rajeunissement : contrôler mêmes entités, équipement et PV post-dégâts ; vérifier qu’un squelette n’est pas converti.
 5. Vérifier tous les sons vanilla et mesurer le framerate avec plusieurs piliers et horloges secondaires.
