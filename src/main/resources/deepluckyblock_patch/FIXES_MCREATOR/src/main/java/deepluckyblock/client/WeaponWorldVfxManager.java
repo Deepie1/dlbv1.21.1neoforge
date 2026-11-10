@@ -127,7 +127,7 @@ public final class WeaponWorldVfxManager {
     private static float pixelDensity = 1.0f;
     /** T350 : échelle de taille de la déclinaison en cours (0.80 .. 1.0). */
     private static float variantScale = 1.0f;
-    /** Séraphin V4 : dimensions monde contractuelles, sans respiration ni taille pseudo-aléatoire. */
+    /** Séraphin V5 : dimensions monde contractuelles, sans respiration ni taille pseudo-aléatoire. */
     private static boolean voxelSizeLocked = false;
 
     // ── T359-BIG-ANIM-SCALE : échelle des grosses animations, pilotée par la taille du mob touché ──
@@ -3627,13 +3627,19 @@ public final class WeaponWorldVfxManager {
             float previousPixelDensity = pixelDensity;
             voxelPulseEnabled = false;
             if (signature == LightSignatureVfx.SERAPH) {
-                // Ni mob, ni variante, ni hash de voxel : 0,05 / 0,60 × 16 monde exacts.
+                // Ni mob, ni variante, ni hash de voxel : 6 × 80 × 6 et cœur 0,5 → 5,5 exacts.
                 mobScaleActive = false;
                 variantScale = 1.0f;
                 pixelDensity = 1.0f;
                 voxelSizeLocked = true;
             }
             float lightDx = v.dirX(), lightDz = v.dirZ();
+            if (signature == LightSignatureVfx.ASTRAL) {
+                // Perpendiculaire au regard : la lance va de la gauche vers la droite du joueur.
+                float forwardX = lightDx;
+                lightDx = -lightDz;
+                lightDz = forwardX;
+            }
             if (signature == LightSignatureVfx.CHRONO) {
                 // L'horloge suit la caméra : le cadran ne se présente jamais par la tranche.
                 lightDx = -v.cx(); lightDz = -v.cz();

@@ -1230,10 +1230,16 @@ public final class WeaponVfxServerListener {
                         primary ? 0.30f : 0.12f, 2.00f);
                 lightSound(sl, bx, by, bz, now, 24, SoundEvents.BEACON_DEACTIVATE,
                         primary ? 0.30f : 0.12f, 1.55f);
+                lightSound(sl, bx, by, bz, now, 0, SoundEvents.BEACON_AMBIENT,
+                        primary ? 0.24f : 0.10f, 2.00f);
+                lightSound(sl, bx, by, bz, now, 10, SoundEvents.BEACON_AMBIENT,
+                        primary ? 0.28f : 0.12f, 2.00f);
+                lightSound(sl, bx, by, bz, now, 14, SoundEvents.BEACON_POWER_SELECT,
+                        primary ? 0.24f : 0.10f, 1.90f);
                 for (int delay = 10; delay <= 14; delay += 2) {
                     TestProcedure.schedule(sl, now + delay, () -> {
                         if (!beamTarget.isAlive() || beamTarget.level() != sl
-                                || !seraphRayContact(beamTarget, bx, by, bz, 0.60, 1.0f)) return;
+                                || !seraphRayContact(beamTarget, bx, by, bz, 2.75, 1.0f)) return;
                         boolean undead = beamTarget.getType().is(net.minecraft.tags.EntityTypeTags.SENSITIVE_TO_SMITE);
                         float factor = (undead ? 0.25f : 0.18f) * (primary ? 1.0f : 0.70f);
                         float cap = (undead ? 1.75f : 1.25f) * (primary ? 1.0f : 0.70f);
@@ -1248,52 +1254,38 @@ public final class WeaponVfxServerListener {
         }
 
         if (fx == WeaponVisualEffectId.ASTRAL_STAR_LANCE) {
-            // La constellation garde sa cible sans désactiver les attaques de celle-ci.
-            applyMovementHold(target, sl.getGameTime() + 25L, false);
+            // La primaire est immobilisée AVANT le départ et jusqu'après la perforation.
+            applyMovementHold(target, sl.getGameTime() + 40L, false);
             double rawX = attacker == null ? 0.0 : target.getX() - attacker.getX();
             double rawZ = attacker == null ? 1.0 : target.getZ() - attacker.getZ();
             double len = Math.max(0.001, Math.sqrt(rawX * rawX + rawZ * rawZ));
-            double dirX = rawX / len, dirZ = rawZ / len;
-            double startX = x - dirX * 4.35 * lightScale;
-            double startZ = z - dirZ * 4.35 * lightScale;
-            double endX = x + dirX * 4.35 * lightScale, endZ = z + dirZ * 4.35 * lightScale;
+            double forwardX = rawX / len, forwardZ = rawZ / len;
+            // Droite du joueur : gauche (-18) -> cible -> droite (+18), jamais depuis son corps.
+            double dirX = -forwardZ, dirZ = forwardX;
             for (int chime = 0; chime <= 12; chime += 4) {
                 lightSound(sl, x, y, z, now, chime, SoundEvents.AMETHYST_BLOCK_CHIME,
                         0.18f, 1.35f + chime * 0.035f);
             }
+            lightSound(sl, x, y, z, now, 4, SoundEvents.TRIDENT_THROW, 0.30f, 1.20f);
+            lightSound(sl, x, y, z, now, 14, SoundEvents.PLAYER_ATTACK_SWEEP, 0.25f, 1.50f);
             lightSound(sl, x, y, z, now, 15, SoundEvents.CHORUS_FRUIT_TELEPORT, 0.30f, 1.70f);
             lightSound(sl, x, y, z, now, 20, SoundEvents.TRIDENT_THROW, 0.42f, 1.45f);
             lightSound(sl, x, y, z, now, 24, SoundEvents.PLAYER_ATTACK_CRIT, 0.52f, 1.80f);
             lightSound(sl, x, y, z, now, 30, SoundEvents.ANVIL_PLACE, 0.20f, 1.75f);
+            lightSound(sl, x, y, z, now, 36, SoundEvents.PLAYER_ATTACK_SWEEP, 0.20f, 1.90f);
+            lightSound(sl, x, y, z, now, 40, SoundEvents.TRIDENT_THROW, 0.25f, 1.80f);
             lightSound(sl, x, y, z, now, 48, SoundEvents.AMETHYST_BLOCK_CHIME, 0.28f, 1.85f);
             lightSound(sl, x, y, z, now, 64, SoundEvents.CHORUS_FRUIT_TELEPORT, 0.18f, 1.25f);
-            TestProcedure.schedule(sl, now + 24, () -> {
-                List<LivingEntity> candidates = new ArrayList<>(sl.getEntitiesOfClass(LivingEntity.class,
-                        new AABB(Math.min(startX, endX) - 1.0, y - 2.5, Math.min(startZ, endZ) - 1.0,
-                                Math.max(startX, endX) + 1.0, y + 2.5, Math.max(startZ, endZ) + 1.0)));
-                LivingEntity lineAttacker = attacker;
-                candidates.removeIf(entity -> !lightTarget(entity, target, attackerId)
-                        || !segmentHitsEntity(startX, y, startZ, endX, y, endZ, entity, 0.16)
-                        || (entity.getId() != target.getId() && lineAttacker != null
-                            && !lineAttacker.hasLineOfSight(entity)));
-                candidates.sort((a, b) -> Double.compare(
-                        (a.getX() - startX) * dirX + (a.getZ() - startZ) * dirZ,
-                        (b.getX() - startX) * dirX + (b.getZ() - startZ) * dirZ));
-                for (LivingEntity entity : candidates) {
-                    boolean primary = entity.getId() == target.getId();
-                    float amount = primary
-                            ? net.minecraft.util.Mth.clamp(captured * 0.30f, 0.15f, 2.75f)
-                            : net.minecraft.util.Mth.clamp(captured * 0.18f, 0.10f, 1.75f);
-                    if (!hurtWithCapturedWeapon(sl, attackerId, entity, amount)) continue;
-                    entity.addEffect(new MobEffectInstance(MobEffects.GLOWING, 100, 0, false, true, true));
-                    entity.push(dirX * (primary ? 0.16 : 0.09), 0.07, dirZ * (primary ? 0.16 : 0.09));
-                    entity.hurtMarked = true;
-                }
-            });
+            Set<Integer> spearHits = new HashSet<>();
+            for (int delay = 4; delay <= 52; delay++) {
+                int age = delay;
+                TestProcedure.schedule(sl, now + delay, () -> tickAstralSpear(sl, attacker, attackerId,
+                        target, x, y, z, dirX, dirZ, captured, lightScale, age, spearHits));
+            }
             return;
         }
 
-        // Chrono V4 AoE : chaque mob non-joueur dans dix blocs reçoit sa propre horloge,
+        // Chrono V5 AoE : chaque mob non-joueur dans dix blocs reçoit sa propre horloge,
         // sa dette et son verrou. Les animaux AgeableMob peuvent donc aussi rajeunir.
         List<LivingEntity> chronoTargets = new ArrayList<>();
         chronoTargets.add(target);
@@ -1327,6 +1319,17 @@ public final class WeaponVfxServerListener {
                         105, 1, false, true, true));
             }
             float soundScale = primary ? 1.0f : 0.45f;
+            // Un son uniquement lorsque le cran de l'aiguille change : avant = hat, retour = snare.
+            for (int tick = 1; tick < 100; tick++) {
+                int step = chronoVisualStep(tick), previous = chronoVisualStep(tick - 1);
+                if (step > previous) {
+                    lightSound(sl, cx, cy, cz, now, tick, SoundEvents.NOTE_BLOCK_HAT.value(),
+                            0.055f * soundScale, 1.90f);
+                } else if (step < previous) {
+                    lightSound(sl, cx, cy, cz, now, tick, SoundEvents.NOTE_BLOCK_SNARE.value(),
+                            0.045f * soundScale, 1.55f);
+                }
+            }
             lightSound(sl, cx, cy, cz, now, 0, SoundEvents.AMETHYST_BLOCK_CHIME, 0.30f * soundScale, 0.75f);
             lightSound(sl, cx, cy, cz, now, 0, SoundEvents.ENDERMAN_TELEPORT, 0.20f * soundScale, 1.35f);
             for (int bell = 15; bell <= 45; bell += 15) {
@@ -1350,6 +1353,76 @@ public final class WeaponVfxServerListener {
                 chronoTarget.hurtMarked = true;
             });
         }
+    }
+
+    /** Position de la pointe au tick serveur, strictement identique au rendu de 80 ticks. */
+    private static float astralHeadAtTick(int delay) {
+        float t = delay / 80.0f;
+        float travel = easeInOutUnit((t - 0.04f) / 0.26f);
+        float after = easeOutUnit((t - 0.30f) / 0.30f);
+        return -18.0f + travel * 18.0f + after * 18.0f;
+    }
+
+    private static float smoothUnit(float x) {
+        x = net.minecraft.util.Mth.clamp(x, 0.0f, 1.0f);
+        return x * x * (3.0f - 2.0f * x);
+    }
+
+    private static float easeOutUnit(float x) {
+        x = net.minecraft.util.Mth.clamp(x, 0.0f, 1.0f);
+        return 1.0f - (1.0f - x) * (1.0f - x) * (1.0f - x);
+    }
+
+    private static float easeInOutUnit(float x) {
+        x = net.minecraft.util.Mth.clamp(x, 0.0f, 1.0f);
+        return x < 0.5f ? 4.0f * x * x * x
+                : 1.0f - (float) Math.pow(-2.0f * x + 2.0f, 3.0f) * 0.5f;
+    }
+
+    /** Contact balayé de la longue lance : une touche et un push par ennemi, avant ou après la primaire. */
+    private static void tickAstralSpear(ServerLevel sl, LivingEntity attacker, int attackerId,
+                                        LivingEntity primary, double x, double y, double z,
+                                        double dirX, double dirZ, float captured, float scale,
+                                        int delay, Set<Integer> spearHits) {
+        float head = astralHeadAtTick(delay) * scale;
+        double tail = head - 9.0 * scale, tip = head + 1.20 * scale;
+        double startX = x + dirX * tail, startZ = z + dirZ * tail;
+        double endX = x + dirX * tip, endZ = z + dirZ * tip;
+        List<LivingEntity> candidates = new ArrayList<>(sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(Math.min(startX, endX) - 1.0, y - 2.5 * scale, Math.min(startZ, endZ) - 1.0,
+                        Math.max(startX, endX) + 1.0, y + 2.5 * scale, Math.max(startZ, endZ) + 1.0)));
+        candidates.sort((a, b) -> Integer.compare(a.getId(), b.getId()));
+        float primaryDamage = net.minecraft.util.Mth.clamp(captured * 0.30f, 0.15f, 2.75f);
+        for (LivingEntity entity : candidates) {
+            if (spearHits.contains(entity.getId()) || !lightTarget(entity, primary, attackerId)) continue;
+            boolean isPrimary = entity.getId() == primary.getId();
+            // La primaire reste verrouillée et reçoit son pulse à l'impact visuel du tick 24.
+            if (isPrimary && delay != 24) continue;
+            boolean guaranteedPrimary = isPrimary && delay == 24;
+            if (!guaranteedPrimary
+                    && !segmentHitsEntity(startX, y, startZ, endX, y, endZ, entity, 0.22 * scale)) continue;
+            if (!isPrimary && attacker != null && !attacker.hasLineOfSight(entity)) continue;
+            float amount = isPrimary ? primaryDamage : primaryDamage * 0.50f;
+            if (!hurtWithCapturedWeapon(sl, attackerId, entity, amount)) continue;
+            spearHits.add(entity.getId());
+            entity.addEffect(new MobEffectInstance(MobEffects.GLOWING, 100, 0, false, true, true));
+            float push = isPrimary ? 0.30f : 0.45f;
+            entity.push(dirX * push, 0.10, dirZ * push);
+            entity.hurtMarked = true;
+        }
+    }
+
+    /** Crans visuels de Chrono : les mêmes entiers pilotent l'angle et les deux tick sonores. */
+    private static int chronoVisualStep(int tick) {
+        tick = net.minecraft.util.Mth.clamp(tick, 0, 99);
+        if (tick < 20) return (int) Math.floor(smoothUnit(tick / 20.0f) * 16.0f);
+        if (tick < 55) {
+            float u = (tick - 20) / 35.0f;
+            float continuous = 2.0f + u * 8.0f + u * u * 4.0f;
+            return (int) Math.floor(continuous * 8.0f);
+        }
+        float continuous = 14.0f - smoothUnit((tick - 55) / 38.0f) * 10.0f;
+        return (int) Math.ceil(continuous * 8.0f - 1.0E-6);
     }
 
     /** La primaire conserve son éligibilité PvP ; les touches collatérales restent enemies-only. */
@@ -1385,7 +1458,7 @@ public final class WeaponVfxServerListener {
     private static boolean seraphRayContact(LivingEntity entity, double x, double y, double z,
                                             double radius, float lightScale) {
         AABB box = entity.getBoundingBox();
-        if (box.maxY < y - 0.90 * lightScale || box.minY > y + 15.10 * lightScale) return false;
+        if (box.maxY < y - 0.90 * lightScale || box.minY > y + 79.10 * lightScale) return false;
         return discContact(box, x, z, radius);
     }
 
