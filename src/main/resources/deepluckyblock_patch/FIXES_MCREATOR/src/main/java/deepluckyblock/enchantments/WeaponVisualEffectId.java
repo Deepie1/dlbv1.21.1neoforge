@@ -81,7 +81,11 @@ public enum WeaponVisualEffectId {
     THORN_MAW_ROOT(31, Category.ELEMENT, 71, false, DeepElement.WOOD),
     /** #32 Terre : main de colosse complète, cinq doigts articulés puis effritement. */
     TITAN_GRASP(32, Category.ELEMENT, 72, false, DeepElement.EARTH),
-    /** #41 Archive Wind : code conservé pour une refonte ultérieure, hors rotation et sans mapping actif. */
+    /**
+     * #41 Vent : tempête de sable — jupe de dune, trois bras spiralés, rubans et grains.
+     * T374-WIND-REFONTE : la variante sort de l'archive Terre et prend son propre moteur
+     * ({@code WindSignatureVfx}); elle reste hors rotation pour ne pas modifier les familles existantes.
+     */
     SANDSTORM_DUNE(41, Category.ELEMENT, 72, false, DeepElement.EARTH),
     /** #33 Ombre : éclipse — disque noir, voile et triple griffure (palette violet/noir T373). */
     ECLIPSE_VEIL(33, Category.ELEMENT, 74, false, DeepElement.SHADOW),
@@ -101,7 +105,14 @@ public enum WeaponVisualEffectId {
     /** #39 Poison : voile de miasme — nuage vert sombre en pixels, rampe de spores. */
     MIASMA_SHROUD(39, Category.ELEMENT, 69, false, DeepElement.POISON),
     /** #40 Poison : nova venimeuse — 10 aiguillons qui jaillissent puis retombent. */
-    PLAGUE_NOVA(40, Category.ELEMENT, 81, false, DeepElement.POISON);
+    PLAGUE_NOVA(40, Category.ELEMENT, 81, false, DeepElement.POISON),
+    /**
+     * #42 Vent : œil du cyclone — deux entonnoirs contra-rotatifs, anneau de calme et débris.
+     * Troisième signature du vent, déclarée <b>en fin d'énumération</b> pour ne décaler aucun
+     * {@code ordinal()} existant (ils servent de sel de rendu). Démontrable par {@code /dlbvfx},
+     * prête pour un futur enchantement : aucun enchantement ne la déclenche aujourd'hui.
+     */
+    TEMPEST_EYE(42, Category.ELEMENT, 74, false, DeepElement.WOOD);
 
     public enum Category {
         EDGE_SHARP,
@@ -230,6 +241,9 @@ public enum WeaponVisualEffectId {
         // #22 Lance Éolienne & Rafale Céleste
         register(ZEPHYR_WIND_LANCE, "wind_lance", "peregrine", "recoil_launch", "fan_volley", "scatter",
                 "whisper", "string_snap");
+        // #42 Œil du cyclone (vent) : aucun enchantement ne le déclenche encore, mais la commande
+        // de test doit pouvoir le nommer comme les autres signatures.
+        register(TEMPEST_EYE, "tempest", "tempete", "cyclone", "whirlwind", "eye_of_the_storm");
         // #23 Jugement du Séraphin
         register(SERAPH_SKY_PILLAR, "seraphs_judgment", "minecraft:smite");
         // #24 Lame Flétrie & Chasse d'Ombre
@@ -479,7 +493,7 @@ public enum WeaponVisualEffectId {
     public static WeaponVisualEffectId signatureFor(DeepElement el) {
         WeaponVisualEffectId best = null;
         for (WeaponVisualEffectId fx : values()) {
-            if (fx.element != el || fx == SANDSTORM_DUNE) continue;
+            if (fx.element != el || fx == SANDSTORM_DUNE || fx == TEMPEST_EYE) continue;
             if (best == null || fx.priority > best.priority) best = fx;
         }
         return best;
@@ -496,8 +510,8 @@ public enum WeaponVisualEffectId {
         }
         List<WeaponVisualEffectId> out = new ArrayList<>(4);
         for (WeaponVisualEffectId fx : values()) {
-            // Archive Wind : ni Terre active, ni combo, ni commande de famille.
-            if (fx.element == el && fx != SANDSTORM_DUNE) out.add(fx);
+            // Vent hors familles Terre/Bois : la rotation de Bois reste Thorn, Verdant et Zéphyr.
+            if (fx.element == el && fx != SANDSTORM_DUNE && fx != TEMPEST_EYE) out.add(fx);
         }
         return out;
     }

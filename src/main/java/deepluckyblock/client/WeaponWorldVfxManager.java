@@ -599,6 +599,7 @@ public final class WeaponWorldVfxManager {
                 : kind == KIND_PLAGUE_CONTAGION ? 48 : switch (fx) {
             // Chorégraphies Wood complètes : croissance, impacts, stun et explosion de sève.
             case ZEPHYR_WIND_LANCE -> 80;
+            case TEMPEST_EYE -> 120;
             case THORN_MAW_ROOT -> 96;
             case VERDANT_SAP_BLOOM -> 96;
             case MOLTEN_FIRE_WAVE -> 92;
@@ -3519,10 +3520,14 @@ public final class WeaponWorldVfxManager {
      * sol se fend en étoile, et des blocs de roche sont arrachés (éclats facettés).
      */
     private static void impactEarth(ImpactView v) {
+        // T374-WIND-REFONTE : Sandstorm n'est plus une archive Terre, elle rejoint le moteur du vent.
+        if (v.inst().effect == WeaponVisualEffectId.SANDSTORM_DUNE) {
+            impactWind(v, WindSignatureVfx.SANDSTORM);
+            return;
+        }
         int signature = switch (v.inst().effect) {
             case SEISMIC_TECTONIC -> EarthSignatureVfx.SEISMIC;
             case TITAN_GRASP -> EarthSignatureVfx.TITAN;
-            case SANDSTORM_DUNE -> EarthSignatureVfx.SANDSTORM;
             case WARLORD_RALLY_SIGIL -> EarthSignatureVfx.RALLY;
             default -> -1;
         };
@@ -3681,11 +3686,19 @@ public final class WeaponWorldVfxManager {
         }
     }
 
-    /** 木 BOIS — GAIA : un arbre-monde complet, puis l'accent propre au titre de l'arme. */
+    /**
+     * 木 BOIS — GAIA : un arbre-monde complet, puis l'accent propre au titre de l'arme.
+     * T374-WIND-REFONTE : la lance de zéphyr et l'œil du cyclone ne passent plus par Gaia, ils ont
+     * leur propre moteur voxel ; seuls Thorn et Verdant conservent l'arbre.
+     */
     private static void impactWood(ImpactView v) {
         WeaponVisualEffectId fx = v.inst().effect;
-        int variant = fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE ? GaiaWorldTreeVfx.ZEPHYR
-                : fx == WeaponVisualEffectId.THORN_MAW_ROOT ? GaiaWorldTreeVfx.THORN
+        if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE || fx == WeaponVisualEffectId.TEMPEST_EYE) {
+            impactWind(v, fx == WeaponVisualEffectId.TEMPEST_EYE
+                    ? WindSignatureVfx.TEMPEST : WindSignatureVfx.ZEPHYR);
+            return;
+        }
+        int variant = fx == WeaponVisualEffectId.THORN_MAW_ROOT ? GaiaWorldTreeVfx.THORN
                 : GaiaWorldTreeVfx.VERDANT;
         // Les impacts transportent cible -> attaquant ; les accents dirigés utilisent l'inverse.
         float dirX = -v.dirX(), dirZ = -v.dirZ();
@@ -3694,6 +3707,26 @@ public final class WeaponWorldVfxManager {
         try {
             GaiaWorldTreeVfx.render(v.vc(), v.mat(), v.tmp(), v.cx(), v.cy(), v.cz(), v.t(),
                     dirX, dirZ, variant, v.fadeA(), v.salt());
+        } finally {
+            voxelPulseEnabled = previousPulse;
+        }
+    }
+
+    /**
+     * 風 VENT — moteur voxel dédié (T374) : lances de zéphyr, tempête de sable et œil du cyclone.
+     *
+     * <p>Les impacts transportent cible → attaquant, donc la direction est inversée comme pour les
+     * autres familles. La pulsation de taille est coupée : rubans et grains doivent rester jointifs
+     * pendant leur mouvement, sinon les lances se disloquent visuellement.</p>
+     */
+    private static void impactWind(ImpactView v, int signature) {
+        boolean previousPulse = voxelPulseEnabled;
+        voxelPulseEnabled = false;
+        try {
+            WindSignatureVfx.render(v.vc(), v.mat(), v.tmp(),
+                    v.cx(), v.cy(), v.cz(), v.t(),
+                    -v.dirX(), -v.dirZ(), signature, v.fadeA(),
+                    (int) (v.inst().seed & 0x7FFFFFFFL));
         } finally {
             voxelPulseEnabled = previousPulse;
         }

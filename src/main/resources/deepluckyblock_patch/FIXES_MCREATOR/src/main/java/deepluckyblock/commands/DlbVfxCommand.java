@@ -154,6 +154,8 @@ public final class DlbVfxCommand {
 
     private static int dummyNextEffectTick(WeaponVisualEffectId fx) {
         if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) return 114; // impact 30 + 80 + marge
+        if (fx == WeaponVisualEffectId.TEMPEST_EYE) return 154;       // impact 30 + 120 + marge
+        if (fx == WeaponVisualEffectId.SANDSTORM_DUNE) return 174;    // impact 30 + 140 + marge
         if (fx == WeaponVisualEffectId.THORN_MAW_ROOT) return 130;  // impact 30 + 96 + marge
         if (fx == WeaponVisualEffectId.VERDANT_SAP_BLOOM) return 130; // impact 30 + 96 + marge
         if (fx == WeaponVisualEffectId.SEISMIC_TECTONIC) return 150; // impact 30 + 112 + marge
@@ -751,6 +753,7 @@ public final class DlbVfxCommand {
         if (kind == KIND_SWING) return 22;
         int duration = switch (fx) {
             case ZEPHYR_WIND_LANCE -> 80;
+            case TEMPEST_EYE -> 120;
             case THORN_MAW_ROOT, VERDANT_SAP_BLOOM -> 96;
             case MOLTEN_FIRE_WAVE -> 92;
             case SOUL_FIRE_CRESCENT -> 112;
