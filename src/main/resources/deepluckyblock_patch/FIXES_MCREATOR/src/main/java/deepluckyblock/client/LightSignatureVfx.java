@@ -33,60 +33,59 @@ public final class LightSignatureVfx {
     /** glow = passe additive ; body = passe alpha réelle, jamais le même buffer. */
     public static void render(VertexConsumer glow, VertexConsumer body, Matrix4f mat, Vector3f tmp,
                               float cx, float cy, float cz, float t, float dx, float dz,
-                              int variant, int alpha, int salt) {
+                              int variant, int alpha, int salt, float bodyWidth) {
         if (t <= 0.0f || t >= 1.0f || alpha <= 0) return;
         float length = Mth.sqrt(dx * dx + dz * dz);
         if (length < 0.001f) { dx = 0.0f; dz = 1.0f; }
         else { dx /= length; dz /= length; }
         Voxels v = new Voxels(glow, body, mat, tmp, cx, cy, cz, dx, dz, t, variant != ASTRAL);
-        if (variant == SERAPH) renderSeraph(v, t, alpha, salt);
+        if (variant == SERAPH) renderSeraph(v, t, alpha, salt, bodyWidth);
         else if (variant == ASTRAL) renderAstral(v, t, alpha, salt);
         else renderChrono(v, t, alpha, salt);
     }
 
-    /** SERAPH V5 — deux cubes 6×80×6 et 0,5→5,5×80, pluie et sceau horizontal jointif. */
-    private static void renderSeraph(Voxels v, float t, int alpha, int salt) {
-        float castEnd = 10.0f / 30.0f, damageEnd = 14.0f / 30.0f;
-        float close = smooth((t - damageEnd) / (2.0f / 30.0f));
-        float visibility = 1.0f - close;
-        float growth = easeInOut(t / castEnd);
-        float innerHalf = 0.25f + 2.50f * growth;
-        float seal = smooth(t / 0.08f) * (1.0f - smooth((t - damageEnd) / (1.0f - damageEnd)));
-        int a = Math.round(alpha * smooth(t / 0.025f) * (1.0f - smooth((t - 0.92f) / 0.075f)));
+    /** SERAPH V6 — largeur de hitbox, cœur rétractile, sceau 2,5× et fondu global. */
+    private static void renderSeraph(Voxels v, float t, int alpha, int salt, float bodyWidth) {
+        float castEnd = 10.0f / 30.0f, damageEnd = 14.0f / 30.0f, shrinkEnd = 22.0f / 30.0f;
+        float growth = easeInOut(t / castEnd)
+                * (1.0f - easeInOut((t - damageEnd) / (shrinkEnd - damageEnd)));
+        float outerHalf = Math.max(0.05f, bodyWidth) * 0.50f;
+        float innerHalf = Mth.lerp(growth, outerHalf / 12.0f, outerHalf * 11.0f / 12.0f);
+        float seal = smooth(t / 0.08f);
+        int a = Math.round(alpha * smooth(t / 0.025f)
+                * (1.0f - smooth((t - 22.0f / 30.0f) / (8.0f / 30.0f))));
         float centerY = 39.10f;
 
-        // Deux volumes, jamais une succession de mailles : extérieur 6×80×6, intérieur dynamique.
-        v.bodyBox(0.0f, centerY, 0.0f, 3.0f, 40.0f, 3.0f,
-                IVORY, Math.round(a * visibility * 0.20f));
+        // La hitbox principale fixe X/Z ; seul le cœur grandit puis se rétracte, jamais Y.
+        v.bodyBox(0.0f, centerY, 0.0f, outerHalf, 40.0f, outerHalf,
+                IVORY, Math.round(a * 0.20f));
         v.bodyBox(0.0f, centerY, 0.0f, innerHalf, 40.0f, innerHalf,
-                WHITE, Math.round(a * visibility * 0.55f));
+                WHITE, Math.round(a * 0.55f));
         v.glowLink(0.0f, 79.10f, 0.0f, 0.0f, -0.90f, 0.0f,
-                innerHalf, WHITE, IVORY, Math.round(a * visibility));
-        // Douze arêtes très fines rendent l’enveloppe transparente lisible sans ajouter de volume.
+                innerHalf, WHITE, IVORY, a);
         for (int corner = 0; corner < 4; corner++) {
-            float f = (corner & 1) == 0 ? -3.0f : 3.0f;
-            float l = (corner & 2) == 0 ? -3.0f : 3.0f;
+            float f = (corner & 1) == 0 ? -outerHalf : outerHalf;
+            float l = (corner & 2) == 0 ? -outerHalf : outerHalf;
             v.glowLink(f, 79.10f, l, f, -0.90f, l, 0.025f, HONEY, IVORY,
-                    Math.round(a * visibility * 0.45f));
+                    Math.round(a * 0.45f));
         }
         for (int level = 0; level < 2; level++) {
             float y = level == 0 ? -0.90f : 79.10f;
             for (int side = 0; side < 4; side++) {
                 float angle = side * TAU / 4.0f + (float) Math.PI / 4.0f;
                 float next = (side + 1) * TAU / 4.0f + (float) Math.PI / 4.0f;
-                float radius = 3.0f * Mth.sqrt(2.0f);
+                float radius = outerHalf * Mth.sqrt(2.0f);
                 v.glowLink(Mth.cos(angle) * radius, y, Mth.sin(angle) * radius,
                         Mth.cos(next) * radius, y, Mth.sin(next) * radius,
-                        0.020f, HONEY, IVORY, Math.round(a * visibility * 0.38f));
+                        0.020f, HONEY, IVORY, Math.round(a * 0.38f));
             }
         }
 
-        // Pluie extérieure : petites streaks verticales qui descendent réellement du ciel.
         for (int mote = 0; mote < 24; mote++) {
             float h = hash(salt, 2100 + mote * 43), h2 = hash(salt, 2300 + mote * 29);
             float fall = (t * (1.35f + h * 0.75f) + h2) % 1.0f;
             float angle = mote * 2.3999632f + t * 0.18f;
-            float radius = 3.45f + h * 1.55f;
+            float radius = outerHalf * (1.15f + h * 0.50f);
             float y = 79.10f - fall * 80.0f;
             v.rot(Mth.cos(angle) * radius, y, Mth.sin(angle) * radius,
                     0.024f + h * 0.015f, 0.35f + h2 * 0.45f, 0.024f,
@@ -95,10 +94,11 @@ public final class LightSignatureVfx {
                     Math.round(a * (0.82f - fall * 0.38f)));
         }
 
-        // Sceau horizontal jointif : couronnes, carrés fermés, octogramme, rayons et satellites.
-        float cy = 79.35f;
+        // Rayon = 1,25 × largeur : le diamètre du sceau vaut exactement 2,5 × le beam.
+        float cy = 79.35f, sealRadius = Math.max(0.05f, bodyWidth) * 1.25f;
+        float sealScale = sealRadius / 4.20f;
         for (int ring = 0; ring < 3; ring++) {
-            float radius = ring == 0 ? 4.20f : ring == 1 ? 3.85f : 2.65f;
+            float radius = (ring == 0 ? 4.20f : ring == 1 ? 3.85f : 2.65f) * sealScale;
             float spin = (ring % 2 == 0 ? 1.0f : -1.0f) * t * (0.32f + ring * 0.11f);
             float y = cy + ring * 0.025f;
             for (int part = 0; part < 48; part++) {
@@ -109,58 +109,61 @@ public final class LightSignatureVfx {
                         Math.round(a * seal * (0.88f - ring * 0.10f)));
             }
         }
-        // Deux carrés exacts, chacun refermé sur son premier sommet.
         for (int square = 0; square < 2; square++) {
             float rotation = square * TAU / 8.0f + (square == 0 ? t * 0.24f : -t * 0.20f);
             for (int side = 0; side < 4; side++) {
                 float a0 = side * TAU / 4.0f + rotation, a1 = (side + 1) * TAU / 4.0f + rotation;
-                v.glowLink(Mth.cos(a0) * 2.65f, cy + 0.10f, Mth.sin(a0) * 2.65f,
-                        Mth.cos(a1) * 2.65f, cy + 0.10f, Mth.sin(a1) * 2.65f,
+                v.glowLink(Mth.cos(a0) * 2.65f * sealScale, cy + 0.10f, Mth.sin(a0) * 2.65f * sealScale,
+                        Mth.cos(a1) * 2.65f * sealScale, cy + 0.10f, Mth.sin(a1) * 2.65f * sealScale,
                         0.022f, square == 0 ? HONEY : IVORY, WHITE, Math.round(a * seal * 0.90f));
             }
         }
-        // Octogramme fermé : les seize segments partagent exactement leurs sommets.
         for (int point = 0; point < 16; point++) {
             float a0 = point * TAU / 16.0f - t * 0.18f, a1 = (point + 1) * TAU / 16.0f - t * 0.18f;
-            float r0 = point % 2 == 0 ? 2.45f : 1.05f, r1 = (point + 1) % 2 == 0 ? 2.45f : 1.05f;
+            float r0 = (point % 2 == 0 ? 2.45f : 1.05f) * sealScale;
+            float r1 = ((point + 1) % 2 == 0 ? 2.45f : 1.05f) * sealScale;
             v.glowLink(Mth.cos(a0) * r0, cy + 0.14f, Mth.sin(a0) * r0,
                     Mth.cos(a1) * r1, cy + 0.14f, Mth.sin(a1) * r1,
                     0.018f, IVORY, WHITE, Math.round(a * seal * 0.88f));
         }
-        // Seize rayons relient explicitement la couronne intérieure à la couronne intermédiaire.
         for (int spoke = 0; spoke < 16; spoke++) {
             float angle = spoke * TAU / 16.0f + t * 0.12f;
-            v.glowLink(Mth.cos(angle) * 2.65f, cy + 0.17f, Mth.sin(angle) * 2.65f,
-                    Mth.cos(angle) * 3.85f, cy + 0.17f, Mth.sin(angle) * 3.85f,
+            v.glowLink(Mth.cos(angle) * 2.65f * sealScale, cy + 0.17f, Mth.sin(angle) * 2.65f * sealScale,
+                    Mth.cos(angle) * 3.85f * sealScale, cy + 0.17f, Mth.sin(angle) * 3.85f * sealScale,
                     spoke % 2 == 0 ? 0.018f : 0.011f, GOLD, WHITE, Math.round(a * seal * 0.80f));
         }
         for (int rune = 0; rune < 8; rune++) {
             float angle = rune * TAU / 8.0f + t * 0.32f;
-            float f = Mth.cos(angle) * 3.85f, l = Mth.sin(angle) * 3.85f, y = cy + 0.20f;
-            v.glowLink(f - 0.16f, y, l, f, y, l + 0.16f, 0.014f, GOLD, WHITE, Math.round(a * seal));
-            v.glowLink(f, y, l + 0.16f, f + 0.16f, y, l, 0.014f, GOLD, WHITE, Math.round(a * seal));
-            v.glowLink(f + 0.16f, y, l, f, y, l - 0.16f, 0.014f, GOLD, WHITE, Math.round(a * seal));
-            v.glowLink(f, y, l - 0.16f, f - 0.16f, y, l, 0.014f, GOLD, WHITE, Math.round(a * seal));
+            float f = Mth.cos(angle) * 3.85f * sealScale;
+            float l = Mth.sin(angle) * 3.85f * sealScale, y = cy + 0.20f;
+            float r = 0.16f * sealScale;
+            v.glowLink(f - r, y, l, f, y, l + r, 0.014f, GOLD, WHITE, Math.round(a * seal));
+            v.glowLink(f, y, l + r, f + r, y, l, 0.014f, GOLD, WHITE, Math.round(a * seal));
+            v.glowLink(f + r, y, l, f, y, l - r, 0.014f, GOLD, WHITE, Math.round(a * seal));
+            v.glowLink(f, y, l - r, f - r, y, l, 0.014f, GOLD, WHITE, Math.round(a * seal));
         }
         for (int satellite = 0; satellite < 4; satellite++) {
             float angle = satellite * TAU / 4.0f + (float) Math.PI / 4.0f - t * 0.16f;
-            float cf = Mth.cos(angle) * 4.20f, cl = Mth.sin(angle) * 4.20f, y = cy + 0.23f;
-            v.glowLink(Mth.cos(angle) * 3.85f, y, Mth.sin(angle) * 3.85f, cf, y, cl,
-                    0.016f, IVORY, WHITE, Math.round(a * seal * 0.82f));
+            float cf = Mth.cos(angle) * 4.20f * sealScale, cl = Mth.sin(angle) * 4.20f * sealScale;
+            float y = cy + 0.23f;
+            v.glowLink(Mth.cos(angle) * 3.85f * sealScale, y, Mth.sin(angle) * 3.85f * sealScale,
+                    cf, y, cl, 0.016f, IVORY, WHITE, Math.round(a * seal * 0.82f));
             for (int part = 0; part < 12; part++) {
                 float p0 = part * TAU / 12.0f - t, p1 = (part + 1) * TAU / 12.0f - t;
-                v.glowLink(cf + Mth.cos(p0) * 0.30f, y, cl + Mth.sin(p0) * 0.30f,
-                        cf + Mth.cos(p1) * 0.30f, y, cl + Mth.sin(p1) * 0.30f,
+                float sr = 0.30f * sealScale;
+                v.glowLink(cf + Mth.cos(p0) * sr, y, cl + Mth.sin(p0) * sr,
+                        cf + Mth.cos(p1) * sr, y, cl + Mth.sin(p1) * sr,
                         0.014f, IVORY, WHITE, Math.round(a * seal * 0.84f));
             }
         }
         for (int ray = 0; ray < 8; ray++) {
             float angle = ray * TAU / 8.0f + t * 0.20f;
             v.glowLink(0.0f, cy + 0.25f, 0.0f,
-                    Mth.cos(angle) * 1.05f, cy + 0.25f, Mth.sin(angle) * 1.05f,
+                    Mth.cos(angle) * 1.05f * sealScale, cy + 0.25f, Mth.sin(angle) * 1.05f * sealScale,
                     0.018f, WHITE, IVORY, Math.round(a * seal));
         }
-        v.bodyBox(0.0f, cy, 0.0f, 0.28f, 0.03f, 0.28f, WHITE, Math.round(a * seal * 0.28f));
+        v.bodyBox(0.0f, cy, 0.0f, 0.28f * sealScale, 0.03f, 0.28f * sealScale,
+                WHITE, Math.round(a * seal * 0.28f));
     }
 
     /** Coordonnées équatoriales J2000 simplifiées : ascension droite en heures, déclinaison en degrés. */
@@ -194,8 +197,13 @@ public final class LightSignatureVfx {
             sky(new SkyStar("Mintaka", 5.533, -.299)), sky(new SkyStar("Saiph", 5.796, -9.670)),
             sky(new SkyStar("Rigel", 5.242, -8.202))});
     private static final int[] ORION_LINKS = {0, 1, 0, 2, 1, 4, 2, 3, 3, 4, 2, 5, 4, 6, 5, 6};
-    private static final float[][] CONSTELLATION_SOURCES = {
-            {-5.0f, 4.0f, -4.0f}, {0.40f, 6.0f, 4.0f}, {5.0f, 3.50f, -3.0f}};
+    private static final float[][] CYGNUS = centered(new float[][]{
+            sky(new SkyStar("Deneb", 20.690, 45.280)), sky(new SkyStar("Sadr", 20.370, 40.257)),
+            sky(new SkyStar("Gienah", 20.770, 33.970)), sky(new SkyStar("Delta Cygni", 19.750, 45.131)),
+            sky(new SkyStar("Albireo", 19.512, 27.960))});
+    private static final int[] CYGNUS_LINKS = {0, 1, 1, 2, 1, 4, 3, 1};
+    private static final float[][][] CONSTELLATIONS = {URSA_MAJOR, CASSIOPEIA, ORION, CYGNUS};
+    private static final int[][] CONSTELLATION_LINKS = {URSA_LINKS, CASSIOPEIA_LINKS, ORION_LINKS, CYGNUS_LINKS};
     private static final float[][] SKY_FIELD = {
             sky(new SkyStar("Sirius", 6.752, -16.716)), sky(new SkyStar("Canopus", 6.399, -52.696)),
             sky(new SkyStar("Vega", 18.615, 38.784)), sky(new SkyStar("Capella", 5.278, 45.998)),
@@ -204,60 +212,113 @@ public final class LightSignatureVfx {
             sky(new SkyStar("Regulus", 10.140, 11.967)), sky(new SkyStar("Antares", 16.490, -26.432)),
             sky(new SkyStar("Deneb", 20.690, 45.280)), sky(new SkyStar("Polaris", 2.530, 89.264))};
 
-    /** ASTRAL V5 — longue lance latérale −18→+18, manche octogonal continu et ciel réel. */
+    /** ASTRAL V6 — disque céleste de 18 blocs, constellations variables et charge épaissie. */
     private static void renderAstral(Voxels v, float t, int alpha, int salt) {
-        float enter = smooth(t / 0.045f), exit = 1.0f - smooth((t - 0.76f) / 0.22f);
-        int a = Math.round(alpha * enter * exit);
+        int a = Math.round(alpha * smooth(t / 0.045f) * (1.0f - smooth((t - 0.86f) / 0.14f)));
         float travel = easeInOut((t - 0.04f) / 0.26f), after = easeOut((t - 0.30f) / 0.30f);
         float head = -18.0f + travel * 18.0f + after * 18.0f;
         float impact = 1.0f - smooth(Math.abs(t - 0.30f) / 0.095f);
-        float visibility = 1.0f - smooth((t - 0.58f) / 0.25f);
         float charge = smooth((t - 0.04f) / 0.13f) * (1.0f - smooth((t - 0.27f) / 0.15f));
+        float skyRadius = 18.0f;
 
-        // Champ d'étoiles à des coordonnées différentes ; Polaris est la dernière et la plus vive.
-        for (int i = 0; i < SKY_FIELD.length; i++) {
-            float[] star = SKY_FIELD[i];
-            float f = star[0] * 10.0f, y = 9.0f + star[1] * 10.0f, l = star[2] * 10.0f;
+        // Le cercle matérialise toute la zone départ → cible, puis reste visible pendant la sortie.
+        for (int part = 0; part < 96; part++) {
+            float a0 = part * TAU / 96.0f, a1 = (part + 1) * TAU / 96.0f;
+            v.glowLink(Mth.cos(a0) * skyRadius, -0.88f, Mth.sin(a0) * skyRadius,
+                    Mth.cos(a1) * skyRadius, -0.88f, Mth.sin(a1) * skyRadius,
+                    part % 4 == 0 ? 0.018f : 0.009f, BLUE, CYAN, Math.round(a * 0.42f));
+        }
+        // Soixante-douze points : douze étoiles nommées puis un remplissage uniforme du disque.
+        for (int i = 0; i < 72; i++) {
+            float f, y, l;
             boolean polaris = i == SKY_FIELD.length - 1;
+            if (i < SKY_FIELD.length) {
+                float[] star = SKY_FIELD[i];
+                if (polaris) { f = 0.0f; y = 17.0f; l = 0.0f; }
+                else {
+                    f = star[0] * 16.0f; l = star[2] * 16.0f;
+                    y = 4.0f + (star[1] + 1.0f) * 4.5f;
+                }
+            } else {
+                float angle = hash(salt, 8200 + i * 31) * TAU;
+                float radius = Mth.sqrt(hash(salt, 8300 + i * 37)) * 17.60f;
+                f = Mth.cos(angle) * radius; l = Mth.sin(angle) * radius;
+                y = 2.0f + hash(salt, 8400 + i * 41) * 12.0f;
+            }
             float pulse = 0.80f + 0.20f * Mth.sin(t * 15.0f + i * 1.7f);
-            v.glow(f, y, l, polaris ? 0.12f : 0.040f + (i % 3) * 0.008f,
-                    polaris ? WHITE : i % 2 == 0 ? ICE : LILAC, Math.round(a * visibility * pulse));
-            if (polaris || i % 4 == 0) {
+            v.glow(f, y, l, polaris ? 0.12f : 0.032f + (i % 4) * 0.007f,
+                    polaris ? WHITE : i % 2 == 0 ? ICE : LILAC, Math.round(a * pulse));
+            if (polaris || i % 9 == 0) {
                 float reach = polaris ? 0.48f : 0.18f;
-                v.glowLink(f - reach, y, l, f + reach, y, l, 0.012f, CYAN, WHITE, Math.round(a * visibility));
-                v.glowLink(f, y - reach, l, f, y + reach, l, 0.012f, CYAN, WHITE, Math.round(a * visibility));
+                v.glowLink(f - reach, y, l, f + reach, y, l, 0.012f, CYAN, WHITE, a);
+                v.glowLink(f, y - reach, l, f, y + reach, l, 0.012f, CYAN, WHITE, a);
             }
         }
-        drawConstellation(v, URSA_MAJOR, URSA_LINKS, -5.0f, 4.0f, -4.0f,
-                4.80f, t * 0.22f + 1.20f, 0.30f, visibility, a, t);
-        drawConstellation(v, CASSIOPEIA, CASSIOPEIA_LINKS, 0.40f, 6.0f, 4.0f,
-                4.60f, -t * 0.18f + 2.30f, -0.42f, visibility, a, t + 1.0f);
-        drawConstellation(v, ORION, ORION_LINKS, 5.0f, 3.50f, -3.0f,
-                3.60f, t * 0.20f + 0.40f, 0.48f, visibility, a, t + 2.0f);
-        for (int beam = 0; beam < 3; beam++) {
-            float[] source = CONSTELLATION_SOURCES[beam];
-            float targetF = head - 7.0f + beam * 3.0f;
+        // Des météores seulement sur certaines seeds et dans leurs propres fenêtres temporelles.
+        for (int meteor = 0; meteor < 6; meteor++) {
+            if (hash(salt, 8500 + meteor * 43) < 0.42f) continue;
+            float start = 0.08f + hash(salt, 8600 + meteor * 47) * 0.58f;
+            float duration = 0.10f + hash(salt, 8700 + meteor * 53) * 0.08f;
+            float age = (t - start) / duration;
+            if (age <= 0.0f || age >= 1.0f) continue;
+            float angle = hash(salt, 8800 + meteor * 59) * TAU;
+            float radius = Mth.sqrt(hash(salt, 8900 + meteor * 61)) * 10.0f;
+            float sf = Mth.cos(angle) * radius, sl = Mth.sin(angle) * radius;
+            float direction = hash(salt, 9000 + meteor * 67) * TAU;
+            float df = Mth.cos(direction), dl = Mth.sin(direction);
+            float f = sf + df * age * 5.0f, l = sl + dl * age * 5.0f;
+            float y = 9.0f + hash(salt, 9100 + meteor * 71) * 5.0f - age * 2.0f;
+            float fade = Mth.sin(age * (float) Math.PI);
+            v.glowLink(f - df * 2.40f, y + 0.60f, l - dl * 2.40f, f, y, l,
+                    0.018f, CYAN, WHITE, Math.round(a * fade * 0.88f));
+            v.glow(f, y, l, 0.045f, WHITE, Math.round(a * fade));
+        }
+
+        // Deux à quatre constellations uniques parmi quatre, tirées par la seed de l'activation.
+        int[] order = {0, 1, 2, 3};
+        for (int i = 3; i > 0; i--) {
+            int j = (int) (hash(salt, 9200 + i * 73) * (i + 1));
+            int swap = order[i]; order[i] = order[j]; order[j] = swap;
+        }
+        int constellationCount = 2 + Math.min(2, (int) (hash(salt, 9300) * 3.0f));
+        float[][] sources = new float[constellationCount][3];
+        for (int slot = 0; slot < constellationCount; slot++) {
+            int index = order[slot];
+            float scale = 3.20f + hash(salt, 9400 + slot * 79) * 0.80f;
+            float angle = hash(salt, 9500 + slot * 83) * TAU;
+            float centerRadius = (skyRadius - scale) * Mth.sqrt(hash(salt, 9600 + slot * 89));
+            float cf = Mth.cos(angle) * centerRadius, cl = Mth.sin(angle) * centerRadius;
+            float cy = 4.0f + hash(salt, 9700 + slot * 97) * 7.0f;
+            sources[slot] = new float[]{cf, cy, cl};
+            drawConstellation(v, CONSTELLATIONS[index], CONSTELLATION_LINKS[index], cf, cy, cl,
+                    scale, t * (0.16f + slot * 0.025f) + slot * 1.20f,
+                    (slot - 1.5f) * 0.26f, 1.0f, a, t + slot);
+        }
+        for (int beam = 0; beam < constellationCount; beam++) {
+            float[] source = sources[beam];
+            float targetF = head - 7.0f + beam * (14.0f / Math.max(1, constellationCount - 1));
             v.glowLink(source[0], source[1], source[2], targetF, 0.0f, 0.0f,
-                    0.012f, beam == 1 ? LILAC : CYAN, WHITE, Math.round(a * charge * 0.68f));
+                    0.012f, beam % 2 == 1 ? LILAC : CYAN, WHITE, Math.round(a * charge * 0.68f));
             for (int packet = 0; packet < 2; packet++) {
                 float u = (t * 5.0f + beam * 0.23f + packet * 0.5f) % 1.0f;
                 v.glow(Mth.lerp(u, source[0], targetF), Mth.lerp(u, source[1], 0.0f),
                         Mth.lerp(u, source[2], 0.0f), 0.030f,
-                        beam == 1 ? LILAC : ICE, Math.round(a * charge * 0.86f));
+                        beam % 2 == 1 ? LILAC : ICE, Math.round(a * charge * 0.86f));
             }
         }
 
-        float lanceAlpha = 1.0f - smooth((t - 0.68f) / 0.20f);
+        float lanceAlpha = smooth(t / 0.10f) * (1.0f - smooth((t - 0.78f) / 0.22f));
+        float thickness = 1.0f + 1.20f * smooth(t / 0.30f);
         float tail = head - 9.0f, socket = head - 1.10f;
         // Manche octogonal CONTINU : aucune pile de segments cubiques visibles.
         v.bodyLink(tail, 0.0f, 0.0f, socket, 0.0f, 0.0f,
-                0.16f, CYAN, Math.round(a * lanceAlpha * 0.65f));
+                0.16f * thickness, CYAN, Math.round(a * lanceAlpha * 0.65f));
         for (int side = 0; side < 8; side++) {
             float angle = side * TAU / 8.0f;
             float y = Mth.cos(angle) * 0.17f, l = Mth.sin(angle) * 0.17f;
-            v.bodyLink(tail, y, l, socket, y, l, 0.028f,
+            v.bodyLink(tail, y, l, socket, y, l, 0.028f * thickness,
                     side % 2 == 0 ? CYAN : VIOLET, Math.round(a * lanceAlpha * 0.58f));
-            v.glowLink(tail, y, l, socket, y, l, 0.010f,
+            v.glowLink(tail, y, l, socket, y, l, 0.010f * thickness,
                     side % 2 == 0 ? ICE : LILAC, WHITE, Math.round(a * lanceAlpha * 0.82f));
         }
         // Quatre bagues de pommeau et cinq de douille, pas de mailles sur tout le manche.
@@ -268,7 +329,7 @@ public final class LightSignatureVfx {
                 float angle = side * TAU / 8.0f, next = (side + 1) * TAU / 8.0f;
                 v.glowLink(f, Mth.cos(angle) * radius, Mth.sin(angle) * radius,
                         f, Mth.cos(next) * radius, Mth.sin(next) * radius,
-                        0.016f, ring < 4 ? CYAN : GOLD, WHITE, Math.round(a * lanceAlpha * 0.90f));
+                        0.016f * thickness, ring < 4 ? CYAN : GOLD, WHITE, Math.round(a * lanceAlpha * 0.90f));
             }
         }
         // Deux gravures hélicoïdales continues le long du fût.
@@ -278,14 +339,14 @@ public final class LightSignatureVfx {
             float a1 = u1 * TAU * 2.0f + strand * (float) Math.PI - t * 4.0f;
             v.glowLink(Mth.lerp(u0, tail + 0.9f, socket - 0.8f), Mth.cos(a0) * 0.19f, Mth.sin(a0) * 0.19f,
                     Mth.lerp(u1, tail + 0.9f, socket - 0.8f), Mth.cos(a1) * 0.19f, Mth.sin(a1) * 0.19f,
-                    0.010f, strand == 0 ? GOLD : CYAN, WHITE, Math.round(a * lanceAlpha * 0.74f));
+                    0.010f * thickness, strand == 0 ? GOLD : CYAN, WHITE, Math.round(a * lanceAlpha * 0.74f));
         }
-        astralShell(v, tail - 0.20f, 0.0f, 0.0f, 0.28f, Math.round(a * lanceAlpha), t * 20.0f);
+        astralShell(v, tail - 0.20f, 0.0f, 0.0f, 0.28f, Math.round(a * lanceAlpha), t * 20.0f, thickness);
         for (int ray = 0; ray < 4; ray++) {
             float angle = ray * TAU / 4.0f;
             v.glowLink(tail - 0.20f, 0.0f, 0.0f, tail - 0.55f,
                     Mth.cos(angle) * 0.48f, Mth.sin(angle) * 0.48f,
-                    0.022f, GOLD, WHITE, Math.round(a * lanceAlpha));
+                    0.022f * thickness, GOLD, WHITE, Math.round(a * lanceAlpha));
         }
 
         // Très large lame de 2,30 blocs : douze sections, quatre faces et une arête centrale.
@@ -293,45 +354,45 @@ public final class LightSignatureVfx {
             float u0 = section / 12.0f, u1 = (section + 1) / 12.0f;
             float f0 = socket + u0 * 2.30f, f1 = socket + u1 * 2.30f;
             float r0 = bladeWidth(u0), r1 = bladeWidth(u1);
-            v.bodyLink(f0, 0.0f, 0.0f, f1, 0.0f, 0.0f, Math.min(r0, r1) * 0.65f,
+            v.bodyLink(f0, 0.0f, 0.0f, f1, 0.0f, 0.0f, Math.min(r0, r1) * 0.65f * thickness,
                     ICE, Math.round(a * lanceAlpha * 0.32f));
             for (int side = 0; side < 4; side++) {
                 float angle = side * TAU / 4.0f + (float) Math.PI / 4.0f;
                 float next = (side + 1) * TAU / 4.0f + (float) Math.PI / 4.0f;
                 float y0 = Mth.cos(angle) * r0, l0 = Mth.sin(angle) * r0;
                 float y1 = Mth.cos(next) * r0, l1 = Mth.sin(next) * r0;
-                v.bodyLink(f0, y0, l0, f0, y1, l1, 0.050f,
+                v.bodyLink(f0, y0, l0, f0, y1, l1, 0.050f * thickness,
                         side % 2 == 0 ? ICE : VIOLET, Math.round(a * lanceAlpha * 0.72f));
                 v.bodyLink(f0, y0, l0, f1, Mth.cos(angle) * r1, Mth.sin(angle) * r1,
-                        0.040f, side % 2 == 0 ? ICE : VIOLET, Math.round(a * lanceAlpha * 0.62f));
+                        0.040f * thickness, side % 2 == 0 ? ICE : VIOLET, Math.round(a * lanceAlpha * 0.62f));
                 v.glowLink(f0, y0, l0, f1, Mth.cos(angle) * r1, Mth.sin(angle) * r1,
-                        0.016f, side % 2 == 0 ? WHITE : CYAN, WHITE, Math.round(a * lanceAlpha));
+                        0.016f * thickness, side % 2 == 0 ? WHITE : CYAN, WHITE, Math.round(a * lanceAlpha));
                 if (section == 11) v.glowLink(f1, Mth.cos(angle) * r1, Mth.sin(angle) * r1,
                         f1, Mth.cos(next) * r1, Mth.sin(next) * r1,
-                        0.012f, WHITE, ICE, Math.round(a * lanceAlpha));
+                        0.012f * thickness, WHITE, ICE, Math.round(a * lanceAlpha));
             }
         }
         v.glowLink(socket, 0.18f, 0.0f, head + 1.20f, 0.0f, 0.0f,
-                0.024f, WHITE, IVORY, Math.round(a * lanceAlpha));
+                0.024f * thickness, WHITE, IVORY, Math.round(a * lanceAlpha));
         v.glowLink(socket, -0.18f, 0.0f, head + 1.20f, 0.0f, 0.0f,
-                0.024f, WHITE, IVORY, Math.round(a * lanceAlpha));
+                0.024f * thickness, WHITE, IVORY, Math.round(a * lanceAlpha));
         v.glowLink(socket + 0.20f, 0.0f, 0.40f, head + 0.85f, 0.0f, 0.035f,
-                0.022f, BLUE, CYAN, Math.round(a * lanceAlpha * 0.84f));
+                0.022f * thickness, BLUE, CYAN, Math.round(a * lanceAlpha * 0.84f));
         for (int wing = 0; wing < 4; wing++) {
             float angle = wing * TAU / 4.0f;
             float y0 = Mth.cos(angle) * 0.22f, l0 = Mth.sin(angle) * 0.22f;
             float y1 = Mth.cos(angle) * 0.95f, l1 = Mth.sin(angle) * 0.95f;
-            v.glowLink(socket - 0.10f, y0, l0, socket - 0.30f, y1, l1, 0.030f, GOLD, IVORY, Math.round(a * lanceAlpha));
-            v.glowLink(socket - 0.30f, y1, l1, socket + 0.18f, y1 * 0.72f, l1 * 0.72f, 0.026f, GOLD, WHITE, Math.round(a * lanceAlpha));
-            v.glowLink(socket + 0.18f, y1 * 0.72f, l1 * 0.72f, socket + 0.28f, y0, l0, 0.022f, HONEY, WHITE, Math.round(a * lanceAlpha));
+            v.glowLink(socket - 0.10f, y0, l0, socket - 0.30f, y1, l1, 0.030f * thickness, GOLD, IVORY, Math.round(a * lanceAlpha));
+            v.glowLink(socket - 0.30f, y1, l1, socket + 0.18f, y1 * 0.72f, l1 * 0.72f, 0.026f * thickness, GOLD, WHITE, Math.round(a * lanceAlpha));
+            v.glowLink(socket + 0.18f, y1 * 0.72f, l1 * 0.72f, socket + 0.28f, y0, l0, 0.022f * thickness, HONEY, WHITE, Math.round(a * lanceAlpha));
         }
-        astralShell(v, socket, 0.0f, 0.0f, 0.30f, Math.round(a * lanceAlpha), t * 24.0f);
+        astralShell(v, socket, 0.0f, 0.0f, 0.30f, Math.round(a * lanceAlpha), t * 24.0f, thickness);
         for (int rune = 0; rune < 7; rune++) {
             float f = socket + 0.42f + rune * 0.23f, y = rune % 2 == 0 ? 0.32f : -0.32f;
-            v.glowLink(f - 0.07f, y, 0.0f, f, y + 0.07f, 0.0f, 0.012f, GOLD, WHITE, Math.round(a * lanceAlpha));
-            v.glowLink(f, y + 0.07f, 0.0f, f + 0.07f, y, 0.0f, 0.012f, GOLD, WHITE, Math.round(a * lanceAlpha));
-            v.glowLink(f + 0.07f, y, 0.0f, f, y - 0.07f, 0.0f, 0.012f, GOLD, WHITE, Math.round(a * lanceAlpha));
-            v.glowLink(f, y - 0.07f, 0.0f, f - 0.07f, y, 0.0f, 0.012f, GOLD, WHITE, Math.round(a * lanceAlpha));
+            v.glowLink(f - 0.07f, y, 0.0f, f, y + 0.07f, 0.0f, 0.012f * thickness, GOLD, WHITE, Math.round(a * lanceAlpha));
+            v.glowLink(f, y + 0.07f, 0.0f, f + 0.07f, y, 0.0f, 0.012f * thickness, GOLD, WHITE, Math.round(a * lanceAlpha));
+            v.glowLink(f + 0.07f, y, 0.0f, f, y - 0.07f, 0.0f, 0.012f * thickness, GOLD, WHITE, Math.round(a * lanceAlpha));
+            v.glowLink(f, y - 0.07f, 0.0f, f - 0.07f, y, 0.0f, 0.012f * thickness, GOLD, WHITE, Math.round(a * lanceAlpha));
         }
         float wake = smooth((t - 0.10f) / 0.17f) * (1.0f - smooth((t - 0.62f) / 0.24f));
         for (int trail = 0; trail < 20; trail++) {
@@ -618,6 +679,11 @@ public final class LightSignatureVfx {
     /** Cube de verre énergétique : 12 arêtes, chacune divisée en deux segments animés. */
     private static void astralShell(Voxels v, float f, float y, float l, float half,
                                     int alpha, float phase) {
+        astralShell(v, f, y, l, half, alpha, phase, 1.0f);
+    }
+
+    private static void astralShell(Voxels v, float f, float y, float l, float half,
+                                    int alpha, float phase, float lineScale) {
         v.bodyBox(f, y, l, half * 0.88f, half * 0.88f, half * 0.88f,
                 ICE, Math.round(alpha * 0.13f));
         int edge = 0;
@@ -636,10 +702,10 @@ public final class LightSignatureVfx {
                 int rgb = (edge + Math.round(phase)) % 4 == 0 ? WHITE : (edge % 3 == 0 ? HONEY : CYAN);
                 v.glowLink(f + start[0], y + start[1], l + start[2],
                         f + split[0], y + split[1], l + split[2],
-                        0.012f + scan * 0.008f, rgb, WHITE, Math.round(alpha * (0.50f + scan * 0.50f)));
+                        (0.012f + scan * 0.008f) * lineScale, rgb, WHITE, Math.round(alpha * (0.50f + scan * 0.50f)));
                 v.glowLink(f + split[0], y + split[1], l + split[2],
                         f + end[0], y + end[1], l + end[2],
-                        0.012f + (1.0f - scan) * 0.008f, rgb, WHITE,
+                        (0.012f + (1.0f - scan) * 0.008f) * lineScale, rgb, WHITE,
                         Math.round(alpha * (0.50f + (1.0f - scan) * 0.50f)));
                 edge++;
             }

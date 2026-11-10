@@ -251,6 +251,18 @@ public final class WeaponVfxServerListener {
         return net.minecraft.util.Mth.clamp(scale, 0.30f, 4.0f);
     }
 
+    /** Largeur contractuelle de Séraphin : plus grande dimension horizontale de la hitbox body. */
+    private static float seraphBeamWidthOf(Entity entity) {
+        if (entity == null) return 2.40f;
+        AABB body = entity.getBoundingBox();
+        float width = (float) Math.max(body.maxX - body.minX, body.maxZ - body.minZ);
+        return net.minecraft.util.Mth.clamp(width, 0.20f, 6.0f);
+    }
+
+    private static float lightVisualScaleOf(WeaponVisualEffectId fx, Entity target, float fallback) {
+        return fx == WeaponVisualEffectId.SERAPH_SKY_PILLAR ? seraphBeamWidthOf(target) : fallback;
+    }
+
     /**
      * Classe l'échelle mesurée dans l'intervalle existant 0.30..4.0, puis la convertit en bonus
      * entier de 5 à 15 %. Aucun second tirage : une cible plus grande donne toujours un bonus
@@ -318,7 +330,7 @@ public final class WeaponVfxServerListener {
         LAST_BIG_ANIM_TICK.put(attacker.getId(), now);
         broadcastNear(sl, cx, cy, cz, fx.id, KIND_IMPACT, Math.max(2, intensity),
                 cx, cy, cz, (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ(),
-                paletteOf(attacker.getMainHandItem(), fx), sizeScaleOf(target));
+                paletteOf(attacker.getMainHandItem(), fx), lightVisualScaleOf(fx, target, sizeScaleOf(target)));
         if (livingTarget != null) {
             applyFireGameplay(attacker, livingTarget, fx, sizeScaleOf(target));
             applyWoodGameplay(attacker, livingTarget, fx, sizeScaleOf(target), estimatedWeaponDamage(attacker));
@@ -462,7 +474,7 @@ public final class WeaponVfxServerListener {
             WeaponVisualEffectId sig = WeaponVisualEffectId.signatureFor(el);
             if (sig == null) continue;
             broadcastNear(sl, tx, ty, tz, sig.id, KIND_IMPACT, 3,
-                    tx, ty, tz, ax, ay, az, 1 << el.ordinal(), sizeScale);
+                    tx, ty, tz, ax, ay, az, 1 << el.ordinal(), lightVisualScaleOf(sig, target, sizeScale));
             LivingEntity comboAttacker = sl.getEntity(attackerId) instanceof LivingEntity living ? living : null;
             applyFireGameplay(comboAttacker, target, sig, sizeScale, weaponDamage);
             applyWoodGameplay(comboAttacker, target, sig, sizeScale, weaponDamage);
@@ -1209,6 +1221,7 @@ public final class WeaponVfxServerListener {
                 double bx = beamTarget.getX();
                 double by = beamTarget.getY() + beamTarget.getBbHeight() * 0.50;
                 double bz = beamTarget.getZ();
+                float beamWidth = seraphBeamWidthOf(beamTarget);
                 // Position fixe pendant le cast et les quatre ticks actifs, attaques conservées.
                 applyMovementHold(beamTarget, sl.getGameTime() + 15L, false);
                 if (!primary) {
@@ -1218,7 +1231,7 @@ public final class WeaponVfxServerListener {
                     broadcastNear(sl, bx, by, bz, fx.id, KIND_IMPACT, 6,
                             bx, by, bz, ax, ay, az,
                             attacker == null ? 1 << fx.element.ordinal()
-                                    : paletteOf(attacker.getMainHandItem(), fx), 1.0f);
+                                    : paletteOf(attacker.getMainHandItem(), fx), beamWidth);
                 }
                 lightSound(sl, bx, by, bz, now, 0, SoundEvents.AMETHYST_BLOCK_CHIME,
                         primary ? 0.34f : 0.16f, primary ? 1.30f : 1.65f);
@@ -1239,7 +1252,7 @@ public final class WeaponVfxServerListener {
                 for (int delay = 10; delay <= 14; delay += 2) {
                     TestProcedure.schedule(sl, now + delay, () -> {
                         if (!beamTarget.isAlive() || beamTarget.level() != sl
-                                || !seraphRayContact(beamTarget, bx, by, bz, 2.75, 1.0f)) return;
+                                || !seraphRayContact(beamTarget, bx, by, bz, beamWidth * 11.0f / 24.0f, 1.0f)) return;
                         boolean undead = beamTarget.getType().is(net.minecraft.tags.EntityTypeTags.SENSITIVE_TO_SMITE);
                         float factor = (undead ? 0.25f : 0.18f) * (primary ? 1.0f : 0.70f);
                         float cap = (undead ? 1.75f : 1.25f) * (primary ? 1.0f : 0.70f);
@@ -2440,7 +2453,7 @@ public final class WeaponVfxServerListener {
             float bigScale = bigMeleeVisualScale(measuredScale);
             event.setAmount(event.getAmount() * (1.0f + bigMeleeBonusPercent(measuredScale) / 100.0f));
             broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, 6,
-                    tx, ty, tz, ax, ay, az, 1 << fx.element.ordinal(), bigScale);
+                    tx, ty, tz, ax, ay, az, 1 << fx.element.ordinal(), lightVisualScaleOf(fx, target, bigScale));
             applyWoodGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyEarthGameplay(attacker, target, fx, capturedWeaponDamage);
             applyMetalGameplay(attacker, target, fx, capturedWeaponDamage);
@@ -2490,14 +2503,14 @@ public final class WeaponVfxServerListener {
         float bigScale = bigMeleeVisualScale(measuredScale);
         if (fx == WeaponVisualEffectId.CRIMSON_SIPHON) {
             broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
-                    tx, ty, tz, ax, ay, az, palette, bigScale);
+                    tx, ty, tz, ax, ay, az, palette, lightVisualScaleOf(fx, target, bigScale));
         } else if (fx == WeaponVisualEffectId.ASTRAL_STAR_LANCE && attacker.distanceToSqr(target) > 9.0) {
             broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
-                    ax, (float) attacker.getEyeY() - 0.12f, az, tx, ty, tz, palette, bigScale);
+                    ax, (float) attacker.getEyeY() - 0.12f, az, tx, ty, tz, palette, lightVisualScaleOf(fx, target, bigScale));
             applyLightGameplay(attacker, target, fx, capturedWeaponDamage, bigScale);
         } else {
             broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, layer.level(),
-                    tx, ty, tz, ax, ay, az, palette, bigScale);
+                    tx, ty, tz, ax, ay, az, palette, lightVisualScaleOf(fx, target, bigScale));
             applyWoodGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyEarthGameplay(attacker, target, fx, capturedWeaponDamage);
             applyMetalGameplay(attacker, target, fx, capturedWeaponDamage);
@@ -2574,7 +2587,7 @@ public final class WeaponVfxServerListener {
                 && sl.random.nextInt(100) < CRIT_TRIGGER_PERCENT) {
             if (!playSubtleAccent(sl, weapon, WeaponVisualEffectId.GOLDEN_CRIT_STAR, tx, ty, tz, ax, ay, az)) {
                 broadcastNear(sl, tx, ty, tz, WeaponVisualEffectId.GOLDEN_CRIT_STAR.id, KIND_IMPACT, 2,
-                        tx, ty, tz, ax, ay, az, palette, sizeScaleOf(target));
+                        tx, ty, tz, ax, ay, az, palette, lightVisualScaleOf(fx, target, sizeScaleOf(target)));
             }
         }
 
@@ -2635,15 +2648,15 @@ public final class WeaponVfxServerListener {
 
             if (fx == WeaponVisualEffectId.CRIMSON_SIPHON) {
                 broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
-                        tx, ty, tz, ax, ay, az, palette, sizeScaleOf(target));
+                        tx, ty, tz, ax, ay, az, palette, lightVisualScaleOf(fx, target, sizeScaleOf(target)));
             } else if (fx == WeaponVisualEffectId.ASTRAL_STAR_LANCE && attacker.distanceToSqr(target) > 9.0) {
                 broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
-                        ax, (float) attacker.getEyeY() - 0.12f, az, tx, ty, tz, palette, sizeScaleOf(target));
+                        ax, (float) attacker.getEyeY() - 0.12f, az, tx, ty, tz, palette, lightVisualScaleOf(fx, target, sizeScaleOf(target)));
                 applyLightGameplay(attacker, target, fx, Math.max(0.0f, event.getAmount()), sizeScaleOf(target));
             } else {
                 int boost = (arrowCrit && fx.category == WeaponVisualEffectId.Category.CRIT) ? layer.level() + 1 : layer.level();
                 broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, boost,
-                        tx, ty, tz, ax, ay, az, palette, sizeScaleOf(target));
+                        tx, ty, tz, ax, ay, az, palette, lightVisualScaleOf(fx, target, sizeScaleOf(target)));
                 applyFireGameplay(attacker, target, fx, sizeScaleOf(target), Math.max(0.0f, event.getAmount()));
                 applyWoodGameplay(attacker, target, fx, sizeScaleOf(target), Math.max(0.0f, event.getAmount()));
                 applyEarthGameplay(attacker, target, fx, Math.max(0.0f, event.getAmount()));

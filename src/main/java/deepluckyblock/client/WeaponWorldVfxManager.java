@@ -3627,7 +3627,7 @@ public final class WeaponWorldVfxManager {
             float previousPixelDensity = pixelDensity;
             voxelPulseEnabled = false;
             if (signature == LightSignatureVfx.SERAPH) {
-                // Ni mob, ni variante, ni hash de voxel : 6 × 80 × 6 et cœur 0,5 → 5,5 exacts.
+                // Ni variante, ni hash de voxel : X/Z proviennent directement de la hitbox du mob.
                 mobScaleActive = false;
                 variantScale = 1.0f;
                 pixelDensity = 1.0f;
@@ -3647,10 +3647,11 @@ public final class WeaponWorldVfxManager {
             try {
                 LightSignatureVfx.render(v.vc(), lightBody, v.mat(), v.tmp(),
                         v.cx(), v.cy(), v.cz(), t, lightDx, lightDz, signature,
-                        // Séraphin possède son propre fondu terminal : il doit rester lumineux
-                        // pendant la refermeture au lieu de disparaître avant de devenir fin.
-                        signature == LightSignatureVfx.SERAPH ? 240 : v.fadeA(),
-                        (int) (v.inst().seed & 0x7FFFFFFFL));
+                        // Séraphin et Astral pilotent leur fondu complet dans LightSignatureVfx :
+                        // aucune seconde atténuation linéaire ne doit raccourcir leur chorégraphie.
+                        (signature == LightSignatureVfx.SERAPH || signature == LightSignatureVfx.ASTRAL)
+                                ? 240 : v.fadeA(),
+                        (int) (v.inst().seed & 0x7FFFFFFFL), v.inst().sizeScale);
             } finally {
                 voxelPulseEnabled = previousPulse;
                 mobScaleActive = previousMobScaleActive;
