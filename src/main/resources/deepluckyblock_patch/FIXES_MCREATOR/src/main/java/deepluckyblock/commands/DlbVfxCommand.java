@@ -608,7 +608,10 @@ public final class DlbVfxCommand {
             WeaponVfxServerListener.playDebug(player, fx, kind, level, to, chest);
             return;
         }
-        WeaponVfxServerListener.playDebug(player, fx, kind, level, from, aimPoint(player));
+        Vec3 at = aimPoint(player);
+        WeaponVfxServerListener.playDebug(player, fx, kind, level, from, at);
+        // Démo : le gameplay du vent s'applique réellement à la cible visée (emprise, dégâts, sons).
+        WeaponVfxServerListener.debugWindGameplay(player, fx, at);
     }
 
     // =====================================================================

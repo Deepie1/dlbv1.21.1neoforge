@@ -131,6 +131,13 @@ public final class WeaponVfxServerListener {
     private static final int METEOR_IMPACT_TICKS = 30;
     private static final double METEOR_FIRE_RADIUS = 4.0;
 
+    /** Emprise de vent : le mob tourne autour de l'axe de la tornade en montant, puis est éjecté. */
+    private record WindHold(long expires, long started, double cx, double cz, double baseY,
+                            double r0, double r1, double rise, double phase, double spin,
+                            float pulse, int period, int attackerId) { }
+
+    private static final Map<Integer, WindHold> WIND_HOLDS = new ConcurrentHashMap<>();
+
     private record MovementHold(long expires, double x, double y, double z, boolean previousNoAi,
                                   boolean fullStun, double releaseY, long started, double burialDepth) { }
     private record SoulHold(long expires, long riseStart, long riseEnd, long descendStart,
@@ -2144,6 +2151,247 @@ public final class WeaponVfxServerListener {
         });
     }
 
+    // ================================================================================================
+    // VENT — réactions des mobs, dégâts répartis sur plusieurs ticks, sons du jeu
+    // ================================================================================================
+
+    /** Aiguillage des trois signatures de vent vers leur gameplay. */
+    private static void applyWindGameplay(LivingEntity attacker, LivingEntity target,
+                                          WeaponVisualEffectId fx, float weaponDamage) {
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        float damage = Math.max(0.0f, weaponDamage);
+        if (fx == WeaponVisualEffectId.SANDSTORM_DUNE) {
+            applySandstormGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.TEMPEST_EYE) {
+            applyTempestGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) {
+            applyZephyrGameplay(attacker, target, sl, damage);
+        }
+    }
+
+    /**
+     * ZÉPHYR (80 ticks) : la cible est soulevée de 0,55 bloc et clouée sur place par la colonne
+     * d'air, piquée par trois lances (33 / 37 / 42), entretenue par quatre rafales, puis relâchée.
+     */
+    private static void applyZephyrGameplay(LivingEntity attacker, LivingEntity target,
+                                            ServerLevel sl, float weaponDamage) {
+        int scheduleNow = TestProcedure.currentTick(sl);
+        long gameNow = sl.getGameTime();
+        int attackerId = attacker == null ? -1 : attacker.getId();
+        double x = target.getX(), y = target.getY() + target.getBbHeight() * 0.5, z = target.getZ();
+
+        applyMovementHold(target, gameNow + 80, false, target.getY() + 0.55);
+        sl.playSound(null, x, y, z, SoundEvents.WARDEN_EMERGE, SoundSource.PLAYERS, 0.40f, 0.75f);
+        sl.playSound(null, x, y, z, SoundEvents.ENDER_DRAGON_FLAP, SoundSource.PLAYERS, 0.35f, 1.35f);
+
+        float impactDamage = weaponDamage * 0.38f;
+        float pulseDamage = net.minecraft.util.Mth.clamp(weaponDamage * 0.09f, 0.05f, 0.60f);
+        int[] launches = {24, 28, 33};
+        int[] impacts = {33, 37, 42};
+        for (int spear = 0; spear < launches.length; spear++) {
+            final int launchDelay = launches[spear];
+            final int impactDelay = impacts[spear];
+            final float pitch = 1.22f + spear * 0.08f;
+            TestProcedure.schedule(sl, scheduleNow + launchDelay,
+                    () -> sl.playSound(null, x, y, z, SoundEvents.TRIDENT_THROW,
+                            SoundSource.PLAYERS, 0.46f, pitch));
+            TestProcedure.schedule(sl, scheduleNow + impactDelay, () -> {
+                if (!target.isAlive() || target.level() != sl) return;
+                if (signatureContact(target, x, y, z, 0.75)) {
+                    hurtWithCapturedWeapon(sl, attackerId, target, impactDamage);
+                }
+                sl.playSound(null, x, y, z, SoundEvents.PLAYER_ATTACK_SWEEP,
+                        SoundSource.PLAYERS, 0.52f, pitch + 0.08f);
+                sl.playSound(null, x, y, z, SoundEvents.AMETHYST_BLOCK_CHIME,
+                        SoundSource.PLAYERS, 0.30f, 1.55f + spear * 0.10f);
+            });
+        }
+
+        for (int delay = 12; delay <= 60; delay += 16) {
+            TestProcedure.schedule(sl, scheduleNow + delay, () -> {
+                if (!target.isAlive() || target.level() != sl) return;
+                hurtWithCapturedWeapon(sl, attackerId, target, pulseDamage);
+                sl.playSound(null, x, y, z, SoundEvents.ENDER_DRAGON_FLAP,
+                        SoundSource.PLAYERS, 0.28f, 1.30f);
+            });
+        }
+
+        TestProcedure.schedule(sl, scheduleNow + 80, () -> {
+            if (!target.isAlive() || target.level() != sl) return;
+            target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 60, 0, false, true, true));
+            sl.playSound(null, x, y, z, SoundEvents.ENDER_DRAGON_FLAP, SoundSource.PLAYERS, 0.60f, 0.95f);
+            sl.playSound(null, x, y, z, SoundEvents.PHANTOM_AMBIENT, SoundSource.PLAYERS, 0.34f, 1.20f);
+        });
+    }
+
+    /**
+     * TEMPÊTE DE SABLE (140 ticks) : nuage de sable — cécité 2,5 s, lenteur, dégâts réguliers sur
+     * tous les ennemis pris dans le nuage (rayon 2,40), plus un souffle final.
+     */
+    private static void applySandstormGameplay(LivingEntity attacker, LivingEntity target,
+                                               ServerLevel sl, float weaponDamage) {
+        int scheduleNow = TestProcedure.currentTick(sl);
+        int attackerId = attacker == null ? -1 : attacker.getId();
+        double cx = target.getX(), cy = target.getY() + target.getBbHeight() * 0.5, cz = target.getZ();
+        double radius = 2.40;
+        List<LivingEntity> caught = new ArrayList<>();
+        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(cx - radius, cy - radius - 1.0, cz - radius,
+                        cx + radius, cy + radius + 1.0, cz + radius))) {
+            if (!(candidate instanceof Enemy) || !candidate.isAlive()) continue;
+            if (attacker != null && candidate.getUUID().equals(attacker.getUUID())) continue;
+            if (candidate.distanceToSqr(cx, cy, cz) > radius * radius) continue;
+            caught.add(candidate);
+            candidate.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 50, 0, false, true, true));
+            candidate.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 90, 1, false, true, true));
+        }
+
+        float pulse = net.minecraft.util.Mth.clamp(weaponDamage * 0.07f, 0.04f, 0.45f);
+        sl.playSound(null, cx, cy, cz, SoundEvents.HONEY_BLOCK_SLIDE, SoundSource.PLAYERS, 0.70f, 0.62f);
+        for (int delay = 12; delay < 140; delay += 14) {
+            TestProcedure.schedule(sl, scheduleNow + delay, () -> {
+                sl.playSound(null, cx, cy, cz, SoundEvents.ROOTED_DIRT_BREAK, SoundSource.PLAYERS, 0.22f, 0.55f);
+                for (LivingEntity victim : caught) {
+                    if (!victim.isAlive() || victim.level() != sl) continue;
+                    hurtWithCapturedWeapon(sl, attackerId, victim, pulse);
+                }
+            });
+        }
+        TestProcedure.schedule(sl, scheduleNow + 40, () -> sl.playSound(null, cx, cy, cz,
+                SoundEvents.PHANTOM_AMBIENT, SoundSource.PLAYERS, 0.30f, 0.80f));
+        TestProcedure.schedule(sl, scheduleNow + 96, () -> sl.playSound(null, cx, cy, cz,
+                SoundEvents.ENDER_DRAGON_FLAP, SoundSource.PLAYERS, 0.55f, 0.70f));
+        TestProcedure.schedule(sl, scheduleNow + 140, () -> sl.playSound(null, cx, cy, cz,
+                SoundEvents.FIRE_EXTINGUISH, SoundSource.PLAYERS, 0.60f, 0.55f));
+    }
+
+    /**
+     * ŒIL DU CYCLONE (120 ticks) : les ennemis du rayon 3,10 sont happés, tournent autour de l'axe
+     * en montant de 4,20 blocs, prennent des dégâts toutes les neuf ticks, puis sont éjectés au
+     * tick 104 — la chute vanilla qui suit ajoute les dégâts de chute.
+     */
+    private static void applyTempestGameplay(LivingEntity attacker, LivingEntity target,
+                                             ServerLevel sl, float weaponDamage) {
+        int scheduleNow = TestProcedure.currentTick(sl);
+        long gameNow = sl.getGameTime();
+        int attackerId = attacker == null ? -1 : attacker.getId();
+        double cx = target.getX(), cy = target.getY() + target.getBbHeight() * 0.5, cz = target.getZ();
+        double radius = 3.10;
+        long expiry = gameNow + 104;
+        float pulse = net.minecraft.util.Mth.clamp(weaponDamage * 0.08f, 0.05f, 0.60f);
+
+        List<LivingEntity> caught = new ArrayList<>();
+        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(cx - radius, cy - radius - 1.0, cz - radius,
+                        cx + radius, cy + radius + 1.0, cz + radius))) {
+            if (!(candidate instanceof Enemy) || !candidate.isAlive()) continue;
+            if (attacker != null && candidate.getUUID().equals(attacker.getUUID())) continue;
+            if (candidate.distanceToSqr(cx, cy, cz) > radius * radius) continue;
+            caught.add(candidate);
+            double dx = candidate.getX() - cx, dz = candidate.getZ() - cz;
+            double startRadius = Math.max(0.80, Math.min(2.80, Math.sqrt(dx * dx + dz * dz)));
+            rememberSignatureAi(candidate);
+            WIND_HOLDS.put(candidate.getId(), new WindHold(expiry, gameNow, cx, cz,
+                    candidate.getY(), startRadius, 1.05, 4.20,
+                    Math.atan2(dz, dx), 0.28, pulse, 9, attackerId));
+        }
+        if (caught.isEmpty()) {
+            sl.playSound(null, cx, cy, cz, SoundEvents.ENDER_DRAGON_FLAP, SoundSource.PLAYERS, 0.55f, 0.60f);
+            return;
+        }
+
+        sl.playSound(null, cx, cy, cz, SoundEvents.ENDER_DRAGON_FLAP, SoundSource.PLAYERS, 0.90f, 0.55f);
+        sl.playSound(null, cx, cy, cz, SoundEvents.WARDEN_EMERGE, SoundSource.PLAYERS, 0.35f, 0.60f);
+        for (int delay = 20; delay <= 100; delay += 20) {
+            final float pitch = 0.85f + (delay / 20) * 0.06f;
+            TestProcedure.schedule(sl, scheduleNow + delay, () -> sl.playSound(null, cx, cy, cz,
+                    SoundEvents.ENDER_DRAGON_FLAP, SoundSource.PLAYERS, 0.48f, pitch));
+        }
+        TestProcedure.schedule(sl, scheduleNow + 60, () -> sl.playSound(null, cx, cy, cz,
+                SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.PLAYERS, 0.22f, 1.45f));
+        TestProcedure.schedule(sl, scheduleNow + 104, () -> {
+            sl.playSound(null, cx, cy, cz, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.55f, 1.20f);
+            sl.playSound(null, cx, cy, cz, SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS, 0.40f, 1.50f);
+            for (LivingEntity victim : caught) {
+                if (!victim.isAlive() || victim.level() != sl) continue;
+                victim.addEffect(new MobEffectInstance(MobEffects.CONFUSION, 120, 0, false, true, true));
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 80, 0, false, true, true));
+                hurtWithCapturedWeapon(sl, attackerId, victim, Math.max(0.0f, weaponDamage) * 0.45f);
+            }
+        });
+    }
+
+    /**
+     * Démo hors combat ({@code /dlbvfx}) : applique le vrai gameplay du vent à l'entité vivante la
+     * plus proche du point visé, pour pouvoir tester dégâts, emprise et sons sans toucher un mob.
+     */
+    public static boolean debugWindGameplay(ServerPlayer player, WeaponVisualEffectId fx, Vec3 at) {
+        if (player == null || fx == null || at == null) return false;
+        if (!(player.level() instanceof ServerLevel sl)) return false;
+        if (fx != WeaponVisualEffectId.ZEPHYR_WIND_LANCE
+                && fx != WeaponVisualEffectId.SANDSTORM_DUNE
+                && fx != WeaponVisualEffectId.TEMPEST_EYE) return false;
+        LivingEntity best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(at.x - 3.5, at.y - 3.5, at.z - 3.5, at.x + 3.5, at.y + 3.5, at.z + 3.5))) {
+            if (candidate == player || !candidate.isAlive()) continue;
+            double distance = candidate.distanceToSqr(at);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = candidate;
+            }
+        }
+        if (best == null) return false;
+        applyWindGameplay(player, best, fx, estimatedWeaponDamage(player));
+        return true;
+    }
+
+    /** Rotation orbitale + montée + dégâts périodiques, tant que l'emprise dure. */
+    private static void tickWindHold(LivingEntity target) {
+        WindHold hold = WIND_HOLDS.get(target.getId());
+        if (hold == null) return;
+        long now = target.level().getGameTime();
+        if (!target.isAlive() || now >= hold.expires()) {
+            releaseWindHold(target, hold);
+            return;
+        }
+        if (target instanceof Mob mob) {
+            mob.setNoAi(true);
+            mob.setTarget(null);
+        }
+        target.stopUsingItem();
+        long elapsed = now - hold.started();
+        double span = Math.max(1.0, (double) (hold.expires() - hold.started()));
+        double u = Math.max(0.0, Math.min(1.0, elapsed / span));
+        double orbitRadius = hold.r0() + (hold.r1() - hold.r0()) * u;
+        double angle = hold.phase() + elapsed * hold.spin();
+        double y = hold.baseY() + hold.rise() * Math.sin(u * Math.PI * 0.5);
+        target.teleportTo(hold.cx() + Math.cos(angle) * orbitRadius, y,
+                hold.cz() + Math.sin(angle) * orbitRadius);
+        target.setDeltaMovement(Vec3.ZERO);
+        target.fallDistance = 0.0f;
+        target.hurtMarked = true;
+        if (hold.period() > 0 && elapsed > 0 && elapsed % hold.period() == 0
+                && hold.pulse() > 0.0f && target.level() instanceof ServerLevel sl) {
+            hurtWithCapturedWeapon(sl, hold.attackerId(), target, hold.pulse());
+        }
+    }
+
+    /** Fin de l'emprise : le mob est projeté en tangentiel et retombe — dégâts de chute vanilla. */
+    private static void releaseWindHold(LivingEntity target, WindHold hold) {
+        WIND_HOLDS.remove(target.getId());
+        refreshSignatureAi(target);
+        if (!target.isAlive()) return;
+        long now = target.level().getGameTime();
+        double elapsed = Math.max(0.0, (double) (now - hold.started()));
+        double angle = hold.phase() + elapsed * hold.spin();
+        target.setDeltaMovement(Math.cos(angle) * 0.62, 0.45, Math.sin(angle) * 0.62);
+        // La chute repart de zéro À CET INSTANT : tout ce qui suit est compté par le jeu.
+        target.fallDistance = 0.0f;
+        target.hurtMarked = true;
+    }
+
     private static void applyEarthGameplay(LivingEntity attacker, LivingEntity target,
                                            WeaponVisualEffectId fx, float weaponDamage) {
         if (!(target.level() instanceof ServerLevel sl)) return;
@@ -2158,6 +2406,11 @@ public final class WeaponVfxServerListener {
         }
         if (fx == WeaponVisualEffectId.SEISMIC_TECTONIC) {
             applySeismicToNearbyEnemies(attacker, target, sl, weaponDamage);
+            return;
+        }
+        if (fx == WeaponVisualEffectId.SANDSTORM_DUNE
+                || fx == WeaponVisualEffectId.TEMPEST_EYE) {
+            applyWindGameplay(attacker, target, fx, weaponDamage);
         }
     }
 
@@ -2194,29 +2447,9 @@ public final class WeaponVfxServerListener {
                     SoundEvents.GRASS_BREAK, SoundSource.PLAYERS, 0.58f, 0.82f));
             return;
         }
-        if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE) {
-            // L'arbre dure 80 ticks : la cible reste centrée et immobile du début à la fin.
-            applyMovementHold(target, gameNow + 80, false);
-            sl.playSound(null, x, y, z, SoundEvents.WARDEN_EMERGE,
-                    SoundSource.PLAYERS, 0.40f, 0.75f);
-            // Zephyr : trois lances indépendantes, chacune avec SON départ et SON impact.
-            int[] launches = {24, 28, 33};
-            int[] impacts = {33, 37, 42};
-            for (int spear = 0; spear < launches.length; spear++) {
-                int launchDelay = launches[spear];
-                int impactDelay = impacts[spear];
-                float pitch = 1.22f + spear * 0.08f;
-                TestProcedure.schedule(sl, scheduleNow + launchDelay, () -> sl.playSound(null,
-                        x, y, z, SoundEvents.TRIDENT_THROW, SoundSource.PLAYERS, 0.46f, pitch));
-                TestProcedure.schedule(sl, scheduleNow + impactDelay, () -> {
-                    if (!target.isAlive() || target.level() != sl) return;
-                    if (signatureContact(target, x, y, z, 0.65)) {
-                        hurtWithCapturedWeapon(sl, attackerId, target, weaponDamage * 0.5f);
-                    }
-                    sl.playSound(null, x, y, z, SoundEvents.PLAYER_ATTACK_SWEEP,
-                            SoundSource.PLAYERS, 0.52f, pitch + 0.08f);
-                });
-            }
+        if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE
+                || fx == WeaponVisualEffectId.TEMPEST_EYE) {
+            applyWindGameplay(attacker, target, fx, weaponDamage);
             return;
         }
         if (fx != WeaponVisualEffectId.VERDANT_SAP_BLOOM) return;
@@ -2292,13 +2525,14 @@ public final class WeaponVfxServerListener {
         int id = target.getId();
         MovementHold wood = MOVEMENT_HOLDS.get(id);
         boolean soul = SOUL_HOLDS.containsKey(id);
-        if (wood == null && !soul) {
+        boolean wind = WIND_HOLDS.containsKey(id);
+        if (wood == null && !soul && !wind) {
             Boolean baseline = SIGNATURE_BASELINE_NO_AI.remove(id);
             if (baseline != null) mob.setNoAi(baseline);
             return;
         }
         boolean baseline = SIGNATURE_BASELINE_NO_AI.getOrDefault(id, mob.isNoAi());
-        boolean fullyDisabled = soul || (wood != null && wood.fullStun());
+        boolean fullyDisabled = soul || wind || (wood != null && wood.fullStun());
         mob.setNoAi(baseline || fullyDisabled);
     }
 
@@ -2330,6 +2564,7 @@ public final class WeaponVfxServerListener {
         tickSignaturePoison(target);
         tickSoulBurn(target);
         tickSoulHold(target);
+        tickWindHold(target);
         MovementHold hold = MOVEMENT_HOLDS.get(target.getId());
         if (hold == null) return;
         long now = target.level().getGameTime();

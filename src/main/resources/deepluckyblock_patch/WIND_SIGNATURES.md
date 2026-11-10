@@ -21,7 +21,8 @@ Le dossier `FIXES_MCREATOR/src/main` contient les mêmes copies que le `src/main
 | `client/WeaponWorldVfxManager.java` | routage `impactWind`, fin du détour Gaia pour le vent, durée d’affichage 120 ticks pour `TEMPEST_EYE` |
 | `enchantments/WeaponVisualEffectId.java` | identifiant `TEMPEST_EYE` (#42), alias `/dlbvfx`, gardes de rotation |
 | `enchantments/WeaponVfxMotion.java` | mouvement d’écho de lame spiralé pour `TEMPEST_EYE` |
-| `commands/DlbVfxCommand.java` | créneaux isolés (114 / 174 / 154 ticks) pour les trois signatures |
+| `commands/DlbVfxCommand.java` | créneaux isolés (114 / 174 / 154 ticks) ; la démo applique désormais le vrai gameplay du vent à la cible visée |
+| `enchantments/WeaponVfxServerListener.java` | **gameplay du vent** : emprise, rotation, dégâts sur plusieurs ticks, effets, dégâts de chute, sons |
 | `deepluckyblock_patch/WIND_SIGNATURES.md` | ce document |
 | `deliverables/DLB_Wind_Three_Signatures_preview.html` | aperçu autonome (Canvas 2D) des trois chorégraphies, à jour de la v2 |
 
@@ -145,18 +146,54 @@ propre source à RenderType fixes (c’est cette correction qui a supprimé le `
 
 ---
 
-## 5. Gameplay, dégâts, sons — inchangés
+## 5. Gameplay — réaction des mobs, dégâts, effets, sons
 
-La refonte est **purement visuelle** :
+Tout est appliqué côté serveur dans `WeaponVfxServerListener`. Le vent n'ajoute **aucun identifiant
+d'effet** : il réutilise les emprises existantes (`MOVEMENT_HOLDS`) et une nouvelle emprise
+`WIND_HOLDS` qui fait tourner le mob autour de l'axe de la tornade.
 
-- Zéphyr conserve son immobilisation de 80 ticks, ses sons de lancement (ticks 24 / 28 / 33) et
-  d’impact (33 / 37 / 42), et ses dégâts.
-- La tempête de sable et l’œil du cyclone n’ajoutent ni dégât ni effet : ce sont des signatures
-  visuelles, comme l’étaient les archives.
-- Aucun identifiant existant ne change de numéro, de catégorie ou de priorité ; `TEMPEST_EYE` est
-  ajouté avec l’identifiant libre 42.
+### 5.1 Zéphyr — la cible est clouée, transpercée, puis lâchée
 
----
+| Aspect | Comportement |
+|---|---|
+| Emprise | `applyMovementHold` 80 ticks, cible **soulevée de 0,55 bloc** : elle ne peut ni avancer ni fuir |
+| Mouvement | immobile, vibration de la colonne côté rendu |
+| Dégâts | 3 impacts de **0,38 × dégâts de l'arme** (ticks 33 / 37 / 42) + 4 rafales de `clamp(0,09 × arme, 0,05, 0,60)` (ticks 12 / 28 / 44 / 60) → ≈ **1,5 × arme** au total |
+| Effets | Lenteur I pendant 3 s à la libération |
+| Chute | 0,55 bloc : sous le seuil de dégâts de chute, aucune pénalité ajoutée |
+| Sons | `warden.emerg` (ouverture) · `item.trident.throw` × 3 départs · `entity.player.attack.sweep` + `block.amethyst_block.chime` × 3 impacts · `entity.ender_dragon.flap` sur les rafales · `entity.ender_dragon.flap` + `entity.phantom.ambient` à la libération |
+
+### 5.2 Tempête de sable — nuage de sable sur tout l'entourage
+
+| Aspect | Comportement |
+|---|---|
+| Cibles | tous les `Enemy` dans **2,40 blocs** du centre |
+| Emprise | aucune immobilisation totale : le sable colle (Lenteur II) et aveugle |
+| Effets | **Cécité 2,5 s** + **Lenteur II 4,5 s** |
+| Dégâts | un pulse toutes les **14 ticks** pendant 140 ticks de `clamp(0,07 × arme, 0,04, 0,45)` → ≈ **0,7 × arme** par mob |
+| Sons | `block.honey_block.slide` (le sable coule) · `block.rooted_dirt.break` à chaque pulse · `entity.phantom.ambient` · `entity.ender_dragon.flap` · `entity.fire.extinguish` (fin du nuage) |
+
+### 5.3 Œil du cyclone — les mobs sont emportés puis relâchés en l'air
+
+| Aspect | Comportement |
+|---|---|
+| Cibles | tous les `Enemy` dans **3,10 blocs** |
+| Emprise | `WIND_HOLDS` 104 ticks : `NoAi` forcé, cible **téléportée chaque tick** sur une orbite |
+| Mouvement | rayon qui se resserre de sa distance de départ à **1,05 bloc**, **0,28 rad/tick** (≈ 4,6 tours), montée de **4,20 blocs** en sinusoïde |
+| Dégâts | un pulse toutes les **9 ticks** de `clamp(0,08 × arme, 0,05, 0,60)` + **0,45 × arme** à l'éjection au tick 104 |
+| Effets | à l'éjection : **Nausée 6 s** + **Lenteur I 4 s** |
+| **Dégâts de chute** | au tick 104 le mob est éjecté (vitesse tangentielle 0,62 + 0,45 vers le haut) et sa `fallDistance` est **remise à zéro à cet instant** : la chute vanilla qui suit applique les dégâts de chute normaux à l'atterrissage. Tornade + chute se cumulent donc bien |
+| Sons | `entity.ender_dragon.flap` (aspiration + boucle toutes les 20 ticks) · `block.warden.emerg` · `entity.lightning_bolt.thunder` (tonnerre lointain) · `entity.generic.explode` + `block.amethyst_block.chime` (éjection) |
+
+### 5.4 Règles communes
+
+- Les dégâts passent par `hurtWithCapturedWeapon` : armure, résistance et enchantements de protection
+  du mob s'appliquent normalement, et les i-frames sont réarmées pour permettre le rythme demandé.
+- Aucun mob ne peut cumuler deux emprises de vent : la seconde remplace la première, qui est relâchée
+  proprement (IA et gravité rendues).
+- Un mob qui meurt pendant l'emprise est relâché immédiatement, sans téléportation posthume.
+- Aucun son de mod n'est ajouté : tout passe par la banque vanilla déjà utilisée par les autres
+  signatures (aucun `sounds.json`, aucun paquet réseau en plus).
 
 ## 6. Tester en jeu
 
@@ -169,10 +206,14 @@ La refonte est **purement visuelle** :
 
 Critères de réussite :
 
-1. Les trois signatures sont **visibles** et ne se chevauchent pas dans la démo isolée.
+1. Les trois signatures sont **visibles** et ne se chevauchent pas dans la démo isolée ; la démo
+   applique maintenant le vrai gameplay au mob visé (emprise, dégâts, effets, sons).
 2. Aucun nouveau `[DLB-VFX] World render batch aborted` ni `IllegalStateException: Not building!`.
 3. La lance de zéphyr montre bien la colonne d’air verticale, le fût planté avec sa pointe de cristal
    et ses deux hélices contra-rotatives qui s’ouvrent à l’éclosion.
+4. Sur un zombie de test : Zéphyr le cloue 4 s en l’air et le lâche sans dégât de chute ; la tempête de
+   sable l’aveugle et le ralentit ; l’œil du cyclone le fait tournoyer, le monte de 4 blocs, puis le
+   projette — et il perd des points de vie **à l’atterrissage** en plus des dégâts de tornade.
 4. La tempête de sable reste ocre et lisible au sol ; l’œil du cyclone montre deux entonnoirs en sens
    opposés, un anneau de calme et des débris.
 5. `/dlbvfx elements bois` conserve trois animations (Thorn, Verdant, Zéphyr) et `/dlbvfx elements terre`
