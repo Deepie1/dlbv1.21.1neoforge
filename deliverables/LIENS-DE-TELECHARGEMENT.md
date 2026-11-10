@@ -4,11 +4,11 @@ Ces liens pointent sur la **branche de travail** (`arena/605e67fb-dlbv1-21-1neof
 
 Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin>` — GitHub redirige vers le fichier brut exact.
 
-## Vent — refonte complète (V6.6, en tête de gondole)
+## Vent — refonte complète (v2, en tête de gondole)
 
 | Fichier | Lien |
 |---|---|
-| Sources complètes (ZIP, 19 entrées — moteur + 4 fichiers patchés + miroirs) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_src.zip |
+| Sources complètes (ZIP, 19 entrées, 313 918 o — moteur + 4 fichiers patchés + miroirs) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_src.zip |
 | Aperçu animé (HTML autonome, ZIP embarqué) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_preview.html |
 | `WindSignatureVfx.java` (moteur voxel du vent) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/WindSignatureVfx.java |
 | `WeaponWorldVfxManager.java` (routage `impactWind`) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/WeaponWorldVfxManager.java |
@@ -16,7 +16,14 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 | `WIND_SIGNATURES.md` (documentation) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/WIND_SIGNATURES.md |
 | Miroirs MCreator (`FIXES_MCREATOR`) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/client/WindSignatureVfx.java |
 
-Trois signatures : **Zéphyr** (#22, 4,0 s) · **Tempête de sable** (#41, 7,0 s, sortie de l'archive Terre) · **Œil du cyclone** (#42, 6,0 s, nouvelle). Un seul moteur, aucun `DeepElement` ajouté, aucun ordinal déplacé.
+Trois signatures : **Zéphyr** (#22, 4,0 s, chorégraphie refaite — colonne d'air verticale, lance plantée, trident, éclosion, ≈ 840 cubes/image) · **Tempête de sable** (#41, 7,0 s, sortie de l'archive Terre, ≈ 990 cubes) · **Œil du cyclone** (#42, 6,0 s, ≈ 956 cubes). Un seul moteur, aucun `DeepElement` ajouté, aucun ordinal déplacé.
+
+Empreintes des archives de cette version :
+
+```text
+DLB_Wind_Three_Signatures_src.zip  313 918 o  sha256 27098ebe206e55b9…
+src-modifies-t301-t374.zip       3 501 644 o  sha256 0079ef50717d0de9…
+```
 
 ## Lumière — dernier correctif (V6.5)
 

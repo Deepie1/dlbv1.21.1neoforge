@@ -23,6 +23,7 @@ Le dossier `FIXES_MCREATOR/src/main` contient les mêmes copies que le `src/main
 | `enchantments/WeaponVfxMotion.java` | mouvement d’écho de lame spiralé pour `TEMPEST_EYE` |
 | `commands/DlbVfxCommand.java` | créneaux isolés (114 / 174 / 154 ticks) pour les trois signatures |
 | `deepluckyblock_patch/WIND_SIGNATURES.md` | ce document |
+| `deliverables/DLB_Wind_Three_Signatures_preview.html` | aperçu autonome (Canvas 2D) des trois chorégraphies, à jour de la v2 |
 
 ---
 
@@ -48,19 +49,38 @@ famille identifiable en combat, même quand plusieurs effets se chevauchent.
 
 ### 3.1 Zéphyr — Lance de zéphyr (`ZEPHYR_WIND_LANCE`, #22, 80 ticks)
 
-Trois lances d’air comprimé, décalées de 120°, qui convergent vers la cible et la percent.
+Chorégraphie refaite de fond en comble (v2). L’ancien trident de lances obliques à 120° était
+illisible de face ; le Zéphyr est désormais un **axe vertical unique** : une colonne d’air qui
+descend du ciel, une lance qui la suit et se plante dans le sol, puis une éclosion latérale.
 
 | Phase | `t` | Contenu |
 |---|---|---|
-| Ouverture | 0,00 → 0,18 | vortex de trois bras spiralés autour de la cible, anneau de sol qui balaie |
-| Convergence | 0,16 → 0,42 | chaque lance passe de 3,60 blocs en arrière à 0,42 bloc devant la cible ; l’écart latéral tombe de 1,62 à 0,06 |
-| Percement | 0,42 → 0,52 | pointe de cristal enfoncée, anneau de compression (24 segments) + 12 poussières d’air |
-| Dissipation | 0,50 → 0,94 | les rubans hélicoïdaux sont emportés vers l’extérieur (rayon 0,20 → 1,30), trois plumes dérivent par lance |
+| Aspiration | 0,00 → 0,20 | trois anneaux de sol (3 × 48) se contractent de 2,34 à 0,90 bloc, la poussière monte |
+| Nouage | 0,10 → 0,34 | la colonne se noue : 5 brins externes (40 niveaux) + 3 brins internes (24 niveaux), 12,5 tours |
+| Chute | 0,22 → 0,46 | la lance descend de `tipY = 0,78` à `−0,86` (`easeOut`) en vibrant de ±0,02 |
+| Percement | 0,44 → 0,53 | `pierce` enfonce la pointe de 0,22 bloc, anneau de compression au sol (48 + 36 + 28 éclats) |
+| Éclosion | 0,50 → 0,90 | les deux hélices s’ouvrent (rayon `0,30 → 1,30`), 40 éclats et 10 plumes partent en cône |
+| Dissipation | 0,84 → 1,00 | fondu global de la colonne, les éclats retombent |
 
-Anatomie d’une lance : fût de **9 sections** jointives (demi-largeur 0,088 → 0,058), âme lumineuse à
-44 %, **quatre ailettes** arrière, pointe de **cinq sections** (0,140 → 0,008), **ruban hélicoïdal** de
-16 pas tournant à `t × 26`, trois plumes arrachées. Les trois lances, leurs rubans et les plumes sont
-les seules pièces qui bougent : le vortex, lui, tourne autour d’un centre fixe.
+Anatomie, sous-système par sous-système :
+
+| # | Sous-système | Cubes | Détail |
+|---|---|---|---|
+| 1 | Anneaux de sol | 144 | 3 anneaux × 48, rayons 0,90 / 1,62 / 2,34, contre-rotation, aspiration `0,34 + 0,66·suck` |
+| 2 | Colonne d’air | 272 | 5 brins × 40 niveaux (rayon 1,00 → 0,46, hauteur 3,30 → 1,34) + 3 brins × 24 (0,58 → 0,22) |
+| 3 | Fût de la lance | 30 | sections jointives, demi-largeur 0,130 → 0,068, bande `col(PALE, WHITE, 0,22 + u·0,70)` |
+| 4 | Pointe de cristal | 14 | 0,152 → 0,010, `col(GLASS, WHITE)`, posée sous `tipY` |
+| 5 | Ailettes | 8 | couronne de 8 cubes à `tipY + 2,28`, alternance `PALE`/`AZURE` |
+| 6 | Hélices | 52 | 2 hélices contra-rotatives × 26 pas, `t × 22`, s’écartent de `blow·(0,80 + u·0,40)` |
+| 7 | Plumes | 10 | dérive radiale `blow·(0,70 + 1,80·h)`, inclinaison sur l’angle |
+| 8 | Trident satellite | 102 | 3 × (14 fût + 8 pointe + 12 hélice), rayon `0,58·(1 − 0,55·drop)`, tip décalé de 0,06 |
+| 9 | Couronne de compression | 112 | anneau `−0,55` (48) + anneau `−1,10` (36) + 28 puits, portée `0,34 + 1,75·(1 − impact)` |
+| 10 | Éclats | 40 | gerbe de 40 cubes, angle d’or, montée `blow·(0,45 + 1,10·h)` |
+| 11 | Brume périphérique | 12 | cubes larges très transparents à 2,05 – 2,95 blocs |
+| 12 | Annelets secondaires | 72 | 4 anneaux × 18 posés le long de la colonne, `GLASS`, alpha `0,52 + 0,30·h` |
+
+**Pic mesuré : ≈ 840 cubes/image** (828 relevés dans l’aperçu HTML à `t = 0,47`), très en dessous du
+plafond `HARD_CUBE_CAP_PER_FRAME = 7000`, même en triple impact simultané.
 
 ### 3.2 Tempête de sable (`SANDSTORM_DUNE`, #41, 140 ticks)
 
@@ -75,6 +95,7 @@ Réactivée depuis l’archive Terre, réécrite pour le vent et rendue par le n
 | Voile de poussière | 12 | cubes larges très transparents qui referment l’arrière-plan |
 
 Le tout vit entre 0,00 et 0,74, puis retombe jusqu’à 1,00 : aucune disparition sèche.
+**Pic mesuré : ≈ 990 cubes/image.**
 
 ### 3.3 Œil du cyclone (`TEMPEST_EYE`, #42, 120 ticks)
 
@@ -82,6 +103,7 @@ Troisième signature, nouvelle. Deux entonnoirs **contra-rotatifs** (±3 brins d
 net à 1,42 bloc de hauteur avec anneau et six rayons, neuf débris d’ardoise en orbite croisée, anneau
 de sol de 32 segments, éclatement sommital à partir de 0,62, puis **effondrement** : les deux
 entonnoirs se rejoignent et s’éteignent.
+**Pic mesuré : ≈ 956 cubes/image.**
 
 `TEMPEST_EYE` est déclaré **en fin d’énumération** (`ordinal` 12) pour ne décaler aucun `ordinal()`
 existant, qui sert de sel de rendu. Il est exclu de `signatureFor` et de `animationsOf` : la rotation
@@ -138,7 +160,8 @@ Critères de réussite :
 
 1. Les trois signatures sont **visibles** et ne se chevauchent pas dans la démo isolée.
 2. Aucun nouveau `[DLB-VFX] World render batch aborted` ni `IllegalStateException: Not building!`.
-3. La lance de zéphyr montre bien ses trois fûts, ses rubans qui tournent et ses plumes emportées.
+3. La lance de zéphyr montre bien la colonne d’air verticale, le fût planté avec sa pointe de cristal
+   et ses deux hélices contra-rotatives qui s’ouvrent à l’éclosion.
 4. La tempête de sable reste ocre et lisible au sol ; l’œil du cyclone montre deux entonnoirs en sens
    opposés, un anneau de calme et des débris.
 5. `/dlbvfx elements bois` conserve trois animations (Thorn, Verdant, Zéphyr) et `/dlbvfx elements terre`
