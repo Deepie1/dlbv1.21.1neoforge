@@ -1,5 +1,6 @@
 package deepluckyblock.client;
 
+import com.mojang.logging.LogUtils;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -40,6 +41,7 @@ import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
+import org.slf4j.Logger;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -61,6 +63,8 @@ import java.util.Map;
 @EventBusSubscriber(modid = DeepLuckyBlockMod.MODID, value = Dist.CLIENT)
 public final class WeaponWorldVfxManager {
 
+    private static final Logger LOGGER = LogUtils.getLogger();
+    private static long lastRenderErrorLogNanos;
     private static final int MAX_ACTIVE_INSTANCES = 140;
     /**
      * T360-NO-VANILLA-PARTICLES : les salves de pixels remplacent désormais les particules
@@ -416,7 +420,9 @@ public final class WeaponWorldVfxManager {
                     .setCullState(RenderStateShard.NO_CULL)
                     .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
                     .setWriteMaskState(RenderStateShard.COLOR_WRITE)
-                    .setOutputState(RenderStateShard.PARTICLES_TARGET)
+                    // AFTER_PARTICLES : vanilla a déjà composé sa cible de particules. Réécrire l'additif
+                    // dans PARTICLES_TARGET le laisse invisible sur certains pipelines (dont Intel).
+                    .setOutputState(RenderStateShard.MAIN_TARGET)
                     .createCompositeState(false);
             additiveType = RenderType.create(
                     "dlb_voxel_vfx_add",
@@ -1683,6 +1689,12 @@ public final class WeaponWorldVfxManager {
         try {
             renderVfxFrame(mc, buffers, poseStack, mat, tmp, camPos);
         } catch (RuntimeException ex) {
+            // Ne plus masquer silencieusement une géométrie invalide : au maximum un log / 5 s.
+            long errorNow = System.nanoTime();
+            if (lastRenderErrorLogNanos == 0L || errorNow - lastRenderErrorLogNanos >= 5_000_000_000L) {
+                lastRenderErrorLogNanos = errorNow;
+                LOGGER.warn("[DLB-VFX] World render batch aborted", ex);
+            }
             releaseBatches(buffers);
             PIXEL_PARTICLES.clear();
             if (ACTIVE.size() > 8) {
@@ -1735,7 +1747,7 @@ public final class WeaponWorldVfxManager {
             if (dx * dx + dy * dy + dz * dz > MAX_VFX_RENDER_DISTANCE_SQR) continue;
 
             if (cubesSinceFlush >= MAX_CUBES_PER_BATCH) {
-                flushBatches(buffers, addVc != null, alphaVc != null);
+                flushBatches(buffers, alphaVc != null, addVc != null);
                 addVc = null;
                 alphaVc = null;
             }
@@ -1788,7 +1800,7 @@ public final class WeaponWorldVfxManager {
 
             // Flush progressif : chaque batch reste petit, le buffer partagé ne peut plus déborder
             if (cubesSinceFlush >= MAX_CUBES_PER_BATCH) {
-                flushBatches(buffers, addVc != null, alphaVc != null);
+                flushBatches(buffers, alphaVc != null, addVc != null);
                 addVc = null;
                 alphaVc = null;
             }
@@ -1848,10 +1860,14 @@ public final class WeaponWorldVfxManager {
             }
         }
 
-        flushBatches(buffers, addVc != null, alphaVc != null);
+        flushBatches(buffers, alphaVc != null, addVc != null);
     }
 
-    /** Envoie les geometry accumulées au GPU et libère les builders (ordre : alpha puis additif). */
+    /**
+     * Envoie la géométrie accumulée au GPU (ordre : alpha puis additif).
+     * Les trois appels doivent transmettre (alphaVc, addVc), jamais l'ordre de déclaration inverse :
+     * un slash Light est additif-seul et serait sinon vidé sans jamais être dessiné.
+     */
     private static void flushBatches(MultiBufferSource.BufferSource buffers, boolean hasAlpha, boolean hasAdditive) {
         if (hasAlpha) {
             buffers.endBatch(getTranslucentRenderType());

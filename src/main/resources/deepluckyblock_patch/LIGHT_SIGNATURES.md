@@ -1,11 +1,11 @@
-# Lumière V6.2 — diagnostics isolés et slash au clic
+# Lumière V6.3 — restauration du rendu additif et des slashes
 
 ## Fichiers synchronisés
 
 Le dossier `FIXES_MCREATOR/src/main` contient les mêmes copies que le `src/main` principal :
 
 - `client/LightSignatureVfx.java` — géométrie des trois animations V6 ;
-- `client/WeaponWorldVfxManager.java` — durées, dimensions monde verrouillées, double passe alpha/additive, trajectoire latérale d’Astral, orientation de Chrono et déclenchement direct du slash au clic gauche ;
+- `client/WeaponWorldVfxManager.java` — durées, dimensions monde verrouillées, double passe alpha/additive, cible principale additive, flush dans le bon ordre, trajectoire latérale d’Astral, orientation de Chrono et déclenchement direct du slash au clic gauche ;
 - `enchantments/WeaponVfxServerListener.java` — multi-ciblage, collisions balayées, dégâts, emprises, sons et rajeunissement ;
 - `commands/DlbVfxCommand.java` — `/anim light`, démos par famille/effet et test du contour vanilla ;
 - `resources/deep_lucky_block.mixins.json` — suppression du refmap inexistant ;
@@ -185,6 +185,36 @@ Les commandes suivantes utilisent le même paquet visuel S2C que `playDebug`, sa
 `/dlbvfx glow` ne joue volontairement aucun paquet Light. Il vérifie séparément le `MobEffects.GLOWING` de l’entité. En combat, Seraph et Astral demandent ce contour seulement après une touche secondaire acceptée ; une animation visible ne garantit donc pas que ce statut a été appliqué, et inversement.
 
 Aucune géométrie V6, aucune trajectoire, aucune durée de signature, aucun son, aucune collision et aucune valeur de dégâts n’est modifiée en V6.2. Metal et Arc restent hors de portée. La compilation et le rendu doivent néanmoins être revérifiés dans `runClient` : les audits locaux ne peuvent pas observer les shaders ou les contours vanilla.
+
+## Correctif de rendu V6.3 — deux corrections ciblées après les tests isolés
+
+Le retour `runClient` a confirmé que `/dlbvfx demo astral` exécute bien sa boucle serveur alors que la lance et l’horloge restent invisibles. Le problème n’est donc pas la commande, le calcul de la durée ou l’absence du paquet de démonstration.
+
+### Slash : inversion des indicateurs de flush
+
+`flushBatches` attend les paramètres `(hasAlpha, hasAdditive)`, mais les trois appels lui transmettaient `(addVc != null, alphaVc != null)`. Quand les deux passes existent, l’inversion est masquée parce que les deux booléens valent `true`. Un slash Lumière est **additif-seul** : le code vidait alors le RenderType translucide, jamais le buffer additif contenant réellement l’arc.
+
+Les trois appels transmettent désormais `(alphaVc != null, addVc != null)`. Cette correction concerne aussi les autres effets à passe unique ; les trajectoires et les huit ticks du slash ne changent pas.
+
+### Lance et horloge : cible de sortie additive
+
+La passe monde additive était envoyée explicitement vers `PARTICLES_TARGET` pendant `RenderLevelStageEvent.Stage.AFTER_PARTICLES`, alors que le renderer additif des lames, qui utilise le même shader, écrit dans la cible principale. À ce stade, les particules vanilla sont déjà composées. Le pattern observé en jeu — corps translucide de Séraphin visible, mais liens additifs d’Astral/Chrono invisibles — correspond à cette sortie devenue inactive sur le pipeline Intel du test.
+
+La passe additive utilise maintenant `RenderStateShard.MAIN_TARGET`, comme le renderer de lame. Elle conserve le shader lightning, la transparence additive, l’absence de culling, le test de profondeur et le masque couleur. La passe alpha n’est pas modifiée.
+
+Enfin, une exception de rendu n’est plus totalement silencieuse : le premier échec puis au maximum un message toutes les cinq secondes sont journalisés avec `[DLB-VFX] World render batch aborted`. Le nettoyage défensif existant est conservé. Ce journal permettra de distinguer une géométrie qui lève une exception d’un simple problème de framebuffer.
+
+Aucun voxel, rayon, timing, fade, dégât, son ou comportement serveur n’est changé en V6.3. Les commandes V6.2 restent identiques et servent de test de régression :
+
+```text
+/dlbvfx demo astral slash
+/dlbvfx stop
+/dlbvfx demo astral
+/dlbvfx stop
+/dlbvfx demo chrono
+```
+
+Le slash doit maintenant apparaître seul ; la lance doit montrer son manche, sa lame et son ciel ; l’horloge doit montrer son cadran et ses contours. La vérification GPU réelle reste indispensable : les audits hors ligne valident la structure et les modèles, pas le framebuffer NeoForge/Intel.
 
 ## Aperçu hors ligne et limites de validation
 
