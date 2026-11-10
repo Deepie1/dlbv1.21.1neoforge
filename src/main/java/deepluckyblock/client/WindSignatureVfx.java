@@ -88,7 +88,7 @@ public final class WindSignatureVfx {
     }
 
     // ============================================================================================
-    // 1. ZÉPHYR — aspiration, tresse, trois lances, couronne de compression, éclosion
+    // 1. ZÉPHYR — aspiration, colonne, lance de cristal détaillée, couronne, éclosion
     // ============================================================================================
 
     /**
@@ -97,14 +97,16 @@ public final class WindSignatureVfx {
      *   <li>0,00–0,20 aspiration : trois anneaux de poussière se resserrent au sol (144 cubes) ;</li>
      *   <li>0,06–0,80 colonne : cinq brins extérieurs et trois brins intérieurs forment un entonnoir
      *       large en haut qui se resserre vers la lance (272) ;</li>
-     *   <li>0,10–0,70 formation : la lance principale descend (30 sections + 14 cubes de pointe,
-     *       8 ailettes, deux hélices de 26, dix plumes) ;</li>
-     *   <li>0,22–0,46 descente : trois lances satellites en trident (3 × 34) ;</li>
+     *   <li>0,10–0,70 formation : la lance principale descend — lame en losange de 14 niveaux,
+     *       douille de 3 anneaux, fût à six pans de 20 sections, 5 viroles, 4 ailettes, pommeau,
+     *       deux hélices de 26 et dix plumes (≈ 600 cubes à elle seule) ;</li>
+     *   <li>0,22–0,46 descente : trois lances satellites en trident, mêmes pièces à échelle
+     *       réduite (3 × 92) ;</li>
      *   <li>0,44–0,58 percement : couronne de compression au sol (112) ;</li>
      *   <li>0,48–0,92 éclosion : éclats (40), annelets (72), brume (12) ;</li>
      *   <li>0,84–1,00 dissipation totale.</li>
      * </ul>
-     * Pic de charge : environ 840 cubes par image.
+     * Pic de charge : environ 1 240 cubes par image.
      */
     private static void renderZephyr(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                      float cx, float cy, float cz, float t,
@@ -173,38 +175,104 @@ public final class WindSignatureVfx {
             }
         }
 
-        // ---- 3. Lance principale : axe vertical, pointe en bas, âme lumineuse ----
+        // ---- 3. Lance principale : lame taillée, douille, fût à six pans, viroles, ailettes ----
         float tipY = Mth.lerp(drop, 0.78f, -0.86f) - pierce * 0.22f;
-        float wobbleX = Mth.cos(t * 2.0f) * 0.02f;
-        float wobbleZ = Mth.sin(t * 2.0f) * 0.02f;
-        for (int seg = 0; seg < 30; seg++) {
-            float u0 = seg / 29.0f;
-            float y0 = tipY + 0.14f + u0 * 2.10f;
-            float half = 0.130f - u0 * 0.062f;
+        float wobbleX = Mth.cos(t * 2.0f) * 0.018f;
+        float wobbleZ = Mth.sin(t * 2.0f) * 0.018f;
+        float hp = (float) (Math.PI * 0.5);
+
+        // 3a. lame : quatorze niveaux, section en losange (quatre faces + arête centrale)
+        for (int bl = 0; bl < 14; bl++) {
+            float u = bl / 13.0f;
+            float y0 = tipY - 0.44f + u * 1.02f;
+            float half = 0.016f + u * 0.186f;
+            for (int q = 0; q < 4; q++) {
+                float qa = q * hp;
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        wobbleX + Mth.cos(qa) * half * 0.60f,
+                        wobbleZ + Mth.sin(qa) * half * 0.60f, y0,
+                        half * 0.56f, half * 0.32f, half * 0.56f,
+                        qa, 0.0f, 0.0f,
+                        (q % 2 == 0) ? WHITE : GLASS,
+                        Math.round(a * (0.94f - 0.14f * u)));
+            }
             rot(vc, mat, tmp, cx, cy, cz, dx, dz, wobbleX, wobbleZ, y0,
-                    half, half * 1.02f, half,
-                    t * 3.0f + u0 * 2.0f, 0.0f, 0.0f,
-                    color(PALE, WHITE, 0.22f + u0 * 0.70f),
-                    Math.round(a * 1.02f));
+                    half * 0.46f, half * 0.46f, half * 0.46f, 0.0f, 0.0f, 0.0f,
+                    WHITE, Math.round(a * (0.98f - 0.20f * u)));
         }
-        for (int tip = 0; tip < 14; tip++) {
-            float u0 = tip / 14.0f;
-            float y0 = tipY - 0.02f - u0 * 0.34f;
-            float half = 0.152f * (1.0f - u0 * 0.95f) + 0.010f;
-            rot(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, y0,
-                    half, half, half, 0.0f, 0.0f, 0.0f,
-                    color(GLASS, WHITE, 0.55f + u0 * 0.42f),
-                    Math.round(a * (0.96f - u0 * 0.16f)));
+
+        // 3b. douille : trois anneaux hexagonaux sous le fût
+        for (int ring = 0; ring < 3; ring++) {
+            float y0 = tipY + 0.60f + ring * 0.10f;
+            float rr = 0.182f - ring * 0.012f;
+            for (int q = 0; q < 6; q++) {
+                float qa = q * TAU / 6.0f + ring * 0.52f;
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        wobbleX + Mth.cos(qa) * rr, wobbleZ + Mth.sin(qa) * rr, y0,
+                        0.046f, 0.020f, 0.046f, qa, 0.0f, 0.0f,
+                        (ring == 1) ? GLASS : PALE, Math.round(a * 0.94f));
+            }
         }
-        for (int fin = 0; fin < 8; fin++) {
-            float fa = fin * TAU / 8.0f + t * 1.4f;
-            float reach = 0.30f;
+
+        // 3c. fût : vingt sections à six pans, âme lumineuse au centre
+        for (int seg = 0; seg < 20; seg++) {
+            float u0 = seg / 19.0f;
+            float y0 = tipY + 0.92f + u0 * 1.66f;
+            float half = 0.152f - u0 * 0.042f;
+            for (int q = 0; q < 6; q++) {
+                float qa = q * TAU / 6.0f + u0 * 1.1f;
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        wobbleX + Mth.cos(qa) * half * 0.88f,
+                        wobbleZ + Mth.sin(qa) * half * 0.88f, y0,
+                        half * 0.56f, half * 0.52f, half * 0.56f, qa, 0.0f, 0.0f,
+                        color(PALE, WHITE, 0.26f + u0 * 0.58f), Math.round(a * 0.98f));
+            }
+            rot(vc, mat, tmp, cx, cy, cz, dx, dz, wobbleX, wobbleZ, y0,
+                    half * 0.50f, half * 0.50f, half * 0.50f, 0.0f, 0.0f, 0.0f,
+                    color(GLASS, WHITE, 0.50f + u0 * 0.44f), Math.round(a * 0.90f));
+        }
+
+        // 3d. cinq viroles de cristal autour du fût
+        for (int ring = 0; ring < 5; ring++) {
+            float u0 = (ring + 0.5f) / 5.0f;
+            float y0 = tipY + 0.92f + u0 * 1.66f;
+            float rr = 0.174f - u0 * 0.026f;
+            for (int q = 0; q < 6; q++) {
+                float qa = q * TAU / 6.0f + ring * 0.31f;
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        wobbleX + Mth.cos(qa) * rr, wobbleZ + Mth.sin(qa) * rr, y0,
+                        0.044f, 0.020f, 0.044f, qa, 0.0f, 0.0f,
+                        (ring % 2 == 0) ? WHITE : GLASS, Math.round(a * 0.96f));
+            }
+        }
+
+        // 3e. quatre ailettes recourbées vers le haut
+        for (int fin = 0; fin < 4; fin++) {
+            float fa = fin * TAU / 4.0f + t * 0.7f;
+            for (int k = 0; k < 4; k++) {
+                float u = k / 3.0f;
+                float reach = 0.18f + u * 0.30f;
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(fa) * reach, Mth.sin(fa) * reach, tipY + 0.74f + u * 0.40f,
+                        0.070f - u * 0.020f, 0.062f, 0.040f, fa + u * 0.5f, 0.0f, 0.0f,
+                        (fin % 2 == 0) ? PALE : AZURE,
+                        Math.round(a * (0.92f - 0.24f * u)));
+            }
+        }
+
+        // 3f. pommeau au sommet du fût
+        for (int q = 0; q < 6; q++) {
+            float qa = q * TAU / 6.0f + t * 1.2f;
             rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    Mth.cos(fa) * reach, Mth.sin(fa) * reach, tipY + 2.28f,
-                    0.058f, 0.058f, 0.058f, fa, 0.0f, 0.0f,
-                    (fin % 2 == 0) ? PALE : AZURE,
-                    Math.round(a * 0.90f));
+                    wobbleX + Mth.cos(qa) * 0.115f, wobbleZ + Mth.sin(qa) * 0.115f,
+                    tipY + 2.62f, 0.058f, 0.058f, 0.058f, qa, 0.0f, 0.0f,
+                    (q % 2 == 0) ? WHITE : PALE, Math.round(a * 0.90f));
         }
+        rot(vc, mat, tmp, cx, cy, cz, dx, dz, wobbleX, wobbleZ, tipY + 2.70f,
+                0.082f, 0.082f, 0.082f, 0.0f, 0.0f, 0.0f,
+                GLASS, Math.round(a * 0.94f));
+
+        // 3g. deux hélices contra-rotatives autour du fût
         for (int helix = 0; helix < 2; helix++) {
             float spinDir = (helix == 0) ? 1.0f : -1.0f;
             for (int step = 0; step < 26; step++) {
@@ -220,6 +288,8 @@ public final class WindSignatureVfx {
                         Math.round(a * fade * (1.0f - blow * 0.40f) * (0.60f - u0 * 0.24f)));
             }
         }
+
+        // 3h. plumes arrachées au fût
         for (int plume = 0; plume < 10; plume++) {
             float h = hash(salt, 4300 + plume * 41);
             float drift = blow * (0.70f + h * 1.80f);
@@ -233,31 +303,73 @@ public final class WindSignatureVfx {
                     Math.round(a * fade * (1.0f - blow) * (0.42f + h * 0.28f)));
         }
 
-        // ---- 4. Trois lances satellites en trident autour de l'axe (3 × 34 cubes) ----
+        // ---- 4. Trois lances satellites en trident : mêmes pièces à échelle réduite (3 × 92) ----
         for (int spear = 0; spear < 3; spear++) {
             float ang = spear * 2.0943951f + 0.60f;
             float rad = 0.58f * (1.0f - drop * 0.55f);
             float tipY2 = tipY + 0.30f + spear * 0.06f;
             float lat = Mth.cos(ang) * rad;
             float fwd = Mth.sin(ang) * rad;
-            for (int seg = 0; seg < 14; seg++) {
-                float u0 = seg / 14.0f;
-                float y0 = tipY2 + 0.10f + u0 * 1.30f;
-                float half = 0.072f - u0 * 0.032f;
+
+            // lame
+            for (int bl = 0; bl < 8; bl++) {
+                float u = bl / 7.0f;
+                float y0 = tipY2 - 0.26f + u * 0.58f;
+                float half = 0.012f + u * 0.092f;
+                for (int side = 0; side < 2; side++) {
+                    float sg = (side == 0) ? 1.0f : -1.0f;
+                    rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            fwd + sg * half * 0.50f, lat + sg * half * 0.50f, y0,
+                            half * 0.42f, half * 0.30f, half * 0.42f,
+                            0.0f, 0.0f, ang,
+                            (side == 0) ? WHITE : GLASS, Math.round(a * 0.92f));
+                }
                 rot(vc, mat, tmp, cx, cy, cz, dx, dz, fwd, lat, y0,
-                        half, half, half, ang, 0.0f, 0.0f,
-                        color(PALE, WHITE, 0.30f + u0 * 0.55f),
-                        Math.round(a * 0.92f));
+                        half * 0.28f, half * 0.28f, half * 0.28f, 0.0f, 0.0f, 0.0f,
+                        WHITE, Math.round(a * 0.94f));
             }
-            for (int tip = 0; tip < 8; tip++) {
-                float u0 = tip / 8.0f;
-                float y0 = tipY2 - 0.01f - u0 * 0.24f;
-                float half = 0.086f * (1.0f - u0 * 0.92f) + 0.008f;
+
+            // fût à quatre pans
+            for (int seg = 0; seg < 9; seg++) {
+                float u0 = seg / 8.0f;
+                float y0 = tipY2 + 0.32f + u0 * 0.94f;
+                float half = 0.078f - u0 * 0.020f;
+                for (int q = 0; q < 4; q++) {
+                    float qa = q * TAU / 4.0f + u0 * 1.0f;
+                    rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            fwd + Mth.cos(qa) * half * 0.90f, lat + Mth.sin(qa) * half * 0.90f, y0,
+                            half * 0.80f, half * 0.62f, half * 0.80f, qa, 0.0f, 0.0f,
+                            color(PALE, WHITE, 0.30f + u0 * 0.52f), Math.round(a * 0.90f));
+                }
                 rot(vc, mat, tmp, cx, cy, cz, dx, dz, fwd, lat, y0,
-                        half, half, half, 0.0f, 0.0f, 0.0f,
-                        color(GLASS, WHITE, 0.55f + u0 * 0.40f),
-                        Math.round(a * 0.92f));
+                        half * 0.52f, half * 0.52f, half * 0.52f, 0.0f, 0.0f, 0.0f,
+                        color(GLASS, WHITE, 0.48f + u0 * 0.42f), Math.round(a * 0.84f));
             }
+
+            // deux viroles
+            for (int ring = 0; ring < 2; ring++) {
+                float u0 = (ring + 0.5f) / 2.0f;
+                float y0 = tipY2 + 0.32f + u0 * 0.94f;
+                float rr = 0.090f - u0 * 0.012f;
+                for (int q = 0; q < 4; q++) {
+                    float qa = q * TAU / 4.0f + ring * 0.4f;
+                    rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            fwd + Mth.cos(qa) * rr, lat + Mth.sin(qa) * rr, y0,
+                            0.032f, 0.014f, 0.032f, qa, 0.0f, 0.0f,
+                            GLASS, Math.round(a * 0.90f));
+                }
+            }
+
+            // trois ailettes
+            for (int fin = 0; fin < 3; fin++) {
+                float fa = fin * TAU / 3.0f + ang * 2.0f;
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        fwd + Mth.cos(fa) * 0.10f, lat + Mth.sin(fa) * 0.10f, tipY2 + 0.22f,
+                        0.040f, 0.030f, 0.020f, fa, 0.0f, 0.0f,
+                        PALE, Math.round(a * 0.86f));
+            }
+
+            // hélice d'air
             for (int step = 0; step < 12; step++) {
                 float u0 = step / 11.0f;
                 float ra = u0 * TAU * 1.8f + t * 18.0f * ((spear % 2 == 0) ? 1.0f : -1.0f) + spear;
@@ -266,8 +378,7 @@ public final class WindSignatureVfx {
                 rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                         fwd + Mth.cos(ra) * r0, lat + Mth.sin(ra) * r0, y0,
                         0.020f, 0.020f, 0.062f, ra, 0.0f, 0.0f,
-                        AZURE,
-                        Math.round(a * fade * (0.42f - u0 * 0.16f)));
+                        AZURE, Math.round(a * fade * (0.42f - u0 * 0.16f)));
             }
         }
 
@@ -361,7 +472,8 @@ public final class WindSignatureVfx {
     /**
      * Chorégraphie (durée 140 ticks) : la dune se forme (0,00–0,30), les bras montent (0,06–0,60),
      * les grains et les rubans tourbillonnent tant que la tempête vit, puis tout retombe (0,72–1,00).
-     * Pic de charge : environ 1 240 cubes par image.
+     * Tout tourne dans le même sens (aucun ruban à contre-courant).
+     * Pic de charge : environ 990 cubes par image.
      */
     private static void renderSandstorm(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                         float cx, float cy, float cz, float t,
@@ -414,11 +526,11 @@ public final class WindSignatureVfx {
                     Math.round(a * reveal * (0.32f + 0.30f * (1.0f - u))));
         }
 
-        // ---- 3. Sept rubans horizontaux tournant à des vitesses différentes (336 cubes) ----
+        // ---- 3. Sept rubans horizontaux : même main que les bras, vitesses différentes (336 cubes) ----
         for (int band = 0; band < 7; band++) for (int i = 0; i < 48; i++) {
             float u = i / 47.0f;
             float h = hash(salt, 6900 + band * 83 + i * 11);
-            float ang = u * 5.2f + band * 0.90f + t * (9.5f + band * 1.3f) * ((band % 2 == 0) ? 1.0f : -1.0f);
+            float ang = u * 5.2f + band * 0.90f + t * (9.5f + band * 1.3f);
             float radius = 1.02f + band * 0.15f + 0.12f * Mth.sin(u * 9.0f + t * 8.0f);
             float f = Mth.cos(ang) * radius;
             float l = Mth.sin(ang) * radius;
@@ -441,7 +553,7 @@ public final class WindSignatureVfx {
             for (int i = 0; i < 30; i++) {
                 float u = i / 29.0f;
                 float h = hash(salt, 7300 + cell * 101 + i * 17);
-                float ang = u * 9.0f + t * 18.0f + cell;
+                float ang = u * 9.0f + t * 18.0f + cell * 0.40f;
                 float rr = (0.42f - u * 0.30f) * (0.85f + 0.25f * h);
                 rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                         cf + Mth.cos(ang) * rr, cl + Mth.sin(ang) * rr,
@@ -507,8 +619,8 @@ public final class WindSignatureVfx {
 
     /**
      * Chorégraphie (durée 120 ticks) : ouverture des deux entonnoirs (0,00–0,26), l'œil s'ouvre
-     * (0,18–0,40), les débris orbitent (0,25–0,78), éclatement sommital (0,62–0,86), effondrement
-     * (0,78–1,00). Pic de charge : environ 1 250 cubes par image.
+     * (0,18–0,40), les blocs de terrain sont happés au sol puis spiralent (0,25–0,90), éclatement
+     * sommital (0,62–0,86), effondrement (0,78–1,00). Pic de charge : environ 960 cubes par image.
      */
     private static void renderTempest(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                       float cx, float cy, float cz, float t,
@@ -545,7 +657,7 @@ public final class WindSignatureVfx {
                                     (funnel == 0) ? WHITE : PALE,
                                     (funnel == 0 ? 0.40f : 0.28f) + u * 0.46f + h * 0.18f),
                             Math.round(a * open * (1.0f - collapse * 0.35f)
-                                    * (0.36f + 0.28f * (1.0f - u * (funnel == 0 ? 0.5f : 1.0f)))));
+                                    * (0.28f + 0.22f * (1.0f - u * (funnel == 0 ? 0.5f : 1.0f)))));
                 }
             }
         }
@@ -594,22 +706,38 @@ public final class WindSignatureVfx {
             }
         }
 
-        // ---- 4. Débris arrachés en orbite croisée (26 cubes) ----
-        for (int debris = 0; debris < 26; debris++) {
-            float h = hash(salt, 8800 + debris * 59);
-            float h2 = hash(salt, 8900 + debris * 71);
-            float orbit = 1.00f + h * 1.35f;
-            float speed = 1.15f + h2 * 1.10f;
-            float ang = debris * 2.3999632f + t * speed * 6.0f;
-            float radius = orbit * (1.0f - collapse * 0.60f) * open;
-            float size = 0.058f + h2 * 0.060f;
+        // ---- 4. Blocs de terrain arrachés au sol (56) : posés, happés, spiralés, culbutés ----
+        for (int blk = 0; blk < 56; blk++) {
+            float h = hash(salt, 8800 + blk * 59);
+            float h2 = hash(salt, 8900 + blk * 71);
+            float h3 = hash(salt, 9000 + blk * 37);
+            float speed = 0.30f + h * 0.26f;
+            float cyc = fract(t * speed + blk * 0.6180339f);
+            float lift = smooth(cyc / 0.16f);
+            float fall = smooth((cyc - 0.80f) / 0.20f);
+            float arc = Mth.sin((float) (Math.PI * Math.min(1.0f, cyc)));
+            float r0 = 1.90f + h2 * 1.45f;
+            float radius = Math.max(0.55f, Mth.lerp(lift, r0, 0.62f) * (1.0f + 0.60f * arc)
+                    + fall * 1.30f) * open * (1.0f - collapse * 0.45f);
+            float ang = blk * 2.3999632f + t * (1.8f + h3 * 1.6f) + lift * (5.0f + h * 4.0f);
+            float y = -1.02f + arc * (3.30f + h3 * 0.60f) - fall * 1.10f;
+            float size = (0.082f + h2 * 0.066f) * (1.0f - collapse * 0.30f);
+            float tumble = t * (2.4f + h * 3.6f) + blk * 1.7f;
+            int rgb = (blk % 5 == 0) ? STEEL : (blk % 5 < 3 ? SLATE : SLATE_DARK);
             rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    Mth.cos(ang) * radius, Mth.sin(ang) * radius,
-                    -0.85f + h * 3.10f + 0.18f * Mth.sin(t * 6.0f + debris),
-                    size, size * 0.85f, size,
-                    ang, h2 * 2.0f, ang * 0.4f,
-                    (debris % 3 == 0) ? SLATE : (debris % 3 == 1 ? SLATE_DARK : STEEL),
-                    Math.round(a * open * (1.0f - collapse * 0.40f) * (0.50f + 0.30f * h)));
+                    Mth.cos(ang) * radius, Mth.sin(ang) * radius, y,
+                    size * (1.15f + 0.25f * h), size * (0.55f + 0.20f * h3),
+                    size * (0.90f + 0.20f * h2),
+                    ang, 0.0f, tumble, rgb,
+                    Math.round(a * open * (1.0f - collapse * 0.35f) * (0.86f + 0.14f * h)));
+            if (blk % 3 == 0) {
+                float da = ang + 0.30f;
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(da) * radius * 1.04f, Mth.sin(da) * radius * 1.04f,
+                        y - size * 0.55f, size * 0.38f, size * 0.38f, size * 0.38f,
+                        0.0f, 0.0f, 0.0f, PALE,
+                        Math.round(a * open * (0.30f + 0.20f * h)));
+            }
         }
 
         // ---- 5. Anneau de sol : soixante segments qui se resserrent (60 cubes) ----

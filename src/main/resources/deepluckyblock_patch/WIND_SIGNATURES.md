@@ -68,19 +68,23 @@ Anatomie, sous-système par sous-système :
 |---|---|---|---|
 | 1 | Anneaux de sol | 144 | 3 anneaux × 48, rayons 0,90 / 1,62 / 2,34, contre-rotation, aspiration `0,34 + 0,66·suck` |
 | 2 | Colonne d’air | 272 | 5 brins × 40 niveaux (rayon 1,00 → 0,46, hauteur 3,30 → 1,34) + 3 brins × 24 (0,58 → 0,22) |
-| 3 | Fût de la lance | 30 | sections jointives, demi-largeur 0,130 → 0,068, bande `col(PALE, WHITE, 0,22 + u·0,70)` |
-| 4 | Pointe de cristal | 14 | 0,152 → 0,010, `col(GLASS, WHITE)`, posée sous `tipY` |
-| 5 | Ailettes | 8 | couronne de 8 cubes à `tipY + 2,28`, alternance `PALE`/`AZURE` |
-| 6 | Hélices | 52 | 2 hélices contra-rotatives × 26 pas, `t × 22`, s’écartent de `blow·(0,80 + u·0,40)` |
+| 3 | Lame | 70 | 14 niveaux, section en losange (4 faces + arête), demi-largeur 0,016 → 0,202, `WHITE`/`GLASS` |
+| 4 | Douille et fût | 158 | douille de 3 anneaux hexagonaux (18) + fût à **six pans** de 20 sections avec âme lumineuse (140), demi-largeur 0,152 → 0,110 |
+| 5 | Viroles et ailettes | 46 | 5 viroles de 6 cubes de cristal (30) + 4 ailettes recourbées de 4 cubes (16) |
+| 6 | Hélices et pommeau | 59 | pommeau de 7 cubes au sommet + 2 hélices contra-rotatives × 26 pas, `t × 22`, qui s’écartent de `blow·(0,80 + u·0,40)` |
 | 7 | Plumes | 10 | dérive radiale `blow·(0,70 + 1,80·h)`, inclinaison sur l’angle |
-| 8 | Trident satellite | 102 | 3 × (14 fût + 8 pointe + 12 hélice), rayon `0,58·(1 − 0,55·drop)`, tip décalé de 0,06 |
+| 8 | Trident satellite | 276 | 3 × 92 : lame de 24 cubes, fût à quatre pans de 45, 2 viroles de 8, 3 ailettes, hélice de 12 ; rayon `0,58·(1 − 0,55·drop)` |
 | 9 | Couronne de compression | 112 | anneau `−0,55` (48) + anneau `−1,10` (36) + 28 puits, portée `0,34 + 1,75·(1 − impact)` |
 | 10 | Éclats | 40 | gerbe de 40 cubes, angle d’or, montée `blow·(0,45 + 1,10·h)` |
 | 11 | Brume périphérique | 12 | cubes larges très transparents à 2,05 – 2,95 blocs |
 | 12 | Annelets secondaires | 72 | 4 anneaux × 18 posés le long de la colonne, `GLASS`, alpha `0,52 + 0,30·h` |
 
-**Pic mesuré : ≈ 840 cubes/image** (828 relevés dans l’aperçu HTML à `t = 0,47`), très en dessous du
+**Pic mesuré : ≈ 1 240 cubes/image** (1 231 relevés dans l’aperçu HTML à `t = 0,47`), très en dessous du
 plafond `HARD_CUBE_CAP_PER_FRAME = 7000`, même en triple impact simultané.
+
+La lance est une vraie arme : lame taillée en losange, douille, fût à six pans avec âme lumineuse,
+viroles de cristal, ailettes recourbées et pommeau. Les trois satellites du trident reprennent les
+mêmes pièces à échelle réduite (lame, fût à quatre pans, viroles, ailettes, hélice d’air).
 
 ### 3.2 Tempête de sable (`SANDSTORM_DUNE`, #41, 140 ticks)
 
@@ -90,11 +94,13 @@ Réactivée depuis l’archive Terre, réécrite pour le vent et rendue par le n
 |---|---|---|
 | Jupe de dune | 3 strates × 24 cubes | ellipse, crête asymétrique, s’affaisse en fin de vie |
 | Bras spiralés | 3 × 16 | montent de −0,92 à +1,63 bloc, rayon 1,02 → 0,40, révélation décalée par niveau |
-| Rubans horizontaux | 4 × 26 | quatre ceintures à vitesses différentes, elles « fouettent » la scène |
+| Rubans horizontaux | 7 × 48 | sept ceintures à vitesses différentes, **toutes dans le même sens** que les bras |
 | Grains individuels | 48 | advection hélicoïdale, cycle propre, extinction en fin de course |
 | Voile de poussière | 12 | cubes larges très transparents qui referment l’arrière-plan |
 
 Le tout vit entre 0,00 et 0,74, puis retombe jusqu’à 1,00 : aucune disparition sèche.
+Tout le tourbillon tourne dans **un seul sens** (dune, bras, rubans, mini-tornades, grains) : plus aucun
+ruban à contre-courant, l’ensemble se lit comme un seul vent.
 **Pic mesuré : ≈ 990 cubes/image.**
 
 ### 3.3 Œil du cyclone (`TEMPEST_EYE`, #42, 120 ticks)
@@ -103,7 +109,12 @@ Troisième signature, nouvelle. Deux entonnoirs **contra-rotatifs** (±3 brins d
 net à 1,42 bloc de hauteur avec anneau et six rayons, neuf débris d’ardoise en orbite croisée, anneau
 de sol de 32 segments, éclatement sommital à partir de 0,62, puis **effondrement** : les deux
 entonnoirs se rejoignent et s’éteignent.
-**Pic mesuré : ≈ 956 cubes/image.**
+**Blocs de terrain (56)** : les mêmes blocs d’ardoise que le sol (`SLATE`, `SLATE_DARK`, `STEEL`) sont
+posés au sol, happés par la tornade (`cyc < 0,16`), montent en spirale contre la paroi, culbutent
+(roulis continu `2,4 + 3,6·h`), puis sont éjectés et retombent avant de recommencer. Le rayon suit la
+paroi de l’entonnoir (`lerp(r0, 0,62, lift) × (1 + 0,60·sin πc)`), la vitesse angulaire augmente avec
+l’aspiration.
+**Pic mesuré : ≈ 960 cubes/image.**
 
 `TEMPEST_EYE` est déclaré **en fin d’énumération** (`ordinal` 12) pour ne décaler aucun `ordinal()`
 existant, qui sert de sel de rendu. Il est exclu de `signatureFor` et de `animationsOf` : la rotation
