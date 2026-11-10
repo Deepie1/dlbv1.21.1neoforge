@@ -2192,6 +2192,7 @@ public final class WeaponVfxServerListener {
             final int launchDelay = launches[spear];
             final int impactDelay = impacts[spear];
             final float pitch = 1.22f + spear * 0.08f;
+            final float chimePitch = 1.55f + spear * 0.10f;
             TestProcedure.schedule(sl, scheduleNow + launchDelay,
                     () -> sl.playSound(null, x, y, z, SoundEvents.TRIDENT_THROW,
                             SoundSource.PLAYERS, 0.46f, pitch));
@@ -2203,7 +2204,7 @@ public final class WeaponVfxServerListener {
                 sl.playSound(null, x, y, z, SoundEvents.PLAYER_ATTACK_SWEEP,
                         SoundSource.PLAYERS, 0.52f, pitch + 0.08f);
                 sl.playSound(null, x, y, z, SoundEvents.AMETHYST_BLOCK_CHIME,
-                        SoundSource.PLAYERS, 0.30f, 1.55f + spear * 0.10f);
+                        SoundSource.PLAYERS, 0.30f, chimePitch);
             });
         }
 

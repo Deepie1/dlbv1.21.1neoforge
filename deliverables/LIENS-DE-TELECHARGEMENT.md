@@ -8,7 +8,7 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 | Fichier | Lien |
 |---|---|
-| Sources complètes (ZIP, 21 entrées, 395 601 o — moteur + rendu + gameplay + commande + miroirs) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_src.zip |
+| Sources complètes (ZIP, 21 entrées, 395 631 o — moteur + rendu + gameplay + commande + miroirs) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_src.zip |
 | Aperçu animé **v4** (HTML autonome, ZIP embarqué, gameplay documenté) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Vent_v4_preview.html |
 | Aperçu (chemin historique, même contenu) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_preview.html |
 | `WindSignatureVfx.java` (moteur voxel du vent) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/WindSignatureVfx.java |
@@ -24,8 +24,8 @@ Trois signatures : **Zéphyr** (#22, 4,0 s, chorégraphie refaite — colonne d'
 Empreintes des archives de cette version :
 
 ```text
-DLB_Wind_Three_Signatures_src.zip  395 601 o  sha256 b61c6f8cb34a4d8d…
-src-modifies-t301-t374.zip       3 510 765 o  sha256 7d332926632dc4fd…
+DLB_Wind_Three_Signatures_src.zip  395 631 o  sha256 7b227eced076b179…
+src-modifies-t301-t374.zip       3 510 795 o  sha256 dff6e86802f41700…
 ```
 
 ## Lumière — dernier correctif (V6.5)
