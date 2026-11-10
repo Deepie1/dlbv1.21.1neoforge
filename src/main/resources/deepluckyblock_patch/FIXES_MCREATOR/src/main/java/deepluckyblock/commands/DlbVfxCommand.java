@@ -21,6 +21,8 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.projectile.Arrow;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -72,6 +74,10 @@ import java.util.concurrent.ConcurrentHashMap;
  *   /dlbvfx play 15 beam 6          -> variante "rayon"/siphon, intensité 6
  *   /dlbvfx all                     -> les 30 effets à la suite, en cercle autour du joueur
  *   /dlbvfx demo                    -> boucle automatique (relancer la commande pour arrêter)
+ *   /dlbvfx demo light              -> famille Lumière seule, un effet à la fois
+ *   /dlbvfx demo astral             -> Astral seul en boucle (seraph et chrono aussi)
+ *   /dlbvfx demo 25 slash           -> entaille seule de l'effet #25
+ *   /dlbvfx glow 8                  -> contour vanilla seul sur la cible d'entraînement
  *   /dlbvfx crit 8                  -> force le chemin CRITIQUE (Étoile Dorée / Bullseye / Cyber-X)
  *   /dlbvfx hit 3                   -> 3 vraies frappes (impact + crit) sur la cible d'entraînement
  *   /dlbvfx dummy                   -> invoque/supprime la cible d'entraînement
@@ -117,8 +123,11 @@ public final class DlbVfxCommand {
         int remaining;
         boolean loop;
         int kind;
-        /** T350 : 0 = 30 effets, 1 = par familles élémentaires, 2 = les 50 déclinaisons. */
+        /** T350 : 0 = tous, 1 = par familles, 2 = déclinaisons, 3 = isolation explicite. */
         int mode;
+        /** Mode 3 : une famille, ou un seul ID répété pour inspecter un effet sans recouvrement. */
+        int[] isolatedIds;
+        String isolatedLabel = "";
         /** Ancre monde capturée à la commande : les VFX ne suivent jamais le joueur ensuite. */
         Vec3 ringCenter;
         /** Direction de présentation capturée elle aussi (le joueur peut tourner/librement bouger). */
@@ -201,6 +210,22 @@ public final class DlbVfxCommand {
     private static final SuggestionProvider<CommandSourceStack> SUGGEST_KINDS =
             (ctx, builder) -> SharedSuggestionProvider.suggest(
                     List.of("impact", "swing", "beam", "proj", "all"), builder);
+
+    private static final SuggestionProvider<CommandSourceStack> SUGGEST_DEMO_KINDS =
+            (ctx, builder) -> SharedSuggestionProvider.suggest(List.of("impact", "swing", "slash"), builder);
+
+    private static final List<String> DEMO_TARGET_SUGGESTIONS = new ArrayList<>();
+
+    static {
+        DEMO_TARGET_SUGGESTIONS.addAll(EFFECT_SUGGESTIONS);
+        for (DeepElement element : DeepElement.values()) {
+            DEMO_TARGET_SUGGESTIONS.add(element.name().toLowerCase(Locale.ROOT));
+        }
+        DEMO_TARGET_SUGGESTIONS.addAll(List.of("light", "lumiere", "seraph", "astral", "chrono"));
+    }
+
+    private static final SuggestionProvider<CommandSourceStack> SUGGEST_DEMO_TARGETS =
+            (ctx, builder) -> SharedSuggestionProvider.suggest(DEMO_TARGET_SUGGESTIONS, builder);
 
     private static WeaponVisualEffectId parseEffect(String raw) {
         if (raw == null) return null;
@@ -290,9 +315,24 @@ public final class DlbVfxCommand {
                                         .executes(ctx -> subtleDemo(ctx,
                                                 StringArgumentType.getString(ctx, "family"),
                                                 IntegerArgumentType.getInteger(ctx, "index"))))))
-                // /dlbvfx demo  (bascule boucle / stop)
-                .then(Commands.literal("demo").executes(DlbVfxCommand::toggleDemo))
+                // /dlbvfx demo [famille|effet] [impact|slash] — boucle générale ou isolation.
+                .then(Commands.literal("demo").executes(DlbVfxCommand::toggleDemo)
+                        .then(Commands.argument("target", StringArgumentType.word())
+                                .suggests(SUGGEST_DEMO_TARGETS)
+                                .executes(ctx -> isolatedDemo(ctx,
+                                        StringArgumentType.getString(ctx, "target"), "impact"))
+                                .then(Commands.argument("kind", StringArgumentType.word())
+                                        .suggests(SUGGEST_DEMO_KINDS)
+                                        .executes(ctx -> isolatedDemo(ctx,
+                                                StringArgumentType.getString(ctx, "target"),
+                                                StringArgumentType.getString(ctx, "kind"))))))
                 .then(Commands.literal("stop").executes(DlbVfxCommand::stopDemo))
+                // /dlbvfx glow [secondes] — isole le contour vanilla de l'animation dans le monde.
+                .then(Commands.literal("glow")
+                        .executes(ctx -> glowDemo(ctx, 8))
+                        .then(Commands.argument("seconds", IntegerArgumentType.integer(1, 30))
+                                .executes(ctx -> glowDemo(ctx,
+                                        IntegerArgumentType.getInteger(ctx, "seconds")))))
                 // /dlbvfx crit [effet] [niveau]
                 .then(Commands.literal("crit")
                         .executes(ctx -> crit(ctx, WeaponVisualEffectId.GOLDEN_CRIT_STAR, 4))
@@ -412,6 +452,8 @@ public final class DlbVfxCommand {
         line(src, "§e/dlbvfx play <effet> [impact|swing|beam|proj] [niveau]", "joue l'effet devant toi (aucune action requise)");
         line(src, "§e/dlbvfx all [kind]", "une chorégraphie par effet, au point fixe devant toi");
         line(src, "§e/dlbvfx demo", "une chorégraphie par effet en boucle, au point fixe (tu peux te déplacer)");
+        line(src, "§e/dlbvfx demo <famille|effet> [impact|slash]", "isole une famille ou UN effet : light, seraph, astral, chrono, ID...");
+        line(src, "§e/dlbvfx glow [secondes]", "teste uniquement le contour vanilla d'un ennemi, sans animation Astral/Seraph");
         line(src, "§e/dummytest", "dummy frontal : slash puis impact réel pour chaque effet, sans chevauchement");
         line(src, "§e/dlbvfx crit [effet] [niveau]", "force le chemin CRITIQUE (nécessite normalement un saut/sprint)");
         line(src, "§e/dlbvfx hit [nombre]", "vraies frappes sur la cible d'entraînement (impact + crit réels)");
@@ -618,6 +660,135 @@ public final class DlbVfxCommand {
         return 1;
     }
 
+    /**
+     * V6.2 : une seule famille ou un seul effet, sans les salves superposées de l'ancien
+     * {@code /dlbvfx elements <famille>}. Le même paquet réseau que le combat est utilisé, mais
+     * aucun dégât, verrou de mob ou tirage aléatoire n'est déclenché.
+     */
+    private static int isolatedDemo(CommandContext<CommandSourceStack> ctx, String rawTarget,
+                                    String rawKind) throws CommandSyntaxException {
+        ServerPlayer player = requirePlayer(ctx);
+        String target = rawTarget.toLowerCase(Locale.ROOT).replace('-', '_');
+        int kind = switch (rawKind.toLowerCase(Locale.ROOT)) {
+            case "impact" -> WeaponVfxServerListener.KIND_IMPACT;
+            case "swing", "slash" -> KIND_SWING;
+            default -> -999;
+        };
+        if (kind == -999) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "§cType inconnu. Utilise §fimpact §cou §fslash§c."));
+            return 0;
+        }
+
+        WeaponVisualEffectId exact = switch (target) {
+            case "seraph", "seraphin" -> WeaponVisualEffectId.SERAPH_SKY_PILLAR;
+            case "astral", "lance" -> WeaponVisualEffectId.ASTRAL_STAR_LANCE;
+            case "chrono", "horloge" -> WeaponVisualEffectId.CHRONO_ETERNAL_HALO;
+            default -> parseEffect(target);
+        };
+        DeepElement family = switch (target) {
+            case "wood", "bois" -> DeepElement.WOOD;
+            case "poison" -> DeepElement.POISON;
+            case "fire", "feu" -> DeepElement.FIRE;
+            case "earth", "terre" -> DeepElement.EARTH;
+            case "metal", "métal" -> DeepElement.METAL;
+            case "water", "eau" -> DeepElement.WATER;
+            case "thunder", "foudre" -> DeepElement.THUNDER;
+            case "light", "lumiere", "lumière" -> DeepElement.LIGHT;
+            case "shadow", "ombre" -> DeepElement.SHADOW;
+            case "blood", "sang" -> DeepElement.BLOOD;
+            case "void", "vide" -> DeepElement.VOID;
+            case "chaos" -> DeepElement.CHAOS;
+            default -> null;
+        };
+        if (exact == null && family == null) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "§cFamille ou effet inconnu. Exemples : §f/dlbvfx demo light§c, "
+                            + "§f/dlbvfx demo astral§c, §f/dlbvfx demo 25 slash§c."));
+            return 0;
+        }
+
+        List<Integer> selected = new ArrayList<>();
+        String label;
+        if (exact != null) {
+            selected.add(exact.id);
+            label = "#" + exact.id + " " + exact.name();
+        } else {
+            label = family.displayName;
+            for (int id : ALL_IDS) {
+                WeaponVisualEffectId fx = WeaponVisualEffectId.byId(id);
+                if (fx != null && fx.element == family) selected.add(id);
+            }
+        }
+        if (selected.isEmpty()) {
+            ctx.getSource().sendFailure(Component.literal("§cAucun effet dans cette famille."));
+            return 0;
+        }
+
+        DUMMY_TESTS.remove(player.getUUID());
+        DemoState st = new DemoState();
+        st.cursor = 0;
+        st.cooldown = 2;
+        st.remaining = Integer.MAX_VALUE;
+        st.loop = true;
+        st.kind = kind;
+        st.mode = 3;
+        st.isolatedIds = selected.stream().mapToInt(Integer::intValue).toArray();
+        st.isolatedLabel = label;
+        captureDemoAnchor(st, player);
+        DEMOS.put(player.getUUID(), st);
+        final int count = selected.size();
+        final String shownKind = kind == KIND_SWING ? "SLASH" : "IMPACT";
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "§b[Démo isolée] §f" + st.isolatedLabel + " §8· §f" + shownKind
+                        + (count == 1 ? " §7— répétition d'un seul effet" : " §7— " + count + " effets, un à la fois")
+                        + ". §e/dlbvfx stop §7pour arrêter."), false);
+        return 1;
+    }
+
+    /** Durée visuelle + huit ticks de silence : deux signatures longues ne se chevauchent jamais. */
+    private static int isolatedEffectTicks(WeaponVisualEffectId fx, int kind) {
+        if (kind == KIND_SWING) return 22;
+        int duration = switch (fx) {
+            case ZEPHYR_WIND_LANCE -> 80;
+            case THORN_MAW_ROOT, VERDANT_SAP_BLOOM -> 96;
+            case MOLTEN_FIRE_WAVE -> 92;
+            case SOUL_FIRE_CRESCENT -> 112;
+            case BRIMSTONE_METEOR, PLAGUE_NOVA -> 128;
+            case SEISMIC_TECTONIC -> 112;
+            case TITAN_GRASP, SANDSTORM_DUNE -> 140;
+            case WARLORD_RALLY_SIGIL -> 120;
+            case RAZOR_GLEAM -> 48;
+            case SERAPH_SKY_PILLAR -> 30;
+            case ASTRAL_STAR_LANCE -> 80;
+            case CHRONO_ETERNAL_HALO -> 100;
+            case SUPREME_PRISM_EDGE -> 84;
+            case ANNIHILATING_ARC -> 96;
+            case VENOM_BRIAR_FANG -> 112;
+            case MIASMA_SHROUD -> 120; // aperçu borné : la vraie brume peut durer 600 ticks.
+            default -> 22;
+        };
+        return duration + 8;
+    }
+
+    private static int glowDemo(CommandContext<CommandSourceStack> ctx, int seconds)
+            throws CommandSyntaxException {
+        ServerPlayer player = requirePlayer(ctx);
+        DEMOS.remove(player.getUUID());
+        DUMMY_TESTS.remove(player.getUUID());
+        LivingEntity target = ensureDummy(player);
+        if (target == null) {
+            ctx.getSource().sendFailure(Component.literal("§cImpossible de créer la cible d'entraînement."));
+            return 0;
+        }
+        target.addEffect(new MobEffectInstance(MobEffects.GLOWING,
+                seconds * 20, 0, false, false, true));
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "§b[Glow isolé] §fContour vanilla pendant " + seconds + " s sur la cible. "
+                        + "§7Aucun paquet Astral/Seraph n'est joué : ce test vérifie uniquement le outline de l'entité."), false);
+        return 1;
+    }
+
     private static int stopDemo(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
         ServerPlayer player = requirePlayer(ctx);
         boolean removed = DEMOS.remove(player.getUUID()) != null;
@@ -743,7 +914,6 @@ public final class DlbVfxCommand {
             }
             DemoState st = entry.getValue();
             if (--st.cooldown > 0) continue;
-            st.cooldown = 26; // effet terminé, petite pause, puis étape suivante
 
             if (st.remaining <= 0) {
                 it.remove();
@@ -759,11 +929,17 @@ public final class DlbVfxCommand {
                 WeaponVfxVariant.Entry var = WeaponVfxVariant.get(itemIndex % WeaponVfxVariant.COUNT);
                 fx = var.effect();
                 densLabel = String.format(Locale.ROOT, " §8· §7densité §f%.0f%%", var.density() * 100);
+            } else if (st.mode == 3) {
+                fx = WeaponVisualEffectId.byId(st.isolatedIds[itemIndex % st.isolatedIds.length]);
             } else {
                 fx = WeaponVisualEffectId.byId(ALL_IDS[itemIndex % ALL_IDS.length]);
             }
             st.cursor++;
-            if (fx == null) continue;
+            if (fx == null) {
+                st.cooldown = 2;
+                continue;
+            }
+            st.cooldown = st.mode == 3 ? isolatedEffectTicks(fx, st.kind) : 26;
 
             // Position et direction immuables capturées à la commande, sans suivre le joueur.
             // Un ID = une seule chorégraphie : la taille n'est plus une fausse seconde animation.
@@ -834,47 +1010,8 @@ public final class DlbVfxCommand {
     }
 
     private static int familyShow(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
-        ServerPlayer player = requirePlayer(ctx);
-        String raw = StringArgumentType.getString(ctx, "family").toLowerCase(Locale.ROOT);
-        DeepElement el = null;
-        for (DeepElement e : DeepElement.values()) {
-            if (e.name().toLowerCase(Locale.ROOT).equals(raw) || e.displayName.toLowerCase(Locale.ROOT).equals(raw)) {
-                el = e;
-                break;
-            }
-        }
-        if (el == null) {
-            ctx.getSource().sendFailure(Component.literal("§cFamille inconnue. Utilise /dlbvfx elements."));
-            return 0;
-        }
-        ServerLevel sl = player.serverLevel();
-        Vec3 demoFrom = player.position().add(0.0, 1.0, 0.0);
-        Vec3 demoDirection = new Vec3(player.getLookAngle().x, 0.0, player.getLookAngle().z);
-        if (demoDirection.lengthSqr() < 1.0e-4) demoDirection = new Vec3(0.0, 0.0, 1.0);
-        Vec3 demoTo = demoFrom.add(demoDirection.normalize().scale(2.0));
-        int i = 0;
-        int shown = 0;
-        for (WeaponVisualEffectId fx : WeaponVisualEffectId.values()) {
-            if (fx.element != el) continue;
-            final WeaponVisualEffectId target = fx;
-            final int delay = i * 8;
-            final int level = Math.max(3, Math.min(12, fx.priority / 10));
-            if (delay == 0) {
-                WeaponVfxServerListener.playDebug(player, target, WeaponVfxServerListener.KIND_IMPACT, level,
-                        demoFrom, demoTo);
-            } else {
-                TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + delay,
-                        () -> WeaponVfxServerListener.playDebug(player, target,
-                                WeaponVfxServerListener.KIND_IMPACT, level, demoFrom, demoTo));
-            }
-            i++;
-            shown++;
-        }
-        final DeepElement fam = el;
-        final int total = shown;
-        ctx.getSource().sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                "§b[%s] §f%d effet(s) enchaînés.", fam.displayName, total)), false);
-        return 1;
+        // Conserve la commande historique, mais utilise désormais les créneaux sans recouvrement.
+        return isolatedDemo(ctx, StringArgumentType.getString(ctx, "family"), "impact");
     }
 
     // =====================================================================

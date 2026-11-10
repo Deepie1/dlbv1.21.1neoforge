@@ -36,6 +36,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
@@ -1513,6 +1514,22 @@ public final class WeaponWorldVfxManager {
         WeaponVisualEffectId fx = layers.get(0).effect();
         spawnMiniPixelBurst(fx, mx, my, mz, 10, 0.030f, 0.12,
                 WeaponVisualEffectId.elementMaskOf(ranged));
+    }
+
+    /**
+     * Déclenchement immédiat du clic gauche. Le polling de {@code swinging} ci-dessous reste un
+     * filet de sécurité pour les autres joueurs et pour les swings déclenchés par le jeu, mais un
+     * événement d'input ne dépend plus d'une fenêtre de deux ticks qui peut être manquée.
+     */
+    @SubscribeEvent
+    public static void onAttackInput(InputEvent.InteractionKeyMappingTriggered event) {
+        if (!event.isAttack()) return;
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer player = mc.player;
+        if (player == null || mc.level == null || !player.isAlive() || player.isSpectator()) return;
+        onPlayerWeaponSwing(player);
+        // Le tick suivant verra swinging=true : il ne doit pas créer une seconde copie de l'arc.
+        PLAYER_WAS_SWINGING.put(player.getId(), true);
     }
 
     /**

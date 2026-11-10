@@ -1,13 +1,13 @@
-# Lumière V6.1 — pilier rétractile, disque céleste et charge de lance
+# Lumière V6.2 — diagnostics isolés et slash au clic
 
 ## Fichiers synchronisés
 
 Le dossier `FIXES_MCREATOR/src/main` contient les mêmes copies que le `src/main` principal :
 
 - `client/LightSignatureVfx.java` — géométrie des trois animations V6 ;
-- `client/WeaponWorldVfxManager.java` — durées, dimensions monde verrouillées, double passe alpha/additive, trajectoire latérale d’Astral et orientation de Chrono ;
+- `client/WeaponWorldVfxManager.java` — durées, dimensions monde verrouillées, double passe alpha/additive, trajectoire latérale d’Astral, orientation de Chrono et déclenchement direct du slash au clic gauche ;
 - `enchantments/WeaponVfxServerListener.java` — multi-ciblage, collisions balayées, dégâts, emprises, sons et rajeunissement ;
-- `commands/DlbVfxCommand.java` — commande `/anim light` ;
+- `commands/DlbVfxCommand.java` — `/anim light`, démos par famille/effet et test du contour vanilla ;
 - `resources/deep_lucky_block.mixins.json` — suppression du refmap inexistant ;
 - `resources/licenses/pixel_musketeer.txt` — licence déplacée hors du resource pack ;
 - `resources/assets/deep_lucky_block/textures/item/lunettesdupatron.png` — texture 256×256.
@@ -162,11 +162,35 @@ Le retour MCreator/NeoForge 1.21.1 a permis de corriger les types mappings qui n
 
 Aucune géométrie, durée, trajectoire, valeur de dégâts ou séquence sonore n’est modifiée par ce correctif de compilation.
 
+## Correctif de diagnostic V6.2 — slash et effets isolés
+
+Le slash de mêlée était déclenché uniquement lorsque le tick client observait la transition de l’état transitoire `swinging`, dans une fenêtre de deux ticks. V6.2 écoute aussi `InputEvent.InteractionKeyMappingTriggered` : le clic gauche local crée immédiatement l’arc. Le polling reste le filet de sécurité pour les autres joueurs et les swings initiés par le jeu. Un marqueur de déduplication empêche le tick suivant de créer une seconde copie. Les dégâts, les probabilités et les paquets serveur ne changent pas.
+
+Les commandes suivantes utilisent le même paquet visuel S2C que `playDebug`, sans appliquer les dégâts, les emprises ou les transformations du combat :
+
+```text
+/dlbvfx demo light             famille Lumière, une animation à la fois
+/dlbvfx demo seraph            Seraph seul, répété après son fondu
+/dlbvfx demo astral            Astral seul, répété après son fondu
+/dlbvfx demo chrono            Chrono seul, répété après son fondu
+/dlbvfx demo astral slash      entaille Astral seule, sans la lance
+/dlbvfx demo 25 slash          même test par identifiant numérique
+/dlbvfx demo fire              exemple pour une autre famille
+/dlbvfx glow 8                 contour vanilla seul sur le dummy, pendant 8 secondes
+/dlbvfx stop                   arrêt de la boucle isolée
+```
+
+À utiliser dans une zone dégagée et en reculant après le lancement : le point de présentation reste fixe et le ciel d’Astral mesure 36 blocs de diamètre. Tous les noms d’éléments et les 41 identifiants/noms d’effets sont acceptés. `swing` est un alias de `slash`. `/dlbvfx elements <famille>` conserve son rôle historique mais emprunte maintenant ce même séquenceur : chaque effet dispose de sa durée complète plus huit ticks de pause. L’ancien envoi toutes les huit ticks superposait notamment Seraph, Astral et Chrono et ne permettait pas d’identifier le rendu défaillant.
+
+`/dlbvfx glow` ne joue volontairement aucun paquet Light. Il vérifie séparément le `MobEffects.GLOWING` de l’entité. En combat, Seraph et Astral demandent ce contour seulement après une touche secondaire acceptée ; une animation visible ne garantit donc pas que ce statut a été appliqué, et inversement.
+
+Aucune géométrie V6, aucune trajectoire, aucune durée de signature, aucun son, aucune collision et aucune valeur de dégâts n’est modifiée en V6.2. Metal et Arc restent hors de portée. La compilation et le rendu doivent néanmoins être revérifiés dans `runClient` : les audits locaux ne peuvent pas observer les shaders ou les contours vanilla.
+
 ## Aperçu hors ligne et limites de validation
 
 `deliverables/DLB_Light_Three_Signatures_preview.html` est autonome, sans réseau ni dépendance externe. Il permet de lire, mettre en pause, scrubber, orbiter, zoomer et comparer les trois modèles. Le ZIP `DLB_Light_Three_Signatures_src.zip` contient les 19 entrées de sources, miroirs et correctifs.
 
-Le workspace ne contient pas le JDK/Gradle/MCreator nécessaire à une compilation NeoForge. Les audits de syntaxe Java, modèles numériques, collisions simulées et Chromium ne remplacent pas une compilation ou un test en jeu. Après copie, lancer `runClient` sous Windows/MCreator, puis `/anim light`.
+Le workspace ne contient pas le JDK/Gradle/MCreator nécessaire à une compilation NeoForge. Les audits de syntaxe Java, modèles numériques, collisions simulées et Chromium ne remplacent pas une compilation ou un test en jeu. Après copie, lancer `runClient` sous Windows/MCreator, puis tester séparément `/dlbvfx demo seraph`, `/dlbvfx demo astral`, `/dlbvfx demo chrono` et `/dlbvfx demo astral slash` avant de retester `/anim light` en combat.
 
 Tests prioritaires en jeu :
 

@@ -21,7 +21,7 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
 <aside>
   <div class="eyebrow">Deep Lucky Block · Double passe alpha + additive</div>
   <h1>LUMIÈRE</h1><h2>Trois signatures</h2>
-  <p class="intro">Version 6 : pilier adapté à la hitbox avec rétraction et fondu, lance à épaisseur de charge, grand disque céleste animé et ticks d’horloge synchronisés.</p>
+  <p class="intro">Version 6.2 : pilier adapté à la hitbox avec rétraction et fondu, lance à épaisseur de charge, grand disque céleste animé, ticks d’horloge synchronisés et commandes de diagnostic isolées.</p>
   <div class="rule"></div>
   <span class="label">Signature de l’enchantement</span>
   <div class="variants" role="group" aria-label="Variante Lumière">
@@ -38,11 +38,11 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
   <div class="warnings"><b>Nettoyage inclus :</b> refmap orphelin retiré · licence hors resource pack · lunettes 256×256 mipmappables · client MCreator en INFO.</div>
   <a class="download" href="./DLB_Light_Three_Signatures_src.zip" download>Télécharger les sources Lumière + corrections · ZIP</a>
   <p class="refs"><b>V6 :</b> Séraphin : largeur X/Z = plus grande dimension horizontale de la hitbox, cœur rétractile ticks 14–22, sceau de diamètre 2,5 × beam et fondu global 22–30. Astral : disque de 18 blocs, 72 étoiles, météores occasionnels, 2–4 constellations uniques parmi 4, épaisseur ×1 → ×2,2 et fondus d’entrée/sortie. Chrono reste inchangé.</p>
-  <p class="refs"><b>Lisibilité et performance :</b> Séraphin culmine à 316 voxels, Astral à 799 sur la seed démo et 843 sur 32 seeds, Chrono à 799. L’aperçu Séraphin utilise un beam de 2,4 blocs : son sceau a donc exactement 3 blocs de rayon. La caméra Astral conserve tout le disque de 36 blocs de diamètre dans le cadre. <b>Test : /anim light</b>. Correctif V6.1 des six erreurs de compilation inclus ; compilation et sons NeoForge à revérifier dans runClient.</p>
+  <p class="refs"><b>Lisibilité et performance :</b> Séraphin culmine à 316 voxels, Astral à 799 sur la seed démo et 843 sur 32 seeds, Chrono à 799. L’aperçu Séraphin utilise un beam de 2,4 blocs : son sceau a donc exactement 3 blocs de rayon. La caméra Astral conserve tout le disque de 36 blocs de diamètre dans le cadre. <b>Tests V6.2 : /dlbvfx demo seraph · /dlbvfx demo astral · /dlbvfx demo chrono · /dlbvfx demo astral slash · /dlbvfx glow 8</b>. Chaque effet est répété seul, sans recouvrement ; /dlbvfx stop arrête la boucle. Correctifs de compilation V6.1 inclus ; compilation, slash et sons NeoForge à revérifier dans runClient.</p>
 </aside>
 <main>
   <canvas id="scene" tabindex="0" aria-label="Aperçu animé détaillé des trois signatures Lumière"></canvas>
-  <div class="topbar"><span class="chip live">Modèle Java V6.1 · alpha + contours animés</span><span class="chip" id="visibleCount">0 voxel</span></div>
+  <div class="topbar"><span class="chip live">Modèle Java V6.2 · alpha + contours animés</span><span class="chip" id="visibleCount">0 voxel</span></div>
   <div class="hint">Glisser pour orbiter · Molette pour zoomer · Espace pour pause · 1 / 2 / 3</div>
   <div class="impact-mark" id="impactLabel">Dégâts continus · ticks 12–92 / 100</div>
   <div class="variant-title"><b id="variantName">Seraph Sky Pillar</b><span id="variantSub">Sceau céleste · cœur blanc · ouverture puis refermeture</span></div>
