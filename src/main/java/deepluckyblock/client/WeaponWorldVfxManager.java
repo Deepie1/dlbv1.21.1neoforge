@@ -1,6 +1,7 @@
 package deepluckyblock.client;
 
 import com.mojang.logging.LogUtils;
+import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -46,8 +47,10 @@ import org.slf4j.Logger;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.SequencedMap;
 
 /**
  * T343-VOXEL-3D-ENGINE : Moteur client 100 % "Blocky / Mini-Pixels 3D" pour les 30 effets d'armes :
@@ -98,6 +101,30 @@ public final class WeaponWorldVfxManager {
 
     private static RenderType additiveType;
     private static RenderType translucentType;
+
+    // ============================================================================================
+    // T370-OWNED-BUFFER-SOURCE — fin definitive de "IllegalStateException: Not building!"
+    // ============================================================================================
+    // Minecraft.renderBuffers().bufferSource() ne possede QU'UN BufferBuilder partage pour tous
+    // les RenderType absents de sa carte interne `fixedBuffers`. Des qu'on redemande un second
+    // RenderType, la source termine le premier (endBatch) : tout sommet ecrit ensuite dans
+    // l'ancien consommateur leve "Not building!".
+    //
+    // Les signatures Light ecrivent EN PERMANENCE dans deux consumers entrelaces par voxel
+    // (corps alpha + ame additive, cf. LightSignatureVfx$Voxels.lightLink/glowLink) : il leur
+    // faut deux builders simultanement vivants. On possede donc un BufferSource dedie dont les
+    // DEUX RenderType sont declares "fixed" : getBuffer() ne termine plus la passe voisine, et
+    // aucun autre listener AFTER_PARTICLES ne peut vider nos buffers.
+    // Le terrain opaque (Seismic/Rally) reste sur la source vanilla, dont le chemin fonctionne.
+    private static final int VOXEL_LAYER_BYTES = 4 * 1024 * 1024;
+
+    private static MultiBufferSource.BufferSource voxelBuffers;
+    private static RenderType voxelBuffersAddType;
+    private static RenderType voxelBuffersAlphaType;
+    private static ByteBufferBuilder voxelAddAllocator;
+    private static ByteBufferBuilder voxelAlphaAllocator;
+    private static ByteBufferBuilder voxelSharedAllocator;
+    private static boolean voxelBuffersUnavailable;
 
     /** T349 : temps de frame (secondes) partagé, mis à jour une seule fois par frame. */
     private static float frameTimeSeconds;
@@ -444,7 +471,10 @@ public final class WeaponWorldVfxManager {
                     .setCullState(RenderStateShard.NO_CULL)
                     .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
                     .setWriteMaskState(RenderStateShard.COLOR_WRITE)
-                    .setOutputState(RenderStateShard.PARTICLES_TARGET)
+                    // T370 : meme raison que la passe additive (T369) — a AFTER_PARTICLES la cible
+                    // de particules vanilla est deja composee ; ecrire dedans perdait le corps
+                    // translucide des signatures Light sur certains pipelines (Intel inclus).
+                    .setOutputState(RenderStateShard.MAIN_TARGET)
                     .createCompositeState(false);
             translucentType = RenderType.create(
                     "dlb_voxel_vfx_alpha",
@@ -456,6 +486,58 @@ public final class WeaponWorldVfxManager {
                     state);
         }
         return translucentType;
+    }
+
+    /**
+     * BufferSource prive du moteur voxel : ses deux RenderType sont declares "fixed", donc
+     * {@code getBuffer(add)} puis {@code getBuffer(alpha)} renvoient deux builders qui restent
+     * tous deux en construction. C'est exactement ce que le BufferSource vanilla interdit
+     * (un seul builder partage par RenderType non fixe), et c'est la cause racine du
+     * {@code IllegalStateException: Not building!} qui faisait disparaitre le slash, Astral,
+     * Chrono et le rayon Seraph.
+     * <p>
+     * La source est creee une seule fois et reutilisee : ses ByteBufferBuilder conservent leur
+     * allocation native d'une frame a l'autre (comme {@code RenderBuffers} vanilla). Elle n'est
+     * reconstruite que si l'identite d'un RenderType change.
+     */
+    public static MultiBufferSource.BufferSource getVoxelBufferSource() {
+        RenderType add = getAdditiveRenderType();
+        RenderType alpha = getTranslucentRenderType();
+        boolean sameTypes = voxelBuffersAddType == add && voxelBuffersAlphaType == alpha;
+        if (voxelBuffers != null && sameTypes) return voxelBuffers;
+        if (voxelBuffersUnavailable && sameTypes) return fallbackBufferSource();
+        try {
+            SequencedMap<RenderType, ByteBufferBuilder> fixed = new LinkedHashMap<>(4);
+            voxelAlphaAllocator = new ByteBufferBuilder(VOXEL_LAYER_BYTES);
+            fixed.put(alpha, voxelAlphaAllocator);
+            voxelAddAllocator = new ByteBufferBuilder(VOXEL_LAYER_BYTES);
+            fixed.put(add, voxelAddAllocator);
+            voxelSharedAllocator = new ByteBufferBuilder(VOXEL_LAYER_BYTES);
+            MultiBufferSource.BufferSource owned =
+                    MultiBufferSource.immediateWithBuffers(fixed, voxelSharedAllocator);
+            voxelBuffers = owned;
+            voxelBuffersAddType = add;
+            voxelBuffersAlphaType = alpha;
+            voxelBuffersUnavailable = false;
+            return owned;
+        } catch (Throwable t) {
+            // Jamais bloquant : on retombe sur l'ancien chemin (les VFX peuvent rester incomplets,
+            // mais le jeu continue de rendre).
+            voxelBuffers = null;
+            voxelBuffersAddType = add;
+            voxelBuffersAlphaType = alpha;
+            voxelBuffersUnavailable = true;
+            voxelAddAllocator = null;
+            voxelAlphaAllocator = null;
+            voxelSharedAllocator = null;
+            LOGGER.warn("[DLB-VFX] Dedicated voxel buffer source unavailable, using the shared one", t);
+            return fallbackBufferSource();
+        }
+    }
+
+    private static MultiBufferSource.BufferSource fallbackBufferSource() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc.renderBuffers().bufferSource();
     }
 
     public static void enqueueNetworkVfx(int vfxId, int kind, int intensity,
@@ -1677,7 +1759,11 @@ public final class WeaponWorldVfxManager {
 
         PoseStack poseStack = event.getPoseStack();
         Matrix4f mat = poseStack.last().pose();
-        MultiBufferSource.BufferSource buffers = mc.renderBuffers().bufferSource();
+        // T370 : deux sources distinctes. Le terrain opaque Seismic/Rally garde le chemin
+        // vanilla (qui fonctionne deja) ; toute la geometrie voxel Light passe par la source
+        // possedee dont les deux RenderType sont fixes, donc simultanement constructibles.
+        MultiBufferSource.BufferSource terrainBuffers = mc.renderBuffers().bufferSource();
+        MultiBufferSource.BufferSource voxelBuffers = getVoxelBufferSource();
         Vector3f tmp = new Vector3f();
 
         cubesSinceFlush = 0;
@@ -1687,7 +1773,7 @@ public final class WeaponWorldVfxManager {
         // T348-BUFFER-SAFETY : tout le rendu est encapsulé. Un BufferBuilder partagé qui aurait été
         // vidé/recyclé par un autre listener ne doit JAMAIS faire crasher le jeu ("Not building!").
         try {
-            renderVfxFrame(mc, buffers, poseStack, mat, tmp, camPos);
+            renderVfxFrame(mc, terrainBuffers, voxelBuffers, poseStack, mat, tmp, camPos);
         } catch (RuntimeException ex) {
             // Ne plus masquer silencieusement une géométrie invalide : au maximum un log / 5 s.
             long errorNow = System.nanoTime();
@@ -1695,7 +1781,7 @@ public final class WeaponWorldVfxManager {
                 lastRenderErrorLogNanos = errorNow;
                 LOGGER.warn("[DLB-VFX] World render batch aborted", ex);
             }
-            releaseBatches(buffers);
+            releaseBatches(voxelBuffers);
             PIXEL_PARTICLES.clear();
             if (ACTIVE.size() > 8) {
                 ACTIVE.subList(0, ACTIVE.size() - 8).clear();
@@ -1703,7 +1789,9 @@ public final class WeaponWorldVfxManager {
         }
     }
 
-    private static void renderVfxFrame(Minecraft mc, MultiBufferSource.BufferSource buffers,
+    private static void renderVfxFrame(Minecraft mc,
+                                       MultiBufferSource.BufferSource terrainBuffers,
+                                       MultiBufferSource.BufferSource voxelBuffers,
                                        PoseStack poseStack, Matrix4f mat, Vector3f tmp, Vec3 camPos) {
         float subTick = mc.isPaused()
                 ? 0.0f
@@ -1721,15 +1809,15 @@ public final class WeaponWorldVfxManager {
             if (inst.effect == WeaponVisualEffectId.SEISMIC_TECTONIC) {
                 float dirX = Mth.sin(-inst.yawDeg * Mth.DEG_TO_RAD);
                 float dirZ = Mth.cos(-inst.yawDeg * Mth.DEG_TO_RAD);
-                opaqueTerrainRendered |= SeismicTerrainVfx.render(mc, buffers, poseStack, camPos,
+                opaqueTerrainRendered |= SeismicTerrainVfx.render(mc, terrainBuffers, poseStack, camPos,
                         inst.x, inst.y, inst.z, dirX, dirZ, inst.sizeScale,
                         (int) (inst.seed & 0x7FFFFFFFL), t);
             } else {
-                opaqueTerrainRendered |= SeismicTerrainVfx.renderRallyMountain(mc, buffers, poseStack, camPos,
+                opaqueTerrainRendered |= SeismicTerrainVfx.renderRallyMountain(mc, terrainBuffers, poseStack, camPos,
                         inst.x, inst.y, inst.z, (int) (inst.seed & 0x7FFFFFFFL), t);
             }
         }
-        if (opaqueTerrainRendered) buffers.endBatch();
+        if (opaqueTerrainRendered) terrainBuffers.endBatch();
 
         VertexConsumer addVc = null;
         VertexConsumer alphaVc = null;
@@ -1747,7 +1835,7 @@ public final class WeaponWorldVfxManager {
             if (dx * dx + dy * dy + dz * dz > MAX_VFX_RENDER_DISTANCE_SQR) continue;
 
             if (cubesSinceFlush >= MAX_CUBES_PER_BATCH) {
-                flushBatches(buffers, alphaVc != null, addVc != null);
+                flushBatches(voxelBuffers, alphaVc != null, addVc != null);
                 addVc = null;
                 alphaVc = null;
             }
@@ -1761,10 +1849,10 @@ public final class WeaponWorldVfxManager {
             VertexConsumer pvc = fp.additive ? addVc : alphaVc;
             if (pvc == null) {
                 if (fp.additive) {
-                    addVc = buffers.getBuffer(getAdditiveRenderType());
+                    addVc = voxelBuffers.getBuffer(getAdditiveRenderType());
                     pvc = addVc;
                 } else {
-                    alphaVc = buffers.getBuffer(getTranslucentRenderType());
+                    alphaVc = voxelBuffers.getBuffer(getTranslucentRenderType());
                     pvc = alphaVc;
                 }
             }
@@ -1800,7 +1888,7 @@ public final class WeaponWorldVfxManager {
 
             // Flush progressif : chaque batch reste petit, le buffer partagé ne peut plus déborder
             if (cubesSinceFlush >= MAX_CUBES_PER_BATCH) {
-                flushBatches(buffers, alphaVc != null, addVc != null);
+                flushBatches(voxelBuffers, alphaVc != null, addVc != null);
                 addVc = null;
                 alphaVc = null;
             }
@@ -1810,10 +1898,10 @@ public final class WeaponWorldVfxManager {
             applyVoxelMaterial(inst.effect);
             VertexConsumer vc;
             if (useAdditivePass(inst.effect)) {
-                if (addVc == null) addVc = buffers.getBuffer(getAdditiveRenderType());
+                if (addVc == null) addVc = voxelBuffers.getBuffer(getAdditiveRenderType());
                 vc = addVc;
             } else {
-                if (alphaVc == null) alphaVc = buffers.getBuffer(getTranslucentRenderType());
+                if (alphaVc == null) alphaVc = voxelBuffers.getBuffer(getTranslucentRenderType());
                 vc = alphaVc;
             }
 
@@ -1821,7 +1909,7 @@ public final class WeaponWorldVfxManager {
             if (inst.effect == WeaponVisualEffectId.SERAPH_SKY_PILLAR
                     || inst.effect == WeaponVisualEffectId.ASTRAL_STAR_LANCE
                     || inst.effect == WeaponVisualEffectId.CHRONO_ETERNAL_HALO) {
-                if (alphaVc == null) alphaVc = buffers.getBuffer(getTranslucentRenderType());
+                if (alphaVc == null) alphaVc = voxelBuffers.getBuffer(getTranslucentRenderType());
                 lightBody = alphaVc;
             }
 
@@ -1860,13 +1948,17 @@ public final class WeaponWorldVfxManager {
             }
         }
 
-        flushBatches(buffers, alphaVc != null, addVc != null);
+        flushBatches(voxelBuffers, alphaVc != null, addVc != null);
     }
 
     /**
      * Envoie la géométrie accumulée au GPU (ordre : alpha puis additif).
      * Les trois appels doivent transmettre (alphaVc, addVc), jamais l'ordre de déclaration inverse :
      * un slash Light est additif-seul et serait sinon vidé sans jamais être dessiné.
+     * <p>
+     * T370 : ces endBatch visent la source possédée. Comme les deux RenderType y sont déclarés
+     * "fixed", terminer une passe ne détruit jamais le builder de l'autre, et aucun autre
+     * listener AFTER_PARTICLES ne peut les recycler entre deux écritures de sommets.
      */
     private static void flushBatches(MultiBufferSource.BufferSource buffers, boolean hasAlpha, boolean hasAdditive) {
         if (hasAlpha) {

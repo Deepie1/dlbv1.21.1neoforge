@@ -1,11 +1,11 @@
-# Lumière V6.3 — restauration du rendu additif et des slashes
+# Lumière V6.4 — buffers possédés et rendu effectif des signatures
 
 ## Fichiers synchronisés
 
 Le dossier `FIXES_MCREATOR/src/main` contient les mêmes copies que le `src/main` principal :
 
 - `client/LightSignatureVfx.java` — géométrie des trois animations V6 ;
-- `client/WeaponWorldVfxManager.java` — durées, dimensions monde verrouillées, double passe alpha/additive, cible principale additive, flush dans le bon ordre, trajectoire latérale d’Astral, orientation de Chrono et déclenchement direct du slash au clic gauche ;
+- `client/WeaponWorldVfxManager.java` — durées, dimensions monde verrouillées, double passe alpha/additive, cible principale pour les deux passes, flush dans le bon ordre, **source de buffers privée à RenderTypes fixes (V6.4)**, trajectoire latérale d’Astral, orientation de Chrono et déclenchement direct du slash au clic gauche ;
 - `enchantments/WeaponVfxServerListener.java` — multi-ciblage, collisions balayées, dégâts, emprises, sons et rajeunissement ;
 - `commands/DlbVfxCommand.java` — `/anim light`, démos par famille/effet et test du contour vanilla ;
 - `resources/deep_lucky_block.mixins.json` — suppression du refmap inexistant ;
@@ -200,7 +200,7 @@ Les trois appels transmettent désormais `(alphaVc != null, addVc != null)`. Cet
 
 La passe monde additive était envoyée explicitement vers `PARTICLES_TARGET` pendant `RenderLevelStageEvent.Stage.AFTER_PARTICLES`, alors que le renderer additif des lames, qui utilise le même shader, écrit dans la cible principale. À ce stade, les particules vanilla sont déjà composées. Le pattern observé en jeu — corps translucide de Séraphin visible, mais liens additifs d’Astral/Chrono invisibles — correspond à cette sortie devenue inactive sur le pipeline Intel du test.
 
-La passe additive utilise maintenant `RenderStateShard.MAIN_TARGET`, comme le renderer de lame. Elle conserve le shader lightning, la transparence additive, l’absence de culling, le test de profondeur et le masque couleur. La passe alpha n’est pas modifiée.
+La passe additive utilise maintenant `RenderStateShard.MAIN_TARGET`, comme le renderer de lame. Elle conserve le shader lightning, la transparence additive, l’absence de culling, le test de profondeur et le masque couleur. En V6.3 la passe alpha restait sur `PARTICLES_TARGET` ; la V6.4 la bascule aussi sur la cible principale (voir ci-dessous).
 
 Enfin, une exception de rendu n’est plus totalement silencieuse : le premier échec puis au maximum un message toutes les cinq secondes sont journalisés avec `[DLB-VFX] World render batch aborted`. Le nettoyage défensif existant est conservé. Ce journal permettra de distinguer une géométrie qui lève une exception d’un simple problème de framebuffer.
 
@@ -215,6 +215,56 @@ Aucun voxel, rayon, timing, fade, dégât, son ou comportement serveur n’est c
 ```
 
 Le slash doit maintenant apparaître seul ; la lance doit montrer son manche, sa lame et son ciel ; l’horloge doit montrer son cadran et ses contours. La vérification GPU réelle reste indispensable : les audits hors ligne valident la structure et les modèles, pas le framebuffer NeoForge/Intel.
+
+## Correctif de rendu V6.4 — cause racine : deux consommateurs sur un seul BufferBuilder
+
+Le journal `[DLB-VFX] World render batch aborted` de V6.3 a fourni la preuve manquante. Pour le slash, Séraphin, Astral et Chrono, la première écriture de sommet lève :
+
+```text
+java.lang.IllegalStateException: Not building!
+  at BufferBuilder.ensureBuilding → beginVertex → addVertex
+  at WeaponWorldVfxManager.putPosColor
+```
+
+Ce n’est ni un minuteur, ni une opacité, ni une transformation de coordonnées : la géométrie est rejetée **avant** d’atteindre le GPU.
+
+### Pourquoi
+
+`Minecraft.renderBuffers().bufferSource()` ne conserve **qu’un seul** `BufferBuilder` partagé pour tous les `RenderType` qui ne figurent pas dans sa carte interne `fixedBuffers`. Dès qu’un second `RenderType` est demandé, la source termine la première passe (`endBatch`) : tout sommet écrit ensuite dans l’ancien consommateur lève `Not building!`.
+
+Les signatures Lumière sont précisément le cas interdit : `LightSignatureVfx$Voxels` garde deux consommateurs vivants (`body` translucide et `glow` additif) et les alimente en alternance voxel par voxel (`lightLink` écrit le corps **puis** l’âme additive, `glowLink`/`link` de même). Le second `getBuffer` rendait donc le premier builder invalide, l’exception interrompait la frame entière, et rien — même la géométrie déjà émise — n’était vidé. D’où des effets simultanément « absents » alors que la boucle serveur tournait normalement. Le même mécanisme explique les slashs mixtes, les pixels flottants et une entorse possiblement aggravée par les autres listeners `AFTER_PARTICLES` (`CosmeticPixelAura`, `MinersEyeClientXray`) qui utilisent la même source partagée.
+
+### Correction
+
+Le moteur voxel possède désormais sa propre source de buffers, construite avec `MultiBufferSource.immediateWithBuffers(SequencedMap, ByteBufferBuilder)` et **ses deux RenderType déclarés `fixed`** :
+
+- `getBuffer(additif)` puis `getBuffer(translucide)` renvoient deux builders qui restent tous deux en construction ;
+- terminer une passe (`endBatch(type)`) ne détruit plus le builder de l’autre ;
+- aucun autre listener ne peut recycler ces buffers pendant l’émission ;
+- la passe translucide écrit elle aussi dans `MAIN_TARGET`, pour la même raison que la passe additive en V6.3 ;
+- la source est allouée une fois (4 Mio par couche, `ByteBufferBuilder.ensureCapacity` sait grandir par `realloc`) puis réutilisée frame après frame ; elle n’est reconstruite que si l’identité d’un `RenderType` change ;
+- si la construction échouait malgré tout, le code retombe sur l’ancienne source partagée avec un avertissement, sans bloquer le rendu.
+
+Le terrain opaque Seismic/Rally reste volontairement sur la source vanilla : c’est le seul chemin de l’écosystème Lumière qui s’affichait déjà correctement, et il sert de témoin de non-régression.
+
+Aucune géométrie, aucun timing, aucun fondu, aucune collision, aucun son et aucun dégât ne change en V6.4. Le plafond de cubes par frame et les flush progressifs sont conservés : la taille de buffer n’est plus une contrainte, seulement une protection de framerate.
+
+### Vérification attendue en jeu
+
+Les commandes restent celles de V6.2/V6.3 :
+
+```text
+/dlbvfx demo astral slash
+/dlbvfx stop
+/dlbvfx demo seraph
+/dlbvfx stop
+/dlbvfx demo astral
+/dlbvfx stop
+/dlbvfx demo chrono
+/dlbvfx stop
+```
+
+Puis `/anim light` et une attaque au corps à corps réelle, dans une zone dégagée (le ciel d’Astral mesure 36 blocs). Le journal ne doit plus contenir **aucun** `[DLB-VFX] World render batch aborted` pendant ces tests ; s’il en reste un, sa pile désignera le nouveau point exact à corriger. Un rendu réel reste indispensable : les audits hors ligne ne prouvent pas un framebuffer.
 
 ## Aperçu hors ligne et limites de validation
 
