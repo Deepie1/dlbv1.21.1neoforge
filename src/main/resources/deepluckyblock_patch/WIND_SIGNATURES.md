@@ -1,4 +1,4 @@
-# Vent V1 — trois signatures, un seul moteur voxel
+# Vent — trois signatures, un seul moteur voxel (v6)
 
 Refonte complète de l’élément **Vent**. Jusqu’ici il n’existait pas comme famille : la lance de zéphyr
 était un modèle compacté caché dans `GaiaWorldTreeVfx` (variant `ZEPHYR`), et la tempête de sable
@@ -11,17 +11,36 @@ sable.
 
 ---
 
+## 0. v6 — les six reproches faits en jeu, corrigés
+
+Tous les points relevés après le test en jeu du 11/11 sont traités, dans cet ordre :
+
+| Reproche | Correction | Où |
+|---|---|---|
+| « `/anim vent` fait des slash de Gaia et de Terre » | le slash du vent a **sa propre lame** : `renderVoxelSwingSlash` détecte les trois signatures de vent et impose `0x9FF2DC` / `0x5FC0AC` / `0xEAFFF8` au lieu des teintes de l'élément porteur (Bois pour Zéphyr et Cyclone, Terre pour Sable) | `WeaponWorldVfxManager` |
+| « slash très clairs bleu-vert et légèrement transparents » | opacité du slash du vent **152/255** (≈ 60 %), rayon ×1,24, épaisseur ×0,62, balayage jusqu'à 172°, et le matériau du vent passe en verre (`cubeTex = 0,05`) au lieu de l'écorce (0,19) ou du grain de sable (0,22) | idem |
+| « les tornades ne propulsent pas du tout dans l'air » | montée de l'emprise **4,20 → 10,50 blocs** ; toute créature vivante est happée (la cible d'entraînement est un **villageois** en mode Paisible, donc pas une `Enemy` : c'était la cause du « rien ne se passe ») | `WeaponVfxServerListener` |
+| « ça relâche trop vite » | emprise **104 → 170 ticks** (8,5 s), visuel du cyclone **120 → 170 ticks** pour que l'entonnoir vive jusqu'au lâcher | idem + `WeaponWorldVfxManager` |
+| « une vraie tornade prend, fait monter, puis lâche tout en haut dans un sens aléatoire » | au sommet, l'éjection part dans une **direction aléatoire** (angle tiré par `RandomSource`, force 1,45–2,00, +0,95 vertical) : plus la tangente de l'orbite. `fallDistance` reste remise à zéro à cet instant, donc les dégâts de chute vanilla s'ajoutent aux dégâts de tornade | `WeaponVfxServerListener` |
+| « les tornades sont beaucoup trop petites » | hauteur visible multipliée par ~2,3 : cyclone **8,90 blocs**, sable **7,90**, lances qui tombent de **+8,60** | `WindSignatureVfx` |
+| « la tornade de sable a la partie intérieure à l'envers » | entonnoir extérieur **0,45 → 2,55** et tourbillon interne **0,22 → 1,27** : étroit au sol, large en haut, les deux dans le **même sens** ; l'interne garde ses blocs sombres et opaques (`SAND_DEEP`, 0,86–1,00 d'alpha) | idem |
+| « la lance ne part pas d'assez haut et on dirait des flèches » | nouvelle lance : **chute depuis +8,60 blocs**, tête facettée de 14 niveaux (base large 0,28 → pointe 0,03), collier de 16 cubes, fût hexagonal de 16 sections (2,30 blocs), 4 viroles, 2 ailerons, pommeau et sillage hélicoïdal ; satellites à 0,80 et 0,74 d'échelle, décalés dans le temps | idem |
+| « je ne vois aucun cube du sol réel » | **`WindTerrainVfx`** (nouveau) : capture les vrais `BlockState` + `ModelData` du terrain autour de la tornade et les réimprime en spirale, exactement comme `SeismicTerrainVfx` pour la faille | nouveau fichier |
+
+---
+
 ## 1. Fichiers synchronisés
 
 Le dossier `FIXES_MCREATOR/src/main` contient les mêmes copies que le `src/main` principal :
 
 | Fichier | Rôle |
 |---|---|
-| `client/WindSignatureVfx.java` | **nouveau** — moteur du vent : Zéphyr, Tempête de sable, Œil du cyclone |
+| `client/WindSignatureVfx.java` | moteur du vent : Zéphyr, Tempête de sable, Œil du cyclone (v6 : hauteurs ×2,3, entonnoirs étroits au sol, lances) |
+| `client/WindTerrainVfx.java` | **nouveau v6** — vrais blocs du sol happés par la tornade (capture `BlockState` + `ModelData`, rendu spirale) |
 | `client/WeaponWorldVfxManager.java` | routage `impactWind`, fin du détour Gaia pour le vent, durée d’affichage 120 ticks pour `TEMPEST_EYE` |
 | `enchantments/WeaponVisualEffectId.java` | identifiant `TEMPEST_EYE` (#42), alias `/dlbvfx`, gardes de rotation |
 | `enchantments/WeaponVfxMotion.java` | mouvement d’écho de lame spiralé pour `TEMPEST_EYE` |
-| `commands/DlbVfxCommand.java` | créneaux isolés (114 / 174 / 154 ticks) ; la démo applique désormais le vrai gameplay du vent à la cible visée |
+| `commands/DlbVfxCommand.java` | `/anim vent` (+ alias `/anim wind`) et `/dlbvfx` ; la démo applique le vrai gameplay du vent à la cible visée |
 | `enchantments/WeaponVfxServerListener.java` | **gameplay du vent** : emprise, rotation, dégâts sur plusieurs ticks, effets, dégâts de chute, sons |
 | `deepluckyblock_patch/WIND_SIGNATURES.md` | ce document |
 | `deliverables/DLB_Wind_Three_Signatures_preview.html` | aperçu autonome (Canvas 2D) des trois chorégraphies, à jour de la v2 |
@@ -38,7 +57,8 @@ Le dossier `FIXES_MCREATOR/src/main` contient les mêmes copies que le `src/main
 | `PALE` | `#A9E2F2` | ailettes, brins secondaires |
 | `GLASS` | `#D9F5FF` | cœurs lumineux, pointes |
 | `WHITE` | `#F4FDFF` | arêtes, éclats d’impact |
-| `SLATE` / `STEEL` | `#59636B`… `#B9C6CE` | débris arrachés au sol (cyclone) |
+| `MINT` | `#9CE8D2` | **v6** — vert d'eau clair des lances et des anneaux d'air |
+| `SLATE` / `STEEL` | `#59636B`… `#B9C6CE` | poussière minérale fine (les vrais blocs viennent de `WindTerrainVfx`) |
 | `SAND_DARK` → `DUST` | `#6E5B41` → `#F0E2BF` | sable et poussière (tempête) |
 
 Le vent ne réutilise volontairement **aucune** couleur de Terre ni de Bois : c’est ce qui rend la
@@ -93,29 +113,35 @@ Réactivée depuis l’archive Terre, réécrite pour le vent et rendue par le n
 
 | Élément | Densité | Comportement |
 |---|---|---|
-| Jupe de dune | 3 strates × 24 cubes | ellipse, crête asymétrique, s’affaisse en fin de vie |
-| Bras spiralés | 3 × 16 | montent de −0,92 à +1,63 bloc, rayon 1,02 → 0,40, révélation décalée par niveau |
-| Rubans horizontaux | 7 × 48 | sept ceintures à vitesses différentes, **toutes dans le même sens** que les bras |
-| Grains individuels | 48 | advection hélicoïdale, cycle propre, extinction en fin de course |
-| Voile de poussière | 12 | cubes larges très transparents qui referment l’arrière-plan |
+| Jupe de dune | 4 strates × 32 cubes | ellipse, crête asymétrique, s’affaisse en fin de vie |
+| Entonnoir extérieur | 6 × 30 | monte de −1,10 à **+6,80 blocs**, rayon **0,45 → 2,55** : étroit au sol, large en haut |
+| **Tourbillon interne** | 4 × 22 | rayon **0,22 → 1,27**, **même sens** que l’extérieur, blocs sombres et opaques (`SAND_DEEP`, alpha 0,86–1,00) |
+| Mini-tornades | 2 × 26 | au pied de la colonne, montent de 2,40 blocs |
+| Grains individuels | 130 | advection hélicoïdale sur toute la hauteur, extinction en fin de course |
+| Voile de poussière | 30 | cubes larges très transparents qui referment l’arrière-plan |
+| **Blocs du sol réel** | ~96 | `WindTerrainVfx` : herbe, sable, pierre, neige… capturés puis emportés en spirale |
 
 Le tout vit entre 0,00 et 0,74, puis retombe jusqu’à 1,00 : aucune disparition sèche.
 Tout le tourbillon tourne dans **un seul sens** (dune, bras, rubans, mini-tornades, grains) : plus aucun
 ruban à contre-courant, l’ensemble se lit comme un seul vent.
-**Pic mesuré : ≈ 990 cubes/image.**
+**Pic mesuré : ≈ 980 cubes/image (hors blocs de terrain).**
 
 ### 3.3 Œil du cyclone (`TEMPEST_EYE`, #42, 120 ticks)
 
-Troisième signature, nouvelle. Deux entonnoirs **contra-rotatifs** (±3 brins de 16 niveaux), un œil
-net à 1,42 bloc de hauteur avec anneau et six rayons, neuf débris d’ardoise en orbite croisée, anneau
-de sol de 32 segments, éclatement sommital à partir de 0,62, puis **effondrement** : les deux
-entonnoirs se rejoignent et s’éteignent.
-**Blocs de terrain (56)** : les mêmes blocs d’ardoise que le sol (`SLATE`, `SLATE_DARK`, `STEEL`) sont
-posés au sol, happés par la tornade (`cyc < 0,16`), montent en spirale contre la paroi, culbutent
-(roulis continu `2,4 + 3,6·h`), puis sont éjectés et retombent avant de recommencer. Le rayon suit la
-paroi de l’entonnoir (`lerp(r0, 0,62, lift) × (1 + 0,60·sin πc)`), la vitesse angulaire augmente avec
-l’aspiration.
-**Pic mesuré : ≈ 960 cubes/image.**
+Troisième signature, nouvelle — et la plus grande. Entonnoir extérieur de **8 brins × 26 niveaux**
+(rayon **0,55 → 2,95**, hauteur **8,90 blocs**), entonnoir interne de 6 brins (rayon 0,24 → 1,34),
+noyau torsadé, **œil sommital** à 8,01 blocs (anneau de 44 segments + 10 rayons de 9 cubes), anneau de
+sol de 56 segments, mur de nuages de 2 × 6 × 18, éclatement sommital à 0,62, puis effondrement.
+**Tous les brins tournent dans le même sens** (le contre-rotatif de la v2 se lisait comme deux
+tornades collées).
+**Blocs de terrain réels** : `WindTerrainVfx` capture jusqu’à **110 blocs** (surface + profondeur) dans
+un rayon de 4–6 blocs, puis les fait décoller, spiraler, culbuter (quaternion réutilisé, aucune
+allocation par bloc), s’élever sur toute la hauteur et retomber. Ce sont les vrais modèles du sol
+(herbe, sable, pierre, neige, netherrack…), pas des cubes d’ardoise génériques.
+**Pic mesuré : ≈ 960 cubes/image (hors blocs de terrain).**
+
+Le visuel du cyclone dure **170 ticks**, exactement la durée de l’emprise : l’entonnoir ne disparaît
+plus avant le lâcher.
 
 `TEMPEST_EYE` est déclaré **en fin d’énumération** (`ordinal` 12) pour ne décaler aucun `ordinal()`
 existant, qui sert de sel de rendu. Il est exclu de `signatureFor` et de `animationsOf` : la rotation
@@ -177,13 +203,14 @@ d'effet** : il réutilise les emprises existantes (`MOVEMENT_HOLDS`) et une nouv
 
 | Aspect | Comportement |
 |---|---|
-| Cibles | tous les `Enemy` dans **3,10 blocs** |
-| Emprise | `WIND_HOLDS` 104 ticks : `NoAi` forcé, cible **téléportée chaque tick** sur une orbite |
-| Mouvement | rayon qui se resserre de sa distance de départ à **1,05 bloc**, **0,28 rad/tick** (≈ 4,6 tours), montée de **4,20 blocs** en sinusoïde |
-| Dégâts | un pulse toutes les **9 ticks** de `clamp(0,08 × arme, 0,05, 0,60)` + **0,45 × arme** à l'éjection au tick 104 |
-| Effets | à l'éjection : **Nausée 6 s** + **Lenteur I 4 s** |
-| **Dégâts de chute** | au tick 104 le mob est éjecté (vitesse tangentielle 0,62 + 0,45 vers le haut) et sa `fallDistance` est **remise à zéro à cet instant** : la chute vanilla qui suit applique les dégâts de chute normaux à l'atterrissage. Tornade + chute se cumulent donc bien |
-| Sons | `entity.ender_dragon.flap` (aspiration + boucle toutes les 20 ticks) · `block.warden.emerg` · `entity.lightning_bolt.thunder` (tonnerre lointain) · `entity.generic.explode` + `block.amethyst_block.chime` (éjection) |
+| Cibles | **toute créature vivante** dans **3,10 blocs** (hors joueurs et hors attaquant) : depuis la v6 le villageois de la cible d'entraînement est happé, ce qui rend le test visible en mode Paisible |
+| Emprise | `WIND_HOLDS` **170 ticks** (8,5 s) : `NoAi` forcé, cible **téléportée chaque tick** sur une orbite |
+| Mouvement | rayon qui se resserre de sa distance de départ à **0,75 bloc**, **0,34 rad/tick** (≈ 9 tours), montée de **10,50 blocs** en sinusoïde (accélération douce, sommet atteint au lâcher) |
+| Dégâts | un pulse toutes les **10 ticks** de `clamp(0,08 × arme, 0,05, 0,60)` + **0,45 × arme** au lâcher (tick 170) |
+| Effets | au lâcher : **Nausée 6 s** + **Lenteur I 4 s** |
+| **Lâcher** | au sommet, vitesse **aléatoire** : angle tiré par `RandomSource`, force 1,45–2,00, **+0,95** vertical — le mob part dans une direction quelconque, pas sur la tangente |
+| **Dégâts de chute** | au lâcher la `fallDistance` est **remise à zéro à cet instant** et le mob retombe de ~10 blocs : la chute vanilla applique ses dégâts normaux à l'atterrissage. Tornade + chute se cumulent donc bien |
+| Sons | `entity.ender_dragon.flap` (aspiration + boucle toutes les 20 ticks jusqu'à 160) · `block.warden.emerg` · `entity.lightning_bolt.thunder` (tonnerre à 90) · `entity.generic.explode` + `block.amethyst_block.chime` (lâcher, joués **à 10,5 blocs de haut**) |
 
 ### 5.4 Règles communes
 

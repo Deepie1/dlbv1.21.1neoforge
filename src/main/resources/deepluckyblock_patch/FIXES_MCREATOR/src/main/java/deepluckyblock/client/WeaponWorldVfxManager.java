@@ -380,6 +380,16 @@ public final class WeaponWorldVfxManager {
      * uniforme. La pierre/terre/bois/métal restent opaques ; seuls les fluides et les voiles le sont.
      */
     private static void applyVoxelMaterial(WeaponVisualEffectId fx) {
+        // T374-WIND : le vent est un volume d'air clair, pas de l'écorce (bois) ni du sable (terre).
+        if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE
+                || fx == WeaponVisualEffectId.SANDSTORM_DUNE
+                || fx == WeaponVisualEffectId.TEMPEST_EYE) {
+            voxelElement = fx.element();
+            cubeVeil = 0.94f;
+            cubeGloss = 0.0f;
+            cubeTex = 0.050f;
+            return;
+        }
         DeepElement el = fx != null ? fx.element() : null;
         voxelElement = el == null ? DeepElement.EARTH : el;
         cubeVeil = 1.0f;
@@ -599,7 +609,7 @@ public final class WeaponWorldVfxManager {
                 : kind == KIND_PLAGUE_CONTAGION ? 48 : switch (fx) {
             // Chorégraphies Wood complètes : croissance, impacts, stun et explosion de sève.
             case ZEPHYR_WIND_LANCE -> 80;
-            case TEMPEST_EYE -> 120;
+            case TEMPEST_EYE -> 170; // l'emprise du cyclone dure 170 ticks : le visuel suit.
             case THORN_MAW_ROOT -> 96;
             case VERDANT_SAP_BLOOM -> 96;
             case MOLTEN_FIRE_WAVE -> 92;
@@ -1430,6 +1440,7 @@ public final class WeaponWorldVfxManager {
         PoisonSignatureVfx.beginTerrainTick(level);
         EarthSignatureVfx.beginTerrainTick(level);
         SeismicTerrainVfx.beginTerrainTick(level);
+        WindTerrainVfx.beginTerrainTick(level);
 
         for (Iterator<VfxInstance> it = ACTIVE.iterator(); it.hasNext(); ) {
             VfxInstance inst = it.next();
@@ -1453,6 +1464,13 @@ public final class WeaponWorldVfxManager {
                     || inst.effect == WeaponVisualEffectId.SANDSTORM_DUNE
                     || inst.effect == WeaponVisualEffectId.WARLORD_RALLY_SIGIL)) {
                 EarthSignatureVfx.prepareTerrain(level, inst.x, inst.y, inst.z, inst.sizeScale);
+            }
+            if (inst.kind == KIND_IMPACT && (inst.effect == WeaponVisualEffectId.SANDSTORM_DUNE
+                    || inst.effect == WeaponVisualEffectId.TEMPEST_EYE)) {
+                // Vrais blocs du sol happés par la tornade (même technique que la faille du séisme).
+                float windHeight = inst.effect == WeaponVisualEffectId.TEMPEST_EYE ? 8.90f : 7.90f;
+                WindTerrainVfx.prepare(level, inst.x, inst.y, inst.z,
+                        (int) (inst.seed & 0x7FFFFFFFL), windHeight, 1.0f);
             }
             if (inst.kind == KIND_IMPACT && inst.effect == WeaponVisualEffectId.WARLORD_RALLY_SIGIL) {
                 SeismicTerrainVfx.prepareRallyMountain(level, inst.x, inst.y, inst.z,
@@ -1810,12 +1828,17 @@ public final class WeaponWorldVfxManager {
         // Le batch est terminé ici pour ne jamais mélanger leurs RenderTypes à ceux des autres VFX.
         boolean opaqueTerrainRendered = false;
         for (VfxInstance inst : ACTIVE) {
+            boolean windTerrain = inst.effect == WeaponVisualEffectId.SANDSTORM_DUNE
+                    || inst.effect == WeaponVisualEffectId.TEMPEST_EYE;
             if (inst.kind != KIND_IMPACT || (inst.effect != WeaponVisualEffectId.SEISMIC_TECTONIC
-                    && inst.effect != WeaponVisualEffectId.WARLORD_RALLY_SIGIL)) continue;
+                    && inst.effect != WeaponVisualEffectId.WARLORD_RALLY_SIGIL && !windTerrain)) continue;
             float t = Mth.clamp((inst.age + subTick) / (float) inst.maxAge, 0.0f, 1.0f);
             double dx = inst.x - camPos.x, dy = inst.y - camPos.y, dz = inst.z - camPos.z;
             if (dx * dx + dy * dy + dz * dz > MAX_VFX_RENDER_DISTANCE_SQR) continue;
-            if (inst.effect == WeaponVisualEffectId.SEISMIC_TECTONIC) {
+            if (windTerrain) {
+                opaqueTerrainRendered |= WindTerrainVfx.render(mc, terrainBuffers, poseStack, camPos,
+                        inst.x, inst.y, inst.z, (int) (inst.seed & 0x7FFFFFFFL), t);
+            } else if (inst.effect == WeaponVisualEffectId.SEISMIC_TECTONIC) {
                 float dirX = Mth.sin(-inst.yawDeg * Mth.DEG_TO_RAD);
                 float dirZ = Mth.cos(-inst.yawDeg * Mth.DEG_TO_RAD);
                 opaqueTerrainRendered |= SeismicTerrainVfx.render(mc, terrainBuffers, poseStack, camPos,
@@ -2047,11 +2070,25 @@ public final class WeaponWorldVfxManager {
             default -> { }                                                          // arc continu classique
         }
 
+        // T374-WIND : le vent a sa propre lame — claire, bleu-vert, légèrement transparente.
+        // Sans ce cas, l'arc empruntait les teintes de l'élément porteur (vert Gaia / ocre Terre).
+        boolean windSlash = inst.effect == WeaponVisualEffectId.ZEPHYR_WIND_LANCE
+                || inst.effect == WeaponVisualEffectId.SANDSTORM_DUNE
+                || inst.effect == WeaponVisualEffectId.TEMPEST_EYE;
         int alpha = Math.round(238.0f * (1.0f - t * t));
-        boolean earthSlash = inst.effect.element() == DeepElement.EARTH;
+        boolean earthSlash = !windSlash && inst.effect.element() == DeepElement.EARTH;
         int slashCore = earthSlash ? 0x6B4526 : inst.effect.primaryRgb;
         int slashTrail = earthSlash ? 0x3B2616 : inst.effect.secondaryRgb;
         int slashTip = earthSlash ? 0x79A74B : 0xFFFFFF;
+        if (windSlash) {
+            radius *= 1.24f;
+            voxelHalf *= 0.62f;
+            sweepDeg = Math.min(172.0f, sweepDeg * 1.10f);
+            alpha = Math.round(152.0f * (1.0f - t * t));
+            slashCore = 0x9FF2DC;
+            slashTrail = 0x5FC0AC;
+            slashTip = 0xEAFFF8;
+        }
         emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, randomTilt,
                 radius, voxelHalf, sweepDeg, t, slashCore, slashTrail, alpha, style, slashTip, earthSlash);
         if (style == 4) {

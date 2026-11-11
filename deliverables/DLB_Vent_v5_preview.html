@@ -64,316 +64,250 @@ function buildWind(variant,t,salt=4242){const out=[];if(t<=0||t>=1)return out;
  const box=(f,y,l,hx,hy,hz,rgb,a,roll=0)=>{if(a>14&&hx>.0005&&hy>.0005&&hz>.0005&&Number.isFinite(f)&&Number.isFinite(y)&&Number.isFinite(l))
    out.push({x:f,y,z:l,hx,hy,hz,rgb,a:Math.min(255,a),roll})};
  const cube=(f,y,l,h,rgb,a,roll=0)=>box(f,y,l,h,h,h,rgb,a,roll);
- const col=(dark,light,u)=>mix(dark,light,clamp(u)),
-       easeOut=x=>{x=clamp(x);return 1-Math.pow(1-x,3)},TAU=Math.PI*2;
- const ringCubes=(y,segs,radiusAt,sizeFn,rgbA,rgbB,aFn)=>{for(let i=0;i<segs;i++){const a0=i*TAU/segs,r0=radiusAt(i);
-   cube(Math.cos(a0)*r0,y,Math.sin(a0)*r0,sizeFn(i),i%2===0?rgbA:rgbB,aFn(i))}};
+ const col=(dark,light,u)=>mix(dark,light,clamp(u)),TAU=Math.PI*2,
+       easeIn=x=>{x=clamp(x);return x*x};
+ // Teintes des VRAIS blocs du sol (côté Java : WindTerrainVfx réimprime les BlockState réels).
+ const GRASS=0x618E42,DIRT=0x6B4B2A,STONE=0x7E7E77,SNOW=0xE4EEF1;
+ const groundDebris=(count,height,dir,baseY)=>{
+  for(let i=0;i<count;i++){const h=hash(salt,12000+i*97),h2=hash(salt,13000+i*53),h3=hash(salt,14000+i*71),
+    cyc=fract(t*(.85+h*.55)+h2),lift=smooth((cyc-h3*.28)/.22);
+   if(lift<=.02)continue;
+   const rise=smooth(cyc/.82),fall=smooth((cyc-.86)/.14),
+     ang=(h2*TAU+cyc*(1.15+h3*.85)*TAU)*dir,
+     r0=.55+h*2.40,r1=Math.max(r0*1.55,1.60+h3*2.10),
+     radius=lerp(r0,r1,rise)*(.80+.26*Math.sin(cyc*9+h*7))+fall*1.15,
+     yy=baseY+rise*height*(.55+.45*(.30+h2*.22))-fall*height*.55,
+     size=.30+h2*.22,tumble=(t*8+h*3)*(1.4+h3*2.6);
+   box(Math.cos(ang)*radius,yy,Math.sin(ang)*radius,
+       size*.58,size*.44,size*.52,
+       i%4===0?GRASS:(i%4===1?DIRT:(i%4===2?STONE:SNOW)),lift*210*(1-fall*.45),tumble)}}
 
- // ══════════════════════ Ⅰ. ZÉPHYR — colonne d'air, lance verticale, trident, éclosion ══════════════════════
+ // ══════════════════════ Ⅰ. ZÉPHYR — trois lances qui tombent du ciel (v6) ══════════════════════
  if(variant===0){
-  const a=Math.round(245*smooth(t/.04)*(1-smooth((t-.86)/.14)));if(a<=4)return out;
-  const suck=smooth(t/.20),
-        form=smooth((t-.10)/.24),                 // la colonne se noue
-        drop=easeOut((t-.22)/.24),                // la lance descend
-        pierce=smooth((t-.44)/.09),               // enfoncement
-        blow=smooth((t-.50)/.40),                 // éclosion
-        fade=1-smooth((t-.84)/.16),
-        impact=1-smooth(Math.abs(t-.49)/.085),
-        core=smooth(t/.16)*(1-smooth((t-.70)/.30)),
-        shards=smooth((t-.48)/.20)*(1-smooth((t-.88)/.12));
+  const a=Math.round(245*smooth(t/.05)*(1-smooth((t-.88)/.12)));if(a<=4)return out;
+  const suck=smooth(t/.22),fade=1-smooth((t-.86)/.14),
+        impact=1-smooth(Math.abs(t-.52)/.10),shards=smooth((t-.54)/.22)*(1-smooth((t-.90)/.10));
 
-  // 1. sol : trois anneaux de poussière aspirés vers la base (144)
-  for(let ring=0;ring<3;ring++){const baseR=.90+ring*.72,dir=ring%2===0?1:-1;
+  // 1. sol : deux anneaux aspirés (96)
+  for(let ring=0;ring<2;ring++){const baseR=1.05+ring*.85,dir=ring===0?1:-1;
    for(let i=0;i<48;i++){const h=hash(salt,2100+ring*137+i*13),
-     ang=i*TAU/48+t*(5.5+ring*1.4)*dir+ring*.31,
-     radius=baseR*(.90+.18*Math.sin(t*9+i*.7))*(.34+.66*suck),
-     y=-1.15+h*.06+.10*suck*Math.sin(ang*2+t*6),size=(.046+.028*h)*(1+ring*.20);
-    box(Math.cos(ang)*radius,y,Math.sin(ang)*radius*.95,size*1.75,size*.45,size*1.2,
-        col(C.AIR_DEEP,C.PALE,.26+h*.36+ring*.06),a*fade*suck*(.34+.28*h),ang)}}
+     ang=i*TAU/48+t*(5.5+ring*1.4)*(ring===0?1:-1)+ring*.31,
+     radius=baseR*(.90+.18*Math.sin(t*9+i*.7))*(.34+.66*suck);
+    box(Math.cos(ang)*radius,-1.15+h*.06+.10*suck*Math.sin(ang*2+t*6),Math.sin(ang)*radius*.95,
+        .048+h*.030,(.048+h*.030)*.45,(.048+h*.030)*1.2,
+        col(C.AIR_DEEP,0x9CE8D2,.30+h*.40+ring*.06),a*fade*suck*(.34+.28*h),ang)}}
 
-  // 2. colonne d'air : entonnoir large en haut qui se resserre vers la lance (272)
-  for(let layer=0;layer<2;layer++){
-   const strands=layer===0?5:3, levels=layer===0?40:24;
-   for(let strand=0;strand<strands;strand++){
-    const dir=(layer===0?(strand%2===0?1:-1):(strand%2===0?-1:1)),phase=strand*TAU/strands+layer*.7;
-    for(let level=0;level<levels;level++){const u=level/(levels-1),
-      rise=smooth((t-.06-u*.10)/.24)*(1-smooth((t-.80)/.18));
-     if(rise<=.01)continue;
-     const h=hash(salt,2400+layer*601+strand*173+level*29),
-       rTop=layer===0?1.00:.58,rLow=layer===0?.46:.22,
-       radius=(rTop+(rLow-rTop)*u)*(1+.10*Math.sin(t*8+strand+u*7)),
-       ang=phase+u*12.5*dir+t*(11+strand*.6)*dir,
-       y=3.30-u*1.96+.05*Math.sin(t*6+u*12),
-       size=((layer===0?.090:.066)-u*(layer===0?.046:.026))*(.84+h*.30);
-     box(Math.cos(ang)*radius,y,Math.sin(ang)*radius,size*1.15,size,size*1.15,
-         col(C.AIR_DEEP,layer===0?C.PALE:C.WHITE,.30+u*.46+h*.18),
-         a*rise*(layer===0?(.22+.22*h):(.18+.18*h)),ang)}}}
+  // 2. colonne d'air comprimé : cinq brins (130)
+  for(let strand=0;strand<5;strand++){const dir=strand%2===0?1:-1;
+   for(let level=0;level<26;level++){const u=level/25,
+     rise=smooth((t-.10-u*.06)/.22)*(1-smooth((t-.76)/.20));if(rise<=.01)continue;
+    const h=hash(salt,2400+strand*173+level*29),
+      radius=(1.55-u*1.05)*(1+.10*Math.sin(t*8+strand+u*7)),
+      ang=strand*TAU/5+u*9.5*dir+t*15*dir,size=.085-u*.045;
+    box(Math.cos(ang)*radius,-1.10+u*5.60,Math.sin(ang)*radius,
+        size*1.15*(.84+h*.30),size*(.84+h*.30),size*1.15*(.84+h*.30),
+        col(C.AIR_DEEP,0x9CE8D2,.34+u*.46+h*.18),a*rise*(.20+.20*h))}}
 
-  // 3. lance principale : lame taillée, douille, fût hexagonal, viroles, ailettes, pommeau
-  const tipY=lerp(0.78,-0.86,drop)-pierce*.22;
-  const wobX=Math.cos(t*2)*.018,wobZ=Math.sin(t*2)*.018;
-  // 3a. lame : quatorze niveaux, section en losange (quatre faces + arête centrale)
-  for(let bl=0;bl<14;bl++){const u=bl/13,y0=tipY-.44+u*1.02,half=.016+u*.186;
-   for(let q=0;q<4;q++){const qa=q*Math.PI*.5,
-     dx=wobX+Math.cos(qa)*half*.60,dz=wobZ+Math.sin(qa)*half*.60;
-    box(dx,y0,dz,half*.56,half*.32,half*.56,q%2===0?C.WHITE:C.GLASS,
-        Math.round(a*(.94-.14*u)),qa)}
-   cube(wobX,y0,wobZ,half*.46,C.WHITE,Math.round(a*(.98-.20*u)))}
-  // 3b. douille : trois anneaux hexagonaux sous le fût
-  for(let fr=0;fr<3;fr++){const y0=tipY+.60+fr*.10,r=.182-fr*.012;
-   for(let q=0;q<6;q++){const qa=q*TAU/6+fr*.52;
-    box(wobX+Math.cos(qa)*r,y0,wobZ+Math.sin(qa)*r,.046,.020,.046,
-         fr===1?C.GLASS:C.PALE,Math.round(a*.94))}}
-  // 3c. fût : vingt sections à six pans, âme lumineuse au centre
-  for(let seg=0;seg<20;seg++){const u0=seg/19,y0=tipY+.92+u0*1.66,half=.152-u0*.042;
-   for(let q=0;q<6;q++){const qa=q*TAU/6+u0*1.1;
-    box(wobX+Math.cos(qa)*half*.88,y0,wobZ+Math.sin(qa)*half*.88,
-        half*.56,half*.52,half*.56,col(C.PALE,C.WHITE,.26+u0*.58),Math.round(a*.98),qa)}
-   cube(wobX,y0,wobZ,half*.50,col(C.GLASS,C.WHITE,.50+u0*.44),Math.round(a*.90))}
-  
-  // 3d. cinq viroles de cristal autour du fût
-  for(let fr=0;fr<5;fr++){const u0=(fr+.5)/5,y0=tipY+.92+u0*1.66,r=.174-u0*.026;
-   for(let q=0;q<6;q++){const qa=q*TAU/6+fr*.31;
-    box(wobX+Math.cos(qa)*r,y0,wobZ+Math.sin(qa)*r,.044,.020,.044,
-         fr%2===0?C.WHITE:C.GLASS,Math.round(a*.96))}}
-  // 3e. quatre ailettes recourbées vers le haut
-  for(let fin=0;fin<4;fin++){const fa=fin*TAU/4+t*.7;
-   for(let k=0;k<4;k++){const u=k/3,reach=.18+u*.30,y0=tipY+.74+u*.40;
-    box(Math.cos(fa)*reach,y0,Math.sin(fa)*reach,
-        .070-u*.020,.062,.040,fin%2===0?C.PALE:C.AZURE,
-        Math.round(a*(.92-.24*u)),fa+u*.5)}}
-  // 3f. pommeau au sommet du fût
-  for(let q=0;q<6;q++){const qa=q*TAU/6+t*1.2;
-   cube(wobX+Math.cos(qa)*.115,tipY+2.62,wobZ+Math.sin(qa)*.115,.058,
-        q%2===0?C.WHITE:C.PALE,Math.round(a*.90))}
-  cube(wobX,tipY+2.70,wobZ,.082,C.GLASS,Math.round(a*.94));
-  // deux hélices autour du fût
-  for(let helix=0;helix<2;helix++){const dir=helix===0?1:-1;
-   for(let step=0;step<26;step++){const u0=step/25,ra=u0*TAU*2.4*dir+t*22*dir+helix*1.7,
-     y0=tipY+.20+u0*2.20,r0=(.30+u0*.10)+blow*(.80+u0*.40),
-     size=.026+.008*hash(salt,4100+step*17+helix*7);
-    box(Math.cos(ra)*r0,y0,Math.sin(ra)*r0,size,size,size*3.0,
-        helix===0?C.AZURE:C.GLASS,a*fade*(1-blow*.40)*(.60-u0*.24),ra)}}
-  // plumes arrachées au fût
-  for(let plume=0;plume<10;plume++){const h=hash(salt,4300+plume*41),drift=blow*(.70+h*1.80),
-    pa=plume*TAU/10+t*2.2;
-   box(Math.cos(pa)*(.34+drift*1.05),tipY+1.10+h*1.20+drift*.55,Math.sin(pa)*(.34+drift*1.05),
-       .030,.125,.024,plume%3===0?C.WHITE:C.PALE,a*fade*(1-blow)*(.42+h*.28),pa)}
+  // 3. les trois lances : tête facettée + fût + viroles + ailerons + sillage
+  const spear=(offF,offL,headY,s,phase)=>{
+   if(headY>12)return;
+   for(let bl=0;bl<14;bl++){const u=bl/13,half=(.026+u*.250)*s,y0=headY+bl*.112*s;
+    for(let q=0;q<6;q++){const qa=q*TAU/6+bl*.16;
+     box(offF+Math.cos(qa)*half*.62,y0,offL+Math.sin(qa)*half*.62,
+         half*.52,half*.34,half*.52,q%2===0?C.WHITE:C.GLASS,a*(.96-.16*u),qa)}
+    cube(offF,y0,offL,half*.52,0x9CE8D2,a*(.98-.20*u))}
+   for(let ring=0;ring<2;ring++){const y0=headY+(1.56+ring*.10)*s,rr=(.285-ring*.022)*s;
+    for(let q=0;q<8;q++){const qa=q*TAU/8+ring*.40;
+     box(offF+Math.cos(qa)*rr,y0,offL+Math.sin(qa)*rr,
+         .052*s,.024*s,.052*s,ring===0?C.GLASS:C.PALE,a*.95,qa)}}
+   for(let seg=0;seg<16;seg++){const u0=seg/15,y0=headY+(1.78+u0*2.30)*s,half=(.098-u0*.030)*s;
+    for(let q=0;q<6;q++){const qa=q*TAU/6+u0*1.1;
+     box(offF+Math.cos(qa)*half*.90,y0,offL+Math.sin(qa)*half*.90,
+         half*.58,half*.62,half*.58,col(0x9CE8D2,C.WHITE,.30+u0*.56),a*.97,qa)}
+    cube(offF,y0,offL,half*.52,col(C.GLASS,C.WHITE,.52+u0*.42),a*.90)}
+   for(let ring=0;ring<4;ring++){const u0=(ring+.5)/4,y0=headY+(1.78+u0*2.30)*s,rr=(.115-u0*.020)*s;
+    for(let q=0;q<8;q++){const qa=q*TAU/8+ring*.31;
+     box(offF+Math.cos(qa)*rr,y0,offL+Math.sin(qa)*rr,
+         .040*s,.020*s,.040*s,ring%2===0?C.WHITE:C.GLASS,a*.94,qa)}}
+   for(let fin=0;fin<2;fin++){const side=fin===0?1:-1;
+    for(let k=0;k<4;k++){const u=k/3,reach=(.20+u*.34)*s;
+     box(offF+side*reach,headY+(1.52-u*.42)*s,offL+side*reach*.30,
+         (.070-u*.022)*s,(.060-u*.020)*s,.040*s,k%2===0?0x9CE8D2:C.AZURE,a*(.92-.22*u),side*(.30+u*.40))}}
+   for(let q=0;q<6;q++){const qa=q*TAU/6+t*1.4;
+    cube(offF+Math.cos(qa)*.125*s,headY+4.16*s,offL+Math.sin(qa)*.125*s,
+         .050*s,q%2===0?C.WHITE:C.PALE,a*.92)}
+   cube(offF,headY+4.26*s,offL,.075*s,C.GLASS,a*.95);
+   for(let helix=0;helix<2;helix++){const dir=helix===0?1:-1;
+    for(let step=0;step<18;step++){const u0=step/17,
+      ra=u0*TAU*2*dir+t*26*dir+helix*1.7,y0=headY+(.30+u0*3.90)*s,
+      r0=(.24+u0*.06)*s,size=(.024+.007*hash(salt,4100+step*17+helix*7))*s;
+     box(offF+Math.cos(ra)*r0,y0,offL+Math.sin(ra)*r0,
+         size,size,size*2.6,helix===0?C.AZURE:0x9CE8D2,a*(.52-u0*.20),ra)}}};
 
-  // 4. trois lances satellites en trident : mêmes pièces à échelle réduite (3 × 92)
-  for(let spear=0;spear<3;spear++){
-   const ang=spear*2.0943951+.60,rad=.58*(1-drop*.55),
-     tipY2=tipY+.30+spear*.06,lat=Math.cos(ang)*rad,forw=Math.sin(ang)*rad;
-   // lame
-   for(let bl=0;bl<8;bl++){const u=bl/7,y0=tipY2-.26+u*.58,half=.012+u*.092;
-    for(let side=0;side<2;side++){const sg=side===0?1:-1;
-     box(forw+sg*half*.50,y0,lat+sg*half*.50,half*.42,half*.30,half*.42,
-         side===0?C.WHITE:C.GLASS,Math.round(a*.92),ang)}
-    cube(forw,y0,lat,half*.28,C.WHITE,Math.round(a*.94))}
-   // fût à quatre pans
-   for(let seg=0;seg<9;seg++){const u0=seg/8,y0=tipY2+.32+u0*.94,half=.078-u0*.020;
-    for(let q=0;q<4;q++){const qa=q*TAU/4+u0*1.0;
-     box(forw+Math.cos(qa)*half*.90,y0,lat+Math.sin(qa)*half*.90,
-         half*.80,half*.62,half*.80,col(C.PALE,C.WHITE,.30+u0*.52),Math.round(a*.90),qa)}
-    cube(forw,y0,lat,half*.52,col(C.GLASS,C.WHITE,.48+u0*.42),Math.round(a*.84))}
-   // deux viroles
-   for(let fr=0;fr<2;fr++){const u0=(fr+.5)/2,y0=tipY2+.32+u0*.94,r=.090-u0*.012;
-    for(let q=0;q<4;q++){const qa=q*TAU/4+fr*.4;
-     box(forw+Math.cos(qa)*r,y0,lat+Math.sin(qa)*r,.032,.014,.032,C.GLASS,Math.round(a*.90))}}
-   // ailettes
-   for(let fin=0;fin<3;fin++){const fa=fin*TAU/3+ang*2;
-    box(forw+Math.cos(fa)*.10,tipY2+.22,lat+Math.sin(fa)*.10,.040,.030,.020,
-        C.PALE,Math.round(a*.86),fa)}
-   for(let step=0;step<12;step++){const u0=step/11,ra=u0*TAU*1.8+t*18*(spear%2===0?1:-1)+spear,
-     y0=tipY2+.16+u0*1.15,r0=.16+u0*.06;
-    box(forw+Math.cos(ra)*r0,y0,lat+Math.sin(ra)*r0,.020,.020,.062,
-        C.AZURE,a*fade*(.42-u0*.16),ra)}}
+  spear(0,0,lerp(8.60,-0.55,easeIn((t-.06)/.44)),1.00);
+  spear(.95,-1.05,lerp(8.20,-0.75,easeIn((t-.16)/.44)),.80);
+  spear(-1.10,.95,lerp(7.90,-0.70,easeIn((t-.24)/.44)),.74);
 
-  // 5. couronne de compression au sol (112)
-  if(impact>.02){const reach=.34+(1-impact)*1.75;
-   ringCubes(-.55,48,i=>reach,i=>i%4===0?.052:.028,i=>i%4===0?C.WHITE:C.GLASS,C.GLASS,()=>a*impact*.96);
-   ringCubes(-1.10,36,i=>reach*.72,i=>i%3===0?.032:.020,C.PALE,C.GLASS,()=>a*impact*.62);
-   for(let pit=0;pit<28;pit++){const h=hash(salt,5100+pit*53),pa=pit*TAU/28+h*.5,pr=reach*(.55+h*.75);
-    cube(Math.cos(pa)*pr,-.60+(h-.5)*.55,Math.sin(pa)*pr,.046+.026*h,
-         pit%3===0?C.WHITE:pit%3===1?C.GLASS:C.PALE,a*impact*(.48+h*.32),pa)}}
+  // 4. couronne de compression (96)
+  if(impact>.02){const reach=.34+(1-impact)*1.85;
+   for(let i=0;i<48;i++){const ang=i*TAU/48,size=i%4===0?.052:.026;
+    cube(Math.cos(ang)*reach,-.55,Math.sin(ang)*reach,size,i%4===0?C.WHITE:0x9CE8D2,a*impact*.94,ang)}
+   for(let i=0;i<36;i++){const ang=i*TAU/36,size=i%3===0?.032:.020;
+    cube(Math.cos(ang)*reach*.72,-1.10,Math.sin(ang)*reach*.72,size,i%3===0?C.PALE:C.GLASS,a*impact*.62,ang)}}
 
-  // 6. éclats emportés par l'éclosion (40)
-  for(let shard=0;shard<40;shard++){const h=hash(salt,5600+shard*67),h2=hash(salt,5700+shard*41),
-    pa=shard*2.3999632+t*(1.6+h*2.2),pr=.42+blow*(1.15+h*1.85),
-    y=-.55+(h2-.30)*1.40+blow*(.45+h*1.10);
-   box(Math.cos(pa)*pr,y,Math.sin(pa)*pr,.028+.012*h2,.110+.065*h,.024,
-       shard%4===0?C.WHITE:shard%3===0?C.GLASS:C.PALE,
-       a*shards*(1-blow*.40)*(.46+.30*h),pa)}
-
-  // 7. brume périphérique (12)
-  for(let mist=0;mist<12;mist++){const h=hash(salt,6100+mist*43),pa=mist*TAU/12+t*3.2+h,
-    pr=2.05+h*.90;
-   cube(Math.cos(pa)*pr,-.85+h*2.60+blow*.30,Math.sin(pa)*pr,.13,C.AIR,a*fade*(.06+.06*h),pa)}
-
-  // 8. quatre annelets secondaires le long de la colonne (72)
-  for(let cell=0;cell<4;cell++){const ca=cell*2.0943951+.70,
-    cf=Math.cos(ca)*(1.00+.30*cell),cl=Math.sin(ca)*(1.00+.30*cell),
-    cyy=.70+cell*.62+impact*.20,scale=(.13+impact*.20)*(1-blow*.55);
-   if(scale<=.02)continue;
-   for(let i=0;i<18;i++){const h=hash(salt,6800+cell*97+i*19),
-     ang=i*TAU/18+t*16*(cell%2===0?1:-1),rr=scale*(.75+.45*h);
-    cube(cf+Math.cos(ang)*rr,cyy,cl+Math.sin(ang)*rr,.017+.013*h,
-         col(C.GLASS,C.WHITE,.35+h*.45),a*impact*(.52+.30*h),ang)}}
+  // 5. éclats et brume (48)
+  for(let i=0;i<36;i++){const h=hash(salt,5600+i*67),h2=hash(salt,5700+i*41),
+    pa=i*2.3999632+t*(1.6+h*2.2),pr=.42+smooth((t-.54)/.40)*(1.15+h*1.85);
+   box(Math.cos(pa)*pr,-.55+(h2-.30)*1.40+smooth((t-.54)/.40)*(.45+h*1.10),Math.sin(pa)*pr,
+       .028+.012*h2,.110+.065*h,.024,
+       i%4===0?C.WHITE:(i%3===0?C.GLASS:0x9CE8D2),a*shards*(.46+.30*h),pa)}
+  for(let i=0;i<12;i++){const h=hash(salt,6100+i*43),pa=i*TAU/12+t*3.2+h,pr=2.05+h*.90;
+   cube(Math.cos(pa)*pr,-.85+h*4.20,Math.sin(pa)*pr,.130,C.AIR,a*fade*(.07+.07*h))}
   return out;
  }
 
- // ══════════════════════ Ⅱ. TEMPÊTE DE SABLE ══════════════════════
+ // ══════════════════════ Ⅱ. TEMPÊTE DE SABLE — étroit au sol, large en haut ══════════════════════
  if(variant===1){
   const a=Math.round(245*smooth(t/.07)*(1-smooth((t-.74)/.26)));if(a<=4)return out;
-  const grow=smooth(t/.30)*(1-smooth((t-.70)/.30)),spin=t*9,settle=smooth((t-.72)/.28),
-        crestWave=Math.sin(t*7);
+  const H=7.90,grow=smooth(t/.30)*(1-smooth((t-.70)/.30)),spin=t*11,settle=smooth((t-.74)/.26);
 
-  // 1. dune : cinq strates de 40 (200)
-  for(let layer=0;layer<5;layer++){const u=layer/4,radius=(1.46-u*.86)*Math.max(.06,grow);
+  // 1. dune (128)
+  for(let layer=0;layer<4;layer++){const u=layer/3,radius=(1.55-u*.82)*Math.max(.06,grow);
    if(radius<=.02)continue;
-   for(let i=0;i<40;i++){const h=hash(salt,6100+layer*71+i*19),
-     ang=i*TAU/40+layer*.22+spin*(.22+layer*.03),
+   for(let i=0;i<32;i++){const h=hash(salt,6100+layer*71+i*19),
+     ang=i*TAU/32+layer*.22+spin*(.22+layer*.03),
      crest=Math.max(0,Math.cos(ang-.55))*(.24-u*.10)*grow,
-     ripple=.045*Math.sin(ang*6+t*9+layer)*grow,
-     y=-1.14+u*.42*grow+crest+ripple-settle*(.24+h*.22),
-     size=(.148-u*.038)*(.84+h*.30);
-    box(Math.cos(ang)*radius*(1+.20*u),y,Math.sin(ang)*radius*.72,size*1.24,size*.60,size,
-        col(C.SAND_DARK,C.SAND_LIGHT,.22+u*.44+h*.18),a*grow*(.50+.26*h),ang+t*.30)}}
+     y=-1.14+u*.40*grow+crest+.045*Math.sin(ang*6+t*9+layer)*grow-settle*(.24+h*.22),
+     size=.150-u*.040;
+    box(Math.cos(ang)*radius*(1+.20*u),y,Math.sin(ang)*radius*.74,
+        size*1.24*(.84+h*.30),size*.58*(.84+h*.30),size*(.84+h*.30),
+        col(C.SAND_DARK,C.SAND_LIGHT,.24+u*.44+h*.18),a*grow*(.50+.26*h),ang+t*.30)}}
 
-  // 2. cinq bras spiralés (130)
-  for(let arm=0;arm<5;arm++)for(let level=0;level<26;level++){const u=level/25,
-    reveal=smooth((t-.05-u*.12)/.20)*(1-settle);
-   if(reveal<=.01)continue;
-   const h=hash(salt,6500+arm*149+level*23),ang=arm*1.2566371+u*8.4+t*13,
-     radius=(1.16-u*.72)*(.90+.14*Math.sin(t*9+u*12)),
-     size=(.170-u*.070)*(.84+h*.32);
-   box(Math.cos(ang)*radius,-.92+u*2.78,Math.sin(ang)*radius,size*1.32,size,size*1.16,
-       level%5===0?C.DUST:C.SAND_LIGHT,a*reveal*(.32+.30*(1-u)),ang)}
+  // 2. entonnoir extérieur : six bras, rayon 0,45 → 2,55 (étroit au sol)
+  for(let arm=0;arm<6;arm++)for(let level=0;level<30;level++){
+   const u=level/29,reveal=smooth((t-.05-u*.10)/.22)*(1-settle);if(reveal<=.01)continue;
+   const h=hash(salt,6500+arm*149+level*23),ang=arm*TAU/6+u*8.2+spin,
+     radius=(.45+u*2.10)*(.92+.12*Math.sin(t*9+u*12)),size=.190-u*.055;
+   box(Math.cos(ang)*radius,-1.10+u*H+settle*.40*h,Math.sin(ang)*radius,
+       size*1.28*(.84+h*.32),size*(.84+h*.32),size*1.12*(.84+h*.32),
+       level%5===0?C.DUST:C.SAND_LIGHT,a*reveal*(.34+.30*(1-u)),ang)}
 
-  // 3. sept rubans horizontaux de 48 (336)
-  for(let band=0;band<7;band++)for(let i=0;i<48;i++){const u=i/47,h=hash(salt,6900+band*83+i*11),
-    ang=u*5.2+band*.90+t*(9.5+band*1.3),
-    radius=1.02+band*.15+.12*Math.sin(u*9+t*8),
-    y=-.92+band*.30+u*.34+settle*.32*h,size=.022+.013*h;
-   box(Math.cos(ang)*radius,y,Math.sin(ang)*radius,size*2.8,size*.48,size*.72,
-       band%3===0?C.DUST:C.SAND,a*(1-settle)*(.26+.20*h),ang)}
+  // 3. tourbillon INTERNE sombre et opaque, MÊME SENS, étroit au sol
+  for(let arm=0;arm<4;arm++)for(let level=0;level<22;level++){
+   const u=level/21,reveal=smooth((t-.08-u*.08)/.20)*(1-settle);if(reveal<=.01)continue;
+   const h=hash(salt,9100+arm*131+level*19),ang=arm*TAU/4+u*7.4+spin*1.06,
+     radius=(.22+u*1.05)*(.94+.10*Math.sin(t*10+u*9)),size=.205-u*.070;
+   box(Math.cos(ang)*radius,-1.06+u*(H*.86),Math.sin(ang)*radius,
+       size*1.20*(.90+h*.20),size*(.90+h*.20),size*1.10*(.90+h*.20),
+       col(0x4A3A26,C.SAND_DARK,.30+u*.40+h*.20),a*reveal*(.86+.14*h),ang)}
 
-  // 4. trois mini-tornades (90)
-  for(let cell=0;cell<3;cell++){const ca=cell*2.0943951+1.30,
-    cf=Math.cos(ca)*(1.55+.18*cell),cl=Math.sin(ca)*(1.55+.18*cell),
-    born=smooth((t-.16-cell*.05)/.24)*(1-settle);
-   if(born<=.01)continue;
-   for(let i=0;i<30;i++){const u=i/29,h=hash(salt,7300+cell*101+i*17),
-     ang=u*9+t*18+cell*.40,rr=(.42-u*.30)*(.85+.25*h);
-    cube(cf+Math.cos(ang)*rr,-.95+u*1.70+.05*Math.sin(t*8+i),cl+Math.sin(ang)*rr,
-         .026+.016*h,i%6===0?C.DUST:C.SAND_LIGHT,a*born*(.30+.26*h),ang)}}
+  // 4. deux mini-tornades (52)
+  for(let cell=0;cell<2;cell++){const ca=cell*Math.PI+1.30,cf=Math.cos(ca)*1.85,cl=Math.sin(ca)*1.85,
+    born=smooth((t-.16-cell*.05)/.24)*(1-settle);if(born<=.01)continue;
+   for(let i=0;i<26;i++){const u=i/25,h=hash(salt,7300+cell*101+i*17),
+     ang=u*8+t*20+cell*.40,rr=(.20+u*.62)*(.85+.25*h),size=.028+.016*h;
+    cube(cf+Math.cos(ang)*rr,-.98+u*2.40+.05*Math.sin(t*8+i),cl+Math.sin(ang)*rr,size,
+         i%6===0?C.DUST:C.SAND_LIGHT,a*born*(.30+.26*h),ang)}}
 
-  // 5. cent soixante grains
-  for(let grain=0;grain<160;grain++){const h=hash(salt,7500+grain*47),h2=hash(salt,7700+grain*61),
-    cycle=fract(t*(1.10+h*.90)+grain*.6180339),ang=grain*2.3999632+spin*(.8+h2*.7),
-    radius=.28+cycle*2.10,size=.024+.024*h;
-   cube(Math.cos(ang)*radius,lerp(-1.08,2.45,cycle)+h2*.30,Math.sin(ang)*radius,size,
-        grain%5===0?C.DUST:grain%3===0?C.SAND_LIGHT:C.SAND,a*(1-cycle)*(.42+.28*h),ang)}
+  // 5. grains (130)
+  for(let i=0;i<130;i++){const h=hash(salt,7500+i*47),h2=hash(salt,7700+i*61),
+    cyc=fract(t*(1.05+h*.85)+i*.6180339),ang=i*2.3999632+spin*(.8+h2*.7),
+    radius=.30+cyc*2.35,y=lerp(-1.08,H*.94,cyc)+h2*.30,size=.024+.024*h;
+   cube(Math.cos(ang)*radius,y,Math.sin(ang)*radius,size,
+        i%5===0?C.DUST:(i%3===0?C.SAND_LIGHT:C.SAND),a*(1-cyc)*(.42+.28*h),ang)}
 
-  // 6. voile (36)
-  for(let veil=0;veil<24;veil++){const h=hash(salt,8000+veil*37),ang=veil*TAU/24+t*4+h,
-    radius=1.30+h*.95;
-   cube(Math.cos(ang)*radius,-.80+h*2.60+settle*.40+.10*crestWave,Math.sin(ang)*radius,
-        .130+.050*h,C.SAND,a*(.10+.06*h),ang)}
+  // 6. voile (30)
+  for(let i=0;i<30;i++){const h=hash(salt,8000+i*37),ang=i*TAU/30+t*4+h,radius=1.45+h*1.10;
+   box(Math.cos(ang)*radius,-.80+h*(H*.92)+settle*.40,Math.sin(ang)*radius,
+       .150+.060*h,.120,.150+.060*h,C.SAND_DARK,a*(.08+.08*h),ang)}
 
-  // 7. cinquante éclats de crête
+  // 7. éclats arrachés (40)
   const fling=smooth((t-.34)/.26)*(1-settle);
-  for(let shard=0;shard<50;shard++){const h=hash(salt,8400+shard*59),h2=hash(salt,8500+shard*43),
-    ang=shard*2.3999632+t*(2.0+h*2.4),radius=.55+fling*(.90+h*1.50);
-   box(Math.cos(ang)*radius,-.75+h2*1.85+fling*(.35+h*.75),Math.sin(ang)*radius,
-       .030+.014*h2,.105+.060*h,.026,shard%4===0?C.DUST:C.SAND_LIGHT,
-       a*fling*(.34+.26*h),ang)}
+  for(let i=0;i<40;i++){const h=hash(salt,8400+i*59),h2=hash(salt,8500+i*43),
+    ang=i*2.3999632+t*(2.0+h*2.4),radius=.55+fling*(.90+h*1.50);
+   box(Math.cos(ang)*radius,-.75+h2*H*.80+fling*(.35+h*.95),Math.sin(ang)*radius,
+       .030+.014*h2,.105+.060*h,.026,i%4===0?C.DUST:C.SAND_LIGHT,a*fling*(.34+.26*h),ang)}
+
+  // 8. vrais blocs du sol happés par la tornade (WindTerrainVfx côté Java)
+  groundDebris(96,H,1,-1.02);
   return out;
  }
 
- // ══════════════════════ Ⅲ. ŒIL DU CYCLONE ══════════════════════
+ // ══════════════════════ Ⅲ. ŒIL DU CYCLONE — entonnoir de 8,9 blocs, œil sommital ══════════════════════
  const a=Math.round(245*smooth(t/.06)*(1-smooth((t-.80)/.20)));if(a<=4)return out;
- const open=smooth(t/.26),collapse=smooth((t-.78)/.22),eye=smooth((t-.18)/.22)*(1-collapse),
-       spin=t*12,shrink=1-collapse*.55,burst=smooth((t-.62)/.38);
+ const H=8.90,open=smooth(t/.26),collapse=smooth((t-.78)/.22),
+       eye=smooth((t-.18)/.22)*(1-collapse),spin=t*12,burst=smooth((t-.62)/.38);
 
- // 1. deux entonnoirs de huit brins contra-rotatifs (352)
- for(let funnel=0;funnel<2;funnel++){const dir=funnel===0?1:-1,
-   baseR=funnel===0?.26:1.02,spread=funnel===0?1.08:1.52;
-  for(let strand=0;strand<8;strand++){const phase=strand*TAU/8;
-   for(let level=0;level<22;level++){const u=level/21,h=hash(salt,8100+funnel*401+strand*97+level*13),
-     ang=phase+u*7.4*dir+spin*dir*(1-u*.40),
-     radius=(baseR+u*spread)*shrink*(.90+.14*h)*open,size=(.096+u*.028)*(.84+h*.30);
-    cube(Math.cos(ang)*radius,-1.15+u*3.80,Math.sin(ang)*radius,size,
-         col(funnel===0?C.AIR:C.AIR_DEEP,funnel===0?C.WHITE:C.PALE,
-             (funnel===0?.40:.28)+u*.46+h*.18),
-         a*open*(1-collapse*.35)*(.28+.22*(1-u*(funnel===0?.5:1))),ang)}}}
+ // 1. entonnoir extérieur : huit brins, 0,55 → 2,95
+ for(let strand=0;strand<8;strand++){const phase=strand*TAU/8;
+  for(let level=0;level<26;level++){const u=level/25,h=hash(salt,8100+strand*97+level*13),
+    ang=phase+u*8.6+spin*(1-u*.35),
+    radius=(.55+u*2.40)*(.92+.12*h)*open,size=(.110+u*.030)*(.84+h*.30);
+   cube(Math.cos(ang)*radius,-1.15+u*H,Math.sin(ang)*radius,size,
+        col(C.AIR,C.WHITE,.40+u*.46+h*.18),a*open*(1-collapse*.35)*(.30+.22*(1-u*.5)),ang)}}
 
- // 2. noyau torsadé (34)
- for(let step=0;step<34;step++){const u=step/33,h=hash(salt,8600+step*29),ang=t*9+u*5,
-   radius=.10+.06*Math.sin(t*12+u*6),size=(.078-u*.030)*(.84+.24*Math.sin(t*16+step));
-  cube(Math.cos(ang)*radius,-1.05+u*3.70,Math.sin(ang)*radius,size,
-       col(C.GLASS,C.WHITE,.35+.50*h),a*open*(1-collapse*.60)*(.40+.32*h),ang)}
+ // 2. entonnoir interne : six brins sombres, même sens
+ for(let strand=0;strand<6;strand++){const phase=strand*TAU/6+.35;
+  for(let level=0;level<20;level++){const u=level/19,h=hash(salt,8300+strand*89+level*17),
+    ang=phase+u*7.2+spin*1.08,radius=(.24+u*1.10)*(.94+.10*h)*open,size=(.118+u*.020)*(.86+h*.24);
+   cube(Math.cos(ang)*radius,-1.08+u*(H*.92),Math.sin(ang)*radius,size,
+        col(C.AIR_DEEP,0x9CE8D2,.30+u*.40+h*.16),a*open*(.70+.20*h),ang)}}
 
- // 3. œil calme : anneau de 44 + dix rayons de neuf (134)
- if(eye>.02){const eyeY=2.74,eyeR=(1.16+.05*Math.sin(t*9))*open;
-  ringCubes(eyeY,44,()=>eyeR,i=>i%4===0?.062:.034,C.WHITE,C.GLASS,
-            i=>a*eye*(i%4===0?.96:.76));
+ // 3. noyau torsadé (28)
+ for(let step=0;step<28;step++){const u=step/27,h=hash(salt,8600+step*29),ang=t*9+u*5,
+   radius=.12+.06*Math.sin(t*12+u*6),size=(.082-u*.028)*(.84+.24*Math.sin(t*16+step));
+  box(Math.cos(ang)*radius,-1.05+u*(H*.96),Math.sin(ang)*radius,
+      size,size*1.50,size,col(C.GLASS,C.WHITE,.35+h*.50),a*open*(1-collapse*.60)*(.40+.32*h),ang)}
+
+ // 4. œil calme sommital (44 + 90)
+ if(eye>.02){const eyeY=H*.90,eyeR=2.45*open;
+  for(let i=0;i<44;i++){const a0=i*TAU/44,a1=(i+1)*TAU/44,
+    x0=Math.cos(a0)*eyeR,z0=Math.sin(a0)*eyeR,x1=Math.cos(a1)*eyeR,z1=Math.sin(a1)*eyeR;
+   const seg=Math.hypot(x1-x0,z1-z0),half=i%4===0?.034:.016;
+   box((x0+x1)/2,eyeY,(z0+z1)/2,seg*.56,half,half,i%4===0?C.WHITE:C.GLASS,
+       a*eye*(i%4===0?.94:.60),Math.atan2(x1-x0,z1-z0))}
   for(let spoke=0;spoke<10;spoke++){const sa=spoke*TAU/10+spin*.35;
-   for(let step=1;step<=9;step++){const r0=eyeR*(.16+step*.092);
-    cube(Math.cos(sa)*r0,eyeY,Math.sin(sa)*r0,.026,step%3===0?C.WHITE:C.GLASS,
-         a*eye*(.42+.34*(1-step/9)))}}}
+   for(let step=1;step<=9;step++){const r0=eyeR*(.14+step*.090);
+    cube(Math.cos(sa)*r0,eyeY,Math.sin(sa)*r0,.028,step%3===0?C.WHITE:0x9CE8D2,
+         a*eye*(.24+.30*(1-step/9)))}}}
 
- // 4. blocs de terrain arrachés au sol (56) : posés, happés, spiralés, culbutés, retombés
- for(let blk=0;blk<56;blk++){
-  const h=hash(salt,8800+blk*59),h2=hash(salt,8900+blk*71),h3=hash(salt,9000+blk*37),
-   speed=.30+h*.26,cyc=fract(t*speed+blk*.6180339),
-   lift=smooth(cyc/.16),fall=smooth((cyc-.80)/.20),
-   r0=1.90+h2*1.45,
-   radius=Math.max(.55,lerp(r0,.62,lift)*(1+.60*Math.sin(Math.PI*Math.min(1,cyc)))+fall*1.30)*open*(1-collapse*.45),
-   ang=blk*2.3999632+t*(1.8+h3*1.6)+lift*(5.0+h*4.0),
-   y=-1.02+Math.sin(Math.PI*Math.min(1,cyc))*(3.30+h3*.60)-fall*1.10,
-   size=(.082+h2*.066)*(1-collapse*.30),
-   tumble=t*(2.4+h*3.6)+blk*1.7;
-  const rgb=blk%5===0?C.STEEL:blk%5<3?C.SLATE:C.SLATE_DARK;
-  box(Math.cos(ang)*radius,y,Math.sin(ang)*radius,
-      size*(1.15+.25*h),size*(.55+.20*h3),size*(.90+.20*h2),
-      rgb,Math.round(a*open*(1-collapse*.35)*(.86+.14*h)),tumble);
-  if(blk%3===0)cube(Math.cos(ang+.30)*radius*1.04,y-size*.55,Math.sin(ang+.30)*radius*1.04,
-      size*.38,C.PALE,Math.round(a*open*(.30+.20*h)),ang)}
+ // 5. anneau de sol (56)
+ for(let i=0;i<56;i++){const a0=i*TAU/56,a1=(i+1)*TAU/56,
+   r0=2.65*open*(.96+.06*Math.sin(i*1.7+t*7)),r1=2.65*open*(.96+.06*Math.sin((i+1)*1.7+t*7)),
+   x0=Math.cos(a0)*r0,z0=Math.sin(a0)*r0,x1=Math.cos(a1)*r1,z1=Math.sin(a1)*r1,
+   seg=Math.hypot(x1-x0,z1-z0),half=i%5===0?.028:.013;
+  box((x0+x1)/2,-1.16,(z0+z1)/2,seg*.56,half,half,i%5===0?0x9CE8D2:C.AIR,
+      a*open*.60*(1-collapse*.30),Math.atan2(x1-x0,z1-z0))}
 
- // 5. anneau de sol : soixante segments (60)
- ringCubes(-1.16,60,i=>(2.55*open*shrink)*(.94+.06*Math.sin(t*7)),
-           i=>i%5===0?.058:.030,C.PALE,C.GLASS,
-           ()=>a*open*.82*(1-collapse*.30));
-
- // 6. mur de nuages : deux bandes de six colonnes de vingt (240)
+ // 6. mur de nuages (2 × 6 × 18)
  for(let band=0;band<2;band++)for(let column=0;column<6;column++){
-  const colAng=column*TAU/6+band*.52+spin*.22,colR=band===0?1.75:2.35;
-  for(let step=0;step<12;step++){const u=step/11,h=hash(salt,9200+band*311+column*53+step*11),
-    wobble=.16*Math.sin(t*7+column+u*5),radius=(colR+wobble)*open*(1-collapse*.30),
-    y=-.45+u*3.05+.10*Math.sin(t*5+step),size=(.098-u*.026)*(.80+h*.34);
-   cube(Math.cos(colAng)*radius,y,Math.sin(colAng)*radius,size,
-        col(C.AIR_DEEP,C.PALE,.24+u*.42+h*.18),a*open*(.20+.18*h),colAng)}}
+  const colAng=column*TAU/6+band*.52+spin*.22,colR=band===0?2.55:3.35;
+  for(let step=0;step<18;step++){const u=step/17,h=hash(salt,9200+band*311+column*53+step*11),
+    radius=(colR+.16*Math.sin(t*7+column+u*5))*open,size=(.150-u*.040)*(.80+h*.34);
+   cube(Math.cos(colAng)*radius,-.55+u*(H*.92)+.10*Math.sin(t*5+step),Math.sin(colAng)*radius,size,
+        col(C.AIR_DEEP,C.PALE,.24+u*.42+h*.18),a*open*(.14+.14*h),colAng)}}
 
- // 7. cent vingt grains périphériques
- for(let grain=0;grain<120;grain++){const h=hash(salt,9600+grain*41),h2=hash(salt,9700+grain*53),
-   cycle=fract(t*(.90+h*1.10)+grain*.6180339),ang=grain*2.3999632+t*(2.4+h2*2.6),
-   radius=(1.30+cycle*2.10)*(1-collapse*.35)*open,size=.020+.018*h;
-  cube(Math.cos(ang)*radius,-1.05+cycle*2.90+h2*.25,Math.sin(ang)*radius,size,
-       grain%4===0?C.WHITE:grain%2===0?C.PALE:C.AIR,a*(1-cycle)*(.24+.20*h),ang)}
+ // 7. poussière et débris fins (90)
+ for(let i=0;i<90;i++){const h=hash(salt,9600+i*41),h2=hash(salt,9700+i*53),
+   cyc=fract(t*(.85+h*1.05)+i*.6180339),ang=i*2.3999632+t*(2.4+h2*2.6),
+   radius=(.45+cyc*2.55)*open,size=.020+.018*h;
+  cube(Math.cos(ang)*radius,-1.05+cyc*H+h2*.25,Math.sin(ang)*radius,size,
+       i%4===0?(i%8===0?C.SLATE:C.WHITE):(i%2===0?C.PALE:C.AIR),a*(1-cyc)*(.26+.20*h),ang)}
 
  // 8. éclatement sommital (40)
- if(burst>.02)for(let i=0;i<40;i++){const h=hash(salt,9900+i*43),ang=i*TAU/40+spin,
-   radius=(.45+burst*(1.25+h*1.15))*open,y=2.92+burst*(.45+h*.95),size=.046+h*.038;
-  cube(Math.cos(ang)*radius,y,Math.sin(ang)*radius,size,
-       i%4===0?C.WHITE:i%2===0?C.GLASS:C.PALE,
-       a*burst*(.42+.26*h)*(1-collapse*.50))}
+ if(burst>.02){for(let i=0;i<40;i++){const h=hash(salt,9900+i*43),ang=i*TAU/40+spin,
+   radius=(.45+burst*(1.25+h*1.15))*open,size=.046+h*.038;
+  cube(Math.cos(ang)*radius,H*.96+burst*(.45+h*.95),Math.sin(ang)*radius,size,
+       i%4===0?C.WHITE:(i%2===0?C.GLASS:0x9CE8D2),a*burst*(.42+.26*h)*(1-collapse*.50),ang)}}
 
- // 9. effondrement vers le centre (40)
- if(collapse>.20)for(let i=0;i<40;i++){const h=hash(salt,10200+i*37),ang=i*TAU/40+spin*2,
-   radius=(1-collapse)*1.45*(.55+h*.70);
-  cube(Math.cos(ang)*radius,1.90+(h-.5)*.60-collapse*1.30,Math.sin(ang)*radius,.048,
-       C.WHITE,a*collapse*.58)}
+ // 9. effondrement (40)
+ if(collapse>.20){for(let i=0;i<40;i++){const h=hash(salt,10200+i*37),ang=i*TAU/40+spin*2,
+   radius=(1-collapse)*2.10*(.55+h*.70);
+  cube(Math.cos(ang)*radius,H*.62+(h-.5)*.60-collapse*(H*.55),Math.sin(ang)*radius,.048,
+       C.WHITE,a*collapse*.58,ang)}}
+
+ // 10. vrais blocs du sol du cyclone
+ groundDebris(104,H,1,-1.02);
  return out;
 }
 if(typeof module!=='undefined')module.exports={buildWind,C};

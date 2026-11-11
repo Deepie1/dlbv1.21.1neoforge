@@ -2244,7 +2244,10 @@ public final class WeaponVfxServerListener {
         for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
                 new AABB(cx - radius, cy - radius - 1.0, cz - radius,
                         cx + radius, cy + radius + 1.0, cz + radius))) {
-            if (!(candidate instanceof Enemy) || !candidate.isAlive()) continue;
+            // Toute créature vivante est concernée (la cible d'entraînement est un villageois en
+            // mode Paisible, donc pas une « Enemy ») : seuls le joueur attaquant et les joueurs
+            // sont exclus.
+            if (!candidate.isAlive() || candidate instanceof Player) continue;
             if (attacker != null && candidate.getUUID().equals(attacker.getUUID())) continue;
             if (candidate.distanceToSqr(cx, cy, cz) > radius * radius) continue;
             caught.add(candidate);
@@ -2272,9 +2275,10 @@ public final class WeaponVfxServerListener {
     }
 
     /**
-     * ŒIL DU CYCLONE (120 ticks) : les ennemis du rayon 3,10 sont happés, tournent autour de l'axe
-     * en montant de 4,20 blocs, prennent des dégâts toutes les neuf ticks, puis sont éjectés au
-     * tick 104 — la chute vanilla qui suit ajoute les dégâts de chute.
+     * ŒIL DU CYCLONE (170 ticks) : les ennemis du rayon 3,10 sont happés, tournent autour de l'axe
+     * en montant de <b>10,50 blocs</b>, prennent des dégâts toutes les dix ticks, puis sont lâchés
+     * tout en haut au tick 170 : la chute libre qui suit (10 blocs) ajoute les dégâts de chute
+     * vanilla, et l'éjection horizontale part dans une direction aléatoire.
      */
     private static void applyTempestGameplay(LivingEntity attacker, LivingEntity target,
                                              ServerLevel sl, float weaponDamage) {
@@ -2283,14 +2287,17 @@ public final class WeaponVfxServerListener {
         int attackerId = attacker == null ? -1 : attacker.getId();
         double cx = target.getX(), cy = target.getY() + target.getBbHeight() * 0.5, cz = target.getZ();
         double radius = 3.10;
-        long expiry = gameNow + 104;
+        long expiry = gameNow + 170;
         float pulse = net.minecraft.util.Mth.clamp(weaponDamage * 0.08f, 0.05f, 0.60f);
 
         List<LivingEntity> caught = new ArrayList<>();
         for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
                 new AABB(cx - radius, cy - radius - 1.0, cz - radius,
                         cx + radius, cy + radius + 1.0, cz + radius))) {
-            if (!(candidate instanceof Enemy) || !candidate.isAlive()) continue;
+            // Toute créature vivante est concernée (la cible d'entraînement est un villageois en
+            // mode Paisible, donc pas une « Enemy ») : seuls le joueur attaquant et les joueurs
+            // sont exclus.
+            if (!candidate.isAlive() || candidate instanceof Player) continue;
             if (attacker != null && candidate.getUUID().equals(attacker.getUUID())) continue;
             if (candidate.distanceToSqr(cx, cy, cz) > radius * radius) continue;
             caught.add(candidate);
@@ -2298,8 +2305,8 @@ public final class WeaponVfxServerListener {
             double startRadius = Math.max(0.80, Math.min(2.80, Math.sqrt(dx * dx + dz * dz)));
             rememberSignatureAi(candidate);
             WIND_HOLDS.put(candidate.getId(), new WindHold(expiry, gameNow, cx, cz,
-                    candidate.getY(), startRadius, 1.05, 4.20,
-                    Math.atan2(dz, dx), 0.28, pulse, 9, attackerId));
+                    candidate.getY(), startRadius, 0.75, 10.50,
+                    Math.atan2(dz, dx), 0.34, pulse, 10, attackerId));
         }
         if (caught.isEmpty()) {
             sl.playSound(null, cx, cy, cz, SoundEvents.ENDER_DRAGON_FLAP, SoundSource.PLAYERS, 0.55f, 0.60f);
@@ -2308,16 +2315,17 @@ public final class WeaponVfxServerListener {
 
         sl.playSound(null, cx, cy, cz, SoundEvents.ENDER_DRAGON_FLAP, SoundSource.PLAYERS, 0.90f, 0.55f);
         sl.playSound(null, cx, cy, cz, SoundEvents.WARDEN_EMERGE, SoundSource.PLAYERS, 0.35f, 0.60f);
-        for (int delay = 20; delay <= 100; delay += 20) {
-            final float pitch = 0.85f + (delay / 20) * 0.06f;
+        for (int delay = 20; delay <= 160; delay += 20) {
+            final float pitch = 0.78f + (delay / 20) * 0.05f;
             TestProcedure.schedule(sl, scheduleNow + delay, () -> sl.playSound(null, cx, cy, cz,
-                    SoundEvents.ENDER_DRAGON_FLAP, SoundSource.PLAYERS, 0.48f, pitch));
+                    SoundEvents.ENDER_DRAGON_FLAP, SoundSource.PLAYERS, 0.50f, pitch));
         }
-        TestProcedure.schedule(sl, scheduleNow + 60, () -> sl.playSound(null, cx, cy, cz,
+        TestProcedure.schedule(sl, scheduleNow + 90, () -> sl.playSound(null, cx, cy, cz,
                 SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.PLAYERS, 0.22f, 1.45f));
-        TestProcedure.schedule(sl, scheduleNow + 104, () -> {
-            sl.playSound(null, cx, cy, cz, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.55f, 1.20f);
-            sl.playSound(null, cx, cy, cz, SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS, 0.40f, 1.50f);
+        TestProcedure.schedule(sl, scheduleNow + 170, () -> {
+            // Le lâcher se produit TOUT EN HAUT : souffle grave + choc lointain.
+            sl.playSound(null, cx, cy + 10.5, cz, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.65f, 0.85f);
+            sl.playSound(null, cx, cy + 10.5, cz, SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS, 0.45f, 1.35f);
             for (LivingEntity victim : caught) {
                 if (!victim.isAlive() || victim.level() != sl) continue;
                 victim.addEffect(new MobEffectInstance(MobEffects.CONFUSION, 120, 0, false, true, true));
@@ -2384,15 +2392,19 @@ public final class WeaponVfxServerListener {
         }
     }
 
-    /** Fin de l'emprise : le mob est projeté en tangentiel et retombe — dégâts de chute vanilla. */
+    /**
+     * Fin de l'emprise : le mob est lâché au sommet de la tornade et projeté dans une direction
+     * <b>aléatoire</b> — pas la tangente de l'orbite — puis retombe : la chute libre vanilla ajoute
+     * ses propres dégâts de chute par-dessus ceux de la tornade.
+     */
     private static void releaseWindHold(LivingEntity target, WindHold hold) {
         WIND_HOLDS.remove(target.getId());
         refreshSignatureAi(target);
         if (!target.isAlive()) return;
-        long now = target.level().getGameTime();
-        double elapsed = Math.max(0.0, (double) (now - hold.started()));
-        double angle = hold.phase() + elapsed * hold.spin();
-        target.setDeltaMovement(Math.cos(angle) * 0.62, 0.45, Math.sin(angle) * 0.62);
+        var random = target.getRandom();
+        float flingAngle = random.nextFloat() * (float) (Math.PI * 2.0);
+        float strength = 1.45f + random.nextFloat() * 0.55f;
+        target.setDeltaMovement(Math.cos(flingAngle) * strength, 0.95, Math.sin(flingAngle) * strength);
         // La chute repart de zéro À CET INSTANT : tout ce qui suit est compté par le jeu.
         target.fallDistance = 0.0f;
         target.hurtMarked = true;

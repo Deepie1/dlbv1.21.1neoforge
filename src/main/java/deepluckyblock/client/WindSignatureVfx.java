@@ -6,61 +6,54 @@ import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
 /**
- * T374-WIND-REFONTE — élément VENT : trois signatures détaillées sur un moteur voxel commun.
+ * T374-WIND-REFONTE v2 — élément VENT : trois signatures voxel sur un moteur commun.
  *
- * <p><b>Pourquoi une classe dédiée ?</b> Le vent était éclaté : la lance vivait dans
- * {@link GaiaWorldTreeVfx} sous forme de modèle compacté (variant {@code ZEPHYR}), et Sandstorm
- * dormait en archive dans {@link EarthSignatureVfx} avec du code Terre. Aucune des deux n'avait de
- * langage visuel propre : ni rubans, ni tourbillons, ni grain. Cette classe leur donne une identité
- * unique — blanc glacé, azur, ardoise — et ajoute la troisième signature, l'Œil du cyclone.</p>
+ * <p><b>Langage visuel.</b> Une tornade réelle est <i>étroite au sol et large en altitude</i>, elle
+ * tourne dans un seul sens et elle est plus haute que large. Les trois signatures respectent
+ * maintenant ces trois règles : le bas plonge dans le sol, le haut s'évase, tout tourne dans le même
+ * sens, et la hauteur visible atteint 8 à 9 blocs au-dessus de la cible.</p>
  *
- * <p><b>Densité.</b> Chaque signature est composée de plusieurs couches indépendantes (sol, tresse,
- * noyau, corps, couronne, éclats, brume) qui apparaissent et disparaissent à des instants différents.
- * Le pic de charge reste sous les 2 000 cubes par image, très loin du plafond de 7 000 du manager :
- * plusieurs impacts simultanés tiennent sans être tronqués.</p>
+ * <p><b>Identité du vent.</b> Palette blanc glacé / azur / vert d'eau (aucun vert Gaia, aucun ocre
+ * Terre dans les rubans) ; la lance de zéphyr tombe du ciel, la tempête de sable garde son grain
+ * ocre mais son tourbillon interne est <b>au même sens</b> que l'extérieur, et l'œil du cyclone
+ * ouvre un anneau de calme tout en haut de l'entonnoir.</p>
  *
- * <p><b>Signatures.</b></p>
- * <ul>
- *   <li>{@link #ZEPHYR} — <i>Lance de zéphyr</i> : trois anneaux de poussière aspirés au sol, six brins
- *       hélicoïdaux contra-rotatifs qui se resserrent en tresse, noyau lumineux, puis trois lances
- *       d'air comprimé (fût double, huit ailettes, pointe de cristal, deux hélices de sillage) qui
- *       percent la cible et éclosent en couronne de compression, éclats de plumes et brume.</li>
- *   <li>{@link #SANDSTORM} — <i>Tempête de sable</i> : cinq strates de dune, cinq bras spiralés,
- *       sept rubans, trois mini-tornades, cent soixante grains et un voile ocre.</li>
- *   <li>{@link #TEMPEST} — <i>Œil du cyclone</i> : deux entonnoirs contra-rotatifs de huit brins,
- *       noyau, anneau de calme à rayons, débris en orbite, mur de nuages, éclatement puis
- *       effondrement.</li>
- * </ul>
+ * <p><b>Blocs réels.</b> Les cubes du sol (herbe, sable, pierre, neige…) ne sont pas simulés ici :
+ * {@link WindTerrainVfx} capture les vrais {@code BlockState} du terrain et les fait voler dans la
+ * spirale, exactement comme le séisme pour sa faille. Cette classe ne dessine que l'air, le sable et
+ * les éclats.</p>
  *
- * <p><b>Contraintes respectées.</b> Aucun appel dans la passe de rendu ne peut allouer de tableau :
- * tout est statique ou scalaire. Aucun RenderType n'est demandé ici — les cubes passent par les
- * émetteurs de {@link WeaponWorldVfxManager}, qui possède depuis V6.4 sa propre source de buffers
- * (le bug {@code Not building!} venait de deux RenderType sur une même source). Aucune géométrie
- * n'est écrite hors du repère fourni par l'appelant, donc le rendu reste aligné sur la caméra.</p>
+ * <p><b>Contraintes.</b> Aucune allocation dans la passe de rendu, aucun RenderType demandé ici,
+ * aucune géométrie hors du repère caméra-relatif fourni par le manager. Pic de charge mesuré :
+ * environ 1 250 cubes pour le zéphyr, 980 pour la tempête, 960 pour le cyclone — sous le plafond de
+ * 7 000 par image de {@link WeaponWorldVfxManager}.</p>
  */
 public final class WindSignatureVfx {
 
-    /** Lance de zéphyr (identifiant {@code ZEPHYR_WIND_LANCE}). */
+    /** Lance de zéphyr ({@code ZEPHYR_WIND_LANCE}). */
     public static final int ZEPHYR = 0;
-    /** Tempête de sable (identifiant {@code SANDSTORM_DUNE}, réactivé). */
+    /** Tempête de sable ({@code SANDSTORM_DUNE}). */
     public static final int SANDSTORM = 1;
-    /** Œil du cyclone (identifiant {@code TEMPEST_EYE}). */
+    /** Œil du cyclone ({@code TEMPEST_EYE}). */
     public static final int TEMPEST = 2;
 
     /** Palette vent : du plus sombre au plus lumineux. */
     private static final int AIR_DEEP = 0x2C4658;
     private static final int AIR = 0x4E7F99;
     private static final int AZURE = 0x6FBEDC;
+    private static final int MINT = 0x9CE8D2;
     private static final int PALE = 0xA9E2F2;
     private static final int GLASS = 0xD9F5FF;
     private static final int WHITE = 0xF4FDFF;
-    private static final int SLATE_DARK = 0x59636B;
-    private static final int SLATE = 0x8C9AA4;
-    private static final int STEEL = 0xB9C6CE;
+    /** Sable : le tourbillon interne utilise volontairement les valeurs les plus sombres. */
+    private static final int SAND_DEEP = 0x4A3A26;
     private static final int SAND_DARK = 0x6E5B41;
     private static final int SAND = 0xA88B5E;
     private static final int SAND_LIGHT = 0xDCC79B;
     private static final int DUST = 0xF0E2BF;
+    /** Débris minéraux (les vrais blocs viennent de WindTerrainVfx). */
+    private static final int SLATE_DARK = 0x59636B;
+    private static final int SLATE = 0x8C9AA4;
 
     private static final float TAU = (float) (Math.PI * 2.0);
 
@@ -69,11 +62,11 @@ public final class WindSignatureVfx {
     /**
      * Point d'entrée unique des trois signatures.
      *
-     * @param cx,cy,cz origine caméra-relative de l'effet (centre de la cible)
+     * @param cx,cy,cz origine caméra-relative (centre de la cible)
      * @param dx,dz    direction horizontale normalisée attaquant → cible
-     * @param t        progression 0..1 sur la durée visuelle de l'effet
+     * @param t        progression 0..1 sur la durée visuelle
      * @param alpha    opacité de base fournie par le manager (0..255)
-     * @param salt     graine stable de l'instance, pour un tirage déterministe
+     * @param salt     graine stable de l'instance
      */
     public static void render(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                               float cx, float cy, float cz, float t,
@@ -88,310 +81,93 @@ public final class WindSignatureVfx {
     }
 
     // ============================================================================================
-    // 1. ZÉPHYR — aspiration, colonne, lance de cristal détaillée, couronne, éclosion
+    // 1. ZÉPHYR — trois lances qui TOMBENT DU CIEL, couronne de compression, éclosion
     // ============================================================================================
 
     /**
-     * Chorégraphie (durée serveur 80 ticks) :
+     * Chorégraphie (80 ticks) :
      * <ul>
-     *   <li>0,00–0,20 aspiration : trois anneaux de poussière se resserrent au sol (144 cubes) ;</li>
-     *   <li>0,06–0,80 colonne : cinq brins extérieurs et trois brins intérieurs forment un entonnoir
-     *       large en haut qui se resserre vers la lance (272) ;</li>
-     *   <li>0,10–0,70 formation : la lance principale descend — lame en losange de 14 niveaux,
-     *       douille de 3 anneaux, fût à six pans de 20 sections, 5 viroles, 4 ailettes, pommeau,
-     *       deux hélices de 26 et dix plumes (≈ 600 cubes à elle seule) ;</li>
-     *   <li>0,22–0,46 descente : trois lances satellites en trident, mêmes pièces à échelle
-     *       réduite (3 × 92) ;</li>
-     *   <li>0,44–0,58 percement : couronne de compression au sol (112) ;</li>
-     *   <li>0,48–0,92 éclosion : éclats (40), annelets (72), brume (12) ;</li>
-     *   <li>0,84–1,00 dissipation totale.</li>
+     *   <li>0,00–0,24 aspiration : deux anneaux de poussière se resserrent au sol ;</li>
+     *   <li>0,06–0,50 chute : la lance principale part de <b>+8,6 blocs</b> et perce la cible ;</li>
+     *   <li>0,16–0,60 les deux lances satellites suivent, décalées, en V ;</li>
+     *   <li>0,30–0,72 colonne d'air comprimé qui se resserre autour de chaque fût ;</li>
+     *   <li>0,50–0,62 couronne de compression au sol ;</li>
+     *   <li>0,60–1,00 éclosion d'éclats, d'annelets et de brume.</li>
      * </ul>
-     * Pic de charge : environ 1 240 cubes par image.
      */
     private static void renderZephyr(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                      float cx, float cy, float cz, float t,
                                      float dx, float dz, int alpha, int salt) {
-        int a = Math.round(alpha * smooth(t / 0.04f) * (1.0f - smooth((t - 0.86f) / 0.14f)));
+        int a = Math.round(alpha * smooth(t / 0.05f) * (1.0f - smooth((t - 0.88f) / 0.12f)));
         if (a <= 4) return;
-        float suck = smooth(t / 0.20f);
-        float drop = easeOut((t - 0.22f) / 0.24f);
-        float pierce = smooth((t - 0.44f) / 0.09f);
-        float blow = smooth((t - 0.50f) / 0.40f);
-        float fade = 1.0f - smooth((t - 0.84f) / 0.16f);
-        float impact = 1.0f - smooth(Math.abs(t - 0.49f) / 0.085f);
-        float core = smooth(t / 0.16f) * (1.0f - smooth((t - 0.70f) / 0.30f));
-        float shards = smooth((t - 0.48f) / 0.20f) * (1.0f - smooth((t - 0.88f) / 0.12f));
+        float suck = smooth(t / 0.22f);
+        float fade = 1.0f - smooth((t - 0.86f) / 0.14f);
+        float impact = 1.0f - smooth(Math.abs(t - 0.52f) / 0.10f);
+        float shards = smooth((t - 0.54f) / 0.22f) * (1.0f - smooth((t - 0.90f) / 0.10f));
 
-        // ---- 1. Sol : trois anneaux de poussière aspirés vers la base (144 cubes) ----
-        for (int ring = 0; ring < 3; ring++) {
-            float baseRadius = 0.90f + ring * 0.72f;
-            float spinDir = (ring % 2 == 0) ? 1.0f : -1.0f;
+        // ---- 1. Sol : deux anneaux de poussière aspirés vers la base (96 cubes) ----
+        for (int ring = 0; ring < 2; ring++) {
+            float baseRadius = 1.05f + ring * 0.85f;
+            float spinDir = (ring == 0) ? 1.0f : -1.0f;
             for (int i = 0; i < 48; i++) {
                 float h = hash(salt, 2100 + ring * 137 + i * 13);
                 float ang = i * TAU / 48.0f + t * (5.5f + ring * 1.4f) * spinDir + ring * 0.31f;
                 float radius = baseRadius * (0.90f + 0.18f * Mth.sin(t * 9.0f + i * 0.7f))
                         * (0.34f + 0.66f * suck);
-                float f = Mth.cos(ang) * radius;
-                float l = Mth.sin(ang) * radius * 0.95f;
                 float y = -1.15f + h * 0.06f + 0.10f * suck * Mth.sin(ang * 2.0f + t * 6.0f);
-                float size = (0.046f + 0.028f * h) * (1.0f + ring * 0.20f);
-                rot(vc, mat, tmp, cx, cy, cz, dx, dz, f, l, y,
+                float size = (0.048f + 0.030f * h) * (1.0f + ring * 0.18f);
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * radius, Mth.sin(ang) * radius * 0.95f, y,
                         size * 1.75f, size * 0.45f, size * 1.20f,
                         ang, 0.0f, 0.0f,
-                        color(AIR_DEEP, PALE, 0.26f + h * 0.36f + ring * 0.06f),
+                        color(AIR_DEEP, MINT, 0.30f + h * 0.40f + ring * 0.06f),
                         Math.round(a * fade * suck * (0.34f + 0.28f * h)));
             }
         }
 
-        // ---- 2. Colonne d'air : entonnoir large en haut, resserré vers la lance (272 cubes) ----
-        for (int layer = 0; layer < 2; layer++) {
-            int strands = (layer == 0) ? 5 : 3;
-            int levels = (layer == 0) ? 40 : 24;
-            for (int strand = 0; strand < strands; strand++) {
-                float spinDir = (layer == 0)
-                        ? ((strand % 2 == 0) ? 1.0f : -1.0f)
-                        : ((strand % 2 == 0) ? -1.0f : 1.0f);
-                float phase = strand * TAU / strands + layer * 0.7f;
-                for (int level = 0; level < levels; level++) {
-                    float u = level / (float) (levels - 1);
-                    float rise = smooth((t - 0.06f - u * 0.10f) / 0.24f) * (1.0f - smooth((t - 0.80f) / 0.18f));
-                    if (rise <= 0.01f) continue;
-                    float h = hash(salt, 2400 + layer * 601 + strand * 173 + level * 29);
-                    float rTop = (layer == 0) ? 1.00f : 0.58f;
-                    float rLow = (layer == 0) ? 0.46f : 0.22f;
-                    float radius = (rTop + (rLow - rTop) * u) * (1.0f + 0.10f * Mth.sin(t * 8.0f + strand + u * 7.0f));
-                    float ang = phase + u * 12.5f * spinDir + t * (11.0f + strand * 0.6f) * spinDir;
-                    float y = 3.30f - u * 1.96f + 0.05f * Mth.sin(t * 6.0f + u * 12.0f);
-                    float size = ((layer == 0 ? 0.090f : 0.066f) - u * (layer == 0 ? 0.046f : 0.026f))
-                            * (0.84f + h * 0.30f);
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            Mth.cos(ang) * radius, Mth.sin(ang) * radius, y,
-                            size * 1.15f, size, size * 1.15f,
-                            color(AIR_DEEP, (layer == 0) ? PALE : WHITE, 0.30f + u * 0.46f + h * 0.18f),
-                            Math.round(a * rise * (layer == 0
-                                    ? (0.22f + 0.22f * h)
-                                    : (0.18f + 0.18f * h))));
-                }
+        // ---- 2. Colonne d'air comprimé : cinq brins qui se resserrent sur la trajectoire ----
+        for (int strand = 0; strand < 5; strand++) {
+            float spinDir = (strand % 2 == 0) ? 1.0f : -1.0f;
+            for (int level = 0; level < 26; level++) {
+                float u = level / 25.0f;
+                float rise = smooth((t - 0.10f - u * 0.06f) / 0.22f) * (1.0f - smooth((t - 0.76f) / 0.20f));
+                if (rise <= 0.01f) continue;
+                float h = hash(salt, 2400 + strand * 173 + level * 29);
+                float radius = (1.55f - u * 1.05f) * (1.0f + 0.10f * Mth.sin(t * 8.0f + strand + u * 7.0f));
+                float ang = strand * TAU / 5.0f + u * 9.5f * spinDir + t * 15.0f * spinDir;
+                float y = -1.10f + u * 5.60f;
+                float size = (0.085f - u * 0.045f) * (0.84f + h * 0.30f);
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * radius, Mth.sin(ang) * radius, y,
+                        size * 1.15f, size, size * 1.15f,
+                        color(AIR_DEEP, MINT, 0.34f + u * 0.46f + h * 0.18f),
+                        Math.round(a * rise * (0.20f + 0.20f * h)));
             }
         }
 
-        // ---- 3. Lance principale : lame taillée, douille, fût à six pans, viroles, ailettes ----
-        float tipY = Mth.lerp(drop, 0.78f, -0.86f) - pierce * 0.22f;
-        float wobbleX = Mth.cos(t * 2.0f) * 0.018f;
-        float wobbleZ = Mth.sin(t * 2.0f) * 0.018f;
-        float hp = (float) (Math.PI * 0.5);
+        // ---- 3. Les trois lances : chute depuis +8,6 blocs, décalées dans le temps ----
+        // (l'arme n'est plus une flèche : fût long, tête facettée, viroles, ailerons, sillage)
+        float mainP = easeIn((t - 0.06f) / 0.44f);
+        float mainY = Mth.lerp(mainP, 8.60f, -0.55f);
+        spear(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, mainY, 1.0f,
+                t, a, salt, 3);
+        float sat1P = easeIn((t - 0.16f) / 0.44f);
+        spear(vc, mat, tmp, cx, cy, cz, dx, dz, 0.95f, -1.05f,
+                Mth.lerp(sat1P, 8.20f, -0.75f), 0.80f, t * 0.94f, a, salt, 6);
+        float sat2P = easeIn((t - 0.24f) / 0.44f);
+        spear(vc, mat, tmp, cx, cy, cz, dx, dz, -1.10f, 0.95f,
+                Mth.lerp(sat2P, 7.90f, -0.70f), 0.74f, t * 1.06f, a, salt, 9);
 
-        // 3a. lame : quatorze niveaux, section en losange (quatre faces + arête centrale)
-        for (int bl = 0; bl < 14; bl++) {
-            float u = bl / 13.0f;
-            float y0 = tipY - 0.44f + u * 1.02f;
-            float half = 0.016f + u * 0.186f;
-            for (int q = 0; q < 4; q++) {
-                float qa = q * hp;
-                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        wobbleX + Mth.cos(qa) * half * 0.60f,
-                        wobbleZ + Mth.sin(qa) * half * 0.60f, y0,
-                        half * 0.56f, half * 0.32f, half * 0.56f,
-                        qa, 0.0f, 0.0f,
-                        (q % 2 == 0) ? WHITE : GLASS,
-                        Math.round(a * (0.94f - 0.14f * u)));
-            }
-            rot(vc, mat, tmp, cx, cy, cz, dx, dz, wobbleX, wobbleZ, y0,
-                    half * 0.46f, half * 0.46f, half * 0.46f, 0.0f, 0.0f, 0.0f,
-                    WHITE, Math.round(a * (0.98f - 0.20f * u)));
-        }
-
-        // 3b. douille : trois anneaux hexagonaux sous le fût
-        for (int ring = 0; ring < 3; ring++) {
-            float y0 = tipY + 0.60f + ring * 0.10f;
-            float rr = 0.182f - ring * 0.012f;
-            for (int q = 0; q < 6; q++) {
-                float qa = q * TAU / 6.0f + ring * 0.52f;
-                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        wobbleX + Mth.cos(qa) * rr, wobbleZ + Mth.sin(qa) * rr, y0,
-                        0.046f, 0.020f, 0.046f, qa, 0.0f, 0.0f,
-                        (ring == 1) ? GLASS : PALE, Math.round(a * 0.94f));
-            }
-        }
-
-        // 3c. fût : vingt sections à six pans, âme lumineuse au centre
-        for (int seg = 0; seg < 20; seg++) {
-            float u0 = seg / 19.0f;
-            float y0 = tipY + 0.92f + u0 * 1.66f;
-            float half = 0.152f - u0 * 0.042f;
-            for (int q = 0; q < 6; q++) {
-                float qa = q * TAU / 6.0f + u0 * 1.1f;
-                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        wobbleX + Mth.cos(qa) * half * 0.88f,
-                        wobbleZ + Mth.sin(qa) * half * 0.88f, y0,
-                        half * 0.56f, half * 0.52f, half * 0.56f, qa, 0.0f, 0.0f,
-                        color(PALE, WHITE, 0.26f + u0 * 0.58f), Math.round(a * 0.98f));
-            }
-            rot(vc, mat, tmp, cx, cy, cz, dx, dz, wobbleX, wobbleZ, y0,
-                    half * 0.50f, half * 0.50f, half * 0.50f, 0.0f, 0.0f, 0.0f,
-                    color(GLASS, WHITE, 0.50f + u0 * 0.44f), Math.round(a * 0.90f));
-        }
-
-        // 3d. cinq viroles de cristal autour du fût
-        for (int ring = 0; ring < 5; ring++) {
-            float u0 = (ring + 0.5f) / 5.0f;
-            float y0 = tipY + 0.92f + u0 * 1.66f;
-            float rr = 0.174f - u0 * 0.026f;
-            for (int q = 0; q < 6; q++) {
-                float qa = q * TAU / 6.0f + ring * 0.31f;
-                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        wobbleX + Mth.cos(qa) * rr, wobbleZ + Mth.sin(qa) * rr, y0,
-                        0.044f, 0.020f, 0.044f, qa, 0.0f, 0.0f,
-                        (ring % 2 == 0) ? WHITE : GLASS, Math.round(a * 0.96f));
-            }
-        }
-
-        // 3e. quatre ailettes recourbées vers le haut
-        for (int fin = 0; fin < 4; fin++) {
-            float fa = fin * TAU / 4.0f + t * 0.7f;
-            for (int k = 0; k < 4; k++) {
-                float u = k / 3.0f;
-                float reach = 0.18f + u * 0.30f;
-                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        Mth.cos(fa) * reach, Mth.sin(fa) * reach, tipY + 0.74f + u * 0.40f,
-                        0.070f - u * 0.020f, 0.062f, 0.040f, fa + u * 0.5f, 0.0f, 0.0f,
-                        (fin % 2 == 0) ? PALE : AZURE,
-                        Math.round(a * (0.92f - 0.24f * u)));
-            }
-        }
-
-        // 3f. pommeau au sommet du fût
-        for (int q = 0; q < 6; q++) {
-            float qa = q * TAU / 6.0f + t * 1.2f;
-            rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    wobbleX + Mth.cos(qa) * 0.115f, wobbleZ + Mth.sin(qa) * 0.115f,
-                    tipY + 2.62f, 0.058f, 0.058f, 0.058f, qa, 0.0f, 0.0f,
-                    (q % 2 == 0) ? WHITE : PALE, Math.round(a * 0.90f));
-        }
-        rot(vc, mat, tmp, cx, cy, cz, dx, dz, wobbleX, wobbleZ, tipY + 2.70f,
-                0.082f, 0.082f, 0.082f, 0.0f, 0.0f, 0.0f,
-                GLASS, Math.round(a * 0.94f));
-
-        // 3g. deux hélices contra-rotatives autour du fût
-        for (int helix = 0; helix < 2; helix++) {
-            float spinDir = (helix == 0) ? 1.0f : -1.0f;
-            for (int step = 0; step < 26; step++) {
-                float u0 = step / 25.0f;
-                float ra = u0 * TAU * 2.4f * spinDir + t * 22.0f * spinDir + helix * 1.7f;
-                float y0 = tipY + 0.20f + u0 * 2.20f;
-                float r0 = (0.30f + u0 * 0.10f) + blow * (0.80f + u0 * 0.40f);
-                float size = 0.026f + 0.008f * hash(salt, 4100 + step * 17 + helix * 7);
-                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        Mth.cos(ra) * r0, Mth.sin(ra) * r0, y0,
-                        size, size, size * 3.0f, ra, 0.0f, 0.0f,
-                        (helix == 0) ? AZURE : GLASS,
-                        Math.round(a * fade * (1.0f - blow * 0.40f) * (0.60f - u0 * 0.24f)));
-            }
-        }
-
-        // 3h. plumes arrachées au fût
-        for (int plume = 0; plume < 10; plume++) {
-            float h = hash(salt, 4300 + plume * 41);
-            float drift = blow * (0.70f + h * 1.80f);
-            float pa = plume * TAU / 10.0f + t * 2.2f;
-            rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    Mth.cos(pa) * (0.34f + drift * 1.05f),
-                    Mth.sin(pa) * (0.34f + drift * 1.05f),
-                    tipY + 1.10f + h * 1.20f + drift * 0.55f,
-                    0.030f, 0.125f, 0.024f, pa, 0.0f, 0.0f,
-                    (plume % 3 == 0) ? WHITE : PALE,
-                    Math.round(a * fade * (1.0f - blow) * (0.42f + h * 0.28f)));
-        }
-
-        // ---- 4. Trois lances satellites en trident : mêmes pièces à échelle réduite (3 × 92) ----
-        for (int spear = 0; spear < 3; spear++) {
-            float ang = spear * 2.0943951f + 0.60f;
-            float rad = 0.58f * (1.0f - drop * 0.55f);
-            float tipY2 = tipY + 0.30f + spear * 0.06f;
-            float lat = Mth.cos(ang) * rad;
-            float fwd = Mth.sin(ang) * rad;
-
-            // lame
-            for (int bl = 0; bl < 8; bl++) {
-                float u = bl / 7.0f;
-                float y0 = tipY2 - 0.26f + u * 0.58f;
-                float half = 0.012f + u * 0.092f;
-                for (int side = 0; side < 2; side++) {
-                    float sg = (side == 0) ? 1.0f : -1.0f;
-                    rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            fwd + sg * half * 0.50f, lat + sg * half * 0.50f, y0,
-                            half * 0.42f, half * 0.30f, half * 0.42f,
-                            0.0f, 0.0f, ang,
-                            (side == 0) ? WHITE : GLASS, Math.round(a * 0.92f));
-                }
-                rot(vc, mat, tmp, cx, cy, cz, dx, dz, fwd, lat, y0,
-                        half * 0.28f, half * 0.28f, half * 0.28f, 0.0f, 0.0f, 0.0f,
-                        WHITE, Math.round(a * 0.94f));
-            }
-
-            // fût à quatre pans
-            for (int seg = 0; seg < 9; seg++) {
-                float u0 = seg / 8.0f;
-                float y0 = tipY2 + 0.32f + u0 * 0.94f;
-                float half = 0.078f - u0 * 0.020f;
-                for (int q = 0; q < 4; q++) {
-                    float qa = q * TAU / 4.0f + u0 * 1.0f;
-                    rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            fwd + Mth.cos(qa) * half * 0.90f, lat + Mth.sin(qa) * half * 0.90f, y0,
-                            half * 0.80f, half * 0.62f, half * 0.80f, qa, 0.0f, 0.0f,
-                            color(PALE, WHITE, 0.30f + u0 * 0.52f), Math.round(a * 0.90f));
-                }
-                rot(vc, mat, tmp, cx, cy, cz, dx, dz, fwd, lat, y0,
-                        half * 0.52f, half * 0.52f, half * 0.52f, 0.0f, 0.0f, 0.0f,
-                        color(GLASS, WHITE, 0.48f + u0 * 0.42f), Math.round(a * 0.84f));
-            }
-
-            // deux viroles
-            for (int ring = 0; ring < 2; ring++) {
-                float u0 = (ring + 0.5f) / 2.0f;
-                float y0 = tipY2 + 0.32f + u0 * 0.94f;
-                float rr = 0.090f - u0 * 0.012f;
-                for (int q = 0; q < 4; q++) {
-                    float qa = q * TAU / 4.0f + ring * 0.4f;
-                    rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            fwd + Mth.cos(qa) * rr, lat + Mth.sin(qa) * rr, y0,
-                            0.032f, 0.014f, 0.032f, qa, 0.0f, 0.0f,
-                            GLASS, Math.round(a * 0.90f));
-                }
-            }
-
-            // trois ailettes
-            for (int fin = 0; fin < 3; fin++) {
-                float fa = fin * TAU / 3.0f + ang * 2.0f;
-                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        fwd + Mth.cos(fa) * 0.10f, lat + Mth.sin(fa) * 0.10f, tipY2 + 0.22f,
-                        0.040f, 0.030f, 0.020f, fa, 0.0f, 0.0f,
-                        PALE, Math.round(a * 0.86f));
-            }
-
-            // hélice d'air
-            for (int step = 0; step < 12; step++) {
-                float u0 = step / 11.0f;
-                float ra = u0 * TAU * 1.8f + t * 18.0f * ((spear % 2 == 0) ? 1.0f : -1.0f) + spear;
-                float y0 = tipY2 + 0.16f + u0 * 1.15f;
-                float r0 = 0.16f + u0 * 0.06f;
-                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        fwd + Mth.cos(ra) * r0, lat + Mth.sin(ra) * r0, y0,
-                        0.020f, 0.020f, 0.062f, ra, 0.0f, 0.0f,
-                        AZURE, Math.round(a * fade * (0.42f - u0 * 0.16f)));
-            }
-        }
-
-        // ---- 5. Couronne de compression au sol : deux anneaux de cubes + éclats (112) ----
+        // ---- 4. Couronne de compression au sol (96 cubes) ----
         if (impact > 0.02f) {
-            float reach = 0.34f + (1.0f - impact) * 1.75f;
+            float reach = 0.34f + (1.0f - impact) * 1.85f;
             for (int i = 0; i < 48; i++) {
                 float ang = i * TAU / 48.0f;
-                float size = (i % 4 == 0) ? 0.050f : 0.026f;
+                float size = (i % 4 == 0) ? 0.052f : 0.026f;
                 rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                         Mth.cos(ang) * reach, Mth.sin(ang) * reach, -0.55f,
                         size, size, size, ang, 0.0f, 0.0f,
-                        (i % 4 == 0) ? WHITE : GLASS,
+                        (i % 4 == 0) ? WHITE : MINT,
                         Math.round(a * impact * 0.94f));
             }
             float reach2 = reach * 0.72f;
@@ -404,208 +180,297 @@ public final class WindSignatureVfx {
                         (i % 3 == 0) ? PALE : GLASS,
                         Math.round(a * impact * 0.62f));
             }
-            for (int pit = 0; pit < 28; pit++) {
-                float h = hash(salt, 5100 + pit * 53);
-                float pa = pit * TAU / 28.0f + h * 0.5f;
-                float pr = reach * (0.55f + h * 0.75f);
-                float size = 0.046f + 0.026f * h;
-                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        Mth.cos(pa) * pr, Mth.sin(pa) * pr, -0.60f + (h - 0.5f) * 0.55f,
-                        size, size, size, pa, 0.0f, 0.0f,
-                        (pit % 3 == 0) ? WHITE : ((pit % 3 == 1) ? GLASS : PALE),
-                        Math.round(a * impact * (0.48f + h * 0.32f)));
-            }
         }
 
-        // ---- 6. Éclats emportés par l'éclosion (40 cubes) ----
-        for (int shard = 0; shard < 40; shard++) {
+        // ---- 5. Éclats et brume (48 cubes) ----
+        for (int shard = 0; shard < 36; shard++) {
             float h = hash(salt, 5600 + shard * 67);
             float h2 = hash(salt, 5700 + shard * 41);
             float pa = shard * 2.3999632f + t * (1.6f + h * 2.2f);
-            float pr = 0.42f + blow * (1.15f + h * 1.85f);
-            float y = -0.55f + (h2 - 0.30f) * 1.40f + blow * (0.45f + h * 1.10f);
+            float pr = 0.42f + smooth((t - 0.54f) / 0.40f) * (1.15f + h * 1.85f);
             rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    Mth.cos(pa) * pr, Mth.sin(pa) * pr, y,
+                    Mth.cos(pa) * pr, Mth.sin(pa) * pr,
+                    -0.55f + (h2 - 0.30f) * 1.40f + smooth((t - 0.54f) / 0.40f) * (0.45f + h * 1.10f),
                     0.028f + 0.012f * h2, 0.110f + 0.065f * h, 0.024f,
                     pa, 0.0f, 0.0f,
-                    (shard % 4 == 0) ? WHITE : ((shard % 3 == 0) ? GLASS : PALE),
-                    Math.round(a * shards * (1.0f - blow * 0.40f) * (0.46f + 0.30f * h)));
+                    (shard % 4 == 0) ? WHITE : ((shard % 3 == 0) ? GLASS : MINT),
+                    Math.round(a * shards * (0.46f + 0.30f * h)));
         }
-
-        // ---- 7. Brume périphérique (12 cubes très discrets) ----
         for (int mist = 0; mist < 12; mist++) {
             float h = hash(salt, 6100 + mist * 43);
             float pa = mist * TAU / 12.0f + t * 3.2f + h;
             float pr = 2.05f + h * 0.90f;
             rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    Mth.cos(pa) * pr, Mth.sin(pa) * pr, -0.85f + h * 2.60f + blow * 0.30f,
+                    Mth.cos(pa) * pr, Mth.sin(pa) * pr, -0.85f + h * 4.20f,
                     0.130f, 0.130f, 0.130f, pa, 0.0f, 0.0f,
-                    AIR, Math.round(a * fade * (0.06f + 0.06f * h)));
+                    AIR, Math.round(a * fade * (0.07f + 0.07f * h)));
+        }
+    }
+
+    /**
+     * Une lance verticale complète : tête facettée de 14 niveaux, collier, fût hexagonal de 16
+     * sections, quatre viroles, pommeau, deux ailerons et un sillage hélicoïdal.
+     *
+     * @param offF,offL décalage latéral de la lance dans le repère de l'attaque
+     * @param headY     hauteur de la pointe (elle descend de +8,6 à −0,5)
+     * @param s         échelle globale (1,00 pour la principale, 0,74..0,80 pour les satellites)
+     */
+    private static void spear(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                              float cx, float cy, float cz, float dx, float dz,
+                              float offF, float offL, float headY, float s,
+                              float t, int a, int salt, int seed) {
+        if (headY > 12.0f) return;
+
+        // 3a. Tête : cône à six faces, pointe fine, base large — lisible comme une lame de lance.
+        for (int bl = 0; bl < 14; bl++) {
+            float u = bl / 13.0f;
+            float half = (0.026f + u * 0.250f) * s;
+            float y0 = headY + bl * 0.112f * s;
+            for (int q = 0; q < 6; q++) {
+                float qa = q * TAU / 6.0f + bl * 0.16f;
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        offF + Mth.cos(qa) * half * 0.62f,
+                        offL + Mth.sin(qa) * half * 0.62f, y0,
+                        half * 0.52f, half * 0.34f, half * 0.52f,
+                        qa, 0.0f, 0.0f,
+                        (q % 2 == 0) ? WHITE : GLASS,
+                        Math.round(a * (0.96f - 0.16f * u)));
+            }
+            rot(vc, mat, tmp, cx, cy, cz, dx, dz, offF, offL, y0,
+                    half * 0.52f, half * 0.60f, half * 0.52f, 0.0f, 0.0f, 0.0f,
+                    MINT, Math.round(a * (0.98f - 0.20f * u)));
         }
 
-        // ---- 8. Quatre annelets secondaires le long de la colonne (72 cubes) ----
-        for (int cell = 0; cell < 4; cell++) {
-            float ca = cell * 2.0943951f + 0.70f;
-            float cf = Mth.cos(ca) * (1.00f + 0.30f * cell);
-            float cl = Mth.sin(ca) * (1.00f + 0.30f * cell);
-            float cyy = 0.70f + cell * 0.62f + impact * 0.20f;
-            float scale = (0.13f + impact * 0.20f) * (1.0f - blow * 0.55f);
-            if (scale <= 0.02f) continue;
-            for (int i = 0; i < 18; i++) {
-                float h = hash(salt, 6800 + cell * 97 + i * 19);
-                float ang = i * TAU / 18.0f + t * 16.0f * ((cell % 2 == 0) ? 1.0f : -1.0f);
-                float rr = scale * (0.75f + 0.45f * h);
-                float size = 0.017f + 0.013f * h;
+        // 3b. Collier sous la tête : deux anneaux de huit cubes.
+        for (int ring = 0; ring < 2; ring++) {
+            float y0 = headY + (1.56f + ring * 0.10f) * s;
+            float rr = (0.285f - ring * 0.022f) * s;
+            for (int q = 0; q < 8; q++) {
+                float qa = q * TAU / 8.0f + ring * 0.40f;
                 rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        cf + Mth.cos(ang) * rr, cl + Mth.sin(ang) * rr, cyy,
-                        size, size, size, ang, 0.0f, 0.0f,
-                        color(AZURE, WHITE, 0.35f + h * 0.45f),
-                        Math.round(a * impact * (0.34f + 0.28f * h)));
+                        offF + Mth.cos(qa) * rr, offL + Mth.sin(qa) * rr, y0,
+                        0.052f * s, 0.024f * s, 0.052f * s, qa, 0.0f, 0.0f,
+                        (ring == 0) ? GLASS : PALE, Math.round(a * 0.95f));
+            }
+        }
+
+        // 3c. Fût : seize sections à six pans, âme lumineuse au centre.
+        for (int seg = 0; seg < 16; seg++) {
+            float u0 = seg / 15.0f;
+            float y0 = headY + (1.78f + u0 * 2.30f) * s;
+            float half = (0.118f - u0 * 0.034f) * s;
+            for (int q = 0; q < 6; q++) {
+                float qa = q * TAU / 6.0f + u0 * 1.1f;
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        offF + Mth.cos(qa) * half * 0.90f,
+                        offL + Mth.sin(qa) * half * 0.90f, y0,
+                        half * 0.58f, half * 0.62f, half * 0.58f, qa, 0.0f, 0.0f,
+                        color(MINT, WHITE, 0.30f + u0 * 0.56f), Math.round(a * 0.97f));
+            }
+            rot(vc, mat, tmp, cx, cy, cz, dx, dz, offF, offL, y0,
+                    half * 0.52f, half * 0.60f, half * 0.52f, 0.0f, 0.0f, 0.0f,
+                    color(GLASS, WHITE, 0.52f + u0 * 0.42f), Math.round(a * 0.90f));
+        }
+
+        // 3d. Quatre viroles de cristal.
+        for (int ring = 0; ring < 4; ring++) {
+            float u0 = (ring + 0.5f) / 4.0f;
+            float y0 = headY + (1.78f + u0 * 2.30f) * s;
+            float rr = (0.134f - u0 * 0.022f) * s;
+            for (int q = 0; q < 8; q++) {
+                float qa = q * TAU / 8.0f + ring * 0.31f;
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        offF + Mth.cos(qa) * rr, offL + Mth.sin(qa) * rr, y0,
+                        0.040f * s, 0.020f * s, 0.040f * s, qa, 0.0f, 0.0f,
+                        (ring % 2 == 0) ? WHITE : GLASS, Math.round(a * 0.94f));
+            }
+        }
+
+        // 3e. Deux ailerons recourbés à la base de la tête : ils donnent la silhouette « lance ».
+        for (int fin = 0; fin < 2; fin++) {
+            float side = (fin == 0) ? 1.0f : -1.0f;
+            for (int k = 0; k < 4; k++) {
+                float u = k / 3.0f;
+                float reach = (0.20f + u * 0.34f) * s;
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        offF + side * reach, offL + side * reach * 0.30f,
+                        headY + (1.52f - u * 0.42f) * s,
+                        (0.070f - u * 0.022f) * s, (0.060f - u * 0.020f) * s, 0.040f * s,
+                        side * (0.30f + u * 0.40f), side * 0.22f, 0.0f,
+                        (k % 2 == 0) ? MINT : AZURE,
+                        Math.round(a * (0.92f - 0.22f * u)));
+            }
+        }
+
+        // 3f. Pommeau : anneau de six cubes et cabochon.
+        for (int q = 0; q < 6; q++) {
+            float qa = q * TAU / 6.0f + t * 1.4f;
+            rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                    offF + Mth.cos(qa) * 0.125f * s, offL + Mth.sin(qa) * 0.125f * s,
+                    headY + 4.16f * s, 0.050f * s, 0.050f * s, 0.050f * s, qa, 0.0f, 0.0f,
+                    (q % 2 == 0) ? WHITE : PALE, Math.round(a * 0.92f));
+        }
+        rot(vc, mat, tmp, cx, cy, cz, dx, dz, offF, offL, headY + 4.26f * s,
+                0.075f * s, 0.075f * s, 0.075f * s, 0.0f, 0.0f, 0.0f,
+                GLASS, Math.round(a * 0.95f));
+
+        // 3g. Sillage : deux hélices contra-rotatives serrées autour du fût.
+        for (int helix = 0; helix < 2; helix++) {
+            float spinDir = (helix == 0) ? 1.0f : -1.0f;
+            for (int step = 0; step < 18; step++) {
+                float u0 = step / 17.0f;
+                float ra = u0 * TAU * 2.0f * spinDir + t * 26.0f * spinDir + helix * 1.7f;
+                float y0 = headY + (0.30f + u0 * 3.90f) * s;
+                float r0 = (0.24f + u0 * 0.06f) * s;
+                float size = (0.024f + 0.007f * hash(salt, 4100 + step * 17 + helix * 7 + seed)) * s;
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        offF + Mth.cos(ra) * r0, offL + Mth.sin(ra) * r0, y0,
+                        size, size, size * 2.6f, ra, 0.0f, 0.0f,
+                        (helix == 0) ? AZURE : MINT,
+                        Math.round(a * (0.52f - u0 * 0.20f)));
             }
         }
     }
 
     // ============================================================================================
-    // 2. SANDSTORM — dune, cinq bras, sept rubans, trois mini-tornades, grains
+    // 2. TEMPÊTE DE SABLE — entonnoir ÉTROIT AU SOL, LARGE EN HAUT, tourbillon interne même sens
     // ============================================================================================
 
     /**
-     * Chorégraphie (durée 140 ticks) : la dune se forme (0,00–0,30), les bras montent (0,06–0,60),
-     * les grains et les rubans tourbillonnent tant que la tempête vit, puis tout retombe (0,72–1,00).
-     * Tout tourne dans le même sens (aucun ruban à contre-courant).
-     * Pic de charge : environ 990 cubes par image.
+     * Chorégraphie (140 ticks) : la dune se forme, les six bras extérieurs montent sur 7,9 blocs en
+     * s'évasant, le tourbillon interne (quatre bras sombres, plus opaques) suit <b>le même sens</b>,
+     * les grains et le voile tourbillonnent, puis tout retombe.
      */
     private static void renderSandstorm(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                         float cx, float cy, float cz, float t,
                                         float dx, float dz, int alpha, int salt) {
         int a = Math.round(alpha * smooth(t / 0.07f) * (1.0f - smooth((t - 0.74f) / 0.26f)));
         if (a <= 4) return;
+        final float height = 7.90f;
         float grow = smooth(t / 0.30f) * (1.0f - smooth((t - 0.70f) / 0.30f));
-        float spin = t * 9.0f;
-        float settle = smooth((t - 0.72f) / 0.28f);
-        float crestWave = Mth.sin(t * 7.0f);
+        float settle = smooth((t - 0.74f) / 0.26f);
+        float spin = t * 11.0f;
 
-        // ---- 1. Dune : cinq strates elliptiques de 40 cubes, crête asymétrique (200 cubes) ----
-        for (int layer = 0; layer < 5; layer++) {
-            float u = layer / 4.0f;
-            float radius = (1.46f - u * 0.86f) * Math.max(0.06f, grow);
+        // ---- 1. Dune de base : quatre strates (128 cubes) ----
+        for (int layer = 0; layer < 4; layer++) {
+            float u = layer / 3.0f;
+            float radius = (1.55f - u * 0.82f) * Math.max(0.06f, grow);
             if (radius <= 0.02f) continue;
-            for (int i = 0; i < 40; i++) {
+            for (int i = 0; i < 32; i++) {
                 float h = hash(salt, 6100 + layer * 71 + i * 19);
-                float ang = i * TAU / 40.0f + layer * 0.22f + spin * (0.22f + layer * 0.03f);
-                float f = Mth.cos(ang) * radius * (1.0f + 0.20f * u);
-                float l = Mth.sin(ang) * radius * 0.72f;
+                float ang = i * TAU / 32.0f + layer * 0.22f + spin * (0.22f + layer * 0.03f);
                 float crest = Math.max(0.0f, Mth.cos(ang - 0.55f)) * (0.24f - u * 0.10f) * grow;
-                float ripple = 0.045f * Mth.sin(ang * 6.0f + t * 9.0f + layer) * grow;
-                float y = -1.14f + u * 0.42f * grow + crest + ripple - settle * (0.24f + h * 0.22f);
-                float size = (0.148f - u * 0.038f) * (0.84f + h * 0.30f);
-                rot(vc, mat, tmp, cx, cy, cz, dx, dz, f, l, y,
-                        size * 1.24f, size * 0.60f, size,
+                float y = -1.14f + u * 0.40f * grow + crest
+                        + 0.045f * Mth.sin(ang * 6.0f + t * 9.0f + layer) * grow
+                        - settle * (0.24f + h * 0.22f);
+                float size = (0.150f - u * 0.040f) * (0.84f + h * 0.30f);
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * radius * (1.0f + 0.20f * u),
+                        Mth.sin(ang) * radius * 0.74f, y,
+                        size * 1.24f, size * 0.58f, size,
                         ang + t * 0.30f, h * 0.26f, 0.0f,
-                        color(SAND_DARK, SAND_LIGHT, 0.22f + u * 0.44f + h * 0.18f),
+                        color(SAND_DARK, SAND_LIGHT, 0.24f + u * 0.44f + h * 0.18f),
                         Math.round(a * grow * (0.50f + 0.26f * h)));
             }
         }
 
-        // ---- 2. Cinq bras spiralés qui montent en se resserrant (130 cubes) ----
-        for (int arm = 0; arm < 5; arm++) for (int level = 0; level < 26; level++) {
-            float u = level / 25.0f;
-            float reveal = smooth((t - 0.05f - u * 0.12f) / 0.20f) * (1.0f - settle);
+        // ---- 2. Entonnoir extérieur : six bras, rayon 0,45 → 2,55 (étroit au sol) ----
+        for (int arm = 0; arm < 6; arm++) for (int level = 0; level < 30; level++) {
+            float u = level / 29.0f;
+            float reveal = smooth((t - 0.05f - u * 0.10f) / 0.22f) * (1.0f - settle);
             if (reveal <= 0.01f) continue;
             float h = hash(salt, 6500 + arm * 149 + level * 23);
-            float ang = arm * 1.2566371f + u * 8.4f + t * 13.0f;
-            float radius = (1.16f - u * 0.72f) * (0.90f + 0.14f * Mth.sin(t * 9.0f + u * 12.0f));
-            float f = Mth.cos(ang) * radius;
-            float l = Mth.sin(ang) * radius;
-            float y = -0.92f + u * 2.78f;
-            float size = (0.170f - u * 0.070f) * (0.84f + h * 0.32f);
-            rot(vc, mat, tmp, cx, cy, cz, dx, dz, f, l, y,
-                    size * 1.32f, size, size * 1.16f,
+            float ang = arm * TAU / 6.0f + u * 8.2f + spin;
+            float radius = (0.45f + u * 2.10f) * (0.92f + 0.12f * Mth.sin(t * 9.0f + u * 12.0f));
+            float y = -1.10f + u * height + settle * 0.40f * h;
+            float size = (0.190f - u * 0.055f) * (0.84f + h * 0.32f);
+            rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                    Mth.cos(ang) * radius, Mth.sin(ang) * radius, y,
+                    size * 1.28f, size, size * 1.12f,
                     ang, u * 0.75f, 0.0f,
                     (level % 5 == 0) ? DUST : SAND_LIGHT,
-                    Math.round(a * reveal * (0.32f + 0.30f * (1.0f - u))));
+                    Math.round(a * reveal * (0.34f + 0.30f * (1.0f - u))));
         }
 
-        // ---- 3. Sept rubans horizontaux : même main que les bras, vitesses différentes (336 cubes) ----
-        for (int band = 0; band < 7; band++) for (int i = 0; i < 48; i++) {
-            float u = i / 47.0f;
-            float h = hash(salt, 6900 + band * 83 + i * 11);
-            float ang = u * 5.2f + band * 0.90f + t * (9.5f + band * 1.3f);
-            float radius = 1.02f + band * 0.15f + 0.12f * Mth.sin(u * 9.0f + t * 8.0f);
-            float f = Mth.cos(ang) * radius;
-            float l = Mth.sin(ang) * radius;
-            float y = -0.92f + band * 0.30f + u * 0.34f + settle * 0.32f * h;
-            float size = 0.022f + 0.013f * h;
-            rot(vc, mat, tmp, cx, cy, cz, dx, dz, f, l, y,
-                    size * 2.8f, size * 0.48f, size * 0.72f,
-                    ang, 0.20f, 0.0f,
-                    (band % 3 == 0) ? DUST : SAND,
-                    Math.round(a * (1.0f - settle) * (0.26f + 0.20f * h)));
+        // ---- 3. Tourbillon INTERNE : quatre bras sombres et opaques, même sens, étroit au sol ----
+        for (int arm = 0; arm < 4; arm++) for (int level = 0; level < 22; level++) {
+            float u = level / 21.0f;
+            float reveal = smooth((t - 0.08f - u * 0.08f) / 0.20f) * (1.0f - settle);
+            if (reveal <= 0.01f) continue;
+            float h = hash(salt, 9100 + arm * 131 + level * 19);
+            float ang = arm * TAU / 4.0f + u * 7.4f + spin * 1.06f;
+            float radius = (0.22f + u * 1.05f) * (0.94f + 0.10f * Mth.sin(t * 10.0f + u * 9.0f));
+            float y = -1.06f + u * (height * 0.86f);
+            float size = (0.205f - u * 0.070f) * (0.90f + h * 0.20f);
+            rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                    Mth.cos(ang) * radius, Mth.sin(ang) * radius, y,
+                    size * 1.20f, size, size * 1.10f,
+                    ang, u * 0.60f, 0.0f,
+                    color(SAND_DEEP, SAND_DARK, 0.30f + u * 0.40f + h * 0.20f),
+                    Math.round(a * reveal * (0.86f + 0.14f * h)));
         }
 
-        // ---- 4. Trois mini-tornades satellites (90 cubes) ----
-        for (int cell = 0; cell < 3; cell++) {
-            float ca = cell * 2.0943951f + 1.30f;
-            float cf = Mth.cos(ca) * (1.55f + 0.18f * cell);
-            float cl = Mth.sin(ca) * (1.55f + 0.18f * cell);
+        // ---- 4. Deux mini-tornades au pied de la colonne (52 cubes) ----
+        for (int cell = 0; cell < 2; cell++) {
+            float ca = cell * 3.1415927f + 1.30f;
+            float cf = Mth.cos(ca) * 1.85f;
+            float cl = Mth.sin(ca) * 1.85f;
             float born = smooth((t - 0.16f - cell * 0.05f) / 0.24f) * (1.0f - settle);
             if (born <= 0.01f) continue;
-            for (int i = 0; i < 30; i++) {
-                float u = i / 29.0f;
+            for (int i = 0; i < 26; i++) {
+                float u = i / 25.0f;
                 float h = hash(salt, 7300 + cell * 101 + i * 17);
-                float ang = u * 9.0f + t * 18.0f + cell * 0.40f;
-                float rr = (0.42f - u * 0.30f) * (0.85f + 0.25f * h);
+                float ang = u * 8.0f + t * 20.0f + cell * 0.40f;
+                float rr = (0.20f + u * 0.62f) * (0.85f + 0.25f * h);
                 rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                         cf + Mth.cos(ang) * rr, cl + Mth.sin(ang) * rr,
-                        -0.95f + u * 1.70f + 0.05f * Mth.sin(t * 8.0f + i),
-                        0.026f + 0.016f * h, 0.026f + 0.016f * h, 0.026f + 0.016f * h,
+                        -0.98f + u * 2.40f + 0.05f * Mth.sin(t * 8.0f + i),
+                        0.028f + 0.016f * h, 0.028f + 0.016f * h, 0.028f + 0.016f * h,
                         ang, 0.0f, 0.0f,
                         (i % 6 == 0) ? DUST : SAND_LIGHT,
                         Math.round(a * born * (0.30f + 0.26f * h)));
             }
         }
 
-        // ---- 5. Grains individuels : advection hélicoïdale puis extinction (160 cubes) ----
-        for (int grain = 0; grain < 160; grain++) {
+        // ---- 5. Grains individuels : advection hélicoïdale sur toute la hauteur (130 cubes) ----
+        for (int grain = 0; grain < 130; grain++) {
             float h = hash(salt, 7500 + grain * 47);
             float h2 = hash(salt, 7700 + grain * 61);
-            float cycle = fract(t * (1.10f + h * 0.90f) + grain * 0.6180339f);
+            float cycle = fract(t * (1.05f + h * 0.85f) + grain * 0.6180339f);
             float ang = grain * 2.3999632f + spin * (0.8f + h2 * 0.7f);
-            float radius = 0.28f + cycle * 2.10f;
-            float f = Mth.cos(ang) * radius;
-            float l = Mth.sin(ang) * radius;
-            float y = Mth.lerp(cycle, -1.08f, 2.45f) + h2 * 0.30f;
+            float radius = 0.30f + cycle * 2.35f;
+            float y = Mth.lerp(cycle, -1.08f, height * 0.94f) + h2 * 0.30f;
             float size = 0.024f + 0.024f * h;
-            rot(vc, mat, tmp, cx, cy, cz, dx, dz, f, l, y,
+            rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                    Mth.cos(ang) * radius, Mth.sin(ang) * radius, y,
                     size, size, size, ang, cycle * 3.0f, 0.0f,
                     (grain % 5 == 0) ? DUST : (grain % 3 == 0 ? SAND_LIGHT : SAND),
                     Math.round(a * (1.0f - cycle) * (0.42f + 0.28f * h)));
         }
 
-        // ---- 6. Voile de poussière : trente-six cubes larges et translucides (36 cubes) ----
-        for (int veil = 0; veil < 36; veil++) {
+        // ---- 6. Voile de poussière : trente cubes larges et translucides ----
+        for (int veil = 0; veil < 30; veil++) {
             float h = hash(salt, 8000 + veil * 37);
-            float ang = veil * TAU / 36.0f + t * 4.0f + h;
-            float radius = 1.30f + h * 0.95f;
+            float ang = veil * TAU / 30.0f + t * 4.0f + h;
+            float radius = 1.45f + h * 1.10f;
             rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                     Mth.cos(ang) * radius, Mth.sin(ang) * radius,
-                    -0.80f + h * 2.60f + settle * 0.40f + 0.10f * crestWave,
+                    -0.80f + h * (height * 0.92f) + settle * 0.40f,
                     0.150f + 0.060f * h, 0.120f, 0.150f + 0.060f * h,
-                    ang, h * TAU, 0.0f,
-                    SAND_DARK,
+                    ang, h * TAU, 0.0f, SAND_DARK,
                     Math.round(a * (0.08f + 0.08f * h)));
         }
 
-        // ---- 7. Éclats de sable arrachés à la crête (50 cubes) ----
+        // ---- 7. Éclats arrachés à la crête (40 cubes) ----
         float fling = smooth((t - 0.34f) / 0.26f) * (1.0f - settle);
-        for (int shard = 0; shard < 50; shard++) {
+        for (int shard = 0; shard < 40; shard++) {
             float h = hash(salt, 8400 + shard * 59);
             float h2 = hash(salt, 8500 + shard * 43);
             float ang = shard * 2.3999632f + t * (2.0f + h * 2.4f);
             float radius = 0.55f + fling * (0.90f + h * 1.50f);
             rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                     Mth.cos(ang) * radius, Mth.sin(ang) * radius,
-                    -0.75f + h2 * 1.85f + fling * (0.35f + h * 0.75f),
+                    -0.75f + h2 * height * 0.80f + fling * (0.35f + h * 0.95f),
                     0.030f + 0.014f * h2, 0.105f + 0.060f * h, 0.026f,
                     ang, h2 * 2.2f, ang * 0.6f,
                     (shard % 4 == 0) ? DUST : SAND_LIGHT,
@@ -614,197 +479,174 @@ public final class WindSignatureVfx {
     }
 
     // ============================================================================================
-    // 3. TEMPEST — deux entonnoirs contra-rotatifs, œil, débris, mur de nuages
+    // 3. ŒIL DU CYCLONE — entonnoir de 8,9 blocs, œil sommital, mur de nuages
     // ============================================================================================
 
     /**
-     * Chorégraphie (durée 120 ticks) : ouverture des deux entonnoirs (0,00–0,26), l'œil s'ouvre
-     * (0,18–0,40), les blocs de terrain sont happés au sol puis spiralent (0,25–0,90), éclatement
-     * sommital (0,62–0,86), effondrement (0,78–1,00). Pic de charge : environ 960 cubes par image.
+     * Chorégraphie (120 ticks) : ouverture des entonnoirs (0,00–0,26), œil sommital (0,18–0,40),
+     * spirale continue jusqu'à 8,9 blocs, éclatement sommital (0,62–0,86), effondrement (0,78–1,00).
+     * Tous les brins tournent dans le même sens.
      */
     private static void renderTempest(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                       float cx, float cy, float cz, float t,
                                       float dx, float dz, int alpha, int salt) {
         int a = Math.round(alpha * smooth(t / 0.06f) * (1.0f - smooth((t - 0.80f) / 0.20f)));
         if (a <= 4) return;
+        final float height = 8.90f;
         float open = smooth(t / 0.26f);
         float collapse = smooth((t - 0.78f) / 0.22f);
         float eye = smooth((t - 0.18f) / 0.22f) * (1.0f - collapse);
         float spin = t * 12.0f;
-        float shrink = 1.0f - collapse * 0.55f;
         float burst = smooth((t - 0.62f) / 0.38f);
 
-        // ---- 1. Deux entonnoirs de huit brins contra-rotatifs (352 cubes) ----
-        for (int funnel = 0; funnel < 2; funnel++) {
-            float spinDir = (funnel == 0) ? 1.0f : -1.0f;
-            float baseRadius = (funnel == 0) ? 0.26f : 1.02f;
-            float spread = (funnel == 0) ? 1.08f : 1.52f;
-            for (int strand = 0; strand < 8; strand++) {
-                float phase = strand * TAU / 8.0f;
-                for (int level = 0; level < 22; level++) {
-                    float u = level / 21.0f;
-                    float h = hash(salt, 8100 + funnel * 401 + strand * 97 + level * 13);
-                    float ang = phase + u * 7.4f * spinDir + spin * spinDir * (1.0f - u * 0.40f);
-                    float radius = (baseRadius + u * spread) * shrink
-                            * (0.90f + 0.14f * h) * open;
-                    float y = -1.15f + u * 3.80f;
-                    float size = (0.096f + u * 0.028f) * (0.84f + h * 0.30f);
-                    rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            Mth.cos(ang) * radius, Mth.sin(ang) * radius, y,
-                            size, size, size,
-                            ang, u * 0.50f * spinDir, ang * 0.30f,
-                            color((funnel == 0) ? AIR : AIR_DEEP,
-                                    (funnel == 0) ? WHITE : PALE,
-                                    (funnel == 0 ? 0.40f : 0.28f) + u * 0.46f + h * 0.18f),
-                            Math.round(a * open * (1.0f - collapse * 0.35f)
-                                    * (0.28f + 0.22f * (1.0f - u * (funnel == 0 ? 0.5f : 1.0f)))));
-                }
+        // ---- 1. Entonnoir extérieur : huit brins, rayon 0,55 → 2,95, hauteur 8,9 ----
+        for (int strand = 0; strand < 8; strand++) {
+            float phase = strand * TAU / 8.0f;
+            for (int level = 0; level < 26; level++) {
+                float u = level / 25.0f;
+                float h = hash(salt, 8100 + strand * 97 + level * 13);
+                float ang = phase + u * 8.6f + spin * (1.0f - u * 0.35f);
+                float radius = (0.55f + u * 2.40f) * (0.92f + 0.12f * h) * open;
+                float y = -1.15f + u * height;
+                float size = (0.110f + u * 0.030f) * (0.84f + h * 0.30f);
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * radius, Mth.sin(ang) * radius, y,
+                        size, size, size,
+                        ang, u * 0.50f, ang * 0.30f,
+                        color(AIR, WHITE, 0.40f + u * 0.46f + h * 0.18f),
+                        Math.round(a * open * (1.0f - collapse * 0.35f)
+                                * (0.30f + 0.22f * (1.0f - u * 0.5f))));
             }
         }
 
-        // ---- 2. Noyau : colonne centrale torsadée (34 cubes) ----
-        for (int step = 0; step < 34; step++) {
-            float u = step / 33.0f;
+        // ---- 2. Entonnoir interne : six brins sombres, même sens, rayon 0,24 → 1,35 ----
+        for (int strand = 0; strand < 6; strand++) {
+            float phase = strand * TAU / 6.0f + 0.35f;
+            for (int level = 0; level < 20; level++) {
+                float u = level / 19.0f;
+                float h = hash(salt, 8300 + strand * 89 + level * 17);
+                float ang = phase + u * 7.2f + spin * 1.08f;
+                float radius = (0.24f + u * 1.10f) * (0.94f + 0.10f * h) * open;
+                float y = -1.08f + u * (height * 0.92f);
+                float size = (0.118f + u * 0.020f) * (0.86f + h * 0.24f);
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * radius, Mth.sin(ang) * radius, y,
+                        size, size, size,
+                        ang, u * 0.40f, 0.0f,
+                        color(AIR_DEEP, MINT, 0.30f + u * 0.40f + h * 0.16f),
+                        Math.round(a * open * (0.70f + 0.20f * h)));
+            }
+        }
+
+        // ---- 3. Noyau : colonne centrale torsadée (28 cubes) ----
+        for (int step = 0; step < 28; step++) {
+            float u = step / 27.0f;
             float h = hash(salt, 8600 + step * 29);
             float ang = t * 9.0f + u * 5.0f;
-            float radius = 0.10f + 0.06f * Mth.sin(t * 12.0f + u * 6.0f);
-            float size = (0.078f - u * 0.030f) * (0.84f + 0.24f * Mth.sin(t * 16.0f + step));
+            float radius = 0.12f + 0.06f * Mth.sin(t * 12.0f + u * 6.0f);
+            float size = (0.082f - u * 0.028f) * (0.84f + 0.24f * Mth.sin(t * 16.0f + step));
             rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                     Mth.cos(ang) * radius, Mth.sin(ang) * radius,
-                    -1.05f + u * 3.70f,
+                    -1.05f + u * (height * 0.96f),
                     size, size * 1.50f, size,
                     ang, u * 1.1f, 0.0f,
                     color(GLASS, WHITE, 0.35f + h * 0.50f),
                     Math.round(a * open * (1.0f - collapse * 0.60f) * (0.40f + 0.32f * h)));
         }
 
-        // ---- 3. Œil calme : anneau de 44 segments, dix rayons de neuf cubes (134 cubes) ----
+        // ---- 4. Œil calme sommital : anneau de 44 segments et dix rayons (134 cubes) ----
         if (eye > 0.02f) {
-            float eyeY = 2.74f;
-            float eyeR = (1.16f + 0.05f * Mth.sin(t * 9.0f)) * open;
+            float eyeY = height * 0.90f;
+            float eyeR = 2.45f * open;
             for (int i = 0; i < 44; i++) {
                 float a0 = i * TAU / 44.0f;
                 float a1 = (i + 1) * TAU / 44.0f;
                 link(vc, mat, tmp, cx, cy, cz, dx, dz,
                         Mth.cos(a0) * eyeR, Mth.sin(a0) * eyeR, eyeY,
                         Mth.cos(a1) * eyeR, Mth.sin(a1) * eyeR, eyeY,
-                        (i % 4 == 0) ? 0.030f : 0.016f,
+                        (i % 4 == 0) ? 0.034f : 0.016f,
                         (i % 4 == 0) ? WHITE : GLASS, WHITE,
-                        Math.round(a * eye * ((i % 4 == 0) ? 0.94f : 0.64f)));
+                        Math.round(a * eye * ((i % 4 == 0) ? 0.94f : 0.60f)));
             }
             for (int spoke = 0; spoke < 10; spoke++) {
                 float sa = spoke * TAU / 10.0f + spin * 0.35f;
                 for (int step = 1; step <= 9; step++) {
-                    float r0 = eyeR * (0.16f + step * 0.092f);
+                    float r0 = eyeR * (0.14f + step * 0.090f);
                     rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                             Mth.cos(sa) * r0, Mth.sin(sa) * r0, eyeY,
-                            0.026f, 0.026f, 0.026f,
-                            sa, 0.0f, 0.0f,
-                            (step % 3 == 0) ? WHITE : AZURE,
+                            0.028f, 0.028f, 0.028f, sa, 0.0f, 0.0f,
+                            (step % 3 == 0) ? WHITE : MINT,
                             Math.round(a * eye * (0.24f + 0.30f * (1.0f - step / 9.0f))));
                 }
             }
         }
 
-        // ---- 4. Blocs de terrain arrachés au sol (56) : posés, happés, spiralés, culbutés ----
-        for (int blk = 0; blk < 56; blk++) {
-            float h = hash(salt, 8800 + blk * 59);
-            float h2 = hash(salt, 8900 + blk * 71);
-            float h3 = hash(salt, 9000 + blk * 37);
-            float speed = 0.30f + h * 0.26f;
-            float cyc = fract(t * speed + blk * 0.6180339f);
-            float lift = smooth(cyc / 0.16f);
-            float fall = smooth((cyc - 0.80f) / 0.20f);
-            float arc = Mth.sin((float) (Math.PI * Math.min(1.0f, cyc)));
-            float r0 = 1.90f + h2 * 1.45f;
-            float radius = Math.max(0.55f, Mth.lerp(lift, r0, 0.62f) * (1.0f + 0.60f * arc)
-                    + fall * 1.30f) * open * (1.0f - collapse * 0.45f);
-            float ang = blk * 2.3999632f + t * (1.8f + h3 * 1.6f) + lift * (5.0f + h * 4.0f);
-            float y = -1.02f + arc * (3.30f + h3 * 0.60f) - fall * 1.10f;
-            float size = (0.082f + h2 * 0.066f) * (1.0f - collapse * 0.30f);
-            float tumble = t * (2.4f + h * 3.6f) + blk * 1.7f;
-            int rgb = (blk % 5 == 0) ? STEEL : (blk % 5 < 3 ? SLATE : SLATE_DARK);
-            rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    Mth.cos(ang) * radius, Mth.sin(ang) * radius, y,
-                    size * (1.15f + 0.25f * h), size * (0.55f + 0.20f * h3),
-                    size * (0.90f + 0.20f * h2),
-                    ang, 0.0f, tumble, rgb,
-                    Math.round(a * open * (1.0f - collapse * 0.35f) * (0.86f + 0.14f * h)));
-            if (blk % 3 == 0) {
-                float da = ang + 0.30f;
-                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        Mth.cos(da) * radius * 1.04f, Mth.sin(da) * radius * 1.04f,
-                        y - size * 0.55f, size * 0.38f, size * 0.38f, size * 0.38f,
-                        0.0f, 0.0f, 0.0f, PALE,
-                        Math.round(a * open * (0.30f + 0.20f * h)));
-            }
-        }
-
-        // ---- 5. Anneau de sol : soixante segments qui se resserrent (60 cubes) ----
-        float groundR = (2.55f * open * shrink) * (0.94f + 0.06f * Mth.sin(t * 7.0f));
-        for (int i = 0; i < 60; i++) {
-            float a0 = i * TAU / 60.0f;
-            float a1 = (i + 1) * TAU / 60.0f;
+        // ---- 5. Anneau de sol : cinquante-six segments qui se resserrent ----
+        float groundR = 2.65f * open;
+        for (int i = 0; i < 56; i++) {
+            float a0 = i * TAU / 56.0f;
+            float a1 = (i + 1) * TAU / 56.0f;
             float r0 = groundR * (0.96f + 0.06f * Mth.sin(i * 1.7f + t * 7.0f));
             float r1 = groundR * (0.96f + 0.06f * Mth.sin((i + 1) * 1.7f + t * 7.0f));
             link(vc, mat, tmp, cx, cy, cz, dx, dz,
                     Mth.cos(a0) * r0, Mth.sin(a0) * r0, -1.16f,
                     Mth.cos(a1) * r1, Mth.sin(a1) * r1, -1.16f,
-                    (i % 5 == 0) ? 0.026f : 0.013f,
-                    (i % 5 == 0) ? PALE : AIR, GLASS,
-                    Math.round(a * open * 0.52f * (1.0f - collapse * 0.30f)));
+                    (i % 5 == 0) ? 0.028f : 0.013f,
+                    (i % 5 == 0) ? MINT : AIR, GLASS,
+                    Math.round(a * open * 0.60f * (1.0f - collapse * 0.30f)));
         }
 
-        // ---- 6. Mur de nuages : deux bandes de six colonnes autour des entonnoirs (240 cubes) ----
+        // ---- 6. Mur de nuages : deux bandes de six colonnes, hauteur 8,2 ----
         for (int band = 0; band < 2; band++) for (int column = 0; column < 6; column++) {
             float colAng = column * TAU / 6.0f + band * 0.52f + spin * 0.22f;
-            float colRadius = (band == 0) ? 1.75f : 2.35f;
-            for (int step = 0; step < 20; step++) {
-                float u = step / 19.0f;
+            float colRadius = (band == 0) ? 2.55f : 3.35f;
+            for (int step = 0; step < 18; step++) {
+                float u = step / 17.0f;
                 float h = hash(salt, 9200 + band * 311 + column * 53 + step * 11);
                 float wobble = 0.16f * Mth.sin(t * 7.0f + column + u * 5.0f);
-                float radius = (colRadius + wobble) * open * (1.0f - collapse * 0.30f);
-                float y = -0.55f + u * 3.15f + 0.10f * Mth.sin(t * 5.0f + step);
-                float size = (0.115f - u * 0.030f) * (0.80f + h * 0.34f);
+                float radius = (colRadius + wobble) * open;
+                float y = -0.55f + u * (height * 0.92f) + 0.10f * Mth.sin(t * 5.0f + step);
+                float size = (0.150f - u * 0.040f) * (0.80f + h * 0.34f);
                 rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                         Mth.cos(colAng) * radius, Mth.sin(colAng) * radius, y,
                         size, size * 1.10f, size,
                         colAng, u * 0.40f, colAng * 0.3f,
                         color(AIR_DEEP, PALE, 0.24f + u * 0.42f + h * 0.18f),
-                        Math.round(a * open * (0.16f + 0.16f * h)));
+                        Math.round(a * open * (0.14f + 0.14f * h)));
             }
         }
 
-        // ---- 7. Poussière périphérique : cent vingt grains soufflés (120 cubes) ----
-        for (int grain = 0; grain < 120; grain++) {
+        // ---- 7. Poussière et débris fins : quatre-vingt-dix grains ----
+        for (int grain = 0; grain < 90; grain++) {
             float h = hash(salt, 9600 + grain * 41);
             float h2 = hash(salt, 9700 + grain * 53);
-            float cycle = fract(t * (0.90f + h * 1.10f) + grain * 0.6180339f);
+            float cycle = fract(t * (0.85f + h * 1.05f) + grain * 0.6180339f);
             float ang = grain * 2.3999632f + t * (2.4f + h2 * 2.6f);
-            float radius = (1.30f + cycle * 2.10f) * (1.0f - collapse * 0.35f) * open;
+            float radius = (0.45f + cycle * 2.55f) * open;
             float size = 0.020f + 0.018f * h;
             rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                     Mth.cos(ang) * radius, Mth.sin(ang) * radius,
-                    -1.05f + cycle * 2.90f + h2 * 0.25f,
+                    -1.05f + cycle * height + h2 * 0.25f,
                     size, size, size,
                     ang, cycle * 2.4f, 0.0f,
-                    (grain % 4 == 0) ? WHITE : (grain % 2 == 0 ? PALE : AIR),
-                    Math.round(a * (1.0f - cycle) * (0.24f + 0.20f * h)));
+                    (grain % 4 == 0) ? (grain % 8 == 0 ? SLATE : WHITE)
+                            : (grain % 2 == 0 ? PALE : AIR),
+                    Math.round(a * (1.0f - cycle) * (0.26f + 0.20f * h)));
         }
 
         // ---- 8. Éclatement sommital (40 cubes) ----
         if (burst > 0.02f) {
+            float topY = height * 0.96f;
             for (int i = 0; i < 40; i++) {
                 float h = hash(salt, 9900 + i * 43);
                 float ang = i * TAU / 40.0f + spin;
                 float radius = (0.45f + burst * (1.25f + h * 1.15f)) * open;
-                float y = 2.92f + burst * (0.45f + h * 0.95f);
-                float size = 0.046f + h * 0.038f;
                 rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        Mth.cos(ang) * radius, Mth.sin(ang) * radius, y,
-                        size, size * 0.90f, size,
+                        Mth.cos(ang) * radius, Mth.sin(ang) * radius,
+                        topY + burst * (0.45f + h * 0.95f),
+                        0.046f + h * 0.038f, 0.042f + h * 0.034f, 0.046f + h * 0.038f,
                         ang, h * 1.6f, 0.0f,
-                        (i % 4 == 0) ? WHITE : (i % 2 == 0 ? GLASS : PALE),
+                        (i % 4 == 0) ? WHITE : (i % 2 == 0 ? GLASS : MINT),
                         Math.round(a * burst * (0.42f + 0.26f * h) * (1.0f - collapse * 0.50f)));
             }
         }
@@ -814,14 +656,13 @@ public final class WindSignatureVfx {
             for (int i = 0; i < 40; i++) {
                 float h = hash(salt, 10200 + i * 37);
                 float ang = i * TAU / 40.0f + spin * 2.0f;
-                float radius = (1.0f - collapse) * 1.45f * (0.55f + h * 0.70f);
+                float radius = (1.0f - collapse) * 2.10f * (0.55f + h * 0.70f);
                 rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                         Mth.cos(ang) * radius, Mth.sin(ang) * radius,
-                        1.90f + (h - 0.5f) * 0.60f - collapse * 1.30f,
+                        height * 0.62f + (h - 0.5f) * 0.60f - collapse * (height * 0.55f),
                         0.048f, 0.048f, 0.048f,
                         ang, collapse * 2.0f, 0.0f,
-                        WHITE,
-                        Math.round(a * collapse * 0.58f));
+                        WHITE, Math.round(a * collapse * 0.58f));
             }
         }
     }
@@ -883,9 +724,9 @@ public final class WindSignatureVfx {
         return x * x * (3.0f - 2.0f * x);
     }
 
-    private static float easeOut(float x) {
+    private static float easeIn(float x) {
         x = clamp(x);
-        return 1.0f - (1.0f - x) * (1.0f - x) * (1.0f - x);
+        return x * x;
     }
 
     private static float fract(float value) { return value - Mth.floor(value); }
