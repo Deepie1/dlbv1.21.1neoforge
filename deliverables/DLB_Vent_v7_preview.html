@@ -70,18 +70,26 @@ function buildWind(variant,t,salt=4242){const out=[];if(t<=0||t>=1)return out;
  const GRASS=0x618E42,DIRT=0x6B4B2A,STONE=0x7E7E77,SNOW=0xE4EEF1;
  const groundDebris=(count,height,dir,baseY)=>{
   for(let i=0;i<count;i++){const h=hash(salt,12000+i*97),h2=hash(salt,13000+i*53),h3=hash(salt,14000+i*71),
-    cyc=fract(t*(.85+h*.55)+h2),lift=smooth((cyc-h2*.30)/.22);
-   if(lift<=.02)continue;
-   // v7 (parité Java WindTerrainVfx) : la montée atteint le SOMMET de la tour.
-   const rise=smooth(cyc/.74),fall=smooth((cyc-.88)/.12),
-     ang=(h2*TAU+cyc*(1.15+h3*.85)*TAU)*dir,
+    // v8 (parité Java WindTerrainVfx) : position RÉELLE du bloc au sol + heure d'arrachement.
+    gdist=.45+h*2.65,bearing=h2*TAU,
+    pickup=Math.min(.80,.03+.62*(gdist/3.15)+.10*h2),
+    u0=(t-pickup)/Math.max(.26,1-pickup)*(.85+h*.55);
+   if(u0<=0)continue;                       // la tornade ne l'a pas encore atteint : le sol est intact
+   const u=fract(u0),
+     tear=smooth(u/.16),                    // la motte se décolle en restant à sa place
+     rise=smooth((u-.10)/.64),fall=smooth((u-.88)/.12),
+     ang=bearing+tear*u*(1.15+h3*.85)*TAU*dir,
      r0=.55+h*2.40,r1=Math.max(r0*1.45,1.55+h3*1.35),
-     radius=lerp(r0,r1,rise)*(.80+.26*Math.sin(cyc*9+h*7))+fall*1.15,
-     yy=baseY+rise*height*(.70+.30*h3)*(.94+.06*(.30+h2*.22))-fall*height*.92,
-     size=.30+h2*.22,tumble=(t*8+h*3)*(1.4+h3*2.6);
+     helix=lerp(r0,r1,rise)*(.80+.26*Math.sin(u*9+bearing*7))+fall*1.15,
+     radius=lerp(gdist,helix,tear),         // de sa vraie distance vers l'hélice
+     base=.30+h2*.22,
+     yy=baseY+tear*(.10+.22*base)+tear*(1-tear)*.12*Math.sin(u*40)
+        +rise*height*(.70+.30*h3)*(.94+.06*base)-fall*height*.92,
+     size=base*(.25+.75*tear),
+     tumble=tear*(u*7+bearing)*(1.4+h3*2.6);
    box(Math.cos(ang)*radius,yy,Math.sin(ang)*radius,
        size*.58,size*.44,size*.52,
-       i%4===0?GRASS:(i%4===1?DIRT:(i%4===2?STONE:SNOW)),lift*210*(1-fall*.45),tumble)}}
+       i%4===0?GRASS:(i%4===1?DIRT:(i%4===2?STONE:SNOW)),smooth(u/.06)*210*(1-fall*.45),tumble)}}
 
  // ══════════════════════ Ⅰ. ZÉPHYR — trois lances qui tombent du ciel (v6) ══════════════════════
  if(variant===0){

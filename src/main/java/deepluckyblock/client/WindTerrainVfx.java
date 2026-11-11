@@ -28,9 +28,12 @@ import java.util.Map;
  * l'atlas de blocs. Rien n'est retiré du monde : la tornade soulève une copie des blocs, exactement
  * comme {@link SeismicTerrainVfx} le fait pour la faille.</p>
  *
- * <p>Trajectoire : chaque bloc reste posé au sol, puis décolle, monte en spirale dans le sens de la
- * tornade en grossissant légèrement, culbute sur lui-même, atteint le sommet et est éjecté vers
- * l'extérieur avant de fondre. Aucun cube générique : ici ce sont les teintes réelles du terrain
+ * <p>Trajectoire (v8) : <b>rien ne part dans la tornade au premier instant</b>. Le vortex mord le
+ * sol <b>du centre vers l'extérieur</b> : chaque bloc attend son heure ({@code pickup}, fonction de
+ * sa distance à l'axe), apparaît <b>à sa vraie place</b> en petite motte qui tremble et se décolle
+ * de quelques centimètres, puis est aspiré vers l'hélice — son rayon glisse de sa distance réelle
+ * vers le profil d'entonnoir, son angle s'enroule, sa culbute s'emballe — et il monte jusqu'au
+ * sommet avant d'être éjecté. Aucun cube générique : ce sont les teintes réelles du terrain
  * (herbe, sable, pierre, neige, netherrack…) qui volent.</p>
  */
 public final class WindTerrainVfx {
@@ -40,10 +43,18 @@ public final class WindTerrainVfx {
 
     private record SnapshotKey(long x, long y, long z, int salt) { }
 
-    /** Bloc capturé + paramètres stable de sa trajectoire. */
+    /**
+     * Bloc capturé + paramètres stables de sa trajectoire.
+     *
+     * <p>T374-WIND-TEAR : {@code groundDist}/{@code bearing} sont la <b>vraie</b> position du bloc
+     * (distance et relèvement par rapport à l'axe de la tornade) et {@code pickup} l'instant, dans
+     * la vie de l'effet, où le vortex l'atteint enfin. Tant que ce moment n'est pas venu le bloc
+     * n'est pas dessiné du tout : c'est le vrai bloc du monde qu'on voit, intact.</p>
+     */
     private record Debris(BlockState state, ModelData modelData, int light,
-                          float surfaceY, float phase, float radius0, float radius1,
-                          float size, float turns, float speed, float liftDelay,
+                          float surfaceY, float bearing, float groundDist,
+                          float radius0, float radius1,
+                          float size, float turns, float flight, float pickup,
                           float tumbleSpeed, float spinDir) { }
 
     private record Snapshot(ClientLevel level, float height,
@@ -109,16 +120,23 @@ public final class WindTerrainVfx {
 
             float h2 = hash(salt, 0x51F3 ^ (surface.getX() * 2654435761L));
             float h3 = hash(salt, 0x7A19 + surface.getZ() * 40503);
-            float phase = (float) (Math.atan2(relZ, relX) / (Math.PI * 2.0));
+            float bearing = (float) Math.atan2(relZ, relX);
             float orbit = Mth.clamp(dist * 0.55f + h2 * 1.10f, 0.35f, 3.10f);
             // T374-WIND-TOP : sommet plus large que la base (profil d'entonnoir demandé).
             float top = Math.max(orbit * 1.45f, 1.55f + h3 * 1.35f);
+            // T374-WIND-TEAR : le vortex mord le sol du centre vers l'extérieur. Un bloc collé à
+            // l'axe est arraché tout de suite, le pourtour attend que la tornade s'élargisse ; le
+            // bruit h2 évite une couronne qui se décolle d'un seul bloc.
+            float pickup = Mth.clamp(0.03f + 0.58f * (dist / (radius + 0.5f)) + 0.10f * h2,
+                    0.0f, 0.72f);
             debris.add(new Debris(state, modelData, light, topY,
-                    phase, orbit, top,
+                    bearing, dist, orbit, top,
                     0.30f + h2 * 0.22f,
                     1.15f + h3 * 0.85f,
-                    0.85f + h * 0.55f,
-                    h2 * 0.30f,
+                    // Durée de vol sol → sommet : 40 à 66 % de l'effet, indépendante de l'heure
+                    // d'arrachement, pour que la motte soit VRAIMENT emportée et pas traînée.
+                    0.40f + h * 0.26f,
+                    pickup,
                     1.40f + h3 * 2.60f,
                     dir));
             if (debris.size() >= MAX_BLOCKS) break capture;
@@ -150,32 +168,49 @@ public final class WindTerrainVfx {
         float spin = snapshot.spinDir();
         boolean emitted = false;
         for (Debris d : snapshot.debris()) {
-            float cycle = t * d.speed() + d.phase();
-            cycle = cycle - Mth.floor(cycle);
-            float lift = smooth((cycle - d.liftDelay()) / 0.22f);
-            if (lift <= 0.001f) continue;
+            // T374-WIND-TEAR : tant que la tornade n'a pas atteint ce bloc, RIEN n'est dessiné —
+            // le joueur voit le vrai sol intact. Avant, la phase de départ valait l'azimut du bloc,
+            // donc la moitié des blocs apparaissaient déjà en pleine tornade dès la première image.
+            float u = (t - d.pickup()) / d.flight();
+            if (u <= 0.0f) continue;
+            // Une motte qui a fini son vol repart du sol : la tornade continue de mordre le terrain.
+            u = u - Mth.floor(u);
+            // Arrachement progressif : la motte se décolle sur les 16 premiers % de sa vie, en
+            // restant À SA PLACE, puis elle est aspirée vers l'hélice.
+            float tear = smooth(u / 0.16f);
             // T374-WIND-TOP : la montée atteint le SOMMET de la tour (avant, le facteur 0,55+0,45·taille
             // plafonnait tous les blocs vers 65-70 % de la hauteur : « on dirait qu'ils sont cappés
             // au milieu »). Le palier haut est aussi allongé pour que les blocs restent visibles en haut.
-            float fall = smooth((cycle - 0.88f) / 0.12f);
-            float rise = smooth(cycle / 0.74f);
-            float angle = (d.phase() + cycle * d.turns()) * TAU * spin;
-            float radius = Mth.lerp(rise, d.radius0(), d.radius1())
-                    * (0.80f + 0.26f * Mth.sin(cycle * 9.0f + d.phase() * 7.0f))
+            float fall = smooth((u - 0.88f) / 0.12f);
+            float rise = smooth((u - 0.10f) / 0.64f);
+            // Aspiration progressive : une fois décollée, la motte garde encore les deux tiers de sa
+            // position d'origine et n'est ramenée vers l'axe qu'au fur et à mesure qu'elle monte —
+            // sans quoi tout le sol s'empile instantanément au pied de l'entonnoir.
+            float pull = tear * (0.30f + 0.70f * rise);
+            // L'angle part du relèvement RÉEL du bloc et ne s'enroule qu'une fois aspiré.
+            float angle = d.bearing() + pull * u * d.turns() * TAU * spin;
+            // Le rayon part de la distance RÉELLE au sol et migre vers le profil d'entonnoir.
+            float helix = Mth.lerp(rise, d.radius0(), d.radius1())
+                    * (0.80f + 0.26f * Mth.sin(u * 9.0f + d.bearing() * 7.0f))
                     + fall * 1.15f;
+            float radius = Mth.lerp(pull, d.groundDist(), helix);
             // Chaque bloc culmine à une hauteur propre (70 à 100 % de la tour) : la colonne reste
             // garnie sur toute sa hauteur au lieu de former un couvercle à mi-course.
             float peak = 0.70f + 0.30f * Mth.clamp((d.turns() - 1.15f) / 0.85f, 0.0f, 1.0f);
-            float dy = rise * height * peak * (0.94f + 0.06f * d.size()) - fall * height * 0.92f;
-            float size = d.size() * (1.0f - fall * 0.25f);
+            float dy = tear * (0.10f + 0.22f * d.size())
+                    + tear * (1.0f - tear) * 0.12f * Mth.sin(u * 40.0f)
+                    + rise * height * peak * (0.94f + 0.06f * d.size()) - fall * height * 0.92f;
+            // La motte « casse » du sol : elle sort petite et prend sa taille en se détachant.
+            float size = d.size() * (0.25f + 0.75f * tear) * (1.0f - fall * 0.25f);
             if (size <= 0.05f) continue;
 
             pose.pushPose();
             pose.translate(x + Math.cos(angle) * radius - camera.x,
                     d.surfaceY() + dy - camera.y,
                     z + Math.sin(angle) * radius - camera.z);
-            float tumble = (t * 8.0f + d.phase()) * d.tumbleSpeed();
-            ROTATION.identity().rotateY(angle).rotateX(tumble * 0.85f).rotateZ(tumble * 0.55f);
+            // Culbute nulle au décollage (le bloc est encore posé bien à plat), puis de plus en plus vive.
+            float tumble = tear * (u * 7.0f + d.bearing()) * d.tumbleSpeed();
+            ROTATION.identity().rotateY(pull * angle).rotateX(tumble * 0.85f).rotateZ(tumble * 0.55f);
             pose.mulPose(ROTATION);
             pose.scale(size, size, size);
             pose.translate(-0.5f, -0.5f, -0.5f);

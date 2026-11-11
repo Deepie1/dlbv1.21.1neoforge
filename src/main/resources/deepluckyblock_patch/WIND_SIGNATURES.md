@@ -1,4 +1,4 @@
-# Vent — trois signatures, un seul moteur voxel (v7)
+# Vent — trois signatures, un seul moteur voxel (v8)
 
 Refonte complète de l’élément **Vent**. Jusqu’ici il n’existait pas comme famille : la lance de zéphyr
 était un modèle compacté caché dans `GaiaWorldTreeVfx` (variant `ZEPHYR`), et la tempête de sable
@@ -8,6 +8,41 @@ n’avait de langage visuel commun : pas de ruban, pas de grain, pas de tourbill
 Cette version introduit **`WindSignatureVfx`**, un moteur voxel dédié, et trois chorégraphies
 distinctes partageant une identité unique — blanc glacé, azur, ardoise — avec de l’ocre réservé au
 sable.
+
+---
+
+## 0ter. v8 — « les blocs commencent direct dans la tornade »
+
+**Le reproche.** Dès la première image, la moitié des blocs du sol était déjà en vol dans l'entonnoir :
+rien ne se *décollait*, tout *apparaissait* en l'air.
+
+**La cause.** Dans `WindTerrainVfx`, la phase de départ de chaque bloc valait son **azimut** autour de
+l'axe (`cycle = t·vitesse + azimut`). Comme l'azimut couvre tout le tour, à `t = 0` les blocs étaient
+déjà répartis sur l'intégralité du cycle — certains au sol, beaucoup à mi-hauteur, d'autres en train
+de retomber. Pire : leur position horizontale était **déjà** celle de l'hélice (`cos(angle)·orbite`),
+donc aucun bloc ne partait de l'endroit où il se trouvait réellement.
+
+**La correction (v8).** Chaque bloc capturé mémorise désormais sa **vraie** position — relèvement
+`bearing` et distance `groundDist` à l'axe — et une **heure d'arrachement** :
+
+```text
+pickup = clamp(0,03 + 0,58·(dist / rayonCapture) + 0,10·h2 , 0 , 0,72)   // le vortex mord du centre vers l'extérieur
+flight = 0,40 + 0,26·h                                                   // vol sol → sommet (40 à 66 % de l'effet)
+u      = frac( (t − pickup) / flight )     // u ≤ 0 ⇒ le bloc n'est PAS dessiné : on voit le vrai sol
+tear   = smooth(u / 0,16)                  // la motte se décolle en restant à sa place
+pull   = tear·(0,30 + 0,70·rise)           // elle n'est aspirée vers l'axe qu'en montant
+radius = lerp(groundDist, hélice, pull)
+angle  = bearing + pull·u·tours·2π·sens
+dy     = tear·(0,10 + 0,22·taille) + tear·(1−tear)·0,12·sin(40u)  +  rise·H·peak·(0,94 + 0,06·taille) − fall·H·0,92
+taille = base·(0,25 + 0,75·tear)           // le fragment « casse » du sol : il sort petit
+culbute = tear·(7u + bearing)·vitesseCulbute  // nulle au décollage, de plus en plus vive
+```
+
+Résultat, dans l'ordre : le sol est **intact** au premier instant · une déchirure part du centre et
+**s'élargit** · chaque motte tremble, se décolle de quelques centimètres **à sa place**, grossit ·
+elle est aspirée vers l'hélice **au fur et à mesure qu'elle monte** · elle culbute de plus en plus
+vite · elle atteint le sommet puis est éjectée · une motte qui a fini son vol **repart du sol**, donc
+la tornade continue de mordre le terrain tant qu'elle vit.
 
 ---
 
@@ -53,7 +88,7 @@ Le dossier `FIXES_MCREATOR/src/main` contient les mêmes copies que le `src/main
 | Fichier | Rôle |
 |---|---|
 | `client/WindSignatureVfx.java` | moteur du vent : Zéphyr, Tempête de sable, Œil du cyclone (v6 : hauteurs ×2,3, entonnoirs étroits au sol, lances) |
-| `client/WindTerrainVfx.java` | vrais blocs du sol happés par la tornade (capture `BlockState` + `ModelData`, rendu spirale) — **v7 : les blocs montent jusqu'au sommet**, entonnoir plus large en haut |
+| `client/WindTerrainVfx.java` | vrais blocs du sol happés par la tornade (capture `BlockState` + `ModelData`, rendu spirale) — **v8 : arrachement progressif du centre vers l'extérieur, chaque motte part de sa vraie place**, puis montée jusqu'au sommet |
 | `client/WeaponWorldVfxManager.java` | routage `impactWind`, fin du détour Gaia pour le vent, durée d’affichage 120 ticks pour `TEMPEST_EYE` |
 | `enchantments/WeaponVisualEffectId.java` | identifiant `TEMPEST_EYE` (#42), alias `/dlbvfx`, gardes de rotation |
 | `enchantments/WeaponVfxMotion.java` | mouvement d’écho de lame spiralé pour `TEMPEST_EYE` |
