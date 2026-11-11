@@ -192,6 +192,11 @@ public final class WeaponVfxServerListener {
             WeaponVisualEffectId.RAZOR_GLEAM, WeaponVisualEffectId.SUPREME_PRISM_EDGE,
             WeaponVisualEffectId.ANNIHILATING_ARC
     };
+    /** Famille VENT : les trois signatures de vent tournent sur la même épée. */
+    private static final WeaponVisualEffectId[] ANIM_WIND = {
+            WeaponVisualEffectId.ZEPHYR_WIND_LANCE, WeaponVisualEffectId.SANDSTORM_DUNE,
+            WeaponVisualEffectId.TEMPEST_EYE
+    };
     private static final WeaponVisualEffectId[] ANIM_LIGHT = {
             WeaponVisualEffectId.SERAPH_SKY_PILLAR, WeaponVisualEffectId.ASTRAL_STAR_LANCE,
             WeaponVisualEffectId.CHRONO_ETERNAL_HALO
@@ -2409,8 +2414,8 @@ public final class WeaponVfxServerListener {
             applySeismicToNearbyEnemies(attacker, target, sl, weaponDamage);
             return;
         }
-        if (fx == WeaponVisualEffectId.SANDSTORM_DUNE
-                || fx == WeaponVisualEffectId.TEMPEST_EYE) {
+        // TEMPEST est déjà traité par la branche Bois (son élément) : pas de double gameplay.
+        if (fx == WeaponVisualEffectId.SANDSTORM_DUNE) {
             applyWindGameplay(attacker, target, fx, weaponDamage);
         }
     }
@@ -2654,7 +2659,8 @@ public final class WeaponVfxServerListener {
         if (tag == null) return null;
         String family = tag.getString("DlbAnimFamily");
         return family.equals("feu") || family.equals("gaia") || family.equals("poison")
-                || family.equals("terre") || family.equals("metal") || family.equals("light") ? family : null;
+                || family.equals("terre") || family.equals("metal") || family.equals("light")
+                || family.equals("vent") ? family : null;
     }
 
     /**
@@ -2677,7 +2683,8 @@ public final class WeaponVfxServerListener {
                 : family.equals("poison") ? ANIM_POISON
                 : family.equals("terre") ? ANIM_EARTH
                 : family.equals("metal") ? ANIM_METAL
-                : family.equals("light") ? ANIM_LIGHT : ANIM_GAIA;
+                : family.equals("light") ? ANIM_LIGHT
+                : family.equals("vent") ? ANIM_WIND : ANIM_GAIA;
 
         if (roll >= 60) {
             var tag = deepluckyblock.util.DeepNbt.getOrCreateTag(weapon);

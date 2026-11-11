@@ -1637,7 +1637,8 @@ public final class WeaponWorldVfxManager {
         if (tag != null) {
             String candidate = tag.getString("DlbAnimFamily");
             if (candidate.equals("feu") || candidate.equals("gaia") || candidate.equals("poison")
-                    || candidate.equals("terre") || candidate.equals("metal") || candidate.equals("light")) animFamily = candidate;
+                    || candidate.equals("terre") || candidate.equals("metal") || candidate.equals("light")
+                    || candidate.equals("vent")) animFamily = candidate;
         }
         if (layers.isEmpty() && animFamily == null) return;
 
@@ -1718,6 +1719,13 @@ public final class WeaponWorldVfxManager {
                 case 0 -> WeaponVisualEffectId.RAZOR_GLEAM;
                 case 1 -> WeaponVisualEffectId.SUPREME_PRISM_EDGE;
                 default -> WeaponVisualEffectId.ANNIHILATING_ARC;
+            };
+        }
+        if (family.equals("vent")) {
+            return switch (index) {
+                case 0 -> WeaponVisualEffectId.ZEPHYR_WIND_LANCE;
+                case 1 -> WeaponVisualEffectId.SANDSTORM_DUNE;
+                default -> WeaponVisualEffectId.TEMPEST_EYE;
             };
         }
         return switch (index) {

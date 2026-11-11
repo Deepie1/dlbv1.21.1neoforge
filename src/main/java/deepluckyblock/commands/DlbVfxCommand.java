@@ -375,7 +375,9 @@ public final class DlbVfxCommand {
         if (opOnly()) {
             anim.requires(src -> src.hasPermission(2));
         }
-        anim.then(Commands.literal("feu").executes(ctx -> giveAnimationSword(ctx, "feu")))
+        anim.then(Commands.literal("vent").executes(ctx -> giveAnimationSword(ctx, "vent")))
+                .then(Commands.literal("wind").executes(ctx -> giveAnimationSword(ctx, "vent")))
+                .then(Commands.literal("feu").executes(ctx -> giveAnimationSword(ctx, "feu")))
                 .then(Commands.literal("gaia").executes(ctx -> giveAnimationSword(ctx, "gaia")))
                 .then(Commands.literal("poison").executes(ctx -> giveAnimationSword(ctx, "poison")))
                 .then(Commands.literal("terre").executes(ctx -> giveAnimationSword(ctx, "terre")))
@@ -399,6 +401,7 @@ public final class DlbVfxCommand {
             case "terre" -> "§6Animation §aTerre";
             case "metal" -> "§7Animation Métal";
             case "light" -> "§eAnimation Lumière";
+            case "vent" -> "§bAnimation Vent";
             default -> "§aAnimation Gaia";
         };
         sword.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
@@ -461,6 +464,7 @@ public final class DlbVfxCommand {
         line(src, "§e/dlbvfx hit [nombre]", "vraies frappes sur la cible d'entraînement (impact + crit réels)");
         line(src, "§e/dlbvfx dummy", "invoque / retire la cible d'entraînement");
         line(src, "§e/dlbvfx give <effet> [niveau]", "donne les armes enchantées qui déclenchent cet effet");
+        line(src, "§e/anim vent|gaia|feu|poison|terre|metal|light", "épée de démonstration : 60 % slash + 40 % grosses animations de la famille");
         line(src, "§e/dlbvfx elements [famille]", "les §f" + deepluckyblock.enchantments.DeepElement.values().length + " §7familles élémentaires (couleurs + effets)");
         line(src, "§e/dlbvfx variants", "défile les déclinaisons (de moins en moins de particules)");
         line(src, "§e/dlbvfx subtle [famille] [index]", "les §f" + (deepluckyblock.enchantments.WeaponVfxSubtle.COUNT + deepluckyblock.enchantments.WeaponVfxSubtleEcho.COUNT) + " §7accents discrets : §f" + deepluckyblock.enchantments.WeaponVfxSubtle.COUNT + " §7élémentaires + §f" + deepluckyblock.enchantments.WeaponVfxSubtleEcho.COUNT + " §7échos des grosses animations");

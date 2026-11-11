@@ -198,11 +198,17 @@ d'effet** : il réutilise les emprises existantes (`MOVEMENT_HOLDS`) et une nouv
 ## 6. Tester en jeu
 
 ```text
+/anim vent                 (ou /anim wind)                → épée de démo : 60 % slash + 40 % signatures de vent
 /dlbvfx play 22            (ou /dlbvfx demo wind_lance)   → lance de zéphyr
 /dlbvfx play 41            (ou /dlbvfx demo sandstorm)    → tempête de sable
 /dlbvfx play 42            (ou /dlbvfx demo tempest)      → œil du cyclone
 /dlbvfx stop
 ```
+
+`/anim vent` donne une épée en netherite dont le NBT `DlbAnimFamily = "vent"` fait tourner, dans l'ordre,
+Zéphyr → Tempête de sable → Œil du cyclone à chaque grosse animation : c'est le seul moyen de déclencher
+`TEMPEST_EYE` en combat, puisqu'aucun enchantement ne le porte encore. Le slash (60 % des coups) et le
+gameplay serveur suivent la même famille.
 
 Critères de réussite :
 

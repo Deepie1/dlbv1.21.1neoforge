@@ -8,8 +8,8 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 | Fichier | Lien |
 |---|---|
-| Sources complètes (ZIP, 21 entrées, 395 631 o — moteur + rendu + gameplay + commande + miroirs) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_src.zip |
-| Aperçu animé **v4** (HTML autonome, ZIP embarqué, gameplay documenté) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Vent_v4_preview.html |
+| Sources complètes (ZIP, 21 entrées, 396 338 o — moteur + rendu + gameplay + commande + miroirs) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_src.zip |
+| Aperçu animé **v5** (HTML autonome, ZIP embarqué, gameplay documenté) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Vent_v5_preview.html |
 | Aperçu (chemin historique, même contenu) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_preview.html |
 | `WindSignatureVfx.java` (moteur voxel du vent) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/WindSignatureVfx.java |
 | `WeaponWorldVfxManager.java` (routage `impactWind`) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/WeaponWorldVfxManager.java |
@@ -19,13 +19,15 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 Trois signatures : **Zéphyr** (#22, 4,0 s, chorégraphie refaite — colonne d'air verticale, lance de cristal détaillée, trident, éclosion, ≈ 1 240 cubes/image) · **Tempête de sable** (#41, 7,0 s, sortie de l'archive Terre, ≈ 990 cubes) · **Œil du cyclone** (#42, 6,0 s, ≈ 956 cubes). Un seul moteur, aucun `DeepElement` ajouté, aucun ordinal déplacé.
 
+**`/anim vent`** (nouveau) : épée de démo dont la famille NBT `vent` fait tourner Zéphyr → sable → cyclone, et déclenche le gameplay correspondant.
+
 **Gameplay (nouveau)** : Zéphyr cloue la cible 4 s puis la lâche · tempête de sable = cécité + lenteur + dégâts périodiques sur l'entourage · œil du cyclone = mobs happés, orbités, montés de 4 blocs, éjectés, dégâts de tornade **+ dégâts de chute vanilla** à l'atterrissage. Sons 100 % vanilla.
 
 Empreintes des archives de cette version :
 
 ```text
-DLB_Wind_Three_Signatures_src.zip  395 631 o  sha256 7b227eced076b179…
-src-modifies-t301-t374.zip       3 510 795 o  sha256 dff6e86802f41700…
+DLB_Wind_Three_Signatures_src.zip  396 338 o  sha256 05c357cafba5ae27…
+src-modifies-t301-t374.zip       3 511 502 o  sha256 f6ba9b0412f9fe6c…
 ```
 
 ## Lumière — dernier correctif (V6.5)
