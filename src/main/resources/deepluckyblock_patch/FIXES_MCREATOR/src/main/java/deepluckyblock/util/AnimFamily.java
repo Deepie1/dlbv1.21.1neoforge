@@ -10,7 +10,7 @@ import java.util.Locale;
  * écouteur serveur) et mélangeaient français et anglais : la commande exposait par exemple
  * {@code terre} <i>et</i> {@code earth} pour la même famille, avec deux noms affichés différents.
  * Tout passe désormais par les noms <b>anglais canoniques</b> — {@code fire}, {@code wind},
- * {@code earth}, {@code metal}, {@code light}, {@code poison}, {@code nature} — et les anciennes
+ * {@code earth}, {@code metal}, {@code light}, {@code poison}, {@code nature}, {@code water} — et les
  * valeurs restent acceptées en lecture (les épées déjà données continuent de fonctionner), sans
  * jamais réapparaître comme doublon dans l'autocomplétion.</p>
  *
@@ -28,9 +28,11 @@ public final class AnimFamily {
     public static final String LIGHT = "light";
     public static final String POISON = "poison";
     public static final String NATURE = "nature";
+    /** T375 : huitième famille, l'eau (raz-de-marée, maelström abyssal, givre du permafrost). */
+    public static final String WATER = "water";
 
     /** Ordre d'affichage de l'aide et de l'autocomplétion : un seul nom par famille, en anglais. */
-    public static final String[] ALL = {FIRE, WIND, EARTH, METAL, LIGHT, POISON, NATURE};
+    public static final String[] ALL = {FIRE, WATER, WIND, EARTH, METAL, LIGHT, POISON, NATURE};
 
     private AnimFamily() { }
 
@@ -58,6 +60,8 @@ public final class AnimFamily {
             case "poison", "venin", "venom", "toxic" -> POISON;
             // gaia / nature
             case "gaia", "nature", "bois", "wood" -> NATURE;
+            // eau / water (le givre appartient à la même famille, comme dans DeepElement.WATER)
+            case "eau", "water", "aqua", "glace", "ice", "givre", "frost" -> WATER;
             default -> null;
         };
     }
@@ -73,6 +77,7 @@ public final class AnimFamily {
             case LIGHT -> 0xFFD75E;
             case POISON -> 0x46C24C;
             case NATURE -> 0x74C34A;
+            case WATER -> 0x62C7E8;
             default -> 0xFFF3B0;
         };
     }
@@ -88,6 +93,7 @@ public final class AnimFamily {
             case LIGHT -> "§e";
             case POISON -> "§2";
             case NATURE -> "§a";
+            case WATER -> "§3";
             default -> "§f";
         };
     }
@@ -103,6 +109,7 @@ public final class AnimFamily {
             case LIGHT -> "Light";
             case POISON -> "Poison";
             case NATURE -> "Nature";
+            case WATER -> "Water";
             default -> "Animation";
         };
     }

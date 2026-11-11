@@ -58,7 +58,7 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
 const C={AIR_DEEP:0x2C4658,AIR:0x4E7F99,AZURE:0x6FBEDC,PALE:0xA9E2F2,GLASS:0xD9F5FF,WHITE:0xF4FDFF,SLATE_DARK:0x59636B,SLATE:0x8C9AA4,STEEL:0xB9C6CE,SAND_DARK:0x6E5B41,SAND:0xA88B5E,SAND_LIGHT:0xDCC79B,DUST:0xF0E2BF};
 const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x)),smooth=x=>{x=clamp(x);return x*x*(3-2*x)},lerp=(a,b,t)=>a+(b-a)*t,fract=x=>x-Math.floor(x);
 function hash(seed,n){let h=(seed^Math.imul(n,0x45D9F3B))|0;h=Math.imul(h^(h>>>16),0x45D9F3B);h=Math.imul(h^(h>>>16),0x45D9F3B);h^=h>>>16;return(h&65535)/65535}
-function mix(a,b,t){t=clamp(t);const ar=a>>16&255,ag=a>>8&255,ab=a&255;return((ar+(b>>16&255)-ar)*t|0)<<16|((ag+(b>>8&255)-ag)*t|0)<<8|((ab+(b&255)-ab)*t|0)}
+function mix(a,b,t){t=clamp(t);const ar=a>>16&255,ag=a>>8&255,ab=a&255;return((ar+((b>>16&255)-ar)*t)|0)<<16|((ag+((b>>8&255)-ag)*t)|0)<<8|((ab+((b&255)-ab)*t)|0)}
 const seismicCollisionCache=new Map();
 function buildWind(variant,t,salt=4242){const out=[];if(t<=0||t>=1)return out;
  const box=(f,y,l,hx,hy,hz,rgb,a,roll=0)=>{if(a>14&&hx>.0005&&hy>.0005&&hz>.0005&&Number.isFinite(f)&&Number.isFinite(y)&&Number.isFinite(l))

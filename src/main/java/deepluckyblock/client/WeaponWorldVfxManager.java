@@ -625,7 +625,13 @@ public final class WeaponWorldVfxManager {
             case ASTRAL_STAR_LANCE -> 80;
             case SUPREME_PRISM_EDGE -> 84;
             case ANNIHILATING_ARC -> 96;
-            case ABYSSAL_MAELSTROM, DRAGON_CHAOS_PRISM, BIG_BANG_SCAR -> 22;
+            // T375-WATER : l'eau avait 14 à 22 ticks (moins d'une seconde) là où toutes les autres
+            // familles refondues tiennent 80 à 170 ticks. Ses trois signatures ont désormais une
+            // vraie chorégraphie : marche de la vague, tourbillon complet, gel puis éclatement.
+            case HYDRO_TIDAL_SURGE -> 104;
+            case ABYSSAL_MAELSTROM -> 150;
+            case PERMAFROST_RIME -> 120;
+            case DRAGON_CHAOS_PRISM, BIG_BANG_SCAR -> 22;
             case ECLIPSE_VEIL, NULL_RIFT_FISSURE,
                  CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE -> 18;
             case VENOM_BRIAR_FANG -> 112;
@@ -1441,6 +1447,7 @@ public final class WeaponWorldVfxManager {
         EarthSignatureVfx.beginTerrainTick(level);
         SeismicTerrainVfx.beginTerrainTick(level);
         WindTerrainVfx.beginTerrainTick(level);
+        WaterTerrainVfx.beginTerrainTick(level);
 
         for (Iterator<VfxInstance> it = ACTIVE.iterator(); it.hasNext(); ) {
             VfxInstance inst = it.next();
@@ -1475,6 +1482,18 @@ public final class WeaponWorldVfxManager {
             if (inst.kind == KIND_IMPACT && inst.effect == WeaponVisualEffectId.WARLORD_RALLY_SIGIL) {
                 SeismicTerrainVfx.prepareRallyMountain(level, inst.x, inst.y, inst.z,
                         (int) (inst.seed & 0x7FFFFFFFL));
+            }
+            if (inst.kind == KIND_IMPACT && (inst.effect == WeaponVisualEffectId.HYDRO_TIDAL_SURGE
+                    || inst.effect == WeaponVisualEffectId.ABYSSAL_MAELSTROM)) {
+                // T375-WATER-TERRAIN : vrais blocs du sol poussés par la vague / avalés par le
+                // tourbillon (la direction de marche est celle de l'impact, comme pour le feu).
+                boolean maelstrom = inst.effect == WeaponVisualEffectId.ABYSSAL_MAELSTROM;
+                float waterDx = -Mth.sin(-inst.yawDeg * Mth.DEG_TO_RAD);
+                float waterDz = -Mth.cos(-inst.yawDeg * Mth.DEG_TO_RAD);
+                WaterTerrainVfx.prepare(level, inst.x, inst.y, inst.z,
+                        (int) (inst.seed & 0x7FFFFFFFL),
+                        maelstrom ? WaterTerrainVfx.MODE_MAELSTROM : WaterTerrainVfx.MODE_SURGE,
+                        waterDx, waterDz, maelstrom ? 3.30f : 4.60f);
             }
             if (inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE
                     || inst.effect == WeaponVisualEffectId.SOUL_FIRE_CRESCENT
@@ -1829,12 +1848,18 @@ public final class WeaponWorldVfxManager {
         for (VfxInstance inst : ACTIVE) {
             boolean windTerrain = inst.effect == WeaponVisualEffectId.SANDSTORM_DUNE
                     || inst.effect == WeaponVisualEffectId.TEMPEST_EYE;
+            boolean waterTerrain = inst.effect == WeaponVisualEffectId.HYDRO_TIDAL_SURGE
+                    || inst.effect == WeaponVisualEffectId.ABYSSAL_MAELSTROM;
             if (inst.kind != KIND_IMPACT || (inst.effect != WeaponVisualEffectId.SEISMIC_TECTONIC
-                    && inst.effect != WeaponVisualEffectId.WARLORD_RALLY_SIGIL && !windTerrain)) continue;
+                    && inst.effect != WeaponVisualEffectId.WARLORD_RALLY_SIGIL
+                    && !windTerrain && !waterTerrain)) continue;
             float t = Mth.clamp((inst.age + subTick) / (float) inst.maxAge, 0.0f, 1.0f);
             double dx = inst.x - camPos.x, dy = inst.y - camPos.y, dz = inst.z - camPos.z;
             if (dx * dx + dy * dy + dz * dz > MAX_VFX_RENDER_DISTANCE_SQR) continue;
-            if (windTerrain) {
+            if (waterTerrain) {
+                opaqueTerrainRendered |= WaterTerrainVfx.render(mc, terrainBuffers, poseStack, camPos,
+                        inst.x, inst.y, inst.z, (int) (inst.seed & 0x7FFFFFFFL), t);
+            } else if (windTerrain) {
                 opaqueTerrainRendered |= WindTerrainVfx.render(mc, terrainBuffers, poseStack, camPos,
                         inst.x, inst.y, inst.z, (int) (inst.seed & 0x7FFFFFFFL), t);
             } else if (inst.effect == WeaponVisualEffectId.SEISMIC_TECTONIC) {
@@ -3346,8 +3371,48 @@ public final class WeaponWorldVfxManager {
      * 水 EAU — une <b>vague déferlante</b> : une paroi d'eau qui monte, se recourbe vers la cible et
      * l'écrase, avec écume au sommet, embruns qui retombent et rides concentriques au sol.
      */
+    /**
+     * 水 EAU — moteur voxel dédié (T375) : raz-de-marée, maelström abyssal et givre du permafrost.
+     *
+     * <p>Comme pour le vent, la pulsation de taille est coupée : le volume d'eau et la coque de
+     * glace doivent rester jointifs, sinon la masse se lit comme un nuage de cubes séparés. La
+     * direction est inversée (les impacts transportent cible → attaquant) pour que la vague marche
+     * <b>vers</b> l'adversaire.</p>
+     */
+    private static void impactWaterSignature(ImpactView v, int signature) {
+        boolean previousPulse = voxelPulseEnabled;
+        voxelPulseEnabled = false;
+        try {
+            WaterSignatureVfx.render(v.vc(), v.mat(), v.tmp(),
+                    v.cx(), v.cy(), v.cz(), v.t(),
+                    -v.dirX(), -v.dirZ(), signature, v.fadeA(),
+                    (int) (v.inst().seed & 0x7FFFFFFFL));
+        } finally {
+            voxelPulseEnabled = previousPulse;
+        }
+    }
+
     private static void impactWater(ImpactView v) {
-        if (v.inst().effect == WeaponVisualEffectId.PERMAFROST_RIME) {
+        // T375-WATER-REFONTE : les trois signatures d'eau passent par leur moteur dédié. Les
+        // anciennes routines (nappe générique + buisson de piques) restent plus bas pour les
+        // effets d'eau secondaires qui n'ont pas de chorégraphie propre.
+        WeaponVisualEffectId water = v.inst().effect;
+        if (water == WeaponVisualEffectId.HYDRO_TIDAL_SURGE) {
+            impactWaterSignature(v, WaterSignatureVfx.SURGE);
+            return;
+        }
+        if (water == WeaponVisualEffectId.ABYSSAL_MAELSTROM) {
+            impactWaterSignature(v, WaterSignatureVfx.MAELSTROM);
+            return;
+        }
+        if (water == WeaponVisualEffectId.PERMAFROST_RIME) {
+            impactWaterSignature(v, WaterSignatureVfx.RIME);
+            return;
+        }
+        // Repli : tout futur effet d'eau « froid » garde l'ancien buisson de piques, les autres la
+        // nappe générique ci-dessous. Aucun des trois grands ne passe plus par ici.
+        String waterName = water == null ? "" : water.name();
+        if (waterName.contains("RIME") || waterName.contains("FROST") || waterName.contains("ICE")) {
             impactIce(v);
             return;
         }

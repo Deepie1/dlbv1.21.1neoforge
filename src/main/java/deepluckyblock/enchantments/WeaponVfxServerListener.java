@@ -141,7 +141,7 @@ public final class WeaponVfxServerListener {
      */
     private record WindHold(long expires, long started, double cx, double cz, double baseY,
                             double r0, double r1, double rise, double phase, double spin,
-                            float pulse, int period, int attackerId, double wobble) { }
+                            float pulse, int period, int attackerId, double wobble, int release) { }
 
     private static final Map<Integer, WindHold> WIND_HOLDS = new ConcurrentHashMap<>();
     /** Après une éjection, le mob est intouchable un court instant (sinon il est repris en vol). */
@@ -156,7 +156,12 @@ public final class WeaponVfxServerListener {
     private record WindZone(ServerLevel level, long started, long expires, double cx, double cz,
                             double baseY, double radius, double rise, double spin, float pulse,
                             int period, int attackerId, int flightMin, int flightMax,
-                            boolean blind) { }
+                            boolean blind, boolean converge, int release) { }
+
+    /** Éjection classique de tornade : loin, à l'horizontale, direction aléatoire. */
+    private static final int RELEASE_FLING = 0;
+    /** Éjection de geyser (maelström) : très haut, presque à la verticale. */
+    private static final int RELEASE_GEYSER = 1;
 
     private static final List<WindZone> WIND_ZONES = new java.util.concurrent.CopyOnWriteArrayList<>();
     /** Une seule passe d'aspiration par tick de jeu, quel que soit l'entité qui déclenche le hook. */
@@ -220,6 +225,11 @@ public final class WeaponVfxServerListener {
     private static final WeaponVisualEffectId[] ANIM_WIND = {
             WeaponVisualEffectId.ZEPHYR_WIND_LANCE, WeaponVisualEffectId.SANDSTORM_DUNE,
             WeaponVisualEffectId.TEMPEST_EYE
+    };
+    /** Famille EAU (T375) : raz-de-marée, maelström abyssal et givre du permafrost. */
+    private static final WeaponVisualEffectId[] ANIM_WATER = {
+            WeaponVisualEffectId.HYDRO_TIDAL_SURGE, WeaponVisualEffectId.ABYSSAL_MAELSTROM,
+            WeaponVisualEffectId.PERMAFROST_RIME
     };
     private static final WeaponVisualEffectId[] ANIM_LIGHT = {
             WeaponVisualEffectId.SERAPH_SKY_PILLAR, WeaponVisualEffectId.ASTRAL_STAR_LANCE,
@@ -374,6 +384,7 @@ public final class WeaponVfxServerListener {
             applyMetalGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker));
             applyLightGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker), sizeScaleOf(target));
             applyPoisonGameplay(attacker, livingTarget, fx);
+            applyWaterGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker));
         }
     }
 
@@ -518,6 +529,7 @@ public final class WeaponVfxServerListener {
             applyMetalGameplay(comboAttacker, target, sig, weaponDamage);
             applyLightGameplay(comboAttacker, target, sig, weaponDamage, sizeScale);
             applyPoisonGameplay(comboAttacker, target, sig);
+            applyWaterGameplay(comboAttacker, target, sig, weaponDamage);
             // Étincelles de la famille, une par élément : le mélange de couleurs se voit tout de suite.
             WeaponVfxSubtle.Subtle accent = WeaponVfxSubtle.pick(el, sl.random.nextLong());
             broadcastNear(sl, tx, ty, tz, 0, WeaponVfxSubtle.NET_KIND_BASE + accent.index(), 1,
@@ -2185,6 +2197,253 @@ public final class WeaponVfxServerListener {
     // ================================================================================================
 
     /** Aiguillage des trois signatures de vent vers leur gameplay. */
+    // ============================================================================================
+    // 水 EAU (T375) — raz-de-marée, maelström abyssal, givre du permafrost
+    // ============================================================================================
+
+    /**
+     * Routage des trois signatures d'eau. Jusqu'ici l'élément n'avait <b>aucun</b> gameplay : les
+     * animations duraient moins d'une seconde et ne faisaient rien aux mobs. Chacune a maintenant
+     * son comportement, construit sur les mêmes briques que les familles déjà refondues
+     * (emprises, zones, pulses d'arme capturée, sons vanilla).
+     */
+    private static void applyWaterGameplay(LivingEntity attacker, LivingEntity target,
+                                           WeaponVisualEffectId fx, float weaponDamage) {
+        if (fx == null || target == null) return;
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        float damage = Math.max(0.0f, weaponDamage);
+        if (fx == WeaponVisualEffectId.HYDRO_TIDAL_SURGE) {
+            applySurgeGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.ABYSSAL_MAELSTROM) {
+            applyMaelstromGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.PERMAFROST_RIME) {
+            applyRimeGameplay(attacker, target, sl, damage);
+        }
+    }
+
+    /**
+     * RAZ-DE-MARÉE (104 ticks) : le mur d'eau <b>marche vraiment</b>. Un front large de 3,6 blocs
+     * se déplace de 3,4 blocs derrière la cible jusqu'à 2,8 blocs devant elle en douze passes
+     * (ticks 12 → 56). Chaque créature atteinte par le front est <b>emportée</b> dans le sens de
+     * la vague (poussée 1,15 + 0,52 vers le haut), prend un pulse de dégâts, est trempée (ses
+     * flammes s'éteignent, Lenteur II) et ne peut être poussée qu'une fois par passe : le mob est
+     * donc <i>roulé</i> devant la vague au lieu d'être téléporté.
+     */
+    private static void applySurgeGameplay(LivingEntity attacker, LivingEntity target,
+                                           ServerLevel sl, float weaponDamage) {
+        final int scheduleNow = TestProcedure.currentTick(sl);
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final double cx = target.getX();
+        final double cy = target.getY();
+        final double cz = target.getZ();
+        // Direction de marche : attaquant → cible (la vague traverse la cible et continue).
+        double rawX = attacker == null ? target.getLookAngle().x : cx - attacker.getX();
+        double rawZ = attacker == null ? target.getLookAngle().z : cz - attacker.getZ();
+        double norm = Math.sqrt(rawX * rawX + rawZ * rawZ);
+        final double dirX = norm < 0.05 ? 0.0 : rawX / norm;
+        final double dirZ = norm < 0.05 ? 1.0 : rawZ / norm;
+        final float pulse = net.minecraft.util.Mth.clamp(weaponDamage * 0.085f, 0.05f, 0.55f);
+
+        sl.playSound(null, cx, cy, cz, SoundEvents.AMBIENT_UNDERWATER_ENTER, SoundSource.PLAYERS, 0.80f, 0.70f);
+        if (attacker instanceof ServerPlayer serverPlayer) {
+            serverPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                    "§3[Raz-de-marée] §fmur d'eau en marche §7— 6,2 blocs de course · "
+                            + "front de 3,6 · emporte et éteint tout sur son passage"), true);
+        }
+
+        final int passes = 12;
+        for (int pass = 0; pass < passes; pass++) {
+            final float progress = pass / (float) (passes - 1);
+            final int delay = 12 + pass * 4;
+            final double front = -3.40 + progress * 6.20;
+            final boolean breaking = pass >= 6;
+            TestProcedure.schedule(sl, scheduleNow + delay, () -> {
+                double fx2 = cx + dirX * front;
+                double fz2 = cz + dirZ * front;
+                sl.playSound(null, fx2, cy, fz2, breaking ? SoundEvents.AMBIENT_UNDERWATER_EXIT
+                        : SoundEvents.BUBBLE_COLUMN_UPWARDS_AMBIENT, SoundSource.PLAYERS, 0.42f, 0.78f);
+                for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
+                        new AABB(fx2 - 3.60, cy - 1.60, fz2 - 3.60,
+                                fx2 + 3.60, cy + 4.60, fz2 + 3.60))) {
+                    if (!victim.isAlive() || victim instanceof Player) continue;
+                    if (attackerId >= 0 && victim.getId() == attackerId) continue;
+                    // Le front est une BANDE : seules les créatures que le mur touche à CETTE passe
+                    // sont emportées, pas tout le cylindre (sinon la vague n'avance plus, elle gifle).
+                    double rx = victim.getX() - fx2, rz = victim.getZ() - fz2;
+                    double along = rx * dirX + rz * dirZ;
+                    double side = -rx * dirZ + rz * dirX;
+                    if (Math.abs(along) > 1.70 || Math.abs(side) > 3.60) continue;
+                    victim.setDeltaMovement(dirX * 1.15, 0.52, dirZ * 1.15);
+                    victim.hurtMarked = true;
+                    victim.fallDistance = 0.0f;
+                    victim.clearFire();
+                    victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 70, 1, false, true, true));
+                    hurtWithCapturedWeapon(sl, attackerId, victim, pulse);
+                }
+            });
+        }
+        // Reflux : les créatures encore dans la zone sont ramenées vers l'arrière, plus doucement.
+        TestProcedure.schedule(sl, scheduleNow + 74, () -> {
+            sl.playSound(null, cx, cy, cz, SoundEvents.AMBIENT_UNDERWATER_EXIT, SoundSource.PLAYERS, 0.70f, 0.58f);
+            for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
+                    new AABB(cx - 5.0, cy - 2.0, cz - 5.0, cx + 5.0, cy + 3.0, cz + 5.0))) {
+                if (!victim.isAlive() || victim instanceof Player) continue;
+                if (attackerId >= 0 && victim.getId() == attackerId) continue;
+                victim.setDeltaMovement(-dirX * 0.52, 0.18, -dirZ * 0.52);
+                victim.hurtMarked = true;
+            }
+        });
+        TestProcedure.schedule(sl, scheduleNow + 104, () -> sl.playSound(null, cx, cy, cz,
+                SoundEvents.GENERIC_SPLASH, SoundSource.PLAYERS, 0.55f, 0.62f));
+    }
+
+    /**
+     * MAELSTRÖM ABYSSAL (150 ticks) : même machinerie de zone que la tornade — aspiration continue,
+     * hélices toutes différentes — mais réglée en <b>entonnoir</b> : rayon 4,35, montée courte de
+     * 2,30 (on tourne au ras de l'eau, on ne s'envole pas), rotation rapide 0,42 rad/tick, et
+     * surtout {@code converge} : <b>tous</b> les rayons d'arrivée visent la gorge (0,18 à 1,13),
+     * chacun le sien, si bien que les mobs se resserrent en spirale au lieu de rester sur la paroi.
+     * La libération est de type {@link #RELEASE_GEYSER} : au lieu d'être projetés loin, ils sont
+     * <b>recrachés à la verticale</b> (poussée verticale 1,85 à 2,40), et c'est la chute qui fait
+     * le reste des dégâts.
+     */
+    private static void applyMaelstromGameplay(LivingEntity attacker, LivingEntity target,
+                                               ServerLevel sl, float weaponDamage) {
+        final int scheduleNow = TestProcedure.currentTick(sl);
+        final long gameNow = sl.getGameTime();
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final double cx = target.getX();
+        final double cy = target.getY() + target.getBbHeight() * 0.5;
+        final double cz = target.getZ();
+        final double baseY = target.getY();
+        final float pulse = net.minecraft.util.Mth.clamp(weaponDamage * 0.075f, 0.05f, 0.50f);
+
+        WindZone zone = new WindZone(sl, gameNow, gameNow + 118, cx, cz, baseY,
+                4.35, 2.30, 0.42, pulse, 11, attackerId, 55, 100, false, true, RELEASE_GEYSER);
+        WIND_ZONES.add(zone);
+        int grabbed = captureWindZone(zone, sl);
+        if (attacker instanceof ServerPlayer serverPlayer) {
+            serverPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                    "§3[Maelström abyssal] §f" + grabbed + " créature(s) avalée(s) §7— rayon 4,35 · "
+                            + "spirale vers la gorge · geyser au tick 114"), true);
+        }
+
+        sl.playSound(null, cx, cy, cz, SoundEvents.AMBIENT_UNDERWATER_LOOP, SoundSource.PLAYERS, 0.85f, 0.55f);
+        for (int delay = 14; delay < 118; delay += 16) {
+            TestProcedure.schedule(sl, scheduleNow + delay, () -> sl.playSound(null, cx, cy, cz,
+                    SoundEvents.BUBBLE_COLUMN_WHIRLPOOL_AMBIENT, SoundSource.PLAYERS, 0.50f, 0.62f));
+        }
+        // Noyade : tant que le tourbillon tourne, les happés manquent d'air (dégâts déjà donnés par
+        // la zone) et sortent étourdis. On ajoute ici la lenteur « eau lourde » sur toute la cuvette.
+        for (int delay = 20; delay < 112; delay += 22) {
+            TestProcedure.schedule(sl, scheduleNow + delay, () -> {
+                for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
+                        new AABB(cx - 4.35, baseY - 2.0, cz - 4.35,
+                                cx + 4.35, baseY + 3.0, cz + 4.35))) {
+                    if (!victim.isAlive() || victim instanceof Player) continue;
+                    if (attackerId >= 0 && victim.getId() == attackerId) continue;
+                    victim.clearFire();
+                    victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 50, 1, false, true, true));
+                }
+            });
+        }
+        // Geyser : la gorge se referme et recrache. Tout ce qui est encore tenu part à la verticale.
+        TestProcedure.schedule(sl, scheduleNow + 114, () -> {
+            sl.playSound(null, cx, cy, cz, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.55f, 1.45f);
+            sl.playSound(null, cx, cy, cz, SoundEvents.GENERIC_SPLASH, SoundSource.PLAYERS, 0.90f, 0.70f);
+            for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
+                    new AABB(cx - 2.60, baseY - 2.0, cz - 2.60, cx + 2.60, baseY + 4.0, cz + 2.60))) {
+                if (!victim.isAlive() || victim instanceof Player) continue;
+                if (attackerId >= 0 && victim.getId() == attackerId) continue;
+                WindHold held = WIND_HOLDS.get(victim.getId());
+                if (held != null) {
+                    releaseWindHold(victim, held);
+                } else {
+                    victim.setDeltaMovement(victim.getDeltaMovement().x * 0.25, 1.75,
+                            victim.getDeltaMovement().z * 0.25);
+                    victim.fallDistance = 0.0f;
+                    victim.hurtMarked = true;
+                }
+                hurtWithCapturedWeapon(sl, attackerId, victim, Math.min(4.5f, pulse * 2.6f));
+            }
+        });
+        TestProcedure.schedule(sl, scheduleNow + 150, () -> sl.playSound(null, cx, cy, cz,
+                SoundEvents.AMBIENT_UNDERWATER_EXIT, SoundSource.PLAYERS, 0.60f, 0.80f));
+    }
+
+    /**
+     * GIVRE DU PERMAFROST (120 ticks) : la cible est <b>prise dans la glace</b> — immobilisation
+     * complète 72 ticks (comme la mâchoire d'épines), gel vanilla visible ({@code ticksFrozen}),
+     * Lenteur III et Fatigue, pulses de froid toutes les dix ticks — puis la prison
+     * <b>éclate</b> au tick 94 : dégâts de rupture, projection, et la couronne de pics blesse tout
+     * ce qui se trouve encore dans les 3,6 blocs.
+     */
+    private static void applyRimeGameplay(LivingEntity attacker, LivingEntity target,
+                                          ServerLevel sl, float weaponDamage) {
+        final int scheduleNow = TestProcedure.currentTick(sl);
+        final long gameNow = sl.getGameTime();
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final double cx = target.getX();
+        final double cy = target.getY() + target.getBbHeight() * 0.5;
+        final double cz = target.getZ();
+        final float pulse = net.minecraft.util.Mth.clamp(weaponDamage * 0.045f, 0.04f, 0.32f);
+        final long holdEnd = gameNow + 72;
+
+        applyMovementHold(target, holdEnd, true);
+        target.clearFire();
+        target.setTicksFrozen(Math.max(target.getTicksFrozen(), 260));
+
+        sl.playSound(null, cx, cy, cz, SoundEvents.POWDER_SNOW_PLACE, SoundSource.PLAYERS, 0.85f, 0.55f);
+        sl.playSound(null, cx, cy, cz, SoundEvents.GLASS_PLACE, SoundSource.PLAYERS, 0.55f, 0.65f);
+        if (attacker instanceof ServerPlayer serverPlayer) {
+            serverPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                    "§b[Givre du permafrost] §fcible prise dans la glace §7— 72 ticks · "
+                            + "éclatement au tick 94"), true);
+        }
+
+        // Le gel se propage : tout ce qui entre dans la couronne de pics est ralenti et gelé.
+        for (int delay = 10; delay <= 90; delay += 10) {
+            TestProcedure.schedule(sl, scheduleNow + delay, () -> {
+                for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
+                        new AABB(cx - 3.60, cy - 2.40, cz - 3.60, cx + 3.60, cy + 2.80, cz + 3.60))) {
+                    if (!victim.isAlive() || victim instanceof Player) continue;
+                    if (attackerId >= 0 && victim.getId() == attackerId) continue;
+                    victim.clearFire();
+                    victim.setTicksFrozen(Math.max(victim.getTicksFrozen(), 200));
+                    victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 60, 2, false, true, true));
+                    victim.addEffect(new MobEffectInstance(MobEffects.DIG_SLOWDOWN, 60, 1, false, true, true));
+                    hurtWithCapturedWeapon(sl, attackerId, victim, pulse);
+                }
+            });
+        }
+        // Craquements avant la rupture.
+        TestProcedure.schedule(sl, scheduleNow + 78, () -> sl.playSound(null, cx, cy, cz,
+                SoundEvents.GLASS_BREAK, SoundSource.PLAYERS, 0.35f, 0.75f));
+        TestProcedure.schedule(sl, scheduleNow + 86, () -> sl.playSound(null, cx, cy, cz,
+                SoundEvents.GLASS_BREAK, SoundSource.PLAYERS, 0.45f, 0.62f));
+        // Éclatement : la prison explose, les éclats blessent, la cible est libérée et projetée.
+        TestProcedure.schedule(sl, scheduleNow + 94, () -> {
+            releaseMovementHold(target, holdEnd);
+            sl.playSound(null, cx, cy, cz, SoundEvents.GLASS_BREAK, SoundSource.PLAYERS, 1.0f, 0.52f);
+            sl.playSound(null, cx, cy, cz, SoundEvents.PLAYER_HURT_FREEZE, SoundSource.PLAYERS, 0.70f, 0.80f);
+            for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
+                    new AABB(cx - 3.60, cy - 2.40, cz - 3.60, cx + 3.60, cy + 2.80, cz + 3.60))) {
+                if (!victim.isAlive() || victim instanceof Player) continue;
+                if (attackerId >= 0 && victim.getId() == attackerId) continue;
+                double rx = victim.getX() - cx, rz = victim.getZ() - cz;
+                double len = Math.sqrt(rx * rx + rz * rz);
+                double ux = len < 0.05 ? 0.0 : rx / len;
+                double uz = len < 0.05 ? 1.0 : rz / len;
+                victim.setDeltaMovement(ux * 0.85, 0.62, uz * 0.85);
+                victim.fallDistance = 0.0f;
+                victim.hurtMarked = true;
+                hurtWithCapturedWeapon(sl, attackerId, victim, Math.min(5.0f, pulse * 6.0f));
+            }
+        });
+        TestProcedure.schedule(sl, scheduleNow + 120, () -> sl.playSound(null, cx, cy, cz,
+                SoundEvents.POWDER_SNOW_BREAK, SoundSource.PLAYERS, 0.50f, 0.85f));
+    }
+
     private static void applyWindGameplay(LivingEntity attacker, LivingEntity target,
                                           WeaponVisualEffectId fx, float weaponDamage) {
         if (!(target.level() instanceof ServerLevel sl)) return;
@@ -2275,7 +2534,7 @@ public final class WeaponVfxServerListener {
 
         float pulse = net.minecraft.util.Mth.clamp(weaponDamage * 0.07f, 0.04f, 0.45f);
         WindZone zone = new WindZone(sl, gameNow, gameNow + 140, cx, cz, baseY,
-                4.20, 7.60, 0.30, pulse, 12, attackerId, 55, 105, true);
+                4.20, 7.60, 0.30, pulse, 12, attackerId, 55, 105, true, false, RELEASE_FLING);
         WIND_ZONES.add(zone);
         int grabbed = captureWindZone(zone, sl);
         if (attacker instanceof ServerPlayer serverPlayer) {
@@ -2315,7 +2574,7 @@ public final class WeaponVfxServerListener {
         float pulse = net.minecraft.util.Mth.clamp(weaponDamage * 0.08f, 0.05f, 0.60f);
 
         WindZone zone = new WindZone(sl, gameNow, gameNow + 170, cx, cz, baseY,
-                4.60, 10.50, 0.34, pulse, 10, attackerId, 70, 130, false);
+                4.60, 10.50, 0.34, pulse, 10, attackerId, 70, 130, false, false, RELEASE_FLING);
         WIND_ZONES.add(zone);
         int grabbed = captureWindZone(zone, sl);
         if (attacker instanceof ServerPlayer serverPlayer) {
@@ -2381,8 +2640,11 @@ public final class WeaponVfxServerListener {
             // T374-WIND-WEAVE : « bien faire des radius differents pour les mobs, qu'ils
             // s'entremellent en montant ». Un tiers des victimes est aspiré vers l'ŒIL (rayon
             // minuscule au sommet), les autres restent sur la paroi, à des distances variées.
-            boolean towardEye = rnd.nextFloat() < 0.32f;
-            double topRadius = towardEye ? 0.25 + rnd.nextDouble() * 0.55
+            boolean towardEye = zone.converge() || rnd.nextFloat() < 0.32f;
+            // T375-WATER : dans un tourbillon, TOUT finit à la gorge — mais chacun sur son rayon,
+            // sinon les mobs se superposent exactement sur l'axe et la spirale ne se lit plus.
+            double topRadius = zone.converge() ? 0.18 + rnd.nextDouble() * 0.95
+                    : towardEye ? 0.25 + rnd.nextDouble() * 0.55
                     : 1.30 + rnd.nextDouble() * Math.max(0.60, r * 0.55);
             // Vitesse de rotation propre (même sens pour tout le monde), hauteur propre, durée propre.
             double spin = zone.spin() * (0.70 + rnd.nextDouble() * 0.85);
@@ -2393,7 +2655,7 @@ public final class WeaponVfxServerListener {
             WIND_HOLDS.put(candidate.getId(), new WindHold(now + flight, now, zone.cx(), zone.cz(),
                     candidate.getY(), startRadius, topRadius, rise, Math.atan2(dz, dx),
                     spin, zone.pulse(), zone.period(), zone.attackerId(),
-                    rnd.nextDouble() * Math.PI * 2.0));
+                    rnd.nextDouble() * Math.PI * 2.0, zone.release()));
             if (zone.blind()) {
                 candidate.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 60, 0, false, true, true));
                 candidate.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 90, 1, false, true, true));
@@ -2509,8 +2771,12 @@ public final class WeaponVfxServerListener {
         float flingAngle = random.nextFloat() * (float) (Math.PI * 2.0);
         // « a la fin ils se font projeter haut et loin » : poussée horizontale 2,05-3,40 et une
         // verticale franche, dans une direction tirée au hasard, dès que le mob atteint le sommet.
-        float strength = 2.05f + random.nextFloat() * 1.35f;
-        double lift = 1.12 + random.nextFloat() * 0.48;
+        // T375-WATER : le maelström, lui, RECRACHE à la verticale — c'est un geyser, pas un souffle.
+        boolean geyser = hold.release() == RELEASE_GEYSER;
+        float strength = geyser ? 0.30f + random.nextFloat() * 0.55f
+                : 2.05f + random.nextFloat() * 1.35f;
+        double lift = geyser ? 1.85 + random.nextFloat() * 0.55
+                : 1.12 + random.nextFloat() * 0.48;
         target.setDeltaMovement(Math.cos(flingAngle) * strength, lift, Math.sin(flingAngle) * strength);
         WIND_RECAPTURE.put(target.getId(), target.level().getGameTime() + 70);
         // La chute repart de zéro À CET INSTANT : tout ce qui suit est compté par le jeu.
@@ -2817,6 +3083,7 @@ public final class WeaponVfxServerListener {
                 : deepluckyblock.util.AnimFamily.EARTH.equals(family) ? ANIM_EARTH
                 : deepluckyblock.util.AnimFamily.METAL.equals(family) ? ANIM_METAL
                 : deepluckyblock.util.AnimFamily.LIGHT.equals(family) ? ANIM_LIGHT
+                : deepluckyblock.util.AnimFamily.WATER.equals(family) ? ANIM_WATER
                 : deepluckyblock.util.AnimFamily.WIND.equals(family) ? ANIM_WIND : ANIM_GAIA;
 
         if (roll >= 60) {
@@ -2836,6 +3103,7 @@ public final class WeaponVfxServerListener {
             applyLightGameplay(attacker, target, fx, capturedWeaponDamage, bigScale);
             applyFireGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyPoisonGameplay(attacker, target, fx);
+            applyWaterGameplay(attacker, target, fx, capturedWeaponDamage);
             return;
         }
 

@@ -482,7 +482,7 @@ public final class DlbVfxCommand {
         line(src, "§e/dlbvfx hit [nombre]", "vraies frappes sur la cible d'entraînement (impact + crit réels)");
         line(src, "§e/dlbvfx dummy", "invoque / retire la cible d'entraînement");
         line(src, "§e/dlbvfx give <effet> [niveau]", "donne les armes enchantées qui déclenchent cet effet");
-        line(src, "§e/anim <famille>", "épée de démonstration en §fbois§7 (glint de l'élément) : familles §ffire wind earth metal light poison nature §7— §f60 %§7 slash + §f40 %§7 grosses animations");
+        line(src, "§e/anim <famille>", "épée de démonstration en §fbois§7 (glint de l'élément) : familles §ffire water wind earth metal light poison nature §7— §f60 %§7 slash + §f40 %§7 grosses animations");
         line(src, "§e/dlbvfx elements [famille]", "les §f" + deepluckyblock.enchantments.DeepElement.values().length + " §7familles élémentaires (couleurs + effets)");
         line(src, "§e/dlbvfx variants", "défile les déclinaisons (de moins en moins de particules)");
         line(src, "§e/dlbvfx subtle [famille] [index]", "les §f" + (deepluckyblock.enchantments.WeaponVfxSubtle.COUNT + deepluckyblock.enchantments.WeaponVfxSubtleEcho.COUNT) + " §7accents discrets : §f" + deepluckyblock.enchantments.WeaponVfxSubtle.COUNT + " §7élémentaires + §f" + deepluckyblock.enchantments.WeaponVfxSubtleEcho.COUNT + " §7échos des grosses animations");
