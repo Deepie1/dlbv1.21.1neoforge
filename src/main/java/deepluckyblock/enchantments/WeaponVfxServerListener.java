@@ -131,12 +131,21 @@ public final class WeaponVfxServerListener {
     private static final int METEOR_IMPACT_TICKS = 30;
     private static final double METEOR_FIRE_RADIUS = 4.0;
 
-    /** Emprise de vent : le mob tourne autour de l'axe de la tornade en montant, puis est éjecté. */
+    /**
+     * Emprise de vent : le mob tourne autour de l'axe de la tornade en montant, puis est éjecté.
+     *
+     * <p>T374-WIND-WEAVE : {@code r1}, {@code spin}, {@code rise}, la durée de vol et {@code wobble}
+     * sont tirés au sort <b>par mob</b>. Deux créatures happées au même instant ne suivent donc
+     * jamais la même hélice : elles s'entremêlent, certaines filent vers l'œil (rayon &lt; 0,8),
+     * d'autres restent sur la paroi, et elles n'atteignent pas le sommet en même temps.</p>
+     */
     private record WindHold(long expires, long started, double cx, double cz, double baseY,
                             double r0, double r1, double rise, double phase, double spin,
-                            float pulse, int period, int attackerId) { }
+                            float pulse, int period, int attackerId, double wobble) { }
 
     private static final Map<Integer, WindHold> WIND_HOLDS = new ConcurrentHashMap<>();
+    /** Après une éjection, le mob est intouchable un court instant (sinon il est repris en vol). */
+    private static final Map<Integer, Long> WIND_RECAPTURE = new ConcurrentHashMap<>();
 
     /**
      * T374-WIND-VORTEX : une <b>zone</b> de tornade, indépendante des victimes déjà attrapées.
@@ -146,7 +155,8 @@ public final class WeaponVfxServerListener {
      */
     private record WindZone(ServerLevel level, long started, long expires, double cx, double cz,
                             double baseY, double radius, double rise, double spin, float pulse,
-                            int period, int attackerId) { }
+                            int period, int attackerId, int flightMin, int flightMax,
+                            boolean blind) { }
 
     private static final List<WindZone> WIND_ZONES = new java.util.concurrent.CopyOnWriteArrayList<>();
     /** Une seule passe d'aspiration par tick de jeu, quel que soit l'entité qui déclenche le hook. */
@@ -2245,40 +2255,39 @@ public final class WeaponVfxServerListener {
     }
 
     /**
-     * TEMPÊTE DE SABLE (140 ticks) : nuage de sable — cécité 2,5 s, lenteur, dégâts réguliers sur
-     * tous les ennemis pris dans le nuage (rayon 2,40), plus un souffle final.
+     * TEMPÊTE DE SABLE (140 ticks) : <b>vraie tornade</b>, comme l'Œil du cyclone mais plus basse et
+     * plus large au sol. Elle happe en continu toute créature du rayon 4,20, les fait tourner en
+     * montant de 7,60 blocs sur des hélices toutes différentes (certaines filent vers l'œil), les
+     * aveugle et les ralentit, leur inflige des dégâts toutes les douze ticks, puis les projette
+     * haut et loin dès qu'elles atteignent le sommet — avec les dégâts de chute par-dessus.
+     *
+     * <p>T374-SAND-TORNADO : jusqu'ici cette signature ne faisait que poser cécité + lenteur sur une
+     * liste figée de victimes dans un rayon de 2,40 ; « les tornades n'emportent toujours pas les
+     * mobs » ne concernait donc que celle-ci, le cyclone utilisant déjà l'aspiration zonale.</p>
      */
     private static void applySandstormGameplay(LivingEntity attacker, LivingEntity target,
                                                ServerLevel sl, float weaponDamage) {
         int scheduleNow = TestProcedure.currentTick(sl);
+        long gameNow = sl.getGameTime();
         int attackerId = attacker == null ? -1 : attacker.getId();
         double cx = target.getX(), cy = target.getY() + target.getBbHeight() * 0.5, cz = target.getZ();
-        double radius = 2.40;
-        List<LivingEntity> caught = new ArrayList<>();
-        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
-                new AABB(cx - radius, cy - radius - 1.0, cz - radius,
-                        cx + radius, cy + radius + 1.0, cz + radius))) {
-            // Toute créature vivante est concernée (la cible d'entraînement est un villageois en
-            // mode Paisible, donc pas une « Enemy ») : seuls le joueur attaquant et les joueurs
-            // sont exclus.
-            if (!candidate.isAlive() || candidate instanceof Player) continue;
-            if (attacker != null && candidate.getUUID().equals(attacker.getUUID())) continue;
-            if (candidate.distanceToSqr(cx, cy, cz) > radius * radius) continue;
-            caught.add(candidate);
-            candidate.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 50, 0, false, true, true));
-            candidate.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 90, 1, false, true, true));
-        }
+        double baseY = target.getY();
 
         float pulse = net.minecraft.util.Mth.clamp(weaponDamage * 0.07f, 0.04f, 0.45f);
+        WindZone zone = new WindZone(sl, gameNow, gameNow + 140, cx, cz, baseY,
+                4.20, 7.60, 0.30, pulse, 12, attackerId, 55, 105, true);
+        WIND_ZONES.add(zone);
+        int grabbed = captureWindZone(zone, sl);
+        if (attacker instanceof ServerPlayer serverPlayer) {
+            serverPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                    "§6[Tempête de sable] §f" + grabbed + " créature(s) happée(s) §7— rayon 4,2 · "
+                            + "montée 7,6 · cécité · éjection au sommet"), true);
+        }
+
         sl.playSound(null, cx, cy, cz, SoundEvents.HONEY_BLOCK_SLIDE, SoundSource.PLAYERS, 0.70f, 0.62f);
         for (int delay = 12; delay < 140; delay += 14) {
-            TestProcedure.schedule(sl, scheduleNow + delay, () -> {
-                sl.playSound(null, cx, cy, cz, SoundEvents.ROOTED_DIRT_BREAK, SoundSource.PLAYERS, 0.22f, 0.55f);
-                for (LivingEntity victim : caught) {
-                    if (!victim.isAlive() || victim.level() != sl) continue;
-                    hurtWithCapturedWeapon(sl, attackerId, victim, pulse);
-                }
-            });
+            TestProcedure.schedule(sl, scheduleNow + delay, () -> sl.playSound(null, cx, cy, cz,
+                    SoundEvents.ROOTED_DIRT_BREAK, SoundSource.PLAYERS, 0.22f, 0.55f));
         }
         TestProcedure.schedule(sl, scheduleNow + 40, () -> sl.playSound(null, cx, cy, cz,
                 SoundEvents.PHANTOM_AMBIENT, SoundSource.PLAYERS, 0.30f, 0.80f));
@@ -2306,7 +2315,7 @@ public final class WeaponVfxServerListener {
         float pulse = net.minecraft.util.Mth.clamp(weaponDamage * 0.08f, 0.05f, 0.60f);
 
         WindZone zone = new WindZone(sl, gameNow, gameNow + 170, cx, cz, baseY,
-                4.60, 10.50, 0.34, pulse, 10, attackerId);
+                4.60, 10.50, 0.34, pulse, 10, attackerId, 70, 130, false);
         WIND_ZONES.add(zone);
         int grabbed = captureWindZone(zone, sl);
         if (attacker instanceof ServerPlayer serverPlayer) {
@@ -2360,16 +2369,35 @@ public final class WeaponVfxServerListener {
             if (d2 > r * r) continue;
             if (candidate.getY() > topY + 1.5) continue;
             if (WIND_HOLDS.containsKey(candidate.getId())) continue;
+            Long recapture = WIND_RECAPTURE.get(candidate.getId());
+            if (recapture != null && now < recapture) continue;
             rememberSignatureAi(candidate);
             // T374-WIND-PRIORITY : le vent prime sur les emprises au sol (seisme, titan). Sans cela,
             // l'emprise rappelait le mob a sa position d'origine a chaque tick et la tornade semblait
             // n'avoir aucun effet.
             MOVEMENT_HOLDS.remove(candidate.getId());
-            double startRadius = Math.max(0.80, Math.min(2.80, Math.sqrt(d2)));
-            double rise = Math.max(0.60, topY - candidate.getY());
-            WIND_HOLDS.put(candidate.getId(), new WindHold(zone.expires(), now, zone.cx(), zone.cz(),
-                    candidate.getY(), startRadius, 2.60, rise, Math.atan2(dz, dx),
-                    zone.spin(), zone.pulse(), zone.period(), zone.attackerId()));
+            var rnd = candidate.getRandom();
+            double startRadius = Math.max(0.60, Math.min(r, Math.sqrt(d2)));
+            // T374-WIND-WEAVE : « bien faire des radius differents pour les mobs, qu'ils
+            // s'entremellent en montant ». Un tiers des victimes est aspiré vers l'ŒIL (rayon
+            // minuscule au sommet), les autres restent sur la paroi, à des distances variées.
+            boolean towardEye = rnd.nextFloat() < 0.32f;
+            double topRadius = towardEye ? 0.25 + rnd.nextDouble() * 0.55
+                    : 1.30 + rnd.nextDouble() * Math.max(0.60, r * 0.55);
+            // Vitesse de rotation propre (même sens pour tout le monde), hauteur propre, durée propre.
+            double spin = zone.spin() * (0.70 + rnd.nextDouble() * 0.85);
+            double climb = zone.rise() * (0.80 + rnd.nextDouble() * 0.28);
+            double rise = Math.max(1.20, zone.baseY() + climb - candidate.getY());
+            int span = Math.max(1, zone.flightMax() - zone.flightMin() + 1);
+            long flight = zone.flightMin() + rnd.nextInt(span);
+            WIND_HOLDS.put(candidate.getId(), new WindHold(now + flight, now, zone.cx(), zone.cz(),
+                    candidate.getY(), startRadius, topRadius, rise, Math.atan2(dz, dx),
+                    spin, zone.pulse(), zone.period(), zone.attackerId(),
+                    rnd.nextDouble() * Math.PI * 2.0));
+            if (zone.blind()) {
+                candidate.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 60, 0, false, true, true));
+                candidate.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 90, 1, false, true, true));
+            }
             grabbed++;
         }
         return grabbed;
@@ -2377,10 +2405,12 @@ public final class WeaponVfxServerListener {
 
     /** Une passe d'aspiration par tick de jeu : les mobs qui entrent dans la tornade sont pris. */
     private static void tickWindZones(net.minecraft.world.level.Level level) {
-        if (WIND_ZONES.isEmpty() || !(level instanceof ServerLevel sl)) return;
+        if (!(level instanceof ServerLevel sl)) return;
         long now = sl.getGameTime();
         if (now == LAST_WIND_ZONE_TICK) return;
         LAST_WIND_ZONE_TICK = now;
+        if (!WIND_RECAPTURE.isEmpty()) WIND_RECAPTURE.values().removeIf(until -> now >= until);
+        if (WIND_ZONES.isEmpty()) return;
         WIND_ZONES.removeIf(zone -> now >= zone.expires() || zone.level() != sl);
         for (WindZone zone : WIND_ZONES) {
             captureWindZone(zone, sl);
@@ -2439,12 +2469,19 @@ public final class WeaponVfxServerListener {
         double span = Math.max(1.0, (double) (hold.expires() - hold.started()));
         double u = Math.max(0.0, Math.min(1.0, elapsed / span));
         double uNext = Math.max(0.0, Math.min(1.0, (elapsed + 1.0) / span));
-        double rNow = hold.r0() + (hold.r1() - hold.r0()) * u;
-        double rNext = hold.r0() + (hold.r1() - hold.r0()) * uNext;
+        // T374-WIND-WEAVE : le rayon et l'altitude ondulent autour de l'hélice, avec une phase
+        // propre à chaque mob — sans cela tous montaient sur EXACTEMENT le même patron, ce qui se
+        // remarquait immédiatement. Ici ils se croisent, se doublent et s'entremêlent.
+        double rNow = Math.max(0.12, hold.r0() + (hold.r1() - hold.r0()) * u
+                + 0.34 * Math.sin(elapsed * 0.17 + hold.wobble()));
+        double rNext = Math.max(0.12, hold.r0() + (hold.r1() - hold.r0()) * uNext
+                + 0.34 * Math.sin((elapsed + 1.0) * 0.17 + hold.wobble()));
         double aNow = hold.phase() + elapsed * hold.spin();
         double aNext = hold.phase() + (elapsed + 1.0) * hold.spin();
-        double yNow = hold.baseY() + hold.rise() * Math.sin(u * Math.PI * 0.5);
-        double yNext = hold.baseY() + hold.rise() * Math.sin(uNext * Math.PI * 0.5);
+        double yNow = hold.baseY() + hold.rise() * Math.sin(u * Math.PI * 0.5)
+                + 0.20 * Math.sin(elapsed * 0.23 + hold.wobble() * 1.7);
+        double yNext = hold.baseY() + hold.rise() * Math.sin(uNext * Math.PI * 0.5)
+                + 0.20 * Math.sin((elapsed + 1.0) * 0.23 + hold.wobble() * 1.7);
         double xNow = hold.cx() + Math.cos(aNow) * rNow;
         double zNow = hold.cz() + Math.sin(aNow) * rNow;
         double xNext = hold.cx() + Math.cos(aNext) * rNext;
@@ -2470,8 +2507,12 @@ public final class WeaponVfxServerListener {
         if (!target.isAlive()) return;
         var random = target.getRandom();
         float flingAngle = random.nextFloat() * (float) (Math.PI * 2.0);
-        float strength = 1.45f + random.nextFloat() * 0.55f;
-        target.setDeltaMovement(Math.cos(flingAngle) * strength, 0.95, Math.sin(flingAngle) * strength);
+        // « a la fin ils se font projeter haut et loin » : poussée horizontale 2,05-3,40 et une
+        // verticale franche, dans une direction tirée au hasard, dès que le mob atteint le sommet.
+        float strength = 2.05f + random.nextFloat() * 1.35f;
+        double lift = 1.12 + random.nextFloat() * 0.48;
+        target.setDeltaMovement(Math.cos(flingAngle) * strength, lift, Math.sin(flingAngle) * strength);
+        WIND_RECAPTURE.put(target.getId(), target.level().getGameTime() + 70);
         // La chute repart de zéro À CET INSTANT : tout ce qui suit est compté par le jeu.
         target.fallDistance = 0.0f;
         target.hurtMarked = true;

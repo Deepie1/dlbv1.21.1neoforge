@@ -4,12 +4,12 @@ Ces liens pointent sur la **branche de travail** (`arena/605e67fb-dlbv1-21-1neof
 
 Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin>` — GitHub redirige vers le fichier brut exact.
 
-## Vent — refonte complète (v8, en tête de gondole)
+## Vent — refonte complète (v9, en tête de gondole)
 
 | Fichier | Lien |
 |---|---|
-| Sources complètes (ZIP, 25 entrées, 417586 o — moteur + rendu + gameplay + commande `/anim` + miroirs) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_src.zip |
-| Aperçu animé **v8** (HTML autonome, ZIP embarqué, gameplay documenté) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Vent_v8_preview.html |
+| Sources complètes (ZIP, 25 entrées, 421012 o — moteur + rendu + gameplay + commande `/anim` + miroirs) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_src.zip |
+| Aperçu animé **v8** (HTML autonome, ZIP embarqué rafraîchi au gameplay v9) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Vent_v8_preview.html |
 | Aperçu animé v7 (version précédente) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Vent_v7_preview.html |
 | Aperçu (chemin historique, même contenu) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_preview.html |
 | `WindSignatureVfx.java` (moteur voxel du vent) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/WindSignatureVfx.java |
@@ -32,13 +32,13 @@ Trois signatures : **Zéphyr** (#22, 4,0 s, chorégraphie refaite — colonne d'
 
 **`/anim wind`** : épée **en bois** au glint bleu-vert dont la famille NBT fait tourner Zéphyr → sable → cyclone et déclenche le gameplay correspondant (`/anim` seul liste les sept familles).
 
-**Gameplay (nouveau)** : Zéphyr cloue la cible 4 s puis la lâche · tempête de sable = cécité + lenteur + dégâts périodiques sur l'entourage · œil du cyclone = toutes les créatures du rayon 4,6 happées, orbitées, montées de 10,5 blocs puis éjectées dans une direction aléatoire, dégâts de tornade toutes les 10 ticks **+ dégâts de chute vanilla** à l'atterrissage. Sons 100 % vanilla.
+**Gameplay (v9)** : Zéphyr cloue la cible 4 s puis la lâche · **tempête de sable = vraie tornade** — toute créature du rayon 4,2 est happée en continu, monte 7,6 blocs sur **son propre** rayon d'orbite (≈ 1 mob sur 3 passe par l'œil), avec rotation, ondulation et durée de vol tirées au sort pour que les mobs **s'entremêlent** au lieu de suivre le même patron, puis est **projetée haut et loin dès qu'elle atteint le sommet** (cécité, lenteur, dégâts toutes les 12 ticks, dégâts de chute) · œil du cyclone = toutes les créatures du rayon 4,6 happées, orbitées, montées de 10,5 blocs puis éjectées dans une direction aléatoire, dégâts de tornade toutes les 10 ticks **+ dégâts de chute vanilla** à l'atterrissage. Sons 100 % vanilla.
 
 Empreintes des archives de cette version :
 
 ```text
-DLB_Wind_Three_Signatures_src.zip  417 586 o  sha256 de95200d6f7d32e1…
-src-modifies-t301-t374.zip       3 532 750 o  sha256 7b6217902459452c…
+DLB_Wind_Three_Signatures_src.zip  421 012 o  sha256 8bf066076444e201…
+src-modifies-t301-t374.zip       3 536 176 o  sha256 2c06c6de8920bc6e…
 ```
 
 ## Lumière — dernier correctif (V6.5)

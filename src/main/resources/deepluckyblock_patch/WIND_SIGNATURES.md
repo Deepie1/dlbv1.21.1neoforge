@@ -1,4 +1,4 @@
-# Vent — trois signatures, un seul moteur voxel (v8)
+# Vent — trois signatures, un seul moteur voxel (v9)
 
 Refonte complète de l’élément **Vent**. Jusqu’ici il n’existait pas comme famille : la lance de zéphyr
 était un modèle compacté caché dans `GaiaWorldTreeVfx` (variant `ZEPHYR`), et la tempête de sable
@@ -8,6 +8,38 @@ n’avait de langage visuel commun : pas de ruban, pas de grain, pas de tourbill
 Cette version introduit **`WindSignatureVfx`**, un moteur voxel dédié, et trois chorégraphies
 distinctes partageant une identité unique — blanc glacé, azur, ardoise — avec de l’ocre réservé au
 sable.
+
+---
+
+## 0quater. v9 — « la tornade de sable n'emporte pas les mobs »
+
+**Le reproche.** « Pour la tornade bleue ça fonctionne, le non fonctionnel est donc la tornade de
+sable. » Et, sur la montée : « bien faire des **radius différents** pour les mobs, qu'ils
+s'entremêlent en montant, sinon on remarque trop qu'ils montent en suivant exactement le même
+patron, ce qui n'est pas naturel. »
+
+**La cause.** Seul l'Œil du cyclone installait une **`WindZone`** (aspiration zonale + `WIND_HOLDS`).
+`applySandstormGameplay` ne faisait que poser Cécité + Lenteur sur une liste figée de victimes dans
+2,40 blocs, et leur infliger des dégâts : aucune emprise, donc aucune montée et aucune éjection.
+
+**Le correctif.**
+
+1. La tempête de sable crée désormais sa propre `WindZone` — rayon **4,20**, montée **7,60** (la
+   tornade visuelle fait 7,90 de haut), `spin` **0,30**, **140 ticks**, un pulse toutes les 12 ticks —
+   avec capture **continue** : tout mob qui entre dans le cylindre en cours de route est happé.
+   Cécité 3 s + Lenteur II 4,5 s sont maintenant portées **à la capture**, par la zone.
+2. **Hélices toutes différentes** (`T374-WIND-WEAVE`). À la capture, chaque mob tire au sort :
+   son **rayon au sommet** (≈ 32 % des mobs partent vers l'**œil**, rayon 0,25–0,80 ; les autres
+   restent sur la paroi, 1,30 → 1,30 + 0,55 × rayon), sa **vitesse de rotation** (0,70–1,55 × celle de
+   la zone), sa **hauteur de montée** (0,80–1,08 × celle de la zone), sa **durée de vol** et une
+   **phase d'ondulation** propre. Chaque tick, le rayon ondule de ±0,34 et l'altitude de ±0,20 selon
+   cette phase : les victimes se croisent, se doublent et s'entremêlent au lieu de suivre le même
+   patron.
+3. **Éjection au sommet**, pas à l'expiration d'un minuteur commun : comme la durée de vol est tirée
+   par mob (sable 55–105 ticks, cyclone 70–130), chacun arrive en haut à son tour et part **haut et
+   loin** — poussée horizontale **2,05–3,40** (contre 1,45–2,00 avant) et verticale **1,12–1,60** dans
+   une direction aléatoire, suivie des dégâts de chute vanilla. Une immunité de reprise de 70 ticks
+   empêche la zone encore active de le ré-aspirer en plein vol.
 
 ---
 
@@ -242,14 +274,16 @@ d'effet** : il réutilise les emprises existantes (`MOVEMENT_HOLDS`) et une nouv
 | Chute | 0,55 bloc : sous le seuil de dégâts de chute, aucune pénalité ajoutée |
 | Sons | `warden.emerg` (ouverture) · `item.trident.throw` × 3 départs · `entity.player.attack.sweep` + `block.amethyst_block.chime` × 3 impacts · `entity.ender_dragon.flap` sur les rafales · `entity.ender_dragon.flap` + `entity.phantom.ambient` à la libération |
 
-### 5.2 Tempête de sable — nuage de sable sur tout l'entourage
+### 5.2 Tempête de sable — les mobs montent la tornade puis sont projetés (v9)
 
 | Aspect | Comportement |
 |---|---|
-| Cibles | tous les `Enemy` dans **2,40 blocs** du centre |
-| Emprise | aucune immobilisation totale : le sable colle (Lenteur II) et aveugle |
-| Effets | **Cécité 2,5 s** + **Lenteur II 4,5 s** |
-| Dégâts | un pulse toutes les **14 ticks** pendant 140 ticks de `clamp(0,07 × arme, 0,04, 0,45)` → ≈ **0,7 × arme** par mob |
+| Cibles | **toute créature vivante** dans **4,20 blocs** (hors joueurs et hors attaquant), aspirée **en continu** pendant 140 ticks (v9) |
+| Emprise | `WIND_HOLDS` : `NoAi` forcé, victime téléportée chaque tick sur **son** hélice, 55 à 105 ticks selon le mob |
+| Mouvement | montée de **7,60 blocs** (± 8 %), rotation **0,30 rad/tick** (× 0,70 à 1,55 selon le mob), rayon final tiré au sort — ≈ 32 % des mobs passent par l'**œil** (0,25–0,80), les autres longent la paroi — ondulation ±0,34 en rayon et ±0,20 en hauteur, phase propre à chacun |
+| Effets | **Cécité 3 s** + **Lenteur II 4,5 s** à la capture |
+| Dégâts | un pulse toutes les **12 ticks** de `clamp(0,07 × arme, 0,04, 0,45)` + **3 × pulse** à l'éjection, plus les dégâts de chute |
+| Éjection | au **sommet** de son hélice : poussée horizontale **2,05–3,40** + verticale **1,12–1,60** dans une direction aléatoire, Nausée 6 s, Lenteur 4 s, immunité de reprise 70 ticks |
 | Sons | `block.honey_block.slide` (le sable coule) · `block.rooted_dirt.break` à chaque pulse · `entity.phantom.ambient` · `entity.ender_dragon.flap` · `entity.fire.extinguish` (fin du nuage) |
 
 ### 5.3 Œil du cyclone — les mobs sont emportés puis relâchés en l'air
