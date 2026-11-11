@@ -404,8 +404,10 @@ public final class DlbVfxCommand {
     private static int giveAnimationSword(CommandContext<CommandSourceStack> ctx, String family)
             throws CommandSyntaxException {
         ServerPlayer player = requirePlayer(ctx);
-        String canonical = deepluckyblock.util.AnimFamily.canonical(family);
-        if (canonical == null) canonical = deepluckyblock.util.AnimFamily.NATURE;
+        // `final` obligatoire : la valeur est relue dans le lambda du message de confirmation
+        // (« local variables referenced from a lambda expression must be effectively final »).
+        String resolved = deepluckyblock.util.AnimFamily.canonical(family);
+        final String canonical = resolved == null ? deepluckyblock.util.AnimFamily.NATURE : resolved;
         // T374-ANIM-SWORD : épée en BOIS (plus de netherite) — l'épée ne sert qu'à déclencher les
         // animations, le matériau n'a aucune importance et le bois se repère d'un coup d'œil.
         ItemStack sword = new ItemStack(Items.WOODEN_SWORD);

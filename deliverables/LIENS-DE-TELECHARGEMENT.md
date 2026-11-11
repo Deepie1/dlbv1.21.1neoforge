@@ -8,7 +8,7 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 | Fichier | Lien |
 |---|---|
-| Sources complètes (ZIP, 25 entrées, 417344 o — moteur + rendu + gameplay + commande `/anim` + miroirs) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_src.zip |
+| Sources complètes (ZIP, 25 entrées, 417586 o — moteur + rendu + gameplay + commande `/anim` + miroirs) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_src.zip |
 | Aperçu animé **v8** (HTML autonome, ZIP embarqué, gameplay documenté) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Vent_v8_preview.html |
 | Aperçu animé v7 (version précédente) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Vent_v7_preview.html |
 | Aperçu (chemin historique, même contenu) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_preview.html |
@@ -37,8 +37,8 @@ Trois signatures : **Zéphyr** (#22, 4,0 s, chorégraphie refaite — colonne d'
 Empreintes des archives de cette version :
 
 ```text
-DLB_Wind_Three_Signatures_src.zip  417 344 o  sha256 37c00853a9483314…
-src-modifies-t301-t374.zip       3 532 508 o  sha256 d6514bafb46480fe…
+DLB_Wind_Three_Signatures_src.zip  417 586 o  sha256 de95200d6f7d32e1…
+src-modifies-t301-t374.zip       3 532 750 o  sha256 7b6217902459452c…
 ```
 
 ## Lumière — dernier correctif (V6.5)
