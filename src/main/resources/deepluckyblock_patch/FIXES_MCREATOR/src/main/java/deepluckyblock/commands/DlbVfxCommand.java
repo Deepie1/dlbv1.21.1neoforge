@@ -375,43 +375,59 @@ public final class DlbVfxCommand {
         if (opOnly()) {
             anim.requires(src -> src.hasPermission(2));
         }
-        anim.then(Commands.literal("vent").executes(ctx -> giveAnimationSword(ctx, "vent")))
-                .then(Commands.literal("wind").executes(ctx -> giveAnimationSword(ctx, "vent")))
-                .then(Commands.literal("feu").executes(ctx -> giveAnimationSword(ctx, "feu")))
-                .then(Commands.literal("gaia").executes(ctx -> giveAnimationSword(ctx, "gaia")))
-                .then(Commands.literal("poison").executes(ctx -> giveAnimationSword(ctx, "poison")))
-                .then(Commands.literal("terre").executes(ctx -> giveAnimationSword(ctx, "terre")))
-                .then(Commands.literal("earth").executes(ctx -> giveAnimationSword(ctx, "terre")))
-                .then(Commands.literal("metal").executes(ctx -> giveAnimationSword(ctx, "metal")))
-                .then(Commands.literal("light").executes(ctx -> giveAnimationSword(ctx, "light")));
+        // T374-ANIM-FAMILIES : un seul nom par famille, toujours en anglais. Les anciennes valeurs
+        // NBT (feu / vent / terre / gaia) restent lues par AnimFamily.canonical(...) pour les épées
+        // déjà distribuées, mais elles ne sont plus proposées : plus aucun doublon terre/earth.
+        for (String family : deepluckyblock.util.AnimFamily.ALL) {
+            anim.then(Commands.literal(family).executes(ctx -> giveAnimationSword(ctx, family)));
+        }
+        anim.executes(DlbVfxCommand::listAnimationFamilies);
         event.getDispatcher().register(anim);
+    }
+
+    /** {@code /anim} sans argument : la liste anglaise, sans doublon, avec la couleur de glint. */
+    private static int listAnimationFamilies(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack src = ctx.getSource();
+        line(src, "§e/anim <famille>", "épée de démonstration en §fbois§7, glint de la couleur de l'élément, "
+                + "§f60 %§7 slash + §f40 %§7 grosses animations (dans l'ordre, en boucle)");
+        StringBuilder names = new StringBuilder();
+        for (String family : deepluckyblock.util.AnimFamily.ALL) {
+            if (names.length() > 0) names.append("§7, ");
+            names.append(deepluckyblock.util.AnimFamily.colorCode(family))
+                    .append(deepluckyblock.util.AnimFamily.displayName(family));
+        }
+        src.sendSuccess(() -> Component.literal("§b[/anim] §ffamilles disponibles : " + names
+                + " §8(les anciens noms feu / vent / terre / gaia restent acceptés sur les épées existantes)"), false);
+        return 1;
     }
 
     private static int giveAnimationSword(CommandContext<CommandSourceStack> ctx, String family)
             throws CommandSyntaxException {
         ServerPlayer player = requirePlayer(ctx);
-        ItemStack sword = new ItemStack(Items.NETHERITE_SWORD);
+        String canonical = deepluckyblock.util.AnimFamily.canonical(family);
+        if (canonical == null) canonical = deepluckyblock.util.AnimFamily.NATURE;
+        // T374-ANIM-SWORD : épée en BOIS (plus de netherite) — l'épée ne sert qu'à déclencher les
+        // animations, le matériau n'a aucune importance et le bois se repère d'un coup d'œil.
+        ItemStack sword = new ItemStack(Items.WOODEN_SWORD);
         var tag = deepluckyblock.util.DeepNbt.getOrCreateTag(sword);
-        tag.putString("DlbAnimFamily", family);
+        tag.putString("DlbAnimFamily", canonical);
         tag.putInt("DlbAnimNext", 0);
+        // Glint = couleur de l'élément, via la même clé forcée que /glint <couleur>.
+        tag.putInt(deepluckyblock.client.EnchantAura.GLINT_FORCE_NBT_KEY,
+                0xFF000000 | (deepluckyblock.util.AnimFamily.glintColor(canonical) & 0xFFFFFF));
         deepluckyblock.util.DeepNbt.commit(sword, tag);
-        String displayName = switch (family) {
-            case "feu" -> "§cAnimation Feu";
-            case "poison" -> "§2Animation Poison";
-            case "terre" -> "§6Animation §aTerre";
-            case "metal" -> "§7Animation Métal";
-            case "light" -> "§eAnimation Lumière";
-            case "vent" -> "§bAnimation Vent";
-            default -> "§aAnimation Gaia";
-        };
-        sword.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
-                Component.literal(displayName + " §7— §f60 / 40"));
+        // Composant vanilla : rend le halo visible sans aucun enchantement réel.
+        sword.set(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, Boolean.TRUE);
+        sword.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal(
+                deepluckyblock.util.AnimFamily.colorCode(canonical) + "Animation "
+                        + deepluckyblock.util.AnimFamily.displayName(canonical) + " §8· §760 / 40"));
         if (!player.getInventory().add(sword)) {
             player.drop(sword, false);
         }
-        ctx.getSource().sendSuccess(() -> Component.literal("§b[/anim " + family + "] §fÉpée donnée : "
-                + "§e60% slash originel §f(un seul arc) + §e40% grosses animations§f, "
-                + "dans l’ordre et en boucle."), false);
+        ctx.getSource().sendSuccess(() -> Component.literal("§b[/anim " + canonical + "] §fÉpée en bois donnée "
+                + "(glint " + deepluckyblock.util.AnimFamily.colorCode(canonical)
+                + deepluckyblock.util.AnimFamily.displayName(canonical) + "§f) : §e60% slash originel "
+                + "§f(un seul arc) + §e40% grosses animations§f, dans l’ordre et en boucle."), false);
         return 1;
     }
 
@@ -464,7 +480,7 @@ public final class DlbVfxCommand {
         line(src, "§e/dlbvfx hit [nombre]", "vraies frappes sur la cible d'entraînement (impact + crit réels)");
         line(src, "§e/dlbvfx dummy", "invoque / retire la cible d'entraînement");
         line(src, "§e/dlbvfx give <effet> [niveau]", "donne les armes enchantées qui déclenchent cet effet");
-        line(src, "§e/anim vent|gaia|feu|poison|terre|metal|light", "épée de démonstration : 60 % slash + 40 % grosses animations de la famille");
+        line(src, "§e/anim <famille>", "épée de démonstration en §fbois§7 (glint de l'élément) : familles §ffire wind earth metal light poison nature §7— §f60 %§7 slash + §f40 %§7 grosses animations");
         line(src, "§e/dlbvfx elements [famille]", "les §f" + deepluckyblock.enchantments.DeepElement.values().length + " §7familles élémentaires (couleurs + effets)");
         line(src, "§e/dlbvfx variants", "défile les déclinaisons (de moins en moins de particules)");
         line(src, "§e/dlbvfx subtle [famille] [index]", "les §f" + (deepluckyblock.enchantments.WeaponVfxSubtle.COUNT + deepluckyblock.enchantments.WeaponVfxSubtleEcho.COUNT) + " §7accents discrets : §f" + deepluckyblock.enchantments.WeaponVfxSubtle.COUNT + " §7élémentaires + §f" + deepluckyblock.enchantments.WeaponVfxSubtleEcho.COUNT + " §7échos des grosses animations");

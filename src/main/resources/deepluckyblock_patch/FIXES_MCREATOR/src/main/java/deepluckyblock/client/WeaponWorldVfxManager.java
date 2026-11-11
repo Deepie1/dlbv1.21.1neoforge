@@ -1653,10 +1653,8 @@ public final class WeaponWorldVfxManager {
         String animFamily = null;
         var tag = deepluckyblock.util.DeepNbt.tag(stack);
         if (tag != null) {
-            String candidate = tag.getString("DlbAnimFamily");
-            if (candidate.equals("feu") || candidate.equals("gaia") || candidate.equals("poison")
-                    || candidate.equals("terre") || candidate.equals("metal") || candidate.equals("light")
-                    || candidate.equals("vent")) animFamily = candidate;
+            // T374-ANIM-FAMILIES : noms anglais canoniques, anciennes valeurs acceptées en lecture.
+            animFamily = deepluckyblock.util.AnimFamily.canonical(tag.getString("DlbAnimFamily"));
         }
         if (layers.isEmpty() && animFamily == null) return;
 
@@ -1704,42 +1702,43 @@ public final class WeaponWorldVfxManager {
     }
 
     private static WeaponVisualEffectId animationSlashEffect(String family, int index) {
-        if (family.equals("feu")) {
+        String canonical = deepluckyblock.util.AnimFamily.canonical(family);
+        if (deepluckyblock.util.AnimFamily.FIRE.equals(canonical)) {
             return switch (index) {
                 case 0 -> WeaponVisualEffectId.MOLTEN_FIRE_WAVE;
                 case 1 -> WeaponVisualEffectId.SOUL_FIRE_CRESCENT;
                 default -> WeaponVisualEffectId.BRIMSTONE_METEOR;
             };
         }
-        if (family.equals("poison")) {
+        if (deepluckyblock.util.AnimFamily.POISON.equals(canonical)) {
             return switch (index) {
                 case 0 -> WeaponVisualEffectId.VENOM_BRIAR_FANG;
                 case 1 -> WeaponVisualEffectId.MIASMA_SHROUD;
                 default -> WeaponVisualEffectId.PLAGUE_NOVA;
             };
         }
-        if (family.equals("terre")) {
+        if (deepluckyblock.util.AnimFamily.EARTH.equals(canonical)) {
             return switch (index) {
                 case 0 -> WeaponVisualEffectId.SEISMIC_TECTONIC;
                 case 1 -> WeaponVisualEffectId.TITAN_GRASP;
                 default -> WeaponVisualEffectId.WARLORD_RALLY_SIGIL;
             };
         }
-        if (family.equals("light")) {
+        if (deepluckyblock.util.AnimFamily.LIGHT.equals(canonical)) {
             return switch (index) {
                 case 0 -> WeaponVisualEffectId.SERAPH_SKY_PILLAR;
                 case 1 -> WeaponVisualEffectId.ASTRAL_STAR_LANCE;
                 default -> WeaponVisualEffectId.CHRONO_ETERNAL_HALO;
             };
         }
-        if (family.equals("metal")) {
+        if (deepluckyblock.util.AnimFamily.METAL.equals(canonical)) {
             return switch (index) {
                 case 0 -> WeaponVisualEffectId.RAZOR_GLEAM;
                 case 1 -> WeaponVisualEffectId.SUPREME_PRISM_EDGE;
                 default -> WeaponVisualEffectId.ANNIHILATING_ARC;
             };
         }
-        if (family.equals("vent")) {
+        if (deepluckyblock.util.AnimFamily.WIND.equals(canonical)) {
             return switch (index) {
                 case 0 -> WeaponVisualEffectId.ZEPHYR_WIND_LANCE;
                 case 1 -> WeaponVisualEffectId.SANDSTORM_DUNE;

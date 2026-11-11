@@ -4,33 +4,39 @@ Ces liens pointent sur la **branche de travail** (`arena/605e67fb-dlbv1-21-1neof
 
 Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin>` — GitHub redirige vers le fichier brut exact.
 
-## Vent — refonte complète (v2, en tête de gondole)
+## Vent — refonte complète (v7, en tête de gondole)
 
 | Fichier | Lien |
 |---|---|
-| Sources complètes (ZIP, 23 entrées, 403356 o — moteur + rendu + gameplay + commande + miroirs) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_src.zip |
-| Aperçu animé **v6** (HTML autonome, ZIP embarqué, gameplay documenté) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Vent_v6_preview.html |
+| Sources complètes (ZIP, 25 entrées, 414084 o — moteur + rendu + gameplay + commande `/anim` + miroirs) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_src.zip |
+| Aperçu animé **v7** (HTML autonome, ZIP embarqué, gameplay documenté) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Vent_v7_preview.html |
+| Aperçu animé v6 (version précédente) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Vent_v6_preview.html |
 | Aperçu (chemin historique, même contenu) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Wind_Three_Signatures_preview.html |
 | `WindSignatureVfx.java` (moteur voxel du vent) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/WindSignatureVfx.java |
-| `WindTerrainVfx.java` (**v6** — vrais blocs du sol happés par la tornade) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/WindTerrainVfx.java |
+| `WindTerrainVfx.java` (**v7** — vrais blocs du sol, montée jusqu'au sommet) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/WindTerrainVfx.java |
 | `WeaponWorldVfxManager.java` (routage `impactWind`) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/WeaponWorldVfxManager.java |
 | `WeaponVisualEffectId.java` (`TEMPEST_EYE` = 42) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/WeaponVisualEffectId.java |
+| `DlbVfxCommand.java` (**v7** — `/anim`, épées en bois, glint élémentaire) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/commands/DlbVfxCommand.java |
+| `AnimFamily.java` (**v7** — familles `/anim` en anglais, sans doublon) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/util/AnimFamily.java |
+| `WeaponVfxServerListener.java` (**v7** — aspiration zonale, priorité vent) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java |
 | `WIND_SIGNATURES.md` (documentation) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/WIND_SIGNATURES.md |
 | Miroirs MCreator (`FIXES_MCREATOR`) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/client/WindSignatureVfx.java |
 
 Trois signatures : **Zéphyr** (#22, 4,0 s, chorégraphie refaite — colonne d'air verticale, lance de cristal détaillée, trident, éclosion, ≈ 1 240 cubes/image) · **Tempête de sable** (#41, 7,0 s, sortie de l'archive Terre, ≈ 990 cubes) · **Œil du cyclone** (#42, 6,0 s, ≈ 956 cubes). Un seul moteur, aucun `DeepElement` ajouté, aucun ordinal déplacé.
 
+**v7 (11/11)** : la tornade happe **toute créature du rayon 4,6** et continue d'aspirer celles qui y entrent (l'emprise au sol ne la contre plus), vitesse tangentielle réelle, **blocs emportés jusqu'au sommet** de la tour, et `/anim` revu : **épées en bois**, **glint à la couleur de l'élément**, **plus de doublons**, **noms en anglais** (`fire wind earth metal light poison nature`).
+
 **v6 (11/11)** : lances qui tombent de +8,6 blocs, entonnoirs étroits au sol/larges en haut (7,9 et 8,9 blocs), tourbillon interne du sable dans le même sens, `WindTerrainVfx` (vrais blocs du sol), slash de vent clair bleu-vert translucide, cyclone à 10,5 blocs / 170 ticks / éjection aléatoire.
 
-**`/anim vent`** : épée de démo dont la famille NBT `vent` fait tourner Zéphyr → sable → cyclone, et déclenche le gameplay correspondant.
+**`/anim wind`** : épée **en bois** au glint bleu-vert dont la famille NBT fait tourner Zéphyr → sable → cyclone et déclenche le gameplay correspondant (`/anim` seul liste les sept familles).
 
-**Gameplay (nouveau)** : Zéphyr cloue la cible 4 s puis la lâche · tempête de sable = cécité + lenteur + dégâts périodiques sur l'entourage · œil du cyclone = mobs happés, orbités, montés de 4 blocs, éjectés, dégâts de tornade **+ dégâts de chute vanilla** à l'atterrissage. Sons 100 % vanilla.
+**Gameplay (nouveau)** : Zéphyr cloue la cible 4 s puis la lâche · tempête de sable = cécité + lenteur + dégâts périodiques sur l'entourage · œil du cyclone = toutes les créatures du rayon 4,6 happées, orbitées, montées de 10,5 blocs puis éjectées dans une direction aléatoire, dégâts de tornade toutes les 10 ticks **+ dégâts de chute vanilla** à l'atterrissage. Sons 100 % vanilla.
 
 Empreintes des archives de cette version :
 
 ```text
-DLB_Wind_Three_Signatures_src.zip  396 338 o  sha256 05c357cafba5ae27…
-src-modifies-t301-t374.zip       3 511 502 o  sha256 f6ba9b0412f9fe6c…
+DLB_Wind_Three_Signatures_src.zip  414 084 o  sha256 b273b8ae7c81ba7a…
+src-modifies-t301-t374.zip       3 529 248 o  sha256 90fb5e73da01008a…
 ```
 
 ## Lumière — dernier correctif (V6.5)

@@ -111,7 +111,8 @@ public final class WindTerrainVfx {
             float h3 = hash(salt, 0x7A19 + surface.getZ() * 40503);
             float phase = (float) (Math.atan2(relZ, relX) / (Math.PI * 2.0));
             float orbit = Mth.clamp(dist * 0.55f + h2 * 1.10f, 0.35f, 3.10f);
-            float top = Math.max(orbit * 1.55f, 1.60f + h3 * 2.10f);
+            // T374-WIND-TOP : sommet plus large que la base (profil d'entonnoir demandé).
+            float top = Math.max(orbit * 1.45f, 1.55f + h3 * 1.35f);
             debris.add(new Debris(state, modelData, light, topY,
                     phase, orbit, top,
                     0.30f + h2 * 0.22f,
@@ -153,13 +154,19 @@ public final class WindTerrainVfx {
             cycle = cycle - Mth.floor(cycle);
             float lift = smooth((cycle - d.liftDelay()) / 0.22f);
             if (lift <= 0.001f) continue;
-            float fall = smooth((cycle - 0.86f) / 0.14f);
-            float rise = smooth(cycle / 0.82f);
+            // T374-WIND-TOP : la montée atteint le SOMMET de la tour (avant, le facteur 0,55+0,45·taille
+            // plafonnait tous les blocs vers 65-70 % de la hauteur : « on dirait qu'ils sont cappés
+            // au milieu »). Le palier haut est aussi allongé pour que les blocs restent visibles en haut.
+            float fall = smooth((cycle - 0.88f) / 0.12f);
+            float rise = smooth(cycle / 0.74f);
             float angle = (d.phase() + cycle * d.turns()) * TAU * spin;
             float radius = Mth.lerp(rise, d.radius0(), d.radius1())
                     * (0.80f + 0.26f * Mth.sin(cycle * 9.0f + d.phase() * 7.0f))
                     + fall * 1.15f;
-            float dy = rise * height * (0.55f + 0.45f * d.size()) - fall * height * 0.55f;
+            // Chaque bloc culmine à une hauteur propre (70 à 100 % de la tour) : la colonne reste
+            // garnie sur toute sa hauteur au lieu de former un couvercle à mi-course.
+            float peak = 0.70f + 0.30f * Mth.clamp((d.turns() - 1.15f) / 0.85f, 0.0f, 1.0f);
+            float dy = rise * height * peak * (0.94f + 0.06f * d.size()) - fall * height * 0.92f;
             float size = d.size() * (1.0f - fall * 0.25f);
             if (size <= 0.05f) continue;
 

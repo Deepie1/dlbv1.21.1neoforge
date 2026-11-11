@@ -1,4 +1,4 @@
-# Vent — trois signatures, un seul moteur voxel (v6)
+# Vent — trois signatures, un seul moteur voxel (v7)
 
 Refonte complète de l’élément **Vent**. Jusqu’ici il n’existait pas comme famille : la lance de zéphyr
 était un modèle compacté caché dans `GaiaWorldTreeVfx` (variant `ZEPHYR`), et la tempête de sable
@@ -8,6 +8,23 @@ n’avait de langage visuel commun : pas de ruban, pas de grain, pas de tourbill
 Cette version introduit **`WindSignatureVfx`**, un moteur voxel dédié, et trois chorégraphies
 distinctes partageant une identité unique — blanc glacé, azur, ardoise — avec de l’ocre réservé au
 sable.
+
+---
+
+## 0bis. v7 — les six reproches du second test en jeu
+
+| Reproche | Correction | Où |
+|---|---|---|
+| « aucun mob du rayon ne se fait prendre par le cyclone » | le cyclone n'est plus une **liste figée** de victimes mais une **zone d'aspiration** (`WindZone`) de **4,60 blocs** qui vit 170 ticks : à chaque tick elle happe toute créature vivante présente dans son cylindre — la cible frappée **et** tout son entourage, y compris celles qui entrent en cours de route. Principe des mods de tornade : aspiration zonale, pas ciblage unique. | `WeaponVfxServerListener` (`WindZone`, `captureWindZone`, `tickWindZones`) |
+| « … et toujours rien » | **cause réelle trouvée** : une emprise au sol encore active (séisme / titan, ou le clouage du Zéphyr) **rappelait le mob à sa position d'origine à chaque tick**, juste après la téléportation de la tornade. Le vent **prime** désormais : `MOVEMENT_HOLDS.remove(id)` à la capture et garde explicite dans `onSignatureHoldTick`. | idem |
+| « le pull ne ressemble pas à celui des mods de tornade » | la position sur l'hélice est garantie par `teleportTo`, et la **vitesse** est posée sur la **tangente** de l'hélice (delta entre le point du tick et celui du tick suivant) avec `hurtMarked = true` : aspiration + rotation + montée lissées côté client, au lieu d'un à-coup sec par tick. | `tickWindHold` |
+| « les blocs emportés sont cappés au milieu » | `WindTerrainVfx` : la montée atteignait `0,55 + 0,45·taille` de la hauteur (≈ 65-70 %) et le palier haut ne durait que 4 % du cycle. Désormais **`peak = 0,70 + 0,30·h` puis `dy = rise·H·peak·(0,94 + 0,06·taille)`** : chaque bloc a son propre plafond entre 70 % et 100 % de la tour, donc la colonne est garnie sur **toute** sa hauteur au lieu de former un couvercle. Palier haut allongé (`rise` jusqu'à 0,74 du cycle, chute à partir de 0,88) et **sommet plus large** que la base (`radius1 = max(orbit·1,45 ; 1,55 + h3·1,35)`). | `WindTerrainVfx` + aperçu |
+| « `/anim` : des épées en netherite » | les sept épées de démonstration sont en **bois** (`Items.WOODEN_SWORD`). | `DlbVfxCommand` |
+| « glint = couleur de l'élément » | la couleur forcée `dlbGlintForce` (même clé que `/glint <couleur>`) est posée à la création de l'épée + `ENCHANTMENT_GLINT_OVERRIDE = true`, donc le halo est visible **sans aucun enchantement** et prend la teinte de l'élément : feu `#FF6A2A`, vent `#9FF2DC`, terre `#9FC25E`, métal `#C4C8CD`, lumière `#FFD75E`, poison `#46C24C`, nature `#74C34A`. | idem |
+| « doublons `earth`/`terre`, titres en français » | nouvelle source unique **`util/AnimFamily`** : sept noms **anglais canoniques** — `fire`, `wind`, `earth`, `metal`, `light`, `poison`, `nature` —, un seul par famille (plus aucun doublon dans l'autocomplétion ni dans l'aide), titres affichés en anglais. Les anciennes valeurs NBT (`feu`, `vent`, `terre`, `gaia`) restent **lues** par les épées déjà distribuées. | `util/AnimFamily` + `DlbVfxCommand` + `WeaponWorldVfxManager` + `WeaponVfxServerListener` |
+
+Le lâcher applique en plus un **souffle final** (derniers dégâts de tornade, confusion, lenteur) juste
+avant la chute libre : dégâts de tornade **et** dégâts de chute, comme demandé.
 
 ---
 
@@ -36,12 +53,13 @@ Le dossier `FIXES_MCREATOR/src/main` contient les mêmes copies que le `src/main
 | Fichier | Rôle |
 |---|---|
 | `client/WindSignatureVfx.java` | moteur du vent : Zéphyr, Tempête de sable, Œil du cyclone (v6 : hauteurs ×2,3, entonnoirs étroits au sol, lances) |
-| `client/WindTerrainVfx.java` | **nouveau v6** — vrais blocs du sol happés par la tornade (capture `BlockState` + `ModelData`, rendu spirale) |
+| `client/WindTerrainVfx.java` | vrais blocs du sol happés par la tornade (capture `BlockState` + `ModelData`, rendu spirale) — **v7 : les blocs montent jusqu'au sommet**, entonnoir plus large en haut |
 | `client/WeaponWorldVfxManager.java` | routage `impactWind`, fin du détour Gaia pour le vent, durée d’affichage 120 ticks pour `TEMPEST_EYE` |
 | `enchantments/WeaponVisualEffectId.java` | identifiant `TEMPEST_EYE` (#42), alias `/dlbvfx`, gardes de rotation |
 | `enchantments/WeaponVfxMotion.java` | mouvement d’écho de lame spiralé pour `TEMPEST_EYE` |
-| `commands/DlbVfxCommand.java` | `/anim vent` (+ alias `/anim wind`) et `/dlbvfx` ; la démo applique le vrai gameplay du vent à la cible visée |
-| `enchantments/WeaponVfxServerListener.java` | **gameplay du vent** : emprise, rotation, dégâts sur plusieurs ticks, effets, dégâts de chute, sons |
+| `util/AnimFamily.java` | **nouveau v7** — noms anglais canoniques des familles (`fire`, `wind`, `earth`, `metal`, `light`, `poison`, `nature`), couleurs de glint et titres ; les anciens noms restent lus |
+| `commands/DlbVfxCommand.java` | `/anim <famille>` (épée en **bois**, glint de l'élément, un seul nom par famille) et `/dlbvfx` ; la démo applique le vrai gameplay du vent à la cible visée |
+| `enchantments/WeaponVfxServerListener.java` | **gameplay du vent** : zone d'aspiration (`WindZone`) de 4,60 blocs, aspiration continue, rotation + montée 10,50, dégâts sur plusieurs ticks, souffle final, dégâts de chute, sons |
 | `deepluckyblock_patch/WIND_SIGNATURES.md` | ce document |
 | `deliverables/DLB_Wind_Three_Signatures_preview.html` | aperçu autonome (Canvas 2D) des trois chorégraphies, à jour de la v2 |
 

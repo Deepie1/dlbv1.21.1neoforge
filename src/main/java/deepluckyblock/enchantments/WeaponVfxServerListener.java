@@ -138,6 +138,20 @@ public final class WeaponVfxServerListener {
 
     private static final Map<Integer, WindHold> WIND_HOLDS = new ConcurrentHashMap<>();
 
+    /**
+     * T374-WIND-VORTEX : une <b>zone</b> de tornade, indépendante des victimes déjà attrapées.
+     * Tant qu'elle vit, elle aspire en continu toute créature qui entre dans son cylindre : c'est
+     * le fonctionnement des mods de tornade (aspiration zonale), là où la v6 ne traitait qu'une
+     * liste figée au moment de l'impact — d'où l'impression qu'« aucun mob du rayon » n'était pris.
+     */
+    private record WindZone(ServerLevel level, long started, long expires, double cx, double cz,
+                            double baseY, double radius, double rise, double spin, float pulse,
+                            int period, int attackerId) { }
+
+    private static final List<WindZone> WIND_ZONES = new java.util.concurrent.CopyOnWriteArrayList<>();
+    /** Une seule passe d'aspiration par tick de jeu, quel que soit l'entité qui déclenche le hook. */
+    private static long LAST_WIND_ZONE_TICK = Long.MIN_VALUE;
+
     private record MovementHold(long expires, double x, double y, double z, boolean previousNoAi,
                                   boolean fullStun, double releaseY, long started, double burialDepth) { }
     private record SoulHold(long expires, long riseStart, long riseEnd, long descendStart,
@@ -2275,10 +2289,12 @@ public final class WeaponVfxServerListener {
     }
 
     /**
-     * ŒIL DU CYCLONE (170 ticks) : les ennemis du rayon 3,10 sont happés, tournent autour de l'axe
-     * en montant de <b>10,50 blocs</b>, prennent des dégâts toutes les dix ticks, puis sont lâchés
-     * tout en haut au tick 170 : la chute libre qui suit (10 blocs) ajoute les dégâts de chute
-     * vanilla, et l'éjection horizontale part dans une direction aléatoire.
+     * ŒIL DU CYCLONE (170 ticks) : la tornade naît sous la cible et happe <b>toute créature vivante
+     * du rayon 4,60</b> — pas seulement celle qui vient d'être frappée — puis continue d'aspirer
+     * celles qui entrent dans la zone en cours de route. Les victimes tournent autour de l'axe en
+     * montant de <b>10,50 blocs</b>, prennent des dégâts toutes les dix ticks, puis sont lâchées tout
+     * en haut : la chute libre qui suit (10 blocs) ajoute les dégâts de chute vanilla, et l'éjection
+     * horizontale part dans une direction aléatoire.
      */
     private static void applyTempestGameplay(LivingEntity attacker, LivingEntity target,
                                              ServerLevel sl, float weaponDamage) {
@@ -2286,29 +2302,19 @@ public final class WeaponVfxServerListener {
         long gameNow = sl.getGameTime();
         int attackerId = attacker == null ? -1 : attacker.getId();
         double cx = target.getX(), cy = target.getY() + target.getBbHeight() * 0.5, cz = target.getZ();
-        double radius = 3.10;
-        long expiry = gameNow + 170;
+        double baseY = target.getY();
         float pulse = net.minecraft.util.Mth.clamp(weaponDamage * 0.08f, 0.05f, 0.60f);
 
-        List<LivingEntity> caught = new ArrayList<>();
-        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
-                new AABB(cx - radius, cy - radius - 1.0, cz - radius,
-                        cx + radius, cy + radius + 1.0, cz + radius))) {
-            // Toute créature vivante est concernée (la cible d'entraînement est un villageois en
-            // mode Paisible, donc pas une « Enemy ») : seuls le joueur attaquant et les joueurs
-            // sont exclus.
-            if (!candidate.isAlive() || candidate instanceof Player) continue;
-            if (attacker != null && candidate.getUUID().equals(attacker.getUUID())) continue;
-            if (candidate.distanceToSqr(cx, cy, cz) > radius * radius) continue;
-            caught.add(candidate);
-            double dx = candidate.getX() - cx, dz = candidate.getZ() - cz;
-            double startRadius = Math.max(0.80, Math.min(2.80, Math.sqrt(dx * dx + dz * dz)));
-            rememberSignatureAi(candidate);
-            WIND_HOLDS.put(candidate.getId(), new WindHold(expiry, gameNow, cx, cz,
-                    candidate.getY(), startRadius, 0.75, 10.50,
-                    Math.atan2(dz, dx), 0.34, pulse, 10, attackerId));
+        WindZone zone = new WindZone(sl, gameNow, gameNow + 170, cx, cz, baseY,
+                4.60, 10.50, 0.34, pulse, 10, attackerId);
+        WIND_ZONES.add(zone);
+        int grabbed = captureWindZone(zone, sl);
+        if (attacker instanceof ServerPlayer serverPlayer) {
+            serverPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                    "§b[Œil du cyclone] §f" + grabbed + " créature(s) happée(s) §7— rayon 4,6 · montée 10,5 · "
+                            + "éjection aléatoire au sommet"), true);
         }
-        if (caught.isEmpty()) {
+        if (grabbed <= 0) {
             sl.playSound(null, cx, cy, cz, SoundEvents.ENDER_DRAGON_FLAP, SoundSource.PLAYERS, 0.55f, 0.60f);
             return;
         }
@@ -2326,13 +2332,59 @@ public final class WeaponVfxServerListener {
             // Le lâcher se produit TOUT EN HAUT : souffle grave + choc lointain.
             sl.playSound(null, cx, cy + 10.5, cz, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.65f, 0.85f);
             sl.playSound(null, cx, cy + 10.5, cz, SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS, 0.45f, 1.35f);
-            for (LivingEntity victim : caught) {
-                if (!victim.isAlive() || victim.level() != sl) continue;
-                victim.addEffect(new MobEffectInstance(MobEffects.CONFUSION, 120, 0, false, true, true));
-                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 80, 0, false, true, true));
-                hurtWithCapturedWeapon(sl, attackerId, victim, Math.max(0.0f, weaponDamage) * 0.45f);
-            }
         });
+    }
+
+    /**
+     * Aspiration zonale : toute créature vivante (hors joueurs) presente dans le cylindre rejoint
+     * l'helice si elle n'y est pas deja, et monte jusqu'au sommet avec les autres. Les degats et
+     * l'ejection sont traites par {@link #tickWindHold} et {@link #releaseWindHold}.
+     *
+     * @return le nombre de creatures happees par cet appel
+     */
+    private static int captureWindZone(WindZone zone, ServerLevel sl) {
+        long now = sl.getGameTime();
+        if (now >= zone.expires()) return 0;
+        double r = zone.radius();
+        double topY = zone.baseY() + zone.rise();
+        AABB box = new AABB(zone.cx() - r, zone.baseY() - 2.0, zone.cz() - r,
+                zone.cx() + r, topY + 2.5, zone.cz() + r);
+        int grabbed = 0;
+        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class, box)) {
+            // Toute creature vivante est concernee (la cible d'entrainement est un villageois en
+            // mode Paisible, donc pas une « Enemy ») : seuls les joueurs sont exclus.
+            if (!candidate.isAlive() || candidate instanceof Player) continue;
+            if (zone.attackerId() >= 0 && candidate.getId() == zone.attackerId()) continue;
+            double dx = candidate.getX() - zone.cx(), dz = candidate.getZ() - zone.cz();
+            double d2 = dx * dx + dz * dz;
+            if (d2 > r * r) continue;
+            if (candidate.getY() > topY + 1.5) continue;
+            if (WIND_HOLDS.containsKey(candidate.getId())) continue;
+            rememberSignatureAi(candidate);
+            // T374-WIND-PRIORITY : le vent prime sur les emprises au sol (seisme, titan). Sans cela,
+            // l'emprise rappelait le mob a sa position d'origine a chaque tick et la tornade semblait
+            // n'avoir aucun effet.
+            MOVEMENT_HOLDS.remove(candidate.getId());
+            double startRadius = Math.max(0.80, Math.min(2.80, Math.sqrt(d2)));
+            double rise = Math.max(0.60, topY - candidate.getY());
+            WIND_HOLDS.put(candidate.getId(), new WindHold(zone.expires(), now, zone.cx(), zone.cz(),
+                    candidate.getY(), startRadius, 2.60, rise, Math.atan2(dz, dx),
+                    zone.spin(), zone.pulse(), zone.period(), zone.attackerId()));
+            grabbed++;
+        }
+        return grabbed;
+    }
+
+    /** Une passe d'aspiration par tick de jeu : les mobs qui entrent dans la tornade sont pris. */
+    private static void tickWindZones(net.minecraft.world.level.Level level) {
+        if (WIND_ZONES.isEmpty() || !(level instanceof ServerLevel sl)) return;
+        long now = sl.getGameTime();
+        if (now == LAST_WIND_ZONE_TICK) return;
+        LAST_WIND_ZONE_TICK = now;
+        WIND_ZONES.removeIf(zone -> now >= zone.expires() || zone.level() != sl);
+        for (WindZone zone : WIND_ZONES) {
+            captureWindZone(zone, sl);
+        }
     }
 
     /**
@@ -2361,7 +2413,15 @@ public final class WeaponVfxServerListener {
         return true;
     }
 
-    /** Rotation orbitale + montée + dégâts périodiques, tant que l'emprise dure. */
+    /**
+     * Rotation orbitale + montée + dégâts périodiques, tant que l'emprise dure.
+     *
+     * <p>T374-WIND-PULL : la position sur l'hélice est garantie par {@code teleportTo}, et la
+     * <b>vitesse</b> est posée sur la tangente de l'hélice (delta entre le point de ce tick et celui
+     * du tick suivant). C'est le principe des mods de tornade : la victime est à la fois aspirée vers
+     * l'axe, entraînée en rotation et poussée vers le haut, avec un mouvement lissé côté client
+     * ({@code hurtMarked} synchronise la vitesse) au lieu d'un à-coup par tick.</p>
+     */
     private static void tickWindHold(LivingEntity target) {
         WindHold hold = WIND_HOLDS.get(target.getId());
         if (hold == null) return;
@@ -2375,15 +2435,22 @@ public final class WeaponVfxServerListener {
             mob.setTarget(null);
         }
         target.stopUsingItem();
-        long elapsed = now - hold.started();
+        double elapsed = now - hold.started();
         double span = Math.max(1.0, (double) (hold.expires() - hold.started()));
         double u = Math.max(0.0, Math.min(1.0, elapsed / span));
-        double orbitRadius = hold.r0() + (hold.r1() - hold.r0()) * u;
-        double angle = hold.phase() + elapsed * hold.spin();
-        double y = hold.baseY() + hold.rise() * Math.sin(u * Math.PI * 0.5);
-        target.teleportTo(hold.cx() + Math.cos(angle) * orbitRadius, y,
-                hold.cz() + Math.sin(angle) * orbitRadius);
-        target.setDeltaMovement(Vec3.ZERO);
+        double uNext = Math.max(0.0, Math.min(1.0, (elapsed + 1.0) / span));
+        double rNow = hold.r0() + (hold.r1() - hold.r0()) * u;
+        double rNext = hold.r0() + (hold.r1() - hold.r0()) * uNext;
+        double aNow = hold.phase() + elapsed * hold.spin();
+        double aNext = hold.phase() + (elapsed + 1.0) * hold.spin();
+        double yNow = hold.baseY() + hold.rise() * Math.sin(u * Math.PI * 0.5);
+        double yNext = hold.baseY() + hold.rise() * Math.sin(uNext * Math.PI * 0.5);
+        double xNow = hold.cx() + Math.cos(aNow) * rNow;
+        double zNow = hold.cz() + Math.sin(aNow) * rNow;
+        double xNext = hold.cx() + Math.cos(aNext) * rNext;
+        double zNext = hold.cz() + Math.sin(aNext) * rNext;
+        target.teleportTo(xNow, yNow, zNow);
+        target.setDeltaMovement(xNext - xNow, Math.max(0.08, yNext - yNow), zNext - zNow);
         target.fallDistance = 0.0f;
         target.hurtMarked = true;
         if (hold.period() > 0 && elapsed > 0 && elapsed % hold.period() == 0
@@ -2395,7 +2462,7 @@ public final class WeaponVfxServerListener {
     /**
      * Fin de l'emprise : le mob est lâché au sommet de la tornade et projeté dans une direction
      * <b>aléatoire</b> — pas la tangente de l'orbite — puis retombe : la chute libre vanilla ajoute
-     * ses propres dégâts de chute par-dessus ceux de la tornade.
+     * ses propres dégâts de chute par-dessus ceux de la tornade (souffle final + confusion).
      */
     private static void releaseWindHold(LivingEntity target, WindHold hold) {
         WIND_HOLDS.remove(target.getId());
@@ -2408,6 +2475,12 @@ public final class WeaponVfxServerListener {
         // La chute repart de zéro À CET INSTANT : tout ce qui suit est compté par le jeu.
         target.fallDistance = 0.0f;
         target.hurtMarked = true;
+        target.addEffect(new MobEffectInstance(MobEffects.CONFUSION, 120, 0, false, true, true));
+        target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 80, 0, false, true, true));
+        // Souffle final : derniers dégâts de tornade AVANT la chute (qui ajoutera les siens).
+        if (hold.pulse() > 0.0f && target.level() instanceof ServerLevel sl) {
+            hurtWithCapturedWeapon(sl, hold.attackerId(), target, Math.min(4.0f, hold.pulse() * 3.0f));
+        }
     }
 
     private static void applyEarthGameplay(LivingEntity attacker, LivingEntity target,
@@ -2582,9 +2655,17 @@ public final class WeaponVfxServerListener {
         tickSignaturePoison(target);
         tickSoulBurn(target);
         tickSoulHold(target);
+        tickWindZones(target.level());
         tickWindHold(target);
         MovementHold hold = MOVEMENT_HOLDS.get(target.getId());
         if (hold == null) return;
+        if (WIND_HOLDS.containsKey(target.getId())) {
+            // T374-WIND-PRIORITY : une tornade tient la cible ; aucune emprise au sol ne doit la
+            // rappeler à sa position d'origine (c'était la cause du « rien ne se passe »).
+            MOVEMENT_HOLDS.remove(target.getId());
+            refreshSignatureAi(target);
+            return;
+        }
         long now = target.level().getGameTime();
         if (!target.isAlive() || now >= hold.expires()) {
             releaseMovementHold(target, hold.expires());
@@ -2669,10 +2750,9 @@ public final class WeaponVfxServerListener {
     private static String animationFamily(ItemStack weapon) {
         var tag = deepluckyblock.util.DeepNbt.tag(weapon);
         if (tag == null) return null;
-        String family = tag.getString("DlbAnimFamily");
-        return family.equals("feu") || family.equals("gaia") || family.equals("poison")
-                || family.equals("terre") || family.equals("metal") || family.equals("light")
-                || family.equals("vent") ? family : null;
+        // T374-ANIM-FAMILIES : noms anglais canoniques (fire / wind / earth / metal / light /
+        // poison / nature) ; les anciennes valeurs (feu / vent / terre / gaia) sont normalisées.
+        return deepluckyblock.util.AnimFamily.canonical(tag.getString("DlbAnimFamily"));
     }
 
     /**
@@ -2691,12 +2771,12 @@ public final class WeaponVfxServerListener {
         float tx = (float) target.getX();
         float ty = (float) (target.getY() + target.getBbHeight() * 0.50f);
         float tz = (float) target.getZ();
-        WeaponVisualEffectId[] pool = family.equals("feu") ? ANIM_FIRE
-                : family.equals("poison") ? ANIM_POISON
-                : family.equals("terre") ? ANIM_EARTH
-                : family.equals("metal") ? ANIM_METAL
-                : family.equals("light") ? ANIM_LIGHT
-                : family.equals("vent") ? ANIM_WIND : ANIM_GAIA;
+        WeaponVisualEffectId[] pool = deepluckyblock.util.AnimFamily.FIRE.equals(family) ? ANIM_FIRE
+                : deepluckyblock.util.AnimFamily.POISON.equals(family) ? ANIM_POISON
+                : deepluckyblock.util.AnimFamily.EARTH.equals(family) ? ANIM_EARTH
+                : deepluckyblock.util.AnimFamily.METAL.equals(family) ? ANIM_METAL
+                : deepluckyblock.util.AnimFamily.LIGHT.equals(family) ? ANIM_LIGHT
+                : deepluckyblock.util.AnimFamily.WIND.equals(family) ? ANIM_WIND : ANIM_GAIA;
 
         if (roll >= 60) {
             var tag = deepluckyblock.util.DeepNbt.getOrCreateTag(weapon);
