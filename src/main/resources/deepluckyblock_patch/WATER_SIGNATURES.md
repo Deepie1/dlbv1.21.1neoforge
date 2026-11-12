@@ -356,3 +356,136 @@ FROST_EXPOSURE   Map<Integer, Integer>     compteur d'exposition au froid
 et on le voyait se retourner pour marcher contre la vague. Les trois registres sont purgés dans la
 passe « une fois par tick » et par un filet de sécurité au tick 120 du givre.
 
+---
+
+## 11. Le « faux trou » du maelström — comment on efface le sol sans y toucher
+
+### 11.1 Les trois façons de faire, et pourquoi deux sont à rejeter
+
+| Méthode | Comment | Verdict |
+|---|---|---|
+| **A. Casser les vrais blocs** (`setBlock` / `destroyBlock`) | on met `AIR`, on restaure après | ❌ **Inacceptable** |
+| **B. Détourner le rendu de chunk** | hook sur `BlockAndTintGetter`, re-maillage des sections | ❌ Coûteux et fragile |
+| **C. Mentir au client** (`ClientboundBlockUpdatePacket`) | on annonce « air » aux joueurs, le serveur ne change rien | ✅ **Retenu** |
+
+**Pourquoi pas A.** Casser les blocs pour de vrai, c'est déclencher tout le moteur de jeu : le sable
+et le gravier tombent, l'eau et la lave coulent dans le trou, la redstone se met à jour, les coffres
+droppent leur contenu, les mobs tombent dedans, les events de minage partent. Et surtout : si le
+serveur crashe, si le chunk se décharge, ou si le joueur se déconnecte pendant les 7,5 secondes de
+l'animation, **le cratère reste définitivement** dans son monde. Un effet cosmétique n'a pas le
+droit de faire ça.
+
+**Pourquoi pas B.** Il faudrait intercepter l'accès aux `BlockState` au niveau du moteur de rendu,
+forcer le re-maillage des sections à chaque frame, et se battre avec les optimiseurs de rendu des
+autres mods. Beaucoup de travail pour un résultat fragile.
+
+### 11.2 La méthode retenue — `enchantments/GhostBlockMask.java`
+
+On envoie aux joueurs à portée un `ClientboundBlockUpdatePacket` qui dit « ce bloc est de l'air ».
+Le client l'affiche comme de l'air. **Le serveur, lui, n'a rien changé.**
+
+```java
+new ClientboundBlockUpdatePacket(pos, Blocks.AIR.defaultBlockState())  →  player.connection.send(…)
+```
+
+Pour restaurer, on relit l'état **réel** et on le renvoie :
+
+```java
+new ClientboundBlockUpdatePacket(level, pos)   // lit le vrai bloc, maintenant
+```
+
+| Avantage | Détail |
+|---|---|
+| Zéro effet de bord | pas de mise à jour de bloc, pas de gravité, pas de fluide, pas de redstone, pas de drop |
+| Les entités ne tombent pas dedans | la collision serveur est **inchangée** — exactement ce qu'on veut, les mobs doivent tourner dans l'entonnoir, pas s'y enterrer |
+| Rien à réparer après un crash | le monde sur le disque n'a jamais été modifié ; recharger le chunk suffit |
+| Restauration exacte | si quelqu'un pose un bloc pendant l'animation, c'est **son** bloc qui réapparaît |
+
+**La limite, assumée :** l'illusion est purement visuelle. Un joueur qui marche sur le trou ne tombe
+pas, il marche sur un sol invisible. Pour un effet d'arme de 7,5 secondes c'est le bon compromis —
+et c'est aussi pourquoi la durée est plafonnée à 240 ticks par `MAX_LIFETIME`.
+
+### 11.3 Rendre l'ouverture et la fermeture *smooth*
+
+Trois mécanismes se combinent :
+
+**1. Le profil, pas un cylindre.** La profondeur suit une parabole :
+
+```
+depth = maxDepth × (1 − (dist / radius)²)
+```
+
+large et peu profond au bord, resserré et plongeant au centre. Sans ça, le trou a des parois
+verticales et ressemble à une cage d'ascenseur.
+
+**2. L'ouverture décalée.** Chaque bloc a son propre instant de disparition :
+
+```
+open = openAt + dist × delayPerRing      (3,4 ticks par bloc de distance)
+     + dy                                (la colonne s'enfonce couche par couche)
+```
+
+Le trou se creuse **du centre vers le bord**, à la vitesse de la spirale qui l'aspire. Ouverture
+étalée sur ~15 ticks au lieu d'un clignotement instantané.
+
+**3. La fermeture en sens inverse.** Le rebouchage est décalé lui aussi, mais **à l'envers** :
+
+```
+close = closeAt + (radius − dist) × closeStagger    (2,6 ticks par bloc)
+      − dy                                          (se remplit du fond vers le haut)
+```
+
+Le **bord** se referme en premier, le centre en dernier — c'est le sens dans lequel l'eau reflue.
+
+**4. Et surtout : la continuité avec `WaterTerrainVfx`.** Le bloc ne disparaît pas dans le néant.
+Au même instant, le moteur client le dessine **en train de voler** dans la spirale, avec sa vraie
+texture. L'œil suit le bloc : il ne voit pas une disparition, il voit un **arrachement**.
+
+**5. La nappe de surface.** Nouveau bloc de rendu n° 7 du maelström : un anneau d'eau plaqué au sol
+qui **déborde du bassin**. Son rôle est autant technique qu'esthétique — il recouvre l'arête nette
+entre le terrain intact et le bord du trou. L'œil voit de l'eau qui tourne par-dessus un rebord,
+pas une découpe géométrique. Même rôle pour la **brume de froid** du givre.
+
+### 11.4 Les trois usages dans l'élément eau
+
+| Signature | Méthode | Ce que le joueur voit |
+|---|---|---|
+| **Maelström** | `digFunnel(r 4,35 · prof. 3,30 · ouvre t+6 · referme t+128)` | un vrai entonnoir creusé dans le sol |
+| **Raz-de-marée** | `scourLine(−3,40 → +2,80 · demi-largeur 3,40 · prof. 2)` | la terre est **arrachée sous le front**, jamais devant lui |
+| **Givre** | `freezeSurface(r 4,20 · PACKED_ICE au cœur, SNOW_BLOCK au bord)` | le sol **gèle** puis dégèle — rien à déneiger après |
+
+`freezeSurface` utilise `PACKED_ICE` et `SNOW_BLOCK` parce qu'ils sont **opaques** : la glace
+normale est translucide et aurait laissé passer la lumière du bloc d'origine, trahissant l'illusion.
+Le bord du disque gelé est **dentelé** par un hash de position — un cercle parfait se repère
+immédiatement.
+
+### 11.5 Garde-fous
+
+```
+MAX_ACTIVE   = 420 masques simultanés sur tout le serveur  (au-delà : le plus ancien saute)
+MAX_LIFETIME = 240 ticks par masque                        (même si l'appelant oublie de restaurer)
+SEND_RADIUS  = 96 blocs                                    (inutile de mentir à qui ne voit rien)
+tick()       = une passe par tick, restaure ce qui a expiré
+restoreAll() = tout annuler d'un coup
+```
+
+Chaque envoi est enveloppé dans un `try/catch` : un paquet cosmétique ne doit jamais casser un tick
+serveur. `tick()` est appelé depuis la passe « une fois par tick » déjà protégée de
+`WeaponVfxServerListener`.
+
+---
+
+## 12. Détails ajoutés aux trois animations
+
+| # | Signature | Élément | Rôle |
+|---|---|---|---|
+| 7 | Raz-de-marée | **Ruissellement** — 34 filets verticaux qui descendent la face du mur, phase et vitesse propres | sans eux la paroi est lisse et on ne lit pas sa hauteur |
+| 8 | Raz-de-marée | **Sol mouillé** — 40 plaques sombres devant le front | ancre le mur au terrain au lieu de le laisser flotter |
+| 7 | Maelström | **Nappe de surface** — 3 anneaux débordants, 38 à 54 cubes chacun | masque la découpe du trou fantôme |
+| 8 | Maelström | **Bulles** — 30 bulles remontant du fond, cycle individuel | seul élément lisible *dans* le trou : il en donne la profondeur |
+| 5 | Givre | **Brume de froid** — 46 plaques basses à la dérive | masque la découpe du sol gelé |
+| 6 | Givre | **Cristaux en suspension** — 26 éclats en orbite lente | distingue un sort actif d'un bloc de glace posé là |
+
+Charge mesurée après ajout (pic de cubes visibles) : **517** raz-de-marée, **607** maelström,
+**574** givre — toujours très loin du plafond de 7 000 cubes/frame du manager.
+

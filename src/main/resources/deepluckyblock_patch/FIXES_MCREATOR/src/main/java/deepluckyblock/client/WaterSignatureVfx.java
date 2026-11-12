@@ -261,6 +261,48 @@ public final class WaterSignatureVfx {
                 }
             }
         }
+
+        // 7. RUISSELLEMENT — l'eau redescend le long de la face du mur en filets verticaux.
+        // Sans cela la paroi est une surface lisse et on ne lit pas sa hauteur.
+        if (lift > 0.12f && body > 0.05f) {
+            for (int i = 0; i < 34; i++) {
+                float h = hash(salt, 8400 + i * 23);
+                float h2 = hash(salt, 8500 + i * 41);
+                float h3 = hash(salt, 8600 + i * 13);
+                float u = h2 * 2.0f - 1.0f;
+                float columnH = H * lift * (1.0f - u * u * 0.74f) * body;
+                if (columnH < 0.35f) continue;
+                // Le filet part du sommet et descend : phase propre, vitesse propre.
+                float fall = fract(t * (0.70f + 0.55f * h3) + h);
+                float fy = -1.12f + columnH * (1.0f - fall * 0.92f);
+                float forward = front - (u * u) * 1.15f + curl * 0.55f + (h3 - 0.5f) * 0.20f;
+                float len = 0.10f + 0.16f * (1.0f - fall);
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        forward, u * HALF_WIDTH, fy,
+                        0.055f, len, 0.045f + 0.025f * h3,
+                        mix(SHALLOW, FOAM, 0.35f + 0.55f * (1.0f - fall)),
+                        Math.round(a * body * (0.55f - 0.30f * fall)));
+            }
+        }
+
+        // 8. SOL MOUILLÉ — nappe sombre qui s'étend devant le front : la vague laisse une trace,
+        // et surtout cela ancre le mur au terrain au lieu de le laisser flotter.
+        if (march > 0.02f) {
+            float wetFront = front + 1.10f;
+            for (int i = 0; i < 40; i++) {
+                float h = hash(salt, 8700 + i * 19);
+                float h2 = hash(salt, 8800 + i * 7);
+                float along = -3.60f + (wetFront + 3.60f) * h;
+                float lateral = (h2 * 2.0f - 1.0f) * HALF_WIDTH * (1.05f - 0.25f * h);
+                float fade = 1.0f - ebb * 0.80f;
+                if (fade <= 0.04f) continue;
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        along, lateral, -1.16f + 0.015f * h,
+                        0.30f + 0.18f * h, 0.022f, 0.30f + 0.18f * h2,
+                        mix(DEEP, OCEAN, h * 0.60f),
+                        Math.round(a * fade * 0.34f));
+            }
+        }
     }
 
     // ============================================================================================
@@ -433,6 +475,55 @@ public final class WaterSignatureVfx {
                             ang, crown * 3.0f, crown * 2.0f,
                             mix(SPRAY, WHITE, h), Math.round(a * geyser * (1.0f - crown * 0.55f)));
                 }
+            }
+        }
+
+        // 7. NAPPE DE SURFACE — anneau d'eau plaqué au sol, DÉBORDANT du bassin.
+        //
+        // Rôle technique autant qu'esthétique : depuis que le sol est réellement effacé à l'écran
+        // (blocs fantômes, voir GhostBlockMask), il existe une arête nette entre le terrain intact
+        // et le bord du trou. Cette nappe la recouvre : l'œil voit de l'eau qui tourne par-dessus
+        // le rebord, pas une découpe géométrique.
+        if (open > 0.04f) {
+            float sheet = basinLife * (0.55f + 0.45f * open);
+            for (int ring = 0; ring < 3; ring++) {
+                float k = ring / 2.0f;
+                float radius = BASIN_RADIUS * (1.02f + 0.16f * k) * open;
+                int count = 38 + ring * 8;
+                for (int i = 0; i < count; i++) {
+                    float h = hash(salt, 10400 + ring * 137 + i * 11);
+                    if (h > 0.88f) continue;
+                    float ang = i * TAU / count + spinPhase * (0.55f - 0.12f * k) + ring * 0.31f;
+                    float r = radius * (0.97f + 0.07f * Mth.sin(ang * 4.0f + t * 7.0f));
+                    float y = -1.15f + 0.055f * Mth.sin(ang * 6.0f + t * 9.0f) + 0.02f * h;
+                    float size = 0.115f + 0.070f * h;
+                    rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            Mth.cos(ang) * r, Mth.sin(ang) * r, y,
+                            size * 1.50f, 0.028f + 0.018f * h, size * 1.10f,
+                            -ang, 0.0f, 0.0f,
+                            mix(mix(OCEAN, SHALLOW, k), FOAM, h * 0.45f),
+                            Math.round(a * sheet * (0.62f - 0.14f * k)));
+                }
+            }
+        }
+
+        // 8. BULLES — elles remontent du fond de la gorge, toujours, même pendant l'implosion.
+        // C'est le seul élément qui se lit DANS le trou et qui en donne la profondeur.
+        if (open > 0.08f) {
+            for (int i = 0; i < 30; i++) {
+                float h = hash(salt, 10600 + i * 29);
+                float h2 = hash(salt, 10700 + i * 17);
+                float h3 = hash(salt, 10800 + i * 43);
+                float climb = fract(t * (0.42f + 0.38f * h3) + h);
+                float ang = h2 * TAU + spinPhase * 1.20f * climb;
+                float r = (0.22f + 0.95f * h2) * open * (1.0f - climb * 0.55f);
+                float y = -0.95f - BASIN_DEPTH * open * (1.0f - climb) + 0.35f * climb;
+                float size = (0.045f + 0.040f * h3) * (0.60f + 0.55f * climb);
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * r, Mth.sin(ang) * r, y,
+                        size, size, size,
+                        mix(SPRAY, WHITE, climb * 0.70f),
+                        Math.round(a * basinLife * (0.30f + 0.55f * climb)));
             }
         }
     }
@@ -617,6 +708,47 @@ public final class WaterSignatureVfx {
                         mix(FROST, WHITE, h), Math.round(a * (1.0f - shatter) * 0.80f));
             }
         }
+
+        // 5. BRUME DE FROID — nappe basse qui rampe au sol pendant toute la durée.
+        // Elle recouvre la jonction entre le terrain réel et le sol gelé à l'écran
+        // (blocs fantômes, voir GhostBlockMask) : sans elle on verrait la découpe du disque.
+        if (creep > 0.03f) {
+            float haze = creep * (1.0f - shatter * 0.55f);
+            for (int i = 0; i < 46; i++) {
+                float h = hash(salt, 13000 + i * 31);
+                float h2 = hash(salt, 13100 + i * 17);
+                float h3 = hash(salt, 13200 + i * 53);
+                float drift = fract(t * (0.10f + 0.09f * h3) + h);
+                float ang = h2 * TAU + drift * 0.85f;
+                float r = (0.70f + 3.80f * h) * creep;
+                float y = -1.14f + 0.10f * h3 + 0.05f * Mth.sin(t * 4.0f + h * 9.0f);
+                float size = 0.16f + 0.14f * h3;
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * r, Mth.sin(ang) * r, y,
+                        size * 1.45f, 0.030f + 0.022f * h2, size * 1.45f,
+                        mix(ICE_PALE, FROST, h2),
+                        Math.round(a * haze * (0.26f - 0.10f * (r / 4.50f))));
+            }
+        }
+
+        // 6. CRISTAUX EN SUSPENSION — de la glace qui flotte et tourne lentement autour de la
+        // prison. C'est ce qui distingue un bloc de glace posé là d'un sort de givre actif.
+        if (cage > 0.04f && solid > 0.04f) {
+            for (int i = 0; i < 26; i++) {
+                float h = hash(salt, 13400 + i * 37);
+                float h2 = hash(salt, 13500 + i * 23);
+                float h3 = hash(salt, 13600 + i * 11);
+                float orbit = t * (0.55f + 0.70f * h3) + h2 * TAU;
+                float r = 1.05f + 1.45f * h;
+                float y = -0.85f + 1.90f * h2 + 0.14f * Mth.sin(t * 3.4f + h * 7.0f);
+                float size = 0.045f + 0.055f * h3;
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(orbit) * r, Mth.sin(orbit) * r, y,
+                        size, size * 1.70f, size,
+                        orbit, t * 1.8f + h * 6.0f, h2 * 3.0f,
+                        mix(ICE, FROST, h3), Math.round(a * cage * solid * (0.45f + 0.35f * h)));
+            }
+        }
     }
 
     // ============================================================================================
@@ -652,6 +784,11 @@ public final class WaterSignatureVfx {
     }
 
     private static float clamp(float value) { return Mth.clamp(value, 0.0f, 1.0f); }
+
+    /** Partie fractionnaire positive — sert aux cycles qui se rejouent (ruissellement, bulles). */
+    private static float fract(float x) {
+        return x - (float) Math.floor(x);
+    }
 
     private static float smooth(float x) {
         x = clamp(x);
