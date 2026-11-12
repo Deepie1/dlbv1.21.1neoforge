@@ -270,7 +270,7 @@ public final class WaterSignatureVfx {
                 float h2 = hash(salt, 8500 + i * 41);
                 float h3 = hash(salt, 8600 + i * 13);
                 float u = h2 * 2.0f - 1.0f;
-                float columnH = H * lift * (1.0f - u * u * 0.74f) * body;
+                float columnH = SURGE_HEIGHT * lift * (1.0f - u * u * 0.74f) * body;
                 if (columnH < 0.35f) continue;
                 // Le filet part du sommet et descend : phase propre, vitesse propre.
                 float fall = fract(t * (0.70f + 0.55f * h3) + h);
@@ -278,7 +278,7 @@ public final class WaterSignatureVfx {
                 float forward = front - (u * u) * 1.15f + curl * 0.55f + (h3 - 0.5f) * 0.20f;
                 float len = 0.10f + 0.16f * (1.0f - fall);
                 box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        forward, u * HALF_WIDTH, fy,
+                        forward, u * SURGE_HALF_WIDTH, fy,
                         0.055f, len, 0.045f + 0.025f * h3,
                         mix(SHALLOW, FOAM, 0.35f + 0.55f * (1.0f - fall)),
                         Math.round(a * body * (0.55f - 0.30f * fall)));
@@ -293,7 +293,7 @@ public final class WaterSignatureVfx {
                 float h = hash(salt, 8700 + i * 19);
                 float h2 = hash(salt, 8800 + i * 7);
                 float along = -3.60f + (wetFront + 3.60f) * h;
-                float lateral = (h2 * 2.0f - 1.0f) * HALF_WIDTH * (1.05f - 0.25f * h);
+                float lateral = (h2 * 2.0f - 1.0f) * SURGE_HALF_WIDTH * (1.05f - 0.25f * h);
                 float fade = 1.0f - ebb * 0.80f;
                 if (fade <= 0.04f) continue;
                 box(vc, mat, tmp, cx, cy, cz, dx, dz,

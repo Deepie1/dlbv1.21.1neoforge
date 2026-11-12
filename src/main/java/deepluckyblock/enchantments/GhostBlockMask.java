@@ -202,7 +202,6 @@ public final class GhostBlockMask {
      * @param halfWidth demi-largeur de la bande, perpendiculairement à la marche
      * @param from      début de la bande le long de l'axe (négatif = derrière la cible)
      * @param to        fin de la bande
-     * @param travel    nombre de ticks que met le front pour parcourir la bande entière
      */
     public static int scourLine(ServerLevel level, BlockPos center, double dirX, double dirZ,
                                 double from, double to, double halfWidth, int depth,

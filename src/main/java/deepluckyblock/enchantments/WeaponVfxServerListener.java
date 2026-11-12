@@ -2504,16 +2504,6 @@ public final class WeaponVfxServerListener {
         final double baseY = target.getY();
         final float pulse = net.minecraft.util.Mth.clamp(weaponDamage * 0.075f, 0.05f, 0.50f);
 
-        WindZone zone = new WindZone(sl, gameNow, gameNow + 118, cx, cz, baseY,
-                4.35, 2.30, 0.42, pulse, 11, attackerId, 55, 100, false, true, RELEASE_GEYSER);
-        WIND_ZONES.add(zone);
-        int grabbed = captureWindZone(zone, sl);
-        if (attacker instanceof ServerPlayer serverPlayer) {
-            serverPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal(
-                    "§3[Maelström abyssal] §f" + grabbed + " créature(s) avalée(s) §7— succion 7,2 → "
-                            + "capture 4,35 · " + carved + " blocs de sol effacés · geyser au tick 114"), true);
-        }
-
         // ------------------------------------------------------------------------------------
         // LE TROU. Le sol n'est pas cassé : on envoie aux clients à portée un paquet de mise à
         // jour de bloc qui annonce « air », sans toucher au monde (GhostBlockMask). Profil
@@ -2525,6 +2515,16 @@ public final class WeaponVfxServerListener {
                 net.minecraft.core.BlockPos.containing(cx, baseY, cz),
                 4.35, 3.30, 3,
                 gameNow + 6, gameNow + 128, 3.4, 2.6);
+
+        WindZone zone = new WindZone(sl, gameNow, gameNow + 118, cx, cz, baseY,
+                4.35, 2.30, 0.42, pulse, 11, attackerId, 55, 100, false, true, RELEASE_GEYSER);
+        WIND_ZONES.add(zone);
+        int grabbed = captureWindZone(zone, sl);
+        if (attacker instanceof ServerPlayer serverPlayer) {
+            serverPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                    "§3[Maelström abyssal] §f" + grabbed + " créature(s) avalée(s) §7— succion 7,2 → "
+                            + "capture 4,35 · " + carved + " blocs de sol effacés · geyser au tick 114"), true);
+        }
 
         sl.playSound(null, cx, cy, cz, SoundEvents.AMBIENT_UNDERWATER_LOOP, SoundSource.PLAYERS, 0.85f, 0.55f);
         for (int delay = 14; delay < 118; delay += 16) {

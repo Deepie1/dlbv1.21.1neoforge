@@ -489,3 +489,53 @@ serveur. `tick()` est appelé depuis la passe « une fois par tick » déjà pro
 Charge mesurée après ajout (pic de cubes visibles) : **517** raz-de-marée, **607** maelström,
 **574** givre — toujours très loin du plafond de 7 000 cubes/frame du manager.
 
+---
+
+## 13. Correctif de compilation du 12 novembre 2026 — et l'outil qui l'aurait évité
+
+Le `runClient` a échoué sur **quatre** erreurs, toutes invisibles pour le contrôle syntaxique
+utilisé jusqu'ici (`java-parser` valide la grammaire, pas les symboles) :
+
+| Fichier | Ligne | Erreur | Cause |
+|---|---|---|---|
+| `WaterSignatureVfx` | 273 | `cannot find symbol: H` | nom repris du JavaScript de l'aperçu ; la constante Java s'appelle **`SURGE_HEIGHT`** |
+| `WaterSignatureVfx` | 281 | `cannot find symbol: HALF_WIDTH` | idem → **`SURGE_HALF_WIDTH`** |
+| `WaterSignatureVfx` | 296 | `cannot find symbol: HALF_WIDTH` | idem |
+| `WeaponVfxServerListener` | 2514 | `cannot find symbol: carved` | `int carved = digFunnel(…)` avait été inséré **après** le message client qui l'utilise |
+
+Les trois premières viennent du fait que l'aperçu HTML et le moteur Java sont écrits en parallèle :
+le JS utilise des noms courts (`H`, `HW`) qui n'existent pas côté Java. La quatrième est une erreur
+d'ordre d'insertion.
+
+### Nouvel outil : `tools/semcheck.py`
+
+Contrôle sémantique léger, complémentaire de `java-parser` :
+
+```
+python3 semcheck.py <fichiers .java…>
+```
+
+| Détection | Exemple attrapé |
+|---|---|
+| **(A) constante inconnue** — identifiant MAJUSCULE utilisé sans point devant et déclaré nulle part dans le projet | `H`, `HALF_WIDTH` |
+| **(B) utilisation avant déclaration** — variable locale lue plus haut que sa déclaration, dans la même méthode | `carved` |
+
+Il neutralise d'abord commentaires et chaînes, construit un dictionnaire de **toutes** les constantes
+et enums du projet (une constante peut venir d'un autre fichier), puis ne signale que ce qui n'est
+nulle part. Pour (B) il retient la **première** déclaration d'un nom — sans cela, chaque variable
+redéclarée dans deux boucles frères produit un faux positif.
+
+**Mode d'emploi.** Comme `lamcheck2`, l'outil reste bruyant sur les gros fichiers qui listent des
+constantes d'enum (`WeaponWorldVfxManager`, `DlbVfxCommand`). La règle est donc la même :
+**comparer la sortie à celle d'une version qui compilait**, et ne regarder que les lignes nouvelles.
+Baseline actuelle des faux positifs connus :
+
+```
+WeaponVfxServerListener : candidate@1666, part@1857, zone@3001, baseline@3257
+WeaponWorldVfxManager   : dy/dz@1857, s@2991, hs@3009 + constantes d'enum multi-lignes
+DlbVfxCommand           : constantes d'enum multi-lignes
+```
+
+Sur les fichiers de l'élément eau, la sortie est **OK** partout : `WaterSignatureVfx`,
+`WaterTerrainVfx`, `GhostBlockMask`.
+
