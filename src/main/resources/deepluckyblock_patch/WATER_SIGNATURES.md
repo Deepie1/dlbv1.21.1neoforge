@@ -539,3 +539,75 @@ DlbVfxCommand           : constantes d'enum multi-lignes
 Sur les fichiers de l'élément eau, la sortie est **OK** partout : `WaterSignatureVfx`,
 `WaterTerrainVfx`, `GhostBlockMask`.
 
+---
+
+## 14. v1.3 — retours de la partie d'essai du 12 novembre 2026
+
+Six reproches relevés en jeu, six correctifs.
+
+### 14.1 « Le slash de water est un mélange de water et de earth · il y a des slashs marrons »
+
+**Cause.** `WeaponWorldVfxManager.animationSlashEffect(...)` choisit l'effet du *petit* arc (les 60 %
+de « slash originel ») à partir de la famille `/anim`. Il y avait une branche pour `fire`, `poison`,
+`earth`, `light`, `metal`, `wind`… **mais aucune pour `water`** : l'eau tombait dans le `return`
+par défaut, celui de `nature`, donc `THORN_MAW_ROOT` et `VERDANT_SAP_BLOOM`. La palette suit
+`fx.element()`, d'où les arcs verts et bruns sous un glint bleu.
+
+**Correctif.** Branche `WATER` ajoutée, qui renvoie les trois identifiants de l'élément :
+`HYDRO_TIDAL_SURGE` / `ABYSSAL_MAELSTROM` / `PERMAFROST_RIME`.
+
+### 14.2 « Maelström : on voit bien le trou, mais ça manque gravement de particules à l'intérieur »
+
+Le trou creusé en v1.2 a rendu visible un défaut qui ne se voyait pas avant : les cinq anneaux du
+bassin ne dessinaient qu'une **armature**, et entre eux il n'y avait rien. Trois blocs de rendu
+remplissent désormais le volume (`WaterSignatureVfx`, blocs 9 à 11) :
+
+| Bloc | Contenu | Cubes |
+|---|---|---|
+| 9 | **Paroi volumétrique** — 11 nappes hélicoïdales, 1,9 tour du bord à la gorge, cubes étirés tangentiellement (×2,05) pour se toucher et former une surface | 374 max |
+| 10 | **Remplissage** — 200 gouttes en suspension *dans* le cône ; rayon tiré en `sqrt(h)` pour une répartition homogène et non un entassement sur l'axe | 200 max |
+| 11 | **Cœur** — voir 14.3 | 136 |
+
+Côté serveur, l'entonnoir est aussi rempli de **vraies particules** toutes les 2 ticks du tick 6 au
+tick 124 : trois bras en spirale (`SPLASH` + `BUBBLE`), la gorge (`BUBBLE_COLUMN_UP`, `UNDERWATER`),
+une colonne remontante et des embruns au-dessus du bord.
+
+### 14.3 « Détaille à mort le cœur du maelström, avec des cubes de différentes tailles »
+
+La lisibilité vient du **contraste d'échelle**, pas du nombre. Quatre couches superposées, à trois
+tailles nettement séparées et trois vitesses de rotation différentes :
+
+| Couche | Nombre | Taille | Rotation |
+|---|---|---|---|
+| (a) grosses dalles | 6 | **0,34** | `spin × 1,70` |
+| (b) blocs moyens, double hélice | 24 | **0,155** | `spin × 3,10` |
+| (c) éclats rapides | 90 | **0,055** | `spin × 4,20 → 6,80` |
+| (d) l'œil — noyau sombre pulsant | 16 | 0,105 | `spin × 0,90` |
+
+L'œil (d) est ce qui rend le fond *lisible* : sans lui le centre « bave » et on ne sait plus où est
+le fond de l'entonnoir.
+
+Comptage de l'aperçu : le maelström passe de **607** à **1283** voxels visibles (plafond 7 000).
+
+### 14.4 « Pour la première animation, la wave, pas besoin de trouer le sol »
+
+L'appel `GhostBlockMask.scourLine(...)` est retiré de `applySurgeGameplay`. Une vague déferle, elle
+ne creuse pas. La méthode reste dans l'API de `GhostBlockMask` mais n'a plus aucun appelant.
+
+### 14.5 et 14.6 « La vague fonctionne en AoE » · « le mob recule avec la vague de plein fouet »
+
+Le mur ne capturait que dans une bande de `|along| <= 1,70` et `|side| <= 3,60`, et **seules** les
+créatures embarquées subissaient quelque chose : tout ce qui n'était pas capturable (cooldown de
+réembarquement, mob tenu par une tornade, mob trop sur le côté) traversait la vague sans rien sentir.
+
+Nouveau comportement :
+
+* **bande élargie** à `|along| <= 2,60` et `|side| <= 3,90` — le mur a une épaisseur ;
+* **tout** ce que le mur traverse est poussé, surfeur ou non :
+  `shove = (breaking ? 0,95 : 0,62) x (0,45 + 0,55 x head)` où
+  `head = 1 - |side| / 3,90` — de plein fouet au centre, effleuré sur les bords ;
+* les dégâts sont appliqués **une seule fois par vague**, au premier contact, via un
+  `Set<Integer> struck` partagé par les douze passes ;
+* le **reflux** ne renvoie plus personne vers l'attaquant : il pousse encore vers l'avant
+  (`+dir x 0,38` au lieu de `-dir x 0,52`). Une vague ne recrache pas ses victimes vers le tireur.
+

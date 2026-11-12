@@ -2283,11 +2283,12 @@ public final class WeaponVfxServerListener {
     private static void applySurgeGameplay(LivingEntity attacker, LivingEntity target,
                                            ServerLevel sl, float weaponDamage) {
         final int scheduleNow = TestProcedure.currentTick(sl);
-        final long scheduleNowGame = sl.getGameTime();
         final int attackerId = attacker == null ? -1 : attacker.getId();
         final double cx = target.getX();
         final double cy = target.getY();
         final double cz = target.getZ();
+        // Les mobs déjà frappés par CE mur : l'AoE ne blesse qu'une fois, mais pousse à chaque passe.
+        final java.util.Set<Integer> struck = java.util.concurrent.ConcurrentHashMap.newKeySet();
         // Direction de marche : attaquant → cible (la vague traverse la cible et continue).
         double rawX = attacker == null ? target.getLookAngle().x : cx - attacker.getX();
         double rawZ = attacker == null ? target.getLookAngle().z : cz - attacker.getZ();
@@ -2303,11 +2304,8 @@ public final class WeaponVfxServerListener {
                             + "les mobs happés SURFENT 26-42 ticks puis sont jetés"), true);
         }
 
-        // Décapage : la vague arrache la couche de surface sur son passage. Blocs fantômes
-        // là encore — rien n'est cassé, et WaterTerrainVfx montre au même instant ces mêmes
-        // blocs en train de voler devant le front.
-        GhostBlockMask.scourLine(sl, net.minecraft.core.BlockPos.containing(cx, cy, cz),
-                dirX, dirZ, -3.40, 2.80, 3.40, 2, 3, scheduleNowGame + 12, scheduleNowGame + 86, 12.0);
+        // Pas de décapage du sol pour le raz-de-marée : une vague DÉFERLE, elle ne creuse pas.
+        // (GhostBlockMask.scourLine reste disponible, mais n'est plus appelé ici.)
 
         final int passes = 12;
         for (int pass = 0; pass < passes; pass++) {
@@ -2336,8 +2334,31 @@ public final class WeaponVfxServerListener {
                     double rx = victim.getX() - fx2, rz = victim.getZ() - fz2;
                     double along = rx * dirX + rz * dirZ;
                     double side = -rx * dirZ + rz * dirX;
-                    if (Math.abs(along) > 1.70 || Math.abs(side) > 3.60) continue;
+                    // Mur épais : 2,60 d'épaisseur sur 3,90 de demi-largeur. Tout ce que le mur
+                    // traverse est touché — c'est une AoE, pas un cône de tir.
+                    if (Math.abs(along) > 2.60 || Math.abs(side) > 3.90) continue;
                     victim.clearFire();
+
+                    // ---- AoE : la vague POUSSE tout ce qu'elle touche, surfeur ou non ----
+                    // Le mob recule avec le mur même s'il ne peut pas être embarqué (déjà jeté,
+                    // tenu par une tornade…). Le poids de la poussée suit la place dans le mur :
+                    // de plein fouet au centre, effleuré sur les bords.
+                    double head = 1.0 - Math.min(1.0, Math.abs(side) / 3.90);
+                    double shove = (breaking ? 0.95 : 0.62) * (0.45 + 0.55 * head);
+                    Vec3 mv = victim.getDeltaMovement();
+                    victim.setDeltaMovement(mv.x * 0.30 + dirX * shove,
+                            Math.max(mv.y, 0.16 + 0.22 * head),
+                            mv.z * 0.30 + dirZ * shove);
+                    victim.fallDistance = 0.0f;
+                    victim.hurtMarked = true;
+                    if (struck.add(victim.getId())) {
+                        // Première rencontre avec le mur : c'est là que la vague blesse.
+                        hurtWithCapturedWeapon(sl, attackerId, victim, pulse);
+                        PixelFx.send(sl, ParticleTypes.SPLASH, victim.getX(),
+                                victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
+                                12, 0.34, 0.30, 0.34, 0.14);
+                    }
+
                     if (SURGE_RIDES.containsKey(victim.getId())) continue;   // déjà porté
                     Long cooldown = SURGE_RECAPTURE.get(victim.getId());
                     if (cooldown != null && gameTick < cooldown) continue;   // vient d'être jeté
@@ -2357,7 +2378,7 @@ public final class WeaponVfxServerListener {
                     SURGE_RIDES.put(victim.getId(), new SurgeRide(gameTick + carry, gameTick,
                             dirX, dirZ, speed, lift, drift, bob, roll, pulse, attackerId, 9));
                     victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 70, 1, false, true, true));
-                    hurtWithCapturedWeapon(sl, attackerId, victim, pulse);
+                    // (les dégâts ont déjà été appliqués par l'AoE ci-dessus, au premier contact)
                     // Gerbe d'embarquement, centrée sur le mob : on voit QUI vient d'être happé.
                     PixelFx.send(sl, ParticleTypes.SPLASH, victim.getX(),
                             victim.getY() + victim.getBbHeight() * 0.65, victim.getZ(),
@@ -2367,8 +2388,8 @@ public final class WeaponVfxServerListener {
                 }
             });
         }
-        // Reflux : ce qui n'a pas été emporté est ramené vers l'arrière, plus doucement. On laisse
-        // tranquilles les mobs encore portés — sinon la vague se contredit elle-même.
+        // Traîne : la nappe qui suit le mur continue de pousser VERS L'AVANT, doucement. Elle ne
+        // ramène plus personne en arrière — une vague ne recrache pas ses victimes vers le tireur.
         TestProcedure.schedule(sl, scheduleNow + 74, () -> {
             sl.playSound(null, cx, cy, cz, SoundEvents.AMBIENT_UNDERWATER_EXIT, SoundSource.PLAYERS, 0.70f, 0.58f);
             PixelFx.send(sl, ParticleTypes.CURRENT_DOWN, cx, cy - 0.60, cz, 26, 2.60, 0.25, 2.60, 0.02);
@@ -2377,7 +2398,7 @@ public final class WeaponVfxServerListener {
                 if (!victim.isAlive() || victim instanceof Player) continue;
                 if (attackerId >= 0 && victim.getId() == attackerId) continue;
                 if (SURGE_RIDES.containsKey(victim.getId())) continue;
-                victim.setDeltaMovement(-dirX * 0.52, 0.18, -dirZ * 0.52);
+                victim.setDeltaMovement(dirX * 0.38, 0.16, dirZ * 0.38);
                 victim.hurtMarked = true;
             }
         });
@@ -2524,6 +2545,45 @@ public final class WeaponVfxServerListener {
             serverPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal(
                     "§3[Maelström abyssal] §f" + grabbed + " créature(s) avalée(s) §7— succion 7,2 → "
                             + "capture 4,35 · " + carved + " blocs de sol effacés · geyser au tick 114"), true);
+        }
+
+        // ------------------------------------------------------------------------------------
+        // L'INTÉRIEUR DU TROU. Le creusement rendait le trou lisible mais vide : on y voyait le
+        // mob voler dans du rien. Toutes les 2 ticks on remplit le volume de l'entonnoir — paroi
+        // en spirale, gorge, et colonne d'air remontante — avec des particules d'eau réelles.
+        // ------------------------------------------------------------------------------------
+        for (int delay = 6; delay < 124; delay += 2) {
+            final int step = delay;
+            TestProcedure.schedule(sl, scheduleNow + delay, () -> {
+                double phase = step * 0.42;                      // même vitesse que la spirale
+                double openK = Math.min(1.0, step / 24.0);
+                // Paroi : 3 bras en spirale, du bord jusqu'à la gorge.
+                for (int arm = 0; arm < 3; arm++) {
+                    for (int k = 0; k < 6; k++) {
+                        double v = k / 5.0;                      // 0 bord .. 1 gorge
+                        double r = 4.35 * (1.0 - v * 0.82) * openK;
+                        double ang = phase * (1.0 + v * 2.40) + arm * 2.0944 + v * 10.05;
+                        double px = cx + Math.cos(ang) * r;
+                        double pz = cz + Math.sin(ang) * r;
+                        double py = baseY - 0.10 - 3.30 * v * v * openK;
+                        PixelFx.send(sl, ParticleTypes.SPLASH, px, py, pz, 2, 0.10, 0.06, 0.10, 0.02);
+                        if (k >= 3) {
+                            PixelFx.send(sl, ParticleTypes.BUBBLE, px, py, pz, 2, 0.12, 0.14, 0.12, 0.03);
+                        }
+                    }
+                }
+                // Gorge : le fond de l'entonnoir aspire en permanence.
+                double gy = baseY - 0.10 - 3.30 * openK;
+                PixelFx.send(sl, ParticleTypes.BUBBLE_COLUMN_UP, cx, gy, cz, 6, 0.42, 0.20, 0.42, 0.06);
+                PixelFx.send(sl, ParticleTypes.UNDERWATER, cx, gy + 0.60, cz, 8, 0.70, 0.50, 0.70, 0.02);
+                // Remontée : l'air arraché au fond repart vers la surface le long de l'axe.
+                double climb = (step % 20) / 20.0;
+                PixelFx.send(sl, ParticleTypes.BUBBLE, cx, gy + climb * 3.40, cz,
+                        5, 0.55 * (1.0 - climb) + 0.10, 0.25, 0.55 * (1.0 - climb) + 0.10, 0.04);
+                // Embruns au-dessus du bord : la jonction trou / terrain reste masquée.
+                PixelFx.send(sl, ParticleTypes.SPLASH, cx, baseY + 0.25, cz,
+                        4, 4.10 * openK, 0.18, 4.10 * openK, 0.03);
+            });
         }
 
         sl.playSound(null, cx, cy, cz, SoundEvents.AMBIENT_UNDERWATER_LOOP, SoundSource.PLAYERS, 0.85f, 0.55f);

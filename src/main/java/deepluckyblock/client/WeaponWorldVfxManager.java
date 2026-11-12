@@ -1757,6 +1757,15 @@ public final class WeaponWorldVfxManager {
                 default -> WeaponVisualEffectId.ANNIHILATING_ARC;
             };
         }
+        // T375-WATER-SLASH : sans cette branche l'eau retombait dans le cas par défaut (nature) et
+        // le petit arc sortait en vert/brun — « slash marron » alors que le glint était bleu.
+        if (deepluckyblock.util.AnimFamily.WATER.equals(canonical)) {
+            return switch (index) {
+                case 0 -> WeaponVisualEffectId.HYDRO_TIDAL_SURGE;
+                case 1 -> WeaponVisualEffectId.ABYSSAL_MAELSTROM;
+                default -> WeaponVisualEffectId.PERMAFROST_RIME;
+            };
+        }
         if (deepluckyblock.util.AnimFamily.WIND.equals(canonical)) {
             return switch (index) {
                 case 0 -> WeaponVisualEffectId.ZEPHYR_WIND_LANCE;

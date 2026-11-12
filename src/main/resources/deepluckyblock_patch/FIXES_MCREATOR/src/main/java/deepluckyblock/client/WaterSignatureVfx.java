@@ -526,6 +526,148 @@ public final class WaterSignatureVfx {
                         Math.round(a * basinLife * (0.30f + 0.55f * climb)));
             }
         }
+
+        // ============================ v1.3 — L'INTÉRIEUR DU TROU ============================
+        // Reproche de la partie d'essai : « on voit bien le trou, mais ça manque gravement de
+        // particules à l'intérieur, on voit juste le mob fly ». Les cinq anneaux d'origine ne
+        // dessinaient qu'un fil de fer : entre eux, le vide. Les trois blocs qui suivent
+        // remplissent le VOLUME de l'entonnoir, puis détaillent son cœur à plusieurs échelles.
+
+        // ---- 9. PAROI VOLUMÉTRIQUE : onze nappes hélicoïdales du bord jusqu'à la gorge ----
+        // Chaque nappe descend en s'enroulant ; les cubes sont étirés tangentiellement, si bien
+        // qu'ils se touchent et forment une surface continue plutôt qu'un chapelet de points.
+        if (basinLife > 0.02f && open > 0.03f) {
+            final int sheets = 11;
+            final int steps = 34;
+            for (int sheet = 0; sheet < sheets; sheet++) {
+                float sPhase = sheet * (TAU / sheets);
+                float sJit = hash(salt, 11000 + sheet * 311);
+                for (int i = 0; i < steps; i++) {
+                    float v = i / (float) (steps - 1);                  // 0 bord .. 1 gorge
+                    float h = hash(salt, 11100 + sheet * 173 + i * 29);
+                    // Trous dans la nappe : une paroi d'eau n'est jamais pleine.
+                    if (h > 0.93f - 0.10f * v) continue;
+                    float radius = BASIN_RADIUS * (1.0f - v * 0.86f) * open
+                            * (1.0f - implode * (0.22f + 0.74f * v))
+                            * (0.95f + 0.09f * Mth.sin(v * 9.0f + t * 12.0f + sJit * 6.0f));
+                    if (radius < 0.06f) continue;
+                    // L'enroulement s'accélère vers le fond : 1,9 tour entre le bord et la gorge.
+                    float ang = sPhase + v * TAU * 1.90f + spinPhase * (1.0f + v * 2.40f);
+                    float y = -0.95f - BASIN_DEPTH * v * v * open
+                            + 0.07f * Mth.sin(v * 16.0f + t * 13.0f + sJit * 4.0f);
+                    // Taille : large dalle au bord, écaille serrée à la gorge.
+                    float size = (0.165f - 0.095f * v) * (0.80f + 0.45f * h);
+                    float slope = -(0.38f + 1.05f * v);
+                    int rgb = mix(mix(AZURE, OCEAN, v * 0.85f), ABYSS, v * v * 0.80f);
+                    int ca = Math.round(a * basinLife * (0.58f + 0.30f * (1.0f - v)));
+                    rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            Mth.cos(ang) * radius, Mth.sin(ang) * radius, y,
+                            size * 2.05f, size * 0.42f, size * 0.95f,
+                            ang, slope, 0.0f, rgb, ca);
+                }
+            }
+        }
+
+        // ---- 10. REMPLISSAGE : 200 gouttes en suspension DANS le cône, pas sur sa paroi ----
+        // Tirage uniforme en profondeur ; à chaque profondeur le rayon est tiré À L'INTÉRIEUR du
+        // rayon local de l'entonnoir. C'est ce qui enlève la sensation de trou vide.
+        if (basinLife > 0.02f && open > 0.05f) {
+            for (int i = 0; i < 200; i++) {
+                float h = hash(salt, 12000 + i * 37);
+                float h2 = hash(salt, 12200 + i * 53);
+                float h3 = hash(salt, 12400 + i * 19);
+                float v = h;                                            // profondeur relative
+                float wall = BASIN_RADIUS * (1.0f - v * 0.86f) * open
+                        * (1.0f - implode * (0.22f + 0.74f * v));
+                if (wall < 0.08f) continue;
+                // sqrt : répartition homogène en surface, sinon tout s'entasse sur l'axe.
+                float r = wall * (float) Math.sqrt(h2) * 0.94f;
+                float ang = h3 * TAU + spinPhase * (1.0f + v * 2.40f) * (0.80f + 0.40f * h2);
+                float y = -0.95f - BASIN_DEPTH * v * v * open
+                        + 0.22f * Mth.sin(t * 15.0f + h3 * 9.0f);
+                float size = (0.040f + 0.065f * h2) * (1.0f - 0.35f * v);
+                int rgb = mix(mix(SHALLOW, OCEAN, v * 0.70f), SPRAY, h3 * 0.55f);
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * r, Mth.sin(ang) * r, y,
+                        size, size * 1.30f, size, rgb,
+                        Math.round(a * basinLife * (0.42f + 0.38f * (1.0f - v))));
+            }
+        }
+
+        // ---- 11. LE CŒUR, À TROIS ÉCHELLES ----
+        // Demande explicite : « détaille à mort le cœur du maelström, avec des cubes de
+        // différentes tailles, je veux que ça soit ultra compréhensible ». La lisibilité vient
+        // du CONTRASTE d'échelle : on superpose trois tailles très séparées (0,34 / 0,155 /
+        // 0,055) tournant à trois vitesses différentes, plus un œil noir immobile au centre.
+        if (basinLife > 0.02f && open > 0.06f) {
+            float core = open * (1.0f - implode * 0.55f);
+            float floorY = -0.95f - BASIN_DEPTH * open;
+
+            // (a) Six GROSSES dalles, lentes, qui tournent au fond : elles donnent l'échelle.
+            for (int i = 0; i < 6; i++) {
+                float h = hash(salt, 13000 + i * 101);
+                float ang = i * TAU / 6.0f + spinPhase * 1.70f;
+                float r = (0.52f + 0.30f * h) * core;
+                float y = floorY + 0.28f + 0.16f * Mth.sin(t * 9.0f + i * 1.7f);
+                float size = 0.34f * (0.85f + 0.30f * h);
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * r, Mth.sin(ang) * r, y,
+                        size * 1.45f, size * 0.50f, size * 1.05f,
+                        ang, -0.85f, 0.0f,
+                        mix(DEEP, OCEAN, h * 0.55f),
+                        Math.round(a * basinLife * 0.90f));
+            }
+
+            // (b) Vingt-quatre blocs MOYENS en double hélice serrée autour de l'axe.
+            for (int i = 0; i < 24; i++) {
+                float h = hash(salt, 13200 + i * 59);
+                float v = i / 23.0f;
+                float ang = v * TAU * 2.40f + spinPhase * 3.10f + (i % 2) * 3.1416f;
+                float r = (0.20f + 0.46f * (1.0f - v)) * core;
+                float y = floorY + 0.10f + v * (1.45f * core)
+                        + 0.07f * Mth.sin(t * 17.0f + i);
+                float size = 0.155f * (0.80f + 0.45f * h);
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * r, Mth.sin(ang) * r, y,
+                        size * 1.30f, size * 0.85f, size * 1.30f,
+                        ang, -0.55f, 0.0f,
+                        mix(OCEAN, SHALLOW, v * 0.70f),
+                        Math.round(a * basinLife * (0.88f - 0.20f * v)));
+            }
+
+            // (c) Quatre-vingt-dix ÉCLATS minuscules et rapides : la poussière d'eau du cœur.
+            for (int i = 0; i < 90; i++) {
+                float h = hash(salt, 13500 + i * 23);
+                float h2 = hash(salt, 13700 + i * 41);
+                float h3 = hash(salt, 13900 + i * 13);
+                float spin2 = spinPhase * (4.20f + 2.60f * h2);
+                float ang = h * TAU + spin2;
+                float r = (0.10f + 0.72f * h2) * core;
+                float y = floorY + 0.05f + h3 * (1.90f * core)
+                        + 0.10f * Mth.sin(t * 26.0f + h * 11.0f);
+                float size = 0.055f * (0.70f + 0.60f * h3);
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * r, Mth.sin(ang) * r, y,
+                        size, size * 1.45f, size,
+                        mix(SPRAY, WHITE, h3 * 0.75f),
+                        Math.round(a * basinLife * (0.60f + 0.35f * h2)));
+            }
+
+            // (d) L'ŒIL : noyau noir presque immobile, qui pulse. Sans lui le centre « bave » ;
+            // avec lui on lit instantanément où est le fond de l'entonnoir.
+            float eye = 0.30f * core * (0.90f + 0.14f * Mth.sin(t * 20.0f));
+            for (int i = 0; i < 16; i++) {
+                float h = hash(salt, 14100 + i * 71);
+                float ang = i * TAU / 16.0f + spinPhase * 0.90f;
+                float lift = (i % 2 == 0) ? 0.0f : 0.14f;
+                float size = 0.105f * (0.85f + 0.30f * h);
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * eye, Mth.sin(ang) * eye, floorY + 0.08f + lift,
+                        size, size * 1.20f, size,
+                        mix(ABYSS, DEEP, h * 0.30f),
+                        Math.round(a * basinLife * 0.96f));
+            }
+        }
     }
 
     // ============================================================================================
