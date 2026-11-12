@@ -51,7 +51,19 @@ public enum DeepElement {
      * Le corps conserve une base très sombre et stable. Seuls les contours reçoivent les teintes
      * dynamiques de {@link #chaosEdge(float, float)}, avec plusieurs phases visibles simultanément.
      */
-    CHAOS("Chaos", 0x2B0B38, 0x120616, 0x5B2A68);
+    CHAOS("Chaos", 0x2B0B38, 0x120616, 0x5B2A68),
+
+    /**
+     * 風 Vent / air / tempête. <b>Ajouté en dernier volontairement</b> : {@code ordinal()} sert
+     * d'index de bit dans {@code paletteMask} ({@code 1 << ordinal()}), donc insérer cette famille
+     * ailleurs qu'à la fin décalerait tous les masques déjà en circulation.
+     *
+     * <p>Avant son existence, les trois effets du vent étaient garés sur d'autres familles —
+     * {@code ZEPHYR_WIND_LANCE} et {@code TEMPEST_EYE} sur le Bois, {@code SANDSTORM_DUNE} sur la
+     * Terre — et {@code impactWood}/{@code impactEarth} les interceptaient au vol. C'est ce qui
+     * faisait apparaître des lances de vent pâles dans la rotation de l'élément Bois.</p>
+     */
+    WIND("Vent", 0x9FF2DC, 0x4FB8A4, 0xE6FFF8);
 
     public final String displayName;
     public final int primary;
@@ -100,6 +112,17 @@ public enum DeepElement {
                 || s.contains("corrode") || s.contains("corrosion") || s.contains("acid")
                 || s.contains("contagion") || s.contains("disease") || s.contains("virul")) {
             return POISON;
+        }
+        // Vent / air / tempête — testé AVANT le Bois : « zephyr », « gale » et « tempest »
+        // n'ont rien à voir avec l'écorce.
+        // « windmill » (bloc décoratif), « galerie » (minage) et « second_wind » (soin) ne sont
+        // pas des enchantements d'air : on les exclut explicitement.
+        if ((s.contains("wind") && !s.contains("windmill") && !s.contains("second_wind"))
+                || s.contains("zephyr") || (s.contains("gale") && !s.contains("galer"))
+                || s.contains("tempest") || s.contains("cyclone") || s.contains("tornad")
+                || s.contains("sandstorm") || s.contains("whirlwind") || s.contains("gust")
+                || s.contains("breeze") || s.contains("aeolian")) {
+            return WIND;
         }
         // Bois / nature / forêt / récolte -> BRUN (couleur de l'écorce et des planches)
         if (s.contains("nature") || s.contains("harvest") || s.contains("wood")

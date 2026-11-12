@@ -10,7 +10,7 @@ import java.util.Locale;
  * écouteur serveur) et mélangeaient français et anglais : la commande exposait par exemple
  * {@code terre} <i>et</i> {@code earth} pour la même famille, avec deux noms affichés différents.
  * Tout passe désormais par les noms <b>anglais canoniques</b> — {@code fire}, {@code wind},
- * {@code earth}, {@code metal}, {@code light}, {@code poison}, {@code nature}, {@code water} — et les
+ * {@code earth}, {@code metal}, {@code light}, {@code poison}, {@code wood}, {@code water} — et les
  * valeurs restent acceptées en lecture (les épées déjà données continuent de fonctionner), sans
  * jamais réapparaître comme doublon dans l'autocomplétion.</p>
  *
@@ -27,12 +27,17 @@ public final class AnimFamily {
     public static final String METAL = "metal";
     public static final String LIGHT = "light";
     public static final String POISON = "poison";
-    public static final String NATURE = "nature";
+    /**
+     * Bois. S'appelait {@code nature} jusqu'au 12 novembre 2026 : c'était un nom inventé, alors
+     * que la famille correspond à {@link deepluckyblock.enchantments.DeepElement#WOOD}, « Bois ».
+     * Les anciennes valeurs NBT {@code nature} et {@code gaia} restent lues.
+     */
+    public static final String WOOD = "wood";
     /** T375 : huitième famille, l'eau (raz-de-marée, maelström abyssal, givre du permafrost). */
     public static final String WATER = "water";
 
     /** Ordre d'affichage de l'aide et de l'autocomplétion : un seul nom par famille, en anglais. */
-    public static final String[] ALL = {FIRE, WATER, WIND, EARTH, METAL, LIGHT, POISON, NATURE};
+    public static final String[] ALL = {FIRE, WATER, WIND, EARTH, METAL, LIGHT, POISON, WOOD};
 
     private AnimFamily() { }
 
@@ -58,8 +63,8 @@ public final class AnimFamily {
             case "light", "lumiere", "lumière", "sacre", "sacré", "holy" -> LIGHT;
             // poison / venin
             case "poison", "venin", "venom", "toxic" -> POISON;
-            // gaia / nature
-            case "gaia", "nature", "bois", "wood" -> NATURE;
+            // bois / wood (anciennement exposé sous le nom inventé « nature »)
+            case "gaia", "nature", "bois", "wood", "foret", "forêt", "tree" -> WOOD;
             // eau / water (le givre appartient à la même famille, comme dans DeepElement.WATER)
             case "eau", "water", "aqua", "glace", "ice", "givre", "frost" -> WATER;
             default -> null;
@@ -76,7 +81,7 @@ public final class AnimFamily {
             case METAL -> 0xC4C8CD;
             case LIGHT -> 0xFFD75E;
             case POISON -> 0x46C24C;
-            case NATURE -> 0x74C34A;
+            case WOOD -> 0xA9743C;      // DeepElement.WOOD.primary — écorce, pas feuillage
             case WATER -> 0x62C7E8;
             default -> 0xFFF3B0;
         };
@@ -88,11 +93,11 @@ public final class AnimFamily {
         return switch (canonical) {
             case FIRE -> "§c";
             case WIND -> "§b";
-            case EARTH -> "§6";
+            case EARTH -> "§a";   // 0x9FC25E : la terre du mod est olive, pas dorée
             case METAL -> "§7";
             case LIGHT -> "§e";
             case POISON -> "§2";
-            case NATURE -> "§a";
+            case WOOD -> "§6";    // écorce brun doré — doit rester distinct de la Terre
             case WATER -> "§3";
             default -> "§f";
         };
@@ -108,7 +113,7 @@ public final class AnimFamily {
             case METAL -> "Metal";
             case LIGHT -> "Light";
             case POISON -> "Poison";
-            case NATURE -> "Nature";
+            case WOOD -> "Wood";
             case WATER -> "Water";
             default -> "Animation";
         };

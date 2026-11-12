@@ -181,6 +181,14 @@ public final class WeaponVfxSubtle {
             case VOID -> (tier % 2 == 0) ? SHAPE_MOTES : SHAPE_WISP;
             // T352-CHAOS : traînée bariolée + reflet instable (toujours 2..9 pixels).
             case CHAOS -> (tier % 2 == 0) ? SHAPE_DRIFT : SHAPE_GLINT;
+            // Vent : rien ne tombe, tout dérive — bourrasque, poussière emportée, voile d'air.
+            case WIND -> switch (tier) {
+                case 0 -> SHAPE_DRIFT;
+                case 1 -> SHAPE_MIST;
+                case 2 -> SHAPE_DUST;
+                case 3 -> SHAPE_LEAF;
+                default -> SHAPE_WISP;
+            };
         };
     }
 

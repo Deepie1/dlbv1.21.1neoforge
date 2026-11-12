@@ -65,7 +65,7 @@ public enum WeaponVisualEffectId {
     PERMAFROST_RIME(19, Category.ELEMENT, 56, true, DeepElement.WATER),
     VENOM_BRIAR_FANG(20, Category.ELEMENT, 63, false, DeepElement.POISON),
     SEISMIC_TECTONIC(21, Category.ELEMENT, 82, false, DeepElement.EARTH),
-    ZEPHYR_WIND_LANCE(22, Category.ELEMENT, 67, true, DeepElement.WOOD),
+    ZEPHYR_WIND_LANCE(22, Category.ELEMENT, 67, true, DeepElement.WIND),
     SERAPH_SKY_PILLAR(23, Category.ELEMENT, 96, true, DeepElement.LIGHT),
     WITHER_SHADOW_RIFT(24, Category.ELEMENT, 78, false, DeepElement.SHADOW),
     ASTRAL_STAR_LANCE(25, Category.RANGED, 93, true, DeepElement.LIGHT),
@@ -86,7 +86,7 @@ public enum WeaponVisualEffectId {
      * T374-WIND-REFONTE : la variante sort de l'archive Terre et prend son propre moteur
      * ({@code WindSignatureVfx}); elle reste hors rotation pour ne pas modifier les familles existantes.
      */
-    SANDSTORM_DUNE(41, Category.ELEMENT, 72, false, DeepElement.EARTH),
+    SANDSTORM_DUNE(41, Category.ELEMENT, 72, false, DeepElement.WIND),
     /** #33 Ombre : éclipse — disque noir, voile et triple griffure (palette violet/noir T373). */
     ECLIPSE_VEIL(33, Category.ELEMENT, 74, false, DeepElement.SHADOW),
     /** #34 Vide : faille verticale qui aspire la lumière, puis se referme (gris/noir T373). */
@@ -112,7 +112,7 @@ public enum WeaponVisualEffectId {
      * {@code ordinal()} existant (ils servent de sel de rendu). Démontrable par {@code /dlbvfx},
      * prête pour un futur enchantement : aucun enchantement ne la déclenche aujourd'hui.
      */
-    TEMPEST_EYE(42, Category.ELEMENT, 74, false, DeepElement.WOOD);
+    TEMPEST_EYE(42, Category.ELEMENT, 74, false, DeepElement.WIND);
 
     public enum Category {
         EDGE_SHARP,
@@ -493,7 +493,8 @@ public enum WeaponVisualEffectId {
     public static WeaponVisualEffectId signatureFor(DeepElement el) {
         WeaponVisualEffectId best = null;
         for (WeaponVisualEffectId fx : values()) {
-            if (fx.element != el || fx == SANDSTORM_DUNE || fx == TEMPEST_EYE) continue;
+            // (l'exclusion SANDSTORM/TEMPEST n'a plus lieu d'être : ils ont leur propre famille)
+            if (fx.element != el) continue;
             if (best == null || fx.priority > best.priority) best = fx;
         }
         return best;
@@ -508,10 +509,13 @@ public enum WeaponVisualEffectId {
         if (el == DeepElement.METAL) {
             return new ArrayList<>(List.of(RAZOR_GLEAM, SUPREME_PRISM_EDGE, ANNIHILATING_ARC));
         }
+        // Vent : ordre de rotation explicite, comme Terre et Métal.
+        if (el == DeepElement.WIND) {
+            return new ArrayList<>(List.of(ZEPHYR_WIND_LANCE, SANDSTORM_DUNE, TEMPEST_EYE));
+        }
         List<WeaponVisualEffectId> out = new ArrayList<>(4);
         for (WeaponVisualEffectId fx : values()) {
-            // Vent hors familles Terre/Bois : la rotation de Bois reste Thorn, Verdant et Zéphyr.
-            if (fx.element == el && fx != SANDSTORM_DUNE && fx != TEMPEST_EYE) out.add(fx);
+            if (fx.element == el) out.add(fx);
         }
         return out;
     }

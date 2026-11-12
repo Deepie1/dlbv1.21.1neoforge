@@ -241,9 +241,13 @@ public final class WeaponVfxServerListener {
             WeaponVisualEffectId.MOLTEN_FIRE_WAVE, WeaponVisualEffectId.SOUL_FIRE_CRESCENT,
             WeaponVisualEffectId.BRIMSTONE_METEOR
     };
-    private static final WeaponVisualEffectId[] ANIM_GAIA = {
-            WeaponVisualEffectId.ZEPHYR_WIND_LANCE, WeaponVisualEffectId.THORN_MAW_ROOT,
-            WeaponVisualEffectId.VERDANT_SAP_BLOOM
+    /**
+     * Bois. ZEPHYR_WIND_LANCE a été retiré de cette rotation : c'est la lance de VENT, elle
+     * appartient à {@link #ANIM_WIND}. Sa présence ici est ce qui faisait jouer une animation
+     * d'air pâle — lue comme « de l'eau » — quand on demandait du bois.
+     */
+    private static final WeaponVisualEffectId[] ANIM_WOOD = {
+            WeaponVisualEffectId.THORN_MAW_ROOT, WeaponVisualEffectId.VERDANT_SAP_BLOOM
     };
     private static final WeaponVisualEffectId[] ANIM_POISON = {
             WeaponVisualEffectId.VENOM_BRIAR_FANG, WeaponVisualEffectId.MIASMA_SHROUD,
@@ -3475,7 +3479,7 @@ public final class WeaponVfxServerListener {
                 : deepluckyblock.util.AnimFamily.METAL.equals(family) ? ANIM_METAL
                 : deepluckyblock.util.AnimFamily.LIGHT.equals(family) ? ANIM_LIGHT
                 : deepluckyblock.util.AnimFamily.WATER.equals(family) ? ANIM_WATER
-                : deepluckyblock.util.AnimFamily.WIND.equals(family) ? ANIM_WIND : ANIM_GAIA;
+                : deepluckyblock.util.AnimFamily.WIND.equals(family) ? ANIM_WIND : ANIM_WOOD;
 
         if (roll >= 60) {
             var tag = deepluckyblock.util.DeepNbt.getOrCreateTag(weapon);

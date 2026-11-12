@@ -611,3 +611,92 @@ Nouveau comportement :
 * le **reflux** ne renvoie plus personne vers l'attaquant : il pousse encore vers l'avant
   (`+dir x 0,38` au lieu de `-dir x 0,52`). Une vague ne recrache pas ses victimes vers le tireur.
 
+
+---
+
+## 15. v1.5 — « l'eau a des slashs de nature, la nature a des slashs d'eau »
+
+### 15.1 Ce qui se passait réellement
+
+Le diagnostic du joueur était juste, mais la cause n'était ni dans l'eau ni dans la nature :
+**l'élément Vent n'existait pas.**
+
+Les trois animations d'air avaient été garées chez les voisins, faute de famille à elles :
+
+| Animation | Élément déclaré (avant) | Élément réel |
+|---|---|---|
+| `ZEPHYR_WIND_LANCE` (22) | `DeepElement.WOOD` | Vent |
+| `TEMPEST_EYE` (42) | `DeepElement.WOOD` | Vent |
+| `SANDSTORM_DUNE` (41) | `DeepElement.EARTH` | Vent |
+
+Conséquence en jeu : la rotation du Bois était `{ZEPHYR_WIND_LANCE, THORN_MAW_ROOT,
+VERDANT_SAP_BLOOM}`. **Une fois sur trois, frapper avec une arme « nature » jouait la lance de
+vent** — un arc pâle, bleuté-blanc, que l'œil lit immédiatement comme de l'eau. Et comme
+`ZEPHYR_WIND_LANCE` appartenait *aussi* au pool `ANIM_WIND`, c'était le seul effet du mod présent
+dans deux familles à la fois.
+
+L'autre moitié du symptôme (« l'eau a des slashs de nature ») avait déjà été corrigée en v1.4 :
+sans branche `WATER` dans `animationSlashEffect`, l'eau retombait dans le `return` par défaut,
+c'est-à-dire le trio du Bois. Les deux bugs avaient donc la même racine : **le défaut de
+l'aiguillage, c'était « nature »**, et tout ce qui n'était pas explicitement routé y atterrissait.
+
+### 15.2 La contrainte qui dictait la solution
+
+`DeepElement.ordinal()` n'est pas un simple index : il sert de **numéro de bit** dans les masques
+de palette (`1 << el.ordinal()`, `MASK_ALL`), lus par `WeaponWorldVfxManager`,
+`WeaponVfxServerListener`, `EnchantmentComboRegistry`, `MinersEyeClientXray` et
+`WeaponVisualEffectId.elementMaskOf`.
+
+Insérer `WIND` au milieu de l'énumération aurait décalé **tous** les masques déjà en circulation —
+y compris ceux stockés en NBT sur les armes existantes. `WIND` est donc ajouté **après `CHAOS`**,
+en dernière position (ordinal 12) : les douze familles historiques gardent leur bit, et `MASK_ALL`
+s'élargit simplement de `0xFFF` à `0x1FFF`.
+
+### 15.3 Ce qui a changé
+
+* **`DeepElement.WIND("Vent", 0x9FF2DC, 0x4FB8A4, 0xE6FFF8)`**, ajouté en fin d'énumération.
+* Les trois animations d'air déclarent `DeepElement.WIND`.
+* `WeaponVisualEffectId.animationsOf(WIND)` renvoie la rotation explicite
+  `{ZEPHYR_WIND_LANCE, SANDSTORM_DUNE, TEMPEST_EYE}`, comme Terre et Métal.
+  Les exclusions `fx != SANDSTORM_DUNE && fx != TEMPEST_EYE` qui bricolaient le résultat dans
+  `signatureFor` et `animationsOf` **ont disparu** : elles n'avaient de sens que tant que le vent
+  squattait une autre famille.
+* Pool serveur : `ANIM_GAIA` devient **`ANIM_WOOD = {THORN_MAW_ROOT, VERDANT_SAP_BLOOM}`**.
+  Plus aucun effet n'appartient à deux familles.
+* Aiguillage client : `case WIND -> impactWindElement(iv)` dans le `switch` d'impact.
+  `impactWood` et `impactEarth` ne détournent plus les identifiants du vent au vol.
+* `applyVoxelMaterial` : le vent a sa branche d'élément (`cubeVeil 0.94`, `cubeTex 0.050`)
+  au lieu d'une rustine par identifiant placée avant le `switch`.
+* `WeaponVfxSubtle.shapeFor` reçoit `case WIND` — dérive, brume, poussière, feuille emportée.
+  **Ce point était bloquant** : c'est un `switch` *expression* exhaustif sans `default`, donc
+  l'ajout d'une constante à l'énumération l'aurait fait échouer à la compilation.
+
+### 15.4 « nature » s'appelait mal : c'est le Bois
+
+La famille `/anim` s'appelait `nature`, un nom qui n'existe nulle part ailleurs dans le mod :
+l'élément correspondant est `DeepElement.WOOD`, « Bois », de couleur écorce `0xA9743C`.
+
+* `AnimFamily.NATURE` → **`AnimFamily.WOOD`** (`"wood"`), y compris dans `ALL` et l'aide `/anim`.
+* Le glint passe du vert feuille `0x74C34A` au brun d'écorce `0xA9743C`, la vraie couleur de
+  `DeepElement.WOOD`.
+* `/anim nature` et `/anim gaia` **continuent de fonctionner** : `canonical()` accepte toujours
+  `gaia`, `nature`, `bois`, `wood`, `foret`, `tree`. Aucune arme déjà enchantée ne perd sa famille.
+* Les codes couleur des huit familles redeviennent tous distincts : la Terre prend `§a`
+  (sa couleur réelle `0x9FC25E` est olive, pas dorée) et le Bois garde `§6`.
+
+### 15.5 Vérifications
+
+Aucun JDK ici, donc trois filets successifs :
+
+1. `java-parser` sur les sept fichiers touchés — syntaxe OK.
+2. Audit des `switch` sur `DeepElement` par appariement d'accolades, en ignorant les `switch`
+   imbriqués : **un seul** switch expression exhaustif sans `default` existait
+   (`WeaponVfxSubtle.shapeFor`), il a été complété. Les autres ont un `default` ou sont des
+   instructions.
+3. `semcheck.py` en différentiel contre `HEAD` : à numéros de ligne près, **le jeu d'alertes est
+   identique à la baseline qui compilait**, aux deux `case` du nouveau `switch` près (faux positif
+   connu, §13).
+
+Enfin, un contrôle croisé automatique compare chaque pool `ANIM_*` à l'élément déclaré de chaque
+animation : **aucun effet dans deux familles, et chaque animation joue dans la famille de son
+élément.**

@@ -380,16 +380,6 @@ public final class WeaponWorldVfxManager {
      * uniforme. La pierre/terre/bois/métal restent opaques ; seuls les fluides et les voiles le sont.
      */
     private static void applyVoxelMaterial(WeaponVisualEffectId fx) {
-        // T374-WIND : le vent est un volume d'air clair, pas de l'écorce (bois) ni du sable (terre).
-        if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE
-                || fx == WeaponVisualEffectId.SANDSTORM_DUNE
-                || fx == WeaponVisualEffectId.TEMPEST_EYE) {
-            voxelElement = fx.element();
-            cubeVeil = 0.94f;
-            cubeGloss = 0.0f;
-            cubeTex = 0.050f;
-            return;
-        }
         DeepElement el = fx != null ? fx.element() : null;
         voxelElement = el == null ? DeepElement.EARTH : el;
         cubeVeil = 1.0f;
@@ -400,6 +390,8 @@ public final class WeaponWorldVfxManager {
                 cubeVeil = fx == WeaponVisualEffectId.PERMAFROST_RIME ? 0.78f : 0.62f;
                 cubeTex = fx == WeaponVisualEffectId.PERMAFROST_RIME ? 0.075f : 0.035f;
             }
+            // Le vent est un volume d'air clair : ni écorce (bois) ni grain (terre).
+            case WIND -> { cubeVeil = 0.94f; cubeTex = 0.050f; }
             case FIRE -> cubeTex = 0.075f;       // flamme = panaches lisses, non une pierre brillante
             case THUNDER -> cubeTex = 0.025f;    // énergie nette, aucun reflet spéculaire
             case LIGHT -> cubeTex = 0.045f;      // énergie pure, sans matière brillante
@@ -440,6 +432,7 @@ public final class WeaponWorldVfxManager {
                 case EARTH -> (x * y * z) * 0.26f + noise * 0.40f; // grain cassé
                 case METAL -> y * 0.12f + noise * 0.12f;           // stries d'usinage discrètes
                 case WATER -> y * 0.08f + noise * 0.10f;            // surface presque lisse
+                case WIND -> noise * 0.14f;                          // air : texture quasi nulle
                 case FIRE, THUNDER, LIGHT -> noise * 0.22f;          // énergie peu texturée
                 case POISON, SHADOW, VOID -> noise * 0.34f;          // voile diffus
                 case BLOOD -> x * z * 0.12f + noise * 0.26f;
@@ -1773,11 +1766,11 @@ public final class WeaponWorldVfxManager {
                 default -> WeaponVisualEffectId.TEMPEST_EYE;
             };
         }
-        return switch (index) {
-            case 0 -> WeaponVisualEffectId.ZEPHYR_WIND_LANCE;
-            case 1 -> WeaponVisualEffectId.THORN_MAW_ROOT;
-            default -> WeaponVisualEffectId.VERDANT_SAP_BLOOM;
-        };
+        // Bois (ex-« nature ») : deux signatures, toutes deux réellement en bois. La troisième
+        // entrée d'avant était ZEPHYR_WIND_LANCE, c'est-à-dire la lance de VENT — c'est elle qui
+        // faisait apparaître des arcs pâles « eau » dans la rotation du Bois.
+        return (index % 2 == 0) ? WeaponVisualEffectId.THORN_MAW_ROOT
+                : WeaponVisualEffectId.VERDANT_SAP_BLOOM;
     }
 
     private static boolean isMeleeSlashWeapon(ItemStack stack) {
@@ -2899,6 +2892,7 @@ public final class WeaponWorldVfxManager {
             case EARTH -> impactEarth(iv);
             case METAL -> impactMetal(iv);
             case WOOD -> impactWood(iv);
+            case WIND -> impactWindElement(iv);
             case POISON -> impactPoison(iv);
             case LIGHT -> impactLight(iv, lightBody);
             case SHADOW -> impactShadow(iv);
@@ -3639,10 +3633,6 @@ public final class WeaponWorldVfxManager {
      */
     private static void impactEarth(ImpactView v) {
         // T374-WIND-REFONTE : Sandstorm n'est plus une archive Terre, elle rejoint le moteur du vent.
-        if (v.inst().effect == WeaponVisualEffectId.SANDSTORM_DUNE) {
-            impactWind(v, WindSignatureVfx.SANDSTORM);
-            return;
-        }
         int signature = switch (v.inst().effect) {
             case SEISMIC_TECTONIC -> EarthSignatureVfx.SEISMIC;
             case TITAN_GRASP -> EarthSignatureVfx.TITAN;
@@ -3811,11 +3801,6 @@ public final class WeaponWorldVfxManager {
      */
     private static void impactWood(ImpactView v) {
         WeaponVisualEffectId fx = v.inst().effect;
-        if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE || fx == WeaponVisualEffectId.TEMPEST_EYE) {
-            impactWind(v, fx == WeaponVisualEffectId.TEMPEST_EYE
-                    ? WindSignatureVfx.TEMPEST : WindSignatureVfx.ZEPHYR);
-            return;
-        }
         int variant = fx == WeaponVisualEffectId.THORN_MAW_ROOT ? GaiaWorldTreeVfx.THORN
                 : GaiaWorldTreeVfx.VERDANT;
         // Les impacts transportent cible -> attaquant ; les accents dirigés utilisent l'inverse.
@@ -3837,6 +3822,14 @@ public final class WeaponWorldVfxManager {
      * autres familles. La pulsation de taille est coupée : rubans et grains doivent rester jointifs
      * pendant leur mouvement, sinon les lances se disloquent visuellement.</p>
      */
+    private static void impactWindElement(ImpactView v) {
+        impactWind(v, switch (v.inst().effect) {
+            case SANDSTORM_DUNE -> WindSignatureVfx.SANDSTORM;
+            case TEMPEST_EYE -> WindSignatureVfx.TEMPEST;
+            default -> WindSignatureVfx.ZEPHYR;
+        });
+    }
+
     private static void impactWind(ImpactView v, int signature) {
         boolean previousPulse = voxelPulseEnabled;
         voxelPulseEnabled = false;
