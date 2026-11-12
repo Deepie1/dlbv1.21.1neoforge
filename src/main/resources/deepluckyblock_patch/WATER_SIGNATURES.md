@@ -219,3 +219,140 @@ Ces nombres sont des **cubes visibles après tri de profondeur** : le plafond de
    Côté mod, `WeaponWorldVfxManager.mixRgb()` fait `a × (1 − k) + b × k` : elle était **déjà correcte**,
    aucune couleur du jeu n'a jamais été affectée.
 
+---
+
+## 10. Mouvement des mobs — doctrine complète (révision v2)
+
+La première passe de gameplay marchait, mais le **mouvement** des victimes était le maillon faible :
+poussées identiques pour tout le monde, verrous mal cadrés, projections sans variation, et presque
+aucun retour visuel sur les mobs eux-mêmes. Cette révision reprend les quatre points un par un.
+
+### 10.1 Les deux types de verrou
+
+Il y a maintenant une distinction explicite, et elle est volontaire :
+
+| | **Verrou mou** | **Verrou dur** |
+|---|---|---|
+| Qui | Raz-de-marée (`SurgeRide`) | Maelström (`WindHold`) |
+| Ce qui est imposé | la **vitesse**, chaque tick | la **position**, chaque tick (`teleportTo`) |
+| IA | coupée (`setNoAi`) | coupée (`setNoAi`) |
+| Physique | **conservée** : bute contre les murs, tombe dans les trous, percute les autres mobs | ignorée : le mob suit l'hélice quoi qu'il arrive |
+| Pourquoi | une vague **pousse**, elle ne téléporte pas | un tourbillon **tient** sa proie |
+
+Le verrou mou était indispensable : sans coupure d'IA, le mob se retournait et marchait à
+contre-courant au milieu de la vague. Sans conservation de la physique, il traversait les murs.
+
+### 10.2 Quand verrouiller
+
+| Signature | Cible du verrou | Déclenchement | Durée | Raison |
+|---|---|---|---|---|
+| Raz-de-marée | tout mob dans la bande du front | au passage du front | **26 à 42 ticks**, tirés au sort par mob | transport, puis relâche |
+| Maelström | mobs dans 4,35 blocs | capture continue de la zone | 55 à 100 ticks (déjà par mob) | aspiration |
+| Givre | la cible | à l'impact | **jusqu'au tick 94** | voir le correctif ci-dessous |
+| Givre | l'entourage | au **3ᵉ** passage de froid | jusqu'au tick 94 | le permafrost fige ce qui traîne |
+
+> **Correctif de timing.** Le verrou de la cible du givre expirait au tick **72** alors que la prison
+> n'éclate qu'au tick **94** : la cible disposait de 22 ticks pour s'enfuir *avant* la rupture, et
+> l'éclatement frappait souvent le vide. Le verrou tient désormais jusqu'à l'instant exact de la
+> rupture, et c'est le callback du tick 94 qui libère tout le monde.
+
+### 10.3 Quand projeter
+
+| Moment | Qui | Direction | Force horizontale | Portance |
+|---|---|---|---|---|
+| Fin de surf (**échelonnée**, ticks ~38 à ~98) | surfeurs | avant de la vague ± 0,45 rad | 1,45 → 2,30 | 0,70 → 1,10 |
+| Tick 74 | ce qui n'a pas été emporté | reflux, vers l'arrière | 0,52 | 0,18 |
+| Tick 114 — geyser | happés par l'entonnoir | verticale + dispersion | 0,30 → 0,85 | 1,85 → 2,40 |
+| Tick 114 — retardataires | non tenus, dans 2,6 blocs | angle aléatoire | 0,22 → 0,60 | 1,55 → 2,10 |
+| Tick 94 — éclatement | tout dans 3,6 blocs | radial | **0,55 + 0,80 × proximité** | **0,42 + 0,38 × proximité** |
+
+Deux principes :
+
+1. **Jamais au même instant.** Pour le raz-de-marée la projection n'est pas un événement planifié :
+   elle survient quand la durée de transport tirée à l'embarquement expire. Comme les embarquements
+   s'étalent du tick 12 au tick 56 et que les durées valent 26 à 42 ticks, les mobs sont jetés les
+   uns après les autres, du tick ~38 au tick ~98.
+2. **Jamais avec la même force.** Chaque projection combine un terme déterministe et un terme
+   aléatoire. L'éclatement du givre ajoute un terme de **proximité** : collé à la prison on part
+   deux fois plus fort et on prend deux fois plus de dégâts qu'au bord de la couronne.
+
+`fallDistance` est remis à zéro **juste avant** chaque projection : toute la chute qui suit est
+comptée par le jeu et ajoute ses propres dégâts par-dessus ceux de la signature.
+
+### 10.4 Le transport du raz-de-marée en détail
+
+Trois forces se composent à chaque tick dans `tickSurgeRide` :
+
+```
+drive = speed × (0,55 + 0,45 · sin(min(1 ; u×1,15) · π))     entraînement dans l'axe
+sway  = drift × sin(elapsed × 0,31 + bob)                    dérive latérale
+vy    = lift × sin(u · π) + 0,04 · sin(elapsed × 0,44 + bob) portance de la crête
+```
+
+Paramètres **tirés au sort à l'embarquement, propres à chaque mob** :
+
+| Paramètre | Plage | Effet |
+|---|---|---|
+| `speed` | 0,62 → 1,08 | vitesse d'entraînement |
+| `lift` | 0,26 → 0,50 | hauteur sur la crête |
+| `drift` | ± 0,08 → 0,38 | écart latéral (signe aléatoire) |
+| `bob` | 0 → 2π | phase du ballottement |
+| `roll` | ± 6 → 20 °/tick | culbute sur soi-même (`setYRot`) |
+| `carry` | 26 → 42 ticks | durée du transport |
+
+C'est la même leçon que pour la tornade de sable : sans ces six tirages, on voit immédiatement que
+tous les mobs suivent le même patron.
+
+### 10.5 Succion d'approche du maelström
+
+La zone ne capture que dans 4,35 blocs, mais un maelström se voit de plus loin. Une passe toutes les
+**3 ticks**, du tick 8 au tick 110, tire vers la gorge tout ce qui se trouve entre **4,35 et 7,20**
+blocs, sans le capturer :
+
+```
+grip = (0,16 + 0,13 × (1 − (dist − 4,35)/(7,20 − 4,35))) × ramp
+vx  −= ux·grip + uz·grip×0,55      ← la composante tangentielle (×0,55) fait entrer
+vz  −= uz·grip − ux·grip×0,55         les mobs en SPIRALE, pas en ligne droite
+```
+
+`ramp` monte de 0 à 1 sur les 40 premiers ticks : l'aspiration s'installe, elle ne claque pas.
+
+### 10.6 Noyade
+
+Les mobs présents dans la cuvette perdent **55 points d'air** à chaque passe (toutes les 22 ticks,
+plancher −18). Les créatures qui respirent sous l'eau ne sont pas concernées : le jeu leur remet
+l'air de lui-même, aucun test d'espèce n'est nécessaire.
+
+### 10.7 Effets visuels ajoutés
+
+Tous passent par `PixelFx`, le wrapper maison de `sendParticles` (enveloppé dans un `try/catch` :
+un effet cosmétique ne peut pas casser un tick serveur).
+
+| Signature | Moment | Particules | Rôle |
+|---|---|---|---|
+| Raz-de-marée | chaque passe du front | `SPLASH` ×18 étalé sur la largeur, `BUBBLE` ×10 | rendre le **mur** visible sur ses 3,6 blocs |
+| Raz-de-marée | embarquement | `SPLASH` ×14 sur le mob + `GENERIC_SPLASH` | on voit **qui** vient d'être happé |
+| Raz-de-marée | pendant le surf | `SPLASH` ×4 tous les 3 ticks, `BUBBLE` ×3 tous les 7 | sillage individuel |
+| Raz-de-marée | projection | `SPLASH` ×22 + son | ponctuer le lâcher |
+| Raz-de-marée | reflux / fin | `CURRENT_DOWN` ×26, `SPLASH` ×20 | l'eau se retire |
+| Maelström | pendant l'aspiration | `BUBBLE_COLUMN_UP` ×14, `CURRENT_DOWN` ×18, `BUBBLE` ×5 par noyé | l'entonnoir respire |
+| Maelström | geyser | colonne de 10 étages × (`SPLASH` ×9 + `BUBBLE_COLUMN_UP` ×5) sur 9 blocs | le jet se voit de loin |
+| Maelström | geyser | `broadcastNear(ABYSSAL_MAELSTROM, sizeScale 0,55)` | rejoue la signature en réduit sur l'axe |
+| Givre | chaque passe de froid | `SNOWFLAKE` ×6 par victime + ×12 au sol | la zone est lisible |
+| Givre | gel par exposition | `SNOWFLAKE` ×22 + `GLASS_PLACE` | marque l'instant où le mob est pris |
+| Givre | éclatement | `SNOWFLAKE` ×60, `WHITE_ASH` ×36, `SNOWFLAKE` ×14 par victime | la rupture |
+| Givre | éclatement | `broadcastNear(PERMAFROST_RIME, sizeScale 0,50)` | rejoue la signature au bon tick |
+
+### 10.8 Registres ajoutés
+
+```java
+SURGE_RIDES      Map<Integer, SurgeRide>   surfeurs, tickés par tickSurgeRide
+SURGE_RECAPTURE  Map<Integer, Long>        45 ticks d'immunité après avoir été jeté
+FROST_EXPOSURE   Map<Integer, Integer>     compteur d'exposition au froid
+```
+
+`refreshSignatureAi` consulte maintenant `SURGE_RIDES` en plus de `MOVEMENT_HOLDS`, `SOUL_HOLDS` et
+`WIND_HOLDS` : sans cela, la fin d'un autre effet rendait le contrôle au mob **en plein transport**
+et on le voyait se retourner pour marcher contre la vague. Les trois registres sont purgés dans la
+passe « une fois par tick » et par un filet de sécurité au tick 120 du givre.
+

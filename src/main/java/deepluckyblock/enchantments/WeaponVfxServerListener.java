@@ -167,6 +167,42 @@ public final class WeaponVfxServerListener {
     /** Une seule passe d'aspiration par tick de jeu, quel que soit l'entité qui déclenche le hook. */
     private static long LAST_WIND_ZONE_TICK = Long.MIN_VALUE;
 
+    // --------------------------------------------------------------------------------------------
+    // T375-WATER-MOTION : mouvement des victimes de l'eau
+    // --------------------------------------------------------------------------------------------
+
+    /**
+     * <b>Surf du raz-de-marée.</b> Première version : douze impulsions espacées de quatre ticks.
+     * Entre deux impulsions le mob retombait au sol et reprenait son IA — il « sautait » douze fois
+     * au lieu d'être <i>porté</i>, et comme la poussée était la même pour tous ils avançaient en
+     * rang d'oignon.
+     *
+     * <p>Désormais, un mob touché par le front est inscrit ici et <b>poussé à chaque tick</b> par
+     * {@link #tickSurgeRide}, avec des paramètres <b>tirés au sort pour lui</b> : vitesse
+     * d'entraînement, portance, dérive latérale, phase de ballottement, durée de transport. Deux
+     * mobs happés par la même passe ne suivent donc pas la même trajectoire — ils se croisent, se
+     * doublent, et ne sont pas projetés au même instant.</p>
+     *
+     * <p>Le verrou est <b>mou</b> : on coupe l'IA ({@code setNoAi}) pour que le mob ne puisse pas
+     * nager à contre-courant, mais on ne le téléporte pas — il garde sa physique, bute contre les
+     * murs et roule. C'est la différence volontaire avec l'emprise du maelström, qui est un verrou
+     * <b>dur</b> (position imposée par {@code teleportTo} sur une hélice).</p>
+     */
+    private record SurgeRide(long expires, long started, double dirX, double dirZ,
+                             double speed, double lift, double drift, double bob,
+                             double roll, float pulse, int attackerId, int period) { }
+
+    private static final Map<Integer, SurgeRide> SURGE_RIDES = new ConcurrentHashMap<>();
+    /** Après avoir été jeté par la vague, un mob n'est pas réembarqué par la passe suivante. */
+    private static final Map<Integer, Long> SURGE_RECAPTURE = new ConcurrentHashMap<>();
+
+    /**
+     * <b>Prise du permafrost.</b> Compteur d'exposition : rester dans la couronne de pics ne doit
+     * pas seulement ralentir, cela doit finir par <b>figer</b>. Au troisième passage de froid, le
+     * mob est immobilisé jusqu'à l'éclatement — il ne peut plus sortir de la zone avant la rupture.
+     */
+    private static final Map<Integer, Integer> FROST_EXPOSURE = new ConcurrentHashMap<>();
+
     private record MovementHold(long expires, double x, double y, double z, boolean previousNoAi,
                                   boolean fullStun, double releaseY, long started, double burialDepth) { }
     private record SoulHold(long expires, long riseStart, long riseEnd, long descendStart,
@@ -2224,10 +2260,25 @@ public final class WeaponVfxServerListener {
     /**
      * RAZ-DE-MARÉE (104 ticks) : le mur d'eau <b>marche vraiment</b>. Un front large de 3,6 blocs
      * se déplace de 3,4 blocs derrière la cible jusqu'à 2,8 blocs devant elle en douze passes
-     * (ticks 12 → 56). Chaque créature atteinte par le front est <b>emportée</b> dans le sens de
-     * la vague (poussée 1,15 + 0,52 vers le haut), prend un pulse de dégâts, est trempée (ses
-     * flammes s'éteignent, Lenteur II) et ne peut être poussée qu'une fois par passe : le mob est
-     * donc <i>roulé</i> devant la vague au lieu d'être téléporté.
+     * (ticks 12 → 56).
+     *
+     * <p><b>Ce que fait le front.</b> Il n'applique pas une impulsion : il <b>embarque</b>. Toute
+     * créature dans la bande {@code |along| ≤ 1,70 && |side| ≤ 3,60} est inscrite dans
+     * {@link #SURGE_RIDES} et devient un « surfeur » poussé à chaque tick par
+     * {@link #tickSurgeRide} pendant 26 à 42 ticks — durée tirée au sort pour elle.</p>
+     *
+     * <p><b>Pourquoi ce changement.</b> La première version donnait douze poussées identiques
+     * espacées de quatre ticks. Entre deux poussées le mob retombait, reprenait son IA et se
+     * retournait ; comme la poussée valait {@code (1,15 ; 0,52)} pour tout le monde, les mobs
+     * avançaient groupés, au même rythme, exactement sur le même patron. Chaque surfeur a
+     * maintenant sa vitesse (0,62 à 1,08), sa portance (0,26 à 0,50), sa dérive latérale
+     * (± 0,08 à 0,38), sa phase de ballottement, son sens de culbute et sa durée de transport :
+     * ils s'entremêlent, se doublent, et ne sont pas <b>jetés</b> au même instant.</p>
+     *
+     * <p><b>Verrou mou.</b> L'IA est coupée pendant le transport — sans cela le mob nage à
+     * contre-courant — mais la position n'est jamais imposée : il garde sa physique, bute contre
+     * les murs et peut tomber dans un trou. C'est volontairement l'inverse du maelström, qui
+     * impose une hélice par {@code teleportTo}.</p>
      */
     private static void applySurgeGameplay(LivingEntity attacker, LivingEntity target,
                                            ServerLevel sl, float weaponDamage) {
@@ -2247,8 +2298,8 @@ public final class WeaponVfxServerListener {
         sl.playSound(null, cx, cy, cz, SoundEvents.AMBIENT_UNDERWATER_ENTER, SoundSource.PLAYERS, 0.80f, 0.70f);
         if (attacker instanceof ServerPlayer serverPlayer) {
             serverPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal(
-                    "§3[Raz-de-marée] §fmur d'eau en marche §7— 6,2 blocs de course · "
-                            + "front de 3,6 · emporte et éteint tout sur son passage"), true);
+                    "§3[Raz-de-marée] §fmur d'eau en marche §7— 6,2 blocs de course · front de 3,6 · "
+                            + "les mobs happés SURFENT 26-42 ticks puis sont jetés"), true);
         }
 
         final int passes = 12;
@@ -2262,6 +2313,12 @@ public final class WeaponVfxServerListener {
                 double fz2 = cz + dirZ * front;
                 sl.playSound(null, fx2, cy, fz2, breaking ? SoundEvents.AMBIENT_UNDERWATER_EXIT
                         : SoundEvents.BUBBLE_COLUMN_UPWARDS_AMBIENT, SoundSource.PLAYERS, 0.42f, 0.78f);
+                // Mur d'eau visible sur toute la largeur du front, à chaque passe.
+                PixelFx.send(sl, ParticleTypes.SPLASH, fx2, cy + 0.40, fz2,
+                        18, 1.70 * Math.abs(dirZ) + 0.30, 0.90, 1.70 * Math.abs(dirX) + 0.30, 0.09);
+                PixelFx.send(sl, ParticleTypes.BUBBLE, fx2, cy - 0.10, fz2,
+                        10, 1.40, 0.35, 1.40, 0.05);
+                long gameTick = sl.getGameTime();
                 for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
                         new AABB(fx2 - 3.60, cy - 1.60, fz2 - 3.60,
                                 fx2 + 3.60, cy + 4.60, fz2 + 3.60))) {
@@ -2273,28 +2330,150 @@ public final class WeaponVfxServerListener {
                     double along = rx * dirX + rz * dirZ;
                     double side = -rx * dirZ + rz * dirX;
                     if (Math.abs(along) > 1.70 || Math.abs(side) > 3.60) continue;
-                    victim.setDeltaMovement(dirX * 1.15, 0.52, dirZ * 1.15);
-                    victim.hurtMarked = true;
-                    victim.fallDistance = 0.0f;
                     victim.clearFire();
+                    if (SURGE_RIDES.containsKey(victim.getId())) continue;   // déjà porté
+                    Long cooldown = SURGE_RECAPTURE.get(victim.getId());
+                    if (cooldown != null && gameTick < cooldown) continue;   // vient d'être jeté
+                    if (WIND_HOLDS.containsKey(victim.getId())) continue;    // tenu par une tornade
+                    var rnd = victim.getRandom();
+                    // ---- paramètres PROPRES À CE MOB : deux victimes ne surfent jamais pareil ----
+                    double speed = 0.62 + rnd.nextDouble() * 0.46;          // 0,62 → 1,08 bloc/tick
+                    double lift = 0.26 + rnd.nextDouble() * 0.24;           // portance de la crête
+                    double drift = (rnd.nextDouble() * 0.30 + 0.08)         // dérive latérale
+                            * (rnd.nextBoolean() ? 1.0 : -1.0);
+                    double bob = rnd.nextDouble() * Math.PI * 2.0;          // phase de ballottement
+                    double roll = (rnd.nextDouble() * 14.0 + 6.0)           // culbute dans l'eau
+                            * (rnd.nextBoolean() ? 1.0 : -1.0);
+                    int carry = 26 + rnd.nextInt(17);                       // 26 → 42 ticks portés
+                    rememberSignatureAi(victim);
+                    MOVEMENT_HOLDS.remove(victim.getId());
+                    SURGE_RIDES.put(victim.getId(), new SurgeRide(gameTick + carry, gameTick,
+                            dirX, dirZ, speed, lift, drift, bob, roll, pulse, attackerId, 9));
                     victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 70, 1, false, true, true));
                     hurtWithCapturedWeapon(sl, attackerId, victim, pulse);
+                    // Gerbe d'embarquement, centrée sur le mob : on voit QUI vient d'être happé.
+                    PixelFx.send(sl, ParticleTypes.SPLASH, victim.getX(),
+                            victim.getY() + victim.getBbHeight() * 0.65, victim.getZ(),
+                            14, 0.30, 0.26, 0.30, 0.16);
+                    sl.playSound(null, victim.getX(), victim.getY(), victim.getZ(),
+                            SoundEvents.GENERIC_SPLASH, SoundSource.PLAYERS, 0.45f, 0.95f);
                 }
             });
         }
-        // Reflux : les créatures encore dans la zone sont ramenées vers l'arrière, plus doucement.
+        // Reflux : ce qui n'a pas été emporté est ramené vers l'arrière, plus doucement. On laisse
+        // tranquilles les mobs encore portés — sinon la vague se contredit elle-même.
         TestProcedure.schedule(sl, scheduleNow + 74, () -> {
             sl.playSound(null, cx, cy, cz, SoundEvents.AMBIENT_UNDERWATER_EXIT, SoundSource.PLAYERS, 0.70f, 0.58f);
+            PixelFx.send(sl, ParticleTypes.CURRENT_DOWN, cx, cy - 0.60, cz, 26, 2.60, 0.25, 2.60, 0.02);
             for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
                     new AABB(cx - 5.0, cy - 2.0, cz - 5.0, cx + 5.0, cy + 3.0, cz + 5.0))) {
                 if (!victim.isAlive() || victim instanceof Player) continue;
                 if (attackerId >= 0 && victim.getId() == attackerId) continue;
+                if (SURGE_RIDES.containsKey(victim.getId())) continue;
                 victim.setDeltaMovement(-dirX * 0.52, 0.18, -dirZ * 0.52);
                 victim.hurtMarked = true;
             }
         });
-        TestProcedure.schedule(sl, scheduleNow + 104, () -> sl.playSound(null, cx, cy, cz,
-                SoundEvents.GENERIC_SPLASH, SoundSource.PLAYERS, 0.55f, 0.62f));
+        TestProcedure.schedule(sl, scheduleNow + 104, () -> {
+            sl.playSound(null, cx, cy, cz, SoundEvents.GENERIC_SPLASH, SoundSource.PLAYERS, 0.55f, 0.62f);
+            PixelFx.send(sl, ParticleTypes.SPLASH, cx, cy, cz, 20, 2.20, 0.30, 2.20, 0.05);
+        });
+    }
+
+    /**
+     * Transport : appelé à chaque tick pour chaque mob porté par la vague.
+     *
+     * <p>Trois forces se composent — l'entraînement dans l'axe de marche, la dérive latérale (un
+     * mob n'est jamais poussé exactement droit dans une vague réelle), et la portance de la crête
+     * qui monte puis retombe en {@code sin(u·π)}. Le mob tourne aussi sur lui-même
+     * ({@code setYRot}) : c'est ce qui donne l'impression d'être <b>roulé</b> plutôt que poussé.</p>
+     *
+     * <p>Aucun {@code teleportTo} ici, volontairement : le mob conserve sa physique, il peut donc
+     * être bloqué par un mur, tomber dans un trou ou percuter un autre mob — la vague le <i>pousse</i>,
+     * elle ne le <i>téléporte</i> pas.</p>
+     */
+    private static void tickSurgeRide(LivingEntity target) {
+        SurgeRide ride = SURGE_RIDES.get(target.getId());
+        if (ride == null) return;
+        long now = target.level().getGameTime();
+        if (!target.isAlive() || now >= ride.expires()) {
+            releaseSurgeRide(target, ride);
+            return;
+        }
+        if (target instanceof Mob mob) {
+            mob.setNoAi(true);
+            mob.setTarget(null);
+        }
+        target.stopUsingItem();
+        double elapsed = now - ride.started();
+        double span = Math.max(1.0, (double) (ride.expires() - ride.started()));
+        double u = Math.max(0.0, Math.min(1.0, elapsed / span));
+        // Entraînement : fort à l'avant du transport, il faiblit quand la vague se couche.
+        double drive = ride.speed() * (0.55 + 0.45 * Math.sin(Math.min(1.0, u * 1.15) * Math.PI));
+        double swayX = -ride.dirZ(), swayZ = ride.dirX();
+        double sway = ride.drift() * Math.sin(elapsed * 0.31 + ride.bob());
+        double vx = ride.dirX() * drive + swayX * sway;
+        double vz = ride.dirZ() * drive + swayZ * sway;
+        // Portance : porté sur la crête, puis reposé. Le + 0,04·sin donne le ballottement.
+        double vy = ride.lift() * Math.sin(u * Math.PI) + 0.04 * Math.sin(elapsed * 0.44 + ride.bob());
+        target.setDeltaMovement(vx, Math.max(vy, target.getDeltaMovement().y * 0.35), vz);
+        target.setYRot((float) (target.getYRot() + ride.roll() * 0.35));
+        target.fallDistance = 0.0f;
+        target.hurtMarked = true;
+        if (target.level() instanceof ServerLevel sl) {
+            if (elapsed % 3 == 0) {
+                PixelFx.send(sl, ParticleTypes.SPLASH, target.getX(),
+                        target.getY() + target.getBbHeight() * 0.55, target.getZ(),
+                        4, 0.26, 0.18, 0.26, 0.05);
+            }
+            if (elapsed % 7 == 0) {
+                PixelFx.send(sl, ParticleTypes.BUBBLE, target.getX(),
+                        target.getY() + target.getBbHeight() * 0.30, target.getZ(),
+                        3, 0.22, 0.20, 0.22, 0.02);
+            }
+            if (ride.period() > 0 && elapsed > 0 && elapsed % ride.period() == 0 && ride.pulse() > 0.0f) {
+                hurtWithCapturedWeapon(sl, ride.attackerId(), target, ride.pulse());
+            }
+        }
+    }
+
+    /**
+     * Fin du transport : la vague <b>jette</b> ce qu'elle portait. La projection a lieu quand la
+     * durée tirée au sort à l'embarquement expire — donc à un instant différent pour chaque mob,
+     * ce qui évite l'effet « tout le monde décolle à la même frame ».
+     *
+     * <p>Elle est dirigée vers l'avant de la vague (c'est une lame de fond, pas une explosion) avec
+     * un écart angulaire aléatoire de ±0,45 rad, une force horizontale de 1,45 à 2,30 et une
+     * portance de 0,70 à 1,10. {@code fallDistance} est remis à zéro juste avant : toute la chute
+     * qui suit est comptée par le jeu et ajoute ses propres dégâts.</p>
+     */
+    private static void releaseSurgeRide(LivingEntity target, SurgeRide ride) {
+        SURGE_RIDES.remove(target.getId());
+        refreshSignatureAi(target);
+        if (!target.isAlive()) return;
+        var rnd = target.getRandom();
+        double spread = (rnd.nextDouble() - 0.5) * 0.90;
+        double cos = Math.cos(spread), sin = Math.sin(spread);
+        double ejectX = ride.dirX() * cos - ride.dirZ() * sin;
+        double ejectZ = ride.dirX() * sin + ride.dirZ() * cos;
+        double power = 1.45 + rnd.nextDouble() * 0.85;
+        double lift = 0.70 + rnd.nextDouble() * 0.40;
+        target.setDeltaMovement(ejectX * power, lift, ejectZ * power);
+        target.fallDistance = 0.0f;
+        target.hurtMarked = true;
+        target.addEffect(new MobEffectInstance(MobEffects.CONFUSION, 80, 0, false, true, true));
+        target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 50, 0, false, true, true));
+        SURGE_RECAPTURE.put(target.getId(), target.level().getGameTime() + 45);
+        if (target.level() instanceof ServerLevel sl) {
+            PixelFx.send(sl, ParticleTypes.SPLASH, target.getX(),
+                    target.getY() + target.getBbHeight() * 0.50, target.getZ(),
+                    22, 0.34, 0.30, 0.34, 0.22);
+            sl.playSound(null, target.getX(), target.getY(), target.getZ(),
+                    SoundEvents.GENERIC_SPLASH, SoundSource.PLAYERS, 0.60f, 0.72f);
+            if (ride.pulse() > 0.0f) {
+                hurtWithCapturedWeapon(sl, ride.attackerId(), target, Math.min(3.2f, ride.pulse() * 2.2f));
+            }
+        }
     }
 
     /**
@@ -2324,14 +2503,47 @@ public final class WeaponVfxServerListener {
         int grabbed = captureWindZone(zone, sl);
         if (attacker instanceof ServerPlayer serverPlayer) {
             serverPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal(
-                    "§3[Maelström abyssal] §f" + grabbed + " créature(s) avalée(s) §7— rayon 4,35 · "
-                            + "spirale vers la gorge · geyser au tick 114"), true);
+                    "§3[Maelström abyssal] §f" + grabbed + " créature(s) avalée(s) §7— succion 7,2 → "
+                            + "capture 4,35 · spirale vers la gorge · geyser au tick 114"), true);
         }
 
         sl.playSound(null, cx, cy, cz, SoundEvents.AMBIENT_UNDERWATER_LOOP, SoundSource.PLAYERS, 0.85f, 0.55f);
         for (int delay = 14; delay < 118; delay += 16) {
             TestProcedure.schedule(sl, scheduleNow + delay, () -> sl.playSound(null, cx, cy, cz,
                     SoundEvents.BUBBLE_COLUMN_WHIRLPOOL_AMBIENT, SoundSource.PLAYERS, 0.50f, 0.62f));
+        }
+
+        // ------------------------------------------------------------------------------------
+        // Succion d'approche : la zone ne capture que dans 4,35 blocs, mais un maelström se voit
+        // de plus loin. De 4,35 à 7,20 les créatures sont TIRÉES vers la gorge sans être prises :
+        // elles arrivent d'elles-mêmes dans la zone de capture. Composante tangentielle ajoutée
+        // pour qu'elles entrent en SPIRALE, pas en ligne droite comme attirées par un aimant.
+        // ------------------------------------------------------------------------------------
+        final double outerPull = 7.20;
+        for (int delay = 8; delay < 112; delay += 3) {
+            final float ramp = Math.min(1.0f, delay / 40.0f);
+            TestProcedure.schedule(sl, scheduleNow + delay, () -> {
+                for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
+                        new AABB(cx - outerPull, baseY - 3.0, cz - outerPull,
+                                cx + outerPull, baseY + 4.0, cz + outerPull))) {
+                    if (!victim.isAlive() || victim instanceof Player) continue;
+                    if (attackerId >= 0 && victim.getId() == attackerId) continue;
+                    if (WIND_HOLDS.containsKey(victim.getId())) continue;   // déjà dans l'entonnoir
+                    double rx = victim.getX() - cx, rz = victim.getZ() - cz;
+                    double dist = Math.sqrt(rx * rx + rz * rz);
+                    if (dist < 4.35 || dist > outerPull) continue;
+                    double ux = rx / dist, uz = rz / dist;
+                    // Plus on est près du bord de capture, plus ça tire fort.
+                    double grip = (0.16 + 0.13 * (1.0 - (dist - 4.35) / (outerPull - 4.35))) * ramp;
+                    Vec3 current = victim.getDeltaMovement();
+                    victim.setDeltaMovement(
+                            current.x - ux * grip - uz * grip * 0.55,
+                            Math.max(current.y, -0.12),
+                            current.z - uz * grip + ux * grip * 0.55);
+                    victim.hurtMarked = true;
+                    victim.clearFire();
+                }
+            });
         }
         // Noyade : tant que le tourbillon tourne, les happés manquent d'air (dégâts déjà donnés par
         // la zone) et sortent étourdis. On ajoute ici la lenteur « eau lourde » sur toute la cuvette.
@@ -2344,13 +2556,36 @@ public final class WeaponVfxServerListener {
                     if (attackerId >= 0 && victim.getId() == attackerId) continue;
                     victim.clearFire();
                     victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 50, 1, false, true, true));
+                    // Noyade : la réserve d'air descend pour de bon. Les créatures qui respirent
+                    // sous l'eau ne sont pas concernées — le jeu leur remet l'air de lui-même.
+                    victim.setAirSupply(Math.max(-18, victim.getAirSupply() - 55));
+                    PixelFx.send(sl, ParticleTypes.BUBBLE, victim.getX(),
+                            victim.getY() + victim.getBbHeight() * 0.70, victim.getZ(),
+                            5, 0.22, 0.26, 0.22, 0.04);
                 }
+                PixelFx.send(sl, ParticleTypes.BUBBLE_COLUMN_UP, cx, baseY + 0.20, cz,
+                        14, 1.90, 0.40, 1.90, 0.08);
+                PixelFx.send(sl, ParticleTypes.CURRENT_DOWN, cx, baseY + 0.60, cz,
+                        18, 2.40, 0.80, 2.40, 0.04);
             });
         }
         // Geyser : la gorge se referme et recrache. Tout ce qui est encore tenu part à la verticale.
         TestProcedure.schedule(sl, scheduleNow + 114, () -> {
             sl.playSound(null, cx, cy, cz, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.55f, 1.45f);
             sl.playSound(null, cx, cy, cz, SoundEvents.GENERIC_SPLASH, SoundSource.PLAYERS, 0.90f, 0.70f);
+            // Colonne d'eau sur les neuf blocs du geyser : le jet se voit même sans regarder le sol.
+            for (int step = 0; step < 10; step++) {
+                double gy = baseY + step * 0.95;
+                PixelFx.send(sl, ParticleTypes.SPLASH, cx, gy, cz,
+                        9, 0.45 - step * 0.025, 0.45, 0.45 - step * 0.025, 0.22);
+                PixelFx.send(sl, ParticleTypes.BUBBLE_COLUMN_UP, cx, gy, cz,
+                        5, 0.34, 0.30, 0.34, 0.16);
+            }
+            // Rejoue la signature côté client, en réduit, pile sur l'axe du jet.
+            broadcastNear(sl, (float) cx, (float) cy, (float) cz,
+                    WeaponVisualEffectId.ABYSSAL_MAELSTROM.id, KIND_IMPACT, 5,
+                    (float) cx, (float) baseY, (float) cz,
+                    (float) cx, (float) (baseY + 6.0), (float) cz, 0, 0.55f);
             for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
                     new AABB(cx - 2.60, baseY - 2.0, cz - 2.60, cx + 2.60, baseY + 4.0, cz + 2.60))) {
                 if (!victim.isAlive() || victim instanceof Player) continue;
@@ -2359,11 +2594,20 @@ public final class WeaponVfxServerListener {
                 if (held != null) {
                     releaseWindHold(victim, held);
                 } else {
-                    victim.setDeltaMovement(victim.getDeltaMovement().x * 0.25, 1.75,
-                            victim.getDeltaMovement().z * 0.25);
+                    // Pas tenu par l'entonnoir (entré trop tard) : recraché quand même, mais chacun
+                    // avec sa force et un léger écart latéral, sinon ils retombent tous au même point.
+                    var rnd = victim.getRandom();
+                    double scatter = rnd.nextDouble() * Math.PI * 2.0;
+                    double push = 0.22 + rnd.nextDouble() * 0.38;
+                    victim.setDeltaMovement(Math.cos(scatter) * push,
+                            1.55 + rnd.nextDouble() * 0.55, Math.sin(scatter) * push);
                     victim.fallDistance = 0.0f;
                     victim.hurtMarked = true;
+                    victim.addEffect(new MobEffectInstance(MobEffects.CONFUSION, 100, 0, false, true, true));
                 }
+                PixelFx.send(sl, ParticleTypes.SPLASH, victim.getX(),
+                        victim.getY() + victim.getBbHeight() * 0.50, victim.getZ(),
+                        16, 0.30, 0.36, 0.30, 0.24);
                 hurtWithCapturedWeapon(sl, attackerId, victim, Math.min(4.5f, pulse * 2.6f));
             }
         });
@@ -2387,7 +2631,10 @@ public final class WeaponVfxServerListener {
         final double cy = target.getY() + target.getBbHeight() * 0.5;
         final double cz = target.getZ();
         final float pulse = net.minecraft.util.Mth.clamp(weaponDamage * 0.045f, 0.04f, 0.32f);
-        final long holdEnd = gameNow + 72;
+        // T375-WATER-MOTION : l'emprise expirait au tick 72 alors que la prison n'éclate qu'au
+        // tick 94 — la cible avait 22 ticks pour s'enfuir AVANT la rupture, et l'éclatement
+        // frappait le vide. Le verrou tient maintenant jusqu'à l'instant de la rupture.
+        final long holdEnd = gameNow + 94;
 
         applyMovementHold(target, holdEnd, true);
         target.clearFire();
@@ -2397,8 +2644,8 @@ public final class WeaponVfxServerListener {
         sl.playSound(null, cx, cy, cz, SoundEvents.GLASS_PLACE, SoundSource.PLAYERS, 0.55f, 0.65f);
         if (attacker instanceof ServerPlayer serverPlayer) {
             serverPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal(
-                    "§b[Givre du permafrost] §fcible prise dans la glace §7— 72 ticks · "
-                            + "éclatement au tick 94"), true);
+                    "§b[Givre du permafrost] §fcible prise dans la glace §7— verrou jusqu'au tick 94 · "
+                            + "3 passages de froid = gel · éclatement au tick 94"), true);
         }
 
         // Le gel se propage : tout ce qui entre dans la couronne de pics est ralenti et gelé.
@@ -2413,7 +2660,26 @@ public final class WeaponVfxServerListener {
                     victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 60, 2, false, true, true));
                     victim.addEffect(new MobEffectInstance(MobEffects.DIG_SLOWDOWN, 60, 1, false, true, true));
                     hurtWithCapturedWeapon(sl, attackerId, victim, pulse);
+                    PixelFx.send(sl, ParticleTypes.SNOWFLAKE, victim.getX(),
+                            victim.getY() + victim.getBbHeight() * 0.60, victim.getZ(),
+                            6, 0.28, 0.32, 0.28, 0.01);
+                    // Exposition : rester dans la couronne ne doit pas seulement ralentir, cela
+                    // doit FIGER. Au troisième passage de froid le mob est pris jusqu'à la rupture :
+                    // il ne peut plus sortir de la zone avant l'éclatement.
+                    int id = victim.getId();
+                    int exposure = FROST_EXPOSURE.merge(id, 1, Integer::sum);
+                    if (exposure == 3 && victim != target && !MOVEMENT_HOLDS.containsKey(id)
+                            && !WIND_HOLDS.containsKey(id) && !SURGE_RIDES.containsKey(id)) {
+                        applyMovementHold(victim, holdEnd, true);
+                        victim.setTicksFrozen(Math.max(victim.getTicksFrozen(), 400));
+                        sl.playSound(null, victim.getX(), victim.getY(), victim.getZ(),
+                                SoundEvents.GLASS_PLACE, SoundSource.PLAYERS, 0.50f, 0.80f);
+                        PixelFx.send(sl, ParticleTypes.SNOWFLAKE, victim.getX(),
+                                victim.getY() + victim.getBbHeight() * 0.50, victim.getZ(),
+                                22, 0.34, 0.45, 0.34, 0.03);
+                    }
                 }
+                PixelFx.send(sl, ParticleTypes.SNOWFLAKE, cx, cy - 0.80, cz, 12, 2.40, 0.30, 2.40, 0.01);
             });
         }
         // Craquements avant la rupture.
@@ -2426,22 +2692,52 @@ public final class WeaponVfxServerListener {
             releaseMovementHold(target, holdEnd);
             sl.playSound(null, cx, cy, cz, SoundEvents.GLASS_BREAK, SoundSource.PLAYERS, 1.0f, 0.52f);
             sl.playSound(null, cx, cy, cz, SoundEvents.PLAYER_HURT_FREEZE, SoundSource.PLAYERS, 0.70f, 0.80f);
+            PixelFx.send(sl, ParticleTypes.SNOWFLAKE, cx, cy, cz, 60, 1.30, 1.00, 1.30, 0.45);
+            PixelFx.send(sl, ParticleTypes.WHITE_ASH, cx, cy, cz, 36, 1.60, 0.80, 1.60, 0.30);
+            // Rejoue la signature côté client au moment exact de la rupture.
+            broadcastNear(sl, (float) cx, (float) cy, (float) cz,
+                    WeaponVisualEffectId.PERMAFROST_RIME.id, KIND_IMPACT, 4,
+                    (float) cx, (float) cy, (float) cz,
+                    (float) cx, (float) cy, (float) cz, 0, 0.50f);
             for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
                     new AABB(cx - 3.60, cy - 2.40, cz - 3.60, cx + 3.60, cy + 2.80, cz + 3.60))) {
                 if (!victim.isAlive() || victim instanceof Player) continue;
                 if (attackerId >= 0 && victim.getId() == attackerId) continue;
+                // Tout ce que l'exposition avait figé est libéré ici, pas avant : sinon les mobs
+                // gelés par la couronne restaient bloqués après la fin de l'animation.
+                int id = victim.getId();
+                FROST_EXPOSURE.remove(id);
+                MovementHold frozen = MOVEMENT_HOLDS.get(id);
+                if (frozen != null && frozen.expires() == holdEnd) releaseMovementHold(victim, holdEnd);
                 double rx = victim.getX() - cx, rz = victim.getZ() - cz;
                 double len = Math.sqrt(rx * rx + rz * rz);
                 double ux = len < 0.05 ? 0.0 : rx / len;
                 double uz = len < 0.05 ? 1.0 : rz / len;
-                victim.setDeltaMovement(ux * 0.85, 0.62, uz * 0.85);
+                // Souffle de rupture : plus on est près du cœur de la prison, plus on part fort.
+                double nearness = 1.0 - Math.min(1.0, len / 3.60);
+                var rnd = victim.getRandom();
+                double power = (0.55 + 0.80 * nearness) * (0.85 + rnd.nextDouble() * 0.45);
+                double lift = (0.42 + 0.38 * nearness) * (0.85 + rnd.nextDouble() * 0.45);
+                victim.setDeltaMovement(ux * power, lift, uz * power);
                 victim.fallDistance = 0.0f;
                 victim.hurtMarked = true;
-                hurtWithCapturedWeapon(sl, attackerId, victim, Math.min(5.0f, pulse * 6.0f));
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 70, 1, false, true, true));
+                // Les éclats font d'autant plus mal qu'on était près du bloc de glace.
+                hurtWithCapturedWeapon(sl, attackerId, victim,
+                        Math.min(5.0f, pulse * (3.0f + 3.6f * (float) nearness)));
+                PixelFx.send(sl, ParticleTypes.SNOWFLAKE, victim.getX(),
+                        victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
+                        14, 0.30, 0.34, 0.30, 0.12);
             }
         });
-        TestProcedure.schedule(sl, scheduleNow + 120, () -> sl.playSound(null, cx, cy, cz,
-                SoundEvents.POWDER_SNOW_BREAK, SoundSource.PLAYERS, 0.50f, 0.85f));
+        TestProcedure.schedule(sl, scheduleNow + 120, () -> {
+            sl.playSound(null, cx, cy, cz, SoundEvents.POWDER_SNOW_BREAK, SoundSource.PLAYERS, 0.50f, 0.85f);
+            // Filet de sécurité : aucun compteur d'exposition ne survit à l'animation.
+            for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
+                    new AABB(cx - 6.0, cy - 4.0, cz - 6.0, cx + 6.0, cy + 4.0, cz + 6.0))) {
+                FROST_EXPOSURE.remove(victim.getId());
+            }
+        });
     }
 
     private static void applyWindGameplay(LivingEntity attacker, LivingEntity target,
@@ -2672,6 +2968,7 @@ public final class WeaponVfxServerListener {
         if (now == LAST_WIND_ZONE_TICK) return;
         LAST_WIND_ZONE_TICK = now;
         if (!WIND_RECAPTURE.isEmpty()) WIND_RECAPTURE.values().removeIf(until -> now >= until);
+        if (!SURGE_RECAPTURE.isEmpty()) SURGE_RECAPTURE.values().removeIf(until -> now >= until);
         if (WIND_ZONES.isEmpty()) return;
         WIND_ZONES.removeIf(zone -> now >= zone.expires() || zone.level() != sl);
         for (WindZone zone : WIND_ZONES) {
@@ -2924,13 +3221,17 @@ public final class WeaponVfxServerListener {
         MovementHold wood = MOVEMENT_HOLDS.get(id);
         boolean soul = SOUL_HOLDS.containsKey(id);
         boolean wind = WIND_HOLDS.containsKey(id);
-        if (wood == null && !soul && !wind) {
+        // T375-WATER-MOTION : le surf du raz-de-marée compte lui aussi comme une IA suspendue,
+        // sinon un autre effet qui se termine rend le contrôle au mob en plein transport et on le
+        // voit se retourner pour marcher contre la vague.
+        boolean surf = SURGE_RIDES.containsKey(id);
+        if (wood == null && !soul && !wind && !surf) {
             Boolean baseline = SIGNATURE_BASELINE_NO_AI.remove(id);
             if (baseline != null) mob.setNoAi(baseline);
             return;
         }
         boolean baseline = SIGNATURE_BASELINE_NO_AI.getOrDefault(id, mob.isNoAi());
-        boolean fullyDisabled = soul || wind || (wood != null && wood.fullStun());
+        boolean fullyDisabled = soul || wind || surf || (wood != null && wood.fullStun());
         mob.setNoAi(baseline || fullyDisabled);
     }
 
@@ -2964,6 +3265,8 @@ public final class WeaponVfxServerListener {
         tickSoulHold(target);
         tickWindZones(target.level());
         tickWindHold(target);
+        tickSurgeRide(target);
+        if (SURGE_RIDES.containsKey(target.getId())) return;
         MovementHold hold = MOVEMENT_HOLDS.get(target.getId());
         if (hold == null) return;
         if (WIND_HOLDS.containsKey(target.getId())) {
