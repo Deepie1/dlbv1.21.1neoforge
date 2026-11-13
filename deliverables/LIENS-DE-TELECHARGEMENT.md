@@ -6,36 +6,35 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 > **Si le navigateur sert une vieille version** (le CDN de GitHub garde les fichiers bruts en cache quelques minutes), remplacer `refs/heads/arena/605e67fb-dlbv1-21-1neoforge` par le SHA du commit — par exemple `raw/fa83a2f/…` pour la v1.3 — ou ajouter `?v=2` à la fin de l'adresse.
 
-## Eau + séparation des éléments — v1.5 (13 novembre 2026)
+## Eau — maelström v1.5c (13 novembre 2026)
+
+> Correctif de fond : le moteur supprime les cubes émis sous alpha 200 quand une
+> déclinaison allégée est tirée. Tout le maelström est désormais émis au-dessus de ce
+> seuil et ne disparaît plus que par la géométrie.
 
 | Fichier | Lien |
 |---|---|
-| **Sources complètes (ZIP, 27 entrées, 430211 o)** — eau + séparation des éléments + doc + outils + miroirs | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Water_Three_Signatures_src.zip |
-| **Aperçu animé v1.5** (HTML autonome — nappe de fermeture du maelström) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Eau_v1_preview.html |
-| `DeepElement.java` — **nouveau** `WIND`, ajouté en fin d'énumération · **v1.5** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/DeepElement.java |
-| `WeaponVisualEffectId.java` — les 3 animations d'air passent à `WIND` · **v1.5** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/WeaponVisualEffectId.java |
-| `WeaponVfxServerListener.java` — `ANIM_GAIA` → `ANIM_WOOD` (sans la lance de vent) · **v1.5** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java |
-| `WeaponWorldVfxManager.java` — `case WIND`, fin des détournements bois/terre · **v1.5** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/WeaponWorldVfxManager.java |
-| `WeaponVfxSubtle.java` — `case WIND` (switch exhaustif : bloquant à la compilation) · **v1.5** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/WeaponVfxSubtle.java |
-| `AnimFamily.java` — `nature` → `wood`, anciens noms toujours acceptés · **v1.5** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/util/AnimFamily.java |
-| `DlbVfxCommand.java` — aide `/anim … wood` · **v1.5** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/commands/DlbVfxCommand.java |
-| `WaterSignatureVfx.java` — moteur voxel (raz-de-marée / maelström / givre) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/WaterSignatureVfx.java |
-| `WaterTerrainVfx.java` — vrais blocs poussés par la vague | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/WaterTerrainVfx.java |
-| `GhostBlockMask.java` — faux trou côté client | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/GhostBlockMask.java |
-| `PixelFx.java` — façade particules imposée | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/PixelFx.java |
-| `WATER_SIGNATURES.md` — documentation §1 → **§16** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/WATER_SIGNATURES.md |
-| `semcheck.py` — contrôle sémantique | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/tools/semcheck.py |
-| `water_build.js` — géométrie de l'aperçu | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/tools/water_build.js |
-| Miroir MCreator `DeepElement.java` | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/enchantments/DeepElement.java |
-| Miroir MCreator `WeaponVisualEffectId.java` | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/enchantments/WeaponVisualEffectId.java |
-| Miroir MCreator `WeaponVfxSubtle.java` | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/enchantments/WeaponVfxSubtle.java |
-| Miroir MCreator `AnimFamily.java` | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/util/AnimFamily.java |
-| **Dépôt source complet** (ZIP, 741 entrées, 3562806 o) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src-modifies-t301-t374.zip |
+| **Sources complètes (ZIP, 27 entrées, 439992 o)** — eau + éléments + doc §1→§17 + outils + miroirs | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/deliverables/DLB_Water_Three_Signatures_src.zip |
+| **Aperçu animé v1.5c** (HTML autonome — maelström corrigé) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/deliverables/DLB_Eau_v1_preview.html |
+| `WaterSignatureVfx.java` — **opacité verrouillée `opaque()` + iris géométrique** · **v1.5c** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/java/deepluckyblock/client/WaterSignatureVfx.java |
+| Miroir MCreator `WaterSignatureVfx.java` · **v1.5c** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/client/WaterSignatureVfx.java |
+| `WATER_SIGNATURES.md` — documentation §1 → **§17** (le seuil d'alpha du moteur) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/resources/deepluckyblock_patch/WATER_SIGNATURES.md |
+| `water_build.js` — miroir JS de la géométrie, `op()` aligné · **v1.5c** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/resources/deepluckyblock_patch/tools/water_build.js |
+| `WeaponWorldVfxManager.java` — moteur voxel (siège du tamis `pixelDensity`) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/java/deepluckyblock/client/WeaponWorldVfxManager.java |
+| `WeaponVfxVariant.java` — table des déclinaisons (`density` 0,70 → 0,30) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/java/deepluckyblock/enchantments/WeaponVfxVariant.java |
+| `WeaponVfxServerListener.java` — gameplay serveur + `digFunnel` | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java |
+| `GhostBlockMask.java` — faux trou côté client | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/java/deepluckyblock/enchantments/GhostBlockMask.java |
+| `WaterTerrainVfx.java` — vrais blocs poussés par la vague | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/java/deepluckyblock/client/WaterTerrainVfx.java |
+| `DeepElement.java` — `WIND` en fin d'énumération · v1.5 | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/java/deepluckyblock/enchantments/DeepElement.java |
+| `AnimFamily.java` — `nature` → `wood` · v1.5 | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/java/deepluckyblock/util/AnimFamily.java |
+| `semcheck.py` — contrôle sémantique | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/resources/deepluckyblock_patch/tools/semcheck.py |
+| **Dépôt source complet** (ZIP, 741 entrées, 3563326 o) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src-modifies-t301-t374.zip |
 
 ```text
-DLB_Water_Three_Signatures_src.zip   435933 o   27 entrées   sha256 cdd70493b5239327bf8f98bff4b5d7ae…
-DLB_Eau_v1_preview.html              592742 o   badge v1.5
+DLB_Water_Three_Signatures_src.zip   439992 o   27 entrées   sha256 c6e7168419423837f607c37eab93371d…
+DLB_Eau_v1_preview.html              593154 o   badge v1.5c
 src-modifies-t301-t374.zip           3563326 o   741 entrées
+commit                               6e3cb10403e5335efc7e0212719431a597066218
 ```
 
 ## Vent — refonte complète (v9)
