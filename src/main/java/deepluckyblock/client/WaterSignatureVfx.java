@@ -144,7 +144,7 @@ public final class WaterSignatureVfx {
                     float size = (0.070f + 0.045f * h) * (0.55f + 0.45f * pull);
                     box(vc, mat, tmp, cx, cy, cz, dx, dz, forward, lateral, y,
                             size * 1.5f, size * 0.42f, size * 1.5f,
-                            mix(DEEP, OCEAN, h), Math.round(a * pull * 0.62f));
+                            mix(DEEP, OCEAN, h), opaque(a * pull * 0.62f));
                 }
             }
         }
@@ -173,7 +173,7 @@ public final class WaterSignatureVfx {
                     float half = (0.235f - 0.085f * v) * (0.90f + 0.22f * hc);
                     float depth = 0.30f + 0.26f * (1.0f - v);
                     int rgb = mix(mix(ABYSS, OCEAN, v * 0.85f), AZURE, v * v);
-                    int ca = Math.round(a * body * (0.62f + 0.34f * v));
+                    int ca = opaque(a * body * (0.62f + 0.34f * v));
                     rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                             forward + shear, lateral + Mth.sin(v * 3.1f + hc * 6.0f) * 0.10f, y,
                             depth, 0.21f + 0.06f * (1.0f - v), half,
@@ -192,7 +192,7 @@ public final class WaterSignatureVfx {
                         rot(vc, mat, tmp, cx, cy, cz, dx, dz, lf, lateral, ly,
                                 0.30f, 0.17f, 0.215f + 0.03f * hc,
                                 0.0f, -arcAngle, 0.0f, rgb,
-                                Math.round(a * body * curl * (0.80f - 0.25f * v)));
+                                opaque(a * body * curl * (0.80f - 0.25f * v)));
                     }
                 }
             }
@@ -212,7 +212,7 @@ public final class WaterSignatureVfx {
                 float size = 0.055f + 0.055f * h3;
                 box(vc, mat, tmp, cx, cy, cz, dx, dz, lf, u * SURGE_HALF_WIDTH, ly,
                         size, size * (0.70f + 0.40f * h), size,
-                        mix(FOAM, WHITE, h3), Math.round(a * (1.0f - ebb) * 0.92f));
+                        mix(FOAM, WHITE, h3), opaque(a * (1.0f - ebb) * 0.92f));
             }
         }
 
@@ -235,7 +235,7 @@ public final class WaterSignatureVfx {
                 rot(vc, mat, tmp, cx, cy, cz, dx, dz, dForward, side * (0.55f + 0.45f * life), dY,
                         size, size * 1.30f, size,
                         life * 7.0f * (h - 0.5f), life * 5.0f, life * 4.0f, rgb,
-                        Math.round(a * burst * (1.0f - life * 0.80f)));
+                        opaque(a * burst * (1.0f - life * 0.80f)));
             }
         }
 
@@ -257,7 +257,7 @@ public final class WaterSignatureVfx {
                     box(vc, mat, tmp, cx, cy, cz, dx, dz,
                             Mth.cos(ang) * r, Mth.sin(ang) * r, y,
                             size * 1.45f, 0.030f + 0.020f * h, size * 1.45f,
-                            mix(SHALLOW, FOAM, h), Math.round(a * ringFade * 0.70f));
+                            mix(SHALLOW, FOAM, h), opaque(a * ringFade * 0.70f));
                 }
             }
         }
@@ -281,7 +281,7 @@ public final class WaterSignatureVfx {
                         forward, u * SURGE_HALF_WIDTH, fy,
                         0.055f, len, 0.045f + 0.025f * h3,
                         mix(SHALLOW, FOAM, 0.35f + 0.55f * (1.0f - fall)),
-                        Math.round(a * body * (0.55f - 0.30f * fall)));
+                        opaque(a * body * (0.55f - 0.30f * fall)));
             }
         }
 
@@ -300,7 +300,7 @@ public final class WaterSignatureVfx {
                         along, lateral, -1.16f + 0.015f * h,
                         0.30f + 0.18f * h, 0.022f, 0.30f + 0.18f * h2,
                         mix(DEEP, OCEAN, h * 0.60f),
-                        Math.round(a * fade * 0.34f));
+                        opaque(a * fade * 0.34f));
             }
         }
     }
@@ -533,46 +533,59 @@ public final class WaterSignatureVfx {
         // dessinaient qu'un fil de fer : entre eux, le vide. Les trois blocs qui suivent
         // remplissent le VOLUME de l'entonnoir, puis détaillent son cœur à plusieurs échelles.
 
-        // ---- 9. PAROI VOLUMÉTRIQUE : onze nappes hélicoïdales du bord jusqu'à la gorge ----
-        // Chaque nappe descend en s'enroulant ; les cubes sont étirés tangentiellement, si bien
-        // qu'ils se touchent et forment une surface continue plutôt qu'un chapelet de points.
+        // ---- 9. PAROI CONIQUE PLEINE : le nombre de dalles suit la circonférence ----
+        // Reproche de la partie du 13 novembre : « le centre du maelström est toujours mal
+        // rempli, je ne vois que des petits pixels dedans ainsi que des mini textures de
+        // blocs », « les surfaces ne sont pas remplies de bleu tournoyant abysses ».
+        //
+        // Cause mesurée : la paroi était faite de 11 hélices, nombre FIXE quelle que soit la
+        // profondeur. Or au bord la circonférence vaut 2π × 4,35 = 27,3 m : onze dalles de
+        // 0,70 m n'en couvrent que 28 %. Les 72 % restants étaient des trous, à travers
+        // lesquels on voyait le sol et les blocs avalés — d'où « des petits pixels et des
+        // mini textures de blocs » au lieu d'une masse d'eau.
+        //
+        // Correctif : on ne raisonne plus en nombre d'hélices mais en TAUX DE RECOUVREMENT.
+        // À chaque profondeur, le nombre de dalles est calculé pour que la circonférence soit
+        // couverte avec 28 % de chevauchement, et les dalles sont nettement plus larges.
         if (basinLife > 0.02f && open > 0.03f) {
-            final int sheets = 11;
-            final int steps = 34;
-            for (int sheet = 0; sheet < sheets; sheet++) {
-                float sPhase = sheet * (TAU / sheets);
-                float sJit = hash(salt, 11000 + sheet * 311);
-                for (int i = 0; i < steps; i++) {
-                    float v = i / (float) (steps - 1);                  // 0 bord .. 1 gorge
-                    float h = hash(salt, 11100 + sheet * 173 + i * 29);
-                    // Trous dans la nappe : une paroi d'eau n'est jamais pleine.
-                    if (h > 0.93f - 0.10f * v) continue;
-                    float radius = BASIN_RADIUS * (1.0f - v * 0.86f) * open
-                            * (1.0f - implode * (0.22f + 0.74f * v))
-                            * (0.95f + 0.09f * Mth.sin(v * 9.0f + t * 12.0f + sJit * 6.0f));
-                    if (radius < 0.06f) continue;
-                    // L'enroulement s'accélère vers le fond : 1,9 tour entre le bord et la gorge.
-                    float ang = sPhase + v * TAU * 1.90f + spinPhase * (1.0f + v * 2.40f);
-                    float y = -0.95f - BASIN_DEPTH * v * v * open
-                            + 0.07f * Mth.sin(v * 16.0f + t * 13.0f + sJit * 4.0f);
-                    // Taille : large dalle au bord, écaille serrée à la gorge.
-                    float size = (0.165f - 0.095f * v) * (0.80f + 0.45f * h);
-                    float slope = -(0.38f + 1.05f * v);
+            final int rings = 24;
+            for (int ring = 0; ring < rings; ring++) {
+                float v = ring / (float) (rings - 1);                   // 0 bord .. 1 gorge
+                float radius = BASIN_RADIUS * (1.0f - v * 0.86f) * open
+                        * (1.0f - implode * (0.22f + 0.74f * v))
+                        * (0.96f + 0.07f * Mth.sin(v * 9.0f + t * 12.0f));
+                if (radius < 0.05f) continue;
+                float y0 = -0.95f - BASIN_DEPTH * v * v * open;
+                float size = 0.260f - 0.130f * v;                       // large dalle .. écaille
+                float tang = size * 1.35f;                              // demi-largeur tangentielle
+                // Couverture : circonférence / (largeur × 0,72) ⇒ les dalles se chevauchent.
+                int count = Math.max(9, Math.round(TAU * radius / (tang * 2.0f * 0.72f)));
+                // L'enroulement s'accélère vers le fond : c'est le différentiel qui fait
+                // « tourbillon » plutôt que « pile d'anneaux ».
+                float spin = spinPhase * (1.0f + v * 2.40f) + v * TAU * 1.60f;
+                float slope = -(0.38f + 1.05f * v);                     // la dalle épouse le cône
+                for (int i = 0; i < count; i++) {
+                    float h = hash(salt, 11100 + ring * 173 + i * 29);
+                    float ang = i * TAU / count + spin;
+                    float r = radius * (0.985f + 0.030f * h);
+                    float y = y0 + 0.06f * Mth.sin(v * 16.0f + t * 13.0f + i * 0.7f) + 0.03f * h;
+                    // Du bleu clair en surface jusqu'aux abîmes dans la gorge.
                     int rgb = mix(mix(AZURE, OCEAN, v * 0.85f), ABYSS, v * v * 0.80f);
-                    int ca = opaque(a * basinLife * (0.58f + 0.30f * (1.0f - v)));
                     rot(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            Mth.cos(ang) * radius, Mth.sin(ang) * radius, y,
-                            size * 2.05f, size * 0.42f, size * 0.95f,
-                            ang, slope, 0.0f, rgb, ca);
+                            Mth.cos(ang) * r, Mth.sin(ang) * r, y,
+                            size * 0.95f, size * 0.44f, tang,
+                            ang, slope, 0.0f, rgb,
+                            opaque(a * basinLife * (0.74f + 0.24f * (1.0f - v))));
                 }
             }
         }
 
-        // ---- 10. REMPLISSAGE : 200 gouttes en suspension DANS le cône, pas sur sa paroi ----
-        // Tirage uniforme en profondeur ; à chaque profondeur le rayon est tiré À L'INTÉRIEUR du
-        // rayon local de l'entonnoir. C'est ce qui enlève la sensation de trou vide.
+        // ---- 10. VOLUME INTÉRIEUR : des lames larges, plus des poussières ----
+        // Les 200 gouttes de 0,08 m d'origine étaient exactement les « petits pixels »
+        // reprochés : trop fines pour lire comme de l'eau. On les remplace par 120 lames
+        // tangentielles bien plus larges, réparties dans le volume du cône.
         if (basinLife > 0.02f && open > 0.05f) {
-            for (int i = 0; i < 200; i++) {
+            for (int i = 0; i < 120; i++) {
                 float h = hash(salt, 12000 + i * 37);
                 float h2 = hash(salt, 12200 + i * 53);
                 float h3 = hash(salt, 12400 + i * 19);
@@ -581,16 +594,17 @@ public final class WaterSignatureVfx {
                         * (1.0f - implode * (0.22f + 0.74f * v));
                 if (wall < 0.08f) continue;
                 // sqrt : répartition homogène en surface, sinon tout s'entasse sur l'axe.
-                float r = wall * (float) Math.sqrt(h2) * 0.94f;
+                float r = wall * (float) Math.sqrt(h2) * 0.92f;
                 float ang = h3 * TAU + spinPhase * (1.0f + v * 2.40f) * (0.80f + 0.40f * h2);
                 float y = -0.95f - BASIN_DEPTH * v * v * open
-                        + 0.22f * Mth.sin(t * 15.0f + h3 * 9.0f);
-                float size = (0.040f + 0.065f * h2) * (1.0f - 0.35f * v);
-                int rgb = mix(mix(SHALLOW, OCEAN, v * 0.70f), SPRAY, h3 * 0.55f);
-                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        + 0.20f * Mth.sin(t * 15.0f + h3 * 9.0f);
+                float size = (0.150f + 0.110f * h2) * (1.0f - 0.30f * v);
+                int rgb = mix(mix(SHALLOW, OCEAN, v * 0.70f), AZURE, h3 * 0.55f);
+                rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                         Mth.cos(ang) * r, Mth.sin(ang) * r, y,
-                        size, size * 1.30f, size, rgb,
-                        opaque(a * basinLife * (0.42f + 0.38f * (1.0f - v))));
+                        size * 0.80f, size * 0.52f, size * 1.45f,
+                        ang, -(0.30f + 0.70f * v), 0.0f, rgb,
+                        opaque(a * basinLife * (0.62f + 0.30f * (1.0f - v))));
             }
         }
 
@@ -604,12 +618,12 @@ public final class WaterSignatureVfx {
             float floorY = -0.95f - BASIN_DEPTH * open;
 
             // (a) Six GROSSES dalles, lentes, qui tournent au fond : elles donnent l'échelle.
-            for (int i = 0; i < 6; i++) {
+            for (int i = 0; i < 12; i++) {
                 float h = hash(salt, 13000 + i * 101);
-                float ang = i * TAU / 6.0f + spinPhase * 1.70f;
+                float ang = i * TAU / 12.0f + spinPhase * 1.70f;
                 float r = (0.52f + 0.30f * h) * core;
                 float y = floorY + 0.28f + 0.16f * Mth.sin(t * 9.0f + i * 1.7f);
-                float size = 0.34f * (0.85f + 0.30f * h);
+                float size = 0.44f * (0.85f + 0.30f * h);
                 rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                         Mth.cos(ang) * r, Mth.sin(ang) * r, y,
                         size * 1.45f, size * 0.50f, size * 1.05f,
@@ -619,14 +633,14 @@ public final class WaterSignatureVfx {
             }
 
             // (b) Vingt-quatre blocs MOYENS en double hélice serrée autour de l'axe.
-            for (int i = 0; i < 24; i++) {
+            for (int i = 0; i < 40; i++) {
                 float h = hash(salt, 13200 + i * 59);
-                float v = i / 23.0f;
+                float v = i / 39.0f;
                 float ang = v * TAU * 2.40f + spinPhase * 3.10f + (i % 2) * 3.1416f;
                 float r = (0.20f + 0.46f * (1.0f - v)) * core;
                 float y = floorY + 0.10f + v * (1.45f * core)
                         + 0.07f * Mth.sin(t * 17.0f + i);
-                float size = 0.155f * (0.80f + 0.45f * h);
+                float size = 0.230f * (0.80f + 0.45f * h);
                 rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                         Mth.cos(ang) * r, Mth.sin(ang) * r, y,
                         size * 1.30f, size * 0.85f, size * 1.30f,
@@ -636,7 +650,7 @@ public final class WaterSignatureVfx {
             }
 
             // (c) Quatre-vingt-dix ÉCLATS minuscules et rapides : la poussière d'eau du cœur.
-            for (int i = 0; i < 90; i++) {
+            for (int i = 0; i < 54; i++) {
                 float h = hash(salt, 13500 + i * 23);
                 float h2 = hash(salt, 13700 + i * 41);
                 float h3 = hash(salt, 13900 + i * 13);
@@ -645,7 +659,7 @@ public final class WaterSignatureVfx {
                 float r = (0.10f + 0.72f * h2) * core;
                 float y = floorY + 0.05f + h3 * (1.90f * core)
                         + 0.10f * Mth.sin(t * 26.0f + h * 11.0f);
-                float size = 0.055f * (0.70f + 0.60f * h3);
+                float size = 0.115f * (0.70f + 0.60f * h3);
                 box(vc, mat, tmp, cx, cy, cz, dx, dz,
                         Mth.cos(ang) * r, Mth.sin(ang) * r, y,
                         size, size * 1.45f, size,
@@ -660,7 +674,7 @@ public final class WaterSignatureVfx {
                 float h = hash(salt, 14100 + i * 71);
                 float ang = i * TAU / 16.0f + spinPhase * 0.90f;
                 float lift = (i % 2 == 0) ? 0.0f : 0.14f;
-                float size = 0.105f * (0.85f + 0.30f * h);
+                float size = 0.150f * (0.85f + 0.30f * h);
                 box(vc, mat, tmp, cx, cy, cz, dx, dz,
                         Mth.cos(ang) * eye, Mth.sin(ang) * eye, floorY + 0.08f + lift,
                         size, size * 1.20f, size,
@@ -799,7 +813,7 @@ public final class WaterSignatureVfx {
                 box(vc, mat, tmp, cx, cy, cz, dx, dz,
                         Mth.cos(ang) * r, Mth.sin(ang) * r, y,
                         size * 1.30f, 0.032f + 0.022f * h, size * 1.30f,
-                        mix(ICE_PALE, FROST, h), Math.round(a * local * (0.92f - 0.30f * v) * solid));
+                        mix(ICE_PALE, FROST, h), opaque(a * local * (0.92f - 0.30f * v) * solid));
                 // Ramification : une épine latérale un segment sur trois.
                 if (s % 3 == 2 && h > 0.35f) {
                     float side = (hash(salt, 11200 + branch * 31 + s) - 0.5f) > 0.0f ? 1.0f : -1.0f;
@@ -809,7 +823,7 @@ public final class WaterSignatureVfx {
                     box(vc, mat, tmp, cx, cy, cz, dx, dz,
                             Mth.cos(sAng) * (sr + len), Mth.sin(sAng) * (sr + len), y,
                             0.070f, 0.028f, 0.070f,
-                            mix(ICE, ICE_PALE, h), Math.round(a * local * 0.70f * solid));
+                            mix(ICE, ICE_PALE, h), opaque(a * local * 0.70f * solid));
                 }
             }
         }
@@ -835,7 +849,7 @@ public final class WaterSignatureVfx {
                         Mth.cos(ang) * r, Mth.sin(ang) * r, y,
                         half * 1.20f, spikeH / steps * 0.62f, half * 1.20f,
                         ang, tilt * v, (h2 - 0.5f) * 0.40f, rgb,
-                        Math.round(a * (0.70f + 0.28f * v) * (1.0f - shatter * 0.70f)));
+                        opaque(a * (0.70f + 0.28f * v) * (1.0f - shatter * 0.70f)));
             }
         }
         // Trois pics majeurs sous la cible : ils l'encadrent au lieu de la traverser.
@@ -853,7 +867,7 @@ public final class WaterSignatureVfx {
                         Mth.cos(ang) * r, Mth.sin(ang) * r, y,
                         half * 1.25f, spikeH / steps * 0.60f, half * 1.25f,
                         ang, 0.24f * v, 0.0f, mix(ICE, FROST, v * 0.80f),
-                        Math.round(a * (0.72f + 0.26f * v) * (1.0f - shatter * 0.70f)));
+                        opaque(a * (0.72f + 0.26f * v) * (1.0f - shatter * 0.70f)));
             }
         }
 
@@ -877,7 +891,7 @@ public final class WaterSignatureVfx {
                                 ly + shiver * 0.5f,
                                 size, size * 1.05f, size,
                                 mix(ICE, ICE_PALE, h * 0.70f),
-                                Math.round(a * cage * solid * (0.38f + 0.22f * lv)));
+                                opaque(a * cage * solid * (0.38f + 0.22f * lv)));
                     }
                 }
             }
@@ -894,7 +908,7 @@ public final class WaterSignatureVfx {
                             Mth.cos(ang) * r, Mth.sin(ang) * r, ly,
                             0.028f, 0.165f + 0.120f * h2, 0.028f,
                             ang, (h2 - 0.5f) * 1.6f, (h - 0.5f) * 1.2f,
-                            mix(ICE_DEEP, ABYSS, 0.45f), Math.round(a * crack * solid * 0.85f));
+                            mix(ICE_DEEP, ABYSS, 0.45f), opaque(a * crack * solid * 0.85f));
                 }
             }
         }
@@ -918,7 +932,7 @@ public final class WaterSignatureVfx {
                         size * 1.30f, size * 0.70f, size,
                         ang + spin, spin * 0.75f, spin * 0.55f,
                         mix(mix(ICE, ICE_PALE, h3), FROST, h2 * 0.55f),
-                        Math.round(a * (1.0f - shatter * 0.72f)));
+                        opaque(a * (1.0f - shatter * 0.72f)));
             }
             // Souffle de froid au sol : un anneau plat qui s'échappe de l'éclatement.
             for (int i = 0; i < 34; i++) {
@@ -928,7 +942,7 @@ public final class WaterSignatureVfx {
                 box(vc, mat, tmp, cx, cy, cz, dx, dz,
                         Mth.cos(ang) * r, Mth.sin(ang) * r, -1.14f + 0.03f * h,
                         0.115f, 0.030f, 0.115f,
-                        mix(FROST, WHITE, h), Math.round(a * (1.0f - shatter) * 0.80f));
+                        mix(FROST, WHITE, h), opaque(a * (1.0f - shatter) * 0.80f));
             }
         }
 
@@ -950,7 +964,7 @@ public final class WaterSignatureVfx {
                         Mth.cos(ang) * r, Mth.sin(ang) * r, y,
                         size * 1.45f, 0.030f + 0.022f * h2, size * 1.45f,
                         mix(ICE_PALE, FROST, h2),
-                        Math.round(a * haze * (0.26f - 0.10f * (r / 4.50f))));
+                        opaque(a * haze * (0.26f - 0.10f * (r / 4.50f))));
             }
         }
 
@@ -969,7 +983,7 @@ public final class WaterSignatureVfx {
                         Mth.cos(orbit) * r, Mth.sin(orbit) * r, y,
                         size, size * 1.70f, size,
                         orbit, t * 1.8f + h * 6.0f, h2 * 3.0f,
-                        mix(ICE, FROST, h3), Math.round(a * cage * solid * (0.45f + 0.35f * h)));
+                        mix(ICE, FROST, h3), opaque(a * cage * solid * (0.45f + 0.35f * h)));
             }
         }
     }

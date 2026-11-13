@@ -158,6 +158,7 @@ public final class DlbVfxCommand {
         if (fx == WeaponVisualEffectId.SANDSTORM_DUNE) return 174;    // impact 30 + 140 + marge
         if (fx == WeaponVisualEffectId.THORN_MAW_ROOT) return 130;  // impact 30 + 96 + marge
         if (fx == WeaponVisualEffectId.VERDANT_SAP_BLOOM) return 130; // impact 30 + 96 + marge
+        if (fx == WeaponVisualEffectId.WILDWOOD_AWAKENING) return 140; // impact 30 + 104 + marge
         if (fx == WeaponVisualEffectId.SEISMIC_TECTONIC) return 150; // impact 30 + 112 + marge
         if (fx == WeaponVisualEffectId.TITAN_GRASP) return 178;      // impact 30 + 140 + marge
         if (fx == WeaponVisualEffectId.WARLORD_RALLY_SIGIL) return 158; // impact 30 + 120 + marge
@@ -780,6 +781,7 @@ public final class DlbVfxCommand {
             case ZEPHYR_WIND_LANCE -> 80;
             case TEMPEST_EYE -> 120;
             case THORN_MAW_ROOT, VERDANT_SAP_BLOOM -> 96;
+            case WILDWOOD_AWAKENING -> 104;
             case MOLTEN_FIRE_WAVE -> 92;
             case SOUL_FIRE_CRESCENT -> 112;
             case BRIMSTONE_METEOR, PLAGUE_NOVA -> 128;

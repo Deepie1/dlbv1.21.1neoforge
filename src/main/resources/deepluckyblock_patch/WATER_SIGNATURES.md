@@ -888,3 +888,164 @@ Contrôles passés pour cette livraison : `java-parser` OK · `semcheck.py` en d
 `HEAD` → **identique** · miroirs `FIXES_MCREATOR` → MIRROR_OK sur les 199 fichiers ·
 `node --check` sur le miroir JS et sur le script de la page · Playwright sur 8 instants →
 **0 erreur JS**, et plus aucun cube d'eau sous le seuil de 208 aux 10 instants testés.
+
+---
+
+## 18. Maelström v1.6 — la gorge devient un volume d'eau (13 novembre 2026)
+
+Retour de test : « *le centre du maelström est toujours mal rempli ; je ne vois que des petits
+pixels dedans ainsi que des mini textures de blocs* », « *les surfaces ne sont pas remplies de
+bleu tournoyant abymes* ». La v1.5c avait réglé le **seuil d'alpha** ; elle n'avait pas réglé la
+**géométrie**. Voici la cause, mesurée, et sa correction.
+
+### 18.1 La cause : une paroi faite de 11 hélices, quel que soit le rayon
+
+La paroi du bassin était dessinée par un nombre **fixe** d'hélices — 11 — réparties sur toute la
+hauteur de l'entonnoir. Or la circonférence, elle, n'est pas fixe : elle vaut `2π·r`, et au bord
+du bassin `r = 4,35 m`, soit **27,3 m de tour**. Onze dalles de 0,70 m de large y couvrent
+`11 × 0,70 = 7,7 m` : **28 %**. Les 72 % restants étaient des trous, et à travers ces trous on
+voyait le fond du cratère, le sol avalé et les blocs réimprimés. D'où la lecture « petits pixels
+et mini textures de blocs » : il ne manquait pas de couleur, il manquait de la **matière**.
+
+Couverture mesurée avant correction, du bord vers la gorge :
+
+| profondeur `v` | 0 (bord) | 0,25 | 0,50 | 0,75 | 1 (gorge) |
+|---|---|---|---|---|---|
+| couverture | **28 %** | 31 % | 35 % | 45 % | 85 % |
+
+La gorge paraissait « moins pire » simplement parce que le rayon y est petit.
+
+### 18.2 La correction : le nombre de dalles est calculé, pas choisi
+
+La paroi est reconstruite en **24 anneaux** et chaque anneau calcule lui-même combien de dalles
+il lui faut pour être plein :
+
+```java
+count = Math.max(9, Math.round(TAU * radius / (tang * 2.0f * 0.72f)))
+```
+
+`tang` est la demi-largeur tangentielle de la dalle ; le facteur `0,72` impose un recouvrement
+de 28 %. Le résultat ne dépend plus de la profondeur : **138 % de couverture partout**, de 54
+dalles au bord à 15 dans la gorge, soit **929 cubes** pour la paroi.
+
+| profondeur `v` | 0 | 0,17 | 0,33 | 0,50 | 0,67 | 0,83 | 1 |
+|---|---|---|---|---|---|---|---|
+| couverture | 139 % | 138 % | 139 % | 138 % | 138 % | 138 % | 138 % |
+
+Le reste de la gorge suit la même logique — remplacer le semis par de la matière :
+
+- **Rideau intérieur** : 200 gouttes de 4 à 10 cm → **120 lames larges** de 15 à 26 cm,
+  orientées tangentiellement (`rot(..., ang, -(0.30+0.70*v), 0)`) : elles tournent avec l'eau
+  au lieu de flotter dedans.
+- **Cœur** : 6 → **12** grandes dalles (0,34 → **0,44 m**), 24 → **40** blocs moyens
+  (0,155 → **0,230 m**), 90 → **54** éclats (0,055 → **0,115 m**), œil 0,105 → **0,150 m**.
+  Moins d'éléments, chacun deux fois plus gros : la gorge est pleine au lieu d'être poudrée.
+
+Budget : **≈ 1 930 voxels** au pic (plafond moteur 7 000/frame).
+
+### 18.3 Aucune texture de bloc dans le maelström
+
+`WaterTerrainVfx` capturait le sol sur un disque de 5 blocs — c'est-à-dire **la bouche de
+l'entonnoir tout entière** — et réimprimait ces `BlockState` en train d'y tomber, en boucle
+(`u = u - floor(u)`) pendant les 150 ticks. Il y avait donc **en permanence** des cubes de terre,
+d'herbe et de pierre en train de tourner au centre.
+
+La capture est désormais **désactivée pour `MODE_MAELSTROM`** : le tourbillon ne montre que de
+l'eau. Le sol disparaît sous le masque fantôme (`GhostBlockMask.digFunnel`), anneau par anneau,
+et l'eau le remplace. Le raz-de-marée (`MODE_SURGE`) garde ses blocs : il les pousse **devant**
+lui, à l'air libre, et c'est là que l'effet se voit.
+
+### 18.4 La règle d'alpha étendue aux trois signatures
+
+La v1.5c n'avait appliqué `opaque()` qu'au maelström. L'audit a montré que `renderSurge` et
+`renderRime` émettaient encore des alphas bruts :
+
+| méthode | sites `opaque()` avant | sites bruts avant | après |
+|---|---|---|---|
+| `renderSurge` | 0 | 8 | **8 `opaque()`** |
+| `renderMaelstrom` | 17 | 0 | 17 |
+| `renderRime` | 1 | 10 | **11 `opaque()`** |
+
+Les trois alphas « maîtres » (lignes 122, 334, 790) restent bruts : ce sont les fondus globaux
+d'entrée et de sortie, et `opaque()` est appliqué en aval, à chaque point d'émission. Le miroir
+`tools/water_build.js` reçoit exactement les mêmes 8 et 10 enveloppements, `op()` ayant été hissé
+au niveau du fichier.
+
+Conséquence attendue en jeu : la brume de froid et la nappe de sol mouillé, jusqu'ici réduites à
+un semis aléatoire de 30 à 70 % de leurs cubes par le tamis, deviennent des surfaces franches.
+
+### 18.5 Contrôles passés
+
+`java-parser` sur les 8 fichiers touchés · `semcheck.py` en différentiel contre `HEAD` →
+**identique à la baseline** · miroirs `FIXES_MCREATOR` → **MIRROR_OK sur 209 fichiers, 0 écart** ·
+`node --check` sur le miroir JS et sur le script de la page · Playwright sur les 3 variantes et
+10 instants → **0 erreur JS**, pic à 1 937 voxels.
+
+---
+
+## 19. Bois — la troisième animation (13 novembre 2026)
+
+Retour de test : « *problème wood ! je ne vois que deux animations, les vignes et le sap tree*,
+l'autre a disparu, trouve la cause et répare ».
+
+### 19.1 Cause : ce n'était pas une régression, c'était un emprunt
+
+`git show 442d5a4~1` montre l'ancien pool, à l'époque nommé `ANIM_GAIA` :
+
+```java
+{ ZEPHYR_WIND_LANCE, THORN_MAW_ROOT, VERDANT_SAP_BLOOM }
+```
+
+La troisième entrée était **la lance de zéphyr**, c'est-à-dire une animation de **vent**. C'est
+elle qui faisait apparaître des arcs pâles « eau » dans la rotation du Bois, et c'est pour cette
+raison qu'elle a été rendue à son élément lors de la séparation des familles (v1.5, `442d5a4`).
+Le Bois n'a donc jamais possédé que **deux** signatures réellement en bois : rien n'est cassé,
+il manquait une animation qui n'avait jamais existé. Elle existe maintenant.
+
+### 19.2 `WILDWOOD_AWAKENING` — l'éveil de la futaie
+
+| | |
+|---|---|
+| identifiant | **43** (1 → 42 étaient contigus et tous pris) |
+| catégorie | `Category.ELEMENT`, priorité 74 |
+| élément | `DeepElement.WOOD` — couleurs héritées, aucun RGB individuel (`T374-PALETTE-LOCK`) |
+| durée | **104 ticks** (`WeaponWorldVfxManager` et `DlbVfxCommand`) |
+| mouvement de lame | `SHAPE_BLOOM`, 4 échos, décalage 0,10 / élévation 0,50 / portée 1,20 |
+| rendu | `GaiaWorldTreeVfx.GROVE` (= 3) |
+
+Le modèle réutilise **`ZEPHYR_VOXELS`**, l'arbre aux branches étalées resté **orphelin** depuis
+que la lance de zéphyr a rejoint le moteur du vent : une silhouette plus large et plus basse que
+l'arbre sacré, déjà dessinée, déjà équilibrée, et que plus rien n'utilisait. La futaie s'en sert
+sans la moindre lance :
+
+- croissance en **0,38** (entre les 0,30 du zéphyr et les 0,46 du sacré) ;
+- **pluie de feuilles nettement plus dense** : départ à 0,28 au lieu de 0,34, pas
+  d'échantillonnage 10 au lieu de 7, chute de 3,05 m au lieu de 2,35 ;
+- **sève** (`renderSacredSap`), pas de fruits d'or : la futaie est sauvage, pas sacrée ;
+- dérive des feuilles en mode « non-zéphyr » (`age × 0,16`), donc **aucune lecture de vent**.
+
+Côté serveur, l'effet joue un **accent sonore seulement** — `WOOD_BREAK` puis `GRASS_BREAK` à
++26 ticks. Aucun maintien, aucun dégât supplémentaire : rien qui puisse interférer avec les
+priorités de `MOVEMENT_HOLDS`, de `WIND_HOLDS` ou de `SURGE_RIDES`.
+
+### 19.3 Les sept points d'ancrage
+
+| fichier | modification |
+|---|---|
+| `WeaponVisualEffectId.java` | déclaration de la constante #43 |
+| `WeaponVfxMotion.java` | `case WILDWOOD_AWAKENING` — **obligatoire** : ce `switch` est exhaustif et n'a pas de `default` |
+| `WeaponWorldVfxManager.java` | durée 104 · sélecteur `index % 2` → **`% 3`** · routage vers `GROVE` dans `impactWood` |
+| `GaiaWorldTreeVfx.java` | constante `GROVE`, choix du modèle, durée de croissance, branche de rendu |
+| `WeaponVfxServerListener.java` | ajout à `ANIM_WOOD` · accent sonore |
+| `DlbVfxCommand.java` | durée 104 · créneau de test `dummyNextEffectTick` = 140 |
+
+`/anim wood` fait tourner le pool par `DlbAnimNext % pool.length` : il joue donc bien **trois**
+animations en boucle, et la rotation de l'enchantement suit la même règle via `index % 3`.
+
+### 19.4 Contrôles passés
+
+`java-parser` sur les 7 fichiers · audit des `switch` **aplatis au niveau 1** → le seul `switch`
+exhaustif sans `default` portant sur ces constantes (`WeaponVfxMotion:105`) **couvre** le nouvel
+identifiant · unicité des identifiants → 0 doublon · `BY_ID` dimensionné à 64, l'entrée 43 y
+tient · `semcheck.py` en différentiel → seul écart, le faux positif connu « constante inconnue »
+sur les `case` non qualifiés · miroirs `FIXES_MCREATOR` → **MIRROR_OK sur 209 fichiers**.

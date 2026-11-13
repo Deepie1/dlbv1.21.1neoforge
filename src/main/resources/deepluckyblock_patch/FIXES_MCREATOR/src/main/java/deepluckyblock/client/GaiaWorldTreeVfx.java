@@ -10,6 +10,12 @@ public final class GaiaWorldTreeVfx {
     public static final int ZEPHYR = 0;
     public static final int THORN = 1;
     public static final int VERDANT = 2;
+    /**
+     * Bois #3 — l'éveil de la futaie. Réutilise la silhouette large de l'ancien arbre de
+     * zéphyr, restée orpheline depuis que la lance de vent a rejoint son propre moteur, mais
+     * SANS la moindre lance : seulement du bois, des feuilles et de la sève.
+     */
+    public static final int GROVE = 3;
 
     private static final float BASE = -0.48f;
     private static final int STRIDE = 8;
@@ -76,8 +82,8 @@ public static void render(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
             renderThornMaw(vc, mat, tmp, cx, cy, cz, t, dirX, dirZ, alpha, salt);
             return;
         }
-        float[] model = variant == ZEPHYR ? ZEPHYR_VOXELS : VERDANT_VOXELS;
-        float growDuration = variant == ZEPHYR ? 0.30f : 0.46f;
+        float[] model = (variant == ZEPHYR || variant == GROVE) ? ZEPHYR_VOXELS : VERDANT_VOXELS;
+        float growDuration = variant == ZEPHYR ? 0.30f : variant == GROVE ? 0.38f : 0.46f;
         float raw = Mth.clamp(t / growDuration, 0.0f, 1.0f);
         float growth = 1.0f - (1.0f - raw) * (1.0f - raw) * (1.0f - raw);
         renderTree(vc, mat, tmp, model, cx, cy, cz, growth, t, variant, alpha, salt);
@@ -85,6 +91,12 @@ public static void render(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
             renderFallingLeaves(vc, mat, tmp, model, cx, cy, cz, t, 0.46f,
                     6, 2.80f, variant, alpha, salt);
             renderZephyrLances(vc, mat, tmp, cx, cy, cz, t, alpha, salt);
+        } else if (variant == GROVE) {
+            // Pluie de feuilles nettement plus dense que l'arbre sacré, et de la sève :
+            // c'est ce qui distingue la futaie à l'œil. Aucune lance, aucun souffle.
+            renderFallingLeaves(vc, mat, tmp, model, cx, cy, cz, t, 0.28f,
+                    10, 3.05f, variant, alpha, salt);
+            renderSacredSap(vc, mat, tmp, model, cx, cy, cz, t, alpha, salt);
         } else {
             renderGoldenFruits(vc, mat, tmp, model, cx, cy, cz, t, growth, alpha, salt);
             renderFallingLeaves(vc, mat, tmp, model, cx, cy, cz, t, 0.34f,

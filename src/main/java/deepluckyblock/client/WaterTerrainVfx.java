@@ -50,6 +50,12 @@ public final class WaterTerrainVfx {
     /** Vague qui pousse les blocs devant elle. */
     public static final int MODE_SURGE = 0;
     /** Tourbillon qui avale les blocs puis les recrache. */
+    /**
+     * @deprecated depuis v1.6 : la capture est désactivée pour ce mode (voir {@link #prepare}).
+     *     Le maelström ne doit montrer que de l'eau. Le code de vol correspondant est conservé
+     *     plus bas au cas où un futur effet d'aspiration en aurait besoin.
+     */
+    @Deprecated
     public static final int MODE_MAELSTROM = 1;
 
     private static final int MAX_SNAPSHOTS = 6;
@@ -98,6 +104,15 @@ public final class WaterTerrainVfx {
                                int mode, float dirX, float dirZ, float depth) {
         if (level == null) return;
         beginTerrainTick(level);
+        // T374-EAU-v1.6 — EXIGENCE DE RENDU : « aucune texture de bloc ne doit être visible à
+        // l'intérieur du maelström ». Le tourbillon capturait le sol sur un disque de 5 blocs,
+        // c'est-à-dire la bouche de l'entonnoir tout entière, et réimprimait ces BlockState en
+        // train d'y tomber : on voyait en permanence des mini-textures de terre et de pierre au
+        // centre au lieu d'un volume d'eau. La gorge est désormais remplie d'eau et de rien
+        // d'autre ; le sol disparaît simplement sous le masque fantôme, anneau par anneau.
+        // Le raz-de-marée (MODE_SURGE), lui, pousse ses blocs DEVANT lui, à l'air libre : il les
+        // garde, c'est là que l'effet se voit.
+        if (mode == MODE_MAELSTROM) return;
         float len = Mth.sqrt(dirX * dirX + dirZ * dirZ);
         float ax = len < 0.001f ? 0.0f : dirX / len;
         float az = len < 0.001f ? 1.0f : dirZ / len;
@@ -202,8 +217,15 @@ public final class WaterTerrainVfx {
         for (Debris d : snapshot.debris()) {
             float u = (t - d.pickup()) / d.flight();
             if (u <= 0.0f) continue;
-            // Un bloc qui a fini son voyage recommence : l'eau continue de travailler le terrain.
-            u = u - Mth.floor(u);
+            if (maelstrom) {
+                // T374-EAU-v1.6 : UN SEUL voyage. Le bouclage faisait repasser des blocs dans la
+                // gorge pendant toute la durée, si bien qu'on voyait en permanence des textures de
+                // blocs au centre du tourbillon au lieu d'un volume d'eau.
+                if (u >= 1.0f) continue;
+            } else {
+                // La vague, elle, continue de travailler le terrain : le bloc repart.
+                u = u - Mth.floor(u);
+            }
             float tear = smooth(u / 0.18f);
             float ride = smooth((u - 0.12f) / 0.58f);
             float land = smooth((u - 0.84f) / 0.16f);
@@ -221,10 +243,10 @@ public final class WaterTerrainVfx {
                 float radius = Mth.lerp(pull, d.groundDist(), target);
                 worldX = (float) x + Mth.cos(angle) * radius;
                 worldZ = (float) z + Mth.sin(angle) * radius;
-                // Descente en cuvette, puis remontée brutale quand le geyser recrache (u > 0,88).
-                float spit = smooth((u - 0.88f) / 0.12f);
-                dy = tear * 0.10f - ride * depth * (0.55f + 0.45f * pull) * (1.0f - spit)
-                        + spit * (6.40f * d.lift());
+                // T374-EAU-v1.6 : plus de recrachage. Le bloc descend et c'est tout — il est
+                // dissous au passage de la lèvre (voir le fondu de taille plus bas), donc il n'y a
+                // plus rien à renvoyer vers le ciel.
+                dy = tear * 0.10f - ride * depth * (0.55f + 0.45f * pull);
                 tumble = tear * (u * 8.0f + d.bearing()) * d.tumbleSpeed();
             } else {
                 // Poussée : le bloc part en avant avec le front, s'élève sur la crête, dérive et
@@ -241,6 +263,13 @@ public final class WaterTerrainVfx {
             }
 
             float size = d.size() * (0.25f + 0.75f * tear) * (1.0f - land * 0.30f);
+            if (maelstrom) {
+                // T374-EAU-v1.6 — EXIGENCE : aucune texture de bloc à l'intérieur du maelström.
+                // Le bloc est arraché et glisse sur la lèvre, puis se dissout dès qu'il passe sous
+                // le niveau du sol : l'eau l'a avalé. Sous la lèvre, il ne reste que de l'eau.
+                float sink = Mth.clamp(-dy / 0.80f, 0.0f, 1.0f);
+                size *= 1.0f - sink;
+            }
             if (size <= 0.05f) continue;
 
             pose.pushPose();

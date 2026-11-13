@@ -157,6 +157,8 @@ public final class WeaponVfxMotion {
 
             // --- VIII. T352b : Bois (brun) & Poison (vert foncé) --------------------------
             case VERDANT_SAP_BLOOM -> p(SHAPE_BLOOM, 3, 0.30f, 0.65f, 1.05f, 0.045f);
+            // Bois #3 : la ramure s'ouvre plus large et plus bas que l'arbre sacré.
+            case WILDWOOD_AWAKENING -> p(SHAPE_BLOOM, 4, 0.10f, 0.50f, 1.20f, 0.055f);
             case MIASMA_SHROUD -> p(SHAPE_ASH, 3, -0.30f, 0.95f, 1.15f, 0.070f);
             case PLAGUE_NOVA -> p(SHAPE_SHARDS, 10, 0.00f, 0.45f, 1.10f, 0.030f);
             // T374-WIND-REFONTE : l'œil du cyclone tourne autour de la lame, comme la lance de zéphyr.

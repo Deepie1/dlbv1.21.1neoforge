@@ -102,6 +102,16 @@ public enum WeaponVisualEffectId {
     // familles distinctes -> chacune doit avoir ses 3 grosses animations uniques.
     /** #38 Bois : sève vive — éclats d'écorce qui éclosent en pousses, sève ambrée (brun). */
     VERDANT_SAP_BLOOM(38, Category.ELEMENT, 73, false, DeepElement.WOOD),
+    /**
+     * #43 Bois : l'éveil de la futaie — une seconde essence, plus large et plus basse que
+     * l'arbre sacré, qui déploie sa ramure puis lâche une pluie de feuilles et de sève.
+     *
+     * <p>Créée le 13 novembre 2026 : le Bois n'avait que deux signatures propres, sa
+     * troisième entrée historique étant ZEPHYR_WIND_LANCE, c'est-à-dire la lance de VENT.
+     * En rendant cette lance à son élément (v1.5), la rotation du Bois était tombée à deux
+     * animations. Celle-ci la ramène à trois, cette fois avec du bois pour de bon.</p>
+     */
+    WILDWOOD_AWAKENING(43, Category.ELEMENT, 74, false, DeepElement.WOOD),
     /** #39 Poison : voile de miasme — nuage vert sombre en pixels, rampe de spores. */
     MIASMA_SHROUD(39, Category.ELEMENT, 69, false, DeepElement.POISON),
     /** #40 Poison : nova venimeuse — 10 aiguillons qui jaillissent puis retombent. */

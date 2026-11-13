@@ -605,6 +605,7 @@ public final class WeaponWorldVfxManager {
             case TEMPEST_EYE -> 170; // l'emprise du cyclone dure 170 ticks : le visuel suit.
             case THORN_MAW_ROOT -> 96;
             case VERDANT_SAP_BLOOM -> 96;
+            case WILDWOOD_AWAKENING -> 104;
             case MOLTEN_FIRE_WAVE -> 92;
             case SOUL_FIRE_CRESCENT -> 112;
             case BRIMSTONE_METEOR -> 128;
@@ -1766,11 +1767,15 @@ public final class WeaponWorldVfxManager {
                 default -> WeaponVisualEffectId.TEMPEST_EYE;
             };
         }
-        // Bois (ex-« nature ») : deux signatures, toutes deux réellement en bois. La troisième
-        // entrée d'avant était ZEPHYR_WIND_LANCE, c'est-à-dire la lance de VENT — c'est elle qui
-        // faisait apparaître des arcs pâles « eau » dans la rotation du Bois.
-        return (index % 2 == 0) ? WeaponVisualEffectId.THORN_MAW_ROOT
-                : WeaponVisualEffectId.VERDANT_SAP_BLOOM;
+        // Bois (ex-« nature ») : TROIS signatures, toutes réellement en bois. L'ancienne
+        // troisième entrée était ZEPHYR_WIND_LANCE, la lance de VENT — c'est elle qui faisait
+        // apparaître des arcs pâles « eau » dans la rotation du Bois. Elle est rendue au vent,
+        // et WILDWOOD_AWAKENING la remplace (13 novembre 2026).
+        return switch (index % 3) {
+            case 0 -> WeaponVisualEffectId.THORN_MAW_ROOT;
+            case 1 -> WeaponVisualEffectId.VERDANT_SAP_BLOOM;
+            default -> WeaponVisualEffectId.WILDWOOD_AWAKENING;
+        };
     }
 
     private static boolean isMeleeSlashWeapon(ItemStack stack) {
@@ -3802,6 +3807,7 @@ public final class WeaponWorldVfxManager {
     private static void impactWood(ImpactView v) {
         WeaponVisualEffectId fx = v.inst().effect;
         int variant = fx == WeaponVisualEffectId.THORN_MAW_ROOT ? GaiaWorldTreeVfx.THORN
+                : fx == WeaponVisualEffectId.WILDWOOD_AWAKENING ? GaiaWorldTreeVfx.GROVE
                 : GaiaWorldTreeVfx.VERDANT;
         // Les impacts transportent cible -> attaquant ; les accents dirigés utilisent l'inverse.
         float dirX = -v.dirX(), dirZ = -v.dirZ();

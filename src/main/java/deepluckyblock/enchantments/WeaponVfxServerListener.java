@@ -247,7 +247,8 @@ public final class WeaponVfxServerListener {
      * d'air pâle — lue comme « de l'eau » — quand on demandait du bois.
      */
     private static final WeaponVisualEffectId[] ANIM_WOOD = {
-            WeaponVisualEffectId.THORN_MAW_ROOT, WeaponVisualEffectId.VERDANT_SAP_BLOOM
+            WeaponVisualEffectId.THORN_MAW_ROOT, WeaponVisualEffectId.VERDANT_SAP_BLOOM,
+            WeaponVisualEffectId.WILDWOOD_AWAKENING
     };
     private static final WeaponVisualEffectId[] ANIM_POISON = {
             WeaponVisualEffectId.VENOM_BRIAR_FANG, WeaponVisualEffectId.MIASMA_SHROUD,
@@ -3244,6 +3245,15 @@ public final class WeaponVfxServerListener {
         if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE
                 || fx == WeaponVisualEffectId.TEMPEST_EYE) {
             applyWindGameplay(attacker, target, fx, weaponDamage);
+            return;
+        }
+        if (fx == WeaponVisualEffectId.WILDWOOD_AWAKENING) {
+            // Futaie : accent sonore seulement. La rotation du Bois gagne une animation,
+            // pas une nouvelle emprise — aucun maintien, aucun dégât supplémentaire, donc
+            // aucune interférence avec les priorités de MOVEMENT_HOLDS.
+            sl.playSound(null, x, y, z, SoundEvents.WOOD_BREAK, SoundSource.PLAYERS, 0.68f, 0.64f);
+            TestProcedure.schedule(sl, scheduleNow + 26, () -> sl.playSound(null, x, y, z,
+                    SoundEvents.GRASS_BREAK, SoundSource.PLAYERS, 0.60f, 0.98f));
             return;
         }
         if (fx != WeaponVisualEffectId.VERDANT_SAP_BLOOM) return;
