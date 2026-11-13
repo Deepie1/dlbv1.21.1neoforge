@@ -700,3 +700,68 @@ Aucun JDK ici, donc trois filets successifs :
 Enfin, un contrôle croisé automatique compare chaque pool `ANIM_*` à l'élément déclaré de chaque
 animation : **aucun effet dans deux familles, et chaque animation joue dans la famille de son
 élément.**
+
+---
+
+## 16. v1.5b — « la texture du trou disparaît et ne revient que brièvement à la fin »
+
+### 16.1 Deux horloges qui ne se parlaient pas
+
+Le trou du maelström est un **faux trou** : `GhostBlockMask.digFunnel` annonce « air » aux clients
+sans toucher au monde (§11). Il faut donc que quelque chose le remplisse à l'écran, sinon le
+joueur voit le cratère de terre brut. Ce quelque chose, c'était le bassin d'eau — et les deux
+n'étaient pas synchronisés :
+
+| | début | fin |
+|---|---|---|
+| **Eau du bassin** (anneaux, bras, gorge, paroi, remplissage, cœur) | tick 0 | **tick 120** (`basinLife = 1 − implode`, nul dès t = 0,80) |
+| **Trou fantôme** | tick 6 | **tick 128 au bord, ~139 au centre** |
+
+Entre les deux : **une seconde et demie de cratère à nu**. Et comme le geyser part au tick 114,
+il repassait brièvement devant le trou — d'où la description exacte du joueur : « ça disparaît,
+puis ça revient brièvement à la fin ».
+
+Détail aggravant : le bassin ne meurt pas d'un coup, il **rétrécit** (`1 − implode × 0,22` au bord).
+La terre se découvrait donc par le pourtour dès le tick 100, bien avant la disparition complète.
+
+### 16.2 Correctif : une nappe de fermeture en iris
+
+Un vrai remous qui meurt ne s'évapore pas, **il se referme** : la surface se recolle du bord vers
+l'axe. C'est exactement ce que fait le bloc 12.
+
+* L'iris se ferme entre **t = 0,54 et t = 0,78** (`sealGrow`), soit juste avant que `basinLife`
+  n'atteigne zéro — il n'y a donc jamais d'instant où ni le bassin ni la nappe ne couvre la gorge.
+* Tant que le bassin couvre encore, la nappe n'est qu'un **film translucide**
+  (`0,42 + 0,58 × implode`) : on continue de voir le tourbillon s'effondrer au travers. Elle ne
+  devient franchement opaque qu'au moment où elle devient la seule chose qui cache la terre.
+* Une fois l'iris refermé, l'opacité est forcée à son plancher `sealGrow²` **partout**, y compris
+  au centre — sans quoi l'axe restait translucide et laissait voir le sol.
+* Un bourrelet d'écume court sur la lèvre de l'iris : le front qui se referme se lit.
+
+### 16.3 Et surtout : le sol revient SOUS l'eau
+
+Le correctif visuel ne suffisait pas — il fallait aussi que le rebouchage tombe au bon moment.
+`digFunnel` passe de `gameNow + 128` à **`gameNow + 118`** : la dernière colonne se rebouche au
+tick ~129 au lieu de ~139.
+
+L'ordre est désormais garanti :
+
+```
+tick 114 … 141   nappe pleinement opaque (0,95)
+tick 118 … 129   le sol réapparaît, bord puis centre   <- entièrement sous la nappe
+tick 140 … 148   la nappe s'efface                      <- le sol est déjà là
+```
+
+Le joueur ne voit jamais le trou nu, et ne voit jamais non plus les blocs « pop » : ils
+reviennent à l'abri sous une surface d'eau opaque.
+
+### 16.4 Vérifications
+
+* Simulation tick par tick de la couverture du rayon creusé (4,35) sur les ticks 80 → 151 :
+  **plus aucun tick avec une zone nue** (le résidu de 0,65 bloc au tick 118 du premier jet a été
+  supprimé en resserrant l'iris de 0,86 à 0,78).
+* Aperçu rejoué sous navigateur (Playwright) aux instants critiques t = 0,60 / 0,70 / 0,76 / 0,80 /
+  0,86 / 0,90 / 0,93 / 0,96 : **aucune erreur JS**, et le comptage ne s'effondre plus après le
+  tick 120 (567 → 669 voxels au lieu de la poignée du geyser).
+* Pic de voxels : **1 617** à t = 0,70 (contre 1 283 avant), très en deçà du plafond dur de 7 000
+  par frame. Le surcoût n'existe que pendant le recouvrement, quand le bassin s'efface déjà.

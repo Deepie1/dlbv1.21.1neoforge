@@ -668,6 +668,86 @@ public final class WaterSignatureVfx {
                         Math.round(a * basinLife * 0.96f));
             }
         }
+
+        // ================== v1.5 — 12. NAPPE DE FERMETURE (le trou ne doit JAMAIS être nu) ======
+        // Bug de la partie d'essai du 13 novembre 2026 : « la texture du trou disparaît
+        // rapidement et ne revient que brièvement à la fin ». Deux horloges désynchronisées :
+        //
+        //   * TOUTE l'eau du bassin (anneaux, bras, gorge, paroi, remplissage, cœur) est pilotée
+        //     par basinLife = 1 - implode, qui vaut 0 dès t = 0,80, soit le tick 120 ;
+        //   * le trou fantôme (GhostBlockMask.digFunnel) reste ouvert jusqu'au tick 128 au bord
+        //     et ~139 au centre.
+        //
+        // Entre les deux : une seconde et demie de cratère de terre à nu, que seul le geyser
+        // (ticks 114 → 141) venait recouvrir au passage — d'où l'impression de « bref retour ».
+        //
+        // Correctif : la surface se referme en IRIS depuis le bord vers l'axe pendant que le
+        // tourbillon s'effondre — ce que fait un vrai remous qui meurt — et cette nappe ne
+        // s'efface qu'une fois le sol revenu. L'ordre devient : l'eau se referme, PUIS le sol
+        // réapparaît dessous, PUIS l'eau s'évapore. Le joueur ne voit jamais le trou nu.
+        // L'iris doit être REFERMÉ avant que basinLife n'atteigne 0 (t = 0,80), sinon la gorge
+        // centrale reste nue quelques ticks. Il se ferme donc entre 0,54 et 0,78.
+        float sealGrow = smooth((t - 0.54f) / 0.24f);              // iris : 0,54 → 0,78
+        float sealOut = 1.0f - smooth((t - 0.93f) / 0.05f);        // efface après le rebouchage
+        float seal = sealGrow * sealOut;
+        if (seal > 0.01f) {
+            // Rayon intérieur : part du bord du trou et descend jusqu'à l'axe. Tant qu'il est
+            // grand, on ne dessine qu'un anneau — la gorge reste donc visible pendant qu'elle
+            // se referme, et le nombre de cubes reste faible au moment où le bassin tourne encore.
+            float innerR = BASIN_RADIUS * (1.0f - sealGrow);
+            // La nappe épouse la largeur réellement creusée (digFunnel : rayon 4,35).
+            float outerR = BASIN_RADIUS * Math.max(open, 0.92f);
+            int rings = 11;
+            for (int ring = 0; ring < rings; ring++) {
+                float rk = (ring + 0.5f) / rings;
+                float r = outerR * rk;
+                if (r < innerR - 0.22f) continue;                  // encore ouvert ici
+                // Opacité : pleine au bord (refermé depuis longtemps), montante sur la lèvre
+                // de l'iris, pour que la fermeture se lise au lieu d'apparaître d'un coup.
+                // Une fois l'iris refermé (sealGrow = 1), la nappe est pleinement opaque PARTOUT :
+                // sans ce plancher, le centre restait translucide et laissait voir la terre.
+                float lip = Math.max(sealGrow * sealGrow,
+                        Mth.clamp((r - innerR) / 0.55f, 0.0f, 1.0f));
+                int count = Math.max(7, Math.round(r * 13.0f));
+                for (int i = 0; i < count; i++) {
+                    float h = hash(salt, 14500 + ring * 149 + i * 31);
+                    float ang = i * TAU / count + ring * 0.31f + spinPhase * 0.22f;
+                    // Houle résiduelle : la surface n'est pas un disque plat et mort.
+                    float y = -0.98f + 0.085f * Mth.sin(ang * 3.0f + t * 7.0f + rk * 5.0f)
+                            + 0.045f * Mth.sin(rk * 11.0f - t * 9.0f) + 0.03f * h;
+                    float size = 0.225f * (0.86f + 0.26f * h);
+                    // Teinte : azur au centre (l'eau y est encore profonde), bas-fond au bord.
+                    int rgb = mix(mix(SHALLOW, AZURE, 1.0f - rk), FOAM, lip * 0.18f + h * 0.12f);
+                    // Opacité pilotée par l'implosion, pas par le temps : tant que le bassin
+                    // couvre encore le trou (implode < 1), la nappe reste un film translucide et
+                    // on continue de voir le tourbillon s'effondrer au travers. Elle ne devient
+                    // franchement opaque qu'au moment où le bassin meurt — c'est-à-dire pile
+                    // quand elle devient la SEULE chose qui cache la terre.
+                    float sealOpacity = 0.42f + 0.58f * implode;
+                    rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            Mth.cos(ang) * r, Mth.sin(ang) * r, y,
+                            size * 1.95f, size * 0.46f, size * 1.60f,
+                            ang, 0.0f, 0.0f, rgb,
+                            Math.round(a * seal * lip * sealOpacity));
+                }
+            }
+            // Bourrelet d'écume sur la lèvre de l'iris : marque le front qui se referme.
+            if (innerR > 0.25f && sealOut > 0.02f) {
+                int count = Math.max(10, Math.round(innerR * 15.0f));
+                for (int i = 0; i < count; i++) {
+                    float h = hash(salt, 14900 + i * 53);
+                    float ang = i * TAU / count + spinPhase * 1.25f;
+                    float r = innerR * (0.98f + 0.07f * Mth.sin(ang * 4.0f + t * 12.0f));
+                    float y = -0.93f + 0.10f * Mth.sin(ang * 5.0f - t * 13.0f) + 0.04f * h;
+                    float size = 0.105f * (0.80f + 0.50f * h);
+                    rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            Mth.cos(ang) * r, Mth.sin(ang) * r, y,
+                            size * 1.50f, size * 0.80f, size * 1.10f,
+                            ang, -0.30f, 0.0f, mix(FOAM, WHITE, h * 0.60f),
+                            Math.round(a * sealGrow * sealOut * 0.88f));
+                }
+            }
+        }
     }
 
     // ============================================================================================

@@ -281,6 +281,29 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
     box(Math.cos(ang)*eye,fy+.08+lift,Math.sin(ang)*eye,size,size*1.20,size,
         col(0x0B3550,0x14557F,h*.30),a*life*.96)}}
 
+  // 12. NAPPE DE FERMETURE (v1.5) : la surface se referme en iris du bord vers l'axe pendant
+  // que le tourbillon s'effondre, et ne s'efface qu'une fois le sol fantôme revenu. Sans elle,
+  // toute l'eau mourait au tick 120 alors que le trou restait ouvert : cratère de terre à nu.
+  {const sealGrow=smooth((t-.54)/.24),sealOut=1-smooth((t-.93)/.05),seal=sealGrow*sealOut;
+   if(seal>.01){const innerR=R*(1-sealGrow),outerR=R*Math.max(open,.92),rings=11;
+    for(let ring=0;ring<rings;ring++){const rk=(ring+.5)/rings,r=outerR*rk;
+     if(r<innerR-.22)continue;
+     const lip=Math.max(sealGrow*sealGrow,Math.max(0,Math.min(1,(r-innerR)/.55))),
+       count=Math.max(7,Math.round(r*13));
+     for(let i=0;i<count;i++){const h=hash(salt,14500+ring*149+i*31),
+       ang=i*TAU/count+ring*.31+spin*.22,
+       y=-.98+.085*Math.sin(ang*3+t*7+rk*5)+.045*Math.sin(rk*11-t*9)+.03*h,
+       size=.225*(.86+.26*h);
+      box(Math.cos(ang)*r,y,Math.sin(ang)*r,size*1.95,size*.46,size*1.60,
+          col(col(0x62C7E8,0x37A6D6,1-rk),0xE8FBFF,lip*.18+h*.12),
+          a*seal*lip*(.42+.58*implode),0)}}
+    if(innerR>.25&&sealOut>.02){const count=Math.max(10,Math.round(innerR*15));
+     for(let i=0;i<count;i++){const h=hash(salt,14900+i*53),ang=i*TAU/count+spin*1.25,
+       r=innerR*(.98+.07*Math.sin(ang*4+t*12)),
+       y=-.93+.10*Math.sin(ang*5-t*13)+.04*h,size=.105*(.80+.50*h);
+      box(Math.cos(ang)*r,y,Math.sin(ang)*r,size*1.50,size*.80,size*1.10,
+          col(0xE8FBFF,0xF6FEFF,h*.60),a*sealGrow*sealOut*.88,-.30)}}}}
+
   // 6. vrais blocs du sol avalés puis recrachés
   waterDebris(92,1,D);
   return out;

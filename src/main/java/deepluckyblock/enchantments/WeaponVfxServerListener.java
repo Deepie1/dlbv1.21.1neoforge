@@ -2534,12 +2534,19 @@ public final class WeaponVfxServerListener {
         // jour de bloc qui annonce « air », sans toucher au monde (GhostBlockMask). Profil
         // parabolique sur 4,35 blocs de rayon et 3,3 de fond, creusé du centre vers le bord à
         // 3,4 ticks par bloc de distance — soit la même vitesse que la spirale qui l'aspire —
-        // puis rebouché à partir du tick 128, bord d'abord.
+        // puis rebouché à partir du tick 118, bord d'abord (dernière colonne au tick ~129).
+        //
+        // v1.5 : le rebouchage était calé sur le tick 128, donc la dernière colonne revenait au
+        // tick ~139 — soit APRÈS la mort du bassin d'eau (tick 120) et pile au moment où toute
+        // l'animation commence son fondu. Le joueur voyait le cratère de terre à nu pendant une
+        // seconde et demie. Avancé à 118, le sol réapparaît entre les ticks 118 et 129, c'est-à-
+        // dire sous la nappe de fermeture qui est pleinement opaque de 114 à 141 : la terre
+        // revient à l'abri des regards, et l'eau ne s'efface qu'ensuite.
         // ------------------------------------------------------------------------------------
         int carved = GhostBlockMask.digFunnel(sl,
                 net.minecraft.core.BlockPos.containing(cx, baseY, cz),
                 4.35, 3.30, 3,
-                gameNow + 6, gameNow + 128, 3.4, 2.6);
+                gameNow + 6, gameNow + 118, 3.4, 2.6);
 
         WindZone zone = new WindZone(sl, gameNow, gameNow + 118, cx, cz, baseY,
                 4.35, 2.30, 0.42, pulse, 11, attackerId, 55, 100, false, true, RELEASE_GEYSER);

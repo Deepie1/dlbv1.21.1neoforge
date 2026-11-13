@@ -11,7 +11,7 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 | Fichier | Lien |
 |---|---|
 | **Sources complètes (ZIP, 27 entrées, 430211 o)** — eau + séparation des éléments + doc + outils + miroirs | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Water_Three_Signatures_src.zip |
-| **Aperçu animé v1.4** (HTML autonome — visuels d'eau inchangés par la v1.5) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Eau_v1_preview.html |
+| **Aperçu animé v1.5** (HTML autonome — nappe de fermeture du maelström) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Eau_v1_preview.html |
 | `DeepElement.java` — **nouveau** `WIND`, ajouté en fin d'énumération · **v1.5** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/DeepElement.java |
 | `WeaponVisualEffectId.java` — les 3 animations d'air passent à `WIND` · **v1.5** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/WeaponVisualEffectId.java |
 | `WeaponVfxServerListener.java` — `ANIM_GAIA` → `ANIM_WOOD` (sans la lance de vent) · **v1.5** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java |
@@ -23,7 +23,7 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 | `WaterTerrainVfx.java` — vrais blocs poussés par la vague | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/WaterTerrainVfx.java |
 | `GhostBlockMask.java` — faux trou côté client | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/GhostBlockMask.java |
 | `PixelFx.java` — façade particules imposée | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/PixelFx.java |
-| `WATER_SIGNATURES.md` — documentation §1 → **§15** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/WATER_SIGNATURES.md |
+| `WATER_SIGNATURES.md` — documentation §1 → **§16** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/WATER_SIGNATURES.md |
 | `semcheck.py` — contrôle sémantique | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/tools/semcheck.py |
 | `water_build.js` — géométrie de l'aperçu | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/tools/water_build.js |
 | Miroir MCreator `DeepElement.java` | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/enchantments/DeepElement.java |
@@ -33,9 +33,9 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 | **Dépôt source complet** (ZIP, 741 entrées, 3562806 o) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src-modifies-t301-t374.zip |
 
 ```text
-DLB_Water_Three_Signatures_src.zip   430211 o   27 entrées   sha256 515e8478786fb595db0b5fa208a5454f…
-DLB_Eau_v1_preview.html              591202 o   badge v1.4 (visuels d'eau inchangés)
-src-modifies-t301-t374.zip           3562806 o   741 entrées
+DLB_Water_Three_Signatures_src.zip   435933 o   27 entrées   sha256 cdd70493b5239327bf8f98bff4b5d7ae…
+DLB_Eau_v1_preview.html              592742 o   badge v1.5
+src-modifies-t301-t374.zip           3563326 o   741 entrées
 ```
 
 ## Vent — refonte complète (v9)
