@@ -136,6 +136,11 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
 
  // ══════════════════════ Ⅱ. MAELSTRÖM ABYSSAL — entonnoir + geyser ══════════════════════
  if(variant===1){
+  // Parité Java WaterSignatureVfx.opaque() : le moteur du jeu jette 30 à 70 % des cubes
+  // émis sous alpha 200 (emitVoxelCube : pixelDensity < 0.999 && alpha < 200). Tout le
+  // maelström est donc émis AU-DESSUS du seuil, et ne disparaît que par la géométrie.
+  const op=v=>{const i=Math.round(v);return i<=10?0:(i<208?208:Math.min(255,i))},
+    bxM=(f,y,l,hx,hy,hz,rgb,av,roll=0)=>box(f,y,l,hx,hy,hz,rgb,op(av),roll);
   const a=Math.round(245*smooth(t/.05)*(1-smooth((t-.93)/.07)));if(a<=4)return out;
   const R=4.35,D=3.30,GH=9.00,RINGS=5,
     open=smooth(t/.20),spin=t*10,implode=smooth((t-.60)/.20),
@@ -151,7 +156,7 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
      r=radius*(.90+.16*Math.sin(ang*3+t*9+ring)),
      y=depth+.10*Math.sin(ang*4+t*11)-.05*h,
      size=(.185-.055*k)*(.85+.30*h);
-    box(Math.cos(ang)*r,y,Math.sin(ang)*r,size*1.55,size*.52,size*1.05,
+    bxM(Math.cos(ang)*r,y,Math.sin(ang)*r,size*1.55,size*.52,size*1.05,
         col(col(0x62C7E8,0x1E7BA8,k),0x0B3550,k*k*.85),
         a*life*(.52+.40*(1-k)),-(.42+.95*k))}}}
 
@@ -163,7 +168,7 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
       ang=armP+v*TAU*1.60+spin*(1+v*2.40),
       y=-.95-D*v*v*open+.06*Math.sin(v*20+t*14),
       size=(.085-.030*v)*(.80+.45*h);
-    box(Math.cos(ang)*radius,y,Math.sin(ang)*radius,size*1.35,size*.55,size*1.35,
+    bxM(Math.cos(ang)*radius,y,Math.sin(ang)*radius,size*1.35,size*.55,size*1.35,
         col(0xE8FBFF,0xA9E6F7,v*.80),a*life*(.90-.35*v))}}}
 
   // 3. la gorge : quatre étages sombres qui pulsent
@@ -173,7 +178,7 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
     const y=-.95-D*open*(.72+.26*lv),count=14-lvl*2;
     for(let i=0;i<count;i++){const ang=i*TAU/count+spin*(3.4+lv*1.6),
       pulse=.88+.18*Math.sin(t*24+lv*2.4);
-     box(Math.cos(ang)*r*pulse,y,Math.sin(ang)*r*pulse,.115,.085,.115,
+     bxM(Math.cos(ang)*r*pulse,y,Math.sin(ang)*r*pulse,.115,.085,.115,
          col(0x0B3550,0x14557F,lv*.45),a*life*(.95-.20*lv))}}}
 
   // 4. couronne du bord
@@ -181,7 +186,7 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
    const h=hash(salt,9700+i*19),ang=i*TAU/44+spin*.85,
      r=R*open*(1.02+.08*Math.sin(ang*5+t*8))*(1-implode*.30),
      y=-1.02+.30*open*(.55+.45*Math.sin(ang*3-t*10))+.06*h,size=.095+.055*h;
-   box(Math.cos(ang)*r,y,Math.sin(ang)*r,size*1.40,size*.70,size*.95,
+   bxM(Math.cos(ang)*r,y,Math.sin(ang)*r,size*1.40,size*.70,size*.95,
        col(0x37A6D6,0xE8FBFF,h*.65),a*life*.78,-.35)}}
 
   // 5. geyser : colonne construite de bas en haut + couronne en parapluie
@@ -193,7 +198,7 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
       count=Math.max(5,Math.round(11-v*5));
     for(let i=0;i<count;i++){const ang=i*TAU/count+spin*(1.6+v*1.2),
       size=(.145-.070*v)*(.85+.28*h);
-     box(Math.cos(ang)*r,y,Math.sin(ang)*r,size,size*1.55,size,
+     bxM(Math.cos(ang)*r,y,Math.sin(ang)*r,size,size*1.55,size,
          col(col(0x1E7BA8,0x62C7E8,v),0xF6FEFF,v*v*.80),a*geyser*(.92-.30*v))}}
    const crown=smooth((t-.84)/.12);
    if(crown>.02){for(let i=0;i<40;i++){
@@ -202,7 +207,7 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
       y=-1.10+GH*(.92+.08*h)-crown*crown*(4.20+3.10*h2);
     if(y<-1.14)continue;
     const size=.065+.050*h2;
-    box(Math.cos(ang)*reach,y,Math.sin(ang)*reach,size,size*1.25,size,
+    bxM(Math.cos(ang)*reach,y,Math.sin(ang)*reach,size,size*1.25,size,
         col(0xA9E6F7,0xF6FEFF,h),a*geyser*(1-crown*.55),crown*3)}}}
 
   // 7. nappe de surface (recouvre la jonction avec le trou de blocs fantômes)
@@ -213,7 +218,7 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
      const ang=i*TAU/count+spin*(.55-.12*k)+ring*.31,
        r=radius*(.97+.07*Math.sin(ang*4+t*7)),
        y=-1.15+.055*Math.sin(ang*6+t*9)+.02*h,size=.115+.070*h;
-     box(Math.cos(ang)*r,y,Math.sin(ang)*r,size*1.50,.028+.018*h,size*1.10,
+     bxM(Math.cos(ang)*r,y,Math.sin(ang)*r,size*1.50,.028+.018*h,size*1.10,
          col(col(0x1E7BA8,0x62C7E8,k),0xE8FBFF,h*.45),a*sheet*(.62-.14*k),-ang)}}}
 
   // 8. bulles remontant de la gorge
@@ -222,7 +227,7 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
      climb=frc(t*(.42+.38*h3)+h),ang=h2*TAU+spin*1.20*climb,
      r=(.22+.95*h2)*open*(1-climb*.55),
      y=-.95-D*open*(1-climb)+.35*climb,size=(.045+.040*h3)*(.60+.55*climb);
-   box(Math.cos(ang)*r,y,Math.sin(ang)*r,size,size,size,
+   bxM(Math.cos(ang)*r,y,Math.sin(ang)*r,size,size,size,
        col(0xA9E6F7,0xF6FEFF,climb*.70),a*life*(.30+.55*climb))}}
 
   // ═══════ v1.3 — L'INTÉRIEUR DU TROU (parité Java : blocs 9, 10, 11) ═══════
@@ -236,7 +241,7 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
      const ang=sP+v*TAU*1.90+spin*(1+v*2.40),
        y=-.95-D*v*v*open+.07*Math.sin(v*16+t*13+sJ*4),
        size=(.165-.095*v)*(.80+.45*h);
-     box(Math.cos(ang)*radius,y,Math.sin(ang)*radius,size*2.05,size*.42,size*.95,
+     bxM(Math.cos(ang)*radius,y,Math.sin(ang)*radius,size*2.05,size*.42,size*.95,
          col(col(0x37A6D6,0x1E7BA8,v*.85),0x0B3550,v*v*.80),
          a*life*(.58+.30*(1-v)),-(.38+1.05*v))}}}
 
@@ -249,7 +254,7 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
      ang=h3*TAU+spin*(1+v*2.40)*(.80+.40*h2),
      y=-.95-D*v*v*open+.22*Math.sin(t*15+h3*9),
      size=(.040+.065*h2)*(1-.35*v);
-   box(Math.cos(ang)*r,y,Math.sin(ang)*r,size,size*1.30,size,
+   bxM(Math.cos(ang)*r,y,Math.sin(ang)*r,size,size*1.30,size,
        col(col(0x62C7E8,0x1E7BA8,v*.70),0xA9E6F7,h3*.55),
        a*life*(.42+.38*(1-v)))}}
 
@@ -258,35 +263,36 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
    // (a) six grosses dalles lentes
    for(let i=0;i<6;i++){const h=hash(salt,13000+i*101),ang=i*TAU/6+spin*1.70,
      r=(.52+.30*h)*core,y=fy+.28+.16*Math.sin(t*9+i*1.7),size=.34*(.85+.30*h);
-    box(Math.cos(ang)*r,y,Math.sin(ang)*r,size*1.45,size*.50,size*1.05,
+    bxM(Math.cos(ang)*r,y,Math.sin(ang)*r,size*1.45,size*.50,size*1.05,
         col(0x14557F,0x1E7BA8,h*.55),a*life*.90,-.85)}
    // (b) vingt-quatre blocs moyens en double hélice
    for(let i=0;i<24;i++){const h=hash(salt,13200+i*59),v=i/23,
      ang=v*TAU*2.40+spin*3.10+(i%2)*Math.PI,
      r=(.20+.46*(1-v))*core,y=fy+.10+v*(1.45*core)+.07*Math.sin(t*17+i),
      size=.155*(.80+.45*h);
-    box(Math.cos(ang)*r,y,Math.sin(ang)*r,size*1.30,size*.85,size*1.30,
+    bxM(Math.cos(ang)*r,y,Math.sin(ang)*r,size*1.30,size*.85,size*1.30,
         col(0x1E7BA8,0x62C7E8,v*.70),a*life*(.88-.20*v),-.55)}
    // (c) quatre-vingt-dix éclats rapides
    for(let i=0;i<90;i++){const h=hash(salt,13500+i*23),h2=hash(salt,13700+i*41),
      h3=hash(salt,13900+i*13),ang=h*TAU+spin*(4.20+2.60*h2),
      r=(.10+.72*h2)*core,y=fy+.05+h3*(1.90*core)+.10*Math.sin(t*26+h*11),
      size=.055*(.70+.60*h3);
-    box(Math.cos(ang)*r,y,Math.sin(ang)*r,size,size*1.45,size,
+    bxM(Math.cos(ang)*r,y,Math.sin(ang)*r,size,size*1.45,size,
         col(0xA9E6F7,0xF6FEFF,h3*.75),a*life*(.60+.35*h2))}
    // (d) l'œil : noyau noir pulsant au fond
    const eye=.30*core*(.90+.14*Math.sin(t*20));
    for(let i=0;i<16;i++){const h=hash(salt,14100+i*71),ang=i*TAU/16+spin*.90,
      lift=(i%2===0)?0:.14,size=.105*(.85+.30*h);
-    box(Math.cos(ang)*eye,fy+.08+lift,Math.sin(ang)*eye,size,size*1.20,size,
+    bxM(Math.cos(ang)*eye,fy+.08+lift,Math.sin(ang)*eye,size,size*1.20,size,
         col(0x0B3550,0x14557F,h*.30),a*life*.96)}}
 
   // 12. NAPPE DE FERMETURE (v1.5) : la surface se referme en iris du bord vers l'axe pendant
   // que le tourbillon s'effondre, et ne s'efface qu'une fois le sol fantôme revenu. Sans elle,
   // toute l'eau mourait au tick 120 alors que le trou restait ouvert : cratère de terre à nu.
-  {const sealGrow=smooth((t-.54)/.24),sealOut=1-smooth((t-.93)/.05),seal=sealGrow*sealOut;
-   if(seal>.01){const innerR=R*(1-sealGrow),outerR=R*Math.max(open,.92),rings=11;
-    for(let ring=0;ring<rings;ring++){const rk=(ring+.5)/rings,r=outerR*rk;
+  {const sealGrow=smooth((t-.50)/.22),sealBack=smooth((t-.90)/.07);
+   if(sealGrow>.002){const innerR=R*Math.max(1-sealGrow,sealBack),
+     outerR=R*Math.max(open,.92)*(1-.82*sealBack),rings=11;
+    for(let ring=0;ring<rings&&innerR<outerR;ring++){const rk=(ring+.5)/rings,r=outerR*rk;
      if(r<innerR-.22)continue;
      const lip=Math.max(sealGrow*sealGrow,Math.max(0,Math.min(1,(r-innerR)/.55))),
        count=Math.max(7,Math.round(r*13));
@@ -294,15 +300,14 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
        ang=i*TAU/count+ring*.31+spin*.22,
        y=-.98+.085*Math.sin(ang*3+t*7+rk*5)+.045*Math.sin(rk*11-t*9)+.03*h,
        size=.225*(.86+.26*h);
-      box(Math.cos(ang)*r,y,Math.sin(ang)*r,size*1.95,size*.46,size*1.60,
-          col(col(0x62C7E8,0x37A6D6,1-rk),0xE8FBFF,lip*.18+h*.12),
-          a*seal*lip*(.42+.58*implode),0)}}
-    if(innerR>.25&&sealOut>.02){const count=Math.max(10,Math.round(innerR*15));
+      bxM(Math.cos(ang)*r,y,Math.sin(ang)*r,size*1.95,size*.46,size*1.60,
+          col(col(0x62C7E8,0x37A6D6,1-rk),0xE8FBFF,lip*.18+h*.12),a,0)}}
+    if(innerR>.25&&innerR<outerR){const count=Math.max(10,Math.round(innerR*15));
      for(let i=0;i<count;i++){const h=hash(salt,14900+i*53),ang=i*TAU/count+spin*1.25,
        r=innerR*(.98+.07*Math.sin(ang*4+t*12)),
        y=-.93+.10*Math.sin(ang*5-t*13)+.04*h,size=.105*(.80+.50*h);
-      box(Math.cos(ang)*r,y,Math.sin(ang)*r,size*1.50,size*.80,size*1.10,
-          col(0xE8FBFF,0xF6FEFF,h*.60),a*sealGrow*sealOut*.88,-.30)}}}}
+      bxM(Math.cos(ang)*r,y,Math.sin(ang)*r,size*1.50,size*.80,size*1.10,
+          col(0xE8FBFF,0xF6FEFF,h*.60),a,-.30)}}}}
 
   // 6. vrais blocs du sol avalés puis recrachés
   waterDebris(92,1,D);

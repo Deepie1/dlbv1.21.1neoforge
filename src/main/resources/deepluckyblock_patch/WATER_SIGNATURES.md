@@ -765,3 +765,126 @@ reviennent à l'abri sous une surface d'eau opaque.
   tick 120 (567 → 669 voxels au lieu de la poignée du geyser).
 * Pic de voxels : **1 617** à t = 0,70 (contre 1 283 avant), très en deçà du plafond dur de 7 000
   par frame. Le surcoût n'existe que pendant le recouvrement, quand le bassin s'efface déjà.
+
+---
+
+## 17. v1.5c — Le seuil d'alpha du moteur : pourquoi la nappe v1.5b était invisible
+
+### 17.1 Le verdict de la partie d'essai
+
+La nappe de fermeture livrée en v1.5b a été jugée **« encore pire qu'avant »**, suivie de
+l'observation décisive du joueur :
+
+> « les blocs pixels trop transparents n'apparaissent pas du tout en jeu »
+
+Cette phrase a permis de trouver la cause réelle, qui n'est ni dans l'eau ni dans le masque
+fantôme mais dans le **moteur de rendu voxel** lui-même.
+
+### 17.2 Le tamis T350 : sous alpha 200, le moteur jette les cubes
+
+`WeaponWorldVfxManager.emitVoxelCube()` et `emitVoxelBoxRotated()` contiennent tous deux, depuis
+le lot T350-VFX-VARIATIONS, un allègement de charge :
+
+```java
+if (pixelDensity < 0.999f && alpha < 200) {
+    float keep = pixelHash(0x5EED, (int) (cx * 977.0f + cy * 613.0f + cz * 389.0f));
+    if (keep > pixelDensity) return;            // le cube n'est jamais émis
+}
+```
+
+Et `pixelDensity` vient de la déclinaison tirée (`WeaponVfxVariant`) :
+
+```java
+float density = 0.70f - 0.40f * f;              // 0,70 pour la 1re « lite », 0,30 pour la 20e
+```
+
+Conséquence, mesurée et non supposée : **tout cube émis sous alpha 200 a 30 à 70 % de chances
+d'être purement et simplement supprimé.** Le seuil n'est pas progressif, et il ne s'applique
+qu'aux déclinaisons allégées — ce qui explique qu'il soit passé inaperçu jusqu'ici.
+
+### 17.3 Les deux conséquences, dont une antérieure au bug signalé
+
+| Élément | Alpha nominal | Sort réel en jeu |
+|---|---|---|
+| Nappe v1.5b (`0,42 + 0,58 × implode`) | ≈ 107 pendant toute la phase utile | effacée aux deux tiers → **invisible** |
+| Bassin, dès `basinLife` ≈ 0,85 | 255 × 0,88 × 0,85 ≈ 191 | décimé → **désintégration en confettis** |
+
+Le second point est le plus important : **le bug existait déjà avant la v1.5b.** Le bassin du
+maelström n'a jamais « fondu » à l'écran, il s'est toujours *désagrégé* à partir du tick ~108,
+parce que son alpha est multiplié par `basinLife`. La v1.5b n'a fait qu'ajouter par-dessus un
+film que le moteur ne dessinait pas davantage — d'où l'aggravation ressentie.
+
+### 17.4 La règle de conception qui en découle
+
+> **Dans ce moteur, rien ne disparaît par fondu d'alpha. Tout disparaît par la géométrie.**
+
+Un fondu ne produit pas un estompage : il produit une décimation aléatoire, puis le vide. Les
+transitions doivent donc être portées par le rayon, la hauteur ou le nombre de cubes — jamais
+par l'opacité.
+
+Cette règle est appliquée par un seul point de passage, `WaterSignatureVfx.opaque()` :
+
+```java
+private static int opaque(float v) {
+    int i = Math.round(v);
+    if (i <= 10) return 0;                              // réellement mort : on n'émet rien
+    return i < SOLID_FLOOR ? SOLID_FLOOR : Math.min(255, i);   // SOLID_FLOOR = 208
+}
+```
+
+Les **16 émissions** du maelström passent désormais par cette fonction : un cube est soit absent,
+soit franchement dessiné.
+
+### 17.5 La transparence de l'eau n'est pas perdue pour autant
+
+Point essentiel, et c'est ce qui rend le correctif acceptable visuellement : le tamis teste
+l'alpha **avant** le voile de matière. L'ordre dans `emitVoxelCube` est :
+
+1. `alphaFloor` / `pixelDensity` → **le cube est gardé ou jeté** ;
+2. `cubeVeil` → `alpha = Math.round(alpha * cubeVeil)`.
+
+Or `applyVoxelMaterial` donne `cubeVeil = 0.62f` à l'élément `WATER` (0,78 pour le permafrost).
+Un cube verrouillé à 208 arrive donc à l'écran à **129/255** : il est réellement dessiné, et il
+reste translucide. On obtient les deux à la fois, là où la v1.5b n'obtenait ni l'un ni l'autre.
+
+### 17.6 La nappe refondue : un iris purement géométrique
+
+```java
+float sealGrow = smooth((t - 0.50f) / 0.22f);   // l'iris se FERME   : 0,50 → 0,72
+float sealBack = smooth((t - 0.90f) / 0.07f);   // puis se ROUVRE    : 0,90 → 0,97
+float innerR = BASIN_RADIUS * Math.max(1.0f - sealGrow, sealBack);
+float outerR = BASIN_RADIUS * Math.max(open, 0.92f) * (1.0f - 0.82f * sealBack);
+```
+
+L'opacité ne varie plus du tout : la fermeture se lit parce que le trou central se referme, et
+la disparition finale se lit parce que la couronne se rouvre *et* se rétracte, jusqu'à
+`innerR > outerR` où plus aucun anneau n'est émis. La lèvre (`lip`) ne sert plus qu'à la teinte
+de l'écume.
+
+### 17.7 Vérification de la chronologie (150 ticks)
+
+| tick | trou encore creusé | nappe | bassin | état |
+|---|---|---|---|---|
+| 60 → 117 | r = 4,35 | se ferme | vivant (désormais **opaque**) | couvert par le bassin |
+| 120 | r = 3,57 | **pleine 0 → 4,35** | mort | couvert par la nappe |
+| 129 | r = 0,09 | pleine | mort | le sol revient **sous** la nappe |
+| 135 | 0 | pleine | mort | sol rebouché |
+| 138 → 144 | 0 | se rouvre puis meurt | mort | le vrai sol est visible |
+
+**Aucun tick avec le trou à nu**, et le bassin ne meurt plus à l'air libre mais caché sous la
+nappe. La couverture est étanche : les anneaux sont espacés de 0,40 m pour une extension
+radiale de 0,88 m par dalle, soit un recouvrement de plus de deux fois.
+
+### 17.8 Ce que l'aperçu HTML ne sait pas dire
+
+L'aperçu ne modélise ni le tamis `pixelDensity` ni le voile `cubeVeil` : il affichait sans
+broncher les cubes que le jeu supprimait. **Un rendu correct dans l'aperçu ne prouve donc rien
+sur la visibilité en jeu.** Le miroir `tools/water_build.js` reproduit maintenant `opaque()`
+à l'identique (fonction `op()`), de sorte que les deux implémentations émettent exactement le
+même jeu de cubes ; mais la validation de la *visibilité* reste une affaire de lecture du code
+du moteur, pas de capture d'écran.
+
+Contrôles passés pour cette livraison : `java-parser` OK · `semcheck.py` en différentiel contre
+`HEAD` → **identique** · miroirs `FIXES_MCREATOR` → MIRROR_OK sur les 199 fichiers ·
+`node --check` sur le miroir JS et sur le script de la page · Playwright sur 8 instants →
+**0 erreur JS**, et plus aucun cube d'eau sous le seuil de 208 aux 10 instants testés.

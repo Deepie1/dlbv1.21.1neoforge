@@ -362,7 +362,7 @@ public final class WaterSignatureVfx {
                     float slope = -(0.42f + 0.95f * k);
                     float size = (0.185f - 0.055f * k) * (0.85f + 0.30f * h);
                     int rgb = mix(mix(SHALLOW, OCEAN, k), ABYSS, k * k * 0.85f);
-                    int ca = Math.round(a * basinLife * (0.52f + 0.40f * (1.0f - k)));
+                    int ca = opaque(a * basinLife * (0.52f + 0.40f * (1.0f - k)));
                     rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                             Mth.cos(ang) * r, Mth.sin(ang) * r, y,
                             size * 1.55f, size * 0.52f, size * 1.05f,
@@ -389,7 +389,7 @@ public final class WaterSignatureVfx {
                     box(vc, mat, tmp, cx, cy, cz, dx, dz,
                             Mth.cos(ang) * radius, Mth.sin(ang) * radius, y,
                             size * 1.35f, size * 0.55f, size * 1.35f,
-                            rgb, Math.round(a * basinLife * (0.90f - 0.35f * v)));
+                            rgb, opaque(a * basinLife * (0.90f - 0.35f * v)));
                 }
             }
         }
@@ -410,7 +410,7 @@ public final class WaterSignatureVfx {
                             Mth.cos(ang) * r * pulse, Mth.sin(ang) * r * pulse, y,
                             0.115f, 0.085f, 0.115f,
                             mix(ABYSS, DEEP, lv * 0.45f),
-                            Math.round(a * basinLife * (0.95f - 0.20f * lv)));
+                            opaque(a * basinLife * (0.95f - 0.20f * lv)));
                 }
             }
         }
@@ -430,7 +430,7 @@ public final class WaterSignatureVfx {
                         Mth.cos(ang) * r, Mth.sin(ang) * r, y,
                         size * 1.40f, size * 0.70f, size * 0.95f,
                         ang, -0.35f, 0.0f, mix(AZURE, FOAM, h * 0.65f),
-                        Math.round(a * basinLife * 0.78f));
+                        opaque(a * basinLife * 0.78f));
             }
         }
 
@@ -454,7 +454,7 @@ public final class WaterSignatureVfx {
                     box(vc, mat, tmp, cx, cy, cz, dx, dz,
                             Mth.cos(ang) * r, Mth.sin(ang) * r, y,
                             size, size * 1.55f, size, rgb,
-                            Math.round(a * geyser * (0.92f - 0.30f * v)));
+                            opaque(a * geyser * (0.92f - 0.30f * v)));
                 }
             }
             // Couronne : l'eau qui retombe en parapluie au sommet du jet.
@@ -473,7 +473,7 @@ public final class WaterSignatureVfx {
                             Mth.cos(ang) * reach, Mth.sin(ang) * reach, y,
                             size, size * 1.25f, size,
                             ang, crown * 3.0f, crown * 2.0f,
-                            mix(SPRAY, WHITE, h), Math.round(a * geyser * (1.0f - crown * 0.55f)));
+                            mix(SPRAY, WHITE, h), opaque(a * geyser * (1.0f - crown * 0.55f)));
                 }
             }
         }
@@ -502,7 +502,7 @@ public final class WaterSignatureVfx {
                             size * 1.50f, 0.028f + 0.018f * h, size * 1.10f,
                             -ang, 0.0f, 0.0f,
                             mix(mix(OCEAN, SHALLOW, k), FOAM, h * 0.45f),
-                            Math.round(a * sheet * (0.62f - 0.14f * k)));
+                            opaque(a * sheet * (0.62f - 0.14f * k)));
                 }
             }
         }
@@ -523,7 +523,7 @@ public final class WaterSignatureVfx {
                         Mth.cos(ang) * r, Mth.sin(ang) * r, y,
                         size, size, size,
                         mix(SPRAY, WHITE, climb * 0.70f),
-                        Math.round(a * basinLife * (0.30f + 0.55f * climb)));
+                        opaque(a * basinLife * (0.30f + 0.55f * climb)));
             }
         }
 
@@ -559,7 +559,7 @@ public final class WaterSignatureVfx {
                     float size = (0.165f - 0.095f * v) * (0.80f + 0.45f * h);
                     float slope = -(0.38f + 1.05f * v);
                     int rgb = mix(mix(AZURE, OCEAN, v * 0.85f), ABYSS, v * v * 0.80f);
-                    int ca = Math.round(a * basinLife * (0.58f + 0.30f * (1.0f - v)));
+                    int ca = opaque(a * basinLife * (0.58f + 0.30f * (1.0f - v)));
                     rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                             Mth.cos(ang) * radius, Mth.sin(ang) * radius, y,
                             size * 2.05f, size * 0.42f, size * 0.95f,
@@ -590,7 +590,7 @@ public final class WaterSignatureVfx {
                 box(vc, mat, tmp, cx, cy, cz, dx, dz,
                         Mth.cos(ang) * r, Mth.sin(ang) * r, y,
                         size, size * 1.30f, size, rgb,
-                        Math.round(a * basinLife * (0.42f + 0.38f * (1.0f - v))));
+                        opaque(a * basinLife * (0.42f + 0.38f * (1.0f - v))));
             }
         }
 
@@ -615,7 +615,7 @@ public final class WaterSignatureVfx {
                         size * 1.45f, size * 0.50f, size * 1.05f,
                         ang, -0.85f, 0.0f,
                         mix(DEEP, OCEAN, h * 0.55f),
-                        Math.round(a * basinLife * 0.90f));
+                        opaque(a * basinLife * 0.90f));
             }
 
             // (b) Vingt-quatre blocs MOYENS en double hélice serrée autour de l'axe.
@@ -632,7 +632,7 @@ public final class WaterSignatureVfx {
                         size * 1.30f, size * 0.85f, size * 1.30f,
                         ang, -0.55f, 0.0f,
                         mix(OCEAN, SHALLOW, v * 0.70f),
-                        Math.round(a * basinLife * (0.88f - 0.20f * v)));
+                        opaque(a * basinLife * (0.88f - 0.20f * v)));
             }
 
             // (c) Quatre-vingt-dix ÉCLATS minuscules et rapides : la poussière d'eau du cœur.
@@ -650,7 +650,7 @@ public final class WaterSignatureVfx {
                         Mth.cos(ang) * r, Mth.sin(ang) * r, y,
                         size, size * 1.45f, size,
                         mix(SPRAY, WHITE, h3 * 0.75f),
-                        Math.round(a * basinLife * (0.60f + 0.35f * h2)));
+                        opaque(a * basinLife * (0.60f + 0.35f * h2)));
             }
 
             // (d) L'ŒIL : noyau noir presque immobile, qui pulse. Sans lui le centre « bave » ;
@@ -665,47 +665,49 @@ public final class WaterSignatureVfx {
                         Mth.cos(ang) * eye, Mth.sin(ang) * eye, floorY + 0.08f + lift,
                         size, size * 1.20f, size,
                         mix(ABYSS, DEEP, h * 0.30f),
-                        Math.round(a * basinLife * 0.96f));
+                        opaque(a * basinLife * 0.96f));
             }
         }
 
-        // ================== v1.5 — 12. NAPPE DE FERMETURE (le trou ne doit JAMAIS être nu) ======
-        // Bug de la partie d'essai du 13 novembre 2026 : « la texture du trou disparaît
-        // rapidement et ne revient que brièvement à la fin ». Deux horloges désynchronisées :
+        // ================== v1.5c — 12. NAPPE DE FERMETURE (le trou ne doit JAMAIS être nu) =====
+        // Partie d'essai du 13 novembre 2026 : « c'est encore pire qu'avant », puis la cause
+        // réelle, donnée par le joueur : « les blocs pixels trop transparents n'apparaissent pas
+        // du tout en jeu ». Vérification faite dans le moteur, emitVoxelCube / emitVoxelBoxRotated :
         //
-        //   * TOUTE l'eau du bassin (anneaux, bras, gorge, paroi, remplissage, cœur) est pilotée
-        //     par basinLife = 1 - implode, qui vaut 0 dès t = 0,80, soit le tick 120 ;
-        //   * le trou fantôme (GhostBlockMask.digFunnel) reste ouvert jusqu'au tick 128 au bord
-        //     et ~139 au centre.
+        //     if (pixelDensity < 0.999f && alpha < 200) { ... return; }        // T350-VFX-VARIATIONS
         //
-        // Entre les deux : une seconde et demie de cratère de terre à nu, que seul le geyser
-        // (ticks 114 → 141) venait recouvrir au passage — d'où l'impression de « bref retour ».
+        // et pixelDensity vaut 0,30 à 0,70 selon la déclinaison (WeaponVfxVariant : 0,70 - 0,40 f).
+        // Autrement dit : SOUS alpha 200, le moteur jette aléatoirement 30 à 70 % des cubes.
+        // La nappe v1.5b à 0,42 d'opacité (alpha ≈ 107) était donc effacée aux deux tiers — d'où
+        // le « pire qu'avant ». Le même piège frappait déjà le bassin lui-même : son alpha est
+        // multiplié par basinLife, si bien qu'à partir de basinLife ≈ 0,85 le tourbillon ne
+        // s'estompait pas, il se DÉSINTÉGRAIT en confettis clairsemés avant de disparaître.
         //
-        // Correctif : la surface se referme en IRIS depuis le bord vers l'axe pendant que le
-        // tourbillon s'effondre — ce que fait un vrai remous qui meurt — et cette nappe ne
-        // s'efface qu'une fois le sol revenu. L'ordre devient : l'eau se referme, PUIS le sol
-        // réapparaît dessous, PUIS l'eau s'évapore. Le joueur ne voit jamais le trou nu.
-        // L'iris doit être REFERMÉ avant que basinLife n'atteigne 0 (t = 0,80), sinon la gorge
-        // centrale reste nue quelques ticks. Il se ferme donc entre 0,54 et 0,78.
-        float sealGrow = smooth((t - 0.54f) / 0.24f);              // iris : 0,54 → 0,78
-        float sealOut = 1.0f - smooth((t - 0.93f) / 0.05f);        // efface après le rebouchage
-        float seal = sealGrow * sealOut;
-        if (seal > 0.01f) {
-            // Rayon intérieur : part du bord du trou et descend jusqu'à l'axe. Tant qu'il est
-            // grand, on ne dessine qu'un anneau — la gorge reste donc visible pendant qu'elle
-            // se referme, et le nombre de cubes reste faible au moment où le bassin tourne encore.
-            float innerR = BASIN_RADIUS * (1.0f - sealGrow);
-            // La nappe épouse la largeur réellement creusée (digFunnel : rayon 4,35).
-            float outerR = BASIN_RADIUS * Math.max(open, 0.92f);
+        // Règle retenue pour toute l'animation (cf. opaque()) : on ne fait JAMAIS disparaître
+        // quelque chose par fondu d'alpha, on le fait disparaître par la GÉOMÉTRIE. Tout cube
+        // encore vivant est émis au-dessus du seuil ; la transparence visuelle de l'eau est
+        // rendue ensuite par le voile de matière (cubeVeil = 0,62 pour WATER), appliqué APRÈS
+        // le tamis — la nappe est donc à la fois réellement dessinée et translucide à l'œil.
+        //
+        // Chronologie (150 ticks) : l'iris se ferme 0,50 → 0,72 (tick 75 → 108) ; le sol fantôme
+        // revient au tick 129 au plus tard (digFunnel closeAt 118 + 4,35 × 2,6) ; la nappe se
+        // résorbe enfin en se ROUVRANT 0,90 → 0,97. Le joueur ne voit jamais la terre à nu.
+        float sealGrow = smooth((t - 0.50f) / 0.22f);              // iris : se ferme 0,50 → 0,72
+        float sealBack = smooth((t - 0.90f) / 0.07f);              // puis se rouvre 0,90 → 0,97
+        if (sealGrow > 0.002f) {
+            // Rayon intérieur : descend du bord vers l'axe pendant la fermeture, puis remonte
+            // pendant la résorption. C'est lui, et non l'alpha, qui porte toute l'animation.
+            float innerR = BASIN_RADIUS * Math.max(1.0f - sealGrow, sealBack);
+            // Rayon extérieur : épouse la largeur réellement creusée (digFunnel : 4,35) et se
+            // rétracte à la toute fin, si bien que la nappe meurt sans le moindre fondu.
+            float outerR = BASIN_RADIUS * Math.max(open, 0.92f) * (1.0f - 0.82f * sealBack);
             int rings = 11;
-            for (int ring = 0; ring < rings; ring++) {
+            for (int ring = 0; ring < rings && innerR < outerR; ring++) {
                 float rk = (ring + 0.5f) / rings;
                 float r = outerR * rk;
                 if (r < innerR - 0.22f) continue;                  // encore ouvert ici
-                // Opacité : pleine au bord (refermé depuis longtemps), montante sur la lèvre
-                // de l'iris, pour que la fermeture se lise au lieu d'apparaître d'un coup.
-                // Une fois l'iris refermé (sealGrow = 1), la nappe est pleinement opaque PARTOUT :
-                // sans ce plancher, le centre restait translucide et laissait voir la terre.
+                // La lèvre ne pilote plus l'opacité (interdit) mais la TEINTE et le relief :
+                // l'écume se concentre sur le front qui se referme.
                 float lip = Math.max(sealGrow * sealGrow,
                         Mth.clamp((r - innerR) / 0.55f, 0.0f, 1.0f));
                 int count = Math.max(7, Math.round(r * 13.0f));
@@ -718,21 +720,14 @@ public final class WaterSignatureVfx {
                     float size = 0.225f * (0.86f + 0.26f * h);
                     // Teinte : azur au centre (l'eau y est encore profonde), bas-fond au bord.
                     int rgb = mix(mix(SHALLOW, AZURE, 1.0f - rk), FOAM, lip * 0.18f + h * 0.12f);
-                    // Opacité pilotée par l'implosion, pas par le temps : tant que le bassin
-                    // couvre encore le trou (implode < 1), la nappe reste un film translucide et
-                    // on continue de voir le tourbillon s'effondrer au travers. Elle ne devient
-                    // franchement opaque qu'au moment où le bassin meurt — c'est-à-dire pile
-                    // quand elle devient la SEULE chose qui cache la terre.
-                    float sealOpacity = 0.42f + 0.58f * implode;
                     rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                             Mth.cos(ang) * r, Mth.sin(ang) * r, y,
                             size * 1.95f, size * 0.46f, size * 1.60f,
-                            ang, 0.0f, 0.0f, rgb,
-                            Math.round(a * seal * lip * sealOpacity));
+                            ang, 0.0f, 0.0f, rgb, opaque(a));
                 }
             }
             // Bourrelet d'écume sur la lèvre de l'iris : marque le front qui se referme.
-            if (innerR > 0.25f && sealOut > 0.02f) {
+            if (innerR > 0.25f && innerR < outerR) {
                 int count = Math.max(10, Math.round(innerR * 15.0f));
                 for (int i = 0; i < count; i++) {
                     float h = hash(salt, 14900 + i * 53);
@@ -743,8 +738,7 @@ public final class WaterSignatureVfx {
                     rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                             Mth.cos(ang) * r, Mth.sin(ang) * r, y,
                             size * 1.50f, size * 0.80f, size * 1.10f,
-                            ang, -0.30f, 0.0f, mix(FOAM, WHITE, h * 0.60f),
-                            Math.round(a * sealGrow * sealOut * 0.88f));
+                            ang, -0.30f, 0.0f, mix(FOAM, WHITE, h * 0.60f), opaque(a));
                 }
             }
         }
@@ -753,6 +747,13 @@ public final class WaterSignatureVfx {
     // ============================================================================================
     // 3. GIVRE DU PERMAFROST — étoile de gel, pics, prison de glace, éclatement
     // ============================================================================================
+
+    /**
+     * Alpha minimal réellement dessiné par le moteur quand une déclinaison allégée est tirée
+     * ({@code pixelDensity} 0,30 à 0,70). Le tamis du manager compare à 200 ; on prend une
+     * petite marge au-dessus.
+     */
+    private static final int SOLID_FLOOR = 208;
 
     /** Hauteur du plus grand pic de glace, en blocs. */
     private static final float SPIKE_HEIGHT = 3.20f;
@@ -976,6 +977,37 @@ public final class WaterSignatureVfx {
     // ============================================================================================
     // Boîte à outils (mêmes conventions que WindSignatureVfx : avant / latéral / hauteur)
     // ============================================================================================
+
+    /**
+     * Plancher d'opacité imposé par le moteur de rendu.
+     *
+     * <p>{@code WeaponWorldVfxManager.emitVoxelCube} et {@code emitVoxelBoxRotated} contiennent
+     * un tamis d'allègement (T350) :</p>
+     *
+     * <pre>if (pixelDensity &lt; 0.999f &amp;&amp; alpha &lt; 200) { ... return; }</pre>
+     *
+     * <p>Comme {@code pixelDensity} vaut 0,30 à 0,70 suivant la déclinaison tirée, tout cube
+     * émis sous alpha 200 a 30 à 70 % de chances d'être purement et simplement jeté. En jeu
+     * cela se traduit par « les blocs pixels trop transparents n'apparaissent pas du tout »
+     * (retour du 13 novembre 2026) : un fondu d'alpha ne produit pas un estompage mais une
+     * désintégration en confettis, puis le vide.</p>
+     *
+     * <p>Cette méthode verrouille donc l'opacité au-dessus du tamis : un cube est soit absent,
+     * soit franchement dessiné. La translucidité de l'eau n'est pas perdue pour autant, elle
+     * est appliquée APRÈS le tamis par le voile de matière ({@code cubeVeil = 0,62} pour
+     * {@code WATER}), ce qui ramène un cube à 255 vers 158 à l'écran.</p>
+     *
+     * <p>Corollaire de conception : dans cette animation, rien ne disparaît par fondu — tout
+     * disparaît par la géométrie (rayon, hauteur, nombre de cubes).</p>
+     *
+     * @param v alpha souhaité, avant verrouillage
+     * @return 0 si le cube ne doit plus exister, sinon un alpha garanti ≥ {@value #SOLID_FLOOR}
+     */
+    private static int opaque(float v) {
+        int i = Math.round(v);
+        if (i <= 10) return 0;                 // réellement mort : on n'émet rien
+        return i < SOLID_FLOOR ? SOLID_FLOOR : Math.min(255, i);
+    }
 
     /** Cube aligné : {@code f} = axe attaquant→cible, {@code lateral} = perpendiculaire, {@code y} = hauteur. */
     private static void box(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
