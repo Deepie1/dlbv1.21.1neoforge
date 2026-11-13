@@ -6,35 +6,44 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 > **Si le navigateur sert une vieille version** (le CDN de GitHub garde les fichiers bruts en cache quelques minutes), remplacer `refs/heads/arena/605e67fb-dlbv1-21-1neoforge` par le SHA du commit — par exemple `raw/fa83a2f/…` pour la v1.3 — ou ajouter `?v=2` à la fin de l'adresse.
 
-## Eau — maelström v1.5c (13 novembre 2026)
+## Eau v1.6 + Bois (13 novembre 2026)
 
-> Correctif de fond : le moteur supprime les cubes émis sous alpha 200 quand une
-> déclinaison allégée est tirée. Tout le maelström est désormais émis au-dessus de ce
-> seuil et ne disparaît plus que par la géométrie.
+> Le maelström : la paroi du bassin était faite de 11 hélices à nombre fixe, soit 28 %
+> de couverture au bord — on voyait littéralement à travers. Elle compte maintenant ses
+> dalles par anneau et couvre 138 % partout. Plus aucune texture de bloc dans la gorge.
+> Le bois : troisième animation créée (`WILDWOOD_AWAKENING`), la rotation en joue bien 3.
 
 | Fichier | Lien |
 |---|---|
-| **Sources complètes (ZIP, 27 entrées, 439992 o)** — eau + éléments + doc §1→§17 + outils + miroirs | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/deliverables/DLB_Water_Three_Signatures_src.zip |
-| **Aperçu animé v1.5c** (HTML autonome — maelström corrigé) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/deliverables/DLB_Eau_v1_preview.html |
-| `WaterSignatureVfx.java` — **opacité verrouillée `opaque()` + iris géométrique** · **v1.5c** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/java/deepluckyblock/client/WaterSignatureVfx.java |
-| Miroir MCreator `WaterSignatureVfx.java` · **v1.5c** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/client/WaterSignatureVfx.java |
-| `WATER_SIGNATURES.md` — documentation §1 → **§17** (le seuil d'alpha du moteur) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/resources/deepluckyblock_patch/WATER_SIGNATURES.md |
-| `water_build.js` — miroir JS de la géométrie, `op()` aligné · **v1.5c** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/resources/deepluckyblock_patch/tools/water_build.js |
-| `WeaponWorldVfxManager.java` — moteur voxel (siège du tamis `pixelDensity`) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/java/deepluckyblock/client/WeaponWorldVfxManager.java |
-| `WeaponVfxVariant.java` — table des déclinaisons (`density` 0,70 → 0,30) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/java/deepluckyblock/enchantments/WeaponVfxVariant.java |
-| `WeaponVfxServerListener.java` — gameplay serveur + `digFunnel` | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java |
-| `GhostBlockMask.java` — faux trou côté client | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/java/deepluckyblock/enchantments/GhostBlockMask.java |
-| `WaterTerrainVfx.java` — vrais blocs poussés par la vague | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/java/deepluckyblock/client/WaterTerrainVfx.java |
-| `DeepElement.java` — `WIND` en fin d'énumération · v1.5 | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/java/deepluckyblock/enchantments/DeepElement.java |
-| `AnimFamily.java` — `nature` → `wood` · v1.5 | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/java/deepluckyblock/util/AnimFamily.java |
-| `semcheck.py` — contrôle sémantique | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src/main/resources/deepluckyblock_patch/tools/semcheck.py |
-| **Dépôt source complet** (ZIP, 741 entrées, 3563326 o) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6e3cb10403e5335efc7e0212719431a597066218/src-modifies-t301-t374.zip |
+| **Sources completes (ZIP, 31 entrees, 516941 o)** — eau v1.6 + bois + doc §1→§19 + outils + miroirs | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/deliverables/DLB_Water_Three_Signatures_src.zip |
+| **Aperçu animé v1.6** (HTML autonome — gorge du maelström remplie) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/deliverables/DLB_Eau_v1_preview.html |
+| `WaterSignatureVfx.java` — **paroi à comptage proportionnel (138 % de couverture)** · **v1.6** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/java/deepluckyblock/client/WaterSignatureVfx.java |
+| `WaterTerrainVfx.java` — **plus aucun bloc de sol dans le maelström** · **v1.6** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/java/deepluckyblock/client/WaterTerrainVfx.java |
+| `water_build.js` — miroir JS de la géométrie, `op()` hissé aux 3 signatures · **v1.6** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/resources/deepluckyblock_patch/tools/water_build.js |
+| `WeaponVisualEffectId.java` — **`WILDWOOD_AWAKENING` #43, 3ᵉ animation de bois** · **v1.6** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/java/deepluckyblock/enchantments/WeaponVisualEffectId.java |
+| `GaiaWorldTreeVfx.java` — **variante `GROVE`** (modèle `ZEPHYR_VOXELS` réemployé, sans lance) · **v1.6** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/java/deepluckyblock/client/GaiaWorldTreeVfx.java |
+| `WeaponVfxMotion.java` — `case WILDWOOD_AWAKENING` (switch exhaustif : bloquant à la compilation) · **v1.6** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/java/deepluckyblock/enchantments/WeaponVfxMotion.java |
+| `WeaponWorldVfxManager.java` — sélecteur bois `% 2` → **`% 3`**, durée 104, routage `GROVE` · **v1.6** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/java/deepluckyblock/client/WeaponWorldVfxManager.java |
+| `WeaponVfxServerListener.java` — `ANIM_WOOD` à **3 entrées** + gameplay eau · **v1.6** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java |
+| `DlbVfxCommand.java` — durée et créneau de test du nouvel effet · **v1.6** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/java/deepluckyblock/commands/DlbVfxCommand.java |
+| `WATER_SIGNATURES.md` — documentation §1 → **§19** (§18 maelström, §19 bois) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/resources/deepluckyblock_patch/WATER_SIGNATURES.md |
+| `GhostBlockMask.java` — faux trou côté client | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/java/deepluckyblock/enchantments/GhostBlockMask.java |
+| `WeaponVfxVariant.java` — table des déclinaisons (`density` 0,70 → 0,30) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/java/deepluckyblock/enchantments/WeaponVfxVariant.java |
+| `DeepElement.java` — `WIND` en fin d'énumération | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/java/deepluckyblock/enchantments/DeepElement.java |
+| `AnimFamily.java` — `nature` → `wood` | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/java/deepluckyblock/util/AnimFamily.java |
+| `semcheck.py` — contrôle sémantique | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/resources/deepluckyblock_patch/tools/semcheck.py |
+| Miroir MCreator `WaterSignatureVfx.java` · **v1.6** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/client/WaterSignatureVfx.java |
+| Miroir MCreator `WaterTerrainVfx.java` · **v1.6** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/client/WaterTerrainVfx.java |
+| Miroir MCreator `WeaponVisualEffectId.java` · **v1.6** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/enchantments/WeaponVisualEffectId.java |
+| Miroir MCreator `GaiaWorldTreeVfx.java` · **v1.6** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/client/GaiaWorldTreeVfx.java |
+| Miroir MCreator `WeaponVfxMotion.java` · **v1.6** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/enchantments/WeaponVfxMotion.java |
+| **Dépôt source complet** (ZIP, 741 entrées, 3563326 o) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/e5c34fb1df958bfef8edc52fe521f61bda0901fb/src-modifies-t301-t374.zip |
 
 ```text
-DLB_Water_Three_Signatures_src.zip   439992 o   27 entrées   sha256 c6e7168419423837f607c37eab93371d…
-DLB_Eau_v1_preview.html              593154 o   badge v1.5c
+DLB_Water_Three_Signatures_src.zip   516941 o   31 entrées   sha256 57712371f757a9d06f75f3268fe4f033…
+DLB_Eau_v1_preview.html              593882 o   badge v1.6
 src-modifies-t301-t374.zip           3563326 o   741 entrées
-commit                               6e3cb10403e5335efc7e0212719431a597066218
+commit                               e5c34fb1df958bfef8edc52fe521f61bda0901fb
 ```
 
 ## Vent — refonte complète (v9)
