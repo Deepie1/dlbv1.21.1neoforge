@@ -23,7 +23,7 @@ main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;
 <noscript><div style="margin:12px;padding:12px;border:1px solid #b9821f;border-radius:8px;background:#241a06;color:#ffd98a;font:13px system-ui">Le JavaScript est désactivé dans ce lecteur : l’animation ne peut pas démarrer. Télécharge l’aperçu et ouvre-le dans un navigateur, ou récupère les sources via ce lien direct : <a style="color:#8fd8ff" href="https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Water_Three_Signatures_src.zip" rel="noopener">DLB_Water_Three_Signatures_src.zip</a></div></noscript>
 <aside>
   <div class="eyebrow">Deep Lucky Block · Water VFX</div>
-  <div class="build">build v1.6 · 13 novembre 2026 — <b>le trou du maelström ne se découvre plus</b> : il passait de 14 à 22 ticks et n'avait aucun gameplay, il a désormais trois chorégraphies de 104 / 150 / 120 ticks, un moteur dédié (<code>WaterSignatureVfx</code>), les vrais blocs du sol (<code>WaterTerrainVfx</code>), un gameplay serveur complet et la famille <code>/anim water</code></div>
+  <div class="build">build v1.7 · 14 novembre 2026 — <b>le cratère est enfin couvert de bout en bout</b> : la paroi du bassin épouse désormais le paraboloïde exact que creuse <code>GhostBlockMask</code> (l'ancien cône flottait jusqu'à 45 cm au-dessus du fond), son emprise ne dépend plus de <code>open</code>, la nappe de surface existe dès le tick 0 et le masque s'ouvre couche par couche sous elle — marge minimale mesurée : 3 ticks</div>
   <h1>EAU</h1><h2>Trois signatures</h2>
   <p class="intro">Refonte complète de l’élément eau : un mur d’eau de 4,6 blocs qui <b>marche vraiment</b> et déferle, un maelström en entonnoir à rotation différentielle qui finit en geyser de 9 blocs, et un givre qui court au sol, emprisonne puis <b>éclate</b>. Un seul moteur voxel (<code>WaterSignatureVfx</code>), zéro RenderType supplémentaire.</p>
   <div class="rule"></div>
@@ -299,13 +299,13 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
   // ═══════ v1.3 — L'INTÉRIEUR DU TROU (parité Java : blocs 9, 10, 11) ═══════
   // 9. paroi conique PLEINE : le nombre de dalles suit la circonférence (parité Java)
   //    11 hélices fixes ne couvraient que 28 % du bord (2π×4,35 = 27,3 m) : on voyait au travers.
-  if(life>.02&&open>.03){const rings=24;
-   for(let ring=0;ring<rings;ring++){const v=ring/(rings-1),
-     radius=R*(1-v*.86)*open*(1-implode*(.22+.74*v))*(.96+.07*Math.sin(v*9+t*12));
+  if(life>.02){const rings=30;
+   for(let ring=0;ring<rings;ring++){const v=ring/(rings-1),rr=1-v*.86,
+     radius=R*rr*(1-implode*(.22+.74*v))*(.96+.07*Math.sin(v*9+t*12));
     if(radius<.05)continue;
-    const y0=-.95-D*v*v*open,size=.260-.130*v,tang=size*1.35,
+    const sink=D*(1-rr*rr)+.70*(1-rr),y0=-.18-sink*open,size=.280-.140*v,tang=size*1.35,
       count=Math.max(9,Math.round(TAU*radius/(tang*2*.72))),
-      spin2=spin*(1+v*2.40)+v*TAU*1.60,slope=-(.38+1.05*v);
+      spin2=spin*(1+v*2.40)+v*TAU*1.60,slope=-(.18+.82*rr*open);
     for(let i=0;i<count;i++){const h=hash(salt,11100+ring*173+i*29),
       ang=i*TAU/count+spin2,r=radius*(.985+.030*h),
       y=y0+.06*Math.sin(v*16+t*13+i*.7)+.03*h;
@@ -358,7 +358,7 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
   // que le tourbillon s'effondre, et ne s'efface qu'une fois le sol fantôme revenu. Sans elle,
   // toute l'eau mourait au tick 120 alors que le trou restait ouvert : cratère de terre à nu.
   {const sealGrow=smooth((t-.50)/.22),sealBack=smooth((t-.90)/.07);
-   if(sealGrow>.002){const innerR=R*Math.max(1-sealGrow,sealBack),
+   {const innerR=R*Math.min(open,Math.max(1-sealGrow,sealBack)),
      outerR=R*Math.max(open,.92)*(1-.82*sealBack),rings=11;
     for(let ring=0;ring<rings&&innerR<outerR;ring++){const rk=(ring+.5)/rings,r=outerR*rk;
      if(r<innerR-.22)continue;

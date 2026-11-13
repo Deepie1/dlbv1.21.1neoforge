@@ -1049,3 +1049,141 @@ exhaustif sans `default` portant sur ces constantes (`WeaponVfxMotion:105`) **co
 identifiant · unicité des identifiants → 0 doublon · `BY_ID` dimensionné à 64, l'entrée 43 y
 tient · `semcheck.py` en différentiel → seul écart, le faux positif connu « constante inconnue »
 sur les `case` non qualifiés · miroirs `FIXES_MCREATOR` → **MIRROR_OK sur 209 fichiers**.
+
+---
+
+## §20 — v1.7 : pourquoi le cratère restait visible, et le banyan de la futaie
+
+### 20.1 Le trou du maelström — trois causes, dont une jamais soupçonnée
+
+En v1.6 la couverture géométrique de la paroi avait été portée de 28 % à 138 % et le nombre de
+dalles de 410 à 929. Le joueur a pourtant répondu : « on voit quand même toujours le trou ».
+Le diagnostic par les chiffres a montré que la densité n'était **pas** en cause. Trois défauts
+indépendants se superposaient.
+
+**Cause nº 1 — le profil de la paroi ne suivait pas celui du trou.** `GhostBlockMask.digFunnel`
+creuse un **paraboloïde** : `depth = BASIN_DEPTH × (1 − ratio²)`. Le bloc 9 dessinait, lui, un
+**cône** décalé : `y = −0,95 − BASIN_DEPTH × v²`. Les deux surfaces ne coïncident nulle part :
+
+| v | rayon de la paroi | y de la paroi | fond réel du trou | verdict |
+|---|---|---|---|---|
+| 0,00 | 4,35 | −0,95 | 0,00 | dalles enterrées, invisibles |
+| 0,26 | 3,37 | −1,17 | −1,31 | **14 cm de terre à nu** |
+| 0,39 | 2,89 | −1,46 | −1,85 | **39 cm de terre à nu** |
+| 0,52 | 2,40 | −1,85 | −2,30 | **45 cm de terre à nu** |
+| 0,65 | 1,91 | −2,35 | −2,66 | **31 cm de terre à nu** |
+| 0,78 | 1,42 | −2,97 | −2,95 | couvre |
+
+La paroi *flottait au-dessus du fond* sur toute la couronne médiane, et la toute première couche
+du cratère (de `y = 0` à `y = −0,95`) n'était couverte par **rien**. Aucune augmentation de
+densité ne pouvait corriger cela : les dalles étaient denses, mais au mauvais endroit.
+
+Correctif — le profil est désormais la copie conforme du masque, avec deux marges :
+
+```java
+float rr   = 1.0f - v * 0.86f;                                   // rayon normalisé
+float sink = BASIN_DEPTH * (1.0f - rr * rr) + 0.70f * (1.0f - rr); // paraboloïde + débord
+float y0   = -0.18f - sink * open;                               // -0,18 : arase du sol
+float slope = -(0.18f + 0.82f * rr * open);                      // tangente du paraboloïde
+```
+
+Le terme `0,70 × (1 − rr)` fait passer la dalle **sous** le fond, ce qui absorbe l'arrondi du
+masque en couches entières. La pente est inversée : raide au bord, presque plate dans la gorge —
+l'ancien cône inclinait les dalles à contresens.
+
+**Cause nº 2 — l'emprise de la paroi était multipliée par `open`.** Le masque atteint le bord du
+cratère au tick 20 ; la paroi, dont le rayon valait `BASIN_RADIUS × open`, ne l'atteignait qu'au
+tick 30. Pendant dix ticks le sol était effacé là où aucune eau n'était encore dessinée. Le
+facteur `open` a été retiré du rayon : l'emprise au sol est pleine dès le premier tick et c'est
+la **profondeur**, elle seule, qui s'enfonce.
+
+**Cause nº 3 — la nappe de surface n'existait qu'à partir de t = 0,50.** Elle n'était dessinée
+que si `sealGrow > 0,002`, soit à partir du tick 75. Elle couvre maintenant toute la durée, son
+rayon intérieur enchaînant trois régimes par un simple `min/max` :
+
+```java
+float innerR = BASIN_RADIUS * Math.min(open, Math.max(1.0f - sealGrow, sealBack));
+```
+
+Pleine au tick 0, elle s'ouvre au rythme de `open`, se referme en iris de 0,50 à 0,72, puis se
+rouvre de 0,90 à 0,97 pour la résorption. Entre les ticks 30 et 75 elle ne coûte rien :
+`innerR == outerR`, la boucle ne tourne pas.
+
+### 20.2 Recalage des deux horloges
+
+Les deux horloges — celle du masque serveur et celle du visuel client — sont désormais vérifiées
+couche par couche. `GhostBlockMask` a reçu une constante `LAYER_STAGGER = 5` : à une couche par
+tick le trou atteignait son fond en trois ticks quand la paroi met trente ticks à descendre.
+L'ouverture passe de `gameNow + 6` à `gameNow + 14`.
+
+| distance | couche | trou ouvert | paroi descendue | marge |
+|---|---|---|---|---|
+| 0,00 | 0 / 1 / 2 | 14 / 19 / 24 | 9 / 15 / 20 | +5 / +4 / +4 |
+| 1,00 | 0 / 1 / 2 | 17 / 22 / 27 | 10 / 15 / 21 | +7 / +7 / +6 |
+| 2,00 | 0 / 1 / 2 | 20 / 25 / 30 | 11 / 18 / 26 | +9 / +7 / +4 |
+| 3,00 | 0 / 1 | 24 / 29 | 14 / 26 | +10 / +3 |
+| 3,50 | 0 | 25 | 18 | +7 |
+
+**Vingt couples (distance, couche) vérifiés, zéro marge négative**, minimum +3 ticks. La fermeture
+reste à `gameNow + 118` : le sol revient entre les ticks 118 et 129, sous la nappe pleinement
+opaque de 108 à 135.
+
+### 20.3 Coût
+
+30 anneaux au lieu de 24, 1 085 dalles au lieu de 929. Couverture tangentielle 138 %, couverture
+**radiale 195 à 213 %** — c'est elle qui manquait. Pic mesuré dans l'aperçu : **2 117 voxels**,
+pour un plafond de 7 000 par image.
+
+### 20.4 `WILDWOOD_AWAKENING` — un banyan, et non une variante de l'arbre sacré
+
+Reproche du joueur : « tu répètes sap ! où est passée la 3ᵉ animation wood ? ». Il avait raison,
+et la cause était dans le code : le variant `GROVE` réutilisait `ZEPHYR_VOXELS` et appelait
+`renderFallingLeaves` **et** `renderSacredSap` — exactement les deux routines de
+`VERDANT_SAP_BLOOM`. À quelques paramètres près, c'était la même animation.
+
+Tout a été refait. La silhouette n'est plus une chaîne packée recopiée mais un modèle
+**construit** par `buildGrove()`, donc impossible à confondre par accident :
+
+| pièce | description | voxels |
+|---|---|---|
+| tronc | trapu, cannelé (8 cannelures), 2,20 m, en torsion | 135 |
+| **contreforts** | **six arcs qui quittent le tronc à 1,6 m et replongent au sol** | 90 |
+| couronne | **parasol plat** de 2,6 m de rayon, 3 coques, et non une boule | 227 |
+| lianes | onze lianes pendantes sous le parasol | 77 |
+| | **total** | **529** |
+
+```
+                @   @  @  @ @@ @   @ @ @
+              @ @   @ @   @ @@ @@   @ @@@@@          @ parasol
+          @@@ @                          @@@@@
+         @                                     @@
+        @ @                                      @ @
+       @          |                    |             @   | lianes
+                  |       ######       |
+                          ######                         # tronc
+                  |     \\\\\\\\\\     |
+                       \\# ## ## \\    |
+                  |    \ # ## ##  \                      \ contreforts
+                      \  #### ###  \   |
+                  | \    #### ###    \
+```
+
+Hauteur 2,3 m pour 5,3 m de large, là où l'arbre sacré monte à 4,7 m sur un fût étroit : les deux
+silhouettes ne se ressemblent en rien.
+
+La chorégraphie est elle aussi exclusive — **ni sève, ni fruits, ni lances** :
+
+* `renderGroveRoots` : neuf racines percent le sol en anneau, rampent vers l'extérieur segment
+  par segment en ondulant, portent des pousses vertes sur leur dos, puis se retirent. Cette
+  animation se joue **au ras du sol**, quand les deux autres bois se jouent en hauteur.
+* `renderGroveSpores` : soixante-quatre spores **montent** en spirale depuis le sol et mûrissent
+  du vert au doré en s'élevant — mouvement exactement **inverse** de la pluie de feuilles des
+  deux autres arbres. C'est le repère le plus immédiat pour les distinguer d'un seul regard.
+
+### 20.5 Contrôles
+
+`java-parser` sur les 4 fichiers modifiés · `semcheck.py` → `OK` sur les trois fichiers touchés ·
+vérification numérique des 20 couples (distance, couche) → 0 anomalie · `node --check` sur le
+miroir JS · réinjection de `buildWater` dans l'aperçu par appariement d'accolades, 2 blocs
+`<script>` valides · Playwright sur 9 instants → **aucune erreur JS**, pic 2 117 voxels ·
+miroirs `FIXES_MCREATOR` → **MIRROR_OK sur 209 fichiers, 0 écart**.

@@ -141,6 +141,12 @@ public final class GhostBlockMask {
      *                     fait « clignoter » tout le disque d'un coup, ce qui se voit énormément.
      * @return le nombre de blocs effectivement masqués.
      */
+    /**
+     * Ticks entre deux couches successives d'une même colonne. Doit rester calé sur la vitesse
+     * d'enfoncement du visuel qui masque le trou (WaterSignatureVfx : `open` sur 0,20 × 150 t).
+     */
+    private static final long LAYER_STAGGER = 5L;
+
     public static int digFunnel(ServerLevel level, BlockPos center, double radius,
                                 double maxDepth, int surfaceSearch,
                                 long openAt, long closeAt, double delayPerRing,
@@ -166,7 +172,10 @@ public final class GhostBlockMask {
                     BlockPos pos = surface.below(dy);
                     if (level.getBlockState(pos).isAir()) continue;
                     // La colonne s'enfonce couche par couche, et se remplit du fond vers le haut.
-                    scheduleHide(level, pos, open + dy, close - dy);
+                    // LAYER_STAGGER étale ces couches sur plusieurs ticks : à 1 tick par couche
+                    // le trou atteignait son fond en 3 ticks alors que la paroi d'eau met ~30
+                    // ticks à descendre, et le joueur voyait le cratère sous l'animation.
+                    scheduleHide(level, pos, open + dy * LAYER_STAGGER, close - dy * LAYER_STAGGER);
                     masked++;
                     if (masked >= MAX_ACTIVE) return masked;
                 }

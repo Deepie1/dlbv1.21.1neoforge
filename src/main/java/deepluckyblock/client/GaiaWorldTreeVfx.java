@@ -11,9 +11,20 @@ public final class GaiaWorldTreeVfx {
     public static final int THORN = 1;
     public static final int VERDANT = 2;
     /**
-     * Bois #3 — l'éveil de la futaie. Réutilise la silhouette large de l'ancien arbre de
-     * zéphyr, restée orpheline depuis que la lance de vent a rejoint son propre moteur, mais
-     * SANS la moindre lance : seulement du bois, des feuilles et de la sève.
+     * Bois #3 — l'éveil de la futaie : un BANYAN, et non une variante de l'arbre sacré.
+     *
+     * <p>Première version : ce variant empruntait la silhouette de l'arbre de zéphyr et
+     * appelait {@code renderSacredSap} comme VERDANT. Résultat, le joueur voyait « encore
+     * la sève » et comptait deux animations de bois au lieu de trois. Tout est refait :</p>
+     * <ul>
+     *   <li>silhouette propre {@link #GROVE_VOXELS}, construite par {@link #buildGrove()} :
+     *       tronc trapu cannelé, six CONTREFORTS ARQUÉS qui retombent au sol, couronne en
+     *       PARASOL plat et large, et des lianes qui pendent — rien de commun avec le fût
+     *       droit à couronne sphérique des deux autres ;</li>
+     *   <li>chorégraphie propre : pas de sève, pas de fruits, pas de lances. Les racines
+     *       percent le sol en anneau, puis des spores MONTENT (les deux autres font tomber
+     *       des feuilles : le mouvement est inversé, c'est lisible au premier coup d'œil).</li>
+     * </ul>
      */
     public static final int GROVE = 3;
 
@@ -57,6 +68,118 @@ public final class GaiaWorldTreeVfx {
         "0.196,4.144,-0.426,0.051,0.057,0.051,0.720,8;-0.110,3.788,0.040,0.133,0.114,0.133,0.738,7;0.168,4.193,0.693,0.061,0.069,0.061,0.741,6;-0.476,3.933,0.458,0.096,0.099,0.096,0.727,8;-0.495,4.306,-0.052,0.109,0.104,0.109,0.755,6;0.101,3.920,-0.525,0.135,0.129,0.135,0.745,6;-0.008,4.358,0.628,0.130,0.124,0.130,0.743,7;0.251,3.816,0.410,0.059,0.052,0.059,0.733,7;0.436,3.789,-0.155,0.163,0.182,0.163,0.740,8;0.436,3.947,-0.296,0.094,0.103,0.094,0.714,8;-0.420,4.289,-0.437,0.096,0.097,0.096,0.753,7;0.326,4.371,-0.353,0.054,0.047,0.054,0.732,6;0.023,3.732,0.060,0.063,0.066,0.063,0.734,7;-0.083,3.723,-0.505,0.089,0.075,0.089,0.749,10;0.605,4.180,-0.265,0.132,0.145,0.132,0.742,5;-0.233,4.588,0.124,0.119,0.121,0.119,0.726,8;-0.451,3.802,0.252,0.079,0.070,0.079,0.748,7;0.248,4.531,-0.279,0.097,0.094,0.097,0.720,8;0.353,3.988,0.576,0.056,0.046,0.056,0.735,8;0.098,4.122,-0.598,0.110,0.096,0.110,0.723,5;0.215,3.765,0.536,0.116,0.102,0.116,0.739,8;-0.177,3.872,0.561,0.068,0.071,0.068,0.745,7;-0.201,3.915,0.359,0.077,0.088,0.077,0.741,7;-0.561,4.251,-0.493,0.117,0.118,0.117,0.740,7;-0.366,4.237,-0.021,0.094,0.089,0.094,0.732,6;0.005,4.612,0.089,0.056,0.048,0.056,0.713,7;0.060,3.741,0.061,0.113,0.103,0.113,0.726,10;-0.380,4.290,-0.250,0.127,0.120,0.127,0.741,10;0.345,4.015,0.164,0.125,0.106,0.125,0.752,7;-0.448,4.436,-0.135,0.064,0.056,0.064,0.756,8;-0.020,4.498,-0.254,0.052,0.056,0.052,0.732,8;0.177,4.328,0.326,0.125,0.121,0.125,0.736,6;0.279,4.081,0.170,0.065,0.058,0.065,0.733,5;0.006,4.428,0.474,0.132,0.113,0.132,0.752,8;-0.106,4.104,-0.151,0.055,0.049,0.055,0.748,7;-0.286,4.358,-0.669,0.062,0.066,0.062,0.755,6;0.513,3.930,-0.473,0.084,0.095,0.084,0.715,6;-0.104,3.600,0.153,0.110,0.119,0.110,0.720,9;-0.034,4.474,-0.251,0.114,0.099,0.114,0.741,8;-0.221,3.955,0.578,0.105,0.087,0.105,0.724,6;-0.022,4.142,-0.812,0.060,0.058,0.060,0.727,7;-0.136,4.692,-0.060,0.062,0.061,0.062,0.755,7;-0.303,4.089,0.576,0.080,0.089,0.080,0.742,6;-0.618,4.088,0.334,0.073,0.064,0.073,0.736,7;-0.527,4.166,0.116,0.082,0.074,0.082,0.756,8;0.575,4.246,-0.413,0.104,0.092,0.104,0.732,7;-0.141,4.411,0.642,0.124,0.131,0.124,0.731,7;-0.442,3.943,-0.420,0.119,0.133,0.119,0.722,6;-0.254,3.673,0.109,0.098,0.110,0.098,0.726,8;-0.492,4.236,-0.427,0.135,0.119,0.135,0.725,9;0.549,4.196,0.281,0.070,0.072,0.070,0.719,7;0.588,4.361,0.044,0.097,0.108,0.097,0.713,10;-0.380,4.085,0.042,0.081,0.067,0.081,0.727,7;0.343,4.130,0.592,0.090,0.093,0.090,0.730,7;-0.575,4.310,-0.218,0.117,0.127,0.117,0.713,9;0.535,3.772,-0.217,0.090,0.087,0.090,0.736,7;-0.060,4.328,-0.214,0.083,0.086,0.083,0.726,8;-0.428,3.944,0.355,0.112,0.106,0.112,0.754,8;0.639,4.321,-0.120,0.055,0.053,0.055,0.714,8;0.364,4.523,0.193,0.131,0.117,0.131,0.730,7;" +
         "0.392,3.949,-0.571,0.051,0.052,0.051,0.744,7;0.251,3.839,-0.272,0.109,0.093,0.109,0.754,7;-0.527,4.000,0.089,0.116,0.125,0.116,0.712,8;0.219,4.288,0.228,0.156,0.157,0.156,0.742,9;0.208,4.448,0.309,0.127,0.144,0.127,0.729,6;-0.134,4.108,-0.496,0.057,0.048,0.057,0.728,7;-0.252,4.561,0.249,0.119,0.099,0.119,0.748,7;0.497,4.348,0.131,0.093,0.093,0.093,0.752,6;0.010,4.728,-0.007,0.073,0.075,0.073,0.737,7;-0.008,4.605,-0.276,0.095,0.099,0.095,0.742,8;-0.485,4.114,0.373,0.055,0.059,0.055,0.716,9;0.003,3.793,-0.354,0.132,0.125,0.132,0.731,8;0.462,3.996,-0.409,0.102,0.098,0.102,0.756,8;0.096,3.890,-0.607,0.055,0.049,0.055,0.747,6;-0.456,4.166,-0.565,0.053,0.058,0.053,0.739,5;-0.567,4.106,-0.460,0.134,0.123,0.134,0.723,9;-0.035,4.120,-0.142,0.123,0.111,0.123,0.753,7;0.439,4.346,0.528,0.062,0.063,0.062,0.747,8;0.436,3.832,-0.523,0.070,0.066,0.070,0.739,9;-0.239,3.923,0.450,0.091,0.078,0.091,0.754,7;-0.339,4.093,0.487,0.108,0.099,0.108,0.729,6;0.526,4.392,0.188,0.095,0.084,0.095,0.717,8;0.043,4.392,0.272,0.165,0.175,0.165,0.721,7;0.488,3.882,0.077,0.097,0.103,0.097,0.743,5;-0.619,4.324,-0.334,0.119,0.111,0.119,0.738,7;-0.652,4.031,0.268,0.096,0.092,0.096,0.722,7;0.112,3.729,-0.052,0.052,0.050,0.052,0.745,8;0.128,3.730,-0.141,0.065,0.064,0.065,0.752,8;-0.098,3.885,0.358,0.164,0.166,0.164,0.724,5;-0.153,4.355,0.003,0.117,0.126,0.117,0.754,5;-0.451,4.037,0.370,0.087,0.095,0.087,0.720,7;0.311,3.895,-0.241,0.064,0.055,0.064,0.743,7;-0.468,4.063,-0.220,0.054,0.058,0.054,0.752,6;0.328,4.555,0.452,0.078,0.075,0.078,0.713,6;0.031,3.915,-0.391,0.119,0.114,0.119,0.749,7;0.107,4.513,0.235,0.132,0.111,0.132,0.737,7;0.127,4.143,-0.805,0.134,0.131,0.134,0.718,7";
 
+    /**
+     * Modèle du banyan, CONSTRUIT et non packé : la silhouette est entièrement décrite par
+     * la géométrie ci-dessous, donc elle ne peut pas ressembler par accident aux deux autres
+     * arbres. Huit flottants par voxel : x, y, z, demi-tailles, seuil de pousse, rôle palette.
+     */
+    private static final float[] GROVE_VOXELS = buildGrove();
+
+    private static float[] buildGrove() {
+        float[] buf = new float[8 * 1400];
+        int n = 0;
+
+        // ---- 1. TRONC trapu et cannelé : large, court, très différent d'un fût élancé ----
+        final int trunkSteps = 15;
+        for (int s = 0; s < trunkSteps; s++) {
+            float u = s / (float) (trunkSteps - 1);
+            float y = BASE + 2.20f * u;
+            float rad = 0.46f - 0.19f * u;                       // s'affine vers le haut
+            int around = 9;
+            for (int i = 0; i < around; i++) {
+                float ang = i * 6.2831855f / around + u * 0.55f; // légère torsion
+                float flute = 1.0f + 0.16f * Mth.cos(ang * 4.0f);// cannelures
+                float r = rad * flute;
+                buf[n] = Mth.cos(ang) * r;
+                buf[n + 1] = y;
+                buf[n + 2] = Mth.sin(ang) * r;
+                buf[n + 3] = 0.150f;
+                buf[n + 4] = 0.105f;
+                buf[n + 5] = 0.150f;
+                buf[n + 6] = 0.02f + 0.30f * u;                  // pousse de bas en haut
+                buf[n + 7] = (i % 3 == 0) ? 1 : (i % 3 == 1 ? 2 : 3);
+                n += 8;
+            }
+        }
+
+        // ---- 2. SIX CONTREFORTS ARQUÉS : la signature du banyan ----
+        // Chaque arc quitte le tronc vers 1,1 m, s'écarte à 1,55 m et replonge sous le sol.
+        final int buttress = 6;
+        for (int b = 0; b < buttress; b++) {
+            float ang = b * 6.2831855f / buttress + 0.26f;
+            float ca = Mth.cos(ang);
+            float sa = Mth.sin(ang);
+            final int steps = 15;
+            for (int s = 0; s < steps; s++) {
+                float u = s / (float) (steps - 1);
+                float r = 0.30f + 1.32f * u * u;                 // s'écarte en accélérant
+                float y = BASE + 1.62f * (1.0f - u * u) + 0.22f * Mth.sin(u * 3.14159f);
+                float bend = 0.22f * Mth.sin(u * 3.14159f);      // l'arc n'est pas droit
+                float thick = 0.135f - 0.062f * u;
+                buf[n] = ca * r - sa * bend;
+                buf[n + 1] = y;
+                buf[n + 2] = sa * r + ca * bend;
+                buf[n + 3] = thick;
+                buf[n + 4] = thick * 1.25f;
+                buf[n + 5] = thick;
+                buf[n + 6] = 0.26f + 0.30f * u;                  // ils tombent après le tronc
+                buf[n + 7] = (s % 2 == 0) ? 0 : 2;
+                n += 8;
+            }
+        }
+
+        // ---- 3. COURONNE EN PARASOL : un disque plat et large, pas une boule ----
+        final int shells = 3;
+        for (int sh = 0; sh < shells; sh++) {
+            float sv = sh / (float) (shells - 1);
+            for (int ring = 1; ring <= 7; ring++) {
+                float rv = ring / 7.0f;
+                float r = 2.62f * rv * (1.0f - 0.16f * sv);
+                // Profil de parasol : haut au centre, retombant sur les bords.
+                float y = BASE + 2.30f + 0.30f * (1.0f - rv * rv) - 0.34f * rv * rv * rv
+                        + sv * 0.19f;
+                int around = Math.max(6, Math.round(r * 7.4f));
+                for (int i = 0; i < around; i++) {
+                    float a2 = i * 6.2831855f / around + ring * 0.42f + sv * 0.21f;
+                    float wob = 1.0f + 0.085f * Mth.sin(a2 * 3.0f + ring);
+                    buf[n] = Mth.cos(a2) * r * wob;
+                    buf[n + 1] = y + 0.045f * Mth.sin(a2 * 5.0f + ring * 1.7f);
+                    buf[n + 2] = Mth.sin(a2) * r * wob;
+                    buf[n + 3] = 0.168f;
+                    buf[n + 4] = 0.112f;
+                    buf[n + 5] = 0.168f;
+                    buf[n + 6] = 0.46f + 0.30f * rv + 0.08f * sv;
+                    buf[n + 7] = 5 + ((ring + i + sh) % 6);      // nuancier de verts
+                    n += 8;
+                }
+            }
+        }
+
+        // ---- 4. LIANES PENDANTES : elles tombent du parasol et se balancent ----
+        final int vines = 11;
+        for (int v = 0; v < vines; v++) {
+            float ang = v * 6.2831855f / vines + 0.47f;
+            float r = 1.15f + 1.25f * ((v * 7) % 5) / 4.0f;
+            float len = 0.85f + 0.95f * ((v * 3) % 4) / 3.0f;
+            int steps = 7;
+            for (int s = 0; s < steps; s++) {
+                float u = s / (float) (steps - 1);
+                float drift = 0.14f * u * u;
+                buf[n] = Mth.cos(ang) * (r + drift);
+                buf[n + 1] = BASE + 2.30f - 0.34f - len * u;
+                buf[n + 2] = Mth.sin(ang) * (r + drift);
+                buf[n + 3] = 0.062f;
+                buf[n + 4] = 0.090f;
+                buf[n + 5] = 0.062f;
+                buf[n + 6] = 0.68f + 0.28f * u;                  // elles finissent de pousser
+                buf[n + 7] = (s >= steps - 2) ? 10 : 7;
+                n += 8;
+            }
+        }
+
+        return java.util.Arrays.copyOf(buf, n);
+    }
+
     private static final float[] ZEPHYR_VOXELS = unpack(ZEPHYR_PACKED);
     private static final float[] VERDANT_VOXELS = unpack(VERDANT_PACKED);
 
@@ -82,8 +205,9 @@ public static void render(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
             renderThornMaw(vc, mat, tmp, cx, cy, cz, t, dirX, dirZ, alpha, salt);
             return;
         }
-        float[] model = (variant == ZEPHYR || variant == GROVE) ? ZEPHYR_VOXELS : VERDANT_VOXELS;
-        float growDuration = variant == ZEPHYR ? 0.30f : variant == GROVE ? 0.38f : 0.46f;
+        float[] model = variant == ZEPHYR ? ZEPHYR_VOXELS
+                : variant == GROVE ? GROVE_VOXELS : VERDANT_VOXELS;
+        float growDuration = variant == ZEPHYR ? 0.30f : variant == GROVE ? 0.42f : 0.46f;
         float raw = Mth.clamp(t / growDuration, 0.0f, 1.0f);
         float growth = 1.0f - (1.0f - raw) * (1.0f - raw) * (1.0f - raw);
         renderTree(vc, mat, tmp, model, cx, cy, cz, growth, t, variant, alpha, salt);
@@ -92,11 +216,11 @@ public static void render(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                     6, 2.80f, variant, alpha, salt);
             renderZephyrLances(vc, mat, tmp, cx, cy, cz, t, alpha, salt);
         } else if (variant == GROVE) {
-            // Pluie de feuilles nettement plus dense que l'arbre sacré, et de la sève :
-            // c'est ce qui distingue la futaie à l'œil. Aucune lance, aucun souffle.
-            renderFallingLeaves(vc, mat, tmp, model, cx, cy, cz, t, 0.28f,
-                    10, 3.05f, variant, alpha, salt);
-            renderSacredSap(vc, mat, tmp, model, cx, cy, cz, t, alpha, salt);
+            // Chorégraphie exclusive au banyan : surtout NI sève NI fruits NI lances, et
+            // des feuilles qui montent au lieu de tomber. Rien ici n'est partagé avec les
+            // deux autres bois — c'était tout le reproche fait à la première version.
+            renderGroveRoots(vc, mat, tmp, cx, cy, cz, t, alpha, salt);
+            renderGroveSpores(vc, mat, tmp, cx, cy, cz, t, alpha, salt);
         } else {
             renderGoldenFruits(vc, mat, tmp, model, cx, cy, cz, t, growth, alpha, salt);
             renderFallingLeaves(vc, mat, tmp, model, cx, cy, cz, t, 0.34f,
@@ -429,6 +553,88 @@ private static float smooth01(float v) {
         out[0] = sideX * x + dirX * z;
         out[1] = y;
         out[2] = sideZ * x + dirZ * z;
+    }
+
+    /**
+     * GROVE : l'anneau de racines. Neuf racines percent le sol autour de la cible, courent
+     * vers l'extérieur en ondulant, se soulèvent puis replongent. C'est au RAS DU SOL que
+     * se joue cette animation — les deux autres bois se jouent en hauteur.
+     */
+    private static void renderGroveRoots(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                         float cx, float cy, float cz, float t,
+                                         int alpha, int salt) {
+        float rise = smooth01((t - 0.06f) / 0.24f);              // elles sortent de terre
+        float sink = smooth01((t - 0.80f) / 0.18f);              // puis se retirent
+        float life = rise * (1.0f - sink);
+        if (life <= 0.01f) return;
+        final int roots = 9;
+        for (int rt = 0; rt < roots; rt++) {
+            float h0 = hash01(salt, 7700 + rt * 37);
+            float ang = rt * 6.2831855f / roots + h0 * 0.42f;
+            float ca = Mth.cos(ang);
+            float sa = Mth.sin(ang);
+            float reach = (2.15f + 1.25f * h0) * rise;
+            int steps = 13;
+            for (int s = 0; s < steps; s++) {
+                float u = s / (float) (steps - 1);
+                // Chaque segment sort à son tour : la racine RAMPE, elle n'apparaît pas d'un bloc.
+                float seg = Mth.clamp((rise - u * 0.55f) / 0.30f, 0.0f, 1.0f);
+                if (seg <= 0.0f) continue;
+                float r = reach * u;
+                float wave = 0.30f * Mth.sin(u * 5.2f + h0 * 6.0f + t * 3.1f);
+                // Hors du sol en bosses successives : la racine plonge et ressort.
+                float y = BASE + 0.10f + 0.26f * Mth.sin(u * 7.4f + h0 * 4.0f)
+                        - 0.55f * sink * (0.4f + u);
+                float thick = (0.115f - 0.058f * u) * seg;
+                if (thick <= 0.004f) continue;
+                int role = (s % 3 == 0) ? 0 : (s % 3 == 1 ? 2 : 4);
+                int a = Math.round(alpha * life * seg * (1.0f - 0.25f * u));
+                if (a <= 0) continue;
+                cube(vc, mat, tmp,
+                        cx + ca * r - sa * wave, cy + y, cz + sa * r + ca * wave,
+                        thick, thick * 0.80f, thick, PALETTE[role], a);
+                // Pousses vertes sur le dos des racines : la futaie reverdit le sol.
+                if (s % 4 == 2 && seg > 0.55f) {
+                    float sprout = 0.075f * seg;
+                    cube(vc, mat, tmp,
+                            cx + ca * r - sa * wave, cy + y + thick + sprout, cz + sa * r + ca * wave,
+                            sprout, sprout * 1.5f, sprout,
+                            PALETTE[7 + ((rt + s) % 4)], a);
+                }
+            }
+        }
+    }
+
+    /**
+     * GROVE : les spores. Elles MONTENT en spirale depuis le sol et s'éteignent dans la
+     * couronne — mouvement exactement inverse de la pluie de feuilles des deux autres
+     * arbres, ce qui rend les trois animations discernables d'un seul regard.
+     */
+    private static void renderGroveSpores(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                          float cx, float cy, float cz, float t,
+                                          int alpha, int salt) {
+        final int count = 64;
+        for (int i = 0; i < count; i++) {
+            float h0 = hash01(salt, 9100 + i * 53);
+            float h1 = hash01(salt, 9200 + i * 31);
+            float h2 = hash01(salt, 9300 + i * 17);
+            float birth = 0.12f + h0 * 0.52f;
+            float age = (t - birth) / (0.34f + h1 * 0.22f);
+            if (age <= 0.0f || age >= 1.0f) continue;
+            float climb = age * age * (3.0f - 2.0f * age);       // accélère puis se pose
+            float r = (0.55f + h1 * 2.15f) * (1.0f - 0.34f * climb);
+            float ang = h2 * 6.2831855f + climb * (1.5f + h0 * 2.2f);
+            float y = BASE + 0.08f + climb * (2.75f + h2 * 0.95f);
+            float size = (0.052f + 0.044f * h1) * (1.0f - 0.45f * climb);
+            if (size <= 0.004f) continue;
+            // Verte en bas, dorée en haut : la spore mûrit en montant.
+            int role = climb < 0.55f ? 8 + (i % 3) : 11 + (i % 3);
+            int a = Math.round(alpha * (1.0f - climb * climb) * (0.55f + 0.45f * h0));
+            if (a <= 0) continue;
+            cube(vc, mat, tmp,
+                    cx + Mth.cos(ang) * r, cy + y, cz + Mth.sin(ang) * r,
+                    size, size, size, PALETTE[role], a);
+        }
     }
 
     private static void renderThornMaw(VertexConsumer vc, Matrix4f mat, Vector3f tmp,

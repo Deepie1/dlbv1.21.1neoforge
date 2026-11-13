@@ -238,13 +238,13 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
   // ═══════ v1.3 — L'INTÉRIEUR DU TROU (parité Java : blocs 9, 10, 11) ═══════
   // 9. paroi conique PLEINE : le nombre de dalles suit la circonférence (parité Java)
   //    11 hélices fixes ne couvraient que 28 % du bord (2π×4,35 = 27,3 m) : on voyait au travers.
-  if(life>.02&&open>.03){const rings=24;
-   for(let ring=0;ring<rings;ring++){const v=ring/(rings-1),
-     radius=R*(1-v*.86)*open*(1-implode*(.22+.74*v))*(.96+.07*Math.sin(v*9+t*12));
+  if(life>.02){const rings=30;
+   for(let ring=0;ring<rings;ring++){const v=ring/(rings-1),rr=1-v*.86,
+     radius=R*rr*(1-implode*(.22+.74*v))*(.96+.07*Math.sin(v*9+t*12));
     if(radius<.05)continue;
-    const y0=-.95-D*v*v*open,size=.260-.130*v,tang=size*1.35,
+    const sink=D*(1-rr*rr)+.70*(1-rr),y0=-.18-sink*open,size=.280-.140*v,tang=size*1.35,
       count=Math.max(9,Math.round(TAU*radius/(tang*2*.72))),
-      spin2=spin*(1+v*2.40)+v*TAU*1.60,slope=-(.38+1.05*v);
+      spin2=spin*(1+v*2.40)+v*TAU*1.60,slope=-(.18+.82*rr*open);
     for(let i=0;i<count;i++){const h=hash(salt,11100+ring*173+i*29),
       ang=i*TAU/count+spin2,r=radius*(.985+.030*h),
       y=y0+.06*Math.sin(v*16+t*13+i*.7)+.03*h;
@@ -297,7 +297,7 @@ function buildWater(variant,t,salt=5252){const out=[];if(t<=0||t>=1)return out;
   // que le tourbillon s'effondre, et ne s'efface qu'une fois le sol fantôme revenu. Sans elle,
   // toute l'eau mourait au tick 120 alors que le trou restait ouvert : cratère de terre à nu.
   {const sealGrow=smooth((t-.50)/.22),sealBack=smooth((t-.90)/.07);
-   if(sealGrow>.002){const innerR=R*Math.max(1-sealGrow,sealBack),
+   {const innerR=R*Math.min(open,Math.max(1-sealGrow,sealBack)),
      outerR=R*Math.max(open,.92)*(1-.82*sealBack),rings=11;
     for(let ring=0;ring<rings&&innerR<outerR;ring++){const rk=(ring+.5)/rings,r=outerR*rk;
      if(r<innerR-.22)continue;

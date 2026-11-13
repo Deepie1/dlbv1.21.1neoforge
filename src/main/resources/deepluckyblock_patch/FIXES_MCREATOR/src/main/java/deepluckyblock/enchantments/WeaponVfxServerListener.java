@@ -2547,7 +2547,7 @@ public final class WeaponVfxServerListener {
         int carved = GhostBlockMask.digFunnel(sl,
                 net.minecraft.core.BlockPos.containing(cx, baseY, cz),
                 4.35, 3.30, 3,
-                gameNow + 6, gameNow + 118, 3.4, 2.6);
+                gameNow + 14, gameNow + 118, 3.4, 2.6);
 
         WindZone zone = new WindZone(sl, gameNow, gameNow + 118, cx, cz, baseY,
                 4.35, 2.30, 0.42, pulse, 11, attackerId, 55, 100, false, true, RELEASE_GEYSER);

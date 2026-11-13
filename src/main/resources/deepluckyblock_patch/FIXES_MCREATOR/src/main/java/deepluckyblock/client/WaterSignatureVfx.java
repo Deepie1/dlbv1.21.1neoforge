@@ -547,23 +547,37 @@ public final class WaterSignatureVfx {
         // Correctif : on ne raisonne plus en nombre d'hélices mais en TAUX DE RECOUVREMENT.
         // À chaque profondeur, le nombre de dalles est calculé pour que la circonférence soit
         // couverte avec 28 % de chevauchement, et les dalles sont nettement plus larges.
-        if (basinLife > 0.02f && open > 0.03f) {
-            final int rings = 24;
+        if (basinLife > 0.02f) {
+            final int rings = 30;
             for (int ring = 0; ring < rings; ring++) {
                 float v = ring / (float) (rings - 1);                   // 0 bord .. 1 gorge
-                float radius = BASIN_RADIUS * (1.0f - v * 0.86f) * open
+                // RAYON NORMALISÉ, VOLONTAIREMENT SANS `open` : en v1.6 l'emprise entière était
+                // multipliée par `open`, si bien qu'au tick 10 la paroi ne mesurait qu'un mètre
+                // alors que GhostBlockMask avait déjà effacé le sol jusqu'à 3,4 m. D'où le
+                // cratère nu. Désormais le disque couvre le trou dès le premier tick et c'est
+                // la PROFONDEUR, elle seule, qui s'enfonce avec `open`.
+                float rr = 1.0f - v * 0.86f;
+                float radius = BASIN_RADIUS * rr
                         * (1.0f - implode * (0.22f + 0.74f * v))
                         * (0.96f + 0.07f * Mth.sin(v * 9.0f + t * 12.0f));
                 if (radius < 0.05f) continue;
-                float y0 = -0.95f - BASIN_DEPTH * v * v * open;
-                float size = 0.260f - 0.130f * v;                       // large dalle .. écaille
+                // PROFIL PARABOLOÏDE, copie conforme de ce que creuse GhostBlockMask.digFunnel
+                // (depth = BASIN_DEPTH × (1 − ratio²)). L'ancien cône `-0.95 - BASIN_DEPTH·v²`
+                // passait JUSQU'À 45 cm AU-DESSUS du fond réel sur toute la couronne médiane :
+                // la paroi flottait et on voyait la terre dessous. Le terme `0.70 × (1 − rr)`
+                // ajoute un débord sous le fond pour absorber l'arrondi en couches entières.
+                float sink = BASIN_DEPTH * (1.0f - rr * rr) + 0.70f * (1.0f - rr);
+                float y0 = -0.18f - sink * open;                        // -0,18 : arase du sol
+                float size = 0.280f - 0.140f * v;                       // large dalle .. écaille
                 float tang = size * 1.35f;                              // demi-largeur tangentielle
                 // Couverture : circonférence / (largeur × 0,72) ⇒ les dalles se chevauchent.
                 int count = Math.max(9, Math.round(TAU * radius / (tang * 2.0f * 0.72f)));
                 // L'enroulement s'accélère vers le fond : c'est le différentiel qui fait
                 // « tourbillon » plutôt que « pile d'anneaux ».
                 float spin = spinPhase * (1.0f + v * 2.40f) + v * TAU * 1.60f;
-                float slope = -(0.38f + 1.05f * v);                     // la dalle épouse le cône
+                // Tangente du paraboloïde : raide au bord, presque plate dans la gorge —
+                // l'exact inverse de l'ancien cône, qui inclinait les dalles à contresens.
+                float slope = -(0.18f + 0.82f * rr * open);
                 for (int i = 0; i < count; i++) {
                     float h = hash(salt, 11100 + ring * 173 + i * 29);
                     float ang = i * TAU / count + spin;
@@ -703,15 +717,23 @@ public final class WaterSignatureVfx {
         // rendue ensuite par le voile de matière (cubeVeil = 0,62 pour WATER), appliqué APRÈS
         // le tamis — la nappe est donc à la fois réellement dessinée et translucide à l'œil.
         //
-        // Chronologie (150 ticks) : l'iris se ferme 0,50 → 0,72 (tick 75 → 108) ; le sol fantôme
+        // Chronologie (150 ticks) : la nappe est PLEINE au tick 0 puis s'ouvre 0,00 → 0,20 au
+        // rythme du masque ; l'iris se referme 0,50 → 0,72 (tick 75 → 108) ; le sol fantôme
         // revient au tick 129 au plus tard (digFunnel closeAt 118 + 4,35 × 2,6) ; la nappe se
         // résorbe enfin en se ROUVRANT 0,90 → 0,97. Le joueur ne voit jamais la terre à nu.
         float sealGrow = smooth((t - 0.50f) / 0.22f);              // iris : se ferme 0,50 → 0,72
         float sealBack = smooth((t - 0.90f) / 0.07f);              // puis se rouvre 0,90 → 0,97
-        if (sealGrow > 0.002f) {
-            // Rayon intérieur : descend du bord vers l'axe pendant la fermeture, puis remonte
-            // pendant la résorption. C'est lui, et non l'alpha, qui porte toute l'animation.
-            float innerR = BASIN_RADIUS * Math.max(1.0f - sealGrow, sealBack);
+        {
+            // Rayon intérieur. Trois régimes enchaînés par un simple min/max :
+            //   • 0,00 → 0,20  `open` écarte la nappe depuis l'axe  → le trou s'OUVRE ;
+            //   • 0,50 → 0,72  `1 - sealGrow` la ramène vers l'axe  → le trou se REFERME ;
+            //   • 0,90 → 0,97  `sealBack` la rouvre pour la résorption finale.
+            // Le facteur `open` est la correction de v1.7 : en v1.6 la nappe n'existait qu'à
+            // partir de t = 0,50 (tick 75), si bien que pendant tout le creusement rien ne
+            // couvrait la couronne entre la gorge et le bord — c'est le trou que le joueur
+            // voyait. Elle est maintenant PLEINE au tick 0 et s'ouvre au rythme exact du
+            // masque, donc le sol effacé est couvert à chaque instant.
+            float innerR = BASIN_RADIUS * Math.min(open, Math.max(1.0f - sealGrow, sealBack));
             // Rayon extérieur : épouse la largeur réellement creusée (digFunnel : 4,35) et se
             // rétracte à la toute fin, si bien que la nappe meurt sans le moindre fondu.
             float outerR = BASIN_RADIUS * Math.max(open, 0.92f) * (1.0f - 0.82f * sealBack);
