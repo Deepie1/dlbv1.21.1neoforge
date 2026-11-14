@@ -35,9 +35,14 @@ public final class AnimFamily {
     public static final String WOOD = "wood";
     /** T375 : huitième famille, l'eau (raz-de-marée, maelström abyssal, givre du permafrost). */
     public static final String WATER = "water";
+    /**
+     * T376 : neuvième famille, la foudre (arc en chaîne, surcadence cyber-X, double écho).
+     * Correspond à {@link deepluckyblock.enchantments.DeepElement#THUNDER}, « Foudre ».
+     */
+    public static final String THUNDER = "thunder";
 
     /** Ordre d'affichage de l'aide et de l'autocomplétion : un seul nom par famille, en anglais. */
-    public static final String[] ALL = {FIRE, WATER, WIND, EARTH, METAL, LIGHT, POISON, WOOD};
+    public static final String[] ALL = {FIRE, WATER, THUNDER, WIND, EARTH, METAL, LIGHT, POISON, WOOD};
 
     private AnimFamily() { }
 
@@ -67,6 +72,9 @@ public final class AnimFamily {
             case "gaia", "nature", "bois", "wood", "foret", "forêt", "tree" -> WOOD;
             // eau / water (le givre appartient à la même famille, comme dans DeepElement.WATER)
             case "eau", "water", "aqua", "glace", "ice", "givre", "frost" -> WATER;
+            // foudre / thunder (l'électricité et l'orage sont la même famille, DeepElement.THUNDER)
+            case "foudre", "thunder", "lightning", "eclair", "éclair", "volt", "electric",
+                 "electrique", "électrique", "orage", "storm", "bolt" -> THUNDER;
             default -> null;
         };
     }
@@ -83,6 +91,7 @@ public final class AnimFamily {
             case POISON -> 0x46C24C;
             case WOOD -> 0xA9743C;      // DeepElement.WOOD.primary — écorce, pas feuillage
             case WATER -> 0x62C7E8;
+            case THUNDER -> 0x5E3AFF;   // DeepElement.THUNDER.primary — violet électrique
             default -> 0xFFF3B0;
         };
     }
@@ -99,6 +108,7 @@ public final class AnimFamily {
             case POISON -> "§2";
             case WOOD -> "§6";    // écorce brun doré — doit rester distinct de la Terre
             case WATER -> "§3";
+            case THUNDER -> "§d";  // violet clair : l'arc est violet, pas bleu comme l'eau
             default -> "§f";
         };
     }
@@ -115,6 +125,7 @@ public final class AnimFamily {
             case POISON -> "Poison";
             case WOOD -> "Wood";
             case WATER -> "Water";
+            case THUNDER -> "Thunder";
             default -> "Animation";
         };
     }

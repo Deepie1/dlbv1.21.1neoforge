@@ -162,6 +162,9 @@ public final class DlbVfxCommand {
         if (fx == WeaponVisualEffectId.SEISMIC_TECTONIC) return 150; // impact 30 + 112 + marge
         if (fx == WeaponVisualEffectId.TITAN_GRASP) return 178;      // impact 30 + 140 + marge
         if (fx == WeaponVisualEffectId.WARLORD_RALLY_SIGIL) return 158; // impact 30 + 120 + marge
+        if (fx == WeaponVisualEffectId.CHAIN_VOLT_ARC) return 168;   // impact 30 + 130 + marge
+        if (fx == WeaponVisualEffectId.OVERCLOCK_CYBER_X) return 158; // impact 30 + 120 + marge
+        if (fx == WeaponVisualEffectId.TWIN_ECHO_SLASH) return 130;  // impact 30 + 96 + marge
         return DUMMY_NEXT_EFFECT_TICK;
     }
 
@@ -483,7 +486,7 @@ public final class DlbVfxCommand {
         line(src, "§e/dlbvfx hit [nombre]", "vraies frappes sur la cible d'entraînement (impact + crit réels)");
         line(src, "§e/dlbvfx dummy", "invoque / retire la cible d'entraînement");
         line(src, "§e/dlbvfx give <effet> [niveau]", "donne les armes enchantées qui déclenchent cet effet");
-        line(src, "§e/anim <famille>", "épée de démonstration en §fbois§7 (glint de l'élément) : familles §ffire water wind earth metal light poison wood §7— §f60 %§7 slash + §f40 %§7 grosses animations");
+        line(src, "§e/anim <famille>", "épée de démonstration en §fbois§7 (glint de l'élément) : familles §ffire water thunder wind earth metal light poison wood §7— §f60 %§7 slash + §f40 %§7 grosses animations");
         line(src, "§e/dlbvfx elements [famille]", "les §f" + deepluckyblock.enchantments.DeepElement.values().length + " §7familles élémentaires (couleurs + effets)");
         line(src, "§e/dlbvfx variants", "défile les déclinaisons (de moins en moins de particules)");
         line(src, "§e/dlbvfx subtle [famille] [index]", "les §f" + (deepluckyblock.enchantments.WeaponVfxSubtle.COUNT + deepluckyblock.enchantments.WeaponVfxSubtleEcho.COUNT) + " §7accents discrets : §f" + deepluckyblock.enchantments.WeaponVfxSubtle.COUNT + " §7élémentaires + §f" + deepluckyblock.enchantments.WeaponVfxSubtleEcho.COUNT + " §7échos des grosses animations");
@@ -721,6 +724,7 @@ public final class DlbVfxCommand {
             case "earth", "terre" -> DeepElement.EARTH;
             case "metal", "métal" -> DeepElement.METAL;
             case "water", "eau" -> DeepElement.WATER;
+            case "thunder", "foudre", "lightning", "eclair", "éclair" -> DeepElement.THUNDER;
             case "thunder", "foudre" -> DeepElement.THUNDER;
             case "light", "lumiere", "lumière" -> DeepElement.LIGHT;
             case "shadow", "ombre" -> DeepElement.SHADOW;
@@ -788,6 +792,10 @@ public final class DlbVfxCommand {
             case SEISMIC_TECTONIC -> 112;
             case TITAN_GRASP, SANDSTORM_DUNE -> 140;
             case WARLORD_RALLY_SIGIL -> 120;
+            // T376-THUNDER : les trois signatures de foudre ont une vraie chorégraphie.
+            case CHAIN_VOLT_ARC -> 130;
+            case OVERCLOCK_CYBER_X -> 120;
+            case TWIN_ECHO_SLASH -> 96;
             case RAZOR_GLEAM -> 48;
             case SERAPH_SKY_PILLAR -> 30;
             case ASTRAL_STAR_LANCE -> 80;

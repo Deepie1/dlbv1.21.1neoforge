@@ -625,6 +625,12 @@ public final class WeaponWorldVfxManager {
             case HYDRO_TIDAL_SURGE -> 104;
             case ABYSSAL_MAELSTROM -> 150;
             case PERMAFROST_RIME -> 120;
+            // T376-THUNDER : la foudre tenait 11 à 14 ticks, soit moins d'une demi-seconde.
+            // Ses trois signatures ont désormais une vraie chorégraphie : ionisation puis
+            // chaîne à six relais, construction de la cage de surcadence, double entaille.
+            case CHAIN_VOLT_ARC -> 130;
+            case OVERCLOCK_CYBER_X -> 120;
+            case TWIN_ECHO_SLASH -> 96;
             case DRAGON_CHAOS_PRISM, BIG_BANG_SCAR -> 22;
             case ECLIPSE_VEIL, NULL_RIFT_FISSURE,
                  CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE -> 18;
@@ -632,7 +638,6 @@ public final class WeaponWorldVfxManager {
             case MIASMA_SHROUD -> 600; // Le serveur raccourcit à 6 s ou enchaîne jusqu'à 30 s.
             case PLAGUE_NOVA -> 128;
             case VOID_WARP_SPHERE, CRIMSON_SIPHON -> 16;
-            case CHAIN_VOLT_ARC -> 11;
             default -> 14;
         };
 
@@ -1758,6 +1763,15 @@ public final class WeaponWorldVfxManager {
                 case 0 -> WeaponVisualEffectId.HYDRO_TIDAL_SURGE;
                 case 1 -> WeaponVisualEffectId.ABYSSAL_MAELSTROM;
                 default -> WeaponVisualEffectId.PERMAFROST_RIME;
+            };
+        }
+        // T376-THUNDER : neuvième famille. Sans cette branche la foudre retombait dans le cas
+        // par défaut (bois) et sortait en brun — exactement le défaut corrigé pour l'eau.
+        if (deepluckyblock.util.AnimFamily.THUNDER.equals(canonical)) {
+            return switch (index) {
+                case 0 -> WeaponVisualEffectId.CHAIN_VOLT_ARC;
+                case 1 -> WeaponVisualEffectId.OVERCLOCK_CYBER_X;
+                default -> WeaponVisualEffectId.TWIN_ECHO_SLASH;
             };
         }
         if (deepluckyblock.util.AnimFamily.WIND.equals(canonical)) {
@@ -3564,10 +3578,49 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
+     * 雷 FOUDRE — moteur voxel dédié (T376) : arc en chaîne, surcadence cyber-X, double écho.
+     *
+     * <p>Comme pour l'eau et le vent, la pulsation de taille est coupée : un canal d'éclair doit
+     * rester <b>jointif</b> d'un segment à l'autre, sinon la polyligne se lit comme un chapelet
+     * de cubes séparés et toute la structure fractale est perdue.</p>
+     */
+    private static void impactThunderSignature(ImpactView v, int signature) {
+        boolean previousPulse = voxelPulseEnabled;
+        voxelPulseEnabled = false;
+        try {
+            ThunderSignatureVfx.render(v.vc(), v.mat(), v.tmp(),
+                    v.cx(), v.cy(), v.cz(), v.t(),
+                    -v.dirX(), -v.dirZ(), signature, v.fadeA(),
+                    (int) (v.inst().seed & 0x7FFFFFFFL));
+        } finally {
+            voxelPulseEnabled = previousPulse;
+        }
+    }
+
+    /**
      * 雷 FOUDRE — instantané : des branches tombent du ciel et rampent au sol, l'intensité CLIGNOTE
      * au lieu de croître, et des éclats crénelés sont projetés en ligne droite.
+     *
+     * <p>T376 : les trois grandes signatures de foudre passent par {@link ThunderSignatureVfx} et
+     * ne traversent plus ce corps. Ce qui suit ne sert plus qu'aux effets de foudre secondaires
+     * qui n'ont pas de chorégraphie propre.</p>
      */
     private static void impactThunder(ImpactView v) {
+        int thunderSignature = switch (v.inst().effect) {
+            case CHAIN_VOLT_ARC -> ThunderSignatureVfx.BOLT;
+            case OVERCLOCK_CYBER_X -> ThunderSignatureVfx.OVERCLOCK;
+            case TWIN_ECHO_SLASH -> ThunderSignatureVfx.ECHO;
+            default -> -1;
+        };
+        if (thunderSignature >= 0) {
+            impactThunderSignature(v, thunderSignature);
+            return;
+        }
+        impactThunderLegacy(v);
+    }
+
+    /** Ancien rendu générique de la foudre, conservé pour les effets secondaires. */
+    private static void impactThunderLegacy(ImpactView v) {
         float t = v.t();
         float S = v.S();
         WeaponVisualEffectId fx = v.inst().effect;

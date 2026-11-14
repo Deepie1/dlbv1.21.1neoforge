@@ -144,6 +144,22 @@ public final class WeaponVfxServerListener {
                             float pulse, int period, int attackerId, double wobble, int release) { }
 
     private static final Map<Integer, WindHold> WIND_HOLDS = new ConcurrentHashMap<>();
+    /**
+     * T376-THUNDER — <b>CHARGE STATIQUE</b>, le debuff cumulable de la famille foudre.
+     *
+     * <p>Chaque frappe de foudre dépose une pile sur sa victime ({@link #STATIC_MAX} au plus).
+     * Chaque pile majore de {@link #STATIC_PER_STACK} les dégâts de foudre qu'elle reçoit
+     * ensuite ; à saturation elle <b>claque</b> toute seule. C'est le liant des trois
+     * signatures : l'arc en chaîne pose les piles sur beaucoup de monde, la double entaille les
+     * consomme sur une cible unique, la surcadence accélère la cadence qui les dépose.</p>
+     */
+    private static final Map<Integer, StaticCharge> STATIC_CHARGES = new ConcurrentHashMap<>();
+    /** Au-delà, la charge se décharge d'elle-même au lieu de s'accumuler. */
+    private static final int STATIC_MAX = 5;
+    /** Majoration des dégâts de foudre par pile accumulée. */
+    private static final float STATIC_PER_STACK = 0.15f;
+    /** Durée de vie d'une charge sans nouvelle frappe (ticks). */
+    private static final int STATIC_DECAY = 140;
     /** Après une éjection, le mob est intouchable un court instant (sinon il est repris en vol). */
     private static final Map<Integer, Long> WIND_RECAPTURE = new ConcurrentHashMap<>();
 
@@ -205,6 +221,8 @@ public final class WeaponVfxServerListener {
 
     private record MovementHold(long expires, double x, double y, double z, boolean previousNoAi,
                                   boolean fullStun, double releaseY, long started, double burialDepth) { }
+    /** Piles de charge statique sur une créature, avec leur instant de péremption. */
+    private record StaticCharge(int stacks, long expires) { }
     private record SoulHold(long expires, long riseStart, long riseEnd, long descendStart,
                             double x, double baseY, double targetY, double z, boolean previousNoAi,
                             int attackerId, float weaponDamage) { }
@@ -271,6 +289,13 @@ public final class WeaponVfxServerListener {
     private static final WeaponVisualEffectId[] ANIM_WATER = {
             WeaponVisualEffectId.HYDRO_TIDAL_SURGE, WeaponVisualEffectId.ABYSSAL_MAELSTROM,
             WeaponVisualEffectId.PERMAFROST_RIME
+    };
+    /**
+     * Famille FOUDRE (T376) : arc fulgurant en chaîne, surcadence cyber-X, double entaille d'écho.
+     */
+    private static final WeaponVisualEffectId[] ANIM_THUNDER = {
+            WeaponVisualEffectId.CHAIN_VOLT_ARC, WeaponVisualEffectId.OVERCLOCK_CYBER_X,
+            WeaponVisualEffectId.TWIN_ECHO_SLASH
     };
     private static final WeaponVisualEffectId[] ANIM_LIGHT = {
             WeaponVisualEffectId.SERAPH_SKY_PILLAR, WeaponVisualEffectId.ASTRAL_STAR_LANCE,
@@ -426,6 +451,7 @@ public final class WeaponVfxServerListener {
             applyLightGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker), sizeScaleOf(target));
             applyPoisonGameplay(attacker, livingTarget, fx);
             applyWaterGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker));
+            applyThunderGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker));
         }
     }
 
@@ -571,6 +597,7 @@ public final class WeaponVfxServerListener {
             applyLightGameplay(comboAttacker, target, sig, weaponDamage, sizeScale);
             applyPoisonGameplay(comboAttacker, target, sig);
             applyWaterGameplay(comboAttacker, target, sig, weaponDamage);
+            applyThunderGameplay(comboAttacker, target, sig, weaponDamage);
             // Étincelles de la famille, une par élément : le mélange de couleurs se voit tout de suite.
             WeaponVfxSubtle.Subtle accent = WeaponVfxSubtle.pick(el, sl.random.nextLong());
             broadcastNear(sl, tx, ty, tz, 0, WeaponVfxSubtle.NET_KIND_BASE + accent.index(), 1,
@@ -2838,6 +2865,385 @@ public final class WeaponVfxServerListener {
         });
     }
 
+    // ============================================================================================
+    // 雷 FOUDRE (T376) — arc en chaîne, surcadence cyber-X, double entaille d'écho
+    // ============================================================================================
+
+    /**
+     * Routage des trois signatures de foudre. Comme l'eau avant la T375, la foudre n'avait
+     * <b>aucun</b> gameplay : trois animations de moins d'une demi-seconde qui ne faisaient rien.
+     *
+     * <p>Les trois signatures partagent une ressource commune, la <b>charge statique</b>
+     * ({@link #STATIC_CHARGES}), et se répondent : l'arc en chaîne en pose sur toute une foule,
+     * la surcadence accélère celui qui frappe, la double entaille convertit les piles accumulées
+     * en dégâts sur une cible unique. Chacune gère explicitement les deux cas de figure demandés
+     * — <b>plusieurs ennemis</b> (propagation) et <b>ennemi seul</b> (report de l'énergie non
+     * dépensée), pour qu'aucune ne soit décevante en duel.</p>
+     */
+    private static void applyThunderGameplay(LivingEntity attacker, LivingEntity target,
+                                             WeaponVisualEffectId fx, float weaponDamage) {
+        if (fx == null || target == null) return;
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        float damage = Math.max(0.0f, weaponDamage);
+        if (fx == WeaponVisualEffectId.CHAIN_VOLT_ARC) {
+            applyChainVoltGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.OVERCLOCK_CYBER_X) {
+            applyOverclockGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.TWIN_ECHO_SLASH) {
+            applyTwinEchoGameplay(attacker, target, sl, damage);
+        }
+    }
+
+    /**
+     * Ajoute des piles de charge statique et renvoie le total après ajout. À saturation la
+     * charge est consommée sur place par {@link #dischargeStatic}.
+     */
+    private static int addStaticCharge(ServerLevel sl, LivingEntity victim, int add, int attackerId) {
+        if (victim == null || !victim.isAlive() || add <= 0) return 0;
+        long now = TestProcedure.currentTick(sl);
+        int id = victim.getId();
+        StaticCharge current = STATIC_CHARGES.get(id);
+        int base = (current == null || current.expires() <= now) ? 0 : current.stacks();
+        int total = base + add;
+        PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
+                victim.getX(), victim.getY() + victim.getBbHeight() * 0.72, victim.getZ(),
+                3 + total * 2, 0.26, 0.34, 0.26, 0.04);
+        if (total >= STATIC_MAX) {
+            STATIC_CHARGES.remove(id);
+            dischargeStatic(sl, victim, attackerId, total);
+            return 0;
+        }
+        STATIC_CHARGES.put(id, new StaticCharge(total, now + STATIC_DECAY));
+        return total;
+    }
+
+    /** Majoration de dégâts apportée par les piles présentes, sans les consommer. */
+    private static float staticMultiplier(ServerLevel sl, LivingEntity victim) {
+        if (victim == null) return 1.0f;
+        StaticCharge charge = STATIC_CHARGES.get(victim.getId());
+        if (charge == null || charge.expires() <= TestProcedure.currentTick(sl)) return 1.0f;
+        return 1.0f + STATIC_PER_STACK * charge.stacks();
+    }
+
+    /** Retire les piles d'une créature et renvoie combien il y en avait. */
+    private static int consumeStatic(ServerLevel sl, LivingEntity victim) {
+        if (victim == null) return 0;
+        StaticCharge charge = STATIC_CHARGES.remove(victim.getId());
+        if (charge == null || charge.expires() <= TestProcedure.currentTick(sl)) return 0;
+        return charge.stacks();
+    }
+
+    /**
+     * Claquage de la charge à saturation : la victime encaisse, et l'arc saute aux voisins
+     * immédiats en leur laissant une pile. C'est ce qui fait qu'un groupe « s'allume » en
+     * cascade quand on le travaille à la foudre.
+     */
+    private static void dischargeStatic(ServerLevel sl, LivingEntity victim, int attackerId, int stacks) {
+        final double vx = victim.getX();
+        final double vy = victim.getY() + victim.getBbHeight() * 0.55;
+        final double vz = victim.getZ();
+        hurtWithCapturedWeapon(sl, attackerId, victim, 1.10f * stacks);
+        sl.playSound(null, vx, vy, vz, SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.PLAYERS,
+                0.42f, 1.65f);
+        PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, vx, vy, vz, 34, 0.55, 0.60, 0.55, 0.22);
+        broadcastNear(sl, (float) vx, (float) vy, (float) vz,
+                WeaponVisualEffectId.CHAIN_VOLT_ARC.id, KIND_IMPACT, 3,
+                (float) vx, (float) vy, (float) vz,
+                (float) vx, (float) vy, (float) vz, 0, 0.42f);
+        int splash = 0;
+        for (LivingEntity near : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(vx - 3.20, vy - 2.20, vz - 3.20, vx + 3.20, vy + 2.40, vz + 3.20))) {
+            if (splash >= 3) break;
+            if (!near.isAlive() || near == victim || near instanceof Player) continue;
+            if (attackerId >= 0 && near.getId() == attackerId) continue;
+            splash++;
+            hurtWithCapturedWeapon(sl, attackerId, near, 0.55f * stacks);
+            // Pile déposée SANS repasser par addStaticCharge : sinon un voisin déjà chargé
+            // claquerait à son tour depuis cette pile, qui rechargerait le premier, et ainsi
+            // de suite — une décharge en anneau se refermant sur elle-même suffit à faire
+            // déborder la pile d'appels. Une éclaboussure ne peut donc pas en déclencher
+            // une autre : il faut une nouvelle frappe du joueur.
+            long id = near.getId();
+            StaticCharge prior = STATIC_CHARGES.get((int) id);
+            int had = (prior == null || prior.expires() <= TestProcedure.currentTick(sl))
+                    ? 0 : prior.stacks();
+            STATIC_CHARGES.put((int) id,
+                    new StaticCharge(Math.min(STATIC_MAX - 1, had + 1),
+                            TestProcedure.currentTick(sl) + STATIC_DECAY));
+            PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
+                    near.getX(), near.getY() + near.getBbHeight() * 0.70, near.getZ(),
+                    6, 0.24, 0.30, 0.24, 0.05);
+        }
+    }
+
+    /**
+     * ARC FULGURANT EN CHAÎNE (130 ticks) — la signature <b>de zone</b> de la famille.
+     *
+     * <p><b>Plusieurs ennemis.</b> Le trait tombe sur la cible désignée puis <b>saute</b> de
+     * proche en proche, six relais au plus ({@code CHAIN_LINKS} côté client dessine exactement le
+     * même nombre). Chaque saut cherche la créature vivante la plus proche du dernier maillon
+     * dans un rayon de 7 blocs, jamais déjà touchée, et coûte 18 % des dégâts : la chaîne
+     * s'épuise, elle ne tond pas une armée indéfiniment. Chaque maillon dépose une pile de
+     * charge statique, si bien qu'une foule travaillée à l'arc finit par claquer toute seule.</p>
+     *
+     * <p><b>Ennemi seul.</b> Sans voisin, la chaîne n'aurait servi à rien : l'énergie des relais
+     * inutilisés est <b>reversée sur la cible unique</b> sous forme de trois décharges
+     * rapprochées (ticks 26, 38, 50) valant chacune 26 % des dégâts par maillon non dépensé, et
+     * la cible reçoit directement trois piles. Un duel reste donc payant.</p>
+     */
+    private static void applyChainVoltGameplay(LivingEntity attacker, LivingEntity target,
+                                               ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final long now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.55;
+        final double oz = target.getZ();
+        final float base = Math.max(1.6f, weaponDamage * 0.92f);
+
+        sl.playSound(null, ox, oy, oz, SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.PLAYERS,
+                0.55f, 1.35f);
+        // Ionisation : le sol crépite AVANT la frappe, le joueur voit le coup arriver.
+        TestProcedure.schedule(sl, now + 6, () -> PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
+                ox, oy - 0.90, oz, 26, 1.80, 0.25, 1.80, 0.05));
+
+        // --- Tick 20 : la frappe principale ---
+        TestProcedure.schedule(sl, now + 20, () -> {
+            if (!target.isAlive()) return;
+            sl.playSound(null, ox, oy, oz, SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.PLAYERS,
+                    0.95f, 1.05f);
+            PixelFx.send(sl, ParticleTypes.FLASH, ox, oy, oz, 2, 0.10, 0.10, 0.10, 0.0);
+            PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, ox, oy, oz, 48, 0.70, 0.90, 0.70, 0.30);
+            hurtWithCapturedWeapon(sl, attackerId, target,
+                    base * staticMultiplier(sl, target));
+            addStaticCharge(sl, target, 1, attackerId);
+        });
+
+        // --- Repérage de la chaîne : on la calcule une fois, au moment de l'impact ---
+        TestProcedure.schedule(sl, now + 24, () -> {
+            java.util.List<LivingEntity> links = new java.util.ArrayList<>();
+            java.util.Set<Integer> seen = new java.util.HashSet<>();
+            seen.add(target.getId());
+            if (attackerId >= 0) seen.add(attackerId);
+            double cx = ox;
+            double cz = oz;
+            for (int hop = 0; hop < 6; hop++) {
+                LivingEntity best = null;
+                double bestDist = Double.MAX_VALUE;
+                for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
+                        new AABB(cx - 7.0, oy - 4.0, cz - 7.0, cx + 7.0, oy + 4.5, cz + 7.0))) {
+                    if (!candidate.isAlive() || candidate instanceof Player) continue;
+                    if (seen.contains(candidate.getId())) continue;
+                    double d = candidate.distanceToSqr(cx, candidate.getY(), cz);
+                    if (d < bestDist) { bestDist = d; best = candidate; }
+                }
+                if (best == null) break;
+                links.add(best);
+                seen.add(best.getId());
+                cx = best.getX();
+                cz = best.getZ();
+            }
+
+            if (links.isEmpty()) {
+                // ----- CAS ENNEMI SEUL : l'énergie des six relais revient sur la cible -----
+                final float solo = base * 0.26f * 6.0f / 3.0f;
+                for (int shot = 0; shot < 3; shot++) {
+                    final int delay = 2 + shot * 12;
+                    TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + delay, () -> {
+                        if (!target.isAlive()) return;
+                        hurtWithCapturedWeapon(sl, attackerId, target,
+                                solo * staticMultiplier(sl, target));
+                        addStaticCharge(sl, target, 1, attackerId);
+                        sl.playSound(null, target.getX(), target.getY(), target.getZ(),
+                                SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.PLAYERS, 0.50f, 1.72f);
+                        PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
+                                target.getX(), target.getY() + target.getBbHeight() * 0.6,
+                                target.getZ(), 22, 0.40, 0.55, 0.40, 0.18);
+                        broadcastNear(sl, (float) target.getX(), (float) target.getY(),
+                                (float) target.getZ(),
+                                WeaponVisualEffectId.CHAIN_VOLT_ARC.id, KIND_IMPACT, 2,
+                                (float) target.getX(), (float) target.getY(), (float) target.getZ(),
+                                (float) target.getX(), (float) target.getY(), (float) target.getZ(),
+                                0, 0.38f);
+                    });
+                }
+                return;
+            }
+
+            // ----- CAS PLUSIEURS ENNEMIS : la chaîne saute, et s'épuise -----
+            for (int i = 0; i < links.size(); i++) {
+                final LivingEntity victim = links.get(i);
+                final float share = base * (float) Math.pow(0.82, i + 1);
+                final int delay = 4 + i * 9;
+                TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + delay, () -> {
+                    if (!victim.isAlive()) return;
+                    double jx = victim.getX();
+                    double jy = victim.getY() + victim.getBbHeight() * 0.55;
+                    double jz = victim.getZ();
+                    hurtWithCapturedWeapon(sl, attackerId, victim,
+                            share * staticMultiplier(sl, victim));
+                    addStaticCharge(sl, victim, 1, attackerId);
+                    sl.playSound(null, jx, jy, jz, SoundEvents.LIGHTNING_BOLT_THUNDER,
+                            SoundSource.PLAYERS, 0.48f, 1.45f);
+                    PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, jx, jy, jz,
+                            26, 0.42, 0.52, 0.42, 0.20);
+                    broadcastNear(sl, (float) jx, (float) jy, (float) jz,
+                            WeaponVisualEffectId.CHAIN_VOLT_ARC.id, KIND_IMPACT, 2,
+                            (float) jx, (float) jy, (float) jz,
+                            (float) jx, (float) jy, (float) jz, 0, 0.40f);
+                });
+            }
+        });
+    }
+
+    /**
+     * SURCADENCE CYBER-X (120 ticks) — la signature <b>de soutien</b>, centrée sur le porteur.
+     *
+     * <p><b>Buff.</b> Pendant 7 secondes le porteur gagne hâte III, célérité II et force I : la
+     * cadence de frappe monte, donc le nombre de piles de charge statique déposées aussi. C'est
+     * un buff qui sert les deux autres signatures plutôt qu'un bonus isolé.</p>
+     *
+     * <p><b>Plusieurs ennemis.</b> À la décharge (tick 94) la cage implose et libère une nova de
+     * 4,5 blocs : tout ce qui est autour prend 45 % des dégâts, reçoit une pile et se voit
+     * infliger <b>lenteur II pendant 3 s</b> — le débuff qui accompagne le buff.</p>
+     *
+     * <p><b>Ennemi seul.</b> Si la nova ne trouve que la cible désignée, elle se concentre :
+     * dégâts doublés et deux piles d'un coup, de sorte que la surcadence reste utile en duel.</p>
+     */
+    private static void applyOverclockGameplay(LivingEntity attacker, LivingEntity target,
+                                               ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final long now = TestProcedure.currentTick(sl);
+        final float base = Math.max(1.4f, weaponDamage * 0.85f);
+
+        if (attacker != null) {
+            // Le buff est immédiat : la cage se construit autour de quelqu'un de déjà accéléré.
+            attacker.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 140, 2, false, true, true));
+            attacker.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 140, 1, false, true, true));
+            attacker.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 140, 0, false, true, true));
+            sl.playSound(null, attacker.getX(), attacker.getY(), attacker.getZ(),
+                    SoundEvents.BEACON_ACTIVATE, SoundSource.PLAYERS, 0.45f, 1.85f);
+        }
+
+        final double bx = attacker == null ? target.getX() : attacker.getX();
+        final double by = (attacker == null ? target.getY() : attacker.getY()) + 0.90;
+        final double bz = attacker == null ? target.getZ() : attacker.getZ();
+
+        // Montée en cadence : quatre paliers sonores pendant la construction de la cage.
+        for (int step = 0; step < 4; step++) {
+            final float pitch = 1.20f + step * 0.22f;
+            TestProcedure.schedule(sl, now + 16L + step * 18L, () -> {
+                sl.playSound(null, bx, by, bz, SoundEvents.NOTE_BLOCK_BELL.value(),
+                        SoundSource.PLAYERS, 0.32f, pitch);
+                PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, bx, by, bz, 14, 1.10, 0.90, 1.10, 0.06);
+            });
+        }
+
+        // --- Tick 94 : implosion et nova ---
+        TestProcedure.schedule(sl, now + 94, () -> {
+            sl.playSound(null, bx, by, bz, SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS,
+                    0.70f, 1.45f);
+            PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, bx, by, bz, 60, 1.50, 1.10, 1.50, 0.34);
+            java.util.List<LivingEntity> hit = new java.util.ArrayList<>();
+            for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
+                    new AABB(bx - 4.50, by - 3.00, bz - 4.50, bx + 4.50, by + 3.20, bz + 4.50))) {
+                if (!victim.isAlive() || victim instanceof Player) continue;
+                if (attackerId >= 0 && victim.getId() == attackerId) continue;
+                hit.add(victim);
+            }
+            // Ennemi seul : toute l'énergie de la nova part sur lui.
+            boolean solo = hit.size() <= 1;
+            for (LivingEntity victim : hit) {
+                hurtWithCapturedWeapon(sl, attackerId, victim,
+                        base * (solo ? 0.90f : 0.45f) * staticMultiplier(sl, victim));
+                addStaticCharge(sl, victim, solo ? 2 : 1, attackerId);
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 60, 1, false, true, true));
+                PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
+                        victim.getX(), victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
+                        18, 0.34, 0.44, 0.34, 0.16);
+            }
+        });
+    }
+
+    /**
+     * DOUBLE ENTAILLE D'ÉCHO (96 ticks) — la signature <b>de duel</b>, et la seule qui
+     * <b>consomme</b> la charge statique.
+     *
+     * <p><b>Ennemi seul.</b> Deux coups : la lame (tick 8) puis son écho (tick 32), le second
+     * valant 70 % du premier. L'écho ramasse toutes les piles de charge statique posées par les
+     * deux autres signatures et les convertit en <b>+35 % de dégâts par pile</b> — c'est le
+     * finisseur de la famille, et la raison d'enchaîner les trois.</p>
+     *
+     * <p><b>Plusieurs ennemis.</b> Les deux entailles balaient un arc de 210° sur 3,4 blocs,
+     * exactement l'empreinte dessinée par le client. Tout ce qui est dans l'arc prend 55 % du
+     * coup et reçoit une pile ; la cible désignée garde le coup plein. L'attaque reste donc une
+     * attaque de duel qui <i>déborde</i>, plutôt qu'une vraie attaque de zone.</p>
+     */
+    private static void applyTwinEchoGameplay(LivingEntity attacker, LivingEntity target,
+                                              ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final long now = TestProcedure.currentTick(sl);
+        final float base = Math.max(1.5f, weaponDamage * 0.80f);
+        final double ax = attacker == null ? target.getX() : attacker.getX();
+        final double az = attacker == null ? target.getZ() : attacker.getZ();
+
+        for (int pass = 0; pass < 2; pass++) {
+            final boolean echo = pass == 1;
+            final long at = now + (echo ? 32L : 8L);
+            TestProcedure.schedule(sl, at, () -> {
+                final double cx = target.getX();
+                final double cy = target.getY() + target.getBbHeight() * 0.55;
+                final double cz = target.getZ();
+                sl.playSound(null, cx, cy, cz, SoundEvents.TRIDENT_THROW.value(),
+                        SoundSource.PLAYERS, echo ? 0.52f : 0.72f, echo ? 1.62f : 1.28f);
+                PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, cx, cy, cz,
+                        echo ? 36 : 26, 0.80, 0.55, 0.80, 0.22);
+
+                // Coup principal. L'écho encaisse en plus toutes les piles accumulées.
+                float power = base * (echo ? 0.70f : 1.0f);
+                if (echo) {
+                    int stacks = consumeStatic(sl, target);
+                    if (stacks > 0) {
+                        power *= 1.0f + 0.35f * stacks;
+                        sl.playSound(null, cx, cy, cz, SoundEvents.LIGHTNING_BOLT_THUNDER,
+                                SoundSource.PLAYERS, 0.80f, 1.10f);
+                        PixelFx.send(sl, ParticleTypes.FLASH, cx, cy, cz, 1, 0.0, 0.0, 0.0, 0.0);
+                    }
+                } else {
+                    power *= staticMultiplier(sl, target);
+                }
+                if (target.isAlive()) {
+                    hurtWithCapturedWeapon(sl, attackerId, target, power);
+                    if (!echo) addStaticCharge(sl, target, 1, attackerId);
+                }
+
+                // Débordement : l'arc de 210° devant l'attaquant, rayon 3,4 blocs.
+                double fx = cx - ax;
+                double fz = cz - az;
+                double flen = Math.sqrt(fx * fx + fz * fz);
+                final double ux = flen < 0.05 ? 1.0 : fx / flen;
+                final double uz = flen < 0.05 ? 0.0 : fz / flen;
+                for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
+                        new AABB(cx - 3.40, cy - 2.20, cz - 3.40, cx + 3.40, cy + 2.40, cz + 3.40))) {
+                    if (!victim.isAlive() || victim == target || victim instanceof Player) continue;
+                    if (attackerId >= 0 && victim.getId() == attackerId) continue;
+                    double rx = victim.getX() - cx;
+                    double rz = victim.getZ() - cz;
+                    double rlen = Math.sqrt(rx * rx + rz * rz);
+                    if (rlen > 3.40) continue;
+                    // cos(105°) ≈ -0,259 : la moitié d'un arc de 210°.
+                    double dot = rlen < 0.05 ? 1.0 : (rx * ux + rz * uz) / rlen;
+                    if (dot < -0.259) continue;
+                    hurtWithCapturedWeapon(sl, attackerId, victim,
+                            base * 0.55f * (echo ? 0.70f : 1.0f) * staticMultiplier(sl, victim));
+                    addStaticCharge(sl, victim, 1, attackerId);
+                    PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
+                            victim.getX(), victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
+                            14, 0.30, 0.40, 0.30, 0.14);
+                }
+            });
+        }
+    }
+
     private static void applyWindGameplay(LivingEntity attacker, LivingEntity target,
                                           WeaponVisualEffectId fx, float weaponDamage) {
         if (!(target.level() instanceof ServerLevel sl)) return;
@@ -3496,6 +3902,7 @@ public final class WeaponVfxServerListener {
                 : deepluckyblock.util.AnimFamily.METAL.equals(family) ? ANIM_METAL
                 : deepluckyblock.util.AnimFamily.LIGHT.equals(family) ? ANIM_LIGHT
                 : deepluckyblock.util.AnimFamily.WATER.equals(family) ? ANIM_WATER
+                : deepluckyblock.util.AnimFamily.THUNDER.equals(family) ? ANIM_THUNDER
                 : deepluckyblock.util.AnimFamily.WIND.equals(family) ? ANIM_WIND : ANIM_WOOD;
 
         if (roll >= 60) {
@@ -3516,6 +3923,7 @@ public final class WeaponVfxServerListener {
             applyFireGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyPoisonGameplay(attacker, target, fx);
             applyWaterGameplay(attacker, target, fx, capturedWeaponDamage);
+            applyThunderGameplay(attacker, target, fx, capturedWeaponDamage);
             return;
         }
 

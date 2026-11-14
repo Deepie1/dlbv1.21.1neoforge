@@ -1187,3 +1187,106 @@ vérification numérique des 20 couples (distance, couche) → 0 anomalie · `no
 miroir JS · réinjection de `buildWater` dans l'aperçu par appariement d'accolades, 2 blocs
 `<script>` valides · Playwright sur 9 instants → **aucune erreur JS**, pic 2 117 voxels ·
 miroirs `FIXES_MCREATOR` → **MIRROR_OK sur 209 fichiers, 0 écart**.
+
+---
+
+## §21 — Foudre : les trois signatures et la charge statique (4 novembre 2026)
+
+Neuvième famille refondue sur treize. Les trois effets de foudre existaient dans l'énumération
+depuis l'origine, mais deux d'entre eux ne faisaient rien de particulier et le troisième,
+`CHAIN_VOLT_ARC`, n'était **jamais tiré** : il figurait dans la liste des effets ELEMENT morts.
+Cette version lui donne une chorégraphie, un gameplay, et le branche à la commande.
+
+| Effet | id | Durée | Rôle |
+|---|---|---|---|
+| `CHAIN_VOLT_ARC` | 16 | 130 t | L'éclair qui tombe du ciel, puis saute de cible en cible |
+| `OVERCLOCK_CYBER_X` | 8 | 120 t | La surcharge : on se suralimente, puis on explose |
+| `TWIN_ECHO_SLASH` | 4 | 96 t | Deux entailles croisées, la seconde en écho |
+
+### 21.1 Le piège du `case` en double
+
+Porter `CHAIN_VOLT_ARC` de 11 à 130 ticks n'était pas une addition mais un **remplacement** :
+la constante figurait déjà dans le `switch` des durées. Ajouter la nouvelle ligne sans retirer
+l'ancienne donne deux `case` pour la même valeur dans le même `switch` — en Java c'est une
+erreur de compilation, pas un avertissement. La règle qui en sort : avant d'ajouter un `case`,
+toujours vérifier que la constante n'est pas déjà listée ailleurs dans le même bloc.
+
+### 21.2 Trois sons qui n'existaient pas
+
+Le premier jet utilisait `SoundEvents.LIGHTNING_BOLT_IMPACT`, `NOTE_BLOCK_BIT` et
+`TRIDENT_THUNDER`. Un `grep` sur le dossier source semblait confirmer qu'ils étaient déjà
+employés ailleurs — sauf que le `grep` voyait **mes propres lignes**, écrites quelques minutes
+plus tôt. Interrogé sur le dernier commit (`git grep … HEAD`), le dépôt répond : zéro occurrence.
+Ces trois noms n'ont jamais été utilisés dans ce projet, et rien ne garantissait qu'ils existent
+dans la version de Minecraft visée. C'est exactement la classe d'erreur que `java-parser` laisse
+passer : la syntaxe est parfaite, le symbole est introuvable à la compilation.
+
+Les trois ont été remplacés par des sons **attestés dans le code déjà compilé**, en conservant la
+forme d'accès exacte (certains sons sont des `Holder` et exigent `.value()`) :
+
+| Voulu | Retenu | Preuve |
+|---|---|---|
+| `LIGHTNING_BOLT_IMPACT` | `LIGHTNING_BOLT_THUNDER` | 8 usages au HEAD |
+| `NOTE_BLOCK_BIT.value()` | `NOTE_BLOCK_BELL.value()` | 12 usages au HEAD |
+| `TRIDENT_THUNDER.value()` | `TRIDENT_THROW.value()` | 6 usages au HEAD |
+
+Un contrôle final liste les 11 symboles `SoundEvents` / `ParticleTypes` / `MobEffects` de la
+section foudre et les confronte au HEAD : **11 prouvés, 0 absent**. La règle générale :
+*ne jamais faire confiance à un `grep` sur l'arbre de travail pour prouver qu'un symbole existe —
+interroger le dernier commit.*
+
+### 21.3 La charge statique
+
+Le liant des trois effets. Chaque coup de foudre dépose une pile sur la victime ; chaque pile
+majore les dégâts de foudre suivants de 15 %, jusqu'à 5 piles (+75 %), et s'efface après
+140 ticks sans nouveau coup. À la sixième pile la cible **claque** : décharge sur elle-même et
+sur trois voisins au plus, dans un rayon de 3,20 bloc.
+
+C'est là qu'était le vrai danger. La décharge déposait une pile sur chaque voisin **en repassant
+par la fonction d'ajout** — donc un voisin déjà chargé claquait à son tour, ce qui rechargeait le
+premier, qui reclaquait. Trois ennemis serrés suffisaient à refermer l'anneau et à faire déborder
+la pile d'appels : plus un crash qu'un effet. La décharge dépose désormais sa pile **directement
+dans la table**, sans jamais rappeler la fonction d'ajout, et plafonne à `STATIC_MAX - 1`.
+Une éclaboussure ne peut donc pas en déclencher une autre : il faut une nouvelle frappe du joueur.
+
+### 21.4 Les trois gameplays
+
+**`CHAIN_VOLT_ARC`** — l'impact principal tombe au tick 20. Au tick 24 on repère la chaîne :
+six relais au plus, de proche en proche, rayon 7, jamais un joueur, un ensemble d'identifiants
+interdisant de toucher deux fois la même créature. Chaque saut retire 18 % de puissance.
+*Si la cible est seule*, l'énergie des six relais ne disparaît pas : elle revient en trois
+décharges successives sur elle.
+
+**`OVERCLOCK_CYBER_X`** — la surcharge se paie d'avance. Hâte III, Vitesse II et Force I
+pendant 140 ticks, quatre paliers sonores, puis au tick 94 la nova, rayon 4,50. Seul contre un
+ennemi unique elle frappe à 90 % et pose deux piles ; contre un groupe elle frappe à 45 % et
+ralentit. L'effet récompense donc le duel et reste correct en mêlée.
+
+**`TWIN_ECHO_SLASH`** — deux passes : la lame au tick 8, l'écho au tick 32 à 70 %. L'écho
+**consomme** les piles accumulées par la première passe et les convertit en dégâts
+(+35 % par pile) : l'enchaînement est le sujet de l'effet. Le débordement suit un arc de 210°
+devant le joueur — un produit scalaire inférieur à −0,259 exclut ce qui est dans le dos.
+
+### 21.5 Le X des deux lames
+
+`drawBlade` dessinait les deux entailles dans le même plan horizontal : au lieu d'un X, on voyait
+deux arcs superposés. La relecture du fichier a montré pourquoi — plusieurs termes étaient
+multipliés par `0.0f`, et un drapeau `first` ne servait plus à rien. Ce sont les restes d'une
+intention jamais appliquée : l'inclinaison avait été prévue, puis neutralisée.
+
+La fonction prend désormais un paramètre `tilt` (0 = lame à plat, 1 = lame verticale) qui verse
+la coordonnée latérale dans la hauteur : `flat = 1 - tilt`, `y = 0.95 + lat * tilt * 0.92`,
+`pitch = tilt * 1,5708`. La première lame passe à plat, la seconde à la verticale et en sens
+inverse : les deux entailles décrivent un X dans l'espace. *Leçon : un terme multiplié par zéro
+ou une variable morte signalent presque toujours une intention oubliée en chemin.*
+
+### 21.6 Contrôles
+
+`java-parser` sur les 4 fichiers modifiés + le nouveau · `semcheck.py` **en différentiel contre
+le HEAD** : 41 lignes avant, 38 après, **aucun nouvel écart** introduit par la foudre ·
+11/11 symboles vanilla prouvés au HEAD · vérification qu'aucune variable mutée n'est capturée
+par une lambda · `WeaponVfxMotion.of()` (le seul `switch` exhaustif sans `default`) contient bien
+les trois constantes · miroirs `FIXES_MCREATOR` → **MIRROR_OK sur 210 fichiers, 0 écart**.
+
+Le gameplay de la foudre n'immobilise jamais : il ne pose que `MOVEMENT_SLOWDOWN`. Il ne peut
+donc pas entrer en conflit avec `MOVEMENT_HOLDS`, `WIND_HOLDS` ou `SURGE_RIDES`.
