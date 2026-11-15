@@ -273,15 +273,26 @@ public final class WeaponBladeVisualRenderer {
                 }
             }
 
-            case TWIN_ECHO_SLASH -> {
-                // #04 Seconde rangée fantôme de mini-cubes décalée d'un pixel à côté du tranchant !
+            case STORMCALL_JUDGMENT -> {
+                // #04 La rangée fantôme décalée illustrait la double entaille. L'arme appelle
+                // maintenant l'orage : des charges REMONTENT le tranchant vers la pointe, de
+                // plus en plus vives, comme l'air qui s'ionise avant le coup de foudre.
                 renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.85f, hz, pRgb, sRgb, time * 4.0f, time, 155, layerMul, chaosContour);
-                float off = 0.0625f * (0.8f + 0.4f * Mth.sin(time * 6.0f));
-                for (int i = 0; i < count; i += 2) {
+                for (int i = 0; i < count; i++) {
+                    float u = count <= 1 ? 0.0f : i / (float) (count - 1);
+                    // Trois charges décalées d'un tiers, qui bouclent le long de la lame.
+                    float lit = 0.0f;
+                    for (int c = 0; c < 3; c++) {
+                        float head = (time * 0.85f + c / 3.0f) % 1.0f;
+                        float d = Math.abs(u - head);
+                        if (d < 0.12f) lit = Math.max(lit, 1.0f - d / 0.12f);
+                    }
+                    if (lit <= 0.02f) continue;
                     VoxelNode n = nodes.get(i);
-                    WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
-                            n.x + n.nx * off, n.y + n.ny * off, n.z,
-                            hxy * 0.72f, hxy * 0.72f, hz * 0.72f, sRgb, Math.round(150 * layerMul));
+                    float s = hxy * (0.60f + 0.55f * lit);
+                    WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp, n.x, n.y, n.z,
+                            s, s, hz * 0.80f, lit > 0.65f ? pRgb : sRgb,
+                            Math.round((110 + 115 * lit) * layerMul));
                 }
             }
 

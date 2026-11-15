@@ -100,7 +100,7 @@ public final class WeaponVfxSubtleEcho {
                 MOTION_ARC,    // 01 RAZOR_GLEAM          : le fil qui chante
                 MOTION_PRISM,  // 02 SUPREME_PRISM_EDGE   : facettes
                 MOTION_TRAIL,  // 03 SPECTRAL_REACH       : allonge spectral
-                MOTION_ARC,    // 04 TWIN_ECHO_SLASH      : double entaille
+                MOTION_ARC,    // 04 STORMCALL_JUDGMENT   : appel de l'orage
                 MOTION_ARC,    // 05 GUILLOTINE_CLEAVE    : couperet
                 MOTION_STAR,   // 06 GOLDEN_CRIT_STAR     : étoile critique
                 MOTION_CROSS,  // 07 FOCUSED_BULLSEYE     : croix de visée

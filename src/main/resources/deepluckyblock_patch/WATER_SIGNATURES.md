@@ -1478,3 +1478,82 @@ porté dans le même tour, `node --check` OK · **0 NaN**, **0 voxel sous le pla
 **0 voxel sous le sol** sur 99 instants × 3 variantes · Playwright 3 × 6 instants, **0 erreur
 JS**, comptes DOM identiques à node · miroirs `FIXES_MCREATOR` **237/237** · durées
 130 / 120 / 96 ticks inchangées.
+
+---
+
+## 24. Foudre v4 — une peau 8 bits, et une signature entièrement remplacée
+
+Les v3 des signatures 2 et 3 ont été jugées pires que la v1. Plutôt que de les retoucher une
+troisième fois, elles sont reprises à la base, chacune dans une direction différente.
+
+### 24.1 Surcadence Cyber-X : pixel art 8 bits
+
+Le style n'est pas un filtre qu'on applique après coup, c'est un ensemble de **contraintes**.
+Elles sont toutes tenues, et vérifiables :
+
+| règle | mise en œuvre | contrôle |
+|---|---|---|
+| grille fixe | `snap()` aligne tout sur `PIX = 0,1875` | — |
+| un cube = un pixel | `pix()` force un cube de côté `PIX`, jamais autre chose | — |
+| aucune rotation | tout passe par `box()`, `rot()` n'est plus appelé | **0 cube tourné** sur 99 instants |
+| palette fermée | 7 teintes indexées dans `GB[]`, aucune interpolation | — |
+| horloge à paliers | 18 images pour 120 ticks, `fr = (int)(t × 18)` | — |
+| tracés entiers | cercles rasterisés au **Bresenham** | — |
+
+La chorégraphie est neuve : le cadre se trace en balayage, quatre sprites d'éclair définis en
+ASCII dans le code alternent sur trois poses sans jamais pivoter, une jauge de surcharge se
+remplit case par case, un anneau de Bresenham gagne un pixel à la fois, et la décharge finit en
+nappe au sol **tramée en damier** — car sur une console un dégradé se fait au damier, pas à
+l'alpha. C'est aussi ce qui la rend compatible avec le tamis du moteur, qui décime tout alpha
+inférieur à 200.
+
+Le gameplay de la Surcadence est **inchangé** : seule la peau change.
+
+### 24.2 L'« Appel de l'orage » remplace la « Double entaille d'écho »
+
+L'ancienne signature frappait deux fois au même endroit et ne demandait rien au joueur. La
+nouvelle est un **contrat de position** : le nuage se noue à huit blocs au-dessus du point
+d'impact et n'y bouge plus.
+
+- **0 → 27** : 112 bouffées convergent de l'extérieur et le cumulonimbus se noue ;
+- **34 → 105** : cinq éclairs tombent sur des points dispersés, chacun avec deux ramifications,
+  son flash et sa brûlure. Le **ventre du nuage s'illumine avant chaque départ** — c'est le
+  seul avertissement, et il est volontairement lisible ;
+- **105 → 133** : le nuage se contracte de 30 %, une colonne d'appel monte du sol ;
+- **133 → 153** : la décharge, **sept traits serrés** plutôt qu'un seul tronc, car un trait
+  assez épais pour paraître massif cesse d'être un éclair (voir §23.1) ;
+- **143 → 170** : l'onde de choc s'ouvre jusqu'à dix blocs.
+
+Dégâts, pour une base de `max(1,2 ; arme × 0,55)` :
+
+| situation | dégâts | rapport à l'arme |
+|---|---|---|
+| cible immobile sous le nuage | 15,79 | **2,26 ×** |
+| cible qui sort après deux frappes | 2,31 | 0,33 × |
+| mob à dix blocs (répercussion) | 0,85 | 0,12 × |
+
+Le rapport de 2,26 est volontairement élevé : il se paie de **sept secondes** pendant lesquelles
+tout est télégraphié et la zone est fixe. Sortir divise les dégâts par sept.
+
+### 24.3 Ce que le remplacement a entraîné ailleurs
+
+Renommer n'aurait servi à rien si le reste du mod avait continué de parler d'écho :
+
+- `TWIN_ECHO_SLASH` → `STORMCALL_JUDGMENT`, **21 occurrences dans 8 fichiers**. L'identifiant
+  numérique **4 est conservé** : c'est lui la clé de persistance et de dispatch, et les
+  enchantements déclencheurs (`echo_strike`, `combo_slash`, …) sont intacts ;
+- durée **96 → 170 ticks** dans le gestionnaire comme dans la commande de test (`204` de marge) ;
+- la **seconde entaille différée du balayage** (`PENDING_ECHOES`) est débranchée : elle aurait
+  superposé un swing fantôme à chaque coup. La file est conservée, documentée comme inutilisée ;
+- le **balayage d'arme** devient trois anneaux étagés qui montent, et la **lame en main** voit
+  des charges remonter vers la pointe au lieu d'une rangée fantôme décalée ;
+- `SHAPE_DOUBLE_ARC` → `SHAPE_COLUMN` dans la table des mouvements.
+
+### 24.4 Contrôles
+
+`java-parser` OK sur les **8 fichiers** touchés · `semcheck.py` OK · `lamcheck2` : les seuls
+écarts avec HEAD sont les variables locales des nouveaux blocs, aucune capture de variable mutée
+· `node --check` OK · **0 NaN**, **0 alpha sous 208** sur 99 instants × 3 variantes · Playwright
+3 × 6 instants, **0 erreur JS**, comptes DOM identiques à node · pics **456 / 470 / 651** cubes
+pour un plafond de 7 000 · rapport longueur/épaisseur moyen des arcs **9,60** et **6,84** ·
+**0 cube tourné** dans la variante 8 bits · miroirs `FIXES_MCREATOR` **237/237**.

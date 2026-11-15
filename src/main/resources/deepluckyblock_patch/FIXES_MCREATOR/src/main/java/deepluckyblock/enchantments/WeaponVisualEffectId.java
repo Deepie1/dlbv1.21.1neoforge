@@ -41,7 +41,7 @@ public enum WeaponVisualEffectId {
     RAZOR_GLEAM(1,  Category.EDGE_SHARP, 35, true, DeepElement.METAL),
     SUPREME_PRISM_EDGE(2,  Category.EDGE_SHARP, 85, true, DeepElement.METAL),
     SPECTRAL_REACH(3,  Category.SPECIAL,    62, true, DeepElement.SHADOW),
-    TWIN_ECHO_SLASH(4,  Category.SPECIAL,    68, true, DeepElement.THUNDER),
+    STORMCALL_JUDGMENT(4,  Category.SPECIAL,    68, true, DeepElement.THUNDER),
     GUILLOTINE_CLEAVE(5,  Category.SPECIAL,    80, false, DeepElement.BLOOD),
 
     // === II. COUPS CRITIQUES AMÉLIORÉS (6..8) ===
@@ -201,7 +201,7 @@ public enum WeaponVisualEffectId {
         // #03 Allonge Fantôme
         register(SPECTRAL_REACH, "extension", "titans_grasp", "heavy_range", "short_reach");
         // #04 Double Rémanence d'Écho
-        register(TWIN_ECHO_SLASH, "echo_strike", "combo_slash", "swift_strike", "duelists_mastery",
+        register(STORMCALL_JUDGMENT, "echo_strike", "combo_slash", "swift_strike", "duelists_mastery",
                 "instant_shot", "ricochet", "bounce", "minecraft:multishot");
         // #05 Fil d'Exécution & Guillotine
         register(GUILLOTINE_CLEAVE, "guillotine", "decapitation", "beheading", "desperate_kill", "reapers_scythe");
@@ -298,7 +298,7 @@ public enum WeaponVisualEffectId {
         GAUNTLET_MAP.put("iron_fist_gauntlet", SEISMIC_TECTONIC);
         GAUNTLET_MAP.put("diamond_shard_gauntlet", SUPREME_PRISM_EDGE);
         GAUNTLET_MAP.put("focused_punch_gauntlet", FOCUSED_BULLSEYE);
-        GAUNTLET_MAP.put("flurry_gauntlet", TWIN_ECHO_SLASH);
+        GAUNTLET_MAP.put("flurry_gauntlet", STORMCALL_JUDGMENT);
         GAUNTLET_MAP.put("blazing_fist_gauntlet", MOLTEN_FIRE_WAVE);
         GAUNTLET_MAP.put("frost_palm_gauntlet", PERMAFROST_RIME);
         GAUNTLET_MAP.put("thunder_palm_gauntlet", CHAIN_VOLT_ARC);

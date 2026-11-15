@@ -90,6 +90,12 @@ public final class WeaponWorldVfxManager {
     private static final Map<Integer, TrackedProjectile> TRACKED_PROJECTILES = new HashMap<>(32);
 
     // Déclenchement originel des entailles (T342, commit 4d4182e) : au swing, pas au contact.
+    /**
+     * File des balayages différés. <b>Plus aucun effet ne l'alimente depuis que la « double
+     * entaille d'écho » est devenue l'Appel de l'orage</b> : la boucle de drainage itère donc
+     * sur une liste vide. Le mécanisme est conservé — générique et à coût nul — pour le jour
+     * où un effet aura de nouveau besoin d'un second balayage décalé.
+     */
     private static final List<PendingEcho> PENDING_ECHOES = new ArrayList<>(16);
     private static final Map<Integer, Boolean> PLAYER_WAS_SWINGING = new HashMap<>(16);
     private static final Map<Integer, Integer> PLAYER_SWING_PARITY = new HashMap<>(16);
@@ -267,7 +273,7 @@ public final class WeaponWorldVfxManager {
         }
     }
 
-    /** Seconde lame différée de TWIN_ECHO_SLASH, reprise de l'implémentation originelle. */
+    /** Balayage différé générique. Plus aucun effet ne l'alimente — voir PENDING_ECHOES. */
     private static final class PendingEcho {
         int ticksLeft;
         WeaponVisualEffectId effect;
@@ -627,10 +633,10 @@ public final class WeaponWorldVfxManager {
             case PERMAFROST_RIME -> 120;
             // T376-THUNDER : la foudre tenait 11 à 14 ticks, soit moins d'une demi-seconde.
             // Ses trois signatures ont désormais une vraie chorégraphie : ionisation puis
-            // chaîne à six relais, construction de la cage de surcadence, double entaille.
+            // chaîne à six relais, cage de surcadence, formation et décharge de l'orage.
             case CHAIN_VOLT_ARC -> 130;
             case OVERCLOCK_CYBER_X -> 120;
-            case TWIN_ECHO_SLASH -> 96;
+            case STORMCALL_JUDGMENT -> 170;
             case DRAGON_CHAOS_PRISM, BIG_BANG_SCAR -> 22;
             case ECLIPSE_VEIL, NULL_RIFT_FISSURE,
                  CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE -> 18;
@@ -1516,7 +1522,7 @@ public final class WeaponWorldVfxManager {
             }
         }
 
-        // Déclenche les entailles d'écho différées (#04 TWIN_ECHO_SLASH), comme dans T342.
+        // Déclenche les entailles d'écho différées (#04 STORMCALL_JUDGMENT), comme dans T342.
         for (Iterator<PendingEcho> it = PENDING_ECHOES.iterator(); it.hasNext(); ) {
             PendingEcho pe = it.next();
             pe.ticksLeft--;
@@ -1700,23 +1706,10 @@ public final class WeaponWorldVfxManager {
                 p.getYRot(), p.getXRot(), tilt, duration, System.nanoTime(), paletteMask));
 
         if (layers.isEmpty()) return;
-        WeaponVisualEffectId primaryEffect = layers.get(0).effect();
-        boolean hasEcho = primaryEffect == WeaponVisualEffectId.TWIN_ECHO_SLASH
-                || (layers.size() > 1 && layers.get(1).effect() == WeaponVisualEffectId.TWIN_ECHO_SLASH);
-        if (hasEcho && PENDING_ECHOES.size() < 16) {
-            PendingEcho pe = new PendingEcho();
-            pe.ticksLeft = 4;
-            pe.effect = WeaponVisualEffectId.TWIN_ECHO_SLASH;
-            pe.intensity = layers.get(0).level();
-            pe.x = ox;
-            pe.y = oy;
-            pe.z = oz;
-            pe.yaw = p.getYRot();
-            pe.pitch = p.getXRot();
-            pe.tiltRad = baseTilt;
-            pe.paletteMask = WeaponVisualEffectId.elementMaskOf(stack);
-            PENDING_ECHOES.add(pe);
-        }
+        // L'identifiant 4 déclenchait ici une SECONDE entaille différée de 4 ticks : c'était
+        // tout le sens de l'ancienne « double entaille d'écho ». L'effet est devenu l'Appel de
+        // l'orage, dont la répétition se joue en l'air et non dans le balayage de l'arme ;
+        // laisser ce doublon aurait superposé un second swing fantôme à chaque coup.
     }
 
     private static WeaponVisualEffectId animationSlashEffect(String family, int index) {
@@ -1771,7 +1764,7 @@ public final class WeaponWorldVfxManager {
             return switch (index) {
                 case 0 -> WeaponVisualEffectId.CHAIN_VOLT_ARC;
                 case 1 -> WeaponVisualEffectId.OVERCLOCK_CYBER_X;
-                default -> WeaponVisualEffectId.TWIN_ECHO_SLASH;
+                default -> WeaponVisualEffectId.STORMCALL_JUDGMENT;
             };
         }
         if (deepluckyblock.util.AnimFamily.WIND.equals(canonical)) {
@@ -3609,7 +3602,7 @@ public final class WeaponWorldVfxManager {
         int thunderSignature = switch (v.inst().effect) {
             case CHAIN_VOLT_ARC -> ThunderSignatureVfx.BOLT;
             case OVERCLOCK_CYBER_X -> ThunderSignatureVfx.OVERCLOCK;
-            case TWIN_ECHO_SLASH -> ThunderSignatureVfx.ECHO;
+            case STORMCALL_JUDGMENT -> ThunderSignatureVfx.ECHO;
             default -> -1;
         };
         if (thunderSignature >= 0) {
@@ -3659,12 +3652,17 @@ public final class WeaponWorldVfxManager {
                     v.aRgb(), v.aRgb(), flick, v.salt() + e * 11);
         }
 
-        if (fx == WeaponVisualEffectId.TWIN_ECHO_SLASH) {
-            v.slash((1.10f + 0.35f * t) * v.m().scale(), 0.036f, 155.0f,
-                    v.pRgb(), v.sRgb(), v.aRgb(), v.fadeA());
-            // L'écho devient un anneau discret, pas une deuxième ligne de slash.
-            v.ring(v.cy(), (0.85f + 0.30f * t) * S, v.aRgb(), v.pRgb(),
-                    Math.round(v.fadeA() * 0.45f), PIXEL_RING_DASHED);
+        if (fx == WeaponVisualEffectId.STORMCALL_JUDGMENT) {
+            // L'arme n'annonce plus une entaille mais une MONTÉE : trois anneaux étagés qui
+            // s'élèvent, comme l'air qui part vers le nuage. L'ancienne double ligne de slash
+            // n'avait plus de sens une fois la mécanique devenue une zone.
+            v.slash((0.95f + 0.25f * t) * v.m().scale(), 0.030f, 130.0f,
+                    v.pRgb(), v.sRgb(), v.aRgb(), Math.round(v.fadeA() * 0.70f));
+            for (int r = 0; r < 3; r++) {
+                float lift = 0.30f + r * 0.42f + t * 0.55f;
+                v.ring(v.cy() + lift, (0.80f - 0.16f * r + 0.26f * t) * S, v.aRgb(), v.pRgb(),
+                        Math.round(v.fadeA() * (0.52f - 0.12f * r)), PIXEL_RING_DASHED);
+            }
         } else if (fx == WeaponVisualEffectId.CHAIN_VOLT_ARC) {
             for (int c = 0; c < 3; c++) {
                 float ang = c * 2.094f + v.age() * 0.10f;

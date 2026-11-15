@@ -164,7 +164,7 @@ public final class DlbVfxCommand {
         if (fx == WeaponVisualEffectId.WARLORD_RALLY_SIGIL) return 158; // impact 30 + 120 + marge
         if (fx == WeaponVisualEffectId.CHAIN_VOLT_ARC) return 168;   // impact 30 + 130 + marge
         if (fx == WeaponVisualEffectId.OVERCLOCK_CYBER_X) return 158; // impact 30 + 120 + marge
-        if (fx == WeaponVisualEffectId.TWIN_ECHO_SLASH) return 130;  // impact 30 + 96 + marge
+        if (fx == WeaponVisualEffectId.STORMCALL_JUDGMENT) return 204;  // impact 30 + 170 + marge
         return DUMMY_NEXT_EFFECT_TICK;
     }
 
@@ -795,7 +795,7 @@ public final class DlbVfxCommand {
             // T376-THUNDER : les trois signatures de foudre ont une vraie chorégraphie.
             case CHAIN_VOLT_ARC -> 130;
             case OVERCLOCK_CYBER_X -> 120;
-            case TWIN_ECHO_SLASH -> 96;
+            case STORMCALL_JUDGMENT -> 170;
             case RAZOR_GLEAM -> 48;
             case SERAPH_SKY_PILLAR -> 30;
             case ASTRAL_STAR_LANCE -> 80;

@@ -107,7 +107,8 @@ public final class WeaponVfxMotion {
             case RAZOR_GLEAM -> p(SHAPE_CRESCENT, 1, 0.00f, 0.00f, 0.94f, 0.010f);
             case SUPREME_PRISM_EDGE -> p(SHAPE_PRISM, 3, 0.35f, 0.00f, 1.08f, 0.020f);
             case SPECTRAL_REACH -> p(SHAPE_LANCE, 1, 0.00f, 0.00f, 1.25f, 0.000f);
-            case TWIN_ECHO_SLASH -> p(SHAPE_DOUBLE_ARC, 2, -0.45f, 0.00f, 1.02f, 0.030f);
+            // SHAPE_DOUBLE_ARC décrivait la double entaille. L'appel de l'orage monte : colonne.
+            case STORMCALL_JUDGMENT -> p(SHAPE_COLUMN, 2, -0.20f, 0.35f, 1.02f, 0.030f);
 
             // --- II. Critiques -------------------------------------------------------------
             case GUILLOTINE_CLEAVE -> p(SHAPE_COLUMN, 1, 0.00f, 0.00f, 1.20f, 0.015f);
