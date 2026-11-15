@@ -1625,3 +1625,66 @@ seul cube pivotait ou se décalait d'un demi-pas, la grille cesserait de se voir
 Les deux `ERR  constante inconnue « FRAMES »` de `semcheck.py` sont un faux positif connu de
 l'outil sur les `final` locaux en majuscules : la v4, qui compile, les déclenche aux mêmes
 lignes — et deux de plus que la v5.
+
+---
+
+## 26. Surcadence Cyber-X — v6 : la planche de référence, appliquée
+
+### 26.1 Ce qui n'allait pas, et ce n'était pas un réglage
+
+La v5 avait réglé la question du volume — vrais arbres fractals, Bresenham 3D, zéro sprite —
+mais elle restait illisible, et pour une raison qui n'a rien à voir avec la technique : **elle
+montrait quatre choses à la fois**. Une cage de trois troncs, quatre conducteurs verticaux, des
+liaisons de pointe à pointe, un noyau pulsant. Quatre objets de même poids visuel dans le même
+mètre cube : le résultat n'est pas un effet, c'est une boîte.
+
+La correction ne pouvait donc pas être un coefficient. Il a fallu redire **ce que l'animation
+raconte** : la foudre frappe le porteur et ne repart pas. Elle reste plantée sur lui, elle
+grésille, elle éclate au sol. **Un seul objet domine** — le trait vertical — et tout le reste
+n'existe que pour le servir. Il n'y a plus de cage.
+
+### 26.2 L'éclairage : trois règles lues sur la planche
+
+**Le halo ne se fait pas par transparence.** En pixel art, une aura, c'est une couronne de
+pixels de teinte intermédiaire autour du trait. Cela tombe d'autant mieux ici que le moteur
+écarte tout cube sous 200 d'alpha : une aura translucide aurait été parfaitement visible dans
+l'aperçu et **parfaitement invisible en jeu** — le piège dans lequel ce chantier était déjà
+tombé une fois. La gaine est donc opaque et descend dans la palette par couronne : blanc au
+cœur, cyan à une cellule, bleu à deux.
+
+**Le cycle est de cinq images** : deux fines, une de flash, deux fines. C'est le flash qui fait
+la foudre ; une intensité constante se lit comme un néon. Les images fines sont **nues**, un
+seul cube de large — leur donner une couronne permanente retransformait le trait en tube. Le
+battement se mesure, en cubes par image : `170 · 97 · 136 · 398 · 123`.
+
+**L'aura doit être ajourée**, et c'est la seule chose que la planche ne pouvait pas m'apprendre.
+À plat, on voit le cœur *à travers* son halo. En volume, une gaine pleine **masque le cœur** :
+au premier essai il ne restait qu'un bloc bleu compact. Les cubes de couronne sont donc semés
+par un bruit haché (78 % de la couronne proche, 45 % et 38 % de la lointaine), ce qui laisse
+voir le trait blanc et rend au passage le grain du flou.
+
+### 26.3 La forme
+
+Un éclair descend et **se ramifie vers le bas**. La probabilité de fourche croît avec la
+progression le long du trait (`0,70 · u` sur le tronc) : le haut reste franc, le bas s'ouvre en
+patte d'oie. Une branche **continue de descendre en s'écartant** — avec une direction
+quelconque on obtient un oursin, pas une décharge.
+
+Deux corrections de forme ont suivi la première image : l'errance est passée de 0,52 à **1,15**,
+sans quoi un trait de 4,40 blocs de haut reste un poteau ; et le nombre de nœuds de `3+2·depth`
+à `4+3·depth`, pour qu'il y ait assez de coudes pour que le zigzag existe.
+
+### 26.4 Contrôles
+
+`java-parser` OK · `node --check` OK · **0 NaN**, **0 alpha sous 208**, **0 dépassement du
+plafond de 7 000** sur 99 instants × 3 variantes · pics **456 / 608 / 651** · Playwright
+3 × 8 instants, **0 erreur JS** · cinq graines donnent des pics de 547 à 608, la structure ne
+dégénère pas · **0 cube tourné**, **0 cube hors grille sur 22 719**, une seule demi-taille.
+
+Le rapport longueur/épaisseur se mesure sur la **section** du trait, tranche horizontale par
+tranche horizontale — ni l'amplitude du zigzag, ni l'empreinte au sol ne sont une épaisseur.
+Il vaut **4,20 sur l'image de flash** et **21,0 sur les images fines**, pour un plancher exigé
+de 2,5.
+
+`CAGE_HALF` et `ECHO_RADIUS` ont disparu : la première n'avait plus d'usage, la seconde était
+déjà morte côté miroir et n'a jamais existé côté Java.
