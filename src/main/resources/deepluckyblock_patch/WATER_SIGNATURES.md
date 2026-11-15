@@ -1367,3 +1367,114 @@ comptes DOM identiques à ceux de node · pics 492 / 883 / 771 cubes, très en d
 
 Les durées (130 / 120 / 96 ticks) et tout le gameplay serveur sont **inchangés** : cette refonte
 est purement visuelle, elle ne retouche ni les dégâts, ni la charge statique, ni les sons.
+
+---
+
+## 23. Foudre v3 — proportions, plancher, et un barème qui ne se paie plus tout seul
+
+La refonte v2 a été rejetée sur trois points. Les trois étaient justes, et les trois se mesurent.
+
+### 23.1 « Des cubes giga épais »
+
+Mesure du rapport **longueur de segment / largeur de gaine** sur la v2 :
+
+| élément | longueur de segment | largeur de gaine | rapport |
+|---|---|---|---|
+| échelle de Jacob | 0,136 | 0,276 | **0,49** |
+| X croisé | 0,177 | 0,294 | **0,60** |
+| trait maître | 0,393 | 0,367 | 1,07 |
+| cage | 0,293 | 0,221 | 1,33 |
+
+Un segment de l'échelle de Jacob était **deux fois plus large que long**. Ce n'est pas un arc,
+c'est un cube ; aligner des cubes ne fait pas un éclair, cela fait un chapelet. L'erreur de la
+v2 est d'avoir augmenté le nombre de nœuds pour obtenir du détail **sans toucher à l'épaisseur** :
+plus on subdivise, plus les segments raccourcissent, et à épaisseur constante ils finissent carrés.
+
+Deux leviers ont été actionnés ensemble. `BOLT_CORE` descend de **0,075 à 0,040**, et chaque
+appel a vu son nombre de nœuds recalculé pour que la longueur de segment reste supérieure au
+triple de la largeur : échelle de Jacob 14 → 7 nœuds, X croisé 13 → 8, cage 9 → 8, trait maître
+56 → 44, relais de chaîne 20 → 12, liaison d'écho 11 → 8.
+
+| élément | longueur de segment | largeur de gaine | rapport |
+|---|---|---|---|
+| échelle de Jacob | 0,271 | 0,071 | **3,85** |
+| X croisé | 0,287 | 0,090 | **3,19** |
+| cage | 0,330 | 0,098 | **3,35** |
+| trait maître | 0,500 | 0,164 | **3,05** |
+
+Sur l'ensemble des segments réellement émis (99 instants × 3 variantes, section carrée isolée),
+le rapport **moyen** passe de moins de 1 à **9,6 / 5,6 / 6,7**.
+
+Les billes de plasma de la Surcadence relevaient du même reproche : des cubes de 0,22 de côté
+couraient le long de montants larges de 0,13 — la bille était deux fois plus grosse que le
+conducteur. Une charge qui file se lit comme un **trait étiré dans son sens de marche**, pas
+comme un dé : la traînée est devenue une suite de segments effilés reliant les positions
+successives, surmontée d'une tête à peine plus large.
+
+### 23.2 « Le 3ᵉ passe sous le sol »
+
+La lame verticale était un cercle de rayon 3,84 centré à `y = 0,95`. Son point bas tombait donc
+à `0,95 − 0,92 × 3,84 = −2,58`, pour un sol à **−0,44** : **2,14 bloc sous terre**, soit près de
+la moitié de la figure invisible et payée quand même.
+
+Une constante `GROUND_Y = −0,42` borne désormais tout le fichier. La lame inclinée est
+raccourcie d'un tiers **et** son pivot est relevé de sorte que le bas du cercle vienne effleurer
+le sol : la coupe devient une roue posée au sol, lisible en entier, à **−0,42 exactement** pour
+les trois échelles (1,08 / 0,80 / 0,65). Deux autres fuites ont été trouvées au passage :
+
+- les **arcs rampants** de la Surcadence plongeaient à −0,59 ; ils sont plaqués au sol, ce qui
+  est de toute façon le sens d'un contournement de surface ;
+- le **flash d'impact** de l'Arc fulgurant était une sphère pleine centrée à 0,30 pour un rayon
+  vertical de 1,4 : sa moitié basse était enterrée. Le sol la tronque — ce qu'on voit d'un vrai
+  impact est une coupole, pas une bille.
+
+Résultat : `y_min` = −0,46 / −0,44 / −0,43 contre −1,06 / −0,59 / −2,58.
+
+### 23.3 « Mal optimisée »
+
+Le ruban de la lame se recouvrait lui-même : chaque section faisait 0,30 de large sur 0,50 de
+long pour un pas de 0,24 le long de l'arc. Les demi-arêtes ont été divisées par deux et les
+sections ramenées de 44 à 34, et surtout la demi-longueur dans le sens de l'arc est maintenant
+**déduite du pas réel** (`r × reach / segments × 0,58`) au lieu d'être une constante — une
+constante ne peut convenir ni aux deux lames ni aux rémanences, et la figer fragmentait le ruban
+en plaquettes détachées. Les rémanences passent de quatre à trois.
+
+Pic de cubes : **456 / 777 / 584** contre 492 / 928 / 771, pour une lecture nettement plus nette.
+
+### 23.4 « Dégâts mal calculés »
+
+Le vrai défaut n'était pas le chiffre, c'était la **boucle fermée** : la première passe posait
+une pile de charge statique que la seconde consommait aussitôt. La signature s'offrait donc
+`+35 %` à chaque utilisation, sans la moindre décision du joueur — et le débordement faisait
+pire, puisque les deux passes posaient une pile sur chaque victime du groupe, la seconde se
+payant le multiplicateur de la première.
+
+Trois corrections :
+
+1. **La pile n'est plus posée que par la première passe**, sur la cible comme sur le débordement.
+   L'écho ne consomme donc plus que des piles venues d'**autres** coups de foudre : le bonus
+   récompense un enchaînement, pas le simple fait d'appuyer.
+2. Barème ramené de `0,80` à **`0,55`** (plancher 1,5 → 1,2), bonus de pile `+35 %` → **`+30 %`**,
+   débordement `0,55` → **`0,45`**.
+3. Rayon du débordement ramené de 3,40 à **3,05**, qui est le rayon de la lame telle qu'elle est
+   réellement dessinée. Mordre au-delà du visible donne l'impression de dégâts sortis de nulle part.
+
+Pour une arme à 7 dégâts, en plus du coup normal du joueur :
+
+| situation | avant | après |
+|---|---|---|
+| cible seule | 10,89 (**1,56×** l'arme) | **6,55** (0,94×) |
+| 1 pile d'un autre coup | 12,26 | 7,35 |
+| 3 piles | 15,01 | 8,97 |
+| 5 piles (maximum) | 17,75 | **10,59** |
+
+L'écho reste le gros lot de la famille, mais il faut désormais le préparer.
+
+### 23.5 Contrôles
+
+`java-parser` OK sur les deux fichiers · `semcheck.py` OK · `lamcheck2` **rigoureusement
+identique à HEAD** sur le gameplay, donc aucune régression de capture introduite · miroir JS
+porté dans le même tour, `node --check` OK · **0 NaN**, **0 voxel sous le plancher d'opacité**,
+**0 voxel sous le sol** sur 99 instants × 3 variantes · Playwright 3 × 6 instants, **0 erreur
+JS**, comptes DOM identiques à node · miroirs `FIXES_MCREATOR` **237/237** · durées
+130 / 120 / 96 ticks inchangées.

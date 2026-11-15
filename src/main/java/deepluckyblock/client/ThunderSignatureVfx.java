@@ -85,8 +85,22 @@ public final class ThunderSignatureVfx {
 
     /** Hauteur de chute du trait maître. Au-delà, le trait sort du champ de vision courant. */
     private static final float SKY_HEIGHT = 22.0f;
-    /** Demi-épaisseur du cœur d'un trait principal. */
-    private static final float BOLT_CORE = 0.075f;
+    /**
+     * Demi-épaisseur du cœur d'un trait principal. <b>0,040 et non 0,075</b> : à l'ancienne
+     * valeur, la gaine d'un trait mesurait 0,37 bloc de large pour des segments de 0,14 à 0,39
+     * bloc de long — chaque segment était donc plus large que long et la décharge se lisait
+     * comme un chapelet de cubes. Un trait n'est perçu comme un trait qu'à partir d'un rapport
+     * longueur/épaisseur d'environ 3 ; tous les appels de {@link #drawBolt} de ce fichier sont
+     * dimensionnés pour le respecter.
+     */
+    private static final float BOLT_CORE = 0.040f;
+
+    /**
+     * Niveau du sol dans le repère local. Rien n'est émis en dessous : une lame verticale
+     * centrée à hauteur de poitrine plongeait la moitié de son cercle sous terre, ce qui
+     * gaspillait des cubes et donnait une coupe amputée.
+     */
+    private static final float GROUND_Y = -0.42f;
     /** Rayon de la couronne de plasma au sol, à pleine extension. */
     private static final float CROWN_RADIUS = 5.10f;
     /** Nombre de relais de la chaîne — le serveur en frappe autant (voir WeaponVfxServerListener). */
@@ -197,7 +211,7 @@ public final class ThunderSignatureVfx {
             if (persist > 0.02f) {
                 drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
                         0.0f, 0.0f, SKY_HEIGHT, 0.0f, 0.0f, 0.0f,
-                        salt * 31 + 7, 1.55f, reveal, thick, a * persist, 56, true);
+                        salt * 31 + 7, 1.55f, reveal, thick, a * persist, 44, true);
                 // Ramifications : cinq départs le long du canal, orientés vers le bas-dehors.
                 for (int br = 0; br < 5; br++) {
                     float hb = hash(salt, 900 + br * 59);
@@ -235,8 +249,13 @@ public final class ThunderSignatureVfx {
                             * (yy / Math.max(0.01f, rr * 0.75f))));
                     float sz = (0.17f - 0.07f * sv) * flash;
                     if (sz <= 0.004f) continue;
+                    // La boule de surexposition était une sphère pleine centrée à 0,30 pour un
+                    // rayon vertical de 1,4 : la moitié basse était enterrée, donc perdue. Le
+                    // sol la tronque — ce qu'on voit d'un vrai impact est une coupole, pas une bille.
+                    float fy = 0.30f + yy;
+                    if (fy < GROUND_Y) continue;
                     box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            Mth.cos(ang) * pr, Mth.sin(ang) * pr, 0.30f + yy,
+                            Mth.cos(ang) * pr, Mth.sin(ang) * pr, fy,
                             sz, sz, sz, mix(CORE, HOT, sv * 0.8f), opaque(a * flash));
                 }
             }
@@ -332,7 +351,7 @@ public final class ThunderSignatureVfx {
                 drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
                         prevF, prevL, prevY, tf, tl, ty,
                         salt * 7 + k * 877, 0.80f, draw, 0.55f + 0.45f * keep,
-                        a * (0.55f + 0.45f * keep), 20, true);
+                        a * (0.55f + 0.45f * keep), 12, true);
                 // Flash d'arrivée sur la victime : petite sphère + anneau au sol.
                 if (age > 0.40f) {
                     float hit = smooth((age - 0.40f) / 0.22f) * (1.0f - smooth((age - 0.72f) / 0.28f));
@@ -435,7 +454,7 @@ public final class ThunderSignatureVfx {
                 neonEdge(vc, mat, tmp, cx, cy, cz, dx, dz,
                         Mth.cos(ang) * r, Mth.sin(ang) * r, -0.44f,
                         Mth.cos(ang) * r, Mth.sin(ang) * r, tipY,
-                        1.0f, 0.062f, CYAN, a * cage);
+                        1.0f, 0.034f, CYAN, a * cage);
                 // Effluves à la pointe : de courts filaments qui partent dans tous les sens.
                 int brushes = 5;
                 for (int b = 0; b < brushes; b++) {
@@ -449,7 +468,7 @@ public final class ThunderSignatureVfx {
                             Mth.sin(ang) * r + Mth.sin(ba) * bl,
                             tipY + (hb - 0.35f) * 0.55f,
                             salt * 29 + p * 71 + b * 311 + strobe * 7, 0.16f,
-                            1.0f, 0.46f, a * cage * 0.85f, 5, false);
+                            1.0f, 0.46f, a * cage * 0.85f, 3, false);
                 }
             }
         }
@@ -482,7 +501,7 @@ public final class ThunderSignatureVfx {
                 if (hash(salt + strobe * 211, edge * 53) < 0.17f) continue;
                 drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz, f0, l0, y0, f1, l1, y1,
                         salt * 41 + edge * 617 + strobe * 13, 0.12f, g, 0.60f,
-                        a * cage * 0.92f, 9, true);
+                        a * cage * 0.92f, 8, true);
             }
         }
 
@@ -506,7 +525,7 @@ public final class ThunderSignatureVfx {
                 drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
                         cf0, cl0, ladderY, cf1, cl1, ladderY,
                         salt * 53 + pair * 743 + strobe * 29, 0.30f + 0.34f * climb,
-                        1.0f, 0.52f + 0.48f * vigour, a * cage * vigour, 14, true);
+                        1.0f, 0.30f + 0.26f * vigour, a * cage * vigour, 7, true);
             }
         }
 
@@ -526,12 +545,15 @@ public final class ThunderSignatureVfx {
                     float ang = (lane - 4) * TAU / 4.0f + 0.7854f;
                     f0 = Mth.cos(ang) * e; l0 = Mth.sin(ang) * e; y0 = lo + (hi - lo) * u;
                 }
-                float sz = 0.070f + 0.040f * h0;
+                // Des cubes de 0,22 de côté couraient le long de montants larges de 0,13 : la
+                // « bille » était deux fois plus grosse que le conducteur. Une charge qui file
+                // se lit comme un TRAIT étiré dans son sens de marche, pas comme un dé. On relie
+                // donc la position courante à la précédente par un segment effilé.
+                float sz = 0.034f + 0.020f * h0;
                 int rgb = h0 > 0.66f ? MAGENTA : (h0 > 0.33f ? CYAN : HOT);
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, f0, l0, y0,
-                        sz, sz, sz, rgb, opaque(a * run * cage));
-                for (int q = 1; q <= 3; q++) {
-                    float back = u - q * 0.022f;
+                float pf = f0, pl = l0, py = y0;
+                for (int q = 1; q <= 4; q++) {
+                    float back = u - q * 0.028f;
                     if (back < 0.0f) break;
                     float bf, bl, by;
                     if (lane < 4) {
@@ -540,10 +562,15 @@ public final class ThunderSignatureVfx {
                     } else {
                         bf = f0; bl = l0; by = lo + (hi - lo) * back;
                     }
-                    float bs = sz * (1.0f - q * 0.26f);
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz, bf, bl, by,
-                            bs, bs, bs, rgb, opaque(a * run * cage * 0.9f));
+                    float bs = sz * (1.0f - q * 0.19f);
+                    seg(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py, bf, bl, by,
+                            bs, rgb, opaque(a * run * cage * (1.0f - q * 0.16f)));
+                    pf = bf; pl = bl; py = by;
                 }
+                // Tête de la charge : à peine plus large que sa traînée.
+                box(vc, mat, tmp, cx, cy, cz, dx, dz, f0, l0, y0,
+                        sz * 1.25f, sz * 1.25f, sz * 1.25f, mix(rgb, CORE, 0.45f),
+                        opaque(a * run * cage));
             }
         }
 
@@ -557,8 +584,8 @@ public final class ThunderSignatureVfx {
                 float ef = Mth.cos(spin) * arm, el = Mth.sin(spin) * arm;
                 drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
                         -ef, -el, yMid - tilt * arm, ef, el, yMid + tilt * arm,
-                        salt * 67 + bar * 929 + strobeSlow * 23, 0.14f, 1.0f, 0.80f,
-                        a * (1.0f - 0.5f * collapse), 13, true);
+                        salt * 67 + bar * 929 + strobeSlow * 23, 0.14f, 1.0f, 0.55f,
+                        a * (1.0f - 0.5f * collapse), 8, true);
             }
             // Le nœud central : surexposé, il bat plus vite que le reste.
             float pulse = 0.72f + 0.28f * Mth.sin(t * 52.0f);
@@ -672,7 +699,7 @@ public final class ThunderSignatureVfx {
         // ---- 2. RÉMANENCES : quatre copies figées de la première lame ----
         if (t > 0.14f && t < 0.46f) {
             float ghost = 1.0f - smooth((t - 0.16f) / 0.28f);
-            for (int g = 1; g <= 4; g++) {
+            for (int g = 1; g <= 3; g++) {
                 float back = g * 0.055f;
                 float gt = Mth.clamp(cut1 - back * 2.2f, 0.0f, 1.0f);
                 if (gt <= 0.02f) continue;
@@ -696,15 +723,18 @@ public final class ThunderSignatureVfx {
                 float ang0 = -arc * 0.5f + arc * cut1 * u0;
                 float r0 = ECHO_RADIUS * scale1 * 0.90f;
                 float f0 = Mth.cos(ang0) * r0, l0 = Mth.sin(ang0) * r0, y0 = 0.95f;
-                // Point sur la lame verticale (tilt 1, sens -1, décalage de phase).
+                // Point sur la lame verticale : même rayon réduit et même pivot relevé que
+                // drawBlade, sinon les arcs de liaison partiraient dans le vide.
                 float ang1 = -arc * 0.5f + 1.5708f - arc * cut2 * u1;
-                float r1 = ECHO_RADIUS * scale2 * 0.90f;
-                float f1 = Mth.cos(ang1) * r1;
+                float r1 = ECHO_RADIUS * scale2 * 0.65f;
+                float pivot2 = 0.95f + Math.max(0.0f, (GROUND_Y + 0.92f * r1 * 1.06f) - 0.95f);
+                float f1 = Mth.cos(ang1) * r1 * 0.90f;
                 float l1 = 0.0f;
-                float y1 = 0.95f + Mth.sin(ang1) * r1 * 0.92f;
+                float y1 = pivot2 + Mth.sin(ang1) * r1 * 0.92f;
+                if (y1 < GROUND_Y) continue;
                 drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz, f0, l0, y0, f1, l1, y1,
                         salt * 23 + s * 457 + strobe * 31, 0.34f, 1.0f, 0.50f,
-                        a * cross * 0.88f, 11, true);
+                        a * cross * 0.88f, 8, true);
             }
             // Noyau du croisement.
             float pulse = 0.6f + 0.4f * Mth.sin(t * 46.0f);
@@ -758,11 +788,20 @@ public final class ThunderSignatureVfx {
                                   int alpha, int salt, int variant, int strobe) {
         if (sweep <= 0.0f || scale <= 0.02f) return;
         final float arc = 3.665f;                               // 210°
-        final int segments = 44;
+        final int segments = 34;
         float start = -arc * 0.5f + phase;
         float reach = arc * sweep;
         float flat = 1.0f - tilt;
         boolean ghost = variant >= 10;
+        // Une lame inclinée est un cercle vertical : à rayon égal, sa moitié basse passe sous le
+        // sol. On la raccourcit d'un tiers ET on remonte son pivot pour que le bas du cercle
+        // vienne effleurer le sol — la coupe devient une roue posée au sol, lisible en entier.
+        float bladeR = ECHO_RADIUS * scale * (1.0f - 0.35f * tilt);
+        float yPivot = 0.95f;
+        if (tilt > 0.0f) {
+            float drop = 0.92f * bladeR * 1.06f;
+            yPivot = 0.95f + tilt * Math.max(0.0f, (GROUND_Y + drop) - 0.95f);
+        }
         // Graine et amplitude COMMUNES au corps et au tranchant. C'est le point essentiel :
         // tant que le corps suivait un arc de cercle parfait, la lame restait une lame
         // d'energie generique, interchangeable avec n'importe quel autre element. En lui
@@ -779,28 +818,37 @@ public final class ThunderSignatureVfx {
             float taper = Mth.sin(u * 3.14159f);
             float dr = boltOffset(bladeSeed, u, amp) * taper;
             float dyv = boltOffset(bladeSeed + 5000, u, amp) * taper * 0.75f;
-            float r = ECHO_RADIUS * scale * (0.72f + 0.34f * belly) + dr;
+            float r = bladeR * (0.72f + 0.34f * belly) + dr;
             float lat = Mth.sin(ang) * r;
             float f = Mth.cos(ang) * r;
             float l = lat * flat;
-            float y = 0.95f + lat * tilt * 0.92f + dyv;
+            float y = yPivot + lat * tilt * 0.92f + dyv;
+            if (y < GROUND_Y) continue;                         // rien sous le sol
             for (int layer = 0; layer < 2; layer++) {
                 float lv = layer;
-                float hw = (0.040f + 0.085f * lv) * scale * (0.55f + 0.65f * belly);
-                float hh = (0.165f - 0.060f * lv) * scale * (0.50f + 0.70f * belly);
+                // Demi-arêtes divisées par deux : l'ancien ruban faisait 0,30 de large sur 0,50
+                // de long par section, pour un pas de 0,24 le long de l'arc — il se recouvrait
+                // lui-même deux fois. D'où l'impression de tube épais, et le gaspillage.
+                float hw = (0.022f + 0.040f * lv) * scale * (0.55f + 0.65f * belly);
+                float hh = (0.105f - 0.040f * lv) * scale * (0.50f + 0.70f * belly);
+                // La demi-longueur dans le sens de l'arc doit valoir la MOITIÉ DU PAS réel,
+                // sinon les sections se détachent et le ruban se lit comme un chapelet de
+                // plaquettes. Le pas dépend du rayon courant et de l'ouverture balayée : une
+                // constante ne peut pas convenir aux deux lames ni aux rémanences.
+                float hz = Math.max(0.020f, r * (reach / segments) * 0.58f);
                 int rgb = layer == 0 ? CORE : VIOLET;
                 float fade = layer == 0 ? 1.0f : 0.88f;
                 if (hw <= 0.004f || hh <= 0.004f) continue;
                 rot(vc, mat, tmp, cx, cy, cz, dx, dz, f, l, y,
-                        hw, hh, hw * 1.65f,
+                        hw, hh, hz,
                         -ang, tilt * 1.5708f, 0.0f, rgb, opaque(alpha * fade));
             }
         }
 
         // ---- Tranchant : LA décharge, une polyligne fractale le long de la coupe ----
         boltArc(vc, mat, tmp, cx, cy, cz, dx, dz,
-                start, dir * reach, ECHO_RADIUS * scale * 1.04f, tilt, 0.95f,
-                bladeSeed, amp, 0.60f * scale, alpha * (ghost ? 0.72f : 1.0f), 30, !ghost);
+                start, dir * reach, bladeR * 1.04f, tilt, yPivot,
+                bladeSeed, amp, 0.55f * scale, alpha * (ghost ? 0.72f : 1.0f), 22, !ghost);
 
         // ---- Filaments : la coupe fuit par les bords ----
         if (!ghost) {
@@ -809,31 +857,35 @@ public final class ThunderSignatureVfx {
                 float ub = (b + 0.5f) / 7.0f;
                 if (ub > sweep || hb > 0.70f) continue;
                 float ang = start + dir * reach * ub;
-                float r = ECHO_RADIUS * scale;
+                float r = bladeR;
                 float lat = Mth.sin(ang) * r;
                 float f = Mth.cos(ang) * r;
                 float l = lat * flat;
-                float y = 0.95f + lat * tilt * 0.92f;
+                float y = yPivot + lat * tilt * 0.92f;
+                if (y < GROUND_Y) continue;
                 float bl = (0.30f + 0.62f * hb) * scale;
                 // La branche part vers l'extérieur de l'arc, et vers le bas si la lame est à plat.
                 float of = Mth.cos(ang) * bl, ol = Mth.sin(ang) * bl * flat;
                 float oy = (tilt > 0.5f ? Mth.sin(ang) * bl * 0.92f : -bl * 0.75f);
                 drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        f, l, y, f + of, l + ol, y + oy,
+                        f, l, y, f + of, l + ol, Math.max(GROUND_Y, y + oy),
                         salt * 149 + variant * 503 + b * 211 + strobe * 7, 0.14f,
-                        1.0f, 0.42f, alpha * 0.82f, 6, false);
+                        1.0f, 0.42f, alpha * 0.82f, 4, false);
             }
         }
 
         // ---- Pointe : le front de coupe reste surexposé ----
         {
             float angTip = start + dir * reach;
-            float rTip = ECHO_RADIUS * scale * 1.02f;
+            float rTip = bladeR * 1.02f;
             float latTip = Mth.sin(angTip) * rTip;
-            float sz = 0.145f * scale;
-            box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    Mth.cos(angTip) * rTip, latTip * flat, 0.95f + latTip * tilt * 0.92f,
-                    sz, sz, sz, CORE, opaque(alpha));
+            float yTip = yPivot + latTip * tilt * 0.92f;
+            float sz = 0.105f * scale;
+            if (yTip >= GROUND_Y) {
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(angTip) * rTip, latTip * flat, yTip,
+                        sz, sz, sz, CORE, opaque(alpha));
+            }
         }
     }
 
@@ -870,15 +922,18 @@ public final class ThunderSignatureVfx {
                 // `thick` est un FACTEUR de BOLT_CORE, exactement comme dans drawBolt, et non
                 // une epaisseur absolue : sans cette multiplication le tranchant atteignait
                 // 1,38 bloc de demi-epaisseur et la lame devenait une dalle pleine.
-                if (sheath) {
+                // Rien sous le sol : ni le tronçon courant, ni le précédent.
+                if (y >= GROUND_Y && py >= GROUND_Y) {
+                    if (sheath) {
+                        seg(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py, f, l, y,
+                                BOLT_CORE * 2.05f * thick, mix(VIOLET, ARC, 0.5f), opaque(alpha * 0.80f));
+                        seg(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py, f, l, y,
+                                BOLT_CORE * 1.40f * thick, NEON, opaque(alpha * 0.92f));
+                    }
                     seg(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py, f, l, y,
-                            BOLT_CORE * 2.30f * thick, mix(VIOLET, ARC, 0.5f), opaque(alpha * 0.80f));
-                    seg(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py, f, l, y,
-                            BOLT_CORE * 1.50f * thick, NEON, opaque(alpha * 0.92f));
+                            BOLT_CORE * (sheath ? 1.0f : 0.85f) * thick,
+                            sheath ? CORE : mix(NEON, CORE, 0.55f), opaque(alpha));
                 }
-                seg(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py, f, l, y,
-                        BOLT_CORE * (sheath ? 1.0f : 0.85f) * thick,
-                        sheath ? CORE : mix(NEON, CORE, 0.55f), opaque(alpha));
             }
             pf = f; pl = l; py = y;
         }
@@ -931,14 +986,18 @@ public final class ThunderSignatureVfx {
             float cf = ef + nf * off1;
             float cl = el + nl * off1;
             float cyy = ey + off2 * (hlen > Math.abs(sy) ? 0.42f : 1.0f);
+            // Un arc rampant est un contournement de SURFACE : le bruit vertical le faisait
+            // plonger jusqu'à 0,6 bloc sous terre, où il disparaissait purement et simplement.
+            // On le plaque au sol plutôt que de le laisser se perdre dessous.
+            if (cyy < GROUND_Y) cyy = GROUND_Y;
             // Gaine violette large, halo, puis cœur blanc : trois passes concentriques. C'est
             // ce triple tracé qui donne au canal sa surexposition, impossible à obtenir avec
             // un seul cube par segment.
             if (sheath) {
                 seg(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py, cf, cl, cyy,
-                        BOLT_CORE * 2.45f * thick, mix(VIOLET, ARC, 0.5f), opaque(alpha * 0.80f));
+                        BOLT_CORE * 2.05f * thick, mix(VIOLET, ARC, 0.5f), opaque(alpha * 0.80f));
                 seg(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py, cf, cl, cyy,
-                        BOLT_CORE * 1.55f * thick, NEON, opaque(alpha * 0.92f));
+                        BOLT_CORE * 1.40f * thick, NEON, opaque(alpha * 0.92f));
             }
             seg(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py, cf, cl, cyy,
                     BOLT_CORE * (sheath ? 1.0f : 0.80f) * thick,

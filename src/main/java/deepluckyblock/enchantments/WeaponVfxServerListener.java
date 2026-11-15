@@ -3182,7 +3182,11 @@ public final class WeaponVfxServerListener {
                                               ServerLevel sl, float weaponDamage) {
         final int attackerId = attacker == null ? -1 : attacker.getId();
         final long now = TestProcedure.currentTick(sl);
-        final float base = Math.max(1.5f, weaponDamage * 0.80f);
+        // 0,55 et non 0,80. L'ancien barème cumulait 1,56 x les dégâts de l'arme EN PLUS du coup
+        // normal du joueur, et il s'auto-amplifiait (voir plus bas). Les deux passes totalisent
+        // désormais 0,94 x, et seules des piles venues d'AUTRES coups de foudre font monter
+        // l'écho — jusqu'à 1,5 x au maximum, ce qui reste le gros lot de la famille.
+        final float base = Math.max(1.2f, weaponDamage * 0.55f);
         final double ax = attacker == null ? target.getX() : attacker.getX();
         final double az = attacker == null ? target.getZ() : attacker.getZ();
 
@@ -3201,9 +3205,13 @@ public final class WeaponVfxServerListener {
                 // Coup principal. L'écho encaisse en plus toutes les piles accumulées.
                 float power = base * (echo ? 0.70f : 1.0f);
                 if (echo) {
+                    // L'écho ne consomme QUE des piles accumulées par d'autres coups de foudre.
+                    // Auparavant la première passe en posait une que la seconde consommait
+                    // aussitôt : l'effet s'offrait un bonus de +35 % à chaque utilisation, sans
+                    // la moindre décision du joueur. Une boucle fermée n'est pas une mécanique.
                     int stacks = consumeStatic(sl, target);
                     if (stacks > 0) {
-                        power *= 1.0f + 0.35f * stacks;
+                        power *= 1.0f + 0.30f * stacks;
                         sl.playSound(null, cx, cy, cz, SoundEvents.LIGHTNING_BOLT_THUNDER,
                                 SoundSource.PLAYERS, 0.80f, 1.10f);
                         PixelFx.send(sl, ParticleTypes.FLASH, cx, cy, cz, 1, 0.0, 0.0, 0.0, 0.0);
@@ -3213,7 +3221,6 @@ public final class WeaponVfxServerListener {
                 }
                 if (target.isAlive()) {
                     hurtWithCapturedWeapon(sl, attackerId, target, power);
-                    if (!echo) addStaticCharge(sl, target, 1, attackerId);
                 }
 
                 // Débordement : l'arc de 210° devant l'attaquant, rayon 3,4 blocs.
@@ -3222,20 +3229,26 @@ public final class WeaponVfxServerListener {
                 double flen = Math.sqrt(fx * fx + fz * fz);
                 final double ux = flen < 0.05 ? 1.0 : fx / flen;
                 final double uz = flen < 0.05 ? 0.0 : fz / flen;
+                // 3,05 : rayon de la lame telle qu'elle est RÉELLEMENT dessinée
+                // (ECHO_RADIUS 3,35 x l'échelle décroissante du ruban). À 3,40 la zone mordait
+                // au-delà du visible, ce qui donne l'impression de dégâts sortis de nulle part.
                 for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
-                        new AABB(cx - 3.40, cy - 2.20, cz - 3.40, cx + 3.40, cy + 2.40, cz + 3.40))) {
+                        new AABB(cx - 3.05, cy - 2.20, cz - 3.05, cx + 3.05, cy + 2.40, cz + 3.05))) {
                     if (!victim.isAlive() || victim == target || victim instanceof Player) continue;
                     if (attackerId >= 0 && victim.getId() == attackerId) continue;
                     double rx = victim.getX() - cx;
                     double rz = victim.getZ() - cz;
                     double rlen = Math.sqrt(rx * rx + rz * rz);
-                    if (rlen > 3.40) continue;
+                    if (rlen > 3.05) continue;
                     // cos(105°) ≈ -0,259 : la moitié d'un arc de 210°.
                     double dot = rlen < 0.05 ? 1.0 : (rx * ux + rz * uz) / rlen;
                     if (dot < -0.259) continue;
                     hurtWithCapturedWeapon(sl, attackerId, victim,
-                            base * 0.55f * (echo ? 0.70f : 1.0f) * staticMultiplier(sl, victim));
-                    addStaticCharge(sl, victim, 1, attackerId);
+                            base * 0.45f * (echo ? 0.70f : 1.0f) * staticMultiplier(sl, victim));
+                    // La pile n'est posée que par la première passe. Quand les deux en posaient
+                    // une, la seconde se payait le multiplicateur de la première : même boucle
+                    // fermée que sur la cible principale, en pire car elle touchait tout le groupe.
+                    if (!echo) addStaticCharge(sl, victim, 1, attackerId);
                     PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
                             victim.getX(), victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
                             14, 0.30, 0.40, 0.30, 0.14);
