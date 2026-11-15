@@ -1290,3 +1290,80 @@ les trois constantes · miroirs `FIXES_MCREATOR` → **MIRROR_OK sur 210 fichier
 
 Le gameplay de la foudre n'immobilise jamais : il ne pose que `MOVEMENT_SLOWDOWN`. Il ne peut
 donc pas entrer en conflit avec `MOVEMENT_HOLDS`, `WIND_HOLDS` ou `SURGE_RIDES`.
+
+---
+
+## §22 — « Pas assez électrique » : refonte des signatures 2 et 3 (4 novembre 2026)
+
+Verdict de l'essai : l'arc en chaîne passait, les deux autres non. Le diagnostic tient en deux
+phrases. La **Surcadence** n'était pas électrique, elle était *électronique* — cage néon
+parfaitement régulière, pistes de circuit imprimé, histogramme de cadence, anneaux de scan :
+rien n'y claquait, tout y était lisse et stable. La **Double entaille** n'était pas une
+décharge, c'était un *ruban lisse* — un arc de cercle parfait, donc une lame d'énergie
+générique, interchangeable avec celle de n'importe quel autre élément.
+
+### 22.1 Ce qui rend un trait électrique
+
+Un néon et un éclair se distinguent par **l'instabilité**, pas par la couleur. Un tracé qui ne
+change pas d'une image à l'autre est perçu comme un tube de néon, même violet, même avec un cœur
+blanc. D'où l'horloge de scintillement introduite ici :
+
+```java
+int strobe = (int) (t * 34.0f);   // la graine avance par paliers
+```
+
+En injectant `strobe` dans la graine des tracés, la cage entière est **redessinée plusieurs fois
+par seconde**. Une arête sur cinq s'éteint à chaque palier. L'œil ne lit plus une structure
+mais une décharge qui peine à s'établir.
+
+### 22.2 Surcadence — d'une carte électronique à une installation haute tension
+
+| Avant | Après |
+|---|---|
+| 12 arêtes néon régulières | 12 **arcs** fractals qui se retracent et papillotent |
+| Pistes de circuit imprimé (vert PCB) | **Échelle de Jacob** entre électrodes voisines |
+| Histogramme de cadence, anneaux de scan | **Contournement au sol** : la terre fuit |
+| X en chaîne de cubes | X de **deux éclairs** croisés en rotation |
+| 4 pylônes décoratifs | 4 **électrodes** à couronne d'effluves |
+
+L'échelle de Jacob est l'ajout décisif : l'arc s'amorce en bas entre deux électrodes, monte,
+s'allonge donc s'affaiblit, puis **rompt net** et se rallume en bas. C'est l'image de haute
+tension la plus reconnaissable qui soit, et elle raconte exactement ce que fait l'effet —
+une machine poussée au-delà de son régime.
+
+La constante `PCB` est devenue inutile et a été **supprimée** plutôt que laissée en place :
+une couleur déclarée que personne n'emploie est du code mort, et le code mort masque toujours
+une intention abandonnée (cf. §21.5).
+
+### 22.3 La lame — et le bug de la dalle violette
+
+Le tranchant est désormais tracé par une nouvelle primitive, `boltArc`, qui déplace
+fractalement une polyligne **le long d'un arc** et non d'un segment droit. `drawBolt` ne sait
+relier que deux points ; l'appeler segment par segment aurait annulé le bruit à chaque jonction
+et redonné un cercle.
+
+Premier jet : **la lame est devenue une dalle violette pleine**, un bloc informe occupant tout
+l'écran. Cause exacte : `drawBolt` traite son paramètre `thick` comme un *facteur* de
+`BOLT_CORE` (0,075), alors que `boltArc` l'utilisait comme une *épaisseur absolue*. Avec
+`thick = 0,60`, la gaine passait de 0,10 à **1,38 bloc de demi-épaisseur**, soit quatorze fois
+trop. Deux fonctions voisines, un paramètre de même nom, deux unités différentes : la
+multiplication par `BOLT_CORE` a été rétablie dans `boltArc`, et le garde-fou d'entrée
+(`thick <= 0.004`) relevé à `0.02` pour qu'il teste bien un facteur.
+
+Seconde correction, plus subtile : même avec un tranchant zigzaguant, la lame restait molle,
+parce que **le corps du ruban suivait toujours un cercle parfait**. Corps et tranchant partagent
+maintenant la même graine et la même amplitude, donc le même déplacement fractal — la coupe
+entière zigzague. Des filaments partent des bords, et les arcs de liaison relient un point
+**pris sur** la lame horizontale à un point **pris sur** la lame verticale, au lieu de dix arcs
+tirés au hasard dans une sphère.
+
+### 22.4 Contrôles
+
+`java-parser` OK · `semcheck.py` OK · aucune variable mutée capturée par une lambda ·
+miroir JS mis à jour dans le même tour, `node --check` OK · **0 NaN** et **0 voxel sous le
+plancher d'opacité** sur 99 instants × 3 variantes · Playwright 3 × 6 instants, **0 erreur JS**,
+comptes DOM identiques à ceux de node · pics 492 / 883 / 771 cubes, très en deçà du plafond de
+7 000 · miroirs `FIXES_MCREATOR` **210/210**.
+
+Les durées (130 / 120 / 96 ticks) et tout le gameplay serveur sont **inchangés** : cette refonte
+est purement visuelle, elle ne retouche ni les dégâts, ni la charge statique, ni les sons.

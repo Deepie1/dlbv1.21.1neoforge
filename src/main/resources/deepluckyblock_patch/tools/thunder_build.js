@@ -48,7 +48,7 @@ function buildThunder(variant, t, salt = 7331) {
   // ---- Palette (DeepElement.THUNDER) -----------------------------------------------------
   const DEEP = 0x1E26FF, VIOLET = 0x5E3AFF, ARC = 0x8E6BFF, NEON = 0xC9B6FF,
         HOT = 0xFCFFBA, CORE = 0xFFFFFF, CYAN = 0x2BE8FF, MAGENTA = 0xFF3BD4,
-        PCB = 0x1BE08A, GLASS = 0x7C68A0, MOLTEN = 0xFFB347, SCORCH = 0x2A2036;
+        GLASS = 0x7C68A0, MOLTEN = 0xFFB347, SCORCH = 0x2A2036;
 
   const SKY_HEIGHT = 22.0, BOLT_CORE = 0.075, CROWN_RADIUS = 5.10,
         CHAIN_LINKS = 6, CAGE_HALF = 1.32, ECHO_RADIUS = 3.35;
@@ -130,50 +130,110 @@ function buildThunder(variant, t, salt = 7331) {
     seg(f0, l0, y0, ef, el, ey, thick, rgb, opq(alpha));
   };
 
-  // drawBlade() : ruban en arc de 210°. `tilt` verse la coordonnée latérale dans la hauteur
-  // (0 = lame à plat, 1 = lame verticale) — c'est ce qui fait que les deux entailles décrivent
-  // un X dans l'espace au lieu de deux cercles superposés.
-  const drawBlade = (sweep, phase, tilt, dir, scale, alpha, bladeVariant) => {
+  // boltArc() : polyligne fractale suivant un ARC, et non un segment droit. drawBolt ne sait
+  // relier que deux points ; l'appeler segment par segment annulerait le bruit a chaque
+  // jonction. Ici le deplacement est calcule sur toute la longueur de la course.
+  const boltArc = (start, span, radius, tilt, yBase, seed, amp, thick, alpha, nodes, sheath) => {
+    if (alpha <= 1 || thick <= 0.02 || nodes < 2) return;
+    const flat = 1 - tilt;
+    let pf = 0, pl = 0, py = 0;
+    for (let n = 0; n <= nodes; n++) {
+      const u = n / nodes;
+      const ang = start + span * u;
+      const taper = Math.sin(u * 3.14159);
+      const dr = boltOffset(seed, u, amp) * taper;
+      const dyv = boltOffset(seed + 5000, u, amp) * taper * 0.75;
+      const r = radius + dr;
+      const lat = Math.sin(ang) * r;
+      const f = Math.cos(ang) * r;
+      const l = lat * flat;
+      const y = yBase + lat * tilt * 0.92 + dyv;
+      if (n > 0) {
+        // `thick` est un FACTEUR de BOLT_CORE, comme dans drawBolt, pas une epaisseur absolue.
+        if (sheath) {
+          seg(pf, pl, py, f, l, y, BOLT_CORE * 2.30 * thick, mix(VIOLET, ARC, 0.5), opq(alpha * 0.80));
+          seg(pf, pl, py, f, l, y, BOLT_CORE * 1.50 * thick, NEON, opq(alpha * 0.92));
+        }
+        seg(pf, pl, py, f, l, y, BOLT_CORE * (sheath ? 1.0 : 0.85) * thick,
+            sheath ? CORE : mix(NEON, CORE, 0.55), opq(alpha));
+      }
+      pf = f; pl = l; py = y;
+    }
+  };
+
+  // drawBlade() : le tranchant n'est PLUS un arc de cercle parfait. Le ruban subsiste, aminci,
+  // pour que la coupe reste lisible ; la lecture « foudre » vient du tranchant fractal et des
+  // filaments qui en partent.
+  const drawBlade = (sweep, phase, tilt, dir, scale, alpha, bladeVariant, strobe) => {
     if (sweep <= 0 || scale <= 0.02) return;
     const arc = 3.665, segments = 44;
     const start = -arc * 0.5 + phase, reach = arc * sweep;
     const flat = 1.0 - tilt;
-    for (let s = 0; s < segments; s++) {
-      const u = s / (segments - 1);
+    const ghost = bladeVariant >= 10;
+    // Graine et amplitude COMMUNES au corps et au tranchant : sans cela le corps reste un arc
+    // de cercle parfait et la lame redevient une lame d'energie generique.
+    const bladeSeed = salt * 311 + bladeVariant * 877 + strobe * 19;
+    const amp = 0.42 * scale;
+
+    for (let s2 = 0; s2 < segments; s2++) {
+      const u = s2 / (segments - 1);
       if (u > sweep) break;
       const ang = start + dir * reach * u;
       const belly = Math.sin(clamp01(u / Math.max(0.05, sweep)) * 3.14159);
-      const r = ECHO_RADIUS * scale * (0.72 + 0.34 * belly);
+      const taper = Math.sin(u * 3.14159);
+      const dr = boltOffset(bladeSeed, u, amp) * taper;
+      const dyv = boltOffset(bladeSeed + 5000, u, amp) * taper * 0.75;
+      const r = ECHO_RADIUS * scale * (0.72 + 0.34 * belly) + dr;
       const lat = Math.sin(ang) * r;
       const f = Math.cos(ang) * r;
       const l = lat * flat;
-      const y = 0.95 + lat * tilt * 0.92;
-      for (let layer = 0; layer < 3; layer++) {
-        const lv = layer / 2;
-        const hw = (0.055 + 0.145 * lv) * scale * (0.55 + 0.65 * belly);
-        const hh = (0.230 - 0.090 * lv) * scale * (0.50 + 0.70 * belly);
-        const rgb = layer === 0 ? CORE : (layer === 1 ? mix(NEON, HOT, 0.35) : VIOLET);
-        const fade = layer === 0 ? 1.0 : (layer === 1 ? 0.95 : 0.88);
+      const y = 0.95 + lat * tilt * 0.92 + dyv;
+      for (let layer = 0; layer < 2; layer++) {
+        const lv = layer;
+        const hw = (0.040 + 0.085 * lv) * scale * (0.55 + 0.65 * belly);
+        const hh = (0.165 - 0.060 * lv) * scale * (0.50 + 0.70 * belly);
+        const rgb = layer === 0 ? CORE : VIOLET;
+        const fade = layer === 0 ? 1.0 : 0.88;
         if (hw <= 0.004 || hh <= 0.004) continue;
         rot(f, l, y, hw, hh, hw * 1.65, -ang, tilt * 1.5708, 0, rgb, opq(alpha * fade));
       }
-      if (s === segments - 1 || u + 1 / segments > sweep) {
-        const sz = 0.145 * scale;
-        box(f, l, y, sz, sz, sz, CORE, opq(alpha));
+    }
+
+    boltArc(start, dir * reach, ECHO_RADIUS * scale * 1.04, tilt, 0.95,
+            bladeSeed, amp, 0.60 * scale, alpha * (ghost ? 0.72 : 1.0), 30, !ghost);
+
+    if (!ghost) {
+      for (let b = 0; b < 7; b++) {
+        const hb = hash(salt + strobe * 53, 11500 + bladeVariant * 311 + b * 29);
+        const ub = (b + 0.5) / 7;
+        if (ub > sweep || hb > 0.70) continue;
+        const ang = start + dir * reach * ub;
+        const r = ECHO_RADIUS * scale;
+        const lat = Math.sin(ang) * r;
+        const f = Math.cos(ang) * r;
+        const l = lat * flat;
+        const y = 0.95 + lat * tilt * 0.92;
+        const bl = (0.30 + 0.62 * hb) * scale;
+        const of = Math.cos(ang) * bl, ol = Math.sin(ang) * bl * flat;
+        const oy = (tilt > 0.5 ? Math.sin(ang) * bl * 0.92 : -bl * 0.75);
+        drawBolt(f, l, y, f + of, l + ol, y + oy,
+                 salt * 149 + bladeVariant * 503 + b * 211 + strobe * 7, 0.14,
+                 1.0, 0.42, alpha * 0.82, 6, false);
       }
-      if ((s & 3) === 0 && bladeVariant < 10) {
-        const hsp = hash(salt, 11000 + bladeVariant * 311 + s * 17);
-        const drop = fract(hsp + sweep * 1.6);
-        const sz = 0.052 * scale * (1 - drop);
-        if (sz > 0.004) {
-          box(f * (1 + 0.06 * hsp), l * (1 + 0.06 * hsp), y - drop * 1.25,
-              sz, sz * 1.6, sz, mix(ARC, NEON, hsp), opq(alpha * 0.92));
-        }
-      }
+    }
+
+    {
+      const angTip = start + dir * reach;
+      const rTip = ECHO_RADIUS * scale * 1.02;
+      const latTip = Math.sin(angTip) * rTip;
+      const sz = 0.145 * scale;
+      box(Math.cos(angTip) * rTip, latTip * flat, 0.95 + latTip * tilt * 0.92,
+          sz, sz, sz, CORE, opq(alpha));
     }
   };
 
   // =========================================================================================
+
   //  I. ARC FULGURANT EN CHAÎNE — 130 ticks
   // =========================================================================================
   if (variant === 0) {
@@ -382,35 +442,48 @@ function buildThunder(variant, t, salt = 7331) {
     const a = Math.round(255 * smooth(t / 0.05) * (1 - smooth((t - 0.95) / 0.05)));
     if (a <= 4) return out;
 
-    const boot = smooth(t / 0.14);
-    const build = smooth((t - 0.12) / 0.26);
+    const boot = smooth(t / 0.12);
+    const build = smooth((t - 0.10) / 0.24);
     const run = smooth((t - 0.34) / 0.10);
     const burst = smooth((t - 0.78) / 0.09);
     const collapse = smooth((t - 0.80) / 0.16);
     const cage = 1 - collapse;
-    const shrink = 1 - 0.88 * collapse;   // l'implosion éteint la cage par la GÉOMÉTRIE
+    const shrink = 1 - 0.88 * collapse;
 
-    // 1. LES QUATRE PYLÔNES.
+    // Horloge de scintillement : un arc qui garde le meme trace d'une frame a l'autre est un
+    // neon. En avancant la graine par paliers, le trace est redessine plusieurs fois par
+    // seconde et l'oeil lit une decharge instable.
+    const strobe = Math.floor(t * 34);
+    const strobeSlow = Math.floor(t * 17);
+
+    const e = CAGE_HALF * shrink, lo = -0.44, hi = -0.44 + 2.68 * shrink;
+
+    // 1. LES QUATRE ELECTRODES.
     if (boot > 0.01 && cage > 0.02) {
       for (let p = 0; p < 4; p++) {
         const ang = p * TAU / 4 + 0.7854;
         const r = CAGE_HALF * 1.42 * shrink;
         const h = (0.30 + 2.50 * boot) * cage;
-        const steps = 9;
-        for (let s = 0; s < steps; s++) {
-          const u = s / (steps - 1);
-          if (u > boot * 1.1) break;
-          const y = -0.44 + h * u;
-          const sz = 0.105 - 0.045 * u;
-          const rgb = u > 0.80 ? CYAN : mix(DEEP, CYAN, u);
-          box(Math.cos(ang) * r, Math.sin(ang) * r, y, sz, sz * 1.15, sz, rgb, opq(a * cage));
+        const tipY = -0.44 + h;
+        neonEdge(Math.cos(ang) * r, Math.sin(ang) * r, -0.44,
+                 Math.cos(ang) * r, Math.sin(ang) * r, tipY, 1.0, 0.062, CYAN, a * cage);
+        for (let b = 0; b < 5; b++) {
+          const hb = hash(salt + strobe * 101, 300 + p * 37 + b * 13);
+          if (hb > 0.55 + 0.45 * boot) continue;
+          const ba = hash(salt + strobe * 101, 360 + p * 29 + b * 17) * TAU;
+          const bl = 0.22 + 0.46 * hb;
+          drawBolt(Math.cos(ang) * r, Math.sin(ang) * r, tipY,
+                   Math.cos(ang) * r + Math.cos(ba) * bl,
+                   Math.sin(ang) * r + Math.sin(ba) * bl,
+                   tipY + (hb - 0.35) * 0.55,
+                   salt * 29 + p * 71 + b * 311 + strobe * 7, 0.16, 1.0, 0.46,
+                   a * cage * 0.85, 5, false);
         }
       }
     }
 
-    // 2. LA CAGE — douze arêtes tracées une par une.
+    // 2. LA CAGE : douze ARCS, pas douze neons. Une arete sur cinq s'eteint a chaque palier.
     if (build > 0.005 && cage > 0.02) {
-      const e = CAGE_HALF * shrink, lo = -0.44, hi = -0.44 + 2.68 * shrink;
       for (let edge = 0; edge < 12; edge++) {
         const born = edge / 14;
         const g = clamp01((build - born) * 5);
@@ -431,50 +504,33 @@ function buildThunder(variant, t, salt = 7331) {
           f0 = Math.cos(a0) * e; l0 = Math.sin(a0) * e; y0 = lo;
           f1 = f0; l1 = l0; y1 = hi;
         }
-        neonEdge(f0, l0, y0, f1, l1, y1, g, 0.052, CYAN, a * cage);
+        if (hash(salt + strobe * 211, edge * 53) < 0.17) continue;
+        drawBolt(f0, l0, y0, f1, l1, y1, salt * 41 + edge * 617 + strobe * 13,
+                 0.12, g, 0.60, a * cage * 0.92, 9, true);
       }
     }
 
-    // 3. PISTES DE CIRCUIT IMPRIMÉ — tracé de Manhattan, jamais de diagonale, vias aux coudes.
-    if (build > 0.22 && cage > 0.02) {
-      const trace = clamp01((build - 0.22) / 0.72);
-      const e = CAGE_HALF * shrink, lo = -0.40, span = 2.60 * shrink;
-      for (let face = 0; face < 4; face++) {
-        const fang = face * TAU / 4 + 0.7854;
-        const nf = Math.cos(fang), nl = Math.sin(fang);
-        const tf = -nl, tl = nf;
-        for (let tr = 0; tr < 3; tr++) {
-          const seed = salt + face * 971 + tr * 131;
-          let u = -0.62 + tr * 0.62;
-          let y = lo + 0.30 + tr * 0.22;
-          for (let s = 0; s < 6; s++) {
-            const g = clamp01((trace - s / 7) * 6);
-            if (g <= 0) break;
-            const horizontal = (s % 2) === 0;
-            let step = (0.26 + 0.34 * hash(seed, s * 17)) * (horizontal ? 1.0 : 0.85);
-            if (!horizontal && hash(seed, s * 29) < 0.5) step = -step;
-            let u2 = horizontal ? u + step : u;
-            let y2 = horizontal ? y : y + step;
-            u2 = Math.max(-0.92, Math.min(0.92, u2));
-            y2 = Math.max(lo + 0.10, Math.min(lo + span, y2));
-            const du = (u2 - u) * g, dy = (y2 - y) * g;
-            neonEdge(nf * e + tf * u, nl * e + tl * u, y,
-                     nf * e + tf * (u + du), nl * e + tl * (u + du), y + dy,
-                     1.0, 0.030, PCB, a * cage);
-            u += du; y += dy;
-            if (g >= 0.999) {
-              box(nf * e + tf * u, nl * e + tl * u, y, 0.058, 0.058, 0.058,
-                  mix(PCB, CYAN, 0.65), opq(a * cage));
-            }
-          }
-        }
+    // 3. ECHELLE DE JACOB : l'arc monte entre deux electrodes, s'affaiblit, claque, repart.
+    if (build > 0.18 && cage > 0.02) {
+      for (let pair = 0; pair < 4; pair++) {
+        const a0 = pair * TAU / 4 + 0.7854, a1 = (pair + 1) * TAU / 4 + 0.7854;
+        const r = CAGE_HALF * 1.42 * shrink;
+        const climb = fract(t * 0.78 + pair * 0.25);
+        const ladderY = lo + 0.18 + (hi - lo) * 0.92 * climb;
+        const spread = 0.34 + 0.66 * climb;
+        const cf0 = Math.cos(a0) * r * spread, cl0 = Math.sin(a0) * r * spread;
+        const cf1 = Math.cos(a1) * r * spread, cl1 = Math.sin(a1) * r * spread;
+        const vigour = (1 - 0.45 * climb) * (climb > 0.90 ? 0 : 1);
+        if (vigour <= 0) continue;
+        drawBolt(cf0, cl0, ladderY, cf1, cl1, ladderY,
+                 salt * 53 + pair * 743 + strobe * 29, 0.30 + 0.34 * climb,
+                 1.0, 0.52 + 0.48 * vigour, a * cage * vigour, 14, true);
       }
     }
 
-    // 4. PAQUETS DE DONNÉES — ils courent sur les arêtes, avec une traînée de 3 copies.
+    // 4. BILLES DE PLASMA sur les montants, avec leur trainee.
     if (run > 0.01 && cage > 0.02) {
-      const e = CAGE_HALF * shrink, lo = -0.44, hi = -0.44 + 2.68 * shrink;
-      for (let p = 0; p < 26; p++) {
+      for (let p = 0; p < 18; p++) {
         const h0 = hash(salt, 7000 + p * 59);
         const speed = 0.55 + 1.35 * h0;
         const u = fract(t * speed + h0);
@@ -503,59 +559,43 @@ function buildThunder(variant, t, salt = 7331) {
       }
     }
 
-    // 5. LE X — la marque de l'effet, deux barres croisées qui tournent.
+    // 5. LE X : deux ECLAIRS croises en rotation, et non deux barres de cubes.
     {
       const spin = t * 5.4;
       const arm = (0.95 + 0.55 * run) * shrink * (0.35 + 0.65 * boot);
       const yMid = -0.44 + 1.34 * shrink;
       for (let bar = 0; bar < 2; bar++) {
         const tilt = bar === 0 ? 0.68 : -0.68;
-        const segs = 15;
-        for (let s = 0; s < segs; s++) {
-          const u = s / (segs - 1) * 2 - 1;
-          const f = Math.cos(spin) * arm * u;
-          const l = Math.sin(spin) * arm * u;
-          const y = yMid + tilt * arm * u;
-          const sz = 0.085 * (1 - 0.45 * Math.abs(u));
-          const rgb = Math.abs(u) < 0.22 ? CORE : mix(CYAN, MAGENTA, (u + 1) * 0.5);
-          box(f, l, y, sz, sz, sz, rgb, opq(a * (1 - 0.5 * collapse)));
-        }
+        const ef = Math.cos(spin) * arm, el = Math.sin(spin) * arm;
+        drawBolt(-ef, -el, yMid - tilt * arm, ef, el, yMid + tilt * arm,
+                 salt * 67 + bar * 929 + strobeSlow * 23, 0.14, 1.0, 0.80,
+                 a * (1 - 0.5 * collapse), 13, true);
+      }
+      const pulse = 0.72 + 0.28 * Math.sin(t * 52);
+      for (let i = 0; i < 9; i++) {
+        const h0 = hash(salt, 7500 + i * 43);
+        const ang = i * TAU / 9 + t * 3.1;
+        const rr = (0.10 + 0.20 * h0) * pulse;
+        const sz = 0.080 * (1 - 0.5 * collapse);
+        box(Math.cos(ang) * rr, Math.sin(ang) * rr, yMid + (h0 - 0.5) * 0.38,
+            sz, sz, sz, mix(CORE, HOT, h0 * 0.6), opq(a * (1 - 0.5 * collapse)));
       }
     }
 
-    // 6. HISTOGRAMME DE CADENCE.
+    // 6. CONTOURNEMENT AU SOL : une installation sous tension fuit par la terre.
     if (run > 0.02 && cage > 0.02) {
-      for (let b = 0; b < 12; b++) {
-        const hb = hash(salt, 7600 + b * 37);
-        const phase = fract(t * 1.25 + b / 12);
-        const lvl = (0.25 + 0.75 * hb) * (0.35 + 0.65 * Math.sin(phase * TAU) * 0.5 + 0.325);
-        const ang = b * TAU / 12;
-        const r = CAGE_HALF * 1.72 * shrink;
-        const cells = Math.max(1, Math.round(lvl * 7 * run));
-        for (let c = 0; c < cells; c++) {
-          const y = -0.42 + c * 0.19;
-          const rgb = c >= 5 ? MAGENTA : (c >= 3 ? HOT : PCB);
-          box(Math.cos(ang) * r, Math.sin(ang) * r, y, 0.072, 0.070, 0.072, rgb, opq(a * run * cage));
-        }
+      for (let c = 0; c < 7; c++) {
+        const hc = hash(salt + strobeSlow * 313, 7800 + c * 67);
+        if (hc > 0.62) continue;
+        const ang = hash(salt + strobeSlow * 313, 7850 + c * 31) * TAU;
+        const reach = 1.30 + 2.30 * hc;
+        drawBolt(0, 0, -0.40, Math.cos(ang) * reach, Math.sin(ang) * reach, -0.40,
+                 salt * 97 + c * 419 + strobeSlow * 11, 0.34, 1.0, 0.44,
+                 a * run * cage * 0.80, 10, false);
       }
     }
 
-    // 7. ANNEAUX DE SCAN.
-    if (run > 0.02 && cage > 0.02) {
-      for (let s = 0; s < 3; s++) {
-        const u = fract(t * 0.95 + s / 3);
-        const y = -0.44 + 2.68 * u * shrink;
-        const r = CAGE_HALF * (1.05 + 0.22 * Math.sin(u * TAU)) * shrink;
-        const count = Math.max(14, Math.round(r * 16));
-        for (let i = 0; i < count; i++) {
-          const ang = i * TAU / count + t * 1.7;
-          box(Math.cos(ang) * r, Math.sin(ang) * r, y, 0.052, 0.030, 0.052,
-              mix(CYAN, CORE, 0.35), opq(a * run * cage * 0.95));
-        }
-      }
-    }
-
-    // 8. DÉCHARGE — la cage implose, une onde part au sol, l'énergie remonte dans le porteur.
+    // 7. DECHARGE : onde au sol, dix arcs rampants, colonne de retour.
     if (burst > 0.01) {
       const r = 0.40 + 4.60 * burst;
       const thin = 1 - 0.62 * burst;
@@ -568,6 +608,14 @@ function buildThunder(variant, t, salt = 7331) {
         if (sz <= 0.004) continue;
         box(Math.cos(ang) * rr, Math.sin(ang) * rr, -0.40 + 0.07 * h0,
             sz * 1.4, sz * 0.55, sz * 1.4, mix(CYAN, MAGENTA, h0 * 0.6), opq(a * (1 - 0.3 * burst)));
+      }
+      for (let sp = 0; sp < 10; sp++) {
+        const hs = hash(salt, 8500 + sp * 73);
+        const ang = sp * TAU / 10 + hs * 0.4;
+        const reach = r * (0.60 + 0.40 * hs);
+        drawBolt(0, 0, -0.38, Math.cos(ang) * reach, Math.sin(ang) * reach, -0.38,
+                 salt * 131 + sp * 523 + strobe * 17, 0.46, burst, 0.50,
+                 a * (1 - 0.40 * burst), 12, false);
       }
       const col = Math.round(22 * (1 - burst));
       for (let i = 0; i < col; i++) {
@@ -591,42 +639,46 @@ function buildThunder(variant, t, salt = 7331) {
 
     const cut1 = smooth(t / 0.16);
     const cut2 = smooth((t - 0.30) / 0.18);
-    const cross = smooth((t - 0.46) / 0.12) * (1 - smooth((t - 0.74) / 0.26));
+    const cross = smooth((t - 0.40) / 0.10) * (1 - smooth((t - 0.78) / 0.22));
     const outp = smooth((t - 0.74) / 0.26);
+    const strobe = Math.floor(t * 30);
 
-    // 1 & 3. LES DEUX LAMES — la seconde inclinée à 90° et en sens inverse : un X dans l'espace.
-    drawBlade(cut1, 0, 0, +1, 1 - 0.55 * smooth((t - 0.20) / 0.30), a, 0);
-    if (cut2 > 0) {
-      drawBlade(cut2, 1.5708, 1, -1, 1.08 * (1 - 0.45 * smooth((t - 0.52) / 0.34)), a, 1);
-    }
+    const scale1 = 1 - 0.55 * smooth((t - 0.20) / 0.30);
+    const scale2 = 1.08 * (1 - 0.45 * smooth((t - 0.52) / 0.34));
 
-    // 2. RÉMANENCES — elles s'effacent par la TAILLE, jamais par l'alpha.
+    // 1 & 3. LES DEUX LAMES.
+    drawBlade(cut1, 0, 0, +1, scale1, a, 0, strobe);
+    if (cut2 > 0) drawBlade(cut2, 1.5708, 1, -1, scale2, a, 1, strobe);
+
+    // 2. REMANENCES — elles s'effacent par la TAILLE, jamais par l'alpha.
     if (t > 0.14 && t < 0.46) {
       const ghost = 1 - smooth((t - 0.16) / 0.28);
       for (let g = 1; g <= 4; g++) {
         const back = g * 0.055;
         const gt = clamp01(cut1 - back * 2.2);
         if (gt <= 0.02) continue;
-        drawBlade(gt, 0, 0, +1, ghost * (0.74 - 0.15 * g), a, 10 + g);
+        drawBlade(gt, 0, 0, +1, ghost * (0.74 - 0.15 * g), a, 10 + g, strobe);
       }
     }
 
-    // 4. COURT-CIRCUIT — gerbe d'arcs au croisement des deux plans + noyau surexposé.
+    // 4. LIAISON : chaque arc relie un point PRIS SUR la lame a plat a un point PRIS SUR la
+    // lame verticale. L'ancienne gerbe tirait dix arcs au hasard dans une sphere : decoratif,
+    // et sans rapport avec la rencontre des deux entailles.
     if (cross > 0.01) {
-      for (let s = 0; s < 10; s++) {
-        const hs = hash(salt, 9000 + s * 71);
-        const cyc = fract(t * 2.6 + hs);
-        if (cyc > 0.42) continue;
-        const live = 1 - cyc / 0.42;
-        const a0 = hash(salt, 9100 + s * 37) * TAU;
-        const a1 = a0 + 1.4 + hash(salt, 9200 + s * 19) * 2.2;
-        const r0 = ECHO_RADIUS * (0.35 + 0.55 * hash(salt, 9300 + s * 23));
-        const r1 = ECHO_RADIUS * (0.35 + 0.55 * hash(salt, 9400 + s * 29));
-        const y0 = 0.25 + 1.35 * hash(salt, 9500 + s * 13);
-        const y1 = 0.25 + 1.35 * hash(salt, 9600 + s * 17);
-        drawBolt(Math.cos(a0) * r0, Math.sin(a0) * r0, y0,
-                 Math.cos(a1) * r1, Math.sin(a1) * r1, y1,
-                 salt * 23 + s * 457, 0.42, 1.0, live, a * cross * live, 10, true);
+      const arc = 3.665;
+      for (let s2 = 0; s2 < 9; s2++) {
+        const hs = hash(salt + strobe * 97, 9000 + s2 * 71);
+        if (hs > 0.78) continue;
+        const u0 = hash(salt + strobe * 97, 9100 + s2 * 37);
+        const u1 = hash(salt + strobe * 97, 9200 + s2 * 19);
+        const ang0 = -arc * 0.5 + arc * cut1 * u0;
+        const r0 = ECHO_RADIUS * scale1 * 0.90;
+        const f0 = Math.cos(ang0) * r0, l0 = Math.sin(ang0) * r0, y0 = 0.95;
+        const ang1 = -arc * 0.5 + 1.5708 - arc * cut2 * u1;
+        const r1 = ECHO_RADIUS * scale2 * 0.90;
+        const f1 = Math.cos(ang1) * r1, l1 = 0, y1 = 0.95 + Math.sin(ang1) * r1 * 0.92;
+        drawBolt(f0, l0, y0, f1, l1, y1, salt * 23 + s2 * 457 + strobe * 31,
+                 0.34, 1.0, 0.50, a * cross * 0.88, 11, true);
       }
       const pulse = 0.6 + 0.4 * Math.sin(t * 46);
       for (let i = 0; i < 16; i++) {
