@@ -1557,3 +1557,71 @@ Renommer n'aurait servi à rien si le reste du mod avait continué de parler d'�
 3 × 6 instants, **0 erreur JS**, comptes DOM identiques à node · pics **456 / 470 / 651** cubes
 pour un plafond de 7 000 · rapport longueur/épaisseur moyen des arcs **9,60** et **6,84** ·
 **0 cube tourné** dans la variante 8 bits · miroirs `FIXES_MCREATOR` **237/237**.
+
+---
+
+## 25. Surcadence Cyber-X — v5 : le pixel passe dans la géométrie
+
+### 25.1 Pourquoi la v4 était à refaire
+
+La v4 habillait la Surcadence d'un vrai vocabulaire 8 bits — sprites d'éclair à trois poses,
+cadre d'interface qui se traçait au balayage, jauge de surcharge remplie case par case, anneau
+de Bresenham au sol. Chaque élément était juste pris isolément, et l'ensemble était faux :
+**c'était un HUD posé au milieu d'une scène 3D**. Un sprite est plat ; dans un monde où la
+caméra tourne, il se trahit au premier pas de côté. Le verdict est sans appel — « des pixels
+arts plats 2D sur un plan 3D, ça n'a pas de sens ».
+
+La leçon tient en une phrase : **le style « bits » doit porter sur la géométrie, pas sur des
+vignettes**. Grille, cubes tous identiques, palette fermée, horloge à paliers — mais appliqués
+à des volumes réels qu'on peut contourner.
+
+### 25.2 Les deux outils
+
+Tout repose sur deux fonctions, et elles remplacent `sprite`, `pixelCircle` et `plot8`.
+
+`voxelLine` rastérise un segment en **Bresenham tridimensionnel** : le tracé avance d'une
+cellule à la fois en arithmétique entière, ce qui donne les marches d'escalier du pixel art,
+cette fois en volume. Un garde-fou abandonne au-delà de 192 pas. Le drapeau `fat` double la
+cellule sur X et sur Z : le conducteur gagne une section 2×2 **sans changer la taille du cube
+ni quitter la grille** — c'est ainsi qu'un tronc se distingue d'une brindille.
+
+`pixelBolt` est un **arbre fractal récursif**. Profondeur 2 pour le tronc, 1 pour les branches,
+0 pour les brindilles. Chaque nœud dévie d'un bruit haché pondéré par `sin(u·π)` — l'écart est
+maximal au milieu, nul aux deux extrémités, de sorte que les points d'attache restent francs.
+La teinte se choisit **par index dans la palette** selon la profondeur, jamais par
+interpolation : blanc au cœur, bleu vers les pointes.
+
+### 25.3 Les réglages, et ce qu'ils ont coûté
+
+Quatre passes ont été nécessaires, chacune corrigeant un défaut visible :
+
+- **buisson.** Huit arbres, 34 % de branchement par nœud : le volume se remplissait et on ne
+  distinguait plus une seule décharge. Un éclair est **aéré** → trois troncs ;
+- **colonnes droites.** 10 nœuds sur 2,7 blocs font 1,5 cellule par tronçon : le zigzag passait
+  **sous la résolution de la grille**. Moins de nœuds, plus longs (`3 + depth*2`), amplitude
+  0,55, hauteur portée à 3,20 → l'escalier redevient lisible ;
+- **forêt de poteaux.** Les quatre électrodes montaient sur toute la hauteur et doublaient la
+  cage. Elles sont ramenées au tiers et **s'effacent** quand les arbres s'allument (`socle =
+  1 − 0,80·cage`). Un premier essai en pointillé a été abandonné : il produisait des cubes
+  flottants orphelins au lieu d'un conducteur ;
+- **tache rose.** Le magenta, à 7 % sur un tronçon à section 2×2, ne faisait pas un pixel
+  d'accent mais une tache de six cubes. Il quitte les éclairs et reste au **noyau**, où il
+  signe la surcharge.
+
+La ramification se lit désormais par profondeur : **62 %** sur le tronc — c'est elle qui fait
+reconnaître un éclair — **18 %** sur les branches, sinon le buisson revient.
+
+### 25.4 Contrôles
+
+`java-parser` OK · `node --check` OK · **0 NaN**, **0 alpha sous 208**, **0 dépassement du
+plafond de 7 000** sur 99 instants × 3 variantes · pics **456 / 626 / 651** cubes · Playwright
+3 × 7 instants, **0 erreur JS**, comptes DOM identiques à node · quatre graines distinctes
+rendent 366 à 550 cubes, la structure ne dégénère pas.
+
+Deux invariants valent pour toute la variante : **0 cube tourné** et **0 cube hors grille sur
+34 030** — une seule demi-taille, `0,0938`. C'est la définition opératoire du style : si un
+seul cube pivotait ou se décalait d'un demi-pas, la grille cesserait de se voir.
+
+Les deux `ERR  constante inconnue « FRAMES »` de `semcheck.py` sont un faux positif connu de
+l'outil sur les `final` locaux en majuscules : la v4, qui compile, les déclenche aux mêmes
+lignes — et deux de plus que la v5.

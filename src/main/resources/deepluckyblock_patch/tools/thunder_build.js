@@ -56,12 +56,9 @@ function buildThunder(variant, t, salt = 7331) {
   const GROUND_Y = -0.42;
   // Pixel art : un cube vaut un pixel, jamais un demi. Palette fermee, indexee, sans melange.
   const PIX = 0.1875;
-  const GB = [0x11224A, 0x1E63C8, 0x2BE8FF, 0x7DFF3B, 0xFFE94A, 0xFFFFFF, 0xFF3BD4];
-  const BOLT_SPRITE = [
-    ['...##', '..##o', '.##o.', '####o', '..##o', '.##o.', '##o..', '#o...'],
-    ['..##.', '.##o.', '###o.', '.###o', '..##o', '.##o.', '##o..', '.o...'],
-    ['..##.', '.###o', '##o..', '####o', '..##o', '..#o.', '.##..', 'o....'],
-  ];
+  // Palette fermee, ordonnee du plus froid au plus chaud : la teinte se choisit PAR INDEX
+  // selon la profondeur dans l'arbre d'eclair, jamais par interpolation.
+  const PXL = [0x141E6E, 0x1E46C8, 0x2B8BFF, 0x4FE3FF, 0xA8F4FF, 0xFFFFFF, 0xFF3BD4];
   // SCORCH est une couleur de BRULURE : a 8 blocs de haut le nuage disparaissait dans le ciel.
   const CLOUD_DARK = 0x3B3457, CLOUD_LIT = 0x6A5CA8;
   const CLOUD_Y = 8.0, CLOUD_R = 3.40, STRIKES = 5;
@@ -97,43 +94,78 @@ function buildThunder(variant, t, salt = 7331) {
 
   // boltOffset() : 5 octaves de bruit haché à interpolation LINÉAIRE. C'est l'interpolation
   // linéaire qui casse le trait ; une interpolation lisse donnerait une ondulation molle.
-  // ---- Outils du pixel art 8 bits (miroir exact du .java) ----
+  // ---- Outils du pixel volumetrique (miroir exact du .java) ----
   const snap = (v) => Math.round(v / PIX) * PIX;
   const pix = (f, lat, y, rgb, alpha) => {
     if (y < GROUND_Y) return;
     const h = PIX * 0.5;
     box(snap(f), snap(lat), GROUND_Y + snap(y - GROUND_Y), h, h, h, rgb, opq(alpha));
   };
-  const sprite = (rows, f0, l0, y0, sideways, rgbMain, rgbShade, alpha) => {
-    for (let r = 0; r < rows.length; r++) {
-      const row = rows[r];
-      for (let c = 0; c < row.length; c++) {
-        const ch = row.charAt(c);
-        if (ch === '.') continue;
-        const u = (c - row.length * 0.5 + 0.5) * PIX;
-        const v = (rows.length * 0.5 - 0.5 - r) * PIX;
-        pix(sideways ? f0 : f0 + u, sideways ? l0 + u : l0, y0 + v,
-            ch === '#' ? rgbMain : rgbShade, alpha);
+  // Rasterise un segment en cubes au Bresenham 3D : le trace avance d'UNE cellule a la fois en
+  // arithmetique entiere, ce qui donne les marches d'escalier du pixel art, ici en volume.
+  const voxelLine = (f0, l0, y0, f1, l1, y1, rgb, alpha, fat) => {
+    const x0 = Math.round(f0 / PIX), z0 = Math.round(l0 / PIX);
+    const x1 = Math.round(f1 / PIX), z1 = Math.round(l1 / PIX);
+    const y0i = Math.round((y0 - GROUND_Y) / PIX), y1i = Math.round((y1 - GROUND_Y) / PIX);
+    const adx = Math.abs(x1 - x0), ady = Math.abs(y1i - y0i), adz = Math.abs(z1 - z0);
+    const sx = x0 < x1 ? 1 : -1, sy = y0i < y1i ? 1 : -1, sz = z0 < z1 ? 1 : -1;
+    const steps = Math.max(adx, Math.max(ady, adz));
+    if (steps > 192) return;
+    let ex = steps >> 1, ey = steps >> 1, ez = steps >> 1;
+    let cxi = x0, cyi = y0i, czi = z0;
+    for (let i = 0; i <= steps; i++) {
+      if (cyi >= 0) {
+        box(cxi * PIX, czi * PIX, GROUND_Y + cyi * PIX,
+            PIX * 0.5, PIX * 0.5, PIX * 0.5, rgb, opq(alpha));
+        if (fat) {
+          // Section 2x2 : le conducteur gagne du volume sans quitter la grille.
+          box((cxi + 1) * PIX, czi * PIX, GROUND_Y + cyi * PIX,
+              PIX * 0.5, PIX * 0.5, PIX * 0.5, rgb, opq(alpha));
+          box(cxi * PIX, (czi + 1) * PIX, GROUND_Y + cyi * PIX,
+              PIX * 0.5, PIX * 0.5, PIX * 0.5, rgb, opq(alpha));
+        }
       }
+      if (i === steps) break;
+      ex -= adx; if (ex < 0) { ex += steps; cxi += sx; }
+      ey -= ady; if (ey < 0) { ey += steps; cyi += sy; }
+      ez -= adz; if (ez < 0) { ez += steps; czi += sz; }
     }
   };
-  const plot8 = (gx, gz, y, rgbA, rgbB, phase, alpha) => {
-    for (let s = 0; s < 8; s++) {
-      let ox = (s & 1) === 0 ? gx : gz;
-      let oz = (s & 1) === 0 ? gz : gx;
-      if ((s & 2) !== 0) ox = -ox;
-      if ((s & 4) !== 0) oz = -oz;
-      pix(ox * PIX, oz * PIX, y, ((ox + oz + phase) & 3) === 0 ? rgbB : rgbA, alpha);
-    }
-  };
-  // Cercle de Bresenham, arithmetique entiere : le contour a des marches, et c'est voulu.
-  const pixelCircle = (y, radius, rgbA, rgbB, phase, alpha) => {
-    if (radius <= 0 || alpha <= 0) return;
-    let x = radius, z = 0, err = 1 - radius;
-    while (x >= z) {
-      plot8(x, z, y, rgbA, rgbB, phase, alpha);
-      z++;
-      if (err < 0) { err += 2 * z + 1; } else { x--; err += 2 * (z - x) + 1; }
+
+  // Arbre d'eclair fractal, recursif et tridimensionnel. depth 2 = tronc, 1 = branche, 0 = brindille.
+  const pixelBolt = (f0, l0, y0, f1, l1, y1, seed, wander, depth, alpha, frame) => {
+    if (alpha <= 1 || depth < 0) return;
+    // Moins de noeuds, plus longs : sinon le zigzag passe sous la resolution de la grille.
+    const nodes = 3 + depth * 2;
+    let pf = f0, pl = l0, py = y0;
+    for (let n = 1; n <= nodes; n++) {
+      const u = n / nodes;
+      let f = f0 + (f1 - f0) * u;
+      let l = l0 + (l1 - l0) * u;
+      let y = y0 + (y1 - y0) * u;
+      if (n < nodes) {
+        const taper = Math.sin(u * 3.14159265);
+        f += (hash(seed, n * 31) - 0.5) * wander * taper;
+        l += (hash(seed, n * 37) - 0.5) * wander * taper;
+        y += (hash(seed, n * 41) - 0.5) * wander * 0.55 * taper;
+      }
+      const dither = hash(seed + frame, n * 97);
+      let tone;
+      // Aucun magenta sur les eclairs : sur une section 2x2 il fait une tache, pas un accent.
+      if (depth >= 2) tone = dither > 0.55 ? 5 : 4;
+      else if (depth === 1) tone = dither > 0.75 ? 5 : (dither > 0.30 ? 4 : 3);
+      else tone = dither > 0.70 ? 3 : (dither > 0.25 ? 2 : 1);
+      voxelLine(pf, pl, py, f, l, y, PXL[tone], alpha, depth >= 2);
+      // Le tronc ramifie souvent, les branches presque jamais : sinon buisson.
+      const split = depth >= 2 ? 0.62 : 0.18;
+      if (depth > 0 && n < nodes && hash(seed + frame * 17, n * 53) < split) {
+        const bl = (0.55 + 0.85 * hash(seed, n * 59)) * (depth === 2 ? 1.0 : 0.55);
+        const ba = hash(seed, n * 61) * TAU;
+        const bp = (hash(seed, n * 67) - 0.5) * 1.5;
+        pixelBolt(f, l, y, f + Math.cos(ba) * bl, l + Math.sin(ba) * bl, y + bp * bl,
+                  seed * 7 + n * 101, wander * 0.55, depth - 1, alpha * 0.88, frame);
+      }
+      pf = f; pl = l; py = y;
     }
   };
 
@@ -396,111 +428,110 @@ function buildThunder(variant, t, salt = 7331) {
   }
 
   // =========================================================================================
-  //  II. SURCADENCE CYBER-X — 120 ticks, en pixel art 8 bits
+  //  II. SURCADENCE CYBER-X — 120 ticks, eclairs voxelises
   // =========================================================================================
-  // Regles du genre, toutes appliquees : grille fixe (PIX), cubes tous identiques, AUCUNE
-  // rotation (box uniquement), palette fermee indexee, horloge a paliers, cercles au Bresenham.
+  // Style pixel applique a de la VRAIE geometrie 3D : arbres fractals recursifs, chaque branche
+  // rasterisee au Bresenham 3D. Grille, cubes identiques, palette fermee, horloge a paliers.
   if (variant === 1) {
     const a = Math.round(255 * (1 - smooth((t - 0.94) / 0.06)));
     if (a <= 4) return out;
 
-    const FRAMES = 18;
+    const FRAMES = 20;
     const fr = Math.floor(t * FRAMES);
     const tq = fr / FRAMES;
 
-    const boot = smooth(tq / 0.18);
-    const live = smooth((tq - 0.12) / 0.10);
-    const burst = smooth((tq - 0.80) / 0.08);
-    const fade = 1 - smooth((tq - 0.92) / 0.08);
-    const floorY = GROUND_Y + PIX * 0.5;
+    const boot = smooth(tq / 0.15);
+    const cage = smooth((tq - 0.10) / 0.12);
+    const link = smooth((tq - 0.22) / 0.14);
+    const core = smooth((tq - 0.28) / 0.16);
+    const burst = smooth((tq - 0.80) / 0.07);
+    const fade = 1 - smooth((tq - 0.90) / 0.10);
+    const shrink = 1 - 0.22 * burst;
 
-    // 1. LE CADRE, trace en balayage.
-    {
-      const side = 11;
-      const half = side * 0.5 * PIX;
-      const total = side * 4 - 4;
-      const drawn = Math.floor(total * boot);
-      for (let i = 0; i < drawn; i++) {
-        let gx, gz;
-        if (i < side) { gx = i; gz = 0; }
-        else if (i < side * 2 - 1) { gx = side - 1; gz = i - side + 1; }
-        else if (i < side * 3 - 2) { gx = side * 3 - 3 - i; gz = side - 1; }
-        else { gx = 0; gz = side * 4 - 4 - i; }
-        const f = -half + (gx + 0.5) * PIX;
-        const l = -half + (gz + 0.5) * PIX;
-        pix(f, l, floorY, GB[((gx + gz + fr) & 3) === 0 ? 5 : 2], a);
-      }
-      if (boot > 0.98) {
-        for (let c = 0; c < 4; c++) {
-          const f = ((c & 1) === 0 ? -1 : 1) * (half - PIX * 0.5);
-          const l = ((c & 2) === 0 ? -1 : 1) * (half - PIX * 0.5);
-          pix(f, l, floorY + PIX, GB[4], a);
+    const top = GROUND_Y + 3.20 * shrink;
+    const ring = CAGE_HALF * 1.30 * shrink;
+
+    // 1. LES QUATRE ELECTRODES, empilees cube par cube.
+    if (boot > 0.01) {
+      // Les conducteurs cedent la place aux eclairs au lieu de les doubler.
+      const socle = 1 - 0.80 * cage;
+      for (let p = 0; p < 4; p++) {
+        const ang = p * TAU / 4 + 0.7854;
+        const ef = Math.cos(ang) * ring, el = Math.sin(ang) * ring;
+        const cells = Math.floor((top - GROUND_Y) * 0.34 / PIX * boot);
+        for (let i = 0; i <= cells; i++) {
+          const tone = i === cells ? 4 : ((i + fr) % 5 === 0 ? 3 : 1);
+          pix(ef, el, GROUND_Y + i * PIX, PXL[tone], a * boot * socle);
         }
       }
     }
 
-    // 2. QUATRE SPRITES D'ECLAIR : ils changent de pose, ils ne pivotent jamais.
-    if (live > 0.01 && burst < 0.55) {
-      const reach = 1.60;
-      for (let q = 0; q < 4; q++) {
-        const pose = (fr + q * 2) % BOLT_SPRITE.length;
-        const sideways = (q & 1) === 1;
-        const f = q === 0 ? reach : (q === 2 ? -reach : 0);
-        const l = q === 1 ? reach : (q === 3 ? -reach : 0);
-        const lift = ((fr + q) & 3) * PIX * 0.5;
-        const main = ((fr + q) & 1) === 0 ? GB[4] : GB[2];
-        sprite(BOLT_SPRITE[pose], f, l, GROUND_Y + PIX * 5.5 + lift, sideways,
-               main, GB[1], Math.round(a * live * (1 - burst)));
+    // 2. LA CAGE : trois arbres fractals, retraces a chaque image.
+    if (cage > 0.01) {
+      for (let b = 0; b < 3; b++) {
+        const ang = b * TAU / 3 + 0.3927;
+        const r0 = ring * (0.72 + 0.42 * hash(salt + 11, b * 29));
+        const r1 = ring * (0.30 + 0.55 * hash(salt + 12, b * 31));
+        const a1 = ang + (hash(salt + 13, b * 37) - 0.5) * 0.9;
+        if (hash(salt + fr * 211, b * 53) < 0.16) continue;
+        pixelBolt(Math.cos(ang) * r0, Math.sin(ang) * r0, GROUND_Y,
+                  Math.cos(a1) * r1, Math.sin(a1) * r1, top,
+                  salt * 31 + b * 617 + fr * 13, 0.55, 2,
+                  a * cage * (1 - 0.35 * burst), fr);
       }
     }
 
-    // 3. LA JAUGE DE SURCHARGE.
-    if (boot > 0.55) {
-      const cells = 12;
-      const fill = burst > 0.02 ? (1 - burst) : clamp01((tq - 0.15) / 0.65);
-      const on = Math.round(cells * fill);
-      const y = GROUND_Y + PIX * 13.0;
-      const x0 = -cells * 0.5 * PIX;
-      for (let i = 0; i < cells; i++) {
-        const lit = i < on;
-        let tone = !lit ? 0 : (i >= cells - 3 ? 6 : (i >= cells - 6 ? 4 : 3));
-        if (lit && i === on - 1 && (fr & 1) === 0) tone = 5;
-        pix(x0 + (i + 0.5) * PIX, 0, y, GB[tone], a);
+    // 3. LIAISONS DE POINTE A POINTE, en diagonale dans le volume.
+    if (link > 0.01) {
+      for (let k = 0; k < 3; k++) {
+        if (hash(salt + fr * 307, k * 67) < 0.42) continue;
+        const p0 = Math.floor(hash(salt + 14, k * 71 + fr) * 4) & 3;
+        const p1 = (p0 + 1 + Math.floor(hash(salt + 15, k * 73 + fr) * 3)) & 3;
+        if (p0 === p1) continue;
+        const a0 = p0 * TAU / 4 + 0.7854, a1b = p1 * TAU / 4 + 0.7854;
+        const y0 = top - PIX * (hash(salt + 16, k * 79) * 3);
+        const y1 = top - PIX * (hash(salt + 17, k * 83) * 3);
+        pixelBolt(Math.cos(a0) * ring, Math.sin(a0) * ring, y0,
+                  Math.cos(a1b) * ring, Math.sin(a1b) * ring, y1,
+                  salt * 41 + k * 733 + fr * 17, 0.34, 1, a * link, fr);
       }
-      pix(x0 - PIX * 0.5, 0, y, GB[1], a);
-      pix(x0 + (cells + 0.5) * PIX, 0, y, GB[1], a);
     }
 
-    // 4. L'ANNEAU, rasterise au Bresenham.
-    if (tq > 0.25) {
-      const grow = clamp01((tq - 0.25) / 0.70);
-      const rad = 4 + Math.floor(grow * 7) + Math.floor(burst * 9);
-      pixelCircle(floorY, rad, burst > 0.1 ? GB[5] : GB[2], GB[3], fr, Math.round(a * fade));
-      if (rad > 6) pixelCircle(floorY, rad - 3, GB[1], GB[1], fr + 1, Math.round(a * fade * 0.8));
+    // 4. LE NOYAU : un amas qui se resserre.
+    if (core > 0.01) {
+      const yMid = GROUND_Y + 1.30 * shrink;
+      const n = 6 + Math.floor(burst * 10);
+      const spread = (0.46 - 0.24 * core) * shrink + 0.70 * burst;
+      for (let i = 0; i < n; i++) {
+        const h1 = hash(salt + 18 + fr * 7, i * 41);
+        const h2 = hash(salt + 19 + fr * 7, i * 43);
+        const h3 = hash(salt + 20 + fr * 7, i * 47);
+        const tone = h3 > 0.80 ? 6 : (h3 > 0.55 ? 5 : 4);
+        pix((h1 - 0.5) * 2 * spread, (h2 - 0.5) * 2 * spread,
+            yMid + (h3 - 0.5) * 2 * spread, PXL[tone], a * core * fade);
+      }
     }
 
-    // 5. LA DECHARGE : colonne empilee, puis nappe au sol en tramage.
+    // 5. LA DECHARGE : une etoile dans toutes les directions de l'espace.
     if (burst > 0.01) {
-      const h = Math.floor(burst * 15);
-      for (let i = 0; i < h; i++) {
-        const tone = ((i + fr) % 3) === 0 ? 5 : (((i & 1) === 0) ? 4 : 6);
-        const yy = GROUND_Y + (i + 0.5) * PIX;
-        for (let c = 0; c < 4; c++) {
-          pix(((c & 1) === 0 ? 0.5 : -0.5) * PIX, ((c & 2) === 0 ? 0.5 : -0.5) * PIX,
-              yy, GB[tone], Math.round(a * fade));
-        }
+      const yMid = GROUND_Y + 1.30 * shrink;
+      for (let s = 0; s < 8; s++) {
+        const h1 = hash(salt + 21, s * 53);
+        const h2 = hash(salt + 22, s * 59);
+        const phi = h1 * TAU;
+        const cosT = 1 - 2 * h2 * 0.78;
+        const sinT = Math.sqrt(Math.max(0, 1 - cosT * cosT));
+        const len = (1.30 + 2.10 * hash(salt + 23, s * 61)) * burst;
+        pixelBolt(0, 0, yMid, Math.cos(phi) * sinT * len, Math.sin(phi) * sinT * len,
+                  yMid + cosT * len, salt * 53 + s * 859 + fr * 19, 0.40, 1,
+                  a * burst * fade, fr);
       }
-      const span = 2 + Math.floor(burst * 9);
-      const inner = Math.max(0, span - 3);
-      for (let gx = -span; gx <= span; gx++) {
-        for (let gz = -span; gz <= span; gz++) {
-          const d2 = gx * gx + gz * gz;
-          if (d2 > span * span) continue;
-          if (((gx + gz + fr) & 1) !== 0) continue;
-          if (d2 < inner * inner && ((gx * 3 + gz * 5 + fr) & 3) !== 0) continue;
-          const tone = d2 > (span - 1) * (span - 1) ? 1 : (d2 > inner * inner ? 4 : 5);
-          pix(gx * PIX, gz * PIX, floorY, GB[tone], Math.round(a * fade));
-        }
+      const rad = 2 + Math.floor(burst * 10);
+      for (let i = 0; i < 40; i++) {
+        const ang = i * TAU / 40;
+        const gx = Math.round(Math.cos(ang) * rad), gz = Math.round(Math.sin(ang) * rad);
+        const tone = ((gx + gz + fr) & 1) === 0 ? 5 : 2;
+        pix(gx * PIX, gz * PIX, GROUND_Y, PXL[tone], a * fade * (1 - burst * 0.35));
       }
     }
     return out;

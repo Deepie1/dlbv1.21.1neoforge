@@ -108,24 +108,18 @@ public final class ThunderSignatureVfx {
     private static final float PIX = 0.1875f;
 
     /**
-     * Palette fermée façon Game Boy Color. Sept teintes, choisies <b>par index</b> : aucune
-     * interpolation nulle part, les dégradés se font au tramage en damier.
+     * Palette fermée, ordonnée du plus froid au plus chaud : la teinte d'un cube se choisit
+     * <b>par index</b> selon sa profondeur dans l'arbre d'éclair, jamais par interpolation.
+     * Les nuances intermédiaires s'obtiennent au tramage, comme sur une console.
      */
-    private static final int[] GB = {
-            0x11224A,   // 0 — abysse
-            0x1E63C8,   // 1 — bleu profond
-            0x2BE8FF,   // 2 — cyan
-            0x7DFF3B,   // 3 — vert console
-            0xFFE94A,   // 4 — jaune
-            0xFFFFFF,   // 5 — blanc
-            0xFF3BD4,   // 6 — magenta
-    };
-
-    /** Les trois poses du sprite d'éclair. '#' = teinte vive, 'o' = ombre, '.' = vide. */
-    private static final String[][] BOLT_SPRITE = {
-            { "...##", "..##o", ".##o.", "####o", "..##o", ".##o.", "##o..", "#o..." },
-            { "..##.", ".##o.", "###o.", ".###o", "..##o", ".##o.", "##o..", ".o..." },
-            { "..##.", ".###o", "##o..", "####o", "..##o", "..#o.", ".##..", "o...." },
+    private static final int[] PXL = {
+            0x141E6E,   // 0 — bleu nuit
+            0x1E46C8,   // 1 — bleu
+            0x2B8BFF,   // 2 — bleu clair
+            0x4FE3FF,   // 3 — cyan
+            0xA8F4FF,   // 4 — cyan pâle
+            0xFFFFFF,   // 5 — blanc, le cœur
+            0xFF3BD4,   // 6 — magenta, l'accent « cyber » de cette signature
     };
 
     /**
@@ -441,32 +435,38 @@ public final class ThunderSignatureVfx {
     }
 
     // =================================================================================
-    //  II. SURCADENCE CYBER-X — 120 ticks, en pixel art 8 bits
+    //  II. SURCADENCE CYBER-X — 120 ticks, éclairs voxelisés
     // =================================================================================
 
     /**
-     * Refonte complète en <b>pixel art 8 bits</b>. Les règles du genre sont contraignantes, et
-     * c'est précisément leur respect qui produit le style — elles sont toutes appliquées ici :
+     * Style <b>pixel / bits</b>, mais appliqué à de la vraie géométrie 3D — pas à des vignettes
+     * plates posées dans l'espace. La quantification est conservée (grille {@link #PIX}, cubes
+     * tous identiques, palette fermée, horloge à paliers) ; ce qu'elle quantifie change :
+     *
      * <ul>
-     *   <li><b>grille</b> : chaque cube est aligné sur un pas fixe {@link #PIX} et tous ont
-     *       exactement la même taille. Un cube vaut un pixel, jamais un demi ;</li>
-     *   <li><b>aucune rotation</b> : un sprite 8 bits ne tourne pas, il change de pose. Tout
-     *       passe par {@link #box}, jamais par {@link #rot} ;</li>
-     *   <li><b>palette fermée</b> de sept teintes choisies par index, sans la moindre
-     *       interpolation — les dégradés se font au <b>tramage</b> en damier ;</li>
-     *   <li><b>horloge à paliers</b> : l'animation avance par images fixes, à 18 images pour
-     *       les 120 ticks. Rien ne glisse, tout tressaute ;</li>
-     *   <li><b>tracés entiers</b> : les cercles sont rasterisés au Bresenham, comme sur une
-     *       console sans virgule flottante.</li>
+     *   <li>chaque décharge est un <b>arbre fractal récursif</b> construit dans les trois
+     *       dimensions — un tronc qui serpente, des branches qui en partent à des angles
+     *       quelconques, et des brindilles sur ces branches ;</li>
+     *   <li>chaque branche est ensuite <b>rastérisée au Bresenham 3D</b> : le tracé avance d'une
+     *       cellule à la fois en arithmétique entière, ce qui produit les marches d'escalier
+     *       caractéristiques du pixel art — ici en volume ;</li>
+     *   <li>la teinte suit la <b>profondeur dans l'arbre</b> (tronc blanc, branches cyan,
+     *       brindilles bleues) avec un tramage par hachage, comme un dégradé de console.</li>
      * </ul>
      *
      * Chronologie :
      * <ul>
-     *   <li>0,00–0,18 <b>allumage</b> : le cadre se trace pixel par pixel, en balayage ;</li>
-     *   <li>0,12–0,82 <b>sprites</b> : quatre éclairs alternent sur trois poses ;</li>
-     *   <li>0,15–0,80 <b>jauge de surcharge</b> : une barre se remplit case par case ;</li>
-     *   <li>0,25–0,95 <b>anneau</b> : un cercle de Bresenham s'élargit d'un pixel à la fois ;</li>
-     *   <li>0,80–1,00 <b>décharge</b> : la jauge se vide, la colonne jaillit, le sol se trame.</li>
+     *   <li>0,00–0,15 <b>amorçage</b> : quatre conducteurs se montent cube par cube, puis
+     *       s'effacent sous la cage — deux réseaux verticaux concurrents se lisaient comme
+     *       une forêt de colonnes et non comme une décharge ;</li>
+     *   <li>0,10–0,85 <b>la cage</b> : trois arbres à <b>tronc épais</b> montent du sol et se
+     *       <b>retracent entièrement</b> à chaque image — la cage grésille au lieu de rester
+     *       figée ;</li>
+     *   <li>0,22–0,85 <b>liaisons</b> : des arcs sautent de pointe à pointe, en diagonale dans
+     *       le volume et non dans un plan ;</li>
+     *   <li>0,28–0,85 <b>noyau</b> : un amas pulse au centre, de plus en plus serré ;</li>
+     *   <li>0,80–1,00 <b>décharge</b> : une étoile d'arcs part du noyau dans toutes les
+     *       directions de l'espace, puis l'onde court au sol.</li>
      * </ul>
      */
     private static void renderOverclock(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
@@ -475,120 +475,118 @@ public final class ThunderSignatureVfx {
         int a = Math.round(alpha * (1.0f - smooth((t - 0.94f) / 0.06f)));
         if (a <= 4) return;
 
-        // Horloge à paliers. Tout ce qui bouge se recale dessus : c'est ce qui donne le
-        // tressautement caractéristique, impossible à obtenir en interpolant.
-        final int FRAMES = 18;
+        // Horloge à paliers : les arbres sont retracés d'un bloc à chaque image, jamais
+        // interpolés. C'est ce qui fait grésiller la décharge au lieu de la faire glisser.
+        final int FRAMES = 20;
         final int fr = (int) (t * FRAMES);
         final float tq = fr / (float) FRAMES;
 
-        float boot  = smooth(tq / 0.18f);
-        float live  = smooth((tq - 0.12f) / 0.10f);
-        float burst = smooth((tq - 0.80f) / 0.08f);
-        float fade  = 1.0f - smooth((tq - 0.92f) / 0.08f);
-        float floorY = GROUND_Y + PIX * 0.5f;
+        float boot  = smooth(tq / 0.15f);
+        float cage  = smooth((tq - 0.10f) / 0.12f);
+        float link  = smooth((tq - 0.22f) / 0.14f);
+        float core  = smooth((tq - 0.28f) / 0.16f);
+        float burst = smooth((tq - 0.80f) / 0.07f);
+        float fade  = 1.0f - smooth((tq - 0.90f) / 0.10f);
+        float shrink = 1.0f - 0.22f * burst;
 
-        // ---- 1. LE CADRE : il se trace en balayage, un pixel après l'autre ----
-        {
-            final int side = 11;
-            float half = side * 0.5f * PIX;
-            int total = side * 4 - 4;
-            int drawn = (int) (total * boot);
-            for (int i = 0; i < drawn; i++) {
-                int gx, gz;
-                if (i < side)                  { gx = i;                 gz = 0; }
-                else if (i < side * 2 - 1)     { gx = side - 1;          gz = i - side + 1; }
-                else if (i < side * 3 - 2)     { gx = side * 3 - 3 - i;  gz = side - 1; }
-                else                           { gx = 0;                 gz = side * 4 - 4 - i; }
-                float f = -half + (gx + 0.5f) * PIX;
-                float l = -half + (gz + 0.5f) * PIX;
-                int tone = ((gx + gz + fr) & 3) == 0 ? 5 : 2;
-                pix(vc, mat, tmp, cx, cy, cz, dx, dz, f, l, floorY, GB[tone], a);
-            }
-            // Les quatre coins restent allumés une fois le cadre bouclé.
-            if (boot > 0.98f) {
-                for (int c = 0; c < 4; c++) {
-                    float f = ((c & 1) == 0 ? -1.0f : 1.0f) * (half - PIX * 0.5f);
-                    float l = ((c & 2) == 0 ? -1.0f : 1.0f) * (half - PIX * 0.5f);
-                    pix(vc, mat, tmp, cx, cy, cz, dx, dz, f, l, floorY + PIX, GB[4], a);
+        float top = GROUND_Y + 3.20f * shrink;
+        float ring = CAGE_HALF * 1.30f * shrink;
+
+        // ---- 1. LES QUATRE ÉLECTRODES, empilées cube par cube ----
+        if (boot > 0.01f) {
+            // Les conducteurs se montent, puis s'effacent sous la cage : deux réseaux verticaux
+            // concurrents se lisaient comme une forêt de colonnes, pas comme une décharge.
+            float socle = 1.0f - 0.80f * cage;
+            for (int p = 0; p < 4; p++) {
+                float ang = p * TAU / 4.0f + 0.7854f;
+                float ef = Mth.cos(ang) * ring;
+                float el = Mth.sin(ang) * ring;
+                int cells = (int) ((top - GROUND_Y) * 0.34f / PIX * boot);
+                for (int i = 0; i <= cells; i++) {
+                    float yy = GROUND_Y + i * PIX;
+                    int tone = i == cells ? 4 : ((i + fr) % 5 == 0 ? 3 : 1);
+                    pix(vc, mat, tmp, cx, cy, cz, dx, dz, ef, el, yy, PXL[tone], a * boot * socle);
                 }
             }
         }
 
-        // ---- 2. QUATRE SPRITES D'ÉCLAIR : ils changent de pose, ils ne pivotent jamais ----
-        if (live > 0.01f && burst < 0.55f) {
-            float reach = 1.60f;
-            for (int q = 0; q < 4; q++) {
-                int pose = (fr + q * 2) % BOLT_SPRITE.length;
-                boolean sideways = (q & 1) == 1;
-                float f = q == 0 ? reach : (q == 2 ? -reach : 0.0f);
-                float l = q == 1 ? reach : (q == 3 ? -reach : 0.0f);
-                // Montée d'un demi-pixel toutes les deux images : un tressautement franc.
-                float lift = ((fr + q) & 3) * PIX * 0.5f;
-                int main = ((fr + q) & 1) == 0 ? GB[4] : GB[2];
-                sprite(vc, mat, tmp, cx, cy, cz, dx, dz, BOLT_SPRITE[pose],
-                        f, l, GROUND_Y + PIX * 5.5f + lift, sideways,
-                        main, GB[1], Math.round(a * live * (1.0f - burst)));
+        // ---- 2. LA CAGE : trois arbres fractals, retracés à chaque image ----
+        if (cage > 0.01f) {
+            for (int b = 0; b < 3; b++) {
+                float ang = b * TAU / 3.0f + 0.3927f;
+                float r0 = ring * (0.72f + 0.42f * hash(salt + 11, b * 29));
+                float r1 = ring * (0.30f + 0.55f * hash(salt + 12, b * 31));
+                float a1 = ang + (hash(salt + 13, b * 37) - 0.5f) * 0.9f;
+                // Une branche sur six manque à l'appel, et pas la même d'une image à l'autre.
+                if (hash(salt + fr * 211, b * 53) < 0.16f) continue;
+                pixelBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * r0, Mth.sin(ang) * r0, GROUND_Y,
+                        Mth.cos(a1) * r1, Mth.sin(a1) * r1, top,
+                        salt * 31 + b * 617 + fr * 13, 0.55f, 2,
+                        a * cage * (1.0f - 0.35f * burst), fr);
             }
         }
 
-        // ---- 3. LA JAUGE DE SURCHARGE : elle se remplit case par case ----
-        if (boot > 0.55f) {
-            final int cells = 12;
-            float fill = burst > 0.02f ? (1.0f - burst) : clamp((tq - 0.15f) / 0.65f);
-            int on = Math.round(cells * fill);
-            float y = GROUND_Y + PIX * 13.0f;
-            float x0 = -cells * 0.5f * PIX;
-            for (int i = 0; i < cells; i++) {
-                boolean lit = i < on;
-                int tone = !lit ? 0 : (i >= cells - 3 ? 6 : (i >= cells - 6 ? 4 : 3));
-                // Une case qui vient de s'allumer clignote une image sur deux.
-                if (lit && i == on - 1 && (fr & 1) == 0) tone = 5;
+        // ---- 3. LIAISONS DE POINTE À POINTE, en diagonale dans le volume ----
+        if (link > 0.01f) {
+            for (int k = 0; k < 3; k++) {
+                if (hash(salt + fr * 307, k * 67) < 0.42f) continue;
+                int p0 = (int) (hash(salt + 14, k * 71 + fr) * 4.0f) & 3;
+                int p1 = (p0 + 1 + (int) (hash(salt + 15, k * 73 + fr) * 3.0f)) & 3;
+                if (p0 == p1) continue;
+                float a0 = p0 * TAU / 4.0f + 0.7854f;
+                float a1 = p1 * TAU / 4.0f + 0.7854f;
+                float y0 = top - PIX * (hash(salt + 16, k * 79) * 3.0f);
+                float y1 = top - PIX * (hash(salt + 17, k * 83) * 3.0f);
+                pixelBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(a0) * ring, Mth.sin(a0) * ring, y0,
+                        Mth.cos(a1) * ring, Mth.sin(a1) * ring, y1,
+                        salt * 41 + k * 733 + fr * 17, 0.34f, 1, a * link, fr);
+            }
+        }
+
+        // ---- 4. LE NOYAU : un amas qui se resserre ----
+        if (core > 0.01f) {
+            float yMid = GROUND_Y + 1.30f * shrink;
+            int n = 6 + (int) (burst * 10.0f);
+            float spread = (0.46f - 0.24f * core) * shrink + 0.70f * burst;
+            for (int i = 0; i < n; i++) {
+                float h1 = hash(salt + 18 + fr * 7, i * 41);
+                float h2 = hash(salt + 19 + fr * 7, i * 43);
+                float h3 = hash(salt + 20 + fr * 7, i * 47);
+                int tone = h3 > 0.80f ? 6 : (h3 > 0.55f ? 5 : 4);
                 pix(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        x0 + (i + 0.5f) * PIX, 0.0f, y, GB[tone], a);
-            }
-            pix(vc, mat, tmp, cx, cy, cz, dx, dz, x0 - PIX * 0.5f, 0.0f, y, GB[1], a);
-            pix(vc, mat, tmp, cx, cy, cz, dx, dz, x0 + (cells + 0.5f) * PIX, 0.0f, y, GB[1], a);
-        }
-
-        // ---- 4. L'ANNEAU : un cercle de Bresenham qui gagne un pixel à la fois ----
-        if (tq > 0.25f) {
-            float grow = clamp((tq - 0.25f) / 0.70f);
-            int rad = 4 + (int) (grow * 7.0f) + (int) (burst * 9.0f);
-            pixelCircle(vc, mat, tmp, cx, cy, cz, dx, dz, floorY, rad,
-                    burst > 0.1f ? GB[5] : GB[2], GB[3], fr, Math.round(a * fade));
-            if (rad > 6) {
-                pixelCircle(vc, mat, tmp, cx, cy, cz, dx, dz, floorY, rad - 3,
-                        GB[1], GB[1], fr + 1, Math.round(a * fade * 0.8f));
+                        (h1 - 0.5f) * 2.0f * spread, (h2 - 0.5f) * 2.0f * spread,
+                        yMid + (h3 - 0.5f) * 2.0f * spread,
+                        PXL[tone], a * core * fade);
             }
         }
 
-        // ---- 5. LA DÉCHARGE : colonne empilée, puis nappe au sol en tramage ----
+        // ---- 5. LA DÉCHARGE : une étoile dans toutes les directions de l'espace ----
         if (burst > 0.01f) {
-            int h = (int) (burst * 15.0f);
-            for (int i = 0; i < h; i++) {
-                int tone = ((i + fr) % 3) == 0 ? 5 : (((i & 1) == 0) ? 4 : 6);
-                float yy = GROUND_Y + (i + 0.5f) * PIX;
-                // Section de deux pixels sur deux : une colonne, pas un fil.
-                for (int c = 0; c < 4; c++) {
-                    float f = ((c & 1) == 0 ? 0.5f : -0.5f) * PIX;
-                    float l = ((c & 2) == 0 ? 0.5f : -0.5f) * PIX;
-                    pix(vc, mat, tmp, cx, cy, cz, dx, dz, f, l, yy, GB[tone],
-                            Math.round(a * fade));
-                }
+            float yMid = GROUND_Y + 1.30f * shrink;
+            for (int s = 0; s < 8; s++) {
+                float h1 = hash(salt + 21, s * 53);
+                float h2 = hash(salt + 22, s * 59);
+                // Direction tirée sur la sphère, pas sur un cercle : la décharge occupe le volume.
+                float phi = h1 * TAU;
+                float cosT = 1.0f - 2.0f * h2 * 0.78f;          // biaisé vers le haut
+                float sinT = Mth.sqrt(Math.max(0.0f, 1.0f - cosT * cosT));
+                float len = (1.30f + 2.10f * hash(salt + 23, s * 61)) * burst;
+                pixelBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        0.0f, 0.0f, yMid,
+                        Mth.cos(phi) * sinT * len, Mth.sin(phi) * sinT * len, yMid + cosT * len,
+                        salt * 53 + s * 859 + fr * 19, 0.40f, 1, a * burst * fade, fr);
             }
-            // Le dégradé d'une console se fait au damier, jamais à l'alpha.
-            int span = 2 + (int) (burst * 9.0f);
-            int inner = Math.max(0, span - 3);
-            for (int gx = -span; gx <= span; gx++) {
-                for (int gz = -span; gz <= span; gz++) {
-                    int d2 = gx * gx + gz * gz;
-                    if (d2 > span * span) continue;
-                    if (((gx + gz + fr) & 1) != 0) continue;
-                    if (d2 < inner * inner && ((gx * 3 + gz * 5 + fr) & 3) != 0) continue;
-                    int tone = d2 > (span - 1) * (span - 1) ? 1 : (d2 > inner * inner ? 4 : 5);
-                    pix(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            gx * PIX, gz * PIX, floorY, GB[tone], Math.round(a * fade));
-                }
+            // Ce qui touche le sol y rampe : l'onde garde la grille, elle aussi.
+            int rad = 2 + (int) (burst * 10.0f);
+            for (int i = 0; i < 40; i++) {
+                float ang = i * TAU / 40.0f;
+                int gx = Math.round(Mth.cos(ang) * rad);
+                int gz = Math.round(Mth.sin(ang) * rad);
+                int tone = ((gx + gz + fr) & 1) == 0 ? 5 : 2;
+                pix(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        gx * PIX, gz * PIX, GROUND_Y, PXL[tone], a * fade * (1.0f - burst * 0.35f));
             }
         }
     }
@@ -815,7 +813,7 @@ public final class ThunderSignatureVfx {
     }
 
     // =================================================================================
-    //  Outils du pixel art 8 bits
+    //  Outils du tracé voxelisé
     // =================================================================================
 
     /** Un pixel : cube de côté {@link #PIX}, aligné sur la grille, jamais tourné. */
@@ -834,62 +832,102 @@ public final class ThunderSignatureVfx {
     }
 
     /**
-     * Affiche une pose de sprite dans un plan vertical. Le sprite n'est jamais pivoté : il est
-     * posé soit face à l'axe de frappe, soit de côté, comme une feuille de sprites d'époque.
+     * Arbre d'éclair fractal, récursif et tridimensionnel. Le segment demandé est d'abord
+     * brisé en nœuds déplacés au hasard, puis chaque tronçon est rastérisé en voxels ; à
+     * chaque nœud, une branche fille peut partir dans une direction quelconque de l'espace.
+     *
+     * @param depth profondeur restante : 2 = tronc, 1 = branche, 0 = brindille sans descendance
      */
-    private static void sprite(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                               float cx, float cy, float cz, float dx, float dz,
-                               String[] rows, float f0, float l0, float y0,
-                               boolean sideways, int rgbMain, int rgbShade, int alpha) {
-        int rowCount = rows.length;
-        for (int r = 0; r < rowCount; r++) {
-            String row = rows[r];
-            for (int c = 0; c < row.length(); c++) {
-                char ch = row.charAt(c);
-                if (ch == '.') continue;
-                float u = (c - row.length() * 0.5f + 0.5f) * PIX;
-                float v = (rowCount * 0.5f - 0.5f - r) * PIX;
-                pix(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        sideways ? f0 : f0 + u, sideways ? l0 + u : l0, y0 + v,
-                        ch == '#' ? rgbMain : rgbShade, alpha);
+    private static void pixelBolt(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                  float cx, float cy, float cz, float dx, float dz,
+                                  float f0, float l0, float y0, float f1, float l1, float y1,
+                                  int seed, float wander, int depth, float alpha, int frame) {
+        if (alpha <= 1.0f || depth < 0) return;
+        // 4 + depth*3 donnait 10 nœuds sur 2,7 blocs, soit 1,5 cellule par tronçon : le
+        // zigzag passait sous la résolution de la grille et le tronc paraissait droit. Moins
+        // de nœuds, plus longs, et l'escalier redevient lisible.
+        final int nodes = 3 + depth * 2;
+        float pf = f0, pl = l0, py = y0;
+        for (int n = 1; n <= nodes; n++) {
+            float u = n / (float) nodes;
+            float f = f0 + (f1 - f0) * u;
+            float l = l0 + (l1 - l0) * u;
+            float y = y0 + (y1 - y0) * u;
+            if (n < nodes) {
+                // Le déplacement s'annule aux deux bouts, sinon la branche se décroche.
+                float taper = Mth.sin(u * 3.14159265f);
+                f += (hash(seed, n * 31) - 0.5f) * wander * taper;
+                l += (hash(seed, n * 37) - 0.5f) * wander * taper;
+                y += (hash(seed, n * 41) - 0.5f) * wander * 0.55f * taper;
             }
+            // Teinte par profondeur, avec tramage : tronc clair, brindilles bleues.
+            float dither = hash(seed + frame, n * 97);
+            int tone;
+            // Un éclair est blanc au cœur et bleuit vers les extrémités. Aucun magenta ici :
+            // sur un tronçon à section 2×2 il ne faisait pas un pixel d'accent mais une tache
+            // de six cubes. Il est réservé au noyau, où il signe la surcharge.
+            if (depth >= 2) tone = dither > 0.55f ? 5 : 4;
+            else if (depth == 1) tone = dither > 0.75f ? 5 : (dither > 0.30f ? 4 : 3);
+            else tone = dither > 0.70f ? 3 : (dither > 0.25f ? 2 : 1);
+            voxelLine(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py, f, l, y, PXL[tone], alpha, depth >= 2);
+            // La probabilité se lit par profondeur : le tronc ramifie souvent — c'est ce qui
+            // fait reconnaître un éclair — les branches presque jamais, sinon buisson.
+            float split = depth >= 2 ? 0.62f : 0.18f;
+            if (depth > 0 && n < nodes && hash(seed + frame * 17, n * 53) < split) {
+                float bl = (0.55f + 0.85f * hash(seed, n * 59)) * (depth == 2 ? 1.0f : 0.55f);
+                float ba = hash(seed, n * 61) * TAU;
+                float bp = (hash(seed, n * 67) - 0.5f) * 1.5f;
+                pixelBolt(vc, mat, tmp, cx, cy, cz, dx, dz, f, l, y,
+                        f + Mth.cos(ba) * bl, l + Mth.sin(ba) * bl, y + bp * bl,
+                        seed * 7 + n * 101, wander * 0.55f, depth - 1, alpha * 0.88f, frame);
+            }
+            pf = f;
+            pl = l;
+            py = y;
         }
     }
 
     /**
-     * Cercle rasterisé par l'algorithme de Bresenham, en arithmétique entière — c'est ainsi
-     * qu'une console 8 bits trace un cercle, et cela se voit : le contour a des marches.
+     * Rastérise un segment en cubes, par l'algorithme de Bresenham en trois dimensions : le
+     * tracé avance d'<b>une cellule à la fois</b> en arithmétique entière. C'est ce qui donne
+     * les marches d'escalier du pixel art, ici en volume — et non une ligne lissée.
      */
-    private static void pixelCircle(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                    float cx, float cy, float cz, float dx, float dz,
-                                    float y, int radius, int rgbA, int rgbB, int phase, int alpha) {
-        if (radius <= 0 || alpha <= 0) return;
-        int x = radius, z = 0, err = 1 - radius;
-        while (x >= z) {
-            plot8(vc, mat, tmp, cx, cy, cz, dx, dz, x, z, y, rgbA, rgbB, phase, alpha);
-            z++;
-            if (err < 0) {
-                err += 2 * z + 1;
-            } else {
-                x--;
-                err += 2 * (z - x) + 1;
+    private static void voxelLine(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                  float cx, float cy, float cz, float dx, float dz,
+                                  float f0, float l0, float y0, float f1, float l1, float y1,
+                                  int rgb, float alpha, boolean fat) {
+        int x0 = Math.round(f0 / PIX), z0 = Math.round(l0 / PIX);
+        int x1 = Math.round(f1 / PIX), z1 = Math.round(l1 / PIX);
+        int y0i = Math.round((y0 - GROUND_Y) / PIX), y1i = Math.round((y1 - GROUND_Y) / PIX);
+        int adx = Math.abs(x1 - x0), ady = Math.abs(y1i - y0i), adz = Math.abs(z1 - z0);
+        int sx = x0 < x1 ? 1 : -1, sy = y0i < y1i ? 1 : -1, sz = z0 < z1 ? 1 : -1;
+        int steps = Math.max(adx, Math.max(ady, adz));
+        if (steps > 192) return;                       // garde-fou : jamais de tracé fou
+        int ex = steps / 2, ey = steps / 2, ez = steps / 2;
+        int cxi = x0, cyi = y0i, czi = z0;
+        for (int i = 0; i <= steps; i++) {
+            if (cyi >= 0) {
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        cxi * PIX, czi * PIX, GROUND_Y + cyi * PIX,
+                        PIX * 0.5f, PIX * 0.5f, PIX * 0.5f, rgb, opaque(alpha));
+                if (fat) {
+                    // Section 2×2 : on double la cellule sur X et sur Z. Le conducteur gagne du
+                    // volume sans quitter la grille ni changer la taille du cube.
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            (cxi + 1) * PIX, czi * PIX, GROUND_Y + cyi * PIX,
+                            PIX * 0.5f, PIX * 0.5f, PIX * 0.5f, rgb, opaque(alpha));
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            cxi * PIX, (czi + 1) * PIX, GROUND_Y + cyi * PIX,
+                            PIX * 0.5f, PIX * 0.5f, PIX * 0.5f, rgb, opaque(alpha));
+                }
             }
+            if (i == steps) break;
+            ex -= adx; if (ex < 0) { ex += steps; cxi += sx; }
+            ey -= ady; if (ey < 0) { ey += steps; cyi += sy; }
+            ez -= adz; if (ez < 0) { ez += steps; czi += sz; }
         }
     }
 
-    /** Les huit symétries d'un octant de Bresenham. */
-    private static void plot8(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                              float cx, float cy, float cz, float dx, float dz,
-                              int gx, int gz, float y, int rgbA, int rgbB, int phase, int alpha) {
-        for (int s = 0; s < 8; s++) {
-            int ox = (s & 1) == 0 ? gx : gz;
-            int oz = (s & 1) == 0 ? gz : gx;
-            if ((s & 2) != 0) ox = -ox;
-            if ((s & 4) != 0) oz = -oz;
-            int rgb = ((ox + oz + phase) & 3) == 0 ? rgbB : rgbA;
-            pix(vc, mat, tmp, cx, cy, cz, dx, dz, ox * PIX, oz * PIX, y, rgb, alpha);
-        }
-    }
 
     // =================================================================================
     //  Tracé d'éclair : la primitive commune aux trois signatures
