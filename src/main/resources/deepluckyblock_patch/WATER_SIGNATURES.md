@@ -1688,3 +1688,85 @@ de 2,5.
 
 `CAGE_HALF` et `ECHO_RADIUS` ont disparu : la première n'avait plus d'usage, la seconde était
 déjà morte côté miroir et n'a jamais existé côté Java.
+
+---
+
+## 27. Signature n°2 — le pixel art est abandonné, place au marteau de Thor
+
+### 27.1 Pourquoi tout jeter
+
+Les versions 4 à 6 ont cherché à faire tenir un style « bits » dans une scène en trois
+dimensions. La v4 posait des sprites plats, la v5 a mis la grille dans la géométrie, la v6 a
+appliqué l'éclairage d'une planche de référence. Chaque étape corrigeait la précédente, et le
+résultat restait rejeté. La conclusion n'est pas qu'il manquait un réglage : **le thème
+lui-même ne tenait pas**. Un rendu pixel suppose une grille et un point de vue fixes ; dès que
+la caméra tourne librement autour de l'effet, la grille cesse d'être une intention et devient
+un défaut.
+
+La signature change donc de sujet. `OVERCLOCK_CYBER_X` devient **`MJOLNIR_HAMMERFALL`** —
+« Marteau de Thor ». L'identifiant numérique **8 reste**, c'est lui la clé de persistance et de
+dispatch, et les enchantements déclencheurs (`overclocked_crit`, `overcharge`) sont intacts.
+
+### 27.2 Le marteau
+
+C'est un **objet**, pas un effet, et c'est ce qui change tout dans la façon de le construire :
+il a un corps, deux plaques de frappe, des rivets, des rainures gravées, des runes serties, une
+lanière de cuir, un pommeau et un anneau de suspension. Une soixantaine de boîtes orientées.
+
+La règle qui fait le volume n'est pas la couleur mais la **valeur** : une face éclairée, une
+face moyenne, une face d'ombre, et une arête plus claire que tout le reste. Toutes les pièces
+sont du même or ; seule leur luminosité change.
+
+Deux corrections sont venues de la première image rendue :
+
+- les arêtes étaient d'abord soulignées par des boîtes **roulées à 45°**. Une boîte tournée sur
+  une arête déborde des deux faces : le marteau avait quatre ailettes blanches. Une baguette
+  droite, rentrée dans le volume, fait le même travail sans rien faire saillir ;
+- les plaques de frappe étaient entièrement dans la teinte de reflet, ce qui les faisait lire
+  comme du papier collé sur l'or. Le reflet ne tient plus que l'arête.
+
+La chute est **accélérée en cube**. Une descente linéaire se lit comme un ascenseur ; il faut
+que le dernier tiers soit brutal pour qu'on lise une frappe.
+
+### 27.3 Le gameplay
+
+**L'impact**, au tick 40 — exactement quand le marteau touche le sol à l'écran : un carré de
+**3×3 blocs** centré sur la cible prend **deux fois les dégâts de l'arme**. Deux fois, au sens
+strict : la valeur utilisée est celle de l'événement de dégâts, donc **enchantements et effets
+d'attaque compris**. Un Tranchant V ou une potion de Force se répercutent tels quels.
+
+**La dalle** reste sous tension **dix secondes** (200 ticks). Tout ce qui se trouve dans le
+carré — **mobs et joueurs**, l'attaquant excepté — prend une décharge légère une fois par
+seconde. La zone est figée au sol : c'est le terrain qui est électrifié, pas la cible, et elle
+ne suit donc personne.
+
+Deux garde-fous repris de la mécanique des tornades, pour la même raison : le hook de tick est
+appelé une fois **par entité vivante** et par tick. Sans verrou de passage unique, une dalle
+frapperait autant de fois qu'il y a de mobs chargés dans le monde. Et un registre de
+rafraîchissement par victime empêche la décharge de se déclencher à chaque tick.
+
+Aucun son n'accompagne la décharge de la dalle : une par seconde et par victime pendant dix
+secondes deviendrait insupportable. Les étincelles suffisent.
+
+### 27.4 Ce que le remplacement a entraîné ailleurs
+
+`OVERCLOCK_CYBER_X` → `MJOLNIR_HAMMERFALL`, **14 occurrences dans 7 fichiers** ; durée **120 →
+250 ticks** dans le gestionnaire comme dans la commande de test (`290` de marge) ;
+`ThunderSignatureVfx.OVERCLOCK` → `HAMMER`. Les libellés français qui parlaient de « surcadence »
+ont été recalés dans six fichiers — un identifiant renommé sans ses descriptions laisse une
+documentation qui ment.
+
+En revanche `overclocked_crit`, `overcharge` et `OVERCLOCK_CYAN` **n'ont pas été touchés** : ce
+sont respectivement des clés d'enchantement et une couleur de particules, sans rapport avec la
+signature.
+
+Tout le pixel art disparaît du fichier : `PIX`, `PXL`, `pix`, `snap`, `cell`, `voxelLine`,
+`pixelBolt`, et `CAGE_HALF` avec eux.
+
+### 27.5 Contrôles
+
+`java-parser` OK sur les **10 fichiers** touchés · `node --check` OK · `semcheck.py` ne
+signale que ses faux positifs connus — dont `zone lu avant sa déclaration`, qu'il produit déjà
+sur `tickWindZones`, du code existant qui compile · `lamcheck2` n'ajoute aucune capture de
+variable mutée · **0 NaN**, **0 alpha sous 208** sur 99 instants × 3 variantes · Playwright
+**0 erreur JS**.

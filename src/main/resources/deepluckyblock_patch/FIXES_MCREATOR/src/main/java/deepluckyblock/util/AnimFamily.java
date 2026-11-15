@@ -36,7 +36,7 @@ public final class AnimFamily {
     /** T375 : huitième famille, l'eau (raz-de-marée, maelström abyssal, givre du permafrost). */
     public static final String WATER = "water";
     /**
-     * T376 : neuvième famille, la foudre (arc en chaîne, surcadence cyber-X, double écho).
+     * T376 : neuvième famille, la foudre (arc en chaîne, marteau de Thor, appel de l'orage).
      * Correspond à {@link deepluckyblock.enchantments.DeepElement#THUNDER}, « Foudre ».
      */
     public static final String THUNDER = "thunder";

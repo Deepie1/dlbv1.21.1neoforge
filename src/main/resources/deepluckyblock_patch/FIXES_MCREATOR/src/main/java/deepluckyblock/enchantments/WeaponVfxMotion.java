@@ -114,7 +114,7 @@ public final class WeaponVfxMotion {
             case GUILLOTINE_CLEAVE -> p(SHAPE_COLUMN, 1, 0.00f, 0.00f, 1.20f, 0.015f);
             case GOLDEN_CRIT_STAR -> p(SHAPE_ORBIT, 2, 1.10f, 0.10f, 1.00f, 0.010f);
             case FOCUSED_BULLSEYE -> p(SHAPE_CRESCENT, 1, 0.00f, 0.00f, 0.72f, 0.000f);
-            case OVERCLOCK_CYBER_X -> p(SHAPE_BOLT, 1, 0.00f, 0.00f, 1.06f, 0.120f);
+            case MJOLNIR_HAMMERFALL -> p(SHAPE_BOLT, 1, 0.00f, 0.00f, 1.06f, 0.120f);
 
             // --- III. Sang ----------------------------------------------------------------
             case DRIPPING_BLOOD_EDGE -> p(SHAPE_DRIP, 1, 0.00f, -0.85f, 0.96f, 0.020f);

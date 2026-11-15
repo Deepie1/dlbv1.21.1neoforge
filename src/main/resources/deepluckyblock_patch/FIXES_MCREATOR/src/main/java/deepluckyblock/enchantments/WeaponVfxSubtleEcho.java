@@ -104,7 +104,7 @@ public final class WeaponVfxSubtleEcho {
                 MOTION_ARC,    // 05 GUILLOTINE_CLEAVE    : couperet
                 MOTION_STAR,   // 06 GOLDEN_CRIT_STAR     : étoile critique
                 MOTION_CROSS,  // 07 FOCUSED_BULLSEYE     : croix de visée
-                MOTION_CROSS,  // 08 OVERCLOCK_CYBER_X    : croix cyber
+                MOTION_CROSS,  // 08 MJOLNIR_HAMMERFALL    : croix de la frappe
                 MOTION_FALL,   // 09 DRIPPING_BLOOD_EDGE  : gouttes
                 MOTION_SIPHON, // 10 CRIMSON_SIPHON       : aspiration
                 MOTION_SIPHON, // 11 VITAL_TRANSFUSION    : transfert

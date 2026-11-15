@@ -633,9 +633,9 @@ public final class WeaponWorldVfxManager {
             case PERMAFROST_RIME -> 120;
             // T376-THUNDER : la foudre tenait 11 à 14 ticks, soit moins d'une demi-seconde.
             // Ses trois signatures ont désormais une vraie chorégraphie : ionisation puis
-            // chaîne à six relais, cage de surcadence, formation et décharge de l'orage.
+            // chaîne à six relais, chute du marteau puis dalle sous tension, orage.
             case CHAIN_VOLT_ARC -> 130;
-            case OVERCLOCK_CYBER_X -> 120;
+            case MJOLNIR_HAMMERFALL -> 250;   // 40 d'appel + impact + 200 de dalle + sortie
             case STORMCALL_JUDGMENT -> 170;
             case DRAGON_CHAOS_PRISM, BIG_BANG_SCAR -> 22;
             case ECLIPSE_VEIL, NULL_RIFT_FISSURE,
@@ -1763,7 +1763,7 @@ public final class WeaponWorldVfxManager {
         if (deepluckyblock.util.AnimFamily.THUNDER.equals(canonical)) {
             return switch (index) {
                 case 0 -> WeaponVisualEffectId.CHAIN_VOLT_ARC;
-                case 1 -> WeaponVisualEffectId.OVERCLOCK_CYBER_X;
+                case 1 -> WeaponVisualEffectId.MJOLNIR_HAMMERFALL;
                 default -> WeaponVisualEffectId.STORMCALL_JUDGMENT;
             };
         }
@@ -3571,7 +3571,7 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * 雷 FOUDRE — moteur voxel dédié (T376) : arc en chaîne, surcadence cyber-X, double écho.
+     * 雷 FOUDRE — moteur voxel dédié (T376) : arc en chaîne, marteau de Thor, appel de l'orage.
      *
      * <p>Comme pour l'eau et le vent, la pulsation de taille est coupée : un canal d'éclair doit
      * rester <b>jointif</b> d'un segment à l'autre, sinon la polyligne se lit comme un chapelet
@@ -3601,7 +3601,7 @@ public final class WeaponWorldVfxManager {
     private static void impactThunder(ImpactView v) {
         int thunderSignature = switch (v.inst().effect) {
             case CHAIN_VOLT_ARC -> ThunderSignatureVfx.BOLT;
-            case OVERCLOCK_CYBER_X -> ThunderSignatureVfx.OVERCLOCK;
+            case MJOLNIR_HAMMERFALL -> ThunderSignatureVfx.HAMMER;
             case STORMCALL_JUDGMENT -> ThunderSignatureVfx.ECHO;
             default -> -1;
         };
@@ -3671,13 +3671,13 @@ public final class WeaponWorldVfxManager {
                         v.cx() + Mth.cos(ang) * rad, v.cy() + 0.10f, v.cz() + Mth.sin(ang) * rad,
                         6, 0.22f, v.aRgb(), v.aRgb(), Math.round(flick * 0.9f), 0.030f * S);
             }
-        } else if (fx == WeaponVisualEffectId.OVERCLOCK_CYBER_X) {
+        } else if (fx == WeaponVisualEffectId.MJOLNIR_HAMMERFALL) {
             float span = (0.75f + 0.55f * t) * S;
             v.line(v.cx() - span, v.cy() - span, v.cz(), v.cx() + span, v.cy() + span, v.cz(),
                     0.042f * S, v.aRgb(), v.pRgb(), flick);
             v.line(v.cx() - span, v.cy() + span, v.cz(), v.cx() + span, v.cy() - span, v.cz(),
                     0.042f * S, v.aRgb(), v.sRgb(), flick);
-            // T365-HOLOGRAM : grille cubique de surcadence (volume néon).
+            // T365-HOLOGRAM : volume néon hérité, conservé pour les anciens effets.
             v.cage(span * 0.95f, v.age() * 0.07f, 0.50f, v.age() * 0.05f,
                     v.pRgb(), v.aRgb(), Math.round(flick * 0.75f));
         }

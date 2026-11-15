@@ -54,11 +54,12 @@ function buildThunder(variant, t, salt = 7331) {
   // pour des segments de 0,14 a 0,39 de long — plus large que long, donc un chapelet de cubes.
   // GROUND_Y : rien n'est emis sous le sol.
   const GROUND_Y = -0.42;
-  // Pixel art : un cube vaut un pixel, jamais un demi. Palette fermee, indexee, sans melange.
-  const PIX = 0.1875;
-  // Palette fermee, ordonnee du plus froid au plus chaud : la teinte se choisit PAR INDEX
-  // selon la profondeur dans l'arbre d'eclair, jamais par interpolation.
-  const PXL = [0x141E6E, 0x1E46C8, 0x2B8BFF, 0x4FE3FF, 0xA8F4FF, 0xFFFFFF, 0xFF3BD4];
+  // Palette du marteau : un metal ne se lit que par ses VALEURS — face eclairee, face
+  // moyenne, ombre, et une arete plus claire que tout le reste.
+  const GOLD_HI = 0xFFF4CB, GOLD = 0xF3C63E, GOLD_MID = 0xC68B1C,
+        GOLD_DARK = 0x87560F, GOLD_DEEP = 0x4A2F07, RUNE = 0x9BF2FF, GRIP = 0x47301C;
+  // Demi-cote de la zone frappee : 3x3 blocs.
+  const ZONE_HALF = 1.5;
   // SCORCH est une couleur de BRULURE : a 8 blocs de haut le nuage disparaissait dans le ciel.
   const CLOUD_DARK = 0x3B3457, CLOUD_LIT = 0x6A5CA8;
   const CLOUD_Y = 8.0, CLOUD_R = 3.40, STRIKES = 5;
@@ -93,101 +94,126 @@ function buildThunder(variant, t, salt = 7331) {
                yaw: yaw, pitch: 0, roll: roll });
   };
 
-  // boltOffset() : 5 octaves de bruit haché à interpolation LINÉAIRE. C'est l'interpolation
-  // linéaire qui casse le trait ; une interpolation lisse donnerait une ondulation molle.
-  // ---- Outils du pixel volumetrique (miroir exact du .java) ----
-  const snap = (v) => Math.round(v / PIX) * PIX;
-  const pix = (f, lat, y, rgb, alpha) => {
-    if (y < GROUND_Y) return;
-    const h = PIX * 0.5;
-    box(snap(f), snap(lat), GROUND_Y + snap(y - GROUND_Y), h, h, h, rgb, opq(alpha));
-  };
-  // Pose un cube sur la cellule entiere (gx, gy, gz) : seule porte vers box, donc aucun
-  // cube ne peut se retrouver a un demi-pas de la grille.
-  const cell = (gx, gy, gz, rgb, alpha) => {
-    box(gx * PIX, gz * PIX, GROUND_Y + gy * PIX,
-        PIX * 0.5, PIX * 0.5, PIX * 0.5, rgb, opq(alpha));
+  // Pose une piece du marteau. Les coordonnees sont LOCALES a l'objet : le lacet s'applique
+  // a la position ET a la boite, donc le marteau tourne d'un seul tenant.
+  const piece = (lf, ll, ly, hf, hy, hl, yaw, roll, baseY, scale, rgb, alpha) => {
+    if (alpha <= 1) return;
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    rot((lf * c - ll * s) * scale, (lf * s + ll * c) * scale, baseY + ly * scale,
+           hf * scale, hy * scale, hl * scale, yaw, 0, roll, rgb, opq(alpha));
   };
 
-  // Bresenham 3D. Le parametre glow dessine l'AURA : en pixel art un halo ne se fait jamais
-  // par transparence mais avec des pixels de teinte intermediaire — ce qui tombe bien, le
-  // moteur ecarte tout cube sous 200 d'alpha. Gaine opaque, deux crans de palette par
-  // couronne, posee UNE SEULE FOIS par niveau Y pour qu'aucun cube ne se superpose.
-  const voxelLine = (f0, l0, y0, f1, l1, y1, tone, alpha, glow) => {
-    const x0 = Math.round(f0 / PIX), z0 = Math.round(l0 / PIX);
-    const x1 = Math.round(f1 / PIX), z1 = Math.round(l1 / PIX);
-    const y0i = Math.round((y0 - GROUND_Y) / PIX), y1i = Math.round((y1 - GROUND_Y) / PIX);
-    const adx = Math.abs(x1 - x0), ady = Math.abs(y1i - y0i), adz = Math.abs(z1 - z0);
-    const sx = x0 < x1 ? 1 : -1, sy = y0i < y1i ? 1 : -1, sz = z0 < z1 ? 1 : -1;
-    const steps = Math.max(adx, Math.max(ady, adz));
-    if (steps > 192) return;
-    let ex = steps >> 1, ey = steps >> 1, ez = steps >> 1;
-    let cxi = x0, cyi = y0i, czi = z0;
-    let lastGlowY = -1e9;
-    const halo1 = Math.max(0, tone - 1), halo2 = Math.max(0, tone - 3);
-    for (let i = 0; i <= steps; i++) {
-      if (cyi >= 0) {
-        cell(cxi, cyi, czi, PXL[tone], alpha);
-        if (glow > 0 && cyi !== lastGlowY) {
-          lastGlowY = cyi;
-          // Aura AJOUREE : en volume une gaine pleine masque le coeur et il ne reste qu'un
-          // bloc bleu. On seme les cubes, ce qui rend aussi le grain du flou de la planche.
-          const g = cxi * 73 + czi * 131 + cyi * 7;
-          if (hash(g, 311) > 0.22) cell(cxi + 1, cyi, czi, PXL[halo1], alpha);
-          if (hash(g, 313) > 0.22) cell(cxi - 1, cyi, czi, PXL[halo1], alpha);
-          if (hash(g, 317) > 0.22) cell(cxi, cyi, czi + 1, PXL[halo1], alpha);
-          if (hash(g, 331) > 0.22) cell(cxi, cyi, czi - 1, PXL[halo1], alpha);
-          if (glow > 1) {
-            if (hash(g, 337) > 0.55) cell(cxi + 1, cyi, czi + 1, PXL[halo2], alpha);
-            if (hash(g, 347) > 0.55) cell(cxi - 1, cyi, czi - 1, PXL[halo2], alpha);
-            if (hash(g, 349) > 0.55) cell(cxi + 1, cyi, czi - 1, PXL[halo2], alpha);
-            if (hash(g, 353) > 0.55) cell(cxi - 1, cyi, czi + 1, PXL[halo2], alpha);
-            if (hash(g, 359) > 0.62) cell(cxi + 2, cyi, czi, PXL[halo2], alpha);
-            if (hash(g, 367) > 0.62) cell(cxi - 2, cyi, czi, PXL[halo2], alpha);
-            if (hash(g, 373) > 0.62) cell(cxi, cyi, czi + 2, PXL[halo2], alpha);
-            if (hash(g, 379) > 0.62) cell(cxi, cyi, czi - 2, PXL[halo2], alpha);
-          }
-        }
+  // Mjollnir : tete courte et massive, manche court. Le detail vient de la superposition de
+  // quatre familles de pieces — corps, plaques de frappe, gravures, garniture du manche.
+  const drawHammer = (baseY, yaw, scale, alpha, charge, salt, t) => {
+    if (alpha <= 1) return;
+    piece(0, 0, 0, 1.00, 0.64, 0.60, yaw, 0, baseY, scale, GOLD, alpha);
+    piece(0, 0, 0.66, 1.00, 0.05, 0.60, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    piece(0, 0, -0.66, 1.00, 0.05, 0.60, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    piece(0, 0.62, 0, 1.00, 0.60, 0.05, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    piece(0, -0.62, 0, 1.00, 0.60, 0.05, yaw, 0, baseY, scale, GOLD_MID, alpha);
+
+    for (let e = -1; e <= 1; e += 2) {
+      const ef = e * 1.04;
+      piece(ef, 0, 0, 0.09, 0.72, 0.68, yaw, 0, baseY, scale, GOLD, alpha);
+      piece(ef, 0, 0.71, 0.10, 0.045, 0.68, yaw, 0, baseY, scale, GOLD_HI, alpha);
+      piece(ef, 0.67, 0, 0.10, 0.72, 0.045, yaw, 0, baseY, scale, GOLD_HI, alpha);
+      piece(ef, -0.67, 0, 0.10, 0.72, 0.045, yaw, 0, baseY, scale, GOLD_MID, alpha);
+      piece(ef * 1.08, 0, 0, 0.03, 0.64, 0.60, yaw, 0, baseY, scale, GOLD, alpha);
+      for (let r = 0; r < 4; r++) {
+        const rl = r < 2 ? -0.42 : 0.42;
+        const ry = r % 2 === 0 ? -0.42 : 0.42;
+        piece(ef * 1.06, rl, ry, 0.05, 0.09, 0.09, yaw, 0, baseY, scale, GOLD_DARK, alpha);
       }
-      if (i === steps) break;
-      ex -= adx; if (ex < 0) { ex += steps; cxi += sx; }
-      ey -= ady; if (ey < 0) { ey += steps; cyi += sy; }
-      ez -= adz; if (ez < 0) { ez += steps; czi += sz; }
+      piece(ef * 0.86, 0, 0, 0.04, 0.62, 0.58, yaw, 0, baseY, scale, GOLD_DEEP, alpha);
+    }
+
+    piece(0, 0, 0, 0.26, 0.68, 0.64, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    piece(0, 0, 0, 0.30, 0.06, 0.62, yaw, 0, baseY, scale, GOLD_DARK, alpha);
+
+    const runeA = alpha * (0.45 + 0.55 * charge);
+    for (let side = -1; side <= 1; side += 2) {
+      const sl = side * 0.645;
+      piece(0.46, sl, 0, 0.05, 0.34, 0.025, yaw, 0, baseY, scale, RUNE, runeA);
+      piece(0.46, sl, 0, 0.22, 0.05, 0.025, yaw, 0, baseY, scale, RUNE, runeA);
+      piece(-0.46, sl, 0, 0.05, 0.34, 0.025, yaw, 0, baseY, scale, RUNE, runeA);
+      piece(-0.46, sl, 0.18, 0.18, 0.05, 0.025, yaw, 0, baseY, scale, RUNE, runeA);
+      piece(-0.46, sl, -0.18, 0.18, 0.05, 0.025, yaw, 0, baseY, scale, RUNE, runeA);
+    }
+
+    // Des boites roulees a 45 deg debordaient des deux faces : quatre ailettes blanches.
+    for (let e = -1; e <= 1; e += 2)
+      for (let s2 = -1; s2 <= 1; s2 += 2)
+        piece(0, s2 * 0.575, e * 0.595, 0.99, 0.055, 0.055, yaw, 0, baseY, scale,
+              GOLD_HI, alpha * 0.92);
+
+    piece(0, 0, 0.78, 0.30, 0.14, 0.30, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    piece(0, 0, 0.95, 0.22, 0.10, 0.22, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    piece(0, 0, 1.75, 0.155, 0.74, 0.155, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    piece(0.14, 0, 1.75, 0.03, 0.74, 0.10, yaw, 0, baseY, scale, GOLD_HI, alpha);
+
+    for (let w = 0; w < 5; w++)
+      piece(0, 0, 1.22 + w * 0.27, 0.165, 0.085, 0.165, yaw + w * 0.18, 0, baseY, scale,
+            GRIP, alpha);
+
+    piece(0, 0, 2.58, 0.26, 0.15, 0.26, yaw, 0, baseY, scale, GOLD, alpha);
+    piece(0, 0, 2.72, 0.17, 0.07, 0.17, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    for (let r = 0; r < 8; r++) {
+      const ra = r * TAU / 8;
+      piece(Math.cos(ra) * 0.17, Math.sin(ra) * 0.17, 2.95, 0.05, 0.05, 0.05,
+            yaw, 0, baseY, scale, GOLD_MID, alpha);
+    }
+
+    if (charge > 0.05) {
+      const arcs = 2 + Math.floor(charge * 4);
+      for (let k = 0; k < arcs; k++) {
+        const sd = salt * 17 + k * 311 + Math.floor(t * 90);
+        const a0 = hash(sd, 7) * TAU, a1 = hash(sd, 11) * TAU;
+        const r0 = 0.70 * scale;
+        drawBolt(Math.cos(yaw + a0) * r0, Math.sin(yaw + a0) * r0,
+                 baseY + (hash(sd, 13) - 0.5) * 1.1 * scale,
+                 Math.cos(yaw + a1) * r0, Math.sin(yaw + a1) * r0,
+                 baseY + (hash(sd, 17) - 0.5) * 1.1 * scale,
+                 sd, 0.28 * scale, 1.0, 0.75, alpha * charge, 6, false);
+      }
     }
   };
 
-  // Arbre d'eclair fractal : 2 = tronc, 1 = branche, 0 = brindille. La ramification se
-  // concentre VERS LE BAS (la proba croit avec u) et une branche CONTINUE DE DESCENDRE en
-  // s'ecartant — sans quoi on obtient un oursin et non une decharge.
-  const pixelBolt = (f0, l0, y0, f1, l1, y1, seed, wander, depth, alpha, frame, glow) => {
-    if (alpha <= 1 || depth < 0) return;
-    const nodes = 4 + depth * 3;
-    let pf = f0, pl = l0, py = y0;
-    for (let n = 1; n <= nodes; n++) {
-      const u = n / nodes;
-      let f = f0 + (f1 - f0) * u;
-      let l = l0 + (l1 - l0) * u;
-      let y = y0 + (y1 - y0) * u;
-      if (n < nodes) {
-        const taper = Math.sin(u * 3.14159265);
-        f += (hash(seed, n * 31) - 0.5) * wander * taper;
-        l += (hash(seed, n * 37) - 0.5) * wander * taper;
-        y += (hash(seed, n * 41) - 0.5) * wander * 0.35 * taper;
+  // Le sol electrifie : volontairement LEGER, il tient 200 ticks a l'ecran. Un lisere qui
+  // tourne plutot qu'un clignotement, quelques arcs courts, un gresillement.
+  const shockZone = (t, live, alpha, salt) => {
+    if (live <= 0.01 || alpha <= 1) return;
+    const h = ZONE_HALF, y = GROUND_Y + 0.02;
+    const SEGMENTS = 32, head = fract(t * 1.35);
+    for (let i = 0; i < SEGMENTS; i++) {
+      const u = i / SEGMENTS, side = u * 4, q = Math.floor(side), v = side - q;
+      let f, l;
+      if (q === 0) { f = -h + 2 * h * v; l = -h; }
+      else if (q === 1) { f = h; l = -h + 2 * h * v; }
+      else if (q === 2) { f = h - 2 * h * v; l = h; }
+      else { f = -h; l = h - 2 * h * v; }
+      const d = Math.abs(fract(u - head + 0.5) - 0.5), lit = d < 0.10;
+      box(f, l, y, 0.085, 0.032 + (lit ? 0.050 : 0), 0.085,
+          lit ? 0xFFFFFF : 0x2F7BE8, opq(alpha * live * (lit ? 1.0 : 0.42)));
+    }
+    for (let e = -1; e <= 1; e += 2)
+      for (let s2 = -1; s2 <= 1; s2 += 2) {
+        const pulse = 0.55 + 0.45 * Math.sin(t * 8 + e * 1.3 + s2 * 2.1);
+        box(e * h, s2 * h, y + 0.05, 0.075, 0.09, 0.075, 0x6FD8FF, opq(alpha * live * pulse));
       }
-      // Hierarchie de TEINTE, pas d'epaisseur.
-      const tone = depth >= 2 ? 5 : (depth === 1 ? 4 : 3);
-      voxelLine(pf, pl, py, f, l, y, tone, alpha, depth >= 2 ? glow : Math.max(0, glow - 1));
-      const split = (depth >= 2 ? 0.70 : 0.26) * u;
-      if (depth > 0 && n < nodes && hash(seed + frame * 17, n * 53) < split) {
-        const bl = (0.45 + 0.70 * hash(seed, n * 59)) * (depth === 2 ? 1.0 : 0.55);
-        const ba = hash(seed, n * 61) * TAU;
-        pixelBolt(f, l, y,
-                  f + Math.cos(ba) * bl * 1.15, l + Math.sin(ba) * bl * 1.15,
-                  y - bl * (0.25 + 0.45 * hash(seed, n * 67)),
-                  seed * 7 + n * 101, wander * 0.55, depth - 1, alpha * 0.92,
-                  frame, Math.max(0, glow - 1));
-      }
-      pf = f; pl = l; py = y;
+    const frame = Math.floor(t * 26);
+    for (let k = 0; k < 3; k++) {
+      const sd = salt * 29 + k * 557 + frame * 97;
+      if (hash(sd, 3) < 0.38) continue;
+      drawBolt((hash(sd, 5) * 2 - 1) * h, (hash(sd, 7) * 2 - 1) * h, y + 0.03,
+               (hash(sd, 11) * 2 - 1) * h, (hash(sd, 13) * 2 - 1) * h, y + 0.03,
+               sd, 0.22, 1.0, 0.55, alpha * live * 0.85, 5, false);
+    }
+    for (let i = 0; i < 7; i++) {
+      const sd = salt * 31 + i * 193 + frame * 53;
+      box((hash(sd, 19) * 2 - 1) * h, (hash(sd, 23) * 2 - 1) * h, y + hash(sd, 29) * 0.22,
+          0.035, 0.035, 0.035, hash(sd, 31) > 0.5 ? 0xFFFFFF : 0x7FE0FF,
+          opq(alpha * live * (0.5 + 0.5 * hash(sd, 37))));
     }
   };
 
@@ -450,67 +476,71 @@ function buildThunder(variant, t, salt = 7331) {
   }
 
   // =========================================================================================
-  //  II. SURCADENCE CYBER-X — 120 ticks, la foudre tombe et reste
+  //  II. MARTEAU DE THOR — 250 ticks, la frappe puis le sol sous tension
   // =========================================================================================
-  // Un seul objet domine : le trait vertical. La cage de la version precedente opposait
-  // quatre objets concurrents et formait une boite illisible.
+  // Le marteau est un OBJET, pas un effet : corps, plaques de frappe, rivets, rainures, runes
+  // serties, laniere et pommeau. L'impact visuel est a t = 0,16, soit le tick 40 — exactement
+  // quand le serveur applique les degats.
   if (variant === 1) {
-    const a = Math.round(255 * (1 - smooth((t - 0.94) / 0.06)));
+    const a = Math.round(255 * (1 - smooth((t - 0.96) / 0.04)));
     if (a <= 4) return out;
 
-    const FRAMES = 20;
-    const fr = Math.floor(t * FRAMES);
-    const tq = fr / FRAMES;
+    const IMPACT = 0.16, SCALE = 1.30, REST = GROUND_Y + 0.64 * SCALE;
+    const appear = smooth(t / 0.05);
+    const fall = Math.max(0, Math.min(1, (t - 0.105) / (IMPACT - 0.105)));
+    const hit = smooth((t - IMPACT) / 0.012);
+    const gone = smooth((t - IMPACT - 0.02) / 0.065);
+    const live = smooth((t - IMPACT) / 0.015) * (1 - smooth((t - 0.93) / 0.05));
 
-    // Cycle de la planche : deux images fines, UNE de flash, deux fines.
-    // Les images fines sont NUES : une couronne permanente faisait un tube continu.
-    const phase = fr % 5;
-    let glow = phase === 2 ? 2 : 0;
+    if (gone < 0.999) {
+      const ease = fall * fall * fall;               // chute en cube : brutale a la fin
+      const sky = GROUND_Y + 5.60;
+      const hover = Math.sin(t * 7) * 0.14 * (1 - fall);
+      let baseY = sky + hover - (sky - REST) * ease;
+      baseY += gone * 2.40;
+      const yaw = 0.9 + t * 1.25 + fall * 2.6;
+      const charge = Math.min(1, appear * (0.25 + 0.75 * fall) + hit * 0.8);
+      drawHammer(baseY, yaw, SCALE, a * appear * (1 - gone), charge, salt, t);
 
-    const strike = smooth(tq / 0.10);
-    const burst = smooth((tq - 0.82) / 0.08);
-    const fade = 1 - smooth((tq - 0.92) / 0.08);
-    if (burst > 0.05) glow = 2;
-
-    const topY = GROUND_Y + 4.40;
-    const reach = topY - (topY - GROUND_Y) * strike;
-
-    // 1. L'ECLAIR MAITRE.
-    pixelBolt(0, 0, topY, 0, 0, reach, salt * 31 + fr * 13, 1.15, 2, a * fade, fr, glow);
-
-    // 2. LA MARQUE D'IMPACT.
-    if (strike > 0.55) {
-      const rad = 1 + Math.floor(strike * 2.0 + burst * 5.0);
-      for (let gx = -rad; gx <= rad; gx++) {
-        for (let gz = -rad; gz <= rad; gz++) {
-          const d = Math.abs(gx) + Math.abs(gz);
-          if (d === 0 || d > rad) continue;
-          if (hash(salt + fr * 71, gx * 131 + gz * 17) < 0.30) continue;
-          const tone = d <= 1 ? 4 : (d <= rad - 2 ? 2 : 1);
-          cell(gx, 0, gz, PXL[tone], a * fade * 0.90);
+      if (fall < 0.98) {
+        for (let k = 0; k < 3; k++) {
+          const sd = salt * 13 + k * 409 + Math.floor(t * 70);
+          if (hash(sd, 3) < 0.35) continue;
+          const ang = hash(sd, 5) * TAU, rr = 1.4 + 1.5 * hash(sd, 7);
+          drawBolt(Math.cos(ang) * rr, Math.sin(ang) * rr, baseY + 1.6 + hash(sd, 11) * 1.4,
+                   0, 0, baseY + 0.3, sd, 0.42, 1.0, 0.70, a * appear * 0.85, 7, false);
         }
       }
     }
 
-    // 3. LES CLAQUEMENTS, uniquement sur l'image de flash.
-    if (phase === 2 && strike > 0.90 && burst < 0.20) {
-      for (let k = 0; k < 3; k++) {
-        const ang = hash(salt + 23, k * 59 + fr) * TAU;
-        const r0 = 0.30 + 0.45 * hash(salt + 24, k * 61 + fr);
-        const yy = GROUND_Y + 0.35 + 1.70 * hash(salt + 25, k * 67 + fr);
-        pixelBolt(0, 0, yy, Math.cos(ang) * r0, Math.sin(ang) * r0, yy - 0.35,
-                  salt * 41 + k * 733 + fr * 17, 0.22, 0, a * 0.85, fr, 0);
+    if (hit > 0.01 && live > 0) {
+      const age = Math.max(0, Math.min(1, (t - IMPACT) / 0.09));
+      const ring = 0.6 + age * 4.6, ra = (1 - age) * a;
+      if (ra > 2) {
+        for (let i = 0; i < 40; i++) {
+          const ang = i * TAU / 40, wob = 1 + 0.10 * hash(salt + 3, i * 17);
+          box(Math.cos(ang) * ring * wob, Math.sin(ang) * ring * wob,
+              GROUND_Y + 0.05 + age * 0.30,
+              0.085, 0.055 + 0.10 * (1 - age), 0.085,
+              age < 0.4 ? 0xFFFFFF : 0xFFE89A, opq(ra * 0.9));
+        }
+        const sparks = Math.floor(14 * (1 - age));
+        for (let i = 0; i < sparks; i++) {
+          const sd = salt * 7 + i * 131;
+          const ang = hash(sd, 3) * TAU, rr = hash(sd, 5) * 1.3;
+          box(Math.cos(ang) * rr, Math.sin(ang) * rr,
+              GROUND_Y + age * (1.4 + 2.2 * hash(sd, 7)),
+              0.055, 0.075, 0.055, 0xFFF4CB, opq(ra));
+        }
       }
     }
 
-    // 4. LA DECHARGE : les racines courent au sol.
-    if (burst > 0.01) {
-      for (let s = 0; s < 6; s++) {
-        const ang = s * TAU / 6 + hash(salt + 26, s * 53) * 0.80;
-        const len = (1.20 + 1.90 * hash(salt + 27, s * 59)) * burst;
-        pixelBolt(0, 0, GROUND_Y + 0.20, Math.cos(ang) * len, Math.sin(ang) * len, GROUND_Y,
-                  salt * 53 + s * 859 + fr * 19, 0.38, 1, a * burst * fade, fr, 1);
-      }
+    if (live > 0.01) {
+      for (let gx = -1; gx <= 1; gx++)
+        for (let gz = -1; gz <= 1; gz++)
+          box(gx, gz, GROUND_Y - 0.01, 0.48, 0.012, 0.48,
+              ((gx + gz) & 1) === 0 ? 0x241C3A : 0x2E2448, opq(a * live * 0.75));
+      shockZone(t, live, a, salt);
     }
     return out;
   }

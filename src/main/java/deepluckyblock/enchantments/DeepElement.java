@@ -36,7 +36,7 @@ public enum DeepElement {
     METAL("Métal", 0x9EA3AA, 0x747A82, 0xC4C8CD),
     /** 水 Eau / glace / océan / givre — bleus clairs, rendus translucides par le matériau. */
     WATER("Eau", 0x62C7E8, 0x92DDF1, 0xD4F3FB),
-    /** T373 : 雷 Foudre / éclair / surcadence (violet électrique, bleu profond, surbrillance jaune pâle). */
+    /** T373 : 雷 Foudre / éclair / marteau divin (violet électrique, bleu profond, surbrillance jaune pâle). */
     THUNDER("Foudre", 0x5E3AFF, 0x1E26FF, 0xFCFFBA),
     /** 光 Lumière / saint / astral / or radieux. */
     LIGHT("Lumière", 0xFFF3B0, 0xFFB01F, 0xFFFFFF),

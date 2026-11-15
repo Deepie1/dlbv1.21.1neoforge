@@ -47,7 +47,7 @@ public enum WeaponVisualEffectId {
     // === II. COUPS CRITIQUES AMÉLIORÉS (6..8) ===
     GOLDEN_CRIT_STAR(6,  Category.CRIT,       52, true, DeepElement.LIGHT),
     FOCUSED_BULLSEYE(7,  Category.CRIT,       64, true, DeepElement.METAL),
-    OVERCLOCK_CYBER_X(8,  Category.CRIT,       88, true, DeepElement.THUNDER),
+    MJOLNIR_HAMMERFALL(8,  Category.CRIT,       88, true, DeepElement.THUNDER),
 
     // === III. SANG, VAMPIRISME & CARNAGE (9..12) ===
     DRIPPING_BLOOD_EDGE(9,  Category.BLOOD,      66, false, DeepElement.BLOOD),
@@ -212,7 +212,7 @@ public enum WeaponVisualEffectId {
         register(FOCUSED_BULLSEYE, "focused_crit", "focused_ambush", "sense", "marked_prey",
                 "point_blank_shot", "ranger");
         // #08 Surcharge Cyber-Critique
-        register(OVERCLOCK_CYBER_X, "overclocked_crit", "overcharge");
+        register(MJOLNIR_HAMMERFALL, "overclocked_crit", "overcharge");
 
         // #09 Lame Sanglante Goutte-à-Goutte
         register(DRIPPING_BLOOD_EDGE, "blood_edge", "bloodthirst", "bloodthirsty", "predators_scent", "lingering_skewer");

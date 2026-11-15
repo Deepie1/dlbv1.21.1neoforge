@@ -151,7 +151,7 @@ public final class WeaponVfxServerListener {
      * Chaque pile majore de {@link #STATIC_PER_STACK} les dégâts de foudre qu'elle reçoit
      * ensuite ; à saturation elle <b>claque</b> toute seule. C'est le liant des trois
      * signatures : l'arc en chaîne pose les piles sur beaucoup de monde, l'appel de l'orage les
-     * consomme sur une cible unique, la surcadence accélère la cadence qui les dépose.</p>
+     * consomme sur une cible unique, le marteau en pose une par frappe de zone.</p>
      */
     private static final Map<Integer, StaticCharge> STATIC_CHARGES = new ConcurrentHashMap<>();
     /** Au-delà, la charge se décharge d'elle-même au lieu de s'accumuler. */
@@ -291,10 +291,10 @@ public final class WeaponVfxServerListener {
             WeaponVisualEffectId.PERMAFROST_RIME
     };
     /**
-     * Famille FOUDRE (T376) : arc fulgurant en chaîne, surcadence cyber-X, appel de l'orage.
+     * Famille FOUDRE (T376) : arc fulgurant en chaîne, marteau de Thor, appel de l'orage.
      */
     private static final WeaponVisualEffectId[] ANIM_THUNDER = {
-            WeaponVisualEffectId.CHAIN_VOLT_ARC, WeaponVisualEffectId.OVERCLOCK_CYBER_X,
+            WeaponVisualEffectId.CHAIN_VOLT_ARC, WeaponVisualEffectId.MJOLNIR_HAMMERFALL,
             WeaponVisualEffectId.STORMCALL_JUDGMENT
     };
     private static final WeaponVisualEffectId[] ANIM_LIGHT = {
@@ -2866,7 +2866,7 @@ public final class WeaponVfxServerListener {
     }
 
     // ============================================================================================
-    // 雷 FOUDRE (T376) — arc en chaîne, surcadence cyber-X, appel de l'orage
+    // 雷 FOUDRE (T376) — arc en chaîne, marteau de Thor, appel de l'orage
     // ============================================================================================
 
     /**
@@ -2875,7 +2875,7 @@ public final class WeaponVfxServerListener {
      *
      * <p>Les trois signatures partagent une ressource commune, la <b>charge statique</b>
      * ({@link #STATIC_CHARGES}), et se répondent : l'arc en chaîne en pose sur toute une foule,
-     * la surcadence accélère celui qui frappe, l'appel de l'orage en sème sur toute une zone
+     * le marteau en pose sur tout un carré de 3×3, l'appel de l'orage en sème sur une zone
      * avant de l'écraser. Chacune gère explicitement les deux cas de figure demandés
      * — <b>plusieurs ennemis</b> (propagation) et <b>ennemi seul</b> (report de l'énergie non
      * dépensée), pour qu'aucune ne soit décevante en duel.</p>
@@ -2887,8 +2887,8 @@ public final class WeaponVfxServerListener {
         float damage = Math.max(0.0f, weaponDamage);
         if (fx == WeaponVisualEffectId.CHAIN_VOLT_ARC) {
             applyChainVoltGameplay(attacker, target, sl, damage);
-        } else if (fx == WeaponVisualEffectId.OVERCLOCK_CYBER_X) {
-            applyOverclockGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.MJOLNIR_HAMMERFALL) {
+            applyHammerGameplay(attacker, target, sl, damage);
         } else if (fx == WeaponVisualEffectId.STORMCALL_JUDGMENT) {
             applyStormcallGameplay(attacker, target, sl, damage);
         }
@@ -3096,72 +3096,147 @@ public final class WeaponVfxServerListener {
     }
 
     /**
-     * SURCADENCE CYBER-X (120 ticks) — la signature <b>de soutien</b>, centrée sur le porteur.
+     * MARTEAU DE THOR (250 ticks) — la signature <b>de frappe</b> de la famille.
      *
-     * <p><b>Buff.</b> Pendant 7 secondes le porteur gagne hâte III, célérité II et force I : la
-     * cadence de frappe monte, donc le nombre de piles de charge statique déposées aussi. C'est
-     * un buff qui sert les deux autres signatures plutôt qu'un bonus isolé.</p>
+     * <p>Elle remplace la « surcadence cyber-X », qui était un bonus de cadence : un buff ne se
+     * voit pas, et celui-ci n'était lisible que dans les chiffres. Le marteau fait l'inverse —
+     * il ne donne rien au porteur, il <b>frappe</b>, et il laisse une trace sur le terrain.
      *
-     * <p><b>Plusieurs ennemis.</b> À la décharge (tick 94) la cage implose et libère une nova de
-     * 4,5 blocs : tout ce qui est autour prend 45 % des dégâts, reçoit une pile et se voit
-     * infliger <b>lenteur II pendant 3 s</b> — le débuff qui accompagne le buff.</p>
+     * <p><b>L'impact.</b> Au tick 40, exactement quand le marteau touche le sol à l'écran, un
+     * carré de <b>3×3 blocs</b> centré sur la cible prend <b>deux fois les dégâts de l'arme</b>
+     * qui a déclenché le coup. Deux fois, et pas deux fois quelque chose : la valeur reçue ici
+     * est celle de l'événement de dégâts, <b>enchantements et effets d'attaque compris</b>, donc
+     * un Tranchant V ou une potion de Force se répercutent tels quels.
      *
-     * <p><b>Ennemi seul.</b> Si la nova ne trouve que la cible désignée, elle se concentre :
-     * dégâts doublés et deux piles d'un coup, de sorte que la surcadence reste utile en duel.</p>
+     * <p><b>La zone.</b> L'impact laisse le sol sous tension <b>dix secondes</b> (200 ticks).
+     * Tout ce qui se trouve dans le carré — <b>mobs et joueurs</b>, l'attaquant excepté — prend
+     * une décharge légère toutes les secondes. C'est une arme de <b>contrôle de terrain</b> :
+     * elle ne tue pas, elle interdit un emplacement, et elle punit celui qui traverse.
+     *
+     * <p><b>Plusieurs ennemis.</b> Le 3×3 touche tout le monde à plein tarif, sans dégressivité :
+     * c'est le sens d'une frappe de zone. <b>Ennemi seul</b> : la zone reste, et comme le duel se
+     * déroule rarement immobile, elle redevient une menace dès que l'adversaire recule dessus.
      */
-    private static void applyOverclockGameplay(LivingEntity attacker, LivingEntity target,
-                                               ServerLevel sl, float weaponDamage) {
+    private static void applyHammerGameplay(LivingEntity attacker, LivingEntity target,
+                                            ServerLevel sl, float weaponDamage) {
         final int attackerId = attacker == null ? -1 : attacker.getId();
         final long now = TestProcedure.currentTick(sl);
-        final float base = Math.max(1.4f, weaponDamage * 0.85f);
+        // « Deux fois l'attaque de l'arme » au sens strict. Le plancher ne sert qu'aux armes
+        // sans dégâts déclarés, pour qu'un marteau divin ne fasse jamais zéro.
+        final float strike = Math.max(2.0f, weaponDamage * 2.0f);
 
-        if (attacker != null) {
-            // Le buff est immédiat : la cage se construit autour de quelqu'un de déjà accéléré.
-            attacker.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 140, 2, false, true, true));
-            attacker.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 140, 1, false, true, true));
-            attacker.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 140, 0, false, true, true));
-            sl.playSound(null, attacker.getX(), attacker.getY(), attacker.getZ(),
-                    SoundEvents.BEACON_ACTIVATE, SoundSource.PLAYERS, 0.45f, 1.85f);
-        }
+        // Le centre est figé au moment du coup : la zone marque le SOL, pas la cible.
+        final double zx = target.getX();
+        final double zy = target.getY();
+        final double zz = target.getZ();
 
-        final double bx = attacker == null ? target.getX() : attacker.getX();
-        final double by = (attacker == null ? target.getY() : attacker.getY()) + 0.90;
-        final double bz = attacker == null ? target.getZ() : attacker.getZ();
-
-        // Montée en cadence : quatre paliers sonores pendant la construction de la cage.
-        for (int step = 0; step < 4; step++) {
-            final float pitch = 1.20f + step * 0.22f;
-            TestProcedure.schedule(sl, now + 16L + step * 18L, () -> {
-                sl.playSound(null, bx, by, bz, SoundEvents.NOTE_BLOCK_BELL.value(),
-                        SoundSource.PLAYERS, 0.32f, pitch);
-                PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, bx, by, bz, 14, 1.10, 0.90, 1.10, 0.06);
+        // --- L'appel : le marteau se matérialise au-dessus de la cible ---
+        sl.playSound(null, zx, zy + 1.0, zz, SoundEvents.BEACON_ACTIVATE, SoundSource.PLAYERS,
+                0.55f, 0.70f);
+        for (int step = 0; step < 3; step++) {
+            final float pitch = 0.80f + step * 0.16f;
+            TestProcedure.schedule(sl, now + 10L + step * 10L, () -> {
+                sl.playSound(null, zx, zy + 4.0, zz, SoundEvents.NOTE_BLOCK_BELL.value(),
+                        SoundSource.PLAYERS, 0.38f, pitch);
+                PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, zx, zy + 4.6, zz,
+                        16, 1.00, 0.70, 1.00, 0.05);
             });
         }
 
-        // --- Tick 94 : implosion et nova ---
-        TestProcedure.schedule(sl, now + 94, () -> {
-            sl.playSound(null, bx, by, bz, SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS,
-                    0.70f, 1.45f);
-            PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, bx, by, bz, 60, 1.50, 1.10, 1.50, 0.34);
-            java.util.List<LivingEntity> hit = new java.util.ArrayList<>();
+        // --- Tick 40 : la frappe. Le 3×3 prend deux fois l'arme ---
+        TestProcedure.schedule(sl, now + 40L, () -> {
+            sl.playSound(null, zx, zy, zz, SoundEvents.LIGHTNING_BOLT_THUNDER,
+                    SoundSource.PLAYERS, 1.00f, 0.72f);
+            sl.playSound(null, zx, zy, zz, SoundEvents.TRIDENT_THROW.value(),
+                    SoundSource.PLAYERS, 0.80f, 0.55f);
+            PixelFx.send(sl, ParticleTypes.FLASH, zx, zy + 0.4, zz, 2, 0.10, 0.10, 0.10, 0.0);
+            PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, zx, zy + 0.3, zz,
+                    80, 1.50, 0.50, 1.50, 0.42);
+
+            // 3×3 blocs : 1,5 de part et d'autre du centre. La hauteur est volontairement
+            // généreuse — un marteau qui écrase une dalle touche aussi ce qui la survole.
             for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
-                    new AABB(bx - 4.50, by - 3.00, bz - 4.50, bx + 4.50, by + 3.20, bz + 4.50))) {
-                if (!victim.isAlive() || victim instanceof Player) continue;
+                    new AABB(zx - 1.5, zy - 1.5, zz - 1.5, zx + 1.5, zy + 2.5, zz + 1.5))) {
+                if (!victim.isAlive()) continue;
                 if (attackerId >= 0 && victim.getId() == attackerId) continue;
-                hit.add(victim);
-            }
-            // Ennemi seul : toute l'énergie de la nova part sur lui.
-            boolean solo = hit.size() <= 1;
-            for (LivingEntity victim : hit) {
-                hurtWithCapturedWeapon(sl, attackerId, victim,
-                        base * (solo ? 0.90f : 0.45f) * staticMultiplier(sl, victim));
-                addStaticCharge(sl, victim, solo ? 2 : 1, attackerId);
-                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 60, 1, false, true, true));
+                hurtWithCapturedWeapon(sl, attackerId, victim, strike);
+                addStaticCharge(sl, victim, 1, attackerId);
                 PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
                         victim.getX(), victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
-                        18, 0.34, 0.44, 0.34, 0.16);
+                        22, 0.34, 0.44, 0.34, 0.20);
             }
+
+            // Le sol reste sous tension dix secondes à partir de l'impact.
+            SHOCK_ZONES.add(new ShockZone(sl, now + 40L + SHOCK_ZONE_TICKS, zx, zy, zz,
+                    attackerId, Math.max(0.5f, weaponDamage * 0.22f)));
         });
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Sol électrifié du marteau
+    // --------------------------------------------------------------------------------------------
+
+    /**
+     * Une dalle sous tension laissée par le marteau. Le centre est figé : c'est le <b>sol</b>
+     * qui est électrifié, pas la cible, et la zone ne suit donc personne.
+     */
+    private record ShockZone(ServerLevel level, long expires, double cx, double cy, double cz,
+                             int attackerId, float tickDamage) { }
+
+    /** Durée de la dalle : dix secondes. */
+    private static final long SHOCK_ZONE_TICKS = 200L;
+    /** Intervalle entre deux décharges pour une même victime. */
+    private static final long SHOCK_ZONE_PERIOD = 20L;
+
+    private static final List<ShockZone> SHOCK_ZONES =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
+    /** Une seule passe par tick de jeu, quelle que soit l'entité qui déclenche le hook. */
+    private static long LAST_SHOCK_ZONE_TICK = Long.MIN_VALUE;
+    /** Prochain tick où chaque victime pourra reprendre une décharge. */
+    private static final java.util.Map<Integer, Long> SHOCK_COOLDOWN =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Balaye les dalles sous tension. Même garde-fou que pour les tornades : le hook est appelé
+     * une fois par entité vivante et par tick, donc sans ce verrou une dalle frapperait autant
+     * de fois qu'il y a de mobs chargés dans le monde.
+     */
+    private static void tickShockZones(net.minecraft.world.level.Level level) {
+        if (!(level instanceof ServerLevel sl)) return;
+        long now = sl.getGameTime();
+        if (now == LAST_SHOCK_ZONE_TICK) return;
+        LAST_SHOCK_ZONE_TICK = now;
+        if (SHOCK_ZONES.isEmpty()) {
+            if (!SHOCK_COOLDOWN.isEmpty()) SHOCK_COOLDOWN.clear();
+            return;
+        }
+        SHOCK_ZONES.removeIf(zone -> now >= zone.expires() || zone.level() != sl);
+        if (!SHOCK_COOLDOWN.isEmpty()) SHOCK_COOLDOWN.values().removeIf(until -> now >= until + 80L);
+        for (ShockZone zone : SHOCK_ZONES) {
+            // Grésillement : quelques étincelles au hasard dans le carré, à chaque demi-seconde.
+            if ((now & 3L) == 0L) {
+                double sx = zone.cx() + (sl.random.nextDouble() * 3.0 - 1.5);
+                double sz = zone.cz() + (sl.random.nextDouble() * 3.0 - 1.5);
+                PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, sx, zone.cy() + 0.12, sz,
+                        3, 0.10, 0.04, 0.10, 0.02);
+            }
+            for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
+                    new AABB(zone.cx() - 1.5, zone.cy() - 1.0, zone.cz() - 1.5,
+                            zone.cx() + 1.5, zone.cy() + 2.0, zone.cz() + 1.5))) {
+                if (!victim.isAlive()) continue;
+                if (zone.attackerId() >= 0 && victim.getId() == zone.attackerId()) continue;
+                Long until = SHOCK_COOLDOWN.get(victim.getId());
+                if (until != null && now < until) continue;
+                SHOCK_COOLDOWN.put(victim.getId(), now + SHOCK_ZONE_PERIOD);
+                hurtWithCapturedWeapon(sl, zone.attackerId(), victim, zone.tickDamage());
+                // Pas de son ici : une décharge par seconde et par victime pendant dix
+                // secondes deviendrait vite insupportable. Les étincelles suffisent à dire
+                // que la dalle mord.
+                PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
+                        victim.getX(), victim.getY() + victim.getBbHeight() * 0.35, victim.getZ(),
+                        10, 0.26, 0.30, 0.26, 0.10);
+            }
+        }
     }
 
     /**
@@ -3806,6 +3881,7 @@ public final class WeaponVfxServerListener {
         tickSoulBurn(target);
         tickSoulHold(target);
         tickWindZones(target.level());
+        tickShockZones(target.level());
         tickWindHold(target);
         tickSurgeRide(target);
         if (SURGE_RIDES.containsKey(target.getId())) return;

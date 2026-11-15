@@ -35,11 +35,10 @@ import org.joml.Vector3f;
  *       l'air s'ionise en filaments montants, un trait de 22 blocs tombe du ciel avec ses
  *       ramifications, l'impact vitrifie le sol en <i>fulgurites</i>, puis l'arc <b>saute de
  *       cible en cible</b> — six relais successifs, chacun avec son propre tracé.</li>
- *   <li>{@link #OVERCLOCK} — <b>Surcadence Cyber-X</b> ({@code OVERCLOCK_CYBER_X}, 120 ticks) :
- *       quatre pylônes se dressent, une cage cubique se trace arête par arête, de vraies
- *       <i>pistes de circuit imprimé</i> (tracé de Manhattan, pastilles, vias) courent sur ses
- *       faces, des paquets de données y circulent, un histogramme de cadence monte, puis tout
- *       implose dans le porteur.</li>
+ *   <li>{@link #HAMMER} — <b>Marteau de Thor</b> ({@code MJOLNIR_HAMMERFALL}, 250 ticks) :
+ *       un marteau doré, immense et détaillé, se matérialise au-dessus de la cible, se charge,
+ *       puis <b>tombe d'un coup</b>. Il écrase un carré de <b>3×3 blocs</b> et le laisse
+ *       <b>électrifié dix secondes</b>.</li>
  *   <li>{@link #ECHO} — <b>Appel de l'orage</b> ({@code STORMCALL_JUDGMENT}, 170 ticks) : une
  *       lame de foudre balaie en arc, laisse quatre rémanences qui rétrécissent, puis sa
  *       <b>jumelle</b> repasse en miroir sur un plan incliné à 90° ; au croisement les deux
@@ -54,8 +53,8 @@ public final class ThunderSignatureVfx {
 
     /** Arc fulgurant en chaîne — {@code CHAIN_VOLT_ARC}. */
     public static final int BOLT = 0;
-    /** Surcadence Cyber-X — {@code OVERCLOCK_CYBER_X}. */
-    public static final int OVERCLOCK = 1;
+    /** Marteau de Thor — {@code MJOLNIR_HAMMERFALL}. */
+    public static final int HAMMER = 1;
     /** Appel de l'orage — {@code STORMCALL_JUDGMENT}. L'indice reste 2, seul le contenu change. */
     public static final int ECHO = 2;
 
@@ -73,7 +72,7 @@ public final class ThunderSignatureVfx {
     private static final int NEON = 0xC9B6FF;      // halo proche du cœur
     private static final int HOT = 0xFCFFBA;       // jaune de surexposition
     private static final int CORE = 0xFFFFFF;      // cœur du canal
-    // Cyber : la surcadence n'est pas un orage, c'est de l'électronique.
+    // Électrique : ces deux teintes servent au sol sous tension du marteau.
     private static final int CYAN = 0x2BE8FF;
     private static final int MAGENTA = 0xFF3BD4;
     // Sol frappé.
@@ -102,25 +101,20 @@ public final class ThunderSignatureVfx {
      */
     private static final float GROUND_Y = -0.42f;
     /**
-     * Pas de la grille du pixel art de la Surcadence. Un cube vaut un pixel, jamais un demi :
-     * c'est cette contrainte, et le refus de toute rotation, qui produit le style 8 bits.
+     * <b>Palette du marteau.</b> Un objet métallique ne se lit que par ses valeurs : une face
+     * éclairée, une face moyenne, une face d'ombre, et une arête plus claire que tout le reste.
+     * C'est ce qui donne le volume — pas la couleur, qui reste la même partout.
      */
-    private static final float PIX = 0.1875f;
+    private static final int GOLD_HI = 0xFFF4CB;     // arête éclairée, reflet
+    private static final int GOLD = 0xF3C63E;        // face principale
+    private static final int GOLD_MID = 0xC68B1C;    // face latérale, dans l'ombre
+    private static final int GOLD_DARK = 0x87560F;   // rainures, creux gravés
+    private static final int GOLD_DEEP = 0x4A2F07;   // fond des gravures
+    private static final int RUNE = 0x9BF2FF;        // runes serties, cyan électrique
+    private static final int GRIP = 0x47301C;        // lanière de cuir du manche
 
-    /**
-     * Palette fermée, ordonnée du plus froid au plus chaud : la teinte d'un cube se choisit
-     * <b>par index</b> selon sa profondeur dans l'arbre d'éclair, jamais par interpolation.
-     * Les nuances intermédiaires s'obtiennent au tramage, comme sur une console.
-     */
-    private static final int[] PXL = {
-            0x141E6E,   // 0 — bleu nuit
-            0x1E46C8,   // 1 — bleu
-            0x2B8BFF,   // 2 — bleu clair
-            0x4FE3FF,   // 3 — cyan
-            0xA8F4FF,   // 4 — cyan pâle
-            0xFFFFFF,   // 5 — blanc, le cœur
-            0xFF3BD4,   // 6 — magenta, l'accent « cyber » de cette signature
-    };
+    /** Demi-côté de la zone frappée : 3×3 blocs, donc 1,5 de part et d'autre du centre. */
+    private static final float ZONE_HALF = 1.5f;
 
     /**
      * Teinte du cumulonimbus. {@code SCORCH} servait au départ, mais c'est une couleur de
@@ -142,8 +136,6 @@ public final class ThunderSignatureVfx {
     private static final float CROWN_RADIUS = 5.10f;
     /** Nombre de relais de la chaîne — le serveur en frappe autant (voir WeaponVfxServerListener). */
     private static final int CHAIN_LINKS = 6;
-    /** Demi-arête de la cage de surcadence. */
-
     private ThunderSignatureVfx() { }
 
     /**
@@ -151,7 +143,7 @@ public final class ThunderSignatureVfx {
      *
      * @param t       avancement normalisé 0 → 1 de la chorégraphie
      * @param dx,dz   axe horizontal unitaire attaquant → cible
-     * @param variant {@link #BOLT}, {@link #OVERCLOCK} ou {@link #ECHO}
+     * @param variant {@link #BOLT}, {@link #HAMMER} ou {@link #ECHO}
      * @param salt    graine stable de l'instance : deux éclairs ne se ressemblent jamais
      */
     public static void render(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
@@ -161,7 +153,7 @@ public final class ThunderSignatureVfx {
         float length = Mth.sqrt(dx * dx + dz * dz);
         if (length < 0.001f) { dx = 0.0f; dz = 1.0f; }
         else { dx /= length; dz /= length; }
-        if (variant == OVERCLOCK) renderOverclock(vc, mat, tmp, cx, cy, cz, t, dx, dz, alpha, salt);
+        if (variant == HAMMER) renderHammer(vc, mat, tmp, cx, cy, cz, t, dx, dz, alpha, salt);
         else if (variant == ECHO) renderStormcall(vc, mat, tmp, cx, cy, cz, t, dx, dz, alpha, salt);
         else renderBolt(vc, mat, tmp, cx, cy, cz, t, dx, dz, alpha, salt);
     }
@@ -433,102 +425,121 @@ public final class ThunderSignatureVfx {
         }
     }
     // =========================================================================================
-    //  II. SURCADENCE CYBER-X — 120 ticks, la foudre tombe et reste
+    //  II. MARTEAU DE THOR — 250 ticks, la frappe puis le sol sous tension
     // =========================================================================================
 
     /**
-     * <b>Ce que l'animation raconte</b> : la foudre frappe le porteur et <b>ne repart pas</b>.
-     * Elle reste plantée sur lui pendant toute la durée du bonus, en grésillant, puis elle
-     * éclate au sol. Un seul objet domine la lecture — le trait vertical — et tout le reste
-     * n'est là que pour le servir.
+     * <b>Ce que l'animation raconte.</b> Un marteau doré, immense, se matérialise au-dessus de
+     * la cible, se charge, puis tombe d'un coup. Il écrase un carré de <b>3×3 blocs</b>, et ce
+     * carré reste <b>électrifié dix secondes</b>.
      *
-     * <p>La version précédente échouait sur ce point et sur aucun autre : une cage de troncs,
-     * des conducteurs, des liaisons et un noyau, soit <b>quatre objets concurrents</b> qui
-     * formaient une boîte illisible. Il n'y a plus de cage.
+     * <p>Le marteau est un <b>objet</b>, pas un effet : il a un corps, des plaques de frappe,
+     * des rivets, des rainures, des runes serties, une lanière de cuir et un pommeau. Il n'est
+     * donc pas construit en particules mais en boîtes orientées, et il tourne d'un seul tenant.
      *
-     * <p>L'éclairage suit la planche de référence à la lettre. Le cycle est de <b>cinq
-     * images</b> : deux fines, <b>une de flash</b>, deux fines. L'aura n'est pas une
-     * transparence mais une <b>couronne de pixels</b> de teinte intermédiaire — ce qui est à
-     * la fois la règle du pixel art et la seule solution viable ici, puisque le moteur écarte
-     * tout cube sous 200 d'alpha.
+     * <p>Le découpage du temps suit le gameplay au tick près, parce que les deux doivent
+     * tomber ensemble : l'impact visuel est à <b>t = 0,16</b>, soit le tick 40, exactement
+     * quand le serveur applique les dégâts ; la zone s'éteint 200 ticks plus tard.
      *
-     * <p>Chronologie :
      * <ul>
-     *   <li>0,00–0,10 <b>la foudre tombe</b> : le trait se creuse du ciel vers le sol ;</li>
-     *   <li>0,10–0,82 <b>sous tension</b> : le trait est retracé à chaque image et pulse sur
-     *       le cycle de cinq ; la marque d'impact s'élargit au sol ; de courts arcs claquent
-     *       près du porteur, <b>uniquement sur l'image de flash</b> ;</li>
-     *   <li>0,82–1,00 <b>la décharge</b> : flash tenu, et les racines courent au sol.</li>
+     *   <li>0,00–0,11 <b>l'appel</b> : le marteau descend du ciel, tourne, et se charge ;</li>
+     *   <li>0,11–0,16 <b>la chute</b> : accélérée en cube, pour que le dernier tiers soit
+     *       brutal — une descente linéaire se lit comme un ascenseur ;</li>
+     *   <li>0,16 <b>l'impact</b> : flash, onde au sol, le carré se grave ;</li>
+     *   <li>0,16–0,24 <b>le retrait</b> : le marteau remonte et s'efface ;</li>
+     *   <li>0,16–0,96 <b>le sol sous tension</b> : dix secondes de liseré et d'arcs.</li>
      * </ul>
      */
-    private static void renderOverclock(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                        float cx, float cy, float cz, float t,
-                                        float dx, float dz, int alpha, int salt) {
-        int a = Math.round(alpha * (1.0f - smooth((t - 0.94f) / 0.06f)));
+    private static void renderHammer(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                     float cx, float cy, float cz, float t,
+                                     float dx, float dz, int alpha, int salt) {
+        int a = Math.round(alpha * (1.0f - smooth((t - 0.96f) / 0.04f)));
         if (a <= 4) return;
 
-        // Horloge à paliers : le trait est redessiné d'un bloc à chaque image, jamais
-        // interpolé. C'est ce qui le fait grésiller au lieu de glisser.
-        final int FRAMES = 20;
-        final int fr = (int) (t * FRAMES);
-        final float tq = fr / (float) FRAMES;
+        final float IMPACT = 0.16f;
+        final float SCALE = 1.30f;
+        final float REST = GROUND_Y + 0.64f * SCALE;   // tête posée au sol
 
-        // Le cycle de la planche : deux images fines, UNE de flash, deux fines. C'est le flash
-        // qui fait la foudre ; une intensité constante se lit comme un néon.
-        // Les images fines sont NUES — un seul cube de large. Leur donner une couronne
-        // faisait un tube continu, et le flash ne ressortait plus.
-        final int phase = fr % 5;
-        int glow = phase == 2 ? 2 : 0;
+        float appear = smooth(t / 0.05f);
+        float fall = clamp((t - 0.105f) / (IMPACT - 0.105f), 0.0f, 1.0f);
+        float hit = smooth((t - IMPACT) / 0.012f);
+        float gone = smooth((t - IMPACT - 0.02f) / 0.065f);
+        float live = smooth((t - IMPACT) / 0.015f) * (1.0f - smooth((t - 0.93f) / 0.05f));
 
-        float strike = smooth(tq / 0.10f);
-        float burst  = smooth((tq - 0.82f) / 0.08f);
-        float fade   = 1.0f - smooth((tq - 0.92f) / 0.08f);
-        if (burst > 0.05f) glow = 2;                   // la décharge est un flash tenu
+        // ---- le marteau ----
+        if (gone < 0.999f) {
+            // chute en cube : lente, lente, puis brutale
+            float ease = fall * fall * fall;
+            float sky = GROUND_Y + 5.60f;
+            float hover = (float) Math.sin(t * 7.0) * 0.14f * (1.0f - fall);
+            float baseY = sky + hover - (sky - REST) * ease;
+            // le retrait : il remonte en s'effaçant
+            baseY += gone * 2.40f;
+            float yaw = 0.9f + t * 1.25f + fall * 2.6f;
+            float charge = Math.min(1.0f, appear * (0.25f + 0.75f * fall) + hit * 0.8f);
+            drawHammer(vc, mat, tmp, cx, cy, cz, dx, dz, baseY, yaw, SCALE,
+                    a * appear * (1.0f - gone), charge, salt, t);
 
-        final float topY = GROUND_Y + 4.40f;
-        float reach = topY - (topY - GROUND_Y) * strike;
-
-        // ---- 1. L'ÉCLAIR MAÎTRE : un seul trait, du ciel au sol, ramifié vers le bas ----
-        pixelBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
-                0.0f, 0.0f, topY, 0.0f, 0.0f, reach,
-                salt * 31 + fr * 13, 1.15f, 2, a * fade, fr, glow);
-
-        // ---- 2. LA MARQUE D'IMPACT : un losange qui s'élargit au sol ----
-        if (strike > 0.55f) {
-            int rad = 1 + (int) (strike * 2.0f + burst * 5.0f);
-            for (int gx = -rad; gx <= rad; gx++) {
-                for (int gz = -rad; gz <= rad; gz++) {
-                    int d = Math.abs(gx) + Math.abs(gz);
-                    if (d == 0 || d > rad) continue;
-                    if (hash(salt + fr * 71, gx * 131 + gz * 17) < 0.30f) continue;
-                    // Couronnes de teinte décroissante : la règle de l'aura, posée à plat.
-                    int tone = d <= 1 ? 4 : (d <= rad - 2 ? 2 : 1);
-                    cell(vc, mat, tmp, cx, cy, cz, dx, dz, gx, 0, gz, PXL[tone], a * fade * 0.90f);
+            // les éclairs d'appel, pendant la suspension
+            if (fall < 0.98f) {
+                int arcs = 3;
+                for (int k = 0; k < arcs; k++) {
+                    int sd = salt * 13 + k * 409 + (int) (t * 70.0f);
+                    if (hash(sd, 3) < 0.35f) continue;
+                    float ang = hash(sd, 5) * TAU;
+                    float rr = 1.4f + 1.5f * hash(sd, 7);
+                    drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            (float) Math.cos(ang) * rr, (float) Math.sin(ang) * rr,
+                            baseY + 1.6f + hash(sd, 11) * 1.4f,
+                            0.0f, 0.0f, baseY + 0.3f,
+                            sd, 0.42f, 1.0f, 0.70f, a * appear * 0.85f, 7, false);
                 }
             }
         }
 
-        // ---- 3. LES CLAQUEMENTS : de courts arcs, UNIQUEMENT sur l'image de flash ----
-        if (phase == 2 && strike > 0.90f && burst < 0.20f) {
-            for (int k = 0; k < 3; k++) {
-                float ang = hash(salt + 23, k * 59 + fr) * TAU;
-                float r0 = 0.30f + 0.45f * hash(salt + 24, k * 61 + fr);
-                float yy = GROUND_Y + 0.35f + 1.70f * hash(salt + 25, k * 67 + fr);
-                pixelBolt(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, yy,
-                        (float) Math.cos(ang) * r0, (float) Math.sin(ang) * r0, yy - 0.35f,
-                        salt * 41 + k * 733 + fr * 17, 0.22f, 0, a * 0.85f, fr, 0);
+        // ---- l'impact : flash et onde ----
+        if (hit > 0.01f && live > 0.0f) {
+            float age = clamp((t - IMPACT) / 0.09f, 0.0f, 1.0f);
+            float ring = 0.6f + age * 4.6f;
+            float ra = (1.0f - age) * a;
+            if (ra > 2.0f) {
+                int n = 40;
+                for (int i = 0; i < n; i++) {
+                    float ang = i * TAU / n;
+                    float wob = 1.0f + 0.10f * hash(salt + 3, i * 17);
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            (float) Math.cos(ang) * ring * wob,
+                            (float) Math.sin(ang) * ring * wob,
+                            GROUND_Y + 0.05f + age * 0.30f,
+                            0.085f, 0.055f + 0.10f * (1.0f - age), 0.085f,
+                            age < 0.4f ? 0xFFFFFF : 0xFFE89A, opaque(ra * 0.9f));
+                }
+                // gerbe verticale au point d'impact
+                int sparks = (int) (14 * (1.0f - age));
+                for (int i = 0; i < sparks; i++) {
+                    int sd = salt * 7 + i * 131;
+                    float ang = hash(sd, 3) * TAU;
+                    float rr = hash(sd, 5) * 1.3f;
+                    float sy = GROUND_Y + age * (1.4f + 2.2f * hash(sd, 7));
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            (float) Math.cos(ang) * rr, (float) Math.sin(ang) * rr, sy,
+                            0.055f, 0.075f, 0.055f, 0xFFF4CB, opaque(ra));
+                }
             }
         }
 
-        // ---- 4. LA DÉCHARGE : les racines courent au sol ----
-        if (burst > 0.01f) {
-            for (int s = 0; s < 6; s++) {
-                float ang = s * TAU / 6.0f + hash(salt + 26, s * 53) * 0.80f;
-                float len = (1.20f + 1.90f * hash(salt + 27, s * 59)) * burst;
-                pixelBolt(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, GROUND_Y + 0.20f,
-                        (float) Math.cos(ang) * len, (float) Math.sin(ang) * len, GROUND_Y,
-                        salt * 53 + s * 859 + fr * 19, 0.38f, 1, a * burst * fade, fr, 1);
+        // ---- le carré gravé, puis le sol sous tension ----
+        if (live > 0.01f) {
+            // la dalle : un damier sourd qui matérialise les 3×3 blocs frappés
+            for (int gx = -1; gx <= 1; gx++) {
+                for (int gz = -1; gz <= 1; gz++) {
+                    boolean dark = ((gx + gz) & 1) == 0;
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz, gx, gz, GROUND_Y - 0.01f,
+                            0.48f, 0.012f, 0.48f, dark ? 0x241C3A : 0x2E2448,
+                            opaque(a * live * 0.75f));
+                }
             }
+            shockZone(vc, mat, tmp, cx, cy, cz, dx, dz, t, live, a, salt);
         }
     }
 
@@ -757,151 +768,231 @@ public final class ThunderSignatureVfx {
     //  Outils du tracé voxelisé
     // =================================================================================
 
-    /** Un pixel : cube de côté {@link #PIX}, aligné sur la grille, jamais tourné. */
-    private static void pix(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                            float cx, float cy, float cz, float dx, float dz,
-                            float f, float lateral, float y, int rgb, float alpha) {
-        if (y < GROUND_Y) return;
-        float h = PIX * 0.5f;
-        box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                snap(f), snap(lateral), GROUND_Y + snap(y - GROUND_Y), h, h, h, rgb, opaque(alpha));
-    }
-
-    /** Aligne une coordonnée sur la grille du pixel art. */
-    private static float snap(float v) {
-        return Math.round(v / PIX) * PIX;
+    /**
+     * Pose une pièce du marteau. Les coordonnées sont <b>locales à l'objet</b> : le lacet est
+     * appliqué à la fois à la position et à la boîte, si bien que le marteau tourne d'un seul
+     * tenant au lieu de voir ses pièces glisser les unes sur les autres.
+     *
+     * <p>{@code ly} se compte depuis le centre de la tête, vers le manche. Toutes les
+     * dimensions passent par {@code scale} : une seule valeur commande la taille de l'objet.
+     */
+    private static void piece(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                              float cx, float cy, float cz, float dx, float dz,
+                              float lf, float ll, float ly,
+                              float hf, float hy, float hl,
+                              float yaw, float roll, float baseY, float scale,
+                              int rgb, float alpha) {
+        if (alpha <= 1.0f) return;
+        float c = (float) Math.cos(yaw), s = (float) Math.sin(yaw);
+        rot(vc, mat, tmp, cx, cy, cz, dx, dz,
+                (lf * c - ll * s) * scale, (lf * s + ll * c) * scale, baseY + ly * scale,
+                hf * scale, hy * scale, hl * scale, yaw, 0.0f, roll, rgb, opaque(alpha));
     }
 
     /**
-     * Arbre d'éclair fractal, récursif et tridimensionnel : {@code depth} 2 = tronc,
-     * 1 = branche, 0 = brindille.
+     * <b>Mjöllnir.</b> Tête courte et massive, manche court — les proportions du marteau de
+     * Thor, pas celles d'une masse d'armes : la tête fait plus du tiers de la hauteur totale.
      *
-     * <p>Deux règles viennent directement de la planche de référence. D'abord la
-     * <b>ramification se concentre en bas</b> : la probabilité de fourche croît avec la
-     * progression le long du trait, si bien que le haut reste un trait franc et que le bas
-     * s'ouvre en patte d'oie. Ensuite une branche <b>continue de descendre</b> en s'écartant,
-     * au lieu de partir dans une direction quelconque — c'est la différence entre une décharge
-     * et un oursin.
-     *
-     * <p>L'écart au nœud est pondéré par {@code sin(u·π)} : maximal au milieu, nul aux deux
-     * extrémités, de sorte que les points d'attache restent francs.
+     * <p>Le détail vient de quatre familles de pièces, et c'est leur superposition qui fait
+     * l'objet : le <b>corps</b>, les <b>plaques de frappe</b> aux deux extrémités, les
+     * <b>gravures</b> (rainures sombres et runes serties) et la <b>garniture</b> du manche.
+     * Les arêtes sont systématiquement doublées d'une pièce plus claire : sans elles, un
+     * assemblage de boîtes dorées se lit comme une seule masse plate.
      */
-    private static void pixelBolt(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                  float cx, float cy, float cz, float dx, float dz,
-                                  float f0, float l0, float y0, float f1, float l1, float y1,
-                                  int seed, float wander, int depth, float alpha,
-                                  int frame, int glow) {
-        if (alpha <= 1.0f || depth < 0) return;
-        final int nodes = 4 + depth * 3;
-        float pf = f0, pl = l0, py = y0;
-        for (int n = 1; n <= nodes; n++) {
-            float u = n / (float) nodes;
-            float f = f0 + (f1 - f0) * u;
-            float l = l0 + (l1 - l0) * u;
-            float y = y0 + (y1 - y0) * u;
-            if (n < nodes) {
-                float taper = (float) Math.sin(u * Math.PI);
-                f += (hash(seed, n * 31) - 0.5f) * wander * taper;
-                l += (hash(seed, n * 37) - 0.5f) * wander * taper;
-                y += (hash(seed, n * 41) - 0.5f) * wander * 0.35f * taper;
+    private static void drawHammer(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                   float cx, float cy, float cz, float dx, float dz,
+                                   float baseY, float yaw, float scale, float alpha,
+                                   float charge, int salt, float t) {
+        if (alpha <= 1.0f) return;
+
+        // ---- la tête : corps, puis arêtes claires, puis gravures ----
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0, 1.00f, 0.64f, 0.60f,
+                yaw, 0, baseY, scale, GOLD, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0.66f, 1.00f, 0.05f, 0.60f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, -0.66f, 1.00f, 0.05f, 0.60f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0.62f, 0, 1.00f, 0.60f, 0.05f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, -0.62f, 0, 1.00f, 0.60f, 0.05f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+
+        // les deux plaques de frappe, légèrement débordantes : c'est elles qui donnent au
+        // marteau sa silhouette en T, et elles sont la seule partie vraiment éclairée
+        for (int e = -1; e <= 1; e += 2) {
+            float ef = e * 1.04f;
+            piece(vc, mat, tmp, cx, cy, cz, dx, dz, ef, 0, 0, 0.09f, 0.72f, 0.68f,
+                    yaw, 0, baseY, scale, GOLD, alpha);
+            piece(vc, mat, tmp, cx, cy, cz, dx, dz, ef, 0, 0.71f, 0.10f, 0.045f, 0.68f,
+                    yaw, 0, baseY, scale, GOLD_HI, alpha);
+            piece(vc, mat, tmp, cx, cy, cz, dx, dz, ef, 0.67f, 0, 0.10f, 0.72f, 0.045f,
+                    yaw, 0, baseY, scale, GOLD_HI, alpha);
+            piece(vc, mat, tmp, cx, cy, cz, dx, dz, ef, -0.67f, 0, 0.10f, 0.72f, 0.045f,
+                    yaw, 0, baseY, scale, GOLD_MID, alpha);
+            piece(vc, mat, tmp, cx, cy, cz, dx, dz, ef * 1.08f, 0, 0, 0.03f, 0.64f, 0.60f,
+                    yaw, 0, baseY, scale, GOLD, alpha);
+            // quatre rivets par plaque
+            for (int r = 0; r < 4; r++) {
+                float rl = (r < 2 ? -0.42f : 0.42f);
+                float ry = (r % 2 == 0 ? -0.42f : 0.42f);
+                piece(vc, mat, tmp, cx, cy, cz, dx, dz, ef * 1.06f, rl, ry,
+                        0.05f, 0.09f, 0.09f, yaw, 0, baseY, scale, GOLD_DARK, alpha);
             }
-            // Hiérarchie de TEINTE, pas d'épaisseur : le tronc est blanc, les brindilles
-            // bleuissent. C'est ainsi que la planche sépare le trait de ses racines.
-            int tone = depth >= 2 ? 5 : (depth == 1 ? 4 : 3);
-            voxelLine(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py, f, l, y,
-                    tone, alpha, depth >= 2 ? glow : Math.max(0, glow - 1));
-            // La fourche se concentre VERS LE BAS : u croît le long du trait.
-            float split = (depth >= 2 ? 0.70f : 0.26f) * u;
-            if (depth > 0 && n < nodes && hash(seed + frame * 17, n * 53) < split) {
-                float bl = (0.45f + 0.70f * hash(seed, n * 59)) * (depth == 2 ? 1.0f : 0.55f);
-                float ba = hash(seed, n * 61) * TAU;
-                pixelBolt(vc, mat, tmp, cx, cy, cz, dx, dz, f, l, y,
-                        f + (float) Math.cos(ba) * bl * 1.15f,
-                        l + (float) Math.sin(ba) * bl * 1.15f,
-                        y - bl * (0.25f + 0.45f * hash(seed, n * 67)),
-                        seed * 7 + n * 101, wander * 0.55f, depth - 1, alpha * 0.92f,
-                        frame, Math.max(0, glow - 1));
+            // rainure sombre en retrait de la plaque
+            piece(vc, mat, tmp, cx, cy, cz, dx, dz, ef * 0.86f, 0, 0, 0.04f, 0.62f, 0.58f,
+                    yaw, 0, baseY, scale, GOLD_DEEP, alpha);
+        }
+
+        // bandeau central, en relief
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0, 0.26f, 0.68f, 0.64f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0, 0.30f, 0.06f, 0.62f,
+                yaw, 0, baseY, scale, GOLD_DARK, alpha);
+
+        // runes serties dans les deux grandes faces : une croix nordique, qui s'allume
+        // quand le marteau se charge
+        float runeA = alpha * (0.45f + 0.55f * charge);
+        for (int side = -1; side <= 1; side += 2) {
+            float sl = side * 0.645f;
+            piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.46f, sl, 0, 0.05f, 0.34f, 0.025f,
+                    yaw, 0, baseY, scale, RUNE, runeA);
+            piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.46f, sl, 0, 0.22f, 0.05f, 0.025f,
+                    yaw, 0, baseY, scale, RUNE, runeA);
+            piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.46f, sl, 0, 0.05f, 0.34f, 0.025f,
+                    yaw, 0, baseY, scale, RUNE, runeA);
+            piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.46f, sl, 0.18f, 0.18f, 0.05f, 0.025f,
+                    yaw, 0, baseY, scale, RUNE, runeA);
+            piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.46f, sl, -0.18f, 0.18f, 0.05f, 0.025f,
+                    yaw, 0, baseY, scale, RUNE, runeA);
+        }
+
+        // Arêtes soulignées. Première version : des boîtes roulées à 45° sur l'arête — elles
+        // DÉBORDAIENT des deux faces et faisaient quatre ailettes blanches. Une baguette
+        // droite, rentrée dans le volume, souligne l'arête sans rien faire saillir.
+        for (int e = -1; e <= 1; e += 2) {
+            for (int s2 = -1; s2 <= 1; s2 += 2) {
+                piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, s2 * 0.575f, e * 0.595f,
+                        0.99f, 0.055f, 0.055f, yaw, 0, baseY, scale, GOLD_HI, alpha * 0.92f);
             }
-            pf = f;
-            pl = l;
-            py = y;
+        }
+
+        // ---- la jonction, puis le manche ----
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0.78f, 0.30f, 0.14f, 0.30f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0.95f, 0.22f, 0.10f, 0.22f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 1.75f, 0.155f, 0.74f, 0.155f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.14f, 0, 1.75f, 0.03f, 0.74f, 0.10f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+
+        // la lanière enroulée : cinq tours, alternés pour qu'on voie l'enroulement
+        for (int w = 0; w < 5; w++) {
+            float wy = 1.22f + w * 0.27f;
+            piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, wy, 0.165f, 0.085f, 0.165f,
+                    yaw + w * 0.18f, 0, baseY, scale, GRIP, alpha);
+        }
+
+        // pommeau et anneau de suspension
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 2.58f, 0.26f, 0.15f, 0.26f,
+                yaw, 0, baseY, scale, GOLD, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 2.72f, 0.17f, 0.07f, 0.17f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        for (int r = 0; r < 8; r++) {
+            float ra = r * TAU / 8.0f;
+            piece(vc, mat, tmp, cx, cy, cz, dx, dz,
+                    (float) Math.cos(ra) * 0.17f, (float) Math.sin(ra) * 0.17f, 2.95f,
+                    0.05f, 0.05f, 0.05f, yaw, 0, baseY, scale, GOLD_MID, alpha);
+        }
+
+        // ---- la charge : des arcs courent sur la tête ----
+        if (charge > 0.05f) {
+            int arcs = 2 + (int) (charge * 4.0f);
+            for (int k = 0; k < arcs; k++) {
+                int sd = salt * 17 + k * 311 + (int) (t * 90.0f);
+                float a0 = hash(sd, 7) * TAU;
+                float a1 = hash(sd, 11) * TAU;
+                float c0 = (float) Math.cos(yaw + a0), s0 = (float) Math.sin(yaw + a0);
+                float c1 = (float) Math.cos(yaw + a1), s1 = (float) Math.sin(yaw + a1);
+                float r0 = 0.70f * scale, r1 = 0.70f * scale;
+                drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        c0 * r0, s0 * r0, baseY + (hash(sd, 13) - 0.5f) * 1.1f * scale,
+                        c1 * r1, s1 * r1, baseY + (hash(sd, 17) - 0.5f) * 1.1f * scale,
+                        sd, 0.28f * scale, 1.0f, 0.75f, alpha * charge, 6, false);
+            }
         }
     }
 
     /**
-     * Pose un cube sur la cellule entière {@code (gx, gy, gz)} de la grille. Tout passe par
-     * ici : c'est la seule porte vers {@code box} pour la Surcadence, et c'est ce qui garantit
-     * qu'aucun cube ne peut se retrouver à un demi-pas de la grille.
-     */
-    private static void cell(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                             float cx, float cy, float cz, float dx, float dz,
-                             int gx, int gy, int gz, int rgb, float alpha) {
-        box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                gx * PIX, gz * PIX, GROUND_Y + gy * PIX,
-                PIX * 0.5f, PIX * 0.5f, PIX * 0.5f, rgb, opaque(alpha));
-    }
-
-    /**
-     * Rastérise un segment en cubes, par l'algorithme de Bresenham en trois dimensions : le
-     * tracé avance d'<b>une cellule à la fois</b> en arithmétique entière. C'est ce qui donne
-     * les marches d'escalier du pixel art, ici en volume — et non une ligne lissée.
+     * <b>Le sol électrifié.</b> Dix secondes durant, le carré de 3×3 blocs reste sous tension :
+     * un liseré qui court sur le périmètre, quelques arcs courts qui claquent d'un bord à
+     * l'autre, et un grésillement au centre.
      *
-     * <p>Le paramètre {@code glow} dessine l'<b>aura</b>, et c'est le cœur de cette version.
-     * En pixel art un halo ne se fait <b>jamais</b> par transparence : il se dessine avec des
-     * pixels de teinte intermédiaire autour du trait. Cela tombe d'autant mieux que le moteur
-     * écarte tout cube sous 200 d'alpha — une aura translucide serait purement et simplement
-     * invisible en jeu. Ici la gaine est <b>opaque</b> et descend de deux crans dans la palette
-     * par couronne : blanc au cœur, cyan à une cellule, bleu à deux.
-     *
-     * <p>La gaine n'est posée qu'<b>une fois par niveau Y</b>. Sans cette règle, un tracé qui
-     * serpente déposerait plusieurs couronnes au même étage et les cubes se superposeraient.
+     * <p>Volontairement <b>léger</b> : cette zone tient deux cents ticks à l'écran, dix fois
+     * plus longtemps que l'impact. Tout ce qui serait spectaculaire une seconde devient
+     * insupportable au bout de dix — d'où un budget d'une cinquantaine de cubes, et un
+     * liseré qui tourne plutôt qu'il ne clignote.
      */
-    private static void voxelLine(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+    private static void shockZone(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                   float cx, float cy, float cz, float dx, float dz,
-                                  float f0, float l0, float y0, float f1, float l1, float y1,
-                                  int tone, float alpha, int glow) {
-        int x0 = Math.round(f0 / PIX), z0 = Math.round(l0 / PIX);
-        int x1 = Math.round(f1 / PIX), z1 = Math.round(l1 / PIX);
-        int y0i = Math.round((y0 - GROUND_Y) / PIX), y1i = Math.round((y1 - GROUND_Y) / PIX);
-        int adx = Math.abs(x1 - x0), ady = Math.abs(y1i - y0i), adz = Math.abs(z1 - z0);
-        int sx = x0 < x1 ? 1 : -1, sy = y0i < y1i ? 1 : -1, sz = z0 < z1 ? 1 : -1;
-        int steps = Math.max(adx, Math.max(ady, adz));
-        if (steps > 192) return;                       // garde-fou : jamais de tracé fou
-        int ex = steps / 2, ey = steps / 2, ez = steps / 2;
-        int cxi = x0, cyi = y0i, czi = z0;
-        int lastGlowY = Integer.MIN_VALUE;
-        int halo1 = Math.max(0, tone - 1);
-        int halo2 = Math.max(0, tone - 3);
-        for (int i = 0; i <= steps; i++) {
-            if (cyi >= 0) {
-                cell(vc, mat, tmp, cx, cy, cz, dx, dz, cxi, cyi, czi, PXL[tone], alpha);
-                if (glow > 0 && cyi != lastGlowY) {
-                    lastGlowY = cyi;
-                    // L'aura est AJOURÉE, et c'est ce qui distingue la 3D du pixel art à plat :
-                    // à plat on voit le cœur à travers le halo, en volume une gaine pleine le
-                    // masque et il ne reste qu'un bloc bleu. On sème donc les cubes au lieu de
-                    // les coller — ce qui rend aussi le grain du flou de la planche.
-                    int g = cxi * 73 + czi * 131 + cyi * 7;
-                    if (hash(g, 311) > 0.22f) cell(vc, mat, tmp, cx, cy, cz, dx, dz, cxi + 1, cyi, czi, PXL[halo1], alpha);
-                    if (hash(g, 313) > 0.22f) cell(vc, mat, tmp, cx, cy, cz, dx, dz, cxi - 1, cyi, czi, PXL[halo1], alpha);
-                    if (hash(g, 317) > 0.22f) cell(vc, mat, tmp, cx, cy, cz, dx, dz, cxi, cyi, czi + 1, PXL[halo1], alpha);
-                    if (hash(g, 331) > 0.22f) cell(vc, mat, tmp, cx, cy, cz, dx, dz, cxi, cyi, czi - 1, PXL[halo1], alpha);
-                    if (glow > 1) {
-                        if (hash(g, 337) > 0.55f) cell(vc, mat, tmp, cx, cy, cz, dx, dz, cxi + 1, cyi, czi + 1, PXL[halo2], alpha);
-                        if (hash(g, 347) > 0.55f) cell(vc, mat, tmp, cx, cy, cz, dx, dz, cxi - 1, cyi, czi - 1, PXL[halo2], alpha);
-                        if (hash(g, 349) > 0.55f) cell(vc, mat, tmp, cx, cy, cz, dx, dz, cxi + 1, cyi, czi - 1, PXL[halo2], alpha);
-                        if (hash(g, 353) > 0.55f) cell(vc, mat, tmp, cx, cy, cz, dx, dz, cxi - 1, cyi, czi + 1, PXL[halo2], alpha);
-                        if (hash(g, 359) > 0.62f) cell(vc, mat, tmp, cx, cy, cz, dx, dz, cxi + 2, cyi, czi, PXL[halo2], alpha);
-                        if (hash(g, 367) > 0.62f) cell(vc, mat, tmp, cx, cy, cz, dx, dz, cxi - 2, cyi, czi, PXL[halo2], alpha);
-                        if (hash(g, 373) > 0.62f) cell(vc, mat, tmp, cx, cy, cz, dx, dz, cxi, cyi, czi + 2, PXL[halo2], alpha);
-                        if (hash(g, 379) > 0.62f) cell(vc, mat, tmp, cx, cy, cz, dx, dz, cxi, cyi, czi - 2, PXL[halo2], alpha);
-                    }
-                }
+                                  float t, float live, float alpha, int salt) {
+        if (live <= 0.01f || alpha <= 1.0f) return;
+        final float h = ZONE_HALF;
+        final float y = GROUND_Y + 0.02f;
+
+        // le liseré : un point lumineux fait le tour du carré, les autres restent sourds
+        final int SEGMENTS = 32;
+        float head = fract(t * 1.35f);
+        for (int i = 0; i < SEGMENTS; i++) {
+            float u = i / (float) SEGMENTS;
+            float side = u * 4.0f;
+            int q = (int) side;
+            float v = side - q;
+            float f, l;
+            if (q == 0) { f = -h + 2 * h * v; l = -h; }
+            else if (q == 1) { f = h; l = -h + 2 * h * v; }
+            else if (q == 2) { f = h - 2 * h * v; l = h; }
+            else { f = -h; l = h - 2 * h * v; }
+            float d = Math.abs(fract(u - head + 0.5f) - 0.5f);
+            boolean lit = d < 0.10f;
+            float g = lit ? 1.0f : 0.42f;
+            box(vc, mat, tmp, cx, cy, cz, dx, dz, f, l, y,
+                    0.085f, 0.032f + (lit ? 0.050f : 0.0f), 0.085f,
+                    lit ? 0xFFFFFF : 0x2F7BE8, opaque(alpha * live * g));
+        }
+
+        // les quatre bornes d'angle, qui tiennent le carré
+        for (int e = -1; e <= 1; e += 2) {
+            for (int s2 = -1; s2 <= 1; s2 += 2) {
+                float pulse = 0.55f + 0.45f * (float) Math.sin(t * 8.0 + e * 1.3 + s2 * 2.1);
+                box(vc, mat, tmp, cx, cy, cz, dx, dz, e * h, s2 * h, y + 0.05f,
+                        0.075f, 0.09f, 0.075f, 0x6FD8FF, opaque(alpha * live * pulse));
             }
-            if (i == steps) break;
-            ex -= adx; if (ex < 0) { ex += steps; cxi += sx; }
-            ey -= ady; if (ey < 0) { ey += steps; cyi += sy; }
-            ez -= adz; if (ez < 0) { ez += steps; czi += sz; }
+        }
+
+        // les arcs : trois au plus, redessinés par paliers pour qu'ils claquent
+        int frame = (int) (t * 26.0f);
+        for (int k = 0; k < 3; k++) {
+            int sd = salt * 29 + k * 557 + frame * 97;
+            if (hash(sd, 3) < 0.38f) continue;
+            float f0 = (hash(sd, 5) * 2.0f - 1.0f) * h;
+            float l0 = (hash(sd, 7) * 2.0f - 1.0f) * h;
+            float f1 = (hash(sd, 11) * 2.0f - 1.0f) * h;
+            float l1 = (hash(sd, 13) * 2.0f - 1.0f) * h;
+            drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
+                    f0, l0, y + 0.03f, f1, l1, y + 0.03f,
+                    sd, 0.22f, 1.0f, 0.55f, alpha * live * 0.85f, 5, false);
+        }
+
+        // grésillement : quelques étincelles qui montent à peine du sol
+        for (int i = 0; i < 7; i++) {
+            int sd = salt * 31 + i * 193 + frame * 53;
+            float sf = (hash(sd, 19) * 2.0f - 1.0f) * h;
+            float sl2 = (hash(sd, 23) * 2.0f - 1.0f) * h;
+            float sy = y + hash(sd, 29) * 0.22f;
+            box(vc, mat, tmp, cx, cy, cz, dx, dz, sf, sl2, sy, 0.035f, 0.035f, 0.035f,
+                    hash(sd, 31) > 0.5f ? 0xFFFFFF : 0x7FE0FF,
+                    opaque(alpha * live * (0.5f + 0.5f * hash(sd, 37))));
         }
     }
 

@@ -359,7 +359,7 @@ public final class WeaponBladeVisualRenderer {
                 }
             }
 
-            case CHAIN_VOLT_ARC, OVERCLOCK_CYBER_X -> {
+            case CHAIN_VOLT_ARC, MJOLNIR_HAMMERFALL -> {
                 // #16 / #08 Éclairs crénelés en mini-cubes 3D sautant de la garde à la pointe !
                 renderSteppedRimCubes(vc, mat, tmp, nodes, hxy * 0.85f, hz, pRgb, sRgb, time * 6.5f, time, 165, layerMul, chaosContour);
                 VoxelNode start = nodes.get(0);
