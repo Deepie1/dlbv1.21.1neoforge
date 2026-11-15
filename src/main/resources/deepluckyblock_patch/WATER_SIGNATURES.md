@@ -1770,3 +1770,64 @@ signale que ses faux positifs connus — dont `zone lu avant sa déclaration`, q
 sur `tickWindZones`, du code existant qui compile · `lamcheck2` n'ajoute aucune capture de
 variable mutée · **0 NaN**, **0 alpha sous 208** sur 99 instants × 3 variantes · Playwright
 **0 erreur JS**.
+
+
+---
+
+## 28. Le marteau se disloquait : un signe de lacet
+
+### 28.1 Le symptôme
+
+Vu de trois quarts, le marteau paraissait juste. En tournant la caméra, les plaques de frappe
+se détachaient du corps, les panneaux de face partaient en biais, et l'objet se lisait comme
+un tas de tôles. Ce n'était pas une question de goût : c'était un bug.
+
+### 28.2 La cause
+
+`piece()` fait deux choses : il place la pièce, et il oriente sa boîte. Les deux tournaient en
+sens contraire.
+
+La position était tournée de **+lacet** :
+
+    f = lf·cos(lacet) − ll·sin(lacet)
+    lat = lf·sin(lacet) + ll·cos(lacet)
+
+tandis que `emitVoxelBoxRotated` envoie l'axe X local sur `(cos lacet, 0, −sin lacet)`, ce qui
+est une rotation de **−lacet**. Passer le même lacet aux deux faisait donc tourner chaque
+pièce à l'envers de sa propre position, d'un angle double. À un huitième de tour, une plaque
+de frappe se retrouvait perpendiculaire à l'endroit où elle aurait dû être.
+
+Le contrôle qui l'établit compare les huit sommets de chaque pièce au même modèle tourné d'un
+bloc : avec le signe d'origine, l'écart monte à **1,27 bloc** ; avec le signe opposé, il est
+**exactement nul**.
+
+À lacet nul, les deux conventions coïncident — et c'est tout le piège : l'effet était correct
+sur l'image de référence, et faux partout ailleurs.
+
+Le correctif ajoute aussi l'orientation du repère de l'effet, `atan2(dz, dx)`. Sans elle, les
+pièces se placent le long de l'arme mais restent orientées sur les axes du monde : invisible
+dans l'aperçu, qui fixe `dx = 1, dz = 0`, mais faux en jeu dès que le joueur ne regarde pas
+plein est.
+
+**Leçon générale.** Quand un helper place *et* oriente, les deux rotations doivent être
+vérifiées ensemble par un test d'invariance : le modèle tourné doit être la rotation rigide du
+modèle au repos. Une inspection visuelle sous un seul angle ne peut pas l'attraper.
+
+### 28.3 Le modèle, refait
+
+L'ancienne tête était une boîte sur laquelle on avait collé, face par face, des panneaux de la
+même taille que la face. Même sans le bug de lacet, cette construction ne tient pas : un
+panneau de la taille de son support n'a aucune raison de se lire comme un relief.
+
+La tête est maintenant un empilement de **cinq tranches emboîtées**, de plus en plus étroites
+vers le haut et vers le bas : la silhouette est chanfreinée, donc solide sous tous les angles,
+et il n'y a plus une seule feuille rapportée. Tout détail est **rentré** dans le volume qu'il
+habille.
+
+Le manche est un **prisme octogonal** : une boîte, plus une seconde inscrite tournée d'un
+huitième de tour. Cette rotation-là est sans danger parce qu'elle est **centrée sur l'axe** —
+c'est précisément ce qui la distingue du chanfrein à 45° posé sur une arête, qui saillait des
+deux faces.
+
+**89 pièces** contre 45, avec cadres de frappe, rivets, cannelures, filets, runes serties,
+poinçons, lanière à cinq tours, gemmes de pommeau et anneau de suspension.

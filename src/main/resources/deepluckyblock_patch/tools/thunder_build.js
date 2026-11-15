@@ -99,81 +99,177 @@ function buildThunder(variant, t, salt = 7331) {
   const piece = (lf, ll, ly, hf, hy, hl, yaw, roll, baseY, scale, rgb, alpha) => {
     if (alpha <= 1) return;
     const c = Math.cos(yaw), s = Math.sin(yaw);
+    // Lacet de la boite = oppose de celui des positions (cf. le commentaire cote Java).
+    // L'apercu fixe dx = 1, dz = 0, donc l'orientation du repere vaut zero ici.
+    const boxYaw = -yaw;
     rot((lf * c - ll * s) * scale, (lf * s + ll * c) * scale, baseY + ly * scale,
-           hf * scale, hy * scale, hl * scale, yaw, 0, roll, rgb, opq(alpha));
+           hf * scale, hy * scale, hl * scale, boxYaw, 0, roll, rgb, opq(alpha));
   };
 
-  // Mjollnir : tete courte et massive, manche court. Le detail vient de la superposition de
-  // quatre familles de pieces — corps, plaques de frappe, gravures, garniture du manche.
+  // Mjollnir : tete massive, manche court, detail partout. Tranches emboitees pour la
+  // silhouette, details rentres dans le volume, manche en prisme octogonal.
   const drawHammer = (baseY, yaw, scale, alpha, charge, salt, t) => {
     if (alpha <= 1) return;
-    piece(0, 0, 0, 1.00, 0.64, 0.60, yaw, 0, baseY, scale, GOLD, alpha);
-    piece(0, 0, 0.66, 1.00, 0.05, 0.60, yaw, 0, baseY, scale, GOLD_HI, alpha);
-    piece(0, 0, -0.66, 1.00, 0.05, 0.60, yaw, 0, baseY, scale, GOLD_MID, alpha);
-    piece(0, 0.62, 0, 1.00, 0.60, 0.05, yaw, 0, baseY, scale, GOLD_MID, alpha);
-    piece(0, -0.62, 0, 1.00, 0.60, 0.05, yaw, 0, baseY, scale, GOLD_MID, alpha);
 
-    for (let e = -1; e <= 1; e += 2) {
-      const ef = e * 1.04;
-      piece(ef, 0, 0, 0.09, 0.72, 0.68, yaw, 0, baseY, scale, GOLD, alpha);
-      piece(ef, 0, 0.71, 0.10, 0.045, 0.68, yaw, 0, baseY, scale, GOLD_HI, alpha);
-      piece(ef, 0.67, 0, 0.10, 0.72, 0.045, yaw, 0, baseY, scale, GOLD_HI, alpha);
-      piece(ef, -0.67, 0, 0.10, 0.72, 0.045, yaw, 0, baseY, scale, GOLD_MID, alpha);
-      piece(ef * 1.08, 0, 0, 0.03, 0.64, 0.60, yaw, 0, baseY, scale, GOLD, alpha);
-      for (let r = 0; r < 4; r++) {
-        const rl = r < 2 ? -0.42 : 0.42;
-        const ry = r % 2 === 0 ? -0.42 : 0.42;
-        piece(ef * 1.06, rl, ry, 0.05, 0.09, 0.09, yaw, 0, baseY, scale, GOLD_DARK, alpha);
-      }
-      piece(ef * 0.86, 0, 0, 0.04, 0.62, 0.58, yaw, 0, baseY, scale, GOLD_DEEP, alpha);
-    }
+    // semelle, la plus etroite
+    piece(0, 0, -0.57, 0.79, 0.075, 0.41, yaw, 0, baseY, scale, GOLD_DARK, alpha);
+    // chanfrein bas
+    piece(0, 0, -0.455, 0.89, 0.065, 0.495, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    // masse principale
+    piece(0, 0, 0, 0.96, 0.395, 0.56, yaw, 0, baseY, scale, GOLD, alpha);
+    // chanfrein haut
+    piece(0, 0, 0.455, 0.89, 0.065, 0.495, yaw, 0, baseY, scale, GOLD, alpha);
+    // dessus, face eclairee
+    piece(0, 0, 0.57, 0.79, 0.075, 0.41, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    // nervure faitiere
+    piece(0, 0, 0.65, 0.56, 0.045, 0.1, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    // clou de faitiere
+    piece(-0.34, 0, 0.69, 0.06, 0.055, 0.06, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    piece(0.34, 0, 0.69, 0.06, 0.055, 0.06, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    // patin
+    piece(0, -0.23, -0.635, 0.7, 0.04, 0.07, yaw, 0, baseY, scale, GOLD_DEEP, alpha);
+    piece(0, 0.23, -0.635, 0.7, 0.04, 0.07, yaw, 0, baseY, scale, GOLD_DEEP, alpha);
+    // panneau en retrait
+    piece(-0.9408, 0, 0, 0.035, 0.265, 0.385, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    // traverse haute du cadre
+    piece(-0.9792, 0, 0.355, 0.05, 0.05, 0.47, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    // traverse basse du cadre
+    piece(-0.9792, 0, -0.355, 0.05, 0.05, 0.47, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    // montant du cadre
+    piece(-0.9792, -0.47, 0, 0.05, 0.355, 0.05, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    piece(-0.9792, 0.47, 0, 0.05, 0.355, 0.05, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    // rivet
+    piece(-0.9936, -0.375, -0.255, 0.045, 0.05, 0.05, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    piece(-0.9936, -0.375, 0.255, 0.045, 0.05, 0.05, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    piece(-0.9936, 0.375, -0.255, 0.045, 0.05, 0.05, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    piece(-0.9936, 0.375, 0.255, 0.045, 0.05, 0.05, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    // bossage de frappe
+    piece(-1.008, 0, 0, 0.06, 0.135, 0.135, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    // pointe du bossage
+    piece(-1.0416, 0, 0, 0.03, 0.07, 0.07, yaw, 0, baseY, scale, GOLD, alpha);
+    // cannelure
+    piece(-0.9696, -0.25, 0, 0.045, 0.165, 0.035, yaw, 0, baseY, scale, GOLD_DARK, alpha);
+    piece(-0.9696, 0.25, 0, 0.045, 0.165, 0.035, yaw, 0, baseY, scale, GOLD_DARK, alpha);
+    // panneau en retrait
+    piece(0.9408, 0, 0, 0.035, 0.265, 0.385, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    // traverse haute du cadre
+    piece(0.9792, 0, 0.355, 0.05, 0.05, 0.47, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    // traverse basse du cadre
+    piece(0.9792, 0, -0.355, 0.05, 0.05, 0.47, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    // montant du cadre
+    piece(0.9792, -0.47, 0, 0.05, 0.355, 0.05, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    piece(0.9792, 0.47, 0, 0.05, 0.355, 0.05, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    // rivet
+    piece(0.9936, -0.375, -0.255, 0.045, 0.05, 0.05, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    piece(0.9936, -0.375, 0.255, 0.045, 0.05, 0.05, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    piece(0.9936, 0.375, -0.255, 0.045, 0.05, 0.05, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    piece(0.9936, 0.375, 0.255, 0.045, 0.05, 0.05, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    // bossage de frappe
+    piece(1.008, 0, 0, 0.06, 0.135, 0.135, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    // pointe du bossage
+    piece(1.0416, 0, 0, 0.03, 0.07, 0.07, yaw, 0, baseY, scale, GOLD, alpha);
+    // cannelure
+    piece(0.9696, -0.25, 0, 0.045, 0.165, 0.035, yaw, 0, baseY, scale, GOLD_DARK, alpha);
+    piece(0.9696, 0.25, 0, 0.045, 0.165, 0.035, yaw, 0, baseY, scale, GOLD_DARK, alpha);
+    // joue creusee
+    piece(0, -0.546, 0, 0.67, 0.265, 0.035, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    // filet haut
+    piece(0, -0.5572, 0.3, 0.71, 0.035, 0.025, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    // filet bas
+    piece(0, -0.5572, -0.3, 0.71, 0.035, 0.025, yaw, 0, baseY, scale, GOLD_DARK, alpha);
+    // filet vertical
+    piece(-0.71, -0.5572, 0, 0.035, 0.3, 0.025, yaw, 0, baseY, scale, GOLD_DARK, alpha);
+    piece(0.71, -0.5572, 0, 0.035, 0.3, 0.025, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    // rune, fut
+    piece(0, -0.5768, 0, 0.055, 0.195, 0.025, yaw, 0, baseY, scale, RUNE, alpha * 0.95);
+    // rune, traverse
+    piece(0, -0.5768, 0.035, 0.195, 0.055, 0.025, yaw, 0, baseY, scale, RUNE, alpha * 0.95);
+    // rune, point
+    piece(-0.235, -0.5768, 0.035, 0.05, 0.05, 0.025, yaw, 0, baseY, scale, RUNE, alpha * 0.8);
+    // poincon
+    piece(-0.43, -0.5684, -0.145, 0.045, 0.045, 0.022, yaw, 0, baseY, scale, GOLD_HI, alpha * 0.9);
+    // rune, point
+    piece(0.235, -0.5768, 0.035, 0.05, 0.05, 0.025, yaw, 0, baseY, scale, RUNE, alpha * 0.8);
+    // poincon
+    piece(0.43, -0.5684, -0.145, 0.045, 0.045, 0.022, yaw, 0, baseY, scale, GOLD_HI, alpha * 0.9);
+    // joue creusee
+    piece(0, 0.546, 0, 0.67, 0.265, 0.035, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    // filet haut
+    piece(0, 0.5572, 0.3, 0.71, 0.035, 0.025, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    // filet bas
+    piece(0, 0.5572, -0.3, 0.71, 0.035, 0.025, yaw, 0, baseY, scale, GOLD_DARK, alpha);
+    // filet vertical
+    piece(-0.71, 0.5572, 0, 0.035, 0.3, 0.025, yaw, 0, baseY, scale, GOLD_DARK, alpha);
+    piece(0.71, 0.5572, 0, 0.035, 0.3, 0.025, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    // rune, fut
+    piece(0, 0.5768, 0, 0.055, 0.195, 0.025, yaw, 0, baseY, scale, RUNE, alpha * 0.95);
+    // rune, traverse
+    piece(0, 0.5768, 0.035, 0.195, 0.055, 0.025, yaw, 0, baseY, scale, RUNE, alpha * 0.95);
+    // rune, point
+    piece(-0.235, 0.5768, 0.035, 0.05, 0.05, 0.025, yaw, 0, baseY, scale, RUNE, alpha * 0.8);
+    // poincon
+    piece(-0.43, 0.5684, -0.145, 0.045, 0.045, 0.022, yaw, 0, baseY, scale, GOLD_HI, alpha * 0.9);
+    // rune, point
+    piece(0.235, 0.5768, 0.035, 0.05, 0.05, 0.025, yaw, 0, baseY, scale, RUNE, alpha * 0.8);
+    // poincon
+    piece(0.43, 0.5684, -0.145, 0.045, 0.045, 0.022, yaw, 0, baseY, scale, GOLD_HI, alpha * 0.9);
+    // evasement
+    piece(0, 0, 0.76, 0.3, 0.13, 0.3, yaw, 0, baseY, scale, GOLD, alpha);
+    // collier
+    piece(0, 0, 0.905, 0.235, 0.055, 0.235, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    // rivet de jonction
+    piece(-0.305, 0, 0.76, 0.045, 0.05, 0.05, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    piece(0, -0.305, 0.76, 0.05, 0.05, 0.045, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    piece(0.305, 0, 0.76, 0.045, 0.05, 0.05, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    piece(0, 0.305, 0.76, 0.05, 0.05, 0.045, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    // manche, pan droit
+    piece(0, 0, 1.175, 0.13, 0.235, 0.13, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    // manche, pan incline
+    piece(0, 0, 1.175, 0.09, 0.2338, 0.09, yaw + 0.7854, 0, baseY, scale, GOLD, alpha);
+    // manche, pan droit
+    piece(0, 0, 1.76, 0.138, 0.39, 0.138, yaw, 0, baseY, scale, GRIP, alpha);
+    // manche, pan incline
+    piece(0, 0, 1.76, 0.096, 0.3881, 0.096, yaw + 0.7854, 0, baseY, scale, GOLD_DEEP, alpha);
+    // manche, pan droit
+    piece(0, 0, 2.265, 0.13, 0.145, 0.13, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    // manche, pan incline
+    piece(0, 0, 2.265, 0.09, 0.1443, 0.09, yaw + 0.7854, 0, baseY, scale, GOLD, alpha);
+    // tour de laniere
+    piece(0, 0, 1.43, 0.15, 0.038, 0.15, yaw, 0, baseY, scale, GRIP, alpha);
+    piece(0, 0, 1.595, 0.15, 0.038, 0.15, yaw, 0, baseY, scale, GOLD_DEEP, alpha);
+    piece(0, 0, 1.76, 0.15, 0.038, 0.15, yaw, 0, baseY, scale, GRIP, alpha);
+    piece(0, 0, 1.925, 0.15, 0.038, 0.15, yaw, 0, baseY, scale, GOLD_DEEP, alpha);
+    piece(0, 0, 2.09, 0.15, 0.038, 0.15, yaw, 0, baseY, scale, GRIP, alpha);
+    // pommeau
+    piece(0, 0, 2.47, 0.23, 0.115, 0.23, yaw, 0, baseY, scale, GOLD, alpha);
+    // couronne du pommeau
+    piece(0, 0, 2.6, 0.165, 0.055, 0.165, yaw, 0, baseY, scale, GOLD_HI, alpha);
+    // gemme du pommeau
+    piece(-0.235, 0, 2.47, 0.03, 0.07, 0.07, yaw, 0, baseY, scale, RUNE, alpha * 0.9);
+    piece(0, -0.235, 2.47, 0.07, 0.07, 0.03, yaw, 0, baseY, scale, RUNE, alpha * 0.9);
+    piece(0.235, 0, 2.47, 0.03, 0.07, 0.07, yaw, 0, baseY, scale, RUNE, alpha * 0.9);
+    piece(0, 0.235, 2.47, 0.07, 0.07, 0.03, yaw, 0, baseY, scale, RUNE, alpha * 0.9);
+    // anneau de suspension
+    piece(0.205, 0, 2.735, 0.052, 0.052, 0.052, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    piece(0.145, 0.145, 2.735, 0.052, 0.052, 0.052, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    piece(0, 0.205, 2.735, 0.052, 0.052, 0.052, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    piece(-0.145, 0.145, 2.735, 0.052, 0.052, 0.052, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    piece(-0.205, 0, 2.735, 0.052, 0.052, 0.052, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    piece(-0.145, -0.145, 2.735, 0.052, 0.052, 0.052, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    piece(-0, -0.205, 2.735, 0.052, 0.052, 0.052, yaw, 0, baseY, scale, GOLD_MID, alpha);
+    piece(0.145, -0.145, 2.735, 0.052, 0.052, 0.052, yaw, 0, baseY, scale, GOLD_MID, alpha);
 
-    piece(0, 0, 0, 0.26, 0.68, 0.64, yaw, 0, baseY, scale, GOLD_MID, alpha);
-    piece(0, 0, 0, 0.30, 0.06, 0.62, yaw, 0, baseY, scale, GOLD_DARK, alpha);
-
-    const runeA = alpha * (0.45 + 0.55 * charge);
-    for (let side = -1; side <= 1; side += 2) {
-      const sl = side * 0.645;
-      piece(0.46, sl, 0, 0.05, 0.34, 0.025, yaw, 0, baseY, scale, RUNE, runeA);
-      piece(0.46, sl, 0, 0.22, 0.05, 0.025, yaw, 0, baseY, scale, RUNE, runeA);
-      piece(-0.46, sl, 0, 0.05, 0.34, 0.025, yaw, 0, baseY, scale, RUNE, runeA);
-      piece(-0.46, sl, 0.18, 0.18, 0.05, 0.025, yaw, 0, baseY, scale, RUNE, runeA);
-      piece(-0.46, sl, -0.18, 0.18, 0.05, 0.025, yaw, 0, baseY, scale, RUNE, runeA);
-    }
-
-    // Des boites roulees a 45 deg debordaient des deux faces : quatre ailettes blanches.
-    for (let e = -1; e <= 1; e += 2)
-      for (let s2 = -1; s2 <= 1; s2 += 2)
-        piece(0, s2 * 0.575, e * 0.595, 0.99, 0.055, 0.055, yaw, 0, baseY, scale,
-              GOLD_HI, alpha * 0.92);
-
-    piece(0, 0, 0.78, 0.30, 0.14, 0.30, yaw, 0, baseY, scale, GOLD_HI, alpha);
-    piece(0, 0, 0.95, 0.22, 0.10, 0.22, yaw, 0, baseY, scale, GOLD_MID, alpha);
-    piece(0, 0, 1.75, 0.155, 0.74, 0.155, yaw, 0, baseY, scale, GOLD_MID, alpha);
-    piece(0.14, 0, 1.75, 0.03, 0.74, 0.10, yaw, 0, baseY, scale, GOLD_HI, alpha);
-
-    for (let w = 0; w < 5; w++)
-      piece(0, 0, 1.22 + w * 0.27, 0.165, 0.085, 0.165, yaw + w * 0.18, 0, baseY, scale,
-            GRIP, alpha);
-
-    piece(0, 0, 2.58, 0.26, 0.15, 0.26, yaw, 0, baseY, scale, GOLD, alpha);
-    piece(0, 0, 2.72, 0.17, 0.07, 0.17, yaw, 0, baseY, scale, GOLD_HI, alpha);
-    for (let r = 0; r < 8; r++) {
-      const ra = r * TAU / 8;
-      piece(Math.cos(ra) * 0.17, Math.sin(ra) * 0.17, 2.95, 0.05, 0.05, 0.05,
-            yaw, 0, baseY, scale, GOLD_MID, alpha);
-    }
-
+    // ---- la charge : des arcs courent sur la tete ----
     if (charge > 0.05) {
-      const arcs = 2 + Math.floor(charge * 4);
+      const arcs = 2 + Math.floor(charge * 4.0);
       for (let k = 0; k < arcs; k++) {
-        const sd = salt * 17 + k * 311 + Math.floor(t * 90);
+        const sd = salt * 17 + k * 311 + Math.floor(t * 90.0);
         const a0 = hash(sd, 7) * TAU, a1 = hash(sd, 11) * TAU;
-        const r0 = 0.70 * scale;
-        drawBolt(Math.cos(yaw + a0) * r0, Math.sin(yaw + a0) * r0,
-                 baseY + (hash(sd, 13) - 0.5) * 1.1 * scale,
-                 Math.cos(yaw + a1) * r0, Math.sin(yaw + a1) * r0,
-                 baseY + (hash(sd, 17) - 0.5) * 1.1 * scale,
+        const c0 = Math.cos(yaw + a0), s0 = Math.sin(yaw + a0);
+        const c1 = Math.cos(yaw + a1), s1 = Math.sin(yaw + a1);
+        const r0 = 0.70 * scale, r1 = 0.70 * scale;
+        drawBolt(c0 * r0, s0 * r0, baseY + (hash(sd, 13) - 0.5) * 1.1 * scale,
+                 c1 * r1, s1 * r1, baseY + (hash(sd, 17) - 0.5) * 1.1 * scale,
                  sd, 0.28 * scale, 1.0, 0.75, alpha * charge, 6, false);
       }
     }

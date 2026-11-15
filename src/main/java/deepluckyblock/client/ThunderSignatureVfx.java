@@ -784,20 +784,33 @@ public final class ThunderSignatureVfx {
                               int rgb, float alpha) {
         if (alpha <= 1.0f) return;
         float c = (float) Math.cos(yaw), s = (float) Math.sin(yaw);
+        // Le lacet de la BOÎTE est l'opposé de celui des positions. emitVoxelBoxRotated envoie
+        // l'axe X local sur (cos lacet, 0, −sin lacet), soit une rotation de −lacet, alors que
+        // les positions ci-dessus tournent de +lacet. Passer le même lacet aux deux faisait
+        // tourner chaque pièce à l'envers de sa position : à un huitième de tour, les plaques
+        // de frappe se retrouvaient perpendiculaires à leur place, et le marteau se disloquait.
+        // Il faut en plus y intégrer l'orientation du repère de l'effet, sinon les pièces se
+        // placent le long de l'arme mais restent orientées sur les axes du monde.
+        float boxYaw = -(yaw + (float) Math.atan2(dz, dx));
         rot(vc, mat, tmp, cx, cy, cz, dx, dz,
                 (lf * c - ll * s) * scale, (lf * s + ll * c) * scale, baseY + ly * scale,
-                hf * scale, hy * scale, hl * scale, yaw, 0.0f, roll, rgb, opaque(alpha));
+                hf * scale, hy * scale, hl * scale, boxYaw, 0.0f, roll, rgb, opaque(alpha));
     }
 
     /**
-     * <b>Mjöllnir.</b> Tête courte et massive, manche court — les proportions du marteau de
-     * Thor, pas celles d'une masse d'armes : la tête fait plus du tiers de la hauteur totale.
+     * Mjöllnir : tête massive, manche court, et de la matière partout où l'œil se pose.
      *
-     * <p>Le détail vient de quatre familles de pièces, et c'est leur superposition qui fait
-     * l'objet : le <b>corps</b>, les <b>plaques de frappe</b> aux deux extrémités, les
-     * <b>gravures</b> (rainures sombres et runes serties) et la <b>garniture</b> du manche.
-     * Les arêtes sont systématiquement doublées d'une pièce plus claire : sans elles, un
-     * assemblage de boîtes dorées se lit comme une seule masse plate.
+     * <p>Construction : la tête est faite de <b>tranches emboîtées</b>, de plus en plus
+     * étroites vers le haut et vers le bas. C'est ce qui lui donne une silhouette chanfreinée
+     * qui tient sous tous les angles. La version précédente plaquait sur chaque face un
+     * panneau de la taille de cette face : de trois quarts l'illusion tenait, mais dès que la
+     * caméra tournait, chaque panneau se détachait comme une feuille posée. Ici tout détail
+     * est <b>rentré</b> dans le volume qu'il habille, jamais rapporté par-dessus.
+     *
+     * <p>Le manche est un <b>prisme octogonal</b> : une boîte, plus une seconde inscrite
+     * tournée d'un huitième de tour. La rotation est centrée sur l'axe du manche, donc la
+     * boîte inscrite ne peut pas déborder — c'est exactement ce qui distinguait cette
+     * construction du chanfrein à 45° qui, lui, était posé sur une arête et saillait.
      */
     private static void drawHammer(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                    float cx, float cy, float cz, float dx, float dz,
@@ -805,105 +818,242 @@ public final class ThunderSignatureVfx {
                                    float charge, int salt, float t) {
         if (alpha <= 1.0f) return;
 
-        // ---- la tête : corps, puis arêtes claires, puis gravures ----
-        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0, 1.00f, 0.64f, 0.60f,
-                yaw, 0, baseY, scale, GOLD, alpha);
-        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0.66f, 1.00f, 0.05f, 0.60f,
-                yaw, 0, baseY, scale, GOLD_HI, alpha);
-        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, -0.66f, 1.00f, 0.05f, 0.60f,
-                yaw, 0, baseY, scale, GOLD_MID, alpha);
-        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0.62f, 0, 1.00f, 0.60f, 0.05f,
-                yaw, 0, baseY, scale, GOLD_MID, alpha);
-        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, -0.62f, 0, 1.00f, 0.60f, 0.05f,
-                yaw, 0, baseY, scale, GOLD_MID, alpha);
-
-        // les deux plaques de frappe, légèrement débordantes : c'est elles qui donnent au
-        // marteau sa silhouette en T, et elles sont la seule partie vraiment éclairée
-        for (int e = -1; e <= 1; e += 2) {
-            float ef = e * 1.04f;
-            piece(vc, mat, tmp, cx, cy, cz, dx, dz, ef, 0, 0, 0.09f, 0.72f, 0.68f,
-                    yaw, 0, baseY, scale, GOLD, alpha);
-            piece(vc, mat, tmp, cx, cy, cz, dx, dz, ef, 0, 0.71f, 0.10f, 0.045f, 0.68f,
-                    yaw, 0, baseY, scale, GOLD_HI, alpha);
-            piece(vc, mat, tmp, cx, cy, cz, dx, dz, ef, 0.67f, 0, 0.10f, 0.72f, 0.045f,
-                    yaw, 0, baseY, scale, GOLD_HI, alpha);
-            piece(vc, mat, tmp, cx, cy, cz, dx, dz, ef, -0.67f, 0, 0.10f, 0.72f, 0.045f,
-                    yaw, 0, baseY, scale, GOLD_MID, alpha);
-            piece(vc, mat, tmp, cx, cy, cz, dx, dz, ef * 1.08f, 0, 0, 0.03f, 0.64f, 0.60f,
-                    yaw, 0, baseY, scale, GOLD, alpha);
-            // quatre rivets par plaque
-            for (int r = 0; r < 4; r++) {
-                float rl = (r < 2 ? -0.42f : 0.42f);
-                float ry = (r % 2 == 0 ? -0.42f : 0.42f);
-                piece(vc, mat, tmp, cx, cy, cz, dx, dz, ef * 1.06f, rl, ry,
-                        0.05f, 0.09f, 0.09f, yaw, 0, baseY, scale, GOLD_DARK, alpha);
-            }
-            // rainure sombre en retrait de la plaque
-            piece(vc, mat, tmp, cx, cy, cz, dx, dz, ef * 0.86f, 0, 0, 0.04f, 0.62f, 0.58f,
-                    yaw, 0, baseY, scale, GOLD_DEEP, alpha);
-        }
-
-        // bandeau central, en relief
-        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0, 0.26f, 0.68f, 0.64f,
-                yaw, 0, baseY, scale, GOLD_MID, alpha);
-        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0, 0.30f, 0.06f, 0.62f,
+        // semelle, la plus etroite
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, -0.57f, 0.79f, 0.075f, 0.41f,
                 yaw, 0, baseY, scale, GOLD_DARK, alpha);
-
-        // runes serties dans les deux grandes faces : une croix nordique, qui s'allume
-        // quand le marteau se charge
-        float runeA = alpha * (0.45f + 0.55f * charge);
-        for (int side = -1; side <= 1; side += 2) {
-            float sl = side * 0.645f;
-            piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.46f, sl, 0, 0.05f, 0.34f, 0.025f,
-                    yaw, 0, baseY, scale, RUNE, runeA);
-            piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.46f, sl, 0, 0.22f, 0.05f, 0.025f,
-                    yaw, 0, baseY, scale, RUNE, runeA);
-            piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.46f, sl, 0, 0.05f, 0.34f, 0.025f,
-                    yaw, 0, baseY, scale, RUNE, runeA);
-            piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.46f, sl, 0.18f, 0.18f, 0.05f, 0.025f,
-                    yaw, 0, baseY, scale, RUNE, runeA);
-            piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.46f, sl, -0.18f, 0.18f, 0.05f, 0.025f,
-                    yaw, 0, baseY, scale, RUNE, runeA);
-        }
-
-        // Arêtes soulignées. Première version : des boîtes roulées à 45° sur l'arête — elles
-        // DÉBORDAIENT des deux faces et faisaient quatre ailettes blanches. Une baguette
-        // droite, rentrée dans le volume, souligne l'arête sans rien faire saillir.
-        for (int e = -1; e <= 1; e += 2) {
-            for (int s2 = -1; s2 <= 1; s2 += 2) {
-                piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, s2 * 0.575f, e * 0.595f,
-                        0.99f, 0.055f, 0.055f, yaw, 0, baseY, scale, GOLD_HI, alpha * 0.92f);
-            }
-        }
-
-        // ---- la jonction, puis le manche ----
-        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0.78f, 0.30f, 0.14f, 0.30f,
-                yaw, 0, baseY, scale, GOLD_HI, alpha);
-        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0.95f, 0.22f, 0.10f, 0.22f,
+        // chanfrein bas
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, -0.455f, 0.89f, 0.065f, 0.495f,
                 yaw, 0, baseY, scale, GOLD_MID, alpha);
-        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 1.75f, 0.155f, 0.74f, 0.155f,
-                yaw, 0, baseY, scale, GOLD_MID, alpha);
-        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.14f, 0, 1.75f, 0.03f, 0.74f, 0.10f,
-                yaw, 0, baseY, scale, GOLD_HI, alpha);
-
-        // la lanière enroulée : cinq tours, alternés pour qu'on voie l'enroulement
-        for (int w = 0; w < 5; w++) {
-            float wy = 1.22f + w * 0.27f;
-            piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, wy, 0.165f, 0.085f, 0.165f,
-                    yaw + w * 0.18f, 0, baseY, scale, GRIP, alpha);
-        }
-
-        // pommeau et anneau de suspension
-        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 2.58f, 0.26f, 0.15f, 0.26f,
+        // masse principale
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0, 0.96f, 0.395f, 0.56f,
                 yaw, 0, baseY, scale, GOLD, alpha);
-        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 2.72f, 0.17f, 0.07f, 0.17f,
+        // chanfrein haut
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0.455f, 0.89f, 0.065f, 0.495f,
+                yaw, 0, baseY, scale, GOLD, alpha);
+        // dessus, face eclairee
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0.57f, 0.79f, 0.075f, 0.41f,
                 yaw, 0, baseY, scale, GOLD_HI, alpha);
-        for (int r = 0; r < 8; r++) {
-            float ra = r * TAU / 8.0f;
-            piece(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    (float) Math.cos(ra) * 0.17f, (float) Math.sin(ra) * 0.17f, 2.95f,
-                    0.05f, 0.05f, 0.05f, yaw, 0, baseY, scale, GOLD_MID, alpha);
-        }
+        // nervure faitiere
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0.65f, 0.56f, 0.045f, 0.1f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        // clou de faitiere
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.34f, 0, 0.69f, 0.06f, 0.055f, 0.06f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.34f, 0, 0.69f, 0.06f, 0.055f, 0.06f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        // patin
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, -0.23f, -0.635f, 0.7f, 0.04f, 0.07f,
+                yaw, 0, baseY, scale, GOLD_DEEP, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0.23f, -0.635f, 0.7f, 0.04f, 0.07f,
+                yaw, 0, baseY, scale, GOLD_DEEP, alpha);
+        // panneau en retrait
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.9408f, 0, 0, 0.035f, 0.265f, 0.385f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        // traverse haute du cadre
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.9792f, 0, 0.355f, 0.05f, 0.05f, 0.47f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        // traverse basse du cadre
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.9792f, 0, -0.355f, 0.05f, 0.05f, 0.47f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        // montant du cadre
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.9792f, -0.47f, 0, 0.05f, 0.355f, 0.05f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.9792f, 0.47f, 0, 0.05f, 0.355f, 0.05f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        // rivet
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.9936f, -0.375f, -0.255f, 0.045f, 0.05f, 0.05f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.9936f, -0.375f, 0.255f, 0.045f, 0.05f, 0.05f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.9936f, 0.375f, -0.255f, 0.045f, 0.05f, 0.05f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.9936f, 0.375f, 0.255f, 0.045f, 0.05f, 0.05f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        // bossage de frappe
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -1.008f, 0, 0, 0.06f, 0.135f, 0.135f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        // pointe du bossage
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -1.0416f, 0, 0, 0.03f, 0.07f, 0.07f,
+                yaw, 0, baseY, scale, GOLD, alpha);
+        // cannelure
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.9696f, -0.25f, 0, 0.045f, 0.165f, 0.035f,
+                yaw, 0, baseY, scale, GOLD_DARK, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.9696f, 0.25f, 0, 0.045f, 0.165f, 0.035f,
+                yaw, 0, baseY, scale, GOLD_DARK, alpha);
+        // panneau en retrait
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.9408f, 0, 0, 0.035f, 0.265f, 0.385f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        // traverse haute du cadre
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.9792f, 0, 0.355f, 0.05f, 0.05f, 0.47f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        // traverse basse du cadre
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.9792f, 0, -0.355f, 0.05f, 0.05f, 0.47f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        // montant du cadre
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.9792f, -0.47f, 0, 0.05f, 0.355f, 0.05f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.9792f, 0.47f, 0, 0.05f, 0.355f, 0.05f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        // rivet
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.9936f, -0.375f, -0.255f, 0.045f, 0.05f, 0.05f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.9936f, -0.375f, 0.255f, 0.045f, 0.05f, 0.05f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.9936f, 0.375f, -0.255f, 0.045f, 0.05f, 0.05f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.9936f, 0.375f, 0.255f, 0.045f, 0.05f, 0.05f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        // bossage de frappe
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 1.008f, 0, 0, 0.06f, 0.135f, 0.135f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        // pointe du bossage
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 1.0416f, 0, 0, 0.03f, 0.07f, 0.07f,
+                yaw, 0, baseY, scale, GOLD, alpha);
+        // cannelure
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.9696f, -0.25f, 0, 0.045f, 0.165f, 0.035f,
+                yaw, 0, baseY, scale, GOLD_DARK, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.9696f, 0.25f, 0, 0.045f, 0.165f, 0.035f,
+                yaw, 0, baseY, scale, GOLD_DARK, alpha);
+        // joue creusee
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, -0.546f, 0, 0.67f, 0.265f, 0.035f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        // filet haut
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, -0.5572f, 0.3f, 0.71f, 0.035f, 0.025f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        // filet bas
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, -0.5572f, -0.3f, 0.71f, 0.035f, 0.025f,
+                yaw, 0, baseY, scale, GOLD_DARK, alpha);
+        // filet vertical
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.71f, -0.5572f, 0, 0.035f, 0.3f, 0.025f,
+                yaw, 0, baseY, scale, GOLD_DARK, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.71f, -0.5572f, 0, 0.035f, 0.3f, 0.025f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        // rune, fut
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, -0.5768f, 0, 0.055f, 0.195f, 0.025f,
+                yaw, 0, baseY, scale, RUNE, alpha * 0.95f);
+        // rune, traverse
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, -0.5768f, 0.035f, 0.195f, 0.055f, 0.025f,
+                yaw, 0, baseY, scale, RUNE, alpha * 0.95f);
+        // rune, point
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.235f, -0.5768f, 0.035f, 0.05f, 0.05f, 0.025f,
+                yaw, 0, baseY, scale, RUNE, alpha * 0.8f);
+        // poincon
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.43f, -0.5684f, -0.145f, 0.045f, 0.045f, 0.022f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha * 0.9f);
+        // rune, point
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.235f, -0.5768f, 0.035f, 0.05f, 0.05f, 0.025f,
+                yaw, 0, baseY, scale, RUNE, alpha * 0.8f);
+        // poincon
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.43f, -0.5684f, -0.145f, 0.045f, 0.045f, 0.022f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha * 0.9f);
+        // joue creusee
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0.546f, 0, 0.67f, 0.265f, 0.035f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        // filet haut
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0.5572f, 0.3f, 0.71f, 0.035f, 0.025f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        // filet bas
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0.5572f, -0.3f, 0.71f, 0.035f, 0.025f,
+                yaw, 0, baseY, scale, GOLD_DARK, alpha);
+        // filet vertical
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.71f, 0.5572f, 0, 0.035f, 0.3f, 0.025f,
+                yaw, 0, baseY, scale, GOLD_DARK, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.71f, 0.5572f, 0, 0.035f, 0.3f, 0.025f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        // rune, fut
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0.5768f, 0, 0.055f, 0.195f, 0.025f,
+                yaw, 0, baseY, scale, RUNE, alpha * 0.95f);
+        // rune, traverse
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0.5768f, 0.035f, 0.195f, 0.055f, 0.025f,
+                yaw, 0, baseY, scale, RUNE, alpha * 0.95f);
+        // rune, point
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.235f, 0.5768f, 0.035f, 0.05f, 0.05f, 0.025f,
+                yaw, 0, baseY, scale, RUNE, alpha * 0.8f);
+        // poincon
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.43f, 0.5684f, -0.145f, 0.045f, 0.045f, 0.022f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha * 0.9f);
+        // rune, point
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.235f, 0.5768f, 0.035f, 0.05f, 0.05f, 0.025f,
+                yaw, 0, baseY, scale, RUNE, alpha * 0.8f);
+        // poincon
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.43f, 0.5684f, -0.145f, 0.045f, 0.045f, 0.022f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha * 0.9f);
+        // evasement
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0.76f, 0.3f, 0.13f, 0.3f,
+                yaw, 0, baseY, scale, GOLD, alpha);
+        // collier
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 0.905f, 0.235f, 0.055f, 0.235f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        // rivet de jonction
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.305f, 0, 0.76f, 0.045f, 0.05f, 0.05f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, -0.305f, 0.76f, 0.05f, 0.05f, 0.045f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.305f, 0, 0.76f, 0.045f, 0.05f, 0.05f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0.305f, 0.76f, 0.05f, 0.05f, 0.045f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        // manche, pan droit
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 1.175f, 0.13f, 0.235f, 0.13f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        // manche, pan incline
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 1.175f, 0.09f, 0.2338f, 0.09f,
+                yaw + 0.7854f, 0, baseY, scale, GOLD, alpha);
+        // manche, pan droit
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 1.76f, 0.138f, 0.39f, 0.138f,
+                yaw, 0, baseY, scale, GRIP, alpha);
+        // manche, pan incline
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 1.76f, 0.096f, 0.3881f, 0.096f,
+                yaw + 0.7854f, 0, baseY, scale, GOLD_DEEP, alpha);
+        // manche, pan droit
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 2.265f, 0.13f, 0.145f, 0.13f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        // manche, pan incline
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 2.265f, 0.09f, 0.1443f, 0.09f,
+                yaw + 0.7854f, 0, baseY, scale, GOLD, alpha);
+        // tour de laniere
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 1.43f, 0.15f, 0.038f, 0.15f,
+                yaw, 0, baseY, scale, GRIP, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 1.595f, 0.15f, 0.038f, 0.15f,
+                yaw, 0, baseY, scale, GOLD_DEEP, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 1.76f, 0.15f, 0.038f, 0.15f,
+                yaw, 0, baseY, scale, GRIP, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 1.925f, 0.15f, 0.038f, 0.15f,
+                yaw, 0, baseY, scale, GOLD_DEEP, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 2.09f, 0.15f, 0.038f, 0.15f,
+                yaw, 0, baseY, scale, GRIP, alpha);
+        // pommeau
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 2.47f, 0.23f, 0.115f, 0.23f,
+                yaw, 0, baseY, scale, GOLD, alpha);
+        // couronne du pommeau
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0, 2.6f, 0.165f, 0.055f, 0.165f,
+                yaw, 0, baseY, scale, GOLD_HI, alpha);
+        // gemme du pommeau
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.235f, 0, 2.47f, 0.03f, 0.07f, 0.07f,
+                yaw, 0, baseY, scale, RUNE, alpha * 0.9f);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, -0.235f, 2.47f, 0.07f, 0.07f, 0.03f,
+                yaw, 0, baseY, scale, RUNE, alpha * 0.9f);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.235f, 0, 2.47f, 0.03f, 0.07f, 0.07f,
+                yaw, 0, baseY, scale, RUNE, alpha * 0.9f);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0.235f, 2.47f, 0.07f, 0.07f, 0.03f,
+                yaw, 0, baseY, scale, RUNE, alpha * 0.9f);
+        // anneau de suspension
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.205f, 0, 2.735f, 0.052f, 0.052f, 0.052f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.145f, 0.145f, 2.735f, 0.052f, 0.052f, 0.052f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, 0.205f, 2.735f, 0.052f, 0.052f, 0.052f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.145f, 0.145f, 2.735f, 0.052f, 0.052f, 0.052f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.205f, 0, 2.735f, 0.052f, 0.052f, 0.052f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, -0.145f, -0.145f, 2.735f, 0.052f, 0.052f, 0.052f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0, -0.205f, 2.735f, 0.052f, 0.052f, 0.052f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
+        piece(vc, mat, tmp, cx, cy, cz, dx, dz, 0.145f, -0.145f, 2.735f, 0.052f, 0.052f, 0.052f,
+                yaw, 0, baseY, scale, GOLD_MID, alpha);
 
         // ---- la charge : des arcs courent sur la tête ----
         if (charge > 0.05f) {
