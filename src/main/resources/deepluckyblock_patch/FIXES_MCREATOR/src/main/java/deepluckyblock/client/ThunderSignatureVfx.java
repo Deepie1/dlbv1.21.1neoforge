@@ -189,6 +189,50 @@ public final class ThunderSignatureVfx {
         float vitrify = smooth((t - 0.17f) / 0.22f);
         float dusk = 1.0f - smooth((t - 0.80f) / 0.20f);
 
+        // ---- 0. LE CIEL SE CHARGE, TRÈS HAUT ----
+        // Une décharge est toujours précédée d'une charge. Sans ce préalable, l'éclair
+        // tombe d'un ciel vide et la scène n'a plus de hauteur : on voit un trait, pas un
+        // orage. Tout est VERTICAL — un éclair suit le champ électrique, qui va du nuage
+        // au sol ; un trait couché en l'air ne correspond à rien.
+        float skyCharge = smooth(t / 0.085f) * (1.0f - smooth((t - 0.58f) / 0.34f));
+        if (skyCharge > 0.02f) {
+            int step = (int) (t * 30.0f);
+
+            // a. le plafond grésille : des filaments courts, pendants, entre 14 et 31 blocs
+            for (int k = 0; k < 13; k++) {
+                int sd = salt * 83 + k * 1619 + step * 149;
+                if (hash(sd, 3) < 0.44f) continue;
+                float ang = hash(sd, 5) * TAU;
+                float rr = 1.0f + 6.8f * hash(sd, 7);
+                float yTop = SKY_HEIGHT * (0.66f + 0.74f * hash(sd, 11));
+                float len = 1.5f + 4.4f * hash(sd, 13);
+                drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        (float) Math.cos(ang) * rr, (float) Math.sin(ang) * rr, yTop,
+                        (float) Math.cos(ang) * rr * 0.84f,
+                        (float) Math.sin(ang) * rr * 0.84f, yTop - len,
+                        sd, 0.40f, 1.0f, 0.44f, a * skyCharge * 0.60f, 9, false);
+            }
+
+            // b. des éclairs TOMBENT du ciel, l'un après l'autre, autour du point visé.
+            // Ils descendent : le départ est plus haut que l'arrivée, toujours.
+            for (int k = 0; k < 4; k++) {
+                float t0 = 0.030f + 0.052f * k;
+                float lifeK = smooth((t - t0) / 0.024f)
+                        * (1.0f - smooth((t - t0 - 0.040f) / 0.050f));
+                if (lifeK < 0.03f) continue;
+                int sd = salt * 59 + k * 977;
+                float ang = hash(sd, 3) * TAU;
+                float rr = 3.6f + 5.4f * hash(sd, 5);
+                float yEnd = hash(sd, 7) < 0.42f
+                        ? GROUND_Y : GROUND_Y + 3.2f + 5.6f * hash(sd, 11);
+                drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        (float) Math.cos(ang) * rr * 1.16f,
+                        (float) Math.sin(ang) * rr * 1.16f, SKY_HEIGHT * 1.42f,
+                        (float) Math.cos(ang) * rr, (float) Math.sin(ang) * rr, yEnd,
+                        sd, 1.00f, 1.0f, 0.58f, a * lifeK * 0.82f, 26, false);
+            }
+        }
+
         // ---- 1. IONISATION : l'air se charge AVANT la frappe, de bas en haut ----
         // C'est le « leader ascendant » : sans lui l'éclair surgit de nulle part et le joueur
         // n'a aucune anticipation. Les filaments meurent à l'instant exact de la frappe.
@@ -493,28 +537,17 @@ public final class ThunderSignatureVfx {
             // ---- L'AIR HAUT SOUS TENSION ----
             // Même principe que l'ionisation de l'arc fulgurant : le ciel doit être chargé
             // AVANT et PENDANT la descente, sinon le marteau traverse un vide et la chute
-            // n'a pas de milieu. Trois couches : une nappe qui craque en altitude, deux
-            // canaux verticaux que le marteau suit, et une traînée qu'il tire derrière lui.
+            // n'a pas de milieu. Deux couches, toutes deux verticales : les canaux que le
+            // marteau suit en descendant, et la traînée qu'il tire derrière lui.
             float air = appear * (1.0f - gone);
             if (air > 0.02f) {
                 int step = (int) (t * 46.0f);
 
-                // 1. la nappe : des arcs horizontaux entre 9 et 30 blocs
-                for (int k = 0; k < 10; k++) {
-                    int sd = salt * 71 + k * 1283 + step * 131;
-                    if (hash(sd, 3) < 0.40f) continue;
-                    float y0 = GROUND_Y + 9.0f + hash(sd, 5) * 21.0f;
-                    float a0 = hash(sd, 7) * TAU, a1 = hash(sd, 11) * TAU;
-                    float r0 = 1.1f + 4.8f * hash(sd, 13);
-                    float r1 = 1.1f + 4.8f * hash(sd, 17);
-                    drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            (float) Math.cos(a0) * r0, (float) Math.sin(a0) * r0, y0,
-                            (float) Math.cos(a1) * r1, (float) Math.sin(a1) * r1,
-                            y0 + (hash(sd, 19) - 0.5f) * 3.6f,
-                            sd, 0.58f, 1.0f, 0.50f, a * air * 0.78f, 11, false);
-                }
+                // Pas d'arcs horizontaux : un éclair suit le champ électrique, qui est
+                // vertical entre un nuage et le sol. Un trait couché en l'air ne correspond
+                // à rien de physique et se lit comme une rayure sur l'image.
 
-                // 2. les canaux : deux traits qui descendent du plafond jusqu'au marteau.
+                // 1. les canaux : deux traits qui descendent du plafond jusqu'au marteau.
                 // C'est eux qui disent que le marteau est TIRÉ vers le bas, pas lâché.
                 for (int k = 0; k < 2; k++) {
                     int sd = salt * 97 + k * 3301 + (step / 2) * 457;
@@ -526,7 +559,7 @@ public final class ThunderSignatureVfx {
                             a * air * (k == 0 ? 0.80f : 0.60f), 30, k == 0);
                 }
 
-                // 3. la traînée : pendant la chute, des arcs restent accrochés au-dessus
+                // 2. la traînée : pendant la chute, des arcs restent accrochés au-dessus
                 if (fall > 0.02f && fall < 0.995f) {
                     for (int k = 0; k < 5; k++) {
                         int sd = salt * 53 + k * 877 + step * 211;

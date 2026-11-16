@@ -1946,3 +1946,46 @@ resserrés vers la fin pour que l'oreille suive l'accélération que l'œil voit
 Pic de **509 cubes** pour le marteau, loin du plafond de 7 000 · **0 NaN**, **0 alpha sous
 208** · `java-parser` OK · `node --check` OK · Playwright **0 erreur JS** · profil de chute
 relevé numériquement, vitesse linéaire confirmée.
+
+## 31. Un éclair ne se couche pas — et l'orage se charge au bon endroit
+
+Deux corrections, et elles vont ensemble.
+
+**La nappe horizontale du marteau est supprimée.** Le chapitre précédent avait ajouté dix
+arcs couchés entre 9 et 30 blocs d'altitude, pour meubler l'air au-dessus du marteau. C'était
+une faute. Un éclair suit le champ électrique, et ce champ est **vertical** : il va du nuage
+au sol. Un trait couché en pleine hauteur ne correspond à rien de physique — à l'écran, il ne
+se lit pas comme de la foudre mais comme une rayure sur l'image. Les deux canaux verticaux
+que le marteau suit en descendant, et la traînée qu'il tire derrière lui, restent : ceux-là
+accompagnent une chute, ils ont un sens. `renderHammer` n'émet plus un seul segment couché.
+
+**Et surtout : la charge d'ambiance n'était pas demandée pour le marteau.** Elle l'était pour
+l'**arc fulgurant en chaîne** (`CHAIN_VOLT_ARC`, id 16), la signature n° 1. C'est là qu'elle
+est maintenant, en deux couches ajoutées avant l'ionisation :
+
+- **le plafond grésille.** Treize filaments courts et *pendants* apparaissent entre 14 et 31
+  blocs, repiqués toutes les deux frames (`step = t·30`). Ils descendent de leur point
+  d'accroche — jamais l'inverse — sur 1,5 à 5,9 blocs. C'est le ciel qui se charge : la
+  décharge arrive, mais elle n'est pas encore là.
+- **quatre éclairs tombent.** Ils partent de `SKY_HEIGHT × 1,42` (environ 31 blocs) et
+  descendent, l'un après l'autre, décalés de 52 millisecondes. Deux sur cinq touchent le sol ;
+  les autres s'éteignent en l'air, comme les décharges intra-nuage d'un vrai orage. Chacun vit
+  à peine un dixième de seconde.
+
+L'ensemble s'éteint à 58 % de l'animation, pour laisser la chaîne de relais courir au sol sans
+concurrence visuelle. L'altitude maximale atteinte par la signature passe à **30,8 blocs**.
+
+**Le cadrage de l'aperçu suit.** Un plan fixe aurait sacrifié soit l'orage, soit la chaîne :
+la vue s'ouvre large et haut (centre 10,5 · portée 31), puis redescend sur le sol (centre 1,4 ·
+portée 14) pendant la frappe. Même principe que le suivi du marteau.
+
+**La page d'aperçu repart du gabarit.** Elle avait dérivé vers un balisage inventé pour
+l'occasion. Elle reprend maintenant le **gabarit du base builder** — celui de Gaia, Poison,
+Feu, Terre, Vent : mêmes blocs (`eyebrow`, `build`, `intro`, `rule`, `variants`, `controls`,
+`timeline`, `phase`, `stats`, `legend`, `refs`, `download`, `zipnote`, `topbar`, `hint`,
+`variant-title`), mêmes identifiants, même archive embarquée en base64. Seules les teintes
+changent. Les deux morceaux partagés sont versionnés : `tools/preview_base.css` et
+`tools/preview_render.js`.
+
+**Mesures** — pics 522 / 427 / 651 cubes (plafond moteur : 7 000), moyennes 331 / 158 / 270,
+zéro valeur non finie, zéro alpha sous le seuil de 208. Aperçu : 0 erreur JS.

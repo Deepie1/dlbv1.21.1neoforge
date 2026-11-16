@@ -389,6 +389,35 @@ function buildThunder(variant, t, salt = 7331) {
     const vitrify = smooth((t - 0.17) / 0.22);
     const dusk = 1 - smooth((t - 0.80) / 0.20);
 
+    // 0. LE CIEL SE CHARGE, TRES HAUT — tout est vertical, le champ electrique l'est.
+    const skyCharge = smooth(t / 0.085) * (1 - smooth((t - 0.58) / 0.34));
+    if (skyCharge > 0.02) {
+      const step = Math.floor(t * 30.0);
+      for (let k = 0; k < 13; k++) {
+        const sd = salt * 83 + k * 1619 + step * 149;
+        if (hash(sd, 3) < 0.44) continue;
+        const ang = hash(sd, 5) * TAU;
+        const rr = 1.0 + 6.8 * hash(sd, 7);
+        const yTop = SKY_HEIGHT * (0.66 + 0.74 * hash(sd, 11));
+        const len = 1.5 + 4.4 * hash(sd, 13);
+        drawBolt(Math.cos(ang) * rr, Math.sin(ang) * rr, yTop,
+                 Math.cos(ang) * rr * 0.84, Math.sin(ang) * rr * 0.84, yTop - len,
+                 sd, 0.40, 1.0, 0.44, a * skyCharge * 0.60, 9, false);
+      }
+      for (let k = 0; k < 4; k++) {
+        const t0 = 0.030 + 0.052 * k;
+        const lifeK = smooth((t - t0) / 0.024) * (1 - smooth((t - t0 - 0.040) / 0.050));
+        if (lifeK < 0.03) continue;
+        const sd = salt * 59 + k * 977;
+        const ang = hash(sd, 3) * TAU;
+        const rr = 3.6 + 5.4 * hash(sd, 5);
+        const yEnd = hash(sd, 7) < 0.42 ? GROUND_Y : GROUND_Y + 3.2 + 5.6 * hash(sd, 11);
+        drawBolt(Math.cos(ang) * rr * 1.16, Math.sin(ang) * rr * 1.16, SKY_HEIGHT * 1.42,
+                 Math.cos(ang) * rr, Math.sin(ang) * rr, yEnd,
+                 sd, 1.00, 1.0, 0.58, a * lifeK * 0.82, 26, false);
+      }
+    }
+
     // 1. IONISATION — le « leader ascendant » : sans lui l'éclair surgit de nulle part.
     if (ionise > 0.01 && fall < 0.92) {
       const live = ionise * (1 - smooth(fall * 1.4));
@@ -612,16 +641,7 @@ function buildThunder(variant, t, salt = 7331) {
       const air = appear * (1 - gone);
       if (air > 0.02) {
         const step = Math.floor(t * 46.0);
-        for (let k = 0; k < 10; k++) {
-          const sd = salt * 71 + k * 1283 + step * 131;
-          if (hash(sd, 3) < 0.40) continue;
-          const y0 = GROUND_Y + 9.0 + hash(sd, 5) * 21.0;
-          const a0 = hash(sd, 7) * TAU, a1 = hash(sd, 11) * TAU;
-          const r0 = 1.1 + 4.8 * hash(sd, 13), r1 = 1.1 + 4.8 * hash(sd, 17);
-          drawBolt(Math.cos(a0) * r0, Math.sin(a0) * r0, y0,
-                   Math.cos(a1) * r1, Math.sin(a1) * r1, y0 + (hash(sd, 19) - 0.5) * 3.6,
-                   sd, 0.58, 1.0, 0.50, a * air * 0.78, 11, false);
-        }
+        // pas d'arcs horizontaux : le champ electrique est vertical
         for (let k = 0; k < 2; k++) {
           const sd = salt * 97 + k * 3301 + Math.floor(step / 2) * 457;
           const off = (k === 0 ? -1.0 : 1.0) * (0.55 + 0.5 * hash(sd, 3));
@@ -629,6 +649,7 @@ function buildThunder(variant, t, salt = 7331) {
                    sd, 1.35, 1.0, k === 0 ? 0.74 : 0.56,
                    a * air * (k === 0 ? 0.80 : 0.60), 30, k === 0);
         }
+        // la trainee, accrochee au-dessus du marteau pendant la chute
         if (fall > 0.02 && fall < 0.995) {
           for (let k = 0; k < 5; k++) {
             const sd = salt * 53 + k * 877 + step * 211;
