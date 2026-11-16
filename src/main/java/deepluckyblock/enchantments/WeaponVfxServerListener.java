@@ -3108,14 +3108,19 @@ public final class WeaponVfxServerListener {
      * est celle de l'événement de dégâts, <b>enchantements et effets d'attaque compris</b>, donc
      * un Tranchant V ou une potion de Force se répercutent tels quels.
      *
-     * <p><b>La zone.</b> L'impact laisse le sol sous tension <b>dix secondes</b> (200 ticks).
-     * Tout ce qui se trouve dans le carré — <b>mobs et joueurs</b>, l'attaquant excepté — prend
-     * une décharge légère toutes les secondes. C'est une arme de <b>contrôle de terrain</b> :
-     * elle ne tue pas, elle interdit un emplacement, et elle punit celui qui traverse.
+     * <p><b>L'aura.</b> L'impact laisse le sol sous tension <b>dix secondes</b> (200 ticks) sur
+     * un <b>disque de 6 blocs de rayon</b> — bien plus large que la frappe elle-même. Tout ce
+     * qui s'y trouve — <b>mobs et joueurs</b>, l'attaquant excepté — prend une décharge toutes
+     * les secondes, dont la <b>puissance décroît du centre vers le bord</b> : plein tarif au
+     * point de chute, 15 % à la limite. Le plancher existe pour que le bord reste une menace
+     * plutôt qu'une ligne morte.
      *
-     * <p><b>Plusieurs ennemis.</b> Le 3×3 touche tout le monde à plein tarif, sans dégressivité :
-     * c'est le sens d'une frappe de zone. <b>Ennemi seul</b> : la zone reste, et comme le duel se
-     * déroule rarement immobile, elle redevient une menace dès que l'adversaire recule dessus.
+     * <p>C'est un <b>disque</b> et non un carré : la boîte de recherche est carrée parce que
+     * le moteur ne sait pas chercher autrement, mais la distance est vérifiée ensuite.
+     *
+     * <p><b>Plusieurs ennemis.</b> Le 3×3 de la frappe touche tout le monde à plein tarif, sans
+     * dégressivité : c'est le sens d'un coup de masse. <b>Ennemi seul</b> : l'aura reste, et
+     * comme un duel se déroule rarement immobile, elle redevient une menace au moindre recul.
      */
     private static void applyHammerGameplay(LivingEntity attacker, LivingEntity target,
                                             ServerLevel sl, float weaponDamage) {
@@ -3168,7 +3173,7 @@ public final class WeaponVfxServerListener {
 
             // Le sol reste sous tension dix secondes à partir de l'impact.
             SHOCK_ZONES.add(new ShockZone(sl, now + 40L + SHOCK_ZONE_TICKS, zx, zy, zz,
-                    attackerId, Math.max(0.5f, weaponDamage * 0.22f)));
+                    attackerId, Math.max(0.5f, weaponDamage * 0.22f), SHOCK_ZONE_RADIUS));
         });
     }
 
@@ -3181,10 +3186,12 @@ public final class WeaponVfxServerListener {
      * qui est électrifié, pas la cible, et la zone ne suit donc personne.
      */
     private record ShockZone(ServerLevel level, long expires, double cx, double cy, double cz,
-                             int attackerId, float tickDamage) { }
+                             int attackerId, float tickDamage, double radius) { }
 
-    /** Durée de la dalle : dix secondes. */
+    /** Durée de l'aura : dix secondes. */
     private static final long SHOCK_ZONE_TICKS = 200L;
+    /** Rayon de l'aura, en blocs. La décharge décroît du centre vers ce bord. */
+    private static final double SHOCK_ZONE_RADIUS = 6.0;
     /** Intervalle entre deux décharges pour une même victime. */
     private static final long SHOCK_ZONE_PERIOD = 20L;
 
@@ -3213,22 +3220,37 @@ public final class WeaponVfxServerListener {
         SHOCK_ZONES.removeIf(zone -> now >= zone.expires() || zone.level() != sl);
         if (!SHOCK_COOLDOWN.isEmpty()) SHOCK_COOLDOWN.values().removeIf(until -> now >= until + 80L);
         for (ShockZone zone : SHOCK_ZONES) {
-            // Grésillement : quelques étincelles au hasard dans le carré, à chaque demi-seconde.
+            final double r = zone.radius();
+            // Grésillement : des étincelles tirées au hasard dans le DISQUE, deux fois plus
+            // denses vers le centre — la racine carrée donnerait un tirage uniforme, la
+            // puissance 0,72 resserre vers le milieu, là où la décharge fait le plus mal.
             if ((now & 3L) == 0L) {
-                double sx = zone.cx() + (sl.random.nextDouble() * 3.0 - 1.5);
-                double sz = zone.cz() + (sl.random.nextDouble() * 3.0 - 1.5);
-                PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, sx, zone.cy() + 0.12, sz,
-                        3, 0.10, 0.04, 0.10, 0.02);
+                for (int k = 0; k < 3; k++) {
+                    double rr = r * Math.pow(sl.random.nextDouble(), 0.72);
+                    double aa = sl.random.nextDouble() * Math.PI * 2.0;
+                    PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
+                            zone.cx() + Math.cos(aa) * rr, zone.cy() + 0.12,
+                            zone.cz() + Math.sin(aa) * rr, 2, 0.06, 0.03, 0.06, 0.02);
+                }
             }
             for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
-                    new AABB(zone.cx() - 1.5, zone.cy() - 1.0, zone.cz() - 1.5,
-                            zone.cx() + 1.5, zone.cy() + 2.0, zone.cz() + 1.5))) {
+                    new AABB(zone.cx() - r, zone.cy() - 1.0, zone.cz() - r,
+                            zone.cx() + r, zone.cy() + 2.5, zone.cz() + r))) {
                 if (!victim.isAlive()) continue;
                 if (zone.attackerId() >= 0 && victim.getId() == zone.attackerId()) continue;
+                // Disque, pas carré : la boîte de recherche est carrée, l'aura ne l'est pas.
+                double ddx = victim.getX() - zone.cx();
+                double ddz = victim.getZ() - zone.cz();
+                double dist = Math.sqrt(ddx * ddx + ddz * ddz);
+                if (dist > r) continue;
                 Long until = SHOCK_COOLDOWN.get(victim.getId());
                 if (until != null && now < until) continue;
                 SHOCK_COOLDOWN.put(victim.getId(), now + SHOCK_ZONE_PERIOD);
-                hurtWithCapturedWeapon(sl, zone.attackerId(), victim, zone.tickDamage());
+                // Puissance décroissante : plein tarif au centre, 15 % au bord. Le plancher
+                // existe pour que le bord reste une menace et non une ligne morte.
+                float fall = (float) (1.0 - dist / r);
+                hurtWithCapturedWeapon(sl, zone.attackerId(), victim,
+                        zone.tickDamage() * (0.15f + 0.85f * fall));
                 // Pas de son ici : une décharge par seconde et par victime pendant dix
                 // secondes deviendrait vite insupportable. Les étincelles suffisent à dire
                 // que la dalle mord.

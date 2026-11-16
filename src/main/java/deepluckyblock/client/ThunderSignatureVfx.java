@@ -114,7 +114,8 @@ public final class ThunderSignatureVfx {
     private static final int GRIP = 0x47301C;        // lanière de cuir du manche
 
     /** Demi-côté de la zone frappée : 3×3 blocs, donc 1,5 de part et d'autre du centre. */
-    private static final float ZONE_HALF = 1.5f;
+    /** Rayon de l'aura au sol, en blocs. Au-delà, la décharge ne porte plus. */
+    private static final float ZONE_RADIUS = 6.0f;
 
     /**
      * Teinte du cumulonimbus. {@code SCORCH} servait au départ, mais c'est une couleur de
@@ -470,7 +471,9 @@ public final class ThunderSignatureVfx {
         if (gone < 0.999f) {
             // chute en cube : lente, lente, puis brutale
             float ease = fall * fall * fall;
-            float sky = GROUND_Y + 5.60f;
+            // 30 blocs : le marteau est appelé très haut, et la chute en cube fait que
+            // l'essentiel de ces 30 blocs est avalé dans les trois derniers ticks.
+            float sky = GROUND_Y + 30.0f;
             float hover = (float) Math.sin(t * 7.0) * 0.14f * (1.0f - fall);
             float baseY = sky + hover - (sky - REST) * ease;
             // le retrait : il remonte en s'effaçant
@@ -500,7 +503,7 @@ public final class ThunderSignatureVfx {
         // ---- l'impact : flash et onde ----
         if (hit > 0.01f && live > 0.0f) {
             float age = clamp((t - IMPACT) / 0.09f, 0.0f, 1.0f);
-            float ring = 0.6f + age * 4.6f;
+            float ring = 0.8f + age * (ZONE_RADIUS - 0.8f);
             float ra = (1.0f - age) * a;
             if (ra > 2.0f) {
                 int n = 40;
@@ -528,17 +531,11 @@ public final class ThunderSignatureVfx {
             }
         }
 
-        // ---- le carré gravé, puis le sol sous tension ----
+        // ---- le sol sous tension ----
+        // Pas de dalle, pas de damier, pas de contour : la version précédente posait un carré
+        // de 3×3 sous l'aura, et ce carré se lisait comme le cadre qu'on voulait éviter. Un
+        // sol électrifié ne se délimite pas, il se signale par ce qui en sort.
         if (live > 0.01f) {
-            // la dalle : un damier sourd qui matérialise les 3×3 blocs frappés
-            for (int gx = -1; gx <= 1; gx++) {
-                for (int gz = -1; gz <= 1; gz++) {
-                    boolean dark = ((gx + gz) & 1) == 0;
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz, gx, gz, GROUND_Y - 0.01f,
-                            0.48f, 0.012f, 0.48f, dark ? 0x241C3A : 0x2E2448,
-                            opaque(a * live * 0.75f));
-                }
-            }
             shockZone(vc, mat, tmp, cx, cy, cz, dx, dz, t, live, a, salt);
         }
     }
@@ -1074,75 +1071,79 @@ public final class ThunderSignatureVfx {
     }
 
     /**
-     * <b>Le sol électrifié.</b> Dix secondes durant, le carré de 3×3 blocs reste sous tension :
-     * un liseré qui court sur le périmètre, quelques arcs courts qui claquent d'un bord à
-     * l'autre, et un grésillement au centre.
+     * LE SOL SOUS TENSION — un disque de 6 blocs de rayon, <b>sans contour</b>.
      *
-     * <p>Volontairement <b>léger</b> : cette zone tient deux cents ticks à l'écran, dix fois
-     * plus longtemps que l'impact. Tout ce qui serait spectaculaire une seconde devient
-     * insupportable au bout de dix — d'où un budget d'une cinquantaine de cubes, et un
-     * liseré qui tourne plutôt qu'il ne clignote.
+     * <p>La version précédente dessinait un liseré carré avec quatre bornes d'angle. C'était
+     * lisible, et c'était faux : un sol électrifié n'a pas de bordure, il a une
+     * <b>densité</b>. Un cadre dit « voici les limites du piège » ; ce qu'on veut dire ici,
+     * c'est « le sol mord, et de moins en moins fort à mesure qu'on s'éloigne ».
+     *
+     * <p>Le dessin est donc fait de <b>foyers</b> tirés au hasard dans le disque, chacun avec
+     * sa propre période et sa propre phase. Trois conséquences : la zone est asymétrique à
+     * chaque instant, aucun motif ne se répète, et la limite extérieure n'est jamais une
+     * ligne — la densité tombe jusqu'à zéro, donc le bord <b>s'éteint</b> au lieu d'être
+     * tracé. La densité suit la puissance : elle est la plus forte au centre, là où la
+     * décharge fait le plus mal.
      */
     private static void shockZone(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                   float cx, float cy, float cz, float dx, float dz,
                                   float t, float live, float alpha, int salt) {
         if (live <= 0.01f || alpha <= 1.0f) return;
-        final float h = ZONE_HALF;
+        final float R = ZONE_RADIUS;
         final float y = GROUND_Y + 0.02f;
 
-        // le liseré : un point lumineux fait le tour du carré, les autres restent sourds
-        final int SEGMENTS = 32;
-        float head = fract(t * 1.35f);
-        for (int i = 0; i < SEGMENTS; i++) {
-            float u = i / (float) SEGMENTS;
-            float side = u * 4.0f;
-            int q = (int) side;
-            float v = side - q;
-            float f, l;
-            if (q == 0) { f = -h + 2 * h * v; l = -h; }
-            else if (q == 1) { f = h; l = -h + 2 * h * v; }
-            else if (q == 2) { f = h - 2 * h * v; l = h; }
-            else { f = -h; l = h - 2 * h * v; }
-            float d = Math.abs(fract(u - head + 0.5f) - 0.5f);
-            boolean lit = d < 0.10f;
-            float g = lit ? 1.0f : 0.42f;
-            box(vc, mat, tmp, cx, cy, cz, dx, dz, f, l, y,
-                    0.085f, 0.032f + (lit ? 0.050f : 0.0f), 0.085f,
-                    lit ? 0xFFFFFF : 0x2F7BE8, opaque(alpha * live * g));
-        }
+        // ---- les foyers : de petits éclairs qui sortent du sol, chacun à son rythme ----
+        final int SITES = 58;
+        for (int i = 0; i < SITES; i++) {
+            int sd = salt * 131 + i * 7919;
+            // r = R·u^0,72 : plus serré au centre que ne le donnerait un tirage uniforme
+            float rr = R * (float) Math.pow(hash(sd, 3), 0.72);
+            float ang = hash(sd, 5) * TAU;
+            float f = (float) Math.cos(ang) * rr;
+            float l = (float) Math.sin(ang) * rr;
 
-        // les quatre bornes d'angle, qui tiennent le carré
-        for (int e = -1; e <= 1; e += 2) {
-            for (int s2 = -1; s2 <= 1; s2 += 2) {
-                float pulse = 0.55f + 0.45f * (float) Math.sin(t * 8.0 + e * 1.3 + s2 * 2.1);
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, e * h, s2 * h, y + 0.05f,
-                        0.075f, 0.09f, 0.075f, 0x6FD8FF, opaque(alpha * live * pulse));
-            }
-        }
+            // période et phase propres : c'est de là que vient l'asymétrie
+            float period = 0.075f + 0.235f * hash(sd, 7);
+            float cyc = fract(t / period + hash(sd, 11));
+            float duty = 0.17f + 0.17f * hash(sd, 13);
+            if (cyc > duty) continue;
 
-        // les arcs : trois au plus, redessinés par paliers pour qu'ils claquent
-        int frame = (int) (t * 26.0f);
-        for (int k = 0; k < 3; k++) {
-            int sd = salt * 29 + k * 557 + frame * 97;
-            if (hash(sd, 3) < 0.38f) continue;
-            float f0 = (hash(sd, 5) * 2.0f - 1.0f) * h;
-            float l0 = (hash(sd, 7) * 2.0f - 1.0f) * h;
-            float f1 = (hash(sd, 11) * 2.0f - 1.0f) * h;
-            float l1 = (hash(sd, 13) * 2.0f - 1.0f) * h;
+            float life = cyc / duty;                       // 0 au claquage, 1 à l'extinction
+            float edge = 1.0f - 0.55f * (rr / R);          // le bord claque plus faiblement
+            float g = (1.0f - life * life) * edge;
+            if (g < 0.05f) continue;
+
+            // l'éclair lui-même : court, vertical, un peu de travers
+            // la graine change à chaque claquage : sans cela le même éclair se rejouerait
+            int bs = sd + (int) (t / period) * 7717;
+            float hgt = 0.30f + 0.95f * hash(bs, 17) * (0.55f + 0.45f * edge);
+            float tipF = f + (hash(bs, 19) - 0.5f) * 0.55f;
+            float tipL = l + (hash(bs, 23) - 0.5f) * 0.55f;
             drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    f0, l0, y + 0.03f, f1, l1, y + 0.03f,
-                    sd, 0.22f, 1.0f, 0.55f, alpha * live * 0.85f, 5, false);
+                    f, l, y, tipF, tipL, y + hgt,
+                    bs, 0.16f, 1.0f, 0.42f, alpha * live * g * 0.95f, 4, false);
+
+            // le pied : deux cubes au ras du sol, c'est ce qui donne l'impression de brûlure
+            box(vc, mat, tmp, cx, cy, cz, dx, dz, f, l, y + 0.015f,
+                    0.085f, 0.028f, 0.085f, 0xFFFFFF, opaque(alpha * live * g));
+            box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                    f + (hash(bs, 29) - 0.5f) * 0.42f, l + (hash(bs, 31) - 0.5f) * 0.42f,
+                    y + 0.012f, 0.062f, 0.022f, 0.062f, 0x4FC8FF,
+                    opaque(alpha * live * g * 0.75f));
         }
 
-        // grésillement : quelques étincelles qui montent à peine du sol
-        for (int i = 0; i < 7; i++) {
+        // ---- le grésillement : une poussière d'étincelles qui saute d'un point à l'autre ----
+        int frame = (int) (t * 34.0f);
+        for (int i = 0; i < 22; i++) {
             int sd = salt * 31 + i * 193 + frame * 53;
-            float sf = (hash(sd, 19) * 2.0f - 1.0f) * h;
-            float sl2 = (hash(sd, 23) * 2.0f - 1.0f) * h;
-            float sy = y + hash(sd, 29) * 0.22f;
-            box(vc, mat, tmp, cx, cy, cz, dx, dz, sf, sl2, sy, 0.035f, 0.035f, 0.035f,
+            float rr = R * (float) Math.pow(hash(sd, 19), 0.65);
+            float ang = hash(sd, 23) * TAU;
+            float g = (0.45f + 0.55f * hash(sd, 37)) * (1.0f - 0.60f * (rr / R));
+            box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                    (float) Math.cos(ang) * rr, (float) Math.sin(ang) * rr,
+                    y + hash(sd, 29) * 0.20f, 0.040f, 0.040f, 0.040f,
                     hash(sd, 31) > 0.5f ? 0xFFFFFF : 0x7FE0FF,
-                    opaque(alpha * live * (0.5f + 0.5f * hash(sd, 37))));
+                    opaque(alpha * live * g));
         }
     }
 

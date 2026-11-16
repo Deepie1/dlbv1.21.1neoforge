@@ -1831,3 +1831,60 @@ deux faces.
 
 **89 pièces** contre 45, avec cadres de frappe, rivets, cannelures, filets, runes serties,
 poinçons, lanière à cinq tours, gemmes de pommeau et anneau de suspension.
+
+---
+
+## 29. Trente blocs de chute, et un sol qui n'a plus de bordure
+
+### 29.1 La chute
+
+Le marteau est maintenant appelé à **30 blocs**, contre 5,60. La courbe de descente ne change
+pas — elle reste cubique — et c'est elle qui rend la hauteur jouable : l'essentiel des trente
+blocs est avalé dans les trois derniers ticks. Une descente linéaire sur trente blocs aurait
+duré une éternité au début et serait arrivée sans force.
+
+Cette hauteur casse tout cadrage fixe : un plan qui montre le marteau à trente blocs réduit
+l'aura au sol à une tache, et un plan qui montre l'aura perd le marteau hors champ. L'aperçu
+**suit** donc la chute : la vue rejoue la même courbe que le mod et se resserre au fur et à
+mesure que le marteau descend. Un premier essai basculait d'un plan à l'autre entre deux
+instants fixes ; le raccord tombait au mauvais moment et l'impact se retrouvait en bas du
+cadre. Suivre vaut mieux que couper.
+
+### 29.2 L'aura : rayon 6, puissance décroissante
+
+L'aura au sol passe d'un carré de 3×3 à un **disque de 6 blocs de rayon**, et la décharge
+**décroît du centre vers le bord** : plein tarif au point de chute, **15 %** à la limite. Le
+plancher n'est pas un détail — sans lui, le bord serait une ligne morte, et une zone dont le
+bord ne fait rien est une zone plus petite qu'annoncée.
+
+C'est un **disque** et non un carré. Le moteur ne sait chercher que dans une boîte, donc la
+recherche reste carrée, mais la distance est vérifiée ensuite et tout ce qui dépasse 6 blocs
+est écarté. Sans cette vérification, les coins auraient porté à 8,49 blocs.
+
+### 29.3 Pourquoi le contour a disparu
+
+La version précédente dessinait un liseré carré, quatre bornes d'angle et une dalle en damier.
+C'était lisible, et c'était faux. Un cadre dit « voici les limites du piège » ; ce qu'il
+fallait dire, c'est « le sol mord, de moins en moins fort à mesure qu'on s'éloigne ». Un
+contour transforme une menace continue en case de jeu de plateau.
+
+Le dessin est donc fait de **foyers** — 58 points tirés au hasard dans le disque, chacun avec
+sa période et sa phase propres. Trois conséquences :
+
+- la zone est **asymétrique** à chaque instant, et aucun motif ne se répète ;
+- la limite extérieure n'est **jamais une ligne** : la densité tombe jusqu'à zéro, donc le bord
+  s'éteint au lieu d'être tracé ;
+- la densité **suit la puissance**. Les foyers sont tirés en `R·u^0,72` au lieu de la racine
+  carrée d'un tirage uniforme, ce qui les resserre vers le centre — là, précisément, où la
+  décharge fait le plus mal. Le dessin dit donc la règle du jeu sans l'écrire.
+
+La dalle en damier a été retirée avec le reste : posée sous l'aura, elle redessinait
+exactement le carré qu'on venait de supprimer.
+
+### 29.4 Contrôles
+
+`java-parser` OK · `node --check` OK · **0 NaN**, **0 alpha sous 208** sur 99 instants × 3
+variantes · pic de 299 cubes pour le marteau, loin du plafond de 7 000 · Playwright **0 erreur
+JS** · centre de masse de l'aura relevé à cinq instants : il se déplace entre (−0,30 ; 0,51)
+et (1,10 ; −0,51) et ne revient jamais à l'origine, ce qui vérifie l'asymétrie autrement qu'à
+l'œil.

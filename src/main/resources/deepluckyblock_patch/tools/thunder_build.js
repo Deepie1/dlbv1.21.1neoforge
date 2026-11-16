@@ -59,7 +59,7 @@ function buildThunder(variant, t, salt = 7331) {
   const GOLD_HI = 0xFFF4CB, GOLD = 0xF3C63E, GOLD_MID = 0xC68B1C,
         GOLD_DARK = 0x87560F, GOLD_DEEP = 0x4A2F07, RUNE = 0x9BF2FF, GRIP = 0x47301C;
   // Demi-cote de la zone frappee : 3x3 blocs.
-  const ZONE_HALF = 1.5;
+  const ZONE_RADIUS = 6.0;   // rayon de l'aura au sol, en blocs
   // SCORCH est une couleur de BRULURE : a 8 blocs de haut le nuage disparaissait dans le ciel.
   const CLOUD_DARK = 0x3B3457, CLOUD_LIT = 0x6A5CA8;
   const CLOUD_Y = 8.0, CLOUD_R = 3.40, STRIKES = 5;
@@ -275,41 +275,51 @@ function buildThunder(variant, t, salt = 7331) {
     }
   };
 
-  // Le sol electrifie : volontairement LEGER, il tient 200 ticks a l'ecran. Un lisere qui
-  // tourne plutot qu'un clignotement, quelques arcs courts, un gresillement.
+  // Le sol sous tension : un disque de 6 blocs de rayon, SANS contour. Des foyers tires au
+  // hasard, chacun avec sa periode et sa phase, donc une zone asymetrique dont le bord
+  // s'eteint par perte de densite au lieu d'etre trace.
   const shockZone = (t, live, alpha, salt) => {
     if (live <= 0.01 || alpha <= 1) return;
-    const h = ZONE_HALF, y = GROUND_Y + 0.02;
-    const SEGMENTS = 32, head = fract(t * 1.35);
-    for (let i = 0; i < SEGMENTS; i++) {
-      const u = i / SEGMENTS, side = u * 4, q = Math.floor(side), v = side - q;
-      let f, l;
-      if (q === 0) { f = -h + 2 * h * v; l = -h; }
-      else if (q === 1) { f = h; l = -h + 2 * h * v; }
-      else if (q === 2) { f = h - 2 * h * v; l = h; }
-      else { f = -h; l = h - 2 * h * v; }
-      const d = Math.abs(fract(u - head + 0.5) - 0.5), lit = d < 0.10;
-      box(f, l, y, 0.085, 0.032 + (lit ? 0.050 : 0), 0.085,
-          lit ? 0xFFFFFF : 0x2F7BE8, opq(alpha * live * (lit ? 1.0 : 0.42)));
+    const R = ZONE_RADIUS, y = GROUND_Y + 0.02;
+
+    const SITES = 58;
+    for (let i = 0; i < SITES; i++) {
+      const sd = salt * 131 + i * 7919;
+      const rr = R * Math.pow(hash(sd, 3), 0.72);
+      const ang = hash(sd, 5) * TAU;
+      const f = Math.cos(ang) * rr, l = Math.sin(ang) * rr;
+
+      const period = 0.075 + 0.235 * hash(sd, 7);
+      const cyc = fract(t / period + hash(sd, 11));
+      const duty = 0.17 + 0.17 * hash(sd, 13);
+      if (cyc > duty) continue;
+
+      const life = cyc / duty;
+      const edge = 1 - 0.55 * (rr / R);
+      const g = (1 - life * life) * edge;
+      if (g < 0.05) continue;
+
+      const bs = sd + Math.floor(t / period) * 7717;
+      const hgt = 0.30 + 0.95 * hash(bs, 17) * (0.55 + 0.45 * edge);
+      const tipF = f + (hash(bs, 19) - 0.5) * 0.55;
+      const tipL = l + (hash(bs, 23) - 0.5) * 0.55;
+      drawBolt(f, l, y, tipF, tipL, y + hgt, bs, 0.16, 1.0, 0.42,
+               alpha * live * g * 0.95, 4, false);
+
+      box(f, l, y + 0.015, 0.085, 0.028, 0.085, 0xFFFFFF, opq(alpha * live * g));
+      box(f + (hash(bs, 29) - 0.5) * 0.42, l + (hash(bs, 31) - 0.5) * 0.42, y + 0.012,
+          0.062, 0.022, 0.062, 0x4FC8FF, opq(alpha * live * g * 0.75));
     }
-    for (let e = -1; e <= 1; e += 2)
-      for (let s2 = -1; s2 <= 1; s2 += 2) {
-        const pulse = 0.55 + 0.45 * Math.sin(t * 8 + e * 1.3 + s2 * 2.1);
-        box(e * h, s2 * h, y + 0.05, 0.075, 0.09, 0.075, 0x6FD8FF, opq(alpha * live * pulse));
-      }
-    const frame = Math.floor(t * 26);
-    for (let k = 0; k < 3; k++) {
-      const sd = salt * 29 + k * 557 + frame * 97;
-      if (hash(sd, 3) < 0.38) continue;
-      drawBolt((hash(sd, 5) * 2 - 1) * h, (hash(sd, 7) * 2 - 1) * h, y + 0.03,
-               (hash(sd, 11) * 2 - 1) * h, (hash(sd, 13) * 2 - 1) * h, y + 0.03,
-               sd, 0.22, 1.0, 0.55, alpha * live * 0.85, 5, false);
-    }
-    for (let i = 0; i < 7; i++) {
+
+    const frame = Math.floor(t * 34.0);
+    for (let i = 0; i < 22; i++) {
       const sd = salt * 31 + i * 193 + frame * 53;
-      box((hash(sd, 19) * 2 - 1) * h, (hash(sd, 23) * 2 - 1) * h, y + hash(sd, 29) * 0.22,
-          0.035, 0.035, 0.035, hash(sd, 31) > 0.5 ? 0xFFFFFF : 0x7FE0FF,
-          opq(alpha * live * (0.5 + 0.5 * hash(sd, 37))));
+      const rr = R * Math.pow(hash(sd, 19), 0.65);
+      const ang = hash(sd, 23) * TAU;
+      const g = (0.45 + 0.55 * hash(sd, 37)) * (1 - 0.60 * (rr / R));
+      box(Math.cos(ang) * rr, Math.sin(ang) * rr, y + hash(sd, 29) * 0.20,
+          0.040, 0.040, 0.040, hash(sd, 31) > 0.5 ? 0xFFFFFF : 0x7FE0FF,
+          opq(alpha * live * g));
     }
   };
 
@@ -590,7 +600,7 @@ function buildThunder(variant, t, salt = 7331) {
 
     if (gone < 0.999) {
       const ease = fall * fall * fall;               // chute en cube : brutale a la fin
-      const sky = GROUND_Y + 5.60;
+      const sky = GROUND_Y + 30.0;   // appelé à 30 blocs, avalés en cube
       const hover = Math.sin(t * 7) * 0.14 * (1 - fall);
       let baseY = sky + hover - (sky - REST) * ease;
       baseY += gone * 2.40;
@@ -611,7 +621,7 @@ function buildThunder(variant, t, salt = 7331) {
 
     if (hit > 0.01 && live > 0) {
       const age = Math.max(0, Math.min(1, (t - IMPACT) / 0.09));
-      const ring = 0.6 + age * 4.6, ra = (1 - age) * a;
+      const ring = 0.8 + age * (ZONE_RADIUS - 0.8), ra = (1 - age) * a;
       if (ra > 2) {
         for (let i = 0; i < 40; i++) {
           const ang = i * TAU / 40, wob = 1 + 0.10 * hash(salt + 3, i * 17);
@@ -631,11 +641,8 @@ function buildThunder(variant, t, salt = 7331) {
       }
     }
 
+    // ni dalle, ni damier, ni contour : le sol ne se delimite pas
     if (live > 0.01) {
-      for (let gx = -1; gx <= 1; gx++)
-        for (let gz = -1; gz <= 1; gz++)
-          box(gx, gz, GROUND_Y - 0.01, 0.48, 0.012, 0.48,
-              ((gx + gz) & 1) === 0 ? 0x241C3A : 0x2E2448, opq(a * live * 0.75));
       shockZone(t, live, a, salt);
     }
     return out;
