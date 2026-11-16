@@ -8,6 +8,17 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 ## Ombre — trois signatures · 4 novembre 2026 ⟵ **LOT COURANT**
 
+> **Version 3.1 — l'éclipse devient une prison.** Trois écarts corrigés d'un coup : les
+> dégâts étaient **pulsés** (cinq battements) et non constants, les **joueurs étaient
+> tous épargnés** — y compris les adversaires — tandis que le **bétail et les villageois**
+> étaient frappés, et **rien n'empêchait de sortir** du dôme. Désormais une **brûlure de
+> 12 % de la base toutes les 10 ticks** s'applique à tout le monde pareil, par-dessus les
+> battements existants ; une **paroi sphérique** renvoie à l'intérieur tout ce qui
+> l'atteint, par les côtés comme par le dessus, du tick 48 (pose du voile) au tick 178
+> (levée). Sont pris : les **hostiles**, les **neutres qui ont une cible** et les **autres
+> joueurs**. Sont épargnés : le **porteur** — seul à franchir la paroi dans les deux sens —
+> le **bétail**, les **villageois** et les **compagnons apprivoisés**.
+
 > **Version 3 — les quatre corrections demandées.**
 >
 > **La main bouge en sortant de terre.** Les doigts restaient droits pendant toute la

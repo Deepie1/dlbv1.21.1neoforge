@@ -2982,6 +2982,171 @@ public final class WeaponVfxServerListener {
     private static final Map<String, SkyTheft> ECLIPSE_SKY = new ConcurrentHashMap<>();
 
     /**
+     * Un dôme d'éclipse actif : une <b>prison</b>, et non plus seulement une zone.
+     *
+     * <p>Jusqu'ici le voile était un simple contrat de position — ce qui restait dessous
+     * souffrait, ce qui en sortait était tranquille. C'est désormais l'inverse : ce qui est
+     * entré ne ressort plus, et souffre en continu tant que le voile tient.</p>
+     *
+     * <p>La clé de la carte est le nom de la dimension suivi de l'identifiant du porteur,
+     * jamais le {@link ServerLevel} lui-même : une carte statique qui retient un niveau
+     * l'empêche d'être libéré au déchargement du monde. Un porteur n'a qu'un dôme à la fois,
+     * donc un second lancer remplace le premier au lieu de les empiler.</p>
+     *
+     * @param captives identifiants des entités déjà vues à l'intérieur. On ne retient pas
+     *                 qui est dans le rayon à l'instant t mais qui y est <i>entré</i> :
+     *                 sans cette mémoire, la coque aspirerait les passants qui frôlent le
+     *                 bord de l'extérieur, ce qui serait un piège et non une prison.
+     * @param burnFrom premier tick de monde où la brûlure s'applique : la pose du voile.
+     *                 Avant elle, le dôme n'est qu'une calotte suspendue — enfermer et
+     *                 brûler sous une porte encore ouverte serait injouable.
+     */
+    private record EclipseDome(double x, double y, double z, double radius,
+                               long burnFrom, long expires, int attackerId, float burn,
+                               java.util.Set<Integer> captives) {}
+
+    private static final Map<String, EclipseDome> ECLIPSE_DOMES = new ConcurrentHashMap<>();
+
+    /** Période de la brûlure, en ticks. Dix : c'est l'invulnérabilité vanilla après un coup. */
+    private static final int ECLIPSE_BURN_PERIOD = 10;
+
+    /**
+     * Qui l'éclipse a le droit de frapper et d'enfermer.
+     *
+     * <p>{@link #shadowVictims} ne convenait pas : il écarte <b>tous</b> les joueurs, ce qui
+     * vide l'éclipse de son sens en PvP, et il ramasse <b>tous</b> les mobs, donc les vaches
+     * du pâturage et les villageois d'à côté. Les règles ici sont explicites :</p>
+     * <ul>
+     *   <li>le <b>porteur</b> n'est jamais touché ni retenu — c'est son ombre, il entre et
+     *       sort à volonté ;</li>
+     *   <li>les <b>joueurs</b> le sont, sauf en créatif ou en spectateur. Si le serveur
+     *       interdit le PvP, {@code hurt} refusera le coup de lui-même : c'est le bon
+     *       comportement, on ne le contourne pas ;</li>
+     *   <li>les <b>compagnons apprivoisés</b> (loup, chat, perroquet) sont épargnés, même
+     *       quand ils se battent — un chien qui meurt sous l'ombre de son maître est un bug
+     *       aux yeux du joueur, quelle que soit la règle invoquée ;</li>
+     *   <li>les <b>hostiles</b> ({@link Enemy}) le sont toujours ;</li>
+     *   <li>les <b>neutres</b> — enderman provoqué, abeille, golem de fer en colère — le sont
+     *       uniquement s'ils ont une cible : c'est ce qui sépare un animal d'un agresseur.</li>
+     * </ul>
+     * Tout le reste (bétail, villageois, PNJ, animaux marins, golems au repos) passe au
+     * travers du voile sans rien subir.
+     */
+    private static boolean eclipsePrey(LivingEntity e, int attackerId) {
+        if (e == null || !e.isAlive()) return false;
+        if (attackerId >= 0 && e.getId() == attackerId) return false;
+        if (e instanceof Player player) return !player.isCreative() && !player.isSpectator();
+        if (e instanceof net.minecraft.world.entity.TamableAnimal tame && tame.isTame()) return false;
+        if (e instanceof Enemy) return true;
+        return e instanceof Mob mob && mob.getTarget() != null;
+    }
+
+    /** Recense ce que l'éclipse peut frapper sous le dôme — joueurs compris, passifs exclus. */
+    private static List<LivingEntity> eclipseVictims(ServerLevel sl, double cx, double cy, double cz,
+                                                     double radius, double halfHeight, int attackerId) {
+        List<LivingEntity> out = new ArrayList<>();
+        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(cx - radius, cy - halfHeight, cz - radius,
+                        cx + radius, cy + halfHeight, cz + radius))) {
+            if (!eclipsePrey(candidate, attackerId)) continue;
+            double ddx = candidate.getX() - cx;
+            double ddz = candidate.getZ() - cz;
+            if (ddx * ddx + ddz * ddz > radius * radius) continue;
+            out.add(candidate);
+        }
+        return out;
+    }
+
+    /**
+     * La cage et la brûlure, une fois par entité et par tick.
+     *
+     * <p><b>Pourquoi ici et pas dans des tâches programmées ?</b> Un {@code schedule} toutes
+     * les dix ticks suffirait pour les dégâts, mais pas pour la paroi : entre deux tâches un
+     * joueur qui sprinte parcourt plus de quatre blocs et serait déjà dehors. Le confinement
+     * n'a de sens qu'évalué à chaque tick, donc dans le tick d'entité déjà en place.</p>
+     *
+     * <p>La contrainte est une <b>sphère</b> et non un cylindre : elle ferme le dessus, et
+     * c'est par le dessus qu'on s'échappe (saut, élytres, perle). Vers le bas elle ne gêne
+     * personne — sept blocs de creusement en dix secondes, cela n'arrive pas — mais elle
+     * ferme quand même la fuite par en dessous, gratuitement.</p>
+     *
+     * <p>Une emprise en cours ({@code MOVEMENT_HOLDS}, souffle de la faille, tornade…) a la
+     * priorité sur la paroi : deux systèmes qui téléportent la même entité dans le même tick
+     * la font vibrer. La brûlure, elle, continue de s'appliquer.</p>
+     */
+    private static void tickEclipseCage(LivingEntity target) {
+        if (ECLIPSE_DOMES.isEmpty()) return;
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        final String dim = sl.dimension().location().toString();
+        final long now = sl.getGameTime();
+        final int id = target.getId();
+        for (Map.Entry<String, EclipseDome> entry : ECLIPSE_DOMES.entrySet()) {
+            EclipseDome dome = entry.getValue();
+            if (now >= dome.expires()) { ECLIPSE_DOMES.remove(entry.getKey()); continue; }
+            if (!entry.getKey().startsWith(dim + "|")) continue;
+            if (now < dome.burnFrom()) continue;
+            if (!eclipsePrey(target, dome.attackerId())) continue;
+
+            double dx = target.getX() - dome.x();
+            double dy = target.getY() + target.getBbHeight() * 0.5 - dome.y();
+            double dz = target.getZ() - dome.z();
+            double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (dist <= dome.radius()) dome.captives().add(id);
+            else if (!dome.captives().contains(id)) continue;   // simple passant : qu'il passe
+
+            // --- LA BRÛLURE, à période fixe et pour tout le monde pareil ---
+            if ((now - dome.burnFrom()) % ECLIPSE_BURN_PERIOD == 0L) {
+                hurtWithCapturedWeapon(sl, dome.attackerId(), target, dome.burn());
+                PixelFx.send(sl, ParticleTypes.SCULK_SOUL,
+                        target.getX(), target.getY() + target.getBbHeight() * 0.55, target.getZ(),
+                        4, 0.22, 0.32, 0.22, 0.012);
+            }
+
+            // --- LA PAROI ---
+            if (MOVEMENT_HOLDS.containsKey(id) || SOUL_HOLDS.containsKey(id)
+                    || WIND_HOLDS.containsKey(id) || SURGE_RIDES.containsKey(id)) return;
+            double limit = dome.radius() - 0.45;
+            if (dist <= limit || dist < 0.001) return;
+
+            double k = limit / dist;
+            double nx = dome.x() + dx * k;
+            double ny = dome.y() + dy * k - target.getBbHeight() * 0.5;
+            double nz = dome.z() + dz * k;
+            // On annule la part SORTANTE de la vitesse et on en renvoie un peu vers le
+            // centre. Remettre la vitesse à zéro collerait la victime à la coque ; la
+            // renvoyer en entier la ferait rebondir d'un mur à l'autre.
+            Vec3 v = target.getDeltaMovement();
+            double ux = dx / dist, uy = dy / dist, uz = dz / dist;
+            double out = v.x * ux + v.y * uy + v.z * uz;
+            if (out > 0.0) {
+                target.setDeltaMovement(v.x - ux * out * 1.25,
+                        v.y - uy * out * 1.25, v.z - uz * out * 1.25);
+                target.hasImpulse = true;
+            }
+            target.fallDistance = 0.0f;
+            if (target instanceof ServerPlayer sp) {
+                sp.connection.teleport(nx, ny, nz, sp.getYRot(), sp.getXRot());
+                sp.connection.send(new net.minecraft.network.protocol.game
+                        .ClientboundSetEntityMotionPacket(sp));
+            } else {
+                target.teleportTo(nx, ny, nz);
+            }
+            // La paroi doit se VOIR à l'endroit précis où on la heurte, sinon le joueur
+            // croit à un défaut de collision. Le son est espacé : à chaque tick, ce serait
+            // un bourdonnement continu.
+            PixelFx.send(sl, ParticleTypes.SCULK_CHARGE_POP, nx, ny + target.getBbHeight() * 0.5, nz,
+                    5, 0.14, 0.22, 0.14, 0.02);
+            PixelFx.send(sl, ParticleTypes.PORTAL, nx, ny + target.getBbHeight() * 0.5, nz,
+                    7, 0.20, 0.30, 0.20, 0.06);
+            if (now % 8L == 0L) {
+                sl.playSound(null, nx, ny, nz, SoundEvents.BEACON_DEACTIVATE,
+                        SoundSource.PLAYERS, 0.35f, 1.45f);
+            }
+            return;
+        }
+    }
+
+    /**
      * Force le monde a minuit pour la duree de l'eclipse.
      *
      * <p><b>Le piege, et la raison de tout ce code.</b> Deux eclipses qui se chevauchent
@@ -3598,10 +3763,22 @@ public final class WeaponVfxServerListener {
      * VOILE D'ÉCLIPSE (200 ticks) — la signature <b>de contrôle de terrain</b> de la famille.
      *
      * <p><b>Plusieurs ennemis.</b> Un dôme de sept blocs de rayon se pose au tick 48 et tient
-     * jusqu'au tick 148. Tant qu'il tient, il <b>bat</b> toutes les vingt ticks : chaque
-     * battement aveugle, ralentit et marque tout ce qui est dessous. C'est un <b>contrat de
-     * position</b>, comme l'appel de l'orage : ce qui reste dedans souffre, ce qui en sort est
-     * tranquille. Les deux camps peuvent jouer la zone.</p>
+     * jusqu'au tick 178. Tant qu'il tient, il <b>bat</b> toutes les dix-huit ticks : chaque
+     * battement aveugle, ralentit et marque tout ce qui est dessous.</p>
+     *
+     * <p><b>Ce n'est plus un contrat de position, c'est une prison.</b> Le dôme était une zone
+     * qu'on pouvait quitter — comme l'appel de l'orage, ce qui restait dedans souffrait, ce qui
+     * en sortait était tranquille. Désormais, ce qui est entré <b>ne ressort plus</b> : une
+     * paroi sphérique ({@link #tickEclipseCage}) renvoie à l'intérieur tout ce qui l'atteint,
+     * par les côtés comme par le dessus, et une <b>brûlure</b> s'applique à période fixe —
+     * toutes les {@value #ECLIPSE_BURN_PERIOD} ticks, la même pour tout le monde — par-dessus
+     * les battements. Les deux changements vont ensemble : enfermer sans brûler ferait une
+     * cage inoffensive, brûler sans enfermer laisserait la victime sortir au premier tick.</p>
+     *
+     * <p><b>Qui est concerné</b> est décidé par {@link #eclipsePrey} : les joueurs le sont
+     * (c'est la seule signature de la famille qui compte en PvP), le porteur ne l'est jamais,
+     * et le bétail, les villageois et les compagnons apprivoisés traversent le voile sans rien
+     * subir — une éclipse qui massacre le troupeau du joueur est un bug, pas une signature.</p>
      *
      * <p><b>Ennemi seul.</b> Le dôme se <b>resserre</b> sur la cible unique : les trois
      * griffures finales (tick 152) convergent toutes sur elle au lieu de se répartir, soit le
@@ -3623,6 +3800,20 @@ public final class WeaponVfxServerListener {
         final double oy = target.getY() + target.getBbHeight() * 0.55;
         final double oz = target.getZ();
         final float base = Math.max(1.5f, weaponDamage * 0.88f);
+
+        // --- LA CAGE. Le dôme n'est pas qu'un décor ni qu'un contrat de position : ce qui
+        //     entre dessous n'en ressort plus et brûle en continu. On l'enregistre tout de
+        //     suite, avec des échéances en TEMPS DE MONDE et non en ticks programmés : le
+        //     tick d'entité qui applique la paroi lit getGameTime(), et mélanger les deux
+        //     horloges est l'erreur qui laisse un effet actif bien après sa fin.
+        //     La paroi ne se ferme qu'au tick 48, quand l'ourlet du voile touche le sol ;
+        //     elle se rouvre au tick 178, quand le voile part en lambeaux. Enfermer avant
+        //     que la porte existe, ou après qu'elle s'est ouverte, serait incompréhensible.
+        final long gameNow = sl.getGameTime();
+        final String domeKey = sl.dimension().location().toString() + "|" + attackerId;
+        ECLIPSE_DOMES.put(domeKey, new EclipseDome(ox, oy, oz, DOME_RADIUS,
+                gameNow + 48L, gameNow + 178L, attackerId, base * 0.12f,
+                ConcurrentHashMap.newKeySet()));
 
         // --- LA NUIT. Le monde passe a minuit pour les deux cents ticks de la signature,
         //     puis retrouve l'heure qu'il avait, avancee du temps ecoule. C'est le seul
@@ -3660,6 +3851,9 @@ public final class WeaponVfxServerListener {
 
         // --- Le voile se pose (tick 48) ---
         TestProcedure.schedule(sl, now + 48, () -> {
+            // La paroi devient effective à cet instant précis (EclipseDome.burnFrom) :
+            // le verrou doit s'ENTENDRE, sinon le premier joueur qui s'y cogne croit à un bug.
+            sl.playSound(null, ox, oy, oz, SoundEvents.CHEST_LOCKED, SoundSource.PLAYERS, 0.85f, 0.55f);
             sl.playSound(null, ox, oy, oz, SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 0.80f, 0.55f);
             sl.playSound(null, ox, oy, oz, SoundEvents.AMBIENT_CAVE.value(), SoundSource.PLAYERS, 0.90f, 0.70f);
             sl.playSound(null, ox, oy, oz, SoundEvents.ELDER_GUARDIAN_CURSE, SoundSource.PLAYERS, 0.55f, 0.48f);
@@ -3696,7 +3890,7 @@ public final class WeaponVfxServerListener {
         for (int k = 0; k < 5; k++) {
             final int beat = k;
             TestProcedure.schedule(sl, now + 68 + beat * 18, () -> {
-                List<LivingEntity> inside = shadowVictims(sl, ox, oy, oz, DOME_RADIUS, 6.0, attackerId);
+                List<LivingEntity> inside = eclipseVictims(sl, ox, oy, oz, DOME_RADIUS, 6.0, attackerId);
                 sl.playSound(null, ox, oy, oz, SoundEvents.WARDEN_HEARTBEAT, SoundSource.PLAYERS,
                         0.55f, 0.62f);
                 for (LivingEntity victim : inside) {
@@ -3749,7 +3943,7 @@ public final class WeaponVfxServerListener {
         // --- Les griffures (tick 152) ---
         TestProcedure.schedule(sl, now + 152, () -> {
             sl.playSound(null, ox, oy, oz, SoundEvents.WARDEN_SONIC_BOOM, SoundSource.PLAYERS, 0.90f, 0.85f);
-            List<LivingEntity> inside = shadowVictims(sl, ox, oy, oz, DOME_RADIUS, 6.0, attackerId);
+            List<LivingEntity> inside = eclipseVictims(sl, ox, oy, oz, DOME_RADIUS, 6.0, attackerId);
             // SOLO : les trois griffures convergent sur l'unique victime. EN FOULE : chacune
             // prend sa part. Le facteur est explicite pour que la règle reste lisible.
             float claws = inside.size() <= 1 ? 3.0f : 1.0f;
@@ -3767,6 +3961,12 @@ public final class WeaponVfxServerListener {
 
         // --- La levée (tick 178) ---
         TestProcedure.schedule(sl, now + 178, () -> {
+            // Le dôme expire tout seul par son échéance en temps de monde ; on le retire
+            // quand même ici pour ne rien laisser dans la carte si plus aucune entité ne
+            // tick dans cette dimension (une carte statique qu'on ne purge jamais est une
+            // fuite, même petite).
+            ECLIPSE_DOMES.remove(domeKey);
+            sl.playSound(null, ox, oy, oz, SoundEvents.CHEST_LOCKED, SoundSource.PLAYERS, 0.45f, 1.30f);
             sl.playSound(null, ox, oy, oz, SoundEvents.PORTAL_TRAVEL, SoundSource.PLAYERS, 0.35f, 1.40f);
             PixelFx.send(sl, ParticleTypes.ASH, ox, oy + 1.5, oz, 70, 3.00, 1.60, 3.00, 0.03);
             PixelFx.send(sl, ParticleTypes.REVERSE_PORTAL, ox, oy + 2.0, oz, 50, 2.40, 2.60, 2.40, 0.09);
@@ -5540,6 +5740,7 @@ public final class WeaponVfxServerListener {
         tickThunderHits(target.level());
         tickWindHold(target);
         tickSurgeRide(target);
+        tickEclipseCage(target);
         if (SURGE_RIDES.containsKey(target.getId())) return;
         MovementHold hold = MOVEMENT_HOLDS.get(target.getId());
         if (hold == null) return;
