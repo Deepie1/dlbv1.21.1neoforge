@@ -8,6 +8,14 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 ## Ombre — trois signatures · 4 novembre 2026 ⟵ **LOT COURANT**
 
+> **Version 2 — les trois corrections demandées.** La **main** faisait demi-tour (elle
+> présentait le dos à sa proie) et a grandi de 1,45 à **2,45** — sommet mesuré à 2,42
+> blocs. Le crâne de Wither est devenu un **crâne de démon** de ~210 pièces : arcades
+> obliques, museau, mâchoire à quatre couches de gorge, cornes annelées. L'**éclipse** est
+> montée de 10,5 à **23 blocs au-dessus du mob**, le **ciel passe à minuit** pendant les
+> dix secondes puis revient à l'heure qu'il faisait, et le disque est relié au dôme par
+> neuf rayons crépusculaires et une colonne en spirale.
+
 > **Dixième famille refondue.** `SPECTRAL_REACH`, `WITHER_SHADOW_RIFT` et `ECLIPSE_VEIL`
 > passaient de **14 à 18 ticks** — moins d'une seconde — avec un rendu générique de
 > tentacules et aucun gameplay. Elles tiennent maintenant **118, 160 et 200 ticks**, avec un
