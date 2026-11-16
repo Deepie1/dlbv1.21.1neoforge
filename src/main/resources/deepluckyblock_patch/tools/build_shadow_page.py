@@ -40,7 +40,7 @@ assert RENDER.count(MARK) == 1, 'marqueur de decoupe introuvable dans preview_re
 _, TAIL = RENDER.split(MARK, 1)
 
 HEAD = r"""/* ===== Rendu ===== */
-const SUBS=['couloir de 9 blocs \u00b7 main articul\u00e9e \u00b7 traction','cr\u00e2ne \u00b7 souffle \u00b7 aspiration de 8 blocs','d\u00f4me de 7 blocs \u00b7 anneau de diamant \u00b7 griffures'];
+const SUBS=['couloir de 9 blocs \u00b7 main articul\u00e9e \u00b7 traction','cr\u00e2ne de d\u00e9mon \u00b7 souffle \u00b7 aspiration de 8 blocs','soleil noir \u00e0 23 blocs \u00b7 d\u00f4me de 7 \u00b7 nuit forc\u00e9e'];
 const DUR=[118,160,200], NAMES=['Allonge Spectrale','Faille du Fl\u00e9trisseur',"Voile d'\u00c9clipse"];
 const BEATS=[
  [['0 \u2192 15','la coul\u00e9e : l\u2019ombre se d\u00e9tache du sol et court sur <b>9 blocs</b>, bord dentel\u00e9'],
@@ -51,16 +51,16 @@ const BEATS=[
   ['97 \u2192 118','le retour au sol : m\u00eame rotation \u00e0 l\u2019envers, tout part en cendre']],
  [['0 \u2192 11','la f\u00ealure : un trait vertical d\u2019un dixi\u00e8me de bloc, qui clignote'],
   ['11 \u2192 32','l\u2019ouverture : la f\u00ealure s\u2019\u00e9carte en <b>amande</b>, l\u00e8vres violettes'],
-  ['32 \u2192 61','<b>le cr\u00e2ne</b> : 96 pi\u00e8ces, il sort en grandissant et en tournant'],
-  ['61 \u2192 88','le souffle : c\u00f4ne de fl\u00e9trissure + <b>3 cr\u00e2nes mineurs</b> en vrille'],
+  ['32 \u2192 61','<b>le cr\u00e2ne de d\u00e9mon</b> : ~210 pi\u00e8ces, museau, arcades obliques, cornes annel\u00e9es'],
+  ['61 \u2192 88','le souffle : gueule grande ouverte, c\u00f4ne de fl\u00e9trissure + <b>3 cr\u00e2nes mineurs</b>'],
   ['88 \u2192 118','<b>l\u2019inspiration</b> : 22 traits convergent depuis 8 blocs \u00e0 la ronde'],
   ['118 \u2192 136','la fermeture : l\u2019amande se pince, l\u2019onde part au sol'],
   ['136 \u2192 160','la cicatrice : une balafre de cendre s\u2019effrite']],
- [['0 \u2192 22','la mont\u00e9e : le <b>soleil noir</b> s\u2019\u00e9l\u00e8ve \u00e0 10,5 blocs en grossissant'],
-  ['22 \u2192 48','la couronne : <b>36 filaments</b> ondulent \u2014 seule source de lumi\u00e8re'],
-  ['48 \u2192 84','<b>le voile tombe</b> : demi-sph\u00e8re de 7 blocs, 9 m\u00e9ridiens et 5 parall\u00e8les'],
-  ['84 \u2192 124','la nuit : la cendre tombe, un sceau \u00e0 <b>3 croissants</b> tourne au sol'],
-  ['124 \u2192 148','<b>l\u2019anneau de diamant</b> : un seul point du limbe \u00e9clate en croix'],
+ [['0 \u2192 22','la mont\u00e9e : le <b>soleil noir</b> s\u2019\u00e9l\u00e8ve \u00e0 <b>23 blocs</b>, les \u00e9toiles s\u2019allument'],
+  ['22 \u2192 48','la couronne : <b>48 filaments</b> + 3 protub\u00e9rances en arc \u2014 seule lumi\u00e8re'],
+  ['48 \u2192 84','<b>le voile tombe</b> : d\u00f4me de 7 blocs reli\u00e9 au disque par <b>9 rayons cr\u00e9pusculaires</b> et une colonne en spirale'],
+  ['84 \u2192 124','la nuit : cendre qui tombe, braises qui montent, sceau \u00e0 <b>3 croissants</b> et 8 runes'],
+  ['124 \u2192 148','<b>l\u2019anneau de diamant</b> : le limbe \u00e9clate, une onde de choc part au sol'],
   ['148 \u2192 176','<b>la griffure</b> : 3 lames courbes traversent le d\u00f4me'],
   ['176 \u2192 200','la lev\u00e9e : le voile part en lambeaux vers le haut']]];
 /* Conception sonore. L'ombre n'a pas de registre propre dans la banque vanilla : elle
@@ -82,6 +82,32 @@ const GP=[
 RENDER = HEAD + MARK + TAIL
 assert RENDER.count('buildThunder') == 1, 'appel buildThunder introuvable'
 RENDER = RENDER.replace('buildThunder', 'buildShadow')
+
+# --- Cadrage. Le gabarit partage fait cadrer la variante 0 par boltShot (la chute de
+#     l'eclair) et la variante 1 par hammerShot (la chute du marteau) : herite tel quel,
+#     il filmait l'ombre avec la camera de la foudre. Les trois signatures n'ont rien de
+#     commun en echelle -- un couloir de 9 blocs couche au sol, une faille de 2,7 blocs,
+#     et une eclipse dont le disque est a 23 blocs -- donc un cadrage unique en
+#     sacrifierait forcement une. La vue de l'eclipse S'OUVRE pendant la montee du
+#     disque, comme ferait une camera qui suit un objet qui s'eleve.
+CAM_OLD = """function updateCam(){CY=Math.cos(camYaw);SY=Math.sin(camYaw);CP=Math.cos(camPitch);SP=Math.sin(camPitch);
+ let span;
+ if(variant===1){const s=hammerShot(t);span=s.span;VCY=s.center;}
+ else if(variant===0){const s=boltShot(t);span=s.span;VCY=s.center;}
+ else{span=23.0;VCY=VIEW_CENTER_BY[variant];}
+ SCALE=Math.min(W/span,H/(span*0.80))*zoom;}"""
+CAM_NEW = """/* boltShot et hammerShot ci-dessus appartiennent au gabarit partage
+   (foudre) et ne servent pas ici : l'ombre a son propre cadrage. */
+function shadowShot(tt){
+ if(variant===0) return {span:16.5, center:1.05};
+ if(variant===1) return {span:15.0, center:2.10};
+ const k=smoothstep((tt-0.015)/0.115);
+ return {span:19.0+21.0*k, center:1.60+9.40*k};}
+function updateCam(){CY=Math.cos(camYaw);SY=Math.sin(camYaw);CP=Math.cos(camPitch);SP=Math.sin(camPitch);
+ const s=shadowShot(t); VCY=s.center;
+ SCALE=Math.min(W/s.span,H/(s.span*0.80))*zoom;}"""
+assert RENDER.count(CAM_OLD) == 1, 'bloc updateCam introuvable dans preview_render.js'
+RENDER = RENDER.replace(CAM_OLD, CAM_NEW)
 
 ZIP = 'deliverables/DLB_Shadow_Three_Signatures_src.zip'
 ZIP_NAME = os.path.basename(ZIP)
@@ -114,7 +140,7 @@ href="{URL}" rel="noopener">{ZIP_NAME}</a></div></noscript>
 <aside>
   <div class="eyebrow">Deep Lucky Block · Shadow VFX</div>
   <div class="build">T377 · 4 novembre 2026 — dixième famille · main articulée pliable à \
-plat · crâne de 96 pièces · dôme en treillis</div>
+plat · crâne de démon · éclipse à 23 blocs</div>
   <h1>OMBRE</h1><h2>Trois signatures</h2>
   <p class="intro">Refonte complète de l’élément ombre : une ombre qui se détache du sol et \
 va chercher sa proie, une faille qui recrache un crâne puis inspire, et une éclipse qui \
@@ -129,10 +155,10 @@ le liseré qu’on voit, le noir n’est que le trou qu’il entoure.</p>
 <b>Allonge Spectrale</b><small>5,9 s · couloir de 9 blocs · main articulée</small>\
 </span></button>
     <button class="variant" data-variant="1"><span class="num">Ⅱ</span><span>\
-<b>Faille du Flétrisseur</b><small>8,0 s · crâne · aspiration de 8 blocs</small>\
+<b>Faille du Flétrisseur</b><small>8,0 s · crâne de démon · aspiration de 8 blocs</small>\
 </span></button>
     <button class="variant" data-variant="2"><span class="num">Ⅲ</span><span>\
-<b>Voile d’Éclipse</b><small>10,0 s · dôme de 7 blocs · griffures</small>\
+<b>Voile d’Éclipse</b><small>10,0 s · soleil noir à 23 blocs · nuit forcée</small>\
 </span></button>
   </div>
   <span class="label">Chorégraphie du modèle Java</span>

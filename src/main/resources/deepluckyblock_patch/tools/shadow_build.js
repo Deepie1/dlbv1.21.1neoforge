@@ -16,7 +16,7 @@
  * C'est précisément pour cela que opq() existe : il reproduit le plancher d'opacité du Java.
  *
  * CE MIROIR N'EST PAS UNE TRANSCRIPTION LIGNE À LIGNE : piece/rot/drawSpectralHand/
- * drawWitherSkull sont des CLOSURES ici, des méthodes statiques là-bas.
+ * drawDemonSkull sont des CLOSURES ici, des méthodes statiques là-bas.
  * =========================================================================================== */
 
 function buildShadow(variant, t, salt = 4211) {
@@ -56,7 +56,9 @@ function buildShadow(variant, t, salt = 4211) {
   const GROUND_Y = -0.86, SLAB_H = 0.030;
   const REACH_SPAN = 9.0;
   const RIFT_H = 2.70, RIFT_W = 1.15;
-  const DOME_R = 7.0, SUN_Y = 10.5, SUN_R = 2.55;
+  // SUN_Y = 22 : pres de VINGT-TROIS blocs au-dessus du mob. A onze, l'eclipse se jouait
+  // a hauteur de toit et se confondait avec le dome. SUN_R grandit avec la distance.
+  const DOME_R = 7.0, SUN_Y = 22.0, SUN_R = 4.60;
 
   // ---- Émission --------------------------------------------------------------------------
   const box = (f, lat, y, hf, hy, hl, rgb, a) => {
@@ -79,9 +81,10 @@ function buildShadow(variant, t, salt = 4211) {
   // drawSpectralHand puis jamais utilisee : la main sortait a l'echelle 1 quoi qu'on passe.
   const handPiece = (wristF, wristL, wristY, lie, cl, sl_, scale, u, v, h, hu, hh, hv, localRoll, rgb, alpha) => {
     if (alpha <= 1) return;
-    const f = wristF + (u * cl + h * sl_) * scale;
+    // DEMI-TOUR autour de la verticale : la main se levait DOS a la cible.
+    const f = wristF - (u * cl + h * sl_) * scale;
     const y = wristY + (h * cl - u * sl_) * scale;
-    rot(f, wristL + v * scale, y, hu * scale, hh * scale, hv * scale, 0, 0, -(lie + localRoll), rgb, opq(alpha));
+    rot(f, wristL - v * scale, y, hu * scale, hh * scale, hv * scale, Math.PI, 0, -(lie + localRoll), rgb, opq(alpha));
   };
 
   // La main spectrale : 78 pièces, articulées, et surtout PLIABLES À PLAT. Les doigts sont des
@@ -264,8 +267,8 @@ function buildShadow(variant, t, salt = 4211) {
       const lie = (1 - up) * HALF_PI;
       const grip = curl * (1 - layDown * 0.55);
       const handA = a * (0.35 + 0.65 * up + 0.35 * curl);
-      // ECHELLE 1,45 : du poignet au majeur la main fait 2,2 blocs, la taille d'un mob.
-      drawSpectralHand(handF, 0, GROUND_Y, lie, grip, 1.45, Math.min(255, handA), salt, strobe);
+      // ECHELLE 2,45 : pres de quatre blocs du poignet au majeur — elle DOMINE sa proie.
+      drawSpectralHand(handF, 0, GROUND_Y, lie, grip, 2.45, Math.min(255, handA), salt, strobe);
     }
 
     // 5. LA CENDRE — elle donne au couloir une épaisseur d'air, sinon c'est un autocollant
@@ -295,106 +298,202 @@ function buildShadow(variant, t, salt = 4211) {
         hf * scale, hy * scale, hl * scale, -yaw, 0, roll, rgb, opq(alpha));
   };
 
-  // Crâne du Flétrisseur : 96 pièces. C'est le seul objet RECONNAISSABLE de la famille, donc
-  // celui qui doit tenir de près. Tranches emboîtées, jamais de panneau rapporté ; les orbites
-  // sont des CREUX (boîte sombre enfoncée + braise au fond), pas des taches peintes.
-  const drawWitherSkull = (atF, atL, atY, yaw, scale, jaw, alpha, salt, strobe) => {
+  // Crâne de DÉMON : ~210 pièces au détail plein. Ce qui le sépare d'un crâne ordinaire et qui
+  // est donc modélisé explicitement : museau allongé, arcades OBLIQUES (à elles seules elles
+  // font la colère), cornes annelées à six segments qui partent en arrière avant de se relever,
+  // crocs qui dépassent de la gueule fermée. Orbites = CREUX en quatre couches + pupille fendue.
+  // `full` : les trois crânes mineurs du souffle sortent à 0,30 d'échelle, où fissures, anneaux
+  // et dents secondaires tombent sous le tamis du moteur — les calculer est du temps perdu.
+  const drawDemonSkull = (atF, atL, atY, yaw, scale, jaw, alpha, salt, strobe, full) => {
     if (alpha <= 1 || scale <= 0.01) return;
     const S = (lf, ll, ly, hf, hy, hl, rgb, a) => skullPieceRoll(atF, atL, atY, yaw, scale, lf, ll, ly, hf, hy, hl, 0, rgb, a);
     const SR = (lf, ll, ly, hf, hy, hl, roll, rgb, a) => skullPieceRoll(atF, atL, atY, yaw, scale, lf, ll, ly, hf, hy, hl, roll, rgb, a);
-    // Pièce de mâchoire : la position pivote de +j autour de l'articulation, la boîte suit.
     const J = (pivF, pivH, j, lf, ll, ly, hf, hy, hl, rgb, a) => {
       const rf = lf - pivF, rh = ly - pivH, c = Math.cos(j), s = Math.sin(j);
       SR(pivF + rf * c - rh * s, ll, pivH + rf * s + rh * c, hf, hy, hl, j, rgb, a);
     };
+    const glow = 0.68 + 0.32 * hash(salt + strobe * 13, 5);
 
-    // boîte crânienne : cinq tranches, de la plus étroite au sommet à la plus large aux tempes
-    S(0, 0, 0.60, 0.34, 0.055, 0.30, BONE_HI, alpha);
-    S(0, 0, 0.47, 0.40, 0.085, 0.37, BONE_HI, alpha);
-    S(0, 0, 0.28, 0.44, 0.115, 0.42, BONE, alpha);
-    S(0, 0, 0.06, 0.45, 0.115, 0.43, BONE, alpha);
-    S(-0.02, 0, -0.14, 0.40, 0.095, 0.38, BONE_MID, alpha);
-    S(-0.40, 0, 0.22, 0.075, 0.30, 0.34, BONE_DARK, alpha);
-    for (let i = 0; i < 6; i++) {
-      const u = i / 5.0;
-      S(0.26 - u * 0.68, 0, 0.63 - u * 0.10 - (u > 0.7 ? (u - 0.7) * 0.5 : 0), 0.055, 0.030, 0.028, BONE_DARK, alpha);
+    // --- boîte crânienne : six tranches, plus longue que large ---
+    S(-0.08, 0, 0.615, 0.300, 0.050, 0.255, BONE_HI, alpha);
+    S(-0.07, 0, 0.500, 0.350, 0.075, 0.320, BONE_HI, alpha);
+    S(-0.06, 0, 0.335, 0.390, 0.100, 0.375, BONE, alpha);
+    S(-0.05, 0, 0.140, 0.400, 0.105, 0.395, BONE, alpha);
+    S(-0.07, 0, -0.040, 0.370, 0.090, 0.355, BONE_MID, alpha);
+    S(-0.12, 0, -0.185, 0.300, 0.075, 0.290, BONE_MID, alpha);
+    S(-0.44, 0, 0.200, 0.070, 0.280, 0.300, BONE_DARK, alpha);
+    S(-0.46, 0, -0.030, 0.055, 0.090, 0.150, BONE_DEEP, alpha);
+
+    // crête sagittale : cinq épines, sinon le crâne est un œuf
+    for (let i = 0; i < 5; i++) {
+      const u = i / 4, lf = 0.10 - u * 0.46, hgt = 0.045 + u * 0.085;
+      SR(lf, 0, 0.650 + u * 0.030 + hgt, 0.040, hgt, 0.038, -0.25 - u * 0.20,
+         i % 2 === 0 ? BONE_HI : BONE, alpha);
     }
-    for (let s = -1; s <= 1; s += 2)
-      for (let i = 0; i < 4; i++) {
-        const u = i / 3.0;
-        S(0.12 - u * 0.42, s * (0.38 - u * 0.05), 0.50 - u * 0.26, 0.055, 0.024, 0.028, BONE_DARK, alpha * 0.92);
-      }
-
-    // le front : une arête saillante au-dessus des orbites
-    S(0.40, 0, 0.34, 0.075, 0.075, 0.40, BONE_HI, alpha);
-    S(0.43, 0, 0.46, 0.055, 0.055, 0.33, BONE_HI, alpha);
-
-    // les orbites : creusées, pas peintes. La braise au fond est le SEUL point surexposé du
-    // modèle, donc le point de fixation du regard.
-    const burn = 0.70 + 0.30 * hash(salt + strobe * 11, 5);
+    // fosses temporales : sans creux latéraux le crâne paraît gonflé
     for (let s = -1; s <= 1; s += 2) {
-      const ol = s * 0.195;
-      S(0.40, ol, 0.23, 0.085, 0.115, 0.125, BONE_DEEP, alpha);
-      S(0.34, ol, 0.23, 0.055, 0.135, 0.145, BONE_DEEP, alpha);
-      S(0.44, ol, 0.375, 0.055, 0.030, 0.145, BONE_HI, alpha);
-      S(0.44, ol + s * 0.135, 0.23, 0.055, 0.120, 0.030, BONE, alpha);
-      S(0.44, ol, 0.095, 0.055, 0.030, 0.130, BONE_MID, alpha);
-      S(0.37, ol, 0.23, 0.040, 0.065 * burn, 0.070 * burn, VIOLET, alpha);
-      S(0.39, ol, 0.23, 0.030, 0.035 * burn, 0.038 * burn, PALE, alpha);
+      S(-0.16, s * 0.355, 0.250, 0.150, 0.130, 0.055, BONE_DARK, alpha);
+      S(-0.16, s * 0.390, 0.250, 0.120, 0.100, 0.030, BONE_DEEP, alpha * 0.9);
     }
 
-    // cavité nasale
-    S(0.40, 0, 0.06, 0.075, 0.075, 0.045, BONE_DEEP, alpha);
-    S(0.41, 0, 0.14, 0.065, 0.038, 0.022, BONE_DEEP, alpha);
-    // pommettes : c'est ce qui fait « crâne » et pas « boîte »
+    // --- LES ARCADES : le trait du démon. Obliques, en V renversé. ---
     for (let s = -1; s <= 1; s += 2) {
-      S(0.30, s * 0.355, 0.045, 0.125, 0.055, 0.070, BONE, alpha);
-      S(0.10, s * 0.395, 0.02, 0.105, 0.045, 0.055, BONE_MID, alpha);
+      SR(0.215, s * 0.215, 0.300, 0.075, 0.150, 0.115, 0.62, BONE_HI, alpha);
+      SR(0.195, s * 0.335, 0.345, 0.065, 0.130, 0.070, 0.48, BONE, alpha);
+      SR(0.230, s * 0.255, 0.395, 0.055, 0.028, 0.135, 0.58, BONE_HI, alpha);
     }
-    // maxillaire et dents
-    S(0.33, 0, -0.09, 0.135, 0.055, 0.300, BONE, alpha);
-    for (let i = 0; i < 7; i++) {
-      const lat = (i - 3) * 0.078;
-      const len = (i === 3 || i === 2 || i === 4) ? 0.075 : 0.055;
-      S(0.34, lat, -0.145 - len * 0.5, 0.045, len * 0.5, 0.032, i % 2 === 0 ? BONE_HI : BONE, alpha);
-    }
+    S(0.225, 0, 0.330, 0.080, 0.090, 0.085, BONE_HI, alpha);
 
-    // la mâchoire : elle pivote autour de l'articulation, à l'arrière
-    {
-      const j = jaw * 0.62, pivF = -0.12, pivH = -0.16;
-      J(pivF, pivH, j, 0.26, 0, -0.10, 0.165, 0.055, 0.290, BONE, alpha);
-      J(pivF, pivH, j, 0.26, 0, -0.165, 0.155, 0.030, 0.270, BONE_MID, alpha);
-      J(pivF, pivH, j, 0.405, 0, -0.135, 0.045, 0.075, 0.230, BONE_HI, alpha);
-      for (let s = -1; s <= 1; s += 2) {
-        J(pivF, pivH, j, 0.26, s * 0.265, -0.105, 0.155, 0.050, 0.035, BONE_MID, alpha);
-        J(pivF, pivH, j, 0.02, s * 0.245, -0.02, 0.045, 0.095, 0.040, BONE_DARK, alpha);
-      }
-      for (let i = 0; i < 6; i++) {
-        const lat = (i - 2.5) * 0.082;
-        const len = (i === 2 || i === 3) ? 0.070 : 0.050;
-        J(pivF, pivH, j, 0.34, lat, -0.040 + len * 0.5, 0.042, len * 0.5, 0.030, i % 2 === 0 ? BONE_HI : BONE, alpha);
-      }
-      // la gueule : quand elle s'ouvre on voit du NOIR, pas un vide entre deux os
-      if (jaw > 0.05) {
-        S(0.26, 0, -0.17 - jaw * 0.14, 0.115, 0.075 + jaw * 0.13, 0.215, VOID_INK, alpha);
-        S(0.20, 0, -0.17 - jaw * 0.14, 0.065, 0.055 + jaw * 0.10, 0.150, VIOLET, alpha * (0.35 + 0.65 * jaw));
-      }
-    }
-
-    // les cornes : trois segments recourbés. Le segment pointe vers (-sin ang, cos ang), donc
-    // le roulis vaut +ang ; au signe opposé la corne devenait un escalier.
+    // --- LES ORBITES : quatre couches creusées + pupille fendue ---
+    // Couches EMPILEES SANS CHEVAUCHEMENT le long de lf, rebord en ANNEAU de 4 barres :
+    // la premiere version avait une cavite qui englobait sa propre braise => carre sombre.
     for (let s = -1; s <= 1; s += 2) {
-      let f0 = -0.10, h0 = 0.62, ang = -0.45;
-      const lat = s * 0.26, seg3 = [0.30, 0.26, 0.20], rad = [0.070, 0.055, 0.038];
+      const ol = s * 0.235, oy = 0.200;
+      S(0.215, ol, oy, 0.075, 0.105, 0.098, VOID_INK, alpha);
+      S(0.272, ol, oy, 0.030, 0.082, 0.076, VIOLET, alpha * glow);
+      S(0.294, ol, oy, 0.022, 0.058, 0.052, ORCHID, alpha * glow);
+      S(0.310, ol, oy, 0.018, 0.054, 0.013, PALE, alpha * glow);
+      S(0.320, ol, oy, 0.012, 0.030, 0.008, SPARK, alpha * glow);
+      S(0.296, ol, oy + 0.128, 0.050, 0.032, 0.132, BONE_MID, alpha);
+      S(0.296, ol, oy - 0.122, 0.050, 0.030, 0.132, BONE_HI, alpha);
+      S(0.296, ol + s * 0.112, oy, 0.050, 0.112, 0.030, BONE_MID, alpha);
+      S(0.296, ol - s * 0.108, oy, 0.050, 0.112, 0.028, BONE, alpha);
+      if (full) {
+        for (let k = 0; k < 3; k++) {
+          S(0.300, s * (0.225 + k * 0.010), 0.060 - k * 0.055, 0.016, 0.030, 0.016,
+            k === 0 ? ORCHID : PURPLE, alpha * glow * (0.85 - k * 0.22));
+        }
+      }
+    }
+
+    // --- LE MUSEAU : il AVANCE ---
+    // Le museau s'arrete SOUS les orbites, sinon il les couvre par l'interieur.
+    S(0.330, 0, 0.085, 0.095, 0.090, 0.165, BONE, alpha);
+    S(0.440, 0, 0.075, 0.090, 0.088, 0.155, BONE, alpha);
+    S(0.540, 0, 0.065, 0.075, 0.085, 0.145, BONE_MID, alpha);
+    S(0.610, 0, 0.020, 0.055, 0.070, 0.115, BONE_MID, alpha);
+    for (let i = 0; i < 4; i++) {
+      const u = i / 3;
+      SR(0.330 + u * 0.280, 0, 0.255 - u * 0.155, 0.055, 0.026, 0.050 - u * 0.016, 0.42, BONE_HI, alpha);
+    }
+    for (let s = -1; s <= 1; s += 2) {
+      S(0.600, s * 0.062, 0.095, 0.045, 0.050, 0.042, BONE_DEEP, alpha);
+      S(0.625, s * 0.062, 0.095, 0.030, 0.036, 0.028, VOID_INK, alpha);
+      if (full) S(0.632, s * 0.062, 0.095, 0.020, 0.022, 0.018, PURPLE, alpha * glow * 0.75);
+    }
+    for (let s = -1; s <= 1; s += 2) {
+      SR(0.270, s * 0.325, 0.015, 0.145, 0.055, 0.075, -0.22, BONE_HI, alpha);
+      S(0.120, s * 0.350, -0.020, 0.110, 0.065, 0.060, BONE_MID, alpha);
+    }
+
+    // --- LE MAXILLAIRE et les deux grandes canines ---
+    S(0.400, 0, -0.075, 0.195, 0.055, 0.185, BONE, alpha);
+    for (let s = -1; s <= 1; s += 2) {
+      const tl = [0.075, 0.060, 0.045], tr = [0.040, 0.030, 0.018];
+      let hh = -0.125;
       for (let p = 0; p < 3; p++) {
-        const half = seg3[p] * 0.5;
-        SR(f0 - Math.sin(ang) * half, lat + s * p * 0.035, h0 + Math.cos(ang) * half,
-           rad[p], half, rad[p], ang, p === 0 ? UMBRA : (p === 1 ? PENUMBRA : PURPLE), alpha);
-        f0 -= Math.sin(ang) * seg3[p];
-        h0 += Math.cos(ang) * seg3[p];
-        ang += 0.62;
+        hh -= tl[p] * 0.5;
+        SR(0.470 + p * 0.012, s * 0.145, hh, tr[p], tl[p] * 0.5, tr[p], -0.10,
+           p === 1 ? BONE : BONE_HI, alpha);
+        hh -= tl[p] * 0.5;
       }
-      S(f0, lat + s * 0.105, h0, 0.028, 0.045, 0.028, ORCHID, alpha);
+    }
+    if (full) {
+      for (let i = 0; i < 9; i++) {
+        const lat = (i - 4) * 0.072;
+        if (Math.abs(Math.abs(lat) - 0.145) < 0.02) continue;
+        let len = 0.048 + 0.020 * (1 - Math.abs(lat) * 3);
+        if (len < 0.022) len = 0.022;
+        S(0.430, lat, -0.135 - len * 0.5, 0.042, len * 0.5, 0.030, i % 2 === 0 ? BONE_HI : BONE, alpha);
+      }
+    }
+
+    // --- LA MÂCHOIRE : un démon ouvre plus grand ---
+    {
+      const j = jaw * 0.78, pivF = -0.14, pivH = -0.175;
+      J(pivF, pivH, j, 0.280, 0, -0.115, 0.300, 0.055, 0.270, BONE, alpha);
+      J(pivF, pivH, j, 0.280, 0, -0.185, 0.280, 0.030, 0.245, BONE_MID, alpha);
+      J(pivF, pivH, j, 0.520, 0, -0.150, 0.060, 0.080, 0.195, BONE_HI, alpha);
+      J(pivF, pivH, j, 0.545, 0, -0.150, 0.040, 0.060, 0.022, BONE_DARK, alpha);
+      for (let s = -1; s <= 1; s += 2) {
+        J(pivF, pivH, j, 0.250, s * 0.255, -0.125, 0.270, 0.050, 0.040, BONE_MID, alpha);
+        J(pivF, pivH, j, -0.060, s * 0.240, -0.030, 0.050, 0.110, 0.045, BONE_DARK, alpha);
+        J(pivF, pivH, j, -0.130, s * 0.235, 0.075, 0.045, 0.045, 0.050, BONE_HI, alpha);
+        const tl = [0.070, 0.055, 0.040], tr = [0.038, 0.028, 0.017];
+        let hh = -0.060;
+        for (let p = 0; p < 3; p++) {
+          hh += tl[p] * 0.5;
+          J(pivF, pivH, j, 0.455 + p * 0.010, s * 0.150, hh, tr[p], tl[p] * 0.5, tr[p],
+            p === 1 ? BONE : BONE_HI, alpha);
+          hh += tl[p] * 0.5;
+        }
+      }
+      if (full) {
+        for (let i = 0; i < 8; i++) {
+          const lat = (i - 3.5) * 0.074;
+          if (Math.abs(Math.abs(lat) - 0.148) < 0.025) continue;
+          J(pivF, pivH, j, 0.420, lat, -0.065 + 0.044 * 0.5, 0.040, 0.044 * 0.5, 0.028,
+            i % 2 === 0 ? BONE_HI : BONE, alpha);
+        }
+      }
+      if (jaw > 0.04) {
+        S(0.270, 0, -0.185 - jaw * 0.165, 0.175, 0.075 + jaw * 0.155, 0.195, VOID_INK, alpha);
+        S(0.140, 0, -0.185 - jaw * 0.150, 0.090, 0.055 + jaw * 0.120, 0.125, PURPLE, alpha * (0.30 + 0.70 * jaw));
+        S(0.085, 0, -0.185 - jaw * 0.140, 0.055, 0.038 + jaw * 0.085, 0.080, VIOLET, alpha * (0.25 + 0.75 * jaw));
+        S(0.040, 0, -0.185 - jaw * 0.130, 0.035, 0.026 + jaw * 0.055, 0.050, ORCHID, alpha * jaw);
+      }
+    }
+
+    // --- LES CORNES : six segments annelés, en arrière puis relevées ---
+    for (let s = -1; s <= 1; s += 2) {
+      let f0 = -0.05, h0 = 0.52, ang = -0.62;
+      const lat = s * 0.300;
+      const seg = [0.26, 0.25, 0.24, 0.22, 0.19, 0.15];
+      const rad = [0.098, 0.088, 0.076, 0.062, 0.046, 0.028];
+      const turn = [0.46, 0.52, 0.56, 0.60, 0.62, 0];
+      for (let p = 0; p < 6; p++) {
+        const half = seg[p] * 0.5;
+        const pf = f0 - Math.sin(ang) * half, ph = h0 + Math.cos(ang) * half;
+        const plat = lat + s * p * 0.022;
+        const rgb = p === 0 ? UMBRA : (p === 1 ? PENUMBRA : (p < 4 ? PURPLE : VIOLET));
+        SR(pf, plat, ph, rad[p], half, rad[p], ang, rgb, alpha);
+        if (full && p < 5) {
+          SR(f0 - Math.sin(ang) * 0.02, plat, h0 + Math.cos(ang) * 0.02,
+             rad[p] * 1.22, 0.018, rad[p] * 1.22, ang, p < 2 ? PENUMBRA : ORCHID, alpha * 0.92);
+        }
+        f0 -= Math.sin(ang) * seg[p];
+        h0 += Math.cos(ang) * seg[p];
+        ang += turn[p];
+      }
+      SR(f0 - Math.sin(ang) * 0.045, lat + s * 0.132, h0 + Math.cos(ang) * 0.045,
+         0.020, 0.048, 0.020, ang, PALE, alpha);
+      if (full) {
+        let gf = 0.08, gh = 0.095, ga = 1.15;
+        for (let p = 0; p < 3; p++) {
+          const hl = 0.085 - p * 0.018, rr = 0.040 - p * 0.010;
+          SR(gf - Math.sin(ga) * hl * 0.5, s * 0.355, gh + Math.cos(ga) * hl * 0.5,
+             rr, hl * 0.5, rr, ga, p === 2 ? ORCHID : PURPLE, alpha);
+          gf -= Math.sin(ga) * hl;
+          gh += Math.cos(ga) * hl;
+          ga += 0.30;
+        }
+      }
+    }
+
+    // --- LES FISSURES DE BRAISE : le crâne devient un contenant ---
+    if (full) {
+      const cracks = [
+        [-0.100, 0.290, 0.520, 0.085], [-0.230, -0.330, 0.400, 0.070],
+        [0.060, 0.370, 0.230, 0.060], [-0.300, 0.180, 0.090, 0.055],
+        [0.180, -0.390, 0.130, 0.050], [-0.180, -0.250, 0.560, 0.065],
+      ];
+      for (let i = 0; i < cracks.length; i++) {
+        const c = cracks[i];
+        const puls = 0.55 + 0.45 * hash(salt + i * 17, strobe + i);
+        const rl = (i % 2 === 0 ? 0.6 : -0.5);
+        SR(c[0], c[1], c[2], 0.020, c[3], 0.020, rl, VIOLET, alpha * puls);
+        SR(c[0], c[1], c[2], 0.012, c[3] * 0.62, 0.012, rl, PALE, alpha * puls * 0.9);
+      }
     }
   };
 
@@ -457,7 +556,7 @@ function buildShadow(variant, t, salt = 4211) {
       const yaw = Math.sin(t * 3.4 + salt * 0.37) * 0.30 + (1 - outp) * 0.9;
       const bob = Math.sin(t * 7.1) * 0.065 * outp;
       const jaw = breath * (1 - inhale) * 0.55;
-      drawWitherSkull(adv, 0, midY + bob, yaw, sc, jaw, a * (0.35 + 0.65 * outp), salt, strobe);
+      drawDemonSkull(adv, 0, midY + bob, yaw, sc, jaw, a * (0.35 + 0.65 * outp), salt, strobe, true);
     }
 
     // 3. LE SOUFFLE — chaque bouffée a sa naissance, donc le souffle COULE
@@ -476,9 +575,9 @@ function buildShadow(variant, t, salt = 4211) {
         const age = (breath - (0.12 + k * 0.17)) / 0.70;
         if (age <= 0 || age >= 1) continue;
         const ang = (k - 1) * 0.42, adv = 1.3 + age * 5.4;
-        drawWitherSkull(adv, Math.sin(ang) * adv * 0.35,
+        drawDemonSkull(adv, Math.sin(ang) * adv * 0.35,
           midY - 0.25 - age * 0.9 + Math.sin(age * 9 + k) * 0.18,
-          ang + age * 2.6, 0.30 * (1 - age * 0.35), 0.42, a * (1 - age) * 0.85, salt + k * 701, strobe);
+          ang + age * 2.6, 0.30 * (1 - age * 0.35), 0.42, a * (1 - age) * 0.85, salt + k * 701, strobe, false);
       }
     }
 
@@ -547,10 +646,26 @@ function buildShadow(variant, t, salt = 4211) {
     const sunY = GROUND_Y + (SUN_Y - GROUND_Y) * rise - lift * 3.0;
     const sunR = SUN_R * (0.30 + 0.70 * rise) * (1 - lift * 0.55);
 
+    // 0. LES ÉTOILES — le serveur force le monde à minuit ; un ciel noir SANS étoiles n'est
+    //    pas la nuit, c'est un écran éteint. Ce qui bouge, c'est leur scintillement.
+    if (rise > 0.02) {
+      for (let i = 0; i < 54; i++) {
+        const h1 = hash(salt + 301, i * 29), h2 = hash(salt + 302, i * 31), h3 = hash(salt + 303, i * 37);
+        const ang = h1 * TAU, phi = 0.18 + h2 * 1.05, dist = 17.0 + 11.0 * h3;
+        const yy = GROUND_Y + 6.0 + Math.cos(phi) * dist * 0.95;
+        if (yy < GROUND_Y + 4.0) continue;
+        const tw = 0.45 + 0.55 * hash(salt + i, strobe + i * 3);
+        const s = (0.040 + 0.055 * h3) * tw;
+        box(Math.cos(ang) * Math.sin(phi) * dist, Math.sin(ang) * Math.sin(phi) * dist, yy,
+            s, s, s, h3 > 0.78 ? SPARK : (h3 > 0.45 ? PALE : ORCHID),
+            opq(a * rise * (1 - lift) * tw * 0.9));
+      }
+    }
+
     // 1. LE SOLEIL NOIR — un VRAI disque (balayage en rangées + demi-corde), pas un empilement
-    //    d'anneaux, qui laisse toujours des trous au centre.
+    //    d'anneaux, qui laisse toujours des trous au centre. À VINGT-TROIS BLOCS du sol.
     if (sunR > 0.05) {
-      const rows = 17;
+      const rows = 25;
       for (let r = 0; r < rows; r++) {
         const v = (r + 0.5) / rows, sy = (v - 0.5) * 2;
         const halfChord = Math.sqrt(Math.max(0, 1 - sy * sy)) * sunR;
@@ -559,75 +674,132 @@ function buildShadow(variant, t, salt = 4211) {
         box(0, 0, yy, 0.075, sunR / rows * 1.15, halfChord, VOID_INK, opq(a));
         for (let s = -1; s <= 1; s += 2) {
           const flick = 0.74 + 0.26 * hash(salt + strobe * 9, r * 31 + s);
-          box(0.010, s * halfChord, yy, 0.070, sunR / rows * 1.05, 0.055, VIOLET, opq(a * flick));
-          box(0.055, s * halfChord, yy, 0.030, sunR / rows * 0.8, 0.030, ORCHID, opq(a * flick));
+          box(0.010, s * halfChord, yy, 0.070, sunR / rows * 1.05, 0.075, VIOLET, opq(a * flick));
+          box(0.055, s * halfChord, yy, 0.030, sunR / rows * 0.8, 0.040, ORCHID, opq(a * flick));
         }
       }
-      // les deux pôles, que le balayage en rangées manque toujours
-      for (let s = -1; s <= 1; s += 2)
-        box(0.010, 0, sunY + s * sunR, 0.070, 0.055, 0.14, VIOLET, opq(a));
+      for (let s = -1; s <= 1; s += 2) {
+        box(0.010, 0, sunY + s * sunR, 0.070, 0.075, 0.19, VIOLET, opq(a));
+      }
     }
 
     // 2. LA COURONNE — c'est le rapetissement qui fait la flamme, pas la courbure
     if (corona > 0.01) {
-      const fil = 36;
+      const fil = 48;
       for (let i = 0; i < fil; i++) {
-        const ang = i * TAU / fil;
-        const h1 = hash(salt + 81, i * 37), h2 = hash(salt + 82, i * 41);
+        const ang = i * TAU / fil, h1 = hash(salt + 81, i * 37), h2 = hash(salt + 82, i * 41);
         const breathe = 0.55 + 0.45 * Math.sin(t * (5 + 6 * h1) + h2 * TAU);
-        const len = (0.45 + 1.55 * h1) * corona * breathe * (1 - lift * 0.8);
+        const len = (0.70 + 2.60 * h1) * corona * breathe * (1 - lift * 0.8);
         if (len < 0.06) continue;
-        for (let s = 0; s < 5; s++) {
-          const u = (s + 0.5) / 5, d = sunR + len * u;
+        for (let s = 0; s < 6; s++) {
+          const u = (s + 0.5) / 6, d = sunR + len * u;
           const aa = ang + u * u * 0.30 * (h2 - 0.5) * 2;
-          const ss = (0.070 - 0.045 * u) * (0.8 + 0.4 * h2);
+          const ss = (0.095 - 0.060 * u) * (0.8 + 0.4 * h2);
           const rgb = u < 0.25 ? PALE : (u < 0.55 ? ORCHID : (u < 0.8 ? VIOLET : PURPLE));
-          box(0, Math.cos(aa) * d, sunY + Math.sin(aa) * d, ss * 0.9, ss, ss, rgb, opq(a * corona * (1 - u * 0.35)));
+          box(0, Math.cos(aa) * d, sunY + Math.sin(aa) * d, ss * 0.9, ss, ss, rgb,
+              opq(a * corona * (1 - u * 0.35)));
+        }
+      }
+      // LES PROTUBÉRANCES : les filaments donnent le halo, celles-ci donnent l'ÉCHELLE —
+      // et c'est l'échelle qui rend une étoile effrayante.
+      for (let k = 0; k < 3; k++) {
+        const base = k * (TAU / 3) + salt * 0.0013 + t * 0.25;
+        const life = clamp01((corona - k * 0.12) * 1.4) * (1 - lift);
+        if (life < 0.02) continue;
+        for (let i = 0; i < 14; i++) {
+          const u = (i + 0.5) / 14, arc = Math.sin(u * Math.PI);
+          const d = sunR * (1 + 0.95 * arc), aa = base + (u - 0.5) * 1.25;
+          const ss = (0.14 - 0.085 * u) * arc + 0.030;
+          box(0, Math.cos(aa) * d, sunY + Math.sin(aa) * d, ss * 0.8, ss, ss,
+              u < 0.3 ? PALE : (u < 0.7 ? ORCHID : VIOLET),
+              opq(a * life * (0.55 + 0.45 * arc)));
         }
       }
     }
 
-    // 3. L'ANNEAU DE DIAMANT — l'instant que tout le monde reconnaît d'une éclipse
+    // 3. LES RAYONS CRÉPUSCULAIRES — sans rien entre le disque (23 blocs) et le dôme (7), on
+    //    voit deux objets séparés et non un seul événement. Faisceaux BRISÉS : un trait plein
+    //    ferait un tuyau de lumière, on veut de la poussière traversée.
+    if (veil > 0.01) {
+      const reach = veil * (1 - lift * 0.85);
+      for (let k = 0; k < 9; k++) {
+        const ang = k * TAU / 9 + t * 0.18, h1 = hash(salt + 211, k * 53);
+        for (let i = 0; i < 16; i++) {
+          const u = (i + 0.5) / 16;
+          if (u > reach) break;
+          if (hash(salt + k * 7, i * 3 + Math.floor(strobe / 3)) < 0.22) continue;
+          const yy = sunY - (sunY - (GROUND_Y + 0.25)) * u;
+          const spread = sunR * 0.80 + (DOME_R * 0.92 - sunR * 0.80) * u;
+          const ss = (0.075 + 0.055 * h1) * (1 - u * 0.45);
+          box(Math.cos(ang) * spread, Math.sin(ang) * spread, yy, ss, ss * 1.9, ss,
+              u < 0.3 ? ORCHID : (u < 0.65 ? VIOLET : PURPLE),
+              opq(a * veil * (0.75 - u * 0.35)));
+        }
+      }
+      // LA COLONNE : le fil qui dit que le disque là-haut et le cercle au sol sont la même chose
+      for (let i = 0; i < 26; i++) {
+        const u = (i + 0.5) / 26;
+        if (u > reach) break;
+        const yy = sunY - (sunY - (GROUND_Y + 0.15)) * u;
+        const rr = 0.35 + 1.15 * Math.sin(u * Math.PI);
+        const ang = u * 9.0 + t * 2.2, ss = 0.070 * (1 - u * 0.30);
+        box(Math.cos(ang) * rr, Math.sin(ang) * rr, yy, ss, ss, ss,
+            i % 3 === 0 ? PALE : VIOLET, opq(a * veil * 0.85));
+      }
+    }
+
+    // 4. L'ANNEAU DE DIAMANT — l'instant que tout le monde reconnaît d'une éclipse
     if (diamond > 0.01 && diamond < 0.999) {
       const pop = Math.sin(diamond * Math.PI);
       const ang = -0.75 + salt * 0.0007;
       const px = Math.cos(ang) * sunR, py = Math.sin(ang) * sunR;
-      const s0 = 0.085 + 0.19 * pop;
+      const s0 = 0.130 + 0.30 * pop;
       box(0.075, px, sunY + py, 0.055, s0, s0, SPARK, opq(a));
       box(0.095, px, sunY + py, 0.040, s0 * 0.52, s0 * 0.52, 0xFFFFFF, opq(a));
       for (let k = 0; k < 4; k++) {
         const ba = k * HALF_PI + 0.35;
-        const bl = (0.35 + 1.35 * pop) * (k % 2 === 0 ? 1.0 : 0.62);
-        for (let s = 0; s < 5; s++) {
-          const u = (s + 0.5) / 5, ss = 0.055 * (1 - u * 0.75);
+        const bl = (0.55 + 2.20 * pop) * (k % 2 === 0 ? 1 : 0.62);
+        for (let s = 0; s < 7; s++) {
+          const u = (s + 0.5) / 7, ss = 0.070 * (1 - u * 0.75);
           box(0.070, px + Math.cos(ba) * bl * u, sunY + py + Math.sin(ba) * bl * u,
               0.045, ss, ss, u < 0.4 ? PALE : ORCHID, opq(a * (1 - u * 0.5)));
         }
       }
+      // l'onde de choc au sol, EN RETARD d'un tiers : simultanés, les deux événements n'en
+      // font qu'un et on perd le lien de cause à effet.
+      const wave = clamp01((diamond - 0.30) / 0.70);
+      if (wave > 0.001) {
+        const rr = DOME_R * 1.05 * wave, fade = 1 - wave * 0.75;
+        for (let i = 0; i < 64; i++) {
+          const aa = i * TAU / 64;
+          box(Math.cos(aa) * rr, Math.sin(aa) * rr, GROUND_Y + 0.03,
+              0.115, SLAB_H * (1 + 2.5 * fade), 0.115, i % 3 === 0 ? SPARK : PALE, opq(a * fade));
+        }
+      }
     }
 
-    // 4. LE VOILE — treillis et non surface pleine : une demi-sphère pleine de 7 blocs de rayon
-    //    enfermerait la caméra dans une boîte noire et le joueur ne verrait plus le combat.
+    // 5. LE VOILE — treillis et non surface pleine : une demi-sphère pleine de 7 blocs de rayon
+    //    enferme la caméra dans une boîte noire et le joueur ne voit plus le combat.
     if (veil > 0.01) {
       const close = veil * (1 - lift);
       const maxPhi = HALF_PI * close;
-      for (let m = 0; m < 9; m++) {
-        const th = m * Math.PI / 9, ct = Math.cos(th), st = Math.sin(th);
-        for (let i = 0; i <= 11; i++) {
-          const phi = maxPhi * i / 11;
-          const rr = DOME_R * Math.sin(phi);
+      const meridians = 11, parallels = 6;
+      for (let m = 0; m < meridians; m++) {
+        const th = m * Math.PI / meridians, ct = Math.cos(th), st = Math.sin(th);
+        for (let i = 0; i <= 13; i++) {
+          const phi = maxPhi * i / 13, rr = DOME_R * Math.sin(phi);
           const yy = GROUND_Y + DOME_R * Math.cos(phi) * (0.55 + 0.45 * close);
           const wob = 1 + 0.045 * Math.sin(phi * 7 + t * 5 + m);
-          for (let sgn = -1; sgn <= 1; sgn += 2)
+          for (let sgn = -1; sgn <= 1; sgn += 2) {
             // ORCHID/PURPLE : ce treillis est la FRONTIERE d'un contrat de position.
             // En UMBRA il disparaissait de nuit, et la regle devenait injouable.
             box(ct * rr * wob * sgn, st * rr * wob * sgn, yy, 0.055, 0.055, 0.055,
                 (i % 3 === 0) ? ORCHID : PURPLE, opq(a * close * 0.95));
+          }
         }
       }
-      for (let p = 1; p <= 5; p++) {
-        const phi = maxPhi * p / 5;
-        const rr = DOME_R * Math.sin(phi);
+      for (let p = 1; p <= parallels; p++) {
+        const phi = maxPhi * p / parallels, rr = DOME_R * Math.sin(phi);
         const yy = GROUND_Y + DOME_R * Math.cos(phi) * (0.55 + 0.45 * close);
         if (rr < 0.10) continue;
         const n = 14 + p * 5;
@@ -635,31 +807,60 @@ function buildShadow(variant, t, salt = 4211) {
           const ang = i * TAU / n + t * (p % 2 === 0 ? 0.35 : -0.35);
           const flick = 0.70 + 0.30 * hash(salt + strobe * 5, p * 97 + i * 13);
           box(Math.cos(ang) * rr, Math.sin(ang) * rr, yy, 0.048, 0.048, 0.048,
-              (p === 5) ? ORCHID : VIOLET, opq(a * close * flick));
+              (p === parallels) ? ORCHID : VIOLET, opq(a * close * flick));
         }
       }
-      // l'ourlet : le dôme doit se POSER, pas flotter
       if (close > 0.55) {
         const hem = (close - 0.55) / 0.45;
         for (let i = 0; i < 52; i++) {
           const ang = i * TAU / 52;
           const rr = DOME_R * (0.96 + 0.05 * Math.sin(ang * 6 + t * 4));
-          box(Math.cos(ang) * rr, Math.sin(ang) * rr, GROUND_Y + 0.02, 0.105, SLAB_H, 0.105,
-              i % 4 === 0 ? ORCHID : PURPLE, opq(a * hem));
+          box(Math.cos(ang) * rr, Math.sin(ang) * rr, GROUND_Y + 0.02,
+              0.105, SLAB_H, 0.105, i % 4 === 0 ? ORCHID : PURPLE, opq(a * hem));
+        }
+      }
+      // LES ARCS RAMPANTS : c'est la brièveté qui fait l'électricité.
+      if (close > 0.45) {
+        for (let k = 0; k < 5; k++) {
+          const seed = hash(salt + 401 + k * 13, Math.floor(strobe / 2));
+          if (seed < 0.45) continue;
+          const th = seed * TAU, ct = Math.cos(th), st = Math.sin(th);
+          const p0 = hash(salt + 402 + k, Math.floor(strobe / 2)) * 0.55;
+          for (let i = 0; i < 7; i++) {
+            const phi = (p0 + i * 0.075) * HALF_PI * close;
+            const rr = DOME_R * Math.sin(phi) * (1 + 0.03 * Math.sin(i * 2.1));
+            const yy = GROUND_Y + DOME_R * Math.cos(phi) * (0.55 + 0.45 * close);
+            const jig = (hash(salt + k * 31, i * 7 + strobe) - 0.5) * 0.22;
+            box((ct + jig) * rr, (st - jig) * rr, yy, 0.065, 0.065, 0.065,
+                i % 2 === 0 ? SPARK : PALE, opq(a * close * 0.95));
+          }
         }
       }
     }
 
-    // 5. LA NUIT INTÉRIEURE
+    // 6. LA NUIT INTÉRIEURE
     if (night > 0.01) {
-      for (let i = 0; i < 44; i++) {
+      for (let i = 0; i < 62; i++) {
         const h1 = hash(salt + 91, i * 37), h2 = hash(salt + 92, i * 41), h3 = hash(salt + 93, i * 43);
-        const cycle = fract(t * (0.55 + 0.5 * h1) + h2);
-        const ang = h2 * TAU, rr = DOME_R * 0.92 * Math.sqrt(h3);
-        const yy = GROUND_Y + 0.1 + (1 - cycle) * 5.4;
-        const s = 0.030 + 0.022 * h1;
+        const cycle = fract(t * (0.55 + 0.5 * h1) + h2), ang = h2 * TAU;
+        const rr = DOME_R * 0.92 * Math.sqrt(h3);
+        const yy = GROUND_Y + 0.1 + (1 - cycle) * 5.4, s = 0.030 + 0.022 * h1;
         box(Math.cos(ang) * rr, Math.sin(ang) * rr, yy, s, s, s,
-            h3 > 0.80 ? ORCHID : (h3 > 0.45 ? ASH : UMBRA), opq(a * night * (0.45 + 0.55 * cycle)));
+            h3 > 0.80 ? ORCHID : (h3 > 0.45 ? ASH : UMBRA),
+            opq(a * night * (0.45 + 0.55 * cycle)));
+      }
+      // LES BRAISES MONTANTES : deux flux de sens contraire valent mieux qu'un seul deux fois
+      // plus dense — c'est le croisement qui donne la profondeur.
+      for (let i = 0; i < 30; i++) {
+        const h1 = hash(salt + 95, i * 47), h2 = hash(salt + 96, i * 53);
+        const cycle = fract(t * (0.42 + 0.34 * h1) + h2);
+        const ang = h2 * TAU + cycle * 2.1;
+        const rr = (0.6 + 3.4 * h1) * (1 - cycle * 0.72);
+        const yy = GROUND_Y + 0.2 + cycle * (sunY - GROUND_Y) * 0.92;
+        const s = (0.055 + 0.030 * h1) * (1 - cycle * 0.55);
+        box(Math.cos(ang) * rr, Math.sin(ang) * rr, yy, s, s, s,
+            cycle > 0.62 ? SPARK : (cycle > 0.3 ? PALE : ORCHID),
+            opq(a * night * (1 - cycle * 0.45)));
       }
       const spin = t * 1.15;
       for (let k = 0; k < 3; k++) {
@@ -677,9 +878,22 @@ function buildShadow(variant, t, salt = 4211) {
         box(Math.cos(ang) * 3.65, Math.sin(ang) * 3.65, GROUND_Y + 0.018, 0.070, SLAB_H, 0.070,
             i % 5 === 0 ? PALE : PURPLE, opq(a * night * 0.9));
       }
+      // LES RUNES : assez pour qu'on lise « écriture » sans qu'aucune ne signifie quoi que ce soit
+      for (let k = 0; k < 8; k++) {
+        const ang = k * TAU / 8 + spin * 0.55, rr = 5.15;
+        const bx = Math.cos(ang) * rr, bz = Math.sin(ang) * rr;
+        const puls = 0.55 + 0.45 * hash(salt + k * 19, strobe + k);
+        const bars = 3 + (k % 3);
+        for (let i = 0; i < bars; i++) {
+          const off = (i - (bars - 1) * 0.5) * 0.16;
+          const len = 0.14 + 0.10 * hash(salt + k * 23, i * 11);
+          box(bx + Math.cos(ang + HALF_PI) * off, bz + Math.sin(ang + HALF_PI) * off,
+              GROUND_Y + 0.030, len, SLAB_H, 0.045, i === 0 ? PALE : ORCHID, opq(a * night * puls));
+        }
+      }
     }
 
-    // 6. LA GRIFFURE — largeur en sinus : une lame d'épaisseur constante est un tuyau
+    // 7. LA GRIFFURE — largeur en sinus : une lame d'épaisseur constante est un tuyau
     if (claw > 0.01) {
       for (let k = 0; k < 3; k++) {
         const age = (claw - k * 0.13) / 0.62;
@@ -706,7 +920,7 @@ function buildShadow(variant, t, salt = 4211) {
       }
     }
 
-    // 7. LA LEVÉE — en lambeaux, et toujours par la GÉOMÉTRIE : ils rapetissent et montent,
+    // 8. LA LEVÉE — en lambeaux, et toujours par la GÉOMÉTRIE : ils rapetissent et montent,
     //    l'alpha reste plein.
     if (lift > 0.01) {
       for (let i = 0; i < 30; i++) {

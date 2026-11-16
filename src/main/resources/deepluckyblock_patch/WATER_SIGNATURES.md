@@ -2446,7 +2446,86 @@ la récursion en anneau ne se pose donc jamais.
 |---|---|---|---|
 | Allonge Spectrale | couloir de 9×2,7 blocs, 4 vagues de lames | cible clouée 72 t puis **ramenée**, 3 serrages | Absorption, selon le nombre drainé |
 | Faille du Flétrisseur | cône de souffle, puis **aspiration** de 8 blocs en 4 secousses | Flétrissure **II** double durée, fermeture plein tarif | soin + Régénération, 1 PV par victime |
-| Voile d'Éclipse | dôme de 7 blocs, 5 battements, griffures finales | les **3 griffures convergent** = triple dégâts | Vision nocturne + Force tant qu'il reste dedans |
+| Voile d'Éclipse | **nuit forcée**, dôme de 7 blocs, 5 battements, onde de choc, griffures | les **3 griffures convergent** = triple dégâts | Vision nocturne + Force tant qu'il reste dedans |
+
+## §38 — Ombre v2 : la main, le démon, et le ciel confisqué
+
+Trois reproches, trois réponses. La v1 était lisible ; elle n'était pas impressionnante.
+
+### La main tournait le dos à sa proie
+
+Un demi-tour, littéralement : `base + Mth.PI` dans la rotation des phalanges. La main se
+refermait sur la cible en lui présentant le dos de la main — correct géométriquement,
+absurde à regarder. Et elle est passée de `1.45f` à **`2.45f`**, soit un sommet mesuré à
+**2,42 blocs** : une main qui sort du sol doit faire peur à l'échelle d'un joueur, pas à
+celle d'un gant.
+
+Le facteur avait d'ailleurs un bug plus grave que sa valeur : `handPiece` **recevait**
+`scale` et ne l'utilisait jamais. Dix-neuf appels le passaient consciencieusement dans le
+vide. C'est le genre de défaut qu'on ne voit pas en relisant l'appelant, seulement en
+mesurant la géométrie produite.
+
+### Le crâne de Wither est devenu un crâne de démon
+
+De 96 à **~210 pièces** : six tranches crâniennes, un occiput, une crête de cinq épines,
+des arcades sourcilières **obliques** (c'est l'obliquité qui fait la menace — une arcade
+horizontale fait un crâne surpris), un museau abaissé, un maxillaire à canines, une
+mâchoire qui s'ouvre sur quatre couches de gorge, et deux cornes de six segments annelés
+qui s'enroulent vers l'arrière.
+
+**Deux tours entiers ont été perdus sur les orbites.** Le réflexe — empiler des couches
+concentriques le long de la profondeur locale, puis entourer le tout d'une boîte « rebord »
+— produit une orbite *noire*. Les couches s'occultent entre elles, et le rebord plein
+masque exactement ce qu'il est censé encadrer. La règle qui marche : **empiler sans
+chevauchement** le long de la profondeur, et faire les encadrements en **anneau de quatre
+barres**, jamais en boîte pleine. L'orbite v2 va donc du fond `VOID_INK` (0,215) à la
+pupille fendue `SPARK` (0,320) sans qu'aucune couche ne morde sur sa voisine.
+
+### L'éclipse : 23 blocs, et la nuit pour de vrai
+
+Le disque était à 10,5 blocs. À cette hauteur il se confondait avec le dôme de 7 — deux
+objets de taille comparable, à portée de main l'un de l'autre, qui se lisaient comme un
+seul tas. Il est maintenant à **22,0** au-dessus du point d'impact (≈ **23 blocs** depuis
+le sol, qui est à −0,86), et son rayon passe de 2,55 à **4,60** : un objet lointain doit
+grandir pour garder sa présence.
+
+Mais éloigner le disque crée le problème inverse. **Deux objets séparés par vingt blocs de
+vide ne forment pas un événement, ils forment deux décors.** D'où ce qui les relie :
+
+- **9 rayons crépusculaires** brisés (un segment sur cinq omis au hasard) qui partent du
+  limbe et descendent jusqu'à l'ourlet du dôme ;
+- une **colonne en spirale** de 26 pas qui monte du sceau au sol jusqu'au disque ;
+- côté serveur, la même colonne en particules, six paliers par battement, pour que le
+  joueur ait une raison de **lever les yeux**.
+
+Le reste est de la densité : 54 étoiles qui s'allument par scintillement haché, une
+couronne portée de 36 à **48 filaments** plus **3 protubérances** en arc, 30 braises qui
+montent à contre-courant des 62 cendres qui tombent, 8 runes qui tournent à contresens sur
+le cercle de garde, 5 arcs rampants sur le dôme. Pic mesuré : **1 554 cubes** à t = 0,81,
+pour un plafond moteur de 7 000.
+
+### Le ciel : voler l'heure, et surtout la rendre
+
+Le monde passe à **minuit** (`setDayTime(18000)`) pendant les 200 ticks, puis retrouve
+l'heure qu'il avait, **avancée du temps écoulé**.
+
+Le piège est le chevauchement. Deux éclipses coup sur coup, traitées naïvement, cassent le
+monde pour de bon : la seconde enregistre *minuit* comme heure d'origine, la première rend
+minuit en finissant, et le serveur reste dans la nuit pour toujours — sans que personne
+puisse relier la panne à une épée. `stealSky` ne retient donc l'heure **qu'à la première
+prise** ; les éclipses suivantes se contentent de repousser l'échéance, et `returnSky`
+refuse de rendre quoi que ce soit tant qu'une éclipse plus récente tient la dimension.
+
+La carte est indexée par le **nom** de la dimension, pas par le `ServerLevel` : une carte
+statique qui retient un niveau l'empêche d'être libéré au déchargement du monde.
+
+### Le cadrage de la page : chaque élément filme le sien
+
+Le gabarit d'aperçu appelait `boltShot` et `hammerShot` pour les variantes 0 et 1 — les
+caméras de la **foudre**. Hérité tel quel, le dôme d'ombre était donc cadré par la chute
+d'un éclair. Chaque élément définit maintenant son `<elem>Shot(tt)` ; celui de l'ombre
+**s'ouvre pendant la montée** du disque (`span` de 19 à 40 blocs) au lieu de choisir entre
+voir le sol et voir le ciel.
 
 ### Deux recalages trouvés en relisant les deux horloges côte à côte
 

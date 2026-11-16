@@ -126,8 +126,19 @@ public final class ShadowSignatureVfx {
 
     /** Rayon du dôme du Voile, et hauteur du soleil noir. */
     private static final float DOME_R = 7.0f;
-    private static final float SUN_Y = 10.5f;
-    private static final float SUN_R = 2.55f;
+    /**
+     * Hauteur du soleil noir, dans le repere local (le sol est a {@link #GROUND_Y}). Vingt-deux
+     * moins moins zero virgule quatre-vingt-six font <b>pres de vingt-trois blocs au-dessus du
+     * mob</b>. A onze blocs, l'eclipse se jouait a hauteur de toit : on la voyait de cote, et
+     * elle se confondait avec le dome. Il faut lever la tete pour la voir, sinon ce n'est pas
+     * une eclipse, c'est une lampe.
+     */
+    private static final float SUN_Y = 22.0f;
+    /**
+     * Rayon du disque. Il grandit avec la distance, sinon un objet trois fois plus loin devient
+     * trois fois plus petit et tout le benefice de la hauteur est perdu.
+     */
+    private static final float SUN_R = 4.60f;
 
     private ShadowSignatureVfx() { }
 
@@ -318,12 +329,12 @@ public final class ShadowSignatureVfx {
             float lie = (1.0f - up) * HALF_PI;
             float grip = curl * (1.0f - layDown * 0.55f);
             float handA = a * (0.35f + 0.65f * up + 0.35f * curl);
-            // ÉCHELLE 1,45 : du poignet au bout du majeur, la main fait alors 2,2 blocs,
-            // soit la taille du mob qu’elle empoigne — c’est la bonne reference a cote d’un
-            // couloir de neuf blocs. (Tant que l’echelle n’etait pas appliquee, ce reglage
-            // n’avait aucun effet : voir handPiece.)
+            // ÉCHELLE 2,45. A 1,45 la main faisait 2,2 blocs — la taille du mob, ce qui
+            // paraissait la bonne reference sur le papier mais se lisait comme un accessoire
+            // au bout d’un couloir de neuf blocs. A 2,45 elle fait pres de quatre blocs du
+            // poignet au majeur : elle DOMINE sa proie, ce qui est le sujet de la signature.
             drawSpectralHand(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    handF, 0.0f, GROUND_Y, lie, grip, 1.45f, Math.min(255.0f, handA), salt, strobe);
+                    handF, 0.0f, GROUND_Y, lie, grip, 2.45f, Math.min(255.0f, handA), salt, strobe);
         }
 
         // ---- 5. LA CENDRE ----
@@ -514,7 +525,14 @@ public final class ShadowSignatureVfx {
         // utilisee : la main sortait a l'echelle 1 quelle que soit la valeur passee, et
         // changer le parametre ne produisait rigoureusement aucun effet — un reglage mort,
         // le genre de defaut qu'on ne voit pas parce que « ca marche ».
-        float f = wristF + (u * cl + h * sl) * scale;
+        // DEMI-TOUR. La main se levait DOS a la cible : debout, l'axe u (dos de la main)
+        // pointait vers +f, donc la paume regardait le porteur et la main saisissait a
+        // l'envers. On applique une rotation de 180 degres autour de la VERTICALE du monde :
+        // elle inverse l'avant et le lateral, laisse la hauteur intacte, et se compose au
+        // lacet de chaque boite par +PI (le lacet est applique en dernier dans l'ordre
+        // roll -> pitch -> yaw, donc l'ajouter revient a multiplier a gauche par Ry(PI) :
+        // c'est bien un solide qu'on retourne, pas un miroir, et la chiralite est preservee).
+        float f = wristF - (u * cl + h * sl) * scale;
         float y = wristY + (h * cl - u * sl) * scale;
         // ROULIS — derive de rotWrite, et non devine. Un roulis de theta envoie l’axe Y local
         // de la boite sur (−sin theta, cos theta) dans le plan (f, hauteur). La position, elle,
@@ -523,9 +541,9 @@ public final class ShadowSignatureVfx {
         // D’ou −(lie + localRoll). Avec le signe oppose, la main se levait correctement mais
         // chaque doigt restait couche sur lui-meme — exactement le defaut du marteau de Thor,
         // dont les plaques se placaient bien mais s’orientaient a l’envers.
-        rot(vc, mat, tmp, cx, cy, cz, dx, dz, f, wristL + v * scale, y,
+        rot(vc, mat, tmp, cx, cy, cz, dx, dz, f, wristL - v * scale, y,
                 hu * scale, hh * scale, hv * scale,
-                base, 0.0f, -(lie + localRoll), rgb, opaque(alpha));
+                base + Mth.PI, 0.0f, -(lie + localRoll), rgb, opaque(alpha));
     }
 
     // =================================================================================
@@ -633,9 +651,9 @@ public final class ShadowSignatureVfx {
             float yaw = Mth.sin(t * 3.4f + salt * 0.37f) * 0.30f + (1.0f - out) * 0.9f;
             float bob = Mth.sin(t * 7.1f) * 0.065f * out;
             float jaw = breath * (1.0f - inhale) * 0.55f;
-            drawWitherSkull(vc, mat, tmp, cx, cy, cz, dx, dz,
+            drawDemonSkull(vc, mat, tmp, cx, cy, cz, dx, dz,
                     adv, 0.0f, midY + bob, yaw, sc, jaw,
-                    a * (0.35f + 0.65f * out), salt, strobe);
+                    a * (0.35f + 0.65f * out), salt, strobe, true);
         }
 
         // ---- 3. LE SOUFFLE ----
@@ -667,11 +685,11 @@ public final class ShadowSignatureVfx {
                 if (age <= 0.0f || age >= 1.0f) continue;
                 float ang = (k - 1) * 0.42f;
                 float adv = 1.3f + age * 5.4f;
-                drawWitherSkull(vc, mat, tmp, cx, cy, cz, dx, dz,
+                drawDemonSkull(vc, mat, tmp, cx, cy, cz, dx, dz,
                         adv, Mth.sin(ang) * adv * 0.35f,
                         midY - 0.25f - age * 0.9f + Mth.sin(age * 9.0f + k) * 0.18f,
                         ang + age * 2.6f, 0.30f * (1.0f - age * 0.35f), 0.42f,
-                        a * (1.0f - age) * 0.85f, salt + k * 701, strobe);
+                        a * (1.0f - age) * 0.85f, salt + k * 701, strobe, false);
             }
         }
 
@@ -751,179 +769,368 @@ public final class ShadowSignatureVfx {
     }
 
     /**
-     * Crâne du Flétrisseur. <b>96 pièces</b>, et c'est volontairement beaucoup : c'est le seul
-     * objet <i>reconnaissable</i> de la famille, donc celui qui doit tenir de près.
+     * Crâne de démon. <b>Environ deux cent dix pièces</b> au niveau de détail plein, et c'est
+     * volontairement beaucoup : c'est le seul objet <i>reconnaissable</i> de toute la famille,
+     * donc le seul qui doive tenir quand la caméra s'approche.
      *
-     * <p><b>Construction.</b> Comme le marteau de Thor, le crâne est fait de <i>tranches
-     * emboîtées</i> et jamais de panneaux rapportés : un panneau plaqué sur une face se détache
-     * comme une feuille dès que la caméra tourne. Les orbites sont des <b>creux</b> — une boîte
-     * sombre enfoncée dans la masse, puis une braise plus petite au fond — et non des taches
-     * peintes sur le front.</p>
+     * <p><b>Ce qui distingue un crâne de démon d'un crâne ordinaire</b>, et qui est donc
+     * modélisé ici explicitement : (1) le <i>museau allongé</i> — un crâne humain est une
+     * sphère, un crâne de démon est un prédateur, la mâchoire avance ; (2) les <i>arcades
+     * sourcilières obliques</i>, qui descendent vers le nez et donnent à elles seules
+     * l'expression de colère — sans elles on obtient un animal, pas un démon ; (3) les
+     * <i>cornes annelées</i> à six segments, qui partent vers l'arrière avant de se relever ;
+     * (4) les <i>crocs qui dépassent de la gueule fermée</i>, en haut comme en bas.</p>
+     *
+     * <p><b>Construction.</b> Tranches emboîtées, jamais de panneaux rapportés : un panneau
+     * plaqué sur une face se détache comme une feuille dès que la caméra tourne. Les orbites
+     * sont des <b>creux</b> — cavité sombre enfoncée dans la masse, puis braise au fond, puis
+     * pupille fendue — et non des taches peintes sur le front.</p>
      *
      * <p><b>Les valeurs.</b> Quatre tons d'os suffisent si on les place correctement : le plus
-     * clair sur les arêtes supérieures (front, pommettes, dessus de la mâchoire), le moyen sur
-     * les faces vues de trois quarts, le sombre dans les sutures, le très sombre au fond des
-     * orbites. C'est ce qui donne le volume ; la teinte, elle, ne change jamais.</p>
+     * clair sur les arêtes supérieures, le moyen sur les faces vues de trois quarts, le sombre
+     * dans les sutures, le très sombre au fond des orbites. C'est ce qui donne le volume ; la
+     * teinte, elle, ne change jamais.</p>
      *
-     * @param jaw ouverture de la mâchoire, 0 = fermée
+     * @param jaw  ouverture de la mâchoire, 0 = fermée
+     * @param full plein détail. Les trois crânes mineurs du souffle sont émis à {@code 0,30}
+     *             d'échelle : à cette taille les fissures, les anneaux de corne et les dents
+     *             secondaires tombent sous le tamis du moteur, et les calculer est du temps
+     *             perdu quatre fois par image.
      */
-    private static void drawWitherSkull(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                        float cx, float cy, float cz, float dx, float dz,
-                                        float atF, float atL, float atY,
-                                        float yaw, float scale, float jaw,
-                                        float alpha, int salt, int strobe) {
+    private static void drawDemonSkull(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                       float cx, float cy, float cz, float dx, float dz,
+                                       float atF, float atL, float atY,
+                                       float yaw, float scale, float jaw,
+                                       float alpha, int salt, int strobe, boolean full) {
         if (alpha <= 1.0f || scale <= 0.01f) return;
 
-        // --- boîte crânienne : cinq tranches horizontales, de la plus étroite (sommet) à la
-        //     plus large (hauteur des tempes), puis deux qui se resserrent vers la mâchoire ---
+        // Battement de la braise. Une lueur fixe se lit comme une peinture ; une lueur qui
+        // respire se lit comme quelque chose de vivant enfermé dans l'os.
+        final float glow = 0.68f + 0.32f * hash(salt + strobe * 13, 5);
+
+        // =============================== LA BOÎTE CRÂNIENNE ===============================
+        // Six tranches. Un crâne de démon est plus long que large : on part étroit au sommet,
+        // on élargit aux tempes, on resserre vers la base.
         skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                0.0f, 0.0f, 0.60f, 0.34f, 0.055f, 0.30f, BONE_HI, alpha);
+                -0.08f, 0.0f, 0.615f, 0.300f, 0.050f, 0.255f, BONE_HI, alpha);
         skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                0.0f, 0.0f, 0.47f, 0.40f, 0.085f, 0.37f, BONE_HI, alpha);
+                -0.07f, 0.0f, 0.500f, 0.350f, 0.075f, 0.320f, BONE_HI, alpha);
         skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                0.0f, 0.0f, 0.28f, 0.44f, 0.115f, 0.42f, BONE, alpha);
+                -0.06f, 0.0f, 0.335f, 0.390f, 0.100f, 0.375f, BONE, alpha);
         skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                0.0f, 0.0f, 0.06f, 0.45f, 0.115f, 0.43f, BONE, alpha);
+                -0.05f, 0.0f, 0.140f, 0.400f, 0.105f, 0.395f, BONE, alpha);
         skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                -0.02f, 0.0f, -0.14f, 0.40f, 0.095f, 0.38f, BONE_MID, alpha);
-        // l'occiput, derrière : plus sombre, il ferme la tête
+                -0.07f, 0.0f, -0.040f, 0.370f, 0.090f, 0.355f, BONE_MID, alpha);
         skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                -0.40f, 0.0f, 0.22f, 0.075f, 0.30f, 0.34f, BONE_DARK, alpha);
-        // suture sagittale : une rainure sombre du front à la nuque
-        for (int i = 0; i < 6; i++) {
-            float u = i / 5.0f;
-            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                    0.26f - u * 0.68f, 0.0f, 0.63f - u * 0.10f - (u > 0.7f ? (u - 0.7f) * 0.5f : 0.0f),
-                    0.055f, 0.030f, 0.028f, BONE_DARK, alpha);
+                -0.12f, 0.0f, -0.185f, 0.300f, 0.075f, 0.290f, BONE_MID, alpha);
+        // l'occiput : il ferme la tête derrière, et il est toujours dans l'ombre
+        skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                -0.44f, 0.0f, 0.200f, 0.070f, 0.280f, 0.300f, BONE_DARK, alpha);
+        skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                -0.46f, 0.0f, -0.030f, 0.055f, 0.090f, 0.150f, BONE_DEEP, alpha);
+
+        // --- la crête sagittale : cinq épines le long du sommet, de plus en plus hautes vers
+        //     l'arrière. C'est elle qui empêche le crâne de ressembler à un œuf. ---
+        for (int i = 0; i < 5; i++) {
+            float u = i / 4.0f;
+            float lf = 0.10f - u * 0.46f;
+            float hgt = 0.045f + u * 0.085f;
+            skullPieceRoll(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    lf, 0.0f, 0.650f + u * 0.030f + hgt, 0.040f, hgt, 0.038f,
+                    -0.25f - u * 0.20f, i % 2 == 0 ? BONE_HI : BONE, alpha);
         }
-        // sutures latérales
+        // --- les fosses temporales : deux creux sombres derrière les orbites. Un crâne sans
+        //     creux latéraux paraît gonflé. ---
         for (int s = -1; s <= 1; s += 2) {
-            for (int i = 0; i < 4; i++) {
-                float u = i / 3.0f;
+            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    -0.16f, s * 0.355f, 0.250f, 0.150f, 0.130f, 0.055f, BONE_DARK, alpha);
+            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    -0.16f, s * 0.390f, 0.250f, 0.120f, 0.100f, 0.030f, BONE_DEEP, alpha * 0.9f);
+        }
+
+        // ================================ LES ARCADES ====================================
+        // LE trait du démon. Deux barres massives, inclinées vers le bas et vers l'intérieur :
+        // l'œil lit l'angle avant de lire la forme, et un V renversé au-dessus des orbites se
+        // lit comme de la colère même sur une silhouette de trois pixels. Horizontales, elles
+        // donneraient un bovin ; relevées, un batracien.
+        for (int s = -1; s <= 1; s += 2) {
+            skullPieceRoll(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    0.215f, s * 0.215f, 0.300f, 0.075f, 0.150f, 0.115f, 0.62f, BONE_HI, alpha);
+            skullPieceRoll(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    0.195f, s * 0.335f, 0.345f, 0.065f, 0.130f, 0.070f, 0.48f, BONE, alpha);
+            // l'arête vive sur le dessus de l'arcade : le liseré qui la détache du front
+            skullPieceRoll(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    0.230f, s * 0.255f, 0.395f, 0.055f, 0.028f, 0.135f, 0.58f, BONE_HI, alpha);
+        }
+        // le glabelle : le pont d'os entre les deux arcades, saillant
+        skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                0.225f, 0.0f, 0.330f, 0.080f, 0.090f, 0.085f, BONE_HI, alpha);
+
+        // ================================= LES ORBITES ===================================
+        // Creusées en quatre couches, de la plus extérieure à la plus profonde. Une orbite
+        // peinte en noir sur le front ne creuse rien : c'est l'empilement qui fait le trou.
+        // ORDRE DE PROFONDEUR. Premiere version : une cavite BONE_DEEP de 0,075 de demi-epaisseur
+        // ENGLOBAIT la braise placee derriere elle, et le rebord — une boite pleine — bouchait
+        // le tout. Resultat : un carre sombre, aucun regard. Les couches sont donc desormais
+        // EMPILEES SANS CHEVAUCHEMENT le long de lf (le fond derriere, la braise devant lui,
+        // la pupille devant elle), et le rebord est un ANNEAU de quatre barres : un cadre ne
+        // peut pas masquer ce qu'il encadre.
+        for (int s = -1; s <= 1; s += 2) {
+            final float ol = s * 0.235f;           // lateral du centre de l'orbite
+            final float oy = 0.200f;               // hauteur du centre
+            // 1. le fond du trou, tout au fond
+            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    0.215f, ol, oy, 0.075f, 0.105f, 0.098f, VOID_INK, alpha);
+            // 2. la braise, DEVANT le fond
+            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    0.272f, ol, oy, 0.030f, 0.082f, 0.076f, VIOLET, alpha * glow);
+            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    0.294f, ol, oy, 0.022f, 0.058f, 0.052f, ORCHID, alpha * glow);
+            // 3. la PUPILLE FENDUE, verticale, devant la braise : le detail qui fait qu'on
+            //    voit un REGARD et non deux lampes. Ronde, elle donnerait un hibou.
+            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    0.310f, ol, oy, 0.018f, 0.054f, 0.013f, PALE, alpha * glow);
+            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    0.320f, ol, oy, 0.012f, 0.030f, 0.008f, SPARK, alpha * glow);
+            // 4. le rebord osseux : QUATRE BARRES, pas une boite pleine
+            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    0.296f, ol, oy + 0.128f, 0.050f, 0.032f, 0.132f, BONE_MID, alpha);
+            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    0.296f, ol, oy - 0.122f, 0.050f, 0.030f, 0.132f, BONE_HI, alpha);
+            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    0.296f, ol + s * 0.112f, oy, 0.050f, 0.112f, 0.030f, BONE_MID, alpha);
+            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    0.296f, ol - s * 0.108f, oy, 0.050f, 0.112f, 0.028f, BONE, alpha);
+            if (full) {
+                // la larme de braise : elle coule de l'orbite sur la pommette
+                for (int k = 0; k < 3; k++) {
+                    skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                            0.300f, s * (0.225f + k * 0.010f), 0.060f - k * 0.055f,
+                            0.016f, 0.030f, 0.016f, k == 0 ? ORCHID : PURPLE,
+                            alpha * glow * (0.85f - k * 0.22f));
+                }
+            }
+        }
+
+        // ================================= LE MUSEAU =====================================
+        // Il AVANCE. C'est la deuxième chose qui sépare un démon d'un humain, et elle se joue
+        // entièrement sur l'axe lf : quatre tranches qui s'allongent et se rétrécissent.
+        // Le museau s'arrete SOUS les orbites. Plus haut, il venait les couvrir par
+        // l'interieur et mangeait la moitie du regard.
+        skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                0.330f, 0.0f, 0.085f, 0.095f, 0.090f, 0.165f, BONE, alpha);
+        skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                0.440f, 0.0f, 0.075f, 0.090f, 0.088f, 0.155f, BONE, alpha);
+        skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                0.540f, 0.0f, 0.065f, 0.075f, 0.085f, 0.145f, BONE_MID, alpha);
+        skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                0.610f, 0.0f, 0.020f, 0.055f, 0.070f, 0.115f, BONE_MID, alpha);
+        // l'arête nasale : le liseré clair qui court sur le dessus du museau
+        for (int i = 0; i < 4; i++) {
+            float u = i / 3.0f;
+            skullPieceRoll(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    0.330f + u * 0.280f, 0.0f, 0.255f - u * 0.155f,
+                    0.055f, 0.026f, 0.050f - u * 0.016f, 0.42f, BONE_HI, alpha);
+        }
+        // les naseaux : deux trous, creusés comme les orbites
+        for (int s = -1; s <= 1; s += 2) {
+            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    0.600f, s * 0.062f, 0.095f, 0.045f, 0.050f, 0.042f, BONE_DEEP, alpha);
+            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    0.625f, s * 0.062f, 0.095f, 0.030f, 0.036f, 0.028f, VOID_INK, alpha);
+            if (full) {
                 skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                        0.12f - u * 0.42f, s * (0.38f - u * 0.05f), 0.50f - u * 0.26f,
-                        0.055f, 0.024f, 0.028f, BONE_DARK, alpha * 0.92f);
+                        0.632f, s * 0.062f, 0.095f, 0.020f, 0.022f, 0.018f, PURPLE,
+                        alpha * glow * 0.75f);
             }
         }
-
-        // --- le front : une arête saillante au-dessus des orbites ---
-        skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                0.40f, 0.0f, 0.34f, 0.075f, 0.075f, 0.40f, BONE_HI, alpha);
-        skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                0.43f, 0.0f, 0.46f, 0.055f, 0.055f, 0.33f, BONE_HI, alpha);
-
-        // --- les orbites : creusées, pas peintes ---
-        float burn = 0.70f + 0.30f * hash(salt + strobe * 11, 5);
+        // les pommettes : elles élargissent le bas du crâne — c'est ce qui fait « crâne »
         for (int s = -1; s <= 1; s += 2) {
-            float ol = s * 0.195f;
-            // le creux
+            skullPieceRoll(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    0.270f, s * 0.325f, 0.015f, 0.145f, 0.055f, 0.075f, -0.22f, BONE_HI, alpha);
             skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                    0.40f, ol, 0.23f, 0.085f, 0.115f, 0.125f, BONE_DEEP, alpha);
-            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                    0.34f, ol, 0.23f, 0.055f, 0.135f, 0.145f, BONE_DEEP, alpha);
-            // l'arcade : trois pièces qui bordent le creux et le rendent lisible de loin
-            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                    0.44f, ol, 0.375f, 0.055f, 0.030f, 0.145f, BONE_HI, alpha);
-            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                    0.44f, ol + s * 0.135f, 0.23f, 0.055f, 0.120f, 0.030f, BONE, alpha);
-            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                    0.44f, ol, 0.095f, 0.055f, 0.030f, 0.130f, BONE_MID, alpha);
-            // la braise au fond : deux cubes, violet puis pâle. C'est le seul point
-            // surexposé du modèle, donc le point de fixation du regard.
-            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                    0.37f, ol, 0.23f, 0.040f, 0.065f * burn, 0.070f * burn, VIOLET, alpha);
-            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                    0.39f, ol, 0.23f, 0.030f, 0.035f * burn, 0.038f * burn, PALE, alpha);
+                    0.120f, s * 0.350f, -0.020f, 0.110f, 0.065f, 0.060f, BONE_MID, alpha);
         }
 
-        // --- la cavité nasale : un triangle creusé, deux pièces ---
+        // ============================ LE MAXILLAIRE SUPÉRIEUR ============================
         skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                0.40f, 0.0f, 0.06f, 0.075f, 0.075f, 0.045f, BONE_DEEP, alpha);
-        skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                0.41f, 0.0f, 0.14f, 0.065f, 0.038f, 0.022f, BONE_DEEP, alpha);
-
-        // --- les pommettes : elles élargissent le bas du crâne, c'est ce qui fait « crâne »
-        //     et pas « boîte » ---
+                0.400f, 0.0f, -0.075f, 0.195f, 0.055f, 0.185f, BONE, alpha);
+        // les DEUX GRANDES CANINES, qui dépassent de la gueule même fermée. Trois tronçons
+        // décroissants chacune : une dent d'un seul cube n'est pas une dent, c'est un piquet.
         for (int s = -1; s <= 1; s += 2) {
-            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                    0.30f, s * 0.355f, 0.045f, 0.125f, 0.055f, 0.070f, BONE, alpha);
-            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                    0.10f, s * 0.395f, 0.02f, 0.105f, 0.045f, 0.055f, BONE_MID, alpha);
-        }
-
-        // --- le maxillaire supérieur et ses dents ---
-        skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                0.33f, 0.0f, -0.09f, 0.135f, 0.055f, 0.300f, BONE, alpha);
-        for (int i = 0; i < 7; i++) {
-            float lat = (i - 3) * 0.078f;
-            float len = (i == 3 || i == 2 || i == 4) ? 0.075f : 0.055f;
-            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                    0.34f, lat, -0.145f - len * 0.5f, 0.045f, len * 0.5f, 0.032f,
-                    i % 2 == 0 ? BONE_HI : BONE, alpha);
-        }
-
-        // --- la mâchoire : elle pivote autour de l'articulation, à l'arrière ---
-        {
-            float j = jaw * 0.62f;                     // angle d'ouverture
-            float pivF = -0.12f, pivH = -0.16f;
-            // branche horizontale
-            jawPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                    pivF, pivH, j, 0.26f, 0.0f, -0.10f, 0.165f, 0.055f, 0.290f, BONE, alpha);
-            jawPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                    pivF, pivH, j, 0.26f, 0.0f, -0.165f, 0.155f, 0.030f, 0.270f, BONE_MID, alpha);
-            // menton
-            jawPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                    pivF, pivH, j, 0.405f, 0.0f, -0.135f, 0.045f, 0.075f, 0.230f, BONE_HI, alpha);
-            // branches montantes (les deux côtés de la mâchoire)
-            for (int s = -1; s <= 1; s += 2) {
-                jawPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                        pivF, pivH, j, 0.26f, s * 0.265f, -0.105f, 0.155f, 0.050f, 0.035f,
-                        BONE_MID, alpha);
-                jawPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                        pivF, pivH, j, 0.02f, s * 0.245f, -0.02f, 0.045f, 0.095f, 0.040f,
-                        BONE_DARK, alpha);
+            float[] tl = {0.075f, 0.060f, 0.045f};
+            float[] tr = {0.040f, 0.030f, 0.018f};
+            float hh = -0.125f;
+            for (int p = 0; p < 3; p++) {
+                hh -= tl[p] * 0.5f;
+                skullPieceRoll(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                        0.470f + p * 0.012f, s * 0.145f, hh, tr[p], tl[p] * 0.5f, tr[p],
+                        -0.10f, p == 0 ? BONE_HI : (p == 1 ? BONE : BONE_HI), alpha);
+                hh -= tl[p] * 0.5f;
             }
-            // dents inférieures
-            for (int i = 0; i < 6; i++) {
-                float lat = (i - 2.5f) * 0.082f;
-                float len = (i == 2 || i == 3) ? 0.070f : 0.050f;
-                jawPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                        pivF, pivH, j, 0.34f, lat, -0.040f + len * 0.5f, 0.042f, len * 0.5f, 0.030f,
+        }
+        // les incisives et molaires
+        if (full) {
+            for (int i = 0; i < 9; i++) {
+                float lat = (i - 4) * 0.072f;
+                if (Math.abs(Math.abs(lat) - 0.145f) < 0.02f) continue;   // place des canines
+                float len = 0.048f + 0.020f * (1.0f - Math.abs(lat) * 3.0f);
+                if (len < 0.022f) len = 0.022f;
+                skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                        0.430f, lat, -0.135f - len * 0.5f, 0.042f, len * 0.5f, 0.030f,
                         i % 2 == 0 ? BONE_HI : BONE, alpha);
             }
-            // la gueule : quand elle s'ouvre, on voit le noir, pas un vide entre deux os
-            if (jaw > 0.05f) {
+        }
+
+        // ============================== LA MÂCHOIRE ======================================
+        // Elle pivote autour du condyle, à l'arrière. Tout ce qui suit passe par jawPiece,
+        // qui applique la rotation AUX POSITIONS ET À L'ORIENTATION : sans le second terme le
+        // menton descend en bloc et se détache du reste du crâne.
+        {
+            float j = jaw * 0.78f;                       // un démon ouvre plus grand
+            float pivF = -0.14f, pivH = -0.175f;
+            // la branche horizontale, en deux épaisseurs
+            jawPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    pivF, pivH, j, 0.280f, 0.0f, -0.115f, 0.300f, 0.055f, 0.270f, BONE, alpha);
+            jawPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    pivF, pivH, j, 0.280f, 0.0f, -0.185f, 0.280f, 0.030f, 0.245f, BONE_MID, alpha);
+            // le menton, fendu en deux : la fente est un creux, pas un trait peint
+            jawPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    pivF, pivH, j, 0.520f, 0.0f, -0.150f, 0.060f, 0.080f, 0.195f, BONE_HI, alpha);
+            jawPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    pivF, pivH, j, 0.545f, 0.0f, -0.150f, 0.040f, 0.060f, 0.022f, BONE_DARK, alpha);
+            for (int s = -1; s <= 1; s += 2) {
+                // les branches montantes, qui remontent vers l'articulation
+                jawPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                        pivF, pivH, j, 0.250f, s * 0.255f, -0.125f, 0.270f, 0.050f, 0.040f,
+                        BONE_MID, alpha);
+                jawPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                        pivF, pivH, j, -0.060f, s * 0.240f, -0.030f, 0.050f, 0.110f, 0.045f,
+                        BONE_DARK, alpha);
+                // le condyle : la boule d'articulation, visible quand la gueule s'ouvre
+                jawPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                        pivF, pivH, j, -0.130f, s * 0.235f, 0.075f, 0.045f, 0.045f, 0.050f,
+                        BONE_HI, alpha);
+                // LES DEUX GRANDES CANINES INFÉRIEURES, qui remontent devant le museau
+                float[] tl = {0.070f, 0.055f, 0.040f};
+                float[] tr = {0.038f, 0.028f, 0.017f};
+                float hh = -0.060f;
+                for (int p = 0; p < 3; p++) {
+                    hh += tl[p] * 0.5f;
+                    jawPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                            pivF, pivH, j, 0.455f + p * 0.010f, s * 0.150f, hh,
+                            tr[p], tl[p] * 0.5f, tr[p],
+                            p == 1 ? BONE : BONE_HI, alpha);
+                    hh += tl[p] * 0.5f;
+                }
+            }
+            if (full) {
+                for (int i = 0; i < 8; i++) {
+                    float lat = (i - 3.5f) * 0.074f;
+                    if (Math.abs(Math.abs(lat) - 0.148f) < 0.025f) continue;
+                    float len = 0.044f;
+                    jawPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                            pivF, pivH, j, 0.420f, lat, -0.065f + len * 0.5f,
+                            0.040f, len * 0.5f, 0.028f, i % 2 == 0 ? BONE_HI : BONE, alpha);
+                }
+            }
+            // la gueule : quand elle s'ouvre on doit voir du NOIR puis une gorge en braise,
+            // et non un vide entre deux os — un vide se lit comme un défaut de modèle.
+            if (jaw > 0.04f) {
                 skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                        0.26f, 0.0f, -0.17f - jaw * 0.14f, 0.115f, 0.075f + jaw * 0.13f, 0.215f,
-                        VOID_INK, alpha);
+                        0.270f, 0.0f, -0.185f - jaw * 0.165f, 0.175f, 0.075f + jaw * 0.155f,
+                        0.195f, VOID_INK, alpha);
                 skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                        0.20f, 0.0f, -0.17f - jaw * 0.14f, 0.065f, 0.055f + jaw * 0.10f, 0.150f,
-                        VIOLET, alpha * (0.35f + 0.65f * jaw));
+                        0.140f, 0.0f, -0.185f - jaw * 0.150f, 0.090f, 0.055f + jaw * 0.120f,
+                        0.125f, PURPLE, alpha * (0.30f + 0.70f * jaw));
+                skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                        0.085f, 0.0f, -0.185f - jaw * 0.140f, 0.055f, 0.038f + jaw * 0.085f,
+                        0.080f, VIOLET, alpha * (0.25f + 0.75f * jaw));
+                skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                        0.040f, 0.0f, -0.185f - jaw * 0.130f, 0.035f, 0.026f + jaw * 0.055f,
+                        0.050f, ORCHID, alpha * jaw);
             }
         }
 
-        // --- les cornes : deux pointes recourbées, trois segments chacune. Elles sortent du
-        //     registre « crâne de mob » et font du Flétrisseur une chose de l'ombre. ---
+        // ================================ LES CORNES =====================================
+        // Six segments annelés par corne. Elles partent des tempes vers l'ARRIÈRE, se couchent,
+        // puis se relèvent et pointent vers l'avant : une corne qui monte tout droit donne un
+        // taureau, c'est le retournement qui donne un démon. Le segment pointe vers
+        // (−sin ang, cos ang) dans le plan (avant, hauteur) ; le roulis vaut donc +ang — au
+        // signe opposé la corne se place en arc mais chaque tronçon reste vertical, et l'arc
+        // devient un escalier.
         for (int s = -1; s <= 1; s += 2) {
-            float f0 = -0.10f, h0 = 0.62f, lat = s * 0.26f, ang = -0.45f;
-            float[] seg = {0.30f, 0.26f, 0.20f};
-            float[] rad = {0.070f, 0.055f, 0.038f};
-            for (int p = 0; p < 3; p++) {
+            float f0 = -0.05f, h0 = 0.52f, lat = s * 0.300f, ang = -0.62f;
+            float[] seg = {0.26f, 0.25f, 0.24f, 0.22f, 0.19f, 0.15f};
+            float[] rad = {0.098f, 0.088f, 0.076f, 0.062f, 0.046f, 0.028f};
+            float[] turn = {0.46f, 0.52f, 0.56f, 0.60f, 0.62f, 0.0f};
+            for (int p = 0; p < 6; p++) {
                 float half = seg[p] * 0.5f;
                 float pf = f0 - Mth.sin(ang) * half;
                 float ph = h0 + Mth.cos(ang) * half;
-                // Le segment pointe vers (−sin ang, cos ang) dans le plan (avant, hauteur) :
-                // le roulis vaut donc +ang. Au signe oppose, les cornes se placaient en arc
-                // mais chaque troncon restait vertical, et la corne devenait un escalier.
+                float plat = lat + s * p * 0.022f;
+                int rgb = p == 0 ? UMBRA : (p == 1 ? PENUMBRA : (p < 4 ? PURPLE : VIOLET));
                 skullPieceRoll(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                        pf, lat + s * p * 0.035f, ph, rad[p], half, rad[p], ang,
-                        p == 0 ? UMBRA : (p == 1 ? PENUMBRA : PURPLE), alpha);
+                        pf, plat, ph, rad[p], half, rad[p], ang, rgb, alpha);
+                // L'ANNEAU : une bague légèrement plus large au départ de chaque tronçon.
+                // C'est ce relief qui fait la corne de bouc ; lisse, elle fait la défense.
+                if (full && p < 5) {
+                    skullPieceRoll(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                            f0 - Mth.sin(ang) * 0.02f, plat, h0 + Mth.cos(ang) * 0.02f,
+                            rad[p] * 1.22f, 0.018f, rad[p] * 1.22f, ang,
+                            p < 2 ? PENUMBRA : ORCHID, alpha * 0.92f);
+                }
                 f0 -= Mth.sin(ang) * seg[p];
                 h0 += Mth.cos(ang) * seg[p];
-                ang += 0.62f;
+                ang += turn[p];
             }
-            skullPiece(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
-                    f0, lat + s * 0.105f, h0, 0.028f, 0.045f, 0.028f, ORCHID, alpha);
+            // la pointe, surexposée : c'est elle qui accroche l'œil de loin
+            skullPieceRoll(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                    f0 - Mth.sin(ang) * 0.045f, lat + s * 0.132f, h0 + Mth.cos(ang) * 0.045f,
+                    0.020f, 0.048f, 0.020f, ang, PALE, alpha);
+
+            // --- les cornes secondaires : deux petites, sur la joue, pointant vers l'avant.
+            //     Elles remplissent le vide entre la mâchoire et la grande corne. ---
+            if (full) {
+                float gf = 0.08f, gh = 0.095f, ga = 1.15f;
+                for (int p = 0; p < 3; p++) {
+                    float hl = 0.085f - p * 0.018f;
+                    float rr = 0.040f - p * 0.010f;
+                    float pf = gf - Mth.sin(ga) * hl * 0.5f;
+                    float ph = gh + Mth.cos(ga) * hl * 0.5f;
+                    skullPieceRoll(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                            pf, s * 0.355f, ph, rr, hl * 0.5f, rr, ga,
+                            p == 2 ? ORCHID : PURPLE, alpha);
+                    gf -= Mth.sin(ga) * hl;
+                    gh += Mth.cos(ga) * hl;
+                    ga += 0.30f;
+                }
+            }
+        }
+
+        // ============================ LES FISSURES DE BRAISE =============================
+        // De la lumière qui sort de l'intérieur de l'os. Sans elles, le crâne est un objet ;
+        // avec elles, il est un contenant — et ce qu'il contient est la raison pour laquelle
+        // on ne veut pas être là.
+        if (full) {
+            final float[][] cracks = {
+                    {-0.100f, 0.290f, 0.520f, 0.085f},
+                    {-0.230f, -0.330f, 0.400f, 0.070f},
+                    {0.060f, 0.370f, 0.230f, 0.060f},
+                    {-0.300f, 0.180f, 0.090f, 0.055f},
+                    {0.180f, -0.390f, 0.130f, 0.050f},
+                    {-0.180f, -0.250f, 0.560f, 0.065f},
+            };
+            for (int i = 0; i < cracks.length; i++) {
+                float[] c = cracks[i];
+                float puls = 0.55f + 0.45f * hash(salt + i * 17, strobe + i);
+                skullPieceRoll(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                        c[0], c[1], c[2], 0.020f, c[3], 0.020f,
+                        (i % 2 == 0 ? 0.6f : -0.5f), VIOLET, alpha * puls);
+                skullPieceRoll(vc, mat, tmp, cx, cy, cz, dx, dz, atF, atL, atY, yaw, scale,
+                        c[0], c[1], c[2], 0.012f, c[3] * 0.62f, 0.012f,
+                        (i % 2 == 0 ? 0.6f : -0.5f), PALE, alpha * puls * 0.9f);
+            }
         }
     }
 
@@ -982,15 +1189,17 @@ public final class ShadowSignatureVfx {
     /**
      * Chronologie (200 ticks) :
      * <ul>
-     *   <li>0,00–0,11 <b>la montée</b> : le disque noir s'élève du sol jusqu'à dix blocs et
-     *       demi, en grossissant ;</li>
+     *   <li>0,00–0,11 <b>la montée</b> : le disque noir s'élève du sol jusqu'à <b>vingt-trois
+     *       blocs</b>, en grossissant, pendant que les étoiles s'allument ;</li>
      *   <li>0,11–0,24 <b>la couronne</b> : trente-six filaments se déploient autour du disque
      *       et ondulent — c'est la seule source de lumière de la scène ;</li>
      *   <li>0,24–0,42 <b>le voile tombe</b> : une demi-sphère de sept blocs de rayon descend
-     *       sur l'arène, tracée en méridiens et parallèles ;</li>
+     *       sur l'arène, tracée en méridiens et parallèles, pendant que neuf rayons
+     *       crépusculaires et une colonne en spirale relient le disque au sol ;</li>
      *   <li>0,42–0,62 <b>la nuit</b> : à l'intérieur, la cendre tombe et un sceau à trois
      *       croissants tourne au sol ;</li>
-     *   <li>0,62–0,74 <b>l'anneau de diamant</b> : un seul point du limbe éclate ;</li>
+     *   <li>0,62–0,74 <b>l'anneau de diamant</b> : un seul point du limbe éclate, et une onde
+     *       de choc part au sol un tiers de temps plus tard ;</li>
      *   <li>0,74–0,88 <b>la griffure</b> : trois lames courbes traversent le dôme ;</li>
      *   <li>0,88–1,00 <b>la levée</b> : le voile se déchire par le haut, le disque retombe.</li>
      * </ul>
@@ -1020,107 +1229,206 @@ public final class ShadowSignatureVfx {
         final float sunY = GROUND_Y + (SUN_Y - GROUND_Y) * rise - lift * 3.0f;
         final float sunR = SUN_R * (0.30f + 0.70f * rise) * (1.0f - lift * 0.55f);
 
+        // ---- 0. LES ÉTOILES ----
+        // Le serveur force le monde à minuit pendant toute la signature. Côté client, un ciel
+        // noir sans étoiles est juste un écran éteint : ce sont elles qui disent « il fait
+        // nuit » plutôt que « le rendu a lâché ». Elles sont posées sur une calotte très large
+        // et ne bougent pas — ce qui bouge, c'est leur scintillement.
+        if (rise > 0.02f) {
+            final int stars = 54;
+            for (int i = 0; i < stars; i++) {
+                float h1 = hash(salt + 301, i * 29);
+                float h2 = hash(salt + 302, i * 31);
+                float h3 = hash(salt + 303, i * 37);
+                float ang = h1 * TAU;
+                float phi = 0.18f + h2 * 1.05f;
+                float dist = 17.0f + 11.0f * h3;
+                float yy = GROUND_Y + 6.0f + Mth.cos(phi) * dist * 0.95f;
+                if (yy < GROUND_Y + 4.0f) continue;
+                float twinkle = 0.45f + 0.55f * hash(salt + i, strobe + i * 3);
+                float s = (0.040f + 0.055f * h3) * twinkle;
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * Mth.sin(phi) * dist, Mth.sin(ang) * Mth.sin(phi) * dist, yy,
+                        s, s, s, h3 > 0.78f ? SPARK : (h3 > 0.45f ? PALE : ORCHID),
+                        opaque(a * rise * (1.0f - lift) * twinkle * 0.9f));
+            }
+        }
+
         // ---- 1. LE SOLEIL NOIR ----
-        // Un disque vertical, face à l'attaquant : il occupe le plan (latéral, hauteur). Le
-        // remplissage est un vrai disque — on balaie la hauteur et on calcule la demi-corde —
-        // et non un empilement d'anneaux, qui laisse toujours des trous au centre.
+        // Un disque vertical, face à l'attaquant, à VINGT-TROIS BLOCS du sol. Le remplissage
+        // est un vrai disque — on balaie la hauteur et on calcule la demi-corde — et non un
+        // empilement d'anneaux, qui laisse toujours des trous au centre.
         if (sunR > 0.05f) {
-            final int rows = 17;
+            final int rows = 25;
             for (int r = 0; r < rows; r++) {
                 float v = (r + 0.5f) / rows;
                 float sy = (v - 0.5f) * 2.0f;                    // -1..1
                 float halfChord = Mth.sqrt(Math.max(0.0f, 1.0f - sy * sy)) * sunR;
                 if (halfChord < 0.03f) continue;
                 float yy = sunY + sy * sunR;
-                // le corps du disque : une seule boîte par rangée, c'est net et peu coûteux
                 box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, yy,
                         0.075f, sunR / rows * 1.15f, halfChord, VOID_INK, opaque(a));
-                // le limbe : deux cubes par rangée, posés pile sur le bord
                 for (int s = -1; s <= 1; s += 2) {
                     float flick = 0.74f + 0.26f * hash(salt + strobe * 9, r * 31 + s);
                     box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.010f, s * halfChord, yy,
-                            0.070f, sunR / rows * 1.05f, 0.055f, VIOLET, opaque(a * flick));
+                            0.070f, sunR / rows * 1.05f, 0.075f, VIOLET, opaque(a * flick));
                     box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.055f, s * halfChord, yy,
-                            0.030f, sunR / rows * 0.8f, 0.030f, ORCHID, opaque(a * flick));
+                            0.030f, sunR / rows * 0.8f, 0.040f, ORCHID, opaque(a * flick));
                 }
             }
-            // les deux pôles du limbe, que le balayage en rangées manque toujours
             for (int s = -1; s <= 1; s += 2) {
                 box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.010f, 0.0f, sunY + s * sunR,
-                        0.070f, 0.055f, 0.14f, VIOLET, opaque(a));
+                        0.070f, 0.075f, 0.19f, VIOLET, opaque(a));
             }
         }
 
         // ---- 2. LA COURONNE ----
-        // Trente-six filaments. Chacun est une chaîne de cinq cubes qui s'éloignent du limbe
+        // Quarante-huit filaments. Chacun est une chaîne de six cubes qui s'éloignent du limbe
         // en rapetissant : c'est le rapetissement qui fait la flamme, pas la courbure.
         if (corona > 0.01f) {
-            final int fil = 36;
+            final int fil = 48;
             for (int i = 0; i < fil; i++) {
                 float ang = i * TAU / fil;
                 float h1 = hash(salt + 81, i * 37);
                 float h2 = hash(salt + 82, i * 41);
-                // Respiration : chaque filament a sa propre période, sinon la couronne pulse
-                // d'un seul bloc et redevient un anneau.
                 float breathe = 0.55f + 0.45f * Mth.sin(t * (5.0f + 6.0f * h1) + h2 * TAU);
-                float len = (0.45f + 1.55f * h1) * corona * breathe * (1.0f - lift * 0.8f);
+                float len = (0.70f + 2.60f * h1) * corona * breathe * (1.0f - lift * 0.8f);
                 if (len < 0.06f) continue;
-                int segs = 5;
+                int segs = 6;
                 for (int s = 0; s < segs; s++) {
                     float u = (s + 0.5f) / segs;
                     float d = sunR + len * u;
-                    // léger cisaillement : les filaments se couchent dans le sens de rotation
                     float shear = u * u * 0.30f * (h2 - 0.5f) * 2.0f;
                     float aa = ang + shear;
-                    float ss = (0.070f - 0.045f * u) * (0.8f + 0.4f * h2);
+                    float ss = (0.095f - 0.060f * u) * (0.8f + 0.4f * h2);
                     int rgb = u < 0.25f ? PALE : (u < 0.55f ? ORCHID : (u < 0.8f ? VIOLET : PURPLE));
                     box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f,
                             Mth.cos(aa) * d, sunY + Mth.sin(aa) * d,
                             ss * 0.9f, ss, ss, rgb, opaque(a * corona * (1.0f - u * 0.35f)));
                 }
             }
+            // LES PROTUBÉRANCES : trois grandes langues qui jaillissent du limbe et retombent
+            // en arc. Les filaments donnent le halo ; les protubérances donnent l'échelle, et
+            // c'est l'échelle qui rend une étoile effrayante.
+            for (int k = 0; k < 3; k++) {
+                float base = k * (TAU / 3.0f) + salt * 0.0013f + t * 0.25f;
+                float life = clamp((corona - k * 0.12f) * 1.4f) * (1.0f - lift);
+                if (life < 0.02f) continue;
+                int n = 14;
+                for (int i = 0; i < n; i++) {
+                    float u = (i + 0.5f) / n;
+                    float arc = Mth.sin(u * Mth.PI);
+                    float d = sunR * (1.0f + 0.95f * arc);
+                    float aa = base + (u - 0.5f) * 1.25f;
+                    float ss = (0.14f - 0.085f * u) * arc + 0.030f;
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f,
+                            Mth.cos(aa) * d, sunY + Mth.sin(aa) * d,
+                            ss * 0.8f, ss, ss,
+                            u < 0.3f ? PALE : (u < 0.7f ? ORCHID : VIOLET),
+                            opaque(a * life * (0.55f + 0.45f * arc)));
+                }
+            }
         }
 
-        // ---- 3. L'ANNEAU DE DIAMANT ----
-        // Un seul point du limbe, surexposé, avec quatre branches en croix. C'est l'instant que
-        // tout le monde reconnaît d'une éclipse, et il ne dure qu'une poignée de ticks.
+        // ---- 3. LES RAYONS CRÉPUSCULAIRES ----
+        // Le soleil est à vingt-trois blocs, le dôme en fait sept : sans rien entre les deux,
+        // on voit deux objets séparés et non un seul événement. Neuf faisceaux descendent donc
+        // du limbe jusqu'à l'ourlet, en éventail. Ils sont BRISÉS — chaque faisceau saute des
+        // segments — parce qu'un trait plein ferait un tuyau de lumière, et qu'on veut de la
+        // poussière traversée.
+        if (veil > 0.01f) {
+            final int shafts = 9;
+            final float reach = veil * (1.0f - lift * 0.85f);
+            for (int k = 0; k < shafts; k++) {
+                float ang = k * TAU / shafts + t * 0.18f;
+                float h1 = hash(salt + 211, k * 53);
+                int n = 16;
+                for (int i = 0; i < n; i++) {
+                    float u = (i + 0.5f) / n;
+                    if (u > reach) break;
+                    // un segment sur cinq manque, et le motif dérive avec le temps
+                    if (hash(salt + k * 7, i * 3 + strobe / 3) < 0.22f) continue;
+                    float yy = sunY - (sunY - (GROUND_Y + 0.25f)) * u;
+                    float spread = sunR * 0.80f + (DOME_R * 0.92f - sunR * 0.80f) * u;
+                    float ss = (0.075f + 0.055f * h1) * (1.0f - u * 0.45f);
+                    int rgb = u < 0.3f ? ORCHID : (u < 0.65f ? VIOLET : PURPLE);
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            Mth.cos(ang) * spread, Mth.sin(ang) * spread, yy,
+                            ss, ss * 1.9f, ss, rgb,
+                            opaque(a * veil * (0.75f - u * 0.35f)));
+                }
+            }
+            // LA COLONNE : une spirale serrée sur l'axe, du soleil au sceau. C'est le fil qui
+            // dit que le disque là-haut et le cercle au sol sont la même chose.
+            int turns = 26;
+            for (int i = 0; i < turns; i++) {
+                float u = (i + 0.5f) / turns;
+                if (u > reach) break;
+                float yy = sunY - (sunY - (GROUND_Y + 0.15f)) * u;
+                float rr = 0.35f + 1.15f * Mth.sin(u * Mth.PI);
+                float ang = u * 9.0f + t * 2.2f;
+                float ss = 0.070f * (1.0f - u * 0.30f);
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * rr, Mth.sin(ang) * rr, yy, ss, ss, ss,
+                        i % 3 == 0 ? PALE : VIOLET, opaque(a * veil * 0.85f));
+            }
+        }
+
+        // ---- 4. L'ANNEAU DE DIAMANT ----
+        // Un seul point du limbe, surexposé, avec quatre branches en croix, puis une ONDE DE
+        // CHOC qui part au sol. C'est l'instant que tout le monde reconnaît d'une éclipse, et
+        // il ne dure qu'une poignée de ticks.
         if (diamond > 0.01f && diamond < 0.999f) {
             float pop = Mth.sin(diamond * Mth.PI);
             float ang = -0.75f + salt * 0.0007f;
             float px = Mth.cos(ang) * sunR, py = Mth.sin(ang) * sunR;
-            float s0 = 0.085f + 0.19f * pop;
+            float s0 = 0.130f + 0.30f * pop;
             box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.075f, px, sunY + py,
                     0.055f, s0, s0, SPARK, opaque(a));
             box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.095f, px, sunY + py,
                     0.040f, s0 * 0.52f, s0 * 0.52f, 0xFFFFFF, opaque(a));
             for (int k = 0; k < 4; k++) {
                 float ba = k * HALF_PI + 0.35f;
-                float bl = (0.35f + 1.35f * pop) * (k % 2 == 0 ? 1.0f : 0.62f);
-                int segs = 5;
+                float bl = (0.55f + 2.20f * pop) * (k % 2 == 0 ? 1.0f : 0.62f);
+                int segs = 7;
                 for (int s = 0; s < segs; s++) {
                     float u = (s + 0.5f) / segs;
-                    float ss = 0.055f * (1.0f - u * 0.75f);
+                    float ss = 0.070f * (1.0f - u * 0.75f);
                     box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.070f,
                             px + Mth.cos(ba) * bl * u, sunY + py + Mth.sin(ba) * bl * u,
                             0.045f, ss, ss, u < 0.4f ? PALE : ORCHID, opaque(a * (1.0f - u * 0.5f)));
                 }
             }
+            // l'onde de choc au sol, en retard d'un tiers : la lumière part d'en haut, le sol
+            // répond après. Simultanés, les deux événements n'en font qu'un et on perd le lien.
+            float wave = clamp((diamond - 0.30f) / 0.70f);
+            if (wave > 0.001f) {
+                int n = 64;
+                float rr = DOME_R * 1.05f * wave;
+                float fade = 1.0f - wave * 0.75f;
+                for (int i = 0; i < n; i++) {
+                    float aa = i * TAU / n;
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            Mth.cos(aa) * rr, Mth.sin(aa) * rr, GROUND_Y + 0.03f,
+                            0.115f, SLAB_H * (1.0f + 2.5f * fade), 0.115f,
+                            i % 3 == 0 ? SPARK : PALE, opaque(a * fade));
+                }
+            }
         }
 
-        // ---- 4. LE VOILE ----
+        // ---- 5. LE VOILE ----
         if (veil > 0.01f) {
             float close = veil * (1.0f - lift);
             // Le dôme descend : à close = 0 il est une calotte plate très haut, à close = 1 il
             // touche le sol. On interpole l'angle polaire maximal, pas le rayon : c'est ce qui
             // donne l'impression qu'il se referme plutôt qu'il ne rétrécit.
             float maxPhi = HALF_PI * close;
-            final int meridians = 9;
-            final int parallels = 5;
-            // méridiens
+            final int meridians = 11;
+            final int parallels = 6;
             for (int m = 0; m < meridians; m++) {
-                float th = m * Mth.PI / meridians;              // demi-tour suffit, on double
+                float th = m * Mth.PI / meridians;
                 float ct = Mth.cos(th), st = Mth.sin(th);
-                int steps = 11;
+                int steps = 13;
                 for (int i = 0; i <= steps; i++) {
                     float phi = maxPhi * i / steps;
                     float rr = DOME_R * Mth.sin(phi);
@@ -1138,7 +1446,6 @@ public final class ShadowSignatureVfx {
                     }
                 }
             }
-            // parallèles
             for (int p = 1; p <= parallels; p++) {
                 float phi = maxPhi * p / parallels;
                 float rr = DOME_R * Mth.sin(phi);
@@ -1167,12 +1474,35 @@ public final class ShadowSignatureVfx {
                             opaque(a * hem));
                 }
             }
+            // LES ARCS RAMPANTS : de brèves décharges qui courent à la surface du dôme, comme
+            // sur un bouclier qui encaisse. Chacune ne vit que quelques ticks et choisit un
+            // méridien au hasard — c'est la brièveté qui fait l'électricité.
+            if (close > 0.45f) {
+                for (int k = 0; k < 5; k++) {
+                    float seed = hash(salt + 401 + k * 13, strobe / 2);
+                    if (seed < 0.45f) continue;
+                    float th = seed * TAU;
+                    float ct = Mth.cos(th), st = Mth.sin(th);
+                    float p0 = hash(salt + 402 + k, strobe / 2) * 0.55f;
+                    int n = 7;
+                    for (int i = 0; i < n; i++) {
+                        float phi = (p0 + i * 0.075f) * HALF_PI * close;
+                        float rr = DOME_R * Mth.sin(phi) * (1.0f + 0.03f * Mth.sin(i * 2.1f));
+                        float yy = GROUND_Y + DOME_R * Mth.cos(phi) * (0.55f + 0.45f * close);
+                        float jig = (hash(salt + k * 31, i * 7 + strobe) - 0.5f) * 0.22f;
+                        box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                (ct + jig) * rr, (st - jig) * rr, yy,
+                                0.065f, 0.065f, 0.065f, i % 2 == 0 ? SPARK : PALE,
+                                opaque(a * close * 0.95f));
+                    }
+                }
+            }
         }
 
-        // ---- 5. LA NUIT INTÉRIEURE ----
+        // ---- 6. LA NUIT INTÉRIEURE ----
         if (night > 0.01f) {
             // cendre : elle tombe lentement et uniquement DANS le dôme
-            int motes = 44;
+            int motes = 62;
             for (int i = 0; i < motes; i++) {
                 float h1 = hash(salt + 91, i * 37);
                 float h2 = hash(salt + 92, i * 41);
@@ -1186,6 +1516,23 @@ public final class ShadowSignatureVfx {
                         Mth.cos(ang) * rr, Mth.sin(ang) * rr, yy, s, s, s,
                         h3 > 0.80f ? ORCHID : (h3 > 0.45f ? ASH : UMBRA),
                         opaque(a * night * (0.45f + 0.55f * cycle)));
+            }
+            // LES BRAISES MONTANTES : l'inverse de la cendre. Elles partent du sceau et sont
+            // aspirées vers le disque. Deux flux de sens contraire valent mieux qu'un seul
+            // deux fois plus dense : c'est le croisement qui donne la profondeur.
+            int embers = 30;
+            for (int i = 0; i < embers; i++) {
+                float h1 = hash(salt + 95, i * 47);
+                float h2 = hash(salt + 96, i * 53);
+                float cycle = fract(t * (0.42f + 0.34f * h1) + h2);
+                float ang = h2 * TAU + cycle * 2.1f;
+                float rr = (0.6f + 3.4f * h1) * (1.0f - cycle * 0.72f);
+                float yy = GROUND_Y + 0.2f + cycle * (sunY - GROUND_Y) * 0.92f;
+                float s = (0.055f + 0.030f * h1) * (1.0f - cycle * 0.55f);
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * rr, Mth.sin(ang) * rr, yy, s, s, s,
+                        cycle > 0.62f ? SPARK : (cycle > 0.3f ? PALE : ORCHID),
+                        opaque(a * night * (1.0f - cycle * 0.45f)));
             }
             // le sceau : trois croissants qui tournent, plus un cercle de garde
             float spin = t * 1.15f;
@@ -1210,9 +1557,27 @@ public final class ShadowSignatureVfx {
                         0.070f, SLAB_H, 0.070f, i % 5 == 0 ? PALE : PURPLE,
                         opaque(a * night * 0.9f));
             }
+            // LES RUNES : huit glyphes sur le cercle de garde, tournant à contresens. Chacun
+            // est une petite croix irrégulière — assez pour qu'on lise « écriture » sans
+            // qu'aucun ne signifie quoi que ce soit.
+            for (int k = 0; k < 8; k++) {
+                float ang = k * TAU / 8.0f + spin * 0.55f;
+                float rr = 5.15f;
+                float bx = Mth.cos(ang) * rr, bz = Mth.sin(ang) * rr;
+                float puls = 0.55f + 0.45f * hash(salt + k * 19, strobe + k);
+                int bars = 3 + (k % 3);
+                for (int i = 0; i < bars; i++) {
+                    float off = (i - (bars - 1) * 0.5f) * 0.16f;
+                    float len = 0.14f + 0.10f * hash(salt + k * 23, i * 11);
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            bx + Mth.cos(ang + HALF_PI) * off, bz + Mth.sin(ang + HALF_PI) * off,
+                            GROUND_Y + 0.030f, len, SLAB_H, 0.045f,
+                            i == 0 ? PALE : ORCHID, opaque(a * night * puls));
+                }
+            }
         }
 
-        // ---- 6. LA GRIFFURE ----
+        // ---- 7. LA GRIFFURE ----
         // Trois lames courbes qui balaient le dôme. Chacune est un arc de cercle incliné :
         // on l'échantillonne en 18 points, et sa largeur suit un sinus pour qu'elle soit
         // pointue aux deux bouts. Une lame d'épaisseur constante est un tuyau, pas une griffe.
@@ -1254,7 +1619,7 @@ public final class ShadowSignatureVfx {
             }
         }
 
-        // ---- 7. LA LEVÉE ----
+        // ---- 8. LA LEVÉE ----
         // Le voile ne s'efface pas : il part en lambeaux vers le haut. Encore une fois, la
         // disparition est GÉOMÉTRIQUE — les lambeaux rapetissent et montent, l'alpha reste plein.
         if (lift > 0.01f) {

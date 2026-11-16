@@ -2909,6 +2909,65 @@ public final class WeaponVfxServerListener {
     private static final double RIFT_BREATH_RANGE = 6.5;
     /** Rayon du dôme d'éclipse. Doit rester aligné sur {@code ShadowSignatureVfx.DOME_R}. */
     private static final double DOME_RADIUS = 7.0;
+
+    /**
+     * Ciel confisque pendant une eclipse. On retient l'heure du monde AVANT la signature,
+     * l'instant ou on l'a prise, et l'instant ou on doit la rendre.
+     *
+     * <p>La cle est le nom de la dimension et non le {@code ServerLevel} lui-meme : une
+     * carte statique qui retient un niveau l'empeche d'etre liberee quand le monde est
+     * decharge.</p>
+     */
+    private record SkyTheft(long originalDayTime, long startedAt, long endsAt) {}
+
+    private static final Map<String, SkyTheft> ECLIPSE_SKY = new ConcurrentHashMap<>();
+
+    /**
+     * Force le monde a minuit pour la duree de l'eclipse.
+     *
+     * <p><b>Le piege, et la raison de tout ce code.</b> Deux eclipses qui se chevauchent
+     * cassent le monde si on les traite naivement : la seconde enregistre <i>minuit</i>
+     * comme heure d'origine, et quand la premiere se termine elle rend minuit. Le monde
+     * reste alors dans la nuit pour toujours, et le joueur n'a aucun moyen de comprendre
+     * pourquoi. On ne retient donc l'heure QU'A LA PREMIERE prise ; les suivantes se
+     * contentent de reculer l'echeance.</p>
+     *
+     * <p>Le changement est propage aux clients par la liste des joueurs, qui reemet
+     * l'heure toutes les secondes : le ciel s'assombrit donc en moins d'une seconde,
+     * pendant que le disque monte. C'est volontairement laisse au serveur plutot que
+     * d'envoyer le paquet a la main — un constructeur de paquet se trompe en silence.</p>
+     */
+    private static void stealSky(ServerLevel sl, int durationTicks) {
+        final String key = sl.dimension().location().toString();
+        final long gameNow = sl.getGameTime();
+        final long ends = gameNow + durationTicks;
+        ECLIPSE_SKY.compute(key, (k, cur) -> {
+            if (cur == null) return new SkyTheft(sl.getDayTime(), gameNow, ends);
+            // Deja de nuit : on garde l'heure d'origine de la PREMIERE eclipse et on ne
+            // fait que repousser l'echeance.
+            return cur.endsAt() >= ends ? cur : new SkyTheft(cur.originalDayTime(), cur.startedAt(), ends);
+        });
+        sl.setDayTime(18000L);
+    }
+
+    /**
+     * Rend le ciel. Ne fait rien si une eclipse plus recente tient encore la dimension :
+     * c'est elle qui rendra l'heure, et elle a conserve l'originale.
+     *
+     * <p>On rend {@code origine + temps ecoule} et non {@code origine} tout court, sinon
+     * chaque eclipse remonterait l'horloge du monde de dix secondes. Si le cycle du jour
+     * est gele, ces dix secondes sont rendues en trop — huit dixiemes de pour cent d'un
+     * cycle, invisible, et c'est le prix a payer pour ne pas dependre d'une gamerule dont
+     * on ne peut pas verifier le nom sans compilateur.</p>
+     */
+    private static void returnSky(ServerLevel sl) {
+        final String key = sl.dimension().location().toString();
+        final SkyTheft theft = ECLIPSE_SKY.get(key);
+        if (theft == null) return;
+        if (sl.getGameTime() < theft.endsAt()) return;
+        ECLIPSE_SKY.remove(key);
+        sl.setDayTime(theft.originalDayTime() + (sl.getGameTime() - theft.startedAt()));
+    }
     /** Longueur du couloir de l'allonge, et sa demi-largeur. */
     private static final double REACH_LENGTH = 9.0;
     private static final double REACH_HALF_WIDTH = 1.35;
@@ -3396,24 +3455,67 @@ public final class WeaponVfxServerListener {
         final double oz = target.getZ();
         final float base = Math.max(1.5f, weaponDamage * 0.88f);
 
-        // --- La montée du soleil noir ---
+        // --- LA NUIT. Le monde passe a minuit pour les deux cents ticks de la signature,
+        //     puis retrouve l'heure qu'il avait, avancee du temps ecoule. C'est le seul
+        //     effet du mod qui touche a l'etat du MONDE et non a celui des entites, d'ou
+        //     la machinerie de stealSky/returnSky : il faut pouvoir le rendre meme si deux
+        //     eclipses se chevauchent. ---
+        stealSky(sl, 200);
+        sl.playSound(null, ox, oy, oz, SoundEvents.WARDEN_EMERGE, SoundSource.PLAYERS, 1.00f, 0.42f);
+
+        // --- La montee du soleil noir : cinq battements de plus en plus rapproches, et une
+        //     COLONNE de particules qui monte jusqu'a la hauteur du disque. Sans la colonne,
+        //     le joueur n'a aucune raison de lever les yeux, et il rate l'eclipse. ---
         sl.playSound(null, ox, oy + 8.0, oz, SoundEvents.WARDEN_HEARTBEAT, SoundSource.PLAYERS, 0.85f, 0.65f);
-        for (int k = 0; k < 4; k++) {
+        for (int k = 0; k < 5; k++) {
             final int step = k;
-            TestProcedure.schedule(sl, now + 6 + step * 9, () -> {
+            TestProcedure.schedule(sl, now + 4 + step * 8, () -> {
                 sl.playSound(null, ox, oy + 6.0, oz, SoundEvents.WARDEN_HEARTBEAT,
                         SoundSource.PLAYERS, 0.50f + step * 0.12f, 0.58f + step * 0.05f);
-                PixelFx.send(sl, ParticleTypes.SCULK_SOUL, ox, oy + 4.0 + step * 1.6, oz,
-                        14, 0.80, 0.40, 0.80, 0.01);
+                // la colonne : six paliers par battement, du sol jusqu'a vingt-trois blocs
+                for (int h = 0; h < 6; h++) {
+                    double hy = oy + 1.0 + h * 3.8 + step * 0.6;
+                    PixelFx.send(sl, ParticleTypes.SCULK_SOUL, ox, hy, oz, 6, 0.55, 0.30, 0.55, 0.012);
+                    PixelFx.send(sl, ParticleTypes.PORTAL, ox, hy, oz, 5, 0.85, 0.45, 0.85, 0.035);
+                }
             });
         }
+        // le disque lui-meme, a vingt-trois blocs : une bouffee d'encre et de souffle
+        TestProcedure.schedule(sl, now + 22, () -> {
+            sl.playSound(null, ox, oy + 20.0, oz, SoundEvents.WARDEN_SONIC_CHARGE,
+                    SoundSource.PLAYERS, 1.00f, 0.50f);
+            PixelFx.send(sl, ParticleTypes.SQUID_INK, ox, oy + 22.0, oz, 70, 2.60, 2.60, 2.60, 0.02);
+            PixelFx.send(sl, ParticleTypes.REVERSE_PORTAL, ox, oy + 22.0, oz, 60, 3.20, 3.20, 3.20, 0.06);
+            PixelFx.send(sl, ParticleTypes.DRAGON_BREATH, ox, oy + 22.0, oz, 40, 3.60, 3.60, 3.60, 0.01);
+        });
 
         // --- Le voile se pose (tick 48) ---
         TestProcedure.schedule(sl, now + 48, () -> {
             sl.playSound(null, ox, oy, oz, SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 0.80f, 0.55f);
             sl.playSound(null, ox, oy, oz, SoundEvents.AMBIENT_CAVE.value(), SoundSource.PLAYERS, 0.90f, 0.70f);
+            sl.playSound(null, ox, oy, oz, SoundEvents.ELDER_GUARDIAN_CURSE, SoundSource.PLAYERS, 0.55f, 0.48f);
             PixelFx.send(sl, ParticleTypes.SQUID_INK, ox, oy + 1.0, oz, 80, 3.20, 1.20, 3.20, 0.04);
+            // L'OURLET. Le dome est un contrat de position : sa limite doit exister au sol,
+            // pas seulement dans le rendu client. Trente-deux bouffees sur le cercle.
+            for (int i = 0; i < 32; i++) {
+                double ang = i * (Math.PI * 2.0) / 32.0;
+                double rx = ox + Math.cos(ang) * DOME_RADIUS;
+                double rz = oz + Math.sin(ang) * DOME_RADIUS;
+                PixelFx.send(sl, ParticleTypes.SCULK_SOUL, rx, oy - 0.6, rz, 3, 0.10, 0.45, 0.10, 0.015);
+                if (i % 4 == 0) {
+                    PixelFx.send(sl, ParticleTypes.END_ROD, rx, oy - 0.5, rz, 2, 0.08, 0.30, 0.08, 0.008);
+                }
+            }
         });
+        // --- La cendre, pendant toute la nuit : six bouffees espacees de 18 ticks. Un
+        //     dome silencieux et vide se lit comme un decor ; il faut qu'il PLEUVE. ---
+        for (int k = 0; k < 6; k++) {
+            TestProcedure.schedule(sl, now + 56 + k * 18, () -> {
+                PixelFx.send(sl, ParticleTypes.ASH, ox, oy + 3.5, oz, 55, 3.40, 2.20, 3.40, 0.01);
+                PixelFx.send(sl, ParticleTypes.WHITE_ASH, ox, oy + 4.5, oz, 25, 3.00, 2.00, 3.00, 0.01);
+                PixelFx.send(sl, ParticleTypes.PORTAL, ox, oy + 1.2, oz, 30, 2.80, 1.40, 2.80, 0.05);
+            });
+        }
 
         // --- Les battements (ticks 68 à 140, un toutes les 18 ticks) ---
         // Le premier tombe au tick 68, pas au tick 54 : c'est là que l'ourlet du dôme touche
@@ -3450,11 +3552,29 @@ public final class WeaponVfxServerListener {
             });
         }
 
-        // --- L'anneau de diamant (tick 140) : l'avertissement ---
+        // --- L'anneau de diamant (tick 140) : l'avertissement, et le seul instant clair ---
         TestProcedure.schedule(sl, now + 140, () -> {
             sl.playSound(null, ox, oy + 3.0, oz, SoundEvents.WARDEN_SONIC_CHARGE, SoundSource.PLAYERS,
                     0.80f, 1.10f);
+            sl.playSound(null, ox, oy + 18.0, oz, SoundEvents.GHAST_SCREAM, SoundSource.PLAYERS,
+                    0.65f, 0.55f);
             PixelFx.send(sl, ParticleTypes.END_ROD, ox, oy + 3.0, oz, 24, 0.60, 0.60, 0.60, 0.05);
+            // l'eclat la-haut, sur le limbe
+            PixelFx.send(sl, ParticleTypes.FLASH, ox, oy + 22.0, oz, 3, 0.80, 0.80, 0.80, 0.0);
+            PixelFx.send(sl, ParticleTypes.END_ROD, ox, oy + 22.0, oz, 55, 3.60, 3.60, 3.60, 0.16);
+        });
+        // L'ONDE DE CHOC, douze ticks plus tard. La lumiere part d'en haut, le sol repond
+        // APRES : simultanes, les deux evenements n'en font qu'un et on perd le lien de
+        // cause a effet. Le decalage est le meme que celui du rendu client.
+        TestProcedure.schedule(sl, now + 152 - 4, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.WARDEN_NEARBY_CLOSE, SoundSource.PLAYERS,
+                    0.90f, 0.60f);
+            for (int i = 0; i < 40; i++) {
+                double ang = i * (Math.PI * 2.0) / 40.0;
+                PixelFx.send(sl, ParticleTypes.SONIC_BOOM,
+                        ox + Math.cos(ang) * DOME_RADIUS * 0.85, oy - 0.5,
+                        oz + Math.sin(ang) * DOME_RADIUS * 0.85, 1, 0.05, 0.05, 0.05, 0.0);
+            }
         });
 
         // --- Les griffures (tick 152) ---
@@ -3480,6 +3600,17 @@ public final class WeaponVfxServerListener {
         TestProcedure.schedule(sl, now + 178, () -> {
             sl.playSound(null, ox, oy, oz, SoundEvents.PORTAL_TRAVEL, SoundSource.PLAYERS, 0.35f, 1.40f);
             PixelFx.send(sl, ParticleTypes.ASH, ox, oy + 1.5, oz, 70, 3.00, 1.60, 3.00, 0.03);
+            PixelFx.send(sl, ParticleTypes.REVERSE_PORTAL, ox, oy + 2.0, oz, 50, 2.40, 2.60, 2.40, 0.09);
+        });
+
+        // --- LE JOUR REVIENT (tick 200) ---
+        // Programme a la duree EXACTE de la signature, pas une frame de moins : le ciel
+        // doit rester noir tant que le dome est a l'ecran, sinon on voit le soleil se
+        // rallumer a travers une eclipse encore en cours.
+        TestProcedure.schedule(sl, now + 200, () -> {
+            returnSky(sl);
+            sl.playSound(null, ox, oy, oz, SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS,
+                    0.50f, 1.25f);
         });
     }
 
