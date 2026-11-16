@@ -453,6 +453,16 @@ public final class WeaponVfxServerListener {
 
         // Grosse animation jouée -> le dégât de ce coup sera amplifié de 5 % (voir onLivingHurtVisuals).
         LAST_BIG_ANIM_TICK.put(attacker.getId(), now);
+        // LA FAILLE EST LA SEULE SIGNATURE QUI NE SE JOUE PAS SUR LE MOB. Elle s'ouvre
+        // derrière lui et souffle à travers : son point de référence dépend donc du groupe
+        // visé, pas du seul corps touché. On le recule ici, avant l'envoi, pour que l'image
+        // et le cône de dégâts partent exactement du même endroit.
+        if (fx == WeaponVisualEffectId.WITHER_SHADOW_RIFT && livingTarget != null) {
+            double[] dir = towardWielder(attacker, cx, cz);
+            double[] anchor = riftAnchor(sl, cx, cy, cz, dir[0], dir[1], attacker.getId());
+            cx = (float) anchor[0];
+            cz = (float) anchor[1];
+        }
         broadcastNear(sl, cx, cy, cz, fx.id, KIND_IMPACT, Math.max(2, intensity),
                 cx, cy, cz, (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ(),
                 paletteOf(attacker.getMainHandItem(), fx), lightVisualScaleOf(fx, target, sizeScaleOf(target)));
@@ -2907,6 +2917,55 @@ public final class WeaponVfxServerListener {
     /** Rayon d'aspiration de la faille, et portée du cône de souffle. */
     private static final double RIFT_PULL_RADIUS = 8.0;
     private static final double RIFT_BREATH_RANGE = 6.5;
+
+    /** Recul de la faille derrière l'ancrage. Égal à {@code RIFT_BACK} du rendu client. */
+    private static final double RIFT_BACK = 2.0;
+
+    /**
+     * Où centrer la Faille du Flétrisseur, en fonction de ce qu'il y a à souffler.
+     *
+     * <p>Le client ouvre toujours la faille {@code RIFT_BACK} blocs derrière le point qu'on
+     * lui envoie, et souffle de là vers le porteur sur {@code RIFT_BREATH_RANGE} blocs. Le
+     * cône est donc entièrement déterminé par ce point — et c'est pour ça qu'il faut le
+     * choisir ici plutôt que de prendre la cible les yeux fermés.</p>
+     *
+     * <p><b>La règle.</b> La bouche doit être derrière le mob le plus éloigné du porteur,
+     * sinon celui-là se retrouve dans le dos du crâne et ne reçoit rien alors qu'il est
+     * visuellement dans le jet. Mais elle ne peut pas reculer indéfiniment : au-delà de la
+     * portée, c'est le mob le plus PROCHE qui sort du cône par l'autre bout. Quand le
+     * groupe est plus long que le souffle, on privilégie donc le proche et on accepte de
+     * perdre le fond — un souffle qui rate ce qu'il touche presque est pire qu'un souffle
+     * trop court.</p>
+     *
+     * @param dirX direction unitaire de la cible VERS le porteur
+     * @return {@code {x, z}} du point à envoyer au client
+     */
+    private static double[] riftAnchor(ServerLevel sl, double tX, double tY, double tZ,
+                                       double dirX, double dirZ, int attackerId) {
+        final double awayX = -dirX;
+        final double awayZ = -dirZ;
+        double maxS = 0.0;
+        double minS = 0.0;
+        for (LivingEntity victim : shadowVictims(sl, tX, tY, tZ, RIFT_BREATH_RANGE * 0.70, 4.0, attackerId)) {
+            double s = (victim.getX() - tX) * awayX + (victim.getZ() - tZ) * awayZ;
+            if (s > maxS) maxS = s;
+            if (s < minS) minS = s;
+        }
+        double mouth = maxS + RIFT_BACK;
+        double usable = RIFT_BREATH_RANGE * 0.92;
+        if (mouth - minS > usable) mouth = minS + usable;
+        double anchor = Math.max(0.0, mouth - RIFT_BACK);
+        return new double[]{tX + awayX * anchor, tZ + awayZ * anchor};
+    }
+
+    /** Direction unitaire d'un point vers le porteur ; {@code (0,1)} à défaut. */
+    private static double[] towardWielder(LivingEntity attacker, double fromX, double fromZ) {
+        double ax = attacker != null ? attacker.getX() - fromX : 0.0;
+        double az = attacker != null ? attacker.getZ() - fromZ : 1.0;
+        double len = Math.sqrt(ax * ax + az * az);
+        if (len < 0.01) return new double[]{0.0, 1.0};
+        return new double[]{ax / len, az / len};
+    }
     /** Rayon du dôme d'éclipse. Doit rester aligné sur {@code ShadowSignatureVfx.DOME_R}. */
     private static final double DOME_RADIUS = 7.0;
 
@@ -2970,6 +3029,19 @@ public final class WeaponVfxServerListener {
     }
     /** Longueur du couloir de l'allonge, et sa demi-largeur. */
     private static final double REACH_LENGTH = 9.0;
+
+    /**
+     * Distance de la paume au point d'impact, le long du couloir, pour une traction donnée.
+     *
+     * <p>C'est la transcription exacte de {@code handF} dans le rendu client
+     * ({@code ShadowSignatureVfx.renderGrasp}) : {@code -REACH_SPAN*0.06 - REACH_SPAN*0.64*pull},
+     * au signe près puisque l'écran compte vers l'arrière et le serveur vers le porteur.
+     * Les deux doivent rester collées : dès qu'elles divergent, la proie est traînée à côté
+     * du poing, ce qui est pire que pas de traction du tout.</p>
+     */
+    private static double graspHandDistance(double pull) {
+        return REACH_LENGTH * 0.06 + REACH_LENGTH * 0.64 * pull;
+    }
     private static final double REACH_HALF_WIDTH = 1.35;
 
     /**
@@ -3182,9 +3254,12 @@ public final class WeaponVfxServerListener {
         // ticks pour sortir du cadre pendant que la main, dessinée au point d'impact figé, se
         // refermait sur du vide. Sans étourdissement complet : elle est tenue, pas désactivée,
         // et continue de se défendre.
-        final long graspHoldEnd = sl.getGameTime() + 72L;
+        //
+        // L'emprise court maintenant jusqu'au tick 100, soit la fin de la TRACTION et non son
+        // début : la victime n'est pas clouée puis relâchée d'un coup, elle est tenue PENDANT
+        // tout le trajet (voir la boucle d'emport ci-dessous).
+        final long graspHoldEnd = sl.getGameTime() + 100L;
         applyMovementHold(target, graspHoldEnd, false);
-        TestProcedure.schedule(sl, now + 72, () -> releaseMovementHold(target, graspHoldEnd));
 
         // --- L'ombre se détache. On l'entend glisser avant de la voir. ---
         sl.playSound(null, ox, oy, oz, SoundEvents.ENDERMAN_STARE, SoundSource.PLAYERS, 0.55f, 0.72f);
@@ -3242,30 +3317,103 @@ public final class WeaponVfxServerListener {
             });
         }
 
-        // --- La traction (tick 70) : la main ramène la cible vers le porteur ---
-        TestProcedure.schedule(sl, now + 70, () -> {
-            if (!target.isAlive()) return;
-            double destX = ox + dirX * (REACH_LENGTH * 0.60);
-            double destZ = oz + dirZ * (REACH_LENGTH * 0.60);
-            if (attacker != null && attacker.isAlive()) {
+        // =================== LA PRISE, PUIS L'EMPORT ===================
+        // Ce bloc remplace l'ancienne « traction », qui était UNE impulsion au tick 70. Une
+        // impulsion ne se lit pas : la victime partait d'un coup, en glissade, sans rapport
+        // visible avec la main qui se refermait sur elle. Ici la main SAISIT (tick 66), puis
+        // EMPORTE tick par tick (68 → 97) en traînant tout ce qu'elle tient, et ne lâche
+        // qu'au tick 100. Les trois temps correspondent exactement à ceux du rendu.
+
+        // Qui est dans le poing. On retient l'entité ET son décalage au moment de la prise :
+        // déplacer tout le monde sur un même point les ferait se pousser les uns les autres
+        // (la collision des mobs), ce qui donne un tas qui vibre. On translate donc la
+        // FORMATION entière, chacun gardant sa place relative.
+        final Map<Integer, double[]> hauled = new ConcurrentHashMap<>();
+
+        // --- La prise (tick 66) : tout ce qui est sous la paume part avec elle ---
+        TestProcedure.schedule(sl, now + 66, () -> {
+            double hx = ox + dirX * graspHandDistance(0.0);
+            double hz = oz + dirZ * graspHandDistance(0.0);
+            sl.playSound(null, hx, oy, hz, SoundEvents.CHEST_LOCKED, SoundSource.PLAYERS, 0.80f, 0.58f);
+            PixelFx.send(sl, ParticleTypes.SQUID_INK, hx, oy, hz, 45, 0.85, 0.70, 0.85, 0.05);
+            // La paume fait deux blocs et demi à l'échelle 2,45 : tout ce qui tient dedans
+            // est emporté, pas seulement la cible du coup.
+            List<LivingEntity> caught = shadowVictims(sl, hx, oy, hz, 2.60, 3.0, attackerId);
+            if (!caught.contains(target) && target.isAlive()) caught.add(target);
+            for (LivingEntity victim : caught) {
+                if (victim == null || !victim.isAlive()) continue;
+                applyMovementHold(victim, graspHoldEnd, false);
+                hauled.put(victim.getId(), new double[]{victim.getX(), victim.getZ()});
+                shadowAfflict(sl, victim, 90, 45, 120);
+                addUmbralMark(sl, victim, 1, attackerId);
+                sl.playSound(null, victim.getX(), victim.getY(), victim.getZ(),
+                        SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 0.70f, 0.58f);
+            }
+        });
+
+        // --- L'emport (ticks 68 à 97), un pas par tick ---
+        // Le pas suit la MÊME courbe que la main à l'écran, sinon la proie avance à côté du
+        // poing au lieu d'être dedans.
+        for (int k = 0; k <= 29; k++) {
+            final int tick = 68 + k;
+            TestProcedure.schedule(sl, now + tick, () -> {
+                float pull = smoothTick(tick, 68L, 97L);
+                double travel = graspHandDistance(pull) - graspHandDistance(0.0);
                 // On s'arrête à deux blocs du porteur : le ramener DANS le joueur le ferait
                 // rebondir par la collision, et le mouvement se lirait comme un bug.
-                double bx = attacker.getX() - ox;
-                double bz = attacker.getZ() - oz;
-                double bl = Math.sqrt(bx * bx + bz * bz);
-                if (bl > 2.2) {
-                    destX = ox + bx / bl * (bl - 2.0);
-                    destZ = oz + bz / bl * (bl - 2.0);
+                if (attacker != null && attacker.isAlive()) {
+                    double bx = attacker.getX() - ox;
+                    double bz = attacker.getZ() - oz;
+                    double bl = Math.sqrt(bx * bx + bz * bz);
+                    travel = Math.min(travel, Math.max(0.0, bl - 2.0 - graspHandDistance(0.0)));
                 }
+                for (Map.Entry<Integer, double[]> entry : hauled.entrySet()) {
+                    if (!(sl.getEntity(entry.getKey()) instanceof LivingEntity victim)
+                            || !victim.isAlive()) {
+                        hauled.remove(entry.getKey());
+                        continue;
+                    }
+                    double[] from = entry.getValue();
+                    dragMovementHold(victim, from[0] + dirX * travel, from[1] + dirZ * travel);
+                    // La traînée : sans elle, un corps qui glisse sur dix ticks n'a pas de
+                    // vitesse lisible — c'est la seule chose qui dit qu'il est TRAÎNÉ.
+                    if ((tick & 1) == 0) {
+                        PixelFx.send(sl, ParticleTypes.SQUID_INK,
+                                victim.getX(), victim.getY() + 0.25, victim.getZ(),
+                                6, 0.22, 0.14, 0.22, 0.012);
+                    }
+                    // --- LES DÉGÂTS EN TEMPS RÉEL ---
+                    // Un battement toutes les six ticks pendant tout le trajet, au lieu d'une
+                    // seule addition à l'arrivée : on sent la main serrer PENDANT qu'elle tire,
+                    // et la barre de vie descend sous les yeux du joueur.
+                    if (tick % 6 == 0) {
+                        hurtWithCapturedWeapon(sl, attackerId, victim, base * 0.17f);
+                        PixelFx.send(sl, ParticleTypes.SCULK_CHARGE_POP,
+                                victim.getX(), victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
+                                7, 0.24, 0.30, 0.24, 0.02);
+                        sl.playSound(null, victim.getX(), victim.getY(), victim.getZ(),
+                                SoundEvents.PLAYER_ATTACK_SWEEP, SoundSource.PLAYERS, 0.35f, 0.48f);
+                    }
+                }
+            });
+        }
+
+        // --- Le lâcher (tick 100) : la main rend ce qu'elle tient, aux pieds du porteur ---
+        TestProcedure.schedule(sl, now + 100, () -> {
+            for (Integer id : hauled.keySet()) {
+                if (!(sl.getEntity(id) instanceof LivingEntity victim)) continue;
+                releaseMovementHold(victim, graspHoldEnd);
+                if (!victim.isAlive()) continue;
+                // Une bascule vers l'avant : on ne lâche pas un corps à l'arrêt, on le jette.
+                shadowYank(sl, victim, victim.getX() + dirX * 1.6,
+                        victim.getY() + 0.35, victim.getZ() + dirZ * 1.6, 0.55);
+                PixelFx.send(sl, ParticleTypes.PORTAL,
+                        victim.getX(), victim.getY() + victim.getBbHeight() * 0.5, victim.getZ(),
+                        30, 0.40, 0.55, 0.40, 0.30);
             }
-            shadowYank(sl, target, destX, target.getY(), destZ, 1.0);
-            shadowAfflict(sl, target, 90, 45, 120);
-            addUmbralMark(sl, target, 1, attackerId);
+            releaseMovementHold(target, graspHoldEnd);
             sl.playSound(null, target.getX(), target.getY(), target.getZ(),
-                    SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 0.70f, 0.58f);
-            PixelFx.send(sl, ParticleTypes.PORTAL,
-                    target.getX(), target.getY() + target.getBbHeight() * 0.5, target.getZ(),
-                    30, 0.40, 0.55, 0.40, 0.30);
+                    SoundEvents.ENDERMAN_STARE, SoundSource.PLAYERS, 0.55f, 0.46f);
         });
 
         // --- Le solo : trois serrages si le couloir n'a ramassé personne d'autre ---
@@ -3319,23 +3467,44 @@ public final class WeaponVfxServerListener {
                                                 ServerLevel sl, float weaponDamage) {
         final int attackerId = attacker == null ? -1 : attacker.getId();
         final int now = TestProcedure.currentTick(sl);
-        final double ox = target.getX();
-        final double oy = target.getY() + target.getBbHeight() * 0.55;
-        final double oz = target.getZ();
+        final double ty = target.getY() + target.getBbHeight() * 0.55;
         final float base = Math.max(1.6f, weaponDamage * 0.90f);
 
         // Direction du souffle : de la faille vers l'attaquant, comme à l'écran.
-        double axX = attacker != null ? attacker.getX() - ox : 0.0;
-        double axZ = attacker != null ? attacker.getZ() - oz : 1.0;
-        double axLen = Math.sqrt(axX * axX + axZ * axZ);
-        if (axLen < 0.01) { axX = 0.0; axZ = 1.0; axLen = 1.0; }
-        final double dirX = axX / axLen;
-        final double dirZ = axZ / axLen;
+        final double[] dir = towardWielder(attacker, target.getX(), target.getZ());
+        final double dirX = dir[0];
+        final double dirZ = dir[1];
 
-        // --- La cible est clouée pendant l'ouverture et la sortie du crâne (56 ticks). ---
-        final long riftHoldEnd = sl.getGameTime() + 56L;
-        applyMovementHold(target, riftHoldEnd, false);
-        TestProcedure.schedule(sl, now + 56, () -> releaseMovementHold(target, riftHoldEnd));
+        // LA BOUCHE. Le cône ne part PAS de la cible : il part de la faille, qui s'ouvre
+        // deux blocs derrière l'ancrage (lequel recule encore si plusieurs mobs sont alignés).
+        // C'est le défaut que l'ancienne version cachait : le mob touché était à l'origine
+        // du souffle, donc à distance nulle, donc toujours épargné par le test d'angle et
+        // rattrapé seulement par la clause {@code d > 0.6}. Il est maintenant VRAIMENT dans
+        // le jet, à deux blocs de la gueule.
+        final double[] anchor = riftAnchor(sl, target.getX(), ty, target.getZ(), dirX, dirZ, attackerId);
+        final double ox = anchor[0] - dirX * RIFT_BACK;
+        final double oy = ty;
+        final double oz = anchor[1] - dirZ * RIFT_BACK;
+
+        // --- Tout ce qui est dans le jet est cloué jusqu'APRÈS le souffle. ---
+        // L'emprise s'arrêtait au tick 56 alors que le souffle part au tick 62 : la cible
+        // était donc libérée six ticks AVANT d'être soufflée, et un mob qui court sortait
+        // du cône pile au mauvais moment. Elle court maintenant jusqu'au tick 70.
+        final long riftHoldEnd = sl.getGameTime() + 70L;
+        final List<LivingEntity> pinned = new ArrayList<>();
+        pinned.add(target);
+        for (LivingEntity victim : shadowVictims(sl, ox, oy, oz, RIFT_BREATH_RANGE, 4.0, attackerId)) {
+            double rx = victim.getX() - ox;
+            double rz = victim.getZ() - oz;
+            double d = Math.sqrt(rx * rx + rz * rz);
+            if (d > 0.6 && (rx * dirX + rz * dirZ) / d < 0.37) continue;
+            if (!pinned.contains(victim)) pinned.add(victim);
+        }
+        for (LivingEntity victim : pinned) {
+            applyMovementHold(victim, riftHoldEnd, false);
+            final LivingEntity held = victim;
+            TestProcedure.schedule(sl, now + 70, () -> releaseMovementHold(held, riftHoldEnd));
+        }
 
         // --- L'ouverture ---
         sl.playSound(null, ox, oy, oz, SoundEvents.WARDEN_SONIC_CHARGE, SoundSource.PLAYERS, 0.60f, 1.30f);
@@ -5248,6 +5417,25 @@ public final class WeaponVfxServerListener {
                     SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.70f, 1.35f);
         });
         TestProcedure.schedule(sl, holdEndSchedule, () -> releaseMovementHold(target, holdEndGame));
+    }
+
+    /**
+     * Déplace le point d'ancrage d'une emprise déjà posée.
+     *
+     * <p>{@link #applyMovementHold} conserve délibérément les coordonnées de l'emprise
+     * précédente — c'est ce qui empêche une seconde signature de téléporter une victime
+     * déjà tenue. Il faut donc une porte séparée pour le seul cas où l'on veut vraiment
+     * que le point bouge : une proie qu'on <b>emporte</b>.</p>
+     *
+     * <p>Le tick d'emprise téléporte la victime sur l'ancre à chaque image ; déplacer
+     * l'ancre d'un peu chaque tick produit donc un vrai glissement, et non un saut.</p>
+     */
+    private static void dragMovementHold(LivingEntity target, double x, double z) {
+        MovementHold hold = MOVEMENT_HOLDS.get(target.getId());
+        if (hold == null) return;
+        MOVEMENT_HOLDS.put(target.getId(), new MovementHold(hold.expires(), x, hold.y(), z,
+                hold.previousNoAi(), hold.fullStun(), hold.releaseY(),
+                hold.started(), hold.burialDepth()));
     }
 
     private static void applyMovementHold(LivingEntity target, long expires, boolean fullStun) {

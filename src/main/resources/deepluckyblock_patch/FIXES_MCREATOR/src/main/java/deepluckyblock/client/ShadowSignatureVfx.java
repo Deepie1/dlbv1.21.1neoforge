@@ -121,6 +121,24 @@ public final class ShadowSignatureVfx {
     private static final float REACH_SPAN = 9.0f;
 
     /** Demi-hauteur de l'amande de la Faille, et sa demi-largeur à pleine ouverture. */
+    /**
+     * Recul de la faille derrière le point d'impact, en blocs.
+     *
+     * <p>La faille s'ouvrait <b>dans</b> la cible, et le souffle partait de là vers
+     * l'extérieur : le mob était donc à l'origine du cône, pas dedans, et ne pouvait
+     * logiquement pas le recevoir. Elle s'ouvre maintenant deux blocs DERRIÈRE lui — du
+     * côté opposé au porteur — et souffle vers le porteur, donc à travers le mob.</p>
+     *
+     * <p>Effet secondaire voulu : le crâne fait maintenant FACE au joueur au lieu de lui
+     * tourner le dos. Les deux cents pièces du museau et des orbites ne servaient à rien
+     * tant qu'on ne voyait que son occiput.</p>
+     *
+     * <p>Le serveur recule en plus le point d'impact lui-même quand plusieurs mobs sont
+     * groupés, pour que le cône les couvre tous ({@code riftAnchor} côté serveur). Les
+     * deux reculs s'ajoutent et doivent rester égaux à cette constante.</p>
+     */
+    private static final float RIFT_BACK = 2.0f;
+
     private static final float RIFT_H = 2.70f;
     private static final float RIFT_W = 1.15f;
 
@@ -334,7 +352,8 @@ public final class ShadowSignatureVfx {
             // au bout d’un couloir de neuf blocs. A 2,45 elle fait pres de quatre blocs du
             // poignet au majeur : elle DOMINE sa proie, ce qui est le sujet de la signature.
             drawSpectralHand(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    handF, 0.0f, GROUND_Y, lie, grip, 2.45f, Math.min(255.0f, handA), salt, strobe);
+                    handF, 0.0f, GROUND_Y, lie, grip, peel, 2.45f,
+                    Math.min(255.0f, handA), salt, strobe);
         }
 
         // ---- 5. LA CENDRE ----
@@ -377,11 +396,14 @@ public final class ShadowSignatureVfx {
      *
      * @param lie  PI/2 = couchée à plat sur le sol, 0 = dressée
      * @param grip 0 = ouverte, 1 = refermée
+     * @param flex avancement de la sortie de terre, 0 à 1. Il ne sert qu'aux doigts, et
+     *             il est <b>séparé</b> de {@code grip} : une main qui s'extirpe griffe
+     *             l'air longtemps avant de commencer à se refermer.
      */
     private static void drawSpectralHand(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                          float cx, float cy, float cz, float dx, float dz,
                                          float wristF, float wristL, float wristY,
-                                         float lie, float grip, float scale,
+                                         float lie, float grip, float flex, float scale,
                                          float alpha, int salt, int strobe) {
         if (alpha <= 1.0f) return;
         final float base = -(float) Math.atan2(dz, dx);
@@ -446,8 +468,36 @@ public final class ShadowSignatureVfx {
             // Fermeture : la première phalange plie peu, la dernière beaucoup. Chaque doigt a
             // son propre retard, sinon le poing se ferme d'un bloc et paraît mécanique.
             float lag = clamp((grip - fdx * 0.07f) / 0.80f);
-            float[] bend = {lag * 1.05f, lag * 1.30f, lag * 1.45f};
-            float curF = 0.0f, curH = 0.375f, ang = -0.16f + fingerSpread[fdx] * 0.30f;
+
+            // --- LE PLI DE REPOS ---
+            // Une main relâchée n'a JAMAIS les doigts tendus. Même grande ouverte, chaque
+            // phalange garde un pli, et ce pli n'est pas le même d'un doigt à l'autre :
+            // l'auriculaire se recroqueville toujours plus que l'index. Sans ce repos, la
+            // main sortait du sol les quatre doigts tendus et PARALLÈLES — une main de
+            // mannequin, pas une main qui s'extirpe.
+            final float[] restCurl = {0.19f, 0.13f, 0.21f, 0.33f};
+
+            // --- LA GRIFFE DE SORTIE ---
+            // Chaque doigt perce le sol à son tour (un retard de 0,13 par doigt) et GRIFFE :
+            // il se replie d'un coup, puis se détend. C'est un demi-sinus, donc le pli revient
+            // à zéro tout seul et ne se cumule pas avec la fermeture qui suit. L'amplitude est
+            // tirée au hasard par doigt : certains raclent fort, d'autres à peine.
+            float emerge = clamp((flex - fdx * 0.13f) / 0.44f);
+            float claw = Mth.sin(emerge * Mth.PI) * (0.30f + 0.52f * hash(salt + 90, fdx * 31));
+
+            // --- LE TREMBLEMENT ---
+            // L'effort. Quelques centièmes de radian, repris à chaque image : invisible
+            // isolément, mais c'est lui qui empêche la main de paraître posée là. Il
+            // s'éteint quand la poigne se ferme : un poing serré ne tremble plus, il tient.
+            float tremor = (hash(salt + 91 + fdx * 7, strobe) - 0.5f) * 0.11f * (1.0f - lag * 0.8f);
+
+            float idle = restCurl[fdx] + claw + tremor;
+            float[] bend = {lag * 1.05f + idle * 0.55f,
+                            lag * 1.30f + idle * 1.00f,
+                            lag * 1.45f + idle * 1.30f};
+            // L'écartement s'ouvre pendant la griffure : les doigts cherchent une prise.
+            float curF = 0.0f, curH = 0.375f,
+                  ang = -0.16f + fingerSpread[fdx] * (0.30f + 0.55f * claw);
             for (int p = 0; p < 3; p++) {
                 ang += bend[p];
                 float half = seg[p] * 0.5f;
@@ -485,7 +535,14 @@ public final class ShadowSignatureVfx {
             float lag = clamp(grip / 0.85f);
             float[] seg = {0.30f, 0.24f};
             float[] rad = {0.082f, 0.068f};
-            float curF = 0.055f, curH = 0.02f, ang = 0.95f - lag * 0.70f;
+            // Le pouce est le levier : il sort replié contre la paume, pousse, puis s'écarte.
+            // Il travaille donc à CONTRE-TEMPS des quatre doigts, qui eux griffent vers
+            // l'intérieur — c'est cette opposition qui fait lire un effort plutôt qu'un
+            // dépliage de pantin.
+            float pry = Mth.sin(clamp(flex / 0.55f) * Mth.PI) * 0.40f;
+            float thumbShake = (hash(salt + 97, strobe + 5) - 0.5f) * 0.09f * (1.0f - lag * 0.8f);
+            float curF = 0.055f, curH = 0.02f,
+                  ang = 0.95f - lag * 0.70f + pry + thumbShake;
             float lat = 0.255f;
             for (int p = 0; p < 2; p++) {
                 float half = seg[p] * 0.5f;
@@ -570,6 +627,18 @@ public final class ShadowSignatureVfx {
                                    float dx, float dz, int alpha, int salt) {
         int a = Math.round(alpha * smooth(t / 0.03f) * (1.0f - smooth((t - 0.94f) / 0.06f)));
         if (a <= 4) return;
+
+        // ---- ON SE PLACE DERRIÈRE LA PROIE, ET ON SE RETOURNE ----
+        // Deux lignes, et tout le corps de la fonction — écrit dans un repère qui regarde
+        // vers l'avant — se retrouve orienté vers le porteur. On recule l'origine de deux
+        // blocs, puis on inverse l'axe : le souffle, le crâne et les crânes mineurs, qui
+        // avancent tous en {@code +f}, traversent donc désormais le mob au lieu de partir
+        // dans son dos. Retourner le repère plutôt que chaque appel évite d'en oublier un :
+        // il y en a plus de soixante dans cette méthode.
+        cx = cx + dx * RIFT_BACK;
+        cz = cz + dz * RIFT_BACK;
+        dx = -dx;
+        dz = -dz;
 
         final float crack = smooth(t / 0.07f);
         final float open = smooth((t - 0.07f) / 0.13f);
@@ -1229,6 +1298,31 @@ public final class ShadowSignatureVfx {
         final float sunY = GROUND_Y + (SUN_Y - GROUND_Y) * rise - lift * 3.0f;
         final float sunR = SUN_R * (0.30f + 0.70f * rise) * (1.0f - lift * 0.55f);
 
+        // ---- LA BASE FACE CAMÉRA ----
+        // Le disque, la couronne et l'anneau de diamant sont construits dans ce repère-là
+        // et non dans celui de l'attaque : voir {@link #sky}. Tout le reste de l'éclipse
+        // (le dôme, le sceau, les griffures) reste dans le repère du monde, parce que ces
+        // objets-là ont une orientation réelle qu'on ne doit surtout pas truquer.
+        final float sunWy = cy + sunY;
+        float vcx = (float) (WeaponWorldVfxManager.camX() - cx);
+        float vcy = (float) (WeaponWorldVfxManager.camY() - sunWy);
+        float vcz = (float) (WeaponWorldVfxManager.camZ() - cz);
+        float horiz = Mth.sqrt(vcx * vcx + vcz * vcz);
+        final float hx;
+        final float hz;
+        if (horiz < 0.05f) {
+            // Caméra à la verticale du disque : plus d'horizontale utilisable, on retombe
+            // sur l'axe de l'attaque plutôt que de diviser par zéro.
+            hx = dx; hz = dz;
+        } else {
+            hx = vcx / horiz; hz = vcz / horiz;
+        }
+        float vlen = Mth.sqrt(vcx * vcx + vcy * vcy + vcz * vcz);
+        final float uy = vlen < 0.05f ? 0.0f : Mth.clamp(vcy / vlen, -0.985f, 0.985f);
+        final float uh = Mth.sqrt(Math.max(0.02f, 1.0f - uy * uy));
+        final float[] skyFrame = {hx, hz, uy, uh,
+                (float) Math.atan2(hz, -hx), (float) Math.atan2(uy, -uh)};
+
         // ---- 0. LES ÉTOILES ----
         // Le serveur force le monde à minuit pendant toute la signature. Côté client, un ciel
         // noir sans étoiles est juste un écran éteint : ce sont elles qui disent « il fait
@@ -1255,9 +1349,9 @@ public final class ShadowSignatureVfx {
         }
 
         // ---- 1. LE SOLEIL NOIR ----
-        // Un disque vertical, face à l'attaquant, à VINGT-TROIS BLOCS du sol. Le remplissage
-        // est un vrai disque — on balaie la hauteur et on calcule la demi-corde — et non un
-        // empilement d'anneaux, qui laisse toujours des trous au centre.
+        // Un disque qui fait TOUJOURS face au joueur, à vingt-trois blocs du sol. Le
+        // remplissage est un vrai disque — on balaie la hauteur et on calcule la demi-corde
+        // — et non un empilement d'anneaux, qui laisse toujours des trous au centre.
         if (sunR > 0.05f) {
             final int rows = 25;
             for (int r = 0; r < rows; r++) {
@@ -1265,20 +1359,67 @@ public final class ShadowSignatureVfx {
                 float sy = (v - 0.5f) * 2.0f;                    // -1..1
                 float halfChord = Mth.sqrt(Math.max(0.0f, 1.0f - sy * sy)) * sunR;
                 if (halfChord < 0.03f) continue;
-                float yy = sunY + sy * sunR;
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, yy,
+                float uu = sy * sunR;
+                sky(vc, mat, tmp, cx, sunWy, cz, skyFrame, 0.0f, uu, 0.0f,
                         0.075f, sunR / rows * 1.15f, halfChord, VOID_INK, opaque(a));
-                for (int s = -1; s <= 1; s += 2) {
-                    float flick = 0.74f + 0.26f * hash(salt + strobe * 9, r * 31 + s);
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.010f, s * halfChord, yy,
+                for (int sg = -1; sg <= 1; sg += 2) {
+                    float flick = 0.74f + 0.26f * hash(salt + strobe * 9, r * 31 + sg);
+                    sky(vc, mat, tmp, cx, sunWy, cz, skyFrame,
+                            sg * halfChord, uu, 0.010f,
                             0.070f, sunR / rows * 1.05f, 0.075f, VIOLET, opaque(a * flick));
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.055f, s * halfChord, yy,
+                    sky(vc, mat, tmp, cx, sunWy, cz, skyFrame,
+                            sg * halfChord, uu, 0.055f,
                             0.030f, sunR / rows * 0.8f, 0.040f, ORCHID, opaque(a * flick));
                 }
             }
-            for (int s = -1; s <= 1; s += 2) {
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.010f, 0.0f, sunY + s * sunR,
+            for (int sg = -1; sg <= 1; sg += 2) {
+                sky(vc, mat, tmp, cx, sunWy, cz, skyFrame, 0.0f, sg * sunR, 0.010f,
                         0.070f, 0.075f, 0.19f, VIOLET, opaque(a));
+            }
+
+            // ---- LE VOLUME ----
+            // Le disque est plat par construction. Pour qu'il se lise comme un CORPS et non
+            // comme une découpe de papier, on bombe une calotte de braises vers la caméra :
+            // quatre couronnes dont la profondeur suit la sphère. On ne voit pas le noir
+            // bomber — du noir sur du noir ne bombe jamais — on voit les braises s'étager.
+            final int shells = 4;
+            for (int sh = 1; sh <= shells; sh++) {
+                float rr = sunR * (sh / (float) (shells + 0.6f));
+                float depth = Mth.sqrt(Math.max(0.0f, sunR * sunR - rr * rr)) * 0.62f;
+                int n = 6 + sh * 5;
+                for (int i = 0; i < n; i++) {
+                    float aa = i * TAU / n + t * (0.5f + 0.22f * sh) + sh * 1.1f;
+                    float gl = hash(salt + 330 + sh, i * 17 + strobe);
+                    if (gl < 0.30f) continue;
+                    float ss = 0.045f + 0.045f * gl;
+                    sky(vc, mat, tmp, cx, sunWy, cz, skyFrame,
+                            Mth.cos(aa) * rr, Mth.sin(aa) * rr, depth,
+                            ss, ss, ss, gl > 0.78f ? ORCHID : (gl > 0.52f ? VIOLET : PURPLE),
+                            opaque(a * (0.45f + 0.55f * gl)));
+                }
+            }
+
+            // ---- L'ANNEAU ORBITAL ----
+            // La seule chose qui prouve qu'un objet est en trois dimensions, c'est qu'une
+            // partie de lui passe DERRIÈRE une autre. Cet anneau incliné tourne autour du
+            // disque : sa moitié avant le barre, sa moitié arrière disparaît dedans. On ne
+            // s'en remet pas au tampon de profondeur pour la masquer — on ne dessine tout
+            // simplement pas ce qui est derrière la silhouette, ce qui est exact et gratuit.
+            float ringTilt = 0.95f + 0.22f * Mth.sin(t * 1.7f);
+            float ct = Mth.cos(ringTilt), st = Mth.sin(ringTilt);
+            final int ringN = 54;
+            float ringR = sunR * (1.30f + 0.10f * Mth.sin(t * 2.3f));
+            for (int i = 0; i < ringN; i++) {
+                float aa = i * TAU / ringN + t * 1.15f;
+                float rr = Mth.cos(aa) * ringR;
+                float uu = Mth.sin(aa) * ringR * ct;
+                float dd = Mth.sin(aa) * ringR * st;
+                // derrière le disque et dans sa silhouette : invisible, on l'économise
+                if (dd < 0.0f && rr * rr + uu * uu < sunR * sunR) continue;
+                float ss = 0.055f + 0.030f * (dd > 0.0f ? 1.0f : 0.0f);
+                int rgb = dd > 0.0f ? (i % 4 == 0 ? PALE : ORCHID) : PURPLE;
+                sky(vc, mat, tmp, cx, sunWy, cz, skyFrame, rr, uu, dd,
+                        ss, ss, ss, rgb, opaque(a * corona * (dd > 0.0f ? 1.0f : 0.70f)));
             }
         }
 
@@ -1295,15 +1436,22 @@ public final class ShadowSignatureVfx {
                 float len = (0.70f + 2.60f * h1) * corona * breathe * (1.0f - lift * 0.8f);
                 if (len < 0.06f) continue;
                 int segs = 6;
-                for (int s = 0; s < segs; s++) {
-                    float u = (s + 0.5f) / segs;
+                // La COUCHE du filament : un tiers part vers la caméra, un tiers vers le
+                // fond, un tiers reste dans le plan. Une couronne coplanaire fait un
+                // napperon ; répartie en profondeur, elle fait une atmosphère.
+                float h3 = hash(salt + 83, i * 43);
+                float tilt = (h3 - 0.5f) * 1.90f;
+                for (int sg = 0; sg < segs; sg++) {
+                    float u = (sg + 0.5f) / segs;
                     float d = sunR + len * u;
                     float shear = u * u * 0.30f * (h2 - 0.5f) * 2.0f;
                     float aa = ang + shear;
                     float ss = (0.095f - 0.060f * u) * (0.8f + 0.4f * h2);
                     int rgb = u < 0.25f ? PALE : (u < 0.55f ? ORCHID : (u < 0.8f ? VIOLET : PURPLE));
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f,
-                            Mth.cos(aa) * d, sunY + Mth.sin(aa) * d,
+                    float dep = tilt * len * u;
+                    if (dep < 0.0f && d < sunR * 1.02f) continue;
+                    sky(vc, mat, tmp, cx, sunWy, cz, skyFrame,
+                            Mth.cos(aa) * d, Mth.sin(aa) * d, dep,
                             ss * 0.9f, ss, ss, rgb, opaque(a * corona * (1.0f - u * 0.35f)));
                 }
             }
@@ -1315,14 +1463,19 @@ public final class ShadowSignatureVfx {
                 float life = clamp((corona - k * 0.12f) * 1.4f) * (1.0f - lift);
                 if (life < 0.02f) continue;
                 int n = 14;
+                // Chaque langue sort du plan : elle part vers l'avant, culmine, et replonge
+                // derrière le limbe. C'est le seul endroit où la couronne passe VISIBLEMENT
+                // devant puis derrière le disque, et ça vaut tous les dégradés du monde.
+                float lean = (hash(salt + 86, k * 97) - 0.35f) * 2.4f;
                 for (int i = 0; i < n; i++) {
                     float u = (i + 0.5f) / n;
                     float arc = Mth.sin(u * Mth.PI);
                     float d = sunR * (1.0f + 0.95f * arc);
                     float aa = base + (u - 0.5f) * 1.25f;
                     float ss = (0.14f - 0.085f * u) * arc + 0.030f;
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f,
-                            Mth.cos(aa) * d, sunY + Mth.sin(aa) * d,
+                    float dep = lean * sunR * 0.60f * arc;
+                    sky(vc, mat, tmp, cx, sunWy, cz, skyFrame,
+                            Mth.cos(aa) * d, Mth.sin(aa) * d, dep,
                             ss * 0.8f, ss, ss,
                             u < 0.3f ? PALE : (u < 0.7f ? ORCHID : VIOLET),
                             opaque(a * life * (0.55f + 0.45f * arc)));
@@ -1383,21 +1536,32 @@ public final class ShadowSignatureVfx {
             float ang = -0.75f + salt * 0.0007f;
             float px = Mth.cos(ang) * sunR, py = Mth.sin(ang) * sunR;
             float s0 = 0.130f + 0.30f * pop;
-            box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.075f, px, sunY + py,
+            sky(vc, mat, tmp, cx, sunWy, cz, skyFrame, px, py, 0.075f,
                     0.055f, s0, s0, SPARK, opaque(a));
-            box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.095f, px, sunY + py,
+            sky(vc, mat, tmp, cx, sunWy, cz, skyFrame, px, py, 0.095f,
                     0.040f, s0 * 0.52f, s0 * 0.52f, 0xFFFFFF, opaque(a));
             for (int k = 0; k < 4; k++) {
                 float ba = k * HALF_PI + 0.35f;
                 float bl = (0.55f + 2.20f * pop) * (k % 2 == 0 ? 1.0f : 0.62f);
                 int segs = 7;
-                for (int s = 0; s < segs; s++) {
-                    float u = (s + 0.5f) / segs;
+                for (int sg = 0; sg < segs; sg++) {
+                    float u = (sg + 0.5f) / segs;
                     float ss = 0.070f * (1.0f - u * 0.75f);
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.070f,
-                            px + Mth.cos(ba) * bl * u, sunY + py + Mth.sin(ba) * bl * u,
+                    sky(vc, mat, tmp, cx, sunWy, cz, skyFrame,
+                            px + Mth.cos(ba) * bl * u, py + Mth.sin(ba) * bl * u, 0.070f,
                             0.045f, ss, ss, u < 0.4f ? PALE : ORCHID, opaque(a * (1.0f - u * 0.5f)));
                 }
+            }
+            // L'ÉCLAT EN PROFONDEUR : six éclats qui partent vers le joueur. Sans eux le
+            // diamant reste une croix plate collée sur le limbe.
+            for (int k = 0; k < 6; k++) {
+                float u = (k + 1) / 6.0f;
+                float ss = 0.085f * (1.0f - u * 0.7f) * (0.4f + pop);
+                sky(vc, mat, tmp, cx, sunWy, cz, skyFrame,
+                        px * (1.0f - u * 0.25f), py * (1.0f - u * 0.25f),
+                        0.12f + u * 2.4f * pop,
+                        ss, ss, ss, u < 0.5f ? 0xFFFFFF : PALE,
+                        opaque(a * (1.0f - u * 0.55f)));
             }
             // l'onde de choc au sol, en retard d'un tiers : la lumière part d'en haut, le sol
             // répond après. Simultanés, les deux événements n'en font qu'un et on perd le lien.
@@ -1663,6 +1827,49 @@ public final class ShadowSignatureVfx {
         float x = cx + dx * f - dz * lateral;
         float z = cz + dz * f + dx * lateral;
         WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp, x, cy + y, z, hf, hy, hl, rgb, alpha);
+    }
+
+    /**
+     * Pose un voxel dans le plan <b>face caméra</b> du soleil noir.
+     *
+     * <p>Tout le reste de ce fichier travaille dans le repère attaquant→cible, qui convient
+     * à des objets posés au sol. Une ÉCLIPSE, non : c'est un disque, et un disque dessiné
+     * dans un plan fixe disparaît dès qu'on le regarde par la tranche. Comme il est à
+     * vingt-trois blocs de haut, l'angle dépend entièrement de l'endroit où se tient le
+     * joueur : il suffisait de contourner le mob pour que l'éclipse devienne un trait.</p>
+     *
+     * <p>La base est reconstruite à chaque image depuis la caméra :
+     * <b>R</b> = horizontale perpendiculaire au regard, <b>U</b> = verticale redressée dans
+     * le plan du regard, <b>profondeur</b> = vers la caméra. {@code U} vaut
+     * {@code (-uy·h, uh)} : quand on regarde le disque d'en bas, son haut bascule VERS le
+     * joueur, exactement comme une pièce qu'on incline pour la montrer.</p>
+     *
+     * <p><b>Les BOÎTES tournent aussi, pas seulement leurs positions.</b> C'est l'erreur
+     * qui ne se voit qu'une fois en place : on fait pivoter les centres, les rangées du
+     * disque suivent la caméra, mais chaque rangée reste allongée sur l'axe Z du monde —
+     * et le disque se déchire en lamelles dès qu'on tourne autour. Avec la convention
+     * roulis→tangage→lacet du moteur, le triplet qui envoie l'axe {@code hf} sur la
+     * profondeur, {@code hy} sur le haut et {@code hl} sur la droite est
+     * {@code (lacet = atan2(hz, -hx), tangage = 0, roulis = atan2(uy, -uh))}. Le tangage
+     * est nul : avec ce moteur l'axe Z local ne peut être horizontal qu'à tangage nul, et
+     * la droite de l'écran est justement toujours horizontale.</p>
+     *
+     * @param fr base de l'éclipse : {@code {hx, hz, uy, uh, lacet, roulis}} où {@code (hx,hz)}
+     *           est l'horizontale unitaire du disque vers la caméra, {@code uy} le sinus de
+     *           l'élévation de la caméra (négatif si elle est dessous) et {@code uh} son cosinus
+     * @param r  vers la droite de l'écran
+     * @param u  vers le haut de l'écran
+     * @param d  profondeur, positive vers la caméra : c'est elle qui donne le volume
+     */
+    private static void sky(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                            float ox, float oy, float oz, float[] fr,
+                            float r, float u, float d,
+                            float hf, float hy, float hl, int rgb, int alpha) {
+        if (alpha <= 0 || hf <= 0.0f || hy <= 0.0f || hl <= 0.0f) return;
+        float fwd = d - fr[2] * u;
+        WeaponWorldVfxManager.emitVoxelBoxRotated(vc, mat, tmp,
+                ox + fr[0] * fwd + fr[1] * r, oy + fr[3] * u, oz + fr[1] * fwd - fr[0] * r,
+                hf, hy, hl, fr[4], 0.0f, fr[5], rgb, alpha);
     }
 
     /** Cube orienté (lacet, tangage, roulis) dans le même repère que {@link #box}. */

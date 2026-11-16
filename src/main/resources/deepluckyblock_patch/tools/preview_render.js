@@ -112,7 +112,10 @@ function render(){
  updateCam();
  ctx.fillStyle='#05040d';ctx.fillRect(0,0,W,H);
  ground();
- const vox=buildThunder(variant,t,salt);
+ // Les angles de camera sont passes au constructeur : certaines signatures contiennent
+ // des elements en panneau-reclame (le disque de l'eclipse) qui doivent faire face au
+ // joueur. Les builders qui n'en ont pas besoin ignorent simplement ces arguments.
+ const vox=buildThunder(variant,t,salt,camYaw,camPitch);
  glow(vox);
  // Peintre PAR FACE, et non par cube. Les trois passes concentriques d'un trait d'eclair
  // (gaine violette large et plate, halo, coeur blanc fin et haut) partagent exactement le

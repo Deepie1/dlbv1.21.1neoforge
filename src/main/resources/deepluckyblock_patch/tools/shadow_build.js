@@ -19,7 +19,11 @@
  * drawDemonSkull sont des CLOSURES ici, des méthodes statiques là-bas.
  * =========================================================================================== */
 
-function buildShadow(variant, t, salt = 4211) {
+// camYaw/camPitch : l'éclipse est un DISQUE et doit faire face au joueur, sinon il
+// suffit de contourner le mob pour qu'elle devienne un trait. Le rendu client prend la
+// vraie caméra (WeaponWorldVfxManager.camX/Y/Z) ; ici l'aperçu est orthographique, donc
+// la direction du regard est la même partout et deux angles suffisent.
+function buildShadow(variant, t, salt = 4211, camYaw = 0.62, camPitch = 0.30) {
   const out = [];
   if (t <= 0 || t >= 1) return out;
 
@@ -56,18 +60,52 @@ function buildShadow(variant, t, salt = 4211) {
   const GROUND_Y = -0.86, SLAB_H = 0.030;
   const REACH_SPAN = 9.0;
   const RIFT_H = 2.70, RIFT_W = 1.15;
+  // Deux blocs derrière le point d'impact : la faille ne s'ouvre plus DANS la cible, donc
+  // le souffle la traverse au lieu de partir de son dos.
+  const RIFT_BACK = 2.0;
   // SUN_Y = 22 : pres de VINGT-TROIS blocs au-dessus du mob. A onze, l'eclipse se jouait
   // a hauteur de toit et se confondait avec le dome. SUN_R grandit avec la distance.
   const DOME_R = 7.0, SUN_Y = 22.0, SUN_R = 4.60;
 
   // ---- Émission --------------------------------------------------------------------------
+  // REPÈRE MOBILE. La Faille s'ouvre DERRIÈRE la proie et souffle vers le porteur : tout
+  // son corps est donc écrit dans un repère reculé et retourné. Côté Java cela tient en
+  // deux lignes (cx += dx*RIFT_BACK ; dx = -dx) parce que cx/dx y sont des paramètres ;
+  // ici le repère est implicite (x = f, z = lat), d'où ces deux variables qui font la
+  // même chose à la source. FSGN retourne AUSSI le lacet des boîtes, sinon le crâne
+  // serait au bon endroit mais tourné à l'envers.
+  let FOFF = 0, FSGN = 1;
+
+  // BASE FACE CAMÉRA de l'éclipse. La direction d'un point VERS la caméra vaut
+  // (sin(lacet)·cos(tangage), sin(tangage), cos(lacet)·cos(tangage)) — c'est le gradient de
+  // la profondeur de project(), donc par construction la normale des faces visibles.
+  // R = horizontale perpendiculaire au regard, U = verticale redressée : U = (-uy·h, uh).
+  const hxC = Math.sin(camYaw), hzC = Math.cos(camYaw);
+  const uyC = Math.sin(camPitch), uhC = Math.cos(camPitch);
+  let SKY_Y = 0;
+  // Les BOITES tournent aussi, pas seulement leurs positions : sans cela chaque rangee du
+  // disque reste allongee sur l'axe Z du monde et le disque se dechire en lamelles des
+  // qu'on tourne autour. Avec la convention roulis->tangage->lacet, le triplet qui envoie
+  // hf sur la profondeur, hy sur le haut et hl sur la droite est
+  // (lacet = atan2(hz,-hx), tangage = 0, roulis = atan2(uy,-uh)).
+  const skyYaw = Math.atan2(hzC, -hxC), skyRoll = Math.atan2(uyC, -uhC);
+  const sky = (r, u, d, hf, hy, hl, rgb, a) => {
+    if (a <= 0 || hf <= 0 || hy <= 0 || hl <= 0) return;
+    const fwd = d - uyC * u;
+    out.push({ x: hxC * fwd + hzC * r, y: SKY_Y + uhC * u, z: hzC * fwd - hxC * r,
+               hx: hf, hy: hy, hz: hl, rgb: rgb, a: Math.min(255, a),
+               yaw: skyYaw, pitch: 0, roll: skyRoll });
+  };
   const box = (f, lat, y, hf, hy, hl, rgb, a) => {
     if (a <= 0 || hf <= 0 || hy <= 0 || hl <= 0) return;
-    out.push({ x: f, y: y, z: lat, hx: hf, hy: hy, hz: hl, rgb: rgb, a: Math.min(255, a), yaw: 0, pitch: 0, roll: 0 });
+    out.push({ x: FOFF + FSGN * f, y: y, z: FSGN * lat, hx: hf, hy: hy, hz: hl,
+               rgb: rgb, a: Math.min(255, a), yaw: 0, pitch: 0, roll: 0 });
   };
   const rot = (f, lat, y, hf, hy, hl, yaw, pitch, roll, rgb, a) => {
     if (a <= 0 || hf <= 0 || hy <= 0 || hl <= 0) return;
-    out.push({ x: f, y: y, z: lat, hx: hf, hy: hy, hz: hl, rgb: rgb, a: Math.min(255, a), yaw: yaw, pitch: pitch, roll: roll });
+    out.push({ x: FOFF + FSGN * f, y: y, z: FSGN * lat, hx: hf, hy: hy, hz: hl,
+               rgb: rgb, a: Math.min(255, a),
+               yaw: FSGN > 0 ? yaw : yaw - Math.PI, pitch: pitch, roll: roll });
   };
 
   // =========================================================================================
@@ -90,7 +128,7 @@ function buildShadow(variant, t, salt = 4211) {
   // La main spectrale : 78 pièces, articulées, et surtout PLIABLES À PLAT. Les doigts sont des
   // chaînes cinématiques — chaque phalange part du bout de la précédente avec son angle cumulé,
   // ce qui donne un vrai poing là où un pliage à angle unique ferait un éventail.
-  const drawSpectralHand = (wristF, wristL, wristY, lie, grip, scale, alpha, salt, strobe) => {
+  const drawSpectralHand = (wristF, wristL, wristY, lie, grip, flex, scale, alpha, salt, strobe) => {
     if (alpha <= 1) return;
     const cl = Math.cos(lie), sl_ = Math.sin(lie);
     const P = (u, v, h, hu, hh, hv, lr, rgb, a) =>
@@ -132,8 +170,17 @@ function buildShadow(variant, t, salt = 4211) {
       const seg3 = [L * 0.42, L * 0.33, L * 0.25];
       const rad = [0.072, 0.062, 0.050];
       const lag = clamp01((grip - fdx * 0.07) / 0.80);
-      const bend = [lag * 1.05, lag * 1.30, lag * 1.45];
-      let curF = 0, curH = 0.375, ang = -0.16 + fingerSpread[fdx] * 0.30;
+      // PLI DE REPOS : une main relâchée n'a jamais les doigts tendus, et pas le même
+      // pli d'un doigt à l'autre. GRIFFE DE SORTIE : chaque doigt perce le sol à son
+      // tour et racle, en demi-sinus, donc le pli revient seul à zéro. TREMBLEMENT :
+      // l'effort, qui s'éteint quand le poing se ferme.
+      const restCurl = [0.19, 0.13, 0.21, 0.33];
+      const emerge = clamp01((flex - fdx * 0.13) / 0.44);
+      const claw = Math.sin(emerge * Math.PI) * (0.30 + 0.52 * hash(salt + 90, fdx * 31));
+      const tremor = (hash(salt + 91 + fdx * 7, strobe) - 0.5) * 0.11 * (1 - lag * 0.8);
+      const idle = restCurl[fdx] + claw + tremor;
+      const bend = [lag * 1.05 + idle * 0.55, lag * 1.30 + idle * 1.00, lag * 1.45 + idle * 1.30];
+      let curF = 0, curH = 0.375, ang = -0.16 + fingerSpread[fdx] * (0.30 + 0.55 * claw);
       for (let p = 0; p < 3; p++) {
         ang += bend[p];
         const half = seg3[p] * 0.5;
@@ -154,7 +201,11 @@ function buildShadow(variant, t, salt = 4211) {
     {
       const lag = clamp01(grip / 0.85);
       const seg2 = [0.30, 0.24], rad = [0.082, 0.068];
-      let curF = 0.055, curH = 0.02, ang = 0.95 - lag * 0.70, lat = 0.255;
+      // Le pouce est le levier : il pousse pendant la sortie, donc à CONTRE-TEMPS des
+      // quatre doigts qui griffent vers l'intérieur.
+      const pry = Math.sin(clamp01(flex / 0.55) * Math.PI) * 0.40;
+      const thumbShake = (hash(salt + 97, strobe + 5) - 0.5) * 0.09 * (1 - lag * 0.8);
+      let curF = 0.055, curH = 0.02, ang = 0.95 - lag * 0.70 + pry + thumbShake, lat = 0.255;
       for (let p = 0; p < 2; p++) {
         const half = seg2[p] * 0.5;
         const pf = curF + Math.sin(ang) * half * 0.35;
@@ -268,7 +319,7 @@ function buildShadow(variant, t, salt = 4211) {
       const grip = curl * (1 - layDown * 0.55);
       const handA = a * (0.35 + 0.65 * up + 0.35 * curl);
       // ECHELLE 2,45 : pres de quatre blocs du poignet au majeur — elle DOMINE sa proie.
-      drawSpectralHand(handF, 0, GROUND_Y, lie, grip, 2.45, Math.min(255, handA), salt, strobe);
+      drawSpectralHand(handF, 0, GROUND_Y, lie, grip, peel, 2.45, Math.min(255, handA), salt, strobe);
     }
 
     // 5. LA CENDRE — elle donne au couloir une épaisseur d'air, sinon c'est un autocollant
@@ -500,6 +551,7 @@ function buildShadow(variant, t, salt = 4211) {
   const renderRift = (alpha) => {
     const a = Math.round(alpha * smooth(t / 0.03) * (1 - smooth((t - 0.94) / 0.06)));
     if (a <= 4) return;
+    FOFF = RIFT_BACK; FSGN = -1;
     const crack = smooth(t / 0.07);
     const open = smooth((t - 0.07) / 0.13);
     const skull = smooth((t - 0.20) / 0.18);
@@ -664,22 +716,58 @@ function buildShadow(variant, t, salt = 4211) {
 
     // 1. LE SOLEIL NOIR — un VRAI disque (balayage en rangées + demi-corde), pas un empilement
     //    d'anneaux, qui laisse toujours des trous au centre. À VINGT-TROIS BLOCS du sol.
+    SKY_Y = sunY;
     if (sunR > 0.05) {
       const rows = 25;
       for (let r = 0; r < rows; r++) {
         const v = (r + 0.5) / rows, sy = (v - 0.5) * 2;
         const halfChord = Math.sqrt(Math.max(0, 1 - sy * sy)) * sunR;
         if (halfChord < 0.03) continue;
-        const yy = sunY + sy * sunR;
-        box(0, 0, yy, 0.075, sunR / rows * 1.15, halfChord, VOID_INK, opq(a));
-        for (let s = -1; s <= 1; s += 2) {
-          const flick = 0.74 + 0.26 * hash(salt + strobe * 9, r * 31 + s);
-          box(0.010, s * halfChord, yy, 0.070, sunR / rows * 1.05, 0.075, VIOLET, opq(a * flick));
-          box(0.055, s * halfChord, yy, 0.030, sunR / rows * 0.8, 0.040, ORCHID, opq(a * flick));
+        const uu = sy * sunR;
+        sky(0, uu, 0, 0.075, sunR / rows * 1.15, halfChord, VOID_INK, opq(a));
+        for (let sg = -1; sg <= 1; sg += 2) {
+          const flick = 0.74 + 0.26 * hash(salt + strobe * 9, r * 31 + sg);
+          sky(sg * halfChord, uu, 0.010, 0.070, sunR / rows * 1.05, 0.075, VIOLET, opq(a * flick));
+          sky(sg * halfChord, uu, 0.055, 0.030, sunR / rows * 0.8, 0.040, ORCHID, opq(a * flick));
         }
       }
-      for (let s = -1; s <= 1; s += 2) {
-        box(0.010, 0, sunY + s * sunR, 0.070, 0.075, 0.19, VIOLET, opq(a));
+      for (let sg = -1; sg <= 1; sg += 2) {
+        sky(0, sg * sunR, 0.010, 0.070, 0.075, 0.19, VIOLET, opq(a));
+      }
+
+      // LE VOLUME : quatre couronnes de braises bombées vers la caméra. On ne voit pas le
+      // noir bomber — du noir sur du noir ne bombe jamais — on voit les braises s'étager.
+      for (let sh = 1; sh <= 4; sh++) {
+        const rr = sunR * (sh / 4.6);
+        const depth = Math.sqrt(Math.max(0, sunR * sunR - rr * rr)) * 0.62;
+        const n = 6 + sh * 5;
+        for (let i = 0; i < n; i++) {
+          const aa = i * TAU / n + t * (0.5 + 0.22 * sh) + sh * 1.1;
+          const gl = hash(salt + 330 + sh, i * 17 + strobe);
+          if (gl < 0.30) continue;
+          const ss = 0.045 + 0.045 * gl;
+          sky(Math.cos(aa) * rr, Math.sin(aa) * rr, depth, ss, ss, ss,
+              gl > 0.78 ? ORCHID : (gl > 0.52 ? VIOLET : PURPLE),
+              opq(a * (0.45 + 0.55 * gl)));
+        }
+      }
+
+      // L'ANNEAU ORBITAL : la seule chose qui prouve qu'un objet est en trois dimensions,
+      // c'est qu'une partie de lui passe DERRIÈRE une autre. On ne dessine pas la moitié
+      // cachée : c'est exact par construction, et gratuit.
+      const ringTilt = 0.95 + 0.22 * Math.sin(t * 1.7);
+      const ct = Math.cos(ringTilt), st = Math.sin(ringTilt);
+      const ringR = sunR * (1.30 + 0.10 * Math.sin(t * 2.3));
+      for (let i = 0; i < 54; i++) {
+        const aa = i * TAU / 54 + t * 1.15;
+        const rr = Math.cos(aa) * ringR;
+        const uu = Math.sin(aa) * ringR * ct;
+        const dd = Math.sin(aa) * ringR * st;
+        if (dd < 0 && rr * rr + uu * uu < sunR * sunR) continue;
+        const ss = 0.055 + (dd > 0 ? 0.030 : 0);
+        sky(rr, uu, dd, ss, ss, ss,
+            dd > 0 ? (i % 4 === 0 ? PALE : ORCHID) : PURPLE,
+            opq(a * corona * (dd > 0 ? 1 : 0.70)));
       }
     }
 
@@ -691,12 +779,17 @@ function buildShadow(variant, t, salt = 4211) {
         const breathe = 0.55 + 0.45 * Math.sin(t * (5 + 6 * h1) + h2 * TAU);
         const len = (0.70 + 2.60 * h1) * corona * breathe * (1 - lift * 0.8);
         if (len < 0.06) continue;
-        for (let s = 0; s < 6; s++) {
-          const u = (s + 0.5) / 6, d = sunR + len * u;
+        // LA COUCHE : un tiers des filaments part vers la caméra, un tiers vers le fond.
+        // Une couronne coplanaire fait un napperon ; répartie, elle fait une atmosphère.
+        const tilt = (hash(salt + 83, i * 43) - 0.5) * 1.90;
+        for (let sg = 0; sg < 6; sg++) {
+          const u = (sg + 0.5) / 6, d = sunR + len * u;
           const aa = ang + u * u * 0.30 * (h2 - 0.5) * 2;
           const ss = (0.095 - 0.060 * u) * (0.8 + 0.4 * h2);
           const rgb = u < 0.25 ? PALE : (u < 0.55 ? ORCHID : (u < 0.8 ? VIOLET : PURPLE));
-          box(0, Math.cos(aa) * d, sunY + Math.sin(aa) * d, ss * 0.9, ss, ss, rgb,
+          const dep = tilt * len * u;
+          if (dep < 0 && d < sunR * 1.02) continue;
+          sky(Math.cos(aa) * d, Math.sin(aa) * d, dep, ss * 0.9, ss, ss, rgb,
               opq(a * corona * (1 - u * 0.35)));
         }
       }
@@ -706,11 +799,16 @@ function buildShadow(variant, t, salt = 4211) {
         const base = k * (TAU / 3) + salt * 0.0013 + t * 0.25;
         const life = clamp01((corona - k * 0.12) * 1.4) * (1 - lift);
         if (life < 0.02) continue;
+        // Chaque langue sort du plan : elle part vers l'avant, culmine, et replonge
+        // derrière le limbe — le seul endroit où la couronne passe visiblement devant
+        // PUIS derrière le disque.
+        const lean = (hash(salt + 86, k * 97) - 0.35) * 2.4;
         for (let i = 0; i < 14; i++) {
           const u = (i + 0.5) / 14, arc = Math.sin(u * Math.PI);
           const d = sunR * (1 + 0.95 * arc), aa = base + (u - 0.5) * 1.25;
           const ss = (0.14 - 0.085 * u) * arc + 0.030;
-          box(0, Math.cos(aa) * d, sunY + Math.sin(aa) * d, ss * 0.8, ss, ss,
+          sky(Math.cos(aa) * d, Math.sin(aa) * d, lean * sunR * 0.60 * arc,
+              ss * 0.8, ss, ss,
               u < 0.3 ? PALE : (u < 0.7 ? ORCHID : VIOLET),
               opq(a * life * (0.55 + 0.45 * arc)));
         }
@@ -754,16 +852,23 @@ function buildShadow(variant, t, salt = 4211) {
       const ang = -0.75 + salt * 0.0007;
       const px = Math.cos(ang) * sunR, py = Math.sin(ang) * sunR;
       const s0 = 0.130 + 0.30 * pop;
-      box(0.075, px, sunY + py, 0.055, s0, s0, SPARK, opq(a));
-      box(0.095, px, sunY + py, 0.040, s0 * 0.52, s0 * 0.52, 0xFFFFFF, opq(a));
+      sky(px, py, 0.075, 0.055, s0, s0, SPARK, opq(a));
+      sky(px, py, 0.095, 0.040, s0 * 0.52, s0 * 0.52, 0xFFFFFF, opq(a));
       for (let k = 0; k < 4; k++) {
         const ba = k * HALF_PI + 0.35;
         const bl = (0.55 + 2.20 * pop) * (k % 2 === 0 ? 1 : 0.62);
-        for (let s = 0; s < 7; s++) {
-          const u = (s + 0.5) / 7, ss = 0.070 * (1 - u * 0.75);
-          box(0.070, px + Math.cos(ba) * bl * u, sunY + py + Math.sin(ba) * bl * u,
+        for (let sg = 0; sg < 7; sg++) {
+          const u = (sg + 0.5) / 7, ss = 0.070 * (1 - u * 0.75);
+          sky(px + Math.cos(ba) * bl * u, py + Math.sin(ba) * bl * u, 0.070,
               0.045, ss, ss, u < 0.4 ? PALE : ORCHID, opq(a * (1 - u * 0.5)));
         }
+      }
+      // L'ÉCLAT EN PROFONDEUR : six éclats qui partent vers le joueur. Sans eux le diamant
+      // reste une croix plate collée sur le limbe.
+      for (let k = 0; k < 6; k++) {
+        const u = (k + 1) / 6, ss = 0.085 * (1 - u * 0.7) * (0.4 + pop);
+        sky(px * (1 - u * 0.25), py * (1 - u * 0.25), 0.12 + u * 2.4 * pop,
+            ss, ss, ss, u < 0.5 ? 0xFFFFFF : PALE, opq(a * (1 - u * 0.55)));
       }
       // l'onde de choc au sol, EN RETARD d'un tiers : simultanés, les deux événements n'en
       // font qu'un et on perd le lien de cause à effet.

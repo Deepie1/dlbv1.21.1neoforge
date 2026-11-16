@@ -8,6 +8,40 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 ## Ombre — trois signatures · 4 novembre 2026 ⟵ **LOT COURANT**
 
+> **Version 3 — les quatre corrections demandées.**
+>
+> **La main bouge en sortant de terre.** Les doigts restaient droits pendant toute la
+> sortie puis se fermaient d'un bloc : une main de mannequin posée sur un rail. Chaque
+> doigt a maintenant son **pli de repos** (0,19 / 0,13 / 0,21 / 0,33 rad), sort avec son
+> **propre retard** — l'auriculaire a presque un demi-temps sur l'index — et se **griffe**
+> en demi-sinus pendant l'émergence, avec un tremblement qui s'éteint à mesure que la
+> prise se ferme. Le pouce fait levier à part. Côté serveur la prise **bloque** le mob,
+> le **traîne** le long du couloir pendant trente ticks (la main et le mob avancent sur
+> la *même* formule, donc jamais de décalage) et inflige des **dégâts toutes les six
+> ticks** pendant le trajet, au lieu d'une seule gifle à l'arrivée.
+>
+> **L'éclipse fait face au joueur et a du volume.** Le disque était dessiné dans un plan
+> fixe : dès qu'on contournait le mob il devenait **un trait**. Il est maintenant en
+> panneau-réclame — reconstruit chaque image dans le repère de la caméra, donc **rond vu
+> de partout** (mesuré : rapport largeur/hauteur 0,994 sous sept azimuts). Épaissir le
+> disque n'aurait rien réglé, il serait resté orienté ; et bomber du noir ne se voit pas.
+> Le relief vient donc d'ailleurs : **quatre couronnes de braises** étagées en profondeur
+> sur la calotte, un **anneau orbital incliné** de 54 cubes qui passe **devant puis
+> derrière** le disque — sa moitié arrière est supprimée là où la silhouette la masque,
+> ce qui donne une occlusion exacte et gratuite — des filaments de couronne et des
+> protubérances qui **sortent du plan**, et six éclats de l'anneau de diamant projetés
+> vers le joueur.
+>
+> **La faille s'ouvre deux blocs derrière le mob.** Elle s'ouvrait **dans** la cible, qui
+> se trouvait donc à l'origine du cône de souffle et que le test d'angle épargnait : le
+> souffle passait à côté de sa propre victime. Elle recule de deux blocs du côté opposé
+> au porteur et **souffle vers lui**, donc à travers le mob — effet secondaire voulu, le
+> crâne fait enfin face au joueur au lieu de lui présenter son occiput. La position est
+> **recalculée en fonction de la portée réelle** : le serveur balaie les mobs du cône,
+> place la bouche derrière le **plus éloigné**, et si le groupe est plus long que la
+> portée il la ramène devant le **plus proche** plutôt que de souffler dans le vide.
+> Toutes les victimes du cône sont **verrouillées** pendant soixante-dix ticks.
+
 > **Version 2 — les trois corrections demandées.** La **main** faisait demi-tour (elle
 > présentait le dos à sa proie) et a grandi de 1,45 à **2,45** — sommet mesuré à 2,42
 > blocs. Le crâne de Wither est devenu un **crâne de démon** de ~210 pièces : arcades

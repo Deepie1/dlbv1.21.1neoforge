@@ -1879,6 +1879,23 @@ public final class WeaponWorldVfxManager {
     private static final double MAX_VFX_RENDER_DISTANCE_SQR = 96.0 * 96.0;
 
     private static int cubesSinceFlush;
+
+    // ---- Position de la caméra de l'image en cours ----
+    // Presque tous les effets de ce mod sont orientés par le couple attaquant/cible et se
+    // moquent de l'endroit d'où on les regarde. Un seul ne le peut pas : un DISQUE. Une
+    // éclipse dessinée dans un plan fixe disparaît dès qu'on la regarde par la tranche, et
+    // comme elle est à vingt-trois blocs de haut, l'angle sous lequel on la voit dépend
+    // entièrement de l'endroit où le joueur se place. Il lui faut donc la caméra.
+    private static double camPosX;
+    private static double camPosY;
+    private static double camPosZ;
+
+    /** Position de la caméra au début de l'image courante (monde). */
+    public static double camX() { return camPosX; }
+
+    public static double camY() { return camPosY; }
+
+    public static double camZ() { return camPosZ; }
     @SubscribeEvent
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_PARTICLES) return;
@@ -1889,6 +1906,9 @@ public final class WeaponWorldVfxManager {
 
         Camera cam = event.getCamera();
         Vec3 camPos = cam.getPosition();
+        camPosX = camPos.x;
+        camPosY = camPos.y;
+        camPosZ = camPos.z;
 
         PoseStack poseStack = event.getPoseStack();
         Matrix4f mat = poseStack.last().pose();
