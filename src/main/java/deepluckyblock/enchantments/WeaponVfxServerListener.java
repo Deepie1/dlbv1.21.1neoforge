@@ -3000,22 +3000,67 @@ public final class WeaponVfxServerListener {
         final double oz = target.getZ();
         final float base = Math.max(1.6f, weaponDamage * 0.92f);
 
+        // --- Le ciel se charge. On l'entend avant de le voir. ---
+        // Un orage ne commence pas par l'éclair : il commence par cette pression sourde qui
+        // fait lever la tête. La source est à vingt-deux blocs, là où le plafond grésille à
+        // l'écran, et le fondu d'entrée accélère jusqu'à la frappe.
+        sl.playSound(null, ox, oy + 22.0, oz, SoundEvents.TRIAL_SPAWNER_OMINOUS_ACTIVATE,
+                SoundSource.PLAYERS, 0.70f, 0.88f);
+        chargeSwell(sl, now, ox, oy + 16.0, oz, 6, 0.80f);
         sl.playSound(null, ox, oy, oz, SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.PLAYERS,
                 0.55f, 1.35f);
         // Ionisation : le sol crépite AVANT la frappe, le joueur voit le coup arriver.
-        TestProcedure.schedule(sl, now + 6, () -> PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
-                ox, oy - 0.90, oz, 26, 1.80, 0.25, 1.80, 0.05));
+        TestProcedure.schedule(sl, now + 6, () -> {
+            PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
+                    ox, oy - 0.90, oz, 26, 1.80, 0.25, 1.80, 0.05);
+            staticCrackle(sl, ox, oy - 0.70, oz, 2.20, 4, 0.55f);
+        });
+
+        // --- Quatre éclairs tombent du plafond, autour du point visé ---
+        // Ils ne sont pas décoratifs : chacun est une colonne qui blesse ce qu'elle traverse.
+        // L'angle d'or écarte les points de chute sans jamais les aligner, et le rayon reprend
+        // la fourchette du rendu — entre 3,6 et 9 blocs du centre.
+        for (int k = 0; k < 4; k++) {
+            final int index = k;
+            final long when = 5L + index * 7L;
+            TestProcedure.schedule(sl, now + when, () -> {
+                double aa = index * 2.3998277 + 0.7;
+                double rr = 3.60 + 5.40 * ((index * 3 + 1) % 4) / 3.0;
+                double hx = ox + Math.cos(aa) * rr;
+                double hz = oz + Math.sin(aa) * rr;
+                // Le son part d'en haut : la décharge descend, elle ne jaillit pas du sol.
+                sl.playSound(null, hx, oy + 14.0, hz, SoundEvents.LIGHTNING_BOLT_THUNDER,
+                        SoundSource.PLAYERS, 0.52f, 1.42f + 0.07f * index);
+                sl.playSound(null, hx, oy, hz, SoundEvents.MACE_SMASH_GROUND,
+                        SoundSource.PLAYERS, 0.50f, 1.25f);
+                PixelFx.send(sl, ParticleTypes.FLASH, hx, oy + 0.50, hz, 1, 0.0, 0.0, 0.0, 0.0);
+                PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, hx, oy + 0.30, hz,
+                        24, 0.30, 0.70, 0.30, 0.22);
+                broadcastNear(sl, (float) hx, (float) oy, (float) hz,
+                        WeaponVisualEffectId.CHAIN_VOLT_ARC.id, KIND_IMPACT, 2,
+                        (float) hx, (float) oy, (float) hz,
+                        (float) hx, (float) oy, (float) hz, 0, 0.34f);
+                // La colonne touche sur toute sa hauteur, le temps d'un éclair : trois ticks.
+                addThunderHit(sl, attackerId, TestProcedure.currentTick(sl),
+                        TestProcedure.currentTick(sl) + 3L, hx, hz,
+                        oy + 3.0, oy + 3.0, 1.30, 4.20, base * 0.42f, false, 30);
+            });
+        }
 
         // --- Tick 20 : la frappe principale ---
         TestProcedure.schedule(sl, now + 20, () -> {
             if (!target.isAlive()) return;
-            sl.playSound(null, ox, oy, oz, SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.PLAYERS,
-                    0.95f, 1.05f);
+            // Plus gros que les quatre précédents, moins que le marteau : c'est un éclair,
+            // pas une enclume. thunderBoom à 0,30 donne le claquement sans le sub.
+            thunderBoom(sl, ox, oy, oz, 0.30f);
             PixelFx.send(sl, ParticleTypes.FLASH, ox, oy, oz, 2, 0.10, 0.10, 0.10, 0.0);
             PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, ox, oy, oz, 48, 0.70, 0.90, 0.70, 0.30);
             hurtWithCapturedWeapon(sl, attackerId, target,
                     base * staticMultiplier(sl, target));
             addStaticCharge(sl, target, 1, attackerId);
+            // Électrocuté : les muscles se verrouillent une seconde et demie.
+            target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                    30, 2, true, false));
         });
 
         // --- Repérage de la chaîne : on la calcule une fois, au moment de l'impact ---
@@ -3043,10 +3088,20 @@ public final class WeaponVfxServerListener {
                 cz = best.getZ();
             }
 
+            // Le sol garde une trace et l'orage s'éloigne : fondu de sortie commun aux
+            // deux cas, programmé une seule fois depuis le repérage.
+            TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 75L, () -> {
+                sl.playSound(null, ox, oy - 0.8, oz, SoundEvents.COPPER_BULB_TURN_ON,
+                        SoundSource.PLAYERS, 0.55f, 0.72f);
+                staticCrackle(sl, ox, oy - 0.8, oz, 3.00, 5, 0.40f);
+            });
+            rollingThunder(sl, TestProcedure.currentTick(sl) + 20L, ox, oy, oz, 0.62f);
+
             if (links.isEmpty()) {
                 // ----- CAS ENNEMI SEUL : l'énergie des six relais revient sur la cible -----
                 final float solo = base * 0.26f * 6.0f / 3.0f;
                 for (int shot = 0; shot < 3; shot++) {
+                    final int rank = shot;
                     final int delay = 2 + shot * 12;
                     TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + delay, () -> {
                         if (!target.isAlive()) return;
@@ -3054,7 +3109,12 @@ public final class WeaponVfxServerListener {
                                 solo * staticMultiplier(sl, target));
                         addStaticCharge(sl, target, 1, attackerId);
                         sl.playSound(null, target.getX(), target.getY(), target.getZ(),
+                                SoundEvents.CONDUIT_ATTACK_TARGET, SoundSource.PLAYERS,
+                                0.80f, 1.05f + 0.12f * rank);
+                        sl.playSound(null, target.getX(), target.getY(), target.getZ(),
                                 SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.PLAYERS, 0.50f, 1.72f);
+                        target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                                26, 1, true, false));
                         PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
                                 target.getX(), target.getY() + target.getBbHeight() * 0.6,
                                 target.getZ(), 22, 0.40, 0.55, 0.40, 0.18);
@@ -3073,6 +3133,7 @@ public final class WeaponVfxServerListener {
             for (int i = 0; i < links.size(); i++) {
                 final LivingEntity victim = links.get(i);
                 final float share = base * (float) Math.pow(0.82, i + 1);
+                final int rank = i;
                 final int delay = 4 + i * 9;
                 TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + delay, () -> {
                     if (!victim.isAlive()) return;
@@ -3082,8 +3143,17 @@ public final class WeaponVfxServerListener {
                     hurtWithCapturedWeapon(sl, attackerId, victim,
                             share * staticMultiplier(sl, victim));
                     addStaticCharge(sl, victim, 1, attackerId);
+                    // Un relais n'est pas un coup de tonnerre : c'est un arc qui saute d'un
+                    // corps à l'autre. Le son du conduit attaque bien plus vite et monte en
+                    // hauteur à chaque bond, ce qui rend la chaîne audible comme une chaîne.
+                    sl.playSound(null, jx, jy, jz, SoundEvents.CONDUIT_ATTACK_TARGET,
+                            SoundSource.PLAYERS, 0.85f, 1.10f + 0.09f * rank);
                     sl.playSound(null, jx, jy, jz, SoundEvents.LIGHTNING_BOLT_THUNDER,
-                            SoundSource.PLAYERS, 0.48f, 1.45f);
+                            SoundSource.PLAYERS, 0.36f, 1.60f);
+                    victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                            24, 1, true, false));
+                    victim.addEffect(new MobEffectInstance(MobEffects.GLOWING,
+                            70, 0, true, false));
                     PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, jx, jy, jz,
                             26, 0.42, 0.52, 0.42, 0.20);
                     broadcastNear(sl, (float) jx, (float) jy, (float) jz,
@@ -3135,34 +3205,68 @@ public final class WeaponVfxServerListener {
         final double zy = target.getY();
         final double zz = target.getZ();
 
-        // --- L'appel : le marteau se matérialise au-dessus de la cible ---
+        // --- L'appel : le marteau se matérialise à trente blocs, et ça s'entend ---
         sl.playSound(null, zx, zy + 1.0, zz, SoundEvents.BEACON_ACTIVATE, SoundSource.PLAYERS,
                 0.55f, 0.70f);
-        // Quatre paliers étalés sur la chute, de plus en plus rapprochés : l'oreille suit
-        // l'accélération que l'œil voit.
-        final long[] CUE = {10L, 24L, 35L, 44L};
-        for (int step = 0; step < CUE.length; step++) {
-            final float pitch = 0.80f + step * 0.16f;
-            TestProcedure.schedule(sl, now + CUE[step], () -> {
-                sl.playSound(null, zx, zy + 4.0, zz, SoundEvents.NOTE_BLOCK_BELL.value(),
-                        SoundSource.PLAYERS, 0.38f, pitch);
-                PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, zx, zy + 4.6, zz,
-                        16, 1.00, 0.70, 1.00, 0.05);
-                // l'air haut se charge aussi côté serveur, sur toute la colonne
+        // Le grondement d'invocation part de très haut : la source sonore est au point
+        // d'apparition du marteau, pas sur la cible. On lève la tête avant de comprendre.
+        sl.playSound(null, zx, zy + 26.0, zz, SoundEvents.TRIAL_SPAWNER_OMINOUS_ACTIVATE,
+                SoundSource.PLAYERS, 1.00f, 0.72f);
+        TestProcedure.schedule(sl, now + 4L, () ->
+                sl.playSound(null, zx, zy + 22.0, zz, SoundEvents.WARDEN_SONIC_CHARGE,
+                        SoundSource.PLAYERS, 0.80f, 0.55f));
+
+        // --- La chute : un bruit d'ENCLUME, et il se rapproche ---
+        // Cinq passages répartis sur les quarante-deux ticks de descente. La hauteur de la
+        // source suit la vraie trajectoire (chute en t²), donc le son descend avec l'objet ;
+        // le volume monte et la hauteur tonale aussi, ce que l'oreille lit comme un
+        // rapprochement. C'est tout le principe d'un effet Doppler, sans en avoir un.
+        final long[] FALL_CUE = {10L, 22L, 32L, 40L, 46L};
+        for (int step = 0; step < FALL_CUE.length; step++) {
+            final long when = FALL_CUE[step];
+            // même loi que le rendu : 30 blocs parcourus en t², sur 42 ticks à partir du 8ᵉ
+            final double prog = Math.min(1.0, Math.max(0.0, (when - 8.0) / 42.0));
+            final double hy = zy + 30.0 * (1.0 - prog * prog);
+            final float gain = 0.30f + 0.62f * (float) (prog * prog);
+            final float pitch = 0.58f + 0.52f * (float) prog;
+            TestProcedure.schedule(sl, now + when, () -> {
+                sl.playSound(null, zx, hy, zz, SoundEvents.ANVIL_FALL,
+                        SoundSource.PLAYERS, gain, pitch);
+                sl.playSound(null, zx, hy, zz, SoundEvents.WIND_CHARGE_THROW,
+                        SoundSource.PLAYERS, gain * 0.85f, pitch * 0.80f);
+                sl.playSound(null, zx, hy, zz, SoundEvents.NOTE_BLOCK_BELL.value(),
+                        SoundSource.PLAYERS, 0.26f, pitch + 0.30f);
+                PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, zx, hy, zz,
+                        18, 1.00, 1.40, 1.00, 0.06);
                 PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, zx, zy + 14.0, zz,
                         22, 2.60, 7.00, 2.60, 0.04);
             });
         }
+
+        // --- Et le marteau touche ce qu'il traverse ---
+        // Un objet de deux mètres qui tombe de trente blocs ne peut pas ignorer ce qui se
+        // trouve sur son chemin. Le volume de contact descend exactement comme le rendu ; un
+        // mob perché à mi-hauteur encaisse au moment précis où la tête passe sur lui, avec la
+        // moitié de la force — le plein tarif reste pour l'écrasement au sol.
+        addThunderHit(sl, attackerId, now + 8L, now + 50L, zx, zz,
+                zy + 30.0, zy + 0.30, 1.45, 1.00, strike * 0.50f, true, 40);
 
         // --- Tick 50 : la frappe. Le 3×3 prend deux fois l'arme ---
         // 50 et non 40 : la chute dure maintenant 42 ticks, parce qu'un corps lâché de 30
         // blocs met réellement ce temps-là à tomber. Le coup doit porter à l'instant exact
         // où le marteau touche le sol à l'écran, sinon le joueur voit deux événements.
         TestProcedure.schedule(sl, now + 50L, () -> {
-            sl.playSound(null, zx, zy, zz, SoundEvents.LIGHTNING_BOLT_THUNDER,
-                    SoundSource.PLAYERS, 1.00f, 0.72f);
+            // LE coup. Quatre couches empilées par thunderBoom — claquement, tonnerre,
+            // souffle, sub — plus l'enclume qui se pose, parce que c'est exactement ce que
+            // l'œil voit : une masse de métal qui finit sa course dans le sol.
+            thunderBoom(sl, zx, zy, zz, 1.0f);
+            sl.playSound(null, zx, zy, zz, SoundEvents.ANVIL_LAND,
+                    SoundSource.PLAYERS, 1.10f, 0.48f);
             sl.playSound(null, zx, zy, zz, SoundEvents.TRIDENT_THROW.value(),
                     SoundSource.PLAYERS, 0.80f, 0.55f);
+            // Le tonnerre roule ensuite et s'éteint en quatre répliques : un orage ne
+            // s'arrête jamais net.
+            rollingThunder(sl, TestProcedure.currentTick(sl), zx, zy, zz, 1.0f);
             PixelFx.send(sl, ParticleTypes.FLASH, zx, zy + 0.4, zz, 2, 0.10, 0.10, 0.10, 0.0);
             PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, zx, zy + 0.3, zz,
                     80, 1.50, 0.50, 1.50, 0.42);
@@ -3174,7 +3278,25 @@ public final class WeaponVfxServerListener {
                 if (!victim.isAlive()) continue;
                 if (attackerId >= 0 && victim.getId() == attackerId) continue;
                 hurtWithCapturedWeapon(sl, attackerId, victim, strike);
-                addStaticCharge(sl, victim, 1, attackerId);
+                addStaticCharge(sl, victim, 2, attackerId);
+                // Sonné. Un coup de masse n'a jamais tué que la moitié des gens qu'il met au
+                // sol : les trois secondes suivantes, la victime bouge mal et frappe mou.
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                        60, 2, true, false));
+                victim.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 80, 1, true, false));
+                victim.addEffect(new MobEffectInstance(MobEffects.DIG_SLOWDOWN,
+                        80, 1, true, false));
+                // Le souffle : il pousse vers l'extérieur et vers le haut, depuis le point de
+                // chute. Au centre exact la direction est indéterminée, on soulève alors tout
+                // droit plutôt que de diviser par zéro.
+                double px = victim.getX() - zx;
+                double pz = victim.getZ() - zz;
+                double pl = Math.sqrt(px * px + pz * pz);
+                if (pl < 1.0e-3) { px = 0.0; pz = 0.0; } else { px /= pl; pz /= pl; }
+                victim.push(px * 0.52, 0.46, pz * 0.52);
+                victim.hurtMarked = true;
+                sl.playSound(null, victim.getX(), victim.getY(), victim.getZ(),
+                        SoundEvents.MACE_SMASH_GROUND, SoundSource.PLAYERS, 0.90f, 0.80f);
                 PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
                         victim.getX(), victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
                         22, 0.34, 0.44, 0.34, 0.20);
@@ -3226,6 +3348,17 @@ public final class WeaponVfxServerListener {
             if (!SHOCK_COOLDOWN.isEmpty()) SHOCK_COOLDOWN.clear();
             return;
         }
+        // Une dalle qui s'éteint le fait savoir. Sans ça, dix secondes de grésillement
+        // s'arrêtent sur une image, et le joueur ne sait pas s'il peut revenir marcher
+        // dessus. Le petit déclic de cuivre dit « c'est fini », et il ne coûte rien.
+        for (ShockZone zone : SHOCK_ZONES) {
+            if (now >= zone.expires() && zone.level() == sl) {
+                sl.playSound(null, zone.cx(), zone.cy() + 0.3, zone.cz(),
+                        SoundEvents.COPPER_BULB_TURN_OFF, SoundSource.PLAYERS, 0.50f, 0.70f);
+                sl.playSound(null, zone.cx(), zone.cy() + 0.3, zone.cz(),
+                        SoundEvents.CONDUIT_DEACTIVATE, SoundSource.PLAYERS, 0.42f, 1.30f);
+            }
+        }
         SHOCK_ZONES.removeIf(zone -> now >= zone.expires() || zone.level() != sl);
         if (!SHOCK_COOLDOWN.isEmpty()) SHOCK_COOLDOWN.values().removeIf(until -> now >= until + 80L);
         for (ShockZone zone : SHOCK_ZONES) {
@@ -3241,6 +3374,21 @@ public final class WeaponVfxServerListener {
                             zone.cx() + Math.cos(aa) * rr, zone.cy() + 0.12,
                             zone.cz() + Math.sin(aa) * rr, 2, 0.06, 0.03, 0.06, 0.02);
                 }
+            }
+            // Le bruit de la dalle. Une fois toutes les quinze frames environ, à un endroit
+            // tiré au hasard dans le disque : asymétrique comme les étincelles, et assez
+            // rare pour qu'on l'entende encore au bout de dix secondes. Un crépitement par
+            // tick serait un bourdonnement, et un bourdonnement, on cesse de l'écouter.
+            if ((now % 15L) == 0L) {
+                double rr = r * Math.pow(sl.random.nextDouble(), 0.55);
+                double aa = sl.random.nextDouble() * Math.PI * 2.0;
+                sl.playSound(null, zone.cx() + Math.cos(aa) * rr, zone.cy() + 0.25,
+                        zone.cz() + Math.sin(aa) * rr, SoundEvents.REDSTONE_TORCH_BURNOUT,
+                        SoundSource.PLAYERS, 0.42f, 1.25f + sl.random.nextFloat() * 0.60f);
+            }
+            if ((now % 47L) == 0L) {
+                sl.playSound(null, zone.cx(), zone.cy() + 0.4, zone.cz(),
+                        SoundEvents.CONDUIT_AMBIENT, SoundSource.PLAYERS, 0.38f, 0.82f);
             }
             for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
                     new AABB(zone.cx() - r, zone.cy() - 1.0, zone.cz() - r,
@@ -3260,6 +3408,16 @@ public final class WeaponVfxServerListener {
                 float fall = (float) (1.0 - dist / r);
                 hurtWithCapturedWeapon(sl, zone.attackerId(), victim,
                         zone.tickDamage() * (0.15f + 0.85f * fall));
+                // Rester dedans coûte de la mobilité, et d'autant plus qu'on est au centre.
+                // C'est ce qui transforme l'aura en contrôle de terrain : on peut encaisser
+                // la décharge, mais on sort moins vite qu'on n'est entré.
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                        30, fall > 0.55f ? 1 : 0, true, false));
+                // Un son court sur la victime elle-même, pas sur toute la zone : on sait
+                // qu'on vient de prendre une décharge sans que la dalle devienne une alarme.
+                sl.playSound(null, victim.getX(), victim.getY() + victim.getBbHeight() * 0.4,
+                        victim.getZ(), SoundEvents.CONDUIT_ATTACK_TARGET, SoundSource.PLAYERS,
+                        0.34f + 0.26f * fall, 1.55f);
                 // Pas de son ici : une décharge par seconde et par victime pendant dix
                 // secondes deviendrait vite insupportable. Les étincelles suffisent à dire
                 // que la dalle mord.
@@ -3267,6 +3425,189 @@ public final class WeaponVfxServerListener {
                         victim.getX(), victim.getY() + victim.getBbHeight() * 0.35, victim.getZ(),
                         10, 0.26, 0.30, 0.26, 0.10);
             }
+        }
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Dégâts par CONTACT — la géométrie à l'écran touche vraiment
+    // --------------------------------------------------------------------------------------------
+
+    /**
+     * Un volume qui suit une pièce de l'animation et blesse ce qu'il traverse.
+     *
+     * <p>Jusqu'ici, les dégâts de foudre étaient posés par <i>minuterie</i> : à tel tick, tout
+     * ce qui se trouve dans tel rayon encaisse. C'est juste pour une onde de choc, qui est
+     * effectivement instantanée et omniprésente, mais c'est faux pour un objet qui <b>tombe</b>.
+     * Le marteau met quarante-deux ticks à descendre trente blocs : pendant ce temps il occupe
+     * une position précise, et un mob qui se tient à mi-hauteur — sur un toit, un échafaudage,
+     * en vol — devrait le prendre en pleine tête <i>avant</i> qu'il n'atteigne le sol.
+     *
+     * <p>Un volume de contact règle ça. Il connaît sa hauteur à chaque tick, suit exactement la
+     * même loi que le rendu (chute en {@code t²}), et ne frappe une victime <b>qu'une seule
+     * fois</b> : traverser un corps n'est pas y rester. Le jeu de clés {@code hit} sert à ça.
+     *
+     * @param y0     hauteur au départ, {@code y1} hauteur à l'arrivée (identiques = volume fixe)
+     * @param t0     tick d'apparition, {@code t1} tick de disparition
+     * @param radius rayon horizontal, {@code halfHeight} demi-hauteur du cylindre
+     * @param ease   {@code true} si la descente accélère en {@code t²}, {@code false} si linéaire
+     */
+    private record ThunderHit(ServerLevel level, int attackerId, long t0, long t1,
+                              double cx, double cz, double y0, double y1,
+                              double radius, double halfHeight, float damage, boolean ease,
+                              int slowTicks, Set<Integer> hit) { }
+
+    private static final List<ThunderHit> THUNDER_HITS =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
+    /** Une seule passe par tick de jeu, comme pour les dalles et les tornades. */
+    private static long LAST_THUNDER_HIT_TICK = Long.MIN_VALUE;
+
+    /** Enregistre un volume de contact. Le jeu de clés est créé ici, un par volume. */
+    private static void addThunderHit(ServerLevel sl, int attackerId, long t0, long t1,
+                                      double cx, double cz, double y0, double y1,
+                                      double radius, double halfHeight, float damage,
+                                      boolean ease, int slowTicks) {
+        if (!(damage > 0.0f) || t1 <= t0) return;
+        THUNDER_HITS.add(new ThunderHit(sl, attackerId, t0, t1, cx, cz, y0, y1,
+                radius, halfHeight, damage, ease,
+                slowTicks, java.util.concurrent.ConcurrentHashMap.newKeySet()));
+    }
+
+    /**
+     * Balaye les volumes de contact. Le verrou de tick est indispensable : le hook appelant est
+     * tiré une fois par entité vivante, donc sans lui un marteau frapperait autant de fois
+     * qu'il y a de mobs chargés dans la dimension.
+     */
+    private static void tickThunderHits(net.minecraft.world.level.Level level) {
+        if (!(level instanceof ServerLevel sl)) return;
+        long now = sl.getGameTime();
+        if (now == LAST_THUNDER_HIT_TICK) return;
+        LAST_THUNDER_HIT_TICK = now;
+        if (THUNDER_HITS.isEmpty()) return;
+        THUNDER_HITS.removeIf(h -> now > h.t1() || h.level() != sl);
+
+        for (ThunderHit h : THUNDER_HITS) {
+            if (now < h.t0()) continue;
+            // Position du volume à cet instant précis. La même courbe que le rendu, sinon
+            // l'oreille et l'œil ne diraient pas la même chose que les points de vie.
+            double p = (double) (now - h.t0()) / (double) Math.max(1L, h.t1() - h.t0());
+            if (p > 1.0) p = 1.0;
+            double k = h.ease() ? p * p : p;
+            double cy = h.y0() + (h.y1() - h.y0()) * k;
+
+            double r = h.radius();
+            double hh = h.halfHeight();
+            for (LivingEntity victim : sl.getEntitiesOfClass(LivingEntity.class,
+                    new AABB(h.cx() - r, cy - hh, h.cz() - r,
+                            h.cx() + r, cy + hh + 1.2, h.cz() + r))) {
+                if (!victim.isAlive()) continue;
+                if (h.attackerId() >= 0 && victim.getId() == h.attackerId()) continue;
+                if (h.hit().contains(victim.getId())) continue;
+                double ddx = victim.getX() - h.cx();
+                double ddz = victim.getZ() - h.cz();
+                if (ddx * ddx + ddz * ddz > r * r) continue;
+                // Recouvrement vertical réel : le volume contre la boîte du mob, pas son pied.
+                double vTop = victim.getY() + victim.getBbHeight();
+                if (vTop < cy - hh || victim.getY() > cy + hh) continue;
+
+                h.hit().add(victim.getId());
+                hurtWithCapturedWeapon(sl, h.attackerId(), victim,
+                        h.damage() * staticMultiplier(sl, victim));
+                addStaticCharge(sl, victim, 1, h.attackerId());
+                if (h.slowTicks() > 0) {
+                    victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                            h.slowTicks(), 1, true, false));
+                }
+                // Le son de touche : il part de la VICTIME, pas du centre de l'effet. C'est ce
+                // qui fait entendre qu'on a été accroché au passage plutôt que soufflé de loin.
+                sl.playSound(null, victim.getX(), victim.getY() + victim.getBbHeight() * 0.5,
+                        victim.getZ(), SoundEvents.MACE_SMASH_AIR, SoundSource.PLAYERS,
+                        0.70f, 1.15f + sl.random.nextFloat() * 0.25f);
+                sl.playSound(null, victim.getX(), victim.getY() + victim.getBbHeight() * 0.5,
+                        victim.getZ(), SoundEvents.CONDUIT_ATTACK_TARGET, SoundSource.PLAYERS,
+                        0.42f, 1.50f);
+                PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
+                        victim.getX(), victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
+                        26, 0.34, 0.44, 0.34, 0.26);
+                PixelFx.send(sl, ParticleTypes.FLASH,
+                        victim.getX(), victim.getY() + victim.getBbHeight() * 0.6, victim.getZ(),
+                        1, 0.0, 0.0, 0.0, 0.0);
+            }
+        }
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Palette sonore de la foudre
+    // --------------------------------------------------------------------------------------------
+
+    /**
+     * Le gros impact. Un seul échantillon ne donne jamais une détonation : le tonnerre de
+     * Minecraft est long et mou, il manque l'attaque. On empile donc quatre couches qui se
+     * complètent — le claquement sec du marteau de guerre, la masse du tonnerre, le souffle de
+     * l'explosion, et le sub du Warden qui met le poids en bas du spectre.
+     *
+     * @param power 0 → gros coup, 1 → coup dévastateur ; module volume et gravité
+     */
+    private static void thunderBoom(ServerLevel sl, double x, double y, double z, float power) {
+        float p = Math.max(0.0f, Math.min(1.0f, power));
+        sl.playSound(null, x, y, z, SoundEvents.MACE_SMASH_GROUND_HEAVY, SoundSource.PLAYERS,
+                0.95f + 0.45f * p, 0.90f - 0.18f * p);
+        sl.playSound(null, x, y, z, SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.PLAYERS,
+                1.15f + 0.55f * p, 0.72f - 0.14f * p);
+        sl.playSound(null, x, y, z, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS,
+                0.70f + 0.35f * p, 0.62f - 0.10f * p);
+        sl.playSound(null, x, y, z, SoundEvents.WARDEN_SONIC_BOOM, SoundSource.PLAYERS,
+                0.45f + 0.40f * p, 0.58f - 0.12f * p);
+    }
+
+    /**
+     * Le tonnerre qui roule et s'éteint. C'est le fondu de sortie de toutes les signatures de
+     * foudre : quatre répliques de plus en plus faibles, de plus en plus graves et de plus en
+     * plus espacées, décalées autour du point d'impact pour qu'elles ne sortent pas du même
+     * haut-parleur. Sans ça, un orage s'arrête net, ce qu'aucun orage ne fait.
+     */
+    private static void rollingThunder(ServerLevel sl, long now, double x, double y, double z,
+                                       float volume) {
+        final long[] WHEN = {14L, 31L, 53L, 82L};
+        final float[] GAIN = {0.70f, 0.46f, 0.28f, 0.15f};
+        for (int i = 0; i < WHEN.length; i++) {
+            final float v = volume * GAIN[i];
+            final float pitch = 0.78f - 0.07f * i;
+            final double ox = x + (i % 2 == 0 ? 7.0 : -6.0) * (i + 1) * 0.5;
+            final double oz = z + (i % 2 == 0 ? -5.0 : 8.0) * (i + 1) * 0.5;
+            TestProcedure.schedule(sl, now + WHEN[i], () ->
+                    sl.playSound(null, ox, y + 6.0, oz, SoundEvents.LIGHTNING_BOLT_THUNDER,
+                            SoundSource.PLAYERS, v, pitch));
+        }
+    }
+
+    /**
+     * Le fondu d'entrée : l'air se charge. Volume croissant, intervalle décroissant — on entend
+     * la tension monter avant de voir quoi que ce soit. C'est la moitié du travail d'un effet
+     * de frappe : prévenir.
+     */
+    private static void chargeSwell(ServerLevel sl, long now, double x, double y, double z,
+                                    int steps, float volume) {
+        for (int i = 0; i < steps; i++) {
+            final float v = volume * (0.28f + 0.72f * i / Math.max(1, steps - 1));
+            final float pitch = 0.62f + 0.11f * i;
+            final long when = now + Math.round(i * i * 1.15 + i * 2.2);
+            TestProcedure.schedule(sl, when, () -> {
+                sl.playSound(null, x, y, z, SoundEvents.REDSTONE_TORCH_BURNOUT,
+                        SoundSource.PLAYERS, v * 0.85f, pitch + 0.55f);
+                sl.playSound(null, x, y, z, SoundEvents.CONDUIT_AMBIENT,
+                        SoundSource.PLAYERS, v * 0.60f, pitch);
+            });
+        }
+    }
+
+    /** Crépitement court et sec, tiré au hasard autour d'un point : du statique, rien d'autre. */
+    private static void staticCrackle(ServerLevel sl, double x, double y, double z,
+                                      double spread, int count, float volume) {
+        for (int i = 0; i < count; i++) {
+            double ox = x + (sl.random.nextDouble() - 0.5) * spread * 2.0;
+            double oz = z + (sl.random.nextDouble() - 0.5) * spread * 2.0;
+            sl.playSound(null, ox, y, oz, SoundEvents.REDSTONE_TORCH_BURNOUT,
+                    SoundSource.PLAYERS, volume, 1.35f + sl.random.nextFloat() * 0.55f);
         }
     }
 
@@ -3306,9 +3647,27 @@ public final class WeaponVfxServerListener {
         TestProcedure.schedule(sl, now + 6L, () -> {
             sl.playSound(null, ax, ay + 8.0, az, SoundEvents.BEACON_ACTIVATE,
                     SoundSource.PLAYERS, 0.85f, 0.60f);
+            sl.playSound(null, ax, ay + 8.0, az, SoundEvents.TRIAL_SPAWNER_OMINOUS_ACTIVATE,
+                    SoundSource.PLAYERS, 1.00f, 0.66f);
             PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, ax, ay + 8.0, az,
                     40, 2.40, 0.55, 2.40, 0.02);
         });
+
+        // --- Le battement d'attente. ---
+        // Entre la formation du nuage et la première frappe il y a une seconde et demie de
+        // rien du tout : c'est long, et le silence y passe pour un bug. Six battements de
+        // plus en plus rapprochés tiennent cet intervalle et annoncent que ça va tomber.
+        final long[] BEAT = {10L, 18L, 25L, 30L, 34L, 37L};
+        for (int b = 0; b < BEAT.length; b++) {
+            final float v = 0.34f + 0.09f * b;
+            final float pitch = 0.52f + 0.06f * b;
+            TestProcedure.schedule(sl, now + BEAT[b], () -> {
+                sl.playSound(null, ax, ay + 7.0, az, SoundEvents.WARDEN_HEARTBEAT,
+                        SoundSource.PLAYERS, v, pitch);
+                PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, ax, ay + 7.4, az,
+                        10, 2.10, 0.40, 2.10, 0.02);
+            });
+        }
 
         // --- Mitraille : cinq frappes, chacune sur un point tiré sous le nuage. ---
         for (int s = 0; s < 5; s++) {
@@ -3318,8 +3677,12 @@ public final class WeaponVfxServerListener {
                 double aa = index * 2.3998277;                  // angle d'or : jamais aligné
                 double hx = ax + Math.cos(aa) * rr;
                 double hz = az + Math.sin(aa) * rr;
-                sl.playSound(null, hx, ay, hz, SoundEvents.LIGHTNING_BOLT_THUNDER,
+                // Le trait part du nuage : la source est à huit blocs, pas au sol.
+                sl.playSound(null, hx, ay + 8.0, hz, SoundEvents.LIGHTNING_BOLT_THUNDER,
                         SoundSource.PLAYERS, 0.55f, 1.35f + 0.05f * index);
+                sl.playSound(null, hx, ay, hz, SoundEvents.MACE_SMASH_GROUND,
+                        SoundSource.PLAYERS, 0.58f, 1.18f + 0.06f * index);
+                staticCrackle(sl, hx, ay + 0.2, hz, 1.60, 2, 0.34f);
                 PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, hx, ay + 0.20, hz,
                         22, 0.35, 0.45, 0.35, 0.16);
                 PixelFx.send(sl, ParticleTypes.FLASH, hx, ay + 0.60, hz, 1, 0.0, 0.0, 0.0, 0.0);
@@ -3334,6 +3697,13 @@ public final class WeaponVfxServerListener {
                     hurtWithCapturedWeapon(sl, attackerId, victim,
                             base * 0.30f * staticMultiplier(sl, victim));
                     addStaticCharge(sl, victim, 1, attackerId);
+                    // Marqué par l'orage : il reste visible à travers les murs le temps que
+                    // la décharge arrive. C'est une information, pas une punition — le nuage
+                    // désigne ses cibles, et le joueur sait qui n'est pas sorti de la zone.
+                    victim.addEffect(new MobEffectInstance(MobEffects.GLOWING,
+                            120, 0, true, false));
+                    victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                            20, 0, true, false));
                 }
             });
         }
@@ -3342,16 +3712,37 @@ public final class WeaponVfxServerListener {
         TestProcedure.schedule(sl, now + 112L, () -> {
             sl.playSound(null, ax, ay + 6.0, az, SoundEvents.BEACON_DEACTIVATE,
                     SoundSource.PLAYERS, 1.0f, 0.70f);
+            // L'aspiration : le nuage se contracte de 30 % à l'écran, et le son fait pareil.
+            // Le chargement du Warden monte pendant presque une seconde et s'arrête pile
+            // quand la décharge part — c'est l'inspiration avant le cri.
+            sl.playSound(null, ax, ay + 6.0, az, SoundEvents.WARDEN_SONIC_CHARGE,
+                    SoundSource.PLAYERS, 1.10f, 0.74f);
+            sl.playSound(null, ax, ay + 5.0, az, SoundEvents.RESPAWN_ANCHOR_CHARGE,
+                    SoundSource.PLAYERS, 0.70f, 0.62f);
             PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, ax, ay + 4.0, az,
                     60, 0.90, 2.20, 0.90, 0.28);
         });
+        // Sept crépitements serrés pendant la contraction : l'air ne tient plus.
+        for (int c = 0; c < 7; c++) {
+            final long when = 116L + c * 3L;
+            TestProcedure.schedule(sl, now + when, () ->
+                    staticCrackle(sl, ax, ay + 3.5, az, 2.40, 2, 0.46f));
+        }
 
         // --- La décharge, et l'onde qui la répercute. ---
         TestProcedure.schedule(sl, now + 140L, () -> {
-            sl.playSound(null, ax, ay, az, SoundEvents.LIGHTNING_BOLT_THUNDER,
-                    SoundSource.PLAYERS, 1.6f, 0.78f);
+            // Sept traits tombent ensemble : la détonation est pleine, mais plus claire que
+            // celle du marteau — c'est de l'électricité qui frappe, pas du métal qui écrase.
+            thunderBoom(sl, ax, ay, az, 0.72f);
             sl.playSound(null, ax, ay, az, SoundEvents.TRIDENT_THROW.value(),
                     SoundSource.PLAYERS, 0.90f, 0.62f);
+            sl.playSound(null, ax, ay + 4.0, az, SoundEvents.ELDER_GUARDIAN_CURSE,
+                    SoundSource.PLAYERS, 0.55f, 1.25f);
+            rollingThunder(sl, TestProcedure.currentTick(sl), ax, ay, az, 0.90f);
+            // La colonne centrale traverse vraiment ce qui se tient dessous, du sol au nuage.
+            addThunderHit(sl, attackerId, TestProcedure.currentTick(sl),
+                    TestProcedure.currentTick(sl) + 4L, ax, az,
+                    ay + 3.0, ay + 3.0, 2.60, 4.00, base * 0.55f, false, 40);
             PixelFx.send(sl, ParticleTypes.FLASH, ax, ay + 1.00, az, 1, 0.0, 0.0, 0.0, 0.0);
             PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, ax, ay + 0.40, az,
                     90, 1.20, 0.90, 1.20, 0.42);
@@ -3370,6 +3761,24 @@ public final class WeaponVfxServerListener {
                 float power = base * (core ? 2.60f : 0.22f) * staticMultiplier(sl, victim);
                 hurtWithCapturedWeapon(sl, attackerId, victim, power);
                 addStaticCharge(sl, victim, core ? 2 : 1, attackerId);
+                // Au centre on est assommé ; au bord on est seulement secoué. La nausée dit
+                // la commotion, la faiblesse dit le bras qui ne répond plus.
+                if (core) {
+                    victim.addEffect(new MobEffectInstance(MobEffects.CONFUSION,
+                            120, 0, true, false));
+                    victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                            70, 2, true, false));
+                    victim.addEffect(new MobEffectInstance(MobEffects.WEAKNESS,
+                            100, 1, true, false));
+                    sl.playSound(null, victim.getX(), victim.getY(), victim.getZ(),
+                            SoundEvents.MACE_SMASH_GROUND_HEAVY, SoundSource.PLAYERS,
+                            0.80f, 0.95f);
+                } else {
+                    victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                            40, 0, true, false));
+                    victim.addEffect(new MobEffectInstance(MobEffects.WEAKNESS,
+                            60, 0, true, false));
+                }
                 PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
                         victim.getX(), victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
                         core ? 30 : 10, 0.35, 0.45, 0.35, core ? 0.26 : 0.12);
@@ -3913,6 +4322,7 @@ public final class WeaponVfxServerListener {
         tickSoulHold(target);
         tickWindZones(target.level());
         tickShockZones(target.level());
+        tickThunderHits(target.level());
         tickWindHold(target);
         tickSurgeRide(target);
         if (SURGE_RIDES.containsKey(target.getId())) return;

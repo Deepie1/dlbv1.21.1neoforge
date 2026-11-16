@@ -1989,3 +1989,77 @@ changent. Les deux morceaux partagés sont versionnés : `tools/preview_base.css
 
 **Mesures** — pics 522 / 427 / 651 cubes (plafond moteur : 7 000), moyennes 331 / 158 / 270,
 zéro valeur non finie, zéro alpha sous le seuil de 208. Aperçu : 0 erreur JS.
+
+## 32. Les dégâts par contact, et une bande-son qui vient de la banque vanilla
+
+Jusqu'ici, toute la foudre frappait par **minuterie** : à tel tick, tout ce qui se trouve dans
+tel rayon encaisse. C'est juste pour une onde de choc, qui est effectivement instantanée et
+partout à la fois. C'est **faux** pour un objet qui tombe.
+
+### Le volume de contact
+
+Le marteau met quarante-deux ticks à descendre trente blocs. Pendant ce temps il occupe une
+position précise, et un mob perché à mi-hauteur — sur un toit, un échafaudage, en vol —
+devrait le prendre en pleine tête *avant* que le sol ne soit touché. Il ne le prenait pas.
+
+`ThunderHit` corrige ça. C'est un cylindre qui connaît sa hauteur à chaque tick, suit
+exactement la même loi que le rendu (chute en `t²`), et ne frappe une victime **qu'une seule
+fois** : traverser un corps n'est pas y rester. Vérification faite contre la géométrie du
+miroir JS, tick par tick, du 8ᵉ au 50ᵉ : l'écart entre le bas du marteau à l'écran et le bas
+du volume ne dépasse jamais **0,71 bloc**, et il est toujours *négatif* — le volume est
+légèrement en retard sur l'image, jamais en avance. On n'est donc jamais touché par un marteau
+qui n'est pas encore arrivé.
+
+Trois usages :
+
+| Signature | Volume | Fenêtre | Dégâts |
+|---|---|---|---|
+| Arc fulgurant | 4 colonnes, r 1,30 × 8,4 blocs | 3 ticks chacune, aux ticks 5/12/19/26 | 42 % de la base |
+| Marteau | cylindre mobile, r 1,45 | ticks 8 → 50, en `t²` | **50 % de la frappe** |
+| Appel de l'orage | colonne centrale, r 2,60 × 8 blocs | 4 ticks au tick 140 | 55 % de la base |
+
+Le son de touche part de **la victime**, pas du centre de l'effet : c'est ce qui fait entendre
+qu'on a été accroché au passage plutôt que soufflé de loin.
+
+### Les effets de statut
+
+Ils disent ce que les dégâts ne disent pas. L'écrasement du marteau donne Lenteur III trois
+secondes, Faiblesse II et Fatigue II quatre secondes, et **projette** vers l'extérieur : un
+coup de masse met au sol, il ne fait pas que blesser. L'aura entretient Lenteur I, Lenteur II
+dans la moitié centrale — c'est ce qui en fait vraiment du contrôle de terrain : on peut
+encaisser, mais on sort moins vite qu'on n'est entré. La mitraille de l'orage pose
+**Luminescence** : le nuage désigne ses cibles, et le joueur voit qui n'est pas sorti de la
+zone. La décharge ajoute Nausée au centre. Les relais de la chaîne marquent chaque victime.
+
+### La bande-son
+
+Trois règles, et tout vient de la banque vanilla 1.21.1 — aucun fichier ajouté.
+
+**Un seul échantillon ne fait jamais une détonation.** Le tonnerre de Minecraft est long et
+mou : il lui manque l'attaque. `thunderBoom()` empile donc quatre couches qui se complètent —
+le claquement sec de `item.mace.smash_ground_heavy` (ajouté en 1.21 pour la masse, c'est-à-dire
+pour exactement ce geste-là), la masse de `entity.lightning_bolt.thunder`, le souffle de
+`entity.generic.explode`, et le sub de `entity.warden.sonic_boom` qui met le poids en bas du
+spectre. Le marteau y ajoute `block.anvil.land` à 0,48 de hauteur tonale.
+
+**Un orage ne s'arrête jamais net.** `rollingThunder()` programme quatre répliques de plus en
+plus faibles, de plus en plus graves, de plus en plus espacées, et **décalées dans l'espace**
+autour du point d'impact pour qu'elles ne sortent pas du même haut-parleur.
+
+**On prévient avant de frapper.** `chargeSwell()` fait monter la tension avant qu'il n'y ait
+quoi que ce soit à voir : volume croissant, intervalle décroissant.
+
+Le reste suit la même logique de **position** : le grondement d'invocation du marteau est émis
+à vingt-six blocs de haut, pas sur la cible — on lève la tête avant de comprendre. Pendant la
+chute, cinq passages d'**enclume** (`block.anvil.fall` + `item.wind_charge.throw`) ont leur
+source qui *descend avec l'objet*, le volume doublant et la hauteur montant d'un demi-ton : un
+Doppler sans Doppler. Les six battements de `entity.warden.heartbeat` de l'orage transforment
+l'intervalle mort d'une seconde et demie en attente. Les relais de la chaîne utilisent
+`block.conduit.attack_target` dont la hauteur monte de 0,09 à chaque bond : on *entend* la
+chaîne se propager. Et l'aura grésille une fois toutes les quinze frames à un point tiré au
+hasard — un crépitement par tick serait un bourdonnement, et un bourdonnement, on cesse de
+l'écouter.
+
+Dix-neuf identifiants sonores sont employés. Tous ont été vérifiés comme existant dans la
+version 1.21.1 : soit ils étaient déjà utilisés ailleurs dans le mod, soit leur présence a été
+contrôlée sur le registre vanilla avant écriture.

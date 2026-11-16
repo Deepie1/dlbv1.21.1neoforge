@@ -93,6 +93,7 @@ aria-label="Progression de l’animation">
 
   <p class="refs" id="beatsRefs"></p>
   <p class="refs" id="gpRefs"></p>
+  <p class="refs" id="sfxRefs"></p>
   <p class="refs"><b>Moteur :</b> <code>ThunderSignatureVfx</code> — Arc fulgurant (#16), \
 Marteau de Thor (#8, ex-surcadence cyber-X), Appel de l’orage (#4). Les pièces sont émises \
 par les émetteurs voxel du manager : aucun RenderType supplémentaire. L’aperçu ne modélise \
