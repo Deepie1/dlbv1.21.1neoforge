@@ -6,6 +6,35 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 > **Si le navigateur sert une vieille version** (le CDN de GitHub garde les fichiers bruts en cache quelques minutes), remplacer `refs/heads/arena/605e67fb-dlbv1-21-1neoforge` par le SHA du commit — par exemple `raw/fa83a2f/…` pour la v1.3 — ou ajouter `?v=2` à la fin de l'adresse.
 
+## Foudre v7 — 4 novembre 2026 ⟵ **LOT COURANT**
+
+> Les éclairs horizontaux du marteau sont supprimés : un éclair suit le champ électrique,
+> qui est vertical. La charge d'ambiance est passée sur la **bonne** animation, l'arc
+> fulgurant en chaîne — treize filaments qui pendent du plafond entre 14 et 31 blocs, et
+> quatre éclairs qui **tombent** depuis 31 blocs. La page d'aperçu repart du **gabarit du
+> base builder** (Gaia / Poison / Feu / Terre / Vent), simplement reteinté.
+
+Commit épinglé : [`c374ee8d`](https://github.com/Deepie1/dlbv1.21.1neoforge/commit/c374ee8dc223e2a742bf0e99d9dc9269d71c51f5)
+
+| Fichier | Lien |
+|---|---|
+| **⬇ APERÇU ANIMÉ FOUDRE** (HTML autonome, 895 729 o — le ZIP est *dedans*) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/c374ee8dc223e2a742bf0e99d9dc9269d71c51f5/deliverables/DLB_Thunder_Three_Signatures_preview.html |
+| **⬇ Sources complètes** (ZIP, 36 entrées, 620 602 o) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/c374ee8dc223e2a742bf0e99d9dc9269d71c51f5/deliverables/DLB_Thunder_Three_Signatures_src.zip |
+| `ThunderSignatureVfx.java` — les 3 chorégraphies, **plus un seul arc horizontal** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/c374ee8dc223e2a742bf0e99d9dc9269d71c51f5/src/main/java/deepluckyblock/client/ThunderSignatureVfx.java |
+| `thunder_build.js` — miroir JS de la géométrie | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/c374ee8dc223e2a742bf0e99d9dc9269d71c51f5/src/main/resources/deepluckyblock_patch/tools/thunder_build.js |
+| `preview_base.css` — **le CSS du gabarit base builder**, reteinté foudre | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/c374ee8dc223e2a742bf0e99d9dc9269d71c51f5/src/main/resources/deepluckyblock_patch/tools/preview_base.css |
+| `preview_render.js` — moteur de rendu câblé sur les identifiants du gabarit | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/c374ee8dc223e2a742bf0e99d9dc9269d71c51f5/src/main/resources/deepluckyblock_patch/tools/preview_render.js |
+| `build_thunder_page.py` — assemblage de la page sur le gabarit | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/c374ee8dc223e2a742bf0e99d9dc9269d71c51f5/src/main/resources/deepluckyblock_patch/tools/build_thunder_page.py |
+| `WeaponVfxServerListener.java` — gameplay du marteau, frappe au tick 50, aura de 6 blocs | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/c374ee8dc223e2a742bf0e99d9dc9269d71c51f5/src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java |
+| `WATER_SIGNATURES.md` — documentation, **§31 = ce lot** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/c374ee8dc223e2a742bf0e99d9dc9269d71c51f5/src/main/resources/deepluckyblock_patch/WATER_SIGNATURES.md |
+| Miroir MCreator `ThunderSignatureVfx.java` | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/c374ee8dc223e2a742bf0e99d9dc9269d71c51f5/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/client/ThunderSignatureVfx.java |
+
+**Comment ouvrir l'aperçu :** GitHub sert les `.html` bruts en `text/plain` — un clic
+affichera donc le code source, pas l'animation. Faire **clic droit → Enregistrer la cible
+sous…**, puis ouvrir le fichier enregistré dans le navigateur. La page est autonome :
+l'archive des sources est embarquée dedans, le bouton « Télécharger les sources » marche
+hors ligne.
+
 ## Eau v1.6 + Bois (13 novembre 2026)
 
 > Le maelström : la paroi du bassin était faite de 11 hélices à nombre fixe, soit 28 %
