@@ -704,7 +704,16 @@ public final class WeaponWorldVfxManager {
             case VENOM_BRIAR_FANG -> 112;
             case MIASMA_SHROUD -> 600; // Le serveur raccourcit à 6 s ou enchaîne jusqu'à 30 s.
             case PLAGUE_NOVA -> 128;
-            case VOID_WARP_SPHERE, CRIMSON_SIPHON -> 16;
+            case VOID_WARP_SPHERE -> 16;
+            // T379-BLOOD : les cinq titres du sang etaient la derniere famille sous la
+            // seconde. CRIMSON_SIPHON tenait 16 ticks, les quatre autres tombaient sur le
+            // « default -> 14 » : impossible d'y lire une guillotine, encore moins un coeur
+            // qui bat. Chaque signature a desormais la duree de sa choregraphie.
+            case GUILLOTINE_CLEAVE -> 150;    // plantation + hisse + SUSPENS + chute + nappe
+            case DRIPPING_BLOOD_EDGE -> 120;  // entaille + rigoles + gouttes + flaque
+            case CRIMSON_SIPHON -> 170;       // crochets + conduit + six bols + rupture
+            case VITAL_TRANSFUSION -> 140;    // assemblage + sept battements + resorption
+            case CARNAGE_BERSERK -> 180;      // montee + onze taillades + onde + brume
             default -> 14;
         };
 
@@ -1792,7 +1801,8 @@ public final class WeaponWorldVfxManager {
         double oz = eye.z + look.z * 0.55;
         WeaponVisualEffectId.ResolvedLayer primary = layers.isEmpty() ? null : layers.get(0);
         WeaponVisualEffectId fx = primary != null ? primary.effect()
-                : animationSlashEffect(animFamily, p.level().random.nextInt(3));
+                : animationSlashEffect(animFamily,
+                        p.level().random.nextInt(animationSlashCount(animFamily)));
         int intensity = primary != null ? primary.level() : 6;
         int paletteMask = WeaponVisualEffectId.elementMaskOf(stack);
         if (paletteMask == 0) paletteMask = 1 << fx.element().ordinal();
@@ -1811,6 +1821,16 @@ public final class WeaponWorldVfxManager {
         // tout le sens de l'ancienne « double entaille d'écho ». L'effet est devenu l'Appel de
         // l'orage, dont la répétition se joue en l'air et non dans le balayage de l'arme ;
         // laisser ce doublon aurait superposé un second swing fantôme à chaque coup.
+    }
+
+    /**
+     * Nombre de signatures de la famille. Le tirage etait ecrit {@code nextInt(3)} en dur :
+     * toutes les familles en avaient trois. Le SANG en a cinq, et les deux dernieres
+     * n'auraient jamais ete tirees.
+     */
+    private static int animationSlashCount(String family) {
+        String canonical = deepluckyblock.util.AnimFamily.canonical(family);
+        return deepluckyblock.util.AnimFamily.BLOOD.equals(canonical) ? 5 : 3;
     }
 
     private static WeaponVisualEffectId animationSlashEffect(String family, int index) {
@@ -1877,6 +1897,18 @@ public final class WeaponWorldVfxManager {
                 case 0 -> WeaponVisualEffectId.SPECTRAL_REACH;
                 case 1 -> WeaponVisualEffectId.WITHER_SHADOW_RIFT;
                 default -> WeaponVisualEffectId.ECLIPSE_VEIL;
+            };
+        }
+        // T379-BLOOD : onzieme famille, et la seule a CINQ signatures. Meme piege que l'eau,
+        // la foudre et l'ombre avant elle — sans cette branche le sang retombait sur le cas
+        // par defaut (bois) et le petit arc sortait en BRUN alors que le glint etait rouge.
+        if (deepluckyblock.util.AnimFamily.BLOOD.equals(canonical)) {
+            return switch (index) {
+                case 0 -> WeaponVisualEffectId.GUILLOTINE_CLEAVE;
+                case 1 -> WeaponVisualEffectId.DRIPPING_BLOOD_EDGE;
+                case 2 -> WeaponVisualEffectId.CRIMSON_SIPHON;
+                case 3 -> WeaponVisualEffectId.VITAL_TRANSFUSION;
+                default -> WeaponVisualEffectId.CARNAGE_BERSERK;
             };
         }
         if (deepluckyblock.util.AnimFamily.WIND.equals(canonical)) {
@@ -4388,10 +4420,61 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * 血 SANG — veines courbes qui rampent, gouttes qui tombent en accélérant, éclats de sang
-     * inclinés ; chaque enchantement de prélèvement garde sa circulation propre.
+     * 血 SANG — aiguillage des CINQ signatures refondues (T379) vers
+     * {@link BloodSignatureVfx} ; les autres effets de sang gardent le rendu generique.
+     *
+     * <p>Le sang est la seule famille a compter cinq titres la ou les autres en ont trois,
+     * et c'etait la derniere encore dessinee en ligne ici meme.</p>
      */
     private static void impactBlood(ImpactView v) {
+        int bloodSignature = switch (v.inst().effect) {
+            case GUILLOTINE_CLEAVE -> BloodSignatureVfx.GUILLOTINE;
+            case DRIPPING_BLOOD_EDGE -> BloodSignatureVfx.EDGE;
+            case CRIMSON_SIPHON -> BloodSignatureVfx.SIPHON;
+            case VITAL_TRANSFUSION -> BloodSignatureVfx.TRANSFUSION;
+            case CARNAGE_BERSERK -> BloodSignatureVfx.CARNAGE;
+            default -> -1;
+        };
+        if (bloodSignature >= 0) {
+            impactBloodSignature(v, bloodSignature);
+            return;
+        }
+        impactBloodLegacy(v);
+    }
+
+    /**
+     * Pont vers {@link BloodSignatureVfx}, sur le modele de
+     * {@link #impactShadowSignature(ImpactView, int)}.
+     *
+     * <p>Meme precaution que pour l'ombre et le marteau : le pouls de taille est coupe pendant
+     * tout le trace. Le couperet et le coeur sont des assemblages de pieces jointives — un
+     * facteur d'echelle applique cube par cube ouvre des fentes dans la lame et fait respirer
+     * le myocarde comme un tas de gravier.</p>
+     *
+     * <p>La direction est inversee comme pour la foudre et l'ombre : {@code dirX/dirZ} va de
+     * l'attaquant vers la cible, or le siphon et la transfusion dessinent un conduit qui
+     * RELIE les deux. A l'envers, le sang remonterait du porteur vers la victime.</p>
+     */
+    private static void impactBloodSignature(ImpactView v, int signature) {
+        boolean previousPulse = voxelPulseEnabled;
+        voxelPulseEnabled = false;
+        try {
+            BloodSignatureVfx.render(v.vc(), v.mat(), v.tmp(),
+                    v.cx(), v.cy(), v.cz(), v.t(),
+                    -v.dirX(), -v.dirZ(), signature, v.fadeA(),
+                    (int) (v.inst().seed & 0x7FFFFFFFL),
+                    probeGroundOffset(v.inst().x, v.inst().y, v.inst().z));
+        } finally {
+            voxelPulseEnabled = previousPulse;
+        }
+    }
+
+    /**
+     * Ancien rendu generique du sang : veines courbes qui rampent, gouttes qui tombent en
+     * accelerant, eclats inclines. Conserve pour les effets de la categorie qui n'ont pas
+     * de signature propre.
+     */
+    private static void impactBloodLegacy(ImpactView v) {
         float t = v.t();
         float S = v.S();
         WeaponVisualEffectId fx = v.inst().effect;

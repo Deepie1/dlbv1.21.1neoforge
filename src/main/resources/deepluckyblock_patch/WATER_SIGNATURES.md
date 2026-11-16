@@ -2560,3 +2560,120 @@ parce que l'effet *s'affiche* — il est juste de la mauvaise famille.
 
 `/anim shadow` (ou `/anim ombre`), puis frapper un mob entouré d'autres. Visuel seul :
 `/dlbvfx play 3` · `/dlbvfx play 24` · `/dlbvfx play 33` · `/dlbvfx stop`.
+
+## §39 — Sang : cinq signatures, et la première famille qui n'en compte pas trois
+
+Onzième famille refondue, et la première à **cinq** signatures : `GUILLOTINE_CLEAVE` (#5),
+`DRIPPING_BLOOD_EDGE` (#9), `CRIMSON_SIPHON` (#10), `VITAL_TRANSFUSION` (#11),
+`CARNAGE_BERSERK` (#12). Durées 150 / 120 / 170 / 140 / 180 ticks contre 14-18 avant.
+Un seul moteur, `BloodSignatureVfx` (1 321 lignes), aucun `RenderType` supplémentaire.
+
+### Trois règles, écrites avant la première ligne de rendu
+
+**1. Rien ne flotte.** Toute goutte tombe sous `GRAVITY = 11.0f`. Le sang est le seul
+élément de ce mod dont le spectateur connaît par cœur le comportement physique : une
+giclure qui plane se voit immédiatement, là où une flamme ou une ombre peuvent se
+permettre n'importe quoi.
+
+**2. Toute nappe porte son ménisque.** Un liquide sans liseré clair sur son bord n'est
+qu'une tache plate. C'est la contrepartie exacte de la règle de l'ombre — là-bas le liseré
+dessinait le trou noir, ici il donne son épaisseur au rouge.
+
+**3. Le rouge ne se lit pas contre le rouge.** D'où les matières étrangères : le fer de la
+lame, le bois de l'échafaud, l'os des crochets. Sans elles, la guillotine n'est qu'une
+masse sombre et le siphon qu'un tuyau.
+
+### Ce que les cinq rendus ont coûté à l'inspection
+
+Aucun JDK ici : le Java ne peut pas être exécuté. Un miroir JavaScript
+(`tools/blood_build.js`) reproduit les cinq rendus cube pour cube, et c'est lui qu'on
+regarde. Cinq défauts n'étaient visibles **que** sur image, aucun n'aurait été détecté par
+les outils de contrôle :
+
+**Le couperet traversait le linteau.** Le mouton culminait à 4,99 alors que la poutre est à
+4,60. Pire, le biseau était construit avec un sommet *constant* : la colonne de droite
+finissait à 0,04 bloc de haut, et la lame se réduisait à un éclat triangulaire. Un couperet
+de guillotine est un **trapèze** — corps rectangulaire, bord oblique. Corrigé par un
+`bodyH` de hauteur fixe sous le biseau, 24 colonnes au lieu de 17 (à 17, la marche du
+biseau dépassait la largeur d'une colonne : le tranchant se lisait comme une scie), et un
+mouton posé *sur* le corps de lame au lieu d'une hauteur en dur.
+
+**Le cœur était une arrosoir.** Trois teintes séparées de deux crans donnent une masse
+uniforme une fois l'ombrage des faces appliqué. Il a fallu cinq crans **et** un second
+terme d'éclairage vertical : sans lui, toutes les tranches reçoivent la même valeur et
+l'organe s'aplatit en disque. Les coronaires, elles, étaient posées à `1,02 × w` alors que
+la frontière des deux ventricules culmine à `0,90 × w` : elles **flottaient à côté** du
+cœur au lieu d'y courir.
+
+**Les vaisseaux sortaient en pointillés.** Le pas était dimensionné sur l'écart
+*horizontal* du trajet, alors que les deux vaisseaux d'entrée ne couvrent que 1,30 bloc en
+`f` mais descendent de 1,50 en hauteur, flèche de l'arc en plus. Dimensionné sur la
+longueur réelle, le pas repasse sous le diamètre du tube.
+
+**Le siphon sortait en tige unique.** Rayon d'hélice 0,085 pour des brins épais de 0,052 :
+les deux brins se chevauchaient. On perdait l'enroulement, donc le sens d'écoulement — qui
+est tout le sujet de la signature. Rayon porté à 0,135 et quatre tours au lieu de 2,4.
+La colonne qui se vide, elle, était une **cage** de fil de fer : huit points sur un rayon
+de 0,30, soit 0,235 d'espacement pour des cubes de 0,06. Quatorze points, des cubes plus
+épais, et surtout le ménisque posé sur le niveau restant : c'est lui qu'on regarde
+descendre.
+
+**La frénésie ne montrait que trois arcs.** La mesure numérique disait pourtant « sept
+taillades vivantes ». Les deux étaient vraies : l'effacement géométrique était *linéaire*,
+donc l'arc était réduit à un fil dès le tiers de sa vie. `sqrt(1 - remnant)` le garde épais
+pendant la moitié de sa durée puis l'escamote — et c'est le **chevauchement** des arcs qui
+fait la frénésie, pas leur nombre.
+
+### Deux défauts du gabarit d'aperçu, hérités de la foudre
+
+La grille du gabarit partagé est tracée à `y = -0,47`, hauteur héritée de la foudre, alors
+que le moteur du sang pose son sol à `GROUND_Y = -0,86`. Toutes les flaques se retrouvaient
+**0,39 bloc sous le plan dessiné** : pour une famille dont la première règle est « rien ne
+flotte », c'était le défaut à corriger avant les autres.
+
+Et le gabarit ne réglait que la hauteur de vue (`VCY`), jamais le centre horizontal : les
+signatures de la foudre sont des colonnes verticales. Le Siphon est un conduit de 7 blocs
+tendu à l'**horizontale** — centré sur zéro, il sortait du cadre. D'où `VCX`, symétrique de
+`VCY`. Les tableaux du gabarit (`DUR`, `BEATS`, `NAMES`, `SUBS`, `SFX`, `GP`) n'avaient par
+ailleurs que **trois** entrées, et les variantes 0 et 1 étaient câblées sur les cadrages de
+la foudre (`boltShot` / `hammerShot`).
+
+### L'hémorragie punit la fuite
+
+La ressource partagée des cinq signatures : cinq piles au maximum, un tic toutes les 10
+ticks, 42 % du drain reversé au porteur. Son seul mécanisme notable est le multiplicateur
+de vitesse — `×(1 + 1,5 × min(1, vitesse / 0,22))`, soit jusqu'à **×2,5** pour une cible
+qui court. Un saignement qu'on peut distancer n'est pas un saignement ; ici, courir est la
+pire réponse, et rester immobile le moindre mal. C'est la seule mécanique du mod qui
+récompense l'immobilité.
+
+### Ce qui distingue chaque signature
+
+**Couperet** est une exécution : dégâts `×(1 + 1,25 × vie manquante)`, clouage 86 ticks —
+le temps exact de la montée, de la suspension et de la chute. La cible *voit venir*. C'est
+aussi le seul endroit du mod où le silence est écrit : seize ticks sans un son pendant la
+suspension.
+
+**Tranchant Sanglant** est la seule zone **en ligne** du mod (`bladeLineVictims`) : ce qui
+est sur l'arc est touché, ce qui est à côté ne l'est pas.
+
+**Transfusion Vitale** est la seule aire **bienveillante** : porteur, joueurs et compagnons
+apprivoisés. Le bétail n'est ni prélevé ni soigné. 85 % du pot est reversible, dont 55 %
+pour le porteur — il soigne les siens, il ne se sacrifie pas.
+
+**Carnage Berserk** fait tomber ses paliers de rage aux 4ᵉ, 7ᵉ et 10ᵉ coups **touchés**, pas
+lancés : frapper le vide ne rend pas enragé. Et il assume son coût — Fatigue 60 ticks au
+porteur à partir de 6 coups.
+
+### Trois sons qui n'existent pas, pour la quatrième fois
+
+`RAVAGER_BITE`, `CROSSBOW_LOADING_END` et `ARMOR_EQUIP_CHAIN` ne sont pas dans la banque
+1.21.1. Le réflexe pris en §38 (vérifier chaque constante avant de l'écrire) a été
+systématisé : une table des **1 806** identifiants réels a été extraite, et les 31 sons de
+la famille validés un par un — y compris leur nature de `Holder`, qui impose `.value()`.
+
+### Tests en jeu
+
+`/anim sang`, puis frapper un mob entouré d'autres. Visuel seul : `/dlbvfx play 5` ·
+`/dlbvfx play 9` · `/dlbvfx play 10` · `/dlbvfx play 11` · `/dlbvfx play 12` ·
+`/dlbvfx stop`.

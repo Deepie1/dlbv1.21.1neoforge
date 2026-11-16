@@ -47,10 +47,16 @@ public final class AnimFamily {
      * ({@code isCursePath}).
      */
     public static final String SHADOW = "shadow";
+    /**
+     * T379 : onzieme famille, le sang (couperet, fil qui goutte, siphon carmin, transfusion
+     * vitale, carnage berserk). Correspond a {@link deepluckyblock.enchantments.DeepElement#BLOOD},
+     * « Sang ». C'est la seule famille a compter CINQ signatures au lieu de trois.
+     */
+    public static final String BLOOD = "blood";
 
     /** Ordre d'affichage de l'aide et de l'autocomplétion : un seul nom par famille, en anglais. */
     public static final String[] ALL =
-            {FIRE, WATER, THUNDER, SHADOW, WIND, EARTH, METAL, LIGHT, POISON, WOOD};
+            {FIRE, WATER, THUNDER, SHADOW, BLOOD, WIND, EARTH, METAL, LIGHT, POISON, WOOD};
 
     private AnimFamily() { }
 
@@ -89,6 +95,12 @@ public final class AnimFamily {
                  "dark", "darkness", "noir", "nuit", "night", "spectre", "spectral",
                  "eclipse", "éclipse", "malediction", "malédiction", "curse",
                  "wither", "fletrissure", "flétrissure", "void_shade" -> SHADOW;
+            // sang / blood (la saignee, le prelevement et la frenesie sont la meme famille,
+            // DeepElement.BLOOD). « gore » et « carnage » sont admis parce que ce sont les
+            // deux mots que les joueurs tapent en premier pour CARNAGE_BERSERK.
+            case "sang", "blood", "sanguine", "crimson", "carmin", "gore", "carnage",
+                 "hemorragie", "hémorragie", "saignee", "saignée", "bleed", "bleeding",
+                 "vampire", "vampirique", "siphon", "guillotine", "couperet" -> BLOOD;
             default -> null;
         };
     }
@@ -110,6 +122,10 @@ public final class AnimFamily {
             // est un reflet, donc la valeur la plus claire de l’element. La primaire, plus
             // sombre, se confondait avec l’acier non eclaire.
             case SHADOW -> 0x7100A7;
+            // DeepElement.BLOOD.highlight 0xFF0000 serait un rouge primaire pur, qui sur une
+            // lame se confond avec les particules de degats. On prend la primaire 0xDD0000
+            // relevee vers l'ecarlate : un reflet de sang frais, pas un voyant lumineux.
+            case BLOOD -> 0xE01822;
             default -> 0xFFF3B0;
         };
     }
@@ -128,6 +144,7 @@ public final class AnimFamily {
             case WATER -> "§3";
             case THUNDER -> "§d";  // violet clair : l'arc est violet, pas bleu comme l'eau
             case SHADOW -> "§5";  // violet fonce — doit rester distinct du §d de la Foudre
+            case BLOOD -> "§4";   // rouge sombre — le §c est deja pris par le Feu
             default -> "§f";
         };
     }
@@ -146,6 +163,7 @@ public final class AnimFamily {
             case WATER -> "Water";
             case THUNDER -> "Thunder";
             case SHADOW -> "Shadow";
+            case BLOOD -> "Blood";
             default -> "Animation";
         };
     }

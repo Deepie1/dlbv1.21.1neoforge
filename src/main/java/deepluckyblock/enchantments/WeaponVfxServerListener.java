@@ -310,6 +310,16 @@ public final class WeaponVfxServerListener {
             WeaponVisualEffectId.SPECTRAL_REACH, WeaponVisualEffectId.WITHER_SHADOW_RIFT,
             WeaponVisualEffectId.ECLIPSE_VEIL
     };
+    /**
+     * T379-BLOOD : la seule famille a CINQ signatures. Le compteur NBT {@code DlbAnimNext}
+     * tourne sur la longueur du tableau, donc rien d'autre n'a besoin d'etre adapte : les
+     * cinq titres sortent dans l'ordre, sans reroll ni repetition.
+     */
+    private static final WeaponVisualEffectId[] ANIM_BLOOD = {
+            WeaponVisualEffectId.GUILLOTINE_CLEAVE, WeaponVisualEffectId.DRIPPING_BLOOD_EDGE,
+            WeaponVisualEffectId.CRIMSON_SIPHON, WeaponVisualEffectId.VITAL_TRANSFUSION,
+            WeaponVisualEffectId.CARNAGE_BERSERK
+    };
     private static final WeaponVisualEffectId[] ANIM_LIGHT = {
             WeaponVisualEffectId.SERAPH_SKY_PILLAR, WeaponVisualEffectId.ASTRAL_STAR_LANCE,
             WeaponVisualEffectId.CHRONO_ETERNAL_HALO
@@ -518,6 +528,7 @@ public final class WeaponVfxServerListener {
             applyWaterGameplay(attacker, livingTarget, fx, signatureBaseDamage(attacker, livingTarget));
             applyThunderGameplay(attacker, livingTarget, fx, signatureBaseDamage(attacker, livingTarget));
             applyShadowGameplay(attacker, livingTarget, fx, signatureBaseDamage(attacker, livingTarget));
+            applyBloodGameplay(attacker, livingTarget, fx, signatureBaseDamage(attacker, livingTarget));
         }
     }
 
@@ -665,6 +676,7 @@ public final class WeaponVfxServerListener {
             applyWaterGameplay(comboAttacker, target, sig, weaponDamage);
             applyThunderGameplay(comboAttacker, target, sig, weaponDamage);
             applyShadowGameplay(comboAttacker, target, sig, weaponDamage);
+            applyBloodGameplay(comboAttacker, target, sig, weaponDamage);
             // Étincelles de la famille, une par élément : le mélange de couleurs se voit tout de suite.
             WeaponVfxSubtle.Subtle accent = WeaponVfxSubtle.pick(el, sl.random.nextLong());
             broadcastNear(sl, tx, ty, tz, 0, WeaponVfxSubtle.NET_KIND_BASE + accent.index(), 1,
@@ -3315,6 +3327,987 @@ public final class WeaponVfxServerListener {
                 (float) vx, (float) vy, (float) vz, 0, 0.40f);
     }
 
+    // ============================================================================================
+    //  T379-BLOOD — gameplay des CINQ signatures du sang
+    // ============================================================================================
+    //
+    //  Le sang arrivait dans l'etat exact ou l'ombre se trouvait avant la T377 : cinq animations
+    //  de 14 a 16 ticks qui ne faisaient RIEN. Ni degats differes, ni afflictions, ni soin.
+    //
+    //  La famille est batie autour d'une idee que les dix autres n'ont pas : le sang ne frappe
+    //  pas, il COUTE. Tout ce qui suit applique une regle de transfert — ce que la victime perd,
+    //  le porteur le gagne, et ce qui est perdu continue de couler apres le coup.
+    //
+    //  Trois pieces communes, reprises par les cinq titres :
+    //
+    //    1. L'HEMORRAGIE ({@link #BLEEDS}) — la marque de la famille, l'equivalent de la marque
+    //       d'ombre. Elle s'empile jusqu'a cinq, saigne toutes les demi-secondes, et surtout
+    //       elle PUNIT LA FUITE : une creature qui court perd jusqu'a deux fois et demie plus
+    //       de sang qu'une creature immobile. C'est la seule affliction du mod dont l'intensite
+    //       depend de ce que fait la victime, et elle change la lecture d'un combat — on
+    //       n'echappe pas a une saignee, on la subit plus vite.
+    //
+    //    2. LA FLAQUE ({@link #BLOOD_POOLS}) — une zone au sol, posee par l'arete qui goutte et
+    //       par le carnage, qui ralentit et re-saigne ceux qui y restent. C'est la contrepartie
+    //       au sol de l'hemorragie : la premiere suit la victime, la seconde tient le terrain.
+    //
+    //    3. LA FERVEUR ({@link #bloodFervor}) — le buff du porteur. Elle n'est jamais donnee
+    //       d'office : elle se paie en sang verse, et son intensite suit ce qui a reellement
+    //       ete preleve. Un coup qui rate ne nourrit personne.
+    //
+    //  AIRE ET DUEL. Chacune des cinq distingue explicitement les deux cas, comme l'ombre :
+    //  le mot « solo » dans ce bloc veut dire « une seule victime dans la zone », et il donne
+    //  systematiquement un tarif plein plus un effet supplementaire, pour qu'aucune signature
+    //  ne soit decevante en duel. Mais les formes de zone, elles, different a dessein :
+    //  le couperet coupe une LIGNE, le siphon prend une GRAPPE, la transfusion un DISQUE a deux
+    //  camps, le carnage un disque qui s'elargit a chaque taillade.
+
+    /** Rayon utile des signatures de sang qui travaillent autour de la victime. */
+    private static final double BLOOD_RADIUS = 6.0;
+
+    /** Nombre maximal de piles d'hemorragie. Au-dela, une saignee de plus ne se lit plus. */
+    private static final int BLEED_MAX = 5;
+
+    /** Periode d'une perte de sang, en ticks de MONDE. */
+    private static final int BLEED_PERIOD = 10;
+
+    /**
+     * Part de la perte rendue au porteur. Volontairement inferieure a la moitie : un vol de
+     * vie integral rend n'importe quelle arme de sang invincible en melee prolongee.
+     */
+    private static final float BLEED_DRAIN_SHARE = 0.42f;
+
+    /**
+     * Hemorragie posee sur une victime.
+     *
+     * @param stacks     piles accumulees (1..{@link #BLEED_MAX})
+     * @param attackerId porteur a crediter du vol de vie, ou -1
+     * @param expires    fin, en temps de MONDE ({@code getGameTime})
+     * @param nextTick   prochaine perte, en temps de MONDE
+     * @param perStack   degats d'une pile a chaque periode
+     */
+    private record Bleed(int stacks, int attackerId, long expires, long nextTick, float perStack) { }
+
+    private static final Map<Integer, Bleed> BLEEDS = new ConcurrentHashMap<>();
+
+    /**
+     * Flaque de sang au sol.
+     *
+     * @param expires fin, en temps de MONDE
+     * @param nextBite prochaine morsure de la flaque, en temps de MONDE
+     */
+    private record BloodPool(String dimension, double x, double y, double z, double radius,
+                             long expires, long nextBite, int attackerId, float perBite) { }
+
+    private static final Map<Integer, BloodPool> BLOOD_POOLS = new ConcurrentHashMap<>();
+    private static int bloodPoolSequence = 0;
+
+    /**
+     * Pose ou renforce une hemorragie.
+     *
+     * <p>Les piles s'additionnent mais la duree ne s'additionne pas : elle est repoussee. Sans
+     * cela, enchainer cinq petits coups donnerait une saignee de plusieurs minutes, et le
+     * joueur perdrait tout rapport entre ce qu'il fait et ce qu'il voit.</p>
+     */
+    private static void addBleed(ServerLevel sl, LivingEntity victim, int stacks,
+                                 int attackerId, float perStack, int durationTicks) {
+        if (victim == null || !victim.isAlive() || stacks <= 0) return;
+        long now = sl.getGameTime();
+        Bleed previous = BLEEDS.get(victim.getId());
+        int total = stacks;
+        float unit = perStack;
+        if (previous != null && previous.expires() > now) {
+            total = Math.min(BLEED_MAX, previous.stacks() + stacks);
+            // On garde la saignee la plus forte des deux : un grand coup ne doit pas etre
+            // dilue par les petits qui le suivent.
+            unit = Math.max(previous.perStack(), perStack);
+        } else {
+            total = Math.min(BLEED_MAX, stacks);
+        }
+        long next = previous != null && previous.expires() > now ? previous.nextTick() : now + BLEED_PERIOD;
+        BLEEDS.put(victim.getId(), new Bleed(total, attackerId, now + durationTicks, next, unit));
+        PixelFx.send(sl, ParticleTypes.DAMAGE_INDICATOR,
+                victim.getX(), victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
+                2 + total, victim.getBbWidth() * 0.35, victim.getBbHeight() * 0.30,
+                victim.getBbWidth() * 0.35, 0.01);
+    }
+
+    /** Piles d'hemorragie actuellement posees sur une cible, 0 si aucune. */
+    private static int bleedStacks(ServerLevel sl, LivingEntity victim) {
+        if (victim == null) return 0;
+        Bleed bleed = BLEEDS.get(victim.getId());
+        if (bleed == null || bleed.expires() <= sl.getGameTime()) return 0;
+        return bleed.stacks();
+    }
+
+    /**
+     * Saignement, appele a chaque tick d'entite.
+     *
+     * <p><b>La fuite coute cher.</b> Le multiplicateur suit la vitesse horizontale : immobile,
+     * la victime perd le tarif de base ; a pleine course, deux fois et demie. C'est la piece
+     * qui donne son caractere a la famille — la panique aggrave la blessure, et un joueur qui
+     * comprend cela cesse de courir, ce qui le remet a portee du porteur.</p>
+     */
+    private static void tickBleed(LivingEntity target) {
+        if (target == null) return;
+        Bleed bleed = BLEEDS.get(target.getId());
+        if (bleed == null) return;
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        long now = sl.getGameTime();
+        if (!target.isAlive() || now >= bleed.expires()) {
+            BLEEDS.remove(target.getId());
+            return;
+        }
+        if (now < bleed.nextTick()) return;
+
+        Vec3 motion = target.getDeltaMovement();
+        double speed = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
+        float effort = 1.0f + 1.5f * (float) Math.min(1.0, speed / 0.22);
+        float amount = bleed.perStack() * bleed.stacks() * effort;
+
+        double vx = target.getX();
+        double vy = target.getY() + target.getBbHeight() * 0.45;
+        double vz = target.getZ();
+
+        boolean hurt = bleed.attackerId() >= 0
+                ? hurtWithCapturedWeapon(sl, bleed.attackerId(), target, amount)
+                : target.hurt(target.damageSources().generic(), amount);
+
+        // --- Le transfert. Ce que la victime perd, le porteur en reprend une part. ---
+        if (hurt && bleed.attackerId() >= 0
+                && sl.getEntity(bleed.attackerId()) instanceof LivingEntity drinker
+                && drinker.isAlive()) {
+            float fed = amount * BLEED_DRAIN_SHARE;
+            if (drinker.getHealth() < drinker.getMaxHealth()) {
+                drinker.heal(fed);
+            } else {
+                // Deja au maximum : le surplus devient de l'absorption, plafonnee a quatre
+                // coeurs. Sans ce plafond, une melee longue empilerait un bouclier infini.
+                var existing = drinker.getEffect(MobEffects.ABSORPTION);
+                int level = existing == null ? 0 : Math.min(3, existing.getAmplifier() + 1);
+                drinker.addEffect(new MobEffectInstance(MobEffects.ABSORPTION, 120, level, true, true));
+            }
+            PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA,
+                    drinker.getX(), drinker.getY() + drinker.getBbHeight() * 0.7, drinker.getZ(),
+                    2, 0.22, 0.25, 0.22, 0.0);
+        }
+
+        int particles = 2 + bleed.stacks() + (effort > 2.0f ? 4 : 0);
+        PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, vx, vy, vz, particles,
+                target.getBbWidth() * 0.32, target.getBbHeight() * 0.28, target.getBbWidth() * 0.32, 0.0);
+        if (effort > 2.0f) {
+            // La course projette : on l'entend et on la voit gicler derriere.
+            PixelFx.send(sl, ParticleTypes.DAMAGE_INDICATOR, vx, vy, vz, 3, 0.30, 0.22, 0.30, 0.02);
+            sl.playSound(null, vx, vy, vz, SoundEvents.HONEY_BLOCK_SLIDE, SoundSource.PLAYERS,
+                    0.22f, 0.70f);
+        }
+        BLEEDS.put(target.getId(), new Bleed(bleed.stacks(), bleed.attackerId(), bleed.expires(),
+                now + BLEED_PERIOD, bleed.perStack()));
+    }
+
+    /**
+     * Pose une flaque de sang persistante.
+     *
+     * <p>La dimension est retenue par son identifiant et non par une reference au niveau :
+     * une carte statique qui retient un {@code ServerLevel} empeche son dechargement, piege
+     * deja paye en T376.</p>
+     */
+    private static void addBloodPool(ServerLevel sl, double x, double y, double z,
+                                     double radius, int durationTicks, int attackerId, float perBite) {
+        long now = sl.getGameTime();
+        int key = ++bloodPoolSequence;
+        BLOOD_POOLS.put(key, new BloodPool(sl.dimension().location().toString(), x, y, z, radius,
+                now + durationTicks, now + 20L, attackerId, perBite));
+        PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, x, y + 0.1, z,
+                28, radius * 0.45, 0.06, radius * 0.45, 0.0);
+        sl.playSound(null, x, y, z, SoundEvents.MUD_PLACE, SoundSource.PLAYERS, 0.55f, 0.60f);
+    }
+
+    /** Morsure periodique des flaques, et leur extinction. */
+    private static void tickBloodPools(net.minecraft.world.level.Level level) {
+        if (BLOOD_POOLS.isEmpty() || !(level instanceof ServerLevel sl)) return;
+        String here = sl.dimension().location().toString();
+        long now = sl.getGameTime();
+        for (Map.Entry<Integer, BloodPool> entry : BLOOD_POOLS.entrySet()) {
+            BloodPool pool = entry.getValue();
+            if (!pool.dimension().equals(here)) continue;
+            if (now >= pool.expires()) {
+                BLOOD_POOLS.remove(entry.getKey());
+                continue;
+            }
+            if (now < pool.nextBite()) continue;
+            BLOOD_POOLS.put(entry.getKey(), new BloodPool(pool.dimension(), pool.x(), pool.y(),
+                    pool.z(), pool.radius(), pool.expires(), now + 20L, pool.attackerId(), pool.perBite()));
+            PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, pool.x(), pool.y() + 0.08, pool.z(),
+                    10, pool.radius() * 0.5, 0.04, pool.radius() * 0.5, 0.0);
+            for (LivingEntity victim : bloodVictims(sl, pool.x(), pool.y(), pool.z(),
+                    pool.radius(), 2.2, pool.attackerId())) {
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 40, 0, true, false));
+                addBleed(sl, victim, 1, pool.attackerId(), pool.perBite(), 80);
+            }
+        }
+    }
+
+    /**
+     * Victimes d'une zone de sang. Meme regle que {@code shadowVictims} : les joueurs sont
+     * exclus, donc aucune de ces signatures ne se retourne contre un allie, et le porteur
+     * n'est jamais sa propre cible.
+     */
+    private static List<LivingEntity> bloodVictims(ServerLevel sl, double cx, double cy, double cz,
+                                                   double radius, double halfHeight, int attackerId) {
+        List<LivingEntity> out = new ArrayList<>();
+        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(cx - radius, cy - halfHeight, cz - radius,
+                        cx + radius, cy + halfHeight, cz + radius))) {
+            if (!candidate.isAlive() || candidate instanceof Player) continue;
+            if (attackerId >= 0 && candidate.getId() == attackerId) continue;
+            double ddx = candidate.getX() - cx;
+            double ddz = candidate.getZ() - cz;
+            if (ddx * ddx + ddz * ddz > radius * radius) continue;
+            out.add(candidate);
+        }
+        return out;
+    }
+
+    /**
+     * Victimes situees sous le TRAIT DE COUPE du couperet.
+     *
+     * <p>Aucune autre signature du mod n'a cette forme de zone. Un couperet ne frappe pas un
+     * disque : il frappe une ligne, celle de sa lame, large d'a peine plus d'un bloc. On
+     * mesure donc la distance a un SEGMENT perpendiculaire a l'axe porteur→cible, et non au
+     * point d'impact. Resultat lisible en jeu : trois mobs alignes dans le sens de la lame
+     * tombent ensemble, trois mobs alignes face au porteur non.</p>
+     *
+     * @param dirX,dirZ axe porteur→cible, unitaire
+     * @param halfSpan  demi-longueur de la lame
+     * @param thickness demi-epaisseur du trait
+     */
+    private static List<LivingEntity> bladeLineVictims(ServerLevel sl, double cx, double cy, double cz,
+                                                       double dirX, double dirZ, double halfSpan,
+                                                       double thickness, int attackerId) {
+        List<LivingEntity> out = new ArrayList<>();
+        double range = Math.max(halfSpan, thickness) + 1.5;
+        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(cx - range, cy - 3.0, cz - range, cx + range, cy + 3.0, cz + range))) {
+            if (!candidate.isAlive() || candidate instanceof Player) continue;
+            if (attackerId >= 0 && candidate.getId() == attackerId) continue;
+            double ddx = candidate.getX() - cx;
+            double ddz = candidate.getZ() - cz;
+            // Projection sur l'axe (profondeur) et sur sa perpendiculaire (le long de la lame).
+            double depth = ddx * dirX + ddz * dirZ;
+            double along = -ddx * dirZ + ddz * dirX;
+            double pad = candidate.getBbWidth() * 0.5;
+            if (Math.abs(depth) > thickness + pad) continue;
+            if (Math.abs(along) > halfSpan + pad) continue;
+            out.add(candidate);
+        }
+        return out;
+    }
+
+    /**
+     * Allies a soigner par la transfusion : le porteur, les autres joueurs, et les creatures
+     * apprivoisees. C'est la seule aire BIENVEILLANTE de tout le mod, et elle est volontairement
+     * plus courte que l'aire de prelevement — on prend loin, on redistribue pres.
+     */
+    private static List<LivingEntity> transfusionAllies(ServerLevel sl, LivingEntity attacker,
+                                                        double cx, double cy, double cz, double radius) {
+        List<LivingEntity> out = new ArrayList<>();
+        if (attacker != null && attacker.isAlive()) out.add(attacker);
+        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(cx - radius, cy - 3.0, cz - radius, cx + radius, cy + 3.0, cz + radius))) {
+            if (!candidate.isAlive() || out.contains(candidate)) continue;
+            boolean friendly = candidate instanceof Player
+                    || (candidate instanceof net.minecraft.world.entity.TamableAnimal tame && tame.isTame());
+            if (!friendly) continue;
+            double ddx = candidate.getX() - cx;
+            double ddz = candidate.getZ() - cz;
+            if (ddx * ddx + ddz * ddz > radius * radius) continue;
+            out.add(candidate);
+        }
+        return out;
+    }
+
+    /**
+     * LA FERVEUR : le buff du porteur, paye en sang verse.
+     *
+     * <p>Elle ne donne jamais un effet fixe. Le degre monte avec la quantite reellement
+     * prelevee, et retombe seul. Un coup dans le vide ne nourrit rien — c'est la contrepartie
+     * du fait que le sang frappe plus fort que les autres familles quand il touche.</p>
+     *
+     * @param spilled sang verse, en points de degats
+     */
+    private static void bloodFervor(ServerLevel sl, LivingEntity attacker, float spilled, int ticks) {
+        if (attacker == null || !attacker.isAlive() || spilled <= 0.1f) return;
+        int level = spilled >= 9.0f ? 2 : (spilled >= 4.0f ? 1 : 0);
+        attacker.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, ticks, level, true, true));
+        if (level >= 1) {
+            attacker.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED,
+                    ticks, 0, true, true));
+        }
+        PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA,
+                attacker.getX(), attacker.getY() + attacker.getBbHeight() * 0.75, attacker.getZ(),
+                8 + level * 6, 0.30, 0.40, 0.30, 0.01);
+        sl.playSound(null, attacker.getX(), attacker.getY(), attacker.getZ(),
+                SoundEvents.GENERIC_DRINK.value(), SoundSource.PLAYERS, 0.45f, 0.70f + level * 0.12f);
+    }
+
+    /** Fondu d'entree du sang : on previent avant de frapper, comme pour la foudre et l'ombre. */
+    private static void bloodSwell(ServerLevel sl, int now, double x, double y, double z,
+                                   int steps, float volume) {
+        for (int k = 0; k < steps; k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + step * 3, () ->
+                    sl.playSound(null, x, y, z, SoundEvents.BEEHIVE_DRIP, SoundSource.PLAYERS,
+                            volume * (0.25f + 0.17f * step), 0.55f + 0.06f * step));
+        }
+    }
+
+    /**
+     * Routage des CINQ signatures du sang.
+     *
+     * <p>Les cinq partagent l'hemorragie et la ferveur, et se repondent : le couperet ouvre,
+     * l'arete entretient, le siphon encaisse, la transfusion redistribue, le carnage dissemine.
+     * Chacune traite explicitement les deux cas demandes — <b>plusieurs ennemis</b> et
+     * <b>ennemi seul</b>.</p>
+     */
+    private static void applyBloodGameplay(LivingEntity attacker, LivingEntity target,
+                                           WeaponVisualEffectId fx, float weaponDamage) {
+        if (fx == null || target == null) return;
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        float damage = Math.max(0.0f, weaponDamage);
+        if (fx == WeaponVisualEffectId.GUILLOTINE_CLEAVE) {
+            applyGuillotineGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.DRIPPING_BLOOD_EDGE) {
+            applyBloodEdgeGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.CRIMSON_SIPHON) {
+            applyCrimsonSiphonGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.VITAL_TRANSFUSION) {
+            applyVitalTransfusionGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.CARNAGE_BERSERK) {
+            applyCarnageGameplay(attacker, target, sl, damage);
+        }
+    }
+
+    // --------------------------------------------------------------------------------------
+    //  I. COUPERET DE GUILLOTINE (150 ticks)
+    // --------------------------------------------------------------------------------------
+
+    /**
+     * Le couperet est une EXECUTION : son interet n'est pas de frapper fort, c'est de frapper
+     * plus fort ce qui est deja entame. Le bonus suit la vie MANQUANTE de la victime, de sorte
+     * qu'une cible a pleine vie encaisse un bon coup et qu'une cible a bout de souffle est
+     * tranchee net. C'est aussi la seule signature du mod a clouer sa cible pendant toute sa
+     * montee : les quatre-vingt-trois ticks d'attente seraient absurdes si la victime pouvait
+     * simplement s'ecarter.
+     *
+     * <p>Chronologie, calee sur l'animation : plantation 0→15, linteau 15, hisse 24→57,
+     * SUSPENS 57→75, chute 75, morsure 83, nappe 93→123, retrait 123→150.</p>
+     */
+    private static void applyGuillotineGameplay(LivingEntity attacker, LivingEntity target,
+                                                ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.50;
+        final double oz = target.getZ();
+        final float base = Math.max(1.6f, weaponDamage * 0.95f);
+
+        // Axe de la lame : perpendiculaire a porteur→cible.
+        double axX = attacker != null ? target.getX() - attacker.getX()
+                : -Math.sin(Math.toRadians(target.getYRot()));
+        double axZ = attacker != null ? target.getZ() - attacker.getZ()
+                : Math.cos(Math.toRadians(target.getYRot()));
+        double axLen = Math.sqrt(axX * axX + axZ * axZ);
+        if (axLen < 0.01) { axX = 0.0; axZ = 1.0; axLen = 1.0; }
+        final double dirX = axX / axLen;
+        final double dirZ = axZ / axLen;
+
+        // --- La victime est clouee sous la lame, du premier montant a la morsure. ---
+        // Elle n'est pas etourdie : elle se defend, elle ne s'echappe pas. Et l'emprise est
+        // relachee DEUX ticks apres la coupe, pas avant : relachee a la chute, la victime
+        // aurait le temps de sortir du cadre pendant que la lame descend.
+        applyMovementHold(target, sl.getGameTime() + 86L, false);
+
+        // --- 0→15 : la plantation. Deux poutres entrent dans le sol. ---
+        sl.playSound(null, ox, oy, oz, SoundEvents.ANVIL_PLACE, SoundSource.PLAYERS, 0.55f, 0.52f);
+        bloodSwell(sl, now, ox, oy, oz, 4, 0.70f);
+        for (int k = 0; k < 2; k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + 2 + step * 6, () -> {
+                double side = step == 0 ? 1.0 : -1.0;
+                sl.playSound(null, ox - dirZ * side * 1.0, oy - 0.8, oz + dirX * side * 1.0,
+                        SoundEvents.NETHER_WOOD_PLACE, SoundSource.PLAYERS, 0.70f, 0.48f);
+                PixelFx.send(sl, ParticleTypes.CRIT,
+                        ox - dirZ * side * 1.0, oy - 1.2, oz + dirX * side * 1.0,
+                        12, 0.22, 0.10, 0.22, 0.04);
+            });
+        }
+        TestProcedure.schedule(sl, now + 15, () ->
+                sl.playSound(null, ox, oy + 2.0, oz, SoundEvents.NETHER_WOOD_PLACE,
+                        SoundSource.PLAYERS, 0.85f, 0.40f));
+
+        // --- 24→57 : la hisse. Cinq a-coups de chaine, hauteur tonale montante. ---
+        for (int k = 0; k < 5; k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + 24 + step * 7, () -> {
+                sl.playSound(null, ox, oy + 1.2 + step * 0.45, oz, SoundEvents.CHAIN_PLACE,
+                        SoundSource.PLAYERS, 0.62f, 0.72f + step * 0.09f);
+                sl.playSound(null, ox, oy + 1.2 + step * 0.45, oz, SoundEvents.IRON_TRAPDOOR_OPEN,
+                        SoundSource.PLAYERS, 0.28f, 0.60f + step * 0.07f);
+            });
+        }
+
+        // --- 57→75 : LE SUSPENS. Rien, et c'est voulu. Une seule goutte au tick 62. ---
+        TestProcedure.schedule(sl, now + 62, () -> {
+            sl.playSound(null, ox, oy + 2.6, oz, SoundEvents.POINTED_DRIPSTONE_DRIP_WATER,
+                    SoundSource.PLAYERS, 0.80f, 1.30f);
+            PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, ox, oy + 2.4, oz,
+                    1, 0.0, 0.0, 0.0, 0.0);
+        });
+        // La victime comprend ce qui l'attend : lenteur et faiblesse pendant l'attente.
+        TestProcedure.schedule(sl, now + 58, () -> {
+            if (!target.isAlive()) return;
+            target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 40, 2, true, false));
+            target.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 60, 0, true, false));
+        });
+
+        // --- 75 : la chute. ---
+        TestProcedure.schedule(sl, now + 75, () -> {
+            sl.playSound(null, ox, oy + 2.0, oz, SoundEvents.PLAYER_ATTACK_SWEEP,
+                    SoundSource.PLAYERS, 1.00f, 0.52f);
+            sl.playSound(null, ox, oy + 1.5, oz, SoundEvents.CHAIN_BREAK,
+                    SoundSource.PLAYERS, 0.70f, 0.85f);
+        });
+
+        // --- 83 : LA MORSURE. ---
+        TestProcedure.schedule(sl, now + 83, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.ANVIL_LAND, SoundSource.PLAYERS, 1.00f, 0.72f);
+            sl.playSound(null, ox, oy, oz, SoundEvents.SLIME_BLOCK_BREAK, SoundSource.PLAYERS, 0.95f, 0.62f);
+            sl.playSound(null, ox, oy, oz, SoundEvents.GENERIC_SPLASH, SoundSource.PLAYERS, 0.55f, 0.55f);
+            PixelFx.send(sl, ParticleTypes.DAMAGE_INDICATOR, ox, oy, oz, 40, 1.10, 0.35, 1.10, 0.14);
+            PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, ox, oy + 0.4, oz, 50, 1.30, 0.50, 1.30, 0.05);
+
+            List<LivingEntity> cut = bladeLineVictims(sl, ox, oy, oz, dirX, dirZ, 1.35, 0.85, attackerId);
+            if (!cut.contains(target) && target.isAlive()) cut.add(target);
+            boolean solo = cut.size() <= 1;
+            float spilled = 0.0f;
+
+            for (LivingEntity victim : cut) {
+                // L'EXECUTION : le bonus suit la vie manquante. A pleine vie, 1,00x ;
+                // a un quart de vie, 1,94x ; a l'agonie, 2,25x.
+                float missing = 1.0f - Math.max(0.0f, Math.min(1.0f,
+                        victim.getHealth() / Math.max(1.0f, victim.getMaxHealth())));
+                float execute = 1.0f + 1.25f * missing;
+                // SOLO : plein tarif. EN LIGNE : tarif de zone, mais l'execution reste —
+                // c'est elle le sujet de la signature, pas sa puissance brute.
+                float amount = base * (solo ? 1.35f : 0.80f) * execute;
+                if (hurtWithCapturedWeapon(sl, attackerId, victim, amount)) spilled += amount;
+                // La coupe sectionne : on ne manie plus ses outils de la meme facon.
+                victim.addEffect(new MobEffectInstance(MobEffects.WEAKNESS,
+                        solo ? 160 : 90, solo ? 1 : 0, true, false));
+                victim.addEffect(new MobEffectInstance(MobEffects.DIG_SLOWDOWN,
+                        solo ? 140 : 80, 1, true, false));
+                addBleed(sl, victim, solo ? 3 : 2, attackerId, base * 0.085f, 140);
+                PixelFx.send(sl, ParticleTypes.DAMAGE_INDICATOR,
+                        victim.getX(), victim.getY() + victim.getBbHeight() * 0.6, victim.getZ(),
+                        14, 0.35, 0.35, 0.35, 0.10);
+            }
+
+            // SOLO uniquement : la lame reste plantee, et la victime est maintenue au sol
+            // vingt ticks de plus. En foule, ce serait une immobilisation de masse.
+            if (solo && target.isAlive()) {
+                applyMovementHold(target, sl.getGameTime() + 20L, false);
+            }
+
+            // --- Le buff : le couperet nourrit le porteur a proportion de ce qu'il a verse.
+            bloodFervor(sl, attacker, spilled, 140);
+            // Et s'il a acheve quelqu'un, la ferveur se double d'une resistance breve : le
+            // porteur vient de regarder une execution, pas de prendre un coup.
+            boolean killed = false;
+            for (LivingEntity victim : cut) if (!victim.isAlive()) killed = true;
+            if (killed && attacker != null && attacker.isAlive()) {
+                attacker.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 100, 1, true, true));
+                sl.playSound(null, attacker.getX(), attacker.getY(), attacker.getZ(),
+                        SoundEvents.TOTEM_USE, SoundSource.PLAYERS, 0.35f, 0.55f);
+            }
+        });
+
+        // --- 93→123 : la nappe. Le sang monte du trait et retombe en flaque. ---
+        TestProcedure.schedule(sl, now + 93, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.HONEY_BLOCK_BREAK, SoundSource.PLAYERS, 0.70f, 0.55f);
+            addBloodPool(sl, ox, target.getY(), oz, 1.9, 110, attackerId, base * 0.07f);
+        });
+        TestProcedure.schedule(sl, now + 123, () ->
+                sl.playSound(null, ox, oy, oz, SoundEvents.PISTON_CONTRACT, SoundSource.PLAYERS, 0.50f, 0.45f));
+    }
+
+    // --------------------------------------------------------------------------------------
+    //  II. FIL QUI GOUTTE (120 ticks)
+    // --------------------------------------------------------------------------------------
+
+    /**
+     * L'arete qui goutte est la signature d'ENTRETIEN : elle frappe peu et saigne longtemps.
+     * Tout son interet est dans la duree, et c'est la seule des cinq dont le total de degats
+     * depasse largement le coup initial.
+     *
+     * <p>Son aire n'est pas une explosion mais une FLAQUE, qui tient le terrain cent ticks
+     * apres la fin de l'animation : le sang verse reste un danger. En duel, la flaque est plus
+     * petite mais la saignee monte directement a quatre piles.</p>
+     */
+    private static void applyBloodEdgeGameplay(LivingEntity attacker, LivingEntity target,
+                                               ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.55;
+        final double oz = target.getZ();
+        final float base = Math.max(1.2f, weaponDamage * 0.74f);
+
+        sl.playSound(null, ox, oy, oz, SoundEvents.PLAYER_ATTACK_CRIT, SoundSource.PLAYERS, 0.70f, 1.35f);
+        bloodSwell(sl, now, ox, oy, oz, 3, 0.55f);
+
+        // --- 10 : l'ouverture de l'entaille. ---
+        TestProcedure.schedule(sl, now + 10, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.SLIME_BLOCK_BREAK, SoundSource.PLAYERS, 0.60f, 1.10f);
+            PixelFx.send(sl, ParticleTypes.DAMAGE_INDICATOR, ox, oy, oz, 18, 0.40, 0.30, 0.40, 0.06);
+
+            List<LivingEntity> near = bloodVictims(sl, ox, oy, oz, 3.2, 2.4, attackerId);
+            if (!near.contains(target) && target.isAlive()) near.add(target);
+            boolean solo = near.size() <= 1;
+            float spilled = 0.0f;
+            for (LivingEntity victim : near) {
+                boolean primary = victim == target;
+                float amount = base * (primary ? (solo ? 0.95f : 0.80f) : 0.45f);
+                if (hurtWithCapturedWeapon(sl, attackerId, victim, amount)) spilled += amount;
+                // SOLO : quatre piles d'un coup, c'est-a-dire presque le maximum. EN FOULE :
+                // deux sur la cible, une sur les voisins. La saignee se dilue, pas la duree.
+                int stacks = primary ? (solo ? 4 : 2) : 1;
+                addBleed(sl, victim, stacks, attackerId, base * 0.115f, solo ? 220 : 160);
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                        primary ? 70 : 40, 0, true, false));
+            }
+            bloodFervor(sl, attacker, spilled, 120);
+        });
+
+        // --- 26→66 : les rigoles. Sept coulees, sept dates. ---
+        for (int k = 0; k < 7; k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + 26 + step * 6, () -> {
+                sl.playSound(null, ox, oy - 0.3 - step * 0.08, oz,
+                        SoundEvents.POINTED_DRIPSTONE_DRIP_LAVA, SoundSource.PLAYERS,
+                        0.32f, 1.10f - step * 0.045f);
+                PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA,
+                        ox, oy - 0.2, oz, 6, 0.40, 0.35, 0.40, 0.0);
+            });
+        }
+
+        // --- 36→102 : les gouttes qui touchent le sol, et la flaque qui s'etale. ---
+        TestProcedure.schedule(sl, now + 36, () -> {
+            boolean solo = bloodVictims(sl, ox, oy, oz, 4.0, 2.6, attackerId).size() <= 1;
+            // La flaque de duel est plus petite mais mord plus fort : en duel elle sert a
+            // interdire un pas de recul, en foule a couvrir une zone de passage.
+            addBloodPool(sl, ox, target.getY(), oz, solo ? 1.7 : 2.8, 180, attackerId,
+                    base * (solo ? 0.12f : 0.08f));
+        });
+        for (int k = 0; k < 5; k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + 44 + step * 14, () ->
+                    sl.playSound(null, ox, target.getY() + 0.1, oz, SoundEvents.POINTED_DRIPSTONE_LAND,
+                            SoundSource.PLAYERS, 0.40f, 0.85f - step * 0.05f));
+        }
+
+        // --- 102 : la fermeture. Un dernier soin au porteur a hauteur de la saignee posee.
+        TestProcedure.schedule(sl, now + 102, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.SPONGE_ABSORB, SoundSource.PLAYERS, 0.35f, 1.20f);
+            if (attacker != null && attacker.isAlive()) {
+                int stacks = bleedStacks(sl, target);
+                if (stacks > 0) attacker.heal(0.5f * stacks);
+            }
+        });
+    }
+
+    // --------------------------------------------------------------------------------------
+    //  III. SIPHON CARMIN (170 ticks)
+    // --------------------------------------------------------------------------------------
+
+    /**
+     * Le siphon est un TRANSFERT etale : six prelevements, un par bol qui remonte le conduit.
+     * Son interet n'est ni la pointe de degats ni la zone, c'est la regularite — six fenetres
+     * ou la victime doit rompre le contact, faute de quoi elle paie six fois.
+     *
+     * <p>En duel le conduit est unique et prend plein tarif. En foule il se ramifie : jusqu'a
+     * trois conduits secondaires, chacun a tarif reduit, chacun avec son propre rayon visible
+     * ({@code KIND_BEAM_SIPHON}) pour qu'on voie d'ou vient le sang. Le sixieme bol rompt le
+     * conduit : si la victime principale est alors sous le tiers de sa vie, la rupture est
+     * violente et la saignee double.</p>
+     */
+    private static void applyCrimsonSiphonGameplay(LivingEntity attacker, LivingEntity target,
+                                                   ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.55;
+        final double oz = target.getZ();
+        final float base = Math.max(1.4f, weaponDamage * 0.86f);
+
+        // --- 0→15 : les quatre crochets mordent. ---
+        sl.playSound(null, ox, oy, oz, SoundEvents.BONE_BLOCK_BREAK, SoundSource.PLAYERS, 0.70f, 1.25f);
+        bloodSwell(sl, now, ox, oy, oz, 4, 0.65f);
+        for (int k = 0; k < 4; k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + 3 + step * 3, () -> {
+                sl.playSound(null, ox, oy, oz, SoundEvents.BONE_BLOCK_PLACE, SoundSource.PLAYERS,
+                        0.50f, 1.05f + step * 0.08f);
+                PixelFx.send(sl, ParticleTypes.DAMAGE_INDICATOR, ox, oy, oz, 5, 0.35, 0.25, 0.35, 0.03);
+            });
+        }
+        // La morsure retient : la cible peut se battre, pas se desengager librement.
+        TestProcedure.schedule(sl, now + 15, () -> {
+            if (!target.isAlive()) return;
+            target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 120, 1, true, false));
+        });
+
+        // --- 34→117 : les six bols. ---
+        for (int k = 0; k < 6; k++) {
+            final int bolus = k;
+            TestProcedure.schedule(sl, now + 34 + bolus * 17, () -> {
+                if (!target.isAlive() && bolus < 5) return;
+                List<LivingEntity> grapple = bloodVictims(sl, ox, oy, oz, 5.5, 3.0, attackerId);
+                if (!grapple.contains(target) && target.isAlive()) grapple.add(target);
+                boolean solo = grapple.size() <= 1;
+                float drawn = 0.0f;
+                int secondary = 0;
+
+                for (LivingEntity victim : grapple) {
+                    boolean primary = victim == target;
+                    // SOLO : 0,30 par bol, soit 1,80 fois les degats de base sur six bols.
+                    // EN GRAPPE : 0,22 sur la principale et 0,13 sur les autres — le total
+                    // monte, le tarif individuel baisse.
+                    float amount = base * (primary ? (solo ? 0.30f : 0.22f) : 0.13f);
+                    if (hurtWithCapturedWeapon(sl, attackerId, victim, amount)) drawn += amount;
+                    victim.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 50, 0, true, false));
+                    PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA,
+                            victim.getX(), victim.getY() + victim.getBbHeight() * 0.5, victim.getZ(),
+                            6, 0.28, 0.30, 0.28, 0.02);
+                    // Les conduits secondaires sont VISIBLES : trois au plus, sinon la scene
+                    // devient illisible et le reseau de rayons coute plus qu'il ne raconte.
+                    if (!primary && secondary < 3 && attacker != null) {
+                        secondary++;
+                        broadcastNear(sl, (float) victim.getX(), (float) victim.getY(), (float) victim.getZ(),
+                                WeaponVisualEffectId.CRIMSON_SIPHON.id, KIND_BEAM_SIPHON, 3,
+                                (float) victim.getX(), (float) (victim.getY() + victim.getBbHeight() * 0.5f),
+                                (float) victim.getZ(),
+                                (float) attacker.getX(), (float) (attacker.getY() + attacker.getBbHeight() * 0.6f),
+                                (float) attacker.getZ(), 0, 0.55f);
+                    }
+                }
+
+                // --- Le porteur encaisse. Plus de la moitie du sang preleve lui revient :
+                //     c'est la signature la plus genereuse de la famille, et la plus lente.
+                if (attacker != null && attacker.isAlive() && drawn > 0.0f) {
+                    float fed = drawn * 0.58f;
+                    if (attacker.getHealth() < attacker.getMaxHealth()) {
+                        attacker.heal(fed);
+                    } else {
+                        var existing = attacker.getEffect(MobEffects.ABSORPTION);
+                        int level = existing == null ? 0 : Math.min(3, existing.getAmplifier() + 1);
+                        attacker.addEffect(new MobEffectInstance(MobEffects.ABSORPTION, 160, level, true, true));
+                    }
+                    PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA,
+                            attacker.getX(), attacker.getY() + attacker.getBbHeight() * 0.75, attacker.getZ(),
+                            8, 0.26, 0.35, 0.26, 0.01);
+                }
+                sl.playSound(null, ox, oy, oz, SoundEvents.GENERIC_DRINK.value(), SoundSource.PLAYERS,
+                        0.50f, 0.62f + bolus * 0.055f);
+                sl.playSound(null, ox, oy, oz, SoundEvents.HONEY_BLOCK_SLIDE, SoundSource.PLAYERS,
+                        0.30f, 0.70f + bolus * 0.05f);
+            });
+        }
+
+        // --- 153 : la rupture. ---
+        TestProcedure.schedule(sl, now + 153, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.SLIME_BLOCK_BREAK, SoundSource.PLAYERS, 0.80f, 0.80f);
+            sl.playSound(null, ox, oy, oz, SoundEvents.GENERIC_SPLASH, SoundSource.PLAYERS, 0.45f, 0.70f);
+            PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, ox, oy, oz, 36, 0.80, 0.60, 0.80, 0.08);
+            if (!target.isAlive()) return;
+            float left = target.getHealth() / Math.max(1.0f, target.getMaxHealth());
+            if (left < 0.34f) {
+                // La victime est trop vide : le conduit claque et emporte le reste.
+                hurtWithCapturedWeapon(sl, attackerId, target, base * 0.75f);
+                addBleed(sl, target, 3, attackerId, base * 0.10f, 160);
+                sl.playSound(null, ox, oy, oz, SoundEvents.ZOMBIE_INFECT, SoundSource.PLAYERS, 0.60f, 0.70f);
+            } else {
+                addBleed(sl, target, 1, attackerId, base * 0.08f, 120);
+            }
+            bloodFervor(sl, attacker, base * 1.4f, 160);
+        });
+    }
+
+    // --------------------------------------------------------------------------------------
+    //  IV. TRANSFUSION VITALE (140 ticks)
+    // --------------------------------------------------------------------------------------
+
+    /**
+     * La transfusion est la seule signature BIENVEILLANTE du mod : elle prend d'un cote et
+     * rend de l'autre. C'est aussi la seule dont l'identifiant est declare {@code additive} et
+     * qui accepte un evenement de degats nul — elle peut donc se declencher sur un coup qui ne
+     * fait rien, ce qui est exactement ce qu'on attend d'un soin.
+     *
+     * <p>Sept battements, en lub-dub. Chacun preleve sur les ennemis d'un disque de six blocs
+     * et redistribue dans un disque plus court de quatre : on prend loin, on rend pres. En
+     * duel le prelevement est presque double et le dernier battement pose une resistance ;
+     * en foule il se repartit, et le total soigne davantage.</p>
+     */
+    private static void applyVitalTransfusionGameplay(LivingEntity attacker, LivingEntity target,
+                                                      ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.55;
+        final double oz = target.getZ();
+        final float base = Math.max(1.0f, weaponDamage * 0.62f);
+        // Le coeur flotte entre les deux : c'est de la qu'on entend battre.
+        final double hx = attacker != null ? (ox + attacker.getX()) * 0.5 : ox;
+        final double hz = attacker != null ? (oz + attacker.getZ()) * 0.5 : oz;
+        final double hy = oy + 1.6;
+
+        bloodSwell(sl, now, hx, hy, hz, 3, 0.60f);
+        TestProcedure.schedule(sl, now + 14, () ->
+                sl.playSound(null, hx, hy, hz, SoundEvents.SCULK_CATALYST_BLOOM,
+                        SoundSource.PLAYERS, 0.55f, 0.85f));
+
+        for (int k = 0; k < 7; k++) {
+            final int beat = k;
+            final int at = 22 + beat * 14;
+            // LE LUB-DUB. Deux coups rapproches puis un silence : un battement unique et
+            // regulier donne un ballon qu'on gonfle, pas un organe. Quatre ticks d'ecart,
+            // le second plus sourd et plus faible — c'est tout ce qu'il faut.
+            TestProcedure.schedule(sl, now + at, () ->
+                    sl.playSound(null, hx, hy, hz, SoundEvents.WARDEN_HEARTBEAT, SoundSource.PLAYERS,
+                            0.55f + beat * 0.05f, 0.80f + beat * 0.035f));
+            TestProcedure.schedule(sl, now + at + 4, () ->
+                    sl.playSound(null, hx, hy, hz, SoundEvents.WARDEN_HEARTBEAT, SoundSource.PLAYERS,
+                            0.34f + beat * 0.03f, 0.62f + beat * 0.03f));
+
+            TestProcedure.schedule(sl, now + at, () -> {
+                PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, hx, hy, hz,
+                        10 + beat * 2, 0.45, 0.40, 0.45, 0.02);
+
+                // --- LE PRELEVEMENT. ---
+                List<LivingEntity> donors = bloodVictims(sl, ox, oy, oz, BLOOD_RADIUS, 3.2, attackerId);
+                if (!donors.contains(target) && target.isAlive()) donors.add(target);
+                boolean solo = donors.size() <= 1;
+                float drawn = 0.0f;
+                for (LivingEntity donor : donors) {
+                    float amount = base * (solo ? 0.40f : 0.22f);
+                    if (hurtWithCapturedWeapon(sl, attackerId, donor, amount)) drawn += amount;
+                    donor.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 60, 0, true, false));
+                    if (beat % 2 == 1) {
+                        donor.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 50, 0, true, false));
+                    }
+                    PixelFx.send(sl, ParticleTypes.DAMAGE_INDICATOR,
+                            donor.getX(), donor.getY() + donor.getBbHeight() * 0.5, donor.getZ(),
+                            4, 0.30, 0.30, 0.30, 0.03);
+                }
+
+                // --- LA REDISTRIBUTION. ---
+                if (drawn <= 0.0f) return;
+                List<LivingEntity> allies = transfusionAllies(sl, attacker, hx, hy - 1.0, hz, 4.0);
+                if (allies.isEmpty()) return;
+                // Le soin total vaut 85 % du sang preleve, partage entre les allies. Le
+                // porteur en recoit toujours au moins la moitie : c'est lui qui a frappe.
+                float pot = drawn * 0.85f;
+                float mine = attacker != null && attacker.isAlive() ? pot * 0.55f : 0.0f;
+                float rest = allies.size() > 1 ? (pot - mine) / (allies.size() - 1) : 0.0f;
+                for (LivingEntity ally : allies) {
+                    float share = (ally == attacker) ? mine + (allies.size() == 1 ? pot - mine : 0.0f) : rest;
+                    if (share <= 0.0f) continue;
+                    if (ally.getHealth() < ally.getMaxHealth()) {
+                        ally.heal(share);
+                    } else {
+                        var existing = ally.getEffect(MobEffects.ABSORPTION);
+                        int level = existing == null ? 0 : Math.min(2, existing.getAmplifier() + 1);
+                        ally.addEffect(new MobEffectInstance(MobEffects.ABSORPTION, 140, level, true, true));
+                    }
+                    PixelFx.send(sl, ParticleTypes.HEART,
+                            ally.getX(), ally.getY() + ally.getBbHeight() * 0.85, ally.getZ(),
+                            2, 0.25, 0.20, 0.25, 0.01);
+                }
+                // Une regeneration legere accompagne les battements impairs, pour que le
+                // soin continue entre deux systoles au lieu d'arriver par a-coups.
+                if (beat % 2 == 0) {
+                    for (LivingEntity ally : allies) {
+                        ally.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 60, 0, true, true));
+                    }
+                }
+                // DUEL : le dernier battement blinde le porteur. En foule, le soin reparti
+                // est deja la recompense, et une resistance de groupe serait de trop.
+                if (solo && beat == 6 && attacker != null && attacker.isAlive()) {
+                    attacker.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 120, 1, true, true));
+                    sl.playSound(null, attacker.getX(), attacker.getY(), attacker.getZ(),
+                            SoundEvents.TOTEM_USE, SoundSource.PLAYERS, 0.30f, 0.80f);
+                }
+            });
+        }
+
+        // --- 112 : la resorption. ---
+        TestProcedure.schedule(sl, now + 112, () -> {
+            sl.playSound(null, hx, hy, hz, SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 0.35f, 1.30f);
+            PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, hx, hy, hz, 24, 0.55, 0.60, 0.55, 0.04);
+            addBloodPool(sl, hx, target.getY(), hz, 1.3, 90, attackerId, base * 0.06f);
+        });
+    }
+
+    // --------------------------------------------------------------------------------------
+    //  V. CARNAGE BERSERK (180 ticks)
+    // --------------------------------------------------------------------------------------
+
+    /**
+     * Le carnage est la signature d'AIRE du sang, et la seule du mod dont la cadence
+     * s'accelere : onze taillades dont l'ecart se reduit de moitie du debut a la fin. Elle ne
+     * vise rien, elle occupe.
+     *
+     * <p><b>La frenesie se paie.</b> Chaque taillade qui touche nourrit le porteur, jusqu'a
+     * trois paliers de ferveur. Mais la signature se termine par une RETOMBEE : soixante ticks
+     * de lenteur d'action une fois la salve finie. Une frenesie sans contrecoup serait un buff
+     * gratuit, et celle-ci est la plus puissante des cinq.</p>
+     *
+     * <p>En duel, les onze taillades convergent : chacune frappe deux fois plus fort et la
+     * cible ne peut pas fuir la zone, puisqu'elle en est le centre.</p>
+     */
+    private static void applyCarnageGameplay(LivingEntity attacker, LivingEntity target,
+                                             ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.50;
+        final double oz = target.getZ();
+        final float base = Math.max(1.3f, weaponDamage * 0.80f);
+        final java.util.concurrent.atomic.AtomicInteger landed =
+                new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.concurrent.atomic.AtomicInteger spilled =
+                new java.util.concurrent.atomic.AtomicInteger();
+
+        // --- 0→25 : la montee. Trois pulsations, ecart decroissant. ---
+        int[] winds = {3, 12, 19};
+        for (int k = 0; k < 3; k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + winds[step], () -> {
+                sl.playSound(null, ox, oy, oz, SoundEvents.RAVAGER_ROAR, SoundSource.PLAYERS,
+                        0.30f + step * 0.14f, 0.55f + step * 0.09f);
+                PixelFx.send(sl, ParticleTypes.DAMAGE_INDICATOR, ox, target.getY() + 0.1, oz,
+                        10 + step * 6, 1.0 + step * 0.5, 0.08, 1.0 + step * 0.5, 0.04);
+            });
+        }
+
+        // --- 25→112 : les onze taillades. ---
+        for (int k = 0; k < 11; k++) {
+            final int strike = k;
+            float u = strike / 10.0f;
+            // Meme loi que l'animation : l'ecart passe de six a trois ticks.
+            final int at = Math.round(25 + 87.0f * (u - 0.22f * u * (1.0f - u) * 2.0f));
+            final double radius = 2.6 + 0.9 * u;
+            TestProcedure.schedule(sl, now + at, () -> {
+                List<LivingEntity> hit = bloodVictims(sl, ox, oy, oz, radius, 3.0, attackerId);
+                if (!hit.contains(target) && target.isAlive()
+                        && target.distanceToSqr(ox, oy, oz) <= radius * radius) {
+                    hit.add(target);
+                }
+                boolean solo = hit.size() <= 1;
+                sl.playSound(null, ox, oy, oz, SoundEvents.PLAYER_ATTACK_SWEEP, SoundSource.PLAYERS,
+                        0.55f, 0.85f + strike * 0.035f);
+                PixelFx.send(sl, ParticleTypes.DAMAGE_INDICATOR, ox, oy, oz,
+                        8, radius * 0.4, 0.5, radius * 0.4, 0.08);
+                if (hit.isEmpty()) return;
+
+                landed.incrementAndGet();
+                for (LivingEntity victim : hit) {
+                    // SOLO : 0,42 par taillade, soit 4,6 fois les degats de base sur onze
+                    // coups. EN FOULE : 0,24, mais sur tout le monde a la fois.
+                    float amount = base * (solo ? 0.42f : 0.24f);
+                    if (hurtWithCapturedWeapon(sl, attackerId, victim, amount)) {
+                        spilled.addAndGet(Math.round(amount * 100.0f));
+                    }
+                    // Une taillade sur deux ouvre : onze piles seraient absurdes, cinq est
+                    // deja le plafond.
+                    if ((strike & 1) == 0) {
+                        addBleed(sl, victim, 1, attackerId, base * 0.075f, 150);
+                    }
+                    PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA,
+                            victim.getX(), victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
+                            5, 0.30, 0.35, 0.30, 0.03);
+                }
+                sl.playSound(null, ox, oy, oz, SoundEvents.SLIME_BLOCK_BREAK, SoundSource.PLAYERS,
+                        0.30f, 1.05f + strike * 0.03f);
+
+                // --- LA FERVEUR MONTE. Trois paliers, aux quatrieme, septieme et dixieme
+                //     coups qui TOUCHENT. Une frenesie qui monte dans le vide n'a pas de sens.
+                int count = landed.get();
+                if ((count == 4 || count == 7 || count == 10) && attacker != null && attacker.isAlive()) {
+                    int level = count == 4 ? 0 : (count == 7 ? 1 : 2);
+                    attacker.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 120, level, true, true));
+                    attacker.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED,
+                            120, level == 2 ? 1 : 0, true, true));
+                    attacker.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 120, level, true, true));
+                    sl.playSound(null, attacker.getX(), attacker.getY(), attacker.getZ(),
+                            SoundEvents.HOGLIN_ANGRY, SoundSource.PLAYERS, 0.45f, 0.70f + level * 0.15f);
+                }
+            });
+        }
+
+        // --- 115 : l'apogee. Une onde balaie le sol. ---
+        TestProcedure.schedule(sl, now + 115, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.GOAT_RAM_IMPACT, SoundSource.PLAYERS, 0.85f, 0.60f);
+            sl.playSound(null, ox, oy, oz, SoundEvents.GENERIC_SPLASH, SoundSource.PLAYERS, 0.70f, 0.50f);
+            PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, ox, target.getY() + 0.15, oz,
+                    60, 2.2, 0.10, 2.2, 0.06);
+            List<LivingEntity> swept = bloodVictims(sl, ox, oy, oz, 5.0, 3.0, attackerId);
+            boolean solo = swept.size() <= 1;
+            for (LivingEntity victim : swept) {
+                hurtWithCapturedWeapon(sl, attackerId, victim, base * (solo ? 0.95f : 0.55f));
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 80, 1, true, false));
+                addBleed(sl, victim, solo ? 2 : 1, attackerId, base * 0.09f, 140);
+                // L'onde repousse. Sans composante verticale la poussee est absorbee par la
+                // premiere marche et la victime glisse contre le talus (piege de la T376).
+                double ddx = victim.getX() - ox;
+                double ddz = victim.getZ() - oz;
+                double flat = Math.sqrt(ddx * ddx + ddz * ddz);
+                if (flat > 0.08) {
+                    victim.setDeltaMovement(ddx / flat * 0.52, 0.34, ddz / flat * 0.52);
+                    victim.hasImpulse = true;
+                    victim.fallDistance = 0.0f;
+                    if (victim instanceof ServerPlayer sp) {
+                        sp.connection.send(new net.minecraft.network.protocol.game
+                                .ClientboundSetEntityMotionPacket(sp));
+                    }
+                }
+            }
+            addBloodPool(sl, ox, target.getY(), oz, 3.0, 160, attackerId, base * 0.07f);
+        });
+
+        // --- 130→170 : la brume. Elle ralentit ce qui reste dedans. ---
+        for (int k = 0; k < 3; k++) {
+            TestProcedure.schedule(sl, now + 130 + k * 20, () -> {
+                for (LivingEntity victim : bloodVictims(sl, ox, oy, oz, 4.2, 2.6, attackerId)) {
+                    victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 50, 0, true, false));
+                }
+                PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, ox, target.getY() + 0.5, oz,
+                        18, 1.8, 0.35, 1.8, 0.01);
+            });
+        }
+
+        // --- 175 : LA RETOMBEE. Les bras retombent, et c'est le prix de la frenesie. ---
+        TestProcedure.schedule(sl, now + 175, () -> {
+            bloodFervor(sl, attacker, spilled.get() / 100.0f, 100);
+            if (attacker == null || !attacker.isAlive()) return;
+            if (landed.get() >= 6) {
+                attacker.addEffect(new MobEffectInstance(MobEffects.DIG_SLOWDOWN, 60, 0, true, true));
+                sl.playSound(null, attacker.getX(), attacker.getY(), attacker.getZ(),
+                        SoundEvents.PLAYER_BREATH, SoundSource.PLAYERS, 0.50f, 0.70f);
+            }
+        });
+    }
+
     /**
      * Routage des trois signatures d'ombre. Comme la foudre avant la T376, l'ombre n'avait
      * <b>aucun</b> gameplay : trois animations de 14 à 18 ticks qui ne faisaient rien.
@@ -4053,9 +5046,10 @@ public final class WeaponVfxServerListener {
      * griffures finales (tick 152) convergent toutes sur elle au lieu de se répartir, soit le
      * triple des dégâts. Aucun joueur ne perd à utiliser l'éclipse en duel.</p>
      *
-     * <p><b>Buff du porteur.</b> C'est <i>son</i> ombre : sous le dôme, le porteur voit dans le
-     * noir et frappe plus fort ({@code NIGHT_VISION} + {@code DAMAGE_BOOST}) pendant toute la
-     * durée du voile. C'est la seule signature de l'ombre qui récompense le fait de rester au
+     * <p><b>Buff du porteur.</b> C'est <i>son</i> ombre : sous le dôme, le porteur frappe plus
+     * fort ({@code DAMAGE_BOOST}) pendant toute la durée du voile. Il n'y voit pas mieux que
+     * ses victimes pour autant — une éclipse qui rend la vue à celui qui l'invoque annule son
+     * propre sujet. C'est la seule signature de l'ombre qui récompense le fait de rester au
      * contact, et c'est voulu — l'éclipse est une arène, pas une fuite.</p>
      */
     private static void applyEclipseVeilGameplay(LivingEntity attacker, LivingEntity target,
@@ -4207,7 +5201,9 @@ public final class WeaponVfxServerListener {
                     double adx = attacker.getX() - ox;
                     double adz = attacker.getZ() - oz;
                     if (adx * adx + adz * adz <= DOME_RADIUS * DOME_RADIUS) {
-                        attacker.addEffect(new MobEffectInstance(MobEffects.NIGHT_VISION, 220, 0, true, false));
+                        // Pas de NIGHT_VISION : l'eclipse PLONGE l'arene dans le noir, et
+                        // rendre la vue au porteur detruisait son propre sujet. Il frappe
+                        // plus fort dans une obscurite qu'il subit aussi.
                         attacker.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 60, 0, true, true));
                     }
                 }
@@ -6070,6 +7066,8 @@ public final class WeaponVfxServerListener {
         tickWindHold(target);
         tickSurgeRide(target);
         tickEclipseCage(target);
+        tickBleed(target);
+        tickBloodPools(target.level());
         if (SURGE_RIDES.containsKey(target.getId())) return;
         MovementHold hold = MOVEMENT_HOLDS.get(target.getId());
         if (hold == null) return;
@@ -6193,6 +7191,7 @@ public final class WeaponVfxServerListener {
                 : deepluckyblock.util.AnimFamily.WATER.equals(family) ? ANIM_WATER
                 : deepluckyblock.util.AnimFamily.THUNDER.equals(family) ? ANIM_THUNDER
                 : deepluckyblock.util.AnimFamily.SHADOW.equals(family) ? ANIM_SHADOW
+                : deepluckyblock.util.AnimFamily.BLOOD.equals(family) ? ANIM_BLOOD
                 : deepluckyblock.util.AnimFamily.WIND.equals(family) ? ANIM_WIND : ANIM_WOOD;
 
         if (roll >= 60) {
@@ -6215,6 +7214,7 @@ public final class WeaponVfxServerListener {
             applyWaterGameplay(attacker, target, fx, capturedWeaponDamage);
             applyThunderGameplay(attacker, target, fx, capturedWeaponDamage);
             applyShadowGameplay(attacker, target, fx, capturedWeaponDamage);
+            applyBloodGameplay(attacker, target, fx, capturedWeaponDamage);
             return;
         }
 
@@ -6257,8 +7257,13 @@ public final class WeaponVfxServerListener {
         event.setAmount(event.getAmount() * (1.0f + bonusPercent / 100.0f));
         float bigScale = bigMeleeVisualScale(measuredScale);
         if (fx == WeaponVisualEffectId.CRIMSON_SIPHON) {
-            broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
+            // T379-BLOOD : le siphon passait par le rayon generique KIND_BEAM_SIPHON, qui ne
+            // sait tracer qu'un trait entre deux points. Sa choregraphie propre — crochets,
+            // conduit helicoidal, six bols, rupture — vit dans BloodSignatureVfx, et celle-ci
+            // n'est atteinte que par KIND_IMPACT. On y bascule, et on applique le gameplay.
+            broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, layer.level(),
                     tx, ty, tz, ax, ay, az, palette, lightVisualScaleOf(fx, target, bigScale));
+            applyBloodGameplay(attacker, target, fx, capturedWeaponDamage);
         } else if (fx == WeaponVisualEffectId.ASTRAL_STAR_LANCE && attacker.distanceToSqr(target) > 9.0) {
             broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
                     ax, (float) attacker.getEyeY() - 0.12f, az, tx, ty, tz, palette, lightVisualScaleOf(fx, target, bigScale));
@@ -6272,6 +7277,7 @@ public final class WeaponVfxServerListener {
             applyLightGameplay(attacker, target, fx, capturedWeaponDamage, bigScale);
             applyFireGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyPoisonGameplay(attacker, target, fx);
+            applyBloodGameplay(attacker, target, fx, capturedWeaponDamage);
         }
     }
 

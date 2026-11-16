@@ -89,7 +89,12 @@ def project_constants(root='src/main/java'):
             found |= set(re.findall(r'\bstatic\s+(?:final\s+)?[\w<>\[\],.\s]+?\b([A-Z][A-Z0-9_]{1,})\s*[=;]', txt))
             # constantes d'enum : NOM( ou NOM, ou NOM; en tête de ligne
             for body in re.findall(r'\benum\s+\w+[^{]*\{(.*?)\n\s*(?:public|private|protected|\})', txt, re.S):
-                found |= set(re.findall(r'(?:^|,|\{)\s*([A-Z][A-Z0-9_]{1,})\s*[(,;]', body))
+                # re.M est INDISPENSABLE : sans lui « ^ » ne vaut qu'au tout debut de la
+                # chaine, et la premiere constante qui suit un commentaire de section
+                # (« // === III. SANG ... === ») restait invisible. C'est ce qui faisait
+                # passer DRIPPING_BLOOD_EDGE pour une constante inconnue alors qu'elle est
+                # declaree ligne 53 de WeaponVisualEffectId.
+                found |= set(re.findall(r'(?:^|,|\{)\s*([A-Z][A-Z0-9_]{1,})\s*[(,;]', body, re.M))
     GLOBAL_CONSTS = found
     return found
 
