@@ -2291,3 +2291,66 @@ joueur qui s'est déjà écarté tout seul.
 **La leçon générale.** Chaque fois que ce dépôt déplace un joueur en dehors d'un dégât
 vanilla — recul, aspiration, projection d'une zone — il faut le paquet explicite. Déplacer un
 mob et déplacer un joueur ne sont pas la même opération, même si l'appel Java est identique.
+
+## 36. Trois retours de combat : le cadrage, le verrou, la dose
+
+Le recul du marteau partait enfin (§35). Trois défauts sont apparus derrière.
+
+### « L'animation du nuage est visée sur le joueur, pas sur le mob »
+
+Elle ne l'est pas. `applyStormcallGameplay` ancre tout sur `target.getX/Y/Z()` au moment du
+coup, les deux balayages de victimes excluent explicitement les joueurs, et le visuel est
+émis à la position de la cible. Le diagnostic était faux mais l'observation était juste.
+
+La cause est géométrique : `CLOUD_R` vaut 3,40 et `CLOUD_Y` vaut 8,0. Le nuage fait donc
+presque sept blocs de large et flotte à huit de haut. En mêlée on se tient à deux ou trois
+blocs de ce qu'on frappe, c'est-à-dire **sous la jupe du nuage**. La mitraille tombe entre
+0,55 et 2,60 blocs du centre : certains traits atterrissent littéralement aux pieds du
+joueur. De l'intérieur, un nuage centré sur le mob et un nuage centré sur soi donnent la
+même image.
+
+Même cause que le marteau, donc même remède : `clearTheBlastZone(sl, attacker, ax, az,
+STORM_CLEARANCE)` en tête de la procédure. Dix blocs — moins que les onze du marteau, parce
+que le nuage ne tombe pas sur le porteur ; il suffit d'en sortir pour le voir en entier.
+
+### « Pour l'éclair qui tombe de très haut, tu as oublié de lock le mob »
+
+Exact. `applyChainVoltGameplay` fige `ox/oy/oz` à l'instant du coup — délibérément, un
+éclair ne poursuit pas sa proie. Mais le mob, lui, continue de marcher pendant les vingt
+ticks de descente : un pas de côté et le trait tombe à côté de lui.
+
+```java
+final long chainHoldEnd = sl.getGameTime() + 40L;
+applyMovementHold(target, chainHoldEnd, false);
+TestProcedure.schedule(sl, now + 40, () -> releaseMovementHold(target, chainHoldEnd));
+```
+
+Quarante ticks couvrent l'ionisation, les quatre colonnes, la frappe principale au vingtième
+et le premier bond de la chaîne. **Sans** étourdissement complet : le mob est immobilisé, pas
+désactivé. Il se défend encore, il ne peut simplement plus sortir de la mire.
+
+Noter les deux horloges, une fois de plus : l'emprise expire en temps de **monde**
+(`getGameTime`), la tâche différée compte en ticks de **serveur** (`currentTick`).
+
+### « Ajoute 5 blocs de recul, et projette deux fois plus haut »
+
+`HAMMER_CLEARANCE` passe de 6,0 à **11,0**. La vitesse verticale est **doublée**, bornes
+comprises : `0,42–1,05` devient `0,84–1,50`.
+
+Doubler la vitesse ne monte pas deux fois plus haut mais **quatre** fois — la hauteur varie
+comme le carré de la vitesse. Le plafond de 1,50 existe pour que le vol ne dure pas plus
+longtemps que l'animation qu'il sert à regarder.
+
+| Terrain derrière | v verticale | vol | v horizontale | portée | apogée |
+|---|---|---|---|---|---|
+| sol plat | 0,858 | 21 t | 1,148 | 11,00 bl | 4,60 bl |
+| talus de 2 | 1,420 | 35 t | 1,028 | 11,00 bl | 12,60 bl |
+| mur plein | 1,500 | 37 t | 1,021 | 11,00 bl | 14,06 bl |
+
+La portée reste exactement à onze blocs dans les trois cas : c'est la série géométrique qui
+s'en charge, `v·(1−0,91ⁿ)/0,09`, recalculée pour chaque durée de vol.
+
+**Une conséquence à ne pas manquer.** La garantie anti-chute bouclait sur `flight + 28`, soit
+la **montée** plus une marge. Avec un apogée quatre fois plus haut, elle s'arrêtait en plein
+ciel et rendait au joueur toute la descente. Elle couvre maintenant `2 * flight + 30`,
+c'est-à-dire l'aller-retour complet.

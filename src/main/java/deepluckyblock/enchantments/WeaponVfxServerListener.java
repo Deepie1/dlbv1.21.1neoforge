@@ -3006,6 +3006,25 @@ public final class WeaponVfxServerListener {
         final double oz = target.getZ();
         final float base = Math.max(1.6f, weaponDamage * 0.92f);
 
+        // --- La cible est clouée sur place le temps que l'éclair descende. ---
+        // « Tu as oublié de lock le mob en place. » Exact, et c'est visible : le point de
+        // chute est figé ici, à l'instant du coup, parce qu'un éclair ne poursuit pas sa
+        // proie. Mais le mob, lui, continue de marcher pendant les vingt ticks de descente.
+        // Il suffit qu'il fasse un pas de côté pour que le trait tombe à côté de lui.
+        //
+        // DEUX HORLOGES, et il ne faut pas les confondre : l'emprise expire en temps de MONDE
+        // (getGameTime, qui suit la sauvegarde), la tâche différée compte en ticks de SERVEUR
+        // (currentTick, remis à zéro à chaque démarrage). Les noms disent lequel est lequel.
+        //
+        // Quarante ticks couvrent l'ionisation, les quatre colonnes, la frappe principale au
+        // vingtième et le premier bond de la chaîne. Sans étourdissement complet : le mob
+        // est immobilisé, pas désactivé — il se défend encore, il ne peut simplement plus
+        // sortir de la mire. L'emprise se libère seule à l'expiration ; on la rend quand même
+        // explicitement, pour que l'IA reprenne la main au tick exact et pas au suivant.
+        final long chainHoldEnd = sl.getGameTime() + 40L;
+        applyMovementHold(target, chainHoldEnd, false);
+        TestProcedure.schedule(sl, now + 40, () -> releaseMovementHold(target, chainHoldEnd));
+
         // --- Le ciel se charge. On l'entend avant de le voir. ---
         // Un orage ne commence pas par l'éclair : il commence par cette pression sourde qui
         // fait lever la tête. La source est à vingt-deux blocs, là où le plafond grésille à
@@ -3410,7 +3429,12 @@ public final class WeaponVfxServerListener {
     }
 
     /** De combien de blocs le porteur recule à l'invocation du marteau. */
-    private static final double HAMMER_CLEARANCE = 6.0;
+    private static final double HAMMER_CLEARANCE = 11.0;
+    /**
+     * Recul du porteur à l'appel de l'orage. Plus court que celui du marteau : le nuage ne
+     * tombe pas sur le porteur, il faut seulement sortir de sa jupe pour le voir en entier.
+     */
+    private static final double STORM_CLEARANCE = 10.0;
 
     /**
      * Écarte le porteur du point de chute, en franchissant le relief au lieu de s'y écraser.
@@ -3480,8 +3504,12 @@ public final class WeaponVfxServerListener {
 
         final double climb = Math.min(rise, 4.5);
         // v = racine(2·g·h), avec un bloc de marge pour ne pas raser l'arête.
-        double vy = Math.sqrt(0.16 * (climb + 1.15));
-        vy = Math.max(0.42, Math.min(1.05, vy));
+        // Puis TOUT EST DOUBLÉ : la hauteur atteinte varie comme le carré de la vitesse,
+        // doubler v ne monte donc pas deux fois plus haut mais QUATRE fois. C'est demandé,
+        // c'est assumé, et c'est ce qui fait qu'on domine la scène au lieu de la longer.
+        // Le plafond reste : au-delà de 1,50 le vol dure plus longtemps que l'animation.
+        double vy = Math.sqrt(0.16 * (climb + 1.15)) * 2.0;
+        vy = Math.max(0.84, Math.min(1.50, vy));
         final int flight = (int) Math.max(10.0, 2.0 * vy / 0.08);
         // Série géométrique de raison 0,91 : distance = v·(1−0,91ⁿ)/0,09.
         final double reach = Math.max(0.25, 1.0 - Math.pow(0.91, flight));
@@ -3520,8 +3548,11 @@ public final class WeaponVfxServerListener {
         // remise à zéro toutes les quatre frames jusqu'à la frappe : elle ne dépasse jamais
         // deux blocs, donc jamais le seuil des trois. La garantie couvre tout l'enchaînement,
         // y compris le cas où le recul fait passer par-dessus un bord.
+        // Le vol dure maintenant deux fois la montée, plus la retombée depuis un apogée
+        // quatre fois plus haut. La boucle couvrait « montée + 28 » ; elle s'arrêtait donc
+        // en plein ciel et rendait au joueur toute la chute. On couvre l'aller-retour.
         final int start = TestProcedure.currentTick(sl);
-        for (int t = 4; t <= flight + 28; t += 4) {
+        for (int t = 4; t <= 2 * flight + 30; t += 4) {
             TestProcedure.schedule(sl, start + t, () -> {
                 if (rider.isAlive()) rider.fallDistance = 0.0F;
             });
@@ -3884,6 +3915,17 @@ public final class WeaponVfxServerListener {
         final double ax = target.getX();
         final double ay = target.getY();
         final double az = target.getZ();
+
+        // --- Le porteur dégage, pour la même raison que sous le marteau. ---
+        // « L'animation du nuage qui fait éclair est visée sur le joueur, pas sur le mob. »
+        // Elle ne l'est pas : le gameplay est centré ici, sur la cible, et aucun joueur n'est
+        // jamais touché. Mais le nuage mesure 3,40 blocs de rayon et flotte à huit de haut,
+        // et en mêlée on se tient à deux ou trois blocs de ce qu'on frappe : on est DEDANS.
+        // La mitraille tombe jusqu'à 2,60 blocs du centre, donc littéralement à ses pieds.
+        // De l'intérieur, un nuage centré sur le mob et un nuage centré sur soi sont la même
+        // image. On recule le porteur et l'orage redevient ce qu'il est : quelque chose qui
+        // tombe là-bas. Dix blocs suffisent — la jupe du nuage en fait trois et demi.
+        clearTheBlastZone(sl, attacker, ax, az, STORM_CLEARANCE);
 
         // --- Formation : un grondement, puis rien pendant une seconde et demie. ---
         TestProcedure.schedule(sl, now + 6, () -> {

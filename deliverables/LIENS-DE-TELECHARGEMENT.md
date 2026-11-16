@@ -6,7 +6,60 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 > **Si le navigateur sert une vieille version** (le CDN de GitHub garde les fichiers bruts en cache quelques minutes), remplacer `refs/heads/arena/605e67fb-dlbv1-21-1neoforge` par le SHA du commit — par exemple `raw/fa83a2f/…` pour la v1.3 — ou ajouter `?v=2` à la fin de l'adresse.
 
-## Foudre v11 — 4 novembre 2026 ⟵ **LOT COURANT**
+## Foudre v12 — 4 novembre 2026 ⟵ **LOT COURANT**
+
+> **Trois retours de combat, trois corrections.** Le recul du marteau part désormais : la v11
+> a débloqué la fonction, la v12 la règle et traite les deux autres signatures.
+>
+> **1. Le nuage de l'orage était « visé sur le joueur ».** Il ne l'était pas : le gameplay est
+> ancré sur la cible, et les deux balayages de victimes excluent explicitement les joueurs.
+> Mais le nuage fait **3,40 blocs de rayon** et flotte à huit de haut, et en mêlée on se tient
+> à deux ou trois blocs de ce qu'on frappe : on est **sous sa jupe**. La mitraille tombe entre
+> 0,55 et 2,60 blocs du centre, donc certains traits atterrissent aux pieds du joueur. De
+> l'intérieur, un nuage centré sur le mob et un nuage centré sur soi, c'est la même image.
+> Même cause que le marteau, même remède : **le porteur recule de dix blocs** à l'appel.
+>
+> **2. L'éclair qui tombe de très haut ne verrouillait pas sa cible.** Le point de chute est
+> figé à l'instant du coup — délibérément, un éclair ne poursuit pas sa proie. Mais le mob
+> continuait de marcher pendant les vingt ticks de descente : un pas de côté et le trait
+> tombait à côté. La cible est maintenant **clouée sur place quarante ticks**, de
+> l'ionisation jusqu'au premier bond de la chaîne. Sans étourdissement complet : elle est
+> immobilisée, pas désactivée — elle se défend encore, elle ne peut plus sortir de la mire.
+>
+> **3. Le recul du marteau : cinq blocs de plus, et deux fois plus haut.** `HAMMER_CLEARANCE`
+> passe de 6,0 à **11,0**, et la vitesse verticale est doublée, bornes comprises
+> (`0,42–1,05` → `0,84–1,50`). Doubler la vitesse ne monte pas deux fois plus haut mais
+> **quatre** fois : la hauteur varie comme le carré de la vitesse.
+>
+> | Terrain derrière | v verticale | vol | portée | apogée |
+> |---|---|---|---|---|
+> | sol plat | 0,858 | 21 t | 11,00 bl | 4,60 bl |
+> | talus de 2 | 1,420 | 35 t | 11,00 bl | 12,60 bl |
+> | mur plein | 1,500 | 37 t | 11,00 bl | 14,06 bl |
+>
+> La portée tombe à onze blocs dans les trois cas : c'est la série géométrique qui s'en
+> charge, recalculée pour chaque durée de vol.
+>
+> **Et la conséquence à ne pas manquer** : la garantie anti-dégâts de chute bouclait sur la
+> **montée** seule. Avec un apogée quatre fois plus haut elle s'arrêtait en plein ciel et vous
+> rendait toute la descente. Elle couvre maintenant l'aller-retour complet.
+>
+> Démarche complète au **§36** de `WATER_SIGNATURES.md`.
+
+| Fichier | Lien |
+|---|---|
+| **⬇ APERÇU ANIMÉ FOUDRE** (HTML autonome — le ZIP est *dedans*) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Thunder_Three_Signatures_preview.html |
+| **⬇ Sources complètes** (ZIP, 42 entrées, 694 211 o) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Thunder_Three_Signatures_src.zip |
+| `WeaponVfxServerListener.java` — **les trois correctifs** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java |
+| `WATER_SIGNATURES.md` — **§36, cadrage / verrou / dose** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/WATER_SIGNATURES.md |
+
+**SHA-256 du ZIP** : `1ee8d4aa08bb566d4f8935dba4ee61c2b31431cbc4d2d2406e1a5c212b54d801`
+
+**Un seul fichier Java change depuis la v11** : `WeaponVfxServerListener.java` (plus la doc).
+
+---
+
+## Foudre v11 — 4 novembre 2026
 
 > **Un seul correctif, mais il débloque la fonction entière : le recul du porteur part enfin.**
 >
