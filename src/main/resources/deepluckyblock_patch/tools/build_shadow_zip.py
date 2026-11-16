@@ -27,6 +27,8 @@ JAVA = [
     'src/main/java/deepluckyblock/client/GaiaWorldTreeVfx.java',
     'src/main/java/deepluckyblock/client/WaterSignatureVfx.java',
     'src/main/java/deepluckyblock/client/WaterTerrainVfx.java',
+    # T378-NO-JITTER : l'aura cosmetique emet elle aussi des cubes, hors passe VFX.
+    'src/main/java/deepluckyblock/client/CosmeticPixelAura.java',
     # T378-UMBRAL-GLINT : le glint melange de l'ombre touche ces trois fichiers.
     'src/main/java/deepluckyblock/client/EnchantGlintTyped.java',
     'src/main/java/deepluckyblock/client/DeepGlintColor.java',

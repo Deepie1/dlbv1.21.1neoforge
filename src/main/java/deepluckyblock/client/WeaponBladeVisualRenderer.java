@@ -114,50 +114,60 @@ public final class WeaponBladeVisualRenderer {
 
         List<WeaponVisualEffectId.ResolvedLayer> layers = WeaponVisualEffectId.resolveLayers(stack, 2);
         if (layers.isEmpty()) return;
-
-        boolean custom3dTrident = stack.is(Items.TRIDENT)
-                && displayContext != ItemDisplayContext.GROUND
-                && displayContext != ItemDisplayContext.FIXED;
-
-        List<VoxelNode> nodes = custom3dTrident
-                ? getTrident3dVoxelNodes()
-                : getOrBuildModelVoxelNodes(stack, model);
-        if (nodes.isEmpty()) return;
-
-        // T349-IDLE-FILTER : les « pixels lumineux constants » collés sur l'item tenu sont supprimés.
-        // Seuls les éclats d'ACTION (alpha élevé : reflet qui parcourt la lame, charge d'arc, goutte qui
-        // tombe...) restent visibles. Hors action, on ne garde donc que les accents animés.
-        boolean armActive = isHeldWeaponActive();
-        // Le tirage 15 % mêlée / 40 % distance est fait UNE FOIS au loot dans DeepNbt.
-        // Sans aura persistée, l'item reste propre au repos ; les éclats d'action restent jouables.
-        if (!armActive && !deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(stack)) return;
-        WeaponWorldVfxManager.setAlphaFloor(armActive ? 0 : 172);
-        WeaponWorldVfxManager.beginFrame(WeaponWorldVfxManager.smoothTimeSeconds());
-
-        renderingOverlay = true;
+        // T378-NO-JITTER : la lame suit la main, et ses noeuds avancent le long du fil. Ses
+        // pixels se deplacent donc en permanence dans le repere ou emitVoxelCube tire ses
+        // variations. Cette classe module deja sa propre variance par l'INDICE du noeud
+        // (pixelVariance) — la bonne methode ; le gel supprime celle, parasite, qui venait
+        // de la position.
+        boolean previousFrozen = WeaponWorldVfxManager.beginFrozenDetail();
         try {
-            float time = WeaponWorldVfxManager.smoothTimeSeconds();
-            Matrix4f mat = poseStack.last().pose();
-            Vector3f tmp = new Vector3f();
 
-            for (int i = 0; i < layers.size(); i++) {
-                WeaponVisualEffectId.ResolvedLayer layer = layers.get(i);
-                WeaponVisualEffectId fx = layer.effect();
-                VertexConsumer vc = bufferSource.getBuffer(
-                        fx.additive && fx.element() != DeepElement.WATER
-                                ? getBladeAdditiveRenderType()
-                                : getBladeTranslucentRenderType());
+            boolean custom3dTrident = stack.is(Items.TRIDENT)
+                    && displayContext != ItemDisplayContext.GROUND
+                    && displayContext != ItemDisplayContext.FIXED;
 
-                float alphaMul = (i == 0) ? 1.0f : 0.78f;
-                if (fx.element() == DeepElement.WATER) alphaMul *= 0.68f;
-                renderBladeVoxelEffect(vc, mat, tmp, stack, nodes, custom3dTrident,
-                        fx, layer.level(), time + i * 1.35f, alphaMul);
+            List<VoxelNode> nodes = custom3dTrident
+                    ? getTrident3dVoxelNodes()
+                    : getOrBuildModelVoxelNodes(stack, model);
+            if (nodes.isEmpty()) return;
+
+            // T349-IDLE-FILTER : les « pixels lumineux constants » collés sur l'item tenu sont supprimés.
+            // Seuls les éclats d'ACTION (alpha élevé : reflet qui parcourt la lame, charge d'arc, goutte qui
+            // tombe...) restent visibles. Hors action, on ne garde donc que les accents animés.
+            boolean armActive = isHeldWeaponActive();
+            // Le tirage 15 % mêlée / 40 % distance est fait UNE FOIS au loot dans DeepNbt.
+            // Sans aura persistée, l'item reste propre au repos ; les éclats d'action restent jouables.
+            if (!armActive && !deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(stack)) return;
+            WeaponWorldVfxManager.setAlphaFloor(armActive ? 0 : 172);
+            WeaponWorldVfxManager.beginFrame(WeaponWorldVfxManager.smoothTimeSeconds());
+
+            renderingOverlay = true;
+            try {
+                float time = WeaponWorldVfxManager.smoothTimeSeconds();
+                Matrix4f mat = poseStack.last().pose();
+                Vector3f tmp = new Vector3f();
+
+                for (int i = 0; i < layers.size(); i++) {
+                    WeaponVisualEffectId.ResolvedLayer layer = layers.get(i);
+                    WeaponVisualEffectId fx = layer.effect();
+                    VertexConsumer vc = bufferSource.getBuffer(
+                            fx.additive && fx.element() != DeepElement.WATER
+                                    ? getBladeAdditiveRenderType()
+                                    : getBladeTranslucentRenderType());
+
+                    float alphaMul = (i == 0) ? 1.0f : 0.78f;
+                    if (fx.element() == DeepElement.WATER) alphaMul *= 0.68f;
+                    renderBladeVoxelEffect(vc, mat, tmp, stack, nodes, custom3dTrident,
+                            fx, layer.level(), time + i * 1.35f, alphaMul);
+                }
+            } catch (Throwable ignored) {
+                // Tolérance totale avec ImmediatelyFast / Sodium / Iris
+            } finally {
+                WeaponWorldVfxManager.setAlphaFloor(0);
+                renderingOverlay = false;
             }
-        } catch (Throwable ignored) {
-            // Tolérance totale avec ImmediatelyFast / Sodium / Iris
         } finally {
-            WeaponWorldVfxManager.setAlphaFloor(0);
-            renderingOverlay = false;
+            WeaponWorldVfxManager.endFrozenDetail(previousFrozen);
         }
     }
 

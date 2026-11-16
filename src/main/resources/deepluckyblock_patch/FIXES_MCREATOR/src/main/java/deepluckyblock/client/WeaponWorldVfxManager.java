@@ -190,6 +190,23 @@ public final class WeaponWorldVfxManager {
      */
     private static boolean voxelFrozenDetail = false;
 
+    /**
+     * T378-NO-JITTER : gele les variations par position pour le bloc de rendu qui suit, et
+     * rend l'etat precedent — a repasser a {@link #endFrozenDetail(boolean)} dans un
+     * {@code finally}. A employer des que la geometrie emise se deplace d'une image a
+     * l'autre, ce qui est le cas de tout ce qui est accroche a une entite ou qui tourne.
+     */
+    public static boolean beginFrozenDetail() {
+        boolean previous = voxelFrozenDetail;
+        voxelFrozenDetail = true;
+        return previous;
+    }
+
+    /** Rend l'etat rendu par {@link #beginFrozenDetail()}. */
+    public static void endFrozenDetail(boolean previous) {
+        voxelFrozenDetail = previous;
+    }
+
     /** Graine unique employee par toute la geometrie gelee : un seul grain, donc une seule matiere. */
     private static final int FROZEN_TEX_SEED = 0x2F13;
 
@@ -1944,6 +1961,15 @@ public final class WeaponWorldVfxManager {
         beginFrame((mc.level.getGameTime() & 0xFFFFFL) * 0.05f
                 + (mc.isPaused() ? 0.0f : Mth.clamp((System.nanoTime() - lastTickNanos) / 1.0e9f, 0.0f, 1.0f)));
 
+        // T378-NO-JITTER : TOUTE la passe est de la geometrie animee — les douze elements, les
+        // eclats flottants, les signatures externes (feu, eau, terre, metal, lumiere, vent,
+        // poison, foudre, ombre, Gaia). Aucune n'est immobile plus de quelques images. Le gel
+        // des variations tirees de la position vaut donc pour la passe entiere, et non effet
+        // par effet : c'est la correction que onze renderers avaient commencee chacun dans son
+        // coin en coupant le pouls, sans traiter les trois hachages de taille, de densite et
+        // de grain qui tremblaient avec lui.
+        voxelFrozenDetail = true;
+
         // T348-BUFFER-SAFETY : tout le rendu est encapsulé. Un BufferBuilder partagé qui aurait été
         // vidé/recyclé par un autre listener ne doit JAMAIS faire crasher le jeu ("Not building!").
         try {
@@ -1960,6 +1986,10 @@ public final class WeaponWorldVfxManager {
             if (ACTIVE.size() > 8) {
                 ACTIVE.subList(0, ACTIVE.size() - 8).clear();
             }
+        } finally {
+            // Le drapeau est statique : les autres chemins de rendu (lame en main, aura
+            // cosmetique) ne doivent pas heriter du gel de cette passe.
+            voxelFrozenDetail = false;
         }
     }
 
@@ -4216,12 +4246,10 @@ public final class WeaponWorldVfxManager {
      */
     private static void impactShadowSignature(ImpactView v, int signature) {
         boolean previousPulse = voxelPulseEnabled;
-        boolean previousFrozen = voxelFrozenDetail;
+        // Le gel des variations par position est pose pour toute la passe (voir
+        // onRenderLevelStage). Ne reste ici que la coupure franche du pouls : les dalles de
+        // l'ombre sont jointives et le moindre battement de taille y ouvrirait des fentes.
         voxelPulseEnabled = false;
-        // T378-NO-JITTER : les trois signatures d'ombre deplacent leur geometrie d'une image
-        // a l'autre (la main avance, le crane tourne, le dome se referme). Toute variation
-        // tiree de la position doit donc etre gelee, sans quoi chaque pixel tremble.
-        voxelFrozenDetail = true;
         try {
             // Comme la foudre : on vise depuis la cible vers l’attaquant, donc on inverse la
             // direction. Pour l’Allonge Spectrale ce n’est pas cosmetique — c’est elle qui
@@ -4234,7 +4262,6 @@ public final class WeaponWorldVfxManager {
                     probeGroundOffset(v.inst().x, v.inst().y, v.inst().z));
         } finally {
             voxelPulseEnabled = previousPulse;
-            voxelFrozenDetail = previousFrozen;
         }
     }
 
@@ -4659,7 +4686,7 @@ public final class WeaponWorldVfxManager {
 
         // T349-PIXEL-VARIATION : la taille respire doucement dans le temps…
         float scale = voxelSizeLocked ? 1.0f
-                : (voxelPulseEnabled ? framePixelScale * smoothPulse(cx, cy, cz) : 1.0f) * variantScale;
+                : (voxelPulseEnabled ? framePixelScale * pulseFactor(cx, cy, cz) : 1.0f) * variantScale;
         // …T367 : …et chaque cube a en plus sa PROPRE taille (aucun n'est identique à son voisin).
         int sizeSeed = (int) (cx * 911.0f + cy * 577.0f + cz * 331.0f);
         if (!voxelSizeLocked && !voxelFrozenDetail) scale *= 0.82f + 0.34f * pixelHash(0x51C3, sizeSeed);
@@ -4668,7 +4695,20 @@ public final class WeaponWorldVfxManager {
         hz *= scale;
 
         // T350-VFX-VARIATIONS : allègement contrôlé (les contours lumineux restent toujours dessinés)
-        if (!voxelFrozenDetail && pixelDensity < 0.999f && alpha < 200) {
+        // T378-NO-JITTER — L'EXCEPTION ASSUMEE. Ce tamis est lui aussi tire de la position,
+        // donc un cube qui se deplace peut passer d'une image et etre rejete a la suivante :
+        // les pixels secondaires scintillent. On ne le gele pourtant PAS, parce que le geler
+        // reviendrait a tout dessiner — les densites declarees par WeaponVfxVariant vont de
+        // 0,30 a 0,70, soit de 1,4 a 3,3 fois plus de cubes sur les pixels sombres, et le
+        // budget par image est deja la contrainte dimensionnante.
+        //
+        // Le rendre stable demanderait une identite PAR PIECE, que l'appelant seul possede :
+        // ni la position (elle bouge), ni la taille, ni la couleur (partagees par toute une
+        // serie de pieces) ne peuvent en tenir lieu, et un compteur d'emission glisserait des
+        // qu'une boucle saute une piece. C'est donc une signature d'emetteur a elargir, pas
+        // un drapeau a poser. En attendant, seuls les cubes d'alpha inferieur a 200 sont
+        // concernes, et les deux tremblements VISIBLES — la taille et le grain — sont gelés.
+        if (pixelDensity < 0.999f && alpha < 200) {
             float keep = pixelHash(0x5EED, (int) (cx * 977.0f + cy * 613.0f + cz * 389.0f));
             if (keep > pixelDensity) return;
         }
@@ -4758,14 +4798,27 @@ public final class WeaponWorldVfxManager {
         cubesSinceFlush++;
 
         float scale = voxelSizeLocked ? 1.0f
-                : (voxelPulseEnabled ? framePixelScale * smoothPulse(cx, cy, cz) : 1.0f) * variantScale;
+                : (voxelPulseEnabled ? framePixelScale * pulseFactor(cx, cy, cz) : 1.0f) * variantScale;
         int sizeSeed = (int) (cx * 911.0f + cy * 577.0f + cz * 331.0f);
         if (!voxelSizeLocked && !voxelFrozenDetail) scale *= 0.82f + 0.34f * pixelHash(0x51C3, sizeSeed);
         hx *= scale;
         hy *= scale;
         hz *= scale;
 
-        if (!voxelFrozenDetail && pixelDensity < 0.999f && alpha < 200) {
+        // T378-NO-JITTER — L'EXCEPTION ASSUMEE. Ce tamis est lui aussi tire de la position,
+        // donc un cube qui se deplace peut passer d'une image et etre rejete a la suivante :
+        // les pixels secondaires scintillent. On ne le gele pourtant PAS, parce que le geler
+        // reviendrait a tout dessiner — les densites declarees par WeaponVfxVariant vont de
+        // 0,30 a 0,70, soit de 1,4 a 3,3 fois plus de cubes sur les pixels sombres, et le
+        // budget par image est deja la contrainte dimensionnante.
+        //
+        // Le rendre stable demanderait une identite PAR PIECE, que l'appelant seul possede :
+        // ni la position (elle bouge), ni la taille, ni la couleur (partagees par toute une
+        // serie de pieces) ne peuvent en tenir lieu, et un compteur d'emission glisserait des
+        // qu'une boucle saute une piece. C'est donc une signature d'emetteur a elargir, pas
+        // un drapeau a poser. En attendant, seuls les cubes d'alpha inferieur a 200 sont
+        // concernes, et les deux tremblements VISIBLES — la taille et le grain — sont gelés.
+        if (pixelDensity < 0.999f && alpha < 200) {
             float keep = pixelHash(0x5EED, (int) (cx * 977.0f + cy * 613.0f + cz * 389.0f));
             if (keep > pixelDensity) return;
         }
@@ -5630,6 +5683,25 @@ public final class WeaponWorldVfxManager {
      * T349-PIXEL-VARIATION : pulsation lente et déterministe (0.72 .. 1.12) propre à chaque position.
      * Comme elle dérive du temps de frame, la variation est parfaitement lisse (aucun scintillement).
      */
+    /**
+     * T378-NO-JITTER : le pouls de taille, avec la phase gelee quand la geometrie bouge.
+     *
+     * <p>{@link #smoothPulse} tire sa phase de la POSITION du cube. Sur un decor immobile
+     * chaque cube respire a son propre rythme et l'ensemble grouille agreablement. Sur un
+     * cube qui se deplace, la phase change a chaque image : le sinus est echantillonne au
+     * hasard, et « respirer » devient « trembler ». C'est la deuxieme source du defaut,
+     * apres les trois hachages de {@code emitVoxelCube} — et la seule que onze renderers
+     * avaient deja contournee a la main en coupant {@code voxelPulseEnabled}.</p>
+     *
+     * <p>On echantillonne alors le pouls en un point FIXE au lieu de le supprimer : meme
+     * moyenne, meme amplitude, meme rythme, mais toutes les pieces respirent ensemble. La
+     * forme garde sa vie au lieu de se figer, et aucun pixel ne saute. Supprimer le terme
+     * aurait en prime grossi tous les cubes d'un quart, sa moyenne valant 0,74 et non 1.</p>
+     */
+    private static float pulseFactor(float x, float y, float z) {
+        return voxelFrozenDetail ? smoothPulse(0.0f, 0.0f, 0.0f) : smoothPulse(x, y, z);
+    }
+
     private static float smoothPulse(float x, float y, float z) {
         float h = x * 12.9898f + y * 78.233f + z * 37.719f;
         float n = h - (float) Math.floor(h * 0.15915494f) * 6.2831855f;

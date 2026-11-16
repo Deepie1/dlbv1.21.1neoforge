@@ -155,49 +155,60 @@ public final class CosmeticPixelAura {
 
         float time = WeaponWorldVfxManager.smoothTimeSeconds();
         WeaponWorldVfxManager.beginFrame(time);
-
-        WeaponWorldVfxManager.resetCubeBudget();
-        budget = MAX_CUBES_PER_FRAME;
-        VertexConsumer add = null;
-        VertexConsumer alpha = null;
-
-        // T360-HALO-CONTINU : le style partagé du moteur (seuil d'alpha du reflet d'arme, densité de
-        // pixels) pouvait rester « fermé » et culling l'intégralité de l'aura (alpha 150-250). On
-        // isole donc complètement la passe cosmétique : halo TOUJOURS dessiné, quoi qu'il arrive.
-        int previousAlphaFloor = WeaponWorldVfxManager.getAlphaFloor();
-        WeaponWorldVfxManager.beginCosmeticPass();
-
+        // T378-NO-JITTER : l'aura est accrochee a une entite et ses anneaux tournent, donc
+        // AUCUN de ses pixels n'occupe la meme position deux images de suite. Les variations
+        // qu'emitVoxelCube tire de la position changeaient donc a chaque image. Le defaut
+        // etait deja a moitie connu ici : T351-SMOOTH-GLINT a supprime l'alternance de
+        // couleur « quand l'anneau tourne », sans voir que la taille et le grain
+        // tremblaient pour exactement la meme raison.
+        boolean previousFrozen = WeaponWorldVfxManager.beginFrozenDetail();
         try {
-            for (int i = 0, n = TARGETS.size(); i < n && budget > 0; i++) {
-                Player p = TARGETS.get(i);
-                if (!p.isAlive() || p.isInvisible()) continue;
-                if (p.distanceToSqr(cam.x, cam.y, cam.z) > MAX_DIST_SQR) continue;
 
-                int flags = CosmeticAuraClientTicker.getCosmeticFlags(p, level.getGameTime());
-                if (flags == 0) continue;
+            WeaponWorldVfxManager.resetCubeBudget();
+            budget = MAX_CUBES_PER_FRAME;
+            VertexConsumer add = null;
+            VertexConsumer alpha = null;
 
-                if (add == null) add = buffers.getBuffer(getAdditiveType());
-                if (alpha == null) alpha = buffers.getBuffer(getTranslucentType());
+            // T360-HALO-CONTINU : le style partagé du moteur (seuil d'alpha du reflet d'arme, densité de
+            // pixels) pouvait rester « fermé » et culling l'intégralité de l'aura (alpha 150-250). On
+            // isole donc complètement la passe cosmétique : halo TOUJOURS dessiné, quoi qu'il arrive.
+            int previousAlphaFloor = WeaponWorldVfxManager.getAlphaFloor();
+            WeaponWorldVfxManager.beginCosmeticPass();
 
-                // T360-HALO-CONTINU : une erreur sur un joueur ne doit plus vider l'écran de TOUS
-                // les autres halos (l'ancien catch englobant rendait le halo « invisible à vie »).
+            try {
+                for (int i = 0, n = TARGETS.size(); i < n && budget > 0; i++) {
+                    Player p = TARGETS.get(i);
+                    if (!p.isAlive() || p.isInvisible()) continue;
+                    if (p.distanceToSqr(cam.x, cam.y, cam.z) > MAX_DIST_SQR) continue;
+
+                    int flags = CosmeticAuraClientTicker.getCosmeticFlags(p, level.getGameTime());
+                    if (flags == 0) continue;
+
+                    if (add == null) add = buffers.getBuffer(getAdditiveType());
+                    if (alpha == null) alpha = buffers.getBuffer(getTranslucentType());
+
+                    // T360-HALO-CONTINU : une erreur sur un joueur ne doit plus vider l'écran de TOUS
+                    // les autres halos (l'ancien catch englobant rendait le halo « invisible à vie »).
+                    try {
+                        renderPlayerAura(p, flags, cam, mat, tmp, add, alpha, time);
+                    } catch (RuntimeException ignored) {
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // Jamais de crash pour du cosmétique
+            } finally {
+                WeaponWorldVfxManager.setAlphaFloor(previousAlphaFloor);
                 try {
-                    renderPlayerAura(p, flags, cam, mat, tmp, add, alpha, time);
+                    buffers.endBatch(getTranslucentType());
+                } catch (RuntimeException ignored) {
+                }
+                try {
+                    buffers.endBatch(getAdditiveType());
                 } catch (RuntimeException ignored) {
                 }
             }
-        } catch (RuntimeException ignored) {
-            // Jamais de crash pour du cosmétique
         } finally {
-            WeaponWorldVfxManager.setAlphaFloor(previousAlphaFloor);
-            try {
-                buffers.endBatch(getTranslucentType());
-            } catch (RuntimeException ignored) {
-            }
-            try {
-                buffers.endBatch(getAdditiveType());
-            } catch (RuntimeException ignored) {
-            }
+            WeaponWorldVfxManager.endFrozenDetail(previousFrozen);
         }
     }
 
