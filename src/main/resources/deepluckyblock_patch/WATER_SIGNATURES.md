@@ -2244,3 +2244,50 @@ Le seuil ne peut pas confondre les deux : la grande animation de combat vaut tou
 
 **La page d'aperçu garde l'anneau**, et c'est normal : elle n'a pas de mobs. Le miroir JS n'est
 donc pas touché par ce lot.
+
+## 35. Le recul du porteur ne partait pas — un joueur n'est pas un mob
+
+Le lot v10 posait bien `setDeltaMovement` sur le porteur du marteau, et ce code était
+bien dans le jeu compilé. En combat réel, rien : le joueur restait sous la masse.
+
+**La cause.** Pour un mob, le serveur fait autorité sur le déplacement : on change sa
+vitesse, il bouge, et le changement part vers les clients avec le reste de son état. Pour
+un **joueur**, c'est l'inverse : c'est son propre client qui simule son déplacement et qui
+envoie sa position au serveur. Une vitesse posée côté serveur n'est qu'un avis, et elle est
+écrasée au paquet de position suivant.
+
+Le drapeau prévu pour cela, `hurtMarked`, ne suffit pas ici. Il demande l'envoi d'un paquet
+de vélocité en **fin de tick**, construit à partir de la vitesse telle qu'elle est à ce
+moment-là. Or notre poussée part depuis l'intérieur de l'événement de dégâts, donc très tôt
+dans le tick, et plusieurs choses passent derrière : la fin de `Player.attack`, qui multiplie
+la vitesse horizontale de l'attaquant par 0,6 en course, puis la physique, qui rabote la
+composante verticale contre le sol. Le paquet finit par partir, mais avec un vecteur mort.
+
+**Le correctif.** On fabrique le paquet nous-même, avec le vecteur voulu, et on le remet
+directement à la connexion du joueur, dans la foulée du `setDeltaMovement` :
+
+```java
+final Vec3 launch = new Vec3(dx * vh, vy, dz * vh);
+rider.setDeltaMovement(launch);
+rider.hasImpulse = true;
+rider.fallDistance = 0.0F;
+if (rider instanceof ServerPlayer pushed) {
+    pushed.connection.send(new ClientboundSetEntityMotionPacket(pushed));
+}
+```
+
+`hurtMarked` n'est volontairement **pas** levé : il provoquerait un second paquet en fin de
+tick, construit sur la vitesse entre-temps rabotée, qui annulerait le premier. C'est la même
+manœuvre que celle employée par les mods qui déplacent un joueur hors du flux d'attaque
+vanilla, et c'est ce que fait la masse de 1.21 pour son propre rebond.
+
+**Le filet.** Huit ticks après la poussée, une tâche différée vérifie que le joueur a bien
+décollé — déplacement mesuré depuis **sa** position de départ, et non depuis le point de
+chute, dont la distance dépend de l'allonge de l'arme et ne dit rien de fiable. S'il a
+parcouru moins de deux blocs, le vecteur a été mangé en route et on le renvoie. Une seule
+fois : rattraper un échec, pas catapulter deux fois, et ne pas reprendre la main sur un
+joueur qui s'est déjà écarté tout seul.
+
+**La leçon générale.** Chaque fois que ce dépôt déplace un joueur en dehors d'un dégât
+vanilla — recul, aspiration, projection d'une zone — il faut le paquet explicite. Déplacer un
+mob et déplacer un joueur ne sont pas la même opération, même si l'appel Java est identique.

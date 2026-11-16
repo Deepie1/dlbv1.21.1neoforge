@@ -3488,9 +3488,30 @@ public final class WeaponVfxServerListener {
         double vh = distance * 0.09 / reach;
         vh = Math.max(0.18, Math.min(1.35, vh));
 
-        rider.setDeltaMovement(dx * vh, vy, dz * vh);
-        rider.hurtMarked = true;
+        // ---- ET MAINTENANT, LE FAIRE SAVOIR AU CLIENT ----
+        // Premier essai : setDeltaMovement + hurtMarked, comme partout ailleurs dans ce
+        // fichier. Aucun effet, et pour une raison qui n'a rien d'évident. Pour un MOB le
+        // serveur fait autorité : on change sa vitesse, il bouge. Pour un JOUEUR c'est le
+        // client qui simule son propre déplacement ; la vitesse posée côté serveur n'est
+        // qu'un avis, et elle est écrasée dès le paquet de position suivant. Pire, le coup
+        // part depuis l'intérieur de l'événement de dégâts, donc AVANT que le serveur ne
+        // traite le reste du tick : quand le paquet de vélocité différé finit par être
+        // construit, la composante verticale a déjà été remise à zéro par la collision avec
+        // le sol, et le joueur reçoit un vecteur mort.
+        //
+        // La seule méthode fiable est de fabriquer le paquet nous-mêmes, avec le vecteur
+        // voulu, et de le remettre directement à la connexion du joueur. On ne lève
+        // volontairement PAS hurtMarked : il provoquerait l'envoi d'un second paquet en fin
+        // de tick, construit à partir de la vitesse serveur entre-temps rabotée, qui
+        // annulerait celui-ci.
+        final Vec3 launch = new Vec3(dx * vh, vy, dz * vh);
+        rider.setDeltaMovement(launch);
+        rider.hasImpulse = true;
         rider.fallDistance = 0.0F;
+        if (rider instanceof ServerPlayer pushed) {
+            pushed.connection.send(
+                    new net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket(pushed));
+        }
         sl.playSound(null, rider.getX(), rider.getY() + 0.5, rider.getZ(),
                 SoundEvents.WIND_CHARGE_THROW, SoundSource.PLAYERS, 0.70f, 1.25f);
         PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
@@ -3505,6 +3526,27 @@ public final class WeaponVfxServerListener {
                 if (rider.isAlive()) rider.fallDistance = 0.0F;
             });
         }
+
+        // Filet de sécurité. On mesure le déplacement depuis SA position de départ à lui, et
+        // non depuis le point de chute : la distance au point de chute dépend de l'allonge de
+        // l'arme et ne dit rien de fiable. Huit ticks après une poussée réussie il a parcouru
+        // plus de quatre blocs ; s'il en est encore à moins de deux, le vecteur a été mangé
+        // en route et on le renvoie. Une seule fois, et seulement s'il est toujours au-dessus
+        // du cratère : l'objectif est de rattraper un échec, pas de catapulter deux fois ni de
+        // reprendre la main sur un joueur qui s'est déjà écarté tout seul.
+        final double homeX = rider.getX();
+        final double homeZ = rider.getZ();
+        TestProcedure.schedule(sl, start + 8, () -> {
+            if (!(rider instanceof ServerPlayer again) || !again.isAlive()) return;
+            double movedX = again.getX() - homeX;
+            double movedZ = again.getZ() - homeZ;
+            if (movedX * movedX + movedZ * movedZ >= 4.0) return;
+            again.setDeltaMovement(launch);
+            again.hasImpulse = true;
+            again.fallDistance = 0.0F;
+            again.connection.send(
+                    new net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket(again));
+        });
     }
 
     // --------------------------------------------------------------------------------------------

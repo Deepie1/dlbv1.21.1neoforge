@@ -6,7 +6,54 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 > **Si le navigateur sert une vieille version** (le CDN de GitHub garde les fichiers bruts en cache quelques minutes), remplacer `refs/heads/arena/605e67fb-dlbv1-21-1neoforge` par le SHA du commit — par exemple `raw/fa83a2f/…` pour la v1.3 — ou ajouter `?v=2` à la fin de l'adresse.
 
-## Foudre v10 — 4 novembre 2026 ⟵ **LOT COURANT**
+## Foudre v11 — 4 novembre 2026 ⟵ **LOT COURANT**
+
+> **Un seul correctif, mais il débloque la fonction entière : le recul du porteur part enfin.**
+>
+> « Je ne vois pas mon recul avant l'animation marteau — je suis donc encore dedans. » Le code
+> de la v10 était pourtant bien dans le jeu compilé, et le calcul balistique était juste. Ce
+> qui manquait n'était pas le mouvement : c'était **de le dire au client**.
+>
+> Pour un **mob**, le serveur fait autorité : on change sa vitesse, il bouge. Pour un **joueur**,
+> c'est son propre client qui simule son déplacement ; une vitesse posée côté serveur n'est
+> qu'un avis, écrasé au paquet de position suivant. Le drapeau prévu pour cela, `hurtMarked`,
+> ne suffisait pas ici : il demande l'envoi d'un paquet de vélocité en **fin de tick**, construit
+> à partir de la vitesse telle qu'elle est à ce moment-là. Or la poussée part depuis l'intérieur
+> de l'événement de dégâts, très tôt dans le tick, et deux choses passent derrière : la fin de
+> `Player.attack`, qui multiplie la vitesse horizontale de l'attaquant par 0,6 en course, puis la
+> physique, qui rabote la composante verticale contre le sol. Le paquet partait bien — avec un
+> vecteur mort.
+>
+> Le marteau construit maintenant le paquet lui-même et le remet **directement à la connexion du
+> joueur**, dans la foulée du `setDeltaMovement`. `hurtMarked` n'est volontairement plus levé :
+> il provoquerait un second paquet en fin de tick, bâti sur la vitesse entre-temps rabotée, qui
+> annulerait le premier.
+>
+> **Et un filet.** Huit ticks après la poussée, une tâche différée vérifie que le joueur a bien
+> décollé — déplacement mesuré depuis **sa** position de départ, et non depuis le point de chute,
+> dont la distance dépend de l'allonge de l'arme et ne dit rien de fiable. Moins de deux blocs
+> parcourus : le vecteur a été mangé en route, on le renvoie. Une seule fois.
+>
+> Le reste de la v10 est inchangé : balistique `v = √(2gh)`, sonde de relief à douze pas, zéro
+> dégât de chute, chaîne d'éclairs bond par bond sur de vrais corps.
+>
+> La démarche complète est écrite au **§35** de `WATER_SIGNATURES.md`.
+
+| Fichier | Lien |
+|---|---|
+| **⬇ APERÇU ANIMÉ FOUDRE** (HTML autonome — le ZIP est *dedans*) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Thunder_Three_Signatures_preview.html |
+| **⬇ Sources complètes** (ZIP, 42 entrées, 690 806 o) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Thunder_Three_Signatures_src.zip |
+| `WeaponVfxServerListener.java` — **le correctif du recul** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java |
+| `WATER_SIGNATURES.md` — **§35, pourquoi un joueur n'est pas un mob** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/WATER_SIGNATURES.md |
+
+**SHA-256 du ZIP** : `43cc4e9ceb2daadab72f96ce040d02d5a07e36b3d6d1713de160669e51d414ac`
+
+**Un seul fichier change par rapport à la v10** : `WeaponVfxServerListener.java` (plus la doc).
+Si vous avez déjà posé la v10, il suffit de remplacer ce fichier-là.
+
+---
+
+## Foudre v10 — 4 novembre 2026
 
 > **Deux retours de jeu, corrigés.**
 >
