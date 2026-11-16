@@ -332,6 +332,46 @@ public final class WeaponVfxServerListener {
     }
 
     /**
+     * Base de dégâts d'une signature : <b>exactement celle du coup qui l'a lancée,
+     * enchantements compris</b>.
+     *
+     * <p><b>Le défaut corrigé ici.</b> Toutes les familles calculaient leur base avec
+     * {@link #estimatedWeaponDamage}, c'est-à-dire l'attribut {@code ATTACK_DAMAGE} seul.
+     * Cet attribut contient bien l'arme tenue et la Force, mais <b>pas</b> les enchantements
+     * de dégâts : depuis la 1.21 Tranchant, Châtiment et Fléau des arthropodes ne sont plus
+     * des modificateurs d'attribut, ils sont appliqués au moment du coup par
+     * {@code EnchantmentHelper.modifyDamage}. Une épée en diamant Tranchant V lançait donc
+     * des signatures calibrées sur 8 dégâts alors que son coup normal en fait 11 : les
+     * animations étaient systématiquement plus faibles que l'arme qui les déclenche, et
+     * enchanter son arme n'avait aucun effet sur elles.</p>
+     *
+     * <p><b>Pourquoi la cible compte.</b> Châtiment et Fléau ne donnent leur bonus que contre
+     * certaines familles de mobs : la base est donc calculée <i>contre le corps qui a reçu le
+     * coup</i>, celui qui a déclenché la signature. Les victimes secondaires d'un effet de
+     * zone héritent de cette base. C'est volontaire et c'est le comportement le plus lisible :
+     * la signature est la conséquence d'<i>un</i> coup porté sur <i>un</i> corps, et son
+     * ampleur est fixée à cet instant — pas recalculée mob par mob trois secondes plus tard,
+     * alors que le joueur a peut-être déjà rangé son épée.</p>
+     *
+     * <p>L'arme lue est celle tenue à l'instant du déclenchement, et la valeur obtenue est
+     * transportée dans les tâches programmées : changer d'arme pendant l'animation ne change
+     * plus rien, dans un sens comme dans l'autre.</p>
+     */
+    private static float signatureBaseDamage(LivingEntity attacker, LivingEntity target) {
+        float base = estimatedWeaponDamage(attacker);
+        if (attacker == null || target == null) return base;
+        if (!(attacker.level() instanceof ServerLevel sl)) return base;
+        ItemStack weapon = attacker.getMainHandItem();
+        if (weapon.isEmpty()) return base;
+        DamageSource source = attacker instanceof Player player
+                ? target.damageSources().playerAttack(player)
+                : target.damageSources().mobAttack(attacker);
+        float enchanted = net.minecraft.world.item.enchantment.EnchantmentHelper
+                .modifyDamage(sl, weapon, target, source, base);
+        return Math.max(0.0f, Float.isFinite(enchanted) ? enchanted : base);
+    }
+
+    /**
      * Dégât normal Minecraft : armure, résistance, enchantements de protection et attributs de
      * défense restent appliqués. Seules les i-frames sont réarmées pour permettre le rythme demandé
      * de 6/7 ticks. Le marqueur évite toute récursion dans le pipeline VFX de l'attaquant.
@@ -448,7 +488,7 @@ public final class WeaponVfxServerListener {
         if (livingTarget != null) {
             tryElementCombo(sl, attacker.getId(), attacker.getMainHandItem(), cx, cy, cz,
                     (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ(),
-                    sizeScaleOf(target), livingTarget, estimatedWeaponDamage(attacker));
+                    sizeScaleOf(target), livingTarget, signatureBaseDamage(attacker, livingTarget));
         }
 
         // Grosse animation jouée -> le dégât de ce coup sera amplifié de 5 % (voir onLivingHurtVisuals).
@@ -468,14 +508,16 @@ public final class WeaponVfxServerListener {
                 paletteOf(attacker.getMainHandItem(), fx), lightVisualScaleOf(fx, target, sizeScaleOf(target)));
         if (livingTarget != null) {
             applyFireGameplay(attacker, livingTarget, fx, sizeScaleOf(target));
-            applyWoodGameplay(attacker, livingTarget, fx, sizeScaleOf(target), estimatedWeaponDamage(attacker));
-            applyEarthGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker));
-            applyMetalGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker));
-            applyLightGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker), sizeScaleOf(target));
+            applyWoodGameplay(attacker, livingTarget, fx, sizeScaleOf(target),
+                    signatureBaseDamage(attacker, livingTarget));
+            applyEarthGameplay(attacker, livingTarget, fx, signatureBaseDamage(attacker, livingTarget));
+            applyMetalGameplay(attacker, livingTarget, fx, signatureBaseDamage(attacker, livingTarget));
+            applyLightGameplay(attacker, livingTarget, fx,
+                    signatureBaseDamage(attacker, livingTarget), sizeScaleOf(target));
             applyPoisonGameplay(attacker, livingTarget, fx);
-            applyWaterGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker));
-            applyThunderGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker));
-            applyShadowGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker));
+            applyWaterGameplay(attacker, livingTarget, fx, signatureBaseDamage(attacker, livingTarget));
+            applyThunderGameplay(attacker, livingTarget, fx, signatureBaseDamage(attacker, livingTarget));
+            applyShadowGameplay(attacker, livingTarget, fx, signatureBaseDamage(attacker, livingTarget));
         }
     }
 
@@ -587,7 +629,7 @@ public final class WeaponVfxServerListener {
                                            float ax, float ay, float az, LivingEntity target) {
         LivingEntity attacker = sl.getEntity(attackerId) instanceof LivingEntity living ? living : null;
         return tryElementCombo(sl, attackerId, weapon, tx, ty, tz, ax, ay, az, 1.0f, target,
-                estimatedWeaponDamage(attacker));
+                signatureBaseDamage(attacker, target));
     }
 
     /** T359-BIG-ANIM-SCALE : variante qui applique l'échelle de la cible à chacune des signatures. */
@@ -672,7 +714,7 @@ public final class WeaponVfxServerListener {
     /** Direction, contacts hostiles et combustion finale des trois signatures Fire. */
     private static void applyFireGameplay(LivingEntity attacker, LivingEntity target,
                                           WeaponVisualEffectId fx, float visualScale) {
-        applyFireGameplay(attacker, target, fx, visualScale, estimatedWeaponDamage(attacker));
+        applyFireGameplay(attacker, target, fx, visualScale, signatureBaseDamage(attacker, target));
     }
 
     private static void applyFireGameplay(LivingEntity attacker, LivingEntity target,
@@ -958,7 +1000,7 @@ public final class WeaponVfxServerListener {
         LivingEntity bearer = target;
         LivingEntity caster = attacker;
         int casterId = attacker == null ? -1 : attacker.getId();
-        float plaguePulseDamage = Math.max(0.25f, estimatedWeaponDamage(attacker) * 0.16f);
+        float plaguePulseDamage = Math.max(0.25f, signatureBaseDamage(attacker, target) * 0.16f);
 
         if (fx == WeaponVisualEffectId.VENOM_BRIAR_FANG) {
             double x = target.getX(), y = target.getY() + target.getBbHeight() * 0.50, z = target.getZ();
@@ -989,7 +1031,7 @@ public final class WeaponVfxServerListener {
         if (fx == WeaponVisualEffectId.MIASMA_SHROUD) {
             int chainId = NEXT_MIASMA_CHAIN_ID++;
             if (NEXT_MIASMA_CHAIN_ID <= 0 || NEXT_MIASMA_CHAIN_ID > 1_000_000) NEXT_MIASMA_CHAIN_ID = 1;
-            float pulseDamage = Math.max(0.25f, estimatedWeaponDamage(attacker) * 0.12f);
+            float pulseDamage = Math.max(0.25f, signatureBaseDamage(attacker, target) * 0.12f);
             MiasmaChain chain = new MiasmaChain(chainId, casterId, now, pulseDamage);
             chain.visited.add(target.getId());
             sl.playSound(null, target.getX(), target.getY() + target.getBbHeight() * 0.50, target.getZ(),
@@ -3366,6 +3408,112 @@ public final class WeaponVfxServerListener {
         }
     }
 
+    // ============================================================================================
+    //  Conception sonore de l'ombre — même procédé que la foudre (T376)
+    // ============================================================================================
+    //
+    //  La foudre a établi quatre pièces, et elles valent pour toute signature longue :
+    //    1. un FONDU D'ENTRÉE qui prévient avant que l'image existe ({@code chargeSwell}) ;
+    //    2. des ACCENTS D'ÉTAPE posés exactement sur les jalons de l'animation cliente ;
+    //    3. une DISPERSION aléatoire qui donne une largeur à la zone ({@code staticCrackle}) ;
+    //    4. un FONDU DE SORTIE décalé dans l'espace ({@code rollingThunder}) — sans lui, un
+    //       événement de dix secondes s'arrête net, ce qu'aucun événement ne fait.
+    //
+    //  Ce qui change pour l'ombre, et c'est délibéré : la foudre monte en hauteur tonale
+    //  (l'air se charge, ça se tend vers l'aigu), l'ombre DESCEND (quelque chose s'enfonce et
+    //  s'approche par en dessous). Même courbe, sens inverse.
+    //
+    //  Tous les sons ci-dessous ont été vérifiés contre le registre {@code sound_event} de la
+    //  1.21.1 : ceux déclarés par {@code registerForHolder} exigent {@code .value()}, les
+    //  autres non. C'est la seule source d'erreur de compilation de ce bloc.
+
+    /**
+     * Fondu d'entrée : l'ombre se charge. Volume croissant, intervalle décroissant — la même
+     * courbe {@code i²·1,15 + i·2,2} que la foudre — mais la hauteur tonale <b>descend</b>.
+     */
+    private static void shadowSwell(ServerLevel sl, int now, double x, double y, double z,
+                                    int steps, float volume) {
+        for (int i = 0; i < steps; i++) {
+            final float v = volume * (0.26f + 0.74f * i / Math.max(1, steps - 1));
+            final float pitch = 0.98f - 0.085f * i;
+            final int when = now + (int) Math.round(i * i * 1.15 + i * 2.2);
+            TestProcedure.schedule(sl, when, () -> {
+                sl.playSound(null, x, y, z, SoundEvents.SCULK_CLICKING,
+                        SoundSource.PLAYERS, v * 0.78f, pitch + 0.42f);
+                sl.playSound(null, x, y, z, SoundEvents.SCULK_BLOCK_CHARGE,
+                        SoundSource.PLAYERS, v * 0.62f, pitch);
+            });
+        }
+    }
+
+    /**
+     * Chuchotements courts tirés au hasard autour d'un point : l'équivalent exact du
+     * crépitement statique de la foudre. C'est ce qui donne une <b>largeur</b> à l'effet —
+     * un son unique au centre reste un point, quelle que soit la taille de l'image.
+     */
+    private static void shadowWhispers(ServerLevel sl, double x, double y, double z,
+                                       double spread, int count, float volume) {
+        for (int i = 0; i < count; i++) {
+            double ox = x + (sl.random.nextDouble() - 0.5) * spread * 2.0;
+            double oz = z + (sl.random.nextDouble() - 0.5) * spread * 2.0;
+            sl.playSound(null, ox, y, oz, SoundEvents.SOUL_ESCAPE.value(),
+                    SoundSource.PLAYERS, volume, 0.52f + sl.random.nextFloat() * 0.46f);
+        }
+    }
+
+    /**
+     * Fondu de sortie : l'ombre se retire. Quatre répliques de plus en plus faibles, graves et
+     * espacées, <b>décalées autour du point d'impact</b> pour qu'elles ne sortent pas toutes du
+     * même haut-parleur — c'est ce décalage spatial, et non le volume, qui fait entendre que
+     * la chose s'éloigne.
+     */
+    private static void fadingUmbra(ServerLevel sl, int now, double x, double y, double z,
+                                    float volume) {
+        final int[] WHEN = {9, 23, 42, 67};
+        final float[] GAIN = {0.74f, 0.49f, 0.30f, 0.16f};
+        for (int i = 0; i < WHEN.length; i++) {
+            final float v = volume * GAIN[i];
+            final float pitch = 0.84f - 0.075f * i;
+            final double ox = x + (i % 2 == 0 ? 6.0 : -5.0) * (i + 1) * 0.5;
+            final double oz = z + (i % 2 == 0 ? -4.0 : 7.0) * (i + 1) * 0.5;
+            final boolean thick = v > 0.20f;
+            TestProcedure.schedule(sl, now + WHEN[i], () -> {
+                sl.playSound(null, ox, y + 2.2, oz,
+                        SoundEvents.AMBIENT_SOUL_SAND_VALLEY_ADDITIONS.value(),
+                        SoundSource.PLAYERS, v, pitch);
+                if (thick) {
+                    sl.playSound(null, ox, y + 0.8, oz, SoundEvents.SCULK_BLOCK_SPREAD,
+                            SoundSource.PLAYERS, v * 0.70f, pitch * 0.88f);
+                }
+            });
+        }
+    }
+
+    /**
+     * La nappe d'ambiance pendant la durée. Une signature de dix secondes qui ne produit du son
+     * qu'à ses jalons laisse des trous de trois à quatre secondes : l'effet paraît fini avant
+     * de l'être. Trois timbres alternent pour qu'aucun ne devienne une boucle reconnaissable.
+     */
+    private static void umbralAmbience(ServerLevel sl, int now, double x, double y, double z,
+                                       int from, int to, int period, float volume) {
+        int k = 0;
+        for (int t = from; t <= to; t += Math.max(1, period), k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + t, () -> {
+                switch (step % 3) {
+                    case 0 -> sl.playSound(null, x, y + 1.6, z,
+                            SoundEvents.AMBIENT_SOUL_SAND_VALLEY_LOOP.value(),
+                            SoundSource.PLAYERS, volume, 0.62f);
+                    case 1 -> sl.playSound(null, x, y + 0.9, z, SoundEvents.WARDEN_TENDRIL_CLICKS,
+                            SoundSource.PLAYERS, volume * 0.70f, 0.58f);
+                    default -> sl.playSound(null, x, y + 2.4, z,
+                            SoundEvents.AMBIENT_SOUL_SAND_VALLEY_ADDITIONS.value(),
+                            SoundSource.PLAYERS, volume * 0.85f, 0.70f);
+                }
+            });
+        }
+    }
+
     /**
      * ALLONGE SPECTRALE (118 ticks) — la signature <b>de ligne</b> de la famille.
      *
@@ -3430,6 +3578,10 @@ public final class WeaponVfxServerListener {
         sl.playSound(null, ox, oy, oz, SoundEvents.ENDERMAN_STARE, SoundSource.PLAYERS, 0.55f, 0.72f);
         sl.playSound(null, ox, oy - 0.8, oz, SoundEvents.CHORUS_FRUIT_TELEPORT, SoundSource.PLAYERS,
                 0.60f, 0.52f);
+        // Le fondu d'entrée est placé à MI-COULOIR et non sur la cible : la coulée vient
+        // du porteur, et c'est de ce côté que le joueur doit tourner la tête.
+        shadowSwell(sl, now, ox + dirX * (REACH_LENGTH * 0.45), oy - 0.7,
+                oz + dirZ * (REACH_LENGTH * 0.45), 5, 0.72f);
         for (int k = 0; k < 5; k++) {
             final int step = k;
             TestProcedure.schedule(sl, now + 3 + step * 3, () -> {
@@ -3438,7 +3590,57 @@ public final class WeaponVfxServerListener {
                         ox + dirX * d, oy - 1.05, oz + dirZ * d, 12, 0.45, 0.06, 0.45, 0.004);
                 PixelFx.send(sl, ParticleTypes.SCULK_SOUL,
                         ox + dirX * d, oy - 0.95, oz + dirZ * d, 4, 0.30, 0.10, 0.30, 0.006);
+                // LA COULÉE S'ENTEND AVANCER : chaque palier sonne à sa propre distance le
+                // long du couloir, hauteur tonale descendante. Un son unique au point
+                // d'impact aurait décrit un éclat, pas un déplacement.
+                sl.playSound(null, ox + dirX * d, oy - 0.95, oz + dirZ * d,
+                        SoundEvents.SOUL_SAND_STEP, SoundSource.PLAYERS,
+                        0.62f, 0.78f - step * 0.055f);
             });
+        }
+
+        // --- L'ÉCHINE (ticks 15 → 32) : onze vertèbres se soulèvent en vague qui s'éloigne.
+        //     Quatre accents suffisent à la décrire — un par vertèbre serait un crépitement
+        //     de machine à écrire. La hauteur MONTE ici, contrairement au reste de la
+        //     famille : quelque chose se redresse, et le sens tonal doit suivre le geste.
+        for (int k = 0; k < 4; k++) {
+            final int step = k;
+            final double d = 1.4 + step * 1.9;
+            TestProcedure.schedule(sl, now + 15 + step * 5, () -> {
+                sl.playSound(null, ox + dirX * d, oy - 0.5, oz + dirZ * d,
+                        SoundEvents.DEEPSLATE_PLACE, SoundSource.PLAYERS,
+                        0.55f, 0.52f + step * 0.07f);
+                sl.playSound(null, ox + dirX * d, oy - 0.3, oz + dirZ * d,
+                        SoundEvents.BONE_BLOCK_PLACE, SoundSource.PLAYERS,
+                        0.40f, 0.62f + step * 0.06f);
+            });
+        }
+
+        // --- LE DÉCOLLEMENT (tick 32) : la main pivote autour du poignet et sort du sol.
+        //     C'est le seul moment de la signature où un objet franchit la surface, et
+        //     warden.dig est exactement ce bruit-là.
+        TestProcedure.schedule(sl, now + 32, () -> {
+            double hx = ox + dirX * (REACH_LENGTH * 0.06);
+            double hz = oz + dirZ * (REACH_LENGTH * 0.06);
+            sl.playSound(null, hx, oy - 0.6, hz, SoundEvents.WARDEN_DIG,
+                    SoundSource.PLAYERS, 0.85f, 0.62f);
+            sl.playSound(null, hx, oy - 0.4, hz, SoundEvents.SOUL_SOIL_BREAK,
+                    SoundSource.PLAYERS, 0.70f, 0.55f);
+            shadowWhispers(sl, hx, oy - 0.2, hz, 1.6, 3, 0.45f);
+        });
+        TestProcedure.schedule(sl, now + 42, () -> sl.playSound(null,
+                ox + dirX * (REACH_LENGTH * 0.06), oy, oz + dirZ * (REACH_LENGTH * 0.06),
+                SoundEvents.SOUL_SAND_BREAK, SoundSource.PLAYERS, 0.58f, 0.48f));
+
+        // --- LA POIGNE (ticks 53 → 68) : les phalanges se replient une à une. Trois clics
+        //     secs et courts, de plus en plus aigus et de plus en plus rapprochés — la
+        //     même compression d'intervalle que le fondu d'entrée, en miniature.
+        for (int k = 0; k < 3; k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + 53 + step * 5 - step, () -> sl.playSound(null,
+                    ox + dirX * (REACH_LENGTH * 0.06), oy + 0.2, oz + dirZ * (REACH_LENGTH * 0.06),
+                    SoundEvents.SCULK_CLICKING, SoundSource.PLAYERS,
+                    0.52f + step * 0.08f, 0.86f + step * 0.16f));
         }
 
         // --- Les lames du couloir (ticks 70 à 97) ---
@@ -3499,6 +3701,8 @@ public final class WeaponVfxServerListener {
         TestProcedure.schedule(sl, now + 66, () -> {
             double hx = ox + dirX * graspHandDistance(0.0);
             double hz = oz + dirZ * graspHandDistance(0.0);
+            sl.playSound(null, hx, oy, hz, SoundEvents.WARDEN_ATTACK_IMPACT,
+                    SoundSource.PLAYERS, 0.78f, 0.56f);
             sl.playSound(null, hx, oy, hz, SoundEvents.CHEST_LOCKED, SoundSource.PLAYERS, 0.80f, 0.58f);
             PixelFx.send(sl, ParticleTypes.SQUID_INK, hx, oy, hz, 45, 0.85, 0.70, 0.85, 0.05);
             // La paume fait deux blocs et demi à l'échelle 2,45 : tout ce qui tient dedans
@@ -3672,9 +3876,39 @@ public final class WeaponVfxServerListener {
         }
 
         // --- L'ouverture ---
+        // --- LA FÊLURE (ticks 0 → 11). Un trait d'un dixième de bloc qui clignote : il
+        //     faut un son SEC, pas une nappe. La pierre qui cède, puis le fondu d'entrée
+        //     par-dessus — le fondu court jusqu'au tick 11 et s'achève donc exactement
+        //     quand l'amande commence à s'écarter.
+        sl.playSound(null, ox, oy, oz, SoundEvents.DEEPSLATE_BREAK, SoundSource.PLAYERS,
+                0.75f, 0.42f);
+        shadowSwell(sl, now, ox, oy + 0.6, oz, 4, 0.68f);
+
+        // --- L'OUVERTURE (tick 11). Une fente qui s'écarte, pas une explosion : le
+        //     volet du coffre-fort vaut mieux que n'importe quel son de portail.
+        TestProcedure.schedule(sl, now + 11, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.VAULT_OPEN_SHUTTER,
+                    SoundSource.PLAYERS, 0.90f, 0.48f);
+            shadowWhispers(sl, ox, oy + 0.4, oz, 1.4, 4, 0.50f);
+        });
+        TestProcedure.schedule(sl, now + 22, () -> sl.playSound(null, ox, oy + 0.8, oz,
+                SoundEvents.SCULK_CATALYST_BLOOM, SoundSource.PLAYERS, 0.68f, 0.52f));
+
         sl.playSound(null, ox, oy, oz, SoundEvents.WARDEN_SONIC_CHARGE, SoundSource.PLAYERS, 0.60f, 1.30f);
         TestProcedure.schedule(sl, now + 12, () ->
                 sl.playSound(null, ox, oy, oz, SoundEvents.PORTAL_TRIGGER, SoundSource.PLAYERS, 0.50f, 0.55f));
+        // --- LE CRÂNE S'ASSEMBLE (ticks 40 → 56). Deux cents pièces d'os sortent de la
+        //     faille en trente ticks ; trois accents d'os de plus en plus GRAVES disent
+        //     que la chose grossit. Montants, ils auraient dit qu'elle rétrécit.
+        for (int k = 0; k < 3; k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + 40 + step * 8, () -> {
+                sl.playSound(null, ox, oy + 0.9 + step * 0.25, oz, SoundEvents.BONE_BLOCK_PLACE,
+                        SoundSource.PLAYERS, 0.62f, 0.74f - step * 0.11f);
+                sl.playSound(null, ox, oy + 0.7, oz, SoundEvents.WITHER_SKELETON_STEP,
+                        SoundSource.PLAYERS, 0.42f, 0.55f - step * 0.06f);
+            });
+        }
         TestProcedure.schedule(sl, now + 32, () -> {
             sl.playSound(null, ox, oy, oz, SoundEvents.WITHER_SPAWN, SoundSource.PLAYERS, 0.42f, 1.55f);
             PixelFx.send(sl, ParticleTypes.SCULK_SOUL, ox, oy + 0.4, oz, 26, 0.22, 0.95, 0.22, 0.02);
@@ -3684,7 +3918,30 @@ public final class WeaponVfxServerListener {
         final java.util.concurrent.atomic.AtomicInteger swallowed =
                 new java.util.concurrent.atomic.AtomicInteger();
         TestProcedure.schedule(sl, now + 62, () -> {
-            sl.playSound(null, ox, oy, oz, SoundEvents.WITHER_AMBIENT, SoundSource.PLAYERS, 0.70f, 0.75f);
+            // Le tir de flétrissure, une frame AVANT le râle : on entend la gueule se vider,
+        // puis le souffle lui-même. Inversés, les deux sons se lisent comme un seul bruit.
+        TestProcedure.schedule(sl, now + 61, () -> {
+            sl.playSound(null, ox, oy + 0.9, oz, SoundEvents.WITHER_SHOOT,
+                    SoundSource.PLAYERS, 0.85f, 0.52f);
+            sl.playSound(null, ox, oy + 0.9, oz, SoundEvents.GHAST_SHOOT,
+                    SoundSource.PLAYERS, 0.55f, 0.46f);
+        });
+        // Les trois crânes mineurs du souffle, à 0,30 d'échelle : même tir, plus aigu et
+        // plus faible, légèrement décalés pour qu'on les compte.
+        for (int k = 0; k < 3; k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + 70 + step * 5, () -> sl.playSound(null,
+                    ox, oy + 0.8, oz, SoundEvents.WITHER_SHOOT, SoundSource.PLAYERS,
+                    0.38f, 1.18f + step * 0.10f));
+        }
+        // L'INSPIRATION (tick 88). Le cri du hurleur est le seul son de la banque qui
+        // donne l'impression d'aspirer plutôt que d'émettre.
+        TestProcedure.schedule(sl, now + 88, () -> {
+            sl.playSound(null, ox, oy + 0.6, oz, SoundEvents.SCULK_SHRIEKER_SHRIEK,
+                    SoundSource.PLAYERS, 0.78f, 0.62f);
+            shadowWhispers(sl, ox, oy + 0.5, oz, 4.5, 5, 0.42f);
+        });
+        sl.playSound(null, ox, oy, oz, SoundEvents.WITHER_AMBIENT, SoundSource.PLAYERS, 0.70f, 0.75f);
             for (LivingEntity victim : shadowVictims(sl, ox, oy, oz, RIFT_BREATH_RANGE, 4.0, attackerId)) {
                 double rx = victim.getX() - ox;
                 double rz = victim.getZ() - oz;
@@ -3731,6 +3988,18 @@ public final class WeaponVfxServerListener {
         }
 
         // --- La fermeture (tick 122) ---
+        // --- LA FERMETURE (tick 118). Le volet se referme quatre ticks avant la
+        //     détonation du tick 122 : la fente se pince d'abord, le contrecoup suit.
+        TestProcedure.schedule(sl, now + 118, () -> sl.playSound(null, ox, oy, oz,
+                SoundEvents.VAULT_CLOSE_SHUTTER, SoundSource.PLAYERS, 0.88f, 0.44f));
+        // --- LA CICATRICE (ticks 136 → 160). Une balafre de cendre qui s'effrite, puis
+        //     le fondu de sortie qui déborde volontairement la fin de la signature.
+        TestProcedure.schedule(sl, now + 136, () -> {
+            sl.playSound(null, ox, oy - 0.4, oz, SoundEvents.SCULK_BLOCK_SPREAD,
+                    SoundSource.PLAYERS, 0.60f, 0.48f);
+            shadowWhispers(sl, ox, oy, oz, 2.2, 3, 0.34f);
+        });
+        fadingUmbra(sl, now + 140, ox, oy, oz, 0.80f);
         TestProcedure.schedule(sl, now + 122, () -> {
             sl.playSound(null, ox, oy, oz, SoundEvents.WARDEN_SONIC_BOOM, SoundSource.PLAYERS, 0.75f, 1.40f);
             PixelFx.send(sl, ParticleTypes.SQUID_INK, ox, oy, oz, 60, 1.40, 0.70, 1.40, 0.10);
@@ -3849,6 +4118,21 @@ public final class WeaponVfxServerListener {
             PixelFx.send(sl, ParticleTypes.DRAGON_BREATH, ox, oy + 22.0, oz, 40, 3.60, 3.60, 3.60, 0.01);
         });
 
+        // --- LA COURONNE SE DÉPLOIE (ticks 26 → 42). Entre le disque (tick 22) et la pose
+        //     du voile (tick 48), l'image montre 48 filaments qui s'allument un par un et
+        //     la bande son ne disait rien. Trois paliers ascendants comblent exactement
+        //     cet intervalle : c'est le seul moment lumineux de la signature, il doit
+        //     sonner comme un appareil qui s'amorce et non comme une menace.
+        TestProcedure.schedule(sl, now + 26, () -> sl.playSound(null, ox, oy + 14.0, oz,
+                SoundEvents.BEACON_ACTIVATE, SoundSource.PLAYERS, 0.62f, 0.52f));
+        TestProcedure.schedule(sl, now + 34, () -> sl.playSound(null, ox, oy + 16.0, oz,
+                SoundEvents.CONDUIT_ACTIVATE, SoundSource.PLAYERS, 0.58f, 0.60f));
+        TestProcedure.schedule(sl, now + 42, () -> {
+            sl.playSound(null, ox, oy + 18.0, oz, SoundEvents.ENDERMAN_SCREAM,
+                    SoundSource.PLAYERS, 0.34f, 0.44f);
+            shadowWhispers(sl, ox, oy + 2.0, oz, DOME_RADIUS * 0.8, 4, 0.40f);
+        });
+
         // --- Le voile se pose (tick 48) ---
         TestProcedure.schedule(sl, now + 48, () -> {
             // La paroi devient effective à cet instant précis (EclipseDome.burnFrom) :
@@ -3878,6 +4162,21 @@ public final class WeaponVfxServerListener {
                 PixelFx.send(sl, ParticleTypes.WHITE_ASH, ox, oy + 4.5, oz, 25, 3.00, 2.00, 3.00, 0.01);
                 PixelFx.send(sl, ParticleTypes.PORTAL, ox, oy + 1.2, oz, 30, 2.80, 1.40, 2.80, 0.05);
             });
+        }
+
+        // --- LA NUIT (ticks 84 → 148). LE PLUS GROS DÉFAUT DE LA BANDE SON : entre le
+        //     premier battement (68) et l'anneau de diamant (140), il n'y avait QUE les
+        //     battements, espacés de 18 ticks. Presque une seconde de silence entre
+        //     chacun, pendant que l'image montre de la cendre qui tombe, des braises qui
+        //     montent et un sceau qui tourne : l'effet paraissait fini avant de l'être.
+        //     La nappe tourne toutes les 13 ticks — volontairement premier avec 18 pour
+        //     que nappe et battements ne tombent jamais deux fois de suite ensemble.
+        umbralAmbience(sl, now, ox, oy, oz, 84, 148, 13, 0.46f);
+        // ... et la poussière d'âmes qui traîne sous le dôme, décalée des deux autres
+        //     horloges pour achever de remplir la grille.
+        for (int k = 0; k < 4; k++) {
+            TestProcedure.schedule(sl, now + 92 + k * 15, () ->
+                    shadowWhispers(sl, ox, oy + 0.8, oz, DOME_RADIUS * 0.85, 3, 0.34f));
         }
 
         // --- Les battements (ticks 68 à 140, un toutes les 18 ticks) ---
@@ -3943,6 +4242,18 @@ public final class WeaponVfxServerListener {
         // --- Les griffures (tick 152) ---
         TestProcedure.schedule(sl, now + 152, () -> {
             sl.playSound(null, ox, oy, oz, SoundEvents.WARDEN_SONIC_BOOM, SoundSource.PLAYERS, 0.90f, 0.85f);
+            // Trois lames balaient le dôme à l'écran, décalées de 0,13 de progression
+            // chacune : trois passages d'air décalés d'autant, et non un seul coup. Un
+            // son unique pour trois traits visibles, c'est l'image qui ment.
+            for (int c = 0; c < 3; c++) {
+                final int blade = c;
+                TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + blade * 5, () ->
+                        sl.playSound(null,
+                                ox + Math.cos(blade * 2.1) * DOME_RADIUS * 0.6, oy + 1.4,
+                                oz + Math.sin(blade * 2.1) * DOME_RADIUS * 0.6,
+                                SoundEvents.PHANTOM_SWOOP, SoundSource.PLAYERS,
+                                0.70f, 0.52f + blade * 0.07f));
+            }
             List<LivingEntity> inside = eclipseVictims(sl, ox, oy, oz, DOME_RADIUS, 6.0, attackerId);
             // SOLO : les trois griffures convergent sur l'unique victime. EN FOULE : chacune
             // prend sa part. Le facteur est explicite pour que la règle reste lisible.
@@ -3959,6 +4270,20 @@ public final class WeaponVfxServerListener {
             }
         });
 
+        // --- LE DÔME CÈDE (ticks 164 → 171). Les griffures courent jusqu'au tick 176 ;
+        //     après le troisième passage de lame (tick 162) la bande son retombait à
+        //     zéro alors que l'image montre encore le voile en train de se déchirer.
+        //     Deux craquements de membrane, là où les lames ont ouvert le tissu.
+        for (int k = 0; k < 2; k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + 164 + step * 7, () -> {
+                sl.playSound(null, ox + (step == 0 ? 3.2 : -2.8), oy + 2.6,
+                        oz + (step == 0 ? -2.6 : 3.4), SoundEvents.SCULK_VEIN_BREAK,
+                        SoundSource.PLAYERS, 0.72f, 0.46f + step * 0.08f);
+                shadowWhispers(sl, ox, oy + 1.8, oz, DOME_RADIUS * 0.7, 3, 0.38f);
+            });
+        }
+
         // --- La levée (tick 178) ---
         TestProcedure.schedule(sl, now + 178, () -> {
             // Le dôme expire tout seul par son échéance en temps de monde ; on le retire
@@ -3968,6 +4293,10 @@ public final class WeaponVfxServerListener {
             ECLIPSE_DOMES.remove(domeKey);
             sl.playSound(null, ox, oy, oz, SoundEvents.CHEST_LOCKED, SoundSource.PLAYERS, 0.45f, 1.30f);
             sl.playSound(null, ox, oy, oz, SoundEvents.PORTAL_TRAVEL, SoundSource.PLAYERS, 0.35f, 1.40f);
+            // Le fondu de sortie part d'ICI et non du tick 200 : il doit couvrir la
+            // levée du voile, pas commencer quand tout est déjà fini. Ses quatre
+            // répliques débordent volontairement la fin de la signature.
+            fadingUmbra(sl, TestProcedure.currentTick(sl), ox, oy, oz, 0.95f);
             PixelFx.send(sl, ParticleTypes.ASH, ox, oy + 1.5, oz, 70, 3.00, 1.60, 3.00, 0.03);
             PixelFx.send(sl, ParticleTypes.REVERSE_PORTAL, ox, oy + 2.0, oz, 50, 2.40, 2.60, 2.40, 0.09);
         });
@@ -5442,7 +5771,7 @@ public final class WeaponVfxServerListener {
             }
         }
         if (best == null) return false;
-        applyWindGameplay(player, best, fx, estimatedWeaponDamage(player));
+        applyWindGameplay(player, best, fx, signatureBaseDamage(player, best));
         return true;
     }
 
@@ -5556,7 +5885,7 @@ public final class WeaponVfxServerListener {
     /** ZEPHYR/VERDANT = immobilisation sans bloquer les attaques ; THORN = stun complet 3 s. */
     private static void applyWoodGameplay(LivingEntity attacker, LivingEntity target,
                                           WeaponVisualEffectId fx) {
-        applyWoodGameplay(attacker, target, fx, sizeScaleOf(target), estimatedWeaponDamage(attacker));
+        applyWoodGameplay(attacker, target, fx, sizeScaleOf(target), signatureBaseDamage(attacker, target));
     }
 
     private static void applyWoodGameplay(LivingEntity attacker, LivingEntity target,

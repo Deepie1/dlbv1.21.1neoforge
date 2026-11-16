@@ -8,6 +8,28 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 ## Ombre — trois signatures · 4 novembre 2026 ⟵ **LOT COURANT**
 
+> **Version 3.2 — bande son complète et base de dégâts corrigée.**
+>
+> **Les dégâts ignoraient les enchantements.** Toutes les familles calculaient leur base
+> avec l'attribut `ATTACK_DAMAGE` seul. Cet attribut contient l'arme et la Force, mais
+> **pas** Tranchant, Châtiment ni Fléau des arthropodes : depuis la 1.21 ces enchantements
+> ne sont plus des modificateurs d'attribut, ils sont appliqués au moment du coup. Une épée
+> en diamant **Tranchant V** lançait donc des signatures calibrées sur **8** dégâts alors
+> que son coup normal en fait **11** — enchanter son arme n'avait aucun effet sur les
+> animations. La base est maintenant copiée exactement depuis le coup qui a lancé
+> l'animation, enchantements compris, et évaluée **contre le corps touché** (Châtiment et
+> Fléau sont conditionnels). Correction appliquée aux **dix familles**, pas seulement à
+> l'ombre.
+>
+> **Bande son, même procédé que la foudre.** Quatre pièces : fondu d'entrée, accents posés
+> sur les jalons exacts de l'animation, dispersion aléatoire, fondu de sortie décalé dans
+> l'espace. Une différence voulue : la foudre monte en hauteur tonale, **l'ombre descend**.
+> Les trois signatures passent de 9/6/17 à **30/28/32 instants sonores**, sans aucun trou
+> de plus de 20 ticks — le pire était l'éclipse, **72 ticks** où l'image montrait cendre,
+> braises et sceau pendant que le son retombait à zéro. Tous les sons ont été vérifiés
+> contre le registre `sound_event` de la 1.21.1 : 97 constantes, existence et `.value()`
+> contrôlés un par un.
+
 > **Version 3.1 — l'éclipse devient une prison.** Trois écarts corrigés d'un coup : les
 > dégâts étaient **pulsés** (cinq battements) et non constants, les **joueurs étaient
 > tous épargnés** — y compris les adversaires — tandis que le **bétail et les villageois**
