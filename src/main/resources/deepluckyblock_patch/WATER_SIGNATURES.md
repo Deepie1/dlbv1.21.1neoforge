@@ -1888,3 +1888,61 @@ variantes · pic de 299 cubes pour le marteau, loin du plafond de 7 000 · Playw
 JS** · centre de masse de l'aura relevé à cinq instants : il se déplace entre (−0,30 ; 0,51)
 et (1,10 ; −0,51) et ne revient jamais à l'origine, ce qui vérifie l'asymétrie autrement qu'à
 l'œil.
+
+---
+
+## 30. Une vraie chute, et un ciel qui n'est plus vide
+
+### 30.1 Le cube n'était la chute de rien
+
+La descente était calculée en `fall³`. Résultat : le marteau restait quasiment immobile
+pendant les deux premiers tiers du trajet, puis franchissait vingt blocs en trois ticks. Ce
+n'était pas « une chute qui s'accélère », c'était une stagnation suivie d'une téléportation.
+
+Un corps lâché sans vitesse initiale parcourt une distance proportionnelle au **carré** du
+temps — c'est la définition même d'une accélération constante. La courbe est donc passée en
+`fall²`, et le minutage a suivi : la chute occupe maintenant **42 ticks** au lieu de 14, et
+l'impact passe du tick 40 au **tick 50**.
+
+Le profil obtenu, relevé tick par tick :
+
+| tick | hauteur | vitesse |
+|---|---|---|
+| 8 | 29,58 | 0,00 |
+| 20 | 27,06 | 0,34 |
+| 32 | 19,89 | 0,73 |
+| 44 | 8,07 | 1,11 |
+| 50 | 0,41 | 1,37 |
+
+La vitesse croît **linéairement** : c'est la signature d'une gravité constante, et c'est
+vérifiable sans regarder l'écran. Trente blocs en 2,13 s, contre 2,47 s pour une chute réelle
+de 30 m — le jeu accélère un peu, ce qui est la bonne direction.
+
+Le flottement d'attente a disparu avec le reste. Il ne reste qu'un frémissement de cinq ticks
+à l'apparition, le temps que l'œil trouve l'objet.
+
+### 30.2 L'air haut
+
+Le marteau traversait trente blocs de vide. Une chute n'a pas que deux extrémités, elle a un
+**milieu**, et ce milieu doit être occupé. L'arc fulgurant règle le problème depuis le début
+avec son ionisation ascendante ; le marteau reprend le principe en trois couches :
+
+- **la nappe** : dix arcs horizontaux tirés entre 9 et 30 blocs, re-tirés par paliers, qui
+  font craquer le plafond ;
+- **les canaux** : deux traits verticaux qui descendent du ciel jusqu'au marteau, dont un avec
+  gaine. Ce sont eux qui disent que le marteau est **tiré** vers le bas et non lâché ;
+- **la traînée** : pendant la descente, des arcs restent accrochés au-dessus de lui, d'autant
+  plus longs que la chute est avancée. C'est la lecture de la vitesse.
+
+### 30.3 Synchronisation
+
+Le coup doit porter à l'instant exact où le marteau touche le sol à l'écran, sinon le joueur
+voit deux événements au lieu d'un. Le report de l'impact de 40 à 50 ticks a donc été répercuté
+sur la frappe, sur la pose de l'aura, et sur les paliers sonores — passés de trois à quatre,
+resserrés vers la fin pour que l'oreille suive l'accélération que l'œil voit.
+
+### 30.4 Contrôles
+
+Pic de **509 cubes** pour le marteau, loin du plafond de 7 000 · **0 NaN**, **0 alpha sous
+208** · `java-parser` OK · `node --check` OK · Playwright **0 erreur JS** · profil de chute
+relevé numériquement, vitesse linéaire confirmée.

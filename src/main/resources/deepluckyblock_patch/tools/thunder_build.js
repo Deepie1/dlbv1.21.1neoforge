@@ -591,22 +591,55 @@ function buildThunder(variant, t, salt = 7331) {
     const a = Math.round(255 * (1 - smooth((t - 0.96) / 0.04)));
     if (a <= 4) return out;
 
-    const IMPACT = 0.16, SCALE = 1.30, REST = GROUND_Y + 0.64 * SCALE;
-    const appear = smooth(t / 0.05);
-    const fall = Math.max(0, Math.min(1, (t - 0.105) / (IMPACT - 0.105)));
+    const IMPACT = 0.20, SCALE = 1.30, REST = GROUND_Y + 0.64 * SCALE;   // tick 50 sur 250
+    const appear = smooth(t / 0.020);
+    const fall = Math.max(0, Math.min(1, (t - 0.030) / (IMPACT - 0.030)));
     const hit = smooth((t - IMPACT) / 0.012);
     const gone = smooth((t - IMPACT - 0.02) / 0.065);
     const live = smooth((t - IMPACT) / 0.015) * (1 - smooth((t - 0.93) / 0.05));
 
     if (gone < 0.999) {
-      const ease = fall * fall * fall;               // chute en cube : brutale a la fin
+      const ease = fall * fall;   // chute libre : le deplacement croit comme t carre
       const sky = GROUND_Y + 30.0;   // appelé à 30 blocs, avalés en cube
-      const hover = Math.sin(t * 7) * 0.14 * (1 - fall);
+      const hover = Math.sin(t * 22.0) * 0.10 * (1 - appear) * appear;
       let baseY = sky + hover - (sky - REST) * ease;
       baseY += gone * 2.40;
       const yaw = 0.9 + t * 1.25 + fall * 2.6;
       const charge = Math.min(1, appear * (0.25 + 0.75 * fall) + hit * 0.8);
       drawHammer(baseY, yaw, SCALE, a * appear * (1 - gone), charge, salt, t);
+
+      // ---- l'air haut sous tension : nappe, canaux, trainee ----
+      const air = appear * (1 - gone);
+      if (air > 0.02) {
+        const step = Math.floor(t * 46.0);
+        for (let k = 0; k < 10; k++) {
+          const sd = salt * 71 + k * 1283 + step * 131;
+          if (hash(sd, 3) < 0.40) continue;
+          const y0 = GROUND_Y + 9.0 + hash(sd, 5) * 21.0;
+          const a0 = hash(sd, 7) * TAU, a1 = hash(sd, 11) * TAU;
+          const r0 = 1.1 + 4.8 * hash(sd, 13), r1 = 1.1 + 4.8 * hash(sd, 17);
+          drawBolt(Math.cos(a0) * r0, Math.sin(a0) * r0, y0,
+                   Math.cos(a1) * r1, Math.sin(a1) * r1, y0 + (hash(sd, 19) - 0.5) * 3.6,
+                   sd, 0.58, 1.0, 0.50, a * air * 0.78, 11, false);
+        }
+        for (let k = 0; k < 2; k++) {
+          const sd = salt * 97 + k * 3301 + Math.floor(step / 2) * 457;
+          const off = (k === 0 ? -1.0 : 1.0) * (0.55 + 0.5 * hash(sd, 3));
+          drawBolt(off, off * 0.6, GROUND_Y + 31.0, 0, 0, baseY + 0.9,
+                   sd, 1.35, 1.0, k === 0 ? 0.74 : 0.56,
+                   a * air * (k === 0 ? 0.80 : 0.60), 30, k === 0);
+        }
+        if (fall > 0.02 && fall < 0.995) {
+          for (let k = 0; k < 5; k++) {
+            const sd = salt * 53 + k * 877 + step * 211;
+            if (hash(sd, 3) < 0.30) continue;
+            const up = 1.4 + 5.2 * hash(sd, 5) * fall;
+            const ang = hash(sd, 7) * TAU, rr = 0.4 + 1.5 * hash(sd, 11);
+            drawBolt(0, 0, baseY + 0.7, Math.cos(ang) * rr, Math.sin(ang) * rr, baseY + up,
+                     sd, 0.50, 1.0, 0.46, a * air * 0.72, 9, false);
+          }
+        }
+      }
 
       if (fall < 0.98) {
         for (let k = 0; k < 3; k++) {

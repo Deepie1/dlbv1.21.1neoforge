@@ -457,24 +457,31 @@ public final class ThunderSignatureVfx {
         int a = Math.round(alpha * (1.0f - smooth((t - 0.96f) / 0.04f)));
         if (a <= 4) return;
 
-        final float IMPACT = 0.16f;
+        final float IMPACT = 0.20f;          // tick 50 sur 250
         final float SCALE = 1.30f;
         final float REST = GROUND_Y + 0.64f * SCALE;   // tête posée au sol
 
-        float appear = smooth(t / 0.05f);
-        float fall = clamp((t - 0.105f) / (IMPACT - 0.105f), 0.0f, 1.0f);
+        float appear = smooth(t / 0.020f);                           // 5 ticks, pas plus
+        // La chute occupe 42 ticks sur les 50 qui précèdent l'impact : le marteau ne
+        // stationne pas, il part presque tout de suite et accélère.
+        float fall = clamp((t - 0.030f) / (IMPACT - 0.030f), 0.0f, 1.0f);
         float hit = smooth((t - IMPACT) / 0.012f);
         float gone = smooth((t - IMPACT - 0.02f) / 0.065f);
         float live = smooth((t - IMPACT) / 0.015f) * (1.0f - smooth((t - 0.93f) / 0.05f));
 
         // ---- le marteau ----
         if (gone < 0.999f) {
-            // chute en cube : lente, lente, puis brutale
-            float ease = fall * fall * fall;
+            // CHUTE LIBRE. Le déplacement d'un corps lâché sans vitesse initiale croît
+            // comme le CARRÉ du temps : c'est la définition d'une accélération constante,
+            // donc d'une vraie gravité. La version précédente élevait au cube, ce qui n'est
+            // la chute de rien du tout — le marteau restait suspendu puis tombait d'un coup.
+            // Sur 30 blocs en 42 ticks, la vitesse d'arrivée vaut 1,43 bloc par tick, soit
+            // 28,6 blocs/s : une chute réelle de 30 m arrive à 24,3 m/s.
+            float ease = fall * fall;
             // 30 blocs : le marteau est appelé très haut, et la chute en cube fait que
             // l'essentiel de ces 30 blocs est avalé dans les trois derniers ticks.
             float sky = GROUND_Y + 30.0f;
-            float hover = (float) Math.sin(t * 7.0) * 0.14f * (1.0f - fall);
+            float hover = (float) Math.sin(t * 22.0) * 0.10f * (1.0f - appear) * appear;
             float baseY = sky + hover - (sky - REST) * ease;
             // le retrait : il remonte en s'effaçant
             baseY += gone * 2.40f;
@@ -483,7 +490,60 @@ public final class ThunderSignatureVfx {
             drawHammer(vc, mat, tmp, cx, cy, cz, dx, dz, baseY, yaw, SCALE,
                     a * appear * (1.0f - gone), charge, salt, t);
 
-            // les éclairs d'appel, pendant la suspension
+            // ---- L'AIR HAUT SOUS TENSION ----
+            // Même principe que l'ionisation de l'arc fulgurant : le ciel doit être chargé
+            // AVANT et PENDANT la descente, sinon le marteau traverse un vide et la chute
+            // n'a pas de milieu. Trois couches : une nappe qui craque en altitude, deux
+            // canaux verticaux que le marteau suit, et une traînée qu'il tire derrière lui.
+            float air = appear * (1.0f - gone);
+            if (air > 0.02f) {
+                int step = (int) (t * 46.0f);
+
+                // 1. la nappe : des arcs horizontaux entre 9 et 30 blocs
+                for (int k = 0; k < 10; k++) {
+                    int sd = salt * 71 + k * 1283 + step * 131;
+                    if (hash(sd, 3) < 0.40f) continue;
+                    float y0 = GROUND_Y + 9.0f + hash(sd, 5) * 21.0f;
+                    float a0 = hash(sd, 7) * TAU, a1 = hash(sd, 11) * TAU;
+                    float r0 = 1.1f + 4.8f * hash(sd, 13);
+                    float r1 = 1.1f + 4.8f * hash(sd, 17);
+                    drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            (float) Math.cos(a0) * r0, (float) Math.sin(a0) * r0, y0,
+                            (float) Math.cos(a1) * r1, (float) Math.sin(a1) * r1,
+                            y0 + (hash(sd, 19) - 0.5f) * 3.6f,
+                            sd, 0.58f, 1.0f, 0.50f, a * air * 0.78f, 11, false);
+                }
+
+                // 2. les canaux : deux traits qui descendent du plafond jusqu'au marteau.
+                // C'est eux qui disent que le marteau est TIRÉ vers le bas, pas lâché.
+                for (int k = 0; k < 2; k++) {
+                    int sd = salt * 97 + k * 3301 + (step / 2) * 457;
+                    float off = (k == 0 ? -1.0f : 1.0f) * (0.55f + 0.5f * hash(sd, 3));
+                    drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            off, off * 0.6f, GROUND_Y + 31.0f,
+                            0.0f, 0.0f, baseY + 0.9f,
+                            sd, 1.35f, 1.0f, k == 0 ? 0.74f : 0.56f,
+                            a * air * (k == 0 ? 0.80f : 0.60f), 30, k == 0);
+                }
+
+                // 3. la traînée : pendant la chute, des arcs restent accrochés au-dessus
+                if (fall > 0.02f && fall < 0.995f) {
+                    for (int k = 0; k < 5; k++) {
+                        int sd = salt * 53 + k * 877 + step * 211;
+                        if (hash(sd, 3) < 0.30f) continue;
+                        float up = 1.4f + 5.2f * hash(sd, 5) * fall;
+                        float ang = hash(sd, 7) * TAU;
+                        float rr = 0.4f + 1.5f * hash(sd, 11);
+                        drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                0.0f, 0.0f, baseY + 0.7f,
+                                (float) Math.cos(ang) * rr, (float) Math.sin(ang) * rr,
+                                baseY + up,
+                                sd, 0.50f, 1.0f, 0.46f, a * air * 0.72f, 9, false);
+                    }
+                }
+            }
+
+            // les éclairs d'appel, autour de la tête
             if (fall < 0.98f) {
                 int arcs = 3;
                 for (int k = 0; k < arcs; k++) {

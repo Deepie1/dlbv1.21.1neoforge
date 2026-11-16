@@ -3102,7 +3102,7 @@ public final class WeaponVfxServerListener {
      * voit pas, et celui-ci n'était lisible que dans les chiffres. Le marteau fait l'inverse —
      * il ne donne rien au porteur, il <b>frappe</b>, et il laisse une trace sur le terrain.
      *
-     * <p><b>L'impact.</b> Au tick 40, exactement quand le marteau touche le sol à l'écran, un
+     * <p><b>L'impact.</b> Au tick 50, exactement quand le marteau touche le sol à l'écran, un
      * carré de <b>3×3 blocs</b> centré sur la cible prend <b>deux fois les dégâts de l'arme</b>
      * qui a déclenché le coup. Deux fois, et pas deux fois quelque chose : la valeur reçue ici
      * est celle de l'événement de dégâts, <b>enchantements et effets d'attaque compris</b>, donc
@@ -3138,18 +3138,27 @@ public final class WeaponVfxServerListener {
         // --- L'appel : le marteau se matérialise au-dessus de la cible ---
         sl.playSound(null, zx, zy + 1.0, zz, SoundEvents.BEACON_ACTIVATE, SoundSource.PLAYERS,
                 0.55f, 0.70f);
-        for (int step = 0; step < 3; step++) {
+        // Quatre paliers étalés sur la chute, de plus en plus rapprochés : l'oreille suit
+        // l'accélération que l'œil voit.
+        final long[] CUE = {10L, 24L, 35L, 44L};
+        for (int step = 0; step < CUE.length; step++) {
             final float pitch = 0.80f + step * 0.16f;
-            TestProcedure.schedule(sl, now + 10L + step * 10L, () -> {
+            TestProcedure.schedule(sl, now + CUE[step], () -> {
                 sl.playSound(null, zx, zy + 4.0, zz, SoundEvents.NOTE_BLOCK_BELL.value(),
                         SoundSource.PLAYERS, 0.38f, pitch);
                 PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, zx, zy + 4.6, zz,
                         16, 1.00, 0.70, 1.00, 0.05);
+                // l'air haut se charge aussi côté serveur, sur toute la colonne
+                PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, zx, zy + 14.0, zz,
+                        22, 2.60, 7.00, 2.60, 0.04);
             });
         }
 
-        // --- Tick 40 : la frappe. Le 3×3 prend deux fois l'arme ---
-        TestProcedure.schedule(sl, now + 40L, () -> {
+        // --- Tick 50 : la frappe. Le 3×3 prend deux fois l'arme ---
+        // 50 et non 40 : la chute dure maintenant 42 ticks, parce qu'un corps lâché de 30
+        // blocs met réellement ce temps-là à tomber. Le coup doit porter à l'instant exact
+        // où le marteau touche le sol à l'écran, sinon le joueur voit deux événements.
+        TestProcedure.schedule(sl, now + 50L, () -> {
             sl.playSound(null, zx, zy, zz, SoundEvents.LIGHTNING_BOLT_THUNDER,
                     SoundSource.PLAYERS, 1.00f, 0.72f);
             sl.playSound(null, zx, zy, zz, SoundEvents.TRIDENT_THROW.value(),
@@ -3172,7 +3181,7 @@ public final class WeaponVfxServerListener {
             }
 
             // Le sol reste sous tension dix secondes à partir de l'impact.
-            SHOCK_ZONES.add(new ShockZone(sl, now + 40L + SHOCK_ZONE_TICKS, zx, zy, zz,
+            SHOCK_ZONES.add(new ShockZone(sl, now + 50L + SHOCK_ZONE_TICKS, zx, zy, zz,
                     attackerId, Math.max(0.5f, weaponDamage * 0.22f), SHOCK_ZONE_RADIUS));
         });
     }
