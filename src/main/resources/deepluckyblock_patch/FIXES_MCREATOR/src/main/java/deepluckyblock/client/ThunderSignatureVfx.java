@@ -508,7 +508,7 @@ public final class ThunderSignatureVfx {
         float appear = smooth(t / 0.020f);                           // 5 ticks, pas plus
         // La chute occupe 42 ticks sur les 50 qui précèdent l'impact : le marteau ne
         // stationne pas, il part presque tout de suite et accélère.
-        float fall = clamp((t - 0.030f) / (IMPACT - 0.030f), 0.0f, 1.0f);
+        float fall = clamp((t - 0.030f) / (IMPACT - 0.030f));
         float hit = smooth((t - IMPACT) / 0.012f);
         float gone = smooth((t - IMPACT - 0.02f) / 0.065f);
         float live = smooth((t - IMPACT) / 0.015f) * (1.0f - smooth((t - 0.93f) / 0.05f));
@@ -595,7 +595,7 @@ public final class ThunderSignatureVfx {
 
         // ---- l'impact : flash et onde ----
         if (hit > 0.01f && live > 0.0f) {
-            float age = clamp((t - IMPACT) / 0.09f, 0.0f, 1.0f);
+            float age = clamp((t - IMPACT) / 0.09f);
             float ring = 0.8f + age * (ZONE_RADIUS - 0.8f);
             float ra = (1.0f - age) * a;
             if (ra > 2.0f) {

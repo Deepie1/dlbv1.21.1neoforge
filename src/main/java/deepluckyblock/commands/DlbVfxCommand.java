@@ -725,7 +725,6 @@ public final class DlbVfxCommand {
             case "metal", "métal" -> DeepElement.METAL;
             case "water", "eau" -> DeepElement.WATER;
             case "thunder", "foudre", "lightning", "eclair", "éclair" -> DeepElement.THUNDER;
-            case "thunder", "foudre" -> DeepElement.THUNDER;
             case "light", "lumiere", "lumière" -> DeepElement.LIGHT;
             case "shadow", "ombre" -> DeepElement.SHADOW;
             case "blood", "sang" -> DeepElement.BLOOD;

@@ -6,38 +6,52 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 > **Si le navigateur sert une vieille version** (le CDN de GitHub garde les fichiers bruts en cache quelques minutes), remplacer `refs/heads/arena/605e67fb-dlbv1-21-1neoforge` par le SHA du commit — par exemple `raw/fa83a2f/…` pour la v1.3 — ou ajouter `?v=2` à la fin de l'adresse.
 
-## Foudre v8 — 4 novembre 2026 ⟵ **LOT COURANT**
+## Foudre v9 — 4 novembre 2026 ⟵ **LOT COURANT**
 
-> Dégâts par CONTACT (le marteau touche en tombant), effets de statut, et une bande-son
-> complète tirée de la banque vanilla 1.21.1 — enclume qui tombe, détonation à quatre
-> couches, tonnerre qui roule et s’éteint.
+> **Ça compile.** Les dix-neuf erreurs de `runClient` sont corrigées : `clamp()` local appelé
+> avec trois arguments au lieu d'un (2 fois), étiquette `"thunder"/"foudre"` présente deux fois
+> dans le même `switch`, et seize `long` passés à `TestProcedure.schedule` qui attend un `int`.
 >
-> Les éclairs horizontaux du marteau sont supprimés : un éclair suit le champ électrique,
-> qui est vertical. La charge d'ambiance est passée sur la **bonne** animation, l'arc
-> fulgurant en chaîne — treize filaments qui pendent du plafond entre 14 et 31 blocs, et
-> quatre éclairs qui **tombent** depuis 31 blocs. La page d'aperçu repart du **gabarit du
-> base builder** (Gaia / Poison / Feu / Terre / Vent), simplement reteinté.
-
-Commit épinglé : [`73cdcaa4`](https://github.com/Deepie1/dlbv1.21.1neoforge/commit/73cdcaa4e35b96255604ad77252cc2af715bdeab)
+> **Un quatrième défaut a été trouvé en chemin, invisible au compilateur.** L'aura du marteau
+> mélangeait deux horloges : son expiration était calculée sur le tick de *serveur*
+> (`getTickCount()`, remis à zéro à chaque lancement) alors que la boucle qui la fait vivre lit
+> le temps du *monde* (`getGameTime()`, qui suit la sauvegarde). Sur tout monde plus vieux que
+> la session en cours, la zone expirait avant d'exister — aucune aura, aucun dégât de sol,
+> aucune trace dans les journaux. Les deux horloges sont maintenant séparées et nommées.
+>
+> **Nouvel outil `typecheck.py`** : l'analyse syntaxique utilisée jusqu'ici ne pouvait pas voir
+> ces erreurs — elle vérifie les accolades, pas les types. `typecheck.py` rejoue trois règles du
+> compilateur (arité des appels, `long` là où un `int` est attendu, `case` en double) et
+> retrouve les dix-neuf erreurs sur la version d'avant.
+>
+> **Ton script d'init Gradle est archivé** dans le dépôt et livré dans l'archive.
 
 | Fichier | Lien |
 |---|---|
-| **⬇ APERÇU ANIMÉ FOUDRE** (HTML autonome, 920 720 o — le ZIP est *dedans*) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/73cdcaa4e35b96255604ad77252cc2af715bdeab/deliverables/DLB_Thunder_Three_Signatures_preview.html |
-| **⬇ Sources complètes** (ZIP, 36 entrées, 636 597 o) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/73cdcaa4e35b96255604ad77252cc2af715bdeab/deliverables/DLB_Thunder_Three_Signatures_src.zip |
-| `ThunderSignatureVfx.java` — les 3 chorégraphies, **plus un seul arc horizontal** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/73cdcaa4e35b96255604ad77252cc2af715bdeab/src/main/java/deepluckyblock/client/ThunderSignatureVfx.java |
-| `thunder_build.js` — miroir JS de la géométrie | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/73cdcaa4e35b96255604ad77252cc2af715bdeab/src/main/resources/deepluckyblock_patch/tools/thunder_build.js |
-| `preview_base.css` — **le CSS du gabarit base builder**, reteinté foudre | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/73cdcaa4e35b96255604ad77252cc2af715bdeab/src/main/resources/deepluckyblock_patch/tools/preview_base.css |
-| `preview_render.js` — moteur de rendu câblé sur les identifiants du gabarit | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/73cdcaa4e35b96255604ad77252cc2af715bdeab/src/main/resources/deepluckyblock_patch/tools/preview_render.js |
-| `build_thunder_page.py` — assemblage de la page sur le gabarit | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/73cdcaa4e35b96255604ad77252cc2af715bdeab/src/main/resources/deepluckyblock_patch/tools/build_thunder_page.py |
-| `WeaponVfxServerListener.java` — gameplay du marteau, frappe au tick 50, aura de 6 blocs | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/73cdcaa4e35b96255604ad77252cc2af715bdeab/src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java |
-| `WATER_SIGNATURES.md` — documentation, **§31 = ce lot** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/73cdcaa4e35b96255604ad77252cc2af715bdeab/src/main/resources/deepluckyblock_patch/WATER_SIGNATURES.md |
-| Miroir MCreator `ThunderSignatureVfx.java` | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/73cdcaa4e35b96255604ad77252cc2af715bdeab/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/client/ThunderSignatureVfx.java |
+| **⬇ APERÇU ANIMÉ FOUDRE** (HTML autonome — le ZIP est *dedans*) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Thunder_Three_Signatures_preview.html |
+| **⬇ Sources complètes** (ZIP, 42 entrées) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Thunder_Three_Signatures_src.zip |
+| `typecheck.py` — **le contrôle qui manquait** : arité, `long`→`int`, `case` en double | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/tools/typecheck.py |
+| `deep-lucky-block-patch.gradle` — **ton script d'init**, archivé dans le dépôt | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/tools/deep-lucky-block-patch.gradle |
+| `WeaponVfxServerListener.java` — 16 `schedule` en `int`, **deux horloges séparées** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java |
+| `ThunderSignatureVfx.java` — `clamp()` à un argument (l. 511 et 598) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/ThunderSignatureVfx.java |
+| `DlbVfxCommand.java` — étiquette `"thunder"/"foudre"` dédoublée | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/commands/DlbVfxCommand.java |
+| `WATER_SIGNATURES.md` — documentation, **§33 = les 19 erreurs et le bug des horloges** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/WATER_SIGNATURES.md |
+| `WeaponVisualEffectId.java` — les 3 identifiants de foudre (4 / 8 / 16) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/WeaponVisualEffectId.java |
+| `WeaponWorldVfxManager.java` — moteur voxel et durées | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/WeaponWorldVfxManager.java |
+| `thunder_build.js` — miroir JS de la géométrie | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/tools/thunder_build.js |
+| Miroir MCreator `WeaponVfxServerListener.java` | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java |
 
 **Comment ouvrir l'aperçu :** GitHub sert les `.html` bruts en `text/plain` — un clic
 affichera donc le code source, pas l'animation. Faire **clic droit → Enregistrer la cible
 sous…**, puis ouvrir le fichier enregistré dans le navigateur. La page est autonome :
 l'archive des sources est embarquée dedans, le bouton « Télécharger les sources » marche
 hors ligne.
+
+**Contrôle de l'archive :**
+
+```
+python3 src/main/resources/deepluckyblock_patch/tools/typecheck.py
+```
 
 ## Eau v1.6 + Bois (13 novembre 2026)
 

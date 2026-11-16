@@ -2994,7 +2994,7 @@ public final class WeaponVfxServerListener {
     private static void applyChainVoltGameplay(LivingEntity attacker, LivingEntity target,
                                                ServerLevel sl, float weaponDamage) {
         final int attackerId = attacker == null ? -1 : attacker.getId();
-        final long now = TestProcedure.currentTick(sl);
+        final int now = TestProcedure.currentTick(sl);
         final double ox = target.getX();
         final double oy = target.getY() + target.getBbHeight() * 0.55;
         final double oz = target.getZ();
@@ -3022,7 +3022,7 @@ public final class WeaponVfxServerListener {
         // la fourchette du rendu — entre 3,6 et 9 blocs du centre.
         for (int k = 0; k < 4; k++) {
             final int index = k;
-            final long when = 5L + index * 7L;
+            final int when = 5 + index * 7;
             TestProcedure.schedule(sl, now + when, () -> {
                 double aa = index * 2.3998277 + 0.7;
                 double rr = 3.60 + 5.40 * ((index * 3 + 1) % 4) / 3.0;
@@ -3041,8 +3041,8 @@ public final class WeaponVfxServerListener {
                         (float) hx, (float) oy, (float) hz,
                         (float) hx, (float) oy, (float) hz, 0, 0.34f);
                 // La colonne touche sur toute sa hauteur, le temps d'un éclair : trois ticks.
-                addThunderHit(sl, attackerId, TestProcedure.currentTick(sl),
-                        TestProcedure.currentTick(sl) + 3L, hx, hz,
+                addThunderHit(sl, attackerId, sl.getGameTime(),
+                        sl.getGameTime() + 3L, hx, hz,
                         oy + 3.0, oy + 3.0, 1.30, 4.20, base * 0.42f, false, 30);
             });
         }
@@ -3090,12 +3090,12 @@ public final class WeaponVfxServerListener {
 
             // Le sol garde une trace et l'orage s'éloigne : fondu de sortie commun aux
             // deux cas, programmé une seule fois depuis le repérage.
-            TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 75L, () -> {
+            TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 75, () -> {
                 sl.playSound(null, ox, oy - 0.8, oz, SoundEvents.COPPER_BULB_TURN_ON,
                         SoundSource.PLAYERS, 0.55f, 0.72f);
                 staticCrackle(sl, ox, oy - 0.8, oz, 3.00, 5, 0.40f);
             });
-            rollingThunder(sl, TestProcedure.currentTick(sl) + 20L, ox, oy, oz, 0.62f);
+            rollingThunder(sl, TestProcedure.currentTick(sl) + 20, ox, oy, oz, 0.62f);
 
             if (links.isEmpty()) {
                 // ----- CAS ENNEMI SEUL : l'énergie des six relais revient sur la cible -----
@@ -3195,7 +3195,13 @@ public final class WeaponVfxServerListener {
     private static void applyHammerGameplay(LivingEntity attacker, LivingEntity target,
                                             ServerLevel sl, float weaponDamage) {
         final int attackerId = attacker == null ? -1 : attacker.getId();
-        final long now = TestProcedure.currentTick(sl);
+        // DEUX HORLOGES, et il ne faut pas les confondre. TestProcedure.schedule compte en
+        // ticks de SERVEUR (getTickCount, remis à zéro à chaque démarrage) ; les zones
+        // persistantes comparent des temps de MONDE (getGameTime, qui suit la sauvegarde).
+        // Mélanger les deux faisait expirer l'aura avant même qu'elle n'existe, sur tout
+        // monde plus vieux que la session en cours. Le vent sépare déjà les deux, on fait
+        // pareil. Les noms disent lequel est lequel.
+        final int now = TestProcedure.currentTick(sl);
         // « Deux fois l'attaque de l'arme » au sens strict. Le plancher ne sert qu'aux armes
         // sans dégâts déclarés, pour qu'un marteau divin ne fasse jamais zéro.
         final float strike = Math.max(2.0f, weaponDamage * 2.0f);
@@ -3212,7 +3218,7 @@ public final class WeaponVfxServerListener {
         // d'apparition du marteau, pas sur la cible. On lève la tête avant de comprendre.
         sl.playSound(null, zx, zy + 26.0, zz, SoundEvents.TRIAL_SPAWNER_OMINOUS_ACTIVATE,
                 SoundSource.PLAYERS, 1.00f, 0.72f);
-        TestProcedure.schedule(sl, now + 4L, () ->
+        TestProcedure.schedule(sl, now + 4, () ->
                 sl.playSound(null, zx, zy + 22.0, zz, SoundEvents.WARDEN_SONIC_CHARGE,
                         SoundSource.PLAYERS, 0.80f, 0.55f));
 
@@ -3221,9 +3227,9 @@ public final class WeaponVfxServerListener {
         // source suit la vraie trajectoire (chute en t²), donc le son descend avec l'objet ;
         // le volume monte et la hauteur tonale aussi, ce que l'oreille lit comme un
         // rapprochement. C'est tout le principe d'un effet Doppler, sans en avoir un.
-        final long[] FALL_CUE = {10L, 22L, 32L, 40L, 46L};
+        final int[] FALL_CUE = {10, 22, 32, 40, 46};
         for (int step = 0; step < FALL_CUE.length; step++) {
-            final long when = FALL_CUE[step];
+            final int when = FALL_CUE[step];
             // même loi que le rendu : 30 blocs parcourus en t², sur 42 ticks à partir du 8ᵉ
             final double prog = Math.min(1.0, Math.max(0.0, (when - 8.0) / 42.0));
             final double hy = zy + 30.0 * (1.0 - prog * prog);
@@ -3248,14 +3254,15 @@ public final class WeaponVfxServerListener {
         // trouve sur son chemin. Le volume de contact descend exactement comme le rendu ; un
         // mob perché à mi-hauteur encaisse au moment précis où la tête passe sur lui, avec la
         // moitié de la force — le plein tarif reste pour l'écrasement au sol.
-        addThunderHit(sl, attackerId, now + 8L, now + 50L, zx, zz,
+        final long gameNow = sl.getGameTime();
+        addThunderHit(sl, attackerId, gameNow + 8L, gameNow + 50L, zx, zz,
                 zy + 30.0, zy + 0.30, 1.45, 1.00, strike * 0.50f, true, 40);
 
         // --- Tick 50 : la frappe. Le 3×3 prend deux fois l'arme ---
         // 50 et non 40 : la chute dure maintenant 42 ticks, parce qu'un corps lâché de 30
         // blocs met réellement ce temps-là à tomber. Le coup doit porter à l'instant exact
         // où le marteau touche le sol à l'écran, sinon le joueur voit deux événements.
-        TestProcedure.schedule(sl, now + 50L, () -> {
+        TestProcedure.schedule(sl, now + 50, () -> {
             // LE coup. Quatre couches empilées par thunderBoom — claquement, tonnerre,
             // souffle, sub — plus l'enclume qui se pose, parce que c'est exactement ce que
             // l'œil voit : une masse de métal qui finit sa course dans le sol.
@@ -3303,7 +3310,10 @@ public final class WeaponVfxServerListener {
             }
 
             // Le sol reste sous tension dix secondes à partir de l'impact.
-            SHOCK_ZONES.add(new ShockZone(sl, now + 50L + SHOCK_ZONE_TICKS, zx, zy, zz,
+            // getGameTime() et non now : on est DANS le lambda, il s'exécute au tick de
+            // l'impact, et tickShockZones lit la même horloge. C'est ce décalage d'horloge
+            // qui empêchait l'aura d'apparaître.
+            SHOCK_ZONES.add(new ShockZone(sl, sl.getGameTime() + SHOCK_ZONE_TICKS, zx, zy, zz,
                     attackerId, Math.max(0.5f, weaponDamage * 0.22f), SHOCK_ZONE_RADIUS));
         });
     }
@@ -3565,9 +3575,10 @@ public final class WeaponVfxServerListener {
      * plus espacées, décalées autour du point d'impact pour qu'elles ne sortent pas du même
      * haut-parleur. Sans ça, un orage s'arrête net, ce qu'aucun orage ne fait.
      */
-    private static void rollingThunder(ServerLevel sl, long now, double x, double y, double z,
+    private static void rollingThunder(ServerLevel sl, int now, double x, double y, double z,
                                        float volume) {
-        final long[] WHEN = {14L, 31L, 53L, 82L};
+        // int et non long : TestProcedure.schedule attend un tick de serveur, qui est un int.
+        final int[] WHEN = {14, 31, 53, 82};
         final float[] GAIN = {0.70f, 0.46f, 0.28f, 0.15f};
         for (int i = 0; i < WHEN.length; i++) {
             final float v = volume * GAIN[i];
@@ -3585,12 +3596,12 @@ public final class WeaponVfxServerListener {
      * la tension monter avant de voir quoi que ce soit. C'est la moitié du travail d'un effet
      * de frappe : prévenir.
      */
-    private static void chargeSwell(ServerLevel sl, long now, double x, double y, double z,
+    private static void chargeSwell(ServerLevel sl, int now, double x, double y, double z,
                                     int steps, float volume) {
         for (int i = 0; i < steps; i++) {
             final float v = volume * (0.28f + 0.72f * i / Math.max(1, steps - 1));
             final float pitch = 0.62f + 0.11f * i;
-            final long when = now + Math.round(i * i * 1.15 + i * 2.2);
+            final int when = now + (int) Math.round(i * i * 1.15 + i * 2.2);
             TestProcedure.schedule(sl, when, () -> {
                 sl.playSound(null, x, y, z, SoundEvents.REDSTONE_TORCH_BURNOUT,
                         SoundSource.PLAYERS, v * 0.85f, pitch + 0.55f);
@@ -3635,7 +3646,7 @@ public final class WeaponVfxServerListener {
     private static void applyStormcallGameplay(LivingEntity attacker, LivingEntity target,
                                                ServerLevel sl, float weaponDamage) {
         final int attackerId = attacker == null ? -1 : attacker.getId();
-        final long now = TestProcedure.currentTick(sl);
+        final int now = TestProcedure.currentTick(sl);
         final float base = Math.max(1.2f, weaponDamage * 0.55f);
 
         // Le nuage est ancré une fois pour toutes, sur la position de la cible à l'impact.
@@ -3644,7 +3655,7 @@ public final class WeaponVfxServerListener {
         final double az = target.getZ();
 
         // --- Formation : un grondement, puis rien pendant une seconde et demie. ---
-        TestProcedure.schedule(sl, now + 6L, () -> {
+        TestProcedure.schedule(sl, now + 6, () -> {
             sl.playSound(null, ax, ay + 8.0, az, SoundEvents.BEACON_ACTIVATE,
                     SoundSource.PLAYERS, 0.85f, 0.60f);
             sl.playSound(null, ax, ay + 8.0, az, SoundEvents.TRIAL_SPAWNER_OMINOUS_ACTIVATE,
@@ -3657,7 +3668,7 @@ public final class WeaponVfxServerListener {
         // Entre la formation du nuage et la première frappe il y a une seconde et demie de
         // rien du tout : c'est long, et le silence y passe pour un bug. Six battements de
         // plus en plus rapprochés tiennent cet intervalle et annoncent que ça va tomber.
-        final long[] BEAT = {10L, 18L, 25L, 30L, 34L, 37L};
+        final int[] BEAT = {10, 18, 25, 30, 34, 37};
         for (int b = 0; b < BEAT.length; b++) {
             final float v = 0.34f + 0.09f * b;
             final float pitch = 0.52f + 0.06f * b;
@@ -3672,7 +3683,7 @@ public final class WeaponVfxServerListener {
         // --- Mitraille : cinq frappes, chacune sur un point tiré sous le nuage. ---
         for (int s = 0; s < 5; s++) {
             final int index = s;
-            TestProcedure.schedule(sl, now + 34L + index * 18L, () -> {
+            TestProcedure.schedule(sl, now + 34 + index * 18, () -> {
                 double rr = 0.55 + 2.05 * ((index * 7 + 3) % 5) / 4.0;
                 double aa = index * 2.3998277;                  // angle d'or : jamais aligné
                 double hx = ax + Math.cos(aa) * rr;
@@ -3709,7 +3720,7 @@ public final class WeaponVfxServerListener {
         }
 
         // --- Charge : le nuage se contracte, on l'entend. ---
-        TestProcedure.schedule(sl, now + 112L, () -> {
+        TestProcedure.schedule(sl, now + 112, () -> {
             sl.playSound(null, ax, ay + 6.0, az, SoundEvents.BEACON_DEACTIVATE,
                     SoundSource.PLAYERS, 1.0f, 0.70f);
             // L'aspiration : le nuage se contracte de 30 % à l'écran, et le son fait pareil.
@@ -3724,13 +3735,13 @@ public final class WeaponVfxServerListener {
         });
         // Sept crépitements serrés pendant la contraction : l'air ne tient plus.
         for (int c = 0; c < 7; c++) {
-            final long when = 116L + c * 3L;
+            final int when = 116 + c * 3;
             TestProcedure.schedule(sl, now + when, () ->
                     staticCrackle(sl, ax, ay + 3.5, az, 2.40, 2, 0.46f));
         }
 
         // --- La décharge, et l'onde qui la répercute. ---
-        TestProcedure.schedule(sl, now + 140L, () -> {
+        TestProcedure.schedule(sl, now + 140, () -> {
             // Sept traits tombent ensemble : la détonation est pleine, mais plus claire que
             // celle du marteau — c'est de l'électricité qui frappe, pas du métal qui écrase.
             thunderBoom(sl, ax, ay, az, 0.72f);
@@ -3740,8 +3751,8 @@ public final class WeaponVfxServerListener {
                     SoundSource.PLAYERS, 0.55f, 1.25f);
             rollingThunder(sl, TestProcedure.currentTick(sl), ax, ay, az, 0.90f);
             // La colonne centrale traverse vraiment ce qui se tient dessous, du sol au nuage.
-            addThunderHit(sl, attackerId, TestProcedure.currentTick(sl),
-                    TestProcedure.currentTick(sl) + 4L, ax, az,
+            addThunderHit(sl, attackerId, sl.getGameTime(),
+                    sl.getGameTime() + 4L, ax, az,
                     ay + 3.0, ay + 3.0, 2.60, 4.00, base * 0.55f, false, 40);
             PixelFx.send(sl, ParticleTypes.FLASH, ax, ay + 1.00, az, 1, 0.0, 0.0, 0.0, 0.0);
             PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, ax, ay + 0.40, az,

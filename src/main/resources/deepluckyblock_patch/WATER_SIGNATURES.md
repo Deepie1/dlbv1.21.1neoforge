@@ -2063,3 +2063,92 @@ l'écouter.
 Dix-neuf identifiants sonores sont employés. Tous ont été vérifiés comme existant dans la
 version 1.21.1 : soit ils étaient déjà utilisés ailleurs dans le mod, soit leur présence a été
 contrôlée sur le registre vanilla avant écriture.
+
+## 33. Dix-neuf erreurs de compilation, et pourquoi le contrôle ne les voyait pas
+
+Le lot précédent ne compilait pas. `runClient` a sorti dix-neuf erreurs, et aucune n'avait été
+détectée ici. Ce n'est pas un hasard : l'outil de contrôle dont je disposais était un
+**analyseur syntaxique**. Il vérifie que les accolades se ferment et que les parenthèses
+s'équilibrent. Il ne sait rien des types ni des signatures. Pour lui, `clamp(x, 0f, 1f)` est un
+appel parfaitement formé — c'est le compilateur, et lui seul, qui sait que `clamp` n'accepte
+qu'un argument.
+
+### Ce qui n'allait pas
+
+**`clamp` à trois arguments** (`ThunderSignatureVfx`, lignes 511 et 598). La méthode locale est
+`private static float clamp(float value)` : elle borne déjà entre 0 et 1, c'est tout son objet.
+J'ai écrit `clamp(v, 0.0f, 1.0f)` par réflexe `Mth.clamp`. Les deux arguments en trop sont
+retirés, le comportement est identique.
+
+**Étiquette de `switch` en double** (`DlbVfxCommand`, ligne 728). En élargissant la liste
+d'alias de l'élément foudre, `"thunder"` et `"foudre"` se sont retrouvés sur la ligne
+`"lightning", "eclair", "éclair"` *et* sur la ligne suivante. Java refuse deux fois la même
+étiquette dans un `switch`. La ligne redondante disparaît ; les cinq alias restent.
+
+**Seize `long` passés à un `int`** (`WeaponVfxServerListener`). `TestProcedure.schedule` est
+déclaré `schedule(ServerLevel level, int absoluteTick, Runnable task)` — un `int`. Les trois
+méthodes de foudre déclaraient `final long now = TestProcedure.currentTick(sl)` et comptaient
+en littéraux `50L`, en tableaux `long[]`. Java ne rétrécit pas un `long` en `int` tout seul :
+la conversion est potentiellement destructrice, donc elle doit être écrite. Tout est repassé
+en `int`, y compris les signatures de `rollingThunder` et `chargeSwell`.
+
+### Le vrai bug, celui que le compilateur ne pouvait pas voir
+
+En relisant ces conversions j'en ai trouvé une **quatrième**, qui compilait parfaitement et qui
+cassait l'aura du marteau en jeu.
+
+Il y a deux horloges dans ce mod, et elles n'ont rien à voir :
+
+| horloge | source | comportement |
+|---|---|---|
+| tick de **serveur** | `getServer().getTickCount()` | repart de zéro à chaque lancement du jeu |
+| temps du **monde** | `level.getGameTime()` | suit la sauvegarde, ne redescend jamais |
+
+`TestProcedure.schedule` compte en ticks de serveur. Les zones persistantes — `ShockZone`,
+`WindZone`, `ThunderHit` — stockent une date d'expiration comparée, à chaque tick, au temps du
+monde. Or l'aura du marteau était construite ainsi :
+
+```java
+SHOCK_ZONES.add(new ShockZone(sl, now + 50L + SHOCK_ZONE_TICKS, ...));  // now = tick serveur
+```
+
+tandis que `tickShockZones` fait `long now = sl.getGameTime()`. Sur un monde neuf dans une
+session fraîche, les deux valeurs sont proches et ça marche. Sur **n'importe quel monde plus
+vieux que la session en cours** — c'est-à-dire tous, en pratique — `getGameTime()` vaut des
+millions, `getTickCount()` quelques milliers : l'aura naissait avec une date d'expiration déjà
+largement dépassée. Elle disparaissait au tick suivant. Pas de champ électrique, pas de dégâts
+de sol, et rien dans les journaux.
+
+Le code du vent séparait déjà proprement les deux (`int scheduleNow` pour la planification,
+`long gameNow` pour les zones). La foudre fait pareil maintenant, et les noms disent lequel est
+lequel. Les deux `addThunderHit` qui passaient `TestProcedure.currentTick(sl)` en date de début
+et de fin sont passés à `sl.getGameTime()` pour la même raison.
+
+### L'outil qui manquait
+
+`tools/typecheck.py` rejoue trois règles du compilateur sur l'arbre Java :
+
+1. **arité** — tout appel à une méthode définie dans le même fichier doit avoir un nombre
+   d'arguments que l'une de ses déclarations accepte (les paramètres variadiques sont gérés) ;
+2. **`long` → `int`** — le deuxième argument de `TestProcedure.schedule` est inspecté : suffixe
+   `L`, tableau `long[]`, variable déclarée `long` dans la portée visible ;
+3. **`case` en double** — deux étiquettes identiques dans le même `switch`, en tenant compte
+   des `switch` imbriqués.
+
+Lancé sur la version d'avant correction, il retrouve les dix-neuf erreurs. Le mod traîne par
+ailleurs vingt-quatre signalements inoffensifs, dus à du code MCreator d'origine compacté sur
+une seule ligne et à des classes internes ; ils sont figés dans `typecheck-baseline.txt` et
+seules les **nouvelles** alertes font échouer le contrôle.
+
+```
+python3 src/main/resources/deepluckyblock_patch/tools/typecheck.py
+```
+
+### Le script d'init Gradle
+
+`tools/deep-lucky-block-patch.gradle` est la copie conforme du script qui vit dans
+`%USERPROFILE%\.mcreator\gradle\init.d\`. Il est hors du dépôt par nature — Gradle le charge
+depuis le dossier utilisateur, pas depuis le projet — donc aucun commit ne peut le corriger. Il
+est archivé ici pour être versionné avec le reste, et la version à jour sera livrée dans chaque
+archive. Au passage, il explique l'échec du lot précédent : il lève une `GradleException` si
+l'un des huit fichiers cadre manque de l'archive, et il restaure soixante et un fichiers.

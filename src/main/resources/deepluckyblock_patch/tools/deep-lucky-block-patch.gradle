@@ -1,0 +1,116 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// DEEP LUCKY BLOCK — REPARATION AUTOMATIQUE (script d'initialisation Gradle)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// EMPLACEMENT : %USERPROFILE%\.mcreator\gradle\init.d\
+//
+// POURQUOI ICI ?
+//   MCreator reecrit build.gradle ET mcreator.gradle a chaque regeneration du
+//   projet. Toute reparation placee dans le workspace est donc effacee avant
+//   meme d'avoir servi. En revanche, MCreator ne touche JAMAIS au dossier
+//   .mcreator\gradle : c'est son GRADLE_USER_HOME, il n'y stocke que des caches.
+//
+//   Gradle execute automatiquement tout fichier .gradle present dans
+//   GRADLE_USER_HOME\init.d\ AVANT de configurer le projet. Cette reparation
+//   s'applique donc a chaque build, y compris quand MCreator lance le jeu
+//   via son bouton Play, et survit a toutes les regenerations.
+//
+// CE QU'ELLE FAIT
+//   MCreator 2026.1 genere 8 fichiers "cadre" avec un generateur 1.21.1 bugue :
+//   son DeepLuckyBlockMod.java ne declare pas le constructeur
+//       public DeepLuckyBlockMod(IEventBus modBus, ModContainer modContainer)
+//   d'ou 27 erreurs "cannot find symbol: variable modBus / modContainer".
+//   Ce script restaure les versions corrigees AVANT chaque compilation, depuis
+//       src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/
+//   (dossier sous resources/, que MCreator conserve toujours).
+//
+// PORTEE
+//   Le garde-fou "si le kit n'existe pas, on ne fait rien" garantit que ce
+//   script n'a aucun effet sur les autres workspaces MCreator.
+// ═══════════════════════════════════════════════════════════════════════════
+
+gradle.rootProject { p ->
+
+    def kit = new File(p.projectDir, 'src/main/resources/deepluckyblock_patch/FIXES_MCREATOR')
+
+    // Autre projet que Deep Lucky Block : on ne fait rien du tout.
+    if (!kit.exists()) return
+
+    p.afterEvaluate {
+
+        def patch = p.tasks.register('applyMcreatorPatch') {
+            doLast {
+                int done = 0
+
+                // ── 1) les 8 fichiers cadre regeneres (et casses) par MCreator ──
+                ['DeepLuckyBlockMod.java',
+                 'init/DeepLuckyBlockModEntities.java',
+                 'init/DeepLuckyBlockModEntityRenderers.java',
+                 'init/DeepLuckyBlockModItems.java',
+                 'init/DeepLuckyBlockModModels.java',
+                 'init/DeepLuckyBlockModTabs.java',
+                 'network/DeepLuckyBlockModVariables.java',
+                 'mixin/MultiBufferSourceEnchantMixin.java.disabled'].each { rel ->
+                    def from = new File(kit, 'src/main/java/deepluckyblock/' + rel)
+                    if (!from.exists()) {
+                        throw new GradleException('[DLB-PATCH] Fichier absent du kit : ' + from)
+                    }
+                    def to = new File(p.projectDir, 'src/main/java/deepluckyblock/' + rel)
+                    to.parentFile.mkdirs()
+                    to.bytes = from.bytes
+                    done++
+                }
+
+                // Le mixin SANS le suffixe .disabled casse la compilation.
+                def brokenMixin = new File(p.projectDir,
+                    'src/main/java/deepluckyblock/mixin/MultiBufferSourceEnchantMixin.java')
+                if (brokenMixin.exists()) brokenMixin.delete()
+
+                // ── 2) les deux ressources ──
+                ['META-INF/neoforge.mods.toml', 'deepluckyblock.mixins.json'].each { rel ->
+                    def from = new File(kit, 'src/main/resources/' + rel)
+                    if (!from.exists()) return
+                    def to = new File(p.projectDir, 'src/main/resources/' + rel)
+                    to.parentFile.mkdirs()
+                    to.bytes = from.bytes
+                    done++
+                }
+
+                // MCreator ecrit parfois "neoforgeD.mods.toml" : nom invalide.
+                def wrongToml = new File(p.projectDir,
+                    'src/main/resources/META-INF/neoforged.mods.toml')
+                if (wrongToml.exists()) wrongToml.delete()
+
+                // ── 3) les 51 advancements ──
+                // Ceux de MCreator utilisent le critere "minecraft:tick", toujours
+                // vrai : tous les succes se debloquaient a l'entree dans le monde.
+                def advKit = new File(kit, 'data/deep_lucky_block/advancement')
+                if (advKit.exists()) {
+                    def advTarget = new File(p.projectDir,
+                        'src/main/resources/data/deep_lucky_block/advancement')
+                    advTarget.mkdirs()
+                    advKit.eachFile { f ->
+                        if (f.isFile()) { new File(advTarget, f.name).bytes = f.bytes; done++ }
+                    }
+                }
+
+                logger.lifecycle('[DLB-PATCH] ' + done +
+                    ' fichiers restaures (cadre MCreator + ressources + advancements).')
+            }
+        }
+
+        // ⚠️ tasks.named et NON tasks.matching{}.configureEach{} : le branchement
+        //    paresseux peut ne jamais se declencher quand Gradle recalcule son
+        //    graphe, et le mauvais graphe part ensuite en cache de configuration.
+        //    Le try/catch couvre le cas ou la tache n'existerait pas encore.
+        ['compileJava', 'processResources'].each { n ->
+            try {
+                p.tasks.named(n) { dependsOn patch }
+            } catch (Exception ignored) {
+                p.logger.lifecycle('[DLB-PATCH] tache ' + n + ' introuvable, branchement ignore.')
+            }
+        }
+
+        p.logger.lifecycle('[DLB-PATCH] Reparation armee pour ' + p.projectDir.name)
+    }
+}
