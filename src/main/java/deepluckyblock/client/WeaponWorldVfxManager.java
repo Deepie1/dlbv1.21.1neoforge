@@ -172,6 +172,27 @@ public final class WeaponWorldVfxManager {
     /** Séraphin V5 : dimensions monde contractuelles, sans respiration ni taille pseudo-aléatoire. */
     private static boolean voxelSizeLocked = false;
 
+    /**
+     * T378-NO-JITTER : la geometrie DE CETTE ANIMATION BOUGE.
+     *
+     * <p>Les trois variations par cube — sa taille propre (T367), son tirage de densite
+     * (T350) et le grain de ses huit coins (T367-VOXEL-TEXTURE) — sont toutes tirees d'un
+     * hachage de la POSITION du cube. Sur un decor immobile c'est exactement ce qu'on veut :
+     * deux cubes voisins ne sont jamais identiques, et la matiere existe. Sur une main qui se
+     * deplace, la position change a chaque image, donc le tirage change a chaque image : le
+     * meme pixel saute de taille, clignote et change de nuance soixante fois par seconde.</p>
+     *
+     * <p>C'est la cause exacte du « les pixels shakent et ont des textures differentes »
+     * constate en jeu. Quand ce drapeau est leve, les trois tirages sont geles : la taille
+     * est nominale, aucun cube n'est rejete, et le grain devient uniforme. La matiere perd
+     * un peu de son irregularite et gagne d'etre STABLE, ce qui est le seul choix tenable
+     * des que le sujet se deplace.</p>
+     */
+    private static boolean voxelFrozenDetail = false;
+
+    /** Graine unique employee par toute la geometrie gelee : un seul grain, donc une seule matiere. */
+    private static final int FROZEN_TEX_SEED = 0x2F13;
+
     // ── T359-BIG-ANIM-SCALE : échelle des grosses animations, pilotée par la taille du mob touché ──
     /** Échelle courante (1 = normale) ; appliquée à TOUTE la géométrie d'une instance. */
     private static float mobScale = 1.0f;
@@ -4195,7 +4216,12 @@ public final class WeaponWorldVfxManager {
      */
     private static void impactShadowSignature(ImpactView v, int signature) {
         boolean previousPulse = voxelPulseEnabled;
+        boolean previousFrozen = voxelFrozenDetail;
         voxelPulseEnabled = false;
+        // T378-NO-JITTER : les trois signatures d'ombre deplacent leur geometrie d'une image
+        // a l'autre (la main avance, le crane tourne, le dome se referme). Toute variation
+        // tiree de la position doit donc etre gelee, sans quoi chaque pixel tremble.
+        voxelFrozenDetail = true;
         try {
             // Comme la foudre : on vise depuis la cible vers l’attaquant, donc on inverse la
             // direction. Pour l’Allonge Spectrale ce n’est pas cosmetique — c’est elle qui
@@ -4204,11 +4230,57 @@ public final class WeaponWorldVfxManager {
             ShadowSignatureVfx.render(v.vc(), v.mat(), v.tmp(),
                     v.cx(), v.cy(), v.cz(), v.t(),
                     -v.dirX(), -v.dirZ(), signature, v.fadeA(),
-                    (int) (v.inst().seed & 0x7FFFFFFFL));
+                    (int) (v.inst().seed & 0x7FFFFFFFL),
+                    probeGroundOffset(v.inst().x, v.inst().y, v.inst().z));
         } finally {
             voxelPulseEnabled = previousPulse;
+            voxelFrozenDetail = previousFrozen;
         }
     }
+
+    /**
+     * T378-GROUND : hauteur du SOL REEL sous le point d'impact, exprimee en ecart par rapport
+     * au centre de l'effet.
+     *
+     * <p>Le serveur diffuse comme origine {@code pieds + hauteur/2} de la cible. Le client
+     * n'en connait pas la taille : la constante {@code GROUND_Y = -0,86} supposait donc une
+     * cible d'1,72 bloc. Sur un zombie (1,95) l'ombre flottait ; sur une vache (1,40), un
+     * mouton (1,30) ou une poule (0,70) elle etait ENTERREE de 16 a 51 centimetres — le
+     * « l'animation est dans le sol » constate en jeu. Une ombre portee est le seul objet du
+     * mod qui ne tolere aucune approximation verticale : elle est visible exactement parce
+     * qu'elle epouse la surface.</p>
+     *
+     * <p>On sonde donc vers le bas, de la hauteur de l'impact jusqu'a huit blocs, et on prend
+     * le SOMMET de la premiere forme de collision rencontree. Les dalles, les marches et les
+     * fermes labourees sont donc traitees correctement, l'herbe haute est traversee, et une
+     * cible en vol voit son ombre rester au sol au lieu de la suivre en l'air.</p>
+     */
+    private static float probeGroundOffset(double worldX, double worldY, double worldZ) {
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) return SHADOW_GROUND_FALLBACK;
+        // Meme sondage que FireSignatureVfx.sampleGround, dont la forme est deja eprouvee :
+        // on part legerement au-dessus de l'origine et on descend jusqu'a vingt-quatre blocs.
+        net.minecraft.core.BlockPos.MutableBlockPos probe = new net.minecraft.core.BlockPos.MutableBlockPos();
+        int bx = Mth.floor(worldX);
+        int bz = Mth.floor(worldZ);
+        int maxY = Math.min(level.getMaxBuildHeight() - 1, Mth.floor(worldY + 0.75));
+        int minY = Math.max(level.getMinBuildHeight(), Mth.floor(worldY - 24.0));
+        for (int y = maxY; y >= minY; y--) {
+            probe.set(bx, y, bz);
+            net.minecraft.world.phys.shapes.VoxelShape shape =
+                    level.getBlockState(probe).getCollisionShape(level, probe);
+            if (shape.isEmpty()) continue;
+            double top = shape.max(net.minecraft.core.Direction.Axis.Y);
+            if (!Double.isFinite(top)) continue;
+            double candidate = y + top;
+            if (candidate > worldY + 0.751 || candidate < worldY - 24.0) continue;
+            return (float) (candidate - worldY);
+        }
+        return SHADOW_GROUND_FALLBACK;
+    }
+
+    /** Repli quand aucun sol n'est trouve en huit blocs (vol, vide) : l'ancienne constante. */
+    private static final float SHADOW_GROUND_FALLBACK = -0.86f;
 
     /**
      * 影 OMBRE — aiguillage des trois signatures refondues (T377) vers
@@ -4590,13 +4662,13 @@ public final class WeaponWorldVfxManager {
                 : (voxelPulseEnabled ? framePixelScale * smoothPulse(cx, cy, cz) : 1.0f) * variantScale;
         // …T367 : …et chaque cube a en plus sa PROPRE taille (aucun n'est identique à son voisin).
         int sizeSeed = (int) (cx * 911.0f + cy * 577.0f + cz * 331.0f);
-        if (!voxelSizeLocked) scale *= 0.82f + 0.34f * pixelHash(0x51C3, sizeSeed);
+        if (!voxelSizeLocked && !voxelFrozenDetail) scale *= 0.82f + 0.34f * pixelHash(0x51C3, sizeSeed);
         hx *= scale;
         hy *= scale;
         hz *= scale;
 
         // T350-VFX-VARIATIONS : allègement contrôlé (les contours lumineux restent toujours dessinés)
-        if (pixelDensity < 0.999f && alpha < 200) {
+        if (!voxelFrozenDetail && pixelDensity < 0.999f && alpha < 200) {
             float keep = pixelHash(0x5EED, (int) (cx * 977.0f + cy * 613.0f + cz * 389.0f));
             if (keep > pixelDensity) return;
         }
@@ -4609,7 +4681,7 @@ public final class WeaponWorldVfxManager {
 
         // T367-VOXEL-TEXTURE : les 8 coins du cube ont chacun leur nuance -> la face n'est plus un
         // aplat, elle a un dégradé interne et des arêtes légèrement assombries (occlusion).
-        int texSeed = sizeSeed ^ (alpha * 31);
+        int texSeed = voxelFrozenDetail ? FROZEN_TEX_SEED : (sizeSeed ^ (alpha * 31));
         prepareCorners(texSeed);
 
         float x0 = cx - hx, x1 = cx + hx;
@@ -4688,12 +4760,12 @@ public final class WeaponWorldVfxManager {
         float scale = voxelSizeLocked ? 1.0f
                 : (voxelPulseEnabled ? framePixelScale * smoothPulse(cx, cy, cz) : 1.0f) * variantScale;
         int sizeSeed = (int) (cx * 911.0f + cy * 577.0f + cz * 331.0f);
-        if (!voxelSizeLocked) scale *= 0.82f + 0.34f * pixelHash(0x51C3, sizeSeed);
+        if (!voxelSizeLocked && !voxelFrozenDetail) scale *= 0.82f + 0.34f * pixelHash(0x51C3, sizeSeed);
         hx *= scale;
         hy *= scale;
         hz *= scale;
 
-        if (pixelDensity < 0.999f && alpha < 200) {
+        if (!voxelFrozenDetail && pixelDensity < 0.999f && alpha < 200) {
             float keep = pixelHash(0x5EED, (int) (cx * 977.0f + cy * 613.0f + cz * 389.0f));
             if (keep > pixelDensity) return;
         }
@@ -4703,7 +4775,7 @@ public final class WeaponWorldVfxManager {
             alpha = Math.round(alpha * cubeVeil);
             if (alpha <= 5) return;
         }
-        prepareCorners(sizeSeed ^ (alpha * 31));
+        prepareCorners(voxelFrozenDetail ? FROZEN_TEX_SEED : (sizeSeed ^ (alpha * 31)));
 
         float cr = Mth.cos(rollRad), sr = Mth.sin(rollRad);
         float cp = Mth.cos(pitchRad), sp = Mth.sin(pitchRad);

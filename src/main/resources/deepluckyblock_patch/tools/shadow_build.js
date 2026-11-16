@@ -59,6 +59,9 @@ function buildShadow(variant, t, salt = 4211, camYaw = 0.62, camPitch = 0.30) {
   // sol se lit immédiatement comme un bug, alors qu'une ombre un peu enfouie reste juste.
   const GROUND_Y = -0.86, SLAB_H = 0.030;
   const REACH_SPAN = 9.0;
+  // T378-GRASP-LEAD : voir ShadowSignatureVfx.GRASP_LEAD. En jeu le client sonde le sol réel
+  // sous l'impact ; ici l'aperçu n'a pas de monde, donc GROUND_Y garde sa valeur de repli.
+  const GRASP_LEAD = 1.45;
   const RIFT_H = 2.70, RIFT_W = 1.15;
   // Deux blocs derrière le point d'impact : la faille ne s'ouvre plus DANS la cible, donc
   // le souffle la traverse au lieu de partir de son dos.
@@ -223,6 +226,11 @@ function buildShadow(variant, t, salt = 4211, camYaw = 0.62, camPitch = 0.30) {
   const renderGrasp = (alpha) => {
     const a = Math.round(alpha * smooth(t / 0.035) * (1 - smooth((t - 0.93) / 0.07)));
     if (a <= 4) return;
+    // T378-GRASP-LEAD : miroir du .java. Toute l'allonge avance de 1,45 bloc DERRIÈRE la
+    // cible, sans quoi la main se dresse entre le porteur et sa victime et se referme sur
+    // le vide qui les sépare. Ici c'est FOFF qui porte le décalage, comme RIFT_BACK pour
+    // la faille ; FSGN reste à +1, l'allonge ne retourne pas son repère.
+    FOFF = GRASP_LEAD; FSGN = 1;
     const flow = smooth(t / 0.13);
     const spine = clamp01((t - 0.13) / 0.14);
     const peel = smooth((t - 0.27) / 0.18);

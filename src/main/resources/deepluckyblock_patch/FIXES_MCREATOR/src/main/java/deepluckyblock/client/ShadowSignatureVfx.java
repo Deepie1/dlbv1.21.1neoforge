@@ -112,7 +112,32 @@ public final class ShadowSignatureVfx {
      * enfouie est <i>invisible là où elle s'enfonce</i> et juste partout ailleurs, alors qu'une
      * ombre flottante est fausse partout.
      */
-    private static final float GROUND_Y = -0.86f;
+    /**
+     * T378-GROUND : hauteur du sol dans le repere local, c'est-a-dire l'ecart entre la surface
+     * reelle et le centre de l'effet. Ce n'est plus une constante : le rendu la recoit a chaque
+     * image, sondee sous le point d'impact. Elle valait -0,86 en dur, ce qui revenait a parier
+     * que toute cible mesure 1,72 bloc — vrai pour un joueur, faux pour tout le reste, et c'est
+     * ce pari qui enterrait la main sous les mobs courts.
+     */
+    private static float GROUND_Y = -0.86f;
+
+    /**
+     * T378-GRASP-LEAD : de combien la main se leve DERRIERE la cible.
+     *
+     * <p>Le repere de l'allonge a son avant ({@code f} positif) du cote oppose au porteur.
+     * Le poignet etait place a {@code f = -0,54}, donc entre le porteur et sa victime : la
+     * main se dressait DEVANT le mob et se refermait sur l'air qui le separait du joueur.
+     * C'est le « la main apparait entre le joueur et le mob » constate en jeu.</p>
+     *
+     * <p>On decale l'origine entiere de l'allonge de 1,45 bloc vers l'avant. Le couloir
+     * d'ombre continue de venir du porteur — il va maintenant jusqu'a 1,45 bloc AU-DELA de la
+     * cible — et le poignet se retrouve a {@code f = +0,91}. Comme les doigts se referment
+     * vers {@code -f} sur 2,45 bloc d'envergure, la prise couvre {@code f} de -1,54 a +0,91 :
+     * la cible, qui est a {@code f = 0}, est exactement dans la poigne. La main sort donc du
+     * sol derriere elle, la saisit, puis repart vers le porteur en la tirant — ce que fait
+     * deja le gameplay avec {@code dragMovementHold}.</p>
+     */
+    private static final float GRASP_LEAD = 1.45f;
 
     /** Demi-épaisseur d'une dalle plaquée au sol. Assez fine pour être plate, assez épaisse pour exister. */
     private static final float SLAB_H = 0.030f;
@@ -170,8 +195,12 @@ public final class ShadowSignatureVfx {
      */
     public static void render(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                               float cx, float cy, float cz, float t,
-                              float dx, float dz, int variant, int alpha, int salt) {
+                              float dx, float dz, int variant, int alpha, int salt,
+                              float groundOffset) {
         if (t <= 0.0f || t >= 1.0f || alpha <= 4) return;
+        // T378-GROUND : le sol reel, sonde par l'appelant. Borne large : une valeur aberrante
+        // (cible tres haute, bloc fantome) ne doit pas projeter l'ombre a l'autre bout du monde.
+        GROUND_Y = Mth.clamp(groundOffset, -4.0f, 0.10f);
         float length = Mth.sqrt(dx * dx + dz * dz);
         if (length < 0.001f) { dx = 0.0f; dz = 1.0f; }
         else { dx /= length; dz /= length; }
@@ -209,6 +238,12 @@ public final class ShadowSignatureVfx {
                                     float dx, float dz, int alpha, int salt) {
         int a = Math.round(alpha * smooth(t / 0.035f) * (1.0f - smooth((t - 0.93f) / 0.07f)));
         if (a <= 4) return;
+
+        // T378-GRASP-LEAD : toute l'allonge avance derriere la cible (voir GRASP_LEAD). Un
+        // decalage de l'ORIGINE, et non de la seule main : le couloir, l'echine, les lames et
+        // la cendre gardent ainsi leur alignement exact les uns par rapport aux autres.
+        cx = cx + dx * GRASP_LEAD;
+        cz = cz + dz * GRASP_LEAD;
 
         final float flow = smooth(t / 0.13f);                       // avancée du front
         final float spine = clamp((t - 0.13f) / 0.14f);
