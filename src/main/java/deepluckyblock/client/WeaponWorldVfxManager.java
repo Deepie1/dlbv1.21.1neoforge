@@ -654,7 +654,14 @@ public final class WeaponWorldVfxManager {
             case MJOLNIR_HAMMERFALL -> 250;   // 40 d'appel + impact + 200 de dalle + sortie
             case STORMCALL_JUDGMENT -> 170;
             case DRAGON_CHAOS_PRISM, BIG_BANG_SCAR -> 22;
-            case ECLIPSE_VEIL, NULL_RIFT_FISSURE,
+            // T377-SHADOW : les trois signatures de l’ombre sortent du case fourre-tout ou
+            // ECLIPSE_VEIL etait coince a 18 ticks — moins d’une seconde pour une eclipse.
+            // SPECTRAL_REACH et WITHER_SHADOW_RIFT, eux, n’etaient meme pas listes et
+            // tombaient sur le « default -> 14 » de fin de table.
+            case SPECTRAL_REACH -> 118;       // coulee + echine + main qui se leve et tire
+            case WITHER_SHADOW_RIFT -> 160;   // ouverture + crane + souffle + inspiration
+            case ECLIPSE_VEIL -> 200;         // montee + voile + nuit + anneau + griffure
+            case NULL_RIFT_FISSURE,
                  CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE -> 18;
             case VENOM_BRIAR_FANG -> 112;
             case MIASMA_SHROUD -> 600; // Le serveur raccourcit à 6 s ou enchaîne jusqu'à 30 s.
@@ -1821,6 +1828,17 @@ public final class WeaponWorldVfxManager {
                 case 0 -> WeaponVisualEffectId.CHAIN_VOLT_ARC;
                 case 1 -> WeaponVisualEffectId.MJOLNIR_HAMMERFALL;
                 default -> WeaponVisualEffectId.STORMCALL_JUDGMENT;
+            };
+        }
+        // T377-SHADOW : dixieme famille. Meme piege que l’eau (T375) puis la foudre (T376) —
+        // sans cette branche l’ombre retombait dans le cas par defaut (bois) et sortait en BRUN,
+        // alors que son glint etait violet. C’est le defaut le plus couteux a diagnostiquer de
+        // ce fichier, parce que l’effet s’affiche : il est juste de la mauvaise famille.
+        if (deepluckyblock.util.AnimFamily.SHADOW.equals(canonical)) {
+            return switch (index) {
+                case 0 -> WeaponVisualEffectId.SPECTRAL_REACH;
+                case 1 -> WeaponVisualEffectId.WITHER_SHADOW_RIFT;
+                default -> WeaponVisualEffectId.ECLIPSE_VEIL;
             };
         }
         if (deepluckyblock.util.AnimFamily.WIND.equals(canonical)) {
@@ -4147,10 +4165,60 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * 影 OMBRE — des <b>tentacules courbes</b> rampent au sol depuis l'impact puis se RÉTRACTENT,
-     * avec des griffures en éclats inclinés et une éclipse qui avale la lumière.
+     * Pont vers {@link ShadowSignatureVfx}, sur le modele de
+     * {@link #impactThunderSignature(ImpactView, int)}.
+     *
+     * <p>Le pouls de taille est coupe pendant tout le trace. Les modeles de l’ombre — la main
+     * spectrale et le crane du Fletrisseur — sont des assemblages de pieces jointives : un
+     * facteur d’echelle applique cube par cube les disjoint, et le crane se met a respirer
+     * comme un tas de gravier. Meme raison, meme remede que pour le marteau de Thor.</p>
+     */
+    private static void impactShadowSignature(ImpactView v, int signature) {
+        boolean previousPulse = voxelPulseEnabled;
+        voxelPulseEnabled = false;
+        try {
+            // Comme la foudre : on vise depuis la cible vers l’attaquant, donc on inverse la
+            // direction. Pour l’Allonge Spectrale ce n’est pas cosmetique — c’est elle qui
+            // decide de quel cote part le couloir d’ombre, et a l’envers la main se leve
+            // derriere la victime au lieu d’aller la chercher.
+            ShadowSignatureVfx.render(v.vc(), v.mat(), v.tmp(),
+                    v.cx(), v.cy(), v.cz(), v.t(),
+                    -v.dirX(), -v.dirZ(), signature, v.fadeA(),
+                    (int) (v.inst().seed & 0x7FFFFFFFL));
+        } finally {
+            voxelPulseEnabled = previousPulse;
+        }
+    }
+
+    /**
+     * 影 OMBRE — aiguillage des trois signatures refondues (T377) vers
+     * {@link ShadowSignatureVfx} ; les autres effets d’ombre gardent le rendu generique.
      */
     private static void impactShadow(ImpactView v) {
+        int shadowSignature = switch (v.inst().effect) {
+            case SPECTRAL_REACH -> ShadowSignatureVfx.GRASP;
+            case WITHER_SHADOW_RIFT -> ShadowSignatureVfx.RIFT;
+            case ECLIPSE_VEIL -> ShadowSignatureVfx.ECLIPSE;
+            default -> -1;
+        };
+        if (shadowSignature >= 0) {
+            impactShadowSignature(v, shadowSignature);
+            return;
+        }
+        impactShadowLegacy(v);
+    }
+
+    /**
+     * 影 OMBRE (rendu generique) — des <b>tentacules courbes</b> rampent au sol depuis l'impact
+     * puis se RÉTRACTENT, avec des griffures en éclats inclinés et une éclipse qui avale la
+     * lumière.
+     *
+     * <p>T377 : les trois grandes signatures d’ombre ne traversent plus ce corps. Ce qui suit ne
+     * sert plus qu’aux effets d’ombre secondaires sans choregraphie propre. Les branches
+     * {@code WITHER_SHADOW_RIFT} / {@code ECLIPSE_VEIL} / {@code SPECTRAL_REACH} qu’il contient
+     * encore sont desormais inatteignables ; elles restent comme trace de l’ancien rendu.</p>
+     */
+    private static void impactShadowLegacy(ImpactView v) {
         float t = v.t();
         float S = v.S();
         WeaponVisualEffectId fx = v.inst().effect;

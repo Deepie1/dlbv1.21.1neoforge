@@ -40,9 +40,17 @@ public final class AnimFamily {
      * Correspond à {@link deepluckyblock.enchantments.DeepElement#THUNDER}, « Foudre ».
      */
     public static final String THUNDER = "thunder";
+    /**
+     * T377 : dixieme famille, l’ombre (allonge spectrale, faille du Fletrisseur, voile
+     * d’eclipse). Correspond a {@link deepluckyblock.enchantments.DeepElement#SHADOW},
+     * « Ombre », qui est aussi l’element de toutes les malediction
+     * ({@code isCursePath}).
+     */
+    public static final String SHADOW = "shadow";
 
     /** Ordre d'affichage de l'aide et de l'autocomplétion : un seul nom par famille, en anglais. */
-    public static final String[] ALL = {FIRE, WATER, THUNDER, WIND, EARTH, METAL, LIGHT, POISON, WOOD};
+    public static final String[] ALL =
+            {FIRE, WATER, THUNDER, SHADOW, WIND, EARTH, METAL, LIGHT, POISON, WOOD};
 
     private AnimFamily() { }
 
@@ -75,6 +83,12 @@ public final class AnimFamily {
             // foudre / thunder (l'électricité et l'orage sont la même famille, DeepElement.THUNDER)
             case "foudre", "thunder", "lightning", "eclair", "éclair", "volt", "electric",
                  "electrique", "électrique", "orage", "storm", "bolt" -> THUNDER;
+            // ombre / shadow (les tenebres, les maledictions et le spectral sont la meme
+            // famille, DeepElement.SHADOW — cf. isCursePath)
+            case "ombre", "shadow", "tenebre", "tenebres", "ténèbre", "ténèbres",
+                 "dark", "darkness", "noir", "nuit", "night", "spectre", "spectral",
+                 "eclipse", "éclipse", "malediction", "malédiction", "curse",
+                 "wither", "fletrissure", "flétrissure", "void_shade" -> SHADOW;
             default -> null;
         };
     }
@@ -92,6 +106,10 @@ public final class AnimFamily {
             case WOOD -> 0xA9743C;      // DeepElement.WOOD.primary — écorce, pas feuillage
             case WATER -> 0x62C7E8;
             case THUNDER -> 0x5E3AFF;   // DeepElement.THUNDER.primary — violet électrique
+            // DeepElement.SHADOW.accent, et NON sa primaire 0x4D318E : sur une lame, le glint
+            // est un reflet, donc la valeur la plus claire de l’element. La primaire, plus
+            // sombre, se confondait avec l’acier non eclaire.
+            case SHADOW -> 0x7100A7;
             default -> 0xFFF3B0;
         };
     }
@@ -109,6 +127,7 @@ public final class AnimFamily {
             case WOOD -> "§6";    // écorce brun doré — doit rester distinct de la Terre
             case WATER -> "§3";
             case THUNDER -> "§d";  // violet clair : l'arc est violet, pas bleu comme l'eau
+            case SHADOW -> "§5";  // violet fonce — doit rester distinct du §d de la Foudre
             default -> "§f";
         };
     }
@@ -126,6 +145,7 @@ public final class AnimFamily {
             case WOOD -> "Wood";
             case WATER -> "Water";
             case THUNDER -> "Thunder";
+            case SHADOW -> "Shadow";
             default -> "Animation";
         };
     }

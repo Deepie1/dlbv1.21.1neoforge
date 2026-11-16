@@ -6,7 +6,73 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 > **Si le navigateur sert une vieille version** (le CDN de GitHub garde les fichiers bruts en cache quelques minutes), remplacer `refs/heads/arena/605e67fb-dlbv1-21-1neoforge` par le SHA du commit — par exemple `raw/fa83a2f/…` pour la v1.3 — ou ajouter `?v=2` à la fin de l'adresse.
 
-## Foudre v12 — 4 novembre 2026 ⟵ **LOT COURANT**
+## Ombre — trois signatures · 4 novembre 2026 ⟵ **LOT COURANT**
+
+> **Dixième famille refondue.** `SPECTRAL_REACH`, `WITHER_SHADOW_RIFT` et `ECLIPSE_VEIL`
+> passaient de **14 à 18 ticks** — moins d'une seconde — avec un rendu générique de
+> tentacules et aucun gameplay. Elles tiennent maintenant **118, 160 et 200 ticks**, avec un
+> moteur voxel dédié, un gameplay serveur complet et une ressource partagée.
+>
+> **Le problème propre à cet élément.** Les neuf familles précédentes se voient parce
+> qu'elles **émettent** de la lumière. L'ombre, non : du noir sur un monde déjà sombre ne
+> produit *aucune image*, et l'ancien rendu tombait exactement là-dedans — ses bras noirs
+> étaient invisibles la nuit et dans les grottes, c'est-à-dire là où on joue. Trois règles
+> en découlent : **jamais de noir sans liseré** (c'est le liseré qu'on voit, le noir n'est
+> que le trou qu'il entoure), **la silhouette avant la matière**, et le noir n'est pas
+> `0x000000` mais `0x0B0814` — le noir pur se confond avec le ciel de nuit.
+>
+> **Les trois chorégraphies.**
+> Ⅰ **Allonge Spectrale** — l'ombre du porteur se détache du sol et court sur neuf blocs ;
+> une échine la remonte, puis une **main articulée** — à plat, puis décollée par rotation
+> autour du poignet — se referme et **ramène** la cible. Rien n'y est radial : le sujet est
+> l'allonge.
+> Ⅱ **Faille du Flétrisseur** — une fente s'ouvre en amande, un **crâne de 96 pièces** en
+> sort, souffle la flétrissure, puis la faille **inspire** : tout est tiré vers elle.
+> Ⅲ **Voile d'Éclipse** — un soleil noir monte, sa couronne se déploie, un **dôme de sept
+> blocs** descend sur l'arène. L'anneau de diamant annonce la fin ; trois griffures déchirent
+> le dôme.
+>
+> **AoE *et* cible seule, pour chacune.** Allonge : couloir de 9×2,7 blocs / cible clouée
+> 72 ticks puis tractée, trois serrages. Faille : aspiration de 8 blocs en quatre secousses /
+> Flétrissure **II** double durée. Éclipse : cinq battements sous le dôme / les trois
+> griffures **convergent** sur la cible unique (×3).
+>
+> **Buffs et debuffs.** Liant des trois : la **marque d'ombre**, qui fonctionne à l'envers de
+> la charge statique de la foudre — elle majore la **durée des afflictions** (+35 % par pile)
+> et non les dégâts, parce que l'ombre est l'élément des malédictions. À saturation elle
+> s'effondre. Côté porteur : Absorption sur l'Allonge, soin et Régénération sur la Faille,
+> Vision nocturne et Force tant qu'il reste **sous** le dôme de l'Éclipse.
+>
+> **Deux décalages trouvés en relisant les horloges côte à côte.** L'emprise de l'Allonge
+> durait 40 ticks (valeur copiée de la foudre) alors que la traction a lieu au tick 70 : la
+> victime avait dix-sept ticks pour sortir du cadre pendant que la main se refermait sur du
+> vide → **72 ticks**. Et les battements de l'Éclipse commençaient au tick 54, alors que
+> l'ourlet du dôme ne touche le sol qu'au tick 69 : **la zone frappait avant d'exister**
+> → premier battement au tick 68.
+>
+> **Deux bogues attrapés avant livraison.** (1) Le paramètre `scale` de la main était reçu
+> puis **jamais appliqué** : la main sortait à l'échelle 1 quoi qu'on passe, un réglage mort.
+> (2) Quatre sons pressentis (`soul_escape`, `phantom.bite`, `sculk.clicking`, `wither.shoot`)
+> **n'existent pas** en 1.21 — chaque constante a été vérifiée par `grep` contre les usages
+> réels du dépôt avant d'être retenue.
+>
+> **Tests :** `/anim shadow` (ou `/anim ombre`), puis frapper un mob entouré d'autres.
+> Visuel seul : `/dlbvfx play 3` · `/dlbvfx play 24` · `/dlbvfx play 33`.
+
+| Fichier | Lien |
+|---|---|
+| Aperçu animé (HTML) | [DLB_Shadow_Three_Signatures_preview.html](https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Shadow_Three_Signatures_preview.html) |
+| Sources (ZIP, 46 entrées) | [DLB_Shadow_Three_Signatures_src.zip](https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Shadow_Three_Signatures_src.zip) |
+| Le fichier **nouveau** | [ShadowSignatureVfx.java](https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/ShadowSignatureVfx.java) |
+| Journal technique (§ 37) | [WATER_SIGNATURES.md](https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/WATER_SIGNATURES.md) |
+
+> **⚠ Le `.html` s'ouvre en texte brut** depuis `/raw/` : clic droit → « Enregistrer
+> sous », puis ouvrir le fichier local. Le ZIP est aussi **embarqué dans la page**, donc le
+> bouton de téléchargement fonctionne même hors ligne.
+
+---
+
+## Foudre v12 — 4 novembre 2026
 
 > **Trois retours de combat, trois corrections.** Le recul du marteau part désormais : la v11
 > a débloqué la fonction, la v12 la règle et traite les deux autres signatures.

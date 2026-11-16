@@ -303,6 +303,13 @@ public final class WeaponVfxServerListener {
             WeaponVisualEffectId.CHAIN_VOLT_ARC, WeaponVisualEffectId.MJOLNIR_HAMMERFALL,
             WeaponVisualEffectId.STORMCALL_JUDGMENT
     };
+    /**
+     * Famille OMBRE (T377) : allonge spectrale, faille du Flétrisseur, voile d'éclipse.
+     */
+    private static final WeaponVisualEffectId[] ANIM_SHADOW = {
+            WeaponVisualEffectId.SPECTRAL_REACH, WeaponVisualEffectId.WITHER_SHADOW_RIFT,
+            WeaponVisualEffectId.ECLIPSE_VEIL
+    };
     private static final WeaponVisualEffectId[] ANIM_LIGHT = {
             WeaponVisualEffectId.SERAPH_SKY_PILLAR, WeaponVisualEffectId.ASTRAL_STAR_LANCE,
             WeaponVisualEffectId.CHRONO_ETERNAL_HALO
@@ -458,6 +465,7 @@ public final class WeaponVfxServerListener {
             applyPoisonGameplay(attacker, livingTarget, fx);
             applyWaterGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker));
             applyThunderGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker));
+            applyShadowGameplay(attacker, livingTarget, fx, estimatedWeaponDamage(attacker));
         }
     }
 
@@ -604,6 +612,7 @@ public final class WeaponVfxServerListener {
             applyPoisonGameplay(comboAttacker, target, sig);
             applyWaterGameplay(comboAttacker, target, sig, weaponDamage);
             applyThunderGameplay(comboAttacker, target, sig, weaponDamage);
+            applyShadowGameplay(comboAttacker, target, sig, weaponDamage);
             // Étincelles de la famille, une par élément : le mélange de couleurs se voit tout de suite.
             WeaponVfxSubtle.Subtle accent = WeaponVfxSubtle.pick(el, sl.random.nextLong());
             broadcastNear(sl, tx, ty, tz, 0, WeaponVfxSubtle.NET_KIND_BASE + accent.index(), 1,
@@ -2872,6 +2881,609 @@ public final class WeaponVfxServerListener {
     }
 
     // ============================================================================================
+    // 影 OMBRE (T377) — allonge spectrale, faille du Flétrisseur, voile d'éclipse
+    // ============================================================================================
+
+    /**
+     * Piles de <b>Marque d'ombre</b> posées sur une créature, avec leur instant de péremption.
+     *
+     * <p>C'est le liant des trois signatures, comme la charge statique l'est pour la foudre —
+     * mais il fonctionne à l'envers. La charge statique majore les <i>dégâts</i> ; la marque
+     * d'ombre, elle, majore la <b>durée des afflictions</b>. L'ombre du mod est l'élément des
+     * malédictions ({@code DeepElement.isCursePath} renvoie {@code SHADOW} pour toutes), donc
+     * sa ressource partagée devait porter sur les états, pas sur les points de vie.</p>
+     */
+    private record UmbralMark(int stacks, long expires) { }
+
+    /** Marques d'ombre en cours, par identifiant d'entité. */
+    private static final Map<Integer, UmbralMark> UMBRAL_MARKS = new ConcurrentHashMap<>();
+    /** Au-delà, la marque s'effondre d'elle-même au lieu de s'accumuler. */
+    private static final int MARK_MAX = 4;
+    /** Allongement des afflictions par pile accumulée. */
+    private static final float MARK_PER_STACK = 0.35f;
+    /** Durée de vie d'une marque sans nouvelle imposition (ticks). */
+    private static final int MARK_DECAY = 160;
+
+    /** Rayon d'aspiration de la faille, et portée du cône de souffle. */
+    private static final double RIFT_PULL_RADIUS = 8.0;
+    private static final double RIFT_BREATH_RANGE = 6.5;
+    /** Rayon du dôme d'éclipse. Doit rester aligné sur {@code ShadowSignatureVfx.DOME_R}. */
+    private static final double DOME_RADIUS = 7.0;
+    /** Longueur du couloir de l'allonge, et sa demi-largeur. */
+    private static final double REACH_LENGTH = 9.0;
+    private static final double REACH_HALF_WIDTH = 1.35;
+
+    /**
+     * Pose des piles de marque et renvoie le total après ajout. À saturation la marque
+     * s'effondre sur place via {@link #collapseMark}.
+     */
+    private static int addUmbralMark(ServerLevel sl, LivingEntity victim, int stacks, int attackerId) {
+        if (victim == null || !victim.isAlive() || stacks <= 0) return 0;
+        final int id = victim.getId();
+        final int now = TestProcedure.currentTick(sl);
+        // Purge opportuniste. Une entree n'est retiree que par saturation : une creature
+        // marquee qui meurt laisse donc la sienne pour toujours. C'est le comportement de
+        // STATIC_CHARGES, et ce n'est pas une raison pour le reproduire — au-dela de 256
+        // entrees on balaie les perimees. Le cout est nul en pratique (la methode n'est
+        // appelee que sur une frappe d'ombre) et la carte ne peut plus deriver.
+        if (UMBRAL_MARKS.size() > 256) UMBRAL_MARKS.values().removeIf(m -> m.expires() <= now);
+        UmbralMark prior = UMBRAL_MARKS.get(id);
+        int had = (prior == null || prior.expires() <= now) ? 0 : prior.stacks();
+        int total = had + stacks;
+        if (total >= MARK_MAX) {
+            UMBRAL_MARKS.remove(id);
+            collapseMark(sl, victim, attackerId, total);
+            return 0;
+        }
+        UMBRAL_MARKS.put(id, new UmbralMark(total, now + MARK_DECAY));
+        PixelFx.send(sl, ParticleTypes.SCULK_SOUL,
+                victim.getX(), victim.getY() + victim.getBbHeight() * 0.80, victim.getZ(),
+                3 + total * 2, 0.26, 0.34, 0.26, 0.012);
+        return total;
+    }
+
+    /** Allongement de durée apporté par les marques présentes, sans les consommer. */
+    private static int markedDuration(ServerLevel sl, LivingEntity victim, int baseTicks) {
+        if (victim == null) return baseTicks;
+        UmbralMark mark = UMBRAL_MARKS.get(victim.getId());
+        if (mark == null || mark.expires() <= TestProcedure.currentTick(sl)) return baseTicks;
+        return Math.round(baseTicks * (1.0f + MARK_PER_STACK * mark.stacks()));
+    }
+
+    /**
+     * Effondrement de la marque à saturation : la victime encaisse d'un coup toute l'ombre
+     * accumulée, et se retrouve aveuglée.
+     *
+     * <p>Contrairement au claquage de la charge statique, l'effondrement <b>ne se propage
+     * pas</b> aux voisins. La raison est la même que celle qui a forcé la garde anti-récursion
+     * de {@code dischargeStatic} : une marque qui en poserait une autre pourrait se renvoyer la
+     * balle en anneau. Ici on tranche à la source — l'effondrement ne pose aucune marque, donc
+     * la question ne se pose jamais.</p>
+     */
+    private static void collapseMark(ServerLevel sl, LivingEntity victim, int attackerId, int stacks) {
+        final double vx = victim.getX();
+        final double vy = victim.getY() + victim.getBbHeight() * 0.55;
+        final double vz = victim.getZ();
+        hurtWithCapturedWeapon(sl, attackerId, victim, 1.30f * stacks);
+        victim.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 70, 0, true, false));
+        victim.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 110, 0, true, false));
+        sl.playSound(null, vx, vy, vz, SoundEvents.ELDER_GUARDIAN_CURSE, SoundSource.PLAYERS,
+                0.50f, 1.45f);
+        PixelFx.send(sl, ParticleTypes.SQUID_INK, vx, vy, vz, 40, 0.55, 0.60, 0.55, 0.06);
+        PixelFx.send(sl, ParticleTypes.SCULK_CHARGE_POP, vx, vy, vz, 16, 0.42, 0.50, 0.42, 0.04);
+        broadcastNear(sl, (float) vx, (float) vy, (float) vz,
+                WeaponVisualEffectId.WITHER_SHADOW_RIFT.id, KIND_IMPACT, 3,
+                (float) vx, (float) vy, (float) vz,
+                (float) vx, (float) vy, (float) vz, 0, 0.40f);
+    }
+
+    /**
+     * Routage des trois signatures d'ombre. Comme la foudre avant la T376, l'ombre n'avait
+     * <b>aucun</b> gameplay : trois animations de 14 à 18 ticks qui ne faisaient rien.
+     *
+     * <p>Les trois partagent la <b>marque d'ombre</b> et se répondent : l'allonge en pose sur
+     * une ligne, la faille en pose sur tout un disque en aspirant, l'éclipse en pose à chaque
+     * battement du dôme. Chacune traite explicitement les deux cas demandés — <b>plusieurs
+     * ennemis</b> et <b>ennemi seul</b> — pour qu'aucune ne soit décevante en duel.</p>
+     */
+    private static void applyShadowGameplay(LivingEntity attacker, LivingEntity target,
+                                            WeaponVisualEffectId fx, float weaponDamage) {
+        if (fx == null || target == null) return;
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        float damage = Math.max(0.0f, weaponDamage);
+        if (fx == WeaponVisualEffectId.SPECTRAL_REACH) {
+            applySpectralReachGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.WITHER_SHADOW_RIFT) {
+            applyWitherRiftGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.ECLIPSE_VEIL) {
+            applyEclipseVeilGameplay(attacker, target, sl, damage);
+        }
+    }
+
+    /**
+     * Déplace une créature vers un point, en traversant le mur invisible du client.
+     *
+     * <p><b>Le piège.</b> {@code setDeltaMovement} seul n'a aucun effet sur un <i>joueur</i> :
+     * son client fait autorité sur sa position et écrase la valeur au tick suivant.
+     * {@code hurtMarked} ne suffit pas non plus. La seule méthode fiable, établie en T376 et
+     * confirmée sur plusieurs mods 1.21, est d'envoyer explicitement le paquet de vélocité au
+     * client concerné. Sur un mob, rien de tout cela n'est nécessaire.</p>
+     *
+     * <p>Une composante verticale est toujours ajoutée : une traction purement horizontale est
+     * absorbée par la première marche, et la victime reste collée au talus en glissant.</p>
+     */
+    private static void shadowYank(ServerLevel sl, LivingEntity victim,
+                                   double toX, double toY, double toZ, double strength) {
+        if (victim == null || !victim.isAlive()) return;
+        double ddx = toX - victim.getX();
+        double ddz = toZ - victim.getZ();
+        double flat = Math.sqrt(ddx * ddx + ddz * ddz);
+        if (flat < 0.05) return;
+        double rise = Math.max(0.0, toY - victim.getY());
+        // Plus la cible est loin, plus elle part fort, mais on borne : à huit blocs une
+        // traction proportionnelle enverrait le mob en orbite au-dessus de la faille.
+        double push = Math.min(1.15, strength * (0.35 + 0.085 * flat));
+        double vy = 0.26 + Math.min(0.42, rise * 0.18);
+        victim.setDeltaMovement(ddx / flat * push, vy, ddz / flat * push);
+        victim.hasImpulse = true;
+        victim.fallDistance = 0.0f;
+        if (victim instanceof ServerPlayer sp) {
+            sp.connection.send(new net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket(sp));
+        }
+    }
+
+    /**
+     * Recense les créatures hostiles autour d'un point. Exclut l'attaquant et les joueurs : un
+     * effet de zone qui ramasse le porteur ou ses alliés est un piège, pas une signature.
+     */
+    private static List<LivingEntity> shadowVictims(ServerLevel sl, double cx, double cy, double cz,
+                                                    double radius, double halfHeight, int attackerId) {
+        List<LivingEntity> out = new ArrayList<>();
+        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(cx - radius, cy - halfHeight, cz - radius,
+                        cx + radius, cy + halfHeight, cz + radius))) {
+            if (!candidate.isAlive() || candidate instanceof Player) continue;
+            if (attackerId >= 0 && candidate.getId() == attackerId) continue;
+            double ddx = candidate.getX() - cx;
+            double ddz = candidate.getZ() - cz;
+            if (ddx * ddx + ddz * ddz > radius * radius) continue;
+            out.add(candidate);
+        }
+        return out;
+    }
+
+    /** Afflictions communes de l'ombre, allongées par les marques déjà posées. */
+    private static void shadowAfflict(ServerLevel sl, LivingEntity victim,
+                                      int slowTicks, int blindTicks, int weakTicks) {
+        if (victim == null || !victim.isAlive()) return;
+        if (slowTicks > 0) {
+            victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                    markedDuration(sl, victim, slowTicks), 1, true, false));
+        }
+        if (blindTicks > 0) {
+            victim.addEffect(new MobEffectInstance(MobEffects.BLINDNESS,
+                    markedDuration(sl, victim, blindTicks), 0, true, false));
+        }
+        if (weakTicks > 0) {
+            victim.addEffect(new MobEffectInstance(MobEffects.WEAKNESS,
+                    markedDuration(sl, victim, weakTicks), 0, true, false));
+        }
+    }
+
+    /**
+     * ALLONGE SPECTRALE (118 ticks) — la signature <b>de ligne</b> de la famille.
+     *
+     * <p><b>Plusieurs ennemis.</b> Le couloir d'ombre est un volume réel : neuf blocs de long,
+     * deux blocs sept de large, tracé de la cible vers le porteur. Tout ce qui s'y trouve est
+     * lacéré par les lames qui se lèvent au passage de la main (ticks 70 à 97), et marqué. Ce
+     * n'est pas un cône centré sur la victime : c'est le chemin que l'ombre vient de parcourir,
+     * donc le joueur sait exactement où il frappe — devant lui, en ligne.</p>
+     *
+     * <p><b>Ennemi seul.</b> La main ne lâche pas : la cible est <b>clouée</b> pendant la montée
+     * (40 ticks sans étourdissement complet, elle se défend encore), puis <b>ramenée</b> vers le
+     * porteur au tick 70. L'énergie des lames non dépensées est reversée en trois serrages
+     * (ticks 76, 88, 100). Ramener la cible à portée est en soi la récompense : l'allonge sert à
+     * agripper ce qui fuit.</p>
+     *
+     * <p><b>Buff du porteur.</b> La main draine ce qu'elle tient : chaque victime du couloir
+     * rend 1,5 point d'absorption au porteur, plafonné à 6. C'est la contrepartie du risque
+     * pris à ramener un paquet d'ennemis sur soi.</p>
+     */
+    private static void applySpectralReachGameplay(LivingEntity attacker, LivingEntity target,
+                                                   ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.55;
+        final double oz = target.getZ();
+        final float base = Math.max(1.4f, weaponDamage * 0.85f);
+
+        // Axe du couloir : de la cible VERS le porteur. S'il n'y a pas d'attaquant (aperçu
+        // /dlbvfx), on prend le regard de la cible pour que le couloir existe quand même.
+        double axX;
+        double axZ;
+        if (attacker != null) {
+            axX = attacker.getX() - ox;
+            axZ = attacker.getZ() - oz;
+        } else {
+            axX = -Math.sin(Math.toRadians(target.getYRot()));
+            axZ = Math.cos(Math.toRadians(target.getYRot()));
+        }
+        double axLen = Math.sqrt(axX * axX + axZ * axZ);
+        if (axLen < 0.01) { axX = 0.0; axZ = 1.0; axLen = 1.0; }
+        final double dirX = axX / axLen;
+        final double dirZ = axZ / axLen;
+
+        // --- La cible est clouée le temps que la main se lève. ---
+        // DEUX HORLOGES : l'emprise expire en temps de MONDE (getGameTime), la tâche différée
+        // compte en ticks de SERVEUR (currentTick). Les noms disent lequel est lequel.
+        // L'emprise court jusqu'au tick 72, soit DEUX ticks après la traction du tick 70.
+        // Quarante ticks — la valeur de la chaîne de foudre — ne suffisaient pas ici : la
+        // main se lève au tick 53 et ne tire qu'au tick 70, donc la victime aurait eu dix-sept
+        // ticks pour sortir du cadre pendant que la main, dessinée au point d'impact figé, se
+        // refermait sur du vide. Sans étourdissement complet : elle est tenue, pas désactivée,
+        // et continue de se défendre.
+        final long graspHoldEnd = sl.getGameTime() + 72L;
+        applyMovementHold(target, graspHoldEnd, false);
+        TestProcedure.schedule(sl, now + 72, () -> releaseMovementHold(target, graspHoldEnd));
+
+        // --- L'ombre se détache. On l'entend glisser avant de la voir. ---
+        sl.playSound(null, ox, oy, oz, SoundEvents.ENDERMAN_STARE, SoundSource.PLAYERS, 0.55f, 0.72f);
+        sl.playSound(null, ox, oy - 0.8, oz, SoundEvents.CHORUS_FRUIT_TELEPORT, SoundSource.PLAYERS,
+                0.60f, 0.52f);
+        for (int k = 0; k < 5; k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + 3 + step * 3, () -> {
+                double d = 0.9 + step * 1.7;
+                PixelFx.send(sl, ParticleTypes.SQUID_INK,
+                        ox + dirX * d, oy - 1.05, oz + dirZ * d, 12, 0.45, 0.06, 0.45, 0.004);
+                PixelFx.send(sl, ParticleTypes.SCULK_SOUL,
+                        ox + dirX * d, oy - 0.95, oz + dirZ * d, 4, 0.30, 0.10, 0.30, 0.006);
+            });
+        }
+
+        // --- Les lames du couloir (ticks 70 à 97) ---
+        // Un seul balayage par vague, et une liste partagée des corps déjà lacérés : sans elle,
+        // un mob immobile au milieu du couloir encaisserait les quatre vagues.
+        final java.util.Set<Integer> raked = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        final java.util.concurrent.atomic.AtomicInteger drained =
+                new java.util.concurrent.atomic.AtomicInteger();
+        for (int w = 0; w < 4; w++) {
+            final int wave = w;
+            TestProcedure.schedule(sl, now + 70 + wave * 9, () -> {
+                // Le volume balayé avance le long du couloir, comme les lames à l'écran.
+                double from = wave * (REACH_LENGTH / 4.0);
+                double to = (wave + 1) * (REACH_LENGTH / 4.0);
+                double midD = (from + to) * 0.5;
+                double mx = ox + dirX * midD;
+                double mz = oz + dirZ * midD;
+                double seg = (to - from) * 0.5 + REACH_HALF_WIDTH;
+                for (LivingEntity victim : shadowVictims(sl, mx, oy, mz, seg, 3.0, attackerId)) {
+                    if (raked.contains(victim.getId())) continue;
+                    // Projection sur l'axe : on ne garde que ce qui est VRAIMENT dans le
+                    // couloir, pas dans le disque circonscrit. Sans ce filtre, le couloir
+                    // ramasse les coins et redevient une zone ronde.
+                    double rx = victim.getX() - ox;
+                    double rz = victim.getZ() - oz;
+                    double along = rx * dirX + rz * dirZ;
+                    double across = Math.abs(rx * dirZ - rz * dirX);
+                    if (along < from - 0.6 || along > to + 0.6) continue;
+                    if (across > REACH_HALF_WIDTH) continue;
+                    raked.add(victim.getId());
+                    hurtWithCapturedWeapon(sl, attackerId, victim, base * 0.62f);
+                    shadowAfflict(sl, victim, 70, 0, 90);
+                    addUmbralMark(sl, victim, 1, attackerId);
+                    drained.incrementAndGet();
+                    PixelFx.send(sl, ParticleTypes.SQUID_INK,
+                            victim.getX(), victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
+                            16, 0.32, 0.42, 0.32, 0.05);
+                    sl.playSound(null, victim.getX(), victim.getY(), victim.getZ(),
+                            SoundEvents.PLAYER_ATTACK_SWEEP, SoundSource.PLAYERS, 0.45f, 0.62f);
+                }
+            });
+        }
+
+        // --- La traction (tick 70) : la main ramène la cible vers le porteur ---
+        TestProcedure.schedule(sl, now + 70, () -> {
+            if (!target.isAlive()) return;
+            double destX = ox + dirX * (REACH_LENGTH * 0.60);
+            double destZ = oz + dirZ * (REACH_LENGTH * 0.60);
+            if (attacker != null && attacker.isAlive()) {
+                // On s'arrête à deux blocs du porteur : le ramener DANS le joueur le ferait
+                // rebondir par la collision, et le mouvement se lirait comme un bug.
+                double bx = attacker.getX() - ox;
+                double bz = attacker.getZ() - oz;
+                double bl = Math.sqrt(bx * bx + bz * bz);
+                if (bl > 2.2) {
+                    destX = ox + bx / bl * (bl - 2.0);
+                    destZ = oz + bz / bl * (bl - 2.0);
+                }
+            }
+            shadowYank(sl, target, destX, target.getY(), destZ, 1.0);
+            shadowAfflict(sl, target, 90, 45, 120);
+            addUmbralMark(sl, target, 1, attackerId);
+            sl.playSound(null, target.getX(), target.getY(), target.getZ(),
+                    SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 0.70f, 0.58f);
+            PixelFx.send(sl, ParticleTypes.PORTAL,
+                    target.getX(), target.getY() + target.getBbHeight() * 0.5, target.getZ(),
+                    30, 0.40, 0.55, 0.40, 0.30);
+        });
+
+        // --- Le solo : trois serrages si le couloir n'a ramassé personne d'autre ---
+        for (int k = 0; k < 3; k++) {
+            final int squeeze = k;
+            TestProcedure.schedule(sl, now + 76 + squeeze * 12, () -> {
+                if (!target.isAlive()) return;
+                int others = drained.get();
+                if (others > 1) return;         // la foule a déjà payé, pas de double récompense
+                hurtWithCapturedWeapon(sl, attackerId, target, base * 0.34f);
+                PixelFx.send(sl, ParticleTypes.SCULK_CHARGE_POP,
+                        target.getX(), target.getY() + target.getBbHeight() * 0.60, target.getZ(),
+                        10, 0.26, 0.32, 0.26, 0.02);
+                sl.playSound(null, target.getX(), target.getY(), target.getZ(),
+                        SoundEvents.CHEST_LOCKED, SoundSource.PLAYERS, 0.55f, 0.72f);
+            });
+        }
+
+        // --- Le buff du porteur : l'ombre rend ce qu'elle a pris ---
+        TestProcedure.schedule(sl, now + 104, () -> {
+            if (attacker == null || !attacker.isAlive()) return;
+            int taken = Math.max(1, drained.get());
+            int amplifier = Math.min(2, (taken - 1) / 2);
+            attacker.addEffect(new MobEffectInstance(MobEffects.ABSORPTION, 220, amplifier, true, true));
+            sl.playSound(null, attacker.getX(), attacker.getY(), attacker.getZ(),
+                    SoundEvents.CHORUS_FRUIT_TELEPORT, SoundSource.PLAYERS, 0.50f, 1.45f);
+            PixelFx.send(sl, ParticleTypes.SCULK_SOUL,
+                    attacker.getX(), attacker.getY() + attacker.getBbHeight() * 0.60, attacker.getZ(),
+                    18, 0.35, 0.50, 0.35, 0.02);
+        });
+    }
+
+    /**
+     * FAILLE DU FLÉTRISSEUR (160 ticks) — la signature <b>d'aspiration</b> de la famille.
+     *
+     * <p><b>Plusieurs ennemis.</b> Le souffle du crâne balaie un cône de six blocs et demi
+     * devant la faille (tick 62), puis la faille <b>inspire</b> : tout ce qui se trouve dans un
+     * rayon de huit blocs est tiré vers elle, en quatre secousses (ticks 90 à 114). Le
+     * regroupement est l'intérêt de la signature — elle ne tue pas la foule, elle la
+     * <i>rassemble</i>, ce que les deux autres signatures d'ombre savent ensuite exploiter.</p>
+     *
+     * <p><b>Ennemi seul.</b> Sans voisin à rassembler, l'aspiration n'aurait rien donné :
+     * l'énergie est reversée en <b>flétrissure concentrée</b> — la cible unique reçoit
+     * {@code WITHER} au niveau II au lieu du niveau I, pour le double de la durée, et la
+     * fermeture (tick 122) la frappe au plein tarif au lieu du tarif de zone.</p>
+     *
+     * <p><b>Buff du porteur.</b> La faille recrache ce qu'elle digère : à la fermeture, le
+     * porteur récupère un point de vie par victime aspirée, plafonné à quatre.</p>
+     */
+    private static void applyWitherRiftGameplay(LivingEntity attacker, LivingEntity target,
+                                                ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.55;
+        final double oz = target.getZ();
+        final float base = Math.max(1.6f, weaponDamage * 0.90f);
+
+        // Direction du souffle : de la faille vers l'attaquant, comme à l'écran.
+        double axX = attacker != null ? attacker.getX() - ox : 0.0;
+        double axZ = attacker != null ? attacker.getZ() - oz : 1.0;
+        double axLen = Math.sqrt(axX * axX + axZ * axZ);
+        if (axLen < 0.01) { axX = 0.0; axZ = 1.0; axLen = 1.0; }
+        final double dirX = axX / axLen;
+        final double dirZ = axZ / axLen;
+
+        // --- La cible est clouée pendant l'ouverture et la sortie du crâne (56 ticks). ---
+        final long riftHoldEnd = sl.getGameTime() + 56L;
+        applyMovementHold(target, riftHoldEnd, false);
+        TestProcedure.schedule(sl, now + 56, () -> releaseMovementHold(target, riftHoldEnd));
+
+        // --- L'ouverture ---
+        sl.playSound(null, ox, oy, oz, SoundEvents.WARDEN_SONIC_CHARGE, SoundSource.PLAYERS, 0.60f, 1.30f);
+        TestProcedure.schedule(sl, now + 12, () ->
+                sl.playSound(null, ox, oy, oz, SoundEvents.PORTAL_TRIGGER, SoundSource.PLAYERS, 0.50f, 0.55f));
+        TestProcedure.schedule(sl, now + 32, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.WITHER_SPAWN, SoundSource.PLAYERS, 0.42f, 1.55f);
+            PixelFx.send(sl, ParticleTypes.SCULK_SOUL, ox, oy + 0.4, oz, 26, 0.22, 0.95, 0.22, 0.02);
+        });
+
+        // --- Le souffle (tick 62) : un cône devant la faille ---
+        final java.util.concurrent.atomic.AtomicInteger swallowed =
+                new java.util.concurrent.atomic.AtomicInteger();
+        TestProcedure.schedule(sl, now + 62, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.WITHER_AMBIENT, SoundSource.PLAYERS, 0.70f, 0.75f);
+            for (LivingEntity victim : shadowVictims(sl, ox, oy, oz, RIFT_BREATH_RANGE, 4.0, attackerId)) {
+                double rx = victim.getX() - ox;
+                double rz = victim.getZ() - oz;
+                double d = Math.sqrt(rx * rx + rz * rz);
+                // Cône de 100° : au-delà, on est derrière la faille, le souffle ne porte pas.
+                if (d > 0.6 && (rx * dirX + rz * dirZ) / d < 0.37) continue;
+                hurtWithCapturedWeapon(sl, attackerId, victim, base * 0.55f);
+                victim.addEffect(new MobEffectInstance(MobEffects.WITHER,
+                        markedDuration(sl, victim, 100), 0, true, false));
+                victim.addEffect(new MobEffectInstance(MobEffects.HUNGER,
+                        markedDuration(sl, victim, 140), 0, true, false));
+                addUmbralMark(sl, victim, 1, attackerId);
+                PixelFx.send(sl, ParticleTypes.SCULK_SOUL,
+                        victim.getX(), victim.getY() + victim.getBbHeight() * 0.6, victim.getZ(),
+                        14, 0.30, 0.38, 0.30, 0.02);
+            }
+        });
+
+        // --- L'aspiration (ticks 90 à 114) ---
+        for (int k = 0; k < 4; k++) {
+            final int pulse = k;
+            TestProcedure.schedule(sl, now + 90 + pulse * 8, () -> {
+                List<LivingEntity> caught = shadowVictims(sl, ox, oy, oz, RIFT_PULL_RADIUS, 5.0, attackerId);
+                if (pulse == 0) swallowed.set(caught.size());
+                sl.playSound(null, ox, oy, oz, SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS,
+                        0.42f, 0.48f + pulse * 0.06f);
+                for (LivingEntity victim : caught) {
+                    // On tire vers la faille, pas dessus : s'arrêter à un bloc évite que la
+                    // victime oscille autour du centre d'une secousse à l'autre.
+                    double rx = victim.getX() - ox;
+                    double rz = victim.getZ() - oz;
+                    double d = Math.sqrt(rx * rx + rz * rz);
+                    if (d < 1.1) continue;
+                    shadowYank(sl, victim, ox, oy, oz, 0.70);
+                    if (pulse % 2 == 0) {
+                        hurtWithCapturedWeapon(sl, attackerId, victim, base * 0.22f);
+                        shadowAfflict(sl, victim, 60, 0, 0);
+                    }
+                    PixelFx.send(sl, ParticleTypes.REVERSE_PORTAL,
+                            victim.getX(), victim.getY() + victim.getBbHeight() * 0.5, victim.getZ(),
+                            8, 0.24, 0.30, 0.24, 0.12);
+                }
+            });
+        }
+
+        // --- La fermeture (tick 122) ---
+        TestProcedure.schedule(sl, now + 122, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.WARDEN_SONIC_BOOM, SoundSource.PLAYERS, 0.75f, 1.40f);
+            PixelFx.send(sl, ParticleTypes.SQUID_INK, ox, oy, oz, 60, 1.40, 0.70, 1.40, 0.10);
+            List<LivingEntity> inside = shadowVictims(sl, ox, oy, oz, 6.4, 4.0, attackerId);
+            boolean solo = inside.size() <= 1;
+            for (LivingEntity victim : inside) {
+                // SOLO : plein tarif et flétrissure II. EN FOULE : tarif de zone et flétrissure I.
+                hurtWithCapturedWeapon(sl, attackerId, victim, base * (solo ? 1.05f : 0.68f));
+                victim.addEffect(new MobEffectInstance(MobEffects.WITHER,
+                        markedDuration(sl, victim, solo ? 200 : 100), solo ? 1 : 0, true, false));
+                shadowAfflict(sl, victim, 80, 60, 100);
+                addUmbralMark(sl, victim, 1, attackerId);
+            }
+            // --- Le buff du porteur : la faille recrache ---
+            if (attacker != null && attacker.isAlive()) {
+                int fed = Math.min(4, Math.max(swallowed.get(), inside.size()));
+                if (fed > 0) {
+                    attacker.heal(fed);
+                    attacker.addEffect(new MobEffectInstance(MobEffects.REGENERATION,
+                            60 + fed * 30, 0, true, true));
+                    PixelFx.send(sl, ParticleTypes.SCULK_SOUL,
+                            attacker.getX(), attacker.getY() + attacker.getBbHeight() * 0.6, attacker.getZ(),
+                            6 + fed * 4, 0.32, 0.45, 0.32, 0.02);
+                }
+            }
+        });
+    }
+
+    /**
+     * VOILE D'ÉCLIPSE (200 ticks) — la signature <b>de contrôle de terrain</b> de la famille.
+     *
+     * <p><b>Plusieurs ennemis.</b> Un dôme de sept blocs de rayon se pose au tick 48 et tient
+     * jusqu'au tick 148. Tant qu'il tient, il <b>bat</b> toutes les vingt ticks : chaque
+     * battement aveugle, ralentit et marque tout ce qui est dessous. C'est un <b>contrat de
+     * position</b>, comme l'appel de l'orage : ce qui reste dedans souffre, ce qui en sort est
+     * tranquille. Les deux camps peuvent jouer la zone.</p>
+     *
+     * <p><b>Ennemi seul.</b> Le dôme se <b>resserre</b> sur la cible unique : les trois
+     * griffures finales (tick 152) convergent toutes sur elle au lieu de se répartir, soit le
+     * triple des dégâts. Aucun joueur ne perd à utiliser l'éclipse en duel.</p>
+     *
+     * <p><b>Buff du porteur.</b> C'est <i>son</i> ombre : sous le dôme, le porteur voit dans le
+     * noir et frappe plus fort ({@code NIGHT_VISION} + {@code DAMAGE_BOOST}) pendant toute la
+     * durée du voile. C'est la seule signature de l'ombre qui récompense le fait de rester au
+     * contact, et c'est voulu — l'éclipse est une arène, pas une fuite.</p>
+     */
+    private static void applyEclipseVeilGameplay(LivingEntity attacker, LivingEntity target,
+                                                 ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        // Le dôme est ancré sur le POINT D'IMPACT et n'y bouge plus. Si on le recalculait
+        // depuis la cible à chaque battement, le joueur ne pourrait pas jouer la zone — et
+        // l'effet paraîtrait « visé sur le joueur », défaut déjà corrigé pour l'orage.
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.55;
+        final double oz = target.getZ();
+        final float base = Math.max(1.5f, weaponDamage * 0.88f);
+
+        // --- La montée du soleil noir ---
+        sl.playSound(null, ox, oy + 8.0, oz, SoundEvents.WARDEN_HEARTBEAT, SoundSource.PLAYERS, 0.85f, 0.65f);
+        for (int k = 0; k < 4; k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + 6 + step * 9, () -> {
+                sl.playSound(null, ox, oy + 6.0, oz, SoundEvents.WARDEN_HEARTBEAT,
+                        SoundSource.PLAYERS, 0.50f + step * 0.12f, 0.58f + step * 0.05f);
+                PixelFx.send(sl, ParticleTypes.SCULK_SOUL, ox, oy + 4.0 + step * 1.6, oz,
+                        14, 0.80, 0.40, 0.80, 0.01);
+            });
+        }
+
+        // --- Le voile se pose (tick 48) ---
+        TestProcedure.schedule(sl, now + 48, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 0.80f, 0.55f);
+            sl.playSound(null, ox, oy, oz, SoundEvents.AMBIENT_CAVE.value(), SoundSource.PLAYERS, 0.90f, 0.70f);
+            PixelFx.send(sl, ParticleTypes.SQUID_INK, ox, oy + 1.0, oz, 80, 3.20, 1.20, 3.20, 0.04);
+        });
+
+        // --- Les battements (ticks 68 à 140, un toutes les 18 ticks) ---
+        // Le premier tombe au tick 68, pas au tick 54 : c'est là que l'ourlet du dôme touche
+        // le sol à l'écran (le voile atteint 0,55 de fermeture à t = 0,345, soit 69 ticks sur
+        // 200). Plus tôt, le joueur encaissait un battement alors que la demi-sphère était
+        // encore une calotte suspendue au-dessus de lui : la zone frappait avant d'exister.
+        // Le dernier tombe au tick 140, en même temps que l'anneau de diamant — le battement
+        // final et l'avertissement ne font plus qu'un son.
+        for (int k = 0; k < 5; k++) {
+            final int beat = k;
+            TestProcedure.schedule(sl, now + 68 + beat * 18, () -> {
+                List<LivingEntity> inside = shadowVictims(sl, ox, oy, oz, DOME_RADIUS, 6.0, attackerId);
+                sl.playSound(null, ox, oy, oz, SoundEvents.WARDEN_HEARTBEAT, SoundSource.PLAYERS,
+                        0.55f, 0.62f);
+                for (LivingEntity victim : inside) {
+                    hurtWithCapturedWeapon(sl, attackerId, victim, base * 0.30f);
+                    shadowAfflict(sl, victim, 50, 60, 0);
+                    // Une marque tous les deux battements : à chaque battement, une foule
+                    // saturerait en deux secondes et l'effondrement perdrait tout son sens.
+                    if (beat % 2 == 0) addUmbralMark(sl, victim, 1, attackerId);
+                    PixelFx.send(sl, ParticleTypes.SCULK_SOUL,
+                            victim.getX(), victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
+                            8, 0.28, 0.40, 0.28, 0.015);
+                }
+                // --- Le buff du porteur, renouvelé tant qu'il reste sous le dôme ---
+                if (attacker != null && attacker.isAlive()) {
+                    double adx = attacker.getX() - ox;
+                    double adz = attacker.getZ() - oz;
+                    if (adx * adx + adz * adz <= DOME_RADIUS * DOME_RADIUS) {
+                        attacker.addEffect(new MobEffectInstance(MobEffects.NIGHT_VISION, 220, 0, true, false));
+                        attacker.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 60, 0, true, true));
+                    }
+                }
+            });
+        }
+
+        // --- L'anneau de diamant (tick 140) : l'avertissement ---
+        TestProcedure.schedule(sl, now + 140, () -> {
+            sl.playSound(null, ox, oy + 3.0, oz, SoundEvents.WARDEN_SONIC_CHARGE, SoundSource.PLAYERS,
+                    0.80f, 1.10f);
+            PixelFx.send(sl, ParticleTypes.END_ROD, ox, oy + 3.0, oz, 24, 0.60, 0.60, 0.60, 0.05);
+        });
+
+        // --- Les griffures (tick 152) ---
+        TestProcedure.schedule(sl, now + 152, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.WARDEN_SONIC_BOOM, SoundSource.PLAYERS, 0.90f, 0.85f);
+            List<LivingEntity> inside = shadowVictims(sl, ox, oy, oz, DOME_RADIUS, 6.0, attackerId);
+            // SOLO : les trois griffures convergent sur l'unique victime. EN FOULE : chacune
+            // prend sa part. Le facteur est explicite pour que la règle reste lisible.
+            float claws = inside.size() <= 1 ? 3.0f : 1.0f;
+            for (LivingEntity victim : inside) {
+                hurtWithCapturedWeapon(sl, attackerId, victim, base * 0.80f * claws);
+                shadowAfflict(sl, victim, 100, 100, 140);
+                addUmbralMark(sl, victim, 2, attackerId);
+                PixelFx.send(sl, ParticleTypes.SQUID_INK,
+                        victim.getX(), victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
+                        34, 0.45, 0.55, 0.45, 0.08);
+                sl.playSound(null, victim.getX(), victim.getY(), victim.getZ(),
+                        SoundEvents.PLAYER_ATTACK_SWEEP, SoundSource.PLAYERS, 0.70f, 0.52f);
+            }
+        });
+
+        // --- La levée (tick 178) ---
+        TestProcedure.schedule(sl, now + 178, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.PORTAL_TRAVEL, SoundSource.PLAYERS, 0.35f, 1.40f);
+            PixelFx.send(sl, ParticleTypes.ASH, ox, oy + 1.5, oz, 70, 3.00, 1.60, 3.00, 0.03);
+        });
+    }
+
+    // ============================================================================================
     // 雷 FOUDRE (T376) — arc en chaîne, marteau de Thor, appel de l'orage
     // ============================================================================================
 
@@ -4731,6 +5343,7 @@ public final class WeaponVfxServerListener {
                 : deepluckyblock.util.AnimFamily.LIGHT.equals(family) ? ANIM_LIGHT
                 : deepluckyblock.util.AnimFamily.WATER.equals(family) ? ANIM_WATER
                 : deepluckyblock.util.AnimFamily.THUNDER.equals(family) ? ANIM_THUNDER
+                : deepluckyblock.util.AnimFamily.SHADOW.equals(family) ? ANIM_SHADOW
                 : deepluckyblock.util.AnimFamily.WIND.equals(family) ? ANIM_WIND : ANIM_WOOD;
 
         if (roll >= 60) {
@@ -4752,6 +5365,7 @@ public final class WeaponVfxServerListener {
             applyPoisonGameplay(attacker, target, fx);
             applyWaterGameplay(attacker, target, fx, capturedWeaponDamage);
             applyThunderGameplay(attacker, target, fx, capturedWeaponDamage);
+            applyShadowGameplay(attacker, target, fx, capturedWeaponDamage);
             return;
         }
 

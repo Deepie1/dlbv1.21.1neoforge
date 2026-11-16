@@ -2354,3 +2354,130 @@ s'en charge, `v·(1−0,91ⁿ)/0,09`, recalculée pour chaque durée de vol.
 la **montée** plus une marge. Avec un apogée quatre fois plus haut, elle s'arrêtait en plein
 ciel et rendait au joueur toute la descente. Elle couvre maintenant `2 * flight + 30`,
 c'est-à-dire l'aller-retour complet.
+
+## 37. L'ombre — le seul élément qu'on ne peut pas éclairer
+
+Dixième famille refondue, et la première à poser un problème que les neuf précédentes
+n'avaient pas.
+
+### Le problème
+
+Le feu, la foudre, le métal, la lumière se voient parce qu'ils **émettent**. Une flamme, un
+arc, un éclat se détachent de n'importe quel fond. L'ombre, non : du noir sur un monde déjà
+sombre ne produit **aucune image**. L'ancien rendu tombait exactement là-dedans — ses bras
+noirs étaient littéralement invisibles la nuit et dans les grottes, c'est-à-dire là où on
+joue.
+
+Trois règles en sont sorties, et tout `ShadowSignatureVfx` les applique :
+
+1. **Jamais de noir sans liseré.** Toute masse sombre est bordée de violet ou d'orchidée.
+   C'est le liseré qu'on voit ; le noir n'est que le trou qu'il entoure.
+2. **La silhouette avant la matière.** Une forme d'ombre se lit à son contour. Les modèles
+   sont construits en couches de *valeur croissante vers l'extérieur* — l'inverse d'un objet
+   éclairé.
+3. **Le noir n'est pas `0x000000`.** Le noir pur se confond avec le ciel de nuit et le fond
+   des grottes : la forme disparaît. `VOID_INK = 0x0B0814` lit comme un trou tout en restant
+   détachable.
+
+### Deux constantes qui ne sont pas celles de la foudre
+
+`GROUND_Y` vaut **−0,86** et non −0,42. L'origine d'un impact est à mi-hauteur du mob, donc
+le sol réel est entre 0,6 et 1,0 bloc plus bas. La foudre s'en accommode — ses effets au sol
+sont des lueurs. Une ombre, non : une ombre qui flotte à un demi-bloc du sol se lit
+immédiatement comme un bug. Quitte à ce qu'elle s'enfonce un peu sous un mob court : une
+ombre enfouie est *invisible là où elle s'enfonce* et juste partout ailleurs, alors qu'une
+ombre flottante est fausse partout.
+
+Le plancher d'opacité, lui, ne change pas : `SOLID_FLOOR = 208`. On efface **par la
+géométrie**, jamais par fondu d'alpha — sinon le tamis décime la forme en pointillés.
+
+### Le roulis, dérivé et non deviné
+
+Trois modèles de ce fichier tournent sur eux-mêmes : la main qui se redresse, les cornes du
+crâne, la mâchoire. Les trois signes de roulis ont été **dérivés de `rotWrite`**, pas
+essayés au hasard.
+
+Un roulis de θ envoie l'axe Y local de la boîte sur `(−sin θ, cos θ)` dans le plan
+(avant, hauteur). De là :
+
+| Pièce | Direction voulue | Roulis |
+|---|---|---|
+| phalange de la main | axe `h` → `(sin ang, cos ang)`, plus le couchage | `−(lie + ang)` |
+| segment de corne | `(−sin ang, cos ang)` | `+ang` |
+| pièce de mâchoire | la position tourne de `+j` | `+j` |
+
+C'est exactement le piège du marteau de Thor : au signe opposé, les pièces se placent bien
+mais s'orientent à l'envers. La main se levait, et chaque doigt restait couché sur lui-même.
+
+### Le dôme en treillis
+
+Une demi-sphère pleine de sept blocs de rayon demande des milliers de cubes et, surtout,
+**enferme la caméra dans une boîte noire** : le joueur ne voit plus le combat. Neuf méridiens
+et cinq parallèles donnent la même lecture — on est dedans, c'est fermé — en laissant passer
+le regard. Même leçon que l'anneau de la foudre : une forme se lit à ses lignes de
+construction, pas à son remplissage.
+
+### Les durées
+
+`ECLIPSE_VEIL` était coincé à **18 ticks** dans un `case` fourre-tout, et les deux autres
+n'étaient même pas listés — ils tombaient sur le `default -> 14` de fin de table.
+
+| Signature | Avant | Après |
+|---|---|---|
+| `SPECTRAL_REACH` (#3) | 14 t | **118 t** |
+| `WITHER_SHADOW_RIFT` (#24) | 14 t | **160 t** |
+| `ECLIPSE_VEIL` (#33) | 18 t | **200 t** |
+
+### La marque d'ombre
+
+Liant des trois signatures, comme la charge statique pour la foudre — mais **à l'envers**.
+La charge statique majore les *dégâts* ; la marque majore la **durée des afflictions**
+(+35 % par pile, quatre piles maximum). L'ombre du mod est l'élément des malédictions
+(`DeepElement.isCursePath` renvoie `SHADOW` pour toutes), donc sa ressource partagée devait
+porter sur les états, pas sur les points de vie.
+
+À saturation la marque **s'effondre** : dégâts d'un coup, Cécité et Faiblesse. Contrairement
+au claquage de la charge statique, l'effondrement **ne pose aucune marque** — la question de
+la récursion en anneau ne se pose donc jamais.
+
+### AoE *et* cible seule, pour chacune
+
+| Signature | Plusieurs ennemis | Ennemi seul | Buff du porteur |
+|---|---|---|---|
+| Allonge Spectrale | couloir de 9×2,7 blocs, 4 vagues de lames | cible clouée 72 t puis **ramenée**, 3 serrages | Absorption, selon le nombre drainé |
+| Faille du Flétrisseur | cône de souffle, puis **aspiration** de 8 blocs en 4 secousses | Flétrissure **II** double durée, fermeture plein tarif | soin + Régénération, 1 PV par victime |
+| Voile d'Éclipse | dôme de 7 blocs, 5 battements, griffures finales | les **3 griffures convergent** = triple dégâts | Vision nocturne + Force tant qu'il reste dedans |
+
+### Deux recalages trouvés en relisant les deux horloges côte à côte
+
+L'emprise de l'Allonge durait 40 ticks — la valeur copiée de la chaîne de foudre. Mais la
+main se lève au tick 53 et ne tire qu'au **tick 70** : la victime avait dix-sept ticks pour
+sortir du cadre pendant que la main, dessinée au point d'impact figé, se refermait sur du
+vide. L'emprise court maintenant jusqu'au tick **72**.
+
+Les battements de l'Éclipse commençaient au tick 54. Or l'ourlet du dôme ne touche le sol
+qu'au tick **69** (le voile atteint 0,55 de fermeture à `t = 0,345`, sur 200 ticks). Le
+joueur encaissait donc un battement alors que la demi-sphère était encore suspendue
+au-dessus de lui : **la zone frappait avant d'exister.** Premier battement au tick 68,
+dernier au tick 140 — en même temps que l'anneau de diamant, si bien que le battement final
+et l'avertissement ne font plus qu'un son.
+
+### Quatre sons qui n'existent pas
+
+`SOUL_ESCAPE`, `PHANTOM_BITE`, `SCULK_CLICKING` et `WITHER_SHOOT` ne sont **pas** dans la
+banque 1.21 utilisée ici. Aucun JDK sur cette machine : une erreur de nom ne se serait vue
+qu'à la compilation, chez l'utilisateur. Chaque constante a donc été vérifiée par `grep`
+contre les usages réels du dépôt avant d'être retenue, et les quatre ont été remplacées par
+`CHORUS_FRUIT_TELEPORT`, `PLAYER_ATTACK_SWEEP`, `CHEST_LOCKED` et `WITHER_AMBIENT`.
+
+### Le piège de famille, pour la troisième fois
+
+Sans branche dans `WeaponWorldVfxManager` (ligne ~1835), une famille retombe dans le
+`return switch (index % 3)` du **BOIS** et sort en brun. Subi par l'eau en T375, par la
+foudre en T376 ; évité ici. C'est le défaut le plus coûteux à diagnostiquer du fichier,
+parce que l'effet *s'affiche* — il est juste de la mauvaise famille.
+
+### Tests en jeu
+
+`/anim shadow` (ou `/anim ombre`), puis frapper un mob entouré d'autres. Visuel seul :
+`/dlbvfx play 3` · `/dlbvfx play 24` · `/dlbvfx play 33` · `/dlbvfx stop`.
