@@ -68,6 +68,12 @@ public final class WeaponVfxServerListener {
     public static final int KIND_MIASMA_DEFENSE = 5;
     public static final int KIND_PLAGUE_CONTAGION = 6;
     public static final int KIND_MIASMA_CHAIN = 7;
+    /**
+     * Un maillon RÉEL de la chaîne d'éclairs : « de ce point-là, vers ce corps-là ». Le client
+     * ne devine plus où sauter, il reçoit la position de chaque victime au moment où elle est
+     * touchée. C'est le seul « kind » dont la charge utile est un <b>segment</b> et non un point.
+     */
+    public static final int KIND_THUNDER_LINK = 8;
 
     private static final int MIASMA_HOST_TICKS = 120;
     private static final int MIASMA_SWAP_TICKS = 60;
@@ -3016,34 +3022,63 @@ public final class WeaponVfxServerListener {
             staticCrackle(sl, ox, oy - 0.70, oz, 2.20, 4, 0.55f);
         });
 
-        // --- Quatre éclairs tombent du plafond, autour du point visé ---
-        // Ils ne sont pas décoratifs : chacun est une colonne qui blesse ce qu'elle traverse.
-        // L'angle d'or écarte les points de chute sans jamais les aligner, et le rayon reprend
-        // la fourchette du rendu — entre 3,6 et 9 blocs du centre.
+        // --- Quatre éclairs tombent du plafond, SUR CE QUI SE TROUVE AUTOUR ---
+        // Avant, les points de chute étaient calculés : angle d'or, rayon fixe. C'était joli
+        // sur le papier et inutile en jeu — quatre colonnes tombaient à côté des mobs pendant
+        // qu'un groupe entier regardait. Maintenant chaque colonne cherche un corps vivant et
+        // tombe DESSUS. La géométrie ne sert plus que de repli : s'il n'y a personne, l'éclair
+        // doit bien tomber quelque part, et il retrouve alors sa position d'origine.
+        //
+        // L'ensemble partage une liste des corps déjà visés pour que deux colonnes ne se
+        // superposent pas. Quand tout le monde a été servi, la liste est vidée : avec deux
+        // mobs on préfère deux colonnes chacun plutôt que deux dans le vide.
+        final java.util.Set<Integer> aimed = java.util.concurrent.ConcurrentHashMap.newKeySet();
         for (int k = 0; k < 4; k++) {
             final int index = k;
             final int when = 5 + index * 7;
             TestProcedure.schedule(sl, now + when, () -> {
-                double aa = index * 2.3998277 + 0.7;
-                double rr = 3.60 + 5.40 * ((index * 3 + 1) % 4) / 3.0;
-                double hx = ox + Math.cos(aa) * rr;
-                double hz = oz + Math.sin(aa) * rr;
+                LivingEntity mark = nearestChainTarget(sl, ox, oy, oz,
+                        CHAIN_STRIKE_RADIUS, aimed, attackerId);
+                if (mark == null && !aimed.isEmpty()) {
+                    aimed.clear();
+                    mark = nearestChainTarget(sl, ox, oy, oz,
+                            CHAIN_STRIKE_RADIUS, aimed, attackerId);
+                }
+                double hx;
+                double hz;
+                // La HAUTEUR suit elle aussi le corps visé. Sans ça, une colonne tombait bien
+                // sur les bonnes coordonnées au sol mais son volume de contact restait calé
+                // sur la hauteur de la cible initiale : un mob perché sur un talus ou au fond
+                // d'un trou prenait l'éclair en pleine figure et n'encaissait rien.
+                double hy;
+                if (mark != null) {
+                    aimed.add(mark.getId());
+                    hx = mark.getX();
+                    hz = mark.getZ();
+                    hy = mark.getY() + mark.getBbHeight() * 0.55;
+                } else {
+                    double aa = index * 2.3998277 + 0.7;
+                    double rr = 3.60 + 5.40 * ((index * 3 + 1) % 4) / 3.0;
+                    hx = ox + Math.cos(aa) * rr;
+                    hz = oz + Math.sin(aa) * rr;
+                    hy = oy;
+                }
                 // Le son part d'en haut : la décharge descend, elle ne jaillit pas du sol.
-                sl.playSound(null, hx, oy + 14.0, hz, SoundEvents.LIGHTNING_BOLT_THUNDER,
+                sl.playSound(null, hx, hy + 14.0, hz, SoundEvents.LIGHTNING_BOLT_THUNDER,
                         SoundSource.PLAYERS, 0.52f, 1.42f + 0.07f * index);
-                sl.playSound(null, hx, oy, hz, SoundEvents.MACE_SMASH_GROUND,
+                sl.playSound(null, hx, hy, hz, SoundEvents.MACE_SMASH_GROUND,
                         SoundSource.PLAYERS, 0.50f, 1.25f);
-                PixelFx.send(sl, ParticleTypes.FLASH, hx, oy + 0.50, hz, 1, 0.0, 0.0, 0.0, 0.0);
-                PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, hx, oy + 0.30, hz,
+                PixelFx.send(sl, ParticleTypes.FLASH, hx, hy + 0.50, hz, 1, 0.0, 0.0, 0.0, 0.0);
+                PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, hx, hy + 0.30, hz,
                         24, 0.30, 0.70, 0.30, 0.22);
-                broadcastNear(sl, (float) hx, (float) oy, (float) hz,
+                broadcastNear(sl, (float) hx, (float) hy, (float) hz,
                         WeaponVisualEffectId.CHAIN_VOLT_ARC.id, KIND_IMPACT, 2,
-                        (float) hx, (float) oy, (float) hz,
-                        (float) hx, (float) oy, (float) hz, 0, 0.34f);
+                        (float) hx, (float) hy, (float) hz,
+                        (float) hx, (float) hy, (float) hz, 0, 0.34f);
                 // La colonne touche sur toute sa hauteur, le temps d'un éclair : trois ticks.
                 addThunderHit(sl, attackerId, sl.getGameTime(),
                         sl.getGameTime() + 3L, hx, hz,
-                        oy + 3.0, oy + 3.0, 1.30, 4.20, base * 0.42f, false, 30);
+                        hy + 3.0, hy + 3.0, 1.30, 4.20, base * 0.42f, false, 30);
             });
         }
 
@@ -3063,30 +3098,22 @@ public final class WeaponVfxServerListener {
                     30, 2, true, false));
         });
 
-        // --- Repérage de la chaîne : on la calcule une fois, au moment de l'impact ---
+        // --- La chaîne : chaque relais est cherché AU MOMENT du bond ---
+        // Avant, les six maillons étaient figés d'un coup au tick 24. Deux conséquences, les
+        // deux mauvaises : un mob mort entre-temps faisait disparaître son maillon au lieu de
+        // le passer au suivant, et la boîte de recherche restait collée à la hauteur de la
+        // cible initiale — un mob trois blocs plus haut n'existait pas. La chaîne avançait
+        // donc sur un itinéraire décidé d'avance, et sautait du monde.
+        //
+        // Maintenant elle se construit bond par bond : à chaque relais on repart de la
+        // position RÉELLE du corps qu'on vient de toucher et on cherche le plus proche vivant
+        // qui n'a pas encore été touché. C'est ce que fait un arc électrique.
         TestProcedure.schedule(sl, now + 24, () -> {
-            java.util.List<LivingEntity> links = new java.util.ArrayList<>();
-            java.util.Set<Integer> seen = new java.util.HashSet<>();
+            java.util.Set<Integer> seen = java.util.concurrent.ConcurrentHashMap.newKeySet();
             seen.add(target.getId());
             if (attackerId >= 0) seen.add(attackerId);
-            double cx = ox;
-            double cz = oz;
-            for (int hop = 0; hop < 6; hop++) {
-                LivingEntity best = null;
-                double bestDist = Double.MAX_VALUE;
-                for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
-                        new AABB(cx - 7.0, oy - 4.0, cz - 7.0, cx + 7.0, oy + 4.5, cz + 7.0))) {
-                    if (!candidate.isAlive() || candidate instanceof Player) continue;
-                    if (seen.contains(candidate.getId())) continue;
-                    double d = candidate.distanceToSqr(cx, candidate.getY(), cz);
-                    if (d < bestDist) { bestDist = d; best = candidate; }
-                }
-                if (best == null) break;
-                links.add(best);
-                seen.add(best.getId());
-                cx = best.getX();
-                cz = best.getZ();
-            }
+            boolean anyLink = nearestChainTarget(sl, ox, oy, oz,
+                    CHAIN_HOP_RADIUS, seen, attackerId) != null;
 
             // Le sol garde une trace et l'orage s'éloigne : fondu de sortie commun aux
             // deux cas, programmé une seule fois depuis le repérage.
@@ -3097,7 +3124,7 @@ public final class WeaponVfxServerListener {
             });
             rollingThunder(sl, TestProcedure.currentTick(sl) + 20, ox, oy, oz, 0.62f);
 
-            if (links.isEmpty()) {
+            if (!anyLink) {
                 // ----- CAS ENNEMI SEUL : l'énergie des six relais revient sur la cible -----
                 final float solo = base * 0.26f * 6.0f / 3.0f;
                 for (int shot = 0; shot < 3; shot++) {
@@ -3130,39 +3157,94 @@ public final class WeaponVfxServerListener {
             }
 
             // ----- CAS PLUSIEURS ENNEMIS : la chaîne saute, et s'épuise -----
-            for (int i = 0; i < links.size(); i++) {
-                final LivingEntity victim = links.get(i);
-                final float share = base * (float) Math.pow(0.82, i + 1);
-                final int rank = i;
-                final int delay = 4 + i * 9;
-                TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + delay, () -> {
-                    if (!victim.isAlive()) return;
-                    double jx = victim.getX();
-                    double jy = victim.getY() + victim.getBbHeight() * 0.55;
-                    double jz = victim.getZ();
-                    hurtWithCapturedWeapon(sl, attackerId, victim,
-                            share * staticMultiplier(sl, victim));
-                    addStaticCharge(sl, victim, 1, attackerId);
-                    // Un relais n'est pas un coup de tonnerre : c'est un arc qui saute d'un
-                    // corps à l'autre. Le son du conduit attaque bien plus vite et monte en
-                    // hauteur à chaque bond, ce qui rend la chaîne audible comme une chaîne.
-                    sl.playSound(null, jx, jy, jz, SoundEvents.CONDUIT_ATTACK_TARGET,
-                            SoundSource.PLAYERS, 0.85f, 1.10f + 0.09f * rank);
-                    sl.playSound(null, jx, jy, jz, SoundEvents.LIGHTNING_BOLT_THUNDER,
-                            SoundSource.PLAYERS, 0.36f, 1.60f);
-                    victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
-                            24, 1, true, false));
-                    victim.addEffect(new MobEffectInstance(MobEffects.GLOWING,
-                            70, 0, true, false));
-                    PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, jx, jy, jz,
-                            26, 0.42, 0.52, 0.42, 0.20);
-                    broadcastNear(sl, (float) jx, (float) jy, (float) jz,
-                            WeaponVisualEffectId.CHAIN_VOLT_ARC.id, KIND_IMPACT, 2,
-                            (float) jx, (float) jy, (float) jz,
-                            (float) jx, (float) jy, (float) jz, 0, 0.40f);
-                });
-            }
+            TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + 4, () ->
+                    chainVoltHop(sl, attackerId, ox, oy, oz, ox, oy, oz, seen, 0, base));
         });
+    }
+
+    /** Portée d'un saut de la chaîne. Au-delà, l'arc ne tient plus. */
+    private static final double CHAIN_HOP_RADIUS = 8.0;
+    /** Portée de recherche des quatre colonnes qui tombent autour du point visé. */
+    private static final double CHAIN_STRIKE_RADIUS = 10.0;
+    /** Nombre maximal de relais après la cible initiale. */
+    private static final int CHAIN_MAX_HOPS = 6;
+    /** Ticks entre deux relais. La chaîne doit se lire comme une chaîne, pas comme une salve. */
+    private static final int CHAIN_HOP_DELAY = 7;
+
+    /**
+     * Le corps vivant le plus proche d'un point, parmi ceux qui n'ont pas déjà été servis.
+     *
+     * <p>Trois détails qui comptent. La recherche se fait dans un <b>disque</b> : la boîte
+     * passée au moteur est carrée parce qu'il ne sait pas chercher autrement, mais un coin de
+     * carré est à 1,41 fois le rayon annoncé et l'arc n'y porte pas. La hauteur est centrée sur
+     * le point de départ et non sur la cible initiale, sinon un mob perché ou dans un trou
+     * n'existe tout simplement pas. Et l'attaquant est exclu, évidemment.
+     */
+    private static LivingEntity nearestChainTarget(ServerLevel sl, double cx, double cy, double cz,
+                                                   double radius, java.util.Set<Integer> skip,
+                                                   int attackerId) {
+        LivingEntity best = null;
+        double bestDist = Double.MAX_VALUE;
+        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(cx - radius, cy - 6.0, cz - radius,
+                        cx + radius, cy + 6.0, cz + radius))) {
+            if (!candidate.isAlive() || candidate instanceof Player) continue;
+            if (attackerId >= 0 && candidate.getId() == attackerId) continue;
+            if (skip.contains(candidate.getId())) continue;
+            double ddx = candidate.getX() - cx;
+            double ddz = candidate.getZ() - cz;
+            double d = ddx * ddx + ddz * ddz;
+            if (d > radius * radius) continue;
+            if (d < bestDist) { bestDist = d; best = candidate; }
+        }
+        return best;
+    }
+
+    /**
+     * Un bond de la chaîne, puis le suivant.
+     *
+     * <p>La méthode cherche elle-même sa victime depuis le point d'où part l'arc, la frappe,
+     * puis se reprogramme depuis la position de cette victime. Rien n'est décidé d'avance :
+     * un mob qui meurt, qui arrive ou qui se déplace pendant la propagation est pris en compte
+     * au bond suivant. L'ensemble des corps déjà touchés circule d'un bond à l'autre — une
+     * chaîne ne repasse pas deux fois sur le même.
+     */
+    private static void chainVoltHop(ServerLevel sl, int attackerId,
+                                     double origX, double origY, double origZ,
+                                     double fx, double fy, double fz,
+                                     java.util.Set<Integer> seen, int rank, float base) {
+        LivingEntity victim = nearestChainTarget(sl, fx, fy, fz, CHAIN_HOP_RADIUS, seen, attackerId);
+        if (victim == null) return;
+        seen.add(victim.getId());
+
+        final double jx = victim.getX();
+        final double jy = victim.getY() + victim.getBbHeight() * 0.55;
+        final double jz = victim.getZ();
+        final float share = base * (float) Math.pow(0.82, rank + 1);
+
+        hurtWithCapturedWeapon(sl, attackerId, victim, share * staticMultiplier(sl, victim));
+        addStaticCharge(sl, victim, 1, attackerId);
+        // Un relais n'est pas un coup de tonnerre : c'est un arc qui saute d'un corps à
+        // l'autre. Le son du conduit attaque bien plus vite et monte en hauteur à chaque bond,
+        // ce qui rend la chaîne audible comme une chaîne.
+        sl.playSound(null, jx, jy, jz, SoundEvents.CONDUIT_ATTACK_TARGET,
+                SoundSource.PLAYERS, 0.85f, 1.10f + 0.09f * rank);
+        sl.playSound(null, jx, jy, jz, SoundEvents.LIGHTNING_BOLT_THUNDER,
+                SoundSource.PLAYERS, 0.36f, 1.60f);
+        victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 24, 1, true, false));
+        victim.addEffect(new MobEffectInstance(MobEffects.GLOWING, 70, 0, true, false));
+        PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK, jx, jy, jz, 26, 0.42, 0.52, 0.42, 0.20);
+        // Le maillon part vers le client : origine de la chaîne (pour retrouver l'animation
+        // en cours) et position RÉELLE de la victime. L'arc sera tracé entre les deux vrais
+        // points, plus sur un anneau inventé.
+        broadcastNear(sl, (float) jx, (float) jy, (float) jz,
+                WeaponVisualEffectId.CHAIN_VOLT_ARC.id, KIND_THUNDER_LINK, rank,
+                (float) origX, (float) origY, (float) origZ,
+                (float) jx, (float) jy, (float) jz, 0, 1.0f);
+
+        if (rank + 1 >= CHAIN_MAX_HOPS) return;
+        TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + CHAIN_HOP_DELAY, () ->
+                chainVoltHop(sl, attackerId, origX, origY, origZ, jx, jy, jz, seen, rank + 1, base));
     }
 
     /**
@@ -3210,6 +3292,15 @@ public final class WeaponVfxServerListener {
         final double zx = target.getX();
         final double zy = target.getY();
         final double zz = target.getZ();
+
+        // --- Le porteur dégage. Sinon il ne voit rien du tout. ---
+        // Un marteau de trente blocs de haut qui tombe à un mètre de vous ne se regarde pas :
+        // la caméra est DANS la masse, et tout ce qu'on en retire est un aplat jaune qui
+        // remplit l'écran. Le coup part, on ne sait pas de quoi. On le recule donc de six
+        // blocs au moment de l'invocation — il lui reste cinquante ticks pour se retourner et
+        // voir la chose arriver. Il ne prend aucun dégât de son propre marteau, ce n'est pas
+        // une question d'équilibrage mais de cadrage.
+        clearTheBlastZone(sl, attacker, zx, zz, HAMMER_CLEARANCE);
 
         // --- L'appel : le marteau se matérialise à trente blocs, et ça s'entend ---
         sl.playSound(null, zx, zy + 1.0, zz, SoundEvents.BEACON_ACTIVATE, SoundSource.PLAYERS,
@@ -3316,6 +3407,104 @@ public final class WeaponVfxServerListener {
             SHOCK_ZONES.add(new ShockZone(sl, sl.getGameTime() + SHOCK_ZONE_TICKS, zx, zy, zz,
                     attackerId, Math.max(0.5f, weaponDamage * 0.22f), SHOCK_ZONE_RADIUS));
         });
+    }
+
+    /** De combien de blocs le porteur recule à l'invocation du marteau. */
+    private static final double HAMMER_CLEARANCE = 6.0;
+
+    /**
+     * Écarte le porteur du point de chute, en franchissant le relief au lieu de s'y écraser.
+     *
+     * <p>Une poussée horizontale pure ne vaut rien : un mur, un talus ou une simple marche
+     * derrière le joueur l'arrête au premier bloc et il reste dans la zone. La méthode
+     * <b>sonde le trajet</b> avant de pousser — douze pas d'un demi-bloc, et à chaque pas la
+     * hauteur libre la plus basse où la boîte du joueur tient. La plus haute de ces valeurs
+     * donne la montée à franchir, et c'est elle qui fixe la composante verticale.
+     *
+     * <p>Le reste est de la balistique. La hauteur d'un saut vaut à peu près
+     * {@code v² / 2g} avec {@code g = 0,08} bloc par tick² ; on inverse pour obtenir la vitesse
+     * verticale, ce qui donne au passage la durée du vol. Horizontalement, un corps en l'air
+     * conserve 91 % de sa vitesse par tick : la distance parcourue est donc une série
+     * géométrique, {@code v·(1−0,91ⁿ)/0,09}, qu'on inverse à son tour pour viser les six blocs
+     * demandés. Sans ce calcul, une poussée constante envoie à trois blocs ou à quinze selon la
+     * hauteur du saut.
+     *
+     * <p>La distance de chute accumulée est remise à zéro à l'apogée : le joueur n'a pas
+     * demandé ce vol, il n'a pas à en payer l'atterrissage.
+     */
+    private static void clearTheBlastZone(ServerLevel sl, LivingEntity rider,
+                                          double fromX, double fromZ, double distance) {
+        if (rider == null || !rider.isAlive()) return;
+        // Seul un joueur recule. La raison d'être de ce recul est une raison de CADRAGE : il
+        // faut une caméra assez loin pour voir le marteau. Un mob n'a pas de caméra, et le
+        // projeter à six blocs à chacun de ses coups ne ferait que casser son combat.
+        if (!(rider instanceof Player)) return;
+
+        // Direction : du point de chute vers le porteur. S'il est pile dessus, la direction
+        // n'existe pas — on prend alors l'inverse de son regard, c'est-à-dire « en arrière ».
+        double dx = rider.getX() - fromX;
+        double dz = rider.getZ() - fromZ;
+        double len = Math.sqrt(dx * dx + dz * dz);
+        if (len < 0.35) {
+            Vec3 look = rider.getLookAngle();
+            dx = -look.x;
+            dz = -look.z;
+            len = Math.sqrt(dx * dx + dz * dz);
+            if (len < 1.0e-4) { dx = 0.0; dz = -1.0; len = 1.0; }
+        }
+        dx /= len;
+        dz /= len;
+
+        // Sondage du relief. On cherche, à chaque pas, la hauteur la plus basse à laquelle la
+        // boîte du joueur passe. Un mur plein compte pour la montée maximale : mieux vaut
+        // sauter dedans que rester sous le marteau.
+        final AABB box = rider.getBoundingBox();
+        final double halfW = box.getXsize() * 0.5;
+        final double height = box.getYsize();
+        final double footY = rider.getY();
+        double rise = 0.0;
+        final int probes = 12;
+        for (int s = 1; s <= probes; s++) {
+            double t = distance * s / probes;
+            double px = rider.getX() + dx * t;
+            double pz = rider.getZ() + dz * t;
+            double clear = -1.0;
+            for (double h = 0.0; h <= 5.0; h += 0.5) {
+                AABB probe = new AABB(px - halfW, footY + h, pz - halfW,
+                        px + halfW, footY + h + height, pz + halfW);
+                if (sl.noCollision(rider, probe)) { clear = h; break; }
+            }
+            if (clear < 0.0) clear = 5.0;
+            if (clear > rise) rise = clear;
+        }
+
+        final double climb = Math.min(rise, 4.5);
+        // v = racine(2·g·h), avec un bloc de marge pour ne pas raser l'arête.
+        double vy = Math.sqrt(0.16 * (climb + 1.15));
+        vy = Math.max(0.42, Math.min(1.05, vy));
+        final int flight = (int) Math.max(10.0, 2.0 * vy / 0.08);
+        // Série géométrique de raison 0,91 : distance = v·(1−0,91ⁿ)/0,09.
+        final double reach = Math.max(0.25, 1.0 - Math.pow(0.91, flight));
+        double vh = distance * 0.09 / reach;
+        vh = Math.max(0.18, Math.min(1.35, vh));
+
+        rider.setDeltaMovement(dx * vh, vy, dz * vh);
+        rider.hurtMarked = true;
+        rider.fallDistance = 0.0F;
+        sl.playSound(null, rider.getX(), rider.getY() + 0.5, rider.getZ(),
+                SoundEvents.WIND_CHARGE_THROW, SoundSource.PLAYERS, 0.70f, 1.25f);
+        PixelFx.send(sl, ParticleTypes.ELECTRIC_SPARK,
+                rider.getX(), rider.getY() + 0.40, rider.getZ(), 14, 0.30, 0.20, 0.30, 0.08);
+        // Pas de dégâts de chute pour un vol qu'on n'a pas demandé. La distance accumulée est
+        // remise à zéro toutes les quatre frames jusqu'à la frappe : elle ne dépasse jamais
+        // deux blocs, donc jamais le seuil des trois. La garantie couvre tout l'enchaînement,
+        // y compris le cas où le recul fait passer par-dessus un bord.
+        final int start = TestProcedure.currentTick(sl);
+        for (int t = 4; t <= flight + 28; t += 4) {
+            TestProcedure.schedule(sl, start + t, () -> {
+                if (rider.isAlive()) rider.fallDistance = 0.0F;
+            });
+        }
     }
 
     // --------------------------------------------------------------------------------------------

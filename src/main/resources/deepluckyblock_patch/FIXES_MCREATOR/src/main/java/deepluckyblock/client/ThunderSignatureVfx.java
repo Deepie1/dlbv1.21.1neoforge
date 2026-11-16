@@ -150,13 +150,28 @@ public final class ThunderSignatureVfx {
     public static void render(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                               float cx, float cy, float cz, float t,
                               float dx, float dz, int variant, int alpha, int salt) {
+        render(vc, mat, tmp, cx, cy, cz, t, dx, dz, variant, alpha, salt, null, 0);
+    }
+
+    /**
+     * Même chose, en acceptant les <b>maillons réels</b> de la chaîne.
+     *
+     * @param links     écarts X, Y, Z par rapport au centre puis avancement de naissance, par
+     *                  paquets de quatre ; {@code null} si le serveur n'a rien envoyé
+     * @param linkCount nombre de maillons valides ; {@code 0} déclenche l'anneau de secours,
+     *                  {@code -1} supprime la chaîne (petites répliques)
+     */
+    public static void render(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                              float cx, float cy, float cz, float t,
+                              float dx, float dz, int variant, int alpha, int salt,
+                              float[] links, int linkCount) {
         if (t <= 0.0f || t >= 1.0f || alpha <= 4) return;
         float length = Mth.sqrt(dx * dx + dz * dz);
         if (length < 0.001f) { dx = 0.0f; dz = 1.0f; }
         else { dx /= length; dz /= length; }
         if (variant == HAMMER) renderHammer(vc, mat, tmp, cx, cy, cz, t, dx, dz, alpha, salt);
         else if (variant == ECHO) renderStormcall(vc, mat, tmp, cx, cy, cz, t, dx, dz, alpha, salt);
-        else renderBolt(vc, mat, tmp, cx, cy, cz, t, dx, dz, alpha, salt);
+        else renderBolt(vc, mat, tmp, cx, cy, cz, t, dx, dz, alpha, salt, links, linkCount);
     }
 
     // =================================================================================
@@ -178,7 +193,8 @@ public final class ThunderSignatureVfx {
      */
     private static void renderBolt(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                    float cx, float cy, float cz, float t,
-                                   float dx, float dz, int alpha, int salt) {
+                                   float dx, float dz, int alpha, int salt,
+                                   float[] links, int linkCount) {
         int a = Math.round(alpha * smooth(t / 0.04f) * (1.0f - smooth((t - 0.94f) / 0.06f)));
         if (a <= 4) return;
 
@@ -400,56 +416,8 @@ public final class ThunderSignatureVfx {
             }
         }
 
-        // ---- 6. LA CHAÎNE : six relais successifs, chacun son tracé et son flash ----
-        // Le serveur frappe exactement CHAIN_LINKS cibles ; le client dessine les mêmes relais
-        // sur un anneau stable tiré de la graine, de sorte que le visuel et les dégâts racontent
-        // la même histoire même si le client ignore la position réelle des victimes.
-        float prevF = 0.0f;
-        float prevL = 0.0f;
-        float prevY = 0.55f;
-        for (int k = 0; k < CHAIN_LINKS; k++) {
-            float born = 0.30f + k * 0.072f;
-            float age = (t - born) / 0.115f;
-            float hk = hash(salt, 5000 + k * 149);
-            float ang = hash(salt, 5100 + k * 73) * TAU;
-            float rad = 2.45f + 3.55f * hk;
-            float tf = Mth.cos(ang) * rad;
-            float tl = Mth.sin(ang) * rad;
-            float ty = 0.35f + 0.85f * hash(salt, 5200 + k * 29);
-            if (age > 0.0f && age < 1.0f) {
-                float draw = smooth(age * 2.2f);
-                float keep = 1.0f - smooth((age - 0.45f) / 0.55f);
-                drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        prevF, prevL, prevY, tf, tl, ty,
-                        salt * 7 + k * 877, 0.80f, draw, 0.55f + 0.45f * keep,
-                        a * (0.55f + 0.45f * keep), 12, true);
-                // Flash d'arrivée sur la victime : petite sphère + anneau au sol.
-                if (age > 0.40f) {
-                    float hit = smooth((age - 0.40f) / 0.22f) * (1.0f - smooth((age - 0.72f) / 0.28f));
-                    for (int i = 0; i < 14; i++) {
-                        float h0 = hash(salt, 5400 + k * 61 + i * 17);
-                        float a2 = i * TAU / 14.0f + k;
-                        float rr = (0.30f + 0.42f * hit) * (0.7f + 0.5f * h0);
-                        float sz = 0.090f * hit;
-                        if (sz <= 0.004f) continue;
-                        box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                                tf + Mth.cos(a2) * rr, tl + Mth.sin(a2) * rr,
-                                ty + (h0 - 0.5f) * 0.70f,
-                                sz, sz, sz, mix(HOT, CORE, h0), opaque(a * hit));
-                    }
-                    int ring = 18;
-                    for (int i = 0; i < ring; i++) {
-                        float a2 = i * TAU / ring;
-                        float rr = 0.95f * hit;
-                        box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                                tf + Mth.cos(a2) * rr, tl + Mth.sin(a2) * rr, -0.40f,
-                                0.075f, 0.030f, 0.075f, VIOLET, opaque(a * hit * 0.9f));
-                    }
-                }
-            }
-            // Le relais suivant part de la victime précédente : la chaîne se propage vraiment.
-            if (t > born) { prevF = tf; prevL = tl; prevY = ty; }
-        }
+        // ---- 6. LA CHAÎNE : un relais par CORPS RÉELLEMENT TOUCHÉ ----
+        chainRelays(vc, mat, tmp, cx, cy, cz, dx, dz, t, a, salt, links, linkCount);
 
         // ---- 7. CRÉPITEMENT RÉSIDUEL : l'air reste ionisé bien après le coup ----
         if (t > 0.22f) {
@@ -1256,6 +1224,90 @@ public final class ThunderSignatureVfx {
      * @param nodes   nombre de nœuds de la polyligne
      * @param sheath  dessiner la gaine large en plus du cœur
      */
+    /**
+     * Les relais de la chaîne, tracés entre les corps RÉELLEMENT touchés.
+     *
+     * <p>Le serveur envoie la position de chaque victime au moment où elle encaisse
+     * (<b>KIND_THUNDER_LINK</b>) et l'on relie ces points-là, seulement eux. Avant, les six
+     * relais étaient posés sur un anneau tiré de la graine : les dégâts tombaient bien sur
+     * les bons mobs, mais les arcs partaient ailleurs. Vu de l'intérieur ce n'était plus une
+     * chaîne, c'était une chorégraphie qui ignorait la moitié de la salle.</p>
+     *
+     * <p>L'anneau survit comme secours : la commande d'aperçu joue l'animation sans gameplay,
+     * donc sans victime, et un arc qui ne dessinerait rien serait pire qu'un arc approximatif.
+     * Un {@code linkCount} négatif coupe la chaîne pour de bon — c'est le cas des petites
+     * répliques qui tombent autour du coup, qui n'ont pas à dérouler la leur.</p>
+     */
+    private static void chainRelays(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                    float cx, float cy, float cz, float dx, float dz,
+                                    float t, int a, int salt, float[] links, int linkCount) {
+        if (linkCount < 0) return;
+        boolean real = linkCount > 0 && links != null;
+        int chainCount = real ? Math.min(linkCount, links.length / 4) : CHAIN_LINKS;
+        float prevF = 0.0f;
+        float prevL = 0.0f;
+        float prevY = 0.55f;
+        for (int k = 0; k < chainCount; k++) {
+            float born;
+            float tf;
+            float tl;
+            float ty;
+            if (real) {
+                // Repère local : f suit l'axe attaquant→cible, l lui est perpendiculaire.
+                // C'est l'inverse exact de la transformation appliquée par box().
+                float wx = links[k * 4];
+                float wy = links[k * 4 + 1];
+                float wz = links[k * 4 + 2];
+                born = links[k * 4 + 3];
+                tf = dx * wx + dz * wz;
+                tl = -dz * wx + dx * wz;
+                ty = wy;
+            } else {
+                born = 0.30f + k * 0.072f;
+                float hk = hash(salt, 5000 + k * 149);
+                float ang = hash(salt, 5100 + k * 73) * TAU;
+                float rad = 2.45f + 3.55f * hk;
+                tf = Mth.cos(ang) * rad;
+                tl = Mth.sin(ang) * rad;
+                ty = 0.35f + 0.85f * hash(salt, 5200 + k * 29);
+            }
+            float age = (t - born) / 0.115f;
+            if (age > 0.0f && age < 1.0f) {
+                float draw = smooth(age * 2.2f);
+                float keep = 1.0f - smooth((age - 0.45f) / 0.55f);
+                drawBolt(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        prevF, prevL, prevY, tf, tl, ty,
+                        salt * 7 + k * 877, 0.80f, draw, 0.55f + 0.45f * keep,
+                        a * (0.55f + 0.45f * keep), 12, true);
+                // Flash d'arrivée sur la victime : petite sphère + anneau au sol.
+                if (age > 0.40f) {
+                    float hit = smooth((age - 0.40f) / 0.22f) * (1.0f - smooth((age - 0.72f) / 0.28f));
+                    for (int i = 0; i < 14; i++) {
+                        float h0 = hash(salt, 5400 + k * 61 + i * 17);
+                        float a2 = i * TAU / 14.0f + k;
+                        float rr = (0.30f + 0.42f * hit) * (0.7f + 0.5f * h0);
+                        float sz = 0.090f * hit;
+                        if (sz <= 0.004f) continue;
+                        box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                tf + Mth.cos(a2) * rr, tl + Mth.sin(a2) * rr,
+                                ty + (h0 - 0.5f) * 0.70f,
+                                sz, sz, sz, mix(HOT, CORE, h0), opaque(a * hit));
+                    }
+                    int ring = 18;
+                    for (int i = 0; i < ring; i++) {
+                        float a2 = i * TAU / ring;
+                        float rr = 0.95f * hit;
+                        box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                tf + Mth.cos(a2) * rr, tl + Mth.sin(a2) * rr, -0.40f,
+                                0.075f, 0.030f, 0.075f, VIOLET, opaque(a * hit * 0.9f));
+                    }
+                }
+            }
+            // Le relais suivant part de la victime précédente : la chaîne se propage vraiment.
+            if (t > born) { prevF = tf; prevL = tl; prevY = ty; }
+        }
+    }
+
     private static void drawBolt(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                  float cx, float cy, float cz, float dx, float dz,
                                  float f0, float l0, float y0,

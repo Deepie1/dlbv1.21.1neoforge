@@ -84,6 +84,10 @@ public final class WeaponWorldVfxManager {
     public static final int KIND_MIASMA_DEFENSE = 5;
     public static final int KIND_PLAGUE_CONTAGION = 6;
     public static final int KIND_MIASMA_CHAIN = 7;
+    /** Un maillon réel de la chaîne d'éclairs : origine de la chaîne → corps touché. */
+    public static final int KIND_THUNDER_LINK = 8;
+    /** Nombre maximal de maillons mémorisés par animation d'arc. Le serveur n'en envoie pas plus. */
+    private static final int THUNDER_LINK_MAX = 6;
 
     private static final List<VfxInstance> ACTIVE = new ArrayList<>(144);
     private static final List<FloatingPixel> PIXEL_PARTICLES = new ArrayList<>(1400);
@@ -307,6 +311,14 @@ public final class WeaponWorldVfxManager {
         int miasmaEndAge = -1;
         int miasmaTravelAge = -1;
         double miasmaTravelX, miasmaTravelY, miasmaTravelZ;
+        /**
+         * Maillons réels de la chaîne d'éclairs, par paquets de quatre flottants :
+         * écart X, Y, Z par rapport à l'origine de cette animation, puis l'avancement
+         * normalisé auquel le maillon est arrivé. Tant que le compteur est à zéro, le rendu
+         * retombe sur son anneau de secours — c'est le cas des aperçus sans mobs.
+         */
+        float[] thunderLinks;
+        int thunderLinkCount;
         double dragX, dragZ;
 
         /** Couleur primaire de l'effet ou d'une famille sélectionnée dans la palette de l'arme. */
@@ -587,6 +599,10 @@ public final class WeaponWorldVfxManager {
             updateMiasmaChain(x, y, z, Math.round(tx), Math.round(ty), tz >= 0.5f);
             return;
         }
+        if (kind == KIND_THUNDER_LINK) {
+            registerThunderLink(x, y, z, tx, ty, tz);
+            return;
+        }
         if (kind == KIND_METEOR_TRACK) {
             updateMeteorTracking(Math.round(tx), x, y, z);
             return;
@@ -681,6 +697,46 @@ public final class WeaponWorldVfxManager {
     }
 
     /** Paquets serveur de la brume : hôte initial, transferts sans snap et dissipation anticipée. */
+    /**
+     * Accroche un maillon réel à l'animation d'arc en cours.
+     *
+     * <p>Le serveur envoie l'<b>origine</b> de la chaîne et la position du corps qu'il vient de
+     * frapper. On retrouve ici la grande animation correspondante — il y en a plusieurs à
+     * l'écran, les quatre colonnes qui tombent autour sont elles aussi des arcs, mais au tiers
+     * de la taille : on ne garde que celles à taille pleine, et parmi elles la plus ancienne,
+     * qui est forcément celle née au moment du coup.</p>
+     *
+     * <p>Le maillon est mémorisé en <b>écart</b> par rapport à l'origine de l'animation, pas en
+     * coordonnées absolues : le rendu travaille dans un repère local, et un écart n'a pas
+     * besoin d'être retraduit à chaque frame.</p>
+     */
+    private static void registerThunderLink(float origX, float origY, float origZ,
+                                            float relayX, float relayY, float relayZ) {
+        VfxInstance chain = null;
+        int oldest = -1;
+        for (VfxInstance candidate : ACTIVE) {
+            if (candidate.kind != KIND_IMPACT) continue;
+            if (candidate.effect != WeaponVisualEffectId.CHAIN_VOLT_ARC) continue;
+            if (candidate.sizeScale < 0.55f) continue;
+            if (candidate.thunderLinkCount >= THUNDER_LINK_MAX) continue;
+            double ddx = candidate.x - origX;
+            double ddz = candidate.z - origZ;
+            if (ddx * ddx + ddz * ddz > 64.0) continue;
+            if (candidate.age > oldest) { oldest = candidate.age; chain = candidate; }
+        }
+        if (chain == null) return;
+        if (chain.thunderLinks == null) chain.thunderLinks = new float[THUNDER_LINK_MAX * 4];
+        int slot = chain.thunderLinkCount * 4;
+        chain.thunderLinks[slot] = relayX - (float) chain.x;
+        chain.thunderLinks[slot + 1] = relayY - (float) chain.y;
+        chain.thunderLinks[slot + 2] = relayZ - (float) chain.z;
+        // Naissance du maillon : l'avancement normalisé de l'animation à cet instant. L'arc se
+        // trace à partir de là, donc exactement quand le mob encaisse.
+        chain.thunderLinks[slot + 3] =
+                Mth.clamp(chain.age / (float) Math.max(1, chain.maxAge), 0.0f, 1.0f);
+        chain.thunderLinkCount++;
+    }
+
     private static void updateMiasmaChain(float x, float y, float z, int chainId,
                                           int hostEntityId, boolean ending) {
         VfxInstance chain = null;
@@ -3581,10 +3637,22 @@ public final class WeaponWorldVfxManager {
         boolean previousPulse = voxelPulseEnabled;
         voxelPulseEnabled = false;
         try {
+            // Trois cas, dans cet ordre. Si l'animation a reçu des maillons, elle les trace :
+            // ce sont les vraies victimes. Sinon, et si elle est petite, elle ne trace RIEN —
+            // les quatre colonnes qui tombent autour du coup sont elles aussi des arcs, au
+            // tiers de la taille, et chacune déroulant sa propre chaîne l'écran se remplit
+            // d'éclairs qui ne vont nulle part. Sinon c'est une grande animation sans victime,
+            // typiquement un aperçu : l'anneau de secours vaut mieux qu'un arc amputé.
+            // La grande animation de combat vaut toujours au moins 1,365 (bigMeleeVisualScale),
+            // le seuil ne peut donc pas la confondre avec une réplique.
+            int links = v.inst().thunderLinkCount > 0
+                    ? v.inst().thunderLinkCount
+                    : (v.inst().sizeScale < 0.55f ? -1 : 0);
             ThunderSignatureVfx.render(v.vc(), v.mat(), v.tmp(),
                     v.cx(), v.cy(), v.cz(), v.t(),
                     -v.dirX(), -v.dirZ(), signature, v.fadeA(),
-                    (int) (v.inst().seed & 0x7FFFFFFFL));
+                    (int) (v.inst().seed & 0x7FFFFFFFL),
+                    v.inst().thunderLinks, links);
         } finally {
             voxelPulseEnabled = previousPulse;
         }

@@ -2152,3 +2152,95 @@ depuis le dossier utilisateur, pas depuis le projet — donc aucun commit ne peu
 est archivé ici pour être versionné avec le reste, et la version à jour sera livrée dans chaque
 archive. Au passage, il explique l'échec du lot précédent : il lève une `GradleException` si
 l'un des huit fichiers cadre manque de l'archive, et il restaure soixante et un fichiers.
+
+---
+
+## §34 — Foudre v10 : le joueur sort de la zone, et la chaîne regarde enfin où elle va
+
+Deux retours de jeu, les deux portant sur la même faute : **l'animation racontait une
+histoire que le monde ne vivait pas**.
+
+### 1. Le marteau tombait sur son propre porteur
+
+> « dans l'état actuel le joueur qui joue l'animation se fait prendre par le marteau et il
+> comprend rien » — « vu qu'il est dedans, il ne voit pas le marteau, juste une masse jaune
+> lui tomber dessus »
+
+Un marteau de trente blocs de haut qui tombe à un mètre de la caméra ne se regarde pas : il
+remplit l'écran. Le travail de mise en scène — la chute en t², les cinq passages d'enclume qui
+se rapprochent, les quatre-vingt-neuf pièces du modèle — était invisible pour la seule
+personne qui l'avait déclenché.
+
+`clearTheBlastZone` écarte donc le porteur de **six blocs** au moment de l'invocation. Il lui
+reste cinquante ticks pour se retourner et voir la chose arriver.
+
+Une poussée horizontale pure ne valait rien : un talus, un mur, une simple marche derrière le
+joueur l'arrête au premier bloc et il reste dans la zone. La méthode **sonde le trajet** avant
+de pousser — douze pas d'un demi-bloc, et à chaque pas la hauteur libre la plus basse où la
+boîte du joueur tient. La plus haute de ces valeurs donne la montée à franchir, et c'est elle
+qui fixe la composante verticale. Un mur plein compte pour la montée maximale : mieux vaut
+sauter dedans que rester sous le marteau.
+
+Le reste est de la balistique, et il faut la faire, sinon une poussée constante envoie à trois
+blocs ou à quinze selon la hauteur du saut :
+
+| grandeur | formule | pourquoi |
+|---|---|---|
+| vitesse verticale | `v = √(2gh)`, `g = 0,08` bloc/tick² | hauteur demandée = montée sondée + 1,15 bloc de marge |
+| durée du vol | `2v / g` | aller-retour complet |
+| portée horizontale | `v·(1 − 0,91ⁿ) / 0,09` | un corps en l'air garde 91 % de sa vitesse par tick : la distance est une série géométrique, qu'on inverse pour viser les six blocs |
+
+La distance de chute est remise à zéro toutes les quatre frames pendant tout l'enchaînement :
+elle ne dépasse jamais deux blocs, donc jamais le seuil des trois. **Personne ne paie
+l'atterrissage d'un vol qu'il n'a pas demandé**, y compris quand le recul fait passer
+par-dessus un bord.
+
+Le recul ne s'applique qu'à un **joueur**. Sa raison d'être est une raison de cadrage ; un mob
+n'a pas de caméra, et le projeter à six blocs à chacun de ses coups ne ferait que casser son
+combat.
+
+### 2. La chaîne d'éclairs ne cherchait pas les mobs
+
+> « là il ne cherche pas réellement les mobs dans la zone et va d'un en 1, il suit bêtement
+> une chorégraphie de mouvement et skip plein de mobs »
+
+Le diagnostic était exact, et le défaut était **des deux côtés du réseau**.
+
+**Côté serveur**, les six maillons étaient figés d'un coup au tick 24. Deux conséquences, les
+deux mauvaises : un mob mort entre-temps faisait disparaître son maillon au lieu de le passer
+au suivant, et la boîte de recherche restait collée à la hauteur de la cible initiale — un mob
+trois blocs plus haut n'existait tout simplement pas. La chaîne suivait un itinéraire décidé
+d'avance.
+
+`chainVoltHop` se construit maintenant **bond par bond** : à chaque relais on repart de la
+position réelle du corps qu'on vient de toucher et on cherche le plus proche vivant pas encore
+servi, dans un **disque** de huit blocs (la boîte passée au moteur est carrée parce qu'il ne
+sait pas chercher autrement, mais un coin de carré est à 1,41 fois le rayon annoncé et l'arc
+n'y porte pas), sur **douze blocs de hauteur centrés sur le point de départ**. C'est ce que
+fait un arc électrique.
+
+Les **quatre colonnes** qui tombent autour du point visé souffraient du même mal : angle d'or,
+rayon fixe, joli sur le papier et inutile en jeu. Chacune cherche désormais un corps vivant et
+tombe dessus — position **et hauteur**, sinon le volume de contact reste calé sur la cible
+initiale et un mob perché encaisse zéro. La géométrie ne sert plus que de repli quand il n'y a
+personne.
+
+**Côté client**, le rendu dessinait ses relais sur un anneau tiré de la graine, et l'assumait
+en commentaire : « même si le client ignore la position réelle des victimes ». Les dégâts
+tombaient sur les bons mobs, les arcs partaient ailleurs. Un nouveau `KIND_THUNDER_LINK`
+transporte la position de chaque victime au moment où elle encaisse ; `registerThunderLink`
+l'accroche à l'animation en cours et `chainRelays` relie ces points-là, seulement eux.
+
+Trois cas, dans cet ordre :
+
+| situation | chaîne dessinée |
+|---|---|
+| l'animation a reçu des maillons | les **vraies** victimes |
+| petite réplique (`sizeScale < 0,55`) sans maillon | **rien** — les quatre colonnes sont aussi des arcs, au tiers de la taille ; chacune déroulant la sienne, l'écran se remplit d'éclairs qui ne vont nulle part |
+| grande animation sans maillon | l'anneau de secours — c'est le cas de `/dlbvfx play 16`, qui joue l'animation sans gameplay |
+
+Le seuil ne peut pas confondre les deux : la grande animation de combat vaut toujours au moins
+1,365 (`bigMeleeVisualScale`), les répliques 0,34.
+
+**La page d'aperçu garde l'anneau**, et c'est normal : elle n'a pas de mobs. Le miroir JS n'est
+donc pas touché par ce lot.

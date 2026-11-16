@@ -6,39 +6,45 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 > **Si le navigateur sert une vieille version** (le CDN de GitHub garde les fichiers bruts en cache quelques minutes), remplacer `refs/heads/arena/605e67fb-dlbv1-21-1neoforge` par le SHA du commit — par exemple `raw/fa83a2f/…` pour la v1.3 — ou ajouter `?v=2` à la fin de l'adresse.
 
-## Foudre v9 — 4 novembre 2026 ⟵ **LOT COURANT**
+## Foudre v10 — 4 novembre 2026 ⟵ **LOT COURANT**
 
-> **Ça compile.** Les dix-neuf erreurs de `runClient` sont corrigées : `clamp()` local appelé
-> avec trois arguments au lieu d'un (2 fois), étiquette `"thunder"/"foudre"` présente deux fois
-> dans le même `switch`, et seize `long` passés à `TestProcedure.schedule` qui attend un `int`.
+> **Deux retours de jeu, corrigés.**
 >
-> **Un quatrième défaut a été trouvé en chemin, invisible au compilateur.** L'aura du marteau
-> mélangeait deux horloges : son expiration était calculée sur le tick de *serveur*
-> (`getTickCount()`, remis à zéro à chaque lancement) alors que la boucle qui la fait vivre lit
-> le temps du *monde* (`getGameTime()`, qui suit la sauvegarde). Sur tout monde plus vieux que
-> la session en cours, la zone expirait avant d'exister — aucune aura, aucun dégât de sol,
-> aucune trace dans les journaux. Les deux horloges sont maintenant séparées et nommées.
+> **1. Le marteau ne tombe plus sur son porteur.** « Vu qu'il est dedans, il ne voit pas le
+> marteau, juste une masse jaune lui tomber dessus » — exact : une masse de trente blocs à un
+> mètre de la caméra remplit l'écran. Le joueur est désormais projeté **six blocs en arrière**
+> au moment de l'invocation, avec une composante verticale calculée à partir du relief
+> *réellement sondé* derrière lui (douze pas, hauteur libre à chaque pas) : une montagne juste
+> derrière ne le bloque pas, il monte dessus. Balistique exacte — `v = √(2gh)` pour la hauteur,
+> série géométrique de raison 0,91 pour viser les six blocs — et **aucun dégât de chute**.
+> Réservé aux joueurs : un mob n'a pas de caméra.
 >
-> **Nouvel outil `typecheck.py`** : l'analyse syntaxique utilisée jusqu'ici ne pouvait pas voir
-> ces erreurs — elle vérifie les accolades, pas les types. `typecheck.py` rejoue trois règles du
-> compilateur (arité des appels, `long` là où un `int` est attendu, `case` en double) et
-> retrouve les dix-neuf erreurs sur la version d'avant.
+> **2. La chaîne d'éclairs cherche enfin les mobs.** « Il ne cherche pas réellement les mobs
+> dans la zone […] il suit bêtement une chorégraphie. » Le défaut était **des deux côtés**.
+> Côté serveur les six maillons étaient figés d'un coup : un mob mort faisait disparaître son
+> maillon, et la boîte de recherche restait collée à la hauteur de la cible initiale. Chaque
+> bond est maintenant cherché **au moment du bond**, depuis la position réelle du corps
+> précédent, dans un disque de 8 blocs sur 12 de haut. Les **quatre colonnes** visent elles
+> aussi de vrais corps, position *et* hauteur. Côté client, le rendu dessinait ses relais sur
+> un anneau tiré de la graine ; un nouveau `KIND_THUNDER_LINK` transporte la position de chaque
+> victime et `chainRelays` relie **ces points-là, seulement eux**.
 >
-> **Ton script d'init Gradle est archivé** dans le dépôt et livré dans l'archive.
+> L'anneau survit uniquement pour `/dlbvfx play 16`, qui joue l'animation sans gameplay, donc
+> sans victime. Les petites répliques ne déroulent plus de chaîne du tout.
 
 | Fichier | Lien |
 |---|---|
 | **⬇ APERÇU ANIMÉ FOUDRE** (HTML autonome — le ZIP est *dedans*) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Thunder_Three_Signatures_preview.html |
-| **⬇ Sources complètes** (ZIP, 42 entrées) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Thunder_Three_Signatures_src.zip |
-| `typecheck.py` — **le contrôle qui manquait** : arité, `long`→`int`, `case` en double | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/tools/typecheck.py |
-| `deep-lucky-block-patch.gradle` — **ton script d'init**, archivé dans le dépôt | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/tools/deep-lucky-block-patch.gradle |
-| `WeaponVfxServerListener.java` — 16 `schedule` en `int`, **deux horloges séparées** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java |
-| `ThunderSignatureVfx.java` — `clamp()` à un argument (l. 511 et 598) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/ThunderSignatureVfx.java |
-| `DlbVfxCommand.java` — étiquette `"thunder"/"foudre"` dédoublée | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/commands/DlbVfxCommand.java |
-| `WATER_SIGNATURES.md` — documentation, **§33 = les 19 erreurs et le bug des horloges** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/WATER_SIGNATURES.md |
+| **⬇ Sources complètes** (ZIP, 42 entrées, 687 711 o) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Thunder_Three_Signatures_src.zip |
+| `WeaponVfxServerListener.java` — **recul du porteur** + chaîne bond par bond | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java |
+| `ThunderSignatureVfx.java` — `chainRelays`, les arcs vont **sur les vraies victimes** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/ThunderSignatureVfx.java |
+| `WeaponWorldVfxManager.java` — `KIND_THUNDER_LINK` et `registerThunderLink` | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/WeaponWorldVfxManager.java |
+| `WATER_SIGNATURES.md` — documentation, **§34 = ce lot** | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/WATER_SIGNATURES.md |
+| `typecheck.py` — arité, `long`→`int`, `case` en double | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/tools/typecheck.py |
+| `deep-lucky-block-patch.gradle` — ton script d'init, archivé | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/tools/deep-lucky-block-patch.gradle |
 | `WeaponVisualEffectId.java` — les 3 identifiants de foudre (4 / 8 / 16) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/enchantments/WeaponVisualEffectId.java |
-| `WeaponWorldVfxManager.java` — moteur voxel et durées | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/client/WeaponWorldVfxManager.java |
-| `thunder_build.js` — miroir JS de la géométrie | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/tools/thunder_build.js |
+| `DlbVfxCommand.java` — commande d'aperçu `/dlbvfx` | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/java/deepluckyblock/commands/DlbVfxCommand.java |
+| `thunder_build.js` — miroir JS de la géométrie (inchangé par ce lot) | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/tools/thunder_build.js |
 | Miroir MCreator `WeaponVfxServerListener.java` | https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java |
 
 **Comment ouvrir l'aperçu :** GitHub sert les `.html` bruts en `text/plain` — un clic
@@ -46,6 +52,10 @@ affichera donc le code source, pas l'animation. Faire **clic droit → Enregistr
 sous…**, puis ouvrir le fichier enregistré dans le navigateur. La page est autonome :
 l'archive des sources est embarquée dedans, le bouton « Télécharger les sources » marche
 hors ligne.
+
+**Pour tester en jeu :** `/anim thunder` donne l'épée, puis frapper un mob avec plusieurs
+autres autour. `/dlbvfx play 8` et `/dlbvfx play 16` ne jouent que le visuel, sans gameplay —
+donc sans recul ni chaîne réelle.
 
 **Contrôle de l'archive :**
 
