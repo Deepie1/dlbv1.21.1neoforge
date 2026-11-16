@@ -402,6 +402,10 @@ public final class EnchantAura {
         current = DeepGlintColor.smoothGlint(stack, target, armorSlot);
         currentGradient = DeepGlintColor.smoothGlintAccent(stack);
         currentGradientMode = DeepGlintColor.glintGradientMode(stack);
+        // T378-UMBRAL-GLINT : l'ombre ne degrade pas, elle melange (voir GRADIENT_MODE_UMBRAL).
+        if (DeepGlintColor.isShadowStack(stack)) {
+            currentGradientMode = DeepGlintColor.GRADIENT_MODE_UMBRAL;
+        }
     }
 
     /**

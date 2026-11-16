@@ -609,6 +609,52 @@ public final class DeepGlintColor {
     }
 
     /** 0 = dégradé haut/bas ; 1 = roue A -> B -> A, sans couture chromatique. */
+    /**
+     * T378-UMBRAL-GLINT : mode de degrade reserve a la famille OMBRE.
+     *
+     * <p>Les modes 0 et 1 sont des degrades a DEUX teintes, l'une derivee de l'autre par
+     * rotation de teinte : sur une arme d'ombre cela donnait du violet qui vire au violet,
+     * et les transitions de {@code GlintTransition} faisaient defiler ces teintes l'une
+     * apres l'autre. Le mode 2 ne degrade pas : il tire chaque pixel dans un champ nuageux
+     * a trois arrets — violet, noir, gris — qui defile avec le glint.</p>
+     */
+    public static final int GRADIENT_MODE_UMBRAL = 2;
+
+    /**
+     * True si l'un des enchantements de la pile appartient a la famille OMBRE.
+     *
+     * <p>On interroge le MEME classificateur que {@link #resolve(String, int)} plutot que de
+     * comparer la couleur finale : celle-ci passe par {@code shade()}, donc elle n'est jamais
+     * egale a la constante {@code SHADOW} et toute comparaison de teinte serait fausse — le
+     * violet du chaos et celui de la foudre tombent d'ailleurs dans la meme plage de teinte.</p>
+     */
+    public static boolean isShadowStack(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        Map<net.minecraft.world.item.enchantment.Enchantment, Integer> enchants;
+        try {
+            enchants = deepluckyblock.util.DeepEnchant.map(stack);
+        } catch (Throwable t) {
+            return false;
+        }
+        if (enchants == null || enchants.isEmpty()) return false;
+        for (net.minecraft.world.item.enchantment.Enchantment ench : enchants.keySet()) {
+            if (ench == null) continue;
+            net.minecraft.resources.ResourceLocation rl;
+            try {
+                rl = deepluckyblock.util.DeepEnchant.getKeySafe(ench);
+            } catch (Throwable t) {
+                continue;
+            }
+            if (rl == null) continue;
+            String s = rl.toString().toLowerCase(Locale.ROOT);
+            // Une malediction est rouge par decision anterieure : elle ne bascule pas l'ombre.
+            if (s.contains("curse") || s.contains("cursed") || s.contains("blemish")
+                    || s.contains("unlucky")) continue;
+            if (baseColor(s) == SHADOW) return true;
+        }
+        return false;
+    }
+
     public static int glintGradientMode(ItemStack stack) {
         synchronized (GLINT_TRANSITIONS) {
             GlintTransition state = GLINT_TRANSITIONS.get(stack);

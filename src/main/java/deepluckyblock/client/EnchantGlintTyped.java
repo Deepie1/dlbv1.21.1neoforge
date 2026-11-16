@@ -360,7 +360,7 @@ public final class EnchantGlintTyped {
                 for (int x = 0; x < img.getWidth(); x++) {
                     for (int y = 0; y < img.getHeight(); y++) {
                         float gradient = gradientPosition(x, y, img.getWidth(), img.getHeight(), gradientMode);
-                        int spatial = mixGradient(rgb, gradientRgb, gradient);
+                        int spatial = spatialTint(rgb, gradientRgb, gradientMode, gradient);
                         int tr = (spatial >> 16) & 0xFF, tg = (spatial >> 8) & 0xFF, tb = spatial & 0xFF;
                         int maxChan = Math.max(1, Math.max(tr, Math.max(tg, tb)));
                         double sr = tr * 255.0 / maxChan;
@@ -403,7 +403,7 @@ public final class EnchantGlintTyped {
                 for (int x = 0; x < img.getWidth(); x++) {
                     for (int y = 0; y < img.getHeight(); y++) {
                         float gradient = gradientPosition(x, y, img.getWidth(), img.getHeight(), gradientMode);
-                        int spatial = mixGradient(rgb, gradientRgb, gradient);
+                        int spatial = spatialTint(rgb, gradientRgb, gradientMode, gradient);
                         int tr = (spatial >> 16) & 0xFF, tg = (spatial >> 8) & 0xFF, tb = spatial & 0xFF;
                         int maxChan = Math.max(1, Math.max(tr, Math.max(tg, tb)));
                         double satBlend = tier >= EnchantAura.DEFAULT_GLINT_TIER ? 0.58 : 0.30;
@@ -434,7 +434,7 @@ public final class EnchantGlintTyped {
                 for (int x = 0; x < img.getWidth(); x++) {
                     for (int y = 0; y < img.getHeight(); y++) {
                         float gradient = gradientPosition(x, y, img.getWidth(), img.getHeight(), gradientMode);
-                        int spatial = mixGradient(rgb, gradientRgb, gradient);
+                        int spatial = spatialTint(rgb, gradientRgb, gradientMode, gradient);
                         int tr = (spatial >> 16) & 0xFF, tg = (spatial >> 8) & 0xFF, tb = spatial & 0xFF;
                         int px = img.getPixelRGBA(x, y);
                         int a = (px >> 24) & 0xFF;
@@ -454,7 +454,7 @@ public final class EnchantGlintTyped {
                 for (int x = 0; x < img.getWidth(); x++) {
                     for (int y = 0; y < img.getHeight(); y++) {
                         float gradient = gradientPosition(x, y, img.getWidth(), img.getHeight(), gradientMode);
-                        int spatial = mixGradient(rgb, gradientRgb, gradient);
+                        int spatial = spatialTint(rgb, gradientRgb, gradientMode, gradient);
                         int tr = (spatial >> 16) & 0xFF, tg = (spatial >> 8) & 0xFF, tb = spatial & 0xFF;
                         int px = img.getPixelRGBA(x, y);
                         int a = (px >> 24) & 0xFF;
@@ -480,7 +480,7 @@ public final class EnchantGlintTyped {
                 for (int x = 0; x < img.getWidth(); x++) {
                     for (int y = 0; y < img.getHeight(); y++) {
                         float gradient = gradientPosition(x, y, img.getWidth(), img.getHeight(), gradientMode);
-                        int spatial = mixGradient(rgb, gradientRgb, gradient);
+                        int spatial = spatialTint(rgb, gradientRgb, gradientMode, gradient);
                         int tr = (spatial >> 16) & 0xFF, tg = (spatial >> 8) & 0xFF, tb = spatial & 0xFF;
                         int maxChan = Math.max(1, Math.max(tr, Math.max(tg, tb)));
                         double satBlend = Math.min(1.0, u * 1.15);
@@ -517,7 +517,75 @@ public final class EnchantGlintTyped {
         }
     }
 
+    /**
+     * T378-UMBRAL-GLINT : champ nuageux de l'ombre, dans [0, 1].
+     *
+     * <p>Somme de quatre ondes de frequences ENTIERES sur le domaine normalise. L'entier est
+     * la condition du raccord : la texture de glint est repetee et defilee en continu, une
+     * frequence fractionnaire y laisserait une couture verticale visible a chaque boucle.
+     * Quatre directions incommensurables suffisent a casser toute regularite lisible, donc
+     * on lit des volutes et non un quadrillage.</p>
+     *
+     * <p>Le resultat est resserre vers le milieu : le noir occupe la bande centrale, donc
+     * l'ombre domine et le violet comme le gris n'apparaissent qu'en nappes.</p>
+     */
+    private static float umbralField(int x, int y, int width, int height) {
+        double u = x / (double) Math.max(1, width);
+        double v = y / (double) Math.max(1, height);
+        final double TAU = Math.PI * 2.0;
+        double n = 0.22 * Math.sin(TAU * (2.0 * u + v) + 0.70)
+                 + 0.16 * Math.sin(TAU * (u - 3.0 * v) + 2.10)
+                 + 0.10 * Math.sin(TAU * (4.0 * u + 2.0 * v) + 4.30)
+                 + 0.07 * Math.sin(TAU * (3.0 * u - 5.0 * v) + 1.20)
+                 + 0.06 * Math.sin(TAU * (8.0 * u + 13.0 * v) + 5.60);
+        // Grain par PIXEL. Les ondes ci-dessus donnent les volutes, qui defilent avec le
+        // glint ; seules, elles laissent une lame de seize pixels sous une unique tache, donc
+        // une seule couleur a la fois — exactement ce qu'on cherche a eviter. Le hachage
+        // melange les trois teintes jusqu'a l'echelle du pixel, et comme il ne depend que des
+        // coordonnees entieres de la texture, il se repete sans couture.
+        double f = 0.5 + n + 0.28 * pixelNoise(x, y);
+        return (float) Math.max(0.0, Math.min(1.0, f));
+    }
+
+    /** Hachage deterministe par pixel, dans [-0,5 ; +0,5]. Meme arithmetique que les VFX. */
+    private static double pixelNoise(int x, int y) {
+        int h = (x * 0x9E3779B1) ^ (y * 0x85EBCA77);
+        h ^= (h >>> 15);
+        h *= 0x2545F491;
+        h ^= (h >>> 13);
+        return ((h & 0xFFFF) / 65535.0) - 0.5;
+    }
+
+    /**
+     * T378-UMBRAL-GLINT : les trois arrets de l'ombre — gris cendre, noir, violet.
+     *
+     * <p>Le noir n'est pas une couleur de plus : le glint est additif, donc un pixel noir
+     * n'allume rien. Ce sont des TROUS dans la brillance, et c'est eux qui font lire de
+     * l'ombre plutot qu'un degrade violet de plus. Le violet est la teinte d'aura de la
+     * piece, pour que palier et fenetre de frappe continuent de l'affecter.</p>
+     */
+    private static int umbralTint(int violet, float u) {
+        final int ASH = 0x9B97A6; // gris legerement violace, jamais un gris neutre
+        if (u < 0.5f) {
+            float k = u * 2.0f;
+            return mixGradient(ASH, 0x000000, k * k * (3.0f - 2.0f * k));
+        }
+        float k = (u - 0.5f) * 2.0f;
+        return mixGradient(0x000000, violet, k * k * (3.0f - 2.0f * k));
+    }
+
+    /** Teinte spatiale d'un pixel de glint : melange d'ombre, ou degrade a deux teintes. */
+    private static int spatialTint(int rgb, int gradientRgb, int mode, float gradient) {
+        if (mode == deepluckyblock.client.DeepGlintColor.GRADIENT_MODE_UMBRAL) {
+            return umbralTint(rgb, gradient);
+        }
+        return mixGradient(rgb, gradientRgb, gradient);
+    }
+
     private static float gradientPosition(int x, int y, int width, int height, int mode) {
+        if (mode == deepluckyblock.client.DeepGlintColor.GRADIENT_MODE_UMBRAL) {
+            return umbralField(x, y, width, height);
+        }
         if (mode == 0) {
             float v = y / (float) Math.max(1, height - 1);
             return v * v * (3.0f - 2.0f * v);

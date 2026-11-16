@@ -27,6 +27,10 @@ JAVA = [
     'src/main/java/deepluckyblock/client/GaiaWorldTreeVfx.java',
     'src/main/java/deepluckyblock/client/WaterSignatureVfx.java',
     'src/main/java/deepluckyblock/client/WaterTerrainVfx.java',
+    # T378-UMBRAL-GLINT : le glint melange de l'ombre touche ces trois fichiers.
+    'src/main/java/deepluckyblock/client/EnchantGlintTyped.java',
+    'src/main/java/deepluckyblock/client/DeepGlintColor.java',
+    'src/main/java/deepluckyblock/client/EnchantAura.java',
     'src/main/java/deepluckyblock/commands/DlbVfxCommand.java',
     'src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java',
     'src/main/java/deepluckyblock/enchantments/WeaponVisualEffectId.java',
