@@ -75,7 +75,7 @@ CE QUE CONTIENT CETTE ARCHIVE
 -----------------------------
   src/main/java/...                  les sources, a copier dans ton projet
   src/.../FIXES_MCREATOR/...         la copie miroir, identique fichier pour fichier
-  src/.../WATER_SIGNATURES.md        le journal technique — le Sang est au SS 39
+  src/.../WATER_SIGNATURES.md        le journal technique — le Sang est aux SS 39 et 40
   src/.../tools/                     les outils de controle et le miroir JS de l'apercu
 
 CE QU'ELLE NE CONTIENT PAS, ET POURQUOI

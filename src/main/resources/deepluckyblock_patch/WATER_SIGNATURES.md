@@ -2677,3 +2677,85 @@ la famille validés un par un — y compris leur nature de `Holder`, qui impose 
 `/anim sang`, puis frapper un mob entouré d'autres. Visuel seul : `/dlbvfx play 5` ·
 `/dlbvfx play 9` · `/dlbvfx play 10` · `/dlbvfx play 11` · `/dlbvfx play 12` ·
 `/dlbvfx stop`.
+
+---
+
+## §40 — Le conduit qui ne reliait rien
+
+Le Siphon et la Transfusion racontaient tous les deux la même histoire : un lien
+entre deux êtres. Ni l'un ni l'autre ne le tenait réellement.
+
+Trois mensonges, trouvés en relisant le code plutôt que les captures.
+
+**La longueur était une constante.** `REACH = 7.0f`. Le conduit mesurait sept
+blocs que le porteur soit à trois mètres ou à onze. À trois, il traversait le
+porteur et continuait quatre blocs derrière lui ; à onze, il s'arrêtait en l'air
+au milieu de nulle part. La capture d'écran ne pouvait pas le montrer : la scène
+d'aperçu place toujours le porteur à exactement sept blocs.
+
+**Aucun bout ne suivait son entité.** L'effet part en `KIND_IMPACT`, qui fige
+l'ancre au point d'impact, et `ImpactView.dirX()/dirZ()` dérivent du seul
+`yawDeg` figé dans le paquet. La victime pouvait se mettre à courir : le conduit
+restait pendu là où elle avait été frappée.
+
+**Le cœur de la Transfusion n'était pas où le serveur croyait.** Le visuel le
+dessinait à `heartF = -1.30`, soit à un bloc trente du porteur ; le serveur
+prélevait et redistribuait depuis le milieu du segment. Deux cœurs, l'un visible
+et faux, l'autre invisible et vrai.
+
+### Ce qu'il a fallu
+
+Le paquet ne transporte pas d'identifiant d'entité, seulement deux points. Le
+client retrouve donc les deux corps par proximité — rayon de trois blocs autour
+de chaque extrémité, une seule fois, comme `updatePoisonFollow` le fait déjà
+pour le poison — puis recale l'ancre sur la victime à `bbHeight × 0,50`, l'autre
+bout sur le porteur à `bbHeight × 0,62`, et recalcule à chaque image la
+direction, la longueur et le dénivelé. `render()` prend trois paramètres de plus :
+`linkLen`, `linkEndY`, `linkBroken`.
+
+Ce qui dépendait de `REACH` en dépend toujours, mais en proportion : le ventre du
+conduit vaut `(0,55 − 0,30·drain) × (reach/REACH)`, le pas de l'hélice
+`26 × reach/REACH`, le nombre de segments `max(26, 62 × reach/REACH)`. Sans cela
+un conduit de deux blocs garderait un ventre de sept et raclerait le sol.
+
+Mesures sur le miroir JavaScript, extrémité basse du conduit :
+
+| portée demandée | 2 | 4 | 7 | 11 |
+|---|---|---|---|---|
+| siphon, `xmin` | −2,03 | −4,04 | −6,98 | −10,98 |
+| transfusion, `xmin` | −1,99 | −3,98 | −6,98 | −10,98 |
+
+### La laisse
+
+Un lien qui s'étire à l'infini n'est pas un lien. Au-delà de **neuf blocs** il
+casse : son de chaîne brisée, gerbe de particules, `base × 0,45` de dégâts
+d'arrachement et deux piles d'hémorragie pour la victime, puis la pompe s'arrête
+— les bols ou les battements restants sont perdus. Le client et le serveur
+portent la même constante (`BLOOD_LINK_BREAK = 9.0`) et rompent donc en même
+temps, sans paquet supplémentaire.
+
+Fuir reste coûteux : la morsure du Siphon pose Lenteur II pendant 120 ticks, et
+l'hémorragie frappe une cible qui court jusqu'à deux fois et demie plus fort.
+
+### Un chiffre qui ne tenait pas
+
+En calculant les cinq totaux pour répondre à une question de revue, le Tranchant
+Sanglant — la signature d'entretien, celle qui « frappe peu et saigne longtemps »
+— sortait première des cinq : 150 points sur une cible mobile contre 147 au
+Carnage, et en six secondes au lieu de neuf. Quatre piles à `0,115 × base` sur
+vingt-deux tics, c'était simplement trop. Le tarif unitaire passe à **0,075** et
+la durée de 220 à 200 ticks. Les quatre piles restent : c'est son identité.
+
+Classement après correction, en duel, arme à 8 de dégâts, cible immobile → cible
+qui court :
+
+| signature | total | DPS |
+|---|---|---|
+| Carnage | 82 → 147 | 9,2 → 16,4 |
+| Siphon | 51 → 100 | 5,9 → 11,8 |
+| Tranchant | 48 → 101 | 7,9 → 16,8 |
+| Couperet | 50 → 90 | 6,6 → 12,0 |
+| Transfusion | 15 → 15 | 2,2 → 2,2 |
+
+La Transfusion reste volontairement dernière : elle ne tue pas, elle soigne un
+groupe.

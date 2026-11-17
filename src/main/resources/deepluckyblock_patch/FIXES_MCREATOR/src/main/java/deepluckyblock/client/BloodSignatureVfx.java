@@ -147,10 +147,26 @@ public final class BloodSignatureVfx {
      * @param dx,dz  direction unitaire ATTAQUANT → CIBLE
      * @param groundOffset écart entre la surface réelle et le centre de l'effet
      */
+    /**
+     * T380-BLOOD-LINK : {@code linkLen}, {@code linkEndY} et {@code linkBroken} decrivent le
+     * LIEN vivant entre la victime (l'ancre, en {@code f = 0}) et le porteur (en
+     * {@code f = -linkLen}, a la hauteur {@code linkEndY} au-dessus de l'ancre).
+     *
+     * <p>Avant eux, le siphon et la transfusion tendaient leur conduit sur la constante
+     * {@code REACH = 7} dans la direction gelee au moment du coup. A trois blocs de
+     * distance le tuyau traversait le porteur et continuait quatre blocs derriere lui ;
+     * a dix, il s'arretait en l'air. Et aucun des deux bouts ne suivait son entite : il
+     * suffisait d'un pas de cote pour que le conduit ne relie plus rien.</p>
+     *
+     * <p>Les trois autres signatures ignorent ces parametres : le couperet est plante dans
+     * le SOL (et sa victime est clouee), l'arete marque une entaille et la flaque qui en
+     * tombe, le carnage occupe une aire. Toutes trois sont fixes cote serveur aussi.</p>
+     */
     public static void render(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                               float cx, float cy, float cz, float t,
                               float dx, float dz, int variant, int alpha, int salt,
-                              float groundOffset) {
+                              float groundOffset,
+                              float linkLen, float linkEndY, boolean linkBroken) {
         if (t <= 0.0f || t >= 1.0f || alpha <= 4) return;
         GROUND_Y = Mth.clamp(groundOffset, -4.0f, 0.10f);
         float length = Mth.sqrt(dx * dx + dz * dz);
@@ -159,8 +175,10 @@ public final class BloodSignatureVfx {
 
         switch (variant) {
             case EDGE -> renderEdge(vc, mat, tmp, cx, cy, cz, t, dx, dz, alpha, salt);
-            case SIPHON -> renderSiphon(vc, mat, tmp, cx, cy, cz, t, dx, dz, alpha, salt);
-            case TRANSFUSION -> renderTransfusion(vc, mat, tmp, cx, cy, cz, t, dx, dz, alpha, salt);
+            case SIPHON -> renderSiphon(vc, mat, tmp, cx, cy, cz, t, dx, dz, alpha, salt,
+                    linkLen, linkEndY, linkBroken);
+            case TRANSFUSION -> renderTransfusion(vc, mat, tmp, cx, cy, cz, t, dx, dz, alpha, salt,
+                    linkLen, linkEndY, linkBroken);
             case CARNAGE -> renderCarnage(vc, mat, tmp, cx, cy, cz, t, dx, dz, alpha, salt);
             default -> renderGuillotine(vc, mat, tmp, cx, cy, cz, t, dx, dz, alpha, salt);
         }
@@ -626,7 +644,8 @@ public final class BloodSignatureVfx {
      */
     private static void renderSiphon(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                      float cx, float cy, float cz, float t,
-                                     float dx, float dz, int alpha, int salt) {
+                                     float dx, float dz, int alpha, int salt,
+                                     float linkLen, float linkEndY, boolean linkBroken) {
         final int a = Math.round(alpha * smooth(t / 0.03f));
         if (a <= 4) return;
 
@@ -634,10 +653,12 @@ public final class BloodSignatureVfx {
         final float build = smooth((t - 0.09f) / 0.11f);
         final float drain = clamp((t - 0.20f) / 0.60f);
         final float slack = clamp((t - 0.80f) / 0.10f);
-        final float snap = clamp((t - 0.90f) / 0.10f);
+        // Rupture : en fin d'animation, OU des que le porteur est sorti de la laisse. Le
+        // second cas n'est pas un decor — le serveur arrete la pompe au meme moment.
+        final float snap = Math.max(clamp((t - 0.90f) / 0.10f), linkBroken ? 1.0f : 0.0f);
 
         final float mouthY = 0.95f;                                // point de ponction
-        final float handY = 0.65f;                                 // main du porteur
+        final float handY = linkEndY;                              // main du porteur, EN VRAI
 
         // ---- 1. LES CROCHETS ----
         // Quatre hameçons d'os plantés en couronne autour du point de ponction. Ils donnent
@@ -671,8 +692,11 @@ public final class BloodSignatureVfx {
         // ---- 2. LE CONDUIT ----
         // Double hélice. Un tuyau droit ne dit pas dans quel sens il coule ; deux brins
         // enroulés, si — et ils donnent au gonflement des bols quelque chose à déformer.
-        final int segs = 62;
-        final float reach = REACH;
+        // La longueur du conduit est la distance REELLE au porteur, pas la constante REACH.
+        // Le nombre de segments suit : 62 pour sept blocs, soit un segment tous les 11 cm,
+        // qu'il y en ait trois ou douze.
+        final float reach = linkLen;
+        final int segs = Math.max(26, Math.round(62.0f * reach / REACH));
         float frontier = build;                                     // avancée de la construction
         for (int i = 0; i < segs; i++) {
             float u = (i + 0.5f) / segs;                            // 0 = victime, 1 = porteur
@@ -684,8 +708,11 @@ public final class BloodSignatureVfx {
                 if (u > 0.5f - gap && u < 0.5f + gap) continue;
             }
             float f = -u * reach;
+            // Le ventre est proportionnel a la portee : un conduit de trois blocs qui pend
+            // de 55 cm comme un conduit de sept racle le sol.
+            float sag = (0.55f - 0.30f * drain) * (reach / REACH);
             float yy = mouthY + (handY - mouthY) * u
-                    - Mth.sin(u * Mth.PI) * (0.55f - 0.30f * drain);   // le conduit PEND
+                    - Mth.sin(u * Mth.PI) * sag;                       // le conduit PEND
             // Gonflement : somme des six bols qui passent.
             float bulge = 0.0f;
             for (int b = 0; b < 6; b++) {
@@ -704,7 +731,9 @@ public final class BloodSignatureVfx {
             // Les deux brins. 26 radians sur la longueur, soit un peu plus de quatre tours :
             // a 15 (2,4 tours sur sept blocs) l'helice etait trop lache pour se lire.
             for (int s = 0; s < 2; s++) {
-                float phase = u * 26.0f + s * Mth.PI + t * 2.4f;
+                // 26 radians pour sept blocs : le PAS de l'helice est une propriete du
+                // tuyau, pas de la distance. Il se recalcule donc sur la portee reelle.
+                float phase = u * (26.0f * reach / REACH) + s * Mth.PI + t * 2.4f;
                 float ox = Mth.cos(phase) * r;
                 float oz = Mth.sin(phase) * r;
                 int rgb = bulge > 0.35f ? FRESH : (s == 0 ? GORE : VENOUS);
@@ -802,16 +831,23 @@ public final class BloodSignatureVfx {
      */
     private static void renderTransfusion(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                           float cx, float cy, float cz, float t,
-                                          float dx, float dz, int alpha, int salt) {
+                                          float dx, float dz, int alpha, int salt,
+                                          float linkLen, float linkEndY, boolean linkBroken) {
         final int a = Math.round(alpha * smooth(t / 0.03f));
         if (a <= 4) return;
 
         final float gather = smooth(t / 0.12f);
-        final float fade = smooth((t - 0.80f) / 0.12f);
+        // Le lien casse precipite la resorption : les vaisseaux s'arrachent, le coeur se
+        // degonfle. Le serveur arrete les battements au meme instant et a la meme distance.
+        final float fade = Math.max(smooth((t - 0.80f) / 0.12f), linkBroken ? 1.0f : 0.0f);
 
-        // Position du cœur : entre les deux, au-dessus de la mêlée.
-        final float heartF = -1.30f;
-        final float heartY = 2.55f;
+        // Position du cœur : au MILIEU du segment porteur-victime, et à 1,60 bloc au-dessus
+        // de l'ancre. Ces deux nombres ne sont pas choisis pour la mise en page : ce sont
+        // exactement ceux du serveur (hx/hz = milieu des deux, hy = oy + 1,6). Avant, le cœur
+        // était dessiné à 1,30 bloc du point d'impact et 2,55 de haut, c'est-à-dire AILLEURS
+        // que le point d'où partaient réellement les battements et le soin.
+        final float heartF = -linkLen * 0.5f;
+        final float heartY = 1.60f;
         final float scale = 0.92f * gather * (1.0f - fade * 0.55f);
 
         // --- Le rythme. Sept battements, répartis de 0,16 à 0,84, chacun en lub-dub. ---
@@ -877,8 +913,9 @@ public final class BloodSignatureVfx {
             for (int v = 0; v < 4; v++) {
                 boolean intake = v < 2;
                 float side = (v % 2 == 0) ? 1.0f : -1.0f;
-                float endF = intake ? 0.0f : -REACH * 0.80f;
-                float endY = intake ? 1.05f : 0.55f;
+                // Entrée : la victime, à l'ancre. Sortie : le porteur, là où il est.
+                float endF = intake ? 0.0f : -linkLen;
+                float endY = intake ? 1.05f : linkEndY;
                 // Le pas doit rester inferieur au diametre du tube, sinon on dessine un
                 // collier de perles et non un vaisseau. Et il se mesure sur la LONGUEUR
                 // REELLE du trajet, pas sur son ecart horizontal : les deux vaisseaux
@@ -924,10 +961,10 @@ public final class BloodSignatureVfx {
                 float yy = y0 - GRAVITY * 0.10f * age * age;
                 if (yy < GROUND_Y + 0.05f) continue;
                 drop(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        heartF + Mth.cos(ang) * rr - REACH * 0.28f * age,
+                        heartF + Mth.cos(ang) * rr - linkLen * 0.28f * age,
                         Mth.sin(ang) * rr, yy, 0.028f, a);
             }
-            pool(vc, mat, tmp, cx, cy, cz, dx, dz, -REACH * 0.62f, 0.0f,
+            pool(vc, mat, tmp, cx, cy, cz, dx, dz, heartF, 0.0f,
                     0.85f * fade * (1.0f - clamp((t - 0.94f) / 0.06f)), a, salt + 141);
         }
     }

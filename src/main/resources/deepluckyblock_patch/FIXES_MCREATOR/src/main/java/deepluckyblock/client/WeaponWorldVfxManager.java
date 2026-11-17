@@ -76,6 +76,15 @@ public final class WeaponWorldVfxManager {
      */
     private static final int MAX_VOXEL_TRAIL_PIXELS = 1400;
 
+    /**
+     * T380-BLOOD-LINK : longueur maximale dessinee pour un conduit de sang, et distance a
+     * laquelle il casse. Le serveur applique EXACTEMENT la meme rupture dans
+     * applyCrimsonSiphonGameplay : les deux cotes cedent au meme instant sans echanger un
+     * paquet de plus.
+     */
+    public static final float BLOOD_LINK_MAX = 12.0f;
+    public static final float BLOOD_LINK_BREAK = 9.0f;
+
     public static final int KIND_SWING_SLASH       = 0;
     public static final int KIND_IMPACT            = 1;
     public static final int KIND_BEAM_SIPHON       = 2;
@@ -344,6 +353,19 @@ public final class WeaponWorldVfxManager {
         int homingTargetId = -1;
         int followEntityId = 0;
         boolean followInitialized;
+        /**
+         * T380-BLOOD-LINK : les deux bouts du conduit de sang. {@code bloodVictimId} porte
+         * l'ancre (la victime), {@code bloodWielderId} l'autre extremite (le porteur). Tant
+         * qu'ils ne sont pas resolus, on retombe sur les positions du paquet.
+         */
+        int bloodVictimId = 0;
+        int bloodWielderId = 0;
+        boolean bloodLinkResolved;
+        float linkDirX = 0.0f;
+        float linkDirZ = 1.0f;
+        float linkLen = 7.0f;
+        float linkEndY = 0.65f;
+        boolean linkBroken;
         int miasmaChainId = -1;
         int miasmaHostAge;
         int miasmaEndAge = -1;
@@ -835,6 +857,77 @@ public final class WeaponWorldVfxManager {
         }
         chain.miasmaEndAge = -1;
         chain.maxAge = 600;
+    }
+
+    /**
+     * T380-BLOOD-LINK : tient les deux bouts du conduit de sang sur leurs entites.
+     *
+     * <p>Le Siphon et la Transfusion sont les deux seules signatures du mod dont le visuel
+     * est un LIEN : un conduit tendu entre la victime et le porteur. Un lien dont les bouts
+     * ne bougent pas n'est pas un lien, c'est un decor pose a cote de la scene — et il
+     * suffisait d'un pas de cote pour le voir.</p>
+     *
+     * <p>Les deux entites sont retrouvees une seule fois, par proximite, a partir des deux
+     * points portes par le paquet : {@code (x,y,z)} est la victime au moment du coup,
+     * {@code (tx,ty,tz)} le porteur. Ensuite on les SUIT. Si l'une disparait (mort,
+     * dechargement), on retombe sur sa derniere position connue plutot que de faire
+     * s'effondrer le conduit sur l'origine du monde.</p>
+     *
+     * <p>Au-dela de {@link #BLOOD_LINK_BREAK} blocs, le lien casse. Le serveur applique
+     * EXACTEMENT le meme seuil dans {@code applyCrimsonSiphonGameplay} : les deux cotes
+     * rompent donc au meme instant sans echanger un seul paquet de plus.</p>
+     */
+    private static void updateBloodLink(ClientLevel level, VfxInstance inst) {
+        if (inst.kind != KIND_IMPACT) return;
+        if (inst.effect != WeaponVisualEffectId.CRIMSON_SIPHON
+                && inst.effect != WeaponVisualEffectId.VITAL_TRANSFUSION) return;
+
+        if (!inst.bloodLinkResolved) {
+            inst.bloodLinkResolved = true;
+            inst.bloodVictimId = nearestLivingId(level, inst.x, inst.y, inst.z, 3.0);
+            inst.bloodWielderId = nearestLivingId(level, inst.tx, inst.ty, inst.tz, 3.0);
+            if (inst.bloodWielderId == inst.bloodVictimId) inst.bloodWielderId = 0;
+        }
+
+        // --- L'ancre : la victime. ---
+        if (level.getEntity(inst.bloodVictimId) instanceof LivingEntity victim && victim.isAlive()) {
+            inst.x = victim.getX();
+            inst.y = victim.getY() + victim.getBbHeight() * 0.50;
+            inst.z = victim.getZ();
+        }
+
+        // --- L'autre bout : le porteur, ou a defaut le point d'ou il a frappe. ---
+        double ex = inst.tx, ey = inst.ty, ez = inst.tz;
+        if (level.getEntity(inst.bloodWielderId) instanceof LivingEntity wielder && wielder.isAlive()) {
+            ex = wielder.getX();
+            ey = wielder.getY() + wielder.getBbHeight() * 0.62;
+            ez = wielder.getZ();
+        }
+
+        double ddx = ex - inst.x;
+        double ddz = ez - inst.z;
+        double flat = Math.sqrt(ddx * ddx + ddz * ddz);
+        if (flat > 0.12) {
+            inst.linkDirX = (float) (ddx / flat);
+            inst.linkDirZ = (float) (ddz / flat);
+        }
+        // Plancher a 1,2 : colle contre son porteur, un conduit de dix centimetres n'est
+        // plus qu'un paquet de cubes empiles dans la tete de la victime.
+        inst.linkLen = Mth.clamp((float) flat, 1.2f, BLOOD_LINK_MAX);
+        inst.linkEndY = Mth.clamp((float) (ey - inst.y), -2.5f, 4.0f);
+        if (flat > BLOOD_LINK_BREAK) inst.linkBroken = true;
+    }
+
+    /** L'etre vivant le plus proche d'un point, dans un rayon donne. 0 si aucun. */
+    private static int nearestLivingId(ClientLevel level, double x, double y, double z, double radius) {
+        AABB box = new AABB(x - radius, y - radius, z - radius, x + radius, y + radius, z + radius);
+        double best = radius * radius;
+        int found = 0;
+        for (LivingEntity living : level.getEntitiesOfClass(LivingEntity.class, box)) {
+            double d = living.distanceToSqr(x, y, z);
+            if (d < best) { best = d; found = living.getId(); }
+        }
+        return found;
     }
 
     /** Miasma suit le vol puis le centre serveur exact ; Plague se fige au snap ; contagion sur cible. */
@@ -1569,6 +1662,7 @@ public final class WeaponWorldVfxManager {
             inst.age++;
             if (inst.miasmaChainId >= 0) inst.miasmaHostAge++;
             updatePoisonFollow(level, inst);
+            updateBloodLink(level, inst);
             if (inst.age >= inst.maxAge) {
                 it.remove();
                 continue;
@@ -4459,11 +4553,20 @@ public final class WeaponWorldVfxManager {
         boolean previousPulse = voxelPulseEnabled;
         voxelPulseEnabled = false;
         try {
+            // La direction : pour le siphon et la transfusion, c'est le vecteur VIVANT qui
+            // va de la victime au porteur, remis a jour a chaque tick par updateBloodLink.
+            // Pour les trois autres, le gel au moment du coup est le bon comportement —
+            // l'echafaud ne pivote pas parce que le joueur a fait trois pas.
+            boolean linked = v.inst().effect == WeaponVisualEffectId.CRIMSON_SIPHON
+                    || v.inst().effect == WeaponVisualEffectId.VITAL_TRANSFUSION;
+            float dirX = linked ? v.inst().linkDirX : -v.dirX();
+            float dirZ = linked ? v.inst().linkDirZ : -v.dirZ();
             BloodSignatureVfx.render(v.vc(), v.mat(), v.tmp(),
                     v.cx(), v.cy(), v.cz(), v.t(),
-                    -v.dirX(), -v.dirZ(), signature, v.fadeA(),
+                    dirX, dirZ, signature, v.fadeA(),
                     (int) (v.inst().seed & 0x7FFFFFFFL),
-                    probeGroundOffset(v.inst().x, v.inst().y, v.inst().z));
+                    probeGroundOffset(v.inst().x, v.inst().y, v.inst().z),
+                    v.inst().linkLen, v.inst().linkEndY, v.inst().linkBroken);
         } finally {
             voxelPulseEnabled = previousPulse;
         }

@@ -21,7 +21,7 @@
  * des CLOSURES ici, des méthodes statiques là-bas.
  * =========================================================================================== */
 
-function buildBlood(variant, t, salt = 5099) {
+function buildBlood(variant, t, salt = 5099, linkLen = 7.0, linkEndY = 0.65, linkBroken = false) {
   const out = [];
   if (t <= 0 || t >= 1) return out;
 
@@ -395,8 +395,9 @@ function buildBlood(variant, t, salt = 5099) {
     const build = smooth((t - 0.09) / 0.11);
     const drain = clamp01((t - 0.20) / 0.60);
     const slack = clamp01((t - 0.80) / 0.10);
-    const snap = clamp01((t - 0.90) / 0.10);
-    const mouthY = 0.95, handY = 0.65;
+    // Rupture : fin d'animation OU laisse cassee. Le serveur arrete la pompe au meme moment.
+    const snap = Math.max(clamp01((t - 0.90) / 0.10), linkBroken ? 1 : 0);
+    const mouthY = 0.95, handY = linkEndY;   // la main du porteur, la ou elle est
 
     // ---- 1. LES CROCHETS ---- (un tuyau qui ne plante rien dans la peau flotte)
     if (bite > 0.001) {
@@ -413,13 +414,14 @@ function buildBlood(variant, t, salt = 5099) {
     }
 
     // ---- 2. LE CONDUIT ---- (double hélice : un tuyau droit ne dit pas dans quel sens il coule)
-    const segs = 62;
+    // Portee REELLE, et un segment tous les 11 cm quelle que soit la distance.
+    const reach = linkLen, segs = Math.max(26, Math.round(62 * reach / REACH));
     for (let i = 0; i < segs; i++) {
       const u = (i + 0.5) / segs;
       if (u > build) continue;
       if (snap > 0) { const gap = 0.5 * snap; if (u > 0.5 - gap && u < 0.5 + gap) continue; }
-      const f = -u * REACH;
-      const yy = mouthY + (handY - mouthY) * u - Math.sin(u * PI) * (0.55 - 0.30 * drain);
+      const f = -u * reach;
+      const yy = mouthY + (handY - mouthY) * u - Math.sin(u * PI) * ((0.55 - 0.30 * drain) * (reach / REACH));
       let bulge = 0;
       for (let b = 0; b < 6; b++) {
         const launch = 0.20 + b * 0.098;
@@ -432,16 +434,16 @@ function buildBlood(variant, t, salt = 5099) {
       // 0,135 : a 0,085 les deux brins se chevauchaient et le conduit sortait en tige unique.
       const r = (0.135 + 0.105 * bulge) * thin;
       for (let s = 0; s < 2; s++) {
-        const phase = u * 26.0 + s * PI + t * 2.4;
+        const phase = u * (26.0 * reach / REACH) + s * PI + t * 2.4;
         const ox = Math.cos(phase) * r, oz = Math.sin(phase) * r;
         const rgb = bulge > 0.35 ? FRESH : (s === 0 ? GORE : VENOUS);
-        box(f + ox * 0.6, oz, yy + ox * 0.45, REACH / segs * 0.60,
+        box(f + ox * 0.6, oz, yy + ox * 0.45, reach / segs * 0.60,
             0.024 + 0.020 * bulge, 0.024 + 0.020 * bulge, rgb, opq(a * 0.95));
       }
-      box(f, 0, yy, REACH / segs * 0.62, 0.019 + 0.030 * bulge, 0.019 + 0.030 * bulge,
+      box(f, 0, yy, reach / segs * 0.62, 0.019 + 0.030 * bulge, 0.019 + 0.030 * bulge,
           CLOT, opq(a * 0.85));
       if (bulge > 0.55) {
-        box(f, 0, yy + 0.034 + 0.020 * bulge, REACH / segs * 0.5, 0.012, 0.040, SPRAY, opq(a));
+        box(f, 0, yy + 0.034 + 0.020 * bulge, reach / segs * 0.5, 0.012, 0.040, SPRAY, opq(a));
       }
     }
 
@@ -473,7 +475,7 @@ function buildBlood(variant, t, salt = 5099) {
     if (snap > 0.001) {
       for (let s = 0; s < 2; s++) {
         const end = s === 0 ? 0.5 - 0.5 * snap : 0.5 + 0.5 * snap;
-        const f = -end * REACH;
+        const f = -end * reach;
         const yy = mouthY + (handY - mouthY) * end - Math.sin(end * PI) * 0.25;
         const lash = Math.sin(snap * PI * 2.0) * 0.42 * (1 - snap);
         box(f, lash, yy + Math.abs(lash) * 0.5, 0.070, 0.044, 0.044, FRESH, opq(a));
@@ -581,8 +583,11 @@ function buildBlood(variant, t, salt = 5099) {
     const a = Math.round(alpha * smooth(t / 0.03));
     if (a <= 4) return;
     const gather = smooth(t / 0.12);
-    const fade = smooth((t - 0.80) / 0.12);
-    const heartF = -1.30, heartY = 2.55;
+    // Le lien casse precipite la resorption.
+    const fade = Math.max(smooth((t - 0.80) / 0.12), linkBroken ? 1 : 0);
+    // Coeur au MILIEU du segment porteur-victime, 1,60 au-dessus de l'ancre : les nombres
+    // exacts du serveur (hx/hz = milieu des deux, hy = oy + 1,6).
+    const heartF = -linkLen * 0.5, heartY = 1.60;
     const scale = 0.92 * gather * (1 - fade * 0.55);
 
     // LUB-DUB. Deux coups rapprochés puis un silence : un battement unique et régulier
@@ -629,8 +634,8 @@ function buildBlood(variant, t, salt = 5099) {
     for (let v = 0; v < 4; v++) {
       const intake = v < 2;
       const side = (v % 2 === 0) ? 1 : -1;
-      const endF = intake ? 0 : -REACH * 0.80;
-      const endY = intake ? 1.05 : 0.55;
+      const endF = intake ? 0 : -linkLen;
+      const endY = intake ? 1.05 : linkEndY;
       // Le pas se mesure sur la LONGUEUR REELLE du trajet : les vaisseaux d'entree ne
       // couvrent que 1,30 bloc en f mais descendent de 1,50, d'ou les pointilles.
       const sagMax = intake ? 0.45 : 0.62;
@@ -663,9 +668,9 @@ function buildBlood(variant, t, salt = 5099) {
         const ang = h2 * TAU, rr = 0.5 + 0.7 * h1;
         const yy = heartY - GRAVITY * 0.10 * age * age;
         if (yy < GROUND_Y + 0.05) continue;
-        drop(heartF + Math.cos(ang) * rr - REACH * 0.28 * age, Math.sin(ang) * rr, yy, 0.028, a);
+        drop(heartF + Math.cos(ang) * rr - linkLen * 0.28 * age, Math.sin(ang) * rr, yy, 0.028, a);
       }
-      pool(-REACH * 0.62, 0, 0.85 * fade * (1 - clamp01((t - 0.94) / 0.06)), a, salt + 141);
+      pool(heartF, 0, 0.85 * fade * (1 - clamp01((t - 0.94) / 0.06)), a, salt + 141);
     }
   };
 

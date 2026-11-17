@@ -42,7 +42,7 @@ assert RENDER.count(MARK) == 1, 'marqueur de decoupe introuvable dans preview_re
 _, TAIL = RENDER.split(MARK, 1)
 
 HEAD = r"""/* ===== Rendu ===== */
-const SUBS=['\u00e9chafaud de 4,6 blocs \u00b7 couperet de 1,4 \u00b7 clouage','arc de 3,4 blocs \u00b7 rideau de go\u00fattes \u00b7 flaque','conduit h\u00e9lico\u00efdal de 7 blocs \u00b7 6 bols \u00b7 colonne qui se vide','c\u0153ur \u00e0 17 tranches \u00b7 4 vaisseaux \u00b7 7 battements','11 taillades \u00b7 onde au sol \u00b7 brume'];
+const SUBS=['\u00e9chafaud de 4,6 blocs \u00b7 couperet de 1,4 \u00b7 clouage','arc de 3,4 blocs \u00b7 rideau de go\u00fattes \u00b7 flaque','conduit tendu entre les deux \u00b7 6 bols \u00b7 laisse de 9 blocs','c\u0153ur \u00e0 17 tranches \u00b7 4 vaisseaux \u00b7 7 battements','11 taillades \u00b7 onde au sol \u00b7 brume'];
 const DUR=[150,120,170,140,180], NAMES=['Couperet','Tranchant Sanglant','Siphon Carmin','Transfusion Vitale','Carnage Berserk'];
 const BEATS=[
  [['0 \u2192 18','l\u2019\u00e9chafaud sort du sol : deux montants, un linteau, les ferrures'],
@@ -57,12 +57,12 @@ const BEATS=[
   ['66 \u2192 96','l\u2019impact au sol : chaque goutte fait sa couronne'],
   ['96 \u2192 120','la flaque : les couronnes fusionnent, le m\u00e9nisque se ferme']],
  [['0 \u2192 16','l\u2019amor\u00e7age : quatre crochets d\u2019os se plantent, l\u2019anneau se serre'],
-  ['16 \u2192 44','<b>le conduit</b> : deux brins s\u2019enroulent de la cible au porteur, 7 blocs'],
+  ['16 \u2192 44','<b>le conduit</b> : deux brins s\u2019enroulent de la cible au porteur \u2014 la longueur est leur distance r\u00e9elle, et les deux bouts suivent'],
   ['44 \u2192 112','les six bols : un renflement traverse le conduit toutes les 17 frames'],
   ['112 \u2192 142','la colonne se vide \u00e0 vue \u2014 le m\u00e9nisque descend, c\u2019est lui qu\u2019on regarde'],
   ['142 \u2192 158','la rupture : les brins claquent, le conduit se r\u00e9tracte'],
   ['158 \u2192 170','le reflux : ce qui restait dedans retombe au sol']],
- [['0 \u2192 20','l\u2019appel : les quatre vaisseaux se d\u00e9ploient vers les alli\u00e9s'],
+ [['0 \u2192 20','l\u2019appel : deux vaisseaux plongent dans la victime, deux remontent vers le porteur'],
   ['20 \u2192 118','<b>sept battements</b> : systole, diastole \u2014 le c\u0153ur se contracte de 12 %'],
   ['42 \u2192 118','les convois : chaque battement pousse une perle dans chaque vaisseau'],
   ['118 \u2192 132','le dernier souffle : le c\u0153ur ralentit, les coronaires p\u00e2lissent'],
@@ -86,9 +86,9 @@ const SFX=[
  "<b>0 \u2192 112</b> les onze taillades \u2014 <code>player.attack.sweep</code> pour chacune, et l\u2019\u00e9cart passe de 25 \u00e0 7 ticks : la bande acc\u00e9l\u00e8re avec l\u2019image. Aux <b>4\u1d49, 7\u1d49 et 10\u1d49 coups TOUCH\u00c9S</b> \u2014 pas lanc\u00e9s \u2014 <code>player.attack.crit</code> se superpose : le palier de rage s\u2019entend. <b>112</b> l\u2019onde \u2014 <code>honey_block.break</code> massif. <b>128 \u2192 170</b> la brume \u2014 <code>water.ambient</code> en nappe. <b>170</b> la retomb\u00e9e."];
 const GP=[
  "<b>Contact.</b> <b>Une ex\u00e9cution, pas un coup.</b> Les d\u00e9g\u00e2ts sont multipli\u00e9s par <code>1 + 1,25 \u00d7 (vie manquante)</code> : \u00e0 pleine vie c\u2019est un coup ordinaire, \u00e0 20 % de PV c\u2019est le double. La signature ne punit pas le combat, elle le <i>termine</i>. <b>Timer.</b> La cible est <b>clou\u00e9e 86 ticks</b> \u2014 le temps exact de la mont\u00e9e, de la suspension et de la chute : elle voit venir. <b>Buff :</b> R\u00e9sistance si la lame tue.",
- "<b>Contact.</b> <b>Une ligne, pas un disque</b> \u2014 seule zone en ligne du mod : tout ce qui est sur l\u2019arc est touch\u00e9, ce qui est \u00e0 c\u00f4t\u00e9 ne l\u2019est pas. <b>Duel :</b> 4 piles d\u2019h\u00e9morragie d\u2019un coup. <b>Foule :</b> 2 piles chacun, +1 \u00e0 la cible centrale. <b>Timer.</b> Flaque de <b>180 ticks</b> sous les victimes. <b>Buff :</b> le porteur r\u00e9cup\u00e8re un demi-c\u0153ur par pile pos\u00e9e.",
- "<b>Contact.</b> Six pr\u00e9l\u00e8vements de 17 ticks. <b>58 % de ce qui est pris est rendu</b> au porteur \u2014 pas la totalit\u00e9 : un siphon qui rend tout serait une arme sans co\u00fbt. <b>Trois conduits au maximum</b>, m\u00eame dans une foule. <b>Timer.</b> Rupture au tick 153, <b>doubl\u00e9e si la cible est sous 34 % de PV</b>. <b>Buff :</b> la ferveur monte \u00e0 chaque bol.",
- "<b>La seule aire bienveillante de la famille.</b> Le c\u0153ur <b>pr\u00e9l\u00e8ve dans un rayon de 6,0</b> sur les ennemis et <b>redistribue dans 4,0</b> au porteur, aux joueurs et aux <b>compagnons apprivois\u00e9s</b>. <b>Sept battements.</b> 85 % du pot est reversible, dont <b>55 % pour le porteur</b> \u2014 il soigne les siens, il ne se sacrifie pas. <b>Les animaux de b\u00e9tail ne sont ni prelev\u00e9s ni soign\u00e9s.</b>",
+ "<b>Contact.</b> <b>Une ligne, pas un disque</b> \u2014 seule zone en ligne du mod : tout ce qui est sur l\u2019arc est touch\u00e9, ce qui est \u00e0 c\u00f4t\u00e9 ne l\u2019est pas. <b>Duel :</b> 4 piles d\u2019h\u00e9morragie d\u2019un coup, <b>200 ticks</b>. <b>Foule :</b> 2 piles chacun, +1 \u00e0 la cible centrale. <b>Timer.</b> Flaque de <b>180 ticks</b> sous les victimes. <b>Buff :</b> le porteur r\u00e9cup\u00e8re un demi-c\u0153ur par pile pos\u00e9e. <b>Le tarif de la pile est tomb\u00e9 de 0,115 \u00e0 0,075 de la base</b> : elle \u00e9tait, de loin, la plus grosse source de d\u00e9g\u00e2ts des cinq, alors qu\u2019elle se d\u00e9crit comme celle qui frappe peu.",
+ "<b>Contact.</b> Six pr\u00e9l\u00e8vements de 17 ticks. <b>58 % de ce qui est pris est rendu</b> au porteur \u2014 pas la totalit\u00e9 : un siphon qui rend tout serait une arme sans co\u00fbt. <b>Trois conduits au maximum</b>, m\u00eame dans une foule. <b>LA LAISSE.</b> Le conduit relie deux \u00eatres qui bougent : ses deux bouts suivent la victime et le porteur, sa longueur est leur distance r\u00e9elle, et <b>au-del\u00e0 de 9 blocs il casse</b> \u2014 la pompe s\u2019arr\u00eate, les bols restants sont perdus. Fuir n\u2019est pas gratuit : l\u2019arrachement co\u00fbte <b>45 % de la base et deux piles d\u2019h\u00e9morragie</b>, et la morsure a pos\u00e9 <b>Lenteur II pendant 120 ticks</b>. <b>Timer.</b> Rupture au tick 153, <b>doubl\u00e9e si la cible est sous 34 % de PV</b>. <b>Buff :</b> la ferveur monte \u00e0 chaque bol.",
+ "<b>La seule aire bienveillante de la famille.</b> Le c\u0153ur flotte <b>au milieu exact du segment porteur-victime</b> et s\u2019y maintient : il <b>pr\u00e9l\u00e8ve dans un rayon de 6,0</b> sur les ennemis et <b>redistribue dans 4,0</b> au porteur, aux joueurs et aux <b>compagnons apprivois\u00e9s</b>. <b>Sept battements.</b> 85 % du pot est reversible, dont <b>55 % pour le porteur</b> \u2014 il soigne les siens, il ne se sacrifie pas. <b>M\u00eame laisse que le siphon :</b> au-del\u00e0 de 9 blocs les vaisseaux s\u2019arrachent et le c\u0153ur se r\u00e9sorbe. <b>Les animaux de b\u00e9tail ne sont ni pr\u00e9lev\u00e9s ni soign\u00e9s.</b>",
  "<b>Contact.</b> Onze taillades, de 25 \u00e0 112 ticks, l\u2019\u00e9cart se resserre. <b>Les paliers de rage tombent aux 4\u1d49, 7\u1d49 et 10\u1d49 coups <i>touch\u00e9s</i></b>, pas lanc\u00e9s : frapper le vide ne rend pas enrag\u00e9. <b>Timer.</b> Onde au sol au tick 115, brume de 130 \u00e0 170. <b>Malus assum\u00e9 :</b> \u00e0 partir de 6 coups le porteur prend <b>Fatigue 60 ticks</b> \u2014 la fr\u00e9n\u00e9sie co\u00fbte. <b>Ressource.</b> L\u2019h\u00e9morragie <b>punit la fuite</b> : \u00d7(1 + 1,5 \u00d7 min(1, vitesse / 0,22)), soit jusqu\u2019\u00e0 <b>\u00d72,5</b> pour une cible qui court."];
 """
 
@@ -203,7 +203,7 @@ contre lui-même que si une matière étrangère le borde — le fer, le bois, l
 <b>Tranchant Sanglant</b><small>6,0 s · zone en ligne · rideau de gouttes</small>\
 </span></button>
     <button class="variant" data-variant="2"><span class="num">Ⅲ</span><span>\
-<b>Siphon Carmin</b><small>8,5 s · conduit de 7 blocs · 6 bols</small></span></button>
+<b>Siphon Carmin</b><small>8,5 s · conduit vivant · laisse de 9 blocs</small></span></button>
     <button class="variant" data-variant="3"><span class="num">Ⅳ</span><span>\
 <b>Transfusion Vitale</b><small>7,0 s · cœur · soigne les alliés</small></span></button>
     <button class="variant" data-variant="4"><span class="num">Ⅴ</span><span>\

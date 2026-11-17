@@ -3365,6 +3365,52 @@ public final class WeaponVfxServerListener {
     /** Rayon utile des signatures de sang qui travaillent autour de la victime. */
     private static final double BLOOD_RADIUS = 6.0;
 
+    /**
+     * T380-BLOOD-LINK : distance a laquelle un conduit de sang casse.
+     *
+     * <p>C'est la MEME valeur que {@code WeaponWorldVfxManager.BLOOD_LINK_BREAK}. Les deux
+     * cotes rompent donc au meme instant sans echanger un paquet de plus : le client ne
+     * fait que mesurer, comme le serveur, la distance entre deux entites qu'il voit tous
+     * les deux.</p>
+     */
+    private static final double BLOOD_LINK_BREAK = 9.0;
+
+    /**
+     * Le lien tient-il encore ? Sert au siphon et a la transfusion, les deux seules
+     * signatures du mod dont le visuel RELIE deux etres : tant que le conduit est dessine,
+     * il doit etre vrai, et des qu'il ne l'est plus, il doit casser des deux cotes.
+     */
+    private static boolean bloodLinkHolds(LivingEntity attacker, LivingEntity target) {
+        if (attacker == null || target == null) return false;
+        if (!attacker.isAlive() || !target.isAlive()) return false;
+        if (attacker.level() != target.level()) return false;
+        return attacker.distanceToSqr(target) <= BLOOD_LINK_BREAK * BLOOD_LINK_BREAK;
+    }
+
+    /**
+     * La rupture : les crochets s'arrachent. Fuir coute, sinon la laisse serait un cadeau —
+     * il suffirait de courir pour annuler la signature sans rien payer.
+     */
+    private static void bloodLinkSnap(ServerLevel sl, LivingEntity attacker, LivingEntity target,
+                                      int attackerId, float base) {
+        if (target == null || !target.isAlive()) return;
+        double vx = target.getX();
+        double vy = target.getY() + target.getBbHeight() * 0.55;
+        double vz = target.getZ();
+        sl.playSound(null, vx, vy, vz, SoundEvents.CHAIN_BREAK, SoundSource.PLAYERS, 0.85f, 0.70f);
+        sl.playSound(null, vx, vy, vz, SoundEvents.SLIME_BLOCK_BREAK, SoundSource.PLAYERS, 0.70f, 0.95f);
+        PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, vx, vy, vz, 30, 0.70, 0.55, 0.70, 0.09);
+        PixelFx.send(sl, ParticleTypes.DAMAGE_INDICATOR, vx, vy, vz, 10, 0.40, 0.35, 0.40, 0.05);
+        // L'arrachement : une seule fois, et deux piles d'hemorragie. La victime est libre,
+        // elle n'est pas indemne.
+        hurtWithCapturedWeapon(sl, attackerId, target, base * 0.45f);
+        addBleed(sl, target, 2, attackerId, base * 0.09f, 140);
+        if (attacker != null && attacker.isAlive()) {
+            sl.playSound(null, attacker.getX(), attacker.getY(), attacker.getZ(),
+                    SoundEvents.CHAIN_BREAK, SoundSource.PLAYERS, 0.45f, 1.10f);
+        }
+    }
+
     /** Nombre maximal de piles d'hemorragie. Au-dela, une saignee de plus ne se lit plus. */
     private static final int BLEED_MAX = 5;
 
@@ -3882,7 +3928,17 @@ public final class WeaponVfxServerListener {
                 // SOLO : quatre piles d'un coup, c'est-a-dire presque le maximum. EN FOULE :
                 // deux sur la cible, une sur les voisins. La saignee se dilue, pas la duree.
                 int stacks = primary ? (solo ? 4 : 2) : 1;
-                addBleed(sl, victim, stacks, attackerId, base * 0.115f, solo ? 220 : 160);
+                // T380-BLOOD-DPS : 0,075 par pile et non 0,115, duree 200 et non 220.
+                //
+                // Le calcul complet des cinq signatures a montre que cette ligne faisait de
+                // l'arete la plus grosse source de degats de la famille : quatre piles a
+                // 0,115 sur vingt-deux tics valent 60 points pour une cible immobile et 150
+                // pour une cible qui court — plus que le Carnage, qui est cense etre « la
+                // plus puissante des cinq », et avec six secondes d'animation contre neuf.
+                // La signature se decrivait elle-meme comme celle qui « frappe peu et saigne
+                // longtemps » ; elle frappait en realite le plus fort du mod. On garde les
+                // quatre piles, qui sont son identite, et on baisse le tarif unitaire.
+                addBleed(sl, victim, stacks, attackerId, base * 0.075f, solo ? 200 : 160);
                 victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
                         primary ? 70 : 40, 0, true, false));
             }
@@ -3968,11 +4024,30 @@ public final class WeaponVfxServerListener {
         });
 
         // --- 34→117 : les six bols. ---
+        // T380-BLOOD-LINK : la laisse. Le commentaire de cette methode promettait depuis le
+        // premier jour « six fenetres ou la victime doit rompre le contact » — et rien dans
+        // le code ne lui permettait de rompre quoi que ce soit : elle etait ponctionnee a
+        // n'importe quelle distance. Le conduit est maintenant une vraie contrainte pour les
+        // DEUX : la victime peut s'arracher, et le porteur ne peut pas se mettre a l'abri en
+        // continuant de boire.
+        final java.util.concurrent.atomic.AtomicBoolean snapped =
+                new java.util.concurrent.atomic.AtomicBoolean();
         for (int k = 0; k < 6; k++) {
             final int bolus = k;
             TestProcedure.schedule(sl, now + 34 + bolus * 17, () -> {
+                if (snapped.get()) return;
                 if (!target.isAlive() && bolus < 5) return;
-                List<LivingEntity> grapple = bloodVictims(sl, ox, oy, oz, 5.5, 3.0, attackerId);
+                if (!bloodLinkHolds(attacker, target)) {
+                    snapped.set(true);
+                    bloodLinkSnap(sl, attacker, target, attackerId, base);
+                    return;
+                }
+                // Les voisins sont pris autour de la victime LA OU ELLE EST, pas autour du
+                // point ou elle se tenait il y a cinq secondes.
+                double vx = target.getX();
+                double vy = target.getY() + target.getBbHeight() * 0.55;
+                double vz = target.getZ();
+                List<LivingEntity> grapple = bloodVictims(sl, vx, vy, vz, 5.5, 3.0, attackerId);
                 if (!grapple.contains(target) && target.isAlive()) grapple.add(target);
                 boolean solo = grapple.size() <= 1;
                 float drawn = 0.0f;
@@ -4017,15 +4092,17 @@ public final class WeaponVfxServerListener {
                             attacker.getX(), attacker.getY() + attacker.getBbHeight() * 0.75, attacker.getZ(),
                             8, 0.26, 0.35, 0.26, 0.01);
                 }
-                sl.playSound(null, ox, oy, oz, SoundEvents.GENERIC_DRINK.value(), SoundSource.PLAYERS,
+                sl.playSound(null, vx, vy, vz, SoundEvents.GENERIC_DRINK.value(), SoundSource.PLAYERS,
                         0.50f, 0.62f + bolus * 0.055f);
-                sl.playSound(null, ox, oy, oz, SoundEvents.HONEY_BLOCK_SLIDE, SoundSource.PLAYERS,
+                sl.playSound(null, vx, vy, vz, SoundEvents.HONEY_BLOCK_SLIDE, SoundSource.PLAYERS,
                         0.30f, 0.70f + bolus * 0.05f);
             });
         }
 
         // --- 153 : la rupture. ---
         TestProcedure.schedule(sl, now + 153, () -> {
+            // Deja casse en route : la signature est finie, on ne la termine pas deux fois.
+            if (snapped.get()) return;
             sl.playSound(null, ox, oy, oz, SoundEvents.SLIME_BLOCK_BREAK, SoundSource.PLAYERS, 0.80f, 0.80f);
             sl.playSound(null, ox, oy, oz, SoundEvents.GENERIC_SPLASH, SoundSource.PLAYERS, 0.45f, 0.70f);
             PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, ox, oy, oz, 36, 0.80, 0.60, 0.80, 0.08);
@@ -4058,6 +4135,27 @@ public final class WeaponVfxServerListener {
      * duel le prelevement est presque double et le dernier battement pose une resistance ;
      * en foule il se repartit, et le total soigne davantage.</p>
      */
+    /**
+     * Le coeur de la transfusion : le MILIEU du segment porteur-victime, 1,60 bloc au-dessus
+     * de la victime. Recalcule a chaque battement sur les positions vivantes.
+     *
+     * <p>Ces deux nombres sont aussi ceux du rendu ({@code heartF = -linkLen / 2},
+     * {@code heartY = 1.60}). Quand ils divergent, on obtient ce qu'on avait avant : un
+     * organe dessine a un endroit et des battements qui soignent a un autre.</p>
+     */
+    private static double[] transfusionHeart(LivingEntity attacker, LivingEntity target,
+                                             double fallbackX, double fallbackY, double fallbackZ) {
+        if (target == null || !target.isAlive()) {
+            return new double[]{fallbackX, fallbackY, fallbackZ};
+        }
+        double vx = target.getX();
+        double vy = target.getY() + target.getBbHeight() * 0.55;
+        double vz = target.getZ();
+        double ax = attacker != null && attacker.isAlive() ? attacker.getX() : vx;
+        double az = attacker != null && attacker.isAlive() ? attacker.getZ() : vz;
+        return new double[]{(vx + ax) * 0.5, vy + 1.6, (vz + az) * 0.5};
+    }
+
     private static void applyVitalTransfusionGameplay(LivingEntity attacker, LivingEntity target,
                                                       ServerLevel sl, float weaponDamage) {
         final int attackerId = attacker == null ? -1 : attacker.getId();
@@ -4066,10 +4164,16 @@ public final class WeaponVfxServerListener {
         final double oy = target.getY() + target.getBbHeight() * 0.55;
         final double oz = target.getZ();
         final float base = Math.max(1.0f, weaponDamage * 0.62f);
-        // Le coeur flotte entre les deux : c'est de la qu'on entend battre.
+        // Le coeur flotte entre les deux : c'est de la qu'on entend battre. Ces trois
+        // nombres sont ceux que le rendu client reproduit — milieu du segment, 1,6 bloc plus
+        // haut que l'ancre. Ils ne servent plus que de REPLI : a chaque battement, le coeur
+        // est recalcule sur les positions vivantes, sinon il reste accroche au sol que les
+        // deux combattants ont quitte depuis longtemps.
         final double hx = attacker != null ? (ox + attacker.getX()) * 0.5 : ox;
         final double hz = attacker != null ? (oz + attacker.getZ()) * 0.5 : oz;
         final double hy = oy + 1.6;
+        final java.util.concurrent.atomic.AtomicBoolean torn =
+                new java.util.concurrent.atomic.AtomicBoolean();
 
         bloodSwell(sl, now, hx, hy, hz, 3, 0.60f);
         TestProcedure.schedule(sl, now + 14, () ->
@@ -4082,19 +4186,37 @@ public final class WeaponVfxServerListener {
             // LE LUB-DUB. Deux coups rapproches puis un silence : un battement unique et
             // regulier donne un ballon qu'on gonfle, pas un organe. Quatre ticks d'ecart,
             // le second plus sourd et plus faible — c'est tout ce qu'il faut.
-            TestProcedure.schedule(sl, now + at, () ->
-                    sl.playSound(null, hx, hy, hz, SoundEvents.WARDEN_HEARTBEAT, SoundSource.PLAYERS,
-                            0.55f + beat * 0.05f, 0.80f + beat * 0.035f));
-            TestProcedure.schedule(sl, now + at + 4, () ->
-                    sl.playSound(null, hx, hy, hz, SoundEvents.WARDEN_HEARTBEAT, SoundSource.PLAYERS,
-                            0.34f + beat * 0.03f, 0.62f + beat * 0.03f));
+            TestProcedure.schedule(sl, now + at, () -> {
+                if (torn.get()) return;
+                double[] h = transfusionHeart(attacker, target, hx, hy, hz);
+                sl.playSound(null, h[0], h[1], h[2], SoundEvents.WARDEN_HEARTBEAT, SoundSource.PLAYERS,
+                        0.55f + beat * 0.05f, 0.80f + beat * 0.035f);
+            });
+            TestProcedure.schedule(sl, now + at + 4, () -> {
+                if (torn.get()) return;
+                double[] h = transfusionHeart(attacker, target, hx, hy, hz);
+                sl.playSound(null, h[0], h[1], h[2], SoundEvents.WARDEN_HEARTBEAT, SoundSource.PLAYERS,
+                        0.34f + beat * 0.03f, 0.62f + beat * 0.03f);
+            });
 
             TestProcedure.schedule(sl, now + at, () -> {
-                PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, hx, hy, hz,
+                if (torn.get()) return;
+                // Les vaisseaux d'entree sont plantes dans la victime : hors de portee, ils
+                // s'arrachent, exactement comme le conduit du siphon.
+                if (!bloodLinkHolds(attacker, target)) {
+                    torn.set(true);
+                    bloodLinkSnap(sl, attacker, target, attackerId, base * 0.5f);
+                    return;
+                }
+                double[] h = transfusionHeart(attacker, target, hx, hy, hz);
+                PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, h[0], h[1], h[2],
                         10 + beat * 2, 0.45, 0.40, 0.45, 0.02);
 
-                // --- LE PRELEVEMENT. ---
-                List<LivingEntity> donors = bloodVictims(sl, ox, oy, oz, BLOOD_RADIUS, 3.2, attackerId);
+                // --- LE PRELEVEMENT. Autour de la victime vivante, pas de son souvenir. ---
+                double vx = target.getX();
+                double vy = target.getY() + target.getBbHeight() * 0.55;
+                double vz = target.getZ();
+                List<LivingEntity> donors = bloodVictims(sl, vx, vy, vz, BLOOD_RADIUS, 3.2, attackerId);
                 if (!donors.contains(target) && target.isAlive()) donors.add(target);
                 boolean solo = donors.size() <= 1;
                 float drawn = 0.0f;
@@ -4112,7 +4234,7 @@ public final class WeaponVfxServerListener {
 
                 // --- LA REDISTRIBUTION. ---
                 if (drawn <= 0.0f) return;
-                List<LivingEntity> allies = transfusionAllies(sl, attacker, hx, hy - 1.0, hz, 4.0);
+                List<LivingEntity> allies = transfusionAllies(sl, attacker, h[0], h[1] - 1.0, h[2], 4.0);
                 if (allies.isEmpty()) return;
                 // Le soin total vaut 85 % du sang preleve, partage entre les allies. Le
                 // porteur en recoit toujours au moins la moitie : c'est lui qui a frappe.
@@ -4150,11 +4272,14 @@ public final class WeaponVfxServerListener {
             });
         }
 
-        // --- 112 : la resorption. ---
+        // --- 112 : la resorption. Sous le coeur, la ou il est. ---
         TestProcedure.schedule(sl, now + 112, () -> {
-            sl.playSound(null, hx, hy, hz, SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 0.35f, 1.30f);
-            PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, hx, hy, hz, 24, 0.55, 0.60, 0.55, 0.04);
-            addBloodPool(sl, hx, target.getY(), hz, 1.3, 90, attackerId, base * 0.06f);
+            if (torn.get()) return;
+            double[] h = transfusionHeart(attacker, target, hx, hy, hz);
+            sl.playSound(null, h[0], h[1], h[2], SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 0.35f, 1.30f);
+            PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, h[0], h[1], h[2], 24, 0.55, 0.60, 0.55, 0.04);
+            double poolY = target.isAlive() ? target.getY() : oy - 1.0;
+            addBloodPool(sl, h[0], poolY, h[2], 1.3, 90, attackerId, base * 0.06f);
         });
     }
 
