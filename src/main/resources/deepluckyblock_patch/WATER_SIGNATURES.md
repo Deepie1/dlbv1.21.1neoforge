@@ -3604,19 +3604,64 @@ son **bord**. La fenêtre ne dessine toujours pas de matière — elle **remplac
 voxel reste l'objet ; la fenêtre garantit seulement qu'il y a l'abîme derrière lui, et pas
 le mur du village.
 
-Rayon et hauteur par signature, en blocs :
+#### La première version était fausse, et c'est la page qui l'a dit
 
-| signature | rayon max | hauteur du centre |
-| --- | --- | --- |
-| Sphère de Distorsion | 1,55 | 1,20 |
-| Prisme du Dragon | 1,25 | 1,30 |
-| Faille du Néant | 1,05 | 0,85 |
-| **Porte d'Horizon** | **1,95** | 1,45 |
-| Constellation Nulle | 1,35 | 1,15 |
+La T390 posait **cinq** fenêtres : un disque face caméra, de rayon fixe, au cœur de chaque
+signature. Tant que le shader n'était jugé que sur un banc isolé, ça tenait. Une fois le
+shader branché **dans la page d'aperçu**, derrière les vraies figures, les deux erreurs ont
+sauté aux yeux en une capture.
 
-Ouverture en `smoothstep` sur `[0,06 ; 0,32]`, fermeture sur `[0,84 ; 1,00]` : l'ouverture
-est plus lente que la fermeture, parce qu'un trou dans le réel se déchire avec effort et se
-referme d'un coup.
+**La taille.** Les rayons venaient de l'**emprise** de la figure, pas de son **ouverture**.
+L'horizon de la sphère monte à 1,10 : elle recevait une fenêtre de 1,55. Un disque qui
+déborde de la lèvre cesse d'être un trou — il redevient un objet, avec sa silhouette
+circulaire à lui, c'est-à-dire exactement ce que la règle du bord interdit. Le défaut qu'on
+croyait corriger était recréé un cran plus loin.
+
+**L'orientation.** Un panneau-réclame ne vaut que pour une figure dont l'ouverture fait face
+au joueur d'où qu'il regarde, et il n'y en a qu'une : la sphère. La Porte est un anneau
+**posé au sol** — un disque vertical planté dedans lisait comme une bulle flottante au-dessus
+de l'anneau. La Faille est une fente **verticale orientée par l'attaque** : son ouverture est
+dans le plan des deux lèvres.
+
+#### Trois fenêtres, trois plans, zéro constante
+
+Les trois fenêtres ne portent plus aucune cote à elles. Elles **appellent** les fonctions de
+forme de la figure, extraites pour l'occasion dans `VoidSignatureVfx` et partagées par le
+rendu, par la fenêtre et par le miroir JS :
+
+| | plan | demi-étendues | hauteur du centre | source |
+| --- | --- | --- | --- | --- |
+| Sphère de Distorsion | face caméra | `warpHorizon(t) × 0,94` (≤ 1,08) | `WARP_YC` = 0,46 | l'horizon lui-même |
+| Faille du Néant | plan des lèvres | `RIFT_LIP × riftGape(t) × 0,80` (≤ 0,66) **×** 1,34 | sol + 0,05 + 1,53 | l'écartement des lèvres |
+| **Porte d'Horizon** | **horizontal** | `gateRing(t) × 0,88` (≤ 1,87) | sol + 0,06 | le rayon de l'anneau |
+
+Les marges — 0,94 · 0,80 · 0,88 — ne sont pas décoratives : ce sont elles qui garantissent
+que le contour tombe **à l'intérieur** de la lèvre, donc qu'on ne voie jamais la silhouette
+propre de la fenêtre. Et comme les trois tailles sont celles de la figure, l'ouverture et la
+fermeture n'ont plus besoin d'être programmées : la fenêtre naît, grandit et meurt avec ce
+qu'elle remplit. Les deux `smoothstep` de la première version ont disparu avec les
+constantes qu'elles pilotaient.
+
+**Le Prisme et la Trame n'en ont pas, et c'est un choix.** La fenêtre répare les figures qui
+encadrent un **grand vide**. Le prisme est un octaèdre en fil de fer habité par son cœur et
+sept faisceaux ; la trame est un réseau d'arêtes sans intérieur. Leur ajouter un disque,
+c'était poser un trou là où aucune lèvre ne le justifie. Une ligne fine se lit sur n'importe
+quel fond — c'est l'**aire vide** qui avait besoin d'être comblée, pas le dessin.
+
+**Conséquence cherchée, pour la Faille :** vue dans l'axe de l'attaque, la fenêtre s'écrase
+en trait et disparaît. C'est la bonne réponse — la fente aussi. Pour la Porte, même logique
+dans l'autre sens : vue du ras du sol, la mare se referme en ligne, et il faut lever un peu
+la tête pour voir dans le trou. Une fenêtre qui reste pleinement visible de partout serait
+une décalcomanie.
+
+#### Une seule source pour les trois cotes
+
+`warpHorizon`, `riftGape` et `gateRing` étaient enfouies au milieu de trois méthodes de rendu
+de plusieurs centaines de lignes. Les recopier dans la fenêtre, c'était s'engager à les tenir
+à jour à deux endroits — et la palette du Vide a déjà appris ce que ça coûte. Elles sont
+désormais publiques, appelées par les renderers eux-mêmes, et le miroir JS les expose dans
+`VOID_SHAPE` pour que la page les lise aussi. Trois exemplaires du **nom**, un seul du
+**nombre**.
 
 Aucun état ne survit à une image. Le rendu des signatures **dépose** une fenêtre par image,
 la classe la consomme dans la même étape — rien à nettoyer au changement de monde, rien à
@@ -3637,7 +3682,18 @@ Ni JDK ni Minecraft ici. Ce qui a pu être prouvé l'a été :
 * le champ est **accroché à l'écran** : à géométrie identique, déplacer le disque dans le
   viewport change entièrement le motif. La parallaxe est là ;
 * les cinq signatures repeintes ont été re-rendues au banc voxel (1677 / 1494 / 476 / 942 /
-  996 cubes, inchangés) et relues une par une.
+  996 cubes, inchangés) et relues une par une ;
+* **la page d'aperçu exécute désormais le shader elle-même**, derrière les vraies figures et
+  composé dans l'ordre du peintre. Trois mesures y ont été prises :
+  * le partage par profondeur fonctionne — 847 cubes derrière / 830 devant pour la sphère,
+    258 / 218 pour la faille, 436 / 506 pour la porte. Ce qui passe derrière la fenêtre
+    disparaît, y compris la moitié arrière de la silhouette de la victime ;
+  * la parallaxe est **prouvée sans bouger la caméra** : à deux niveaux de zoom, le même
+    carré de 40 × 40 pixels au centre de la mare rend une empreinte **identique au bit
+    près** (1 111 683) alors que le trou, lui, a presque doublé. Les étoiles sont accrochées
+    à l'écran, pas au disque ;
+  * la fente disparaît bien quand on la regarde par la tranche, et la mare quand on
+    s'accroupit au ras du sol.
 
 ### 5. À essayer en jeu
 
@@ -3645,7 +3701,10 @@ Ni JDK ni Minecraft ici. Ce qui a pu être prouvé l'a été :
   cas qui motivait la fenêtre ;
 * la même chose de nuit, puis dans l'eau, puis en regardant le ciel ;
 * tourner autour d'une Porte d'Horizon ouverte : les étoiles doivent **glisser**, pas suivre
-  le disque ;
+  le disque ; et la mare doit rester **couchée dans l'anneau**, jamais debout ;
+* se mettre **à hauteur du sol** devant une Porte : la mare doit se refermer en trait. Se
+  placer **dans l'axe de l'attaque** devant une Faille : la fenêtre doit disparaître avec la
+  fente, pas rester affichée en panneau ;
 * F3+T pendant qu'une signature est à l'écran : le shader doit se recharger sans crash ;
 * vérifier que la lèvre violette se distingue encore d'une signature d'Ombre jouée juste
   après.

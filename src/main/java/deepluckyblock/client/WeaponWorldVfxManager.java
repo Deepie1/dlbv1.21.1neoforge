@@ -4797,14 +4797,17 @@ public final class WeaponWorldVfxManager {
      * que le repère attaquant → cible donne sans retouche.</p>
      */
     private static void impactVoidSignature(ImpactView v, int signature) {
+        // Une seule sonde de sol pour les deux passes. Le bord voxel et la fenetre doivent
+        // de toute facon lire le MEME plancher : deux appels, c'etait deux occasions de
+        // repondre deux choses differentes sur un terrain en pente.
+        float ground = probeGroundOffset(v.inst().x, v.inst().y, v.inst().z);
         boolean previousPulse = voxelPulseEnabled;
         voxelPulseEnabled = false;
         try {
             VoidSignatureVfx.render(v.vc(), v.mat(), v.tmp(),
                     v.cx(), v.cy(), v.cz(), v.t(),
                     v.dirX(), v.dirZ(), signature, v.fadeA(),
-                    (int) (v.inst().seed & 0x7FFFFFFFL),
-                    probeGroundOffset(v.inst().x, v.inst().y, v.inst().z));
+                    (int) (v.inst().seed & 0x7FFFFFFFL), ground);
         } finally {
             voxelPulseEnabled = previousPulse;
         }
@@ -4813,7 +4816,8 @@ public final class WeaponWorldVfxManager {
         // lui tend ; la fenêtre, elle, a son propre RenderType (core shader + deux textures)
         // et ne peut pas partager cette passe. Position du MONDE, jamais celle relative à la
         // caméra : VoidPortalFx retranche la sienne au moment où il dessine.
-        VoidPortalFx.queueSignature(signature, v.inst().x, v.inst().y, v.inst().z, v.t());
+        VoidPortalFx.queueSignature(signature, v.inst().x, v.inst().y, v.inst().z,
+                v.t(), v.dirX(), v.dirZ(), ground);
     }
 
     /**

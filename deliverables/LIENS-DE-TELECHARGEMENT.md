@@ -8,9 +8,9 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 ## Vide — cinq signatures, repeintes + core shader · 4 novembre 2026 ⟵ **LOT COURANT**
 
-- **Aperçu voxel (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_preview.html?v=390
-- **Démo du shader (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Portal_shader_demo.html?v=390
-- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_src.zip?v=390
+- **Aperçu voxel + fenêtre d'abysse (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_preview.html?v=391
+- **Démo du shader (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Portal_shader_demo.html?v=391
+- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_src.zip?v=391
 
 > **T390 — la repeinte, et le trou qui n'était pas là.** Deux livraisons en une, parce que
 > c'est le même défaut vu de deux côtés.
@@ -40,12 +40,29 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > **2. Le trou — un vrai core shader, le seul du mod.** Les cinq figures ne dessinent que
 > des **bords**, et un bord n'existe que si ce qu'il encadre est sombre : devant un mur de
 > pierre claire, l'anneau de la Porte d'Horizon encadrait de la pierre claire.
-> `void_portal` ouvre au cœur de chaque signature un **disque opaque** rempli d'un ciel
-> d'abysse — quinze couches d'étoiles additives, tournées et translatées différemment,
-> dont les coordonnées de texture viennent de l'**écran** et non du modèle. Quand la tête
-> tourne, les étoiles **glissent**. C'est le procédé exact de `rendertype_end_portal`,
-> repeint aux gammes ci-dessus. La règle du bord n'est pas trahie : le shader ne dessine
-> pas de matière, il **remplace ce qu'on voit à travers**.
+> `void_portal` ouvre dans la figure une **surface opaque** remplie d'un ciel d'abysse —
+> quinze couches d'étoiles additives, tournées et translatées différemment, dont les
+> coordonnées de texture viennent de l'**écran** et non du modèle. Quand la tête tourne,
+> les étoiles **glissent**. C'est le procédé exact de `rendertype_end_portal`, repeint aux
+> gammes ci-dessus. La règle du bord n'est pas trahie : le shader ne dessine pas de
+> matière, il **remplace ce qu'on voit à travers**.
+>
+> **3. La page d'aperçu exécute le shader, et elle a corrigé le shader.** Première
+> version : cinq disques face caméra, de rayon fixe. Branchée derrière les vraies figures,
+> la page a montré les deux erreurs en une capture. **La taille** — les rayons venaient de
+> l'emprise de la figure et non de son ouverture : l'horizon de la sphère monte à 1,10 et
+> recevait une fenêtre de 1,55, qui débordait de la lèvre. Un trou qui déborde redevient un
+> objet, avec sa silhouette à lui : le défaut qu'on croyait corriger était recréé un cran
+> plus loin. **L'orientation** — la Porte est un anneau posé au sol, et un disque vertical
+> planté dedans lisait comme une bulle flottante.
+>
+> Il y a donc maintenant **trois fenêtres et trois plans**, et plus une seule cote en dur :
+> la sphère prend un disque face caméra à `warpHorizon(t) × 0,94`, la faille une ellipse
+> **dans le plan de ses lèvres** à `riftGape(t)`, la porte une **mare horizontale** à
+> `gateRing(t) × 0,88`. Les trois lisent les fonctions de forme de la figure elle-même, et
+> naissent, grandissent et meurent avec elle. Le Prisme et la Trame n'en ont pas : la
+> fenêtre répare les figures qui encadrent un grand vide, et ces deux-là n'ont pas
+> d'intérieur.
 >
 > **Neuf fichiers nouveaux** : `void_portal.{json,vsh,fsh}`, `void_{sky,stars}.png`,
 > `ModShaders.java` (RegisterShadersEvent, bus MOD), `ModRenderTypes.java`
@@ -54,10 +71,14 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 >
 > **Vérifié sans le jeu** : les deux programmes GLSL ont été portés mécaniquement en
 > GLSL ES 3.00 et exécutés dans Chromium, avec les vraies textures et la même géométrie —
-> compilation et rendu sans erreur, **6 %** de pixels allumés sur le disque (luminance
-> moyenne 16/255, pic 107 : un champ d'étoiles, pas une purée laiteuse), et le motif change
-> entièrement quand le disque se déplace dans le viewport. La **démo du shader** ci-dessus
-> rejoue exactement ça dans le navigateur : bougez le curseur **Visée**.
+> compilation et rendu sans erreur, **6 %** de pixels allumés (luminance moyenne 16/255,
+> pic 107 : un champ d'étoiles, pas une purée laiteuse). Dans l'aperçu, la fenêtre est
+> composée **dans l'ordre du peintre** : 847 cubes derrière / 830 devant pour la sphère,
+> 436 / 506 pour la porte — ce qui passe derrière disparaît, y compris la moitié arrière de
+> la silhouette. Et la parallaxe est prouvée **sans bouger la caméra** : à deux niveaux de
+> zoom, le même carré de 40 × 40 pixels au centre de la mare rend une empreinte identique
+> au bit près, alors que le trou, lui, a presque doublé. Les étoiles sont accrochées à
+> l'écran, pas au disque.
 >
 > **Tests en jeu :** `/dlbvfx play 26` · `27` · `34` · `44` · `45`, **devant un mur de
 > pierre claire** — c'est le cas qui motivait la fenêtre. Puis de nuit, puis dans l'eau.
@@ -65,8 +86,8 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > disque. **F3+T** pendant qu'une signature est à l'écran : le shader doit se recharger
 > sans crash. Enfin, jouer une signature d'Ombre juste après une du Vide, pour juger la
 > réserve ci-dessus.
-> ZIP **1 238 604 o / 77 entrées**, page **1 740 322 o**, démo **32 994 o**,
-> SHA-256 `dd52dc6bd171e54e…`.
+> ZIP **1 251 935 o / 77 entrées**, aperçu **1 776 262 o**, démo **35 709 o**,
+> SHA-256 `d25adadcb727a15f…`.
 
 ## Sang — cinq signatures · 17 novembre 2026
 

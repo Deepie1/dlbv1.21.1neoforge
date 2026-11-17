@@ -30,7 +30,7 @@ canvas{display:block;width:100%;height:100%}
 .hud{position:absolute;left:18px;bottom:16px;display:flex;gap:7px;flex-wrap:wrap;
      font-size:11px;color:#a99cd0}
 .hud code{background:#17122e;border:1px solid #352c5e;border-radius:5px;padding:3px 7px;color:#d6c9ff}
-.srow{display:grid;grid-template-columns:76px 1fr 44px;align-items:center;gap:8px;margin:0 0 9px}
+.srow{display:grid;grid-template-columns:76px 1fr 54px;align-items:center;gap:8px;margin:0 0 9px}
 .srow span{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#9b90bd}
 .srow b{font-size:11px;color:#d9cdff;text-align:right;font-weight:600}
 .srow input{width:100%;accent-color:#8e6bff}
@@ -58,11 +58,21 @@ pre{margin:0;padding:0 12px 12px;overflow:auto;max-height:260px;font-size:10.5px
   l’<b>écran</b> et non du modèle. C’est le procédé exact du portail de l’End.</p>
   <div class="rule"></div>
 
+  <span class="label">Le plan, et la figure qui l’encadre</span>
+  <div class="variants" id="plans">
+    <button class="variant active" data-plan="0"><span class="num">I</span>
+      <span><b>Panneau-réclame</b><small>Sphère de Distorsion · r 1,08 · face caméra</small></span></button>
+    <button class="variant" data-plan="1"><span class="num">II</span>
+      <span><b>Au sol</b><small>Porte d’Horizon · r 1,87 · la mare dans l’anneau</small></span></button>
+    <button class="variant" data-plan="2"><span class="num">III</span>
+      <span><b>Dans les lèvres</b><small>Faille du Néant · 0,66 × 1,34 · disparaît par la tranche</small></span></button>
+  </div>
+
   <span class="label">Réglages</span>
   <div class="srow"><span>Couches</span><input id="layers" type="range" min="1" max="15" value="15"><b id="vlayers">15</b></div>
-  <div class="srow"><span>Rayon</span><input id="radius" type="range" min="30" max="320" value="195"><b id="vradius">1,95</b></div>
   <div class="srow"><span>Orbite</span><input id="yaw" type="range" min="-180" max="180" value="0"><b id="vyaw">0°</b></div>
   <div class="srow"><span>Visée</span><input id="aim" type="range" min="-60" max="60" value="0"><b id="vaim">0,0</b></div>
+  <div class="srow"><span>Dérive</span><input id="warp" type="range" min="1" max="24" value="1"><b id="vwarp">×1</b></div>
   <div class="controls">
     <button class="btn primary" id="play">Pause</button>
     <button class="btn" id="reset">Recentrer</button>
@@ -76,11 +86,18 @@ pre{margin:0;padding:0 12px 12px;overflow:auto;max-height:260px;font-size:10.5px
   GLSL&nbsp;ES&nbsp;3.00 par deux substitutions mécaniques (la ligne <code>#version</code>,
   et la taille explicite du tableau constant qu’ES exige), puis compilés tels quels. Les
   deux textures sont les vraies, embarquées en base64. La géométrie est celle de
-  <code>VoidPortalFx</code> : un disque face caméra de 22 secteurs.</p>
+  <code>VoidPortalFx</code> : une ellipse de 22 secteurs, dans l’un des <b>trois plans</b>
+  ci-dessus, aux cotes que la figure lui impose.</p>
 
-  <p class="refs warn"><b>La seule chose à vérifier ici :</b> déplacez la <b>visée</b>. Le
-  disque glisse sur l’écran — et le champ d’étoiles, lui, ne le suit pas. C’est toute la
-  différence entre une texture collée sur un quad et un portail.</p>
+  <p class="refs"><b>Trois fenêtres, pas cinq.</b> Le Prisme et la Trame n’en ont pas : la
+  fenêtre répare les figures qui encadrent un grand vide, et ces deux-là n’ont pas
+  d’intérieur. Un trou sans lèvre pour l’encadrer n’est qu’un disque noir — c’est-à-dire
+  un objet, exactement ce que la règle du bord interdit.</p>
+
+  <p class="refs warn"><b>La seule chose à vérifier ici :</b> déplacez la <b>visée</b>. La
+  fenêtre glisse sur l’écran — et le champ d’étoiles, lui, ne la suit pas. C’est toute la
+  différence entre une texture collée sur un quad et un portail. La <b>dérive</b> est à ×1
+  par défaut, c’est-à-dire la vitesse réelle de <code>GameTime</code> en jeu : lente.</p>
 
   <details><summary>void_portal.fsh</summary><pre>#version 150
 
@@ -396,7 +413,7 @@ function prog(v,f){ const p=gl.createProgram(); gl.attachShader(p,sh(gl.VERTEX_S
 const PORTAL = prog(VSH,FSH), BG = prog(BG_V,BG_F);
 
 function tex(src){ const t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,t);
-  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([0,0,0,255]));
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([5,13,37,255]));
   for(const [k,v] of [[gl.TEXTURE_MIN_FILTER,gl.NEAREST],[gl.TEXTURE_MAG_FILTER,gl.NEAREST],
                       [gl.TEXTURE_WRAP_S,gl.REPEAT],[gl.TEXTURE_WRAP_T,gl.REPEAT]])
     gl.texParameteri(gl.TEXTURE_2D,k,v);
@@ -421,21 +438,33 @@ const persp=(f,a,n,q)=>{const t=1/Math.tan(f/2);
 const lookAt=(e,c,u)=>{const z=norm(sub(e,c)),x=norm(cross(u,z)),y=cross(z,x);
   return [x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0, -dot(x,e),-dot(y,e),-dot(z,e),1];};
 
-const TARGET=[0,1.45,0], DIST=7.2;
-let yaw=0, pitch=0.17, aim=0, radius=1.95, layers=15, gameTime=0, playing=true, last=0, frames=0, acc=0;
+/* Les trois fenêtres de VoidPortalFx, à leurs vraies cotes et à leur vraie hauteur.
+   L'origine de l'effet est AUX PIEDS de la victime, comme en jeu. */
+const PLANS = [
+  {name:'panneau-réclame', y:0.46, a:1.08, b:1.08, mode:0},
+  {name:'au sol',          y:0.06, a:1.87, b:1.87, mode:1},
+  {name:'dans les lèvres', y:1.58, a:0.66, b:1.34, mode:2}];
+
+const DIST=7.2;
+let plan=0, yaw=0, pitch=0.17, aim=0, layers=15, warp=1,
+    gameTime=0, playing=true, last=0, frames=0, acc=0;
 
 function render(ts){
   const w = cv.clientWidth|0, h = cv.clientHeight|0;
   if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
-  if(playing && last) gameTime += Math.min(0.05,(ts-last)/1000) * 0.0016;
+  /* GameTime vanilla : un 24000e par tick, vingt ticks par seconde. La dérive est un
+     multiplicateur D'AFFICHAGE, pas une valeur du jeu : à ×1 c'est exactement la
+     vitesse réelle, et elle est lente. */
+  if(playing && last) gameTime += Math.min(0.05,(ts-last)/1000) * (20/24000) * warp;
   if(last){ acc += ts-last; frames++; if(acc>500){
     document.getElementById('fps').textContent = (1000*frames/acc).toFixed(0)+' i/s';
     acc=0; frames=0; } }
   last = ts;
 
+  const P0=PLANS[plan], TARGET=[0,P0.y,0];
   const asp=w/Math.max(1,h);
   const eye=[TARGET[0]+Math.sin(yaw)*Math.cos(pitch)*DIST,
-             TARGET[1]+Math.sin(pitch)*DIST,
+             Math.max(0.35, TARGET[1]+Math.sin(pitch)*DIST),
              TARGET[2]+Math.cos(yaw)*Math.cos(pitch)*DIST];
   const AIM=[TARGET[0]+Math.cos(yaw)*aim, TARGET[1], TARGET[2]-Math.sin(yaw)*aim];
   const P=persp(1.20,asp,0.05,220), V=lookAt(eye,AIM,[0,1,0]);
@@ -451,12 +480,21 @@ function render(ts){
   g.push(-6,0,-5, 6,0,-5, 6,7,-5,  -6,0,-5, 6,7,-5, -6,7,-5);
   upload(g); gl.drawArrays(gl.TRIANGLES,0,g.length/3);
 
-  const fwd=norm(sub(TARGET,eye)), right=norm(cross(fwd,[0,1,0])), up=cross(right,fwd);
+  /* Les deux vecteurs de base, comme dans VoidPortalFx.onRenderLevelStage. */
+  const fwd=norm(sub(TARGET,eye));
+  let axA, axB;
+  if(P0.mode===1){ axA=[1,0,0]; axB=[0,0,1]; }
+  /* La fente s'ecarte LATERALEMENT et sa normale est l'axe de l'attaque. Ici la camera
+     au repos regarde le long de -z : l'attaque est donc z, le lateral est x, et la fente
+     est de face a l'ouverture puis s'ecrase en trait quand on tourne d'un quart. */
+  else if(P0.mode===2){ axA=[1,0,0]; axB=[0,1,0]; }
+  else { axA=norm(cross(fwd,[0,1,0])); axB=cross(axA,fwd); }
+
   const d=[], N=22;
+  const pt=a=>[TARGET[0]+axA[0]*Math.cos(a)*P0.a+axB[0]*Math.sin(a)*P0.b,
+               TARGET[1]+axA[1]*Math.cos(a)*P0.a+axB[1]*Math.sin(a)*P0.b,
+               TARGET[2]+axA[2]*Math.cos(a)*P0.a+axB[2]*Math.sin(a)*P0.b];
   for(let s=0;s<N;s++){
-    const pt=a=>[TARGET[0]+right[0]*Math.cos(a)*radius+up[0]*Math.sin(a)*radius,
-                 TARGET[1]+right[1]*Math.cos(a)*radius+up[1]*Math.sin(a)*radius,
-                 TARGET[2]+right[2]*Math.cos(a)*radius+up[2]*Math.sin(a)*radius];
     const A=pt(s*2*Math.PI/N), B=pt((s+1)*2*Math.PI/N);
     d.push(TARGET[0],TARGET[1],TARGET[2], A[0],A[1],A[2], B[0],B[1],B[2]);
   }
@@ -472,7 +510,8 @@ function render(ts){
   upload(d); gl.drawArrays(gl.TRIANGLES,0,d.length/3);
 
   document.getElementById('info').textContent =
-    layers+' couches · GameTime '+(gameTime%1).toFixed(4)+' · rayon '+radius.toFixed(2)+' bloc(s)';
+    P0.name+' · '+P0.a.toFixed(2).replace('.',',')+' × '+P0.b.toFixed(2).replace('.',',')
+    +' bl · '+layers+' couches · GameTime '+(gameTime%1).toFixed(4);
   requestAnimationFrame(render);
 }
 requestAnimationFrame(render);
@@ -480,21 +519,26 @@ requestAnimationFrame(render);
 /* ---- commandes ---- */
 const $ = id => document.getElementById(id);
 $('layers').oninput = e => { layers = +e.target.value; $('vlayers').textContent = layers; };
-$('radius').oninput = e => { radius = +e.target.value/100; $('vradius').textContent = radius.toFixed(2).replace('.',','); };
 $('yaw').oninput    = e => { yaw = +e.target.value*Math.PI/180; $('vyaw').textContent = e.target.value+'°'; };
 $('aim').oninput    = e => { aim = +e.target.value/10; $('vaim').textContent = aim.toFixed(1).replace('.',','); };
+$('warp').oninput   = e => { warp = +e.target.value; $('vwarp').textContent = '×'+warp; };
 $('play').onclick   = () => { playing = !playing; $('play').textContent = playing ? 'Pause' : 'Reprendre'; };
-$('reset').onclick  = () => { yaw=0; aim=0; pitch=0.17; radius=1.95; layers=15;
-  for(const [k,v] of [['yaw',0],['aim',0],['radius',195],['layers',15]]) $(k).value=v;
+document.querySelectorAll('#plans .variant').forEach(b => b.onclick = () => {
+  plan = +b.dataset.plan;
+  document.querySelectorAll('#plans .variant').forEach(x => x.classList.toggle('active', x===b));
+  pitch = plan===1 ? 0.42 : 0.17;            /* une mare se regarde d'un peu plus haut */
+});
+$('reset').onclick  = () => { yaw=0; aim=0; pitch=(plan===1?0.42:0.17); layers=15; warp=1;
+  for(const [k,v] of [['yaw',0],['aim',0],['layers',15],['warp',1]]) $(k).value=v;
   $('vyaw').textContent='0°'; $('vaim').textContent='0,0';
-  $('vradius').textContent='1,95'; $('vlayers').textContent='15'; };
+  $('vlayers').textContent='15'; $('vwarp').textContent='×1'; };
 
 let drag=null;
 cv.addEventListener('pointerdown', e => { drag=[e.clientX,e.clientY]; cv.setPointerCapture(e.pointerId); });
 cv.addEventListener('pointerup',   () => { drag=null; });
 cv.addEventListener('pointermove', e => { if(!drag) return;
   yaw   -= (e.clientX-drag[0])*0.006;
-  pitch  = Math.max(-0.9, Math.min(1.25, pitch + (e.clientY-drag[1])*0.004));
+  pitch  = Math.max(-0.3, Math.min(1.25, pitch + (e.clientY-drag[1])*0.004));
   drag=[e.clientX,e.clientY];
   $('yaw').value = Math.round(((yaw*180/Math.PI)%360+540)%360-180);
   $('vyaw').textContent = $('yaw').value+'°'; });

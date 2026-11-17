@@ -161,6 +161,56 @@ public final class VoidSignatureVfx {
     private static final float TAU = 6.2831855f;
 
     // =================================================================================
+    //  LES TROIS COTES PARTAGÉES AVEC LA FENÊTRE D'ABYSSE
+    // =================================================================================
+    //
+    // T390b — {@link VoidPortalFx} doit poser sa fenêtre EXACTEMENT dans l'ouverture que
+    // la figure encadre. Un disque qui déborde de la lèvre cesse d'être un trou : il
+    // redevient un objet, avec sa silhouette circulaire à lui, et c'est précisément la
+    // règle « on ne dessine jamais le vide, on dessine son bord » qu'il viole.
+    //
+    // Or le rayon de l'horizon, l'écartement de la faille et le rayon de la porte sont
+    // calculés au milieu de trois méthodes de rendu de plusieurs centaines de lignes. Les
+    // recopier dans la fenêtre, c'était s'engager à les maintenir à deux endroits — la
+    // palette du Vide a déjà appris ce que ça coûte. Ils sont donc extraits ici, publics,
+    // et les trois renderers les appellent comme n'importe qui d'autre.
+
+    /** Hauteur du centre de la Sphère de Distorsion au-dessus de l'origine de l'effet. */
+    public static final float WARP_YC = 0.46f;
+
+    /** Hauteur totale de la Faille, du bas des lèvres au sommet. */
+    public static final float RIFT_HEIGHT = 3.05f;
+
+    /** Demi-écartement maximal des deux lèvres, atteint à mi-hauteur. */
+    public static final float RIFT_LIP = 0.82f;
+
+    /** Rayon de l'horizon de la sphère : ouvre en 0,24, tient, puis tombe en 0,10. */
+    public static float warpHorizon(float t) {
+        float open = smooth(clamp((t - 0.10f) / 0.24f));
+        float fall = smooth(clamp((t - 0.70f) / 0.10f));
+        return (0.05f + 1.10f * open) * (1.0f - fall);
+    }
+
+    /** Écartement de la faille, 0 → 1 → 0. Asymétrique : s'ouvre vite, se recoud mal. */
+    public static float riftGape(float t) {
+        float opening = smooth(clamp((t - 0.06f) / 0.17f));
+        float closing = smooth(clamp((t - 0.64f) / 0.18f));
+        return opening * (1.0f - closing);
+    }
+
+    /** Rayon de l'anneau de la Porte : de 0,34 à 2,12, puis retour à zéro. */
+    public static float gateRing(float t) {
+        float grow = smooth(clamp((t - 0.04f) / 0.26f));
+        float shut = smooth(clamp((t - 0.86f) / 0.14f));
+        return (0.34f + 1.78f * grow) * (1.0f - shut);
+    }
+
+    /** Le sol tel que le rendu l'emploie. Mêmes bornes que {@link #render}. */
+    public static float groundClamp(float groundOffset) {
+        return Mth.clamp(groundOffset, -4.0f, 0.10f);
+    }
+
+    // =================================================================================
     //  ENTRÉE
     // =================================================================================
 
@@ -173,7 +223,7 @@ public final class VoidSignatureVfx {
                               float dx, float dz, int variant, int alpha, int salt,
                               float groundOffset) {
         if (t <= 0.0f || t >= 1.0f || alpha <= 4) return;
-        GROUND_Y = Mth.clamp(groundOffset, -4.0f, 0.10f);
+        GROUND_Y = groundClamp(groundOffset);
         float length = Mth.sqrt(dx * dx + dz * dz);
         if (length < 0.001f) { dx = 0.0f; dz = 1.0f; }
         else { dx /= length; dz /= length; }
@@ -220,16 +270,14 @@ public final class VoidSignatureVfx {
                                    float dx, float dz, int alpha, int salt) {
         float a = alpha;
         // --- Rayon de l'horizon. Il ouvre lentement, tient, puis tombe en huit ticks. ---
-        float open = smooth(clamp((t - 0.10f) / 0.24f));
-        float fall = smooth(clamp((t - 0.70f) / 0.10f));
-        float rs = (0.05f + 1.10f * open) * (1.0f - fall);
+        float rs = warpHorizon(t);
         // --- Basculement de la grille : plan vertical au début, disque d'accrétion ensuite. ---
         float tip = smooth(clamp((t - 0.46f) / 0.24f));
         // --- Redressement élastique après la chute : la grille dépasse puis revient. ---
         float snap = clamp((t - 0.70f) / 0.22f);
         float rebound = snap <= 0.0f ? 0.0f
                 : Mth.sin(snap * Mth.PI * 1.6f) * (1.0f - snap) * 0.55f;
-        float yc = 0.46f;
+        float yc = WARP_YC;
 
         // ---- 1. LA GRILLE TÉMOIN ------------------------------------------------------
         // Sept par sept. Le pas est constant : c'est la seule chose régulière de la scène,
@@ -789,14 +837,13 @@ public final class VoidSignatureVfx {
                                    float dx, float dz, int alpha, int salt) {
         float a = alpha;
         float yBase = GROUND_Y + 0.05f;
-        float height = 3.05f;
+        float height = RIFT_HEIGHT;
 
         // Ouverture puis fermeture. L'asymétrie est volontaire : ça s'ouvre vite (seize
         // ticks) et ça se referme lentement (trente), parce qu'une déchirure se fait d'un
         // coup et se recoud mal.
-        float opening = smooth(clamp((t - 0.06f) / 0.17f));
         float closing = smooth(clamp((t - 0.64f) / 0.18f));
-        float gape = opening * (1.0f - closing);
+        float gape = riftGape(t);
         float scar = clamp((t - 0.80f) / 0.20f);
 
         // ---- 1. LA FÊLURE puis LES DEUX LÈVRES -----------------------------------------
@@ -809,7 +856,7 @@ public final class VoidSignatureVfx {
                 // la pointe reste pointue — une racine carrée donnerait une ellipse molle.
                 float profile = Mth.sin(u * Mth.PI);
                 profile = (float) Math.pow(profile, 0.62);
-                float wMax = 0.82f * gape;
+                float wMax = RIFT_LIP * gape;
                 float w = wMax * profile;
                 // Les DENTS. Deux hachages différents pour les deux lèvres : c'est tout le
                 // sujet. Avec le même, les dents s'emboîtent et on lit une fermeture éclair.
@@ -875,7 +922,7 @@ public final class VoidSignatureVfx {
                     float u = (r + 0.5f) / rows;
                     float yy = yBase + u * height;
                     float profile = (float) Math.pow(Mth.sin(u * Mth.PI), 0.62);
-                    float wMax = 0.82f * gape * profile;
+                    float wMax = RIFT_LIP * gape * profile;
                     if (wMax < 0.05f) continue;
                     int cols = Math.max(2, Math.round(wMax * 14.0f));
                     for (int c = 0; c < cols; c++) {
@@ -1067,7 +1114,7 @@ public final class VoidSignatureVfx {
         // rentrer sur lui-même, et un tube qui maigrit est un tube qui s'efface.
         float grow = smooth(clamp((t - 0.04f) / 0.26f));
         float shut = smooth(clamp((t - 0.86f) / 0.14f));
-        float ring = (0.34f + 1.78f * grow) * (1.0f - shut);
+        float ring = gateRing(t);
         float spin = t * 3.4f + salt * 0.0013f;
 
         // ---- 1. LE TRACÉ AU SOL ---------------------------------------------------------

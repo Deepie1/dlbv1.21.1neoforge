@@ -256,15 +256,24 @@ ACT_ANCHOR = "function glow(vox){ctx.save();ctx.globalCompositeOperation='lighte
 ACT_NEW = """/* REPERE D'APERCU -- il ne fait pas partie de la signature. En jeu, cette place est
    occupee par la victime ; ici, une silhouette en fil de fer donne l'echelle. Sans elle,
    une sphere de 1,10 de rayon et une sphere de 3 blocs sont le meme dessin. */
+/* T390 -- Seuil de profondeur du squelette. La fenetre d'abysse est OPAQUE et son centre
+   tombe sur le torse de la victime : la moitie du corps situee derriere le disque doit
+   donc disparaitre, exactement comme en jeu. Le squelette est peint deux fois, avant la
+   fenetre (tout) puis apres (FIG_NEAR = profondeur du disque, donc la moitie avant
+   seulement). Une passe unique montrerait un mannequin soit intact devant un trou, soit
+   entierement avale : ni l'un ni l'autre n'est ce que le joueur verra. */
+let FIG_NEAR=-1e9;
 function wireBox(x,y,z,hx,hy,hz){
  const c=[];
  for(let i=0;i<8;i++)c.push(project(x+((i&1)?hx:-hx),y+((i&2)?hy:-hy),z+((i&4)?hz:-hz)));
  const E=[[0,1],[2,3],[4,5],[6,7],[0,2],[1,3],[4,6],[5,7],[0,4],[1,5],[2,6],[3,7]];
  ctx.beginPath();
- for(const e of E){ctx.moveTo(c[e[0]][0],c[e[0]][1]);ctx.lineTo(c[e[1]][0],c[e[1]][1]);}
+ for(const e of E){const a=c[e[0]],b=c[e[1]];
+  if((a[2]+b[2])*0.5<FIG_NEAR)continue;
+  ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);}
  ctx.stroke();
 }
-function figure(x,tall,label,tint){
+function figure(x,tall,tint){
  const F=-0.47;                       /* les pieds, sur le plan de grille du gabarit */
  ctx.strokeStyle=tint;ctx.lineWidth=DPR;
  const legs=tall*0.44, torso=tall*0.34, head=tall*0.22;
@@ -275,11 +284,16 @@ function figure(x,tall,label,tint){
  wireBox(x,F+legs+torso*0.62,-0.29,0.08,torso*0.42,0.08);
  wireBox(x,F+legs+torso*0.62, 0.29,0.08,torso*0.42,0.08);
  wireBox(x,F+legs+torso+head/2,0,0.14,head/2,0.14);
- const p=project(x,F+tall+0.22,0);
- ctx.fillStyle=tint;ctx.font=(11*DPR)+'px ui-monospace,Menlo,monospace';
- ctx.textAlign='center';ctx.fillText(label,p[0],p[1]);
 }
-function actors(){ figure(0,1.95,'VICTIME','#2f5a6b'); }
+/* L'etiquette n'est pas dans la scene : c'est de l'interface. Elle passe donc en dernier,
+   au-dessus de tout, y compris de la fenetre -- sinon le disque l'avalerait, et on
+   perdrait le seul reperage de l'acteur. */
+function actorLabels(){
+ const p=project(0,-0.47+1.95+0.22,0);
+ ctx.fillStyle='#2f5a6b';ctx.font=(11*DPR)+'px ui-monospace,Menlo,monospace';
+ ctx.textAlign='center';ctx.fillText('VICTIME',p[0],p[1]);
+}
+function actors(){ figure(0,1.95,'#2f5a6b'); }
 function glow(vox){ctx.save();ctx.globalCompositeOperation='lighter';"""
 assert RENDER.count(ACT_ANCHOR) == 1, 'ancre glow introuvable'
 RENDER = RENDER.replace(ACT_ANCHOR, ACT_NEW)
@@ -310,6 +324,223 @@ document.querySelectorAll('.variant').forEach(b=>b.onclick=()=>{
  syncPanel();});"""
 assert RENDER.count(YAW_OLD) == 1, 'gestionnaire de variante introuvable'
 RENDER = RENDER.replace(YAW_OLD, YAW_NEW)
+
+# --- T390b -- LA FENETRE D'ABYSSE, DANS LA PAGE ET POUR DE VRAI ---------------------
+#
+#     L'apercu peignait les cinq signatures et DECRIVAIT le core shader en prose. Une page
+#     dont le role est de juger une forme ne peut pas se permettre de raconter la moitie
+#     qui manque : le bord voxel et la fenetre se jugent ENSEMBLE, puisque tout l'interet
+#     du bord est ce qu'il encadre. Et la premiere chose que la page a montree, une fois le
+#     shader branche, c'est que les fenetres DEBORDAIENT des figures.
+#
+#     On execute donc le vrai shader. Le .vsh et le .fsh sont lus dans assets/ au moment de
+#     la construction et portes en GLSL ES 3.00 par les MEMES deux substitutions mecaniques
+#     que la page de demonstration -- la fonction est importee de build_void_shader_demo,
+#     pas recopiee : une palette qui vit en trois exemplaires a deja coute assez cher.
+#
+#     LE POINT DELICAT, ET POURQUOI C'EST FIDELE. En jeu, les coordonnees de texture
+#     viennent de gl_Position, c'est-a-dire de l'ECRAN. Ici le contour est projete par la
+#     camera de la page puis envoye en coordonnees d'horloge (matrices identite) : la
+#     relation « ou est le pixel -> quelle etoile » est donc exactement celle du jeu. Le
+#     facteur w (la distance, en jeu) se simplifie dans textureProj et la composante z
+#     n'intervient dans aucune matrice de couche. Ce que la page affiche n'est pas une
+#     imitation du shader : c'est le shader.
+import sys as _sys
+_here = os.path.dirname(os.path.abspath(__file__))
+if _here not in _sys.path:
+    _sys.path.insert(0, _here)
+try:
+    import build_void_shader_demo as _demo
+except ImportError as _err:        # pragma: no cover
+    raise SystemExit('build_void_shader_demo.py introuvable a cote de ce script : %s' % _err)
+
+_SH = 'src/main/resources/assets/deep_lucky_block/shaders/core/'
+_TX = 'src/main/resources/assets/deep_lucky_block/textures/effect/'
+for _p in (_SH + 'void_portal.vsh', _SH + 'void_portal.fsh',
+           _TX + 'void_sky.png', _TX + 'void_stars.png'):
+    assert os.path.exists(_p), 'asset du shader absent : ' + _p
+
+_VSH = _demo.escape_backtick(_demo.to_es300(io.open(_SH + 'void_portal.vsh', encoding='utf-8').read(), True))
+_FSH = _demo.escape_backtick(_demo.to_es300(io.open(_SH + 'void_portal.fsh', encoding='utf-8').read(), False))
+
+# Le miroir JS doit exposer les cotes partagees, sinon la fenetre retomberait sur des
+# constantes a elle -- exactement le defaut que cette passe corrige.
+assert 'VOID_SHAPE' in ENGINE, 'void_build.js n\'expose pas VOID_SHAPE'
+
+PORTAL_JS = r"""
+/* ===== LA FENETRE D'ABYSSE =========================================================
+   Le vrai void_portal.vsh / void_portal.fsh, compiles ici. La surface est dessinee dans
+   un canevas WebGL hors ecran puis COMPOSEE dans l'ordre du peintre du canevas 2D, a la
+   profondeur de son centre : ce qui est derriere disparait, ce qui est devant reste. Un
+   simple calque empile en CSS aurait mis la fenetre soit devant tout, soit derriere tout.
+
+   MIROIR DE VoidPortalFx.queueSignature. Trois signatures en ont une, pas cinq, et
+   aucune n'a de rayon a elle : tout vient de VOID_SHAPE, c'est-a-dire des cotes de la
+   figure. Un contour qui depasse la levre cesse d'etre un trou et redevient un objet.
+
+   Si WebGL manque, ready() rend faux et la page se comporte exactement comme avant : on
+   ne perd que la fenetre, jamais la choregraphie. */
+const PORTAL=(function(){
+ const VSH=`__VSH__`;
+ const FSH=`__FSH__`;
+ const SKY="__SKY__", STARS="__STARS__";
+ const SECTORS=22, LAYERS=15;
+ const cn=document.createElement('canvas');
+ let gl=null,pg=null,vbo=null,t0=null,t1=null,ok=false,why='';
+ try{gl=cn.getContext('webgl2',{alpha:true,premultipliedAlpha:false,
+  preserveDrawingBuffer:true,antialias:true});}catch(e){why=e.message;}
+ function sh(ty,src){const o=gl.createShader(ty);gl.shaderSource(o,src);gl.compileShader(o);
+  if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(o));
+  return o;}
+ function tex(src){const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,
+   new Uint8Array([5,13,37,255]));
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+  const im=new Image();im.onload=function(){gl.bindTexture(gl.TEXTURE_2D,t);
+   gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,im);};
+  im.src=src;return t;}
+ if(gl){try{
+  pg=gl.createProgram();gl.attachShader(pg,sh(gl.VERTEX_SHADER,VSH));
+  gl.attachShader(pg,sh(gl.FRAGMENT_SHADER,FSH));gl.linkProgram(pg);
+  if(!gl.getProgramParameter(pg,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(pg));
+  vbo=gl.createBuffer();t0=tex(SKY);t1=tex(STARS);ok=true;
+ }catch(e){why=e.message;ok=false;console.warn('fenetre indisponible :',why);}}
+ const ID=new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+ return{
+  ready:function(){return ok;},
+  why:function(){return why;},
+  canvas:function(){return cn;},
+  sectors:SECTORS,
+  /* Miroir exact de VoidPortalFx.queueSignature : meme choix de plan, memes marges.
+     mode 0 = panneau-reclame (la sphere), 1 = au sol (la porte), 2 = dans le plan des
+     levres (la faille). Rend null quand la signature n'a pas de fenetre. */
+  windowOf:function(variant,t){
+   if(t<=0||t>=1)return null;
+   if(variant===0){
+    const r=VOID_SHAPE.warpHorizon(t)*0.94;
+    return r<0.10?null:{mode:0,y:VOID_SHAPE.WARP_YC,a:r,b:r,label:'sph\u00e8re'};}
+   if(variant===2){
+    const w=VOID_SHAPE.RIFT_LIP*VOID_SHAPE.riftGape(t)*0.80;
+    return w<0.04?null:{mode:2,
+     y:VOID_SHAPE.GROUND_FALLBACK+0.05+VOID_SHAPE.RIFT_HEIGHT*0.50,
+     a:w,b:VOID_SHAPE.RIFT_HEIGHT*0.44,label:'fente'};}
+   if(variant===3){
+    const r=VOID_SHAPE.gateRing(t)*0.88;
+    return r<0.12?null:{mode:1,y:VOID_SHAPE.GROUND_FALLBACK+0.06,a:r,b:r,label:'mare'};}
+   return null;                       /* PRISME et TRAME : aucune. Voir VoidPortalFx. */
+  },
+  /* pts : le contour DEJA PROJETE, en pixels ecran. On le renvoie tel quel en
+     coordonnees d'horloge, donc gl_Position EST la position ecran -- comme en jeu. */
+  draw:function(cx,cy,pts,w,h,gameTime){
+   if(!ok||pts.length<3)return false;
+   if(cn.width!==w||cn.height!==h){cn.width=w;cn.height=h;}
+   gl.viewport(0,0,w,h);
+   gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);
+   gl.disable(gl.DEPTH_TEST);gl.disable(gl.BLEND);gl.disable(gl.CULL_FACE);
+   const nx=function(x){return x/w*2-1;}, ny=function(y){return 1-y/h*2;}, v=[];
+   for(let s=0;s<pts.length;s++){
+    const p=pts[s], q=pts[(s+1)%pts.length];
+    v.push(nx(cx),ny(cy),0, nx(p[0]),ny(p[1]),0, nx(q[0]),ny(q[1]),0);}
+   gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
+   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(v),gl.DYNAMIC_DRAW);
+   gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+   gl.useProgram(pg);
+   gl.uniformMatrix4fv(gl.getUniformLocation(pg,'ProjMat'),false,ID);
+   gl.uniformMatrix4fv(gl.getUniformLocation(pg,'ModelViewMat'),false,ID);
+   gl.uniform1f(gl.getUniformLocation(pg,'GameTime'),gameTime%1.0);
+   gl.uniform1i(gl.getUniformLocation(pg,'EndPortalLayers'),LAYERS);
+   gl.uniform1i(gl.getUniformLocation(pg,'Sampler0'),0);
+   gl.uniform1i(gl.getUniformLocation(pg,'Sampler1'),1);
+   gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,t0);
+   gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,t1);
+   gl.drawArrays(gl.TRIANGLES,0,v.length/3);
+   return true;}
+ };
+})();
+
+/* Le contour, dans le repere de l'apercu : x = f (axe de l'attaque), y = hauteur,
+   z = lateral, avec dx = 1 et dz = 0 comme partout dans cette page.
+     - panneau-reclame : un cercle d'ECRAN, puisque la camera de l'apercu est
+       orthographique et qu'une ellipse face camera s'y projette en cercle exact ;
+     - au sol        : (cos, sin) dans le plan (f, lateral), a hauteur fixe ;
+     - fente         : (lateral, hauteur), f nul -- vue dans l'axe de l'attaque elle
+       s'ecrase en trait, exactement comme la faille qu'elle remplit. */
+function portalRim(variant,t){
+ const w=PORTAL.windowOf(variant,t);
+ if(!w||!PORTAL.ready())return null;
+ const c=project(0,w.y,0), pts=[], N=PORTAL.sectors;
+ for(let s=0;s<N;s++){
+  const ang=s*2*Math.PI/N, ca=Math.cos(ang), sa=Math.sin(ang);
+  if(w.mode===0){pts.push([c[0]+ca*w.a*SCALE, c[1]+sa*w.a*SCALE]);continue;}
+  const p=(w.mode===1)?project(ca*w.a, w.y, sa*w.b)
+                      :project(0, w.y+sa*w.b, ca*w.a);
+  pts.push([p[0],p[1]]);
+ }
+ return {c:c, pts:pts, win:w};
+}
+"""
+PORTAL_JS = (PORTAL_JS.replace('__VSH__', _VSH).replace('__FSH__', _FSH)
+             .replace('__SKY__', _demo.b64(_TX + 'void_sky.png'))
+             .replace('__STARS__', _demo.b64(_TX + 'void_stars.png')))
+
+# Le module doit exister avant la premiere image. La derniere ligne du moteur partage
+# amorce la boucle : on se glisse juste avant.
+BOOT = 'syncPanel();requestAnimationFrame(loop);'
+assert RENDER.count(BOOT) == 1, 'amorce de boucle introuvable'
+RENDER = RENDER.replace(BOOT, PORTAL_JS + '\n' + BOOT)
+
+# --- L'HORLOGE DU SHADER. GameTime vanilla avance d'un 24000e par tick ; on reproduit ce
+#     rythme EXACT plutot qu'une derive confortable, sinon la page promettrait un
+#     tourbillon que le jeu ne donnera pas. La preuve de la parallaxe n'est pas la vitesse
+#     des etoiles : c'est qu'elles ne suivent pas la figure quand on fait tourner la vue.
+CLK_OLD = 'let last=performance.now();'
+CLK_NEW = 'let last=performance.now(), gameTime=0;'
+assert RENDER.count(CLK_OLD) == 1, 'horloge introuvable'
+RENDER = RENDER.replace(CLK_OLD, CLK_NEW)
+TIC_OLD = ' if(playing){t+=dt/(DUR[variant]/20);if(t>=1)t=0;'
+TIC_NEW = ' if(playing){t+=dt/(DUR[variant]/20);if(t>=1)t=0;gameTime+=dt*(20.0/24000.0);'
+assert RENDER.count(TIC_OLD) == 1, 'avance du temps introuvable'
+RENDER = RENDER.replace(TIC_OLD, TIC_NEW)
+
+# --- COMPOSITION A LA BONNE PROFONDEUR. Le peintre trie ses faces par profondeur
+#     croissante et les pose dans cet ordre : la fenetre entre dans ce tri comme n'importe
+#     quelle face, a la profondeur de son centre. Les cubes derriere sont donc peints puis
+#     RECOUVERTS -- c'est bien ce que fait une surface opaque qui ecrit la profondeur.
+QD_OLD = """ const quads=[];
+ ctx.lineJoin='round';"""
+QD_NEW = """ /* La fenetre d'abysse. Ni rayon ni hauteur propres : tout est lu dans les cotes de
+    la figure (VOID_SHAPE), comme VoidPortalFx le fait en jeu. */
+ const rim=portalRim(variant,t);
+ const pc=rim?rim.c:null;
+ const quads=[];
+ if(rim&&PORTAL.draw(rim.c[0],rim.c[1],rim.pts,W,H,gameTime))
+  quads.push({d:rim.c[2],portal:true});
+ ctx.lineJoin='round';"""
+assert RENDER.count(QD_OLD) == 1, 'ouverture du tableau de quads introuvable'
+RENDER = RENDER.replace(QD_OLD, QD_NEW)
+
+PT_OLD = """ for(const q of quads){
+  ctx.fillStyle=q.fill;"""
+PT_NEW = """ for(const q of quads){
+  if(q.portal){ctx.drawImage(PORTAL.canvas(),0,0);continue}
+  ctx.fillStyle=q.fill;"""
+assert RENDER.count(PT_OLD) == 1, 'boucle de peinture introuvable'
+RENDER = RENDER.replace(PT_OLD, PT_NEW)
+
+# --- La moitie AVANT du squelette repasse par-dessus la fenetre, puis les etiquettes.
+END_OLD = " document.getElementById('baseCount').textContent=vox.length;"
+END_NEW = """ if(pc){FIG_NEAR=pc[2];actors();FIG_NEAR=-1e9;}
+ actorLabels();
+ document.getElementById('portalChip').textContent=
+   rim?('fen\\u00eatre \\u00b7 '+rim.win.label+' '+rim.win.a.toFixed(2).replace('.',',')+' bl')
+     :(PORTAL.ready()?(variant===1||variant===4?'sans fen\\u00eatre':'fen\\u00eatre ferm\\u00e9e')
+                     :'fen\\u00eatre : WebGL absent');
+ document.getElementById('baseCount').textContent=vox.length;"""
+assert RENDER.count(END_OLD) == 1, 'fin de render() introuvable'
+RENDER = RENDER.replace(END_OLD, END_NEW)
 
 ZIP = 'deliverables/DLB_Void_Five_Signatures_src.zip'
 ZIP_NAME = os.path.basename(ZIP)
@@ -416,13 +647,20 @@ exception, la <b>lèvre</b>, qui passe au violet néon et descend de 189 à 84 :
 égale aucune gamme n’offrait de couleur chromatique, et la garder revenait à garder un \
 blanc sale. Ce qui porte une figure, c’est l’écart <b>lèvre/corps</b> (84 contre 21), pas \
 l’écart lèvre/fond. Les deux tons de <b>matière étrangère</b> ne changent pas : ils sont \
-le monde avalé, pas le vide.<br>En jeu — et <b>pas dans cet aperçu</b> — un \
-<b>core shader</b> maison (<code>void_portal</code>, calqué sur \
-<code>rendertype_end_portal</code>) ouvre au cœur de chaque signature un disque opaque \
-rempli d’un ciel d’abysse en <b>parallaxe d’écran</b> : quinze couches d’étoiles \
-additives, accrochées au viewport et non au monde. C’est la réponse au seul vrai défaut \
-des cinq figures : un bord n’existe que si ce qu’il encadre est sombre, et devant un mur \
-de pierre claire l’anneau de la Porte encadrait de la pierre claire.</p>
+le monde avalé, pas le vide.</p>
+  <p class="refs"><b>Le trou, et il tourne ici.</b> Un <b>core shader</b> maison \
+(<code>void_portal</code>, calqué sur <code>rendertype_end_portal</code>) ouvre au cœur de \
+chaque signature un <b>disque opaque</b> rempli d’un ciel d’abysse : quinze couches \
+d’étoiles additives dont les coordonnées de texture viennent de l’<b>écran</b> et non du \
+modèle. C’est la réponse au seul vrai défaut des cinq figures — un bord n’existe que si ce \
+qu’il encadre est sombre, et devant un mur de pierre claire l’anneau de la Porte encadrait \
+de la pierre claire.<br><b>Cette page exécute le shader lui-même</b>, lu dans \
+<code>assets/</code> à la construction et porté en GLSL ES 3.00 par deux substitutions \
+mécaniques. Le disque est composé <b>dans l’ordre du peintre</b>, à la profondeur de son \
+centre : ce qui passe derrière disparaît — y compris la moitié arrière de la silhouette, \
+qui est exactement ce que verra le joueur. <b>Faites tourner la vue :</b> la figure \
+pivote, le champ d’étoiles reste accroché au viewport. C’est toute la différence entre une \
+texture collée sur un panneau et un portail.</p>
   <p class="refs"><b>Moteur :</b> <code>VoidSignatureVfx</code> — Sphère de Distorsion \
 (#26), Prisme du Dragon (#27), Faille du Néant (#34), Porte d’Horizon (#44), \
 Constellation Nulle (#45). Les pièces sont émises par les \
@@ -449,8 +687,10 @@ dans <code>deliverables/</code>.</div>
   <div class="topbar"><span class="chip live">Modèle Java T390 · VoidSignatureVfx</span>\
 <span class="right"><a class="chip zipchip" id="srcZipTop" href="{URL}" \
 download="{ZIP_NAME}" rel="noopener">ZIP sources</a>\
+<span class="chip" id="portalChip">fenêtre —</span>\
 <span class="chip" id="visibleCount">0 voxels visibles</span></span></div>
-  <div class="hint">Glisser pour orbiter · Molette pour zoomer · Espace pour pause</div>
+  <div class="hint">Glisser pour orbiter — <b>les étoiles de la fenêtre ne \
+suivent pas</b> · Molette pour zoomer · Espace pour pause</div>
   <div class="variant-title"><b id="variantName">Sphère de Distorsion</b>\
 <span id="variantSub">grille 9×9 · lentille · anneau d’Einstein · disque d’accrétion</span>\
 </div>

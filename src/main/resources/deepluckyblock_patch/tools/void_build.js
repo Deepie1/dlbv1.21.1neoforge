@@ -19,6 +19,36 @@
  * CLOSURES ici, des méthodes statiques là-bas.
  * =========================================================================================== */
 
+/* ---- LES TROIS COTES PARTAGÉES AVEC LA FENÊTRE D'ABYSSE ----------------------------
+ * Miroir de VoidSignatureVfx.warpHorizon / riftGape / gateRing. Hors de buildVoid parce
+ * que la fenêtre (VoidPortalFx côté jeu, le module PORTAL côté page) doit poser son
+ * disque dans l'ouverture que la figure encadre, et pas une ligne plus loin.
+ */
+const VOID_SHAPE = (function () {
+  const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+  const smooth = (x) => { x = clamp01(x); return x * x * (3 - 2 * x); };
+  return {
+    // Le sol de repli. L'apercu n'a pas de monde a sonder, et la fenetre doit poser sa
+    // mare et sa fente sur le MEME plancher que la figure : une seule valeur, ici.
+    GROUND_FALLBACK: -0.86,
+    WARP_YC: 0.46,          // hauteur du centre de la sphère
+    RIFT_HEIGHT: 3.05,      // hauteur totale de la faille
+    RIFT_LIP: 0.82,         // demi-écartement maximal des lèvres
+    warpHorizon(t) {
+      const open = smooth((t - 0.10) / 0.24), fall = smooth((t - 0.70) / 0.10);
+      return (0.05 + 1.10 * open) * (1 - fall);
+    },
+    riftGape(t) {
+      const opening = smooth((t - 0.06) / 0.17), closing = smooth((t - 0.64) / 0.18);
+      return opening * (1 - closing);
+    },
+    gateRing(t) {
+      const grow = smooth((t - 0.04) / 0.26), shut = smooth((t - 0.86) / 0.14);
+      return (0.34 + 1.78 * grow) * (1 - shut);
+    },
+  };
+})();
+
 function buildVoid(variant, t, salt = 7331) {
   const out = [];
   if (t <= 0 || t >= 1) return out;
@@ -46,7 +76,7 @@ function buildVoid(variant, t, salt = 7331) {
   const ENDSTONE = 0xD8D2A4, ENDSTONE_DK = 0x8A855F, CHORUS = 0x4B5295, INVERT = 0xB18E8C;
 
   // L'aperçu n'a pas de monde à sonder : GROUND_Y garde sa valeur de repli.
-  const GROUND_Y = -0.86, SLAB_H = 0.030, GRAVITY = 9.0;
+  const GROUND_Y = VOID_SHAPE.GROUND_FALLBACK, SLAB_H = 0.030, GRAVITY = 9.0;
 
   // ---- Émission ---------------------------------------------------------------------------
   const box = (f, lateral, y, hf, hy, hl, rgb, a) => {
@@ -188,13 +218,11 @@ function buildVoid(variant, t, salt = 7331) {
   //  I. SPHÈRE DE DISTORSION — 160 ticks
   // =======================================================================================
   const renderWarp = (a) => {
-    const open = smooth(clamp01((t - 0.10) / 0.24));
-    const fall = smooth(clamp01((t - 0.70) / 0.10));
-    const rs = (0.05 + 1.10 * open) * (1 - fall);
+    const rs = VOID_SHAPE.warpHorizon(t);
     const tip = smooth(clamp01((t - 0.46) / 0.24));
     const snap = clamp01((t - 0.70) / 0.22);
     const rebound = snap <= 0 ? 0 : Math.sin(snap * PI * 1.6) * (1 - snap) * 0.55;
-    const yc = 0.46;
+    const yc = VOID_SHAPE.WARP_YC;
 
     // ---- 1. LA GRILLE TÉMOIN --------------------------------------------------------
     const life = clamp01(t / 0.07) * (1 - clamp01((t - 0.88) / 0.12));
@@ -526,10 +554,9 @@ function buildVoid(variant, t, salt = 7331) {
   //  III. FAILLE DU NÉANT — 170 ticks
   // =======================================================================================
   const renderRift = (a) => {
-    const yBase = GROUND_Y + 0.05, height = 3.05;
-    const opening = smooth(clamp01((t - 0.06) / 0.17));
+    const yBase = GROUND_Y + 0.05, height = VOID_SHAPE.RIFT_HEIGHT;
     const closing = smooth(clamp01((t - 0.64) / 0.18));
-    const gape = opening * (1 - closing);
+    const gape = VOID_SHAPE.riftGape(t);
     const scar = clamp01((t - 0.80) / 0.20);
 
     // ---- 1. LA FÊLURE puis LES DEUX LÈVRES -------------------------------------------
@@ -538,7 +565,7 @@ function buildVoid(variant, t, salt = 7331) {
       const u = i / steps;
       const yy = yBase + u * height;
       const profile = Math.pow(Math.sin(u * PI), 0.62);
-      const w = 0.82 * gape * profile;
+      const w = VOID_SHAPE.RIFT_LIP * gape * profile;
       // Deux hachages DIFFÉRENTS pour les deux lèvres : c'est tout le sujet. Avec le même,
       // les dents s'emboîtent et on lit une fermeture éclair.
       const toothL = (hash(salt + 81, i * 13) - 0.5) * 0.14 * profile;
@@ -576,7 +603,7 @@ function buildVoid(variant, t, salt = 7331) {
       for (let r = 0; r < rows; r++) {
         const u = (r + 0.5) / rows;
         const yy = yBase + u * height;
-        const wMax = 0.82 * gape * Math.pow(Math.sin(u * PI), 0.62);
+        const wMax = VOID_SHAPE.RIFT_LIP * gape * Math.pow(Math.sin(u * PI), 0.62);
         if (wMax < 0.05) continue;
         const cols = Math.max(2, Math.round(wMax * 14));
         for (let c = 0; c < cols; c++) {
@@ -678,7 +705,7 @@ function buildVoid(variant, t, salt = 7331) {
     const yFloor = GROUND_Y + 0.04;
     const grow = smooth(clamp01((t - 0.04) / 0.26));
     const shut = smooth(clamp01((t - 0.86) / 0.14));
-    const ring = (0.34 + 1.78 * grow) * (1 - shut);
+    const ring = VOID_SHAPE.gateRing(t);
     const spin = t * 3.4 + salt * 0.0013;
 
     /* ---- 1. LE TRACE AU SOL : l'empreinte existe avant la porte. ---- */
@@ -905,4 +932,4 @@ function buildVoid(variant, t, salt = 7331) {
   return out;
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { buildVoid };
+if (typeof module !== 'undefined' && module.exports) module.exports = { buildVoid, VOID_SHAPE };
