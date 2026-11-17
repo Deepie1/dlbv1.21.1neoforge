@@ -322,7 +322,7 @@ public final class WeaponVfxServerListener {
     };
     /**
      * T388-VOID puis T389 : douzieme famille, portee a CINQ titres comme le sang. La sphere
-     * rassemble, le prisme distribue, la faille trie, la porte EXPULSE, la trame LIE.
+     * rassemble, le prisme distribue, la faille trie, la porte EXPULSE, la chaine PROPAGE.
      *
      * <p>Les cinq verbes sont distincts a dessein : deux signatures qui deplacent de la meme
      * maniere ne sont qu'une seule signature jouee deux fois.</p>
@@ -330,7 +330,7 @@ public final class WeaponVfxServerListener {
     private static final WeaponVisualEffectId[] ANIM_VOID = {
             WeaponVisualEffectId.VOID_WARP_SPHERE, WeaponVisualEffectId.DRAGON_CHAOS_PRISM,
             WeaponVisualEffectId.NULL_RIFT_FISSURE, WeaponVisualEffectId.HORIZON_GATE,
-            WeaponVisualEffectId.NULL_LATTICE
+            WeaponVisualEffectId.CHAIN_COLLAPSE
     };
     private static final WeaponVisualEffectId[] ANIM_LIGHT = {
             WeaponVisualEffectId.SERAPH_SKY_PILLAR, WeaponVisualEffectId.ASTRAL_STAR_LANCE,
@@ -5000,8 +5000,8 @@ public final class WeaponVfxServerListener {
             applyNullRiftGameplay(attacker, target, sl, damage);
         } else if (fx == WeaponVisualEffectId.HORIZON_GATE) {
             applyHorizonGateGameplay(attacker, target, sl, damage);
-        } else if (fx == WeaponVisualEffectId.NULL_LATTICE) {
-            applyNullLatticeGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.CHAIN_COLLAPSE) {
+            applyChainCollapseGameplay(attacker, target, sl, damage);
         }
     }
 
@@ -5454,154 +5454,228 @@ public final class WeaponVfxServerListener {
      * se referme sur sa victime — celle-ci est RETENUE quatre secondes et prend l'integralite
      * des tensions pour elle seule.</p>
      */
-    private static void applyNullLatticeGameplay(LivingEntity attacker, LivingEntity target,
-                                                 ServerLevel sl, float weaponDamage) {
+    /**
+     * V. L'EFFONDREMENT EN CHAINE (200 ticks) — elle PROPAGE.
+     *
+     * <p><b>La mecanique, et pourquoi elle n'existe nulle part ailleurs dans le mod.</b> Les
+     * quatre autres signatures du Vide choisissent leurs victimes une fois (ou a chaque
+     * battement) et les traitent EN PARALLELE. Celle-ci n'en touche qu'une a la fois, et
+     * c'est la victime elle-meme qui designe la suivante : un seul corps est amorce, il
+     * implose au bout de son compte a rebours, et l'implosion amorce le corps VIVANT LE PLUS
+     * PROCHE qui n'a pas encore servi. La signature est donc une sequence, pas une salve.</p>
+     *
+     * <p><b>L'escalade.</b> Chaque maillon frappe {@code x1,35} plus fort que le precedent et
+     * son compte a rebours est plus court ({@code 40 - maillon x 5}, plancher 14). Une chaine
+     * de six corps finit par une detonation enorme ; une chaine d'un seul corps ne finit par
+     * rien du tout. <b>C'est la premiere signature du mod dont la puissance depend de la
+     * DENSITE et de l'ESPACEMENT des ennemis</b>, et non du nombre brut : six mobs colles les
+     * uns aux autres donnent une chaine complete, six mobs disperses a dix blocs n'en donnent
+     * aucune.</p>
+     *
+     * <p><b>Le renforcement, et pourquoi il est voulu.</b> Chaque implosion aspire sa victime
+     * VERS le maillon suivant. Les corps se rapprochent donc a mesure que la chaine court, ce
+     * qui rend le maillon d'apres plus facile a trouver. La signature s'auto-alimente : c'est
+     * exactement la lecture que doit avoir une reaction en chaine, et c'est ce que montre
+     * l'animation.</p>
+     *
+     * <p><b>Le cas du duel.</b> Sans voisin, la chaine se replie sur sa propre victime : le
+     * meme corps est reamorce, mais l'escalade tombe a {@code x1,18} et le compte a rebours
+     * reste fixe a 30. On garde une signature jouable en duel sans lui offrir la courbe
+     * exponentielle qui est la recompense de la foule.</p>
+     */
+    private static void applyChainCollapseGameplay(LivingEntity attacker, LivingEntity target,
+                                                   ServerLevel sl, float weaponDamage) {
         final int attackerId = attacker == null ? -1 : attacker.getId();
         final int now = TestProcedure.currentTick(sl);
-        final double ox = target.getX();
-        final double oy = target.getY() + target.getBbHeight() * 0.50;
-        final double oz = target.getZ();
-        final float base = Math.max(1.3f, weaponDamage * 0.78f);
+        final double oy0 = target.getY() + target.getBbHeight() * 0.50;
+        final float base = Math.max(1.3f, weaponDamage * 0.80f);
         final long markEnd = sl.getGameTime() + 200L + 20L;
 
-        // LA CAPTURE. Sept au plus : au-dela la trame ne se lit plus, ni a l'ecran ni au
-        // tableau des degats. La cible du coup est toujours dedans, meme si elle est huitieme.
-        List<LivingEntity> caught = voidVictims(sl, ox, oy, oz, 6.0, 3.0, attackerId);
-        List<Integer> ids = new ArrayList<>();
-        ids.add(target.getId());
-        for (LivingEntity candidate : caught) {
-            if (ids.size() >= 7) break;
-            if (!ids.contains(candidate.getId())) ids.add(candidate.getId());
-        }
-        final int[] bound = new int[ids.size()];
-        for (int i = 0; i < bound.length; i++) bound[i] = ids.get(i);
-        final boolean solo = bound.length <= 1;
+        // La chaine porte son etat dans un tableau d'une case plutot que dans un champ :
+        // une lambda ne capture que du final, et chaque maillon doit pouvoir ecrire ce que
+        // le suivant lira. Les identifiants deja consommes sont dans un Set partage.
+        final java.util.Set<Integer> burned = new java.util.HashSet<>();
+        chainLink(sl, attackerId, attacker, target.getId(), 0, now + 30, base, markEnd,
+                oy0, burned);
+    }
 
-        // --- 0 -> 24 : L'EVEIL des noeuds, un par un. ---
-        for (int i = 0; i < bound.length; i++) {
-            final int slot = i;
-            TestProcedure.schedule(sl, now + slot * 4, () -> {
-                LivingEntity knot = latticeNode(sl, bound[slot]);
-                if (knot == null) return;
-                knot.addEffect(new MobEffectInstance(MobEffects.GLOWING, 200, 0, true, false));
-                addVoidMark(sl, knot, 1, attackerId, base * 0.24f, markEnd);
-                sl.playSound(null, knot.getX(), knot.getY(), knot.getZ(),
-                        SoundEvents.AMETHYST_BLOCK_PLACE, SoundSource.PLAYERS, 0.45f,
-                        0.80f + slot * 0.09f);
-                voidMotes(sl, knot, 3, sl.getGameTime() * 7L + slot);
-            });
-        }
-        if (solo) {
-            // Une trame d'un seul noeud se referme sur lui : il ne peut plus choisir ou il est.
-            applyMovementHold(target, sl.getGameTime() + 90L, false);
-        }
+    /** Longueur maximale d'une chaine. Au-dela, la detonation finale passerait l'ecran en blanc. */
+    private static final int CHAIN_MAX_LINKS = 8;
 
-        // --- 40 -> 150 : ONZE MISES EN TENSION, toutes les dix frames. ---
-        for (int e = 0; e < 11; e++) {
-            final int edge = e;
-            TestProcedure.schedule(sl, now + 40 + edge * 10, () -> {
-                double bx = 0.0;
-                double bz = 0.0;
-                int alive = 0;
-                for (int id : bound) {
-                    LivingEntity knot = latticeNode(sl, id);
-                    if (knot == null) continue;
-                    bx += knot.getX(); bz += knot.getZ(); alive++;
+    /**
+     * Un maillon : le compte a rebours, l'implosion, et le relais vers le suivant.
+     *
+     * <p>La recursion passe par {@code TestProcedure.schedule} et non par un appel direct :
+     * chaque maillon est un evenement date, et la pile ne grandit jamais.</p>
+     */
+    private static void chainLink(ServerLevel sl, int attackerId, LivingEntity attacker,
+                                  int victimId, int link, int fireTick, float base,
+                                  long markEnd, double oy0, java.util.Set<Integer> burned) {
+        if (sl == null || link >= CHAIN_MAX_LINKS) return;
+        final int depth = link;
+        final int who = victimId;
+
+        // --- LE COMPTE A REBOURS. Trois battements avant l'implosion, de plus en plus
+        //     rapproches a mesure que la chaine accelere. C'est le seul avertissement
+        //     que recoit le joueur, et il doit etre AUDIBLE avant d'etre visible.
+        final int span = Math.max(6, (fireTick - TestProcedure.currentTick(sl)) - 2);
+        for (int beat = 0; beat < 3; beat++) {
+            final int rank = beat;
+            TestProcedure.schedule(sl, fireTick - span + span * beat / 3, () -> {
+                LivingEntity armed = latticeNode(sl, who);
+                if (armed == null) return;
+                sl.playSound(null, armed.getX(), armed.getY(), armed.getZ(),
+                        SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS,
+                        0.30f + rank * 0.12f, 0.62f + rank * 0.20f + depth * 0.05f);
+                if (rank == 0) {
+                    armed.addEffect(new MobEffectInstance(MobEffects.GLOWING,
+                            Math.max(20, span + 20), 0, true, false));
                 }
-                if (alive == 0) return;
-                final double cx = bx / alive;
-                final double cz = bz / alive;
-                for (int id : bound) {
-                    LivingEntity knot = latticeNode(sl, id);
-                    if (knot == null) continue;
-                    // Chaque tension raccourcit l'arete : les corps se rapprochent du
-                    // barycentre sans jamais y etre jetes d'un coup.
-                    double ddx = cx - knot.getX();
-                    double ddz = cz - knot.getZ();
-                    double dist = Math.sqrt(ddx * ddx + ddz * ddz);
-                    if (!solo && dist > 0.60) {
-                        double speed = Math.min(0.34, 0.07 + dist * 0.045);
-                        voidPush(sl, knot, ddx / dist * speed, 0.030, ddz / dist * speed);
-                    }
-                    voidHurt(sl, attackerId, knot, base * (solo ? 0.42f : 0.26f));
-                    if (edge % 4 == 0) {
-                        addVoidMark(sl, knot, 1, attackerId, base * 0.26f, markEnd);
-                    }
-                }
-                sl.playSound(null, cx, oy, cz, SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS,
-                        0.32f, 0.70f + edge * 0.045f);
-                PixelFx.send(sl, VOID_DUST, cx, oy, cz, 10, 0.8, 0.7, 0.8, 0.04);
+                PixelFx.send(sl, VOID_DUST, armed.getX(),
+                        armed.getY() + armed.getBbHeight() * 0.5, armed.getZ(),
+                        5 + rank * 4, 0.6, 0.6, 0.6, 0.03);
             });
         }
 
-        // --- 160 : LA CONVERGENCE. ---
-        TestProcedure.schedule(sl, now + 160, () -> {
-            double bx = 0.0;
-            double bz = 0.0;
-            int alive = 0;
-            for (int id : bound) {
-                LivingEntity knot = latticeNode(sl, id);
-                if (knot == null) continue;
-                bx += knot.getX(); bz += knot.getZ(); alive++;
+        // --- L'IMPLOSION. ---
+        TestProcedure.schedule(sl, fireTick, () -> {
+            LivingEntity node = latticeNode(sl, who);
+            if (node == null) {
+                // Le corps amorce est mort avant son tour : la chaine s'arrete ici, mais
+                // elle PAIE quand meme ce qu'elle avait accumule. Sinon tuer le maillon
+                // courant serait une parade gratuite.
+                chainDetonate(sl, attackerId, attacker, null, depth, base, markEnd, oy0);
+                return;
             }
-            if (alive == 0) return;
-            final double cx = bx / alive;
-            final double cz = bz / alive;
-            sl.playSound(null, cx, oy, cz, SoundEvents.BEACON_POWER_SELECT, SoundSource.PLAYERS, 0.85f, 0.45f);
-            PixelFx.send(sl, ParticleTypes.PORTAL, cx, oy, cz, 60, 0.9, 1.1, 0.9, 0.34);
-            for (int id : bound) {
-                LivingEntity knot = latticeNode(sl, id);
-                if (knot == null) continue;
-                knot.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 60, 1, true, false));
-                double ddx = cx - knot.getX();
-                double ddz = cz - knot.getZ();
-                double dist = Math.sqrt(ddx * ddx + ddz * ddz);
-                if (dist > 0.30) {
-                    double speed = Math.min(0.72, 0.18 + dist * 0.11);
-                    voidPush(sl, knot, ddx / dist * speed, 0.10, ddz / dist * speed);
-                }
-            }
-        });
+            burned.add(who);
+            final double nx = node.getX();
+            final double ny = node.getY() + node.getBbHeight() * 0.50;
+            final double nz = node.getZ();
+            final float punch = base * 0.70f * (float) Math.pow(1.35, depth);
 
-        // --- 184 : LA RUPTURE. Les aretes cassent par le milieu, les bouts partent. ---
-        TestProcedure.schedule(sl, now + 184, () -> {
-            double bx = 0.0;
-            double bz = 0.0;
-            int alive = 0;
-            for (int id : bound) {
-                LivingEntity knot = latticeNode(sl, id);
-                if (knot == null) continue;
-                bx += knot.getX(); bz += knot.getZ(); alive++;
+            sl.playSound(null, nx, ny, nz, SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS,
+                    0.70f, Math.max(0.35f, 0.58f - depth * 0.045f));
+            sl.playSound(null, nx, ny, nz, SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS,
+                    0.40f, 0.70f + depth * 0.07f);
+            PixelFx.send(sl, ParticleTypes.PORTAL, nx, ny, nz, 30 + depth * 10,
+                    0.7 + depth * 0.10, 0.8, 0.7 + depth * 0.10, 0.26);
+            PixelFx.send(sl, VOID_DUST_INVERT, nx, ny, nz, 18 + depth * 6, 0.6, 0.6, 0.6, 0.14);
+
+            voidHurt(sl, attackerId, node, punch);
+            addVoidMark(sl, node, 1, attackerId, base * 0.28f, markEnd);
+            node.addEffect(new MobEffectInstance(MobEffects.LEVITATION, 24 + depth * 4, 0, true, false));
+
+            // Le SOUFFLE de l'implosion : tout ce qui est juste a cote est secoue, pour
+            // une fraction du coup. Ce n'est pas une seconde zone de degats, c'est la
+            // preuve que l'implosion a un volume.
+            double blastR = 1.4 + depth * 0.25;
+            for (LivingEntity near : voidVictims(sl, nx, ny, nz, blastR, 2.2, attackerId)) {
+                if (near.getId() == who) continue;
+                voidHurt(sl, attackerId, near, punch * 0.30f);
             }
-            if (alive == 0) return;
-            final double cx = bx / alive;
-            final double cz = bz / alive;
-            sl.playSound(null, cx, oy, cz, SoundEvents.AMETHYST_BLOCK_BREAK, SoundSource.PLAYERS, 0.90f, 0.55f);
-            sl.playSound(null, cx, oy, cz, SoundEvents.GLASS_BREAK, SoundSource.PLAYERS, 0.70f, 0.70f);
-            PixelFx.send(sl, VOID_DUST_INVERT, cx, oy, cz, 48, 0.9, 1.0, 0.9, 0.22);
-            for (int id : bound) {
-                LivingEntity knot = latticeNode(sl, id);
-                if (knot == null) continue;
-                voidHurt(sl, attackerId, knot, base * 1.15f);
-                addVoidMark(sl, knot, 2, attackerId, base * 0.34f, markEnd);
-                double ddx = knot.getX() - cx;
-                double ddz = knot.getZ() - cz;
-                double dist = Math.sqrt(ddx * ddx + ddz * ddz);
-                if (dist < 0.05) { ddx = 1.0; ddz = 0.0; dist = 1.0; }
-                voidPush(sl, knot, ddx / dist * 0.66, 0.34, ddz / dist * 0.66);
+
+            // --- LE RELAIS. Le corps vivant le plus proche qui n'a pas encore servi. ---
+            LivingEntity next = null;
+            double bestSqr = Double.MAX_VALUE;
+            for (LivingEntity candidate : voidVictims(sl, nx, ny, nz, 5.5, 3.2, attackerId)) {
+                if (burned.contains(candidate.getId())) continue;
+                double ddx = candidate.getX() - nx;
+                double ddy = candidate.getY() + candidate.getBbHeight() * 0.5 - ny;
+                double ddz = candidate.getZ() - nz;
+                double d2 = ddx * ddx + ddy * ddy + ddz * ddz;
+                if (d2 < bestSqr) { bestSqr = d2; next = candidate; }
             }
-            if (attacker != null && attacker.isAlive()) {
-                attacker.addEffect(new MobEffectInstance(MobEffects.SLOW_FALLING, 140, 0, true, true));
+
+            if (next == null) {
+                // SOLO, ou plus personne a portee. La chaine se replie sur sa victime :
+                // meme corps, escalade reduite, compte a rebours fixe. Deux maillons au
+                // plus de cette sorte, apres quoi on detone — un duel ne doit pas durer
+                // les deux cents ticks a lui tout seul.
+                if (depth < 2 && node.isAlive()) {
+                    applyMovementHold(node, sl.getGameTime() + 34L, false);
+                    chainLink(sl, attackerId, attacker, who, depth + 1,
+                            TestProcedure.currentTick(sl) + 30, base * 0.87f, markEnd, oy0, burned);
+                    burned.remove(who);
+                } else {
+                    chainDetonate(sl, attackerId, attacker, node, depth, base, markEnd, oy0);
+                }
+                return;
             }
+
+            // L'ASPIRATION VERS LE SUIVANT. C'est elle qui rend la chaine auto-alimentee :
+            // chaque maillon rapproche les corps, donc allonge la chaine d'apres.
+            final LivingEntity heir = next;
+            double ddx = heir.getX() - nx;
+            double ddz = heir.getZ() - nz;
+            double flat = Math.sqrt(ddx * ddx + ddz * ddz);
+            if (flat > 0.25) {
+                double speed = Math.min(0.52, 0.16 + flat * 0.075);
+                voidPush(sl, node, ddx / flat * speed, 0.18, ddz / flat * speed);
+            }
+            sl.playSound(null, nx, ny, nz, SoundEvents.PORTAL_TRIGGER, SoundSource.PLAYERS,
+                    0.26f, 1.15f + depth * 0.07f);
+
+            // Le porteur est paye en terrain, jamais en Force : a partir du quatrieme
+            // maillon la chaine lui rend de la vitesse pour qu'il suive sa propre onde.
+            if (depth >= 3 && attacker != null && attacker.isAlive()) {
+                attacker.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 60, 0, true, true));
+            }
+
+            int delay = Math.max(14, 40 - depth * 5);
+            chainLink(sl, attackerId, attacker, heir.getId(), depth + 1,
+                    TestProcedure.currentTick(sl) + delay, base, markEnd, oy0, burned);
         });
     }
 
     /**
-     * Un noeud de la trame, releve par son identifiant.
+     * La detonation finale, au bout de la chaine.
      *
-     * <p>La trame capture des IDENTIFIANTS, pas des references : une reference retenue cent
-     * ticks garde en memoire une entite morte et retirée du monde. Meme precaution que pour
-     * les {@code ServerLevel} indexes par dimension.</p>
+     * <p>Sa force est PROPORTIONNELLE a la longueur parcourue : {@code base x 0,9 x maillons}.
+     * C'est la recompense de la densite, et c'est le seul endroit de la famille ou le nombre
+     * d'ennemis touches multiplie les degats au lieu de les diviser.</p>
+     */
+    private static void chainDetonate(ServerLevel sl, int attackerId, LivingEntity attacker,
+                                      LivingEntity last, int links, float base, long markEnd,
+                                      double oy0) {
+        if (sl == null) return;
+        final double dx = last != null ? last.getX() : 0.0;
+        final double dy = last != null ? last.getY() + last.getBbHeight() * 0.50 : oy0;
+        final double dz = last != null ? last.getZ() : 0.0;
+        if (last == null) return;
+        final int chain = Math.max(1, links + 1);
+        final float blast = base * 0.90f * chain;
+        final double radius = 2.0 + 0.30 * chain;
+
+        sl.playSound(null, dx, dy, dz, SoundEvents.RESPAWN_ANCHOR_DEPLETE.value(),
+                SoundSource.PLAYERS, 1.0f, 0.50f);
+        sl.playSound(null, dx, dy, dz, SoundEvents.ANVIL_LAND, SoundSource.PLAYERS, 0.60f, 1.45f);
+        PixelFx.send(sl, ParticleTypes.PORTAL, dx, dy, dz, 70 + chain * 12,
+                radius * 0.42, 1.0, radius * 0.42, 0.42);
+        PixelFx.send(sl, VOID_DUST_INVERT, dx, dy, dz, 54, radius * 0.35, 0.8, radius * 0.35, 0.24);
+
+        for (LivingEntity victim : voidVictims(sl, dx, dy, dz, radius, 3.0, attackerId)) {
+            voidHurt(sl, attackerId, victim, blast);
+            addVoidMark(sl, victim, 2, attackerId, base * 0.34f, markEnd);
+            double ddx = victim.getX() - dx;
+            double ddz = victim.getZ() - dz;
+            double flat = Math.sqrt(ddx * ddx + ddz * ddz);
+            if (flat < 0.05) { ddx = 1.0; ddz = 0.0; flat = 1.0; }
+            voidPush(sl, victim, ddx / flat * 0.74, 0.40, ddz / flat * 0.74);
+            victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 60, 1, true, false));
+        }
+        if (attacker != null && attacker.isAlive()) {
+            attacker.addEffect(new MobEffectInstance(MobEffects.SLOW_FALLING, 140, 0, true, true));
+        }
+    }
+
+    /**
+     * Un corps du Vide, releve par son identifiant.
+     *
+     * <p>Les signatures du Vide capturent des IDENTIFIANTS, pas des references : une
+     * reference retenue cent ticks garde en memoire une entite morte et retirée du monde.
+     * Meme precaution que pour les {@code ServerLevel} indexes par dimension. La chaine en
+     * depend plus que les autres, puisqu'elle rebondit de corps en corps sur deux cents
+     * ticks et que n'importe lequel peut mourir entre deux maillons.</p>
      */
     private static LivingEntity latticeNode(ServerLevel sl, int id) {
         if (sl == null || id < 0) return null;

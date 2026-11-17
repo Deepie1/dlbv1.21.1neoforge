@@ -53,8 +53,8 @@ assert RENDER.count(MARK) == 1, 'marqueur de decoupe introuvable dans preview_re
 _, TAIL = RENDER.split(MARK, 1)
 
 HEAD = r"""/* ===== Rendu ===== */
-const SUBS=['grille 9\u00d79 \u00b7 lentille \u00b7 anneau d\u2019Einstein \u00b7 disque d\u2019accr\u00e9tion','octa\u00e8dre \u00b7 sept rayons r\u00e9fract\u00e9s \u00b7 indices 1,14 \u2192 1,62','d\u00e9chirure de 8,6 blocs \u00b7 profil de Griffith \u00b7 neuf fibres qui cassent','anneau au sol \xb7 cage lentill\xe9e \xb7 sept paraboles','sept masses \xb7 onze ressorts \xb7 240 pas par image'];
-const DUR=[160,190,170,180,200], NAMES=['Sph\u00e8re de Distorsion','Prisme du Dragon','Faille du N\u00e9ant','Porte d\u2019Horizon','Constellation Nulle'];
+const SUBS=['grille 9\u00d79 \u00b7 lentille \u00b7 anneau d\u2019Einstein \u00b7 disque d\u2019accr\u00e9tion','octa\u00e8dre \u00b7 sept rayons r\u00e9fract\u00e9s \u00b7 indices 1,14 \u2192 1,62','d\u00e9chirure de 8,6 blocs \u00b7 profil de Griffith \u00b7 neuf fibres qui cassent','anneau au sol \xb7 cage lentill\xe9e \xb7 sept paraboles','sept stations \xb7 phyllotaxie \xb7 \xd71,35 par maillon'];
+const DUR=[160,190,170,180,200], NAMES=['Sph\u00e8re de Distorsion','Prisme du Dragon','Faille du N\u00e9ant','Porte d\u2019Horizon','L\u2019Effondrement en Cha\u00eene'];
 const BEATS=[
  [['0 \u2192 25','la grille t\u00e9moin sort droite : 9\u00d79, au pas de 0,78 \u2014 <b>c\u2019est le seul rep\u00e8re qui prouvera la d\u00e9formation</b>'],
   ['25 \u2192 48','<b>la lentille</b> : la grille se creuse en <code>rs\u00b2 / max(r0, 0,55)</code>, le pas se resserre l\u00e0 o\u00f9 l\u2019espace se tord'],
@@ -82,13 +82,13 @@ const BEATS=[
   ['34 \u2192 142','<b>les sept transits</b>, un toutes les 18 frames \u2014 l\u2019horaire du serveur. Vraies <b>paraboles balistiques</b> : 3,5 bl/s vers l\u2019avant, 4,4 bl/s vers le haut, gravit\u00e9 9,0. Azimut tournant d\u2019un <b>septi\u00e8me de tour</b> \u00e0 chaque passage \u2014 au bout des sept, le paquet est diss\u00e9min\u00e9 en \u00e9toile, exactement comme le fait <code>seedAng + pass\u00b72\u03c0/7</code>'],
   ['34 \u2192 142','chaque transit tra\u00eene <b>neuf motes</b> derri\u00e8re lui et <b>dispara\u00eet une quinzaine de frames</b> en passant : <b>c\u2019est le trou dans la trajectoire qui prouve la travers\u00e9e</b>'],
   ['150 \u2192 180','<b>la fermeture</b> : une onde balaye 3,4 blocs, l\u2019anneau se r\u00e9sorbe sur son \u00e2me et la <b>boule de section</b> reste une seconde \u2014 \u00e9jection radiale, puis Chute Lente 140']],
- [['0 \u2192 24','<b>l\u2019\u00e9veil des sept n\u0153uds</b>, un toutes les 4 frames, et <b>chacun marque le sol sous lui</b> : la liste du serveur est <b>fig\u00e9e \u00e0 la pose</b>, et ces marques montrent qui est pris'],
-  ['24 \u2192 200','<b>ce n\u2019est pas une animation, c\u2019est une SIMULATION</b> : sept masses, onze ressorts (raideur 5,4, amortissement 0,955), <b>240 pas d\u2019int\u00e9gration rejou\u00e9s depuis z\u00e9ro \u00e0 chaque image</b>. Rien n\u2019est interpol\u00e9 ; la trame <i>trouve</i> ses positions'],
-  ['24 \u2192 40','les ar\u00eates naissent <b>molles</b> et pendent en vraie <b>cha\u00eenette</b> \u2014 <code>cosh</code>, pas une parabole. Une ar\u00eate droite d\u2019embl\u00e9e est un trait de r\u00e8gle : elle ne p\u00e8se rien'],
-  ['40 \u2192 140','<b>les onze tensions</b>, une toutes les 10 frames \u2014 l\u2019horaire du serveur. Chacune tire les sept masses vers le barycentre \u00e0 <code>min(0,34 ; 0,07 + dist\u00b70,045)</code>, <b>la formule exacte du listener</b>, et une pulsation blanche remonte l\u2019ar\u00eate'],
-  ['40 \u2192 160','une ar\u00eate tendue cesse de pendre et se met \u00e0 <b>vibrer en onde stationnaire</b> : le mou devient de la raideur, et \u00e7a se voit sans l\u00e9gende'],
-  ['160 \u2192 184','<b>la convergence</b> : Lenteur II, et le plancher \u00e0 <code>sol + 0,55</code> emp\u00eache les masses de traverser la terre'],
-  ['184 \u2192 200','<b>la rupture, en coup de fouet</b> : l\u2019ar\u00eate rompue garde sa vitesse et ses deux bouts claquent']]];
+ [['0 \u2192 30','<b>la marque</b> : UN seul corps est d\u00e9sign\u00e9, pas une zone. Un anneau de <b>cubes d\u2019abysse</b> \u2014 la vraie texture de portail, pos\u00e9e sur des volumes et non sur une vitre \u2014 se referme sur lui : <b>le rayon de l\u2019anneau EST le temps qui reste</b>'],
+  ['30','<b>la premi\u00e8re implosion</b>. La coquille tombe en <code>(1\u2212\u00e2ge)\u00b3</code> sur 26 frames, trois grands cercles claquent au centre, une onde balaye le sol et un <b>crat\u00e8re reste</b>. Le crat\u00e8re est la m\u00e9moire de la cha\u00eene : \u00e0 la fin, le sol raconte le trajet'],
+  ['30 \u2192 195','<b>le circuit</b> : un fil court jusqu\u2019au corps suivant en <b>8 frames</b>, t\u00eate vive devant. Derri\u00e8re lui le fil reste et <b>pulse</b>. Les sept d\u00e9parts tombent aux ticks <b>30, 70, 105, 135, 160, 180, 195</b> \u2014 l\u2019horaire exact du serveur, dont le d\u00e9lai raccourcit de 5 frames \u00e0 chaque maillon'],
+  ['30 \u2192 195','<b>les implosions grossissent</b> : rayon <code>1,40 + rang\u00b70,25</code>, et la frappe monte en <code>\u00d71,35</code> cumulatif. La septi\u00e8me est trois fois la premi\u00e8re \u2014 <b>la cha\u00eene se lit sans compteur</b>'],
+  ['30 \u2192 195','<b>les stations ne se superposent jamais</b> : elles sont pos\u00e9es en <b>phyllotaxie</b> (angle d\u2019or, rayon en <code>\u221arang</code>), la m\u00eame loi que les graines d\u2019un tournesol. C\u2019est la seule disposition qui garantisse sept points lisibles sans en placer un seul \u00e0 la main'],
+  ['195 \u2192 205','<b>la vidange</b> : le circuit se d\u00e9charge \u00e0 rebours, du dernier corps vers le premier, en 10 frames. C\u2019est le seul moment o\u00f9 l\u2019\u0153il remonte la cha\u00eene'],
+  ['205 \u2192 200','<b>la d\u00e9tonation</b> : une sph\u00e8re de cubes d\u2019abysse de <code>2,0 + 0,30\u00b7maillons</code> blocs et seize colonnes d\u2019\u00e9jection. <b>Elle ne vient que si la cha\u00eene a tenu</b> \u2014 sur une cible isol\u00e9e, l\u2019animation s\u2019arr\u00eate au premier crat\u00e8re']]];
 /* Conception sonore. Le vide n'a pas de registre dedie : il emprunte a l'End (enderman
    teleport, portal.trigger), au cristal (amethyst, beacon) et a la rupture (glass, anvil).
    Les onze sons de la famille sont attestes un par un contre la table des identifiants
@@ -99,13 +99,13 @@ const SFX=[
  "<b>0 \u2192 20</b> la descente \u2014 trois <code>amethyst_block.place</code> dont la hauteur monte par paliers : l\u2019objet se <i>pose</i>, il ne tombe pas. <b>42</b> le trait \u2014 <code>beacon.power_select</code> aigu. <b>62 \u2192 125</b> <b>les sept faisceaux</b> \u2014 une <code>amethyst_block.chime</code> par faisceau, <b>\u00e0 la position du corps touch\u00e9</b> et non au centre : en foule, les sept sons viennent de sept endroits diff\u00e9rents. <b>150</b> la fracture \u2014 <code>amethyst_block.break</code>. <b>170</b> l\u2019\u00e9clat \u2014 <code>respawn_anchor.deplete</code>.",
  "<b>2</b> la f\u00ealure \u2014 <code>glass.break</code> \u00e0 <b>1,80</b> de hauteur et <b>0,35</b> de volume : tr\u00e8s aigu, tr\u00e8s faible. C\u2019est le son le plus discret de la famille, et c\u2019est voulu \u2014 une d\u00e9chirure commence par un craquement, pas par un coup. <b>14</b> l\u2019ouverture \u2014 <code>enderman.teleport</code>. <b>20 \u2192 100</b> les neuf aspirations \u2014 <code>amethyst_block.chime</code> grave et r\u00e9gulier. <b>112</b> l\u2019autre c\u00f4t\u00e9 \u2014 <code>portal.trigger</code>. <b>140</b> la fermeture \u2014 <code>anvil.land</code> aigu + <code>enderman.teleport</code> : du m\u00e9tal, puis le vide.",
  "<b>0 \u2192 15</b> le trac\xe9 \u2014 <b>quatre</b> <code>beacon.power_select</code> dont le volume et la hauteur montent ensemble : la porte s\u2019annonce avant d\u2019exister. <b>24</b> l\u2019ouverture \u2014 <code>respawn_anchor.deplete</code>, <b>le seul son Holder de la famille</b>, donc le seul \xe0 demander <code>.value()</code>, \xe0 0,55 de hauteur. <b>34 \u2192 142</b> les sept transits \u2014 un <code>enderman.teleport</code> par passage, hauteur de 0,70 \xe0 1,12 : on entend le tourniquet acc\xe9l\xe9rer. <b>150</b> la fermeture \u2014 <code>beacon.deactivate</code> grave <b>et</b> <code>anvil.land</code> aigu dans la m\xeame frame : le vide, puis le m\xe9tal.",
- "<b>0 \u2192 24</b> l\u2019\xe9veil \u2014 un <code>amethyst_block.place</code> <b>par n\u0153ud</b>, \xe0 la position du corps et non au centre, la hauteur montant avec le rang : <b>l\u2019oreille compte les corps pris</b>. <b>40 \u2192 150</b> les onze mises en tension \u2014 <code>amethyst_block.chime</code> <b>au barycentre</b>, qui se d\xe9place \xe0 mesure que la trame se resserre : la source du son converge avec elle. <b>160</b> la convergence \u2014 <code>beacon.power_select</code> \xe0 0,45, tr\xe8s grave. <b>184</b> la rupture \u2014 <code>amethyst_block.break</code> + <code>glass.break</code>."];
+ "<b>Le compte \u00e0 rebours, et il ACC\u00c9L\u00c8RE.</b> Chaque corps marqu\u00e9 re\u00e7oit <b>trois</b> <code>amethyst_block.chime</code> avant d\u2019imploser, \u00e0 la hauteur <code>0,62 + rang\u00b70,20 + profondeur\u00b70,05</code> : le tic monte d\u2019un cran \u00e0 chaque maillon, et comme le d\u00e9lai se raccourcit de cinq frames \u00e0 chaque fois, <b>le rythme se serre en m\u00eame temps que la hauteur monte</b>. C\u2019est le seul signal dont le joueur ait besoin : il entend la cha\u00eene prendre, et il entend si elle meurt. <b>\u00c0 chaque implosion</b> un <code>amethyst_block.break</code>. <b>\u00c0 la d\u00e9tonation</b> \u2014 et seulement si la cha\u00eene a tenu \u2014 <code>respawn_anchor.deplete</code>, le seul Holder de la famille et donc le seul \u00e0 r\u00e9clamer <code>.value()</code>, doubl\u00e9 d\u2019un <code>anvil.land</code> grave."];
 const GP=[
  "<b>Elle RASSEMBLE.</b> Son int\u00e9r\u00eat n\u2019est pas de frapper fort, c\u2019est de mettre six ennemis au m\u00eame endroit \u2014 apr\u00e8s quoi n\u2019importe quelle autre arme les prend tous. <b>Foule :</b> six tractions de 5 ticks dans un rayon de 5,0, <b>vitesse proportionnelle \u00e0 la distance</b> (born\u00e9e \u00e0 0,78) \u2014 une vitesse constante ferait osciller les proches autour du point comme un pendule. Lenteur II tout du long. <b>Duel :</b> il n\u2019y a personne \u00e0 rassembler, alors elle change de m\u00e9tier \u2014 elle s\u2019accroche \u00e0 l\u2019unique cible, la <b>soul\u00e8ve</b> (L\u00e9vitation), et chaque traction tape <b>2,45 fois plus fort</b>. <b>Timer.</b> Effondrement au tick 112, restitution au 128 : celle-l\u00e0 <b>repousse</b> tout ce qui avait \u00e9t\u00e9 tir\u00e9. <b>Buff :</b> Chute Lente 100 ticks au porteur.",
  "<b>Il DISTRIBUE.</b> Sept faisceaux, sept corps, un chacun. <b>Foule :</b> jusqu\u2019\u00e0 sept victimes distinctes dans 6,5, tir\u00e9es en s\u00e9quence toutes les 9 frames ; chacune re\u00e7oit une empreinte <b>et la Lueur</b> \u2014 le seul debuff franchement utile de la famille, puisqu\u2019il rend visibles \u00e0 travers les murs ceux qui sont marqu\u00e9s. <b>Duel :</b> sous trois corps, les sept faisceaux <b>CONVERGENT</b> sur le m\u00eame ; chaque trait tape moins, mais sept traits posent quatre empreintes \u2014 <b>la d\u00e9tonation est garantie</b>. <b>Timer.</b> Fracture au tick 150 : Faiblesse II, 120 ticks, sur toute la zone. \u00c9clat au 170 : L\u00e9vitation. <b>Buff :</b> Vitesse 80 ticks au porteur \u00e0 la fracture.",
  "<b>Elle TRIE.</b> Son aire n\u2019est pas un disque mais un <b>CORRIDOR de 9 blocs de long sur 3,2 de large</b>, perpendiculaire \u00e0 l\u2019axe du coup \u2014 la d\u00e9chirure est un plan, sa trace au sol est une ligne. Un disque aurait touch\u00e9 ce qui se trouve devant et derri\u00e8re la faille, c\u2019est-\u00e0-dire ce qui n\u2019en est s\u00e9par\u00e9 par rien. <b>C\u2019est la seule aire du mod o\u00f9 le placement lat\u00e9ral d\u00e9cide.</b> <b>Foule :</b> neuf aspirations qui tirent vers l\u2019<b>axe</b> et non vers le centre (seule la composante perpendiculaire est appliqu\u00e9e : tirer vers le centre entasserait tout le corridor en un point). <b>Duel :</b> la victime unique est <b>RETENUE 70 ticks</b> \u2014 elle ne peut pas sortir du corridor \u2014 et chaque aspiration tape <b>1,73 fois plus fort</b>. <b>Timer.</b> Tick 112 : C\u00e9cit\u00e9 60 + Naus\u00e9e 100. Tick 140 : fermeture, \u00e9jection <b>perpendiculaire</b>, deux empreintes. <b>Buff :</b> Chute Lente 120 ticks au porteur.",
  "<b>Elle EXPULSE.</b> C\u2019est l\u2019<b>exact inverse de la Sph\xe8re</b>, et c\u2019est la raison de la garder : deux outils oppos\xe9s sur la m\xeame famille donnent au joueur une d\xe9cision \xe0 prendre. <b>Foule :</b> sept transits toutes les 18 frames ; chacun prend le corps le plus proche de l\u2019<b>anneau</b> (pas du centre \u2014 la porte avale ce qui est tomb\xe9 dedans, pas ce qui passait au large) et l\u2019exp\xe9die sur un azimut qui <b>tourne d\u2019un septi\xe8me de tour</b> : au bout des sept, le paquet est diss\xe9min\xe9 en \xe9toile. <b>Duel :</b> rien \xe0 diss\xe9miner, alors la porte devient un <b>MOULIN</b> \u2014 l\u2019azimut fait un <b>demi-tour</b> \xe0 chaque passage, la victime est chass\xe9e d\u2019un c\xf4t\xe9 puis de l\u2019autre, et chaque transit tape <b>deux fois plus fort</b> (0,92 contre 0,45). Elle ne va nulle part, mais elle n\u2019arr\xeate jamais de tomber. <b>Timer.</b> Fermeture au tick 150 : <code>base\xb71,25</code>, deux empreintes, \xe9jection radiale. <b>Buff :</b> Chute Lente 140 ticks au porteur.",
- "<b>Elle LIE.</b> Seule signature du mod dont la zone est <b>fig\xe9e \xe0 la pose</b> : la liste des corps est captur\xe9e <b>une fois</b>, sept au plus, et <b>fuir n\u2019en sort pas</b>. Les quatre autres r\xe9interrogent le monde \xe0 chaque battement et laissent toujours une porte de sortie ; c\u2019est le prix \xe0 payer pour qu\u2019un lien veuille dire quelque chose. <b>Foule :</b> onze mises en tension, et <b>chacune frappe tout le monde</b> pour <code>base\xb70,26</code> \u2014 modeste par corps, \xe9norme sur le groupe, et chaque tension raccourcit l\u2019ar\xeate en rapprochant les corps du barycentre. <b>Duel :</b> une trame \xe0 un seul n\u0153ud n\u2019a pas d\u2019ar\xeate, alors elle se referme sur sa victime \u2014 <b>retenue 90 ticks</b> et l\u2019int\xe9gralit\xe9 des tensions pour elle seule (<code>base\xb70,42</code>). <b>Timer.</b> Convergence au 160 : Lenteur II et traction forte. Rupture au 184 : <code>base\xb71,15</code>, deux empreintes, les bouts partent. <b>Buff :</b> Chute Lente 140 ticks au porteur.",];
+ "<b>Elle PROPAGE \u2014 et c\u2019est la seule signature du mod dont la puissance d\u00e9pende de la DISPOSITION des ennemis.</b> Un seul corps est marqu\u00e9 au d\u00e9part. Deux secondes plus tard il implose, et l\u2019implosion marque <b>le corps le plus proche encore vivant</b>, qui implose \u00e0 son tour. <b>Chaque maillon frappe \u00d71,35 du pr\u00e9c\u00e9dent</b> (<code>base\u00b70,70\u00b71,35^profondeur</code>) et le d\u00e9lai tombe de 40 \u00e0 14 frames : la cha\u00eene s\u2019emballe. <b>Foule serr\u00e9e :</b> six corps relay\u00e9s, un septi\u00e8me saut, puis une <b>d\u00e9tonation</b> de <code>base\u00b70,90\u00b7(maillons+1)</code> sur <code>2,0 + 0,30\u00b7cha\u00eene</code> blocs \u2014 de loin le plus gros chiffre de la famille. <b>Cible isol\u00e9e :</b> aucun relais \u00e0 5,5 blocs, la cha\u00eene meurt au premier maillon ; repli \u00e0 <code>base\u00b70,87</code>, <b>deux maillons au maximum</b>, et la signature est faible. <b>C\u2019est voulu</b> : les quatre autres se moquent de l\u2019espacement, celle-ci r\u00e9compense le joueur qui a d\u2019abord group\u00e9 ses cibles \u2014 avec la Sph\u00e8re de Distorsion, par exemple. <b>Timer.</b> \u00c0 partir du troisi\u00e8me maillon, Vitesse 60 ticks au porteur : la cha\u00eene le r\u00e9compense pendant qu\u2019elle court. \u00c0 la d\u00e9tonation, Lenteur II 60 ticks sur tout ce qui reste debout. <b>Plafond :</b> huit maillons, et un corps d\u00e9j\u00e0 br\u00fbl\u00e9 ne peut pas \u00eatre repris \u2014 sans quoi deux corps c\u00f4te \u00e0 c\u00f4te se renverraient la cha\u00eene ind\u00e9finiment.",];
 /* L'EMPREINTE DU NEANT, ressource partagee par les trois. Quatre au maximum. Elle ne fait
    AUCUN degat par elle-meme : c'est un SEUIL. A la quatrieme, l'espace cede -- implosion,
    Levitation, Lenteur II, et un echo banque au porteur. Au 3e et au 7e echo, le porteur
@@ -188,7 +188,7 @@ RENDER = RENDER.replace(GR_OLD, GR_NEW)
 #     lui, pose tout ce qui touche terre sur GROUND_Y, dont le repli vaut -0,90 parce que
 #     l'origine d'une signature est le TORSE de la victime (bbHeight x 0,50 cote serveur)
 #     et qu'un corps d'1,80 a les pieds 0,90 plus bas. Resultat : la mare de la Porte, les
-#     couronnes d'impact du Prisme et les marques de la Trame etaient peintes QUARANTE-TROIS
+#     couronnes d'impact du Prisme et les marques de la Chaine etaient peintes QUARANTE-TROIS
 #     CENTIMETRES SOUS LE SOL DESSINE. Il n'y a qu'un seul plancher dans une scene : le
 #     quadrillage et les pieds du mannequin descendent donc sur celui de la figure, et c'est
 #     la constante partagee qui le donne -- jamais un nombre recopie.
@@ -440,19 +440,19 @@ const PORTAL=(function(){
   sectors:SECTORS,
   /* Miroir exact de VoidPortalFx.queueSignature : memes plans, memes marges, memes
      seuils. T391 : les CINQ signatures en ont une, et il a fallu un quatrieme plan.
-       mode 0 = panneau-reclame (la Sphere, la Trame)
+       mode 0 = panneau-reclame (la Sphere)
        mode 1 = au sol          (la Porte)
        mode 2 = plan des levres (la Faille)
-       mode 3 = plan LIBRE      (le Prisme : son equateur bascule et tourne) */
+     T392 : le Prisme et la Chaine n'ont PLUS de fenetre. Coller une ouverture a chaque
+     animation faisait cinq fois la meme image — le retour utilisateur etait explicite.
+     Ces deux-la portent la texture du portail sur des VOLUMES (voir portalCubes), ce qui
+     laisse trois fenetres pour les trois figures qui ont reellement un interieur. */
   windowOf:function(variant,t){
    if(t<=0||t>=1)return null;
    if(variant===0){
     const r=VOID_SHAPE.warpHorizon(t)*0.94;
     return r<0.10?null:{mode:0,y:VOID_SHAPE.WARP_YC,a:r,b:r,label:'sph\u00e8re'};}
-   if(variant===1){
-    const sl=VOID_SHAPE.prismSlice(t), r=sl[6];
-    return r<0.08?null:{mode:3,y:VOID_SHAPE.PRISM_YC,a:r,b:r,
-     ax:sl[0],ay:sl[2],az:sl[1], bx:sl[3],by:sl[5],bz:sl[4],label:'tranche'};}
+   if(variant===1)return null;            /* le Prisme : des cubes, pas une vitre */
    if(variant===2){
     const vis=Math.max(0,Math.min(1,VOID_SHAPE.riftGape(t)*2.2));
     const half=VOID_SHAPE.riftHalfLength(t)*0.80*vis, crown=VOID_SHAPE.riftCrown(t);
@@ -462,11 +462,14 @@ const PORTAL=(function(){
    if(variant===3){
     const r=VOID_SHAPE.gateRing(t)*0.88;
     return r<0.12?null:{mode:1,y:VOID_SHAPE.GROUND_FALLBACK+0.06,a:r,b:r,label:'mare'};}
-   const r=VOID_SHAPE.latticeCell(t);
-   return r<0.12?null:{mode:0,y:VOID_SHAPE.LATTICE_YC,a:r,b:r,label:'cellule'};
+   return null;                           /* la Chaine : des cubes, pas une vitre */
   },
   /* pts : le contour DEJA PROJETE, en pixels ecran. On le renvoie tel quel en
      coordonnees d'horloge, donc gl_Position EST la position ecran -- comme en jeu. */
+  /* UNE passe plein ecran par image. Les formes y decoupent ensuite leur part : le
+     shader lisant ses UV a l'ecran, decouper apres vaut exactement tirer avant. */
+  full:function(w,h,gameTime){
+   return this.draw(w*0.5,h*0.5,[[0,0],[w,0],[w,h],[0,h]],w,h,gameTime);},
   draw:function(cx,cy,pts,w,h,gameTime){
    if(!ok||pts.length<3)return false;
    if(cn.width!==w||cn.height!==h){cn.width=w;cn.height=h;}
@@ -503,6 +506,30 @@ const PORTAL=(function(){
        s'ecrase en trait, exactement comme la faille qu'elle remplit ;
      - plan libre    : les deux vecteurs de base viennent de la figure (l'equateur du
        cristal), donc la fenetre tourne et bascule avec lui sans jamais en sortir. */
+/* L'ENVELOPPE D'UN CUBE A L'ECRAN. Un cube vu en projection parallele montre un
+   hexagone — ou un carre s'il est vu de face. Plutot que de choisir, on projette les huit
+   sommets et on prend leur enveloppe convexe : le contour est juste dans tous les cas, y
+   compris quand le cube tourne sur lui-meme (spin), ce qu'il fait toujours ici. */
+function cubeHull(f,lat,y,half,spin){
+ const ca=Math.cos(spin), sa=Math.sin(spin), pts=[];
+ let d=1e9;
+ for(let i=0;i<8;i++){
+  const sx=(i&1)?half:-half, sy=(i&2)?half:-half, sz=(i&4)?half:-half;
+  const rx=sx*ca-sz*sa, rz=sx*sa+sz*ca;
+  const p=project(f+rx, y+sy, lat+rz);
+  if(p[2]<d)d=p[2];
+  pts.push([p[0],p[1]]);
+ }
+ /* Enveloppe convexe par balayage angulaire autour du barycentre : huit points, le tri
+    coute moins cher que n'importe quelle structure, et l'ordre est directement celui du
+    trace. */
+ let mx=0,my=0;
+ for(const p of pts){mx+=p[0];my+=p[1];}
+ mx/=8;my/=8;
+ pts.sort(function(u,v){return Math.atan2(u[1]-my,u[0]-mx)-Math.atan2(v[1]-my,v[0]-mx);});
+ return {pts:pts,d:d};
+}
+
 function portalRim(variant,t){
  const w=PORTAL.windowOf(variant,t);
  if(!w||!PORTAL.ready())return null;
@@ -554,9 +581,15 @@ QD_NEW = """ /* La fenetre d'abysse. Ni rayon ni hauteur propres : tout est lu d
     la figure (VOID_SHAPE), comme VoidPortalFx le fait en jeu. */
  const rim=portalRim(variant,t);
  const pc=rim?rim.c:null;
+ const cubes=vox.portalCubes||[];
  const quads=[];
- if(rim&&PORTAL.draw(rim.c[0],rim.c[1],rim.pts,W,H,gameTime))
-  quads.push({d:rim.c[2],portal:true});
+ /* Une seule passe GL, puis chaque forme y decoupe sa part a SA profondeur. */
+ const gl_ok=(rim||cubes.length)?PORTAL.full(W,H,gameTime):false;
+ if(rim&&gl_ok)quads.push({d:rim.c[2],portal:true,poly:rim.pts});
+ if(gl_ok)for(const c of cubes){
+  const hu=cubeHull(c[0],c[1],c[2],c[3],0);
+  quads.push({d:hu.d,portal:true,poly:hu.pts});
+ }
  ctx.lineJoin='round';"""
 assert RENDER.count(QD_OLD) == 1, 'ouverture du tableau de quads introuvable'
 RENDER = RENDER.replace(QD_OLD, QD_NEW)
@@ -564,7 +597,14 @@ RENDER = RENDER.replace(QD_OLD, QD_NEW)
 PT_OLD = """ for(const q of quads){
   ctx.fillStyle=q.fill;"""
 PT_NEW = """ for(const q of quads){
-  if(q.portal){ctx.drawImage(PORTAL.canvas(),0,0);continue}
+  if(q.portal){
+   ctx.save();ctx.beginPath();
+   ctx.moveTo(q.poly[0][0],q.poly[0][1]);
+   for(let i=1;i<q.poly.length;i++)ctx.lineTo(q.poly[i][0],q.poly[i][1]);
+   ctx.closePath();ctx.clip();
+   ctx.drawImage(PORTAL.canvas(),0,0);
+   ctx.restore();
+   continue}
   ctx.fillStyle=q.fill;"""
 assert RENDER.count(PT_OLD) == 1, 'boucle de peinture introuvable'
 RENDER = RENDER.replace(PT_OLD, PT_NEW)
@@ -574,9 +614,10 @@ END_OLD = " document.getElementById('baseCount').textContent=vox.length;"
 END_NEW = """ if(pc){FIG_NEAR=pc[2];actors();FIG_NEAR=-1e9;}
  actorLabels();
  document.getElementById('portalChip').textContent=
-   rim?('fen\\u00eatre \\u00b7 '+rim.win.label+' '+rim.win.a.toFixed(2).replace('.',',')+' bl')
-     :(PORTAL.ready()?(variant===1||variant===4?'sans fen\\u00eatre':'fen\\u00eatre ferm\\u00e9e')
-                     :'fen\\u00eatre : WebGL absent');
+   !PORTAL.ready()?'abysse : WebGL absent'
+   :rim?('fen\\u00eatre \\u00b7 '+rim.win.label+' '+rim.win.a.toFixed(2).replace('.',',')+' bl')
+   :cubes.length?('cubes d\\u2019abysse \\u00b7 '+cubes.length)
+   :(variant===1||variant===4?'cubes d\\u2019abysse \\u00b7 0':'fen\\u00eatre ferm\\u00e9e');
  document.getElementById('baseCount').textContent=vox.length;"""
 assert RENDER.count(END_OLD) == 1, 'fin de render() introuvable'
 RENDER = RENDER.replace(END_OLD, END_NEW)
@@ -624,7 +665,7 @@ la Faille le sien avec <code>CHAOS_KALEIDO_LOOP</code>. Elles font désormais \
 (<code>VoidSignatureVfx</code>), zéro RenderType supplémentaire. <b>Le critère d’admission \
 d’une nouvelle signature n’était pas une forme libre mais un VERBE libre :</b> la sphère \
 rassemble, le prisme distribue, la faille trie — restaient <b>expulser</b> (la Porte, exact \
-inverse de la sphère) et <b>lier</b> (la Trame, seul objet non centré de la famille). <b>Les trois règles qui gouvernent ce fichier :</b> on ne montre \
+inverse de la sphère) et <b>propager</b> (l’Effondrement, seule signature dont la puissance dépend de l’ESPACEMENT des ennemis). <b>Les trois règles qui gouvernent ce fichier :</b> on ne montre \
 pas le vide, on montre <b>ce qu’il fait à ce qui l’entoure</b> — d’où la grille témoin, qui \
 est le sujet et non le décor ; le noir pur est invisible sur fond noir, donc toute masse \
 sombre porte son <b>liseré</b> violet néon ; et la <b>densité est une variable expressive</b> — le \
@@ -645,7 +686,7 @@ est pointillé au loin et jointif au bord.</p>\
 <b>Porte d’Horizon</b><small>9,0 s · elle EXPULSE · un tore, donc un trou</small>\
 </span></button>
     <button class="variant" data-variant="4"><span class="num">Ⅴ</span><span>\
-<b>Constellation Nulle</b><small>10,0 s · elle LIE · sept nœuds, onze arêtes</small>\
+<b>L’Effondrement en Chaîne</b><small>10,0 s · elle PROPAGE · sept implosions, ×1,35 chacune</small>\
 </span></button>
   </div>
   <span class="label">Chorégraphie du modèle Java</span>
@@ -702,7 +743,7 @@ pivote, le champ d’étoiles reste accroché au viewport. C’est toute la diff
 texture collée sur un panneau et un portail.</p>
   <p class="refs"><b>Moteur :</b> <code>VoidSignatureVfx</code> — Sphère de Distorsion \
 (#26), Prisme du Dragon (#27), Faille du Néant (#34), Porte d’Horizon (#44), \
-Constellation Nulle (#45). Les pièces sont émises par les \
+l’Effondrement en Chaîne (#45). Les pièces sont émises par les \
 émetteurs voxel du manager : aucun RenderType supplémentaire. <b>Attention :</b> l’aperçu \
 ne modélise ni le tamis de densité, ni le voile d’alpha, ni le plafond de 7 000 cubes du \
 moteur — il sert à relire la chorégraphie, <b>pas à la valider en jeu</b>.<br>Tests : \
@@ -710,8 +751,8 @@ moteur — il sert à relire la chorégraphie, <b>pas à la valider en jeu</b>.<
 <b>45</b> · <b>/dlbvfx stop</b>. Pour la Faille, se placer <b>dans l’axe</b> de la \
 déchirure puis <b>à deux pas de côté</b> : c’est la seule aire du mod où le placement \
 latéral décide. Pour la Porte, le duel est le cas intéressant — la victime doit faire un \
-<b>va-et-vient</b>, pas s’éloigner. Pour la Trame, <b>s’éloigner après la pose ne doit pas \
-sortir du contrat</b>.</p>
+<b>va-et-vient</b>, pas s’éloigner. Pour l’Effondrement, comparer <b>six mobs serrés</b> à six mobs \
+<b>dispersés</b> : c’est tout le sujet de la signature.</p>
 
   <a class="download" id="srcZip" href="{URL}" download="{ZIP_NAME}" rel="noopener">\
 Télécharger les sources Vide · ZIP</a>

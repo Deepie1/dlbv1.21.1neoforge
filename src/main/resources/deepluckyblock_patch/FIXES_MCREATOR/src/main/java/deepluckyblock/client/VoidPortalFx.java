@@ -114,8 +114,31 @@ public final class VoidPortalFx {
     private static final float[] WBY = new float[MAX_WINDOWS];
     private static final float[] WBZ = new float[MAX_WINDOWS];
     /** Tampon de travail de {@link VoidSignatureVfx#prismSlice}, une fois pour toutes. */
-    private static final float[] SLICE = new float[7];
     private static int pending;
+
+    // =====================================================================
+    // LES CUBES D'ABYSSE
+    // =====================================================================
+    //
+    // Une fenêtre est une surface : elle dit « il y a un trou ici ». Un CUBE d'abysse dit
+    // autre chose — « ce petit morceau de monde n'est plus du monde ». C'est la même
+    // texture à couches, mais posée sur un volume de quelques centimètres, et ça se marie
+    // avec les figures voxel au lieu de les percer.
+    //
+    // Les six faces sont dessinées, pas les trois visibles : le shader du portail tire ses
+    // UV de la POSITION À L'ÉCRAN et non d'une projection par face, donc trier les faces
+    // n'économiserait rien de visible et coûterait un produit scalaire par cube. Un cube
+    // de 0,10 bloc occupe une dizaine de pixels : le surcoût est dans le bruit.
+
+    /** Plafond de cubes par image, toutes signatures confondues. */
+    private static final int MAX_CUBES = 320;
+    private static final double[] CX = new double[MAX_CUBES];
+    private static final double[] CY = new double[MAX_CUBES];
+    private static final double[] CZ = new double[MAX_CUBES];
+    private static final float[] CH = new float[MAX_CUBES];
+    /** Rotation du cube autour de Y, en radians. Un cube droit se lit comme un bloc posé. */
+    private static final float[] CSPIN = new float[MAX_CUBES];
+    private static int cubes;
 
     // =====================================================================
     // DÉPÔT (appelé par le rendu des signatures, une fois par image)
@@ -125,11 +148,18 @@ public final class VoidPortalFx {
      * Point d'entrée unique du rendu des signatures : <b>une</b> ligne côté
      * {@code WeaponWorldVfxManager}, tout le réglage de la fenêtre ici.
      *
+     * <p><b>TROIS fenêtres, et pas cinq.</b> Une fenêtre dit « il y a un trou ici » : elle
+     * n'a de sens que là où la figure a réellement un intérieur — l'horizon de la Sphère,
+     * la fente de la Faille, la mare de la Porte. Le Prisme et la Chaîne reçoivent la même
+     * texture, mais sur des <b>cubes d'abysse</b> ({@link #queueCube}) posés par la figure
+     * elle-même : des volumes, pas des surfaces. Percer une fenêtre dans les cinq aurait
+     * donné cinq fois le même objet, et la famille n'aurait plus eu qu'une seule idée.</p>
+     *
      * <p>Les marges (0,94 pour la sphère, 0,80 pour la faille, 0,88 pour la porte) ne sont
      * pas décoratives : ce sont elles qui garantissent que le contour de la fenêtre tombe
      * À L'INTÉRIEUR de la lèvre, donc qu'on ne voie jamais sa silhouette propre.</p>
      *
-     * @param variant une des constantes de {@link VoidSignatureVfx} (WARP…LATTICE)
+     * @param variant une des constantes de {@link VoidSignatureVfx} (WARP…CHAIN)
      * @param worldX,worldY,worldZ origine de l'effet dans le monde (le sol, pas le centre)
      * @param t       progression de la signature, 0 → 1
      * @param dx,dz   direction unitaire ATTAQUANT → CIBLE, comme pour le rendu voxel
@@ -146,18 +176,6 @@ public final class VoidPortalFx {
             float r = VoidSignatureVfx.warpHorizon(t) * 0.94f;
             if (r < 0.10f) return;
             queue(MODE_BILLBOARD, worldX, worldY + VoidSignatureVfx.WARP_YC, worldZ, r, r, 1.0f, 0.0f);
-
-        } else if (variant == VoidSignatureVfx.PRISM) {
-            // LA TRANCHE ÉQUATORIALE. C'est le plan que les sept faisceaux traversent ;
-            // y mettre l'abysse, c'est dire que le cristal n'est pas plein de verre, il
-            // est plein de rien. Le carré équatorial a une demi-diagonale de w et la
-            // fenêtre s'arrête à 0,62 w : elle ne touche jamais les quatre arêtes.
-            VoidSignatureVfx.prismSlice(t, SLICE);
-            float r = SLICE[6];
-            if (r < 0.08f) return;
-            queueFree(worldX, worldY + VoidSignatureVfx.PRISM_YC, worldZ, r, r,
-                    SLICE[0] * dx - SLICE[1] * dz, SLICE[2], SLICE[0] * dz + SLICE[1] * dx,
-                    SLICE[3] * dx - SLICE[4] * dz, SLICE[5], SLICE[3] * dz + SLICE[4] * dx);
 
         } else if (variant == VoidSignatureVfx.RIFT) {
             // LA DÉCHIRURE. Elle court maintenant sur huit blocs six le long du corridor,
@@ -184,13 +202,6 @@ public final class VoidPortalFx {
             // la mare ait l'air d'être le sol lui-même.
             queue(MODE_GROUND, worldX, worldY + ground + 0.06, worldZ, r, r, 1.0f, 0.0f);
 
-        } else if (variant == VoidSignatureVfx.LATTICE) {
-            // LA CELLULE. Ce que la trame enserre pendant qu'elle se resserre — et ce
-            // qu'elle lâche à la rupture. Face caméra, parce qu'une constellation n'a pas
-            // de plan : ses sept nœuds ne sont jamais coplanaires.
-            float r = VoidSignatureVfx.latticeCell(t);
-            if (r < 0.12f) return;
-            queue(MODE_BILLBOARD, worldX, worldY + VoidSignatureVfx.LATTICE_YC, worldZ, r, r, 1.0f, 0.0f);
         }
     }
 
@@ -223,6 +234,26 @@ public final class VoidPortalFx {
      * Dépose une fenêtre pour cette image. Coordonnées du <b>monde</b> (pas relatives à la
      * caméra) : l'écouteur ci-dessous n'a pas la même caméra sous la main au même instant.
      */
+    /**
+     * Un cube d'abysse. {@code half} est la DEMI-arête, {@code spin} la rotation autour de
+     * la verticale.
+     *
+     * <p>Appelée depuis les figures voxel, souvent plusieurs dizaines de fois par image :
+     * elle ne fait aucune allocation et se contente d'écrire dans six tableaux parallèles.
+     * Au-delà de {@link #MAX_CUBES} elle laisse tomber silencieusement — un plafond franc
+     * vaut mieux qu'une chute de cadence sur un groupe de vingt mobs.</p>
+     */
+    public static void queueCube(double worldX, double worldY, double worldZ,
+                                 float half, float spin) {
+        if (half <= 0.004f || cubes >= MAX_CUBES) return;
+        CX[cubes] = worldX;
+        CY[cubes] = worldY;
+        CZ[cubes] = worldZ;
+        CH[cubes] = half;
+        CSPIN[cubes] = spin;
+        cubes++;
+    }
+
     public static void queue(int mode, double worldX, double worldY, double worldZ,
                              float halfA, float halfB, float dx, float dz) {
         if (halfA <= 0.02f || halfB <= 0.02f || pending >= MAX_WINDOWS) return;
@@ -245,8 +276,10 @@ public final class VoidPortalFx {
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_PARTICLES) return;
         int count = pending;
+        int cubeCount = cubes;
         pending = 0;
-        if (count <= 0) return;
+        cubes = 0;
+        if (count <= 0 && cubeCount <= 0) return;
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
@@ -309,6 +342,12 @@ public final class VoidPortalFx {
             ellipse(vc, mat, tmp, cx, cy, cz, WA[i], WB[i], axisA, axisB);
         }
 
+        for (int i = 0; i < cubeCount; i++) {
+            cube(vc, mat, tmp,
+                    (float) (CX[i] - cam.x), (float) (CY[i] - cam.y), (float) (CZ[i] - cam.z),
+                    CH[i], CSPIN[i]);
+        }
+
         buffers.endBatch(ModRenderTypes.voidPortal());
     }
 
@@ -343,8 +382,56 @@ public final class VoidPortalFx {
         }
     }
 
+    /**
+     * Un cube plein, six faces, tourné de {@code spin} autour de la verticale.
+     *
+     * <p>Visible dans le paquet : {@code WeaponBladeVisualRenderer} s'en sert pour poser
+     * les mêmes cubes <b>sur l'arme tenue en main</b>, dans le repère de l'item et non
+     * dans celui du monde. C'est possible parce que le shader du portail tire ses UV de la
+     * position À L'ÉCRAN : il ne sait pas, et n'a pas besoin de savoir, dans quel repère on
+     * l'appelle.</p>
+     *
+     * <p>Les quatre sommets de chaque face sont donnés dans l'ordre direct vu de
+     * l'extérieur. Le {@code RenderType} du portail ne fait pas de face culling (le trou
+     * doit rester visible quand la caméra passe derrière), donc l'ordre ne change rien au
+     * rendu — il est respecté quand même, pour que ce code reste lisible par quelqu'un qui
+     * activerait le culling un jour.</p>
+     */
+    static void cube(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                     float cx, float cy, float cz, float half, float spin) {
+        // Les deux axes horizontaux du cube, tournés de `spin` ; la verticale ne tourne pas.
+        float ax = Mth.cos(spin) * half;
+        float az = Mth.sin(spin) * half;
+        float bx = -az;
+        float bz = ax;
+        // normale, puis les deux tangentes, exprimées dans la base (a, haut, b).
+        // Minuscules à dessein : semcheck prend un tableau local en MAJUSCULES pour une
+        // constante d'enum et crie au symbole inconnu.
+        final int[][] faces = {
+                { 1,  0,  0,   0, 1, 0,   0, 0, 1},
+                {-1,  0,  0,   0, 1, 0,   0, 0, 1},
+                { 0,  1,  0,   1, 0, 0,   0, 0, 1},
+                { 0, -1,  0,   1, 0, 0,   0, 0, 1},
+                { 0,  0,  1,   1, 0, 0,   0, 1, 0},
+                { 0,  0, -1,   1, 0, 0,   0, 1, 0},
+        };
+        for (int[] f : faces) {
+            for (int corner = 0; corner < 4; corner++) {
+                int st = (corner == 0 || corner == 3) ? -1 : 1;
+                int su = (corner < 2) ? -1 : 1;
+                float fa = f[0] + f[3] * st + f[6] * su;
+                float fu = f[1] + f[4] * st + f[7] * su;
+                float fb = f[2] + f[5] * st + f[8] * su;
+                put(vc, mat, tmp,
+                        cx + ax * fa + bx * fb,
+                        cy + half * fu,
+                        cz + az * fa + bz * fb);
+            }
+        }
+    }
+
     /** Format POSITION seul : aucune couleur, aucun UV. Tout vient du shader. */
-    private static void put(VertexConsumer vc, Matrix4f mat, Vector3f tmp, float x, float y, float z) {
+    static void put(VertexConsumer vc, Matrix4f mat, Vector3f tmp, float x, float y, float z) {
         mat.transformPosition(x, y, z, tmp);
         vc.addVertex(tmp.x(), tmp.y(), tmp.z());
     }

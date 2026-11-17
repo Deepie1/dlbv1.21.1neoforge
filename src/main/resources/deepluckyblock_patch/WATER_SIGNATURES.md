@@ -3354,7 +3354,8 @@ Sang en a cinq depuis la T379 ; le Vide venait de naître avec trois. La rotatio
 `/anim void` tirait donc dans un sac trois fois plus petit, et la douzième famille était
 la seule à ne pas tenir son rang.
 
-Deux signatures de plus, `HORIZON_GATE` **44** et `NULL_LATTICE` **45**. Les
+Deux signatures de plus, `HORIZON_GATE` **44** et `NULL_LATTICE` **45** (renommee
+`CHAIN_COLLAPSE` en T392, §52 — l'alias historique est conserve a l'enregistrement). Les
 identifiants 1 à 43 étaient tous pris, sans trou : les deux entrées vont **en fin
 d'énumération**, comme `TEMPEST_EYE` avant elles, parce que `ordinal()` sert de sel de
 rendu et qu'une insertion au milieu décalerait le sel de tout ce qui suit.
@@ -3373,6 +3374,9 @@ verbes que le Vide peut tenir et que personne d'autre ne tient :
 | 34 | Faille du néant | **TRIE** | une ligne, pas un disque |
 | **44** | **Porte d'horizon** | **EXPULSE** | sort les corps de la zone, en étoile |
 | **45** | **Constellation nulle** | **LIE** | ce qui touche un nœud touche tous les nœuds |
+
+*(45 a ete entierement refaite en T392 : voir §52. Elle s'appelle desormais
+**l'Effondrement en chaine** et elle **PROPAGE**.)*
 
 La porte est l'**exact inverse** de la sphère, et c'est la raison de la garder : deux
 outils opposés sur la même famille donnent au joueur une décision à prendre. La trame est
@@ -3869,3 +3873,202 @@ mesure 1,80 et non plus 1,95 — c'est lui qui justifie le chiffre.
 * sur un **bloc à demi-hauteur** (dalle, escalier) pour chacune des cinq : rien ne doit
   s'enfoncer dans la marche ;
 * F3+T pendant qu'une signature est à l'écran.
+
+## §52 — T392 · VIDE : le dragon arrive, la cinquième signature est jetée et refaite, et la texture de portail quitte la vitre
+
+Cette section répond à quatre reproches précis portés sur l'aperçu T391. Aucun n'était
+une question de goût ; tous les quatre décrivaient une **chose qu'on ne pouvait pas lire
+à l'écran**, ce qui est le seul critère qui vaille ici.
+
+### 1. Une texture de portail, oui — une fenêtre partout, non
+
+Le reproche : *« on a bien la texture de portail dans les cinq, mais pas en portail
+partout »*. Il est juste, et il désigne une faute de méthode. T391 avait levé la règle
+« pas de fenêtre dans une figure sans intérieur », puis l'avait appliquée **cinq fois sur
+cinq** — une ouverture ovale dans chaque animation. Cinq figures très différentes
+finissaient par se ressembler par leur accessoire commun.
+
+La règle est donc reformulée, et elle tient en une phrase : **une fenêtre pour une figure
+qui ENCADRE un vide, des cubes pour une figure qui en CONTIENT.**
+
+| | support | pourquoi |
+|---|---|---|
+| Sphère de distorsion | **fenêtre** 0,94 | l'horizon encercle un trou : il y a un cadre |
+| Prisme du dragon | **9 cubes d'abysse** | un cristal a un contenu, pas une vitre |
+| Faille du néant | **fenêtre** 0,80 | deux lèvres encadrent une déchirure |
+| Porte d'horizon | **fenêtre** 0,88 | l'anneau au sol encadre la mare |
+| Effondrement en chaîne | **jusqu'à 85 cubes** | des implosions, donc des volumes |
+
+Ce que ce tableau cache, et qui est le point technique de la section : **le core shader
+ne fait aucune différence entre les deux cas**. `rendertype_end_portal` calcule ses
+coordonnées de texture à partir de la position **à l'écran** du fragment
+(`texProj0 = projection_from_position(gl_Position)` dans le vertex shader de vanilla), pas
+d'un UV de sommet ni d'une projection de face. Il est donc indifférent à la géométrie
+qu'on lui donne : la même passe remplit une ouverture de trois mètres et un cube de quatre
+centimètres. `VoidPortalFx` gagne pour cela un **mode cube** (`queueCube`, tampons
+`CX/CY/CZ/CH/CSPIN`, plafond `MAX_CUBES = 320`, primitive à six faces, zéro allocation par
+image) à côté de son mode fenêtre, et rien d'autre ne change dans le pipeline.
+
+**Corollaire visuel, et il est contre-intuitif.** Un cube de portail seul n'a pas de bord :
+sur fond clair il n'est qu'une tache de ciel étoilé sans contour. On lui pose donc
+derrière une **monture voxel `NOTHING` à ×1,15-1,20**, invisible de face, qui lui rend une
+arête. C'est le même raisonnement que le liseré violet des masses sombres — *le noir pur
+est invisible sur fond noir* — appliqué à l'envers.
+
+### 2. L'épée : des cubes de portail autour de la lame
+
+Demande directe, et elle découle de ce qui précède. `WeaponBladeVisualRenderer` pose
+maintenant **quatorze cubes d'abysse** autour de toute arme portant un effet du Vide, en
+plus du glint rose `0xFF3FD8`.
+
+* **Pourquoi c'est possible dans le repère de l'item** : voir plus haut. Le shader lit
+  l'écran. Il ne sait pas, et n'a pas besoin de savoir, qu'on l'appelle dans la matrice de
+  la main et non dans celle du monde.
+* **Où ils s'accrochent** : à des nœuds du tranchant, pris en sautant dans la liste selon
+  **l'angle d'or**, pour qu'ils se répartissent sur toute la lame au lieu de s'agglutiner
+  au talon.
+* **Comment ils bougent** : une lissajous de périodes **incommensurables** (0,61 contre
+  0,83). Une figure de périodes rationnelles se referme, et l'œil finit par voir la
+  boucle ; celle-ci ne se referme jamais. L'écart à l'ancre reste entre **4 et 11
+  centièmes** d'unité de modèle — *collés ou presque*, jamais un nuage détaché.
+* **Où ils sont dessinés** : **après** toutes les couches voxel, jamais entre deux. Deux
+  `RenderType` non « fixed » entrelacés sur la même `BufferSource` remontent en
+  `Not building!` — piège déjà payé.
+
+### 3. Le Prisme du Dragon : il manquait le dragon
+
+Le reproche était net : *« on comprend pas ce qu'il se passe et le dragon est absent »*.
+Les deux moitiés tenaient ensemble. La figure montrait un octaèdre qui tirait sept rayons
+réfractés — une belle mécanique optique, mais **sans personne pour l'actionner**, donc une
+action sans sujet, donc illisible. Et le titre promettait un dragon.
+
+Il y a maintenant un dragon, et **c'est lui qui tire**. Le cristal n'est plus l'acteur :
+il est le prisme qui découpe le souffle. Deux objets, deux rôles.
+
+* **L'ossature** est une courbe paramétrée par `u ∈ [0,1]`, museau à 0, queue à 1. Le corps
+  **traîne** derrière la tête avec un retard angulaire proportionnel à `u` : c'est ce qui
+  donne le serpentement, et c'est ce qu'un corps tourné en bloc ne donne jamais. Ce retard
+  est **déduit** de la longueur voulue (`lag = DRAGON_LEN / rayon`) et non écrit en dur —
+  la première version portait un 0,72 arbitraire qui donnait un dragon de deux blocs,
+  **plus court que ses propres ailes**.
+* **Le corps est une cage**, six lisses sur la section, et non un tube plein. Un corps
+  plein de cette taille n'a pas de silhouette, il a une masse ; et dans cette famille le
+  contour se lit mieux que la masse (le dôme plein était déjà devenu un treillis en T389).
+* **Les ailes** sont le triangle **épaule → poignet → hanche** : bord d'attaque en Bézier
+  quadratique (épaule, coude relevé, poignet), quatre nervures rayonnant du poignet, bord
+  de fuite qui ferme le triangle, et une griffe au poignet. L'altitude du poignet **est**
+  le battement.
+* **La gueule et les yeux** chauffent une demi-seconde avant chaque tir : on sait qu'il va
+  souffler avant qu'il souffle. Au tick 150, à la fracture, il rugit.
+
+**Deux erreurs de méthode, consignées parce qu'elles se reproduiront.** La première
+version des ailes était un peigne plat, pour deux raisons sans rapport avec le dessin :
+`segment()` **plafonne à 26 cubes**, si bien qu'une nervure d'un mètre quatre-vingt
+demandée au pas de 0,030 recevait un pas réel de 0,069 — des pointillés ; et l'aile était
+**horizontale**, or vue d'une caméra basse un plan horizontal est un trait. Les longues
+pièces sont désormais tracées par boucles explicites au pas calculé, et l'aile est
+dressée. La deuxième : les membranes avaient été peintes en `NOTHING` (`0x0E0216`) sur un
+fond à `0x05040d`. Du noir sur du noir. Troisième fois que ce piège est payé.
+
+### 4. La Faille du Néant : rendre les coups visibles
+
+Le reproche : *« trop simple, pas assez d'effets spectaculaires, on ne voit pas les
+moments de dégâts »*. Les neuf aspirations du serveur existaient déjà à l'image, mais
+elles ne montraient que de la poussière qui glisse : **rien ne disait « ici, maintenant,
+ça frappe »**. Trois objets s'ajoutent donc sur le tick exact, à trois échelles de temps
+différentes — c'est l'étagement qui fait lire un coup, pas l'intensité.
+
+1. **La décharge**, 4 frames : cinq arcs sautent d'une lèvre à l'autre, en travers de la
+   fente, avec une déviation aléatoire par tronçon. C'est l'éclair du coup.
+2. **La bouche qui claque**, 10 frames : les deux lèvres se rapprochent d'un coup sec puis
+   reviennent. C'est ce mouvement qui rend l'aspiration crédible — quelque chose a avalé.
+3. **Le chiffre**, permanent : une barre au sol **par aspiration subie**, et elle reste. Au
+   neuvième coup la rangée est pleine. Le joueur peut **compter** ce qu'il a pris ; aucune
+   autre signature du dossier ne le permet.
+
+### 5. La Porte d'Horizon : des montants continus et vivants
+
+Deux reproches, un seul défaut. *« Supprimer les pixels isolés »* : les montants étaient
+tracés **au pas de 0,115 bloc avec des cubes de 1,4 centimètre**. Un pas plus grand que le
+cube donne un pointillé, quoi qu'on fasse par ailleurs ; la seule correction possible est
+arithmétique. Le pas descend à **0,026**, strictement sous la taille du cube, et les cubes
+se recouvrent : le montant est un trait plein. Ils sont du même coup **affinés**, pour ne
+pas retomber dans la cage opaque de T390 qui masquait la mare.
+
+*« Mouvements naturels »* : seize montants qui ondulent en phase font un rideau tiré par un
+fil. Chacun reçoit donc **sa** phase, **sa** fréquence et **sa** vitesse de dérive, tirées
+du sel. L'ondulation est **nulle au pied** — le montant est planté dans le sol — et
+maximale en haut, où rien ne le retient. Enfin une **crête vive remonte** chaque montant en
+boucle : sans elle, une ondulation ne dit pas dans quel sens le courant va. Le nombre de
+tronçons passe de 10 à 22, parce que dix cordes rendent une courbe anguleuse dès que la
+déviation devient forte.
+
+### 6. L'Effondrement en Chaîne remplace la Constellation Nulle
+
+La cinquième signature est **jetée entièrement** — titre et animation. Ce qui suit a été
+conçu dans l'ordre demandé : d'abord ce qui se passe en jeu, puis les dégâts, puis les
+mouvements, puis les sons. L'image vient en dernier, et elle ne fait que transcrire.
+
+**La mécanique, et elle n'existe nulle part ailleurs dans le mod.** Un seul ennemi est
+marqué. Deux secondes plus tard il implose, et l'implosion marque **le corps le plus proche
+encore vivant**, qui implose à son tour.
+
+* chaque maillon frappe **×1,35 du précédent** : `base · 0,70 · 1,35^profondeur` ;
+* le délai se raccourcit de cinq frames à chaque fois, de 40 à 14 : **la chaîne s'emballe** ;
+* six corps relayés mènent à une **détonation** de `base · 0,90 · (maillons+1)` sur
+  `2,0 + 0,30 · chaîne` blocs — de loin le plus gros chiffre de la famille ;
+* une **cible isolée** ne trouve aucun relais à 5,5 blocs : la chaîne meurt au premier
+  maillon, repli à `base · 0,87`, **deux maillons au maximum**, signature faible.
+
+**C'est voulu, et c'est tout l'intérêt.** Les quatre autres signatures se moquent de
+l'espacement des ennemis ; celle-ci est la seule du mod dont la puissance dépende de la
+**densité et de la disposition** des corps. Elle récompense le joueur qui a d'abord groupé
+ses cibles — avec la Sphère de Distorsion, par exemple, qui **rassemble**. Deux
+signatures de la même famille se répondent enfin.
+
+**Garde-fous.** Huit maillons au plafond, et un corps déjà brûlé (`Set<Integer> burned`) ne
+peut pas être repris : sans quoi deux corps côte à côte se renverraient la chaîne
+indéfiniment. Une victime qui meurt en route ne casse rien — `chainDetonate` est appelée
+quand même. La récursion passe par `TestProcedure.schedule`, et **on ne retient que des
+identifiants**, jamais des références d'entité.
+
+**Le son est le compte à rebours.** Trois `amethyst_block.chime` avant chaque implosion, à
+la hauteur `0,62 + rang·0,20 + profondeur·0,05`. Le tic monte d'un cran à chaque maillon
+pendant que le rythme se serre : **le joueur entend la chaîne prendre, et il entend si elle
+meurt**. À la détonation, `respawn_anchor.deplete` — seul `Holder` de la famille, donc seul
+à réclamer `.value()` — doublé d'un `anvil.land` grave.
+
+**L'image, en trois objets séparés, chacun lisible seul.**
+
+1. **Le circuit** : un fil court d'une station à la suivante en huit ticks, tête vive
+   devant, puis reste et **pulse**. Les sept départs tombent aux ticks **30, 70, 105, 135,
+   160, 180, 195** — l'horaire du serveur transcrit, pas approché.
+2. **Les stations armées** : un anneau de cubes d'abysse dont **le rayon est le temps qui
+   reste**, un cercle au sol, et trois battements d'onde.
+3. **Les stations tirées** : coquille en spirale de Fibonacci qui tombe en `(1−âge)³`,
+   flash en trois grands cercles, onde au sol, **cratère persistant**, quatre débris
+   balistiques. Le cratère est la mémoire de la chaîne : à la fin, **le sol raconte le
+   trajet**.
+4. **La finale** : vidange du circuit à rebours sur dix ticks, puis la sphère et seize
+   colonnes d'éjection.
+
+**Les stations ne se superposent jamais**, et ce n'est pas une suite de positions choisies
+à la main : elles sont posées en **phyllotaxie** — angle d'or `i · 2,39996`, rayon en
+`1,55 · √i`, la loi des graines d'un tournesol. C'est la seule disposition qui garantisse
+sept points distincts et lisibles quel que soit le sel.
+
+### Ce qu'il faut regarder en jeu
+
+Le banc de rendu ne prouve rien : il ignore le tamis de densité, le voile d'alpha et le
+plafond de sept mille cubes par image.
+
+* **Le cas décisif de la chaîne** : six mobs **serrés**, puis les mêmes six **dispersés**.
+  L'écart de puissance doit s'entendre avant de se voir.
+* `/dlbvfx play 27` devant un mur clair : le dragon doit se lire **en silhouette**, et on
+  doit voir d'où part chaque faisceau.
+* `/dlbvfx play 34` : compter les barres au sol, elles doivent être neuf à la fin.
+* `/dlbvfx play 44` en tournant autour : aucun montant ne doit être pointillé, sous aucun
+  angle, et la mare doit rester visible entre eux.
+* Une arme du Vide en main, immobile : les quatorze cubes doivent **rester collés** à la
+  lame, et leur ronde ne doit pas se refermer.
+* `F3+T` pendant qu'une signature tourne, et `/dlbvfx stop`.

@@ -155,7 +155,7 @@ public final class WeaponVfxMotion {
             // T389 : la porte reste BASSE et centrée (c'est un sol qui s'ouvre), la trame
             // est LARGE et sans centre (elle appartient au groupe, pas au porteur).
             case HORIZON_GATE -> p(SHAPE_VORTEX, 3, -0.60f, 0.00f, 1.05f, 0.038f);
-            case NULL_LATTICE -> p(SHAPE_PRISM, 7, 0.00f, 0.40f, 1.45f, 0.030f);
+            case CHAIN_COLLAPSE -> p(SHAPE_PRISM, 7, 0.00f, 0.40f, 1.45f, 0.030f);
             case CHAOS_KALEIDO_LOOP -> p(SHAPE_PRISM, 2, 2.60f, 0.00f, 1.25f, 0.100f);
             case ENTROPY_SPHERE -> p(SHAPE_ORBIT, 3, -1.50f, 0.00f, 1.15f, 0.040f);
             case BIG_BANG_SCAR -> p(SHAPE_CROSS_STAR, 5, 1.40f, 0.20f, 1.50f, 0.060f);

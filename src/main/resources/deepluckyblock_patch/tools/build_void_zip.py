@@ -95,7 +95,7 @@ CE QUE CONTIENT CETTE ARCHIVE
   src/main/java/...                  les sources, a copier dans ton projet
   src/.../FIXES_MCREATOR/...         la copie miroir, identique fichier pour fichier
   src/main/resources/assets/...      les assets du shader, A LEUR EMPLACEMENT REEL
-  src/.../WATER_SIGNATURES.md        le journal technique - le Vide est aux SS 48, 49, 50
+  src/.../WATER_SIGNATURES.md        le journal technique - le Vide est aux SS 48 a 52
   src/.../tools/                     les outils de controle et le miroir JS de l'apercu
 
 CE QU'ELLE NE CONTIENT PAS, ET POURQUOI
@@ -179,7 +179,7 @@ TESTS EN JEU
   /dlbvfx play 27   Prisme du Dragon         - il DISTRIBUE
   /dlbvfx play 34   Faille du Neant          - elle TRIE
   /dlbvfx play 44   Porte d'Horizon          - elle EXPULSE
-  /dlbvfx play 45   Constellation Nulle      - elle LIE
+  /dlbvfx play 45   L'Effondrement en Chaine - elle PROPAGE
   /dlbvfx stop
 
   Jouer les cinq DEVANT UN MUR DE PIERRE CLAIRE : c'est le cas qui a motive la fenetre

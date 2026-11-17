@@ -261,7 +261,7 @@ public final class WeaponWorldVfxManager {
                 || fx == WeaponVisualEffectId.DRAGON_CHAOS_PRISM
                 || fx == WeaponVisualEffectId.NULL_RIFT_FISSURE
                 || fx == WeaponVisualEffectId.HORIZON_GATE
-                || fx == WeaponVisualEffectId.NULL_LATTICE;
+                || fx == WeaponVisualEffectId.CHAIN_COLLAPSE;
     }
 
     /** Les cinq signatures refondues du sang (T379), seules à passer par BloodSignatureVfx. */
@@ -780,7 +780,7 @@ public final class WeaponWorldVfxManager {
             case DRAGON_CHAOS_PRISM -> 190;   // descente + trait + sept faisceaux + ailes + eclat
             case NULL_RIFT_FISSURE -> 170;    // felure + amande + crevasse + autre cote + cicatrice
             case HORIZON_GATE -> 180;         // trace + tore + membrane + tore haut + transit + fermeture
-            case NULL_LATTICE -> 200;         // eveil des noeuds + mise en tension + convergence + rupture
+            case CHAIN_COLLAPSE -> 200;       // amorcage + maillons en cascade + detonation finale
             // T379-BLOOD : les cinq titres du sang etaient la derniere famille sous la
             // seconde. CRIMSON_SIPHON tenait 16 ticks, les quatre autres tombaient sur le
             // « default -> 14 » : impossible d'y lire une guillotine, encore moins un coeur
@@ -2089,7 +2089,7 @@ public final class WeaponWorldVfxManager {
                 case 1 -> WeaponVisualEffectId.DRAGON_CHAOS_PRISM;
                 case 2 -> WeaponVisualEffectId.NULL_RIFT_FISSURE;
                 case 3 -> WeaponVisualEffectId.HORIZON_GATE;
-                default -> WeaponVisualEffectId.NULL_LATTICE;
+                default -> WeaponVisualEffectId.CHAIN_COLLAPSE;
             };
         }
         if (deepluckyblock.util.AnimFamily.WIND.equals(canonical)) {
@@ -4771,7 +4771,7 @@ public final class WeaponWorldVfxManager {
             case DRAGON_CHAOS_PRISM -> VoidSignatureVfx.PRISM;
             case NULL_RIFT_FISSURE -> VoidSignatureVfx.RIFT;
             case HORIZON_GATE -> VoidSignatureVfx.GATE;
-            case NULL_LATTICE -> VoidSignatureVfx.LATTICE;
+            case CHAIN_COLLAPSE -> VoidSignatureVfx.CHAIN;
             default -> -1;
         };
         if (voidSignature >= 0) {

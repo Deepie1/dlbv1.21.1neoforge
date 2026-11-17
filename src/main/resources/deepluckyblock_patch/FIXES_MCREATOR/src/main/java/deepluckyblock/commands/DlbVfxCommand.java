@@ -172,7 +172,7 @@ public final class DlbVfxCommand {
         if (fx == WeaponVisualEffectId.DRAGON_CHAOS_PRISM) return 224; // impact 30 + 190 + marge
         if (fx == WeaponVisualEffectId.NULL_RIFT_FISSURE) return 204;  // impact 30 + 170 + marge
         if (fx == WeaponVisualEffectId.HORIZON_GATE) return 214;       // impact 30 + 180 + marge
-        if (fx == WeaponVisualEffectId.NULL_LATTICE) return 234;       // impact 30 + 200 + marge
+        if (fx == WeaponVisualEffectId.CHAIN_COLLAPSE) return 234;     // impact 30 + 200 + marge
         return DUMMY_NEXT_EFFECT_TICK;
     }
 

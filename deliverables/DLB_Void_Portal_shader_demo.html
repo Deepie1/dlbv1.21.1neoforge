@@ -89,10 +89,14 @@ pre{margin:0;padding:0 12px 12px;overflow:auto;max-height:260px;font-size:10.5px
   <code>VoidPortalFx</code> : une ellipse de 22 secteurs, dans l’un des <b>trois plans</b>
   ci-dessus, aux cotes que la figure lui impose.</p>
 
-  <p class="refs"><b>Trois fenêtres, pas cinq.</b> Le Prisme et la Trame n’en ont pas : la
-  fenêtre répare les figures qui encadrent un grand vide, et ces deux-là n’ont pas
-  d’intérieur. Un trou sans lèvre pour l’encadrer n’est qu’un disque noir — c’est-à-dire
-  un objet, exactement ce que la règle du bord interdit.</p>
+  <p class="refs"><b>Trois fenêtres, deux volumes.</b> Le Prisme et l’Effondrement n’ont pas
+  de fenêtre : ils portent la même texture sur des <b>cubes d’abysse</b>. La raison est le
+  retour reçu sur l’aperçu précédent — coller une ouverture à chaque animation donnait
+  cinq fois la même image. Une fenêtre répare une figure qui encadre un grand vide ; un
+  cube convient à une figure qui en <i>contient</i>. Le shader ne fait aucune différence
+  entre les deux : il tire ses coordonnées de la position à l’écran, donc la même passe
+  remplit une ouverture de trois mètres et un cube de quatre centimètres collé à une lame.
+  <b>C’est exactement ce qui permet d’en poser sur l’épée</b>, autour du glint.</p>
 
   <p class="refs warn"><b>La seule chose à vérifier ici :</b> déplacez la <b>visée</b>. La
   fenêtre glisse sur l’écran — et le champ d’étoiles, lui, ne la suit pas. C’est toute la

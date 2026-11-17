@@ -128,19 +128,28 @@ public enum WeaponVisualEffectId {
      * tore incliné deux blocs plus haut, et des fragments de monde qui tombent dans l'un
      * pour ressortir de l'autre.
      *
-     * <p>Créée le 4 novembre 2026 avec {@link #NULL_LATTICE} : le Vide n'avait que trois
+     * <p>Créée le 4 novembre 2026 avec {@link #CHAIN_COLLAPSE} : le Vide n'avait que trois
      * signatures là où le Sang en a cinq. Celle-ci est la seule forme <b>fermée à trou</b>
      * de la famille — une sphère n'a pas d'autre côté, un anneau si.</p>
      */
     HORIZON_GATE(44, Category.ELEMENT, 79, true, DeepElement.VOID),
     /**
-     * #45 Vide : constellation nulle — sept nœuds reliés par onze arêtes qui pendent en
-     * chaînette, se tendent une à une, convergent, puis se rompent par le milieu.
+     * #45 Vide : effondrement en chaîne — un seul corps est amorcé, il implose au bout de
+     * son compte à rebours, et l'implosion amorce le corps vivant le plus proche, qui
+     * implose à son tour. La chaîne court de victime en victime, chaque maillon frappant
+     * plus fort et plus vite que le précédent.
      *
-     * <p>Seul objet <b>non centré</b> du Vide, et le seul capable de dire visuellement que
-     * plusieurs corps sont solidaires : c'est la signature de groupe de l'élément.</p>
+     * <p><b>Remplace la « constellation nulle » du 4 novembre 2026</b>, dont la trame de
+     * sept nœuds et onze arêtes ne se lisait ni comme une constellation ni comme un lien :
+     * des fils épais et des positions inventées, pour une mécanique (lier) déjà couverte par
+     * la Sphère.</p>
+     *
+     * <p>Seule signature <b>SÉQUENTIELLE</b> du mod : les quatre autres du Vide traitent
+     * leurs victimes en parallèle, celle-ci les traite l'une après l'autre et laisse la
+     * victime courante désigner la suivante. Sa puissance dépend donc de la <b>densité et de
+     * l'espacement</b> des ennemis, et non de leur nombre brut.</p>
      */
-    NULL_LATTICE(45, Category.ELEMENT, 82, true, DeepElement.VOID);
+    CHAIN_COLLAPSE(45, Category.ELEMENT, 82, true, DeepElement.VOID);
 
     public enum Category {
         EDGE_SHARP,
@@ -297,9 +306,12 @@ public enum WeaponVisualEffectId {
         register(ECLIPSE_VEIL, "eclipse_veil", "nightfall", "umbral_veil", "blackout");
         // #34 Vide
         register(NULL_RIFT_FISSURE, "null_rift", "fissure", "nullification", "unmaking");
-        // #44-#45 Vide (T389) : la porte et la trame portent la rotation du Vide à cinq.
+        // #44-#45 Vide (T389) : la porte et la chaîne portent la rotation du Vide à cinq.
         register(HORIZON_GATE, "horizon_gate", "event_horizon", "void_gate", "singularity_gate");
-        register(NULL_LATTICE, "null_lattice", "void_lattice", "entanglement", "null_web");
+        // Les alias historiques de la trame restent branchés : une arme déjà tirée avec
+        // `null_lattice` doit continuer de jouer quelque chose plutôt que de ne rien jouer.
+        register(CHAIN_COLLAPSE, "chain_collapse", "null_lattice", "void_lattice",
+                "entanglement", "null_web", "cascade");
         // #35-#37 Chaos (les 4 nouveaux enchantements + l'historique `chaos`)
         register(CHAOS_KALEIDO_LOOP, "chaos_entropy", "chaos", "kaleidoscope");
         register(ENTROPY_SPHERE, "chaos_nexus", "entropy_sphere", "discord");

@@ -160,6 +160,15 @@ public final class WeaponBladeVisualRenderer {
                     renderBladeVoxelEffect(vc, mat, tmp, stack, nodes, custom3dTrident,
                             fx, layer.level(), time + i * 1.35f, alphaMul);
                 }
+
+                // T392 : LES CUBES D'ABYSSE DE L'ARME DU VIDE. Dessinés APRÈS toutes les
+                // couches voxel, et pas entre deux : entrelacer deux RenderType non
+                // « fixed » sur la même BufferSource remonte en « Not building! ».
+                for (WeaponVisualEffectId.ResolvedLayer voidLayer : layers) {
+                    if (voidLayer.effect().element() != DeepElement.VOID) continue;
+                    renderVoidPortalCubes(bufferSource, mat, tmp, nodes, time);
+                    break;
+                }
             } catch (Throwable ignored) {
                 // Tolérance totale avec ImmediatelyFast / Sodium / Iris
             } finally {
@@ -168,6 +177,60 @@ public final class WeaponBladeVisualRenderer {
             }
         } finally {
             WeaponWorldVfxManager.endFrozenDetail(previousFrozen);
+        }
+    }
+
+    /**
+     * T392 — LES CUBES D'ABYSSE SUR L'ARME DU VIDE.
+     *
+     * <p>Le glint rose de la famille dit « cette arme est du Vide ». Il ne dit pas de quoi
+     * le Vide est fait. Ces quatorze cubes le disent : ce sont les mêmes que ceux des
+     * signatures, remplis par le même core shader {@code void_portal}, et on y voit les
+     * quinze couches d'étoiles défiler. L'arme a littéralement des morceaux d'abysse
+     * accrochés à elle.</p>
+     *
+     * <p><b>Pourquoi ça marche dans le repère de l'item.</b> Le shader du portail calcule
+     * ses coordonnées de texture à partir de la position À L'ÉCRAN du fragment, pas d'un UV
+     * de sommet ni d'une projection de face. Il est donc indifférent au repère dans lequel
+     * on l'appelle : le même appel sert pour une fenêtre à trente blocs et pour un cube de
+     * quatre centimètres collé à une lame.</p>
+     *
+     * <p><b>Le mouvement.</b> Chaque cube est ancré à un nœud du tranchant, pris en
+     * sautant dans la liste selon l'angle d'or pour qu'ils se répartissent sur toute la
+     * lame plutôt que de s'agglutiner. Autour de son ancre il décrit une petite lissajous
+     * de période irrationnelle (0,61 contre 0,83) : la figure ne se referme jamais, donc
+     * l'œil ne voit pas de boucle. L'écart reste entre 4 et 11 centièmes d'unité de
+     * modèle — « collé ou presque », comme demandé, jamais un nuage détaché.</p>
+     */
+    private static void renderVoidPortalCubes(MultiBufferSource bufferSource, Matrix4f mat,
+                                              Vector3f tmp, List<VoxelNode> nodes, float time) {
+        int count = nodes.size();
+        if (count <= 0) return;
+        VertexConsumer vc;
+        try {
+            vc = bufferSource.getBuffer(ModRenderTypes.voidPortal());
+        } catch (Throwable ignored) {
+            return;   // shader pas encore chargé, ou pile de rendu exotique
+        }
+        if (vc == null) return;
+
+        final int cubes = 14;
+        for (int i = 0; i < cubes; i++) {
+            // L'ancre : un nœud sur la lame, choisi par pas d'angle d'or dans la liste.
+            VoxelNode anchor = nodes.get((int) ((long) i * 0.61803399 * count) % count);
+            float phase = i * 2.39996f;
+            float swim = time * 0.55f + phase;
+            // Deux pulsations incommensurables : la trajectoire ne se referme jamais.
+            float spread = 0.055f + 0.052f * (0.5f + 0.5f * Mth.sin(time * 0.37f + phase));
+            float ox = Mth.cos(swim * 0.61f) * spread;
+            float oy = Mth.sin(swim * 0.83f) * spread * 0.72f;
+            float oz = Mth.sin(swim * 0.61f + 1.1f) * spread;
+            // La taille respire, mais jamais jusqu'à disparaître : un cube qui clignote
+            // ressemble à un défaut de rendu, pas à un effet.
+            float half = 0.0165f + 0.0075f * (0.5f + 0.5f * Mth.sin(time * 1.9f + phase * 1.7f));
+            VoidPortalFx.cube(vc, mat, tmp,
+                    anchor.x() + ox, anchor.y() + oy, anchor.z() + oz,
+                    half, swim * 0.9f);
         }
     }
 

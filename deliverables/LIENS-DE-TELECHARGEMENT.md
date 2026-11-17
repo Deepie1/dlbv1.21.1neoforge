@@ -6,134 +6,75 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 > **Si le navigateur sert une vieille version** (le CDN de GitHub garde les fichiers bruts en cache quelques minutes), remplacer `refs/heads/arena/605e67fb-dlbv1-21-1neoforge` par le SHA du commit — par exemple `raw/fa83a2f/…` pour la v1.3 — ou ajouter `?v=2` à la fin de l'adresse.
 
-## Vide — cinq signatures, quatre chorégraphies refaites · 4 novembre 2026 ⟵ **LOT COURANT**
+## Vide — le dragon, l'Effondrement en Chaîne, et des cubes de portail sur l'épée · 4 novembre 2026 ⟵ **LOT COURANT**
 
-- **Aperçu voxel + fenêtre d'abysse (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_preview.html?v=392
-- **Démo du shader (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Portal_shader_demo.html?v=392
-- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_src.zip?v=392
+- **Aperçu voxel + abysse (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_preview.html?v=393
+- **Démo du shader (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Portal_shader_demo.html?v=393
+- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_src.zip?v=393
 
-> **T391 — quatre chorégraphies refaites de zéro, et le sol remis à sa place.** Seule la
-> **Sphère de Distorsion** est conservée. Les quatre autres sont reconstruites à partir du
-> **titre** et du **gameplay serveur** : chaque battement de l'image tombe sur le tick où
-> le listener frappe réellement.
+> **T392 — les quatre reproches de l'aperçu précédent, un par un.**
 >
-> **Le Prisme du Dragon distribue, donc il disperse.** Sept rayons traversés par
-> `refract()` — Snell-Descartes complet, réflexion totale comprise — dans un octaèdre
-> résolu par `octaHit()`. L'indice monte de **1,14 à 1,62** : le violet dévie plus que le
-> rouge, et l'éventail s'ouvre tout seul. **Aucun des sept angles n'est écrit.** On voit
-> arriver sept fils parallèles et sortir sept faisceaux divergents, un toutes les 9 frames
-> comme le serveur, chacun laissant une couronne là où il touche le sol.
+> **1. La texture de portail n'est plus partout une fenêtre.** Coller une ouverture ovale
+> dans les cinq animations les faisait se ressembler par leur accessoire commun. La règle
+> tient maintenant en une phrase : **une fenêtre pour une figure qui ENCADRE un vide, des
+> cubes pour une figure qui en CONTIENT.** Trois fenêtres — Sphère, Faille, Porte — et
+> deux volumes de **cubes d'abysse** — Prisme (9 cubes), Effondrement (jusqu'à 85).
+> C'est le même core shader : il tire ses coordonnées de la position à l'écran, donc il
+> remplit indifféremment une ouverture de trois mètres et un cube de quatre centimètres.
 >
-> **La Faille du Néant trie, donc c'est un plan.** Ce n'est plus une amande au-dessus de la
-> victime mais une **déchirure de 8,6 blocs couchée en travers du chemin de l'arme** — le
-> corridor perpendiculaire du listener. Profil de **Griffith** `√(1−u²)`, la forme qu'une
-> fissure prend vraiment dans un solide élastique ; neuf fibres s'étranglent et **cassent
-> une par une** ; les neuf aspirations tirent vers le **plan** et non vers le centre.
+> **2. Le Prisme a son dragon, et c'est lui qui tire.** La figure montrait un octaèdre
+> tirant sept rayons réfractés : une belle mécanique, mais **sans personne pour
+> l'actionner**. Un dragon tourne maintenant autour du cristal — ossature en cage de six
+> lisses, crête dorsale, ailes en triangle épaule-poignet-hanche avec bord d'attaque en
+> Bézier, quatre nervures et une griffe. Sa gueule et ses yeux **chauffent une
+> demi-seconde avant chaque tir**, et son souffle va de sa gueule à la face du cristal.
+> Le cristal n'est plus l'acteur : il est le prisme qui découpe le souffle.
 >
-> **La Porte d'Horizon expulse, donc c'est un entonnoir.** Anneau tracé au sol à 2,12 aux
-> ticks 0/5/10/15 ; **cage lentillée** de seize montants déviés en −k/r ; sept transits en
-> **vraies paraboles balistiques** dont l'azimut tourne d'un septième de tour à chaque
-> passage — au bout des sept, l'étoile du serveur est dessinée.
+> **3. La Faille montre enfin ses coups.** Trois objets tombent sur le tick exact, à trois
+> échelles de temps : une **décharge** qui saute d'une lèvre à l'autre (4 frames), les
+> deux lèvres qui **claquent** puis reviennent (10 frames), et une **barre au sol par
+> aspiration subie, qui reste**. Au neuvième coup la rangée est pleine : le joueur peut
+> compter ce qu'il a pris.
 >
-> **La Constellation Nulle lie, donc elle est simulée.** Sept masses, onze ressorts,
-> **240 pas d'intégration rejoués depuis zéro à chaque image**. Une arête molle pend en
-> vraie **chaînette** (`cosh`), une arête tendue vibre en **onde stationnaire** — le passage
-> de l'un à l'autre n'est écrit nulle part, il sort du rapport tension/longueur.
+> **4. Les montants de la Porte sont continus et vivants.** Le défaut était arithmétique :
+> un pas de 0,115 bloc avec des cubes de 1,4 cm donne un pointillé, quoi qu'on fasse par
+> ailleurs. Le pas descend à **0,026**, sous la taille du cube, et les cubes se
+> recouvrent. Chaque montant reçoit en outre **sa** phase et **sa** fréquence — seize
+> colonnes en phase font un rideau, seize colonnes déphasées font de l'air qui tombe —
+> avec une **crête vive qui remonte** pour donner le sens du courant.
 >
-> **La texture de portail à couches est maintenant dans les CINQ.** La Faille reçoit la
-> sienne **dans la fente** — plan des lèvres, demi-axes pris sur la déchirure, donc elle
-> respire avec elle et s'écrase en trait quand on se place dans l'axe du coup. Un
-> **quatrième mode de plan** a été ajouté pour le Prisme : sa fenêtre est la **tranche
-> équatoriale** du cristal, elle bascule et tourne avec lui. La Trame reçoit sa **cellule
-> centrale**.
+> **La cinquième signature est jetée et refaite : L'EFFONDREMENT EN CHAÎNE** (#45,
+> `CHAIN_COLLAPSE`, 10 s, elle **PROPAGE**). Un seul ennemi est marqué. Deux secondes plus
+> tard il implose, et l'implosion marque **le corps le plus proche**, qui implose à son
+> tour. Chaque maillon frappe **×1,35 du précédent** et le délai tombe de 40 à 14
+> frames : la chaîne s'emballe. Six corps relayés mènent à une **détonation** de
+> `base·0,90·(maillons+1)` — de loin le plus gros chiffre de la famille. Une **cible
+> isolée** ne trouve aucun relais : la chaîne meurt au premier maillon, deux maillons au
+> maximum, signature faible.
 >
-> **Le sol.** `GROUND_Y` valait −0,86, le quadrillage de l'aperçu −0,47 et le mannequin
-> −0,47 : **43 cm d'écart**, et tout ce qui touche terre était peint sous le sol dessiné.
-> Le repli est désormais **−0,90** — l'origine d'une signature est le **torse**, donc un
-> corps d'1,80 a les pieds 0,90 plus bas — et les trois consommateurs lisent la **même**
-> constante.
+> **C'est la seule signature du mod dont la puissance dépende de l'espacement des
+> ennemis**, et c'est voulu : elle récompense le joueur qui a d'abord groupé ses cibles —
+> avec la Sphère de Distorsion, par exemple, qui **rassemble**. Deux signatures de la même
+> famille se répondent enfin.
 >
-> **À essayer en jeu.** `/dlbvfx play 27` devant un mur de pierre claire (les sept faisceaux
-> doivent diverger) ; `/dlbvfx play 34` dans l'axe de l'attaque puis de côté ; `/dlbvfx play
-> 44` accroupi au ras du sol ; `/dlbvfx play 45` sur un groupe de 5 ; et chacune des cinq
-> sur une **dalle** ou un **escalier**, pour vérifier que rien ne s'enfonce dans la marche.
-
-> **T390 — la repeinte, et le trou qui n'était pas là.** Deux livraisons en une, parce que
-> c'est le même défaut vu de deux côtés.
+> **Le son est le compte à rebours.** Trois `amethyst_block.chime` avant chaque implosion,
+> hauteur `0,62 + rang·0,20 + profondeur·0,05`. Le tic monte d'un cran à chaque maillon
+> pendant que le rythme se serre : on **entend** la chaîne prendre, et on entend si elle
+> meurt. Les sept stations sont posées en **phyllotaxie** (angle d'or, rayon en √rang) :
+> elles ne se superposent jamais, quel que soit le sel.
 >
-> **1. La palette.** Les douze constantes du Vide sortaient d'un cyan choisi en T388 par
-> crainte de marcher sur le violet de l'Ombre. Elles viennent maintenant des quatre gammes
-> retenues pour l'élément : **Deep Abyssal Void** `#050D25`, le **charbon**,
-> **Call of the Void** (`#0e0216` → `#9518e2`) et la série **bleu/mauve délavée**
-> (`#282077` → `#E2BFAE`). Règle appliquée : **la luminance de chaque rôle est conservée,
-> seule la teinte change** — l'échelle monte 8 < 13 < 21 < 44 < 62 < 84 < 198 < 255, et le
-> script de repeinte refuse d'écrire si elle cesse d'être monotone.
+> **L'épée du Vide a ses cubes de portail.** Quatorze petits cubes d'abysse flottent
+> autour de la lame, en plus du glint rose. Ils s'accrochent à des nœuds du tranchant
+> choisis selon **l'angle d'or**, et décrivent une lissajous de périodes
+> **incommensurables** (0,61 contre 0,83) : la figure ne se referme jamais, donc l'œil ne
+> voit pas de boucle. L'écart reste entre 4 et 11 centièmes d'unité de modèle —
+> **collés ou presque**, jamais un nuage détaché.
 >
-> **Une exception, la lèvre, et elle a coûté une passe pour rien.** Première tentative :
-> `#C3C8E8`, luminance 202, c'est-à-dire l'ancien cyan à la teinte près. Rendu au banc :
-> lisible, et **sans identité** — un blanc sale. À cette luminance aucune des quatre gammes
-> n'offre de couleur chromatique, donc conserver la luminance revenait à **ne rien
-> repeindre**. Seconde passe : la lèvre prend le **violet néon `#9518E2`** et descend de
-> 189 à 84. Ce qui porte une figure n'est pas l'écart lèvre/fond mais l'écart
-> **lèvre/corps** : 84 contre 21, soit quatre fois.
+> **À vérifier en jeu, et c'est le cas décisif** : six mobs **serrés**, puis les mêmes six
+> **dispersés**. L'écart de puissance doit s'entendre avant de se voir.
 >
-> Deux invariants : les tons de **matière étrangère** (`#D8D2A4` / `#8A855F`) ne bougent
-> pas — ils sont le monde avalé, pas le vide ; et puisque le violet est désormais la
-> couleur de la maison, l'**autre côté** aperçu dans la fente passe au bleu ardoise.
-> *Réserve honnête :* l'Ombre tient `0x4D318E` / `0x7100A7`. Les deux familles restent
-> séparées par la luminance et par la forme, mais plus par la roue des couleurs.
->
-> **2. Le trou — un vrai core shader, le seul du mod.** Les cinq figures ne dessinent que
-> des **bords**, et un bord n'existe que si ce qu'il encadre est sombre : devant un mur de
-> pierre claire, l'anneau de la Porte d'Horizon encadrait de la pierre claire.
-> `void_portal` ouvre dans la figure une **surface opaque** remplie d'un ciel d'abysse —
-> quinze couches d'étoiles additives, tournées et translatées différemment, dont les
-> coordonnées de texture viennent de l'**écran** et non du modèle. Quand la tête tourne,
-> les étoiles **glissent**. C'est le procédé exact de `rendertype_end_portal`, repeint aux
-> gammes ci-dessus. La règle du bord n'est pas trahie : le shader ne dessine pas de
-> matière, il **remplace ce qu'on voit à travers**.
->
-> **3. La page d'aperçu exécute le shader, et elle a corrigé le shader.** Première
-> version : cinq disques face caméra, de rayon fixe. Branchée derrière les vraies figures,
-> la page a montré les deux erreurs en une capture. **La taille** — les rayons venaient de
-> l'emprise de la figure et non de son ouverture : l'horizon de la sphère monte à 1,10 et
-> recevait une fenêtre de 1,55, qui débordait de la lèvre. Un trou qui déborde redevient un
-> objet, avec sa silhouette à lui : le défaut qu'on croyait corriger était recréé un cran
-> plus loin. **L'orientation** — la Porte est un anneau posé au sol, et un disque vertical
-> planté dedans lisait comme une bulle flottante.
->
-> Il y a donc maintenant **trois fenêtres et trois plans**, et plus une seule cote en dur :
-> la sphère prend un disque face caméra à `warpHorizon(t) × 0,94`, la faille une ellipse
-> **dans le plan de ses lèvres** à `riftGape(t)`, la porte une **mare horizontale** à
-> `gateRing(t) × 0,88`. Les trois lisent les fonctions de forme de la figure elle-même, et
-> naissent, grandissent et meurent avec elle. Le Prisme et la Trame n'en ont pas : la
-> fenêtre répare les figures qui encadrent un grand vide, et ces deux-là n'ont pas
-> d'intérieur.
->
-> **Neuf fichiers nouveaux** : `void_portal.{json,vsh,fsh}`, `void_{sky,stars}.png`,
-> `ModShaders.java` (RegisterShadersEvent, bus MOD), `ModRenderTypes.java`
-> (`ShaderStateShard` + `MultiTextureStateShard`), `VoidPortalFx.java` (le disque face
-> caméra). Une seule ligne ajoutée dans `WeaponWorldVfxManager#impactVoidSignature`.
->
-> **Vérifié sans le jeu** : les deux programmes GLSL ont été portés mécaniquement en
-> GLSL ES 3.00 et exécutés dans Chromium, avec les vraies textures et la même géométrie —
-> compilation et rendu sans erreur, **6 %** de pixels allumés (luminance moyenne 16/255,
-> pic 107 : un champ d'étoiles, pas une purée laiteuse). Dans l'aperçu, la fenêtre est
-> composée **dans l'ordre du peintre** : 847 cubes derrière / 830 devant pour la sphère,
-> 436 / 506 pour la porte — ce qui passe derrière disparaît, y compris la moitié arrière de
-> la silhouette. Et la parallaxe est prouvée **sans bouger la caméra** : à deux niveaux de
-> zoom, le même carré de 40 × 40 pixels au centre de la mare rend une empreinte identique
-> au bit près, alors que le trou, lui, a presque doublé. Les étoiles sont accrochées à
-> l'écran, pas au disque.
->
-> **Tests en jeu :** `/dlbvfx play 26` · `27` · `34` · `44` · `45`, **devant un mur de
-> pierre claire** — c'est le cas qui motivait la fenêtre. Puis de nuit, puis dans l'eau.
-> Tourner autour d'une Porte ouverte : les étoiles doivent **glisser**, pas suivre le
-> disque. **F3+T** pendant qu'une signature est à l'écran : le shader doit se recharger
-> sans crash. Enfin, jouer une signature d'Ombre juste après une du Vide, pour juger la
-> réserve ci-dessus.
-> ZIP **1 251 935 o / 77 entrées**, aperçu **1 776 262 o**, démo **35 709 o**,
-> SHA-256 `d25adadcb727a15f…`.
+> Le banc de rendu ne prouve rien : il ignore le tamis de densité, le voile d'alpha et le
+> plafond de sept mille cubes par image. Seul le jeu tranche.
 
 ## Sang — cinq signatures · 17 novembre 2026
 
