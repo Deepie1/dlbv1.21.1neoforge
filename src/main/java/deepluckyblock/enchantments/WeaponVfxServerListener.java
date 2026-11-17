@@ -3710,7 +3710,7 @@ public final class WeaponVfxServerListener {
                 attacker.getX(), attacker.getY() + attacker.getBbHeight() * 0.75, attacker.getZ(),
                 8 + level * 6, 0.30, 0.40, 0.30, 0.01);
         sl.playSound(null, attacker.getX(), attacker.getY(), attacker.getZ(),
-                SoundEvents.GENERIC_DRINK.value(), SoundSource.PLAYERS, 0.45f, 0.70f + level * 0.12f);
+                SoundEvents.GENERIC_DRINK, SoundSource.PLAYERS, 0.45f, 0.70f + level * 0.12f);
     }
 
     /** Fondu d'entree du sang : on previent avant de frapper, comme pour la foudre et l'ombre. */
@@ -4110,7 +4110,7 @@ public final class WeaponVfxServerListener {
                             attacker.getX(), attacker.getY() + attacker.getBbHeight() * 0.75, attacker.getZ(),
                             8, 0.26, 0.35, 0.26, 0.01);
                 }
-                sl.playSound(null, vx, vy, vz, SoundEvents.GENERIC_DRINK.value(), SoundSource.PLAYERS,
+                sl.playSound(null, vx, vy, vz, SoundEvents.GENERIC_DRINK, SoundSource.PLAYERS,
                         0.50f, 0.62f + bolus * 0.055f);
                 sl.playSound(null, vx, vy, vz, SoundEvents.HONEY_BLOCK_SLIDE, SoundSource.PLAYERS,
                         0.30f, 0.70f + bolus * 0.05f);

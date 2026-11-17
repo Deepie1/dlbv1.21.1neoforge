@@ -11,6 +11,12 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 - **Aperçu (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Blood_Five_Signatures_preview.html
 - **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Blood_Five_Signatures_src.zip
 
+> **T384 — correctif de compilation.** `SoundEvents.GENERIC_DRINK.value()` ne compile
+> pas en 1.21.1 : ce champ y est un `SoundEvent` **nu**, pas un `Holder` (il ne le
+> devient qu'en 1.21.4). Deux lignes corrigées. Les 472 usages de `SoundEvents` du mod
+> ont été audités contre la table réelle de la 1.21.1 (117 holders, 1 486 nus),
+> désormais versée au dépôt avec un contrôle `semcheck` dédié. **Le build passe.**
+
 > **T383 — l'échelle du mob était appliquée deux fois.** La mise à l'échelle par la
 > hitbox existait bien : `putPosColor`, point de sortie unique de toute la géométrie,
 > applique √(l²·h / 0,6²·1,8) autour du point d'impact — 0,42 pour un poulet, 1,00 pour

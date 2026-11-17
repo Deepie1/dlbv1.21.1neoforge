@@ -2921,3 +2921,39 @@ Transfusion ferait sept blocs de haut et l'échafaud du Couperet dix-huit. La
 bande est donc resserrée par une racine : `échelle^0,55`, bornée à [0,78 ; 1,75].
 Monotone — un mob plus gros donne toujours une animation plus grande — mais un
 lapin reste lisible et un ravageur ne remplit pas l'écran.
+
+## §44 — `GENERIC_DRINK` : la même constante, deux types selon la version
+
+Le build a échoué sur deux lignes, et l'erreur est instructive :
+
+```
+WeaponVfxServerListener.java:3713: error: cannot find symbol
+        SoundEvents.GENERIC_DRINK.value(), SoundSource.PLAYERS, ...
+  symbol: method value()   location: variable GENERIC_DRINK of type SoundEvent
+```
+
+Dans `net.minecraft.sounds.SoundEvents`, les champs ne sont pas tous du même type.
+La grande majorité — **1 486** en 1.21.1 — sont des `SoundEvent` nus ; une minorité
+— **117** — sont des `Holder.Reference<SoundEvent>`, parce que le jeu a besoin de
+les passer à des API qui veulent un `Holder` (sons d'armure, explosions, trident).
+Sur un `Holder` on écrit `.value()` ; sur un `SoundEvent` nu, la méthode n'existe
+pas.
+
+Le piège est que **la répartition bouge d'une version à l'autre**. `GENERIC_DRINK`
+est un `SoundEvent` nu en 1.20.1 et en 1.21.1, mais devient un
+`Holder.Reference<SoundEvent>` en 1.21.4. Le code avait été écrit avec le réflexe
+de la version récente.
+
+L'inverse — un `Holder` sans `.value()` — n'est **pas** une erreur : `Level.playSound`
+et le constructeur de `ArmorMaterial` ont tous deux une surcharge qui prend un
+`Holder<SoundEvent>` directement. L'audit a relevé six sites de ce genre
+(`TRIDENT_THROW`, trois `GENERIC_EXPLODE`, `ARMOR_EQUIP_LEATHER`,
+`ARMOR_EQUIP_CHAIN`) : tous légitimes, aucun touché.
+
+**Garde-fou.** La table complète de la 1.21.1 est désormais dans le dépôt
+(`tools/soundevents_1211.json`, 117 holders + 1 486 nus) et `semcheck.py` gagne un
+contrôle (C) : `.value()` sur un champ nu, et constante de son inexistante. Passé
+sur la version cassée, l'outil ressort **exactement les deux lignes 3713 et 4113**
+du compilateur ; passé sur les 212 fichiers du mod corrigé, il ne trouve plus rien.
+Cela couvre aussi le vieux piège des **sons inventés** : 472 usages, 158 constantes
+distinctes, toutes vérifiées contre le registre réel.

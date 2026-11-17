@@ -12,8 +12,18 @@ Deux familles d'erreurs, toutes deux rencontrées en vrai sur ce projet :
       qui la déclare, dans la même méthode.
       Cas réel : « carved » utilisé dans le message client avant son int carved = ...
 
+  (C) SOUNDEVENTS .value() EN TROP — en 1.21.1 les champs de SoundEvents sont de DEUX
+      types : la plupart sont des SoundEvent nus, une minorité (117) sont des
+      Holder.Reference<SoundEvent>. Appeler .value() sur un champ nu ne compile pas
+      (« cannot find symbol: method value() »). L'inverse n'est PAS une erreur :
+      playSound et ArmorMaterial acceptent un Holder tel quel. On ne signale donc que
+      le .value() en trop, et les constantes qui n'existent pas du tout.
+      Cas réel : SoundEvents.GENERIC_DRINK.value() — Holder en 1.21.4, nu en 1.21.1.
+
 Heuristique volontairement prudente : on préfère rater un cas que noyer la sortie.
 """
+import json
+import os
 import re
 import sys
 
@@ -172,6 +182,31 @@ def check_use_before_decl(path, clean):
     return problems
 
 
+SOUND_TABLE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           'soundevents_1211.json')
+
+
+def check_sound_events(path, clean):
+    """(C) .value() sur un SoundEvent nu, et constantes inexistantes en 1.21.1."""
+    try:
+        with open(SOUND_TABLE, encoding='utf-8') as fh:
+            table = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    holder = set(table['holder'])
+    plain = set(table['plain'])
+    problems = []
+    for m in re.finditer(r'SoundEvents\.([A-Z][A-Z0-9_]*)(\s*\.\s*value\s*\(\s*\))?', clean):
+        ident, call = m.group(1), m.group(2)
+        line = clean.count('\n', 0, m.start()) + 1
+        if ident not in holder and ident not in plain:
+            problems.append((line, ident, "cette constante n'existe pas en 1.21.1"))
+        elif call and ident in plain:
+            problems.append((line, ident,
+                             'est un SoundEvent nu : .value() en trop (ne compile pas)'))
+    return problems
+
+
 def main(paths):
     bad = 0
     for path in paths:
@@ -179,8 +214,9 @@ def main(paths):
         clean = strip_noise(src)
         a = check_constants(path, clean)
         b = check_use_before_decl(path, clean)
+        c = check_sound_events(path, clean)
         name = path.split('/')[-1]
-        if not a and not b:
+        if not a and not b and not c:
             print(f'OK   {name}')
             continue
         bad += 1
@@ -188,6 +224,8 @@ def main(paths):
             print(f'ERR  {name}:{line}  constante inconnue « {ident} »')
         for line, var, meth in b:
             print(f'ERR  {name}:{line}  « {var} » lu avant sa déclaration (dans {meth})')
+        for line, ident, why in c:
+            print(f'ERR  {name}:{line}  SoundEvents.{ident} — {why}')
     return 1 if bad else 0
 
 

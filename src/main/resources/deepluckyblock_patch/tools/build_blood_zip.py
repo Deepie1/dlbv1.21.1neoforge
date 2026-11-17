@@ -49,6 +49,7 @@ EXTRA = [
     'src/main/resources/deepluckyblock_patch/WATER_SIGNATURES.md',
     'src/main/resources/deepluckyblock_patch/LIRE-MOI-IMPORTANT.md',
     'src/main/resources/deepluckyblock_patch/tools/semcheck.py',
+    'src/main/resources/deepluckyblock_patch/tools/soundevents_1211.json',
     'src/main/resources/deepluckyblock_patch/tools/typecheck.py',
     'src/main/resources/deepluckyblock_patch/tools/typecheck-baseline.txt',
     'src/main/resources/deepluckyblock_patch/tools/blood_build.js',
