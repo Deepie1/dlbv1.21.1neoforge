@@ -2957,3 +2957,46 @@ sur la version cassée, l'outil ressort **exactement les deux lignes 3713 et 411
 du compilateur ; passé sur les 212 fichiers du mod corrigé, il ne trouve plus rien.
 Cela couvre aussi le vieux piège des **sons inventés** : 472 usages, 158 constantes
 distinctes, toutes vérifiées contre le registre réel.
+
+## §45 — Ce que la première partie en jeu a montré
+
+Quatre défauts, tous réels, tous corrigés. Aucun n'était visible depuis l'aperçu :
+l'aperçu dessine une scène *déjà cadrée*, il ne joue pas la partie.
+
+**1. Le conduit sortait par l'arrière du mob.** `box()` pose un point à
+`x = cx + dx·f`, et les deux signatures à lien dessinent le bout **porteur** à `f`
+**négatif** — le calice du Siphon à `−reach+0,22`, le cœur de la Transfusion à
+`−linkLen/2`. Le porteur se trouve donc dans le monde en `victime + dir·(−linkLen)` :
+il faut que `dir` aille **du porteur vers la victime**. Or `linkDirX/Z` va dans
+l'autre sens. Le conduit partait donc à 180° du joueur, dans le vide derrière le
+mob — d'où « ça annule à chaque fois comme si j'étais pas détecté ». Un signe.
+C'est la deuxième fois que ce piège tombe sur ce projet ; le premier était le
+corridor de la main.
+
+**2. Chaque tic de signature appliquait le recul vanilla.** `target.hurt()` pousse
+toujours dans la direction attaquant → victime. Onze taillades de Carnage, six bols
+de Siphon, et surtout une hémorragie qui bat sans arrêt : la cible dérivait
+régulièrement, toujours dans le même sens, et sortait de sa propre animation en
+glissant. Un tic de signature n'est pas un coup d'épée — on lui rend sa vitesse
+après le dégât. Les reculs **voulus** (l'onde du Carnage, la projection du
+Couperet) sont posés après l'appel : ils passent intacts.
+
+**3. Quatre signatures sur cinq ne verrouillaient pas la victime.** Seul le
+Couperet tenait sa cible. Les quatre autres la laissaient marcher pendant 120 à
+180 ticks pendant que leur décor restait planté au point d'impact.
+
+| Signature | Emprise | Pourquoi là |
+|---|---|---|
+| Couperet | 86 + 20 t | déjà en place |
+| Arête qui goutte | 44 t | l'entaille et les quatre rigoles sont dessinées **sur** le corps |
+| Siphon | 150 t | quatre crochets vissés ; lâche **avant** la rupture du tick 153 |
+| Transfusion | 118 t | le cœur est calculé au milieu du segment : si la victime marche, il dérive |
+| Carnage | 112 t | lâche **avant** l'onde du tick 115 — c'est elle, et elle seule, qui projette |
+
+**4. L'hémorragie battait à dix ticks pour les cinq.** C'est le métronome qu'on
+entend le plus longtemps, et il était identique partout : d'où l'impression que
+« les timers sont tous pareils ». Chaque signature a maintenant sa cadence —
+Couperet **14** (lent et lourd), Arête **6** (rapide, c'est son nom), Siphon **10**
+(aspiration régulière), Carnage **8** (nerveux). Le total reste calibré ; seule la
+répartition change. Quand deux hémorragies se superposent, c'est la plus rapide
+qui l'emporte.

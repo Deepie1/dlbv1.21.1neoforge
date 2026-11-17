@@ -394,10 +394,23 @@ public final class WeaponVfxServerListener {
                 ? target.damageSources().playerAttack(player)
                 : attacker != null ? target.damageSources().mobAttack(attacker)
                 : target.damageSources().generic();
+        // T385-RECUL : un tic de signature n'est pas un coup d'epee. target.hurt()
+        // applique le recul vanilla, TOUJOURS dans la direction attaquant -> victime :
+        // les onze taillades du Carnage, les six bols du Siphon et surtout l'hemorragie
+        // qui bat sans arret poussaient la cible toujours dans le meme sens, et elle
+        // sortait de sa propre animation en glissant. On lui rend sa vitesse.
+        // Les reculs VOULUS (onde du Carnage, projection du Couperet) sont poses APRES
+        // l'appel et ne sont donc pas touches.
+        Vec3 momentum = target.getDeltaMovement();
         INTERNAL_SIGNATURE_DAMAGE.add(target.getId());
         try {
             target.invulnerableTime = 0;
-            return target.hurt(source, amount);
+            boolean hurt = target.hurt(source, amount);
+            if (hurt && target.isAlive()) {
+                target.setDeltaMovement(momentum);
+                target.hurtMarked = false;
+            }
+            return hurt;
         } finally {
             INTERNAL_SIGNATURE_DAMAGE.remove(target.getId());
         }
@@ -3448,7 +3461,8 @@ public final class WeaponVfxServerListener {
      * @param nextTick   prochaine perte, en temps de MONDE
      * @param perStack   degats d'une pile a chaque periode
      */
-    private record Bleed(int stacks, int attackerId, long expires, long nextTick, float perStack) { }
+    private record Bleed(int stacks, int attackerId, long expires, long nextTick, float perStack,
+                         int period) { }
 
     private static final Map<Integer, Bleed> BLEEDS = new ConcurrentHashMap<>();
 
@@ -3473,6 +3487,23 @@ public final class WeaponVfxServerListener {
      */
     private static void addBleed(ServerLevel sl, LivingEntity victim, int stacks,
                                  int attackerId, float perStack, int durationTicks) {
+        addBleed(sl, victim, stacks, attackerId, perStack, durationTicks, BLEED_PERIOD);
+    }
+
+    /**
+     * T385-CADENCE : meme hemorragie, mais a la CADENCE de la signature qui l'a posee.
+     *
+     * <p>Les cinq battaient toutes a dix ticks : la perte de vie etait le meme metronome
+     * dans les cinq cas, et c'est ce metronome qu'on entend le plus longtemps. Le couperet
+     * saigne lentement et lourdement, l'arete qui goutte est rapide par definition, le
+     * carnage est irregulierement rapide. Le total reste calibre, seule la repartition
+     * change.</p>
+     *
+     * @param periodTicks ticks entre deux pertes
+     */
+    private static void addBleed(ServerLevel sl, LivingEntity victim, int stacks,
+                                 int attackerId, float perStack, int durationTicks,
+                                 int periodTicks) {
         if (victim == null || !victim.isAlive() || stacks <= 0) return;
         long now = sl.getGameTime();
         Bleed previous = BLEEDS.get(victim.getId());
@@ -3486,8 +3517,10 @@ public final class WeaponVfxServerListener {
         } else {
             total = Math.min(BLEED_MAX, stacks);
         }
-        long next = previous != null && previous.expires() > now ? previous.nextTick() : now + BLEED_PERIOD;
-        BLEEDS.put(victim.getId(), new Bleed(total, attackerId, now + durationTicks, next, unit));
+        int period = Math.max(2, periodTicks);
+        if (previous != null && previous.expires() > now) period = Math.min(period, previous.period());
+        long next = previous != null && previous.expires() > now ? previous.nextTick() : now + period;
+        BLEEDS.put(victim.getId(), new Bleed(total, attackerId, now + durationTicks, next, unit, period));
         PixelFx.send(sl, ParticleTypes.DAMAGE_INDICATOR,
                 victim.getX(), victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
                 2 + total, victim.getBbWidth() * 0.35, victim.getBbHeight() * 0.30,
@@ -3564,7 +3597,7 @@ public final class WeaponVfxServerListener {
                     0.22f, 0.70f);
         }
         BLEEDS.put(target.getId(), new Bleed(bleed.stacks(), bleed.attackerId(), bleed.expires(),
-                now + BLEED_PERIOD, bleed.perStack()));
+                now + bleed.period(), bleed.perStack(), bleed.period()));
     }
 
     /**
@@ -3869,7 +3902,7 @@ public final class WeaponVfxServerListener {
                         solo ? 160 : 90, solo ? 1 : 0, true, false));
                 victim.addEffect(new MobEffectInstance(MobEffects.DIG_SLOWDOWN,
                         solo ? 140 : 80, 1, true, false));
-                addBleed(sl, victim, solo ? 3 : 2, attackerId, base * 0.085f, 140);
+                addBleed(sl, victim, solo ? 3 : 2, attackerId, base * 0.085f, 140, 14);
                 PixelFx.send(sl, ParticleTypes.DAMAGE_INDICATOR,
                         victim.getX(), victim.getY() + victim.getBbHeight() * 0.6, victim.getZ(),
                         14, 0.35, 0.35, 0.35, 0.10);
@@ -3927,6 +3960,11 @@ public final class WeaponVfxServerListener {
 
         sl.playSound(null, ox, oy, oz, SoundEvents.PLAYER_ATTACK_CRIT, SoundSource.PLAYERS, 0.70f, 1.35f);
         bloodSwell(sl, now, ox, oy, oz, 3, 0.55f);
+        // T385-VERROU : l'entaille et les rigoles sont dessinees SUR le corps. Une cible
+        // libre de marcher pendant 120 ticks laissait son entaille derriere elle.
+        // 44 ticks : l'ouverture et les quatre rigoles. Les gouttes, elles, peuvent tomber
+        // pendant que la bete repart.
+        applyMovementHold(target, sl.getGameTime() + 44L, false);
 
         // --- 10 : l'ouverture de l'entaille. ---
         TestProcedure.schedule(sl, now + 10, () -> {
@@ -3954,7 +3992,7 @@ public final class WeaponVfxServerListener {
                 // La signature se decrivait elle-meme comme celle qui « frappe peu et saigne
                 // longtemps » ; elle frappait en realite le plus fort du mod. On garde les
                 // quatre piles, qui sont son identite, et on baisse le tarif unitaire.
-                addBleed(sl, victim, stacks, attackerId, base * 0.075f, solo ? 200 : 160);
+                addBleed(sl, victim, stacks, attackerId, base * 0.075f, solo ? 200 : 160, 6);
                 victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
                         primary ? 70 : 40, 0, true, false));
             }
@@ -4025,6 +4063,11 @@ public final class WeaponVfxServerListener {
         // --- 0→15 : les quatre crochets mordent. ---
         sl.playSound(null, ox, oy, oz, SoundEvents.BONE_BLOCK_BREAK, SoundSource.PLAYERS, 0.70f, 1.25f);
         bloodSwell(sl, now, ox, oy, oz, 4, 0.65f);
+        // T385-VERROU : quatre crochets sont VISSES dans la victime et un conduit la relie
+        // au porteur. Une victime qui s'eloigne casse son propre conduit au bout de neuf
+        // blocs. L'emprise couvre la ponction (0 -> 150) et lache AVANT la rupture du
+        // tick 153, pour que l'arrachement se lise comme une liberation.
+        applyMovementHold(target, sl.getGameTime() + 150L, false);
         for (int k = 0; k < 4; k++) {
             final int step = k;
             TestProcedure.schedule(sl, now + 3 + step * 3, () -> {
@@ -4129,10 +4172,10 @@ public final class WeaponVfxServerListener {
             if (left < 0.34f) {
                 // La victime est trop vide : le conduit claque et emporte le reste.
                 hurtWithCapturedWeapon(sl, attackerId, target, base * 0.75f);
-                addBleed(sl, target, 3, attackerId, base * 0.10f, 160);
+                addBleed(sl, target, 3, attackerId, base * 0.10f, 160, 10);
                 sl.playSound(null, ox, oy, oz, SoundEvents.ZOMBIE_INFECT, SoundSource.PLAYERS, 0.60f, 0.70f);
             } else {
-                addBleed(sl, target, 1, attackerId, base * 0.08f, 120);
+                addBleed(sl, target, 1, attackerId, base * 0.08f, 120, 10);
             }
             bloodFervor(sl, attacker, base * 1.4f, 160);
         });
@@ -4182,6 +4225,10 @@ public final class WeaponVfxServerListener {
         final double oy = target.getY() + target.getBbHeight() * 0.55;
         final double oz = target.getZ();
         final float base = Math.max(1.0f, weaponDamage * 0.62f);
+        // T385-VERROU : la transfusion est l'autre signature a LIEN. Le coeur est calcule
+        // au milieu du segment porteur-victime ; si la victime marche, le coeur derive et
+        // les vaisseaux s'etirent. Sept battements = 106 ticks, plus la resorption.
+        applyMovementHold(target, sl.getGameTime() + 118L, false);
         // Le coeur flotte entre les deux : c'est de la qu'on entend battre. Ces trois
         // nombres sont ceux que le rendu client reproduit — milieu du segment, 1,6 bloc plus
         // haut que l'ancre. Ils ne servent plus que de REPLI : a chaque battement, le coeur
@@ -4331,6 +4378,11 @@ public final class WeaponVfxServerListener {
                 new java.util.concurrent.atomic.AtomicInteger();
         final java.util.concurrent.atomic.AtomicInteger spilled =
                 new java.util.concurrent.atomic.AtomicInteger();
+        // T385-VERROU : onze taillades sur 87 ticks. Sans emprise, la premiere poussait la
+        // cible hors du faisceau et les dix suivantes taillaient dans le vide. On tient
+        // jusqu'au tick 112 et on LACHE avant l'onde du tick 115 : c'est elle, et elle
+        // seule, qui doit projeter.
+        applyMovementHold(target, sl.getGameTime() + 112L, false);
 
         // --- 0→25 : la montee. Trois pulsations, ecart decroissant. ---
         int[] winds = {3, 12, 19};
@@ -4375,7 +4427,7 @@ public final class WeaponVfxServerListener {
                     // Une taillade sur deux ouvre : onze piles seraient absurdes, cinq est
                     // deja le plafond.
                     if ((strike & 1) == 0) {
-                        addBleed(sl, victim, 1, attackerId, base * 0.075f, 150);
+                        addBleed(sl, victim, 1, attackerId, base * 0.075f, 150, 8);
                     }
                     PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA,
                             victim.getX(), victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
@@ -4410,7 +4462,7 @@ public final class WeaponVfxServerListener {
             for (LivingEntity victim : swept) {
                 hurtWithCapturedWeapon(sl, attackerId, victim, base * (solo ? 0.95f : 0.55f));
                 victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 80, 1, true, false));
-                addBleed(sl, victim, solo ? 2 : 1, attackerId, base * 0.09f, 140);
+                addBleed(sl, victim, solo ? 2 : 1, attackerId, base * 0.09f, 140, 8);
                 // L'onde repousse. Sans composante verticale la poussee est absorbee par la
                 // premiere marche et la victime glisse contre le talus (piege de la T376).
                 double ddx = victim.getX() - ox;

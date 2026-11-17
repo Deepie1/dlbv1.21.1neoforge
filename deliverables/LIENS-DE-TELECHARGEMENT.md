@@ -11,6 +11,16 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 - **Aperçu (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Blood_Five_Signatures_preview.html
 - **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Blood_Five_Signatures_src.zip
 
+> **T385 — quatre défauts vus en jeu.** (1) **Le conduit sortait par l'arrière du
+> mob** : les signatures à lien dessinent le bout porteur à `f` négatif, donc la
+> direction doit aller du porteur vers la victime — elle allait dans l'autre sens, le
+> tuyau partait à 180° du joueur. (2) **Chaque tic appliquait le recul vanilla** : la
+> cible dérivait toujours dans le même sens et sortait de son animation en glissant ;
+> on lui rend sa vitesse après le dégât, les reculs voulus passent intacts. (3)
+> **Quatre signatures sur cinq ne verrouillaient pas la victime** : emprises de 44 /
+> 150 / 118 / 112 ticks, chacune lâchant avant son temps fort. (4) **L'hémorragie
+> battait à dix ticks pour les cinq** — désormais 14 / 6 / 10 / 8 selon la signature.
+
 > **T384 — correctif de compilation.** `SoundEvents.GENERIC_DRINK.value()` ne compile
 > pas en 1.21.1 : ce champ y est un `SoundEvent` **nu**, pas un `Holder` (il ne le
 > devient qu'en 1.21.4). Deux lignes corrigées. Les 472 usages de `SoundEvents` du mod

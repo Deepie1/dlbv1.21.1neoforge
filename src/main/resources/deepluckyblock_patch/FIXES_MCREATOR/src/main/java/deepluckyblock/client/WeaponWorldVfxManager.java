@@ -923,6 +923,16 @@ public final class WeaponWorldVfxManager {
 
         if (!inst.bloodLinkResolved) {
             inst.bloodLinkResolved = true;
+            // Repli immediat : le paquet porte deja les deux points. Sans cela la
+            // premiere image du conduit utilisait la direction par defaut (0,1).
+            double seedX = inst.tx - inst.x;
+            double seedZ = inst.tz - inst.z;
+            double seedFlat = Math.sqrt(seedX * seedX + seedZ * seedZ);
+            if (seedFlat > 0.12) {
+                inst.linkDirX = (float) (seedX / seedFlat);
+                inst.linkDirZ = (float) (seedZ / seedFlat);
+                inst.linkLen = Mth.clamp((float) seedFlat, 1.2f, BLOOD_LINK_MAX);
+            }
             inst.bloodVictimId = nearestLivingId(level, inst.x, inst.y, inst.z, 3.0);
             inst.bloodWielderId = nearestLivingId(level, inst.tx, inst.ty, inst.tz, 3.0);
             if (inst.bloodWielderId == inst.bloodVictimId) inst.bloodWielderId = 0;
@@ -4615,8 +4625,15 @@ public final class WeaponWorldVfxManager {
             // l'echafaud ne pivote pas parce que le joueur a fait trois pas.
             boolean linked = v.inst().effect == WeaponVisualEffectId.CRIMSON_SIPHON
                     || v.inst().effect == WeaponVisualEffectId.VITAL_TRANSFUSION;
-            float dirX = linked ? v.inst().linkDirX : -v.dirX();
-            float dirZ = linked ? v.inst().linkDirZ : -v.dirZ();
+            // T385 : le SIGNE. box() pose un point a x = cx + dx * f, et les deux
+            // signatures liees dessinent le bout PORTEUR a f NEGATIF (le calice du
+            // siphon a -reach+0,22, le coeur de la transfusion a -linkLen/2). Le
+            // porteur est donc, dans le monde, en victime + dir * (-linkLen) : il
+            // faut que dir aille du PORTEUR VERS LA VICTIME. linkDirX/Z va dans
+            // l'autre sens. Non inverse, le conduit sortait par l'arriere du mob et
+            // n'atteignait jamais la main — c'est le << ca annule a chaque fois >>.
+            float dirX = linked ? -v.inst().linkDirX : -v.dirX();
+            float dirZ = linked ? -v.inst().linkDirZ : -v.dirZ();
             BloodSignatureVfx.render(v.vc(), v.mat(), v.tmp(),
                     v.cx(), v.cy(), v.cz(), v.t(),
                     dirX, dirZ, signature, v.fadeA(),
