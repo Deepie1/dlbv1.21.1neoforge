@@ -3708,3 +3708,164 @@ Ni JDK ni Minecraft ici. Ce qui a pu être prouvé l'a été :
 * F3+T pendant qu'une signature est à l'écran : le shader doit se recharger sans crash ;
 * vérifier que la lèvre violette se distingue encore d'une signature d'Ombre jouée juste
   après.
+
+## §51 — T391 · VIDE : quatre chorégraphies refaites d'après le gameplay, et le sol remis à sa place
+
+### 0. Le constat
+
+> « les animations ne sont pas assez bonne, assez comprehensive et detaillée et
+> spectaculaire […] uniquement la 1 est interessante »
+
+Quatre signatures sur cinq rejetées. La demande est précise et elle tient en trois points :
+l'animation doit se lire **d'après le titre**, elle doit se lire **d'après les dégâts
+infligés et leur type**, et la **texture de portail à couches** — jusqu'ici réservée à
+trois figures — doit être cherchée **dans les cinq**. Un quatrième point est venu avec :
+les sols sont **sous** le y réel du sol.
+
+Ce qui n'allait pas, en une phrase par signature : le Prisme avait des « ailes de membrane »
+qui ne correspondaient à rien dans le listener ; la Faille était une amande de 4,4 blocs
+au-dessus de la victime alors que le serveur frappe dans un **corridor de 9 blocs couché en
+travers** ; la Porte avait une « membrane en spirale » et un second tore décoratifs ; la
+Trame interpolait des positions au lieu de les **trouver**.
+
+### 1. La règle neuve : l'image est une lecture du listener
+
+La seule chose qui a été conservée des quatre anciennes versions est la durée. Tout le
+reste est reconstruit depuis `WeaponVfxServerListener`, et chaque constante de rythme a
+désormais **un seul exemplaire**, partagé entre le Java de rendu et son miroir JS :
+
+| signature | le serveur fait | l'image fait | constante partagée |
+| --- | --- | --- | --- |
+| **Prisme** | 3 à-coups aux ticks 4, 10, 16 | l'octaèdre **sursaute trois fois** en descendant | — |
+| | 7 faisceaux, t+62 → t+116, pas de 9 | 7 faisceaux, mêmes ticks | `PRISM_FIRE0`, `PRISM_FIRE_STEP` |
+| | `GLOWING` 120 sur chaque touché | couronne d'impact là où le rayon touche le sol | — |
+| | fracture t+150, éclat t+170 r≈2,0 | fracture, puis anneau de **2,0 exactement** | `PRISM_BREAK`, `PRISM_BURST` |
+| **Faille** | corridor 9,0 × ±1,6 **perpendiculaire au coup** | déchirure de **8,6 blocs** couchée en travers | `RIFT_REACH` |
+| | 9 aspirations, t+20 → t+100, pas de 10 | 9 vagues tirées vers le **plan**, pas vers le centre | `riftZip` |
+| | t+112 `BLINDNESS` + `CONFUSION` | l'autre côté remonte, en chorus froid | — |
+| | t+140 fermeture, éjection perpendiculaire | les lèvres se rejoignent, tout part de ±f | `RIFT_CLOSE` |
+| **Porte** | tracé au sol **r 2,12**, ticks 0/5/10/15 | 4 passes de 10 points à **2,12** | `gateRing` (max 2,12) |
+| | 7 transits, t+34 → t+142, pas de 18 | 7 paraboles, mêmes ticks | `GATE_PASS0`, `GATE_PASS_STEP` |
+| | azimut `seedAng + pass·2π/7` | l'azimut tourne **d'un septième de tour** par passage | — |
+| | t+150 fermeture, éjection radiale | onde qui balaye 3,4, anneau résorbé sur son âme | `GATE_SHUT` |
+| **Trame** | liste **figée** ≤ 7 ids | 7 nœuds, et **chacun marque le sol sous lui** | — |
+| | 11 tensions, t+40 → t+140, pas de 10 | 11 tensions, mêmes ticks | `LATTICE_TENSION0/_STEP` |
+| | `min(0,34 ; 0,07 + dist·0,045)` | **la formule du listener, recopiée** dans le solveur | — |
+| | t+160 convergence, t+184 rupture | convergence puis rupture **en coup de fouet** | `LATTICE_CONVERGE/_SNAP` |
+
+### 2. Six primitives de calcul, parce que « spectaculaire » veut dire « non écrit à la main »
+
+Ce qui distingue une chorégraphie d'une liste de positions, c'est qu'elle **résout** quelque
+chose. Six fonctions ont été ajoutées à `VoidSignatureVfx`, avec miroir JS exact :
+
+| primitive | ce qu'elle résout | qui s'en sert |
+| --- | --- | --- |
+| `spinPoint` / `unspinPoint` | passage monde ↔ repère du cristal (bascule puis rotation) | Prisme |
+| `octaHit` | intersection rayon / **octaèdre** : 8 plans, normales sortantes `±1/√3` | Prisme |
+| `refract` | **Snell-Descartes complet**, réflexion totale comprise | Prisme |
+| `prismRay` | le trajet entier : entrée, jusqu'à **3 rebonds internes**, sortie | Prisme |
+| `catenary` | `cosh` — la courbe d'un câble qui pend, pas une parabole | Trame |
+| `ballistic` | chute + **rebond amorti** + repos | Prisme, Porte |
+
+**La dispersion est le cœur du Prisme.** L'indice vaut `n = 1,14 + k·0,08`, de 1,14 pour le
+premier faisceau à 1,62 pour le septième : le violet dévie plus que le rouge, et l'éventail
+s'ouvre **tout seul**. Aucun des sept angles de sortie n'est écrit dans le fichier.
+
+**Le piège, vécu :** la première version tirait les sept rayons depuis le **centre**. Un
+corps symétrique renvoie un rayon central presque dans son axe, quel que soit l'indice — les
+sept faisceaux se superposaient en un seul trait, et le banc de mesure comptait **une seule
+direction de sortie**. Le faisceau incident a donc été transformé en **cylindre** : sept
+points d'entrée répartis sur une section de 0,71 bloc, sept faces différentes, sept
+incidences différentes. Le même banc compte maintenant **neuf directions distinctes** après
+le cristal, étalées de `(0,86 ; −0,15 ; 0,49)` à `(0,41 ; 0,80 ; −0,44)`. Bénéfice inattendu :
+on voit arriver **sept fils parallèles** et sortir **sept faisceaux divergents** — le verbe
+DISTRIBUE, en une image, sans légende.
+
+### 3. La Trame n'est pas animée, elle est simulée
+
+`latticeSim` rejoue **depuis zéro à chaque image** une intégration masses-ressorts : 7 masses,
+11 ressorts, **240 pas** de `dt = 10/240`, raideur 5,4, amortissement 0,955, plancher à
+`GROUND_Y + 0,55`. Les tensions du serveur sont injectées comme impulsions **aux ticks exacts**
+où le listener les applique.
+
+Rejouer toute la simulation à chaque image est volontaire : la page d'aperçu permet de
+**déplacer le curseur de temps**, et un solveur à état se désynchroniserait au premier saut en
+arrière. Le coût est borné (240 × 11 ressorts), et la trame **trouve** ses positions au lieu
+de les recevoir. Conséquence visible : une arête molle pend en **chaînette**, une arête tendue
+se met à **vibrer en onde stationnaire** — le passage de l'un à l'autre n'est écrit nulle part,
+il sort du rapport tension/longueur.
+
+**Le piège, vécu :** avec un amortissement de 0,995 la trame **explosait** — les impulsions
+s'accumulaient plus vite qu'elles ne se dissipaient et les nœuds partaient à l'infini en une
+vingtaine de pas. 0,955 est la valeur la plus haute qui tienne les 240 pas.
+
+### 4. La texture de portail dans les CINQ
+
+T390b avait posé une règle : « pas de fenêtre dans une figure sans intérieur ». Elle est
+**levée**. `VoidPortalFx` reçoit un quatrième mode de plan :
+
+| mode | plan | signature | demi-axes |
+| --- | --- | --- | --- |
+| 0 | panneau-réclame (face caméra) | **Sphère**, **Trame** | `warpHorizon·0,94` · `latticeCell` |
+| 1 | horizontal, au sol | **Porte** | `gateRing·0,88` |
+| 2 | plan des lèvres | **Faille** | `riftHalfLength·0,80` × `riftCrown·0,50` |
+| **3** | **plan quelconque** | **Prisme** | tranche équatoriale, `PRISM_W·prismBody·0,84` |
+
+Le mode 3 prend **deux vecteurs de base** fournis par la figure : pour le Prisme, c'est
+l'équateur de l'octaèdre, qui bascule de 0,34 rad et tourne. La fenêtre tourne donc avec le
+cristal sans jamais en sortir. `queueFree` **normalise les deux axes au rendu** : une base
+presque unitaire déformerait l'ellipse de quelques pour cent, sans la moindre trace dans les
+journaux.
+
+Pour la Trame, la fenêtre est la **cellule centrale** du polyèdre : elle s'ouvre à la
+première tension, se resserre à mesure que les nœuds convergent, et disparaît à la rupture.
+C'est le seul endroit de la figure où l'on voit *à travers* ce qui est lié.
+
+**La Faille est celle qui change le plus.** La demande était explicite : la texture doit
+remplir **la fente**. Le plan de la fenêtre est celui des deux lèvres, son demi-grand axe
+suit `riftHalfLength` et son demi-petit axe `riftCrown` — c'est-à-dire que la fenêtre
+**respire avec la déchirure** et s'écrase en trait quand on se place dans l'axe du coup,
+exactement comme la fente qu'elle remplit.
+
+### 5. Le sol — un seul plancher par scène
+
+C'était le défaut le plus grossier, et il tenait à une constante en triple exemplaire.
+
+`VoidSignatureVfx` pose ce qui touche terre sur `GROUND_Y`, dont le repli valait `-0,86`.
+Le gabarit d'aperçu partagé, lui, dessine son quadrillage à `-0,47`, et le mannequin posait
+ses pieds sur `-0,47`. **Quarante-trois centimètres d'écart** : la mare de la Porte, les
+couronnes d'impact du Prisme et les marques de nœud de la Trame étaient peintes *sous* le sol
+dessiné.
+
+Le repli est maintenant **`-0,90`**, et il est juste : l'origine d'une signature est le
+**torse** de la victime (`bbHeight × 0,50` côté serveur), donc un corps d'1,80 a les pieds
+0,90 plus bas. Les trois consommateurs lisent désormais la **même** constante
+(`VOID_SHAPE.GROUND_FALLBACK` côté page, `GROUND_Y` côté Java), et le mannequin de l'aperçu
+mesure 1,80 et non plus 1,95 — c'est lui qui justifie le chiffre.
+
+### 6. Ce qui a été vérifié sans le jeu
+
+* `jparse` sur les trois fichiers Java — OK ;
+* banc de densité JS sur 19 instants : **1523 / 790 / 1807 / 1245 / 1077** cubes en moyenne,
+  pic à 2001 — aucune variante au-dessus du budget de la famille ;
+* banc de dispersion : **neuf directions de sortie distinctes** après le cristal (une seule
+  avant le correctif du faisceau cylindrique) ;
+* banc de fenêtre : les **cinq** variantes rendent une fenêtre, dans **quatre** modes de plan ;
+* captures Chromium + lecture des PNG : le quadrillage, les pieds du mannequin et tout ce que
+  les figures posent par terre sont **sur le même plan** ;
+* `typecheck.py` et `semcheck.py` en différentiel contre `HEAD`.
+
+### 7. À essayer en jeu
+
+* `/dlbvfx play 27` devant un mur de pierre claire : les **sept faisceaux doivent diverger**,
+  et chacun doit laisser une couronne là où il touche le sol ;
+* `/dlbvfx play 34` en se plaçant **dans l'axe de l'attaque** : la déchirure et sa texture
+  doivent s'écraser en trait ensemble ;
+* `/dlbvfx play 34` en se plaçant **de côté** : le corridor de 9 blocs doit se lire ;
+* `/dlbvfx play 44` en s'accroupissant au ras du sol : la mare ne doit ni flotter ni être
+  enterrée, et la cage doit laisser voir à travers ;
+* `/dlbvfx play 45` sur un groupe de 5 : les sept marques au sol doivent désigner les corps
+  réellement capturés, et **fuir ne doit pas en sortir** ;
+* sur un **bloc à demi-hauteur** (dalle, escalier) pour chacune des cinq : rien ne doit
+  s'enfoncer dans la marche ;
+* F3+T pendant qu'une signature est à l'écran.

@@ -27,25 +27,89 @@
 const VOID_SHAPE = (function () {
   const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
   const smooth = (x) => { x = clamp01(x); return x * x * (3 - 2 * x); };
+  const TAU = 6.2831855;
   return {
-    // Le sol de repli. L'apercu n'a pas de monde a sonder, et la fenetre doit poser sa
-    // mare et sa fente sur le MEME plancher que la figure : une seule valeur, ici.
-    GROUND_FALLBACK: -0.86,
-    WARP_YC: 0.46,          // hauteur du centre de la sphère
-    RIFT_HEIGHT: 3.05,      // hauteur totale de la faille
-    RIFT_LIP: 0.82,         // demi-écartement maximal des lèvres
+    /* LE SOL. L'origine d'une signature est le TORSE de la victime (bbHeight x 0,50 cote
+       serveur) : pour un corps d'1,80 le plancher est 0,90 plus bas, et c'est cette
+       valeur-la. L'apercu pose SON quadrillage et les pieds de SON mannequin ici. */
+    GROUND_FALLBACK: -0.90,
+
+    /* --- Sphere --- */
+    WARP_YC: 0.46,
     warpHorizon(t) {
       const open = smooth((t - 0.10) / 0.24), fall = smooth((t - 0.70) / 0.10);
       return (0.05 + 1.10 * open) * (1 - fall);
     },
+
+    /* --- Prisme : le cristal, son regime, sa tranche equatoriale --- */
+    PRISM_YC: 1.12,
+    PRISM_W: 1.15,
+    PRISM_TILT: 0.34,
+    PRISM_FIRE0: 62 / 190,
+    PRISM_FIRE_STEP: 9 / 190,
+    PRISM_BREAK: 150 / 190,
+    PRISM_BURST: 170 / 190,
+    prismSpin(t) {
+      const spinUp = smooth((t - 0.07) / 0.14);
+      const broken = clamp01((t - 150 / 190) / 0.08);
+      return t * (2.4 + 9.0 * spinUp) * (1 - broken * 0.85);
+    },
+    prismBody(t) {
+      const into = smooth(t / 0.085), out = smooth((t - 150 / 190) / 0.045);
+      return into * (1 - out) * (1 + 0.055 * Math.sin(t * 21));
+    },
+    /* Plan de la tranche equatoriale : {af,al,ay, bf,bl,by, rayon}. L'equateur d'un
+       octaedre qui tourne autour d'un axe incline n'est pas horizontal. */
+    prismSlice(t) {
+      const spin = this.prismSpin(t);
+      const ct = Math.cos(this.PRISM_TILT), st = Math.sin(this.PRISM_TILT);
+      const cs = Math.cos(spin), sn = Math.sin(spin);
+      return [cs, sn, 0, -sn * ct, cs * ct, st, this.PRISM_W * this.prismBody(t) * 0.84];
+    },
+
+    /* --- Faille : une LIGNE qui se propage --- */
+    RIFT_HEIGHT: 3.05,
+    RIFT_LIP: 0.82,
+    RIFT_REACH: 4.30,
+    RIFT_CLOSE: 140 / 170,
     riftGape(t) {
       const opening = smooth((t - 0.06) / 0.17), closing = smooth((t - 0.64) / 0.18);
       return opening * (1 - closing);
     },
+    riftRun(t) { return smooth((t - 0.012) / 0.085); },
+    riftZip(t) { return 1 - smooth((t - 140 / 170) / 0.11); },
+    riftHalfLength(t) { return this.RIFT_REACH * this.riftRun(t) * this.riftZip(t); },
+    riftCrown(t) { return this.RIFT_HEIGHT * this.riftRun(t); },
+    /* Profil de Griffith : maximal au point de nucleation, nul aux pointes. */
+    riftProfile(u) { const v = 1 - u * u; return v <= 0 ? 0 : Math.sqrt(v); },
+
+    /* --- Porte --- */
+    GATE_PASS0: 34 / 180,
+    GATE_PASS_STEP: 18 / 180,
+    GATE_SHUT: 150 / 180,
     gateRing(t) {
       const grow = smooth((t - 0.04) / 0.26), shut = smooth((t - 0.86) / 0.14);
       return (0.34 + 1.78 * grow) * (1 - shut);
     },
+
+    /* --- Trame --- */
+    LATTICE_R: 3.00,
+    LATTICE_YC: 0.28,
+    LATTICE_TENSION0: 40 / 200,
+    LATTICE_TENSION_STEP: 10 / 200,
+    LATTICE_CONVERGE: 160 / 200,
+    LATTICE_SNAP: 184 / 200,
+    latticeRest(t) {
+      const pull = smooth((t - 40 / 200) / 0.50), conv = smooth((t - 160 / 200) / 0.12);
+      return (1 - 0.46 * pull) * (1 - 0.30 * conv);
+    },
+    latticeCell(t) {
+      const open = smooth((t - 0.30) / 0.22), shut = smooth((t - 184 / 200) / 0.035);
+      const pull = smooth((t - 40 / 200) / 0.50), conv = smooth((t - 160 / 200) / 0.12);
+      const ring = this.LATTICE_R * (1 - 0.42 * pull) * (1 - 0.52 * conv);
+      return ring * 0.52 * open * (1 - shut);
+    },
+    TAU,
   };
 })();
 
@@ -214,6 +278,109 @@ function buildVoid(variant, t, salt = 7331) {
     return Math.sqrt(df * df + dl * dl + dy * dy);
   };
 
+  /* ---- CALCUL : miroir exact des primitives du .java ------------------------------- */
+
+  /* Repere du cristal : inclinaison autour de f, puis rotation autour de la verticale. */
+  const spinPoint = (f, l, y, tilt, spin) => {
+    const ct = Math.cos(tilt), st = Math.sin(tilt);
+    const l1 = l * ct - y * st, y1 = l * st + y * ct;
+    const cs = Math.cos(spin), sn = Math.sin(spin);
+    return [f * cs - l1 * sn, f * sn + l1 * cs, y1];
+  };
+  const unspinPoint = (f, l, y, tilt, spin) => {
+    const cs = Math.cos(spin), sn = Math.sin(spin);
+    const f1 = f * cs + l * sn, l1 = -f * sn + l * cs;
+    const ct = Math.cos(tilt), st = Math.sin(tilt);
+    return [f1, l1 * ct + y * st, -l1 * st + y * ct];
+  };
+
+  /* Rayon / octaedre |f|+|l|+|y| <= w, par decoupe de l'intervalle sur les huit plans.
+     Sortie : [tEntree, nf, nl, ny, tSortie, nf, nl, ny], normales SORTANTES. */
+  const octaHit = (ox, ol, oy, dxr, dlr, dyr, w) => {
+    if (w <= 0.001) return null;
+    let near = -1e9, far = 1e9, nearPlane = -1, farPlane = -1;
+    for (let plane = 0; plane < 8; plane++) {
+      const sf = (plane & 1) === 0 ? 1 : -1;
+      const sl = (plane & 2) === 0 ? 1 : -1;
+      const sy = (plane & 4) === 0 ? 1 : -1;
+      const denom = sf * dxr + sl * dlr + sy * dyr;
+      const num = w - (sf * ox + sl * ol + sy * oy);
+      if (Math.abs(denom) < 1e-6) { if (num < 0) return null; continue; }
+      const hit = num / denom;
+      if (denom > 0) { if (hit < far) { far = hit; farPlane = plane; } }
+      else { if (hit > near) { near = hit; nearPlane = plane; } }
+    }
+    if (far <= near || farPlane < 0 || nearPlane < 0) return null;
+    const inv = 0.57735027;
+    return [near,
+            ((nearPlane & 1) === 0 ? 1 : -1) * inv,
+            ((nearPlane & 2) === 0 ? 1 : -1) * inv,
+            ((nearPlane & 4) === 0 ? 1 : -1) * inv,
+            far,
+            ((farPlane & 1) === 0 ? 1 : -1) * inv,
+            ((farPlane & 2) === 0 ? 1 : -1) * inv,
+            ((farPlane & 4) === 0 ? 1 : -1) * inv];
+  };
+
+  /* Snell-Descartes vectoriel, reflexion totale comprise. Renvoie {d, out}. */
+  const refract = (ix, il, iy, nx, nl, ny, eta) => {
+    let cosi = -(ix * nx + il * nl + iy * ny);
+    if (cosi < 0) { cosi = -cosi; nx = -nx; nl = -nl; ny = -ny; }
+    const k = 1 - eta * eta * (1 - cosi * cosi);
+    if (k < 0) return { d: [ix + 2 * cosi * nx, il + 2 * cosi * nl, iy + 2 * cosi * ny], out: false };
+    const c = eta * cosi - Math.sqrt(k);
+    let d = [eta * ix + c * nx, eta * il + c * nl, eta * iy + c * ny];
+    const len = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    if (len > 1e-5) d = [d[0] / len, d[1] / len, d[2] / len];
+    return { d, out: true };
+  };
+
+  /* Fleche d'une CHAINETTE : la courbe d'un cable qui pend, pas une parabole. */
+  const catenary = (u, slack) => {
+    if (slack <= 0.0001) return 0;
+    const shape = 2.2 + 6.0 * clamp01(slack);
+    return (Math.cosh(shape * 0.5) - Math.cosh(shape * (u - 0.5))) / shape * (0.9 + 2.4 * slack);
+  };
+
+  /* Un corps soumis a la pesanteur qui REBONDIT sur le sol au lieu de le traverser. */
+  const ballistic = (y0, vy, sec, floorY) => {
+    const y = y0 + vy * sec - 0.5 * GRAVITY * sec * sec;
+    if (y >= floorY) return y;
+    const over = floorY - y;
+    return floorY + Math.abs(Math.sin(over * 4.2)) * 0.22 / (1 + over * 2.6);
+  };
+
+  /* Le trajet d'un des sept rayons DANS le cristal. Miroir de prismRay(). */
+  const prismRay = (k, spin, w) => {
+    if (w <= 0.06) return null;
+    const PT = VOID_SHAPE.PRISM_TILT;
+    /* Le faisceau incident est un CYLINDRE : sept points d'entree, sept faces, sept
+       incidences. Par le centre, un corps symetrique renvoie tout dans l'axe. */
+    const off = k * (TAU / 7) + 0.40, spread = 0.62 * w;
+    const o = unspinPoint(-3, Math.cos(off) * spread, Math.sin(off) * spread, PT, spin);
+    const d = unspinPoint(1, 0, 0, PT, spin);
+    let hit = octaHit(o[0], o[1], o[2], d[0], d[1], d[2], w);
+    if (!hit) return null;
+    const n = 1.14 + k * 0.08;
+    let px = o[0] + d[0] * hit[0], pl = o[1] + d[1] * hit[0], py = o[2] + d[2] * hit[0];
+    const entry = spinPoint(px, pl, py, PT, spin);
+    let r = refract(d[0], d[1], d[2], hit[1], hit[2], hit[3], 1 / n);
+    let ix = r.d[0], il = r.d[1], iy = r.d[2], escaped = false;
+    for (let bounce = 0; bounce < 3 && !escaped; bounce++) {
+      hit = octaHit(px + ix * 0.002, pl + il * 0.002, py + iy * 0.002, ix, il, iy, w);
+      if (!hit) break;
+      px += ix * hit[4]; pl += il * hit[4]; py += iy * hit[4];
+      r = refract(ix, il, iy, hit[5], hit[6], hit[7], n);
+      ix = r.d[0]; il = r.d[1]; iy = r.d[2]; escaped = r.out;
+      if (!escaped && bounce === 2) { ix = hit[5]; il = hit[6]; iy = hit[7]; escaped = true; }
+    }
+    const P = spinPoint(px, pl, py, PT, spin);
+    const D = spinPoint(ix, il, iy, PT, spin);
+    const len = Math.sqrt(D[0] * D[0] + D[1] * D[1] + D[2] * D[2]);
+    if (len < 1e-4) return null;
+    return { e: entry, p: P, d: [D[0] / len, D[1] / len, D[2] / len] };
+  };
+
   // =======================================================================================
   //  I. SPHÈRE DE DISTORSION — 160 ticks
   // =======================================================================================
@@ -379,544 +546,675 @@ function buildVoid(variant, t, salt = 7331) {
   };
 
   // =======================================================================================
-  //  II. PRISME DU DRAGON — 190 ticks
+  //  II. PRISME DU DRAGON — 190 ticks — il DISTRIBUE
   // =======================================================================================
+  /* Sept faisceaux, sept corps : les ticks 62 + 9k du serveur, traces par REFRACTION reelle
+     (Snell-Descartes, un indice par faisceau, reflexion totale comprise). */
   const renderPrism = (a) => {
-    const yc = 1.12;
-    const drop = clamp01(t / 0.10);
+    const V = VOID_SHAPE;
+    const body = V.prismBody(t), spin = V.prismSpin(t), w = V.PRISM_W * body;
+    const broken = clamp01((t - V.PRISM_BREAK) / 0.10);
+    const floorY = GROUND_Y + 0.05;
+    const drop = clamp01(t / 0.085);
     const stair = (Math.floor(drop * 3) + smooth(fract(drop * 3))) / 3;
-    const py = yc + (1 - stair) * 4.2;
+    const yc = V.PRISM_YC + (1 - stair) * 4.6;
 
-    const spinUp = smooth(clamp01((t - 0.08) / 0.14));
-    const broken = clamp01((t - 0.74) / 0.14);
-    const spin = t * (2.4 + 9.0 * spinUp) * (1 - broken * 0.85);
-    const tiltAxis = 0.34;
-    const scale = 0.72 * (1 + 0.10 * Math.sin(t * 17) * spinUp);
-
-    // ---- 1. L'OCTAÈDRE EN FIL DE FER ---------------------------------------------------
-    const vert = [];
-    for (let i = 0; i < 4; i++) {
-      const ang = spin + i * (TAU / 4);
-      vert.push([Math.cos(ang) * scale, Math.sin(ang) * tiltAxis * scale, Math.sin(ang) * scale * 0.42]);
-    }
-    vert.push([0, 0, scale * 1.34]);
-    vert.push([0, 0, -scale * 1.34]);
-    const edges = [[0, 1], [1, 2], [2, 3], [3, 0], [0, 4], [1, 4], [2, 4], [3, 4],
-                   [0, 5], [1, 5], [2, 5], [3, 5]];
-    for (let e = 0; e < edges.length; e++) {
-      const i0 = edges[e][0], i1 = edges[e][1];
-      const push = broken * (0.55 + 0.85 * hash(salt + 51, e * 23));
-      const mfx = (vert[i0][0] + vert[i1][0]) * 0.5;
-      const mly = (vert[i0][1] + vert[i1][1]) * 0.5;
-      const mzz = (vert[i0][2] + vert[i1][2]) * 0.5;
-      const ml = Math.max(0.0001, Math.sqrt(mfx * mfx + mly * mly + mzz * mzz));
-      const ofx = mfx / ml * push, ofl = mly / ml * push, ofy = mzz / ml * push;
-      const rgb = e < 4 ? HORIZON : (e < 8 ? HALO : SLATE);
-      segment(vert[i0][0] + ofx, vert[i0][1] + ofl, py + vert[i0][2] + ofy,
-              vert[i1][0] + ofx, vert[i1][1] + ofl, py + vert[i1][2] + ofy,
-              0.026, rgb, opq(a * (1 - broken * 0.55)));
-    }
-    for (let i = 0; i < 6; i++) {
-      const push = broken * 0.70;
-      const vl = Math.max(0.0001, Math.sqrt(vert[i][0] ** 2 + vert[i][1] ** 2 + vert[i][2] ** 2));
-      box(vert[i][0] * (1 + push / vl), vert[i][1] * (1 + push / vl),
-          py + vert[i][2] * (1 + push / vl), 0.045, 0.045, 0.045, GLACIER, opq(a));
-    }
-    if (broken < 0.18) {
-      const core = 0.085 + 0.030 * Math.sin(t * 23);
-      box(0, 0, py, core, core, core, CHORUS, opq(a));
-    } else {
-      const hole = 0.14 + 0.26 * (broken - 0.18), pts = 26;
-      for (let i = 0; i < pts; i++) {
-        const ang = (i + 0.5) / pts * TAU;
-        box(Math.cos(ang) * hole, 0, py + Math.sin(ang) * hole, 0.022, 0.022, 0.022,
-            SINGULAR, opq(a * (1 - broken * 0.4)));
-        box(0, Math.cos(ang) * hole, py + Math.sin(ang) * hole, 0.022, 0.022, 0.022,
-            GLACIER, opq(a * (1 - broken * 0.4)));
-      }
-    }
-
-    // ---- 2. LES QUATRE ÉCLATS EN ORBITE ------------------------------------------------
-    const lift = smooth(clamp01((t - 0.12) / 0.12));
-    const thrown = clamp01((t - 0.86) / 0.14);
-    for (let i = 0; i < 4; i++) {
-      const h1 = hash(salt + 61, i * 29);
-      const ang = spin * 0.6 + i * (TAU / 4) + 0.4;
-      const orbit = 1.35 + 0.22 * h1;
-      let fy = GROUND_Y + (py - GROUND_Y) * lift + 0.10 * Math.sin(t * 11 + i);
-      let ff = Math.cos(ang) * orbit * lift, ll = Math.sin(ang) * orbit * lift;
-      if (thrown > 0) {
-        const d = thrown * (3.4 + 1.2 * h1);
-        ff += Math.cos(ang) * d; ll += Math.sin(ang) * d;
-        fy = fy + thrown * 0.9 - GRAVITY * 0.10 * thrown * thrown;
-        if (fy < GROUND_Y + 0.05) fy = GROUND_Y + 0.05;
-      }
-      const sz = 0.090 + 0.040 * h1;
-      box(ff, ll, fy, sz, sz * 0.62, sz, ENDSTONE, opq(a));
-      box(ff + sz * 0.7, ll - sz * 0.5, fy - sz * 0.4, sz * 0.55, sz * 0.45, sz * 0.55, ENDSTONE_DK, opq(a));
-      box(ff - sz * 0.6, ll + sz * 0.6, fy + sz * 0.3, sz * 0.40, sz * 0.40, sz * 0.40, ENDSTONE, opq(a * 0.92));
-    }
-
-    // ---- 3. LE TRAIT D'ENTRÉE ------------------------------------------------------------
-    const inb = clamp01((t - 0.22) / 0.07) * (1 - clamp01((t - 0.60) / 0.10));
-    if (inb > 0.01) {
-      const seg = 30;
-      for (let i = 0; i < seg; i++) {
-        const u = (i + 0.5) / seg;
-        const ff = -4.6 + 4.6 * u;
-        const pk = 0.5 + 0.5 * Math.sin(u * 22 - t * 70);
-        const w = (0.028 + 0.020 * pk) * inb;
-        box(ff, 0, py, w, w, w, pk > 0.78 ? SINGULAR : GLACIER, opq(a * inb));
-      }
-    }
-
-    // ---- 4. LA RÉFRACTION : SEPT FAISCEAUX CREUX -----------------------------------------
-    const wings = smooth(clamp01((t - 0.50) / 0.18)) * (1 - clamp01((t - 0.74) / 0.10));
-    for (let b = 0; b < 7; b++) {
-      const born = 0.32 + b * 0.016;
-      const lifeB = clamp01((t - born) / 0.12) * (1 - clamp01((t - 0.78) / 0.10));
-      if (lifeB <= 0.01) continue;
-      const spreadAng = (b - 3) * 0.30;
-      // LE COU : le faisceau central ne se rabat pas (sin 0 = 0) et cassait la silhouette.
-      const neck = b === 3;
-      const planeTip = 0.30 * Math.sin((t - 0.32) * 3.2);
-      let len = (1.6 + 4.4 * smooth(lifeB)) * (0.78 + 0.22 * Math.cos(spreadAng));
-      if (neck) len *= 1 - 0.52 * wings;
-      const seg = Math.max(10, Math.round(len * 4.5));
-      const perpF = -Math.sin(spreadAng), perpL = Math.cos(spreadAng);
-      for (let s = 0; s < seg; s++) {
-        const u = (s + 0.5) / seg, d = u * len;
-        let ff = d * Math.cos(spreadAng);
-        const ll = d * Math.sin(spreadAng);
-        let yy = py + d * planeTip * Math.sin(spreadAng * 1.6);
-        if (wings > 0.01) {
-          const sweep = wings * (0.55 + 0.30 * u);
-          if (neck) { yy += Math.sin(u * PI * 0.55) * d * wings * 1.55; }
-          else {
-            ff += -Math.abs(Math.sin(spreadAng)) * d * sweep * 1.15;
-            yy += Math.sin(u * PI * 0.72) * d * sweep * 0.72;
-          }
-        }
-        const rad = (0.072 + 0.030 * Math.sin(u * 9 - t * 30)) * (1 - u * 0.45);
-        const ring = u < 0.08 ? 8 : 6;
-        for (let k = 0; k < ring; k++) {
-          const ang = (k + (s & 1) * 0.5) / ring * TAU;
-          const ofl = Math.cos(ang) * rad, ofy = Math.sin(ang) * rad;
-          box(ff + perpF * ofl, ll + perpL * ofl, yy + ofy, 0.020, 0.020, 0.020,
-              k === 0 ? GLACIER : ((b + k) % 3 === 0 ? HORIZON : HALO),
-              opq(a * lifeB * (0.70 + 0.30 * (1 - u))));
-        }
-        if (s === seg - 1) box(ff, ll, yy, 0.055, 0.055, 0.055, SINGULAR, opq(a * lifeB));
-      }
-      if (wings > 0.02 && b < 6) {
-        const nextAng = (b + 1 - 3) * 0.30, dots = 26;
-        for (let k = 0; k < dots; k++) {
-          const u = (k + 0.5) / dots, d = u * len * 0.92;
-          const sweep = wings * (0.55 + 0.30 * u);
-          const sa = spreadAng + (nextAng - spreadAng) * 0.5;
-          const ff = d * Math.cos(sa) - Math.abs(Math.sin(sa)) * d * sweep * 1.15;
-          const ll = d * Math.sin(sa);
-          const yy = py + Math.sin(u * PI * 0.72) * d * sweep * 0.72
-                   + d * 0.30 * Math.sin((t - 0.32) * 3.2) * Math.sin(sa * 1.6);
-          const sz = 0.046 * wings * (1 - u * 0.4);
-          if (sz <= 0.005) continue;
-          box(ff, ll, yy, sz, sz, sz, (k & 3) === 0 ? HORIZON : SLATE, opq(a * wings * 0.80));
-        }
-      }
-    }
-
-    // ---- 5. L'ÉCLAT ------------------------------------------------------------------------
-    const burst = clamp01((t - 0.88) / 0.12);
-    if (burst > 0.001) {
-      const ease = smooth(burst), rr = 0.5 + 4.6 * ease, pts = 56;
-      for (let i = 0; i < pts; i++) {
-        const ang = (i + 0.5) / pts * TAU;
-        const th = 0.078 * (1 - ease * 0.82);
-        if (th <= 0.006) continue;
-        box(Math.cos(ang) * rr, Math.sin(ang) * rr, GROUND_Y + 0.016, th, SLAB_H, th,
-            i % 7 === 0 ? INVERT : HORIZON, opq(a * 0.92));
-      }
-      for (let i = 0; i < 26; i++) {
-        const h1 = hash(salt + 71, i * 13), h2 = hash(salt + 72, i * 17);
-        const u = fract(h1 + ease * 1.3);
-        const yy = GROUND_Y + u * 4.4;
-        const rad = (0.18 + 0.55 * h2) * (1 - u * 0.45);
-        const ang = h2 * TAU + u * 2.6;
-        const sz = 0.036 * (1 - u * 0.6);
-        if (sz <= 0.005) continue;
-        box(Math.cos(ang) * rad, Math.sin(ang) * rad, yy, sz, sz, sz,
-            h1 > 0.65 ? INVERT : GLACIER, opq(a * (1 - u * 0.5)));
-      }
-    }
-  };
-
-  // =======================================================================================
-  //  III. FAILLE DU NÉANT — 170 ticks
-  // =======================================================================================
-  const renderRift = (a) => {
-    const yBase = GROUND_Y + 0.05, height = VOID_SHAPE.RIFT_HEIGHT;
-    const closing = smooth(clamp01((t - 0.64) / 0.18));
-    const gape = VOID_SHAPE.riftGape(t);
-    const scar = clamp01((t - 0.80) / 0.20);
-
-    // ---- 1. LA FÊLURE puis LES DEUX LÈVRES -------------------------------------------
-    const steps = 46;
-    for (let i = 0; i <= steps; i++) {
-      const u = i / steps;
-      const yy = yBase + u * height;
-      const profile = Math.pow(Math.sin(u * PI), 0.62);
-      const w = VOID_SHAPE.RIFT_LIP * gape * profile;
-      // Deux hachages DIFFÉRENTS pour les deux lèvres : c'est tout le sujet. Avec le même,
-      // les dents s'emboîtent et on lit une fermeture éclair.
-      const toothL = (hash(salt + 81, i * 13) - 0.5) * 0.14 * profile;
-      const toothR = (hash(salt + 82, i * 29) - 0.5) * 0.14 * profile;
-      const slip = closing * 0.085 * Math.sin(u * 23 + salt * 0.017);
-      const lL = -w + toothL + slip, lR = w + toothR - slip;
-      const wander = 0.16 * Math.sin(u * 4.3 + salt * 0.013);
-      const lipW = 0.030 + 0.020 * profile;
-      const lipRgb = scar > 0.02 ? (scar > 0.62 ? BASALT : (scar > 0.30 ? HALO : HORIZON)) : GLACIER;
-      box(wander, lL, yy, lipW, lipW * 1.25, lipW, lipRgb, opq(a));
-      box(wander, lL + 0.030, yy, lipW * 0.70, lipW, lipW * 0.70, NOTHING, opq(a * 0.95));
-      box(wander, lR, yy, lipW, lipW * 1.25, lipW, lipRgb, opq(a));
-      box(wander, lR - 0.030, yy, lipW * 0.70, lipW, lipW * 0.70, NOTHING, opq(a * 0.95));
-      if (gape < 0.14 || scar > 0.02) {
-        const th = 0.013 * (1 - scar * 0.85);
-        if (th > 0.003) box(wander, (lL + lR) * 0.5, yy, th, th * 2.4, th,
-                            scar > 0.55 ? HORIZON : SINGULAR, opq(a));
-      }
-      if ((i % 7) === 3 && gape > 0.25) {
-        const h1 = hash(salt + 83, i * 31);
-        const outd = 0.10 + 0.26 * h1;
-        const side = (i & 1) === 0 ? -1 : 1;
-        box(wander + (h1 - 0.5) * 0.14, (side < 0 ? lL : lR) + side * outd,
-            yy + (h1 - 0.5) * 0.12, 0.018, 0.030, 0.018, HORIZON, opq(a * 0.85));
-      }
-    }
-
-    // ---- 2. L'AUTRE CÔTÉ ---------------------------------------------------------------
-    const windows = [[0.40, 0.055], [0.49, 0.030], [0.57, 0.070]];
-    for (let wi = 0; wi < windows.length; wi++) {
-      const w0 = windows[wi][0], wd = windows[wi][1];
-      if (t < w0 || t > w0 + wd) continue;
-      const fade = Math.sin(((t - w0) / wd) * PI);
-      const rows = 9;
-      for (let r = 0; r < rows; r++) {
-        const u = (r + 0.5) / rows;
-        const yy = yBase + u * height;
-        const wMax = VOID_SHAPE.RIFT_LIP * gape * Math.pow(Math.sin(u * PI), 0.62);
-        if (wMax < 0.05) continue;
-        const cols = Math.max(2, Math.round(wMax * 14));
-        for (let c = 0; c < cols; c++) {
-          const ll = -wMax + ((c + 0.5) / cols) * wMax * 2;
-          if (fract(yy * 1.7 + wi * 0.37 + t * 0.8) > 0.30) continue;
-          box(0.16 * Math.sin(u * 4.3 + salt * 0.013) + 0.06, ll, yy,
-              0.016, 0.014, 0.016, CHORUS, opq(a * fade * 0.95));
-        }
-      }
-    }
-
-    // ---- 3. LA CREVASSE AU SOL -----------------------------------------------------------
-    const run = smooth(clamp01((t - 0.15) / 0.24));
-    const heal = clamp01((t - 0.84) / 0.16);
-    if (run > 0.01 && heal < 1) {
-      const reach = 4.6 * run, st = 40;
-      for (let side = -1; side <= 1; side += 2) {
-        for (let i = 1; i <= st; i++) {
-          const u = i / st, d = u * reach;
-          if (d < 0.08) continue;
-          if (u > 1 - heal) continue;
-          const wander = 0.30 * Math.sin(d * 1.9 + side * 1.1 + salt * 0.011);
-          const gap = (0.20 + 0.16 * Math.sin(d * 3.1)) * (1 - u * 0.62) * gape;
-          if (gap < 0.012) continue;
-          const jag = (hash(salt + 91, i * 17 + (side + 1) * 500) - 0.5) * 0.10;
-          for (let lip = -1; lip <= 1; lip += 2) {
-            box(wander + lip * gap + jag, side * d, GROUND_Y + 0.014, 0.052, SLAB_H, 0.062,
-                heal > 0.1 ? BASALT : HORIZON, opq(a * 0.95));
-          }
-          if ((i % 3) === 0) {
-            const h1 = hash(salt + 92, i * 23 + (side + 1) * 700);
-            const tipIn = smooth(clamp01((run - u) * 2.2));
-            const sink = tipIn * (0.22 + 0.30 * h1);
-            box(wander + (h1 - 0.5) * 0.42, side * d + (h1 - 0.5) * 0.3, GROUND_Y + 0.05 - sink,
-                0.085, 0.028 + 0.030 * tipIn, 0.085, h1 > 0.5 ? ENDSTONE : ENDSTONE_DK,
-                opq(a * (1 - tipIn * 0.55)));
-          }
-          if (i === Math.floor(st / 3) || i === Math.floor((st * 2) / 3)) {
-            const bl = 0.9 + 0.7 * hash(salt + 93, i), bs = 10;
-            for (let k = 1; k <= bs; k++) {
-              const bu = k / bs, bd = bu * bl * run;
-              box(wander + side * bd * 0.86, side * d + bd * 0.52, GROUND_Y + 0.014,
-                  0.040 * (1 - bu * 0.6), SLAB_H, 0.040 * (1 - bu * 0.6),
-                  HALO, opq(a * 0.80 * (1 - bu * 0.5)));
-            }
-          }
-        }
-      }
-    }
-
-    // ---- 4. L'ASPIRATION ------------------------------------------------------------------
-    const suck = clamp01((t - 0.26) / 0.36);
-    if (suck > 0.001) {
-      for (let i = 0; i < 22; i++) {
-        const h1 = hash(salt + 101, i * 13), h2 = hash(salt + 102, i * 17), h3 = hash(salt + 103, i * 19);
-        const p = clamp01((suck - h1 * 0.40) / (0.46 + 0.34 * h2));
-        if (p <= 0 || p >= 1) continue;
-        const f0 = (h2 - 0.5) * 5.0, l0 = (h3 - 0.5) * 8.2;
-        const glide = smooth(clamp01(p / 0.72));
-        let ff = f0 * (1 - glide);
-        const ll = l0 * (1 - glide * 0.28);
-        let yy = GROUND_Y + 0.07;
-        const tipOver = clamp01((p - 0.68) / 0.32);
-        if (tipOver > 0) {
-          yy += tipOver * 0.55 - GRAVITY * 0.055 * tipOver * tipOver;
-          ff *= (1 - tipOver);
-        }
-        const sz = (0.080 + 0.040 * h1) * (1 - tipOver * 0.92);
-        if (sz <= 0.006) continue;
-        const roll = p * (6 + 7 * h3);
-        box(ff, ll, yy, sz, sz * 0.72, sz, ENDSTONE, opq(a * (1 - tipOver * 0.4)));
-        box(ff + Math.cos(roll) * sz * 0.7, ll + Math.sin(roll) * sz * 0.7, yy - sz * 0.45,
-            sz * 0.48, sz * 0.40, sz * 0.48, ENDSTONE_DK, opq(a * (1 - tipOver * 0.4)));
-      }
-    }
-
-    // ---- 5. LA CICATRICE ---------------------------------------------------------------------
-    if (scar > 0.02) {
-      for (let i = 0; i < 14; i++) {
-        const h1 = hash(salt + 111, i * 13), h2 = hash(salt + 112, i * 17);
-        const u = fract(h1 + scar * 1.1);
-        const yy = yBase + u * height * 1.25;
-        const sz = 0.026 * (1 - u * 0.7) * (1 - scar * 0.4);
-        if (sz <= 0.005) continue;
-        box(0.16 * Math.sin(u * 4.3 + salt * 0.013) + (h2 - 0.5) * 0.20,
-            (h1 - 0.5) * 0.30, yy, sz, sz, sz, h2 > 0.70 ? INVERT : HORIZON,
-            opq(a * (1 - u * 0.6)));
-      }
-    }
-  };
-
-
-  // =======================================================================================
-  //  IV. PORTE D'HORIZON — 180 ticks
-  // =======================================================================================
-  /* Un TORE pose au sol, et ce qui y tombe ressort ailleurs. C'est la seule forme fermee a
-     TROU de la famille : une sphere n'a pas d'autre cote, un anneau si. */
-  const renderGate = (a) => {
-    const yFloor = GROUND_Y + 0.04;
-    const grow = smooth(clamp01((t - 0.04) / 0.26));
-    const shut = smooth(clamp01((t - 0.86) / 0.14));
-    const ring = VOID_SHAPE.gateRing(t);
-    const spin = t * 3.4 + salt * 0.0013;
-
-    /* ---- 1. LE TRACE AU SOL : l'empreinte existe avant la porte. ---- */
-    {
-      const draw = clamp01(t / 0.12);
-      if (draw < 1) {
-        const n = 76;
-        const upTo = Math.max(1, Math.round(n * draw));
-        for (let i = 0; i <= upTo; i++) {
-          const ang = i / n * TAU;
-          const head = i / Math.max(1, upTo);
-          box(Math.cos(ang) * 2.12, Math.sin(ang) * 2.12, yFloor, 0.034, SLAB_H, 0.034,
-              head > 0.92 ? SINGULAR : (head > 0.70 ? GLACIER : HALO),
-              opq(a * (0.45 + 0.55 * head)));
-        }
-      }
-    }
-
-    /* ---- 2. LE TORE DU BAS ---- */
-    if (ring > 0.02) {
-      const tube = 0.145 * (0.35 + 0.65 * grow);
-      torus(0, 0, yFloor + tube * 1.15, ring, tube, 0, spin, a, false);
-    }
-
-    /* ---- 3. LA MEMBRANE : spirale logarithmique a DEUX brins, qui DESCEND. Pas un
-       disque : un escalier. Un disque plein boucherait le trou, c'est-a-dire le sujet. ---- */
-    {
-      const life = clamp01((t - 0.22) / 0.10) * (1 - clamp01((t - 0.78) / 0.12));
-      if (life > 0.01 && ring > 0.25) {
-        for (let brin = 0; brin < 2; brin++) {
-          const phase = brin * Math.PI;
-          const steps = 54;
-          let prevF = 0, prevL = 0, prevY = 0;
-          for (let i = 0; i <= steps; i++) {
-            const u = i / steps;
-            const theta = phase - spin * 1.7 + u * 4.6;
-            const rr = ring * 0.94 * Math.exp(-2.35 * u);
-            const yy = yFloor + 0.10 - 0.52 * u * u * life;
-            const f = Math.cos(theta) * rr, l = Math.sin(theta) * rr;
-            if (i > 0) {
-              const fade = (1 - u * 0.45) * life;
-              const rgb = u < 0.18 ? HORIZON : (u < 0.55 ? HALO : ABYSS);
-              segment(prevF, prevL, prevY, f, l, yy, 0.030 + 0.018 * (1 - u),
-                      rgb, opq(a * fade), 0.072);
-            }
-            prevF = f; prevL = l; prevY = yy;
-          }
-        }
-      }
-    }
-
-    /* ---- 4. LE TORE DU HAUT, INCLINE. L'inclinaison interdit de le lire comme un echo. ---- */
-    const outGrow = smooth(clamp01((t - 0.30) / 0.16)) * (1 - shut);
-    const outRing = ring * 0.62 * outGrow;
-    const outY = yFloor + 2.25;
-    const tilt = 0.52;
-    if (outRing > 0.04) torus(0, 0, outY, outRing, 0.105, tilt, -spin * 1.35, a * 0.95, true);
-
-    /* ---- 5. LE TRANSIT. Trois vies par fragment : il TOMBE, il N'EXISTE PAS, il RESSORT.
-       La phase morte est ce qui prouve qu'il a traverse quelque chose. ---- */
+    /* ---- 1. LE RECUL : sept coups de canon dans sept directions ---- */
+    let recF = 0, recL = 0, recY = 0;
     for (let k = 0; k < 7; k++) {
-      const born = 0.34 + k * 0.072;
-      const age = (t - born) / 0.30;
-      if (age <= 0 || age >= 1) continue;
-      const angIn = hash(salt + 31, k * 7) * TAU;
-      const rIn = ring * (0.42 + 0.44 * hash(salt + 32, k * 13));
-      const angOut = hash(salt + 33, k * 17) * TAU;
-      const rOut = outRing * (0.30 + 0.50 * hash(salt + 34, k * 19));
-      const size = 0.075 + 0.045 * hash(salt + 35, k * 23);
+      const fire = V.PRISM_FIRE0 + k * V.PRISM_FIRE_STEP;
+      if (t < fire || t > V.PRISM_BREAK) continue;
+      const ray = prismRay(k, V.prismSpin(fire), V.PRISM_W * V.prismBody(fire));
+      if (!ray) continue;
+      const kick = (1 - smooth((t - fire) / 0.085)) * 0.11;
+      recF -= ray.d[0] * kick; recL -= ray.d[1] * kick; recY -= ray.d[2] * kick;
+    }
 
-      if (age < 0.38) {
-        const u = age / 0.38;
-        fragment(Math.cos(angIn) * rIn, Math.sin(angIn) * rIn,
-                 yFloor + 1.60 - 1.62 * u * u, size * (1 - u * 0.25), u * 9 + k,
-                 ENDSTONE, ENDSTONE_DK, opq(a));
-      } else if (age < 0.52) {
-        continue;
-      } else {
-        const u = (age - 0.52) / 0.48;
-        const rr = rOut + u * 1.45;
-        const yy = outY + 0.42 * Math.sin(u * Math.PI * 0.80) - 1.15 * u * u;
-        if (u < 0.14) {
-          const flash = 1 - u / 0.14;
-          for (let s = 0; s < 3; s++) {
-            const sa = angOut + (s - 1) * 0.16;
-            const w = 0.055 * flash + 0.020;
-            box(Math.cos(sa) * outRing, Math.sin(sa) * outRing, outY, w, w, w,
-                SINGULAR, opq(a * flash));
+    /* ---- 2. LE TRAIT D'ENTREE — tick 42 ---- */
+    {
+      const come = clamp01((t - 0.175) / 0.046);
+      const live = 1 - smooth((t - 0.62) / 0.10);
+      if (come > 0 && live > 0.01) {
+        const head = -3.4 + (3.4 - w * 0.60) * smooth(come);
+        const beat = 0.74 + 0.26 * Math.sin(t * 58);
+        const spread = 0.62 * V.PRISM_W;
+        for (let f = -3.4; f <= head; f += 0.085) {
+          const grow = clamp01((f + 3.4) / 0.9);
+          const th = (0.030 + 0.040 * grow) * live;
+          box(f, 0, yc, th, th, th, grow > 0.82 ? SINGULAR : GLACIER,
+              opq(a * (0.55 + 0.45 * grow) * beat * live));
+        }
+        /* Les sept fils, la ou les sept rayons entrent : sept choses paralleles a
+           l'arrivee, sept choses divergentes au depart. */
+        for (let k = 0; k < 7; k++) {
+          const off = k * (TAU / 7) + 0.40;
+          const ol = Math.cos(off) * spread, oy = Math.sin(off) * spread;
+          for (let f = -3.4; f <= head; f += 0.13) {
+            const grow = clamp01((f + 3.4) / 1.2);
+            box(f, ol, yc + oy, 0.024, 0.024, 0.024,
+                k % 3 === 0 ? GLACIER : (k % 3 === 1 ? HORIZON : HALO),
+                opq(a * (0.30 + 0.45 * grow) * live));
           }
         }
-        fragment(Math.cos(angOut) * rr, Math.sin(angOut) * rr, yy,
-                 size * (1 - u * 0.35), u * 11 + k, INVERT, ENDSTONE_DK,
-                 opq(a * (1 - u * 0.5)));
       }
     }
 
-    /* ---- 6. LES QUATRE MONTANTS. Un tube plein retomberait sur le conduit du Siphon,
-       qui appartient au Sang : quatre tiges tres fines en pointille large. ---- */
-    if (outGrow > 0.06) {
-      for (let k = 0; k < 4; k++) {
-        const ang = k * (TAU / 4) + spin * 0.4;
-        const climb = clamp01((t - 0.34) / 0.14);
-        const yTop = yFloor + 0.12 + (outY - yFloor - 0.12) * climb;
-        segment(Math.cos(ang) * ring * 0.96, Math.sin(ang) * ring * 0.96, yFloor + 0.12,
-                Math.cos(ang) * outRing * 0.96, Math.sin(ang) * outRing * 0.96, yTop,
-                0.022, HALO, opq(a * 0.80 * outGrow), 0.195);
+    /* ---- 2 bis. LES TRAJETS INTERNES : le rayon est coude DANS le verre ---- */
+    if (body > 0.05 && t > 0.19) {
+      for (let k = 0; k < 7; k++) {
+        const fire = V.PRISM_FIRE0 + k * V.PRISM_FIRE_STEP;
+        const charge = clamp01((t - 0.19) / Math.max(0.02, fire - 0.19));
+        const after = 1 - smooth((t - fire) / 0.22);
+        const glow = charge * (0.35 + 0.65 * after);
+        if (glow < 0.04) continue;
+        const ray = prismRay(k, spin, w);
+        if (!ray) continue;
+        segment(ray.e[0], ray.e[1], yc + ray.e[2], ray.p[0], ray.p[1], yc + ray.p[2],
+                0.022 + 0.014 * glow,
+                glow > 0.80 ? SINGULAR : (k % 2 === 0 ? GLACIER : HORIZON),
+                opq(a * (0.30 + 0.60 * glow)), 0.055);
+      }
+    }
+
+    /* ---- 3. LES SEPT FAISCEAUX ---- */
+    for (let k = 0; k < 7; k++) {
+      const fire = V.PRISM_FIRE0 + k * V.PRISM_FIRE_STEP;
+      if (t < fire) continue;
+      const age = t - fire;
+      const live = 1 - smooth((t - V.PRISM_BREAK + 0.02) / 0.10);
+      if (live <= 0.01) continue;
+      const ray = prismRay(k, V.prismSpin(fire), V.PRISM_W * V.prismBody(fire));
+      if (!ray) continue;
+      let reach = 3.9 * smooth(age / 0.055);
+      if (reach < 0.08) continue;
+      const bf = ray.p[0], bl = ray.p[1], by = V.PRISM_YC + ray.p[2];
+      const rd = ray.d;
+      let grounded = false;
+      if (rd[2] < -0.03) {
+        const toFloor = (GROUND_Y + 0.03 - by) / rd[2];
+        if (toFloor > 0.05 && toFloor < reach) { reach = toFloor; grounded = true; }
+      }
+      let ux, ul, uy;
+      if (Math.abs(rd[2]) < 0.90) { ux = -rd[1]; ul = rd[0]; uy = 0; }
+      else { ux = 1; ul = 0; uy = 0; }
+      let un = Math.sqrt(ux * ux + ul * ul + uy * uy);
+      if (un < 1e-4) { ux = 1; ul = 0; uy = 0; un = 1; }
+      ux /= un; ul /= un; uy /= un;
+      const wx = rd[1] * uy - rd[2] * ul, wl = rd[2] * ux - rd[0] * uy, wy = rd[0] * ul - rd[1] * ux;
+      const steps = Math.max(3, Math.min(40, Math.round(reach / 0.155)));
+      const tone = k % 3 === 0 ? GLACIER : (k % 3 === 1 ? HORIZON : HALO);
+      const rad = 0.052 + 0.012 * Math.sin(t * 24 + k);
+      for (let si = 0; si <= steps; si++) {
+        const u = si / steps, d = u * reach;
+        const ff = bf + rd[0] * d, ll = bl + rd[1] * d, yy = by + rd[2] * d;
+        const taper = 1 - 0.45 * u;
+        for (let c = 0; c < 5; c++) {
+          const ang = c * (TAU / 5) + d * 2.4 + t * 6;
+          const ca = Math.cos(ang) * rad * taper, sa = Math.sin(ang) * rad * taper;
+          box(ff + ux * ca + wx * sa, ll + ul * ca + wl * sa, yy + uy * ca + wy * sa,
+              0.026, 0.026, 0.026, si === steps ? SINGULAR : tone,
+              opq(a * (0.52 + 0.48 * (1 - u)) * live));
+        }
+      }
+      const ef = bf + rd[0] * reach, el = bl + rd[1] * reach, ey = by + rd[2] * reach;
+      const flash = 1 - clamp01(age / 0.085);
+      if (grounded) {
+        const rr = 0.14 + 0.52 * clamp01(age / 0.16);
+        const ring = Math.max(10, Math.round(rr * 22));
+        for (let i = 0; i < ring; i++) {
+          const ang = i / ring * TAU;
+          box(ef + Math.cos(ang) * rr, el + Math.sin(ang) * rr, GROUND_Y + 0.016,
+              0.040, SLAB_H, 0.040, (i & 1) === 0 ? tone : HALO,
+              opq(a * (0.80 - 0.55 * clamp01(age / 0.22)) * live));
+        }
+      }
+      if (flash > 0.02) {
+        for (let i = 0; i < 6; i++) {
+          const ang = i * (TAU / 6) + t * 3, rr = 0.10 + 0.26 * (1 - flash);
+          box(ef + Math.cos(ang) * rr, el + Math.sin(ang) * rr, ey + (i % 2 === 0 ? 0.08 : -0.08),
+              0.036, 0.036, 0.036, SINGULAR, opq(a * flash * live));
+        }
+      }
+    }
+
+    /* ---- 4. LE CRISTAL : six sommets, douze aretes, et la fracture du tick 150 ---- */
+    {
+      const vert = [];
+      for (let v = 0; v < 6; v++) {
+        const vf = v === 0 ? w : (v === 1 ? -w : 0);
+        const vl2 = v === 2 ? w : (v === 3 ? -w : 0);
+        const vy2 = v === 4 ? w : (v === 5 ? -w : 0);
+        const p = spinPoint(vf, vl2, vy2, V.PRISM_TILT, spin);
+        vert.push(p[0] + recF, p[1] + recL, yc + p[2] + recY);
+      }
+      const edges = [0, 2, 2, 1, 1, 3, 3, 0, 0, 4, 2, 4, 1, 4, 3, 4, 0, 5, 2, 5, 1, 5, 3, 5];
+      const sec = (t - V.PRISM_BREAK) * 9.5;
+      for (let e = 0; e < 12; e++) {
+        const i0e = edges[e * 2], i1e = edges[e * 2 + 1];
+        let f0 = vert[i0e * 3], l0 = vert[i0e * 3 + 1], y0 = vert[i0e * 3 + 2];
+        let f1 = vert[i1e * 3], l1 = vert[i1e * 3 + 1], y1 = vert[i1e * 3 + 2];
+        let fade = 1;
+        if (broken > 0) {
+          const mf = (f0 + f1) * 0.5, ml = (l0 + l1) * 0.5, my = (y0 + y1) * 0.5;
+          const out = Math.sqrt(mf * mf + ml * ml) + 0.001;
+          const sp = 0.9 + 1.1 * hash(salt, e * 7);
+          const nf = mf + mf / out * sp * sec, nl = ml + ml / out * sp * sec;
+          const ny = ballistic(my, 1.1 + 1.6 * hash(salt, e * 13), sec, floorY);
+          const roll = sec * (1.8 + 3.4 * hash(salt, e * 19));
+          const cr = Math.cos(roll), sr = Math.sin(roll);
+          const hf = (f1 - f0) * 0.5, hl = (l1 - l0) * 0.5, hy = (y1 - y0) * 0.5;
+          const rf = hf * cr - hl * sr, rl = hf * sr + hl * cr;
+          f0 = nf - rf; f1 = nf + rf; l0 = nl - rl; l1 = nl + rl; y0 = ny - hy; y1 = ny + hy;
+          fade = 1 - smooth((t - V.PRISM_BREAK) / 0.20) * 0.75;
+        }
+        const equator = e < 4;
+        const th = (equator ? 0.040 : 0.029) * (0.55 + 0.45 * body + 0.45 * broken);
+        const tone = broken > 0 ? ((e & 1) === 0 ? BASALT : SLATE) : (equator ? GLACIER : HORIZON);
+        segment(f0, l0, y0, f1, l1, y1, th, tone, opq(a * 0.95 * fade), equator ? 0.052 : 0.062);
+      }
+      if (broken <= 0) {
+        for (let v = 0; v < 6; v++) {
+          const pulse = 0.70 + 0.30 * Math.sin(t * 19 + v * 1.7);
+          box(vert[v * 3], vert[v * 3 + 1], vert[v * 3 + 2], 0.052, 0.052, 0.052,
+              pulse > 0.92 ? SINGULAR : GLACIER, opq(a * pulse));
+        }
+      }
+    }
+
+    /* ---- 5. LES QUATRE ECLATS ARRACHES AU SOL : ils viennent du plancher, ils y retombent ---- */
+    {
+      const rise = smooth((t - 0.10) / 0.14);
+      for (let i = 0; i < 4; i++) {
+        const ang = i * (TAU / 4) + spin * 0.85, orbit = V.PRISM_W * 1.46;
+        let sf = Math.cos(ang) * orbit, sl = Math.sin(ang) * orbit;
+        const home = yc + Math.sin(spin * 0.7 + i) * 0.10;
+        let sy = GROUND_Y + (home - GROUND_Y) * rise;
+        if (broken > 0) {
+          const fallSec = (t - V.PRISM_BREAK) * 9.5;
+          sf += Math.cos(ang) * 1.25 * fallSec;
+          sl += Math.sin(ang) * 1.25 * fallSec;
+          sy = ballistic(home, 0.7, fallSec, floorY);
+        }
+        fragment(sf, sl, sy, 0.072, spin * 1.4 + i, ENDSTONE, ENDSTONE_DK,
+                 opq(a * (0.35 + 0.65 * rise)));
+      }
+    }
+
+    /* ---- 6. L'ECLAT — tick 170 ---- */
+    {
+      const burst = clamp01((t - V.PRISM_BURST) / 0.105);
+      if (burst > 0) {
+        const rr = 0.3 + 2.3 * smooth(burst);
+        const ring = Math.max(22, Math.round(rr * 20));
+        for (let i = 0; i < ring; i++) {
+          const ang = i / ring * TAU, wob = 1 + 0.06 * Math.sin(ang * 7 + t * 9);
+          box(Math.cos(ang) * rr * wob, Math.sin(ang) * rr * wob, GROUND_Y + 0.016,
+              0.052, SLAB_H, 0.052, i % 5 === 0 ? INVERT : HORIZON,
+              opq(a * (1 - burst) * 0.95));
+        }
+        for (let i = 0; i < 14; i++) {
+          const u = (i / 14 + burst * 1.4) % 1, ang = i * 2.39996 + t * 4;
+          const rr2 = 0.18 + 0.52 * u;
+          box(Math.cos(ang) * rr2, Math.sin(ang) * rr2, GROUND_Y + 0.05 + u * 3.4,
+              0.042, 0.042, 0.042, (i & 1) === 0 ? INVERT : GLACIER,
+              opq(a * (1 - u) * (1 - burst * 0.5)));
+        }
       }
     }
   };
 
   // =======================================================================================
-  //  V. CONSTELLATION NULLE — 200 ticks
+  //  III. FAILLE DU NÉANT — 170 ticks — elle TRIE
   // =======================================================================================
-  /* Sept noeuds, onze aretes, et la trame qui se dechire. Seul objet NON CENTRE de la
-     famille, et seul capable de dire visuellement « ces choses-la sont SOLIDAIRES ». */
-  const renderLattice = (a) => {
-    const N = 7;
-    const edges = [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,0],[0,3],[1,4],[2,5],[3,6]];
-    const converge = smooth(clamp01((t - 0.56) / 0.30));
-    /* La DECHIRURE passe AVANT le point : si la trame se resorbait d'abord, les aretes
-       auraient une longueur nulle au moment de rompre et personne ne verrait rien rompre. */
-    const tear = clamp01((t - 0.86) / 0.07);
-    const collapse = smooth(clamp01((t - 0.92) / 0.08));
+  /* Une LIGNE de 8,6 blocs en travers du chemin de l'arme — le corridor du serveur, pas un
+     disque. Propagation, profil de Griffith, fibres qui cassent, fermeture eclair. */
+  const renderRift = (a) => {
+    const V = VOID_SHAPE;
+    const run = V.riftRun(t), gape = V.riftGape(t);
+    const half = V.riftHalfLength(t), crown = V.riftCrown(t);
+    const base = GROUND_Y + 0.03, lipMax = V.RIFT_LIP * gape;
 
-    const nf = [], nl = [], ny = [];
-    let bf = 0, bl = 0, by = 0;
-    for (let i = 0; i < N; i++) {
-      const ang = (i / N) * TAU + (hash(salt + 41, i * 7) - 0.5) * 0.70;
-      const rad = 1.25 + 1.55 * hash(salt + 42, i * 11);
-      nf.push(Math.cos(ang) * rad); nl.push(Math.sin(ang) * rad);
-      ny.push(0.10 + 2.05 * hash(salt + 43, i * 13));
-      bf += nf[i]; bl += nl[i]; by += ny[i];
-    }
-    bf /= N; bl /= N; by /= N;
-
-    const pf = [], pl = [], py = [];
-    for (let i = 0; i < N; i++) {
-      const pull = converge * 0.46 + collapse * 0.54;
-      const drift = (1 - converge) * 0.055;
-      pf.push(nf[i] + (bf - nf[i]) * pull + Math.sin(t * 5.1 + i * 1.7) * drift);
-      pl.push(nl[i] + (bl - nl[i]) * pull + Math.cos(t * 4.3 + i * 2.3) * drift);
-      py.push(ny[i] + (by - ny[i]) * pull + Math.sin(t * 6.2 + i * 0.9) * drift * 0.7);
-    }
-
-    /* ---- 1. LES ARETES. Elles PENDENT avant de se tendre : une arete droite d'emblee est
-       un trait de regle, elle ne pese rien. La catenaire donne la matiere. ---- */
-    for (let e = 0; e < edges.length; e++) {
-      const i = edges[e][0], j = edges[e][1];
-      const born = 0.10 + Math.max(i, j) * 0.012;
-      if (t < born) continue;
-      const tenseAt = 0.38 + hash(salt + 51, e * 29) * 0.30;
-      const tense = smooth(clamp01((t - tenseAt) / 0.085));
-      const sagAmount = (1 - tense) * 0.28;
-      const len = dist3(pf[i], pl[i], py[i], pf[j], pl[j], py[j]);
-      if (len < 0.02) continue;
-
-      const cutIn = tear * 0.5;
-      const steps = Math.max(6, Math.min(22, Math.round(len * 7)));
-      let prevF = 0, prevL = 0, prevY = 0, havePrev = false;
-      for (let s = 0; s <= steps; s++) {
-        const u = s / steps;
-        if (tear > 0.001 && Math.abs(u - 0.5) < cutIn) { havePrev = false; continue; }
-        const f = pf[i] + (pf[j] - pf[i]) * u;
-        const l = pl[i] + (pl[j] - pl[i]) * u;
-        const k = (u - 0.5) * 2;
-        const sag = (Math.cosh(1.65) - Math.cosh(1.65 * k)) / (Math.cosh(1.65) - 1);
-        const y = py[i] + (py[j] - py[i]) * u - sag * sagAmount * len * 0.42;
-        if (havePrev) {
-          /* DEUX tons quand la trame est tendue : une fois resserrees, onze aretes d'un
-             seul ton ne font plus qu'une masse grise. La parite les redecoupe. */
-          const rgb = tense > 0.55 ? ((e & 1) === 0 ? GLACIER : HORIZON)
-                                   : (tense > 0.12 ? HORIZON : HALO);
-          segment(prevF, prevL, prevY, f, l, y, 0.023 + 0.016 * tense, rgb,
-                  opq(a * (0.66 + 0.34 * tense) * (1 - tear * 0.4)), 0.052);
+    /* ---- 1. LA FELURE AU SOL : elle precede tout, elle survit a tout ---- */
+    {
+      const scar = clamp01((t - V.RIFT_CLOSE) / 0.18), reach = V.RIFT_REACH * run;
+      const n = 38;
+      let prevF = 0, prevL = -reach;
+      for (let i = 0; i <= n; i++) {
+        const u = -1 + 2 * i / n, ll = u * reach;
+        const jag = (hash(salt, i * 31) - 0.5) * 0.18 * (1 - Math.abs(u) * 0.4);
+        if (i > 0) {
+          segment(prevF, prevL, GROUND_Y + 0.014, jag, ll, GROUND_Y + 0.014, 0.034,
+                  scar > 0.5 ? BASALT : (Math.abs(u) < 0.5 ? HORIZON : HALO),
+                  opq(a * (0.92 - 0.35 * scar)), 0.048);
         }
-        prevF = f; prevL = l; prevY = y; havePrev = true;
+        prevF = jag; prevL = ll;
       }
-
-      /* L'ECLAT qui parcourt l'arete au moment ou elle se tend : le seul endroit du
-         fichier ou quelque chose se propage LE LONG d'une arete. */
-      const sparkU = (t - tenseAt) / 0.085;
-      if (sparkU > 0 && sparkU < 1) {
-        const f = pf[i] + (pf[j] - pf[i]) * sparkU;
-        const l = pl[i] + (pl[j] - pl[i]) * sparkU;
-        const k = (sparkU - 0.5) * 2;
-        const sag = (Math.cosh(1.65) - Math.cosh(1.65 * k)) / (Math.cosh(1.65) - 1);
-        const y = py[i] + (py[j] - py[i]) * sparkU
-                - sag * (1 - smooth(sparkU)) * 0.28 * len * 0.42;
-        box(f, l, y, 0.055, 0.055, 0.055, SINGULAR, opq(a));
+      for (let b = 0; b < 7; b++) {
+        const u = (hash(salt, b * 47) - 0.5) * 1.7;
+        const side = (b & 1) === 0 ? 1 : -1;
+        const len = (0.35 + 0.85 * hash(salt, b * 59)) * (1 - Math.abs(u) * 0.6);
+        const ang = (0.5 + 0.7 * hash(salt, b * 71)) * side;
+        const sl = u * reach;
+        segment(0, sl, GROUND_Y + 0.014, Math.sin(ang) * len, sl + Math.cos(ang) * len * 0.5,
+                GROUND_Y + 0.014, 0.026, scar > 0.5 ? ABYSS : SLATE, opq(a * 0.80), 0.055);
       }
     }
 
-    /* ---- 2. LES NOEUDS ---- */
-    for (let i = 0; i < N; i++) {
-      const wake = smooth(clamp01((t - i * 0.0135) / 0.040));
-      if (wake <= 0.01) continue;
-      node(pf[i], pl[i], py[i], (0.095 + 0.030 * hash(salt + 44, i * 17)) * wake,
-           t * 2.1 + i * 0.9, collapse, a);
+    if (half > 0.05 && crown > 0.05) {
+      /* ---- 2. LES DEUX LEVRES, et leurs nervures ---- */
+      const n = 34;
+      for (let side = -1; side <= 1; side += 2) {
+        let prevF = 0, prevL = 0, prevY = 0;
+        for (let i = 0; i <= n; i++) {
+          const u = -1 + 2 * i / n, prof = V.riftProfile(u);
+          const ll = u * half, yy = base + crown * prof;
+          const jag = (hash(salt, i * 37 + (side > 0 ? 0 : 500)) - 0.5) * 0.10 * prof;
+          const ff = side * (lipMax * prof * 0.92 + 0.035) + jag;
+          if (i > 0) {
+            const bright = prof * (0.55 + 0.45 * Math.sin(u * 9 - t * 14));
+            segment(prevF, prevL, prevY, ff, ll, yy, 0.036 + 0.018 * prof,
+                    bright > 0.62 ? SINGULAR : (prof > 0.45 ? GLACIER : HORIZON),
+                    opq(a * (0.68 + 0.32 * prof)), 0.050);
+          }
+          prevF = ff; prevL = ll; prevY = yy;
+        }
+        for (let level = 1; level <= 4; level++) {
+          const h = level / 5;
+          let prevF2 = 0, prevL2 = 0, started = false;
+          for (let i = 0; i <= n; i++) {
+            const u = -1 + 2 * i / n, prof = V.riftProfile(u);
+            if (prof <= h) { started = false; continue; }
+            const inner = Math.sqrt(Math.max(0, 1 - (h / prof) * (h / prof)));
+            const ff = side * lipMax * prof * inner * 0.88, ll = u * half, yy = base + crown * h;
+            if (started) {
+              segment(prevF2, prevL2, yy, ff, ll, yy, 0.024,
+                      (level & 1) === 0 ? BASALT : SLATE, opq(a * 0.72), 0.070);
+            }
+            prevF2 = ff; prevL2 = ll; started = true;
+          }
+        }
+      }
+
+      /* ---- 3. LES FIBRES : de la matiere etiree qui se necrose et CASSE ---- */
+      for (let i = 0; i < 9; i++) {
+        const u = (hash(salt, i * 83) - 0.5) * 1.74, prof = V.riftProfile(u);
+        if (prof < 0.12) continue;
+        const limit = 0.22 + 0.62 * hash(salt, i * 97);
+        const strain = clamp01(gape / limit);
+        if (strain >= 1) continue;
+        const h = (0.15 + 0.70 * hash(salt, i * 101)) * prof;
+        const ll = u * half, yy = base + crown * h, span = lipMax * prof * 0.92;
+        for (let si = 0; si <= 7; si++) {
+          const v = -1 + 2 * si / 7;
+          const neck = 1 - 0.85 * strain * (1 - v * v);
+          const th = 0.028 * neck;
+          if (th < 0.006) continue;
+          box(v * span, ll + v * 0.04, yy + (1 - v * v) * 0.05 * strain, th, th, th,
+              strain > 0.66 ? GLACIER : HORIZON, opq(a * (0.55 + 0.45 * (1 - strain))));
+        }
+      }
+
+      /* ---- 4. L'AUTRE COTE — tick 112 ---- */
+      {
+        const other = clamp01((t - 112 / 170) / 0.10) * (1 - clamp01((t - V.RIFT_CLOSE) / 0.08));
+        if (other > 0.01) {
+          for (let i = 0; i < 12; i++) {
+            const u = (hash(salt, i * 113) - 0.5) * 1.5, prof = V.riftProfile(u);
+            if (prof < 0.2) continue;
+            const rise = fract(hash(salt, i * 127) + t * 0.9);
+            const yy = base + crown * prof * rise, ll = u * half;
+            const ff = (hash(salt, i * 131) - 0.5) * lipMax * prof * 1.2;
+            const sz = 0.040 * (1 - rise * 0.5);
+            box(ff, ll, yy, sz, sz, sz, CHORUS, opq(a * other * (1 - rise)));
+          }
+        }
+      }
     }
 
-    /* ---- 3. LE POINT ---- */
-    if (collapse > 0.02) {
-      const puff = collapse * (1 - tear);
-      const w = 0.085 * puff + 0.02;
-      box(bf, bl, by, w, w, w, SINGULAR, opq(a));
-      for (let s = 0; s < 6; s++) {
-        const sf = (s === 0 ? 1 : s === 1 ? -1 : 0) * 0.20 * puff;
-        const sl = (s === 2 ? 1 : s === 3 ? -1 : 0) * 0.20 * puff;
-        const sy = (s === 4 ? 1 : s === 5 ? -1 : 0) * 0.20 * puff;
-        segment(bf, bl, by, bf + sf, bl + sl, by + sy, 0.022, GLACIER,
-                opq(a * puff), 0.045);
+    /* ---- 5. LES NEUF ASPIRATIONS — ticks 20 + 10k, vers le PLAN et pas vers le centre ---- */
+    for (let k = 0; k < 9; k++) {
+      const when = (20 + k * 10) / 170;
+      if (t < when) break;
+      const age = t - when;
+      if (age > 0.16) continue;
+      const u01 = clamp01(age / 0.16);
+      for (let i = 0; i < 5; i++) {
+        const seed = k * 311 + i * 29;
+        const side = (i & 1) === 0 ? 1 : -1;
+        const f0 = side * (1.6 + 1.8 * hash(salt, seed));
+        const ll = (hash(salt, seed + 7) - 0.5) * 2 * V.RIFT_REACH * run;
+        const prof = V.riftProfile(clamp01(Math.abs(ll) / Math.max(0.2, V.RIFT_REACH * run)));
+        const pull = u01 * u01 * (3 - 2 * u01);
+        const ff = f0 * (1 - pull);
+        const yy = GROUND_Y + 0.06 + pull * (0.35 + 0.9 * prof) + 0.25 * Math.sin(pull * 3.1);
+        if (Math.abs(ff) < lipMax * prof * 0.8) continue;
+        fragment(ff, ll, yy, 0.052 * (1 - 0.4 * pull), pull * 7 + i,
+                 i % 3 === 0 ? ENDSTONE : HALO, ENDSTONE_DK,
+                 opq(a * (0.45 + 0.55 * (1 - pull))));
+      }
+      for (let i = 0; i < 7; i++) {
+        const side = (i & 1) === 0 ? 1 : -1;
+        const f0 = side * (0.9 + 2.4 * hash(salt, k * 53 + i));
+        const ll = (hash(salt, k * 59 + i * 3) - 0.5) * 2 * V.RIFT_REACH * run;
+        box(f0 * (1 - u01), ll, GROUND_Y + 0.020, 0.034, SLAB_H, 0.034,
+            i % 4 === 0 ? GLACIER : HALO, opq(a * (1 - u01) * 0.85));
+      }
+    }
+
+    /* ---- 6. LA FERMETURE — tick 140 : ejection PERPENDICULAIRE, comme le voidPush ---- */
+    {
+      const shut = clamp01((t - V.RIFT_CLOSE) / 0.17);
+      if (shut > 0) {
+        const sec = (t - V.RIFT_CLOSE) * 8.5;
+        for (let i = 0; i < 14; i++) {
+          const side = (i & 1) === 0 ? 1 : -1;
+          const ll = (hash(salt, i * 151) - 0.5) * 2 * V.RIFT_REACH * 0.9;
+          const speed = 1.5 + 1.6 * hash(salt, i * 157);
+          const y0 = base + V.RIFT_HEIGHT * 0.35 * hash(salt, i * 163);
+          fragment(side * speed * sec, ll, ballistic(y0, 1.3, sec, GROUND_Y + 0.05),
+                   0.054, sec * 5 + i, i % 3 === 0 ? INVERT : GLACIER, BASALT,
+                   opq(a * (1 - shut * 0.8)));
+        }
+      }
+    }
+  };
+
+  // =======================================================================================
+  //  IV. PORTE D'HORIZON — 180 ticks — elle EXPULSE
+  // =======================================================================================
+  /* Un TOURNIQUET : sept transits, sept vraies paraboles, azimut qui avance d'un septieme
+     de tour — l'etoile que le serveur dessine avec des corps. */
+  const renderGate = (a) => {
+    const V = VOID_SHAPE;
+    const ring = V.gateRing(t), floorY = GROUND_Y + 0.04;
+    const open = smooth((t - 24 / 180) / 0.12);
+    const shut = clamp01((t - V.GATE_SHUT) / 0.12);
+    const seedAng = hash(salt, 3) * TAU;
+
+    /* ---- 1. LE TRACE AU SOL — ticks 0, 5, 10, 15 : la boucle exacte du serveur ---- */
+    for (let step = 0; step < 4; step++) {
+      const when = step * 5 / 180;
+      if (t < when) continue;
+      const age = clamp01((t - when) / 0.22);
+      for (let i = 0; i < 10; i++) {
+        const ang = (i + step * 2.5) / 10 * TAU;
+        const sz = (0.055 - 0.020 * age) * (1 - 0.5 * open);
+        if (sz <= 0.008) continue;
+        box(Math.cos(ang) * 2.12, Math.sin(ang) * 2.12, GROUND_Y + 0.016, sz, SLAB_H, sz,
+            step === 3 ? GLACIER : HORIZON, opq(a * (0.40 + 0.18 * step) * (1 - age * 0.4)));
+      }
+    }
+
+    /* ---- 2. L'ANNEAU : la fermeture resorbe l'ame et garde la section ---- */
+    {
+      const soul = ring * (1 - smooth(shut));
+      const tube = (0.17 + 0.035 * Math.sin(t * 13)) * (0.35 + 0.65 * open) * (1 + shut * 0.8);
+      if (soul > 0.04 && tube > 0.01) {
+        torus(0, 0, floorY + tube * 0.9, soul, tube, 0, t * 3.4, a * (0.55 + 0.45 * open), false);
+      }
+    }
+
+    /* ---- 3. LA CAGE LENTILLEE : l'air lui-meme tombe dedans, en -k/r ---- */
+    if (open > 0.02 && shut < 1) {
+      const strength = ring * ring * 0.42 * open * (1 - shut);
+      for (let i = 0; i < 16; i++) {
+        const ang = i / 16 * TAU + t * 0.25;
+        const ca = Math.cos(ang), sa = Math.sin(ang);
+        const r0 = ring * (1.04 + 0.26 * hash(salt, i * 17));
+        let prevF = 0, prevL = 0, prevY = 0;
+        for (let h = 0; h <= 10; h++) {
+          const u = h / 10, yy = floorY + u * 2.45;
+          const bend = strength / Math.max(0.5, r0) / (1 + yy * yy * 0.55);
+          const rr = Math.max(ring * 0.22, r0 - bend);
+          const ff = ca * rr, ll = sa * rr;
+          if (h > 0) {
+            const pull = clamp01(bend / 0.9);
+            segment(prevF, prevL, prevY, ff, ll, yy, 0.014 + 0.012 * pull,
+                    pull > 0.55 ? HORIZON : (pull > 0.25 ? HALO : SLATE),
+                    opq(a * (0.30 + 0.55 * pull) * open * (1 - shut)), 0.115 - 0.045 * pull);
+          }
+          prevF = ff; prevL = ll; prevY = yy;
+        }
+      }
+    }
+
+    /* ---- 4. LES SEPT TRANSITS — ticks 34 + 18p ---- */
+    for (let pass = 0; pass < 7; pass++) {
+      const when = V.GATE_PASS0 + pass * V.GATE_PASS_STEP;
+      if (t < when - 0.035) break;
+      const ang = seedAng + pass * (TAU / 7);
+      const ca = Math.cos(ang), sa = Math.sin(ang), inAng = ang + 2.6;
+      const age = t - when;
+      if (age < 0) {
+        const u = clamp01((age + 0.035) / 0.035), rr = ring * (1.9 - 0.9 * u);
+        fragment(Math.cos(inAng) * rr, Math.sin(inAng) * rr, floorY + 0.22 - 0.18 * u,
+                 0.085, u * 5, ENDSTONE, ENDSTONE_DK, opq(a * 0.9));
+        continue;
+      }
+      if (age < 0.030) {
+        const u = age / 0.030;
+        for (let i = 0; i < 9; i++) {
+          const aa = i / 9 * TAU + u * 5, rr = ring * (0.25 + 0.70 * u);
+          box(Math.cos(aa) * rr, Math.sin(aa) * rr, floorY + 0.06 + u * 0.25,
+              0.045, 0.045, 0.045, SINGULAR, opq(a * (1 - u)));
+        }
+        continue;
+      }
+      const sec = (age - 0.030) * 9;
+      const dist = 3.5 * sec;
+      const yy = ballistic(floorY + 0.10, 4.4, sec, floorY + 0.05);
+      const life = 1 - clamp01((sec - 1.9) / 0.8);
+      if (life <= 0.01) continue;
+      fragment(ca * dist, sa * dist, yy, 0.082, sec * 6.5 + pass, INVERT, BASALT, opq(a * life));
+      for (let i = 1; i <= 9; i++) {
+        const back = sec - i * 0.085;
+        if (back <= 0) break;
+        const by = ballistic(floorY + 0.10, 4.4, back, floorY + 0.05), bd = 3.5 * back;
+        const fade = (1 - i / 10) * life;
+        box(ca * bd, sa * bd, by, 0.030, 0.030, 0.030, (i & 1) === 0 ? INVERT : HALO,
+            opq(a * fade * 0.75));
+      }
+    }
+
+    /* ---- 5. LA FERMETURE — tick 150 ---- */
+    if (shut > 0) {
+      const rr = 0.4 + 3.0 * smooth(shut);
+      const n = Math.max(24, Math.round(rr * 18));
+      for (let i = 0; i < n; i++) {
+        const ang = i / n * TAU, wob = 1 + 0.05 * Math.sin(ang * 6 + t * 11);
+        box(Math.cos(ang) * rr * wob, Math.sin(ang) * rr * wob, GROUND_Y + 0.016,
+            0.046, SLAB_H, 0.046, i % 6 === 0 ? SINGULAR : HORIZON, opq(a * (1 - shut) * 0.90));
+      }
+      const core = (1 - shut) * 0.42;
+      if (core > 0.03) {
+        for (let i = 0; i < 16; i++) {
+          const aa = i * 2.39996 + t * 7, el = (hash(salt, i * 23) - 0.5) * 2.4;
+          const rr2 = core * Math.cos(el);
+          box(Math.cos(aa) * rr2, Math.sin(aa) * rr2, floorY + 0.2 + core * Math.sin(el),
+              0.040, 0.040, 0.040, (i & 1) === 0 ? GLACIER : HORIZON, opq(a * (1 - shut)));
+        }
+      }
+    }
+  };
+
+  // =======================================================================================
+  //  V. CONSTELLATION NULLE — 200 ticks — elle LIE
+  // =======================================================================================
+  /* Une vraie SIMULATION masses-ressorts, rejouee depuis zero a chaque image, a pas fixe :
+     onze ressorts, onze impulsions aux ticks du serveur, et la trame OSCILLE. */
+  const latticeSim = (tt) => {
+    const V = VOID_SHAPE, n = 7;
+    const edges = [0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 0, 0, 3, 1, 4, 2, 5, 3, 6];
+    const px = [], pl = [], py = [], vf = [], vl = [], vy = [], rest = [];
+    for (let i = 0; i < n; i++) {
+      const ang = i * (TAU / n) + (hash(salt, i * 17) - 0.5) * 0.62;
+      const r = V.LATTICE_R * (0.72 + 0.46 * hash(salt, i * 31));
+      px.push(Math.cos(ang) * r); pl.push(Math.sin(ang) * r);
+      py.push(V.LATTICE_YC + (hash(salt, i * 53) - 0.5) * 1.35);
+      vf.push(0); vl.push(0); vy.push(0);
+    }
+    for (let e = 0; e < 11; e++) {
+      const i0 = edges[e * 2], i1 = edges[e * 2 + 1];
+      rest.push(dist3(px[i0], pl[i0], py[i0], px[i1], pl[i1], py[i1]));
+    }
+    const total = 240, dt = 10 / total, dtT = 1 / total;
+    const steps = Math.min(total, Math.max(0, Math.round(tt * total)));
+    const af = new Array(n), al = new Array(n), ay = new Array(n);
+    for (let s = 0; s < steps; s++) {
+      const now = s * dtT;
+      for (let i = 0; i < n; i++) { af[i] = 0; al[i] = 0; ay[i] = 0; }
+      const broken = now >= V.LATTICE_SNAP;
+      if (!broken) {
+        const target = V.latticeRest(now);
+        for (let e = 0; e < 11; e++) {
+          const i0 = edges[e * 2], i1 = edges[e * 2 + 1];
+          const ddf = px[i1] - px[i0], ddl = pl[i1] - pl[i0], ddy = py[i1] - py[i0];
+          const len = Math.sqrt(ddf * ddf + ddl * ddl + ddy * ddy);
+          if (len < 0.0005) continue;
+          const force = 5.4 * (len - rest[e] * target) / len;
+          af[i0] += ddf * force; al[i0] += ddl * force; ay[i0] += ddy * force;
+          af[i1] -= ddf * force; al[i1] -= ddl * force; ay[i1] -= ddy * force;
+        }
+        for (let e = 0; e < 11; e++) {
+          const when = V.LATTICE_TENSION0 + e * V.LATTICE_TENSION_STEP;
+          if (when < now || when >= now + dtT) continue;
+          let bf = 0, bl = 0;
+          for (let i = 0; i < n; i++) { bf += px[i]; bl += pl[i]; }
+          bf /= n; bl /= n;
+          for (let i = 0; i < n; i++) {
+            const ddf = bf - px[i], ddl = bl - pl[i];
+            const d = Math.sqrt(ddf * ddf + ddl * ddl);
+            if (d < 0.05) continue;
+            vf[i] += ddf / d * 1.05;
+            vl[i] += ddl / d * 1.05;
+            vy[i] += (hash(salt, e * 13 + i) - 0.4) * 0.55;
+          }
+        }
+        if (V.LATTICE_CONVERGE >= now && V.LATTICE_CONVERGE < now + dtT) {
+          for (let i = 0; i < n; i++) {
+            const d = Math.sqrt(px[i] * px[i] + pl[i] * pl[i]) + 0.001;
+            vf[i] -= px[i] / d * 1.8; vl[i] -= pl[i] / d * 1.8; vy[i] += 0.45;
+          }
+        }
+      } else if (V.LATTICE_SNAP >= now - dtT && V.LATTICE_SNAP < now) {
+        for (let i = 0; i < n; i++) {
+          const d = Math.sqrt(px[i] * px[i] + pl[i] * pl[i]) + 0.001;
+          vf[i] += px[i] / d * (2.1 + hash(salt, i * 61));
+          vl[i] += pl[i] / d * (2.1 + hash(salt, i * 67));
+          vy[i] += 1.1 * hash(salt, i * 71);
+        }
+      }
+      const damp = broken ? 0.995 : 0.955;
+      for (let i = 0; i < n; i++) {
+        vf[i] = (vf[i] + af[i] * dt) * damp;
+        vl[i] = (vl[i] + al[i] * dt) * damp;
+        vy[i] = (vy[i] + (ay[i] - (broken ? GRAVITY * 0.25 : 0)) * dt) * damp;
+        px[i] += vf[i] * dt; pl[i] += vl[i] * dt; py[i] += vy[i] * dt;
+        const lowest = GROUND_Y + 0.55;
+        if (py[i] < lowest) { py[i] = lowest; if (vy[i] < 0) vy[i] = -vy[i] * 0.35; }
+      }
+    }
+    return { px, pl, py, rest, edges };
+  };
+
+  const renderLattice = (a) => {
+    const V = VOID_SHAPE;
+    const sim = latticeSim(t);
+    const px = sim.px, pl = sim.pl, py = sim.py, rest = sim.rest, edges = sim.edges;
+    const snapped = clamp01((t - V.LATTICE_SNAP) / 0.08);
+    const sec = (t - V.LATTICE_SNAP) * 10;
+
+    /* ---- 1. LES SEPT NOEUDS, ET LEUR MARQUE AU SOL ---- */
+    let tensions = 0;
+    for (let e = 0; e < 11; e++) {
+      if (t >= V.LATTICE_TENSION0 + e * V.LATTICE_TENSION_STEP) tensions++;
+    }
+    for (let i = 0; i < 7; i++) {
+      const wake = clamp01((t - i * 4 / 200) / 0.03);
+      if (wake <= 0) continue;
+      const load = tensions / 11;
+      node(px[i], pl[i], py[i], 0.140 * wake, t * 3.4 + i * 1.3, snapped, a * wake);
+      for (let k = 1; k <= 3; k++) {
+        const u = k / 4, yy = py[i] + (GROUND_Y + 0.05 - py[i]) * u;
+        box(px[i], pl[i], yy, 0.022, 0.022, 0.022, SLATE, opq(a * wake * (0.55 - 0.12 * k)));
+      }
+      for (let k = 0; k < 12; k++) {
+        const ang = k / 12 * TAU + t * 0.8;
+        const rr = 0.40 + 0.06 * Math.sin(ang * 3 + t * 6);
+        box(px[i] + Math.cos(ang) * rr, pl[i] + Math.sin(ang) * rr, GROUND_Y + 0.014,
+            0.032, SLAB_H, 0.032,
+            load > 0.66 ? GLACIER : (load > 0.33 ? HORIZON : HALO),
+            opq(a * wake * (0.40 + 0.55 * load) * (1 - snapped * 0.7)));
+      }
+    }
+
+    /* ---- 2. LES ONZE ARETES : chainette si molle, onde stationnaire si tendue ---- */
+    for (let e = 0; e < 11; e++) {
+      const i0 = edges[e * 2], i1 = edges[e * 2 + 1];
+      const wake = clamp01((t - Math.max(i0, i1) * 4 / 200 - 0.02) / 0.05);
+      if (wake <= 0) continue;
+      const f0 = px[i0], l0 = pl[i0], y0 = py[i0];
+      const f1 = px[i1], l1 = pl[i1], y1 = py[i1];
+      const len = dist3(f0, l0, y0, f1, l1, y1);
+      const target = rest[e] * V.latticeRest(t);
+      const strain = target > 0.01 ? (len - target) / target : 0;
+      const slack = strain < 0 ? -strain : 0;
+      const taut = clamp01(strain * 2.6);
+      let prevF = f0, prevL = l0, prevY = y0;
+      for (let si = 1; si <= 12; si++) {
+        const u = si / 12;
+        let ff = f0 + (f1 - f0) * u, ll = l0 + (l1 - l0) * u, yy = y0 + (y1 - y0) * u;
+        yy -= catenary(u, slack) * len * 0.42;
+        if (taut > 0.02) {
+          const wave = Math.sin(u * Math.PI * 3 + t * 46) * 0.045 * taut;
+          yy += wave; ff += wave * 0.5;
+        }
+        if (snapped > 0) {
+          const frac = u < 0.5 ? u / 0.5 : (1 - u) / 0.5;
+          const back = Math.min(1, sec * 1.6);
+          const whip = Math.sin(frac * Math.PI * 2 - sec * 9) * 0.30 * (1 - back);
+          const shrink = 1 - back * 0.9;
+          const anchorF = u < 0.5 ? f0 : f1, anchorL = u < 0.5 ? l0 : l1, anchorY = u < 0.5 ? y0 : y1;
+          ff = anchorF + (ff - anchorF) * shrink;
+          ll = anchorL + (ll - anchorL) * shrink;
+          yy = anchorY + (yy - anchorY) * shrink + whip;
+        }
+        const tone = snapped > 0 ? SLATE
+          : (taut > 0.72 ? SINGULAR : (taut > 0.34 ? GLACIER : (slack > 0.08 ? SLATE : HORIZON)));
+        segment(prevF, prevL, prevY, ff, ll, yy, (0.018 + 0.016 * taut) * wake, tone,
+                opq(a * wake * (0.42 + 0.58 * taut) * (1 - snapped * 0.55)), 0.050);
+        prevF = ff; prevL = ll; prevY = yy;
+      }
+    }
+
+    /* ---- 3. LES PULSATIONS : ce qui arrive a l'un arrive a tous, et on le voit arriver ---- */
+    for (let e = 0; e < 11; e++) {
+      const when = V.LATTICE_TENSION0 + e * V.LATTICE_TENSION_STEP;
+      if (t < when) break;
+      const age = t - when;
+      if (age > 0.05) continue;
+      const u = age / 0.05;
+      for (let k = 0; k < 11; k++) {
+        const i0 = edges[k * 2], i1 = edges[k * 2 + 1];
+        for (let dirn = 0; dirn < 2; dirn++) {
+          const uu = dirn === 0 ? u : 1 - u;
+          box(px[i0] + (px[i1] - px[i0]) * uu, pl[i0] + (pl[i1] - pl[i0]) * uu,
+              py[i0] + (py[i1] - py[i0]) * uu, 0.044, 0.044, 0.044, SINGULAR,
+              opq(a * (1 - u) * 0.95));
+        }
+      }
+    }
+
+    /* ---- 4. LA RUPTURE — tick 184 ---- */
+    if (snapped > 0) {
+      for (let e = 0; e < 11; e++) {
+        const i0 = edges[e * 2], i1 = edges[e * 2 + 1];
+        const mf = (px[i0] + px[i1]) * 0.5, ml = (pl[i0] + pl[i1]) * 0.5, my = (py[i0] + py[i1]) * 0.5;
+        const out = Math.sqrt(mf * mf + ml * ml) + 0.001;
+        const sp = 1.2 + 1.4 * hash(salt, e * 37);
+        fragment(mf + mf / out * sp * sec, ml + ml / out * sp * sec,
+                 ballistic(my, 0.9, sec, GROUND_Y + 0.05), 0.044, sec * 6 + e,
+                 GLACIER, SLATE, opq(a * (1 - clamp01(sec / 1.6))));
       }
     }
   };

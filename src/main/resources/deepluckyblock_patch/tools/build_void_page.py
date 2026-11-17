@@ -53,7 +53,7 @@ assert RENDER.count(MARK) == 1, 'marqueur de decoupe introuvable dans preview_re
 _, TAIL = RENDER.split(MARK, 1)
 
 HEAD = r"""/* ===== Rendu ===== */
-const SUBS=['grille 9\u00d79 \u00b7 lentille \u00b7 anneau d\u2019Einstein \u00b7 disque d\u2019accr\u00e9tion','octa\u00e8dre \u00b7 sept faisceaux creux \u00b7 ailes de membrane','amande de 4,4 blocs \u00b7 deux l\u00e8vres \u00b7 trois fen\u00eatres','tore au sol \xb7 membrane en spirale \xb7 tore inclin\xe9 \xb7 sept transits','sept n\u0153uds \xb7 onze ar\xeates en cha\xeenette \xb7 d\xe9chirure par le milieu'];
+const SUBS=['grille 9\u00d79 \u00b7 lentille \u00b7 anneau d\u2019Einstein \u00b7 disque d\u2019accr\u00e9tion','octa\u00e8dre \u00b7 sept rayons r\u00e9fract\u00e9s \u00b7 indices 1,14 \u2192 1,62','d\u00e9chirure de 8,6 blocs \u00b7 profil de Griffith \u00b7 neuf fibres qui cassent','anneau au sol \xb7 cage lentill\xe9e \xb7 sept paraboles','sept masses \xb7 onze ressorts \xb7 240 pas par image'];
 const DUR=[160,190,170,180,200], NAMES=['Sph\u00e8re de Distorsion','Prisme du Dragon','Faille du N\u00e9ant','Porte d\u2019Horizon','Constellation Nulle'];
 const BEATS=[
  [['0 \u2192 25','la grille t\u00e9moin sort droite : 9\u00d79, au pas de 0,78 \u2014 <b>c\u2019est le seul rep\u00e8re qui prouvera la d\u00e9formation</b>'],
@@ -62,30 +62,33 @@ const BEATS=[
   ['48 \u2192 106','<b>le disque d\u2019accr\u00e9tion</b> : 30 blocs en <code>exp(\u22123,1\u00b7p)</code> tombent depuis 1,9 bloc, puis basculent en rotation diff\u00e9rentielle'],
   ['106 \u2192 130','<b>l\u2019effondrement</b> : tout rentre, et rebondit une fois \u2014 <code>sin(snap\u00b7\u03c0\u00b71,6)\u00b7(1\u2212snap)\u00b70,55</code>'],
   ['130 \u2192 160','<b>la restitution</b> : ce qui a \u00e9t\u00e9 aval\u00e9 ressort en c\u00f4ne, en rose cendr\u00e9']],
- [['0 \u2192 20','la descente, en <b>trois paliers</b> : l\u2019octa\u00e8dre se pose, il ne tombe pas'],
-  ['20 \u2192 42','la rotation et quatre \u00e9clats d\u2019endstone qui orbitent'],
-  ['42 \u2192 62','<b>le trait d\u2019entr\u00e9e</b> : plein, depuis la main du porteur \u00e0 <code>f = \u22124,6</code>'],
-  ['62 \u2192 118','<b>sept faisceaux creux</b>, un toutes les 9 frames. Le quatri\u00e8me \u2014 celui du milieu \u2014 ne subit pas le balayage (<code>sin(0)=0</code>) : il devient <b>le cou du dragon</b>, se raccourcit et se rel\u00e8ve'],
-  ['95 \u2192 140','<b>les ailes</b> : 26 points de membrane par c\u00f4t\u00e9, la silhouette se ferme'],
-  ['140 \u2192 170','la fracture : l\u2019octa\u00e8dre se fend'],
-  ['170 \u2192 190','l\u2019\u00e9clat : la couronne au sol et la colonne']],
- [['0 \u2192 29','l\u2019ouverture \u2014 17 % de la dur\u00e9e : une f\u00ealure, presque rien'],
-  ['29 \u2192 60','<b>l\u2019amande</b> s\u2019\u00e9carte en <code>sin(u\u00b7\u03c0)^0,62</code> \u2014 pas une ellipse : une amande a deux pointes'],
-  ['60 \u2192 108','<b>les deux l\u00e8vres</b> : hachages <i>diff\u00e9rents</i> (<code>salt+81</code> / <code>salt+82</code>) \u2014 avec le m\u00eame, les deux bords sont jumeaux et la d\u00e9chirure a l\u2019air dessin\u00e9e'],
-  ['70 \u2192 130','<b>trois fen\u00eatres sur l\u2019autre c\u00f4t\u00e9</b>, en violet chorus, \u00e0 {0,40 ; 0,055}, {0,49 ; 0,030}, {0,57 ; 0,070}'],
-  ['130 \u2192 170','la fermeture \u2014 18 % : les l\u00e8vres se rejoignent, et ce qui \u00e9tait dedans part']],
- [['0 \u2192 22','le <b>trac\xe9 au sol</b> : 76 cubes \xe0 2,12 de rayon, t\xeate blanche en pointe \u2014 <b>l\u2019empreinte existe avant la porte</b>'],
-  ['7 \u2192 47','<b>le tore bas</b> s\u2019ouvre. Rep\xe8re <i>explicite</i> recalcul\xe9 \xe0 chaque pas (tangente, normale radiale, verticale locale) : b\xe2tie sur les axes du monde, la section se vrille et l\u2019anneau sort en ruban tordu'],
-  ['40 \u2192 140','<b>la membrane</b> : spirale logarithmique \xe0 <b>deux brins</b> en <code>exp(\u22122,35\xb7u)</code> qui <b>descend</b> \u2014 un disque plein boucherait le trou, c\u2019est-\xe0-dire le sujet'],
-  ['54 \u2192 155','<b>le second tore</b>, 0,62\xd7 et <b>inclin\xe9</b> de 0,52 rad deux blocs et quart plus haut : sans l\u2019inclinaison il se lirait comme un \xe9cho du premier, pas comme une autre sortie'],
-  ['61 \u2192 155','<b>sept transits</b> : chute en endstone, puis une quinzaine de frames o\xf9 le fragment <b>n\u2019existe pas</b>, puis sortie en rose cendr\u00e9 \u2014 <b>c\u2019est le trou dans la trajectoire qui prouve la travers\xe9e</b>'],
-  ['155 \u2192 180','<b>la fermeture</b> : c\u2019est le <i>rayon de l\u2019\xe2me</i> qui se r\xe9sorbe, pas la section \u2014 le tore se referme sur lui-m\xeame au lieu de maigrir']],
- [['0 \u2192 20','<b>l\u2019\xe9veil des sept n\u0153uds</b>, d\xe9cal\xe9 de 2,7 ticks chacun : losange noir, c\u0153ur d\u2019abysse et six pointes claires r\xe9tractiles'],
-  ['20 \u2192 76','les onze ar\xeates naissent <b>molles</b> et pendent en vraie <b>cha\xeenette</b> \u2014 <code>(cosh(1,65) \u2212 cosh(1,65\xb7(2u\u22121))) / (cosh(1,65) \u2212 1)</code>. Une ar\xeate droite d\u2019embl\xe9e est un trait de r\xe8gle : elle ne p\xe8se rien'],
-  ['76 \u2192 136','<b>la mise en tension</b>, une ar\xeate \xe0 la fois dans un ordre <b>hach\xe9</b>, et un \xe9clat blanc parcourt l\u2019ar\xeate au moment o\xf9 elle se tend \u2014 le seul endroit du dossier o\xf9 quelque chose se propage <i>le long</i> d\u2019une ar\xeate'],
-  ['112 \u2192 184','<b>la convergence</b> vers le barycentre. Dos\xe9e \xe0 0,46 seulement : \xe0 0,88 la trame devenait une bouillie grise de 1,8 bloc <b>vingt ticks avant</b> la fin'],
-  ['172 \u2192 186','<b>la d\xe9chirure, par le milieu</b> de chaque ar\xeate \u2014 et <b>avant</b> l\u2019effondrement : l\u2019ordre inverse donnait des ar\xeates de longueur nulle au moment de rompre, donc personne ne voyait rien rompre'],
-  ['184 \u2192 200','<b>le point</b> : tout ce qui \xe9tait li\xe9 tient dans un cube blanc de 0,085, h\xe9riss\xe9 de six pointes']]];
+ [['0 \u2192 20','la descente en <b>trois \u00e0-coups</b> \u2014 ticks 4, 10, 16 : <b>le serveur frappe trois fois, donc l\u2019image sursaute trois fois</b>. Le recul est calcul\u00e9 <i>avant</i> tout le reste et appliqu\u00e9 \u00e0 l\u2019objet entier'],
+  ['20 \u2192 62','<b>le faisceau incident est un cylindre</b> : une \u00e2me blanche et <b>sept fils parall\u00e8les</b> \u00e0 0,71 bloc de l\u2019axe. Sept fils entrent, sept faisceaux divergents sortiront \u2014 <i>c\u2019est le verbe de la signature en une image</i>'],
+  ['19 \u2192 140','<b>les trajets internes</b>, visibles dans le verre : chaque rayon est <b>cass\u00e9 deux fois</b> par <code>refract()</code>, loi de Snell-Descartes compl\u00e8te, r\u00e9flexion totale comprise. Un faisceau s\u2019allume \u00e0 mesure que son tour approche'],
+  ['62 \u2192 116','<b>les sept faisceaux</b>, un toutes les 9 frames \u2014 <b>l\u2019horaire exact du serveur</b>. Leur direction n\u2019est pas \u00e9crite : elle est <b>calcul\u00e9e</b>. Indice <code>n = 1,14 + k\u00b70,08</code> \u2014 <b>le violet d\u00e9vie plus que le rouge</b>, donc l\u2019\u00e9ventail s\u2019ouvre tout seul, comme un vrai prisme'],
+  ['62 \u2192 116','chaque faisceau est <b>creux</b> (couronne de 5 cubes autour du vide), s\u2019arr\u00eate au sol et y laisse <b>une couronne d\u2019impact</b> \u2014 la Lueur de 120 ticks que pose le serveur'],
+  ['150 \u2192 170','<b>la fracture</b> : les douze ar\u00eates se d\u00e9solidarisent et <b>quatre \u00e9clats d\u2019endstone sont arrach\u00e9s au sol</b> par <code>ballistic()</code> \u2014 chute, rebond amorti, repos'],
+  ['170 \u2192 190','<b>l\u2019\u00e9clat</b> : anneau \u00e0 2,0 de rayon, exactement celui du serveur, et la colonne de L\u00e9vitation en rose invers\u00e9']],
+ [['0 \u2192 2','<b>la f\u00ealure au sol</b> \u2014 un tronc de 38 points et sept branches, hach\u00e9 une fois pour toutes. <b>Elle survit \u00e0 tout</b> : quand la d\u00e9chirure s\u2019est referm\u00e9e, la cicatrice reste'],
+  ['2 \u2192 60','<b>l\u2019ouverture</b>. Ce n\u2019est pas un disque, c\u2019est une <b>DEUX FOIS QUATRE M\u00c8TRES TRENTE</b> couch\u00e9e en travers du chemin de l\u2019arme : le corridor du serveur, 9,0 de long sur \u00b11,6, <b>perpendiculaire au coup</b>'],
+  ['2 \u2192 140','<b>les deux l\u00e8vres</b> suivent le <b>profil de Griffith</b> <code>\u221a(1\u2212u\u00b2)</code> \u2014 la forme qu\u2019une fissure prend r\u00e9ellement dans un solide \u00e9lastique, pointue aux bouts, b\u00e9ante au milieu. Quatre <b>nervures</b> par l\u00e8vre donnent l\u2019\u00e9paisseur ; sans elles une d\u00e9chirure n\u2019est qu\u2019un trait'],
+  ['10 \u2192 90','<b>les neuf fibres</b> tendues en travers : elles s\u2019\u00e9tranglent au milieu (<code>1 \u2212 0,85\u00b7strain\u00b7(1\u2212v\u00b2)</code>), puis <b>cassent une par une</b>, chacune \u00e0 son propre seuil. \u00c0 pleine ouverture il n\u2019en reste rien'],
+  ['20 \u2192 100','<b>les neuf aspirations</b>, une toutes les 10 frames : la mati\u00e8re est tir\u00e9e vers le <b>PLAN</b> et non vers le centre \u2014 <b>le serveur n\u2019applique que la composante perpendiculaire</b>, et tirer vers le centre entasserait tout le corridor en un point'],
+  ['112 \u2192 140','<b>l\u2019autre c\u00f4t\u00e9</b> remonte en violet chorus, le seul ton froid du dossier : C\u00e9cit\u00e9 60 et Naus\u00e9e 100'],
+  ['140 \u2192 170','<b>la fermeture</b> : les l\u00e8vres se rejoignent et ce qui \u00e9tait dedans est \u00e9ject\u00e9 <b>perpendiculairement</b>, des deux c\u00f4t\u00e9s \u00e0 la fois']],
+ [['0 \u2192 22','<b>le trac\u00e9 au sol</b>, quatre passes de dix points \u00e0 <b>2,12 de rayon</b> \u2014 ticks 0, 5, 10, 15 : <b>le serveur dessine son cercle avant d\u2019ouvrir quoi que ce soit</b>, et l\u2019image le dessine aux m\u00eames ticks'],
+  ['24 \u2192 60','<b>l\u2019anneau</b> s\u2019ouvre. Rep\u00e8re explicite recalcul\u00e9 \u00e0 chaque pas \u2014 b\u00e2tie sur les axes du monde, la section se vrille et le tore sort en ruban tordu'],
+  ['28 \u2192 150','<b>la cage lentill\u00e9e</b> : seize montants dont le rayon suit <b>\u2212k/r</b>, le potentiel d\u2019un puits. Ils se resserrent en descendant vers la gueule \u2014 <b>une porte n\u2019est pas un cylindre, c\u2019est un entonnoir</b>'],
+  ['34 \u2192 142','<b>les sept transits</b>, un toutes les 18 frames \u2014 l\u2019horaire du serveur. Vraies <b>paraboles balistiques</b> : 3,5 bl/s vers l\u2019avant, 4,4 bl/s vers le haut, gravit\u00e9 9,0. Azimut tournant d\u2019un <b>septi\u00e8me de tour</b> \u00e0 chaque passage \u2014 au bout des sept, le paquet est diss\u00e9min\u00e9 en \u00e9toile, exactement comme le fait <code>seedAng + pass\u00b72\u03c0/7</code>'],
+  ['34 \u2192 142','chaque transit tra\u00eene <b>neuf motes</b> derri\u00e8re lui et <b>dispara\u00eet une quinzaine de frames</b> en passant : <b>c\u2019est le trou dans la trajectoire qui prouve la travers\u00e9e</b>'],
+  ['150 \u2192 180','<b>la fermeture</b> : une onde balaye 3,4 blocs, l\u2019anneau se r\u00e9sorbe sur son \u00e2me et la <b>boule de section</b> reste une seconde \u2014 \u00e9jection radiale, puis Chute Lente 140']],
+ [['0 \u2192 24','<b>l\u2019\u00e9veil des sept n\u0153uds</b>, un toutes les 4 frames, et <b>chacun marque le sol sous lui</b> : la liste du serveur est <b>fig\u00e9e \u00e0 la pose</b>, et ces marques montrent qui est pris'],
+  ['24 \u2192 200','<b>ce n\u2019est pas une animation, c\u2019est une SIMULATION</b> : sept masses, onze ressorts (raideur 5,4, amortissement 0,955), <b>240 pas d\u2019int\u00e9gration rejou\u00e9s depuis z\u00e9ro \u00e0 chaque image</b>. Rien n\u2019est interpol\u00e9 ; la trame <i>trouve</i> ses positions'],
+  ['24 \u2192 40','les ar\u00eates naissent <b>molles</b> et pendent en vraie <b>cha\u00eenette</b> \u2014 <code>cosh</code>, pas une parabole. Une ar\u00eate droite d\u2019embl\u00e9e est un trait de r\u00e8gle : elle ne p\u00e8se rien'],
+  ['40 \u2192 140','<b>les onze tensions</b>, une toutes les 10 frames \u2014 l\u2019horaire du serveur. Chacune tire les sept masses vers le barycentre \u00e0 <code>min(0,34 ; 0,07 + dist\u00b70,045)</code>, <b>la formule exacte du listener</b>, et une pulsation blanche remonte l\u2019ar\u00eate'],
+  ['40 \u2192 160','une ar\u00eate tendue cesse de pendre et se met \u00e0 <b>vibrer en onde stationnaire</b> : le mou devient de la raideur, et \u00e7a se voit sans l\u00e9gende'],
+  ['160 \u2192 184','<b>la convergence</b> : Lenteur II, et le plancher \u00e0 <code>sol + 0,55</code> emp\u00eache les masses de traverser la terre'],
+  ['184 \u2192 200','<b>la rupture, en coup de fouet</b> : l\u2019ar\u00eate rompue garde sa vitesse et ses deux bouts claquent']]];
 /* Conception sonore. Le vide n'a pas de registre dedie : il emprunte a l'End (enderman
    teleport, portal.trigger), au cristal (amethyst, beacon) et a la rupture (glass, anvil).
    Les onze sons de la famille sont attestes un par un contre la table des identifiants
@@ -176,9 +179,29 @@ RENDER = RENDER.replace(CALL_OLD, CALL_NEW)
 #     de reference : a 6,2 blocs elle est plus etroite que le disque d'accretion, qui monte
 #     a 3,4 de demi-largeur mais que la perspective etale. 7,6 suffit pour les trois.
 GR_OLD = ' const R=6.2,N=12;'
-GR_NEW = ' const R=7.6,N=14;'
+GR_NEW = ' const R=8.6,N=16;'
 assert RENDER.count(GR_OLD) == 1, 'rayon de grille introuvable'
 RENDER = RENDER.replace(GR_OLD, GR_NEW)
+
+# --- LE SOL. T391 : c'etait le defaut le plus grossier de la page, et il tenait a une
+#     ligne. Le gabarit partage dessine son quadrillage a y = -0,47 ; VoidSignatureVfx,
+#     lui, pose tout ce qui touche terre sur GROUND_Y, dont le repli vaut -0,90 parce que
+#     l'origine d'une signature est le TORSE de la victime (bbHeight x 0,50 cote serveur)
+#     et qu'un corps d'1,80 a les pieds 0,90 plus bas. Resultat : la mare de la Porte, les
+#     couronnes d'impact du Prisme et les marques de la Trame etaient peintes QUARANTE-TROIS
+#     CENTIMETRES SOUS LE SOL DESSINE. Il n'y a qu'un seul plancher dans une scene : le
+#     quadrillage et les pieds du mannequin descendent donc sur celui de la figure, et c'est
+#     la constante partagee qui le donne -- jamais un nombre recopie.
+FLOOR_OLD = """  let p=project(u,-0.47,-R),q=project(u,-0.47,R);"""
+FLOOR_NEW = """  let p=project(u,GFLOOR,-R),q=project(u,GFLOOR,R);"""
+assert RENDER.count(FLOOR_OLD) == 1, 'premiere passe du quadrillage introuvable'
+RENDER = RENDER.replace(FLOOR_OLD, FLOOR_NEW)
+FLOOR_OLD = """  p=project(-R,-0.47,u);q=project(R,-0.47,u);"""
+FLOOR_NEW = """  p=project(-R,GFLOOR,u);q=project(R,GFLOOR,u);"""
+assert RENDER.count(FLOOR_OLD) == 1, 'seconde passe du quadrillage introuvable'
+RENDER = RENDER.replace(FLOOR_OLD, FLOOR_NEW)
+RENDER = RENDER.replace('function ground(){',
+                        'const GFLOOR=VOID_SHAPE.GROUND_FALLBACK;\nfunction ground(){', 1)
 
 # --- Cadrage. Le gabarit partage cable la variante 0 sur boltShot (la chute de l'eclair)
 #     et la variante 1 sur hammerShot (la chute du marteau) : herite tel quel, il filmerait
@@ -193,48 +216,47 @@ CAM_OLD = """function updateCam(){CY=Math.cos(camYaw);SY=Math.sin(camYaw);CP=Mat
  else{span=23.0;VCY=VIEW_CENTER_BY[variant];}
  SCALE=Math.min(W/span,H/(span*0.80))*zoom;}"""
 CAM_NEW = """/* boltShot et hammerShot ci-dessus appartiennent au gabarit partage (foudre) et ne
-   servent pas ici : le vide a son propre cadrage, et il lui en faut TROIS. */
+   servent pas ici : le vide a son propre cadrage, et il lui en faut CINQ. T391 : les
+   quatre dernieres signatures ont ete refaites de zero, et leurs emprises n'ont plus
+   rien a voir avec celles de T390. */
 function voidShot(tt){
  /* LA SPHERE. La grille temoin fait 3,12 blocs de demi-largeur, mais elle se CREUSE :
     cadrer sur son etendue au repos couperait le disque d'accretion des que celui-ci
-    bascule. 8,2 tient l'ensemble, et la vue se resserre d'un bloc et demi a
-    l'effondrement -- la camera accompagne ce qui rentre. */
+    bascule. 9,0 tient l'ensemble, et la vue se resserre a l'effondrement. */
  if(variant===0){const k=smoothstep((tt-0.66)/0.12);
   return {span:9.0-1.3*k, center:0.95, pan:0};}
- /* LE PRISME. Il descend de deux blocs pendant les vingt premiers ticks, donc le centre
-    de vue descend avec lui : fixe, l'octaedre entrait par le haut du cadre. Les ailes
-    portent la silhouette a 3,5 de demi-envergure. */
+ /* LE PRISME. Sept faisceaux refractes de 5,6 blocs de portee, tires dans sept
+    directions calculees : l'emprise est une SPHERE de 5,6 de rayon autour du cristal, et
+    non plus la paire d'ailes de T390. Le centre descend avec le cristal pendant les
+    vingt premiers ticks. */
  if(variant===1){const d=smoothstep(tt/0.11);
-  return {span:10.8, center:2.60-0.75*d, pan:0};}
- /* LA FAILLE. Un plan vertical MINCE : vue par la tranche, ce n'est qu'un trait. La
-    camera la prend de face (yaw proche de zero, cf. YAW_BY) et serre, parce que
-    l'amande ne fait que 4,4 blocs de haut sur 1,6 de large. */
- if(variant===2){return {span:8.8, center:1.10, pan:0};}
- /* LA PORTE. Large et BASSE : 4,24 blocs de diametre au sol pour 2,25 de haut, plus les
-    fragments qui ressortent jusqu'a 2,76 du centre. C'est la seule signature de la
-    famille dont le sujet est un TROU, et un trou ne se voit qu'en plongee : le cadrage
-    est tenu haut (cf. PITCH_BY) et la vue se resserre d'un bloc a la fermeture. */
+  return {span:9.8, center:1.00-0.32*d, pan:0};}
+ /* LA FAILLE. Ce n'est plus une amande au-dessus de la victime mais une DECHIRURE DE
+    8,6 BLOCS couchee en travers du chemin de l'arme -- le corridor du serveur. Il faut
+    donc un cadre large et bas, et la camera la prend de trois quarts (cf. YAW_BY) pour
+    montrer a la fois sa longueur et ses deux levres. */
+ if(variant===2){return {span:11.4, center:0.45, pan:0};}
+ /* LA PORTE. Large et BASSE : l'anneau fait 4,24 de diametre au sol, les sept transits
+    retombent a 3,5 du centre et l'onde de fermeture balaye 3,4. Un trou ne se voit qu'en
+    plongee : le cadrage est tenu haut (cf. PITCH_BY). */
  if(variant===3){const k=smoothstep((tt-0.84)/0.16);
-  return {span:7.8-0.9*k, center:0.34, pan:0};}
- /* LA TRAME. Le seul objet NON CENTRE : ses sept noeuds sont tires entre 1,25 et 2,80 de
-    rayon et entre 0,10 et 2,15 de haut, donc le cadre doit tenir une boite de 5,6 sur
-    2,05 -- et il doit la tenir AU DEBUT, quand elle est la plus large. A la convergence
-    la camera se resserre pour ne pas laisser l'objet se perdre au milieu du vide. */
+  return {span:10.2-1.0*k, center:0.10, pan:0};}
+ /* LA TRAME. Sept noeuds simules entre 2,2 et 3,5 de rayon au depart, tires vers le
+    barycentre par onze tensions. Le cadre doit tenir la boite AU DEBUT, quand elle est la
+    plus large, et se resserrer a la convergence. */
  const c=smoothstep((tt-0.74)/0.20);
- return {span:8.8-2.2*c, center:1.05-0.12*c, pan:0};}
+ return {span:9.8-2.0*c, center:0.30-0.10*c, pan:0};}
 function updateCam(){CY=Math.cos(camYaw);SY=Math.sin(camYaw);CP=Math.cos(camPitch);SP=Math.sin(camPitch);
  const s=voidShot(t); VCY=s.center; VCX=s.pan||0;
  SCALE=Math.min(W/s.span,H/(s.span*0.80))*zoom;}"""
 assert RENDER.count(CAM_OLD) == 1, 'bloc updateCam introuvable dans preview_render.js'
 RENDER = RENDER.replace(CAM_OLD, CAM_NEW)
 
-# --- LE PLAN DE SOL NE BOUGE PAS. La page du Sang descendait le quadrillage de -0,47 a
-#     -0,86 parce que BloodSignatureVfx pose ses flaques a cette hauteur et que, pour une
-#     famille dont la premiere regle est « rien ne flotte », un liquide 0,39 bloc sous le
-#     plan dessine est le defaut a corriger avant tous les autres. VoidSignatureVfx ne pose
-#     NI flaque NI menisque : il travaille autour du torse, et son seul contact avec le sol
-#     est la couronne d'eclat du prisme, qui lit son altitude reelle. Reporter le correctif
-#     du Sang ici aurait donc decale la grille sans raison. Elle reste a -0,47.
+# --- (Le plan de sol est traite plus haut : une seule constante, VOID_SHAPE.GROUND_FALLBACK,
+#     pour le quadrillage, les pieds du mannequin et tout ce que les figures posent par
+#     terre. T391 : les quatre signatures refaites touchent le sol en permanence --
+#     couronnes d'impact, marques de noeud, onde de fermeture, eclats qui rebondissent --
+#     et deux planchers concurrents se voyaient immediatement.)
 
 # --- RECADRAGE HORIZONTAL. Le gabarit centre toujours la vue sur x = 0 et ne reglait que
 #     la hauteur (VCY). Aucune des cinq signatures du vide n'est excentree -- il n'y a pas
@@ -274,7 +296,7 @@ function wireBox(x,y,z,hx,hy,hz){
  ctx.stroke();
 }
 function figure(x,tall,tint){
- const F=-0.47;                       /* les pieds, sur le plan de grille du gabarit */
+ const F=VOID_SHAPE.GROUND_FALLBACK;  /* les pieds sur le MEME plancher que les figures */
  ctx.strokeStyle=tint;ctx.lineWidth=DPR;
  const legs=tall*0.44, torso=tall*0.34, head=tall*0.22;
  /* Deux jambes, deux bras : une seule boite verticale lisait comme un lampadaire. */
@@ -289,11 +311,13 @@ function figure(x,tall,tint){
    au-dessus de tout, y compris de la fenetre -- sinon le disque l'avalerait, et on
    perdrait le seul reperage de l'acteur. */
 function actorLabels(){
- const p=project(0,-0.47+1.95+0.22,0);
+ const p=project(0,VOID_SHAPE.GROUND_FALLBACK+1.80+0.24,0);
  ctx.fillStyle='#2f5a6b';ctx.font=(11*DPR)+'px ui-monospace,Menlo,monospace';
  ctx.textAlign='center';ctx.fillText('VICTIME',p[0],p[1]);
 }
-function actors(){ figure(0,1.95,'#2f5a6b'); }
+/* 1,80 et pas 1,95 : c'est la taille d'un joueur, et c'est elle qui justifie le repli de
+   sol a -0,90 -- l'origine de la signature est le torse, soit la moitie du corps. */
+function actors(){ figure(0,1.80,'#2f5a6b'); }
 function glow(vox){ctx.save();ctx.globalCompositeOperation='lighter';"""
 assert RENDER.count(ACT_ANCHOR) == 1, 'ancre glow introuvable'
 RENDER = RENDER.replace(ACT_ANCHOR, ACT_NEW)
@@ -317,7 +341,7 @@ RENDER = RENDER.replace(" ground();\n", " ground();\n actors();\n")
 #     exactement, la faille n'a plus aucune epaisseur et redevient un dessin plat.
 YAW_OLD = """document.querySelectorAll('.variant').forEach(b=>b.onclick=()=>{
  variant=+b.dataset.variant;t=0;syncPanel();});"""
-YAW_NEW = """const YAW_BY=[0.62,0.48,1.30,0.80,0.75], PITCH_BY=[0.24,0.24,0.18,0.36,0.26];
+YAW_NEW = """const YAW_BY=[0.62,0.52,1.42,0.82,0.78], PITCH_BY=[0.24,0.22,0.20,0.40,0.30];
 document.querySelectorAll('.variant').forEach(b=>b.onclick=()=>{
  variant=+b.dataset.variant;t=0;
  camYaw=YAW_BY[variant];camPitch=PITCH_BY[variant];zoom=1;
@@ -414,23 +438,32 @@ const PORTAL=(function(){
   why:function(){return why;},
   canvas:function(){return cn;},
   sectors:SECTORS,
-  /* Miroir exact de VoidPortalFx.queueSignature : meme choix de plan, memes marges.
-     mode 0 = panneau-reclame (la sphere), 1 = au sol (la porte), 2 = dans le plan des
-     levres (la faille). Rend null quand la signature n'a pas de fenetre. */
+  /* Miroir exact de VoidPortalFx.queueSignature : memes plans, memes marges, memes
+     seuils. T391 : les CINQ signatures en ont une, et il a fallu un quatrieme plan.
+       mode 0 = panneau-reclame (la Sphere, la Trame)
+       mode 1 = au sol          (la Porte)
+       mode 2 = plan des levres (la Faille)
+       mode 3 = plan LIBRE      (le Prisme : son equateur bascule et tourne) */
   windowOf:function(variant,t){
    if(t<=0||t>=1)return null;
    if(variant===0){
     const r=VOID_SHAPE.warpHorizon(t)*0.94;
     return r<0.10?null:{mode:0,y:VOID_SHAPE.WARP_YC,a:r,b:r,label:'sph\u00e8re'};}
+   if(variant===1){
+    const sl=VOID_SHAPE.prismSlice(t), r=sl[6];
+    return r<0.08?null:{mode:3,y:VOID_SHAPE.PRISM_YC,a:r,b:r,
+     ax:sl[0],ay:sl[2],az:sl[1], bx:sl[3],by:sl[5],bz:sl[4],label:'tranche'};}
    if(variant===2){
-    const w=VOID_SHAPE.RIFT_LIP*VOID_SHAPE.riftGape(t)*0.80;
-    return w<0.04?null:{mode:2,
-     y:VOID_SHAPE.GROUND_FALLBACK+0.05+VOID_SHAPE.RIFT_HEIGHT*0.50,
-     a:w,b:VOID_SHAPE.RIFT_HEIGHT*0.44,label:'fente'};}
+    const vis=Math.max(0,Math.min(1,VOID_SHAPE.riftGape(t)*2.2));
+    const half=VOID_SHAPE.riftHalfLength(t)*0.80*vis, crown=VOID_SHAPE.riftCrown(t);
+    if(half<0.06||crown<0.10)return null;
+    return {mode:2,y:VOID_SHAPE.GROUND_FALLBACK+0.03+crown*0.50,
+            a:half,b:crown*0.50*vis,label:'d\u00e9chirure'};}
    if(variant===3){
     const r=VOID_SHAPE.gateRing(t)*0.88;
     return r<0.12?null:{mode:1,y:VOID_SHAPE.GROUND_FALLBACK+0.06,a:r,b:r,label:'mare'};}
-   return null;                       /* PRISME et TRAME : aucune. Voir VoidPortalFx. */
+   const r=VOID_SHAPE.latticeCell(t);
+   return r<0.12?null:{mode:0,y:VOID_SHAPE.LATTICE_YC,a:r,b:r,label:'cellule'};
   },
   /* pts : le contour DEJA PROJETE, en pixels ecran. On le renvoie tel quel en
      coordonnees d'horloge, donc gl_Position EST la position ecran -- comme en jeu. */
@@ -467,7 +500,9 @@ const PORTAL=(function(){
        orthographique et qu'une ellipse face camera s'y projette en cercle exact ;
      - au sol        : (cos, sin) dans le plan (f, lateral), a hauteur fixe ;
      - fente         : (lateral, hauteur), f nul -- vue dans l'axe de l'attaque elle
-       s'ecrase en trait, exactement comme la faille qu'elle remplit. */
+       s'ecrase en trait, exactement comme la faille qu'elle remplit ;
+     - plan libre    : les deux vecteurs de base viennent de la figure (l'equateur du
+       cristal), donc la fenetre tourne et bascule avec lui sans jamais en sortir. */
 function portalRim(variant,t){
  const w=PORTAL.windowOf(variant,t);
  if(!w||!PORTAL.ready())return null;
@@ -475,8 +510,12 @@ function portalRim(variant,t){
  for(let s=0;s<N;s++){
   const ang=s*2*Math.PI/N, ca=Math.cos(ang), sa=Math.sin(ang);
   if(w.mode===0){pts.push([c[0]+ca*w.a*SCALE, c[1]+sa*w.a*SCALE]);continue;}
-  const p=(w.mode===1)?project(ca*w.a, w.y, sa*w.b)
-                      :project(0, w.y+sa*w.b, ca*w.a);
+  let p;
+  if(w.mode===1)      p=project(ca*w.a, w.y, sa*w.b);
+  else if(w.mode===2) p=project(0, w.y+sa*w.b, ca*w.a);
+  else                p=project(w.ax*ca*w.a + w.bx*sa*w.b,
+                                w.y + w.ay*ca*w.a + w.by*sa*w.b,
+                                w.az*ca*w.a + w.bz*sa*w.b);
   pts.push([p[0],p[1]]);
  }
  return {c:c, pts:pts, win:w};

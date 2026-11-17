@@ -6,11 +6,57 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 > **Si le navigateur sert une vieille version** (le CDN de GitHub garde les fichiers bruts en cache quelques minutes), remplacer `refs/heads/arena/605e67fb-dlbv1-21-1neoforge` par le SHA du commit — par exemple `raw/fa83a2f/…` pour la v1.3 — ou ajouter `?v=2` à la fin de l'adresse.
 
-## Vide — cinq signatures, repeintes + core shader · 4 novembre 2026 ⟵ **LOT COURANT**
+## Vide — cinq signatures, quatre chorégraphies refaites · 4 novembre 2026 ⟵ **LOT COURANT**
 
-- **Aperçu voxel + fenêtre d'abysse (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_preview.html?v=391
-- **Démo du shader (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Portal_shader_demo.html?v=391
-- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_src.zip?v=391
+- **Aperçu voxel + fenêtre d'abysse (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_preview.html?v=392
+- **Démo du shader (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Portal_shader_demo.html?v=392
+- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_src.zip?v=392
+
+> **T391 — quatre chorégraphies refaites de zéro, et le sol remis à sa place.** Seule la
+> **Sphère de Distorsion** est conservée. Les quatre autres sont reconstruites à partir du
+> **titre** et du **gameplay serveur** : chaque battement de l'image tombe sur le tick où
+> le listener frappe réellement.
+>
+> **Le Prisme du Dragon distribue, donc il disperse.** Sept rayons traversés par
+> `refract()` — Snell-Descartes complet, réflexion totale comprise — dans un octaèdre
+> résolu par `octaHit()`. L'indice monte de **1,14 à 1,62** : le violet dévie plus que le
+> rouge, et l'éventail s'ouvre tout seul. **Aucun des sept angles n'est écrit.** On voit
+> arriver sept fils parallèles et sortir sept faisceaux divergents, un toutes les 9 frames
+> comme le serveur, chacun laissant une couronne là où il touche le sol.
+>
+> **La Faille du Néant trie, donc c'est un plan.** Ce n'est plus une amande au-dessus de la
+> victime mais une **déchirure de 8,6 blocs couchée en travers du chemin de l'arme** — le
+> corridor perpendiculaire du listener. Profil de **Griffith** `√(1−u²)`, la forme qu'une
+> fissure prend vraiment dans un solide élastique ; neuf fibres s'étranglent et **cassent
+> une par une** ; les neuf aspirations tirent vers le **plan** et non vers le centre.
+>
+> **La Porte d'Horizon expulse, donc c'est un entonnoir.** Anneau tracé au sol à 2,12 aux
+> ticks 0/5/10/15 ; **cage lentillée** de seize montants déviés en −k/r ; sept transits en
+> **vraies paraboles balistiques** dont l'azimut tourne d'un septième de tour à chaque
+> passage — au bout des sept, l'étoile du serveur est dessinée.
+>
+> **La Constellation Nulle lie, donc elle est simulée.** Sept masses, onze ressorts,
+> **240 pas d'intégration rejoués depuis zéro à chaque image**. Une arête molle pend en
+> vraie **chaînette** (`cosh`), une arête tendue vibre en **onde stationnaire** — le passage
+> de l'un à l'autre n'est écrit nulle part, il sort du rapport tension/longueur.
+>
+> **La texture de portail à couches est maintenant dans les CINQ.** La Faille reçoit la
+> sienne **dans la fente** — plan des lèvres, demi-axes pris sur la déchirure, donc elle
+> respire avec elle et s'écrase en trait quand on se place dans l'axe du coup. Un
+> **quatrième mode de plan** a été ajouté pour le Prisme : sa fenêtre est la **tranche
+> équatoriale** du cristal, elle bascule et tourne avec lui. La Trame reçoit sa **cellule
+> centrale**.
+>
+> **Le sol.** `GROUND_Y` valait −0,86, le quadrillage de l'aperçu −0,47 et le mannequin
+> −0,47 : **43 cm d'écart**, et tout ce qui touche terre était peint sous le sol dessiné.
+> Le repli est désormais **−0,90** — l'origine d'une signature est le **torse**, donc un
+> corps d'1,80 a les pieds 0,90 plus bas — et les trois consommateurs lisent la **même**
+> constante.
+>
+> **À essayer en jeu.** `/dlbvfx play 27` devant un mur de pierre claire (les sept faisceaux
+> doivent diverger) ; `/dlbvfx play 34` dans l'axe de l'attaque puis de côté ; `/dlbvfx play
+> 44` accroupi au ras du sol ; `/dlbvfx play 45` sur un groupe de 5 ; et chacune des cinq
+> sur une **dalle** ou un **escalier**, pour vérifier que rien ne s'enfonce dans la marche.
 
 > **T390 — la repeinte, et le trou qui n'était pas là.** Deux livraisons en une, parce que
 > c'est le même défaut vu de deux côtés.

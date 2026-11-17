@@ -149,8 +149,18 @@ public final class VoidSignatureVfx {
     //  CONSTANTES DE SCÈNE
     // =================================================================================
 
-    /** Hauteur du sol dans le repère local, reçue à chaque image (voir {@code probeGroundOffset}). */
-    private static float GROUND_Y = -0.86f;
+    /**
+     * Hauteur du sol dans le repère local, reçue à chaque image (voir
+     * {@code probeGroundOffset}).
+     *
+     * <p><b>La valeur de repli n'est pas arbitraire.</b> L'origine d'une signature est le
+     * TORSE de la victime — {@code target.getY() + bbHeight * 0,50} côté serveur. Pour un
+     * corps d'un mètre quatre-vingts, le sol est donc à <b>0,90 sous l'origine</b>, et c'est
+     * exactement ce repli. Toute figure qui touche le sol doit partir d'ici et de nulle part
+     * ailleurs : un plancher dessiné plus bas que le plancher réel fait flotter la victime
+     * au-dessus de son propre effet.</p>
+     */
+    private static float GROUND_Y = -0.90f;
 
     /** Épaisseur d'une dalle posée au sol. */
     private static final float SLAB_H = 0.030f;
@@ -209,6 +219,172 @@ public final class VoidSignatureVfx {
     public static float groundClamp(float groundOffset) {
         return Mth.clamp(groundOffset, -4.0f, 0.10f);
     }
+
+    /** Sol de repli, publié pour que l'aperçu pose SON plancher au même endroit. */
+    public static float groundFallback() { return -0.90f; }
+
+    // ---------------------------------------------------------------------------------
+    //  PRISME — le cristal, son régime et sa tranche équatoriale
+    // ---------------------------------------------------------------------------------
+
+    /** Hauteur du centre du cristal au-dessus de l'origine de l'effet. */
+    public static final float PRISM_YC = 1.12f;
+
+    /** Demi-diagonale de l'octaèdre. Les six sommets sont à {@code ±PRISM_W} sur un axe. */
+    public static final float PRISM_W = 1.15f;
+
+    /** Inclinaison de l'axe de rotation. Un cristal d'aplomb a l'air posé, pas lâché. */
+    public static final float PRISM_TILT = 0.34f;
+
+    /** Instant du premier des sept faisceaux : tick 62 sur 190, exactement comme au serveur. */
+    public static final float PRISM_FIRE0 = 62.0f / 190.0f;
+
+    /** Écart entre deux faisceaux : neuf ticks, exactement comme au serveur. */
+    public static final float PRISM_FIRE_STEP = 9.0f / 190.0f;
+
+    /** Instant de la fracture : tick 150 sur 190. */
+    public static final float PRISM_BREAK = 150.0f / 190.0f;
+
+    /** Instant de l'éclat : tick 170 sur 190. */
+    public static final float PRISM_BURST = 170.0f / 190.0f;
+
+    /**
+     * Angle du cristal. Il monte en régime, tient, et la fracture le casse — on ne voit pas
+     * une toupie s'arrêter, on voit une toupie dont les morceaux partent.
+     */
+    public static float prismSpin(float t) {
+        float spinUp = smooth(clamp((t - 0.07f) / 0.14f));
+        float broken = clamp((t - PRISM_BREAK) / 0.08f);
+        return t * (2.4f + 9.0f * spinUp) * (1.0f - broken * 0.85f);
+    }
+
+    /** Présence du corps : nulle avant qu'il se pose, pleine en régime, nulle à la fracture. */
+    public static float prismBody(float t) {
+        float in = smooth(clamp(t / 0.085f));
+        float out = smooth(clamp((t - PRISM_BREAK) / 0.045f));
+        return in * (1.0f - out) * (1.0f + 0.055f * Mth.sin(t * 21.0f));
+    }
+
+    /**
+     * Le plan de la tranche équatoriale et son rayon utile, pour la fenêtre d'abysse.
+     *
+     * <p>L'équateur d'un octaèdre qui tourne autour d'un axe incliné n'est pas horizontal :
+     * la fenêtre doit donc recevoir ses DEUX vecteurs de base, pas un mode. Sortie :
+     * {@code {af, al, ay, bf, bl, by, rayon}} dans le repère (f = axe de l'attaque,
+     * latéral, hauteur).</p>
+     */
+    public static void prismSlice(float t, float[] out) {
+        float spin = prismSpin(t);
+        float ct = Mth.cos(PRISM_TILT);
+        float st = Mth.sin(PRISM_TILT);
+        float cs = Mth.cos(spin);
+        float sn = Mth.sin(spin);
+        out[0] = cs;         out[1] = sn;        out[2] = 0.0f;
+        out[3] = -sn * ct;   out[4] = cs * ct;   out[5] = st;
+        // Le carré équatorial a une demi-diagonale de w ; son cercle inscrit vaut w/√2.
+        // On reste à 0,62 w : la fenêtre ne touche jamais les quatre arêtes de l'équateur.
+        out[6] = PRISM_W * prismBody(t) * 0.84f;
+    }
+
+    // ---------------------------------------------------------------------------------
+    //  FAILLE — la déchirure est une LIGNE, et sa longueur se calcule
+    // ---------------------------------------------------------------------------------
+
+    /**
+     * Demi-longueur de la déchirure à pleine propagation. Le corridor du serveur fait neuf
+     * blocs de long : la fissure dessinée en fait 8,6, soit le corridor moins ses bouts.
+     */
+    public static final float RIFT_REACH = 4.30f;
+
+    /** Instant de la fermeture éclair : tick 140 sur 170. */
+    public static final float RIFT_CLOSE = 140.0f / 170.0f;
+
+    /** Propagation de la fissure, 0 → 1. Une fêlure court, elle n'apparaît pas d'un bloc. */
+    public static float riftRun(float t) {
+        return smooth(clamp((t - 0.012f) / 0.085f));
+    }
+
+    /** Fermeture par les pointes : 1 tant que la faille tient, 0 une fois recousue. */
+    public static float riftZip(float t) {
+        return 1.0f - smooth(clamp((t - RIFT_CLOSE) / 0.11f));
+    }
+
+    /** Demi-longueur visible : elle croît en propageant, puis se raccourcit en se refermant. */
+    public static float riftHalfLength(float t) {
+        return RIFT_REACH * riftRun(t) * riftZip(t);
+    }
+
+    /** Hauteur de la déchirure au point de nucléation (elle s'annule aux deux pointes). */
+    public static float riftCrown(float t) {
+        return RIFT_HEIGHT * riftRun(t);
+    }
+
+    /**
+     * Profil d'ouverture d'une fissure de Griffith : maximal au point de nucléation, nul aux
+     * pointes, en racine. Une fente d'épaisseur constante n'est pas une fissure, c'est une
+     * fente découpée aux ciseaux.
+     */
+    public static float riftProfile(float u) {
+        float v = 1.0f - u * u;
+        return v <= 0.0f ? 0.0f : Mth.sqrt(v);
+    }
+
+    // ---------------------------------------------------------------------------------
+    //  TRAME — l'anneau de nœuds, sa contraction et la cellule centrale
+    // ---------------------------------------------------------------------------------
+
+    /**
+     * Rayon de l'anneau de nœuds. La capture du serveur ratisse six blocs ; on en dessine
+     * la MOITIÉ, parce qu'une trame de douze blocs de large sort du cadre et qu'aucun des
+     * sept corps n'est jamais à la limite exacte de la zone.
+     */
+    public static final float LATTICE_R = 3.00f;
+
+    /** Première mise en tension : tick 40 sur 200. */
+    public static final float LATTICE_TENSION0 = 40.0f / 200.0f;
+
+    /** Écart entre deux mises en tension : dix ticks. */
+    public static final float LATTICE_TENSION_STEP = 10.0f / 200.0f;
+
+    /** Convergence : tick 160 sur 200. */
+    public static final float LATTICE_CONVERGE = 160.0f / 200.0f;
+
+    /** Rupture : tick 184 sur 200. Les arêtes cassent par le milieu. */
+    public static final float LATTICE_SNAP = 184.0f / 200.0f;
+
+    /** Rayon visé par les onze tensions, hors oscillation : c'est la consigne, pas l'état. */
+    public static float latticeWeb(float t) {
+        float pull = smooth(clamp((t - LATTICE_TENSION0) / 0.50f));
+        float conv = smooth(clamp((t - LATTICE_CONVERGE) / 0.12f));
+        float burst = smooth(clamp((t - LATTICE_SNAP) / 0.06f));
+        return LATTICE_R * (1.0f - 0.42f * pull) * (1.0f - 0.52f * conv) * (1.0f + 1.8f * burst);
+    }
+
+    /** La cellule que la trame enserre : le trou de la constellation. Nulle à la rupture. */
+    public static float latticeCell(float t) {
+        float open = smooth(clamp((t - 0.30f) / 0.22f));
+        float shut = smooth(clamp((t - LATTICE_SNAP) / 0.035f));
+        float pull = smooth(clamp((t - LATTICE_TENSION0) / 0.50f));
+        float conv = smooth(clamp((t - LATTICE_CONVERGE) / 0.12f));
+        float ring = LATTICE_R * (1.0f - 0.42f * pull) * (1.0f - 0.52f * conv);
+        return ring * 0.52f * open * (1.0f - shut);
+    }
+
+    /** Hauteur du centre de la trame : le torse des corps liés. */
+    public static final float LATTICE_YC = 0.28f;
+
+    // ---------------------------------------------------------------------------------
+    //  PORTE — l'anneau, et les sept transits
+    // ---------------------------------------------------------------------------------
+
+    /** Premier transit : tick 34 sur 180. */
+    public static final float GATE_PASS0 = 34.0f / 180.0f;
+
+    /** Écart entre deux transits : dix-huit ticks. */
+    public static final float GATE_PASS_STEP = 18.0f / 180.0f;
+
+    /** Fermeture : tick 150 sur 180. */
+    public static final float GATE_SHUT = 150.0f / 180.0f;
 
     // =================================================================================
     //  ENTRÉE
@@ -512,931 +688,1149 @@ public final class VoidSignatureVfx {
     }
 
     // =================================================================================
-    //  II. PRISME DU DRAGON — 190 ticks
+    //  II. PRISME DU DRAGON — 190 ticks — il DISTRIBUE
     // =================================================================================
 
     /**
-     * Chronologie (190 ticks) :
+     * <b>Un prisme fait une seule chose : il prend un rayon et il en sort plusieurs.</b> Le
+     * serveur tire SEPT faisceaux, un par corps, au tick 62 puis toutes les neuf frames
+     * ({@code applyDragonPrismGameplay}). L'image ne décore pas ce calendrier, elle l'EST :
+     * les sept rayons sont tracés par réfraction réelle dans l'octaèdre, un indice par
+     * faisceau, et chacun part à l'instant exact où le serveur inflige ses dégâts.
+     *
+     * <h3>Le calcul</h3>
      * <ul>
-     *   <li>0,00–0,10 <b>la descente</b> : un octaèdre en FIL DE FER tombe du ciel en trois
-     *       à-coups. Douze arêtes, aucune face : on voit à travers, ce qui est la règle de
-     *       l'élément appliquée à un solide ;</li>
-     *   <li>0,10–0,22 <b>la mise en rotation</b> : il monte en régime autour d'un axe
-     *       incliné, et quatre éclats d'{@link #ENDSTONE} sont arrachés au sol et verrouillés
-     *       en orbite à son équateur ;</li>
-     *   <li>0,22–0,32 <b>le trait d'entrée</b> : un unique faisceau PLEIN arrive de la main
-     *       du porteur ({@code f < 0}). C'est la seule chose pleine de toute la signature,
-     *       et c'est ce qui donne sa valeur au creux de tout le reste ;</li>
-     *   <li>0,32–0,62 <b>la réfraction</b> : il ressort en SEPT faisceaux divergents, tous
-     *       creux — huit cubes en couronne, rien au milieu. Ils s'allongent en séquence, pas
-     *       ensemble : un éventail s'ouvre, il ne se déplie pas d'un bloc ;</li>
-     *   <li>0,50–0,74 <b>les ailes</b> : à l'apogée les sept se rabattent en deux ailes
-     *       membranées — quatre nervures et une membrane pointillée. Une aile se lit
-     *       instantanément en silhouette, et ne partage rien avec le crâne de l'Ombre ;</li>
-     *   <li>0,74–0,88 <b>la fracture</b> : les douze arêtes se séparent aux sommets et
-     *       dérivent. Le cœur est mis à nu — et le cœur, c'est un TROU ;</li>
-     *   <li>0,88–1,00 <b>l'éclat</b> : anneau au sol, colonne de motes {@link #INVERT}, et
-     *       les quatre éclats d'endstone retombent sous la pesanteur.</li>
+     *   <li>le rayon incident est transporté dans le repère du cristal, puis intersecté
+     *       avec l'octaèdre {@code |f|+|l|+|y| ≤ w} par découpe sur huit plans ;</li>
+     *   <li>à l'entrée comme à la sortie, <b>Snell-Descartes vectoriel</b> avec un indice
+     *       par faisceau — 1,14 à 1,62. C'est la DISPERSION qui ouvre l'éventail : les sept
+     *       rayons ne divergent pas parce qu'on leur a donné sept angles, ils divergent
+     *       parce qu'ils ne voient pas le même verre ;</li>
+     *   <li>la <b>réflexion totale</b> est traitée, et elle arrive : les indices hauts
+     *       rebondissent à l'intérieur avant de trouver une face qui les laisse sortir,
+     *       d'où deux faisceaux qui partent d'une arête inattendue ;</li>
+     *   <li>chaque tir donne un <b>recul</b> au cristal, opposé au rayon et amorti : sept
+     *       coups de canon dans sept directions, donc un corps qui tressaute.</li>
+     * </ul>
+     *
+     * <h3>La chronologie, en ticks du serveur</h3>
+     * <ul>
+     *   <li><b>4 / 10 / 16</b> la descente en trois à-coups — les trois sons du serveur ;</li>
+     *   <li><b>42</b> le trait d'entrée frappe la face : un faisceau PLEIN, le seul de la
+     *       famille ;</li>
+     *   <li><b>62 → 116</b> les sept tirs. Un faisceau creux par corps touché, qui s'arrête
+     *       AU SOL s'il descend, avec sa marque d'impact dessus ;</li>
+     *   <li><b>150</b> la fracture : les douze arêtes se séparent, tombent sous la pesanteur
+     *       et rebondissent ;</li>
+     *   <li><b>170</b> l'éclat : l'anneau au sol et la colonne d'{@link #INVERT}.</li>
      * </ul>
      */
     private static void renderPrism(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                     float cx, float cy, float cz, float t,
                                     float dx, float dz, int alpha, int salt) {
         float a = alpha;
-        float yc = 1.12f;
+        float body = prismBody(t);
+        float spin = prismSpin(t);
+        float w = PRISM_W * body;
+        float broken = clamp((t - PRISM_BREAK) / 0.10f);
+        float floorY = GROUND_Y + 0.05f;
 
-        // --- Descente en trois à-coups. Un objet qui se pose d'un glissement continu n'a
-        //     pas de masse ; trois paliers suffisent à lui en donner. ---
-        float drop = clamp(t / 0.10f);
+        // --- La descente, en trois paliers. Un objet qui se pose d'un glissement continu
+        //     n'a pas de masse ; trois paliers suffisent à lui en donner. ---
+        float drop = clamp(t / 0.085f);
         float stair = (Mth.floor(drop * 3.0f) + smooth(fract(drop * 3.0f))) / 3.0f;
-        float py = yc + (1.0f - stair) * 4.2f;
+        float yc = PRISM_YC + (1.0f - stair) * 4.6f;
 
-        // --- Régime de rotation : il monte, tient, puis se casse à la fracture. ---
-        float spinUp = smooth(clamp((t - 0.08f) / 0.14f));
-        float broken = clamp((t - 0.74f) / 0.14f);
-        float spin = t * (2.4f + 9.0f * spinUp) * (1.0f - broken * 0.85f);
-        float tiltAxis = 0.34f;
+        float[] p = new float[3];
+        float[] re = new float[3];
+        float[] rp = new float[3];
+        float[] rd = new float[3];
 
-        float scale = 0.72f * (1.0f + 0.10f * Mth.sin(t * 17.0f) * spinUp);
+        // ---- 1. LE RECUL, calculé avant tout le reste ---------------------------------
+        float recF = 0.0f;
+        float recL = 0.0f;
+        float recY = 0.0f;
+        for (int k = 0; k < 7; k++) {
+            float fire = PRISM_FIRE0 + k * PRISM_FIRE_STEP;
+            if (t < fire || t > PRISM_BREAK) continue;
+            if (!prismRay(k, prismSpin(fire), PRISM_W * prismBody(fire), re, rp, rd)) continue;
+            float kick = (1.0f - smooth(clamp((t - fire) / 0.085f))) * 0.11f;
+            recF -= rd[0] * kick;
+            recL -= rd[1] * kick;
+            recY -= rd[2] * kick;
+        }
 
-        // ---- 1. L'OCTAÈDRE EN FIL DE FER ----------------------------------------------
-        // Six sommets : deux pôles, quatre à l'équateur. Douze arêtes, et rien d'autre.
+        // ---- 2. LE TRAIT D'ENTRÉE -----------------------------------------------------
+        // Tick 42 : il FRAPPE. Avant, il approche ; après, il alimente, et son intensité
+        // bat au rythme des tirs. C'est la seule chose pleine de toute la signature, et
+        // c'est elle qui donne sa valeur au creux de tout le reste.
         {
-            float[][] vert = new float[6][3];
-            for (int i = 0; i < 4; i++) {
-                float ang = spin + i * (TAU / 4.0f);
-                vert[i][0] = Mth.cos(ang) * scale;
-                vert[i][1] = Mth.sin(ang) * tiltAxis * scale;
-                vert[i][2] = Mth.sin(ang) * scale * 0.42f;
+            float come = clamp((t - 0.175f) / 0.046f);
+            float live = (1.0f - smooth(clamp((t - 0.62f) / 0.10f)));
+            if (come > 0.0f && live > 0.01f) {
+                float head = -3.4f + (3.4f - w * 0.60f) * smooth(come);
+                float beat = 0.74f + 0.26f * Mth.sin(t * 58.0f);
+                float spread = 0.62f * PRISM_W;
+                // L'ÂME du trait, pleine et blanche : c'est elle qui frappe au tick 42.
+                for (float f = -3.4f; f <= head; f += 0.085f) {
+                    float grow = clamp((f + 3.4f) / 0.9f);
+                    float th = (0.030f + 0.040f * grow) * live;
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz, f, 0.0f, yc, th, th, th,
+                            grow > 0.82f ? SINGULAR : GLACIER,
+                            opaque(a * (0.55f + 0.45f * grow) * beat * live));
+                }
+                // LES SEPT FILS, aux endroits exacts où les sept rayons entrent. On voit
+                // donc arriver sept choses parallèles, et on verra sortir sept choses
+                // divergentes : c'est le verbe de la signature, en une image.
+                for (int k = 0; k < 7; k++) {
+                    float off = k * (TAU / 7.0f) + 0.40f;
+                    float ol = Mth.cos(off) * spread;
+                    float oy = Mth.sin(off) * spread;
+                    for (float f = -3.4f; f <= head; f += 0.13f) {
+                        float grow = clamp((f + 3.4f) / 1.2f);
+                        box(vc, mat, tmp, cx, cy, cz, dx, dz, f, ol, yc + oy,
+                                0.024f, 0.024f, 0.024f,
+                                k % 3 == 0 ? GLACIER : (k % 3 == 1 ? HORIZON : HALO),
+                                opaque(a * (0.30f + 0.45f * grow) * live));
+                    }
+                }
             }
-            vert[4][0] = 0.0f; vert[4][1] = 0.0f; vert[4][2] = scale * 1.34f;
-            vert[5][0] = 0.0f; vert[5][1] = 0.0f; vert[5][2] = -scale * 1.34f;
-            int[][] edges = {
-                    {0, 1}, {1, 2}, {2, 3}, {3, 0},
-                    {0, 4}, {1, 4}, {2, 4}, {3, 4},
-                    {0, 5}, {1, 5}, {2, 5}, {3, 5}
-            };
-            for (int e = 0; e < edges.length; e++) {
-                int i0 = edges[e][0];
-                int i1 = edges[e][1];
-                // La fracture : chaque arête s'écarte du centre dans sa propre direction.
-                float push = broken * (0.55f + 0.85f * hash(salt + 51, e * 23));
-                float mfx = (vert[i0][0] + vert[i1][0]) * 0.5f;
-                float mly = (vert[i0][1] + vert[i1][1]) * 0.5f;
-                float mzz = (vert[i0][2] + vert[i1][2]) * 0.5f;
-                float ml = Math.max(0.0001f, Mth.sqrt(mfx * mfx + mly * mly + mzz * mzz));
-                float ofx = mfx / ml * push;
-                float ofl = mly / ml * push;
-                float ofy = mzz / ml * push;
-                int rgb = e < 4 ? HORIZON : (e < 8 ? HALO : SLATE);
+        }
+
+        // ---- 2 bis. LES TRAJETS INTERNES ----------------------------------------------
+        // Entre l'entrée et la sortie, le rayon est DANS le verre, et il y est coudé. C'est
+        // la seule preuve visible que l'éventail vient d'une réfraction et non d'un angle
+        // écrit à la main — et le faisceau s'allume quand son tour approche.
+        if (body > 0.05f && t > 0.19f) {
+            for (int k = 0; k < 7; k++) {
+                float fire = PRISM_FIRE0 + k * PRISM_FIRE_STEP;
+                float charge = clamp((t - 0.19f) / Math.max(0.02f, fire - 0.19f));
+                float after = 1.0f - smooth(clamp((t - fire) / 0.22f));
+                float glow = charge * (0.35f + 0.65f * after);
+                if (glow < 0.04f) continue;
+                if (!prismRay(k, spin, w, re, rp, rd)) continue;
                 segment(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        vert[i0][0] + ofx, vert[i0][1] + ofl, py + vert[i0][2] + ofy,
-                        vert[i1][0] + ofx, vert[i1][1] + ofl, py + vert[i1][2] + ofy,
-                        0.026f, rgb, opaque(a * (1.0f - broken * 0.55f)));
+                        re[0], re[1], yc + re[2], rp[0], rp[1], yc + rp[2],
+                        0.022f + 0.014f * glow, 0.055f,
+                        glow > 0.80f ? SINGULAR : (k % 2 == 0 ? GLACIER : HORIZON),
+                        opaque(a * (0.30f + 0.60f * glow)));
             }
-            // Les six sommets, plus vifs que les arêtes : ils donnent la forme au premier
-            // coup d'œil, avant même qu'on ait suivi une arête.
-            for (int i = 0; i < 6; i++) {
-                float push = broken * 0.70f;
-                float vl = Math.max(0.0001f, Mth.sqrt(vert[i][0] * vert[i][0]
-                        + vert[i][1] * vert[i][1] + vert[i][2] * vert[i][2]));
-                box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        vert[i][0] * (1.0f + push / vl), vert[i][1] * (1.0f + push / vl),
-                        py + vert[i][2] * (1.0f + push / vl),
-                        0.045f, 0.045f, 0.045f, GLACIER, opaque(a));
+        }
+
+        // ---- 3. LES SEPT FAISCEAUX ----------------------------------------------------
+        for (int k = 0; k < 7; k++) {
+            float fire = PRISM_FIRE0 + k * PRISM_FIRE_STEP;
+            if (t < fire) continue;
+            float age = t - fire;
+            float live = 1.0f - smooth(clamp((t - PRISM_BREAK + 0.02f) / 0.10f));
+            if (live <= 0.01f) continue;
+            if (!prismRay(k, prismSpin(fire), PRISM_W * prismBody(fire), re, rp, rd)) continue;
+            float reach = 3.9f * smooth(clamp(age / 0.055f));
+            if (reach < 0.08f) continue;
+            float bf = rp[0];
+            float bl = rp[1];
+            float by = PRISM_YC + rp[2];
+            // Arrêt AU SOL. Un faisceau qui plonge sous le plancher est un faisceau qui
+            // n'a touché personne : il s'arrête sur la surface, et il y laisse sa marque.
+            boolean grounded = false;
+            if (rd[2] < -0.03f) {
+                float toFloor = (GROUND_Y + 0.03f - by) / rd[2];
+                if (toFloor > 0.05f && toFloor < reach) { reach = toFloor; grounded = true; }
             }
-            // ---- LE CŒUR ----
-            // Avant la fracture : une bille de chorus, la seule matière pleine à l'intérieur.
-            // Après : un TROU bordé de blanc. La signature se vide par le milieu.
-            if (broken < 0.18f) {
-                float core = 0.085f + 0.030f * Mth.sin(t * 23.0f);
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, py,
-                        core, core, core, CHORUS, opaque(a));
+            // Base orthonormée autour du rayon, pour une section CREUSE : cinq cubes en
+            // couronne, rien au milieu. Un faisceau plein serait de la matière.
+            float ux;
+            float ul;
+            float uy;
+            if (Math.abs(rd[2]) < 0.90f) {
+                ux = -rd[1]; ul = rd[0]; uy = 0.0f;
             } else {
-                float hole = 0.14f + 0.26f * (broken - 0.18f);
-                int pts = 26;
-                for (int i = 0; i < pts; i++) {
-                    float ang = (i + 0.5f) / pts * TAU;
+                ux = 1.0f; ul = 0.0f; uy = 0.0f;
+            }
+            float un = Mth.sqrt(ux * ux + ul * ul + uy * uy);
+            if (un < 1.0e-4f) { ux = 1.0f; ul = 0.0f; uy = 0.0f; un = 1.0f; }
+            ux /= un; ul /= un; uy /= un;
+            float wx = rd[1] * uy - rd[2] * ul;
+            float wl = rd[2] * ux - rd[0] * uy;
+            float wy = rd[0] * ul - rd[1] * ux;
+            int steps = Math.max(3, Math.min(40, Math.round(reach / 0.155f)));
+            int tone = k % 3 == 0 ? GLACIER : (k % 3 == 1 ? HORIZON : HALO);
+            float rad = 0.052f + 0.012f * Mth.sin(t * 24.0f + k);
+            for (int sIdx = 0; sIdx <= steps; sIdx++) {
+                float u = sIdx / (float) steps;
+                float d = u * reach;
+                float ff = bf + rd[0] * d;
+                float ll = bl + rd[1] * d;
+                float yy = by + rd[2] * d;
+                float taper = 1.0f - 0.45f * u;
+                for (int c = 0; c < 5; c++) {
+                    float ang = c * (TAU / 5.0f) + d * 2.4f + t * 6.0f;
+                    float ca = Mth.cos(ang) * rad * taper;
+                    float sa = Mth.sin(ang) * rad * taper;
                     box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            Mth.cos(ang) * hole, 0.0f, py + Mth.sin(ang) * hole,
-                            0.022f, 0.022f, 0.022f, SINGULAR, opaque(a * (1.0f - broken * 0.4f)));
+                            ff + ux * ca + wx * sa, ll + ul * ca + wl * sa, yy + uy * ca + wy * sa,
+                            0.026f, 0.026f, 0.026f,
+                            sIdx == steps ? SINGULAR : tone,
+                            opaque(a * (0.52f + 0.48f * (1.0f - u)) * live));
+                }
+            }
+            // L'IMPACT. Au sol c'est une marque plaquée sur la surface ; en l'air, l'étoile
+            // du corps touché. Dans les deux cas elle naît à l'instant du dégât serveur.
+            float ef = bf + rd[0] * reach;
+            float el = bl + rd[1] * reach;
+            float ey = by + rd[2] * reach;
+            float flash = 1.0f - clamp(age / 0.085f);
+            if (grounded) {
+                float rr = 0.14f + 0.52f * clamp(age / 0.16f);
+                int ring = Math.max(10, Math.round(rr * 22.0f));
+                for (int i = 0; i < ring; i++) {
+                    float ang = i / (float) ring * TAU;
                     box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            0.0f, Mth.cos(ang) * hole, py + Mth.sin(ang) * hole,
-                            0.022f, 0.022f, 0.022f, GLACIER, opaque(a * (1.0f - broken * 0.4f)));
+                            ef + Mth.cos(ang) * rr, el + Mth.sin(ang) * rr, GROUND_Y + 0.016f,
+                            0.040f, SLAB_H, 0.040f, (i & 1) == 0 ? tone : HALO,
+                            opaque(a * (0.80f - 0.55f * clamp(age / 0.22f)) * live));
+                }
+            }
+            if (flash > 0.02f) {
+                for (int i = 0; i < 6; i++) {
+                    float ang = i * (TAU / 6.0f) + t * 3.0f;
+                    float rr = 0.10f + 0.26f * (1.0f - flash);
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            ef + Mth.cos(ang) * rr, el + Mth.sin(ang) * rr, ey + (i % 2 == 0 ? 0.08f : -0.08f),
+                            0.036f, 0.036f, 0.036f, SINGULAR, opaque(a * flash * live));
                 }
             }
         }
 
-        // ---- 2. LES QUATRE ÉCLATS EN ORBITE -------------------------------------------
-        // Matière étrangère : du sol arraché. Sans eux, le prisme flotte dans le néant et
-        // on perd l'échelle autant que le rapport au monde.
+        // ---- 4. LE CRISTAL ------------------------------------------------------------
         {
-            float lift = smooth(clamp((t - 0.12f) / 0.12f));
-            float thrown = clamp((t - 0.86f) / 0.14f);
+            float[] vert = new float[18];
+            for (int v = 0; v < 6; v++) {
+                float vf = v == 0 ? w : (v == 1 ? -w : 0.0f);
+                float vl2 = v == 2 ? w : (v == 3 ? -w : 0.0f);
+                float vy2 = v == 4 ? w : (v == 5 ? -w : 0.0f);
+                spinPoint(p, vf, vl2, vy2, PRISM_TILT, spin);
+                vert[v * 3] = p[0] + recF;
+                vert[v * 3 + 1] = p[1] + recL;
+                vert[v * 3 + 2] = yc + p[2] + recY;
+            }
+            // Quatre arêtes d'équateur d'abord : ce sont elles qui encadrent la fenêtre.
+            final int[] edges = { 0, 2, 2, 1, 1, 3, 3, 0, 0, 4, 2, 4, 1, 4, 3, 4, 0, 5, 2, 5, 1, 5, 3, 5 };
+            float sec = (t - PRISM_BREAK) * 9.5f;
+            for (int e = 0; e < 12; e++) {
+                int i0e = edges[e * 2];
+                int i1e = edges[e * 2 + 1];
+                float f0 = vert[i0e * 3];
+                float l0 = vert[i0e * 3 + 1];
+                float y0 = vert[i0e * 3 + 2];
+                float f1 = vert[i1e * 3];
+                float l1 = vert[i1e * 3 + 1];
+                float y1 = vert[i1e * 3 + 2];
+                float fade = 1.0f;
+                if (broken > 0.0f) {
+                    // LA FRACTURE. Chaque arête part avec sa vitesse propre, tourne autour
+                    // de son milieu, tombe et REBONDIT. Douze morceaux qui s'évanouissent en
+                    // l'air seraient douze morceaux sans poids.
+                    float mf = (f0 + f1) * 0.5f;
+                    float ml = (l0 + l1) * 0.5f;
+                    float my = (y0 + y1) * 0.5f;
+                    float out = Mth.sqrt(mf * mf + ml * ml) + 0.001f;
+                    float sp = 0.9f + 1.1f * hash(salt, e * 7);
+                    float ddf = mf / out * sp;
+                    float ddl = ml / out * sp;
+                    float nf = mf + ddf * sec;
+                    float nl = ml + ddl * sec;
+                    float ny = ballistic(my, 1.1f + 1.6f * hash(salt, e * 13), sec, floorY);
+                    float roll = sec * (1.8f + 3.4f * hash(salt, e * 19));
+                    float cr = Mth.cos(roll);
+                    float sr = Mth.sin(roll);
+                    float hf = (f1 - f0) * 0.5f;
+                    float hl = (l1 - l0) * 0.5f;
+                    float hy = (y1 - y0) * 0.5f;
+                    float rf = hf * cr - hl * sr;
+                    float rl = hf * sr + hl * cr;
+                    f0 = nf - rf; f1 = nf + rf;
+                    l0 = nl - rl; l1 = nl + rl;
+                    y0 = ny - hy; y1 = ny + hy;
+                    fade = 1.0f - smooth(clamp((t - PRISM_BREAK) / 0.20f)) * 0.75f;
+                }
+                boolean equator = e < 4;
+                float th = (equator ? 0.040f : 0.029f) * (0.55f + 0.45f * body + 0.45f * broken);
+                int tone = broken > 0.0f ? (((e & 1) == 0) ? BASALT : SLATE)
+                        : (equator ? GLACIER : HORIZON);
+                segment(vc, mat, tmp, cx, cy, cz, dx, dz, f0, l0, y0, f1, l1, y1,
+                        th, equator ? 0.052f : 0.062f, tone, opaque(a * 0.95f * fade));
+            }
+            // Les six sommets, marqués. Sans eux l'octaèdre se lit comme une cage molle.
+            if (broken <= 0.0f) {
+                for (int v = 0; v < 6; v++) {
+                    float pulse = 0.70f + 0.30f * Mth.sin(t * 19.0f + v * 1.7f);
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            vert[v * 3], vert[v * 3 + 1], vert[v * 3 + 2],
+                            0.052f, 0.052f, 0.052f, pulse > 0.92f ? SINGULAR : GLACIER,
+                            opaque(a * pulse));
+                }
+            }
+        }
+
+        // ---- 5. LES QUATRE ÉCLATS ARRACHÉS AU SOL -------------------------------------
+        // Ils viennent du plancher, se verrouillent à l'équateur, et y retombent. Le vide
+        // n'invente pas de matière : il prend celle du monde, et elle redescend.
+        {
+            float rise = smooth(clamp((t - 0.10f) / 0.14f));
             for (int i = 0; i < 4; i++) {
-                float h1 = hash(salt + 61, i * 29);
-                float ang = spin * 0.6f + i * (TAU / 4.0f) + 0.4f;
-                float orbit = 1.35f + 0.22f * h1;
-                float fy = GROUND_Y + (py - GROUND_Y) * lift + 0.10f * Mth.sin(t * 11.0f + i);
-                float ff = Mth.cos(ang) * orbit * lift;
-                float ll = Mth.sin(ang) * orbit * lift;
-                if (thrown > 0.0f) {
-                    float d = thrown * (3.4f + 1.2f * h1);
-                    ff += Mth.cos(ang) * d;
-                    ll += Mth.sin(ang) * d;
-                    fy = fy + thrown * 0.9f - GRAVITY * 0.10f * thrown * thrown;
-                    if (fy < GROUND_Y + 0.05f) fy = GROUND_Y + 0.05f;
+                float ang = i * (TAU / 4.0f) + spin * 0.85f;
+                float orbit = PRISM_W * 1.46f;
+                float sf = Mth.cos(ang) * orbit;
+                float sl = Mth.sin(ang) * orbit;
+                float home = yc + Mth.sin(spin * 0.7f + i) * 0.10f;
+                float sy = GROUND_Y + (home - GROUND_Y) * rise;
+                if (broken > 0.0f) {
+                    float fallSec = (t - PRISM_BREAK) * 9.5f;
+                    sf += Mth.cos(ang) * 1.25f * fallSec;
+                    sl += Mth.sin(ang) * 1.25f * fallSec;
+                    sy = ballistic(home, 0.7f, fallSec, floorY);
                 }
-                float sz = 0.090f + 0.040f * h1;
-                // Chaque éclat est un petit assemblage de trois cubes, pas un cube : un cube
-                // isolé se lit comme un pixel de l'interface, trois se lisent comme un débris.
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, ff, ll, fy,
-                        sz, sz * 0.62f, sz, ENDSTONE, opaque(a));
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, ff + sz * 0.7f, ll - sz * 0.5f, fy - sz * 0.4f,
-                        sz * 0.55f, sz * 0.45f, sz * 0.55f, ENDSTONE_DK, opaque(a));
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, ff - sz * 0.6f, ll + sz * 0.6f, fy + sz * 0.3f,
-                        sz * 0.40f, sz * 0.40f, sz * 0.40f, ENDSTONE, opaque(a * 0.92f));
+                fragment(vc, mat, tmp, cx, cy, cz, dx, dz, sf, sl, sy,
+                        0.072f, spin * 1.4f + i, ENDSTONE, ENDSTONE_DK,
+                        opaque(a * (0.35f + 0.65f * rise)));
             }
         }
 
-        // ---- 3. LE TRAIT D'ENTRÉE ------------------------------------------------------
-        // Il vient de la main : f négatif. Plein, fin, brillant — l'exception du fichier.
+        // ---- 6. L'ÉCLAT — tick 170 ----------------------------------------------------
         {
-            float inb = clamp((t - 0.22f) / 0.07f) * (1.0f - clamp((t - 0.60f) / 0.10f));
-            if (inb > 0.01f) {
-                int seg = 30;
-                for (int i = 0; i < seg; i++) {
-                    float u = (i + 0.5f) / seg;
-                    float ff = -4.6f + 4.6f * u;
-                    // Le faisceau pulse vers l'intérieur : des paquets qui remontent le trait.
-                    float pk = 0.5f + 0.5f * Mth.sin(u * 22.0f - t * 70.0f);
-                    float w = (0.028f + 0.020f * pk) * inb;
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz, ff, 0.0f, py,
-                            w, w, w, pk > 0.78f ? SINGULAR : GLACIER, opaque(a * inb));
-                }
-            }
-        }
-
-        // ---- 4. LA RÉFRACTION : SEPT FAISCEAUX CREUX -----------------------------------
-        {
-            float wings = smooth(clamp((t - 0.50f) / 0.18f)) * (1.0f - clamp((t - 0.74f) / 0.10f));
-            for (int b = 0; b < 7; b++) {
-                // Ouverture EN SÉQUENCE : chaque faisceau part trois ticks après le précédent.
-                float born = 0.32f + b * 0.016f;
-                float life = clamp((t - born) / 0.12f) * (1.0f - clamp((t - 0.78f) / 0.10f));
-                if (life <= 0.01f) continue;
-                float spreadAng = (b - 3) * 0.30f;
-                // LE COU. Le faisceau central ne se rabat pas — sin(0) = 0 — il partait
-                // donc tout droit en travers de la silhouette et cassait les deux ailes
-                // en deux moities sans rapport. Pendant la phase des ailes il se raccourcit
-                // et se releve : c'est la tete du dragon, et la silhouette se ferme.
-                boolean neck = b == 3;
-                // Le plan de l'éventail bascule lentement : un éventail figé est un décor.
-                float planeTip = 0.30f * Mth.sin((t - 0.32f) * 3.2f);
-                float len = (1.6f + 4.4f * smooth(life)) * (0.78f + 0.22f * Mth.cos(spreadAng));
-                if (neck) len *= 1.0f - 0.52f * wings;
-                // 4,5 segments par bloc et non 7 : le tube reste continu a l'oeil, et les
-                // sept faisceaux passent de 2 128 cubes a environ 950.
-                int seg = Math.max(10, Math.round(len * 4.5f));
-                for (int s = 0; s < seg; s++) {
-                    float u = (s + 0.5f) / seg;
-                    float d = u * len;
-                    float ff = d * Mth.cos(spreadAng);
-                    float ll = d * Mth.sin(spreadAng);
-                    float yy = py + d * planeTip * Mth.sin(spreadAng * 1.6f);
-                    // --- LE RABATTEMENT EN AILE ---
-                    if (wings > 0.01f) {
-                        float sweep = wings * (0.55f + 0.30f * u);
-                        float back = -Math.abs(Mth.sin(spreadAng)) * d * sweep * 1.15f;
-                        float up = Mth.sin(u * Mth.PI * 0.72f) * d * sweep * 0.72f;
-                        if (neck) {
-                            // Le cou monte en courbe et se penche vers l'avant.
-                            back = 0.0f;
-                            up = Mth.sin(u * Mth.PI * 0.55f) * d * wings * 1.55f;
-                        }
-                        ff += back;
-                        yy += up;
-                    }
-                    // --- LE TUBE CREUX ---
-                    // Huit cubes en couronne, zéro au centre. Un faisceau plein serait un
-                    // bâton lumineux de plus ; celui-ci, on le traverse du regard.
-                    float rad = (0.072f + 0.030f * Mth.sin(u * 9.0f - t * 30.0f)) * (1.0f - u * 0.45f);
-                    int ring = u < 0.08f ? 8 : 6;
-                    // La couronne doit etre PERPENDICULAIRE au faisceau, pas alignee sur le
-                    // repere : un tube dont les anneaux restent paralleles aux axes se
-                    // vrille visiblement des que le faisceau s'ecarte de l'axe.
-                    float perpF = -Mth.sin(spreadAng);
-                    float perpL = Mth.cos(spreadAng);
-                    for (int k = 0; k < ring; k++) {
-                        float ang = (k + (s & 1) * 0.5f) / ring * TAU;
-                        float ofl = Mth.cos(ang) * rad;
-                        float ofy = Mth.sin(ang) * rad;
-                        box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                                ff + perpF * ofl, ll + perpL * ofl, yy + ofy,
-                                0.020f, 0.020f, 0.020f,
-                                k == 0 ? GLACIER : ((b + k) % 3 == 0 ? HORIZON : HALO),
-                                opaque(a * life * (0.70f + 0.30f * (1.0f - u))));
-                    }
-                    // La POINTE : plus vive, et c'est elle qui touche.
-                    if (s == seg - 1) {
-                        box(vc, mat, tmp, cx, cy, cz, dx, dz, ff, ll, yy,
-                                0.055f, 0.055f, 0.055f, SINGULAR, opaque(a * life));
-                    }
-                }
-                // --- LA MEMBRANE ---
-                // Pointillée, entre deux nervures voisines : une aile sans membrane est un
-                // peigne. Pointillée et non pleine, parce qu'une membrane pleine du Vide
-                // serait une surface — et le Vide n'a pas de surface.
-                if (wings > 0.02f && b < 6) {
-                    float nextAng = (b + 1 - 3) * 0.30f;
-                    int dots = 26;
-                    for (int k = 0; k < dots; k++) {
-                        float u = (k + 0.5f) / dots;
-                        float d = u * len * 0.92f;
-                        float sweep = wings * (0.55f + 0.30f * u);
-                        float m = 0.5f;
-                        float sa = spreadAng + (nextAng - spreadAng) * m;
-                        float ff = d * Mth.cos(sa) - Math.abs(Mth.sin(sa)) * d * sweep * 1.15f;
-                        float ll = d * Mth.sin(sa);
-                        float yy = py + Mth.sin(u * Mth.PI * 0.72f) * d * sweep * 0.72f
-                                + d * 0.30f * Mth.sin((t - 0.32f) * 3.2f) * Mth.sin(sa * 1.6f);
-                        float sz = 0.046f * wings * (1.0f - u * 0.4f);
-                        if (sz <= 0.005f) continue;
-                        box(vc, mat, tmp, cx, cy, cz, dx, dz, ff, ll, yy,
-                                sz, sz, sz, (k & 3) == 0 ? HORIZON : SLATE,
-                                opaque(a * wings * 0.80f));
-                    }
-                }
-            }
-        }
-
-        // ---- 5. L'ÉCLAT ----------------------------------------------------------------
-        {
-            float burst = clamp((t - 0.88f) / 0.12f);
-            if (burst > 0.001f) {
-                float ease = smooth(burst);
-                float rr = 0.5f + 4.6f * ease;
-                int pts = 56;
-                for (int i = 0; i < pts; i++) {
-                    float ang = (i + 0.5f) / pts * TAU;
-                    float th = 0.078f * (1.0f - ease * 0.82f);
-                    if (th <= 0.006f) continue;
+            float burst = clamp((t - PRISM_BURST) / 0.105f);
+            if (burst > 0.0f) {
+                float rr = 0.3f + 2.3f * smooth(burst);
+                int ring = Math.max(22, Math.round(rr * 20.0f));
+                for (int i = 0; i < ring; i++) {
+                    float ang = i / (float) ring * TAU;
+                    float wob = 1.0f + 0.06f * Mth.sin(ang * 7.0f + t * 9.0f);
                     box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            Mth.cos(ang) * rr, Mth.sin(ang) * rr, GROUND_Y + 0.016f,
-                            th, SLAB_H, th, i % 7 == 0 ? INVERT : HORIZON, opaque(a * 0.92f));
+                            Mth.cos(ang) * rr * wob, Mth.sin(ang) * rr * wob, GROUND_Y + 0.016f,
+                            0.052f, SLAB_H, 0.052f, (i % 5 == 0) ? INVERT : HORIZON,
+                            opaque(a * (1.0f - burst) * 0.95f));
                 }
-                // La colonne : ce que le prisme avait pris, qui remonte.
-                for (int i = 0; i < 26; i++) {
-                    float h1 = hash(salt + 71, i * 13);
-                    float h2 = hash(salt + 72, i * 17);
-                    float u = fract(h1 + ease * 1.3f);
-                    float yy = GROUND_Y + u * 4.4f;
-                    float rad = (0.18f + 0.55f * h2) * (1.0f - u * 0.45f);
-                    float ang = h2 * TAU + u * 2.6f;
-                    float sz = 0.036f * (1.0f - u * 0.6f);
-                    if (sz <= 0.005f) continue;
+                // La colonne : ce que le prisme a pris ressort, et ressort en INVERT.
+                for (int i = 0; i < 14; i++) {
+                    float u = (i / 14.0f + burst * 1.4f) % 1.0f;
+                    float ang = i * 2.39996f + t * 4.0f;
+                    float rr2 = 0.18f + 0.52f * u;
                     box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            Mth.cos(ang) * rad, Mth.sin(ang) * rad, yy,
-                            sz, sz, sz, h1 > 0.65f ? INVERT : GLACIER, opaque(a * (1.0f - u * 0.5f)));
+                            Mth.cos(ang) * rr2, Mth.sin(ang) * rr2,
+                            GROUND_Y + 0.05f + u * 3.4f,
+                            0.042f, 0.042f, 0.042f, (i & 1) == 0 ? INVERT : GLACIER,
+                            opaque(a * (1.0f - u) * (1.0f - burst * 0.5f)));
                 }
             }
         }
     }
 
+    /**
+     * Le trajet d'un des sept rayons DANS le cristal, par réfraction réelle.
+     *
+     * <p>Le rayon incident part de {@code f = −3} et passe par le centre : dans le repère du
+     * cristal il passe donc par l'origine, quelle que soit la rotation. Il entre, se
+     * réfracte, traverse, se réfracte encore — et s'il est pris en réflexion totale il
+     * rebondit à l'intérieur. Au troisième rebond on le laisse sortir par la normale : un
+     * faisceau prisonnier ne vaut rien à l'écran, et le serveur en tire SEPT, pas cinq.</p>
+     *
+     * @param outP point de sortie, repère de l'effet, relatif au centre du cristal
+     * @param outD direction de sortie, unitaire, repère de l'effet
+     */
+    private static boolean prismRay(int k, float spin, float w,
+                                    float[] outE, float[] outP, float[] outD) {
+        if (w <= 0.06f) return false;
+        float[] o = new float[3];
+        float[] d = new float[3];
+        float[] hit = new float[8];
+        float[] dir = new float[3];
+        // LE FAISCEAU INCIDENT EST UN CYLINDRE, pas un crayon. Les sept rayons entrent
+        // donc à sept endroits de sa section : faces différentes, incidences différentes,
+        // et c'est ÇA qui ouvre l'éventail. Un rayon qui passe par le centre d'un corps
+        // symétrique en ressort presque dans l'axe, quel que soit son indice — la première
+        // version le faisait, et les sept faisceaux se superposaient en un seul trait.
+        float off = k * (TAU / 7.0f) + 0.40f;
+        float spread = 0.62f * w;
+        unspinPoint(o, -3.0f, Mth.cos(off) * spread, Mth.sin(off) * spread, PRISM_TILT, spin);
+        unspinPoint(d, 1.0f, 0.0f, 0.0f, PRISM_TILT, spin);
+        if (!octaHit(o[0], o[1], o[2], d[0], d[1], d[2], w, hit)) return false;
+        // DISPERSION : un indice par faisceau. C'est tout ce qui les sépare.
+        float n = 1.14f + k * 0.08f;
+        float px = o[0] + d[0] * hit[0];
+        float pl = o[1] + d[1] * hit[0];
+        float py = o[2] + d[2] * hit[0];
+        spinPoint(outE, px, pl, py, PRISM_TILT, spin);
+        refract(dir, d[0], d[1], d[2], hit[1], hit[2], hit[3], 1.0f / n);
+        float ix = dir[0];
+        float il = dir[1];
+        float iy = dir[2];
+        boolean escaped = false;
+        for (int bounce = 0; bounce < 3 && !escaped; bounce++) {
+            if (!octaHit(px + ix * 0.002f, pl + il * 0.002f, py + iy * 0.002f, ix, il, iy, w, hit)) {
+                break;
+            }
+            float travel = hit[4];
+            px += ix * travel;
+            pl += il * travel;
+            py += iy * travel;
+            escaped = refract(dir, ix, il, iy, hit[5], hit[6], hit[7], n);
+            ix = dir[0];
+            il = dir[1];
+            iy = dir[2];
+            if (!escaped && bounce == 2) {
+                ix = hit[5]; il = hit[6]; iy = hit[7];
+                escaped = true;
+            }
+        }
+        spinPoint(outP, px, pl, py, PRISM_TILT, spin);
+        spinPoint(outD, ix, il, iy, PRISM_TILT, spin);
+        float len = Mth.sqrt(outD[0] * outD[0] + outD[1] * outD[1] + outD[2] * outD[2]);
+        if (len < 1.0e-4f) return false;
+        outD[0] /= len; outD[1] /= len; outD[2] /= len;
+        return true;
+    }
+
     // =================================================================================
-    //  III. FAILLE DU NÉANT — 170 ticks
+    //  III. FAILLE DU NÉANT — 170 ticks — elle TRIE
     // =================================================================================
 
     /**
-     * Chronologie (170 ticks) :
+     * <b>La faille est une LIGNE, et c'est sa seule idée.</b> Le serveur ne ratisse pas un
+     * disque mais un corridor de neuf blocs de long sur trois de large, PERPENDICULAIRE à
+     * l'axe du coup ({@code applyNullRiftGameplay}) : se tenir dans son axe ou à deux pas de
+     * côté change tout. La figure dit exactement ça — une déchirure de 8,6 blocs couchée en
+     * travers du chemin de l'arme, et rien au-dessus de la victime.
+     *
+     * <h3>Le calcul</h3>
      * <ul>
-     *   <li>0,00–0,08 <b>la fêlure</b> : un cheveu vertical de {@link #SINGULAR}, large de
-     *       douze millièmes. Rien d'autre. Huit ticks de presque rien — même leçon que le
-     *       suspens du Couperet : c'est le vide AVANT l'événement qui fait atterrir
-     *       l'événement ;</li>
-     *   <li>0,08–0,24 <b>l'ouverture</b> : la ligne s'ouvre en amande, large au milieu. Les
-     *       deux lèvres sont <b>dentelées et DÉCALÉES</b> — leurs dents viennent de deux
-     *       graines différentes, donc elles s'engrènent sans correspondre. Du papier déchiré,
-     *       pas coupé. À l'intérieur : <i>zéro cube</i> ;</li>
-     *   <li>0,16–0,42 <b>la propagation</b> : le pied de la faille atteint le sol et une
-     *       crevasse part des deux côtés, avec deux embranchements ;</li>
-     *   <li>0,30–0,60 <b>l'aspiration</b> : des blocs du monde sont traînés vers la fente,
-     *       basculent par-dessus la lèvre et ne ressortent pas ;</li>
-     *   <li>0,40–0,64 <b>l'autre côté</b> : à travers la fente, trois fois, brièvement, une
-     *       seconde grille apparaît — tournée à quatre-vingt-dix degrés et en
-     *       {@link #CHORUS}. Le seul violet du fichier, et il veut dire « il y a un
-     *       ailleurs » ;</li>
-     *   <li>0,64–0,82 <b>la fermeture</b> : les lèvres se rejoignent mais ne s'emboîtent
-     *       plus — décalées d'une dent, la couture reste visible ;</li>
-     *   <li>0,82–1,00 <b>la cicatrice</b> : la couture refroidit du blanc au basalte et se
-     *       rétracte. La crevasse au sol est la dernière à se refermer.</li>
+     *   <li><b>propagation</b> : la fêlure part du point d'impact et COURT vers ses deux
+     *       pointes. Elle n'apparaît pas d'un bloc, elle se propage, et ses branches
+     *       secondaires partent du tronc avec une génération de moins ;</li>
+     *   <li><b>profil de Griffith</b> : l'ouverture et la hauteur suivent
+     *       {@code √(1 − u²)} — maximales au point de nucléation, nulles aux pointes. Une
+     *       fente d'épaisseur constante n'est pas une fissure, c'est une découpe ;</li>
+     *   <li><b>fibres</b> : entre les deux lèvres, des filaments de matière étirés qui
+     *       s'amincissent, se nécrosent et CASSENT quand l'écartement passe leur limite.
+     *       Leur nombre tombe à mesure que la faille bâille ;</li>
+     *   <li><b>fermeture éclair</b> : au tick 140 les pointes se rejoignent vers le centre,
+     *       et ce qui était dedans est éjecté PERPENDICULAIREMENT — exactement le
+     *       {@code voidPush} du serveur, qui pousse selon ±l.</li>
+     * </ul>
+     *
+     * <h3>La chronologie, en ticks du serveur</h3>
+     * <ul>
+     *   <li><b>2</b> la fêlure ; <b>14</b> l'ouverture ;</li>
+     *   <li><b>20 → 100</b> neuf aspirations : à chacune, une vague de débris est arrachée
+     *       des deux côtés du corridor et tirée VERS LE PLAN, pas vers le centre ;</li>
+     *   <li><b>112</b> l'autre côté : ce qui remonte par la fente est en {@link #CHORUS} ;</li>
+     *   <li><b>140</b> la fermeture, et l'éjection latérale ;</li>
+     *   <li><b>140 → 170</b> la cicatrice au sol, qui refroidit.</li>
      * </ul>
      */
     private static void renderRift(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                    float cx, float cy, float cz, float t,
                                    float dx, float dz, int alpha, int salt) {
         float a = alpha;
-        float yBase = GROUND_Y + 0.05f;
-        float height = RIFT_HEIGHT;
-
-        // Ouverture puis fermeture. L'asymétrie est volontaire : ça s'ouvre vite (seize
-        // ticks) et ça se referme lentement (trente), parce qu'une déchirure se fait d'un
-        // coup et se recoud mal.
-        float closing = smooth(clamp((t - 0.64f) / 0.18f));
+        float run = riftRun(t);
         float gape = riftGape(t);
-        float scar = clamp((t - 0.80f) / 0.20f);
+        float half = riftHalfLength(t);
+        float crown = riftCrown(t);
+        float base = GROUND_Y + 0.03f;
+        float lipMax = RIFT_LIP * gape;
 
-        // ---- 1. LA FÊLURE puis LES DEUX LÈVRES -----------------------------------------
+        // ---- 1. LA FÊLURE AU SOL ------------------------------------------------------
+        // Elle précède tout, elle survit à tout. Le tronc court le long du corridor, les
+        // branches en partent avec une génération de moins — un verre ne casse pas droit.
         {
-            int steps = 46;
-            for (int i = 0; i <= steps; i++) {
-                float u = i / (float) steps;                 // 0 = pied, 1 = sommet
-                float yy = yBase + u * height;
-                // L'AMANDE : large au milieu, nulle aux deux bouts. Puissance 0,62 pour que
-                // la pointe reste pointue — une racine carrée donnerait une ellipse molle.
-                float profile = Mth.sin(u * Mth.PI);
-                profile = (float) Math.pow(profile, 0.62);
-                float wMax = RIFT_LIP * gape;
-                float w = wMax * profile;
-                // Les DENTS. Deux hachages différents pour les deux lèvres : c'est tout le
-                // sujet. Avec le même, les dents s'emboîtent et on lit une fermeture éclair.
-                float toothL = (hash(salt + 81, i * 13) - 0.5f) * 0.14f * profile;
-                float toothR = (hash(salt + 82, i * 29) - 0.5f) * 0.14f * profile;
-                // Le décalage d'une dent à la fermeture : les lèvres ne retrouvent pas leur
-                // place. C'est la cicatrice, et elle se voit.
-                float slip = closing * 0.085f * Mth.sin(u * 23.0f + salt * 0.017f);
-                float lL = -w + toothL + slip;
-                float lR = w + toothR - slip;
-                // Léger serpentement vertical : une déchirure n'est pas un trait de règle.
-                float wander = 0.16f * Mth.sin(u * 4.3f + salt * 0.013f);
-
-                float lipW = 0.030f + 0.020f * profile;
-                int lipRgb = scar > 0.02f
-                        ? (scar > 0.62f ? BASALT : (scar > 0.30f ? HALO : HORIZON))
-                        : GLACIER;
-                // Lèvre gauche : liseré clair dehors, noir dedans. Le noir n'est pas un
-                // remplissage, c'est l'épaisseur de la lèvre — un seul cube.
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, wander, lL, yy,
-                        lipW, lipW * 1.25f, lipW, lipRgb, opaque(a));
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, wander, lL + 0.030f, yy,
-                        lipW * 0.70f, lipW, lipW * 0.70f, NOTHING, opaque(a * 0.95f));
-                // Lèvre droite.
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, wander, lR, yy,
-                        lipW, lipW * 1.25f, lipW, lipRgb, opaque(a));
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, wander, lR - 0.030f, yy,
-                        lipW * 0.70f, lipW, lipW * 0.70f, NOTHING, opaque(a * 0.95f));
-                // Le fil blanc de la fêlure, avant l'ouverture et après la fermeture.
-                if (gape < 0.14f || scar > 0.02f) {
-                    float th = 0.013f * (1.0f - scar * 0.85f);
-                    if (th > 0.003f) {
-                        box(vc, mat, tmp, cx, cy, cz, dx, dz, wander, (lL + lR) * 0.5f, yy,
-                                th, th * 2.4f, th, scar > 0.55f ? HORIZON : SINGULAR, opaque(a));
-                    }
+            float scar = clamp((t - RIFT_CLOSE) / 0.18f);
+            float reach = RIFT_REACH * run;
+            int n = 38;
+            float prevF = 0.0f;
+            float prevL = -reach;
+            for (int i = 0; i <= n; i++) {
+                float u = -1.0f + 2.0f * i / n;
+                float ll = u * reach;
+                float jag = (hash(salt, i * 31) - 0.5f) * 0.18f * (1.0f - Math.abs(u) * 0.4f);
+                if (i > 0) {
+                    segment(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            prevF, prevL, GROUND_Y + 0.014f, jag, ll, GROUND_Y + 0.014f,
+                            0.034f, 0.048f,
+                            scar > 0.5f ? BASALT : (Math.abs(u) < 0.5f ? HORIZON : HALO),
+                            opaque(a * (0.92f - 0.35f * scar)));
                 }
-                // Quelques ÉCHARDES qui se détachent de la lèvre : une déchirure fibre.
-                if ((i % 7) == 3 && gape > 0.25f) {
-                    float h1 = hash(salt + 83, i * 31);
-                    float out = 0.10f + 0.26f * h1;
-                    float side = (i & 1) == 0 ? -1.0f : 1.0f;
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            wander + (h1 - 0.5f) * 0.14f,
-                            (side < 0 ? lL : lR) + side * out, yy + (h1 - 0.5f) * 0.12f,
-                            0.018f, 0.030f, 0.018f, HORIZON, opaque(a * 0.85f));
-                }
+                prevF = jag;
+                prevL = ll;
+            }
+            // Les branches. Sept, de part et d'autre, longueur décroissante vers les pointes.
+            for (int b = 0; b < 7; b++) {
+                float u = (hash(salt, b * 47) - 0.5f) * 1.7f;
+                float side = (b & 1) == 0 ? 1.0f : -1.0f;
+                float len = (0.35f + 0.85f * hash(salt, b * 59)) * (1.0f - Math.abs(u) * 0.6f);
+                float ang = (0.5f + 0.7f * hash(salt, b * 71)) * side;
+                float sl = u * reach;
+                float ef = Mth.sin(ang) * len;
+                float el = sl + Mth.cos(ang) * len * 0.5f;
+                segment(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        0.0f, sl, GROUND_Y + 0.014f, ef, el, GROUND_Y + 0.014f,
+                        0.026f, 0.055f, scar > 0.5f ? ABYSS : SLATE, opaque(a * 0.80f));
             }
         }
 
-        // ---- 2. L'AUTRE CÔTÉ ------------------------------------------------------------
-        // Trois apparitions brèves, jamais de la même longueur. Clippées dans l'amande :
-        // on ne voit l'autre grille QUE par la fente, ce qui prouve que la fente est un trou.
-        {
-            float[][] windows = {{0.40f, 0.055f}, {0.49f, 0.030f}, {0.57f, 0.070f}};
-            for (int wi = 0; wi < windows.length; wi++) {
-                float w0 = windows[wi][0];
-                float wd = windows[wi][1];
-                if (t < w0 || t > w0 + wd) continue;
-                float p = (t - w0) / wd;
-                float fade = Mth.sin(p * Mth.PI);
-                int rows = 9;
-                for (int r = 0; r < rows; r++) {
-                    float u = (r + 0.5f) / rows;
-                    float yy = yBase + u * height;
-                    float profile = (float) Math.pow(Mth.sin(u * Mth.PI), 0.62);
-                    float wMax = RIFT_LIP * gape * profile;
-                    if (wMax < 0.05f) continue;
-                    int cols = Math.max(2, Math.round(wMax * 14.0f));
-                    for (int c = 0; c < cols; c++) {
-                        float lv = (c + 0.5f) / cols;
-                        float ll = -wMax + lv * wMax * 2.0f;
-                        // La grille d'en face est TOURNÉE : ses lignes sont horizontales là
-                        // où les nôtres sont verticales. C'est ce qui dit « autre espace ».
-                        float g = fract(yy * 1.7f + wi * 0.37f + t * 0.8f);
-                        if (g > 0.30f) continue;
+        if (half > 0.05f && crown > 0.05f) {
+            // ---- 2. LES DEUX LÈVRES ---------------------------------------------------
+            // Le bord de la déchirure : un arc qui monte de la pointe gauche au sommet et
+            // redescend. Les deux lèvres sont décalées de ±l'ouverture, qui suit le profil.
+            int n = 34;
+            for (int side = -1; side <= 1; side += 2) {
+                float prevF = 0.0f;
+                float prevL = 0.0f;
+                float prevY = 0.0f;
+                for (int i = 0; i <= n; i++) {
+                    float u = -1.0f + 2.0f * i / n;
+                    float prof = riftProfile(u);
+                    float ll = u * half;
+                    float yy = base + crown * prof;
+                    float jag = (hash(salt, i * 37 + (side > 0 ? 0 : 500)) - 0.5f) * 0.10f * prof;
+                    float ff = side * (lipMax * prof * 0.92f + 0.035f) + jag;
+                    if (i > 0) {
+                        float bright = prof * (0.55f + 0.45f * Mth.sin(u * 9.0f - t * 14.0f));
+                        segment(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                prevF, prevL, prevY, ff, ll, yy,
+                                0.036f + 0.018f * prof, 0.050f,
+                                bright > 0.62f ? SINGULAR : (prof > 0.45f ? GLACIER : HORIZON),
+                                opaque(a * (0.68f + 0.32f * prof)));
+                    }
+                    prevF = ff;
+                    prevL = ll;
+                    prevY = yy;
+                }
+                // Les NERVURES intérieures : quatre niveaux qui montrent l'épaisseur de la
+                // lèvre. Sans elles la déchirure est un trait, et un trait n'a pas de bord.
+                for (int level = 1; level <= 4; level++) {
+                    float h = level / 5.0f;
+                    float prevF2 = 0.0f;
+                    float prevL2 = 0.0f;
+                    boolean started = false;
+                    for (int i = 0; i <= n; i++) {
+                        float u = -1.0f + 2.0f * i / n;
+                        float prof = riftProfile(u);
+                        if (prof <= h) { started = false; continue; }
+                        // Ouverture à cette hauteur : une lentille, pas un rectangle.
+                        float inner = Mth.sqrt(Math.max(0.0f, 1.0f - (h / prof) * (h / prof)));
+                        float ff = side * lipMax * prof * inner * 0.88f;
+                        float ll = u * half;
+                        float yy = base + crown * h;
+                        if (started) {
+                            segment(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                    prevF2, prevL2, yy, ff, ll, yy, 0.024f, 0.070f,
+                                    (level & 1) == 0 ? BASALT : SLATE, opaque(a * 0.72f));
+                        }
+                        prevF2 = ff;
+                        prevL2 = ll;
+                        started = true;
+                    }
+                }
+            }
+
+            // ---- 3. LES FIBRES --------------------------------------------------------
+            // De la matière étirée en travers du trou. Elles s'amincissent, se nécrosent au
+            // milieu, et CASSENT : à pleine ouverture il n'en reste presque plus.
+            {
+                int fibres = 9;
+                for (int i = 0; i < fibres; i++) {
+                    float u = (hash(salt, i * 83) - 0.5f) * 1.74f;
+                    float prof = riftProfile(u);
+                    if (prof < 0.12f) continue;
+                    float limit = 0.22f + 0.62f * hash(salt, i * 97);
+                    float strain = clamp(gape / limit);
+                    if (strain >= 1.0f) continue;                    // celle-ci a cassé
+                    float h = (0.15f + 0.70f * hash(salt, i * 101)) * prof;
+                    float ll = u * half;
+                    float yy = base + crown * h;
+                    float span = lipMax * prof * 0.92f;
+                    int seg = 7;
+                    for (int sIdx = 0; sIdx <= seg; sIdx++) {
+                        float v = -1.0f + 2.0f * sIdx / seg;
+                        float neck = 1.0f - 0.85f * strain * (1.0f - v * v);
+                        float th = (0.028f * neck);
+                        if (th < 0.006f) continue;
                         box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                                0.16f * Mth.sin(u * 4.3f + salt * 0.013f) + 0.06f, ll, yy,
-                                0.016f, 0.014f, 0.016f, CHORUS, opaque(a * fade * 0.95f));
+                                v * span, ll + v * 0.04f, yy + (1.0f - v * v) * 0.05f * strain,
+                                th, th, th, strain > 0.66f ? GLACIER : HORIZON,
+                                opaque(a * (0.55f + 0.45f * (1.0f - strain))));
+                    }
+                }
+            }
+
+            // ---- 4. L'AUTRE CÔTÉ — tick 112 -------------------------------------------
+            // Le seul ton FROID du dossier, et il ne sert qu'ici : ce qui remonte par la
+            // fente ne vient pas du monde.
+            {
+                float other = clamp((t - 112.0f / 170.0f) / 0.10f) * (1.0f - clamp((t - RIFT_CLOSE) / 0.08f));
+                if (other > 0.01f) {
+                    for (int i = 0; i < 12; i++) {
+                        float u = (hash(salt, i * 113) - 0.5f) * 1.5f;
+                        float prof = riftProfile(u);
+                        if (prof < 0.2f) continue;
+                        float rise = fract(hash(salt, i * 127) + t * 0.9f);
+                        float yy = base + crown * prof * rise;
+                        float ll = u * half;
+                        float ff = (hash(salt, i * 131) - 0.5f) * lipMax * prof * 1.2f;
+                        float sz = 0.040f * (1.0f - rise * 0.5f);
+                        box(vc, mat, tmp, cx, cy, cz, dx, dz, ff, ll, yy, sz, sz, sz,
+                                CHORUS, opaque(a * other * (1.0f - rise)));
                     }
                 }
             }
         }
 
-        // ---- 3. LA CREVASSE AU SOL ------------------------------------------------------
-        // Elle part du pied, dans les deux sens, le long de l'axe LATÉRAL — la faille est un
-        // plan, sa trace au sol est une ligne, pas un disque. C'est la seule aire de ce type
-        // dans tout le mod, et le gameplay la reprend telle quelle (corridor, pas cercle).
-        {
-            float run = smooth(clamp((t - 0.15f) / 0.24f));
-            float heal = clamp((t - 0.84f) / 0.16f);
-            if (run > 0.01f && heal < 1.0f) {
-                float reach = 4.6f * run;
-                int steps = 40;
-                for (int side = -1; side <= 1; side += 2) {
-                    for (int i = 1; i <= steps; i++) {
-                        float u = i / (float) steps;
-                        float d = u * reach;
-                        if (d < 0.08f) continue;
-                        // La crevasse se referme depuis le bout : la cicatrisation remonte
-                        // vers le centre, elle ne s'efface pas partout à la fois.
-                        if (u > 1.0f - heal) continue;
-                        float wander = 0.30f * Mth.sin(d * 1.9f + side * 1.1f + salt * 0.011f);
-                        float gap = (0.20f + 0.16f * Mth.sin(d * 3.1f)) * (1.0f - u * 0.62f) * gape;
-                        if (gap < 0.012f) continue;
-                        float jag = (hash(salt + 91, i * 17 + (side + 1) * 500) - 0.5f) * 0.10f;
-                        for (int lip = -1; lip <= 1; lip += 2) {
-                            box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                                    wander + lip * gap + jag, side * d, GROUND_Y + 0.014f,
-                                    0.052f, SLAB_H, 0.062f,
-                                    heal > 0.1f ? BASALT : HORIZON, opaque(a * 0.95f));
-                        }
-                        // Les dalles qui BASCULENT dans la fente. Chacune a sa propre
-                        // inclinaison : des dalles toutes identiques feraient un escalier.
-                        if ((i % 3) == 0) {
-                            float h1 = hash(salt + 92, i * 23 + (side + 1) * 700);
-                            float tipIn = smooth(clamp((run - u) * 2.2f));
-                            float sink = tipIn * (0.22f + 0.30f * h1);
-                            box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                                    wander + (h1 - 0.5f) * 0.42f, side * d + (h1 - 0.5f) * 0.3f,
-                                    GROUND_Y + 0.05f - sink,
-                                    0.085f, 0.028f + 0.030f * tipIn, 0.085f,
-                                    h1 > 0.5f ? ENDSTONE : ENDSTONE_DK,
-                                    opaque(a * (1.0f - tipIn * 0.55f)));
-                        }
-                        // Deux embranchements, à un tiers et aux deux tiers.
-                        if (i == steps / 3 || i == (steps * 2) / 3) {
-                            float bl = 0.9f + 0.7f * hash(salt + 93, i);
-                            int bs = 10;
-                            for (int k = 1; k <= bs; k++) {
-                                float bu = k / (float) bs;
-                                float bd = bu * bl * run;
-                                float bf = wander + side * bd * 0.86f;
-                                box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                                        bf, side * d + bd * 0.52f, GROUND_Y + 0.014f,
-                                        0.040f * (1.0f - bu * 0.6f), SLAB_H,
-                                        0.040f * (1.0f - bu * 0.6f),
-                                        HALO, opaque(a * 0.80f * (1.0f - bu * 0.5f)));
-                            }
-                        }
-                    }
-                }
+        // ---- 5. LES NEUF ASPIRATIONS --------------------------------------------------
+        // Tick 20, puis toutes les dix frames. Chacune arrache une vague des DEUX côtés du
+        // corridor et la tire vers le PLAN — pas vers le centre : le serveur ne corrige que
+        // la composante perpendiculaire, et entasser tout au milieu effacerait la ligne.
+        for (int k = 0; k < 9; k++) {
+            float when = (20.0f + k * 10.0f) / 170.0f;
+            if (t < when) break;
+            float age = t - when;
+            if (age > 0.16f) continue;
+            float u01 = clamp(age / 0.16f);
+            for (int i = 0; i < 5; i++) {
+                int seed = k * 311 + i * 29;
+                float side = (i & 1) == 0 ? 1.0f : -1.0f;
+                float f0 = side * (1.6f + 1.8f * hash(salt, seed));
+                float ll = (hash(salt, seed + 7) - 0.5f) * 2.0f * RIFT_REACH * run;
+                float prof = riftProfile(clamp(Math.abs(ll) / Math.max(0.2f, RIFT_REACH * run)));
+                // Attraction en 1/r² intégrée grossièrement : le débris part lentement et
+                // finit avalé. Une interpolation linéaire aurait l'air d'un tapis roulant.
+                float pull = u01 * u01 * (3.0f - 2.0f * u01);
+                float ff = f0 * (1.0f - pull);
+                float yy = GROUND_Y + 0.06f + pull * (0.35f + 0.9f * prof) + 0.25f * Mth.sin(pull * 3.1f);
+                if (Math.abs(ff) < lipMax * prof * 0.8f) continue;     // avalé
+                fragment(vc, mat, tmp, cx, cy, cz, dx, dz, ff, ll, yy,
+                        0.052f * (1.0f - 0.4f * pull), pull * 7.0f + i,
+                        (i % 3 == 0) ? ENDSTONE : HALO, ENDSTONE_DK,
+                        opaque(a * (0.45f + 0.55f * (1.0f - pull))));
+            }
+            // La vague au sol : la poussière glisse vers la ligne, elle ne vole pas.
+            for (int i = 0; i < 7; i++) {
+                float side = (i & 1) == 0 ? 1.0f : -1.0f;
+                float f0 = side * (0.9f + 2.4f * hash(salt, k * 53 + i));
+                float ll = (hash(salt, k * 59 + i * 3) - 0.5f) * 2.0f * RIFT_REACH * run;
+                float ff = f0 * (1.0f - u01);
+                box(vc, mat, tmp, cx, cy, cz, dx, dz, ff, ll, GROUND_Y + 0.020f,
+                        0.034f, SLAB_H, 0.034f, (i % 4 == 0) ? GLACIER : HALO,
+                        opaque(a * (1.0f - u01) * 0.85f));
             }
         }
 
-        // ---- 4. L'ASPIRATION -------------------------------------------------------------
-        // Ce que le corridor avale. Les blocs sont traînés le long du SOL vers l'axe, puis
-        // basculent par-dessus la lèvre et s'amincissent jusqu'à rien. Aucun ne ressort.
+        // ---- 6. LA FERMETURE — tick 140 -----------------------------------------------
+        // Les pointes se rejoignent (c'est riftZip qui raccourcit la demi-longueur), et ce
+        // qui était dedans part DE CÔTÉ, en ±f, comme le voidPush du serveur.
         {
-            float suck = clamp((t - 0.26f) / 0.36f);
-            if (suck > 0.001f) {
-                for (int i = 0; i < 22; i++) {
-                    float h1 = hash(salt + 101, i * 13);
-                    float h2 = hash(salt + 102, i * 17);
-                    float h3 = hash(salt + 103, i * 19);
-                    float start = h1 * 0.40f;
-                    float p = clamp((suck - start) / (0.46f + 0.34f * h2));
-                    if (p <= 0.0f || p >= 1.0f) continue;
-                    float f0 = (h2 - 0.5f) * 5.0f;
-                    float l0 = (h3 - 0.5f) * 8.2f;
-                    // Trajet : d'abord le long du sol vers l'axe f = 0, puis la bascule.
-                    float glide = smooth(clamp(p / 0.72f));
-                    float ff = f0 * (1.0f - glide);
-                    float ll = l0 * (1.0f - glide * 0.28f);
-                    float yy = GROUND_Y + 0.07f;
-                    float tipOver = clamp((p - 0.68f) / 0.32f);
-                    if (tipOver > 0.0f) {
-                        yy += tipOver * 0.55f - GRAVITY * 0.055f * tipOver * tipOver;
-                        ff *= (1.0f - tipOver);
-                    }
-                    float sz = (0.080f + 0.040f * h1) * (1.0f - tipOver * 0.92f);
-                    if (sz <= 0.006f) continue;
-                    // Tumbling : chaque bloc tourne à sa vitesse, lu par un décalage de sa
-                    // face sombre. Sans lui, un bloc qui glisse est un palet de hockey.
-                    float roll = p * (6.0f + 7.0f * h3);
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz, ff, ll, yy,
-                            sz, sz * 0.72f, sz, ENDSTONE, opaque(a * (1.0f - tipOver * 0.4f)));
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            ff + Mth.cos(roll) * sz * 0.7f, ll + Mth.sin(roll) * sz * 0.7f,
-                            yy - sz * 0.45f,
-                            sz * 0.48f, sz * 0.40f, sz * 0.48f, ENDSTONE_DK,
-                            opaque(a * (1.0f - tipOver * 0.4f)));
-                }
-            }
-        }
-
-        // ---- 5. LA CICATRICE ---------------------------------------------------------------
-        // Quelques motes qui montent de la couture, et rien d'autre. La signature ne se
-        // termine pas sur un effet, elle se termine sur une trace.
-        {
-            if (scar > 0.02f) {
+            float shut = clamp((t - RIFT_CLOSE) / 0.17f);
+            if (shut > 0.0f) {
+                float sec = (t - RIFT_CLOSE) * 8.5f;
                 for (int i = 0; i < 14; i++) {
-                    float h1 = hash(salt + 111, i * 13);
-                    float h2 = hash(salt + 112, i * 17);
-                    float u = fract(h1 + scar * 1.1f);
-                    float yy = yBase + u * height * 1.25f;
-                    float sz = 0.026f * (1.0f - u * 0.7f) * (1.0f - scar * 0.4f);
-                    if (sz <= 0.005f) continue;
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            0.16f * Mth.sin(u * 4.3f + salt * 0.013f) + (h2 - 0.5f) * 0.20f,
-                            (h1 - 0.5f) * 0.30f, yy,
-                            sz, sz, sz, h2 > 0.70f ? INVERT : HORIZON,
-                            opaque(a * (1.0f - u * 0.6f)));
+                    float side = (i & 1) == 0 ? 1.0f : -1.0f;
+                    float ll = (hash(salt, i * 151) - 0.5f) * 2.0f * RIFT_REACH * 0.9f;
+                    float speed = 1.5f + 1.6f * hash(salt, i * 157);
+                    float ff = side * speed * sec;
+                    float y0 = base + RIFT_HEIGHT * 0.35f * hash(salt, i * 163);
+                    float yy = ballistic(y0, 1.3f, sec, GROUND_Y + 0.05f);
+                    fragment(vc, mat, tmp, cx, cy, cz, dx, dz, ff, ll, yy,
+                            0.054f, sec * 5.0f + i, (i % 3 == 0) ? INVERT : GLACIER, BASALT,
+                            opaque(a * (1.0f - shut * 0.8f)));
                 }
             }
         }
     }
 
-
     // =================================================================================
-    //  IV. PORTE D'HORIZON — 180 ticks
+    //  IV. PORTE D'HORIZON — 180 ticks — elle EXPULSE
     // =================================================================================
 
     /**
-     * 虚 <b>LA PORTE D'HORIZON</b> — un TORE posé au sol, et ce qui y tombe ressort ailleurs.
+     * <b>La porte est un TOURNIQUET.</b> Les quatre autres signatures gardent leurs victimes
+     * dans la zone ; celle-ci les en SORT. Le serveur fait sept transits
+     * ({@code applyHorizonGateGameplay}, ticks 34 puis toutes les dix-huit) : il prend à
+     * chaque fois le corps le plus proche de l'anneau, le jette par-dessus, et le repose
+     * plus loin sur un azimut qui tourne d'un septième de tour. Au bout des sept, le paquet
+     * est disséminé EN ÉTOILE — et c'est exactement ce que l'image dessine.
      *
-     * <p><b>Pourquoi un tore ?</b> Les trois premières signatures du Vide occupent trois
-     * catégories de forme : un volume (la sphère), un solide convexe (l'octaèdre du prisme),
-     * une surface plane (la faille). Il manquait la seule forme fermée qui porte un TROU —
-     * et c'est précisément la forme qui dit « on passe à travers ». Une sphère n'a pas
-     * d'autre côté ; un anneau, si.</p>
-     *
-     * <p><b>Le piège du tube, payé une fois déjà sur la couronne du Prisme.</b> Un anneau
-     * tubulaire dont la section est construite sur les axes du monde se VRILLE : la section
-     * tourne avec l'angle au lieu de rester perpendiculaire à l'âme. Le repère est donc
-     * explicite ici — tangente, normale radiale, verticale — et recalculé à chaque pas.</p>
-     *
+     * <h3>Le calcul</h3>
      * <ul>
-     *   <li>0,00–0,12 <b>le tracé</b> : un fil unique court au sol en cercle, comme une
-     *       craie. L'empreinte existe avant la porte ;</li>
-     *   <li>0,12–0,30 <b>le gonflement</b> : le fil s'épaissit en tore. Corps {@link #BASALT},
-     *       crête {@link #HORIZON} — un tube d'un seul ton serait un beignet ;</li>
-     *   <li>0,22–0,78 <b>la membrane</b> : l'intérieur se remplit d'une <b>spirale
-     *       logarithmique</b> à deux brins qui tourne et DESCEND. Pas un disque : un
-     *       escalier. Un disque plein aurait bouché le trou, c'est-à-dire supprimé le
-     *       sujet ;</li>
-     *   <li>0,30–0,46 <b>la sortie</b> : un second tore, 0,62 fois plus petit et <b>incliné</b>,
-     *       apparaît 2,25 blocs plus haut. L'inclinaison est ce qui interdit de le lire comme
-     *       un écho du premier ;</li>
-     *   <li>0,34–0,86 <b>le transit</b> : sept fragments d'{@link #ENDSTONE} tombent dans le
-     *       tore du bas, <b>cessent d'exister</b> sous la membrane, puis <b>réapparaissent</b>
-     *       au tore du haut en {@link #INVERT} et retombent en dehors ;</li>
-     *   <li>0,86–1,00 <b>la fermeture</b> : les deux tores <b>rentrent dans leur propre
-     *       trou</b> — le rayon de l'âme tombe à zéro pendant que la section tient. Ils ne
-     *       s'effacent pas, ils se résorbent.</li>
+     *   <li>les sept transits sont de vraies <b>paraboles</b> : vitesse de départ, pesanteur
+     *       à 9, rebond amorti à l'arrivée. L'azimut avance de {@code 2π/7} par passage,
+     *       donc les sept arcs se referment en étoile à sept branches ;</li>
+     *   <li>au-dessus de la mare, l'air est <b>lentillé</b> : les verticales d'une cage de
+     *       seize montants sont déviées en {@code −k/r}, violemment au bord du trou et
+     *       presque pas au loin. C'est la même loi que la Sphère, et c'est ce qui fait
+     *       qu'on lit « horizon » et pas « anneau décoratif » ;</li>
+     *   <li>la fermeture du serveur dit « le rayon de l'âme se résorbe, la section tient » :
+     *       c'est pris au mot — le tore se referme sur lui-même jusqu'à devenir une boule
+     *       de section, qui éclate.</li>
+     * </ul>
+     *
+     * <h3>La chronologie, en ticks du serveur</h3>
+     * <ul>
+     *   <li><b>0 / 5 / 10 / 15</b> le tracé au sol : quatre passes de dix motes à 2,12 de
+     *       rayon, décalées d'un quart de pas — la boucle exacte du serveur ;</li>
+     *   <li><b>24</b> l'ouverture ; <b>34 → 142</b> les sept transits ;</li>
+     *   <li><b>150</b> la fermeture et l'onde au sol ; <b>168</b> la marque s'efface.</li>
      * </ul>
      */
     private static void renderGate(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                    float cx, float cy, float cz, float t,
                                    float dx, float dz, int alpha, int salt) {
         float a = alpha;
-        float yFloor = GROUND_Y + 0.04f;
-
-        // Ouverture, puis résorption. Le rayon de l'âme est la SEULE chose qui tombe à la
-        // fermeture : la section garde son épaisseur, sinon le tube maigrit au lieu de
-        // rentrer sur lui-même, et un tube qui maigrit est un tube qui s'efface.
-        float grow = smooth(clamp((t - 0.04f) / 0.26f));
-        float shut = smooth(clamp((t - 0.86f) / 0.14f));
         float ring = gateRing(t);
-        float spin = t * 3.4f + salt * 0.0013f;
+        float floorY = GROUND_Y + 0.04f;
+        float open = smooth(clamp((t - 24.0f / 180.0f) / 0.12f));
+        float shut = clamp((t - GATE_SHUT) / 0.12f);
+        float seedAng = hash(salt, 3) * TAU;
 
-        // ---- 1. LE TRACÉ AU SOL ---------------------------------------------------------
-        // Avant que la porte existe, son empreinte est dessinée. Le fil n'est pas un cercle
-        // complet d'emblée : il COURT, et son extrémité est plus claire que sa traîne.
+        // ---- 1. LE TRACÉ AU SOL — ticks 0, 5, 10, 15 ----------------------------------
+        for (int step = 0; step < 4; step++) {
+            float when = step * 5.0f / 180.0f;
+            if (t < when) continue;
+            float age = clamp((t - when) / 0.22f);
+            for (int i = 0; i < 10; i++) {
+                float ang = (i + step * 2.5f) / 10.0f * TAU;
+                float rr = 2.12f;
+                float sz = (0.055f - 0.020f * age) * (1.0f - 0.5f * open);
+                if (sz <= 0.008f) continue;
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * rr, Mth.sin(ang) * rr, GROUND_Y + 0.016f,
+                        sz, SLAB_H, sz, step == 3 ? GLACIER : HORIZON,
+                        opaque(a * (0.40f + 0.18f * step) * (1.0f - age * 0.4f)));
+            }
+        }
+
+        // ---- 2. L'ANNEAU --------------------------------------------------------------
+        // Posé à plat, section pleine. La fermeture résorbe l'âme et garde la section :
+        // le tore devient une boule, puis rien.
         {
-            float draw = clamp(t / 0.12f);
-            if (draw < 1.0f) {
-                int n = 76;
-                int upTo = Math.max(1, Math.round(n * draw));
-                for (int i = 0; i <= upTo; i++) {
-                    float ang = i / (float) n * TAU;
-                    float head = i / (float) Math.max(1, upTo);
-                    float rr = 2.12f;
+            float soul = ring * (1.0f - smooth(shut));
+            float tube = (0.17f + 0.035f * Mth.sin(t * 13.0f)) * (0.35f + 0.65f * open) * (1.0f + shut * 0.8f);
+            if (soul > 0.04f && tube > 0.01f) {
+                torus(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        0.0f, 0.0f, floorY + tube * 0.9f, soul, tube, 0.0f, t * 3.4f,
+                        a * (0.55f + 0.45f * open), salt, false);
+            }
+        }
+
+        // ---- 3. LA CAGE LENTILLÉE -----------------------------------------------------
+        // Seize montants au-dessus de la mare, déviés en −k/r : l'air lui-même tombe dedans.
+        if (open > 0.02f && shut < 1.0f) {
+            float strength = ring * ring * 0.42f * open * (1.0f - shut);
+            int posts = 16;
+            for (int i = 0; i < posts; i++) {
+                float ang = i / (float) posts * TAU + t * 0.25f;
+                float ca = Mth.cos(ang);
+                float sa = Mth.sin(ang);
+                float r0 = ring * (1.04f + 0.26f * hash(salt, i * 17));
+                float prevF = 0.0f;
+                float prevL = 0.0f;
+                float prevY = 0.0f;
+                int seg = 10;
+                for (int h = 0; h <= seg; h++) {
+                    float u = h / (float) seg;
+                    float yy = floorY + u * 2.45f;
+                    // Plus on est haut, moins le trou tire : la déviation décroît en 1/(1+y²).
+                    float bend = strength / Math.max(0.5f, r0) / (1.0f + yy * yy * 0.55f);
+                    float rr = Math.max(ring * 0.22f, r0 - bend);
+                    float ff = ca * rr;
+                    float ll = sa * rr;
+                    if (h > 0) {
+                        float pull = clamp(bend / 0.9f);
+                        segment(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                prevF, prevL, prevY, ff, ll, yy,
+                                0.014f + 0.012f * pull, 0.115f - 0.045f * pull,
+                                pull > 0.55f ? HORIZON : (pull > 0.25f ? HALO : SLATE),
+                                opaque(a * (0.30f + 0.55f * pull) * open * (1.0f - shut)));
+                    }
+                    prevF = ff;
+                    prevL = ll;
+                    prevY = yy;
+                }
+            }
+        }
+
+        // ---- 4. LES SEPT TRANSITS -----------------------------------------------------
+        // Pris, avalé, recraché. L'azimut avance d'un septième de tour par passage ; les
+        // sept arcs dessinent l'étoile que le serveur dessine avec des corps.
+        for (int pass = 0; pass < 7; pass++) {
+            float when = GATE_PASS0 + pass * GATE_PASS_STEP;
+            if (t < when - 0.035f) break;
+            float ang = seedAng + pass * (TAU / 7.0f);
+            float ca = Mth.cos(ang);
+            float sa = Mth.sin(ang);
+            float inAng = ang + 2.6f;
+            float age = t - when;
+            // -- phase A : le corps est traîné jusqu'à la lèvre, puis bascule --
+            if (age < 0.0f) {
+                float u = clamp((age + 0.035f) / 0.035f);
+                float rr = ring * (1.9f - 0.9f * u);
+                fragment(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(inAng) * rr, Mth.sin(inAng) * rr,
+                        floorY + 0.22f - 0.18f * u, 0.085f, u * 5.0f,
+                        ENDSTONE, ENDSTONE_DK, opaque(a * 0.9f));
+                continue;
+            }
+            // -- phase B : avalé. La mare encaisse, l'anneau palpite --
+            if (age < 0.030f) {
+                float u = age / 0.030f;
+                for (int i = 0; i < 9; i++) {
+                    float aa = i / 9.0f * TAU + u * 5.0f;
+                    float rr = ring * (0.25f + 0.70f * u);
                     box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            Mth.cos(ang) * rr, Mth.sin(ang) * rr, yFloor,
-                            0.034f, SLAB_H, 0.034f,
-                            head > 0.92f ? SINGULAR : (head > 0.70f ? GLACIER : HALO),
-                            opaque(a * (0.45f + 0.55f * head)));
+                            Mth.cos(aa) * rr, Mth.sin(aa) * rr, floorY + 0.06f + u * 0.25f,
+                            0.045f, 0.045f, 0.045f, SINGULAR, opaque(a * (1.0f - u)));
                 }
+                continue;
+            }
+            // -- phase C : la parabole. Vraies cotes : 3,5 bl/s en avant, 4,4 bl/s en haut,
+            //    pesanteur 9 — apogée à une demi-seconde, poser à trois mètres. --
+            float sec = (age - 0.030f) * 9.0f;
+            float dist = 3.5f * sec;
+            float yy = ballistic(floorY + 0.10f, 4.4f, sec, floorY + 0.05f);
+            float ff = ca * dist;
+            float ll = sa * dist;
+            float life = 1.0f - clamp((sec - 1.9f) / 0.8f);
+            if (life <= 0.01f) continue;
+            fragment(vc, mat, tmp, cx, cy, cz, dx, dz, ff, ll, yy,
+                    0.082f, sec * 6.5f + pass, INVERT, BASALT, opaque(a * life));
+            // La traînée : l'arc déjà parcouru, en motes qui s'éteignent.
+            int trail = 9;
+            for (int i = 1; i <= trail; i++) {
+                float back = sec - i * 0.085f;
+                if (back <= 0.0f) break;
+                float by = ballistic(floorY + 0.10f, 4.4f, back, floorY + 0.05f);
+                float bd = 3.5f * back;
+                float fade = (1.0f - i / (float) (trail + 1)) * life;
+                box(vc, mat, tmp, cx, cy, cz, dx, dz, ca * bd, sa * bd, by,
+                        0.030f, 0.030f, 0.030f, (i & 1) == 0 ? INVERT : HALO,
+                        opaque(a * fade * 0.75f));
             }
         }
 
-        // ---- 2. LE TORE DU BAS ----------------------------------------------------------
-        if (ring > 0.02f) {
-            float tube = 0.145f * (0.35f + 0.65f * grow);
-            torus(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    0.0f, 0.0f, yFloor + tube * 1.15f,
-                    ring, tube, 0.0f, spin, a, salt + 11, false);
-        }
-
-        // ---- 3. LA MEMBRANE : SPIRALE LOGARITHMIQUE À DEUX BRINS ------------------------
-        // r = a·e^(b·θ) prise à l'envers : on part du bord et on tombe vers le centre. Deux
-        // brins décalés d'un demi-tour, sans quoi la nappe tourne visiblement « d'un côté »
-        // et ressemble à un disque rayé.
-        {
-            float life = clamp((t - 0.22f) / 0.10f) * (1.0f - clamp((t - 0.78f) / 0.12f));
-            if (life > 0.01f && ring > 0.25f) {
-                for (int brin = 0; brin < 2; brin++) {
-                    float phase = brin * Mth.PI;
-                    int steps = 54;
-                    float prevF = 0.0f, prevL = 0.0f, prevY = 0.0f;
-                    for (int i = 0; i <= steps; i++) {
-                        float u = i / (float) steps;              // 0 = bord, 1 = centre
-                        float theta = phase - spin * 1.7f + u * 4.6f;
-                        float rr = ring * 0.94f * (float) Math.exp(-2.35 * u);
-                        // L'escalier : la nappe DESCEND en spiralant. Sans cette chute, deux
-                        // spirales à plat ne sont qu'un motif de tapis.
-                        float yy = yFloor + 0.10f - 0.52f * u * u * life;
-                        float f = Mth.cos(theta) * rr;
-                        float l = Mth.sin(theta) * rr;
-                        if (i > 0) {
-                            float fade = (1.0f - u * 0.45f) * life;
-                            int rgb = u < 0.18f ? HORIZON : (u < 0.55f ? HALO : ABYSS);
-                            segment(vc, mat, tmp, cx, cy, cz, dx, dz,
-                                    prevF, prevL, prevY, f, l, yy,
-                                    0.030f + 0.018f * (1.0f - u), 0.072f,
-                                    rgb, opaque(a * fade));
-                        }
-                        prevF = f; prevL = l; prevY = yy;
-                    }
-                }
+        // ---- 5. LA FERMETURE — tick 150 -----------------------------------------------
+        if (shut > 0.0f) {
+            // L'onde au sol : ce que le voidPush radial fait aux corps, en poussière.
+            float rr = 0.4f + 3.0f * smooth(shut);
+            int n = Math.max(24, Math.round(rr * 18.0f));
+            for (int i = 0; i < n; i++) {
+                float ang = i / (float) n * TAU;
+                float wob = 1.0f + 0.05f * Mth.sin(ang * 6.0f + t * 11.0f);
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * rr * wob, Mth.sin(ang) * rr * wob, GROUND_Y + 0.016f,
+                        0.046f, SLAB_H, 0.046f, (i % 6 == 0) ? SINGULAR : HORIZON,
+                        opaque(a * (1.0f - shut) * 0.90f));
             }
-        }
-
-        // ---- 4. LE TORE DU HAUT, INCLINÉ ------------------------------------------------
-        float outGrow = smooth(clamp((t - 0.30f) / 0.16f)) * (1.0f - shut);
-        float outRing = ring * 0.62f * outGrow;
-        float outY = yFloor + 2.25f;
-        float tilt = 0.52f;
-        if (outRing > 0.04f) {
-            torus(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    0.0f, 0.0f, outY,
-                    outRing, 0.105f, tilt, -spin * 1.35f, a * 0.95f, salt + 23, true);
-        }
-
-        // ---- 5. LE TRANSIT --------------------------------------------------------------
-        // Sept fragments. Chacun a trois vies : il TOMBE dans le tore du bas, il N'EXISTE
-        // PAS entre les deux, il RESSORT du tore du haut. La phase morte est ce qui prouve
-        // qu'il a traversé quelque chose — sans elle, on voit un objet voler en arc.
-        {
-            for (int k = 0; k < 7; k++) {
-                float born = 0.34f + k * 0.072f;
-                float age = (t - born) / 0.30f;
-                if (age <= 0.0f || age >= 1.0f) continue;
-                float angIn = hash(salt + 31, k * 7) * TAU;
-                float rIn = ring * (0.42f + 0.44f * hash(salt + 32, k * 13));
-                float angOut = hash(salt + 33, k * 17) * TAU;
-                float rOut = outRing * (0.30f + 0.50f * hash(salt + 34, k * 19));
-                float size = 0.075f + 0.045f * hash(salt + 35, k * 23);
-
-                if (age < 0.38f) {
-                    // --- LA CHUTE. Il arrive de 1,6 bloc au-dessus et plonge dans la nappe.
-                    float u = age / 0.38f;
-                    float yy = yFloor + 1.60f - 1.62f * u * u;
-                    float sh = size * (1.0f - u * 0.25f);
-                    fragment(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            Mth.cos(angIn) * rIn, Mth.sin(angIn) * rIn, yy,
-                            sh, u * 9.0f + k, ENDSTONE, ENDSTONE_DK, opaque(a));
-                } else if (age < 0.52f) {
-                    // --- LE RIEN. Quatorze centièmes de la vie du fragment sans aucun cube.
-                    continue;
-                } else {
-                    // --- LA SORTIE. Il jaillit du tore du haut, en INVERT, et retombe hors
-                    //     du cercle : ce qui est ressorti ne revient pas dans la porte.
-                    float u = (age - 0.52f) / 0.48f;
-                    float rr = rOut + u * 1.45f;
-                    float yy = outY + 0.42f * Mth.sin(u * Mth.PI * 0.80f) - 1.15f * u * u;
-                    float sh = size * (1.0f - u * 0.35f);
-                    if (u < 0.14f) {
-                        // L'éclat de sortie : trois cubes sur l'arête du tore du haut.
-                        float flash = 1.0f - u / 0.14f;
-                        for (int s = 0; s < 3; s++) {
-                            float sa = angOut + (s - 1) * 0.16f;
-                            box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                                    Mth.cos(sa) * outRing, Mth.sin(sa) * outRing,
-                                    outY + Mth.cos(sa) * outRing * Mth.sin(tilt) * 0.0f,
-                                    0.055f * flash + 0.020f, 0.055f * flash + 0.020f,
-                                    0.055f * flash + 0.020f, SINGULAR, opaque(a * flash));
-                        }
-                    }
-                    fragment(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            Mth.cos(angOut) * rr, Mth.sin(angOut) * rr, yy,
-                            sh, u * 11.0f + k, INVERT, ENDSTONE_DK, opaque(a * (1.0f - u * 0.5f)));
+            // Et la boule de section qui reste quand l'âme a disparu.
+            float core = (1.0f - shut) * 0.42f;
+            if (core > 0.03f) {
+                for (int i = 0; i < 16; i++) {
+                    float aa = i * 2.39996f + t * 7.0f;
+                    float el = (hash(salt, i * 23) - 0.5f) * 2.4f;
+                    float rr2 = core * Mth.cos(el);
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            Mth.cos(aa) * rr2, Mth.sin(aa) * rr2, floorY + 0.2f + core * Mth.sin(el),
+                            0.040f, 0.040f, 0.040f, (i & 1) == 0 ? GLACIER : HORIZON,
+                            opaque(a * (1.0f - shut)));
                 }
-            }
-        }
-
-        // ---- 6. LES QUATRE MONTANTS -----------------------------------------------------
-        // Ce qui relie les deux tores, et seulement une fois qu'ils existent tous les deux :
-        // quatre tiges verticales très fines, en pointillé large. Sans elles, le tore du
-        // haut flotte sans raison ; avec un tube plein, on retomberait sur le conduit du
-        // Siphon, qui appartient au Sang.
-        if (outGrow > 0.06f) {
-            for (int k = 0; k < 4; k++) {
-                float ang = k * (TAU / 4.0f) + spin * 0.4f;
-                float climb = clamp((t - 0.34f) / 0.14f);
-                float yTop = yFloor + 0.12f + (outY - yFloor - 0.12f) * climb;
-                segment(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        Mth.cos(ang) * ring * 0.96f, Mth.sin(ang) * ring * 0.96f, yFloor + 0.12f,
-                        Mth.cos(ang) * outRing * 0.96f, Mth.sin(ang) * outRing * 0.96f, yTop,
-                        0.022f, 0.195f, HALO, opaque(a * 0.80f * outGrow));
             }
         }
     }
 
     // =================================================================================
-    //  V. CONSTELLATION NULLE — 200 ticks
+    //  V. CONSTELLATION NULLE — 200 ticks — elle LIE
     // =================================================================================
 
     /**
-     * 虚 <b>LA CONSTELLATION NULLE</b> — sept nœuds, leurs fils, et la trame qui se déchire.
+     * <b>La trame est un CONTRAT, et un contrat se tend.</b> Le serveur capture jusqu'à sept
+     * corps À LA POSE, puis serre ONZE FOIS ({@code applyNullLatticeGameplay}, ticks 40 à
+     * 140), converge au 160 et ROMPT au 184. Chaque tension frappe tout le monde pour une
+     * petite part : le total par corps est modeste, le total sur le groupe est énorme.
      *
-     * <p><b>Pourquoi un graphe ?</b> Les quatre autres signatures du Vide sont CENTRÉES :
-     * tout y rayonne d'un point ou d'un plan. C'est le dernier schéma spatial disponible, et
-     * c'est aussi le seul qui puisse dire visuellement « ces choses-là sont SOLIDAIRES » —
-     * ce qu'aucune forme centrée ne peut exprimer, puisqu'elle n'a qu'un centre.</p>
+     * <h3>Le calcul — c'est une vraie simulation</h3>
      *
-     * <p><b>Les fils pendent avant de se tendre.</b> Une arête droite d'emblée est un trait
-     * de règle : elle ne pèse rien et ne raconte rien. Une <b>caténaire</b> ({@code cosh})
-     * qui s'affaisse puis se redresse d'un coup donne au graphe une matière — on comprend
-     * que quelque chose TIRE. C'est la même leçon que le disque d'accrétion : une surface
-     * d'épaisseur nulle n'existe pas, un fil sans poids non plus.</p>
+     * <p>Les sept nœuds ne sont pas interpolés entre deux poses : ils sont <b>intégrés</b>.
+     * À chaque image on rejoue le système masses-ressorts depuis zéro, à pas fixe
+     * (1/240 d'effet, soit 24 pas par seconde de jeu) — onze ressorts, un amortissement, et
+     * une impulsion vers le barycentre à chacune des onze tensions, aux ticks exacts du
+     * serveur. Rejouer depuis le début à chaque image coûte huit cents itérations et rend
+     * le résultat <b>déterministe</b> : pas d'état à garder entre deux frames, et la même
+     * image au même {@code t}, toujours.</p>
      *
-     * <ul>
-     *   <li>0,00–0,10 <b>l'apparition</b> : sept nœuds, un toutes les trois frames, à des
-     *       positions tirées d'un hachage. Chacun est un petit <b>octaèdre</b> à six
-     *       pointes — pas un cube : le cube appartient à la grille de la Sphère ;</li>
-     *   <li>0,10–0,38 <b>les fils pendent</b> : onze arêtes molles, en pointillé {@link #HALO},
-     *       affaissées de 28 % de leur portée ;</li>
-     *   <li>0,38–0,70 <b>la tension</b> : une arête se tend toutes les quatre frames. Elle
-     *       devient droite et {@link #GLACIER}, un éclat blanc la parcourt, et <b>ses deux
-     *       nœuds se rapprochent</b> ;</li>
-     *   <li>0,56–0,86 <b>la convergence</b> : tous les nœuds glissent vers leur barycentre ;</li>
-     *   <li>0,86–0,94 <b>le point</b> : les sept se superposent en un seul cube
-     *       {@link #SINGULAR} ;</li>
-     *   <li>0,94–1,00 <b>la déchirure</b> : la trame reste imprimée, puis chaque arête
-     *       <b>casse par son milieu</b> et ses deux moitiés se rétractent vers les bouts.
-     *       Une trame qui s'effacerait d'un bloc ne dirait pas qu'elle était tendue.</li>
-     * </ul>
+     * <p>Ce que ça donne à l'œil, et qu'aucune interpolation ne donne : la trame
+     * <b>oscille</b>. Chaque tension la fait sonner, elle dépasse sa consigne, revient,
+     * et la suivante arrive avant qu'elle soit calmée. Les arêtes encore molles pendent en
+     * <b>chaînette</b> ; les arêtes tendues vibrent et blanchissent à proportion de leur
+     * <b>déformation</b> — on voit laquelle porte. À la rupture, chacune casse par le
+     * milieu et les deux moitiés se rétractent en fouet.</p>
      */
     private static void renderLattice(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                       float cx, float cy, float cz, float t,
                                       float dx, float dz, int alpha, int salt) {
         float a = alpha;
-        final int N = 7;
+        final int n = 7;
+        final int[] edges = { 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 0, 0, 3, 1, 4, 2, 5, 3, 6 };
+        float[] px = new float[n];
+        float[] pl = new float[n];
+        float[] py = new float[n];
+        float[] rest = new float[11];
+        latticeSim(t, salt, px, pl, py, rest);
+        float snapped = clamp((t - LATTICE_SNAP) / 0.08f);
+        float sec = (t - LATTICE_SNAP) * 10.0f;
 
-        // Les onze arêtes. Un graphe complet (21 arêtes) serait une boule de laine ; un
-        // cycle simple (7) n'aurait aucune profondeur. Onze donne des triangles ET des
-        // chemins longs, ce qui est exactement ce qu'on veut lire : une structure.
-        final int[][] edges = {
-                {0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}, {5, 6}, {6, 0},
-                {0, 3}, {1, 4}, {2, 5}, {3, 6}
-        };
-
-        float converge = smooth(clamp((t - 0.56f) / 0.30f));
-        /* La DECHIRURE passe AVANT le point : si la trame se resorbait d'abord, les aretes
-           auraient une longueur nulle au moment de rompre et personne ne verrait rien rompre. */
-        float tear = clamp((t - 0.86f) / 0.07f);
-        float collapse = smooth(clamp((t - 0.92f) / 0.08f));
-
-        // ---- Positions des nœuds --------------------------------------------------------
-        float[] nf = new float[N];
-        float[] nl = new float[N];
-        float[] ny = new float[N];
-        float bf = 0.0f, bl = 0.0f, by = 0.0f;
-        for (int i = 0; i < N; i++) {
-            // Répartition en couronne irrégulière : un tirage libre sur les trois axes
-            // donnait régulièrement deux nœuds superposés, et deux nœuds superposés
-            // ressemblent à un défaut d'affichage, pas à une constellation.
-            float ang = (i / (float) N) * TAU + (hash(salt + 41, i * 7) - 0.5f) * 0.70f;
-            float rad = 1.25f + 1.55f * hash(salt + 42, i * 11);
-            nf[i] = Mth.cos(ang) * rad;
-            nl[i] = Mth.sin(ang) * rad;
-            ny[i] = 0.10f + 2.05f * hash(salt + 43, i * 13);
-            bf += nf[i]; bl += nl[i]; by += ny[i];
+        // ---- 1. LES SEPT NŒUDS, ET LEUR MARQUE AU SOL ---------------------------------
+        // Chaque nœud est un CORPS : il a des pieds. La marque au sol dit lequel est lié,
+        // et elle s'allume d'un cran à chaque tension encaissée — onze crans en tout.
+        int tensions = 0;
+        for (int e = 0; e < 11; e++) {
+            if (t >= LATTICE_TENSION0 + e * LATTICE_TENSION_STEP) tensions++;
         }
-        bf /= N; bl /= N; by /= N;
-
-        // Le rapprochement dû aux arêtes tendues, puis la convergence générale.
-        float[] pf = new float[N];
-        float[] pl = new float[N];
-        float[] py = new float[N];
-        for (int i = 0; i < N; i++) {
-            float pull = converge * 0.46f + collapse * 0.54f;
-            // Un léger flottement avant la convergence : rien n'est jamais parfaitement
-            // immobile dans cette famille, et un nœud figé se lit comme un repère d'éditeur.
-            float drift = (1.0f - converge) * 0.055f;
-            pf[i] = nf[i] + (bf - nf[i]) * pull + Mth.sin(t * 5.1f + i * 1.7f) * drift;
-            pl[i] = nl[i] + (bl - nl[i]) * pull + Mth.cos(t * 4.3f + i * 2.3f) * drift;
-            py[i] = ny[i] + (by - ny[i]) * pull + Mth.sin(t * 6.2f + i * 0.9f) * drift * 0.7f;
+        for (int i = 0; i < n; i++) {
+            float wake = clamp((t - i * 4.0f / 200.0f) / 0.03f);
+            if (wake <= 0.0f) continue;
+            float load = tensions / 11.0f;
+            node(vc, mat, tmp, cx, cy, cz, dx, dz, px[i], pl[i], py[i],
+                    0.140f * wake, t * 3.4f + i * 1.3f, snapped, a * wake);
+            // L'attache au sol : trois cubes, pas une colonne. Le nœud tient à un corps.
+            for (int k = 1; k <= 3; k++) {
+                float u = k / 4.0f;
+                float yy = py[i] + (GROUND_Y + 0.05f - py[i]) * u;
+                box(vc, mat, tmp, cx, cy, cz, dx, dz, px[i], pl[i], yy,
+                        0.022f, 0.022f, 0.022f, SLATE, opaque(a * wake * (0.55f - 0.12f * k)));
+            }
+            int mark = 12;
+            for (int k = 0; k < mark; k++) {
+                float ang = k / (float) mark * TAU + t * 0.8f;
+                float rr = 0.40f + 0.06f * Mth.sin(ang * 3.0f + t * 6.0f);
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        px[i] + Mth.cos(ang) * rr, pl[i] + Mth.sin(ang) * rr, GROUND_Y + 0.014f,
+                        0.032f, SLAB_H, 0.032f,
+                        load > 0.66f ? GLACIER : (load > 0.33f ? HORIZON : HALO),
+                        opaque(a * wake * (0.40f + 0.55f * load) * (1.0f - snapped * 0.7f)));
+            }
         }
 
-        // ---- 1. LES ARÊTES --------------------------------------------------------------
-        for (int e = 0; e < edges.length; e++) {
-            int i = edges[e][0];
-            int j = edges[e][1];
-            // Chaque arête naît avec son nœud le plus tardif, et se tend à son tour.
-            float born = 0.10f + Math.max(i, j) * 0.012f;
-            if (t < born) continue;
-            // L'ORDRE DE TENSION est tiré d'un hachage, pas séquentiel : une tension qui
-            // ferait le tour du graphe dans l'ordre des indices se lirait comme un balayage.
-            float tenseAt = 0.38f + hash(salt + 51, e * 29) * 0.30f;
-            float tense = smooth(clamp((t - tenseAt) / 0.085f));
-            float sagAmount = (1.0f - tense) * 0.28f;
-
-            float len = dist(pf[i], pl[i], py[i], pf[j], pl[j], py[j]);
-            if (len < 0.02f) continue;
-
-            // La déchirure : l'arête casse par le MILIEU et les deux moitiés se rétractent.
-            float cutIn = tear * 0.5f;
-            int steps = Math.max(6, Math.min(22, Math.round(len * 7.0f)));
-            float prevF = 0.0f, prevL = 0.0f, prevY = 0.0f;
-            boolean havePrev = false;
-            for (int s = 0; s <= steps; s++) {
-                float u = s / (float) steps;
-                if (tear > 0.001f && Math.abs(u - 0.5f) < cutIn) { havePrev = false; continue; }
-                float f = pf[i] + (pf[j] - pf[i]) * u;
-                float l = pl[i] + (pl[j] - pl[i]) * u;
-                float y = py[i] + (py[j] - py[i]) * u;
-                // LA CATÉNAIRE. cosh normalisé : nul aux deux bouts, maximal au milieu, et
-                // la courbe est plus pleine qu'une parabole — c'est ce qui donne le poids.
-                float k = (u - 0.5f) * 2.0f;
-                float sag = (float) ((Math.cosh(1.65) - Math.cosh(1.65 * k)) / (Math.cosh(1.65) - 1.0));
-                y -= sag * sagAmount * len * 0.42f;
-                if (havePrev) {
-                    /* DEUX tons quand la trame est tendue : une fois resserrees, onze aretes
-                       d'un seul ton ne font plus qu'une masse grise. La parite les redecoupe. */
-                    int rgb = tense > 0.55f ? ((e & 1) == 0 ? GLACIER : HORIZON)
-                                            : (tense > 0.12f ? HORIZON : HALO);
-                    float w = 0.023f + 0.016f * tense;
-                    segment(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            prevF, prevL, prevY, f, l, y,
-                            w, 0.052f, rgb, opaque(a * (0.66f + 0.34f * tense) * (1.0f - tear * 0.4f)));
+        // ---- 2. LES ONZE ARÊTES -------------------------------------------------------
+        for (int e = 0; e < 11; e++) {
+            int i0 = edges[e * 2];
+            int i1 = edges[e * 2 + 1];
+            float wake = clamp((t - Math.max(i0, i1) * 4.0f / 200.0f - 0.02f) / 0.05f);
+            if (wake <= 0.0f) continue;
+            float f0 = px[i0];
+            float l0 = pl[i0];
+            float y0 = py[i0];
+            float f1 = px[i1];
+            float l1 = pl[i1];
+            float y1 = py[i1];
+            float len = dist(f0, l0, y0, f1, l1, y1);
+            float target = rest[e] * latticeRest(t);
+            float strain = target > 0.01f ? (len - target) / target : 0.0f;
+            float slack = strain < 0.0f ? -strain : 0.0f;
+            float taut = clamp(strain * 2.6f);
+            // La verticale locale, pour que la chaînette pende vers le bas et pas de côté.
+            int seg = 12;
+            float prevF = f0;
+            float prevL = l0;
+            float prevY = y0;
+            for (int sIdx = 1; sIdx <= seg; sIdx++) {
+                float u = sIdx / (float) seg;
+                float ff = f0 + (f1 - f0) * u;
+                float ll = l0 + (l1 - l0) * u;
+                float yy = y0 + (y1 - y0) * u;
+                // MOU : chaînette. TENDU : onde stationnaire, d'autant plus ample que la
+                // déformation est grande — une corde trop tirée chante.
+                yy -= catenary(u, slack) * len * 0.42f;
+                if (taut > 0.02f) {
+                    float wave = Mth.sin(u * Mth.PI * 3.0f + t * 46.0f) * 0.045f * taut;
+                    yy += wave;
+                    ff += wave * 0.5f;
                 }
-                prevF = f; prevL = l; prevY = y;
-                havePrev = true;
-            }
-
-            // L'ÉCLAT qui parcourt l'arête au moment où elle se tend. Il part du nœud de
-            // plus petit indice et arrive à l'autre en 8,5 % de l'animation : c'est le seul
-            // endroit du fichier où quelque chose se propage LE LONG d'une arête.
-            float sparkU = (t - tenseAt) / 0.085f;
-            if (sparkU > 0.0f && sparkU < 1.0f) {
-                float f = pf[i] + (pf[j] - pf[i]) * sparkU;
-                float l = pl[i] + (pl[j] - pl[i]) * sparkU;
-                float y = py[i] + (py[j] - py[i]) * sparkU;
-                float k = (sparkU - 0.5f) * 2.0f;
-                float sag = (float) ((Math.cosh(1.65) - Math.cosh(1.65 * k)) / (Math.cosh(1.65) - 1.0));
-                y -= sag * (1.0f - smooth(sparkU)) * 0.28f * len * 0.42f;
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, f, l, y,
-                        0.055f, 0.055f, 0.055f, SINGULAR, opaque(a));
+                if (snapped > 0.0f) {
+                    // RUPTURE : l'arête casse par le milieu, et chaque moitié se rétracte
+                    // vers son nœud en fouettant.
+                    float frac = u < 0.5f ? u / 0.5f : (1.0f - u) / 0.5f;
+                    float back = Math.min(1.0f, sec * 1.6f);
+                    float whip = Mth.sin(frac * Mth.PI * 2.0f - sec * 9.0f) * 0.30f * (1.0f - back);
+                    float shrink = 1.0f - back * 0.9f;
+                    float anchorF = u < 0.5f ? f0 : f1;
+                    float anchorL = u < 0.5f ? l0 : l1;
+                    float anchorY = u < 0.5f ? y0 : y1;
+                    ff = anchorF + (ff - anchorF) * shrink;
+                    ll = anchorL + (ll - anchorL) * shrink;
+                    yy = anchorY + (yy - anchorY) * shrink + whip;
+                }
+                int tone = snapped > 0.0f ? SLATE
+                        : (taut > 0.72f ? SINGULAR : (taut > 0.34f ? GLACIER : (slack > 0.08f ? SLATE : HORIZON)));
+                float th = (0.018f + 0.016f * taut) * wake;
+                segment(vc, mat, tmp, cx, cy, cz, dx, dz, prevF, prevL, prevY, ff, ll, yy,
+                        th, 0.050f, tone,
+                        opaque(a * wake * (0.42f + 0.58f * taut) * (1.0f - snapped * 0.55f)));
+                prevF = ff;
+                prevL = ll;
+                prevY = yy;
             }
         }
 
-        // ---- 2. LES NŒUDS ---------------------------------------------------------------
-        for (int i = 0; i < N; i++) {
-            float born = i * 0.0135f;
-            float wake = smooth(clamp((t - born) / 0.040f));
-            if (wake <= 0.01f) continue;
-            float size = (0.095f + 0.030f * hash(salt + 44, i * 17)) * wake;
-            // À l'effondrement, les nœuds ne rétrécissent pas : ils se superposent. C'est la
-            // superposition qui fait le point blanc, et elle est lisible parce que les sept
-            // arrivent ensemble.
-            node(vc, mat, tmp, cx, cy, cz, dx, dz, pf[i], pl[i], py[i],
-                    size, t * 2.1f + i * 0.9f, collapse, a);
+        // ---- 3. LES PULSATIONS DE TENSION ---------------------------------------------
+        // À chaque tension, le serveur frappe TOUS les corps à la même frame. À l'écran,
+        // une bille claire part de chaque nœud et court sur chaque arête : ce qui arrive à
+        // l'un arrive à tous, et on le voit arriver.
+        for (int e = 0; e < 11; e++) {
+            float when = LATTICE_TENSION0 + e * LATTICE_TENSION_STEP;
+            if (t < when) break;
+            float age = t - when;
+            if (age > 0.05f) continue;
+            float u = age / 0.05f;
+            for (int k = 0; k < 11; k++) {
+                int i0 = edges[k * 2];
+                int i1 = edges[k * 2 + 1];
+                for (int dirn = 0; dirn < 2; dirn++) {
+                    float uu = dirn == 0 ? u : 1.0f - u;
+                    float ff = px[i0] + (px[i1] - px[i0]) * uu;
+                    float ll = pl[i0] + (pl[i1] - pl[i0]) * uu;
+                    float yy = py[i0] + (py[i1] - py[i0]) * uu;
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz, ff, ll, yy,
+                            0.044f, 0.044f, 0.044f, SINGULAR, opaque(a * (1.0f - u) * 0.95f));
+                }
+            }
         }
 
-        // ---- 3. LE POINT ----------------------------------------------------------------
-        if (collapse > 0.02f) {
-            float puff = collapse * (1.0f - tear);
-            box(vc, mat, tmp, cx, cy, cz, dx, dz, bf, bl, by,
-                    0.085f * puff + 0.02f, 0.085f * puff + 0.02f, 0.085f * puff + 0.02f,
-                    SINGULAR, opaque(a));
-            // Six pointes courtes : sans elles, le point est un pixel blanc et rien d'autre.
-            for (int s = 0; s < 6; s++) {
-                float sf = (s == 0 ? 1 : s == 1 ? -1 : 0) * 0.20f * puff;
-                float sl = (s == 2 ? 1 : s == 3 ? -1 : 0) * 0.20f * puff;
-                float sy = (s == 4 ? 1 : s == 5 ? -1 : 0) * 0.20f * puff;
-                segment(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        bf, bl, by, bf + sf, bl + sl, by + sy,
-                        0.022f, 0.045f, GLACIER, opaque(a * puff));
+        // ---- 4. LA RUPTURE — tick 184 -------------------------------------------------
+        if (snapped > 0.0f) {
+            for (int e = 0; e < 11; e++) {
+                int i0 = edges[e * 2];
+                int i1 = edges[e * 2 + 1];
+                float mf = (px[i0] + px[i1]) * 0.5f;
+                float ml = (pl[i0] + pl[i1]) * 0.5f;
+                float my = (py[i0] + py[i1]) * 0.5f;
+                float out = Mth.sqrt(mf * mf + ml * ml) + 0.001f;
+                float sp = 1.2f + 1.4f * hash(salt, e * 37);
+                float ff = mf + mf / out * sp * sec;
+                float ll = ml + ml / out * sp * sec;
+                float yy = ballistic(my, 0.9f, sec, GROUND_Y + 0.05f);
+                fragment(vc, mat, tmp, cx, cy, cz, dx, dz, ff, ll, yy,
+                        0.044f, sec * 6.0f + e, GLACIER, SLATE,
+                        opaque(a * (1.0f - clamp(sec / 1.6f))));
+            }
+        }
+    }
+
+    /**
+     * Le rapport de longueur au repos imposé par les onze tensions : c'est la CONSIGNE que
+     * le serveur applique aux corps, pas l'état du système — lequel oscille autour.
+     */
+    private static float latticeRest(float t) {
+        float pull = smooth(clamp((t - LATTICE_TENSION0) / 0.50f));
+        float conv = smooth(clamp((t - LATTICE_CONVERGE) / 0.12f));
+        return (1.0f - 0.46f * pull) * (1.0f - 0.30f * conv);
+    }
+
+    /**
+     * La simulation. Rejouée depuis zéro à chaque image, à pas FIXE : c'est ce qui la rend
+     * déterministe sans garder un seul octet d'état entre deux frames.
+     *
+     * @param rest longueurs initiales des onze arêtes, remplies au passage
+     */
+    private static void latticeSim(float t, int salt, float[] px, float[] pl, float[] py,
+                                   float[] rest) {
+        final int n = 7;
+        final int[] edges = { 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 0, 0, 3, 1, 4, 2, 5, 3, 6 };
+        float[] vf = new float[n];
+        float[] vl = new float[n];
+        float[] vy = new float[n];
+        float[] af = new float[n];
+        float[] al = new float[n];
+        float[] ay = new float[n];
+        // Pose initiale : un anneau IRRÉGULIER. Sept corps ne se rangent pas en heptagone.
+        for (int i = 0; i < n; i++) {
+            float ang = i * (TAU / n) + (hash(salt, i * 17) - 0.5f) * 0.62f;
+            float r = LATTICE_R * (0.72f + 0.46f * hash(salt, i * 31));
+            px[i] = Mth.cos(ang) * r;
+            pl[i] = Mth.sin(ang) * r;
+            py[i] = LATTICE_YC + (hash(salt, i * 53) - 0.5f) * 1.35f;
+        }
+        for (int e = 0; e < 11; e++) {
+            int i0 = edges[e * 2];
+            int i1 = edges[e * 2 + 1];
+            rest[e] = dist(px[i0], pl[i0], py[i0], px[i1], pl[i1], py[i1]);
+        }
+        final int total = 240;
+        final float dt = 10.0f / total;                 // 200 ticks = 10 s
+        final float dtT = 1.0f / total;                 // le même pas, exprimé en t
+        int steps = Math.min(total, Math.max(0, Math.round(t * total)));
+        for (int s = 0; s < steps; s++) {
+            float now = s * dtT;
+            for (int i = 0; i < n; i++) { af[i] = 0.0f; al[i] = 0.0f; ay[i] = 0.0f; }
+            boolean broken = now >= LATTICE_SNAP;
+            if (!broken) {
+                float target = latticeRest(now);
+                for (int e = 0; e < 11; e++) {
+                    int i0 = edges[e * 2];
+                    int i1 = edges[e * 2 + 1];
+                    float ddf = px[i1] - px[i0];
+                    float ddl = pl[i1] - pl[i0];
+                    float ddy = py[i1] - py[i0];
+                    float len = Mth.sqrt(ddf * ddf + ddl * ddl + ddy * ddy);
+                    if (len < 0.0005f) continue;
+                    float force = 5.4f * (len - rest[e] * target) / len;
+                    af[i0] += ddf * force; al[i0] += ddl * force; ay[i0] += ddy * force;
+                    af[i1] -= ddf * force; al[i1] -= ddl * force; ay[i1] -= ddy * force;
+                }
+                // L'impulsion des onze tensions, aux ticks exacts du serveur.
+                for (int e = 0; e < 11; e++) {
+                    float when = LATTICE_TENSION0 + e * LATTICE_TENSION_STEP;
+                    if (when < now || when >= now + dtT) continue;
+                    float bf = 0.0f;
+                    float bl = 0.0f;
+                    for (int i = 0; i < n; i++) { bf += px[i]; bl += pl[i]; }
+                    bf /= n; bl /= n;
+                    for (int i = 0; i < n; i++) {
+                        float ddf = bf - px[i];
+                        float ddl = bl - pl[i];
+                        float d = Mth.sqrt(ddf * ddf + ddl * ddl);
+                        if (d < 0.05f) continue;
+                        float kick = 1.05f / dt;
+                        vf[i] += ddf / d * kick * dt;
+                        vl[i] += ddl / d * kick * dt;
+                        vy[i] += (hash(salt, e * 13 + i) - 0.4f) * 0.55f;
+                    }
+                }
+                // La convergence du tick 160 : une secousse, pas une téléportation.
+                if (LATTICE_CONVERGE >= now && LATTICE_CONVERGE < now + dtT) {
+                    for (int i = 0; i < n; i++) {
+                        float d = Mth.sqrt(px[i] * px[i] + pl[i] * pl[i]) + 0.001f;
+                        vf[i] -= px[i] / d * 1.8f;
+                        vl[i] -= pl[i] / d * 1.8f;
+                        vy[i] += 0.45f;
+                    }
+                }
+            } else if (LATTICE_SNAP >= now - dtT && LATTICE_SNAP < now) {
+                // La rupture : les liens lâchent, les corps partent avec ce qu'ils avaient.
+                for (int i = 0; i < n; i++) {
+                    float d = Mth.sqrt(px[i] * px[i] + pl[i] * pl[i]) + 0.001f;
+                    vf[i] += px[i] / d * (2.1f + hash(salt, i * 61));
+                    vl[i] += pl[i] / d * (2.1f + hash(salt, i * 67));
+                    vy[i] += 1.1f * hash(salt, i * 71);
+                }
+            }
+            float damp = broken ? 0.995f : 0.955f;
+            for (int i = 0; i < n; i++) {
+                vf[i] = (vf[i] + af[i] * dt) * damp;
+                vl[i] = (vl[i] + al[i] * dt) * damp;
+                vy[i] = (vy[i] + (ay[i] - (broken ? GRAVITY * 0.25f : 0.0f)) * dt) * damp;
+                px[i] += vf[i] * dt;
+                pl[i] += vl[i] * dt;
+                py[i] += vy[i] * dt;
+                // Aucun nœud ne descend sous le plancher : un corps lié reste un corps posé.
+                float lowest = GROUND_Y + 0.55f;
+                if (py[i] < lowest) { py[i] = lowest; if (vy[i] < 0.0f) vy[i] = -vy[i] * 0.35f; }
             }
         }
     }
@@ -1664,6 +2058,150 @@ public final class VoidSignatureVfx {
                     size * 0.26f, 0.040f,
                     s >= 4 ? GLACIER : HORIZON, opaque(alpha * 0.92f * fade));
         }
+    }
+
+    // =================================================================================
+    //  CALCUL — ce que les quatre signatures ont en commun
+    // =================================================================================
+
+    /**
+     * Repère du cristal : inclinaison de {@code tilt} autour de l'axe {@code f}, puis
+     * rotation de {@code spin} autour de la verticale. Les six sommets, les douze arêtes,
+     * la tranche équatoriale et les sept rayons passent tous par ici — une seule définition
+     * de « le cristal est tourné comme ça », donc aucune pièce ne peut dériver des autres.
+     */
+    private static void spinPoint(float[] out, float f, float l, float y,
+                                  float tilt, float spin) {
+        float ct = Mth.cos(tilt);
+        float st = Mth.sin(tilt);
+        float l1 = l * ct - y * st;
+        float y1 = l * st + y * ct;
+        float cs = Mth.cos(spin);
+        float sn = Mth.sin(spin);
+        out[0] = f * cs - l1 * sn;
+        out[1] = f * sn + l1 * cs;
+        out[2] = y1;
+    }
+
+    /** Transformation inverse de {@link #spinPoint} : du monde vers le repère du cristal. */
+    private static void unspinPoint(float[] out, float f, float l, float y,
+                                    float tilt, float spin) {
+        float cs = Mth.cos(spin);
+        float sn = Mth.sin(spin);
+        float f1 = f * cs + l * sn;
+        float l1 = -f * sn + l * cs;
+        float ct = Mth.cos(tilt);
+        float st = Mth.sin(tilt);
+        out[0] = f1;
+        out[1] = l1 * ct + y * st;
+        out[2] = -l1 * st + y * ct;
+    }
+
+    /**
+     * Intersection d'un rayon et de l'OCTAÈDRE {@code |f| + |l| + |y| ≤ w}, par découpe de
+     * l'intervalle sur les huit plans.
+     *
+     * <p>Huit plans, huit contraintes {@code s·X ≤ w} : on rétrécit {@code [tProche, tLoin]}
+     * à chaque plan et on retient lequel a serré de chaque côté — ce sont les deux normales
+     * dont la réfraction a besoin. Un octaèdre étant convexe, ça suffit : pas de parcours
+     * de faces, pas de cas particulier.</p>
+     *
+     * @param out {@code {tEntrée, nf, nl, ny, tSortie, nf, nl, ny}}, normales SORTANTES
+     * @return faux si le rayon manque le corps
+     */
+    private static boolean octaHit(float ox, float ol, float oy,
+                                   float dxr, float dlr, float dyr,
+                                   float w, float[] out) {
+        if (w <= 0.001f) return false;
+        float near = -1.0e9f;
+        float far = 1.0e9f;
+        int nearPlane = -1;
+        int farPlane = -1;
+        for (int plane = 0; plane < 8; plane++) {
+            float sf = (plane & 1) == 0 ? 1.0f : -1.0f;
+            float sl = (plane & 2) == 0 ? 1.0f : -1.0f;
+            float sy = (plane & 4) == 0 ? 1.0f : -1.0f;
+            float denom = sf * dxr + sl * dlr + sy * dyr;
+            float num = w - (sf * ox + sl * ol + sy * oy);
+            if (Math.abs(denom) < 1.0e-6f) {
+                if (num < 0.0f) return false;      // rayon parallèle et déjà dehors
+                continue;
+            }
+            float hit = num / denom;
+            if (denom > 0.0f) {
+                if (hit < far) { far = hit; farPlane = plane; }
+            } else {
+                if (hit > near) { near = hit; nearPlane = plane; }
+            }
+        }
+        if (far <= near || farPlane < 0 || nearPlane < 0) return false;
+        float inv = 0.57735027f;                   // 1/√3 : les normales doivent être unitaires
+        out[0] = near;
+        out[1] = ((nearPlane & 1) == 0 ? 1.0f : -1.0f) * inv;
+        out[2] = ((nearPlane & 2) == 0 ? 1.0f : -1.0f) * inv;
+        out[3] = ((nearPlane & 4) == 0 ? 1.0f : -1.0f) * inv;
+        out[4] = far;
+        out[5] = ((farPlane & 1) == 0 ? 1.0f : -1.0f) * inv;
+        out[6] = ((farPlane & 2) == 0 ? 1.0f : -1.0f) * inv;
+        out[7] = ((farPlane & 4) == 0 ? 1.0f : -1.0f) * inv;
+        return true;
+    }
+
+    /**
+     * Snell-Descartes sous forme vectorielle, <b>réflexion totale comprise</b>.
+     *
+     * <p>{@code eta} est le rapport des indices ; la normale est retournée pour faire face
+     * au rayon. Si le radicande est négatif il n'y a pas de rayon transmis : on réfléchit,
+     * et c'est ce cas-là qui fait sortir deux des sept faisceaux par une face inattendue.</p>
+     *
+     * @return vrai s'il y a eu réfraction, faux si réflexion totale
+     */
+    private static boolean refract(float[] out, float ix, float il, float iy,
+                                   float nx, float nl, float ny, float eta) {
+        float cosi = -(ix * nx + il * nl + iy * ny);
+        if (cosi < 0.0f) { cosi = -cosi; nx = -nx; nl = -nl; ny = -ny; }
+        float k = 1.0f - eta * eta * (1.0f - cosi * cosi);
+        if (k < 0.0f) {
+            out[0] = ix + 2.0f * cosi * nx;
+            out[1] = il + 2.0f * cosi * nl;
+            out[2] = iy + 2.0f * cosi * ny;
+            return false;
+        }
+        float c = eta * cosi - Mth.sqrt(k);
+        out[0] = eta * ix + c * nx;
+        out[1] = eta * il + c * nl;
+        out[2] = eta * iy + c * ny;
+        float len = Mth.sqrt(out[0] * out[0] + out[1] * out[1] + out[2] * out[2]);
+        if (len > 1.0e-5f) { out[0] /= len; out[1] /= len; out[2] /= len; }
+        return true;
+    }
+
+    /**
+     * Flèche d'une CHAÎNETTE : la courbe que prend un câble qui pend, pas une parabole et
+     * surtout pas un arc de cercle.
+     *
+     * <p>{@code u} va de 0 à 1 le long de la corde, {@code slack} est l'excès de longueur
+     * rapporté à la corde. Sans ça, une arête de la trame encore molle se lit comme une
+     * arête tendue mal placée ; avec, on voit au premier coup d'œil laquelle porte.</p>
+     */
+    private static float catenary(float u, float slack) {
+        if (slack <= 0.0001f) return 0.0f;
+        float shape = 2.2f + 6.0f * clamp(slack);
+        float middle = (float) Math.cosh(shape * 0.5f);
+        float here = (float) Math.cosh(shape * (u - 0.5f));
+        return (middle - here) / shape * (0.9f + 2.4f * slack);
+    }
+
+    /**
+     * Un cube soumis à la pesanteur qui REBONDIT sur le sol, au lieu de le traverser ou de
+     * s'y coller. Renvoie la hauteur ; {@code sec} est en secondes depuis le lâcher.
+     */
+    private static float ballistic(float y0, float vy, float sec, float floorY) {
+        float y = y0 + vy * sec - 0.5f * GRAVITY * sec * sec;
+        if (y >= floorY) return y;
+        float over = floorY - y;
+        float damp = 1.0f / (1.0f + over * 2.6f);
+        return floorY + Math.abs(Mth.sin(over * 4.2f)) * 0.22f * damp;
     }
 
     /** Distance entre deux points du repère local. */

@@ -32,7 +32,7 @@ import deepluckyblock.DeepLuckyBlockMod;
  * profondeur, et affiche un ciel d'abysse en parallaxe. Le bord voxel reste l'objet ; la
  * fenêtre garantit seulement que derrière ce bord il y a l'abîme, et pas le mur du village.</p>
  *
- * <h2>Trois fenêtres, pas cinq — et aucune en panneau-réclame par défaut</h2>
+ * <h2>Cinq fenêtres, quatre plans — et une seule en panneau-réclame</h2>
  *
  * <p>Première version (T390) : un disque face caméra de rayon fixe au cœur des cinq
  * signatures. L'aperçu l'a mise en défaut avant le jeu, et sur les deux points à la fois.</p>
@@ -52,12 +52,14 @@ import deepluckyblock.DeepLuckyBlockMod;
  * ouverture est dans le plan des deux lèvres, et vue par la tranche elle doit disparaître,
  * exactement comme la fente.</p>
  *
- * <p><b>Le Prisme et la Trame n'en ont pas, et c'est un choix.</b> La fenêtre répare les
- * figures qui encadrent un GRAND VIDE. Le prisme est un octaèdre en fil de fer habité par
- * son cœur et sept faisceaux ; la trame est un réseau d'arêtes sans intérieur. Leur ajouter
- * un disque, c'était poser un trou là où aucune lèvre ne le justifie — et retomber sur la
- * silhouette circulaire parasite. Une ligne fine se lit sur n'importe quel fond ; c'est
- * l'aire vide qui avait besoin d'être comblée.</p>
+ * <p><b>T391 — les cinq, maintenant, et un plan LIBRE pour y arriver.</b> Le Prisme et la
+ * Trame en étaient privés parce qu'ils n'encadraient rien. Ils encadrent, depuis : le
+ * cristal a une tranche équatoriale (le plan par lequel la lumière le traverse), et la
+ * constellation a une cellule centrale que les onze tensions resserrent. Aucun des deux
+ * n'est horizontal ni face caméra — l'équateur d'un octaèdre qui tourne autour d'un axe
+ * incliné bascule à chaque image. D'où {@link #MODE_FREE} : la figure fournit ses deux
+ * vecteurs de base, la fenêtre ne fait que les suivre. C'est le seul moyen d'avoir une
+ * fenêtre dans une pièce qui tourne sans qu'elle en sorte.</p>
  *
  * <h2>Pourquoi une file, et pas un registre d'instances</h2>
  *
@@ -90,6 +92,8 @@ public final class VoidPortalFx {
     private static final int MODE_GROUND = 1;
     /** Vertical, dans le plan des deux lèvres. La Faille : invisible par la tranche. */
     private static final int MODE_FISSURE = 2;
+    /** Plan quelconque, donné par la figure. Le Prisme : son équateur bascule et tourne. */
+    private static final int MODE_FREE = 3;
 
     private static final double[] WX = new double[MAX_WINDOWS];
     private static final double[] WY = new double[MAX_WINDOWS];
@@ -102,6 +106,15 @@ public final class VoidPortalFx {
     /** Axe attaquant → cible, pour le seul mode {@link #MODE_FISSURE}. */
     private static final float[] WDX = new float[MAX_WINDOWS];
     private static final float[] WDZ = new float[MAX_WINDOWS];
+    /** Les deux vecteurs de base, pour le seul mode {@link #MODE_FREE}. */
+    private static final float[] WAX = new float[MAX_WINDOWS];
+    private static final float[] WAY = new float[MAX_WINDOWS];
+    private static final float[] WAZ = new float[MAX_WINDOWS];
+    private static final float[] WBX = new float[MAX_WINDOWS];
+    private static final float[] WBY = new float[MAX_WINDOWS];
+    private static final float[] WBZ = new float[MAX_WINDOWS];
+    /** Tampon de travail de {@link VoidSignatureVfx#prismSlice}, une fois pour toutes. */
+    private static final float[] SLICE = new float[7];
     private static int pending;
 
     // =====================================================================
@@ -134,17 +147,32 @@ public final class VoidPortalFx {
             if (r < 0.10f) return;
             queue(MODE_BILLBOARD, worldX, worldY + VoidSignatureVfx.WARP_YC, worldZ, r, r, 1.0f, 0.0f);
 
+        } else if (variant == VoidSignatureVfx.PRISM) {
+            // LA TRANCHE ÉQUATORIALE. C'est le plan que les sept faisceaux traversent ;
+            // y mettre l'abysse, c'est dire que le cristal n'est pas plein de verre, il
+            // est plein de rien. Le carré équatorial a une demi-diagonale de w et la
+            // fenêtre s'arrête à 0,62 w : elle ne touche jamais les quatre arêtes.
+            VoidSignatureVfx.prismSlice(t, SLICE);
+            float r = SLICE[6];
+            if (r < 0.08f) return;
+            queueFree(worldX, worldY + VoidSignatureVfx.PRISM_YC, worldZ, r, r,
+                    SLICE[0] * dx - SLICE[1] * dz, SLICE[2], SLICE[0] * dz + SLICE[1] * dx,
+                    SLICE[3] * dx - SLICE[4] * dz, SLICE[5], SLICE[3] * dz + SLICE[4] * dx);
+
         } else if (variant == VoidSignatureVfx.RIFT) {
-            // La fente. Sa LARGEUR suit l'écartement des lèvres — quand la faille n'est
-            // qu'une craquelure, la fenêtre est un fil ; quand elle bâille, c'est une
-            // amande. Sa HAUTEUR, elle, ne bouge pas : les lèvres courent sur toute la
-            // hauteur dès la première image, seul l'écartement raconte l'ouverture.
+            // LA DÉCHIRURE. Elle court maintenant sur huit blocs six le long du corridor,
+            // et sa hauteur s'annule aux deux pointes : la fenêtre est donc une ellipse
+            // COUCHÉE, de demi-longueur 0,80 fois la demi-longueur de la faille et de
+            // demi-hauteur 0,40 fois la hauteur au point de nucléation. Ces deux marges
+            // sont calculées, pas choisies : avec elles l'ellipse reste sous le profil en
+            // √(1 − u²) de la déchirure sur toute sa longueur.
             float gape = VoidSignatureVfx.riftGape(t);
-            float halfWidth = VoidSignatureVfx.RIFT_LIP * gape * 0.80f;
-            if (halfWidth < 0.04f) return;
-            float halfHeight = VoidSignatureVfx.RIFT_HEIGHT * 0.44f;
-            double centre = worldY + ground + 0.05 + VoidSignatureVfx.RIFT_HEIGHT * 0.50;
-            queue(MODE_FISSURE, worldX, centre, worldZ, halfWidth, halfHeight, dx, dz);
+            float vis = Mth.clamp(gape * 2.2f, 0.0f, 1.0f);
+            float half = VoidSignatureVfx.riftHalfLength(t) * 0.80f * vis;
+            float crown = VoidSignatureVfx.riftCrown(t);
+            if (half < 0.06f || crown < 0.10f) return;
+            double centre = worldY + ground + 0.03 + crown * 0.50;
+            queue(MODE_FISSURE, worldX, centre, worldZ, half, crown * 0.50f * vis, dx, dz);
 
         } else if (variant == VoidSignatureVfx.GATE) {
             // La mare. Douze pour cent de marge sous l'anneau : le tracé au sol et le tore
@@ -155,9 +183,40 @@ public final class VoidPortalFx {
             // battre avec le tracé au sol dans le tampon de profondeur, assez peu pour que
             // la mare ait l'air d'être le sol lui-même.
             queue(MODE_GROUND, worldX, worldY + ground + 0.06, worldZ, r, r, 1.0f, 0.0f);
+
+        } else if (variant == VoidSignatureVfx.LATTICE) {
+            // LA CELLULE. Ce que la trame enserre pendant qu'elle se resserre — et ce
+            // qu'elle lâche à la rupture. Face caméra, parce qu'une constellation n'a pas
+            // de plan : ses sept nœuds ne sont jamais coplanaires.
+            float r = VoidSignatureVfx.latticeCell(t);
+            if (r < 0.12f) return;
+            queue(MODE_BILLBOARD, worldX, worldY + VoidSignatureVfx.LATTICE_YC, worldZ, r, r, 1.0f, 0.0f);
         }
-        // PRISM et LATTICE : rien. Voir l'en-tête de classe — ce sont des figures sans
-        // intérieur, et un trou sans lèvre pour l'encadrer est juste un disque noir.
+    }
+
+    /**
+     * Dépose une fenêtre dans un plan QUELCONQUE, donné par ses deux vecteurs de base
+     * (monde). Réservé aux figures dont l'ouverture n'est ni horizontale, ni face caméra,
+     * ni dans le plan de l'attaque — en pratique : l'équateur du cristal, qui bascule.
+     */
+    public static void queueFree(double worldX, double worldY, double worldZ,
+                                 float halfA, float halfB,
+                                 float ax, float ay, float az,
+                                 float bx, float by, float bz) {
+        if (halfA <= 0.02f || halfB <= 0.02f || pending >= MAX_WINDOWS) return;
+        WMODE[pending] = MODE_FREE;
+        WX[pending] = worldX;
+        WY[pending] = worldY;
+        WZ[pending] = worldZ;
+        WA[pending] = halfA;
+        WB[pending] = halfB;
+        WAX[pending] = ax;
+        WAY[pending] = ay;
+        WAZ[pending] = az;
+        WBX[pending] = bx;
+        WBY[pending] = by;
+        WBZ[pending] = bz;
+        pending++;
     }
 
     /**
@@ -228,6 +287,16 @@ public final class VoidPortalFx {
                     if (axisA.lengthSquared() < 1.0e-6f) axisA.set(1.0f, 0.0f, 0.0f);
                     axisA.normalize();
                     axisB.set(0.0f, 1.0f, 0.0f);
+                    break;
+                case MODE_FREE:
+                    // Les deux vecteurs viennent de la figure. On normalise ici et pas
+                    // chez elle : une base presque unitaire déformerait l'ellipse sans
+                    // qu'on sache où chercher.
+                    axisA.set(WAX[i], WAY[i], WAZ[i]);
+                    axisB.set(WBX[i], WBY[i], WBZ[i]);
+                    if (axisA.lengthSquared() < 1.0e-6f || axisB.lengthSquared() < 1.0e-6f) continue;
+                    axisA.normalize();
+                    axisB.normalize();
                     break;
                 default:
                     axisA.set(camRight);
