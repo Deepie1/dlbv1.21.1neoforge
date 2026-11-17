@@ -228,6 +228,23 @@ public final class WeaponWorldVfxManager {
     private static boolean mobScaleActive = false;
 
     /**
+     * T383-HITBOX : ramène une <b>distance réelle du monde</b> dans le repère local de
+     * l'animation en cours de tracé.
+     *
+     * <p>Toute la géométrie sort par {@link #putPosColor}, qui l'agrandit autour du point
+     * d'impact du facteur tiré de la hitbox du mob touché — c'est exactement ce qu'on veut
+     * d'un dessin. Mais une valeur qui vaut <b>déjà</b> une distance du monde — la hauteur du
+     * sol sous l'ancre, la longueur du conduit entre deux entités, la position d'une victime
+     * de la chaîne — serait alors multipliée une seconde fois et manquerait sa cible : sur un
+     * ravageur (échelle mesurée 3,6) la flaque de sang s'enfonçait à trois mètres sous le sol
+     * et le conduit dépassait le porteur de deux blocs ; sur un poulet (0,42) la même flaque
+     * flottait au-dessus de l'herbe. On divise donc en entrant ce que la sortie multipliera.</p>
+     */
+    static float unscaleWorld(float worldDistance) {
+        return mobScaleActive && mobScale > 0.05f ? worldDistance / mobScale : worldDistance;
+    }
+
+    /**
      * T359-BIG-ANIM-SCALE : applique l'échelle au pivot courant.
      *
      * <p>Le point (x, y, z) est ramené dans le repère du pivot, multiplié par {@link #mobScale},
@@ -236,6 +253,28 @@ public final class WeaponWorldVfxManager {
      */
     private static float scaleAxis(float v, float pivot) {
         return mobScaleActive ? pivot + (v - pivot) * mobScale : v;
+    }
+
+    /** Les cinq signatures refondues du sang (T379), seules à passer par BloodSignatureVfx. */
+    private static boolean isBloodSignature(WeaponVisualEffectId fx) {
+        return fx == WeaponVisualEffectId.GUILLOTINE_CLEAVE
+                || fx == WeaponVisualEffectId.DRIPPING_BLOOD_EDGE
+                || fx == WeaponVisualEffectId.CRIMSON_SIPHON
+                || fx == WeaponVisualEffectId.VITAL_TRANSFUSION
+                || fx == WeaponVisualEffectId.CARNAGE_BERSERK;
+    }
+
+    /**
+     * T383-HITBOX : échelle du sang, monotone et resserrée — 0,78 sur un poulet, 1,00 sur un
+     * joueur, 1,31 sur une araignée, 1,75 sur un ravageur ou plus gros.
+     *
+     * <p>La racine (puissance 0,55) est là pour que l'écart reste lisible en bas de l'échelle
+     * sans exploser en haut : entre un lapin et un zombie la différence doit se voir, entre un
+     * ravageur et un dragon elle n'apporte plus rien, elle ne fait que sortir du champ.</p>
+     */
+    private static float bloodSignatureScale(float measured) {
+        if (measured <= 0.0f) return 1.0f;
+        return Mth.clamp((float) Math.pow(measured, 0.55), 0.78f, 1.75f);
     }
 
     /** T350-SMOOTH-COLOR : index de frame pour ne faire avancer les couleurs qu'une fois par frame. */
@@ -2268,6 +2307,12 @@ public final class WeaponWorldVfxManager {
             // T359-BIG-ANIM-SCALE : échelle propre à l'instance (taille du mob touché).
             // Molten garde son corridor monde verrouillé : le scale des voxels est local à sa maille.
             mobScale = inst.effect == WeaponVisualEffectId.MOLTEN_FIRE_WAVE ? 1.0f : inst.sizeScale;
+            // T383-HITBOX : les cinq signatures du sang sont des ASSEMBLAGES — un échafaud,
+            // un calice, un cœur — et non des nuages de pixels. L'échelle mesurée court de
+            // 0,30 (poulet) à 4,0 (dragon) : à 4, le cœur de la Transfusion ferait sept blocs
+            // de haut et l'échafaud du Couperet dix-huit. La progression reste monotone, la
+            // bande est resserrée.
+            if (isBloodSignature(inst.effect)) mobScale = bloodSignatureScale(mobScale);
             mobScaleActive = Math.abs(mobScale - 1.0f) > 0.02f;
             // Les sommets déjà émis par les rendus sont en coordonnées RELATIVES à la caméra.
             // Le pivot doit être dans le même repère : utiliser ici la position monde de l'effet
@@ -4414,9 +4459,14 @@ public final class WeaponWorldVfxManager {
      * fermes labourees sont donc traitees correctement, l'herbe haute est traversee, et une
      * cible en vol voit son ombre rester au sol au lieu de la suivre en l'air.</p>
      */
+    /**
+     * Hauteur du sol sous l'ancre, en blocs et en négatif. T383-HITBOX : le résultat est une
+     * distance du monde, donc {@link #unscaleWorld} la ramène dans le repère de l'animation
+     * avant que {@link #putPosColor} ne la remultiplie.
+     */
     private static float probeGroundOffset(double worldX, double worldY, double worldZ) {
         ClientLevel level = Minecraft.getInstance().level;
-        if (level == null) return SHADOW_GROUND_FALLBACK;
+        if (level == null) return unscaleWorld(SHADOW_GROUND_FALLBACK);
         // Meme sondage que FireSignatureVfx.sampleGround, dont la forme est deja eprouvee :
         // on part legerement au-dessus de l'origine et on descend jusqu'a vingt-quatre blocs.
         net.minecraft.core.BlockPos.MutableBlockPos probe = new net.minecraft.core.BlockPos.MutableBlockPos();
@@ -4433,9 +4483,9 @@ public final class WeaponWorldVfxManager {
             if (!Double.isFinite(top)) continue;
             double candidate = y + top;
             if (candidate > worldY + 0.751 || candidate < worldY - 24.0) continue;
-            return (float) (candidate - worldY);
+            return unscaleWorld((float) (candidate - worldY));
         }
-        return SHADOW_GROUND_FALLBACK;
+        return unscaleWorld(SHADOW_GROUND_FALLBACK);
     }
 
     /** Repli quand aucun sol n'est trouve en huit blocs (vol, vide) : l'ancienne constante. */
@@ -4572,7 +4622,11 @@ public final class WeaponWorldVfxManager {
                     dirX, dirZ, signature, v.fadeA(),
                     (int) (v.inst().seed & 0x7FFFFFFFL),
                     probeGroundOffset(v.inst().x, v.inst().y, v.inst().z),
-                    v.inst().linkLen, v.inst().linkEndY, v.inst().linkBroken);
+                    // T383-HITBOX : deux distances mesurées entre la victime et le porteur.
+                    // Non divisées, le conduit du Siphon et les vaisseaux de la Transfusion
+                    // dépassaient leur ancre de tout le facteur d'échelle.
+                    unscaleWorld(v.inst().linkLen), unscaleWorld(v.inst().linkEndY),
+                    v.inst().linkBroken);
         } finally {
             voxelPulseEnabled = previousPulse;
         }

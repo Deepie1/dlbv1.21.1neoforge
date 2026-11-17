@@ -1255,9 +1255,13 @@ public final class ThunderSignatureVfx {
             if (real) {
                 // Repère local : f suit l'axe attaquant→cible, l lui est perpendiculaire.
                 // C'est l'inverse exact de la transformation appliquée par box().
-                float wx = links[k * 4];
-                float wy = links[k * 4 + 1];
-                float wz = links[k * 4 + 2];
+                // T383-HITBOX : ces trois nombres sont la position REELLE d'une victime
+                // relayée, mesurée en blocs depuis le point d'impact. L'échelle du mob les
+                // aurait étirés comme le reste du dessin et la chaîne serait allée frapper
+                // deux blocs derrière chacune de ses cibles.
+                float wx = WeaponWorldVfxManager.unscaleWorld(links[k * 4]);
+                float wy = WeaponWorldVfxManager.unscaleWorld(links[k * 4 + 1]);
+                float wz = WeaponWorldVfxManager.unscaleWorld(links[k * 4 + 2]);
                 born = links[k * 4 + 3];
                 tf = dx * wx + dz * wz;
                 tl = -dz * wx + dx * wz;

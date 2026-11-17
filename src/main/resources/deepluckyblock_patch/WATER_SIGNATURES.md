@@ -2879,3 +2879,45 @@ sur `H` et `AV` — les deux grandeurs locales du modèle. Faux positifs : l'out
 connaissait que les champs `static`. Il accepte désormais les **variables locales
 en majuscules** déclarées avec un type primitif. Un faux positif se corrige dans
 l'outil, jamais dans la source.
+
+## §43 — Ce que l'échelle du mob multipliait deux fois
+
+Question posée : les animations qui visent **un seul mob** se mettent-elles à
+l'échelle de sa hitbox ? Réponse honnête en deux temps.
+
+Oui, depuis T359, et de la bonne manière : `putPosColor` est le **point de sortie
+unique** de toute la géométrie du moteur, et il y applique un facteur tiré de la
+hitbox de la victime — `sizeScaleOf` = √(l²·h / 0,6²·1,8), soit 0,42 pour un
+poulet, 1,00 pour un joueur, 2,86 pour un golem, 3,59 pour un ravageur. La
+transformation se fait **autour du point d'impact**, sur les positions *et* sur
+les tailles : l'animation entière grossit, elle ne se contente pas d'épaissir ses
+pixels. Rien à refaire de ce côté.
+
+Non, pour tout ce qui n'est pas du dessin. Trois grandeurs reçues par les moteurs
+de signature ne sont pas de la géométrie locale : ce sont **des distances déjà
+mesurées dans le monde**.
+
+| Grandeur | Qui la produit | Ce qui se passait à l'échelle 3,59 |
+|---|---|---|
+| Hauteur du sol sous l'ancre | `probeGroundOffset` | la flaque de sang descendait à trois mètres **sous** le sol |
+| Longueur du conduit victime → porteur | `updateBloodLink` | le conduit dépassait le porteur de douze blocs |
+| Position des relais de la chaîne | `registerThunderLink` | l'éclair allait frapper **derrière** chacune de ses victimes |
+
+Multipliées une seconde fois par la sortie, elles manquaient leur cible — trop
+loin sur un gros mob, trop court sur un petit (sur un poulet, le même conduit
+s'arrêtait à 5,45 blocs au lieu de 7,00). La correction tient en une fonction,
+`unscaleWorld`, appliquée **à l'entrée** : on divise par l'échelle ce que la
+sortie va multiplier. Mesuré sur la géométrie réelle, le bout du conduit tombe
+désormais à −6,98 pour une cible à −7,00, à 0,78 comme à 1,75 d'échelle.
+
+Le code du mod savait déjà le faire : le Feu, la Terre et le Poison divisent
+depuis toujours leur sondage de sol par leur `worldScale`. Ce sont le **Sang** et
+l'**Ombre**, qui passent par `probeGroundOffset`, qui ne le faisaient pas.
+
+Reste la question du goût. L'échelle brute va de 0,30 à 4,0, et c'est tenable
+pour un nuage de pixels ; pour les cinq signatures du sang, qui sont des
+**assemblages** — un échafaud, un calice, un cœur —, à 4,0 le cœur de la
+Transfusion ferait sept blocs de haut et l'échafaud du Couperet dix-huit. La
+bande est donc resserrée par une racine : `échelle^0,55`, bornée à [0,78 ; 1,75].
+Monotone — un mob plus gros donne toujours une animation plus grande — mais un
+lapin reste lisible et un ravageur ne remplit pas l'écran.
