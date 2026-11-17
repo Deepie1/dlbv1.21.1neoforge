@@ -3380,11 +3380,27 @@ public final class WeaponVfxServerListener {
      * signatures du mod dont le visuel RELIE deux etres : tant que le conduit est dessine,
      * il doit etre vrai, et des qu'il ne l'est plus, il doit casser des deux cotes.
      */
-    private static boolean bloodLinkHolds(LivingEntity attacker, LivingEntity target) {
-        if (attacker == null || target == null) return false;
-        if (!attacker.isAlive() || !target.isAlive()) return false;
-        if (attacker.level() != target.level()) return false;
-        return attacker.distanceToSqr(target) <= BLOOD_LINK_BREAK * BLOOD_LINK_BREAK;
+    /** Le lien tient. */
+    private static final int LINK_HOLDS = 0;
+    /** La distance l'a rompu : quelqu'un a fui, et cela se paie. */
+    private static final int LINK_TORN = 1;
+    /** Il n'y a plus de lien a rompre : un des deux corps a disparu. Personne ne paie. */
+    private static final int LINK_GONE = 2;
+
+    /**
+     * Etat de la laisse.
+     *
+     * <p>T380-BLOOD-LINK, deuxieme passe : la premiere version repondait par un simple oui/non,
+     * et traitait donc « le porteur est mort » exactement comme « la victime a fui » — la
+     * victime encaissait l'arrachement parce que son bourreau venait de tomber. Les deux cas
+     * sont maintenant distincts : seule la DISTANCE fait payer.</p>
+     */
+    private static int bloodLinkState(LivingEntity attacker, LivingEntity target) {
+        if (attacker == null || target == null) return LINK_GONE;
+        if (!attacker.isAlive() || !target.isAlive()) return LINK_GONE;
+        if (attacker.level() != target.level()) return LINK_GONE;
+        return attacker.distanceToSqr(target) <= BLOOD_LINK_BREAK * BLOOD_LINK_BREAK
+                ? LINK_HOLDS : LINK_TORN;
     }
 
     /**
@@ -4037,9 +4053,11 @@ public final class WeaponVfxServerListener {
             TestProcedure.schedule(sl, now + 34 + bolus * 17, () -> {
                 if (snapped.get()) return;
                 if (!target.isAlive() && bolus < 5) return;
-                if (!bloodLinkHolds(attacker, target)) {
+                int link = bloodLinkState(attacker, target);
+                if (link != LINK_HOLDS) {
                     snapped.set(true);
-                    bloodLinkSnap(sl, attacker, target, attackerId, base);
+                    // Mort du porteur : le conduit tombe, sans facture pour la victime.
+                    if (link == LINK_TORN) bloodLinkSnap(sl, attacker, target, attackerId, base);
                     return;
                 }
                 // Les voisins sont pris autour de la victime LA OU ELLE EST, pas autour du
@@ -4203,9 +4221,10 @@ public final class WeaponVfxServerListener {
                 if (torn.get()) return;
                 // Les vaisseaux d'entree sont plantes dans la victime : hors de portee, ils
                 // s'arrachent, exactement comme le conduit du siphon.
-                if (!bloodLinkHolds(attacker, target)) {
+                int link = bloodLinkState(attacker, target);
+                if (link != LINK_HOLDS) {
                     torn.set(true);
-                    bloodLinkSnap(sl, attacker, target, attackerId, base * 0.5f);
+                    if (link == LINK_TORN) bloodLinkSnap(sl, attacker, target, attackerId, base * 0.5f);
                     return;
                 }
                 double[] h = transfusionHeart(attacker, target, hx, hy, hz);

@@ -894,6 +894,9 @@ public final class WeaponWorldVfxManager {
             inst.x = victim.getX();
             inst.y = victim.getY() + victim.getBbHeight() * 0.50;
             inst.z = victim.getZ();
+        } else if (inst.bloodVictimId > 0) {
+            // Le corps est tombe : l'ancre reste ou il est tombe, mais le lien ne survit pas.
+            inst.linkBroken = true;
         }
 
         // --- L'autre bout : le porteur, ou a defaut le point d'ou il a frappe. ---
@@ -902,6 +905,9 @@ public final class WeaponWorldVfxManager {
             ex = wielder.getX();
             ey = wielder.getY() + wielder.getBbHeight() * 0.62;
             ez = wielder.getZ();
+        } else if (inst.bloodWielderId > 0) {
+            // Porteur mort ou hors de portee de vue : un conduit accroche a rien se resorbe.
+            inst.linkBroken = true;
         }
 
         double ddx = ex - inst.x;

@@ -2759,3 +2759,17 @@ qui court :
 
 La Transfusion reste volontairement dernière : elle ne tue pas, elle soigne un
 groupe.
+
+### Post-scriptum : la laisse punissait la mauvaise personne
+
+Première version de `bloodLinkHolds` : un booléen. Elle répondait « non » aussi
+bien quand la victime avait fui qu'au moment où le porteur mourait — et dans les
+deux cas `bloodLinkSnap` facturait l'arrachement **à la victime**. Tuer le
+siphonneur coûtait donc 45 % de la base et deux piles d'hémorragie à celui qui
+venait de le tuer.
+
+Trois états maintenant : `LINK_HOLDS`, `LINK_TORN` (la distance — et cela se
+paie), `LINK_GONE` (un des deux corps a disparu — la pompe s'arrête, personne ne
+paie). Côté client, symétriquement, la disparition de l'un des deux corps marque
+`linkBroken` : un conduit accroché à un mort se résorbe au lieu de pendre dans
+le vide jusqu'à la fin de l'animation.
