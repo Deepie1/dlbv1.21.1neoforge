@@ -109,7 +109,10 @@ public final class AnimFamily {
     public static int glintColor(String canonical) {
         if (canonical == null) return 0xFFF3B0;
         return switch (canonical) {
-            case FIRE -> 0xFF6A2A;
+            // T387 : aligne sur la base du glint (DeepGlintColor.FIRE). L'ambre franc
+            // est la seule teinte de la palette ou le canal vert depasse 120 ; c'est ce
+            // canal, et non la teinte, qui separe le feu du sang d'un coup d'oeil.
+            case FIRE -> 0xFF8210;
             case WIND -> 0x9FF2DC;
             case EARTH -> 0x9FC25E;
             case METAL -> 0xC4C8CD;
@@ -123,9 +126,10 @@ public final class AnimFamily {
             // sombre, se confondait avec l’acier non eclaire.
             case SHADOW -> 0x7100A7;
             // DeepElement.BLOOD.highlight 0xFF0000 serait un rouge primaire pur, qui sur une
-            // lame se confond avec les particules de degats. On prend la primaire 0xDD0000
-            // relevee vers l'ecarlate : un reflet de sang frais, pas un voyant lumineux.
-            case BLOOD -> 0xE01822;
+            // lame se confond avec les particules de degats. T387 : descendu de 0xE01822
+            // vers l'ecarlate sombre, pour que le vert tombe a 8 la ou le feu est a 130.
+            // La pulsation (DeepGlintColor.familyBreath) fait le reste.
+            case BLOOD -> 0xCD082A;
             default -> 0xFFF3B0;
         };
     }

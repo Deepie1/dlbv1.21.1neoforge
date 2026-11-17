@@ -3432,8 +3432,10 @@ public final class WeaponVfxServerListener {
         PixelFx.send(sl, ParticleTypes.DAMAGE_INDICATOR, vx, vy, vz, 10, 0.40, 0.35, 0.40, 0.05);
         // L'arrachement : une seule fois, et deux piles d'hemorragie. La victime est libre,
         // elle n'est pas indemne.
-        hurtWithCapturedWeapon(sl, attackerId, target, base * 0.45f);
-        addBleed(sl, target, 2, attackerId, base * 0.09f, 140);
+        bloodHurt(sl, attackerId, target, base * 0.45f);
+        // 140 ticks apres un arrachement qui peut survenir n'importe quand : borne a
+        // soixante, la duree qu'il reste typiquement a la signature qui l'a pose.
+        addBleedUntil(sl, target, 2, attackerId, base * 0.11f, sl.getGameTime() + 60L, BLEED_PERIOD);
         if (attacker != null && attacker.isAlive()) {
             sl.playSound(null, attacker.getX(), attacker.getY(), attacker.getZ(),
                     SoundEvents.CHAIN_BREAK, SoundSource.PLAYERS, 0.45f, 1.10f);
@@ -3442,6 +3444,97 @@ public final class WeaponVfxServerListener {
 
     /** Nombre maximal de piles d'hemorragie. Au-dela, une saignee de plus ne se lit plus. */
     private static final int BLEED_MAX = 5;
+
+    /**
+     * T387 : marge apres la fin d'une animation pendant laquelle une hemorragie peut encore
+     * battre. Vingt ticks, une seconde — assez pour que la derniere goutte tombe, trop peu
+     * pour qu'on se demande d'ou vient le degat.
+     */
+    private static final int BLEED_GRACE = 20;
+
+    /**
+     * Gouttes de sang. La poussiere coloree est la seule particule vanilla qui lise
+     * vraiment << sang >> : {@code FALLING_DRIPSTONE_LAVA} est orange et se lit comme de
+     * la lave, {@code DAMAGE_INDICATOR} comme un coeur brise.
+     */
+    private static final net.minecraft.core.particles.DustParticleOptions BLOOD_DUST =
+            new net.minecraft.core.particles.DustParticleOptions(
+                    new org.joml.Vector3f(0.64f, 0.02f, 0.05f), 1.35f);
+
+    /** La meme, plus sombre et plus grosse : ce qui a deja coule et qui poisse. */
+    private static final net.minecraft.core.particles.DustParticleOptions BLOOD_DUST_DARK =
+            new net.minecraft.core.particles.DustParticleOptions(
+                    new org.joml.Vector3f(0.31f, 0.01f, 0.03f), 1.70f);
+
+    /**
+     * Gerbe de gouttes AUTOUR d'un corps : un anneau a mi-hauteur plus une retombee au sol.
+     *
+     * <p>Demande explicite apres essai en jeu : << pour les degats lies au sang, mets des
+     * particules / gouttes de sang autour du mob >>. Un nuage centre sur l'entite disparait
+     * dans son modele ; c'est l'ANNEAU, legerement plus large que la hitbox, qui se voit.</p>
+     */
+    private static void bloodDrops(ServerLevel sl, LivingEntity victim, int intensity, long seed) {
+        if (sl == null || victim == null) return;
+        double vx = victim.getX();
+        double vz = victim.getZ();
+        double w = Math.max(0.35, victim.getBbWidth());
+        double h = Math.max(0.60, victim.getBbHeight());
+        int ring = Math.max(4, Math.min(18, 4 + intensity * 2));
+        for (int i = 0; i < ring; i++) {
+            double ang = (i + (seed % 11) * 0.09) / ring * Math.PI * 2.0;
+            double rr = w * (0.42 + 0.34 * (((i * 37 + seed) % 11) / 10.0));
+            PixelFx.send(sl, BLOOD_DUST,
+                    vx + Math.cos(ang) * rr,
+                    victim.getY() + h * (0.18 + 0.58 * (((i * 53 + seed) % 13) / 12.0)),
+                    vz + Math.sin(ang) * rr,
+                    1, 0.015, 0.015, 0.015, 0.0);
+        }
+        // Ce qui tombe : au pied, large et sombre.
+        PixelFx.send(sl, BLOOD_DUST_DARK, vx, victim.getY() + 0.07, vz,
+                2 + intensity, w * 0.55, 0.03, w * 0.55, 0.0);
+    }
+
+    /**
+     * Degat de la famille Sang : la perte de vie ET les gouttes, toujours ensemble.
+     *
+     * <p>Les neuf points de degats du bloc appelaient {@code hurtWithCapturedWeapon} nu.
+     * Le joueur voyait la barre de vie descendre sans rien voir couler — et quand il
+     * voyait quelque chose, c'etait {@code FALLING_DRIPSTONE_LAVA}, orange, qui se lit
+     * comme de la lave et non comme du sang. Un seul passage obligatoire, et la
+     * famille entiere saigne.</p>
+     *
+     * @return vrai si le coup a porte
+     */
+    private static boolean bloodHurt(ServerLevel sl, int attackerId, LivingEntity victim,
+                                     float amount) {
+        boolean hit = hurtWithCapturedWeapon(sl, attackerId, victim, amount);
+        if (hit && sl != null && victim != null) {
+            // L'intensite suit le degat : une taillade de volee jette moins qu'une
+            // guillotine. Plafonnee, sinon une arme tardive noircirait l'ecran.
+            int weight = 2 + (int) Math.min(7.0f, Math.max(0.0f, amount) * 0.85f);
+            bloodDrops(sl, victim, weight, sl.getGameTime() * 31L + victim.getId());
+        }
+        return hit;
+    }
+
+    /**
+     * T387 : hemorragie bornee par une ECHEANCE ABSOLUE, en temps de monde.
+     *
+     * <p>Toutes les saignees d'une meme signature visent la meme fin, quelle que soit
+     * l'heure a laquelle elles sont posees. C'est la seule facon d'empecher une
+     * choregraphie de 180 ticks de saigner pendant 260.</p>
+     */
+    private static void addBleedUntil(ServerLevel sl, LivingEntity victim, int stacks,
+                                      int attackerId, float perStack, long deadline,
+                                      int periodTicks) {
+        if (sl == null) return;
+        int period = Math.max(2, periodTicks);
+        long remaining = deadline - sl.getGameTime();
+        // Au moins une perte : une hemorragie qui n'a le temps de rien faire serait un
+        // mensonge visuel — on affiche des gouttes pour rien.
+        if (remaining < period) remaining = period;
+        addBleed(sl, victim, stacks, attackerId, perStack, (int) remaining, period);
+    }
 
     /** Periode d'une perte de sang, en ticks de MONDE. */
     private static final int BLEED_PERIOD = 10;
@@ -3520,11 +3613,18 @@ public final class WeaponVfxServerListener {
         int period = Math.max(2, periodTicks);
         if (previous != null && previous.expires() > now) period = Math.min(period, previous.period());
         long next = previous != null && previous.expires() > now ? previous.nextTick() : now + period;
-        BLEEDS.put(victim.getId(), new Bleed(total, attackerId, now + durationTicks, next, unit, period));
+        // T387 : on ne RACCOURCIT pas une saignee en cours, mais on ne la rallonge que si la
+        // nouvelle va plus loin. Avant, chaque appel ecrasait l'echeance avec la sienne —
+        // la morsure de flaque, qui repasse toutes les 20 ticks avec 80 ticks en poche,
+        // repoussait indefiniment la fin. C'est la boucle qui faisait saigner sans fin.
+        long expiry = now + durationTicks;
+        if (previous != null && previous.expires() > expiry) expiry = previous.expires();
+        BLEEDS.put(victim.getId(), new Bleed(total, attackerId, expiry, next, unit, period));
         PixelFx.send(sl, ParticleTypes.DAMAGE_INDICATOR,
                 victim.getX(), victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
                 2 + total, victim.getBbWidth() * 0.35, victim.getBbHeight() * 0.30,
                 victim.getBbWidth() * 0.35, 0.01);
+        bloodDrops(sl, victim, 2 + total, now);
     }
 
     /** Piles d'hemorragie actuellement posees sur une cible, 0 si aucune. */
@@ -3590,6 +3690,9 @@ public final class WeaponVfxServerListener {
         int particles = 2 + bleed.stacks() + (effort > 2.0f ? 4 : 0);
         PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, vx, vy, vz, particles,
                 target.getBbWidth() * 0.32, target.getBbHeight() * 0.28, target.getBbWidth() * 0.32, 0.0);
+        // T387 : l'anneau de gouttes. Sans lui, une perte de vie par hemorragie ne se
+        // distingue d'aucune autre : le joueur voit des degats tomber sans savoir pourquoi.
+        bloodDrops(sl, target, bleed.stacks() + (effort > 2.0f ? 3 : 1), now);
         if (effort > 2.0f) {
             // La course projette : on l'entend et on la voit gicler derriere.
             PixelFx.send(sl, ParticleTypes.DAMAGE_INDICATOR, vx, vy, vz, 3, 0.30, 0.22, 0.30, 0.02);
@@ -3638,7 +3741,13 @@ public final class WeaponVfxServerListener {
             for (LivingEntity victim : bloodVictims(sl, pool.x(), pool.y(), pool.z(),
                     pool.radius(), 2.2, pool.attackerId())) {
                 victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 40, 0, true, false));
-                addBleed(sl, victim, 1, pool.attackerId(), pool.perBite(), 80);
+                // T387 : bornee a la flaque elle-meme. Avec 80 ticks en dur, chaque
+                // morsure repoussait la fin de la saignee de quatre secondes, toutes les
+                // secondes : une victime qui reste dans la flaque ne cessait jamais de
+                // saigner. C'etait la vraie source des << degats sans fin >>.
+                addBleedUntil(sl, victim, 1, pool.attackerId(), pool.perBite(),
+                        pool.expires(), BLEED_PERIOD);
+                bloodDrops(sl, victim, 2, now + victim.getId());
             }
         }
     }
@@ -3806,6 +3915,11 @@ public final class WeaponVfxServerListener {
         final double oy = target.getY() + target.getBbHeight() * 0.50;
         final double oz = target.getZ();
         final float base = Math.max(1.6f, weaponDamage * 0.95f);
+        // T387 : l'echeance de TOUS les degats differes de cette signature. << now >> est
+        // l'horloge de l'ordonnanceur ; les hemorragies et les flaques, elles, vivent en
+        // temps de monde — il faut donc les deux, prises au meme instant.
+        final long bleedEnd = sl.getGameTime() + 150 + BLEED_GRACE;
+        final long poolEnd = sl.getGameTime() + 150 + BLEED_GRACE * 2L;
 
         // Axe de la lame : perpendiculaire a porteur→cible.
         double axX = attacker != null ? target.getX() - attacker.getX()
@@ -3896,13 +4010,16 @@ public final class WeaponVfxServerListener {
                 // SOLO : plein tarif. EN LIGNE : tarif de zone, mais l'execution reste —
                 // c'est elle le sujet de la signature, pas sa puissance brute.
                 float amount = base * (solo ? 1.35f : 0.80f) * execute;
-                if (hurtWithCapturedWeapon(sl, attackerId, victim, amount)) spilled += amount;
+                if (bloodHurt(sl, attackerId, victim, amount)) spilled += amount;
                 // La coupe sectionne : on ne manie plus ses outils de la meme facon.
                 victim.addEffect(new MobEffectInstance(MobEffects.WEAKNESS,
                         solo ? 160 : 90, solo ? 1 : 0, true, false));
                 victim.addEffect(new MobEffectInstance(MobEffects.DIG_SLOWDOWN,
                         solo ? 140 : 80, 1, true, false));
-                addBleed(sl, victim, solo ? 3 : 2, attackerId, base * 0.085f, 140, 14);
+                // 0,085 -> 0,115 : la saignee ne court plus que jusqu'a la fin de
+                // l'echafaud, donc chaque perte doit peser davantage pour que le total
+                // reste celui d'avant. Moins long, pas moins fort.
+                addBleedUntil(sl, victim, solo ? 3 : 2, attackerId, base * 0.115f, bleedEnd, 14);
                 PixelFx.send(sl, ParticleTypes.DAMAGE_INDICATOR,
                         victim.getX(), victim.getY() + victim.getBbHeight() * 0.6, victim.getZ(),
                         14, 0.35, 0.35, 0.35, 0.10);
@@ -3930,7 +4047,8 @@ public final class WeaponVfxServerListener {
         // --- 93→123 : la nappe. Le sang monte du trait et retombe en flaque. ---
         TestProcedure.schedule(sl, now + 93, () -> {
             sl.playSound(null, ox, oy, oz, SoundEvents.HONEY_BLOCK_BREAK, SoundSource.PLAYERS, 0.70f, 0.55f);
-            addBloodPool(sl, ox, target.getY(), oz, 1.9, 110, attackerId, base * 0.07f);
+            addBloodPool(sl, ox, target.getY(), oz, 1.9,
+                    (int) (poolEnd - sl.getGameTime()), attackerId, base * 0.07f);
         });
         TestProcedure.schedule(sl, now + 123, () ->
                 sl.playSound(null, ox, oy, oz, SoundEvents.PISTON_CONTRACT, SoundSource.PLAYERS, 0.50f, 0.45f));
@@ -3957,6 +4075,11 @@ public final class WeaponVfxServerListener {
         final double oy = target.getY() + target.getBbHeight() * 0.55;
         final double oz = target.getZ();
         final float base = Math.max(1.2f, weaponDamage * 0.74f);
+        // T387 : l'echeance de TOUS les degats differes de cette signature. << now >> est
+        // l'horloge de l'ordonnanceur ; les hemorragies et les flaques, elles, vivent en
+        // temps de monde — il faut donc les deux, prises au meme instant.
+        final long bleedEnd = sl.getGameTime() + 120 + BLEED_GRACE;
+        final long poolEnd = sl.getGameTime() + 120 + BLEED_GRACE * 2L;
 
         sl.playSound(null, ox, oy, oz, SoundEvents.PLAYER_ATTACK_CRIT, SoundSource.PLAYERS, 0.70f, 1.35f);
         bloodSwell(sl, now, ox, oy, oz, 3, 0.55f);
@@ -3978,7 +4101,7 @@ public final class WeaponVfxServerListener {
             for (LivingEntity victim : near) {
                 boolean primary = victim == target;
                 float amount = base * (primary ? (solo ? 0.95f : 0.80f) : 0.45f);
-                if (hurtWithCapturedWeapon(sl, attackerId, victim, amount)) spilled += amount;
+                if (bloodHurt(sl, attackerId, victim, amount)) spilled += amount;
                 // SOLO : quatre piles d'un coup, c'est-a-dire presque le maximum. EN FOULE :
                 // deux sur la cible, une sur les voisins. La saignee se dilue, pas la duree.
                 int stacks = primary ? (solo ? 4 : 2) : 1;
@@ -3992,7 +4115,9 @@ public final class WeaponVfxServerListener {
                 // La signature se decrivait elle-meme comme celle qui « frappe peu et saigne
                 // longtemps » ; elle frappait en realite le plus fort du mod. On garde les
                 // quatre piles, qui sont son identite, et on baisse le tarif unitaire.
-                addBleed(sl, victim, stacks, attackerId, base * 0.075f, solo ? 200 : 160, 6);
+                // L'arete posait 200 ticks de saignee des le tick 10, soit 90 de plus
+                // que son animation : c'etait la pire des cinq.
+                addBleedUntil(sl, victim, stacks, attackerId, base * 0.075f, bleedEnd, 6);
                 victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
                         primary ? 70 : 40, 0, true, false));
             }
@@ -4016,7 +4141,8 @@ public final class WeaponVfxServerListener {
             boolean solo = bloodVictims(sl, ox, oy, oz, 4.0, 2.6, attackerId).size() <= 1;
             // La flaque de duel est plus petite mais mord plus fort : en duel elle sert a
             // interdire un pas de recul, en foule a couvrir une zone de passage.
-            addBloodPool(sl, ox, target.getY(), oz, solo ? 1.7 : 2.8, 180, attackerId,
+            addBloodPool(sl, ox, target.getY(), oz, solo ? 1.7 : 2.8,
+                    (int) (poolEnd - sl.getGameTime()), attackerId,
                     base * (solo ? 0.12f : 0.08f));
         });
         for (int k = 0; k < 5; k++) {
@@ -4059,6 +4185,11 @@ public final class WeaponVfxServerListener {
         final double oy = target.getY() + target.getBbHeight() * 0.55;
         final double oz = target.getZ();
         final float base = Math.max(1.4f, weaponDamage * 0.86f);
+        // T387 : l'echeance de TOUS les degats differes de cette signature. << now >> est
+        // l'horloge de l'ordonnanceur ; les hemorragies et les flaques, elles, vivent en
+        // temps de monde — il faut donc les deux, prises au meme instant.
+        final long bleedEnd = sl.getGameTime() + 170 + BLEED_GRACE;
+        final long poolEnd = sl.getGameTime() + 170 + BLEED_GRACE * 2L;
 
         // --- 0→15 : les quatre crochets mordent. ---
         sl.playSound(null, ox, oy, oz, SoundEvents.BONE_BLOCK_BREAK, SoundSource.PLAYERS, 0.70f, 1.25f);
@@ -4120,7 +4251,7 @@ public final class WeaponVfxServerListener {
                     // EN GRAPPE : 0,22 sur la principale et 0,13 sur les autres — le total
                     // monte, le tarif individuel baisse.
                     float amount = base * (primary ? (solo ? 0.30f : 0.22f) : 0.13f);
-                    if (hurtWithCapturedWeapon(sl, attackerId, victim, amount)) drawn += amount;
+                    if (bloodHurt(sl, attackerId, victim, amount)) drawn += amount;
                     victim.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 50, 0, true, false));
                     PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA,
                             victim.getX(), victim.getY() + victim.getBbHeight() * 0.5, victim.getZ(),
@@ -4171,11 +4302,14 @@ public final class WeaponVfxServerListener {
             float left = target.getHealth() / Math.max(1.0f, target.getMaxHealth());
             if (left < 0.34f) {
                 // La victime est trop vide : le conduit claque et emporte le reste.
-                hurtWithCapturedWeapon(sl, attackerId, target, base * 0.75f);
-                addBleed(sl, target, 3, attackerId, base * 0.10f, 160, 10);
+                bloodHurt(sl, attackerId, target, base * 1.10f);
+                // La rupture tombe au tick 153 d'une animation de 170 : il ne reste
+                // qu'une poignee de battements. Le degat perdu est rendu a l'impact
+                // ci-dessus (0,75 -> 1,10 de base), ou il se VOIT.
+                addBleedUntil(sl, target, 3, attackerId, base * 0.16f, bleedEnd, 10);
                 sl.playSound(null, ox, oy, oz, SoundEvents.ZOMBIE_INFECT, SoundSource.PLAYERS, 0.60f, 0.70f);
             } else {
-                addBleed(sl, target, 1, attackerId, base * 0.08f, 120, 10);
+                addBleedUntil(sl, target, 1, attackerId, base * 0.12f, bleedEnd, 10);
             }
             bloodFervor(sl, attacker, base * 1.4f, 160);
         });
@@ -4225,6 +4359,11 @@ public final class WeaponVfxServerListener {
         final double oy = target.getY() + target.getBbHeight() * 0.55;
         final double oz = target.getZ();
         final float base = Math.max(1.0f, weaponDamage * 0.62f);
+        // T387 : l'echeance de TOUS les degats differes de cette signature. << now >> est
+        // l'horloge de l'ordonnanceur ; les hemorragies et les flaques, elles, vivent en
+        // temps de monde — il faut donc les deux, prises au meme instant.
+        final long bleedEnd = sl.getGameTime() + 140 + BLEED_GRACE;
+        final long poolEnd = sl.getGameTime() + 140 + BLEED_GRACE * 2L;
         // T385-VERROU : la transfusion est l'autre signature a LIEN. Le coeur est calcule
         // au milieu du segment porteur-victime ; si la victime marche, le coeur derive et
         // les vaisseaux s'etirent. Sept battements = 106 ticks, plus la resorption.
@@ -4288,7 +4427,7 @@ public final class WeaponVfxServerListener {
                 float drawn = 0.0f;
                 for (LivingEntity donor : donors) {
                     float amount = base * (solo ? 0.40f : 0.22f);
-                    if (hurtWithCapturedWeapon(sl, attackerId, donor, amount)) drawn += amount;
+                    if (bloodHurt(sl, attackerId, donor, amount)) drawn += amount;
                     donor.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 60, 0, true, false));
                     if (beat % 2 == 1) {
                         donor.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 50, 0, true, false));
@@ -4345,7 +4484,8 @@ public final class WeaponVfxServerListener {
             sl.playSound(null, h[0], h[1], h[2], SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 0.35f, 1.30f);
             PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA, h[0], h[1], h[2], 24, 0.55, 0.60, 0.55, 0.04);
             double poolY = target.isAlive() ? target.getY() : oy - 1.0;
-            addBloodPool(sl, h[0], poolY, h[2], 1.3, 90, attackerId, base * 0.06f);
+            addBloodPool(sl, h[0], poolY, h[2], 1.3,
+                    (int) (poolEnd - sl.getGameTime()), attackerId, base * 0.06f);
         });
     }
 
@@ -4374,6 +4514,11 @@ public final class WeaponVfxServerListener {
         final double oy = target.getY() + target.getBbHeight() * 0.50;
         final double oz = target.getZ();
         final float base = Math.max(1.3f, weaponDamage * 0.80f);
+        // T387 : l'echeance de TOUS les degats differes de cette signature. << now >> est
+        // l'horloge de l'ordonnanceur ; les hemorragies et les flaques, elles, vivent en
+        // temps de monde — il faut donc les deux, prises au meme instant.
+        final long bleedEnd = sl.getGameTime() + 180 + BLEED_GRACE;
+        final long poolEnd = sl.getGameTime() + 180 + BLEED_GRACE * 2L;
         final java.util.concurrent.atomic.AtomicInteger landed =
                 new java.util.concurrent.atomic.AtomicInteger();
         final java.util.concurrent.atomic.AtomicInteger spilled =
@@ -4431,13 +4576,13 @@ public final class WeaponVfxServerListener {
                     // SOLO : 0,42 par taillade, soit 4,6 fois les degats de base sur onze
                     // coups. EN FOULE : 0,24, mais sur tout le monde a la fois.
                     float amount = base * (solo ? 0.42f : 0.24f);
-                    if (hurtWithCapturedWeapon(sl, attackerId, victim, amount)) {
+                    if (bloodHurt(sl, attackerId, victim, amount)) {
                         spilled.addAndGet(Math.round(amount * 100.0f));
                     }
                     // Une taillade sur deux ouvre : onze piles seraient absurdes, cinq est
                     // deja le plafond.
                     if ((strike & 1) == 0) {
-                        addBleed(sl, victim, 1, attackerId, base * 0.075f, 150, 8);
+                        addBleedUntil(sl, victim, 1, attackerId, base * 0.075f, bleedEnd, 8);
                     }
                     PixelFx.send(sl, ParticleTypes.FALLING_DRIPSTONE_LAVA,
                             victim.getX(), victim.getY() + victim.getBbHeight() * 0.55, victim.getZ(),
@@ -4470,9 +4615,9 @@ public final class WeaponVfxServerListener {
             List<LivingEntity> swept = bloodVictims(sl, ox, oy, oz, 5.0, 3.0, attackerId);
             boolean solo = swept.size() <= 1;
             for (LivingEntity victim : swept) {
-                hurtWithCapturedWeapon(sl, attackerId, victim, base * (solo ? 0.95f : 0.55f));
+                bloodHurt(sl, attackerId, victim, base * (solo ? 0.95f : 0.55f));
                 victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 80, 1, true, false));
-                addBleed(sl, victim, solo ? 2 : 1, attackerId, base * 0.09f, 140, 8);
+                addBleedUntil(sl, victim, solo ? 2 : 1, attackerId, base * 0.115f, bleedEnd, 8);
                 // L'onde repousse. Sans composante verticale la poussee est absorbee par la
                 // premiere marche et la victime glisse contre le talus (piege de la T376).
                 double ddx = victim.getX() - ox;
@@ -4488,7 +4633,8 @@ public final class WeaponVfxServerListener {
                     }
                 }
             }
-            addBloodPool(sl, ox, target.getY(), oz, 3.0, 160, attackerId, base * 0.07f);
+            addBloodPool(sl, ox, target.getY(), oz, 3.0,
+                    (int) (poolEnd - sl.getGameTime()), attackerId, base * 0.07f);
         });
 
         // --- 130→170 : la brume. Elle ralentit ce qui reste dedans. ---

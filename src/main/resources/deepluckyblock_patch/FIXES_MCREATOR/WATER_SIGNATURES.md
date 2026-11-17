@@ -3088,3 +3088,103 @@ suive la pulsation. La famille est mise en cache deux secondes dans l'état déj
 tenu par item — sans ce cache, la carte d'enchantements serait relue à chaque image
 en plus des deux lectures que `resolve()` fait déjà. Les malédictions sont exclues :
 elles sont rouges par décision antérieure et ne respirent pas.
+
+---
+
+## §47 — T387 · les dégâts du Sang s'arrêtent avec l'animation, et ils se voient
+
+Trois retours de jeu du 17/11, tous sur la famille Sang.
+
+### 1. « en fin d'animation ça déclenche des ticks de dégâts qui continuent sur une grande durée sans sens »
+
+Le constat portait sur **les cinq** signatures. Deux causes, pas une.
+
+**La première, arithmétique.** `addBleed` posait `expires = MAINTENANT + durée`, et les
+appels tombent **tard** dans la chorégraphie : la morsure du couperet au tick 83, la
+rupture du siphon au tick 153, la onzième lame du carnage au tick 112. Avec 140 à 200
+ticks de durée, la saignée débordait de 73 à 143 ticks — jusqu'à **sept secondes** après
+la dernière image. L'arête était la pire : 200 ticks de saignée posés au tick 10 d'une
+animation qui en dure 120.
+
+**La seconde, et c'est elle qui donnait l'impression de dégâts sans fin.** La flaque de
+sang mord toutes les 20 ticks, et chaque morsure **reposait** une hémorragie de 80 ticks.
+`addBleed` écrasait l'échéance avec la sienne. Une victime qui reste dans la flaque voyait
+donc sa fin de saignée repoussée de quatre secondes, **toutes les secondes** : la boucle
+ne se fermait jamais tant que la flaque vivait.
+
+Le correctif tient en trois règles.
+
+- Chaque signature calcule une **échéance absolue** en temps de monde, prise à l'instant
+  où elle démarre : `bleedEnd = getGameTime() + durée_animation + 20`. Les sept appels
+  passent par `addBleedUntil`, qui convertit cette échéance en durée restante. Peu importe
+  désormais à quel tick la saignée est posée, elle vise la même fin.
+- `addBleed` **ne recule plus jamais** une échéance : `if (previous.expires() > expiry)
+  expiry = previous.expires()`. La morsure de flaque, elle, est bornée par la flaque
+  elle-même (`pool.expires()`), ce qui ferme la boucle pour de bon.
+- Les quatre flaques sont bornées de même, à `durée_animation + 40`.
+
+| signature | animation | dernier dégât posé | fin de saignée | après la fin |
+|---|---|---|---|---|
+| Couperet | 150 t | t+83 | 170 t | **20 t (1,0 s)** |
+| Arête | 120 t | t+10 | 140 t | **20 t (1,0 s)** |
+| Siphon | 170 t | t+153 | 190 t | **20 t (1,0 s)** |
+| Carnage | 180 t | t+112 | 200 t | **20 t (1,0 s)** |
+
+Le total de dégâts est conservé : ce qui n'est plus étalé est **concentré**. Le couperet
+passe de 0,085 à 0,115 par pile et par battement, le carnage de 0,09 à 0,115, le siphon
+de 0,10 à 0,16 et de 0,08 à 0,12 — et le dégât que la rupture du siphon n'a plus le temps
+de saigner lui est rendu à l'impact, où il **se voit** (0,75 → 1,10 de base).
+
+### 2. « mets des particules / gouttes de sang autour du mob »
+
+Les neuf points de dégâts du bloc appelaient `hurtWithCapturedWeapon` nu : la barre de vie
+descendait sans que rien ne coule. Quand une particule sortait, c'était
+`FALLING_DRIPSTONE_LAVA`, **orange**, qui se lit comme de la lave.
+
+`bloodDrops` pose deux `DustParticleOptions` taillées pour le sang — `(0.64, 0.02, 0.05)`
+à l'échelle 1,35 pour ce qui gicle, `(0.31, 0.01, 0.03)` à 1,70 pour ce qui a déjà coulé.
+La géométrie compte autant que la couleur : un nuage **centré** sur l'entité disparaît
+dans son modèle, donc les gouttes sont semées sur un **anneau** un peu plus large que la
+hitbox, entre 18 % et 76 % de la hauteur, avec une retombée sombre au pied. Le nombre suit
+l'intensité, plafonné — une mêlée longue ne doit pas noircir l'écran.
+
+Huit des neuf sites passent désormais par `bloodHurt`, qui ne peut pas frapper sans faire
+couler. Le neuvième est `tickBleed`, qui sème son propre anneau à chaque perte, plus dense
+quand la victime court.
+
+### 3. « les glints feu et sang se ressemblent encore »
+
+T386 avait déjà écarté les deux bases — (192, 65, 10) contre (138, 2, 8) — et l'essai en
+jeu a tranché : toujours trop proches. **Trois** raisons, dont une qui annulait tout le
+reste.
+
+**`breathFamilyOf` ne lisait que les enchantements réels.** L'épée donnée par
+`/anim <famille>` n'en porte aucun : sa couleur vient d'une clé NBT et son halo du
+composant vanilla. La méthode renvoyait donc `BREATH_NONE`, et **la pulsation de T386 ne
+s'est jamais déclenchée sur l'outil même qui sert à la juger**. Elle lit maintenant
+`DlbAnimFamily` avant toute chose.
+
+**Vingt degrés de teinte ne se lisent pas sur un halo qui défile.** Le critère change :
+ce n'est plus la teinte qui sépare les deux familles, c'est le **canal vert**.
+
+|  | base | sommet | vert |
+|---|---|---|---|
+| Feu | (255, 130, 16) ambre franc | (255, 203, 94) jaune blanc | **toujours ≥ 130** |
+| Sang | (124, 0, 18) bordeaux | (200, 8, 41) écarlate artériel | **toujours ≤ 8** |
+
+Un écart de 122 sur un canal entier se voit du coin de l'œil, en mouvement, sur un item
+minuscule dans une barre d'action. Et le sens physique suit : une braise plus chaude vire
+au jaune, un sang qui bat ne change pas de teinte — il change de **luminosité**, ce que
+fait exactement un pouls sous la peau. Les sommets, eux aussi, s'éloignent au lieu de se
+rejoindre : T386 montait le feu vers un rouge vif, c'est-à-dire vers le sang, à l'instant
+précis où les deux sont le plus visibles.
+
+Les excursions sont élargies (0,20 → 0,30 pour le feu, 0,16 → 0,24 pour le sang) et
+presque totales en profondeur (0,97 et 0,94). Le feu passe désormais près d'un tiers de
+son cycle à monter vers le jaune. Les deux périodes restent premières entre elles —
+4,3 s et 5,7 s — donc les sommets ne tombent jamais ensemble, et la phase reste décalée
+par item.
+
+`AnimFamily.glintColor` suit : `FIRE` passe de `0xFF6A2A` à `0xFF8210`, `BLOOD` de
+`0xE01822` à `0xCD082A`. `DeepElement` n'est pas touché : ces constantes sont locales au
+glint et ne changent aucun VFX.

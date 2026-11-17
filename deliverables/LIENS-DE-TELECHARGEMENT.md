@@ -11,6 +11,20 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 - **Aperçu (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Blood_Five_Signatures_preview.html
 - **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Blood_Five_Signatures_src.zip
 
+> **T387 — 17/11 · les dégâts du Sang s'arrêtent avec l'animation, et ils se voient.**
+> Trois retours de jeu corrigés. **(1)** Les hémorragies débordaient de 73 à 143 ticks après
+> la dernière image, et la flaque de sang **repoussait** la fin de saignée de quatre secondes
+> toutes les secondes — la boucle ne se fermait jamais. Chaque signature a désormais une
+> **échéance absolue** : animation + 1,0 s, pour les cinq. Le total de dégâts est conservé,
+> concentré au lieu d'être étalé. **(2)** Les huit points de dégâts passent par `bloodHurt` :
+> plus aucun coup de la famille sans **anneau de gouttes** autour du corps, en poussière
+> rouge sang et non en `FALLING_DRIPSTONE_LAVA` orange. **(3)** La pulsation du glint ne se
+> déclenchait **jamais** sur les épées de `/anim` (aucun enchantement réel à lire) ; elle lit
+> maintenant `DlbAnimFamily`. Le critère de séparation devient le **canal vert** : feu
+> (255,130,16)→(255,203,94), toujours ≥ 130 ; sang (124,0,18)→(200,8,41), toujours ≤ 8.
+> Aperçu : `T387_glint_feu_vs_sang.png`. ZIP **1 075 559 o / 60 entrées**, page **1 519 767 o**.
+> Suffixez les liens de **`?v=387`**.
+
 > **T386 — le Carnage devient une VOLEE DE LAMES, et le glint du Feu cesse d'etre
 > celui du Sang.** (1) **CARNAGE BERSERK (animation 5)** : les onze arcs tires d'un
 > hachage sont remplaces par **onze lames**. Chacune se forge **dans le ciel** a 3,5-5,2

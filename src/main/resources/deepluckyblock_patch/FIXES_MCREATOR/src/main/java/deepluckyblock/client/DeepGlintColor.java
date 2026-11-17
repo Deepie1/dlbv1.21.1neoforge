@@ -26,12 +26,19 @@ public final class DeepGlintColor {
     // Couleurs "pleines" (0xFFRRGGBB) par famille.
     private static final int CURSE    = 0xFFFF5555;
     private static final int NATURE   = 0xFF000000 | deepluckyblock.enchantments.DeepElement.WOOD.primary;
-    // T386-GLINT : le feu et le sang se confondaient. DeepElement.FIRE.primary vaut
-    // 0xFF4A10 et BLOOD.primary 0xDD0000 : deux rouges-orange voisins, impossibles a
-    // distinguer sur une lame qui bouge. Le glint prend donc ses propres bases, loin
-    // l'une de l'autre, et c'est la PULSATION qui les separe pour de bon (familyBreath).
-    // Feu : orange brule, nettement plus jaune. Ces constantes ne touchent pas au VFX.
-    private static final int FIRE     = 0xFFC0410A;
+    // T387-GLINT : T386 avait deja ecarte les deux bases (192,65,10 contre 138,2,8),
+    // et l'essai en jeu a tranche : toujours trop proches. Vingt degres de teinte sur
+    // un halo qui defile ne se lisent pas. On change donc de critere — ce n'est plus la
+    // teinte qui separe les deux familles, c'est le CANAL VERT :
+    //
+    //      feu  (255, 130,  16)  -> sommet (255, 205,  96)   vert >= 130, toujours
+    //      sang (124,   0,  18)  -> sommet (205,   8,  42)   vert <=   8, toujours
+    //
+    // Un ecart de 122 sur un canal entier se voit meme du coin de l'oeil, meme en
+    // mouvement, meme sur un item minuscule dans une barre d'action. Et le sens
+    // physique suit : une braise plus chaude vire au jaune, un sang qui bat reste
+    // rouge. Ces constantes ne touchent pas au VFX : DeepElement reste intact.
+    private static final int FIRE     = 0xFFFF8210;
     private static final int WATER    = 0xFF000000 | deepluckyblock.enchantments.DeepElement.WATER.primary;
     private static final int POISON   = 0xFF000000 | deepluckyblock.enchantments.DeepElement.POISON.primary;
     private static final int SPEED    = 0xFF3A2E80;
@@ -43,7 +50,7 @@ public final class DeepGlintColor {
     private static final int DAMAGE   = 0xFF000000 | deepluckyblock.enchantments.DeepElement.METAL.primary;
     private static final int FORCE    = 0xFFFF7A14;
     /** Sang : rouge sombre, presque sans vert ni bleu — le contraire d'un orange. */
-    private static final int UNDEAD   = 0xFF8A0208;
+    private static final int UNDEAD   = 0xFF7C0012;
     private static final int LIGHT    = 0xFF000000 | deepluckyblock.enchantments.DeepElement.LIGHT.primary;
     private static final int ECHO     = 0xFF000000 | deepluckyblock.enchantments.DeepElement.THUNDER.primary;
     private static final int MAGIC    = 0xFF8252CC;
@@ -691,15 +698,18 @@ public final class DeepGlintColor {
     private static final int BREATH_NONE = 0;
     private static final int BREATH_FIRE = 1;
     private static final int BREATH_BLOOD = 2;
-    /** Le sommet bref du feu : un rouge VIF, qui garde une trace de braise. */
-    private static final int FIRE_PEAK  = 0xFFE63010;
     /**
-     * Le sommet bref du sang : un rouge intense qui tire du cote froid. Mesure des deux
-     * sommets une fois melanges — feu (224, 51, 15) contre sang (186, 0, 25) : meme a
-     * l'instant ou les deux familles sont au plus haut, l'une est orangee et claire,
-     * l'autre pourpre et sourde. Deux sommets voisins auraient ruine tout le reste.
+     * Le sommet bref du feu : le JAUNE BLANC du metal en fusion. T386 montait vers un
+     * rouge vif, c'est-a-dire vers le sang — les deux familles se rejoignaient a
+     * l'instant precis ou elles sont le plus visibles. Elles s'eloignent desormais.
      */
-    private static final int BLOOD_PEAK = 0xFFC8001E;
+    private static final int FIRE_PEAK  = 0xFFFFCD60;
+    /**
+     * Le sommet bref du sang : l'ecarlate arteriel. Le sang ne change pas de teinte en
+     * battant, il change de LUMINOSITE — c'est exactement ce que fait un pouls sous la
+     * peau. Du bordeaux (124) a l'ecarlate (205) en valeur, zero en vert aux deux bouts.
+     */
+    private static final int BLOOD_PEAK = 0xFFCD082A;
 
     /**
      * Excursion breve et douce vers le sommet de la famille, puis retour.
@@ -731,9 +741,14 @@ public final class DeepGlintColor {
             }
         }
         if (family == BREATH_NONE) return argb;
+        // T387 : excursions elargies (0,20 -> 0,30 et 0,16 -> 0,24) et presque totales
+        // en profondeur. Le verdict en jeu etait << encore trop semblables >> : une
+        // pulsation qu'on ne voit qu'un cinquieme du temps et a 85 % de sa course ne
+        // suffit pas a separer deux familles. Le feu passe desormais pres d'un tiers
+        // de son cycle a monter vers le jaune.
         long period = family == BREATH_FIRE ? 4300L : 5700L;
-        float burst = family == BREATH_FIRE ? 0.20f : 0.16f;
-        float depth = family == BREATH_FIRE ? 0.85f : 0.78f;
+        float burst = family == BREATH_FIRE ? 0.30f : 0.24f;
+        float depth = family == BREATH_FIRE ? 0.97f : 0.94f;
         long offset = Math.floorMod((long) System.identityHashCode(stack) * 2654435761L, period);
         float phase = Math.floorMod(System.currentTimeMillis() + offset, period) / (float) period;
         if (phase >= burst) return argb;
@@ -754,6 +769,24 @@ public final class DeepGlintColor {
     /** {@link #BREATH_FIRE}, {@link #BREATH_BLOOD} ou {@link #BREATH_NONE}. */
     private static int breathFamilyOf(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return BREATH_NONE;
+        // ---- T387 : la famille d'animation d'abord. ----------------------------------
+        // L'epee donnee par /anim <famille> ne porte AUCUN enchantement reel : sa couleur
+        // vient d'une cle NBT et son halo du composant vanilla. Toute la suite de cette
+        // methode lit les enchantements, donc elle renvoyait BREATH_NONE — la pulsation
+        // de T386 ne s'est jamais declenchee sur l'outil meme qui sert a la juger. C'est
+        // la premiere des trois raisons pour lesquelles le feu et le sang se ressemblaient
+        // encore en jeu.
+        try {
+            net.minecraft.nbt.CompoundTag tag = deepluckyblock.util.DeepNbt.tag(stack);
+            if (tag != null && tag.contains("DlbAnimFamily", 8)) {
+                String fam = tag.getString("DlbAnimFamily").toLowerCase(Locale.ROOT);
+                if (fam.equals(deepluckyblock.util.AnimFamily.FIRE)) return BREATH_FIRE;
+                if (fam.equals(deepluckyblock.util.AnimFamily.BLOOD)) return BREATH_BLOOD;
+                return BREATH_NONE;
+            }
+        } catch (Throwable ignored) {
+            // Un halo ne casse jamais un rendu : on retombe sur la lecture des enchantements.
+        }
         Map<net.minecraft.world.item.enchantment.Enchantment, Integer> enchants;
         try {
             enchants = deepluckyblock.util.DeepEnchant.map(stack);
