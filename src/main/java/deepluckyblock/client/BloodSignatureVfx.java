@@ -631,16 +631,25 @@ public final class BloodSignatureVfx {
     /**
      * Chronologie (170 ticks) :
      * <ul>
-     *   <li>0,00–0,09 <b>les crochets</b> : quatre hameçons d'os partent du porteur et mordent ;</li>
-     *   <li>0,09–0,20 <b>le conduit</b> : une double hélice se tend de la victime au porteur ;</li>
-     *   <li>0,20–0,80 <b>la pompe</b> : six bols remontent le conduit en le faisant GONFLER à
-     *       leur passage, et le niveau de la victime descend ;</li>
-     *   <li>0,80–0,90 <b>la vidange</b> : le conduit s'amincit et se détend ;</li>
-     *   <li>0,90–1,00 <b>la rupture</b> : il casse au milieu, les deux moitiés fouettent.</li>
+     *   <li>0,00-0,08 <b>la morsure</b> : la bride se plaque sur la victime et quatre crochets
+     *       se plantent autour du point de ponction ;</li>
+     *   <li>0,08-0,20 <b>le tuyau</b> : il se construit de la victime vers le porteur et le
+     *       calice apparait dans la main au moment ou le tuyau l'atteint ;</li>
+     *   <li>0,20-0,80 <b>la pompe</b> : six bols remontent le tuyau en le faisant gonfler, et
+     *       le calice monte d'un sixieme a chaque arrivee ;</li>
+     *   <li>0,80-0,90 <b>la tension</b> : le tuyau s'amincit, l'arc s'aplatit ;</li>
+     *   <li>0,90-1,00 <b>la rupture</b> : le tuyau s'arrache de la victime et se retracte vers
+     *       le calice, qui reste plein dans la main.</li>
      * </ul>
      *
-     * <p>Le conduit est dessiné de {@code f = 0} (la victime) à {@code f = −REACH} (le porteur) :
-     * c'est la seule signature du sang dont la lecture dépend de savoir qui prend à qui.</p>
+     * <p><b>T381 : refonte pour la lisibilite.</b> La version precedente dessinait une double
+     * helice qui pendait, plus une colonne de niveau batie depuis le SOL — a l'ecran, une
+     * saucisse posee par terre a cote d'un tonneau, et rien aux deux bouts. Trois corrections
+     * de fond : le point de ponction est maintenant a la hauteur de l'ancre (la poitrine) et
+     * non 95 cm au-dessus ; le tuyau passe PAR-DESSUS au lieu de pendre, comme un vrai siphon ;
+     * et les deux extremites portent un objet reconnaissable, l'embout et le calice. La
+     * colonne de niveau a disparu : elle etait invisible en jeu (dans le corps du mob) et
+     * illisible dans l'apercu. C'est le calice qui raconte le volume pris.</p>
      */
     private static void renderSiphon(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                      float cx, float cy, float cz, float t,
@@ -649,71 +658,92 @@ public final class BloodSignatureVfx {
         final int a = Math.round(alpha * smooth(t / 0.03f));
         if (a <= 4) return;
 
-        final float bite = smooth(t / 0.09f);
-        final float build = smooth((t - 0.09f) / 0.11f);
+        final float bite  = smooth(t / 0.08f);
+        final float build = smooth((t - 0.08f) / 0.12f);
         final float drain = clamp((t - 0.20f) / 0.60f);
         final float slack = clamp((t - 0.80f) / 0.10f);
-        // Rupture : en fin d'animation, OU des que le porteur est sorti de la laisse. Le
-        // second cas n'est pas un decor — le serveur arrete la pompe au meme moment.
-        final float snap = Math.max(clamp((t - 0.90f) / 0.10f), linkBroken ? 1.0f : 0.0f);
+        final float snap  = Math.max(clamp((t - 0.90f) / 0.10f), linkBroken ? 1.0f : 0.0f);
 
-        final float mouthY = 0.95f;                                // point de ponction
-        final float handY = linkEndY;                              // main du porteur, EN VRAI
+        final float reach = linkLen;
+        // Le point de ponction est a la POITRINE, c'est-a-dire a l'ancre elle-meme. L'ancien
+        // 0,95 placait la morsure au-dessus de la tete de la plupart des mobs.
+        final float mouthY = 0.12f;
+        final float handY  = linkEndY;
+        // Un siphon MONTE puis redescend : c'est ce qui le distingue d'un tuyau pose. L'arc
+        // s'aplatit a mesure que le conduit se tend. Proportionnel a la portee, sinon un
+        // conduit de deux blocs se cabre comme une anse de panier.
+        final float arch = (0.30f + 0.085f * reach) * (1.0f - 0.30f * drain);
 
-        // ---- 1. LES CROCHETS ----
-        // Quatre hameçons d'os plantés en couronne autour du point de ponction. Ils donnent
-        // au conduit une ACCROCHE : un tuyau qui touche une peau sans rien y planter flotte.
-        if (bite > 0.001f) {
+        // Combien de bols sont DEJA arrives dans le calice : c'est le niveau du verre.
+        float poured = 0.0f;
+        for (int b = 0; b < 6; b++) {
+            float launch = 0.20f + b * 0.098f;
+            poured += smooth((t - launch - 0.30f) / 0.05f);
+        }
+        final float fill = Math.min(1.0f, poured / 6.0f);
+
+        // ---------------------------------------------------------------------------------
+        //  A. L'EMBOUT : ce qui est visse dans la victime.
+        // ---------------------------------------------------------------------------------
+        if (bite > 0.001f && snap < 0.85f) {
+            float set = smooth(bite) * (1.0f - snap);
+            // La bride : deux couronnes de fer de rayon decroissant, de la peau vers le tuyau.
+            for (int ring = 0; ring < 2; ring++) {
+                float rr = (0.26f - ring * 0.07f) * set;
+                float ff = 0.02f - ring * 0.10f;
+                int pts = 10;
+                for (int k = 0; k < pts; k++) {
+                    float ang = (k + 0.5f) / pts * 6.2831855f;
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            ff, Mth.cos(ang) * rr, mouthY + Mth.sin(ang) * rr,
+                            0.042f, 0.048f, 0.048f,
+                            ring == 0 ? IRON_DK : IRON, opaque(a * 0.95f));
+                }
+            }
+            // Quatre crochets d'os plantes en croix, pointe vers l'interieur.
             for (int i = 0; i < 4; i++) {
                 float ang = i * HALF_PI + 0.42f;
-                float rr = 0.34f;
-                float plunge = smooth(bite);
-                float lat = Mth.cos(ang) * rr;
-                float yy = mouthY + Mth.sin(ang) * rr * 0.75f;
-                float f = 0.14f - 0.16f * plunge;
-                // la hampe
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, f + 0.12f, lat * 1.22f, yy + Mth.sin(ang) * 0.06f,
-                        0.105f, 0.030f, 0.030f, BONE, opaque(a * 0.95f));
-                // la pointe recourbée
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, f + 0.02f, lat * 1.02f, yy,
-                        0.040f, 0.038f, 0.038f, BONE, opaque(a));
-                // l'anneau de serrage : il relie les quatre crochets a la bouche du conduit,
-                // sans quoi ils flottent autour de la cible comme quatre eclats detaches.
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, f + 0.20f, lat * 0.62f, yy * 0.5f + mouthY * 0.5f,
-                        0.030f, 0.030f, 0.030f, IRON_DK, opaque(a * 0.85f));
-                // le sang à la morsure
-                if (plunge > 0.6f) {
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz, f + 0.05f, lat * 1.06f, yy - 0.05f,
-                            0.016f, 0.030f, 0.016f, ARTERY, opaque(a));
+                float lat = Mth.cos(ang) * 0.30f * set;
+                float yy  = mouthY + Mth.sin(ang) * 0.30f * set;
+                float plunge = 0.16f - 0.13f * set;
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        plunge + 0.11f, lat * 1.30f, yy + Mth.sin(ang) * 0.09f,
+                        0.110f, 0.040f, 0.040f, BONE, opaque(a * 0.95f));
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        plunge, lat * 1.05f, yy, 0.048f, 0.046f, 0.046f, BONE, opaque(a));
+                if (set > 0.6f) {
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            plunge - 0.02f, lat * 1.10f, yy - 0.06f,
+                            0.018f, 0.034f, 0.018f, ARTERY, opaque(a));
                 }
             }
         }
 
-        // ---- 2. LE CONDUIT ----
-        // Double hélice. Un tuyau droit ne dit pas dans quel sens il coule ; deux brins
-        // enroulés, si — et ils donnent au gonflement des bols quelque chose à déformer.
-        // La longueur du conduit est la distance REELLE au porteur, pas la constante REACH.
-        // Le nombre de segments suit : 62 pour sept blocs, soit un segment tous les 11 cm,
-        // qu'il y en ait trois ou douze.
-        final float reach = linkLen;
-        final int segs = Math.max(26, Math.round(62.0f * reach / REACH));
-        float frontier = build;                                     // avancée de la construction
+        // ---------------------------------------------------------------------------------
+        //  B. LE TUYAU : un arc par-dessus, a cotes, qui gonfle au passage des bols.
+        // ---------------------------------------------------------------------------------
+        final int segs = Math.max(30, Math.round(9.0f * reach));
+        final float segLen = reach / segs;
         for (int i = 0; i < segs; i++) {
-            float u = (i + 0.5f) / segs;                            // 0 = victime, 1 = porteur
-            if (u > frontier) continue;
-            // Rupture : à partir de 0,90 le conduit s'ouvre au milieu et les deux moitiés
-            // se rétractent vers leurs extrémités.
-            if (snap > 0.0f) {
-                float gap = 0.5f * snap;
-                if (u > 0.5f - gap && u < 0.5f + gap) continue;
+            float u = (i + 0.5f) / segs;                       // 0 = victime, 1 = porteur
+            if (u > build) continue;
+            // La rupture part de la VICTIME : le tuyau s'arrache la ou il etait plante, et
+            // le bout libre file vers le calice. Couper au milieu ne racontait rien.
+            if (u < snap) continue;
+
+            float f  = u * (-reach + 0.22f);
+            float yy = mouthY + (handY - mouthY) * u + Mth.sin(u * Mth.PI) * arch;
+            // LE BEC VERSEUR. Sans lui le tuyau s'arretait a l'aplomb du calice, au-dessus
+            // du bord : deux objets voisins, pas un tuyau qui se DEVERSE dedans. On vise le
+            // bord de la coupe — une descente libre le faisait ressortir 50 cm SOUS le pied.
+            if (u > 0.90f) {
+                float k = smooth((u - 0.90f) / 0.10f);
+                yy = yy + (handY + 0.22f - yy) * k;
             }
-            float f = -u * reach;
-            // Le ventre est proportionnel a la portee : un conduit de trois blocs qui pend
-            // de 55 cm comme un conduit de sept racle le sol.
-            float sag = (0.55f - 0.30f * drain) * (reach / REACH);
-            float yy = mouthY + (handY - mouthY) * u
-                    - Mth.sin(u * Mth.PI) * sag;                       // le conduit PEND
-            // Gonflement : somme des six bols qui passent.
+            // Le fouet du bout libre, juste apres l'arrachement.
+            float whip = snap > 0.001f && u < snap + 0.16f
+                    ? Mth.sin((t - 0.90f) * 34.0f) * 0.30f * (1.0f - snap) : 0.0f;
+
             float bulge = 0.0f;
             for (int b = 0; b < 6; b++) {
                 float launch = 0.20f + b * 0.098f;
@@ -721,91 +751,175 @@ public final class BloodSignatureVfx {
                 if (travel <= 0.0f || travel >= 1.0f) continue;
                 float pos = smooth(travel);
                 float d = Math.abs(u - pos);
-                if (d < 0.085f) bulge += (1.0f - d / 0.085f) * (1.0f - 0.45f * b / 6.0f);
+                if (d < 0.075f) bulge += (1.0f - d / 0.075f);
             }
-            float thin = 1.0f - 0.42f * slack;
-            // Rayon d'helice 0,135 et non 0,085 : a 0,085 pour des brins epais de 0,052,
-            // les deux brins se CHEVAUCHAIENT et le conduit sortait en tige unique — on
-            // perdait l'enroulement, donc le sens d'ecoulement, qui est tout le sujet.
-            float r = (0.135f + 0.105f * bulge) * thin;
-            // Les deux brins. 26 radians sur la longueur, soit un peu plus de quatre tours :
-            // a 15 (2,4 tours sur sept blocs) l'helice etait trop lache pour se lire.
-            for (int s = 0; s < 2; s++) {
-                // 26 radians pour sept blocs : le PAS de l'helice est une propriete du
-                // tuyau, pas de la distance. Il se recalcule donc sur la portee reelle.
-                float phase = u * (26.0f * reach / REACH) + s * Mth.PI + t * 2.4f;
-                float ox = Mth.cos(phase) * r;
-                float oz = Mth.sin(phase) * r;
-                int rgb = bulge > 0.35f ? FRESH : (s == 0 ? GORE : VENOUS);
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, f + ox * 0.6f, oz, yy + ox * 0.45f,
-                        reach / segs * 0.60f, 0.024f + 0.020f * bulge, 0.024f + 0.020f * bulge,
-                        rgb, opaque(a * 0.95f));
+            bulge = Math.min(1.0f, bulge);
+
+            float thin = 1.0f - 0.30f * slack;
+            float r = (0.085f + 0.075f * bulge) * thin;
+            int body = bulge > 0.30f ? FRESH : GORE;
+
+            // Le corps du tuyau.
+            box(vc, mat, tmp, cx, cy, cz, dx, dz, f, whip, yy + whip * 0.4f,
+                    segLen * 0.62f, r, r, body, opaque(a * 0.96f));
+            // La crete claire et l'ombre basse : sans elles un tuyau voxel est un ruban plat.
+            box(vc, mat, tmp, cx, cy, cz, dx, dz, f, whip, yy + whip * 0.4f + r * 0.80f,
+                    segLen * 0.58f, r * 0.30f, r * 0.52f, ARTERY, opaque(a * 0.85f));
+            box(vc, mat, tmp, cx, cy, cz, dx, dz, f, whip, yy + whip * 0.4f - r * 0.82f,
+                    segLen * 0.58f, r * 0.26f, r * 0.50f, CLOT, opaque(a * 0.80f));
+
+            // LES COTES. Un anneau tous les 36 cm, qui GLISSE vers le porteur : c'est ce
+            // glissement qui dit le sens de l'ecoulement. L'helice le disait aussi, mais
+            // seulement de pres ; une cote se lit a dix blocs.
+            float band = (u * reach * 2.35f) - t * 3.1f;
+            float frac = band - Mth.floor(band);
+            if (frac < 0.14f) {
+                // Bande SOMBRE et non veineuse : sur un tuyau rouge, une cote rouge foncee
+                // ne se voit pas. Un anneau presque noir, lui, se lit a dix blocs, et son
+                // glissement vers le porteur donne le sens de l'ecoulement.
+                box(vc, mat, tmp, cx, cy, cz, dx, dz, f, whip, yy + whip * 0.4f,
+                        segLen * 0.80f, r * 1.30f, r * 1.30f, CLOT, opaque(a * 0.95f));
             }
-            // L'âme : le filet sombre au centre, qui donne de l'épaisseur à l'hélice.
-            box(vc, mat, tmp, cx, cy, cz, dx, dz, f, 0.0f, yy,
-                    reach / segs * 0.62f, 0.019f + 0.030f * bulge, 0.019f + 0.030f * bulge,
-                    CLOT, opaque(a * 0.85f));
-            // Le méniscus du bol : un liseré clair juste devant lui.
+            // Le front du bol : un liseré clair juste devant le renflement.
             if (bulge > 0.55f) {
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, f, 0.0f, yy + 0.034f + 0.020f * bulge,
-                        reach / segs * 0.5f, 0.012f, 0.040f, SPRAY, opaque(a));
+                box(vc, mat, tmp, cx, cy, cz, dx, dz, f, whip, yy + whip * 0.4f + r * 1.05f,
+                        segLen * 0.46f, 0.014f, r * 1.30f, SPRAY, opaque(a));
             }
         }
 
-        // ---- 3. LA VICTIME SE VIDE ----
-        // Une colonne à l'intérieur de la silhouette, dont le niveau descend. C'est la seule
-        // façon de montrer un volume qu'on retire sans dessiner l'intérieur d'un corps.
-        if (drain > 0.001f) {
-            float full = 1.55f;
-            float level = full * (1.0f - drain * 0.88f);
-            // 14 points et non 8 : a huit, l'espacement sur un rayon de 0,30 valait 0,235
-            // pour des cubes de 0,06 — une CAGE de fil de fer flottant a cote de la cible,
-            // pas un corps qui se vide.
-            int rings = 11;
-            for (int i = 0; i < rings; i++) {
-                float v = (i + 0.5f) / rings;
-                float yy = GROUND_Y + 0.35f + v * level;
-                float rr = 0.30f * (1.0f - 0.25f * v);
-                int pts = 14;
-                for (int k = 0; k < pts; k++) {
-                    float ang = (k + 0.5f) / pts * 6.2831855f + v * 1.4f;
+        // ---------------------------------------------------------------------------------
+        //  C. LE CALICE : le tuyau mene ICI, dans la main du porteur, et le verre se remplit.
+        // ---------------------------------------------------------------------------------
+        {
+            float born = smooth((t - 0.16f) / 0.06f);
+            if (born > 0.01f) {
+                // Le calice est tenu DEVANT le porteur, pas dans son torse.
+                float cf = -reach + 0.22f;
+                float base = handY - 0.20f;                     // fond de la coupe
+                float lip  = handY + 0.26f;                     // bord
+                float sc = born;
+                // Le pied et la tige : ce qui transforme un bol en calice tenu a la main.
+                for (int k = 0; k < 8; k++) {
+                    float ang = (k + 0.5f) / 8.0f * 6.2831855f;
                     box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            Mth.cos(ang) * rr, Mth.sin(ang) * rr, yy,
-                            0.046f, 0.030f, 0.046f,
-                            v > 0.80f ? ARTERY : (v > 0.40f ? GORE : VENOUS), opaque(a * 0.88f));
+                            cf + Mth.cos(ang) * 0.18f * sc, Mth.sin(ang) * 0.18f * sc,
+                            base - 0.32f, 0.050f, 0.032f, 0.050f, IRON_DK, opaque(a * 0.90f));
                 }
-            }
-            // LE MENISQUE. C'est lui qui transforme une colonne en volume de liquide : un
-            // disque clair pose exactement sur le niveau restant, qui DESCEND a vue.
-            float topY = GROUND_Y + 0.35f + level;
-            float topR = 0.30f * 0.75f;
-            for (int k = 0; k < 16; k++) {
-                float ang = (k + 0.5f) / 16.0f * 6.2831855f;
-                box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        Mth.cos(ang) * topR, Mth.sin(ang) * topR, topY + 0.02f,
-                        0.050f, 0.016f, 0.050f, SPRAY, opaque(a));
+                box(vc, mat, tmp, cx, cy, cz, dx, dz, cf, 0.0f, base - 0.16f,
+                        0.040f, 0.090f, 0.040f, IRON, opaque(a * 0.92f));
+                // LA COUPE. Six rangs serres : la paroi doit etre pleine. A trois rangs
+                // espaces de dix-sept centimetres, le calice sortait en ressort a boudin.
+                final int walls = 6;
+                for (int ring = 0; ring < walls; ring++) {
+                    float v = ring / (float) (walls - 1);
+                    float rr = (0.19f + 0.16f * v) * sc;
+                    float yy = base + (lip - base) * v;
+                    int pts = 12 + ring;
+                    for (int k = 0; k < pts; k++) {
+                        float ang = (k + 0.5f) / pts * 6.2831855f + ring * 0.21f;
+                        box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                cf + Mth.cos(ang) * rr, Mth.sin(ang) * rr, yy,
+                                0.046f, 0.042f, 0.046f,
+                                ring == walls - 1 ? EDGE_LT : (ring == 0 ? IRON_DK : IRON),
+                                opaque(a * 0.95f));
+                    }
+                }
+                // Le fond, sans quoi on voit le sol a travers le verre.
+                for (int k = 0; k < 7; k++) {
+                    float ang = (k + 0.5f) / 7.0f * 6.2831855f;
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            cf + Mth.cos(ang) * 0.09f * sc, Mth.sin(ang) * 0.09f * sc, base - 0.02f,
+                            0.055f, 0.030f, 0.055f, IRON_DK, opaque(a * 0.95f));
+                }
+                // LE SANG DANS LE VERRE. C'est le compteur de la signature : six bols, six
+                // crans. Un spectateur comprend le vol de vie sans lire un seul chiffre.
+                if (fill > 0.01f) {
+                    // UN VOLUME, PAS UN DISQUE. La premiere version posait une galette plate
+                    // au niveau du liquide : derriere la paroi de la coupe, elle etait
+                    // invisible, et un calice plein ressemblait a un calice vide. On empile
+                    // donc des tranches du fond jusqu'au niveau, et seule la derniere porte
+                    // le menisque clair.
+                    float lv = 0.14f + 0.78f * fill;
+                    float top = base + (lip - base) * lv;
+                    int layers = Math.max(3, Math.round((top - base) / 0.045f));
+                    for (int ly = 0; ly < layers; ly++) {
+                        float v = (ly + 0.5f) / layers;
+                        float yy = base + (top - base) * v + 0.02f;
+                        // La coupe s'evase : le liquide suit son profil interieur.
+                        float prof = (yy - base) / Math.max(0.05f, lip - base);
+                        float rr = (0.17f + 0.14f * prof) * sc;
+                        boolean surface = ly == layers - 1;
+                        int pts = surface ? 12 : 9;
+                        for (int k = 0; k < pts; k++) {
+                            float ang = (k + 0.5f) / pts * 6.2831855f + ly * 0.7f;
+                            box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                    cf + Mth.cos(ang) * rr * 0.84f, Mth.sin(ang) * rr * 0.84f, yy,
+                                    0.066f, 0.034f, 0.066f,
+                                    surface ? SPRAY : (v > 0.5f ? FRESH : GORE),
+                                    opaque(a * 0.95f));
+                        }
+                        box(vc, mat, tmp, cx, cy, cz, dx, dz, cf, 0.0f, yy,
+                                0.075f, 0.034f, 0.075f,
+                                surface ? ARTERY : VENOUS, opaque(a * 0.95f));
+                    }
+                }
+                // L'eclaboussure a l'arrivee d'un bol : le verre encaisse.
+                for (int b = 0; b < 6; b++) {
+                    float land = 0.20f + b * 0.098f + 0.30f;
+                    float age = (t - land) / 0.05f;
+                    if (age <= 0.0f || age >= 1.0f) continue;
+                    for (int k = 0; k < 4; k++) {
+                        float h1 = hash(salt + 211 + b, k * 13);
+                        float ang = h1 * 6.2831855f;
+                        float d = 0.10f + 0.22f * age;
+                        drop(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                cf + Mth.cos(ang) * d, Mth.sin(ang) * d,
+                                lip + 0.30f * age - GRAVITY * 0.06f * age * age,
+                                0.026f, Math.round(a * (1.0f - age)));
+                    }
+                }
             }
         }
 
-        // ---- 4. LE FOUET DE RUPTURE ----
+        // ---------------------------------------------------------------------------------
+        //  D. CE QUI TOMBE : la plaie goutte, et une petite flaque se forme sous la victime.
+        // ---------------------------------------------------------------------------------
+        if (drain > 0.02f) {
+            for (int k = 0; k < 4; k++) {
+                float h1 = hash(salt + 331, k * 17);
+                float cycle = (t * 3.1f + h1) % 1.0f;
+                float fall = cycle;
+                float yy = mouthY - 0.10f - GRAVITY * 0.055f * fall * fall;
+                if (yy < GROUND_Y + 0.05f) continue;
+                drop(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        0.06f + (h1 - 0.5f) * 0.12f, (hash(salt + 332, k) - 0.5f) * 0.26f,
+                        yy, 0.026f, Math.round(a * 0.85f));
+            }
+            float r = 0.22f + 0.46f * smooth(drain);
+            pool(vc, mat, tmp, cx, cy, cz, dx, dz, 0.05f, 0.0f, r, Math.round(a * 0.80f),
+                    salt + 341);
+        }
+
+        // ---------------------------------------------------------------------------------
+        //  E. L'ARRACHEMENT : les crochets sautent et le sang gicle au point de ponction.
+        // ---------------------------------------------------------------------------------
         if (snap > 0.001f) {
-            for (int s = 0; s < 2; s++) {
-                float end = s == 0 ? 0.5f - 0.5f * snap : 0.5f + 0.5f * snap;
-                float f = -end * reach;
-                float yy = mouthY + (handY - mouthY) * end - Mth.sin(end * Mth.PI) * 0.25f;
-                float lash = Mth.sin(snap * Mth.PI * 2.0f) * 0.42f * (1.0f - snap);
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, f, lash, yy + Math.abs(lash) * 0.5f,
-                        0.070f, 0.044f, 0.044f, FRESH, opaque(a));
-                // Les gouttes projetées par le fouet.
-                for (int i = 0; i < 5; i++) {
-                    float h1 = hash(salt + 111 + s * 7, i * 19);
-                    float age = snap;
-                    float d = (0.4f + 1.6f * h1) * age;
-                    float dy = 0.3f * age - GRAVITY * 0.05f * age * age;
-                    drop(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            f + (h1 - 0.5f) * 0.6f, lash + d * (s == 0 ? 1.0f : -1.0f),
-                            yy + dy, 0.024f, a);
-                }
+            for (int i = 0; i < 4; i++) {
+                float ang = i * HALF_PI + 0.42f;
+                float d = 0.30f + 1.1f * snap;
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        0.10f + 0.5f * snap, Mth.cos(ang) * d,
+                        mouthY + Mth.sin(ang) * d * 0.6f - GRAVITY * 0.04f * snap * snap,
+                        0.080f, 0.038f, 0.038f, BONE, opaque(a * (1.0f - snap)));
+            }
+            for (int k = 0; k < 9; k++) {
+                float h1 = hash(salt + 351, k * 23);
+                float h2 = hash(salt + 352, k * 29);
+                float d = (0.3f + 1.5f * h1) * snap;
+                drop(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        0.05f - d * 0.5f, (h2 - 0.5f) * 1.8f * snap,
+                        mouthY + 0.4f * snap - GRAVITY * 0.07f * snap * snap,
+                        0.028f, Math.round(a * (1.0f - snap * 0.8f)));
             }
         }
     }

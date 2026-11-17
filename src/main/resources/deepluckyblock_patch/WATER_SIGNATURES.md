@@ -2773,3 +2773,57 @@ paie), `LINK_GONE` (un des deux corps a disparu — la pompe s'arrête, personne
 paie). Côté client, symétriquement, la disparition de l'un des deux corps marque
 `linkBroken` : un conduit accroché à un mort se résorbe au lieu de pendre dans
 le vide jusqu'à la fin de l'animation.
+
+---
+
+## §41 — « Je ne comprends pas du tout ce que tu essaies de représenter »
+
+Verdict de l'utilisateur sur le Siphon Carmin, captures à l'appui. Il avait
+raison, et le diagnostic tient en quatre points lus sur ses images :
+
+1. **Une saucisse par terre.** Le conduit pendait d'un ventre proportionnel à la
+   portée, et le point de ponction était à `mouthY = 0.95` — 95 cm *au-dessus* de
+   l'ancre, c'est-à-dire au-dessus de la tête de la plupart des mobs. Le tuyau
+   partait donc du vide et retombait au sol.
+2. **Un tonneau à côté.** La « colonne qui se vide » était bâtie depuis
+   `GROUND_Y`, pas dans le corps : à l'écran, un fût rouge planté près du départ.
+   En jeu, elle aurait été *invisible*, cachée dans le modèle du mob. Un élément
+   qui ne se voit pas en jeu et qui désoriente dans l'aperçu n'a aucune raison
+   d'exister.
+3. **Des éclats d'os flottants.** Les crochets étaient quatre bâtonnets de 3 cm
+   accrochés à rien.
+4. **Rien au bout.** La question posée était « ça mène où ? ». Le dessin ne
+   répondait pas : le tuyau s'arrêtait dans l'air.
+
+### Trois objets, trois seulement
+
+- **L'embout** vissé dans la victime : deux couronnes de fer de rayon décroissant
+  et quatre crochets d'os plantés en croix. On voit *où* on pique.
+- **Le tuyau** : il passe **par-dessus** — un siphon monte et redescend, c'est sa
+  définition — avec des **côtes sombres qui glissent vers le porteur**. L'ancienne
+  double hélice disait aussi le sens de l'écoulement, mais seulement de près ;
+  une côte presque noire sur un tuyau rouge se lit à dix blocs.
+- **Le calice** dans la main du porteur, qui **monte d'un sixième à chaque bol**.
+  C'est lui qui raconte le volume prélevé, à la place de la colonne. Un
+  spectateur comprend le vol de vie sans lire un chiffre.
+
+Le bec verseur vise le **bord de la coupe** : une descente libre faisait
+ressortir le tuyau cinquante centimètres *sous* le pied du calice. Et le calice
+est tenu 22 cm devant le porteur, pas dans son torse.
+
+### Le piège qui a tout caché
+
+`render()` appelle le constructeur avec les angles de caméra en 4ᵉ et 5ᵉ argument
+— `buildThunder(variant, t, salt, camYaw, camPitch)` — parce que la foudre s'en
+sert pour ses panneaux-réclame. Depuis que `buildBlood` prend `linkLen` et
+`linkEndY` à ces deux places, **la page passait `camYaw` comme longueur de
+conduit**, soit 0,16 bloc : tout le siphon se repliait sur la victime. L'aperçu
+fixe désormais un lien explicite.
+
+### Et les deux corps
+
+La page montrait un tuyau entre deux points vides. Elle dessine maintenant, dans
+le **décor** (là où vit déjà la grille de sol, pas dans le moteur Java), deux
+silhouettes filaires légendées **VICTIME** et **PORTEUR**. La question « ça mène
+où, sur le joueur ? » a désormais une réponse visible. Caméra de profil pour les
+deux signatures de lien : à 0,62 radian un lien horizontal fuit vers le fond.

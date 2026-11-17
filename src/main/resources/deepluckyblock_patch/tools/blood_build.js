@@ -21,7 +21,10 @@
  * des CLOSURES ici, des méthodes statiques là-bas.
  * =========================================================================================== */
 
-function buildBlood(variant, t, salt = 5099, linkLen = 7.0, linkEndY = 0.65, linkBroken = false) {
+// linkEndY par defaut 0,25 et non 0,65 : c'est la vraie difference de hauteur entre la main
+// d'un porteur (bbHeight x 0,62) et la poitrine d'une victime (bbHeight x 0,50) pour deux
+// corps de taille comparable. 0,65 faisait monter le tuyau vers un porteur geant.
+function buildBlood(variant, t, salt = 5099, linkLen = 7.0, linkEndY = 0.25, linkBroken = false) {
   const out = [];
   if (t <= 0 || t >= 1) return out;
 
@@ -388,115 +391,173 @@ function buildBlood(variant, t, salt = 5099, linkLen = 7.0, linkEndY = 0.65, lin
   // =======================================================================================
   //  III. SIPHON CARMIN — 170 ticks
   // =======================================================================================
+  /* T381 : refonte pour la LISIBILITE. Trois objets, trois seulement — l'embout visse dans
+     la victime, le tuyau en arc a cotes glissantes, le calice qui se remplit dans la main du
+     porteur. Plus de colonne de niveau (invisible en jeu, tonneau dans l'apercu), plus de
+     ponction a 95 cm au-dessus de la poitrine, plus de ventre qui racle le sol. */
   const renderSiphon = (alpha) => {
     const a = Math.round(alpha * smooth(t / 0.03));
     if (a <= 4) return;
-    const bite = smooth(t / 0.09);
-    const build = smooth((t - 0.09) / 0.11);
+    const bite  = smooth(t / 0.08);
+    const build = smooth((t - 0.08) / 0.12);
     const drain = clamp01((t - 0.20) / 0.60);
     const slack = clamp01((t - 0.80) / 0.10);
-    // Rupture : fin d'animation OU laisse cassee. Le serveur arrete la pompe au meme moment.
-    const snap = Math.max(clamp01((t - 0.90) / 0.10), linkBroken ? 1 : 0);
-    const mouthY = 0.95, handY = linkEndY;   // la main du porteur, la ou elle est
+    const snap  = Math.max(clamp01((t - 0.90) / 0.10), linkBroken ? 1 : 0);
 
-    // ---- 1. LES CROCHETS ---- (un tuyau qui ne plante rien dans la peau flotte)
-    if (bite > 0.001) {
+    const reach = linkLen;
+    const mouthY = 0.12, handY = linkEndY;
+    const arch = (0.30 + 0.085 * reach) * (1 - 0.30 * drain);
+
+    let poured = 0;
+    for (let b = 0; b < 6; b++) poured += smooth((t - (0.20 + b * 0.098) - 0.30) / 0.05);
+    const fill = Math.min(1, poured / 6);
+
+    /* ---- A. L'EMBOUT ---- */
+    if (bite > 0.001 && snap < 0.85) {
+      const set = smooth(bite) * (1 - snap);
+      for (let ring = 0; ring < 2; ring++) {
+        const rr = (0.26 - ring * 0.07) * set, ff = 0.02 - ring * 0.10;
+        for (let k = 0; k < 10; k++) {
+          const ang = (k + 0.5) / 10 * TAU;
+          box(ff, Math.cos(ang) * rr, mouthY + Math.sin(ang) * rr,
+              0.042, 0.048, 0.048, ring === 0 ? IRON_DK : IRON, opq(a * 0.95));
+        }
+      }
       for (let i = 0; i < 4; i++) {
-        const ang = i * HALF_PI + 0.42, rr = 0.34, plunge = smooth(bite);
-        const lat = Math.cos(ang) * rr;
-        const yy = mouthY + Math.sin(ang) * rr * 0.75;
-        const f = 0.14 - 0.16 * plunge;
-        box(f + 0.12, lat * 1.22, yy + Math.sin(ang) * 0.06, 0.105, 0.030, 0.030, BONE, opq(a * 0.95));
-        box(f + 0.02, lat * 1.02, yy, 0.040, 0.038, 0.038, BONE, opq(a));
-        box(f + 0.20, lat * 0.62, yy * 0.5 + mouthY * 0.5, 0.030, 0.030, 0.030, IRON_DK, opq(a * 0.85));
-        if (plunge > 0.6) box(f + 0.05, lat * 1.06, yy - 0.05, 0.016, 0.030, 0.016, ARTERY, opq(a));
+        const ang = i * HALF_PI + 0.42;
+        const lat = Math.cos(ang) * 0.30 * set, yy = mouthY + Math.sin(ang) * 0.30 * set;
+        const plunge = 0.16 - 0.13 * set;
+        box(plunge + 0.11, lat * 1.30, yy + Math.sin(ang) * 0.09, 0.110, 0.040, 0.040, BONE, opq(a * 0.95));
+        box(plunge, lat * 1.05, yy, 0.048, 0.046, 0.046, BONE, opq(a));
+        if (set > 0.6) box(plunge - 0.02, lat * 1.10, yy - 0.06, 0.018, 0.034, 0.018, ARTERY, opq(a));
       }
     }
 
-    // ---- 2. LE CONDUIT ---- (double hélice : un tuyau droit ne dit pas dans quel sens il coule)
-    // Portee REELLE, et un segment tous les 11 cm quelle que soit la distance.
-    const reach = linkLen, segs = Math.max(26, Math.round(62 * reach / REACH));
+    /* ---- B. LE TUYAU ---- */
+    const segs = Math.max(30, Math.round(9.0 * reach)), segLen = reach / segs;
     for (let i = 0; i < segs; i++) {
       const u = (i + 0.5) / segs;
       if (u > build) continue;
-      if (snap > 0) { const gap = 0.5 * snap; if (u > 0.5 - gap && u < 0.5 + gap) continue; }
-      const f = -u * reach;
-      const yy = mouthY + (handY - mouthY) * u - Math.sin(u * PI) * ((0.55 - 0.30 * drain) * (reach / REACH));
+      if (u < snap) continue;
+      const f = u * (-reach + 0.22);
+      let yy = mouthY + (handY - mouthY) * u + Math.sin(u * PI) * arch;
+      // Le bec verseur : le tuyau vise le BORD de la coupe (handY + 0,22).
+      if (u > 0.90) { const k = smooth((u - 0.90) / 0.10); yy = yy + (handY + 0.22 - yy) * k; }
+      const whip = (snap > 0.001 && u < snap + 0.16)
+          ? Math.sin((t - 0.90) * 34.0) * 0.30 * (1 - snap) : 0;
+
       let bulge = 0;
       for (let b = 0; b < 6; b++) {
-        const launch = 0.20 + b * 0.098;
-        const travel = (t - launch) / 0.30;
+        const travel = (t - (0.20 + b * 0.098)) / 0.30;
         if (travel <= 0 || travel >= 1) continue;
-        const pos = smooth(travel), d = Math.abs(u - pos);
-        if (d < 0.085) bulge += (1 - d / 0.085) * (1 - 0.45 * b / 6.0);
+        const d = Math.abs(u - smooth(travel));
+        if (d < 0.075) bulge += 1 - d / 0.075;
       }
-      const thin = 1 - 0.42 * slack;
-      // 0,135 : a 0,085 les deux brins se chevauchaient et le conduit sortait en tige unique.
-      const r = (0.135 + 0.105 * bulge) * thin;
-      for (let s = 0; s < 2; s++) {
-        const phase = u * (26.0 * reach / REACH) + s * PI + t * 2.4;
-        const ox = Math.cos(phase) * r, oz = Math.sin(phase) * r;
-        const rgb = bulge > 0.35 ? FRESH : (s === 0 ? GORE : VENOUS);
-        box(f + ox * 0.6, oz, yy + ox * 0.45, reach / segs * 0.60,
-            0.024 + 0.020 * bulge, 0.024 + 0.020 * bulge, rgb, opq(a * 0.95));
+      bulge = Math.min(1, bulge);
+
+      const thin = 1 - 0.30 * slack;
+      const r = (0.085 + 0.075 * bulge) * thin;
+      const body = bulge > 0.30 ? FRESH : GORE;
+      const yv = yy + whip * 0.4;
+
+      box(f, whip, yv, segLen * 0.62, r, r, body, opq(a * 0.96));
+      box(f, whip, yv + r * 0.80, segLen * 0.58, r * 0.30, r * 0.52, ARTERY, opq(a * 0.85));
+      box(f, whip, yv - r * 0.82, segLen * 0.58, r * 0.26, r * 0.50, CLOT, opq(a * 0.80));
+
+      const band = (u * reach * 2.35) - t * 3.1;
+      if (band - Math.floor(band) < 0.14) {
+        box(f, whip, yv, segLen * 0.80, r * 1.30, r * 1.30, CLOT, opq(a * 0.95));
       }
-      box(f, 0, yy, reach / segs * 0.62, 0.019 + 0.030 * bulge, 0.019 + 0.030 * bulge,
-          CLOT, opq(a * 0.85));
       if (bulge > 0.55) {
-        box(f, 0, yy + 0.034 + 0.020 * bulge, reach / segs * 0.5, 0.012, 0.040, SPRAY, opq(a));
+        box(f, whip, yv + r * 1.05, segLen * 0.46, 0.014, r * 1.30, SPRAY, opq(a));
       }
     }
 
-    // ---- 3. LA VICTIME SE VIDE ----
-    if (drain > 0.001) {
-      const full = 1.55, level = full * (1 - drain * 0.88);
-      const rings = 11;
-      for (let i = 0; i < rings; i++) {
-        const v = (i + 0.5) / rings;
-        const yy = GROUND_Y + 0.35 + v * level;
-        const rr = 0.30 * (1 - 0.25 * v);
-        const pts = 14;
-        for (let k = 0; k < pts; k++) {
-          const ang = (k + 0.5) / pts * TAU + v * 1.4;
-          box(Math.cos(ang) * rr, Math.sin(ang) * rr, yy, 0.046, 0.030, 0.046,
-              v > 0.80 ? ARTERY : (v > 0.40 ? GORE : VENOUS), opq(a * 0.88));
+    /* ---- C. LE CALICE ---- */
+    {
+      const born = smooth((t - 0.16) / 0.06);
+      if (born > 0.01) {
+        const cf = -reach + 0.22, base = handY - 0.20, lip = handY + 0.26, sc = born;
+        for (let k = 0; k < 8; k++) {
+          const ang = (k + 0.5) / 8 * TAU;
+          box(cf + Math.cos(ang) * 0.18 * sc, Math.sin(ang) * 0.18 * sc, base - 0.32,
+              0.050, 0.032, 0.050, IRON_DK, opq(a * 0.90));
+        }
+        box(cf, 0, base - 0.16, 0.040, 0.090, 0.040, IRON, opq(a * 0.92));
+        const walls = 6;
+        for (let ring = 0; ring < walls; ring++) {
+          const v = ring / (walls - 1), rr = (0.19 + 0.16 * v) * sc;
+          const yy = base + (lip - base) * v, pts = 12 + ring;
+          for (let k = 0; k < pts; k++) {
+            const ang = (k + 0.5) / pts * TAU + ring * 0.21;
+            box(cf + Math.cos(ang) * rr, Math.sin(ang) * rr, yy, 0.046, 0.042, 0.046,
+                ring === walls - 1 ? EDGE_LT : (ring === 0 ? IRON_DK : IRON), opq(a * 0.95));
+          }
+        }
+        for (let k = 0; k < 7; k++) {
+          const ang = (k + 0.5) / 7 * TAU;
+          box(cf + Math.cos(ang) * 0.09 * sc, Math.sin(ang) * 0.09 * sc, base - 0.02,
+              0.055, 0.030, 0.055, IRON_DK, opq(a * 0.95));
+        }
+        if (fill > 0.01) {
+          // Un VOLUME empile du fond au niveau, pas une galette invisible derriere la paroi.
+          const lv = 0.14 + 0.78 * fill, top = base + (lip - base) * lv;
+          const layers = Math.max(3, Math.round((top - base) / 0.045));
+          for (let ly = 0; ly < layers; ly++) {
+            const v = (ly + 0.5) / layers, yy = base + (top - base) * v + 0.02;
+            const prof = (yy - base) / Math.max(0.05, lip - base);
+            const rr = (0.17 + 0.14 * prof) * sc, surface = ly === layers - 1;
+            const pts = surface ? 12 : 9;
+            for (let k = 0; k < pts; k++) {
+              const ang = (k + 0.5) / pts * TAU + ly * 0.7;
+              box(cf + Math.cos(ang) * rr * 0.84, Math.sin(ang) * rr * 0.84, yy,
+                  0.066, 0.034, 0.066, surface ? SPRAY : (v > 0.5 ? FRESH : GORE), opq(a * 0.95));
+            }
+            box(cf, 0, yy, 0.075, 0.034, 0.075, surface ? ARTERY : VENOUS, opq(a * 0.95));
+          }
+        }
+        for (let b = 0; b < 6; b++) {
+          const age = (t - (0.20 + b * 0.098 + 0.30)) / 0.05;
+          if (age <= 0 || age >= 1) continue;
+          for (let k = 0; k < 4; k++) {
+            const ang = hash(salt + 211 + b, k * 13) * TAU, d = 0.10 + 0.22 * age;
+            drop(cf + Math.cos(ang) * d, Math.sin(ang) * d,
+                 lip + 0.30 * age - GRAVITY * 0.06 * age * age, 0.026, Math.round(a * (1 - age)));
+          }
         }
       }
-      // LE MENISQUE : le disque clair pose sur le niveau restant, qui descend a vue.
-      const lvlY = GROUND_Y + 0.35 + level, topR = 0.30 * 0.75;
-      for (let k = 0; k < 16; k++) {
-        const ang = (k + 0.5) / 16.0 * TAU;
-        box(Math.cos(ang) * topR, Math.sin(ang) * topR, lvlY + 0.02,
-            0.050, 0.016, 0.050, SPRAY, opq(a));
-      }
     }
 
-    // ---- 4. LE FOUET DE RUPTURE ----
+    /* ---- D. LA PLAIE QUI GOUTTE ---- */
+    if (drain > 0.02) {
+      for (let k = 0; k < 4; k++) {
+        const h1 = hash(salt + 331, k * 17), fall = (t * 3.1 + h1) % 1;
+        const yy = mouthY - 0.10 - GRAVITY * 0.055 * fall * fall;
+        if (yy < GROUND_Y + 0.05) continue;
+        drop(0.06 + (h1 - 0.5) * 0.12, (hash(salt + 332, k) - 0.5) * 0.26, yy,
+             0.026, Math.round(a * 0.85));
+      }
+      pool(0.05, 0.0, 0.22 + 0.46 * smooth(drain), Math.round(a * 0.80), salt + 341);
+    }
+
+    /* ---- E. L'ARRACHEMENT ---- */
     if (snap > 0.001) {
-      for (let s = 0; s < 2; s++) {
-        const end = s === 0 ? 0.5 - 0.5 * snap : 0.5 + 0.5 * snap;
-        const f = -end * reach;
-        const yy = mouthY + (handY - mouthY) * end - Math.sin(end * PI) * 0.25;
-        const lash = Math.sin(snap * PI * 2.0) * 0.42 * (1 - snap);
-        box(f, lash, yy + Math.abs(lash) * 0.5, 0.070, 0.044, 0.044, FRESH, opq(a));
-        for (let i = 0; i < 5; i++) {
-          const h1 = hash(salt + 111 + s * 7, i * 19);
-          const age = snap;
-          const d = (0.4 + 1.6 * h1) * age;
-          const dy = 0.3 * age - GRAVITY * 0.05 * age * age;
-          drop(f + (h1 - 0.5) * 0.6, lash + d * (s === 0 ? 1 : -1), yy + dy, 0.024, a);
-        }
+      for (let i = 0; i < 4; i++) {
+        const ang = i * HALF_PI + 0.42, d = 0.30 + 1.1 * snap;
+        box(0.10 + 0.5 * snap, Math.cos(ang) * d,
+            mouthY + Math.sin(ang) * d * 0.6 - GRAVITY * 0.04 * snap * snap,
+            0.080, 0.038, 0.038, BONE, opq(a * (1 - snap)));
+      }
+      for (let k = 0; k < 9; k++) {
+        const h1 = hash(salt + 351, k * 23), h2 = hash(salt + 352, k * 29);
+        const d = (0.3 + 1.5 * h1) * snap;
+        drop(0.05 - d * 0.5, (h2 - 0.5) * 1.8 * snap,
+             mouthY + 0.4 * snap - GRAVITY * 0.07 * snap * snap,
+             0.028, Math.round(a * (1 - snap * 0.8)));
       }
     }
   };
 
-  // =======================================================================================
-  //  IV. TRANSFUSION VITALE — 140 ticks
-  // =======================================================================================
-
-  /* Distance de l'origine à la frontière d'un cercle le long d'une direction unitaire :
-     la brique de l'UNION des deux ventricules. Deux cylindres séparés auraient donné un
-     sablier vu de face ; c'est le contour commun qui fait l'organe. */
   const rayToCircle = (ccx, ccz, r, ux, uz) => {
     const b = ccx * ux + ccz * uz;
     const c = ccx * ccx + ccz * ccz - r * r;
