@@ -2560,3 +2560,322 @@ parce que l'effet *s'affiche* — il est juste de la mauvaise famille.
 
 `/anim shadow` (ou `/anim ombre`), puis frapper un mob entouré d'autres. Visuel seul :
 `/dlbvfx play 3` · `/dlbvfx play 24` · `/dlbvfx play 33` · `/dlbvfx stop`.
+
+## §39 — Sang : cinq signatures, et la première famille qui n'en compte pas trois
+
+Onzième famille refondue, et la première à **cinq** signatures : `GUILLOTINE_CLEAVE` (#5),
+`DRIPPING_BLOOD_EDGE` (#9), `CRIMSON_SIPHON` (#10), `VITAL_TRANSFUSION` (#11),
+`CARNAGE_BERSERK` (#12). Durées 150 / 120 / 170 / 140 / 180 ticks contre 14-18 avant.
+Un seul moteur, `BloodSignatureVfx` (1 321 lignes), aucun `RenderType` supplémentaire.
+
+### Trois règles, écrites avant la première ligne de rendu
+
+**1. Rien ne flotte.** Toute goutte tombe sous `GRAVITY = 11.0f`. Le sang est le seul
+élément de ce mod dont le spectateur connaît par cœur le comportement physique : une
+giclure qui plane se voit immédiatement, là où une flamme ou une ombre peuvent se
+permettre n'importe quoi.
+
+**2. Toute nappe porte son ménisque.** Un liquide sans liseré clair sur son bord n'est
+qu'une tache plate. C'est la contrepartie exacte de la règle de l'ombre — là-bas le liseré
+dessinait le trou noir, ici il donne son épaisseur au rouge.
+
+**3. Le rouge ne se lit pas contre le rouge.** D'où les matières étrangères : le fer de la
+lame, le bois de l'échafaud, l'os des crochets. Sans elles, la guillotine n'est qu'une
+masse sombre et le siphon qu'un tuyau.
+
+### Ce que les cinq rendus ont coûté à l'inspection
+
+Aucun JDK ici : le Java ne peut pas être exécuté. Un miroir JavaScript
+(`tools/blood_build.js`) reproduit les cinq rendus cube pour cube, et c'est lui qu'on
+regarde. Cinq défauts n'étaient visibles **que** sur image, aucun n'aurait été détecté par
+les outils de contrôle :
+
+**Le couperet traversait le linteau.** Le mouton culminait à 4,99 alors que la poutre est à
+4,60. Pire, le biseau était construit avec un sommet *constant* : la colonne de droite
+finissait à 0,04 bloc de haut, et la lame se réduisait à un éclat triangulaire. Un couperet
+de guillotine est un **trapèze** — corps rectangulaire, bord oblique. Corrigé par un
+`bodyH` de hauteur fixe sous le biseau, 24 colonnes au lieu de 17 (à 17, la marche du
+biseau dépassait la largeur d'une colonne : le tranchant se lisait comme une scie), et un
+mouton posé *sur* le corps de lame au lieu d'une hauteur en dur.
+
+**Le cœur était une arrosoir.** Trois teintes séparées de deux crans donnent une masse
+uniforme une fois l'ombrage des faces appliqué. Il a fallu cinq crans **et** un second
+terme d'éclairage vertical : sans lui, toutes les tranches reçoivent la même valeur et
+l'organe s'aplatit en disque. Les coronaires, elles, étaient posées à `1,02 × w` alors que
+la frontière des deux ventricules culmine à `0,90 × w` : elles **flottaient à côté** du
+cœur au lieu d'y courir.
+
+**Les vaisseaux sortaient en pointillés.** Le pas était dimensionné sur l'écart
+*horizontal* du trajet, alors que les deux vaisseaux d'entrée ne couvrent que 1,30 bloc en
+`f` mais descendent de 1,50 en hauteur, flèche de l'arc en plus. Dimensionné sur la
+longueur réelle, le pas repasse sous le diamètre du tube.
+
+**Le siphon sortait en tige unique.** Rayon d'hélice 0,085 pour des brins épais de 0,052 :
+les deux brins se chevauchaient. On perdait l'enroulement, donc le sens d'écoulement — qui
+est tout le sujet de la signature. Rayon porté à 0,135 et quatre tours au lieu de 2,4.
+La colonne qui se vide, elle, était une **cage** de fil de fer : huit points sur un rayon
+de 0,30, soit 0,235 d'espacement pour des cubes de 0,06. Quatorze points, des cubes plus
+épais, et surtout le ménisque posé sur le niveau restant : c'est lui qu'on regarde
+descendre.
+
+**La frénésie ne montrait que trois arcs.** La mesure numérique disait pourtant « sept
+taillades vivantes ». Les deux étaient vraies : l'effacement géométrique était *linéaire*,
+donc l'arc était réduit à un fil dès le tiers de sa vie. `sqrt(1 - remnant)` le garde épais
+pendant la moitié de sa durée puis l'escamote — et c'est le **chevauchement** des arcs qui
+fait la frénésie, pas leur nombre.
+
+### Deux défauts du gabarit d'aperçu, hérités de la foudre
+
+La grille du gabarit partagé est tracée à `y = -0,47`, hauteur héritée de la foudre, alors
+que le moteur du sang pose son sol à `GROUND_Y = -0,86`. Toutes les flaques se retrouvaient
+**0,39 bloc sous le plan dessiné** : pour une famille dont la première règle est « rien ne
+flotte », c'était le défaut à corriger avant les autres.
+
+Et le gabarit ne réglait que la hauteur de vue (`VCY`), jamais le centre horizontal : les
+signatures de la foudre sont des colonnes verticales. Le Siphon est un conduit de 7 blocs
+tendu à l'**horizontale** — centré sur zéro, il sortait du cadre. D'où `VCX`, symétrique de
+`VCY`. Les tableaux du gabarit (`DUR`, `BEATS`, `NAMES`, `SUBS`, `SFX`, `GP`) n'avaient par
+ailleurs que **trois** entrées, et les variantes 0 et 1 étaient câblées sur les cadrages de
+la foudre (`boltShot` / `hammerShot`).
+
+### L'hémorragie punit la fuite
+
+La ressource partagée des cinq signatures : cinq piles au maximum, un tic toutes les 10
+ticks, 42 % du drain reversé au porteur. Son seul mécanisme notable est le multiplicateur
+de vitesse — `×(1 + 1,5 × min(1, vitesse / 0,22))`, soit jusqu'à **×2,5** pour une cible
+qui court. Un saignement qu'on peut distancer n'est pas un saignement ; ici, courir est la
+pire réponse, et rester immobile le moindre mal. C'est la seule mécanique du mod qui
+récompense l'immobilité.
+
+### Ce qui distingue chaque signature
+
+**Couperet** est une exécution : dégâts `×(1 + 1,25 × vie manquante)`, clouage 86 ticks —
+le temps exact de la montée, de la suspension et de la chute. La cible *voit venir*. C'est
+aussi le seul endroit du mod où le silence est écrit : seize ticks sans un son pendant la
+suspension.
+
+**Tranchant Sanglant** est la seule zone **en ligne** du mod (`bladeLineVictims`) : ce qui
+est sur l'arc est touché, ce qui est à côté ne l'est pas.
+
+**Transfusion Vitale** est la seule aire **bienveillante** : porteur, joueurs et compagnons
+apprivoisés. Le bétail n'est ni prélevé ni soigné. 85 % du pot est reversible, dont 55 %
+pour le porteur — il soigne les siens, il ne se sacrifie pas.
+
+**Carnage Berserk** fait tomber ses paliers de rage aux 4ᵉ, 7ᵉ et 10ᵉ coups **touchés**, pas
+lancés : frapper le vide ne rend pas enragé. Et il assume son coût — Fatigue 60 ticks au
+porteur à partir de 6 coups.
+
+### Trois sons qui n'existent pas, pour la quatrième fois
+
+`RAVAGER_BITE`, `CROSSBOW_LOADING_END` et `ARMOR_EQUIP_CHAIN` ne sont pas dans la banque
+1.21.1. Le réflexe pris en §38 (vérifier chaque constante avant de l'écrire) a été
+systématisé : une table des **1 806** identifiants réels a été extraite, et les 31 sons de
+la famille validés un par un — y compris leur nature de `Holder`, qui impose `.value()`.
+
+### Tests en jeu
+
+`/anim sang`, puis frapper un mob entouré d'autres. Visuel seul : `/dlbvfx play 5` ·
+`/dlbvfx play 9` · `/dlbvfx play 10` · `/dlbvfx play 11` · `/dlbvfx play 12` ·
+`/dlbvfx stop`.
+
+---
+
+## §40 — Le conduit qui ne reliait rien
+
+Le Siphon et la Transfusion racontaient tous les deux la même histoire : un lien
+entre deux êtres. Ni l'un ni l'autre ne le tenait réellement.
+
+Trois mensonges, trouvés en relisant le code plutôt que les captures.
+
+**La longueur était une constante.** `REACH = 7.0f`. Le conduit mesurait sept
+blocs que le porteur soit à trois mètres ou à onze. À trois, il traversait le
+porteur et continuait quatre blocs derrière lui ; à onze, il s'arrêtait en l'air
+au milieu de nulle part. La capture d'écran ne pouvait pas le montrer : la scène
+d'aperçu place toujours le porteur à exactement sept blocs.
+
+**Aucun bout ne suivait son entité.** L'effet part en `KIND_IMPACT`, qui fige
+l'ancre au point d'impact, et `ImpactView.dirX()/dirZ()` dérivent du seul
+`yawDeg` figé dans le paquet. La victime pouvait se mettre à courir : le conduit
+restait pendu là où elle avait été frappée.
+
+**Le cœur de la Transfusion n'était pas où le serveur croyait.** Le visuel le
+dessinait à `heartF = -1.30`, soit à un bloc trente du porteur ; le serveur
+prélevait et redistribuait depuis le milieu du segment. Deux cœurs, l'un visible
+et faux, l'autre invisible et vrai.
+
+### Ce qu'il a fallu
+
+Le paquet ne transporte pas d'identifiant d'entité, seulement deux points. Le
+client retrouve donc les deux corps par proximité — rayon de trois blocs autour
+de chaque extrémité, une seule fois, comme `updatePoisonFollow` le fait déjà
+pour le poison — puis recale l'ancre sur la victime à `bbHeight × 0,50`, l'autre
+bout sur le porteur à `bbHeight × 0,62`, et recalcule à chaque image la
+direction, la longueur et le dénivelé. `render()` prend trois paramètres de plus :
+`linkLen`, `linkEndY`, `linkBroken`.
+
+Ce qui dépendait de `REACH` en dépend toujours, mais en proportion : le ventre du
+conduit vaut `(0,55 − 0,30·drain) × (reach/REACH)`, le pas de l'hélice
+`26 × reach/REACH`, le nombre de segments `max(26, 62 × reach/REACH)`. Sans cela
+un conduit de deux blocs garderait un ventre de sept et raclerait le sol.
+
+Mesures sur le miroir JavaScript, extrémité basse du conduit :
+
+| portée demandée | 2 | 4 | 7 | 11 |
+|---|---|---|---|---|
+| siphon, `xmin` | −2,03 | −4,04 | −6,98 | −10,98 |
+| transfusion, `xmin` | −1,99 | −3,98 | −6,98 | −10,98 |
+
+### La laisse
+
+Un lien qui s'étire à l'infini n'est pas un lien. Au-delà de **neuf blocs** il
+casse : son de chaîne brisée, gerbe de particules, `base × 0,45` de dégâts
+d'arrachement et deux piles d'hémorragie pour la victime, puis la pompe s'arrête
+— les bols ou les battements restants sont perdus. Le client et le serveur
+portent la même constante (`BLOOD_LINK_BREAK = 9.0`) et rompent donc en même
+temps, sans paquet supplémentaire.
+
+Fuir reste coûteux : la morsure du Siphon pose Lenteur II pendant 120 ticks, et
+l'hémorragie frappe une cible qui court jusqu'à deux fois et demie plus fort.
+
+### Un chiffre qui ne tenait pas
+
+En calculant les cinq totaux pour répondre à une question de revue, le Tranchant
+Sanglant — la signature d'entretien, celle qui « frappe peu et saigne longtemps »
+— sortait première des cinq : 150 points sur une cible mobile contre 147 au
+Carnage, et en six secondes au lieu de neuf. Quatre piles à `0,115 × base` sur
+vingt-deux tics, c'était simplement trop. Le tarif unitaire passe à **0,075** et
+la durée de 220 à 200 ticks. Les quatre piles restent : c'est son identité.
+
+Classement après correction, en duel, arme à 8 de dégâts, cible immobile → cible
+qui court :
+
+| signature | total | DPS |
+|---|---|---|
+| Carnage | 82 → 147 | 9,2 → 16,4 |
+| Siphon | 51 → 100 | 5,9 → 11,8 |
+| Tranchant | 48 → 101 | 7,9 → 16,8 |
+| Couperet | 50 → 90 | 6,6 → 12,0 |
+| Transfusion | 15 → 15 | 2,2 → 2,2 |
+
+La Transfusion reste volontairement dernière : elle ne tue pas, elle soigne un
+groupe.
+
+### Post-scriptum : la laisse punissait la mauvaise personne
+
+Première version de `bloodLinkHolds` : un booléen. Elle répondait « non » aussi
+bien quand la victime avait fui qu'au moment où le porteur mourait — et dans les
+deux cas `bloodLinkSnap` facturait l'arrachement **à la victime**. Tuer le
+siphonneur coûtait donc 45 % de la base et deux piles d'hémorragie à celui qui
+venait de le tuer.
+
+Trois états maintenant : `LINK_HOLDS`, `LINK_TORN` (la distance — et cela se
+paie), `LINK_GONE` (un des deux corps a disparu — la pompe s'arrête, personne ne
+paie). Côté client, symétriquement, la disparition de l'un des deux corps marque
+`linkBroken` : un conduit accroché à un mort se résorbe au lieu de pendre dans
+le vide jusqu'à la fin de l'animation.
+
+---
+
+## §41 — « Je ne comprends pas du tout ce que tu essaies de représenter »
+
+Verdict de l'utilisateur sur le Siphon Carmin, captures à l'appui. Il avait
+raison, et le diagnostic tient en quatre points lus sur ses images :
+
+1. **Une saucisse par terre.** Le conduit pendait d'un ventre proportionnel à la
+   portée, et le point de ponction était à `mouthY = 0.95` — 95 cm *au-dessus* de
+   l'ancre, c'est-à-dire au-dessus de la tête de la plupart des mobs. Le tuyau
+   partait donc du vide et retombait au sol.
+2. **Un tonneau à côté.** La « colonne qui se vide » était bâtie depuis
+   `GROUND_Y`, pas dans le corps : à l'écran, un fût rouge planté près du départ.
+   En jeu, elle aurait été *invisible*, cachée dans le modèle du mob. Un élément
+   qui ne se voit pas en jeu et qui désoriente dans l'aperçu n'a aucune raison
+   d'exister.
+3. **Des éclats d'os flottants.** Les crochets étaient quatre bâtonnets de 3 cm
+   accrochés à rien.
+4. **Rien au bout.** La question posée était « ça mène où ? ». Le dessin ne
+   répondait pas : le tuyau s'arrêtait dans l'air.
+
+### Trois objets, trois seulement
+
+- **L'embout** vissé dans la victime : deux couronnes de fer de rayon décroissant
+  et quatre crochets d'os plantés en croix. On voit *où* on pique.
+- **Le tuyau** : il passe **par-dessus** — un siphon monte et redescend, c'est sa
+  définition — avec des **côtes sombres qui glissent vers le porteur**. L'ancienne
+  double hélice disait aussi le sens de l'écoulement, mais seulement de près ;
+  une côte presque noire sur un tuyau rouge se lit à dix blocs.
+- **Le calice** dans la main du porteur, qui **monte d'un sixième à chaque bol**.
+  C'est lui qui raconte le volume prélevé, à la place de la colonne. Un
+  spectateur comprend le vol de vie sans lire un chiffre.
+
+Le bec verseur vise le **bord de la coupe** : une descente libre faisait
+ressortir le tuyau cinquante centimètres *sous* le pied du calice. Et le calice
+est tenu 22 cm devant le porteur, pas dans son torse.
+
+### Le piège qui a tout caché
+
+`render()` appelle le constructeur avec les angles de caméra en 4ᵉ et 5ᵉ argument
+— `buildThunder(variant, t, salt, camYaw, camPitch)` — parce que la foudre s'en
+sert pour ses panneaux-réclame. Depuis que `buildBlood` prend `linkLen` et
+`linkEndY` à ces deux places, **la page passait `camYaw` comme longueur de
+conduit**, soit 0,16 bloc : tout le siphon se repliait sur la victime. L'aperçu
+fixe désormais un lien explicite.
+
+### Et les deux corps
+
+La page montrait un tuyau entre deux points vides. Elle dessine maintenant, dans
+le **décor** (là où vit déjà la grille de sol, pas dans le moteur Java), deux
+silhouettes filaires légendées **VICTIME** et **PORTEUR**. La question « ça mène
+où, sur le joueur ? » a désormais une réponse visible. Caméra de profil pour les
+deux signatures de lien : à 0,62 radian un lien horizontal fuit vers le fond.
+
+## §42 — « On dirait une amande » : pourquoi le cœur n'en était pas un
+
+Verdict de la quatrième relecture de la Transfusion, et il était net : *le cœur ne
+ressemble pas du tout à un cœur, on dirait une sorte d'amande*. Il avait pourtant
+vingt tranches, un sillon, des vaisseaux. Le défaut n'était dans aucun de ces
+détails : il était dans le **profil**.
+
+L'ancienne largeur de tranche valait `sin(√v · 2,55) · (0,52 − 0,10 v)`. Cette
+courbe est maximale **au milieu** — 0,46 à mi-hauteur — et retombe **aux deux
+bouts**, 0,23 en haut comme en bas. Un volume large au centre et pointu aux deux
+extrémités porte un nom, et ce n'est pas « cœur » : c'est une amande. Un cœur est
+large **en haut**, là où arrivent les gros vaisseaux, et pointu **en bas**, une
+seule fois. La règle tient en une ligne : **une pointe, et une seule, et elle est
+en bas.**
+
+Le nouveau profil sépare les deux étages au sillon auriculo-ventriculaire, placé
+à 74 % de la hauteur. Sous le sillon, les ventricules :
+`0,60 · sin(90° · u^0,62) · (0,62 + 0,38·√u)`. Le sinus donne l'**épaule ronde**
+sous la ceinture — un cône a des flancs droits, un organe non ; le facteur en
+racine resserre le tiers inférieur pour que l'**apex redevienne une pointe**, et
+non le bas d'un œuf. Au-dessus du sillon, les oreillettes enflent en sens
+inverse : elles se remplissent pendant que les ventricules se vident.
+
+Quatre erreurs annexes, toutes visibles dès qu'on regarde une planche d'anatomie
+plutôt que son propre code :
+
+- **Le pan noir.** La face opposée à la lumière tombait à 0,10 de clarté, donc en
+  `VENOUS` : la moitié de l'organe était un trou brun. Le relief se garde, mais le
+  creux le plus sombre doit rester **du muscle rouge** (plancher 0,70 · 0,30).
+- **La rangée de dents.** La ceinture posait 22 cubes de 4 cm sur un périmètre de
+  2,9 blocs : un cube tous les 13 cm, donc des **dents**. Trente cubes de 8 cm se
+  touchent et font une ceinture.
+- **Les orbites.** Les auricules partaient droit sur le côté comme deux bras, et
+  leur teinte `VENOUS` ouvrait deux **trous noirs** aux coins de la base. Elles
+  s'enroulent maintenant contre l'oreillette, en rouge moyen.
+- **L'anse de panier.** Un arc d'épaisseur constante qui redescend aussi bas des
+  deux côtés est une anse, pas une aorte. Elle s'amincit en montant (8,6 → 5,6 cm),
+  sa branche descendante s'arrête plus haut, et surtout sa crosse est couchée
+  **dans le plan de la liaison** : de biais, la caméra la voyait par la tranche et
+  l'arc se refermait en patate. **Une courbe ne se lit que de profil.**
+
+Reste la taille : 0,92 bloc d'échelle donnait un organe d'1,12 bloc flottant entre
+deux joueurs de 1,80 — une babiole. À 1,45, le cœur fait 1,77 bloc de haut et la
+signature a enfin un sujet. Le cadrage de la variante III suit : portée 9,4 au lieu
+de 10,4.
+
+Une note d'outillage pour finir. `semcheck.py` a sorti 35 « constante inconnue »
+sur `H` et `AV` — les deux grandeurs locales du modèle. Faux positifs : l'outil ne
+connaissait que les champs `static`. Il accepte désormais les **variables locales
+en majuscules** déclarées avec un type primitif. Un faux positif se corrige dans
+l'outil, jamais dans la source.

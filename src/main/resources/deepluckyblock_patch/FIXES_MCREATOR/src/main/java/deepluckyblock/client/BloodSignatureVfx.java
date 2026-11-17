@@ -962,7 +962,7 @@ public final class BloodSignatureVfx {
         // que le point d'où partaient réellement les battements et le soin.
         final float heartF = -linkLen * 0.5f;
         final float heartY = 1.60f;
-        final float scale = 0.92f * gather * (1.0f - fade * 0.55f);
+        final float scale = 1.45f * gather * (1.0f - fade * 0.55f);
 
         // --- Le rythme. Sept battements, répartis de 0,16 à 0,84, chacun en lub-dub. ---
         float contract = 0.0f;
@@ -1084,130 +1084,314 @@ public final class BloodSignatureVfx {
     }
 
     /**
-     * Le CŒUR. Une vingtaine de tranches horizontales dont la section est l'<b>union de deux
-     * disques</b> de rayons inégaux — le ventricule gauche, plus gros, et le droit.
+     * Le CŒUR, modèle anatomique.
      *
-     * <p>Chaque tranche est tracée comme un contour : pour chaque angle on calcule la distance
-     * à la frontière de l'union, c'est-à-dire la plus grande des deux intersections de rayon.
-     * Dessiner deux cylindres séparés aurait donné un sablier vu de face ; c'est le contour
-     * commun qui fait l'organe.</p>
+     * <p><b>T382 — pourquoi la version précédente sortait en amande.</b> Son profil valait
+     * {@code sin(sqrt(v)·2,55)·(0,52−0,10·v)} : une courbe maximale au MILIEU (0,46 à
+     * mi-hauteur) et qui retombe aux deux bouts (0,23 à la base). Un volume large au centre
+     * et pointu en haut comme en bas est une amande. Un cœur est large <i>en haut</i> — la
+     * base, où arrivent les gros vaisseaux — et pointu <i>en bas</i>, une seule fois.</p>
      *
-     * <p>Par-dessus : la crosse aortique, le tronc pulmonaire, la veine cave, et surtout les
-     * <b>artères coronaires</b> — deux liserés clairs qui descendent en serpentant sur la
-     * surface. Ce sont elles qui font lire « organe » plutôt que « masse rouge ».</p>
+     * <p>Le corps est bâti en tranches horizontales dont la section est l'<b>union de deux
+     * disques inégaux</b> : le ventricule gauche, plus gros et plus rond, et le droit, plus
+     * petit, appliqué sur son flanc. Là où les deux frontières se croisent naît le
+     * <b>sillon interventriculaire</b>, qu'on creuse d'une ligne sombre et que suit
+     * l'artère interventriculaire antérieure. Au-dessus des ventricules, le <b>sillon
+     * auriculo-ventriculaire</b> — la ceinture du cœur — puis les deux <b>oreillettes</b>,
+     * chacune coiffée de son <b>auricule</b>, ces deux petites oreilles plissées sans
+     * lesquelles un cœur n'est qu'un cône.</p>
+     *
+     * <p>Les gros vaisseaux font la moitié de la lecture : <b>crosse aortique</b> et ses
+     * trois branches (tronc brachio-céphalique, carotide, subclavière), <b>tronc
+     * pulmonaire</b> qui croise devant l'aorte et bifurque en Y, <b>veine cave supérieure</b>
+     * à droite, <b>cave inférieure</b> sous elle, deux <b>veines pulmonaires</b> à l'arrière.
+     * Ils sont épais : un vaisseau plus fin que la maille de la coque disparaît dans les
+     * joints.</p>
+     *
+     * <p>La systole écrase les ventricules et <b>gonfle</b> les oreillettes au même instant :
+     * c'est ce qu'il se passe dans un cœur, et c'est ce qui donne au battement sa vie.</p>
      */
     private static void drawHeart(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                   float cx, float cy, float cz, float dx, float dz,
                                   float hf, float hl, float hy,
                                   float s, float contract, float t, int alpha, int salt) {
-        final int slices = 17;
-        // Le cœur se couche en avant ET sur le côté. L'inclinaison latérale n'est pas un
-        // ornement : l'apex d'un cœur ne pointe pas droit en bas, il part vers la gauche.
-        // Sans elle, la silhouette est un bulbe symétrique — une ampoule, pas un organe.
-        final float lean = 0.22f;
-        final float leanL = 0.30f;
+        final int slices = 20;
+        // 1,22 et non 1,34 : a 1,34 pour 0,90 de large, le corps sortait en cone. Un coeur
+        // humain tient dans un rapport hauteur/largeur de 1,35 environ — il est TRAPU.
+        final float H = 1.22f * s;                 // apex -> sommet des oreillettes
+        final float AV = 0.74f;                    // hauteur relative du sillon AV
+        // Le cœur se couche en avant et sur le côté : l'apex part vers l'avant-gauche.
+        final float lean = 0.20f;
+        final float leanL = 0.26f;
+        final float step = H / slices;
 
         for (int i = 0; i < slices; i++) {
-            float v = (i + 0.5f) / slices;                 // 0 = pointe (bas), 1 = base (haut)
-            float yy = hy + (v - 0.42f) * 1.55f * s;
-            float fOff = hf + lean * (v - 0.42f) * 1.55f * s;
-            float lOff = hl + leanL * (v - 0.42f) * 1.55f * s;
+            float v = (i + 0.5f) / slices;             // 0 = apex (bas), 1 = sommet (haut)
+            float yy = hy + (v - 0.46f) * H;
+            float fOff = hf + lean * (v - 0.46f) * H;
+            float lOff = hl + leanL * (v - 0.46f) * H;
 
-            // Profil : pointu en bas, large aux deux tiers, resserré à la base.
-            float w = Mth.sin(Mth.sqrt(v) * 2.55f) * (0.52f - 0.10f * v);
+            boolean atrium = v > AV;
+            float w;
+            if (!atrium) {
+                // VENTRICULES : pointe en bas, largeur maximale juste sous le sillon AV.
+                float u = v / AV;
+                w = 0.60f * Mth.sin(1.5707964f * (float) Math.pow(u, 0.62))
+                        * (0.62f + 0.38f * (float) Math.sqrt(u))
+                        * (1.0f - 0.09f * u * u * u * u);
+                // L'apex est une POINTE ARRONDIE, pas une section coupee : sans ce facteur
+                // la tranche du bas mesure encore 26 cm de large et le coeur finit en sabot.
+                w *= Math.min(1.0f, (float) Math.sqrt(u / 0.07f));
+                w *= 1.0f - contract * (0.26f * Mth.sin(u * Mth.PI) + 0.10f);
+            } else {
+                // OREILLETTES : plus etroites que la ceinture, et elles se REMPLISSENT
+                // pendant que les ventricules se vident.
+                float u = (v - AV) / (1.0f - AV);
+                w = 0.546f * (1.0f - 0.34f * u * u) * (1.0f - 0.16f * u);
+                w *= 1.0f + contract * 0.10f;
+            }
             if (w <= 0.012f) continue;
-            // La systole écrase surtout le milieu : un organe ne se contracte pas en bloc.
-            w *= s * (1.0f - contract * (0.55f + 0.85f * Mth.sin(v * Mth.PI)));
+            w *= s;
 
-            // Les deux ventricules.
-            float c1 = -0.20f * w, r1 = 0.70f * w;         // gauche, le gros
-            float c2 = 0.26f * w, r2 = 0.54f * w;          // droit
+            // Les deux cavites. Le gauche est plus gros et recule ; le droit s'applique
+            // sur son flanc avant-droit. C'est leur union qui donne la section en oeuf
+            // dissymetrique, et le point ou leurs frontieres se croisent est le sillon.
+            float c1 = -0.14f * w, r1 = atrium ? 0.74f * w : 0.80f * w;
+            float c2 = 0.30f * w, r2 = atrium ? 0.60f * w : 0.64f * w;
 
-            int pts = 20;
+            // 28 points de 0,050 et non 24 de 0,042 : a 24, l'espacement sur la
+            // circonference valait 0,10 pour des cubes de 0,084 — des cannelures verticales
+            // sur toute la hauteur, un chapiteau dorique plutot qu'un muscle.
+            int pts = 28;
             for (int k = 0; k < pts; k++) {
                 float ang = (k + 0.5f) / pts * 6.2831855f;
-                float ux = Mth.cos(ang), uz = Mth.sin(ang);
+                float ux = Mth.cos(ang), uz = Mth.sin(ang) * 0.86f;   // legerement aplati
+                float d1 = rayToCircle(c1, 0.0f, r1, ux, uz);
+                float d2 = rayToCircle(c2, 0.0f, r2, ux, uz);
+                float rr = Math.max(d1, d2);
+                if (rr <= 0.004f) continue;
+                // Le sillon : la ou les deux frontieres se valent, on rentre la surface.
+                boolean groove = !atrium && Math.abs(d1 - d2) < 0.060f * w && d1 > 0.0f && d2 > 0.0f;
+                if (groove) rr *= 0.93f;
+                // L'ECHANCRURE : entre les deux oreillettes, la paroi plonge. C'est le creux
+                // du haut — le seul trait qui distingue un coeur d'un oeuf en silhouette.
+                if (atrium) {
+                    float ua = (v - AV) / (1.0f - AV);
+                    float notch = Math.max(0.0f, 1.0f - Math.abs(d1 - d2) / (0.42f * w));
+                    rr *= 1.0f - 0.62f * ua * ua * notch;
+                }
+
+                // Le cote sombre valait 0,30 x v, donc VENOUS partout : le muscle sortait
+                // en masse brune. Plancher a 0,55 et seuils abaisses — un myocarde est un
+                // rouge VIF, c'est le sang veineux des oreillettes qui est sombre.
+                // La face opposee a la lumiere tombait a 0,10 : un PAN NOIR large comme la
+                // moitie de l'organe, qui le creusait en gouttiere. On garde un relief, mais
+                // le creux le plus sombre reste du muscle rouge.
+                float lit = 0.70f + 0.30f * Mth.cos(ang - 0.9f);
+                lit = lit * 0.70f + 0.30f * v;
+                if (atrium) lit *= 0.84f;                      // les oreillettes sont ternes
+                // Le myocarde n'est pas lisse : un grain fige (meme cube, meme teinte)
+                // casse l'aspect plastique sans scintiller d'une image a l'autre.
+                float grain = hash(salt + 141, k * 31 + i * 7);
+                lit *= 0.93f + 0.14f * grain;
+                int rgb = groove ? VENOUS
+                        : (lit > 0.84f ? SPRAY
+                        : (lit > 0.66f ? FRESH
+                        : (lit > 0.48f ? ARTERY
+                        : (lit > 0.32f ? GORE : VENOUS))));
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        fOff + ux * rr, lOff + uz * rr, yy,
+                        0.050f * s, step * 0.66f, 0.050f * s,
+                        rgb, opaque(alpha * 0.95f));
+            }
+        }
+
+        // LA CALOTTE DE L'APEX. Les tranches s'arretent sur une section plate de 16 cm :
+        // vu de dessous, le coeur etait coupe net. Trois cubes la referment en pointe.
+        {
+            float v0 = 0.5f / slices;
+            float yy = hy + (v0 - 0.46f) * H;
+            float fOff = hf + lean * (v0 - 0.46f) * H;
+            float lOff = hl + leanL * (v0 - 0.46f) * H;
+            for (int k = 0; k < 3; k++) {
+                float d = (k + 1) / 3.0f;
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        fOff - lean * d * 0.10f * H, lOff - leanL * d * 0.10f * H,
+                        yy - d * 0.085f * H,
+                        (0.085f - 0.024f * k) * s, step * 0.55f, (0.085f - 0.024f * k) * s,
+                        k == 2 ? VENOUS : GORE, opaque(alpha * 0.95f));
+            }
+        }
+
+        // ---- LE SILLON AURICULO-VENTRICULAIRE : la ceinture du coeur ----
+        {
+            float v = AV;
+            float yy = hy + (v - 0.46f) * H;
+            float fOff = hf + lean * (v - 0.46f) * H;
+            float lOff = hl + leanL * (v - 0.46f) * H;
+            float w = 0.60f * s * 0.91f * (1.0f - contract * 0.12f);
+            float c1 = -0.14f * w, r1 = 0.80f * w, c2 = 0.30f * w, r2 = 0.64f * w;
+            for (int k = 0; k < 30; k++) {
+                float ang = (k + 0.5f) / 30.0f * 6.2831855f;
+                float ux = Mth.cos(ang), uz = Mth.sin(ang) * 0.86f;
                 float rr = Math.max(rayToCircle(c1, 0.0f, r1, ux, uz),
                                     rayToCircle(c2, 0.0f, r2, ux, uz));
                 if (rr <= 0.004f) continue;
-                // LA VALEUR FAIT LE VOLUME. Trois teintes séparées de deux crans donnaient
-                // une masse uniforme une fois l'ombrage des faces appliqué : le cœur sortait
-                // en bouillie rouge. Cinq crans, et surtout un second terme — la base est
-                // plus claire que la pointe — parce qu'un éclairage purement horizontal
-                // laisse toutes les tranches identiques et aplatit l'organe en disque.
-                float lit = 0.5f + 0.5f * Mth.cos(ang - 0.9f);
-                lit = lit * 0.72f + 0.28f * v;
-                int rgb = lit > 0.78f ? SPRAY
-                        : (lit > 0.60f ? FRESH
-                        : (lit > 0.43f ? ARTERY
-                        : (lit > 0.26f ? GORE : VENOUS)));
                 box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        fOff + ux * rr, lOff + uz * rr, yy,
-                        0.034f * s, 1.55f * s / slices * 0.56f, 0.034f * s,
-                        rgb, opaque(alpha * 0.95f));
-            }
-
-            // Le sillon interventriculaire : le creux sombre entre les deux ventricules.
-            if (v > 0.12f && v < 0.88f) {
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, fOff + 0.03f * w, lOff + 0.03f * w, yy,
-                        0.030f * s, 1.55f * s / slices * 0.5f, 0.022f * s,
-                        CLOT, opaque(alpha * 0.9f));
+                        fOff + ux * rr * 0.99f, lOff + uz * rr * 0.99f, yy,
+                        0.080f * s, 0.036f * s, 0.080f * s, VENOUS, opaque(alpha * 0.94f));
+                // L'artere circonflexe, dans le sillon, cote gauche seulement.
+                if (Mth.cos(ang) < -0.1f) {
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            fOff + ux * rr * 1.0f, lOff + uz * rr * 1.0f, yy + 0.012f * s,
+                            0.046f * s, 0.024f * s, 0.046f * s,
+                            contract > 0.05f ? SPRAY : ARTERY, opaque(alpha * 0.9f));
+                }
             }
         }
 
-        // ---- Les gros vaisseaux ----
-        float baseY = hy + 0.58f * 1.55f * s * 0.5f + 0.42f * s;
-        // Crosse aortique : un quart de tore qui part vers le haut puis se couche.
+        // ---- LES AURICULES : deux rabats plisses qui EPOUSENT la base ----
+        // Elles partaient droit sur le cote comme deux bras : une auricule est une poche
+        // couchee CONTRE l'oreillette, qui part de l'avant et s'enroule vers l'arriere.
+        for (int side = 0; side < 2; side++) {
+            float sg = side == 0 ? 1.0f : -1.0f;
+            float v = AV + 0.10f;
+            float yy = hy + (v - 0.46f) * H;
+            float fOff = hf + lean * (v - 0.46f) * H;
+            float lOff = hl + leanL * (v - 0.46f) * H;
+            for (int k = 0; k < 8; k++) {
+                float u = (k + 0.5f) / 8.0f;
+                float ang = sg * (0.42f + 1.30f * u);           // de l'avant vers l'arriere
+                float rad = (0.50f + 0.14f * Mth.sin(u * Mth.PI)) * s;
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        fOff + Mth.cos(ang) * rad * 0.92f,
+                        lOff + Mth.sin(ang) * rad * 0.80f,
+                        yy + 0.07f * s - u * u * 0.16f * s,
+                        0.058f * s, 0.052f * s, 0.058f * s,
+                        k % 2 == 0 ? GORE : ARTERY, opaque(alpha * 0.92f));
+            }
+        }
+
+        // ---- LES GROS VAISSEAUX ----
+        final float baseY = hy + (1.0f - 0.46f) * H;
+        final float baseF = hf + lean * (1.0f - 0.46f) * H;
+        final float baseL = hl + leanL * (1.0f - 0.46f) * H;
+
+        // L'AORTE. Sa crosse est couchee dans le plan de la LIAISON (l'axe f) et non sur
+        // le cote : de biais, la camera la voyait par la tranche et l'arc se refermait en
+        // patate. Une crosse ne se lit que de profil, et c'est elle qui dit « aorte ».
+        final int aortaSegs = 20;
+        for (int i = 0; i < aortaSegs; i++) {
+            float u = (i + 0.5f) / aortaSegs;
+            float pf, py;
+            if (u < 0.30f) {                                    // ascendante
+                float k = u / 0.30f;
+                pf = 0.12f - 0.02f * k;
+                py = -0.08f + k * 0.34f;
+            } else if (u < 0.76f) {                             // la crosse
+                float k = (u - 0.30f) / 0.46f;
+                float ang = k * Mth.PI;
+                pf = 0.10f - (1.0f - Mth.cos(ang)) * 0.33f;
+                py = 0.26f + Mth.sin(ang) * 0.24f;
+            } else {                                            // descendante
+                float k = (u - 0.76f) / 0.24f;
+                pf = -0.56f;
+                py = 0.26f - k * 0.16f;
+            }
+            box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                    baseF + pf * s, baseL - 0.06f * s, baseY + py * s,
+                    (0.086f - 0.030f * u) * s, (0.086f - 0.030f * u) * s,
+                    (0.086f - 0.030f * u) * s,
+                    u < 0.45f ? FRESH : ARTERY, opaque(alpha * 0.96f));
+        }
+        // Deux troncs sur le dos de la crosse. Trois rangees de trois faisaient un crenelage
+        // de chateau fort ; deux moignons suffisent a dire « branches ».
+        for (int b = 0; b < 2; b++) {
+            float ff = -0.11f - b * 0.17f;
+            for (int k = 0; k < 2; k++) {
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        baseF + (ff - (b == 0 ? 0.06f : -0.02f) * k) * s, baseL - 0.06f * s,
+                        baseY + (0.50f + k * 0.075f) * s,
+                        0.044f * s, 0.048f * s, 0.044f * s, FRESH, opaque(alpha * 0.92f));
+            }
+        }
+
+        // LE TRONC PULMONAIRE : devant l'aorte, plus sombre, il se divise en Y.
         for (int i = 0; i < 11; i++) {
             float u = (i + 0.5f) / 11.0f;
-            float ang = u * HALF_PI * 1.15f;
-            float rr = 0.42f * s;
             box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    hf + lean * 0.3f - Mth.sin(ang) * rr * 0.4f,
-                    hl + 0.08f * s + Mth.sin(ang) * rr,
-                    baseY + Mth.cos(ang) * rr * 0.75f,
-                    0.052f * s, 0.052f * s, 0.052f * s,
-                    i < 3 ? ARTERY : GORE, opaque(alpha * 0.95f));
+                    baseF + (0.02f + 0.06f * u) * s, baseL + (0.20f - 0.03f * u) * s,
+                    baseY + (-0.10f + u * 0.42f) * s,
+                    0.078f * s, 0.078f * s, 0.078f * s, GORE, opaque(alpha * 0.95f));
         }
-        // Tronc pulmonaire, plus court et plus sombre.
-        for (int i = 0; i < 7; i++) {
-            float u = (i + 0.5f) / 7.0f;
-            box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    hf + 0.16f * s, hl + 0.20f * s,
-                    baseY + u * 0.52f * s,
-                    0.046f * s, 0.046f * s, 0.046f * s, VENOUS, opaque(alpha * 0.92f));
-        }
-        // Veine cave : elle arrive par-dessous, à l'arrière.
-        for (int i = 0; i < 6; i++) {
-            float u = (i + 0.5f) / 6.0f;
-            box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    hf - 0.28f * s, hl - 0.26f * s,
-                    baseY - 0.10f * s + u * 0.40f * s,
-                    0.040f * s, 0.040f * s, 0.040f * s, CLOT, opaque(alpha * 0.9f));
+        for (int side = 0; side < 2; side++) {
+            float sg = side == 0 ? 1.0f : -1.0f;
+            for (int k = 0; k < 3; k++) {
+                float u = (k + 0.5f) / 3.0f;
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        baseF + (0.08f + sg * u * 0.30f) * s, baseL + (0.17f - 0.02f * u) * s,
+                        baseY + (0.30f + 0.05f * u - u * u * 0.07f) * s,
+                        0.060f * s, 0.060f * s, 0.060f * s, VENOUS, opaque(alpha * 0.92f));
+            }
         }
 
-        // ---- Les coronaires ----
-        // Deux liserés clairs qui serpentent du haut vers la pointe. Elles pulsent avec la
-        // systole : c'est le seul endroit où le cœur s'éclaircit, donc le seul qui batte à l'œil.
-        for (int c = 0; c < 2; c++) {
-            float side = c == 0 ? 1.0f : -1.0f;
-            int segs = 15;
-            for (int i = 0; i < segs; i++) {
-                float v = 0.88f - (i + 0.5f) / segs * 0.80f;
-                float w = Mth.sin(Mth.sqrt(v) * 2.55f) * (0.52f - 0.10f * v) * s;
-                float ang = side * (0.75f + v * 1.25f) + Mth.sin(v * 5.0f) * 0.22f;
-                float yy = hy + (v - 0.42f) * 1.55f * s;
-                float fOff = hf + lean * (v - 0.42f) * 1.55f * s;
-                float lOff = hl + leanL * (v - 0.42f) * 1.55f * s;
-                // 0,88 et non 1,02 : la frontière de l'union des deux ventricules culmine à
-                // 0,90·w, donc une coronaire posée à 1,02·w FLOTTE à côté du cœur au lieu
-                // de courir dessus. Et elle est deux fois plus épaisse : à 0,020 elle était
-                // plus fine qu'un pixel de la surface et disparaissait dans les joints.
-                float rr = w * 0.88f;
-                int rgb = contract > 0.05f ? PLASMA : SPRAY;
+        // LES VEINES CAVES, en arriere et a droite, sombres : elles RAMENENT le sang.
+        for (int i = 0; i < 8; i++) {
+            float u = (i + 0.5f) / 8.0f;
+            box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                    baseF + (0.32f + 0.03f * u) * s, baseL - 0.20f * s,
+                    baseY + (-0.10f + u * 0.34f) * s,
+                    0.068f * s, 0.068f * s, 0.068f * s, GORE, opaque(alpha * 0.92f));
+        }
+        for (int i = 0; i < 5; i++) {
+            float u = (i + 0.5f) / 5.0f;
+            box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                    baseF + 0.34f * s, baseL - 0.17f * s, baseY - (0.10f + u * 0.24f) * s,
+                    0.064f * s, 0.064f * s, 0.064f * s, VENOUS, opaque(alpha * 0.90f));
+        }
+        // Les veines pulmonaires : quatre moignons a l'arriere, discrets.
+        for (int side = 0; side < 2; side++) {
+            float sg = side == 0 ? 1.0f : -1.0f;
+            for (int k = 0; k < 2; k++) {
                 box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        fOff + Mth.cos(ang) * rr, lOff + Mth.sin(ang) * rr, yy,
-                        0.038f * s, 0.040f * s, 0.038f * s, rgb, opaque(alpha));
+                        baseF + sg * 0.19f * s, baseL - (0.26f + k * 0.09f) * s,
+                        baseY - 0.11f * s,
+                        0.054f * s, 0.054f * s, 0.054f * s, CLOT, opaque(alpha * 0.88f));
+            }
+        }
+
+        // ---- L'ARTERE INTERVENTRICULAIRE ANTERIEURE ----
+        // Elle descend DANS le sillon, de la base a l'apex. C'est le detail qui fait lire
+        // « organe » : une masse rouge sans coronaire reste une masse.
+        {
+            int segs = 16;
+            for (int i = 0; i < segs; i++) {
+                float v = AV - (i + 0.5f) / segs * (AV - 0.06f);
+                float u = v / AV;
+                float w = 0.60f * s * Mth.sin(1.5707964f * (float) Math.pow(u, 0.62))
+                        * (0.62f + 0.38f * (float) Math.sqrt(u))
+                        * (1.0f - 0.09f * u * u * u * u)
+                        * Math.min(1.0f, (float) Math.sqrt(u / 0.10f))
+                        * (1.0f - contract * (0.26f * Mth.sin(u * Mth.PI) + 0.10f));
+                float yy = hy + (v - 0.46f) * H;
+                float fOff = hf + lean * (v - 0.46f) * H;
+                float lOff = hl + leanL * (v - 0.46f) * H;
+                // Le sillon est a l'avant, entre les deux cavites : angle proche de +0,55 rad,
+                // qui glisse vers l'apex ou les deux ventricules se rejoignent.
+                float ang = 0.55f + 0.30f * (1.0f - u) + Mth.sin(u * 4.0f) * 0.10f;
+                float rr = w * 0.96f;
+                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                        fOff + Mth.cos(ang) * rr, lOff + Mth.sin(ang) * rr * 0.86f, yy,
+                        0.038f * s, step * 0.58f, 0.038f * s,
+                        contract > 0.05f ? PLASMA : SPRAY, opaque(alpha));
+                // Une diagonale sur deux : les branches de la coronaire.
+                if (i % 5 == 2) {
+                    float ang2 = ang - 0.55f;
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            fOff + Mth.cos(ang2) * rr, lOff + Mth.sin(ang2) * rr * 0.86f,
+                            yy - step * 0.5f,
+                            0.032f * s, step * 0.5f, 0.032f * s, SPRAY, opaque(alpha * 0.85f));
+                }
             }
         }
     }

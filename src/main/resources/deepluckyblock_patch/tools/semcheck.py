@@ -107,6 +107,13 @@ def check_constants(path, clean):
     declared |= set(re.findall(r'^import\s+(?:static\s+)?[\w.]*?([A-Za-z_]\w*);', clean, re.M))
     # classes déclarées dans le fichier et types du même paquet
     declared |= set(re.findall(r'\b(?:class|interface|enum|record)\s+(\w+)', clean))
+    # variables LOCALES en majuscules. « final float H = 1.22f * s; » au debut d'une
+    # methode est une declaration aussi valable qu'un champ static : sans cette regle, un
+    # modele geometrique qui nomme ses grandeurs H, AV, R... sort des dizaines de faux
+    # positifs. On reste prudent : seulement les types primitifs, var et String.
+    declared |= set(re.findall(
+        r'\b(?:final\s+)?(?:float|double|int|long|boolean|char|byte|short|var|String)\s+'
+        r'([A-Z][A-Z0-9_]*)\s*=', clean))
     declared |= project_constants()
     declared |= set(re.findall(r'\benum\s+\w+\s*\{([^}]*)\}', clean, re.S) and
                     re.findall(r'\b([A-Z][A-Z0-9_]{2,})\s*[(,;]', ' '.join(re.findall(r'\benum\s+\w+\s*\{([^}]*)\}', clean, re.S))) or [])

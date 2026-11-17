@@ -42,7 +42,7 @@ assert RENDER.count(MARK) == 1, 'marqueur de decoupe introuvable dans preview_re
 _, TAIL = RENDER.split(MARK, 1)
 
 HEAD = r"""/* ===== Rendu ===== */
-const SUBS=['\u00e9chafaud de 4,6 blocs \u00b7 couperet de 1,4 \u00b7 clouage','arc de 3,4 blocs \u00b7 rideau de go\u00fattes \u00b7 flaque','embout \u00b7 tuyau en arc \u00b7 calice qui se remplit','c\u0153ur \u00e0 17 tranches \u00b7 4 vaisseaux \u00b7 7 battements','11 taillades \u00b7 onde au sol \u00b7 brume'];
+const SUBS=['\u00e9chafaud de 4,6 blocs \u00b7 couperet de 1,4 \u00b7 clouage','arc de 3,4 blocs \u00b7 rideau de go\u00fattes \u00b7 flaque','embout \u00b7 tuyau en arc \u00b7 calice qui se remplit','c\u0153ur anatomique \u00b7 crosse aortique \u00b7 7 battements','11 taillades \u00b7 onde au sol \u00b7 brume'];
 const DUR=[150,120,170,140,180], NAMES=['Couperet','Tranchant Sanglant','Siphon Carmin','Transfusion Vitale','Carnage Berserk'];
 const BEATS=[
  [['0 \u2192 18','l\u2019\u00e9chafaud sort du sol : deux montants, un linteau, les ferrures'],
@@ -143,7 +143,7 @@ function bloodShot(tt){
  if(variant===2) return {span:9.8, center:0.35, pan:-3.1};
  /* La transfusion est un lien, elle aussi : le coeur est au MILIEU du segment et deux
     vaisseaux vont jusqu'au porteur. Cadrage de lien, donc, comme le siphon. */
- if(variant===3) return {span:10.4, center:0.75, pan:-3.3};
+ if(variant===3) return {span:9.4, center:1.00, pan:-3.4};
  return {span:8.6, center:1.25, pan:0};}
 function updateCam(){CY=Math.cos(camYaw);SY=Math.sin(camYaw);CP=Math.cos(camPitch);SP=Math.sin(camPitch);
  const s=bloodShot(t); VCY=s.center; VCX=s.pan||0;
@@ -261,7 +261,7 @@ href="{URL}" rel="noopener">{ZIP_NAME}</a></div></noscript>
 <aside>
   <div class="eyebrow">Deep Lucky Block · Blood VFX</div>
   <div class="build">T379 · 4 novembre 2026 — onzième famille · la première à CINQ \
-signatures · échafaud · cœur à 17 tranches · frénésie</div>\
+signatures · échafaud · cœur anatomique · frénésie</div>\
   <h1>SANG</h1><h2>Cinq signatures</h2>
   <p class="intro">Refonte complète de l’élément sang, et la première famille du mod à \
 porter <b>cinq</b> signatures : une exécution, une coupe, un siphon, une transfusion et une \

@@ -2827,3 +2827,55 @@ le **décor** (là où vit déjà la grille de sol, pas dans le moteur Java), de
 silhouettes filaires légendées **VICTIME** et **PORTEUR**. La question « ça mène
 où, sur le joueur ? » a désormais une réponse visible. Caméra de profil pour les
 deux signatures de lien : à 0,62 radian un lien horizontal fuit vers le fond.
+
+## §42 — « On dirait une amande » : pourquoi le cœur n'en était pas un
+
+Verdict de la quatrième relecture de la Transfusion, et il était net : *le cœur ne
+ressemble pas du tout à un cœur, on dirait une sorte d'amande*. Il avait pourtant
+vingt tranches, un sillon, des vaisseaux. Le défaut n'était dans aucun de ces
+détails : il était dans le **profil**.
+
+L'ancienne largeur de tranche valait `sin(√v · 2,55) · (0,52 − 0,10 v)`. Cette
+courbe est maximale **au milieu** — 0,46 à mi-hauteur — et retombe **aux deux
+bouts**, 0,23 en haut comme en bas. Un volume large au centre et pointu aux deux
+extrémités porte un nom, et ce n'est pas « cœur » : c'est une amande. Un cœur est
+large **en haut**, là où arrivent les gros vaisseaux, et pointu **en bas**, une
+seule fois. La règle tient en une ligne : **une pointe, et une seule, et elle est
+en bas.**
+
+Le nouveau profil sépare les deux étages au sillon auriculo-ventriculaire, placé
+à 74 % de la hauteur. Sous le sillon, les ventricules :
+`0,60 · sin(90° · u^0,62) · (0,62 + 0,38·√u)`. Le sinus donne l'**épaule ronde**
+sous la ceinture — un cône a des flancs droits, un organe non ; le facteur en
+racine resserre le tiers inférieur pour que l'**apex redevienne une pointe**, et
+non le bas d'un œuf. Au-dessus du sillon, les oreillettes enflent en sens
+inverse : elles se remplissent pendant que les ventricules se vident.
+
+Quatre erreurs annexes, toutes visibles dès qu'on regarde une planche d'anatomie
+plutôt que son propre code :
+
+- **Le pan noir.** La face opposée à la lumière tombait à 0,10 de clarté, donc en
+  `VENOUS` : la moitié de l'organe était un trou brun. Le relief se garde, mais le
+  creux le plus sombre doit rester **du muscle rouge** (plancher 0,70 · 0,30).
+- **La rangée de dents.** La ceinture posait 22 cubes de 4 cm sur un périmètre de
+  2,9 blocs : un cube tous les 13 cm, donc des **dents**. Trente cubes de 8 cm se
+  touchent et font une ceinture.
+- **Les orbites.** Les auricules partaient droit sur le côté comme deux bras, et
+  leur teinte `VENOUS` ouvrait deux **trous noirs** aux coins de la base. Elles
+  s'enroulent maintenant contre l'oreillette, en rouge moyen.
+- **L'anse de panier.** Un arc d'épaisseur constante qui redescend aussi bas des
+  deux côtés est une anse, pas une aorte. Elle s'amincit en montant (8,6 → 5,6 cm),
+  sa branche descendante s'arrête plus haut, et surtout sa crosse est couchée
+  **dans le plan de la liaison** : de biais, la caméra la voyait par la tranche et
+  l'arc se refermait en patate. **Une courbe ne se lit que de profil.**
+
+Reste la taille : 0,92 bloc d'échelle donnait un organe d'1,12 bloc flottant entre
+deux joueurs de 1,80 — une babiole. À 1,45, le cœur fait 1,77 bloc de haut et la
+signature a enfin un sujet. Le cadrage de la variante III suit : portée 9,4 au lieu
+de 10,4.
+
+Une note d'outillage pour finir. `semcheck.py` a sorti 35 « constante inconnue »
+sur `H` et `AV` — les deux grandeurs locales du modèle. Faux positifs : l'outil ne
+connaissait que les champs `static`. Il accepte désormais les **variables locales
+en majuscules** déclarées avec un type primitif. Un faux positif se corrige dans
+l'outil, jamais dans la source.

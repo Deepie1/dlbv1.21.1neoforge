@@ -567,75 +567,187 @@ function buildBlood(variant, t, salt = 5099, linkLen = 7.0, linkEndY = 0.25, lin
     return d > 0 ? d : 0;
   };
 
+  /* T382 — le coeur, modele anatomique. L'ancien profil sin(sqrt(v)*2,55)*(0,52-0,10v) etait
+     maximal AU MILIEU et retombait aux deux bouts : une amande. Un coeur est large en haut
+     (la base et ses gros vaisseaux) et pointu en bas (l'apex), une seule fois. */
   const drawHeart = (hf, hl, hy, s, contract, alpha) => {
-    // L'apex d'un coeur ne pointe pas droit en bas : sans inclinaison laterale, la
-    // silhouette est un bulbe symetrique — une ampoule, pas un organe.
-    const slices = 17, lean = 0.22, leanL = 0.30;
+    const slices = 20, H = 1.22 * s, AV = 0.74, lean = 0.20, leanL = 0.26, step = H / slices;
+
     for (let i = 0; i < slices; i++) {
       const v = (i + 0.5) / slices;
-      const yy = hy + (v - 0.42) * 1.55 * s;
-      const fOff = hf + lean * (v - 0.42) * 1.55 * s;
-      const lOff = hl + leanL * (v - 0.42) * 1.55 * s;
-      let w = Math.sin(Math.sqrt(v) * 2.55) * (0.52 - 0.10 * v);
+      const yy = hy + (v - 0.46) * H;
+      const fOff = hf + lean * (v - 0.46) * H;
+      const lOff = hl + leanL * (v - 0.46) * H;
+      const atrium = v > AV;
+      let w;
+      if (!atrium) {
+        const u = v / AV;
+        w = 0.60 * Math.sin(1.5707964 * Math.pow(u, 0.62)) * (0.62 + 0.38 * Math.sqrt(u))
+              * (1 - 0.09 * u * u * u * u);
+        w *= Math.min(1, Math.sqrt(u / 0.07));
+        w *= 1 - contract * (0.26 * Math.sin(u * PI) + 0.10);
+      } else {
+        const u = (v - AV) / (1 - AV);
+        w = 0.546 * (1 - 0.34 * u * u) * (1 - 0.16 * u);
+        w *= 1 + contract * 0.10;
+      }
       if (w <= 0.012) continue;
-      // La systole écrase surtout le milieu : un organe ne se contracte pas en bloc.
-      w *= s * (1 - contract * (0.55 + 0.85 * Math.sin(v * PI)));
-      const c1 = -0.20 * w, r1 = 0.70 * w;
-      const c2 = 0.26 * w, r2 = 0.54 * w;
-      const pts = 20;
+      w *= s;
+
+      const c1 = -0.14 * w, r1 = atrium ? 0.74 * w : 0.80 * w;
+      const c2 = 0.30 * w, r2 = atrium ? 0.60 * w : 0.64 * w;
+      const pts = 28;
       for (let k = 0; k < pts; k++) {
         const ang = (k + 0.5) / pts * TAU;
-        const ux = Math.cos(ang), uz = Math.sin(ang);
+        const ux = Math.cos(ang), uz = Math.sin(ang) * 0.86;
+        const d1 = rayToCircle(c1, 0, r1, ux, uz), d2 = rayToCircle(c2, 0, r2, ux, uz);
+        let rr = Math.max(d1, d2);
+        if (rr <= 0.004) continue;
+        const groove = !atrium && Math.abs(d1 - d2) < 0.060 * w && d1 > 0 && d2 > 0;
+        if (groove) rr *= 0.93;
+        if (atrium) {
+          const ua = (v - AV) / (1 - AV);
+          const notch = Math.max(0, 1 - Math.abs(d1 - d2) / (0.42 * w));
+          rr *= 1 - 0.62 * ua * ua * notch;
+        }
+        let lit = (0.70 + 0.30 * Math.cos(ang - 0.9)) * 0.70 + 0.30 * v;
+        if (atrium) lit *= 0.84;
+        lit *= 0.93 + 0.14 * hash(salt + 141, k * 31 + i * 7);
+        const rgb = groove ? VENOUS
+                  : (lit > 0.84 ? SPRAY : lit > 0.66 ? FRESH : lit > 0.48 ? ARTERY
+                  : lit > 0.32 ? GORE : VENOUS);
+        box(fOff + ux * rr, lOff + uz * rr, yy,
+            0.050 * s, step * 0.66, 0.050 * s, rgb, opq(alpha * 0.95));
+      }
+    }
+
+    /* La calotte de l'apex : sans elle le coeur est coupe net par le bas. */
+    {
+      const v0 = 0.5 / slices, yy = hy + (v0 - 0.46) * H;
+      const fOff = hf + lean * (v0 - 0.46) * H, lOff = hl + leanL * (v0 - 0.46) * H;
+      for (let k = 0; k < 3; k++) {
+        const d = (k + 1) / 3;
+        box(fOff - lean * d * 0.10 * H, lOff - leanL * d * 0.10 * H, yy - d * 0.085 * H,
+            (0.085 - 0.024 * k) * s, step * 0.55, (0.085 - 0.024 * k) * s,
+            k === 2 ? VENOUS : GORE, opq(alpha * 0.95));
+      }
+    }
+
+    /* Le sillon auriculo-ventriculaire : la ceinture du coeur, et la circonflexe dedans. */
+    {
+      const v = AV, yy = hy + (v - 0.46) * H;
+      const fOff = hf + lean * (v - 0.46) * H, lOff = hl + leanL * (v - 0.46) * H;
+      const w = 0.60 * s * 0.91 * (1 - contract * 0.12);
+      const c1 = -0.14 * w, r1 = 0.80 * w, c2 = 0.30 * w, r2 = 0.64 * w;
+      for (let k = 0; k < 30; k++) {
+        const ang = (k + 0.5) / 30 * TAU, ux = Math.cos(ang), uz = Math.sin(ang) * 0.86;
         const rr = Math.max(rayToCircle(c1, 0, r1, ux, uz), rayToCircle(c2, 0, r2, ux, uz));
         if (rr <= 0.004) continue;
-        // LA VALEUR FAIT LE VOLUME : cinq crans, plus un terme vertical, sans quoi
-        // toutes les tranches sont identiques et l'organe s'aplatit en disque.
-        let lit = 0.5 + 0.5 * Math.cos(ang - 0.9);
-        lit = lit * 0.72 + 0.28 * v;
-        const rgb = lit > 0.78 ? SPRAY : (lit > 0.60 ? FRESH : (lit > 0.43 ? ARTERY : (lit > 0.26 ? GORE : VENOUS)));
-        box(fOff + ux * rr, lOff + uz * rr, yy, 0.034 * s, 1.55 * s / slices * 0.56, 0.034 * s,
-            rgb, opq(alpha * 0.95));
-      }
-      if (v > 0.12 && v < 0.88) {
-        box(fOff + 0.03 * w, lOff + 0.03 * w, yy, 0.030 * s, 1.55 * s / slices * 0.5, 0.022 * s,
-            CLOT, opq(alpha * 0.9));
+        box(fOff + ux * rr * 0.99, lOff + uz * rr * 0.99, yy,
+            0.080 * s, 0.036 * s, 0.080 * s, VENOUS, opq(alpha * 0.94));
+        if (Math.cos(ang) < -0.1) {
+          box(fOff + ux * rr, lOff + uz * rr, yy + 0.012 * s,
+              0.046 * s, 0.024 * s, 0.046 * s, contract > 0.05 ? SPRAY : ARTERY, opq(alpha * 0.9));
+        }
       }
     }
-    const baseY = hy + 0.58 * 1.55 * s * 0.5 + 0.42 * s;
-    for (let i = 0; i < 11; i++) {           // crosse aortique
-      const u = (i + 0.5) / 11.0;
-      const ang = u * HALF_PI * 1.15, rr = 0.42 * s;
-      box(hf + lean * 0.3 - Math.sin(ang) * rr * 0.4, hl + 0.08 * s + Math.sin(ang) * rr,
-          baseY + Math.cos(ang) * rr * 0.75, 0.052 * s, 0.052 * s, 0.052 * s,
-          i < 3 ? ARTERY : GORE, opq(alpha * 0.95));
+
+    /* Les auricules. */
+    for (let side = 0; side < 2; side++) {
+      const sg = side === 0 ? 1 : -1, v = AV + 0.10;
+      const yy = hy + (v - 0.46) * H;
+      const fOff = hf + lean * (v - 0.46) * H, lOff = hl + leanL * (v - 0.46) * H;
+      for (let k = 0; k < 8; k++) {
+        const u = (k + 0.5) / 8, ang = sg * (0.42 + 1.30 * u),
+              rad = (0.50 + 0.14 * Math.sin(u * PI)) * s;
+        box(fOff + Math.cos(ang) * rad * 0.92, lOff + Math.sin(ang) * rad * 0.80,
+            yy + 0.07 * s - u * u * 0.16 * s,
+            0.058 * s, 0.052 * s, 0.058 * s, k % 2 === 0 ? GORE : ARTERY, opq(alpha * 0.92));
+      }
     }
-    for (let i = 0; i < 7; i++) {            // tronc pulmonaire
-      const u = (i + 0.5) / 7.0;
-      box(hf + 0.16 * s, hl + 0.20 * s, baseY + u * 0.52 * s,
-          0.046 * s, 0.046 * s, 0.046 * s, VENOUS, opq(alpha * 0.92));
+
+    /* Les gros vaisseaux. */
+    const baseY = hy + (1 - 0.46) * H;
+    const baseF = hf + lean * (1 - 0.46) * H, baseL = hl + leanL * (1 - 0.46) * H;
+
+    /* L'aorte : crosse couchee dans le plan de la liaison, sinon on la voit par la tranche. */
+    for (let i = 0; i < 20; i++) {
+      const u = (i + 0.5) / 20;
+      let pf, py;
+      if (u < 0.30) { const k = u / 0.30; pf = 0.12 - 0.02 * k; py = -0.08 + k * 0.34; }
+      else if (u < 0.76) {
+        const k = (u - 0.30) / 0.46, ang = k * PI;
+        pf = 0.10 - (1 - Math.cos(ang)) * 0.33;
+        py = 0.26 + Math.sin(ang) * 0.24;
+      } else { const k = (u - 0.76) / 0.24; pf = -0.56; py = 0.26 - k * 0.16; }
+      box(baseF + pf * s, baseL - 0.06 * s, baseY + py * s,
+          (0.086 - 0.030 * u) * s, (0.086 - 0.030 * u) * s, (0.086 - 0.030 * u) * s,
+          u < 0.45 ? FRESH : ARTERY, opq(alpha * 0.96));
     }
-    for (let i = 0; i < 6; i++) {            // veine cave
-      const u = (i + 0.5) / 6.0;
-      box(hf - 0.28 * s, hl - 0.26 * s, baseY - 0.10 * s + u * 0.40 * s,
-          0.040 * s, 0.040 * s, 0.040 * s, CLOT, opq(alpha * 0.9));
+    for (let b = 0; b < 2; b++) {
+      const ff = -0.11 - b * 0.17;
+      for (let k = 0; k < 2; k++) {
+        box(baseF + (ff - (b === 0 ? 0.06 : -0.02) * k) * s, baseL - 0.06 * s,
+            baseY + (0.50 + k * 0.075) * s,
+            0.044 * s, 0.048 * s, 0.044 * s, FRESH, opq(alpha * 0.92));
+      }
     }
-    // Les CORONAIRES : le seul endroit où le cœur s'éclaircit, donc le seul qui batte à l'œil.
-    for (let c = 0; c < 2; c++) {
-      const side = c === 0 ? 1 : -1;
-      const segs = 15;
+
+    for (let i = 0; i < 11; i++) {
+      const u = (i + 0.5) / 11;
+      box(baseF + (0.02 + 0.06 * u) * s, baseL + (0.20 - 0.03 * u) * s,
+          baseY + (-0.10 + u * 0.42) * s,
+          0.078 * s, 0.078 * s, 0.078 * s, GORE, opq(alpha * 0.95));
+    }
+    for (let side = 0; side < 2; side++) {
+      const sg = side === 0 ? 1 : -1;
+      for (let k = 0; k < 3; k++) {
+        const u = (k + 0.5) / 3;
+        box(baseF + (0.08 + sg * u * 0.30) * s, baseL + (0.17 - 0.02 * u) * s,
+            baseY + (0.30 + 0.05 * u - u * u * 0.07) * s,
+            0.060 * s, 0.060 * s, 0.060 * s, VENOUS, opq(alpha * 0.92));
+      }
+    }
+
+    for (let i = 0; i < 8; i++) {
+      const u = (i + 0.5) / 8;
+      box(baseF + (0.32 + 0.03 * u) * s, baseL - 0.20 * s, baseY + (-0.10 + u * 0.34) * s,
+          0.068 * s, 0.068 * s, 0.068 * s, GORE, opq(alpha * 0.92));
+    }
+    for (let i = 0; i < 5; i++) {
+      const u = (i + 0.5) / 5;
+      box(baseF + 0.34 * s, baseL - 0.17 * s, baseY - (0.10 + u * 0.24) * s,
+          0.064 * s, 0.064 * s, 0.064 * s, VENOUS, opq(alpha * 0.90));
+    }
+    for (let side = 0; side < 2; side++) {
+      const sg = side === 0 ? 1 : -1;
+      for (let k = 0; k < 2; k++) {
+        box(baseF + sg * 0.19 * s, baseL - (0.26 + k * 0.09) * s, baseY - 0.11 * s,
+            0.054 * s, 0.054 * s, 0.054 * s, CLOT, opq(alpha * 0.88));
+      }
+    }
+
+    /* L'interventriculaire anterieure, dans le sillon, de la base a l'apex. */
+    {
+      const segs = 16;
       for (let i = 0; i < segs; i++) {
-        const v = 0.88 - (i + 0.5) / segs * 0.80;
-        const w = Math.sin(Math.sqrt(v) * 2.55) * (0.52 - 0.10 * v) * s;
-        const ang = side * (0.75 + v * 1.25) + Math.sin(v * 5.0) * 0.22;
-        const yy = hy + (v - 0.42) * 1.55 * s;
-        const fOff = hf + lean * (v - 0.42) * 1.55 * s;
-        const lOff = hl + leanL * (v - 0.42) * 1.55 * s;
-        // 0,88 et non 1,02 : la frontiere de l'union culmine a 0,90·w, donc a 1,02 la
-        // coronaire FLOTTE a cote du coeur au lieu de courir dessus.
-        const rr = w * 0.88;
-        const rgb = contract > 0.05 ? PLASMA : SPRAY;
-        box(fOff + Math.cos(ang) * rr, lOff + Math.sin(ang) * rr, yy,
-            0.038 * s, 0.040 * s, 0.038 * s, rgb, opq(alpha));
+        const v = AV - (i + 0.5) / segs * (AV - 0.06), u = v / AV;
+        const w = 0.60 * s * Math.sin(1.5707964 * Math.pow(u, 0.62))
+                * (0.62 + 0.38 * Math.sqrt(u))
+                * (1 - 0.09 * u * u * u * u)
+                * Math.min(1, Math.sqrt(u / 0.10))
+                * (1 - contract * (0.26 * Math.sin(u * PI) + 0.10));
+        const yy = hy + (v - 0.46) * H;
+        const fOff = hf + lean * (v - 0.46) * H, lOff = hl + leanL * (v - 0.46) * H;
+        const ang = 0.55 + 0.30 * (1 - u) + Math.sin(u * 4.0) * 0.10, rr = w * 0.96;
+        box(fOff + Math.cos(ang) * rr, lOff + Math.sin(ang) * rr * 0.86, yy,
+            0.038 * s, step * 0.58, 0.038 * s,
+            contract > 0.05 ? PLASMA : SPRAY, opq(alpha));
+        if (i % 5 === 2) {
+          const ang2 = ang - 0.55;
+          box(fOff + Math.cos(ang2) * rr, lOff + Math.sin(ang2) * rr * 0.86, yy - step * 0.5,
+              0.032 * s, step * 0.5, 0.032 * s, SPRAY, opq(alpha * 0.85));
+        }
       }
     }
   };
@@ -649,7 +761,7 @@ function buildBlood(variant, t, salt = 5099, linkLen = 7.0, linkEndY = 0.25, lin
     // Coeur au MILIEU du segment porteur-victime, 1,60 au-dessus de l'ancre : les nombres
     // exacts du serveur (hx/hz = milieu des deux, hy = oy + 1,6).
     const heartF = -linkLen * 0.5, heartY = 1.60;
-    const scale = 0.92 * gather * (1 - fade * 0.55);
+    const scale = 1.45 * gather * (1 - fade * 0.55);
 
     // LUB-DUB. Deux coups rapprochés puis un silence : un battement unique et régulier
     // donne un ballon qu'on gonfle, pas un organe.
