@@ -6,7 +6,41 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 > **Si le navigateur sert une vieille version** (le CDN de GitHub garde les fichiers bruts en cache quelques minutes), remplacer `refs/heads/arena/605e67fb-dlbv1-21-1neoforge` par le SHA du commit — par exemple `raw/fa83a2f/…` pour la v1.3 — ou ajouter `?v=2` à la fin de l'adresse.
 
-## Sang — cinq signatures · 17 novembre 2026 ⟵ **LOT COURANT**
+## Vide — trois signatures · 4 novembre 2026 ⟵ **LOT COURANT**
+
+- **Aperçu (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Three_Signatures_preview.html
+- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Three_Signatures_src.zip
+
+> **T388 — douzième famille : le VIDE.** Trois signatures qui partageaient une routine
+> générique de **16 à 22 ticks** et n'avaient **aucun gameplay** — deux d'entre elles
+> n'avaient même pas leur propre durée (le Prisme était dans le `case` de `BIG_BANG_SCAR`,
+> la Faille dans celui de `CHAOS_KALEIDO_LOOP`). Elles font désormais **160 / 190 / 170**,
+> dans `VoidSignatureVfx`.
+>
+> **Sa monnaie n'est pas la vie, c'est la POSITION.** Le Sang punit, l'Ombre aveugle, le
+> Vide **déplace** : il tire, il soulève, il éjecte, il retient. Conséquence assumée — il ne
+> donne **aucun bonus de dégâts** à son porteur (ce serait la ferveur du Sang une seconde
+> fois), mais **Vitesse et Chute Lente**.
+>
+> **L'empreinte du néant**, quatre au maximum, ne fait aucun dégât par elle-même : c'est un
+> **seuil**. À la quatrième, l'espace cède — implosion, Lévitation, Lenteur II. Une graine
+> de poussière cyan flotte au-dessus de la tête **par empreinte**, pour qu'on sache qui est
+> à 3 sur 4.
+>
+> **AoE et duel, trois réponses différentes.** La **Sphère** RASSEMBLE (six tractions à
+> vitesse proportionnelle à la distance) ; seule, elle s'accroche, soulève et tape
+> **×2,45**. Le **Prisme** DISTRIBUE (sept faisceaux, sept corps, Lueur à travers les
+> murs) ; sous trois corps ils **CONVERGENT** et la détonation est garantie. La **Faille**
+> TRIE : son aire est un **CORRIDOR** de 9 × 3,2 blocs perpendiculaire au coup, pas un
+> disque — **la seule aire du mod où le placement latéral décide** ; seule, la victime est
+> **retenue 70 ticks** et chaque aspiration tape **×1,73**.
+>
+> **Glint `0xFF3FD8`** (magenta de l'autre côté), `§9` pour le nom. Pas le cyan d'horizon :
+> il n'est qu'à 29 / 13 / **0** de l'Eau sur les trois canaux. **`/anim void`**.
+> ZIP **1 164 625 o / 65 entrées**, page **1 617 527 o**, SHA-256 `d7dabe117bd6c193…`.
+> Suffixez les liens de **`?v=388`**.
+
+## Sang — cinq signatures · 17 novembre 2026
 
 - **Aperçu (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Blood_Five_Signatures_preview.html
 - **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Blood_Five_Signatures_src.zip

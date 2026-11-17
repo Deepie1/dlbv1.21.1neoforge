@@ -320,6 +320,14 @@ public final class WeaponVfxServerListener {
             WeaponVisualEffectId.CRIMSON_SIPHON, WeaponVisualEffectId.VITAL_TRANSFUSION,
             WeaponVisualEffectId.CARNAGE_BERSERK
     };
+    /**
+     * T388-VOID : douzieme famille. Les trois titres du vide — la sphere qui rassemble, le
+     * prisme qui distribue, la faille qui trie.
+     */
+    private static final WeaponVisualEffectId[] ANIM_VOID = {
+            WeaponVisualEffectId.VOID_WARP_SPHERE, WeaponVisualEffectId.DRAGON_CHAOS_PRISM,
+            WeaponVisualEffectId.NULL_RIFT_FISSURE
+    };
     private static final WeaponVisualEffectId[] ANIM_LIGHT = {
             WeaponVisualEffectId.SERAPH_SKY_PILLAR, WeaponVisualEffectId.ASTRAL_STAR_LANCE,
             WeaponVisualEffectId.CHRONO_ETERNAL_HALO
@@ -542,6 +550,7 @@ public final class WeaponVfxServerListener {
             applyThunderGameplay(attacker, livingTarget, fx, signatureBaseDamage(attacker, livingTarget));
             applyShadowGameplay(attacker, livingTarget, fx, signatureBaseDamage(attacker, livingTarget));
             applyBloodGameplay(attacker, livingTarget, fx, signatureBaseDamage(attacker, livingTarget));
+            applyVoidGameplay(attacker, livingTarget, fx, signatureBaseDamage(attacker, livingTarget));
         }
     }
 
@@ -4660,6 +4669,665 @@ public final class WeaponVfxServerListener {
         });
     }
 
+
+    // ============================================================================================
+    //  T388-VOID — LE VIDE : SPHERE DE DISTORSION, PRISME DU DRAGON, FAILLE DU NEANT
+    // ============================================================================================
+    //
+    //  L'IDENTITE DE JEU DE CETTE FAMILLE, et pourquoi elle n'est ni l'ombre ni le sang.
+    //
+    //  Le sang PUNIT : il saigne, il draine, il recompense l'acharnement. L'ombre AVEUGLE :
+    //  elle marque, elle affaiblit, elle recompense l'embuscade. Le vide, lui, DEPLACE. Sa
+    //  monnaie n'est pas la perte de vie, c'est la POSITION : il tire, il souleve, il ejecte,
+    //  il retient. Toute sa valeur tactique est la — un ennemi arrache a sa place est un
+    //  ennemi qui ne fait plus ce qu'il faisait.
+    //
+    //  Consequence assumee sur la recompense du porteur : le vide ne lui donne PAS de degats
+    //  en plus (ce serait la ferveur du sang une seconde fois). Il lui donne de la MOBILITE —
+    //  vitesse et chute lente. La famille dont le sujet est le deplacement recompense par du
+    //  deplacement.
+    //
+    //  L'EMPREINTE (VOID_MARKS) est leur ressource commune. Quatre empreintes sur un corps et
+    //  l'espace cede : implosion, soulevement, remise a zero. T387 est applique DES LE DEPART —
+    //  toute empreinte porte une ECHEANCE ABSOLUE, et aucun appel ne peut la repousser au-dela
+    //  de l'animation qui l'a posee.
+    //
+
+    /**
+     * L'EMPREINTE DU NEANT posee sur une victime.
+     *
+     * @param stacks   empreintes accumulees (1..{@link #VOID_MARK_MAX})
+     * @param attackerId porteur a crediter de l'echo, ou -1
+     * @param expires  fin, en temps de MONDE ({@code getGameTime})
+     * @param perStack degats d'une empreinte a l'implosion
+     */
+    private record VoidMark(int stacks, int attackerId, long expires, float perStack) { }
+
+    private static final Map<Integer, VoidMark> VOID_MARKS = new ConcurrentHashMap<>();
+
+    /** Au-dela de quatre, l'espace cede : c'est le seuil, pas un plafond decoratif. */
+    private static final int VOID_MARK_MAX = 4;
+
+    /**
+     * Echos banques par porteur, avec leur peremption.
+     *
+     * <p>Un compteur nu aurait eu deux defauts, et le second est un bogue : il n'aurait
+     * jamais ete vide (une carte statique indexee par identifiant d'entite qui ne se purge
+     * pas est exactement la fuite deja constatee sur {@code BLOOD_POOLS}), et surtout il
+     * aurait recompense l'ACCUMULATION au lieu de l'ENCHAINEMENT — trois effondrements
+     * separes par dix minutes de marche auraient paye comme trois effondrements en six
+     * secondes. L'echo se perime donc en {@link #VOID_ECHO_WINDOW} ticks.</p>
+     *
+     * @param count   effondrements declenches dans la fenetre
+     * @param expires fin de la fenetre, en temps de MONDE
+     */
+    private record VoidEcho(int count, long expires) { }
+
+    private static final Map<Integer, VoidEcho> VOID_ECHOES = new ConcurrentHashMap<>();
+
+    /** Dix secondes : au-dela, la serie est cassee et le compteur repart de zero. */
+    private static final long VOID_ECHO_WINDOW = 200L;
+
+    /**
+     * Gouttes du vide : un ANNEAU de poussiere cyan autour du corps, plus un point blanc.
+     *
+     * <p>Meme raison que {@code bloodDrops} (T387) : un nuage centre sur l'entite disparait
+     * dans son modele. Et meme exigence de lisibilite que le VFX — le gris de
+     * {@code DeepElement.VOID} serait invisible, donc la poussiere est cyan.</p>
+     */
+    private static void voidMotes(ServerLevel sl, LivingEntity victim, int intensity, long seed) {
+        if (sl == null || victim == null) return;
+        double vx = victim.getX();
+        double vz = victim.getZ();
+        double w = Math.max(0.35, victim.getBbWidth());
+        double h = Math.max(0.60, victim.getBbHeight());
+        int ring = Math.max(5, Math.min(20, 5 + intensity * 3));
+        for (int i = 0; i < ring; i++) {
+            double ang = (i + (seed % 13) * 0.08) / ring * Math.PI * 2.0;
+            double rr = w * (0.50 + 0.40 * (((i * 41 + seed) % 11) / 10.0));
+            PixelFx.send(sl, VOID_DUST,
+                    vx + Math.cos(ang) * rr,
+                    victim.getY() + h * (0.14 + 0.62 * (((i * 59 + seed) % 13) / 12.0)),
+                    vz + Math.sin(ang) * rr,
+                    1, 0.012, 0.012, 0.012, 0.0);
+        }
+        PixelFx.send(sl, ParticleTypes.PORTAL, vx, victim.getY() + h * 0.55, vz,
+                2 + intensity, w * 0.40, h * 0.30, w * 0.40, 0.02);
+    }
+
+    /** Cyan d'horizon, accorde sur {@code VoidSignatureVfx.HORIZON} (0x7FD4E8). */
+    private static final net.minecraft.core.particles.DustParticleOptions VOID_DUST =
+            new net.minecraft.core.particles.DustParticleOptions(
+                    new org.joml.Vector3f(0.50f, 0.83f, 0.91f), 1.25f);
+
+    /** Orange de restitution, accorde sur {@code VoidSignatureVfx.INVERT} (0xFF9A4A). */
+    private static final net.minecraft.core.particles.DustParticleOptions VOID_DUST_INVERT =
+            new net.minecraft.core.particles.DustParticleOptions(
+                    new org.joml.Vector3f(1.00f, 0.60f, 0.29f), 1.55f);
+
+    /**
+     * Degat de la famille Vide : la perte de vie ET la poussiere, toujours ensemble.
+     * Meme principe que {@code bloodHurt} (T387) — aucun coup de la famille sans trace.
+     */
+    private static boolean voidHurt(ServerLevel sl, int attackerId, LivingEntity victim,
+                                    float amount) {
+        boolean hit = hurtWithCapturedWeapon(sl, attackerId, victim, amount);
+        if (hit && sl != null && victim != null) {
+            int weight = 2 + (int) Math.min(6.0f, Math.max(0.0f, amount) * 0.75f);
+            voidMotes(sl, victim, weight, sl.getGameTime() * 29L + victim.getId());
+        }
+        return hit;
+    }
+
+    /**
+     * Pose une empreinte, et DETONE si le quatrieme tombe.
+     *
+     * <p>L'echeance est absolue : {@code deadline} est calcule par la signature au moment ou
+     * elle demarre, et {@code addVoidMark} ne peut que la raccourcir, jamais l'allonger.
+     * C'est la lecon T387 appliquee avant d'avoir le bogue.</p>
+     */
+    private static void addVoidMark(ServerLevel sl, LivingEntity victim, int stacks,
+                                    int attackerId, float perStack, long deadline) {
+        if (sl == null || victim == null || !victim.isAlive() || stacks <= 0) return;
+        long now = sl.getGameTime();
+        if (deadline <= now) return;
+        VoidMark previous = VOID_MARKS.get(victim.getId());
+        int total = stacks;
+        float unit = perStack;
+        if (previous != null && previous.expires() > now) {
+            total = previous.stacks() + stacks;
+            unit = Math.max(previous.perStack(), perStack);
+        }
+        if (total >= VOID_MARK_MAX) {
+            voidCollapse(sl, victim, attackerId, unit, total);
+            return;
+        }
+        // On ne RALLONGE jamais : min(nouvelle, ancienne restante) si une empreinte court deja.
+        long expiry = previous != null && previous.expires() > now
+                ? Math.min(deadline, previous.expires()) : deadline;
+        VOID_MARKS.put(victim.getId(), new VoidMark(total, attackerId, expiry, unit));
+        voidMotes(sl, victim, 1 + total, now + victim.getId());
+        sl.playSound(null, victim.getX(), victim.getY(), victim.getZ(),
+                SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS,
+                0.30f, 1.30f + total * 0.18f);
+    }
+
+    /**
+     * L'ESPACE CEDE. Quatre empreintes, et le point ou elles sont posees cesse d'exister une
+     * fraction de seconde : implosion, soulevement, et un echo pour le porteur.
+     *
+     * <p>Le soulevement n'est pas decoratif. C'est la seule facon de rendre la famille
+     * lisible en jeu : une creature qui decolle du sol dit « ici, la gravite a lache », et
+     * c'est exactement ce que la signature pretend faire.</p>
+     */
+    private static void voidCollapse(ServerLevel sl, LivingEntity victim, int attackerId,
+                                     float perStack, int stacks) {
+        if (sl == null || victim == null || !victim.isAlive()) return;
+        VOID_MARKS.remove(victim.getId());
+        double vx = victim.getX();
+        double vy = victim.getY() + victim.getBbHeight() * 0.55;
+        double vz = victim.getZ();
+        voidHurt(sl, attackerId, victim, perStack * stacks * 1.15f);
+        victim.addEffect(new MobEffectInstance(MobEffects.LEVITATION, 25, 0, true, true));
+        victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 50, 1, true, false));
+        PixelFx.send(sl, VOID_DUST, vx, vy, vz, 26, 0.55, 0.65, 0.55, 0.05);
+        PixelFx.send(sl, ParticleTypes.REVERSE_PORTAL, vx, vy, vz, 20, 0.30, 0.45, 0.30, 0.22);
+        PixelFx.send(sl, VOID_DUST_INVERT, vx, vy, vz, 10, 0.40, 0.40, 0.40, 0.06);
+        sl.playSound(null, vx, vy, vz, SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 0.80f, 0.62f);
+        sl.playSound(null, vx, vy, vz, SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 0.45f, 1.45f);
+        voidEcho(sl, attackerId);
+    }
+
+    /**
+     * Un ECHO de plus au porteur. Aux troisieme et septieme, l'espace se desserre autour de
+     * lui : vitesse et chute lente.
+     *
+     * <p><b>Pas de degats en plus.</b> La ferveur du sang donne deja Force a un porteur qui
+     * s'acharne ; refaire la meme recompense ici, ce serait avoir ecrit deux fois la meme
+     * famille. Le vide paie en terrain.</p>
+     */
+    private static void voidEcho(ServerLevel sl, int attackerId) {
+        if (sl == null || attackerId < 0) return;
+        if (!(sl.getEntity(attackerId) instanceof LivingEntity carrier) || !carrier.isAlive()) return;
+        long now = sl.getGameTime();
+        VoidEcho previous = VOID_ECHOES.get(attackerId);
+        int echoes = previous != null && previous.expires() > now ? previous.count() + 1 : 1;
+        VOID_ECHOES.put(attackerId, new VoidEcho(echoes, now + VOID_ECHO_WINDOW));
+        if (echoes != 3 && echoes != 7) return;
+        int level = echoes >= 7 ? 1 : 0;
+        carrier.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 120, level, true, true));
+        carrier.addEffect(new MobEffectInstance(MobEffects.SLOW_FALLING, 140, 0, true, true));
+        PixelFx.send(sl, VOID_DUST, carrier.getX(), carrier.getY() + carrier.getBbHeight() * 0.5,
+                carrier.getZ(), 18, 0.40, 0.55, 0.40, 0.03);
+        sl.playSound(null, carrier.getX(), carrier.getY(), carrier.getZ(),
+                SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS, 0.55f, 0.85f + level * 0.25f);
+        if (echoes >= 7) VOID_ECHOES.remove(attackerId);
+    }
+
+    /**
+     * Tick de l'empreinte : la rendre VISIBLE, la faire expirer, et vider les deux cartes.
+     *
+     * <p><b>Pourquoi un tick alors que l'empreinte ne fait pas de degats ?</b> Parce qu'une
+     * ressource a seuil qu'on ne voit pas n'est pas une ressource : si rien ne distingue un
+     * corps a trois empreintes d'un corps a une, le joueur ne peut pas decider de frapper
+     * celui-la plutot que l'autre, et tout le systeme se reduit a du hasard. Le halo compte
+     * donc a voix haute — une graine de poussiere par empreinte, deux fois par seconde.</p>
+     *
+     * <p>L'expiration est lue sur l'echeance ABSOLUE posee par la signature : rien ici ne
+     * peut la repousser, ce qui est la lecon payee en T387 sur l'hemorragie sans fin.</p>
+     */
+    private static void tickVoidMark(LivingEntity target) {
+        if (target == null) return;
+        VoidMark mark = VOID_MARKS.get(target.getId());
+        if (mark == null) return;
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        long now = sl.getGameTime();
+        if (!target.isAlive() || now >= mark.expires()) {
+            VOID_MARKS.remove(target.getId());
+            if (target.isAlive()) {
+                // L'empreinte ne s'efface pas en silence : l'espace se referme.
+                PixelFx.send(sl, VOID_DUST, target.getX(),
+                        target.getY() + target.getBbHeight() * 0.6, target.getZ(),
+                        4, 0.25, 0.30, 0.25, 0.0);
+            }
+            return;
+        }
+        if (now % 10L != 0L) return;
+        double w = Math.max(0.35, target.getBbWidth());
+        double h = Math.max(0.60, target.getBbHeight());
+        // Une graine par empreinte, posees en etoile au-dessus de la tete : on COMPTE.
+        for (int i = 0; i < mark.stacks(); i++) {
+            double ang = i / (double) VOID_MARK_MAX * Math.PI * 2.0 + now * 0.06;
+            PixelFx.send(sl, VOID_DUST,
+                    target.getX() + Math.cos(ang) * w * 0.62,
+                    target.getY() + h * 1.08,
+                    target.getZ() + Math.sin(ang) * w * 0.62,
+                    1, 0.0, 0.0, 0.0, 0.0);
+        }
+        // Au troisieme, l'espace tremble deja : le joueur voit venir l'effondrement.
+        if (mark.stacks() >= VOID_MARK_MAX - 1 && now % 20L == 0L) {
+            PixelFx.send(sl, ParticleTypes.PORTAL, target.getX(),
+                    target.getY() + h * 0.55, target.getZ(), 3, w * 0.5, h * 0.3, w * 0.5, 0.04);
+        }
+    }
+
+    /**
+     * Balayage des deux cartes du vide. Appele une fois toutes les cinq secondes, par le
+     * tick d'entite deja en place : aucun abonnement supplementaire, et aucune carte
+     * statique qui grossit pendant toute une partie.
+     */
+    private static void sweepVoidTables(net.minecraft.world.level.Level level) {
+        if (!(level instanceof ServerLevel sl)) return;
+        long now = sl.getGameTime();
+        if (now % 100L != 0L) return;
+        VOID_MARKS.entrySet().removeIf(e -> e.getValue().expires() <= now);
+        VOID_ECHOES.entrySet().removeIf(e -> e.getValue().expires() <= now);
+    }
+
+    /**
+     * Victimes d'une zone de vide. Meme regle que {@code bloodVictims} : les joueurs sont
+     * exclus, donc aucune de ces signatures ne se retourne contre un allie.
+     */
+    private static List<LivingEntity> voidVictims(ServerLevel sl, double cx, double cy, double cz,
+                                                  double radius, double halfHeight, int attackerId) {
+        List<LivingEntity> out = new ArrayList<>();
+        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(cx - radius, cy - halfHeight, cz - radius,
+                        cx + radius, cy + halfHeight, cz + radius))) {
+            if (!candidate.isAlive() || candidate instanceof Player) continue;
+            if (attackerId >= 0 && candidate.getId() == attackerId) continue;
+            double ddx = candidate.getX() - cx;
+            double ddz = candidate.getZ() - cz;
+            if (ddx * ddx + ddz * ddz > radius * radius) continue;
+            out.add(candidate);
+        }
+        return out;
+    }
+
+    /**
+     * Victimes d'un CORRIDOR : une bande de longueur {@code length} le long de l'axe
+     * {@code (ax, az)}, large de {@code halfWidth} de part et d'autre.
+     *
+     * <p>C'est la forme de zone de la Faille, et elle n'existe nulle part ailleurs dans le
+     * mod sous cette forme : la faille est un PLAN, sa trace au sol est une LIGNE. Un disque
+     * aurait touche ce qui se trouve devant et derriere la dechirure, c'est-a-dire ce qui
+     * n'en est separe par rien. Se placer dans son axe ou a cote doit faire la difference.</p>
+     */
+    private static List<LivingEntity> voidCorridor(ServerLevel sl, double cx, double cy, double cz,
+                                                   double ax, double az, double length,
+                                                   double halfWidth, int attackerId) {
+        List<LivingEntity> out = new ArrayList<>();
+        double reach = length * 0.5;
+        double span = reach + halfWidth;
+        for (LivingEntity candidate : sl.getEntitiesOfClass(LivingEntity.class,
+                new AABB(cx - span, cy - 2.6, cz - span, cx + span, cy + 2.6, cz + span))) {
+            if (!candidate.isAlive() || candidate instanceof Player) continue;
+            if (attackerId >= 0 && candidate.getId() == attackerId) continue;
+            double ddx = candidate.getX() - cx;
+            double ddz = candidate.getZ() - cz;
+            double along = ddx * ax + ddz * az;              // projection sur l'axe
+            double across = ddx * (-az) + ddz * ax;          // distance signee a l'axe
+            if (Math.abs(along) > reach) continue;
+            if (Math.abs(across) > halfWidth) continue;
+            out.add(candidate);
+        }
+        return out;
+    }
+
+    /**
+     * Routage des trois signatures du vide.
+     *
+     * <p>Les trois partagent l'empreinte et l'echo, et se repondent : la sphere RASSEMBLE
+     * (elle tire tout vers un point), le prisme DISTRIBUE (un faisceau par corps), la faille
+     * TRIE (une ligne, pas un disque). Chacune traite explicitement les deux cas demandes —
+     * <b>plusieurs ennemis</b> et <b>ennemi seul</b>.</p>
+     */
+    private static void applyVoidGameplay(LivingEntity attacker, LivingEntity target,
+                                          WeaponVisualEffectId fx, float weaponDamage) {
+        if (fx == null || target == null) return;
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        float damage = Math.max(0.0f, weaponDamage);
+        if (fx == WeaponVisualEffectId.VOID_WARP_SPHERE) {
+            applyWarpSphereGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.DRAGON_CHAOS_PRISM) {
+            applyDragonPrismGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.NULL_RIFT_FISSURE) {
+            applyNullRiftGameplay(attacker, target, sl, damage);
+        }
+    }
+
+    // --------------------------------------------------------------------------------------
+    //  I. SPHERE DE DISTORSION (160 ticks) — elle RASSEMBLE
+    // --------------------------------------------------------------------------------------
+
+    /**
+     * La sphere est un AIMANT. Son interet n'est pas de frapper fort, c'est de mettre six
+     * ennemis au meme endroit — apres quoi n'importe quelle autre arme les prend tous.
+     *
+     * <p><b>Foule</b> : six tractions de cinq ticks, chacune ramene vers le centre a une
+     * vitesse proportionnelle a la distance ; Lenteur II pendant la duree. <b>Duel</b> : il
+     * n'y a personne a rassembler, donc la sphere change de metier — elle s'accroche a
+     * l'unique cible, la souleve, et chaque traction tape deux fois et demie plus fort.
+     * C'est le meme objet, pas la meme utilite, et aucun des deux cas n'est decevant.</p>
+     */
+    private static void applyWarpSphereGameplay(LivingEntity attacker, LivingEntity target,
+                                                ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.50;
+        final double oz = target.getZ();
+        final float base = Math.max(1.4f, weaponDamage * 0.82f);
+        final long markEnd = sl.getGameTime() + 160L + 20L;
+        final boolean solo = voidVictims(sl, ox, oy, oz, 5.0, 3.0, attackerId).size() <= 1;
+
+        // --- 0 -> 18 : l'amorce. On previent avant de tirer, comme la foudre et le sang. ---
+        for (int k = 0; k < 5; k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + step * 4, () -> {
+                sl.playSound(null, ox, oy, oz, SoundEvents.BEACON_AMBIENT, SoundSource.PLAYERS,
+                        0.22f + 0.07f * step, 0.45f + 0.09f * step);
+                PixelFx.send(sl, VOID_DUST, ox, oy, oz, 6 + step * 3,
+                        2.2 - step * 0.3, 1.2, 2.2 - step * 0.3, 0.02);
+            });
+        }
+        TestProcedure.schedule(sl, now + 20, () ->
+                sl.playSound(null, ox, oy, oz, SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS,
+                        0.75f, 0.45f));
+
+        // --- 22 -> 52 : SIX TRACTIONS. Le coeur de la signature. ---
+        for (int k = 0; k < 6; k++) {
+            final int pull = k;
+            TestProcedure.schedule(sl, now + 22 + pull * 5, () -> {
+                List<LivingEntity> victims = voidVictims(sl, ox, oy, oz, 5.0, 3.0, attackerId);
+                for (LivingEntity victim : victims) {
+                    double ddx = ox - victim.getX();
+                    double ddz = oz - victim.getZ();
+                    double dist = Math.sqrt(ddx * ddx + ddz * ddz);
+                    if (dist > 0.25) {
+                        // Vitesse PROPORTIONNELLE a la distance : ce qui est loin arrive vite,
+                        // ce qui est pres ne traverse pas le centre. Une vitesse constante
+                        // ferait osciller les proches autour du point comme un pendule.
+                        double speed = Math.min(0.78, 0.17 + dist * 0.085);
+                        voidPush(sl, victim, ddx / dist * speed, 0.055, ddz / dist * speed);
+                    }
+                    voidHurt(sl, attackerId, victim, base * (solo ? 1.35f : 0.55f));
+                    victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 60, 1, true, false));
+                    if (solo) {
+                        // Duel : il n'y a rien a rassembler, alors la sphere SOULEVE.
+                        victim.addEffect(new MobEffectInstance(MobEffects.LEVITATION, 40, 0, true, true));
+                    }
+                    if ((pull & 1) == 0) {
+                        addVoidMark(sl, victim, 1, attackerId, base * 0.28f, markEnd);
+                    }
+                }
+                sl.playSound(null, ox, oy, oz, SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS,
+                        0.40f, 0.70f + pull * 0.09f);
+                PixelFx.send(sl, VOID_DUST, ox, oy, oz, 14, 1.4, 0.9, 1.4, 0.05);
+            });
+        }
+
+        // --- 112 : L'EFFONDREMENT. Tout ce qui a ete rassemble paie d'un coup. ---
+        TestProcedure.schedule(sl, now + 112, () -> {
+            PixelFx.send(sl, ParticleTypes.REVERSE_PORTAL, ox, oy, oz, 50, 0.6, 0.8, 0.6, 0.35);
+            PixelFx.send(sl, VOID_DUST, ox, oy, oz, 40, 1.0, 1.0, 1.0, 0.10);
+            sl.playSound(null, ox, oy, oz, SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 1.0f, 0.38f);
+            sl.playSound(null, ox, oy, oz, SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 0.70f, 0.55f);
+            for (LivingEntity victim : voidVictims(sl, ox, oy, oz, 3.2, 2.4, attackerId)) {
+                voidHurt(sl, attackerId, victim, base * (solo ? 1.60f : 0.95f));
+                addVoidMark(sl, victim, 2, attackerId, base * 0.30f, markEnd);
+            }
+            // Le porteur a tenu a cote d'une etoile qui s'effondre : l'espace est lache
+            // autour de lui pendant cinq secondes.
+            if (attacker != null && attacker.isAlive()) {
+                attacker.addEffect(new MobEffectInstance(MobEffects.SLOW_FALLING, 100, 0, true, true));
+            }
+        });
+
+        // --- 128 : LA RESTITUTION. Ce qui a ete avale ressort, et repousse. ---
+        TestProcedure.schedule(sl, now + 128, () -> {
+            PixelFx.send(sl, VOID_DUST_INVERT, ox, oy, oz, 44, 1.6, 0.9, 1.6, 0.26);
+            sl.playSound(null, ox, oy, oz, SoundEvents.RESPAWN_ANCHOR_DEPLETE.value(),
+                    SoundSource.PLAYERS, 0.85f, 0.75f);
+            for (LivingEntity victim : voidVictims(sl, ox, oy, oz, 4.6, 2.6, attackerId)) {
+                double ddx = victim.getX() - ox;
+                double ddz = victim.getZ() - oz;
+                double dist = Math.max(0.3, Math.sqrt(ddx * ddx + ddz * ddz));
+                voidPush(sl, victim, ddx / dist * 0.62, 0.34, ddz / dist * 0.62);
+                voidHurt(sl, attackerId, victim, base * 0.70f);
+                addVoidMark(sl, victim, 1, attackerId, base * 0.26f, markEnd);
+            }
+        });
+    }
+
+    // --------------------------------------------------------------------------------------
+    //  II. PRISME DU DRAGON (190 ticks) — il DISTRIBUE
+    // --------------------------------------------------------------------------------------
+
+    /**
+     * Le prisme est un REPARTITEUR : sept faisceaux, sept corps, un chacun.
+     *
+     * <p><b>Foule</b> : jusqu'a sept victimes distinctes recoivent un faisceau, tirees en
+     * sequence ; chacune est marquee ET rendue visible a travers les murs (Lueur), ce qui
+     * est le seul debuff franchement UTILE de la famille — on voit qui porte une empreinte.
+     * <b>Duel</b> : moins de trois corps et les sept faisceaux CONVERGENT sur le meme ;
+     * chaque trait tape moins, mais sept traits sur un seul corps posent quatre empreintes,
+     * donc la detonation est garantie. Repartir recompense la foule, converger recompense le
+     * duel : la meme arme, deux lectures.</p>
+     */
+    private static void applyDragonPrismGameplay(LivingEntity attacker, LivingEntity target,
+                                                 ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.55;
+        final double oz = target.getZ();
+        final float base = Math.max(1.5f, weaponDamage * 0.88f);
+        final long markEnd = sl.getGameTime() + 190L + 20L;
+        final int targetId = target.getId();
+        final boolean solo = voidVictims(sl, ox, oy, oz, 6.5, 3.0, attackerId).size() < 3;
+
+        // --- 0 -> 20 : la descente, en trois a-coups. On l'entend se poser. ---
+        for (int k = 0; k < 3; k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + 4 + step * 6, () -> {
+                sl.playSound(null, ox, oy + 2.0 - step * 0.7, oz, SoundEvents.AMETHYST_BLOCK_PLACE,
+                        SoundSource.PLAYERS, 0.55f, 0.60f + step * 0.16f);
+                PixelFx.send(sl, VOID_DUST, ox, oy + 2.2 - step * 0.7, oz, 10, 0.5, 0.2, 0.5, 0.02);
+            });
+        }
+        // --- 42 : le trait d'entree. ---
+        TestProcedure.schedule(sl, now + 42, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.BEACON_POWER_SELECT, SoundSource.PLAYERS, 0.80f, 1.35f);
+            PixelFx.send(sl, ParticleTypes.END_ROD, ox, oy, oz, 26, 0.35, 0.35, 0.35, 0.08);
+        });
+
+        // --- 62 -> 125 : SEPT FAISCEAUX, un toutes les neuf frames. ---
+        for (int b = 0; b < 7; b++) {
+            final int beam = b;
+            TestProcedure.schedule(sl, now + 62 + beam * 9, () -> {
+                List<LivingEntity> victims = voidVictims(sl, ox, oy, oz, 6.5, 3.0, attackerId);
+                LivingEntity hit;
+                if (solo || victims.isEmpty()) {
+                    // CONVERGENCE : tout sur la cible d'origine.
+                    hit = sl.getEntity(targetId) instanceof LivingEntity le && le.isAlive() ? le
+                            : (victims.isEmpty() ? null : victims.get(0));
+                } else {
+                    // REPARTITION : un corps distinct par faisceau, en tournant.
+                    hit = victims.get(beam % victims.size());
+                }
+                if (hit == null) return;
+                float amount = base * (solo ? 0.46f : 0.62f);
+                voidHurt(sl, attackerId, hit, amount);
+                hit.addEffect(new MobEffectInstance(MobEffects.GLOWING, 120, 0, true, false));
+                addVoidMark(sl, hit, 1, attackerId, base * 0.26f, markEnd);
+                PixelFx.send(sl, ParticleTypes.END_ROD, hit.getX(),
+                        hit.getY() + hit.getBbHeight() * 0.6, hit.getZ(), 14, 0.22, 0.30, 0.22, 0.06);
+                sl.playSound(null, hit.getX(), hit.getY(), hit.getZ(),
+                        SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS,
+                        0.50f, 0.95f + beam * 0.07f);
+            });
+        }
+
+        // --- 150 : LA FRACTURE. Le prisme se casse, et ce qu'il a pris manque aux victimes. ---
+        TestProcedure.schedule(sl, now + 150, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.AMETHYST_BLOCK_BREAK, SoundSource.PLAYERS, 0.95f, 0.70f);
+            PixelFx.send(sl, VOID_DUST, ox, oy, oz, 34, 0.8, 0.8, 0.8, 0.14);
+            for (LivingEntity victim : voidVictims(sl, ox, oy, oz, 6.5, 3.0, attackerId)) {
+                victim.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 120, 1, true, false));
+            }
+            if (attacker != null && attacker.isAlive()) {
+                attacker.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 80, 0, true, true));
+            }
+        });
+
+        // --- 170 : L'ECLAT. L'anneau au sol et la colonne. ---
+        TestProcedure.schedule(sl, now + 170, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.RESPAWN_ANCHOR_DEPLETE.value(),
+                    SoundSource.PLAYERS, 0.90f, 0.85f);
+            PixelFx.send(sl, VOID_DUST_INVERT, ox, target.getY() + 0.2, oz, 40, 2.0, 0.25, 2.0, 0.05);
+            for (LivingEntity victim : voidVictims(sl, ox, oy, oz, 4.4, 2.6, attackerId)) {
+                voidHurt(sl, attackerId, victim, base * 0.80f);
+                victim.addEffect(new MobEffectInstance(MobEffects.LEVITATION, 30, 0, true, true));
+                addVoidMark(sl, victim, 1, attackerId, base * 0.28f, markEnd);
+            }
+        });
+    }
+
+    // --------------------------------------------------------------------------------------
+    //  III. FAILLE DU NEANT (170 ticks) — elle TRIE
+    // --------------------------------------------------------------------------------------
+
+    /**
+     * La faille est une LIGNE. C'est sa seule idee, et elle la tient jusqu'au bout.
+     *
+     * <p>Son aire n'est pas un disque mais un corridor de neuf blocs de long sur trois de
+     * large, perpendiculaire a l'axe du coup — la dechirure est un plan, sa trace au sol est
+     * une ligne. Se tenir dans son axe ou a deux pas de cote change tout, et c'est la seule
+     * signature du mod ou le placement lateral decide.</p>
+     *
+     * <p><b>Foule</b> : neuf aspirations tirent vers l'axe, puis la fermeture ejecte
+     * perpendiculairement — on entre par le cote et on ressort par le cote. <b>Duel</b> : une
+     * seule victime n'est pas tiree, elle est RETENUE ({@code applyMovementHold} 70 ticks) et
+     * chaque aspiration tape presque deux fois plus fort : elle ne peut pas sortir du
+     * corridor, la faille prend donc son temps.</p>
+     */
+    private static void applyNullRiftGameplay(LivingEntity attacker, LivingEntity target,
+                                              ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.50;
+        final double oz = target.getZ();
+        final float base = Math.max(1.2f, weaponDamage * 0.76f);
+        final long markEnd = sl.getGameTime() + 170L + 20L;
+
+        // L'axe du corridor : PERPENDICULAIRE a la direction du coup, parce que la dechirure
+        // s'ouvre en travers du chemin de l'arme. Normalise, et avec un repli si l'attaquant
+        // et la cible sont exactement superposes.
+        double rawX = attacker == null ? 1.0 : target.getX() - attacker.getX();
+        double rawZ = attacker == null ? 0.0 : target.getZ() - attacker.getZ();
+        double rawLen = Math.sqrt(rawX * rawX + rawZ * rawZ);
+        if (rawLen < 0.001) { rawX = 1.0; rawZ = 0.0; rawLen = 1.0; }
+        final double axX = -rawZ / rawLen;
+        final double axZ = rawX / rawLen;
+
+        final boolean solo = voidCorridor(sl, ox, oy, oz, axX, axZ, 9.0, 1.6, attackerId).size() <= 1;
+
+        // --- 0 -> 12 : la felure. Presque rien, et c'est voulu. ---
+        TestProcedure.schedule(sl, now + 2, () ->
+                sl.playSound(null, ox, oy, oz, SoundEvents.GLASS_BREAK, SoundSource.PLAYERS, 0.35f, 1.80f));
+        TestProcedure.schedule(sl, now + 14, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 0.70f, 0.50f);
+            PixelFx.send(sl, VOID_DUST, ox, oy, oz, 22, 0.20, 1.4, 0.20, 0.04);
+        });
+
+        // --- DUEL : la victime unique est RETENUE. Elle ne peut pas sortir du corridor. ---
+        if (solo) {
+            applyMovementHold(target, sl.getGameTime() + 70L, false);
+        }
+
+        // --- 20 -> 100 : NEUF ASPIRATIONS, toutes les dix frames. ---
+        for (int k = 0; k < 9; k++) {
+            final int pull = k;
+            TestProcedure.schedule(sl, now + 20 + pull * 10, () -> {
+                List<LivingEntity> victims = voidCorridor(sl, ox, oy, oz, axX, axZ, 9.0, 1.6, attackerId);
+                for (LivingEntity victim : victims) {
+                    double ddx = victim.getX() - ox;
+                    double ddz = victim.getZ() - oz;
+                    // On ne tire pas vers le CENTRE mais vers l'AXE : composante
+                    // perpendiculaire seule. Tirer vers le centre entasserait tout le
+                    // corridor en un point et la ligne ne se lirait plus.
+                    double across = ddx * (-axZ) + ddz * axX;
+                    if (!solo && Math.abs(across) > 0.20) {
+                        double dir = across > 0 ? -1.0 : 1.0;
+                        double speed = Math.min(0.46, 0.10 + Math.abs(across) * 0.14);
+                        voidPush(sl, victim, -axZ * dir * speed, 0.035, axX * dir * speed);
+                    }
+                    voidHurt(sl, attackerId, victim, base * (solo ? 0.52f : 0.30f));
+                    if (pull % 3 == 0) {
+                        addVoidMark(sl, victim, 1, attackerId, base * 0.30f, markEnd);
+                    }
+                }
+                sl.playSound(null, ox, oy, oz, SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS,
+                        0.30f, 0.55f + pull * 0.05f);
+                for (int s = -1; s <= 1; s += 2) {
+                    PixelFx.send(sl, VOID_DUST, ox + axX * 2.6 * s, target.getY() + 0.25, oz + axZ * 2.6 * s,
+                            8, 0.9, 0.12, 0.9, 0.03);
+                }
+            });
+        }
+
+        // --- 112 : L'AUTRE COTE. Ce qu'elles ont vu ne s'oublie pas tout de suite. ---
+        TestProcedure.schedule(sl, now + 112, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.PORTAL_TRIGGER, SoundSource.PLAYERS, 0.55f, 1.40f);
+            PixelFx.send(sl, ParticleTypes.PORTAL, ox, oy, oz, 46, 0.25, 1.3, 0.25, 0.30);
+            for (LivingEntity victim : voidCorridor(sl, ox, oy, oz, axX, axZ, 9.0, 1.6, attackerId)) {
+                victim.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 60, 0, true, false));
+                victim.addEffect(new MobEffectInstance(MobEffects.CONFUSION, 100, 0, true, false));
+            }
+        });
+
+        // --- 140 : LA FERMETURE. Les levres se rejoignent, et ce qui etait dedans part. ---
+        TestProcedure.schedule(sl, now + 140, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.ANVIL_LAND, SoundSource.PLAYERS, 0.70f, 1.55f);
+            sl.playSound(null, ox, oy, oz, SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 0.85f, 0.70f);
+            PixelFx.send(sl, VOID_DUST_INVERT, ox, oy, oz, 34, 0.35, 1.3, 0.35, 0.16);
+            for (LivingEntity victim : voidCorridor(sl, ox, oy, oz, axX, axZ, 9.0, 1.6, attackerId)) {
+                voidHurt(sl, attackerId, victim, base * 1.10f);
+                addVoidMark(sl, victim, 2, attackerId, base * 0.32f, markEnd);
+                double ddx = victim.getX() - ox;
+                double ddz = victim.getZ() - oz;
+                double across = ddx * (-axZ) + ddz * axX;
+                double dir = across >= 0 ? 1.0 : -1.0;
+                voidPush(sl, victim, -axZ * dir * 0.70, 0.30, axX * dir * 0.70);
+            }
+            if (attacker != null && attacker.isAlive()) {
+                attacker.addEffect(new MobEffectInstance(MobEffects.SLOW_FALLING, 120, 0, true, true));
+            }
+        });
+    }
+
+    /**
+     * Pousse une entite, en tenant compte du cas du joueur.
+     *
+     * <p>Piege deja paye trois fois dans ce fichier : {@code setDeltaMovement} sur un
+     * {@code ServerPlayer} n'est jamais applique cote client tant que le paquet n'est pas
+     * envoye, et {@code hurtMarked} ferait en plus repartir le recul vanilla par-dessus.</p>
+     */
+    private static void voidPush(ServerLevel sl, LivingEntity victim, double vx, double vy, double vz) {
+        if (victim == null || !victim.isAlive()) return;
+        Vec3 motion = victim.getDeltaMovement();
+        victim.setDeltaMovement(motion.x * 0.55 + vx, Math.max(motion.y, 0.0) + vy, motion.z * 0.55 + vz);
+        victim.hasImpulse = true;
+        victim.fallDistance = 0.0f;
+        if (victim instanceof ServerPlayer sp) {
+            sp.connection.send(new net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket(sp));
+        } else {
+            victim.hurtMarked = true;
+        }
+    }
+
     /**
      * Routage des trois signatures d'ombre. Comme la foudre avant la T376, l'ombre n'avait
      * <b>aucun</b> gameplay : trois animations de 14 à 18 ticks qui ne faisaient rien.
@@ -7420,6 +8088,8 @@ public final class WeaponVfxServerListener {
         tickEclipseCage(target);
         tickBleed(target);
         tickBloodPools(target.level());
+        tickVoidMark(target);
+        sweepVoidTables(target.level());
         if (SURGE_RIDES.containsKey(target.getId())) return;
         MovementHold hold = MOVEMENT_HOLDS.get(target.getId());
         if (hold == null) return;
@@ -7544,6 +8214,7 @@ public final class WeaponVfxServerListener {
                 : deepluckyblock.util.AnimFamily.THUNDER.equals(family) ? ANIM_THUNDER
                 : deepluckyblock.util.AnimFamily.SHADOW.equals(family) ? ANIM_SHADOW
                 : deepluckyblock.util.AnimFamily.BLOOD.equals(family) ? ANIM_BLOOD
+                : deepluckyblock.util.AnimFamily.VOID.equals(family) ? ANIM_VOID
                 : deepluckyblock.util.AnimFamily.WIND.equals(family) ? ANIM_WIND : ANIM_WOOD;
 
         if (roll >= 60) {
@@ -7567,6 +8238,7 @@ public final class WeaponVfxServerListener {
             applyThunderGameplay(attacker, target, fx, capturedWeaponDamage);
             applyShadowGameplay(attacker, target, fx, capturedWeaponDamage);
             applyBloodGameplay(attacker, target, fx, capturedWeaponDamage);
+            applyVoidGameplay(attacker, target, fx, capturedWeaponDamage);
             return;
         }
 
@@ -7630,6 +8302,7 @@ public final class WeaponVfxServerListener {
             applyFireGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyPoisonGameplay(attacker, target, fx);
             applyBloodGameplay(attacker, target, fx, capturedWeaponDamage);
+            applyVoidGameplay(attacker, target, fx, capturedWeaponDamage);
         }
     }
 

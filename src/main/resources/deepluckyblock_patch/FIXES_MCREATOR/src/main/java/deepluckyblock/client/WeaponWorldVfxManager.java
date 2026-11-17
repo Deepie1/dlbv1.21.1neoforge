@@ -255,6 +255,13 @@ public final class WeaponWorldVfxManager {
         return mobScaleActive ? pivot + (v - pivot) * mobScale : v;
     }
 
+    /** Les trois signatures refondues du vide (T388), seules à passer par VoidSignatureVfx. */
+    private static boolean isVoidSignature(WeaponVisualEffectId fx) {
+        return fx == WeaponVisualEffectId.VOID_WARP_SPHERE
+                || fx == WeaponVisualEffectId.DRAGON_CHAOS_PRISM
+                || fx == WeaponVisualEffectId.NULL_RIFT_FISSURE;
+    }
+
     /** Les cinq signatures refondues du sang (T379), seules à passer par BloodSignatureVfx. */
     private static boolean isBloodSignature(WeaponVisualEffectId fx) {
         return fx == WeaponVisualEffectId.GUILLOTINE_CLEAVE
@@ -752,7 +759,7 @@ public final class WeaponWorldVfxManager {
             case CHAIN_VOLT_ARC -> 130;
             case MJOLNIR_HAMMERFALL -> 250;   // 40 d'appel + impact + 200 de dalle + sortie
             case STORMCALL_JUDGMENT -> 170;
-            case DRAGON_CHAOS_PRISM, BIG_BANG_SCAR -> 22;
+            case BIG_BANG_SCAR -> 22;
             // T377-SHADOW : les trois signatures de l’ombre sortent du case fourre-tout ou
             // ECLIPSE_VEIL etait coince a 18 ticks — moins d’une seconde pour une eclipse.
             // SPECTRAL_REACH et WITHER_SHADOW_RIFT, eux, n’etaient meme pas listes et
@@ -760,12 +767,16 @@ public final class WeaponWorldVfxManager {
             case SPECTRAL_REACH -> 118;       // coulee + echine + main qui se leve et tire
             case WITHER_SHADOW_RIFT -> 160;   // ouverture + crane + souffle + inspiration
             case ECLIPSE_VEIL -> 200;         // montee + voile + nuit + anneau + griffure
-            case NULL_RIFT_FISSURE,
-                 CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE -> 18;
+            case CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE -> 18;
             case VENOM_BRIAR_FANG -> 112;
             case MIASMA_SHROUD -> 600; // Le serveur raccourcit à 6 s ou enchaîne jusqu'à 30 s.
             case PLAGUE_NOVA -> 128;
-            case VOID_WARP_SPHERE -> 16;
+            // T388-VOID : les trois titres du Vide etaient, avec le Chaos, les derniers
+            // du mod sous la seconde — 16, 22 et 18 ticks, et un unique bloc generique
+            // de trente lignes pour les trois. Chacun a desormais sa choregraphie.
+            case VOID_WARP_SPHERE -> 160;     // grille + lentille + anneau + accretion + rendu
+            case DRAGON_CHAOS_PRISM -> 190;   // descente + trait + sept faisceaux + ailes + eclat
+            case NULL_RIFT_FISSURE -> 170;    // felure + amande + crevasse + autre cote + cicatrice
             // T379-BLOOD : les cinq titres du sang etaient la derniere famille sous la
             // seconde. CRIMSON_SIPHON tenait 16 ticks, les quatre autres tombaient sur le
             // « default -> 14 » : impossible d'y lire une guillotine, encore moins un coeur
@@ -2060,6 +2071,19 @@ public final class WeaponWorldVfxManager {
                 default -> WeaponVisualEffectId.CARNAGE_BERSERK;
             };
         }
+        // T388-VOID : douzieme famille, et le meme piege pour la quatrieme fois (eau, foudre,
+        // ombre, sang). Sans cette branche le vide retombe sur le cas par defaut — le BOIS —
+        // et le petit arc du swing sort en BRUN alors que le glint est magenta et que la
+        // grosse signature, elle, est bien du vide. C'est le defaut le plus couteux a
+        // diagnostiquer du fichier, parce que quelque chose s'affiche : simplement pas la
+        // bonne famille, et seulement une fois sur deux.
+        if (deepluckyblock.util.AnimFamily.VOID.equals(canonical)) {
+            return switch (index) {
+                case 0 -> WeaponVisualEffectId.VOID_WARP_SPHERE;
+                case 1 -> WeaponVisualEffectId.DRAGON_CHAOS_PRISM;
+                default -> WeaponVisualEffectId.NULL_RIFT_FISSURE;
+            };
+        }
         if (deepluckyblock.util.AnimFamily.WIND.equals(canonical)) {
             return switch (index) {
                 case 0 -> WeaponVisualEffectId.ZEPHYR_WIND_LANCE;
@@ -2323,6 +2347,14 @@ public final class WeaponWorldVfxManager {
             // de haut et l'échafaud du Couperet dix-huit. La progression reste monotone, la
             // bande est resserrée.
             if (isBloodSignature(inst.effect)) mobScale = bloodSignatureScale(mobScale);
+            // T388-VOID : même raison, et une de plus. Les trois signatures du vide portent
+            // une GRILLE RÉGULIÈRE, un OCTAÈDRE et une DÉCHIRURE — trois objets dont la
+            // régularité EST le sujet : c'est en comparant la maille droite à la maille
+            // tordue qu'on lit la lentille. Une échelle de 4,0 sur un ravageur ferait une
+            // grille de vingt-cinq blocs de côté dont on ne verrait plus le centre, et une
+            // échelle de 0,30 sur un poulet réduirait la déformation à un pixel. La même
+            // bande resserrée que le sang s'applique donc telle quelle.
+            if (isVoidSignature(inst.effect)) mobScale = bloodSignatureScale(mobScale);
             mobScaleActive = Math.abs(mobScale - 1.0f) > 0.02f;
             // Les sommets déjà émis par les rendus sont en coordonnées RELATIVES à la caméra.
             // Le pivot doit être dans le même repère : utiliser ici la position monde de l'effet
@@ -4722,10 +4754,58 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * 虚 VID — le vide IMPLOSE : une coquille de cubes <b>inclinés</b> s'effondre vers la cible,
-     * l'espace se déforme, puis tout ce qui a été avalé ressort d'un coup.
+     * 虚 VIDE — aiguillage des TROIS signatures refondues (T388) vers
+     * {@link VoidSignatureVfx} ; les autres effets de vide gardent le rendu générique.
      */
     private static void impactVoid(ImpactView v) {
+        int voidSignature = switch (v.inst().effect) {
+            case VOID_WARP_SPHERE -> VoidSignatureVfx.WARP;
+            case DRAGON_CHAOS_PRISM -> VoidSignatureVfx.PRISM;
+            case NULL_RIFT_FISSURE -> VoidSignatureVfx.RIFT;
+            default -> -1;
+        };
+        if (voidSignature >= 0) {
+            impactVoidSignature(v, voidSignature);
+            return;
+        }
+        impactVoidLegacy(v);
+    }
+
+    /**
+     * Pont vers {@link VoidSignatureVfx}, sur le modèle de
+     * {@link #impactBloodSignature(ImpactView, int)}.
+     *
+     * <p>Même précaution que pour l'ombre, le marteau et le sang : le pouls de taille est
+     * coupé pendant tout le tracé. La grille de la sphère et l'octaèdre du prisme sont des
+     * assemblages dont la RÉGULARITÉ est le sujet — un facteur d'échelle appliqué cube par
+     * cube ouvre des fentes dans la maille, et une maille irrégulière ne prouve plus rien
+     * sur la déformation de l'espace.</p>
+     *
+     * <p>La direction n'est PAS inversée ici, contrairement au siphon et à la transfusion :
+     * aucune des trois signatures du vide ne relie deux entités. Le trait d'entrée du
+     * prisme arrive de la main du porteur, donc de {@code f < 0}, ce qui est exactement ce
+     * que le repère attaquant → cible donne sans retouche.</p>
+     */
+    private static void impactVoidSignature(ImpactView v, int signature) {
+        boolean previousPulse = voxelPulseEnabled;
+        voxelPulseEnabled = false;
+        try {
+            VoidSignatureVfx.render(v.vc(), v.mat(), v.tmp(),
+                    v.cx(), v.cy(), v.cz(), v.t(),
+                    v.dirX(), v.dirZ(), signature, v.fadeA(),
+                    (int) (v.inst().seed & 0x7FFFFFFFL),
+                    probeGroundOffset(v.inst().x, v.inst().y, v.inst().z));
+        } finally {
+            voxelPulseEnabled = previousPulse;
+        }
+    }
+
+    /**
+     * Ancien rendu générique du vide : coquille de cubes inclinés qui s'effondre, cage,
+     * anneau pointillé. Conservé pour les effets de la catégorie qui n'ont pas de
+     * signature propre.
+     */
+    private static void impactVoidLegacy(ImpactView v) {
         float t = v.t();
         float S = v.S();
         WeaponVisualEffectId fx = v.inst().effect;

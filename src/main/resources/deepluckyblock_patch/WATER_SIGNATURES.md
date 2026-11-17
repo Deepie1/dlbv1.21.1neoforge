@@ -3088,3 +3088,254 @@ suive la pulsation. La famille est mise en cache deux secondes dans l'état déj
 tenu par item — sans ce cache, la carte d'enchantements serait relue à chaque image
 en plus des deux lectures que `resolve()` fait déjà. Les malédictions sont exclues :
 elles sont rouges par décision antérieure et ne respirent pas.
+
+---
+
+## §47 — T387 · les dégâts du Sang s'arrêtent avec l'animation, et ils se voient
+
+Trois retours de jeu du 17/11, tous sur la famille Sang.
+
+### 1. « en fin d'animation ça déclenche des ticks de dégâts qui continuent sur une grande durée sans sens »
+
+Le constat portait sur **les cinq** signatures. Deux causes, pas une.
+
+**La première, arithmétique.** `addBleed` posait `expires = MAINTENANT + durée`, et les
+appels tombent **tard** dans la chorégraphie : la morsure du couperet au tick 83, la
+rupture du siphon au tick 153, la onzième lame du carnage au tick 112. Avec 140 à 200
+ticks de durée, la saignée débordait de 73 à 143 ticks — jusqu'à **sept secondes** après
+la dernière image. L'arête était la pire : 200 ticks de saignée posés au tick 10 d'une
+animation qui en dure 120.
+
+**La seconde, et c'est elle qui donnait l'impression de dégâts sans fin.** La flaque de
+sang mord toutes les 20 ticks, et chaque morsure **reposait** une hémorragie de 80 ticks.
+`addBleed` écrasait l'échéance avec la sienne. Une victime qui reste dans la flaque voyait
+donc sa fin de saignée repoussée de quatre secondes, **toutes les secondes** : la boucle
+ne se fermait jamais tant que la flaque vivait.
+
+Le correctif tient en trois règles.
+
+- Chaque signature calcule une **échéance absolue** en temps de monde, prise à l'instant
+  où elle démarre : `bleedEnd = getGameTime() + durée_animation + 20`. Les sept appels
+  passent par `addBleedUntil`, qui convertit cette échéance en durée restante. Peu importe
+  désormais à quel tick la saignée est posée, elle vise la même fin.
+- `addBleed` **ne recule plus jamais** une échéance : `if (previous.expires() > expiry)
+  expiry = previous.expires()`. La morsure de flaque, elle, est bornée par la flaque
+  elle-même (`pool.expires()`), ce qui ferme la boucle pour de bon.
+- Les quatre flaques sont bornées de même, à `durée_animation + 40`.
+
+| signature | animation | dernier dégât posé | fin de saignée | après la fin |
+|---|---|---|---|---|
+| Couperet | 150 t | t+83 | 170 t | **20 t (1,0 s)** |
+| Arête | 120 t | t+10 | 140 t | **20 t (1,0 s)** |
+| Siphon | 170 t | t+153 | 190 t | **20 t (1,0 s)** |
+| Carnage | 180 t | t+112 | 200 t | **20 t (1,0 s)** |
+
+Le total de dégâts est conservé : ce qui n'est plus étalé est **concentré**. Le couperet
+passe de 0,085 à 0,115 par pile et par battement, le carnage de 0,09 à 0,115, le siphon
+de 0,10 à 0,16 et de 0,08 à 0,12 — et le dégât que la rupture du siphon n'a plus le temps
+de saigner lui est rendu à l'impact, où il **se voit** (0,75 → 1,10 de base).
+
+### 2. « mets des particules / gouttes de sang autour du mob »
+
+Les neuf points de dégâts du bloc appelaient `hurtWithCapturedWeapon` nu : la barre de vie
+descendait sans que rien ne coule. Quand une particule sortait, c'était
+`FALLING_DRIPSTONE_LAVA`, **orange**, qui se lit comme de la lave.
+
+`bloodDrops` pose deux `DustParticleOptions` taillées pour le sang — `(0.64, 0.02, 0.05)`
+à l'échelle 1,35 pour ce qui gicle, `(0.31, 0.01, 0.03)` à 1,70 pour ce qui a déjà coulé.
+La géométrie compte autant que la couleur : un nuage **centré** sur l'entité disparaît
+dans son modèle, donc les gouttes sont semées sur un **anneau** un peu plus large que la
+hitbox, entre 18 % et 76 % de la hauteur, avec une retombée sombre au pied. Le nombre suit
+l'intensité, plafonné — une mêlée longue ne doit pas noircir l'écran.
+
+Huit des neuf sites passent désormais par `bloodHurt`, qui ne peut pas frapper sans faire
+couler. Le neuvième est `tickBleed`, qui sème son propre anneau à chaque perte, plus dense
+quand la victime court.
+
+### 3. « les glints feu et sang se ressemblent encore »
+
+T386 avait déjà écarté les deux bases — (192, 65, 10) contre (138, 2, 8) — et l'essai en
+jeu a tranché : toujours trop proches. **Trois** raisons, dont une qui annulait tout le
+reste.
+
+**`breathFamilyOf` ne lisait que les enchantements réels.** L'épée donnée par
+`/anim <famille>` n'en porte aucun : sa couleur vient d'une clé NBT et son halo du
+composant vanilla. La méthode renvoyait donc `BREATH_NONE`, et **la pulsation de T386 ne
+s'est jamais déclenchée sur l'outil même qui sert à la juger**. Elle lit maintenant
+`DlbAnimFamily` avant toute chose.
+
+**Vingt degrés de teinte ne se lisent pas sur un halo qui défile.** Le critère change :
+ce n'est plus la teinte qui sépare les deux familles, c'est le **canal vert**.
+
+|  | base | sommet | vert |
+|---|---|---|---|
+| Feu | (255, 130, 16) ambre franc | (255, 203, 94) jaune blanc | **toujours ≥ 130** |
+| Sang | (124, 0, 18) bordeaux | (200, 8, 41) écarlate artériel | **toujours ≤ 8** |
+
+Un écart de 122 sur un canal entier se voit du coin de l'œil, en mouvement, sur un item
+minuscule dans une barre d'action. Et le sens physique suit : une braise plus chaude vire
+au jaune, un sang qui bat ne change pas de teinte — il change de **luminosité**, ce que
+fait exactement un pouls sous la peau. Les sommets, eux aussi, s'éloignent au lieu de se
+rejoindre : T386 montait le feu vers un rouge vif, c'est-à-dire vers le sang, à l'instant
+précis où les deux sont le plus visibles.
+
+Les excursions sont élargies (0,20 → 0,30 pour le feu, 0,16 → 0,24 pour le sang) et
+presque totales en profondeur (0,97 et 0,94). Le feu passe désormais près d'un tiers de
+son cycle à monter vers le jaune. Les deux périodes restent premières entre elles —
+4,3 s et 5,7 s — donc les sommets ne tombent jamais ensemble, et la phase reste décalée
+par item.
+
+`AnimFamily.glintColor` suit : `FIRE` passe de `0xFF6A2A` à `0xFF8210`, `BLOOD` de
+`0xE01822` à `0xCD082A`. `DeepElement` n'est pas touché : ces constantes sont locales au
+glint et ne changent aucun VFX.
+
+
+---
+
+## §48 — T388 · le VIDE, douzième famille : trois signatures, et une monnaie qui n'est pas la vie
+
+Le Vide était resté ce qu'il était depuis le début du mod : trois identifiants
+(`VOID_WARP_SPHERE` 26, `DRAGON_CHAOS_PRISM` 27, `NULL_RIFT_FISSURE` 34) qui partageaient
+une seule routine générique de **16 à 22 ticks** — une coquille de cubes inclinés qui
+s'effondre, une cage, un anneau pointillé — et **aucun gameplay**. Pire : deux des trois
+n'avaient même pas leur propre durée. Le prisme partageait son `case` avec
+`BIG_BANG_SCAR`, la faille le sien avec `CHAOS_KALEIDO_LOOP` et `ENTROPY_SPHERE`. Les
+sortir de ces groupes était le préalable à tout le reste : on ne donne pas une durée
+propre à une signature qui n'a pas sa propre étiquette.
+
+### 1. Ce que le Vide fait, et que personne d'autre ne fait
+
+La question posée avant d'écrire une ligne : **quelle est sa monnaie ?**
+
+Le Sang punit — il saigne, il draine, il récompense l'acharnement. L'Ombre aveugle — elle
+marque, elle affaiblit, elle récompense l'embuscade. Si le Vide avait payé en dégâts
+périodiques, il aurait été du sang bleu.
+
+**Le Vide déplace.** Sa monnaie n'est pas la perte de vie, c'est la **position** : il
+tire, il soulève, il éjecte, il retient. Toute sa valeur tactique est là — un ennemi
+arraché à sa place est un ennemi qui ne fait plus ce qu'il faisait.
+
+Conséquence assumée, et c'est la décision la plus discutable du lot : **le Vide ne donne
+aucun bonus de dégâts à son porteur.** La ferveur du Sang donne déjà Force à qui
+s'acharne ; refaire la même récompense aurait revenu à écrire deux fois la même famille
+avec une autre palette. Le Vide paie en **mobilité** : Vitesse et Chute Lente. La famille
+dont le sujet est le déplacement récompense par du déplacement.
+
+### 2. L'empreinte du néant — un SEUIL, pas une goutte à goutte
+
+`VOID_MARKS`, quatre au maximum. Elle **ne fait aucun dégât par elle-même**. C'est la
+différence de nature avec l'hémorragie : l'hémorragie est un robinet, l'empreinte est un
+compteur. À la quatrième, l'espace cède — implosion, **Lévitation**, Lenteur II, et un
+écho banqué au porteur.
+
+Trois leçons des tours précédentes sont appliquées **avant** d'avoir le bogue :
+
+* **Échéance absolue.** `addVoidMark` reçoit une `deadline` calculée au démarrage de la
+  signature et ne peut que la **raccourcir** (`min`), jamais l'allonger. C'est exactement
+  le défaut de l'hémorragie sans fin du §47, repris à l'envers.
+* **Purge.** `sweepVoidTables` balaie les deux cartes toutes les cent ticks, par le tick
+  d'entité déjà en place — aucun abonnement de plus. `BLOOD_POOLS` n'a toujours pas la
+  sienne ; celle-ci est écrite dès le premier jour.
+* **Lisibilité.** Une ressource à seuil qu'on ne voit pas n'est pas une ressource. Si
+  rien ne distingue un corps à trois empreintes d'un corps à une, le joueur ne peut pas
+  choisir sa cible et le système se réduit à du hasard. `tickVoidMark` **compte à voix
+  haute** : une graine de poussière cyan au-dessus de la tête par empreinte, deux fois par
+  seconde, en étoile tournante. À trois sur quatre, un souffle de `PORTAL` s'ajoute.
+
+Les échos du porteur se périment en **200 ticks**. Un compteur nu aurait eu deux défauts,
+et le second est un bogue : il n'aurait jamais été vidé, et surtout il aurait récompensé
+l'**accumulation** au lieu de l'**enchaînement** — trois effondrements séparés par dix
+minutes de marche auraient payé comme trois effondrements en six secondes.
+
+### 3. Trois aérations, trois réponses différentes à la question du duel
+
+C'est la contrainte répétée à chaque famille : **AoE et ennemi seul**, et aucun des deux
+cas décevant. Les trois n'y répondent pas de la même manière, et c'est voulu.
+
+| | foule | duel |
+|---|---|---|
+| **Sphère** (160 t) — elle **RASSEMBLE** | six tractions de 5 ticks vers le centre, vitesse **proportionnelle à la distance**, Lenteur II | il n'y a personne à rassembler : elle **s'accroche**, soulève (Lévitation) et chaque traction tape **×2,45** |
+| **Prisme** (190 t) — il **DISTRIBUE** | sept faisceaux, **un corps distinct chacun**, tous rendus visibles à travers les murs (Lueur) | sous trois corps, les sept faisceaux **CONVERGENT** : chacun tape moins, mais sept traits posent quatre empreintes — la détonation est **garantie** |
+| **Faille** (170 t) — elle **TRIE** | neuf aspirations **vers l'axe**, puis éjection perpendiculaire à la fermeture | la victime unique est **RETENUE** 70 ticks : elle ne peut pas sortir du corridor, et chaque aspiration tape **×1,73** |
+
+**La vitesse de traction de la sphère est proportionnelle à la distance**, bornée à 0,78.
+Une vitesse constante aurait fait osciller les corps proches autour du point comme un
+pendule : ils traversent le centre, repartent, sont retirés. Proportionnelle, ce qui est
+loin arrive vite et ce qui est près ne bouge presque plus.
+
+### 4. Le CORRIDOR — la seule aire du mod où le placement latéral décide
+
+`voidCorridor` est une forme d'aire nouvelle : une bande de **9 blocs de long sur 3,2 de
+large**, orientée **perpendiculairement à l'axe du coup**, parce que la déchirure s'ouvre
+en travers du chemin de l'arme.
+
+Un disque aurait été un contresens : il aurait touché ce qui se trouve devant et derrière
+la déchirure, c'est-à-dire ce qui n'en est séparé **par rien**. La faille est un **plan** ;
+sa trace au sol est une **ligne**. Se tenir dans son axe ou à deux pas de côté doit
+changer le résultat, et c'est le seul endroit du mod où c'est vrai.
+
+Second point, plus fin : les aspirations tirent vers l'**axe**, pas vers le **centre**.
+Seule la composante perpendiculaire est appliquée. Tirer vers le centre aurait entassé
+tout le corridor en un point — et la ligne, qui est la seule idée de la signature,
+n'aurait plus été lisible une fois la première aspiration passée.
+
+### 5. Le glint : pourquoi PAS le cyan de l'horizon
+
+La couleur que le joueur voit dans l'animation est `HORIZON 0x7FD4E8`. C'était le choix
+évident, et il est faux.
+
+L'Eau tient déjà `0x62C7E8`. Soit, canal par canal : **(98, 199, 232)** contre
+**(127, 212, 232)** — 29, 13 et **0**. La règle acquise en T386 puis T387 est qu'il faut un
+**canal entier d'écart (≥ 120)** avec chaque famille, sans quoi deux lames se confondent
+en main. Le cyan échouait sur les trois.
+
+Restait à chercher dans la palette du Vide la teinte qui n'appartient à personne :
+`CHORUS 0x8E5BA6`, « l'autre côté ». Montée à sa valeur de **reflet** — même raisonnement
+que l'Ombre : sur une lame, un glint est un reflet, donc la valeur la plus claire de
+l'élément — elle donne **`0xFF3FD8`**. Vérifié un par un contre les onze autres familles :
+≥ 120 d'écart sur au moins un canal, le plus serré étant la Terre (131 sur le vert).
+
+Pour le code couleur du nom, les seize codes hérités ne contiennent **qu'un** magenta (`§d`)
+et **qu'un** violet (`§5`), et les deux sont pris — par la Foudre et par l'Ombre. Le Vide
+prend donc **`§9`**, ce qui reste du côté froid de la roue et demeure lisible sur le fond
+sombre d'une infobulle (`§0` et `§8` n'y sont plus qu'une tache).
+
+### 6. Le volet visuel — `VoidSignatureVfx.java`, et six pièges de lisibilité
+
+Le moteur suit le patron de `BloodSignatureVfx` : une seule primitive `box(...)`, un seul
+appel à `emitVoxelCube`, `voxelPulseEnabled` coupé en try/finally. Six défauts ont été
+corrigés au rendu, chacun généralisable :
+
+1. **Le fondu qui coûte plus cher.** Une primitive linéaire dont le pas dérive de
+   l'épaisseur (`len / (w · k)`) **multiplie ses cubes en s'amincissant**. Pic mesuré :
+   **5 195 cubes** sur une image de la sphère, pour un plafond moteur de 7 000. Plancher
+   absolu sur le pas, et la courbe de densité devient plate : 1 211 / 1 659 / 1 677 /
+   1 596 / 1 662 / 1 554.
+2. **Corollaire positif.** Une fois le plancher posé, le pas devient une **variable
+   expressive** : `0,040 + 0,105 · (1 − bend)`. La grille est pointillée au loin et
+   jointive là où l'espace se tord — la densité raconte la déformation.
+3. **Une sphère rendue par des parallèles de latitude est une bouillie grise** : on voit
+   l'avant ET l'arrière. Treize parallèles remplacées par **trois grands cercles
+   orthogonaux**.
+4. **Une surface d'épaisseur nulle disparaît par la tranche.** Le disque d'accrétion
+   reçoit un terme d'évasement et de gondolement,
+   `flare = (0,035 + 0,085 · clamp(r1/3,2)) · sin(atan2(l1,f1) · 2 + t · 5)`.
+5. **Dans une gerbe symétrique, l'élément central ne subit pas le balayage** (`sin(0) = 0`)
+   et casse la silhouette en deux. Le quatrième des sept faisceaux du prisme reçoit son
+   propre rôle : il devient le **cou** du dragon — il se raccourcit et se relève en courbe.
+6. **Une grille témoin plus étroite que l'horizon rend la déformation invisible.** 9×9
+   au pas de 0,78, soit une demi-largeur de 3,12 pour un horizon qui monte à 1,10.
+
+### 7. Ce qui reste à valider en jeu
+
+Le bac à sable n'a ni JDK, ni Gradle, ni MCreator : `jparse`, `semcheck` et `typecheck`
+passent (baselines inchangées, Void 0 erreur), mais **rien n'est compilé**. À vérifier
+manette en main :
+
+* la **densité** des trois signatures sur un dragon (`sizeScale` 4,0) — la bande resserrée
+  de `bloodSignatureScale` leur est appliquée, mais elle n'a jamais été jugée sur une
+  grille ;
+* le **corridor** de la faille : se placer dans l'axe, puis à deux pas de côté ;
+* la **convergence** du prisme en duel : les quatre empreintes doivent tomber avant le
+  septième faisceau ;
+* le **magenta** du glint à côté du violet de l'Ombre et du bleu-violet de la Foudre.
