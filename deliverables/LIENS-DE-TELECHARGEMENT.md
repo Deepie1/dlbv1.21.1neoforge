@@ -6,7 +6,32 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 > **Si le navigateur sert une vieille version** (le CDN de GitHub garde les fichiers bruts en cache quelques minutes), remplacer `refs/heads/arena/605e67fb-dlbv1-21-1neoforge` par le SHA du commit — par exemple `raw/fa83a2f/…` pour la v1.3 — ou ajouter `?v=2` à la fin de l'adresse.
 
-## Ombre — trois signatures · 4 novembre 2026 ⟵ **LOT COURANT**
+## Sang — cinq signatures · 17 novembre 2026 ⟵ **LOT COURANT**
+
+- **Aperçu (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Blood_Five_Signatures_preview.html
+- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Blood_Five_Signatures_src.zip
+
+> **T383 — l'échelle du mob était appliquée deux fois.** La mise à l'échelle par la
+> hitbox existait bien : `putPosColor`, point de sortie unique de toute la géométrie,
+> applique √(l²·h / 0,6²·1,8) autour du point d'impact — 0,42 pour un poulet, 1,00 pour
+> un joueur, 3,59 pour un ravageur. Mais **trois grandeurs ne sont pas de la géométrie
+> locale**, ce sont des distances déjà mesurées dans le monde, et elles étaient
+> multipliées une seconde fois : la **hauteur du sol** sous l'ancre (la flaque de sang
+> descendait trois mètres **sous** le sol sur un ravageur), la **longueur du conduit**
+> victime → porteur (il dépassait le porteur de douze blocs, et s'arrêtait à 5,45 au lieu
+> de 7,00 sur un poulet) et la **position des relais** de la chaîne de foudre (l'éclair
+> frappait derrière chacune de ses victimes). `unscaleWorld` divise désormais à l'entrée
+> ce que la sortie multiplie — mesuré à **−6,98 pour une cible à −7,00**, à 0,78 comme à
+> 1,75 d'échelle. Corrige le **Sang** et l'**Ombre** d'un coup. La bande propre au sang
+> est resserrée à `échelle^0,55` bornée à **[0,78 ; 1,75]** : les cinq signatures sont des
+> assemblages (échafaud, calice, cœur), à 4,0 le cœur aurait fait sept blocs de haut.
+
+> **T382 — le cœur de la Transfusion**, modèle anatomique : ventricules fuselés, sillon
+> interventriculaire, deux auricules enroulées, crosse aortique couchée dans le plan de
+> la liaison. **T381 — le Siphon v2** : le conduit **monte puis redescend**, ancres
+> reconnaissables aux deux bouts, volume visible **dans** le calice.
+
+## Ombre — trois signatures · 4 novembre 2026
 
 > **Version 3.2 — bande son complète et base de dégâts corrigée.**
 >
