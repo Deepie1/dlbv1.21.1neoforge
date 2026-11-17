@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DLB — void_portal · le core shader du Vide</title>
+<style>
+
+.build{display:inline-block;margin:0 0 10px;padding:3px 8px;border:1px solid #352c5e;border-radius:6px;background:#120d26;color:#b49bff;font-size:11px;letter-spacing:.02em}
+:root{color-scheme:dark;--bg:#07060f;--panel:#0d0b1b;--line:#352c5e;--ink:#efe9ff;--muted:#b2a7cb;--volt:#9b7dff;--gold:#f3c63e}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font:14px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}button,input,a{font:inherit}button,a{-webkit-tap-highlight-color:transparent}
+body{display:grid;grid-template-columns:320px 1fr;background:radial-gradient(ellipse at 72% 22%,#1d1733 0,#120e1f 45%,#07050d 100%)}
+aside{position:relative;z-index:4;display:flex;flex-direction:column;min-height:0;padding:30px 25px 70px;background:linear-gradient(180deg,#110e22f5,#0a0816f5);border-right:1px solid #332a58;box-shadow:18px 0 60px #0007;overflow:auto;overscroll-behavior:contain}aside>*{flex:0 0 auto}
+.eyebrow{font-size:10px;font-weight:800;letter-spacing:.24em;text-transform:uppercase;color:#9b7dff}h1{margin:9px 0 4px;font-family:Georgia,serif;font-size:40px;font-weight:500;letter-spacing:.08em;line-height:1;color:#f1ecff}h2{margin:0 0 17px;font-size:15px;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:#bcaae6}.intro{margin:0 0 22px;color:var(--muted);font-size:13px}.rule{height:1px;background:linear-gradient(90deg,#7d5cf0,transparent);margin:0 0 19px}
+.label{display:block;margin:0 0 8px;color:#bcaae6;font-size:10px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}.variants{display:grid;gap:7px;margin-bottom:19px}.variant{display:grid;grid-template-columns:27px 1fr;align-items:center;gap:9px;width:100%;padding:10px 11px;text-align:left;border:1px solid #352c5e;border-radius:7px;background:#13102a;color:#c3b6e8;cursor:pointer;transition:.18s}.variant:hover{border-color:#6a53c0;background:#1b1638}.variant.active{border-color:#9b7dff;background:linear-gradient(90deg,#231a46,#15102c);color:#efe9ff;box-shadow:inset 3px 0 #9b7dff}.variant .num{font-family:Georgia,serif;font-size:19px;color:#8c7fd0}.variant.active .num{color:#d9cbff}.variant b{display:block;font-size:12px;letter-spacing:.03em}.variant small{display:block;color:#9289b8;font-size:10px;margin-top:1px}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:15px}.btn{border:1px solid #4a3d7a;border-radius:6px;background:#1d1838;color:#ded3ff;padding:9px 10px;cursor:pointer}.btn:hover{background:#2a2250;border-color:#7d68d8}.btn.primary{background:#8e6bff;color:#0b0718;border-color:#b9a2ff;font-weight:800}.btn.primary:hover{background:#a488ff}.timeline{width:100%;accent-color:#8e6bff;cursor:pointer;margin:0 0 7px}.phase{min-height:36px;color:#cdbff5;font-size:12px}.stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#3a3068;border:1px solid #3a3068;border-radius:7px;overflow:hidden;margin:15px 0}.stat{background:#15112b;padding:10px 11px}.stat b{display:block;font-family:Georgia,serif;color:#e7deff;font-size:20px;font-weight:500}.stat span{font-size:9px;color:#978cbe;letter-spacing:.12em;text-transform:uppercase}
+.legend{display:flex;gap:14px;flex-wrap:wrap;color:#b2a7cb;font-size:10px;margin-bottom:18px}.legend span:before{content:"";display:inline-block;width:8px;height:8px;margin-right:5px;background:var(--c);box-shadow:0 0 8px color-mix(in srgb,var(--c),transparent 50%)}.download{display:block;text-align:center;text-decoration:none;color:#e8e0ff;border:1px solid #4e3f8c;background:#171234;border-radius:6px;padding:10px;margin-top:18px}.download:hover{background:#221a46;border-color:#9b7dff}.refs{margin:13px 0 76px;color:#9589b4;font-size:9px;line-height:1.5}
+main{position:relative;min-width:0;min-height:0}canvas{display:block;width:100%;height:100%;cursor:grab;touch-action:none;outline:none}canvas:active{cursor:grabbing}.topbar{position:absolute;left:24px;right:24px;top:21px;display:flex;justify-content:space-between;align-items:center;pointer-events:none;gap:10px}.topbar .right{display:flex;gap:10px;align-items:center}.topbar .chip{white-space:nowrap}@media(max-width:1000px){.chip.live{display:none}}.zipchip{pointer-events:auto;text-decoration:none;border-color:#6a53c0;color:#e8e0ff;background:#100c22d9}.zipchip:hover{background:#1e1742;border-color:#9b7dff}.chip{padding:7px 10px;border:1px solid #6a53c055;border-radius:4px;background:#0b0818cf;color:#c3b6e8;font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;backdrop-filter:blur(8px)}.chip.live:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#c9b6ff;box-shadow:0 0 10px #8e6bff;margin-right:7px}.hint{position:absolute;left:22px;bottom:20px;white-space:nowrap;color:#b6abd6;background:#0b0818d9;border:1px solid #352c5e;border-radius:30px;padding:8px 15px;font-size:10px;letter-spacing:.05em;pointer-events:none}.variant-title{position:absolute;right:26px;bottom:24px;text-align:right;pointer-events:none}.variant-title{max-width:46%}.variant-title b{display:block;font-family:Georgia,serif;font-size:19px;font-weight:500;color:#f1ecff}.variant-title span{display:block;margin-top:2px;font-size:10px;color:#bcaae6;letter-spacing:.1em;text-transform:uppercase;line-height:1.45}
+@media(max-width:850px){body{grid-template-columns:250px 1fr}aside{padding:22px 17px}h1{font-size:32px}.intro{font-size:12px}.variant-title{display:none}.hint{font-size:9px;bottom:12px}.topbar{left:14px;right:14px;top:14px}}
+@media(max-width:620px){html,body{overflow:auto}body{display:block;min-height:100%}aside{position:absolute;left:10px;right:10px;bottom:10px;top:auto;max-height:45vh;padding:14px;border:1px solid #352c5e;border-radius:9px;background:#0d0b1bee}aside .intro,aside .rule,aside .refs,aside .legend,aside .stats{display:none}h1{font-size:25px}h2{font-size:11px;margin-bottom:8px}.eyebrow{font-size:8px}.variants{grid-template-columns:repeat(3,1fr);margin-bottom:10px}.variant{display:block;padding:7px;text-align:center}.variant .num,.variant small{display:none}.variant b{font-size:9px}.controls{grid-template-columns:1fr 1fr;margin-bottom:7px}.download{margin-top:5px;padding:7px}main{height:100vh}.hint{display:none}}
+.zipnote{margin:7px 0 0;color:#978cbe;font-size:9px;line-height:1.45}.zipnote code{color:#d6c8ff;font-size:9px;word-break:break-all}/* DLB-DOWNLOAD-REACH : la barre laterale defile et le bouton reste colle en bas, donc toujours visible et cliquable quelle que soit la hauteur de fenetre. */aside{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}.zipnote{flex:0 0 auto}@media(max-width:620px){aside{overflow-y:auto}}.zipnote{margin:8px 0 0;color:#9589b4;font-size:9px;line-height:1.45}.zipnote code{color:#c9b6ff;font-size:9px;word-break:break-all}
+/* === THEME FOUDRE === */
+.controls{grid-template-columns:1fr 1fr 1fr}
+.stats{grid-template-columns:1fr 1fr 1fr}
+.stat b{font-size:17px}
+body{background:radial-gradient(ellipse at 70% 18%,#241b45 0,#130f26 45%,#07060f 100%)}
+.variant.active{box-shadow:inset 3px 0 #9b7dff}
+
+main{position:relative;display:grid;place-items:center;min-width:0}
+canvas{display:block;width:100%;height:100%}
+.hud{position:absolute;left:18px;bottom:16px;display:flex;gap:7px;flex-wrap:wrap;
+     font-size:11px;color:#a99cd0}
+.hud code{background:#17122e;border:1px solid #352c5e;border-radius:5px;padding:3px 7px;color:#d6c9ff}
+.srow{display:grid;grid-template-columns:76px 1fr 44px;align-items:center;gap:8px;margin:0 0 9px}
+.srow span{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#9b90bd}
+.srow b{font-size:11px;color:#d9cdff;text-align:right;font-weight:600}
+.srow input{width:100%;accent-color:#8e6bff}
+.swatch{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;margin:0 0 16px}
+.swatch i{display:block;height:17px;border-radius:3px;background:var(--c);border:1px solid #ffffff14}
+details{margin:14px 0 0;border:1px solid #2c2450;border-radius:7px;background:#100d22}
+summary{cursor:pointer;padding:9px 11px;font-size:11px;letter-spacing:.07em;
+        text-transform:uppercase;color:#bcaae6}
+pre{margin:0;padding:0 12px 12px;overflow:auto;max-height:260px;font-size:10.5px;
+    line-height:1.5;color:#b9aee0;white-space:pre}
+.warn{border-left:2px solid #9b7dff;padding-left:10px;color:#a99cd0;font-size:12px}
+</style></head>
+<body>
+<aside>
+  <div class="eyebrow">Deep Lucky Block · Void VFX</div>
+  <div class="build">T390 · core shader <code style="color:#d6c9ff">void_portal</code></div>
+  <h1>LE TROU</h1><h2>Parallaxe d’écran</h2>
+  <p class="intro">Les cinq signatures du Vide ne dessinent que des <b>bords</b> : l’intérieur
+  de chaque figure est laissé rigoureusement vide, et le noir du monde passe au travers.
+  C’est juste — mais ça repose entièrement sur ce qu’il y a derrière. Devant un mur de
+  pierre claire, l’anneau de la Porte d’Horizon encadre… de la pierre claire.</p>
+  <p class="intro">Ce shader comble ce manque sans trahir la règle : il ne dessine pas de
+  matière, il <b>remplace ce qu’on voit à travers</b>. Quinze couches d’étoiles additives,
+  tournées et translatées différemment, dont les coordonnées de texture viennent de
+  l’<b>écran</b> et non du modèle. C’est le procédé exact du portail de l’End.</p>
+  <div class="rule"></div>
+
+  <span class="label">Réglages</span>
+  <div class="srow"><span>Couches</span><input id="layers" type="range" min="1" max="15" value="15"><b id="vlayers">15</b></div>
+  <div class="srow"><span>Rayon</span><input id="radius" type="range" min="30" max="320" value="195"><b id="vradius">1,95</b></div>
+  <div class="srow"><span>Orbite</span><input id="yaw" type="range" min="-180" max="180" value="0"><b id="vyaw">0°</b></div>
+  <div class="srow"><span>Visée</span><input id="aim" type="range" min="-60" max="60" value="0"><b id="vaim">0,0</b></div>
+  <div class="controls">
+    <button class="btn primary" id="play">Pause</button>
+    <button class="btn" id="reset">Recentrer</button>
+  </div>
+
+  <span class="label">COLORS[] — les quinze couches</span>
+  <div class="swatch" id="swatch"></div>
+
+  <p class="refs"><b>Ce que vous regardez est le vrai shader.</b> Le <code>.vsh</code> et le
+  <code>.fsh</code> de <code>assets/deep_lucky_block/shaders/core/</code> sont portés en
+  GLSL&nbsp;ES&nbsp;3.00 par deux substitutions mécaniques (la ligne <code>#version</code>,
+  et la taille explicite du tableau constant qu’ES exige), puis compilés tels quels. Les
+  deux textures sont les vraies, embarquées en base64. La géométrie est celle de
+  <code>VoidPortalFx</code> : un disque face caméra de 22 secteurs.</p>
+
+  <p class="refs warn"><b>La seule chose à vérifier ici :</b> déplacez la <b>visée</b>. Le
+  disque glisse sur l’écran — et le champ d’étoiles, lui, ne le suit pas. C’est toute la
+  différence entre une texture collée sur un quad et un portail.</p>
+
+  <details><summary>void_portal.fsh</summary><pre>#version 150
+
+// T390-VOID-PORTAL : calque de rendertype_end_portal.fsh (1.21.1), repeint.
+//
+// Structure identique au vanilla : un fond echantillonne dans Sampler0, puis
+// EndPortalLayers couches du meme champ d'etoiles (Sampler1), chacune tournee,
+// translatee et mise a l'echelle differemment, ajoutees les unes aux autres.
+// Comme texProj0 vient de l'ECRAN (voir le .vsh), chaque couche derive a sa
+// propre vitesse : c'est la parallaxe.
+//
+// DEUX ecarts volontaires avec le vanilla :
+//
+//   1. Le fond. Vanilla multiplie end_sky.png par COLORS[0], ce qui l'ecrase a
+//      quasi-noir. Ici void_sky.png vaut deja #050D25 (Deep Abyssal Void), donc on
+//      le prend tel quel : noir absolu a l'oeil, mais avec le bleu de nuit qui
+//      empeche la surface de se confondre avec un trou de rendu.
+//
+//   2. La palette. COLORS[] ne reprend plus les verts-cyan de l'End mais les
+//      quatre gammes du Vide : Deep Abyssal Void, charbon, Call of the Void et la
+//      serie bleu/mauve delavee. Chaque entree garde la TEINTE de son hexa ; seule
+//      la luminosite suit une rampe croissante de la couche la plus lointaine
+//      (indice 0, etoiles minuscules et serrees) a la plus proche (indice 14,
+//      grosses etoiles rares). Sans cette rampe, quinze couches additives
+//      saturent en blanc et toute la palette disparait.
+//
+// Les quinze couches sont additives les unes par rapport aux autres (color += ...)
+// mais le fragment sort OPAQUE : le quad est un trou dans le monde, pas un voile.
+
+uniform sampler2D Sampler0;
+uniform sampler2D Sampler1;
+
+uniform float GameTime;
+uniform int EndPortalLayers;
+
+in vec4 texProj0;
+
+out vec4 fragColor;
+
+const vec3[] COLORS = vec3[](
+    vec3(0.013514, 0.035135, 0.100000),  // #050D25 Deep Abyssal Void, le fond du gouffre
+    vec3(0.070000, 0.010000, 0.110000),  // #0e0216 Call of the Void, noir viole
+    vec3(0.094030, 0.000000, 0.140000),  // #2d0043 Call of the Void, prune
+    vec3(0.130000, 0.130000, 0.130000),  // #1c1c1c charbon 2
+    vec3(0.057143, 0.045714, 0.170000),  // #282077 indigo delave
+    vec3(0.195699, 0.049462, 0.200000),  // #5b175d Call of the Void, mauve
+    vec3(0.170000, 0.170000, 0.170000),  // #3d3d3d charbon 3
+    vec3(0.115772, 0.126577, 0.230000),  // #4B5295 bleu ardoise
+    vec3(0.197561, 0.034756, 0.300000),  // #6c13a4 Call of the Void, violet
+    vec3(0.174452, 0.182839, 0.260000),  // #686D9B bleu poussiere
+    vec3(0.240000, 0.240000, 0.240000),  // #5c5c5c charbon 4
+    vec3(0.290088, 0.046726, 0.440000),  // #9518e2 Call of the Void, violet neon
+    vec3(0.320000, 0.272516, 0.299355),  // #9B8491 mauve grise
+    vec3(0.420000, 0.354956, 0.323363),  // #E2BFAE sable pale
+    vec3(0.408761, 0.065841, 0.620000),  // #9518e2 violet neon, la couche la plus PROCHE
+    vec3(0.600000, 0.600000, 0.600000)   // #8c8c8c charbon 5, reserve si EndPortalLayers passe a 16
+);
+
+const mat4 SCALE_TRANSLATE = mat4(
+    0.5, 0.0, 0.0, 0.25,
+    0.0, 0.5, 0.0, 0.25,
+    0.0, 0.0, 1.0, 0.0,
+    0.0, 0.0, 0.0, 1.0
+);
+
+// Vanilla importe mat2_rotate_z de matrix.glsl ; on l'ecrit en clair, meme raison
+// que pour projection.glsl dans le .vsh : aucun include a resoudre.
+mat2 rotate_z(float angle) {
+    float s = sin(angle);
+    float c = cos(angle);
+    return mat2(c, -s, s, c);
+}
+
+mat4 void_layer(float layer) {
+    // Le portail de l'End ne fait defiler ses couches qu'a la verticale, a vive
+    // allure. Le Vide, lui, doit DERIVER : on garde la montee (ralentie de moitie)
+    // et on ajoute une derive laterale, plus rapide pour les couches proches.
+    mat4 translate = mat4(
+        1.0, 0.0, 0.0, 17.0 / layer + GameTime * (0.55 + layer * 0.08),
+        0.0, 1.0, 0.0, (2.0 + layer / 1.5) * (GameTime * 0.75),
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0
+    );
+
+    mat2 rotate = rotate_z(radians((layer * layer * 4321.0 + layer * 9.0) * 2.0));
+
+    // layer 1  -> x8.5 : la texture se repete beaucoup, les etoiles sont minuscules
+    //                    et serrees, c'est le fond du gouffre.
+    // layer 15 -> x1.5 : peu de repetitions, grosses etoiles rares, au premier plan.
+    mat2 scale = mat2((4.5 - layer / 4.0) * 2.0);
+
+    return mat4(scale * rotate) * translate * SCALE_TRANSLATE;
+}
+
+void main() {
+    vec3 color = textureProj(Sampler0, texProj0).rgb;
+
+    for (int i = 0; i &lt; EndPortalLayers; i++) {
+        color += textureProj(Sampler1, texProj0 * void_layer(float(i + 1))).rgb * COLORS[i];
+    }
+
+    fragColor = vec4(color, 1.0);
+}
+</pre></details>
+  <details><summary>void_portal.vsh</summary><pre>#version 150
+
+// T390-VOID-PORTAL : calque de rendertype_end_portal.vsh (1.21.1).
+//
+// Le vertex shader ne fait que DEUX choses, et c'est tout le secret de l'effet :
+//   1. projeter le sommet normalement ;
+//   2. recopier cette position projetee dans texProj0.
+// Les coordonnees de texture ne viennent donc PAS du modele mais de l'ECRAN. Quand la
+// camera tourne, la geometrie bouge, mais le champ d'etoiles, lui, reste accroche au
+// viewport : c'est ce decalage qui donne la parallaxe du portail de l'End.
+//
+// Vanilla fait appel a #moj_import &lt;projection.glsl>. On recopie la fonction au lieu de
+// l'importer : un mod qui importe un include vanilla depend de la resolution de chemin
+// (avec ou sans namespace) qui a change entre les versions. Zero import, zero surprise.
+
+in vec3 Position;
+
+uniform mat4 ModelViewMat;
+uniform mat4 ProjMat;
+
+out vec4 texProj0;
+
+vec4 projection_from_position(vec4 position) {
+    vec4 projection = position * 0.5;
+    projection.xy = vec2(projection.x + projection.w, projection.y + projection.w);
+    projection.zw = position.zw;
+    return projection;
+}
+
+void main() {
+    gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
+    texProj0 = projection_from_position(gl_Position);
+}
+</pre></details>
+</aside>
+<main><canvas id="c"></canvas>
+  <div class="hud"><code id="fps">—</code><code id="info">—</code></div>
+</main>
+
+<script>
+const SKY_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEdklEQVR42r1bQW4cMQzTpe2p7SuCIv9/YIoUcOD1ShRJeXvIoR2vx5YliqI18f3Xn49vP9++/ta/z//fn1fP1vMfv9/TOdFfNuach/0d8/u1j1AnXj/8nLwawyxcXfw+ljFot4Y1R6DB+2mym2JeuoyYedvne9a7zvHs5hVDBRq4b/p0/WpBWQhMXL16thvpXEsXpk8GqBbWbUZxtanXMM9Oz8nGrdB9CAHFYpn7LkOpYaLGNdoc2jTlATdO7zRkZpDO2AxyI49VshU0QIbyaNJs48pY1r2d00bjQ1k4Y/mOH+wbYTePQmaaHiMbgAyR5ecqQ6jeUKE7Q9Ayz6XTYBdrystZN0cnl/ECJsVVfAKtPRgwY04CcQaGAzCg5jLObK5l1LjF7ioPYE9acW8l7js8i0kK7EKDccFsU2zqc8D3CQTXJEo62heFiiLGYGtxbM1RUV8lozykQTRBhvAMqCku3nlGhhNonupgqt+GQzkzbs2yOqeaQ/Mo68kOOhAqK+7thoBTLTp1Q4Uz0Z06k0/VijBDcpdhoiIMcYevWoC1rkNbXe9B2NF5j2LMf2lQKTIQ+rPcXNkM4haMUELxgPMFlUEQN+/SUJa2HOCrQK2jxuh9wZbB2YLOyu6mbngaI6PMmTeqWBJMYcMwugpwduOxANp5G+NRLGsMVsB045XdPJsa1VqgW2sotTYrVGRyOnJhtxbp6ghm7nBKS0etYV1Vkch343a4RekBrCVR4aKoMRWgVd6krI/Fh1BPoStAuozSERZX7HTw5KEcdhVctTI8JS4VzVVv6NYa7oWEQ4cVsFUOhq0zssoxJmxsenGShYsLxjsrzDaced2DJIb0eqeHwAVWRdRUy+fsAEJ1MWczCEduhKDqdeXNkCJCKHcEqrLsNFhkGYmZJ1zFBgENo/2zKe5mQ0SGbcG4j4vETL9Qp+dlxkN4VV3dlWnwFY0Lr/itgyNM2IYDaqo8pl5vTzRCxiB7ugy1LeaUpdRLy84l3YyRpcbsEof2gIn2r4osDMGpSuCJiFsyQYTYbBtKNq5z7Uz5yTyS3RxzEKEUJqxhboCiK6uzXS6pItRJzROPUPsQEI1F7XBq2g63x2Z6fd5lDIeiO8VbMAVHtXkmFqehMWmbYw4yFPTsYnUicnau28n0bFaAitA0ntVKkKnW3MqPVaqia41jXDATI6a9/uplKAJIxEIjY1HMtXIFVLshGMBkr97dWO/GR8X4FIXopqaIJG2nF7jDiejka5VlMZhwQ0t0iiWIAbdEz2lKzGKZaaTqao6yQwRxcacBklWTJl0gqnKMQjg6CjxpgWF1Q/U7APZqjbkiC0fYVD+Nu8UMb6L/kyDyP5qdnL5B1ISt9ARmV3LS1ZhKkV+hEXYt/IwUBj+ZQVfUKhE52SVDU7vG5okU116MKG3tCvFALe7ojoEVNtEzFHJpNeheQnTdGGzqUj7MUC9ZpS9G1KYmpU/PvWa/1Vf0FAIs9z6bqG+wPYcQoSzgpOdwEXtCk5Gbdt3qNzxgH/8XfoV14oNYTTkAAAAASUVORK5CYII=", STARS_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAACnklEQVR42u3dMWpqURCAYVeTRnsbd5AVWNnZaGcl2IegYBeQWAuiGxDdgLiF9CkULKzEwHncLsXj5cG9xqvzCX8tzPzMHM8d51YqlUpCuTgej2m32/3W9wl42fj6+krn85kA+DfZhwAgAHJVCgFSAYrtKdAC8NACvL29pU6nI3hRBRgMBmkymQieFgACgAB5uVwuEqECgAC/c/cNFQAPLUCr1ZJYFQAEAAFAgNzMZrO0WCwIEJXlcpn6/T4BQAAQAHmp1+sEAAFQjmcfAq0C4K55enpKz8/PBIhKrVZLzWaTACAAihDA5I0KAAKY0SMACGCalwAggLl/AoAAZaoU9hMEFiDbT5Dj7htaAAgAAnw/U6zXawJEZTqdpu12SwAQAARAsBtNCVMBQAAQADGffQhw2el2u9fcTyDAWgAIgDi8vLyk9/d3AkQl23n0+vr6swBm9LQAEOBn9vu9QKoAIIC5fwKAALkZj8fm/iMLkM3oeS+hFgACgAAF0Ov1JFoFAAFAABCgkBvNarVKgKg0Go1H2k8goVoACIDbcblc0m63I0DkGb0bPvuQAC0ABEDY/QQCpgIgcqUQCBXgP0wx+x9YgMPhkFarlWA5A5j7JwAIkJfPz8/Iu3kJMBqN0nw+F3wtAAQAAYr49fFt5w2iCZC9Q8iZQgsAAUCAAmi1WpHuKST8bzN6gc4UEq4FgAC4HqfTqcxnCgm6NpvNpszvJZQgLQAEwP2QzVMUuEdRQO/x2UeB+wkENPg/hAQq/BnAs3SHQBDA3D8BQICiTp/D4VBwowqQ/U694rtuoQWAAIgjQLvd9g6hyAJ0u11nCi3APQUBQICiKsUNd/MS4NZ8fHzYeaQFgAAgQFFnijueqZDAIub+7/i/hBKoBSAsfwAkk6U235eTOwAAAABJRU5ErkJggg==";
+const VSH = `#version 300 es
+precision highp float;
+
+// T390-VOID-PORTAL : calque de rendertype_end_portal.vsh (1.21.1).
+//
+// Le vertex shader ne fait que DEUX choses, et c'est tout le secret de l'effet :
+//   1. projeter le sommet normalement ;
+//   2. recopier cette position projetee dans texProj0.
+// Les coordonnees de texture ne viennent donc PAS du modele mais de l'ECRAN. Quand la
+// camera tourne, la geometrie bouge, mais le champ d'etoiles, lui, reste accroche au
+// viewport : c'est ce decalage qui donne la parallaxe du portail de l'End.
+//
+// Vanilla fait appel a #moj_import <projection.glsl>. On recopie la fonction au lieu de
+// l'importer : un mod qui importe un include vanilla depend de la resolution de chemin
+// (avec ou sans namespace) qui a change entre les versions. Zero import, zero surprise.
+
+layout(location = 0) in vec3 Position;
+
+uniform mat4 ModelViewMat;
+uniform mat4 ProjMat;
+
+out vec4 texProj0;
+
+vec4 projection_from_position(vec4 position) {
+    vec4 projection = position * 0.5;
+    projection.xy = vec2(projection.x + projection.w, projection.y + projection.w);
+    projection.zw = position.zw;
+    return projection;
+}
+
+void main() {
+    gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
+    texProj0 = projection_from_position(gl_Position);
+}
+`;
+const FSH = `#version 300 es
+precision highp float;
+
+// T390-VOID-PORTAL : calque de rendertype_end_portal.fsh (1.21.1), repeint.
+//
+// Structure identique au vanilla : un fond echantillonne dans Sampler0, puis
+// EndPortalLayers couches du meme champ d'etoiles (Sampler1), chacune tournee,
+// translatee et mise a l'echelle differemment, ajoutees les unes aux autres.
+// Comme texProj0 vient de l'ECRAN (voir le .vsh), chaque couche derive a sa
+// propre vitesse : c'est la parallaxe.
+//
+// DEUX ecarts volontaires avec le vanilla :
+//
+//   1. Le fond. Vanilla multiplie end_sky.png par COLORS[0], ce qui l'ecrase a
+//      quasi-noir. Ici void_sky.png vaut deja #050D25 (Deep Abyssal Void), donc on
+//      le prend tel quel : noir absolu a l'oeil, mais avec le bleu de nuit qui
+//      empeche la surface de se confondre avec un trou de rendu.
+//
+//   2. La palette. COLORS[] ne reprend plus les verts-cyan de l'End mais les
+//      quatre gammes du Vide : Deep Abyssal Void, charbon, Call of the Void et la
+//      serie bleu/mauve delavee. Chaque entree garde la TEINTE de son hexa ; seule
+//      la luminosite suit une rampe croissante de la couche la plus lointaine
+//      (indice 0, etoiles minuscules et serrees) a la plus proche (indice 14,
+//      grosses etoiles rares). Sans cette rampe, quinze couches additives
+//      saturent en blanc et toute la palette disparait.
+//
+// Les quinze couches sont additives les unes par rapport aux autres (color += ...)
+// mais le fragment sort OPAQUE : le quad est un trou dans le monde, pas un voile.
+
+uniform sampler2D Sampler0;
+uniform sampler2D Sampler1;
+
+uniform float GameTime;
+uniform int EndPortalLayers;
+
+in vec4 texProj0;
+
+out vec4 fragColor;
+
+const vec3 COLORS[16] = vec3[16](
+    vec3(0.013514, 0.035135, 0.100000),  // #050D25 Deep Abyssal Void, le fond du gouffre
+    vec3(0.070000, 0.010000, 0.110000),  // #0e0216 Call of the Void, noir viole
+    vec3(0.094030, 0.000000, 0.140000),  // #2d0043 Call of the Void, prune
+    vec3(0.130000, 0.130000, 0.130000),  // #1c1c1c charbon 2
+    vec3(0.057143, 0.045714, 0.170000),  // #282077 indigo delave
+    vec3(0.195699, 0.049462, 0.200000),  // #5b175d Call of the Void, mauve
+    vec3(0.170000, 0.170000, 0.170000),  // #3d3d3d charbon 3
+    vec3(0.115772, 0.126577, 0.230000),  // #4B5295 bleu ardoise
+    vec3(0.197561, 0.034756, 0.300000),  // #6c13a4 Call of the Void, violet
+    vec3(0.174452, 0.182839, 0.260000),  // #686D9B bleu poussiere
+    vec3(0.240000, 0.240000, 0.240000),  // #5c5c5c charbon 4
+    vec3(0.290088, 0.046726, 0.440000),  // #9518e2 Call of the Void, violet neon
+    vec3(0.320000, 0.272516, 0.299355),  // #9B8491 mauve grise
+    vec3(0.420000, 0.354956, 0.323363),  // #E2BFAE sable pale
+    vec3(0.408761, 0.065841, 0.620000),  // #9518e2 violet neon, la couche la plus PROCHE
+    vec3(0.600000, 0.600000, 0.600000)   // #8c8c8c charbon 5, reserve si EndPortalLayers passe a 16
+);
+
+const mat4 SCALE_TRANSLATE = mat4(
+    0.5, 0.0, 0.0, 0.25,
+    0.0, 0.5, 0.0, 0.25,
+    0.0, 0.0, 1.0, 0.0,
+    0.0, 0.0, 0.0, 1.0
+);
+
+// Vanilla importe mat2_rotate_z de matrix.glsl ; on l'ecrit en clair, meme raison
+// que pour projection.glsl dans le .vsh : aucun include a resoudre.
+mat2 rotate_z(float angle) {
+    float s = sin(angle);
+    float c = cos(angle);
+    return mat2(c, -s, s, c);
+}
+
+mat4 void_layer(float layer) {
+    // Le portail de l'End ne fait defiler ses couches qu'a la verticale, a vive
+    // allure. Le Vide, lui, doit DERIVER : on garde la montee (ralentie de moitie)
+    // et on ajoute une derive laterale, plus rapide pour les couches proches.
+    mat4 translate = mat4(
+        1.0, 0.0, 0.0, 17.0 / layer + GameTime * (0.55 + layer * 0.08),
+        0.0, 1.0, 0.0, (2.0 + layer / 1.5) * (GameTime * 0.75),
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0
+    );
+
+    mat2 rotate = rotate_z(radians((layer * layer * 4321.0 + layer * 9.0) * 2.0));
+
+    // layer 1  -> x8.5 : la texture se repete beaucoup, les etoiles sont minuscules
+    //                    et serrees, c'est le fond du gouffre.
+    // layer 15 -> x1.5 : peu de repetitions, grosses etoiles rares, au premier plan.
+    mat2 scale = mat2((4.5 - layer / 4.0) * 2.0);
+
+    return mat4(scale * rotate) * translate * SCALE_TRANSLATE;
+}
+
+void main() {
+    vec3 color = textureProj(Sampler0, texProj0).rgb;
+
+    for (int i = 0; i < EndPortalLayers; i++) {
+        color += textureProj(Sampler1, texProj0 * void_layer(float(i + 1))).rgb * COLORS[i];
+    }
+
+    fragColor = vec4(color, 1.0);
+}
+`;
+
+/* Le décor : volontairement CLAIR. Un trou noir sur fond noir ne prouve rien. */
+const BG_V = `#version 300 es
+precision highp float;
+layout(location = 0) in vec3 Position;
+uniform mat4 MVP;
+out vec3 wpos;
+void main(){ gl_Position = MVP * vec4(Position,1.0); wpos = Position; }`;
+const BG_F = `#version 300 es
+precision highp float;
+in vec3 wpos; out vec4 o;
+void main(){
+  float g = mod(floor(wpos.x)+floor(wpos.z),2.0);
+  vec3 grass = mix(vec3(0.40,0.50,0.27), vec3(0.48,0.58,0.32), g);
+  float gw = mod(floor(wpos.x)+floor(wpos.y),2.0);
+  vec3 stone = mix(vec3(0.60,0.60,0.63), vec3(0.69,0.69,0.71), gw);
+  o = vec4(wpos.y > 0.02 ? stone : grass, 1.0);
+}`;
+
+const cv = document.getElementById('c');
+const gl = cv.getContext('webgl2', {antialias:true});
+if(!gl){ document.getElementById('info').textContent = 'WebGL 2 indisponible'; }
+
+function sh(t,s){ const o=gl.createShader(t); gl.shaderSource(o,s); gl.compileShader(o);
+  if(!gl.getShaderParameter(o,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; }
+function prog(v,f){ const p=gl.createProgram(); gl.attachShader(p,sh(gl.VERTEX_SHADER,v));
+  gl.attachShader(p,sh(gl.FRAGMENT_SHADER,f)); gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)); return p; }
+const PORTAL = prog(VSH,FSH), BG = prog(BG_V,BG_F);
+
+function tex(src){ const t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([0,0,0,255]));
+  for(const [k,v] of [[gl.TEXTURE_MIN_FILTER,gl.NEAREST],[gl.TEXTURE_MAG_FILTER,gl.NEAREST],
+                      [gl.TEXTURE_WRAP_S,gl.REPEAT],[gl.TEXTURE_WRAP_T,gl.REPEAT]])
+    gl.texParameteri(gl.TEXTURE_2D,k,v);
+  const im=new Image(); im.onload=()=>{ gl.bindTexture(gl.TEXTURE_2D,t);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,im); };
+  im.src=src; return t; }
+const T_SKY=tex(SKY_SRC), T_STARS=tex(STARS_SRC);
+
+const vbo = gl.createBuffer();
+function upload(a){ gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(a),gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0); }
+
+const mul=(a,b)=>{const r=new Array(16);for(let i=0;i<4;i++)for(let j=0;j<4;j++){
+  let s=0;for(let k=0;k<4;k++)s+=a[k*4+j]*b[i*4+k];r[i*4+j]=s;}return r;};
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const norm=a=>{const l=Math.hypot(a[0],a[1],a[2])||1;return[a[0]/l,a[1]/l,a[2]/l];};
+const persp=(f,a,n,q)=>{const t=1/Math.tan(f/2);
+  return [t/a,0,0,0, 0,t,0,0, 0,0,(q+n)/(n-q),-1, 0,0,2*q*n/(n-q),0];};
+const lookAt=(e,c,u)=>{const z=norm(sub(e,c)),x=norm(cross(u,z)),y=cross(z,x);
+  return [x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0, -dot(x,e),-dot(y,e),-dot(z,e),1];};
+
+const TARGET=[0,1.45,0], DIST=7.2;
+let yaw=0, pitch=0.17, aim=0, radius=1.95, layers=15, gameTime=0, playing=true, last=0, frames=0, acc=0;
+
+function render(ts){
+  const w = cv.clientWidth|0, h = cv.clientHeight|0;
+  if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
+  if(playing && last) gameTime += Math.min(0.05,(ts-last)/1000) * 0.0016;
+  if(last){ acc += ts-last; frames++; if(acc>500){
+    document.getElementById('fps').textContent = (1000*frames/acc).toFixed(0)+' i/s';
+    acc=0; frames=0; } }
+  last = ts;
+
+  const asp=w/Math.max(1,h);
+  const eye=[TARGET[0]+Math.sin(yaw)*Math.cos(pitch)*DIST,
+             TARGET[1]+Math.sin(pitch)*DIST,
+             TARGET[2]+Math.cos(yaw)*Math.cos(pitch)*DIST];
+  const AIM=[TARGET[0]+Math.cos(yaw)*aim, TARGET[1], TARGET[2]-Math.sin(yaw)*aim];
+  const P=persp(1.20,asp,0.05,220), V=lookAt(eye,AIM,[0,1,0]);
+
+  gl.viewport(0,0,w,h);
+  gl.clearColor(0.55,0.68,0.92,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.disable(gl.CULL_FACE); gl.disable(gl.BLEND);
+
+  gl.useProgram(BG);
+  gl.uniformMatrix4fv(gl.getUniformLocation(BG,'MVP'),false,new Float32Array(mul(P,V)));
+  const R=16, g=[];
+  g.push(-R,0,-R, R,0,-R, R,0,R,  -R,0,-R, R,0,R, -R,0,R);
+  g.push(-6,0,-5, 6,0,-5, 6,7,-5,  -6,0,-5, 6,7,-5, -6,7,-5);
+  upload(g); gl.drawArrays(gl.TRIANGLES,0,g.length/3);
+
+  const fwd=norm(sub(TARGET,eye)), right=norm(cross(fwd,[0,1,0])), up=cross(right,fwd);
+  const d=[], N=22;
+  for(let s=0;s<N;s++){
+    const pt=a=>[TARGET[0]+right[0]*Math.cos(a)*radius+up[0]*Math.sin(a)*radius,
+                 TARGET[1]+right[1]*Math.cos(a)*radius+up[1]*Math.sin(a)*radius,
+                 TARGET[2]+right[2]*Math.cos(a)*radius+up[2]*Math.sin(a)*radius];
+    const A=pt(s*2*Math.PI/N), B=pt((s+1)*2*Math.PI/N);
+    d.push(TARGET[0],TARGET[1],TARGET[2], A[0],A[1],A[2], B[0],B[1],B[2]);
+  }
+  gl.useProgram(PORTAL);
+  gl.uniformMatrix4fv(gl.getUniformLocation(PORTAL,'ProjMat'),false,new Float32Array(P));
+  gl.uniformMatrix4fv(gl.getUniformLocation(PORTAL,'ModelViewMat'),false,new Float32Array(V));
+  gl.uniform1f(gl.getUniformLocation(PORTAL,'GameTime'), gameTime % 1.0);
+  gl.uniform1i(gl.getUniformLocation(PORTAL,'EndPortalLayers'), layers);
+  gl.uniform1i(gl.getUniformLocation(PORTAL,'Sampler0'),0);
+  gl.uniform1i(gl.getUniformLocation(PORTAL,'Sampler1'),1);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,T_SKY);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,T_STARS);
+  upload(d); gl.drawArrays(gl.TRIANGLES,0,d.length/3);
+
+  document.getElementById('info').textContent =
+    layers+' couches · GameTime '+(gameTime%1).toFixed(4)+' · rayon '+radius.toFixed(2)+' bloc(s)';
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+
+/* ---- commandes ---- */
+const $ = id => document.getElementById(id);
+$('layers').oninput = e => { layers = +e.target.value; $('vlayers').textContent = layers; };
+$('radius').oninput = e => { radius = +e.target.value/100; $('vradius').textContent = radius.toFixed(2).replace('.',','); };
+$('yaw').oninput    = e => { yaw = +e.target.value*Math.PI/180; $('vyaw').textContent = e.target.value+'°'; };
+$('aim').oninput    = e => { aim = +e.target.value/10; $('vaim').textContent = aim.toFixed(1).replace('.',','); };
+$('play').onclick   = () => { playing = !playing; $('play').textContent = playing ? 'Pause' : 'Reprendre'; };
+$('reset').onclick  = () => { yaw=0; aim=0; pitch=0.17; radius=1.95; layers=15;
+  for(const [k,v] of [['yaw',0],['aim',0],['radius',195],['layers',15]]) $(k).value=v;
+  $('vyaw').textContent='0°'; $('vaim').textContent='0,0';
+  $('vradius').textContent='1,95'; $('vlayers').textContent='15'; };
+
+let drag=null;
+cv.addEventListener('pointerdown', e => { drag=[e.clientX,e.clientY]; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointerup',   () => { drag=null; });
+cv.addEventListener('pointermove', e => { if(!drag) return;
+  yaw   -= (e.clientX-drag[0])*0.006;
+  pitch  = Math.max(-0.9, Math.min(1.25, pitch + (e.clientY-drag[1])*0.004));
+  drag=[e.clientX,e.clientY];
+  $('yaw').value = Math.round(((yaw*180/Math.PI)%360+540)%360-180);
+  $('vyaw').textContent = $('yaw').value+'°'; });
+
+/* ---- nuancier : relu dans le fsh embarque, donc jamais desynchronise ---- */
+const cols = [...FSH.matchAll(/vec3\(([\d.]+), ([\d.]+), ([\d.]+)\)/g)].slice(0,16)
+  .map(m => '#'+[1,2,3].map(i => Math.round(Math.min(1,+m[i]*1.9)*255).toString(16).padStart(2,'0')).join(''));
+$('swatch').innerHTML = cols.map(c => '<i style="--c:'+c+'"></i>').join('');
+</script></body></html>

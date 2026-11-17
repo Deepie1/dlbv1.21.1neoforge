@@ -4808,6 +4808,12 @@ public final class WeaponWorldVfxManager {
         } finally {
             voxelPulseEnabled = previousPulse;
         }
+        // T390-VOID-PORTAL : la fenêtre d'abysse, derrière le bord voxel. Déposée ici et pas
+        // dans VoidSignatureVfx parce que ce dernier n'écrit que dans le tampon voxel qu'on
+        // lui tend ; la fenêtre, elle, a son propre RenderType (core shader + deux textures)
+        // et ne peut pas partager cette passe. Position du MONDE, jamais celle relative à la
+        // caméra : VoidPortalFx retranche la sienne au moment où il dessine.
+        VoidPortalFx.queueSignature(signature, v.inst().x, v.inst().y, v.inst().z, v.t());
     }
 
     /**

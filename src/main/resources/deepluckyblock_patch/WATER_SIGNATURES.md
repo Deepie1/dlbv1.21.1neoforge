@@ -3281,6 +3281,11 @@ n'aurait plus été lisible une fois la première aspiration passée.
 
 ### 5. Le glint : pourquoi PAS le cyan de l'horizon
 
+> **T390.** La palette a été repeinte depuis (voir §50) : la lèvre vaut maintenant
+> `0x9518E2`. Le raisonnement ci-dessous est conservé tel quel parce que sa **conclusion**
+> l'est aussi — le glint reste `0xFF3FD8`, et il tient toujours l'écart d'un canal entier
+> face à la nouvelle lèvre comme face aux onze autres familles.
+
 La couleur que le joueur voit dans l'animation est `HORIZON 0x7FD4E8`. C'était le choix
 évident, et il est faux.
 
@@ -3478,3 +3483,169 @@ résoudre. **Rien n'est compilé.** Manette en main :
 * la porte en duel : la victime doit faire un **va-et-vient**, pas s'éloigner ;
 * la trame : s'éloigner après la pose ne doit **pas** sortir du contrat ;
 * le trou de la porte vu de dessus, et l'arête intérieure à contre-jour.
+
+---
+
+## §50 — T390 · VIDE : la repeinte, et le trou qui n'était pas là
+
+### 0. Le constat
+
+> « tes couleurs sont pas bonnes ! »
+
+Quatre gammes ont été fournies avec la remarque :
+
+| gamme | teintes |
+| --- | --- |
+| **Deep Abyssal Void** | `#050D25` |
+| **charbon** | `#000000` · `#1c1c1c` · `#3d3d3d` · `#5c5c5c` · `#8c8c8c` |
+| **Call of the Void** | `#0e0216` · `#5b175d` · `#6c13a4` · `#9518e2` · `#2d0043` |
+| **bleu / mauve délavé** | `#282077` · `#4B5295` · `#686D9B` · `#9B8491` · `#B18E8C` · `#E2BFAE` |
+
+Elles règlent deux problèmes qui n'en font qu'un seul. Le premier est la **palette voxel**
+des cinq signatures, bâtie en T388 autour d'un cyan. Le second est plus ancien et n'avait
+jamais été nommé : les cinq figures ne dessinent que des **bords**, et un bord n'existe que
+si ce qu'il encadre est sombre. Devant un mur de pierre claire, l'anneau de la Porte
+d'Horizon encadre de la pierre claire.
+
+### 1. La repeinte — la règle, et son unique exception
+
+**La luminance de chaque rôle est conservée, seule la teinte change.** Tout le fichier
+repose sur une échelle qui monte des corps presque noirs jusqu'au fil de l'anneau ;
+intervertir deux barreaux rendrait les cinq signatures illisibles, aussi justes soient les
+couleurs prises une à une.
+
+| rôle | T388/T389 | L | T390 | L | origine |
+| --- | --- | --- | --- | --- | --- |
+| `NOTHING` | `0x04030A` | 4 | `0x0E0216` | 8 | Call of the Void, le noir violé |
+| `ABYSS` | `0x0C0A18` | 12 | `0x050D25` | 13 | **Deep Abyssal Void** |
+| `BASALT` | `0x1A1726` | 26 | `0x2D0043` | 21 | Call of the Void, la prune |
+| `SLATE` | `0x2E2B40` | 46 | `0x282077` | 44 | délavé, l'indigo |
+| `HALO` | `0x4A5E78` | 91 | `0x6C13A4` | 62 | Call of the Void, le violet moyen |
+| `HORIZON` | `0x7FD4E8` | 189 | `0x9518E2` | **84** | Call of the Void, le **violet néon** |
+| `GLACIER` | `0xBFF2FF` | 228 | `0xD7B4F7` | 198 | `#9518E2` surexposé |
+| `SINGULAR` | `0xFFFFFF` | 255 | `0xFFFFFF` | 255 | inchangé |
+| `ENDSTONE` | `0xD8D2A4` | 207 | `0xD8D2A4` | 207 | **inchangé** |
+| `ENDSTONE_DK` | `0x8A855F` | 130 | `0x8A855F` | 130 | **inchangé** |
+| `CHORUS` | `0x8E5BA6` | 115 | `0x4B5295` | 88 | délavé, le bleu ardoise |
+| `INVERT` | `0xFF9A4A` | 175 | `0xB18E8C` | 152 | délavé, le rose cendré |
+
+Échelle résultante : **8 < 13 < 21 < 44 < 62 < 84 < 198 < 255**, monotone, vérifiée par le
+script de repeinte qui refuse d'écrire si elle ne l'est plus.
+
+**L'exception, c'est la lèvre, et elle a coûté une passe pour rien.** Première tentative :
+`#C3C8E8` (le bleu poussière éclairci), luminance 202, c'est-à-dire l'ancien cyan à la
+teinte près. Rendu au banc d'essai : parfaitement lisible, et **sans identité** — un blanc
+sale. Le diagnostic est net : à cette luminance, aucune des quatre gammes n'offre de
+couleur chromatique, donc conserver la luminance de la lèvre revenait à **ne rien
+repeindre du tout**.
+
+Seconde passe, règle inversée : le violet néon devient la teinte maîtresse et l'échelle se
+reconstruit autour de lui. La lèvre tombe de 189 à 84. Ce qui porte une figure n'est pas
+l'écart lèvre / fond mais l'écart **lèvre / corps** : 84 contre 21, soit quatre fois,
+contre cinq fois auparavant. Les deux crans au-dessus — surexposition `#D7B4F7` et fil de
+l'anneau blanc — gardent leur luminance et ramènent la lumière là où il en faut.
+
+Deux invariants. Les tons de **matière étrangère** ne bougent pas : ils représentent le
+monde avalé, pas le vide, et les repeindre supprimerait le contraste qui fait lire
+l'engloutissement. Et puisque le violet est désormais la couleur de la maison, l'**autre
+côté** aperçu dans la fente passe au bleu ardoise : c'est lui, maintenant, qui doit détonner.
+
+**Réserve honnête :** l'Ombre tient `0x4D318E` / `0x7100A7`. Le violet n'est donc plus
+l'exclusivité d'une famille. Les deux restent distinguables par la luminance (84 contre 44
+et 62) et surtout par la forme, mais la séparation n'est plus celle, nette, du cyan contre
+le violet. C'est le prix de la gamme demandée, pas un oubli.
+
+### 2. Le trou : un vrai core shader, le seul du mod
+
+Le reste du mod est en mini-cubes. Ici, non — et pour une raison précise : ce qui rend un
+champ d'étoiles crédible, c'est qu'il est accroché à l'**écran** et non au monde, donc
+qu'il glisse quand la tête tourne. Aucun empilement de voxels ne produit ça. Seul un
+shader qui prend ses coordonnées de texture dans l'espace **projeté** le fait. C'est le
+procédé exact du portail de l'End, d'où la copie.
+
+```
+assets/deep_lucky_block/textures/effect/void_sky.png      64 x 64    #050D25 moucheté
+assets/deep_lucky_block/textures/effect/void_stars.png   128 x 128   4,6 % de couverture
+assets/deep_lucky_block/shaders/core/void_portal.json     Sampler0/1, GameTime, EndPortalLayers = 15
+assets/deep_lucky_block/shaders/core/void_portal.vsh      texProj0 = projection(gl_Position)
+assets/deep_lucky_block/shaders/core/void_portal.fsh      15 couches additives, COLORS[16]
+deepluckyblock/client/ModShaders.java                     RegisterShadersEvent (bus MOD, client)
+deepluckyblock/client/ModRenderTypes.java                 ShaderStateShard + MultiTextureStateShard
+deepluckyblock/client/VoidPortalFx.java                   le disque face caméra
+```
+
+Trois écarts volontaires avec `rendertype_end_portal` :
+
+1. **Le fond.** Vanilla multiplie `end_sky.png` par `COLORS[0]`, ce qui l'écrase à presque
+   noir. Ici `void_sky.png` vaut déjà `#050D25`, donc on le prend tel quel : noir absolu à
+   l'œil, mais avec le bleu de nuit qui empêche la surface de se confondre avec un trou de
+   rendu.
+2. **La palette.** `COLORS[]` reprend les quatre gammes, de la couche la plus lointaine
+   (indice 0, étoiles minuscules et serrées) à la plus proche (indice 14, grosses étoiles
+   rares, violet néon). Chaque entrée garde la **teinte** de son hexadécimal ; seule la
+   luminosité suit une rampe croissante. Sans cette rampe, quinze couches additives
+   saturent en blanc et toute la palette disparaît.
+3. **Le mouvement.** Le portail de l'End ne fait défiler ses couches qu'à la verticale et à
+   vive allure. Le Vide doit **dériver** : montée ralentie de moitié, plus une dérive
+   latérale d'autant plus rapide que la couche est proche.
+
+Deux pièges déjà payés par d'autres mods, et notés ici pour ne pas les repayer.
+**Un :** ne jamais retenir l'instance passée à `registerShader` — c'est celle livrée **au
+callback** qu'il faut garder, sinon le premier F3+T laisse un pointeur sur un programme GL
+détruit. **Deux :** vanilla ne cherche ses shaders que dans `minecraft:shaders/core/` ;
+NeoForge patche le chargement pour autoriser un namespace, d'où le `deep_lucky_block:` à la
+fois dans le `ResourceLocation` Java **et** dans les champs `vertex` / `fragment` du JSON.
+
+### 3. La fenêtre, et pourquoi elle ne trahit pas la règle du bord
+
+`VoidSignatureVfx` applique une règle stricte : on ne dessine jamais le vide, on dessine
+son **bord**. La fenêtre ne dessine toujours pas de matière — elle **remplace ce qu'on voit
+à travers**. Le disque est opaque, écrit la profondeur, et affiche un ciel d'abysse. Le bord
+voxel reste l'objet ; la fenêtre garantit seulement qu'il y a l'abîme derrière lui, et pas
+le mur du village.
+
+Rayon et hauteur par signature, en blocs :
+
+| signature | rayon max | hauteur du centre |
+| --- | --- | --- |
+| Sphère de Distorsion | 1,55 | 1,20 |
+| Prisme du Dragon | 1,25 | 1,30 |
+| Faille du Néant | 1,05 | 0,85 |
+| **Porte d'Horizon** | **1,95** | 1,45 |
+| Constellation Nulle | 1,35 | 1,15 |
+
+Ouverture en `smoothstep` sur `[0,06 ; 0,32]`, fermeture sur `[0,84 ; 1,00]` : l'ouverture
+est plus lente que la fermeture, parce qu'un trou dans le réel se déchire avec effort et se
+referme d'un coup.
+
+Aucun état ne survit à une image. Le rendu des signatures **dépose** une fenêtre par image,
+la classe la consomme dans la même étape — rien à nettoyer au changement de monde, rien à
+resynchroniser entre deux horloges. L'ordre des deux écouteurs `AFTER_PARTICLES` n'étant pas
+garanti, la file peut être dessinée avec une image de retard : invisible sur un disque qui
+grandit en vingt, et c'est le seul couplage accepté.
+
+### 4. Ce qui a été vérifié sans le jeu
+
+Ni JDK ni Minecraft ici. Ce qui a pu être prouvé l'a été :
+
+* le `.vsh` et le `.fsh` ont été **portés mécaniquement en GLSL ES 3.00** (deux
+  substitutions) et exécutés dans Chromium/SwiftShader, avec les vraies textures et la même
+  géométrie — compilation, édition de liens et rendu sans erreur ;
+* mesure sur le disque : **6 %** de pixels allumés, luminance moyenne 16 / 255, pic 107.
+  C'est bien un champ d'étoiles, pas une purée laiteuse — le risque n°1 de quinze couches
+  additives ;
+* le champ est **accroché à l'écran** : à géométrie identique, déplacer le disque dans le
+  viewport change entièrement le motif. La parallaxe est là ;
+* les cinq signatures repeintes ont été re-rendues au banc voxel (1677 / 1494 / 476 / 942 /
+  996 cubes, inchangés) et relues une par une.
+
+### 5. À essayer en jeu
+
+* `/dlbvfx play 26`, `27`, `34`, `44`, `45` **devant un mur de pierre claire** : c'est le
+  cas qui motivait la fenêtre ;
+* la même chose de nuit, puis dans l'eau, puis en regardant le ciel ;
+* tourner autour d'une Porte d'Horizon ouverte : les étoiles doivent **glisser**, pas suivre
+  le disque ;
+* F3+T pendant qu'une signature est à l'écran : le shader doit se recharger sans crash ;
+* vérifier que la lèvre violette se distingue encore d'une signature d'Ombre jouée juste
+  après.

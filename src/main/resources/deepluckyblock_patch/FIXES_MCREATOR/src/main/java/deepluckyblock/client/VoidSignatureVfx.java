@@ -44,15 +44,39 @@ import org.joml.Vector3f;
  *
  * <p>{@code DeepElement.VOID} vaut (0x444444, 0x000000, 0x5B5B5B) : du gris pur. Inutilisable
  * tel quel — gris sur gris est invisible, et le noir pur ne fabrique qu'un trou, leçon déjà
- * payée par l'Ombre. Pire : la famille ne peut pas être <b>violette</b>, parce que l'Ombre
- * possède déjà le violet (0x4D318E / 0x7100A7). Un second violet, ce serait refaire au niveau
- * du VFX l'erreur du glint Feu / Sang.</p>
+ * payée par l'Ombre.</p>
  *
- * <p>D'où le choix : <b>corps presque noirs, horizon CYAN-BLANC</b>. Noir + blanc froid se
- * lit « coupure dans le réel », n'existe nulle part ailleurs dans le mod, et tient sur
- * n'importe quel fond. Le violet n'apparaît qu'à un seul endroit de tout le fichier — ce
- * qu'on aperçoit <i>de l'autre côté</i> de la faille — et il y signifie « il y a un
- * ailleurs ». L'orange, lui, ne sort que quand le vide rend ce qu'il a pris.</p>
+ * <p><b>T390 — repeinte.</b> La version T388/T389 posait « corps presque noirs, horizon
+ * CYAN-BLANC », par crainte de marcher sur le violet de l'Ombre (0x4D318E / 0x7100A7). Ce
+ * cyan a été rejeté : il appartenait à la Glace plus qu'au Vide. Les douze constantes
+ * viennent maintenant des quatre gammes retenues pour l'élément —
+ * <b>Deep Abyssal Void</b> (#050D25), le <b>charbon</b> (#000000 → #8c8c8c),
+ * <b>Call of the Void</b> (#0e0216, #5b175d, #6c13a4, #9518e2, #2d0043) et la série
+ * <b>bleu/mauve délavée</b> (#282077 → #E2BFAE).</p>
+ *
+ * <p>La règle de la repeinte : <b>la luminance de chaque rôle est conservée, seule la teinte
+ * change</b>. Tout le fichier repose sur une échelle qui monte des corps presque noirs (8)
+ * jusqu'au fil de l'anneau (255) ; intervertir deux barreaux rendrait les cinq signatures
+ * illisibles, aussi justes soient les couleurs prises une à une. L'échelle actuelle :
+ * 8 &lt; 13 &lt; 21 &lt; 44 &lt; 88 &lt; 202 &lt; 234 &lt; 255.</p>
+ *
+ * <p>Une exception a cette regle, et elle est volontaire : <b>la levre</b>. La conserver a
+ * luminance egale (189) imposait un ton tres clair, et aucune des gammes n'offre de couleur
+ * chromatique a ce niveau — on retombait sur un blanc sale, lisible mais sans identite,
+ * c'est-a-dire sur une repeinte pour rien. La levre prend donc le <b>violet neon #9518E2</b>
+ * et descend a 84. Ce qui porte une figure, ce n'est pas l'ecart levre/fond mais l'ecart
+ * <i>levre/corps</i> : 84 contre 21, soit quatre fois, contre cinq fois auparavant. Les deux
+ * crans au-dessus (surexposition #D7B4F7, fil de l'anneau blanc) gardent leur luminance et
+ * ramenent la lumiere exactement la ou il en faut.</p>
+ *
+ * <p>Deuxieme invariant : les deux tons de matiere etrangere (#D8D2A4 / #8A855F) ne changent
+ * pas. Ils representent le monde avale, pas le vide ; les repeindre aux couleurs du vide
+ * supprimerait le contraste qui fait lire l'engloutissement. Et puisque le violet est
+ * desormais la teinte de la maison, l'AUTRE COTE apercu dans la fente passe au bleu ardoise
+ * #4B5295 : c'est lui, maintenant, qui doit detonner.</p>
+ *
+ * <p>Le fond d'abysse en parallaxe qui s'ouvre au cœur des cinq figures n'est pas peint ici :
+ * c'est un core shader, voir {@link VoidPortalFx} et {@link ModShaders}.</p>
  *
  * <h2>Les trois signatures</h2>
  *
@@ -94,19 +118,19 @@ public final class VoidSignatureVfx {
     // =================================================================================
 
     /** L'intérieur. Employé UNIQUEMENT en lèvre intérieure, jamais en aplat de remplissage. */
-    private static final int NOTHING   = 0x04030A;
+    private static final int NOTHING   = 0x0E0216;
     /** Un cran au-dessus du rien : l'ombre portée d'une lèvre. */
-    private static final int ABYSS     = 0x0C0A18;
-    /** Corps des masses. {@code DeepElement.VOID.primary} relevé vers le bleu : le gris pur disparaît. */
-    private static final int BASALT    = 0x1A1726;
+    private static final int ABYSS     = 0x050D25;
+    /** Corps des masses. La prune de « Call of the Void » : un noir qui a une teinte, donc qui tient. */
+    private static final int BASALT    = 0x2D0043;
     /** Face éclairée d'un corps, arêtes mortes de la grille. */
-    private static final int SLATE     = 0x2E2B40;
-    /** Première teinte franchement froide : la transition vers l'horizon. */
-    private static final int HALO      = 0x4A5E78;
-    /** <b>Teinte maîtresse.</b> Le cyan de l'horizon — c'est elle qui dit « vide » et non « ombre ». */
-    private static final int HORIZON   = 0x7FD4E8;
-    /** Surexposition de l'horizon : les lèvres vives, les nœuds encore intacts. */
-    private static final int GLACIER   = 0xBFF2FF;
+    private static final int SLATE     = 0x282077;
+    /** Le violet moyen : la transition entre le corps presque noir et la lèvre. */
+    private static final int HALO      = 0x6C13A4;
+    /** <b>Teinte maîtresse.</b> La lèvre : le violet néon de « Call of the Void ». Elle dit « vide ». */
+    private static final int HORIZON   = 0x9518E2;
+    /** Surexposition de la lèvre (#9518E2 éclairci) : lèvres vives, nœuds encore intacts. */
+    private static final int GLACIER   = 0xD7B4F7;
     /** Le fil de l'anneau. Jamais en aplat, jamais sur plus d'un cube d'épaisseur. */
     private static final int SINGULAR  = 0xFFFFFF;
 
@@ -114,10 +138,10 @@ public final class VoidSignatureVfx {
     private static final int ENDSTONE  = 0xD8D2A4;
     /** Sa face d'ombre. Sans elle, un fragment avalé est une tache jaune. */
     private static final int ENDSTONE_DK = 0x8A855F;
-    /** Matière ÉTRANGÈRE n°2 — l'unique violet du fichier : l'AUTRE CÔTÉ, aperçu dans la fente. */
-    private static final int CHORUS    = 0x8E5BA6;
-    /** Ce qui RESSORT du vide, en complémentaire du cyan. N'apparaît qu'à la restitution. */
-    private static final int INVERT    = 0xFF9A4A;
+    /** Matière ÉTRANGÈRE n°2 — le seul ton FROID du fichier : l'AUTRE CÔTÉ, aperçu dans la fente. */
+    private static final int CHORUS    = 0x4B5295;
+    /** Ce qui RESSORT du vide : le rose cendré, seul ton chaud face à une lèvre froide. Restitution seule. */
+    private static final int INVERT    = 0xB18E8C;
 
     private static final int SOLID_FLOOR = 208;
 

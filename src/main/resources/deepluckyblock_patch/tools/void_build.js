@@ -41,9 +41,9 @@ function buildVoid(variant, t, salt = 7331) {
   // DeepElement.VOID vaut (0x444444 / 0x000000 / 0x5B5B5B) : du gris pur, inutilisable.
   // Corps presque noirs + horizon CYAN-BLANC. Le violet n'apparaît qu'à UN endroit (l'autre
   // côté de la faille) et l'orange qu'à la restitution.
-  const NOTHING = 0x04030A, ABYSS = 0x0C0A18, BASALT = 0x1A1726, SLATE = 0x2E2B40,
-        HALO = 0x4A5E78, HORIZON = 0x7FD4E8, GLACIER = 0xBFF2FF, SINGULAR = 0xFFFFFF;
-  const ENDSTONE = 0xD8D2A4, ENDSTONE_DK = 0x8A855F, CHORUS = 0x8E5BA6, INVERT = 0xFF9A4A;
+  const NOTHING = 0x0E0216, ABYSS = 0x050D25, BASALT = 0x2D0043, SLATE = 0x282077,
+        HALO = 0x6C13A4, HORIZON = 0x9518E2, GLACIER = 0xD7B4F7, SINGULAR = 0xFFFFFF;
+  const ENDSTONE = 0xD8D2A4, ENDSTONE_DK = 0x8A855F, CHORUS = 0x4B5295, INVERT = 0xB18E8C;
 
   // L'aperçu n'a pas de monde à sonder : GROUND_Y garde sa valeur de repli.
   const GROUND_Y = -0.86, SLAB_H = 0.030, GRAVITY = 9.0;

@@ -6,51 +6,67 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 > **Si le navigateur sert une vieille version** (le CDN de GitHub garde les fichiers bruts en cache quelques minutes), remplacer `refs/heads/arena/605e67fb-dlbv1-21-1neoforge` par le SHA du commit — par exemple `raw/fa83a2f/…` pour la v1.3 — ou ajouter `?v=2` à la fin de l'adresse.
 
-## Vide — cinq signatures · 4 novembre 2026 ⟵ **LOT COURANT**
+## Vide — cinq signatures, repeintes + core shader · 4 novembre 2026 ⟵ **LOT COURANT**
 
-- **Aperçu (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_preview.html?v=389
-- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_src.zip?v=389
+- **Aperçu voxel (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_preview.html?v=390
+- **Démo du shader (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Portal_shader_demo.html?v=390
+- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_src.zip?v=390
 
-> **T389 — le Vide passe de TROIS à CINQ signatures.** La T388 avait refondu les trois
-> identifiants historiques (`VOID_WARP_SPHERE` 26, `DRAGON_CHAOS_PRISM` 27,
-> `NULL_RIFT_FISSURE` 34) ; le Sang en a cinq depuis la T379, donc la rotation `/anim void`
-> tirait dans un sac trois fois plus petit. S'y ajoutent **`HORIZON_GATE` 44** (180 ticks)
-> et **`NULL_LATTICE` 45** (200 ticks).
+> **T390 — la repeinte, et le trou qui n'était pas là.** Deux livraisons en une, parce que
+> c'est le même défaut vu de deux côtés.
 >
-> **Le critère d'admission n'était pas une forme libre mais un VERBE libre.** La sphère
-> RASSEMBLE, le prisme DISTRIBUE, la faille TRIE — restaient **EXPULSER** et **LIER**. Une
-> quatrième signature qui aurait seulement eu une autre silhouette aurait été la même
-> signature jouée une quatrième fois.
+> **1. La palette.** Les douze constantes du Vide sortaient d'un cyan choisi en T388 par
+> crainte de marcher sur le violet de l'Ombre. Elles viennent maintenant des quatre gammes
+> retenues pour l'élément : **Deep Abyssal Void** `#050D25`, le **charbon**,
+> **Call of the Void** (`#0e0216` → `#9518e2`) et la série **bleu/mauve délavée**
+> (`#282077` → `#E2BFAE`). Règle appliquée : **la luminance de chaque rôle est conservée,
+> seule la teinte change** — l'échelle monte 8 < 13 < 21 < 44 < 62 < 84 < 198 < 255, et le
+> script de repeinte refuse d'écrire si elle cesse d'être monotone.
 >
-> **Porte d'Horizon (#44)** — un **tore** posé au sol, sa membrane en spirale logarithmique
-> à deux brins qui descend, un second tore 0,62× et **incliné** deux blocs et quart plus
-> haut, et sept fragments qui tombent dans l'un, **cessent d'exister une quinzaine de
-> frames**, puis ressortent de l'autre en orange. C'est la seule surface **fermée à trou**
-> de la famille — une sphère n'a pas d'autre côté, un anneau si. **Elle EXPULSE :** en
-> foule, sept transits disséminent le paquet en étoile (azimut qui tourne d'un septième de
-> tour) ; en duel, l'azimut fait un **demi-tour** à chaque passage — la victime est un
-> va-et-vient, et chaque transit tape **deux fois plus fort**.
+> **Une exception, la lèvre, et elle a coûté une passe pour rien.** Première tentative :
+> `#C3C8E8`, luminance 202, c'est-à-dire l'ancien cyan à la teinte près. Rendu au banc :
+> lisible, et **sans identité** — un blanc sale. À cette luminance aucune des quatre gammes
+> n'offre de couleur chromatique, donc conserver la luminance revenait à **ne rien
+> repeindre**. Seconde passe : la lèvre prend le **violet néon `#9518E2`** et descend de
+> 189 à 84. Ce qui porte une figure n'est pas l'écart lèvre/fond mais l'écart
+> **lèvre/corps** : 84 contre 21, soit quatre fois.
 >
-> **Constellation Nulle (#45)** — sept **nœuds** et onze **arêtes** qui pendent en vraie
-> chaînette `cosh`, se tendent une à une dans un ordre haché (un éclat blanc parcourt
-> l'arête au moment où elle se tend), convergent, puis **se rompent par le milieu**. Seul
-> objet **non centré** de la famille. **Elle LIE :** la liste des corps est **figée à la
-> pose**, sept au plus, et **fuir n'en sort pas** — les quatre autres signatures
-> réinterrogent le monde à chaque battement, celle-ci non. Chaque mise en tension frappe
-> **tout le monde** ; en duel, la trame se referme sur sa victime unique, **retenue 90
-> ticks**.
+> Deux invariants : les tons de **matière étrangère** (`#D8D2A4` / `#8A855F`) ne bougent
+> pas — ils sont le monde avalé, pas le vide ; et puisque le violet est désormais la
+> couleur de la maison, l'**autre côté** aperçu dans la fente passe au bleu ardoise.
+> *Réserve honnête :* l'Ombre tient `0x4D318E` / `0x7100A7`. Les deux familles restent
+> séparées par la luminance et par la forme, mais plus par la roue des couleurs.
 >
-> **Doctrine T388 inchangée : le Vide déplace.** Aucun bonus de dégâts au porteur, mais
-> Chute Lente. **L'empreinte du néant** (quatre au maximum, aucun dégât par elle-même :
-> c'est un seuil) est partagée par les **cinq**.
+> **2. Le trou — un vrai core shader, le seul du mod.** Les cinq figures ne dessinent que
+> des **bords**, et un bord n'existe que si ce qu'il encadre est sombre : devant un mur de
+> pierre claire, l'anneau de la Porte d'Horizon encadrait de la pierre claire.
+> `void_portal` ouvre au cœur de chaque signature un **disque opaque** rempli d'un ciel
+> d'abysse — quinze couches d'étoiles additives, tournées et translatées différemment,
+> dont les coordonnées de texture viennent de l'**écran** et non du modèle. Quand la tête
+> tourne, les étoiles **glissent**. C'est le procédé exact de `rendertype_end_portal`,
+> repeint aux gammes ci-dessus. La règle du bord n'est pas trahie : le shader ne dessine
+> pas de matière, il **remplace ce qu'on voit à travers**.
 >
-> Au passage, `dummyNextEffectTick` ignorait les **cinq** signatures du vide : le balayage
-> `/dlbvfx dummytest` passait à l'effet suivant au bout de 62 ticks, soit au tiers de la
-> sphère. La revue complète ne montrait la fin d'aucune d'entre elles.
+> **Neuf fichiers nouveaux** : `void_portal.{json,vsh,fsh}`, `void_{sky,stars}.png`,
+> `ModShaders.java` (RegisterShadersEvent, bus MOD), `ModRenderTypes.java`
+> (`ShaderStateShard` + `MultiTextureStateShard`), `VoidPortalFx.java` (le disque face
+> caméra). Une seule ligne ajoutée dans `WeaponWorldVfxManager#impactVoidSignature`.
 >
-> **Tests :** `/anim void` (les **cinq** doivent sortir) · `/dlbvfx play 26` · `27` · `34` ·
-> **`44`** · **`45`** · `/dlbvfx stop`.
-> ZIP **1 200 410 o / 65 entrées**, page **1 687 939 o**, SHA-256 `4eb0a1eb74802a76…`.
+> **Vérifié sans le jeu** : les deux programmes GLSL ont été portés mécaniquement en
+> GLSL ES 3.00 et exécutés dans Chromium, avec les vraies textures et la même géométrie —
+> compilation et rendu sans erreur, **6 %** de pixels allumés sur le disque (luminance
+> moyenne 16/255, pic 107 : un champ d'étoiles, pas une purée laiteuse), et le motif change
+> entièrement quand le disque se déplace dans le viewport. La **démo du shader** ci-dessus
+> rejoue exactement ça dans le navigateur : bougez le curseur **Visée**.
+>
+> **Tests en jeu :** `/dlbvfx play 26` · `27` · `34` · `44` · `45`, **devant un mur de
+> pierre claire** — c'est le cas qui motivait la fenêtre. Puis de nuit, puis dans l'eau.
+> Tourner autour d'une Porte ouverte : les étoiles doivent **glisser**, pas suivre le
+> disque. **F3+T** pendant qu'une signature est à l'écran : le shader doit se recharger
+> sans crash. Enfin, jouer une signature d'Ombre juste après une du Vide, pour juger la
+> réserve ci-dessus.
+> ZIP **1 238 604 o / 77 entrées**, page **1 740 322 o**, démo **32 994 o**,
+> SHA-256 `dd52dc6bd171e54e…`.
 
 ## Sang — cinq signatures · 17 novembre 2026
 

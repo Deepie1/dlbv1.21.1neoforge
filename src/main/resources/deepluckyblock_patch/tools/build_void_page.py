@@ -61,7 +61,7 @@ const BEATS=[
   ['48 \u2192 74','<b>l\u2019anneau d\u2019Einstein</b> \u00e0 1,14 rayon : trois grands cercles orthogonaux, pas des parall\u00e8les \u2014 une sph\u00e8re en latitudes est une bouillie grise'],
   ['48 \u2192 106','<b>le disque d\u2019accr\u00e9tion</b> : 30 blocs en <code>exp(\u22123,1\u00b7p)</code> tombent depuis 1,9 bloc, puis basculent en rotation diff\u00e9rentielle'],
   ['106 \u2192 130','<b>l\u2019effondrement</b> : tout rentre, et rebondit une fois \u2014 <code>sin(snap\u00b7\u03c0\u00b71,6)\u00b7(1\u2212snap)\u00b70,55</code>'],
-  ['130 \u2192 160','<b>la restitution</b> : ce qui a \u00e9t\u00e9 aval\u00e9 ressort en c\u00f4ne, en orange']],
+  ['130 \u2192 160','<b>la restitution</b> : ce qui a \u00e9t\u00e9 aval\u00e9 ressort en c\u00f4ne, en rose cendr\u00e9']],
  [['0 \u2192 20','la descente, en <b>trois paliers</b> : l\u2019octa\u00e8dre se pose, il ne tombe pas'],
   ['20 \u2192 42','la rotation et quatre \u00e9clats d\u2019endstone qui orbitent'],
   ['42 \u2192 62','<b>le trait d\u2019entr\u00e9e</b> : plein, depuis la main du porteur \u00e0 <code>f = \u22124,6</code>'],
@@ -78,7 +78,7 @@ const BEATS=[
   ['7 \u2192 47','<b>le tore bas</b> s\u2019ouvre. Rep\xe8re <i>explicite</i> recalcul\xe9 \xe0 chaque pas (tangente, normale radiale, verticale locale) : b\xe2tie sur les axes du monde, la section se vrille et l\u2019anneau sort en ruban tordu'],
   ['40 \u2192 140','<b>la membrane</b> : spirale logarithmique \xe0 <b>deux brins</b> en <code>exp(\u22122,35\xb7u)</code> qui <b>descend</b> \u2014 un disque plein boucherait le trou, c\u2019est-\xe0-dire le sujet'],
   ['54 \u2192 155','<b>le second tore</b>, 0,62\xd7 et <b>inclin\xe9</b> de 0,52 rad deux blocs et quart plus haut : sans l\u2019inclinaison il se lirait comme un \xe9cho du premier, pas comme une autre sortie'],
-  ['61 \u2192 155','<b>sept transits</b> : chute en endstone, puis une quinzaine de frames o\xf9 le fragment <b>n\u2019existe pas</b>, puis sortie en orange \u2014 <b>c\u2019est le trou dans la trajectoire qui prouve la travers\xe9e</b>'],
+  ['61 \u2192 155','<b>sept transits</b> : chute en endstone, puis une quinzaine de frames o\xf9 le fragment <b>n\u2019existe pas</b>, puis sortie en rose cendr\u00e9 \u2014 <b>c\u2019est le trou dans la trajectoire qui prouve la travers\xe9e</b>'],
   ['155 \u2192 180','<b>la fermeture</b> : c\u2019est le <i>rayon de l\u2019\xe2me</i> qui se r\xe9sorbe, pas la section \u2014 le tore se referme sur lui-m\xeame au lieu de maigrir']],
  [['0 \u2192 20','<b>l\u2019\xe9veil des sept n\u0153uds</b>, d\xe9cal\xe9 de 2,7 ticks chacun : losange noir, c\u0153ur d\u2019abysse et six pointes claires r\xe9tractiles'],
   ['20 \u2192 76','les onze ar\xeates naissent <b>molles</b> et pendent en vraie <b>cha\xeenette</b> \u2014 <code>(cosh(1,65) \u2212 cosh(1,65\xb7(2u\u22121))) / (cosh(1,65) \u2212 1)</code>. Une ar\xeate droite d\u2019embl\xe9e est un trait de r\xe8gle : elle ne p\xe8se rien'],
@@ -341,8 +341,8 @@ navigateur, ou récupère les sources via ce lien direct : <a style="color:#c9b6
 href="{URL}" rel="noopener">{ZIP_NAME}</a></div></noscript>
 <aside>
   <div class="eyebrow">Deep Lucky Block · Void VFX</div>
-  <div class="build">T389 · 4 novembre 2026 — douzième famille · grille témoin · \
-sept faisceaux · corridor · tore · chaînette</div>\
+  <div class="build">T390 · 4 novembre 2026 — douzième famille · palette repeinte · \
+core shader void_portal · grille témoin · tore · chaînette</div>\
   <h1>VIDE</h1><h2>Cinq signatures</h2>
   <p class="intro">Refonte complète de l’élément vide, <b>portée à cinq signatures</b> \
 (T389) : le Vide tirait dans un sac trois fois plus petit que celui du Sang. Les trois \
@@ -357,7 +357,7 @@ rassemble, le prisme distribue, la faille trie — restaient <b>expulser</b> (la
 inverse de la sphère) et <b>lier</b> (la Trame, seul objet non centré de la famille). <b>Les trois règles qui gouvernent ce fichier :</b> on ne montre \
 pas le vide, on montre <b>ce qu’il fait à ce qui l’entoure</b> — d’où la grille témoin, qui \
 est le sujet et non le décor ; le noir pur est invisible sur fond noir, donc toute masse \
-sombre porte son <b>liseré</b> cyan ; et la <b>densité est une variable expressive</b> — le \
+sombre porte son <b>liseré</b> violet néon ; et la <b>densité est une variable expressive</b> — le \
 pas de la grille passe de 0,145 à 0,040 là où l’espace se tord, si bien que le maillage \
 est pointillé au loin et jointif au bord.</p>\
   <div class="rule"></div>
@@ -388,12 +388,12 @@ aria-label="Progression de l’animation">
   <div class="stats"><div class="stat"><b id="baseCount">0</b><span>Voxels</span></div>\
 <div class="stat"><b id="duration">8,0 s</b><span>Durée en jeu</span></div>\
 <div class="stat"><b id="seedStat">7331</b><span>Graine</span></div></div>
-  <div class="legend"><span style="--c:#04030A">Néant</span>\
-<span style="--c:#0C0A18">Abysse</span><span style="--c:#1A1726">Basalte</span>\
-<span style="--c:#2E2B40">Ardoise</span><span style="--c:#4A5E78">Halo</span>\
-<span style="--c:#7FD4E8">Horizon</span><span style="--c:#BFF2FF">Glacier</span>\
+  <div class="legend"><span style="--c:#0E0216">Néant</span>\
+<span style="--c:#050D25">Abysse</span><span style="--c:#2D0043">Basalte</span>\
+<span style="--c:#282077">Ardoise</span><span style="--c:#6C13A4">Halo</span>\
+<span style="--c:#9518E2">Horizon</span><span style="--c:#D7B4F7">Glacier</span>\
 <span style="--c:#FFFFFF">Singularité</span><span style="--c:#D8D2A4">Endstone</span>\
-<span style="--c:#8E5BA6">Chorus</span><span style="--c:#FF9A4A">Restitution</span></div>
+<span style="--c:#4B5295">Chorus</span><span style="--c:#B18E8C">Restitution</span></div>
 
   <p class="refs" id="beatsRefs"></p>
   <p class="refs" id="gpRefs"></p>
@@ -401,12 +401,28 @@ aria-label="Progression de l’animation">
   <p class="refs"><b>L’empreinte du néant</b> — la ressource partagée des cinq. \
 <b>Quatre au maximum</b>, et elle ne fait <b>aucun dégât par elle-même</b> : c’est un \
 <b>seuil</b>, pas un robinet. À la quatrième, l’espace cède — implosion, Lévitation, \
-Lenteur II, et un écho banqué au porteur. Une graine de poussière cyan flotte au-dessus de \
+Lenteur II, et un écho banqué au porteur. Une graine de poussière violette flotte au-dessus de \
 la tête <b>par empreinte posée</b> : une ressource à seuil qu’on ne voit pas n’est pas une \
 ressource. <b>Au 3ᵉ et au 7ᵉ écho</b>, le porteur gagne <b>Vitesse et Chute Lente — jamais \
 de Force</b> : la ferveur du Sang récompense déjà l’acharnement par des dégâts, et la \
 famille dont le sujet est le déplacement paie en terrain. Les échos se périment en \
 <b>200 ticks</b> : c’est l’enchaînement qui paie, pas l’accumulation.</p>
+  <p class="refs"><b>T390 — la repeinte et le trou.</b> La palette vient désormais des \
+quatre gammes du Vide : <b>Deep Abyssal Void</b> (#050D25), le <b>charbon</b>, \
+<b>Call of the Void</b> (#0e0216 → #9518e2) et la série <b>bleu/mauve délavée</b>. Règle \
+appliquée : <b>la luminance de chaque rôle est conservée, seule la teinte change</b> — \
+l’échelle monte 8 &lt; 13 &lt; 21 &lt; 44 &lt; 62 &lt; 84 &lt; 198 &lt; 255. Une seule \
+exception, la <b>lèvre</b>, qui passe au violet néon et descend de 189 à 84 : à luminance \
+égale aucune gamme n’offrait de couleur chromatique, et la garder revenait à garder un \
+blanc sale. Ce qui porte une figure, c’est l’écart <b>lèvre/corps</b> (84 contre 21), pas \
+l’écart lèvre/fond. Les deux tons de <b>matière étrangère</b> ne changent pas : ils sont \
+le monde avalé, pas le vide.<br>En jeu — et <b>pas dans cet aperçu</b> — un \
+<b>core shader</b> maison (<code>void_portal</code>, calqué sur \
+<code>rendertype_end_portal</code>) ouvre au cœur de chaque signature un disque opaque \
+rempli d’un ciel d’abysse en <b>parallaxe d’écran</b> : quinze couches d’étoiles \
+additives, accrochées au viewport et non au monde. C’est la réponse au seul vrai défaut \
+des cinq figures : un bord n’existe que si ce qu’il encadre est sombre, et devant un mur \
+de pierre claire l’anneau de la Porte encadrait de la pierre claire.</p>
   <p class="refs"><b>Moteur :</b> <code>VoidSignatureVfx</code> — Sphère de Distorsion \
 (#26), Prisme du Dragon (#27), Faille du Néant (#34), Porte d’Horizon (#44), \
 Constellation Nulle (#45). Les pièces sont émises par les \
@@ -430,7 +446,7 @@ dans <code>deliverables/</code>.</div>
 <main>
   <canvas id="scene" tabindex="0" aria-label="Aperçu animé des cinq signatures Vide">\
 </canvas>
-  <div class="topbar"><span class="chip live">Modèle Java T389 · VoidSignatureVfx</span>\
+  <div class="topbar"><span class="chip live">Modèle Java T390 · VoidSignatureVfx</span>\
 <span class="right"><a class="chip zipchip" id="srcZipTop" href="{URL}" \
 download="{ZIP_NAME}" rel="noopener">ZIP sources</a>\
 <span class="chip" id="visibleCount">0 voxels visibles</span></span></div>
