@@ -3000,3 +3000,91 @@ Couperet **14** (lent et lourd), Arête **6** (rapide, c'est son nom), Siphon **
 (aspiration régulière), Carnage **8** (nerveux). Le total reste calibré ; seule la
 répartition change. Quand deux hémorragies se superposent, c'est la plus rapide
 qui l'emporte.
+
+---
+
+## §46 — T386 · le Carnage devient une VOLÉE DE LAMES, et le glint du Feu cesse d'être celui du Sang
+
+Deux demandes sans rapport l'une avec l'autre, traitées dans le même passage parce
+qu'elles touchent la même chaîne cliente.
+
+### 1. « Les lames du Carnage », enfin
+
+Levée d'ambiguïté d'abord : l'« animation 5 » dont il était question n'est pas le
+Couperet mais **CARNAGE BERSERK** (id 12, `variant=4`, 180 ticks) — la signature
+qui portait jusqu'ici onze *arcs*.
+
+**Ce qui n'allait pas.** Les onze taillades étaient des arcs tracés dans un plan
+tiré d'un hachage : `planeYaw`, `planeTilt`, un rayon, un centre. Résultat à
+l'écran : des rubans rouges qui flottent *autour* du mob sans jamais le désigner.
+Aucune pointe, aucun sens de marche, aucun point d'arrivée — donc aucun lien
+lisible entre ce qu'on voit et les onze tics de dégât que le serveur applique.
+
+**Ce qui remplace.** Chaque coup est maintenant **une lame** :
+
+| Étape | Ce qu'elle fait |
+|---|---|
+| naissance | une étincelle de forge à **3,5 → 5,2 blocs** au-dessus du sol, à un azimut écarté par un terme en nombre d'or ; la lame **s'allonge** depuis le vide sur les 20 premiers % de sa vie |
+| chute | **25 ticks**, accélérée (deux tiers de carré, un tiers de courbe douce) |
+| convergence | elle **rétrécit** en descendant : `shrink = 1 − 0,52·p`, longueur et largeur ensemble |
+| cible | le **torse**, `getY() + bbHeight × 0,55` — la hauteur exacte que vise déjà le serveur, dispersée de ±0,13 pour que onze lames ne percent pas le même pixel |
+| impact | une **entaille** s'ouvre dans le plan de la lame puis se referme, douze perles giclent **à contre-sens** du coup |
+
+**Silhouette.** Rapport longueur/largeur **1:14** (2,4 → 3,5 blocs de long). Le
+premier jet était à 1:7 : des *feuilles*, pas des lames. Profil à pointe franche
+sur 18 %, dos presque droit, talon effilé — le sinus du premier jet n'avait pas de
+plat, donc pas de lame mais un fuseau. Corps **sombre** (`FRESH` → `GORE`) et fil
+**clair** (`PLASMA`) sorti à `w + 0,030` : posé à `0,9 w` il était *dans* le corps,
+dont le demi-côté vaut déjà `w + 0,024` — invisible. L'épaisseur latérale suit la
+largeur (`0,020 + 0,35 w`) au lieu d'être fixe : une plaque vue par la tranche est
+un fil, c'est la leçon de la courbe de l'Ombre.
+
+**Densité.** La chute dure **0,14** (25 ticks) alors que l'écart entre deux impacts
+va de 0,029 à 0,067 : il y a donc **quatre lames dans le ciel** au début de la
+salve et deux à la fin. À 0,085 puis 0,115 il n'y en avait qu'une à la fois — une
+file d'attente, pas une volée. L'échantillonnage suit la longueur (**un cube tous
+les 9 cm**, 14 à 30 par lame) : à seize cubes fixes le corps était pointillé.
+
+**Le dégât n'a pas bougé d'un tick.** `at` désigne désormais l'instant de
+l'**impact**, pas celui de la naissance : la lame naît 25 ticks *avant*. Les onze
+tics de dégât du serveur (25 → 112), l'onde du tick 115 et l'emprise de 112 ticks
+restent exactement où ils étaient.
+
+**Son.** Chaque lame **siffle** neuf ticks avant de toucher — `entity.arrow.shoot`
+à 2,6 blocs au-dessus de la cible, là où elle vient de se forger. C'est le seul son
+de la signature qui *annonce* au lieu de constater.
+
+### 2. Le glint du Feu et celui du Sang se confondaient
+
+**Cause.** `DeepGlintColor` prenait ses deux teintes dans `DeepElement` :
+`FIRE.primary = 0xFF4A10` et `BLOOD.primary = 0xDD0000`. Deux rouges-orangés
+voisins, et `shade()` ne module que la **luminosité** — la teinte ne bougeait
+jamais. Sur une lame qui tourne, les deux familles donnaient la même chose.
+
+**Deux bases écartées.** Feu `0xC0410A` (orange brûlé, nettement plus jaune), Sang
+`0x8A0208` (rouge sombre, presque sans vert). Ces constantes sont **locales au
+glint** : les VFX continuent de lire `DeepElement`.
+
+**Une respiration par famille**, et c'est elle qui tranche pour de bon :
+
+| | base | sommet | période | durée de l'excursion |
+|---|---|---|---|---|
+| **Feu** | (192, 65, 10) | (224, 51, 15) | 4,3 s | 20 % du cycle |
+| **Sang** | (138, 2, 8) | (186, 0, 25) | 5,7 s | 16 % du cycle |
+
+Deux teintes fixes voisines restent voisines ; deux teintes qui ne battent **ni au
+même rythme ni vers le même rouge** se distinguent même quand elles se croisent.
+Même au sommet, le feu est clair et orangé, le sang pourpre et sourd. La phase est
+décalée par item (`identityHashCode × 2654435761`) : deux armes côte à côte ne
+clignotent pas ensemble, ce qui trahirait un effet calculé plutôt qu'une matière.
+Montée et retour en `sin` lissé — aucune cassure.
+
+**Où c'est branché.** `DeepGlintColor.familyBreath(stack, argb)`, appelé depuis
+`EnchantAura.applySmoothGlint` **après** `smoothGlint`. Jamais avant : faire varier
+la *cible* de la transition à chaque image relancerait son chronomètre en
+permanence et figerait la couleur sur sa valeur de départ. Le second pôle du
+dégradé est recalculé sur la teinte respirée (`breatheAccent`) pour que le dégradé
+suive la pulsation. La famille est mise en cache deux secondes dans l'état déjà
+tenu par item — sans ce cache, la carte d'enchantements serait relue à chaque image
+en plus des deux lectures que `resolve()` fait déjà. Les malédictions sont exclues :
+elles sont rouges par décision antérieure et ne respirent pas.

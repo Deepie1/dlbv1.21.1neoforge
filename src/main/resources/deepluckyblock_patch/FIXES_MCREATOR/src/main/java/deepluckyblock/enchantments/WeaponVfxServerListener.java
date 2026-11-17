@@ -4403,6 +4403,16 @@ public final class WeaponVfxServerListener {
             // Meme loi que l'animation : l'ecart passe de six a trois ticks.
             final int at = Math.round(25 + 87.0f * (u - 0.22f * u * (1.0f - u) * 2.0f));
             final double radius = 2.6 + 0.9 * u;
+            // T386 : le SIFFLEMENT de la lame qui descend. L'animation la fait naitre
+            // vingt-cinq ticks avant son impact, haut au-dessus de la cible ; sans ce
+            // signal, le joueur subit onze coups sans jamais entendre ARRIVER le suivant.
+            // Neuf ticks d'avance : assez pour que l'oreille anticipe, trop peu pour que
+            // le sifflement se detache du coup qu'il annonce.
+            if (at >= 10) {
+                TestProcedure.schedule(sl, now + at - 9, () -> sl.playSound(null, ox, oy + 2.6, oz,
+                        SoundEvents.ARROW_SHOOT, SoundSource.PLAYERS,
+                        0.40f, 0.50f + strike * 0.022f));
+            }
             TestProcedure.schedule(sl, now + at, () -> {
                 List<LivingEntity> hit = bloodVictims(sl, ox, oy, oz, radius, 3.0, attackerId);
                 if (!hit.contains(target) && target.isAlive()

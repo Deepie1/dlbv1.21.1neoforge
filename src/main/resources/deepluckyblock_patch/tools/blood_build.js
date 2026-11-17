@@ -884,50 +884,103 @@ function buildBlood(variant, t, salt = 5099, linkLen = 7.0, linkEndY = 0.25, lin
       }
     }
 
-    // ---- 2. LA SALVE ---- (onze plans distincts, cadence accélérée)
-    const strikes = 11;
+    // ---- 2. LA VOLEE DE LAMES ---- (nees en l'air, convergentes et retrecissantes)
+    const strikes = 11, flight = 0.14, burst = 0.075;   // 25 ticks : quatre lames en l'air
+    const torsoY = GROUND_Y + 0.99;   // 55 % de la hitbox, comme le serveur
     for (let sIdx = 0; sIdx < strikes; sIdx++) {
-      const u0 = sIdx / (strikes - 1);
+      const u0 = sIdx / (strikes - 1);   // ecart reel entre impacts : 0,029 -> 0,067
+      // « at » = instant de l'IMPACT (colle aux ticks de degat 25 -> 112) ; la lame nait avant.
       const at = 0.14 + 0.48 * (u0 - 0.22 * u0 * (1 - u0) * 2.0);
-      // 0,30 et non 0,22 : c'est le CHEVAUCHEMENT des arcs qui fait la frenesie.
-      const age = (t - at) / 0.30;
+      const age = (t - (at - flight)) / flight;
       if (age <= 0) continue;
       const h1 = hash(salt + 161, sIdx * 29), h2 = hash(salt + 162, sIdx * 31),
-            h3 = hash(salt + 163, sIdx * 37);
-      const planeYaw = h1 * TAU;
-      const planeTilt = (h2 - 0.5) * 1.5;
-      const radius = 1.35 + 1.05 * h3;
-      const centerY = 0.55 + 1.35 * h2;
-      const sweepFrom = -1.15 - 0.5 * h1, sweepTo = 1.15 + 0.5 * h3;
-      const sweep = smooth(clamp01(age / 0.28));
-      const remnant = clamp01((age - 0.28) / 0.72);
-      if (remnant >= 1) continue;
-      const segs = 20;
-      for (let i = 0; i < segs; i++) {
-        const v = (i + 0.5) / segs;
-        if (v > sweep) continue;
-        const ang = sweepFrom + (sweepTo - sweepFrom) * v;
-        const px = Math.cos(ang) * radius, py = Math.sin(ang) * radius;
-        const f = px * Math.cos(planeYaw) - py * Math.sin(planeYaw) * Math.sin(planeTilt);
-        const lat = px * Math.sin(planeYaw) + py * Math.cos(planeYaw) * Math.sin(planeTilt);
-        const yy = centerY + py * Math.cos(planeTilt);
-        if (yy < GROUND_Y + 0.03) continue;
-        const body = Math.sin(v * PI);
-        // On efface par la GÉOMÉTRIE, pas par l'alpha — et pas linéairement : un
-        // rétrécissement proportionnel réduit l'arc à un fil dès le tiers de sa vie.
-        const fadeGeom = Math.sqrt(1 - remnant);
-        const hw = (0.028 + 0.085 * body) * fadeGeom;
-        if (hw <= 0.004) continue;
-        const head = v > sweep - 0.09 && remnant <= 0;
-        box(f, lat, yy, hw, hw * 1.5, hw, head ? SPRAY : (body > 0.55 ? ARTERY : GORE), opq(a * 0.95));
-        if (body > 0.30) {
-          box(f, lat, yy + hw * 1.6, hw * 0.55, 0.012 * fadeGeom, hw * 0.55, FRESH, opq(a * 0.9));
+            h3 = hash(salt + 163, sIdx * 37), h4 = hash(salt + 164, sIdx * 41);
+      const ang = (h1 + sIdx * 0.3819) * TAU;
+      const birthR = 1.7 + 1.6 * h2;
+      const birthF = Math.cos(ang) * birthR, birthL = Math.sin(ang) * birthR;
+      const birthY = GROUND_Y + 3.5 + 1.7 * h3;
+      const aimF = (h3 - 0.5) * 0.26, aimL = (h4 - 0.5) * 0.26,
+            aimY = torsoY + (h2 - 0.5) * 0.22;
+      const axF = aimF - birthF, axL = aimL - birthL, axY = aimY - birthY;
+      const axLen = Math.sqrt(axF * axF + axL * axL + axY * axY);
+      if (axLen < 0.001) continue;
+      const uF = axF / axLen, uL = axL / axLen, uY = axY / axLen;
+      const nLen = Math.sqrt(uF * uF + uY * uY);
+      const nF = nLen > 0.001 ? -uY / nLen : 1, nY = nLen > 0.001 ? uF / nLen : 0;
+
+      if (age < 1) {
+        const p = age * age * 0.65 + smooth(age) * 0.35;
+        const tipF = birthF + axF * p, tipL = birthL + axL * p, tipY = birthY + axY * p;
+        const grow = smooth(clamp01(age / 0.20));
+        const shrink = 1 - 0.52 * p;              // elle RETRECIT en convergeant
+        const bladeLen = (2.40 + 1.10 * h4) * grow * shrink;   // rapport 1:14
+        const wMax = (0.085 + 0.032 * h1) * grow * shrink;
+        const segs = Math.max(14, Math.min(30, Math.round(bladeLen * 11)));   // un cube / 9 cm
+        for (let i = 0; i < segs; i++) {
+          const v = (i + 0.5) / segs;             // 0 = pointe, 1 = talon
+          const back = v * bladeLen;
+          const pf = tipF - uF * back, pl = tipL - uL * back, py = tipY - uY * back;
+          if (py < GROUND_Y + 0.02) continue;
+          // Pointe franche, dos presque droit, talon effile (le sinus n'avait pas de plat).
+          const w = wMax * Math.pow(clamp01(v / 0.18), 0.70)
+                         * (1 - 0.72 * Math.pow(clamp01((v - 0.52) / 0.48), 1.5));
+          if (w <= 0.006) continue;
+          const hf = w * Math.abs(nF) + 0.024, hy = w * Math.abs(nY) + 0.024;
+          const rgb = v < 0.12 ? SPRAY : (v < 0.45 ? FRESH : (v < 0.78 ? ARTERY : GORE));
+          box(pf, pl, py, hf, hy, 0.020 + w * 0.35, rgb, opq(a * 0.95));   // lisible de profil
+          if (v > 0.08 && v < 0.90) {        // le fil SORT du corps, sinon il est noye
+            const edge = w + 0.030;
+            box(pf + nF * edge, pl, py + nY * edge, 0.020, 0.020, 0.013, PLASMA, opq(a));
+          }
+          // ---- 3. L'EGOUTTEMENT ---- (la lame saigne pendant sa course)
+          if ((i % 5) === 0 && age > 0.25) {
+            const dAge = (age - 0.25) / 0.75;
+            const dyy = py - GRAVITY * 0.10 * dAge * dAge;
+            if (dyy > GROUND_Y + 0.04) drop(pf, pl, dyy, 0.022, a);
+          }
         }
-        // ---- 3. L'ÉGOUTTEMENT ---- (un arc rémanent qui ne goutte pas flotte comme un néon)
-        if (remnant > 0.12 && (i % 4) === 0) {
-          const dAge = (remnant - 0.12) / 0.88;
-          const dy = yy - GRAVITY * 0.09 * dAge * dAge;
-          if (dy > GROUND_Y + 0.04) drop(f, lat, dy, 0.024, a);
+        if (grow < 1) {                    // l'etincelle de forge : on voit la lame SE CREER
+          const spark = (1 - grow) * (1 - grow);
+          for (let i = 0; i < 7; i++) {
+            const g1 = hash(salt + 221, sIdx * 23 + i * 7), g2 = hash(salt + 222, sIdx * 29 + i * 11);
+            const rr = 0.10 + 0.42 * g1 * (1 - spark), sa = g2 * TAU;
+            const sz = (0.030 + 0.030 * g2) * spark;
+            if (sz <= 0.006) continue;
+            box(birthF + Math.cos(sa) * rr, birthL + Math.sin(sa) * rr, birthY + (g1 - 0.5) * 0.4,
+                sz, sz, sz, i % 3 === 0 ? PLASMA : SPRAY, opq(a * 0.9));
+          }
+        }
+        const trail = 9;
+        for (let i = 1; i <= trail; i++) {
+          const v = i / (trail + 1), q = p * (1 - v);
+          const sz = 0.040 * (1 - v) * (1 - v) * grow;
+          if (sz <= 0.006) continue;
+          box(birthF + axF * q, birthL + axL * q, birthY + axY * q,
+              sz, sz, sz * 0.5, i < 4 ? ARTERY : GORE, opq(a * 0.55));
+        }
+      } else {
+        const imp = (t - at) / burst;
+        if (imp >= 1) continue;
+        const open = smooth(clamp01(imp / 0.22)), close = 1 - imp;
+        const gash = 9;
+        for (let i = 0; i < gash; i++) {
+          const v = (i + 0.5) / gash - 0.5;
+          const ext = 0.92 * open * (1 - Math.abs(v) * 0.7);
+          const gw = (0.052 + 0.030 * Math.cos(v * PI)) * close;
+          if (gw <= 0.006) continue;
+          box(aimF + nF * v * ext, aimL, aimY + nY * v * ext,
+              gw, gw, gw * 0.8, i === (gash >> 1) ? SPRAY : ARTERY, opq(a));
+        }
+        for (let i = 0; i < 12; i++) {
+          const g1 = hash(salt + 211, sIdx * 17 + i * 13), g2 = hash(salt + 212, sIdx * 19 + i * 11);
+          const sp = (0.9 + 1.5 * g1) * imp, sa = g2 * TAU;
+          const ef = aimF - uF * sp * 0.55 + Math.cos(sa) * sp * 0.42;
+          const el = aimL - uL * sp * 0.55 + Math.sin(sa) * sp * 0.42;
+          const ey = aimY - uY * sp * 0.55 + sp * 0.25 - GRAVITY * 0.22 * imp * imp;
+          if (ey < GROUND_Y + 0.03) continue;
+          const sz = (0.040 + 0.022 * g1) * close;
+          if (sz <= 0.006) continue;
+          box(ef, el, ey, sz, sz, sz, g1 > 0.6 ? PLASMA : FRESH, opq(a * 0.9));
         }
       }
     }

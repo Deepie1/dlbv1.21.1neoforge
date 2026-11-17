@@ -401,6 +401,14 @@ public final class EnchantAura {
     private static void applySmoothGlint(ItemStack stack, int target, boolean armorSlot) {
         current = DeepGlintColor.smoothGlint(stack, target, armorSlot);
         currentGradient = DeepGlintColor.smoothGlintAccent(stack);
+        // T386-GLINT : la respiration est posee APRES la transition, jamais avant. Faire
+        // varier la CIBLE de smoothGlint a chaque image relancerait son chronometre a
+        // chaque fois et figerait la couleur sur sa valeur de depart.
+        int breathed = DeepGlintColor.familyBreath(stack, current);
+        if (breathed != current) {
+            current = breathed;
+            currentGradient = DeepGlintColor.breatheAccent(stack, breathed);
+        }
         currentGradientMode = DeepGlintColor.glintGradientMode(stack);
         // T378-UMBRAL-GLINT : l'ombre ne degrade pas, elle melange (voir GRADIENT_MODE_UMBRAL).
         if (DeepGlintColor.isShadowStack(stack)) {

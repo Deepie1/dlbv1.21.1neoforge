@@ -11,6 +11,21 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 - **Aperçu (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Blood_Five_Signatures_preview.html
 - **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Blood_Five_Signatures_src.zip
 
+> **T386 — le Carnage devient une VOLEE DE LAMES, et le glint du Feu cesse d'etre
+> celui du Sang.** (1) **CARNAGE BERSERK (animation 5)** : les onze arcs tires d'un
+> hachage sont remplaces par **onze lames**. Chacune se forge **dans le ciel** a 3,5-5,2
+> blocs, tombe en **25 ticks**, **retrecit** en convergeant et entre dans le **torse**
+> (55 % de la hitbox) ; l'entaille s'ouvre a l'impact et les perles giclent a
+> contre-sens. Silhouette 1:14, corps sombre et **fil clair sorti du corps**, epaisseur
+> laterale suivant la largeur pour rester lisible de profil. Quatre lames dans le ciel
+> au plus fort de la salve. **Le degat n'a pas bouge d'un tick** : `at` designe
+> desormais l'impact, la lame nait avant. Chaque lame **siffle** neuf ticks avant de
+> toucher. (2) **Glint** : le Feu prend une base **orange foncee rougeatre**
+> (192, 65, 10) avec une **breve** excursion vers le rouge (224, 51, 15) toutes les
+> 4,3 s ; le Sang une base **rouge foncee** (138, 2, 8) avec de **courts** passages vers
+> un rouge plus intense (186, 0, 25) toutes les 5,7 s. Rythmes premiers entre eux, phase
+> decalee par item : les deux familles ne se confondent plus, ni au repos ni au sommet.
+
 > **T385 — quatre défauts vus en jeu.** (1) **Le conduit sortait par l'arrière du
 > mob** : les signatures à lien dessinent le bout porteur à `f` négatif, donc la
 > direction doit aller du porteur vers la victime — elle allait dans l'autre sens, le

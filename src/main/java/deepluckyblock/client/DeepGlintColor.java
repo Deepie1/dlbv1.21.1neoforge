@@ -26,7 +26,12 @@ public final class DeepGlintColor {
     // Couleurs "pleines" (0xFFRRGGBB) par famille.
     private static final int CURSE    = 0xFFFF5555;
     private static final int NATURE   = 0xFF000000 | deepluckyblock.enchantments.DeepElement.WOOD.primary;
-    private static final int FIRE     = 0xFF000000 | deepluckyblock.enchantments.DeepElement.FIRE.primary;
+    // T386-GLINT : le feu et le sang se confondaient. DeepElement.FIRE.primary vaut
+    // 0xFF4A10 et BLOOD.primary 0xDD0000 : deux rouges-orange voisins, impossibles a
+    // distinguer sur une lame qui bouge. Le glint prend donc ses propres bases, loin
+    // l'une de l'autre, et c'est la PULSATION qui les separe pour de bon (familyBreath).
+    // Feu : orange brule, nettement plus jaune. Ces constantes ne touchent pas au VFX.
+    private static final int FIRE     = 0xFFC0410A;
     private static final int WATER    = 0xFF000000 | deepluckyblock.enchantments.DeepElement.WATER.primary;
     private static final int POISON   = 0xFF000000 | deepluckyblock.enchantments.DeepElement.POISON.primary;
     private static final int SPEED    = 0xFF3A2E80;
@@ -37,7 +42,8 @@ public final class DeepGlintColor {
     private static final int WIND     = 0xFF969CA6;
     private static final int DAMAGE   = 0xFF000000 | deepluckyblock.enchantments.DeepElement.METAL.primary;
     private static final int FORCE    = 0xFFFF7A14;
-    private static final int UNDEAD   = 0xFF000000 | deepluckyblock.enchantments.DeepElement.BLOOD.primary;
+    /** Sang : rouge sombre, presque sans vert ni bleu — le contraire d'un orange. */
+    private static final int UNDEAD   = 0xFF8A0208;
     private static final int LIGHT    = 0xFF000000 | deepluckyblock.enchantments.DeepElement.LIGHT.primary;
     private static final int ECHO     = 0xFF000000 | deepluckyblock.enchantments.DeepElement.THUNDER.primary;
     private static final int MAGIC    = 0xFF8252CC;
@@ -561,6 +567,11 @@ public final class DeepGlintColor {
         int targetAccent;
         int mode; // 0 = haut/bas, 1 = roue angulaire
         long startedNs = Long.MIN_VALUE;
+        // T386-GLINT : famille de respiration, retenue par item. Sans ce cache,
+        // familyBreath relirait la carte d'enchantements a CHAQUE image rendue, en plus
+        // des deux lectures que resolve() fait deja.
+        int breathFamily = -1;
+        long breathStampMs = 0L;
     }
 
     /**
@@ -671,6 +682,103 @@ public final class DeepGlintColor {
         int bl = Math.round(ab + (bb - ab) * u);
         if (r == 0 && g == 0 && bl == 0) return 0;
         return 0xFF000000 | (r << 16) | (g << 8) | bl;
+    }
+
+    // =======================================================================
+    // T386-GLINT-BREATH : la respiration de teinte, propre a deux familles.
+    // =======================================================================
+    /** Aucune respiration : la teinte de la famille ne bouge pas. */
+    private static final int BREATH_NONE = 0;
+    private static final int BREATH_FIRE = 1;
+    private static final int BREATH_BLOOD = 2;
+    /** Le sommet bref du feu : un rouge VIF, qui garde une trace de braise. */
+    private static final int FIRE_PEAK  = 0xFFE63010;
+    /**
+     * Le sommet bref du sang : un rouge intense qui tire du cote froid. Mesure des deux
+     * sommets une fois melanges — feu (224, 51, 15) contre sang (186, 0, 25) : meme a
+     * l'instant ou les deux familles sont au plus haut, l'une est orangee et claire,
+     * l'autre pourpre et sourde. Deux sommets voisins auraient ruine tout le reste.
+     */
+    private static final int BLOOD_PEAK = 0xFFC8001E;
+
+    /**
+     * Excursion breve et douce vers le sommet de la famille, puis retour.
+     *
+     * <p>Deux teintes fixes voisines restent voisines ; deux teintes qui ne respirent pas
+     * au meme rythme se distinguent meme quand elles se croisent. Le feu bat vite et fort
+     * (4,3 s, un cinquieme du cycle en excursion), le sang lentement et brievement
+     * (5,7 s, un sixieme) : on lit un brasier d'un cote, un pouls de l'autre.</p>
+     *
+     * <p>La phase est decalee par item : deux armes posees cote a cote ne clignotent pas
+     * ensemble, ce qui trahirait un effet calcule plutot qu'une matiere.</p>
+     */
+    public static int familyBreath(ItemStack stack, int argb) {
+        if (argb == 0 || stack == null || stack.isEmpty()) return argb;
+        int family;
+        synchronized (GLINT_TRANSITIONS) {
+            GlintTransition st = GLINT_TRANSITIONS.get(stack);
+            long nowMs = System.currentTimeMillis();
+            if (st == null) {
+                family = breathFamilyOf(stack);
+            } else if (st.breathFamily >= 0 && nowMs - st.breathStampMs < 2000L) {
+                family = st.breathFamily;
+            } else {
+                // Relu toutes les deux secondes : un item reenchante en main doit finir
+                // par respirer sa nouvelle famille, sans pour autant etre relu par image.
+                family = breathFamilyOf(stack);
+                st.breathFamily = family;
+                st.breathStampMs = nowMs;
+            }
+        }
+        if (family == BREATH_NONE) return argb;
+        long period = family == BREATH_FIRE ? 4300L : 5700L;
+        float burst = family == BREATH_FIRE ? 0.20f : 0.16f;
+        float depth = family == BREATH_FIRE ? 0.85f : 0.78f;
+        long offset = Math.floorMod((long) System.identityHashCode(stack) * 2654435761L, period);
+        float phase = Math.floorMod(System.currentTimeMillis() + offset, period) / (float) period;
+        if (phase >= burst) return argb;
+        float u = phase / burst;
+        float w = (float) Math.sin(u * Math.PI);
+        w = w * w * (3.0f - 2.0f * w);   // depart et retour adoucis : aucune cassure
+        return mixArgb(argb, family == BREATH_FIRE ? FIRE_PEAK : BLOOD_PEAK, w * depth);
+    }
+
+    /** Second pole recalcule sur la teinte deja respiree : le degrade suit la pulsation. */
+    public static int breatheAccent(ItemStack stack, int breathedBase) {
+        synchronized (GLINT_TRANSITIONS) {
+            GlintTransition state = GLINT_TRANSITIONS.get(stack);
+            return gradientAccent(breathedBase, state == null ? 0 : state.mode);
+        }
+    }
+
+    /** {@link #BREATH_FIRE}, {@link #BREATH_BLOOD} ou {@link #BREATH_NONE}. */
+    private static int breathFamilyOf(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return BREATH_NONE;
+        Map<net.minecraft.world.item.enchantment.Enchantment, Integer> enchants;
+        try {
+            enchants = deepluckyblock.util.DeepEnchant.map(stack);
+        } catch (Throwable t) {
+            return BREATH_NONE;
+        }
+        if (enchants == null || enchants.isEmpty()) return BREATH_NONE;
+        for (net.minecraft.world.item.enchantment.Enchantment ench : enchants.keySet()) {
+            if (ench == null) continue;
+            net.minecraft.resources.ResourceLocation rl;
+            try {
+                rl = deepluckyblock.util.DeepEnchant.getKeySafe(ench);
+            } catch (Throwable t) {
+                continue;
+            }
+            if (rl == null) continue;
+            String s = rl.toString().toLowerCase(Locale.ROOT);
+            // Une malediction est rouge par decision anterieure : elle ne respire pas.
+            if (s.contains("curse") || s.contains("cursed") || s.contains("blemish")
+                    || s.contains("unlucky")) continue;
+            int base = baseColor(s);
+            if (base == FIRE) return BREATH_FIRE;
+            if (base == UNDEAD) return BREATH_BLOOD;
+        }
+        return BREATH_NONE;
     }
 
     private static int gradientAccent(int argb, int mode) {

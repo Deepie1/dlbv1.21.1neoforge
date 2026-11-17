@@ -1474,75 +1474,195 @@ public final class BloodSignatureVfx {
             }
         }
 
-        // ---- 2. LA SALVE ----
+        // ---- 2. LA VOLEE DE LAMES ----
+        // Onze lames naissent EN L'AIR, au-dessus de la scene, et tombent sur le torse en
+        // se retrecissant. Ce n'est plus la salve d'arcs d'avant : un arc trace dans un
+        // plan tire d'un hachage ne ressemble a rien de reconnaissable — on voyait des
+        // rubans flotter autour du mob sans jamais le toucher, et la frenesie n'avait pas
+        // de cible. Une lame, elle, a une pointe, un sens de marche et un point d'arrivee.
         final int strikes = 11;
+        // Temps de chute, en fraction des 180 ticks : 0,14 vaut vingt-cinq ticks.
+        // MESURE : a 0,085 puis a 0,115, il n'y avait qu'une lame en l'air a la fois —
+        // l'ecart entre deux impacts va de 0,029 a 0,067, donc une chute plus courte que
+        // l'ecart produit une FILE D'ATTENTE, pas une volee. A 0,14 le ciel en porte
+        // quatre au debut de la salve et deux a la fin, quand les coups s'espacent.
+        final float flight = 0.14f;
+        final float burst = 0.075f;
+        // 55 % de la hitbox — exactement la hauteur que vise le serveur
+        // (victim.getY() + bbHeight * 0.55). Pour le gabarit de reference de 1,8 bloc sur
+        // lequel tout le dessin est normalise, cela tombe a 0,99 au-dessus du sol sonde.
+        final float torsoY = GROUND_Y + 0.99f;
         for (int sIdx = 0; sIdx < strikes; sIdx++) {
-            // Cadence accélérée : l'écart entre deux coups passe de 0,062 à 0,031.
+            // La loi de cadence est celle du serveur, au tick pres. Elle ne « resserre »
+            // pas les coups comme le disait l'ancien commentaire : l'ecart part de 0,029
+            // et finit a 0,067 — la frenesie frappe vite puis s'appesantit sur la fin.
             float u = sIdx / (float) (strikes - 1);
+            // « at » est l'instant de l'IMPACT, pas celui de la naissance. Il doit rester
+            // colle aux ticks de degat du serveur (25 -> 112), donc la lame nait AVANT.
             float at = 0.14f + 0.48f * (u - 0.22f * u * (1.0f - u) * 2.0f);
-            // Duree de vie 0,30 et non 0,22 : a 0,22, seules quatre taillades coexistaient
-            // au plus fort de la salve. Une FRENESIE qui ne montre que quatre arcs n'est
-            // qu'une suite de coups — c'est leur CHEVAUCHEMENT qui fait la frenesie. A 0,30,
-            // huit arcs se superposent au pic.
-            float age = (t - at) / 0.30f;
+            float age = (t - (at - flight)) / flight;
             if (age <= 0.0f) continue;
 
             float h1 = hash(salt + 161, sIdx * 29);
             float h2 = hash(salt + 162, sIdx * 31);
             float h3 = hash(salt + 163, sIdx * 37);
-            float planeYaw = h1 * 6.2831855f;
-            float planeTilt = (h2 - 0.5f) * 1.5f;
-            float radius = 1.35f + 1.05f * h3;
-            float centerY = 0.55f + 1.35f * h2;
-            float sweepFrom = -1.15f - 0.5f * h1;
-            float sweepTo = 1.15f + 0.5f * h3;
+            float h4 = hash(salt + 164, sIdx * 41);
 
-            // L'arc balaie pendant les 28 premiers pour cent de sa vie, puis reste rémanent.
-            float sweep = smooth(clamp(age / 0.28f));
-            float remnant = clamp((age - 0.28f) / 0.72f);
-            if (remnant >= 1.0f) continue;
+            // Naissance : en hauteur, tout autour, jamais deux fois au meme endroit. Le
+            // terme en nombre d'or ecarte les azimuts meme quand le hachage les groupe.
+            float ang = (h1 + sIdx * 0.3819f) * 6.2831855f;
+            float birthR = 1.7f + 1.6f * h2;
+            float birthF = Mth.cos(ang) * birthR;
+            float birthL = Mth.sin(ang) * birthR;
+            float birthY = GROUND_Y + 3.5f + 1.7f * h3;
+            // Le point d'entree, decale de quelques centimetres : onze lames qui percent
+            // le meme pixel font une seule tache, pas une mise a mort.
+            float aimF = (h3 - 0.5f) * 0.26f;
+            float aimL = (h4 - 0.5f) * 0.26f;
+            float aimY = torsoY + (h2 - 0.5f) * 0.22f;
 
-            int segs = 20;
-            for (int i = 0; i < segs; i++) {
-                float v = (i + 0.5f) / segs;
-                if (v > sweep) continue;
-                float ang = sweepFrom + (sweepTo - sweepFrom) * v;
-                // Point sur l'arc, dans un plan incliné autour du centre.
-                float px = Mth.cos(ang) * radius;
-                float py = Mth.sin(ang) * radius;
-                float f = px * Mth.cos(planeYaw) - py * Mth.sin(planeYaw) * Mth.sin(planeTilt);
-                float lat = px * Mth.sin(planeYaw) + py * Mth.cos(planeYaw) * Mth.sin(planeTilt);
-                float yy = centerY + py * Mth.cos(planeTilt);
-                if (yy < GROUND_Y + 0.03f) continue;
+            float axF = aimF - birthF, axL = aimL - birthL, axY = aimY - birthY;
+            float axLen = Mth.sqrt(axF * axF + axL * axL + axY * axY);
+            if (axLen < 0.001f) continue;
+            float uF = axF / axLen, uL = axL / axLen, uY = axY / axLen;
+            // La normale LARGE, prise dans le plan vertical qui contient la course : une
+            // lame est plate, et une plaque vue par la tranche n'est qu'un fil.
+            float nLen = Mth.sqrt(uF * uF + uY * uY);
+            float nF = nLen > 0.001f ? -uY / nLen : 1.0f;
+            float nY = nLen > 0.001f ? uF / nLen : 0.0f;
 
-                // Épaisseur : fine aux deux bouts, large au milieu — une taillade n'est pas
-                // un ruban d'épaisseur constante, c'est le passage d'un tranchant.
-                float body = Mth.sin(v * Mth.PI);
-                // On efface par la GÉOMÉTRIE — mais pas linéairement. Un rétrécissement
-                // proportionnel réduisait l'arc à un fil dès le tiers de sa vie : la mesure
-                // disait « sept taillades vivantes », l'image n'en montrait que trois.
-                // La racine garde l'arc épais pendant la moitié de sa vie puis l'escamote.
-                float fadeGeom = Mth.sqrt(1.0f - remnant);
-                float hw = (0.028f + 0.085f * body) * fadeGeom;
-                if (hw <= 0.004f) continue;
-                boolean head = v > sweep - 0.09f && remnant <= 0.0f;
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, f, lat, yy,
-                        hw, hw * 1.5f, hw, head ? SPRAY : (body > 0.55f ? ARTERY : GORE),
-                        opaque(a * 0.95f));
-                // Le fil clair sur le bord d'attaque de l'arc.
-                if (body > 0.30f) {
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz, f, lat, yy + hw * 1.6f,
-                            hw * 0.55f, 0.012f * fadeGeom, hw * 0.55f, FRESH, opaque(a * 0.9f));
-                }
-
-                // ---- 3. L'ÉGOUTTEMENT ----
-                // Un arc rémanent lâche des gouttes, sinon il flotte comme un néon.
-                if (remnant > 0.12f && (i % 4) == 0) {
-                    float dAge = (remnant - 0.12f) / 0.88f;
-                    float dy = yy - GRAVITY * 0.09f * dAge * dAge;
-                    if (dy > GROUND_Y + 0.04f) {
-                        drop(vc, mat, tmp, cx, cy, cz, dx, dz, f, lat, dy, 0.024f, a);
+            if (age < 1.0f) {
+                // ---- LA CHUTE ----
+                // Progression acceleree : une lame qui descend a vitesse constante est un
+                // ascenseur. Deux tiers de carre, un tiers de courbe douce au depart.
+                float p = age * age * 0.65f + smooth(age) * 0.35f;
+                float tipF = birthF + axF * p, tipL = birthL + axL * p, tipY = birthY + axY * p;
+                // Forgeage : sur les vingt premiers pour cent, la lame SE CREE — elle sort
+                // du vide en s'allongeant, elle n'apparait pas entiere d'un coup.
+                float grow = smooth(clamp(age / 0.20f));
+                // Elle RETRECIT en convergeant : a l'arrivee il ne reste qu'une pointe,
+                // toute la matiere est passee dans le torse.
+                float shrink = 1.0f - 0.52f * p;
+                // Rapport longueur / largeur : 1 pour 14. A 1 pour 7, le premier rendu
+                // donnait des FEUILLES rouges — la silhouette d'une lame tient entierement
+                // dans son elancement, pas dans sa couleur. Et il faut de la TAILLE : deux
+                // blocs de long, c'est la moitie d'un corps, on la lit de loin.
+                float bladeLen = (2.40f + 1.10f * h4) * grow * shrink;
+                float wMax = (0.085f + 0.032f * h1) * grow * shrink;
+                // Seize echantillons sur deux blocs et demi laissaient 0,16 bloc entre
+                // deux cubes larges de 0,05 : le corps etait POINTILLE. On echantillonne
+                // donc a la longueur, un cube tous les neuf centimetres.
+                int segs = Mth.clamp(Math.round(bladeLen * 11.0f), 14, 30);
+                for (int i = 0; i < segs; i++) {
+                    float v = (i + 0.5f) / segs;            // 0 = pointe, 1 = talon
+                    float back = v * bladeLen;
+                    float pf = tipF - uF * back, pl = tipL - uL * back, py = tipY - uY * back;
+                    if (py < GROUND_Y + 0.02f) continue;
+                    // Profil : une pointe franche sur les 18 premiers pour cent, un DOS
+                    // presque droit ensuite, un talon effile. Le sinus du premier jet
+                    // n'avait pas de plat — il n'y avait donc pas de lame, juste un fuseau.
+                    float tipF2 = (float) Math.pow(clamp(v / 0.18f), 0.70f);
+                    float heel = 1.0f - 0.72f * (float) Math.pow(clamp((v - 0.52f) / 0.48f), 1.5f);
+                    float w = wMax * tipF2 * heel;
+                    if (w <= 0.006f) continue;
+                    // Les demi-cotes suivent la normale large : le cube est etale dans le
+                    // plan de la lame et mince en travers, quelle que soit l'inclinaison.
+                    float hf = w * Math.abs(nF) + 0.024f;
+                    float hy = w * Math.abs(nY) + 0.024f;
+                    // Corps sombre, fil clair : c'est le CONTRASTE qui dessine le
+                    // tranchant. Tout en clair, la lame redevient une masse d'un seul rouge.
+                    int rgb = v < 0.12f ? SPRAY : (v < 0.45f ? FRESH : (v < 0.78f ? ARTERY : GORE));
+                    // Epaisseur laterale : 0,026 fixe rendait la lame INVISIBLE quand la
+                    // camera la prenait par la tranche — la meme lecon que la courbe de
+                    // l'ombre. Elle suit maintenant la largeur, en restant trois fois plus
+                    // mince : plate de face, encore lisible de profil.
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py,
+                            hf, hy, 0.020f + w * 0.35f, rgb, opaque(a * 0.95f));
+                    // Le fil. Pose a 0,9 w il etait DANS le corps, dont le demi-cote vaut
+                    // deja w + 0,024 : invisible, et la lame restait une tache. Il sort
+                    // maintenant franchement, du cote du tranchant.
+                    if (v > 0.08f && v < 0.90f) {
+                        float edge = w + 0.030f;
+                        box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                pf + nF * edge, pl, py + nY * edge,
+                                0.020f, 0.020f, 0.013f, PLASMA, opaque(a));
                     }
+                    // ---- 3. L'EGOUTTEMENT ----
+                    // La lame saigne pendant sa course : des gouttes restent en arriere et
+                    // tombent. Sans elles, la trajectoire est propre comme un laser.
+                    if ((i % 5) == 0 && age > 0.25f) {
+                        float dAge = (age - 0.25f) / 0.75f;
+                        float dyy = py - GRAVITY * 0.10f * dAge * dAge;
+                        if (dyy > GROUND_Y + 0.04f) {
+                            drop(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, dyy, 0.022f, a);
+                        }
+                    }
+                }
+                // L'ETINCELLE DE FORGE : au point de naissance, pendant le seul temps
+                // du forgeage. Sans elle, les lames « apparaissent » ; avec elle, on les
+                // voit SE CREER dans le ciel, ce qui est la demande.
+                if (grow < 1.0f) {
+                    float spark = (1.0f - grow) * (1.0f - grow);
+                    for (int i = 0; i < 7; i++) {
+                        float g1 = hash(salt + 221, sIdx * 23 + i * 7);
+                        float g2 = hash(salt + 222, sIdx * 29 + i * 11);
+                        float rr = 0.10f + 0.42f * g1 * (1.0f - spark);
+                        float sa = g2 * 6.2831855f;
+                        float sz = (0.030f + 0.030f * g2) * spark;
+                        if (sz <= 0.006f) continue;
+                        box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                birthF + Mth.cos(sa) * rr, birthL + Mth.sin(sa) * rr,
+                                birthY + (g1 - 0.5f) * 0.4f,
+                                sz, sz, sz, i % 3 == 0 ? PLASMA : SPRAY, opaque(a * 0.9f));
+                    }
+                }
+                // La trainee : ce que la lame a laisse dans l'air depuis sa naissance.
+                // Elle s'efface en remontant vers le point de depart.
+                int trail = 9;
+                for (int i = 1; i <= trail; i++) {
+                    float v = i / (float) (trail + 1);
+                    float q = p * (1.0f - v);
+                    float sz = 0.040f * (1.0f - v) * (1.0f - v) * grow;
+                    if (sz <= 0.006f) continue;
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            birthF + axF * q, birthL + axL * q, birthY + axY * q,
+                            sz, sz, sz * 0.5f, i < 4 ? ARTERY : GORE, opaque(a * 0.55f));
+                }
+            } else {
+                // ---- L'ENTREE DANS LE TORSE ----
+                // Le degat tombe ici, au tick pres : c'est le seul moment ou l'animation
+                // et le serveur se rejoignent, et il doit se VOIR.
+                float imp = (t - at) / burst;
+                if (imp >= 1.0f) continue;
+                float open = smooth(clamp(imp / 0.22f));
+                float close = 1.0f - imp;
+                // La plaie : une entaille courte, couchee dans le plan de la lame, qui
+                // s'ouvre d'un coup puis se referme. C'est elle qui designe la victime.
+                int gash = 9;
+                for (int i = 0; i < gash; i++) {
+                    float v = (i + 0.5f) / gash - 0.5f;
+                    float ext = 0.92f * open * (1.0f - Math.abs(v) * 0.7f);
+                    float gw = (0.052f + 0.030f * Mth.cos(v * Mth.PI)) * close;
+                    if (gw <= 0.006f) continue;
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            aimF + nF * v * ext, aimL, aimY + nY * v * ext,
+                            gw, gw, gw * 0.8f, i == gash / 2 ? SPRAY : ARTERY, opaque(a));
+                }
+                // L'eclaboussure : des perles qui ressortent par ou la lame est entree,
+                // puis retombent. Le sang ne gicle pas au hasard, il repart a contre-sens.
+                for (int i = 0; i < 12; i++) {
+                    float g1 = hash(salt + 211, sIdx * 17 + i * 13);
+                    float g2 = hash(salt + 212, sIdx * 19 + i * 11);
+                    float sp = (0.9f + 1.5f * g1) * imp;
+                    float sa = g2 * 6.2831855f;
+                    float ef = aimF - uF * sp * 0.55f + Mth.cos(sa) * sp * 0.42f;
+                    float el = aimL - uL * sp * 0.55f + Mth.sin(sa) * sp * 0.42f;
+                    float ey = aimY - uY * sp * 0.55f + sp * 0.25f - GRAVITY * 0.22f * imp * imp;
+                    if (ey < GROUND_Y + 0.03f) continue;
+                    float sz = (0.040f + 0.022f * g1) * close;
+                    if (sz <= 0.006f) continue;
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz, ef, el, ey,
+                            sz, sz, sz, g1 > 0.6f ? PLASMA : FRESH, opaque(a * 0.9f));
                 }
             }
         }
