@@ -95,6 +95,95 @@ function buildVoid(variant, t, salt = 7331) {
     }
   };
 
+
+  /* Un TORE. Le repere est EXPLICITE — tangente, normale radiale, verticale locale — et
+     recalcule a chaque pas : construit sur les axes du monde, le tube se vrille et l'anneau
+     prend l'aspect d'un ruban tordu. Meme piege que la couronne du Prisme. */
+  const torus = (of, ol, oy, ring, tube, tilt, phase, a, dashed) => {
+    if (ring <= 0.01 || tube <= 0.003) return;
+    const around = Math.max(24, Math.min(64, Math.round(ring * 26)));
+    const section = dashed ? 4 : 8;
+    const ct = Math.cos(tilt), st = Math.sin(tilt);
+    for (let i = 0; i < around; i++) {
+      const ang = i / around * TAU;
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      const rf = ca * ring, rl = sa * ring * ct, ry = sa * ring * st;
+      const nfx = ca, nlx = sa * ct, nyx = sa * st;
+      const vfx = 0, vlx = -st, vyx = ct;
+      for (let s = 0; s < section; s++) {
+        const sang = s / section * TAU + phase + ang * 0.5;
+        const cs = Math.cos(sang), ss = Math.sin(sang);
+        const f = of + rf + (nfx * cs + vfx * ss) * tube;
+        const l = ol + rl + (nlx * cs + vlx * ss) * tube;
+        const y = oy + ry + (nyx * cs + vyx * ss) * tube;
+        const crest = ss > 0.35;
+        const flick = 0.74 + 0.26 * Math.sin(ang * 5 + phase * 3 + s * 1.1);
+        box(f, l, y, 0.030, 0.030, 0.030,
+            crest ? (flick > 0.93 ? GLACIER : HORIZON)
+                  : (((i + s) & 1) === 0 ? BASALT : ABYSS),
+            opq(a * (crest ? flick : 0.85)));
+      }
+    }
+    /* L'ARETE INTERIEURE : un seul fil clair sur le bord du trou. C'est lui qui dit qu'il
+       y a un TROU, et non un disque sombre au milieu d'un anneau clair. */
+    const lipN = Math.max(20, Math.round(ring * 22));
+    for (let i = 0; i < lipN; i++) {
+      const ang = i / lipN * TAU;
+      const rr = ring - tube * 0.92;
+      if (rr <= 0.02) break;
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      const pulse = 0.68 + 0.32 * Math.sin(ang * 3 - phase * 4);
+      box(of + ca * rr, ol + sa * rr * ct, oy + sa * rr * st, 0.024, 0.024, 0.024,
+          pulse > 0.90 ? SINGULAR : GLACIER, opq(a * pulse));
+    }
+  };
+
+  /* Un FRAGMENT du monde : TROIS cubes assembles et tournes. Un cube seul qui tombe est un
+     pixel qui tombe ; trois cubes decales lisent comme un eclat de matiere, et leur
+     rotation prouve qu'ils sont EN CHUTE et non en translation. */
+  const fragment = (f, l, y, size, roll, bright, dark, a) => {
+    if (size <= 0.008) return;
+    const c = Math.cos(roll), s = Math.sin(roll);
+    for (let k = 0; k < 3; k++) {
+      const off = (k - 1) * size * 0.78;
+      const sz = size * (k === 1 ? 1.0 : 0.72);
+      box(f + off * c, l + off * s, y + off * s * 0.55, sz, sz, sz,
+          k === 1 ? bright : dark, a);
+    }
+  };
+
+  /* Un NOEUD : un coeur noir en losange, herisse de six pointes claires qui tournent. Le
+     coeur est en NOTHING, donc invisible seul — les pointes sont son lisere obligatoire. */
+  const node = (f, l, y, size, roll, collapse, a) => {
+    if (size <= 0.004) return;
+    const fade = 1 - collapse * 0.75;
+    for (let k = 0; k < 4; k++) {
+      const ang = k * (TAU / 4) + roll;
+      box(f + Math.cos(ang) * size * 0.46, l + Math.sin(ang) * size * 0.46, y,
+          size * 0.52, size * 0.52, size * 0.52, NOTHING, opq(a * fade));
+    }
+    box(f, l, y, size * 0.40, size * 0.90, size * 0.40, ABYSS, opq(a * fade));
+    const spike = size * (1.55 + 0.45 * Math.sin(roll * 1.7)) * (1 - collapse);
+    for (let s = 0; s < 6; s++) {
+      let sf = (s === 0 ? 1 : s === 1 ? -1 : 0) * spike;
+      let sl = (s === 2 ? 1 : s === 3 ? -1 : 0) * spike;
+      const sy = (s === 4 ? 1 : s === 5 ? -1 : 0) * spike;
+      if (s < 4) {
+        const c = Math.cos(roll), sn = Math.sin(roll);
+        const rf = sf * c - sl * sn;
+        sl = sf * sn + sl * c;
+        sf = rf;
+      }
+      segment(f, l, y, f + sf, l + sl, y + sy, size * 0.26,
+              s >= 4 ? GLACIER : HORIZON, opq(a * 0.92 * fade), 0.040);
+    }
+  };
+
+  const dist3 = (f0, l0, y0, f1, l1, y1) => {
+    const df = f1 - f0, dl = l1 - l0, dy = y1 - y0;
+    return Math.sqrt(df * df + dl * dl + dy * dy);
+  };
+
   // =======================================================================================
   //  I. SPHÈRE DE DISTORSION — 160 ticks
   // =======================================================================================
@@ -579,10 +668,238 @@ function buildVoid(variant, t, salt = 7331) {
     }
   };
 
+
+  // =======================================================================================
+  //  IV. PORTE D'HORIZON — 180 ticks
+  // =======================================================================================
+  /* Un TORE pose au sol, et ce qui y tombe ressort ailleurs. C'est la seule forme fermee a
+     TROU de la famille : une sphere n'a pas d'autre cote, un anneau si. */
+  const renderGate = (a) => {
+    const yFloor = GROUND_Y + 0.04;
+    const grow = smooth(clamp01((t - 0.04) / 0.26));
+    const shut = smooth(clamp01((t - 0.86) / 0.14));
+    const ring = (0.34 + 1.78 * grow) * (1 - shut);
+    const spin = t * 3.4 + salt * 0.0013;
+
+    /* ---- 1. LE TRACE AU SOL : l'empreinte existe avant la porte. ---- */
+    {
+      const draw = clamp01(t / 0.12);
+      if (draw < 1) {
+        const n = 76;
+        const upTo = Math.max(1, Math.round(n * draw));
+        for (let i = 0; i <= upTo; i++) {
+          const ang = i / n * TAU;
+          const head = i / Math.max(1, upTo);
+          box(Math.cos(ang) * 2.12, Math.sin(ang) * 2.12, yFloor, 0.034, SLAB_H, 0.034,
+              head > 0.92 ? SINGULAR : (head > 0.70 ? GLACIER : HALO),
+              opq(a * (0.45 + 0.55 * head)));
+        }
+      }
+    }
+
+    /* ---- 2. LE TORE DU BAS ---- */
+    if (ring > 0.02) {
+      const tube = 0.145 * (0.35 + 0.65 * grow);
+      torus(0, 0, yFloor + tube * 1.15, ring, tube, 0, spin, a, false);
+    }
+
+    /* ---- 3. LA MEMBRANE : spirale logarithmique a DEUX brins, qui DESCEND. Pas un
+       disque : un escalier. Un disque plein boucherait le trou, c'est-a-dire le sujet. ---- */
+    {
+      const life = clamp01((t - 0.22) / 0.10) * (1 - clamp01((t - 0.78) / 0.12));
+      if (life > 0.01 && ring > 0.25) {
+        for (let brin = 0; brin < 2; brin++) {
+          const phase = brin * Math.PI;
+          const steps = 54;
+          let prevF = 0, prevL = 0, prevY = 0;
+          for (let i = 0; i <= steps; i++) {
+            const u = i / steps;
+            const theta = phase - spin * 1.7 + u * 4.6;
+            const rr = ring * 0.94 * Math.exp(-2.35 * u);
+            const yy = yFloor + 0.10 - 0.52 * u * u * life;
+            const f = Math.cos(theta) * rr, l = Math.sin(theta) * rr;
+            if (i > 0) {
+              const fade = (1 - u * 0.45) * life;
+              const rgb = u < 0.18 ? HORIZON : (u < 0.55 ? HALO : ABYSS);
+              segment(prevF, prevL, prevY, f, l, yy, 0.030 + 0.018 * (1 - u),
+                      rgb, opq(a * fade), 0.072);
+            }
+            prevF = f; prevL = l; prevY = yy;
+          }
+        }
+      }
+    }
+
+    /* ---- 4. LE TORE DU HAUT, INCLINE. L'inclinaison interdit de le lire comme un echo. ---- */
+    const outGrow = smooth(clamp01((t - 0.30) / 0.16)) * (1 - shut);
+    const outRing = ring * 0.62 * outGrow;
+    const outY = yFloor + 2.25;
+    const tilt = 0.52;
+    if (outRing > 0.04) torus(0, 0, outY, outRing, 0.105, tilt, -spin * 1.35, a * 0.95, true);
+
+    /* ---- 5. LE TRANSIT. Trois vies par fragment : il TOMBE, il N'EXISTE PAS, il RESSORT.
+       La phase morte est ce qui prouve qu'il a traverse quelque chose. ---- */
+    for (let k = 0; k < 7; k++) {
+      const born = 0.34 + k * 0.072;
+      const age = (t - born) / 0.30;
+      if (age <= 0 || age >= 1) continue;
+      const angIn = hash(salt + 31, k * 7) * TAU;
+      const rIn = ring * (0.42 + 0.44 * hash(salt + 32, k * 13));
+      const angOut = hash(salt + 33, k * 17) * TAU;
+      const rOut = outRing * (0.30 + 0.50 * hash(salt + 34, k * 19));
+      const size = 0.075 + 0.045 * hash(salt + 35, k * 23);
+
+      if (age < 0.38) {
+        const u = age / 0.38;
+        fragment(Math.cos(angIn) * rIn, Math.sin(angIn) * rIn,
+                 yFloor + 1.60 - 1.62 * u * u, size * (1 - u * 0.25), u * 9 + k,
+                 ENDSTONE, ENDSTONE_DK, opq(a));
+      } else if (age < 0.52) {
+        continue;
+      } else {
+        const u = (age - 0.52) / 0.48;
+        const rr = rOut + u * 1.45;
+        const yy = outY + 0.42 * Math.sin(u * Math.PI * 0.80) - 1.15 * u * u;
+        if (u < 0.14) {
+          const flash = 1 - u / 0.14;
+          for (let s = 0; s < 3; s++) {
+            const sa = angOut + (s - 1) * 0.16;
+            const w = 0.055 * flash + 0.020;
+            box(Math.cos(sa) * outRing, Math.sin(sa) * outRing, outY, w, w, w,
+                SINGULAR, opq(a * flash));
+          }
+        }
+        fragment(Math.cos(angOut) * rr, Math.sin(angOut) * rr, yy,
+                 size * (1 - u * 0.35), u * 11 + k, INVERT, ENDSTONE_DK,
+                 opq(a * (1 - u * 0.5)));
+      }
+    }
+
+    /* ---- 6. LES QUATRE MONTANTS. Un tube plein retomberait sur le conduit du Siphon,
+       qui appartient au Sang : quatre tiges tres fines en pointille large. ---- */
+    if (outGrow > 0.06) {
+      for (let k = 0; k < 4; k++) {
+        const ang = k * (TAU / 4) + spin * 0.4;
+        const climb = clamp01((t - 0.34) / 0.14);
+        const yTop = yFloor + 0.12 + (outY - yFloor - 0.12) * climb;
+        segment(Math.cos(ang) * ring * 0.96, Math.sin(ang) * ring * 0.96, yFloor + 0.12,
+                Math.cos(ang) * outRing * 0.96, Math.sin(ang) * outRing * 0.96, yTop,
+                0.022, HALO, opq(a * 0.80 * outGrow), 0.195);
+      }
+    }
+  };
+
+  // =======================================================================================
+  //  V. CONSTELLATION NULLE — 200 ticks
+  // =======================================================================================
+  /* Sept noeuds, onze aretes, et la trame qui se dechire. Seul objet NON CENTRE de la
+     famille, et seul capable de dire visuellement « ces choses-la sont SOLIDAIRES ». */
+  const renderLattice = (a) => {
+    const N = 7;
+    const edges = [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,0],[0,3],[1,4],[2,5],[3,6]];
+    const converge = smooth(clamp01((t - 0.56) / 0.30));
+    /* La DECHIRURE passe AVANT le point : si la trame se resorbait d'abord, les aretes
+       auraient une longueur nulle au moment de rompre et personne ne verrait rien rompre. */
+    const tear = clamp01((t - 0.86) / 0.07);
+    const collapse = smooth(clamp01((t - 0.92) / 0.08));
+
+    const nf = [], nl = [], ny = [];
+    let bf = 0, bl = 0, by = 0;
+    for (let i = 0; i < N; i++) {
+      const ang = (i / N) * TAU + (hash(salt + 41, i * 7) - 0.5) * 0.70;
+      const rad = 1.25 + 1.55 * hash(salt + 42, i * 11);
+      nf.push(Math.cos(ang) * rad); nl.push(Math.sin(ang) * rad);
+      ny.push(0.10 + 2.05 * hash(salt + 43, i * 13));
+      bf += nf[i]; bl += nl[i]; by += ny[i];
+    }
+    bf /= N; bl /= N; by /= N;
+
+    const pf = [], pl = [], py = [];
+    for (let i = 0; i < N; i++) {
+      const pull = converge * 0.46 + collapse * 0.54;
+      const drift = (1 - converge) * 0.055;
+      pf.push(nf[i] + (bf - nf[i]) * pull + Math.sin(t * 5.1 + i * 1.7) * drift);
+      pl.push(nl[i] + (bl - nl[i]) * pull + Math.cos(t * 4.3 + i * 2.3) * drift);
+      py.push(ny[i] + (by - ny[i]) * pull + Math.sin(t * 6.2 + i * 0.9) * drift * 0.7);
+    }
+
+    /* ---- 1. LES ARETES. Elles PENDENT avant de se tendre : une arete droite d'emblee est
+       un trait de regle, elle ne pese rien. La catenaire donne la matiere. ---- */
+    for (let e = 0; e < edges.length; e++) {
+      const i = edges[e][0], j = edges[e][1];
+      const born = 0.10 + Math.max(i, j) * 0.012;
+      if (t < born) continue;
+      const tenseAt = 0.38 + hash(salt + 51, e * 29) * 0.30;
+      const tense = smooth(clamp01((t - tenseAt) / 0.085));
+      const sagAmount = (1 - tense) * 0.28;
+      const len = dist3(pf[i], pl[i], py[i], pf[j], pl[j], py[j]);
+      if (len < 0.02) continue;
+
+      const cutIn = tear * 0.5;
+      const steps = Math.max(6, Math.min(22, Math.round(len * 7)));
+      let prevF = 0, prevL = 0, prevY = 0, havePrev = false;
+      for (let s = 0; s <= steps; s++) {
+        const u = s / steps;
+        if (tear > 0.001 && Math.abs(u - 0.5) < cutIn) { havePrev = false; continue; }
+        const f = pf[i] + (pf[j] - pf[i]) * u;
+        const l = pl[i] + (pl[j] - pl[i]) * u;
+        const k = (u - 0.5) * 2;
+        const sag = (Math.cosh(1.65) - Math.cosh(1.65 * k)) / (Math.cosh(1.65) - 1);
+        const y = py[i] + (py[j] - py[i]) * u - sag * sagAmount * len * 0.42;
+        if (havePrev) {
+          /* DEUX tons quand la trame est tendue : une fois resserrees, onze aretes d'un
+             seul ton ne font plus qu'une masse grise. La parite les redecoupe. */
+          const rgb = tense > 0.55 ? ((e & 1) === 0 ? GLACIER : HORIZON)
+                                   : (tense > 0.12 ? HORIZON : HALO);
+          segment(prevF, prevL, prevY, f, l, y, 0.023 + 0.016 * tense, rgb,
+                  opq(a * (0.66 + 0.34 * tense) * (1 - tear * 0.4)), 0.052);
+        }
+        prevF = f; prevL = l; prevY = y; havePrev = true;
+      }
+
+      /* L'ECLAT qui parcourt l'arete au moment ou elle se tend : le seul endroit du
+         fichier ou quelque chose se propage LE LONG d'une arete. */
+      const sparkU = (t - tenseAt) / 0.085;
+      if (sparkU > 0 && sparkU < 1) {
+        const f = pf[i] + (pf[j] - pf[i]) * sparkU;
+        const l = pl[i] + (pl[j] - pl[i]) * sparkU;
+        const k = (sparkU - 0.5) * 2;
+        const sag = (Math.cosh(1.65) - Math.cosh(1.65 * k)) / (Math.cosh(1.65) - 1);
+        const y = py[i] + (py[j] - py[i]) * sparkU
+                - sag * (1 - smooth(sparkU)) * 0.28 * len * 0.42;
+        box(f, l, y, 0.055, 0.055, 0.055, SINGULAR, opq(a));
+      }
+    }
+
+    /* ---- 2. LES NOEUDS ---- */
+    for (let i = 0; i < N; i++) {
+      const wake = smooth(clamp01((t - i * 0.0135) / 0.040));
+      if (wake <= 0.01) continue;
+      node(pf[i], pl[i], py[i], (0.095 + 0.030 * hash(salt + 44, i * 17)) * wake,
+           t * 2.1 + i * 0.9, collapse, a);
+    }
+
+    /* ---- 3. LE POINT ---- */
+    if (collapse > 0.02) {
+      const puff = collapse * (1 - tear);
+      const w = 0.085 * puff + 0.02;
+      box(bf, bl, by, w, w, w, SINGULAR, opq(a));
+      for (let s = 0; s < 6; s++) {
+        const sf = (s === 0 ? 1 : s === 1 ? -1 : 0) * 0.20 * puff;
+        const sl = (s === 2 ? 1 : s === 3 ? -1 : 0) * 0.20 * puff;
+        const sy = (s === 4 ? 1 : s === 5 ? -1 : 0) * 0.20 * puff;
+        segment(bf, bl, by, bf + sf, bl + sl, by + sy, 0.022, GLACIER,
+                opq(a * puff), 0.045);
+      }
+    }
+  };
+
   const ALPHA = 255;
   switch (variant) {
     case 1: renderPrism(ALPHA); break;
     case 2: renderRift(ALPHA); break;
+    case 3: renderGate(ALPHA); break;
+    case 4: renderLattice(ALPHA); break;
     default: renderWarp(ALPHA); break;
   }
   return out;

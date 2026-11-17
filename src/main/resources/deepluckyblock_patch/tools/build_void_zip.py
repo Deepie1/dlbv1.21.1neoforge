@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Assemble deliverables/DLB_Void_Three_Signatures_src.zip.
+"""Assemble deliverables/DLB_Void_Five_Signatures_src.zip.
 
 REGLES DU LIVRABLE, apprises a la dure :
 
@@ -139,7 +139,7 @@ TESTS EN JEU
 """
 
 def main():
-    out = 'deliverables/DLB_Void_Three_Signatures_src.zip'
+    out = 'deliverables/DLB_Void_Five_Signatures_src.zip'
     os.makedirs('deliverables', exist_ok=True)
     problems = []
 

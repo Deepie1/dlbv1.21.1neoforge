@@ -255,11 +255,13 @@ public final class WeaponWorldVfxManager {
         return mobScaleActive ? pivot + (v - pivot) * mobScale : v;
     }
 
-    /** Les trois signatures refondues du vide (T388), seules à passer par VoidSignatureVfx. */
+    /** Les cinq signatures refondues du vide (T388-T389), seules à passer par VoidSignatureVfx. */
     private static boolean isVoidSignature(WeaponVisualEffectId fx) {
         return fx == WeaponVisualEffectId.VOID_WARP_SPHERE
                 || fx == WeaponVisualEffectId.DRAGON_CHAOS_PRISM
-                || fx == WeaponVisualEffectId.NULL_RIFT_FISSURE;
+                || fx == WeaponVisualEffectId.NULL_RIFT_FISSURE
+                || fx == WeaponVisualEffectId.HORIZON_GATE
+                || fx == WeaponVisualEffectId.NULL_LATTICE;
     }
 
     /** Les cinq signatures refondues du sang (T379), seules à passer par BloodSignatureVfx. */
@@ -777,6 +779,8 @@ public final class WeaponWorldVfxManager {
             case VOID_WARP_SPHERE -> 160;     // grille + lentille + anneau + accretion + rendu
             case DRAGON_CHAOS_PRISM -> 190;   // descente + trait + sept faisceaux + ailes + eclat
             case NULL_RIFT_FISSURE -> 170;    // felure + amande + crevasse + autre cote + cicatrice
+            case HORIZON_GATE -> 180;         // trace + tore + membrane + tore haut + transit + fermeture
+            case NULL_LATTICE -> 200;         // eveil des noeuds + mise en tension + convergence + rupture
             // T379-BLOOD : les cinq titres du sang etaient la derniere famille sous la
             // seconde. CRIMSON_SIPHON tenait 16 ticks, les quatre autres tombaient sur le
             // « default -> 14 » : impossible d'y lire une guillotine, encore moins un coeur
@@ -1990,7 +1994,9 @@ public final class WeaponWorldVfxManager {
      */
     private static int animationSlashCount(String family) {
         String canonical = deepluckyblock.util.AnimFamily.canonical(family);
-        return deepluckyblock.util.AnimFamily.BLOOD.equals(canonical) ? 5 : 3;
+        // T389 : le VIDE rejoint le SANG à cinq signatures.
+        return deepluckyblock.util.AnimFamily.BLOOD.equals(canonical)
+                || deepluckyblock.util.AnimFamily.VOID.equals(canonical) ? 5 : 3;
     }
 
     private static WeaponVisualEffectId animationSlashEffect(String family, int index) {
@@ -2081,7 +2087,9 @@ public final class WeaponWorldVfxManager {
             return switch (index) {
                 case 0 -> WeaponVisualEffectId.VOID_WARP_SPHERE;
                 case 1 -> WeaponVisualEffectId.DRAGON_CHAOS_PRISM;
-                default -> WeaponVisualEffectId.NULL_RIFT_FISSURE;
+                case 2 -> WeaponVisualEffectId.NULL_RIFT_FISSURE;
+                case 3 -> WeaponVisualEffectId.HORIZON_GATE;
+                default -> WeaponVisualEffectId.NULL_LATTICE;
             };
         }
         if (deepluckyblock.util.AnimFamily.WIND.equals(canonical)) {
@@ -4754,7 +4762,7 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
-     * 虚 VIDE — aiguillage des TROIS signatures refondues (T388) vers
+     * 虚 VIDE — aiguillage des CINQ signatures refondues (T388-T389) vers
      * {@link VoidSignatureVfx} ; les autres effets de vide gardent le rendu générique.
      */
     private static void impactVoid(ImpactView v) {
@@ -4762,6 +4770,8 @@ public final class WeaponWorldVfxManager {
             case VOID_WARP_SPHERE -> VoidSignatureVfx.WARP;
             case DRAGON_CHAOS_PRISM -> VoidSignatureVfx.PRISM;
             case NULL_RIFT_FISSURE -> VoidSignatureVfx.RIFT;
+            case HORIZON_GATE -> VoidSignatureVfx.GATE;
+            case NULL_LATTICE -> VoidSignatureVfx.LATTICE;
             default -> -1;
         };
         if (voidSignature >= 0) {

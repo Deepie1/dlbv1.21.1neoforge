@@ -165,6 +165,14 @@ public final class DlbVfxCommand {
         if (fx == WeaponVisualEffectId.CHAIN_VOLT_ARC) return 168;   // impact 30 + 130 + marge
         if (fx == WeaponVisualEffectId.MJOLNIR_HAMMERFALL) return 290; // impact 30 + 250 + marge
         if (fx == WeaponVisualEffectId.STORMCALL_JUDGMENT) return 204;  // impact 30 + 170 + marge
+        // T389 : les cinq signatures du vide manquaient à l'appel. Le balayage passait à
+        // l'effet suivant au bout de 62 ticks, c'est-à-dire au tiers de la sphère et au quart
+        // de la trame : la revue complète ne montrait jamais la fin d'une seule d'entre elles.
+        if (fx == WeaponVisualEffectId.VOID_WARP_SPHERE) return 194;   // impact 30 + 160 + marge
+        if (fx == WeaponVisualEffectId.DRAGON_CHAOS_PRISM) return 224; // impact 30 + 190 + marge
+        if (fx == WeaponVisualEffectId.NULL_RIFT_FISSURE) return 204;  // impact 30 + 170 + marge
+        if (fx == WeaponVisualEffectId.HORIZON_GATE) return 214;       // impact 30 + 180 + marge
+        if (fx == WeaponVisualEffectId.NULL_LATTICE) return 234;       // impact 30 + 200 + marge
         return DUMMY_NEXT_EFFECT_TICK;
     }
 

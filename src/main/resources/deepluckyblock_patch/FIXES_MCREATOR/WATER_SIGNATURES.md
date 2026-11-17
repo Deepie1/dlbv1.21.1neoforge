@@ -3339,3 +3339,142 @@ manette en main :
 * la **convergence** du prisme en duel : les quatre empreintes doivent tomber avant le
   septième faisceau ;
 * le **magenta** du glint à côté du violet de l'Ombre et du bleu-violet de la Foudre.
+
+---
+
+## §49 — T389 · le Vide passe de trois à cinq : la PORTE et la TRAME
+
+Le retour sur la T388 tenait en sept mots : **« il faut 5 animations, tu en a 3 »**. Le
+Sang en a cinq depuis la T379 ; le Vide venait de naître avec trois. La rotation
+`/anim void` tirait donc dans un sac trois fois plus petit, et la douzième famille était
+la seule à ne pas tenir son rang.
+
+Deux signatures de plus, `HORIZON_GATE` **44** et `NULL_LATTICE` **45**. Les
+identifiants 1 à 43 étaient tous pris, sans trou : les deux entrées vont **en fin
+d'énumération**, comme `TEMPEST_EYE` avant elles, parce que `ordinal()` sert de sel de
+rendu et qu'une insertion au milieu décalerait le sel de tout ce qui suit.
+
+### 1. Le critère : un VERBE libre, pas une forme libre
+
+Les trois signatures existantes occupaient déjà trois verbes : la sphère **rassemble**,
+le prisme **distribue**, la faille **trie**. Une quatrième qui aurait seulement eu une
+autre silhouette aurait été la même signature jouée une quatrième fois. Il fallait deux
+verbes que le Vide peut tenir et que personne d'autre ne tient :
+
+| # | Nom | Verbe | Ce que ça change pour le joueur |
+|---|-----|-------|---------------------------------|
+| 26 | Sphère de distorsion | **RASSEMBLE** | met six corps au même endroit |
+| 27 | Prisme du dragon | **DISTRIBUE** | un faisceau par corps |
+| 34 | Faille du néant | **TRIE** | une ligne, pas un disque |
+| **44** | **Porte d'horizon** | **EXPULSE** | sort les corps de la zone, en étoile |
+| **45** | **Constellation nulle** | **LIE** | ce qui touche un nœud touche tous les nœuds |
+
+La porte est l'**exact inverse** de la sphère, et c'est la raison de la garder : deux
+outils opposés sur la même famille donnent au joueur une décision à prendre. La trame est
+la seule signature du mod dont la zone est **figée à la pose** — les quatre autres
+réinterrogent le monde à chaque battement et laissent toujours une porte de sortie.
+
+### 2. Ce que chacune apporte à la géométrie de la famille
+
+Le Vide ne dessine que des **arêtes** : pas un aplat dans les 1 648 lignes du fichier.
+Chaque nouvelle forme devait donc apporter une propriété topologique que les trois
+premières n'avaient pas.
+
+* **La porte est un TORE** — la seule surface **fermée à trou** de la famille. Une sphère
+  n'a pas d'autre côté, un anneau si. Tout le sens de la signature tient dans ce trou,
+  d'où une **arête intérieure** dédiée, un fil clair tracé à `ring − tube · 0,92` : sans
+  elle, le trou se lit comme un disque sombre et la porte redevient une roue.
+* **La trame est un GRAPHE** — le seul objet **non centré**. Sept nœuds, onze arêtes, pas
+  de milieu. Les quatre autres signatures naissent sur la victime ; celle-ci naît
+  **entre** les victimes, et c'est précisément ce qui lui permet de dire que plusieurs
+  corps sont solidaires.
+
+### 3. Les deux pièges payés en route
+
+**Un tube bâti sur les axes du monde se vrille.** Déjà vécu sur la couronne du prisme en
+T388 : le tore reprend un repère **explicite** recalculé à chaque pas — normale radiale
+`(cos a, sin a · cos θ, sin a · sin θ)`, verticale locale `(0, −sin θ, cos θ)`. Sans lui,
+la section tourne avec l'azimut et l'anneau sort en ruban tordu.
+
+**Une arête droite d'emblée est un trait de règle : elle ne pèse rien.** Les onze arêtes
+de la trame **pendent** avant de se tendre, en vraie **chaînette** :
+
+```
+sag = (cosh(1,65) − cosh(1,65 · (2u − 1))) / (cosh(1,65) − 1)
+```
+
+`Mth` n'a pas de `cosh` : c'est `Math.cosh`, en `double`. Elles se tendent **une par une**
+dans un ordre haché (`tenseAt = 0,38 + hash(sel + 51, e · 29) · 0,30`), et un éclat blanc
+parcourt l'arête au moment où elle se tend — le seul endroit du dossier où quelque chose
+se propage **le long** d'une arête.
+
+### 4. Trois réglages corrigés à l'image, pas au jugé
+
+Le harnais d'inspection a renvoyé trois défauts que la lecture du code n'aurait pas
+donnés :
+
+1. **La convergence arrivait trop tôt et trop fort** (`pull = converge · 0,88`) : entre
+   0,80 et 0,86 la trame n'était plus qu'une bouillie grise de 1,8 bloc. Rééquilibrée en
+   `converge · 0,46 + collapse · 0,54` — la trame reste **lisible** pendant qu'elle se
+   resserre, et le pincement final est bref.
+2. **Onze arêtes d'un seul ton font une masse.** Une fois tendues, elles alternent
+   `GLACIER` et `HORIZON` sur la parité de l'arête.
+3. **La déchirure passait après l'effondrement**, donc les arêtes avaient une longueur
+   nulle au moment de rompre et *personne ne voyait rien rompre*. L'ordre est inversé :
+   `tear` démarre à 0,86, `collapse` à 0,92.
+
+### 5. Le gameplay, deux cas chacun
+
+Doctrine T388 inchangée : **le Vide déplace**, le porteur est récompensé en **mobilité**,
+jamais en dégâts.
+
+**Porte d'horizon** (180 ticks, `base = max(1,3 ; dégât · 0,80)`). *Foule* : sept transits
+toutes les 18 frames ; chacun prend le corps le plus proche de l'anneau et l'expédie sur
+un azimut qui **tourne** d'un septième de tour — au bout des sept, le paquet est
+disséminé en étoile. *Duel* : rien à disséminer, la porte devient un **moulin** — l'azimut
+fait un **demi-tour** à chaque passage, la victime est chassée d'un côté puis de l'autre
+et chaque transit tape **deux fois plus fort** (0,92 contre 0,45). Fermeture à 150 :
+`base · 1,25`, deux empreintes, éjection.
+
+**Constellation nulle** (200 ticks, `base = max(1,3 ; dégât · 0,78)`). La liste est
+**capturée une fois**, sept nœuds au plus, et fuir n'en sort pas. *Foule* : onze mises en
+tension, chacune frappe **tout le monde** pour `base · 0,26` — modeste par corps, énorme
+sur le groupe. *Duel* : une trame à un seul nœud n'a pas d'arête, alors elle se referme
+sur sa victime — `applyMovementHold` 90 ticks et l'intégralité des tensions pour elle
+seule (`base · 0,42`). Rupture à 184 : `base · 1,15`, deux empreintes, les bouts partent.
+
+La trame capture des **identifiants**, jamais des références : une référence retenue deux
+cents ticks garde en mémoire une entité morte et retirée du monde.
+
+### 6. Les cinq points d'accroche d'un identifiant neuf
+
+Posés dans cet ordre, et aucun n'est facultatif :
+
+1. `WeaponVisualEffectId` — la constante **en fin de liste**, plus ses alias.
+2. `WeaponVfxMotion` l.105 — **le seul `switch` exhaustif du dépôt, sans `default`** : sans
+   les deux `case`, le fichier ne compile plus. C'est le piège le plus cher d'ici.
+3. `WeaponWorldVfxManager` — `isVoidSignature`, `fxDuration` (180 et 200), aiguillage
+   `impactVoid` vers `VoidSignatureVfx.GATE` / `.LATTICE`.
+4. **Les deux tables de `/anim`** — `animationSlashCount` (le Vide passe à 5, comme le
+   Sang) **et** `animationSlashEffect` (cinq branches) ; sans la seconde, les index 3 et 4
+   retombent sur le `default` et la Faille sort deux fois sur cinq.
+5. `WeaponVfxServerListener` — `ANIM_VOID` à cinq entrées et le routage de
+   `applyVoidGameplay`.
+
+Au passage, `dummyNextEffectTick` ignorait **les cinq** signatures du vide : le balayage
+`/dlbvfx dummytest` passait à l'effet suivant au bout de 62 ticks, soit au tiers de la
+sphère et au quart de la trame. La revue complète ne montrait la fin d'**aucune** d'entre
+elles.
+
+### 7. Ce qui reste à valider en jeu
+
+`jparse`, `semcheck` et `typecheck` passent — les écarts de `semcheck` (+4 sur le Manager,
++2 sur `WeaponVfxMotion`) sont exactement les six `case` ajoutés, que l'outil ne sait pas
+résoudre. **Rien n'est compilé.** Manette en main :
+
+* `/anim void` répété une vingtaine de fois : les **cinq** doivent sortir, aucune deux
+  fois plus souvent que les autres ;
+* `/dlbvfx play 44` puis `45`, sur un mob **seul** puis sur un groupe de cinq ;
+* la porte en duel : la victime doit faire un **va-et-vient**, pas s'éloigner ;
+* la trame : s'éloigner après la pose ne doit **pas** sortir du contrat ;
+* le trou de la porte vu de dessus, et l'arête intérieure à contre-jour.

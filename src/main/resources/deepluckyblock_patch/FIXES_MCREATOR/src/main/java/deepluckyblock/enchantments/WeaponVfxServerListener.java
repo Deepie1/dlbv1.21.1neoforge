@@ -321,12 +321,16 @@ public final class WeaponVfxServerListener {
             WeaponVisualEffectId.CARNAGE_BERSERK
     };
     /**
-     * T388-VOID : douzieme famille. Les trois titres du vide — la sphere qui rassemble, le
-     * prisme qui distribue, la faille qui trie.
+     * T388-VOID puis T389 : douzieme famille, portee a CINQ titres comme le sang. La sphere
+     * rassemble, le prisme distribue, la faille trie, la porte EXPULSE, la trame LIE.
+     *
+     * <p>Les cinq verbes sont distincts a dessein : deux signatures qui deplacent de la meme
+     * maniere ne sont qu'une seule signature jouee deux fois.</p>
      */
     private static final WeaponVisualEffectId[] ANIM_VOID = {
             WeaponVisualEffectId.VOID_WARP_SPHERE, WeaponVisualEffectId.DRAGON_CHAOS_PRISM,
-            WeaponVisualEffectId.NULL_RIFT_FISSURE
+            WeaponVisualEffectId.NULL_RIFT_FISSURE, WeaponVisualEffectId.HORIZON_GATE,
+            WeaponVisualEffectId.NULL_LATTICE
     };
     private static final WeaponVisualEffectId[] ANIM_LIGHT = {
             WeaponVisualEffectId.SERAPH_SKY_PILLAR, WeaponVisualEffectId.ASTRAL_STAR_LANCE,
@@ -4975,12 +4979,13 @@ public final class WeaponVfxServerListener {
     }
 
     /**
-     * Routage des trois signatures du vide.
+     * Routage des CINQ signatures du vide.
      *
-     * <p>Les trois partagent l'empreinte et l'echo, et se repondent : la sphere RASSEMBLE
-     * (elle tire tout vers un point), le prisme DISTRIBUE (un faisceau par corps), la faille
-     * TRIE (une ligne, pas un disque). Chacune traite explicitement les deux cas demandes —
-     * <b>plusieurs ennemis</b> et <b>ennemi seul</b>.</p>
+     * <p>Les cinq partagent l'empreinte et l'echo, et se repondent par le VERBE : la sphere
+     * RASSEMBLE (elle tire tout vers un point), le prisme DISTRIBUE (un faisceau par corps),
+     * la faille TRIE (une ligne, pas un disque), la porte EXPULSE (elle avale et recrache
+     * ailleurs), la trame LIE (ce qui touche un noeud touche tous les noeuds). Chacune traite
+     * explicitement les deux cas demandes — <b>plusieurs ennemis</b> et <b>ennemi seul</b>.</p>
      */
     private static void applyVoidGameplay(LivingEntity attacker, LivingEntity target,
                                           WeaponVisualEffectId fx, float weaponDamage) {
@@ -4993,6 +4998,10 @@ public final class WeaponVfxServerListener {
             applyDragonPrismGameplay(attacker, target, sl, damage);
         } else if (fx == WeaponVisualEffectId.NULL_RIFT_FISSURE) {
             applyNullRiftGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.HORIZON_GATE) {
+            applyHorizonGateGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.NULL_LATTICE) {
+            applyNullLatticeGameplay(attacker, target, sl, damage);
         }
     }
 
@@ -5306,6 +5315,297 @@ public final class WeaponVfxServerListener {
                 attacker.addEffect(new MobEffectInstance(MobEffects.SLOW_FALLING, 120, 0, true, true));
             }
         });
+    }
+
+    // --------------------------------------------------------------------------------------
+    //  IV. PORTE D'HORIZON (180 ticks) — elle EXPULSE
+    // --------------------------------------------------------------------------------------
+
+    /**
+     * La porte est un TOURNIQUET. Les quatre autres signatures gardent leurs victimes dans
+     * la zone ; celle-ci les en SORT, une par une, et chacune ressort dans une direction
+     * differente de la precedente.
+     *
+     * <p><b>Foule</b> : sept transits, chacun prend le corps le plus proche de l'anneau,
+     * l'envoie par-dessus et le repose a trois metres sur un azimut qui tourne — au bout des
+     * sept, le paquet est dissemine en etoile. C'est l'exact inverse de la sphere, et c'est
+     * pour ca que les deux coexistent. <b>Duel</b> : il n'y a rien a disseminer, donc la
+     * porte devient un MOULIN — la meme victime repasse a chaque transit, chasse d'un cote
+     * puis de l'autre, et chaque passage tape deux fois plus fort. Elle ne va nulle part,
+     * mais elle n'arrete jamais de tomber.</p>
+     */
+    private static void applyHorizonGateGameplay(LivingEntity attacker, LivingEntity target,
+                                                 ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.50;
+        final double oz = target.getZ();
+        final float base = Math.max(1.3f, weaponDamage * 0.80f);
+        final long markEnd = sl.getGameTime() + 180L + 20L;
+        final boolean solo = voidVictims(sl, ox, oy, oz, 4.2, 2.8, attackerId).size() <= 1;
+        // L'azimut de depart est tire de la position : deux portes voisines ne disseminent
+        // pas dans le meme sens, sinon la deuxieme defait le travail de la premiere.
+        final double seedAng = ((long) (ox * 31.0) + (long) (oz * 17.0) & 63L) / 64.0 * Math.PI * 2.0;
+
+        // --- 0 -> 18 : le TRACE au sol. L'empreinte existe avant la porte. ---
+        for (int k = 0; k < 4; k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + step * 5, () -> {
+                sl.playSound(null, ox, oy, oz, SoundEvents.BEACON_POWER_SELECT, SoundSource.PLAYERS,
+                        0.20f + 0.06f * step, 0.60f + 0.12f * step);
+                for (int i = 0; i < 10; i++) {
+                    double ang = (i + step * 2.5) / 10.0 * Math.PI * 2.0;
+                    PixelFx.send(sl, VOID_DUST, ox + Math.cos(ang) * 2.12,
+                            target.getY() + 0.08, oz + Math.sin(ang) * 2.12, 2, 0.04, 0.02, 0.04, 0.01);
+                }
+            });
+        }
+
+        // --- 24 : L'OUVERTURE. ---
+        TestProcedure.schedule(sl, now + 24, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.RESPAWN_ANCHOR_DEPLETE.value(),
+                    SoundSource.PLAYERS, 0.80f, 0.55f);
+            PixelFx.send(sl, ParticleTypes.PORTAL, ox, oy, oz, 52, 1.6, 0.8, 1.6, 0.26);
+            for (LivingEntity victim : voidVictims(sl, ox, oy, oz, 2.4, 2.4, attackerId)) {
+                addVoidMark(sl, victim, 1, attackerId, base * 0.26f, markEnd);
+            }
+        });
+
+        // --- 34 -> 142 : SEPT TRANSITS, toutes les dix-huit frames. ---
+        for (int k = 0; k < 7; k++) {
+            final int pass = k;
+            TestProcedure.schedule(sl, now + 34 + pass * 18, () -> {
+                List<LivingEntity> victims = voidVictims(sl, ox, oy, oz, 3.4, 2.8, attackerId);
+                if (victims.isEmpty()) return;
+                // Le corps le plus proche de l'anneau : la porte avale ce qui est tombe
+                // dedans, pas ce qui passait au large.
+                LivingEntity taken = victims.get(0);
+                double bestGap = Double.MAX_VALUE;
+                for (LivingEntity candidate : victims) {
+                    double ddx = candidate.getX() - ox;
+                    double ddz = candidate.getZ() - oz;
+                    double gap = Math.abs(Math.sqrt(ddx * ddx + ddz * ddz) - 2.12);
+                    if (gap < bestGap) { bestGap = gap; taken = candidate; }
+                }
+                final LivingEntity passenger = taken;
+                // En foule l'azimut TOURNE (dissemination) ; en duel il fait un demi-tour a
+                // chaque passage (va-et-vient). Deux lectures du meme geste.
+                double outAng = solo
+                        ? seedAng + pass * Math.PI
+                        : seedAng + pass * (Math.PI * 2.0 / 7.0);
+                double throwSpeed = solo ? 0.52 : 0.78;
+                voidPush(sl, passenger, Math.cos(outAng) * throwSpeed, solo ? 0.46 : 0.58,
+                        Math.sin(outAng) * throwSpeed);
+                voidHurt(sl, attackerId, passenger, base * (solo ? 0.92f : 0.45f));
+                passenger.addEffect(new MobEffectInstance(MobEffects.LEVITATION, solo ? 18 : 26,
+                        0, true, false));
+                if (pass % 2 == 0) {
+                    addVoidMark(sl, passenger, 1, attackerId, base * 0.28f, markEnd);
+                }
+                sl.playSound(null, ox, oy, oz, SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS,
+                        0.55f, 0.70f + pass * 0.06f);
+                PixelFx.send(sl, VOID_DUST, ox, oy, oz, 14, 1.1, 0.6, 1.1, 0.05);
+                PixelFx.send(sl, VOID_DUST_INVERT, passenger.getX(),
+                        passenger.getY() + passenger.getBbHeight() * 0.60, passenger.getZ(),
+                        18, 0.30, 0.45, 0.30, 0.12);
+            });
+        }
+
+        // --- 150 : LA FERMETURE. Le rayon de l'ame se resorbe, la section tient. ---
+        TestProcedure.schedule(sl, now + 150, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 0.75f, 0.60f);
+            sl.playSound(null, ox, oy, oz, SoundEvents.ANVIL_LAND, SoundSource.PLAYERS, 0.50f, 1.70f);
+            PixelFx.send(sl, VOID_DUST_INVERT, ox, oy, oz, 40, 1.2, 0.9, 1.2, 0.18);
+            for (LivingEntity victim : voidVictims(sl, ox, oy, oz, 3.4, 2.8, attackerId)) {
+                voidHurt(sl, attackerId, victim, base * 1.25f);
+                addVoidMark(sl, victim, 2, attackerId, base * 0.32f, markEnd);
+                double ddx = victim.getX() - ox;
+                double ddz = victim.getZ() - oz;
+                double dist = Math.sqrt(ddx * ddx + ddz * ddz);
+                if (dist < 0.05) { ddx = Math.cos(seedAng); ddz = Math.sin(seedAng); dist = 1.0; }
+                voidPush(sl, victim, ddx / dist * 0.82, 0.40, ddz / dist * 0.82);
+            }
+        });
+
+        // --- 168 : le porteur. Mobilite, jamais degats. ---
+        TestProcedure.schedule(sl, now + 168, () -> {
+            if (attacker == null || !attacker.isAlive()) return;
+            attacker.addEffect(new MobEffectInstance(MobEffects.SLOW_FALLING, 140, 0, true, true));
+        });
+    }
+
+    // --------------------------------------------------------------------------------------
+    //  V. CONSTELLATION NULLE (200 ticks) — elle LIE
+    // --------------------------------------------------------------------------------------
+
+    /**
+     * La trame est un CONTRAT. Les corps presents au moment ou elle se noue deviennent
+     * solidaires : a partir de la, ce qui arrive a l'un arrive a tous, ou qu'ils aillent.
+     *
+     * <p>C'est la seule signature du mod dont la zone est <b>figee a la pose</b> : la liste
+     * est capturee une fois, et fuir n'en sort pas. Les quatre autres signatures du vide
+     * reinterrogent le monde a chaque battement et laissent donc toujours une porte de
+     * sortie ; celle-ci est le prix a payer pour qu'un lien veuille dire quelque chose.</p>
+     *
+     * <p><b>Foule</b> : jusqu'a sept noeuds, onze mises en tension, et chaque tension frappe
+     * TOUT LE MONDE pour une petite part — le total par corps est modeste, le total sur le
+     * groupe est enorme. <b>Duel</b> : une trame a un seul noeud n'a pas d'arete, alors elle
+     * se referme sur sa victime — celle-ci est RETENUE quatre secondes et prend l'integralite
+     * des tensions pour elle seule.</p>
+     */
+    private static void applyNullLatticeGameplay(LivingEntity attacker, LivingEntity target,
+                                                 ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.50;
+        final double oz = target.getZ();
+        final float base = Math.max(1.3f, weaponDamage * 0.78f);
+        final long markEnd = sl.getGameTime() + 200L + 20L;
+
+        // LA CAPTURE. Sept au plus : au-dela la trame ne se lit plus, ni a l'ecran ni au
+        // tableau des degats. La cible du coup est toujours dedans, meme si elle est huitieme.
+        List<LivingEntity> caught = voidVictims(sl, ox, oy, oz, 6.0, 3.0, attackerId);
+        List<Integer> ids = new ArrayList<>();
+        ids.add(target.getId());
+        for (LivingEntity candidate : caught) {
+            if (ids.size() >= 7) break;
+            if (!ids.contains(candidate.getId())) ids.add(candidate.getId());
+        }
+        final int[] bound = new int[ids.size()];
+        for (int i = 0; i < bound.length; i++) bound[i] = ids.get(i);
+        final boolean solo = bound.length <= 1;
+
+        // --- 0 -> 24 : L'EVEIL des noeuds, un par un. ---
+        for (int i = 0; i < bound.length; i++) {
+            final int slot = i;
+            TestProcedure.schedule(sl, now + slot * 4, () -> {
+                LivingEntity knot = latticeNode(sl, bound[slot]);
+                if (knot == null) return;
+                knot.addEffect(new MobEffectInstance(MobEffects.GLOWING, 200, 0, true, false));
+                addVoidMark(sl, knot, 1, attackerId, base * 0.24f, markEnd);
+                sl.playSound(null, knot.getX(), knot.getY(), knot.getZ(),
+                        SoundEvents.AMETHYST_BLOCK_PLACE, SoundSource.PLAYERS, 0.45f,
+                        0.80f + slot * 0.09f);
+                voidMotes(sl, knot, 3, sl.getGameTime() * 7L + slot);
+            });
+        }
+        if (solo) {
+            // Une trame d'un seul noeud se referme sur lui : il ne peut plus choisir ou il est.
+            applyMovementHold(target, sl.getGameTime() + 90L, false);
+        }
+
+        // --- 40 -> 150 : ONZE MISES EN TENSION, toutes les dix frames. ---
+        for (int e = 0; e < 11; e++) {
+            final int edge = e;
+            TestProcedure.schedule(sl, now + 40 + edge * 10, () -> {
+                double bx = 0.0;
+                double bz = 0.0;
+                int alive = 0;
+                for (int id : bound) {
+                    LivingEntity knot = latticeNode(sl, id);
+                    if (knot == null) continue;
+                    bx += knot.getX(); bz += knot.getZ(); alive++;
+                }
+                if (alive == 0) return;
+                final double cx = bx / alive;
+                final double cz = bz / alive;
+                for (int id : bound) {
+                    LivingEntity knot = latticeNode(sl, id);
+                    if (knot == null) continue;
+                    // Chaque tension raccourcit l'arete : les corps se rapprochent du
+                    // barycentre sans jamais y etre jetes d'un coup.
+                    double ddx = cx - knot.getX();
+                    double ddz = cz - knot.getZ();
+                    double dist = Math.sqrt(ddx * ddx + ddz * ddz);
+                    if (!solo && dist > 0.60) {
+                        double speed = Math.min(0.34, 0.07 + dist * 0.045);
+                        voidPush(sl, knot, ddx / dist * speed, 0.030, ddz / dist * speed);
+                    }
+                    voidHurt(sl, attackerId, knot, base * (solo ? 0.42f : 0.26f));
+                    if (edge % 4 == 0) {
+                        addVoidMark(sl, knot, 1, attackerId, base * 0.26f, markEnd);
+                    }
+                }
+                sl.playSound(null, cx, oy, cz, SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS,
+                        0.32f, 0.70f + edge * 0.045f);
+                PixelFx.send(sl, VOID_DUST, cx, oy, cz, 10, 0.8, 0.7, 0.8, 0.04);
+            });
+        }
+
+        // --- 160 : LA CONVERGENCE. ---
+        TestProcedure.schedule(sl, now + 160, () -> {
+            double bx = 0.0;
+            double bz = 0.0;
+            int alive = 0;
+            for (int id : bound) {
+                LivingEntity knot = latticeNode(sl, id);
+                if (knot == null) continue;
+                bx += knot.getX(); bz += knot.getZ(); alive++;
+            }
+            if (alive == 0) return;
+            final double cx = bx / alive;
+            final double cz = bz / alive;
+            sl.playSound(null, cx, oy, cz, SoundEvents.BEACON_POWER_SELECT, SoundSource.PLAYERS, 0.85f, 0.45f);
+            PixelFx.send(sl, ParticleTypes.PORTAL, cx, oy, cz, 60, 0.9, 1.1, 0.9, 0.34);
+            for (int id : bound) {
+                LivingEntity knot = latticeNode(sl, id);
+                if (knot == null) continue;
+                knot.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 60, 1, true, false));
+                double ddx = cx - knot.getX();
+                double ddz = cz - knot.getZ();
+                double dist = Math.sqrt(ddx * ddx + ddz * ddz);
+                if (dist > 0.30) {
+                    double speed = Math.min(0.72, 0.18 + dist * 0.11);
+                    voidPush(sl, knot, ddx / dist * speed, 0.10, ddz / dist * speed);
+                }
+            }
+        });
+
+        // --- 184 : LA RUPTURE. Les aretes cassent par le milieu, les bouts partent. ---
+        TestProcedure.schedule(sl, now + 184, () -> {
+            double bx = 0.0;
+            double bz = 0.0;
+            int alive = 0;
+            for (int id : bound) {
+                LivingEntity knot = latticeNode(sl, id);
+                if (knot == null) continue;
+                bx += knot.getX(); bz += knot.getZ(); alive++;
+            }
+            if (alive == 0) return;
+            final double cx = bx / alive;
+            final double cz = bz / alive;
+            sl.playSound(null, cx, oy, cz, SoundEvents.AMETHYST_BLOCK_BREAK, SoundSource.PLAYERS, 0.90f, 0.55f);
+            sl.playSound(null, cx, oy, cz, SoundEvents.GLASS_BREAK, SoundSource.PLAYERS, 0.70f, 0.70f);
+            PixelFx.send(sl, VOID_DUST_INVERT, cx, oy, cz, 48, 0.9, 1.0, 0.9, 0.22);
+            for (int id : bound) {
+                LivingEntity knot = latticeNode(sl, id);
+                if (knot == null) continue;
+                voidHurt(sl, attackerId, knot, base * 1.15f);
+                addVoidMark(sl, knot, 2, attackerId, base * 0.34f, markEnd);
+                double ddx = knot.getX() - cx;
+                double ddz = knot.getZ() - cz;
+                double dist = Math.sqrt(ddx * ddx + ddz * ddz);
+                if (dist < 0.05) { ddx = 1.0; ddz = 0.0; dist = 1.0; }
+                voidPush(sl, knot, ddx / dist * 0.66, 0.34, ddz / dist * 0.66);
+            }
+            if (attacker != null && attacker.isAlive()) {
+                attacker.addEffect(new MobEffectInstance(MobEffects.SLOW_FALLING, 140, 0, true, true));
+            }
+        });
+    }
+
+    /**
+     * Un noeud de la trame, releve par son identifiant.
+     *
+     * <p>La trame capture des IDENTIFIANTS, pas des references : une reference retenue cent
+     * ticks garde en memoire une entite morte et retirée du monde. Meme precaution que pour
+     * les {@code ServerLevel} indexes par dimension.</p>
+     */
+    private static LivingEntity latticeNode(ServerLevel sl, int id) {
+        if (sl == null || id < 0) return null;
+        return sl.getEntity(id) instanceof LivingEntity living && living.isAlive() ? living : null;
     }
 
     /**

@@ -6,39 +6,51 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 > **Si le navigateur sert une vieille version** (le CDN de GitHub garde les fichiers bruts en cache quelques minutes), remplacer `refs/heads/arena/605e67fb-dlbv1-21-1neoforge` par le SHA du commit — par exemple `raw/fa83a2f/…` pour la v1.3 — ou ajouter `?v=2` à la fin de l'adresse.
 
-## Vide — trois signatures · 4 novembre 2026 ⟵ **LOT COURANT**
+## Vide — cinq signatures · 4 novembre 2026 ⟵ **LOT COURANT**
 
-- **Aperçu (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Three_Signatures_preview.html
-- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Three_Signatures_src.zip
+- **Aperçu (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_preview.html?v=389
+- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_src.zip?v=389
 
-> **T388 — douzième famille : le VIDE.** Trois signatures qui partageaient une routine
-> générique de **16 à 22 ticks** et n'avaient **aucun gameplay** — deux d'entre elles
-> n'avaient même pas leur propre durée (le Prisme était dans le `case` de `BIG_BANG_SCAR`,
-> la Faille dans celui de `CHAOS_KALEIDO_LOOP`). Elles font désormais **160 / 190 / 170**,
-> dans `VoidSignatureVfx`.
+> **T389 — le Vide passe de TROIS à CINQ signatures.** La T388 avait refondu les trois
+> identifiants historiques (`VOID_WARP_SPHERE` 26, `DRAGON_CHAOS_PRISM` 27,
+> `NULL_RIFT_FISSURE` 34) ; le Sang en a cinq depuis la T379, donc la rotation `/anim void`
+> tirait dans un sac trois fois plus petit. S'y ajoutent **`HORIZON_GATE` 44** (180 ticks)
+> et **`NULL_LATTICE` 45** (200 ticks).
 >
-> **Sa monnaie n'est pas la vie, c'est la POSITION.** Le Sang punit, l'Ombre aveugle, le
-> Vide **déplace** : il tire, il soulève, il éjecte, il retient. Conséquence assumée — il ne
-> donne **aucun bonus de dégâts** à son porteur (ce serait la ferveur du Sang une seconde
-> fois), mais **Vitesse et Chute Lente**.
+> **Le critère d'admission n'était pas une forme libre mais un VERBE libre.** La sphère
+> RASSEMBLE, le prisme DISTRIBUE, la faille TRIE — restaient **EXPULSER** et **LIER**. Une
+> quatrième signature qui aurait seulement eu une autre silhouette aurait été la même
+> signature jouée une quatrième fois.
 >
-> **L'empreinte du néant**, quatre au maximum, ne fait aucun dégât par elle-même : c'est un
-> **seuil**. À la quatrième, l'espace cède — implosion, Lévitation, Lenteur II. Une graine
-> de poussière cyan flotte au-dessus de la tête **par empreinte**, pour qu'on sache qui est
-> à 3 sur 4.
+> **Porte d'Horizon (#44)** — un **tore** posé au sol, sa membrane en spirale logarithmique
+> à deux brins qui descend, un second tore 0,62× et **incliné** deux blocs et quart plus
+> haut, et sept fragments qui tombent dans l'un, **cessent d'exister une quinzaine de
+> frames**, puis ressortent de l'autre en orange. C'est la seule surface **fermée à trou**
+> de la famille — une sphère n'a pas d'autre côté, un anneau si. **Elle EXPULSE :** en
+> foule, sept transits disséminent le paquet en étoile (azimut qui tourne d'un septième de
+> tour) ; en duel, l'azimut fait un **demi-tour** à chaque passage — la victime est un
+> va-et-vient, et chaque transit tape **deux fois plus fort**.
 >
-> **AoE et duel, trois réponses différentes.** La **Sphère** RASSEMBLE (six tractions à
-> vitesse proportionnelle à la distance) ; seule, elle s'accroche, soulève et tape
-> **×2,45**. Le **Prisme** DISTRIBUE (sept faisceaux, sept corps, Lueur à travers les
-> murs) ; sous trois corps ils **CONVERGENT** et la détonation est garantie. La **Faille**
-> TRIE : son aire est un **CORRIDOR** de 9 × 3,2 blocs perpendiculaire au coup, pas un
-> disque — **la seule aire du mod où le placement latéral décide** ; seule, la victime est
-> **retenue 70 ticks** et chaque aspiration tape **×1,73**.
+> **Constellation Nulle (#45)** — sept **nœuds** et onze **arêtes** qui pendent en vraie
+> chaînette `cosh`, se tendent une à une dans un ordre haché (un éclat blanc parcourt
+> l'arête au moment où elle se tend), convergent, puis **se rompent par le milieu**. Seul
+> objet **non centré** de la famille. **Elle LIE :** la liste des corps est **figée à la
+> pose**, sept au plus, et **fuir n'en sort pas** — les quatre autres signatures
+> réinterrogent le monde à chaque battement, celle-ci non. Chaque mise en tension frappe
+> **tout le monde** ; en duel, la trame se referme sur sa victime unique, **retenue 90
+> ticks**.
 >
-> **Glint `0xFF3FD8`** (magenta de l'autre côté), `§9` pour le nom. Pas le cyan d'horizon :
-> il n'est qu'à 29 / 13 / **0** de l'Eau sur les trois canaux. **`/anim void`**.
-> ZIP **1 164 625 o / 65 entrées**, page **1 617 527 o**, SHA-256 `d7dabe117bd6c193…`.
-> Suffixez les liens de **`?v=388`**.
+> **Doctrine T388 inchangée : le Vide déplace.** Aucun bonus de dégâts au porteur, mais
+> Chute Lente. **L'empreinte du néant** (quatre au maximum, aucun dégât par elle-même :
+> c'est un seuil) est partagée par les **cinq**.
+>
+> Au passage, `dummyNextEffectTick` ignorait les **cinq** signatures du vide : le balayage
+> `/dlbvfx dummytest` passait à l'effet suivant au bout de 62 ticks, soit au tiers de la
+> sphère. La revue complète ne montrait la fin d'aucune d'entre elles.
+>
+> **Tests :** `/anim void` (les **cinq** doivent sortir) · `/dlbvfx play 26` · `27` · `34` ·
+> **`44`** · **`45`** · `/dlbvfx stop`.
+> ZIP **1 200 410 o / 65 entrées**, page **1 687 939 o**, SHA-256 `4eb0a1eb74802a76…`.
 
 ## Sang — cinq signatures · 17 novembre 2026
 
