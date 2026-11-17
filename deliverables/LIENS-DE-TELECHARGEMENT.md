@@ -7,7 +7,7 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > ## ⚠️ « Mais c'est la même page ! » — lire ceci avant de rouvrir un lien
 >
 > **`?v=N` NE SERT À RIEN sur ces adresses, et c'était une erreur de le croire.** Mesuré le
-> 4 novembre 2026 : `github.com/…/raw/…/fichier.html?v=393` renvoie un **302** vers
+> 4 novembre 2026 : `github.com/…/raw/…/fichier.html` renvoie un **302** vers
 > `raw.githubusercontent.com/…/fichier.html` — **sans la chaîne de requête**. Le
 > paramètre est donc jeté par la redirection et n'atteint jamais le CDN qui sert
 > réellement les octets. Il n'a jamais cassé le cache ; quand ça marchait, c'est que le
@@ -24,11 +24,34 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > toujours la dernière version, une fois le cache expiré (quelques minutes). Les liens en
 > SHA sont l'adresse **immédiate**, à utiliser le jour de la livraison.
 
-## Vide — le dragon, l'Effondrement en Chaîne, et des cubes de portail sur l'épée · 4 novembre 2026 ⟵ **LOT COURANT**
+## Vide — le dragon vanilla et la Faille en piège à loup · 4 novembre 2026 ⟵ **LOT COURANT**
 
-- **Aperçu voxel + abysse (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_preview.html?v=393
-- **Démo du shader (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Portal_shader_demo.html?v=393
-- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_src.zip?v=393
+- **Aperçu voxel + abysse (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_preview.html
+- **Démo du shader (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Portal_shader_demo.html
+- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_src.zip
+
+> **T393 — « le dragon ne ressemble à rien », et la Faille se voyait à peine.**
+>
+> **1. Le dragon est maintenant le modèle vanilla, en plus petit.** La silhouette
+> paramétrique précédente inventait une anatomie ; celle-ci porte la liste de boîtes
+> exacte d'`EnderDragonModel` — museau carré de 16 et lèvre plate de 12×5×16, corps de
+> 24×24×64, ailes de 56 en deux segments, et surtout **le cou et la queue faits cinq et
+> douze fois de la même boîte de 10×10×10**, ce qui donne la démarche de serpent. Les
+> boîtes sont ORIENTÉES (`emitVoxelBoxRotated`), ce que cette classe n'avait jamais
+> utilisé : le dragon entier coûte une soixantaine de cubes contre près de huit cents.
+> Trois défauts corrigés après capture : la membrane en damier se lisait comme un
+> damier, la queue au pas constant finissait en pointillé, et l'échelle écrasait le
+> cristal.
+>
+> **2. La Faille est un piège à loup.** Le reproche portait sur la visibilité ; le
+> défaut était ailleurs — **il n'y avait pas de mécanisme**. Deux mâchoires de 2,05 bloc
+> sur charnières, dont l'angle de fermeture se *résout* pour que les pointes se
+> rejoignent exactement sur l'axe ; **neuf dents par mâchoire décalées d'un demi-pas**
+> pour qu'elles s'engrènent ; **neuf morsures manquées**, une par aspiration du serveur,
+> si bien que le compte des neuf se lit sur le mécanisme ; le claquement en sept ticks
+> avec **cinq échos** du bord denté — en cinq ticks et en u³ il tombait *entre deux
+> images*, mesuré au banc ; et **trente-quatre gerbes balistiques, chacune avec sa
+> traînée**, parce qu'une gerbe sans traînée est une pluie de confettis.
 
 > **T392 — les quatre reproches de l'aperçu précédent, un par un.**
 >

@@ -6,3 +6,4 @@ bin/
 *.log
 .mcreator/workspaceBackups/
 .mcreator/generatorGradleCache/
+__pycache__/
