@@ -4,7 +4,25 @@ Ces liens pointent sur la **branche de travail** (`arena/605e67fb-dlbv1-21-1neof
 
 Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin>` — GitHub redirige vers le fichier brut exact.
 
-> **Si le navigateur sert une vieille version** (le CDN de GitHub garde les fichiers bruts en cache quelques minutes), remplacer `refs/heads/arena/605e67fb-dlbv1-21-1neoforge` par le SHA du commit — par exemple `raw/fa83a2f/…` pour la v1.3 — ou ajouter `?v=2` à la fin de l'adresse.
+> ## ⚠️ « Mais c'est la même page ! » — lire ceci avant de rouvrir un lien
+>
+> **`?v=N` NE SERT À RIEN sur ces adresses, et c'était une erreur de le croire.** Mesuré le
+> 4 novembre 2026 : `github.com/…/raw/…/fichier.html?v=393` renvoie un **302** vers
+> `raw.githubusercontent.com/…/fichier.html` — **sans la chaîne de requête**. Le
+> paramètre est donc jeté par la redirection et n'atteint jamais le CDN qui sert
+> réellement les octets. Il n'a jamais cassé le cache ; quand ça marchait, c'est que le
+> cache avait simplement expiré tout seul.
+>
+> **La seule adresse garantie fraîche est celle qui porte le SHA du commit**, parce que
+> son *chemin* est unique et n'a donc jamais pu être mis en cache :
+>
+> ```
+> https://github.com/Deepie1/dlbv1.21.1neoforge/raw/<SHA>/deliverables/<fichier>
+> ```
+>
+> Les liens en `refs/heads/…` ci-dessous restent la référence **stable** — ils serviront
+> toujours la dernière version, une fois le cache expiré (quelques minutes). Les liens en
+> SHA sont l'adresse **immédiate**, à utiliser le jour de la livraison.
 
 ## Vide — le dragon, l'Effondrement en Chaîne, et des cubes de portail sur l'épée · 4 novembre 2026 ⟵ **LOT COURANT**
 
