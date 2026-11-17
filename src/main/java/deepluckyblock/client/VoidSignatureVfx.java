@@ -330,6 +330,154 @@ public final class VoidSignatureVfx {
     }
 
     // ---------------------------------------------------------------------------------
+    //  LE PIÈGE À LOUP — ouverture, armement, claquement
+    // ---------------------------------------------------------------------------------
+    //
+    // Ce qui manquait à la Faille n'était pas de l'intensité, c'était un MÉCANISME. Deux
+    // lèvres qui s'écartent ne racontent rien : on ne voit jamais ce qui serait pris. Un
+    // piège à loup, si — et sa violence tient tout entière au contraste entre la durée de
+    // l'attente et la brièveté du claquement. Cent dix ticks béant, cinq pour mordre.
+
+    /** Demi-écartement des deux charnières, au sol. */
+    public static final float RIFT_HINGE = 0.52f;
+
+    /** Longueur d'une mâchoire, de sa charnière à la pointe de ses dents. */
+    public static final float RIFT_JAW = 2.05f;
+
+    /** Nombre de côtes — donc de dents — par mâchoire. */
+    public static final int RIFT_TEETH = 9;
+
+    /** Ouverture maximale, mesurée depuis la verticale, vers l'extérieur. */
+    public static final float RIFT_OPEN = 1.08f;
+
+    /** Courbure de la mâchoire : elle se recourbe vers l'intérieur en fin d'arc. */
+    public static final float RIFT_CURVE = 0.52f;
+
+    /** Durée du claquement : sept ticks sur cent soixante-dix, soit quatre pour cent. */
+    public static final float RIFT_SNAP = 0.042f;
+
+    /** Nombre d'échos de vitesse laissés par le bord denté pendant le claquement. */
+    public static final int RIFT_GHOSTS = 5;
+
+    /** Instant où le piège finit de s'ouvrir. */
+    public static final float RIFT_ARMED = 0.30f;
+
+    /**
+     * Angle de fermeture : celui pour lequel les deux pointes se rejoignent exactement sur
+     * l'axe. Il se CALCULE — l'écrire à la main ferait rater le contact d'un cheveu, et un
+     * piège à loup qui ne ferme pas n'est pas un piège.
+     *
+     * <p>La mâchoire étant courbée de {@link #RIFT_CURVE}, le déport horizontal de sa
+     * pointe vaut {@code ∫ sin(ang − RIFT_CURVE·h²) dh} ; on cherche l'angle qui l'amène à
+     * {@code −RIFT_HINGE / RIFT_JAW}. Dix pas de dichotomie suffisent, et le résultat est
+     * une constante : le calcul ne se refait pas par frame.</p>
+     */
+    public static final float RIFT_SHUT = riftSolveShut();
+
+    private static float riftSolveShut() {
+        float target = -RIFT_HINGE / RIFT_JAW;
+        float lo = -1.4f;
+        float hi = 0.0f;
+        for (int it = 0; it < 24; it++) {
+            float mid = (lo + hi) * 0.5f;
+            if (riftReachOf(mid) > target) hi = mid; else lo = mid;
+        }
+        return (lo + hi) * 0.5f;
+    }
+
+    /** Déport horizontal de la pointe, en fraction de {@link #RIFT_JAW}, pour un angle donné. */
+    private static float riftReachOf(float ang) {
+        float acc = 0.0f;
+        int n = 16;
+        for (int i = 0; i < n; i++) {
+            float h = (i + 0.5f) / n;
+            acc += Mth.sin(ang - RIFT_CURVE * h * h);
+        }
+        return acc / n;
+    }
+
+    /**
+     * Angle des mâchoires au temps {@code t}. C'est toute la chorégraphie du piège.
+     *
+     * <ul>
+     *   <li>avant le tick 2, fermé — on ne voit rien venir ;</li>
+     *   <li>jusqu'au tick 51, l'ouverture, en {@code 1 − (1−u)³} : vif puis lent, comme un
+     *       ressort qu'on bande ;</li>
+     *   <li>jusqu'au tick 140, ARMÉ. Il tremble, et le tremblement s'accélère à l'approche
+     *       — c'est le seul avertissement que reçoit la victime ;</li>
+     *   <li><b>tick 140, le claquement : cinq ticks</b>, en {@code u³}. Une interpolation
+     *       linéaire ferait une fermeture de garage.</li>
+     * </ul>
+     */
+    public static float riftJawAngle(float t) {
+        if (t <= 0.012f) return RIFT_SHUT;
+        if (t < RIFT_ARMED) {
+            float u = clamp((t - 0.012f) / (RIFT_ARMED - 0.012f));
+            float ease = 1.0f - (1.0f - u) * (1.0f - u) * (1.0f - u);
+            return RIFT_SHUT + (RIFT_OPEN - RIFT_SHUT) * ease;
+        }
+        if (t < RIFT_CLOSE) {
+            // Armé. Le frisson monte : 1,5° au début, 5° juste avant de mordre.
+            float dread = clamp((t - RIFT_ARMED) / (RIFT_CLOSE - RIFT_ARMED));
+            float tremor = (0.026f + 0.062f * dread * dread)
+                    * Mth.sin(t * (46.0f + 70.0f * dread));
+            // LA MORSURE MANQUÉE. Le serveur aspire aux ticks 20, 30, … 100 : à chacune
+            // le piège se referme d'un tiers et se rouvre. Neuf fois il essaie, neuf fois
+            // il rate — et la dixième il mord. Le compte des neuf se lit donc sur le
+            // mécanisme lui-même, pas seulement sur la barre au sol.
+            float miss = 0.0f;
+            for (int k = 0; k < 9; k++) {
+                float age = t - (20.0f + k * 10.0f) / 170.0f;
+                if (age < 0.0f) break;
+                if (age > 0.050f) continue;
+                float u = age / 0.050f;
+                // Vif à l'aller, mou au retour : un ressort qui se détend, pas un métronome.
+                float bite = u < 0.34f ? (u / 0.34f) * (u / 0.34f)
+                                       : 1.0f - smooth((u - 0.34f) / 0.66f);
+                if (bite > miss) miss = bite;
+            }
+            return RIFT_OPEN + tremor - (RIFT_OPEN - RIFT_SHUT) * 0.34f * miss;
+        }
+        float u = clamp((t - RIFT_CLOSE) / RIFT_SNAP);
+        // u^2,2 : la fermeture traîne un peu puis avale tout. En u³ elle tombait ENTRE
+        // deux images — mesuré au banc : à mi-course les mâchoires n'avaient bougé que
+        // de onze pour cent, et le claquement n'existait pas à l'écran.
+        float snap = u * u * (float) Math.pow(u, 0.2);
+        // Puis le rebond de l'acier, deux fois plus court et dix fois plus petit.
+        float ring = Mth.sin(clamp((t - RIFT_CLOSE - RIFT_SNAP) / 0.055f) * Mth.PI * 2.0f)
+                * 0.085f * (1.0f - clamp((t - RIFT_CLOSE - RIFT_SNAP) / 0.055f));
+        return RIFT_OPEN + (RIFT_SHUT - RIFT_OPEN) * snap + ring;
+    }
+
+    /** Vitesse angulaire des mâchoires, par unité de {@code t}. Elle pilote les traînées. */
+    public static float riftJawSpeed(float t) {
+        return Math.abs(riftJawAngle(t + 0.004f) - riftJawAngle(t - 0.004f)) / 0.008f;
+    }
+
+    /**
+     * Un point de la mâchoire. {@code h} court de 0 à la charnière jusqu'à 1 à la pointe.
+     *
+     * <p>L'arc est intégré pas à pas plutôt que posé en ligne droite : une mâchoire droite
+     * est une planche, et c'est la courbure qui fait qu'on lit un piège et non un pont
+     * levant. Elle se recourbe vers l'intérieur, donc elle CUEILLE.</p>
+     *
+     * @param out {f, y} dans le repère de l'attaque, hors décalage de charnière
+     */
+    public static void riftJawPoint(float h, float ang, float reach, float[] out) {
+        int n = Math.max(2, Mth.ceil(h * 14.0f));
+        float f = 0.0f;
+        float y = 0.0f;
+        for (int i = 0; i < n; i++) {
+            float hh = h * (i + 0.5f) / n;
+            float local = ang - RIFT_CURVE * hh * hh;
+            f += Mth.sin(local);
+            y += Mth.cos(local);
+        }
+        out[0] = f / n * h * reach;
+        out[1] = y / n * h * reach;
+    }
+
+    // ---------------------------------------------------------------------------------
     //  TRAME — l'anneau de nœuds, sa contraction et la cellule centrale
     // ---------------------------------------------------------------------------------
 
@@ -735,298 +883,367 @@ public final class VoidSignatureVfx {
     // =================================================================================
 
     // ---------------------------------------------------------------------------------
-    //  LE DRAGON
+    //  LE DRAGON DE L'END — modèle vanilla, à l'unité de modèle près
     // ---------------------------------------------------------------------------------
     //
-    // Il manquait, et c'était le défaut principal de la signature : le titre annonçait un
-    // dragon, l'image montrait un caillou à facettes. Le dragon est maintenant la SOURCE
-    // des sept faisceaux — il tourne autour du cristal, vise, et souffle au tick exact où
-    // le serveur inflige ses dégâts. Le cristal n'est plus l'acteur, il est le PRISME : il
-    // reçoit le souffle et le découpe. Les deux objets ont enfin chacun leur rôle, et le
-    // titre se lit d'un coup d'œil.
+    // La liste de boîtes vient de {@code net.minecraft.client.model.EnderDragonModel}
+    // ({@code ModelDragon.addBox} dans les versions historiques) : mêmes origines, mêmes
+    // tailles, mêmes points de pivot. Rien n'est inventé ici, et c'est le but — la version
+    // précédente dessinait une anatomie de fantaisie et ne ressemblait à rien.
     //
-    // L'ossature est une courbe paramétrée par u ∈ [0, 1] : 0 au museau, 1 au bout de la
-    // queue. Tout le corps est accroché dessus, y compris les ailes. Longueur développée
-    // environ 4,2 blocs, pour un cristal de 1,15 : le dragon est le plus gros objet de la
-    // figure, ce qui est la moindre des choses.
+    // <p><b>Le cou et la queue sont la même pièce.</b> Vanilla répète la boîte de
+    // 10×10×10 cinq fois devant et douze fois derrière, décalées de dix unités. C'est de
+    // là que vient la démarche de serpent, et ce n'est pas une chose qu'on devine.</p>
+    //
+    // <p><b>Repères.</b> Le modèle Minecraft a son Y vers le BAS et son nez vers les z
+    // NÉGATIFS. La conversion vers le repère de cette classe (f = axe de l'attaque,
+    // lateral, y vers le haut) est donc, pour une boîte de centre (mx, my, mz) :
+    // avant = −mz, haut = −my, côté = mx.</p>
+    //
+    // <p><b>Boîtes orientées.</b> Un modèle articulé ne se dessine pas avec des cubes
+    // alignés sur les axes. Le manager sait poser des boîtes tournées depuis toujours
+    // ({@code emitVoxelBoxRotated}) et cette classe ne s'en était jamais servie. Le dragon
+    // entier coûte désormais une soixantaine de cubes — contre près de huit cents pour le
+    // bricolage qu'il remplace.</p>
 
-    /** Longueur de l'ossature, en blocs. */
-    private static final float DRAGON_LEN = 4.2f;
+    /** Blocs par unité de modèle. Le dragon complet mesure un peu moins de 4 blocs. */
+    private static final float DRAGON_U = 0.015f;
+
+    /** Pas entre deux segments de cou ou de queue, en unités de modèle. */
+    private static final float DRAGON_SEG = 10.0f;
 
     /**
-     * Un point de l'ossature, et son épaisseur.
+     * Compose roulis → tangage → lacet exactement comme {@code emitVoxelBoxRotated}, et
+     * rend l'offset dans le repère de l'attaque.
      *
-     * <p>Le dragon décrit un cercle autour du cristal, la tête devant. Son corps TRAÎNE
-     * derrière la tête avec un retard angulaire proportionnel à {@code u} : c'est ce qui
-     * donne le serpentement, et c'est ce qu'un corps rigide tourné en bloc ne donne jamais.
-     * Le battement vertical est en avance de phase sur la queue, pour la même raison.</p>
+     * <p>Axes locaux : <b>x = l'avant</b> (le nez), <b>y = le haut</b>, <b>z = le côté</b>.
+     * Avec cette convention le paramètre {@code roll} pique du nez, le paramètre
+     * {@code pitch} donne le ROULIS (il tourne autour de l'axe du nez) et {@code yaw}
+     * donne le cap. L'inversion n'est pas une coquille : elle vient de l'ordre dans lequel
+     * le manager compose ses trois matrices, et il vaut mieux la nommer que la subir.</p>
      *
-     * @param out {f, latéral, hauteur, demi-épaisseur}
+     * @param out {avant, haut, côté}
      */
-    private static void dragonBone(float u, float orbit, float radius, float yBase,
-                                   float t, float[] out) {
-        // Le retard angulaire, DÉDUIT de la longueur voulue : un arc de DRAGON_LEN blocs
-        // sur un cercle de rayon donné. Écrire 0,72 en dur donnait un dragon de deux
-        // blocs — plus court que ses propres ailes.
-        float lag = u * Math.min(1.45f, DRAGON_LEN / Math.max(1.2f, radius));
-        float ang = orbit - lag;
-        float wobble = Mth.sin(u * 5.4f - t * 6.0f) * 0.13f * (0.35f + u);
-        float rr = radius * (1.0f + wobble * 0.55f);
-        out[0] = Mth.cos(ang) * rr;
-        out[1] = Mth.sin(ang) * rr;
-        out[2] = yBase + Mth.sin(u * 3.4f - t * 5.2f) * 0.26f * (0.25f + u * 0.85f)
-                - u * 0.30f;
-        // Le profil : museau fin, épaules épaisses, queue effilée. Une seule sinusoïde
-        // donnerait un cigare ; on prend sin^0,55 décalé, qui monte vite et descend long.
-        float profile = Mth.sin(Mth.PI * Math.min(1.0f, 0.12f + u * 0.84f));
-        out[3] = 0.065f + 0.235f * (float) Math.pow(profile, 0.55);
+    private static void dragonRot(float x, float y, float z,
+                                  float nose, float bank, float yaw, float[] out) {
+        float cr = Mth.cos(nose), sr = Mth.sin(nose);
+        float cp = Mth.cos(bank), sp = Mth.sin(bank);
+        float cy = Mth.cos(yaw), sy = Mth.sin(yaw);
+        float x1 = x * cr - y * sr;
+        float y1 = x * sr + y * cr;
+        float y2 = y1 * cp - z * sp;
+        float z2 = y1 * sp + z * cp;
+        out[0] = x1 * cy + z2 * sy;
+        out[1] = y2;
+        out[2] = -x1 * sy + z2 * cy;
     }
 
     /**
-     * Le dragon entier : ossature, tête, mâchoire, crêtes, ailes.
+     * Une boîte du modèle vanilla, posée dans le monde.
      *
-     * @param gape ouverture de la gueule, 0 fermée → 1 grande ouverte
+     * @param bf,bl,by le pivot de la pièce, dans le repère de l'attaque
+     * @param mx,my,mz le CENTRE de la boîte en unités de modèle, repère Minecraft
+     * @param sx,sy,sz la TAILLE de la boîte en unités de modèle
+     */
+    private static void dragonBox(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                  float cx, float cy, float cz, float dx, float dz,
+                                  float bf, float bl, float by,
+                                  float nose, float bank, float yaw,
+                                  float mx, float my, float mz,
+                                  float sx, float sy, float sz,
+                                  int rgb, int alpha, float[] tmpOff) {
+        dragonRot(-mz * DRAGON_U, -my * DRAGON_U, mx * DRAGON_U, nose, bank, yaw, tmpOff);
+        float hf = sz * 0.5f * DRAGON_U;
+        float hy = sy * 0.5f * DRAGON_U;
+        float hl = sx * 0.5f * DRAGON_U;
+        if (hf < 0.004f) hf = 0.004f;
+        if (hy < 0.004f) hy = 0.004f;
+        if (hl < 0.004f) hl = 0.004f;
+        float f = bf + tmpOff[0];
+        float lateral = bl + tmpOff[2];
+        float worldX = cx + dx * f - dz * lateral;
+        float worldZ = cz + dz * f + dx * lateral;
+        // Le lacet du repère de l'attaque s'ajoute à celui de la pièce : la boîte doit
+        // tourner avec la figure, pas seulement avec le dragon.
+        float frameYaw = (float) Math.atan2(-dz, dx);
+        WeaponWorldVfxManager.emitVoxelBoxRotated(vc, mat, tmp,
+                worldX, cy + by + tmpOff[1], worldZ,
+                hf, hy, hl, frameYaw + yaw, bank, nose, rgb, alpha);
+    }
+
+    /**
+     * Une station de l'échine, à {@code s} blocs derrière le museau.
+     *
+     * <p>Le dragon décrit un cercle ; l'échine suit donc l'arc, et le cap de chaque
+     * segment est la TANGENTE à l'arc en ce point. C'est ce qui remplace le « retard
+     * angulaire » bricolé de la version précédente : il n'y a plus rien à régler, la
+     * géométrie s'en charge.</p>
+     *
+     * @param out {avant, côté, haut, cap}
+     */
+    private static void dragonSpine(float s, float orbit, float radius, float yBase,
+                                    float t, float[] out) {
+        float a = orbit - s / Math.max(0.8f, radius);
+        float ca = Mth.cos(a);
+        float sa = Mth.sin(a);
+        out[0] = ca * radius;
+        out[1] = sa * radius;
+        // L'ondulation : elle court le long de la bête, donc elle dépend de s ET du temps.
+        // Elle est nulle au museau — une tête qui gigote fait un jouet, pas un dragon.
+        float amp = 0.055f * Mth.clamp(s * 0.55f, 0.0f, 1.0f);
+        out[2] = yBase + Mth.sin(s * 1.55f - t * 5.6f) * amp;
+        out[3] = (float) Math.atan2(-ca, -sa);
+    }
+
+    /** Le bout du museau, pour accrocher le souffle. {@code out} = {avant, côté, haut}. */
+    private static void dragonMuzzle(float orbit, float radius, float yBase, float t,
+                                     float[] out) {
+        float[] sp = new float[4];
+        dragonSpine(0.0f, orbit, radius, yBase, t, sp);
+        float[] off = new float[3];
+        dragonRot(24.0f * DRAGON_U, 2.0f * DRAGON_U, 0.0f, 0.0f, 0.0f, sp[3], off);
+        out[0] = sp[0] + off[0];
+        out[1] = sp[1] + off[2];
+        out[2] = sp[2] + off[1];
+    }
+
+    /**
+     * Une demi-voilure : le panneau {@code skin} de 56 × 56 unités du modèle vanilla.
+     *
+     * <p>Vanilla le peint d'une texture ; ici il n'y a pas de texture, seulement des
+     * cubes. Un panneau plein de deux blocs de côté se lirait comme un drap, et le damier
+     * essayé d'abord se lisait comme un damier. La membrane est donc une CAGE :
+     * <b>cinq doigts</b> perpendiculaires à l'os, un <b>bord de fuite</b> qui les relie, et
+     * une toile ajourée entre eux. C'est l'anatomie d'une aile — et c'est ce qui la fait
+     * lire comme telle même de loin.</p>
+     *
+     * @param span fraction de l'envergure (le bout d'aile est un peu plus étroit)
+     */
+    private static void dragonWing(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                   float cx, float cy, float cz, float dx, float dz,
+                                   float pf, float pl, float py,
+                                   float bank, float yaw, float side, float span,
+                                   int al, int alSoft, float[] off) {
+        float chord = 56.0f * span;                      // profondeur maximale
+        for (int d = 0; d < 5; d++) {
+            // d = 0 est le BOUT de l'aile, d = 4 l'épaule : la voilure s'effile vers
+            // l'extérieur. C'est cette oblique qui fait lire « aile » plutôt que
+            // « échelle » — un carré de 56 sur 56 sans texture reste un carré.
+            float mx = (-56.0f + (d + 0.5f) * 56.0f / 5.0f) * side;
+            float ch = chord * (0.45f + 0.55f * (d + 0.5f) / 5.0f);
+            // Le doigt : il court de l'os jusqu'au bord de fuite.
+            dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py,
+                    0.0f, bank, yaw, mx, 0.0f, 2.0f + ch * 0.5f,
+                    1.6f, 1.6f, ch, (d == 4) ? HORIZON : SLATE, al, off);
+            // La toile entre deux doigts : plus fine qu'eux, donc un liseré naturel.
+            dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py,
+                    0.0f, bank, yaw, mx, 0.0f, 2.0f + ch * 0.5f,
+                    56.0f / 5.0f * 0.88f, 0.8f, ch * 0.88f, BASALT, alSoft, off);
+            // La marche du bord de fuite. Cinq marches ferment l'oblique ; sans elles,
+            // l'aile s'effiloche en cinq tiges.
+            dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py,
+                    0.0f, bank, yaw, mx, 0.0f, 2.0f + ch,
+                    56.0f / 5.0f, 2.2f, 2.2f, HALO, al, off);
+        }
+    }
+
+    /**
+     * Le dragon entier.
+     *
+     * @param gape ouverture de la mâchoire, 0 fermée → 1 grande ouverte
      * @param glow charge du souffle, 0 éteint → 1 au bord du tir
      */
     private static void dragon(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                float cx, float cy, float cz, float dx, float dz,
                                float orbit, float radius, float yBase, float t,
-                               float gape, float glow, float a, int salt) {
-        float[] p = new float[4];
-        float[] q = new float[4];
-        int ribs = 34;
+                               float gape, float glow, float a) {
+        int al = opaque(a);
+        if (al <= 0) return;
+        int alSoft = opaque(a * 0.90f);
+        float[] sp = new float[4];
+        float[] off = new float[3];
+        float[] piv = new float[3];
 
-        // ---- L'OSSATURE : une CAGE de six lisses, pas un pain. ----
-        dragonBone(0.0f, orbit, radius, yBase, t, p);
-        for (int i = 1; i <= ribs; i++) {
-            float u = i / (float) ribs;
-            dragonBone(u, orbit, radius, yBase, t, q);
-            // Trois tons le long du dos. NOTHING est proscrit ici : sur un fond de nuit,
-            // un corps en 0x0E0216 n'a pas de silhouette — c'est le piège du noir sur noir.
-            int tone = (i % 5 == 0) ? HALO : (i % 2 == 0 ? SLATE : BASALT);
-            // Le repère de la section : l'axe du corps, et deux perpendiculaires. Sans
-            // base orthonormée, une « section » se vrille et le corps part en tire-bouchon
-            // (déjà payé sur le tube de la foudre).
-            float ax = q[0] - p[0];
-            float al = q[1] - p[1];
-            float ay = q[2] - p[2];
-            float an = Mth.sqrt(ax * ax + al * al + ay * ay);
-            if (an < 1.0e-5f) { p[0] = q[0]; p[1] = q[1]; p[2] = q[2]; p[3] = q[3]; continue; }
-            ax /= an; al /= an; ay /= an;
-            float ux = -al;
-            float ul = ax;
-            float un = Mth.sqrt(ux * ux + ul * ul);
-            if (un < 1.0e-5f) { ux = 1.0f; ul = 0.0f; un = 1.0f; }
-            ux /= un; ul /= un;
-            // La seconde perpendiculaire = axe × première, donc verticale au repos.
-            float vx = al * 0.0f - ay * ul;
-            float vl = ay * ux - ax * 0.0f;
-            float vy = ax * ul - al * ux;
-            // Six lisses autour de la section. Le ventre reste sombre, le dos accroche.
-            for (int lisse = 0; lisse < 6; lisse++) {
-                float ang = lisse * TAU / 6.0f + u * 1.1f;
-                float ca = Mth.cos(ang) * q[3];
-                float sa = Mth.sin(ang) * q[3];
-                int lt = (sa > q[3] * 0.45f) ? tone : (sa < -q[3] * 0.45f ? ABYSS : BASALT);
-                segment(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        p[0] + ux * ca + vx * sa, p[1] + ul * ca + vl * sa, p[2] + vy * sa,
-                        q[0] + ux * ca + vx * sa, q[1] + ul * ca + vl * sa, q[2] + vy * sa,
-                        0.034f, 0.030f, lt, opaque(a * 0.92f));
-            }
-            // La CRÊTE dorsale : une rangée d'épines, plus hautes aux épaules. C'est elle
-            // qui distingue une silhouette de dragon d'un simple serpent.
-            if (i % 2 == 0 && u < 0.86f) {
-                float spike = (0.06f + 0.16f * Mth.sin(Mth.PI * Math.min(1.0f, u * 1.15f)))
-                        * (1.0f + 0.25f * Mth.sin(t * 7.0f + i));
-                box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        q[0], q[1], q[2] + q[3] + spike * 0.5f,
-                        0.030f, spike, 0.030f,
-                        (i % 4 == 0) ? HORIZON : HALO, opaque(a * 0.90f));
-            }
-            p[0] = q[0]; p[1] = q[1]; p[2] = q[2]; p[3] = q[3];
+        float segStep = DRAGON_SEG * DRAGON_U;              // un segment, en blocs
+
+        // ---- LA QUEUE : douze fois la boîte du cou, derrière le corps. ----------------
+        // Elle est dessinée en premier pour que le corps la recouvre là où elles se
+        // chevauchent — vanilla fait pareil, et c'est ce qui soude la croupe à la queue.
+        // Le pas SUIT l'affinement : à pas constant, une queue qui rétrécit finit en
+        // pointillé — le piège arithmétique, quatrième fois. Ici les douze segments
+        // restent jointifs du bassin à la pointe.
+        float sTail = 98.0f * DRAGON_U;
+        for (int i = 0; i < 12; i++) {
+            float taper = 1.0f - 0.062f * i;                 // la queue s'affine
+            sTail += segStep * taper;
+            dragonSpine(sTail, orbit, radius, yBase, t, sp);
+            dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, sp[0], sp[1], sp[2],
+                    0.0f, 0.0f, sp[3], 0.0f, 0.0f, 0.0f,
+                    10.0f * taper, 10.0f * taper, 10.0f * taper,
+                    (i % 3 == 0) ? SLATE : BASALT, alSoft, off);
+            // L'écaille dorsale de la pièce « neck », qui court donc aussi sur la queue.
+            dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, sp[0], sp[1], sp[2],
+                    0.0f, 0.0f, sp[3], 0.0f, -7.0f * taper, 0.0f,
+                    2.0f * taper, 4.0f * taper, 6.0f * taper,
+                    (i % 2 == 0) ? HORIZON : HALO, al, off);
         }
 
-        // ---- LA TÊTE. ----
-        dragonBone(0.0f, orbit, radius, yBase, t, p);
-        dragonBone(0.085f, orbit, radius, yBase, t, q);
-        // L'axe du museau : de la nuque vers le bout du nez, normalisé.
-        float hx = p[0] - q[0];
-        float hl = p[1] - q[1];
-        float hy = p[2] - q[2];
-        float hn = Mth.sqrt(hx * hx + hl * hl + hy * hy);
-        if (hn < 1.0e-4f) { hx = 1.0f; hl = 0.0f; hy = 0.0f; hn = 1.0f; }
-        hx /= hn; hl /= hn; hy /= hn;
-        // Le crâne : une boîte, pas un cube — un dragon a la tête longue.
-        box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                p[0] + hx * 0.10f, p[1] + hl * 0.10f, p[2] + hy * 0.10f + 0.03f,
-                0.205f, 0.150f, 0.180f, SLATE, opaque(a));
-        // Les deux MÂCHOIRES, écartées de part et d'autre de l'axe. La gueule s'ouvre vers
-        // le bas comme celle du dragon de l'End, pas comme un bec.
-        for (int jaw = 0; jaw < 2; jaw++) {
-            float sign = jaw == 0 ? 1.0f : -1.0f;
-            float drop = gape * 0.16f * (jaw == 0 ? 0.35f : 1.0f);
-            for (int k = 0; k < 5; k++) {
-                float u = k / 4.0f;
-                box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        p[0] + hx * (0.16f + u * 0.20f),
-                        p[1] + hl * (0.16f + u * 0.20f),
-                        p[2] + hy * (0.16f + u * 0.20f) + sign * 0.035f - drop * (0.3f + u),
-                        0.055f - u * 0.018f, 0.035f, 0.055f - u * 0.018f,
-                        (k == 4) ? GLACIER : BASALT, opaque(a));
-            }
+        // ---- LE CORPS : 24 × 24 × 64, pivot à 50 unités derrière le museau. -----------
+        float bodyS = 50.0f * DRAGON_U;
+        dragonSpine(bodyS + 16.0f * DRAGON_U, orbit, radius, yBase, t, sp);
+        float bodyYaw = sp[3];
+        float bodyF = sp[0];
+        float bodyL = sp[1];
+        float bodyY = sp[2];
+        dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, bodyF, bodyL, bodyY,
+                0.0f, 0.0f, bodyYaw, 0.0f, 12.0f - 4.0f, 0.0f, 24.0f, 24.0f, 64.0f,
+                BASALT, al, off);
+        for (int k = 0; k < 3; k++) {
+            float mz = -4.0f + k * 20.0f;                    // les trois écailles du dos
+            dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, bodyF, bodyL, bodyY,
+                    0.0f, 0.0f, bodyYaw, 0.0f, -3.0f - 4.0f, mz, 2.0f, 6.0f, 12.0f,
+                    HORIZON, al, off);
         }
-        // Les YEUX. Deux cubes vifs, et ils chauffent avec la charge du souffle : on sait
-        // qu'il va tirer une demi-seconde avant qu'il tire.
-        for (int eye = 0; eye < 2; eye++) {
-            float side = eye == 0 ? 0.075f : -0.075f;
-            box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                    p[0] + hx * 0.12f - hl * side, p[1] + hl * 0.12f + hx * side,
-                    p[2] + hy * 0.12f + 0.075f,
-                    0.028f, 0.028f, 0.028f,
-                    glow > 0.55f ? SINGULAR : (glow > 0.18f ? GLACIER : HORIZON),
-                    opaque(a));
+
+        // ---- LES AILES. Pivot (−12, 5, 2) par rapport au pivot du corps. --------------
+        // Le battement tourne autour de l'axe du nez : c'est le paramètre « bank ».
+        float flap = Mth.sin(t * (4.0f + 3.2f * glow) - 0.6f);
+        for (int wing = 0; wing < 2; wing++) {
+            float side = wing == 0 ? 1.0f : -1.0f;
+            float bank = (0.22f + 0.52f * flap) * side;
+            // Le pivot, non banqué : la rotation passe PAR lui.
+            dragonRot(-2.0f * DRAGON_U, -5.0f * DRAGON_U + 4.0f * DRAGON_U,
+                    -12.0f * DRAGON_U * side, 0.0f, 0.0f, bodyYaw, piv);
+            float wf = bodyF + piv[0];
+            float wl = bodyL + piv[2];
+            float wy = bodyY + piv[1];
+            // L'humérus, puis la phalange : deux fois 56 unités, soit plus de deux blocs
+            // par aile. L'envergure dépasse le corps — c'est le cas chez vanilla aussi.
+            dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, wf, wl, wy,
+                    0.0f, bank, bodyYaw, -28.0f * side, 0.0f, 0.0f, 56.0f, 8.0f, 8.0f,
+                    SLATE, al, off);
+            dragonWing(vc, mat, tmp, cx, cy, cz, dx, dz, wf, wl, wy,
+                    bank, bodyYaw, side, 1.0f, al, alSoft, off);
+            // Le bout d'aile : pivot (−56, 0, 0) par rapport à l'aile, et il casse vers le
+            // haut. C'est l'articulation qui empêche l'aile d'être une planche.
+            float tipBank = bank + 0.42f * side * (0.5f + 0.5f * flap);
+            dragonRot(0.0f, 0.0f, -56.0f * DRAGON_U * side, 0.0f, bank, bodyYaw, piv);
+            float tf = wf + piv[0];
+            float tl = wl + piv[2];
+            float ty = wy + piv[1];
+            dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, tf, tl, ty,
+                    0.0f, tipBank, bodyYaw, -28.0f * side, 0.0f, 0.0f, 56.0f, 4.0f, 4.0f,
+                    SLATE, al, off);
+            dragonWing(vc, mat, tmp, cx, cy, cz, dx, dz, tf, tl, ty,
+                    tipBank, bodyYaw, side, 0.82f, al, alSoft, off);
         }
-        // LES CORNES : deux, en arrière, légèrement écartées.
-        for (int horn = 0; horn < 2; horn++) {
-            float side = horn == 0 ? 0.068f : -0.068f;
-            for (int k = 1; k <= 4; k++) {
-                float u = k / 4.0f;
-                box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        p[0] - hx * u * 0.17f - hl * side * (1.0f + u * 0.55f),
-                        p[1] - hl * u * 0.17f + hx * side * (1.0f + u * 0.55f),
-                        p[2] - hy * u * 0.17f + 0.11f + u * 0.13f,
-                        0.030f - u * 0.008f, 0.030f - u * 0.008f, 0.030f - u * 0.008f,
-                        SLATE, opaque(a * 0.95f));
-            }
+
+        // ---- LES PATTES, repliées : la bête vole, elle ne marche pas. -----------------
+        float tuck = 0.85f;
+        for (int leg = 0; leg < 4; leg++) {
+            boolean rear = leg >= 2;
+            float side = (leg % 2 == 0) ? 1.0f : -1.0f;
+            float px = (rear ? -16.0f : -12.0f) * side;
+            float py = rear ? 16.0f : 20.0f;
+            float pz = rear ? 42.0f : 2.0f;
+            dragonRot(-pz * DRAGON_U, (-py + 4.0f) * DRAGON_U, px * DRAGON_U,
+                    0.0f, 0.0f, bodyYaw, piv);
+            float lf = bodyF + piv[0];
+            float ll2 = bodyL + piv[2];
+            float ly = bodyY + piv[1];
+            float thighW = rear ? 16.0f : 8.0f;
+            float thighH = rear ? 32.0f : 24.0f;
+            // Le fémur pique vers l'arrière quand les pattes sont repliées.
+            dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, lf, ll2, ly,
+                    tuck, 0.0f, bodyYaw, 0.0f, thighH * 0.5f - 4.0f, 0.0f,
+                    thighW, thighH, thighW, BASALT, alSoft, off);
+            // Le tibia, replié en sens inverse : un genou, donc une patte.
+            dragonRot(0.0f, -thighH * DRAGON_U, 0.0f, tuck, 0.0f, bodyYaw, piv);
+            float kf = lf + piv[0];
+            float kl = ll2 + piv[2];
+            float ky = ly + piv[1];
+            float shinW = rear ? 12.0f : 6.0f;
+            float shinH = rear ? 32.0f : 24.0f;
+            dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, kf, kl, ky,
+                    -tuck * 1.5f, 0.0f, bodyYaw, 0.0f, shinH * 0.5f, rear ? 6.0f : 0.0f,
+                    shinW, shinH, shinW, SLATE, alSoft, off);
+            // Le pied, griffes vers l'avant.
+            dragonRot(0.0f, -shinH * DRAGON_U, 0.0f, -tuck * 1.5f, 0.0f, bodyYaw, piv);
+            dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                    kf + piv[0], kl + piv[2], ky + piv[1],
+                    -tuck * 0.4f, 0.0f, bodyYaw,
+                    0.0f, rear ? 3.0f : 2.0f, rear ? -8.0f : -4.0f,
+                    rear ? 18.0f : 8.0f, rear ? 6.0f : 4.0f, rear ? 24.0f : 16.0f,
+                    HALO, al, off);
         }
-        // LA CHARGE DU SOUFFLE : une boule qui grossit dans la gueule avant le tir.
-        if (glow > 0.02f) {
-            float r = 0.05f + 0.10f * glow;
-            for (int k = 0; k < 9; k++) {
-                float ang = k * TAU / 9.0f + t * 9.0f;
+
+        // ---- LE COU : cinq fois la même boîte, entre le corps et la tête. -------------
+        for (int i = 5; i >= 1; i--) {
+            float s = i * segStep;
+            dragonSpine(s, orbit, radius, yBase, t, sp);
+            dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, sp[0], sp[1], sp[2],
+                    0.0f, 0.0f, sp[3], 0.0f, 0.0f, 0.0f, 10.0f, 10.0f, 10.0f,
+                    (i % 2 == 0) ? SLATE : BASALT, alSoft, off);
+            dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, sp[0], sp[1], sp[2],
+                    0.0f, 0.0f, sp[3], 0.0f, -7.0f, 0.0f, 2.0f, 4.0f, 6.0f,
+                    HORIZON, al, off);
+        }
+
+        // ---- LA TÊTE. -----------------------------------------------------------------
+        dragonSpine(0.0f, orbit, radius, yBase, t, sp);
+        float hYaw = sp[3];
+        // Elle pique légèrement vers le cristal quand le souffle se charge.
+        float hNose = -0.18f * glow;
+        float hf2 = sp[0];
+        float hl2 = sp[1];
+        float hy2 = sp[2];
+        // upperhead 16×16×16 puis upperlip 12×5×16 : le museau du dragon de l'End est un
+        // bloc carré suivi d'une lèvre plate, et c'est à ça qu'on le reconnaît.
+        dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, hf2, hl2, hy2,
+                hNose, 0.0f, hYaw, 0.0f, 0.0f, -2.0f, 16.0f, 16.0f, 16.0f,
+                BASALT, al, off);
+        dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, hf2, hl2, hy2,
+                hNose, 0.0f, hYaw, 0.0f, 1.5f, -16.0f, 12.0f, 5.0f, 16.0f,
+                SLATE, al, off);
+        for (int sideIdx = 0; sideIdx < 2; sideIdx++) {
+            float sgn = sideIdx == 0 ? -1.0f : 1.0f;
+            dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, hf2, hl2, hy2,
+                    hNose, 0.0f, hYaw, sgn * 4.0f, -10.0f, -1.0f, 2.0f, 4.0f, 6.0f,
+                    HORIZON, al, off);
+            dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, hf2, hl2, hy2,
+                    hNose, 0.0f, hYaw, sgn * 4.0f, -2.0f, -20.0f, 2.0f, 2.0f, 4.0f,
+                    glow > 0.5f ? SINGULAR : GLACIER, al, off);
+            // Les yeux ne sont pas dans le modèle vanilla, ils sont dans sa TEXTURE. Il en
+            // faut donc deux, posés à la main sur les joues : sans eux le dragon n'a pas
+            // de regard, et on ne sait pas qu'il vise.
+            dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, hf2, hl2, hy2,
+                    hNose, 0.0f, hYaw, sgn * 8.0f, -4.0f, -6.0f, 1.5f, 3.0f, 4.0f,
+                    glow > 0.35f ? SINGULAR : HORIZON, al, off);
+        }
+        // La mâchoire : pivot (0, 4, −8) dans la tête, elle s'ouvre vers le BAS.
+        float jaw = 0.12f + 0.55f * gape;
+        dragonRot(8.0f * DRAGON_U, -4.0f * DRAGON_U, 0.0f, hNose, 0.0f, hYaw, piv);
+        dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz,
+                hf2 + piv[0], hl2 + piv[2], hy2 + piv[1],
+                hNose - jaw, 0.0f, hYaw, 0.0f, 2.0f, -8.0f, 12.0f, 4.0f, 16.0f,
+                BASALT, al, off);
+
+        // ---- LA CHARGE DU SOUFFLE, dans la gueule. ------------------------------------
+        if (glow > 0.03f) {
+            float[] mz2 = new float[3];
+            dragonMuzzle(orbit, radius, yBase, t, mz2);
+            float r = 0.045f + 0.085f * glow;
+            for (int k = 0; k < 7; k++) {
+                float ang = k * TAU / 7.0f + t * 9.0f;
                 box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        p[0] + hx * 0.30f + Mth.cos(ang) * r * 0.6f,
-                        p[1] + hl * 0.30f + Mth.sin(ang) * r * 0.6f,
-                        p[2] + hy * 0.30f - gape * 0.07f + Mth.sin(ang * 2.0f) * r * 0.5f,
+                        mz2[0] + Mth.cos(ang) * r, mz2[1] + Mth.sin(ang) * r,
+                        mz2[2] - jaw * 0.10f + Mth.sin(ang * 2.0f) * r * 0.6f,
                         0.026f, 0.026f, 0.026f,
                         glow > 0.70f ? SINGULAR : GLACIER, opaque(a * glow));
             }
         }
-
-        // ---- LES AILES ----------------------------------------------------------------
-        // Le triangle ÉPAULE → POIGNET → HANCHE. L'épaule est sur le dos à u = 0,26, la
-        // hanche à u = 0,56, et le poignet est en l'air, écarté : c'est son altitude qui
-        // fait le battement. Une aile à plat ne se lit pas d'une caméra basse ; une aile
-        // dressée se lit de partout.
-        float flap = Mth.sin(t * (4.2f + 3.4f * glow) - 0.6f);
-        float[] sh = new float[4];
-        float[] hp = new float[4];
-        dragonBone(0.26f, orbit, radius, yBase, t, sh);
-        dragonBone(0.56f, orbit, radius, yBase, t, hp);
-        for (int wing = 0; wing < 2; wing++) {
-            float side = wing == 0 ? 1.0f : -1.0f;
-            // Le vecteur « dehors » : perpendiculaire au cap, horizontal.
-            float ox = -hl * side;
-            float ol = hx * side;
-
-            // Le POIGNET. Haut et large quand l'aile est levée, bas et rentré quand elle
-            // est baissée — un battement, c'est d'abord un changement de SURFACE vue.
-            float raise = 0.5f + 0.5f * flap;
-            float wx = sh[0] + ox * (1.12f + 0.26f * raise);
-            float wl = sh[1] + ol * (1.12f + 0.26f * raise);
-            float wy = sh[2] + 0.22f + 1.05f * raise;
-
-            // Le COUDE, à mi-chemin, remonté : c'est lui qui courbe le bord d'attaque. Un
-            // bord d'attaque droit donne une voile de planche à voile, pas une aile.
-            float ex = (sh[0] + wx) * 0.5f + ox * 0.10f;
-            float el = (sh[1] + wl) * 0.5f + ol * 0.10f;
-            float ey = (sh[2] + wy) * 0.5f + 0.34f;
-
-            // --- Le BORD D'ATTAQUE, en Bézier quadratique épaule-coude-poignet. Tracé au
-            //     pas calculé, et non par segment() : 1,6 bloc au pas de 0,030 réclame
-            //     plus de cubes que le plafond de segment(), qui rendrait des pointillés.
-            int lead = 26;
-            for (int k = 0; k <= lead; k++) {
-                float u = k / (float) lead;
-                float iu = 1.0f - u;
-                float bx = iu * iu * sh[0] + 2.0f * iu * u * ex + u * u * wx;
-                float bl = iu * iu * sh[1] + 2.0f * iu * u * el + u * u * wl;
-                float by = iu * iu * sh[2] + 2.0f * iu * u * ey + u * u * wy;
-                float th = 0.062f - 0.026f * u;
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, bx, bl, by,
-                        th, th, th, (k % 6 == 0) ? HALO : SLATE, opaque(a * 0.95f));
-            }
-
-            // --- Les QUATRE NERVURES. Elles rayonnent du poignet vers le bord de fuite,
-            //     qui court de la hanche à l'épaule. C'est le squelette de la membrane, et
-            //     c'est lui qui donne la lecture « aile » plutôt que « voile ».
-            for (int rib = 0; rib <= 4; rib++) {
-                float v = rib / 4.0f;
-                // Le pied de la nervure glisse de l'épaule vers la hanche.
-                float fx = sh[0] + (hp[0] - sh[0]) * v;
-                float fl = sh[1] + (hp[1] - sh[1]) * v;
-                float fy = sh[2] + (hp[2] - sh[2]) * v;
-                // Et il déborde derrière, pour que l'aile dépasse la croupe : une aile qui
-                // s'arrête au corps a l'air coupée.
-                float over = v * 0.42f;
-                fx -= hx * over;
-                fl -= hl * over;
-                fy -= hy * over - 0.05f;
-                float len = Mth.sqrt((fx - wx) * (fx - wx) + (fl - wl) * (fl - wl)
-                        + (fy - wy) * (fy - wy));
-                int steps = Mth.clamp(Mth.ceil(len / 0.042f), 4, 44);
-                for (int k = 0; k <= steps; k++) {
-                    float u = k / (float) steps;
-                    // L'AFFAISSEMENT : la membrane pend entre deux nervures, et elle pend
-                    // d'autant plus que l'aile descend. Sans lui, une aile est un carton.
-                    float sag = -Mth.sin(u * Mth.PI) * (0.10f + 0.16f * (1.0f - raise))
-                            * (0.35f + 0.65f * v);
-                    float th = (rib == 0 || rib == 4) ? 0.034f : 0.026f;
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            wx + (fx - wx) * u, wl + (fl - wl) * u,
-                            wy + (fy - wy) * u + sag,
-                            th, th, th,
-                            (rib == 4) ? HORIZON : ((k % 5 == 0) ? HALO : SLATE),
-                            opaque(a * (rib == 0 || rib == 4 ? 0.95f : 0.80f)));
-                }
-            }
-
-            // --- Le BORD DE FUITE : il ferme le triangle en reliant les pieds de nervure.
-            //     Un triangle ouvert se lit comme trois bâtons.
-            for (int rib = 0; rib < 4; rib++) {
-                float v0 = rib / 4.0f;
-                float v1 = (rib + 1) / 4.0f;
-                float o0 = v0 * 0.42f;
-                float o1 = v1 * 0.42f;
-                float ax = sh[0] + (hp[0] - sh[0]) * v0 - hx * o0;
-                float al = sh[1] + (hp[1] - sh[1]) * v0 - hl * o0;
-                float ay = sh[2] + (hp[2] - sh[2]) * v0 - hy * o0 + 0.05f;
-                float bx = sh[0] + (hp[0] - sh[0]) * v1 - hx * o1;
-                float bl = sh[1] + (hp[1] - sh[1]) * v1 - hl * o1;
-                float by = sh[2] + (hp[2] - sh[2]) * v1 - hy * o1 + 0.05f;
-                int steps = Mth.clamp(Mth.ceil(Mth.sqrt((bx - ax) * (bx - ax)
-                        + (bl - al) * (bl - al) + (by - ay) * (by - ay)) / 0.040f), 2, 20);
-                for (int k = 0; k <= steps; k++) {
-                    float u = k / (float) steps;
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            ax + (bx - ax) * u, al + (bl - al) * u,
-                            ay + (by - ay) * u - 0.10f * (1.0f - raise),
-                            0.030f, 0.030f, 0.030f, HALO, opaque(a * 0.90f));
-                }
-            }
-
-            // --- LA GRIFFE du poignet. Trois cubes, mais c'est elle qui dit « dragon »
-            //     plutôt que « chauve-souris » : le pouce armé, en haut de l'aile.
-            for (int k = 1; k <= 3; k++) {
-                box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                        wx + ox * k * 0.055f + hx * k * 0.045f,
-                        wl + ol * k * 0.055f + hl * k * 0.045f,
-                        wy + 0.045f * k,
-                        0.030f - k * 0.005f, 0.030f - k * 0.005f, 0.030f - k * 0.005f,
-                        k == 3 ? GLACIER : SLATE, opaque(a));
-            }
-        }
     }
+
 
 
     /**
@@ -1173,14 +1390,14 @@ public final class VoidSignatureVfx {
                         + leave * 2.6f;
                 float yBase = yc + 0.95f - dive * 0.55f + (1.0f - enter) * 3.4f + leave * 1.8f;
                 dragon(vc, mat, tmp, cx, cy, cz, dx, dz, orbit, radius, yBase, t,
-                        gape, glow, a * present, salt);
+                        gape, glow, a * present);
 
                 // LE SOUFFLE : de la gueule du dragon jusqu'à la face du cristal. C'est le
                 // trait d'entrée du serveur (tick 42), mais on voit maintenant d'où il
                 // vient. Il ne s'allume que quand le dragon tire.
                 if (glow > 0.12f) {
-                    float[] head = new float[4];
-                    dragonBone(0.0f, orbit, radius, yBase, t, head);
+                    float[] head = new float[3];
+                    dragonMuzzle(orbit, radius, yBase, t, head);
                     float bx = head[0];
                     float bl = head[1];
                     float by = head[2];
@@ -1532,38 +1749,129 @@ public final class VoidSignatureVfx {
     // =================================================================================
 
     /**
-     * <b>La faille est une LIGNE, et c'est sa seule idée.</b> Le serveur ne ratisse pas un
-     * disque mais un corridor de neuf blocs de long sur trois de large, PERPENDICULAIRE à
-     * l'axe du coup ({@code applyNullRiftGameplay}) : se tenir dans son axe ou à deux pas de
-     * côté change tout. La figure dit exactement ça — une déchirure de 8,6 blocs couchée en
-     * travers du chemin de l'arme, et rien au-dessus de la victime.
+     * <b>La faille est un PIÈGE À LOUP.</b> Le serveur ne ratisse pas un disque mais un
+     * corridor de neuf blocs de long sur trois de large, PERPENDICULAIRE à l'axe du coup
+     * ({@code applyNullRiftGameplay}) : se tenir dans son axe ou à deux pas de côté change
+     * tout. Deux versions de cette figure ont été jugées trop discrètes, et le diagnostic
+     * était faux les deux fois : le problème n'était pas l'intensité, c'était l'absence de
+     * MÉCANISME. Deux lèvres qui s'écartent ne racontent rien, parce qu'on ne voit jamais
+     * ce qui serait pris. Un piège, si.
      *
      * <h3>Le calcul</h3>
      * <ul>
-     *   <li><b>propagation</b> : la fêlure part du point d'impact et COURT vers ses deux
-     *       pointes. Elle n'apparaît pas d'un bloc, elle se propage, et ses branches
-     *       secondaires partent du tronc avec une génération de moins ;</li>
-     *   <li><b>profil de Griffith</b> : l'ouverture et la hauteur suivent
-     *       {@code √(1 − u²)} — maximales au point de nucléation, nulles aux pointes. Une
-     *       fente d'épaisseur constante n'est pas une fissure, c'est une découpe ;</li>
-     *   <li><b>fibres</b> : entre les deux lèvres, des filaments de matière étirés qui
-     *       s'amincissent, se nécrosent et CASSENT quand l'écartement passe leur limite.
-     *       Leur nombre tombe à mesure que la faille bâille ;</li>
-     *   <li><b>fermeture éclair</b> : au tick 140 les pointes se rejoignent vers le centre,
-     *       et ce qui était dedans est éjecté PERPENDICULAIREMENT — exactement le
-     *       {@code voidPush} du serveur, qui pousse selon ±l.</li>
+     *   <li><b>deux mâchoires</b> de {@link #RIFT_JAW} montées sur des charnières à
+     *       ±{@link #RIFT_HINGE}, dont l'arc est INTÉGRÉ pas à pas avec une courbure
+     *       {@link #RIFT_CURVE} : une mâchoire droite est une planche, c'est la courbure
+     *       qui fait qu'elle cueille ;</li>
+     *   <li><b>l'angle de fermeture se résout</b> ({@link #RIFT_SHUT}) au lieu d'être écrit
+     *       à la main — dix pas de dichotomie pour que les deux pointes se rejoignent
+     *       exactement sur l'axe. Un piège qui ferme à un cheveu près ne ferme pas ;</li>
+     *   <li><b>neuf dents par mâchoire</b>, décalées d'un demi-pas d'une mâchoire à
+     *       l'autre : elles s'ENGRÈNENT au lieu de se percuter, et une dent sur deux est
+     *       plus courte — une rangée régulière fait un peigne ;</li>
+     *   <li><b>les traînées</b> : pendant le claquement le bord denté parcourt deux radians
+     *       en sept ticks. Il est redessiné à {@link #RIFT_GHOSTS} positions qu'il vient de
+     *       quitter, sinon l'œil ne voit que l'arrivée et le coup n'existe pas. Hors
+     *       claquement la vitesse est nulle et les échos ne coûtent rien ;</li>
+     *   <li><b>le splash</b> : trente-quatre paraboles, chacune avec quatre positions
+     *       antérieures sur la MÊME parabole. Une gerbe sans traînée est une pluie de
+     *       confettis ;</li>
+     *   <li><b>les ressorts de torsion</b> aux deux bouts de la charnière : leur pas se
+     *       resserre avec la charge. C'est l'énergie stockée, rendue visible.</li>
      * </ul>
      *
      * <h3>La chronologie, en ticks du serveur</h3>
      * <ul>
-     *   <li><b>2</b> la fêlure ; <b>14</b> l'ouverture ;</li>
-     *   <li><b>20 → 100</b> neuf aspirations : à chacune, une vague de débris est arrachée
-     *       des deux côtés du corridor et tirée VERS LE PLAN, pas vers le centre ;</li>
+     *   <li><b>2 → 51</b> le piège s'arme, en {@code 1−(1−u)³} ;</li>
+     *   <li><b>20 → 100</b> les neuf aspirations, et à chacune une <b>morsure manquée</b> :
+     *       il se referme d'un tiers puis se rouvre. Neuf fois il essaie, la dixième il
+     *       mord — le compte des neuf se lit sur le mécanisme ;</li>
+     *   <li><b>51 → 140</b> armé, et il tremble de plus en plus ;</li>
      *   <li><b>112</b> l'autre côté : ce qui remonte par la fente est en {@link #CHORUS} ;</li>
-     *   <li><b>140</b> la fermeture, et l'éjection latérale ;</li>
-     *   <li><b>140 → 170</b> la cicatrice au sol, qui refroidit.</li>
+     *   <li><b>140 → 147</b> le claquement, en {@code u^2,2}. En {@code u³} sur cinq ticks
+     *       il tombait entre deux images — mesuré au banc ;</li>
+     *   <li><b>140 → 170</b> l'éjection latérale et la cicatrice au sol.</li>
      * </ul>
      */
+    private static void riftJaws(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                 float cx, float cy, float cz, float dx, float dz,
+                                 float half, float base, float ang,
+                                 float a, float scale, boolean ghost) {
+        if (a <= 1.0f || half <= 0.05f) return;
+        float[] pt = new float[2];
+        float[] tip = new float[2];
+        float[] prevTip = new float[3];
+        for (int side = -1; side <= 1; side += 2) {
+            boolean haveTip = false;
+            prevTip[0] = 0.0f;
+            prevTip[1] = 0.0f;
+            for (int i = 0; i < RIFT_TEETH; i++) {
+                // Les dents d'une mâchoire tombent à MI-CHEMIN de celles de l'autre : les
+                // deux rangées s'imbriquent, elles ne se cognent pas. Un piège à loup se
+                // reconnaît à ça avant tout.
+                float shift = side > 0 ? 0.0f : 0.5f;
+                float u = -1.0f + 2.0f * (i + shift) / (RIFT_TEETH - 1 + 0.5f);
+                float prof = riftProfile(u);
+                if (prof < 0.10f) continue;
+                float ll = u * half;
+                float reach = RIFT_JAW * (0.42f + 0.58f * prof);
+                riftJawPoint(1.0f, ang, reach, tip);
+                float tipF = side * (RIFT_HINGE + tip[0]);
+                float tipY = base + tip[1];
+
+                if (!ghost) {
+                    // LA CÔTE, intégrée le long de l'arc : une mâchoire droite est une
+                    // planche, c'est la courbure qui fait qu'elle cueille.
+                    int steps = 7;
+                    float pf = side * RIFT_HINGE;
+                    float py = base;
+                    for (int k = 1; k <= steps; k++) {
+                        float h = k / (float) steps;
+                        riftJawPoint(h, ang, reach, pt);
+                        float ff = side * (RIFT_HINGE + pt[0]);
+                        float yy = base + pt[1];
+                        float th = (0.044f - 0.016f * h) * scale;
+                        segment(vc, mat, tmp, cx, cy, cz, dx, dz, pf, ll, py, ff, ll, yy,
+                                th, 0.038f,
+                                (i % 2 == 0) ? SLATE : BASALT,
+                                opaque(a * (0.72f + 0.28f * prof)));
+                        pf = ff;
+                        py = yy;
+                    }
+                }
+
+                // LA DENT : un éclat qui prolonge la tangente de la pointe, et qui
+                // s'allonge d'une dent sur deux — une rangée régulière fait un peigne.
+                float local = ang - RIFT_CURVE;
+                float grow = (i % 2 == 0) ? 1.0f : 0.68f;
+                float tl = 0.40f * grow * (0.45f + 0.55f * prof);
+                int tn = 3;
+                for (int k = 1; k <= tn; k++) {
+                    float h = k / (float) tn;
+                    float sz = (0.062f - 0.014f * k) * scale;
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            tipF + side * Mth.sin(local) * tl * h,
+                            ll, tipY + Mth.cos(local) * tl * h,
+                            sz, sz, sz,
+                            k == tn ? SINGULAR : GLACIER,
+                            opaque(a * (0.78f + 0.22f * prof)));
+                }
+
+                // LA LÈVRE : elle relie les pointes. Sans elle les dents flottent.
+                if (haveTip) {
+                    segment(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            prevTip[0], prevTip[1], prevTip[2],
+                            tipF, ll, tipY, 0.034f * scale, 0.042f,
+                            HORIZON, opaque(a * 0.80f));
+                }
+                prevTip[0] = tipF;
+                prevTip[1] = ll;
+                prevTip[2] = tipY;
+                haveTip = true;
+            }
+        }
+    }
+
     private static void renderRift(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                    float cx, float cy, float cz, float t,
                                    float dx, float dz, int alpha, int salt) {
@@ -1614,87 +1922,109 @@ public final class VoidSignatureVfx {
         }
 
         if (half > 0.05f && crown > 0.05f) {
-            // ---- 2. LES DEUX LÈVRES ---------------------------------------------------
-            // Le bord de la déchirure : un arc qui monte de la pointe gauche au sommet et
-            // redescend. Les deux lèvres sont décalées de ±l'ouverture, qui suit le profil.
-            int n = 34;
-            for (int side = -1; side <= 1; side += 2) {
-                float prevF = 0.0f;
-                float prevL = 0.0f;
-                float prevY = 0.0f;
-                for (int i = 0; i <= n; i++) {
-                    float u = -1.0f + 2.0f * i / n;
-                    float prof = riftProfile(u);
-                    float ll = u * half;
-                    float yy = base + crown * prof;
-                    float jag = (hash(salt, i * 37 + (side > 0 ? 0 : 500)) - 0.5f) * 0.10f * prof;
-                    float ff = side * (lipMax * prof * 0.92f + 0.035f) + jag;
-                    if (i > 0) {
-                        float bright = prof * (0.55f + 0.45f * Mth.sin(u * 9.0f - t * 14.0f));
-                        segment(vc, mat, tmp, cx, cy, cz, dx, dz,
-                                prevF, prevL, prevY, ff, ll, yy,
-                                0.036f + 0.018f * prof, 0.050f,
-                                bright > 0.62f ? SINGULAR : (prof > 0.45f ? GLACIER : HORIZON),
-                                opaque(a * (0.68f + 0.32f * prof)));
-                    }
-                    prevF = ff;
-                    prevL = ll;
-                    prevY = yy;
+            // ---- 2. LES DEUX MÂCHOIRES ------------------------------------------------
+            // Le piège. Neuf côtes par mâchoire, intégrées le long d'un arc qui se
+            // recourbe vers l'intérieur, et un bord denté dont les dents sont décalées
+            // d'un demi-pas d'une mâchoire à l'autre : elles s'ENGRÈNENT, elles ne se
+            // percutent pas. C'est ce décalage qui fait qu'on lit « piège » et non
+            // « clapet ».
+            float ang = riftJawAngle(t);
+            float speed = riftJawSpeed(t);
+            riftJaws(vc, mat, tmp, cx, cy, cz, dx, dz, half, base, ang, a, 1.0f, false);
+
+            // ---- 2 bis. LES TRAÎNÉES DE VITESSE ---------------------------------------
+            // Pendant le claquement le bord denté parcourt deux radians en cinq ticks :
+            // sans trace, l'œil ne voit que la position d'arrivée et le coup n'existe
+            // pas. On redessine donc le bord aux angles qu'il VENAIT de quitter, de plus
+            // en plus pâle. Hors claquement la vitesse est nulle et il n'y a rien à payer.
+            if (speed > 2.5f) {
+                float ghost = clamp((speed - 2.5f) / 22.0f);
+                for (int g = 1; g <= RIFT_GHOSTS; g++) {
+                    float back = g * 0.0042f;
+                    float pastAngle = riftJawAngle(Math.max(0.0f, t - back));
+                    if (Math.abs(pastAngle - ang) < 0.012f) continue;
+                    float fade = ghost * (1.0f - g / (float) (RIFT_GHOSTS + 1));
+                    riftJaws(vc, mat, tmp, cx, cy, cz, dx, dz, half, base, pastAngle,
+                            a * fade * 0.55f, 0.72f, true);
                 }
-                // Les NERVURES intérieures : quatre niveaux qui montrent l'épaisseur de la
-                // lèvre. Sans elles la déchirure est un trait, et un trait n'a pas de bord.
-                for (int level = 1; level <= 4; level++) {
-                    float h = level / 5.0f;
-                    float prevF2 = 0.0f;
-                    float prevL2 = 0.0f;
-                    boolean started = false;
-                    for (int i = 0; i <= n; i++) {
-                        float u = -1.0f + 2.0f * i / n;
-                        float prof = riftProfile(u);
-                        if (prof <= h) { started = false; continue; }
-                        // Ouverture à cette hauteur : une lentille, pas un rectangle.
-                        float inner = Mth.sqrt(Math.max(0.0f, 1.0f - (h / prof) * (h / prof)));
-                        float ff = side * lipMax * prof * inner * 0.88f;
-                        float ll = u * half;
-                        float yy = base + crown * h;
-                        if (started) {
-                            segment(vc, mat, tmp, cx, cy, cz, dx, dz,
-                                    prevF2, prevL2, yy, ff, ll, yy, 0.024f, 0.070f,
-                                    (level & 1) == 0 ? BASALT : SLATE, opaque(a * 0.72f));
-                        }
-                        prevF2 = ff;
-                        prevL2 = ll;
-                        started = true;
+            }
+
+            // ---- 2 ter. LES RESSORTS --------------------------------------------------
+            // Un piège à loup se tend par deux ressorts de torsion posés aux deux bouts
+            // de la charnière. Ils disent l'énergie stockée : serrés quand la gueule est
+            // ouverte, détendus une fois qu'elle a mordu.
+            {
+                float load = clamp((ang - RIFT_SHUT) / Math.max(0.1f, RIFT_OPEN - RIFT_SHUT));
+                for (int end = -1; end <= 1; end += 2) {
+                    float ll = end * half * 0.98f;
+                    int coils = 16;
+                    for (int i = 0; i < coils; i++) {
+                        float v = i / (float) (coils - 1);
+                        // Le pas de l'hélice se resserre avec la charge : c'est ce qui se
+                        // voit, plus que le rayon.
+                        float turn = v * TAU * (1.4f + 1.6f * load);
+                        float rr = 0.20f * (1.0f - 0.22f * load);
+                        box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                Mth.sin(turn) * rr,
+                                ll + end * v * 0.16f * (1.0f - 0.4f * load),
+                                base + 0.16f + Mth.cos(turn) * rr,
+                                0.030f, 0.030f, 0.030f,
+                                load > 0.6f ? GLACIER : HALO,
+                                opaque(a * (0.55f + 0.45f * load)));
                     }
                 }
             }
 
-            // ---- 3. LES FIBRES --------------------------------------------------------
-            // De la matière étirée en travers du trou. Elles s'amincissent, se nécrosent au
-            // milieu, et CASSENT : à pleine ouverture il n'en reste presque plus.
+            // ---- 3. LE SPLASH DE VOID -------------------------------------------------
+            // À l'instant du contact, ce que la gueule contenait est expulsé. Chaque
+            // gerbe est une parabole AVEC SA TRAÎNÉE : sans traînée, une gerbe est une
+            // pluie de confettis — on voit des points, pas un jaillissement.
             {
-                int fibres = 9;
-                for (int i = 0; i < fibres; i++) {
-                    float u = (hash(salt, i * 83) - 0.5f) * 1.74f;
-                    float prof = riftProfile(u);
-                    if (prof < 0.12f) continue;
-                    float limit = 0.22f + 0.62f * hash(salt, i * 97);
-                    float strain = clamp(gape / limit);
-                    if (strain >= 1.0f) continue;                    // celle-ci a cassé
-                    float h = (0.15f + 0.70f * hash(salt, i * 101)) * prof;
-                    float ll = u * half;
-                    float yy = base + crown * h;
-                    float span = lipMax * prof * 0.92f;
-                    int seg = 7;
-                    for (int sIdx = 0; sIdx <= seg; sIdx++) {
-                        float v = -1.0f + 2.0f * sIdx / seg;
-                        float neck = 1.0f - 0.85f * strain * (1.0f - v * v);
-                        float th = (0.028f * neck);
-                        if (th < 0.006f) continue;
-                        box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                                v * span, ll + v * 0.04f, yy + (1.0f - v * v) * 0.05f * strain,
-                                th, th, th, strain > 0.66f ? GLACIER : HORIZON,
-                                opaque(a * (0.55f + 0.45f * (1.0f - strain))));
+                float bite = t - RIFT_CLOSE - RIFT_SNAP * 0.75f;
+                if (bite > 0.0f && bite < 0.22f) {
+                    float sec = bite * 9.0f;
+                    float fade = 1.0f - clamp(bite / 0.22f);
+                    for (int i = 0; i < 34; i++) {
+                        int seed = i * 173;
+                        float ll = (hash(salt, seed) - 0.5f) * 2.0f * half * 0.96f;
+                        float prof = riftProfile(clamp(Math.abs(ll) / Math.max(0.2f, half)));
+                        if (prof < 0.10f) continue;
+                        float side = (i & 1) == 0 ? 1.0f : -1.0f;
+                        // Vite et bas sur les côtés, haut et lent au centre : la gueule
+                        // chasse la matière par ses commissures.
+                        float vf = side * (1.3f + 3.1f * hash(salt, seed + 1)) * (0.45f + 0.55f * prof);
+                        float vy = (2.6f + 4.2f * hash(salt, seed + 2)) * prof;
+                        float vl = (hash(salt, seed + 3) - 0.5f) * 1.8f;
+                        float y0 = base + RIFT_JAW * 0.42f * prof;
+                        // La traînée : quatre positions en arrière sur la MÊME parabole.
+                        for (int q = 3; q >= 0; q--) {
+                            float ss = sec - q * 0.055f;
+                            if (ss <= 0.0f) continue;
+                            float yy = ballistic(y0, vy, ss, GROUND_Y + 0.04f);
+                            float sz = (0.055f - q * 0.009f) * (0.5f + 0.5f * prof);
+                            int rgb = q == 0
+                                    ? (hash(salt, seed + 5) > 0.72f ? SINGULAR : GLACIER)
+                                    : (q == 1 ? HORIZON : HALO);
+                            box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                    vf * ss, ll + vl * ss, yy, sz, sz, sz, rgb,
+                                    opaque(a * fade * (1.0f - q * 0.19f)));
+                        }
+                    }
+                    // L'onde au sol : un anneau plat qui s'échappe de la ligne de morsure.
+                    float ring = sec * 1.35f;
+                    if (ring < 3.4f) {
+                        for (int i = 0; i < 30; i++) {
+                            float ll = (-1.0f + 2.0f * i / 29.0f) * half;
+                            float prof = riftProfile(clamp(Math.abs(ll) / Math.max(0.2f, half)));
+                            for (int side = -1; side <= 1; side += 2) {
+                                box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                        side * ring * (0.35f + 0.65f * prof), ll,
+                                        GROUND_Y + 0.022f,
+                                        0.046f, SLAB_H, 0.046f,
+                                        (i % 4 == 0) ? GLACIER : HORIZON,
+                                        opaque(a * fade * 0.85f * prof));
+                            }
+                        }
                     }
                 }
             }
@@ -1737,13 +2067,17 @@ public final class VoidSignatureVfx {
             //     fente, sur toute sa longueur. Quatre frames. C'est l'éclair du coup.
             float flash = 1.0f - clamp(age / 0.024f);
             if (flash > 0.0f) {
+                float[] jawTip = new float[2];
                 int arcs = 5;
                 for (int arc = 0; arc < arcs; arc++) {
                     float lu = (arc + 0.5f) / arcs * 1.80f - 0.90f;
                     float prof = riftProfile(lu);
                     if (prof < 0.12f) continue;
                     float ll = lu * half;
-                    float span = lipMax * prof * 0.92f;
+                    // L'écartement RÉEL des mâchoires à cet instant : l'arc doit partir
+                    // d'une rangée de dents et arriver sur l'autre, sinon il flotte.
+                    riftJawPoint(1.0f, riftJawAngle(t), RIFT_JAW * (0.42f + 0.58f * prof), jawTip);
+                    float span = RIFT_HINGE + jawTip[0];
                     int bolt = 9;
                     float prevFa = -span;
                     float prevYa = base + crown * prof * (0.25f + 0.45f * hash(salt, k * 17 + arc));
@@ -1763,24 +2097,28 @@ public final class VoidSignatureVfx {
                 }
             }
 
-            // (2) LA BOUCHE QUI CLAQUE : les deux lèvres se rapprochent d'un coup sec puis
-            //     reviennent. Dix frames. C'est la respiration de la faille, et c'est le
-            //     mouvement qui rend l'aspiration CRÉDIBLE — quelque chose a avalé.
-            float clap = (1.0f - clamp(age / 0.060f));
-            clap = clap * clap * Mth.sin(clamp(age / 0.060f) * Mth.PI * 1.6f);
-            if (clap > 0.02f) {
-                int n = 26;
+            // (2) LA GUEULE SE CRISPE. Le mouvement est maintenant porté par les
+            //     mâchoires elles-mêmes (voir la morsure manquée dans riftJawAngle) ; il
+            //     ne reste ici que la traîne lumineuse qui court le long du bord denté,
+            //     de la pointe gauche à la pointe droite, à chaque aspiration.
+            float crisp = 1.0f - clamp(age / 0.085f);
+            if (crisp > 0.02f) {
+                float sweep = -1.0f + 2.0f * clamp(age / 0.085f);
                 for (int side = -1; side <= 1; side += 2) {
-                    for (int i = 0; i <= n; i++) {
-                        float lu = -1.0f + 2.0f * i / n;
+                    float[] jt = new float[2];
+                    for (int i = 0; i < 13; i++) {
+                        float lu = -1.0f + 2.0f * i / 12.0f;
                         float prof = riftProfile(lu);
-                        if (prof < 0.08f) continue;
-                        float ll = lu * half;
-                        float yy = base + crown * prof * 0.55f;
-                        float ff = side * lipMax * prof * (0.92f - 0.45f * clap);
-                        box(vc, mat, tmp, cx, cy, cz, dx, dz, ff, ll, yy,
-                                0.040f, 0.040f, 0.040f, HORIZON,
-                                opaque(a * clap * 0.95f));
+                        if (prof < 0.10f) continue;
+                        float near = 1.0f - clamp(Math.abs(lu - sweep) / 0.42f);
+                        if (near <= 0.0f) continue;
+                        riftJawPoint(1.0f, riftJawAngle(t),
+                                RIFT_JAW * (0.42f + 0.58f * prof), jt);
+                        float sz = 0.034f + 0.030f * near;
+                        box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                side * (RIFT_HINGE + jt[0]), lu * half, base + jt[1],
+                                sz, sz, sz, near > 0.65f ? SINGULAR : GLACIER,
+                                opaque(a * crisp * near));
                     }
                 }
             }

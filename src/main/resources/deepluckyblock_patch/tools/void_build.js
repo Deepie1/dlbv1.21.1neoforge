@@ -92,6 +92,79 @@ const VOID_SHAPE = (function () {
     /* Profil de Griffith : maximal au point de nucleation, nul aux pointes. */
     riftProfile(u) { const v = 1 - u * u; return v <= 0 ? 0 : Math.sqrt(v); },
 
+    /* --- LE PIEGE A LOUP. Miroir des constantes et de la cinematique Java. --- */
+    RIFT_HINGE: 0.52,
+    RIFT_JAW: 2.05,
+    RIFT_TEETH: 9,
+    RIFT_OPEN: 1.08,
+    RIFT_CURVE: 0.52,
+    RIFT_SNAP: 0.042,
+    RIFT_GHOSTS: 5,
+    RIFT_ARMED: 0.30,
+    /* Deport horizontal de la pointe, en fraction de RIFT_JAW, pour un angle donne. */
+    riftReachOf(ang) {
+      let acc = 0;
+      for (let i = 0; i < 16; i++) acc += Math.sin(ang - this.RIFT_CURVE * ((i + 0.5) / 16) ** 2);
+      return acc / 16;
+    },
+    /* L'angle de fermeture se CALCULE : l'ecrire a la main ferait rater le contact. */
+    get RIFT_SHUT() {
+      if (this._shut === undefined) {
+        const target = -this.RIFT_HINGE / this.RIFT_JAW;
+        let lo = -1.4, hi = 0;
+        for (let i = 0; i < 24; i++) {
+          const mid = (lo + hi) * 0.5;
+          if (this.riftReachOf(mid) > target) hi = mid; else lo = mid;
+        }
+        this._shut = (lo + hi) * 0.5;
+      }
+      return this._shut;
+    },
+    /* Toute la choregraphie du piege : ouverture, armement, neuf morsures manquees,
+       claquement en cinq ticks, puis le rebond de l'acier. */
+    riftJawAngle(t) {
+      const SHUT = this.RIFT_SHUT;
+      if (t <= 0.012) return SHUT;
+      if (t < this.RIFT_ARMED) {
+        const u = clamp01((t - 0.012) / (this.RIFT_ARMED - 0.012));
+        return SHUT + (this.RIFT_OPEN - SHUT) * (1 - (1 - u) ** 3);
+      }
+      if (t < this.RIFT_CLOSE) {
+        const dread = clamp01((t - this.RIFT_ARMED) / (this.RIFT_CLOSE - this.RIFT_ARMED));
+        const tremor = (0.026 + 0.062 * dread * dread) * Math.sin(t * (46 + 70 * dread));
+        /* La MORSURE MANQUEE : neuf fois il essaie, la dixieme il mord. */
+        let miss = 0;
+        for (let k = 0; k < 9; k++) {
+          const age = t - (20 + k * 10) / 170;
+          if (age < 0) break;
+          if (age > 0.050) continue;
+          const u = age / 0.050;
+          const bite = u < 0.34 ? (u / 0.34) ** 2 : 1 - smooth((u - 0.34) / 0.66);
+          if (bite > miss) miss = bite;
+        }
+        return this.RIFT_OPEN + tremor - (this.RIFT_OPEN - SHUT) * 0.34 * miss;
+      }
+      const u = clamp01((t - this.RIFT_CLOSE) / this.RIFT_SNAP);
+      const after = clamp01((t - this.RIFT_CLOSE - this.RIFT_SNAP) / 0.055);
+      const ring = Math.sin(after * Math.PI * 2) * 0.085 * (1 - after);
+      /* u^2,2 : en u^3 la fermeture tombait ENTRE deux images. */
+      return this.RIFT_OPEN + (SHUT - this.RIFT_OPEN) * (u * u * u ** 0.2) + ring;
+    },
+    riftJawSpeed(t) {
+      return Math.abs(this.riftJawAngle(t + 0.004) - this.riftJawAngle(t - 0.004)) / 0.008;
+    },
+    /* Un point de la machoire : h = 0 a la charniere, 1 a la pointe. L'arc est INTEGRE,
+       pas pose en ligne droite — une machoire droite est une planche. */
+    riftJawPoint(h, ang, reach) {
+      const n = Math.max(2, Math.ceil(h * 14));
+      let f = 0, y = 0;
+      for (let i = 0; i < n; i++) {
+        const hh = h * (i + 0.5) / n, local = ang - this.RIFT_CURVE * hh * hh;
+        f += Math.sin(local); y += Math.cos(local);
+      }
+      return [f / n * h * reach, y / n * h * reach];
+    },
+
     /* --- Porte --- */
     GATE_PASS0: 34 / 180,
     GATE_PASS_STEP: 18 / 180,
@@ -375,164 +448,183 @@ function buildVoid(variant, t, salt = 7331) {
   };
 
   /* Le trajet d'un des sept rayons DANS le cristal. Miroir de prismRay(). */
-  /* ---- LE DRAGON. Miroir de dragonBone/dragon. ---- */
-  const DRAGON_LEN = 4.2;
-  const dragonBone = (u, orbit, radius, yBase, tt) => {
-    const lag = u * Math.min(1.45, DRAGON_LEN / Math.max(1.2, radius)), ang = orbit - lag;
-    const wobble = Math.sin(u * 5.4 - tt * 6.0) * 0.13 * (0.35 + u);
-    const rr = radius * (1 + wobble * 0.55);
-    const profile = Math.sin(PI * Math.min(1, 0.12 + u * 0.84));
-    return [Math.cos(ang) * rr, Math.sin(ang) * rr,
-            yBase + Math.sin(u * 3.4 - tt * 5.2) * 0.26 * (0.25 + u * 0.85) - u * 0.30,
-            0.065 + 0.235 * Math.pow(profile, 0.55)];
+  /* ---- LE DRAGON DE L'END. Miroir exact de dragonRot/dragonBox/dragonSpine/dragon.
+     Les boites et les pivots sont ceux d'EnderDragonModel (ModelDragon.addBox) ; rien
+     n'est redessine a la main. Le moteur d'apercu applique localRot() dans le meme ordre
+     que emitVoxelBoxRotated (roll -> pitch -> yaw), donc une boite tournee ici se lit
+     comme elle se lira en jeu. ---- */
+  const DRAGON_U = 0.015;          // blocs par unite de modele
+  const DRAGON_SEG = 10.0;         // pas entre deux segments de cou ou de queue
+
+  /* Axes locaux : x = l'avant (le nez), y = le haut, z = le cote. Avec cette convention
+     « nose » pique du nez, « bank » roule autour de l'axe du nez et « yaw » donne le cap.
+     L'inversion vient de l'ordre de composition du manager ; elle est nommee, pas subie. */
+  const dragonRot = (x, y, z, nose, bank, yaw) => {
+    const cr = Math.cos(nose), sr = Math.sin(nose);
+    const cp = Math.cos(bank), sp = Math.sin(bank);
+    const cy = Math.cos(yaw), sy = Math.sin(yaw);
+    const x1 = x * cr - y * sr, y1 = x * sr + y * cr;
+    const y2 = y1 * cp - z * sp, z2 = y1 * sp + z * cp;
+    return [x1 * cy + z2 * sy, y2, -x1 * sy + z2 * cy];
+  };
+
+  /* Une boite du modele vanilla. (bf,bl,by) = pivot de la piece, (mx,my,mz) = centre de la
+     boite en unites de modele dans le repere Minecraft (y vers le BAS, nez vers les z
+     negatifs), (sx,sy,sz) = taille. */
+  const dragonBox = (bf, bl, by, nose, bank, yaw, mx, my, mz, sx, sy, sz, rgb, a) => {
+    if (a <= 0) return;
+    const o = dragonRot(-mz * DRAGON_U, -my * DRAGON_U, mx * DRAGON_U, nose, bank, yaw);
+    out.push({ x: bf + o[0], y: by + o[1], z: bl + o[2],
+               hx: Math.max(0.004, sz * 0.5 * DRAGON_U),
+               hy: Math.max(0.004, sy * 0.5 * DRAGON_U),
+               hz: Math.max(0.004, sx * 0.5 * DRAGON_U),
+               rgb: rgb, a: Math.min(255, a), yaw: yaw, pitch: bank, roll: nose });
+  };
+
+  /* Une station de l'echine, a s blocs derriere le museau. Le cap est la TANGENTE a
+     l'orbite : plus de « retard angulaire » a regler, la geometrie s'en charge. */
+  const dragonSpine = (s, orbit, radius, yBase, tt) => {
+    const a = orbit - s / Math.max(0.8, radius);
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const amp = 0.055 * Math.max(0, Math.min(1, s * 0.55));
+    return [ca * radius, sa * radius,
+            yBase + Math.sin(s * 1.55 - tt * 5.6) * amp,
+            Math.atan2(-ca, -sa)];
+  };
+
+  /* Le bout du museau, pour accrocher le souffle. */
+  const dragonMuzzle = (orbit, radius, yBase, tt) => {
+    const sp = dragonSpine(0, orbit, radius, yBase, tt);
+    const o = dragonRot(24.0 * DRAGON_U, 2.0 * DRAGON_U, 0, 0, 0, sp[3]);
+    return [sp[0] + o[0], sp[1] + o[2], sp[2] + o[1]];
+  };
+
+  /* Une demi-voilure : le panneau « skin » de 56 x 56 unites du modele vanilla. Vanilla
+     le peint d'une texture ; ici il n'y a que des cubes. Un panneau plein se lirait comme
+     un drap et le damier essaye d'abord se lisait comme un damier : la membrane est donc
+     une CAGE — cinq doigts, un bord de fuite, une toile ajouree entre eux. */
+  const dragonWing = (pf, pl, py, bank, yaw, side, span, al, alSoft) => {
+    const chord = 56 * span;
+    for (let d = 0; d < 5; d++) {
+      /* d = 0 est le BOUT, d = 4 l'epaule : la voilure s'effile vers l'exterieur. C'est
+         cette oblique qui fait lire « aile » plutot que « echelle ». */
+      const mx = (-56 + (d + 0.5) * 56 / 5) * side;
+      const ch = chord * (0.45 + 0.55 * (d + 0.5) / 5);
+      dragonBox(pf, pl, py, 0, bank, yaw, mx, 0, 2 + ch * 0.5,
+                1.6, 1.6, ch, (d === 4) ? HORIZON : SLATE, al);
+      dragonBox(pf, pl, py, 0, bank, yaw, mx, 0, 2 + ch * 0.5,
+                56 / 5 * 0.88, 0.8, ch * 0.88, BASALT, alSoft);
+      /* La marche du bord de fuite : sans elle l'aile s'effiloche en cinq tiges. */
+      dragonBox(pf, pl, py, 0, bank, yaw, mx, 0, 2 + ch, 56 / 5, 2.2, 2.2, HALO, al);
+    }
   };
 
   const dragon = (orbit, radius, yBase, tt, gape, glow, a) => {
-    const ribs = 34;
-    let p = dragonBone(0, orbit, radius, yBase, tt);
-    for (let i = 1; i <= ribs; i++) {
-      const u = i / ribs;
-      const q = dragonBone(u, orbit, radius, yBase, tt);
-      const tone = (i % 5 === 0) ? HALO : (i % 2 === 0 ? SLATE : BASALT);
-      /* La cage : six lisses sur la section, dans un repere orthonorme. */
-      let ax = q[0] - p[0], al = q[1] - p[1], ay = q[2] - p[2];
-      const an = Math.sqrt(ax * ax + al * al + ay * ay);
-      if (an < 1e-5) { p = q; continue; }
-      ax /= an; al /= an; ay /= an;
-      let ux = -al, ul = ax;
-      const un2 = Math.sqrt(ux * ux + ul * ul) || 1;
-      ux /= un2; ul /= un2;
-      const vx = -ay * ul, vl = ay * ux, vy = ax * ul - al * ux;
-      for (let lisse = 0; lisse < 6; lisse++) {
-        const ang = lisse * TAU / 6 + u * 1.1;
-        const ca = Math.cos(ang) * q[3], sa = Math.sin(ang) * q[3];
-        const lt = (sa > q[3] * 0.45) ? tone : (sa < -q[3] * 0.45 ? ABYSS : BASALT);
-        segment(p[0] + ux * ca + vx * sa, p[1] + ul * ca + vl * sa, p[2] + vy * sa,
-                q[0] + ux * ca + vx * sa, q[1] + ul * ca + vl * sa, q[2] + vy * sa,
-                0.034, lt, opq(a * 0.92), 0.030);
-      }
-      if (i % 2 === 0 && u < 0.86) {
-        const spike = (0.06 + 0.16 * Math.sin(PI * Math.min(1, u * 1.15)))
-                    * (1 + 0.25 * Math.sin(tt * 7 + i));
-        box(q[0], q[1], q[2] + q[3] + spike * 0.5, 0.030, spike, 0.030,
-            (i % 4 === 0) ? HORIZON : HALO, opq(a * 0.90));
-      }
-      p = q;
+    const al = opq(a); if (al <= 0) return;
+    const alSoft = opq(a * 0.90);
+    const segStep = DRAGON_SEG * DRAGON_U;
+
+    /* LA QUEUE : douze fois la boite du cou. Dessinee avant le corps pour que celui-ci la
+       recouvre la ou elles se chevauchent — vanilla fait pareil. */
+    /* Le pas SUIT l'affinement : a pas constant une queue qui retrecit finit en
+       pointille. Les douze segments restent jointifs du bassin a la pointe. */
+    let sTail = 98.0 * DRAGON_U;
+    for (let i = 0; i < 12; i++) {
+      const taper = 1 - 0.062 * i;
+      sTail += segStep * taper;
+      const sp = dragonSpine(sTail, orbit, radius, yBase, tt);
+      dragonBox(sp[0], sp[1], sp[2], 0, 0, sp[3], 0, 0, 0,
+                10 * taper, 10 * taper, 10 * taper, (i % 3 === 0) ? SLATE : BASALT, alSoft);
+      dragonBox(sp[0], sp[1], sp[2], 0, 0, sp[3], 0, -7 * taper, 0,
+                2 * taper, 4 * taper, 6 * taper, (i % 2 === 0) ? HORIZON : HALO, al);
     }
-    /* La tete. */
-    p = dragonBone(0, orbit, radius, yBase, tt);
-    const q = dragonBone(0.085, orbit, radius, yBase, tt);
-    let hx = p[0] - q[0], hl = p[1] - q[1], hy = p[2] - q[2];
-    const hn = Math.sqrt(hx * hx + hl * hl + hy * hy) || 1;
-    hx /= hn; hl /= hn; hy /= hn;
-    box(p[0] + hx * 0.10, p[1] + hl * 0.10, p[2] + hy * 0.10 + 0.03,
-        0.205, 0.150, 0.180, SLATE, opq(a));
-    for (let jaw = 0; jaw < 2; jaw++) {
-      const sign = jaw === 0 ? 1 : -1, drop = gape * 0.16 * (jaw === 0 ? 0.35 : 1);
-      for (let k = 0; k < 5; k++) {
-        const u = k / 4;
-        box(p[0] + hx * (0.16 + u * 0.20), p[1] + hl * (0.16 + u * 0.20),
-            p[2] + hy * (0.16 + u * 0.20) + sign * 0.035 - drop * (0.3 + u),
-            0.055 - u * 0.018, 0.035, 0.055 - u * 0.018,
-            (k === 4) ? GLACIER : BASALT, opq(a));
-      }
+
+    /* LE CORPS : 24 x 24 x 64. */
+    const bsp = dragonSpine(50.0 * DRAGON_U + 16.0 * DRAGON_U, orbit, radius, yBase, tt);
+    const bodyYaw = bsp[3], bodyF = bsp[0], bodyL = bsp[1], bodyY = bsp[2];
+    dragonBox(bodyF, bodyL, bodyY, 0, 0, bodyYaw, 0, 8, 0, 24, 24, 64, BASALT, al);
+    for (let k = 0; k < 3; k++) {
+      dragonBox(bodyF, bodyL, bodyY, 0, 0, bodyYaw, 0, -7, -4 + k * 20, 2, 6, 12,
+                HORIZON, al);
     }
-    for (let eye = 0; eye < 2; eye++) {
-      const side = eye === 0 ? 0.075 : -0.075;
-      box(p[0] + hx * 0.12 - hl * side, p[1] + hl * 0.12 + hx * side, p[2] + hy * 0.12 + 0.075,
-          0.028, 0.028, 0.028,
-          glow > 0.55 ? SINGULAR : (glow > 0.18 ? GLACIER : HORIZON), opq(a));
-    }
-    for (let horn = 0; horn < 2; horn++) {
-      const side = horn === 0 ? 0.068 : -0.068;
-      for (let k = 1; k <= 4; k++) {
-        const u = k / 4;
-        box(p[0] - hx * u * 0.17 - hl * side * (1 + u * 0.55),
-            p[1] - hl * u * 0.17 + hx * side * (1 + u * 0.55),
-            p[2] - hy * u * 0.17 + 0.11 + u * 0.13,
-            0.030 - u * 0.008, 0.030 - u * 0.008, 0.030 - u * 0.008, SLATE, opq(a * 0.95));
-      }
-    }
-    if (glow > 0.02) {
-      const r = 0.05 + 0.10 * glow;
-      for (let k = 0; k < 9; k++) {
-        const ang = k * TAU / 9 + tt * 9;
-        box(p[0] + hx * 0.30 + Math.cos(ang) * r * 0.6,
-            p[1] + hl * 0.30 + Math.sin(ang) * r * 0.6,
-            p[2] + hy * 0.30 - gape * 0.07 + Math.sin(ang * 2) * r * 0.5,
-            0.026, 0.026, 0.026, glow > 0.70 ? SINGULAR : GLACIER, opq(a * glow));
-      }
-    }
-    /* ---- LES AILES : le triangle EPAULE -> POIGNET -> HANCHE. ----
-       Trace par boucles explicites, jamais par segment() : segment() plafonne a 26
-       cubes, et une nervure longue en ressort en pointilles. */
-    const flap = Math.sin(tt * (4.2 + 3.4 * glow) - 0.6);
-    const sh = dragonBone(0.26, orbit, radius, yBase, tt);
-    const hp = dragonBone(0.56, orbit, radius, yBase, tt);
+
+    /* LES AILES. Le battement tourne autour de l'axe du nez. */
+    const flap = Math.sin(tt * (4.0 + 3.2 * glow) - 0.6);
     for (let wing = 0; wing < 2; wing++) {
       const side = wing === 0 ? 1 : -1;
-      const ox = -hl * side, ol = hx * side;
-      const raise = 0.5 + 0.5 * flap;
-      const wx = sh[0] + ox * (1.12 + 0.26 * raise);
-      const wl = sh[1] + ol * (1.12 + 0.26 * raise);
-      const wy = sh[2] + 0.22 + 1.05 * raise;
-      const ex = (sh[0] + wx) * 0.5 + ox * 0.10;
-      const el = (sh[1] + wl) * 0.5 + ol * 0.10;
-      const ey = (sh[2] + wy) * 0.5 + 0.34;
+      const bank = (0.22 + 0.52 * flap) * side;
+      let piv = dragonRot(-2.0 * DRAGON_U, -1.0 * DRAGON_U, -12.0 * DRAGON_U * side,
+                          0, 0, bodyYaw);
+      const wf = bodyF + piv[0], wl = bodyL + piv[2], wy = bodyY + piv[1];
+      dragonBox(wf, wl, wy, 0, bank, bodyYaw, -28 * side, 0, 0, 56, 8, 8, SLATE, al);
+      dragonWing(wf, wl, wy, bank, bodyYaw, side, 1.0, al, alSoft);
+      const tipBank = bank + 0.42 * side * (0.5 + 0.5 * flap);
+      piv = dragonRot(0, 0, -56.0 * DRAGON_U * side, 0, bank, bodyYaw);
+      const tf = wf + piv[0], tl = wl + piv[2], ty = wy + piv[1];
+      dragonBox(tf, tl, ty, 0, tipBank, bodyYaw, -28 * side, 0, 0, 56, 4, 4, SLATE, al);
+      dragonWing(tf, tl, ty, tipBank, bodyYaw, side, 0.82, al, alSoft);
+    }
 
-      /* Bord d'attaque : Bezier quadratique epaule-coude-poignet. */
-      for (let k = 0; k <= 26; k++) {
-        const u = k / 26, iu = 1 - u;
-        const th = 0.062 - 0.026 * u;
-        box(iu * iu * sh[0] + 2 * iu * u * ex + u * u * wx,
-            iu * iu * sh[1] + 2 * iu * u * el + u * u * wl,
-            iu * iu * sh[2] + 2 * iu * u * ey + u * u * wy,
-            th, th, th, (k % 6 === 0) ? HALO : SLATE, opq(a * 0.95));
-      }
+    /* LES PATTES, repliees : la bete vole, elle ne marche pas. */
+    const tuck = 0.85;
+    for (let leg = 0; leg < 4; leg++) {
+      const rear = leg >= 2, side = (leg % 2 === 0) ? 1 : -1;
+      const px = (rear ? -16 : -12) * side, py = rear ? 16 : 20, pz = rear ? 42 : 2;
+      let piv = dragonRot(-pz * DRAGON_U, (-py + 4) * DRAGON_U, px * DRAGON_U,
+                          0, 0, bodyYaw);
+      const lf = bodyF + piv[0], ll2 = bodyL + piv[2], ly = bodyY + piv[1];
+      const thighW = rear ? 16 : 8, thighH = rear ? 32 : 24;
+      dragonBox(lf, ll2, ly, tuck, 0, bodyYaw, 0, thighH * 0.5 - 4, 0,
+                thighW, thighH, thighW, BASALT, alSoft);
+      piv = dragonRot(0, -thighH * DRAGON_U, 0, tuck, 0, bodyYaw);
+      const kf = lf + piv[0], kl = ll2 + piv[2], ky = ly + piv[1];
+      const shinW = rear ? 12 : 6, shinH = rear ? 32 : 24;
+      dragonBox(kf, kl, ky, -tuck * 1.5, 0, bodyYaw, 0, shinH * 0.5, rear ? 6 : 0,
+                shinW, shinH, shinW, SLATE, alSoft);
+      piv = dragonRot(0, -shinH * DRAGON_U, 0, -tuck * 1.5, 0, bodyYaw);
+      dragonBox(kf + piv[0], kl + piv[2], ky + piv[1], -tuck * 0.4, 0, bodyYaw,
+                0, rear ? 3 : 2, rear ? -8 : -4,
+                rear ? 18 : 8, rear ? 6 : 4, rear ? 24 : 16, HALO, al);
+    }
 
-      /* Quatre nervures, du poignet vers le bord de fuite. */
-      for (let rib = 0; rib <= 4; rib++) {
-        const v = rib / 4, over = v * 0.42;
-        const fx = sh[0] + (hp[0] - sh[0]) * v - hx * over;
-        const fl = sh[1] + (hp[1] - sh[1]) * v - hl * over;
-        const fy = sh[2] + (hp[2] - sh[2]) * v - hy * over + 0.05;
-        const len = Math.sqrt((fx - wx) ** 2 + (fl - wl) ** 2 + (fy - wy) ** 2);
-        const steps = Math.max(4, Math.min(44, Math.ceil(len / 0.042)));
-        for (let k = 0; k <= steps; k++) {
-          const u = k / steps;
-          const sag = -Math.sin(u * PI) * (0.10 + 0.16 * (1 - raise)) * (0.35 + 0.65 * v);
-          const th = (rib === 0 || rib === 4) ? 0.034 : 0.026;
-          box(wx + (fx - wx) * u, wl + (fl - wl) * u, wy + (fy - wy) * u + sag,
-              th, th, th,
-              (rib === 4) ? HORIZON : ((k % 5 === 0) ? HALO : SLATE),
-              opq(a * (rib === 0 || rib === 4 ? 0.95 : 0.80)));
-        }
-      }
+    /* LE COU : cinq fois la meme boite. */
+    for (let i = 5; i >= 1; i--) {
+      const sp = dragonSpine(i * segStep, orbit, radius, yBase, tt);
+      dragonBox(sp[0], sp[1], sp[2], 0, 0, sp[3], 0, 0, 0, 10, 10, 10,
+                (i % 2 === 0) ? SLATE : BASALT, alSoft);
+      dragonBox(sp[0], sp[1], sp[2], 0, 0, sp[3], 0, -7, 0, 2, 4, 6, HORIZON, al);
+    }
 
-      /* Bord de fuite : il ferme le triangle. */
-      for (let rib = 0; rib < 4; rib++) {
-        const v0 = rib / 4, v1 = (rib + 1) / 4, o0 = v0 * 0.42, o1 = v1 * 0.42;
-        const ax = sh[0] + (hp[0] - sh[0]) * v0 - hx * o0;
-        const al = sh[1] + (hp[1] - sh[1]) * v0 - hl * o0;
-        const ay = sh[2] + (hp[2] - sh[2]) * v0 - hy * o0 + 0.05;
-        const bx = sh[0] + (hp[0] - sh[0]) * v1 - hx * o1;
-        const bl = sh[1] + (hp[1] - sh[1]) * v1 - hl * o1;
-        const by = sh[2] + (hp[2] - sh[2]) * v1 - hy * o1 + 0.05;
-        const steps = Math.max(2, Math.min(20, Math.ceil(
-            Math.sqrt((bx - ax) ** 2 + (bl - al) ** 2 + (by - ay) ** 2) / 0.040)));
-        for (let k = 0; k <= steps; k++) {
-          const u = k / steps;
-          box(ax + (bx - ax) * u, al + (bl - al) * u,
-              ay + (by - ay) * u - 0.10 * (1 - raise),
-              0.030, 0.030, 0.030, HALO, opq(a * 0.90));
-        }
-      }
+    /* LA TETE. */
+    const hsp = dragonSpine(0, orbit, radius, yBase, tt);
+    const hYaw = hsp[3], hNose = -0.18 * glow;
+    const hf2 = hsp[0], hl2 = hsp[1], hy2 = hsp[2];
+    dragonBox(hf2, hl2, hy2, hNose, 0, hYaw, 0, 0, -2, 16, 16, 16, BASALT, al);
+    dragonBox(hf2, hl2, hy2, hNose, 0, hYaw, 0, 1.5, -16, 12, 5, 16, SLATE, al);
+    for (let si = 0; si < 2; si++) {
+      const sgn = si === 0 ? -1 : 1;
+      dragonBox(hf2, hl2, hy2, hNose, 0, hYaw, sgn * 4, -10, -1, 2, 4, 6, HORIZON, al);
+      dragonBox(hf2, hl2, hy2, hNose, 0, hYaw, sgn * 4, -2, -20, 2, 2, 4,
+                glow > 0.5 ? SINGULAR : GLACIER, al);
+      /* Les yeux sont dans la TEXTURE vanilla, pas dans le modele : il faut les poser a la
+         main, sinon le dragon n'a pas de regard et on ne sait pas qu'il vise. */
+      dragonBox(hf2, hl2, hy2, hNose, 0, hYaw, sgn * 8, -4, -6, 1.5, 3, 4,
+                glow > 0.35 ? SINGULAR : HORIZON, al);
+    }
+    const jaw = 0.12 + 0.55 * gape;
+    const jp = dragonRot(8.0 * DRAGON_U, -4.0 * DRAGON_U, 0, hNose, 0, hYaw);
+    dragonBox(hf2 + jp[0], hl2 + jp[2], hy2 + jp[1], hNose - jaw, 0, hYaw,
+              0, 2, -8, 12, 4, 16, BASALT, al);
 
-      /* La griffe du poignet : c'est elle qui dit « dragon » et pas « chauve-souris ». */
-      for (let k = 1; k <= 3; k++) {
-        const th = 0.030 - k * 0.005;
-        box(wx + ox * k * 0.055 + hx * k * 0.045, wl + ol * k * 0.055 + hl * k * 0.045,
-            wy + 0.045 * k, th, th, th, k === 3 ? GLACIER : SLATE, opq(a));
+    /* LA CHARGE DU SOUFFLE, dans la gueule. */
+    if (glow > 0.03) {
+      const mz2 = dragonMuzzle(orbit, radius, yBase, tt);
+      const r = 0.045 + 0.085 * glow;
+      for (let k = 0; k < 7; k++) {
+        const ang = k * TAU / 7 + tt * 9.0;
+        box(mz2[0] + Math.cos(ang) * r, mz2[1] + Math.sin(ang) * r,
+            mz2[2] - jaw * 0.10 + Math.sin(ang * 2) * r * 0.6,
+            0.026, 0.026, 0.026, glow > 0.70 ? SINGULAR : GLACIER, opq(a * glow));
       }
     }
   };
@@ -814,7 +906,7 @@ function buildVoid(variant, t, salt = 7331) {
         dragon(orbit, radius, yBase, t, gape, glow, a * present);
 
         if (glow > 0.12) {
-          const head = dragonBone(0, orbit, radius, yBase, t);
+          const head = dragonMuzzle(orbit, radius, yBase, t);
           const steps = 38;
           for (let k = 1; k <= steps; k++) {
             const u = k / steps;
@@ -1052,57 +1144,127 @@ function buildVoid(variant, t, salt = 7331) {
       }
     }
 
-    if (half > 0.05 && crown > 0.05) {
-      /* ---- 2. LES DEUX LEVRES, et leurs nervures ---- */
-      const n = 34;
+    /* Les deux machoires a un angle donne. Appelee une fois pour la position reelle,
+       puis RIFT_GHOSTS fois pour les trainees — d'ou le mode « ghost », qui ne garde que
+       le bord dente : c'est lui qui porte le mouvement. */
+    const riftJaws = (half, base, ang, a, scale, ghost) => {
+      if (a <= 1 || half <= 0.05) return;
       for (let side = -1; side <= 1; side += 2) {
-        let prevF = 0, prevL = 0, prevY = 0;
-        for (let i = 0; i <= n; i++) {
-          const u = -1 + 2 * i / n, prof = V.riftProfile(u);
-          const ll = u * half, yy = base + crown * prof;
-          const jag = (hash(salt, i * 37 + (side > 0 ? 0 : 500)) - 0.5) * 0.10 * prof;
-          const ff = side * (lipMax * prof * 0.92 + 0.035) + jag;
-          if (i > 0) {
-            const bright = prof * (0.55 + 0.45 * Math.sin(u * 9 - t * 14));
-            segment(prevF, prevL, prevY, ff, ll, yy, 0.036 + 0.018 * prof,
-                    bright > 0.62 ? SINGULAR : (prof > 0.45 ? GLACIER : HORIZON),
-                    opq(a * (0.68 + 0.32 * prof)), 0.050);
-          }
-          prevF = ff; prevL = ll; prevY = yy;
-        }
-        for (let level = 1; level <= 4; level++) {
-          const h = level / 5;
-          let prevF2 = 0, prevL2 = 0, started = false;
-          for (let i = 0; i <= n; i++) {
-            const u = -1 + 2 * i / n, prof = V.riftProfile(u);
-            if (prof <= h) { started = false; continue; }
-            const inner = Math.sqrt(Math.max(0, 1 - (h / prof) * (h / prof)));
-            const ff = side * lipMax * prof * inner * 0.88, ll = u * half, yy = base + crown * h;
-            if (started) {
-              segment(prevF2, prevL2, yy, ff, ll, yy, 0.024,
-                      (level & 1) === 0 ? BASALT : SLATE, opq(a * 0.72), 0.070);
+        let have = false, pF = 0, pL = 0, pY = 0;
+        for (let i = 0; i < V.RIFT_TEETH; i++) {
+          /* Les dents d'une machoire tombent a MI-CHEMIN de celles de l'autre : les deux
+             rangees s'imbriquent au lieu de se cogner. C'est a ca qu'on reconnait un
+             piege a loup avant tout. */
+          const shift = side > 0 ? 0 : 0.5;
+          const u = -1 + 2 * (i + shift) / (V.RIFT_TEETH - 1 + 0.5);
+          const prof = V.riftProfile(u);
+          if (prof < 0.10) continue;
+          const ll = u * half, reach = V.RIFT_JAW * (0.42 + 0.58 * prof);
+          const tip = V.riftJawPoint(1, ang, reach);
+          const tipF = side * (V.RIFT_HINGE + tip[0]), tipY = base + tip[1];
+
+          if (!ghost) {
+            let pf = side * V.RIFT_HINGE, py = base;
+            for (let k = 1; k <= 7; k++) {
+              const h = k / 7, p = V.riftJawPoint(h, ang, reach);
+              const ff = side * (V.RIFT_HINGE + p[0]), yy = base + p[1];
+              segment(pf, ll, py, ff, ll, yy, (0.044 - 0.016 * h) * scale,
+                      (i % 2 === 0) ? SLATE : BASALT, opq(a * (0.72 + 0.28 * prof)), 0.038);
+              pf = ff; py = yy;
             }
-            prevF2 = ff; prevL2 = ll; started = true;
+          }
+
+          /* LA DENT : un eclat qui prolonge la tangente, allonge une fois sur deux —
+             une rangee reguliere fait un peigne, pas une machoire. */
+          const local = ang - V.RIFT_CURVE;
+          const tl = 0.40 * ((i % 2 === 0) ? 1 : 0.68) * (0.45 + 0.55 * prof);
+          for (let k = 1; k <= 3; k++) {
+            const h = k / 3, sz = (0.062 - 0.014 * k) * scale;
+            box(tipF + side * Math.sin(local) * tl * h, ll, tipY + Math.cos(local) * tl * h,
+                sz, sz, sz, k === 3 ? SINGULAR : GLACIER, opq(a * (0.78 + 0.22 * prof)));
+          }
+
+          /* LA LEVRE relie les pointes : sans elle les dents flottent. */
+          if (have) segment(pF, pL, pY, tipF, ll, tipY, 0.034 * scale, HORIZON,
+                            opq(a * 0.80), 0.042);
+          pF = tipF; pL = ll; pY = tipY; have = true;
+        }
+      }
+    };
+
+    if (half > 0.05 && crown > 0.05) {
+      /* ---- 2. LES DEUX MACHOIRES ---- */
+      const ang = V.riftJawAngle(t), jawSpeed = V.riftJawSpeed(t);
+      riftJaws(half, base, ang, a, 1.0, false);
+
+      /* ---- 2 bis. LES TRAINEES DE VITESSE. Pendant le claquement le bord dente
+         parcourt deux radians en cinq ticks : sans trace, l'oeil ne voit que la position
+         d'arrivee et le coup n'existe pas. Hors claquement, rien a payer. ---- */
+      if (jawSpeed > 2.5) {
+        const ghost = clamp01((jawSpeed - 2.5) / 22);
+        for (let g = 1; g <= V.RIFT_GHOSTS; g++) {
+          const past = V.riftJawAngle(Math.max(0, t - g * 0.0042));
+          if (Math.abs(past - ang) < 0.012) continue;
+          riftJaws(half, base, past, a * ghost * (1 - g / (V.RIFT_GHOSTS + 1)) * 0.55,
+                   0.72, true);
+        }
+      }
+
+      /* ---- 2 ter. LES RESSORTS. Un piege a loup se tend par deux ressorts de torsion
+         poses aux deux bouts de la charniere : ils disent l'energie stockee. ---- */
+      {
+        const load = clamp01((ang - V.RIFT_SHUT) / Math.max(0.1, V.RIFT_OPEN - V.RIFT_SHUT));
+        for (let end = -1; end <= 1; end += 2) {
+          const ll = end * half * 0.98;
+          for (let i = 0; i < 16; i++) {
+            const v = i / 15, turn = v * TAU * (1.4 + 1.6 * load);
+            const rr = 0.20 * (1 - 0.22 * load);
+            box(Math.sin(turn) * rr, ll + end * v * 0.16 * (1 - 0.4 * load),
+                base + 0.16 + Math.cos(turn) * rr, 0.030, 0.030, 0.030,
+                load > 0.6 ? GLACIER : HALO, opq(a * (0.55 + 0.45 * load)));
           }
         }
       }
 
-      /* ---- 3. LES FIBRES : de la matiere etiree qui se necrose et CASSE ---- */
-      for (let i = 0; i < 9; i++) {
-        const u = (hash(salt, i * 83) - 0.5) * 1.74, prof = V.riftProfile(u);
-        if (prof < 0.12) continue;
-        const limit = 0.22 + 0.62 * hash(salt, i * 97);
-        const strain = clamp01(gape / limit);
-        if (strain >= 1) continue;
-        const h = (0.15 + 0.70 * hash(salt, i * 101)) * prof;
-        const ll = u * half, yy = base + crown * h, span = lipMax * prof * 0.92;
-        for (let si = 0; si <= 7; si++) {
-          const v = -1 + 2 * si / 7;
-          const neck = 1 - 0.85 * strain * (1 - v * v);
-          const th = 0.028 * neck;
-          if (th < 0.006) continue;
-          box(v * span, ll + v * 0.04, yy + (1 - v * v) * 0.05 * strain, th, th, th,
-              strain > 0.66 ? GLACIER : HORIZON, opq(a * (0.55 + 0.45 * (1 - strain))));
+      /* ---- 3. LE SPLASH DE VOID. Chaque gerbe est une parabole AVEC SA TRAINEE : sans
+         trainee, une gerbe est une pluie de confettis. ---- */
+      {
+        const bite = t - V.RIFT_CLOSE - V.RIFT_SNAP * 0.75;
+        if (bite > 0 && bite < 0.22) {
+          const sec = bite * 9.0, fade = 1 - clamp01(bite / 0.22);
+          for (let i = 0; i < 34; i++) {
+            const seed = i * 173;
+            const ll = (hash(salt, seed) - 0.5) * 2 * half * 0.96;
+            const prof = V.riftProfile(clamp01(Math.abs(ll) / Math.max(0.2, half)));
+            if (prof < 0.10) continue;
+            const side = (i & 1) === 0 ? 1 : -1;
+            const vf = side * (1.3 + 3.1 * hash(salt, seed + 1)) * (0.45 + 0.55 * prof);
+            const vy = (2.6 + 4.2 * hash(salt, seed + 2)) * prof;
+            const vl = (hash(salt, seed + 3) - 0.5) * 1.8;
+            const y0 = base + V.RIFT_JAW * 0.42 * prof;
+            for (let q = 3; q >= 0; q--) {
+              const ss = sec - q * 0.055;
+              if (ss <= 0) continue;
+              const yy = ballistic(y0, vy, ss, GROUND_Y + 0.04);
+              const sz = (0.055 - q * 0.009) * (0.5 + 0.5 * prof);
+              const rgb = q === 0 ? (hash(salt, seed + 5) > 0.72 ? SINGULAR : GLACIER)
+                                  : (q === 1 ? HORIZON : HALO);
+              box(vf * ss, ll + vl * ss, yy, sz, sz, sz, rgb,
+                  opq(a * fade * (1 - q * 0.19)));
+            }
+          }
+          const ring = sec * 1.35;
+          if (ring < 3.4) {
+            for (let i = 0; i < 30; i++) {
+              const ll = (-1 + 2 * i / 29) * half;
+              const prof = V.riftProfile(clamp01(Math.abs(ll) / Math.max(0.2, half)));
+              for (let side = -1; side <= 1; side += 2) {
+                box(side * ring * (0.35 + 0.65 * prof), ll, GROUND_Y + 0.022,
+                    0.046, SLAB_H, 0.046, (i % 4 === 0) ? GLACIER : HORIZON,
+                    opq(a * fade * 0.85 * prof));
+              }
+            }
+          }
         }
       }
 
@@ -1139,7 +1301,11 @@ function buildVoid(variant, t, salt = 7331) {
           const lu = (arc + 0.5) / 5 * 1.80 - 0.90;
           const prof = V.riftProfile(lu);
           if (prof < 0.12) continue;
-          const ll = lu * half, span = lipMax * prof * 0.92;
+          /* L'arc doit partir d'une rangee de dents et arriver sur l'autre : on mesure
+             l'ecartement REEL des machoires, sinon il flotte. */
+          const ll = lu * half;
+          const span = V.RIFT_HINGE + V.riftJawPoint(1, V.riftJawAngle(t),
+                         V.RIFT_JAW * (0.42 + 0.58 * prof))[0];
           let prevFa = -span;
           let prevYa = base + crown * prof * (0.25 + 0.45 * hash(salt, k * 17 + arc));
           for (let b = 1; b <= 9; b++) {
@@ -1154,17 +1320,23 @@ function buildVoid(variant, t, salt = 7331) {
         }
       }
 
-      /* (2) LA BOUCHE QUI CLAQUE : les deux levres se referment d'un coup sec. */
-      let clap = 1 - clamp01(age / 0.060);
-      clap = clap * clap * Math.sin(clamp01(age / 0.060) * PI * 1.6);
-      if (clap > 0.02) {
+      /* (2) LA GUEULE SE CRISPE. Le mouvement est porte par les machoires elles-memes
+         (la morsure manquee de riftJawAngle) ; il ne reste ici que la traine lumineuse
+         qui court le long du bord dente a chaque aspiration. */
+      const crisp = 1 - clamp01(age / 0.085);
+      if (crisp > 0.02) {
+        const sweep = -1 + 2 * clamp01(age / 0.085);
         for (let side = -1; side <= 1; side += 2) {
-          for (let i = 0; i <= 26; i++) {
-            const lu = -1 + 2 * i / 26, prof = V.riftProfile(lu);
-            if (prof < 0.08) continue;
-            box(side * lipMax * prof * (0.92 - 0.45 * clap), lu * half,
-                base + crown * prof * 0.55, 0.040, 0.040, 0.040,
-                HORIZON, opq(a * clap * 0.95));
+          for (let i = 0; i < 13; i++) {
+            const lu = -1 + 2 * i / 12, prof = V.riftProfile(lu);
+            if (prof < 0.10) continue;
+            const near = 1 - clamp01(Math.abs(lu - sweep) / 0.42);
+            if (near <= 0) continue;
+            const jt = V.riftJawPoint(1, V.riftJawAngle(t),
+                                      V.RIFT_JAW * (0.42 + 0.58 * prof));
+            const sz = 0.034 + 0.030 * near;
+            box(side * (V.RIFT_HINGE + jt[0]), lu * half, base + jt[1], sz, sz, sz,
+                near > 0.65 ? SINGULAR : GLACIER, opq(a * crisp * near));
           }
         }
       }
