@@ -24,12 +24,66 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > toujours la dernière version, une fois le cache expiré (quelques minutes). Les liens en
 > SHA sont l'adresse **immédiate**, à utiliser le jour de la livraison.
 
-## Chaos — refonte : noir et blanc, couleur aux arêtes, huit dérivés · 18 novembre 2026 ⟵ **LOT COURANT**
+## Chaos — refonte, et des fondus de rien à rien · 18 novembre 2026 ⟵ **LOT COURANT**
 
 - **Aperçu voxel des trois signatures (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Three_Signatures_preview.html
 - **Démo du core shader des Pixels 3D (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Pixel_shader_demo.html
 - **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Three_Signatures_src.zip
 
+> **T399 — LES APPARITIONS ET LES DISPARITIONS, DE RIEN À RIEN.**
+>
+> Le gestionnaire d'impacts donnait à toutes les familles la même courbe d'opacité,
+> `240·(1−t)`. Elle a deux défauts, et ils sont de nature opposée.
+>
+> - **Au départ, un échelon.** La signature est à **pleine opacité dès sa première
+>   image** : elle ne commence pas, elle *apparaît*.
+> - **À l'arrivée, une pente constante.** L'œil voit donc **deux ruptures** — là où la
+>   rampe démarre et là où elle touche zéro — et entre les deux la figure passe la moitié
+>   de sa chorégraphie à **50 % d'alpha**, c'est-à-dire délavée pendant précisément les
+>   instants qu'elle est censée raconter.
+>
+> **La correction, pour Chaos.** L'appelant passe désormais une opacité de référence
+> constante et la signature pose sa propre enveloppe :
+> `env = smoothstep(t, 0, 0,06) · (1 − smoothstep(t, 0,84, 1))`. Un smoothstep a une
+> **dérivée nulle aux deux bornes** : il n'y a donc ni démarrage ni arrêt, seulement une
+> accélération puis un ralenti — et **le plateau du milieu est plein**, ce qui rend la
+> chorégraphie *plus* lisible qu'avant, pas moins. L'entrée est courte (6 %, neuf ticks
+> sur cent cinquante) parce qu'une signature d'impact doit **répondre au coup** : au-delà
+> d'une demi-seconde on ne lit plus une frappe mais une invocation. La sortie est presque
+> trois fois plus longue (16 %) parce que l'œil pardonne une arrivée rapide et **jamais**
+> un arrachage. Elle s'applique dans `put()`, le point d'émission unique du fichier.
+>
+> **La poussière, qui était le vrai piège.** Un Pixel 3D libre, une fois né, ne connaît
+> plus la signature qui l'a émis : il vit sa vie dans `VoidPixelManager` et l'enveloppe ne
+> l'atteint pas. Un pixel né à 95 % de la chorégraphie avec quarante ticks de vie **reste
+> seul en l'air une seconde après que tout le reste a disparu**. La première correction —
+> raccourcir sa vie proportionnellement à l'enveloppe — était fausse, et le banc l'a
+> montré : à *t* = 0,97 la Sphère d'Entropie affichait encore **126 pixels à l'alpha
+> 222**. Ce n'est pas l'enveloppe qui borne, c'est **le temps qui reste** :
+> `vie = min(vie, ticks restants)`, et **aucune naissance quand il reste moins de douze
+> ticks** — en dessous, le fondu propre du pixel se joue en deux images et se lit comme un
+> **clignotement**, soit le défaut qu'on corrige, mais en pire.
+>
+> **Le fondu d'un pixel lui-même** passe de « plein à la naissance puis rampe linéaire sur
+> les 28 derniers % » à `smoothstep(vie, 0, 0,08) · (1 − smoothstep(vie, 0,70, 1))`.
+> L'entrée reste très courte à dessein : au-delà, un cube passe le début de sa course à
+> être invisible et la gerbe paraît terne.
+>
+> **Et les douze autres familles ?** Elles reçoivent la même intention sous une forme qui
+> **ne peut pas régresser un réglage existant** : `240·(1−t)` est multiplié par
+> `smoothstep(t, 0, 0,05) · (1 − smoothstep(t, 0,90, 1))`. Ce facteur vaut **exactement 1**
+> entre 5 % et 90 %, donc la courbe sur laquelle l'Eau, la Foudre, l'Ombre, le Sang et le
+> Vide ont été réglés est inchangée ; il n'ajoute jamais d'opacité, il en **retire aux deux
+> bouts**. L'échelon d'entrée et la rupture de sortie disparaissent partout, sans toucher
+> à une seule chorégraphie validée.
+>
+> **Mesuré au banc**, opacité maximale par image, sur les trois signatures :
+> `t=0 → 0` · `t=0,01 → 1` · `t=0,03 → 47` · `t=0,06 → 197` · `t=0,50 → 222` ·
+> `t=0,84 → 219` · `t=0,92 → 202` · `t=0,97 → 2` · `t=1 → 0`. De rien à rien, et plein au
+> milieu.
+>
+> ---
+>
 > **T398 — les quatre reproches, traités un par un.** Le lot précédent a été refusé sur les
 > trois signatures et sur la palette des corps. Voici ce qui a changé, et pourquoi.
 >

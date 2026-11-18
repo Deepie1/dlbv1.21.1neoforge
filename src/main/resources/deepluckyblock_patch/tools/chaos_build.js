@@ -68,6 +68,13 @@ const G_MASK = 2, G_DEEP = 6, G_BODY = 11, G_MID = 16,
 const H_CYAN = 0.52, H_BLUE = 0.62, H_VIOLET = 0.74,
       H_MAGENTA = 0.86, H_ROSE = 0.93, H_EMBER_HUE = 0.07;
 
+/* Rampe lissee, derivee nulle aux deux bornes -- miroir de ChaosSignatureVfx.smooth(). */
+function sstep(x, from, to) {
+  if (to <= from) return x >= to ? 1 : 0;
+  const u = x < from ? 0 : x > to ? 1 : (x - from) / (to - from);
+  return u * u * (3 - 2 * u);
+}
+
 function buildChaos(variant, t, salt = 4421) {
   const out = [];
   if (t <= 0 || t >= 1) return out;
@@ -96,12 +103,28 @@ function buildChaos(variant, t, salt = 4421) {
 
   const DUR = CHAOS_SHAPE.DURATION[variant];
   const GROUND = CHAOS_SHAPE.GROUND_FALLBACK;
-  const a = 1.0;   /* l'aperçu joue toujours à pleine opacité */
+  /* ENVELOPPE D'ENTREE ET DE SORTIE — miroir de ChaosSignatureVfx.FADE_IN / FADE_OUT.
+     L'entree est courte (6 %) parce qu'une signature d'impact doit repondre au coup ;
+     la sortie est presque trois fois plus longue (16 %) parce que l'oeil pardonne une
+     arrivee rapide et jamais un arrachage. smoothstep aux deux bouts : derivee nulle,
+     donc ni depart ni arret visibles, seulement une acceleration puis un ralenti. */
+  const FADE_IN = 0.06, FADE_OUT = 0.16;
+  const env = sstep(t, 0.0, FADE_IN) * (1.0 - sstep(t, 1.0 - FADE_OUT, 1.0));
+  const a = env;
+  /* Ticks restants : la seule borne qui garantisse qu'un pixel ne survive pas a sa
+     signature. Miroir de ChaosSignatureVfx.envRemain. */
+  const envRemain = Math.max(0, Math.round((1.0 - t) * DUR));
 
   /* ---- LE POINT DE SORTIE UNIQUE ---------------------------------------------------------
      Mirroir de ChaosSignatureVfx.put() + de la formule de couleur du .fsh. Le corps reçoit
      un gris et SON alpha (plus faible) ; l'arête reçoit la teinte et l'alpha plein. */
+  /* L'enveloppe en vigueur pour les prochaines emissions. Elle vaut `env` pour la
+     geometrie de la signature et 1 pour les pixels libres, qui n'en dependent plus une
+     fois nes -- exactement comme ChaosSignatureVfx.envAlpha, que VoidPixelManager
+     n'applique jamais aux pixels deja en vol. */
+  let putEnv = env;
   function put(f, up, lat, hx, hy, hz, spin, mode, gray, hue, alpha) {
+    alpha *= putEnv;
     if (alpha <= 0.004) return;
     const g = gray < 0 ? 0 : gray > 31 ? 31 : gray;
     const gn = g / 31;
@@ -123,6 +146,11 @@ function buildChaos(variant, t, salt = 4421) {
      Rejeu déterministe depuis le tick 0, physique identique à VoidPixelManager.onClientTick. */
   const live = [];
   function spawn(x, y, z, vx, vy, vz, size, life, mode, hue, grav, gray) {
+    /* Un pixel ne a 95 % de la choregraphie avec quarante ticks de vie reste seul en
+       l'air une seconde apres que tout le reste a disparu. On raccourcit sa vie dans la
+       meme proportion que l'enveloppe : miroir exact de ChaosSignatureVfx.pixel(). */
+    if (env <= 0.02 || envRemain < 12) return;
+    life = Math.min(life, envRemain);
     live.push({ x, y, z, vx, vy, vz, size, life, age: 0, mode, hue, grav, gray });
   }
   function stepPixels() {
@@ -136,14 +164,17 @@ function buildChaos(variant, t, salt = 4421) {
     }
   }
   function flushPixels() {
+    putEnv = 1.0;                 /* un pixel en vol ignore l'enveloppe de sa signature */
     for (const p of live) {
       const l = p.age / p.life;
-      const fade = l < 0.72 ? 1.0 : 1.0 - (l - 0.72) / 0.28;
+      /* Fondu de rien a rien, miroir exact de VoidPixelManager. */
+      const fade = sstep(l, 0.0, 0.08) * (1.0 - sstep(l, 0.70, 1.0));
       const grow = l < 0.10 ? l / 0.10 : 1.0;
       const h = p.size * 0.5 * grow;
       if (h < 0.002 || fade <= 0.01) continue;
       cube(p.x, p.y, p.z, h, p.age * 0.07, p.mode, p.gray, p.hue, fade);
     }
+    putEnv = env;
   }
 
   /* ========================================================================================

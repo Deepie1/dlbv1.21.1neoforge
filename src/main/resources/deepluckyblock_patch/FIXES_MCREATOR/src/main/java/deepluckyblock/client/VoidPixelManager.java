@@ -208,6 +208,13 @@ public final class VoidPixelManager {
      */
     private static net.minecraft.resources.ResourceLocation lastDimension = null;
 
+    /** Rampe lissee, derivee nulle aux deux bornes. Trois arguments, comme ailleurs. */
+    private static float smoothstep(float x, float from, float to) {
+        if (to <= from) return x >= to ? 1.0f : 0.0f;
+        float u = x < from ? 0.0f : x > to ? 1.0f : (x - from) / (to - from);
+        return u * u * (3.0f - 2.0f * u);
+    }
+
     // =====================================================================
     //  API PUBLIQUE
     // =====================================================================
@@ -389,9 +396,15 @@ public final class VoidPixelManager {
 
             float life = (AGE[i] + partial) / (float) MAX_AGE[i];
             if (life >= 1.0f) continue;
-            // Fondu en fin de vie seulement : un cube qui pâlit dès sa naissance n'est
-            // jamais vu à pleine intensité, et la gerbe paraît terne.
-            float fade = life < 0.72f ? 1.0f : 1.0f - (life - 0.72f) / 0.28f;
+            // FONDU DE RIEN A RIEN, aux deux bouts. L'entree tient sur 8 % de la vie
+            // seulement : au-dela, un cube passe le debut de sa course a etre invisible
+            // et la gerbe parait terne -- c'etait la raison d'etre de l'ancien echelon,
+            // et elle reste valable. Mais un echelon se voit quand quatre cents cubes
+            // naissent sur la meme image. La sortie prend 30 % et se termine en
+            // smoothstep : une rampe lineaire a une pente constante, donc deux ruptures
+            // visibles, la ou elle commence et la ou elle touche zero.
+            float fade = smoothstep(life, 0.0f, 0.08f)
+                    * (1.0f - smoothstep(life, 0.70f, 1.0f));
             // Le cube grossit un peu en naissant. Mesuré : sans cela, l'apparition de
             // quatre cents cubes sur une seule frame se lit comme un clignotement.
             float grow = life < 0.10f ? life / 0.10f : 1.0f;

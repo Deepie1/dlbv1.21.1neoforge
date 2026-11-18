@@ -3507,12 +3507,32 @@ public final class WeaponWorldVfxManager {
 
     // ==================== 3. IMPACTS, CRITIQUES & EFFETS GRANDIOSES EN MINI-PIXELS 3D ====================
 
+    /**
+     * Rampe lissee, derivee nulle aux deux bornes. Sert aux fondus d'entree et de sortie
+     * des impacts : une interpolation lineaire a une pente constante, donc un debut et une
+     * fin que l'oeil lit comme des ruptures ; celle-ci accelere puis ralentit.
+     */
+    private static float fadeCurve(float x, float from, float to) {
+        if (to <= from) return x >= to ? 1.0f : 0.0f;
+        float u = Mth.clamp((x - from) / (to - from), 0.0f, 1.0f);
+        return u * u * (3.0f - 2.0f * u);
+    }
+
     private static void renderVoxelImpact(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                           Vec3 cam, VfxInstance inst, float t, VertexConsumer lightBody) {
         float cx = quantize((float) (inst.x - cam.x), 0.0625f);
         float cy = quantize((float) (inst.y - cam.y), 0.0625f);
         float cz = quantize((float) (inst.z - cam.z), 0.0625f);
-        int fadeA = Math.round(240.0f * (1.0f - t));
+        // DE RIEN A RIEN, POUR TOUTES LES FAMILLES. La rampe 240*(1-t) demarrait a pleine
+        // opacite des la premiere image -- un echelon franc -- et touchait zero avec une
+        // pente constante, ce qui donne deux ruptures visibles : la ou la rampe commence
+        // et la ou elle finit. Les deux smoothstep ci-dessous ne font que RETIRER de
+        // l'alpha sur les 5 premiers % et les 10 derniers ; entre les deux le facteur vaut
+        // exactement 1, donc la courbe sur laquelle les douze familles ont ete reglees est
+        // inchangee. C'est la seule forme de correction qui ne peut pas regresser un
+        // reglage existant : elle n'ajoute jamais d'opacite, elle en enleve aux deux bouts.
+        int fadeA = Math.round(240.0f * (1.0f - t)
+                * fadeCurve(t, 0.0f, 0.05f) * (1.0f - fadeCurve(t, 0.90f, 1.0f)));
         if (inst.effect == WeaponVisualEffectId.MIASMA_SHROUD && inst.miasmaChainId >= 0) {
             if (inst.miasmaEndAge >= 0) {
                 float endT = Mth.clamp((inst.age - inst.miasmaEndAge) / 20.0f, 0.0f, 1.0f);
@@ -5203,7 +5223,13 @@ public final class WeaponWorldVfxManager {
         try {
             ChaosSignatureVfx.render(v.vc(), v.mat(), v.tmp(),
                     v.cx(), v.cy(), v.cz(), v.t(),
-                    v.dirX(), v.dirZ(), signature, v.fadeA(),
+                    // OPACITE DE REFERENCE CONSTANTE, et non v.fadeA() = 240*(1-t). La
+                    // rampe lineaire generique rendait la signature pleine des la premiere
+                    // image -- un pop franc -- puis la delavait sur toute sa duree, si
+                    // bien qu'a mi-choregraphie il ne restait que la moitie de l'alpha.
+                    // ChaosSignatureVfx pose desormais sa propre enveloppe, nulle aux deux
+                    // bouts et pleine au milieu.
+                    v.dirX(), v.dirZ(), signature, 240,
                     (int) (v.inst().seed & 0x7FFFFFFFL), ground);
         } finally {
             voxelPulseEnabled = previousPulse;

@@ -421,6 +421,37 @@ aria-label="Progression de l’animation">
   <p class="refs" id="beatsRefs"></p>
   <p class="refs" id="gpRefs"></p>
   <p class="refs" id="sfxRefs"></p>
+  <p class="refs"><b>LES APPARITIONS ET LES DISPARITIONS, DE RIEN À RIEN.</b> Le \
+gestionnaire d’impacts donnait à toutes les familles la même courbe d’opacité, \
+<code>240·(1−t)</code>. Elle a deux défauts, et ils sont de nature opposée. Au départ \
+c’est un <b>échelon</b> : la signature est à <b>pleine opacité dès sa première image</b>, \
+elle ne commence pas, elle <i>apparaît</i>. À l’arrivée c’est une rampe à <b>pente \
+constante</b>, donc l’œil voit deux ruptures — là où la rampe démarre et là où elle touche \
+zéro — et entre les deux la figure passe la moitié de sa chorégraphie à <b>50 % d’alpha</b>, \
+c’est-à-dire délavée pendant précisément les instants qu’elle est censée raconter.</p>
+  <p class="refs"><b>La correction.</b> Chaos pose désormais sa propre enveloppe et \
+l’appelant lui passe une opacité de référence constante : \
+<code>env = smoothstep(t, 0, 0,06) · (1 − smoothstep(t, 0,84, 1))</code>. Un smoothstep a \
+une <b>dérivée nulle aux deux bornes</b> : la signature n’a donc ni démarrage ni arrêt, \
+seulement une accélération puis un ralenti, et le <b>plateau du milieu est plein</b>. \
+L’entrée est courte — 6 %, neuf ticks sur cent cinquante — parce qu’une signature d’impact \
+doit <b>répondre au coup</b> : au-delà d’une demi-seconde on ne lit plus une frappe mais \
+une invocation. La sortie est presque trois fois plus longue, 16 %, parce que l’œil \
+pardonne une arrivée rapide et <b>jamais</b> un arrachage. Elle est appliquée dans \
+<code>put()</code>, le point d’émission unique du fichier : un paramètre de plus à faire \
+descendre jusqu’à deux cents sites aurait garanti qu’on en oublie un — et il suffit d’un \
+seul cube resté opaque pour que toute l’extinction se remarque.</p>
+  <p class="refs"><b>Et la poussière ?</b> Un Pixel 3D libre, une fois né, ne connaît plus \
+la signature qui l’a émis : il vit sa vie dans <code>VoidPixelManager</code> et \
+l’enveloppe ne l’atteint pas. Un pixel né à 95 % de la chorégraphie avec quarante ticks \
+de vie <b>reste donc seul en l’air une seconde après que tout le reste a disparu</b>. La \
+première correction — raccourcir sa vie proportionnellement à l’enveloppe — était fausse, \
+et le banc l’a montré : à <i>t</i> = 0,97 la Sphère d’Entropie affichait encore 126 pixels \
+à l’alpha 222. Ce n’est pas l’enveloppe qui borne, c’est <b>le temps qui reste</b> : \
+<code>vie = min(vie, ticks restants)</code>, et aucune naissance quand il reste moins de \
+douze ticks, parce qu’en dessous le fondu propre du pixel se joue en deux images et se lit \
+comme un <b>clignotement</b> — le défaut qu’on corrige, mais en pire. Chaque pixel monte \
+enfin sur 8 % de sa vie et redescend sur les 30 derniers, en smoothstep lui aussi.</p>
   <p class="refs"><b>LES PIXELS 3D — le système demandé, et il porte MAINTENANT TOUTE la \
 géométrie.</b> Les trois signatures n’emploient plus une seule fois \
 <code>emitVoxelCube</code> : perles, parois, treillis, débris et cicatrice passent tous \

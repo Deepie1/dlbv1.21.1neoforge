@@ -119,6 +119,44 @@ public final class ChaosSignatureVfx {
     private static final int M_EMBER = VoidPixelManager.MODE_EMBER;
 
     // =================================================================================
+    //  ENVELOPPE D'ENTREE ET DE SORTIE
+    // =================================================================================
+
+    /**
+     * Fractions de la duree consacrees au fondu d'entree et au fondu de sortie.
+     *
+     * <p>L'entree est courte (6 % : neuf ticks sur cent cinquante) parce qu'une signature
+     * d'impact doit <b>repondre au coup</b> : au-dela d'une demi-seconde on ne lit plus une
+     * frappe mais une invocation. La sortie est presque trois fois plus longue (16 %, soit
+     * vingt-quatre a trente-deux ticks) parce que l'oeil pardonne une arrivee rapide et
+     * jamais un arrachage : c'est la coupure franche qui se remarque, pas le demarrage.</p>
+     */
+    private static final float FADE_IN = 0.06f;
+    private static final float FADE_OUT = 0.16f;
+
+    /**
+     * Duree de chaque signature, en ticks, indexee par variante. Elle sert uniquement a
+     * convertir l'avancement 0..1 en <b>ticks restants</b> : sans cette conversion on ne
+     * peut pas savoir si un pixel qui nait a encore la place de mourir.
+     */
+    private static final int[] DURATION = { 150, 170, 200 };
+
+    /** Ticks restants avant la fin de la signature, poses par {@link #render}. */
+    private static int envRemain = 9999;
+
+    /**
+     * Enveloppe de l'image courante, posee par {@link #render} et appliquee par les deux
+     * seuls emetteurs du fichier, {@link #put} et {@link #pixel}.
+     *
+     * <p>Un champ plutot qu'un parametre de plus sur seize : le rendu client est
+     * mono-thread, la valeur est reecrite au premier geste de chaque image, et la faire
+     * descendre a la main jusqu'aux deux cents sites d'emission aurait garanti qu'on en
+     * oublie -- or il suffit d'un seul oubli pour qu'un cube reste opaque pendant que
+     * tout le reste s'efface.</p>
+     */
+    private static float envAlpha = 1.0f;
+
+    // =================================================================================
     //  DISPATCH
     // =================================================================================
 
@@ -140,6 +178,16 @@ public final class ChaosSignatureVfx {
         // L'alpha arrive en 0..255 depuis le gestionnaire ; la couche de structure
         // travaille en 0..1, comme le shader.
         float a = Mth.clamp(alpha / 255.0f, 0.0f, 1.0f);
+
+        // ENTREE ET SORTIE EN DOUCEUR, DE RIEN A RIEN. smooth() est un smoothstep : sa
+        // derivee est nulle aux deux bornes, donc la signature ne « part » pas et ne
+        // « s'arrete » pas -- elle accelere puis ralentit. Une rampe lineaire, elle, a une
+        // pente constante : l'oeil voit le debut et la fin de la rampe comme deux ruptures,
+        // ce qui est exactement le defaut qu'on corrige ici.
+        envAlpha = smooth(t, 0.0f, FADE_IN) * (1.0f - smooth(t, 1.0f - FADE_OUT, 1.0f));
+        if (envAlpha <= 0.0f) return;
+        int duration = DURATION[variant >= 0 && variant < DURATION.length ? variant : 0];
+        envRemain = Math.max(0, Math.round((1.0f - t) * duration));
 
         switch (variant) {
             case ENTROPY -> renderEntropy(cx, cy, cz, t, dx, dz, a, salt, ground);
@@ -325,7 +373,7 @@ public final class ChaosSignatureVfx {
             float rad = radius * 1.07f;
             float f = cos(ang) * rad;
             float lat = sin(ang) * rad;
-            VoidPixelManager.spawnPixel(
+            pixel(
                     WeaponWorldVfxManager.camX() + cx + f * dx - lat * dz,
                     WeaponWorldVfxManager.camY() + cy + YC,
                     WeaponWorldVfxManager.camZ() + cz + f * dz + lat * dx,
@@ -339,7 +387,7 @@ public final class ChaosSignatureVfx {
             float rad = radius * 0.7f;
             float f = cos(ang) * rad;
             float lat = sin(ang) * rad;
-            VoidPixelManager.spawnPixel(
+            pixel(
                     WeaponWorldVfxManager.camX() + cx + f * dx - lat * dz,
                     WeaponWorldVfxManager.camY() + cy + YC,
                     WeaponWorldVfxManager.camZ() + cz + f * dz + lat * dx,
@@ -440,7 +488,7 @@ public final class ChaosSignatureVfx {
                     if (((cid + (int) (t * 170.0f)) % 23) == 0) {
                         float f = (ux * radius + jx);
                         float la = (uz * radius + jz);
-                        VoidPixelManager.spawnPixel(
+                        pixel(
                                 WeaponWorldVfxManager.camX() + cx + f * dx - la * dz,
                                 WeaponWorldVfxManager.camY() + cy + YC + uy * radius + jy,
                                 WeaponWorldVfxManager.camZ() + cz + f * dz + la * dx,
@@ -742,7 +790,7 @@ public final class ChaosSignatureVfx {
                 float phi = j * GOLD;
                 float ux = cos(phi) * rr;
                 float uz = sin(phi) * rr;
-                VoidPixelManager.spawnPixel(
+                pixel(
                         WeaponWorldVfxManager.camX() + cx + (ux * R) * dx - (uz * R) * dz,
                         WeaponWorldVfxManager.camY() + cy + YC + y0 * R,
                         WeaponWorldVfxManager.camZ() + cz + (ux * R) * dz + (uz * R) * dx,
@@ -766,7 +814,7 @@ public final class ChaosSignatureVfx {
                 int m = (int) (t * 200.0f) % 42;
                 float ang = hash(salt + 331, m) * Mth.TWO_PI;
                 float rad = 0.5f + 4.3f * hash(salt + 332, m);
-                VoidPixelManager.spawnPixel(
+                pixel(
                         WeaponWorldVfxManager.camX() + cx + (cos(ang) * rad) * dx
                                 - (sin(ang) * rad) * dz,
                         WeaponWorldVfxManager.camY() + cy + ground + 0.10f,
@@ -793,11 +841,13 @@ public final class ChaosSignatureVfx {
                             float f, float up, float lat,
                             float hx, float hy, float hz, float spin,
                             int mode, int gray, float hue, float alpha) {
+        float av = alpha * envAlpha;
+        if (av <= 0.004f) return;   // meme seuil que le miroir JS, et meme effet : rien
         VoidPixelManager.emitStructureBox(
                 WeaponWorldVfxManager.camX() + cx + f * dx - lat * dz,
                 WeaponWorldVfxManager.camY() + cy + up,
                 WeaponWorldVfxManager.camZ() + cz + f * dz + lat * dx,
-                hx, hy, hz, spin, mode, gray, hue, alpha);
+                hx, hy, hz, spin, mode, gray, hue, av);
     }
 
     /** Variante cubique, de loin la plus fréquente. */
@@ -805,6 +855,32 @@ public final class ChaosSignatureVfx {
                             float f, float up, float lat, float half, float spin,
                             int mode, int gray, float hue, float alpha) {
         put(cx, cy, cz, dx, dz, f, up, lat, half, half, half, spin, mode, gray, hue, alpha);
+    }
+
+    /**
+     * Naissance d'un Pixel 3D libre, sous enveloppe.
+     *
+     * <p>Un pixel libre survit a la signature qui l'a emis : c'est voulu pour les debris
+     * du big bang, qui doivent finir leur chute. Mais un pixel ne a 95 % de la
+     * choregraphie avec quarante ticks de vie <b>reste seul en l'air une seconde apres que
+     * tout le reste a disparu</b>, et c'est precisement la queue sale qu'on cherche a
+     * supprimer. On raccourcit donc sa vie dans la meme proportion que l'enveloppe : les
+     * derniers nes s'eteignent avec elle, et comme chaque pixel a deja son propre fondu
+     * lisse, ils s'eteignent eux aussi en douceur.</p>
+     */
+    private static void pixel(double x, double y, double z,
+                              double vx, double vy, double vz,
+                              float size, int life, int mode, float hue,
+                              float gravity, int gray) {
+        if (envAlpha <= 0.02f) return;
+        // S'IL NE RESTE PAS LA PLACE DE MOURIR, ON NE NAIT PAS. Douze ticks est le plancher
+        // mesure : en dessous, le fondu propre du pixel (montee sur 8 % de sa vie, descente
+        // sur les 30 derniers %) se joue en deux ou trois images et se lit comme un
+        // clignotement -- exactement le defaut qu'on corrige, mais en pire.
+        if (envRemain < 12) return;
+        int trimmed = Math.min(life, envRemain);
+        VoidPixelManager.spawnPixel(x, y, z, vx, vy, vz, size, trimmed, mode, hue,
+                gravity, gray);
     }
 
     /**
