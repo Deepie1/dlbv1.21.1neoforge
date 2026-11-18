@@ -35,7 +35,7 @@ import os
 
 ROOT = 'src/main/resources/deepluckyblock_patch/tools/'
 ENGINE = io.open(ROOT + 'chaos_build.js', encoding='utf-8').read()
-_MOD = "if (typeof module !== 'undefined' && module.exports) {"
+_MOD = "if (typeof module !== 'undefined') module.exports"
 assert ENGINE.count(_MOD) == 1, 'bloc module.exports introuvable dans chaos_build.js'
 ENGINE = ENGINE[:ENGINE.index(_MOD)]
 CSS = io.open(ROOT + 'preview_base.css', encoding='utf-8').read()
@@ -47,33 +47,35 @@ assert RENDER.count(MARK) == 1, 'marqueur de decoupe introuvable dans preview_re
 _, TAIL = RENDER.split(MARK, 1)
 
 HEAD = r"""/* ===== Rendu ===== */
-const SUBS=['6 branches \u00b7 mandala \u00e0 3 anneaux \u00b7 panneaux de miroir \u00b7 r\u00e9alignement forc\u00e9',
-            '3 grands cercles \u00b7 6 m\u00e9ridiens \u00b7 coque interne \u00b7 \u00e9rosion monotone',
-            '40 com\u00e8tes \u00b7 cage de confinement \u00b7 16 rayons barbel\u00e9s \u00b7 anneau noir'];
+const SUBS=['12 reflets \u00b7 sym\u00e9trie MIROIR d\u2019ordre 6 \u00b7 parois de verre \u00b7 la boucle se referme',
+            'treillis de 340 cellules \u00b7 un front de d\u00e9sordre \u00b7 le gris se disperse sur 32 crans',
+            'une singularit\u00e9 \u00b7 une coquille \u00b7 150 tra\u00een\u00e9es radiales \u00b7 la toile cosmique'];
 const DUR=[150,170,200], NAMES=['Boucle Kal\u00e9idoscopique','Sph\u00e8re d\u2019Entropie','Cicatrice du Big Bang'];
 const BEATS=[
- [['0 \u2192 24','<b>le montage</b> : les six miroirs se verrouillent un par un, <code>amethyst_block.place</code> dont la hauteur monte \u00e0 chaque cran. <b>La sym\u00e9trie d\u2019ordre six est pos\u00e9e sans la moindre entorse</b> \u2014 c\u2019est elle, et rien d\u2019autre, qui rendra la rupture lisible'],
-  ['4 \u2192 63','<b>les six branches sortent</b> en <code>smooth(t, 0,04, 0,42)</code> jusqu\u2019\u00e0 2,90 blocs. Chaque branche est une \u00e9pine de <b>douze n\u0153uds</b>, et chaque n\u0153ud est un <b>TRIANGLE</b> de trois cubes, plus un liant au demi-pas : mesur\u00e9 sur la premi\u00e8re version, huit cubes espac\u00e9s de trente centim\u00e8tres se lisaient comme une ligne pointill\u00e9e, pas comme un cristal'],
-  ['24 \u2192 69','<b>la mandala</b> \u2014 trois anneaux concentriques de dix-huit cubes, qui tournent en sens altern\u00e9. C\u2019est l\u2019image qu\u2019un vrai kal\u00e9idoscope renvoie, et elle manquait enti\u00e8rement : sans elle, la figure \u00e9tait une \u00e9toile \u00e0 six branches'],
-  ['30 \u2192 69','<b>les panneaux de miroir</b> \u2014 sept cubes en biais entre deux branches voisines, la paroi de verre qui FABRIQUE la sym\u00e9trie. Leur alpha vaut <code>1 \u2212 chaos</code> : ils s\u2019effacent exactement \u00e0 mesure que la figure se d\u00e9r\u00e8gle, donc c\u2019est bien la paroi qui c\u00e8de'],
-  ['69 \u2192 111','<b>LE D\u00c9CROCHAGE</b>, \u00e0 46 % et pas avant. Chaque branche a son propre retard (<code>stagger = (bras\u00b70,37) mod 1</code>) : la sym\u00e9trie ne casse pas d\u2019un bloc, elle s\u2019effrite dans l\u2019ordre. Un cube <b>rose</b> appara\u00eet au coude de chaque branche, \u00e0 l\u2019endroit exact o\u00f9 elle c\u00e8de'],
-  ['117 \u2192 129','<b>LE R\u00c9ALIGNEMENT FORC\u00c9</b> \u2014 la deuxi\u00e8me r\u00e8gle du fichier. Sur douze ticks, <code>relock</code> annule tout le d\u00e9sordre : la figure <b>redevient un kal\u00e9idoscope parfait</b>. Sans ce retour \u00e0 l\u2019ordre, le spectateur ne saurait jamais ce qui a \u00e9t\u00e9 cass\u00e9'],
-  ['129 \u2192 150','la rupture d\u00e9finitive, puis le fondu. <b>Le moyeu, lui, n\u2019a pas boug\u00e9 d\u2019un degr\u00e9</b> : six cubes \u00e0 contresens, parfaitement r\u00e9guliers du d\u00e9but \u00e0 la fin \u2014 c\u2019est le t\u00e9moin, et c\u2019est ce qui rend le d\u00e9sordre des branches mesurable']],
- [['0 \u2192 5','<b>les trois grands cercles</b> se tracent, un par plan orthogonal, \u00e0 <code>amethyst_block.chime</code> montant. Trente-quatre segments chacun et non vingt-six : \u00e0 1,87 bloc de rayon, vingt-six cubes laissent 45 cm entre deux voisins, soit six fois leur taille \u2014 ce n\u2019\u00e9tait pas une sph\u00e8re, c\u2019\u00e9taient trois colliers'],
-  ['3 \u2192 51','le rayon s\u2019ouvre \u00e0 <b>1,87 bloc</b>. <b>Six m\u00e9ridiens</b> joignent les p\u00f4les et une <b>coque interne</b> \u00e0 52 % du rayon tourne \u00e0 l\u2019envers : une sph\u00e8re vide se lit comme un anneau vue de profil, une sph\u00e8re \u00e0 deux coques garde son volume sous tous les angles'],
-  ['27 \u2192 146','<b>L\u2019\u00c9ROSION</b>, et elle est MONOTONE. Chaque cube a un seuil fixe tir\u00e9 d\u2019un hachage de son indice, compar\u00e9 \u00e0 <code>entropie = (t \u2212 0,16) / 0,70</code> : <b>un cube tomb\u00e9 reste tomb\u00e9</b>. Un tirage par image aurait fait clignoter l\u2019armature enti\u00e8re au lieu de l\u2019\u00e9roder \u2014 et l\u2019\u00e9rosion est tout le sujet'],
-  ['40 \u2192 146','<b>chaque cube tomb\u00e9 DEVIENT un Pixel 3D</b> qui d\u00e9rive et retombe. C\u2019est la seule fa\u00e7on de montrer que la mati\u00e8re n\u2019est pas d\u00e9truite, seulement d\u00e9sordonn\u00e9e \u2014 ce qui est la d\u00e9finition de l\u2019entropie'],
-  ['60 \u2192 146','<b>le noyau grossit exactement comme l\u2019armature maigrit</b> : octa\u00e8dre rose, six sommets et <b>douze ar\u00eates</b> de trois cubes. La mati\u00e8re passe de l\u2019ordre au d\u00e9sordre, elle ne s\u2019\u00e9vapore pas'],
-  ['102','<b>le d\u00e9litement</b> \u2014 l\u2019armature l\u00e2che un paquet de morceaux d\u2019un coup, <code>amethyst_block.break</code>'],
-  ['150 \u2192 170','<b>L\u2019EFFONDREMENT DU NOYAU</b> : le compteur d\u2019entropie se solde. Tout ce qui est rest\u00e9 dans la sph\u00e8re paie <b>un cran de d\u00e9g\u00e2ts par palier accumul\u00e9</b>, et le disque au sol s\u2019\u00e9teint']],
- [['0 \u2192 12','<b>la compression commence</b>. Quarante fragments \u00e0 rayon FIXE convergent en <code>pull = u\u00b2</code> \u2014 un rayon tir\u00e9 \u00e0 chaque image aurait donn\u00e9 un nuage qui palpite, pas un effondrement'],
-  ['12 \u2192 84','<b>les com\u00e8tes</b> : chaque fragment tra\u00eene trois cubes sur le chemin qu\u2019il vient de parcourir. Quarante points qui se rapprochent ne disent pas qu\u2019ils TOMBENT ; quarante com\u00e8tes, si'],
-  ['30 \u2192 84','<b>la cage de confinement</b> \u2014 douze cubes sur un cuboct\u00e8dre qui se referme avec le c\u0153ur, et le <b>tic-tac</b> : quatorze <code>amethyst_block.hit</code> dont la hauteur monte \u00e0 chaque traction. <b>Le joueur a quatre secondes pour comprendre ce qui arrive</b>, et c\u2019est ce d\u00e9lai qui rend la d\u00e9tonation lisible plut\u00f4t que subie'],
-  ['60 \u2192 84','le c\u0153ur passe du <b>rose au BLANC</b> \u00e0 72 % de la compression : le seul blanc du fichier, et il n\u2019appartient qu\u2019\u00e0 cette signature'],
-  ['84','<b>LA D\u00c9TONATION.</b> <code>generic.explode</code> + <code>respawn_anchor.deplete</code> + <code>amethyst_block.resonate</code> dans la m\u00eame frame \u2014 un seul \u00e9chantillon ne fait jamais une d\u00e9tonation'],
-  ['90 \u2192 170','<b>seize rayons barbel\u00e9s</b> en spirale de Fibonacci (<code>k\u00b72,39996</code>), douze pas chacun, deux barbes perpendiculaires un pas sur trois : un rayon nu est un trait, un rayon barbel\u00e9 est une onde de choc. L\u2019expansion suit <code>\u221ae</code> \u2014 un fondu lin\u00e9aire laisse une marche visible'],
-  ['93 \u2192 170','<b>L\u2019ANNEAU NOIR</b>, horizontal, quarante-huit corps plus une couronne tra\u00eenante, et il va <b>plus vite que les rayons</b>. Il n\u2019\u00e9met aucune lumi\u00e8re : son r\u00f4le est de MASQUER, pour que l\u2019explosion ait un bord net au lieu de se diluer'],
-  ['96 \u2192 186','<b>la cicatrice</b> \u2014 trente-quatre marques au sol, et elle RETR\u00c9CIT de 3,2 \u00e0 1,4 bloc. Une zone qui garde son rayon jusqu\u2019\u00e0 dispara\u00eetre d\u2019un coup ne donne aucune information ; une zone qui se referme dit au joueur combien de temps il lui reste']]];
+ [['0 \u2192 39','<b>le tube s\u2019ouvre</b>. Le disque passe de 0,42 \u00e0 2,84 blocs en <code>smooth(t, 0,01, 0,26)</code>. Il s\u2019ouvre <b>d\u00e9j\u00e0 pav\u00e9</b> : un kal\u00e9idoscope n\u2019a pas de phase de montage, on y voit le motif complet d\u00e8s qu\u2019on colle l\u2019\u0153il au tube'],
+  ['2 \u2192 150','<b>LA SYM\u00c9TRIE MIROIR, et c\u2019est tout le sujet.</b> Trente-quatre perles sont tir\u00e9es dans un <b>unique secteur de trente degr\u00e9s</b> \u2014 l\u2019angle des deux miroirs. Chacune est ensuite copi\u00e9e <b>douze fois</b> : six rotations de soixante degr\u00e9s, et dans chaque cellule la perle <b>ET SON REFLET</b> (<code>local = CELL \u2212 ang</code>). Quatre cent huit cubes, un seul motif. La version pr\u00e9c\u00e9dente ne faisait que des rotations : c\u2019est une rosace, pas un kal\u00e9idoscope \u2014 <b>c\u2019est la r\u00e9flexion qui fait reconna\u00eetre l\u2019objet</b>'],
+  ['6 \u2192 150','<b>les parois de verre</b> \u2014 douze rayons du centre au bord, en deux r\u00f4les distincts : six <b>fentes de pliage</b> (entre cellules, mode DUAL, gris 25) et six <b>axes de r\u00e9flexion</b> (au milieu de chaque cellule, mode MONO, gris 21). Sans elles on voit un motif sym\u00e9trique ; avec elles on voit un <i>instrument</i>'],
+  ['10 \u2192 150','<b>trois anneaux concentriques</b> en sens altern\u00e9, et la <b>cerclure</b> de soixante-seize cubes qui ferme le tube. Un kal\u00e9idoscope se lit aussi en bandes radiales : sans elles, les perles flottent sans \u00e9chelle'],
+  ['69 \u2192 105','<b>LE D\u00c9CROCHAGE.</b> Les douze reflets cessent d\u2019\u00eatre solidaires : chaque copie prend sa propre d\u00e9rive (<code>hash(j\u00b797 + s\u00b713 + m\u00b77)</code>). <b>La sym\u00e9trie se d\u00e9fait sous les yeux</b>, ce qui n\u2019est lisible que parce qu\u2019elle \u00e9tait parfaite juste avant. Un tiers des perles passe en <b>STROBE</b> : la couleur cesse de glisser et se met \u00e0 sauter'],
+  ['105 \u2192 117','<b>les miroirs se f\u00ealent</b> \u2014 les parois se rompent en pointill\u00e9, les anneaux perdent six dixi\u00e8mes de leurs marques. Le tube crache des perles par le bord, en Pixels libres'],
+  ['117 \u2192 140','<b>LE R\u00c9ALIGNEMENT.</b> Sur vingt-trois ticks, tout revient \u00e0 sa place et les corps montent d\u2019un coup au gris 29. Une couronne de monochromes jaillit du centre : <b>l\u2019ordre revenu se signale par une couleur qui se tait</b>'],
+  ['140 \u2192 150','<b>la boucle se referme.</b> Les perles d\u00e9rivent sur des sinuso\u00efdes dont les fr\u00e9quences sont des <b>entiers</b> en fraction de la dur\u00e9e : \u00e0 <code>t = 1</code> elles sont exactement revenues \u00e0 leur position de <code>t = 0</code>. La signature peut \u00eatre jou\u00e9e en continu sans raccord \u2014 c\u2019est ce que le mot \u00ab boucle \u00bb promet']],
+ [['0 \u2192 41','<b>le treillis se d\u00e9ploie</b>. Quatorze latitudes, jusqu\u2019\u00e0 vingt-sept cellules par anneau, <b>trois cent quarante cubes</b> \u2014 et ils sont tous <b>au m\u00eame gris (cran 16), \u00e0 la m\u00eame taille, en mode MONO</b>. L\u2019\u0153il lit une surface, pas des cubes : c\u2019est l\u2019\u00e9tat d\u2019ordre, et il faut le poser avant de pouvoir le d\u00e9truire'],
+  ['2 \u2192 170','<b>les trois grands cercles</b>, un par plan orthogonal, en mode DUAL. Ils c\u00e8dent <b>en dernier</b> : ce sont eux qui gardent la m\u00e9moire de la forme initiale, et sans cette m\u00e9moire personne ne saurait, \u00e0 la fin, ce qui a \u00e9t\u00e9 d\u00e9truit'],
+  ['17 \u2192 170','<b>LE FRONT DE D\u00c9SORDRE</b> entre dans la sph\u00e8re. Il ne frappe pas partout : il <b>traverse</b> le long de l\u2019axe attaquant \u2192 cible, avec un bord d\u00e9chiquet\u00e9 (<code>0,62 de balayage + 0,38 de hachage</code>). Il existe donc toujours une moiti\u00e9 encore propre \u00e0 c\u00f4t\u00e9 d\u2019une moiti\u00e9 d\u00e9truite \u2014 <b>c\u2019est cette cohabitation qui se lit comme de l\u2019entropie</b>, l\u00e0 o\u00f9 une destruction uniforme se lirait comme un fondu'],
+  ['40 \u2192 143','<b>LE GRIS SE DISPERSE, et c\u2019est la ligne qui porte la signature.</b> Chaque cellule atteinte interpole son cran de gris <b>du 16 commun vers un tirage uniforme sur les 32</b>. Au d\u00e9but la sph\u00e8re est d\u2019un gris rigoureusement uniforme ; \u00e0 la fin les m\u00eames cellules couvrent toute l\u2019\u00e9chelle du noir au blanc. <b>L\u2019histogramme s\u2019aplatit sous les yeux du spectateur</b> \u2014 l\u2019entropie, litt\u00e9ralement'],
+  ['60 \u2192 170','<b>l\u2019ar\u00eate monte par paliers</b> : MONO tant que la cellule tient, puis RAINBOW, puis <b>SPECTRUM</b> \u2014 la roue enti\u00e8re, vert et jaune compris, interdits partout ailleurs dans le mod \u2014 puis <b>STROBE</b> quand il ne reste plus rien \u00e0 tenir. La discipline monochrome c\u00e8de en quatre crans'],
+  ['70 \u2192 170','<b>le noyau</b> grossit exactement comme l\u2019armature maigrit. Six branches, sept cubes chacune, <b>toujours au spectre complet</b> : le d\u00e9sordre y est d\u00e9j\u00e0 total, c\u2019est de l\u00e0 qu\u2019il vient'],
+  ['100 \u2192 160','<b>les cellules se d\u00e9tachent</b> : \u00e0 saturation, chacune quitte le treillis en <b>Pixel libre</b>, avec un gris tir\u00e9 au hasard et une gravit\u00e9 de 0,34. La sph\u00e8re devient un nuage'],
+  ['150 \u2192 165','<b>LE FANT\u00d4ME.</b> Le treillis d\u2019origine r\u00e9appara\u00eet une seconde, tr\u00e8s p\u00e2le, puis s\u2019\u00e9teint. R\u00e8gle de l\u2019\u00e9l\u00e9ment : <b>le d\u00e9sordre doit \u00eatre r\u00e9versible \u00e0 l\u2019\u0153il</b>. Sans ce rappel, un spectateur ne peut pas dire ce qui a \u00e9t\u00e9 perdu']],
+ [['0 \u2192 32','<b>LA SINGULARIT\u00c9.</b> Quarante-six fragments convergent en <code>pull = u\u00b2</code> avec une courte com\u00e8te chacun, et au centre un point qui grossit <b>en luminance et non en taille</b> (gris 14 \u2192 31) : une singularit\u00e9 n\u2019est pas un gros objet, c\u2019est un petit objet insoutenable. <b>Trente-deux ticks, et pas quatre-vingt-quatre</b> \u2014 l\u2019aspiration est une inspiration, pas le sujet. L\u2019ancienne version y passait quarante-deux pour cent du temps et se lisait donc comme une <i>implosion</i>, l\u2019exact contraire du titre'],
+  ['32 \u2192 40','<b>LA BOULE DE FEU.</b> Quatre-vingt-dix cubes au gris 31, mode MONO, sur une sph\u00e8re qui passe de 0,18 \u00e0 1,7 bloc en huit ticks. C\u2019est le seul moment de la signature o\u00f9 l\u2019image est enti\u00e8rement blanche'],
+  ['36 \u2192 200','<b>LA COQUILLE EN EXPANSION</b> \u2014 cent cinquante fragments sur une sph\u00e8re de Fibonacci, rayon <code>5,8\u00b7\u221a((t\u22120,16)/0,84)</code>. La racine carr\u00e9e est obligatoire : l\u2019expansion doit \u00eatre violente puis ralentir, un fondu lin\u00e9aire donnerait une bulle de savon qui monte \u00e0 vitesse constante'],
+  ['40 \u2192 200','<b>LES TRA\u00ceN\u00c9ES RADIALES, et c\u2019est elles qui font lire \u00ab big bang \u00bb.</b> Chaque fragment porte <b>quatre cubes align\u00e9s sur son rayon</b>, de plus en plus petits et sombres, et ils sont <b>derri\u00e8re</b> lui \u2014 donc \u00e0 un rayon plus PETIT. Les cent cinquante tra\u00een\u00e9es pointent toutes vers le m\u00eame point : ce faisceau de directions convergentes <b>est</b> l\u2019image de l\u2019explosion. Sans elles, une coquille qui grandit n\u2019est qu\u2019un nuage de points \u2014 on ne voit pas d\u2019o\u00f9 il vient'],
+  ['116 \u2192 172','<b>LA TOILE COSMIQUE.</b> Une coquille parfaitement r\u00e9guli\u00e8re est une boule de discoth\u00e8que. Chaque fragment est donc attir\u00e9 vers l\u2019un de <b>quatorze n\u0153uds</b>, et un pont de deux cubes l\u2019y relie : la surface lisse se grumelle en <b>filaments</b>, exactement comme la mati\u00e8re r\u00e9elle l\u2019a fait. La structure cesse d\u2019\u00eatre une sph\u00e8re pour devenir un r\u00e9seau'],
+  ['156 \u2192 200','<b>LE REFROIDISSEMENT</b> se lit dans le mode d\u2019ar\u00eate, fragment par fragment et d\u00e9cal\u00e9 par le hachage pour qu\u2019aucune fronti\u00e8re nette ne traverse la coquille : <b>MONO</b> blanc dans la boule de feu, <b>SPECTRUM</b> pendant l\u2019expansion, <b>RAINBOW</b> froid \u00e0 la fin. La couleur raconte la temp\u00e9rature'],
+  ['160 \u2192 200','<b>LA CICATRICE.</b> Quarante-deux marques au sol en mode <b>EMBER</b> \u2014 d\u00e9rive lente autour de l\u2019ambre, fort scintillement, le seul ton chaud des trois signatures \u2014 et des braises qui montent. C\u2019est ce qui reste quand l\u2019univers a fini de se d\u00e9plier']],
+];
 /* Conception sonore. Le Chaos est la seule famille du mod ou le DESACCORD est voulu :
    son souffle de swing est grave (0,66) et son timbre aigu (1,62), deux hauteurs qui ne
    s'accordent pas. Tout vient de la banque vanilla 1.21.1, rien n'est ajoute. */
@@ -181,12 +183,12 @@ function bangShot(tt){
  const BANG=CHAOS_SHAPE.BANG;
  if(tt<BANG) return {center:1.20, span:7.6-1.6*(tt/BANG)};
  const e=(tt-BANG)/(1-BANG), wave=Math.sqrt(e);
- return {center:1.20, span:6.0+11.5*wave};}
+ return {center:1.20, span:5.4+9.8*wave};}
 function updateCam(){CY=Math.cos(camYaw);SY=Math.sin(camYaw);CP=Math.cos(camPitch);SP=Math.sin(camPitch);
  let span;
  if(variant===2){const s=bangShot(t);span=s.span;VCY=s.center;}
- else if(variant===0){span=7.0;VCY=1.05;}
- else{span=6.4;VCY=1.15;}
+ else if(variant===0){span=8.2;VCY=1.05;}
+ else{span=5.6;VCY=1.15;}
  SCALE=Math.min(W/span,H/(span*0.80))*zoom;}"""
 assert RENDER.count(CAM_OLD) == 1, 'bloc de camera introuvable'
 RENDER = RENDER.replace(CAM_OLD, CAM_NEW)
@@ -224,8 +226,8 @@ RENDER = RENDER.replace(" ground();\n", " ground();\n actors();\n")
 #     que le fragment shader -- ce n'est pas une imitation de la couleur, c'est la formule.
 PX_OLD = """   quads.push({d:d*0.25,pts:pts,fill:shade(v.rgb,k,al)});"""
 PX_NEW = """   quads.push({d:d*0.25,pts:pts,fill:shade(v.rgb,k,al),
-               edge:v.pixel?pixelEdge(v):null,
-               ew:v.pixel?Math.max(1.1*DPR,Math.max(v.hx,v.hy,v.hz)*SCALE*0.42):0});"""
+               edge:v.pixel?pixelEdge(v,f):null,
+               ew:v.pixel?Math.max(1.35*DPR,Math.max(v.hx,v.hy,v.hz)*SCALE*0.50):0});"""
 assert RENDER.count(PX_OLD) == 1, 'boucle de faces introuvable'
 RENDER = RENDER.replace(PX_OLD, PX_NEW)
 
@@ -274,15 +276,40 @@ function hueToRgb(h){
  return [Math.max(0,Math.min(1,r)),Math.max(0,Math.min(1,g)),Math.max(0,Math.min(1,b))];
 }
 function chaosHue(u){return 0.50+0.42*(0.5+0.5*Math.sin(u*6.2831853));}
-function pixelEdge(v){
+function noise1(n){return (Math.sin(n*12.9898)*43758.5453)%1;}
+/* LES HUIT MODES, repris un par un du .fsh. Le contour d'une face ne peut pas porter
+   deux couleurs comme le fait DUAL en jeu (ou chaque arete connait son orientation) :
+   on prend alors la teinte de base, et la paire se lit quand meme sur les faces
+   voisines du meme cube. C'est la seule concession du miroir, et elle est notee. */
+function pixelEdge(v,f){
+ const TAU=6.2831853;
  const wave=v.phase+(performance.now()/1000)*0.95;
+ const m=v.pmode, h=v.phue===undefined?0:v.phue;
  let c;
- if(v.pmode===0)      c=hueToRgb(chaosHue(wave));
- else if(v.pmode===1){const k=0.72+0.28*Math.sin(wave*6.2831853);
-                      c=hueToRgb(v.phue).map(x=>x*k);}
- else                {const x=0.70+0.30*Math.sin(wave*6.2831853);c=[x,x,x];}
+ if(m===0)      c=hueToRgb(chaosHue(wave));
+ else if(m===1){const k=0.72+0.28*Math.sin(wave*TAU); c=hueToRgb(h).map(x=>x*k);}
+ else if(m===2){/* MONO : l'arete porte LA luminance DE SON CUBE. Une valeur fixe
+                   rendait la sphere ordonnee uniformement blanche. */
+                const g=(v.gray===undefined?16:v.gray)/31;
+                const x=(0.21+0.66*g)*(0.82+0.18*Math.sin(wave*TAU)); c=[x,x,x];}
+ else if(m===3) c=hueToRgb(wave*0.6);
+ else if(m===4){const sp=0.5+0.5*Math.sin(wave*TAU*3.0);
+                const b=hueToRgb(h).map(x=>x*0.62);
+                c=b.map(x=>x+(1-x)*sp*sp*sp);}
+ else if(m===5){/* DUAL : deux teintes selon l'orientation de l'arete. Le contour d'une
+                   face ne peut pas en porter deux, mais une face HORIZONTALE n'a pas les
+                   memes aretes qu'une face verticale : on choisit donc la teinte sur la
+                   normale de la face. Moyenner les deux delavait tout en blanc. */
+                const k=0.76+0.24*Math.sin(wave*TAU);
+                const h2=h>0.72?h-0.26:h+0.26;
+                c=hueToRgb((f&&f.n&&f.n[1]!==0)?h:h2).map(x=>x*k);}
+ else if(m===6){const q=Math.floor((wave-Math.floor(wave))*6)/6;
+                const k=0.80+0.20*Math.abs(noise1(Math.floor(wave*6)));
+                c=hueToRgb(chaosHue(q)).map(x=>x*k);}
+ else          {const f=0.45+0.55*Math.abs(noise1(Math.floor(wave*9)+v.phase));
+                c=hueToRgb(h+0.07*Math.sin(wave*TAU*0.5)).map(x=>x*f);}
  return 'rgba('+(c[0]*255|0)+','+(c[1]*255|0)+','+(c[2]*255|0)+','
-        +(0.92*(v.pfade===undefined?1:v.pfade)).toFixed(3)+')';
+        +(0.95*(v.pfade===undefined?1:v.pfade)).toFixed(3)+')';
 }
 """
 RENDER = HUE_JS + RENDER
@@ -303,7 +330,11 @@ YAW_NEW = """/* LA SYMETRIE DU KALEIDOSCOPE EST HORIZONTALE : six branches a soi
    plan XZ. Vue a 0,34 de tangage, c'est-a-dire presque de profil, l'ordre six ne se lit
    pas du tout -- mesure sur capture. La figure se regarde donc d'EN HAUT (0,92), et elle
    est la seule du lot dans ce cas. */
-const YAW_BY=[0.58,0.72,0.64], PITCH_BY=[0.92,0.38,0.42];
+/* PITCH_BY[0] = 1,42 — presque la verticale. Un kaleidoscope est une IMAGE PLANE :
+   a 0,92 rad (53 degres) la projection decale chaque reflet differemment selon sa
+   distance, et la symetrie d'ordre douze cesse d'etre verifiable a l'oeil. Mesure :
+   c'est le seul reglage qui fasse apparaitre le groupe diedral d'un seul coup d'oeil. */
+const YAW_BY=[0.26,0.72,0.64], PITCH_BY=[1.42,0.42,0.52];
 document.querySelectorAll('.variant').forEach(b=>b.onclick=()=>{
  variant=+b.dataset.variant;t=0;
  camYaw=YAW_BY[variant];camPitch=PITCH_BY[variant];zoom=1;
@@ -353,8 +384,9 @@ moteur dédié (<code>ChaosSignatureVfx</code>). <b>Les trois règles qui gouver
 fichier :</b> le chaos ne se lit que <b>contre un ordre</b>, donc chaque figure commence \
 par poser une symétrie irréprochable ; le désordre doit <b>revenir</b> au moins une fois, \
 sinon le spectateur ne sait jamais ce qui a été cassé ; et seules les <b>arêtes</b> \
-portent la discordance — c’est la consigne d’origine de <code>DeepElement.CHAOS</code>, \
-dont la masse centrale reste presque noire.</p>
+portent la discordance. <b>Les corps sont en niveaux de gris, sans exception</b> : \
+trente-deux crans du presque-noir au presque-blanc, et <b>pas un seul ton coloré</b>. \
+Toute la couleur passe par les douze arêtes.</p>
   <div class="rule"></div>
   <span class="label">Signature de l’enchantement</span>
   <div class="variants" role="group" aria-label="Variante Chaos">
@@ -378,28 +410,53 @@ aria-label="Progression de l’animation">
   <div class="stats"><div class="stat"><b id="baseCount">0</b><span>Voxels</span></div>\
 <div class="stat"><b id="duration">7,5 s</b><span>Durée en jeu</span></div>\
 <div class="stat"><b id="seedStat">7331</b><span>Graine</span></div></div>
-  <div class="legend"><span style="--c:#120616">Corps</span>\
-<span style="--c:#2B0B38">Corps clair</span><span style="--c:#5B2A68">Armature</span>\
-<span style="--c:#9B3FD0">Arête</span><span style="--c:#FF48C8">Rupture</span>\
-<span style="--c:#3FE8FF">Étincelle</span><span style="--c:#FFFFFF">Cœur</span>\
-<span style="--c:#23232A">Pixel 3D</span></div>
+  <div class="legend"><span style="--c:#1A1A1A">Masque</span>\
+<span style="--c:#3A3A3A">Corps</span><span style="--c:#5E5E5E">Corps clair</span>\
+<span style="--c:#8C8C8C">Armature</span><span style="--c:#B4B4B4">Verre</span>\
+<span style="--c:#E6E6E6">Éclat</span><span style="--c:#FFFFFF">Cœur</span></div>
+  <div class="legend"><span style="--c:#3FE8FF">Arête · cyan</span>\
+<span style="--c:#5B6BFF">Arête · bleu</span><span style="--c:#A14BFF">Arête · violet</span>\
+<span style="--c:#FF48C8">Arête · magenta</span><span style="--c:#FF9A2E">Arête · braise</span></div>
 
   <p class="refs" id="beatsRefs"></p>
   <p class="refs" id="gpRefs"></p>
   <p class="refs" id="sfxRefs"></p>
-  <p class="refs"><b>LES PIXELS 3D — le système demandé, et il tourne ici.</b> Un Pixel 3D \
-est un cube miniature de 0,07 à 0,12 bloc : son <b>cœur</b> est anthracite \
-<code>#23232A</code> à 65 % d’opacité, ses <b>douze arêtes</b> défilent en arc-en-ciel \
-<b>fullbright</b> — insensibles à la nuit comme aux grottes. <b>Les arêtes ne sont pas de \
-la géométrie.</b> Chaque cube n’a que ses <b>six faces, 24 sommets</b> ; le fragment \
-shader détecte le bord dans les UV de face (<code>uv.x &lt; 0,10 || uv.x &gt; 0,90 || …</code>) \
-et les quatre bords de six faces donnent exactement les douze arêtes, chacune vue par ses \
-deux faces adjacentes. Une arête modélisée aurait coûté <b>huit fois plus de sommets</b>. \
-<b>Fullbright par construction</b> : le programme ne reçoit ni lightmap ni overlay, il n’y \
-a donc rien à désactiver pour qu’il brille à minuit. <b>La palette n’est pas la roue \
-complète</b> — <code>chaosHue(u) = 0,50 + 0,42·(0,5+0,5·sin 2πu)</code> ne parcourt que la \
-<b>moitié froide</b> : cyan électrique, bleu, violet profond, magenta néon. Le vert et le \
-jaune n’ont rien à faire dans un chaos prismatique.</p>
+  <p class="refs"><b>LES PIXELS 3D — le système demandé, et il porte MAINTENANT TOUTE la \
+géométrie.</b> Les trois signatures n’emploient plus une seule fois \
+<code>emitVoxelCube</code> : perles, parois, treillis, débris et cicatrice passent tous \
+par le core shader. La règle de l’élément est donc appliquée <b>mécaniquement</b> et non \
+par discipline — <b>aucun corps ne peut sortir coloré</b>, puisqu’aucun chemin de rendu ne \
+le permet plus. Un corps n’a qu’une <b>luminance</b>, une arête n’a qu’une <b>teinte</b>, \
+et les deux ne se disputent jamais l’œil.</p>
+  <p class="refs"><b>Trente-deux gris, huit modes d’arête, et un seul octet pour les \
+deux.</b> Le format de sommet reste <code>POSITION_TEX_COLOR</code> et ne bougera pas : \
+<code>UV0</code> porte les coordonnées de face d’où sortent les douze arêtes, et les \
+quatre canaux de <code>Color</code> sont pris. Le canal <b>vert</b> est donc empaqueté — \
+<code>g = mode·32 + gris</code> — ce qui donne <b>huit comportements × trente-deux \
+luminances, soit 256 cubes visuellement distincts</b>, pour une division et un modulo par \
+sommet. Ajouter un attribut aurait imposé un format maison, donc un \
+<code>RenderType</code> de plus, donc un deuxième chemin à maintenir pour un seul \
+scalaire.</p>
+  <p class="refs"><b>Les huit dérivés de l’arête.</b> <b>RAINBOW</b> — l’onde froide \
+continue, le mode par défaut. <b>TINTED</b> — teinte imposée dont seul l’éclat pulse. \
+<b>MONO</b> — luminance seule : dans la Sphère d’Entropie, c’est le mode de ce qui est \
+<i>encore en ordre</i>. <b>SPECTRUM</b> — la roue entière, vert et jaune compris, \
+interdits partout ailleurs : le mode du débordement. <b>PULSE</b> — une tête vive qui \
+<i>court</i> le long de l’arête, donc une direction et une vitesse. <b>DUAL</b> — deux \
+teintes selon l’orientation de l’arête ; l’œil lit la <i>cage</i> du cube au lieu d’un \
+halo. <b>STROBE</b> — l’arc-en-ciel quantifié en six crans : la couleur ne glisse plus, \
+elle <i>saute</i>, et on lit « cassé » avant de le comprendre. <b>EMBER</b> — dérive lente \
+et fort scintillement, la braise de la cicatrice.</p>
+  <p class="refs"><b>Les arêtes ne sont pas de la géométrie.</b> Chaque cube n’a que ses \
+<b>six faces, 24 sommets</b> ; le fragment shader détecte le bord dans les UV de face \
+(<code>min(uv, 1−uv) &lt; 0,10</code>) et les quatre bords de six faces donnent exactement \
+les douze arêtes, chacune vue par ses deux faces adjacentes. Une arête modélisée aurait \
+coûté <b>huit fois plus de sommets</b>. <b>Fullbright par construction</b> : le programme \
+ne reçoit ni lightmap ni overlay, il n’y a donc rien à désactiver pour qu’il brille à \
+minuit. <b>La palette par défaut n’est pas la roue complète</b> — \
+<code>chaosHue(u) = 0,50 + 0,42·(0,5+0,5·sin 2πu)</code> ne parcourt que la <b>moitié \
+froide</b> : cyan électrique, bleu, violet profond, magenta néon. Seul <b>SPECTRUM</b> en \
+sort, et c’est pour cela qu’il signifie quelque chose.</p>
   <p class="refs"><b>Pourquoi la phase est calculée côté CPU, et une seule fois par \
 cube.</b> L’attribut <code>Position</code> d’un core shader est <b>relatif à la \
 caméra</b> : calculer la couleur depuis cette position aurait fait <b>glisser l’arc-en-ciel \
@@ -408,8 +465,9 @@ phase <code>(0,17x + 0,23y + 0,13z) mod 1</code> est donc évaluée en Java, une
 trois produits par cube, et transportée dans le canal <b>rouge</b> du sommet. Ce n’est pas \
 une entorse à la règle « aucun calcul de couleur RGB côté CPU » : aucune couleur n’est \
 calculée, seul un <b>scalaire de position</b> l’est. Les canaux restants transportent le \
-<b>mode</b> (vert), la <b>teinte imposée</b> (bleu) et le <b>fondu</b> (alpha) — le format \
-de sommet est <code>POSITION_TEX_COLOR</code>, le plus étroit qui fasse le travail.</p>
+<b>mode et le gris empaquetés</b> (vert), la <b>teinte imposée</b> (bleu) et le \
+<b>fondu</b> (alpha) — le format de sommet est <code>POSITION_TEX_COLOR</code>, le plus \
+étroit qui fasse le travail.</p>
   <p class="refs"><b>Le budget, et comment il est tenu.</b> <code>VoidPixelManager</code> \
 stocke <b>12 000 pixels</b> dans <b>treize tableaux primitifs parallèles</b> — \
 <code>double[]</code> pour les positions, <code>float[]</code> pour les vitesses, \

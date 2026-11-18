@@ -5,7 +5,7 @@
 // Il ne fait presque rien, et c'est voulu : tout le cout d'un systeme a plusieurs
 // milliers de cubes est dans le FRAGMENT, pas ici. Les 24 sommets d'un cube sont
 // ecrits tels quels par le gestionnaire ; ce programme les projette et transmet
-// trois choses au fragment.
+// quatre choses au fragment.
 //
 // LE POINT QUI DECIDE DE TOUT : la phase de l'arc-en-ciel.
 //
@@ -21,10 +21,25 @@
 // Zero uniforme maison, zero conversion RGB cote CPU, et l'onde reste accrochee au
 // monde quoi que fasse la camera.
 //
-// Les trois autres canaux de Color :
-//   g = mode de rendu (0 arc-en-ciel, 1 teinte imposee, 2 noir et blanc) ;
-//   b = teinte imposee du mode 1, sur un tour complet ;
-//   a = fondu global du cube (age / duree de vie).
+// T397-GRIS — LE CANAL VERT PORTE DEUX CHOSES, ET VOICI POURQUOI
+// ---------------------------------------------------------------
+// La consigne est « faces en niveaux de gris, couleur UNIQUEMENT sur les aretes ». Il
+// faut donc un gris PAR CUBE : un corps unique pour des milliers de cubes redonne le
+// nuage de taches uniforme qu'on cherche precisement a eviter, et c'est le contraste
+// entre un cube presque noir et un cube presque blanc qui dessine le volume quand
+// aucune lumiere n'est appliquee.
+//
+// Mais le format de sommet est POSITION_TEX_COLOR et il ne bougera pas : UV0 porte deja
+// les coordonnees de face (d'ou sortent les douze aretes), et les quatre canaux de Color
+// sont pris. Ajouter un attribut aurait impose un format maison, donc un RenderType
+// maison de plus, donc un deuxieme chemin a maintenir pour UN scalaire.
+//
+// Le canal vert est donc un OCTET EMPAQUETE :   g = mode * 32 + gris
+//      mode 0..7   le comportement colorimetrique de l'arete (huit derives)
+//      gris 0..31  la luminance du corps, 32 crans entre le noir et le blanc
+// Trente-deux crans de gris sont tres au-dela du discernable sur une face de sept
+// centimetres, et huit modes couvrent tout ce que les trois signatures demandent.
+// L'empaquetage coute une division et un modulo par sommet. Le format ne bouge pas.
 
 in vec3 Position;
 in vec2 UV0;
@@ -38,6 +53,7 @@ out float phase;
 out float mode;
 out float tintHue;
 out float fade;
+out float bodyGray;
 
 void main() {
     gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
@@ -47,8 +63,14 @@ void main() {
     // test de bord. 24 sommets au lieu de ~200.
     faceUv = UV0;
     phase = Color.r;
-    // Color.g est normalise 0..1 par le format ; on le ramene au petit entier ecrit.
-    mode = floor(Color.g * 255.0 + 0.5);
+
+    // Desempaquetage du canal vert. Le +0.5 avant le floor est obligatoire : Color.g
+    // arrive normalise 0..1 et le produit par 255 tombe a 31.99999 pour l'octet 32 sur
+    // certaines cartes, ce qui ferait basculer le mode d'un cran sur un pixel sur mille.
+    float packed = floor(Color.g * 255.0 + 0.5);
+    mode = floor(packed / 32.0);
+    bodyGray = (packed - mode * 32.0) / 31.0;
+
     tintHue = Color.b;
     fade = Color.a;
 }

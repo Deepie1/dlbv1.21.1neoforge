@@ -24,79 +24,115 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > toujours la dernière version, une fois le cache expiré (quelques minutes). Les liens en
 > SHA sont l'adresse **immédiate**, à utiliser le jour de la livraison.
 
-## Chaos — trois signatures, et les Pixels 3D · 18 novembre 2026 ⟵ **LOT COURANT**
+## Chaos — refonte : noir et blanc, couleur aux arêtes, huit dérivés · 18 novembre 2026 ⟵ **LOT COURANT**
 
 - **Aperçu voxel des trois signatures (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Three_Signatures_preview.html
 - **Démo du core shader des Pixels 3D (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Pixel_shader_demo.html
 - **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Three_Signatures_src.zip
 
-> **T397 — la treizième et dernière famille, et le système qui lui donne sa matière.**
->
-> **Les trois signatures passent de 18-22 ticks à 150, 170 et 200**, sur le moteur voxel
-> dédié `ChaosSignatureVfx`. Mais la vraie nouveauté de ce lot n'est pas une chorégraphie :
-> c'est un **système de particules** que les douze familles précédentes n'avaient pas.
->
-> **LES PIXELS 3D.** Un cube miniature au cœur anthracite `#23232A`, translucide et grené,
-> dont les **douze arêtes défilent en arc-en-ciel** et brillent de la même façon en plein
-> jour et au fond d'une grotte. Trois décisions tiennent tout l'édifice :
->
-> 1. **Les arêtes ne sont pas de la géométrie.** Chaque cube n'écrit que ses **six faces,
->    vingt-quatre sommets**. C'est le fragment shader qui détecte le bord dans les UV de
->    face — et les quatre bords de six faces donnent exactement douze arêtes. Modéliser les
->    arêtes aurait coûté **huit fois plus de sommets** pour un résultat identique.
-> 2. **La phase de l'onde est calculée côté CPU, une fois par cube.** L'attribut `Position`
->    d'un core shader est **relatif à la caméra** : calculer la teinte dessus aurait fait
->    glisser tout l'arc-en-ciel dès que le joueur marche, l'effet entier serait devenu
->    solidaire de la caméra. Ce n'est pas une couleur qui traverse le bus, c'est **un
->    scalaire**, et l'onde reste accrochée au monde.
-> 3. **Fullbright par construction** : le programme ne reçoit **ni lightmap ni overlay**. Il
->    n'y a rien à désactiver pour que les arêtes brillent dans le noir — elles brillent
->    parce qu'aucune lumière n'est jamais appliquée.
->
-> Douze mille cubes, **treize tableaux primitifs parallèles**, zéro allocation à
-> l'exécution, retrait par échange avec le dernier vivant en O(1), et **un seul lot de
-> rendu** à l'étape `AFTER_TRANSLUCENT_BLOCKS` — choix délibéré contre `AFTER_PARTICLES` :
-> à cette étape l'eau et le verre sont déjà dans le tampon de profondeur, donc un cube
-> derrière une vitre est correctement masqué.
->
-> **La démo du shader ci-dessus ne décrit pas le programme : elle l'exécute.** Les deux
-> sources sont lues dans `assets/` à la construction et portées en GLSL ES 3.00 par des
-> substitutions mécaniques, puis compilées par votre navigateur sur le vrai format de
-> sommet du jeu. Le curseur monte jusqu'à **12 000 cubes**, le plafond exact du
-> gestionnaire — soit 288 000 sommets et 144 000 triangles en un seul lot.
+> **T398 — les quatre reproches, traités un par un.** Le lot précédent a été refusé sur les
+> trois signatures et sur la palette des corps. Voici ce qui a changé, et pourquoi.
 >
 > ---
 >
-> **I. LA BOUCLE KALÉIDOSCOPIQUE** (#35, 150 t). Six branches de douze nœuds dans une
-> mandala **horizontale** — l'aperçu la regarde donc **de dessus**, parce qu'une symétrie
-> d'ordre six vue de profil n'est qu'une ligne. À 46 % du temps, **le décrochage** : la
-> symétrie se brise, les six branches divergent. À 78 %, **le réalignement forcé** les
-> rabat d'un coup. Côté jeu : six miroirs posés, **six frappes** de `max(1,4 · dégâts ×
-> 0,84)`, l'AoE touche six corps à ×0,58 quand le solo frappe à ×0,34 — la boucle
-> **récompense la foule**. Fermeture à t+142 : `VITESSE II` + `CHUTE LENTE`.
+> **1. LES CORPS SONT EN NIVEAUX DE GRIS. Sans exception, et ce n'est plus une
+> discipline — c'est une mécanique.** Les trois signatures n'appellent plus une seule fois
+> `emitVoxelCube` : perles, parois, treillis, débris, anneaux et cicatrice passent
+> **tous** par le core shader des Pixels 3D. Aucun chemin de rendu ne permet donc plus
+> qu'un corps sorte coloré. Trente-deux crans de luminance, de `0,055` à `0,855` — la
+> rampe ne part pas de zéro, parce que **le noir n'est pas une couleur sur un fond de
+> nuit** (`#05040d`) : un corps au cran zéro disparaît au lieu d'être sombre. Huit crans
+> sont nommés et servent de vocabulaire : `MASQUE 2 · PROFOND 6 · CORPS 11 · MÉDIAN 16 ·
+> ARMATURE 21 · VERRE 25 · ÉCLAT 29 · CŒUR 31`.
 >
-> **II. LA SPHÈRE D'ENTROPIE** (#36, 170 t). Trois grands cercles de trente-quatre segments,
-> six méridiens, une coque interne, et une **érosion strictement monotone** : la sphère ne
-> se répare jamais. Chaque cube arraché **tombe en Pixel 3D** arc-en-ciel sous gravité. Au
-> centre, un octaèdre qui grossit exactement comme l'armature maigrit. Côté jeu : **huit
-> pulsations** sur un rayon de 4,6 blocs, qui empilent l'entropie jusqu'à 6 —
-> `FAIBLESSE` à 2, `LENTEUR II` + `NAUSÉE` à 4, `FATIGUE II` + `CÉCITÉ` à 6. **C'est la
-> seule signature du mod où partir est la bonne réponse** : rester trois pulsations de plus
-> coûte plus cher que le solde de sortie. Solde à t+150 : `RÉSISTANCE II`.
+> **2. LA COULEUR EST AUX ARÊTES, AVEC LUMIÈRE ET DÉRIVE.** Les douze arêtes sont
+> fullbright par construction (le programme ne reçoit **ni lightmap ni overlay** : il n'y
+> a rien à désactiver, elles brillent parce qu'aucune lumière n'est jamais appliquée) et
+> leur teinte **dérive en continu** sur `chaosHue(phase + GameTime·48 + (u+v)·0,35)` —
+> la moitié froide de la roue : cyan électrique, bleu, violet profond, magenta néon.
 >
-> **III. LA CICATRICE DU BIG BANG** (#37, 200 t). Quarante fragments aspirés en `u²` avec
-> leur **comète** de trois cubes, une cage qui se referme, un cœur qui passe du rose au
-> **blanc** à 72 % de l'aspiration — puis la **détonation à 42 %** : seize rayons barbelés
-> en spirale de Fibonacci, un **anneau noir** de quarante-huit cubes qui s'ouvre en
-> `sqrt`, et trente-quatre marques au sol qui **restent**. Côté jeu : quatorze tractions,
-> détonation à t+84 avec une **prime de foule de 12 % par corps** plafonnée à six, un
-> report de 42 % sur les voisins, puis la cicatrice qui brûle en **sept passages** de
-> t+96 à t+186.
+> **3. HUIT DÉRIVÉS DU CUBE, ET 256 COMBINAISONS.** Le reproche était « trop peu de
+> variations de mes cubes spéciaux ». Le canal vert du sommet est désormais **empaqueté**
+> — `g = mode·32 + gris` — ce qui donne **huit comportements d'arête × trente-deux
+> luminances de corps**, pour une division et un modulo par sommet. Aucun attribut ajouté,
+> donc aucun format de sommet maison, donc aucun second `RenderType` à maintenir :
+> `POSITION_TEX_COLOR` suffisait, à condition de s'en servir vraiment.
 >
-> **À vérifier en jeu, et c'est le cas décisif** : les Pixels 3D **de nuit** puis **dans
-> une grotte**. Les arêtes doivent briller exactement pareil — si elles s'assombrissent,
-> c'est qu'une lightmap s'est glissée dans le `RenderType`. Puis **F3+T** pendant qu'une
-> signature est à l'écran : le shader doit se recharger sans crash.
+> | # | Dérivé | Ce qu'il fait | Ce qu'il raconte |
+> |---|--------|---------------|------------------|
+> | 0 | `RAINBOW` | l'onde froide continue | l'état normal |
+> | 1 | `TINTED` | teinte imposée, seul l'éclat pulse | un détail qui doit rester rose |
+> | 2 | `MONO` | **la luminance du cube lui-même** | **ce qui est encore en ordre** |
+> | 3 | `SPECTRUM` | la roue **entière**, vert et jaune compris | **le débordement** |
+> | 4 | `PULSE` | une tête vive qui *court* le long de l'arête | une direction, une vitesse |
+> | 5 | `DUAL` | deux teintes selon l'orientation de l'arête | l'œil lit la **cage** du cube |
+> | 6 | `STROBE` | l'arc-en-ciel quantifié en six crans | **cassé** — la couleur saute |
+> | 7 | `EMBER` | dérive lente, fort scintillement | la braise qui refroidit |
+>
+> Le vert et le jaune n'existent **que** dans `SPECTRUM`. C'est précisément pour cela
+> qu'ils veulent dire quelque chose : quand ils apparaissent, quelque chose a débordé.
+>
+> ---
+>
+> **4. ★ LES TROIS SIGNATURES ILLUSTRENT MAINTENANT LEUR TITRE.** C'était le reproche
+> principal — « la Boucle Kaléidoscopique n'a pas du tout d'effet kaléidoscope ». Les
+> trois ont été refaites sur le même constat : **une symétrie ne se vérifie pas sur des
+> points.** Trente-quatre perles répétées douze fois donnent des confettis, pas un
+> kaléidoscope. Il faut des **formes continues** dont l'œil suit le contour.
+>
+> **I. LA BOUCLE KALÉIDOSCOPIQUE** (#35, 150 t) — **refaite de zéro.** Neuf éclats de
+> **cinq cubes contigus** forment des chevrons que l'œil lit comme des *formes*. Chaque
+> éclat est répété dans **six secteurs × deux miroirs** = **douze reflets**, soit 540
+> cubes en symétrie diédrale d'ordre 6. Douze **parois de verre continues** tracent les
+> rayons du miroir, trois anneaux concentriques tournent en sens alternés, une cerclure de
+> quatre-vingt-six cubes ferme la figure. La galette est **vraiment plate** (0,045 bloc
+> d'épaisseur) et l'aperçu la regarde **de dessus** — une symétrie d'ordre six vue de
+> profil n'est qu'une ligne. À 46 %, **le décrochage** : les douze reflets cessent d'être
+> des reflets, et les éclats passent en `STROBE`. À 78 %, **le réalignement forcé** les
+> rabat d'un coup en `ÉCLAT 29`.
+>
+> **II. LA SPHÈRE D'ENTROPIE** (#36, 170 t) — **le désordre se lit par contraste, pas par
+> densité.** Un treillis **fermé** de 16 parallèles (jusqu'à 34 cellules par anneau) : à
+> l'ancienne densité les cellules étaient six fois plus petites que leur écart, et la
+> sphère ressemblait à un pointillé. Puis un **front de désordre** balaie la sphère sur
+> quatre canaux simultanés — position, taille, **gris** et **mode d'arête**. La découverte
+> qui a tout débloqué : **l'ordre doit être SOMBRE.** Tant qu'une cellule est intacte elle
+> est en `MONO` au cran 6, presque noire ; à mesure qu'elle se désagrège son gris monte
+> vers les crans 15 à 31 **et** son arête passe `RAINBOW → SPECTRUM → STROBE`. On voit
+> donc littéralement une sphère ordonnée et sombre **rongée** par une marée claire et
+> colorée. Les cellules totalement perdues se détachent en Pixels 3D libres sous gravité.
+>
+> **III. LA CICATRICE DU BIG BANG** (#37, 200 t) — **c'est la traînée qui fait le big
+> bang.** Cent-soixante-dix débris, chacun suivi d'une **comète de cinq cubes** dont le
+> rayon, la taille, l'alpha **et le gris** décroissent depuis la tête. L'ancienne version
+> peignait ces traînées en gris profond : invisibles, et sans elles un big bang n'est
+> qu'un nuage qui grandit. La **chaleur** pilote le mode d'arête — `MONO` au cœur,
+> `SPECTRUM` dans la bande étroite du débordement, `RAINBOW` une fois refroidi — et la
+> bande `SPECTRUM` a été resserrée parce qu'**une bande de mode trop large tue
+> l'identité** : le vert doit rester un événement. Un anneau de choc de soixante-seize
+> cubes s'ouvre en `sqrt`, une toile cosmique de quatorze nœuds se tisse, et
+> quarante-deux marques `EMBER` **restent** au sol.
+>
+> ---
+>
+> **La démo du shader ne décrit pas le programme : elle l'exécute.** `void_pixel.vsh` et
+> `void_pixel.fsh` sont lus dans `assets/` à la construction et portés en GLSL ES 3.00 par
+> des substitutions **mécaniques** — l'en-tête `#version` et les `layout(location)` des
+> trois attributs, rien d'autre — puis compilés par votre navigateur sur le vrai format de
+> sommet du jeu. Les **huit boutons de mode** sont cliquables, et le bouton *gris
+> uniforme* bascule entre les deux états que la Sphère d'Entropie met en scène. Le curseur
+> monte à **12 000 cubes**, le plafond exact du gestionnaire : 288 000 sommets et
+> 144 000 triangles en un seul lot.
+>
+> **Le gameplay serveur est inchangé** (six miroirs et six frappes pour la Boucle, huit
+> pulsations et six crans d'entropie pour la Sphère, quatorze tractions et une détonation
+> à prime de foule pour le Big Bang) : ce lot ne touche **que** le rendu.
+>
+> **À vérifier en jeu, et c'est le cas décisif** : une signature **de nuit** puis **dans
+> une grotte**. Les corps doivent rester gris et les arêtes briller exactement pareil — si
+> les arêtes s'assombrissent, c'est qu'une lightmap s'est glissée dans le `RenderType`.
+> Puis **F3+T** pendant qu'une signature est à l'écran : le shader doit se recharger sans
+> crash.
 
 ## Vide — la porte engloutit, le prisme plante sept lances · 4 novembre 2026
 

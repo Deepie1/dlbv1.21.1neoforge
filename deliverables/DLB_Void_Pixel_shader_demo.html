@@ -56,20 +56,46 @@ pre{background:#100b26;border:1px solid #2a1f52;border-radius:8px;padding:10px;o
   (u+v)·0,35)</code>, où <code>phase</code> est la position <b>monde</b> du cube, calculée
   une fois côté CPU. <code>chaosHue</code> ne parcourt pas la roue complète mais sa
   <b>moitié froide</b>, entre 0,50 et 0,92 : cyan électrique, bleu, violet profond,
-  magenta néon. Le vert et le jaune n’ont rien à faire dans un chaos prismatique.</p>
+  magenta néon. Seul le mode <b>spectrum</b> en sort — et c’est pour cela qu’il signifie
+  quelque chose.</p>
+  <p><b>Les huit dérivés.</b> <code>rainbow</code> l’onde froide continue ·
+  <code>tinted</code> une teinte imposée dont seul l’éclat pulse · <code>mono</code> la
+  luminance seule, le mode de ce qui est encore en ordre · <code>spectrum</code> la roue
+  entière · <code>pulse</code> une tête vive qui <i>court</i> le long de l’arête ·
+  <code>dual</code> deux teintes selon l’orientation de l’arête, et l’œil lit la cage du
+  cube · <code>strobe</code> l’arc-en-ciel quantifié en six crans, la couleur saute au
+  lieu de glisser · <code>ember</code> dérive lente et fort scintillement.
+  <b>Cliquez-les :</b> c’est le même shader que le jeu, pas une imitation.</p>
   <p><b>Fullbright par construction.</b> Le programme ne reçoit <b>ni lightmap ni
   overlay</b> : il n’y a rien à désactiver pour que les arêtes brillent dans une grotte à
-  minuit, elles brillent parce qu’aucune lumière n’est jamais appliquée. Le cœur, lui,
-  reste à <code>vec3(0,1373 · 0,1373 · 0,1647)</code> — l’anthracite #23232A — à 65 %
-  d’opacité, avec un grain procédural de ±3 % qui évite la face plate qu’un quad non
-  texturé trahit immédiatement.</p>
-  <span class="label">Démonstration</span>
+  minuit, elles brillent parce qu’aucune lumière n’est jamais appliquée.</p>
+  <p><b>Le corps n’a jamais de couleur — il a un gris.</b> Trente-deux crans, de 0,055 à
+  0,855 de luminance, transmis <b>par cube</b>. La rampe ne part pas de zéro (un corps
+  noir se confond avec le fond de nuit) et ne monte pas à un (il rivaliserait avec les
+  arêtes, qui doivent rester les plus claires de l’image). Un grain procédural de ±3 %
+  évite la face plate qu’un quad non texturé trahit immédiatement.</p>
+  <p><b>Un seul octet pour le mode ET le gris.</b> Le format de sommet reste
+  <code>POSITION_TEX_COLOR</code> : <code>UV0</code> porte les coordonnées de face,
+  les quatre canaux de <code>Color</code> sont pris. Le canal vert est donc empaqueté —
+  <code>g = mode·32 + gris</code> — soit <b>huit comportements × trente-deux
+  luminances</b>, 256 cubes visuellement distincts, pour une division et un modulo par
+  sommet. Le bouton <i>gris uniforme</i> bascule entre les deux états que la Sphère
+  d’Entropie met en scène : toutes les cellules au cran 16 (l’ordre), ou chacune au
+  hasard sur les trente-deux (le désordre).</p>
+  <span class="label">Les huit dérivés de l’arête</span>
   <div>
-    <button class="btn on" id="bMode0">Arc-en-ciel</button>
-    <button class="btn" id="bMode1">Teinte imposée</button>
-    <button class="btn" id="bMode2">Noir et blanc</button>
+    <button class="btn on" id="bMode0">Rainbow</button>
+    <button class="btn" id="bMode1">Tinted</button>
+    <button class="btn" id="bMode2">Mono</button>
+    <button class="btn" id="bMode3">Spectrum</button>
+    <button class="btn" id="bMode4">Pulse</button>
+    <button class="btn" id="bMode5">Dual</button>
+    <button class="btn" id="bMode6">Strobe</button>
+    <button class="btn" id="bMode7">Ember</button>
   </div>
+  <span class="label">Le corps</span>
   <div>
+    <button class="btn" id="bGray">Gris uniforme (ordre)</button>
     <button class="btn on" id="bSpin">Rotation</button>
     <button class="btn" id="bFreeze">Figer le temps</button>
     <button class="btn" id="bBig">Gros plan</button>
@@ -108,7 +134,7 @@ precision highp float;
 // Il ne fait presque rien, et c'est voulu : tout le cout d'un systeme a plusieurs
 // milliers de cubes est dans le FRAGMENT, pas ici. Les 24 sommets d'un cube sont
 // ecrits tels quels par le gestionnaire ; ce programme les projette et transmet
-// trois choses au fragment.
+// quatre choses au fragment.
 //
 // LE POINT QUI DECIDE DE TOUT : la phase de l'arc-en-ciel.
 //
@@ -124,10 +150,25 @@ precision highp float;
 // Zero uniforme maison, zero conversion RGB cote CPU, et l'onde reste accrochee au
 // monde quoi que fasse la camera.
 //
-// Les trois autres canaux de Color :
-//   g = mode de rendu (0 arc-en-ciel, 1 teinte imposee, 2 noir et blanc) ;
-//   b = teinte imposee du mode 1, sur un tour complet ;
-//   a = fondu global du cube (age / duree de vie).
+// T397-GRIS — LE CANAL VERT PORTE DEUX CHOSES, ET VOICI POURQUOI
+// ---------------------------------------------------------------
+// La consigne est « faces en niveaux de gris, couleur UNIQUEMENT sur les aretes ». Il
+// faut donc un gris PAR CUBE : un corps unique pour des milliers de cubes redonne le
+// nuage de taches uniforme qu'on cherche precisement a eviter, et c'est le contraste
+// entre un cube presque noir et un cube presque blanc qui dessine le volume quand
+// aucune lumiere n'est appliquee.
+//
+// Mais le format de sommet est POSITION_TEX_COLOR et il ne bougera pas : UV0 porte deja
+// les coordonnees de face (d'ou sortent les douze aretes), et les quatre canaux de Color
+// sont pris. Ajouter un attribut aurait impose un format maison, donc un RenderType
+// maison de plus, donc un deuxieme chemin a maintenir pour UN scalaire.
+//
+// Le canal vert est donc un OCTET EMPAQUETE :   g = mode * 32 + gris
+//      mode 0..7   le comportement colorimetrique de l'arete (huit derives)
+//      gris 0..31  la luminance du corps, 32 crans entre le noir et le blanc
+// Trente-deux crans de gris sont tres au-dela du discernable sur une face de sept
+// centimetres, et huit modes couvrent tout ce que les trois signatures demandent.
+// L'empaquetage coute une division et un modulo par sommet. Le format ne bouge pas.
 
 layout(location = 0) in vec3 Position;
 layout(location = 1) in vec2 UV0;
@@ -141,6 +182,7 @@ out float phase;
 out float mode;
 out float tintHue;
 out float fade;
+out float bodyGray;
 
 void main() {
     gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
@@ -150,8 +192,14 @@ void main() {
     // test de bord. 24 sommets au lieu de ~200.
     faceUv = UV0;
     phase = Color.r;
-    // Color.g est normalise 0..1 par le format ; on le ramene au petit entier ecrit.
-    mode = floor(Color.g * 255.0 + 0.5);
+
+    // Desempaquetage du canal vert. Le +0.5 avant le floor est obligatoire : Color.g
+    // arrive normalise 0..1 et le produit par 255 tombe a 31.99999 pour l'octet 32 sur
+    // certaines cartes, ce qui ferait basculer le mode d'un cran sur un pixel sur mille.
+    float packed = floor(Color.g * 255.0 + 0.5);
+    mode = floor(packed / 32.0);
+    bodyGray = (packed - mode * 32.0) / 31.0;
+
     tintHue = Color.b;
     fade = Color.a;
 }
@@ -161,12 +209,17 @@ precision highp float;
 
 // T397-PIXEL3D : le fragment shader du Pixel 3D.
 //
-// Un cube = un coeur anthracite legerement transparent + 12 aretes lumineuses qui
-// defilent en arc-en-ciel. Les aretes ne sont PAS de la geometrie : elles sont
-// deduites des coordonnees de face. Sur chacun des 6 quads, uv va de 0 a 1 ; un
-// fragment est sur une arete des qu'il approche d'un bord en u OU en v. Les quatre
-// bords de six faces donnent exactement les douze aretes du cube, chacune vue par
-// ses deux faces adjacentes -- d'ou leur nettete, sans un seul sommet de plus.
+// Un cube = un coeur en NIVEAU DE GRIS legerement transparent + 12 aretes lumineuses
+// et colorees. Les aretes ne sont PAS de la geometrie : elles sont deduites des
+// coordonnees de face. Sur chacun des 6 quads, uv va de 0 a 1 ; un fragment est sur
+// une arete des qu'il approche d'un bord en u OU en v. Les quatre bords de six faces
+// donnent exactement les douze aretes du cube, chacune vue par ses deux faces
+// adjacentes -- d'ou leur nettete, sans un seul sommet de plus.
+//
+// LA REGLE DE L'ELEMENT, ET ELLE EST ABSOLUE : le corps n'a JAMAIS de couleur. Il n'a
+// qu'une luminance, entre le noir et le blanc, transmise par cube. Toute la couleur du
+// mod passe par les aretes. Un corps colore et une arete coloree se disputent l'oeil et
+// la forme devient une tache ; un corps gris sous une arete vive se lit a dix metres.
 //
 // FULLBRIGHT : ce programme ne recoit ni lightmap ni overlay. Il n'y a donc rien a
 // desactiver pour que les aretes brillent dans une grotte a minuit : elles brillent
@@ -181,6 +234,7 @@ in float phase;
 in float mode;
 in float tintHue;
 in float fade;
+in float bodyGray;
 
 uniform float GameTime;
 
@@ -197,16 +251,21 @@ vec3 hueToRgb(float h) {
     return clamp(vec3(r, g, b), 0.0, 1.0);
 }
 
-// La palette demandee n'est pas la roue complete : cyan electrique, magenta neon,
-// violet profond, bleu. Ces quatre teintes occupent la moitie froide de la roue,
-// entre 0.50 (cyan) et 0.92 (rose). Une roue complete y aurait ajoute du vert et du
-// jaune, qui n'ont rien a faire dans un effet de chaos prismatique froid.
+// La moitie FROIDE de la roue : cyan electrique, bleu, violet profond, magenta neon,
+// entre 0.50 et 0.92. C'est la teinte par defaut de l'element. Le vert et le jaune
+// n'ont rien a faire dans un chaos prismatique froid -- mais le mode SPECTRUM, lui,
+// parcourt la roue entiere, justement parce que le debordement est un evenement.
 float chaosHue(float u) {
     return 0.50 + 0.42 * (0.5 + 0.5 * sin(u * 6.2831853));
 }
 
-// Grain pixel-art tres leger sur le coeur. Deux sinus incommensurables suffisent :
-// une vraie texture aurait impose un sampler, donc un atlas, donc un bind par passe.
+// Bruit scalaire bon marche, reutilise par le grain du corps et par le scintillement
+// du mode EMBER. Deux sinus incommensurables suffisent : une vraie texture aurait
+// impose un sampler, donc un atlas, donc un bind par passe.
+float noise1(float n) {
+    return fract(sin(n * 12.9898) * 43758.5453);
+}
+
 float grain(vec2 uv) {
     float n = sin(uv.x * 37.0) * 43758.5453 + sin(uv.y * 29.0) * 12543.9321;
     return fract(n) * 0.06 - 0.03;
@@ -218,29 +277,73 @@ void main() {
     // taille du cube dans le monde -- un gros cube n'a pas des aretes plus epaisses
     // en proportion, il a les memes.
     const float EDGE = 0.10;
+    const float TAU = 6.2831853;
 
     vec2 d = min(faceUv, vec2(1.0) - faceUv);
     float edgeDist = min(d.x, d.y);
 
     if (edgeDist < EDGE) {
-        // --- ARETE ---
+        // --- ARETE : LA SEULE CHOSE QUI A LE DROIT D'ETRE COLOREE -------------------
         // L'onde glisse le long de l'arete : la phase spatiale du cube (accrochee au
         // monde) plus le temps. GameTime boucle sur 24000 ticks en valant 0..1, donc
         // il faut un gros facteur pour obtenir une vitesse visible ; 48.0 donne un
         // tour de roue toutes les cinq cents frames environ.
         float wave = phase + GameTime * 48.0 + (faceUv.x + faceUv.y) * 0.35;
+
+        // Abscisse LE LONG de l'arete, et non en travers : sur un bord vertical c'est v
+        // qui court, sur un bord horizontal c'est u. Sans cette distinction, les modes
+        // a tete lumineuse feraient clignoter l'arete entiere au lieu d'y faire courir
+        // un point, ce qui est exactement l'inverse de l'effet recherche.
+        float along = (d.x < d.y) ? faceUv.y : faceUv.x;
+
         vec3 edgeRgb;
         if (mode < 0.5) {
+            // 0 RAINBOW — l'onde froide continue. Le mode par defaut de l'element.
             edgeRgb = hueToRgb(chaosHue(wave));
         } else if (mode < 1.5) {
-            // Teinte imposee : l'onde ne change plus la couleur, seulement son eclat.
-            // C'est le mode des details colores -- une gerbe rouge reste rouge.
-            edgeRgb = hueToRgb(tintHue) * (0.72 + 0.28 * sin(wave * 6.2831853));
+            // 1 TINTED — teinte imposee : l'onde ne change plus la couleur, seulement
+            // son eclat. C'est le mode des details colores -- une gerbe rose reste rose.
+            edgeRgb = hueToRgb(tintHue) * (0.72 + 0.28 * sin(wave * TAU));
+        } else if (mode < 2.5) {
+            // 2 MONO — luminance seule. Dans la Sphere d'Entropie, c'est le mode de ce
+            // qui est encore EN ORDRE : la couleur n'arrive qu'avec le desordre, et ce
+            // contraste porte a lui seul le sujet de la signature.
+            edgeRgb = vec3(0.70 + 0.30 * sin(wave * TAU));
+        } else if (mode < 3.5) {
+            // 3 SPECTRUM — la roue ENTIERE, lentement. Le vert et le jaune, interdits
+            // partout ailleurs, apparaissent ici : c'est le mode du debordement, celui
+            // des cellules qui ont perdu toute discipline.
+            edgeRgb = hueToRgb(wave * 0.6);
+        } else if (mode < 4.5) {
+            // 4 PULSE — teinte imposee, plus une TETE VIVE qui court le long de l'arete.
+            // Le cube cesse d'etre un contour fixe : il a une direction et une vitesse.
+            float head = fract(along - GameTime * 220.0 - phase * 3.0);
+            float spark = smoothstep(0.80, 1.0, head);
+            edgeRgb = mix(hueToRgb(tintHue) * 0.62, vec3(1.0), spark);
+        } else if (mode < 5.5) {
+            // 5 DUAL — deux teintes opposees sur la roue, separees par l'orientation de
+            // l'arete. Un seul cube porte donc deux couleurs franches, et l'oeil lit sa
+            // CAGE au lieu de lire un halo : c'est le mode des pieces d'armature.
+            // La seconde teinte n'est PAS la complementaire : fract(h + 0.5) renvoie du
+            // vert ou du jaune pour la moitie de la palette, et la paire rose/vert vire au
+            // blanc des que les deux aretes se croisent a l'ecran. Mesure au banc :
+            // l'anneau de choc du Big Bang, cense MASQUER, ressortait en blanc eclatant.
+            // Le decalage de 0,26 reste dans la moitie froide quelle que soit l'entree.
+            float h2 = tintHue > 0.72 ? tintHue - 0.26 : tintHue + 0.26;
+            float h = (d.x < d.y) ? tintHue : h2;
+            edgeRgb = hueToRgb(h) * (0.76 + 0.24 * sin(wave * TAU));
+        } else if (mode < 6.5) {
+            // 6 STROBE — l'arc-en-ciel QUANTIFIE en six crans. La couleur ne glisse plus,
+            // elle SAUTE. Lecture immediate : quelque chose est casse.
+            float q = floor(fract(wave) * 6.0) / 6.0;
+            edgeRgb = hueToRgb(chaosHue(q)) * (0.80 + 0.20 * noise1(floor(wave * 6.0)));
         } else {
-            // Noir et blanc : la meme onde, en luminance seule.
-            float v = 0.70 + 0.30 * sin(wave * 6.2831853);
-            edgeRgb = vec3(v);
+            // 7 EMBER — derive lente autour de la teinte imposee, fort scintillement.
+            // La braise de la cicatrice : vivante, mais mourante.
+            float flick = 0.45 + 0.55 * noise1(floor(wave * 9.0) + phase);
+            edgeRgb = hueToRgb(tintHue + 0.07 * sin(wave * TAU * 0.5)) * flick;
         }
+
         // Les 2 % les plus exterieurs sont adoucis : une arete a bord franc scintille
         // des qu'elle fait moins d'un pixel a l'ecran, et a trente metres tous les
         // cubes en font moins d'un.
@@ -248,12 +351,16 @@ void main() {
         soft = mix(1.0, 0.55, 1.0 - soft);
         fragColor = vec4(edgeRgb * soft, fade);
     } else {
-        // --- COEUR ---
-        // Anthracite #23232A, legerement transparent. Le grain evite la face plate
-        // qui trahit immediatement un quad non texture.
-        float g = grain(faceUv);
-        vec3 body = vec3(0.1373, 0.1373, 0.1647) + vec3(g);
-        fragColor = vec4(body, 0.65 * fade);
+        // --- COEUR : UN GRIS, ET RIEN D'AUTRE --------------------------------------
+        // bodyGray arrive du sommet sur 32 crans. La rampe ne part pas de zero et ne
+        // monte pas a un : un corps a 0.0 serait un trou noir indiscernable du fond de
+        // nuit (la lecon payee sur la premiere passe de lisibilite), un corps a 1.0
+        // rivaliserait avec les aretes, qui doivent rester les plus claires de l'image.
+        float lum = 0.055 + 0.80 * bodyGray;
+        vec3 body = vec3(lum) + vec3(grain(faceUv));
+        // Un corps clair est aussi un corps plus couvrant : sans cela les gris hauts
+        // paraissent delaves et la hierarchie des 32 crans s'ecrase en une bouillie.
+        fragColor = vec4(body, (0.58 + 0.30 * bodyGray) * fade);
     }
 
     if (fragColor.a < 0.01) discard;
@@ -296,7 +403,7 @@ const FACES = [
 const UVQ = [[0,0],[1,0],[1,1],[0,1]];
 
 let VBO = gl.createBuffer(), IBO = gl.createBuffer(), VAO = gl.createVertexArray();
-let nCubes = 4096, nIndices = 0, mode = 0, big = false;
+let nCubes = 4096, nIndices = 0, mode = 0, big = false, uniformGray = false;
 
 /* Hachage deterministe : le champ doit etre le meme d'une image a l'autre, sinon on ne
    verrait pas l'onde glisser, on verrait du bruit. */
@@ -320,16 +427,25 @@ function build(n) {
        des coordonnees MONDE, et rien d'autre. Aucune couleur n'est calculee ici. */
     let raw = (cx * 0.17 + cy * 0.23 + cz * 0.13) % 1.0; if (raw < 0) raw += 1.0;
     const tint = hash(c, 71);
+    // LE GRIS. uniformGray montre l'etat « en ordre » (toutes les faces au meme cran,
+    // comme le treillis intact de la Sphere d'Entropie) ; sinon chaque cube tire son cran
+    // sur les trente-deux, ce qui est l'etat « en desordre ». Le contraste entre les deux
+    // est exactement ce que la deuxieme signature met en scene.
+    const gray = uniformGray ? 16 : Math.min(31, (hash(c, 83) * 32) | 0);
     const base = c * 24;
     for (let f = 0; f < 6; f++) {
       for (let q = 0; q < 4; q++) {
         const o = FACES[f][q];
         V[vi++] = cx + o[0] * half; V[vi++] = cy + o[1] * half; V[vi++] = cz + o[2] * half;
         V[vi++] = UVQ[q][0]; V[vi++] = UVQ[q][1];
-        V[vi++] = raw;                 // Color.r = phase spatiale
-        V[vi++] = mode / 255.0;        // Color.g = mode (le .vsh le remultiplie par 255)
-        V[vi++] = tint;                // Color.b = teinte imposee
-        V[vi++] = 1.0;                 // Color.a = fondu
+        V[vi++] = raw;                       // Color.r = phase spatiale
+        // Color.g = OCTET EMPAQUETE : mode * 32 + gris. Ecrire ici le seul numero de
+        // mode, comme le faisait la premiere version de cette page, ferait lire au
+        // shader un mode nul et un gris egal au mode : la demo montrerait autre chose
+        // que le jeu.
+        V[vi++] = (mode * 32 + gray) / 255.0;
+        V[vi++] = tint;                      // Color.b = teinte imposee
+        V[vi++] = 1.0;                       // Color.a = fondu
       }
       const o4 = base + f * 4;
       I[ii++] = o4; I[ii++] = o4 + 1; I[ii++] = o4 + 2;
@@ -403,17 +519,22 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-const MODE_NAMES = ['arc-en-ciel', 'teinte imposée', 'noir et blanc'];
+const MODE_NAMES = ['rainbow', 'tinted', 'mono', 'spectrum',
+                    'pulse', 'dual', 'strobe', 'ember'];
 function setMode(m) {
   mode = m;
-  for (let i = 0; i < 3; i++)
+  for (let i = 0; i < 8; i++)
     document.getElementById('bMode' + i).classList.toggle('on', i === m);
   document.getElementById('chipMode').textContent = 'mode · ' + MODE_NAMES[m];
   build(nCubes);
 }
-document.getElementById('bMode0').onclick = () => setMode(0);
-document.getElementById('bMode1').onclick = () => setMode(1);
-document.getElementById('bMode2').onclick = () => setMode(2);
+for (let i = 0; i < 8; i++)
+  document.getElementById('bMode' + i).onclick = () => setMode(i);
+document.getElementById('bGray').onclick = function () {
+  uniformGray = !uniformGray; this.classList.toggle('on', uniformGray);
+  this.textContent = uniformGray ? 'Gris tiré au hasard (désordre)'
+                                 : 'Gris uniforme (ordre)';
+  build(nCubes); };
 document.getElementById('bSpin').onclick = function () {
   spin = !spin; this.classList.toggle('on', spin); };
 document.getElementById('bFreeze').onclick = function () {

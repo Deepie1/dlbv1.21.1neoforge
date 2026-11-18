@@ -58,7 +58,7 @@ FSH = escape_backtick(to_es300(io.open(SH + 'void_pixel.fsh', encoding='utf-8').
 # Controle de non-regression : le fragment DOIT contenir les trois pieces qui font le
 # Pixel 3D. Si l'une disparait, la demo ne prouve plus rien et on refuse de la produire.
 _raw_fsh = io.open(SH + 'void_pixel.fsh', encoding='utf-8').read()
-for _needle in ('const float EDGE', 'chaosHue', 'hueToRgb', '0.1373'):
+for _needle in ('const float EDGE', 'chaosHue', 'hueToRgb', 'bodyGray', 'mode < 6.5'):
     assert _needle in _raw_fsh, 'piece manquante dans void_pixel.fsh : ' + _needle
 
 sha = os.environ.get('SHA', 'refs/heads/arena/605e67fb-dlbv1-21-1neoforge')
@@ -123,20 +123,46 @@ pre{{background:#100b26;border:1px solid #2a1f52;border-radius:8px;padding:10px;
   (u+v)·0,35)</code>, où <code>phase</code> est la position <b>monde</b> du cube, calculée
   une fois côté CPU. <code>chaosHue</code> ne parcourt pas la roue complète mais sa
   <b>moitié froide</b>, entre 0,50 et 0,92 : cyan électrique, bleu, violet profond,
-  magenta néon. Le vert et le jaune n’ont rien à faire dans un chaos prismatique.</p>
+  magenta néon. Seul le mode <b>spectrum</b> en sort — et c’est pour cela qu’il signifie
+  quelque chose.</p>
+  <p><b>Les huit dérivés.</b> <code>rainbow</code> l’onde froide continue ·
+  <code>tinted</code> une teinte imposée dont seul l’éclat pulse · <code>mono</code> la
+  luminance seule, le mode de ce qui est encore en ordre · <code>spectrum</code> la roue
+  entière · <code>pulse</code> une tête vive qui <i>court</i> le long de l’arête ·
+  <code>dual</code> deux teintes selon l’orientation de l’arête, et l’œil lit la cage du
+  cube · <code>strobe</code> l’arc-en-ciel quantifié en six crans, la couleur saute au
+  lieu de glisser · <code>ember</code> dérive lente et fort scintillement.
+  <b>Cliquez-les :</b> c’est le même shader que le jeu, pas une imitation.</p>
   <p><b>Fullbright par construction.</b> Le programme ne reçoit <b>ni lightmap ni
   overlay</b> : il n’y a rien à désactiver pour que les arêtes brillent dans une grotte à
-  minuit, elles brillent parce qu’aucune lumière n’est jamais appliquée. Le cœur, lui,
-  reste à <code>vec3(0,1373 · 0,1373 · 0,1647)</code> — l’anthracite #23232A — à 65 %
-  d’opacité, avec un grain procédural de ±3 % qui évite la face plate qu’un quad non
-  texturé trahit immédiatement.</p>
-  <span class="label">Démonstration</span>
+  minuit, elles brillent parce qu’aucune lumière n’est jamais appliquée.</p>
+  <p><b>Le corps n’a jamais de couleur — il a un gris.</b> Trente-deux crans, de 0,055 à
+  0,855 de luminance, transmis <b>par cube</b>. La rampe ne part pas de zéro (un corps
+  noir se confond avec le fond de nuit) et ne monte pas à un (il rivaliserait avec les
+  arêtes, qui doivent rester les plus claires de l’image). Un grain procédural de ±3 %
+  évite la face plate qu’un quad non texturé trahit immédiatement.</p>
+  <p><b>Un seul octet pour le mode ET le gris.</b> Le format de sommet reste
+  <code>POSITION_TEX_COLOR</code> : <code>UV0</code> porte les coordonnées de face,
+  les quatre canaux de <code>Color</code> sont pris. Le canal vert est donc empaqueté —
+  <code>g = mode·32 + gris</code> — soit <b>huit comportements × trente-deux
+  luminances</b>, 256 cubes visuellement distincts, pour une division et un modulo par
+  sommet. Le bouton <i>gris uniforme</i> bascule entre les deux états que la Sphère
+  d’Entropie met en scène : toutes les cellules au cran 16 (l’ordre), ou chacune au
+  hasard sur les trente-deux (le désordre).</p>
+  <span class="label">Les huit dérivés de l’arête</span>
   <div>
-    <button class="btn on" id="bMode0">Arc-en-ciel</button>
-    <button class="btn" id="bMode1">Teinte imposée</button>
-    <button class="btn" id="bMode2">Noir et blanc</button>
+    <button class="btn on" id="bMode0">Rainbow</button>
+    <button class="btn" id="bMode1">Tinted</button>
+    <button class="btn" id="bMode2">Mono</button>
+    <button class="btn" id="bMode3">Spectrum</button>
+    <button class="btn" id="bMode4">Pulse</button>
+    <button class="btn" id="bMode5">Dual</button>
+    <button class="btn" id="bMode6">Strobe</button>
+    <button class="btn" id="bMode7">Ember</button>
   </div>
+  <span class="label">Le corps</span>
   <div>
+    <button class="btn" id="bGray">Gris uniforme (ordre)</button>
     <button class="btn on" id="bSpin">Rotation</button>
     <button class="btn" id="bFreeze">Figer le temps</button>
     <button class="btn" id="bBig">Gros plan</button>
@@ -206,7 +232,7 @@ const FACES = [
 const UVQ = [[0,0],[1,0],[1,1],[0,1]];
 
 let VBO = gl.createBuffer(), IBO = gl.createBuffer(), VAO = gl.createVertexArray();
-let nCubes = 4096, nIndices = 0, mode = 0, big = false;
+let nCubes = 4096, nIndices = 0, mode = 0, big = false, uniformGray = false;
 
 /* Hachage deterministe : le champ doit etre le meme d'une image a l'autre, sinon on ne
    verrait pas l'onde glisser, on verrait du bruit. */
@@ -230,16 +256,25 @@ function build(n) {{
        des coordonnees MONDE, et rien d'autre. Aucune couleur n'est calculee ici. */
     let raw = (cx * 0.17 + cy * 0.23 + cz * 0.13) % 1.0; if (raw < 0) raw += 1.0;
     const tint = hash(c, 71);
+    // LE GRIS. uniformGray montre l'etat « en ordre » (toutes les faces au meme cran,
+    // comme le treillis intact de la Sphere d'Entropie) ; sinon chaque cube tire son cran
+    // sur les trente-deux, ce qui est l'etat « en desordre ». Le contraste entre les deux
+    // est exactement ce que la deuxieme signature met en scene.
+    const gray = uniformGray ? 16 : Math.min(31, (hash(c, 83) * 32) | 0);
     const base = c * 24;
     for (let f = 0; f < 6; f++) {{
       for (let q = 0; q < 4; q++) {{
         const o = FACES[f][q];
         V[vi++] = cx + o[0] * half; V[vi++] = cy + o[1] * half; V[vi++] = cz + o[2] * half;
         V[vi++] = UVQ[q][0]; V[vi++] = UVQ[q][1];
-        V[vi++] = raw;                 // Color.r = phase spatiale
-        V[vi++] = mode / 255.0;        // Color.g = mode (le .vsh le remultiplie par 255)
-        V[vi++] = tint;                // Color.b = teinte imposee
-        V[vi++] = 1.0;                 // Color.a = fondu
+        V[vi++] = raw;                       // Color.r = phase spatiale
+        // Color.g = OCTET EMPAQUETE : mode * 32 + gris. Ecrire ici le seul numero de
+        // mode, comme le faisait la premiere version de cette page, ferait lire au
+        // shader un mode nul et un gris egal au mode : la demo montrerait autre chose
+        // que le jeu.
+        V[vi++] = (mode * 32 + gray) / 255.0;
+        V[vi++] = tint;                      // Color.b = teinte imposee
+        V[vi++] = 1.0;                       // Color.a = fondu
       }}
       const o4 = base + f * 4;
       I[ii++] = o4; I[ii++] = o4 + 1; I[ii++] = o4 + 2;
@@ -313,17 +348,22 @@ function frame(now) {{
   requestAnimationFrame(frame);
 }}
 
-const MODE_NAMES = ['arc-en-ciel', 'teinte imposée', 'noir et blanc'];
+const MODE_NAMES = ['rainbow', 'tinted', 'mono', 'spectrum',
+                    'pulse', 'dual', 'strobe', 'ember'];
 function setMode(m) {{
   mode = m;
-  for (let i = 0; i < 3; i++)
+  for (let i = 0; i < 8; i++)
     document.getElementById('bMode' + i).classList.toggle('on', i === m);
   document.getElementById('chipMode').textContent = 'mode · ' + MODE_NAMES[m];
   build(nCubes);
 }}
-document.getElementById('bMode0').onclick = () => setMode(0);
-document.getElementById('bMode1').onclick = () => setMode(1);
-document.getElementById('bMode2').onclick = () => setMode(2);
+for (let i = 0; i < 8; i++)
+  document.getElementById('bMode' + i).onclick = () => setMode(i);
+document.getElementById('bGray').onclick = function () {{
+  uniformGray = !uniformGray; this.classList.toggle('on', uniformGray);
+  this.textContent = uniformGray ? 'Gris tir\u00e9 au hasard (d\u00e9sordre)'
+                                 : 'Gris uniforme (ordre)';
+  build(nCubes); }};
 document.getElementById('bSpin').onclick = function () {{
   spin = !spin; this.classList.toggle('on', spin); }};
 document.getElementById('bFreeze').onclick = function () {{
