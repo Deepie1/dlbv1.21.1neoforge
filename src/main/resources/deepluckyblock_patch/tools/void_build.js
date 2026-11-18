@@ -677,29 +677,9 @@ function buildVoid(variant, t, salt = 7331) {
       if (!escaped && bounce === 2) { ix = hit[5]; il = hit[6]; iy = hit[7]; escaped = true; }
     }
     const P = spinPoint(px, pl, py, PT, spin);
-    const D = spinPoint(ix, il, iy, PT, spin);
-    const len = Math.sqrt(D[0] * D[0] + D[1] * D[1] + D[2] * D[2]);
-    if (len < 1e-4) return null;
-    const dn = [D[0] / len, D[1] / len, D[2] / len];
-    /* L'EVENTAIL EST RABATTU DEVANT : apres trois reflexions internes le rayon piege sort
-       le long de la NORMALE de la face, direction sans rapport avec l'axe d'entree et qui
-       peut pointer en ARRIERE (mesure au banc : jusqu'a 124 degres). On borne
-       l'inclinaison a [18, 62] degres en gardant l'azimut : les sept gardent leur ordre
-       et leur dispersion, mais ils partent tous du bon cote. */
-    const perp = Math.sqrt(dn[1] * dn[1] + dn[2] * dn[2]);
-    const tilt = Math.atan2(perp, dn[0]);
-    /* COMPRESSION et non ecretage : borner collait la moitie des sept pile sur 62
-       degres, ils perdaient leur angle propre donc la dispersion, qui est le sujet de la
-       figure. [0, PI] est replie lineairement sur [18, 62] degres. */
-    const bound = 0.31 + (1.08 - 0.31) * (tilt / PI);
-    {
-      const az = k * (TAU / 7) + 0.40;
-      const cl = perp < 1e-4 ? Math.cos(az) : dn[1] / perp;
-      const cy = perp < 1e-4 ? Math.sin(az) : dn[2] / perp;
-      const sb = Math.sin(bound);
-      dn[0] = Math.cos(bound); dn[1] = cl * sb; dn[2] = cy * sb;
-    }
-    return { e: entry, p: P, d: dn };
+    /* T395 : la direction de SORTIE n'est plus calculee. Elle ne servait qu'aux sept
+       faisceaux, qui n'existent plus ; ce qui reste est le trajet coude entre e et p. */
+    return { e: entry, p: P };
   };
 
   // =======================================================================================
@@ -869,8 +849,153 @@ function buildVoid(variant, t, salt = 7331) {
   // =======================================================================================
   //  II. PRISME DU DRAGON — 190 ticks — il DISTRIBUE
   // =======================================================================================
-  /* Sept faisceaux, sept corps : les ticks 62 + 9k du serveur, traces par REFRACTION reelle
-     (Snell-Descartes, un indice par faisceau, reflexion totale comprise). */
+  /* Sept lances, sept corps : les ticks 62 + 9k du serveur. La refraction reste (Snell-
+     Descartes, un indice par rayon, reflexion totale comprise) mais ne sert plus qu'aux
+     trajets INTERNES -- ce que le prisme envoie dehors n'est plus de la lumiere. */
+  // ---------------------------------------------------------------------------------
+  //  LES SEPT LANCES (T395) -- miroir de VoidSignatureVfx.prismSpear
+  // ---------------------------------------------------------------------------------
+  const SPEAR_LEN = 3.05;    /* longueur totale, du fer au talon */
+  const SPEAR_THRU = 0.95;   /* ce que la pointe depasse le centre : la cible est DERRIERE */
+  const SPEAR_FAR = 4.60;    /* distance de depart, neuf ticks de course */
+  const SPEAR_BLADE = 0.70;  /* fin du fer */
+  const SPEAR_GRIP = 0.92;   /* debut de la hampe */
+  const SPEAR_HEEL = 2.68;   /* debut du talon */
+
+  /* L'axe d'arrivee, unitaire, du centre du cristal vers le point de depart. Les azimuts
+     sont ceux des sept fils du faisceau d'entree ; le lean les sort du meme plan, sinon
+     sept lances coplanaires se lisent comme un disque. */
+  const spearAxis = (k) => {
+    const az = k * (TAU / 7) + 0.40;
+    let gf = 0.30 * Math.sin(k * 1.7 + 0.9), gl = Math.cos(az), gy = Math.sin(az);
+    const n = Math.sqrt(gf * gf + gl * gl + gy * gy);
+    if (n < 1e-4) return [0, 1, 0];
+    return [gf / n, gl / n, gy / n];
+  };
+
+  const spear = (k, yc, a) => {
+    const V = VOID_SHAPE;
+    const fire = V.PRISM_FIRE0 + k * V.PRISM_FIRE_STEP;
+    if (t < fire) return;
+    const age = t - fire;
+    const born = clamp01(age / 0.016);
+    /* L'ARRACHEE : a l'eclat, ce qui a ete plante est repris. Sept lances debout pendant
+       que le cristal se disperse sont sept objets sans proprietaire. */
+    const pull = smooth((t - V.PRISM_BURST) / 0.085);
+    const fade = born * (1 - pull);
+    if (fade <= 0.02) return;
+    const drive = smooth(age / 0.047);
+    const rest = Math.max(0, age - 0.047);
+    /* Le tremblement de la hampe apres l'impact : amorti, sur l'axe. C'est lui qui donne
+       la MASSE -- une lance qui s'arrete net est une image, pas un coup. */
+    const quiver = Math.exp(-rest * 26) * Math.sin(rest * 95) * 0.055;
+    const tip = SPEAR_FAR * (1 - drive) - SPEAR_THRU * drive + quiver + pull * 5.4;
+
+    const g = spearAxis(k);
+    let px, pl, py;
+    if (Math.abs(g[2]) < 0.92) { px = -g[1]; pl = g[0]; py = 0; }
+    else { px = 1; pl = 0; py = 0; }
+    let pn = Math.sqrt(px * px + pl * pl + py * py);
+    if (pn < 1e-4) { px = 1; pl = 0; py = 0; pn = 1; }
+    px /= pn; pl /= pn; py /= pn;
+    const qx = g[1] * py - g[2] * pl, ql = g[2] * px - g[0] * py, qy = g[0] * pl - g[1] * px;
+    const al = a * fade;
+
+    /* ELLE SORT DU SOL : trois des sept arrivent par en dessous, et une hampe dessinee
+       sous le plancher est une hampe qui flotte. */
+    const put = (d, op, oq, half, rgb, alpha) => {
+      const y = yc + g[2] * d + py * op + qy * oq;
+      if (y < GROUND_Y + 0.02) return;
+      box(g[0] * d + px * op + qx * oq, g[1] * d + pl * op + ql * oq, y,
+          half, half, half, rgb, alpha);
+    };
+
+    /* LE FER : une feuille de 0,32 bloc de large. Au banc, un fer de 0,20 sur une hampe
+       de 3 blocs ne se lit pas et la piece passe pour un baton. Les deux tranchants sont
+       clairs -- un fer noir sur fond noir n'existe pas, et ici le lisere a un sens. */
+    const nb = 16;
+    for (let i = 0; i <= nb; i++) {
+      const u = i / nb, s2 = SPEAR_BLADE * u;
+      const bw = 0.022 + 0.138 * Math.sin(PI * Math.pow(u, 0.55));
+      const rib = 0.040 - 0.012 * u;
+      put(tip + s2, 0, 0, rib, i < 2 ? SINGULAR : (u < 0.5 ? BASALT : ABYSS),
+          opq(al * (0.86 + 0.14 * (1 - u))));
+      put(tip + s2, bw, 0, 0.026, GLACIER, opq(al * 0.95));
+      put(tip + s2, -bw, 0, 0.026, GLACIER, opq(al * 0.95));
+      if (i % 3 === 0) {
+        put(tip + s2, bw * 0.55, 0, 0.024, HALO, opq(al * 0.80));
+        put(tip + s2, -bw * 0.55, 0, 0.024, HALO, opq(al * 0.80));
+      }
+    }
+
+    /* LA DOUILLE : deux bagues de HUIT. A 0,082 de rayon, six cubes de 0,060 laissent six
+       trous, et une bague trouee est une bague qu'on ne voit pas. */
+    for (let r = 0; r < 2; r++) {
+      const s2 = 0.735 + r * 0.110;
+      for (let i = 0; i < 8; i++) {
+        const ang = i * (TAU / 8) + r * 0.39;
+        put(tip + s2, Math.cos(ang) * 0.082, Math.sin(ang) * 0.082, 0.030,
+            r === 0 ? HORIZON : HALO, opq(al * 0.90));
+      }
+    }
+
+    /* LES CROCHETS : LE detail qui dit que l'objet est une arme et pas un baton -- ce qui
+       empeche le corps traverse de remonter le long de la hampe. */
+    for (let i = 0; i < 6; i++) {
+      const e = i / 5, out = 0.085 + 0.175 * e, back = 0.800 + 0.180 * e;
+      const tone = e > 0.72 ? GLACIER : SLATE;
+      put(tip + back, out, 0, 0.028, tone, opq(al * 0.88));
+      put(tip + back, -out, 0, 0.028, tone, opq(al * 0.88));
+    }
+
+    /* LA HAMPE, effilee vers le talon. Pas 0,068 pour des cubes de 0,116 : le pas est PLUS
+       COURT QUE LE CUBE. Le filet clair court sans interruption. */
+    const ns = 26;
+    for (let i = 0; i <= ns; i++) {
+      const v = i / ns;
+      const s2 = SPEAR_GRIP + (SPEAR_HEEL - SPEAR_GRIP) * v;
+      const core = 0.058 - 0.012 * v;
+      put(tip + s2, 0, 0, core, BASALT, opq(al * 0.92));
+      put(tip + s2, core * 1.05, 0, 0.036, HORIZON, opq(al * 0.78));
+    }
+
+    /* LES TROIS LIGATURES : la corde qui tient le fer, et les deux prises. */
+    for (let r = 0; r < 3; r++) {
+      const s2 = 1.12 + r * 0.58;
+      for (let i = 0; i < 8; i++) {
+        const ang = i * (TAU / 8) + r * 0.33;
+        put(tip + s2, Math.cos(ang) * 0.078, Math.sin(ang) * 0.078, 0.030,
+            r === 1 ? GLACIER : HALO, opq(al * 0.85));
+      }
+    }
+
+    /* LE TALON : contrepoids, puis trois ailettes CONTINUES. Quatre cubes espaces de 0,087
+       pour des cubes de 0,044 donnaient une poignee de confettis au bout de chaque hampe. */
+    for (let i = 0; i < 4; i++) {
+      put(tip + SPEAR_HEEL + 0.040 + i * 0.047, 0, 0, 0.075 - i * 0.004,
+          i === 1 ? SLATE : BASALT, opq(al * 0.90));
+    }
+    for (let jf = 0; jf < 3; jf++) {
+      const ang = jf * (TAU / 3) + 0.5;
+      for (let i = 0; i < 7; i++) {
+        const e = i / 6, rr = 0.070 + 0.130 * e;
+        put(tip + SPEAR_HEEL + 0.120 + e * (SPEAR_LEN - SPEAR_HEEL - 0.120),
+            Math.cos(ang) * rr, Math.sin(ang) * rr, 0.026,
+            e > 0.55 ? HORIZON : SLATE, opq(al * 0.82));
+      }
+    }
+
+    /* L'IMPACT, a l'instant du degat serveur : six eclats au point vise. */
+    const strike = 1 - clamp01((age - 0.040) / 0.070);
+    if (age > 0.030 && strike > 0.02) {
+      for (let i = 0; i < 6; i++) {
+        const ang = i * (TAU / 6) + t * 3, rr = 0.10 + 0.30 * (1 - strike);
+        put(-SPEAR_THRU, Math.cos(ang) * rr, Math.sin(ang) * rr, 0.034, SINGULAR,
+            opq(al * strike));
+      }
+    }
+  };
+
   const renderPrism = (a) => {
     const V = VOID_SHAPE;
     const body = V.prismBody(t), spin = V.prismSpin(t), w = V.PRISM_W * body;
@@ -880,15 +1005,15 @@ function buildVoid(variant, t, salt = 7331) {
     const stair = (Math.floor(drop * 3) + smooth(fract(drop * 3))) / 3;
     const yc = V.PRISM_YC + (1 - stair) * 4.6;
 
-    /* ---- 1. LE RECUL : sept coups de canon dans sept directions ---- */
+    /* ---- 1. LE RECUL : sept coups de belier, pas sept coups de canon ----
+       Le cristal est FRAPPE : il part dans le sens de la lance, pas a l'oppose. */
     let recF = 0, recL = 0, recY = 0;
     for (let k = 0; k < 7; k++) {
       const fire = V.PRISM_FIRE0 + k * V.PRISM_FIRE_STEP;
       if (t < fire || t > V.PRISM_BREAK) continue;
-      const ray = prismRay(k, V.prismSpin(fire), V.PRISM_W * V.prismBody(fire));
-      if (!ray) continue;
+      const g = spearAxis(k);
       const kick = (1 - smooth((t - fire) / 0.085)) * 0.055;
-      recF -= ray.d[0] * kick; recL -= ray.d[1] * kick; recY -= ray.d[2] * kick;
+      recF -= g[0] * kick; recL -= g[1] * kick; recY -= g[2] * kick;
     }
 
     /* ---- 2. LE TRAIT D'ENTREE — tick 42 ---- */
@@ -990,76 +1115,14 @@ function buildVoid(variant, t, salt = 7331) {
       }
     }
 
-    /* ---- 3. LES SEPT FAISCEAUX ---- */
-    for (let k = 0; k < 7; k++) {
-      const fire = V.PRISM_FIRE0 + k * V.PRISM_FIRE_STEP;
-      if (t < fire) continue;
-      const age = t - fire;
-      /* Eteints AVANT que les aretes se desolidarisent : sept traits sans source au
-         milieu des eclats ne se lisent plus comme des faisceaux. */
-      const live = 1 - smooth((t - V.PRISM_BREAK + 0.055) / 0.045);
-      if (live <= 0.01) continue;
-      const ray = prismRay(k, V.prismSpin(fire), V.PRISM_W * V.prismBody(fire));
-      if (!ray) continue;
-      let reach = 3.9 * smooth(age / 0.055);
-      if (reach < 0.08) continue;
-      const bf = ray.p[0], bl = ray.p[1], by = V.PRISM_YC + ray.p[2];
-      const rd = ray.d;
-      let grounded = false;
-      if (rd[2] < -0.03) {
-        const toFloor = (GROUND_Y + 0.03 - by) / rd[2];
-        if (toFloor > 0.05 && toFloor < reach) { reach = toFloor; grounded = true; }
-      }
-      let ux, ul, uy;
-      if (Math.abs(rd[2]) < 0.90) { ux = -rd[1]; ul = rd[0]; uy = 0; }
-      else { ux = 1; ul = 0; uy = 0; }
-      let un = Math.sqrt(ux * ux + ul * ul + uy * uy);
-      if (un < 1e-4) { ux = 1; ul = 0; uy = 0; un = 1; }
-      ux /= un; ul /= un; uy /= un;
-      const wx = rd[1] * uy - rd[2] * ul, wl = rd[2] * ux - rd[0] * uy, wy = rd[0] * ul - rd[1] * ux;
-      /* LE PAS EST PLUS PETIT QUE LE CUBE : seule facon d'obtenir un trait plein.
-         L'ancienne couronne de cinq cubes espacee de 0,155 etait large ET trouee. */
-      const steps = Math.max(6, Math.min(110, Math.round(reach / 0.042)));
-      /* HALO sur un trait de 0,05 bloc disparait : deux tons clairs seulement, sinon
-         un faisceau sur trois ne se voit pas et les autres ont l'air pointilles. */
-      const tone = (k & 1) === 0 ? GLACIER : HORIZON;
-      for (let si = 0; si <= steps; si++) {
-        const u = si / steps, d = u * reach;
-        const ff = bf + rd[0] * d, ll = bl + rd[1] * d, yy = by + rd[2] * d;
-        const core = 0.025 * (1 - 0.30 * u);
-        box(ff, ll, yy, core, core, core, si === steps ? SINGULAR : tone,
-            opq(a * (0.52 + 0.48 * (1 - u)) * live));
-        /* Pas d'etincelle satellite : au banc, un cube decale tous les quatre pas
-           dessine une SECONDE ligne trouee, et c'est elle que l'oeil suit. La vrille
-           passe par la TEINTE du coeur. */
-        if (si % 5 === 0 && si < steps) {
-          const shimmer = 0.5 + 0.5 * Math.sin(d * 2.4 + t * 6 + k);
-          /* MEME taille que le coeur : grossie, la perle se detachait et le faisceau se
-             lisait comme un chapelet. Seule la teinte change. */
-          box(ff, ll, yy, core, core, core,
-              shimmer > 0.72 ? SINGULAR : GLACIER, opq(a * (0.55 + 0.40 * shimmer) * live));
-        }
-      }
-      const ef = bf + rd[0] * reach, el = bl + rd[1] * reach, ey = by + rd[2] * reach;
-      const flash = 1 - clamp01(age / 0.085);
-      if (grounded) {
-        const rr = 0.14 + 0.52 * clamp01(age / 0.16);
-        const ring = Math.max(10, Math.round(rr * 22));
-        for (let i = 0; i < ring; i++) {
-          const ang = i / ring * TAU;
-          box(ef + Math.cos(ang) * rr, el + Math.sin(ang) * rr, GROUND_Y + 0.016,
-              0.040, SLAB_H, 0.040, (i & 1) === 0 ? tone : HALO,
-              opq(a * (0.80 - 0.55 * clamp01(age / 0.22)) * live));
-        }
-      }
-      if (flash > 0.02) {
-        for (let i = 0; i < 6; i++) {
-          const ang = i * (TAU / 6) + t * 3, rr = 0.10 + 0.26 * (1 - flash);
-          box(ef + Math.cos(ang) * rr, el + Math.sin(ang) * rr, ey + (i % 2 === 0 ? 0.08 : -0.08),
-              0.036, 0.036, 0.036, SINGULAR, opq(a * flash * live));
-        }
-      }
-    }
+    /* ---- 3. LES SEPT LANCES ----
+       Il n'y a plus de faisceau. La refraction reste -- c'est ce qui se passe DANS le
+       verre, section 2 bis -- mais ce que le prisme distribue au dehors n'est plus de la
+       lumiere : c'est une arme. Sept lances noires tombent des sept azimuts du faisceau
+       d'entree, traversent le cristal et se plantent dans ce qu'il y a au centre. La
+       direction n'est plus calculee, elle est COMPOSEE : un eventail issu d'une
+       simulation partait dans tous les sens, et une arme qui vise doit viser. */
+    for (let k = 0; k < 7; k++) spear(k, yc, a);
 
     /* ---- 3 bis. CE QU'IL Y A DANS LE CRISTAL : du RIEN, en neuf cubes ---- */
     if (body > 0.05) {

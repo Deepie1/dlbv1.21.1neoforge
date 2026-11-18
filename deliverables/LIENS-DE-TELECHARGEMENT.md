@@ -24,11 +24,52 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > toujours la dernière version, une fois le cache expiré (quelques minutes). Les liens en
 > SHA sont l'adresse **immédiate**, à utiliser le jour de la livraison.
 
-## Vide — les traits amincis, le prisme lisible et le sang qui s'arrête · 4 novembre 2026 ⟵ **LOT COURANT**
+## Vide — la porte engloutit, le prisme plante sept lances · 4 novembre 2026 ⟵ **LOT COURANT**
 
 - **Aperçu voxel + abysse (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_preview.html
 - **Démo du shader (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Portal_shader_demo.html
 - **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_src.zip
+
+> **T395 — la Porte avale, le Prisme plante.**
+>
+> **1. La Porte d'Horizon emporte ce qui reste dedans.** Entre les sept transits, tout
+> corps resté dans l'anneau **s'enfonce** : 134 ticks pour la pleine profondeur, puis la
+> fermeture le **rend à la surface** en 22 ticks et l'éjecte. Trois règles que ça impose,
+> et chacune a une raison qui se vérifie en jeu : on ne touche **que l'ordonnée**, sinon
+> les poussées horizontales des transits seraient annulées et le tourniquet disparaîtrait ;
+> la profondeur est plafonnée à la **hauteur des yeux moins 0,28 bloc** — mesurée sur le
+> regard et non sur la taille, parce qu'une araignée de 0,90 de haut a l'œil à 0,585 et
+> passerait sous la surface avec un simple ratio, après quoi `isInWall()` facture de
+> l'asphyxie à chaque tick et la porte devient une arme à dégâts continus, ce qu'elle
+> n'est pas ; enfin un corps **expulsé par un transit remonte avant d'être poussé**, sinon
+> sa parabole part d'un bloc sous le sol, et il garde 26 ticks de répit le temps que son
+> arc se termine. Rester coûte (`base·(1,25 + 0,45·profondeur)` à la fermeture), sortir se
+> paie en transits : les deux lectures ont un prix.
+>
+> **2. Le Prisme : l'éventail réfracté est retiré, sept lances le remplacent.** Trois
+> correctifs successifs — amincir, éteindre plus tôt, rabattre dans un cône avant —
+> traitaient des symptômes. Le défaut était en amont : **une signature qui vise ne peut
+> pas laisser un calcul décider où elle envoie**. Les lances sont entièrement composées.
+> Elles tombent des **sept azimuts du faisceau d'entrée**, de 4,6 blocs en 9 ticks,
+> traversent le cristal et se plantent la pointe **0,95 bloc derrière le centre** — la
+> cible est derrière le centre, pas dessus, sinon rien n'est transpercé. Trois des sept
+> arrivent par en dessous et ressortent par le corps. À l'éclat, elles sont arrachées :
+> sept lances debout pendant que le cristal se disperse seraient sept objets sans
+> propriétaire.
+>
+> **3. La lance, pièce par pièce — 194 cubes, pas inférieur au cube partout.** Un **fer**
+> en feuille de 0,32 bloc à deux tranchants clairs (un fer noir sur fond noir n'existe
+> pas : ici le liseré a un sens, c'est le fil de la lame), une **douille** de deux bagues
+> de huit, **deux crochets** — le détail qui dit que l'objet est une arme et pas un bâton,
+> puisqu'il empêche le corps traversé de remonter le long de la hampe —, une **hampe**
+> effilée de 1,76 bloc avec son filet clair continu et trois ligatures, un **talon** à
+> contrepoids et trois ailettes. Première version mesurée au banc : hampe de 0,09 pour
+> 3 blocs de long (un crayon), ailettes espacées de 0,087 pour des cubes de 0,044 (une
+> poignée de confettis). Tout a été repris sur mesure.
+>
+> **4. L'aperçu le montre.** La victime filaire de la page **s'enfonce** sous la Porte,
+> coupée au plancher, avec sa profondeur écrite à côté d'elle — une figure qui descend de
+> huit pixels ne prouve rien.
 
 > **T394 — neuf reproches, traités un par un.**
 >

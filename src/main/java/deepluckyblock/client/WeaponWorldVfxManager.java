@@ -777,7 +777,7 @@ public final class WeaponWorldVfxManager {
             // du mod sous la seconde — 16, 22 et 18 ticks, et un unique bloc generique
             // de trente lignes pour les trois. Chacun a desormais sa choregraphie.
             case VOID_WARP_SPHERE -> 160;     // grille + lentille + anneau + accretion + rendu
-            case DRAGON_CHAOS_PRISM -> 190;   // descente + trait + sept faisceaux + ailes + eclat
+            case DRAGON_CHAOS_PRISM -> 190;   // descente + trait + sept lances + ailes + eclat
             case NULL_RIFT_FISSURE -> 170;    // felure + amande + crevasse + autre cote + cicatrice
             case HORIZON_GATE -> 180;         // trace + tore + membrane + tore haut + transit + fermeture
             case CHAIN_COLLAPSE -> 200;       // amorcage + maillons en cascade + detonation finale

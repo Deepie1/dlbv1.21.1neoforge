@@ -86,7 +86,7 @@ import org.joml.Vector3f;
  *       {@code r − k/r}, et les nœuds passés sous l'horizon <b>disparaissent</b> : la sphère
  *       est dessinée par les nœuds qui manquent.</li>
  *   <li><b>Prisme du Dragon</b> (190 t) — une <i>RÉFRACTION</i>. Un octaèdre en fil de fer
- *       reçoit un trait plein et le ressort en sept faisceaux <b>creux</b>, qu'on traverse du
+ *       reçoit un trait plein et y plante sept <b>lances</b> noires, qu'on traverse du
  *       regard. À l'apogée les sept se rabattent en deux ailes membranées.</li>
  *   <li><b>Faille du Néant</b> (170 t) — une <i>DÉCHIRURE</i>. Un objet à deux dimensions
  *       dans un monde qui en a trois. Deux lèvres dentelées et <b>décalées</b> — du papier
@@ -236,10 +236,10 @@ public final class VoidSignatureVfx {
     /** Inclinaison de l'axe de rotation. Un cristal d'aplomb a l'air posé, pas lâché. */
     public static final float PRISM_TILT = 0.34f;
 
-    /** Instant du premier des sept faisceaux : tick 62 sur 190, exactement comme au serveur. */
+    /** Instant de la première des sept lances : tick 62 sur 190, exactement comme au serveur. */
     public static final float PRISM_FIRE0 = 62.0f / 190.0f;
 
-    /** Écart entre deux faisceaux : neuf ticks, exactement comme au serveur. */
+    /** Écart entre deux lances : neuf ticks, exactement comme au serveur. */
     public static final float PRISM_FIRE_STEP = 9.0f / 190.0f;
 
     /** Instant de la fracture : tick 150 sur 190. */
@@ -1281,24 +1281,24 @@ public final class VoidSignatureVfx {
 
     /**
      * <b>Un prisme fait une seule chose : il prend un rayon et il en sort plusieurs.</b> Le
-     * serveur tire SEPT faisceaux, un par corps, au tick 62 puis toutes les neuf frames
+     * serveur frappe SEPT fois, un corps par coup, au tick 62 puis toutes les neuf frames
      * ({@code applyDragonPrismGameplay}). L'image ne décore pas ce calendrier, elle l'EST :
      * les sept rayons sont tracés par réfraction réelle dans l'octaèdre, un indice par
-     * faisceau, et chacun part à l'instant exact où le serveur inflige ses dégâts.
+     * lance, et chacune se plante à l'instant exact où le serveur inflige ses dégâts.
      *
      * <h3>Le calcul</h3>
      * <ul>
      *   <li>le rayon incident est transporté dans le repère du cristal, puis intersecté
      *       avec l'octaèdre {@code |f|+|l|+|y| ≤ w} par découpe sur huit plans ;</li>
-     *   <li>à l'entrée comme à la sortie, <b>Snell-Descartes vectoriel</b> avec un indice
-     *       par faisceau — 1,14 à 1,62. C'est la DISPERSION qui ouvre l'éventail : les sept
-     *       rayons ne divergent pas parce qu'on leur a donné sept angles, ils divergent
-     *       parce qu'ils ne voient pas le même verre ;</li>
+     *   <li>à l'entrée, <b>Snell-Descartes vectoriel</b> avec un indice par rayon — 1,14 à
+     *       1,62. La dispersion sert encore : c'est elle qui donne aux sept trajets
+     *       INTERNES sept coudes différents, et c'est tout ce qui reste à l'écran de la
+     *       réfraction depuis que l'éventail de sortie a été retiré ;</li>
      *   <li>la <b>réflexion totale</b> est traitée, et elle arrive : les indices hauts
      *       rebondissent à l'intérieur avant de trouver une face qui les laisse sortir,
-     *       d'où deux faisceaux qui partent d'une arête inattendue ;</li>
-     *   <li>chaque tir donne un <b>recul</b> au cristal, opposé au rayon et amorti : sept
-     *       coups de canon dans sept directions, donc un corps qui tressaute.</li>
+     *       d'où deux trajets qui ressortent par une arête inattendue ;</li>
+     *   <li>chaque lance qui se plante donne un <b>recul</b> au cristal, dans le sens de
+     *       sa course et amorti : sept coups de bélier, donc un corps qui tressaute.</li>
      * </ul>
      *
      * <h3>La chronologie, en ticks du serveur</h3>
@@ -1306,8 +1306,9 @@ public final class VoidSignatureVfx {
      *   <li><b>4 / 10 / 16</b> la descente en trois à-coups — les trois sons du serveur ;</li>
      *   <li><b>42</b> le trait d'entrée frappe la face : un faisceau PLEIN, le seul de la
      *       famille ;</li>
-     *   <li><b>62 → 116</b> les sept tirs. Un faisceau creux par corps touché, qui s'arrête
-     *       AU SOL s'il descend, avec sa marque d'impact dessus ;</li>
+     *   <li><b>62 → 116</b> les sept coups. <b>Une lance par corps touché</b> : elle arrive
+     *       de quatre mètres, traverse le cristal et se plante, la pointe passée de 0,95
+     *       bloc DERRIÈRE le centre — donc dans le corps, puisque le centre y est ;</li>
      *   <li><b>150</b> la fracture : les douze arêtes se séparent, tombent sous la pesanteur
      *       et rebondissent ;</li>
      *   <li><b>170</b> l'éclat : l'anneau au sol et la colonne d'{@link #INVERT}.</li>
@@ -1332,20 +1333,22 @@ public final class VoidSignatureVfx {
         float[] p = new float[3];
         float[] re = new float[3];
         float[] rp = new float[3];
-        float[] rd = new float[3];
+        float[] ax = new float[9];
 
         // ---- 1. LE RECUL, calculé avant tout le reste ---------------------------------
+        // Il ne vient plus d'un tir mais d'un IMPACT : le cristal est frappé, donc il part
+        // DANS le sens de la lance et non à l'opposé. Même amortissement, sens inverse.
         float recF = 0.0f;
         float recL = 0.0f;
         float recY = 0.0f;
         for (int k = 0; k < 7; k++) {
             float fire = PRISM_FIRE0 + k * PRISM_FIRE_STEP;
             if (t < fire || t > PRISM_BREAK) continue;
-            if (!prismRay(k, prismSpin(fire), PRISM_W * prismBody(fire), re, rp, rd)) continue;
+            prismSpearAxis(k, ax);
             float kick = (1.0f - smooth(clamp((t - fire) / 0.085f))) * 0.055f;
-            recF -= rd[0] * kick;
-            recL -= rd[1] * kick;
-            recY -= rd[2] * kick;
+            recF -= ax[0] * kick;
+            recL -= ax[1] * kick;
+            recY -= ax[2] * kick;
         }
 
         // ---- 2. LE TRAIT D'ENTRÉE -----------------------------------------------------
@@ -1475,7 +1478,7 @@ public final class VoidSignatureVfx {
                 float after = 1.0f - smooth(clamp((t - fire) / 0.22f));
                 float glow = charge * (0.35f + 0.65f * after);
                 if (glow < 0.04f) continue;
-                if (!prismRay(k, spin, w, re, rp, rd)) continue;
+                if (!prismRay(k, spin, w, re, rp)) continue;
                 segment(vc, mat, tmp, cx, cy, cz, dx, dz,
                         re[0], re[1], yc + re[2], rp[0], rp[1], yc + rp[2],
                         0.022f + 0.014f * glow, 0.055f,
@@ -1484,106 +1487,16 @@ public final class VoidSignatureVfx {
             }
         }
 
-        // ---- 3. LES SEPT FAISCEAUX ----------------------------------------------------
+        // ---- 3. LES SEPT LANCES -------------------------------------------------------
+        // Il n'y a plus de faisceau. La réfraction reste — elle est ce qui se passe DANS le
+        // verre, et on la voit encore section 2 bis — mais ce que le prisme distribue au
+        // dehors n'est plus de la lumière : c'est une arme. Sept lances noires tombent des
+        // sept azimuts du faisceau d'entrée, traversent le cristal et se plantent dans ce
+        // qu'il y a au centre. La direction n'est plus calculée, elle est COMPOSÉE : un
+        // éventail issu d'une simulation partait dans tous les sens, et une arme qui vise
+        // doit viser.
         for (int k = 0; k < 7; k++) {
-            float fire = PRISM_FIRE0 + k * PRISM_FIRE_STEP;
-            if (t < fire) continue;
-            float age = t - fire;
-            // Éteints AVANT que les arêtes se désolidarisent : ils tenaient encore à 22 %
-            // pendant la fracture, et sept traits sans source au milieu des éclats ne se
-            // lisent plus comme des faisceaux — juste comme des traits.
-            float live = 1.0f - smooth(clamp((t - PRISM_BREAK + 0.055f) / 0.045f));
-            if (live <= 0.01f) continue;
-            if (!prismRay(k, prismSpin(fire), PRISM_W * prismBody(fire), re, rp, rd)) continue;
-            float reach = 3.9f * smooth(clamp(age / 0.055f));
-            if (reach < 0.08f) continue;
-            float bf = rp[0];
-            float bl = rp[1];
-            float by = PRISM_YC + rp[2];
-            // Arrêt AU SOL. Un faisceau qui plonge sous le plancher est un faisceau qui
-            // n'a touché personne : il s'arrête sur la surface, et il y laisse sa marque.
-            boolean grounded = false;
-            if (rd[2] < -0.03f) {
-                float toFloor = (GROUND_Y + 0.03f - by) / rd[2];
-                if (toFloor > 0.05f && toFloor < reach) { reach = toFloor; grounded = true; }
-            }
-            // Base orthonormée autour du rayon, pour une section CREUSE : cinq cubes en
-            // couronne, rien au milieu. Un faisceau plein serait de la matière.
-            float ux;
-            float ul;
-            float uy;
-            if (Math.abs(rd[2]) < 0.90f) {
-                ux = -rd[1]; ul = rd[0]; uy = 0.0f;
-            } else {
-                ux = 1.0f; ul = 0.0f; uy = 0.0f;
-            }
-            float un = Mth.sqrt(ux * ux + ul * ul + uy * uy);
-            if (un < 1.0e-4f) { ux = 1.0f; ul = 0.0f; uy = 0.0f; un = 1.0f; }
-            ux /= un; ul /= un; uy /= un;
-            float wx = rd[1] * uy - rd[2] * ul;
-            float wl = rd[2] * ux - rd[0] * uy;
-            float wy = rd[0] * ul - rd[1] * ux;
-            // LE PAS EST PLUS PETIT QUE LE CUBE : c'est la seule façon d'obtenir un trait
-            // plein. L'ancienne couronne de cinq cubes espacée de 0,155 était large ET
-            // trouée — large parce qu'elle faisait 0,156 bloc de diamètre, trouée parce
-            // qu'un anneau tous les 0,155 pour des cubes de 0,026 ne se touche jamais.
-            // Un cœur d'un cube par pas, et le faisceau fait 0,046 de large, sans trou.
-            int steps = Math.max(6, Math.min(110, Math.round(reach / 0.042f)));
-            // HALO sur un trait de 0,05 bloc disparaît : un tube large pouvait se
-            // permettre un ton sombre, une ligne fine non. Deux tons clairs seulement,
-            // sinon un faisceau sur trois ne se voit pas et les deux autres ont l'air
-            // d'être en pointillé à côté de lui.
-            int tone = (k & 1) == 0 ? GLACIER : HORIZON;
-            for (int sIdx = 0; sIdx <= steps; sIdx++) {
-                float u = sIdx / (float) steps;
-                float d = u * reach;
-                float ff = bf + rd[0] * d;
-                float ll = bl + rd[1] * d;
-                float yy = by + rd[2] * d;
-                float core = 0.025f * (1.0f - 0.30f * u);
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, ff, ll, yy,
-                        core, core, core,
-                        sIdx == steps ? SINGULAR : tone,
-                        opaque(a * (0.52f + 0.48f * (1.0f - u)) * live));
-                // Pas d'étincelle satellite : mesuré au banc, un cube décalé tous les
-                // quatre pas dessine une SECONDE ligne, trouée celle-là, et c'est elle que
-                // l'œil suit — la décoration imitait exactement le défaut qu'on vient de
-                // corriger. La vrille passe donc par la TEINTE du cœur, pas par un satellite.
-                if (sIdx % 5 == 0 && sIdx < steps) {
-                    float shimmer = 0.5f + 0.5f * Mth.sin(d * 2.4f + t * 6.0f + k);
-                    // MÊME taille que le cœur : grossie de 22 %, la perle se détachait et
-                    // le faisceau se lisait comme un chapelet. Seule la teinte change.
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz, ff, ll, yy, core, core, core,
-                            shimmer > 0.72f ? SINGULAR : GLACIER,
-                            opaque(a * (0.55f + 0.40f * shimmer) * live));
-                }
-            }
-            // L'IMPACT. Au sol c'est une marque plaquée sur la surface ; en l'air, l'étoile
-            // du corps touché. Dans les deux cas elle naît à l'instant du dégât serveur.
-            float ef = bf + rd[0] * reach;
-            float el = bl + rd[1] * reach;
-            float ey = by + rd[2] * reach;
-            float flash = 1.0f - clamp(age / 0.085f);
-            if (grounded) {
-                float rr = 0.14f + 0.52f * clamp(age / 0.16f);
-                int ring = Math.max(10, Math.round(rr * 22.0f));
-                for (int i = 0; i < ring; i++) {
-                    float ang = i / (float) ring * TAU;
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            ef + Mth.cos(ang) * rr, el + Mth.sin(ang) * rr, GROUND_Y + 0.016f,
-                            0.040f, SLAB_H, 0.040f, (i & 1) == 0 ? tone : HALO,
-                            opaque(a * (0.80f - 0.55f * clamp(age / 0.22f)) * live));
-                }
-            }
-            if (flash > 0.02f) {
-                for (int i = 0; i < 6; i++) {
-                    float ang = i * (TAU / 6.0f) + t * 3.0f;
-                    float rr = 0.10f + 0.26f * (1.0f - flash);
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            ef + Mth.cos(ang) * rr, el + Mth.sin(ang) * rr, ey + (i % 2 == 0 ? 0.08f : -0.08f),
-                            0.036f, 0.036f, 0.036f, SINGULAR, opaque(a * flash * live));
-                }
-            }
+            prismSpear(vc, mat, tmp, cx, cy, cz, dx, dz, yc, k, t, a);
         }
 
         // ---- 3 bis. CE QU'IL Y A DANS LE CRISTAL --------------------------------------
@@ -1764,14 +1677,244 @@ public final class VoidSignatureVfx {
      * <p>Le rayon incident part de {@code f = −3} et passe par le centre : dans le repère du
      * cristal il passe donc par l'origine, quelle que soit la rotation. Il entre, se
      * réfracte, traverse, se réfracte encore — et s'il est pris en réflexion totale il
-     * rebondit à l'intérieur. Au troisième rebond on le laisse sortir par la normale : un
-     * faisceau prisonnier ne vaut rien à l'écran, et le serveur en tire SEPT, pas cinq.</p>
+     * rebondit à l'intérieur. Au troisième rebond on arrête la course : le trajet s'arrête
+     * sur la face atteinte, et c'est ce trajet-là, et lui seul, qui est dessiné.</p>
+     *
+     * <p><b>T395</b> : la direction de SORTIE n'est plus calculée. Elle ne servait qu'aux
+     * sept faisceaux, qui n'existent plus ; ce qui reste de la réfraction est le trajet
+     * coudé entre {@code outE} et {@code outP}, c'est-à-dire la seule partie qui se passe
+     * à l'intérieur du verre et la seule qu'on voit encore.</p>
      *
      * @param outP point de sortie, repère de l'effet, relatif au centre du cristal
-     * @param outD direction de sortie, unitaire, repère de l'effet
      */
+    // ===================================================================================
+    //  LES SEPT LANCES (T395)
+    // ===================================================================================
+    //
+    //  Pourquoi elles remplacent les faisceaux. L'éventail réfracté était une simulation
+    //  juste dont la sortie était illisible : sept directions tirées d'un calcul, donc
+    //  sept directions que rien ne gouvernait. Trois correctifs successifs (amincir,
+    //  éteindre plus tôt, rabattre dans un cône) ont traité des symptômes. Le défaut était
+    //  en amont : une signature qui VISE ne peut pas laisser le hasard décider où elle
+    //  envoie. La lance est donc entièrement COMPOSÉE — azimut, course, longueur, profil.
+    //
+    //  Et elle est un VOLUME, pas un trait. C'est ce qui autorise enfin le ton sombre que
+    //  la famille réclame : un fil de 0,05 bloc en HALO disparaît sur fond noir (mesuré),
+    //  une hampe de 0,09 avec un filet clair sur l'arête se lit de loin.
+    //
+
+    /** Longueur totale, du fer au talon. Plus longue que le cristal n'est large. */
+    private static final float SPEAR_LEN = 3.05f;
+    /** Ce que la pointe dépasse le centre : la cible est DERRIÈRE le centre, pas dessus. */
+    private static final float SPEAR_THRU = 0.95f;
+    /** Distance de départ. Neuf ticks de course. */
+    private static final float SPEAR_FAR = 4.60f;
+    /** Début de la douille, mesuré depuis la pointe. */
+    private static final float SPEAR_BLADE = 0.70f;
+    /** Début de la hampe. */
+    private static final float SPEAR_GRIP = 0.92f;
+    /** Début du talon. */
+    private static final float SPEAR_HEEL = 2.68f;
+
+    /**
+     * L'axe d'arrivée de la lance {@code k}, unitaire, du centre du cristal vers son point
+     * de départ.
+     *
+     * <p>Les azimuts sont ceux des sept fils du faisceau d'entrée : ce qui entrait par sept
+     * points ressort par sept lances, et la roue garde l'ordre. Le {@code lean} les sort du
+     * même plan — sept rayons coplanaires se lisent comme un disque, pas comme des lances.</p>
+     */
+    private static void prismSpearAxis(int k, float[] out) {
+        float az = k * (TAU / 7.0f) + 0.40f;
+        float gf = 0.30f * Mth.sin(k * 1.7f + 0.9f);
+        float gl = Mth.cos(az);
+        float gy = Mth.sin(az);
+        float n = Mth.sqrt(gf * gf + gl * gl + gy * gy);
+        if (n < 1.0e-4f) { out[0] = 0.0f; out[1] = 1.0f; out[2] = 0.0f; return; }
+        out[0] = gf / n;
+        out[1] = gl / n;
+        out[2] = gy / n;
+    }
+
+    /**
+     * Un cube de la lance, posé en coordonnées de LANCE : {@code d} le long de l'axe depuis
+     * le centre du cristal, {@code op} et {@code oq} en travers.
+     */
+    private static void spearCube(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                  float cx, float cy, float cz, float dx, float dz,
+                                  float[] ax, float yc, float d, float op, float oq,
+                                  float half, int rgb, int alpha) {
+        if (alpha <= 0 || half <= 0.004f) return;
+        float f = ax[0] * d + ax[3] * op + ax[6] * oq;
+        float l = ax[1] * d + ax[4] * op + ax[7] * oq;
+        float y = yc + ax[2] * d + ax[5] * op + ax[8] * oq;
+        // ELLE SORT DU SOL. Trois des sept arrivent par en dessous ; une hampe dessinée
+        // sous le plancher est une hampe qui flotte, et le plancher est le seul repère
+        // d'échelle de la figure.
+        if (y < GROUND_Y + 0.02f) return;
+        box(vc, mat, tmp, cx, cy, cz, dx, dz, f, l, y, half, half, half, rgb, alpha);
+    }
+
+    /**
+     * Une lance, de la pointe au talon.
+     *
+     * <p>Quatre pièces, et chacune est là pour une raison de lecture : le <b>fer</b> en
+     * feuille avec ses deux tranchants clairs (une lame noire sur fond noir n'existe pas),
+     * la <b>douille</b> et ses deux crochets (ce qui empêche le corps de remonter le long
+     * de la hampe — c'est ce détail qui dit que l'objet est une arme et pas un bâton), la
+     * <b>hampe</b> sombre à filet clair et ses trois ligatures, le <b>talon</b> et ses
+     * trois ailettes.</p>
+     */
+    private static void prismSpear(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                                   float cx, float cy, float cz, float dx, float dz,
+                                   float yc, int k, float t, float a) {
+        float fire = PRISM_FIRE0 + k * PRISM_FIRE_STEP;
+        if (t < fire) return;
+        float age = t - fire;
+        float born = clamp(age / 0.016f);
+        // L'ARRACHÉE. À l'éclat, ce qui a été planté est repris : sept lances qui restent
+        // debout pendant que le cristal se disperse sont sept objets sans propriétaire.
+        float pull = smooth(clamp((t - PRISM_BURST) / 0.085f));
+        float fade = born * (1.0f - pull);
+        if (fade <= 0.02f) return;
+
+        float drive = smooth(clamp(age / 0.047f));
+        float rest = Math.max(0.0f, age - 0.047f);
+        // Le tremblement de la hampe après l'impact : amorti, sur l'axe. C'est lui qui
+        // donne la MASSE — une lance qui s'arrête net est une image, pas un coup.
+        float quiver = (float) Math.exp(-rest * 26.0f) * Mth.sin(rest * 95.0f) * 0.055f;
+        float tip = SPEAR_FAR * (1.0f - drive) - SPEAR_THRU * drive + quiver + pull * 5.4f;
+
+        float[] ax = new float[9];
+        prismSpearAxis(k, ax);
+        float px;
+        float pl;
+        float py;
+        if (Math.abs(ax[2]) < 0.92f) { px = -ax[1]; pl = ax[0]; py = 0.0f; }
+        else { px = 1.0f; pl = 0.0f; py = 0.0f; }
+        float pn = Mth.sqrt(px * px + pl * pl + py * py);
+        if (pn < 1.0e-4f) { px = 1.0f; pl = 0.0f; py = 0.0f; pn = 1.0f; }
+        ax[3] = px / pn;
+        ax[4] = pl / pn;
+        ax[5] = py / pn;
+        ax[6] = ax[1] * ax[5] - ax[2] * ax[4];
+        ax[7] = ax[2] * ax[3] - ax[0] * ax[5];
+        ax[8] = ax[0] * ax[4] - ax[1] * ax[3];
+
+        float al = a * fade;
+
+        // ---- LE FER. Une feuille de 0,32 bloc de large : mesuré au banc, un fer de 0,20
+        //      sur une hampe de 3 blocs ne se lit pas, et toute la pièce passe pour un
+        //      bâton. Les deux tranchants sont clairs — un fer noir sur fond noir n'existe
+        //      pas, et ici le liseré a un sens : c'est le fil de la lame.
+        int nb = 16;
+        for (int i = 0; i <= nb; i++) {
+            float u = i / (float) nb;
+            float s = SPEAR_BLADE * u;
+            float bw = 0.022f + 0.138f * Mth.sin(Mth.PI * (float) Math.pow(u, 0.55f));
+            float rib = 0.040f - 0.012f * u;
+            spearCube(vc, mat, tmp, cx, cy, cz, dx, dz, ax, yc, tip + s, 0.0f, 0.0f, rib,
+                    i < 2 ? SINGULAR : (u < 0.5f ? BASALT : ABYSS),
+                    opaque(al * (0.86f + 0.14f * (1.0f - u))));
+            spearCube(vc, mat, tmp, cx, cy, cz, dx, dz, ax, yc, tip + s, bw, 0.0f, 0.026f,
+                    GLACIER, opaque(al * 0.95f));
+            spearCube(vc, mat, tmp, cx, cy, cz, dx, dz, ax, yc, tip + s, -bw, 0.0f, 0.026f,
+                    GLACIER, opaque(al * 0.95f));
+            if (i % 3 == 0) {
+                spearCube(vc, mat, tmp, cx, cy, cz, dx, dz, ax, yc, tip + s, bw * 0.55f, 0.0f,
+                        0.024f, HALO, opaque(al * 0.80f));
+                spearCube(vc, mat, tmp, cx, cy, cz, dx, dz, ax, yc, tip + s, -bw * 0.55f, 0.0f,
+                        0.024f, HALO, opaque(al * 0.80f));
+            }
+        }
+
+        // ---- LA DOUILLE : deux bagues de huit. Huit et non six — à 0,082 de rayon, six
+        //      cubes de 0,060 laissent six trous, et une bague trouée est une bague qu'on
+        //      ne voit pas.
+        for (int r = 0; r < 2; r++) {
+            float s = 0.735f + r * 0.110f;
+            for (int i = 0; i < 8; i++) {
+                float ang = i * (TAU / 8.0f) + r * 0.39f;
+                spearCube(vc, mat, tmp, cx, cy, cz, dx, dz, ax, yc, tip + s,
+                        Mth.cos(ang) * 0.082f, Mth.sin(ang) * 0.082f, 0.030f,
+                        r == 0 ? HORIZON : HALO, opaque(al * 0.90f));
+            }
+        }
+
+        // ---- LES CROCHETS. C'est LE détail qui dit que l'objet est une arme et pas un
+        //      bâton : ce qui empêche le corps traversé de remonter le long de la hampe.
+        for (int i = 0; i < 6; i++) {
+            float e = i / 5.0f;
+            float out = 0.085f + 0.175f * e;
+            float back = 0.800f + 0.180f * e;
+            int tone = e > 0.72f ? GLACIER : SLATE;
+            spearCube(vc, mat, tmp, cx, cy, cz, dx, dz, ax, yc, tip + back, out, 0.0f, 0.028f,
+                    tone, opaque(al * 0.88f));
+            spearCube(vc, mat, tmp, cx, cy, cz, dx, dz, ax, yc, tip + back, -out, 0.0f, 0.028f,
+                    tone, opaque(al * 0.88f));
+        }
+
+        // ---- LA HAMPE, effilée vers le talon. Pas 0,068 pour des cubes de 0,116 : le pas
+        //      est PLUS COURT QUE LE CUBE, règle payée trois fois sur cette signature. Le
+        //      filet clair court sans interruption — une arête en tirets redessinerait
+        //      exactement le pointillé qu'on vient de retirer aux faisceaux.
+        int ns = 26;
+        for (int i = 0; i <= ns; i++) {
+            float v = i / (float) ns;
+            float s = SPEAR_GRIP + (SPEAR_HEEL - SPEAR_GRIP) * v;
+            float core = 0.058f - 0.012f * v;
+            spearCube(vc, mat, tmp, cx, cy, cz, dx, dz, ax, yc, tip + s, 0.0f, 0.0f, core,
+                    BASALT, opaque(al * 0.92f));
+            spearCube(vc, mat, tmp, cx, cy, cz, dx, dz, ax, yc, tip + s, core * 1.05f, 0.0f,
+                    0.036f, HORIZON, opaque(al * 0.78f));
+        }
+
+        // ---- LES TROIS LIGATURES : la corde qui tient le fer, et les deux prises.
+        for (int r = 0; r < 3; r++) {
+            float s = 1.12f + r * 0.58f;
+            for (int i = 0; i < 8; i++) {
+                float ang = i * (TAU / 8.0f) + r * 0.33f;
+                spearCube(vc, mat, tmp, cx, cy, cz, dx, dz, ax, yc, tip + s,
+                        Mth.cos(ang) * 0.078f, Mth.sin(ang) * 0.078f, 0.030f,
+                        r == 1 ? GLACIER : HALO, opaque(al * 0.85f));
+            }
+        }
+
+        // ---- LE TALON : le contrepoids, puis trois ailettes CONTINUES. Quatre cubes
+        //      espacés de 0,087 pour des cubes de 0,044 donnaient une poignée de confettis
+        //      au bout de chaque hampe — c'est ce que montrait le gros plan.
+        for (int i = 0; i < 4; i++) {
+            spearCube(vc, mat, tmp, cx, cy, cz, dx, dz, ax, yc,
+                    tip + SPEAR_HEEL + 0.040f + i * 0.047f, 0.0f, 0.0f, 0.075f - i * 0.004f,
+                    i == 1 ? SLATE : BASALT, opaque(al * 0.90f));
+        }
+        for (int jf = 0; jf < 3; jf++) {
+            float ang = jf * (TAU / 3.0f) + 0.5f;
+            for (int i = 0; i < 7; i++) {
+                float e = i / 6.0f;
+                float rr = 0.070f + 0.130f * e;
+                spearCube(vc, mat, tmp, cx, cy, cz, dx, dz, ax, yc,
+                        tip + SPEAR_HEEL + 0.120f + e * (SPEAR_LEN - SPEAR_HEEL - 0.120f),
+                        Mth.cos(ang) * rr, Mth.sin(ang) * rr, 0.026f,
+                        e > 0.55f ? HORIZON : SLATE, opaque(al * 0.82f));
+            }
+        }
+
+        // ---- L'IMPACT, à l'instant du dégât serveur. Six éclats au point visé.
+        float strike = 1.0f - clamp((age - 0.040f) / 0.070f);
+        if (age > 0.030f && strike > 0.02f) {
+            for (int i = 0; i < 6; i++) {
+                float ang = i * (TAU / 6.0f) + t * 3.0f;
+                float rr = 0.10f + 0.30f * (1.0f - strike);
+                spearCube(vc, mat, tmp, cx, cy, cz, dx, dz, ax, yc, -SPEAR_THRU,
+                        Mth.cos(ang) * rr, Mth.sin(ang) * rr, 0.034f, SINGULAR,
+                        opaque(al * strike));
+            }
+        }
+    }
+
     private static boolean prismRay(int k, float spin, float w,
-                                    float[] outE, float[] outP, float[] outD) {
+                                    float[] outE, float[] outP) {
         if (w <= 0.06f) return false;
         float[] o = new float[3];
         float[] d = new float[3];
@@ -1816,35 +1959,6 @@ public final class VoidSignatureVfx {
             }
         }
         spinPoint(outP, px, pl, py, PRISM_TILT, spin);
-        spinPoint(outD, ix, il, iy, PRISM_TILT, spin);
-        float len = Mth.sqrt(outD[0] * outD[0] + outD[1] * outD[1] + outD[2] * outD[2]);
-        if (len < 1.0e-4f) return false;
-        outD[0] /= len; outD[1] /= len; outD[2] /= len;
-        // L'ÉVENTAIL EST RABATTU DEVANT. Après trois réflexions internes, le rayon piégé
-        // est relâché le long de la NORMALE de la face : une direction qui n'a plus de
-        // rapport avec l'axe d'entrée et qui peut pointer n'importe où. Mesuré au banc,
-        // un ou deux des sept repartaient EN ARRIÈRE à presque chaque instant (jusqu'à
-        // 124°) — à l'écran, ils « rentrent » dans le prisme, et c'est très exactement ce
-        // qu'on nous a signalé. On borne donc l'inclinaison à [18°, 62°] en gardant
-        // l'AZIMUT intact : les sept conservent leur ordre et leur dispersion, mais ils
-        // partent tous du bon côté. La signature DISTRIBUE ; ce qu'elle envoie s'en va.
-        float perp = Mth.sqrt(outD[1] * outD[1] + outD[2] * outD[2]);
-        float tilt = (float) Math.atan2(perp, outD[0]);
-        // COMPRESSION, pas écrêtage : borner par Mth.clamp collait la moitié des sept
-        // pile sur 62° — ils gardaient leur azimut mais perdaient leur angle propre, donc
-        // la dispersion, qui est le sujet même de la figure. L'intervalle [0, π] est donc
-        // REPLIÉ linéairement sur [18°, 62°] : l'ordre des sept et l'écart entre leurs
-        // indices survivent intacts, et aucun ne repart en arrière.
-        float bound = 0.31f + (1.08f - 0.31f) * (tilt / Mth.PI);
-        {
-            float az = k * (TAU / 7.0f) + 0.40f;
-            float cl = perp < 1.0e-4f ? Mth.cos(az) : outD[1] / perp;
-            float cy = perp < 1.0e-4f ? Mth.sin(az) : outD[2] / perp;
-            float sb = Mth.sin(bound);
-            outD[0] = Mth.cos(bound);
-            outD[1] = cl * sb;
-            outD[2] = cy * sb;
-        }
         return true;
     }
 

@@ -40,6 +40,7 @@ import net.neoforged.neoforge.event.tick.EntityTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -5194,9 +5195,13 @@ public final class WeaponVfxServerListener {
     // --------------------------------------------------------------------------------------
 
     /**
-     * Le prisme est un REPARTITEUR : sept faisceaux, sept corps, un chacun.
+     * Le prisme est un REPARTITEUR : sept coups, sept corps, un chacun.
      *
-     * <p><b>Foule</b> : jusqu'a sept victimes distinctes recoivent un faisceau, tirees en
+     * <p><b>T395</b> : ce que le client dessine n'est plus un faisceau mais une LANCE qui
+     * se plante — memes ticks, memes cibles, meme repartition. Le serveur n'a pas bouge,
+     * seuls le son et la gerbe suivent l'arme : un impact, plus un carillon.</p>
+     *
+     * <p><b>Foule</b> : jusqu'a sept victimes distinctes recoivent un coup, portees en
      * sequence ; chacune est marquee ET rendue visible a travers les murs (Lueur), ce qui
      * est le seul debuff franchement UTILE de la famille — on voit qui porte une empreinte.
      * <b>Duel</b> : moins de trois corps et les sept faisceaux CONVERGENT sur le meme ;
@@ -5231,7 +5236,7 @@ public final class WeaponVfxServerListener {
             PixelFx.send(sl, ParticleTypes.END_ROD, ox, oy, oz, 26, 0.35, 0.35, 0.35, 0.08);
         });
 
-        // --- 62 -> 125 : SEPT FAISCEAUX, un toutes les neuf frames. ---
+        // --- 62 -> 125 : SEPT LANCES, une toutes les neuf frames. ---
         for (int b = 0; b < 7; b++) {
             final int beam = b;
             TestProcedure.schedule(sl, now + 62 + beam * 9, () -> {
@@ -5242,7 +5247,7 @@ public final class WeaponVfxServerListener {
                     hit = sl.getEntity(targetId) instanceof LivingEntity le && le.isAlive() ? le
                             : (victims.isEmpty() ? null : victims.get(0));
                 } else {
-                    // REPARTITION : un corps distinct par faisceau, en tournant.
+                    // REPARTITION : un corps distinct par lance, en tournant.
                     hit = victims.get(beam % victims.size());
                 }
                 if (hit == null) return;
@@ -5250,11 +5255,18 @@ public final class WeaponVfxServerListener {
                 voidHurt(sl, attackerId, hit, amount);
                 hit.addEffect(new MobEffectInstance(MobEffects.GLOWING, 120, 0, true, false));
                 addVoidMark(sl, hit, 1, attackerId, base * 0.26f, markEnd);
+                // La gerbe part du TORSE et vers le bas : quelque chose a traverse, ce
+                // n'est plus une lumiere qui effleure.
+                PixelFx.send(sl, VOID_DUST, hit.getX(),
+                        hit.getY() + hit.getBbHeight() * 0.6, hit.getZ(), 16, 0.18, 0.26, 0.18, 0.09);
                 PixelFx.send(sl, ParticleTypes.END_ROD, hit.getX(),
-                        hit.getY() + hit.getBbHeight() * 0.6, hit.getZ(), 14, 0.22, 0.30, 0.22, 0.06);
+                        hit.getY() + hit.getBbHeight() * 0.6, hit.getZ(), 8, 0.22, 0.30, 0.22, 0.06);
+                sl.playSound(null, hit.getX(), hit.getY(), hit.getZ(),
+                        SoundEvents.ANVIL_LAND, SoundSource.PLAYERS,
+                        0.34f, 1.45f + beam * 0.05f);
                 sl.playSound(null, hit.getX(), hit.getY(), hit.getZ(),
                         SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS,
-                        0.50f, 0.95f + beam * 0.07f);
+                        0.34f, 0.95f + beam * 0.07f);
             });
         }
 
@@ -5406,6 +5418,21 @@ public final class WeaponVfxServerListener {
      * la zone ; celle-ci les en SORT, une par une, et chacune ressort dans une direction
      * differente de la precedente.
      *
+     * <p><b>L'ENGLOUTISSEMENT</b> (T395) est ce qui se passe ENTRE les transits. La porte
+     * est au sol : ce qui tombe dedans ne reste pas dessus. Chaque corps pris dans l'anneau
+     * s'enfonce de son propre compte, lentement — cent trente-quatre ticks pour la pleine
+     * profondeur — et la fermeture le rend a la surface. Trois regles que ca impose :</p>
+     * <ul>
+     *   <li>on ne touche QUE l'ordonnee. Les transits poussent a l'horizontale, et une
+     *       reposition complete chaque tick aurait annule le tourniquet ;</li>
+     *   <li>la profondeur est plafonnee a la hauteur des YEUX moins 0,28 bloc, donc le
+     *       regard reste dehors. Au-dela, {@code isInWall()} facture de l'asphyxie a
+     *       chaque tick et la porte deviendrait une arme a degats continus — ce qu'elle
+     *       n'est pas, sa monnaie est la POSITION ;</li>
+     *   <li>un corps expulse par un transit est rendu a la surface AVANT d'etre pousse,
+     *       sinon sa trajectoire part d'un bloc sous le sol.</li>
+     * </ul>
+     *
      * <p><b>Foule</b> : sept transits, chacun prend le corps le plus proche de l'anneau,
      * l'envoie par-dessus et le repose a trois metres sur un azimut qui tourne — au bout des
      * sept, le paquet est dissemine en etoile. C'est l'exact inverse de la sphere, et c'est
@@ -5452,6 +5479,67 @@ public final class WeaponVfxServerListener {
             }
         });
 
+        // --- 16 -> 172 : L'ENGLOUTISSEMENT, puis la restitution. ---
+        // Un etat par corps, et pas une profondeur commune : un corps qui tombe dans
+        // l'anneau en retard commence a zero, sinon il se teleporterait a la profondeur
+        // des autres. {surface, avancement, dernier tick vu dans l'anneau}.
+        final Map<Integer, double[]> swallowed = new HashMap<>();
+        final Map<Integer, Integer> spatOut = new HashMap<>();
+        final int sinkEnd = now + 150;
+        for (int d = 16; d <= 172; d += 2) {
+            final int at = now + d;
+            TestProcedure.schedule(sl, at, () -> {
+                boolean rising = at > sinkEnd;
+                if (!rising) {
+                    for (LivingEntity victim : voidVictims(sl, ox, oy, oz, 2.90, 3.0, attackerId)) {
+                        int id = victim.getId();
+                        Integer grace = spatOut.get(id);
+                        if (grace != null && at < grace) continue;
+                        double[] st = swallowed.get(id);
+                        if (st == null) {
+                            // Pas en l'air : on enregistre la SURFACE, et un corps qui
+                            // retombe encore n'en a pas encore une.
+                            if (!victim.onGround()) continue;
+                            st = new double[] { victim.getY(), 0.0, at };
+                            swallowed.put(id, st);
+                        }
+                        st[2] = at;
+                    }
+                }
+                // Copie des cles : on retire des corps en cours de route (morts, rendus),
+                // et une carte qu'on modifie pendant qu'on la parcourt leve.
+                for (Integer id : new ArrayList<>(swallowed.keySet())) {
+                    double[] st = swallowed.get(id);
+                    if (st == null) continue;
+                    if (!(sl.getEntity(id) instanceof LivingEntity body) || !body.isAlive()) {
+                        swallowed.remove(id);
+                        continue;
+                    }
+                    // DOUCEMENT : 134 ticks pour descendre, 22 pour remonter. Un corps
+                    // sorti de l'anneau remonte tout seul — la porte ne tient que ce qui
+                    // est dedans.
+                    boolean held = !rising && st[2] == at;
+                    st[1] = held ? Math.min(1.0, st[1] + 2.0 / 134.0)
+                                 : Math.max(0.0, st[1] - 2.0 / 22.0);
+                    // Le plafond est mesure sur les YEUX et pas sur la taille : un corps
+                    // trapu (araignee, 0,90 de haut, oeil a 0,585) passait sous la surface
+                    // avec un simple ratio, et isInWall() facture de l'asphyxie a chaque
+                    // tick. Vingt-huit centimetres de marge au-dessus du regard.
+                    double cap = Math.min(1.35, Math.max(0.0, body.getEyeHeight() - 0.28));
+                    double deep = cap * st[1];
+                    body.setPos(body.getX(), st[0] - deep, body.getZ());
+                    Vec3 motion = body.getDeltaMovement();
+                    body.setDeltaMovement(motion.x, 0.0, motion.z);
+                    body.fallDistance = 0.0f;
+                    if (st[1] <= 0.0) { swallowed.remove(id); continue; }
+                    if (st[1] > 0.05 && (at & 7) == 0) {
+                        PixelFx.send(sl, VOID_DUST, body.getX(), st[0] + 0.05, body.getZ(),
+                                4, 0.30, 0.02, 0.30, 0.01);
+                    }
+                }
+            });
+        }
+
         // --- 34 -> 142 : SEPT TRANSITS, toutes les dix-huit frames. ---
         for (int k = 0; k < 7; k++) {
             final int pass = k;
@@ -5469,6 +5557,14 @@ public final class WeaponVfxServerListener {
                     if (gap < bestGap) { bestGap = gap; taken = candidate; }
                 }
                 final LivingEntity passenger = taken;
+                // LA PORTE LE RECRACHE. Il remonte AVANT d'etre pousse : sinon la parabole
+                // part d'un bloc sous le sol, et les vingt-six ticks de repit qui suivent
+                // laissent l'arc se terminer avant que l'anneau ne le reprenne.
+                double[] held = swallowed.remove(passenger.getId());
+                if (held != null) {
+                    passenger.setPos(passenger.getX(), held[0], passenger.getZ());
+                }
+                spatOut.put(passenger.getId(), now + 34 + pass * 18 + 26);
                 // En foule l'azimut TOURNE (dissemination) ; en duel il fait un demi-tour a
                 // chaque passage (va-et-vient). Deux lectures du meme geste.
                 double outAng = solo
@@ -5498,13 +5594,45 @@ public final class WeaponVfxServerListener {
             sl.playSound(null, ox, oy, oz, SoundEvents.ANVIL_LAND, SoundSource.PLAYERS, 0.50f, 1.70f);
             PixelFx.send(sl, VOID_DUST_INVERT, ox, oy, oz, 40, 1.2, 0.9, 1.2, 0.18);
             for (LivingEntity victim : voidVictims(sl, ox, oy, oz, 3.4, 2.8, attackerId)) {
-                voidHurt(sl, attackerId, victim, base * 1.25f);
+                double[] st = swallowed.get(victim.getId());
+                // CE QU'ELLE A LE PLUS AVALE PAIE LE PLUS. Rester dans l'anneau coute, en
+                // sortir se paie en transits : les deux lectures ont un prix.
+                float deep = st == null ? 0.0f : (float) st[1];
+                voidHurt(sl, attackerId, victim, base * (1.25f + 0.45f * deep));
                 addVoidMark(sl, victim, 2, attackerId, base * 0.32f, markEnd);
+            }
+        });
+
+        // --- 172 : LA RESTITUTION. Ce qu'elle a pris, elle le rend — a la surface, et de
+        //     travers. L'ejection etait a la fermeture ; elle y annulait la remontee, un
+        //     corps pousse en l'air pendant qu'on lui tient l'ordonnee ne va nulle part.
+        TestProcedure.schedule(sl, now + 172, () -> {
+            boolean any = false;
+            for (LivingEntity victim : voidVictims(sl, ox, oy, oz, 3.4, 2.8, attackerId)) {
+                // Filet de securite : si un arrondi a laisse un corps au fond, il remonte
+                // ici. La porte ne garde personne.
+                double[] st = swallowed.remove(victim.getId());
+                if (st != null) victim.setPos(victim.getX(), st[0], victim.getZ());
                 double ddx = victim.getX() - ox;
                 double ddz = victim.getZ() - oz;
                 double dist = Math.sqrt(ddx * ddx + ddz * ddz);
                 if (dist < 0.05) { ddx = Math.cos(seedAng); ddz = Math.sin(seedAng); dist = 1.0; }
-                voidPush(sl, victim, ddx / dist * 0.82, 0.40, ddz / dist * 0.82);
+                voidPush(sl, victim, ddx / dist * 0.82, 0.46, ddz / dist * 0.82);
+                PixelFx.send(sl, VOID_DUST_INVERT, victim.getX(),
+                        victim.getY() + victim.getBbHeight() * 0.40, victim.getZ(),
+                        16, 0.28, 0.40, 0.28, 0.10);
+                any = true;
+            }
+            for (Integer id : swallowed.keySet()) {
+                double[] st = swallowed.get(id);
+                if (st != null && sl.getEntity(id) instanceof LivingEntity body && body.isAlive()) {
+                    body.setPos(body.getX(), st[0], body.getZ());
+                }
+            }
+            swallowed.clear();
+            if (any) {
+                sl.playSound(null, ox, oy, oz, SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS,
+                        0.70f, 0.55f);
             }
         });
 
