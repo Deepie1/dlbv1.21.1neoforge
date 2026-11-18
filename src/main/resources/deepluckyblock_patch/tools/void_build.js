@@ -680,7 +680,26 @@ function buildVoid(variant, t, salt = 7331) {
     const D = spinPoint(ix, il, iy, PT, spin);
     const len = Math.sqrt(D[0] * D[0] + D[1] * D[1] + D[2] * D[2]);
     if (len < 1e-4) return null;
-    return { e: entry, p: P, d: [D[0] / len, D[1] / len, D[2] / len] };
+    const dn = [D[0] / len, D[1] / len, D[2] / len];
+    /* L'EVENTAIL EST RABATTU DEVANT : apres trois reflexions internes le rayon piege sort
+       le long de la NORMALE de la face, direction sans rapport avec l'axe d'entree et qui
+       peut pointer en ARRIERE (mesure au banc : jusqu'a 124 degres). On borne
+       l'inclinaison a [18, 62] degres en gardant l'azimut : les sept gardent leur ordre
+       et leur dispersion, mais ils partent tous du bon cote. */
+    const perp = Math.sqrt(dn[1] * dn[1] + dn[2] * dn[2]);
+    const tilt = Math.atan2(perp, dn[0]);
+    /* COMPRESSION et non ecretage : borner collait la moitie des sept pile sur 62
+       degres, ils perdaient leur angle propre donc la dispersion, qui est le sujet de la
+       figure. [0, PI] est replie lineairement sur [18, 62] degres. */
+    const bound = 0.31 + (1.08 - 0.31) * (tilt / PI);
+    {
+      const az = k * (TAU / 7) + 0.40;
+      const cl = perp < 1e-4 ? Math.cos(az) : dn[1] / perp;
+      const cy = perp < 1e-4 ? Math.sin(az) : dn[2] / perp;
+      const sb = Math.sin(bound);
+      dn[0] = Math.cos(bound); dn[1] = cl * sb; dn[2] = cy * sb;
+    }
+    return { e: entry, p: P, d: dn };
   };
 
   // =======================================================================================
@@ -976,7 +995,9 @@ function buildVoid(variant, t, salt = 7331) {
       const fire = V.PRISM_FIRE0 + k * V.PRISM_FIRE_STEP;
       if (t < fire) continue;
       const age = t - fire;
-      const live = 1 - smooth((t - V.PRISM_BREAK + 0.02) / 0.10);
+      /* Eteints AVANT que les aretes se desolidarisent : sept traits sans source au
+         milieu des eclats ne se lisent plus comme des faisceaux. */
+      const live = 1 - smooth((t - V.PRISM_BREAK + 0.055) / 0.045);
       if (live <= 0.01) continue;
       const ray = prismRay(k, V.prismSpin(fire), V.PRISM_W * V.prismBody(fire));
       if (!ray) continue;

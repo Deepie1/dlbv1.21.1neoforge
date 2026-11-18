@@ -1489,7 +1489,10 @@ public final class VoidSignatureVfx {
             float fire = PRISM_FIRE0 + k * PRISM_FIRE_STEP;
             if (t < fire) continue;
             float age = t - fire;
-            float live = 1.0f - smooth(clamp((t - PRISM_BREAK + 0.02f) / 0.10f));
+            // Éteints AVANT que les arêtes se désolidarisent : ils tenaient encore à 22 %
+            // pendant la fracture, et sept traits sans source au milieu des éclats ne se
+            // lisent plus comme des faisceaux — juste comme des traits.
+            float live = 1.0f - smooth(clamp((t - PRISM_BREAK + 0.055f) / 0.045f));
             if (live <= 0.01f) continue;
             if (!prismRay(k, prismSpin(fire), PRISM_W * prismBody(fire), re, rp, rd)) continue;
             float reach = 3.9f * smooth(clamp(age / 0.055f));
@@ -1817,6 +1820,31 @@ public final class VoidSignatureVfx {
         float len = Mth.sqrt(outD[0] * outD[0] + outD[1] * outD[1] + outD[2] * outD[2]);
         if (len < 1.0e-4f) return false;
         outD[0] /= len; outD[1] /= len; outD[2] /= len;
+        // L'ÉVENTAIL EST RABATTU DEVANT. Après trois réflexions internes, le rayon piégé
+        // est relâché le long de la NORMALE de la face : une direction qui n'a plus de
+        // rapport avec l'axe d'entrée et qui peut pointer n'importe où. Mesuré au banc,
+        // un ou deux des sept repartaient EN ARRIÈRE à presque chaque instant (jusqu'à
+        // 124°) — à l'écran, ils « rentrent » dans le prisme, et c'est très exactement ce
+        // qu'on nous a signalé. On borne donc l'inclinaison à [18°, 62°] en gardant
+        // l'AZIMUT intact : les sept conservent leur ordre et leur dispersion, mais ils
+        // partent tous du bon côté. La signature DISTRIBUE ; ce qu'elle envoie s'en va.
+        float perp = Mth.sqrt(outD[1] * outD[1] + outD[2] * outD[2]);
+        float tilt = (float) Math.atan2(perp, outD[0]);
+        // COMPRESSION, pas écrêtage : borner par Mth.clamp collait la moitié des sept
+        // pile sur 62° — ils gardaient leur azimut mais perdaient leur angle propre, donc
+        // la dispersion, qui est le sujet même de la figure. L'intervalle [0, π] est donc
+        // REPLIÉ linéairement sur [18°, 62°] : l'ordre des sept et l'écart entre leurs
+        // indices survivent intacts, et aucun ne repart en arrière.
+        float bound = 0.31f + (1.08f - 0.31f) * (tilt / Mth.PI);
+        {
+            float az = k * (TAU / 7.0f) + 0.40f;
+            float cl = perp < 1.0e-4f ? Mth.cos(az) : outD[1] / perp;
+            float cy = perp < 1.0e-4f ? Mth.sin(az) : outD[2] / perp;
+            float sb = Mth.sin(bound);
+            outD[0] = Mth.cos(bound);
+            outD[1] = cl * sb;
+            outD[2] = cy * sb;
+        }
         return true;
     }
 
