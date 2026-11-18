@@ -65,6 +65,16 @@ public final class ModShaders {
      */
     private static ShaderInstance voidPortal;
 
+    /** {@code assets/deep_lucky_block/shaders/core/void_pixel.{json,vsh,fsh}} */
+    public static final ResourceLocation VOID_PIXEL_ID =
+            ResourceLocation.fromNamespaceAndPath(DeepLuckyBlockMod.MODID, "void_pixel");
+
+    /**
+     * T397-PIXEL3D — le shader des Pixels 3D. Même règle que ci-dessus : c'est l'instance
+     * livrée AU CALLBACK qu'on garde, jamais la candidate.
+     */
+    private static ShaderInstance voidPixel;
+
     @SubscribeEvent
     public static void onRegisterShaders(RegisterShadersEvent event) throws IOException {
         // Le format de sommet DOIT être celui que la géométrie écrira (POSITION seul, comme
@@ -73,6 +83,18 @@ public final class ModShaders {
         event.registerShader(
                 new ShaderInstance(event.getResourceProvider(), VOID_PORTAL_ID, DefaultVertexFormat.POSITION),
                 loaded -> voidPortal = loaded);
+
+        // T397-PIXEL3D : POSITION_TEX_COLOR, et les trois attributs comptent.
+        //   Position -> le sommet, relatif a la camera comme tout le rendu de monde ;
+        //   UV0      -> la place du fragment SUR SA FACE (0..1), d'ou le shader deduit
+        //               les douze aretes sans un seul sommet de geometrie en plus ;
+        //   Color    -> quatre octets qui ne sont PAS une couleur : phase spatiale,
+        //               numero de mode, teinte imposee, fondu. La couleur affichee est
+        //               calculee entierement par le fragment shader.
+        event.registerShader(
+                new ShaderInstance(event.getResourceProvider(), VOID_PIXEL_ID,
+                        DefaultVertexFormat.POSITION_TEX_COLOR),
+                loaded -> voidPixel = loaded);
     }
 
     /**
@@ -82,5 +104,10 @@ public final class ModShaders {
      */
     public static ShaderInstance voidPortal() {
         return voidPortal;
+    }
+
+    /** @return le shader des Pixels 3D, ou {@code null} avant le premier chargement. */
+    public static ShaderInstance voidPixel() {
+        return voidPixel;
     }
 }

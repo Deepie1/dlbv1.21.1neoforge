@@ -62,10 +62,23 @@ public final class AnimFamily {
      * le mot, jamais par le geste — l'ombre marque et aveugle, le vide tire et souleve.</p>
      */
     public static final String VOID = "void";
+    /**
+     * T397 : treizieme famille, le chaos (boucle kaleidoscopique, sphere d'entropie,
+     * cicatrice du big bang). Correspond a {@link deepluckyblock.enchantments.DeepElement#CHAOS},
+     * « Chaos ».
+     *
+     * <p>A ne pas confondre avec le VIDE, dont elle est voisine a l'ecran : le vide est une
+     * absence d'espace, le chaos un exces d'ordre qui se rompt. C'est pour ca que
+     * {@code dragon} et {@code prisme} restent des alias du VIDE malgre
+     * {@code DRAGON_CHAOS_PRISM} — le mot « chaos » est dans le nom de l'effet, mais le
+     * geste, lui, appartient au dragon de l'End.</p>
+     */
+    public static final String CHAOS = "chaos";
 
     /** Ordre d'affichage de l'aide et de l'autocomplétion : un seul nom par famille, en anglais. */
     public static final String[] ALL =
-            {FIRE, WATER, THUNDER, SHADOW, BLOOD, VOID, WIND, EARTH, METAL, LIGHT, POISON, WOOD};
+            {FIRE, WATER, THUNDER, SHADOW, BLOOD, VOID, CHAOS, WIND, EARTH, METAL, LIGHT,
+             POISON, WOOD};
 
     private AnimFamily() { }
 
@@ -120,6 +133,14 @@ public final class AnimFamily {
                  "trou", "trounoir", "blackhole", "black_hole", "horizon",
                  "end", "ender", "dragon", "prisme", "prism",
                  "faille", "fissure", "rift", "warp", "distorsion", "distortion" -> VOID;
+            // chaos (le kaleidoscope, l'entropie et le big bang sont la meme famille,
+            // DeepElement.CHAOS). « prismatic » n'y figure PAS : il est deja l'alias du
+            // prisme du Vide, et l'ordre d'ecriture ferait silencieusement basculer les
+            // joueurs d'une famille a l'autre.
+            case "chaos", "kaleidoscope", "kaleido", "kaleidoscopique", "caleidoscope",
+                 "entropie", "entropy", "desordre", "désordre", "disorder", "discord",
+                 "discorde", "bigbang", "big_bang", "big bang", "cataclysme", "cataclysm",
+                 "rupture", "nexus" -> CHAOS;
             default -> null;
         };
     }
@@ -163,6 +184,38 @@ public final class AnimFamily {
             // >= 120 d'ecart sur au moins un canal contre les onze autres familles, le plus
             // serre etant la Terre (131 sur le vert).
             case VOID -> 0xFF3FD8;
+            // T397 — le piege etait le Vide lui-meme : 0xFF3FD8 est un magenta, et la
+            // palette du Chaos culmine sur BREAK 0xFF48C8, un autre magenta. Ecart mesure
+            // (0,9,16) : les deux lames auraient ete indiscernables en main, ce qui est
+            // exactement l'erreur evitee en T388 contre l'Eau.
+            //
+            // La regle acquise (>= 120 d'ecart sur au moins un canal contre CHACUNE des
+            // douze autres familles) ne laissait qu'une sortie : prendre l'AUTRE pole de la
+            // palette, SPARK 0x3FE8FF, le cyan electrique des arcs. Verifie un par un, le
+            // plus serre etant l'Eau 0x62C7E8 — 35, 33 et 23, donc insuffisant — d'ou la
+            // remontee du rouge a 0x1C et la saturation du bleu a plein : 0x1CF0FF contre
+            // l'Eau donne 70, 41 et 23... toujours court.
+            //
+            // Le canal qui reste libre est donc le VERT a pleine valeur avec un rouge nul,
+            // que personne ne tient : le Vent 0x9FF2DC est a 159 de rouge (ecart 131) et
+            // l'Eau a 98 (ecart 70 sur le rouge mais 55 sur le bleu)... insuffisant encore.
+            // Conclusion mesuree : aucune teinte FROIDE ne passe. Le Chaos prend donc son
+            // troisieme pole, le violet d'arete EDGE 0x9B3FD0, remonte en valeur de reflet
+            // comme l'Ombre et le Vide avant lui. Contre l'Ombre 0x7100A7 : 42, 63 et 41 —
+            // trop proche a son tour. Le seul ecart franc disponible dans tout l'espace
+            // restant est le BLANC SATURE DE VERT du coeur, CORE pousse vers 0x7CFF4F :
+            // contre le Poison 0x46C24C, 54, 61 et 3 — non.
+            //
+            // Verdict : les douze familles saturent la roue, et la treizieme ne peut plus
+            // etre separee par la TEINTE. Elle l'est donc par la LUMINANCE, le seul axe
+            // encore libre : 0xF2F2FF, un blanc bleute presque pur. Aucune famille n'a de
+            // glint clair — la plus lumineuse est le Vent a 0x9FF2DC (ecart 83 sur le
+            // rouge, 13 sur le vert, 35 sur le bleu)... et c'est le seul cas du mod ou
+            // l'ecart de 120 n'est pas atteignable. On accepte donc l'exception, en la
+            // compensant par la pulsation (DeepGlintColor.familyBreath), qui fait battre
+            // ce blanc la ou le Vent reste fixe : le Chaos est la seule lame du mod dont
+            // le reflet CLIGNOTE, et c'est ce clignotement, pas la teinte, qui l'identifie.
+            case CHAOS -> 0xF2F2FF;
             default -> 0xFFF3B0;
         };
     }
@@ -187,6 +240,11 @@ public final class AnimFamily {
             // prend donc §9, ce qui reste du cote froid de la roue et demeure lisible sur
             // le fond sombre d'une infobulle (§0 et §8 n'y sont plus qu'une tache).
             case VOID -> "§9";
+            // T397 : les quinze codes restants ne contiennent plus un seul violet ni un
+            // seul magenta libre. Le Chaos prend §f, le blanc, en accord avec son glint
+            // 0xF2F2FF — et c'est coherent avec ce que la famille raconte : une couleur
+            // qui refuse de se ranger.
+            case CHAOS -> "§f";
             default -> "§f";
         };
     }
@@ -207,6 +265,7 @@ public final class AnimFamily {
             case SHADOW -> "Shadow";
             case BLOOD -> "Blood";
             case VOID -> "Void";
+            case CHAOS -> "Chaos";
             default -> "Animation";
         };
     }

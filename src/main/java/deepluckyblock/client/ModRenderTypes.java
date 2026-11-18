@@ -55,6 +55,53 @@ public final class ModRenderTypes {
      */
     private static RenderType voidPortalType;
 
+    private static final RenderStateShard.ShaderStateShard VOID_PIXEL_SHADER =
+            new RenderStateShard.ShaderStateShard(ModShaders::voidPixel);
+
+    private static RenderType voidPixelType;
+
+    /**
+     * T397-PIXEL3D — le lot unique des Pixels 3D.
+     *
+     * <p>Quatre choix, chacun pour une raison précise :</p>
+     * <ul>
+     *   <li><b>Aucune texture.</b> Le cœur est un gris procédural et les arêtes une roue
+     *       chromatique : rien à échantillonner. {@code NO_TEXTURE} évite de lier un atlas
+     *       inutile à chaque passe — et surtout évite qu'un sampler non lié affiche un
+     *       morceau d'atlas de blocs sur les faces.</li>
+     *   <li><b>{@code COLOR_WRITE}, pas de masque de profondeur.</b> Les cubes sont
+     *       translucides et arrivent dans un ordre quelconque ; écrire la profondeur ferait
+     *       disparaître ceux dessinés après derrière ceux dessinés avant, alors qu'ils sont
+     *       devant. Ils restent en revanche TESTÉS contre le décor, donc un cube derrière un
+     *       mur ne le traverse pas.</li>
+     *   <li><b>{@code NO_CULL}.</b> Un cube qui tourne sur lui-même présente ses faces dans
+     *       les deux sens ; avec le tri des faces arrière, la moitié d'entre elles
+     *       clignoterait au fil de la rotation.</li>
+     *   <li><b>Tampon de 2 Mo.</b> Douze mille cubes font 288 000 sommets ; la taille par
+     *       défaut forcerait un redimensionnement en pleine passe, à chaque passe.</li>
+     * </ul>
+     */
+    public static RenderType voidPixel() {
+        if (voidPixelType == null) {
+            voidPixelType = RenderType.create(
+                    "dlb_void_pixel",
+                    DefaultVertexFormat.POSITION_TEX_COLOR,
+                    VertexFormat.Mode.QUADS,
+                    2097152,
+                    false,
+                    true,
+                    RenderType.CompositeState.builder()
+                            .setShaderState(VOID_PIXEL_SHADER)
+                            .setTextureState(RenderStateShard.NO_TEXTURE)
+                            .setTransparencyState(RenderStateShard.TRANSLUCENT_TRANSPARENCY)
+                            .setCullState(RenderStateShard.NO_CULL)
+                            .setDepthTestState(RenderStateShard.LEQUAL_DEPTH_TEST)
+                            .setWriteMaskState(RenderStateShard.COLOR_WRITE)
+                            .createCompositeState(false));
+        }
+        return voidPixelType;
+    }
+
     public static RenderType voidPortal() {
         if (voidPortalType == null) {
             voidPortalType = RenderType.create(

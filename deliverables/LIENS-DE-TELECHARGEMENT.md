@@ -24,7 +24,81 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > toujours la dernière version, une fois le cache expiré (quelques minutes). Les liens en
 > SHA sont l'adresse **immédiate**, à utiliser le jour de la livraison.
 
-## Vide — la porte engloutit, le prisme plante sept lances · 4 novembre 2026 ⟵ **LOT COURANT**
+## Chaos — trois signatures, et les Pixels 3D · 18 novembre 2026 ⟵ **LOT COURANT**
+
+- **Aperçu voxel des trois signatures (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Three_Signatures_preview.html
+- **Démo du core shader des Pixels 3D (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Pixel_shader_demo.html
+- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Three_Signatures_src.zip
+
+> **T397 — la treizième et dernière famille, et le système qui lui donne sa matière.**
+>
+> **Les trois signatures passent de 18-22 ticks à 150, 170 et 200**, sur le moteur voxel
+> dédié `ChaosSignatureVfx`. Mais la vraie nouveauté de ce lot n'est pas une chorégraphie :
+> c'est un **système de particules** que les douze familles précédentes n'avaient pas.
+>
+> **LES PIXELS 3D.** Un cube miniature au cœur anthracite `#23232A`, translucide et grené,
+> dont les **douze arêtes défilent en arc-en-ciel** et brillent de la même façon en plein
+> jour et au fond d'une grotte. Trois décisions tiennent tout l'édifice :
+>
+> 1. **Les arêtes ne sont pas de la géométrie.** Chaque cube n'écrit que ses **six faces,
+>    vingt-quatre sommets**. C'est le fragment shader qui détecte le bord dans les UV de
+>    face — et les quatre bords de six faces donnent exactement douze arêtes. Modéliser les
+>    arêtes aurait coûté **huit fois plus de sommets** pour un résultat identique.
+> 2. **La phase de l'onde est calculée côté CPU, une fois par cube.** L'attribut `Position`
+>    d'un core shader est **relatif à la caméra** : calculer la teinte dessus aurait fait
+>    glisser tout l'arc-en-ciel dès que le joueur marche, l'effet entier serait devenu
+>    solidaire de la caméra. Ce n'est pas une couleur qui traverse le bus, c'est **un
+>    scalaire**, et l'onde reste accrochée au monde.
+> 3. **Fullbright par construction** : le programme ne reçoit **ni lightmap ni overlay**. Il
+>    n'y a rien à désactiver pour que les arêtes brillent dans le noir — elles brillent
+>    parce qu'aucune lumière n'est jamais appliquée.
+>
+> Douze mille cubes, **treize tableaux primitifs parallèles**, zéro allocation à
+> l'exécution, retrait par échange avec le dernier vivant en O(1), et **un seul lot de
+> rendu** à l'étape `AFTER_TRANSLUCENT_BLOCKS` — choix délibéré contre `AFTER_PARTICLES` :
+> à cette étape l'eau et le verre sont déjà dans le tampon de profondeur, donc un cube
+> derrière une vitre est correctement masqué.
+>
+> **La démo du shader ci-dessus ne décrit pas le programme : elle l'exécute.** Les deux
+> sources sont lues dans `assets/` à la construction et portées en GLSL ES 3.00 par des
+> substitutions mécaniques, puis compilées par votre navigateur sur le vrai format de
+> sommet du jeu. Le curseur monte jusqu'à **12 000 cubes**, le plafond exact du
+> gestionnaire — soit 288 000 sommets et 144 000 triangles en un seul lot.
+>
+> ---
+>
+> **I. LA BOUCLE KALÉIDOSCOPIQUE** (#35, 150 t). Six branches de douze nœuds dans une
+> mandala **horizontale** — l'aperçu la regarde donc **de dessus**, parce qu'une symétrie
+> d'ordre six vue de profil n'est qu'une ligne. À 46 % du temps, **le décrochage** : la
+> symétrie se brise, les six branches divergent. À 78 %, **le réalignement forcé** les
+> rabat d'un coup. Côté jeu : six miroirs posés, **six frappes** de `max(1,4 · dégâts ×
+> 0,84)`, l'AoE touche six corps à ×0,58 quand le solo frappe à ×0,34 — la boucle
+> **récompense la foule**. Fermeture à t+142 : `VITESSE II` + `CHUTE LENTE`.
+>
+> **II. LA SPHÈRE D'ENTROPIE** (#36, 170 t). Trois grands cercles de trente-quatre segments,
+> six méridiens, une coque interne, et une **érosion strictement monotone** : la sphère ne
+> se répare jamais. Chaque cube arraché **tombe en Pixel 3D** arc-en-ciel sous gravité. Au
+> centre, un octaèdre qui grossit exactement comme l'armature maigrit. Côté jeu : **huit
+> pulsations** sur un rayon de 4,6 blocs, qui empilent l'entropie jusqu'à 6 —
+> `FAIBLESSE` à 2, `LENTEUR II` + `NAUSÉE` à 4, `FATIGUE II` + `CÉCITÉ` à 6. **C'est la
+> seule signature du mod où partir est la bonne réponse** : rester trois pulsations de plus
+> coûte plus cher que le solde de sortie. Solde à t+150 : `RÉSISTANCE II`.
+>
+> **III. LA CICATRICE DU BIG BANG** (#37, 200 t). Quarante fragments aspirés en `u²` avec
+> leur **comète** de trois cubes, une cage qui se referme, un cœur qui passe du rose au
+> **blanc** à 72 % de l'aspiration — puis la **détonation à 42 %** : seize rayons barbelés
+> en spirale de Fibonacci, un **anneau noir** de quarante-huit cubes qui s'ouvre en
+> `sqrt`, et trente-quatre marques au sol qui **restent**. Côté jeu : quatorze tractions,
+> détonation à t+84 avec une **prime de foule de 12 % par corps** plafonnée à six, un
+> report de 42 % sur les voisins, puis la cicatrice qui brûle en **sept passages** de
+> t+96 à t+186.
+>
+> **À vérifier en jeu, et c'est le cas décisif** : les Pixels 3D **de nuit** puis **dans
+> une grotte**. Les arêtes doivent briller exactement pareil — si elles s'assombrissent,
+> c'est qu'une lightmap s'est glissée dans le `RenderType`. Puis **F3+T** pendant qu'une
+> signature est à l'écran : le shader doit se recharger sans crash.
+
+## Vide — la porte engloutit, le prisme plante sept lances · 4 novembre 2026
 
 - **Aperçu voxel + abysse (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_preview.html
 - **Démo du shader (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Portal_shader_demo.html

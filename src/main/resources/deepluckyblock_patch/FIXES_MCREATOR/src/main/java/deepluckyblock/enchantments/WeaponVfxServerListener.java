@@ -334,6 +334,10 @@ public final class WeaponVfxServerListener {
             WeaponVisualEffectId.NULL_RIFT_FISSURE, WeaponVisualEffectId.HORIZON_GATE,
             WeaponVisualEffectId.CHAIN_COLLAPSE
     };
+    private static final WeaponVisualEffectId[] ANIM_CHAOS = {
+            WeaponVisualEffectId.CHAOS_KALEIDO_LOOP, WeaponVisualEffectId.ENTROPY_SPHERE,
+            WeaponVisualEffectId.BIG_BANG_SCAR
+    };
     private static final WeaponVisualEffectId[] ANIM_LIGHT = {
             WeaponVisualEffectId.SERAPH_SKY_PILLAR, WeaponVisualEffectId.ASTRAL_STAR_LANCE,
             WeaponVisualEffectId.CHRONO_ETERNAL_HALO
@@ -6118,6 +6122,537 @@ public final class WeaponVfxServerListener {
         }
     }
 
+    // ======================================================================================
+    //  T397-CHAOS : LES TROIS SIGNATURES DU CHAOS
+    // ======================================================================================
+
+    /** Rose neon de rupture, accorde sur {@code ChaosSignatureVfx.BREAK} (0xFF48C8). */
+    private static final net.minecraft.core.particles.DustParticleOptions CHAOS_DUST =
+            new net.minecraft.core.particles.DustParticleOptions(
+                    new org.joml.Vector3f(1.00f, 0.28f, 0.78f), 1.30f);
+
+    /** Cyan electrique, accorde sur {@code ChaosSignatureVfx.SPARK} (0x3FE8FF). */
+    private static final net.minecraft.core.particles.DustParticleOptions CHAOS_DUST_SPARK =
+            new net.minecraft.core.particles.DustParticleOptions(
+                    new org.joml.Vector3f(0.25f, 0.91f, 1.00f), 1.15f);
+
+    /**
+     * LA DISCORDANCE — ressource partagee par les trois signatures du Chaos.
+     *
+     * <p>Chaque famille du mod a une monnaie : le Sang a le saignement, le Vide a
+     * l'empreinte. Celle du Chaos est la discordance, et elle ne ressemble a aucune des
+     * deux parce qu'elle ne s'additionne pas dans le temps — elle <b>differe</b>. Tout
+     * degat du Chaos encaisse une part dans un tampon ; ce tampon ne fait rien, ne tique
+     * pas, ne se voit pas, et retombe d'un coup a l'echeance. C'est la traduction exacte de
+     * ce que le kaleidoscope montre a l'ecran : une image repetee avec un decalage.</p>
+     *
+     * <p><b>Pourquoi un tampon et pas des degats sur la duree.</b> Un poison classique
+     * recompense celui qui frappe puis s'enfuit ; il rend la fuite optimale. Le report
+     * recompense l'inverse : la victime sait ce qui arrive et le joueur sait quand, donc
+     * les deux ont une raison de rester. Et comme la somme tombe en UNE fois, elle peut
+     * tuer — ce qu'un poison a un demi-coeur par seconde ne fait jamais.</p>
+     *
+     * @param pending  degats en attente
+     * @param dueAt    instant de la retombee, en temps de MONDE
+     * @param attackerId porteur a crediter, ou -1
+     */
+    private record ChaosDiscord(float pending, long dueAt, int attackerId) { }
+
+    private static final Map<Integer, ChaosDiscord> CHAOS_DISCORDS = new ConcurrentHashMap<>();
+
+    /**
+     * L'ENTROPIE — compteur propre a la sphere, et le seul debuff a paliers du mod.
+     *
+     * <p>Il monte tant que la victime reste dans le champ et redescend des qu'elle en sort.
+     * Ce n'est pas une nuance : c'est ce qui fait de la sphere une signature de ZONE plutot
+     * qu'une signature de cible. Une valeur qui ne redescendrait jamais aurait rendu la
+     * sortie inutile, donc la zone decorative.</p>
+     *
+     * @param level   palier courant, 0 a {@link #CHAOS_ENTROPY_MAX}
+     * @param expires peremption si la victime ne revient pas
+     */
+    private record ChaosEntropy(int level, long expires) { }
+
+    private static final Map<Integer, ChaosEntropy> CHAOS_ENTROPIES = new ConcurrentHashMap<>();
+
+    /** Six paliers : au-dela, le debuff deviendrait une condamnation plutot qu'une pression. */
+    private static final int CHAOS_ENTROPY_MAX = 6;
+
+    /**
+     * Routage des trois signatures du Chaos. Meme forme que les onze familles precedentes :
+     * un aiguillage, et rien d'autre dans cette methode.
+     */
+    private static void applyChaosGameplay(LivingEntity attacker, LivingEntity target,
+                                           WeaponVisualEffectId fx, float weaponDamage) {
+        if (fx == null || target == null) return;
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        float damage = Math.max(0.0f, weaponDamage);
+        if (fx == WeaponVisualEffectId.CHAOS_KALEIDO_LOOP) {
+            applyKaleidoGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.ENTROPY_SPHERE) {
+            applyEntropySphereGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.BIG_BANG_SCAR) {
+            applyBigBangGameplay(attacker, target, sl, damage);
+        }
+    }
+
+    /** Degat du Chaos : la perte de vie ET la trace, toujours ensemble. */
+    private static boolean chaosHurt(ServerLevel sl, int attackerId, LivingEntity victim,
+                                     float amount) {
+        boolean hit = hurtWithCapturedWeapon(sl, attackerId, victim, amount);
+        if (hit && sl != null && victim != null) {
+            PixelFx.send(sl, CHAOS_DUST, victim.getX(),
+                    victim.getY() + victim.getBbHeight() * 0.60, victim.getZ(),
+                    4 + (int) Math.min(8.0f, amount * 0.7f), 0.26, 0.34, 0.26, 0.04);
+        }
+        return hit;
+    }
+
+    /**
+     * Met une part de degats en attente. Un second appel avant l'echeance ADDITIONNE la
+     * somme sans repousser la date : le report doit rester previsible, sinon une rafale
+     * rapide repousserait indefiniment sa propre punition.
+     */
+    private static void addDiscord(ServerLevel sl, LivingEntity victim, float amount,
+                                   int attackerId, int delayTicks) {
+        if (sl == null || victim == null || !victim.isAlive() || amount <= 0.0f) return;
+        int id = victim.getId();
+        long now = sl.getGameTime();
+        ChaosDiscord previous = CHAOS_DISCORDS.get(id);
+        float total = amount;
+        long due = now + Math.max(10, delayTicks);
+        if (previous != null && previous.dueAt() > now) {
+            total += previous.pending();
+            due = previous.dueAt();
+        }
+        CHAOS_DISCORDS.put(id, new ChaosDiscord(total, due, attackerId));
+        victim.addEffect(new MobEffectInstance(MobEffects.GLOWING,
+                (int) Math.max(20L, due - now), 0, true, false));
+    }
+
+    /**
+     * Tick de la discordance. Deux choses, et la seconde est la plus importante : la
+     * retombee ne se produit QUE si la victime est encore vivante a l'echeance. Une
+     * victime achevee entre-temps ne declenche rien — le report ne doit pas creer de
+     * degats fantomes sur un corps deja mort.
+     */
+    private static void tickChaosDiscord(LivingEntity target) {
+        if (target == null) return;
+        ChaosDiscord d = CHAOS_DISCORDS.get(target.getId());
+        if (d == null) return;
+        if (!(target.level() instanceof ServerLevel sl)) return;
+        long now = sl.getGameTime();
+        if (!target.isAlive()) { CHAOS_DISCORDS.remove(target.getId()); return; }
+        // L'avertissement : une graine rose par demi-seconde, de plus en plus serree a
+        // mesure que l'echeance approche. Une ressource a retardement qu'on ne voit pas
+        // venir est une punition arbitraire.
+        long left = d.dueAt() - now;
+        if (left > 0) {
+            long period = left < 20L ? 2L : (left < 40L ? 5L : 10L);
+            if (now % period == 0L) {
+                PixelFx.send(sl, CHAOS_DUST, target.getX(),
+                        target.getY() + target.getBbHeight() * 1.05, target.getZ(),
+                        2, 0.18, 0.05, 0.18, 0.0);
+            }
+            return;
+        }
+        CHAOS_DISCORDS.remove(target.getId());
+        float amount = d.pending();
+        if (amount <= 0.0f) return;
+        sl.playSound(null, target.getX(), target.getY(), target.getZ(),
+                SoundEvents.AMETHYST_BLOCK_RESONATE, SoundSource.PLAYERS, 0.70f, 0.55f);
+        sl.playSound(null, target.getX(), target.getY(), target.getZ(),
+                SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 0.45f, 1.70f);
+        PixelFx.send(sl, CHAOS_DUST, target.getX(),
+                target.getY() + target.getBbHeight() * 0.55, target.getZ(),
+                26, 0.35, 0.45, 0.35, 0.16);
+        PixelFx.send(sl, CHAOS_DUST_SPARK, target.getX(),
+                target.getY() + target.getBbHeight() * 0.55, target.getZ(),
+                18, 0.30, 0.40, 0.30, 0.12);
+        chaosHurt(sl, d.attackerId(), target, amount);
+    }
+
+    /** Monte l'entropie d'un cran et applique le palier atteint. */
+    private static void addEntropy(ServerLevel sl, LivingEntity victim, int steps, int holdTicks) {
+        if (sl == null || victim == null || !victim.isAlive() || steps <= 0) return;
+        int id = victim.getId();
+        long now = sl.getGameTime();
+        ChaosEntropy previous = CHAOS_ENTROPIES.get(id);
+        int level = steps;
+        if (previous != null && previous.expires() > now) {
+            level = Math.min(CHAOS_ENTROPY_MAX, previous.level() + steps);
+        }
+        CHAOS_ENTROPIES.put(id, new ChaosEntropy(level, now + Math.max(20, holdTicks)));
+        // Les paliers. Chacun ajoute une contrainte differente plutot que d'empiler le
+        // meme ralentissement : trois crans de Lenteur ne se distinguent pas a l'oeil,
+        // trois contraintes de nature differente si.
+        if (level >= 2) {
+            victim.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 90, 0, true, false));
+        }
+        if (level >= 4) {
+            victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 90, 1, true, false));
+            victim.addEffect(new MobEffectInstance(MobEffects.CONFUSION, 70, 0, true, false));
+        }
+        if (level >= CHAOS_ENTROPY_MAX) {
+            victim.addEffect(new MobEffectInstance(MobEffects.DIG_SLOWDOWN, 110, 1, true, false));
+            victim.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 50, 0, true, false));
+        }
+    }
+
+    /** Entropie courante, 0 si la victime est sortie du champ assez longtemps. */
+    private static int entropyOf(ServerLevel sl, LivingEntity victim) {
+        if (sl == null || victim == null) return 0;
+        ChaosEntropy e = CHAOS_ENTROPIES.get(victim.getId());
+        if (e == null || e.expires() <= sl.getGameTime()) return 0;
+        return e.level();
+    }
+
+    /** Purge des deux tables du Chaos. Une carte statique qui ne se vide pas est une fuite. */
+    private static void sweepChaosTables(net.minecraft.world.level.Level level) {
+        if (!(level instanceof ServerLevel sl)) return;
+        long now = sl.getGameTime();
+        if (now % 100L != 0L) return;
+        CHAOS_ENTROPIES.entrySet().removeIf(e -> e.getValue().expires() <= now);
+        // La discordance se retire elle-meme a l'echeance ; on ne balaie que les entrees
+        // dont le porteur a disparu sans jamais etre tique (dechargement de chunk).
+        CHAOS_DISCORDS.entrySet().removeIf(e -> e.getValue().dueAt() + 200L <= now);
+    }
+
+    // --------------------------------------------------------------------------------------
+    //  I. BOUCLE KALEIDOSCOPIQUE (150 ticks) — elle REPETE
+    // --------------------------------------------------------------------------------------
+
+    /**
+     * Six branches, six frappes, et tout ce qui est frappe revient une seconde fois.
+     *
+     * <p><b>Foule</b> : les six branches prennent six corps DIFFERENTS, en tournant. Chacun
+     * repart avec une part de discordance, et les six retombees arrivent ensemble a la
+     * fermeture de la boucle — un seul coup d'arme, six punitions simultanees quinze
+     * secondes plus tard. <b>Duel</b> : il n'y a personne a repartir, donc les six branches
+     * CONVERGENT ; chaque frappe tape pres du double et la discordance s'empile sur le meme
+     * corps, ce qui produit la plus grosse retombee unique de la famille. Repartir
+     * recompense la foule, converger recompense le duel : la meme arme, deux lectures.</p>
+     *
+     * <p>Le porteur est paye en VITESSE, jamais en Force : la regle du mod depuis le Sang.</p>
+     */
+    private static void applyKaleidoGameplay(LivingEntity attacker, LivingEntity target,
+                                             ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.50;
+        final double oz = target.getZ();
+        final float base = Math.max(1.4f, weaponDamage * 0.84f);
+        final int targetId = target.getId();
+        final boolean solo = voidVictims(sl, ox, oy, oz, 5.5, 3.0, attackerId).size() < 2;
+
+        // --- 0 -> 24 : LE MONTAGE. Les six miroirs se mettent en place, un par un, et on
+        //     les entend se verrouiller. L'avertissement avant la figure.
+        for (int k = 0; k < 6; k++) {
+            final int step = k;
+            TestProcedure.schedule(sl, now + step * 4, () -> {
+                sl.playSound(null, ox, oy, oz, SoundEvents.AMETHYST_BLOCK_PLACE,
+                        SoundSource.PLAYERS, 0.30f + 0.05f * step, 0.80f + 0.14f * step);
+                double ang = step / 6.0 * Math.PI * 2.0;
+                PixelFx.send(sl, CHAOS_DUST_SPARK,
+                        ox + Math.cos(ang) * 1.9, oy, oz + Math.sin(ang) * 1.9,
+                        5, 0.10, 0.25, 0.10, 0.02);
+            });
+        }
+        TestProcedure.schedule(sl, now + 26, () ->
+                sl.playSound(null, ox, oy, oz, SoundEvents.BEACON_POWER_SELECT,
+                        SoundSource.PLAYERS, 0.85f, 1.55f));
+
+        // --- 30 -> 120 : SIX FRAPPES, une toutes les dix-huit frames.
+        for (int k = 0; k < 6; k++) {
+            final int arm = k;
+            TestProcedure.schedule(sl, now + 30 + arm * 18, () -> {
+                List<LivingEntity> victims = voidVictims(sl, ox, oy, oz, 5.5, 3.0, attackerId);
+                LivingEntity hit;
+                if (solo || victims.isEmpty()) {
+                    hit = sl.getEntity(targetId) instanceof LivingEntity le && le.isAlive() ? le
+                            : (victims.isEmpty() ? null : victims.get(0));
+                } else {
+                    hit = victims.get(arm % victims.size());
+                }
+                if (hit == null) return;
+                float amount = base * (solo ? 0.58f : 0.34f);
+                chaosHurt(sl, attackerId, hit, amount);
+                // LA REPETITION : la moitie du coup est mise de cote et retombera a la
+                // fermeture de la boucle. L'echeance est calee sur la FIN de l'animation,
+                // pas sur un delai glissant, donc les six retombees arrivent ensemble.
+                int delay = Math.max(14, (150 - (30 + arm * 18)) + 14);
+                addDiscord(sl, hit, amount * (solo ? 0.95f : 0.70f), attackerId, delay);
+                hit.addEffect(new MobEffectInstance(MobEffects.CONFUSION, 80, 0, true, false));
+                sl.playSound(null, hit.getX(), hit.getY(), hit.getZ(),
+                        SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.PLAYERS,
+                        0.42f, 0.70f + arm * 0.13f);
+                sl.playSound(null, hit.getX(), hit.getY(), hit.getZ(),
+                        SoundEvents.GLASS_BREAK, SoundSource.PLAYERS, 0.22f, 1.60f + arm * 0.06f);
+                PixelFx.send(sl, CHAOS_DUST, hit.getX(),
+                        hit.getY() + hit.getBbHeight() * 0.6, hit.getZ(), 14, 0.22, 0.30, 0.22, 0.08);
+            });
+        }
+
+        // --- 126 : LE REALIGNEMENT. La figure redevient parfaite une derniere fois, et
+        //     c'est le signal que les retombees arrivent.
+        TestProcedure.schedule(sl, now + 126, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.BEACON_POWER_SELECT,
+                    SoundSource.PLAYERS, 0.90f, 0.95f);
+            PixelFx.send(sl, CHAOS_DUST_SPARK, ox, oy, oz, 40, 1.1, 0.7, 1.1, 0.22);
+            for (LivingEntity victim : voidVictims(sl, ox, oy, oz, 5.5, 3.0, attackerId)) {
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 60, 1, true, false));
+            }
+        });
+
+        // --- 142 : LA BOUCLE SE FERME. Le porteur est paye en terrain.
+        TestProcedure.schedule(sl, now + 142, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.AMETHYST_BLOCK_BREAK,
+                    SoundSource.PLAYERS, 0.80f, 0.70f);
+            PixelFx.send(sl, CHAOS_DUST, ox, oy, oz, 46, 1.3, 0.8, 1.3, 0.26);
+            if (attacker != null && attacker.isAlive()) {
+                attacker.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 120, 1, true, true));
+                attacker.addEffect(new MobEffectInstance(MobEffects.SLOW_FALLING, 100, 0, true, true));
+            }
+        });
+    }
+
+    // --------------------------------------------------------------------------------------
+    //  II. SPHERE D'ENTROPIE (170 ticks) — elle DESORDONNE
+    // --------------------------------------------------------------------------------------
+
+    /**
+     * Un champ qui punit la PRESENCE, pas le contact.
+     *
+     * <p>Les huit pulsations ne tapent presque rien : trois dixiemes de l'arme. Ce qui fait
+     * mal, c'est l'entropie accumulee, qui multiplie chaque pulsation suivante et empile
+     * trois contraintes distinctes. Rester dix secondes dans la sphere coute donc beaucoup
+     * plus cher que d'y passer ; en sortir fait redescendre le compteur. C'est la seule
+     * signature du mod ou la bonne reponse de la victime est de <b>partir</b>, et elle est
+     * ecrite comme ca exprime.</p>
+     *
+     * <p><b>Foule</b> : 4,6 blocs de rayon, tout le monde accumule en meme temps, et les
+     * paliers tombent ensemble. <b>Duel</b> : plus personne a enfermer, donc la sphere se
+     * RESSERRE a 2,8 blocs et accumule pres de deux fois plus vite — une cible seule ne
+     * peut pas s'en extraire a la marche, elle doit depenser quelque chose.</p>
+     *
+     * <p>Le porteur recoit de la RESISTANCE, et c'est la seule famille a en donner :
+     * l'entropie est un desordre qui l'epargne, puisqu'il en est le centre.</p>
+     */
+    private static void applyEntropySphereGameplay(LivingEntity attacker, LivingEntity target,
+                                                   ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.50;
+        final double oz = target.getZ();
+        final float base = Math.max(1.3f, weaponDamage * 0.78f);
+        final boolean solo = voidVictims(sl, ox, oy, oz, 4.6, 3.0, attackerId).size() <= 1;
+        final double radius = solo ? 2.8 : 4.6;
+
+        // --- 0 -> 18 : LES TROIS CERCLES se tracent, un par plan.
+        for (int k = 0; k < 3; k++) {
+            final int ring = k;
+            TestProcedure.schedule(sl, now + 2 + ring * 6, () -> {
+                sl.playSound(null, ox, oy, oz, SoundEvents.AMETHYST_BLOCK_CHIME,
+                        SoundSource.PLAYERS, 0.34f, 0.52f + ring * 0.22f);
+                for (int i = 0; i < 12; i++) {
+                    double ang = i / 12.0 * Math.PI * 2.0;
+                    double rx = Math.cos(ang) * radius * 0.92;
+                    double ry = Math.sin(ang) * radius * 0.92;
+                    PixelFx.send(sl, CHAOS_DUST_SPARK,
+                            ox + (ring == 1 ? 0.0 : rx), oy + (ring == 0 ? ry : (ring == 1 ? rx : 0.0)),
+                            oz + (ring == 2 ? ry : (ring == 1 ? ry : 0.0)),
+                            1, 0.03, 0.03, 0.03, 0.0);
+                }
+            });
+        }
+
+        // --- 22 -> 134 : HUIT PULSATIONS, toutes les seize frames.
+        for (int k = 0; k < 8; k++) {
+            final int pulse = k;
+            TestProcedure.schedule(sl, now + 22 + pulse * 16, () -> {
+                List<LivingEntity> victims = voidVictims(sl, ox, oy, oz, radius, 3.0, attackerId);
+                for (LivingEntity victim : victims) {
+                    // L'entropie monte AVANT le degat : la pulsation qui fait franchir un
+                    // palier doit deja etre payee au nouveau tarif, sinon le palier n'a
+                    // d'effet qu'au coup suivant et le joueur ne fait pas le lien.
+                    addEntropy(sl, victim, solo ? 2 : 1, 70);
+                    int level = entropyOf(sl, victim);
+                    float amount = base * 0.30f * (1.0f + level * 0.42f);
+                    chaosHurt(sl, attackerId, victim, amount);
+                }
+                sl.playSound(null, ox, oy, oz, SoundEvents.BEACON_AMBIENT, SoundSource.PLAYERS,
+                        0.26f, 0.42f + pulse * 0.07f);
+                PixelFx.send(sl, CHAOS_DUST, ox, oy, oz, 10 + pulse * 2,
+                        radius * 0.40, 0.9, radius * 0.40, 0.06);
+            });
+        }
+
+        // --- 60 et 110 : LE DELITEMENT. Deux moments ou l'armature laisse tomber des
+        //     morceaux ; chacun enfonce d'un cran supplementaire ceux qui sont restes.
+        for (int k = 0; k < 2; k++) {
+            final int phase = k;
+            TestProcedure.schedule(sl, now + 60 + phase * 50, () -> {
+                sl.playSound(null, ox, oy, oz, SoundEvents.AMETHYST_BLOCK_BREAK,
+                        SoundSource.PLAYERS, 0.55f, 0.62f + phase * 0.20f);
+                PixelFx.send(sl, CHAOS_DUST_SPARK, ox, oy, oz, 30, radius * 0.5, 1.0, radius * 0.5, 0.18);
+                for (LivingEntity victim : voidVictims(sl, ox, oy, oz, radius, 3.0, attackerId)) {
+                    addEntropy(sl, victim, 1, 80);
+                }
+            });
+        }
+
+        // --- 150 : L'EFFONDREMENT DU NOYAU. Le compteur se solde : chaque palier accumule
+        //     devient des degats, et c'est la que rester se paie vraiment.
+        TestProcedure.schedule(sl, now + 150, () -> {
+            sl.playSound(null, ox, oy, oz, SoundEvents.RESPAWN_ANCHOR_DEPLETE.value(),
+                    SoundSource.PLAYERS, 0.95f, 0.62f);
+            sl.playSound(null, ox, oy, oz, SoundEvents.ANVIL_LAND, SoundSource.PLAYERS, 0.55f, 1.35f);
+            PixelFx.send(sl, CHAOS_DUST, ox, oy, oz, 60, radius * 0.45, 1.1, radius * 0.45, 0.34);
+            PixelFx.send(sl, CHAOS_DUST_SPARK, ox, oy, oz, 40, radius * 0.35, 0.9, radius * 0.35, 0.26);
+            for (LivingEntity victim : voidVictims(sl, ox, oy, oz, radius * 1.15, 3.0, attackerId)) {
+                int level = entropyOf(sl, victim);
+                if (level <= 0) continue;
+                chaosHurt(sl, attackerId, victim, base * 0.34f * level);
+                CHAOS_ENTROPIES.remove(victim.getId());
+            }
+            if (attacker != null && attacker.isAlive()) {
+                attacker.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 140, 1, true, true));
+            }
+        });
+    }
+
+    // --------------------------------------------------------------------------------------
+    //  III. CICATRICE DU BIG BANG (200 ticks) — elle CREE puis DETRUIT
+    // --------------------------------------------------------------------------------------
+
+    /**
+     * Deux temps, et rien entre les deux.
+     *
+     * <p><b>L'aspiration</b> dure quatre-vingt-quatre ticks et ne fait presque aucun degat.
+     * Son role est de RASSEMBLER et d'annoncer : quatorze tractions, un compte a rebours
+     * audible qui accelere, et une Lenteur qui s'aggrave. Le joueur a quatre secondes pour
+     * comprendre ce qui va arriver — c'est ce delai qui rend la detonation lisible plutot
+     * que subie.</p>
+     *
+     * <p><b>La detonation</b> paie au NOMBRE : chaque corps present au-dela du premier
+     * ajoute douze pour cent a la part de tout le monde, plafonnee a six corps. C'est la
+     * recompense de l'aspiration, et c'est pour ca que les deux phases ne sont pas
+     * separables.</p>
+     *
+     * <p><b>Duel</b> : il n'y a personne a rassembler, donc l'aspiration devient un
+     * CLOUAGE — la cible est tenue par l'emprise du Vide, sans knockback possible — et la
+     * detonation frappe pres du double. La signature ne perd pas son interet a un contre
+     * un, elle en change.</p>
+     *
+     * <p><b>La cicatrice</b> reste quatre-vingt-dix ticks apres l'explosion et brule ce qui
+     * s'y attarde. C'est la seule zone persistante de la famille, et elle justifie le nom.</p>
+     */
+    private static void applyBigBangGameplay(LivingEntity attacker, LivingEntity target,
+                                             ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.50;
+        final double oz = target.getZ();
+        final float base = Math.max(1.6f, weaponDamage * 0.92f);
+        final boolean solo = voidVictims(sl, ox, oy, oz, 6.0, 3.2, attackerId).size() <= 1;
+
+        // --- 0 -> 78 : QUATORZE TRACTIONS. Le compte a rebours de l'effondrement.
+        for (int k = 0; k < 14; k++) {
+            final int pull = k;
+            TestProcedure.schedule(sl, now + 6 + pull * 6, () -> {
+                List<LivingEntity> victims = voidVictims(sl, ox, oy, oz, 6.0, 3.2, attackerId);
+                for (LivingEntity victim : victims) {
+                    double ddx = ox - victim.getX();
+                    double ddz = oz - victim.getZ();
+                    double dist = Math.sqrt(ddx * ddx + ddz * ddz);
+                    if (solo) {
+                        // Duel : on ne tire pas, on CLOUE. L'emprise du Vide refuse le
+                        // recul exterieur, donc la cible ne peut pas etre sortie du foyer
+                        // par un tiers pendant les quatre secondes d'aspiration.
+                        voidGrip(victim, 14, true, true);
+                    } else if (dist > 0.30) {
+                        double speed = Math.min(0.72, 0.13 + dist * 0.082);
+                        voidPush(sl, victim, ddx / dist * speed, 0.045, ddz / dist * speed);
+                    }
+                    if ((pull % 3) == 0) {
+                        victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                                40, Math.min(2, pull / 5), true, false));
+                    }
+                }
+                // Le tic-tac : la hauteur monte a chaque traction. C'est l'avertissement,
+                // et il doit etre audible avant d'etre visible.
+                sl.playSound(null, ox, oy, oz, SoundEvents.AMETHYST_BLOCK_HIT,
+                        SoundSource.PLAYERS, 0.24f + pull * 0.025f, 0.55f + pull * 0.075f);
+                PixelFx.send(sl, CHAOS_DUST_SPARK, ox, oy, oz, 4 + pull, 1.6, 1.0, 1.6, 0.03);
+            });
+        }
+
+        // --- 84 : LA DETONATION.
+        TestProcedure.schedule(sl, now + 84, () -> {
+            List<LivingEntity> caught = voidVictims(sl, ox, oy, oz, 6.4, 3.4, attackerId);
+            // La prime de foule : douze pour cent par corps au-dela du premier, plafonnee
+            // a six. Sans plafond, un troupeau de poulets vaudrait un boss.
+            int bodies = Math.min(6, Math.max(1, caught.size()));
+            float crowd = 1.0f + 0.12f * (bodies - 1);
+            float punch = base * (solo ? 2.20f : 1.15f) * crowd;
+
+            sl.playSound(null, ox, oy, oz, SoundEvents.GENERIC_EXPLODE.value(),
+                    SoundSource.PLAYERS, 1.0f, 0.52f);
+            sl.playSound(null, ox, oy, oz, SoundEvents.RESPAWN_ANCHOR_DEPLETE.value(),
+                    SoundSource.PLAYERS, 0.90f, 1.30f);
+            sl.playSound(null, ox, oy, oz, SoundEvents.AMETHYST_BLOCK_RESONATE,
+                    SoundSource.PLAYERS, 0.80f, 0.42f);
+            PixelFx.send(sl, CHAOS_DUST, ox, oy, oz, 90, 1.0, 1.0, 1.0, 0.62);
+            PixelFx.send(sl, CHAOS_DUST_SPARK, ox, oy, oz, 70, 0.8, 0.8, 0.8, 0.52);
+
+            for (LivingEntity victim : caught) {
+                double ddx = victim.getX() - ox;
+                double ddz = victim.getZ() - oz;
+                double dist = Math.max(0.35, Math.sqrt(ddx * ddx + ddz * ddz));
+                // Degressif avec la distance, jamais nul : le bord de l'explosion doit
+                // rester une explosion, pas une limite administrative.
+                float falloff = (float) Math.max(0.38, 1.0 - dist / 7.0);
+                releaseVoidGrip(victim);
+                chaosHurt(sl, attackerId, victim, punch * falloff);
+                addDiscord(sl, victim, punch * falloff * 0.42f, attackerId, 46);
+                voidPush(sl, victim, ddx / dist * 0.96, 0.52, ddz / dist * 0.96);
+                victim.addEffect(new MobEffectInstance(MobEffects.CONFUSION, 120, 0, true, false));
+                victim.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 120, 0, true, false));
+            }
+            if (attacker != null && attacker.isAlive()) {
+                // Il a tenu au centre d'un big bang : absorption, et de quoi retomber.
+                attacker.addEffect(new MobEffectInstance(MobEffects.ABSORPTION, 180, 1, true, true));
+                attacker.addEffect(new MobEffectInstance(MobEffects.SLOW_FALLING, 140, 0, true, true));
+            }
+        });
+
+        // --- 96 -> 186 : LA CICATRICE. Sept passages, un toutes les quinze frames.
+        for (int k = 0; k < 7; k++) {
+            final int burn = k;
+            TestProcedure.schedule(sl, now + 96 + burn * 15, () -> {
+                // Elle retrecit : 3,2 blocs au debut, 1,4 a la fin. Une zone qui garde son
+                // rayon jusqu'a disparaitre d'un coup ne donne aucune information ; une
+                // zone qui se referme dit au joueur combien de temps il lui reste.
+                double r = 3.2 - burn * 0.26;
+                for (LivingEntity victim : voidVictims(sl, ox, oy, oz, r, 2.4, attackerId)) {
+                    chaosHurt(sl, attackerId, victim, base * 0.17f);
+                    addEntropy(sl, victim, 1, 60);
+                }
+                sl.playSound(null, ox, oy, oz, SoundEvents.AMETHYST_BLOCK_HIT,
+                        SoundSource.PLAYERS, 0.20f, 1.50f - burn * 0.07f);
+                for (int i = 0; i < 8; i++) {
+                    double ang = (i + burn * 1.7) / 8.0 * Math.PI * 2.0;
+                    PixelFx.send(sl, CHAOS_DUST,
+                            ox + Math.cos(ang) * r * 0.85, oy - 0.9, oz + Math.sin(ang) * r * 0.85,
+                            2, 0.10, 0.04, 0.10, 0.01);
+                }
+            });
+        }
+    }
+
     /**
      * Routage des trois signatures d'ombre. Comme la foudre avant la T376, l'ombre n'avait
      * <b>aucun</b> gameplay : trois animations de 14 à 18 ticks qui ne faisaient rien.
@@ -8886,7 +9421,9 @@ public final class WeaponVfxServerListener {
         tickBloodPools(target.level());
         tickVoidMark(target);
         tickVoidGrip(target);
+        tickChaosDiscord(target);
         sweepVoidTables(target.level());
+        sweepChaosTables(target.level());
         if (SURGE_RIDES.containsKey(target.getId())) return;
         MovementHold hold = MOVEMENT_HOLDS.get(target.getId());
         if (hold == null) return;
@@ -9012,6 +9549,7 @@ public final class WeaponVfxServerListener {
                 : deepluckyblock.util.AnimFamily.SHADOW.equals(family) ? ANIM_SHADOW
                 : deepluckyblock.util.AnimFamily.BLOOD.equals(family) ? ANIM_BLOOD
                 : deepluckyblock.util.AnimFamily.VOID.equals(family) ? ANIM_VOID
+                : deepluckyblock.util.AnimFamily.CHAOS.equals(family) ? ANIM_CHAOS
                 : deepluckyblock.util.AnimFamily.WIND.equals(family) ? ANIM_WIND : ANIM_WOOD;
 
         if (roll >= 60) {
@@ -9036,6 +9574,7 @@ public final class WeaponVfxServerListener {
             applyShadowGameplay(attacker, target, fx, capturedWeaponDamage);
             applyBloodGameplay(attacker, target, fx, capturedWeaponDamage);
             applyVoidGameplay(attacker, target, fx, capturedWeaponDamage);
+            applyChaosGameplay(attacker, target, fx, capturedWeaponDamage);
             return;
         }
 

@@ -764,7 +764,6 @@ public final class WeaponWorldVfxManager {
             case CHAIN_VOLT_ARC -> 130;
             case MJOLNIR_HAMMERFALL -> 250;   // 40 d'appel + impact + 200 de dalle + sortie
             case STORMCALL_JUDGMENT -> 170;
-            case BIG_BANG_SCAR -> 22;
             // T377-SHADOW : les trois signatures de l’ombre sortent du case fourre-tout ou
             // ECLIPSE_VEIL etait coince a 18 ticks — moins d’une seconde pour une eclipse.
             // SPECTRAL_REACH et WITHER_SHADOW_RIFT, eux, n’etaient meme pas listes et
@@ -772,7 +771,12 @@ public final class WeaponWorldVfxManager {
             case SPECTRAL_REACH -> 118;       // coulee + echine + main qui se leve et tire
             case WITHER_SHADOW_RIFT -> 160;   // ouverture + crane + souffle + inspiration
             case ECLIPSE_VEIL -> 200;         // montee + voile + nuit + anneau + griffure
-            case CHAOS_KALEIDO_LOOP, ENTROPY_SPHERE -> 18;
+            // T397-CHAOS : les trois derniers titres du mod sous la seconde — 18, 18 et
+            // 22 ticks, pour une sphere d'entropie et un big bang. Chacun a desormais sa
+            // choregraphie, et c'est la famille qui ouvre l'ere des Pixels 3D.
+            case CHAOS_KALEIDO_LOOP -> 150;   // montage des six miroirs + rupture + realignement
+            case ENTROPY_SPHERE -> 170;       // trois cercles + delitement + effondrement du noyau
+            case BIG_BANG_SCAR -> 200;        // aspiration + detonation + anneau + cicatrice
             case VENOM_BRIAR_FANG -> 112;
             case MIASMA_SHROUD -> 600; // Le serveur raccourcit à 6 s ou enchaîne jusqu'à 30 s.
             case PLAGUE_NOVA -> 128;
@@ -2074,6 +2078,13 @@ public final class WeaponWorldVfxManager {
                 sweepVolume = 0.30f; sweepPitch = 0.88f;
                 timbre = SoundEvents.SLIME_BLOCK_BREAK; timbreVolume = 0.24f; timbrePitch = 1.15f;
             }
+            case CHAOS -> {
+                // Discordant par construction : un souffle grave et un carillon aigu, deux
+                // hauteurs qui ne s'accordent pas. C'est le seul timbre du mod ou le
+                // desaccord est voulu.
+                sweepVolume = 0.32f; sweepPitch = 0.66f;
+                timbre = SoundEvents.AMETHYST_BLOCK_RESONATE; timbreVolume = 0.26f; timbrePitch = 1.62f;
+            }
             default -> {
                 // WOOD et tout élément ajouté plus tard : le souffle seul, jamais le silence.
                 timbre = SoundEvents.GRASS_BREAK; timbreVolume = 0.16f; timbrePitch = 1.05f;
@@ -2121,6 +2132,13 @@ public final class WeaponWorldVfxManager {
 
     private static WeaponVisualEffectId animationSlashEffect(String family, int index) {
         String canonical = deepluckyblock.util.AnimFamily.canonical(family);
+        if (deepluckyblock.util.AnimFamily.CHAOS.equals(canonical)) {
+            return switch (index) {
+                case 0 -> WeaponVisualEffectId.CHAOS_KALEIDO_LOOP;
+                case 1 -> WeaponVisualEffectId.ENTROPY_SPHERE;
+                default -> WeaponVisualEffectId.BIG_BANG_SCAR;
+            };
+        }
         if (deepluckyblock.util.AnimFamily.FIRE.equals(canonical)) {
             return switch (index) {
                 case 0 -> WeaponVisualEffectId.MOLTEN_FIRE_WAVE;
@@ -5161,7 +5179,56 @@ public final class WeaponWorldVfxManager {
      * Kaléidoscope = deux cadres rotatifs, entropie = trois plans orbitaux, big bang = expansion.
      * Aucun satellite multicolore isolé : chaque pixel coloré appartient à une arête synchronisée.
      */
+    /** Les trois signatures refondues du chaos (T397), seules a passer par ChaosSignatureVfx. */
+    private static boolean isChaosSignature(WeaponVisualEffectId fx) {
+        return fx == WeaponVisualEffectId.CHAOS_KALEIDO_LOOP
+                || fx == WeaponVisualEffectId.ENTROPY_SPHERE
+                || fx == WeaponVisualEffectId.BIG_BANG_SCAR;
+    }
+
+    /**
+     * Pont vers {@link ChaosSignatureVfx}, sur le modele exact de
+     * {@link #impactVoidSignature(ImpactView, int)}.
+     *
+     * <p>Le pouls de taille est coupe pendant tout le trace, pour la meme raison que le
+     * Vide : les six branches du kaleidoscope et les trois cercles de l'entropie sont des
+     * assemblages dont la REGULARITE est le sujet. Un facteur d'echelle applique cube par
+     * cube ouvre des fentes dans la maille, et une maille irreguliere ne prouve plus rien
+     * sur la symetrie qu'on est en train de casser.</p>
+     */
+    private static void impactChaosSignature(ImpactView v, int signature) {
+        float ground = probeGroundOffset(v.inst().x, v.inst().y, v.inst().z);
+        boolean previousPulse = voxelPulseEnabled;
+        voxelPulseEnabled = false;
+        try {
+            ChaosSignatureVfx.render(v.vc(), v.mat(), v.tmp(),
+                    v.cx(), v.cy(), v.cz(), v.t(),
+                    v.dirX(), v.dirZ(), signature, v.fadeA(),
+                    (int) (v.inst().seed & 0x7FFFFFFFL), ground);
+        } finally {
+            voxelPulseEnabled = previousPulse;
+        }
+    }
+
     private static void impactChaos(ImpactView v) {
+        int chaosSignature = switch (v.inst().effect) {
+            case CHAOS_KALEIDO_LOOP -> ChaosSignatureVfx.KALEIDO;
+            case ENTROPY_SPHERE -> ChaosSignatureVfx.ENTROPY;
+            case BIG_BANG_SCAR -> ChaosSignatureVfx.BIGBANG;
+            default -> -1;
+        };
+        if (chaosSignature >= 0) {
+            impactChaosSignature(v, chaosSignature);
+            return;
+        }
+        impactChaosLegacy(v);
+    }
+
+    /**
+     * Ancien rendu generique du chaos : sculpture orbe ou gerbe, plus deux cadres voxel
+     * rotatifs. Conserve pour les effets de la famille qui n'ont pas de signature propre.
+     */
+    private static void impactChaosLegacy(ImpactView v) {
         float t = v.t();
         float S = v.S();
         float time = v.age() * 0.05f;
