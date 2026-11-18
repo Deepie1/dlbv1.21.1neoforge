@@ -704,7 +704,7 @@ public final class VoidSignatureVfx {
                             // fois a plat la grille devient une feuille de papier — et une
                             // feuille vue par la tranche disparait completement.
                             float flare = (0.035f + 0.085f * clamp(r1 / 3.2f))
-                                    * Mth.sin(Mth.atan2(l1, f1) * 2.0f + t * 5.0f);
+                                    * Mth.sin((float) Mth.atan2(l1, f1) * 2.0f + t * 5.0f);
                             float yFlat = yc + flare;
                             float yVert = yc + l1 * 0.72f;
                             float y1 = yVert + (yFlat - yVert) * tip;
@@ -750,7 +750,7 @@ public final class VoidSignatureVfx {
                         float f1 = f0 * k;
                         float l1 = l0 * k;
                         float flare = (0.035f + 0.085f * clamp(r1 / 3.2f))
-                                * Mth.sin(Mth.atan2(l1, f1) * 2.0f + t * 5.0f);
+                                * Mth.sin((float) Mth.atan2(l1, f1) * 2.0f + t * 5.0f);
                         float y1 = yc + l1 * 0.72f * (1.0f - tip) + flare * tip;
                         float l1m = l1 * tip;
                         if (tip > 0.01f) {
@@ -2721,7 +2721,7 @@ public final class VoidSignatureVfx {
      * fenêtre dans une figure qui n'a pas d'intérieur.</p>
      */
     private static void renderChain(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                    double cx, double cy, double cz, float t,
+                                    float cx, float cy, float cz, float t,
                                     float dx, float dz, float alpha, int salt) {
         float a = alpha;
         float floorY = GROUND_Y;

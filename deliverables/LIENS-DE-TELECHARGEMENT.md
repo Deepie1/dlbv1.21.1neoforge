@@ -30,6 +30,25 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 - **Démo du shader (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Portal_shader_demo.html
 - **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_src.zip
 
+> **T395b — compilation : 14 erreurs `double → float`, et l'outil qui les aurait vues.**
+>
+> Le build a refusé `VoidSignatureVfx.java` sur quatorze « possible lossy conversion from
+> double to float ». Deux causes, aucune logique : `Mth.atan2` rend un **double** là où
+> `Mth.sin`/`Mth.cos` rendent un float, donc `Mth.sin(Mth.atan2(…) * 2.0f)` ne compile pas
+> (2 sites) ; et `renderChain` déclarait son centre en `double cx, cy, cz` quand les
+> primitives `box()` / `fragment()` le prennent en `float` (12 sites). Signature alignée sur
+> les quatre autres fonctions de rendu, deux casts ajoutés.
+>
+> Ces fautes ne sont pas rattrapables par `jparse`, qui ne lit que la syntaxe : elles ne
+> sortent qu'au build, chez vous. D'où **`tools/floatcheck.py`**, un mini-vérificateur de
+> types limité aux flottants : signatures du fichier, champs, variables locales **avec leur
+> position** (deux `deep` dans deux blocs ne sont pas la même variable), ternaires dont seule
+> la branche compte, surcharges `max`/`min`/`clamp` résolues par leurs arguments, et tout
+> appel de type de retour inconnu rendu **neutre** pour que ses arguments ne contaminent pas
+> l'expression qui l'englobe. Calibré dans les deux sens : il retrouve **exactement** les 14
+> lignes de javac, ni plus ni moins, et sort **0 alerte sur les 216 fichiers** de l'arbre qui
+> compile. Un faux positif rendrait l'outil inutilisable ; un oubli coûte un build.
+>
 > **T395 — la Porte avale, le Prisme plante.**
 >
 > **1. La Porte d'Horizon emporte ce qui reste dedans.** Entre les sept transits, tout
