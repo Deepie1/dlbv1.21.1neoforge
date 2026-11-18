@@ -24,11 +24,58 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > toujours la dernière version, une fois le cache expiré (quelques minutes). Les liens en
 > SHA sont l'adresse **immédiate**, à utiliser le jour de la livraison.
 
-## Chaos — le correctif qui fait redémarrer le jeu · 4 novembre 2026 ⟵ **LOT COURANT**
+## Chaos — l'attaque se voit enfin · 4 novembre 2026 ⟵ **LOT COURANT**
 
 - **Aperçu voxel des trois signatures (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Three_Signatures_preview.html
 - **Démo du core shader des Pixels 3D (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Pixel_shader_demo.html
 - **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Three_Signatures_src.zip
+
+> **T401 — « EN QUOI ÇA ATTAQUE LES MOBS ? »**
+>
+> Le reproche était fondé, mais pas pour la raison qu'on croirait : **les dégâts
+> tombaient déjà**. Ce qui manquait, c'est que *rien ne touchait la cible à l'image*. Les
+> trois signatures sont des figures — un kaléidoscope, une sphère, une explosion — et une
+> figure se déploie **autour** d'un point sans jamais le frapper. L'œil voyait donc un
+> décor somptueux et un mob qui perdait des cœurs sans cause visible : la définition
+> exacte d'un effet qui n'attaque pas. Cinq corrections, dans cet ordre.
+>
+> **1. Les coups.** Sur chaque temps où le serveur inflige un dégât — et seulement sur
+> ceux-là — une **lance de Pixels 3D fond sur le corps** depuis l'extérieur, puis
+> **éclate** en trois couronnes, une gerbe et un noyau. Les ticks ne sont pas devinés :
+> ce sont les nombres de `applyKaleidoGameplay` (30, 48, 66, 84, 102, 120),
+> `applyEntropySphereGameplay` (22, 38 … 134) et `applyBigBangGameplay` (84), écrits dans
+> la même unité des deux côtés. Six lances sur sept secondes et demie, ce n'est plus une
+> vitrine, c'est un combat.
+>
+> **2. Un coup se mesure à sa figure.** Première version mesurée au banc : la lance pesait
+> **dix-sept cubes contre mille cent soixante-quatorze** de kaléidoscope, soit un virgule
+> quatre pour cent de l'image. Le coup *existait* et restait invisible — exactement le
+> défaut qu'on corrigeait. La lance est passée à trois brins et cinquante-trois cubes, et
+> l'éclat porte désormais un facteur d'échelle par signature : ×2,3 sur la cicatrice du
+> big bang (cinq blocs de rayon, elle avalait tout) et ×1,9 sur la sphère d'entropie, où
+> la couronne **crève la coquille** au lieu de mourir à l'intérieur.
+>
+> **3. Les mobs sont cloués au sol, et vivants.** Pendant les trois animations, la cible
+> et tout ce qui se trouve dans le rayon ne se déplacent plus — mais gardent leur IA,
+> leur regard et leurs attaques : `applyMovementHold(…, fullStun = false)`. Un mob qui
+> fuit pendant qu'une figure se déploie autour de lui est la première raison pour
+> laquelle on ne voyait rien toucher. Les joueurs ne sont jamais cloués (rubber-banding).
+> La prise est **relevée avant la détonation du big bang** : clouer puis pousser ne
+> pousse rien, le tick d'emprise suivant ramènerait le corps au foyer.
+>
+> **4. Les temps forts s'entendent.** Chaque frappe pose un `chaosBeatMark` **sur le corps
+> de la victime** : `AMETHYST_BLOCK_HIT` + `GLASS_BREAK` + une gerbe `CHAOS_DUST_SPARK`,
+> avec un pitch qui monte frappe après frappe.
+>
+> **5. L'item porte sa propre vie.** Sept Pixels 3D gravitent en permanence autour de
+> l'arme, sur sept trajectoires fermées distinctes (anneau, méridien, huit, trèfle,
+> ellipse rétrograde, montée le long du fil, grande orbite couchée). Toutes les
+> fréquences sont des multiples **entiers** d'un tour de huit secondes : la constellation
+> se répète donc **exactement**, sans jamais sauter. Et le slash de base porte enfin de
+> vrais Pixels 3D à arêtes multicolores — l'arc voxel, qui ne peut recevoir qu'**une**
+> couleur de corps, est rabattu au rôle d'armature sombre derrière eux.
+>
+> À valider en jeu sur le Chaos avant de propager aux douze autres familles.
 
 > **T400 — UN MOT INTERDIT DANS LE SHADER : LE JEU NE DÉMARRAIT PLUS.**
 >

@@ -6196,6 +6196,64 @@ public final class WeaponVfxServerListener {
         }
     }
 
+    /**
+     * T401 — LE CLOUAGE DU CHAOS.
+     *
+     * <p><b>Le defaut repare.</b> Les trois signatures capturaient la position de la cible
+     * au premier tick ({@code ox, oy, oz}) puis jouaient cent cinquante a deux cents ticks
+     * de choregraphie a CET endroit. Rien ne retenait le mob : il s'en allait au deuxieme
+     * tick et le spectacle se deroulait dans le vide, pendant que les degats tombaient sur
+     * un corps parti ailleurs. De l'exterieur ca se lit exactement comme « les animations
+     * n'attaquent pas les mobs » — et c'etait vrai, non pas parce que les degats
+     * manquaient, mais parce qu'ils ne tombaient plus la ou la figure se dessinait.</p>
+     *
+     * <p><b>Le choix : cloue, pas assomme.</b> {@code fullStun = false}. Le mob ne se
+     * deplace plus d'un bloc et reste au centre de la figure, mais son IA continue de
+     * tourner : il regarde autour de lui, il s'anime, il frappe si on est a portee. Un
+     * {@code setNoAi(true)} en ferait une statue — la figure aurait l'air de s'acharner sur
+     * un mannequin, ce qui est le probleme inverse de celui qu'on repare.</p>
+     *
+     * <p>L'emprise est posee a chaque temps plutot qu'une seule fois : un mob qui rejoint
+     * la zone en cours de route doit etre pris lui aussi, et une emprise reposee sur un
+     * mob deja tenu conserve sa position d'origine (voir {@code applyMovementHold}), donc
+     * la repetition ne le fait pas deriver.</p>
+     */
+    private static void chaosRoot(ServerLevel sl, LivingEntity victim, int untilTick) {
+        if (sl == null || victim == null || !victim.isAlive()) return;
+        // Un joueur ne se fait pas teleporter de force par une animation : le correctif
+        // serait pire que le defaut (rubber-banding cote client).
+        if (victim instanceof Player) return;
+        applyMovementHold(victim, sl.getGameTime() + Math.max(10, untilTick), false);
+    }
+
+    /**
+     * Rend ses jambes a la victime AVANT l'heure. Indispensable la ou la signature se
+     * termine par une projection : clouer puis pousser ne pousse rien du tout, puisque le
+     * tick d'emprise suivant reteleporte le corps a son point de prise.
+     */
+    private static void chaosUnroot(LivingEntity victim) {
+        if (victim == null) return;
+        if (MOVEMENT_HOLDS.remove(victim.getId()) != null) refreshSignatureAi(victim);
+    }
+
+    /**
+     * Le marqueur visible d'un temps : c'est lui qui transforme un degat en COUP. Deux
+     * sons de hauteurs differentes et une gerbe sur le corps — sans ca, un tic de degat
+     * dans une signature de sept secondes passe inapercu au milieu du reste.
+     */
+    private static void chaosBeatMark(ServerLevel sl, LivingEntity victim, float pitch, float force) {
+        if (sl == null || victim == null) return;
+        double bx = victim.getX();
+        double by = victim.getY() + victim.getBbHeight() * 0.62;
+        double bz = victim.getZ();
+        sl.playSound(null, bx, by, bz, SoundEvents.AMETHYST_BLOCK_HIT, SoundSource.PLAYERS,
+                0.50f * force, pitch);
+        sl.playSound(null, bx, by, bz, SoundEvents.GLASS_BREAK, SoundSource.PLAYERS,
+                0.26f * force, Math.min(2.0f, pitch * 1.45f));
+        PixelFx.send(sl, CHAOS_DUST_SPARK, bx, by, bz,
+                Math.max(6, Math.round(16 * force)), 0.30, 0.34, 0.30, 0.12);
+    }
+
     /** Degat du Chaos : la perte de vie ET la trace, toujours ensemble. */
     private static boolean chaosHurt(ServerLevel sl, int attackerId, LivingEntity victim,
                                      float amount) {
@@ -6346,6 +6404,15 @@ public final class WeaponVfxServerListener {
         final int targetId = target.getId();
         final boolean solo = voidVictims(sl, ox, oy, oz, 5.5, 3.0, attackerId).size() < 2;
 
+        // --- 0 : LE CLOUAGE. La figure se construit autour de la cible ; il faut donc que
+        //     la cible soit encore la quand elle se referme. 148 ticks, soit deux de moins
+        //     que l'animation : l'emprise doit lacher AVANT la derniere image, sinon le mob
+        //     repart pile au moment ou le joueur regarde la fin.
+        chaosRoot(sl, target, 148);
+        for (LivingEntity caught : voidVictims(sl, ox, oy, oz, 5.5, 3.0, attackerId)) {
+            chaosRoot(sl, caught, 148);
+        }
+
         // --- 0 -> 24 : LE MONTAGE. Les six miroirs se mettent en place, un par un, et on
         //     les entend se verrouiller. L'avertissement avant la figure.
         for (int k = 0; k < 6; k++) {
@@ -6376,8 +6443,15 @@ public final class WeaponVfxServerListener {
                     hit = victims.get(arm % victims.size());
                 }
                 if (hit == null) return;
+                // Le retardataire entre aussi dans la figure : sans ca, un mob qui arrive
+                // au troisieme miroir traverse la scene pendant les trois derniers.
+                int left = Math.max(10, 148 - (30 + arm * 18));
+                chaosRoot(sl, hit, left);
                 float amount = base * (solo ? 0.58f : 0.34f);
                 chaosHurt(sl, attackerId, hit, amount);
+                // LE TEMPS SE VOIT ET S'ENTEND SUR LE CORPS, pas seulement au centre de la
+                // figure : c'est ce qui manquait pour lire les six frappes comme SIX coups.
+                chaosBeatMark(sl, hit, 0.74f + arm * 0.12f, 0.80f + arm * 0.04f);
                 // LA REPETITION : la moitie du coup est mise de cote et retombera a la
                 // fermeture de la boucle. L'echeance est calee sur la FIN de l'animation,
                 // pas sur un delai glissant, donc les six retombees arrivent ensemble.
@@ -6450,6 +6524,14 @@ public final class WeaponVfxServerListener {
         final boolean solo = voidVictims(sl, ox, oy, oz, 4.6, 3.0, attackerId).size() <= 1;
         final double radius = solo ? 2.8 : 4.6;
 
+        // --- 0 : LE CLOUAGE. La sphere est un lieu : elle n'a de sens que si on y est
+        //     retenu. C'est la seule des trois ou le clouage change aussi la REGLE —
+        //     l'entropie punit la presence, et la presence est maintenant imposee.
+        chaosRoot(sl, target, 166);
+        for (LivingEntity caught : voidVictims(sl, ox, oy, oz, radius, 3.0, attackerId)) {
+            chaosRoot(sl, caught, 166);
+        }
+
         // --- 0 -> 18 : LES TROIS CERCLES se tracent, un par plan.
         for (int k = 0; k < 3; k++) {
             final int ring = k;
@@ -6477,10 +6559,15 @@ public final class WeaponVfxServerListener {
                     // L'entropie monte AVANT le degat : la pulsation qui fait franchir un
                     // palier doit deja etre payee au nouveau tarif, sinon le palier n'a
                     // d'effet qu'au coup suivant et le joueur ne fait pas le lien.
+                    chaosRoot(sl, victim, Math.max(10, 166 - (22 + pulse * 16)));
                     addEntropy(sl, victim, solo ? 2 : 1, 70);
                     int level = entropyOf(sl, victim);
                     float amount = base * 0.30f * (1.0f + level * 0.42f);
                     chaosHurt(sl, attackerId, victim, amount);
+                    // La pulsation monte en hauteur ET en force avec le palier d'entropie :
+                    // on ENTEND le compteur grimper, au lieu de le deviner aux degats.
+                    chaosBeatMark(sl, victim, 0.56f + pulse * 0.08f + level * 0.05f,
+                            0.52f + level * 0.09f);
                 }
                 sl.playSound(null, ox, oy, oz, SoundEvents.BEACON_AMBIENT, SoundSource.PLAYERS,
                         0.26f, 0.42f + pulse * 0.07f);
@@ -6581,6 +6668,10 @@ public final class WeaponVfxServerListener {
                         victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
                                 40, Math.min(2, pull / 5), true, false));
                     }
+                    // Les cinq dernieres tractions CLOUENT ce qui est deja arrive au foyer.
+                    // Aspirer pendant quatre secondes pour laisser le corps ressortir au
+                    // moment ou la detonation part, c'est perdre les deux phases d'un coup.
+                    if (pull >= 9) chaosRoot(sl, victim, Math.max(10, 90 - (6 + pull * 6)));
                 }
                 // Le tic-tac : la hauteur monte a chaque traction. C'est l'avertissement,
                 // et il doit etre audible avant d'etre visible.
@@ -6616,7 +6707,11 @@ public final class WeaponVfxServerListener {
                 // rester une explosion, pas une limite administrative.
                 float falloff = (float) Math.max(0.38, 1.0 - dist / 7.0);
                 releaseVoidGrip(victim);
+                // On DECLOUE avant de projeter, sinon le tick d'emprise suivant ramene le
+                // corps au foyer et l'explosion n'envoie personne nulle part.
+                chaosUnroot(victim);
                 chaosHurt(sl, attackerId, victim, punch * falloff);
+                chaosBeatMark(sl, victim, 0.48f, 1.0f);
                 addDiscord(sl, victim, punch * falloff * 0.42f, attackerId, 46);
                 voidPush(sl, victim, ddx / dist * 0.96, 0.52, ddz / dist * 0.96);
                 victim.addEffect(new MobEffectInstance(MobEffects.CONFUSION, 120, 0, true, false));

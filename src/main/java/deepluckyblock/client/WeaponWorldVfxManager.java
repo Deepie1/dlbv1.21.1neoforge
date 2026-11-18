@@ -2641,6 +2641,8 @@ public final class WeaponWorldVfxManager {
         int alpha = Math.round(238.0f * (1.0f - t * t));
         boolean earthSlash = !windSlash && inst.effect.element() == DeepElement.EARTH;
         boolean voidSlash = !windSlash && inst.effect.element() == DeepElement.VOID;
+        // T401 : le Chaos ne peint plus son arc, il le CONSTRUIT en Pixels 3D.
+        boolean chaosSlash = !windSlash && inst.effect.element() == DeepElement.CHAOS;
         int slashCore = earthSlash ? 0x6B4526 : inst.effect.primaryRgb;
         int slashTrail = earthSlash ? 0x3B2616 : inst.effect.secondaryRgb;
         int slashTip = earthSlash ? 0x79A74B : 0xFFFFFF;
@@ -2665,6 +2667,17 @@ public final class WeaponWorldVfxManager {
             slashTrail = 0x5FC0AC;
             slashTip = 0xEAFFF8;
         }
+        if (chaosSlash) {
+            // Même partage que le Vide : l'arc voxel cesse d'être l'effet et n'en devient
+            // plus que l'ARMATURE. Sans elle les cubes flotteraient sans forme lisible sur
+            // un décor clair ; avec elle à pleine opacité, son corps monochrome écraserait
+            // précisément les arêtes multicolores qu'on vient d'ajouter.
+            slashCore = 0x241A3A;
+            slashTrail = 0x0E0A1A;
+            slashTip = 0xE8DCFF;
+            voxelHalf *= 0.56f;
+            alpha = Math.round(96.0f * (1.0f - t * t));
+        }
         emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, randomTilt,
                 radius, voxelHalf, sweepDeg, t, slashCore, slashTrail, alpha, style, slashTip, texture);
         if (style == 4) {
@@ -2682,6 +2695,15 @@ public final class WeaponWorldVfxManager {
             // « Not building! ».
             emitVoidPortalSlashArc(cam, rx, ry, rz, inst.yawDeg, inst.pitchDeg, randomTilt,
                     radius, voxelHalf, sweepDeg, t, style);
+        }
+        if (chaosSlash) {
+            // T401 : LA SIGNATURE DU CHAOS AU SWING. Les mêmes Pixels 3D que les trois
+            // grandes signatures, semés le long de l'arc. Ils passent par la file de
+            // structure de VoidPixelManager, donc ils sont dessinés dans leur propre passe
+            // avec leur propre BufferSource : jamais entrelacés avec les couches voxel,
+            // jamais de « Not building! ».
+            emitChaosPixelSlashArc(cam, rx, ry, rz, inst.yawDeg, inst.pitchDeg, randomTilt,
+                    radius, voxelHalf * 1.70f, sweepDeg, t, style);
         }
 
         if (inst.effect == WeaponVisualEffectId.SUPREME_PRISM_EDGE) {
@@ -2883,6 +2905,102 @@ public final class WeaponWorldVfxManager {
                         cam.y + cy + dirY * (shapedRadius - inset),
                         cam.z + cz + dirZ * (shapedRadius - inset),
                         half * 0.70f, u * 4.1f - progress * 1.7f);
+            }
+        }
+    }
+
+    /**
+     * T401 — LE SLASH DU CHAOS EST FAIT DE PIXELS 3D A ARETES MULTICOLORES.
+     *
+     * <p>Le reproche était « le slash de chaos n'est pas multicolor », et la réponse n'est
+     * pas de repeindre l'arc voxel en arc-en-ciel. Un arc voxel reçoit UNE couleur de corps
+     * par cube ; il ne peut pas porter douze arêtes teintées, c'est une limite de forme et
+     * pas de réglage. Les Pixels 3D, eux, sont faits pour ça : le core shader reconstitue
+     * les douze arêtes à partir de la position du fragment sur sa face, et la roue de
+     * teintes défile le long de l'arête. Le slash emprunte donc la technique maison au lieu
+     * de l'imiter — même shader, même octet vert empaqueté que les trois signatures.</p>
+     *
+     * <p><b>Pourquoi la file de structure et pas des pixels libres.</b> Un slash vit huit
+     * ticks et doit suivre la lame image par image ; un pixel libre, lui, a sa propre
+     * physique et traînerait derrière. {@code emitStructureCube} repose la figure entière à
+     * chaque image — une image de retard, seize millisecondes, invisible.</p>
+     *
+     * <p>La teinte n'est PAS tirée au hasard par cube : elle avance le long de l'arc
+     * ({@code u}) et dans le temps. Un bruit par cube donnerait du confetti ; une rampe
+     * donne un dégradé qu'on lit comme un seul geste, ce qui est la différence entre
+     * « multicolore » et « bariolé ».</p>
+     */
+    private static void emitChaosPixelSlashArc(Vec3 cam, float cx, float cy, float cz,
+                                               float yawDeg, float pitchDeg, float tiltRad,
+                                               float radius, float baseHalfSize, float sweepDeg,
+                                               float progress, int connectionStyle) {
+        float yawRad = -yawDeg * Mth.DEG_TO_RAD;
+        float pitchRad = pitchDeg * Mth.DEG_TO_RAD;
+
+        float fx = Mth.sin(yawRad) * Mth.cos(pitchRad);
+        float fy = -Mth.sin(pitchRad);
+        float fz = Mth.cos(yawRad) * Mth.cos(pitchRad);
+
+        float rx0 = Mth.cos(yawRad);
+        float rz0 = -Mth.sin(yawRad);
+        float ux0 = -Mth.sin(yawRad) * Mth.sin(pitchRad);
+        float uy0 = Mth.cos(pitchRad);
+        float uz0 = -Mth.cos(yawRad) * Mth.sin(pitchRad);
+
+        float cosT = Mth.cos(tiltRad);
+        float sinT = Mth.sin(tiltRad);
+        float sx = rx0 * cosT + ux0 * sinT;
+        float sy = uy0 * sinT;
+        float sz = rz0 * cosT + uz0 * sinT;
+
+        int pixelSteps = Math.max(12, Math.round(sweepDeg / 4.0f));
+        float halfArc = (sweepDeg * 0.5f) * Mth.DEG_TO_RAD;
+        float headU = Mth.clamp(progress * 1.35f, 0.0f, 1.0f);
+        // L'arc s'efface en bloc sur la fin du coup, comme les autres slashes.
+        float dim = Math.max(0.0f, 1.0f - progress * progress);
+
+        for (int i = 0; i <= pixelSteps; i++) {
+            float u = (float) i / pixelSteps;
+            if (u > headU + 0.15f) break;
+            float distBehind = headU - u;
+            if (distBehind > 0.68f) continue;
+
+            float ang = (u - 0.5f) * 2.0f * halfArc;
+            float ca = Mth.cos(ang);
+            float sa = Mth.sin(ang);
+            float dirX = fx * ca + sx * sa;
+            float dirY = fy * ca + sy * sa;
+            float dirZ = fz * ca + sz * sa;
+
+            float taper = Mth.sin(u * (float) Math.PI);
+            float shapedRadius = connectionStyle == 5 ? radius * (0.82f + 0.28f * taper) : radius;
+            boolean isHead = Math.abs(distBehind) < 0.12f;
+            float half = baseHalfSize * (0.95f + 1.15f * taper) * (isHead ? 1.60f : 1.0f);
+            half *= Math.max(0.24f, 1.0f - Math.max(0.0f, distBehind) * 1.15f);
+
+            float alpha = dim * (isHead ? 1.0f : 0.88f - Math.max(0.0f, distBehind) * 0.55f);
+            if (alpha <= 0.02f) continue;
+
+            // La tête mène la roue : elle est plus claire ET elle passe en SPECTRUM, donc
+            // ses arêtes balaient tout le cercle chromatique d'un bord à l'autre du cube.
+            int mode = isHead ? VoidPixelManager.MODE_SPECTRUM
+                    : ((i & 1) == 0 ? VoidPixelManager.MODE_RAINBOW : VoidPixelManager.MODE_SPECTRUM);
+            int gray = isHead ? 21 : (distBehind > 0.34f ? 6 : 11);
+
+            float px = cx + dirX * shapedRadius;
+            float py = cy + dirY * shapedRadius;
+            float pz = cz + dirZ * shapedRadius;
+            VoidPixelManager.emitStructureCube(cam.x + px, cam.y + py, cam.z + pz,
+                    half, mode, gray, 0.0f, alpha);
+
+            // Deuxième rang vers l'intérieur : sans lui l'arc disparaît vu par la tranche.
+            if (taper > 0.22f) {
+                float inset = baseHalfSize * 2.20f;
+                VoidPixelManager.emitStructureCube(
+                        cam.x + cx + dirX * (shapedRadius - inset),
+                        cam.y + cy + dirY * (shapedRadius - inset),
+                        cam.z + cz + dirZ * (shapedRadius - inset),
+                        half * 0.68f, VoidPixelManager.MODE_RAINBOW, 6, 0.0f, alpha * 0.80f);
             }
         }
     }

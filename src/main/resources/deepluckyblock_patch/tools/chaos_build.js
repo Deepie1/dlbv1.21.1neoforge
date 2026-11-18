@@ -593,6 +593,105 @@ function buildChaos(variant, t, salt = 4421) {
 
   /* --- LA TRAME COURANTE. */
   fn(t, false);
+
+  /* ======================================================================================
+     T401 — LES COUPS. Miroir exact de ChaosSignatureVfx.renderStrikes().
+
+     Ce que cette couche repare : les trois signatures se deploient AUTOUR d'un point sans
+     jamais le toucher, si bien qu'on voyait un decor somptueux et un mob qui perdait des
+     coeurs sans cause visible. Sur chaque temps ou le serveur inflige un degat — et
+     seulement sur ceux-la — une lance de cubes fond sur le centre, puis eclate en
+     couronne. Les nombres ci-dessous sont les ticks de applyKaleidoGameplay /
+     applyEntropySphereGameplay / applyBigBangGameplay, pas une approximation graphique.
+     ====================================================================================== */
+  const BEATS = [[30, 48, 66, 84, 102, 120],
+                 [22, 38, 54, 70, 86, 102, 118, 134],
+                 [84]][variant] || [];
+  const STRIKE_WIND = 9, STRIKE_BURST = 8;
+  const aim = variant === 2 ? 1.20 : (variant === 1 ? 1.15 : 1.05);
+  /* UN COUP SE MESURE A SA FIGURE : la cicatrice du big bang fait cinq blocs de rayon,
+     un eclat d'un bloc quatre-vingts y disparait -- verifie au banc. */
+  const blast = variant === 2 ? 2.30 : (variant === 1 ? 1.90 : 1.0);
+  const nowT = t * DUR;
+  for (let b = 0; b < BEATS.length; b++) {
+    const since = nowT - BEATS[b];
+    if (since < -STRIKE_WIND || since > STRIKE_BURST) continue;
+    const ang = b * 2.39996 + salt * 0.137;
+    const ux = cos(ang), uz = sin(ang);
+    const px = -uz, pz = ux;
+    if (since < 0) {
+      /* LA DESCENTE : trois brins, pas une file. Mesure au banc avant correction : une
+         file de huit cubes pesait dix-sept cubes contre mille cent soixante-quatorze de
+         kaleidoscope. Le coup existait deja et ne se voyait pas -- c'est la toute la
+         difference entre « il n'y a pas d'attaque » et « on ne la voit pas ». */
+      const k = 1.0 + since / STRIKE_WIND;
+      const ease = k * k;
+      const head = 3.60 - 3.25 * ease;
+      for (let s = -1; s <= 1; s++) {
+        const off = s * 0.17;
+        for (let i = 0; i < 16; i++) {
+          const r = head + i * 0.17;
+          if (r > 3.90) continue;
+          const fade = (0.98 - i * 0.045) * clamp01(k * 2.4);
+          if (fade <= 0.02) continue;
+          const h = (0.150 - i * 0.0062) * (0.72 + 0.52 * ease) * (s === 0 ? 1.0 : 0.74);
+          put(ux * r + px * off, aim + 0.46 * (1.0 - ease) + i * 0.030, uz * r + pz * off,
+              h, h, h, ang + t * 3.1 + s,
+              (i & 1) === 0 ? M_RAINBOW : M_SPECTRUM,
+              i === 0 ? G_FLASH : (i < 4 ? G_BODY : G_DEEP), 0.0, a * fade);
+        }
+      }
+      /* LA POINTE : la masse du coup. */
+      for (let i = 0; i < 5; i++) {
+        const r = head - i * 0.11;
+        const h = 0.205 - i * 0.022;
+        put(ux * r, aim + 0.46 * (1.0 - ease), uz * r, h, h, h, ang * 1.7 + t * 5.0,
+            M_SPECTRUM, i === 0 ? G_CORE : G_FLASH, 0.0,
+            a * clamp01(k * 2.0) * (0.95 - i * 0.11));
+      }
+    } else {
+      /* L'ECLAT : trois couronnes, une gerbe, un noyau. Un seul anneau plat disparait
+         vu par la tranche -- deja paye sur la fenetre de la Porte. */
+      const k = since / STRIKE_BURST;
+      const open = sqrt(k);
+      /* Decroissance LINEAIRE : au carre, l'eclat a perdu soixante pour cent de son
+         alpha au tiers de sa vie, et l'oeil n'y voit plus un coup mais un soupir. */
+      const fade = 1.0 - k * 0.88;
+      const rr = (0.30 + 1.55 * open) * blast;
+      for (let i = 0; i < 26; i++) {
+        const ca = i / 26 * Math.PI * 2 + ang;
+        const lift = 0.40 * sin(i * 1.7 + b) * (1.0 - k);
+        const h = 0.112 * blast * (1.0 - 0.40 * k);
+        put(cos(ca) * rr, aim + lift, sin(ca) * rr, h, h, h, ca + t * 2.2,
+            (i % 3 === 0) ? M_STROBE : M_RAINBOW,
+            (i % 3 === 0) ? G_GLASS : G_BODY, 0.0, a * fade * 0.95);
+      }
+      for (let i = 0; i < 18; i++) {
+        const ca = i / 18 * Math.PI * 2;
+        const rv = rr * 0.86;
+        const h = 0.095 * blast * (1.0 - 0.40 * k);
+        put(ux * cos(ca) * rv, aim + sin(ca) * rv, uz * cos(ca) * rv,
+            h, h, h, ca * 1.3 + t * 2.6, M_SPECTRUM, G_MID, 0.0, a * fade * 0.88);
+      }
+      for (let i = 0; i < 12; i++) {
+        const spin = i / 12 * Math.PI * 2 + ang * 2.0;
+        const reach = rr * (0.55 + 0.85 * ((i * 7 % 5) / 4));
+        const h = 0.085 * blast * (1.0 - 0.5 * k);
+        put(ux * reach * 0.80 + cos(spin) * rr * 0.34,
+            aim + 0.25 + 1.35 * open * (0.45 + (i % 3) * 0.28),
+            uz * reach * 0.80 + sin(spin) * rr * 0.34,
+            h, h, h, spin + t * 3.4, M_RAINBOW, G_FRAME, 0.0, a * fade * 0.80);
+      }
+      if (k < 0.60) {
+        const core = 1.0 - k / 0.60;
+        const h1 = (0.34 * core + 0.09) * blast;
+        put(0, aim, 0, h1, h1, h1, t * 4.7, M_SPECTRUM, G_CORE, 0.0, a * core * 0.98);
+        const h2 = (0.52 * core + 0.12) * blast;
+        put(0, aim, 0, h2, h2, h2, -t * 3.1, M_STROBE, G_GLASS, 0.0, a * core * 0.55);
+      }
+    }
+  }
+
   return out;
 }
 

@@ -285,6 +285,41 @@ public final class VoidPixelManager {
         scount = 0;
     }
 
+    /**
+     * T401 — UN PIXEL 3D DESSINE DANS LE REPERE DE L'APPELANT.
+     *
+     * <p>Les deux autres portes d'entrée — {@link #spawnPixel} et {@link #emitStructureBox} —
+     * prennent des coordonnées MONDE et passent par la file, qui est vidée pendant la passe
+     * de niveau. Ça convient à tout ce qui vit dans le monde, et à rien de ce qui vit sur un
+     * objet : un item tenu en main est dessiné dans la matrice de la main, laquelle n'existe
+     * plus au moment où la passe de niveau s'exécute. Transformer soi-même la matrice pour
+     * retrouver des coordonnées monde serait possible et faux — l'item de première personne
+     * n'est pas À la position qu'il semble occuper.</p>
+     *
+     * <p>Cette méthode-ci ne met donc rien en file : elle écrit les vingt-quatre sommets
+     * tout de suite, dans le {@code VertexConsumer} et la matrice que l'appelant lui donne.
+     * Le shader s'en moque — il ne lit que {@code UV0} (la position sur la face) et les
+     * quatre octets de couleur, jamais une coordonnée monde.</p>
+     *
+     * @param phase01 décalage de la roue de teintes, 0..1. En file, il est dérivé de la
+     *                position ; ici il n'y a pas de position monde, donc c'est à l'appelant
+     *                de le fournir — et c'est tant mieux : il peut en faire un mouvement.
+     */
+    public static void emitCubeInto(VertexConsumer vc, Matrix4f mat,
+                                    float cx, float cy, float cz, float half, float spin,
+                                    int mode, int gray, float hue, float phase01, float alpha) {
+        if (vc == null || mat == null || half <= 0.0f || alpha <= 0.004f) return;
+        emitCube(vc, mat, cx, cy, cz, half, half, half, spin,
+                Math.round(clamp01(phase01) * 255.0f),
+                packModeGray(mode, gray),
+                Math.round(clamp01(hue) * 255.0f),
+                Math.round(clamp01(alpha) * 255.0f));
+    }
+
+    private static float clamp01(float v) {
+        return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
+    }
+
     // =====================================================================
     //  PHYSIQUE
     // =====================================================================

@@ -181,6 +181,15 @@ public final class WeaponBladeVisualRenderer {
                     renderVoidPortalCubes(bufferSource, mat, tmp, nodes, time);
                     break;
                 }
+
+                // T401 : LES PIXELS 3D QUI GRAVITENT AUTOUR DE L'ARME DU CHAOS. Même
+                // précaution que ci-dessus — après toutes les couches voxel, jamais entre
+                // deux — et pour la même raison.
+                for (WeaponVisualEffectId.ResolvedLayer chaosLayer : layers) {
+                    if (chaosLayer.effect().element() != DeepElement.CHAOS) continue;
+                    renderChaosPixelOrbit(bufferSource, mat, nodes, time);
+                    break;
+                }
             } catch (Throwable ignored) {
                 // Tolérance totale avec ImmediatelyFast / Sodium / Iris
             } finally {
@@ -263,6 +272,110 @@ public final class WeaponBladeVisualRenderer {
             VoidPortalFx.cube(vc, mat, tmp,
                     anchor.x() + ox, anchor.y() + oy, anchor.z() + oz,
                     half, swim * 0.9f);
+        }
+    }
+
+    /**
+     * T401 — LES PIXELS 3D QUI GRAVITENT AUTOUR DE L'ARME DU CHAOS.
+     *
+     * <p>Ce sont exactement les cubes des signatures : le même core shader
+     * {@code void_pixel}, le même octet vert empaqueté, les mêmes arêtes multicolores. Pas
+     * une imitation peinte à la main sur l'item — le procédé est le même, donc le repos et
+     * le coup se ressemblent, ce qui est tout l'intérêt d'avoir une technique maison.</p>
+     *
+     * <p><b>Pourquoi ça peut se dessiner ici.</b> Les Pixels 3D du monde passent par une
+     * file vidée pendant la passe de niveau, où la matrice de la main n'existe plus. Ceux-ci
+     * court-circuitent la file par {@link VoidPixelManager#emitCubeInto} et s'écrivent dans
+     * la matrice de l'item. Le shader n'y voit rien : il ne lit que la position du fragment
+     * sur sa face et les quatre octets de couleur, jamais une coordonnée monde.</p>
+     *
+     * <p><b>Sept trajectoires, toutes fermées, toutes différentes.</b> La demande était
+     * « des mouvements uniques et en boucle », et les deux moitiés comptent. Les cubes
+     * d'abysse du Vide, juste au-dessus, font le contraire par construction : deux périodes
+     * incommensurables, une figure qui ne se referme jamais. Ici chaque cube parcourt une
+     * courbe fermée — anneau, méridien, huit, trèfle, ellipse rétrograde — et toutes les
+     * fréquences sont des multiples ENTIERS d'un même tour. La constellation entière se
+     * répète donc exactement toutes les {@value #CHAOS_ORBIT_SECONDS} secondes, au pixel
+     * près, et aucune trajectoire ne ressemble à sa voisine.</p>
+     *
+     * <p>Le rayon est lu sur les nœuds de l'item et non fixé en dur : une dague et une
+     * grande épée doivent avoir le même halo RELATIF, pas la même distance absolue.</p>
+     */
+    private static final float CHAOS_ORBIT_SECONDS = 8.0f;
+
+    private static void renderChaosPixelOrbit(MultiBufferSource bufferSource, Matrix4f mat,
+                                              List<VoxelNode> nodes, float time) {
+        int count = nodes.size();
+        if (count <= 0) return;
+        VertexConsumer vc;
+        try {
+            vc = bufferSource.getBuffer(ModRenderTypes.voidPixel());
+        } catch (Throwable ignored) {
+            return;   // shader pas encore chargé, ou pile de rendu exotique
+        }
+        if (vc == null) return;
+
+        // Le centre et l'envergure de l'item, mesurés sur ses propres nœuds.
+        float sx = 0.0f, sy = 0.0f, sz = 0.0f;
+        for (VoxelNode n : nodes) { sx += n.x(); sy += n.y(); sz += n.z(); }
+        final float cx = sx / count, cy = sy / count, cz = sz / count;
+        float spread = 0.0f;
+        for (VoxelNode n : nodes) {
+            float dx = n.x() - cx, dy = n.y() - cy;
+            spread = Math.max(spread, dx * dx + dy * dy);
+        }
+        // Le plancher évite qu'un item minuscule (ou une liste de nœuds dégénérée) colle
+        // les sept cubes les uns sur les autres au centre géométrique.
+        final float reach = Math.max(0.24f, (float) Math.sqrt(spread) * 1.18f);
+
+        final float tau = (float) (Math.PI * 2.0);
+        // UN tour, et tout le reste en est un multiple entier : c'est ce qui ferme la boucle.
+        final float turn = time * (tau / CHAOS_ORBIT_SECONDS);
+        final int orbiters = 7;
+
+        for (int i = 0; i < orbiters; i++) {
+            float a = turn + i * (tau / orbiters);
+            float ca = Mth.cos(a), sa = Mth.sin(a);
+            float c2 = Mth.cos(a * 2.0f), s2 = Mth.sin(a * 2.0f);
+            float ox, oy, oz;
+            switch (i) {
+                // 0 — l'anneau équatorial : le tour de taille de la lame, vu à plat.
+                case 0 -> { ox = ca * reach; oy = s2 * reach * 0.06f; oz = sa * reach * 0.55f; }
+                // 1 — le méridien : le même anneau basculé d'un quart de tour.
+                case 1 -> { ox = ca * reach * 0.72f; oy = sa * reach; oz = 0.0f; }
+                // 2 — le huit : un seul lobe de chaque côté, la vitesse change de signe au centre.
+                case 2 -> { ox = ca * reach; oy = s2 * reach * 0.42f; oz = sa * reach * 0.30f; }
+                // 3 — le trèfle : trois pétales, parce qu'un rayon qui respire se distingue
+                //     immédiatement d'un rayon constant même du coin de l'œil.
+                case 3 -> {
+                    float r = reach * (0.76f + 0.28f * Mth.cos(a * 3.0f));
+                    ox = ca * r; oy = sa * r * 0.78f; oz = c2 * reach * 0.22f;
+                }
+                // 4 — l'ellipse rétrograde : elle tourne À CONTRE-SENS des six autres.
+                case 4 -> { ox = ca * reach * 0.90f; oy = -sa * reach * 0.34f - ca * reach * 0.26f;
+                            oz = -sa * reach * 0.46f; }
+                // 5 — la montée le long du fil : haute et étroite, elle suit la lame.
+                case 5 -> { ox = ca * reach * 0.28f; oy = sa * reach * 1.06f; oz = c2 * reach * 0.26f; }
+                // 6 — la grande orbite lente et presque couchée, la plus éloignée.
+                default -> { ox = sa * reach * 1.12f; oy = c2 * reach * 0.19f; oz = ca * reach * 0.70f; }
+            }
+
+            // La taille respire sur le même tour : jamais jusqu'à disparaître, sinon ça
+            // ressemble à un défaut de rendu plutôt qu'à un effet.
+            float half = 0.0225f + 0.0062f * Mth.sin(a * 2.0f + i * 1.7f);
+            // Corps sombre, arête vive : c'est l'arête qui porte la couleur, et un corps
+            // clair la mangerait. Six et onze sur trente-deux crans.
+            int gray = (i % 3 == 0) ? 11 : 6;
+            // RAINBOW et SPECTRUM sont les deux modes franchement multicolores du jeu de
+            // huit ; alterner les deux empêche les sept cubes de défiler à l'unisson.
+            int mode = (i % 2 == 0) ? VoidPixelManager.MODE_RAINBOW : VoidPixelManager.MODE_SPECTRUM;
+            // La roue de teintes avance lentement en plus de l'orbite : au repos, l'arme
+            // change de couleur même quand on ne la bouge pas.
+            float phase = (i / (float) orbiters + time * 0.055f) % 1.0f;
+
+            VoidPixelManager.emitCubeInto(vc, mat,
+                    cx + ox, cy + oy, cz + oz, half, a * 0.5f,
+                    mode, gray, 0.0f, phase, 0.88f);
         }
     }
 
