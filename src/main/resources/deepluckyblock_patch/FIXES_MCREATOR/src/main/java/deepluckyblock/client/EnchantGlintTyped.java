@@ -529,6 +529,67 @@ public final class EnchantGlintTyped {
      * <p>Le resultat est resserre vers le milieu : le noir occupe la bande centrale, donc
      * l'ombre domine et le violet comme le gris n'apparaissent qu'en nappes.</p>
      */
+    /**
+     * Champ du Vide : du NOIR, traverse de filaments etroits.
+     *
+     * <p>Le champ ombral melange ses trois teintes a parts a peu pres egales ; ici la
+     * repartition est deliberement desequilibree. Les trois harmoniques donnent une onde
+     * douce dans [0,1], et l'elevation a la puissance six ecrase tout ce qui n'est pas une
+     * crete : plus des trois quarts de la surface retombent sous 0,15, donc restent noirs,
+     * et la lumiere se concentre sur des lignes de deux ou trois pixels de large. C'est la
+     * difference entre une lame teintee de sombre et une lame FENDUE.</p>
+     *
+     * <p>Comme pour l'ombre, les harmoniques sont periodiques en {@code u} et {@code v} et
+     * le grain ne depend que des coordonnees entieres : la texture defile sans couture.</p>
+     */
+    private static float voidField(int x, int y, int width, int height) {
+        double u = x / (double) Math.max(1, width);
+        double v = y / (double) Math.max(1, height);
+        final double TAU = Math.PI * 2.0;
+        // Trois nappes de filaments, d'orientations franchement differentes : seules leurs
+        // intersections produisent les quelques noeuds vraiment lumineux.
+        double a = 0.5 + 0.5 * Math.sin(TAU * (1.0 * u + 2.0 * v) + 0.35);
+        double b = 0.5 + 0.5 * Math.sin(TAU * (3.0 * u - 1.0 * v) + 2.80);
+        double c = 0.5 + 0.5 * Math.sin(TAU * (2.0 * u + 5.0 * v) + 5.10);
+        double veins = 0.62 * Math.pow(a, 6.0) + 0.46 * Math.pow(b, 7.0) + 0.30 * Math.pow(c, 9.0);
+        // Le grain est SOUSTRACTIF aux trois quarts : il ronge les filaments par endroits
+        // plutot que d'eclaircir le noir, sans quoi le fond redeviendrait une nappe grise.
+        double grain = (pixelNoise(x, y) - 0.72) * 0.34;
+        return (float) Math.max(0.0, Math.min(1.0, veins + grain));
+    }
+
+    /**
+     * Rampe du Vide. Elle ne part pas d'un gris comme l'ombre : elle part du noir et n'en
+     * sort qu'au-dela de la moitie, pour finir sur la lavande glaciaire de la palette.
+     *
+     * <p>La teinte du glint n'entre PAS dans le calcul, contrairement a
+     * {@link #umbralTint(int, float)} : le magenta de rang ecrit dans le nom de l'arme est
+     * precisement ce qu'on retire. Cinq arrets, parce que trois laissaient une marche
+     * visible entre le noir et le violet.</p>
+     */
+    private static int voidTint(float u) {
+        final int NOTHING  = 0x05010B; // noir, un soupcon de bleu : jamais 0x000000 pur
+        final int BASALT   = 0x2D0043;
+        final int HALO     = 0x6C13A4;
+        final int HORIZON  = 0x9518E2;
+        final int GLACIER  = 0xD7B4F7;
+        if (u < 0.52f) {
+            // Plus de la moitie de la rampe tient dans le noir : c'est le sujet.
+            float k = u / 0.52f;
+            return mixGradient(NOTHING, BASALT, k * k);
+        }
+        if (u < 0.74f) {
+            float k = (u - 0.52f) / 0.22f;
+            return mixGradient(BASALT, HALO, k * k * (3.0f - 2.0f * k));
+        }
+        if (u < 0.90f) {
+            float k = (u - 0.74f) / 0.16f;
+            return mixGradient(HALO, HORIZON, k * k * (3.0f - 2.0f * k));
+        }
+        float k = (u - 0.90f) / 0.10f;
+        return mixGradient(HORIZON, GLACIER, k * k * (3.0f - 2.0f * k));
+    }
+
     private static float umbralField(int x, int y, int width, int height) {
         double u = x / (double) Math.max(1, width);
         double v = y / (double) Math.max(1, height);
@@ -579,12 +640,18 @@ public final class EnchantGlintTyped {
         if (mode == deepluckyblock.client.DeepGlintColor.GRADIENT_MODE_UMBRAL) {
             return umbralTint(rgb, gradient);
         }
+        if (mode == deepluckyblock.client.DeepGlintColor.GRADIENT_MODE_VOID) {
+            return voidTint(gradient);
+        }
         return mixGradient(rgb, gradientRgb, gradient);
     }
 
     private static float gradientPosition(int x, int y, int width, int height, int mode) {
         if (mode == deepluckyblock.client.DeepGlintColor.GRADIENT_MODE_UMBRAL) {
             return umbralField(x, y, width, height);
+        }
+        if (mode == deepluckyblock.client.DeepGlintColor.GRADIENT_MODE_VOID) {
+            return voidField(x, y, width, height);
         }
         if (mode == 0) {
             float v = y / (float) Math.max(1, height - 1);

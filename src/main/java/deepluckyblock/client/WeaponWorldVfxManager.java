@@ -14,6 +14,9 @@ import deepluckyblock.util.DeepEnchant;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderStateShard;
@@ -1974,6 +1977,8 @@ public final class WeaponWorldVfxManager {
                 || fx == WeaponVisualEffectId.CARNAGE_BERSERK) ? 11 : 8;
         float tilt = (fx == WeaponVisualEffectId.GUILLOTINE_CLEAVE) ? 1.48f : baseTilt;
 
+        playSlashVoice(p, fx);
+
         // UN SEUL VfxInstance par swing, exactement comme l'ancien déclencheur T342.
         pushInstance(new VfxInstance(
                 fx, KIND_SWING_SLASH, intensity,
@@ -1988,10 +1993,125 @@ public final class WeaponWorldVfxManager {
     }
 
     /**
+     * T396 : LA VOIX DU SLASH.
+     *
+     * <p>Le constat qui a motivé cette fonction : {@code grep playSound} sur cette classe
+     * renvoyait <b>zéro</b>. Les cinq grosses signatures sonnent — elles ont entre quatorze
+     * et vingt sons chacune, répartis sur leurs cent soixante à deux cents ticks — mais
+     * elles ne sortent que sur un jet de quarante pour cent. Les six autres coups sur dix
+     * sont un simple arc, et cet arc n'avait jamais eu de son : on voyait la lame du Vide
+     * fendre l'air en silence. C'est ça, « les sons oubliés sur les trois quarts des
+     * animations ».</p>
+     *
+     * <p><b>Pourquoi côté client.</b> Le swing dans le vide n'existe pas pour le serveur :
+     * sans contact, aucun {@code LivingIncomingDamageEvent} n'est levé, donc rien à
+     * sonoriser là-bas. Ce n'est pas une perte : {@link #onPlayerWeaponSwing} est appelée
+     * par la boucle de détection chez CHAQUE client à portée, pour chaque joueur visible —
+     * le geste du voisin est donc entendu par le voisin, exactement comme un son de monde.
+     * Un seul {@code playLocalSound} par swing, et le geste est déjà limité à un par
+     * animation par la parité de {@code PLAYER_SWING_PARITY}.</p>
+     *
+     * <p>Deux couches par famille : un SOUFFLE qui porte le geste, et un TIMBRE qui dit
+     * laquelle. Un seul son aurait suffi à faire du bruit, pas à distinguer douze familles
+     * — et c'est le second rôle qui compte, puisque l'épée de démonstration existe pour
+     * qu'on reconnaisse une famille sans lire son nom.</p>
+     */
+    private static void playSlashVoice(Player p, WeaponVisualEffectId fx) {
+        if (p == null || fx == null) return;
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) return;
+        DeepElement element = fx.element();
+        // Le souffle : commun à tout le monde, c'est le geste lui-même.
+        float sweepVolume = 0.34f;
+        float sweepPitch = 1.00f;
+        SoundEvent timbre = null;
+        float timbreVolume = 0.0f;
+        float timbrePitch = 1.0f;
+        switch (element) {
+            case VOID -> {
+                // Grave, creux, et une pierre d'améthyste qui se fend par-dessus : la
+                // famille sonne comme un espace qui cède, jamais comme une lame qui siffle.
+                sweepVolume = 0.30f; sweepPitch = 0.62f;
+                timbre = SoundEvents.AMETHYST_BLOCK_BREAK; timbreVolume = 0.26f; timbrePitch = 0.58f;
+            }
+            case BLOOD -> {
+                sweepVolume = 0.36f; sweepPitch = 0.82f;
+                timbre = SoundEvents.HONEY_BLOCK_BREAK; timbreVolume = 0.24f; timbrePitch = 0.70f;
+            }
+            case SHADOW -> {
+                sweepVolume = 0.28f; sweepPitch = 0.70f;
+                timbre = SoundEvents.SOUL_SAND_BREAK; timbreVolume = 0.30f; timbrePitch = 0.80f;
+            }
+            case FIRE -> {
+                sweepPitch = 1.08f;
+                timbre = SoundEvents.FIRE_EXTINGUISH; timbreVolume = 0.22f; timbrePitch = 1.45f;
+            }
+            case WATER -> {
+                sweepVolume = 0.30f; sweepPitch = 0.95f;
+                timbre = SoundEvents.BUCKET_EMPTY; timbreVolume = 0.20f; timbrePitch = 1.35f;
+            }
+            case THUNDER -> {
+                sweepPitch = 1.22f;
+                timbre = SoundEvents.AMETHYST_BLOCK_CHIME; timbreVolume = 0.26f; timbrePitch = 1.75f;
+            }
+            case WIND -> {
+                sweepVolume = 0.38f; sweepPitch = 1.30f;
+                timbre = SoundEvents.WOOL_BREAK; timbreVolume = 0.18f; timbrePitch = 1.60f;
+            }
+            case EARTH -> {
+                sweepVolume = 0.34f; sweepPitch = 0.74f;
+                timbre = SoundEvents.ROOTED_DIRT_BREAK; timbreVolume = 0.30f; timbrePitch = 0.85f;
+            }
+            case METAL -> {
+                sweepPitch = 1.12f;
+                timbre = SoundEvents.ANVIL_LAND; timbreVolume = 0.16f; timbrePitch = 1.85f;
+            }
+            case LIGHT -> {
+                sweepPitch = 1.18f;
+                timbre = SoundEvents.AMETHYST_BLOCK_CHIME; timbreVolume = 0.22f; timbrePitch = 1.40f;
+            }
+            case POISON -> {
+                sweepVolume = 0.30f; sweepPitch = 0.88f;
+                timbre = SoundEvents.SLIME_BLOCK_BREAK; timbreVolume = 0.24f; timbrePitch = 1.15f;
+            }
+            default -> {
+                // WOOD et tout élément ajouté plus tard : le souffle seul, jamais le silence.
+                timbre = SoundEvents.GRASS_BREAK; timbreVolume = 0.16f; timbrePitch = 1.05f;
+            }
+        }
+        // Une variation de hauteur par coup : deux swings de suite ne doivent pas être
+        // rigoureusement identiques, c'est ce qui fait entendre une répétition mécanique.
+        float jitter = 0.96f + level.random.nextFloat() * 0.08f;
+        try {
+            level.playLocalSound(p.getX(), p.getEyeY(), p.getZ(),
+                    SoundEvents.PLAYER_ATTACK_SWEEP, SoundSource.PLAYERS,
+                    sweepVolume, sweepPitch * jitter, false);
+            if (timbre != null && timbreVolume > 0.0f) {
+                level.playLocalSound(p.getX(), p.getEyeY(), p.getZ(), timbre, SoundSource.PLAYERS,
+                        timbreVolume, timbrePitch * jitter, false);
+            }
+        } catch (Throwable ignored) {
+            // Un son manquant dans un pack de ressources ne doit jamais interrompre le rendu.
+        }
+    }
+
+    /**
      * Nombre de signatures de la famille. Le tirage etait ecrit {@code nextInt(3)} en dur :
      * toutes les familles en avaient trois. Le SANG en a cinq, et les deux dernieres
      * n'auraient jamais ete tirees.
      */
+    /**
+     * T396 : signature de reference d'une famille, pour l'aura PORTEE (pas pour le coup).
+     *
+     * <p>Elle delegue a {@link #animationSlashEffect(String, int)} avec l'indice zero : une
+     * seule table a maintenir, et l'aura au repos montre donc toujours la premiere
+     * signature de la famille — celle qui la nomme.</p>
+     */
+    public static WeaponVisualEffectId animationAuraEffect(String family) {
+        if (family == null || family.isEmpty()) return null;
+        return animationSlashEffect(family, 0);
+    }
+
     private static int animationSlashCount(String family) {
         String canonical = deepluckyblock.util.AnimFamily.canonical(family);
         // T389 : le VIDE rejoint le SANG à cinq signatures.
@@ -2427,6 +2547,21 @@ public final class WeaponWorldVfxManager {
 
     // ==================== 1. ENTAILLES EN MINI-CUBES VOXELS 3D ====================
 
+    /** Corps de l'arc peint à plat, dans la couleur de l'effet. */
+    private static final int TEX_NONE = 0;
+    /** Corps de l'arc en bruns de grass block, pointe verte (famille TERRE). */
+    private static final int TEX_GRASS = 1;
+    /**
+     * T396 : corps de l'arc en teintes de la palette du VIDE, sans pointe blanche.
+     *
+     * <p>L'arc du Vide était « noir à bout blanc » : le noir venait de {@code primaryRgb},
+     * le bout blanc de la constante {@code 0xFFFFFF} partagée par toutes les familles. Les
+     * deux ensemble donnaient une lame de néon sur fond de suie — exactement l'inverse de
+     * ce que raconte la famille. Le corps prend donc les cinq tons de la palette, et la
+     * pointe la lavande glaciaire : aucun blanc nulle part.</p>
+     */
+    private static final int TEX_VOID = 2;
+
     private static void renderVoxelSwingSlash(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
                                               Vec3 cam, VfxInstance inst, float t) {
         float rx = (float) (inst.x - cam.x);
@@ -2487,9 +2622,22 @@ public final class WeaponWorldVfxManager {
                 || inst.effect == WeaponVisualEffectId.TEMPEST_EYE;
         int alpha = Math.round(238.0f * (1.0f - t * t));
         boolean earthSlash = !windSlash && inst.effect.element() == DeepElement.EARTH;
+        boolean voidSlash = !windSlash && inst.effect.element() == DeepElement.VOID;
         int slashCore = earthSlash ? 0x6B4526 : inst.effect.primaryRgb;
         int slashTrail = earthSlash ? 0x3B2616 : inst.effect.secondaryRgb;
         int slashTip = earthSlash ? 0x79A74B : 0xFFFFFF;
+        int texture = earthSlash ? TEX_GRASS : TEX_NONE;
+        if (voidSlash) {
+            // L'arc voxel n'est plus l'effet : il n'en est plus que le LISERÉ. Les cubes à
+            // texture d'abysse, mis en file plus bas, portent la signature ; sans cette
+            // armature sombre ils flotteraient sans forme lisible sur un décor clair.
+            texture = TEX_VOID;
+            slashCore = 0x2D0043;   // BASALT
+            slashTrail = 0x0E0216;  // NOTHING
+            slashTip = 0xD7B4F7;    // GLACIER — la pointe reste lisible, elle n'est plus blanche
+            voxelHalf *= 0.58f;     // « petits cubes » : la demande est littérale
+            alpha = Math.round(118.0f * (1.0f - t * t));
+        }
         if (windSlash) {
             radius *= 1.24f;
             voxelHalf *= 0.62f;
@@ -2500,19 +2648,28 @@ public final class WeaponWorldVfxManager {
             slashTip = 0xEAFFF8;
         }
         emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, randomTilt,
-                radius, voxelHalf, sweepDeg, t, slashCore, slashTrail, alpha, style, slashTip, earthSlash);
+                radius, voxelHalf, sweepDeg, t, slashCore, slashTrail, alpha, style, slashTip, texture);
         if (style == 4) {
             emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, randomTilt + 0.08f,
                     radius * 0.86f, voxelHalf * 0.62f, sweepDeg * 0.96f, t,
-                    earthSlash ? 0x76502D : inst.effect.secondaryRgb,
-                    earthSlash ? 0x402417 : inst.effect.primaryRgb,
-                    Math.round(alpha * 0.82f), 0, slashTip, earthSlash);
+                    earthSlash ? 0x76502D : (voidSlash ? 0x282077 : inst.effect.secondaryRgb),
+                    earthSlash ? 0x402417 : (voidSlash ? 0x050D25 : inst.effect.primaryRgb),
+                    Math.round(alpha * 0.82f), 0, slashTip, texture);
+        }
+        if (voidSlash) {
+            // T396 : LA SIGNATURE. Les mêmes cubes d'abysse que l'arme porte au repos,
+            // semés le long de l'arc. Ils passent par la file de VoidPortalFx, donc ils
+            // sont dessinés dans leur propre passe (AFTER_PARTICLES) avec leur propre
+            // BufferSource : jamais entrelacés avec les couches voxel, jamais de
+            // « Not building! ».
+            emitVoidPortalSlashArc(cam, rx, ry, rz, inst.yawDeg, inst.pitchDeg, randomTilt,
+                    radius, voxelHalf, sweepDeg, t, style);
         }
 
         if (inst.effect == WeaponVisualEffectId.SUPREME_PRISM_EDGE) {
             emitVoxelSlashArc(vc, mat, tmp, rx, ry, rz, inst.yawDeg, inst.pitchDeg, -randomTilt * 0.85f,
                     radius * 0.92f, voxelHalf * 0.85f, sweepDeg * 0.88f, t,
-                    inst.effect.secondaryRgb, 0xFFFFFF, Math.round(alpha * 0.85f), style, 0xFFFFFF, false);
+                    inst.effect.secondaryRgb, 0xFFFFFF, Math.round(alpha * 0.85f), style, 0xFFFFFF, TEX_NONE);
         }
     }
 
@@ -2521,7 +2678,7 @@ public final class WeaponWorldVfxManager {
                                           float yawDeg, float pitchDeg, float tiltRad,
                                           float radius, float baseHalfSize, float sweepDeg, float progress,
                                           int coreRgb, int trailRgb, int peakAlpha, int connectionStyle,
-                                          int tipRgb, boolean grassTexture) {
+                                          int tipRgb, int texture) {
         if (peakAlpha <= 6) return;
         float yawRad = -yawDeg * Mth.DEG_TO_RAD;
         float pitchRad = pitchDeg * Mth.DEG_TO_RAD;
@@ -2579,7 +2736,19 @@ public final class WeaponWorldVfxManager {
             boolean isHead = Math.abs(distBehind) < 0.12f;
             float hs = baseHalfSize * (0.55f + 0.75f * taper) * (isHead ? 1.25f : 1.0f);
             int rgb = isHead ? tipRgb : (distBehind < 0.28f ? coreRgb : trailRgb);
-            if (grassTexture && !isHead) {
+            if (texture == TEX_VOID && !isHead) {
+                // Cinq tons de la palette, et le noir du néant est le plus probable : un
+                // seul ton aurait donné une barre plate (règle acquise : un ton ⇒ trois
+                // teintes au minimum).
+                int tone = Math.min(4, (int) (pixelHash(0xC30D, i * 29 + connectionStyle * 211) * 5.0f));
+                rgb = switch (tone) {
+                    case 0 -> 0x0E0216;   // NOTHING
+                    case 1 -> 0x050D25;   // ABYSS
+                    case 2 -> 0x2D0043;   // BASALT
+                    case 3 -> 0x282077;   // SLATE
+                    default -> 0x6C13A4;  // HALO
+                };
+            } else if (texture == TEX_GRASS && !isHead) {
                 // Dessus vert uniquement sur la pointe ; le corps reprend les bruns du grass block.
                 int tone = Math.min(4, (int) (pixelHash(0xE471, i * 31 + connectionStyle * 137) * 5.0f));
                 rgb = switch (tone) {
@@ -2614,6 +2783,91 @@ public final class WeaponWorldVfxManager {
         }
     }
 
+
+    /**
+     * T396 : sème l'arc du Vide en cubes à texture d'abysse.
+     *
+     * <p>Reprend EXACTEMENT le repère et le parcours de {@link #emitVoxelSlashArc} — même
+     * lacet, même tangage, même inclinaison, même tête qui court — pour que les cubes
+     * tombent sur le liseré voxel et non à côté. Seule la sortie change : au lieu d'écrire
+     * des sommets colorés dans le tampon courant, on empile dans la file de
+     * {@link VoidPortalFx}, qui vide la sienne à l'étape {@code AFTER_PARTICLES}.</p>
+     *
+     * <p>Les coordonnées de la file sont en MONDE alors que l'arc travaille en relatif
+     * caméra : on rajoute donc la position de la caméra. Oublier ce décalage aurait collé
+     * tous les arcs à l'origine du monde.</p>
+     */
+    private static void emitVoidPortalSlashArc(Vec3 cam, float cx, float cy, float cz,
+                                               float yawDeg, float pitchDeg, float tiltRad,
+                                               float radius, float baseHalfSize, float sweepDeg,
+                                               float progress, int connectionStyle) {
+        float yawRad = -yawDeg * Mth.DEG_TO_RAD;
+        float pitchRad = pitchDeg * Mth.DEG_TO_RAD;
+
+        float fx = Mth.sin(yawRad) * Mth.cos(pitchRad);
+        float fy = -Mth.sin(pitchRad);
+        float fz = Mth.cos(yawRad) * Mth.cos(pitchRad);
+
+        float rx0 = Mth.cos(yawRad);
+        float rz0 = -Mth.sin(yawRad);
+        float ux0 = -Mth.sin(yawRad) * Mth.sin(pitchRad);
+        float uy0 = Mth.cos(pitchRad);
+        float uz0 = -Mth.cos(yawRad) * Mth.sin(pitchRad);
+
+        float cosT = Mth.cos(tiltRad);
+        float sinT = Mth.sin(tiltRad);
+        float sx = rx0 * cosT + ux0 * sinT;
+        float sy = uy0 * sinT;
+        float sz = rz0 * cosT + uz0 * sinT;
+
+        // Un pas tous les 4,2 degrés : assez dense pour lire une lame continue, assez
+        // espacé pour que chaque cube reste un CUBE et non un pixel noyé dans le suivant.
+        int pixelSteps = Math.max(12, Math.round(sweepDeg / 4.2f));
+        float halfArc = (sweepDeg * 0.5f) * Mth.DEG_TO_RAD;
+        float headU = Mth.clamp(progress * 1.35f, 0.0f, 1.0f);
+
+        for (int i = 0; i <= pixelSteps; i++) {
+            float u = (float) i / pixelSteps;
+            if (u > headU + 0.15f) break;
+            float distBehind = headU - u;
+            if (distBehind > 0.68f) continue;
+
+            float ang = (u - 0.5f) * 2.0f * halfArc;
+            float ca = Mth.cos(ang);
+            float sa = Mth.sin(ang);
+            float dirX = fx * ca + sx * sa;
+            float dirY = fy * ca + sy * sa;
+            float dirZ = fz * ca + sz * sa;
+
+            float taper = Mth.sin(u * (float) Math.PI);
+            float shapedRadius = connectionStyle == 5 ? radius * (0.82f + 0.28f * taper) : radius;
+            boolean isHead = Math.abs(distBehind) < 0.12f;
+            // La tête se signale par sa TAILLE et non par une couleur : le shader d'abysse
+            // peint tous les cubes, on ne peut pas lui réclamer un bout clair — et c'est
+            // précisément le bout clair qui était refusé.
+            float half = baseHalfSize * (0.95f + 1.25f * taper) * (isHead ? 1.55f : 1.0f);
+            // La traîne s'efface en volume : un cube qui rétrécit se lit mieux qu'un cube
+            // qui pâlit, puisque le shader ne reçoit pas d'alpha.
+            half *= Math.max(0.22f, 1.0f - Math.max(0.0f, distBehind) * 1.15f);
+
+            float px = cx + dirX * shapedRadius;
+            float py = cy + dirY * shapedRadius;
+            float pz = cz + dirZ * shapedRadius;
+            VoidPortalFx.queueCube(cam.x + px, cam.y + py, cam.z + pz, half,
+                    u * 5.7f + progress * 2.2f);
+
+            // Deuxième rang, en retrait vers le centre : l'arc a une ÉPAISSEUR, sinon il
+            // disparaît dès qu'on le regarde par la tranche.
+            if (taper > 0.22f) {
+                float inset = baseHalfSize * 2.10f;
+                VoidPortalFx.queueCube(
+                        cam.x + cx + dirX * (shapedRadius - inset),
+                        cam.y + cy + dirY * (shapedRadius - inset),
+                        cam.z + cz + dirZ * (shapedRadius - inset),
+                        half * 0.70f, u * 4.1f - progress * 1.7f);
+            }
+        }
+    }
 
     /**
      * T361-MOTIONS-UNIQUES : dessine UNE trajectoire de mouvement (une des 22 familles).

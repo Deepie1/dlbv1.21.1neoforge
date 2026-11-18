@@ -639,6 +639,23 @@ public final class DeepGlintColor {
     public static final int GRADIENT_MODE_UMBRAL = 2;
 
     /**
+     * T396-VOID-GLINT : mode de degrade reserve a la famille VIDE.
+     *
+     * <p>Le Vide se signalait par un magenta vif — la couleur de rang ecrite dans le nom de
+     * l'arme. C'etait lisible et c'etait faux : une arme qui PREND l'espace ne peut pas
+     * briller plus fort que tout le reste de l'inventaire. Le mode 3 inverse la charge de la
+     * preuve. Le fond n'est pas une teinte sombre, c'est du NOIR, et ce noir occupe la
+     * majorite de la surface ; ce qui brille n'est plus une nappe mais un reseau de
+     * filaments etroits — les cretes d'un {@code sin} eleve a la puissance six — qui court
+     * sur la lame comme une fracture. On ne lit pas une couleur, on lit un manque.</p>
+     *
+     * <p>Les modes 0 et 1 interpolent entre deux teintes, le mode 2 melange trois arrets
+     * dans un champ nuageux ; aucun des trois ne peut produire cela, parce que tous les
+     * trois repartissent leur lumiere de facon continue. Ici elle est CONCENTREE.</p>
+     */
+    public static final int GRADIENT_MODE_VOID = 3;
+
+    /**
      * True si l'un des enchantements de la pile appartient a la famille OMBRE.
      *
      * <p>On interroge le MEME classificateur que {@link #resolve(String, int)} plutot que de
@@ -646,6 +663,51 @@ public final class DeepGlintColor {
      * egale a la constante {@code SHADOW} et toute comparaison de teinte serait fausse — le
      * violet du chaos et celui de la foudre tombent d'ailleurs dans la meme plage de teinte.</p>
      */
+    /**
+     * True si la pile releve de la famille VIDE : soit par ses enchantements, soit parce
+     * que c'est une epee de demonstration {@code /anim void}.
+     *
+     * <p>Le second cas n'est pas un detail d'implementation. L'epee de la commande ne porte
+     * AUCUN enchantement — elle ne transporte que son nom de famille en NBT — donc toute
+     * detection fondee sur les seuls enchantements la laisse en dehors, et c'est exactement
+     * pour cela que la lame d'essai n'avait pas le glint de la famille qu'elle sert a
+     * montrer.</p>
+     */
+    public static boolean isVoidStack(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        try {
+            var tag = deepluckyblock.util.DeepNbt.tag(stack);
+            if (tag != null && deepluckyblock.util.AnimFamily.VOID.equals(
+                    deepluckyblock.util.AnimFamily.canonical(tag.getString("DlbAnimFamily")))) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+            // Une pile sans NBT lisible n'est simplement pas une epee de demonstration.
+        }
+        Map<net.minecraft.world.item.enchantment.Enchantment, Integer> enchants;
+        try {
+            enchants = deepluckyblock.util.DeepEnchant.map(stack);
+        } catch (Throwable t) {
+            return false;
+        }
+        if (enchants == null || enchants.isEmpty()) return false;
+        for (net.minecraft.world.item.enchantment.Enchantment ench : enchants.keySet()) {
+            if (ench == null) continue;
+            net.minecraft.resources.ResourceLocation rl;
+            try {
+                rl = deepluckyblock.util.DeepEnchant.getKeySafe(ench);
+            } catch (Throwable t) {
+                continue;
+            }
+            if (rl == null) continue;
+            String s = rl.toString().toLowerCase(Locale.ROOT);
+            if (s.contains("curse") || s.contains("cursed") || s.contains("blemish")
+                    || s.contains("unlucky")) continue;
+            if (baseColor(s) == DRAGON) return true;
+        }
+        return false;
+    }
+
     public static boolean isShadowStack(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
         Map<net.minecraft.world.item.enchantment.Enchantment, Integer> enchants;

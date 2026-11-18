@@ -34,6 +34,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
+import net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent;
 import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
@@ -4813,6 +4814,150 @@ public final class WeaponVfxServerListener {
     /** Dix secondes : au-dela, la serie est cassee et le compteur repart de zero. */
     private static final long VOID_ECHO_WINDOW = 200L;
 
+    // ======================================================================================
+    //  T396-VOID-GRIP : L'EMPRISE DU VIDE
+    // ======================================================================================
+
+    /**
+     * Ce que le Vide tient, le Vide le garde.
+     *
+     * <p><b>Le defaut repare.</b> Les cinq signatures repositionnaient leurs victimes a la
+     * main ({@code setPos}, {@code voidPush}) sans jamais declarer qu'elles les TENAIENT.
+     * Un seul degat venu d'ailleurs — un seul coup d'un autre mob, une fleche, le joueur
+     * lui-meme — suffisait alors : {@code LivingEntity.hurt} appelle {@code knockback}, la
+     * cible encaisse une impulsion horizontale, et comme l'enfoncement de la Porte
+     * d'Horizon ne corrigeait que l'ordonnee, le corps glissait hors du puits en gardant sa
+     * profondeur. L'animation continuait a jouer dans le vide, a cote de sa victime.</p>
+     *
+     * <p><b>Trois verrous, pas un.</b> Annuler le recul ne suffit pas, et figer la position
+     * non plus :</p>
+     * <ol>
+     *   <li>le <b>recul</b> est refuse a la source ({@link LivingKnockBackEvent}), avant
+     *       meme que l'impulsion ne soit ecrite — c'est le seul endroit ou l'on attrape
+     *       aussi bien la fleche que le coup d'epee et la detonation de creeper ;</li>
+     *   <li>la <b>derive</b> residuelle est effacee a chaque tick, parce qu'une entite
+     *       poussee par simple collision n'a jamais declenche d'evenement de recul ;</li>
+     *   <li>l'<b>intention</b> est coupee quand {@code fullStun} est demande : un mob dont
+     *       l'IA marche encore sort du puits par ses propres pattes, sans aucun degat.</li>
+     * </ol>
+     *
+     * <p><b>Pourquoi une table separee de {@code MOVEMENT_HOLDS}.</b> L'emprise de bois
+     * teleporte sa cible sur {@code x, y, z} a chaque tick : elle est parfaite pour un mob
+     * qu'on cloue, inutilisable pour les signatures du Vide, dont tout l'interet est de
+     * DEPLACER leurs victimes — la sphere les rassemble, la Porte les enfonce, la chaine
+     * les tire. L'emprise du Vide ne dicte donc jamais l'ordonnee : elle interdit a
+     * quiconque d'AUTRE de bouger le corps, et laisse la signature le mener.</p>
+     *
+     * @param expires  peremption, en temps de MONDE ({@code getGameTime})
+     * @param ax       ancre en x, ou {@code NaN} si la signature mene elle-meme le corps
+     * @param az       ancre en z, meme convention
+     * @param fullStun coupe l'IA et les attaques de la cible
+     */
+    private record VoidGrip(long expires, double ax, double az, boolean fullStun) { }
+
+    private static final Map<Integer, VoidGrip> VOID_GRIPS = new ConcurrentHashMap<>();
+
+    /**
+     * Pose ou prolonge une emprise. Un deuxieme appel ne REMPLACE pas le premier : il garde
+     * la peremption la plus lointaine et le verrou le plus fort, sans quoi le dernier coup
+     * d'une rafale — toujours le plus court — relacherait la prise etablie par le premier.
+     *
+     * @param anchor true pour clouer aussi la position horizontale sur place
+     */
+    private static void voidGrip(LivingEntity victim, int ticks, boolean anchor, boolean fullStun) {
+        if (victim == null || !victim.isAlive()) return;
+        if (!(victim.level() instanceof ServerLevel sl)) return;
+        long until = sl.getGameTime() + Math.max(1, ticks);
+        VoidGrip previous = VOID_GRIPS.get(victim.getId());
+        double ax = anchor ? victim.getX() : Double.NaN;
+        double az = anchor ? victim.getZ() : Double.NaN;
+        if (previous != null) {
+            until = Math.max(until, previous.expires());
+            fullStun = fullStun || previous.fullStun();
+            // L'ancre d'origine prime : elle marque l'endroit ou le corps a ete saisi.
+            if (!Double.isNaN(previous.ax())) { ax = previous.ax(); az = previous.az(); }
+        }
+        rememberSignatureAi(victim);
+        VOID_GRIPS.put(victim.getId(), new VoidGrip(until, ax, az, fullStun));
+        if (fullStun) {
+            if (victim instanceof Mob mob) {
+                mob.setNoAi(true);
+                mob.setTarget(null);
+            }
+            victim.stopUsingItem();
+        }
+    }
+
+    /** Relache une emprise et rend l'IA, sans reveiller un corps tenu par une autre prise. */
+    private static void releaseVoidGrip(LivingEntity victim) {
+        if (victim == null) return;
+        if (VOID_GRIPS.remove(victim.getId()) == null) return;
+        refreshSignatureAi(victim);
+    }
+
+    /** Vrai tant que l'emprise court. Lu par {@link #refreshSignatureAi} et par le recul. */
+    private static boolean isVoidGripped(Entity entity) {
+        if (!(entity instanceof LivingEntity living)) return false;
+        VoidGrip grip = VOID_GRIPS.get(living.getId());
+        return grip != null && living.level().getGameTime() < grip.expires();
+    }
+
+    /** Vrai seulement pour les emprises qui coupent aussi l'intention de la cible. */
+    private static boolean isVoidStunned(Entity entity) {
+        if (!(entity instanceof LivingEntity living)) return false;
+        VoidGrip grip = VOID_GRIPS.get(living.getId());
+        return grip != null && grip.fullStun() && living.level().getGameTime() < grip.expires();
+    }
+
+    /**
+     * Tick d'emprise. Il ne touche JAMAIS a l'ordonnee : l'enfoncement de la Porte, le
+     * soulevement de la sphere et la traction de la chaine restent maitres du corps sur
+     * l'axe vertical. Seule la derive horizontale non voulue est effacee.
+     */
+    private static void tickVoidGrip(LivingEntity target) {
+        if (target == null) return;
+        VoidGrip grip = VOID_GRIPS.get(target.getId());
+        if (grip == null) return;
+        if (!target.isAlive() || target.level().getGameTime() >= grip.expires()) {
+            releaseVoidGrip(target);
+            return;
+        }
+        if (grip.fullStun()) {
+            if (target instanceof Mob mob) {
+                mob.setNoAi(true);
+                mob.setTarget(null);
+            }
+        }
+        if (Double.isNaN(grip.ax())) return;
+        // Ancrage : on remet le corps sur sa colonne de capture. La tolerance evite de
+        // lutter contre les corrections sub-pixel du moteur a chaque tick.
+        Vec3 motion = target.getDeltaMovement();
+        if (motion.x * motion.x + motion.z * motion.z > 1.0E-6) {
+            target.setDeltaMovement(0.0, motion.y, 0.0);
+        }
+        double dx = grip.ax() - target.getX();
+        double dz = grip.az() - target.getZ();
+        if (dx * dx + dz * dz > 1.0E-4) {
+            target.setPos(grip.ax(), target.getY(), grip.az());
+            if (target instanceof ServerPlayer sp) {
+                sp.connection.send(new net.minecraft.network.protocol.game
+                        .ClientboundSetEntityMotionPacket(sp));
+            } else {
+                target.hurtMarked = true;
+            }
+        }
+    }
+
+    /**
+     * Le recul est refuse a tout corps tenu par le Vide. L'evenement est aussi annule quand
+     * c'est l'ATTAQUANT qui est tenu : un mob fige ne projette pas ce qu'il frappe.
+     */
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onVoidGripKnockback(LivingKnockBackEvent event) {
+        if (event.getEntity() == null || event.getEntity().level().isClientSide()) return;
+        if (isVoidGripped(event.getEntity())) event.setCanceled(true);
+    }
+
     /**
      * Gouttes du vide : un ANNEAU de poussiere cyan autour du corps, plus un point blanc.
      *
@@ -5007,6 +5152,7 @@ public final class WeaponVfxServerListener {
         if (now % 100L != 0L) return;
         VOID_MARKS.entrySet().removeIf(e -> e.getValue().expires() <= now);
         VOID_ECHOES.entrySet().removeIf(e -> e.getValue().expires() <= now);
+        VOID_GRIPS.entrySet().removeIf(e -> e.getValue().expires() <= now);
     }
 
     /**
@@ -5141,6 +5287,11 @@ public final class WeaponVfxServerListener {
                         double speed = Math.min(0.78, 0.17 + dist * 0.085);
                         voidPush(sl, victim, ddx / dist * speed, 0.055, ddz / dist * speed);
                     }
+                    // T396-GRIP : la sphere MENE ses victimes, elle ne les cloue pas —
+                    // donc pas d'ancre. Le bail de douze ticks est renouvele par la
+                    // traction suivante (toutes les cinq) et expire de lui-meme a la
+                    // derniere, ce qui rend l'IA juste avant l'effondrement.
+                    voidGrip(victim, 12, false, true);
                     voidHurt(sl, attackerId, victim, base * (solo ? 1.35f : 0.55f));
                     victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 60, 1, true, false));
                     if (solo) {
@@ -5183,6 +5334,9 @@ public final class WeaponVfxServerListener {
                 double ddx = victim.getX() - ox;
                 double ddz = victim.getZ() - oz;
                 double dist = Math.max(0.3, Math.sqrt(ddx * ddx + ddz * ddz));
+                // T396-GRIP : on RELACHE avant de projeter. Une emprise encore active
+                // effacerait la composante horizontale du rejet au tick suivant.
+                releaseVoidGrip(victim);
                 voidPush(sl, victim, ddx / dist * 0.62, 0.34, ddz / dist * 0.62);
                 voidHurt(sl, attackerId, victim, base * 0.70f);
                 addVoidMark(sl, victim, 1, attackerId, base * 0.26f, markEnd);
@@ -5251,6 +5405,10 @@ public final class WeaponVfxServerListener {
                     hit = victims.get(beam % victims.size());
                 }
                 if (hit == null) return;
+                // T396-GRIP : une lance qui TRAVERSE un corps le cloue sur place. Ancre
+                // ferme pendant quatorze ticks : le temps que la hampe ressorte, et la
+                // victime ne derive plus d'un coup de recul recu entre deux lances.
+                voidGrip(hit, 14, true, true);
                 float amount = base * (solo ? 0.46f : 0.62f);
                 voidHurt(sl, attackerId, hit, amount);
                 hit.addEffect(new MobEffectInstance(MobEffects.GLOWING, 120, 0, true, false));
@@ -5346,6 +5504,10 @@ public final class WeaponVfxServerListener {
         // --- DUEL : la victime unique est RETENUE. Elle ne peut pas sortir du corridor. ---
         if (solo) {
             applyMovementHold(target, sl.getGameTime() + 70L, false);
+            // T396-GRIP : l'emprise de bois reposait la cible chaque tick SANS interdire
+            // le recul — on la voyait partir puis revenir d'une saccade a chaque coup
+            // encaisse. L'emprise du Vide refuse l'impulsion a la source.
+            voidGrip(target, 70, true, true);
         }
 
         // --- 20 -> 100 : NEUF ASPIRATIONS, toutes les dix frames. ---
@@ -5365,6 +5527,9 @@ public final class WeaponVfxServerListener {
                         double speed = Math.min(0.46, 0.10 + Math.abs(across) * 0.14);
                         voidPush(sl, victim, -axZ * dir * speed, 0.035, axX * dir * speed);
                     }
+                    // T396-GRIP : la faille ASPIRE vers son axe, donc pas d'ancre en
+                    // foule ; en duel l'ancre posee plus haut tient deja.
+                    voidGrip(victim, 12, false, true);
                     voidHurt(sl, attackerId, victim, base * (solo ? 0.52f : 0.30f));
                     if (pull % 3 == 0) {
                         addVoidMark(sl, victim, 1, attackerId, base * 0.30f, markEnd);
@@ -5401,6 +5566,7 @@ public final class WeaponVfxServerListener {
                 double ddz = victim.getZ() - oz;
                 double across = ddx * (-axZ) + ddz * axX;
                 double dir = across >= 0 ? 1.0 : -1.0;
+                releaseVoidGrip(victim);
                 voidPush(sl, victim, -axZ * dir * 0.70, 0.30, axX * dir * 0.70);
             }
             if (attacker != null && attacker.isAlive()) {
@@ -5504,6 +5670,14 @@ public final class WeaponVfxServerListener {
                             swallowed.put(id, st);
                         }
                         st[2] = at;
+                        // T396-GRIP : LE correctif de l'enfoncement. On ne corrigeait que
+                        // l'ordonnee ; un seul coup recu d'ailleurs poussait le corps hors
+                        // de l'anneau en lui laissant sa profondeur, et le puits continuait
+                        // a jouer a cote de sa victime. L'ancre cloue la colonne de
+                        // capture, le bail de dix ticks est renouvele toutes les deux
+                        // frames tant que le corps est tenu, et s'eteint seul des qu'il
+                        // sort — la remontee reste libre.
+                        voidGrip(victim, 10, true, true);
                     }
                 }
                 // Copie des cles : on retire des corps en cours de route (morts, rendus),
@@ -5562,6 +5736,7 @@ public final class WeaponVfxServerListener {
                 // laissent l'arc se terminer avant que l'anneau ne le reprenne.
                 double[] held = swallowed.remove(passenger.getId());
                 if (held != null) {
+                    releaseVoidGrip(passenger);
                     passenger.setPos(passenger.getX(), held[0], passenger.getZ());
                 }
                 spatOut.put(passenger.getId(), now + 34 + pass * 18 + 26);
@@ -5613,6 +5788,7 @@ public final class WeaponVfxServerListener {
                 // ici. La porte ne garde personne.
                 double[] st = swallowed.remove(victim.getId());
                 if (st != null) victim.setPos(victim.getX(), st[0], victim.getZ());
+                releaseVoidGrip(victim);
                 double ddx = victim.getX() - ox;
                 double ddz = victim.getZ() - oz;
                 double dist = Math.sqrt(ddx * ddx + ddz * ddz);
@@ -5774,6 +5950,10 @@ public final class WeaponVfxServerListener {
                     0.7 + depth * 0.10, 0.8, 0.7 + depth * 0.10, 0.26);
             PixelFx.send(sl, VOID_DUST_INVERT, nx, ny, nz, 18 + depth * 6, 0.6, 0.6, 0.6, 0.14);
 
+            // T396-GRIP : le maillon est SAISI pendant son implosion. Sans cela le
+            // souffle du maillon precedent le deplacait, et l'aspiration vers l'heritier
+            // partait d'un point que la chaine n'avait jamais vise.
+            voidGrip(node, 16, true, true);
             voidHurt(sl, attackerId, node, punch);
             addVoidMark(sl, node, 1, attackerId, base * 0.28f, markEnd);
             node.addEffect(new MobEffectInstance(MobEffects.LEVITATION, 24 + depth * 4, 0, true, false));
@@ -5827,6 +6007,7 @@ public final class WeaponVfxServerListener {
             double flat = Math.sqrt(ddx * ddx + ddz * ddz);
             if (flat > 0.25) {
                 double speed = Math.min(0.52, 0.16 + flat * 0.075);
+                releaseVoidGrip(node);
                 voidPush(sl, node, ddx / flat * speed, 0.18, ddz / flat * speed);
             }
             sl.playSound(null, nx, ny, nz, SoundEvents.PORTAL_TRIGGER, SoundSource.PLAYERS,
@@ -8651,13 +8832,18 @@ public final class WeaponVfxServerListener {
         // sinon un autre effet qui se termine rend le contrôle au mob en plein transport et on le
         // voit se retourner pour marcher contre la vague.
         boolean surf = SURGE_RIDES.containsKey(id);
-        if (wood == null && !soul && !wind && !surf) {
+        // T396-VOID-GRIP : l'emprise du Vide compte comme une IA suspendue, au meme titre
+        // que l'ame et la tornade ; sans cela, la fin d'une autre prise rendrait le controle
+        // a un mob encore tenu au fond du puits d'horizon.
+        boolean voidHold = isVoidStunned(mob);
+        if (wood == null && !soul && !wind && !surf && !voidHold) {
             Boolean baseline = SIGNATURE_BASELINE_NO_AI.remove(id);
             if (baseline != null) mob.setNoAi(baseline);
             return;
         }
         boolean baseline = SIGNATURE_BASELINE_NO_AI.getOrDefault(id, mob.isNoAi());
-        boolean fullyDisabled = soul || wind || surf || (wood != null && wood.fullStun());
+        boolean fullyDisabled = soul || wind || surf || voidHold
+                || (wood != null && wood.fullStun());
         mob.setNoAi(baseline || fullyDisabled);
     }
 
@@ -8680,7 +8866,8 @@ public final class WeaponVfxServerListener {
         MovementHold wood = MOVEMENT_HOLDS.get(living.getId());
         SoulHold soul = SOUL_HOLDS.get(living.getId());
         return (wood != null && wood.fullStun() && now < wood.expires())
-                || (soul != null && now < soul.expires());
+                || (soul != null && now < soul.expires())
+                || isVoidStunned(living);
     }
 
     @SubscribeEvent
@@ -8698,6 +8885,7 @@ public final class WeaponVfxServerListener {
         tickBleed(target);
         tickBloodPools(target.level());
         tickVoidMark(target);
+        tickVoidGrip(target);
         sweepVoidTables(target.level());
         if (SURGE_RIDES.containsKey(target.getId())) return;
         MovementHold hold = MOVEMENT_HOLDS.get(target.getId());

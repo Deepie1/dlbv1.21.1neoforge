@@ -30,6 +30,36 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 - **Démo du shader (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Portal_shader_demo.html
 - **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_src.zip
 
+> **T396 — l'emprise du Vide, le glint noir, l'arc en cubes et la voix du swing.**
+>
+> Cinq corrections, et la première explique les autres.
+>
+> 1. **Aucune animation ne verrouillait le mob.** Les cinq signatures repositionnaient
+>    leurs victimes à la main (`setPos`, `voidPush`) sans jamais déclarer qu'elles les
+>    **tenaient**. Un seul dégât venu d'ailleurs — un autre mob, une flèche — et
+>    `LivingEntity.hurt` appliquait son recul. L'infrastructure d'emprise existait déjà
+>    dans le fichier (`MovementHold`, `isSignatureFullyStunned`, les gardes
+>    `onWoodHeld*`), mais **aucune des cinq fonctions du Vide ne l'appelait**.
+> 2. **D'où l'enfoncement inopérant de la Porte d'Horizon** : le puits ne corrigeait que
+>    l'ordonnée, donc le corps poussé latéralement **glissait hors de l'anneau en gardant
+>    sa profondeur**, et l'animation continuait à jouer à côté de sa victime. L'emprise du
+>    Vide pose trois verrous — recul refusé à la source (`LivingKnockBackEvent`), dérive
+>    effacée chaque tick (une poussée par collision ne lève aucun événement de recul), IA
+>    coupée (un mob qui marche sort du puits sans aucun dégât) — et ne dicte **jamais**
+>    l'ordonnée, pour que la sphère rassemble et que la chaîne tire comme avant.
+> 3. **Glint noir** : le Vide affichait le magenta de rang lu dans le nom de l'arme. Mode
+>    de dégradé dédié, sur le patron du mode ombral : du **noir** sur plus des trois
+>    quarts de la surface, traversé de **filaments** étroits.
+> 4. **Aura de cubes absente sur l'épée `/anim`** : sans enchantement, elle était rejetée
+>    par **deux** filtres successifs (aucune couche résolue, puis pas d'aura de butin).
+>    Elle reçoit une couche synthétisée depuis sa famille.
+> 5. **Arc de coup** : plus de noir à bout blanc. Cinq tons de la palette, pointe lavande,
+>    et l'arc sème les **mêmes petits cubes à texture d'abysse** que l'arme porte au repos.
+> 6. **Sons** : `grep playSound` sur le gestionnaire client renvoyait **zéro**. Les grosses
+>    signatures sonnent (14 à 20 sons chacune) mais ne sortent qu'à 40 % ; les **six coups
+>    sur dix** restants étaient muets. Chaque swing a désormais un **souffle** et un
+>    **timbre** propres à sa famille.
+
 > **T395b — compilation : 14 erreurs `double → float`, et l'outil qui les aurait vues.**
 >
 > Le build a refusé `VoidSignatureVfx.java` sur quatorze « possible lossy conversion from

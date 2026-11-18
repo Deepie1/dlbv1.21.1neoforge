@@ -712,8 +712,8 @@ navigateur, ou récupère les sources via ce lien direct : <a style="color:#c9b6
 href="{URL}" rel="noopener">{ZIP_NAME}</a></div></noscript>
 <aside>
   <div class="eyebrow">Deep Lucky Block · Void VFX</div>
-  <div class="build">T390 · 4 novembre 2026 — douzième famille · palette repeinte · \
-core shader void_portal · grille témoin · tore · chaînette</div>\
+  <div class="build">T396 · 4 novembre 2026 — douzième famille · emprise du Vide · \
+glint noir · slash en cubes d’abysse · voix du swing</div>\
   <h1>VIDE</h1><h2>Cinq signatures</h2>
   <p class="intro">Refonte complète de l’élément vide, <b>portée à cinq signatures</b> \
 (T389) : le Vide tirait dans un sac trois fois plus petit que celui du Sang. Les trois \
@@ -778,6 +778,32 @@ ressource. <b>Au 3ᵉ et au 7ᵉ écho</b>, le porteur gagne <b>Vitesse et Chute
 de Force</b> : la ferveur du Sang récompense déjà l’acharnement par des dégâts, et la \
 famille dont le sujet est le déplacement paie en terrain. Les échos se périment en \
 <b>200 ticks</b> : c’est l’enchaînement qui paie, pas l’accumulation.</p>
+  <p class="refs"><b>T396 — ce que le Vide tient, le Vide le garde.</b> Les cinq \
+signatures repositionnaient leurs victimes sans jamais déclarer qu’elles les \
+<b>tenaient</b> : un seul dégât venu d’ailleurs suffisait à pousser le corps hors de la \
+zone, et l’enfoncement de la Porte d’Horizon — qui ne corrigeait que l’ordonnée — \
+laissait le mob <b>glisser hors du puits en gardant sa profondeur</b>. L’<b>emprise du \
+Vide</b> pose trois verrous : le recul est refusé à la source \
+(<code>LivingKnockBackEvent</code>), la dérive résiduelle est effacée à chaque tick \
+(une entité poussée par collision ne déclenche aucun événement de recul), et l’IA est \
+coupée — un mob qui marche encore sort du puits par ses propres pattes, sans aucun \
+dégât. Elle ne dicte <b>jamais</b> l’ordonnée : la sphère rassemble, la porte enfonce et \
+la chaîne tire comme avant.</p>
+  <p class="refs"><b>T396 — le glint, l’arc et la voix.</b> Le <b>glint</b> du Vide \
+était un magenta vif, la couleur de rang lue dans le nom de l’arme : une arme qui prend \
+l’espace ne peut pas briller plus fort que tout l’inventaire. Mode de dégradé dédié — \
+du <b>noir</b> sur plus des trois quarts de la surface, traversé de <b>filaments</b> \
+étroits (les crêtes d’un sinus à la puissance six) qui finissent sur la lavande \
+glaciaire. L’<b>arc de coup</b> abandonne le noir à bout blanc : le corps prend cinq tons \
+de la palette, la pointe la lavande, et surtout l’arc sème les <b>mêmes petits cubes à \
+texture d’abysse</b> que l’arme porte au repos — mis en file dans \
+<code>VoidPortalFx</code>, donc dessinés dans leur propre passe. L’épée \
+<code>/anim</code> n’avait <b>aucune aura au repos</b> : sans enchantement, les deux \
+filtres d’affichage la rejetaient coup sur coup ; elle reçoit désormais une couche \
+synthétisée depuis sa famille. Enfin, <code>grep playSound</code> sur le gestionnaire \
+client renvoyait <b>zéro</b> : les grosses signatures sonnent, mais elles ne sortent que \
+sur un jet de 40 %, et les <b>six coups sur dix</b> restants étaient muets. Chaque swing a \
+maintenant un <b>souffle</b> et un <b>timbre</b> propres à sa famille.</p>
   <p class="refs"><b>T390 — la repeinte et le trou.</b> La palette vient désormais des \
 quatre gammes du Vide : <b>Deep Abyssal Void</b> (#050D25), le <b>charbon</b>, \
 <b>Call of the Void</b> (#0e0216 → #9518e2) et la série <b>bleu/mauve délavée</b>. Règle \

@@ -414,6 +414,12 @@ public final class EnchantAura {
         if (DeepGlintColor.isShadowStack(stack)) {
             currentGradientMode = DeepGlintColor.GRADIENT_MODE_UMBRAL;
         }
+        // T396-VOID-GLINT : le Vide passe APRES l'ombre. Les deux familles partagent des
+        // violets, et une arme qui releverait des deux doit tomber du cote du Vide, dont le
+        // traitement est le plus specifique.
+        if (DeepGlintColor.isVoidStack(stack)) {
+            currentGradientMode = DeepGlintColor.GRADIENT_MODE_VOID;
+        }
     }
 
     /**

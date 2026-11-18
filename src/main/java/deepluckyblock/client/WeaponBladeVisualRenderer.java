@@ -113,7 +113,18 @@ public final class WeaponBladeVisualRenderer {
         if (displayContext == ItemDisplayContext.GUI) return;
 
         List<WeaponVisualEffectId.ResolvedLayer> layers = WeaponVisualEffectId.resolveLayers(stack, 2);
-        if (layers.isEmpty()) return;
+        // T396-ANIM-AURA : l'épée de démonstration n'a AUCUN enchantement — elle ne porte
+        // que son nom de famille en NBT. Les deux filtres qui suivaient la rejetaient donc
+        // coup sur coup : pas de couche résolue, puis pas d'aura de butin. Une lame qui
+        // existe pour MONTRER une famille se retrouvait être la seule à n'en rien montrer
+        // tant qu'on ne frappait pas. On lui fabrique sa couche à partir de sa famille.
+        boolean animSword = false;
+        if (layers.isEmpty()) {
+            WeaponVisualEffectId animFx = animationAuraEffect(stack);
+            if (animFx == null) return;
+            layers = java.util.List.of(new WeaponVisualEffectId.ResolvedLayer(animFx, 6));
+            animSword = true;
+        }
         // T378-NO-JITTER : la lame suit la main, et ses noeuds avancent le long du fil. Ses
         // pixels se deplacent donc en permanence dans le repere ou emitVoxelCube tire ses
         // variations. Cette classe module deja sa propre variance par l'INDICE du noeud
@@ -137,7 +148,8 @@ public final class WeaponBladeVisualRenderer {
             boolean armActive = isHeldWeaponActive();
             // Le tirage 15 % mêlée / 40 % distance est fait UNE FOIS au loot dans DeepNbt.
             // Sans aura persistée, l'item reste propre au repos ; les éclats d'action restent jouables.
-            if (!armActive && !deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(stack)) return;
+            if (!armActive && !animSword
+                    && !deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(stack)) return;
             WeaponWorldVfxManager.setAlphaFloor(armActive ? 0 : 172);
             WeaponWorldVfxManager.beginFrame(WeaponWorldVfxManager.smoothTimeSeconds());
 
@@ -202,6 +214,26 @@ public final class WeaponBladeVisualRenderer {
      * l'œil ne voit pas de boucle. L'écart reste entre 4 et 11 centièmes d'unité de
      * modèle — « collé ou presque », comme demandé, jamais un nuage détaché.</p>
      */
+    /**
+     * Effet représentatif d'une épée {@code /anim <famille>}, ou {@code null} si la pile
+     * n'en est pas une.
+     *
+     * <p>On prend la PREMIÈRE signature de la famille et pas un tirage : l'aura au repos
+     * doit être stable d'une image à l'autre. Le tirage, lui, reste au moment du coup —
+     * c'est là qu'il a un sens.</p>
+     */
+    private static WeaponVisualEffectId animationAuraEffect(ItemStack stack) {
+        try {
+            var tag = deepluckyblock.util.DeepNbt.tag(stack);
+            if (tag == null) return null;
+            String family = deepluckyblock.util.AnimFamily.canonical(tag.getString("DlbAnimFamily"));
+            if (family == null || family.isEmpty()) return null;
+            return WeaponWorldVfxManager.animationAuraEffect(family);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     private static void renderVoidPortalCubes(MultiBufferSource bufferSource, Matrix4f mat,
                                               Vector3f tmp, List<VoxelNode> nodes, float time) {
         int count = nodes.size();
