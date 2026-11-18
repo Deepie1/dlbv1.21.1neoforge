@@ -3446,8 +3446,9 @@ public final class WeaponVfxServerListener {
         // L'arrachement : une seule fois, et deux piles d'hemorragie. La victime est libre,
         // elle n'est pas indemne.
         bloodHurt(sl, attackerId, target, base * 0.45f);
-        // 140 ticks apres un arrachement qui peut survenir n'importe quand : borne a
-        // soixante, la duree qu'il reste typiquement a la signature qui l'a pose.
+        // T394 : soixante ticks « a partir de maintenant » etait une fuite — un lien qui
+        // casse sur la fin de la chorégraphie faisait saigner trois secondes apres elle.
+        // L'arrachement ne peut plus depasser le mur du porteur.
         addBleedUntil(sl, target, 2, attackerId, base * 0.11f, sl.getGameTime() + 60L, BLEED_PERIOD);
         if (attacker != null && attacker.isAlive()) {
             sl.playSound(null, attacker.getX(), attacker.getY(), attacker.getZ(),
@@ -3542,10 +3543,13 @@ public final class WeaponVfxServerListener {
                                       int periodTicks) {
         if (sl == null) return;
         int period = Math.max(2, periodTicks);
-        long remaining = deadline - sl.getGameTime();
-        // Au moins une perte : une hemorragie qui n'a le temps de rien faire serait un
-        // mensonge visuel — on affiche des gouttes pour rien.
-        if (remaining < period) remaining = period;
+        // T394 : l'echeance demandee est d'abord rabattue sur LE MUR du porteur.
+        long limit = bloodDeadline(attackerId, deadline);
+        long remaining = limit - sl.getGameTime();
+        // Le plancher « au moins une perte » est supprime : c'est lui qui transformait
+        // chaque morsure de flaque tardive en une periode de rab APRES l'echeance. Une
+        // hemorragie qui n'a plus le temps de battre ne doit pas etre posee du tout.
+        if (remaining < period) return;
         addBleed(sl, victim, stacks, attackerId, perStack, (int) remaining, period);
     }
 
@@ -3571,6 +3575,49 @@ public final class WeaponVfxServerListener {
                          int period) { }
 
     private static final Map<Integer, Bleed> BLEEDS = new ConcurrentHashMap<>();
+
+    /**
+     * T394 — LE MUR DU SANG. Echeance absolue, par porteur, au-dela de laquelle plus aucun
+     * degat de la famille sang ne peut etre inflige.
+     *
+     * <p>T387 avait borne chaque source separement. Chacune respectait sa borne et la somme
+     * debordait quand meme : la flaque vivait deux secondes de plus que la saignee, son
+     * plancher « au moins une perte » rajoutait une periode a chaque morsure, et
+     * l'arrachement de lien s'offrait trois secondes a partir de n'importe quand. Borner
+     * les sources une par une ne suffit pas — il en reapparait toujours une. Un mur unique,
+     * ecrit au lancement de la signature et consulte par tout le monde, est la seule forme
+     * de cette regle qui tienne.</p>
+     */
+    private static final Map<Integer, Long> BLOOD_END = new ConcurrentHashMap<>();
+
+    /**
+     * Pose le mur pour ce porteur. Si une signature plus longue est deja en cours, on garde
+     * la plus lointaine : enchainer deux signatures ne doit pas tronquer la premiere.
+     */
+    private static void setBloodWall(int attackerId, long end) {
+        if (attackerId < 0) return;
+        BLOOD_END.merge(attackerId, end, Math::max);
+    }
+
+    /**
+     * Rabat une echeance sur le mur du porteur. Renvoie l'echeance effective, qui peut etre
+     * deja passee — a l'appelant de ne rien poser dans ce cas.
+     */
+    private static long bloodDeadline(int attackerId, long wanted) {
+        if (attackerId < 0) return wanted;
+        Long wall = BLOOD_END.get(attackerId);
+        return wall == null ? wanted : Math.min(wanted, wall);
+    }
+
+    /** Vrai si le mur de ce porteur est franchi : plus rien ne doit saigner de son fait. */
+    private static boolean bloodExpired(ServerLevel sl, int attackerId) {
+        if (attackerId < 0) return false;
+        Long wall = BLOOD_END.get(attackerId);
+        if (wall == null) return false;
+        if (sl.getGameTime() < wall) return false;
+        BLOOD_END.remove(attackerId);
+        return true;
+    }
 
     /**
      * Flaque de sang au sol.
@@ -3662,7 +3709,8 @@ public final class WeaponVfxServerListener {
         if (bleed == null) return;
         if (!(target.level() instanceof ServerLevel sl)) return;
         long now = sl.getGameTime();
-        if (!target.isAlive() || now >= bleed.expires()) {
+        if (!target.isAlive() || now >= bleed.expires()
+                || bloodExpired(sl, bleed.attackerId())) {
             BLEEDS.remove(target.getId());
             return;
         }
@@ -3736,13 +3784,20 @@ public final class WeaponVfxServerListener {
 
     /** Morsure periodique des flaques, et leur extinction. */
     private static void tickBloodPools(net.minecraft.world.level.Level level) {
-        if (BLOOD_POOLS.isEmpty() || !(level instanceof ServerLevel sl)) return;
+        if (!(level instanceof ServerLevel sl)) return;
+        // Le mur se nettoie ici : une carte statique indexee par porteur qui ne perd jamais
+        // ses entrees est la meme fuite que STATIC_CHARGES, deja payee une fois.
+        if (!BLOOD_END.isEmpty()) {
+            long wallNow = sl.getGameTime();
+            BLOOD_END.values().removeIf(end -> end <= wallNow);
+        }
+        if (BLOOD_POOLS.isEmpty()) return;
         String here = sl.dimension().location().toString();
         long now = sl.getGameTime();
         for (Map.Entry<Integer, BloodPool> entry : BLOOD_POOLS.entrySet()) {
             BloodPool pool = entry.getValue();
             if (!pool.dimension().equals(here)) continue;
-            if (now >= pool.expires()) {
+            if (now >= pool.expires() || bloodExpired(sl, pool.attackerId())) {
                 BLOOD_POOLS.remove(entry.getKey());
                 continue;
             }
@@ -3932,7 +3987,12 @@ public final class WeaponVfxServerListener {
         // l'horloge de l'ordonnanceur ; les hemorragies et les flaques, elles, vivent en
         // temps de monde — il faut donc les deux, prises au meme instant.
         final long bleedEnd = sl.getGameTime() + 150 + BLEED_GRACE;
-        final long poolEnd = sl.getGameTime() + 150 + BLEED_GRACE * 2L;
+        // T394 : LE MUR. Au-dela, plus un degat de sang de ce porteur, quelle que
+        // soit la source qui le demande. Et la flaque meurt AVEC la saignee : a
+        // BLEED_GRACE x 2 elle vivait une seconde de plus et reposait une
+        // hemorragie a chaque morsure.
+        setBloodWall(attackerId, bleedEnd);
+        final long poolEnd = bleedEnd;
 
         // Axe de la lame : perpendiculaire a porteur→cible.
         double axX = attacker != null ? target.getX() - attacker.getX()
@@ -4092,7 +4152,12 @@ public final class WeaponVfxServerListener {
         // l'horloge de l'ordonnanceur ; les hemorragies et les flaques, elles, vivent en
         // temps de monde — il faut donc les deux, prises au meme instant.
         final long bleedEnd = sl.getGameTime() + 120 + BLEED_GRACE;
-        final long poolEnd = sl.getGameTime() + 120 + BLEED_GRACE * 2L;
+        // T394 : LE MUR. Au-dela, plus un degat de sang de ce porteur, quelle que
+        // soit la source qui le demande. Et la flaque meurt AVEC la saignee : a
+        // BLEED_GRACE x 2 elle vivait une seconde de plus et reposait une
+        // hemorragie a chaque morsure.
+        setBloodWall(attackerId, bleedEnd);
+        final long poolEnd = bleedEnd;
 
         sl.playSound(null, ox, oy, oz, SoundEvents.PLAYER_ATTACK_CRIT, SoundSource.PLAYERS, 0.70f, 1.35f);
         bloodSwell(sl, now, ox, oy, oz, 3, 0.55f);
@@ -4202,7 +4267,12 @@ public final class WeaponVfxServerListener {
         // l'horloge de l'ordonnanceur ; les hemorragies et les flaques, elles, vivent en
         // temps de monde — il faut donc les deux, prises au meme instant.
         final long bleedEnd = sl.getGameTime() + 170 + BLEED_GRACE;
-        final long poolEnd = sl.getGameTime() + 170 + BLEED_GRACE * 2L;
+        // T394 : LE MUR. Au-dela, plus un degat de sang de ce porteur, quelle que
+        // soit la source qui le demande. Et la flaque meurt AVEC la saignee : a
+        // BLEED_GRACE x 2 elle vivait une seconde de plus et reposait une
+        // hemorragie a chaque morsure.
+        setBloodWall(attackerId, bleedEnd);
+        final long poolEnd = bleedEnd;
 
         // --- 0→15 : les quatre crochets mordent. ---
         sl.playSound(null, ox, oy, oz, SoundEvents.BONE_BLOCK_BREAK, SoundSource.PLAYERS, 0.70f, 1.25f);
@@ -4376,7 +4446,12 @@ public final class WeaponVfxServerListener {
         // l'horloge de l'ordonnanceur ; les hemorragies et les flaques, elles, vivent en
         // temps de monde — il faut donc les deux, prises au meme instant.
         final long bleedEnd = sl.getGameTime() + 140 + BLEED_GRACE;
-        final long poolEnd = sl.getGameTime() + 140 + BLEED_GRACE * 2L;
+        // T394 : LE MUR. Au-dela, plus un degat de sang de ce porteur, quelle que
+        // soit la source qui le demande. Et la flaque meurt AVEC la saignee : a
+        // BLEED_GRACE x 2 elle vivait une seconde de plus et reposait une
+        // hemorragie a chaque morsure.
+        setBloodWall(attackerId, bleedEnd);
+        final long poolEnd = bleedEnd;
         // T385-VERROU : la transfusion est l'autre signature a LIEN. Le coeur est calcule
         // au milieu du segment porteur-victime ; si la victime marche, le coeur derive et
         // les vaisseaux s'etirent. Sept battements = 106 ticks, plus la resorption.
@@ -4531,7 +4606,12 @@ public final class WeaponVfxServerListener {
         // l'horloge de l'ordonnanceur ; les hemorragies et les flaques, elles, vivent en
         // temps de monde — il faut donc les deux, prises au meme instant.
         final long bleedEnd = sl.getGameTime() + 180 + BLEED_GRACE;
-        final long poolEnd = sl.getGameTime() + 180 + BLEED_GRACE * 2L;
+        // T394 : LE MUR. Au-dela, plus un degat de sang de ce porteur, quelle que
+        // soit la source qui le demande. Et la flaque meurt AVEC la saignee : a
+        // BLEED_GRACE x 2 elle vivait une seconde de plus et reposait une
+        // hemorragie a chaque morsure.
+        setBloodWall(attackerId, bleedEnd);
+        final long poolEnd = bleedEnd;
         final java.util.concurrent.atomic.AtomicInteger landed =
                 new java.util.concurrent.atomic.AtomicInteger();
         final java.util.concurrent.atomic.AtomicInteger spilled =
@@ -5496,7 +5576,7 @@ public final class WeaponVfxServerListener {
         // le suivant lira. Les identifiants deja consommes sont dans un Set partage.
         final java.util.Set<Integer> burned = new java.util.HashSet<>();
         chainLink(sl, attackerId, attacker, target.getId(), 0, now + 30, base, markEnd,
-                oy0, burned);
+                target.getX(), oy0, target.getZ(), burned);
     }
 
     /** Longueur maximale d'une chaine. Au-dela, la detonation finale passerait l'ecran en blanc. */
@@ -5510,7 +5590,8 @@ public final class WeaponVfxServerListener {
      */
     private static void chainLink(ServerLevel sl, int attackerId, LivingEntity attacker,
                                   int victimId, int link, int fireTick, float base,
-                                  long markEnd, double oy0, java.util.Set<Integer> burned) {
+                                  long markEnd, double ox0, double oy0, double oz0,
+                                  java.util.Set<Integer> burned) {
         if (sl == null || link >= CHAIN_MAX_LINKS) return;
         final int depth = link;
         final int who = victimId;
@@ -5543,8 +5624,12 @@ public final class WeaponVfxServerListener {
             if (node == null) {
                 // Le corps amorce est mort avant son tour : la chaine s'arrete ici, mais
                 // elle PAIE quand meme ce qu'elle avait accumule. Sinon tuer le maillon
-                // courant serait une parade gratuite.
-                chainDetonate(sl, attackerId, attacker, null, depth, base, markEnd, oy0);
+                // courant serait une parade gratuite — et c'est precisement ce que faisait
+                // ce code avant T394, puisque la detonation sortait sur un corps nul sans
+                // rien toucher. Elle se fait donc a la position de REPLI, celle de
+                // l'implosion precedente.
+                chainDetonate(sl, attackerId, attacker, null, depth, base, markEnd,
+                        ox0, oy0, oz0, burned);
                 return;
             }
             burned.add(who);
@@ -5577,7 +5662,9 @@ public final class WeaponVfxServerListener {
             // --- LE RELAIS. Le corps vivant le plus proche qui n'a pas encore servi. ---
             LivingEntity next = null;
             double bestSqr = Double.MAX_VALUE;
-            for (LivingEntity candidate : voidVictims(sl, nx, ny, nz, 5.5, 3.2, attackerId)) {
+            // 7,0 et non 5,5 : c'est la distance a laquelle se tient encore un groupe
+            // « disperse », et en dessous la chaine s'arretait au deuxieme maillon.
+            for (LivingEntity candidate : voidVictims(sl, nx, ny, nz, 7.0, 3.2, attackerId)) {
                 if (burned.contains(candidate.getId())) continue;
                 double ddx = candidate.getX() - nx;
                 double ddy = candidate.getY() + candidate.getBbHeight() * 0.5 - ny;
@@ -5594,10 +5681,12 @@ public final class WeaponVfxServerListener {
                 if (depth < 2 && node.isAlive()) {
                     applyMovementHold(node, sl.getGameTime() + 34L, false);
                     chainLink(sl, attackerId, attacker, who, depth + 1,
-                            TestProcedure.currentTick(sl) + 30, base * 0.87f, markEnd, oy0, burned);
+                            TestProcedure.currentTick(sl) + 30, base * 0.87f, markEnd,
+                            nx, ny, nz, burned);
                     burned.remove(who);
                 } else {
-                    chainDetonate(sl, attackerId, attacker, node, depth, base, markEnd, oy0);
+                    chainDetonate(sl, attackerId, attacker, node, depth, base, markEnd,
+                            nx, ny, nz, burned);
                 }
                 return;
             }
@@ -5623,7 +5712,7 @@ public final class WeaponVfxServerListener {
 
             int delay = Math.max(14, 40 - depth * 5);
             chainLink(sl, attackerId, attacker, heir.getId(), depth + 1,
-                    TestProcedure.currentTick(sl) + delay, base, markEnd, oy0, burned);
+                    TestProcedure.currentTick(sl) + delay, base, markEnd, nx, ny, nz, burned);
         });
     }
 
@@ -5636,12 +5725,14 @@ public final class WeaponVfxServerListener {
      */
     private static void chainDetonate(ServerLevel sl, int attackerId, LivingEntity attacker,
                                       LivingEntity last, int links, float base, long markEnd,
-                                      double oy0) {
+                                      double ox0, double oy0, double oz0,
+                                      java.util.Set<Integer> burned) {
         if (sl == null) return;
-        final double dx = last != null ? last.getX() : 0.0;
+        // Position de REPLI quand le dernier corps est mort entre deux maillons : celle de
+        // l'implosion precedente. Sortir sur un corps nul revenait a offrir une parade.
+        final double dx = last != null ? last.getX() : ox0;
         final double dy = last != null ? last.getY() + last.getBbHeight() * 0.50 : oy0;
-        final double dz = last != null ? last.getZ() : 0.0;
-        if (last == null) return;
+        final double dz = last != null ? last.getZ() : oz0;
         final int chain = Math.max(1, links + 1);
         final float blast = base * 0.90f * chain;
         final double radius = 2.0 + 0.30 * chain;
@@ -5662,6 +5753,22 @@ public final class WeaponVfxServerListener {
             if (flat < 0.05) { ddx = 1.0; ddz = 0.0; flat = 1.0; }
             voidPush(sl, victim, ddx / flat * 0.74, 0.40, ddz / flat * 0.74);
             victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 60, 1, true, false));
+        }
+        // --- LE GLANAGE. Le relais ne prend que le plus proche non brule, la chaine
+        //     plafonne a huit maillons et le souffle d'une implosion ne porte qu'a 1,4
+        //     bloc : avec six corps disperses, deux ou trois regardaient la chaine sans
+        //     jamais la sentir. Tout corps vivant dans le rayon de travail qui n'a JAMAIS
+        //     ete un maillon prend donc sa part — reduite, parce que la regle de la
+        //     famille reste que la puissance vient de la densite, mais non nulle, parce
+        //     que personne ne doit rester spectateur a trois metres.
+        if (burned != null) {
+            float gleaning = base * 0.55f;
+            for (LivingEntity bystander : voidVictims(sl, dx, dy, dz, radius + 3.4, 3.4, attackerId)) {
+                if (burned.contains(bystander.getId())) continue;
+                voidHurt(sl, attackerId, bystander, gleaning);
+                addVoidMark(sl, bystander, 1, attackerId, base * 0.22f, markEnd);
+                bystander.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 40, 0, true, false));
+            }
         }
         if (attacker != null && attacker.isAlive()) {
             attacker.addEffect(new MobEffectInstance(MobEffects.SLOW_FALLING, 140, 0, true, true));

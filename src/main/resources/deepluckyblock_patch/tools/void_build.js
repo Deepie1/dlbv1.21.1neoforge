@@ -61,7 +61,9 @@ const VOID_SHAPE = (function () {
     prismSpin(t) {
       const spinUp = smooth((t - 0.07) / 0.14);
       const broken = clamp01((t - 150 / 190) / 0.08);
-      return t * (2.4 + 9.0 * spinUp) * (1 - broken * 0.85);
+      /* 2,4 + 9,0 faisait pres de deux tours par seconde : l'oeil n'a pas le temps
+         de reconstruire l'octaedre et ne voit qu'une cage qui gigote. */
+      return t * (2.0 + 4.2 * spinUp) * (1 - broken * 0.85);
     },
     prismBody(t) {
       const into = smooth(t / 0.085), out = smooth((t - 150 / 190) / 0.045);
@@ -99,7 +101,7 @@ const VOID_SHAPE = (function () {
     RIFT_OPEN: 1.08,
     RIFT_CURVE: 0.52,
     RIFT_SNAP: 0.042,
-    RIFT_GHOSTS: 5,
+    RIFT_GHOSTS: 9,
     RIFT_ARMED: 0.30,
     /* Deport horizontal de la pointe, en fraction de RIFT_JAW, pour un angle donne. */
     riftReachOf(ang) {
@@ -130,23 +132,30 @@ const VOID_SHAPE = (function () {
         return SHUT + (this.RIFT_OPEN - SHUT) * (1 - (1 - u) ** 3);
       }
       if (t < this.RIFT_CLOSE) {
+        /* Le frisson divise par trois : une attente doit etre IMMOBILE pour etre tendue,
+           et neuf a-coups brouillaient le vrai claquement. */
         const dread = clamp01((t - this.RIFT_ARMED) / (this.RIFT_CLOSE - this.RIFT_ARMED));
-        const tremor = (0.026 + 0.062 * dread * dread) * Math.sin(t * (46 + 70 * dread));
-        /* La MORSURE MANQUEE : neuf fois il essaie, la dixieme il mord. */
+        const tremor = (0.008 + 0.020 * dread * dread) * Math.sin(t * (31 + 44 * dread));
+        /* TROIS morsures manquees, pas neuf, mais profondes : on les compte. */
         let miss = 0;
-        for (let k = 0; k < 9; k++) {
+        for (let k = 1; k < 9; k += 3) {
           const age = t - (20 + k * 10) / 170;
           if (age < 0) break;
-          if (age > 0.050) continue;
-          const u = age / 0.050;
-          const bite = u < 0.34 ? (u / 0.34) ** 2 : 1 - smooth((u - 0.34) / 0.66);
+          if (age > 0.072) continue;
+          const u = age / 0.072;
+          const bite = u < 0.28 ? (u / 0.28) ** 2 : 1 - smooth((u - 0.28) / 0.72);
           if (bite > miss) miss = bite;
         }
-        return this.RIFT_OPEN + tremor - (this.RIFT_OPEN - SHUT) * 0.34 * miss;
+        /* ET LE PIEGE SE TEND : sans derive lente et monotone, une attente de quatre
+           secondes et demie n'a pas de direction, et paraît deux fois plus longue. */
+        const tighten = (this.RIFT_OPEN - SHUT) * 0.16 * smooth(dread);
+        return this.RIFT_OPEN - tighten + tremor - (this.RIFT_OPEN - SHUT) * 0.62 * miss;
       }
       const u = clamp01((t - this.RIFT_CLOSE) / this.RIFT_SNAP);
-      const after = clamp01((t - this.RIFT_CLOSE - this.RIFT_SNAP) / 0.055);
-      const ring = Math.sin(after * Math.PI * 2) * 0.085 * (1 - after);
+      /* LE CHOC D'ACIER : les deux machoires se percutent, rebondissent et se recollent
+         en vibrant. Sans lui la fermeture est une porte de garage. */
+      const post = clamp01((t - this.RIFT_CLOSE - this.RIFT_SNAP) / 0.075);
+      const ring = Math.sin(post * Math.PI * 6) * 0.26 * (1 - post) * (1 - post);
       /* u^2,2 : en u^3 la fermeture tombait ENTRE deux images. */
       return this.RIFT_OPEN + (SHUT - this.RIFT_OPEN) * (u * u * u ** 0.2) + ring;
     },
@@ -503,19 +512,30 @@ function buildVoid(variant, t, salt = 7331) {
      le peint d'une texture ; ici il n'y a que des cubes. Un panneau plein se lirait comme
      un drap et le damier essaye d'abord se lisait comme un damier : la membrane est donc
      une CAGE — cinq doigts, un bord de fuite, une toile ajouree entre eux. */
-  const dragonWing = (pf, pl, py, bank, yaw, side, span, al, alSoft) => {
+  const dragonWing = (pf, pl, py, bank, yaw, side, span, taper0, al, alSoft) => {
     const chord = 56 * span;
     for (let d = 0; d < 5; d++) {
       /* d = 0 est le BOUT, d = 4 l'epaule : la voilure s'effile vers l'exterieur. C'est
          cette oblique qui fait lire « aile » plutot que « echelle ». */
       const mx = (-56 + (d + 0.5) * 56 / 5) * side;
-      const ch = chord * (0.45 + 0.55 * (d + 0.5) / 5);
+      const ch = chord * (taper0 + (1 - taper0) * (d + 0.5) / 5);
       dragonBox(pf, pl, py, 0, bank, yaw, mx, 0, 2 + ch * 0.5,
                 1.6, 1.6, ch, (d === 4) ? HORIZON : SLATE, al);
       dragonBox(pf, pl, py, 0, bank, yaw, mx, 0, 2 + ch * 0.5,
                 56 / 5 * 0.88, 0.8, ch * 0.88, BASALT, alSoft);
       /* La marche du bord de fuite : sans elle l'aile s'effiloche en cinq tiges. */
       dragonBox(pf, pl, py, 0, bank, yaw, mx, 0, 2 + ch, 56 / 5, 2.2, 2.2, HALO, al);
+    }
+    /* Le doigt TERMINAL prolonge l'os au-dela de la derniere cote et ferme la pointe :
+       c'est lui qu'on cherche du regard pour savoir ou l'aile s'arrete. */
+    if (taper0 < 0.20) {
+      for (let k = 1; k <= 3; k++) {
+        const h = k / 3;
+        dragonBox(pf, pl, py, 0, bank, yaw, (-56 - h * 9) * side, 0,
+                  2 + chord * 0.10 * (1 - h),
+                  3.4 - h * 2.0, 1.8 - h * 0.9, 3.4 - h * 2.0,
+                  k === 3 ? GLACIER : SLATE, al);
+      }
     }
   };
 
@@ -549,20 +569,24 @@ function buildVoid(variant, t, salt = 7331) {
     }
 
     /* LES AILES. Le battement tourne autour de l'axe du nez. */
-    const flap = Math.sin(tt * (4.0 + 3.2 * glow) - 0.6);
+    /* 0,52 rad etait un fremissement ; a 0,95 le battement devient l'animation
+       principale de la bete, ce qu'il est chez vanilla aussi. */
+    const flap = Math.sin(tt * (4.6 + 3.2 * glow) - 0.6);
     for (let wing = 0; wing < 2; wing++) {
       const side = wing === 0 ? 1 : -1;
-      const bank = (0.22 + 0.52 * flap) * side;
+      const bank = (0.10 + 0.95 * flap) * side;
       let piv = dragonRot(-2.0 * DRAGON_U, -1.0 * DRAGON_U, -12.0 * DRAGON_U * side,
                           0, 0, bodyYaw);
       const wf = bodyF + piv[0], wl = bodyL + piv[2], wy = bodyY + piv[1];
       dragonBox(wf, wl, wy, 0, bank, bodyYaw, -28 * side, 0, 0, 56, 8, 8, SLATE, al);
-      dragonWing(wf, wl, wy, bank, bodyYaw, side, 1.0, al, alSoft);
-      const tipBank = bank + 0.42 * side * (0.5 + 0.5 * flap);
+      dragonWing(wf, wl, wy, bank, bodyYaw, side, 1.0, 0.55, al, alSoft);
+      const tipBank = bank + 0.70 * side * (0.5 + 0.5 * flap);
       piv = dragonRot(0, 0, -56.0 * DRAGON_U * side, 0, bank, bodyYaw);
       const tf = wf + piv[0], tl = wl + piv[2], ty = wy + piv[1];
       dragonBox(tf, tl, ty, 0, tipBank, bodyYaw, -28 * side, 0, 0, 56, 4, 4, SLATE, al);
-      dragonWing(tf, tl, ty, tipBank, bodyYaw, side, 0.82, al, alSoft);
+      /* Le BOUT s'effile presque a rien : sans pointe la voilure se terminait au
+         carre, et c'est ce que les captures montraient — une aile sans bout. */
+      dragonWing(tf, tl, ty, tipBank, bodyYaw, side, 0.95, 0.08, al, alSoft);
     }
 
     /* LES PATTES, repliees : la bete vole, elle ne marche pas. */
@@ -583,8 +607,8 @@ function buildVoid(variant, t, salt = 7331) {
                 shinW, shinH, shinW, SLATE, alSoft);
       piv = dragonRot(0, -shinH * DRAGON_U, 0, -tuck * 1.5, 0, bodyYaw);
       dragonBox(kf + piv[0], kl + piv[2], ky + piv[1], -tuck * 0.4, 0, bodyYaw,
-                0, rear ? 3 : 2, rear ? -8 : -4,
-                rear ? 18 : 8, rear ? 6 : 4, rear ? 24 : 16, HALO, al);
+                0, rear ? 2 : 1.4, rear ? -5 : -3,
+                rear ? 11 : 6, rear ? 4 : 3, rear ? 14 : 11, HALO, al);
     }
 
     /* LE COU : cinq fois la meme boite. */
@@ -844,7 +868,7 @@ function buildVoid(variant, t, salt = 7331) {
       if (t < fire || t > V.PRISM_BREAK) continue;
       const ray = prismRay(k, V.prismSpin(fire), V.PRISM_W * V.prismBody(fire));
       if (!ray) continue;
-      const kick = (1 - smooth((t - fire) / 0.085)) * 0.11;
+      const kick = (1 - smooth((t - fire) / 0.085)) * 0.055;
       recF -= ray.d[0] * kick; recL -= ray.d[1] * kick; recY -= ray.d[2] * kick;
     }
 
@@ -858,18 +882,25 @@ function buildVoid(variant, t, salt = 7331) {
         const spread = 0.62 * V.PRISM_W;
         for (let f = -3.4; f <= head; f += 0.085) {
           const grow = clamp01((f + 3.4) / 0.9);
-          const th = (0.030 + 0.040 * grow) * live;
+          /* 0,140 de large : deux fois l'arete du cristal. Elle reste la chose la plus
+             epaisse de la signature, mais une brique n'est pas un trait. */
+          const th = (0.024 + 0.032 * grow) * live;
           box(f, 0, yc, th, th, th, grow > 0.82 ? SINGULAR : GLACIER,
               opq(a * (0.55 + 0.45 * grow) * beat * live));
         }
         /* Les sept fils, la ou les sept rayons entrent : sept choses paralleles a
            l'arrivee, sept choses divergentes au depart. */
+        /* Un pas de 0,13 pour des cubes de 0,048 : plus de vide que de matiere, et ces
+           sept lignes de tirets etaient LE pointille des captures. Le pas passe sous la
+           taille du cube, et les fils ne courent plus que sur les deux derniers blocs,
+           la ou ils convergent vers les sept points d'entree. */
+        const tail = Math.max(-3.4, head - 2.0);
         for (let k = 0; k < 7; k++) {
           const off = k * (TAU / 7) + 0.40;
           const ol = Math.cos(off) * spread, oy = Math.sin(off) * spread;
-          for (let f = -3.4; f <= head; f += 0.13) {
+          for (let f = tail; f <= head; f += 0.038) {
             const grow = clamp01((f + 3.4) / 1.2);
-            box(f, ol, yc + oy, 0.024, 0.024, 0.024,
+            box(f, ol, yc + oy, 0.020, 0.020, 0.020,
                 k % 3 === 0 ? GLACIER : (k % 3 === 1 ? HORIZON : HALO),
                 opq(a * (0.30 + 0.45 * grow) * live));
           }
@@ -907,11 +938,12 @@ function buildVoid(variant, t, salt = 7331) {
 
         if (glow > 0.12) {
           const head = dragonMuzzle(orbit, radius, yBase, t);
-          const steps = 38;
+          /* 76 pas au lieu de 38 : fin ET continu, c'est un pas plus court. */
+          const steps = 76;
           for (let k = 1; k <= steps; k++) {
             const u = k / steps;
             const swell = Math.sin(u * PI) * 0.10 * glow;
-            const th = (0.028 + 0.055 * glow) * (1 - u * 0.45) + swell * 0.35;
+            const th = (0.021 + 0.008 * glow) * (1 - u * 0.45) + swell * 0.10;
             box(head[0] + (0 - head[0]) * u, head[1] + (0 - head[1]) * u,
                 head[2] + (yc - head[2]) * u + Math.sin(u * PI) * 0.18,
                 th, th, th,
@@ -964,19 +996,27 @@ function buildVoid(variant, t, salt = 7331) {
       if (un < 1e-4) { ux = 1; ul = 0; uy = 0; un = 1; }
       ux /= un; ul /= un; uy /= un;
       const wx = rd[1] * uy - rd[2] * ul, wl = rd[2] * ux - rd[0] * uy, wy = rd[0] * ul - rd[1] * ux;
-      const steps = Math.max(3, Math.min(40, Math.round(reach / 0.155)));
-      const tone = k % 3 === 0 ? GLACIER : (k % 3 === 1 ? HORIZON : HALO);
-      const rad = 0.052 + 0.012 * Math.sin(t * 24 + k);
+      /* LE PAS EST PLUS PETIT QUE LE CUBE : seule facon d'obtenir un trait plein.
+         L'ancienne couronne de cinq cubes espacee de 0,155 etait large ET trouee. */
+      const steps = Math.max(6, Math.min(110, Math.round(reach / 0.042)));
+      /* HALO sur un trait de 0,05 bloc disparait : deux tons clairs seulement, sinon
+         un faisceau sur trois ne se voit pas et les autres ont l'air pointilles. */
+      const tone = (k & 1) === 0 ? GLACIER : HORIZON;
       for (let si = 0; si <= steps; si++) {
         const u = si / steps, d = u * reach;
         const ff = bf + rd[0] * d, ll = bl + rd[1] * d, yy = by + rd[2] * d;
-        const taper = 1 - 0.45 * u;
-        for (let c = 0; c < 5; c++) {
-          const ang = c * (TAU / 5) + d * 2.4 + t * 6;
-          const ca = Math.cos(ang) * rad * taper, sa = Math.sin(ang) * rad * taper;
-          box(ff + ux * ca + wx * sa, ll + ul * ca + wl * sa, yy + uy * ca + wy * sa,
-              0.026, 0.026, 0.026, si === steps ? SINGULAR : tone,
-              opq(a * (0.52 + 0.48 * (1 - u)) * live));
+        const core = 0.025 * (1 - 0.30 * u);
+        box(ff, ll, yy, core, core, core, si === steps ? SINGULAR : tone,
+            opq(a * (0.52 + 0.48 * (1 - u)) * live));
+        /* Pas d'etincelle satellite : au banc, un cube decale tous les quatre pas
+           dessine une SECONDE ligne trouee, et c'est elle que l'oeil suit. La vrille
+           passe par la TEINTE du coeur. */
+        if (si % 5 === 0 && si < steps) {
+          const shimmer = 0.5 + 0.5 * Math.sin(d * 2.4 + t * 6 + k);
+          /* MEME taille que le coeur : grossie, la perle se detachait et le faisceau se
+             lisait comme un chapelet. Seule la teinte change. */
+          box(ff, ll, yy, core, core, core,
+              shimmer > 0.72 ? SINGULAR : GLACIER, opq(a * (0.55 + 0.40 * shimmer) * live));
         }
       }
       const ef = bf + rd[0] * reach, el = bl + rd[1] * reach, ey = by + rd[2] * reach;
@@ -1052,9 +1092,19 @@ function buildVoid(variant, t, salt = 7331) {
           fade = 1 - smooth((t - V.PRISM_BREAK) / 0.20) * 0.75;
         }
         const equator = e < 4;
-        const th = (equator ? 0.040 : 0.029) * (0.55 + 0.45 * body + 0.45 * broken);
+        /* 0,080 de large : deux fois le faisceau. L'arete ne doit pas peser plus que
+           l'objet. Et la boucle est ecrite en clair : segment() plafonne a 26 cubes, une
+           arete de 1,63 a ce pas en demande 34, l'octaedre serait devenu pointille. */
+        const th = (equator ? 0.032 : 0.024) * (0.55 + 0.45 * body + 0.45 * broken);
         const tone = broken > 0 ? ((e & 1) === 0 ? BASALT : SLATE) : (equator ? GLACIER : HORIZON);
-        segment(f0, l0, y0, f1, l1, y1, th, tone, opq(a * 0.95 * fade), equator ? 0.052 : 0.062);
+        const ef2 = f1 - f0, el2 = l1 - l0, ey2 = y1 - y0;
+        const elen = Math.sqrt(ef2 * ef2 + el2 * el2 + ey2 * ey2);
+        const en = Math.max(2, Math.min(60, Math.round(elen / Math.max(0.020, th * 1.55))));
+        const ealpha = opq(a * 0.95 * fade);
+        for (let es = 0; es <= en; es++) {
+          const eu = es / en;
+          box(f0 + ef2 * eu, l0 + el2 * eu, y0 + ey2 * eu, th, th, th, tone, ealpha);
+        }
       }
       if (broken <= 0) {
         for (let v = 0; v < 6; v++) {
@@ -1222,6 +1272,26 @@ function buildVoid(variant, t, salt = 7331) {
             box(Math.sin(turn) * rr, ll + end * v * 0.16 * (1 - 0.4 * load),
                 base + 0.16 + Math.cos(turn) * rr, 0.030, 0.030, 0.030,
                 load > 0.6 ? GLACIER : HALO, opq(a * (0.55 + 0.45 * load)));
+          }
+        }
+      }
+
+      /* ---- 2 quater. L'ONDE DE CHOC : un eclat blanc part du centre de la ligne de
+         morsure et la parcourt dans les deux sens a vitesse finie. C'est ce qui donne au
+         claquement sa TAILLE — sans lui, la machoire mord en silence. ---- */
+      {
+        const shock = t - V.RIFT_CLOSE - V.RIFT_SNAP * 0.82;
+        if (shock > 0 && shock < 0.10) {
+          const front = shock * 42, fade = 1 - clamp01(shock / 0.10);
+          for (let i = 0; i < 26; i++) {
+            const lu = -1 + 2 * i / 25, prof = V.riftProfile(lu);
+            if (prof < 0.08) continue;
+            const near = 1 - clamp01(Math.abs(Math.abs(lu) - front) / 0.30);
+            if (near <= 0) continue;
+            const jt = V.riftJawPoint(1, ang, V.RIFT_JAW * (0.42 + 0.58 * prof));
+            const sz = 0.030 + 0.075 * near;
+            box(0, lu * half, base + jt[1] * 0.96, sz, sz, sz,
+                near > 0.55 ? SINGULAR : GLACIER, opq(a * fade * (0.35 + 0.65 * near)));
           }
         }
       }
@@ -1441,8 +1511,20 @@ function buildVoid(variant, t, salt = 7331) {
           const u = h / 22, yy = floorY + u * 2.45;
           const bend = strength / Math.max(0.5, r0) / (1 + yy * yy * 0.55);
           const rr = Math.max(ring * 0.22, r0 - bend);
-          const swirl = Math.sin(phase + u * 5.6 * wave - t * 3.1) * 0.17 * u;
-          const lateral = Math.cos(phase + u * 4.3 * wave - t * 2.6) * 0.13 * u;
+          /* L'ONDULATION, pour de bon : deux harmoniques non commensurables d'amplitudes
+             inegales (donc jamais symetrique), une enveloppe en u^1,35, et surtout une
+             BOSSE QUI MONTE le long du montant et sort par le haut. C'est elle qu'on
+             appelle une vague, et c'est elle qui manquait. */
+          const env = Math.pow(u, 1.35);
+          const travel = fract(t * 0.31 + i * 0.0625 + hash(salt, i * 37));
+          const bq = (u - travel) * 3.6;
+          const bump = Math.exp(-bq * bq) * (0.55 + 0.45 * wave);
+          const swirl = (Math.sin(phase + u * 5.6 * wave - t * 3.1) * 0.62
+                       + Math.sin(phase * 1.7 + u * 2.21 * wave + t * 1.9) * 0.31) * env
+                       + bump * 0.46;
+          const lateral = (Math.cos(phase + u * 4.3 * wave - t * 2.6) * 0.42
+                         + Math.cos(phase * 0.6 + u * 1.63 * wave - t * 1.3) * 0.25) * env
+                         + bump * 0.22;
           const ff = Math.cos(ang + lateral * 0.5) * (rr + swirl);
           const ll = Math.sin(ang + lateral * 0.5) * (rr + swirl);
           if (h > 0) {

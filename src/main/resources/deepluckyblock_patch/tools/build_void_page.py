@@ -53,7 +53,7 @@ assert RENDER.count(MARK) == 1, 'marqueur de decoupe introuvable dans preview_re
 _, TAIL = RENDER.split(MARK, 1)
 
 HEAD = r"""/* ===== Rendu ===== */
-const SUBS=['grille 9\u00d79 \u00b7 lentille \u00b7 anneau d\u2019Einstein \u00b7 disque d\u2019accr\u00e9tion','octa\u00e8dre \u00b7 sept rayons r\u00e9fract\u00e9s \u00b7 indices 1,14 \u2192 1,62','pi\u00e8ge \u00e0 loup de 8,6 blocs \u00b7 neuf morsures manqu\u00e9es \u00b7 claquement en 7 ticks','anneau au sol \xb7 cage lentill\xe9e \xb7 sept paraboles','sept stations \xb7 phyllotaxie \xb7 \xd71,35 par maillon'];
+const SUBS=['grille 9\u00d79 \u00b7 lentille \u00b7 anneau d\u2019Einstein \u00b7 disque d\u2019accr\u00e9tion','octa\u00e8dre \u00b7 sept rayons r\u00e9fract\u00e9s \u00b7 indices 1,14 \u2192 1,62','pi\u00e8ge \u00e0 loup de 8,6 blocs \u00b7 trois morsures manqu\u00e9es \u00b7 claquement en 7 ticks','anneau au sol \xb7 cage lentill\xe9e \xb7 sept paraboles','sept stations \xb7 phyllotaxie \xb7 \xd71,35 par maillon'];
 const DUR=[160,190,170,180,200], NAMES=['Sph\u00e8re de Distorsion','Prisme du Dragon','Faille du N\u00e9ant','Porte d\u2019Horizon','L\u2019Effondrement en Cha\u00eene'];
 const BEATS=[
  [['0 \u2192 25','la grille t\u00e9moin sort droite : 9\u00d79, au pas de 0,78 \u2014 <b>c\u2019est le seul rep\u00e8re qui prouvera la d\u00e9formation</b>'],
@@ -73,10 +73,10 @@ const BEATS=[
   ['2 \u2192 51','<b>le pi\u00e8ge s\u0027arme</b>. Deux m\u00e2choires de 2,05 bloc sur charni\u00e8res \u00e0 \u00b10,52, ouvertes \u00e0 <b>62\u00b0</b> en <code>1\u2212(1\u2212u)\u00b3</code> \u2014 vif puis lent, comme un ressort qu\u0027on bande. Aux deux bouts, les <b>ressorts de torsion</b> : leur pas se resserre avec la charge. L\u0027angle de fermeture n\u0027est pas \u00e9crit \u00e0 la main, il se <b>r\u00e9sout</b> \u2014 un pi\u00e8ge qui ferme \u00e0 un cheveu pr\u00e8s ne ferme pas'],
   ['2 \u2192 140','ce n\u0027est pas un disque mais une <b>DEUX FOIS QUATRE M\u00c8TRES TRENTE</b> couch\u00e9e en travers du chemin de l\u0027arme : le corridor du serveur, 9,0 de long sur \u00b11,6, <b>perpendiculaire au coup</b>. Les <b>neuf dents</b> de chaque m\u00e2choire tombent \u00e0 <b>mi-chemin</b> de celles d\u0027en face : elles s\u0027engr\u00e8nent au lieu de se cogner, et c\u0027est \u00e0 \u00e7a qu\u0027on reconna\u00eet un pi\u00e8ge \u00e0 loup'],
   ['20 \u2192 100','<b>les neuf aspirations</b>, une toutes les 10 frames : la mati\u00e8re est tir\u00e9e vers le <b>PLAN</b> et non vers le centre \u2014 <b>le serveur n\u0027applique que la composante perpendiculaire</b>, et tirer vers le centre entasserait tout le corridor en un point'],
-  ['20 \u2192 100','\u00e0 chacune, une <b>morsure manqu\u00e9e</b> : le pi\u00e8ge se referme d\u0027un tiers puis se rouvre. Neuf fois il essaie, la dixi\u00e8me il mord \u2014 <b>le compte des neuf se lit sur le m\u00e9canisme</b>, pas seulement sur la barre au sol'],
-  ['51 \u2192 140','<b>arm\u00e9, et il tremble</b> : 1,5\u00b0 au d\u00e9but, 5\u00b0 juste avant de mordre. C\u0027est le seul avertissement que re\u00e7oit la victime'],
+  ['30 \u2192 90','<b>TROIS morsures manqu\u00e9es</b>, aux aspirations 2, 5 et 8 : le pi\u00e8ge se referme de <b>62 % de sa course</b> puis se rouvre. Il y en avait neuf, une par aspiration, et c\u0027\u00e9tait l\u0027erreur \u2014 <b>quand la m\u00e2choire bouge tout le temps, le vrai claquement ne ressort plus</b> : trop d\u0027\u00e0-coups se lisent comme une image qui saute, pas comme une b\u00eate qui guette'],
+  ['51 \u2192 140','<b>arm\u00e9, et il fr\u00e9mit</b> : 0,5\u00b0 au d\u00e9but, 1,6\u00b0 juste avant de mordre \u2014 <b>trois fois moins qu\u0027avant</b>. Une attente doit \u00eatre <b>immobile</b> pour \u00eatre tendue ; au-del\u00e0, \u00e7a ne se lit plus comme une tension mais comme un d\u00e9faut d\u0027affichage'],
   ['112 \u2192 140','<b>l\u0027autre c\u00f4t\u00e9</b> remonte en violet chorus, le seul ton froid du dossier : C\u00e9cit\u00e9 60 et Naus\u00e9e 100'],
-  ['140 \u2192 147','<b>LE CLAQUEMENT</b>, sept ticks sur cent soixante-dix. L\u0027angle tombe en <code>u<sup>2,2</sup></code> et le bord dent\u00e9 laisse <b>cinq \u00e9chos</b> aux positions qu\u0027il vient de quitter : sans tra\u00een\u00e9e, l\u0027\u0153il ne voit que la position d\u0027arriv\u00e9e et le coup n\u0027existe pas. En <code>u\u00b3</code> sur cinq ticks, mesur\u00e9 au banc, la fermeture tombait <b>entre deux images</b>'],
+  ['140 \u2192 147','<b>LE CLAQUEMENT</b>, sept ticks sur cent soixante-dix. L\u0027angle tombe en <code>u<sup>2,2</sup></code> et le bord dent\u00e9 laisse <b>cinq \u00e9chos</b> aux positions qu\u0027il vient de quitter : sans tra\u00een\u00e9e, l\u0027\u0153il ne voit que la position d\u0027arriv\u00e9e et le coup n\u0027existe pas. En <code>u\u00b3</code> sur cinq ticks, mesur\u00e9 au banc, la fermeture tombait <b>entre deux images</b> <b>Puis le CHOC D\u0027ACIER</b> : les deux rang\u00e9es se percutent, rebondissent de quelques degr\u00e9s et se recollent en <b>trois oscillations amorties</b>, pendant qu\u0027un \u00e9clat blanc part du milieu de la ligne de morsure et la parcourt <b>dans les deux sens \u00e0 vitesse finie</b>. Sans eux la fermeture n\u0027est qu\u0027une porte de garage qui arrive en but\u00e9e'],
   ['143 \u2192 165','<b>le splash de void</b> : trente-quatre gerbes balistiques, <b>chacune avec sa tra\u00een\u00e9e</b> de quatre positions sur la m\u00eame parabole \u2014 une gerbe sans tra\u00een\u00e9e est une pluie de confettis. Vite et bas aux commissures, haut et lent au centre, plus l\u0027onde plate qui fuit la ligne de morsure'],
   ['140 \u2192 170','<b>l\u0027\u00e9jection</b> : ce qui \u00e9tait dedans part <b>perpendiculairement</b>, des deux c\u00f4t\u00e9s \u00e0 la fois \u2014 exactement le <code>voidPush</code> du serveur, qui ne corrige que la composante perpendiculaire']],
  [['0 \u2192 22','<b>le trac\u00e9 au sol</b>, quatre passes de dix points \u00e0 <b>2,12 de rayon</b> \u2014 ticks 0, 5, 10, 15 : <b>le serveur dessine son cercle avant d\u2019ouvrir quoi que ce soit</b>, et l\u2019image le dessine aux m\u00eames ticks'],
@@ -457,14 +457,30 @@ const PORTAL=(function(){
     return r<0.10?null:{mode:0,y:VOID_SHAPE.WARP_YC,a:r,b:r,label:'sph\u00e8re'};}
    if(variant===1)return null;            /* le Prisme : des cubes, pas une vitre */
    if(variant===2){
-    /* La fenetre epouse la GUEULE : elle se dresse quand le piege se referme et
-       disparait avec lui. Calee sur riftCrown elle gardait la meme taille pendant
-       tout le claquement, et le trou cessait d'appartenir a la figure. */
+    /* La fenetre EST la gueule, pas une ellipse posee a cote. Une ellipse de 3,70 x 0,66
+       arrivait de biais en vue trois quarts et ne coincidait avec rien : la vraie
+       ouverture est une LENTILLE bordee par les deux rangees de dents, plus haute au
+       milieu qu'aux bouts (profil en racine) et courbee par RIFT_CURVE. On echantillonne
+       donc le contour sur la geometrie vivante — meme riftJawPoint, meme reach, meme
+       base que riftJaws — en remontant une levre et en redescendant l'autre. */
     const half=VOID_SHAPE.riftHalfLength(t)*0.86;
-    const h=VOID_SHAPE.riftJawPoint(1,VOID_SHAPE.riftJawAngle(t),VOID_SHAPE.RIFT_JAW)[1];
+    const ang=VOID_SHAPE.riftJawAngle(t);
+    const h=VOID_SHAPE.riftJawPoint(1,ang,VOID_SHAPE.RIFT_JAW)[1];
     if(half<0.06||h<0.12)return null;
-    return {mode:2,y:VOID_SHAPE.GROUND_FALLBACK+0.03+h*0.52,
-            a:half,b:h*0.52,label:'gueule'};}
+    const base=VOID_SHAPE.GROUND_FALLBACK+0.03, M=16, ring=[];
+    for(let side=1;side>=-1;side-=2){
+     for(let i=0;i<=M;i++){
+      const u=side>0?(-1+2*i/M):(1-2*i/M);
+      const prof=VOID_SHAPE.riftProfile(u);
+      const reach=VOID_SHAPE.RIFT_JAW*(0.42+0.58*prof);
+      const tip=VOID_SHAPE.riftJawPoint(1,ang,reach);
+      /* 0,94 : la decoupe reste EN DEDANS des dents. Au ras, le liseré des dents passait
+         pour un defaut de bord — le vide doit s'arreter avant le metal. */
+      ring.push([side*(VOID_SHAPE.RIFT_HINGE+tip[0])*0.94,
+                 base+tip[1]*0.94, u*half*0.97]);
+     }
+    }
+    return {mode:2,y:base+h*0.52,a:half,b:h*0.52,label:'gueule',ring:ring};}
    if(variant===3){
     const r=VOID_SHAPE.gateRing(t)*0.88;
     return r<0.12?null:{mode:1,y:VOID_SHAPE.GROUND_FALLBACK+0.06,a:r,b:r,label:'mare'};}
@@ -539,6 +555,17 @@ function cubeHull(f,lat,y,half,spin){
 function portalRim(variant,t){
  const w=PORTAL.windowOf(variant,t);
  if(!w||!PORTAL.ready())return null;
+ /* Contour explicite : la fenetre suit la geometrie vivante et non une ellipse. Son
+    centre est alors le barycentre du contour, pas l'axe de la figure — sinon l'eventail
+    de triangles du shader se replie sur lui-meme des que la forme n'est pas convexe
+    autour de l'axe. */
+ if(w.ring){
+  const pr=[];let mx=0,my=0;
+  for(let i=0;i<w.ring.length;i++){
+   const q=w.ring[i], p=project(q[0],q[1],q[2]);
+   pr.push([p[0],p[1]]);mx+=p[0];my+=p[1];}
+  return {c:[mx/pr.length,my/pr.length], pts:pr, win:w};
+ }
  const c=project(0,w.y,0), pts=[], N=PORTAL.sectors;
  for(let s=0;s<N;s++){
   const ang=s*2*Math.PI/N, ca=Math.cos(ang), sa=Math.sin(ang);

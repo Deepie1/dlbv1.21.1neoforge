@@ -255,7 +255,11 @@ public final class VoidSignatureVfx {
     public static float prismSpin(float t) {
         float spinUp = smooth(clamp((t - 0.07f) / 0.14f));
         float broken = clamp((t - PRISM_BREAK) / 0.08f);
-        return t * (2.4f + 9.0f * spinUp) * (1.0f - broken * 0.85f);
+        // 2,4 + 9,0 faisait près de deux tours par seconde : l'œil n'a pas le temps de
+        // reconstruire l'octaèdre et ne voit qu'une cage qui gigote. C'est ce que
+        // l'utilisateur a lu comme « il se déforme ». Un objet ne se reconnaît qu'à une
+        // vitesse où sa silhouette tient en place.
+        return t * (2.0f + 4.2f * spinUp) * (1.0f - broken * 0.85f);
     }
 
     /** Présence du corps : nulle avant qu'il se pose, pleine en régime, nulle à la fracture. */
@@ -357,7 +361,7 @@ public final class VoidSignatureVfx {
     public static final float RIFT_SNAP = 0.042f;
 
     /** Nombre d'échos de vitesse laissés par le bord denté pendant le claquement. */
-    public static final int RIFT_GHOSTS = 5;
+    public static final int RIFT_GHOSTS = 9;
 
     /** Instant où le piège finit de s'ouvrir. */
     public static final float RIFT_ARMED = 0.30f;
@@ -417,35 +421,46 @@ public final class VoidSignatureVfx {
             return RIFT_SHUT + (RIFT_OPEN - RIFT_SHUT) * ease;
         }
         if (t < RIFT_CLOSE) {
-            // Armé. Le frisson monte : 1,5° au début, 5° juste avant de mordre.
+            // Armé. Le frisson était à 1,5° puis 5° : sur quatre-vingt-dix ticks, ça ne
+            // se lit pas comme une bête qui guette, ça se lit comme une image qui saute.
+            // Divisé par trois. Une attente doit être IMMOBILE pour être tendue.
             float dread = clamp((t - RIFT_ARMED) / (RIFT_CLOSE - RIFT_ARMED));
-            float tremor = (0.026f + 0.062f * dread * dread)
-                    * Mth.sin(t * (46.0f + 70.0f * dread));
-            // LA MORSURE MANQUÉE. Le serveur aspire aux ticks 20, 30, … 100 : à chacune
-            // le piège se referme d'un tiers et se rouvre. Neuf fois il essaie, neuf fois
-            // il rate — et la dixième il mord. Le compte des neuf se lit donc sur le
-            // mécanisme lui-même, pas seulement sur la barre au sol.
+            float tremor = (0.008f + 0.020f * dread * dread)
+                    * Mth.sin(t * (31.0f + 44.0f * dread));
+            // LA MORSURE MANQUÉE. TROIS, pas neuf : neuf à-coups sur la durée de
+            // l'attente brouillaient le vrai claquement, et c'est précisément pour ça que
+            // l'effet de mâchoire manquait. Trois, mais profondes — 62 % de la course —
+            // aux aspirations 2, 5 et 8. On les compte, et on les redoute.
             float miss = 0.0f;
-            for (int k = 0; k < 9; k++) {
+            for (int k = 1; k < 9; k += 3) {
                 float age = t - (20.0f + k * 10.0f) / 170.0f;
                 if (age < 0.0f) break;
-                if (age > 0.050f) continue;
-                float u = age / 0.050f;
+                if (age > 0.072f) continue;
+                float u = age / 0.072f;
                 // Vif à l'aller, mou au retour : un ressort qui se détend, pas un métronome.
-                float bite = u < 0.34f ? (u / 0.34f) * (u / 0.34f)
-                                       : 1.0f - smooth((u - 0.34f) / 0.66f);
+                float bite = u < 0.28f ? (u / 0.28f) * (u / 0.28f)
+                                       : 1.0f - smooth((u - 0.28f) / 0.72f);
                 if (bite > miss) miss = bite;
             }
-            return RIFT_OPEN + tremor - (RIFT_OPEN - RIFT_SHUT) * 0.34f * miss;
+            // ET LE PIÈGE SE TEND. L'attente dure quatre secondes et demie ; sans une
+            // dérive lente et monotone elle n'a pas de direction, et une attente sans
+            // direction paraît deux fois plus longue qu'elle n'est. La gueule se
+            // referme donc de 16 % de sa course pendant qu'elle guette : on ne le voit
+            // pas bouger, on voit que ça s'est resserré.
+            float tighten = (RIFT_OPEN - RIFT_SHUT) * 0.16f * smooth(dread);
+            return RIFT_OPEN - tighten + tremor - (RIFT_OPEN - RIFT_SHUT) * 0.62f * miss;
         }
         float u = clamp((t - RIFT_CLOSE) / RIFT_SNAP);
         // u^2,2 : la fermeture traîne un peu puis avale tout. En u³ elle tombait ENTRE
         // deux images — mesuré au banc : à mi-course les mâchoires n'avaient bougé que
         // de onze pour cent, et le claquement n'existait pas à l'écran.
         float snap = u * u * (float) Math.pow(u, 0.2);
-        // Puis le rebond de l'acier, deux fois plus court et dix fois plus petit.
-        float ring = Mth.sin(clamp((t - RIFT_CLOSE - RIFT_SNAP) / 0.055f) * Mth.PI * 2.0f)
-                * 0.085f * (1.0f - clamp((t - RIFT_CLOSE - RIFT_SNAP) / 0.055f));
+        // LE CHOC D'ACIER. Un piège à loup ne s'arrête pas doucement : les deux mâchoires
+        // se percutent, rebondissent de quelques degrés et se recollent en vibrant. Trois
+        // oscillations amorties, et c'est tout le « claquement » — sans elles la
+        // fermeture est une porte de garage qui arrive en butée.
+        float post = clamp((t - RIFT_CLOSE - RIFT_SNAP) / 0.075f);
+        float ring = Mth.sin(post * Mth.PI * 6.0f) * 0.26f * (1.0f - post) * (1.0f - post);
         return RIFT_OPEN + (RIFT_SHUT - RIFT_OPEN) * snap + ring;
     }
 
@@ -1023,14 +1038,14 @@ public final class VoidSignatureVfx {
                                    float cx, float cy, float cz, float dx, float dz,
                                    float pf, float pl, float py,
                                    float bank, float yaw, float side, float span,
-                                   int al, int alSoft, float[] off) {
+                                   float taper0, int al, int alSoft, float[] off) {
         float chord = 56.0f * span;                      // profondeur maximale
         for (int d = 0; d < 5; d++) {
             // d = 0 est le BOUT de l'aile, d = 4 l'épaule : la voilure s'effile vers
             // l'extérieur. C'est cette oblique qui fait lire « aile » plutôt que
             // « échelle » — un carré de 56 sur 56 sans texture reste un carré.
             float mx = (-56.0f + (d + 0.5f) * 56.0f / 5.0f) * side;
-            float ch = chord * (0.45f + 0.55f * (d + 0.5f) / 5.0f);
+            float ch = chord * (taper0 + (1.0f - taper0) * (d + 0.5f) / 5.0f);
             // Le doigt : il court de l'os jusqu'au bord de fuite.
             dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py,
                     0.0f, bank, yaw, mx, 0.0f, 2.0f + ch * 0.5f,
@@ -1044,6 +1059,19 @@ public final class VoidSignatureVfx {
             dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py,
                     0.0f, bank, yaw, mx, 0.0f, 2.0f + ch,
                     56.0f / 5.0f, 2.2f, 2.2f, HALO, al, off);
+        }
+        // Le doigt TERMINAL : il prolonge l'os au-dela de la derniere cote et ferme la
+        // pointe. C'est lui qu'on cherche du regard pour savoir ou l'aile s'arrete, et
+        // son absence est exactement ce que montraient les captures.
+        if (taper0 < 0.20f) {
+            for (int k = 1; k <= 3; k++) {
+                float h = k / 3.0f;
+                dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz, pf, pl, py,
+                        0.0f, bank, yaw, (-56.0f - h * 9.0f) * side, 0.0f,
+                        2.0f + chord * 0.10f * (1.0f - h),
+                        3.4f - h * 2.0f, 1.8f - h * 0.9f, 3.4f - h * 2.0f,
+                        k == 3 ? GLACIER : SLATE, al, off);
+            }
         }
     }
 
@@ -1107,10 +1135,12 @@ public final class VoidSignatureVfx {
 
         // ---- LES AILES. Pivot (−12, 5, 2) par rapport au pivot du corps. --------------
         // Le battement tourne autour de l'axe du nez : c'est le paramètre « bank ».
-        float flap = Mth.sin(t * (4.0f + 3.2f * glow) - 0.6f);
+        // L'amplitude était de 0,52 rad : à l'écran, un frémissement. À 0,95 le battement
+        // devient l'animation principale de la bête, ce qu'il est chez vanilla aussi.
+        float flap = Mth.sin(t * (4.6f + 3.2f * glow) - 0.6f);
         for (int wing = 0; wing < 2; wing++) {
             float side = wing == 0 ? 1.0f : -1.0f;
-            float bank = (0.22f + 0.52f * flap) * side;
+            float bank = (0.10f + 0.95f * flap) * side;
             // Le pivot, non banqué : la rotation passe PAR lui.
             dragonRot(-2.0f * DRAGON_U, -5.0f * DRAGON_U + 4.0f * DRAGON_U,
                     -12.0f * DRAGON_U * side, 0.0f, 0.0f, bodyYaw, piv);
@@ -1123,10 +1153,10 @@ public final class VoidSignatureVfx {
                     0.0f, bank, bodyYaw, -28.0f * side, 0.0f, 0.0f, 56.0f, 8.0f, 8.0f,
                     SLATE, al, off);
             dragonWing(vc, mat, tmp, cx, cy, cz, dx, dz, wf, wl, wy,
-                    bank, bodyYaw, side, 1.0f, al, alSoft, off);
+                    bank, bodyYaw, side, 1.0f, 0.55f, al, alSoft, off);
             // Le bout d'aile : pivot (−56, 0, 0) par rapport à l'aile, et il casse vers le
             // haut. C'est l'articulation qui empêche l'aile d'être une planche.
-            float tipBank = bank + 0.42f * side * (0.5f + 0.5f * flap);
+            float tipBank = bank + 0.70f * side * (0.5f + 0.5f * flap);
             dragonRot(0.0f, 0.0f, -56.0f * DRAGON_U * side, 0.0f, bank, bodyYaw, piv);
             float tf = wf + piv[0];
             float tl = wl + piv[2];
@@ -1135,7 +1165,10 @@ public final class VoidSignatureVfx {
                     0.0f, tipBank, bodyYaw, -28.0f * side, 0.0f, 0.0f, 56.0f, 4.0f, 4.0f,
                     SLATE, al, off);
             dragonWing(vc, mat, tmp, cx, cy, cz, dx, dz, tf, tl, ty,
-                    tipBank, bodyYaw, side, 0.82f, al, alSoft, off);
+                    // Le BOUT de l'aile s'effile presque à rien : sans cette pointe la
+                    // voilure se terminait au carré, et c'est ce que les captures
+                    // montraient — une aile sans bout.
+                    tipBank, bodyYaw, side, 0.95f, 0.08f, al, alSoft, off);
         }
 
         // ---- LES PATTES, repliées : la bête vole, elle ne marche pas. -----------------
@@ -1172,8 +1205,8 @@ public final class VoidSignatureVfx {
             dragonBox(vc, mat, tmp, cx, cy, cz, dx, dz,
                     kf + piv[0], kl + piv[2], ky + piv[1],
                     -tuck * 0.4f, 0.0f, bodyYaw,
-                    0.0f, rear ? 3.0f : 2.0f, rear ? -8.0f : -4.0f,
-                    rear ? 18.0f : 8.0f, rear ? 6.0f : 4.0f, rear ? 24.0f : 16.0f,
+                    0.0f, rear ? 2.0f : 1.4f, rear ? -5.0f : -3.0f,
+                    rear ? 11.0f : 6.0f, rear ? 4.0f : 3.0f, rear ? 14.0f : 11.0f,
                     HALO, al, off);
         }
 
@@ -1309,7 +1342,7 @@ public final class VoidSignatureVfx {
             float fire = PRISM_FIRE0 + k * PRISM_FIRE_STEP;
             if (t < fire || t > PRISM_BREAK) continue;
             if (!prismRay(k, prismSpin(fire), PRISM_W * prismBody(fire), re, rp, rd)) continue;
-            float kick = (1.0f - smooth(clamp((t - fire) / 0.085f))) * 0.11f;
+            float kick = (1.0f - smooth(clamp((t - fire) / 0.085f))) * 0.055f;
             recF -= rd[0] * kick;
             recL -= rd[1] * kick;
             recY -= rd[2] * kick;
@@ -1329,7 +1362,10 @@ public final class VoidSignatureVfx {
                 // L'ÂME du trait, pleine et blanche : c'est elle qui frappe au tick 42.
                 for (float f = -3.4f; f <= head; f += 0.085f) {
                     float grow = clamp((f + 3.4f) / 0.9f);
-                    float th = (0.030f + 0.040f * grow) * live;
+                    // 0,140 bloc de large : deux fois l'arête du cristal, trois fois un
+                    // faisceau. Elle reste la chose la plus épaisse de la signature —
+                    // c'est son rôle — mais une brique n'est pas un trait.
+                    float th = (0.024f + 0.032f * grow) * live;
                     box(vc, mat, tmp, cx, cy, cz, dx, dz, f, 0.0f, yc, th, th, th,
                             grow > 0.82f ? SINGULAR : GLACIER,
                             opaque(a * (0.55f + 0.45f * grow) * beat * live));
@@ -1337,14 +1373,22 @@ public final class VoidSignatureVfx {
                 // LES SEPT FILS, aux endroits exacts où les sept rayons entrent. On voit
                 // donc arriver sept choses parallèles, et on verra sortir sept choses
                 // divergentes : c'est le verbe de la signature, en une image.
+                // Un pas de 0,13 pour des cubes de 0,048 : il y avait plus de vide que de
+                // matière, et ces sept lignes de tirets en travers de la figure étaient
+                // LE pointillé que montraient les captures. Deux corrections, pas une :
+                // le pas passe sous la taille du cube — sinon rien ne touche rien — et
+                // les fils ne courent plus que sur les deux derniers blocs, là où ils
+                // convergent vers les sept points d'entrée. L'approche reste dite par
+                // l'âme du trait ; sept tirets parallèles ne la disaient pas mieux.
+                float tail = Math.max(-3.4f, head - 2.0f);
                 for (int k = 0; k < 7; k++) {
                     float off = k * (TAU / 7.0f) + 0.40f;
                     float ol = Mth.cos(off) * spread;
                     float oy = Mth.sin(off) * spread;
-                    for (float f = -3.4f; f <= head; f += 0.13f) {
+                    for (float f = tail; f <= head; f += 0.038f) {
                         float grow = clamp((f + 3.4f) / 1.2f);
                         box(vc, mat, tmp, cx, cy, cz, dx, dz, f, ol, yc + oy,
-                                0.024f, 0.024f, 0.024f,
+                                0.020f, 0.020f, 0.020f,
                                 k % 3 == 0 ? GLACIER : (k % 3 == 1 ? HORIZON : HALO),
                                 opaque(a * (0.30f + 0.45f * grow) * live));
                     }
@@ -1401,11 +1445,14 @@ public final class VoidSignatureVfx {
                     float bx = head[0];
                     float bl = head[1];
                     float by = head[2];
-                    int steps = 38;
+                    // 76 pas au lieu de 38 : à 0,013 de côté, un pas de 0,08 laissait un
+                    // pointillé. Fin ET continu, c'est un pas plus court, pas un cube
+                    // plus gros — le piège de densité se paie ici aussi.
+                    int steps = 76;
                     for (int k = 1; k <= steps; k++) {
                         float u = k / (float) steps;
                         float swell = Mth.sin(u * Mth.PI) * 0.10f * glow;
-                        float th = (0.028f + 0.055f * glow) * (1.0f - u * 0.45f) + swell * 0.35f;
+                        float th = (0.021f + 0.008f * glow) * (1.0f - u * 0.45f) + swell * 0.10f;
                         box(vc, mat, tmp, cx, cy, cz, dx, dz,
                                 bx + (0.0f - bx) * u, bl + (0.0f - bl) * u,
                                 by + (yc - by) * u + Mth.sin(u * Mth.PI) * 0.18f,
@@ -1473,25 +1520,39 @@ public final class VoidSignatureVfx {
             float wx = rd[1] * uy - rd[2] * ul;
             float wl = rd[2] * ux - rd[0] * uy;
             float wy = rd[0] * ul - rd[1] * ux;
-            int steps = Math.max(3, Math.min(40, Math.round(reach / 0.155f)));
-            int tone = k % 3 == 0 ? GLACIER : (k % 3 == 1 ? HORIZON : HALO);
-            float rad = 0.052f + 0.012f * Mth.sin(t * 24.0f + k);
+            // LE PAS EST PLUS PETIT QUE LE CUBE : c'est la seule façon d'obtenir un trait
+            // plein. L'ancienne couronne de cinq cubes espacée de 0,155 était large ET
+            // trouée — large parce qu'elle faisait 0,156 bloc de diamètre, trouée parce
+            // qu'un anneau tous les 0,155 pour des cubes de 0,026 ne se touche jamais.
+            // Un cœur d'un cube par pas, et le faisceau fait 0,046 de large, sans trou.
+            int steps = Math.max(6, Math.min(110, Math.round(reach / 0.042f)));
+            // HALO sur un trait de 0,05 bloc disparaît : un tube large pouvait se
+            // permettre un ton sombre, une ligne fine non. Deux tons clairs seulement,
+            // sinon un faisceau sur trois ne se voit pas et les deux autres ont l'air
+            // d'être en pointillé à côté de lui.
+            int tone = (k & 1) == 0 ? GLACIER : HORIZON;
             for (int sIdx = 0; sIdx <= steps; sIdx++) {
                 float u = sIdx / (float) steps;
                 float d = u * reach;
                 float ff = bf + rd[0] * d;
                 float ll = bl + rd[1] * d;
                 float yy = by + rd[2] * d;
-                float taper = 1.0f - 0.45f * u;
-                for (int c = 0; c < 5; c++) {
-                    float ang = c * (TAU / 5.0f) + d * 2.4f + t * 6.0f;
-                    float ca = Mth.cos(ang) * rad * taper;
-                    float sa = Mth.sin(ang) * rad * taper;
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
-                            ff + ux * ca + wx * sa, ll + ul * ca + wl * sa, yy + uy * ca + wy * sa,
-                            0.026f, 0.026f, 0.026f,
-                            sIdx == steps ? SINGULAR : tone,
-                            opaque(a * (0.52f + 0.48f * (1.0f - u)) * live));
+                float core = 0.025f * (1.0f - 0.30f * u);
+                box(vc, mat, tmp, cx, cy, cz, dx, dz, ff, ll, yy,
+                        core, core, core,
+                        sIdx == steps ? SINGULAR : tone,
+                        opaque(a * (0.52f + 0.48f * (1.0f - u)) * live));
+                // Pas d'étincelle satellite : mesuré au banc, un cube décalé tous les
+                // quatre pas dessine une SECONDE ligne, trouée celle-là, et c'est elle que
+                // l'œil suit — la décoration imitait exactement le défaut qu'on vient de
+                // corriger. La vrille passe donc par la TEINTE du cœur, pas par un satellite.
+                if (sIdx % 5 == 0 && sIdx < steps) {
+                    float shimmer = 0.5f + 0.5f * Mth.sin(d * 2.4f + t * 6.0f + k);
+                    // MÊME taille que le cœur : grossie de 22 %, la perle se détachait et
+                    // le faisceau se lisait comme un chapelet. Seule la teinte change.
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz, ff, ll, yy, core, core, core,
+                            shimmer > 0.72f ? SINGULAR : GLACIER,
+                            opaque(a * (0.55f + 0.40f * shimmer) * live));
                 }
             }
             // L'IMPACT. Au sol c'est une marque plaquée sur la surface ; en l'air, l'étoile
@@ -1608,11 +1669,26 @@ public final class VoidSignatureVfx {
                     fade = 1.0f - smooth(clamp((t - PRISM_BREAK) / 0.20f)) * 0.75f;
                 }
                 boolean equator = e < 4;
-                float th = (equator ? 0.040f : 0.029f) * (0.55f + 0.45f * body + 0.45f * broken);
+                // 0,080 bloc de large : deux fois le faisceau, trois fois les cubes
+                // voisins. L'arête d'un objet ne doit pas peser plus que l'objet.
+                float th = (equator ? 0.032f : 0.024f) * (0.55f + 0.45f * body + 0.45f * broken);
                 int tone = broken > 0.0f ? (((e & 1) == 0) ? BASALT : SLATE)
                         : (equator ? GLACIER : HORIZON);
-                segment(vc, mat, tmp, cx, cy, cz, dx, dz, f0, l0, y0, f1, l1, y1,
-                        th, equator ? 0.052f : 0.062f, tone, opaque(a * 0.95f * fade));
+                // En clair, et PAS avec segment() : ce helper plafonne à 26 cubes, et une
+                // arête de 1,63 bloc à ce pas en demande 34 — affiner par segment() aurait
+                // rendu l'octaèdre pointillé. Le pas suit la taille du cube, toujours.
+                float ef2 = f1 - f0;
+                float el2 = l1 - l0;
+                float ey2 = y1 - y0;
+                float elen = Mth.sqrt(ef2 * ef2 + el2 * el2 + ey2 * ey2);
+                int en = Math.max(2, Math.min(60, Math.round(elen / Math.max(0.020f, th * 1.55f))));
+                int ealpha = opaque(a * 0.95f * fade);
+                for (int es = 0; es <= en; es++) {
+                    float eu = es / (float) en;
+                    box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                            f0 + ef2 * eu, l0 + el2 * eu, y0 + ey2 * eu,
+                            th, th, th, tone, ealpha);
+                }
             }
             // Les six sommets, marqués. Sans eux l'octaèdre se lit comme une cage molle.
             if (broken <= 0.0f) {
@@ -1975,6 +2051,32 @@ public final class VoidSignatureVfx {
                 }
             }
 
+            // ---- 2 quater. L'ONDE DE CHOC ---------------------------------------------
+            // Les deux rangées se percutent : un éclat blanc part du centre de la ligne de
+            // morsure et la parcourt dans les deux sens à vitesse finie. C'est ce qui
+            // donne au claquement sa TAILLE — sans lui, la mâchoire mord en silence.
+            {
+                float shock = t - RIFT_CLOSE - RIFT_SNAP * 0.82f;
+                if (shock > 0.0f && shock < 0.10f) {
+                    float front = shock * 42.0f;                 // en unités de u
+                    float fade = 1.0f - clamp(shock / 0.10f);
+                    for (int i = 0; i < 26; i++) {
+                        float lu = -1.0f + 2.0f * i / 25.0f;
+                        float prof = riftProfile(lu);
+                        if (prof < 0.08f) continue;
+                        float near = 1.0f - clamp(Math.abs(Math.abs(lu) - front) / 0.30f);
+                        if (near <= 0.0f) continue;
+                        float[] jt = new float[2];
+                        riftJawPoint(1.0f, ang, RIFT_JAW * (0.42f + 0.58f * prof), jt);
+                        float sz = 0.030f + 0.075f * near;
+                        box(vc, mat, tmp, cx, cy, cz, dx, dz,
+                                0.0f, lu * half, base + jt[1] * 0.96f, sz, sz, sz,
+                                near > 0.55f ? SINGULAR : GLACIER,
+                                opaque(a * fade * (0.35f + 0.65f * near)));
+                    }
+                }
+            }
+
             // ---- 3. LE SPLASH DE VOID -------------------------------------------------
             // À l'instant du contact, ce que la gueule contenait est expulsé. Chaque
             // gerbe est une parabole AVEC SA TRAÎNÉE : sans traînée, une gerbe est une
@@ -2289,8 +2391,27 @@ public final class VoidSignatureVfx {
                     // L'ONDULATION. Elle monte le long du montant (u décalé dans le temps),
                     // elle est nulle au pied — le montant est planté dans le sol — et
                     // maximale en haut, où rien ne le retient.
-                    float swirl = Mth.sin(phase + u * 5.6f * wave - t * 3.1f) * 0.17f * u;
-                    float lateral = Mth.cos(phase + u * 4.3f * wave - t * 2.6f) * 0.13f * u;
+                    // L'ONDULATION, pour de bon. Elle valait 0,17 bloc sur un montant de
+                    // 2,45 : sept pour cent, donc rien. Trois choses la rendent enfin
+                    // visible et ASYMÉTRIQUE :
+                    //   — deux harmoniques de périodes non commensurables, d'amplitudes
+                    //     inégales : la courbe ne se répète jamais à l'œil et n'a pas
+                    //     d'axe de symétrie ;
+                    //   — une enveloppe en u^1,35 : nulle au pied, mais qui part plus
+                    //     tard et monte plus fort qu'une rampe linéaire ;
+                    //   — et surtout une BOSSE QUI MONTE, renflement gaussien remontant
+                    //     le long du montant et sortant par le haut. C'est elle qu'on
+                    //     appelle une vague, et c'est elle qui manquait.
+                    float env = (float) Math.pow(u, 1.35);
+                    float travel = fract(t * 0.31f + i * 0.0625f + hash(salt, i * 37));
+                    float bump = (u - travel) * 3.6f;
+                    bump = (float) Math.exp(-bump * bump) * (0.55f + 0.45f * wave);
+                    float swirl = (Mth.sin(phase + u * 5.6f * wave - t * 3.1f) * 0.62f
+                            + Mth.sin(phase * 1.7f + u * 2.21f * wave + t * 1.9f) * 0.31f)
+                            * env + bump * 0.46f;
+                    float lateral = (Mth.cos(phase + u * 4.3f * wave - t * 2.6f) * 0.42f
+                            + Mth.cos(phase * 0.6f + u * 1.63f * wave - t * 1.3f) * 0.25f)
+                            * env + bump * 0.22f;
                     float ff = Mth.cos(ang + lateral * 0.5f) * (rr + swirl);
                     float ll = Mth.sin(ang + lateral * 0.5f) * (rr + swirl);
                     if (h > 0) {

@@ -24,11 +24,70 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > toujours la dernière version, une fois le cache expiré (quelques minutes). Les liens en
 > SHA sont l'adresse **immédiate**, à utiliser le jour de la livraison.
 
-## Vide — le dragon vanilla et la Faille en piège à loup · 4 novembre 2026 ⟵ **LOT COURANT**
+## Vide — les traits amincis, le prisme lisible et le sang qui s'arrête · 4 novembre 2026 ⟵ **LOT COURANT**
 
 - **Aperçu voxel + abysse (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_preview.html
 - **Démo du shader (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Portal_shader_demo.html
 - **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Five_Signatures_src.zip
+
+> **T394 — neuf reproches, traités un par un.**
+>
+> **1. Le prisme « ne ressemblait plus à rien » — il tournait trop vite.** Il ne se
+> déformait pas : à 11,4 radians par unité de temps, soit près de deux tours par seconde,
+> l'œil n'a pas le temps de reconstruire l'octaèdre et ne voit qu'une cage qui gigote.
+> Vitesse ramenée à 6,2, recul de chaque tir divisé par deux, arêtes affinées de 0,080 à
+> 0,064 bloc. La forme se lit de nouveau, pendant tout le tir.
+>
+> **2. « Tous les traits sont trop épais par rapport aux cubes. »** Mesuré au banc,
+> groupe par groupe, en comparant la distance au plus proche voisin à la largeur du cube :
+> les faisceaux faisaient 0,156 bloc de large **et** étaient troués (une couronne de cinq
+> cubes tous les 0,155), les sept fils du trait d'entrée avaient un pas de 0,13 pour des
+> cubes de 0,048 — plus de vide que de matière —, le souffle du dragon atteignait 0,166.
+> Tout est passé en **pas plus petit que le cube**, seule façon d'obtenir un trait plein :
+> faisceaux à 0,050, fils à 0,040, souffle à 0,050. Plus aucun pointillé involontaire.
+>
+> **3. Le dragon : bout d'aile, pieds, battement.** La voilure se terminait au carré —
+> elle a désormais un **doigt terminal** qui l'effile jusqu'à la pointe. Les pieds
+> vanilla, énormes à cette échelle parce que vanilla les cache sous un corps bien plus
+> massif, sont réduits de 40 %. Et le battement passe de 0,52 à **0,95 radian** : c'est
+> l'animation principale de la bête, comme chez vanilla.
+>
+> **4. Le sang ne peut plus blesser après la fin.** T387 avait borné chaque source
+> séparément ; chacune respectait sa borne et la somme débordait quand même — la flaque
+> vivait deux secondes de plus que la saignée, son plancher « au moins une perte »
+> rajoutait une période à chaque morsure, et l'arrachement de lien s'offrait trois
+> secondes à partir de n'importe quand. Un **mur unique par porteur**, écrit au lancement
+> de la signature, est désormais consulté par toutes les sources. Après lui, aucun dégât
+> de sang ne peut exister.
+>
+> **5. La Faille « laguait » — il y avait trop de mouvement, pas trop peu.** Neuf morsures
+> manquées plus un frisson permanent sur quatre-vingt-dix ticks ne se lisent pas comme une
+> bête qui guette mais comme une image qui saute — et quand tout bouge tout le temps, le
+> vrai claquement ne ressort plus. **Trois** morsures, mais à 62 % de la course ; frisson
+> divisé par trois ; la gueule se **tend** lentement pendant l'attente pour lui donner une
+> direction. Toute l'énergie récupérée passe dans la fermeture : **choc d'acier** en trois
+> oscillations amorties, **onde de choc** qui parcourt la ligne de morsure dans les deux
+> sens, et neuf échos au lieu de cinq.
+>
+> **6. Les fenêtres de portail sont cadrées sur la figure.** La Faille recevait une
+> ellipse de 3,70 × 0,66 qui arrivait de biais et ne coïncidait avec rien. La vraie
+> ouverture est une **lentille** bordée par les deux rangées de dents : le contour est
+> maintenant échantillonné sur la géométrie vivante — même `riftJawPoint`, même portée,
+> même base que les mâchoires. La découpe **est** la gueule.
+>
+> **7. La chaîne touche tout le monde.** Deux trous réels : tuer le maillon amorcé
+> **annulait la détonation** (le code sortait sur un corps nul — la parade gratuite que le
+> commentaire prétendait interdire), et un mob présent mais jamais visité ne recevait
+> rien. La détonation a désormais une position de repli, le relais porte à 7,0 blocs, et
+> un **glanage** final frappe tout corps vivant du rayon de travail qui n'a jamais été un
+> maillon.
+>
+> **8. Les montants de la Porte ondulent enfin.** Troisième demande, et la bonne mesure
+> cette fois : l'ondulation valait 0,17 bloc sur un montant de 2,45, soit sept pour cent —
+> invisible. Elle vaut maintenant 0,62, en **somme de deux harmoniques non
+> commensurables** (donc jamais symétrique, jamais périodique à l'œil), et surtout chaque
+> montant porte une **bosse qui monte** le long de lui et sort par le haut. C'est ça, une
+> vague.
 
 > **T393 — « le dragon ne ressemble à rien », et la Faille se voyait à peine.**
 >
@@ -134,7 +193,8 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > maintenant `DlbAnimFamily`. Le critère de séparation devient le **canal vert** : feu
 > (255,130,16)→(255,203,94), toujours ≥ 130 ; sang (124,0,18)→(200,8,41), toujours ≤ 8.
 > Aperçu : `T387_glint_feu_vs_sang.png`. ZIP **1 075 559 o / 60 entrées**, page **1 519 767 o**.
-> Suffixez les liens de **`?v=387`**.
+> *(Consigne d'epoque : « suffixez les liens de ?v=387 ». Elle est fausse — voir
+> l'encadre en tete de fichier : la redirection de GitHub jette la chaine de requete.)*
 
 > **T386 — le Carnage devient une VOLEE DE LAMES, et le glint du Feu cesse d'etre
 > celui du Sang.** (1) **CARNAGE BERSERK (animation 5)** : les onze arcs tires d'un
