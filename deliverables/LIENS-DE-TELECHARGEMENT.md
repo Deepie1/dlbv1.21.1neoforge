@@ -24,11 +24,45 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > toujours la dernière version, une fois le cache expiré (quelques minutes). Les liens en
 > SHA sont l'adresse **immédiate**, à utiliser le jour de la livraison.
 
-## Chaos — refonte, et des fondus de rien à rien · 18 novembre 2026 ⟵ **LOT COURANT**
+## Chaos — le correctif qui fait redémarrer le jeu · 4 novembre 2026 ⟵ **LOT COURANT**
 
 - **Aperçu voxel des trois signatures (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Three_Signatures_preview.html
 - **Démo du core shader des Pixels 3D (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Pixel_shader_demo.html
 - **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Three_Signatures_src.zip
+
+> **T400 — UN MOT INTERDIT DANS LE SHADER : LE JEU NE DÉMARRAIT PLUS.**
+>
+> `runClient` s'arrêtait au chargement des ressources, sur une erreur de compilation du
+> core shader des Pixels 3D :
+>
+> ```
+> Invalid shaders/core/void_pixel.json: Couldn't compile vertex program
+> ERROR: 0:70: 'packed' : reserved word
+> ```
+>
+> Le vertex shader désempaquetait le canal vert dans une variable locale nommée
+> `packed`. **`packed` est un mot réservé de GLSL 1.50**, la version que Minecraft
+> compile : c'est un qualificatif de disposition des blocs uniformes. Le nom est
+> désormais `gBits`, et le commentaire qui l'entoure interdit explicitement de le
+> renommer en arrière. Aucun autre changement : la formule de désempaquetage, les huit
+> modes, les gris et les enveloppes de T399 sont intacts.
+>
+> **Ce qui a laissé passer la faute, et ce qui la rattrapera désormais.** La page de
+> démonstration compile les *vrais* fichiers du mod — mais en **GLSL ES 3.00** (WebGL 2),
+> qui ne réserve pas `packed`. Le shader compilait donc dans le navigateur pendant qu'il
+> refusait de compiler dans le jeu. La démo prouve ce que le shader *fait* ; elle ne
+> prouvait pas qu'il *compile*. Un outil comble maintenant exactement cet écart :
+>
+> - `tools/glslcheck.py` — lit les quatre `.vsh`/`.fsh`, hors commentaires, et signale
+>   tout identifiant figurant dans la liste des mots réservés par GLSL 1.50 mais pas par
+>   GLSL ES 3.00 (`packed`, `filter`, `resource`, `input`, `output`, `interface`,
+>   `sizeof`, `row_major`, `this`, `union`… une cinquantaine), plus deux pièges déjà payés
+>   ici (`#moj_import` hors vanilla, `const vecN X[]` global). Il sort en erreur, donc il
+>   s'enchaîne avec `floatcheck.py` avant chaque livraison.
+>
+> Vérifié dans les deux sens : sur le code corrigé il affiche `4 shader(s), 0 alerte(s)` ;
+> remis sur la version cassée, il pointe les trois lignes 70, 71 et 72. Un balayage des
+> quatre shaders n'a trouvé **aucun autre** mot interdit.
 
 > **T399 — LES APPARITIONS ET LES DISPARITIONS, DE RIEN À RIEN.**
 >

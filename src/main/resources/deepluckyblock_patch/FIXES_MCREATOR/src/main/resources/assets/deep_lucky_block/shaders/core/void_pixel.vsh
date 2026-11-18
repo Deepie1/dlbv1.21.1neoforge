@@ -67,9 +67,15 @@ void main() {
     // Desempaquetage du canal vert. Le +0.5 avant le floor est obligatoire : Color.g
     // arrive normalise 0..1 et le produit par 255 tombe a 31.99999 pour l'octet 32 sur
     // certaines cartes, ce qui ferait basculer le mode d'un cran sur un pixel sur mille.
-    float packed = floor(Color.g * 255.0 + 0.5);
-    mode = floor(packed / 32.0);
-    bodyGray = (packed - mode * 32.0) / 31.0;
+    //
+    // NE PAS RENOMMER CETTE VARIABLE « packed ». C'est un MOT RESERVE de GLSL 1.50 -- un
+    // qualificatif de disposition des blocs uniformes -- et le jeu refuse de compiler le
+    // programme. Le piege est qu'il n'est PAS reserve en GLSL ES 3.00 : la demo navigateur
+    // compilait sans broncher pendant que Minecraft plantait au chargement. glslcheck.py
+    // teste maintenant cet ecart exact sur les quatre shaders.
+    float gBits = floor(Color.g * 255.0 + 0.5);
+    mode = floor(gBits / 32.0);
+    bodyGray = (gBits - mode * 32.0) / 31.0;
 
     tintHue = Color.b;
     fade = Color.a;

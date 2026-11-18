@@ -196,9 +196,15 @@ void main() {
     // Desempaquetage du canal vert. Le +0.5 avant le floor est obligatoire : Color.g
     // arrive normalise 0..1 et le produit par 255 tombe a 31.99999 pour l'octet 32 sur
     // certaines cartes, ce qui ferait basculer le mode d'un cran sur un pixel sur mille.
-    float packed = floor(Color.g * 255.0 + 0.5);
-    mode = floor(packed / 32.0);
-    bodyGray = (packed - mode * 32.0) / 31.0;
+    //
+    // NE PAS RENOMMER CETTE VARIABLE « packed ». C'est un MOT RESERVE de GLSL 1.50 -- un
+    // qualificatif de disposition des blocs uniformes -- et le jeu refuse de compiler le
+    // programme. Le piege est qu'il n'est PAS reserve en GLSL ES 3.00 : la demo navigateur
+    // compilait sans broncher pendant que Minecraft plantait au chargement. glslcheck.py
+    // teste maintenant cet ecart exact sur les quatre shaders.
+    float gBits = floor(Color.g * 255.0 + 0.5);
+    mode = floor(gBits / 32.0);
+    bodyGray = (gBits - mode * 32.0) / 31.0;
 
     tintHue = Color.b;
     fade = Color.a;
@@ -307,8 +313,13 @@ void main() {
         } else if (mode < 2.5) {
             // 2 MONO — luminance seule. Dans la Sphere d'Entropie, c'est le mode de ce
             // qui est encore EN ORDRE : la couleur n'arrive qu'avec le desordre, et ce
-            // contraste porte a lui seul le sujet de la signature.
-            edgeRgb = vec3(0.70 + 0.30 * sin(wave * TAU));
+            // contraste porte a lui seul le sujet de la signature. L'arete prend LA
+            // luminance DE SON CUBE et non une valeur fixe : une arete blanche
+            // constante rendait les trente-deux crans invisibles des que la cage
+            // occupait l'image, et la sphere ordonnee repassait en boule blanche.
+            // Elle reste toujours plus claire que son corps (0,34 contre 0,055 au cran
+            // zero), donc la cage se lit encore sur la nuit.
+            edgeRgb = vec3((0.21 + 0.66 * bodyGray) * (0.82 + 0.18 * sin(wave * TAU)));
         } else if (mode < 3.5) {
             // 3 SPECTRUM — la roue ENTIERE, lentement. Le vert et le jaune, interdits
             // partout ailleurs, apparaissent ici : c'est le mode du debordement, celui

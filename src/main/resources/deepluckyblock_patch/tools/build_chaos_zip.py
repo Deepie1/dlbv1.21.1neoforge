@@ -71,6 +71,9 @@ EXTRA = [
     'src/main/resources/deepluckyblock_patch/LIRE-MOI-IMPORTANT.md',
     'src/main/resources/deepluckyblock_patch/tools/semcheck.py',
     'src/main/resources/deepluckyblock_patch/tools/floatcheck.py',
+    # glslcheck : il attrape ce que la demo navigateur ne peut pas voir, c'est-a-dire les
+    # mots reserves par GLSL 1.50 (le jeu) et pas par GLSL ES 3.00 (le navigateur).
+    'src/main/resources/deepluckyblock_patch/tools/glslcheck.py',
     'src/main/resources/deepluckyblock_patch/tools/typecheck.py',
     'src/main/resources/deepluckyblock_patch/tools/typecheck-baseline.txt',
     'src/main/resources/deepluckyblock_patch/tools/soundevents_1211.json',
