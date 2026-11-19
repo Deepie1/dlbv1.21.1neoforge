@@ -198,170 +198,564 @@ public final class ChaosSignatureVfx {
     }
 
     // =================================================================================
-    //  LES COUPS — la couche qui manquait
+    //  LES COUPS — QUINZE GESTES, QUINZE FORMES
     // =================================================================================
 
     /**
-     * T401 — L'ATTAQUE VISUELLE.
+     * T401b — CHAQUE TEMPS FORT A SON PROPRE GESTE.
      *
-     * <p><b>Le reproche.</b> « En quoi les animations attaquent les mobs ? Il n'y a pas
-     * réellement d'attaque. » Il était fondé, et pas pour la raison qu'on croirait : les
-     * dégâts tombaient bien. Ce qui manquait, c'est que <b>rien ne touchait la cible à
-     * l'image</b>. Les trois signatures sont des figures — un kaléidoscope, une sphère, une
-     * explosion — et une figure se déploie AUTOUR d'un point sans jamais le frapper. L'œil
-     * voyait donc un décor somptueux et un mob qui perdait des cœurs sans raison visible,
-     * ce qui est la définition exacte d'un effet qui n'attaque pas.</p>
+     * <h3>Ce que la première version faisait de travers</h3>
      *
-     * <p><b>Ce que cette couche ajoute.</b> Sur chaque temps où le serveur inflige un
-     * dégât, et seulement sur ceux-là, une <b>lance de cubes fond sur le centre</b> depuis
-     * l'extérieur, puis <b>éclate</b> en couronne au point d'impact. Le mob étant désormais
-     * cloué à ce centre (voir {@code chaosRoot} côté serveur), la lance le traverse
-     * littéralement. Deux secondes de kaléidoscope sans un coup, c'est une vitrine ; les
-     * mêmes deux secondes ponctuées de six lances, c'est un combat.</p>
+     * <p>Elle avait une seule routine de frappe — une lance qui tombe, une couronne qui
+     * s'ouvre — recopiée <b>quinze fois</b>, avec pour seules différences un angle qui
+     * tournait et un facteur d'échelle. Six fois de suite dans le kaléidoscope, huit dans
+     * la sphère, une dans le big bang : le même objet, à la même vitesse, avec la même
+     * silhouette. Ce n'était pas une chorégraphie, c'était un métronome. Et comme la
+     * deuxième occurrence n'apprend plus rien à l'œil, les quatorze suivantes devenaient
+     * du bruit — exactement l'effet inverse de celui qu'on cherchait.</p>
      *
-     * <p><b>La synchronisation.</b> Les temps ne sont pas devinés : ce sont les mêmes
-     * nombres que ceux de {@code applyKaleidoGameplay} / {@code applyEntropySphereGameplay}
-     * / {@code applyBigBangGameplay}, exprimés en ticks et divisés ici par la durée. Si un
-     * jour un temps bouge d'un côté, il doit bouger de l'autre — c'est le prix d'avoir deux
-     * horloges, et le seul moyen honnête de les tenir ensemble est de les écrire côte à
-     * côte avec la même unité.</p>
+     * <h3>La règle appliquée ici</h3>
+     *
+     * <p><b>Aucun temps fort ne partage sa géométrie avec un autre.</b> Pas un angle de
+     * décalage : une <i>forme</i>, une <i>direction d'arrivée</i>, une <i>vitesse</i> et un
+     * <i>registre chromatique</i> qui lui appartiennent. Et chaque geste découle de ce que
+     * sa signature <b>est</b> :</p>
+     * <ul>
+     *   <li>le <b>kaléidoscope</b> est un instrument à miroirs, donc ses coups sont des
+     *       réflexions : ils convergent par douze, se croisent, se referment en cage, se
+     *       démultiplient, s'enroulent, se replient ;</li>
+     *   <li>la <b>sphère d'entropie</b> ne percute pas, elle <b>érode</b> : ses huit
+     *       pulsations mordent, cisaillent, s'effondrent, vrillent, pleuvent, implosent,
+     *       traversent, dissolvent — et le désordre monte à chacune, comme le niveau que
+     *       le serveur accumule dans {@code CHAOS_ENTROPIES} ;</li>
+     *   <li>le <b>big bang</b> n'a qu'un coup mais quatorze <b>tractions</b> avant lui :
+     *       une traction n'est pas une frappe, elle <i>tire</i>, et sa forme doit s'étirer
+     *       vers le foyer au lieu de s'abattre dessus.</li>
+     * </ul>
+     *
+     * <p>Les ticks ne sont pas choisis pour l'image : ce sont ceux de
+     * {@code applyKaleidoGameplay}, {@code applyEntropySphereGameplay} et
+     * {@code applyBigBangGameplay}, à l'unité près. Si l'un bouge, l'autre doit bouger.</p>
      */
     private static final int[] BEATS_KALEIDO = { 30, 48, 66, 84, 102, 120 };
     private static final int[] BEATS_ENTROPY = { 22, 38, 54, 70, 86, 102, 118, 134 };
-    private static final int[] BEATS_BIGBANG = { 84 };
+    private static final int BEAT_BIGBANG = 84;
 
-    /** Ticks de descente de la lance, puis d'épanouissement de la couronne. */
+    /** Ticks de préparation avant le contact, puis de résolution après. */
     private static final int STRIKE_WIND = 9;
     private static final int STRIKE_BURST = 8;
+
+    private static final float TAU = 6.2831853f;
 
     private static void renderStrikes(float cx, float cy, float cz, float t,
                                       float dx, float dz, float a, int salt,
                                       int variant, int duration) {
-        int[] beats = switch (variant) {
-            case ENTROPY -> BEATS_ENTROPY;
-            case BIGBANG -> BEATS_BIGBANG;
-            default -> BEATS_KALEIDO;
-        };
-        float nowTick = t * duration;
-        // La hauteur du corps visé. Les trois signatures sont centrées à mi-hauteur du mob,
-        // donc viser le centre exact revient à viser le torse : c'est là qu'un coup se lit.
-        float aim = variant == BIGBANG ? 1.20f : (variant == ENTROPY ? 1.15f : 1.05f);
+        switch (variant) {
+            case ENTROPY -> entropyStrikes(cx, cy, cz, t, dx, dz, a, salt, duration);
+            case BIGBANG -> bigBangStrikes(cx, cy, cz, t, dx, dz, a, salt, duration);
+            default -> kaleidoStrikes(cx, cy, cz, t, dx, dz, a, salt, duration);
+        }
+    }
 
-        // UN COUP SE MESURE À SA FIGURE. La cicatrice du big bang occupe un disque de cinq
-        // blocs de rayon ; un éclat d'un bloc quatre-vingts posé en son centre y disparaît,
-        // vérifié au banc. Le kaléidoscope, lui, est serré, et le même éclat y crève
-        // l'écran. L'échelle suit donc la signature au lieu d'être une constante.
-        float blast = variant == BIGBANG ? 2.30f : (variant == ENTROPY ? 1.90f : 1.0f);
+    // ---------------------------------------------------------------------------------
+    //  KALÉIDOSCOPE — six réflexions, six gestes
+    // ---------------------------------------------------------------------------------
 
-        for (int b = 0; b < beats.length; b++) {
-            float since = nowTick - beats[b];
+    private static void kaleidoStrikes(float cx, float cy, float cz, float t,
+                                       float dx, float dz, float a, int salt, int duration) {
+        float now = t * duration;
+        final float aim = 1.05f;
+        float spin = t * TAU;
+
+        for (int k = 0; k < BEATS_KALEIDO.length; k++) {
+            float since = now - BEATS_KALEIDO[k];
             if (since < -STRIKE_WIND || since > STRIKE_BURST) continue;
+            boolean pre = since < 0.0f;
+            float w = pre ? 1.0f + since / STRIKE_WIND : 1.0f;   // 0 → 1 : la montée
+            float r = pre ? 0.0f : since / STRIKE_BURST;         // 0 → 1 : la résolution
+            float base = salt * 0.11f + k;
 
-            // Chaque coup arrive d'une direction différente, en tournant par l'angle d'or :
-            // six lances qui tombent du même côté se liraient comme une seule répétée.
-            float ang = (b * 2.39996f) + salt * 0.137f;
-            float ux = Mth.cos(ang);
-            float uz = Mth.sin(ang);
-
-            // L'axe perpendiculaire à la lance : il porte l'épaisseur, et sans épaisseur
-            // une lance vue dans son axe est un point.
-            float px = -uz;
-            float pz = ux;
-
-            if (since < 0.0f) {
-                // --- LA DESCENTE. Trois brins parallèles de seize cubes, pas une file :
-                //     mesuré au banc, une file de huit pesait dix-sept cubes contre mille
-                //     cent soixante-quatorze de kaléidoscope, soit un virgule quatre pour
-                //     cent de la figure. Invisible, et c'est exactement la raison pour
-                //     laquelle « il n'y a pas d'attaque » : le coup EXISTAIT déjà sous
-                //     cette forme-là, il ne se voyait simplement pas.
-                float k = 1.0f + since / STRIKE_WIND;          // 0 au départ, 1 à l'impact
-                float ease = k * k;                             // elle ACCÉLÈRE : un coup
-                float head = 3.60f - 3.25f * ease;              // ne ralentit pas en arrivant
-                for (int s = -1; s <= 1; s++) {
-                    float off = s * 0.17f;
-                    for (int i = 0; i < 16; i++) {
-                        float r = head + i * 0.17f;
-                        if (r > 3.90f) continue;
-                        float fade = (0.98f - i * 0.045f) * Mth.clamp(k * 2.4f, 0.0f, 1.0f);
-                        if (fade <= 0.02f) continue;
-                        // Gros devant, fin derrière : la pointe porte le coup, la hampe
-                        // n'est là que pour dire d'où il vient.
-                        float half = (0.150f - i * 0.0062f) * (0.72f + 0.52f * ease)
-                                * (s == 0 ? 1.0f : 0.74f);
-                        put(cx, cy, cz, dx, dz,
-                                ux * r + px * off, aim + 0.46f * (1.0f - ease) + i * 0.030f,
-                                uz * r + pz * off,
-                                half, ang + t * 3.1f + s,
-                                (i & 1) == 0 ? M_RAINBOW : M_SPECTRUM,
-                                i == 0 ? G_FLASH : (i < 4 ? G_BODY : G_DEEP),
-                                0.0f, a * fade);
+            switch (k) {
+                // I. LES DOUZE CONVERGENTS — la symétrie d'ordre douze se referme d'un coup
+                //    sur le corps, et le choc ressort en colonne. C'est le geste fondateur
+                //    du kaléidoscope : douze reflets, un seul point d'arrivée.
+                case 0 -> {
+                    if (pre) {
+                        float e = w * w;
+                        for (int i = 0; i < 12; i++) {
+                            float ang = i / 12.0f * TAU + base;
+                            float head = 3.90f - 3.70f * e;
+                            for (int j = 0; j < 5; j++) {
+                                float rr = head + j * 0.21f;
+                                put(cx, cy, cz, dx, dz,
+                                        Mth.cos(ang) * rr, aim + 0.07f * j, Mth.sin(ang) * rr,
+                                        0.112f - j * 0.014f, ang + spin,
+                                        (i & 1) == 0 ? M_RAINBOW : M_SPECTRUM,
+                                        j == 0 ? G_FLASH : G_BODY, 0.0f,
+                                        a * (0.98f - j * 0.13f) * w);
+                            }
+                        }
+                    } else {
+                        float f = 1.0f - r;
+                        for (int j = 0; j < 15; j++) {
+                            float up = aim + j * 0.18f * (0.30f + r * 1.7f);
+                            float rr = 0.11f + j * 0.034f;
+                            float ca = j * 1.1f + spin * 2.0f;
+                            put(cx, cy, cz, dx, dz, Mth.cos(ca) * rr, up, Mth.sin(ca) * rr,
+                                    0.135f * f, ca, M_STROBE, j < 3 ? G_CORE : G_GLASS,
+                                    0.0f, a * f * (1.0f - j * 0.042f));
+                        }
                     }
                 }
-                // LA POINTE : cinq gros cubes serrés, qui font la masse du coup.
-                for (int i = 0; i < 5; i++) {
-                    float r = head - i * 0.11f;
-                    put(cx, cy, cz, dx, dz,
-                            ux * r, aim + 0.46f * (1.0f - ease), uz * r,
-                            0.205f - i * 0.022f, ang * 1.7f + t * 5.0f,
-                            M_SPECTRUM, i == 0 ? G_CORE : G_FLASH,
-                            0.0f, a * Mth.clamp(k * 2.0f, 0.0f, 1.0f) * (0.95f - i * 0.11f));
+
+                // II. LES DEUX LAMES CROISÉES — une lame et son reflet balaient en sens
+                //     contraires et se rencontrent exactement sur le corps. Rien ne tombe :
+                //     ça TRANCHE, à l'horizontale, dans deux directions à la fois.
+                case 1 -> {
+                    float s = pre ? (w - 1.0f) : r;              // -1 → 0 → +1
+                    float fade = 1.0f - Math.abs(s) * 0.42f;
+                    for (int m = 0; m < 2; m++) {
+                        float dir = (m == 0) ? 1.0f : -1.0f;
+                        float cross = s * dir * 2.70f;
+                        float tilt = (m == 0) ? 0.30f : -0.30f;
+                        for (int i = -11; i <= 11; i++) {
+                            float along = i * 0.175f;
+                            float wx = (m == 0) ? cross : along;
+                            float wz = (m == 0) ? along : cross;
+                            put(cx, cy, cz, dx, dz, wx, aim + tilt * along, wz,
+                                    0.155f - Math.abs(i) * 0.0068f, 0.055f,
+                                    0.155f - Math.abs(i) * 0.0068f, tilt * 3.0f + spin,
+                                    (m == 0) ? M_RAINBOW : M_SPECTRUM,
+                                    (i == 0) ? G_FLASH : G_BODY, 0.0f, a * fade);
+                        }
+                    }
+                    if (!pre && r < 0.55f) {
+                        float f = 1.0f - r / 0.55f;
+                        put(cx, cy, cz, dx, dz, 0.0f, aim, 0.0f, 0.36f * f + 0.07f,
+                                spin * 3.0f, M_STROBE, G_CORE, 0.0f, a * f);
+                    }
+                }
+
+                // III. LA CAGE QUI SE REFERME — six parois verticales descendent, se
+                //      resserrent jusqu'à traverser le corps, puis se rouvrent sur le vide.
+                //      Un écrasement, pas une percussion : la seule frappe sans projectile.
+                case 2 -> {
+                    float close = pre ? w : 1.0f;
+                    float back = pre ? 0.0f : r;
+                    float rad = 2.60f - 2.28f * (close * close) + 2.45f * back * back;
+                    float fade = pre ? w : (1.0f - back);
+                    for (int wall = 0; wall < 6; wall++) {
+                        float ang = wall / 6.0f * TAU + spin * 0.35f;
+                        for (int j = 0; j < 11; j++) {
+                            put(cx, cy, cz, dx, dz,
+                                    Mth.cos(ang) * rad, 0.10f + j * 0.225f, Mth.sin(ang) * rad,
+                                    0.070f, 0.070f, 0.118f, ang,
+                                    (j % 3 == 0) ? M_DUAL : M_RAINBOW,
+                                    (j % 3 == 0) ? G_FRAME : G_BODY,
+                                    (j % 3 == 0) ? H_CYAN : 0.0f, a * fade * 0.94f);
+                        }
+                    }
+                    if (!pre && back < 0.70f) {
+                        float f = 1.0f - back / 0.70f;
+                        for (int i = 0; i < 12; i++) {
+                            float ca = i / 12.0f * TAU + spin;
+                            put(cx, cy, cz, dx, dz, Mth.cos(ca) * 0.24f,
+                                    aim + 0.20f * Mth.sin(i * 2.1f), Mth.sin(ca) * 0.24f,
+                                    0.165f * f, ca, M_SPECTRUM, G_CORE, 0.0f, a * f * 0.92f);
+                        }
+                    }
+                }
+
+                // IV. LE PRISME ÉCLATÉ — l'exact inverse du premier geste. UN éclat entre
+                //     en diagonale par le haut ; DOUZE ressortent. Le kaléidoscope ne
+                //     renvoie jamais ce qu'on lui donne : il le multiplie.
+                case 3 -> {
+                    if (pre) {
+                        float e = w * w * w;                       // long guet, arrivée sèche
+                        float hh = 4.30f - 4.12f * e;
+                        for (int j = 0; j < 8; j++) {
+                            float rr = hh + j * 0.15f;
+                            put(cx, cy, cz, dx, dz, rr * 0.70f,
+                                    aim + 1.75f * (1.0f - e) + j * 0.05f, rr * -0.70f,
+                                    0.185f - j * 0.016f, spin * 4.0f,
+                                    M_SPECTRUM, j == 0 ? G_CORE : G_FLASH, 0.0f,
+                                    a * (1.0f - j * 0.10f) * Mth.clamp(w * 1.8f, 0.0f, 1.0f));
+                        }
+                    } else {
+                        float out = r * r * 0.55f + r * 0.45f;
+                        float f = 1.0f - r * 0.80f;
+                        for (int i = 0; i < 12; i++) {
+                            float ang = i / 12.0f * TAU + base;
+                            float pitch = ((i % 3) - 1) * 0.60f;
+                            for (int j = 0; j < 4; j++) {
+                                float rr = (0.22f + j * 0.32f) * (0.35f + out * 3.7f);
+                                put(cx, cy, cz, dx, dz, Mth.cos(ang) * rr,
+                                        aim + pitch * rr * 0.48f, Mth.sin(ang) * rr,
+                                        0.105f - j * 0.013f, ang + spin,
+                                        (i % 3 == 0) ? M_STROBE : M_RAINBOW,
+                                        (i % 3 == 0) ? G_GLASS : G_BODY, 0.0f,
+                                        a * f * (0.95f - j * 0.14f));
+                            }
+                        }
+                    }
+                }
+
+                // V. LA SPIRALE DE REFLETS — un fil unique s'enroule du haut vers le bas en
+                //    se resserrant, et mord à chaque tour. Le seul geste CONTINU des six :
+                //    il ne connaît pas d'instant d'impact, il visse.
+                case 4 -> {
+                    float p = pre ? w * 0.58f : 0.58f + r * 0.42f;
+                    float f = pre ? Mth.clamp(w * 2.2f, 0.0f, 1.0f) : (1.0f - r * 0.72f);
+                    for (int i = 0; i < 34; i++) {
+                        float u = i / 33.0f;
+                        float lead = Mth.clamp(p * 1.30f - u * 0.30f, 0.0f, 1.0f);
+                        if (lead <= 0.01f) continue;
+                        float ang = u * TAU * 2.6f + spin * 1.5f + base;
+                        float rr = (1.70f - 1.26f * p) * (0.40f + 0.60f * (1.0f - u * 0.5f));
+                        put(cx, cy, cz, dx, dz, Mth.cos(ang) * rr, 2.45f - u * 2.30f,
+                                Mth.sin(ang) * rr, 0.086f + 0.032f * Mth.sin(u * 9.0f), ang,
+                                (i % 4 == 0) ? M_SPECTRUM : M_RAINBOW,
+                                (i % 4 == 0) ? G_FRAME : G_BODY, 0.0f, a * f * lead);
+                    }
+                }
+
+                // VI. LE REPLIEMENT — dix-huit rayons s'écrasent au centre et toute la
+                //     figure rejaillit en colonne. C'est le coup final : le plus large à la
+                //     préparation, le plus haut à la sortie.
+                default -> {
+                    if (pre) {
+                        float e = w * w;
+                        for (int i = 0; i < 18; i++) {
+                            float ang = i / 18.0f * TAU + base;
+                            for (int j = 0; j < 6; j++) {
+                                float rr = (4.40f - 4.05f * e) * (0.55f + j * 0.11f);
+                                put(cx, cy, cz, dx, dz, Mth.cos(ang) * rr,
+                                        aim + (1.0f - e) * 0.95f * Mth.sin(i * 0.9f),
+                                        Mth.sin(ang) * rr, 0.092f, ang + spin, M_RAINBOW,
+                                        (j == 0) ? G_FLASH : G_BODY, 0.0f, a * w * 0.90f);
+                            }
+                        }
+                    } else {
+                        float f = 1.0f - r * 0.84f;
+                        for (int j = 0; j < 24; j++) {
+                            float up = aim + j * 0.27f * (0.22f + r * 2.1f);
+                            float sway = 0.32f * Mth.sin(j * 0.8f + spin * 2.0f) * (0.3f + r);
+                            float ca = j * 0.7f + spin * 3.0f;
+                            put(cx, cy, cz, dx, dz, Mth.cos(ca) * sway, up, Mth.sin(ca) * sway,
+                                    0.175f - j * 0.0046f, ca,
+                                    (j % 2 == 0) ? M_SPECTRUM : M_STROBE,
+                                    (j < 4) ? G_CORE : (j < 12 ? G_FLASH : G_GLASS),
+                                    0.0f, a * f * (1.0f - j * 0.026f));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------------------
+    //  SPHÈRE D'ENTROPIE — huit façons de se défaire
+    // ---------------------------------------------------------------------------------
+
+    private static void entropyStrikes(float cx, float cy, float cz, float t,
+                                       float dx, float dz, float a, int salt, int duration) {
+        float now = t * duration;
+        final float aim = 1.15f;
+        float spin = t * TAU;
+
+        for (int k = 0; k < BEATS_ENTROPY.length; k++) {
+            float since = now - BEATS_ENTROPY[k];
+            if (since < -STRIKE_WIND || since > STRIKE_BURST) continue;
+            boolean pre = since < 0.0f;
+            float w = pre ? 1.0f + since / STRIKE_WIND : 1.0f;
+            float r = pre ? 0.0f : since / STRIKE_BURST;
+            // Le désordre MONTE d'une pulsation à l'autre : ce n'est pas un ornement, c'est
+            // la grandeur que le serveur empile dans CHAOS_ENTROPIES, plafonnée à six.
+            float grit = 0.10f + k * 0.13f;
+            float base = salt * 0.09f + k * 1.7f;
+
+            switch (k) {
+                // 1. LA MORSURE DE TREILLIS — douze cellules se détachent de la structure,
+                //    viennent mordre, et repartent avec un morceau.
+                case 0 -> {
+                    for (int i = 0; i < 12; i++) {
+                        float ang = i * 2.39996f + base;
+                        float rr = pre ? (2.45f - 2.05f * w * w) : (0.38f + 2.1f * r * r);
+                        float f = pre ? w : (1.0f - r);
+                        float hh = 0.150f * (pre ? 1.0f : 1.0f - 0.42f * r);
+                        float up = aim + Mth.sin(i * 1.7f) * 0.50f * rr * 0.42f;
+                        put(cx, cy, cz, dx, dz, Mth.cos(ang) * rr, up, Mth.sin(ang) * rr,
+                                hh, ang + spin, M_TINTED, G_MID, H_VIOLET, a * f * 0.95f);
+                        put(cx, cy, cz, dx, dz, Mth.cos(ang) * rr * 0.86f, up * 0.97f,
+                                Mth.sin(ang) * rr * 0.86f, hh * 0.60f, -ang,
+                                M_RAINBOW, G_BODY, 0.0f, a * f * 0.78f);
+                    }
+                }
+
+                // 2. L'ANNEAU DE CISAILLEMENT — un disque mince se referme à l'horizontale
+                //    et tranche à hauteur de torse. Plat, large, et tremblant.
+                case 1 -> {
+                    float rad = pre ? (2.95f - 2.52f * w) : (0.42f + 3.0f * r * r);
+                    float f = pre ? w : (1.0f - r * 0.88f);
+                    for (int i = 0; i < 36; i++) {
+                        float ang = i / 36.0f * TAU + spin * 0.8f;
+                        float wob = grit * 0.22f * Mth.sin(i * 3.1f + spin * 4.0f);
+                        put(cx, cy, cz, dx, dz, Mth.cos(ang) * (rad + wob), aim + wob,
+                                Mth.sin(ang) * (rad + wob),
+                                0.145f, 0.038f, 0.145f, ang,
+                                (i % 5 == 0) ? M_DUAL : M_MONO,
+                                (i % 5 == 0) ? G_GLASS : G_MID,
+                                H_CYAN, a * f * 0.92f);
+                    }
+                }
+
+                // 3. L'EFFONDREMENT DE SECTEUR — un quartier entier de la coquille lâche et
+                //    tombe en biais sur le corps. Asymétrique, et c'est tout l'intérêt :
+                //    les sept autres gestes sont centrés, celui-ci arrive d'un seul côté.
+                case 2 -> {
+                    float fall = pre ? (1.0f - w) : 0.0f;
+                    float f = pre ? Mth.clamp(w * 1.7f, 0.0f, 1.0f) : (1.0f - r);
+                    float side = base;
+                    for (int i = 0; i < 9; i++) {
+                        float ang = side + (i - 4) * 0.165f;
+                        for (int j = 0; j < 7; j++) {
+                            float rr = 0.60f + j * 0.32f;
+                            float drop = fall * (2.60f + j * 0.30f);
+                            float slip = pre ? 0.0f : r * r * 1.3f;
+                            put(cx, cy, cz, dx, dz,
+                                    Mth.cos(ang) * (rr + slip), aim + drop - j * 0.06f + slip * 0.4f,
+                                    Mth.sin(ang) * (rr + slip),
+                                    0.125f - j * 0.008f, ang + j * 0.4f,
+                                    M_PULSE, (j < 2) ? G_FLASH : G_MID, H_MAGENTA,
+                                    a * f * (0.95f - j * 0.08f));
+                        }
+                    }
+                }
+
+                // 4. LE VRILLAGE — deux hélices de sens contraires se serrent sur le corps
+                //    et le tordent. Aucun autre geste ne tourne sur lui-même.
+                case 3 -> {
+                    float tight = pre ? w : 1.0f - r * 0.55f;
+                    float f = pre ? w : (1.0f - r * 0.9f);
+                    for (int helix = 0; helix < 2; helix++) {
+                        float sense = (helix == 0) ? 1.0f : -1.0f;
+                        for (int i = 0; i < 24; i++) {
+                            float u = i / 23.0f;
+                            float ang = sense * (u * TAU * 2.2f + spin * 2.4f) + helix * 3.14159f;
+                            float rr = (2.70f - 2.15f * tight) * (0.45f + 0.55f * Mth.sin(u * 3.14159f));
+                            put(cx, cy, cz, dx, dz, Mth.cos(ang) * rr,
+                                    0.20f + u * 2.15f, Mth.sin(ang) * rr,
+                                    0.098f - 0.020f * Math.abs(u - 0.5f) * 2.0f, ang,
+                                    M_SPECTRUM, (i % 5 == 0) ? G_FLASH : G_BODY,
+                                    0.0f, a * f * 0.93f);
+                        }
+                    }
+                }
+
+                // 5. LA PLUIE DE CELLULES — ça tombe DROIT, du dessus, en colonne large.
+                //    Aucune direction horizontale : après quatre gestes latéraux, l'œil a
+                //    besoin d'un axe neuf.
+                case 4 -> {
+                    float f = pre ? Mth.clamp(w * 1.6f, 0.0f, 1.0f) : (1.0f - r * 0.95f);
+                    float drop = pre ? (1.0f - w) : 0.0f;
+                    for (int i = 0; i < 28; i++) {
+                        float ang = i * 2.39996f + base;
+                        float rr = 0.30f + (i % 7) * 0.305f;
+                        float stagger = ((i * 37) % 13) / 13.0f;
+                        float up = aim + 1.05f + drop * (3.4f + stagger * 1.8f)
+                                - (pre ? 0.0f : r * 1.25f);
+                        put(cx, cy, cz, dx, dz, Mth.cos(ang) * rr, up, Mth.sin(ang) * rr,
+                                0.108f + 0.030f * stagger, ang * 2.0f + spin,
+                                (i % 6 == 0) ? M_STROBE : M_MONO,
+                                (i % 6 == 0) ? G_GLASS : G_MID, 0.0f, a * f * 0.90f);
+                    }
+                    if (!pre && r < 0.5f) {
+                        float g = 1.0f - r / 0.5f;
+                        for (int i = 0; i < 14; i++) {
+                            float ca = i / 14.0f * TAU;
+                            float sp = 0.30f + r * 1.9f;
+                            put(cx, cy, cz, dx, dz, Mth.cos(ca) * sp, 0.10f, Mth.sin(ca) * sp,
+                                    0.088f * g, ca, M_MONO, G_DEEP, 0.0f, a * g * 0.75f);
+                        }
+                    }
+                }
+
+                // 6. L'IMPLOSION PONCTUELLE — tout ce qui traîne converge en UN point, et il
+                //    ne reste rien. Le seul geste qui se termine par une absence plutôt que
+                //    par un éclat : après cinq gestes de plus en plus bruyants, un vide.
+                case 5 -> {
+                    if (pre) {
+                        float e = w * w * w;
+                        for (int i = 0; i < 40; i++) {
+                            float ang = i * 2.39996f + base;
+                            float pitchU = ((i * 11) % 17) / 17.0f;
+                            float rr = (3.20f - 3.05f * e) * (0.5f + 0.5f * pitchU);
+                            put(cx, cy, cz, dx, dz, Mth.cos(ang) * rr,
+                                    aim + (pitchU - 0.5f) * 2.4f * (1.0f - e) , Mth.sin(ang) * rr,
+                                    0.070f + 0.055f * e, ang + spin * 2.0f,
+                                    M_EMBER, G_FRAME, H_EMBER, a * (0.45f + 0.55f * e));
+                        }
+                        if (w > 0.80f) {
+                            float g = (w - 0.80f) / 0.20f;
+                            put(cx, cy, cz, dx, dz, 0.0f, aim, 0.0f, 0.10f + 0.45f * g,
+                                    spin * 6.0f, M_SPECTRUM, G_CORE, 0.0f, a * g);
+                        }
+                    } else {
+                        // Le point s'éteint en se contractant : pas d'onde, pas de débris.
+                        float g = 1.0f - r;
+                        put(cx, cy, cz, dx, dz, 0.0f, aim, 0.0f, 0.62f * g * g,
+                                spin * 6.0f, M_SPECTRUM, G_CORE, 0.0f, a * g);
+                        put(cx, cy, cz, dx, dz, 0.0f, aim, 0.0f, 0.95f * g * g * g,
+                                -spin * 2.0f, M_DUAL, G_DEEP, H_VIOLET, a * g * 0.45f);
+                    }
+                }
+
+                // 7. L'ONDE DE DÉSAGRÉGATION — une coquille sphérique naît SUR le corps et
+                //    le traverse en s'élargissant. Le seul geste centrifuge pur.
+                case 6 -> {
+                    float grow = pre ? w * 0.25f : 0.25f + r * 0.75f;
+                    float f = pre ? w * 0.8f : (1.0f - r * 0.92f);
+                    float rr = 0.25f + grow * 3.1f;
+                    for (int ringIdx = 0; ringIdx < 5; ringIdx++) {
+                        float lat = (ringIdx - 2) * 0.38f;
+                        float ringR = rr * Mth.sqrt(Math.max(0.05f, 1.0f - lat * lat * 0.62f));
+                        int n = 8 + ringIdx * 2;
+                        for (int i = 0; i < n; i++) {
+                            float ang = i / (float) n * TAU + ringIdx * 0.6f + spin;
+                            float jitter = grit * 0.30f * Mth.sin(i * 5.3f + ringIdx);
+                            put(cx, cy, cz, dx, dz, Mth.cos(ang) * (ringR + jitter),
+                                    aim + lat * rr * 0.85f, Mth.sin(ang) * (ringR + jitter),
+                                    0.100f * (1.0f - grow * 0.35f), ang,
+                                    M_RAINBOW, (ringIdx == 2) ? G_FLASH : G_BODY,
+                                    0.0f, a * f * 0.94f);
+                        }
+                    }
+                }
+
+                // 8. LA DISSOLUTION — un nuage dense enveloppe le corps, puis part en
+                //    poussière vers le haut. Dernière pulsation, et la seule qui ne fasse
+                //    aucune figure nette : à ce niveau d'entropie, il n'y a plus de forme.
+                default -> {
+                    float f = pre ? w : (1.0f - r);
+                    for (int i = 0; i < 46; i++) {
+                        float ang = i * 2.39996f + base;
+                        float seedU = ((i * 29) % 23) / 23.0f;
+                        float cloud = pre ? (1.0f - w) * 2.1f + 0.50f : 0.50f + r * 2.7f;
+                        float rr = cloud * (0.35f + 0.65f * seedU);
+                        float up = aim + (seedU - 0.42f) * 1.5f * cloud
+                                + (pre ? 0.0f : r * r * 1.7f);
+                        put(cx, cy, cz, dx, dz, Mth.cos(ang) * rr, up, Mth.sin(ang) * rr,
+                                (0.055f + 0.075f * seedU) * (pre ? 1.0f : 1.0f - 0.4f * r),
+                                ang * 3.0f + spin,
+                                (i % 4 == 0) ? M_DUAL : M_TINTED,
+                                (i % 4 == 0) ? G_FRAME : G_DEEP, H_ROSE, a * f * 0.88f);
+                    }
+                }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------------------
+    //  BIG BANG — quatorze tractions, puis UNE détonation
+    // ---------------------------------------------------------------------------------
+
+    private static void bigBangStrikes(float cx, float cy, float cz, float t,
+                                       float dx, float dz, float a, int salt, int duration) {
+        float now = t * duration;
+        final float aim = 1.20f;
+        float spin = t * TAU;
+
+        // --- LES QUATORZE TRACTIONS (t+6+k*6). Ce ne sont PAS des coups : la singularité
+        //     tire. La forme doit donc s'étirer vers le foyer et se resserrer d'une
+        //     traction à l'autre, au lieu de s'abattre. Elles sont brèves et sans éclat :
+        //     garder un impact à chacune aurait écrasé la détonation qui les suit.
+        for (int k = 0; k < 14; k++) {
+            float since = now - (6 + k * 6);
+            if (since < -3.0f || since > 5.0f) continue;
+            float u = Mth.clamp((since + 3.0f) / 8.0f, 0.0f, 1.0f);
+            float f = Mth.sin(u * 3.14159f);                 // naît et meurt d'un souffle
+            float grip = 3.40f - k * 0.165f;                 // l'étau se referme
+            for (int i = 0; i < 5; i++) {
+                float ang = k * 2.39996f + i * 1.2566f + salt * 0.07f;
+                for (int j = 0; j < 10; j++) {
+                    float rr = grip * (1.0f - u * 0.82f) * (0.26f + j * 0.090f);
+                    put(cx, cy, cz, dx, dz, Mth.cos(ang) * rr,
+                            aim + 0.60f * (1.0f - u) * Mth.sin(i * 1.9f + k) + j * 0.028f,
+                            Mth.sin(ang) * rr,
+                            0.090f - j * 0.0052f, ang,
+                            M_TINTED, (j < 2) ? G_FRAME : G_DEEP, H_BLUE,
+                            a * f * (0.92f - j * 0.062f));
+                }
+            }
+        }
+
+        // --- LA DÉTONATION (t+84), en trois temps qui ne se ressemblent pas : la matière
+        //     se compacte, le noyau claque, l'onde part. C'est le seul geste du mod qui
+        //     dure plus de vingt ticks, et il n'y en a qu'un par animation.
+        float bang = now - BEAT_BIGBANG;
+        if (bang >= -16.0f && bang <= 26.0f) {
+
+            // TEMPS 1 — LA COMPRESSION. Une coquille de soixante éclats se referme.
+            if (bang < 0.0f) {
+                float c = 1.0f + bang / 16.0f;                // 0 → 1
+                float e = c * c * c;
+                for (int i = 0; i < 60; i++) {
+                    float ang = i * 2.39996f + salt * 0.05f;
+                    float lat = ((i * 13) % 19) / 19.0f - 0.5f;
+                    float rr = (5.40f - 5.10f * e) * (0.55f + 0.45f * Mth.cos(lat * 3.0f));
+                    put(cx, cy, cz, dx, dz, Mth.cos(ang) * rr, aim + lat * 3.4f * (1.0f - e * 0.7f),
+                            Mth.sin(ang) * rr, 0.085f + 0.075f * e, ang + spin * 2.0f,
+                            (i % 5 == 0) ? M_DUAL : M_TINTED,
+                            (i % 5 == 0) ? G_GLASS : G_MID, H_BLUE, a * (0.40f + 0.60f * e));
+                }
+                if (c > 0.72f) {
+                    float g = (c - 0.72f) / 0.28f;
+                    put(cx, cy, cz, dx, dz, 0.0f, aim, 0.0f, 0.12f + 0.70f * g * g,
+                            spin * 8.0f, M_SPECTRUM, G_CORE, 0.0f, a * g);
                 }
             } else {
-                // --- L'ÉCLAT. Trois couronnes dans trois plans, une gerbe verticale et un
-                //     noyau : la preuve visuelle que le coup a porté. Un seul anneau plat
-                //     disparaît dès qu'on le regarde par la tranche — payé sur la Porte.
-                float k = since / STRIKE_BURST;                 // 0 à l'impact, 1 à la fin
-                float open = Mth.sqrt(k);                       // vite au début, puis freine
-                // Décroissance LINÉAIRE et non quadratique : au carré, l'éclat a déjà
-                // perdu soixante pour cent de son alpha au tiers de sa vie et l'œil ne
-                // voit plus qu'un soupir là où il faut un coup.
-                float fade = 1.0f - k * 0.88f;
-                float rr = (0.30f + 1.55f * open) * blast;
 
-                // 1. La couronne équatoriale, la plus large.
-                for (int i = 0; i < 26; i++) {
-                    float ca = i / 26.0f * 6.2831853f + ang;
-                    float lift = 0.40f * Mth.sin(i * 1.7f + b) * (1.0f - k);
-                    put(cx, cy, cz, dx, dz,
-                            Mth.cos(ca) * rr, aim + lift, Mth.sin(ca) * rr,
-                            0.112f * blast * (1.0f - 0.40f * k), ca + t * 2.2f,
-                            (i % 3 == 0) ? M_STROBE : M_RAINBOW,
-                            (i % 3 == 0) ? G_GLASS : G_BODY,
-                            0.0f, a * fade * 0.95f);
+                // TEMPS 2 — L'ÉCLAIR, quatre ticks. Un noyau massif et seize rayons droits.
+                if (bang < 4.0f) {
+                    float g = 1.0f - bang / 4.0f;
+                    put(cx, cy, cz, dx, dz, 0.0f, aim, 0.0f, 1.35f * g + 0.25f,
+                            spin * 9.0f, M_SPECTRUM, G_CORE, 0.0f, a * g);
+                    for (int i = 0; i < 16; i++) {
+                        float ang = i / 16.0f * TAU;
+                        float lat = ((i % 4) - 1.5f) * 0.55f;
+                        for (int j = 1; j < 9; j++) {
+                            float rr = j * (0.55f + (1.0f - g) * 0.9f);
+                            put(cx, cy, cz, dx, dz, Mth.cos(ang) * rr, aim + lat * j * 0.22f,
+                                    Mth.sin(ang) * rr, 0.26f - j * 0.022f, ang,
+                                    M_STROBE, (j < 3) ? G_FLASH : G_GLASS, 0.0f,
+                                    a * g * (1.0f - j * 0.09f));
+                        }
+                    }
                 }
-                // 2. La couronne verticale, dans le plan de la lance : c'est elle qui tient
-                //    la lecture quand la caméra est au ras du sol.
-                for (int i = 0; i < 18; i++) {
-                    float ca = i / 18.0f * 6.2831853f;
-                    float rv = rr * 0.86f;
-                    put(cx, cy, cz, dx, dz,
-                            ux * Mth.cos(ca) * rv, aim + Mth.sin(ca) * rv, uz * Mth.cos(ca) * rv,
-                            0.095f * blast * (1.0f - 0.40f * k), ca * 1.3f + t * 2.6f,
-                            M_SPECTRUM, G_MID, 0.0f, a * fade * 0.88f);
+
+                // TEMPS 3 — L'ONDE DE CHOC, vingt-six ticks. Un anneau au sol qui court
+                //     loin, et une calotte qui monte. Lente, pour qu'on la suive.
+                float s = bang / 26.0f;
+                float wave = 0.6f + s * 7.4f;
+                float f = (1.0f - s) * (1.0f - s * 0.35f);
+                int n = 44;
+                for (int i = 0; i < n; i++) {
+                    float ang = i / (float) n * TAU + spin * 0.25f;
+                    put(cx, cy, cz, dx, dz, Mth.cos(ang) * wave, 0.12f + 0.30f * s,
+                            Mth.sin(ang) * wave, 0.195f * f + 0.035f, 0.070f, 0.195f * f + 0.035f,
+                            ang, (i % 4 == 0) ? M_EMBER : M_RAINBOW,
+                            (i % 4 == 0) ? G_FLASH : G_BODY, H_EMBER, a * f * 0.95f);
                 }
-                // 3. LA GERBE. Douze éclats projetés vers le haut et vers l'arrière du
-                //    coup : c'est le seul élément qui dit la DIRECTION d'où il venait.
-                for (int i = 0; i < 12; i++) {
-                    float spin = i / 12.0f * 6.2831853f + ang * 2.0f;
-                    float reach = rr * (0.55f + 0.85f * ((i * 7 % 5) / 4.0f));
-                    put(cx, cy, cz, dx, dz,
-                            ux * reach * 0.80f + Mth.cos(spin) * rr * 0.34f,
-                            aim + 0.25f + 1.35f * open * (0.45f + (i % 3) * 0.28f),
-                            uz * reach * 0.80f + Mth.sin(spin) * rr * 0.34f,
-                            0.085f * blast * (1.0f - 0.5f * k), spin + t * 3.4f,
-                            M_RAINBOW, G_FRAME, 0.0f, a * fade * 0.80f);
-                }
-                // 4. LE NOYAU : un bloc massif sur le corps, qui s'éteint en un tiers de
-                //    seconde. Sans lui la couronne a l'air de s'ouvrir sur du vide.
-                if (k < 0.60f) {
-                    float core = (1.0f - k / 0.60f);
-                    put(cx, cy, cz, dx, dz, 0.0f, aim, 0.0f,
-                            (0.34f * core + 0.09f) * blast, t * 4.7f,
-                            M_SPECTRUM, G_CORE, 0.0f, a * core * 0.98f);
-                    put(cx, cy, cz, dx, dz, 0.0f, aim, 0.0f,
-                            (0.52f * core + 0.12f) * blast, -t * 3.1f,
-                            M_STROBE, G_GLASS, 0.0f, a * core * 0.55f);
+                for (int ringIdx = 0; ringIdx < 4; ringIdx++) {
+                    float lat = 0.25f + ringIdx * 0.22f;
+                    float capR = wave * 0.62f * Mth.sqrt(Math.max(0.04f, 1.0f - lat * lat));
+                    int m = 10 + ringIdx * 3;
+                    for (int i = 0; i < m; i++) {
+                        float ang = i / (float) m * TAU + ringIdx * 0.5f - spin * 0.4f;
+                        put(cx, cy, cz, dx, dz, Mth.cos(ang) * capR,
+                                aim + lat * wave * 0.72f, Mth.sin(ang) * capR,
+                                0.115f * f + 0.02f, ang, M_RAINBOW, G_MID, 0.0f, a * f * 0.80f);
+                    }
                 }
             }
         }

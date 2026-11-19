@@ -24,11 +24,58 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > toujours la dernière version, une fois le cache expiré (quelques minutes). Les liens en
 > SHA sont l'adresse **immédiate**, à utiliser le jour de la livraison.
 
-## Chaos — l'attaque se voit enfin · 4 novembre 2026 ⟵ **LOT COURANT**
+## Chaos — quinze coups, quinze formes · 4 novembre 2026 ⟵ **LOT COURANT**
 
 - **Aperçu voxel des trois signatures (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Three_Signatures_preview.html
 - **Démo du core shader des Pixels 3D (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Pixel_shader_demo.html
 - **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Three_Signatures_src.zip
+
+> **T401b — « TU RÉPÈTES LITTÉRALEMENT LES MÊMES ATTAQUES ! »**
+>
+> Reproche exact, et c'était un défaut de conception, pas un réglage. T401 avait **une
+> seule** routine de frappe — une lance qui tombe, une couronne qui s'ouvre — recopiée
+> **quinze fois**, avec pour uniques différences un angle qui tournait et un facteur
+> d'échelle. Six fois de suite dans le kaléidoscope, huit dans la sphère, une dans le
+> big bang : même objet, même vitesse, même silhouette. Ce n'était pas une
+> chorégraphie, c'était un métronome — et comme la deuxième occurrence n'apprend plus
+> rien à l'œil, les quatorze suivantes devenaient du bruit.
+>
+> **La règle appliquée maintenant : aucun temps fort ne partage sa géométrie avec un
+> autre.** Pas un décalage — une forme, une direction d'arrivée, une vitesse et un
+> registre chromatique qui lui appartiennent. Et chaque geste découle de ce que sa
+> signature **est** :
+>
+> | | Kaléidoscope (6) | Sphère d'entropie (8) | Big bang |
+> |---|---|---|---|
+> | | I. douze éclats **convergents**, le choc ressort en colonne | 1. morsure de treillis | 14 **tractions** qui tirent vers le foyer et se resserrent |
+> | | II. deux **lames croisées** qui se rencontrent sur le corps | 2. anneau de **cisaillement**, plat et tremblant | |
+> | | III. la **cage** à six parois qui se referme — un écrasement, sans projectile | 3. **effondrement de secteur** : le seul geste qui arrive d'un seul côté | **détonation en trois temps** : compression, éclair (4 ticks), onde de choc (26 ticks) |
+> | | IV. le **prisme éclaté** : un coup entre, douze sortent | 4. **vrillage** à deux hélices contraires | |
+> | | V. la **spirale**, seul geste continu : elle visse | 5. **pluie** verticale — un axe neuf après quatre gestes latéraux | |
+> | | VI. le **repliement** : dix-huit rayons s'écrasent, tout rejaillit en colonne | 6. **implosion** : la seule qui finisse par une absence | |
+> | | | 7. **onde** centrifuge qui traverse | |
+> | | | 8. **dissolution** : plus aucune forme nette | |
+>
+> **Mesuré plutôt que supposé.** Un banc calcule l'empreinte géométrique de chaque
+> geste — nombre de cubes, rayon moyen et maximal, hauteur, étendue verticale, taille
+> moyenne. Les quinze empreintes sont désormais distinctes : rayon maximal de 3,04 à
+> 4,60 sur le kaléidoscope, étendue verticale de 2,20 à **8,18** (la colonne du
+> repliement), et sur le big bang 6,20 pour l'éclair contre 6,29 pour l'onde — deux
+> tailles voisines mais l'une est un noyau, l'autre un anneau au sol.
+>
+> **Trois gestes rallongés après capture.** Le vrillage, la pluie et la dissolution
+> culminaient sous le rayon de la coquille d'entropie (≈ 2,2) : ils se jouaient
+> *derrière* elle et ne se voyaient pas. Ils passent à 2,6-2,7. Eux seuls — grossir les
+> huit aurait réuniformisé l'ensemble, c'est-à-dire refait la faute.
+>
+> **Les sons suivent.** Le même couple améthyste + verre brisé à chacun des quinze
+> temps, et l'oreille le classe en bourdon de fond dès le troisième. Onze timbres
+> désormais, indexés sur le geste : balayage d'attaque pour les lames, coffre verrouillé
+> pour la cage, améthyste brisée pour le prisme, chaîne pour la spirale, enclume pour le
+> repliement, charge sonique du Warden pour l'onde, bloc de slime pour la dissolution.
+> Tous pris dans l'inventaire **déjà employé** par le mod : sans `javac` dans
+> l'environnement de travail, introduire sept constantes non vérifiées aurait risqué un
+> échec de compilation en jeu pour un détail de timbre.
 
 > **T401 — « EN QUOI ÇA ATTAQUE LES MOBS ? »**
 >

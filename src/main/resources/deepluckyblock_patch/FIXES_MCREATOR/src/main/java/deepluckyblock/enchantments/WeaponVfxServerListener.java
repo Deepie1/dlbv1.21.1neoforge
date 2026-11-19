@@ -6242,14 +6242,55 @@ public final class WeaponVfxServerListener {
      * dans une signature de sept secondes passe inapercu au milieu du reste.
      */
     private static void chaosBeatMark(ServerLevel sl, LivingEntity victim, float pitch, float force) {
+        chaosBeatMark(sl, victim, pitch, force, 0);
+    }
+
+    /**
+     * T401b — UN TIMBRE PAR GESTE.
+     *
+     * <p>La premiere version jouait le meme couple amethyste + verre brise a chacun des
+     * quinze temps forts, en ne faisant varier que la hauteur. Quinze fois le meme son
+     * sur huit secondes, l'oreille cesse de l'entendre au troisieme : elle le classe
+     * comme un bourdon de fond, exactement comme l'oeil avait classe les quinze lances
+     * identiques comme un decor. Chaque geste a donc desormais <b>sa</b> matiere.</p>
+     *
+     * <p>Le parametre {@code voice} est l'index du geste dans sa signature, pas un choix
+     * esthetique libre : il suit le meme ordre que les formes de {@code ChaosSignatureVfx},
+     * de sorte qu'un son ne puisse pas se retrouver sur une autre figure que la sienne.</p>
+     */
+    private static void chaosBeatMark(ServerLevel sl, LivingEntity victim, float pitch,
+                                      float force, int voice) {
         if (sl == null || victim == null) return;
         double bx = victim.getX();
         double by = victim.getY() + victim.getBbHeight() * 0.62;
         double bz = victim.getZ();
-        sl.playSound(null, bx, by, bz, SoundEvents.AMETHYST_BLOCK_HIT, SoundSource.PLAYERS,
-                0.50f * force, pitch);
-        sl.playSound(null, bx, by, bz, SoundEvents.GLASS_BREAK, SoundSource.PLAYERS,
-                0.26f * force, Math.min(2.0f, pitch * 1.45f));
+        float hi = Math.min(2.0f, pitch * 1.45f);
+
+        // Le coup lui-meme : la matiere change, l'intention non.
+        // Tous pris dans l'inventaire DEJA employe par le mod : sans javac dans ce bac a
+        // sable, introduire sept constantes non verifiees, c'est risquer un echec de
+        // compilation en jeu pour un detail de timbre.
+        SoundEvent body = switch (Math.floorMod(voice, 8)) {
+            case 1 -> SoundEvents.PLAYER_ATTACK_SWEEP;      // les lames : ca tranche
+            case 2 -> SoundEvents.CHEST_LOCKED;             // la cage qui se referme
+            case 3 -> SoundEvents.AMETHYST_BLOCK_BREAK;     // le prisme qui se demultiplie
+            case 4 -> SoundEvents.CHAIN_PLACE;              // la spirale qui visse
+            case 5 -> SoundEvents.ANVIL_LAND;               // le repliement, le plus lourd
+            case 6 -> SoundEvents.WARDEN_SONIC_CHARGE;      // l'onde qui traverse
+            case 7 -> SoundEvents.SLIME_BLOCK_BREAK;        // la dissolution, molle
+            default -> SoundEvents.AMETHYST_BLOCK_CHIME;    // les convergents, le timbre mere
+        };
+        sl.playSound(null, bx, by, bz, body, SoundSource.PLAYERS, 0.50f * force, pitch);
+
+        // La trace aigue : elle dit ou le coup a porte, et elle aussi change de grain.
+        SoundEvent edge = switch (Math.floorMod(voice, 4)) {
+            case 1 -> SoundEvents.GLASS_BREAK;
+            case 2 -> SoundEvents.NOTE_BLOCK_HAT;
+            case 3 -> SoundEvents.ARROW_HIT;
+            default -> SoundEvents.GLASS_BREAK;
+        };
+        sl.playSound(null, bx, by, bz, edge, SoundSource.PLAYERS, 0.26f * force, hi);
+
         PixelFx.send(sl, CHAOS_DUST_SPARK, bx, by, bz,
                 Math.max(6, Math.round(16 * force)), 0.30, 0.34, 0.30, 0.12);
     }
@@ -6451,7 +6492,7 @@ public final class WeaponVfxServerListener {
                 chaosHurt(sl, attackerId, hit, amount);
                 // LE TEMPS SE VOIT ET S'ENTEND SUR LE CORPS, pas seulement au centre de la
                 // figure : c'est ce qui manquait pour lire les six frappes comme SIX coups.
-                chaosBeatMark(sl, hit, 0.74f + arm * 0.12f, 0.80f + arm * 0.04f);
+                chaosBeatMark(sl, hit, 0.74f + arm * 0.12f, 0.80f + arm * 0.04f, arm);
                 // LA REPETITION : la moitie du coup est mise de cote et retombera a la
                 // fermeture de la boucle. L'echeance est calee sur la FIN de l'animation,
                 // pas sur un delai glissant, donc les six retombees arrivent ensemble.
@@ -6567,7 +6608,7 @@ public final class WeaponVfxServerListener {
                     // La pulsation monte en hauteur ET en force avec le palier d'entropie :
                     // on ENTEND le compteur grimper, au lieu de le deviner aux degats.
                     chaosBeatMark(sl, victim, 0.56f + pulse * 0.08f + level * 0.05f,
-                            0.52f + level * 0.09f);
+                            0.52f + level * 0.09f, pulse);
                 }
                 sl.playSound(null, ox, oy, oz, SoundEvents.BEACON_AMBIENT, SoundSource.PLAYERS,
                         0.26f, 0.42f + pulse * 0.07f);
@@ -6711,7 +6752,7 @@ public final class WeaponVfxServerListener {
                 // corps au foyer et l'explosion n'envoie personne nulle part.
                 chaosUnroot(victim);
                 chaosHurt(sl, attackerId, victim, punch * falloff);
-                chaosBeatMark(sl, victim, 0.48f, 1.0f);
+                chaosBeatMark(sl, victim, 0.48f, 1.0f, 5);
                 addDiscord(sl, victim, punch * falloff * 0.42f, attackerId, 46);
                 voidPush(sl, victim, ddx / dist * 0.96, 0.52, ddz / dist * 0.96);
                 victim.addEffect(new MobEffectInstance(MobEffects.CONFUSION, 120, 0, true, false));

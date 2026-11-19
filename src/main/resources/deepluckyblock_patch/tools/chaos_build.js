@@ -595,99 +595,397 @@ function buildChaos(variant, t, salt = 4421) {
   fn(t, false);
 
   /* ======================================================================================
-     T401 — LES COUPS. Miroir exact de ChaosSignatureVfx.renderStrikes().
+     T401b — LES COUPS : QUINZE GESTES, QUINZE FORMES.
+     Miroir exact de ChaosSignatureVfx.kaleidoStrikes / entropyStrikes / bigBangStrikes.
 
-     Ce que cette couche repare : les trois signatures se deploient AUTOUR d'un point sans
-     jamais le toucher, si bien qu'on voyait un decor somptueux et un mob qui perdait des
-     coeurs sans cause visible. Sur chaque temps ou le serveur inflige un degat — et
-     seulement sur ceux-la — une lance de cubes fond sur le centre, puis eclate en
-     couronne. Les nombres ci-dessous sont les ticks de applyKaleidoGameplay /
-     applyEntropySphereGameplay / applyBigBangGameplay, pas une approximation graphique.
+     La premiere version avait UNE routine de frappe recopiee quinze fois, avec pour
+     seules differences un angle et une echelle : un metronome, pas une choregraphie.
+     Ici aucun temps fort ne partage sa geometrie avec un autre, et chaque geste decoule
+     de ce que sa signature EST -- le kaleidoscope reflechit, la sphere erode, la
+     singularite tire. Les ticks sont ceux du serveur, a l'unite pres.
      ====================================================================================== */
-  const BEATS = [[30, 48, 66, 84, 102, 120],
-                 [22, 38, 54, 70, 86, 102, 118, 134],
-                 [84]][variant] || [];
-  const STRIKE_WIND = 9, STRIKE_BURST = 8;
-  const aim = variant === 2 ? 1.20 : (variant === 1 ? 1.15 : 1.05);
-  /* UN COUP SE MESURE A SA FIGURE : la cicatrice du big bang fait cinq blocs de rayon,
-     un eclat d'un bloc quatre-vingts y disparait -- verifie au banc. */
-  const blast = variant === 2 ? 2.30 : (variant === 1 ? 1.90 : 1.0);
+  /* TAU est deja declare plus haut dans cette fonction (l. 82) : le redeclarer casse
+     le module. Son ecart avec le 6.2831853f du Java est de 2e-7, donc invisible. */
+  const WIND = 9, BURST = 8;
   const nowT = t * DUR;
-  for (let b = 0; b < BEATS.length; b++) {
-    const since = nowT - BEATS[b];
-    if (since < -STRIKE_WIND || since > STRIKE_BURST) continue;
-    const ang = b * 2.39996 + salt * 0.137;
-    const ux = cos(ang), uz = sin(ang);
-    const px = -uz, pz = ux;
-    if (since < 0) {
-      /* LA DESCENTE : trois brins, pas une file. Mesure au banc avant correction : une
-         file de huit cubes pesait dix-sept cubes contre mille cent soixante-quatorze de
-         kaleidoscope. Le coup existait deja et ne se voyait pas -- c'est la toute la
-         difference entre « il n'y a pas d'attaque » et « on ne la voit pas ». */
-      const k = 1.0 + since / STRIKE_WIND;
-      const ease = k * k;
-      const head = 3.60 - 3.25 * ease;
-      for (let s = -1; s <= 1; s++) {
-        const off = s * 0.17;
-        for (let i = 0; i < 16; i++) {
-          const r = head + i * 0.17;
-          if (r > 3.90) continue;
-          const fade = (0.98 - i * 0.045) * clamp01(k * 2.4);
-          if (fade <= 0.02) continue;
-          const h = (0.150 - i * 0.0062) * (0.72 + 0.52 * ease) * (s === 0 ? 1.0 : 0.74);
-          put(ux * r + px * off, aim + 0.46 * (1.0 - ease) + i * 0.030, uz * r + pz * off,
-              h, h, h, ang + t * 3.1 + s,
-              (i & 1) === 0 ? M_RAINBOW : M_SPECTRUM,
-              i === 0 ? G_FLASH : (i < 4 ? G_BODY : G_DEEP), 0.0, a * fade);
+  const spin = t * TAU;
+  const abs = Math.abs;
+
+  if (variant === 0) {
+    /* ---- KALEIDOSCOPE : six reflexions, six gestes -------------------------------- */
+    const BEATS_K = [30, 48, 66, 84, 102, 120];
+    const aim = 1.05;
+    for (let k = 0; k < BEATS_K.length; k++) {
+      const since = nowT - BEATS_K[k];
+      if (since < -WIND || since > BURST) continue;
+      const pre = since < 0;
+      const w = pre ? 1.0 + since / WIND : 1.0;
+      const r = pre ? 0.0 : since / BURST;
+      const base = salt * 0.11 + k;
+
+      if (k === 0) {
+        /* I. LES DOUZE CONVERGENTS, puis le choc qui ressort en colonne. */
+        if (pre) {
+          const e = w * w;
+          for (let i = 0; i < 12; i++) {
+            const ang = i / 12 * TAU + base;
+            const head = 3.90 - 3.70 * e;
+            for (let j = 0; j < 5; j++) {
+              const rr = head + j * 0.21, h = 0.112 - j * 0.014;
+              put(cos(ang) * rr, aim + 0.07 * j, sin(ang) * rr, h, h, h, ang + spin,
+                  (i & 1) === 0 ? M_RAINBOW : M_SPECTRUM, j === 0 ? G_FLASH : G_BODY,
+                  0.0, a * (0.98 - j * 0.13) * w);
+            }
+          }
+        } else {
+          const f = 1.0 - r;
+          for (let j = 0; j < 15; j++) {
+            const up = aim + j * 0.18 * (0.30 + r * 1.7);
+            const rr = 0.11 + j * 0.034, ca = j * 1.1 + spin * 2.0, h = 0.135 * f;
+            put(cos(ca) * rr, up, sin(ca) * rr, h, h, h, ca, M_STROBE,
+                j < 3 ? G_CORE : G_GLASS, 0.0, a * f * (1.0 - j * 0.042));
+          }
+        }
+      } else if (k === 1) {
+        /* II. LES DEUX LAMES CROISEES : ca tranche, et dans deux sens a la fois. */
+        const s = pre ? (w - 1.0) : r;
+        const fade = 1.0 - abs(s) * 0.42;
+        for (let m = 0; m < 2; m++) {
+          const dir = m === 0 ? 1.0 : -1.0;
+          const cross = s * dir * 2.70;
+          const tilt = m === 0 ? 0.30 : -0.30;
+          for (let i = -11; i <= 11; i++) {
+            const along = i * 0.175;
+            const wx = m === 0 ? cross : along;
+            const wz = m === 0 ? along : cross;
+            const hw = 0.155 - abs(i) * 0.0068;
+            put(wx, aim + tilt * along, wz, hw, 0.055, hw, tilt * 3.0 + spin,
+                m === 0 ? M_RAINBOW : M_SPECTRUM, i === 0 ? G_FLASH : G_BODY, 0.0, a * fade);
+          }
+        }
+        if (!pre && r < 0.55) {
+          const f = 1.0 - r / 0.55, h = 0.36 * f + 0.07;
+          put(0, aim, 0, h, h, h, spin * 3.0, M_STROBE, G_CORE, 0.0, a * f);
+        }
+      } else if (k === 2) {
+        /* III. LA CAGE QUI SE REFERME : un ecrasement, sans projectile. */
+        const close = pre ? w : 1.0;
+        const back = pre ? 0.0 : r;
+        const rad = 2.60 - 2.28 * (close * close) + 2.45 * back * back;
+        const fade = pre ? w : (1.0 - back);
+        for (let wall = 0; wall < 6; wall++) {
+          const ang = wall / 6 * TAU + spin * 0.35;
+          for (let j = 0; j < 11; j++) {
+            put(cos(ang) * rad, 0.10 + j * 0.225, sin(ang) * rad, 0.070, 0.070, 0.118, ang,
+                (j % 3 === 0) ? M_DUAL : M_RAINBOW, (j % 3 === 0) ? G_FRAME : G_BODY,
+                (j % 3 === 0) ? H_CYAN : 0.0, a * fade * 0.94);
+          }
+        }
+        if (!pre && back < 0.70) {
+          const f = 1.0 - back / 0.70;
+          for (let i = 0; i < 12; i++) {
+            const ca = i / 12 * TAU + spin, h = 0.165 * f;
+            put(cos(ca) * 0.24, aim + 0.20 * sin(i * 2.1), sin(ca) * 0.24, h, h, h, ca,
+                M_SPECTRUM, G_CORE, 0.0, a * f * 0.92);
+          }
+        }
+      } else if (k === 3) {
+        /* IV. LE PRISME ECLATE : un coup entre, douze sortent. */
+        if (pre) {
+          const e = w * w * w;
+          const hh = 4.30 - 4.12 * e;
+          for (let j = 0; j < 8; j++) {
+            const rr = hh + j * 0.15, h = 0.185 - j * 0.016;
+            put(rr * 0.70, aim + 1.75 * (1.0 - e) + j * 0.05, rr * -0.70, h, h, h, spin * 4.0,
+                M_SPECTRUM, j === 0 ? G_CORE : G_FLASH, 0.0,
+                a * (1.0 - j * 0.10) * clamp01(w * 1.8));
+          }
+        } else {
+          const out2 = r * r * 0.55 + r * 0.45;
+          const f = 1.0 - r * 0.80;
+          for (let i = 0; i < 12; i++) {
+            const ang = i / 12 * TAU + base;
+            const pitch = ((i % 3) - 1) * 0.60;
+            for (let j = 0; j < 4; j++) {
+              const rr = (0.22 + j * 0.32) * (0.35 + out2 * 3.7), h = 0.105 - j * 0.013;
+              put(cos(ang) * rr, aim + pitch * rr * 0.48, sin(ang) * rr, h, h, h, ang + spin,
+                  (i % 3 === 0) ? M_STROBE : M_RAINBOW, (i % 3 === 0) ? G_GLASS : G_BODY,
+                  0.0, a * f * (0.95 - j * 0.14));
+            }
+          }
+        }
+      } else if (k === 4) {
+        /* V. LA SPIRALE DE REFLETS : le seul geste continu, il visse. */
+        const p = pre ? w * 0.58 : 0.58 + r * 0.42;
+        const f = pre ? clamp01(w * 2.2) : (1.0 - r * 0.72);
+        for (let i = 0; i < 34; i++) {
+          const u = i / 33;
+          const lead = clamp01(p * 1.30 - u * 0.30);
+          if (lead <= 0.01) continue;
+          const ang = u * TAU * 2.6 + spin * 1.5 + base;
+          const rr = (1.70 - 1.26 * p) * (0.40 + 0.60 * (1.0 - u * 0.5));
+          const h = 0.086 + 0.032 * sin(u * 9.0);
+          put(cos(ang) * rr, 2.45 - u * 2.30, sin(ang) * rr, h, h, h, ang,
+              (i % 4 === 0) ? M_SPECTRUM : M_RAINBOW, (i % 4 === 0) ? G_FRAME : G_BODY,
+              0.0, a * f * lead);
+        }
+      } else {
+        /* VI. LE REPLIEMENT : le coup final, le plus large puis le plus haut. */
+        if (pre) {
+          const e = w * w;
+          for (let i = 0; i < 18; i++) {
+            const ang = i / 18 * TAU + base;
+            for (let j = 0; j < 6; j++) {
+              const rr = (4.40 - 4.05 * e) * (0.55 + j * 0.11);
+              put(cos(ang) * rr, aim + (1.0 - e) * 0.95 * sin(i * 0.9), sin(ang) * rr,
+                  0.092, 0.092, 0.092, ang + spin, M_RAINBOW, j === 0 ? G_FLASH : G_BODY,
+                  0.0, a * w * 0.90);
+            }
+          }
+        } else {
+          const f = 1.0 - r * 0.84;
+          for (let j = 0; j < 24; j++) {
+            const up = aim + j * 0.27 * (0.22 + r * 2.1);
+            const sway = 0.32 * sin(j * 0.8 + spin * 2.0) * (0.3 + r);
+            const ca = j * 0.7 + spin * 3.0, h = 0.175 - j * 0.0046;
+            put(cos(ca) * sway, up, sin(ca) * sway, h, h, h, ca,
+                (j % 2 === 0) ? M_SPECTRUM : M_STROBE,
+                (j < 4) ? G_CORE : (j < 12 ? G_FLASH : G_GLASS), 0.0, a * f * (1.0 - j * 0.026));
+          }
         }
       }
-      /* LA POINTE : la masse du coup. */
+    }
+
+  } else if (variant === 1) {
+    /* ---- SPHERE D'ENTROPIE : huit facons de se defaire ---------------------------- */
+    const BEATS_E = [22, 38, 54, 70, 86, 102, 118, 134];
+    const aim = 1.15;
+    for (let k = 0; k < BEATS_E.length; k++) {
+      const since = nowT - BEATS_E[k];
+      if (since < -WIND || since > BURST) continue;
+      const pre = since < 0;
+      const w = pre ? 1.0 + since / WIND : 1.0;
+      const r = pre ? 0.0 : since / BURST;
+      const grit = 0.10 + k * 0.13;      /* le desordre monte, comme CHAOS_ENTROPIES */
+      const base = salt * 0.09 + k * 1.7;
+
+      if (k === 0) {
+        /* 1. LA MORSURE DE TREILLIS. */
+        for (let i = 0; i < 12; i++) {
+          const ang = i * 2.39996 + base;
+          const rr = pre ? (2.45 - 2.05 * w * w) : (0.38 + 2.1 * r * r);
+          const f = pre ? w : (1.0 - r);
+          const hh = 0.150 * (pre ? 1.0 : 1.0 - 0.42 * r);
+          const up = aim + sin(i * 1.7) * 0.50 * rr * 0.42;
+          put(cos(ang) * rr, up, sin(ang) * rr, hh, hh, hh, ang + spin,
+              M_TINTED, G_MID, H_VIOLET, a * f * 0.95);
+          const h2 = hh * 0.60;
+          put(cos(ang) * rr * 0.86, up * 0.97, sin(ang) * rr * 0.86, h2, h2, h2, -ang,
+              M_RAINBOW, G_BODY, 0.0, a * f * 0.78);
+        }
+      } else if (k === 1) {
+        /* 2. L'ANNEAU DE CISAILLEMENT : plat, large, tremblant. */
+        const rad = pre ? (2.95 - 2.52 * w) : (0.42 + 3.0 * r * r);
+        const f = pre ? w : (1.0 - r * 0.88);
+        for (let i = 0; i < 36; i++) {
+          const ang = i / 36 * TAU + spin * 0.8;
+          const wob = grit * 0.22 * sin(i * 3.1 + spin * 4.0);
+          put(cos(ang) * (rad + wob), aim + wob, sin(ang) * (rad + wob),
+              0.145, 0.038, 0.145, ang,
+              (i % 5 === 0) ? M_DUAL : M_MONO, (i % 5 === 0) ? G_GLASS : G_MID,
+              H_CYAN, a * f * 0.92);
+        }
+      } else if (k === 2) {
+        /* 3. L'EFFONDREMENT DE SECTEUR : le seul geste qui arrive d'un seul cote. */
+        const fall = pre ? (1.0 - w) : 0.0;
+        const f = pre ? clamp01(w * 1.7) : (1.0 - r);
+        for (let i = 0; i < 9; i++) {
+          const ang = base + (i - 4) * 0.165;
+          for (let j = 0; j < 7; j++) {
+            const rr = 0.60 + j * 0.32;
+            const drop = fall * (2.60 + j * 0.30);
+            const slip = pre ? 0.0 : r * r * 1.3;
+            const h = 0.125 - j * 0.008;
+            put(cos(ang) * (rr + slip), aim + drop - j * 0.06 + slip * 0.4,
+                sin(ang) * (rr + slip), h, h, h, ang + j * 0.4,
+                M_PULSE, j < 2 ? G_FLASH : G_MID, H_MAGENTA, a * f * (0.95 - j * 0.08));
+          }
+        }
+      } else if (k === 3) {
+        /* 4. LE VRILLAGE : deux helices contraires, le seul geste qui tord. */
+        const tight = pre ? w : 1.0 - r * 0.55;
+        const f = pre ? w : (1.0 - r * 0.9);
+        for (let helix = 0; helix < 2; helix++) {
+          const sense = helix === 0 ? 1.0 : -1.0;
+          for (let i = 0; i < 24; i++) {
+            const u = i / 23;
+            const ang = sense * (u * TAU * 2.2 + spin * 2.4) + helix * Math.PI;
+            const rr = (2.70 - 2.15 * tight) * (0.45 + 0.55 * sin(u * Math.PI));
+            const h = 0.098 - 0.020 * abs(u - 0.5) * 2.0;
+            put(cos(ang) * rr, 0.20 + u * 2.15, sin(ang) * rr, h, h, h, ang,
+                M_SPECTRUM, (i % 5 === 0) ? G_FLASH : G_BODY, 0.0, a * f * 0.93);
+          }
+        }
+      } else if (k === 4) {
+        /* 5. LA PLUIE DE CELLULES : ca tombe droit, l'oeil a besoin d'un axe neuf. */
+        const f = pre ? clamp01(w * 1.6) : (1.0 - r * 0.95);
+        const drop = pre ? (1.0 - w) : 0.0;
+        for (let i = 0; i < 28; i++) {
+          const ang = i * 2.39996 + base;
+          const rr = 0.30 + (i % 7) * 0.305;
+          const stagger = ((i * 37) % 13) / 13;
+          const up = aim + 1.05 + drop * (3.4 + stagger * 1.8) - (pre ? 0.0 : r * 1.25);
+          const h = 0.108 + 0.030 * stagger;
+          put(cos(ang) * rr, up, sin(ang) * rr, h, h, h, ang * 2.0 + spin,
+              (i % 6 === 0) ? M_STROBE : M_MONO, (i % 6 === 0) ? G_GLASS : G_MID,
+              0.0, a * f * 0.90);
+        }
+        if (!pre && r < 0.5) {
+          const g = 1.0 - r / 0.5;
+          for (let i = 0; i < 14; i++) {
+            const ca = i / 14 * TAU, sp = 0.30 + r * 1.9, h = 0.088 * g;
+            put(cos(ca) * sp, 0.10, sin(ca) * sp, h, h, h, ca, M_MONO, G_DEEP, 0.0, a * g * 0.75);
+          }
+        }
+      } else if (k === 5) {
+        /* 6. L'IMPLOSION PONCTUELLE : la seule qui finisse par une absence. */
+        if (pre) {
+          const e = w * w * w;
+          for (let i = 0; i < 40; i++) {
+            const ang = i * 2.39996 + base;
+            const pitchU = ((i * 11) % 17) / 17;
+            const rr = (3.20 - 3.05 * e) * (0.5 + 0.5 * pitchU);
+            const h = 0.070 + 0.055 * e;
+            put(cos(ang) * rr, aim + (pitchU - 0.5) * 2.4 * (1.0 - e), sin(ang) * rr,
+                h, h, h, ang + spin * 2.0, M_EMBER, G_FRAME, H_EMBER_HUE, a * (0.45 + 0.55 * e));
+          }
+          if (w > 0.80) {
+            const g = (w - 0.80) / 0.20, h = 0.10 + 0.45 * g;
+            put(0, aim, 0, h, h, h, spin * 6.0, M_SPECTRUM, G_CORE, 0.0, a * g);
+          }
+        } else {
+          const g = 1.0 - r;
+          const h1 = 0.62 * g * g;
+          put(0, aim, 0, h1, h1, h1, spin * 6.0, M_SPECTRUM, G_CORE, 0.0, a * g);
+          const h2 = 0.95 * g * g * g;
+          put(0, aim, 0, h2, h2, h2, -spin * 2.0, M_DUAL, G_DEEP, H_VIOLET, a * g * 0.45);
+        }
+      } else if (k === 6) {
+        /* 7. L'ONDE DE DESAGREGATION : le seul geste centrifuge pur. */
+        const grow = pre ? w * 0.25 : 0.25 + r * 0.75;
+        const f = pre ? w * 0.8 : (1.0 - r * 0.92);
+        const rr = 0.25 + grow * 3.1;
+        for (let ringIdx = 0; ringIdx < 5; ringIdx++) {
+          const lat = (ringIdx - 2) * 0.38;
+          const ringR = rr * sqrt(Math.max(0.05, 1.0 - lat * lat * 0.62));
+          const n = 8 + ringIdx * 2;
+          for (let i = 0; i < n; i++) {
+            const ang = i / n * TAU + ringIdx * 0.6 + spin;
+            const jit = grit * 0.30 * sin(i * 5.3 + ringIdx);
+            const h = 0.100 * (1.0 - grow * 0.35);
+            put(cos(ang) * (ringR + jit), aim + lat * rr * 0.85, sin(ang) * (ringR + jit),
+                h, h, h, ang, M_RAINBOW, ringIdx === 2 ? G_FLASH : G_BODY, 0.0, a * f * 0.94);
+          }
+        }
+      } else {
+        /* 8. LA DISSOLUTION : a ce niveau d'entropie, il n'y a plus de forme. */
+        const f = pre ? w : (1.0 - r);
+        for (let i = 0; i < 46; i++) {
+          const ang = i * 2.39996 + base;
+          const seedU = ((i * 29) % 23) / 23;
+          const cloud = pre ? (1.0 - w) * 2.1 + 0.50 : 0.50 + r * 2.7;
+          const rr = cloud * (0.35 + 0.65 * seedU);
+          const up = aim + (seedU - 0.42) * 1.5 * cloud + (pre ? 0.0 : r * r * 1.7);
+          const h = (0.055 + 0.075 * seedU) * (pre ? 1.0 : 1.0 - 0.4 * r);
+          put(cos(ang) * rr, up, sin(ang) * rr, h, h, h, ang * 3.0 + spin,
+              (i % 4 === 0) ? M_DUAL : M_TINTED, (i % 4 === 0) ? G_FRAME : G_DEEP,
+              H_ROSE, a * f * 0.88);
+        }
+      }
+    }
+
+  } else {
+    /* ---- BIG BANG : quatorze tractions, puis UNE detonation ----------------------- */
+    const aim = 1.20;
+
+    /* LES TRACTIONS : la singularite TIRE. Elles s'etirent vers le foyer et se
+       resserrent d'une traction a l'autre ; sans eclat, pour ne pas ecraser la suite. */
+    for (let k = 0; k < 14; k++) {
+      const since = nowT - (6 + k * 6);
+      if (since < -3.0 || since > 5.0) continue;
+      const u = clamp01((since + 3.0) / 8.0);
+      const f = sin(u * Math.PI);
+      const grip = 3.40 - k * 0.165;
       for (let i = 0; i < 5; i++) {
-        const r = head - i * 0.11;
-        const h = 0.205 - i * 0.022;
-        put(ux * r, aim + 0.46 * (1.0 - ease), uz * r, h, h, h, ang * 1.7 + t * 5.0,
-            M_SPECTRUM, i === 0 ? G_CORE : G_FLASH, 0.0,
-            a * clamp01(k * 2.0) * (0.95 - i * 0.11));
+        const ang = k * 2.39996 + i * 1.2566 + salt * 0.07;
+        for (let j = 0; j < 10; j++) {
+          const rr = grip * (1.0 - u * 0.82) * (0.26 + j * 0.090);
+          const h = 0.090 - j * 0.0052;
+          put(cos(ang) * rr, aim + 0.60 * (1.0 - u) * sin(i * 1.9 + k) + j * 0.028,
+              sin(ang) * rr, h, h, h, ang, M_TINTED, j < 2 ? G_FRAME : G_DEEP, H_BLUE,
+              a * f * (0.92 - j * 0.062));
+        }
       }
-    } else {
-      /* L'ECLAT : trois couronnes, une gerbe, un noyau. Un seul anneau plat disparait
-         vu par la tranche -- deja paye sur la fenetre de la Porte. */
-      const k = since / STRIKE_BURST;
-      const open = sqrt(k);
-      /* Decroissance LINEAIRE : au carre, l'eclat a perdu soixante pour cent de son
-         alpha au tiers de sa vie, et l'oeil n'y voit plus un coup mais un soupir. */
-      const fade = 1.0 - k * 0.88;
-      const rr = (0.30 + 1.55 * open) * blast;
-      for (let i = 0; i < 26; i++) {
-        const ca = i / 26 * Math.PI * 2 + ang;
-        const lift = 0.40 * sin(i * 1.7 + b) * (1.0 - k);
-        const h = 0.112 * blast * (1.0 - 0.40 * k);
-        put(cos(ca) * rr, aim + lift, sin(ca) * rr, h, h, h, ca + t * 2.2,
-            (i % 3 === 0) ? M_STROBE : M_RAINBOW,
-            (i % 3 === 0) ? G_GLASS : G_BODY, 0.0, a * fade * 0.95);
-      }
-      for (let i = 0; i < 18; i++) {
-        const ca = i / 18 * Math.PI * 2;
-        const rv = rr * 0.86;
-        const h = 0.095 * blast * (1.0 - 0.40 * k);
-        put(ux * cos(ca) * rv, aim + sin(ca) * rv, uz * cos(ca) * rv,
-            h, h, h, ca * 1.3 + t * 2.6, M_SPECTRUM, G_MID, 0.0, a * fade * 0.88);
-      }
-      for (let i = 0; i < 12; i++) {
-        const spin = i / 12 * Math.PI * 2 + ang * 2.0;
-        const reach = rr * (0.55 + 0.85 * ((i * 7 % 5) / 4));
-        const h = 0.085 * blast * (1.0 - 0.5 * k);
-        put(ux * reach * 0.80 + cos(spin) * rr * 0.34,
-            aim + 0.25 + 1.35 * open * (0.45 + (i % 3) * 0.28),
-            uz * reach * 0.80 + sin(spin) * rr * 0.34,
-            h, h, h, spin + t * 3.4, M_RAINBOW, G_FRAME, 0.0, a * fade * 0.80);
-      }
-      if (k < 0.60) {
-        const core = 1.0 - k / 0.60;
-        const h1 = (0.34 * core + 0.09) * blast;
-        put(0, aim, 0, h1, h1, h1, t * 4.7, M_SPECTRUM, G_CORE, 0.0, a * core * 0.98);
-        const h2 = (0.52 * core + 0.12) * blast;
-        put(0, aim, 0, h2, h2, h2, -t * 3.1, M_STROBE, G_GLASS, 0.0, a * core * 0.55);
+    }
+
+    /* LA DETONATION, en trois temps qui ne se ressemblent pas. */
+    const bang = nowT - 84;
+    if (bang >= -16.0 && bang <= 26.0) {
+      if (bang < 0.0) {
+        /* TEMPS 1 : LA COMPRESSION. */
+        const c = 1.0 + bang / 16.0;
+        const e = c * c * c;
+        for (let i = 0; i < 60; i++) {
+          const ang = i * 2.39996 + salt * 0.05;
+          const lat = ((i * 13) % 19) / 19 - 0.5;
+          const rr = (5.40 - 5.10 * e) * (0.55 + 0.45 * cos(lat * 3.0));
+          const h = 0.085 + 0.075 * e;
+          put(cos(ang) * rr, aim + lat * 3.4 * (1.0 - e * 0.7), sin(ang) * rr,
+              h, h, h, ang + spin * 2.0, (i % 5 === 0) ? M_DUAL : M_TINTED,
+              (i % 5 === 0) ? G_GLASS : G_MID, H_BLUE, a * (0.40 + 0.60 * e));
+        }
+        if (c > 0.72) {
+          const g = (c - 0.72) / 0.28, h = 0.12 + 0.70 * g * g;
+          put(0, aim, 0, h, h, h, spin * 8.0, M_SPECTRUM, G_CORE, 0.0, a * g);
+        }
+      } else {
+        /* TEMPS 2 : L'ECLAIR, quatre ticks. */
+        if (bang < 4.0) {
+          const g = 1.0 - bang / 4.0, h0 = 1.35 * g + 0.25;
+          put(0, aim, 0, h0, h0, h0, spin * 9.0, M_SPECTRUM, G_CORE, 0.0, a * g);
+          for (let i = 0; i < 16; i++) {
+            const ang = i / 16 * TAU;
+            const lat = ((i % 4) - 1.5) * 0.55;
+            for (let j = 1; j < 9; j++) {
+              const rr = j * (0.55 + (1.0 - g) * 0.9), h = 0.26 - j * 0.022;
+              put(cos(ang) * rr, aim + lat * j * 0.22, sin(ang) * rr, h, h, h, ang,
+                  M_STROBE, j < 3 ? G_FLASH : G_GLASS, 0.0, a * g * (1.0 - j * 0.09));
+            }
+          }
+        }
+        /* TEMPS 3 : L'ONDE DE CHOC, lente, pour qu'on la suive. */
+        const s = bang / 26.0;
+        const wave = 0.6 + s * 7.4;
+        const f = (1.0 - s) * (1.0 - s * 0.35);
+        const n = 44;
+        for (let i = 0; i < n; i++) {
+          const ang = i / n * TAU + spin * 0.25;
+          const hw = 0.195 * f + 0.035;
+          put(cos(ang) * wave, 0.12 + 0.30 * s, sin(ang) * wave, hw, 0.070, hw, ang,
+              (i % 4 === 0) ? M_EMBER : M_RAINBOW, (i % 4 === 0) ? G_FLASH : G_BODY,
+              H_EMBER_HUE, a * f * 0.95);
+        }
+        for (let ringIdx = 0; ringIdx < 4; ringIdx++) {
+          const lat = 0.25 + ringIdx * 0.22;
+          const capR = wave * 0.62 * sqrt(Math.max(0.04, 1.0 - lat * lat));
+          const m = 10 + ringIdx * 3;
+          for (let i = 0; i < m; i++) {
+            const ang = i / m * TAU + ringIdx * 0.5 - spin * 0.4;
+            const h = 0.115 * f + 0.02;
+            put(cos(ang) * capR, aim + lat * wave * 0.72, sin(ang) * capR, h, h, h, ang,
+                M_RAINBOW, G_MID, 0.0, a * f * 0.80);
+          }
+        }
       }
     }
   }
