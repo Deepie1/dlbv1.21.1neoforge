@@ -385,6 +385,7 @@ public final class ClientTranslationInjector {
         // leur nom, leur geste d'origine et la description de l'auteur — on ne réécrit pas
         // cette dernière, on la réutilise.
         map.put("tooltip.deep_lucky_block.skill_named", "SKILL · %1$s");
+        map.put("tooltip.deep_lucky_block.system.section_skills", "❖ SKILLS (%s)");
         map.put("tooltip.deep_lucky_block.cooldown_suffix", " · Cooldown %1$s s");
         map.put("tooltip.deep_lucky_block.cast.on_mob", "Right-click a mob");
         map.put("tooltip.deep_lucky_block.cast.in_hand", "Right-click, item in hand");
@@ -756,6 +757,7 @@ public final class ClientTranslationInjector {
         // leur nom, leur geste d'origine et la description de l'auteur — on ne réécrit pas
         // cette dernière, on la réutilise.
         map.put("tooltip.deep_lucky_block.skill_named", "COMPÉTENCE · %1$s");
+        map.put("tooltip.deep_lucky_block.system.section_skills", "❖ COMPÉTENCES (%s)");
         map.put("tooltip.deep_lucky_block.cooldown_suffix", " · Recharge %1$s s");
         map.put("tooltip.deep_lucky_block.cast.on_mob", "Clic droit sur un mob");
         map.put("tooltip.deep_lucky_block.cast.in_hand", "Clic droit, objet en main");

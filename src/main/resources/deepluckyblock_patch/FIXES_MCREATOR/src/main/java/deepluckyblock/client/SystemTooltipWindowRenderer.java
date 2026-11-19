@@ -846,6 +846,71 @@ public final class SystemTooltipWindowRenderer {
                 }
             }
 
+            // --- SECTION : COMPETENCES ---
+            // Meme forme que la section ENCHANTEMENTS juste au-dessus, et pour la meme
+            // raison : une competence se lit comme un enchantement. Titre seul quand on
+            // survole, detail sous Maj. Avant, ces lignes tombaient tout en bas parmi les
+            // attributs natifs, dans la police des attributs : c'etait illisible et ca ne
+            // ressemblait a rien de ce que la fenetre fait ailleurs.
+            List<deepluckyblock.enchantments.WeaponSkill.Entry> skillList;
+            try {
+                skillList = deepluckyblock.enchantments.WeaponSkill.allOn(stack);
+            } catch (Throwable ignoredSkills) {
+                skillList = new ArrayList<>();
+            }
+            if (!skillList.isEmpty()) {
+                curY += 5;
+                String skillFmt = TranslationFallback.resolve("tooltip.deep_lucky_block.system.section_skills");
+                String skillHeader = String.format(Locale.ROOT,
+                        skillFmt != null ? skillFmt : (fr ? "\u2756 COMP\u00c9TENCES (%s)" : "\u2756 SKILLS (%s)"),
+                        skillList.size());
+                rows.add(new SectionHeaderRow(skillHeader, "", false, curY, 10));
+                curY += 12;
+
+                List<Component> skillTitles = new ArrayList<>(skillList.size());
+                for (deepluckyblock.enchantments.WeaponSkill.Entry sk : skillList) {
+                    skillTitles.add(skillTitle(stack, sk, shift));
+                }
+
+                if (!shift) {
+                    if (skillTitles.size() >= 3) {
+                        for (int sg = 0; sg < skillTitles.size(); sg += 2) {
+                            Component skLeft = skillTitles.get(sg);
+                            Component skRight = (sg + 1 < skillTitles.size()) ? skillTitles.get(sg + 1) : null;
+                            rows.add(new EnchantGridRow(skLeft, skRight, curY, 10));
+                            curY += 11;
+                        }
+                    } else {
+                        for (Component skOnly : skillTitles) {
+                            rows.add(new PlainComponentRow(skOnly, S_ITEM, TEXT_BRIGHT, 2, curY, 10));
+                            curY += 11;
+                        }
+                    }
+                } else {
+                    int skDescFontPx = Math.max(140, (int) Math.floor((innerW - 14) / S_DESC));
+                    int skDescLineH = Math.max(8, (int) Math.ceil(9 * S_DESC) + 1);
+                    for (int si = 0; si < skillList.size(); si++) {
+                        deepluckyblock.enchantments.WeaponSkill.Entry sk = skillList.get(si);
+                        rows.add(new SplitItemRow(skillTitles.get(si), null, false, curY, 10));
+                        curY += 11;
+                        // Le geste et la recharge d'abord, en gras : c'est ce qu'on vient
+                        // chercher. La description de l'auteur ensuite.
+                        for (String line : wrapDescriptionItalic(font, skillTrigger(sk, fr), skDescFontPx, 2)) {
+                            rows.add(new IndentedBarTextRow(line, 0xAA38BDF8, S_DESC, curY, skDescLineH));
+                            curY += skDescLineH;
+                        }
+                        String skDesc = skillDescription(stack, sk);
+                        if (skDesc != null && !skDesc.isBlank()) {
+                            for (String line : wrapDescriptionItalic(font, skDesc, skDescFontPx, 6)) {
+                                rows.add(new IndentedBarTextRow(line, 0xAA38BDF8, S_DESC, curY, skDescLineH));
+                                curY += skDescLineH;
+                            }
+                        }
+                        if (si < skillList.size() - 1) curY += 4;
+                    }
+                }
+            }
+
             // --- SECTION : SYNERGIE ACTIVE (affichée uniquement lorsqu'une synergie est active) ---
             if (!activeCombos.isEmpty()) {
                 curY += 5;
@@ -1243,6 +1308,82 @@ public final class SystemTooltipWindowRenderer {
         FormattedText ft = el.left().get();
         if (ft instanceof Component c) return c;
         return Component.literal(ft.getString());
+    }
+
+    /**
+     * Titre d'une compétence : le nom de son enchantement, décoré exactement comme dans la
+     * section ENCHANTEMENTS. Une compétence n'a pas de nom à elle — elle est le pouvoir
+     * d'un enchantement — et lui en inventer un obligerait à écrire quarante-cinq textes
+     * de plus pour dire ce que le nom de l'enchantement dit déjà.
+     */
+    private static Component skillTitle(ItemStack stack, deepluckyblock.enchantments.WeaponSkill.Entry sk,
+                                        boolean brightWhite) {
+        String path = sk.enchantPath();
+        try {
+            Enchantment ench = DeepEnchant.byId("deep_lucky_block:" + path);
+            if (ench != null) {
+                ResourceLocation id = DeepEnchant.getKeySafe(ench);
+                if (id != null) {
+                    int lvl = Math.max(1, DeepEnchant.getLevel(stack, ench));
+                    return decorateEnchantBullet(ench,
+                            EnchantmentTooltipFixProcedure.formatEnchantTitle(ench, id, lvl), brightWhite);
+                }
+            }
+        } catch (Throwable ignored) {
+            // enchantement introuvable côté client : on retombe sur le nom traduit.
+        }
+        return Component.literal("\u00a7b\u2726 ")
+                .append(Component.translatable("enchantment.deep_lucky_block." + path));
+    }
+
+    /** Le geste et la recharge, en gras : les deux informations qu'on vient chercher. */
+    private static String skillTrigger(deepluckyblock.enchantments.WeaponSkill.Entry sk, boolean fr) {
+        String gesture = TranslationFallback.resolve(sk.cast().triggerKey());
+        if (gesture == null || gesture.isBlank()) gesture = sk.cast().name();
+        StringBuilder out = new StringBuilder("\u00a7l").append(gesture).append("\u00a7r");
+        if (sk.cooldownSeconds() > 0) {
+            String tpl = TranslationFallback.resolve("tooltip.deep_lucky_block.cooldown_suffix");
+            String txt = tpl != null
+                    ? String.format(Locale.ROOT, tpl, sk.cooldownSeconds())
+                    : (fr ? " \u00b7 Recharge " + sk.cooldownSeconds() + " s"
+                          : " \u00b7 Cooldown " + sk.cooldownSeconds() + " s");
+            out.append("\u00a7l").append(txt).append("\u00a7r");
+        }
+        return out.toString();
+    }
+
+    /**
+     * La description d'une compétence. Pour les capacités activées, c'est le texte de
+     * l'auteur — leur enchantement n'a plus de ligne dans la liste, donc personne d'autre
+     * ne l'affiche. Pour les signatures, dont l'enchantement garde sa ligne et sa
+     * description plus haut, c'est le texte propre à la compétence.
+     */
+    private static String skillDescription(ItemStack stack, deepluckyblock.enchantments.WeaponSkill.Entry sk) {
+        String path = sk.enchantPath();
+        if (sk.ownsEnchant()) {
+            try {
+                Enchantment ench = DeepEnchant.byId("deep_lucky_block:" + path);
+                if (ench != null) {
+                    ResourceLocation id = DeepEnchant.getKeySafe(ench);
+                    if (id != null) {
+                        int lvl = Math.max(1, DeepEnchant.getLevel(stack, ench));
+                        String authored = EnchantmentTooltipFixProcedure.resolveCleanDescription(id, lvl);
+                        if (authored != null && !authored.isBlank()) return authored;
+                    }
+                }
+            } catch (Throwable ignored) {
+                // on retombe sur les lignes de compétence ci-dessous.
+            }
+        }
+        String one = TranslationFallback.resolve("skill.deep_lucky_block." + path + ".1");
+        String two = TranslationFallback.resolve("skill.deep_lucky_block." + path + ".2");
+        StringBuilder out = new StringBuilder();
+        if (one != null && !one.isBlank()) out.append(one);
+        if (two != null && !two.isBlank()) {
+            if (out.length() > 0) out.append(' ');
+            out.append("\u00a7o").append(two);
+        }
+        return out.toString();
     }
 
     private static Component decorateEnchantBullet(Enchantment ench, Component baseTitle, boolean brightWhite) {

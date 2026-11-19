@@ -70,6 +70,9 @@ JAVA = [
     # Fichier NEUF : sans cette ligne il ne part pas, et les deux fichiers qui
     # l'appellent ne compileraient pas chez l'utilisateur.
     'src/main/java/deepluckyblock/util/TooltipEmphasis.java',
+    # T414 : c'est CE fichier qui dessine la fenetre [SYSTEME] des objets gradés,
+    # et donc la section COMPETENCES. Sans lui l'archive livre l'ancien affichage.
+    'src/main/java/deepluckyblock/client/SystemTooltipWindowRenderer.java',
 ]
 EXTRA = [
     # T397-PIXEL3D : les trois fichiers du core shader. Ils ne vivent PAS sous

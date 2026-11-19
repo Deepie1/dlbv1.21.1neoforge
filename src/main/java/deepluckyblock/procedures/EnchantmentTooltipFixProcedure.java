@@ -100,7 +100,7 @@ public final class EnchantmentTooltipFixProcedure {
     /** Marqueur invisible dans Style#getInsertion() permettant à SystemTooltipWindowRenderer de remplacer proprement le bloc texte sans casser l'indexation JEI/EMI. */
     public static final String DLB_SYSTEM_INSERTION_TAG = "\u200b#dlb_sys";
 
-    private static Component markSystemManaged(Component c) {
+    public static Component markSystemManaged(Component c) {
         if (c == null) return null;
         return Component.empty().withStyle(s -> s.withInsertion(DLB_SYSTEM_INSERTION_TAG)).append(c);
     }
@@ -1084,7 +1084,9 @@ public final class EnchantmentTooltipFixProcedure {
         while (trimmed.startsWith("\u00a7r")) {
             trimmed = trimmed.substring(2).trim();
         }
-        return trimmed;
+        // T413 : la fenetre systeme passe par ici, elle merite le meme gras sur les
+        // touches et les recharges que l'infobulle ordinaire.
+        return deepluckyblock.util.TooltipEmphasis.emphasize(trimmed);
     }
 
     private static boolean isModEnchantment(ResourceLocation id) {

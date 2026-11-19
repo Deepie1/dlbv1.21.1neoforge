@@ -1,11 +1,11 @@
 package deepluckyblock.client;
 
 import deepluckyblock.enchantments.WeaponSkill;
+import deepluckyblock.procedures.EnchantmentTooltipFixProcedure;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
@@ -15,35 +15,32 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
  * ═══════════════════════════════════════════════════════════════
- * 🌀 EnchantmentTooltipHandler — l'encart COMPÉTENCE
+ * 🌀 EnchantmentTooltipHandler — la section COMPÉTENCES de l'infobulle ordinaire
  * ═══════════════════════════════════════════════════════════════
  *
- * <p><b>Ce que cette classe n'affiche PAS.</b> Le nom et la description des enchantements
- * ordinaires sont déjà posés par {@code EnchantmentTooltipFixProcedure}. Les réafficher
- * produirait deux fois le même texte — c'est le défaut qu'avait la première version.</p>
+ * <p>Les objets gradés du Lucky Block s'affichent dans la fenêtre {@code [SYSTÈME]}, qui
+ * dessine sa propre section COMPÉTENCES. Cette classe-ci s'occupe de <b>tous les autres
+ * objets</b>, ceux qui gardent l'infobulle normale de Minecraft, et leur donne la même
+ * structure que la liste d'enchantements juste au-dessus :</p>
  *
- * <p><b>Les deux sortes de compétences.</b></p>
- * <ul>
- *   <li>Les <b>signatures</b> sont greffées sur des enchantements qui gardent leurs effets
- *       passifs : {@code advanced_sharpness} ajoute des dégâts à chaque coup, compétence ou
- *       non. Leur ligne d'enchantement reste donc dans la liste, et l'encart n'ajoute que
- *       ce qui concerne la compétence.</li>
- *   <li>Les <b>capacités activées</b> — invocation d'armée, détecteur de minerais, grappin,
- *       traction, loyauté sincère, explosion de fusée — ne sont rien d'autre que leur
- *       pouvoir. Leur ligne a été retirée de la liste, donc l'encart porte <b>leur nom</b>
- *       et <b>la description de l'auteur</b> : sans eux, l'enchantement serait invisible.</li>
- * </ul>
+ * <ol>
+ *   <li>un en-tête de section, <b>❖ COMPÉTENCES (n)</b> ;</li>
+ *   <li>un titre par compétence, et <b>rien d'autre</b> — comme un enchantement ;</li>
+ *   <li>le détail sous <b>Maj</b> seulement : le geste, la recharge, puis la description.</li>
+ * </ol>
  *
- * <p><b>Le geste affiché est celui qui existait déjà.</b> Chaque capacité garde le
- * déclencheur qu'elle avait avant d'entrer dans l'encart. Aucun n'a été ajouté : annoncer
- * une touche qui ne fait rien serait pire que ne rien annoncer du tout.</p>
+ * <p><b>Pourquoi le titre est celui de l'enchantement.</b> Une compétence n'a pas de nom à
+ * elle : elle est le pouvoir d'un enchantement. Lui en inventer un obligerait à écrire
+ * quarante-cinq textes de plus pour dire ce que le nom de l'enchantement dit déjà.</p>
  *
- * <p><b>Le gras.</b> La touche sur laquelle appuyer et le temps de recharge sont en gras.
- * Ce sont les deux informations qu'on vient chercher en survolant l'objet, et elles se
- * perdaient dans la phrase.</p>
+ * <p><b>Pourquoi ces lignes sont marquées « gérées par le système ».</b> La fenêtre
+ * {@code [SYSTÈME]} recopie en bas, dans la police des attributs, toute ligne qu'elle ne
+ * reconnaît pas. Sans ce marquage, les compétences apparaîtraient deux fois sur un objet
+ * gradé : une fois dans sa section, une fois en bas en petits caractères.</p>
  */
 @EventBusSubscriber(modid = "deep_lucky_block", value = Dist.CLIENT)
 public class EnchantmentTooltipHandler {
@@ -64,65 +61,101 @@ public class EnchantmentTooltipHandler {
         }
         if (skills.isEmpty()) return;
 
-        boolean detail = Screen.hasShiftDown();
         List<Component> lines = event.getToolTip();
+        boolean detail = Screen.hasShiftDown();
+
+        lines.add(EnchantmentTooltipFixProcedure.markSystemManaged(
+                Component.literal(header(skills.size())).withStyle(ChatFormatting.AQUA)));
 
         for (WeaponSkill.Entry entry : skills) {
-            String path = entry.enchantPath();
-            int rgb = entry.element().primary & 0xFFFFFF;
-            Style titleStyle = Style.EMPTY.withColor(rgb).withBold(true);
-
-            if (!entry.ownsEnchant()) {
-                // Signature : son enchantement garde sa ligne et sa description plus haut.
-                lines.add(Component.translatable("tooltip.deep_lucky_block.skill_header",
-                        entry.cooldownSeconds()).withStyle(titleStyle));
-                lines.add(Component.translatable("skill.deep_lucky_block." + path + ".1")
-                        .withStyle(ChatFormatting.GRAY));
-                lines.add(Component.translatable("skill.deep_lucky_block." + path + ".2")
-                        .withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC));
-                continue;
-            }
-
-            // Capacite activee : l'encart est le SEUL endroit ou elle apparait.
-            lines.add(Component.translatable("tooltip.deep_lucky_block.skill_named",
-                    Component.translatable("enchantment.deep_lucky_block." + path))
-                    .withStyle(titleStyle));
-
-            MutableComponent trigger = Component.literal(INDENT)
-                    .append(Component.translatable(entry.cast().triggerKey())
-                            .withStyle(ChatFormatting.BOLD));
-            if (entry.cooldownSeconds() > 0) {
-                // Pas de recharge inventee : seules celles qui existent vraiment
-                // s'affichent. Quatre de ces capacites n'en ont aucune.
-                trigger.append(Component.translatable("tooltip.deep_lucky_block.cooldown_suffix",
-                        entry.cooldownSeconds()).withStyle(ChatFormatting.BOLD));
-            }
-            lines.add(trigger.withStyle(ChatFormatting.GRAY));
-
+            lines.add(EnchantmentTooltipFixProcedure.markSystemManaged(title(stack, entry)));
             if (!detail) continue;
-            // La description de l'auteur, telle que la liste l'aurait affichee : meme
-            // source, meme mise en forme, meme repli. Elle ne s'affiche que touche Maj
-            // enfoncee, exactement comme les descriptions de la liste.
-            appendAuthorDescription(lines, stack, path);
+
+            lines.add(EnchantmentTooltipFixProcedure.markSystemManaged(
+                    Component.literal(INDENT + trigger(entry)).withStyle(ChatFormatting.GRAY)));
+            for (Component line : description(stack, entry)) {
+                lines.add(EnchantmentTooltipFixProcedure.markSystemManaged(line));
+            }
         }
     }
 
-    /**
-     * Ajoute la description écrite par l'auteur pour cet enchantement. Silencieuse si
-     * l'enchantement est introuvable ou n'a pas de description : une capacité sans texte
-     * garde son titre et son geste, ce qui suffit à la jouer.
-     */
-    private static void appendAuthorDescription(List<Component> lines, ItemStack stack, String path) {
+    /** « ❖ COMPÉTENCES (n) », exactement la forme de l'en-tête des enchantements. */
+    private static String header(int count) {
+        String fmt = deepluckyblock.util.TranslationFallback.resolve(
+                "tooltip.deep_lucky_block.system.section_skills");
+        if (fmt == null || fmt.isBlank()) fmt = "\u2756 SKILLS (%s)";
         try {
-            Enchantment en = deepluckyblock.util.DeepEnchant.byId("deep_lucky_block:" + path);
-            if (en == null) return;
-            ResourceLocation id = deepluckyblock.util.DeepEnchant.getKeySafe(en);
-            if (id == null) return;
-            int level = Math.max(1, deepluckyblock.util.DeepEnchant.getLevel(stack, en));
-            lines.addAll(deepluckyblock.procedures.EnchantmentTooltipFixProcedure.describe(id, level));
+            return String.format(Locale.ROOT, fmt, count);
         } catch (Throwable ignored) {
-            // Une infobulle ne doit jamais faire tomber le rendu : au pire il manque
-            // la description, le titre et le geste restent.
+            return fmt;
         }
+    }
+
+    /** Le nom de l'enchantement qui porte la compétence, mis en forme comme dans la liste. */
+    private static Component title(ItemStack stack, WeaponSkill.Entry entry) {
+        String path = entry.enchantPath();
+        try {
+            Enchantment ench = deepluckyblock.util.DeepEnchant.byId("deep_lucky_block:" + path);
+            if (ench != null) {
+                ResourceLocation id = deepluckyblock.util.DeepEnchant.getKeySafe(ench);
+                if (id != null) {
+                    int lvl = Math.max(1, deepluckyblock.util.DeepEnchant.getLevel(stack, ench));
+                    return EnchantmentTooltipFixProcedure.formatEnchantTitle(ench, id, lvl);
+                }
+            }
+        } catch (Throwable ignored) {
+            // enchantement introuvable : on retombe sur le nom traduit.
+        }
+        return Component.translatable("enchantment.deep_lucky_block." + path)
+                .withStyle(ChatFormatting.AQUA);
+    }
+
+    /** Geste et recharge, en gras : les deux informations qu'on vient chercher. */
+    private static String trigger(WeaponSkill.Entry entry) {
+        String gesture = deepluckyblock.util.TranslationFallback.resolve(entry.cast().triggerKey());
+        if (gesture == null || gesture.isBlank()) gesture = entry.cast().name();
+        StringBuilder out = new StringBuilder("\u00a7l").append(gesture).append("\u00a7r\u00a77");
+        if (entry.cooldownSeconds() > 0) {
+            String tpl = deepluckyblock.util.TranslationFallback.resolve(
+                    "tooltip.deep_lucky_block.cooldown_suffix");
+            String txt;
+            try {
+                txt = tpl != null ? String.format(Locale.ROOT, tpl, entry.cooldownSeconds())
+                        : " \u00b7 " + entry.cooldownSeconds() + " s";
+            } catch (Throwable ignored) {
+                txt = " \u00b7 " + entry.cooldownSeconds() + " s";
+            }
+            out.append("\u00a7l").append(txt).append("\u00a7r\u00a77");
+        }
+        return out.toString();
+    }
+
+    /**
+     * La description : celle de l'auteur pour une capacité activée — son enchantement n'a
+     * plus de ligne dans la liste, personne d'autre ne l'affiche — et le texte propre à la
+     * compétence pour une signature, dont l'enchantement garde sa ligne plus haut.
+     */
+    private static List<Component> description(ItemStack stack, WeaponSkill.Entry entry) {
+        String path = entry.enchantPath();
+        if (entry.ownsEnchant()) {
+            try {
+                Enchantment ench = deepluckyblock.util.DeepEnchant.byId("deep_lucky_block:" + path);
+                if (ench != null) {
+                    ResourceLocation id = deepluckyblock.util.DeepEnchant.getKeySafe(ench);
+                    if (id != null) {
+                        int lvl = Math.max(1, deepluckyblock.util.DeepEnchant.getLevel(stack, ench));
+                        List<Component> authored = EnchantmentTooltipFixProcedure.describe(id, lvl);
+                        if (!authored.isEmpty()) return authored;
+                    }
+                }
+            } catch (Throwable ignored) {
+                // on retombe sur les deux lignes de compétence ci-dessous.
+            }
+        }
+        MutableComponent one = Component.translatable("skill.deep_lucky_block." + path + ".1")
+                .withStyle(ChatFormatting.GRAY);
+        MutableComponent two = Component.translatable("skill.deep_lucky_block." + path + ".2")
+                .withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC);
+        return List.of(Component.literal(INDENT).append(one), Component.literal(INDENT).append(two));
     }
 }
