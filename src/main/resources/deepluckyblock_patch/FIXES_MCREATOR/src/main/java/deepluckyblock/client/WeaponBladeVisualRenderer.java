@@ -146,10 +146,23 @@ public final class WeaponBladeVisualRenderer {
             // Seuls les éclats d'ACTION (alpha élevé : reflet qui parcourt la lame, charge d'arc, goutte qui
             // tombe...) restent visibles. Hors action, on ne garde donc que les accents animés.
             boolean armActive = isHeldWeaponActive();
-            // Le tirage 15 % mêlée / 40 % distance est fait UNE FOIS au loot dans DeepNbt.
-            // Sans aura persistée, l'item reste propre au repos ; les éclats d'action restent jouables.
-            if (!armActive && !animSword
-                    && !deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(stack)) return;
+            // T409-AURA-MINORITE — LA DECISION PRISE AU LOOT COMMANDE TOUT.
+            //
+            // Le tirage 15 % melee / 40 % distance est fait UNE FOIS a la creation de l'item
+            // (DeepNbt.markLuckyBlockOrigin) et conserve en NBT : une arme a l'aura, ou ne
+            // l'a pas, et cela ne change jamais.
+            //
+            // Ce test laissait passer TOUTE arme des que le bras bougeait : il suffisait de
+            // frapper pour que chaque item lote se couvre de pixels, aura comprise, puisque
+            // alphaFloor retombe a 0 pendant l'action. Comme on frappe en permanence, le
+            // tirage ne servait plus a rien et la totalite du butin paraissait dotee.
+            // L'intention etait « des eclats d'action pour tous, l'aura permanente pour
+            // quelques-uns » ; la regle demandee est plus simple et plus lisible : une
+            // MINORITE d'armes est animee, les autres restent nues en toutes circonstances.
+            //
+            // armActive ne decide donc plus de l'affichage, seulement de sa densite (plancher
+            // d'alpha) sur les armes qui ont effectivement gagne l'aura.
+            if (!animSword && !deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(stack)) return;
             WeaponWorldVfxManager.setAlphaFloor(armActive ? 0 : 172);
             WeaponWorldVfxManager.beginFrame(WeaponWorldVfxManager.smoothTimeSeconds());
 

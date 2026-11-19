@@ -1993,6 +1993,11 @@ public final class WeaponWorldVfxManager {
             animFamily = deepluckyblock.util.AnimFamily.canonical(tag.getString("DlbAnimFamily"));
         }
         if (layers.isEmpty() && animFamily == null) return;
+        // T409-AURA-MINORITE : le slash obeit a la MEME decision que les pixels de lame.
+        // L'arc partait a chaque coup de n'importe quelle arme enchantee ; c'est l'autre
+        // moitie du defaut signale (« tous les items lotes ont le slash visible »). Les
+        // epees de demonstration /anim gardent le leur : elles n'existent que pour montrer.
+        if (animFamily == null && !deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(stack)) return;
 
         int parity = PLAYER_SWING_PARITY.merge(p.getId(), 1, Integer::sum);
         float baseTilt = ((parity & 1) == 0) ? 0.36f : -0.34f;
@@ -2652,7 +2657,12 @@ public final class WeaponWorldVfxManager {
         // change pas pendant les huit ticks, donc la lame ne sautille pas entre plusieurs formes.
         int randomSalt = (int) (inst.seed ^ (inst.seed >>> 32) ^ (inst.seed >>> 17));
         int style = Math.floorMod(randomSalt, 6);
-        radius *= 0.82f + 0.40f * pixelHash(0x5A17, randomSalt);
+        // T409-SLASH-CALIBRE : l'arc etait trop grand. On divise son enveloppe de taille par
+        // 1,7 AUX DEUX BOUTS — 0,82..1,22 devient 0,482..0,718 — de sorte que le rapport
+        // entre le plus petit et le plus grand arc reste exactement le meme (1,49) : on
+        // reduit la taille, on ne reduit pas la variete. Ce facteur porte sur le rayon, donc
+        // sur toute la largeur balayee, y compris apres les multiplicateurs de style.
+        radius *= 0.4824f + 0.2353f * pixelHash(0x5A17, randomSalt);
         voxelHalf *= 0.78f + 0.55f * pixelHash(0x71C3, randomSalt);
         sweepDeg *= 0.88f + 0.24f * pixelHash(0x39B1, randomSalt);
         float randomTilt = inst.tiltRad
