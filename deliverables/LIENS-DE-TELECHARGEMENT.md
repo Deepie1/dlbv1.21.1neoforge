@@ -26,11 +26,11 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 
 ## Chaos — cinq signatures, deux nouvelles · 4 novembre 2026 ⟵ **LOT COURANT**
 
-### Liens figés sur le commit `033da8b8` — garantis frais
+### Liens figés sur le commit `7fe030ee` — garantis frais
 
-- **Aperçu des cinq signatures (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/033da8b893128dd95d606e7047f79c4ef47efb4d/deliverables/DLB_Chaos_Five_Signatures_preview.html
-- **Démo du shader Pixels 3D (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/033da8b893128dd95d606e7047f79c4ef47efb4d/deliverables/DLB_Void_Pixel_shader_demo.html
-- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/033da8b893128dd95d606e7047f79c4ef47efb4d/deliverables/DLB_Chaos_Five_Signatures_src.zip
+- **Aperçu des cinq signatures (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/7fe030ee518f0eb97eca2a39c291d07971a44118/deliverables/DLB_Chaos_Five_Signatures_preview.html
+- **Démo du shader Pixels 3D (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/7fe030ee518f0eb97eca2a39c291d07971a44118/deliverables/DLB_Void_Pixel_shader_demo.html
+- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/7fe030ee518f0eb97eca2a39c291d07971a44118/deliverables/DLB_Chaos_Five_Signatures_src.zip
 
 ### Liens stables sur la branche — toujours la dernière version
 
@@ -39,6 +39,29 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 - **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Five_Signatures_src.zip
 - **Ce fichier de liens** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/LIENS-DE-TELECHARGEMENT.md
 
+> **T402b — la Cascade attaque enfin, et Le Grain de Trop porte son titre.**
+>
+> **Ⅳ ne frappait pas.** Les soixante-trois impacts tombaient *sur le diagramme*, au point
+> de l'attracteur correspondant au rang du coup : la matière se déployait sans jamais
+> traverser le corps visé. Les six vagues sont refaites en **six gestes distincts**, tous
+> à hauteur de torse — **1** la lance (longitudinale, elle ressort derrière) · **2** les
+> mâchoires (deux lames plates, l'une qui tombe, l'autre qui monte) · **4** les anneaux
+> (quatre cercles verticaux resserrés de 3,3 à 0,35 bloc, croisés dans le corps) · **8**
+> la gerbe (cône frontal) · **16** le tourbillon (deux tours d'enroulement puis la coupe,
+> en braise) · **32** la grêle (saturation verticale plus une onde au sol). Aucun ne
+> partage son axe d'arrivée avec son voisin.
+>
+> **Ⅴ manquait de détails et son titre ne se lisait pas.** Le grain faisait quatorze
+> centièmes de bloc au milieu de sept cents cubes de plaque. Il est maintenant gros,
+> entouré d'une coque qui bat, relié à sa case d'arrivée par un **fil à plomb** et
+> annoncé par une **cible au sol qui se resserre**. Surtout, le front d'avalanche
+> **rayonne depuis son point de chute** au lieu de tout faire tomber d'un bloc : braise
+> au cœur, transition en blanc, bord encore intact en violet. Et six **éboulements de
+> démonstration** montrent la règle pendant la montée — une case blanchit, quatre grains
+> partent vers ses quatre voisines.
+>
+> ---
+>
 > **T402 — le Chaos passe de trois à cinq, et les deux nouvelles ne sont pas dessinées :
 > elles sont calculées.**
 >
