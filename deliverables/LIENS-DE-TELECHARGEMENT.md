@@ -2,82 +2,59 @@
 
 ## ⬇️ L'archive — c'est le seul lien
 
-https://github.com/Deepie1/dlbv1.21.1neoforge/raw/07091cea7df32ac3de59fc2e40663a881fc38681/deliverables/DLB_src.zip
+https://github.com/Deepie1/dlbv1.21.1neoforge/raw/4417b0479b06e1b219a06b7bed47cbcefd1b57f3/deliverables/DLB_src.zip
 
-`DLB_src.zip` · 114 fichiers · 1 935 007 octets
-<br>SHA-256 `0b000cecb35403e768a8fb91eef90f92e53017a5375e79ce77525bcbf1a462a3`
+`DLB_src.zip` · 116 fichiers · 1 968 991 octets
+<br>SHA-256 `0dc2cc8426c5c1308d25525bf3dedcac971ad7f0a3a62c4aa5702ce1664322f1`
 
 **Il n'y a plus qu'une seule archive et un seul lien.** `DLB_src.zip` porte toujours le
 même nom et contient à chaque fois **tous** les fichiers à jour. L'adresse contient le
-numéro de la livraison (`07091ce…`) : c'est ce qui garantit que vous recevez la dernière
+numéro de la livraison (`4417b04…`) : c'est ce qui garantit que vous recevez la dernière
 version et jamais une copie en cache.
 
-### 1. Il y avait huit capacités activées, pas trois
+### Pourquoi c'était mal placé, en petits caractères, et trop bavard
 
-La fois précédente je n'en avais trouvé que trois. J'ai repris la recherche au complet :
-toutes les recharges posées par le mod, tous les événements d'interaction, tous les
-verrous de temps, puis les **1742 descriptions d'enchantement** relues une par une à la
-recherche d'une touche citée. Vingt-huit candidates, classées à la main. **Huit** sont
-de vraies capacités activées ; les vingt autres sont des effets permanents que
-l'accroupissement modifie, et elles restent donc dans la liste d'enchantements.
+Vos objets grés s'affichent dans une **fenêtre \[SYSTÈME\]** qui dessine elle-même ses
+sections : le titre, ENCHANTEMENTS, la synergie, les attributs. J'écrivais les
+compétences autrement, comme de simples lignes ajoutées à l'infobulle normale. La
+fenêtre ne les reconnaissait donc pas et les recopiait **tout en bas**, dans la section
+des attributs et **dans la police des attributs**. Vos trois reproches avaient la même
+cause unique.
 
-Les cinq qui manquaient : **Puissance de Traction**, **Grappin**, **Loyauté Sincère**,
-**Explosion de Fusée** et **Glissade**.
+### La section COMPÉTENCES est maintenant une vraie section
 
-| Capacité | Geste | Recharge |
-|---|---|---|
-| Détecteur de Minerais, Armée du Chaos, Invocation d'Armée | Clic droit, objet en main | 15 s, 18 s, 22 s |
-| Puissance de Traction, Grappin | Clic droit avec la canne, ligne lancée | aucune |
-| Loyauté Sincère | Clic droit main vide | aucune |
-| Explosion de Fusée | Clic droit sur une fusée, en vol d'Élytres | aucune |
-| Glissade | S'accroupir en plein sprint | 2 s |
+Elle est dessinée par la fenêtre elle-même, **juste en dessous d'ENCHANTEMENTS**, avec
+exactement les mêmes briques d'affichage : même police, même taille, mêmes couleurs,
+même gouttière, même disposition en deux colonnes à partir de trois entrées.
 
-### 2. Aucun geste ajouté — et un geste de trop retiré
+* **En-tête** : « ❖ COMPÉTENCES (2) », construit comme « ❖ ENCHANTEMENTS (4) ».
+* **Hors Maj** : **le titre seul**, comme un enchantement. Plus de geste, plus de
+  recharge, plus de description à l'écran en permanence.
+* **Sous Maj** : le geste et la recharge **en gras** sur la première ligne, puis la
+  description — exactement le comportement des enchantements.
 
-Chaque capacité garde **exactement** le geste qui la lançait avant. Annoncer une touche
-qui ne fait rien serait pire que de ne rien annoncer.
+**Le titre est le nom de l'enchantement qui porte la compétence.** Une compétence n'a pas
+de nom à elle : elle est le pouvoir d'un enchantement. Lui en inventer un aurait voulu
+dire écrire quarante-cinq textes de plus pour redire ce que le nom dit déjà.
 
-**Invocation d'Armée retrouve son geste unique.** Une livraison précédente lui avait
-ajouté un second déclencheur — clic droit sur un mob — avec sa propre recharge, à côté
-du clic droit en main qu'elle avait depuis toujours. Deux gestes et deux recharges pour
-un seul enchantement : le geste ajouté est retiré. C'est aussi la fin du défaut que je
-vous avais signalé à la fin du message précédent.
+### Trois choses réglées au passage
 
-**Les quatre capacités sans recharge n'en reçoivent pas.** L'encart n'affiche aucune
-recharge pour elles. En inventer une pour faire propre aurait changé le jeu sans que
-vous l'ayez demandé.
-
-### 3. Vos descriptions ne sont pas réécrites, elles sont réutilisées
-
-Vos descriptions expliquent **déjà** comment ces capacités se déclenchent. L'encart
-affiche donc votre texte, sous le nom officiel de l'enchantement, par le même moteur que
-la liste. Aucun fichier de langue n'a été modifié.
-
-### 4. Le gras
-
-Sont mis en gras, **à l'affichage uniquement** : les **touches** (clic droit, clic
-gauche, main vide, accroupi, et leurs équivalents anglais), les **durées** (15 s,
-18 secondes, 40 ticks) et l'**Étoile du Nether**, seul objet qu'une capacité exige pour
-partir.
-
-Mesuré sur les 1742 descriptions : **263 touchées (15 %)**, 1,1 passage en gras chacune.
-Les pourcentages de dégâts sont volontairement laissés en normal : il y en a dans
-presque chaque description, les marquer tous aurait noyé la touche et la recharge qu'on
-voulait justement faire ressortir. Dites-moi si vous en voulez davantage.
-
-### 5. Un défaut d'affichage trouvé en chemin
-
-**Loyauté Sincère** partage son effet visuel avec une compétence d'épée. L'encart
-annonçait donc, sur un trident, un clic droit sur un mob qui ne déclenche rien. Une
-compétence ne s'affiche plus que si l'objet sait vraiment la lancer.
+* **Plus de doublon.** Les lignes de l'infobulle ordinaire sont marquées « gérée par le
+  système ». Sans ça, un objet gré aurait affiché ses compétences **deux fois** : dans
+  sa section, et en bas en petits caractères.
+* **Les objets non grés suivent.** Ceux qui gardent l'infobulle normale de Minecraft
+  reçoivent le même en-tête, les mêmes titres seuls et le même détail sous Maj.
+* **Le gras atteint aussi la fenêtre.** Elle passait par un autre chemin de description
+  que la liste ordinaire ; les deux passent maintenant par le même.
 
 ### Ce qui n'a pas pu être vérifié
 
-`javac` est absent de l'environnement. `semcheck` (aucune alerte nouvelle), `typecheck`
-(rien de neuf, 221 fichiers) et `floatcheck` (0 alerte) sont au vert, les sept méthodes
-neuves ont toutes un appelant, et dix contrôles de comportement ont été relus **à
-l'intérieur du ZIP produit**. **Mais ces bancs ne valent pas une compilation**, et rien
-n'a pu être observé en jeu.
+`javac` est absent de l'environnement, et **je n'ai pas pu voir le rendu en jeu** — c'est
+une mise en page, elle se juge à l'œil. `semcheck` (la seule alerte du fichier de la
+fenêtre existait déjà avant, vérifié en remettant le fichier d'origine), `typecheck`
+(rien de neuf, 221 fichiers) et `floatcheck` (0 alerte) sont au vert, et dix contrôles
+de structure ont été relus **à l'intérieur du ZIP produit**. Si la hauteur des lignes ou
+une couleur ne vous convient pas, dites-le : ce sont des nombres à un seul endroit.
 
 ---
 
