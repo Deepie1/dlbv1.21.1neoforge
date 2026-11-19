@@ -90,8 +90,52 @@ EXTRA = [
     'src/main/resources/deepluckyblock_patch/tools/deep-lucky-block-patch.gradle',
 ]
 
-README = """DLB - CHAOS : TROIS SIGNATURES, ET LES PIXELS 3D (T397)
-======================================================
+README = """DLB - SOURCES DU MOD : L ARCHIVE UNIQUE
+======================================
+
+Cette archive est la seule a telecharger. Elle porte toujours le meme nom
+(DLB_src.zip) et contient a chaque fois l integralite des fichiers a jour.
+
+------------------------------------------------------------------------------
+DERNIER CORRECTIF : LE TREMBLEMENT DES ANIMATIONS A PIXELS  (T407)
+------------------------------------------------------------------------------
+Fichiers concernes, a remplacer :
+    src/main/java/deepluckyblock/client/WeaponWorldVfxManager.java
+    src/main/java/deepluckyblock/client/VoidPixelManager.java
+
+Symptome : les animations tremblaient a l echelle du pixel pendant qu elles
+jouaient. Constate sur Gaia Wood, mais toutes les familles a Pixels etaient
+touchees. Deux causes se cumulaient, toutes deux dans l infrastructure de
+rendu. Aucune choregraphie, aucune couleur, aucune duree ne change.
+
+1. DEUX HORLOGES QUI DERIVENT. La fraction de tick ecoulee etait recalculee a
+   la main, en cinq endroits :
+       clamp((System.nanoTime() - lastTickNanos) / 50_000_000, 0, 1)
+   Ce calcul suppose qu un tick dure EXACTEMENT 50 ms. C est faux : le client
+   declenche un tick quand son accumulateur depasse 50 ms, donc a 60 images par
+   seconde l ecart reel alterne entre 50,0 et 66,7 ms. Des qu il depasse 50 ms
+   la borne SATURE a 1,0 : l animation se fige une image entiere, puis saute.
+   Pendant ce temps la camera est interpolee avec le partial tick officiel, qui
+   ne sature jamais. Les deux horloges s ecartaient image apres image.
+   Corrige : un seul point d entree, WeaponWorldVfxManager.partialTick(), qui
+   lit Minecraft.getTimer().getGameTimeDeltaPartialTick(true) - l argument
+   exact dont GameRenderer.renderLevel tire le flottant qui place la camera.
+
+2. UNE IMAGE DE RETARD. La couche de structure est remplie a AFTER_PARTICLES
+   (stage 9), mais VoidPixelManager la dessinait a AFTER_TRANSLUCENT_BLOCKS
+   (stage 7), donc AVANT le remplissage : il affichait l image precedente. Les
+   positions etant stockees en absolu puis ramenees au repere camera au rendu,
+   le resultat valait offset - (camera_N - camera_N-1). Le balancement de tete
+   du joueur qui marche faisait osciller l armature en opposition de phase.
+   Corrige : le rendu passe a AFTER_WEATHER (stage 10).
+
+NON VERIFIE : javac est absent de l environnement de developpement, les bancs
+(semcheck, floatcheck, typecheck) ne valent donc pas une compilation, et le
+correctif n a pas pu etre observe en jeu.
+
+------------------------------------------------------------------------------
+CONTENU HISTORIQUE : CHAOS, LES SIGNATURES ET LES PIXELS 3D (T397+)
+------------------------------------------------------------------------------
 
 Treizieme et derniere famille refondue. Les trois signatures du Chaos passent de 18-22
 ticks a 150/170/200, avec un moteur voxel dedie, un gameplay serveur complet, une
@@ -180,7 +224,11 @@ A TESTER EN JEU
 
 
 def main():
-    out = 'deliverables/DLB_Chaos_Five_Signatures_src.zip'
+    # UNE SEULE ARCHIVE, UN SEUL NOM, POUR TOUJOURS.
+    # L'utilisateur a demande le 4 novembre 2026 d'arreter de multiplier les archives et
+    # les formes de liens : il veut un fichier unique, toujours au meme nom, qui contient
+    # tout ce dont il a besoin. Ne pas reintroduire de nom date ou thematique ici.
+    out = 'deliverables/DLB_src.zip'
     os.makedirs('deliverables', exist_ok=True)
     problems = []
 
