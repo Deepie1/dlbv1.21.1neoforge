@@ -2,21 +2,38 @@
 
 ## ⬇️ L'archive — c'est le seul lien
 
-https://github.com/Deepie1/dlbv1.21.1neoforge/raw/c02425ee43539642592f3ac782d8609014fb80f5/deliverables/DLB_src.zip
+https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6ef03d0e180e4e55a58b1681f809f6c3c4f5144a/deliverables/DLB_src.zip
 
-`DLB_src.zip` · 82 fichiers · 1 534 151 octets
-<br>SHA-256 `b707e30ff40a8ebea74e7a600fc59202824760757ec30d081037dde77ce3a3fa`
+`DLB_src.zip` · 82 fichiers · 1 539 495 octets
+<br>SHA-256 `57d0d7c567ba5b70ffa13eb698f8216aecbffdbe8074fad434044d8a7286149a`
 
 **Il n'y a plus qu'une seule archive et un seul lien.** `DLB_src.zip` porte toujours le
 même nom et contient à chaque fois **tous** les fichiers à jour — le correctif du jour et
 tout ce qui l'entoure. Pas de version à choisir, pas de lot à recomposer.
 
 Un détail qui a son importance : l'adresse contient le numéro de la livraison
-(`c02425e…`). C'est voulu, et c'est ce qui garantit que vous recevez bien la dernière
+(`6ef03d0…`). C'est voulu, et c'est ce qui garantit que vous recevez bien la dernière
 version et jamais une copie en cache. **Un nouveau lien vous sera donné à chaque
 livraison** — prenez toujours le plus récent.
 
 Dedans, `LISEZ-MOI-CONTENU.txt` décrit en premier le correctif de la livraison courante.
+
+### Ce que corrige la livraison du 4 novembre 2026
+
+- **Gaia / Bois — les sons de l'animation.** Les trois signatures du Bois avaient des
+  sons, mais tous sous le volume 1,0 : Minecraft ne les diffusait alors qu'à **seize
+  blocs**, et ces animations se regardent de plus loin. Ils partaient, ils n'arrivaient
+  pas. Volumes relevés au-dessus du seuil, et trois véritables partitions calées sur
+  l'image : la poussée des ronces et leur rétraction, les racines puis les spores de
+  l'Éveil, la poussée, le feuillage, les fruits et la sève de l'Arbre sacré.
+- **Ombre / Éclipse — le disque se tenait debout.** Le calcul mélangeait deux systèmes
+  de coordonnées, si bien que l'inclinaison dépendait de votre position **absolue** dans
+  le monde. Loin de l'origine de la carte, le disque se redressait à la verticale. Il
+  fait de nouveau face au joueur placé dessous.
+- **Sang / Guillotine — le cadre ne se rejoignait plus.** Les pièces de charpente
+  tournaient de position mais pas de forme : le linteau restait couché sur un axe fixe
+  pendant que les montants suivaient la direction du coup, soit **0,85 bloc d'écart**
+  sur une attaque en diagonale. Charpente réorientée.
 
 ---
 
