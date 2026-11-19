@@ -704,7 +704,12 @@ function buildChaos(variant, t, salt = 4421) {
         for (let k = 0; k < hh; k++) {
           /* Depart immediat : after*after donnerait une avalanche qui demarre en
              douceur, c'est-a-dire pas une avalanche. */
-          const blow = fallen ? sqrt(after) * (0.60 + 0.40 * after) * (1.0 + k * 0.22) : 0.0;
+          /* LE FRONT RAYONNE DEPUIS LE POINT DE CHUTE : une case ne lache que
+             lorsque le front l'atteint, et le front sort du centre, la ou le grain est
+             tombe. C'est le titre rendu visible. */
+          const front = after * 7.5;
+          const local = fallen ? clamp01((front - dist) / 1.30) : 0.0;
+          const blow = fallen ? sqrt(local) * (0.60 + 0.40 * local) * (1.0 + k * 0.22) : 0.0;
           const hop = fallen ? sin(Math.min(1.0, blow) * TAU * 0.5) * (0.9 + k * 0.40) : 0.0;
           const dirx = dist > 0.001 ? fx / dist : 0.3;
           const dirz = dist > 0.001 ? lz / dist : 0.3;
@@ -712,27 +717,71 @@ function buildChaos(variant, t, salt = 4421) {
           const pz = lz + dirz * blow * 4.2;
           let py = GROUND + 0.10 + k * 0.19 + hop;
           if (py < GROUND + 0.08) py = GROUND + 0.08;
+          /* Une case qui n'a pas encore lache garde sa couleur de repos, sans quoi
+             toute la plaque virerait a la braise d'un coup et le front serait invisible. */
+          const gone = fallen && local > 0.02;
           const stress = build * build * (k >= 2 ? 1.0 : 0.25);
-          const shake = fallen ? 0.0 : stress * 0.045 * sin(tt * 62.0 + x * 2.3 + y * 1.7 + k);
-          const fade = fallen ? (1.0 - after * 0.92) : (0.55 + 0.45 * build);
+          const shake = gone ? 0.0 : stress * 0.045 * sin(tt * 62.0 + x * 2.3 + y * 1.7 + k);
+          const fade = gone ? (1.0 - local * 0.92) : (0.55 + 0.45 * build);
           /* La hauteur est portee par la COULEUR : vue de dessus, une plaque de trois
              crans n'a pas de relief, donc sans code couleur le motif ne se lit pas. */
           put(px + shake, py, pz + shake, 0.125, 0.095, 0.125, 0.0,
-              fallen ? M_EMBER : ((hh === 3) ? M_PULSE : M_TINTED),
+              gone ? M_EMBER : ((hh === 3) ? M_PULSE : M_TINTED),
               (hh === 3) ? G_MID : (hh === 2 ? G_BODY : G_DEEP),
-              fallen ? H_EMBER_HUE : ((hh === 3) ? H_ROSE : H_VIOLET), a * fade * 0.95);
+              gone ? H_EMBER_HUE : ((hh === 3) ? H_ROSE : H_VIOLET), a * fade * 0.95);
         }
       }
     }
 
-    /* LE GRAIN QUI VA TOMBER, et son ombre portee : on sait ce qu'on attend. */
+    /* LES EBOULEMENTS DE DEMONSTRATION. Six cases lachent sous les yeux pendant la
+       montee : la source blanchit et QUATRE grains partent vers ses quatre voisines.
+       C'est la regle entiere de l'automate, montree au lieu d'etre ecrite. */
+    if (!fallen) {
+      for (let ev = 0; ev < 6; ev++) {
+        const begin = 16.0 + ev * 21.0;
+        const age = tick - begin;
+        if (age < 0.0 || age > 13.0) continue;
+        const u = age / 13.0;
+        const pop = sin(u * TAU * 0.5);
+        const sx = 3 + Math.floor(hash(ev * 13 + 1, salt) * (PILE_N - 6));
+        const sy = 3 + Math.floor(hash(ev * 13 + 2, salt) * (PILE_N - 6));
+        const bx = (sx - mid) * cell, bz = (sy - mid) * cell;
+        const by = GROUND + 0.10 + 2.0 * 0.19;
+        put(bx, by, bz, 0.145, 0.110, 0.145, 0.0, M_STROBE, G_CORE, 0.0, a * pop * 0.95);
+        for (let d = 0; d < 4; d++) {
+          const ox = (d === 0) ? 1.0 : (d === 1 ? -1.0 : 0.0);
+          const oz = (d === 2) ? 1.0 : (d === 3 ? -1.0 : 0.0);
+          const slide = u * cell;
+          put(bx + ox * slide, by + 0.16 * pop, bz + oz * slide,
+              0.062, 0.062, 0.062, u * 6.0, M_PULSE, G_FLASH, H_ROSE, a * pop * 0.90);
+        }
+      }
+    }
+
+    /* LE GRAIN QUI VA TOMBER : gros, seul, avec son fil a plomb et sa cible au sol.
+       Au premier jet il faisait quatorze centiemes de bloc au milieu de sept cents
+       cubes de plaque -- l'objet qui donne son nom a l'animation etait invisible. */
     if (!fallen) {
       const drop = 4.6 - 4.1 * build;
-      const h0 = 0.14 + 0.06 * build;
-      put(0.0, GROUND + 1.0 + drop, 0.0, h0, h0, h0, tt * 14.0,
-          M_STROBE, G_CORE, 0.0, a * (0.5 + 0.5 * build));
-      const hs = 0.10 + 0.10 * build;
-      put(0.0, GROUND + 0.06, 0.0, hs, 0.030, hs, 0.0, M_MONO, G_MASK, 0.0, a * 0.45);
+      const gy = GROUND + 1.0 + drop;
+      const gh = 0.20 + 0.09 * build;
+      put(0.0, gy, 0.0, gh, gh, gh, tt * 14.0,
+          M_STROBE, G_CORE, 0.0, a * (0.55 + 0.45 * build));
+      const sh = gh * 1.95;
+      put(0.0, gy, 0.0, sh, sh, sh, -tt * 9.0,
+          M_PULSE, G_MASK, H_ROSE, a * (0.20 + 0.26 * build));
+      const topY = GROUND + 0.70;
+      for (let i = 1; i < 10; i++) {
+        const u = i / 10, yy = topY + (gy - topY) * u;
+        put(0.0, yy, 0.0, 0.038, 0.038, 0.038, 0.0,
+            M_MONO, G_MASK, 0.0, a * 0.34 * (1.0 - u * 0.55));
+      }
+      const ring = 1.05 - 0.62 * build;
+      for (let i = 0; i < 14; i++) {
+        const ang = i / 14 * TAU + tt * 1.4;
+        put(cos(ang) * ring, GROUND + 0.78, sin(ang) * ring, 0.052, 0.052, 0.052, ang,
+            M_PULSE, G_GLASS, H_ROSE, a * (0.30 + 0.45 * build));
+      }
     }
 
     /* L'ONDE DE DECHARGE au sol. */
@@ -1074,13 +1123,20 @@ function buildChaos(variant, t, salt = 4421) {
     }
 
   } else if (variant === 3) {
-    /* ---- CASCADE : six vagues, et CHAQUE COUP TOMBE SUR LE DIAGRAMME -------------
-       Le rang d'un coup dans sa vague fixe le r ou il frappe, et sa hauteur est la
-       valeur que l'attracteur prend vraiment a ce r : la carte logistique est reiteree
-       pour chaque impact. La vague 0 tape sur la tige ; la vague 5 fait pleuvoir
-       trente-deux coups sur toute la largeur de la nappe. La grele EPOUSE la cascade. */
+    /* ---- CASCADE : SIX VAGUES, SIX GESTES, ET TOUS FRAPPENT LA CIBLE -------------
+       Le premier jet faisait tomber les impacts SUR LE DIAGRAMME, au point de
+       l'attracteur correspondant au rang du coup. L'idee etait jolie et le resultat
+       n'attaquait rien : la matiere se deployait sans jamais traverser le corps vise.
+       Une figure n'est pas une attaque. Ici les soixante-trois coups arrivent tous sur
+       la cible, a hauteur de torse, et repartent de l'autre cote.
+         0 : 1 coup   la lance        longitudinale, de part en part
+         1 : 2 coups  les machoires   verticale, haut et bas, sur le torse
+         2 : 4 coups  les anneaux     quatre cercles verticaux qui se croisent dedans
+         3 : 8 coups  la gerbe        frontale, elle entre devant et sort derriere
+         4 : 16 coups le tourbillon   rotatif, deux tours puis la coupe
+         5 : 32 coups la grele        verticale saturee, plus une onde au sol      */
     const BEATS_F = [24, 48, 70, 88, 102, 112];
-    const R0 = 2.70, R1 = 3.99;
+    const aim = 1.10;
     for (let k = 0; k < BEATS_F.length; k++) {
       const since = nowT - BEATS_F[k];
       const windK = 8.0 - k * 0.9, burstK = 7.0 - k * 0.7;
@@ -1088,49 +1144,163 @@ function buildChaos(variant, t, salt = 4421) {
       const pre = since < 0;
       const w = pre ? 1.0 + since / windK : 1.0;
       const r01 = pre ? 0.0 : since / burstK;
-      const shots = 1 << k;
-      /* L'echelle ne decroit que doucement : diviser par racine de 2^k rendait les
-         dernieres vagues litteralement invisibles -- des confettis, pas une grele. */
-      const scale = 1.0 / (1.0 + k * 0.25);
-      for (let i = 0; i < shots; i++) {
-        const u = (shots === 1) ? 0.08 : 0.04 + (i / (shots - 1)) * 0.92;
-        const rr = R0 + (R1 - R0) * u;
-        let xv = 0.42 + 0.11 * hash(salt + k * 31 + i, 11);
-        for (let s2 = 0; s2 < 70; s2++) xv = rr * xv * (1.0 - xv);
-        xv = xv < 0.02 ? 0.02 : (xv > 0.98 ? 0.98 : xv);
-        const spread = clamp01((rr - 3.56) * 1.55);
-        const fwd = (u - 0.46) * 6.40;
-        const lat = (hash(k * 97 + i, salt + 3) - 0.5) * 1.70 * spread;
-        const hgt = 0.22 + xv * 2.55;
+      const e = w * w;
+      const fade = 1.0 - r01 * 0.88;
+
+      if (k === 0) {
+        /* LA LANCE : le seul geste LONGITUDINAL de la signature. */
         if (pre) {
-          /* LA CHUTE, a la verticale : le diagramme se regarde de profil, et seule une
-             arrivee verticale se lit sur une figure vue de profil. */
-          const e = w * w;
-          const high = 2.30 - 2.15 * e;
-          const tail = Math.max(3, 8 - k);
-          for (let j = 0; j < tail; j++) {
-            const hh = (0.115 - j * 0.010) * scale * 1.35;
-            put(fwd, hgt + high + j * 0.26, lat, hh, hh * 1.9, hh, spin + i,
+          const tip = -7.0 + 7.0 * e;
+          for (let j = 0; j < 20; j++) {
+            const back = tip - j * 0.33, hh = 0.17 - j * 0.0065;
+            put(back, aim, 0.0, hh * 1.9, hh, hh, spin * 0.5,
                 (j === 0) ? M_STROBE : M_DUAL, (j === 0) ? G_CORE : G_FRAME,
-                H_CYAN, a * w * (0.95 - j * 0.09));
+                H_CYAN, a * w * (1.0 - j * 0.042));
           }
         } else {
-          /* L'IMPACT : un disque PLAT dans le plan de la nappe. */
-          const f = 1.0 - r01 * 0.88;
-          const ring = (0.18 + 0.95 * sqrt(r01)) * scale;
-          const n = Math.max(7, 14 - k);
-          for (let j = 0; j < n; j++) {
-            const ca = j / n * TAU + i * 0.7;
-            put(fwd + cos(ca) * ring, hgt + sin(ca) * ring * 0.55, lat,
-                0.075 * scale + 0.015, 0.075 * scale + 0.015, 0.045 * scale + 0.010, ca,
-                (j % 3 === 0) ? M_STROBE : M_SPECTRUM,
-                (j % 3 === 0) ? G_CORE : G_GLASS, 0.0, a * f * 0.95);
+          const head = -1.2 + 5.8 * r01;             /* elle TRAVERSE */
+          for (let j = 0; j < 24; j++) {
+            const back = head - j * 0.30, hh = 0.155 - j * 0.0050;
+            put(back, aim, 0.0, hh * 2.1, hh, hh, spin,
+                (j < 2) ? M_STROBE : M_SPECTRUM, (j < 2) ? G_CORE : G_GLASS,
+                H_CYAN, a * fade * (1.0 - j * 0.035));
           }
-          if (r01 < 0.45) {
-            const cf = 1.0 - r01 / 0.45;
-            const hc = (0.21 * cf + 0.055) * scale;
-            put(fwd, hgt, lat, hc, hc, hc, spin * 5.0, M_STROBE, G_CORE, 0.0, a * cf * 0.95);
+          for (let j = 0; j < 16; j++) {
+            const ca = j / 16 * TAU, rr = 0.20 + 1.45 * sqrt(r01);
+            put(-0.10, aim + sin(ca) * rr, cos(ca) * rr, 0.085, 0.085, 0.085, ca,
+                M_DUAL, G_FRAME, H_CYAN, a * fade * 0.85);
           }
+        }
+
+      } else if (k === 1) {
+        /* LES MACHOIRES : deux lames plates qui se referment sur le torse. */
+        for (let jaw = 0; jaw < 2; jaw++) {
+          const dir = (jaw === 0) ? 1.0 : -1.0;
+          const gap = pre ? (3.40 * (1.0 - e)) : 0.0;
+          const yy = aim + dir * gap;
+          for (let j = 0; j < 30; j++) {
+            const u = j / 29 - 0.5;
+            const bite = pre ? 1.0 : (1.0 - 0.55 * r01);
+            put(u * 2.90 * bite, yy, dir * 0.18 * (pre ? 1.0 : (1.0 - r01)),
+                0.075, 0.050, 0.165, 0.0,
+                (j % 6 === 0) ? M_STROBE : M_SPECTRUM,
+                (j % 6 === 0) ? G_CORE : G_FRAME, H_MAGENTA,
+                a * (pre ? w : fade) * 0.95);
+          }
+        }
+        if (!pre) {
+          for (let j = 0; j < 34; j++) {
+            const ca = j / 34 * TAU + spin, rr = 0.25 + 2.55 * sqrt(r01);
+            const hw = 0.115 * fade + 0.02;
+            put(cos(ca) * rr, aim, sin(ca) * rr, hw, 0.045, hw, ca,
+                M_STROBE, G_GLASS, H_MAGENTA, a * fade * 0.90);
+          }
+        }
+
+      } else if (k === 2) {
+        /* LES ANNEAUX : quatre cercles verticaux qui se croisent DANS le corps. */
+        const rad = pre ? (3.30 - 2.95 * e) : (0.35 + 2.10 * r01);
+        for (let ring = 0; ring < 4; ring++) {
+          const az = ring * (TAU / 8.0) + salt * 0.03;
+          const ca0 = cos(az), sa0 = sin(az);
+          for (let j = 0; j < 18; j++) {
+            const p = j / 18 * TAU, ox = cos(p) * rad, oy = sin(p) * rad;
+            put(ox * ca0, aim + oy, ox * sa0, 0.095, 0.095, 0.095, p + spin,
+                (ring % 2 === 0) ? M_DUAL : M_PULSE,
+                (j % 5 === 0) ? G_GLASS : G_FRAME,
+                (ring % 2 === 0) ? H_BLUE : H_VIOLET, a * (pre ? w : fade) * 0.92);
+          }
+        }
+        if (!pre) {
+          const cf = 1.0 - clamp01(r01 / 0.5);
+          if (cf > 0.0) {
+            const hc = 0.14 + 0.46 * cf;
+            put(0.0, aim, 0.0, hc, hc, hc, spin * 6.0, M_STROBE, G_CORE, 0.0, a * cf);
+          }
+        }
+
+      } else if (k === 3) {
+        /* LA GERBE FRONTALE : elle entre par devant et ressort derriere. */
+        for (let i = 0; i < 8; i++) {
+          const ca = i / 8 * TAU + 0.21;
+          const travel = pre ? (-4.30 + 4.10 * e) : (-0.20 + 4.00 * r01);
+          for (let j = 0; j < 7; j++) {
+            const back = travel - j * 0.27;
+            const sp = 1.15 * Math.min(1.0, Math.max(0.06, (0.30 - back) * 0.42));
+            const hh = 0.125 - j * 0.011;
+            put(back, aim + sin(ca) * sp, cos(ca) * sp, hh * 1.7, hh, hh, ca,
+                (j === 0) ? M_STROBE : M_SPECTRUM, (j === 0) ? G_CORE : G_MID,
+                H_ROSE, a * (pre ? w : fade) * (1.0 - j * 0.09));
+          }
+        }
+
+      } else if (k === 4) {
+        /* LE TOURBILLON : seize arcs qui enroulent la cible avant de la couper. */
+        const wind = pre ? (1.0 - e) : 0.0;
+        for (let i = 0; i < 16; i++) {
+          const base = i / 16 * TAU;
+          for (let j = 0; j < 9; j++) {
+            const u = j / 8;
+            const ang = base + u * 2.6 + wind * TAU * 2.0 + spin * 2.2;
+            const rr = pre ? (2.60 * wind + 0.45 + u * 0.5)
+                           : (0.40 + 3.20 * r01 + u * 0.35);
+            const yy = aim + (u - 0.5) * (pre ? 1.30 : 0.55);
+            const hw = 0.105 - j * 0.006;
+            put(cos(ang) * rr, yy, sin(ang) * rr, hw, 0.062, hw, ang,
+                (j === 0) ? M_STROBE : M_EMBER, (j === 0) ? G_FLASH : G_MID,
+                H_EMBER_HUE, a * (pre ? w : fade) * (0.95 - j * 0.055));
+          }
+        }
+
+      } else {
+        /* LA GRELE : a trente-deux, on ne vise plus, on noie. */
+        for (let i = 0; i < 32; i++) {
+          const ang = i * 2.39996 + salt * 0.05;
+          const rr = 0.18 + 1.30 * hash(i, salt + 17);
+          const lag = hash(i * 7, salt + 23) * 0.55;
+          const fall = pre ? clamp01((e - lag) / 0.45) : 1.0;
+          const yy = aim + 3.60 * (1.0 - fall) + 0.55 - r01 * 1.50;
+          for (let j = 0; j < 4; j++) {
+            const hh = 0.105 - j * 0.016;
+            put(cos(ang) * rr, yy + j * 0.30, sin(ang) * rr, hh, hh * 1.6, hh, ang,
+                (j === 0) ? M_STROBE : M_SPECTRUM, (j === 0) ? G_CORE : G_GLASS,
+                0.0, a * (pre ? w : fade) * (0.95 - j * 0.14));
+          }
+        }
+        if (!pre) {
+          const wv = 0.4 + 3.6 * sqrt(r01);
+          for (let j = 0; j < 30; j++) {
+            const ca = j / 30 * TAU, hw = 0.12 * fade + 0.02;
+            put(cos(ca) * wv, 0.10, sin(ca) * wv, hw, 0.05, hw, ca,
+                M_SPECTRUM, G_FLASH, 0.0, a * fade * 0.85);
+          }
+        }
+      }
+    }
+
+    /* LA FENETRE DE PERIODE TROIS — 132 / 140 / 148. En plein chaos l'ordre revient :
+       trois colonnes verticales IDENTIQUES. Le seul geste repete de la signature, et il
+       ne l'est que parce que la carte logistique retrouve vraiment une periode exacte. */
+    for (let s2 = 0; s2 < 3; s2++) {
+      const since = nowT - (132 + s2 * 8);
+      if (since < -5.0 || since > 6.0) continue;
+      const pre = since < 0;
+      const w = pre ? 1.0 + since / 5.0 : 1.0;
+      const r01 = pre ? 0.0 : since / 6.0;
+      const col = pre ? (1.0 - w * w) : 0.0;
+      for (let j = 0; j < 14; j++) {
+        const yy = aim + 0.30 + j * 0.26 + col * 3.2, hh = 0.16 - j * 0.0055;
+        put(0.0, yy, 0.0, hh, hh * 1.35, hh, spin * 1.5,
+            (j === 0) ? M_STROBE : M_DUAL, (j === 0) ? G_CORE : G_FRAME,
+            H_CYAN, a * (pre ? w : (1.0 - r01 * 0.88)) * (1.0 - j * 0.045));
+      }
+      if (!pre) {
+        const f2 = 1.0 - r01 * 0.88;
+        for (let j = 0; j < 20; j++) {
+          const ca = j / 20 * TAU, rr = 0.25 + 1.90 * sqrt(r01);
+          const hw = 0.10 * f2 + 0.02;
+          put(cos(ca) * rr, aim * 0.45, sin(ca) * rr, hw, 0.045, hw, ca,
+              M_DUAL, G_GLASS, H_CYAN, a * f2 * 0.88);
         }
       }
     }

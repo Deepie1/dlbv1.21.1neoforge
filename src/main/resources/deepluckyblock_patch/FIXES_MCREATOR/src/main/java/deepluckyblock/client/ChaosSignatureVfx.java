@@ -774,93 +774,286 @@ public final class ChaosSignatureVfx {
     // ---------------------------------------------------------------------------------
 
     /**
-     * Un, deux, quatre, huit, seize, trente-deux — et <b>chaque coup tombe sur le
-     * diagramme lui-même</b>.
+     * SIX VAGUES, SIX GESTES, ET TOUS FRAPPENT LA VICTIME.
      *
-     * <p>C'est le point entier de ce geste. Le rang {@code i} d'un coup dans sa vague
-     * fixe la valeur de {@code r} où il frappe, et sa hauteur est la valeur que
-     * l'attracteur prend <b>vraiment</b> à ce {@code r} — la carte logistique est
-     * réitérée pour chaque impact. La vague 0 tape donc sur la tige, seule et au centre ;
-     * la vague 5 fait pleuvoir trente-deux coups sur toute la largeur de la nappe, et
-     * dans le brouillard de droite ils tombent dispersés parce que l'attracteur y est
-     * dispersé. <b>La grêle épouse la cascade au lieu de se superposer à elle.</b></p>
+     * <p>Le premier jet faisait tomber les impacts <i>sur le diagramme</i> — au point de
+     * l'attracteur correspondant au rang du coup. L'idée était jolie et le résultat
+     * n'attaquait rien : la matière se déployait dans l'espace sans jamais traverser le
+     * corps visé. <b>Une figure n'est pas une attaque.</b> Ici les soixante-trois coups
+     * arrivent tous sur la cible, à hauteur de torse, et la repartent de l'autre côté.</p>
      *
-     * <p>L'échelle ne décroît que doucement ({@code 1/(1+k·0,25)}) : diviser par
-     * {@code √2^k} comme au premier jet rendait les dernières vagues littéralement
-     * invisibles — trente-deux impacts de deux centièmes de bloc ne sont pas une grêle,
-     * ce sont des confettis. La fragmentation se lit au <b>nombre</b> et à
-     * l'<b>étalement</b>, pas à la miniaturisation.</p>
+     * <p>Ce que la bifurcation garde : le <b>nombre</b>. Un, deux, quatre, huit, seize,
+     * trente-deux. Ce n'est pas un décor, c'est ce qui dicte la forme de chaque vague —
+     * on ne frappe pas à trente-deux comme on frappe à un.</p>
+     *
+     * <table>
+     *   <tr><td>0</td><td>1 coup</td><td><b>la lance</b></td><td>longitudinale, elle
+     *       traverse de part en part</td></tr>
+     *   <tr><td>1</td><td>2 coups</td><td><b>les mâchoires</b></td><td>verticale, du haut
+     *       et du bas, elles se referment sur le torse</td></tr>
+     *   <tr><td>2</td><td>4 coups</td><td><b>les anneaux</b></td><td>quatre cercles
+     *       verticaux qui se resserrent et se croisent dans le corps</td></tr>
+     *   <tr><td>3</td><td>8 coups</td><td><b>la gerbe</b></td><td>frontale, un cône de
+     *       pointes qui entre devant et ressort derrière</td></tr>
+     *   <tr><td>4</td><td>16 coups</td><td><b>le tourbillon</b></td><td>rotatif, seize
+     *       arcs qui enroulent la cible avant de la couper</td></tr>
+     *   <tr><td>5</td><td>32 coups</td><td><b>la grêle</b></td><td>verticale et saturée,
+     *       plus une onde au sol</td></tr>
+     * </table>
+     *
+     * <p>Aucune de ces six géométries n'est une autre à l'échelle près, et aucune ne
+     * partage son axe d'arrivée avec sa voisine : longitudinal, vertical, radial,
+     * frontal, rotatif, puis vertical saturé. Les durées tombent de huit ticks à trois et
+     * demi — la fin est une grêle, pas un métronome.</p>
      */
     private static void feigenStrikes(float cx, float cy, float cz, float t,
                                       float dx, float dz, float a, int salt, int duration) {
         float now = t * duration;
         float spin = t * TAU;
+        final float aim = 1.10f;                     // hauteur du torse
 
         for (int k = 0; k < BEATS_FEIGEN.length; k++) {
             float since = now - BEATS_FEIGEN[k];
-            // Les vagues tardives sont BREVES : une grele qui traine n'est plus une grele.
             float windK = 8.0f - k * 0.9f;
             float burstK = 7.0f - k * 0.7f;
             if (since < -windK || since > burstK) continue;
             boolean pre = since < 0.0f;
-            float w = pre ? 1.0f + since / windK : 1.0f;
-            float r01 = pre ? 0.0f : since / burstK;
+            float w = pre ? 1.0f + since / windK : 1.0f;   // 0 → 1 pendant l'approche
+            float r01 = pre ? 0.0f : since / burstK;       // 0 → 1 pendant l'éclat
+            float e = w * w;
+            float fade = 1.0f - r01 * 0.88f;
 
-            int shots = 1 << k;                       // 1, 2, 4, 8, 16, 32
-            float scale = 1.0f / (1.0f + k * 0.25f);
+            switch (k) {
 
-            for (int i = 0; i < shots; i++) {
-                // OU TOMBE CE COUP : son rang le place sur l'axe des r.
-                float u = (shots == 1) ? 0.08f : 0.04f + (i / (float) (shots - 1)) * 0.92f;
-                float rr = FEIGEN_R0 + (FEIGEN_R1 - FEIGEN_R0) * u;
-
-                // A QUELLE HAUTEUR : la valeur que l'attracteur prend vraiment ici.
-                float xv = 0.42f + 0.11f * hash(salt + k * 31 + i, 11);
-                for (int s = 0; s < 70; s++) xv = rr * xv * (1.0f - xv);
-                xv = Mth.clamp(xv, 0.02f, 0.98f);
-
-                float spread = Mth.clamp((rr - 3.56f) * 1.55f, 0.0f, 1.0f);
-                float fwd = (u - 0.46f) * 6.40f;
-                float lat = (hash(k * 97 + i, salt + 3) - 0.5f) * 1.70f * spread;
-                float hgt = 0.22f + xv * 2.55f;
-
-                if (pre) {
-                    // LA CHUTE. Le coup descend A LA VERTICALE sur son point : le
-                    // diagramme se regarde de profil, et seule une arrivee verticale
-                    // se lit sur une figure vue de profil.
-                    float e = w * w;
-                    float high = 2.30f - 2.15f * e;
-                    int tail = Math.max(3, 8 - k);
-                    for (int j = 0; j < tail; j++) {
-                        float hh = (0.115f - j * 0.010f) * scale * 1.35f;
-                        put(cx, cy, cz, dx, dz, fwd, hgt + high + j * 0.26f, lat,
-                                hh, hh * 1.9f, hh, spin + i,
-                                (j == 0) ? M_STROBE : M_DUAL,
-                                (j == 0) ? G_CORE : G_FRAME, H_CYAN,
-                                a * w * (0.95f - j * 0.09f));
+                // ===== VAGUE 0 — UN COUP — LA LANCE ================================
+                // Elle arrive par l'axe, de derriere l'attaquant, et ressort derriere la
+                // cible. C'est le seul geste de la signature qui soit LONGITUDINAL.
+                case 0: {
+                    if (pre) {
+                        float tip = -7.0f + 7.0f * e;
+                        for (int j = 0; j < 20; j++) {
+                            float back = tip - j * 0.33f;
+                            float hh = 0.17f - j * 0.0065f;
+                            put(cx, cy, cz, dx, dz, back, aim, 0.0f,
+                                    hh * 1.9f, hh, hh, spin * 0.5f,
+                                    (j == 0) ? M_STROBE : M_DUAL,
+                                    (j == 0) ? G_CORE : G_FRAME, H_CYAN,
+                                    a * w * (1.0f - j * 0.042f));
+                        }
+                    } else {
+                        // LE PASSAGE. Le fut file de -1,2 a +4,6 : il TRAVERSE.
+                        float head = -1.2f + 5.8f * r01;
+                        for (int j = 0; j < 24; j++) {
+                            float back = head - j * 0.30f;
+                            float hh = 0.155f - j * 0.0050f;
+                            put(cx, cy, cz, dx, dz, back, aim, 0.0f,
+                                    hh * 2.1f, hh, hh, spin,
+                                    (j < 2) ? M_STROBE : M_SPECTRUM,
+                                    (j < 2) ? G_CORE : G_GLASS, H_CYAN,
+                                    a * fade * (1.0f - j * 0.035f));
+                        }
+                        // L'ECLABOUSSURE au point d'entree, dans le plan perpendiculaire.
+                        int n = 16;
+                        for (int j = 0; j < n; j++) {
+                            float ca = j / (float) n * TAU;
+                            float rr = 0.20f + 1.45f * Mth.sqrt(r01);
+                            put(cx, cy, cz, dx, dz, -0.10f,
+                                    aim + sin(ca) * rr, cos(ca) * rr,
+                                    0.085f, 0.085f, 0.085f, ca,
+                                    M_DUAL, G_FRAME, H_CYAN, a * fade * 0.85f);
+                        }
                     }
-                } else {
-                    // L'IMPACT. Un disque PLAT, qui s'ouvre dans le plan de la nappe :
-                    // une sphere d'eclats se confondrait avec la nappe elle-meme.
-                    float f = 1.0f - r01 * 0.88f;
-                    float ring = (0.18f + 0.95f * Mth.sqrt(r01)) * scale;
-                    int n = Math.max(7, 14 - k);
-                    for (int j = 0; j < n; j++) {
-                        float ca = j / (float) n * TAU + i * 0.7f;
-                        put(cx, cy, cz, dx, dz,
-                                fwd + cos(ca) * ring, hgt + sin(ca) * ring * 0.55f, lat,
-                                0.075f * scale + 0.015f, 0.075f * scale + 0.015f,
-                                0.045f * scale + 0.010f, ca,
-                                (j % 3 == 0) ? M_STROBE : M_SPECTRUM,
-                                (j % 3 == 0) ? G_CORE : G_GLASS, 0.0f, a * f * 0.95f);
+                    break;
+                }
+
+                // ===== VAGUE 1 — DEUX COUPS — LES MACHOIRES ========================
+                // Deux lames PLATES, une qui tombe et une qui monte, qui se rejoignent
+                // exactement sur le torse. Arrivee VERTICALE, et rien d'autre dans la
+                // signature n'arrive par le haut sauf la grele — qui, elle, est un essaim.
+                case 1: {
+                    for (int jaw = 0; jaw < 2; jaw++) {
+                        float dir = (jaw == 0) ? 1.0f : -1.0f;
+                        float gap = pre ? (3.40f * (1.0f - e)) : 0.0f;
+                        float yy = aim + dir * gap;
+                        int n = 30;
+                        for (int j = 0; j < n; j++) {
+                            float u = j / (float) (n - 1) - 0.5f;
+                            // Une lame, donc LARGE et MINCE : 2,9 de long, 0,05 d'epais.
+                            float bite = pre ? 1.0f : (1.0f - 0.55f * r01);
+                            put(cx, cy, cz, dx, dz, u * 2.90f * bite, yy,
+                                    dir * 0.18f * (pre ? 1.0f : (1.0f - r01)),
+                                    0.075f, 0.050f, 0.165f, 0.0f,
+                                    (j % 6 == 0) ? M_STROBE : M_SPECTRUM,
+                                    (j % 6 == 0) ? G_CORE : G_FRAME, H_MAGENTA,
+                                    a * (pre ? w : fade) * 0.95f);
+                        }
                     }
-                    // LE NOYAU, bref et blanc : il marque l'instant, pas la duree.
-                    if (r01 < 0.45f) {
-                        float cf = 1.0f - r01 / 0.45f;
-                        put(cx, cy, cz, dx, dz, fwd, hgt, lat,
-                                (0.21f * cf + 0.055f) * scale, spin * 5.0f,
-                                M_STROBE, G_CORE, 0.0f, a * cf * 0.95f);
+                    if (!pre) {
+                        // LA MORSURE : un disque PLAT chasse dans le plan du contact.
+                        int n = 34;
+                        for (int j = 0; j < n; j++) {
+                            float ca = j / (float) n * TAU + spin;
+                            float rr = 0.25f + 2.55f * Mth.sqrt(r01);
+                            put(cx, cy, cz, dx, dz, cos(ca) * rr, aim, sin(ca) * rr,
+                                    0.115f * fade + 0.02f, 0.045f, 0.115f * fade + 0.02f,
+                                    ca, M_STROBE, G_GLASS, H_MAGENTA, a * fade * 0.90f);
+                        }
                     }
+                    break;
+                }
+
+                // ===== VAGUE 2 — QUATRE COUPS — LES ANNEAUX ========================
+                // Quatre cercles VERTICAUX, a quatre azimuts, qui se resserrent et se
+                // croisent DANS le corps. Arrivee radiale par contraction.
+                case 2: {
+                    float rad = pre ? (3.30f - 2.95f * e) : (0.35f + 2.10f * r01);
+                    for (int ring = 0; ring < 4; ring++) {
+                        float az = ring * (TAU / 8.0f) + salt * 0.03f;
+                        float ca0 = cos(az), sa0 = sin(az);
+                        int n = 18;
+                        for (int j = 0; j < n; j++) {
+                            float p = j / (float) n * TAU;
+                            float ox = cos(p) * rad, oy = sin(p) * rad;
+                            put(cx, cy, cz, dx, dz, ox * ca0, aim + oy, ox * sa0,
+                                    0.095f, 0.095f, 0.095f, p + spin,
+                                    (ring % 2 == 0) ? M_DUAL : M_PULSE,
+                                    (j % 5 == 0) ? G_GLASS : G_FRAME,
+                                    (ring % 2 == 0) ? H_BLUE : H_VIOLET,
+                                    a * (pre ? w : fade) * 0.92f);
+                        }
+                    }
+                    if (!pre) {
+                        // LE NOEUD : la ou les quatre anneaux se sont croises.
+                        float cf = 1.0f - Mth.clamp(r01 / 0.5f, 0.0f, 1.0f);
+                        if (cf > 0.0f) {
+                            put(cx, cy, cz, dx, dz, 0.0f, aim, 0.0f,
+                                    0.14f + 0.46f * cf, spin * 6.0f,
+                                    M_STROBE, G_CORE, 0.0f, a * cf);
+                        }
+                    }
+                    break;
+                }
+
+                // ===== VAGUE 3 — HUIT COUPS — LA GERBE FRONTALE ====================
+                // Un cone de pointes qui entre PAR DEVANT et ressort DERRIERE : c'est le
+                // seul geste dont la direction soit celle de l'attaque elle-meme.
+                case 3: {
+                    for (int i = 0; i < 8; i++) {
+                        float ca = i / 8.0f * TAU + 0.21f;
+                        float open = 1.15f;
+                        float travel = pre ? (-4.30f + 4.10f * e) : (-0.20f + 4.00f * r01);
+                        int n = 7;
+                        for (int j = 0; j < n; j++) {
+                            float back = travel - j * 0.27f;
+                            // Le cone se referme en avançant : large derriere, pointu devant.
+                            float sp = open * Mth.clamp((0.30f - back) * 0.42f, 0.06f, 1.0f);
+                            float hh = 0.125f - j * 0.011f;
+                            put(cx, cy, cz, dx, dz, back,
+                                    aim + sin(ca) * sp, cos(ca) * sp,
+                                    hh * 1.7f, hh, hh, ca,
+                                    (j == 0) ? M_STROBE : M_SPECTRUM,
+                                    (j == 0) ? G_CORE : G_MID, H_ROSE,
+                                    a * (pre ? w : fade) * (1.0f - j * 0.09f));
+                        }
+                    }
+                    break;
+                }
+
+                // ===== VAGUE 4 — SEIZE COUPS — LE TOURBILLON =======================
+                // Seize arcs qui ENROULENT la cible sur deux tours avant de la couper.
+                // Arrivee rotative : la matiere tourne au lieu de foncer.
+                case 4: {
+                    float wind = pre ? (1.0f - e) : 0.0f;
+                    for (int i = 0; i < 16; i++) {
+                        float base = i / 16.0f * TAU;
+                        int n = 9;
+                        for (int j = 0; j < n; j++) {
+                            float u = j / (float) (n - 1);
+                            // Deux tours d'enroulement pendant l'approche, puis la spire
+                            // se vide d'un coup vers l'exterieur.
+                            float ang = base + u * 2.6f + wind * TAU * 2.0f + spin * 2.2f;
+                            float rr = pre ? (2.60f * wind + 0.45f + u * 0.5f)
+                                           : (0.40f + 3.20f * r01 + u * 0.35f);
+                            float yy = aim + (u - 0.5f) * (pre ? 1.30f : 0.55f);
+                            put(cx, cy, cz, dx, dz, cos(ang) * rr, yy, sin(ang) * rr,
+                                    0.105f - j * 0.006f, 0.062f, 0.105f - j * 0.006f, ang,
+                                    (j == 0) ? M_STROBE : M_EMBER,
+                                    (j == 0) ? G_FLASH : G_MID, H_EMBER,
+                                    a * (pre ? w : fade) * (0.95f - j * 0.055f));
+                        }
+                    }
+                    break;
+                }
+
+                // ===== VAGUE 5 — TRENTE-DEUX COUPS — LA GRELE ======================
+                // Saturation. Trente-deux pierres dans un cylindre d'un bloc et demi
+                // autour du corps, plus une onde au sol : a trente-deux, on ne vise plus,
+                // on noie.
+                default: {
+                    for (int i = 0; i < 32; i++) {
+                        float ang = i * 2.39996f + salt * 0.05f;
+                        float rr = 0.18f + 1.30f * hash(i, salt + 17);
+                        float lag = hash(i * 7, salt + 23) * 0.55f;
+                        float fall = pre ? Mth.clamp((e - lag) / 0.45f, 0.0f, 1.0f)
+                                         : 1.0f;
+                        float yy = aim + 3.60f * (1.0f - fall) + 0.55f - r01 * 1.50f;
+                        int n = 4;
+                        for (int j = 0; j < n; j++) {
+                            float hh = 0.105f - j * 0.016f;
+                            put(cx, cy, cz, dx, dz, cos(ang) * rr,
+                                    yy + j * 0.30f, sin(ang) * rr,
+                                    hh, hh * 1.6f, hh, ang,
+                                    (j == 0) ? M_STROBE : M_SPECTRUM,
+                                    (j == 0) ? G_CORE : G_GLASS, 0.0f,
+                                    a * (pre ? w : fade) * (0.95f - j * 0.14f));
+                        }
+                    }
+                    if (!pre) {
+                        // L'ONDE AU SOL : trente-deux impacts font un seul bruit.
+                        float wv = 0.4f + 3.6f * Mth.sqrt(r01);
+                        int n = 30;
+                        for (int j = 0; j < n; j++) {
+                            float ca = j / (float) n * TAU;
+                            put(cx, cy, cz, dx, dz, cos(ca) * wv, 0.10f, sin(ca) * wv,
+                                    0.12f * fade + 0.02f, 0.05f, 0.12f * fade + 0.02f, ca,
+                                    M_SPECTRUM, G_FLASH, 0.0f, a * fade * 0.85f);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        // ===== LA FENETRE DE PERIODE TROIS — 132 / 140 / 148 ======================
+        // En plein chaos, l'ordre revient : trois colonnes verticales IDENTIQUES, bien
+        // separees, qui tombent sur la cible. Le seul endroit de la signature ou un geste
+        // se repete — et il ne se repete que parce que la carte logistique, elle aussi,
+        // retrouve une periode exacte vers r = 3,83.
+        for (int s = 0; s < 3; s++) {
+            float since = now - (132 + s * 8);
+            if (since < -5.0f || since > 6.0f) continue;
+            boolean pre = since < 0.0f;
+            float w = pre ? 1.0f + since / 5.0f : 1.0f;
+            float r01 = pre ? 0.0f : since / 6.0f;
+            float col = pre ? (1.0f - w * w) : 0.0f;
+            int n = 14;
+            for (int j = 0; j < n; j++) {
+                float yy = aim + 0.30f + j * 0.26f + col * 3.2f;
+                float hh = 0.16f - j * 0.0055f;
+                put(cx, cy, cz, dx, dz, 0.0f, yy, 0.0f, hh, hh * 1.35f, hh, spin * 1.5f,
+                        (j == 0) ? M_STROBE : M_DUAL,
+                        (j == 0) ? G_CORE : G_FRAME, H_CYAN,
+                        a * (pre ? w : (1.0f - r01 * 0.88f)) * (1.0f - j * 0.045f));
+            }
+            if (!pre) {
+                float f2 = 1.0f - r01 * 0.88f;
+                int m = 20;
+                for (int j = 0; j < m; j++) {
+                    float ca = j / (float) m * TAU;
+                    float rr = 0.25f + 1.90f * Mth.sqrt(r01);
+                    put(cx, cy, cz, dx, dz, cos(ca) * rr, aim * 0.45f, sin(ca) * rr,
+                            0.10f * f2 + 0.02f, 0.045f, 0.10f * f2 + 0.02f, ca,
+                            M_DUAL, G_GLASS, H_CYAN, a * f2 * 0.88f);
                 }
             }
         }
@@ -1901,8 +2094,15 @@ public final class ChaosSignatureVfx {
                     // after*after donnerait une avalanche qui demarre en douceur --
                     // autrement dit pas une avalanche. La racine carree part d'un coup
                     // puis ralentit : c'est ce que fait un tas qui lache.
+                    // LE FRONT RAYONNE DEPUIS LE POINT DE CHUTE. Tout s'effondrer
+                    // d'un bloc ne montrerait pas d'ou ca part ; ici une case ne lache
+                    // que lorsque le front l'atteint, et le front sort du centre — la
+                    // ou le grain est tombe. C'est le titre rendu visible.
+                    float front = after * 7.5f;
+                    float local = fallen
+                            ? Mth.clamp((front - dist) / 1.30f, 0.0f, 1.0f) : 0.0f;
                     float blow = fallen
-                            ? Mth.sqrt(after) * (0.60f + 0.40f * after) * (1.0f + k * 0.22f)
+                            ? Mth.sqrt(local) * (0.60f + 0.40f * local) * (1.0f + k * 0.22f)
                             : 0.0f;
                     // LE REBOND. Les cubes sont jetes en l'air puis retombent ; les plus
                     // hauts de la pile sont jetes le plus loin et le plus haut.
@@ -1916,22 +2116,27 @@ public final class ChaosSignatureVfx {
                     float py = ground + 0.10f + k * 0.19f + hop;
                     if (py < ground + 0.08f) py = ground + 0.08f;
 
+                    // Une case qui n'a pas encore lache garde sa couleur de repos :
+                    // sans cela toute la plaque virerait a la braise d'un seul coup et
+                    // le front serait invisible.
+                    boolean gone = fallen && local > 0.02f;
+
                     // LA TENSION. Plus le tas est proche de la rupture, plus les sommets
                     // tremblent : c'est le seul indice, pendant sept secondes, que quelque
                     // chose va arriver.
                     float stress = build * build * (k >= 2 ? 1.0f : 0.25f);
-                    float shake = fallen ? 0.0f
+                    float shake = gone ? 0.0f
                             : stress * 0.045f * sin(t * 62.0f + x * 2.3f + y * 1.7f + k);
 
-                    float fade = fallen ? (1.0f - after * 0.92f) : (0.55f + 0.45f * build);
+                    float fade = gone ? (1.0f - local * 0.92f) : (0.55f + 0.45f * build);
                     // Les cubes du dessus sont les plus instables : ils sont aussi les plus
                     // clairs, pour que le regard aille ou ca va casser.
                     // LA HAUTEUR EST PORTEE PAR LA COULEUR, et c'est indispensable :
                     // vue de dessus, une plaque de trois crans n'a pas de relief, donc
                     // sans code couleur le motif fractal ne se lit pas du tout.
                     int gray = (h == 3) ? G_MID : (h == 2 ? G_BODY : G_DEEP);
-                    int mode = fallen ? M_EMBER : ((h == 3) ? M_PULSE : M_TINTED);
-                    float hue = fallen ? H_EMBER : ((h == 3) ? H_ROSE : H_VIOLET);
+                    int mode = gone ? M_EMBER : ((h == 3) ? M_PULSE : M_TINTED);
+                    float hue = gone ? H_EMBER : ((h == 3) ? H_ROSE : H_VIOLET);
                     put(cx, cy, cz, dx, dz, px + shake, py, pz + shake,
                             0.125f, 0.095f, 0.125f, 0.0f,
                             mode, gray, hue, a * fade * 0.95f);
@@ -1941,15 +2146,79 @@ public final class ChaosSignatureVfx {
 
         // LE GRAIN QUI VA TOMBER. Un seul cube, haut au-dessus du tas, qui descend pendant
         // toute la montee. On sait donc ce qu'on attend, et on voit combien il reste.
+        // LES EBOULEMENTS DE DEMONSTRATION. Pendant la montee, six cases lachent sous
+        // les yeux : la case source blanchit et QUATRE grains partent vers ses quatre
+        // voisines. C'est la regle entiere de l'automate, montree au lieu d'etre ecrite —
+        // et c'est ce qui manquait pour que la plaque soit autre chose qu'un damier.
+        if (!fallen) {
+            for (int ev = 0; ev < 6; ev++) {
+                float begin = 16.0f + ev * 21.0f;
+                float age = tick - begin;
+                if (age < 0.0f || age > 13.0f) continue;
+                float u = age / 13.0f;
+                float pop = sin(u * TAU * 0.5f);          // nait et meurt en douceur
+                int sx = 3 + (int) (hash(ev * 13 + 1, salt) * (PILE_N - 6));
+                int sy = 3 + (int) (hash(ev * 13 + 2, salt) * (PILE_N - 6));
+                float bx = (sx - mid) * cell;
+                float bz = (sy - mid) * cell;
+                float by = ground + 0.10f + 2.0f * 0.19f;
+
+                // LA CASE QUI LACHE.
+                put(cx, cy, cz, dx, dz, bx, by, bz,
+                        0.145f, 0.110f, 0.145f, 0.0f,
+                        M_STROBE, G_CORE, 0.0f, a * pop * 0.95f);
+
+                // SES QUATRE GRAINS, un par voisine, exactement comme le modele.
+                for (int d = 0; d < 4; d++) {
+                    float ox = (d == 0) ? 1.0f : (d == 1 ? -1.0f : 0.0f);
+                    float oz = (d == 2) ? 1.0f : (d == 3 ? -1.0f : 0.0f);
+                    float slide = u * cell;
+                    put(cx, cy, cz, dx, dz, bx + ox * slide,
+                            by + 0.16f * pop, bz + oz * slide,
+                            0.062f, 0.062f, 0.062f, u * 6.0f,
+                            M_PULSE, G_FLASH, H_ROSE, a * pop * 0.90f);
+                }
+            }
+        }
+
         if (!fallen) {
             float drop = 4.6f - 4.1f * build;
-            put(cx, cy, cz, dx, dz, 0.0f, ground + 1.0f + drop, 0.0f,
-                    0.14f + 0.06f * build, t * 14.0f,
-                    M_STROBE, G_CORE, 0.0f, a * (0.5f + 0.5f * build));
-            // Son ombre portee : sans elle, le grain flotte sans rapport avec le tas.
-            put(cx, cy, cz, dx, dz, 0.0f, ground + 0.06f, 0.0f,
-                    0.10f + 0.10f * build, 0.030f, 0.10f + 0.10f * build, 0.0f,
-                    M_MONO, G_MASK, 0.0f, a * 0.45f);
+            float gy = ground + 1.0f + drop;
+
+            // LE GRAIN. Il est GROS et il est SEUL : c'est le titre de la signature, et
+            // au premier jet on ne le voyait pas. Trois cent soixante-dix mille cubes de
+            // plaque autour, et l'objet qui donne son nom a l'animation faisait quatorze
+            // centiemes de bloc.
+            float gh = 0.20f + 0.09f * build;
+            put(cx, cy, cz, dx, dz, 0.0f, gy, 0.0f, gh, t * 14.0f,
+                    M_STROBE, G_CORE, 0.0f, a * (0.55f + 0.45f * build));
+            // Sa coque, qui bat : un cube seul a cette taille se lit comme un cube de la
+            // plaque qui aurait decolle. La coque dit que celui-la est d'une autre nature.
+            put(cx, cy, cz, dx, dz, 0.0f, gy, 0.0f, gh * 1.95f, -t * 9.0f,
+                    M_PULSE, G_MASK, H_ROSE, a * (0.20f + 0.26f * build));
+
+            // LE FIL A PLOMB. Sans lui, le grain flotte quelque part en l'air et rien ne
+            // dit OU il va tomber — donc rien n'annonce ce qui va se passer.
+            int marks = 10;
+            float topY = ground + 0.70f;
+            for (int i = 1; i < marks; i++) {
+                float u = i / (float) marks;
+                float yy = topY + (gy - topY) * u;
+                put(cx, cy, cz, dx, dz, 0.0f, yy, 0.0f,
+                        0.038f, 0.038f, 0.038f, 0.0f,
+                        M_MONO, G_MASK, 0.0f, a * 0.34f * (1.0f - u * 0.55f));
+            }
+
+            // LA CIBLE AU SOL, qui se resserre a mesure que le grain descend : on voit
+            // combien de temps il reste.
+            float ring = 1.05f - 0.62f * build;
+            int n = 14;
+            for (int i = 0; i < n; i++) {
+                float ang = i / (float) n * TAU + t * 1.4f;
+                put(cx, cy, cz, dx, dz, cos(ang) * ring, ground + 0.78f, sin(ang) * ring,
+                        0.052f, 0.052f, 0.052f, ang,
+                        M_PULSE, G_GLASS, H_ROSE, a * (0.30f + 0.45f * build));
+            }
         }
 
         // L'ONDE DE DECHARGE : le front de l'avalanche, au sol, qui court vers l'exterieur.
