@@ -43,15 +43,55 @@ public final class WeaponSkill {
     /** Palier de glint imposé quand le skill est chargé (échelle 1..20 de {@code /glint}). */
     public static final int CHARGED_GLINT_TIER = 13;
 
-    /** Une compétence : son animation, son enchantement porteur, sa recharge en secondes. */
-    public record Entry(WeaponVisualEffectId effect, String enchantPath, int cooldownSeconds) {
+    /** Comment le joueur déclenche la compétence. */
+    public enum Cast {
+        /** Clic droit sur un mob, arme de mêlée en main : les 45 signatures. */
+        ON_MOB,
+        /** Clic droit, objet en main : les enchantements qui SONT une capacité activée. */
+        IN_HAND;
+    }
+
+    /**
+     * Une compétence.
+     *
+     * @param effect        l'animation jouée, ou {@code null} pour une capacité activée qui
+     *                      n'a pas de signature visuelle (invocation d'armée, détecteur…)
+     * @param element       l'élément, qui donne la couleur du titre et du halo
+     * @param cast          comment on la lance
+     * @param ownsEnchant   vrai quand l'enchantement n'est QUE cette compétence. Dans ce cas
+     *                      il quitte la liste d'enchantements de l'infobulle et n'apparaît
+     *                      plus que dans l'encart SKILL — sinon il serait écrit deux fois.
+     */
+    public record Entry(WeaponVisualEffectId effect, String enchantPath, int cooldownSeconds,
+                        DeepElement element, Cast cast, boolean ownsEnchant) {
         public int cooldownTicks() { return cooldownSeconds * 20; }
     }
 
     private static final Map<WeaponVisualEffectId, Entry> BY_EFFECT = new LinkedHashMap<>(64);
+    /** Index par chemin d'enchantement : sert à l'infobulle et au tirage de butin. */
+    private static final Map<String, Entry> BY_PATH = new LinkedHashMap<>(64);
 
     private static void put(WeaponVisualEffectId fx, String path, int seconds) {
-        BY_EFFECT.put(fx, new Entry(fx, path, seconds));
+        Entry e = new Entry(fx, path, seconds, fx.element(), Cast.ON_MOB, ACTIVE_ONLY.contains(path));
+        BY_EFFECT.put(fx, e);
+        BY_PATH.put(path, e);
+    }
+
+    /**
+     * Enchantements qui ne sont RIEN D'AUTRE qu'une capacité activée : pas de bonus passif,
+     * juste un pouvoir qu'on déclenche et une recharge. Ce sont eux qui quittent la liste
+     * d'enchantements pour l'encart SKILL.
+     *
+     * <p>Les quarante-cinq signatures, elles, RESTENT dans la liste : leur enchantement est
+     * un vrai enchantement avec ses effets passifs — {@code advanced_sharpness} ajoute des
+     * dégâts à chaque coup, et le masquer priverait le joueur d'une information qui n'a
+     * rien à voir avec la compétence.</p>
+     */
+    private static final java.util.Set<String> ACTIVE_ONLY =
+            java.util.Set.of("army_summon", "summon_army", "ore_detector");
+
+    private static void active(String path, int seconds, DeepElement element) {
+        BY_PATH.put(path, new Entry(null, path, seconds, element, Cast.IN_HAND, true));
     }
 
     static {
@@ -102,6 +142,75 @@ public final class WeaponSkill {
         put(WeaponVisualEffectId.WILDWOOD_AWAKENING, "wildwood_awakening", 35);
     }
 
+    /** Recharge du détecteur de minerais, en ticks. Lue par le handler qui la pose. */
+    public static final int ORE_DETECTOR_COOLDOWN_TICKS = 300;
+
+    static {
+        // T411 — LES CAPACITES ACTIVEES QUI NE SONT PAS DES SIGNATURES.
+        // Recharges RELEVEES dans le code, pas choisies : UniversalEnchantmentHandler
+        // l. 4466 pose 360 ticks pour summon_army et 440 pour army_summon.
+        // ore_detector n'en avait aucune — une capacité activée sans recharge se
+        // spamme à chaque tick ; elle reçoit la sienne, posée dans le même handler.
+        // army_summon est DEJA une signature (WARLORD_RALLY_SIGIL) : il n'est pas
+        // réinscrit ici, son entrée de signature suffit. ACTIVE_ONLY le marque
+        // quand même, pour qu'il quitte la liste d'enchantements.
+        active("summon_army", 18, DeepElement.EARTH);
+        active("ore_detector", ORE_DETECTOR_COOLDOWN_TICKS / 20, DeepElement.METAL);
+    }
+
+    /**
+     * Vrai si cet enchantement doit être retiré de la liste d'enchantements de l'infobulle
+     * parce qu'il est entièrement décrit par l'encart SKILL.
+     */
+    public static boolean isSkillEnchantment(net.minecraft.resources.ResourceLocation id) {
+        if (id == null || !"deep_lucky_block".equals(id.getNamespace())) return false;
+        Entry e = BY_PATH.get(id.getPath());
+        return e != null && e.ownsEnchant();
+    }
+
+    /** Toutes les compétences portées par cet objet, sans doublon, dans l'ordre de pose. */
+    public static List<Entry> allOn(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return List.of();
+        java.util.LinkedHashMap<String, Entry> found = new java.util.LinkedHashMap<>(4);
+        // 1. les signatures : on passe par la table d'enchantements complète, car une
+        //    même animation est atteignable par plusieurs clés (thorn_maw, briar_cage…).
+        for (WeaponVisualEffectId.ResolvedLayer layer : WeaponVisualEffectId.resolveLayers(stack, 2)) {
+            Entry e = BY_EFFECT.get(layer.effect());
+            if (e != null) found.putIfAbsent(e.enchantPath(), e);
+        }
+        // 2. les capacités activées, lues par le MEME chemin que le filtre d'infobulle :
+        //    DeepEnchant.map + getKeySafe. Deux lectures différentes pourraient diverger,
+        //    et un enchantement retiré de la liste sans apparaître dans l'encart serait
+        //    purement et simplement invisible.
+        for (net.minecraft.world.item.enchantment.Enchantment en
+                : deepluckyblock.util.DeepEnchant.map(stack).keySet()) {
+            net.minecraft.resources.ResourceLocation loc =
+                    deepluckyblock.util.DeepEnchant.getKeySafe(en);
+            if (loc == null || !"deep_lucky_block".equals(loc.getNamespace())) continue;
+            Entry e = BY_PATH.get(loc.getPath());
+            if (e != null) found.putIfAbsent(e.enchantPath(), e);
+        }
+        return List.copyOf(found.values());
+    }
+
+    /**
+     * Armes sur lesquelles une signature peut reellement se lancer. Le lanceur
+     * ({@code WeaponSkillHandler}) et le tirage de butin lisent cette MEME methode : poser
+     * une competence sur une pioche produirait un pouvoir que rien ne peut declencher.
+     */
+    public static boolean canCastSignature(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        return stack.getItem() instanceof net.minecraft.world.item.SwordItem
+                || stack.getItem() instanceof net.minecraft.world.item.AxeItem
+                || stack.getItem() instanceof net.minecraft.world.item.MaceItem
+                || stack.getItem() instanceof net.minecraft.world.item.HoeItem;
+    }
+
+    /** Les chemins d'enchantement des 45 signatures, pour le tirage de butin. */
+    public static List<String> signaturePaths() {
+        return BY_EFFECT.values().stream().map(Entry::enchantPath).toList();
+    }
+
     /**
      * Compétence portée par cette arme, ou {@code null}. On reprend la résolution de couches
      * déjà utilisée par le rendu : même arme, même enchantement, même animation — le skill ne
@@ -112,7 +221,9 @@ public final class WeaponSkill {
         List<WeaponVisualEffectId.ResolvedLayer> layers = WeaponVisualEffectId.resolveLayers(stack, 2);
         for (WeaponVisualEffectId.ResolvedLayer layer : layers) {
             Entry e = BY_EFFECT.get(layer.effect());
-            if (e != null) return e;
+            // effect() non nul par construction ici, mais la garde documente l'invariant :
+            // seule une signature se lance sur un mob, pas une capacite activee.
+            if (e != null && e.effect() != null && e.cast() == Cast.ON_MOB) return e;
         }
         return null;
     }

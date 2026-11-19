@@ -59,6 +59,13 @@ JAVA = [
     # T410-FIX : sans create(), les 14 enchantements neufs n'ont pas de metadonnees
     # et tout le mod les ignore. Le JSON seul ne suffit pas.
     'src/main/java/deepluckyblock/enchantments/ModEnchantments.java',
+    # T411-SKILLS : les capacites activees quittent la liste d'enchantements pour
+    # l'encart SKILL, et 5 % des armes lootees repartent avec une competence.
+    # Ces trois fichiers portent le changement : sans eux l'archive livre l'ancien
+    # comportement, meme si le depot, lui, est a jour.
+    'src/main/java/deepluckyblock/procedures/EnchantmentTooltipFixProcedure.java',
+    'src/main/java/deepluckyblock/procedures/GenerateLuckyItemProcedure.java',
+    'src/main/java/deepluckyblock/enchantments/UniversalEnchantmentHandler.java',
 ]
 EXTRA = [
     # T397-PIXEL3D : les trois fichiers du core shader. Ils ne vivent PAS sous

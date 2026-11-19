@@ -2,8 +2,8 @@
 # Regenerer : python3 tools/typecheck.py --ecrire-base
 src/main/java/deepluckyblock/client/ClientTranslationInjector.java:379  ARITE  loadJsonResource(...) recoit 2 argument(s), declare(s) : [3]
 src/main/java/deepluckyblock/client/ClientTranslationInjector.java:380  ARITE  loadJsonResource(...) recoit 2 argument(s), declare(s) : [3]
-src/main/java/deepluckyblock/client/ClientTranslationInjector.java:739  ARITE  loadJsonResource(...) recoit 2 argument(s), declare(s) : [3]
-src/main/java/deepluckyblock/client/ClientTranslationInjector.java:740  ARITE  loadJsonResource(...) recoit 2 argument(s), declare(s) : [3]
+src/main/java/deepluckyblock/client/ClientTranslationInjector.java:747  ARITE  loadJsonResource(...) recoit 2 argument(s), declare(s) : [3]
+src/main/java/deepluckyblock/client/ClientTranslationInjector.java:748  ARITE  loadJsonResource(...) recoit 2 argument(s), declare(s) : [3]
 src/main/java/deepluckyblock/client/DeepEnchantmentDescriptionCompatibility.java:102  ARITE  descriptionLineScore(...) recoit 2 argument(s), declare(s) : [3]
 src/main/java/deepluckyblock/client/DeepEnchantmentDescriptionCompatibility.java:105  ARITE  descriptionLineScore(...) recoit 2 argument(s), declare(s) : [3]
 src/main/java/deepluckyblock/client/DeepEnchantmentDescriptionCompatibility.java:72  ARITE  addDescriptionKey(...) recoit 5 argument(s), declare(s) : [7]
@@ -15,8 +15,8 @@ src/main/java/deepluckyblock/client/SystemTooltipWindowRenderer.java:675  ARITE 
 src/main/java/deepluckyblock/client/SystemTooltipWindowRenderer.java:691  ARITE  computeMaxRarityTier(...) recoit 2 argument(s), declare(s) : [3]
 src/main/java/deepluckyblock/client/SystemTooltipWindowRenderer.java:692  ARITE  computeDeterministicSeed(...) recoit 3 argument(s), declare(s) : [4]
 src/main/java/deepluckyblock/enchantments/EquipmentExpansionHandler.java:401  LONG->INT  schedule(..., now+4, ...) : variable long << now >>
-src/main/java/deepluckyblock/enchantments/UniversalEnchantmentHandler.java:5178  ARITE  setTrackedBarrier(...) recoit 9 argument(s), declare(s) : [10]
-src/main/java/deepluckyblock/procedures/GenerateLuckyItemProcedure.java:3265  ARITE  currentPowerScore(...) recoit 2 argument(s), declare(s) : [3]
+src/main/java/deepluckyblock/enchantments/UniversalEnchantmentHandler.java:5185  ARITE  setTrackedBarrier(...) recoit 9 argument(s), declare(s) : [10]
+src/main/java/deepluckyblock/procedures/GenerateLuckyItemProcedure.java:3338  ARITE  currentPowerScore(...) recoit 2 argument(s), declare(s) : [3]
 src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java:12320  ARITE  applyWaterPlans(...) recoit 2 argument(s), declare(s) : [4]
 src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java:12321  ARITE  applyWaterPlans(...) recoit 2 argument(s), declare(s) : [4]
 src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java:12322  ARITE  applyWaterPlans(...) recoit 2 argument(s), declare(s) : [4]

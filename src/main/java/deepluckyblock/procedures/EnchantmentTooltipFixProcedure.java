@@ -399,6 +399,15 @@ public final class EnchantmentTooltipFixProcedure {
                     continue;
                 }
                 if (!handled.add(id)) continue;
+                // T411 : un enchantement qui n'est QU'une capacite activee (invocation
+                // d'armee, detecteur de minerais...) n'a plus sa ligne ici : il est decrit
+                // entierement dans l'encart SKILL, avec son nom, son declencheur et sa
+                // recharge. L'ecrire aux deux endroits le dirait deux fois.
+                // ... sauf sur un livre enchante : la boucle lit aussi les enchantements
+                // STOCKES (mapWithStored), et un livre n'a pas d'encart SKILL puisqu'on
+                // ne lance rien avec. Lui retirer la ligne effacerait l'enchantement de
+                // l'infobulle sans rien mettre a la place.
+                if (!isBook && deepluckyblock.enchantments.WeaponSkill.isSkillEnchantment(id)) continue;
 
                 Component nameLine;
                 try {

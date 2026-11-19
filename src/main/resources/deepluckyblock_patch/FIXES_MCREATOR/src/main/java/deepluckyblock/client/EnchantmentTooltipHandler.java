@@ -14,29 +14,28 @@ import java.util.List;
 
 /**
  * ═══════════════════════════════════════════════════════════════
- * 🌀 EnchantmentTooltipHandler — l'encart SKILL, et rien d'autre
+ * 🌀 EnchantmentTooltipHandler — l'encart SKILL
  * ═══════════════════════════════════════════════════════════════
  *
- * <p><b>Ce que cette classe n'affiche PAS, et pourquoi.</b> Le nom de l'enchantement et sa
- * description sont déjà posés par {@code EnchantmentTooltipFixProcedure} — il les insère
- * lui-même dans la liste (nom en chiffres romains, puis la description sous SHIFT). Les
- * réafficher ici produirait deux fois le même texte sur chaque arme. C'est exactement le
- * défaut qu'avait la première version de ce fichier : trois lignes ajoutées dont deux
- * étaient des copies.</p>
+ * <p><b>Ce que cette classe n'affiche PAS.</b> Le nom et la description des enchantements
+ * sont déjà posés par {@code EnchantmentTooltipFixProcedure}. Les réafficher produirait
+ * deux fois le même texte — c'est le défaut qu'avait la première version de ce fichier.</p>
  *
- * <p><b>Ce qu'elle ajoute, et qui n'existe nulle part ailleurs</b> — trois lignes qui
- * parlent de la <i>compétence</i>, pas de l'enchantement :</p>
- * <ol>
- *   <li>l'en-tête, <b>à la couleur exacte de l'élément</b> (vraie valeur RVB de
- *       {@code DeepElement}, pas un code de couleur approché) : comment on la lance et
- *       combien de temps elle met à revenir ;</li>
- *   <li>l'effet, en chiffres relevés dans le code : nombre d'impacts, durée ;</li>
- *   <li>la phrase qui dit ce qu'on voit.</li>
- * </ol>
+ * <p><b>Les deux sortes de compétences, et pourquoi elles ne s'affichent pas pareil.</b></p>
+ * <ul>
+ *   <li>Les <b>quarante-cinq signatures</b> sont greffées sur de vrais enchantements, qui
+ *       gardent leurs effets passifs : {@code advanced_sharpness} ajoute des dégâts à chaque
+ *       coup, que l'on lance la compétence ou non. Leur ligne d'enchantement reste donc à sa
+ *       place, et l'encart n'ajoute que ce qui concerne la compétence.</li>
+ *   <li>Les <b>capacités activées</b> — invocation d'armée, détecteur de minerais — ne sont
+ *       rien d'autre que leur pouvoir. Leur ligne d'enchantement a été retirée de la liste
+ *       ({@code WeaponSkill.isSkillEnchantment}), donc l'encart doit porter <b>leur nom</b> :
+ *       sans lui le joueur ne saurait plus ce qu'il a sur son objet.</li>
+ * </ul>
  *
- * <p>Les trois clés vivent sous {@code skill.deep_lucky_block.*}, un espace de noms à
- * part : elles ne peuvent donc pas entrer en collision avec les clés d'enchantement du
- * mod, ni être écrasées par un export MCreator.</p>
+ * <p>Les textes vivent sous {@code skill.deep_lucky_block.*}, un espace de noms à part :
+ * aucune collision possible avec les clés d'enchantement, et un export MCreator ne peut pas
+ * les écraser.</p>
  */
 @EventBusSubscriber(modid = "deep_lucky_block", value = Dist.CLIENT)
 public class EnchantmentTooltipHandler {
@@ -46,24 +45,39 @@ public class EnchantmentTooltipHandler {
         ItemStack stack = event.getItemStack();
         if (stack == null || stack.isEmpty()) return;
 
-        WeaponSkill.Entry entry;
+        List<WeaponSkill.Entry> skills;
         try {
-            entry = WeaponSkill.firstOn(stack);
+            skills = WeaponSkill.allOn(stack);
         } catch (Throwable ignored) {
             return;
         }
-        if (entry == null) return;
+        if (skills.isEmpty()) return;
 
         List<Component> lines = event.getToolTip();
-        String path = entry.enchantPath();
-        int rgb = entry.effect().element().primary & 0xFFFFFF;
+        for (WeaponSkill.Entry entry : skills) {
+            String path = entry.enchantPath();
+            int rgb = entry.element().primary & 0xFFFFFF;
 
-        lines.add(Component.translatable("tooltip.deep_lucky_block.skill_header",
-                        entry.cooldownSeconds())
-                .withStyle(Style.EMPTY.withColor(rgb).withBold(true)));
-        lines.add(Component.translatable("skill.deep_lucky_block." + path + ".1")
-                .withStyle(ChatFormatting.GRAY));
-        lines.add(Component.translatable("skill.deep_lucky_block." + path + ".2")
-                .withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC));
+            Component header;
+            if (entry.ownsEnchant()) {
+                // La ligne d'enchantement a disparu de la liste : le nom passe ici. Le
+                // declencheur suit le mode de lancement reel — army_summon est une
+                // signature, elle part sur un mob, pas en l'air.
+                String key = entry.cast() == WeaponSkill.Cast.IN_HAND
+                        ? "tooltip.deep_lucky_block.skill_header_named"
+                        : "tooltip.deep_lucky_block.skill_header_named_mob";
+                header = Component.translatable(key,
+                        Component.translatable("enchantment.deep_lucky_block." + path),
+                        entry.cooldownSeconds());
+            } else {
+                header = Component.translatable("tooltip.deep_lucky_block.skill_header",
+                        entry.cooldownSeconds());
+            }
+            lines.add(header.copy().withStyle(Style.EMPTY.withColor(rgb).withBold(true)));
+            lines.add(Component.translatable("skill.deep_lucky_block." + path + ".1")
+                    .withStyle(ChatFormatting.GRAY));
+            lines.add(Component.translatable("skill.deep_lucky_block." + path + ".2")
+                    .withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC));
+        }
     }
 }

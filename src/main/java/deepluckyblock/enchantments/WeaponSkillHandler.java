@@ -9,11 +9,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.TamableAnimal;
 import net.minecraft.world.entity.npc.AbstractVillager;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.AxeItem;
-import net.minecraft.world.item.HoeItem;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.MaceItem;
-import net.minecraft.world.item.SwordItem;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
@@ -63,11 +59,9 @@ public final class WeaponSkillHandler {
      * leur clic droit a déjà un rôle que le skill n'a pas à confisquer.
      */
     private static boolean isMeleeSkillWeapon(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) return false;
-        return stack.getItem() instanceof SwordItem
-                || stack.getItem() instanceof AxeItem
-                || stack.getItem() instanceof MaceItem
-                || stack.getItem() instanceof HoeItem;
+        // Une seule definition, dans WeaponSkill : le butin pose les competences sur
+        // exactement les armes qui savent les lancer.
+        return WeaponSkill.canCastSignature(stack);
     }
 
     /**

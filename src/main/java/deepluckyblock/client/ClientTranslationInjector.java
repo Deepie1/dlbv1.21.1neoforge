@@ -381,6 +381,14 @@ public final class ClientTranslationInjector {
 
         map.put("tooltip.deep_lucky_block.skill_header", "SKILL · Right-click a mob · Cooldown %1$s s");
 
+        // T411 : les capacités activées quittent la liste d'enchantements
+        // et sont décrites ici, nom compris.
+        map.put("tooltip.deep_lucky_block.skill_header_named", "SKILL · %1$s · Right-click in hand · Cooldown %2$s s");
+        map.put("tooltip.deep_lucky_block.skill_header_named_mob", "SKILL · %1$s · Right-click a mob · Cooldown %2$s s");
+        map.put("skill.deep_lucky_block.summon_army.1", "Summons an elite legion · costs 25 XP · cooldown 18 s.");
+        map.put("skill.deep_lucky_block.summon_army.2", "The ground answers the call, and they rise already armed.");
+        map.put("skill.deep_lucky_block.ore_detector.1", "Scans every ore within 16 blocks · cooldown 15 s.");
+        map.put("skill.deep_lucky_block.ore_detector.2", "The stone turns transparent for a heartbeat.");
         // === T410-SKILLS : textes des 45 compétences ===
         // Pose APRES loadJsonResource pour gagner sur les fichiers de langue, que
         // MCreator regenere a chaque export.
@@ -741,6 +749,14 @@ public final class ClientTranslationInjector {
 
         map.put("tooltip.deep_lucky_block.skill_header", "COMPÉTENCE · Clic droit sur un mob · Recharge %1$s s");
 
+        // T411 : les capacités activées quittent la liste d'enchantements
+        // et sont décrites ici, nom compris.
+        map.put("tooltip.deep_lucky_block.skill_header_named", "COMPÉTENCE · %1$s · Clic droit en main · Recharge %2$s s");
+        map.put("tooltip.deep_lucky_block.skill_header_named_mob", "COMPÉTENCE · %1$s · Clic droit sur un mob · Recharge %2$s s");
+        map.put("skill.deep_lucky_block.summon_army.1", "Invoque une légion d’élite · coûte 25 XP · recharge 18 s.");
+        map.put("skill.deep_lucky_block.summon_army.2", "Le sol répond à l’appel, et ils se lèvent déjà armés.");
+        map.put("skill.deep_lucky_block.ore_detector.1", "Balaie tous les minerais dans 16 blocs · recharge 15 s.");
+        map.put("skill.deep_lucky_block.ore_detector.2", "La pierre devient transparente le temps d’un battement de cœur.");
         // === T410-SKILLS : textes des 45 compétences ===
         // Pose APRES loadJsonResource pour gagner sur les fichiers de langue, que
         // MCreator regenere a chaque export.

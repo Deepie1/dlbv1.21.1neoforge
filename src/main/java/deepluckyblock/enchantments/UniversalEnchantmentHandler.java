@@ -4427,7 +4427,14 @@ public class UniversalEnchantmentHandler {
         Player player = event.getEntity();
         ItemStack tool = player.getMainHandItem();
         if (tool.isEmpty() || player.level().isClientSide()) return;
-        if (getEnchantLvl(tool, "deep_lucky_block:ore_detector") > 0) {
+        // T411 : le detecteur est une capacite ACTIVEE, donc elle a une recharge comme
+        // les autres. Sans elle, maintenir le clic droit relancait le balayage a chaque
+        // tick. La duree vit dans WeaponSkill, a cote de celle qu'affiche l'infobulle :
+        // une seule valeur, impossible de desynchroniser l'affichage du comportement.
+        if (getEnchantLvl(tool, "deep_lucky_block:ore_detector") > 0
+                && !player.getCooldowns().isOnCooldown(tool.getItem())) {
+            player.getCooldowns().addCooldown(tool.getItem(),
+                    deepluckyblock.enchantments.WeaponSkill.ORE_DETECTOR_COOLDOWN_TICKS);
             boolean hasStar = player.getMainHandItem().is(Items.NETHER_STAR) || player.getOffhandItem().is(Items.NETHER_STAR);
             int count = 0;
             BlockPos c = player.blockPosition();

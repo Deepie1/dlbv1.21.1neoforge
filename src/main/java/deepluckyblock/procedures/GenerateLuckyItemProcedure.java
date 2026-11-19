@@ -3055,8 +3055,81 @@ public class GenerateLuckyItemProcedure {
             enforcePowerTier(stack, type, effectiveLuck, random);
         }
 
+        // Le tirage de competence vient EN DERNIER, apres enforcePowerTier : il retire
+        // volontairement de la puissance pour en remettre ailleurs, et un garde-fou de
+        // palier qui passerait derriere lui annulerait ce troc.
+        rollSkillOnDrop(stack, random);
+
         // FIX v8 (resolu) : diagnostic retire (spammait a chaque generation).
     }
+
+    /**
+     * T411 — UNE COMPETENCE SUR CINQ POUR CENT DES ARMES LOOTEES, ET ELLE SE PAIE.
+     *
+     * <p>Une competence est un pouvoir lance a volonte : la donner en plus des
+     * enchantements deja tires ferait de ces cinq pour cent un jackpot sans contrepartie,
+     * et rendrait toute arme sans competence decevante. Elle remplace donc de la puissance
+     * au lieu de s'y ajouter, par l'un des deux troc tires a pile ou face :</p>
+     * <ul>
+     *   <li><b>deux enchantements en moins</b>, pris au hasard parmi ceux presents — le
+     *       troc brutal : l'arme perd deux pouvoirs entiers et gagne une competence ;</li>
+     *   <li><b>tous les enchantements abaisses de 0 a 3 niveaux</b> — le troc diffus :
+     *       l'arme garde tout son repertoire, mais plus rien n'est a son maximum. Un tirage
+     *       a zero est volontairement laisse dans la fourchette : c'est le coup de chance
+     *       qui fait qu'une arme, parfois, ne paie presque rien.</li>
+     * </ul>
+     *
+     * <p>Un enchantement tombe a zero niveau est retire, jamais laisse a zero : un
+     * enchantement de niveau nul s'affiche quand meme dans l'infobulle et ne fait rien.</p>
+     *
+     * <p>Reserve aux epees, haches, masses et houes : {@code WeaponSkill.canCastSignature},
+     * la methode que le lanceur lui-meme interroge. Sur un casque, un arc ou une pioche, la
+     * competence serait un pouvoir que rien ne peut declencher.</p>
+     */
+    private static void rollSkillOnDrop(ItemStack stack, RandomSource random) {
+        if (stack == null || stack.isEmpty()) return;
+        // Epee, hache, masse ou houe : les seules armes qui savent lancer une signature.
+        // Une competence sur une pioche ou un arc serait un pouvoir intriggerable.
+        if (!deepluckyblock.enchantments.WeaponSkill.canCastSignature(stack)) return;
+        if (random.nextInt(100) >= SKILL_DROP_PERCENT) return;
+
+        // On ne pose pas une competence que l'arme porte deja.
+        List<String> pool = new ArrayList<>();
+        for (String path : deepluckyblock.enchantments.WeaponSkill.signaturePaths()) {
+            Enchantment already = deepluckyblock.util.DeepEnchant.byId("deep_lucky_block:" + path);
+            if (already != null && deepluckyblock.util.DeepEnchant.getLevel(stack, already) > 0) continue;
+            pool.add(path);
+        }
+        if (pool.isEmpty()) return;
+        String chosen = pool.get(random.nextInt(pool.size()));
+
+        List<Enchantment> present = new ArrayList<>(deepluckyblock.util.DeepEnchant.map(stack).keySet());
+        if (random.nextBoolean()) {
+            // Troc 1 : deux enchantements disparaissent.
+            for (int removed = 0; removed < 2 && !present.isEmpty(); removed++) {
+                deepluckyblock.util.DeepEnchant.remove(stack, present.remove(random.nextInt(present.size())));
+            }
+        } else {
+            // Troc 2 : tout le monde redescend du meme nombre de niveaux.
+            int drop = random.nextInt(4); // 0, 1, 2 ou 3
+            if (drop > 0) {
+                for (Enchantment held : present) {
+                    int lvl = deepluckyblock.util.DeepEnchant.getLevel(stack, held);
+                    if (lvl <= 0) continue;
+                    int next = lvl - drop;
+                    if (next <= 0) {
+                        deepluckyblock.util.DeepEnchant.remove(stack, held);
+                    } else {
+                        deepluckyblock.util.DeepEnchant.setLevel(stack, held, next);
+                    }
+                }
+            }
+        }
+        addEnchantment(stack, "deep_lucky_block:" + chosen, 1 + random.nextInt(3));
+    }
+
+    /** Part des epees, haches, masses et houes lootees qui repartent avec une competence. */
+    private static final int SKILL_DROP_PERCENT = 5;
 
     // ╔══════════════════════════════════════════════════════════════════════╗
     // ║  PALIERS INVISIBLES DE PUISSANCE / ARMURE PAR RANG                   ║
