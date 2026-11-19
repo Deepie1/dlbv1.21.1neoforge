@@ -24,37 +24,83 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > toujours la dernière version, une fois le cache expiré (quelques minutes). Les liens en
 > SHA sont l'adresse **immédiate**, à utiliser le jour de la livraison.
 
-## Chaos — la IV en anneaux + correctif de compilation · 19 novembre 2026 ⟵ **LOT COURANT**
+## Chaos — le son des cinq signatures + la I en dôme · 4 novembre 2026 ⟵ **LOT COURANT**
 
-**⚠️ Correctif de compilation (19 novembre)** — `WeaponVfxServerListener.java:6293` :
-dans `chaosBeatMark()`, trois branches du switch rendaient un `SoundEvent` nu et la
-quatrième, `NOTE_BLOCK_HAT`, un `Holder.Reference<SoundEvent>` (en 1.21.1 les sons de
-note block sont déclarés en Holder). Une seule branche discordante fait échouer tout le
-switch — corrigé par `.value()`. **Le banc `semcheck` ne vérifiait qu’un sens** (le
-`.value()` en trop) ; il signale maintenant aussi le `.value()` **manquant**, dans les
-trois contextes qui exigent un son nu. Passé sur les 218 fichiers : aucune autre faute
-de cette famille.
+### (A) Pourquoi on n'entendait que l'enclume
 
-Ce que ce commit change — **IV. Cascade de Bifurcation** :
+Le défaut n'était pas dans la partition — les cinq signatures totalisaient déjà
+**soixante-dix appels `playSound`** — mais dans la **diffusion**. `ServerLevel.playSound`
+n'envoie le paquet qu'aux joueurs situés dans `SoundEvent.getRange(volume)` mètres, et
+cette portée vaut **seize blocs en dur** tant que le volume ne dépasse pas `1.0` ; elle ne
+s'étend (`16 × volume`) qu'au-delà. Or toutes les voix du chaos étaient écrites **entre
+0,20 et 0,50** : diffusées à seize blocs seulement, puis ramenées par l'atténuation client
+sous le seuil audible à quatre blocs — alors que la caméra de ces animations recule à huit
+ou dix. Seul `anvil.land`, joué à 0,92 et déjà très fort dans l'échantillon vanilla,
+franchissait la barre. **C'est tout le mystère.**
 
-- **`r` n’est plus une direction de l’espace, c’est le temps.** L’orbite est itérée à un
-  seul `r` à la fois, et chaque valeur de l’attracteur devient le **rayon d’un anneau
-  centré sur la victime** : un anneau, puis deux, puis quatre, puis huit, puis la
-  couronne pleine. La nappe-graphique a disparu.
-- **Le nombre qu’on voit est le nombre qu’on encaisse** : les paliers de `r` sont calés
-  sur les six vagues de coups — à la vague k l’orbite a 2^k valeurs, donc 2^k anneaux,
-  et la vague compte 2^k impacts. Le compte est **mesuré** sur l’orbite triée, pas
-  décrété : 1 / 2 / 4 / 8 / 16 anneaux aux ticks 24 / 48 / 70 / 88 / 102.
-- **La fenêtre de période trois** ne plante plus une colonne au-dessus de la cible :
-  trois anneaux nets se détachent de la couronne et **se referment sur la victime**.
-- **Caméra** : des anneaux concentriques se regardent **de dessus** (pitch 0,20 → 1,00) ;
-  de profil ils se cachent les uns derrière les autres.
+Seconde cause, de timbre : améthyste, verre et carillon sont des échantillons discrets,
+calibrés pour un bloc posé dans une grotte, pas pour tenir huit secondes de scène. Ils
+restent comme *couleur*, mais ne portent plus la structure : sous chacun passe désormais un
+**socle grave** pris parmi les cent timbres de la banque 1.21.1 que le jeu a calibrés pour
+s'entendre de loin.
 
-### Liens figés sur le commit `d7a1602e` — garantis frais
+**Le moteur** — `chaosSwell` (fondu depuis zéro, rampe en puissance 2,2 : l'oreille étant
+logarithmique, une rampe linéaire s'entend comme un son déjà présent au deuxième pas),
+`chaosFade` (fondu vers zéro, plus lent que la montée), `chaosRoll` (rafale à tempo
+variable, *accelerando* ou *ritardando*), `chaosHit` (deux registres : le grave porte,
+l'aigu date). `chaosBeatMark` passe à **trois étages** et ses volumes de 0,26–0,50 à
+0,95–1,95.
 
-- **Aperçu des cinq signatures (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/d7a1602e00becc1ce703247a5b15207f1547c09f/deliverables/DLB_Chaos_Five_Signatures_preview.html
-- **Démo du shader Pixels 3D (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/d7a1602e00becc1ce703247a5b15207f1547c09f/deliverables/DLB_Void_Pixel_shader_demo.html
-- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/d7a1602e00becc1ce703247a5b15207f1547c09f/deliverables/DLB_Chaos_Five_Signatures_src.zip
+**Une partition par signature**, calée sur l'apparition, les temps forts et la disparition :
+
+| | apparition | temps forts | disparition |
+|---|---|---|---|
+| **I** dôme | phare en fondu + cristal qui **accélère** | 6 gouttes : sifflement 5 ticks avant, impact à 3 registres | fondu descendant d'une octave et demie |
+| **II** entropie | conduit qui monte **en descendant** de hauteur | 32 clics dont l'intervalle se resserre — *la perte d'information en tempo* | conduit coupé |
+| **III** big bang | 18 timbales, intervalle × 0,885 — le compte à rebours **se précipite** | 4 registres au-dessus de 2,0, après **deux ticks de creux** | s'éteint en descendant d'une octave |
+| **IV** cascade | *n'émettait **aucun** son* | 6 vagues de **2^k frappes** : 1, 2, 4, 8, 16, **32** | 3 cloches identiques, puis fondu |
+| **V** tas | 20 grains dont l'intervalle **ralentit** | 4 avalanches qui accélèrent, la 4ᵉ plus longue et plus basse | la poussière retombe |
+
+### (B) La galette devient une coupole
+
+L'animation I était un **disque plat de 2,84 blocs** flottant à 1,05 au-dessus du mob : en
+jeu, un tapis posé sur la tête. C'est maintenant un **dôme de huit blocs de rayon** et 6,70
+de flèche, le mob au **centre exact** de sa base. Les douze parois de miroir deviennent
+douze **côtes** qui montent au zénith, les anneaux deviennent sept **parallèles** dont le
+nombre de marques suit le rayon, et le motif kaléidoscopique est **enroulé sur la
+demi-sphère** — la latitude remplace le rayon. Six fois, **un tiers des éclats** glisse au
+sommet, s'y agglomère en goutte, tombe **en carré** sur le **torse** du mob et explose.
+
+**Quatre défauts mesurés au banc, puis corrigés :**
+
+- la goutte descendait à **−0,86** — elle **traversait** la cible pour s'écraser sous ses
+  pieds, ce qui se lit comme une pluie qui tombe à côté. Ramenée à **0,35**, le torse ;
+- la fenêtre de concentration durait **26 ticks pour un intervalle de 18** : elle ne
+  retombait jamais à zéro, **100 %** des éclats restaient collés au sommet et la coupole
+  était nue. Ramenée à 13 ticks, et **un tiers** des éclats seulement monte — la mesure
+  passe de 100 % à **5 %–40 %** selon le moment ;
+- l'explosion faisait **36 cubes sur 1472** à l'écran, soit 2 % de l'image : invisible. Ce
+  n'est pas la taille qui fait exister un événement dans une figure saturée, **c'est le
+  contraste** — la coupole perd la moitié de son alpha pendant l'éclatement. Plus un
+  **anneau de choc au sol**, qui lui donne son point d'appui ;
+- l'onde, indexée sur l'intensité, atteignait son rayon maximal **en un tick** et s'y
+  figeait onze ticks — une coquille, pas une explosion. Âge et intensité sont désormais
+  deux grandeurs distinctes, et le rayon suit **la racine de l'âge**.
+
+**Caméra de la I** : tangage 1,42 → **0,40** et cadrage 8,2 → **20,5**. Une coupole vue
+d'au-dessus redevient exactement le disque qu'elle remplace.
+
+**Bancs** — `semcheck` 21 / 0 / 4 / 0 (baselines inchangées), `typecheck` 24 connues,
+`floatcheck` 218/0, `glslcheck` 4/0, `node --check`. Miroir `FIXES_MCREATOR`
+resynchronisé (`cmp`). **`javac` reste absent de ce bac à sable : ces validateurs ne
+garantissent pas la compilation.**
+
+**SHA-256 du ZIP** : `65227025e78102ecd54cafab82fc7178c3ff31c99d952ecc36d14842b76940fa`
+— 82 entrées, 1 529 307 octets, aucun `build.gradle`.
+
+- **Aperçu des cinq signatures (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/bca9a009e3ee44f1f9d4d630c1ca9ab0fb9dec72/deliverables/DLB_Chaos_Five_Signatures_preview.html
+- **Démo du shader Pixels 3D (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/bca9a009e3ee44f1f9d4d630c1ca9ab0fb9dec72/deliverables/DLB_Void_Pixel_shader_demo.html
+- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/bca9a009e3ee44f1f9d4d630c1ca9ab0fb9dec72/deliverables/DLB_Chaos_Five_Signatures_src.zip
 
 ### Liens stables sur la branche — toujours la dernière version
 
