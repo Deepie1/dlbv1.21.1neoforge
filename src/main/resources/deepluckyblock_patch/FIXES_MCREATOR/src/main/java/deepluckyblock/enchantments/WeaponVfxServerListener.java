@@ -10336,18 +10336,53 @@ public final class WeaponVfxServerListener {
 
     /**
      * Mêlée directe éligible : exactement UN jet serveur par événement de dégâts accepté.
-     * 77 % normal / 20 % slash +5 % / 3 % grande animation +5..15 % selon la taille mesurée.
-     * Aucun appel aux anciens tirages de couches, accents, critiques ou combos dans cette branche.
+     *
+     * <p>T410-SKILLS : le jet ne comporte plus que DEUX issues, 77 % normal et 23 % slash.
+     * La troisième — 3 % de grande animation — a disparu : les quarante-cinq signatures sont
+     * devenues des compétences que le joueur lance lui-même au clic droit sur un mob, et une
+     * chorégraphie de huit secondes n'a plus à tomber du ciel au milieu d'un échange. Le
+     * visuel du slash reste produit au swing par le geste du joueur, donc identique sur un
+     * mob et dans le vide.</p>
      */
     private static void handleEligibleMelee(ServerLevel sl, LivingIncomingDamageEvent event,
                                             LivingEntity attacker, LivingEntity target, ItemStack weapon,
                                             List<WeaponVisualEffectId.ResolvedLayer> layers) {
-        float capturedWeaponDamage = Math.max(0.0f, event.getAmount());
         int roll = sl.random.nextInt(100);
         if (roll <= MELEE_NORMAL_MAX_ROLL) return;
+        event.setAmount(event.getAmount() * MELEE_SLASH_DAMAGE_MULTIPLIER);
+    }
 
-        WeaponVisualEffectId.ResolvedLayer layer = layers.get(0);
-        WeaponVisualEffectId fx = layer.effect();
+    /**
+     * T410-SKILLS — LANCEMENT D'UNE SIGNATURE A LA DEMANDE.
+     *
+     * <p>Corps exact de l'ancienne branche « grande animation » de {@link #handleEligibleMelee},
+     * extrait sans rien changer a son contenu : meme diffusion, meme echelle mesuree sur la
+     * cible, memes appels de gameplay et dans le meme ordre. Seule l'entree change — un clic
+     * droit volontaire au lieu d'un jet de des — et le bonus de degats est applique
+     * directement a la cible au lieu d'etre pose sur un evenement de degats en cours.</p>
+     *
+     * @return vrai si la signature a bien ete jouee
+     */
+    public static boolean castSkillSignature(ServerLevel sl, LivingEntity attacker,
+                                             LivingEntity target, ItemStack weapon,
+                                             WeaponVisualEffectId fx, int level) {
+        return castSkillSignature(sl, attacker, target, weapon, fx, level, true);
+    }
+
+    /**
+     * @param dealEntryDamage vrai pour un lancement au clic droit, ou la signature doit porter
+     *                        elle-meme son coup d'entree ; faux quand elle se greffe sur un
+     *                        degat deja en cours (fleche, carreau, trident), ou le bonus est
+     *                        applique a l'evenement par l'appelant.
+     */
+    public static boolean castSkillSignature(ServerLevel sl, LivingEntity attacker,
+                                             LivingEntity target, ItemStack weapon,
+                                             WeaponVisualEffectId fx, int level,
+                                             boolean dealEntryDamage) {
+        if (sl == null || attacker == null || target == null || fx == null) return false;
+        if (!target.isAlive() || target == attacker) return false;
+
+        float capturedWeaponDamage = signatureBaseDamage(attacker, target);
         int palette = paletteOf(weapon, fx);
         float tx = (float) target.getX();
         float ty = (float) (target.getY() + target.getBbHeight() * 0.5f);
@@ -10356,31 +10391,25 @@ public final class WeaponVfxServerListener {
         float ay = (float) (attacker.getY() + attacker.getBbHeight() * 0.62f);
         float az = (float) attacker.getZ();
 
-        if (roll <= MELEE_SLASH_MAX_ROLL) {
-            event.setAmount(event.getAmount() * MELEE_SLASH_DAMAGE_MULTIPLIER);
-            // Le visuel est déclenché au swing par le geste originel du joueur, pas par ce
-            // événement de dégâts : il reste donc identique sur un mob et dans le vide.
-            return;
-        }
-
         float measuredScale = sizeScaleOf(target);
-        int bonusPercent = bigMeleeBonusPercent(measuredScale);
-        event.setAmount(event.getAmount() * (1.0f + bonusPercent / 100.0f));
+        // Le bonus que l'ancienne branche posait sur l'evenement de degats est ici porte par
+        // un coup propre : sans lui, lancer le skill ne ferait aucun degat d'entree.
+        if (dealEntryDamage) {
+            int bonusPercent = bigMeleeBonusPercent(measuredScale);
+            hurtWithCapturedWeapon(sl, attacker.getId(), target,
+                    capturedWeaponDamage * (1.0f + bonusPercent / 100.0f));
+        }
         float bigScale = bigMeleeVisualScale(measuredScale);
         if (fx == WeaponVisualEffectId.CRIMSON_SIPHON) {
-            // T379-BLOOD : le siphon passait par le rayon generique KIND_BEAM_SIPHON, qui ne
-            // sait tracer qu'un trait entre deux points. Sa choregraphie propre — crochets,
-            // conduit helicoidal, six bols, rupture — vit dans BloodSignatureVfx, et celle-ci
-            // n'est atteinte que par KIND_IMPACT. On y bascule, et on applique le gameplay.
-            broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, layer.level(),
+            broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, level,
                     tx, ty, tz, ax, ay, az, palette, lightVisualScaleOf(fx, target, bigScale));
             applyBloodGameplay(attacker, target, fx, capturedWeaponDamage);
         } else if (fx == WeaponVisualEffectId.ASTRAL_STAR_LANCE && attacker.distanceToSqr(target) > 9.0) {
-            broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
+            broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, level,
                     ax, (float) attacker.getEyeY() - 0.12f, az, tx, ty, tz, palette, lightVisualScaleOf(fx, target, bigScale));
             applyLightGameplay(attacker, target, fx, capturedWeaponDamage, bigScale);
         } else {
-            broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, layer.level(),
+            broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, level,
                     tx, ty, tz, ax, ay, az, palette, lightVisualScaleOf(fx, target, bigScale));
             applyWoodGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyEarthGameplay(attacker, target, fx, capturedWeaponDamage);
@@ -10391,6 +10420,7 @@ public final class WeaponVfxServerListener {
             applyBloodGameplay(attacker, target, fx, capturedWeaponDamage);
             applyVoidGameplay(attacker, target, fx, capturedWeaponDamage);
         }
+        return true;
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
@@ -10441,6 +10471,31 @@ public final class WeaponVfxServerListener {
         if (!isProjectileHit && direct == attacker) {
             handleEligibleMelee(sl, event, attacker, target, weapon, layers);
             return;
+        }
+
+        // =============================================================================
+        // T410-DISTANCE : LES GRANDES ANIMATIONS CHANGENT DE MAIN.
+        //
+        // La melee ne les tire plus (elles y sont devenues des competences au clic droit).
+        // Elles ne disparaissent pas pour autant : elles passent a l'arc, a l'arbalete et
+        // au trident lance, ou elles retrouvent exactement le role qu'elles avaient --
+        // une recompense rare, cinq pour cent des impacts, qui ne coute rien a viser.
+        //
+        // La signature jouee est celle des enchantements de l'ARME DE TIR (resolveImpactWeapon
+        // remonte l'arc depuis la fleche et le trident depuis son propre objet) : un arc de
+        // feu produit une signature de feu, jamais celle d'une epee rangee dans l'inventaire.
+        // Le bonus de degats est applique a la fleche elle-meme plutot que par un coup
+        // separe, pour que l'armure et les protections du defenseur le voient passer.
+        // =============================================================================
+        if (isProjectileHit && sl.random.nextInt(100) < NORMAL_TRIGGER_PERCENT) {
+            WeaponVisualEffectId.ResolvedLayer rangedLayer = layers.get(0);
+            float rangedScale = sizeScaleOf(target);
+            event.setAmount(event.getAmount() * (1.0f + bigMeleeBonusPercent(rangedScale) / 100.0f));
+            if (castSkillSignature(sl, attacker, target, weapon,
+                    rangedLayer.effect(), rangedLayer.level(), false)) {
+                LAST_BIG_ANIM_TICK.put(attacker.getId(), now);
+                return;
+            }
         }
 
         float tx = (float) target.getX();

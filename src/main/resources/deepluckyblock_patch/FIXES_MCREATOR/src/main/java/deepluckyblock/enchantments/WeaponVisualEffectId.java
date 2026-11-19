@@ -311,8 +311,15 @@ public enum WeaponVisualEffectId {
         // #31 Bois
         register(THORN_MAW_ROOT, "thorn_maw", "briar_cage", "rooted_grasp", "overgrowth");
         // #32 Terre : les anciens déclencheurs de tempête utilisent désormais Titan's Grasp.
-        // Sandstorm Dune reste volontairement non enregistrée : archive Wind inactive.
-        register(TITAN_GRASP, "sandstorm", "dune_surge", "dust_devil", "sahara_wrath");
+        register(TITAN_GRASP, "sandstorm", "dune_surge", "dust_devil", "sahara_wrath", "titan_grasp");
+        // T410-SKILLS : six signatures n'avaient aucun enchantement porteur, donc aucun moyen
+        // d'arriver sur une arme et aucune competence possible. On leur en donne un, de meme
+        // nom que la signature. Sandstorm Dune cesse d'etre une archive inactive.
+        register(SANDSTORM_DUNE, "sandstorm_dune");
+        register(VERDANT_SAP_BLOOM, "verdant_sap_bloom");
+        register(WILDWOOD_AWAKENING, "wildwood_awakening");
+        register(MIASMA_SHROUD, "miasma_shroud");
+        register(PLAGUE_NOVA, "plague_nova");
         // #33 Ombre
         register(ECLIPSE_VEIL, "eclipse_veil", "nightfall", "umbral_veil", "blackout");
         // #34 Vide

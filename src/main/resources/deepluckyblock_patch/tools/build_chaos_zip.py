@@ -51,6 +51,11 @@ JAVA = [
     'src/main/java/deepluckyblock/enchantments/DeepElement.java',
     'src/main/java/deepluckyblock/enchantments/GhostBlockMask.java',
     'src/main/java/deepluckyblock/enchantments/PixelFx.java',
+    # T410-SKILLS : les quarante-cinq signatures deviennent des competences au clic droit.
+    'src/main/java/deepluckyblock/enchantments/WeaponSkill.java',
+    'src/main/java/deepluckyblock/enchantments/WeaponSkillHandler.java',
+    'src/main/java/deepluckyblock/client/EnchantmentTooltipHandler.java',
+    'src/main/java/deepluckyblock/client/ClientTranslationInjector.java',
 ]
 EXTRA = [
     # T397-PIXEL3D : les trois fichiers du core shader. Ils ne vivent PAS sous
@@ -88,6 +93,22 @@ EXTRA = [
     'src/main/resources/deepluckyblock_patch/tools/build_void_page.py',
     'src/main/resources/deepluckyblock_patch/tools/build_void_zip.py',
     'src/main/resources/deepluckyblock_patch/tools/deep-lucky-block-patch.gradle',
+    # T410-SKILLS : quatorze signatures n'avaient AUCUN enchantement porteur. Sans ces
+    # quatorze fichiers, leur competence est injouable : rien ne peut l'amener sur une arme.
+    'src/main/resources/data/deep_lucky_block/enchantment/feigenbaum_cascade.json',
+    'src/main/resources/data/deep_lucky_block/enchantment/sandpile_critical.json',
+    'src/main/resources/data/deep_lucky_block/enchantment/titan_grasp.json',
+    'src/main/resources/data/deep_lucky_block/enchantment/miasma_shroud.json',
+    'src/main/resources/data/deep_lucky_block/enchantment/plague_nova.json',
+    'src/main/resources/data/deep_lucky_block/enchantment/eclipse_veil.json',
+    'src/main/resources/data/deep_lucky_block/enchantment/null_rift.json',
+    'src/main/resources/data/deep_lucky_block/enchantment/horizon_gate.json',
+    'src/main/resources/data/deep_lucky_block/enchantment/chain_collapse.json',
+    'src/main/resources/data/deep_lucky_block/enchantment/sandstorm_dune.json',
+    'src/main/resources/data/deep_lucky_block/enchantment/tempest.json',
+    'src/main/resources/data/deep_lucky_block/enchantment/thorn_maw.json',
+    'src/main/resources/data/deep_lucky_block/enchantment/verdant_sap_bloom.json',
+    'src/main/resources/data/deep_lucky_block/enchantment/wildwood_awakening.json',
 ]
 
 README = """DLB - SOURCES DU MOD : L ARCHIVE UNIQUE
@@ -97,41 +118,62 @@ Cette archive est la seule a telecharger. Elle porte toujours le meme nom
 (DLB_src.zip) et contient a chaque fois l integralite des fichiers a jour.
 
 ------------------------------------------------------------------------------
-DERNIER CORRECTIF : LE TREMBLEMENT DES ANIMATIONS A PIXELS  (T407)
+DERNIERE LIVRAISON : LES ANIMATIONS DEVIENNENT DES COMPETENCES  (T410)
 ------------------------------------------------------------------------------
-Fichiers concernes, a remplacer :
-    src/main/java/deepluckyblock/client/WeaponWorldVfxManager.java
-    src/main/java/deepluckyblock/client/VoidPixelManager.java
+Fichiers nouveaux :
+    src/main/java/deepluckyblock/enchantments/WeaponSkill.java
+    src/main/java/deepluckyblock/enchantments/WeaponSkillHandler.java
+    src/main/resources/data/deep_lucky_block/enchantment/  (14 fichiers)
+Fichiers a remplacer :
+    src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java
+    src/main/java/deepluckyblock/enchantments/WeaponVisualEffectId.java
+    src/main/java/deepluckyblock/client/ClientTranslationInjector.java
+    src/main/java/deepluckyblock/client/EnchantmentTooltipHandler.java
 
-Symptome : les animations tremblaient a l echelle du pixel pendant qu elles
-jouaient. Constate sur Gaia Wood, mais toutes les familles a Pixels etaient
-touchees. Deux causes se cumulaient, toutes deux dans l infrastructure de
-rendu. Aucune choregraphie, aucune couleur, aucune duree ne change.
+1. ON NE SUBIT PLUS LES GRANDES ANIMATIONS, ON LES LANCE.
+   Avant, une grosse animation tombait toute seule, sur trois pour cent des
+   coups d epee. Ce tirage n existe plus. Les quarante-cinq signatures sont
+   devenues des COMPETENCES : arme de melee en main, CLIC DROIT SUR UN MOB.
+   Pas de touche a retenir, pas de shift. Le clic droit dans le vide ne change
+   pas : il tend toujours l arc et mange toujours le pain.
 
-1. DEUX HORLOGES QUI DERIVENT. La fraction de tick ecoulee etait recalculee a
-   la main, en cinq endroits :
-       clamp((System.nanoTime() - lastTickNanos) / 50_000_000, 0, 1)
-   Ce calcul suppose qu un tick dure EXACTEMENT 50 ms. C est faux : le client
-   declenche un tick quand son accumulateur depasse 50 ms, donc a 60 images par
-   seconde l ecart reel alterne entre 50,0 et 66,7 ms. Des qu il depasse 50 ms
-   la borne SATURE a 1,0 : l animation se fige une image entiere, puis saute.
-   Pendant ce temps la camera est interpolee avec le partial tick officiel, qui
-   ne sature jamais. Les deux horloges s ecartaient image apres image.
-   Corrige : un seul point d entree, WeaponWorldVfxManager.partialTick(), qui
-   lit Minecraft.getTimer().getGameTimeDeltaPartialTick(true) - l argument
-   exact dont GameRenderer.renderLevel tire le flottant qui place la camera.
+2. CHAQUE COMPETENCE A SA RECHARGE, ET ELLE EST CALCULEE.
+   Aucune valeur n a ete choisie a la main. La formule est la meme pour les
+   quarante-cinq, a partir de ce que fait vraiment l animation :
+       charge   = nombre de coups portes + duree de l animation / 40 ticks
+       recharge = 30 s + 2 s par point de charge, plafonnee a 90 s
+   Une animation qui frappe souvent ET longtemps coute donc plus cher. En
+   pratique les recharges vont de 32 a 60 secondes. Elle est ecrite en toutes
+   lettres sur l objet, dans la description de la competence.
 
-2. UNE IMAGE DE RETARD. La couche de structure est remplie a AFTER_PARTICLES
-   (stage 9), mais VoidPixelManager la dessinait a AFTER_TRANSLUCENT_BLOCKS
-   (stage 7), donc AVANT le remplissage : il affichait l image precedente. Les
-   positions etant stockees en absolu puis ramenees au repere camera au rendu,
-   le resultat valait offset - (camera_N - camera_N-1). Le balancement de tete
-   du joueur qui marche faisait osciller l armature en opposition de phase.
-   Corrige : le rendu passe a AFTER_WEATHER (stage 10).
+3. L ETAT SE LIT SUR L ARME, PAS DANS UNE BARRE.
+   Aucun voile gris, aucune ligne  pret . Quand la competence est chargee, le
+   halo de l arme change : il prend la couleur de son element, a l intensite 13
+   de l echelle de /glint, tres au-dessus du 4 habituel. Une fois lancee, le
+   halo redevient exactement ce qu il etait - y compris un /glint pose a la
+   main, qui est mis de cote et rendu intact.
 
-NON VERIFIE : javac est absent de l environnement de developpement, les bancs
-(semcheck, floatcheck, typecheck) ne valent donc pas une compilation, et le
-correctif n a pas pu etre observe en jeu.
+4. LES GRANDES ANIMATIONS NE SONT PAS PERDUES POUR LA DISTANCE.
+   Elles passent a l arc, a l arbalete et au trident lance, ou elles gardent
+   leur ancien role : cinq pour cent des impacts, avec le bonus de degats et
+   l effet elementaire. La signature jouee est celle des enchantements de l ARME
+   DE TIR, jamais ceux d une epee rangee dans l inventaire.
+
+5. QUATORZE ENCHANTEMENTS QUI MANQUAIENT.
+   Quatorze signatures sur quarante-cinq n avaient aucun enchantement capable de
+   les porter : elles etaient donc injouables. Les fichiers sont crees, avec une
+   rarete qui suit la puissance (poids 10 pour les recharges courtes, 5 au-dela
+   de 40 s, 2 au-dela de 50 s).
+
+6. LES TEXTES SONT DANS LE FICHIER MCREATOR, PAS DANS LES JSON DE LANGUE.
+   Les quatre-vingt-dix lignes francaises et les quatre-vingt-dix anglaises sont
+   posees dans ClientTranslationInjector, APRES la lecture des fichiers de
+   langue, donc elles gagnent sur eux. Un nouvel export MCreator ne les efface
+   plus.
+
+NON VERIFIE : javac est absent de l environnement, les bancs (semcheck,
+floatcheck, typecheck) ne valent donc pas une compilation, et rien n a pu etre
+observe en jeu.
 
 ------------------------------------------------------------------------------
 CONTENU HISTORIQUE : CHAOS, LES SIGNATURES ET LES PIXELS 3D (T397+)
