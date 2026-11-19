@@ -259,7 +259,10 @@ public final class EnchantmentTooltipFixProcedure {
                     raw = raw.replace("%%", "%");
                 }
                 exact.add(raw);
-                List<Component> wrapped = wrap(raw);
+                // T413 : les touches et les recharges passent en gras. Une seule chaine
+                // de formatage (describe) sert ici ET a l'encart SKILL, pour que les
+                // deux ne puissent pas afficher la meme description differemment.
+                List<Component> wrapped = describe(id, entry.getValue());
                 for (Component c : wrapped) exact.add(c.getString());
                 descCache.put(id, wrapped);
             }
@@ -908,6 +911,32 @@ public final class EnchantmentTooltipFixProcedure {
      * Renvoie la description brute (avec ses codes couleur) ou null si aucune
      * traduction n'existe dans aucun namespace connu.
      */
+    /**
+     * La description d'auteur d'un enchantement, prete a afficher : substitutions faites,
+     * touches et recharges mises en gras, texte replie en lignes.
+     *
+     * <p>Publique parce que l'encart SKILL en a besoin : les enchantements qui sont
+     * entierement une competence n'ont plus de ligne dans la liste, et c'est l'encart qui
+     * porte desormais leur description. Il doit afficher EXACTEMENT la meme chose
+     * qu'ici.</p>
+     *
+     * @param level niveau de l'enchantement sur cet objet, substitue aux {@code %s}
+     * @return les lignes, jamais {@code null} ; vide si l'enchantement n'a pas de description
+     */
+    public static List<Component> describe(ResourceLocation id, int level) {
+        String raw = rawDescription(id);
+        if (raw == null) return new ArrayList<>();
+        if (raw.indexOf("%s") >= 0) {
+            try {
+                raw = String.format(java.util.Locale.ROOT, raw, level);
+            } catch (Throwable ignoredFormat) {
+                // format invalide : on garde le texte brut plutot que de planter.
+            }
+        }
+        if (raw.indexOf("%%") >= 0) raw = raw.replace("%%", "%");
+        return wrap(deepluckyblock.util.TooltipEmphasis.emphasize(raw));
+    }
+
     private static String rawDescription(ResourceLocation id) {
         Language language = Language.getInstance();
 

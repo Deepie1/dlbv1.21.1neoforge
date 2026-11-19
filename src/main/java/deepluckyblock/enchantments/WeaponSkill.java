@@ -43,12 +43,32 @@ public final class WeaponSkill {
     /** Palier de glint imposé quand le skill est chargé (échelle 1..20 de {@code /glint}). */
     public static final int CHARGED_GLINT_TIER = 13;
 
-    /** Comment le joueur déclenche la compétence. */
+    /**
+     * Comment le joueur déclenche la compétence.
+     *
+     * <p>Chaque valeur décrit un geste qui existait <b>déjà</b> dans le mod. Aucune n'a été
+     * inventée pour les besoins de l'encart : un enchantement qu'on range dans les
+     * compétences garde exactement le geste qui le lançait avant, sinon l'encart
+     * mentirait et le joueur chercherait une touche qui ne fait rien.</p>
+     */
     public enum Cast {
         /** Clic droit sur un mob, arme de mêlée en main : les 45 signatures. */
         ON_MOB,
-        /** Clic droit, objet en main : les enchantements qui SONT une capacité activée. */
-        IN_HAND;
+        /** Clic droit, objet en main. */
+        IN_HAND,
+        /** Clic droit avec la canne à pêche, ligne lancée : on ramène. */
+        ROD_REEL,
+        /** Clic droit <b>main vide</b>, trident lancé. */
+        EMPTY_HAND,
+        /** Clic droit sur une fusée, en vol d'Élytres. */
+        ELYTRA_ROCKET,
+        /** S'accroupir en plein sprint, au sol. */
+        SNEAK_SPRINT;
+
+        /** Clé de traduction de la phrase qui décrit ce geste. */
+        public String triggerKey() {
+            return "tooltip.deep_lucky_block.cast." + name().toLowerCase(java.util.Locale.ROOT);
+        }
     }
 
     /**
@@ -87,11 +107,19 @@ public final class WeaponSkill {
      * dégâts à chaque coup, et le masquer priverait le joueur d'une information qui n'a
      * rien à voir avec la compétence.</p>
      */
-    private static final java.util.Set<String> ACTIVE_ONLY =
-            java.util.Set.of("army_summon", "summon_army", "ore_detector");
+    private static final java.util.Set<String> ACTIVE_ONLY = java.util.Set.of(
+            "army_summon", "summon_army", "ore_detector",
+            "pulling_power", "grappling_hook", "sincere_loyalty", "rocket_blast",
+            "slide");
 
-    private static void active(String path, int seconds, DeepElement element) {
-        BY_PATH.put(path, new Entry(null, path, seconds, element, Cast.IN_HAND, true));
+    /**
+     * Inscrit une capacité activée avec le geste qui la lançait déjà.
+     *
+     * @param seconds recharge réelle en secondes, ou <b>0</b> quand l'enchantement n'en a
+     *                pas : l'encart n'affiche alors aucune recharge plutôt que d'en inventer
+     */
+    private static void active(String path, int seconds, DeepElement element, Cast cast) {
+        BY_PATH.put(path, new Entry(null, path, seconds, element, cast, true));
     }
 
     static {
@@ -142,20 +170,49 @@ public final class WeaponSkill {
         put(WeaponVisualEffectId.WILDWOOD_AWAKENING, "wildwood_awakening", 35);
     }
 
+    /**
+     * Recharge de la glissade, en ticks. Declaree ici pour que l'infobulle et le
+     * handler lisent le meme nombre ; c'est {@code UniversalEnchantmentHandler} qui
+     * la pose sur le joueur.
+     */
+    public static final int SLIDE_COOLDOWN_TICKS = 44;
+
     /** Recharge du détecteur de minerais, en ticks. Lue par le handler qui la pose. */
     public static final int ORE_DETECTOR_COOLDOWN_TICKS = 300;
 
     static {
-        // T411 — LES CAPACITES ACTIVEES QUI NE SONT PAS DES SIGNATURES.
-        // Recharges RELEVEES dans le code, pas choisies : UniversalEnchantmentHandler
-        // l. 4466 pose 360 ticks pour summon_army et 440 pour army_summon.
-        // ore_detector n'en avait aucune — une capacité activée sans recharge se
-        // spamme à chaque tick ; elle reçoit la sienne, posée dans le même handler.
-        // army_summon est DEJA une signature (WARLORD_RALLY_SIGIL) : il n'est pas
-        // réinscrit ici, son entrée de signature suffit. ACTIVE_ONLY le marque
-        // quand même, pour qu'il quitte la liste d'enchantements.
-        active("summon_army", 18, DeepElement.EARTH);
-        active("ore_detector", ORE_DETECTOR_COOLDOWN_TICKS / 20, DeepElement.METAL);
+        // T413 — LES SEPT CAPACITES ACTIVEES DU MOD, AVEC LEUR GESTE D'ORIGINE.
+        //
+        // Toutes les recharges ci-dessous sont RELEVEES dans le code, aucune n'est
+        // choisie : UniversalEnchantmentHandler pose 360 ticks pour summon_army et
+        // 440 pour army_summon. Les quatre capacites de FishingTridentElytraHandler
+        // n'ont pas de recharge du tout : on inscrit 0, et l'encart n'en affiche
+        // aucune. Inventer une recharge pour faire joli serait un changement de jeu
+        // que personne n'a demande.
+        active("summon_army", 18, DeepElement.EARTH, Cast.IN_HAND);
+        active("ore_detector", ORE_DETECTOR_COOLDOWN_TICKS / 20, DeepElement.METAL, Cast.IN_HAND);
+
+        // army_summon RETROUVE SON SEUL DECLENCHEUR D'ORIGINE.
+        // T410 lui avait ajoute un second geste (clic droit sur un mob, via la
+        // signature WARLORD_RALLY_SIGIL) avec sa propre recharge, a cote du clic
+        // droit en main qu'il avait deja. Un enchantement, un geste : on retire
+        // celui qui avait ete ajoute en le sortant de la table des signatures,
+        // et on le reinscrit avec sa vraie recharge de 440 ticks.
+        Entry rally = BY_EFFECT.remove(WeaponVisualEffectId.WARLORD_RALLY_SIGIL);
+        active("army_summon", 22, rally != null ? rally.element() : DeepElement.EARTH, Cast.IN_HAND);
+
+        // Les quatre capacites de la canne, du trident et des Elytres. Elles vivent
+        // dans FishingTridentElytraHandler et n'ont jamais eu de recharge.
+        active("pulling_power", 0, DeepElement.WATER, Cast.ROD_REEL);
+        active("grappling_hook", 0, DeepElement.WIND, Cast.ROD_REEL);
+        active("sincere_loyalty", 0, DeepElement.LIGHT, Cast.EMPTY_HAND);
+        active("rocket_blast", 0, DeepElement.FIRE, Cast.ELYTRA_ROCKET);
+
+        // La glissade : s'accroupir en plein sprint, au sol. Sa recharge de 44 ticks
+        // est posee par UniversalEnchantmentHandler (state.slideCooldownUntil), elle
+        // n'est pas inventee ici non plus. 44 ticks font un peu plus de deux secondes :
+        // l'encart arrondit a 2, la valeur du jeu ne bouge pas.
+        active("slide", SLIDE_COOLDOWN_TICKS / 20, DeepElement.WIND, Cast.SNEAK_SPRINT);
     }
 
     /**
@@ -174,9 +231,16 @@ public final class WeaponSkill {
         java.util.LinkedHashMap<String, Entry> found = new java.util.LinkedHashMap<>(4);
         // 1. les signatures : on passe par la table d'enchantements complète, car une
         //    même animation est atteignable par plusieurs clés (thorn_maw, briar_cage…).
-        for (WeaponVisualEffectId.ResolvedLayer layer : WeaponVisualEffectId.resolveLayers(stack, 2)) {
-            Entry e = BY_EFFECT.get(layer.effect());
-            if (e != null) found.putIfAbsent(e.enchantPath(), e);
+        // ... mais seulement si cet objet sait lancer une signature. La resolution de
+        // couches est VISUELLE : un trident avec sincere_loyalty resout vers le meme
+        // effet que la signature "warp". Sans ce test, l'encart annoncerait sur un
+        // trident un clic droit sur un mob qui ne declenche rien, et le joueur
+        // chercherait une touche inexistante.
+        if (canCastSignature(stack)) {
+            for (WeaponVisualEffectId.ResolvedLayer layer : WeaponVisualEffectId.resolveLayers(stack, 2)) {
+                Entry e = BY_EFFECT.get(layer.effect());
+                if (e != null) found.putIfAbsent(e.enchantPath(), e);
+            }
         }
         // 2. les capacités activées, lues par le MEME chemin que le filtre d'infobulle :
         //    DeepEnchant.map + getKeySafe. Deux lectures différentes pourraient diverger,

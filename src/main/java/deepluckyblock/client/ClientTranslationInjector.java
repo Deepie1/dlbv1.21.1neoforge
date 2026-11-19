@@ -381,14 +381,17 @@ public final class ClientTranslationInjector {
 
         map.put("tooltip.deep_lucky_block.skill_header", "SKILL · Right-click a mob · Cooldown %1$s s");
 
-        // T411 : les capacités activées quittent la liste d'enchantements
-        // et sont décrites ici, nom compris.
-        map.put("tooltip.deep_lucky_block.skill_header_named", "SKILL · %1$s · Right-click in hand · Cooldown %2$s s");
-        map.put("tooltip.deep_lucky_block.skill_header_named_mob", "SKILL · %1$s · Right-click a mob · Cooldown %2$s s");
-        map.put("skill.deep_lucky_block.summon_army.1", "Summons an elite legion · costs 25 XP · cooldown 18 s.");
-        map.put("skill.deep_lucky_block.summon_army.2", "The ground answers the call, and they rise already armed.");
-        map.put("skill.deep_lucky_block.ore_detector.1", "Scans every ore within 16 blocks · cooldown 15 s.");
-        map.put("skill.deep_lucky_block.ore_detector.2", "The stone turns transparent for a heartbeat.");
+        // T413 : les capacités activées quittent la liste d'enchantements. L'encart porte
+        // leur nom, leur geste d'origine et la description de l'auteur — on ne réécrit pas
+        // cette dernière, on la réutilise.
+        map.put("tooltip.deep_lucky_block.skill_named", "SKILL · %1$s");
+        map.put("tooltip.deep_lucky_block.cooldown_suffix", " · Cooldown %1$s s");
+        map.put("tooltip.deep_lucky_block.cast.on_mob", "Right-click a mob");
+        map.put("tooltip.deep_lucky_block.cast.in_hand", "Right-click, item in hand");
+        map.put("tooltip.deep_lucky_block.cast.rod_reel", "Right-click the rod, line cast");
+        map.put("tooltip.deep_lucky_block.cast.empty_hand", "Right-click with an empty hand");
+        map.put("tooltip.deep_lucky_block.cast.elytra_rocket", "Right-click a firework while gliding");
+        map.put("tooltip.deep_lucky_block.cast.sneak_sprint", "Sneak while sprinting");
         // === T410-SKILLS : textes des 45 compétences ===
         // Pose APRES loadJsonResource pour gagner sur les fichiers de langue, que
         // MCreator regenere a chaque export.
@@ -749,14 +752,17 @@ public final class ClientTranslationInjector {
 
         map.put("tooltip.deep_lucky_block.skill_header", "COMPÉTENCE · Clic droit sur un mob · Recharge %1$s s");
 
-        // T411 : les capacités activées quittent la liste d'enchantements
-        // et sont décrites ici, nom compris.
-        map.put("tooltip.deep_lucky_block.skill_header_named", "COMPÉTENCE · %1$s · Clic droit en main · Recharge %2$s s");
-        map.put("tooltip.deep_lucky_block.skill_header_named_mob", "COMPÉTENCE · %1$s · Clic droit sur un mob · Recharge %2$s s");
-        map.put("skill.deep_lucky_block.summon_army.1", "Invoque une légion d’élite · coûte 25 XP · recharge 18 s.");
-        map.put("skill.deep_lucky_block.summon_army.2", "Le sol répond à l’appel, et ils se lèvent déjà armés.");
-        map.put("skill.deep_lucky_block.ore_detector.1", "Balaie tous les minerais dans 16 blocs · recharge 15 s.");
-        map.put("skill.deep_lucky_block.ore_detector.2", "La pierre devient transparente le temps d’un battement de cœur.");
+        // T413 : les capacités activées quittent la liste d'enchantements. L'encart porte
+        // leur nom, leur geste d'origine et la description de l'auteur — on ne réécrit pas
+        // cette dernière, on la réutilise.
+        map.put("tooltip.deep_lucky_block.skill_named", "COMPÉTENCE · %1$s");
+        map.put("tooltip.deep_lucky_block.cooldown_suffix", " · Recharge %1$s s");
+        map.put("tooltip.deep_lucky_block.cast.on_mob", "Clic droit sur un mob");
+        map.put("tooltip.deep_lucky_block.cast.in_hand", "Clic droit, objet en main");
+        map.put("tooltip.deep_lucky_block.cast.rod_reel", "Clic droit avec la canne, ligne lancée");
+        map.put("tooltip.deep_lucky_block.cast.empty_hand", "Clic droit main vide");
+        map.put("tooltip.deep_lucky_block.cast.elytra_rocket", "Clic droit sur une fusée, en vol d’Élytres");
+        map.put("tooltip.deep_lucky_block.cast.sneak_sprint", "S’accroupir en plein sprint");
         // === T410-SKILLS : textes des 45 compétences ===
         // Pose APRES loadJsonResource pour gagner sur les fichiers de langue, que
         // MCreator regenere a chaque export.

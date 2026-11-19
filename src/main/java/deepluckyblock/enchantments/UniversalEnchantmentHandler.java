@@ -4755,7 +4755,7 @@ public class UniversalEnchantmentHandler {
                     state.slideDirX = flat.x;
                     state.slideDirZ = flat.z;
                     state.slideTicksLeft = (10 + 2 * Math.min(5, slideLvl)) + (cryoCombo ? 5 : 0);
-                    state.slideCooldownUntil = now + 44L;
+                    state.slideCooldownUntil = now + deepluckyblock.enchantments.WeaponSkill.SLIDE_COOLDOWN_TICKS;
                     state.sprintGraceTicks = 0;
                 }
             }

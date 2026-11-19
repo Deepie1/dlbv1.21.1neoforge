@@ -66,6 +66,10 @@ JAVA = [
     'src/main/java/deepluckyblock/procedures/EnchantmentTooltipFixProcedure.java',
     'src/main/java/deepluckyblock/procedures/GenerateLuckyItemProcedure.java',
     'src/main/java/deepluckyblock/enchantments/UniversalEnchantmentHandler.java',
+    # T413 : met en gras les touches et les recharges dans les descriptions.
+    # Fichier NEUF : sans cette ligne il ne part pas, et les deux fichiers qui
+    # l'appellent ne compileraient pas chez l'utilisateur.
+    'src/main/java/deepluckyblock/util/TooltipEmphasis.java',
 ]
 EXTRA = [
     # T397-PIXEL3D : les trois fichiers du core shader. Ils ne vivent PAS sous
