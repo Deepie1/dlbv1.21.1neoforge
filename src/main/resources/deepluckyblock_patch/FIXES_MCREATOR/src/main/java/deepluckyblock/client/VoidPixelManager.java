@@ -196,8 +196,9 @@ public final class VoidPixelManager {
         return scount;
     }
 
-    /** Instant du dernier tick client, pour interpoler le rendu entre deux états. */
-    private static long lastTickNanos = System.nanoTime();
+    // T407 : l'horloge maison qui se trouvait ici (instant du dernier tick client) a
+    // disparu au profit du partial tick officiel, lu sur l'evenement de rendu.
+    // Voir WeaponWorldVfxManager.partialTick() pour le detail du defaut corrige.
 
     /**
      * Dimension du dernier tick. Sans elle, les cubes d'un combat au Nether resteraient en
@@ -337,10 +338,9 @@ public final class VoidPixelManager {
         net.minecraft.resources.ResourceLocation dim = mc.level.dimension().location();
         if (lastDimension != null && !lastDimension.equals(dim)) clear();
         lastDimension = dim;
-        // L'horloge de sous-frame est posée ICI et nulle part ailleurs : c'est le seul
-        // instant où l'on sait qu'un tick vient de finir. Le rendu s'en sert pour
-        // interpoler sans dépendre d'une API de suivi de delta.
-        lastTickNanos = System.nanoTime();
+        // T407 : le rendu n'interpole plus avec une horloge posee ici, mais avec le
+        // partial tick officiel de l'evenement de rendu. Ce tick ne fait plus qu'avancer
+        // l'age des pixels.
         if (mc.isPaused()) return;
         if (count == 0) return;
         for (int i = 0; i < count; ) {
@@ -385,7 +385,19 @@ public final class VoidPixelManager {
      */
     @SubscribeEvent
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
+        // T407 — APRES LE REMPLISSAGE, ET NON AVANT.
+        //
+        // La couche de structure est remplie par les signatures a AFTER_PARTICLES, qui est
+        // le stage 9 ; ce rendu etait a AFTER_TRANSLUCENT_BLOCKS, le stage 7. Il dessinait
+        // donc le contenu de l'IMAGE PRECEDENTE. Comme les positions sont stockees en
+        // absolu (camX() + offset au remplissage) puis ramenees au repere camera ici
+        // (SX[i] - cam.x), le resultat valait offset - (camera_N - camera_N-1) : la figure
+        // etait decalee de l'oppose du deplacement de camera entre deux images. Camera
+        // immobile, rien ne bouge ; joueur qui marche, le balancement de tete faisait
+        // osciller toute la geometrie en opposition de phase.
+        //
+        // AFTER_WEATHER est le stage 10 : le remplissage a eu lieu, la camera est la meme.
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_WEATHER) return;
         // La file de structure doit être vidée même quand le vivier est à zéro : une
         // signature entièrement faite d'armature (le kaléidoscope au repos) ne sème aucun
         // pixel libre, et sortir ici la rendrait invisible.
@@ -411,10 +423,11 @@ public final class VoidPixelManager {
         }
         if (vc == null) { scount = 0; return; }
 
-        // Sous-frame : fraction du tick de cinquante millisecondes déjà écoulée. Même
-        // procédé que le reste du mod ; en pause, elle vaut zéro, donc rien ne glisse.
-        float partial = mc.isPaused() ? 0.0f
-                : Math.max(0.0f, Math.min(1.0f, (System.nanoTime() - lastTickNanos) / 50_000_000.0f));
+        // Le partial tick officiel, celui-la meme dont GameRenderer tire la position de la
+        // camera de cette image (argument « true », comme lui). L'ancien calcul maison
+        // saturait des qu'un tick depassait cinquante millisecondes, figeant
+        // l'interpolation une image entiere avant de la faire sauter.
+        float partial = event.getPartialTick().getGameTimeDeltaPartialTick(true);
 
         for (int i = 0; i < count; i++) {
             // Interpolation : la position affichée est celle du tick précédent plus la

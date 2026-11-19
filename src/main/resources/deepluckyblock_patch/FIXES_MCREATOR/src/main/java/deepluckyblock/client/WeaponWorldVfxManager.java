@@ -119,7 +119,40 @@ public final class WeaponWorldVfxManager {
     private static final Map<Integer, Boolean> PLAYER_WAS_CB_CHARGED = new HashMap<>(16);
 
     private static ClientLevel trackedLevel;
-    private static long lastTickNanos = System.nanoTime();
+    /**
+      * T407 — LA SOUS-FRAME OFFICIELLE, et pas une estimation maison.
+      *
+      * <p>Jusqu'ici la fraction de tick ecoulee etait recalculee par
+      * {@code (System.nanoTime() - lastTickNanos) / 50_000_000}, borne a 1. Ce calcul
+      * suppose qu'un tick dure exactement cinquante millisecondes de temps reel ; or la
+      * boucle client declenche un tick quand son accumulateur depasse 50 ms, si bien que
+      * l'ecart reel entre deux {@code ClientTickEvent.Post} oscille — a soixante images
+      * par seconde, alternativement 50,0 et 66,7 ms. Des que l'ecart depasse 50 ms la
+      * borne SATURE : l'animation se fige une image entiere, puis repart a zero. Un
+      * palier, puis un saut, a chaque periode.</p>
+      *
+      * <p>Pendant ce temps la camera et les entites sont interpolees par Minecraft avec
+      * <b>son</b> partial tick, qui ne sature jamais. Les deux horloges derivent donc l'une
+      * par rapport a l'autre image apres image, et toute la geometrie VFX tremble par
+      * rapport au monde dans lequel elle est posee. C'est la cause du defaut signale sur
+      * Gaia et sur les autres familles a Pixels.</p>
+      *
+      * <p>On prend desormais la seule horloge qui fasse autorite : celle qui a servi a
+      * placer la camera de cette image. On la lit directement sur {@code Minecraft}, et
+      * non sur l'evenement de rendu : c'est le meme objet, mais la lire ainsi rend la
+      * valeur juste pour TOUS les appelants, y compris ceux qui dessinent avant la passe
+      * (le rendu de lame, l'aura cosmetique), sans dependre de l'ordre des handlers.</p>
+      */
+    public static float partialTick() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null) return 0.0f;
+        net.minecraft.client.DeltaTracker timer = mc.getTimer();
+        if (timer == null) return 0.0f;
+        // « true » : exactement l'argument dont GameRenderer.renderLevel tire le flottant
+        // qui positionne la camera et interpole les entites. Meme valeur, donc meme
+        // instant — c'est toute la correction. En pause, la methode rend le residu gele.
+        return timer.getGameTimeDeltaPartialTick(true);
+    }
 
     private static RenderType additiveType;
     private static RenderType translucentType;
@@ -498,10 +531,7 @@ public final class WeaponWorldVfxManager {
         if (lvl == null) {
             return (float) ((System.nanoTime() & 0x3FFFFFFFL) * 1.0e-9);
         }
-        float subTick = mc.isPaused()
-                ? 0.0f
-                : Mth.clamp((System.nanoTime() - lastTickNanos) / 50_000_000.0f, 0.0f, 1.0f);
-        return ((lvl.getGameTime() & 0xFFFFFL) + subTick) * 0.05f;
+        return ((lvl.getGameTime() & 0xFFFFFL) + partialTick()) * 0.05f;
     }
 
     /**
@@ -1719,7 +1749,6 @@ public final class WeaponWorldVfxManager {
         }
         if (mc.isPaused()) return;
 
-        lastTickNanos = System.nanoTime();
         if (trackedLevel != level) {
             trackedLevel = level;
             ACTIVE.clear();
@@ -2314,8 +2343,7 @@ public final class WeaponWorldVfxManager {
         Vector3f tmp = new Vector3f();
 
         cubesSinceFlush = 0;
-        beginFrame((mc.level.getGameTime() & 0xFFFFFL) * 0.05f
-                + (mc.isPaused() ? 0.0f : Mth.clamp((System.nanoTime() - lastTickNanos) / 1.0e9f, 0.0f, 1.0f)));
+        beginFrame((mc.level.getGameTime() & 0xFFFFFL) * 0.05f + partialTick() * 0.05f);
 
         // T378-NO-JITTER : TOUTE la passe est de la geometrie animee — les douze elements, les
         // eclats flottants, les signatures externes (feu, eau, terre, metal, lumiere, vent,
@@ -2353,9 +2381,9 @@ public final class WeaponWorldVfxManager {
                                        MultiBufferSource.BufferSource terrainBuffers,
                                        MultiBufferSource.BufferSource voxelBuffers,
                                        PoseStack poseStack, Matrix4f mat, Vector3f tmp, Vec3 camPos) {
-        float subTick = mc.isPaused()
-                ? 0.0f
-                : Mth.clamp((System.nanoTime() - lastTickNanos) / 50_000_000.0f, 0.0f, 1.0f);
+        // L'horloge de toutes les signatures. C'est ici que le tremblement se voyait :
+        // inst.age est entier, subTick portait seul la continuite du mouvement.
+        float subTick = partialTick();
 
         // Passes Seismic/Rally dédiées : vrais BlockState capturés, opaques et AVANT les voxels.
         // Le batch est terminé ici pour ne jamais mélanger leurs RenderTypes à ceux des autres VFX.
