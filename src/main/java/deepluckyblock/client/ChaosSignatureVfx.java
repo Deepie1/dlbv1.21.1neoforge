@@ -1202,44 +1202,127 @@ public final class ChaosSignatureVfx {
      */
     private static void renderKaleido(float cx, float cy, float cz, float t,
                                       float dx, float dz, float a, int salt, float ground) {
-        final float YC = 1.05f;
+        // ---------------------------------------------------------------------------
+        //  T406 — LA GALETTE DEVIENT UNE COUPOLE
+        //
+        //  L'ancienne version etait un disque plat de 2,8 blocs flottant a 1,05 au-dessus
+        //  du mob : vue en jeu, elle passait pour un tapis pose sur la tete. Le reproche
+        //  etait juste, et la cause est de dimension — une figure qui tient dans un bloc
+        //  et demi au-dessus du sol n'a aucun volume a montrer.
+        //
+        //  Le kaleidoscope est maintenant un DOME de huit blocs de rayon dont le mob
+        //  occupe le centre exact. Il garde toute l'optique de la version plate — six
+        //  secteurs, douze parois, reflexion dans chaque cellule — mais pliee sur une
+        //  demi-sphere : les douze parois deviennent douze COTES qui montent de l'horizon
+        //  au zenith, et les anneaux concentriques deviennent des PARALLELES. Le
+        //  spectateur est sous la coupole, pas devant une image.
+        //
+        //  Et le zenith sert a quelque chose : a chaque temps fort, les eclats glissent
+        //  vers le sommet, s'y agglomerent en une goutte, qui tombe sur le mob et explose.
+        // ---------------------------------------------------------------------------
+        final float HALF_PI = Mth.PI * 0.5f;
         final int SECTORS = 6;
         /** Largeur du secteur fondamental : trente degres, l'angle des deux miroirs. */
         final float WEDGE = Mth.PI / 6.0f;
         final float CELL = Mth.PI / 3.0f;
+        /** Le rayon demande. Huit blocs : le mob tient au centre, largement. */
+        final float DOME_R = 8.0f;
         /**
-         * NEUF ECLATS DE CINQ CUBES, et non quarante perles isolees.
-         *
-         * <p>Mesure au banc : trente-quatre perles independantes, copiees douze fois,
-         * donnent bien une figure rigoureusement symetrique — et elle se lit comme un
-         * confetti. L'oeil ne peut pas verifier une symetrie sur des points : il lui faut
-         * une <b>forme</b> dont il puisse suivre le contour et reconnaitre le retournement.
-         * Chaque eclat est donc un court segment de cinq cubes ; accole a son reflet le
-         * long de l'axe du miroir, il forme un chevron, et c'est ce chevron repete douze
-         * fois qui fait dire « kaleidoscope » avant meme d'avoir compte les secteurs.</p>
+         * La fleche. Volontairement inferieure au rayon (0,84) : une demi-sphere exacte
+         * vue d'une camera basse se lit comme un cercle, alors qu'une coupole surbaissee
+         * montre sa courbure. Six blocs soixante-dix de haut, c'est aussi la limite au-dela
+         * de laquelle le sommet sort du cadre.
          */
+        final float DOME_H = 6.70f;
         final int SHARDS = 9;
         final int PER = 5;
 
-        float open = smooth(t, 0.01f, 0.26f);
-        float radius = 0.42f + 2.42f * open;
-        float spin = t * 2.05f;
+        /** Le sol reel s'il est connu : la coupole se POSE, elle ne flotte pas. */
+        final float floorY = ground > -9.0f ? ground + 0.04f : -0.60f;
+        /**
+         * LA COTE D'IMPACT. Le repere de la signature a son origine au centre du corps :
+         * le mob occupe donc grosso modo de -0.90 (les pieds) a +0.90 (le sommet du
+         * crane). Mesure au banc de la premiere version : la goutte descendait jusqu'a
+         * -0.86, c'est-a-dire qu'elle TRAVERSAIT la cible pour s'ecraser sous ses pieds —
+         * ce qui se lit comme une pluie qui tombe a cote, pas comme un coup porte. Elle
+         * s'arrete maintenant au torse, et c'est la que part l'explosion.
+         */
+        final float HIT_Y = 0.35f;
+
+        float open = smooth(t, 0.01f, 0.20f);
+        float close = smooth(t, 0.90f, 1.0f);
+        float live = 1.0f - 0.82f * close;
+        float rad = DOME_R * open;
+        float hgt = DOME_H * open;
+        float spin = t * 1.35f;
+        float baseYaw = (float) Mth.atan2(dz, dx);
 
         float chaos = smooth(t, 0.46f, 0.62f) * (1.0f - smooth(t, 0.70f, 0.80f));
         float relock = smooth(t, 0.78f, 0.83f) * (1.0f - smooth(t, 0.86f, 0.93f));
-        float baseYaw = (float) Mth.atan2(dz, dx);
+        /**
+         * LE RECUL DE LA COUPOLE. Declare ici parce qu'il s'applique a TOUTE la figure.
+         *
+         * <p>Capture de la version precedente : mille quatre cent soixante-douze cubes a
+         * l'ecran, dont trente-six pour l'explosion. L'evenement representait deux pour
+         * cent de l'image et se perdait integralement dans le reseau de la voute. Grossir
+         * l'explosion n'aurait pas suffi — dans une figure deja saturee, ce qui fait
+         * exister un evenement n'est pas sa taille, c'est le CONTRASTE. La coupole perd
+         * donc la moitie de son alpha pendant l'eclatement et la retrouve aussitot : le
+         * regard est rendu disponible pour le seul endroit ou quelque chose se passe.</p>
+         */
+        float domeDim = 1.0f;
+
+        // --- LES SIX GOUTTES -------------------------------------------------------
+        // Les memes six temps forts que la partition serveur (30, 48, 66, 84, 102, 120).
+        // gather : les eclats montent vers le sommet. dropY : 1 au zenith, 0 sur le mob.
+        // burst  : l'eclatement sur le corps. La chute est en carre — une goutte TOMBE,
+        // elle ne descend pas a vitesse constante, et c'est ce qui la rend « puissante ».
+        float nowT = t * 150.0f;
+        float gather = 0.0f;
+        float dropY = -1.0f;
+        float dropGrow = 0.0f;
+        float burst = 0.0f;
+        float burstU = 1.0f;
+        int dropId = 0;
+        for (int d = 0; d < 6; d++) {
+            float since = nowT - (30 + d * 18);
+            // TREIZE TICKS, pas vingt-six. Les temps forts sont espaces de dix-huit :
+            // une fenetre plus longue que l'intervalle ne retombe jamais a zero, et une
+            // concentration permanente n'est plus une concentration. Il reste cinq ticks
+            // de repos pendant lesquels la coupole se remontre entiere.
+            float g = smooth(since, -9.0f, -4.0f) * (1.0f - smooth(since, 0.0f, 4.0f));
+            if (g > gather) gather = g;
+            if (since >= -9.0f && since < 0.5f) {
+                dropId = d;
+                dropGrow = smooth(since, -9.0f, -5.0f);
+                float fall = clamp((since + 5.0f) / 5.0f);
+                dropY = 1.0f - fall * fall;
+            }
+            // L'AGE et l'INTENSITE, et non une seule rampe pour les deux. Une
+            // explosion est instantanee a l'allumage : son intensite est maximale au
+            // premier tick, pas apres une montee en douceur.
+            if (since >= 0.0f && since < 14.0f) {
+                float u = since / 14.0f;
+                float inten = (1.0f - u) * (1.0f - 0.35f * u);
+                if (inten > burst) { burst = inten; burstU = u; dropId = d; }
+            }
+        }
+        domeDim = 1.0f - 0.52f * burst;
 
         // --- LES ECLATS, et leurs douze reflets ------------------------------------
+        // Le parametre qui portait le rayon porte maintenant la LATITUDE sur la coupole :
+        // le motif est le meme, il est enroule sur la demi-sphere au lieu d'etre pose a
+        // plat. C'est la seule facon de garder la symetrie d'ordre douze en volume.
         for (int sh = 0; sh < SHARDS; sh++) {
-            float band = 0.16f + 0.78f * hash(salt + sh, 1);
+            float lat0 = 0.08f + 0.78f * hash(salt + sh, 1);
             float aC = 0.055f + (WEDGE - 0.11f) * hash(salt + sh, 2);
-            float dirR = (hash(salt + sh, 3) - 0.5f) * 0.40f;
+            float dirL = (hash(salt + sh, 3) - 0.5f) * 0.34f;
             float dirA = (hash(salt + sh, 4) - 0.5f) * 0.17f;
-            float size = 0.036f + 0.030f * hash(salt + sh, 5);
+            float size = 0.086f + 0.062f * hash(salt + sh, 5);
             // Harmoniques ENTIERES : c'est ce qui referme la boucle a t = 1.
             int k1 = 1 + (sh % 3);
             int k2 = 1 + ((sh * 7) % 4);
-            float wobR = 0.070f * sin(Mth.TWO_PI * (k1 * t + hash(salt + sh, 6)));
+            float wobL = 0.055f * sin(Mth.TWO_PI * (k1 * t + hash(salt + sh, 6)));
             float wobA = 0.080f * sin(Mth.TWO_PI * (k2 * t + hash(salt + sh, 7)));
 
             int mode;
@@ -1251,11 +1334,29 @@ public final class ChaosSignatureVfx {
             else if (kind == 2) { mode = M_PULSE; hue = H_VIOLET; gray = G_MID; }
             else { mode = M_TINTED; hue = H_MAGENTA; gray = G_DEEP; }
             if (chaos > 0.45f && ((sh * 5 + salt) % 3) == 0) { mode = M_STROBE; gray = G_GLASS; }
+            /**
+             * LA PART MOBILE. Trois eclats sur neuf montent au zenith ; les six autres
+             * restent accroches a la coupole. Si toute la figure se rassemblait au
+             * sommet, le kaleidoscope disparaitrait a chaque temps fort — et comme les
+             * temps forts occupent les deux tiers de l'animation, on ne verrait plus
+             * jamais le motif. Un tiers suffit a faire une goutte substantielle, et le
+             * contraste avec les deux tiers immobiles est precisement ce qui rend le
+             * ramassement LISIBLE.
+             */
+            boolean lifts = (sh % 3) == 0;
 
             for (int c = 0; c < PER; c++) {
                 float u = c / (PER - 1.0f) - 0.5f;
-                float r0 = Mth.clamp(band + dirR * u + wobR, 0.08f, 1.0f);
+                float l0 = Mth.clamp(lat0 + dirL * u + wobL, 0.03f, 0.97f);
                 float a0 = Mth.clamp(aC + dirA * u + wobA, 0.012f, WEDGE - 0.012f);
+                // LA CONCENTRATION. Au temps fort, la latitude est tiree vers 1 : les
+                // cinquante-quatre eclats et leurs reflets convergent au sommet. C'est ce
+                // ramassement qui fabrique la goutte — elle n'apparait pas, elle est faite
+                // de la matiere de la figure.
+                float lg = lifts ? l0 + (1.0f - l0) * gather * 0.88f : l0;
+                float phi = lg * HALF_PI;
+                float ring = cos(phi);
+                float up = floorY + sin(phi) * hgt;
 
                 for (int sct = 0; sct < SECTORS; sct++) {
                     for (int m = 0; m < 2; m++) {
@@ -1263,113 +1364,227 @@ public final class ChaosSignatureVfx {
                         // le miroir porte par l'axe a WEDGE. Les deux pavent la cellule de
                         // soixante degres, et six cellules font le tour.
                         float local = (m == 0) ? a0 : (CELL - a0);
-                        float rr = r0;
+                        float rr = ring;
                         if (chaos > 0.001f) {
                             int cid = sh * 97 + sct * 13 + m * 7;
                             local += chaos * 0.26f * (hash(salt + cid, 11) - 0.5f);
-                            rr += chaos * 0.22f * (hash(salt + cid, 12) - 0.5f);
+                            rr += chaos * 0.16f * (hash(salt + cid, 12) - 0.5f);
                         }
                         float ang = spin + sct * CELL + local;
-                        float rad = rr * radius;
-                        // LA GALETTE EST PLATE. Mesure : vingt centimetres d'epaisseur
-                        // suffisaient a brouiller la symetrie des que la vue s'ecartait de
-                        // la verticale, parce que la hauteur deplace la projection d'un
-                        // reflet mais pas de son voisin. Un kaleidoscope est une image
-                        // plane, et le rendu doit l'etre aussi.
-                        float up = YC + 0.045f * (1.0f - rr) * (1.0f - rr);
-                        float grow = Mth.clamp(open * 1.5f - rr * 0.30f, 0.0f, 1.0f);
-                        put(cx, cy, cz, dx, dz, cos(ang) * rad, up, sin(ang) * rad,
-                                size * grow, baseYaw + ang, mode,
+                        float dist = Mth.clamp(rr, 0.0f, 1.08f) * rad;
+                        float grow = Mth.clamp(open * 1.5f - (1.0f - lg) * 0.25f, 0.0f, 1.0f);
+                        // Au ramassement les eclats grossissent : la goutte se charge.
+                        float sz = size * grow
+                                * (1.0f + (lifts ? 0.85f : 0.16f) * gather) * live;
+                        put(cx, cy, cz, dx, dz, cos(ang) * dist, up, sin(ang) * dist,
+                                sz, baseYaw + ang, mode,
                                 relock > 0.35f ? G_FLASH : gray, hue,
-                                a * (0.82f + 0.18f * relock) * grow);
+                                a * (0.82f + 0.18f * relock) * grow * live * domeDim);
                     }
                 }
             }
         }
 
-        // --- LES PAROIS DE MIROIR. Douze rayons continus : six fentes de pliage (entre
-        //     cellules) et six axes de reflexion (au milieu de chaque cellule). C'est la
-        //     piece qui transforme « motif symetrique » en « instrument d'optique ».
+        // --- LES DOUZE COTES. Ce sont les anciennes parois de miroir, relevees : chacune
+        //     part du sol et monte jusqu'au zenith, ou toutes se rejoignent. Six fentes de
+        //     pliage (entre cellules) et six axes de reflexion (au milieu de chaque
+        //     cellule). C'est la piece qui fait lire « DOME » et non « boule de points ».
         for (int w = 0; w < 12; w++) {
             boolean fold = (w % 2) == 0;
             float ang = spin + w * WEDGE;
-            int steps = 30;
-            for (int k = 1; k <= steps; k++) {
-                float rr = k / (float) steps;
-                // Pendant le decrochage, les parois se rompent en pointille : un miroir
+            int steps = 32;
+            for (int k = 0; k <= steps; k++) {
+                // Pendant le decrochage, les cotes se rompent en pointille : un miroir
                 // fele. Le test porte sur k, donc la rupture est stable d'une image a
                 // l'autre au lieu de gresiller.
                 if (chaos > 0.25f && hash(salt + w * 31, k * 17) < chaos * 0.55f) continue;
-                float rad = rr * radius * 1.02f;
-                float up = YC + 0.045f * (1.0f - rr) * (1.0f - rr);
-                put(cx, cy, cz, dx, dz, cos(ang) * rad, up, sin(ang) * rad,
-                        fold ? 0.040f : 0.026f, baseYaw + ang,
+                float u = k / (float) steps;
+                float phi = u * HALF_PI;
+                float dist = cos(phi) * rad * 1.01f;
+                float up = floorY + sin(phi) * hgt;
+                put(cx, cy, cz, dx, dz, cos(ang) * dist, up, sin(ang) * dist,
+                        (fold ? 0.112f : 0.074f) * live, baseYaw + ang,
                         fold ? M_DUAL : M_MONO, fold ? G_GLASS : G_FRAME,
-                        fold ? H_BLUE : 0.0f, a * (fold ? 0.98f : 0.80f) * open);
+                        fold ? H_BLUE : 0.0f,
+                        a * (fold ? 0.98f : 0.78f) * open * live * domeDim);
             }
         }
 
-        // --- LES ANNEAUX CONCENTRIQUES. Un kaleidoscope se lit aussi en bandes.
-        for (int ring = 0; ring < 3; ring++) {
-            float rr = 0.34f + ring * 0.27f;
-            int marks = 34 + ring * 14;
+        // --- LES PARALLELES. Sept cercles horizontaux, de la base au sommet. Le nombre de
+        //     cubes suit le rayon du cercle : a densite constante, un parallele haut n'a
+        //     pas besoin d'autant de marques qu'un parallele bas, et un cercle qui
+        //     s'epaissit en montant trahirait la courbure.
+        for (int ring = 0; ring < 7; ring++) {
+            float u = (ring + 0.5f) / 7.0f;
+            float phi = u * HALF_PI;
+            float dist = cos(phi) * rad;
+            float up = floorY + sin(phi) * hgt;
+            int marks = Math.max(9, Math.round(dist * 7.0f));
             for (int k = 0; k < marks; k++) {
                 if (chaos > 0.3f && hash(salt + 400 + ring, k) < chaos * 0.6f) continue;
                 float ang = spin * (ring % 2 == 0 ? 1.0f : -0.65f)
                         + k / (float) marks * Mth.TWO_PI;
-                float rad = rr * radius;
-                put(cx, cy, cz, dx, dz, cos(ang) * rad,
-                        YC + 0.045f * (1.0f - rr) * (1.0f - rr), sin(ang) * rad,
-                        0.019f, baseYaw + ang, M_MONO, G_MID, 0.0f, a * 0.62f * open);
+                put(cx, cy, cz, dx, dz, cos(ang) * dist, up, sin(ang) * dist,
+                        0.052f * live, baseYaw + ang, M_MONO, G_MID, 0.0f,
+                        a * 0.62f * open * live * domeDim);
             }
         }
 
-        // --- LA CERCLURE. Le bord net du tube. Elle est CLAIRE et non masquante : un
-        //     cercle presque noir sur fond de nuit ne ferme rien du tout.
-        int rim = 86;
+        // --- LA CERCLURE AU SOL. Le pied du dome, net et CLAIR : c'est elle qui donne
+        //     l'echelle, et c'est a elle qu'on mesure les huit blocs.
+        int rim = 96;
         for (int k = 0; k < rim; k++) {
             float ang = spin * 0.8f + k / (float) rim * Mth.TWO_PI;
-            float rad = radius * 1.07f;
-            put(cx, cy, cz, dx, dz, cos(ang) * rad, YC, sin(ang) * rad,
-                    0.036f, baseYaw + ang, M_DUAL, G_GLASS, H_ROSE, a * 0.95f * open);
+            float dist = rad * 1.02f;
+            put(cx, cy, cz, dx, dz, cos(ang) * dist, floorY + 0.06f, sin(ang) * dist,
+                    0.098f * live, baseYaw + ang, M_DUAL, G_GLASS, H_ROSE,
+                    a * 0.95f * open * live);
         }
 
-        // --- LES ECLATS LIBRES. Au decrochage, le tube crache des perles par le bord.
+        // --- LE ZENITH. Une clef de voute : sans elle, les douze cotes se croisent dans
+        //     le vide et le sommet a l'air inacheve. Elle enfle quand la goutte se charge.
+        {
+            float keyS = (0.13f + 0.40f * gather) * live;
+            float keyY = floorY + hgt;
+            for (int k = 0; k < 7; k++) {
+                float ang = spin * 2.1f + k / 7.0f * Mth.TWO_PI;
+                float dist = (0.16f + 0.42f * (1.0f - gather)) * open;
+                put(cx, cy, cz, dx, dz, cos(ang) * dist, keyY, sin(ang) * dist,
+                        keyS, baseYaw + ang, gather > 0.4f ? M_STROBE : M_DUAL,
+                        G_FLASH, H_CYAN, a * (0.70f + 0.30f * gather) * open * live);
+            }
+        }
+
+        // --- LA GOUTTE. Elle se detache du sommet et tombe sur le mob. Un noyau de huit
+        //     cubes serres, une colonne de chute derriere elle, et une taille qui augmente
+        //     en descendant : une masse qui arrive, pas un point qui glisse.
+        if (dropGrow > 0.01f && dropY >= 0.0f) {
+            float zen = floorY + hgt;
+            float dY = HIT_Y + dropY * (zen - HIT_Y);
+            float speed = 1.0f - dropY;
+            // Une goutte « puissante » doit peser a l'ecran : pres de deux blocs de
+            // cote a l'arrivee, contre un seul auparavant.
+            float core = (0.26f + 0.34f * dropGrow) * (1.0f + 0.60f * speed);
+            for (int k = 0; k < 8; k++) {
+                float ang = k / 8.0f * Mth.TWO_PI + nowT * 0.55f;
+                float dist = core * 0.85f;
+                put(cx, cy, cz, dx, dz, cos(ang) * dist, dY, sin(ang) * dist,
+                        core * 0.62f, baseYaw + ang, M_PULSE, G_FLASH, H_CYAN,
+                        a * 0.98f);
+            }
+            put(cx, cy, cz, dx, dz, 0.0f, dY, 0.0f, core, core * 1.45f, core,
+                    baseYaw, M_DUAL, G_CORE, H_BLUE, a * 1.0f);
+            // LA COLONNE. Dix cubes qui remontent vers le sommet en retrecissant : c'est
+            // la trainee qui donne la vitesse. Sans elle, la goutte se teleporte d'une
+            // image a l'autre.
+            for (int k = 1; k <= 10; k++) {
+                float back = k / 10.0f;
+                float ty = dY + back * speed * (zen - HIT_Y) * 0.52f;
+                if (ty > zen) continue;
+                put(cx, cy, cz, dx, dz, 0.0f, ty, 0.0f,
+                        core * (1.0f - 0.80f * back) * 0.70f, baseYaw,
+                        M_TINTED, G_GLASS, H_CYAN, a * (1.0f - back) * 0.72f);
+            }
+        }
+
+        // --- L'EXPLOSION SUR LE MOB. Une onde qui part du corps : trente-six eclats sur
+        //     une demi-sphere en expansion, plus une colonne verticale de retour. Elle est
+        //     centree sur le mob (et non sur le sol) parce que c'est LUI qui est frappe.
+        if (burst > 0.01f) {
+            // TROIS BLOCS ET DEMI, pas cinq et demi. Capture : a 5,4 l'onde couvrait
+            // le dome entier et se lisait comme un effondrement de la figure, pas comme
+            // un coup porte au centre. L'explosion doit rester NETTEMENT plus petite que
+            // ce qui la contient, sinon elle efface sa propre cause.
+            // LE RAYON SUIT LA RACINE DE L'AGE : l'onde part violemment puis
+            // ralentit. Indexe sur l'intensite, il atteignait son maximum en un tick et
+            // s'y figeait onze ticks durant — une coquille, pas une explosion.
+            float grow = (float) Math.sqrt(burstU);
+            float er = 0.55f + 2.95f * grow;
+            float eh = 0.80f + 1.80f * grow;
+            float fade = burst;
+            // LE NOYAU. Une onde sans point de depart brillant n'a pas de cause visible :
+            // on voit des debris s'ecarter sans savoir d'ou. Huit cubes serres sur le
+            // corps, enormes au premier tick puis resorbes pendant que l'onde part.
+            float nuke = 0.80f * burst * burst;
+            for (int k = 0; k < 8; k++) {
+                float ang = k / 8.0f * Mth.TWO_PI + nowT * 0.9f;
+                float dist = nuke * 0.70f;
+                put(cx, cy, cz, dx, dz, cos(ang) * dist, HIT_Y + 0.12f * sin(ang * 2.0f),
+                        sin(ang) * dist, nuke, baseYaw + ang,
+                        M_STROBE, G_CORE, H_CYAN, a * (0.55f + 0.45f * fade));
+            }
+            for (int k = 0; k < 60; k++) {
+                float ang = k / 60.0f * Mth.TWO_PI + dropId * 0.41f;
+                float pu = hash(salt + 900 + dropId, k);
+                // La latitude descend jusqu'a -0.22 : une explosion SUR un corps s'etale
+                // aussi vers le bas. Bornee au-dessus a 0.88 pour ne pas faire un jet.
+                float phi = (pu * 1.10f - 0.22f) * HALF_PI * 0.80f;
+                float dist = er * cos(phi) * (0.80f + 0.40f * hash(salt + 930, k));
+                float up = HIT_Y + sin(phi) * eh;
+                put(cx, cy, cz, dx, dz, cos(ang) * dist, up, sin(ang) * dist,
+                        0.14f + 0.20f * burst, baseYaw + ang,
+                        (k % 3 == 0) ? M_STROBE : M_PULSE,
+                        (k % 3 == 0) ? G_FLASH : G_FRAME, H_CYAN,
+                        a * (0.12f + 0.88f * fade));
+            }
+            // L'ANNEAU DE CHOC AU SOL. Une explosion en l'air n'a pas de point d'appui :
+            // c'est le cercle qui court par terre qui dit ou elle a eu lieu, et qui donne
+            // sa dimension. Il part du pied du mob et s'elargit avec l'onde.
+            for (int k = 0; k < 44; k++) {
+                float ang = k / 44.0f * Mth.TWO_PI - dropId * 0.29f;
+                float dist = er * 1.18f;
+                put(cx, cy, cz, dx, dz, cos(ang) * dist, floorY + 0.07f, sin(ang) * dist,
+                        0.10f + 0.12f * burst, 0.055f,
+                        0.10f + 0.12f * burst, baseYaw + ang,
+                        M_STROBE, G_FLASH, H_CYAN, a * (0.10f + 0.90f * fade));
+            }
+            // Le choc en retour : la matiere rejaillit le long du corps.
+            for (int k = 0; k < 9; k++) {
+                float up = HIT_Y - 0.62f + k / 9.0f * eh * 1.30f;
+                float wob = 0.14f * sin(nowT * 0.8f + k);
+                put(cx, cy, cz, dx, dz, wob, up, -wob,
+                        0.27f * (1.0f - k / 11.0f) * (0.4f + 0.6f * burst), baseYaw,
+                        M_DUAL, G_CORE, H_BLUE, a * (0.95f - 0.6f * (k / 9.0f)));
+            }
+        }
+
+        // --- LES ECLATS LIBRES. Au decrochage, la coupole crache des perles par le bord.
         if (chaos > 0.30f && ((salt + (int) (t * 150.0f)) % 3) == 0) {
             int k = (salt + (int) (t * 150.0f) * 7) % rim;
             float ang = spin * 0.8f + k / (float) rim * Mth.TWO_PI;
-            float rad = radius * 1.07f;
-            float f = cos(ang) * rad;
-            float lat = sin(ang) * rad;
+            float phi = hash(salt + 55, k) * HALF_PI * 0.75f;
+            float dist = rad * 1.02f * cos(phi);
+            float f = cos(ang) * dist;
+            float lat = sin(ang) * dist;
             pixel(
                     WeaponWorldVfxManager.camX() + cx + f * dx - lat * dz,
-                    WeaponWorldVfxManager.camY() + cy + YC,
+                    WeaponWorldVfxManager.camY() + cy + floorY + sin(phi) * hgt,
                     WeaponWorldVfxManager.camZ() + cz + f * dz + lat * dx,
-                    cos(ang) * 0.055f, 0.030f, sin(ang) * 0.055f,
-                    0.085f, 26, M_STROBE, 0.0f, 0.22f, G_GLASS);
+                    cos(ang) * 0.075f, 0.040f, sin(ang) * 0.075f,
+                    0.105f, 26, M_STROBE, 0.0f, 0.22f, G_GLASS);
         }
-        // Au realignement, une couronne de monochromes jaillit vers le haut : l'ordre
-        // revenu se signale par une couleur qui se tait.
-        if (relock > 0.5f && ((salt + (int) (t * 150.0f)) % 2) == 0) {
+        // A l'impact d'une goutte, le mob projette de la matiere vers le haut.
+        if (burst > 0.5f && ((salt + (int) (t * 150.0f)) % 2) == 0) {
             float ang = hash(salt, (int) (t * 150.0f)) * Mth.TWO_PI;
-            float rad = radius * 0.7f;
-            float f = cos(ang) * rad;
-            float lat = sin(ang) * rad;
             pixel(
-                    WeaponWorldVfxManager.camX() + cx + f * dx - lat * dz,
-                    WeaponWorldVfxManager.camY() + cy + YC,
-                    WeaponWorldVfxManager.camZ() + cz + f * dz + lat * dx,
-                    0.0, 0.085, 0.0, 0.07f, 20, M_MONO, 0.0f, 0.10f, G_FLASH);
+                    WeaponWorldVfxManager.camX() + cx,
+                    WeaponWorldVfxManager.camY() + cy + HIT_Y,
+                    WeaponWorldVfxManager.camZ() + cz,
+                    cos(ang) * 0.11f, 0.22f, sin(ang) * 0.11f,
+                    0.085f, 22, M_PULSE, H_CYAN, 0.16f, G_FLASH);
         }
 
-        // --- LE REFLET AU SOL. Le tube pose son disque par terre, en plus sombre.
+        // --- LE DISQUE AU SOL. La coupole pose son ombre claire, en plus sombre, et elle
+        //     s'illumine quand une goutte frappe.
         if (ground > -9.0f) {
-            for (int k = 0; k < 44; k++) {
-                float ang = -spin * 0.5f + k / 44.0f * Mth.TWO_PI;
-                float rad = radius * (0.5f + 0.55f * hash(salt + 77, k));
-                put(cx, cy, cz, dx, dz, cos(ang) * rad, ground + 0.03f, sin(ang) * rad,
-                        0.040f, 0.016f, 0.040f, baseYaw, M_MONO, G_MASK, 0.0f,
-                        a * 0.55f * open);
+            for (int k = 0; k < 52; k++) {
+                float ang = -spin * 0.5f + k / 52.0f * Mth.TWO_PI;
+                float dist = rad * (0.30f + 0.70f * hash(salt + 77, k));
+                put(cx, cy, cz, dx, dz, cos(ang) * dist, ground + 0.03f, sin(ang) * dist,
+                        0.090f, 0.016f, 0.090f, baseYaw,
+                        burst > 0.3f ? M_PULSE : M_MONO,
+                        burst > 0.3f ? G_FRAME : G_MASK, H_CYAN,
+                        a * (0.55f + 0.40f * burst) * open * live);
             }
         }
     }

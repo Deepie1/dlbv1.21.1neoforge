@@ -6246,6 +6246,140 @@ public final class WeaponVfxServerListener {
      * sons de hauteurs differentes et une gerbe sur le corps — sans ca, un tic de degat
      * dans une signature de sept secondes passe inapercu au milieu du reste.
      */
+    // =================================================================================
+    //  T406 — LE MOTEUR SONORE DU CHAOS
+    // =================================================================================
+
+    /**
+     * POURQUOI LES CINQ ANIMATIONS ETAIENT MUETTES.
+     *
+     * <p>Les signatures appelaient bien {@code playSound} — soixante-dix fois pour les
+     * cinq — et pourtant une seule chose s'entendait en jeu : l'enclume. La cause n'etait
+     * pas dans la partition mais dans la <b>diffusion</b>. {@code ServerLevel.playSound}
+     * n'envoie le paquet qu'aux joueurs situes dans {@code SoundEvent.getRange(volume)}
+     * metres, et cette portee vaut <b>seize blocs en dur</b> tant que le volume ne depasse
+     * pas 1.0 ; elle ne s'etend qu'au-dela, a {@code 16 * volume}. Or toutes les voix du
+     * chaos etaient ecrites entre 0.20 et 0.50 : diffusees a seize blocs seulement, puis
+     * ramenees par l'attenuation client sous le seuil audible des quatre ou cinq blocs.
+     * Comme la camera de ces animations recule a huit ou dix blocs, le spectateur etait
+     * systematiquement hors de portee. Seul {@code ANVIL_LAND}, joue a 0.92 et deja tres
+     * fort dans l'echantillon vanilla, franchissait la barre.</p>
+     *
+     * <p>Seconde cause, de timbre : amethyste, verre et carillon sont des echantillons
+     * discrets, calibres pour un bloc pose dans une grotte, pas pour tenir huit secondes
+     * de scene. Ils restent comme <i>couleur</i>, mais ne portent plus la structure : sous
+     * chacun passe desormais un <b>socle grave</b> pris parmi les sons que le jeu a conçus
+     * pour s'entendre de loin.</p>
+     *
+     * <p>Trois etages a chaque frappe, donc : le grave qui porte, la couleur qui identifie
+     * le geste, l'arete aigue qui date l'instant.</p>
+     */
+    private static final float SFX_NEAR = 1.25f;
+
+    /**
+     * Le client borne la vitesse de lecture a {@code [0.5, 2.0]} : en dessous de 0.5 un
+     * son ne devient pas plus grave, il est simplement ecrete au bord. Pour descendre
+     * <i>reellement</i> plus bas, il faut changer d'echantillon — d'ou les socles graves.
+     */
+    private static float sfxPitch(float p) {
+        return p < 0.5f ? 0.5f : (p > 2.0f ? 2.0f : p);
+    }
+
+    /**
+     * Un son du chaos. Le volume est l'unique levier qui agrandisse le rayon de
+     * diffusion : passer de 0.5 a 2.0 ne multiplie pas seulement l'amplitude, il fait
+     * passer la portee de seize a trente-deux blocs.
+     */
+    private static void chaosSfx(ServerLevel sl, double x, double y, double z,
+                                 SoundEvent se, float volume, float pitch) {
+        if (sl == null || se == null || volume <= 0.02f) return;
+        sl.playSound(null, x, y, z, se, SoundSource.PLAYERS, volume, sfxPitch(pitch));
+    }
+
+    /**
+     * FONDU DEPUIS LE SILENCE — l'apparition.
+     *
+     * <p>{@code steps} repetitions espacees de {@code every} ticks, dont le volume part de
+     * zero pour atteindre {@code volPeak} et dont la hauteur glisse de {@code pitchFrom}
+     * vers {@code pitchTo}. La rampe est en <b>puissance 2.2</b>, pas lineaire : l'oreille
+     * percoit le volume de maniere logarithmique, une rampe lineaire s'entend donc comme un
+     * son deja entierement present des le deuxieme pas. En puissance, les premieres
+     * repetitions restent sous le seuil et le son semble reellement NAITRE.</p>
+     */
+    private static void chaosSwell(ServerLevel sl, int now, double x, double y, double z,
+                                   SoundEvent se, int from, int steps, int every,
+                                   float volPeak, float pitchFrom, float pitchTo) {
+        if (sl == null || se == null || steps <= 0) return;
+        for (int k = 0; k < steps; k++) {
+            final float u = (k + 1) / (float) steps;
+            final float vol = volPeak * (float) Math.pow(u, 2.2);
+            final float pit = pitchFrom + (pitchTo - pitchFrom) * u;
+            TestProcedure.schedule(sl, now + from + k * every,
+                    () -> chaosSfx(sl, x, y, z, se, vol, pit));
+        }
+    }
+
+    /**
+     * FONDU VERS LE SILENCE — la disparition.
+     *
+     * <p>Symetrique du precedent, en puissance 1.7 : une decroissance plus lente que la
+     * montee, parce qu'une queue de son qui s'eteint trop vite s'entend comme une coupure
+     * et non comme un effacement. La derniere repetition n'est jamais exactement nulle,
+     * sinon elle ne serait pas diffusee du tout et la figure se terminerait sur un trou.</p>
+     */
+    private static void chaosFade(ServerLevel sl, int now, double x, double y, double z,
+                                  SoundEvent se, int from, int steps, int every,
+                                  float volStart, float pitchFrom, float pitchTo) {
+        if (sl == null || se == null || steps <= 0) return;
+        for (int k = 0; k < steps; k++) {
+            final float u = k / (float) steps;
+            final float vol = volStart * (float) Math.pow(1.0 - u, 1.7);
+            final float pit = pitchFrom + (pitchTo - pitchFrom) * u;
+            TestProcedure.schedule(sl, now + from + k * every,
+                    () -> chaosSfx(sl, x, y, z, se, vol, pit));
+        }
+    }
+
+    /**
+     * RAFALE A TEMPO VARIABLE — la vitesse.
+     *
+     * <p>{@code count} frappes dont l'intervalle est multiplie par {@code ratio} a chaque
+     * pas : sous 1.0 c'est un <i>accelerando</i> (la figure se precipite), au-dessus un
+     * <i>ritardando</i> (elle s'enlise). Volume et hauteur interpolent de bout en bout, de
+     * sorte qu'une rafale qui accelere monte aussi en tension au lieu de se contenter de
+     * battre plus vite. L'ecart ne descend jamais sous 0.6 tick : deux declenchements dans
+     * le meme tick se masquent l'un l'autre cote client.</p>
+     */
+    private static void chaosRoll(ServerLevel sl, int now, double x, double y, double z,
+                                  SoundEvent se, int from, int count, float gap0,
+                                  float ratio, float volA, float volB,
+                                  float pitchA, float pitchB) {
+        if (sl == null || se == null || count <= 0) return;
+        float gap = gap0;
+        float acc = 0.0f;
+        for (int k = 0; k < count; k++) {
+            final float u = count == 1 ? 1.0f : k / (float) (count - 1);
+            final float vol = volA + (volB - volA) * u;
+            final float pit = pitchA + (pitchB - pitchA) * u;
+            TestProcedure.schedule(sl, now + from + Math.round(acc),
+                    () -> chaosSfx(sl, x, y, z, se, vol, pit));
+            acc += gap;
+            gap = Math.max(0.60f, gap * ratio);
+        }
+    }
+
+    /**
+     * UNE FRAPPE A DEUX REGISTRES. Le grave porte — il traverse le decor et se percoit de
+     * loin ; l'aigu date — il dit l'instant exact. Les deux sur le meme tick : c'est ce
+     * couple, et non le volume seul, qui fait qu'un coup S'ENTEND au lieu de se deviner.
+     */
+    private static void chaosHit(ServerLevel sl, double x, double y, double z,
+                                 SoundEvent low, float volLow, float pitchLow,
+                                 SoundEvent high, float volHigh, float pitchHigh) {
+        chaosSfx(sl, x, y, z, low, volLow, pitchLow);
+        chaosSfx(sl, x, y, z, high, volHigh, pitchHigh);
+    }
+
     private static void chaosBeatMark(ServerLevel sl, LivingEntity victim, float pitch, float force) {
         chaosBeatMark(sl, victim, pitch, force, 0);
     }
@@ -6285,16 +6419,37 @@ public final class WeaponVfxServerListener {
             case 7 -> SoundEvents.SLIME_BLOCK_BREAK;        // la dissolution, molle
             default -> SoundEvents.AMETHYST_BLOCK_CHIME;    // les convergents, le timbre mere
         };
-        sl.playSound(null, bx, by, bz, body, SoundSource.PLAYERS, 0.50f * force, pitch);
+        // LE SOCLE GRAVE. C'est l'etage ajoute en T406, et c'est lui qui rend la frappe
+        // audible : volume au-dessus de 1.0 pour porter au-dela de seize blocs, timbre
+        // pris parmi les echantillons que le jeu a calibres pour s'entendre de loin.
+        SoundEvent deep = switch (Math.floorMod(voice, 8)) {
+            case 1 -> SoundEvents.WARDEN_ATTACK_IMPACT;        // la lame qui porte
+            case 2 -> SoundEvents.IRON_GOLEM_DAMAGE;           // la cage, du metal lourd
+            case 3 -> SoundEvents.NETHERITE_BLOCK_BREAK;       // le prisme qui eclate
+            case 4 -> SoundEvents.WARDEN_SONIC_CHARGE;         // la spirale qui se charge
+            case 5 -> SoundEvents.ANVIL_LAND;                  // le repliement, le plus lourd
+            case 6 -> SoundEvents.WARDEN_SONIC_BOOM;           // l'onde qui traverse
+            case 7 -> SoundEvents.GENERIC_EXPLODE.value();     // la dissolution
+            default -> SoundEvents.NOTE_BLOCK_BASEDRUM.value();// la timbale des convergents
+        };
+        // Le grave est joue PLUS BAS que la voix de couleur : 0.62 fois sa hauteur, borne
+        // a 0.5. Le meme echantillon descendu d'une octave ne sonne pas comme lui-meme
+        // ralenti, il sonne comme un instrument plus gros — c'est l'effet recherche.
+        chaosSfx(sl, bx, by, bz, deep, 1.95f * force, pitch * 0.62f);
 
-        // La trace aigue : elle dit ou le coup a porte, et elle aussi change de grain.
+        // LA COULEUR. L'ancienne voix principale, conservee pour l'identite du geste, mais
+        // remontee de 0.50 a 1.25 : en dessous de 1.0 elle n'etait meme pas diffusee
+        // au-dela de seize blocs.
+        chaosSfx(sl, bx, by, bz, body, SFX_NEAR * force, pitch);
+
+        // L'ARETE AIGUE : elle dit ou le coup a porte, et elle aussi change de grain.
         SoundEvent edge = switch (Math.floorMod(voice, 4)) {
             case 1 -> SoundEvents.GLASS_BREAK;
             case 2 -> SoundEvents.NOTE_BLOCK_HAT.value();
             case 3 -> SoundEvents.ARROW_HIT;
             default -> SoundEvents.GLASS_BREAK;
         };
-        sl.playSound(null, bx, by, bz, edge, SoundSource.PLAYERS, 0.26f * force, hi);
+        chaosSfx(sl, bx, by, bz, edge, 0.95f * force, hi);
 
         PixelFx.send(sl, CHAOS_DUST_SPARK, bx, by, bz,
                 Math.max(6, Math.round(16 * force)), 0.30, 0.34, 0.30, 0.12);
@@ -6450,6 +6605,51 @@ public final class WeaponVfxServerListener {
         final int targetId = target.getId();
         final boolean solo = voidVictims(sl, ox, oy, oz, 5.5, 3.0, attackerId).size() < 2;
 
+        // ======================= T406 — LA PARTITION DU DOME =======================
+        // APPARITION (0 -> 30). Le dome de huit blocs ne tombe pas du ciel d'un coup : il
+        // se charge. Nappe de phare qui monte du silence pendant une seconde et demie, et
+        // par-dessus une rafale de cristal qui ACCELERE (ratio 0.86) — l'oreille entend la
+        // coupole se fermer avant que l'oeil ait fini de la voir se dessiner.
+        chaosSwell(sl, now, ox, oy + 3.4, oz, SoundEvents.BEACON_ACTIVATE,
+                0, 8, 3, 2.35f, 0.58f, 1.06f);
+        chaosRoll(sl, now, ox, oy + 2.0, oz, SoundEvents.AMETHYST_BLOCK_PLACE,
+                2, 11, 3.2f, 0.86f, 0.70f, 1.75f, 0.62f, 1.60f);
+        // Le verrou : la coupole est close. Grave et aigu sur le meme tick.
+        TestProcedure.schedule(sl, now + 28, () -> chaosHit(sl, ox, oy + 3.0, oz,
+                SoundEvents.WARDEN_SONIC_CHARGE, 2.45f, 0.55f,
+                SoundEvents.BEACON_POWER_SELECT, 1.70f, 1.62f));
+
+        // LES SIX GOUTTES. A chaque concentration des formes au zenith, une goutte se
+        // forme (sifflement qui MONTE pendant qu'elle grossit), tombe sur le mob et
+        // explose. Le sifflement part cinq ticks avant l'impact : c'est ce decalage qui
+        // fait anticiper la chute au lieu de la subir.
+        for (int k = 0; k < 6; k++) {
+            final int drop = k;
+            final int at = 30 + drop * 18;
+            TestProcedure.schedule(sl, now + at - 5, () -> chaosSfx(sl, ox, oy + 6.2, oz,
+                    SoundEvents.BREEZE_WIND_CHARGE_BURST.value(),
+                    1.55f + 0.10f * drop, 1.70f - 0.12f * drop));
+            TestProcedure.schedule(sl, now + at, () -> {
+                // L'IMPACT. Trois registres : le tonnerre qui porte, l'explosion qui
+                // creuse, le cristal qui date. La goutte s'alourdit de geste en geste —
+                // le grave descend de 0.86 a 0.56 pendant que l'aigu monte.
+                chaosSfx(sl, ox, oy, oz, SoundEvents.LIGHTNING_BOLT_IMPACT,
+                        2.20f + 0.14f * drop, 0.86f - 0.06f * drop);
+                chaosSfx(sl, ox, oy, oz, SoundEvents.GENERIC_EXPLODE.value(),
+                        1.85f + 0.12f * drop, 1.10f - 0.07f * drop);
+                chaosSfx(sl, ox, oy + 0.8, oz, SoundEvents.AMETHYST_CLUSTER_BREAK,
+                        1.30f, 1.20f + 0.13f * drop);
+            });
+        }
+
+        // DISPARITION (128 -> 150). Le dome s'ouvre et s'efface : le phare se coupe en
+        // descendant d'une octave et demie, et la derniere repetition tombe a 148 — deux
+        // ticks avant la fin, jamais dessus, sinon elle coincide avec l'extinction.
+        chaosFade(sl, now, ox, oy + 3.4, oz, SoundEvents.BEACON_DEACTIVATE,
+                128, 7, 3, 2.30f, 1.14f, 0.52f);
+        TestProcedure.schedule(sl, now + 146, () -> chaosSfx(sl, ox, oy, oz,
+                SoundEvents.AMETHYST_BLOCK_RESONATE, 1.45f, 0.54f));
+
         // --- 0 : LE CLOUAGE. La figure se construit autour de la cible ; il faut donc que
         //     la cible soit encore la quand elle se referme. 148 ticks, soit deux de moins
         //     que l'animation : l'emprise doit lacher AVANT la derniere image, sinon le mob
@@ -6570,6 +6770,36 @@ public final class WeaponVfxServerListener {
         final boolean solo = voidVictims(sl, ox, oy, oz, 4.6, 3.0, attackerId).size() <= 1;
         final double radius = solo ? 2.8 : 4.6;
 
+        // ==================== T406 — LA PARTITION DE L'ENTROPIE ====================
+        // APPARITION (0 -> 24). Le treillis s'ordonne : le conduit monte du silence, mais
+        // sa hauteur DESCEND (1.34 -> 0.78). Un son qui se renforce en s'abaissant se lit
+        // comme une structure qui prend du poids, pas comme une alarme.
+        chaosSwell(sl, now, ox, oy, oz, SoundEvents.CONDUIT_ACTIVATE,
+                0, 8, 3, 2.40f, 1.34f, 0.78f);
+
+        // LE DESORDRE QUI MONTE (20 -> 150). Trente-deux grésillements dont l'intervalle
+        // se resserre (ratio 0.955) pendant que le volume et la hauteur montent : c'est la
+        // perte d'information rendue en VITESSE. Au debut on compte les clics, a la fin on
+        // ne les separe plus — exactement ce que fait l'entropie a l'information.
+        chaosRoll(sl, now, ox, oy, oz, SoundEvents.SCULK_CLICKING,
+                20, 32, 5.4f, 0.955f, 0.85f, 2.05f, 0.52f, 1.88f);
+
+        // LES HUIT PULSATIONS. Chacune frappe deux registres ; le grave s'enfonce pendant
+        // que l'aigu se tend, donc l'ecart entre les deux s'ouvre de temps fort en temps
+        // fort. C'est l'ecart, et non le volume, qui fait entendre la degradation.
+        final int[] sfxEntropy = { 22, 38, 54, 70, 86, 102, 118, 134 };
+        for (int k = 0; k < sfxEntropy.length; k++) {
+            final int step = k;
+            final float u = step / (float) (sfxEntropy.length - 1);
+            TestProcedure.schedule(sl, now + sfxEntropy[step], () -> chaosHit(sl, ox, oy, oz,
+                    SoundEvents.NETHERITE_BLOCK_BREAK, 1.90f + 0.45f * u, 0.92f - 0.36f * u,
+                    SoundEvents.NOTE_BLOCK_BIT.value(), 1.15f + 0.30f * u, 0.90f + 1.00f * u));
+        }
+
+        // DISPARITION (150 -> 170). Le conduit se coupe, le treillis n'est plus tenu.
+        chaosFade(sl, now, ox, oy, oz, SoundEvents.CONDUIT_DEACTIVATE,
+                150, 6, 3, 2.25f, 0.98f, 0.50f);
+
         // --- 0 : LE CLOUAGE. La sphere est un lieu : elle n'a de sens que si on y est
         //     retenu. C'est la seule des trois ou le clouage change aussi la REGLE —
         //     l'entropie punit la presence, et la presence est maintenant imposee.
@@ -6685,6 +6915,52 @@ public final class WeaponVfxServerListener {
         final float base = Math.max(1.5f, weaponDamage * 0.88f);
         final int[] beats = { 24, 48, 70, 88, 102, 112 };
 
+        // ==================== T406 — LA PARTITION DE LA CASCADE ====================
+        // Cette signature n'emettait AUCUN son : ni apparition, ni temps fort, ni fin.
+        //
+        // APPARITION (0 -> 21). Une note tenue, unique — l'etat avant la premiere
+        // bifurcation. Elle monte du silence et reste basse : tout le propos est qu'elle
+        // va se dedoubler.
+        chaosSwell(sl, now, ox, oy, oz, SoundEvents.BEACON_AMBIENT,
+                0, 7, 3, 2.25f, 0.52f, 0.74f);
+
+        // LES SIX VAGUES. La loi de la figure est le DOUBLEMENT ; la partition l'applique
+        // litteralement : la vague k contient 2^k frappes serrees dans une fenetre qui
+        // retrecit. Une vague, deux, quatre, huit, seize, trente-deux — a la sixieme on
+        // n'entend plus des coups mais un roulement. C'est la bifurcation rendue audible,
+        // et c'est la seule maniere honnete de la faire entendre : par le nombre, comme la
+        // figure la montre par le comptage des anneaux.
+        for (int k = 0; k < beats.length; k++) {
+            final int wave = k;
+            final int shots = 1 << wave;
+            final float win = 9.0f - 1.05f * wave;
+            final float gap = Math.max(0.65f, win / Math.max(1, shots));
+            // La tete de vague : elle marque le debut, deux registres, et elle monte d'un
+            // demi-ton a chaque dedoublement.
+            TestProcedure.schedule(sl, now + beats[wave], () -> chaosHit(sl, ox, oy, oz,
+                    SoundEvents.NETHERITE_BLOCK_BREAK, 2.15f, 0.88f - 0.052f * wave,
+                    SoundEvents.NOTE_BLOCK_BIT.value(), 1.25f, 0.70f + 0.19f * wave));
+            // Le corps de vague : les 2^k branches. Ratio 1.0 — l'acceleration vient du
+            // NOMBRE, pas d'un resserrement arbitraire.
+            chaosRoll(sl, now, ox, oy, oz, SoundEvents.AMETHYST_BLOCK_HIT,
+                    beats[wave] + 1, shots, gap, 1.0f,
+                    1.45f, 1.05f, 0.76f + 0.20f * wave, 1.02f + 0.19f * wave);
+        }
+
+        // LA FENETRE DE PERIODE 3 (132 / 140 / 148). Trois cloches IDENTIQUES, a la meme
+        // hauteur et au meme volume, espacees de huit ticks exactement. Apres trente-deux
+        // frappes indistinctes, trois sons qu'on peut compter : l'ordre revenu au milieu du
+        // chaos s'entend par le retour du denombrable.
+        for (int k = 0; k < 3; k++) {
+            TestProcedure.schedule(sl, now + 132 + k * 8, () -> chaosHit(sl, ox, oy, oz,
+                    SoundEvents.NOTE_BLOCK_BELL.value(), 2.30f, 0.94f,
+                    SoundEvents.AMETHYST_BLOCK_CHIME, 1.35f, 1.56f));
+        }
+
+        // DISPARITION (156 -> 170). La cascade se tait en descendant.
+        chaosFade(sl, now, ox, oy, oz, SoundEvents.BEACON_DEACTIVATE,
+                156, 5, 3, 2.10f, 1.02f, 0.50f);
+
         // --- 0 : LE CLOUAGE. Une cascade qui se dedouble autour d'un corps absent ne
         //     montre rien : la cible tient le centre du diagramme pendant 170 ticks.
         chaosRoot(sl, target, 164);
@@ -6774,6 +7050,42 @@ public final class WeaponVfxServerListener {
         final double oy = target.getY() + target.getBbHeight() * 0.50;
         final double oz = target.getZ();
         final float base = Math.max(1.8f, weaponDamage * 0.95f);
+
+        // ===================== T406 — LA PARTITION DU TAS ==========================
+        // APPARITION (0 -> 24). Le tas se construit grain par grain : vingt chutes de
+        // sable dont l'intervalle RALENTIT (ratio 1.045). Un tas qui se remplit se tasse —
+        // il accepte de moins en moins vite, et c'est ce ralentissement qui annonce que la
+        // pente approche de son seuil.
+        chaosRoll(sl, now, ox, oy, oz, SoundEvents.SAND_PLACE,
+                0, 20, 1.5f, 1.045f, 1.15f, 1.85f, 1.45f, 0.72f);
+        chaosSwell(sl, now, ox, oy, oz, SoundEvents.SCULK_CATALYST_BLOOM,
+                4, 6, 4, 1.95f, 0.72f, 0.54f);
+
+        // LES QUATRE AVALANCHES (52 / 92 / 126 / 150). Chacune s'effondre : une courte
+        // rafale de gravier qui accelere (ratio 0.80), fermee par un coup grave. La
+        // quatrieme est la rupture — elle est plus longue et plus basse que les trois
+        // autres, parce que c'est le grain de trop.
+        final int[] sfxPile = { 52, 92, 126, 150 };
+        for (int k = 0; k < sfxPile.length; k++) {
+            final int slide = k;
+            final boolean last = slide == sfxPile.length - 1;
+            chaosRoll(sl, now, ox, oy, oz, SoundEvents.GRAVEL_BREAK,
+                    sfxPile[slide], last ? 14 : 6, 2.4f, 0.80f,
+                    1.25f, last ? 2.40f : 1.80f,
+                    1.10f - 0.14f * slide, 0.62f - 0.04f * slide);
+            TestProcedure.schedule(sl, now + sfxPile[slide] + (last ? 8 : 5),
+                    () -> chaosHit(sl, ox, oy, oz,
+                            last ? SoundEvents.WARDEN_SONIC_BOOM : SoundEvents.IRON_GOLEM_DAMAGE,
+                            last ? 2.90f : 1.95f, last ? 0.50f : 0.80f - 0.07f * slide,
+                            SoundEvents.DEEPSLATE_BREAK, 1.30f, 1.30f + 0.16f * slide));
+        }
+
+        // DISPARITION (170 -> 198). La poussiere retombe : le dernier gravier roule encore
+        // quand tout le reste s'est tu.
+        chaosFade(sl, now, ox, oy, oz, SoundEvents.SAND_FALL,
+                170, 8, 3, 2.00f, 0.92f, 0.50f);
+        TestProcedure.schedule(sl, now + 196, () -> chaosSfx(sl, ox, oy, oz,
+                SoundEvents.DEEPSLATE_BREAK, 1.20f, 0.50f));
 
         // --- 0 : LE CLOUAGE, et il dure. Tout l'interet du tas est qu'on soit encore
         //     dessous quand il tombe.
@@ -6877,6 +7189,41 @@ public final class WeaponVfxServerListener {
         final double oz = target.getZ();
         final float base = Math.max(1.6f, weaponDamage * 0.92f);
         final boolean solo = voidVictims(sl, ox, oy, oz, 6.0, 3.2, attackerId).size() <= 1;
+
+        // ===================== T406 — LA PARTITION DU BIG BANG =====================
+        // L'EFFONDREMENT (6 -> 82). Dix-huit battements de timbale dont l'intervalle est
+        // multiplie par 0.885 a chaque coup : le compte a rebours ne bat pas la mesure, il
+        // se PRECIPITE. Le volume passe de 0.9 a 2.8 et la hauteur de 0.50 a 1.05 — grave
+        // et lointain au debut, present et tendu a la fin.
+        chaosRoll(sl, now, ox, oy, oz, SoundEvents.NOTE_BLOCK_BASEDRUM.value(),
+                6, 18, 7.4f, 0.885f, 0.90f, 2.80f, 0.50f, 1.05f);
+        // Sous les battements, une aspiration continue qui monte du silence : c'est elle
+        // qui dit que quelque chose se remplit.
+        chaosSwell(sl, now, ox, oy, oz, SoundEvents.WARDEN_HEARTBEAT,
+                10, 9, 8, 2.10f, 0.52f, 0.96f);
+        // LE SILENCE AVANT. Deux ticks de rien : sans creux, la detonation n'a pas de
+        // relief. Le dernier souffle est tire vers le haut puis coupe net.
+        TestProcedure.schedule(sl, now + 80, () -> chaosSfx(sl, ox, oy, oz,
+                SoundEvents.BREEZE_INHALE, 2.30f, 1.85f));
+
+        // LA DETONATION (84). Quatre registres empiles sur le meme tick, du plus grave au
+        // plus aigu, tous au-dessus de 2.0 : c'est le seul moment de toute la suite ou le
+        // son doit s'entendre a quarante blocs.
+        TestProcedure.schedule(sl, now + 84, () -> {
+            chaosSfx(sl, ox, oy, oz, SoundEvents.WARDEN_SONIC_BOOM, 3.00f, 0.50f);
+            chaosSfx(sl, ox, oy, oz, SoundEvents.GENERIC_EXPLODE.value(), 3.00f, 0.62f);
+            chaosSfx(sl, ox, oy, oz, SoundEvents.LIGHTNING_BOLT_THUNDER, 2.60f, 0.88f);
+            chaosSfx(sl, ox, oy, oz, SoundEvents.END_PORTAL_SPAWN, 2.20f, 1.42f);
+        });
+
+        // L'EXPANSION (92 -> 196). Le souffle s'eloigne : quatorze repetitions qui
+        // decroissent vers zero en DESCENDANT d'une octave. Un son qui s'eteint en
+        // restant a la meme hauteur reste sur place ; c'est la chute de hauteur qui le
+        // fait partir au loin.
+        chaosFade(sl, now, ox, oy, oz, SoundEvents.PORTAL_TRAVEL,
+                92, 14, 7, 2.40f, 1.46f, 0.52f);
+        TestProcedure.schedule(sl, now + 192, () -> chaosSfx(sl, ox, oy, oz,
+                SoundEvents.RESPAWN_ANCHOR_DEPLETE.value(), 1.50f, 0.50f));
 
         // --- 0 -> 78 : QUATORZE TRACTIONS. Le compte a rebours de l'effondrement.
         for (int k = 0; k < 14; k++) {

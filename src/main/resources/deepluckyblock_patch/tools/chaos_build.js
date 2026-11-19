@@ -181,28 +181,77 @@ function buildChaos(variant, t, salt = 4421) {
    *  I. BOUCLE KALÉIDOSCOPIQUE — un GROUPE DIÉDRAL d'ordre six
    * ====================================================================================== */
   function kaleido(tt, emitPixels) {
-    const YC = 1.05, SECTORS = 6, WEDGE = PI / 6, CELL = PI / 3;
-    /* NEUF ÉCLATS DE CINQ CUBES, et non quarante perles isolées. Mesuré au banc :
-       trente-quatre perles indépendantes copiées douze fois donnent bien une figure
-       rigoureusement symétrique — et elle se lit comme un confetti. L'œil ne vérifie pas
-       une symétrie sur des points : il lui faut une FORME dont il puisse suivre le
-       contour et reconnaître le retournement. */
+    /* T406 — LA GALETTE DEVIENT UNE COUPOLE.
+
+       L'ancienne version etait un disque plat de 2,8 blocs flottant a 1,05 au-dessus du
+       mob : en jeu, elle passait pour un tapis pose sur la tete. Le kaleidoscope est
+       maintenant un DOME de huit blocs de rayon dont le mob occupe le centre exact. Il
+       garde toute l'optique de la version plate — six secteurs, douze parois, reflexion
+       dans chaque cellule — mais pliee sur une demi-sphere. Et le zenith sert : a chaque
+       temps fort les eclats y montent, s'y agglomerent en goutte, qui tombe et explose.
+
+       Miroir exact de ChaosSignatureVfx.renderKaleido. */
+    const HALF_PI = PI * 0.5;
+    const SECTORS = 6, WEDGE = PI / 6, CELL = PI / 3;
+    const DOME_R = 8.0, DOME_H = 6.70;
     const SHARDS = 9, PER = 5;
-    const open = smooth(tt, 0.01, 0.26);
-    const radius = 0.42 + 2.42 * open;
-    const spin = tt * 2.05;
+
+    const floorY = GROUND > -9.0 ? GROUND + 0.04 : -0.60;
+    /* LA COTE D'IMPACT : le torse. Le repere a son origine au centre du corps, donc le
+       mob occupe de -0.90 a +0.90 ; une goutte qui descend jusqu'au plancher traverse la
+       cible au lieu de la frapper. */
+    const HIT_Y = 0.35;
+
+    const open = smooth(tt, 0.01, 0.20);
+    const close = smooth(tt, 0.90, 1.0);
+    const live = 1.0 - 0.82 * close;
+    const radius = DOME_R * open;
+    const hgt = DOME_H * open;
+    const spin = tt * 1.35;
+
     const chaos = smooth(tt, 0.46, 0.62) * (1 - smooth(tt, 0.70, 0.80));
     const relock = smooth(tt, 0.78, 0.83) * (1 - smooth(tt, 0.86, 0.93));
+    /* LE RECUL DE LA COUPOLE : capture de la version precedente -- 1472 cubes a l'ecran
+       dont 36 pour l'explosion, soit 2 % de l'image. Ce n'est pas la taille qui fait
+       exister un evenement dans une figure saturee, c'est le CONTRASTE. */
+    let domeDim = 1.0;
+
+    /* LES SIX GOUTTES — memes temps forts que la partition serveur. La chute est en
+       carre : une goutte TOMBE, elle ne descend pas a vitesse constante. */
+    const nowT = tt * 150.0;
+    let gather = 0.0, dropY = -1.0, dropGrow = 0.0, burst = 0.0, burstU = 1.0, dropId = 0;
+    for (let d = 0; d < 6; d++) {
+      const since = nowT - (30 + d * 18);
+      /* TREIZE TICKS, pas vingt-six : les temps forts sont espaces de dix-huit, une
+         fenetre plus longue que l'intervalle ne retombe jamais a zero. */
+      const g = smooth(since, -9.0, -4.0) * (1 - smooth(since, 0.0, 4.0));
+      if (g > gather) gather = g;
+      if (since >= -9.0 && since < 0.5) {
+        dropId = d;
+        dropGrow = smooth(since, -9.0, -5.0);
+        const fall = clamp01((since + 5.0) / 5.0);
+        dropY = 1.0 - fall * fall;
+      }
+      /* L'AGE et l'INTENSITE separes : une explosion est instantanee a l'allumage. */
+      if (since >= 0.0 && since < 14.0) {
+        const u = since / 14.0;
+        const inten = (1.0 - u) * (1.0 - 0.35 * u);
+        if (inten > burst) { burst = inten; burstU = u; dropId = d; }
+      }
+    }
+    domeDim = 1.0 - 0.52 * burst;
 
     if (!emitPixels) {
+      /* LES ECLATS. Le parametre qui portait le rayon porte maintenant la LATITUDE : le
+         motif est enroule sur la demi-sphere au lieu d'etre pose a plat. */
       for (let sh = 0; sh < SHARDS; sh++) {
-        const band = 0.16 + 0.78 * hash(salt + sh, 1);
+        const lat0 = 0.08 + 0.78 * hash(salt + sh, 1);
         const aC = 0.055 + (WEDGE - 0.11) * hash(salt + sh, 2);
-        const dirR = (hash(salt + sh, 3) - 0.5) * 0.40;
+        const dirL = (hash(salt + sh, 3) - 0.5) * 0.34;
         const dirA = (hash(salt + sh, 4) - 0.5) * 0.17;
-        const size = 0.036 + 0.030 * hash(salt + sh, 5);
+        const size = 0.086 + 0.062 * hash(salt + sh, 5);
         const k1 = 1 + (sh % 3), k2 = 1 + ((sh * 7) % 4);
-        const wobR = 0.070 * sin(TAU * (k1 * tt + hash(salt + sh, 6)));
+        const wobL = 0.055 * sin(TAU * (k1 * tt + hash(salt + sh, 6)));
         const wobA = 0.080 * sin(TAU * (k2 * tt + hash(salt + sh, 7)));
 
         let mode, hue, gray;
@@ -212,102 +261,199 @@ function buildChaos(variant, t, salt = 4421) {
         else if (kind === 2) { mode = M_PULSE; hue = H_VIOLET; gray = G_MID; }
         else { mode = M_TINTED; hue = H_MAGENTA; gray = G_DEEP; }
         if (chaos > 0.45 && ((sh * 5 + salt) % 3) === 0) { mode = M_STROBE; gray = G_GLASS; }
+        /* LA PART MOBILE : trois eclats sur neuf montent, les six autres tiennent la
+           coupole. Le contraste entre les deux est ce qui rend le ramassement lisible. */
+        const lifts = (sh % 3) === 0;
 
         for (let c = 0; c < PER; c++) {
           const u = c / (PER - 1) - 0.5;
-          const r0 = Math.max(0.08, Math.min(1.0, band + dirR * u + wobR));
-          const a0 = Math.max(0.012, Math.min(WEDGE - 0.012, aC + dirA * u + wobA));
+          let l0 = lat0 + dirL * u + wobL;
+          l0 = l0 < 0.03 ? 0.03 : l0 > 0.97 ? 0.97 : l0;
+          let a0 = aC + dirA * u + wobA;
+          a0 = a0 < 0.012 ? 0.012 : a0 > WEDGE - 0.012 ? WEDGE - 0.012 : a0;
+          /* LA CONCENTRATION : la latitude est tiree vers 1, les cinquante-quatre eclats
+             et leurs reflets convergent au sommet. La goutte est faite de la matiere de
+             la figure, elle n'apparait pas de nulle part. */
+          const lg = lifts ? l0 + (1.0 - l0) * gather * 0.88 : l0;
+          const phi = lg * HALF_PI;
+          const ring = cos(phi);
+          const up = floorY + sin(phi) * hgt;
 
           for (let sct = 0; sct < SECTORS; sct++) {
             for (let m = 0; m < 2; m++) {
-              /* LA RÉFLEXION : m = 0 l'éclat, m = 1 son image dans le miroir porté par
-                 l'axe à WEDGE. Les deux pavent la cellule de 60°, six cellules font le
-                 tour — groupe diédral d'ordre six, douze copies par motif. */
               let local = (m === 0) ? a0 : (CELL - a0);
-              let rr = r0;
+              let rr = ring;
               if (chaos > 0.001) {
                 const cid = sh * 97 + sct * 13 + m * 7;
                 local += chaos * 0.26 * (hash(salt + cid, 11) - 0.5);
-                rr += chaos * 0.22 * (hash(salt + cid, 12) - 0.5);
+                rr += chaos * 0.16 * (hash(salt + cid, 12) - 0.5);
               }
               const ang = spin + sct * CELL + local;
-              const rad = rr * radius;
-              /* LA GALETTE EST PLATE : vingt centimètres d'épaisseur suffisaient à
-                 brouiller la symétrie dès que la vue s'écartait de la verticale. */
-              const up = YC + 0.045 * (1 - rr) * (1 - rr);
-              const grow = clamp01(open * 1.5 - rr * 0.30);
-              cube(cos(ang) * rad, up, sin(ang) * rad, size * grow, ang, mode,
-                   relock > 0.35 ? G_FLASH : gray, hue, a * (0.82 + 0.18 * relock) * grow);
+              const dist = (rr < 0 ? 0 : rr > 1.08 ? 1.08 : rr) * radius;
+              const grow = clamp01(open * 1.5 - (1.0 - lg) * 0.25);
+              const sz = size * grow * (1.0 + (lifts ? 0.85 : 0.16) * gather) * live;
+              cube(cos(ang) * dist, up, sin(ang) * dist, sz, ang, mode,
+                   relock > 0.35 ? G_FLASH : gray, hue,
+                   a * (0.82 + 0.18 * relock) * grow * live * domeDim);
             }
           }
         }
       }
 
-      /* LES PAROIS DE MIROIR — six fentes de pliage, six axes de réflexion. C'est la
-         pièce qui transforme « motif symétrique » en « instrument d'optique ». */
+      /* LES DOUZE COTES. Les anciennes parois de miroir, relevees : chacune part du sol
+         et monte au zenith. C'est la piece qui fait lire « DOME » et non « boule ». */
       for (let w = 0; w < 12; w++) {
         const fold = (w % 2) === 0;
         const ang = spin + w * WEDGE;
-        const steps = 30;
-        for (let k = 1; k <= steps; k++) {
-          const rr = k / steps;
+        const steps = 32;
+        for (let k = 0; k <= steps; k++) {
           if (chaos > 0.25 && hash(salt + w * 31, k * 17) < chaos * 0.55) continue;
-          const rad = rr * radius * 1.02;
-          cube(cos(ang) * rad, YC + 0.045 * (1 - rr) * (1 - rr), sin(ang) * rad,
-               fold ? 0.040 : 0.026, ang, fold ? M_DUAL : M_MONO,
-               fold ? G_GLASS : G_FRAME, fold ? H_BLUE : 0.0,
-               a * (fold ? 0.98 : 0.80) * open);
+          const phi = (k / steps) * HALF_PI;
+          const dist = cos(phi) * radius * 1.01;
+          const up = floorY + sin(phi) * hgt;
+          cube(cos(ang) * dist, up, sin(ang) * dist,
+               (fold ? 0.112 : 0.074) * live, ang,
+               fold ? M_DUAL : M_MONO, fold ? G_GLASS : G_FRAME,
+               fold ? H_BLUE : 0.0, a * (fold ? 0.98 : 0.78) * open * live * domeDim);
         }
       }
 
-      /* LES ANNEAUX CONCENTRIQUES — la lecture radiale du motif. */
-      for (let ring = 0; ring < 3; ring++) {
-        const rr = 0.34 + ring * 0.27;
-        const marks = 34 + ring * 14;
+      /* LES PARALLELES. Sept cercles horizontaux ; le nombre de cubes suit le rayon, a
+         densite constante — un cercle qui s'epaissit en montant trahirait la courbure. */
+      for (let ring = 0; ring < 7; ring++) {
+        const phi = ((ring + 0.5) / 7) * HALF_PI;
+        const dist = cos(phi) * radius;
+        const up = floorY + sin(phi) * hgt;
+        const marks = Math.max(9, Math.round(dist * 7.0));
         for (let k = 0; k < marks; k++) {
           if (chaos > 0.3 && hash(salt + 400 + ring, k) < chaos * 0.6) continue;
           const ang = spin * (ring % 2 === 0 ? 1.0 : -0.65) + k / marks * TAU;
-          const rad = rr * radius;
-          cube(cos(ang) * rad, YC + 0.045 * (1 - rr) * (1 - rr), sin(ang) * rad,
-               0.019, ang, M_MONO, G_MID, 0.0, a * 0.62 * open);
+          cube(cos(ang) * dist, up, sin(ang) * dist, 0.052 * live, ang,
+               M_MONO, G_MID, 0.0, a * 0.62 * open * live * domeDim);
         }
       }
 
-      /* LA CERCLURE — CLAIRE et non masquante : un cercle presque noir sur fond de nuit
-         ne ferme rien du tout. */
-      const rim0 = 86;
+      /* LA CERCLURE AU SOL : le pied du dome. C'est a elle qu'on mesure les huit blocs. */
+      const rim0 = 96;
       for (let k = 0; k < rim0; k++) {
         const ang = spin * 0.8 + k / rim0 * TAU;
-        const rad = radius * 1.07;
-        cube(cos(ang) * rad, YC, sin(ang) * rad, 0.036, ang, M_DUAL, G_GLASS, H_ROSE,
-             a * 0.95 * open);
+        const dist = radius * 1.02;
+        cube(cos(ang) * dist, floorY + 0.06, sin(ang) * dist, 0.098 * live, ang,
+             M_DUAL, G_GLASS, H_ROSE, a * 0.95 * open * live);
       }
 
-      if (GROUND > -9.0) {
+      /* LE ZENITH — la clef de voute. Sans elle les douze cotes se croisent dans le vide
+         et le sommet a l'air inacheve. Elle enfle quand la goutte se charge. */
+      {
+        const keyS = (0.13 + 0.40 * gather) * live;
+        const keyY = floorY + hgt;
+        for (let k = 0; k < 7; k++) {
+          const ang = spin * 2.1 + k / 7 * TAU;
+          const dist = (0.16 + 0.42 * (1.0 - gather)) * open;
+          cube(cos(ang) * dist, keyY, sin(ang) * dist, keyS, ang,
+               gather > 0.4 ? M_STROBE : M_DUAL, G_FLASH, H_CYAN,
+               a * (0.70 + 0.30 * gather) * open * live);
+        }
+      }
+
+      /* LA GOUTTE : un noyau serre, une colonne de chute, une taille qui augmente en
+         descendant — une masse qui arrive, pas un point qui glisse. */
+      if (dropGrow > 0.01 && dropY >= 0.0) {
+        const zen = floorY + hgt;
+        const dY = HIT_Y + dropY * (zen - HIT_Y);
+        const speed = 1.0 - dropY;
+        const core = (0.26 + 0.34 * dropGrow) * (1.0 + 0.60 * speed);
+        for (let k = 0; k < 8; k++) {
+          const ang = k / 8 * TAU + nowT * 0.55;
+          const dist = core * 0.85;
+          cube(cos(ang) * dist, dY, sin(ang) * dist, core * 0.62, ang,
+               M_PULSE, G_FLASH, H_CYAN, a * 0.98);
+        }
+        put(0, dY, 0, core, core * 1.45, core, 0, M_DUAL, G_CORE, H_BLUE, a * 1.0);
+        for (let k = 1; k <= 10; k++) {
+          const back = k / 10;
+          const ty = dY + back * speed * (zen - HIT_Y) * 0.52;
+          if (ty > zen) continue;
+          cube(0, ty, 0, core * (1.0 - 0.80 * back) * 0.70, 0,
+               M_TINTED, G_GLASS, H_CYAN, a * (1.0 - back) * 0.72);
+        }
+      }
+
+      /* L'EXPLOSION SUR LE MOB : une onde depuis le corps, plus une colonne de retour.
+         Centree sur le mob et non sur le sol, parce que c'est LUI qui est frappe. */
+      if (burst > 0.01) {
+        /* TROIS BLOCS ET DEMI, pas cinq et demi : a 5,4 l'onde couvrait le dome entier
+           et se lisait comme un effondrement de la figure, pas comme un coup au centre. */
+        /* LE RAYON SUIT LA RACINE DE L'AGE : violent puis ralenti. Indexe sur
+           l'intensite, il se figeait a son maximum onze ticks durant. */
+        const egrow = sqrt(burstU);
+        const er = 0.55 + 2.95 * egrow;
+        const eh = 0.80 + 1.80 * egrow;
+        const fade = burst;
+        /* LE NOYAU : une onde sans point de depart brillant n'a pas de cause visible. */
+        const nuke = 0.80 * burst * burst;
+        for (let k = 0; k < 8; k++) {
+          const ang = k / 8 * TAU + nowT * 0.9;
+          const dist = nuke * 0.70;
+          cube(cos(ang) * dist, HIT_Y + 0.12 * sin(ang * 2.0), sin(ang) * dist,
+               nuke, ang, M_STROBE, G_CORE, H_CYAN, a * (0.55 + 0.45 * fade));
+        }
+        for (let k = 0; k < 60; k++) {
+          const ang = k / 60 * TAU + dropId * 0.41;
+          const phi = (hash(salt + 900 + dropId, k) * 1.10 - 0.22) * HALF_PI * 0.80;
+          const dist = er * cos(phi) * (0.80 + 0.40 * hash(salt + 930, k));
+          const up = HIT_Y + sin(phi) * eh;
+          cube(cos(ang) * dist, up, sin(ang) * dist, 0.14 + 0.20 * burst, ang,
+               (k % 3 === 0) ? M_STROBE : M_PULSE,
+               (k % 3 === 0) ? G_FLASH : G_FRAME, H_CYAN,
+               a * (0.12 + 0.88 * fade));
+        }
+        /* L'ANNEAU DE CHOC AU SOL : une explosion en l'air n'a pas de point d'appui. */
         for (let k = 0; k < 44; k++) {
-          const ang = -spin * 0.5 + k / 44 * TAU;
-          const rad = radius * (0.5 + 0.55 * hash(salt + 77, k));
-          put(cos(ang) * rad, GROUND + 0.03, sin(ang) * rad,
-              0.040, 0.016, 0.040, 0, M_MONO, G_MASK, 0.0, a * 0.55 * open);
+          const ang = k / 44 * TAU - dropId * 0.29;
+          const dist = er * 1.18;
+          const hh = 0.10 + 0.12 * burst;
+          put(cos(ang) * dist, floorY + 0.07, sin(ang) * dist, hh, 0.055, hh, ang,
+              M_STROBE, G_FLASH, H_CYAN, a * (0.10 + 0.90 * fade));
+        }
+        for (let k = 0; k < 9; k++) {
+          const up = HIT_Y - 0.62 + k / 9 * eh * 1.30;
+          const wob = 0.14 * sin(nowT * 0.8 + k);
+          cube(wob, up, -wob, 0.27 * (1.0 - k / 11) * (0.4 + 0.6 * burst), 0,
+               M_DUAL, G_CORE, H_BLUE, a * (0.95 - 0.6 * (k / 9)));
+        }
+      }
+
+      /* LE DISQUE AU SOL : l'ombre claire de la coupole, qui s'illumine a chaque goutte. */
+      if (GROUND > -9.0) {
+        for (let k = 0; k < 52; k++) {
+          const ang = -spin * 0.5 + k / 52 * TAU;
+          const dist = radius * (0.30 + 0.70 * hash(salt + 77, k));
+          put(cos(ang) * dist, GROUND + 0.03, sin(ang) * dist,
+              0.090, 0.016, 0.090, 0,
+              burst > 0.3 ? M_PULSE : M_MONO,
+              burst > 0.3 ? G_FRAME : G_MASK, H_CYAN,
+              a * (0.55 + 0.40 * burst) * open * live);
         }
       }
       return;
     }
 
     /* --- naissances de pixels libres pour ce tick --- */
-    const rim = 86;
+    const rim = 96;
     const tick = Math.round(tt * DUR);
     if (chaos > 0.30 && ((salt + tick) % 3) === 0) {
       const k = (salt + tick * 7) % rim;
       const ang = spin * 0.8 + k / rim * TAU;
-      const rad = radius * 1.07;
-      spawn(cos(ang) * rad, YC, sin(ang) * rad,
-            cos(ang) * 0.055, 0.030, sin(ang) * 0.055, 0.085, 26, M_STROBE, 0.0, 0.22, G_GLASS);
+      const phi = hash(salt + 55, k) * HALF_PI * 0.75;
+      const dist = radius * 1.02 * cos(phi);
+      spawn(cos(ang) * dist, floorY + sin(phi) * hgt, sin(ang) * dist,
+            cos(ang) * 0.075, 0.040, sin(ang) * 0.075, 0.105, 26, M_STROBE, 0.0, 0.22, G_GLASS);
     }
-    if (relock > 0.5 && ((salt + tick) % 2) === 0) {
+    if (burst > 0.5 && ((salt + tick) % 2) === 0) {
       const ang = hash(salt, tick) * TAU;
-      const rad = radius * 0.7;
-      spawn(cos(ang) * rad, YC, sin(ang) * rad, 0, 0.085, 0, 0.07, 20, M_MONO, 0.0, 0.10, G_FLASH);
+      spawn(0, HIT_Y, 0, cos(ang) * 0.11, 0.22, sin(ang) * 0.11,
+            0.085, 22, M_PULSE, H_CYAN, 0.16, G_FLASH);
     }
   }
 
