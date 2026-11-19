@@ -24,7 +24,71 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > toujours la dernière version, une fois le cache expiré (quelques minutes). Les liens en
 > SHA sont l'adresse **immédiate**, à utiliser le jour de la livraison.
 
-## Chaos — quinze coups, quinze formes · 4 novembre 2026 ⟵ **LOT COURANT**
+## Chaos — cinq signatures, deux nouvelles · 4 novembre 2026 ⟵ **LOT COURANT**
+
+### Liens figés sur le commit `033da8b8` — garantis frais
+
+- **Aperçu des cinq signatures (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/033da8b893128dd95d606e7047f79c4ef47efb4d/deliverables/DLB_Chaos_Five_Signatures_preview.html
+- **Démo du shader Pixels 3D (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/033da8b893128dd95d606e7047f79c4ef47efb4d/deliverables/DLB_Void_Pixel_shader_demo.html
+- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/033da8b893128dd95d606e7047f79c4ef47efb4d/deliverables/DLB_Chaos_Five_Signatures_src.zip
+
+### Liens stables sur la branche — toujours la dernière version
+
+- **Aperçu des cinq signatures (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Five_Signatures_preview.html
+- **Démo du shader Pixels 3D (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Pixel_shader_demo.html
+- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Five_Signatures_src.zip
+- **Ce fichier de liens** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/LIENS-DE-TELECHARGEMENT.md
+
+> **T402 — le Chaos passe de trois à cinq, et les deux nouvelles ne sont pas dessinées :
+> elles sont calculées.**
+>
+> Les trois premières signatures posaient des cubes sur des courbes écrites à la main.
+> Les deux nouvelles font tourner un vrai algorithme et posent un cube à chaque valeur
+> qu'il produit. C'est le changement d'approche, et il se voit : les motifs qui
+> apparaissent ne pourraient pas être inventés.
+>
+> **Ⅳ. Cascade de Bifurcation (170 ticks) — elle DIVISE.** La carte logistique
+> `x = r·x·(1−x)` est réellement itérée : 96 colonnes de `r` entre 2,70 et 3,99, 110 pas
+> de transitoire brûlés pour que l'orbite se pose sur son attracteur, 26 échantillons
+> tracés. `r` court sur l'axe attaquant → cible, `x` est la hauteur. Le dédoublement est
+> **mesuré, pas prétendu** : à `r` = 2,85 la nappe tient dans **une** bande de 0,02 bloc ;
+> à 3,20 elle en fait **deux** (0,76) ; à 3,50, **quatre** (1,28) ; à 3,90 l'œil ne compte
+> plus rien (2,27). Six vagues aux ticks 24, 48, 70, 88, 102, 112 — intervalles qui se
+> resserrent 24, 22, 18, 14, 10 — et la vague `k` porte `2^k` coups : **63 impacts qui
+> accélèrent**. Chaque coup tombe **sur le diagramme lui-même**, à la valeur que
+> l'attracteur prend vraiment à son `r` : la grêle épouse la cascade au lieu de se
+> superposer à elle.
+>
+> **Ⅴ. Le Grain de Trop (200 ticks) — elle ATTEND.** L'automate abélien de
+> Bak-Tang-Wiesenfeld, exécuté pour de bon : grille 19×19, un grain déposé au centre, et
+> toute case qui en compte quatre se vide sur ses quatre voisines. Neuf cents grains au
+> moment de la rupture. **L'automate sature à trois** — une case stable n'en contient
+> jamais quatre — donc ce n'est pas un tas mais une **plaque fractale**, et c'est
+> pourquoi sa caméra est la seule, avec le kaléidoscope, à regarder presque à la
+> verticale ; la hauteur, qui tient en trois crans, est portée par la **couleur**. Trois
+> micro-glissements volontairement maigres, puis **une seule** avalanche au tick 150,
+> qui vaut 4,5 × l'arme.
+>
+> **Elles sont diamétralement opposées, terme à terme** : 63 impacts qui accélèrent
+> contre **un seul** après sept secondes et demie de silence ; une nappe verticale vue de
+> profil contre une plaque horizontale vue de dessus ; le spectre entier contre des gris
+> qui virent à la braise ; une équation exacte contre un automate émergent.
+>
+> **Aucun temps fort ne partage sa géométrie avec un autre.** Les six vagues de la
+> Cascade ne diffèrent pas par un angle ou une échelle : leur nombre double, leur
+> étalement sur l'axe `r` change, leur durée tombe de 8 à 3,5 ticks, et une seule voix
+> sonore est jouée par vague, montant d'une octave à chaque doublement — trente-deux
+> sons sur la dernière vague seraient un bruit blanc.
+>
+> **Vérifié.** `floatcheck` 218 fichiers / 0 alerte · `glslcheck` 4 / 0 · `typecheck`
+> rien de neuf · `semcheck` identique au commit précédent sur les six fichiers touchés
+> (21 alertes sur `WeaponVfxServerListener` **avant comme après**) · `node --check` sur
+> le miroir JS · 16 captures Playwright sans une seule erreur JS.
+>
+> **Toujours à valider en jeu** : `javac` n'est pas disponible ici, les bancs ne
+> remplacent pas une compilation.
+
+## Chaos — quinze coups, quinze formes · 4 novembre 2026
 
 - **Aperçu voxel des trois signatures (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Three_Signatures_preview.html
 - **Démo du core shader des Pixels 3D (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Void_Pixel_shader_demo.html
