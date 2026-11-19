@@ -2,67 +2,82 @@
 
 ## ⬇️ L'archive — c'est le seul lien
 
-https://github.com/Deepie1/dlbv1.21.1neoforge/raw/b4625482a7061297d7ba7ee709d0368c2a24ffe6/deliverables/DLB_src.zip
+https://github.com/Deepie1/dlbv1.21.1neoforge/raw/07091cea7df32ac3de59fc2e40663a881fc38681/deliverables/DLB_src.zip
 
-`DLB_src.zip` · 112 fichiers · 1 925 574 octets
-<br>SHA-256 `88fc0fa39df77c4325eeb0764176b0db3f3858a6f95b7cf154b298bc8d6f71bc`
+`DLB_src.zip` · 114 fichiers · 1 935 007 octets
+<br>SHA-256 `0b000cecb35403e768a8fb91eef90f92e53017a5375e79ce77525bcbf1a462a3`
 
 **Il n'y a plus qu'une seule archive et un seul lien.** `DLB_src.zip` porte toujours le
 même nom et contient à chaque fois **tous** les fichiers à jour. L'adresse contient le
-numéro de la livraison (`b462548…`) : c'est ce qui garantit que vous recevez la dernière
+numéro de la livraison (`07091ce…`) : c'est ce qui garantit que vous recevez la dernière
 version et jamais une copie en cache.
 
-### 1. Les compétences ne sont plus mélangées aux enchantements
+### 1. Il y avait huit capacités activées, pas trois
 
-Un enchantement qui n'est **rien d'autre qu'un pouvoir à déclencher** n'a plus sa ligne
-dans la liste d'enchantements : il est entièrement décrit dans l'encart **COMPÉTENCE**,
-avec son nom, son déclencheur et sa recharge. Trois sont concernés : **Invocation
-d'Armée**, **Armée du Chaos** et **Détecteur de Minerais**.
+La fois précédente je n'en avais trouvé que trois. J'ai repris la recherche au complet :
+toutes les recharges posées par le mod, tous les événements d'interaction, tous les
+verrous de temps, puis les **1742 descriptions d'enchantement** relues une par une à la
+recherche d'une touche citée. Vingt-huit candidates, classées à la main. **Huit** sont
+de vraies capacités activées ; les vingt autres sont des effets permanents que
+l'accroupissement modifie, et elles restent donc dans la liste d'enchantements.
 
-**Ce qui reste volontairement dans la liste, et pourquoi.** Les quarante-cinq signatures
-y restent : leur enchantement fait aussi quelque chose **en permanence**. *Tranchant
-Avancé* ajoute des dégâts à chaque coup, que vous lanciez la compétence ou non — vous
-cacher cette ligne vous priverait d'une information qui n'a rien à voir avec la
-compétence. Même raison pour les huit enchantements à recharge des effets de frappe. Et
-*Commandant*, *Commandant Illageois* et *Commandant Mort-Vivant* se lisent sur le casque
-et choisissent seulement **quel type de mob** apparaît : ce ne sont pas des compétences.
+Les cinq qui manquaient : **Puissance de Traction**, **Grappin**, **Loyauté Sincère**,
+**Explosion de Fusée** et **Glissade**.
 
-**Deux pièges évités en chemin.** L'affichage lit aussi les enchantements **stockés sur
-les livres** : sur un livre enchanté, la ligne est conservée, sinon l'enchantement aurait
-disparu de l'infobulle sans rien pour le remplacer. Et l'encart lit les enchantements
-par **exactement le même chemin** que le filtre : deux lectures différentes auraient pu
-se contredire et rendre un enchantement complètement invisible.
+| Capacité | Geste | Recharge |
+|---|---|---|
+| Détecteur de Minerais, Armée du Chaos, Invocation d'Armée | Clic droit, objet en main | 15 s, 18 s, 22 s |
+| Puissance de Traction, Grappin | Clic droit avec la canne, ligne lancée | aucune |
+| Loyauté Sincère | Clic droit main vide | aucune |
+| Explosion de Fusée | Clic droit sur une fusée, en vol d'Élytres | aucune |
+| Glissade | S'accroupir en plein sprint | 2 s |
 
-**Le Détecteur de Minerais n'avait aucune recharge.** Maintenir le clic droit relançait
-le balayage à chaque tick. Il a maintenant la sienne : **15 secondes**.
+### 2. Aucun geste ajouté — et un geste de trop retiré
 
-### 2. Une arme lootée sur vingt arrive avec une compétence — et elle se paie
+Chaque capacité garde **exactement** le geste qui la lançait avant. Annoncer une touche
+qui ne fait rien serait pire que de ne rien annoncer.
 
-**5 %** des épées, haches, masses et houes trouvées repartent avec une compétence. Elle
-ne s'ajoute pas gratuitement : l'arme la paie, par l'un des deux troc tirés à pile ou
-face.
+**Invocation d'Armée retrouve son geste unique.** Une livraison précédente lui avait
+ajouté un second déclencheur — clic droit sur un mob — avec sa propre recharge, à côté
+du clic droit en main qu'elle avait depuis toujours. Deux gestes et deux recharges pour
+un seul enchantement : le geste ajouté est retiré. C'est aussi la fin du défaut que je
+vous avais signalé à la fin du message précédent.
 
-* **Deux enchantements disparaissent**, pris au hasard parmi ceux de l'arme. Le troc
-  brutal : elle perd deux pouvoirs entiers et gagne une compétence.
-* **Tous les enchantements descendent de 0 à 3 niveaux.** Le troc diffus : l'arme garde
-  tout son répertoire, mais plus rien n'est à son maximum. Le tirage à **0** est laissé
-  exprès dans la fourchette — c'est le coup de chance où l'arme ne paie presque rien.
+**Les quatre capacités sans recharge n'en reçoivent pas.** L'encart n'affiche aucune
+recharge pour elles. En inventer une pour faire propre aurait changé le jeu sans que
+vous l'ayez demandé.
 
-Un enchantement qui tomberait à zéro est **retiré**, jamais laissé à zéro : il
-s'afficherait dans l'infobulle sans plus rien faire.
+### 3. Vos descriptions ne sont pas réécrites, elles sont réutilisées
 
-**Pourquoi seulement ces quatre armes.** Une compétence se lance au clic droit sur un
-mob, arme de mêlée en main. Sur une pioche ou un arc, ce serait un pouvoir que rien ne
-peut déclencher. Le tirage de butin interroge désormais **la même méthode** que le
-lanceur : les deux ne peuvent plus diverger.
+Vos descriptions expliquent **déjà** comment ces capacités se déclenchent. L'encart
+affiche donc votre texte, sous le nom officiel de l'enchantement, par le même moteur que
+la liste. Aucun fichier de langue n'a été modifié.
+
+### 4. Le gras
+
+Sont mis en gras, **à l'affichage uniquement** : les **touches** (clic droit, clic
+gauche, main vide, accroupi, et leurs équivalents anglais), les **durées** (15 s,
+18 secondes, 40 ticks) et l'**Étoile du Nether**, seul objet qu'une capacité exige pour
+partir.
+
+Mesuré sur les 1742 descriptions : **263 touchées (15 %)**, 1,1 passage en gras chacune.
+Les pourcentages de dégâts sont volontairement laissés en normal : il y en a dans
+presque chaque description, les marquer tous aurait noyé la touche et la recharge qu'on
+voulait justement faire ressortir. Dites-moi si vous en voulez davantage.
+
+### 5. Un défaut d'affichage trouvé en chemin
+
+**Loyauté Sincère** partage son effet visuel avec une compétence d'épée. L'encart
+annonçait donc, sur un trident, un clic droit sur un mob qui ne déclenche rien. Une
+compétence ne s'affiche plus que si l'objet sait vraiment la lancer.
 
 ### Ce qui n'a pas pu être vérifié
 
-`javac` est absent de l'environnement. `semcheck` (comparé message par message à la
-version précédente : aucune alerte nouvelle), `typecheck` (rien de neuf, 220 fichiers)
-et `floatcheck` (0 alerte) sont au vert, et les neuf contrôles de comportement ont été
-relus **à l'intérieur du ZIP produit**. **Mais ces bancs ne valent pas une compilation**,
-et rien n'a pu être observé en jeu.
+`javac` est absent de l'environnement. `semcheck` (aucune alerte nouvelle), `typecheck`
+(rien de neuf, 221 fichiers) et `floatcheck` (0 alerte) sont au vert, les sept méthodes
+neuves ont toutes un appelant, et dix contrôles de comportement ont été relus **à
+l'intérieur du ZIP produit**. **Mais ces bancs ne valent pas une compilation**, et rien
+n'a pu être observé en jeu.
 
 ---
 
