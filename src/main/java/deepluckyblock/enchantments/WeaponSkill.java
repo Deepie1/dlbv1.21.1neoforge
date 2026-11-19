@@ -236,9 +236,23 @@ public final class WeaponSkill {
         // effet que la signature "warp". Sans ce test, l'encart annoncerait sur un
         // trident un clic droit sur un mob qui ne declenche rien, et le joueur
         // chercherait une touche inexistante.
+        // T415-FIX-1 : on part des ENCHANTEMENTS DU MOD reellement portes, et non de
+        // resolveLayers(). La resolution de couches accepte des alias VANILLA :
+        // minecraft:mending et minecraft:unbreaking resolvent vers CHRONO_ETERNAL_HALO,
+        // minecraft:silk_touch vers une autre couche. Une epee lootee portant Raccommodage
+        // se voyait donc attribuer la competence « chrono_mending » qu'elle ne porte PAS,
+        // en plus de sa vraie competence : c'est l'origine des competences vues par deux.
+        // On garde forEnchantmentLocation pour conserver les alias du MOD (briar_cage,
+        // thorn_maw... pointent vers la meme couche que leur signature canonique).
         if (canCastSignature(stack)) {
-            for (WeaponVisualEffectId.ResolvedLayer layer : WeaponVisualEffectId.resolveLayers(stack, 2)) {
-                Entry e = BY_EFFECT.get(layer.effect());
+            for (net.minecraft.world.item.enchantment.Enchantment en
+                    : deepluckyblock.util.DeepEnchant.map(stack).keySet()) {
+                net.minecraft.resources.ResourceLocation loc =
+                        deepluckyblock.util.DeepEnchant.getKeySafe(en);
+                if (loc == null || !"deep_lucky_block".equals(loc.getNamespace())) continue;
+                WeaponVisualEffectId fx = WeaponVisualEffectId.forEnchantmentLocation(loc);
+                if (fx == null) continue;
+                Entry e = BY_EFFECT.get(fx);
                 if (e != null) found.putIfAbsent(e.enchantPath(), e);
             }
         }
@@ -282,12 +296,14 @@ public final class WeaponSkill {
      */
     public static Entry firstOn(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return null;
-        List<WeaponVisualEffectId.ResolvedLayer> layers = WeaponVisualEffectId.resolveLayers(stack, 2);
-        for (WeaponVisualEffectId.ResolvedLayer layer : layers) {
-            Entry e = BY_EFFECT.get(layer.effect());
+        // T415-FIX-1 : MEME source que l'encart d'infobulle (allOn). Avant ce correctif,
+        // firstOn relisait resolveLayers() directement et acceptait donc les alias vanilla :
+        // une epee portant seulement Raccommodage etait traitee comme une arme a competence,
+        // recevait le halo « prete » et lancait une signature au clic droit sur un mob.
+        for (Entry e : allOn(stack)) {
             // effect() non nul par construction ici, mais la garde documente l'invariant :
             // seule une signature se lance sur un mob, pas une capacite activee.
-            if (e != null && e.effect() != null && e.cast() == Cast.ON_MOB) return e;
+            if (e.effect() != null && e.cast() == Cast.ON_MOB) return e;
         }
         return null;
     }

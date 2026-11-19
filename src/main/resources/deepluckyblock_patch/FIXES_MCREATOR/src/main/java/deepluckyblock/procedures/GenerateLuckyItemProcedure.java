@@ -3091,7 +3091,22 @@ public class GenerateLuckyItemProcedure {
         // Epee, hache, masse ou houe : les seules armes qui savent lancer une signature.
         // Une competence sur une pioche ou un arc serait un pouvoir intriggerable.
         if (!deepluckyblock.enchantments.WeaponSkill.canCastSignature(stack)) return;
+        // T415-FIX-2 : DEUX tirages INDEPENDANTS a 5 %, et non un seul. Le premier decide
+        // d'une competence ; il n'est relance que s'il a donne, si bien qu'une DEUXIEME
+        // competence vaut 5 % x 5 % = 1 chance sur 400, et jamais davantage. Chaque
+        // competence paie son propre troc : deux competences coutent deux troc.
         if (random.nextInt(100) >= SKILL_DROP_PERCENT) return;
+        if (!grantOneSkill(stack, random)) return;
+        if (random.nextInt(100) >= SKILL_DROP_PERCENT) return;
+        grantOneSkill(stack, random);
+    }
+
+    /**
+     * Pose UNE competence et fait payer son troc. Renvoie {@code false} quand il n'y avait
+     * plus rien a poser : sans cette reponse, le second tirage croirait avoir donne une
+     * competence que l'arme n'a pas recue.
+     */
+    private static boolean grantOneSkill(ItemStack stack, RandomSource random) {
 
         // On ne pose pas une competence que l'arme porte deja.
         List<String> pool = new ArrayList<>();
@@ -3100,7 +3115,7 @@ public class GenerateLuckyItemProcedure {
             if (already != null && deepluckyblock.util.DeepEnchant.getLevel(stack, already) > 0) continue;
             pool.add(path);
         }
-        if (pool.isEmpty()) return;
+        if (pool.isEmpty()) return false;
         String chosen = pool.get(random.nextInt(pool.size()));
 
         List<Enchantment> present = new ArrayList<>(deepluckyblock.util.DeepEnchant.map(stack).keySet());
@@ -3126,6 +3141,7 @@ public class GenerateLuckyItemProcedure {
             }
         }
         addEnchantment(stack, "deep_lucky_block:" + chosen, 1 + random.nextInt(3));
+        return true;
     }
 
     /** Part des epees, haches, masses et houes lootees qui repartent avec une competence. */

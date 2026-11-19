@@ -108,6 +108,9 @@ public final class WeaponSkillHandler {
         WeaponSkill.startCooldown(weapon, now, entry);
         // Le glint retombe à l'état « en recharge » dès cette image, sans attendre le tick.
         applyGlintState(weapon, false, entry);
+        // T415-FIX-3 : et le client doit l'apprendre, sinon l'arme reste visuellement
+        // « prête » alors que la compétence vient de partir.
+        player.inventoryMenu.broadcastChanges();
         sl.playSound(null, player.getX(), player.getY(), player.getZ(),
                 SoundEvents.BEACON_ACTIVATE, SoundSource.PLAYERS, 0.55f, 1.45f);
         event.setCanceled(true);
@@ -124,21 +127,27 @@ public final class WeaponSkillHandler {
         if (player.tickCount % GLINT_REFRESH_TICKS != 0) return;
         if (!(player.level() instanceof ServerLevel sl)) return;
         long now = sl.getGameTime();
-        refresh(player.getMainHandItem(), now);
-        refresh(player.getOffhandItem(), now);
+        boolean changed = refresh(player.getMainHandItem(), now);
+        changed |= refresh(player.getOffhandItem(), now);
+        // T415-FIX-3 (2/2) : sans cette ligne le serveur gardait le nouvel etat pour lui.
+        // On ne diffuse QUE sur changement : rediffuser l'inventaire cinq fois par seconde
+        // ferait clignoter l'objet tenu en main.
+        if (changed) player.inventoryMenu.broadcastChanges();
     }
 
-    private static void refresh(ItemStack stack, long now) {
-        if (!isMeleeSkillWeapon(stack)) return;
+    /** Renvoie vrai quand le halo vient de changer d'etat, donc quand le client doit etre prevenu. */
+    private static boolean refresh(ItemStack stack, long now) {
+        if (!isMeleeSkillWeapon(stack)) return false;
         WeaponSkill.Entry entry = WeaponSkill.firstOn(stack);
-        if (entry == null) return;
+        if (entry == null) return false;
         boolean charged = WeaponSkill.isCharged(stack, now);
         CompoundTag tag = deepluckyblock.util.DeepNbt.tag(stack);
         boolean already = tag != null && tag.getBoolean(WeaponSkill.GLINT_ON_KEY);
         // On n'écrit du NBT que lorsque l'état CHANGE. Sans ce test, l'arme serait réécrite
         // cinq fois par seconde et le client la verrait se rééquiper en boucle.
-        if (charged == already) return;
+        if (charged == already) return false;
         applyGlintState(stack, charged, entry);
+        return true;
     }
 
     /**
@@ -151,7 +160,14 @@ public final class WeaponSkillHandler {
      */
     private static void applyGlintState(ItemStack stack, boolean charged, WeaponSkill.Entry entry) {
         if (stack == null || stack.isEmpty() || entry == null) return;
-        CompoundTag tag = deepluckyblock.util.DeepNbt.getOrCreateTag(stack);
+        // T415-FIX-3 (1/2) : .copy() OBLIGATOIRE. DeepNbt.getOrCreateTag renvoie la compound
+        // VIVANTE du composant CUSTOM_DATA, et l'instantane que le menu d'inventaire garde
+        // pour detecter les changements (lastSlots) partage cette MEME instance : la muter
+        // sur place modifiait l'objet ET sa copie de reference, si bien que la comparaison
+        // ne voyait aucune difference et que rien n'etait jamais envoye au client. C'est
+        // pour cela que le halo ne changeait pas d'un poil en jeu. On repart donc d'une
+        // copie independante, que commit() repose comme un composant NEUF.
+        CompoundTag tag = deepluckyblock.util.DeepNbt.getOrCreateTag(stack).copy();
         String force = deepluckyblock.client.EnchantAura.GLINT_FORCE_NBT_KEY;
         String tier = deepluckyblock.client.EnchantAura.GLINT_TIER_NBT_KEY;
         if (charged) {
