@@ -2,95 +2,66 @@
 
 ## ⬇️ L'archive — c'est le seul lien
 
-https://github.com/Deepie1/dlbv1.21.1neoforge/raw/5592dd1da30e252237ebd0a824242a48bf08463a/deliverables/DLB_src.zip
+https://github.com/Deepie1/dlbv1.21.1neoforge/raw/7617279ffae554d617da230ece75d6ed70e672b7/deliverables/DLB_src.zip
 
-`DLB_src.zip` · 116 fichiers · 1 971 438 octets
-<br>SHA-256 `abc8af9eafa20a2ecc36f6415cc9c3644d0d1c3780e60ce726a6f2b5266259d4`
+`DLB_src.zip` · 116 fichiers · 2 148 548 octets
+<br>SHA-256 `2e103593f52f906a91f5a8527a13f4205389ed01d7eceefc4228b97331393906`
 
-**Il n'y a plus qu'une seule archive et un seul lien.** `DLB_src.zip` porte toujours le
-même nom et contient à chaque fois **tous** les fichiers à jour. L'adresse contient le
-numéro de la livraison (`5592dd1…`) : c'est ce qui garantit que vous recevez la dernière
-version et jamais une copie en cache.
+**Le fichier `deep_lucky_block-neoforge-1.21.1.mcreator` est dedans**, à la racine de
+l'archive, avec les deux fichiers de langue.
 
 ---
 
-## 1. Pourquoi vous voyiez les compétences par deux
+## Réponse à votre question : non, il en manquait 100
 
-Le coupable n'est pas le tirage au sort : c'est la **façon de reconnaître** une
-compétence sur une arme.
+Vous aviez raison de demander. Le `.mcreator` portait **2 518 traductions par langue**, et
+**100 clés n'y étaient pas** :
 
-Pour savoir quelles compétences afficher, le mod demandait « quelles animations cette
-arme déclenche-t-elle ? ». C'est une question **visuelle**, et sa réponse est
-volontairement large : pour que les armes brillent joliment, **24 enchantements vanilla**
-sont rattachés à une animation. Tranchant et Impaling allument l'éclat `RAZOR_GLEAM`,
-Aura de feu et Flamme allument la vague de feu, Raccommodage et Solidité allument le halo
-Chrono, Butin et Fortune le sigle de ralliement, Toile la glace…
+- les **90 textes de signature** (`skill.deep_lucky_block.<nom>.1` et `.2` : thorn_maw,
+  warp, tempest, chrono_mending…) ;
+- les **10 clés de l'encart compétence** : `section_skills`, `skill_header`,
+  `skill_named`, `cooldown_suffix` et les six `cast.*` (clic droit sur un mob, outil en
+  main, canne, main vide, fusée, accroupi en sprint).
 
-Le mod prenait cette réponse pour un inventaire de **pouvoirs**. Résultat : une épée
-lootée parfaitement ordinaire, avec **Tranchant + Aura de feu**, se voyait créditer de
-**deux compétences qu'elle ne possédait pas** — et Tranchant se trouve sur presque toutes
-les épées, d'où le « par deux » quasi systématique. Voici la mesure, avant et après :
+Elles vivaient **uniquement dans le code Java**, qui les pose au démarrage. Ça marchait —
+mais ça ne tenait qu'à ce fichier de code. Comme c'est le `.mcreator` qui **écrase** les
+traductions à la régénération, une régénération fabriquait des fichiers de langue
+**sans** ces 100 clés.
 
-| L'arme | Ce que vous voyiez | Ce que vous verrez |
-|---|---|---|
-| Épée lootée ordinaire (Tranchant + Aura de feu) | `sharp_edge` **et** `fiery_sweep` | *aucune* |
-| Épée à compétence + Raccommodage | `thorn_maw` **et** `chrono_mending` | `thorn_maw` |
-| Épée à compétence, seule | `thorn_maw` | `thorn_maw` |
-| Épée avec Toile de soie | `heavy_slow_hit` | *aucune* |
+C'est corrigé : **2 618 entrées par langue**, et les trois sources (le `.mcreator`,
+`en_us.json`, `fr_fr.json`) sont maintenant **identiques au caractère près**.
 
-Désormais le mod part des **enchantements du mod réellement posés sur l'arme**. Les
-surnoms internes du mod (`briar_cage`, `thorn_maw`… qui désignent la même animation)
-continuent d'être reconnus ; les enchantements vanilla, eux, ne fabriquent plus de
-compétence imaginaire.
+## Un vrai défaut trouvé en chemin : « Bondissant »
 
-**Le même défaut touchait le lanceur.** Une épée n'ayant que Raccommodage était traitée
-comme une arme à compétence : elle recevait le halo et pouvait lancer une signature au
-clic droit sur un mob. Le halo, l'infobulle et le lanceur lisent maintenant **la même
-méthode**, donc ils ne peuvent plus se contredire.
+En comparant les textes un par un, deux clés françaises ne concordaient pas. Le
+`.mcreator` disait :
 
-## 2. Le tirage : 5 %, puis 5 % à nouveau
+> « Vous fait rebondir à chaque atterrissage » · « exactement comme sur un bloc de slime »
 
-Votre règle est maintenant écrite telle quelle : un premier tirage à **5 %** décide d'une
-compétence ; **et seulement s'il a donné**, un **second tirage indépendant à 5 %** peut en
-ajouter une deuxième. Deux compétences valent donc 5 % × 5 % = **1 chance sur 400**, et
-jamais davantage. Chaque compétence paie **son propre troc** (deux enchantements perdus,
-ou tout le monde qui redescend de 0 à 3 niveaux).
+alors que son **propre texte anglais** et le fichier de langue disent :
 
-## 3. Pourquoi le glint ne changeait « pas du tout »
+> « Le rebond suit la chute et perd de l'élan à chaque impact, jusqu'à s'arrêter. »
 
-Le code qui pose le halo « compétence prête » était bien écrit, bien appelé, et il
-s'exécutait : il posait la couleur de l'élément et le palier 13. Mais **le serveur gardait
-ce changement pour lui**.
+Le `.mcreator` gagnant, c'est la **vieille description, fausse**, qui serait partie en
+jeu. Les deux clés sont alignées sur le rebond amorti.
 
-En 1.21, les données d'un objet vivent dans un composant. La fonction utilisée renvoie la
-compound **vivante** de ce composant, et le menu d'inventaire garde, pour repérer les
-changements, un **instantané qui partage exactement la même compound**. En la modifiant
-sur place, on modifiait donc l'objet **et sa propre référence de comparaison** : le
-serveur comparait, ne voyait aucune différence, et n'envoyait rien. Côté client, rien ne
-bougeait — jamais. Ce qui explique aussi la vieille observation « le palier 13 n'a jamais
-été vu ».
+## Les lisez-moi sont partis
 
-C'est précisément ce qui différenciait `/anim` : cette commande pose en plus un composant
-vanilla, un vrai changement visible, donc tout l'objet est renvoyé au client — couleur
-comprise.
+Retirés de l'archive : `LISEZ-MOI-CONTENU.txt`, `LIRE-MOI-IMPORTANT.md` et le journal
+`WATER_SIGNATURES.md` (237 Ko). J'ai aussi supprimé du générateur le texte qui fabriquait
+le premier — 152 lignes de code devenu inutile — et retourné ses garde-fous : l'archive
+**refuse** désormais de se fabriquer si un lisez-moi s'y glisse ou si le `.mcreator`
+manque.
 
-Deux corrections : on repart d'une **copie** de la compound (le composant reposé est alors
-réellement neuf), et on **prévient explicitement le client** au moment où l'état bascule —
-au rechargement comme au lancement. Le halo ne clignote pas pour autant : l'envoi n'a lieu
-qu'au changement d'état, pas cinq fois par seconde.
+## Toujours inclus
 
----
+Les correctifs de la livraison précédente : compétences qui sortaient par deux
+(24 enchantements vanilla créaient des compétences fantômes), tirage à 5 % puis 5 %, et
+halo « compétence prête » enfin transmis au client.
 
-## Ce que j'ai vérifié, et ce que je n'ai pas pu vérifier
+## Ce que je n'ai pas pu vérifier
 
-Vérifié : `semcheck` (les 4 alertes du fichier de butin sont **antérieures**, prouvé en
-remisant mes modifications), `typecheck` (24 alertes connues ; l'alerte « nouvelle » est
-un faux positif déjà listé, simplement descendu de la ligne 3338 à 3354), `floatcheck`
-(221 fichiers, 0), un banc qui rejoue l'ancienne et la nouvelle reconnaissance sur la
-vraie table d'alias du mod (c'est le tableau ci-dessus), et **13 relectures faites dans
-l'archive elle-même**, pas dans mon brouillon.
-
-Non vérifié, et je le dis clairement : `javac` n'existe pas dans cet environnement, donc
-**la compilation n'est pas prouvée**, et je ne peux pas lancer le jeu — **le rendu du halo
-à l'écran reste à confirmer par vous**. Si le halo ne basculait toujours pas, la prochaine
-piste serait le cache de couleur de 150 ms côté client, et non la synchronisation.
+`javac` n'existe pas ici : **la compilation n'est pas prouvée**. Et je ne peux pas lancer
+le jeu, donc le rendu du halo à l'écran reste à confirmer par vous. Le fichier `.mcreator`
+a été relu après écriture : JSON valide, 48 éléments de mod intacts, format d'origine
+respecté à l'octet près.
