@@ -777,6 +777,8 @@ public final class WeaponWorldVfxManager {
             case CHAOS_KALEIDO_LOOP -> 150;   // montage des six miroirs + rupture + realignement
             case ENTROPY_SPHERE -> 170;       // trois cercles + delitement + effondrement du noyau
             case BIG_BANG_SCAR -> 200;        // aspiration + detonation + anneau + cicatrice
+            case FEIGENBAUM_CASCADE -> 170;   // tige + cinq dedoublements + bande chaotique
+            case SANDPILE_CRITICAL -> 200;    // empilement + micro-glissements + avalanche
             case VENOM_BRIAR_FANG -> 112;
             case MIASMA_SHROUD -> 600; // Le serveur raccourcit à 6 s ou enchaîne jusqu'à 30 s.
             case PLAGUE_NOVA -> 128;
@@ -2125,9 +2127,10 @@ public final class WeaponWorldVfxManager {
 
     private static int animationSlashCount(String family) {
         String canonical = deepluckyblock.util.AnimFamily.canonical(family);
-        // T389 : le VIDE rejoint le SANG à cinq signatures.
+        // T389 : le VIDE rejoint le SANG à cinq signatures. T402 : le CHAOS aussi.
         return deepluckyblock.util.AnimFamily.BLOOD.equals(canonical)
-                || deepluckyblock.util.AnimFamily.VOID.equals(canonical) ? 5 : 3;
+                || deepluckyblock.util.AnimFamily.VOID.equals(canonical)
+                || deepluckyblock.util.AnimFamily.CHAOS.equals(canonical) ? 5 : 3;
     }
 
     private static WeaponVisualEffectId animationSlashEffect(String family, int index) {
@@ -2136,7 +2139,9 @@ public final class WeaponWorldVfxManager {
             return switch (index) {
                 case 0 -> WeaponVisualEffectId.CHAOS_KALEIDO_LOOP;
                 case 1 -> WeaponVisualEffectId.ENTROPY_SPHERE;
-                default -> WeaponVisualEffectId.BIG_BANG_SCAR;
+                case 2 -> WeaponVisualEffectId.BIG_BANG_SCAR;
+                case 3 -> WeaponVisualEffectId.FEIGENBAUM_CASCADE;
+                default -> WeaponVisualEffectId.SANDPILE_CRITICAL;
             };
         }
         if (deepluckyblock.util.AnimFamily.FIRE.equals(canonical)) {
@@ -5317,11 +5322,13 @@ public final class WeaponWorldVfxManager {
      * Kaléidoscope = deux cadres rotatifs, entropie = trois plans orbitaux, big bang = expansion.
      * Aucun satellite multicolore isolé : chaque pixel coloré appartient à une arête synchronisée.
      */
-    /** Les trois signatures refondues du chaos (T397), seules a passer par ChaosSignatureVfx. */
+    /** Les cinq signatures du chaos (T397, T402), seules a passer par ChaosSignatureVfx. */
     private static boolean isChaosSignature(WeaponVisualEffectId fx) {
         return fx == WeaponVisualEffectId.CHAOS_KALEIDO_LOOP
                 || fx == WeaponVisualEffectId.ENTROPY_SPHERE
-                || fx == WeaponVisualEffectId.BIG_BANG_SCAR;
+                || fx == WeaponVisualEffectId.BIG_BANG_SCAR
+                || fx == WeaponVisualEffectId.FEIGENBAUM_CASCADE
+                || fx == WeaponVisualEffectId.SANDPILE_CRITICAL;
     }
 
     /**
@@ -5359,6 +5366,8 @@ public final class WeaponWorldVfxManager {
             case CHAOS_KALEIDO_LOOP -> ChaosSignatureVfx.KALEIDO;
             case ENTROPY_SPHERE -> ChaosSignatureVfx.ENTROPY;
             case BIG_BANG_SCAR -> ChaosSignatureVfx.BIGBANG;
+            case FEIGENBAUM_CASCADE -> ChaosSignatureVfx.FEIGEN;
+            case SANDPILE_CRITICAL -> ChaosSignatureVfx.SANDPILE;
             default -> -1;
         };
         if (chaosSignature >= 0) {

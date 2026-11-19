@@ -97,6 +97,17 @@ public enum WeaponVisualEffectId {
     ENTROPY_SPHERE(36, Category.SPECIAL, 87, true, DeepElement.CHAOS),
     /** #37 Chaos : déchirure du big bang — cœur blanc aveuglant, rayons bariolés, anneau noir. */
     BIG_BANG_SCAR(37, Category.SPECIAL, 96, true, DeepElement.CHAOS),
+    /**
+     * #46 Chaos : cascade de bifurcation — la carte logistique rendue visible. Une nappe
+     * qui se dédouble, 1 → 2 → 4 → 8 → 16, puis se brouille. Soixante-trois coups de plus
+     * en plus nombreux, de plus en plus faibles, de plus en plus rapprochés.
+     */
+    FEIGENBAUM_CASCADE(46, Category.SPECIAL, 88, true, DeepElement.CHAOS),
+    /**
+     * #47 Chaos : le grain de trop — un tas de sable critique. Sept secondes où rien ne
+     * semble arriver, puis UNE avalanche. L'exact contraire de la cascade.
+     */
+    SANDPILE_CRITICAL(47, Category.SPECIAL, 92, true, DeepElement.CHAOS),
 
     // === VIII. T352b-SPLIT-ELEMENTS : Bois (brun) et Poison (vert foncé) sont désormais deux
     // familles distinctes -> chacune doit avoir ses 3 grosses animations uniques.
@@ -316,6 +327,9 @@ public enum WeaponVisualEffectId {
         register(CHAOS_KALEIDO_LOOP, "chaos_entropy", "chaos", "kaleidoscope");
         register(ENTROPY_SPHERE, "chaos_nexus", "entropy_sphere", "discord");
         register(BIG_BANG_SCAR, "chaos_rupture", "prismatic_brand", "chaos_cataclysm");
+        // #46-#47 T402 : le Chaos rejoint le Sang et le Vide a cinq signatures.
+        register(FEIGENBAUM_CASCADE, "feigenbaum_cascade", "bifurcation", "chaos_cascade");
+        register(SANDPILE_CRITICAL, "sandpile_critical", "criticality", "chaos_avalanche");
         // #28 Aiguille Temporelle & Lame Éternelle
         register(CHRONO_ETERNAL_HALO, "chrono_mending", "basic_chrono_mending", "basic_mending",
                 "eternal", "promising_blade", "delay", "unbreakable", "recycle", "minecraft:mending", "minecraft:unbreaking");

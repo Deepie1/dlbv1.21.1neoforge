@@ -173,6 +173,9 @@ public final class DlbVfxCommand {
         if (fx == WeaponVisualEffectId.NULL_RIFT_FISSURE) return 204;  // impact 30 + 170 + marge
         if (fx == WeaponVisualEffectId.HORIZON_GATE) return 214;       // impact 30 + 180 + marge
         if (fx == WeaponVisualEffectId.CHAIN_COLLAPSE) return 234;     // impact 30 + 200 + marge
+        // T402 : les deux nouvelles du Chaos, sans quoi la revue coupe a 62 ticks.
+        if (fx == WeaponVisualEffectId.FEIGENBAUM_CASCADE) return 204; // impact 30 + 170 + marge
+        if (fx == WeaponVisualEffectId.SANDPILE_CRITICAL) return 234;  // impact 30 + 200 + marge
         return DUMMY_NEXT_EFFECT_TICK;
     }
 

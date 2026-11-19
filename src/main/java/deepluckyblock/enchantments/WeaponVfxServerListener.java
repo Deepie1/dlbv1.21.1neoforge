@@ -336,7 +336,8 @@ public final class WeaponVfxServerListener {
     };
     private static final WeaponVisualEffectId[] ANIM_CHAOS = {
             WeaponVisualEffectId.CHAOS_KALEIDO_LOOP, WeaponVisualEffectId.ENTROPY_SPHERE,
-            WeaponVisualEffectId.BIG_BANG_SCAR
+            WeaponVisualEffectId.BIG_BANG_SCAR, WeaponVisualEffectId.FEIGENBAUM_CASCADE,
+            WeaponVisualEffectId.SANDPILE_CRITICAL
     };
     private static final WeaponVisualEffectId[] ANIM_LIGHT = {
             WeaponVisualEffectId.SERAPH_SKY_PILLAR, WeaponVisualEffectId.ASTRAL_STAR_LANCE,
@@ -6193,6 +6194,10 @@ public final class WeaponVfxServerListener {
             applyEntropySphereGameplay(attacker, target, sl, damage);
         } else if (fx == WeaponVisualEffectId.BIG_BANG_SCAR) {
             applyBigBangGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.FEIGENBAUM_CASCADE) {
+            applyFeigenbaumGameplay(attacker, target, sl, damage);
+        } else if (fx == WeaponVisualEffectId.SANDPILE_CRITICAL) {
+            applySandpileGameplay(attacker, target, sl, damage);
         }
     }
 
@@ -6654,6 +6659,192 @@ public final class WeaponVfxServerListener {
     // --------------------------------------------------------------------------------------
     //  III. CICATRICE DU BIG BANG (200 ticks) — elle CREE puis DETRUIT
     // --------------------------------------------------------------------------------------
+
+    /**
+     * T402 — IV. CASCADE DE BIFURCATION, 170 ticks.
+     *
+     * <p><b>La regle du gameplay EST le concept.</b> Six vagues ; la vague {@code k}
+     * porte {@code 2^k} coups — un, deux, quatre, huit, seize, trente-deux. Chaque coup
+     * vaut {@code base / 2^(k*0,62)} : le total par vague <b>monte</b> (l'energie se
+     * concentre dans le desordre) pendant que chaque coup <b>baisse</b>. Soixante-trois
+     * impacts au total, de plus en plus serres : les intervalles sont 24, 22, 18, 14, 10,
+     * comme la cascade de doublement converge vers son point d'accumulation.</p>
+     *
+     * <p><b>La bifurcation contamine.</b> A partir de la troisieme vague, les coups ne
+     * tombent plus seulement sur la cible : ils se repartissent sur tout ce qui se trouve
+     * dans le rayon, un ennemi par branche. C'est la traduction la plus directe du
+     * dedoublement — une attaque qui se divise doit diviser ses cibles.</p>
+     */
+    private static void applyFeigenbaumGameplay(LivingEntity attacker, LivingEntity target,
+                                                ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.50;
+        final double oz = target.getZ();
+        final float base = Math.max(1.5f, weaponDamage * 0.88f);
+        final int[] beats = { 24, 48, 70, 88, 102, 112 };
+
+        // --- 0 : LE CLOUAGE. Une cascade qui se dedouble autour d'un corps absent ne
+        //     montre rien : la cible tient le centre du diagramme pendant 170 ticks.
+        chaosRoot(sl, target, 164);
+        for (LivingEntity caught : voidVictims(sl, ox, oy, oz, 5.0, 3.0, attackerId)) {
+            chaosRoot(sl, caught, 164);
+        }
+
+        for (int k = 0; k < beats.length; k++) {
+            final int wave = k;
+            TestProcedure.schedule(sl, now + beats[k], () -> {
+                List<LivingEntity> pool = voidVictims(sl, ox, oy, oz, 5.0, 3.0, attackerId);
+                if (pool.isEmpty() && target.isAlive()) pool = List.of(target);
+                if (pool.isEmpty()) return;
+
+                int shots = 1 << wave;                       // 1, 2, 4, 8, 16, 32
+                float each = base / (float) Math.pow(2.0, wave * 0.62);
+                for (int i = 0; i < shots; i++) {
+                    // Avant la troisieme vague, tout tombe sur la cible ; apres, chaque
+                    // branche choisit sa propre victime.
+                    LivingEntity victim = (wave < 2)
+                            ? pool.get(0)
+                            : pool.get(i % pool.size());
+                    if (victim == null || !victim.isAlive()) continue;
+                    chaosHurt(sl, attackerId, victim, each);
+                    chaosRoot(sl, victim, Math.max(10, 164 - beats[wave]));
+                }
+
+                // UN SEUL son par vague, et il monte d'une octave a chaque doublement :
+                // trente-deux sons sur la derniere vague seraient un bruit blanc.
+                LivingEntity lead = pool.get(0);
+                chaosBeatMark(sl, lead, Math.min(2.0f, 0.62f + wave * 0.17f),
+                        0.95f - wave * 0.06f, wave);
+
+                // La derniere vague laisse une confusion : apres le point d'accumulation,
+                // il n'y a plus de periode — plus rien n'est previsible.
+                if (wave >= 4) {
+                    for (LivingEntity victim : pool) {
+                        victim.addEffect(new MobEffectInstance(MobEffects.CONFUSION,
+                                70, 0, true, false));
+                    }
+                }
+            });
+        }
+
+        // --- 150 : LA FENETRE DE PERIODE TROIS. En plein chaos, l'ordre revient d'un
+        //     coup : trois frappes nettes, egales, bien separees — puis plus rien.
+        for (int k = 0; k < 3; k++) {
+            final int shot = k;
+            TestProcedure.schedule(sl, now + 132 + shot * 8, () -> {
+                if (!target.isAlive()) return;
+                chaosHurt(sl, attackerId, target, base * 0.46f);
+                chaosBeatMark(sl, target, 0.88f, 0.85f, 3);
+            });
+        }
+
+        TestProcedure.schedule(sl, now + 160, () -> {
+            if (attacker == null || !attacker.isAlive()) return;
+            attacker.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED,
+                    160, 1, true, false));
+        });
+    }
+
+    /**
+     * T402 — V. LE GRAIN DE TROP, 200 ticks.
+     *
+     * <p><b>Diametralement oppose a la cascade, et c'est tout l'interet.</b> La cascade
+     * frappe soixante-trois fois en accelerant ; celle-ci ne frappe <b>qu'une seule
+     * fois</b>, apres sept secondes et demie ou il ne se passe presque rien. Trois
+     * micro-glissements, aux ticks 52, 92 et 126, valent un dixieme de degat chacun :
+     * ils ne sont pas la pour blesser mais pour dire que <b>ca tient encore</b>.</p>
+     *
+     * <p>Puis le tick 150. L'avalanche vaut <b>quatre fois et demie</b> l'arme, et elle
+     * touche tout dans six blocs avec une decroissance lente. Un systeme critique ne
+     * previent pas : c'est pour cela que le clouage dure jusqu'au bout et que la
+     * projection n'arrive qu'<i>apres</i> le degat — on ne s'ecarte pas d'un tas de sable
+     * qui s'effondre, on est dessous.</p>
+     *
+     * <p>Le prix a payer est assume : pendant sept secondes, cette signature ne fait
+     * presque rien. Une animation qui frappe sans arret ne peut pas, par construction,
+     * produire un instant qui compte.</p>
+     */
+    private static void applySandpileGameplay(LivingEntity attacker, LivingEntity target,
+                                              ServerLevel sl, float weaponDamage) {
+        final int attackerId = attacker == null ? -1 : attacker.getId();
+        final int now = TestProcedure.currentTick(sl);
+        final double ox = target.getX();
+        final double oy = target.getY() + target.getBbHeight() * 0.50;
+        final double oz = target.getZ();
+        final float base = Math.max(1.8f, weaponDamage * 0.95f);
+
+        // --- 0 : LE CLOUAGE, et il dure. Tout l'interet du tas est qu'on soit encore
+        //     dessous quand il tombe.
+        chaosRoot(sl, target, 196);
+        for (LivingEntity caught : voidVictims(sl, ox, oy, oz, 4.2, 3.0, attackerId)) {
+            chaosRoot(sl, caught, 196);
+        }
+
+        // --- 52 / 92 / 126 : LES TROIS MICRO-GLISSEMENTS. Maigres, et volontairement.
+        final int[] slips = { 52, 92, 126 };
+        for (int k = 0; k < slips.length; k++) {
+            final int slip = k;
+            TestProcedure.schedule(sl, now + slips[k], () -> {
+                if (!target.isAlive()) return;
+                chaosHurt(sl, attackerId, target, base * (0.09f + slip * 0.025f));
+                // Un son mat, de plus en plus grave : le tas s'alourdit.
+                chaosBeatMark(sl, target, 0.95f - slip * 0.12f, 0.34f + slip * 0.07f, 7);
+                target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                        44, slip, true, false));
+                for (LivingEntity victim : voidVictims(sl, ox, oy, oz, 4.2, 3.0, attackerId)) {
+                    chaosRoot(sl, victim, Math.max(10, 196 - slips[slip]));
+                }
+            });
+        }
+
+        // --- 150 : L'AVALANCHE. Le seul evenement de la signature.
+        TestProcedure.schedule(sl, now + 150, () -> {
+            List<LivingEntity> victims = voidVictims(sl, ox, oy, oz, 6.0, 3.4, attackerId);
+            if (victims.isEmpty() && target.isAlive()) victims = List.of(target);
+            for (LivingEntity victim : victims) {
+                double ddx = victim.getX() - ox;
+                double ddz = victim.getZ() - oz;
+                double dist = Math.sqrt(ddx * ddx + ddz * ddz);
+                float falloff = (float) Math.max(0.42, 1.0 - dist / 6.5);
+                chaosHurt(sl, attackerId, victim, base * 4.5f * falloff);
+                chaosBeatMark(sl, victim, 0.42f, 1.0f, 5);
+                // ON DECLOUE AVANT DE POUSSER : le tick d'emprise suivant ramenerait le
+                // corps sous le tas et l'ecroulement n'enverrait personne nulle part.
+                chaosUnroot(victim);
+                if (dist > 0.25) {
+                    double speed = 0.52 * falloff;
+                    voidPush(sl, victim, ddx / dist * speed, 0.30, ddz / dist * speed);
+                } else {
+                    voidPush(sl, victim, 0.0, 0.42, 0.0);
+                }
+                victim.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN,
+                        110, 2, true, false));
+                victim.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 110, 1, true, false));
+            }
+            // Le bruit de l'ecroulement, une seule fois, et fort.
+            sl.playSound(null, ox, oy, oz, SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS,
+                    0.92f, 0.52f);
+            sl.playSound(null, ox, oy, oz, SoundEvents.ANVIL_LAND, SoundSource.PLAYERS,
+                    0.70f, 0.46f);
+            PixelFx.send(sl, CHAOS_DUST, ox, oy, oz, 46, 1.30, 0.50, 1.30, 0.16);
+        });
+
+        // --- 150 -> 190 : LA RETOMBEE. La poussiere, et le sol qui reste meuble.
+        for (int k = 0; k < 5; k++) {
+            final int puff = k;
+            TestProcedure.schedule(sl, now + 156 + puff * 8, () -> {
+                PixelFx.send(sl, CHAOS_DUST_SPARK, ox, oy - 0.30, oz,
+                        14 - puff * 2, 1.60 + puff * 0.35, 0.22, 1.60 + puff * 0.35, 0.05);
+            });
+        }
+
+        TestProcedure.schedule(sl, now + 168, () -> {
+            if (attacker == null || !attacker.isAlive()) return;
+            attacker.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 200, 1, true, false));
+        });
+    }
 
     /**
      * Deux temps, et rien entre les deux.

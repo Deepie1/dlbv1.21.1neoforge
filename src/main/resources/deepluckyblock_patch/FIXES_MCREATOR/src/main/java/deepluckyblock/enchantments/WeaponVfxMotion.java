@@ -159,6 +159,9 @@ public final class WeaponVfxMotion {
             case CHAOS_KALEIDO_LOOP -> p(SHAPE_PRISM, 2, 2.60f, 0.00f, 1.25f, 0.100f);
             case ENTROPY_SPHERE -> p(SHAPE_ORBIT, 3, -1.50f, 0.00f, 1.15f, 0.040f);
             case BIG_BANG_SCAR -> p(SHAPE_CROSS_STAR, 5, 1.40f, 0.20f, 1.50f, 0.060f);
+            // La cascade se dedouble vers l'avant ; le tas, lui, ne bouge pas : il monte.
+            case FEIGENBAUM_CASCADE -> p(SHAPE_PRISM, 4, 2.10f, 0.10f, 1.30f, 0.075f);
+            case SANDPILE_CRITICAL -> p(SHAPE_ORBIT, 2, -0.35f, 0.30f, 0.95f, 0.030f);
 
             // --- VIII. T352b : Bois (brun) & Poison (vert foncé) --------------------------
             case VERDANT_SAP_BLOOM -> p(SHAPE_BLOOM, 3, 0.30f, 0.65f, 1.05f, 0.045f);

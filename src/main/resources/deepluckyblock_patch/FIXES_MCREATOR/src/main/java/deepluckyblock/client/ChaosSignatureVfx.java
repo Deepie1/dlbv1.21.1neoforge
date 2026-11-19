@@ -66,6 +66,10 @@ public final class ChaosSignatureVfx {
     public static final int ENTROPY = 1;
     /** III — Cicatrice du Big Bang : un point, puis un univers, puis une marque. */
     public static final int BIGBANG = 2;
+    /** IV — Cascade de Bifurcation : une équation qui se dédouble jusqu'au brouillard. */
+    public static final int FEIGEN = 3;
+    /** V — Le Grain de Trop : un tas qui monte en silence, puis tombe d'un seul bloc. */
+    public static final int SANDPILE = 4;
 
     // =================================================================================
     //  L'ÉCHELLE DE GRIS — la seule « palette » qui subsiste
@@ -139,7 +143,7 @@ public final class ChaosSignatureVfx {
      * convertir l'avancement 0..1 en <b>ticks restants</b> : sans cette conversion on ne
      * peut pas savoir si un pixel qui nait a encore la place de mourir.
      */
-    private static final int[] DURATION = { 150, 170, 200 };
+    private static final int[] DURATION = { 150, 170, 200, 170, 200 };
 
     /** Ticks restants avant la fin de la signature, poses par {@link #render}. */
     private static int envRemain = 9999;
@@ -192,6 +196,8 @@ public final class ChaosSignatureVfx {
         switch (variant) {
             case ENTROPY -> renderEntropy(cx, cy, cz, t, dx, dz, a, salt, ground);
             case BIGBANG -> renderBigBang(cx, cy, cz, t, dx, dz, a, salt, ground);
+            case FEIGEN -> renderFeigenbaum(cx, cy, cz, t, dx, dz, a, salt, ground);
+            case SANDPILE -> renderSandpile(cx, cy, cz, t, dx, dz, a, salt, ground);
             default -> renderKaleido(cx, cy, cz, t, dx, dz, a, salt, ground);
         }
         renderStrikes(cx, cy, cz, t, dx, dz, a, salt, variant, duration);
@@ -253,6 +259,8 @@ public final class ChaosSignatureVfx {
         switch (variant) {
             case ENTROPY -> entropyStrikes(cx, cy, cz, t, dx, dz, a, salt, duration);
             case BIGBANG -> bigBangStrikes(cx, cy, cz, t, dx, dz, a, salt, duration);
+            case FEIGEN -> feigenStrikes(cx, cy, cz, t, dx, dz, a, salt, duration);
+            case SANDPILE -> sandpileStrikes(cx, cy, cz, t, dx, dz, a, salt, duration);
             default -> kaleidoStrikes(cx, cy, cz, t, dx, dz, a, salt, duration);
         }
     }
@@ -758,6 +766,199 @@ public final class ChaosSignatureVfx {
                     }
                 }
             }
+        }
+    }
+
+    // ---------------------------------------------------------------------------------
+    //  CASCADE — six vagues, et chacune porte deux fois plus de coups que la précédente
+    // ---------------------------------------------------------------------------------
+
+    /**
+     * Un, deux, quatre, huit, seize, trente-deux — et <b>chaque coup tombe sur le
+     * diagramme lui-même</b>.
+     *
+     * <p>C'est le point entier de ce geste. Le rang {@code i} d'un coup dans sa vague
+     * fixe la valeur de {@code r} où il frappe, et sa hauteur est la valeur que
+     * l'attracteur prend <b>vraiment</b> à ce {@code r} — la carte logistique est
+     * réitérée pour chaque impact. La vague 0 tape donc sur la tige, seule et au centre ;
+     * la vague 5 fait pleuvoir trente-deux coups sur toute la largeur de la nappe, et
+     * dans le brouillard de droite ils tombent dispersés parce que l'attracteur y est
+     * dispersé. <b>La grêle épouse la cascade au lieu de se superposer à elle.</b></p>
+     *
+     * <p>L'échelle ne décroît que doucement ({@code 1/(1+k·0,25)}) : diviser par
+     * {@code √2^k} comme au premier jet rendait les dernières vagues littéralement
+     * invisibles — trente-deux impacts de deux centièmes de bloc ne sont pas une grêle,
+     * ce sont des confettis. La fragmentation se lit au <b>nombre</b> et à
+     * l'<b>étalement</b>, pas à la miniaturisation.</p>
+     */
+    private static void feigenStrikes(float cx, float cy, float cz, float t,
+                                      float dx, float dz, float a, int salt, int duration) {
+        float now = t * duration;
+        float spin = t * TAU;
+
+        for (int k = 0; k < BEATS_FEIGEN.length; k++) {
+            float since = now - BEATS_FEIGEN[k];
+            // Les vagues tardives sont BREVES : une grele qui traine n'est plus une grele.
+            float windK = 8.0f - k * 0.9f;
+            float burstK = 7.0f - k * 0.7f;
+            if (since < -windK || since > burstK) continue;
+            boolean pre = since < 0.0f;
+            float w = pre ? 1.0f + since / windK : 1.0f;
+            float r01 = pre ? 0.0f : since / burstK;
+
+            int shots = 1 << k;                       // 1, 2, 4, 8, 16, 32
+            float scale = 1.0f / (1.0f + k * 0.25f);
+
+            for (int i = 0; i < shots; i++) {
+                // OU TOMBE CE COUP : son rang le place sur l'axe des r.
+                float u = (shots == 1) ? 0.08f : 0.04f + (i / (float) (shots - 1)) * 0.92f;
+                float rr = FEIGEN_R0 + (FEIGEN_R1 - FEIGEN_R0) * u;
+
+                // A QUELLE HAUTEUR : la valeur que l'attracteur prend vraiment ici.
+                float xv = 0.42f + 0.11f * hash(salt + k * 31 + i, 11);
+                for (int s = 0; s < 70; s++) xv = rr * xv * (1.0f - xv);
+                xv = Mth.clamp(xv, 0.02f, 0.98f);
+
+                float spread = Mth.clamp((rr - 3.56f) * 1.55f, 0.0f, 1.0f);
+                float fwd = (u - 0.46f) * 6.40f;
+                float lat = (hash(k * 97 + i, salt + 3) - 0.5f) * 1.70f * spread;
+                float hgt = 0.22f + xv * 2.55f;
+
+                if (pre) {
+                    // LA CHUTE. Le coup descend A LA VERTICALE sur son point : le
+                    // diagramme se regarde de profil, et seule une arrivee verticale
+                    // se lit sur une figure vue de profil.
+                    float e = w * w;
+                    float high = 2.30f - 2.15f * e;
+                    int tail = Math.max(3, 8 - k);
+                    for (int j = 0; j < tail; j++) {
+                        float hh = (0.115f - j * 0.010f) * scale * 1.35f;
+                        put(cx, cy, cz, dx, dz, fwd, hgt + high + j * 0.26f, lat,
+                                hh, hh * 1.9f, hh, spin + i,
+                                (j == 0) ? M_STROBE : M_DUAL,
+                                (j == 0) ? G_CORE : G_FRAME, H_CYAN,
+                                a * w * (0.95f - j * 0.09f));
+                    }
+                } else {
+                    // L'IMPACT. Un disque PLAT, qui s'ouvre dans le plan de la nappe :
+                    // une sphere d'eclats se confondrait avec la nappe elle-meme.
+                    float f = 1.0f - r01 * 0.88f;
+                    float ring = (0.18f + 0.95f * Mth.sqrt(r01)) * scale;
+                    int n = Math.max(7, 14 - k);
+                    for (int j = 0; j < n; j++) {
+                        float ca = j / (float) n * TAU + i * 0.7f;
+                        put(cx, cy, cz, dx, dz,
+                                fwd + cos(ca) * ring, hgt + sin(ca) * ring * 0.55f, lat,
+                                0.075f * scale + 0.015f, 0.075f * scale + 0.015f,
+                                0.045f * scale + 0.010f, ca,
+                                (j % 3 == 0) ? M_STROBE : M_SPECTRUM,
+                                (j % 3 == 0) ? G_CORE : G_GLASS, 0.0f, a * f * 0.95f);
+                    }
+                    // LE NOYAU, bref et blanc : il marque l'instant, pas la duree.
+                    if (r01 < 0.45f) {
+                        float cf = 1.0f - r01 / 0.45f;
+                        put(cx, cy, cz, dx, dz, fwd, hgt, lat,
+                                (0.21f * cf + 0.055f) * scale, spin * 5.0f,
+                                M_STROBE, G_CORE, 0.0f, a * cf * 0.95f);
+                    }
+                }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------------------
+    //  GRAIN DE TROP — trois frôlements, puis une seule fois tout
+    // ---------------------------------------------------------------------------------
+
+    /**
+     * Trois micro-glissements et une avalanche. Les trois premiers sont <b>volontairement
+     * maigres</b> : quelques cubes qui dévalent le flanc du tas, et rien d'autre. Ils ne
+     * sont pas là pour frapper mais pour dire que ça tient encore — et pour que le
+     * quatrième, qui dure vingt-cinq ticks au lieu de six, soit le seul événement de
+     * l'animation. Une signature qui frappe sans arrêt ne peut pas, par construction,
+     * produire un instant qui compte.
+     */
+    private static void sandpileStrikes(float cx, float cy, float cz, float t,
+                                        float dx, float dz, float a, int salt, int duration) {
+        float now = t * duration;
+        float spin = t * TAU;
+
+        // --- LES TROIS MICRO-GLISSEMENTS. Six ticks chacun, et ils rampent au sol.
+        for (int k = 0; k < 3; k++) {
+            float since = now - BEATS_SANDPILE[k];
+            if (since < 0.0f || since > 6.0f) continue;
+            float u = since / 6.0f;
+            float f = (1.0f - u) * (1.0f - u);
+            float side = k * 2.39996f + salt * 0.11f;
+            for (int i = 0; i < 14; i++) {
+                float along = i / 13.0f;
+                float ang = side + (along - 0.5f) * 0.55f;
+                float rr = 0.45f + along * (1.3f + u * 2.4f);
+                put(cx, cy, cz, dx, dz, Mth.cos(ang) * rr,
+                        0.55f - along * 0.42f + 0.18f * (1.0f - u), Mth.sin(ang) * rr,
+                        0.105f - along * 0.030f, 0.070f, 0.105f - along * 0.030f, ang,
+                        M_MONO, (i < 3) ? G_MID : G_DEEP, 0.0f, a * f * 0.85f);
+            }
+        }
+
+        // --- L'AVALANCHE. Vingt-cinq ticks, le seul vrai coup de la signature.
+        float since = now - BEATS_SANDPILE[3];
+        if (since < -6.0f || since > 25.0f) return;
+
+        if (since < 0.0f) {
+            // LE DERNIER SOUFFLE : six ticks ou le tas se fige et le grain touche. Rien
+            // ne bouge, et c'est ce silence-la qui fait le coup.
+            float w = 1.0f + since / 6.0f;
+            float g = w * w * w;
+            put(cx, cy, cz, dx, dz, 0.0f, 1.25f, 0.0f, 0.10f + 0.55f * g,
+                    spin * 10.0f, M_STROBE, G_CORE, 0.0f, a * g);
+            return;
+        }
+
+        float u = since / 25.0f;
+        float f = (1.0f - u) * (1.0f - u * 0.45f);
+
+        // 1. LE CRATERE : le tas s'est vide par le centre, et le centre est un trou.
+        for (int i = 0; i < 28; i++) {
+            float ang = i / 28.0f * TAU + spin * 0.3f;
+            float rr = 0.35f + 1.05f * Mth.sqrt(u);
+            put(cx, cy, cz, dx, dz, Mth.cos(ang) * rr, 0.12f + 0.55f * (1.0f - u),
+                    Mth.sin(ang) * rr, 0.175f * f + 0.03f, 0.090f, 0.175f * f + 0.03f, ang,
+                    M_EMBER, (i % 3 == 0) ? G_FLASH : G_MID, H_EMBER, a * f * 0.95f);
+        }
+
+        // 2. LA COULEE : huit langues de matiere qui descendent les flancs et vont loin.
+        //    C'est elle qui porte le coup — large, basse, et dirigee vers l'exterieur.
+        for (int lane = 0; lane < 8; lane++) {
+            float ang = lane / 8.0f * TAU + salt * 0.05f;
+            int n = 16;
+            for (int i = 0; i < n; i++) {
+                float along = i / (float) (n - 1);
+                float lead = Mth.clamp(u * 2.2f - along * 0.9f, 0.0f, 1.0f);
+                if (lead <= 0.02f) continue;
+                float rr = 0.5f + along * (1.6f + u * 6.2f);
+                float wob = 0.22f * Mth.sin(along * 7.0f + lane);
+                put(cx, cy, cz, dx, dz,
+                        Mth.cos(ang) * rr - Mth.sin(ang) * wob,
+                        0.14f + 0.55f * (1.0f - along) * (1.0f - u * 0.6f),
+                        Mth.sin(ang) * rr + Mth.cos(ang) * wob,
+                        (0.150f - along * 0.055f), 0.085f, (0.150f - along * 0.055f), ang,
+                        (i % 5 == 0) ? M_EMBER : M_MONO,
+                        (i % 5 == 0) ? G_FLASH : (along < 0.4f ? G_MID : G_DEEP),
+                        H_EMBER, a * f * lead * 0.95f);
+            }
+        }
+
+        // 3. LA POUSSIERE : elle monte pendant que tout le reste descend. Sans elle, une
+        //    avalanche ressemble a des cubes qui glissent ; avec elle, c'est un ecroulement.
+        for (int i = 0; i < 34; i++) {
+            float ang = i * 2.39996f + salt * 0.09f;
+            float seedU = ((i * 17) % 23) / 23.0f;
+            float rr = (0.4f + seedU * 2.6f) * (0.4f + u * 1.9f);
+            put(cx, cy, cz, dx, dz, Mth.cos(ang) * rr,
+                    0.20f + u * (1.4f + seedU * 2.6f), Mth.sin(ang) * rr,
+                    0.060f + 0.055f * seedU, ang * 3.0f + spin,
+                    M_TINTED, G_DEEP, H_EMBER, a * f * (0.40f + 0.45f * seedU));
         }
     }
 
@@ -1446,6 +1647,323 @@ public final class ChaosSignatureVfx {
         int trimmed = Math.min(life, envRemain);
         VoidPixelManager.spawnPixel(x, y, z, vx, vy, vz, size, trimmed, mode, hue,
                 gravity, gray);
+    }
+
+    // =================================================================================
+    //  IV. CASCADE DE BIFURCATION — 170 ticks
+    // =================================================================================
+
+    /**
+     * T402 — LA FIGURE N'EST PAS DESSINÉE, ELLE EST <b>CALCULÉE</b>.
+     *
+     * <h3>Le concept</h3>
+     *
+     * <p>Les trois premières signatures illustrent le chaos ; celle-ci en est une. On
+     * itère la <b>carte logistique</b> — {@code x = r·x·(1−x)}, une ligne d'arithmétique —
+     * et on place un cube à chaque valeur que l'orbite visite. Pour {@code r} petit
+     * l'orbite tient en <b>un</b> point ; passé 3, elle en occupe <b>deux</b> ; puis
+     * quatre, huit, seize, et à 3,5699… elle n'en finit plus : c'est le
+     * <b>diagramme de Feigenbaum</b>, et c'est la définition opératoire du chaos.</p>
+     *
+     * <p>Rien ici n'est une sinusoïde habillée. Les positions sortent de l'itération, y
+     * compris les <b>fenêtres de périodicité</b> — ces bandes nettes qui réapparaissent
+     * en plein brouillard, dont la plus large, la fenêtre de période 3 vers 3,83, est
+     * visible à l'œil nu dans la figure. On ne pourrait pas les inventer à la main : il
+     * faut faire le calcul pour les obtenir, et c'est précisément ce qui donne à cette
+     * signature une texture qu'aucune autre du mod ne peut avoir.</p>
+     *
+     * <h3>La mise en espace</h3>
+     *
+     * <p>{@code r} court le long de l'axe attaquant → cible : le diagramme <b>fonce sur
+     * la victime</b>, la tige unique derrière elle, le brouillard devant. {@code x} est
+     * la hauteur. Et comme un diagramme plat disparaît vu par la tranche — défaut déjà
+     * payé sur la fenêtre de la Porte —, la nappe est <b>épaissie latéralement</b> : la
+     * dispersion transverse croît avec le désordre, si bien que la tige est un fil et le
+     * chaos un volume.</p>
+     *
+     * <h3>Le rythme</h3>
+     *
+     * <p>Six vagues, aux ticks 24, 48, 70, 88, 102, 112 : les intervalles se resserrent
+     * (24, 22, 18, 14, 10) comme la cascade elle-même converge. La vague {@code k} porte
+     * {@code 2^k} coups — un, puis deux, quatre, huit, seize, trente-deux. Soixante-trois
+     * impacts de plus en plus nombreux, de plus en plus petits, de plus en plus serrés :
+     * l'exact contraire du Grain de Trop qui la suit.</p>
+     */
+    private static final float FEIGEN_R0 = 2.70f;
+    private static final float FEIGEN_R1 = 3.99f;
+
+    /** Les six temps : ils se resserrent, comme les doublements de période. */
+    private static final int[] BEATS_FEIGEN = { 24, 48, 70, 88, 102, 112 };
+
+    private static void renderFeigenbaum(float cx, float cy, float cz, float t,
+                                         float dx, float dz, float a, int salt, float ground) {
+        // LE BALAYAGE. La figure se construit de la gauche (r petit, un seul point) vers la
+        // droite (r grand, le brouillard) : on ne montre que ce qui est deja atteint, sinon
+        // le dedoublement ne se LIT pas, il est deja la au premier tick.
+        float reveal = smooth(t, 0.04f, 0.62f);
+        // LA REPRISE : a 72 % le diagramme se replie vers la tige, puis repart. Le chaos
+        // « revient au moins une fois », c'est la regle du fichier.
+        float fold = smooth(t, 0.72f, 0.86f) * (1.0f - smooth(t, 0.88f, 0.99f));
+        float live = 1.0f - 0.72f * fold;
+
+        final int columns = 96;
+        for (int c = 0; c < columns; c++) {
+            float u = c / (float) (columns - 1);
+            if (u > reveal) break;
+            float r = FEIGEN_R0 + (FEIGEN_R1 - FEIGEN_R0) * u;
+
+            // L'ITERATION. On brule 110 pas pour laisser l'orbite se poser sur son
+            // attracteur, puis on trace les 26 suivants : sans le transitoire, le
+            // diagramme est noye sous la trainee du depart.
+            float x = 0.42f + 0.11f * hash(salt + c, 7);
+            for (int i = 0; i < 110; i++) x = r * x * (1.0f - x);
+
+            float forward = (u - 0.46f) * 6.40f;          // r court vers la cible
+            float spread = Mth.clamp((r - 3.56f) * 1.55f, 0.0f, 1.0f);  // le desordre
+            int samples = 26;
+            for (int i = 0; i < samples; i++) {
+                x = r * x * (1.0f - x);
+                if (x <= 0.0f || x >= 1.0f) break;
+
+                // La nappe s'epaissit la ou l'orbite se disperse : un fil dans la zone
+                // periodique, un volume dans la zone chaotique.
+                float lat = (hash(c * 31 + i, salt + 5) - 0.5f) * 1.70f * spread;
+                float up = 0.22f + x * 2.55f;
+
+                // LE REPLIEMENT : tout revient vers la tige unique, puis repart.
+                float fx2 = forward * live;
+                float fy2 = 0.22f + (up - 0.22f) * live;
+                float lx2 = lat * live;
+
+                float near = 1.0f - 0.55f * spread;       // le brouillard est plus sourd
+                float half = (0.052f + 0.030f * near) * (0.75f + 0.45f * (1.0f - u));
+                int mode = spread > 0.45f ? M_SPECTRUM : M_RAINBOW;
+                int gray = (i % 7 == 0) ? G_FRAME : (spread > 0.6f ? G_DEEP : G_BODY);
+                put(cx, cy, cz, dx, dz, fx2, fy2, lx2, half, u * 9.0f + i,
+                        mode, gray, 0.0f, a * (0.42f + 0.56f * near) * (0.35f + 0.65f * reveal));
+            }
+
+            // LES DEUX SÉPARATRICES. Aux points de bifurcation, une barre verticale claire
+            // marque l'endroit exact ou la periode double : sans reperes, l'oeil voit une
+            // nappe qui s'effiloche au lieu d'un arbre qui se divise.
+            if (c % 24 == 3 && u < 0.72f) {
+                for (int j = 0; j < 9; j++) {
+                    put(cx, cy, cz, dx, dz, forward * live, (0.18f + j * 0.30f) * live, 0.0f,
+                            0.040f, 0.0f, M_DUAL, G_GLASS, H_CYAN,
+                            a * 0.55f * (1.0f - j * 0.07f) * reveal);
+                }
+            }
+        }
+
+        // LA TIGE. Avant la premiere bifurcation l'orbite est UN point : un trait net,
+        // en arriere, qui donne l'echelle de tout le reste.
+        for (int i = 0; i < 16; i++) {
+            float u = i / 15.0f;
+            float r = FEIGEN_R0 + 0.28f * u;
+            float xs = 1.0f - 1.0f / r;                   // le point fixe, exactement
+            put(cx, cy, cz, dx, dz, (-0.46f - u * 0.52f) * 6.40f * 0.16f - 2.55f,
+                    (0.22f + xs * 2.55f) * live, 0.0f,
+                    0.070f, 0.0f, M_TINTED, G_FLASH, H_CYAN, a * 0.92f);
+        }
+
+        // LE SOL. Une ligne d'axe sous la figure : elle dit que r est une grandeur, pas
+        // une direction de l'espace.
+        for (int i = 0; i < 30; i++) {
+            float u = i / 29.0f;
+            if (u > reveal) break;
+            put(cx, cy, cz, dx, dz, (u - 0.46f) * 6.40f, ground + 0.08f, 0.0f,
+                    0.045f, 0.030f, 0.045f, 0.0f, M_MONO, G_DEEP, 0.0f, a * 0.50f);
+        }
+    }
+
+    // =================================================================================
+    //  V. LE GRAIN DE TROP — 200 ticks
+    // =================================================================================
+
+    /**
+     * T402 — UNE FIGURE QUI N'EST PAS ÉCRITE : ELLE <b>ARRIVE</b>.
+     *
+     * <h3>Le concept</h3>
+     *
+     * <p>Le tas de sable de Bak, Tang et Wiesenfeld. Une grille ; on y dépose des grains
+     * un par un ; dès qu'une case en contient quatre, elle <b>se déverse</b> sur ses
+     * quatre voisines, ce qui peut les faire déborder à leur tour. Le système s'organise
+     * tout seul vers un état <b>critique</b> où un seul grain de plus provoque parfois
+     * une avalanche qui traverse toute la grille. C'est la criticalité auto-organisée :
+     * un chaos qui n'a ni équation ni trajectoire, seulement une règle locale et une
+     * catastrophe différée.</p>
+     *
+     * <p>L'automate tourne pour de bon. Personne n'a placé ces cubes : leur hauteur est
+     * le contenu d'une case après N dépôts, et les motifs en losange qui apparaissent
+     * sont ceux, bien connus, du tas de sable abélien. On ne les a ni dessinés ni
+     * approchés.</p>
+     *
+     * <h3>Pourquoi c'est l'exact contraire de la cascade</h3>
+     *
+     * <table>
+     *   <tr><td></td><td><b>Cascade</b></td><td><b>Grain de trop</b></td></tr>
+     *   <tr><td>cadence</td><td>63 coups qui accélèrent</td><td>le silence, puis UN coup</td></tr>
+     *   <tr><td>forme</td><td>une nappe horizontale qui se divise</td><td>une pile verticale qui s'écroule</td></tr>
+     *   <tr><td>couleur</td><td>le spectre entier</td><td>des gris qui virent à la braise</td></tr>
+     *   <tr><td>nature</td><td>une équation exacte</td><td>un automate émergent</td></tr>
+     * </table>
+     *
+     * <h3>Le rythme</h3>
+     *
+     * <p>Cent-cinquante ticks d'empilement où il ne se passe <b>presque</b> rien — trois
+     * micro-glissements seulement, aux ticks 52, 92 et 126, qui disent que ça tient
+     * encore. Puis le tick 150 : l'avalanche. Un seul coup, et il vaut tous les autres.
+     * Le silence qui précède n'est pas du temps perdu, c'est ce qui donne sa valeur au
+     * dernier grain — une animation qui frappe sans arrêt ne peut pas, par construction,
+     * produire un instant qui compte.</p>
+     */
+    private static final int PILE_N = 19;        // grille 19×19, centrée sur la victime
+    private static final int PILE_GRAINS = 900;  // dépôts au moment de la rupture
+
+    /** Les trois micro-glissements, puis l'avalanche. */
+    private static final int[] BEATS_SANDPILE = { 52, 92, 126, 150 };
+
+    /** Dernier état calculé, mémorisé par nombre de grains : l'automate est déterministe. */
+    private static int[] pileCache = null;
+    private static int pileCacheGrains = -1;
+
+    /**
+     * Fait tourner l'automate pour {@code grains} dépôts et renvoie la grille.
+     *
+     * <p>Les dépôts tombent au centre, comme dans le modèle d'origine : c'est la seule
+     * façon d'obtenir les losanges concentriques. Le résultat ne dépend que du nombre de
+     * grains, donc une seule simulation par tick suffit — d'où le cache, sans lequel on
+     * relancerait l'automate soixante fois par seconde pour un résultat identique.</p>
+     */
+    private static int[] sandpile(int grains) {
+        if (pileCache != null && pileCacheGrains == grains) return pileCache;
+        int[] g = new int[PILE_N * PILE_N];
+        int mid = PILE_N / 2;
+        for (int n = 0; n < grains; n++) {
+            g[mid * PILE_N + mid]++;
+            // L'EFFONDREMENT EN CHAINE. Une case a quatre grains se vide sur ses quatre
+            // voisines ; ce qui sort du bord est perdu, exactement comme dans le modele.
+            boolean moved = true;
+            int guard = 0;
+            while (moved && guard++ < 4000) {
+                moved = false;
+                for (int y = 0; y < PILE_N; y++) {
+                    for (int x = 0; x < PILE_N; x++) {
+                        int i = y * PILE_N + x;
+                        if (g[i] < 4) continue;
+                        g[i] -= 4;
+                        moved = true;
+                        if (x > 0) g[i - 1]++;
+                        if (x < PILE_N - 1) g[i + 1]++;
+                        if (y > 0) g[i - PILE_N]++;
+                        if (y < PILE_N - 1) g[i + PILE_N]++;
+                    }
+                }
+            }
+        }
+        pileCache = g;
+        pileCacheGrains = grains;
+        return g;
+    }
+
+    private static void renderSandpile(float cx, float cy, float cz, float t,
+                                       float dx, float dz, float a, int salt, float ground) {
+        float tick = t * 200.0f;
+        // LA MONTEE occupe les trois quarts du temps et ne fait rien d'autre que monter.
+        float build = Mth.clamp(tick / 150.0f, 0.0f, 1.0f);
+        boolean fallen = tick >= 150.0f;
+        float after = fallen ? Mth.clamp((tick - 150.0f) / 50.0f, 0.0f, 1.0f) : 0.0f;
+
+        int grains = Math.max(1, Math.round(PILE_GRAINS * build * build));
+        int[] g = sandpile(grains);
+
+        // LA PLAQUE, ET NON LE CONE. L'automate sature a TROIS : une case stable n'en
+        // contient jamais quatre. Le tas de Bak-Tang-Wiesenfeld n'est donc pas un tas au
+        // sens courant mais un PLATEAU FRACTAL, et toute sa beaute se lit de dessus. La
+        // grille est large (19x19) et la maille serree (0,30) pour que le motif ait la
+        // place d'apparaitre ; la hauteur, elle, tient en trois crans.
+        final float cell = 0.30f;
+        final float mid = (PILE_N - 1) * 0.5f;
+
+        for (int y = 0; y < PILE_N; y++) {
+            for (int x = 0; x < PILE_N; x++) {
+                int h = g[y * PILE_N + x];
+                if (h <= 0) continue;
+                float fx = (x - mid) * cell;
+                float lz = (y - mid) * cell;
+                float dist = Mth.sqrt(fx * fx + lz * lz);
+
+                for (int k = 0; k < h; k++) {
+                    // L'AVALANCHE : les colonnes partent vers l'exterieur en tombant, et
+                    // les plus hautes partent les premieres — c'est ce qui rend
+                    // l'effondrement lisible comme un ECROULEMENT et non comme un fondu.
+                    // LE DEPART EST IMMEDIAT, et c'est tout le sujet. Une loi en
+                    // after*after donnerait une avalanche qui demarre en douceur --
+                    // autrement dit pas une avalanche. La racine carree part d'un coup
+                    // puis ralentit : c'est ce que fait un tas qui lache.
+                    float blow = fallen
+                            ? Mth.sqrt(after) * (0.60f + 0.40f * after) * (1.0f + k * 0.22f)
+                            : 0.0f;
+                    // LE REBOND. Les cubes sont jetes en l'air puis retombent ; les plus
+                    // hauts de la pile sont jetes le plus loin et le plus haut.
+                    float hop = fallen
+                            ? sin(Math.min(1.0f, blow) * TAU * 0.5f) * (0.9f + k * 0.40f)
+                            : 0.0f;
+                    float dirx = dist > 0.001f ? fx / dist : 0.3f;
+                    float dirz = dist > 0.001f ? lz / dist : 0.3f;
+                    float px = fx + dirx * blow * 4.2f;
+                    float pz = lz + dirz * blow * 4.2f;
+                    float py = ground + 0.10f + k * 0.19f + hop;
+                    if (py < ground + 0.08f) py = ground + 0.08f;
+
+                    // LA TENSION. Plus le tas est proche de la rupture, plus les sommets
+                    // tremblent : c'est le seul indice, pendant sept secondes, que quelque
+                    // chose va arriver.
+                    float stress = build * build * (k >= 2 ? 1.0f : 0.25f);
+                    float shake = fallen ? 0.0f
+                            : stress * 0.045f * sin(t * 62.0f + x * 2.3f + y * 1.7f + k);
+
+                    float fade = fallen ? (1.0f - after * 0.92f) : (0.55f + 0.45f * build);
+                    // Les cubes du dessus sont les plus instables : ils sont aussi les plus
+                    // clairs, pour que le regard aille ou ca va casser.
+                    // LA HAUTEUR EST PORTEE PAR LA COULEUR, et c'est indispensable :
+                    // vue de dessus, une plaque de trois crans n'a pas de relief, donc
+                    // sans code couleur le motif fractal ne se lit pas du tout.
+                    int gray = (h == 3) ? G_MID : (h == 2 ? G_BODY : G_DEEP);
+                    int mode = fallen ? M_EMBER : ((h == 3) ? M_PULSE : M_TINTED);
+                    float hue = fallen ? H_EMBER : ((h == 3) ? H_ROSE : H_VIOLET);
+                    put(cx, cy, cz, dx, dz, px + shake, py, pz + shake,
+                            0.125f, 0.095f, 0.125f, 0.0f,
+                            mode, gray, hue, a * fade * 0.95f);
+                }
+            }
+        }
+
+        // LE GRAIN QUI VA TOMBER. Un seul cube, haut au-dessus du tas, qui descend pendant
+        // toute la montee. On sait donc ce qu'on attend, et on voit combien il reste.
+        if (!fallen) {
+            float drop = 4.6f - 4.1f * build;
+            put(cx, cy, cz, dx, dz, 0.0f, ground + 1.0f + drop, 0.0f,
+                    0.14f + 0.06f * build, t * 14.0f,
+                    M_STROBE, G_CORE, 0.0f, a * (0.5f + 0.5f * build));
+            // Son ombre portee : sans elle, le grain flotte sans rapport avec le tas.
+            put(cx, cy, cz, dx, dz, 0.0f, ground + 0.06f, 0.0f,
+                    0.10f + 0.10f * build, 0.030f, 0.10f + 0.10f * build, 0.0f,
+                    M_MONO, G_MASK, 0.0f, a * 0.45f);
+        }
+
+        // L'ONDE DE DECHARGE : le front de l'avalanche, au sol, qui court vers l'exterieur.
+        if (fallen && after < 0.85f) {
+            float wave = 0.5f + after * 7.0f;
+            float f = (1.0f - after / 0.85f);
+            for (int i = 0; i < 40; i++) {
+                float ang = i / 40.0f * TAU;
+                put(cx, cy, cz, dx, dz, cos(ang) * wave, ground + 0.10f, sin(ang) * wave,
+                        0.155f * f + 0.03f, 0.055f, 0.155f * f + 0.03f, ang,
+                        (i % 4 == 0) ? M_EMBER : M_MONO,
+                        (i % 4 == 0) ? G_FLASH : G_MID, H_EMBER, a * f * 0.92f);
+            }
+        }
     }
 
     /**

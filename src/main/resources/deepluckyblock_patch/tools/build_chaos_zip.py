@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Assemble deliverables/DLB_Chaos_Three_Signatures_src.zip.
+"""Assemble deliverables/DLB_Chaos_Five_Signatures_src.zip.
 
 REGLES DU LIVRABLE, apprises a la dure :
 
@@ -112,7 +112,7 @@ Rien hors de src/, a part ce fichier.
 
 LES DEUX FICHIERS JAVA NOUVEAUX
 -------------------------------
-  ChaosSignatureVfx.java             le moteur voxel des trois signatures
+  ChaosSignatureVfx.java             le moteur voxel des cinq signatures
   VoidPixelManager.java              LE SYSTEME DE PIXELS 3D : tableaux primitifs,
                                      physique au tick, rendu en UN SEUL lot
 
@@ -180,7 +180,7 @@ A TESTER EN JEU
 
 
 def main():
-    out = 'deliverables/DLB_Chaos_Three_Signatures_src.zip'
+    out = 'deliverables/DLB_Chaos_Five_Signatures_src.zip'
     os.makedirs('deliverables', exist_ok=True)
     problems = []
 

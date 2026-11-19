@@ -46,9 +46,9 @@ const CHAOS_SHAPE = (function () {
        de la victime (bbHeight × 0,50 côté serveur), donc le plancher est 0,90 plus bas. */
     GROUND_FALLBACK: -0.90,
     /* Durées réelles, en ticks, telles qu'écrites dans WeaponWorldVfxManager. */
-    DURATION: [150, 170, 200],
+    DURATION: [150, 170, 200, 170, 200],
     /* Hauteurs de centre, par signature. La page y accroche sa caméra. */
-    YC: [1.05, 1.15, 1.20],
+    YC: [1.05, 1.15, 1.20, 1.10, 0.95],
     /* L'instant de la détonation du Big Bang. SEIZE pour cent, et plus quarante-deux :
        l'aspiration est une inspiration, pas le sujet. */
     BANG: 0.16,
@@ -580,7 +580,176 @@ function buildChaos(variant, t, salt = 4421) {
     }
   }
 
-  const FN = [kaleido, entropy, bigbang];
+  /* =======================================================================================
+     IV. CASCADE DE BIFURCATION — miroir de ChaosSignatureVfx.renderFeigenbaum().
+     La figure n'est pas dessinee : on itere x = r*x*(1-x) et on pose un cube a chaque
+     valeur visitee. Les fenetres de periodicite apparaissent toutes seules — on ne
+     pourrait pas les inventer a la main.
+     ======================================================================================= */
+  function feigenbaum(tt, emitPixels) {
+    /* Ces deux signatures n'emettent AUCUN pixel libre : leur matiere est entierement
+       recalculee a chaque trame depuis l'equation. Sans ce retour, le rejeu des ticks
+       ecoules redessinerait tout le diagramme a chaque pas (272 000 cubes mesures). */
+    if (emitPixels) return;
+    const R0 = 2.70, R1 = 3.99;
+    const reveal = sstep(tt, 0.04, 0.62);
+    const fold = sstep(tt, 0.72, 0.86) * (1.0 - sstep(tt, 0.88, 0.99));
+    const live = 1.0 - 0.72 * fold;
+    const columns = 96;
+
+    for (let c = 0; c < columns; c++) {
+      const u = c / (columns - 1);
+      if (u > reveal) break;
+      const r = R0 + (R1 - R0) * u;
+
+      /* 110 pas brules pour que l'orbite se pose sur son attracteur : sans cela le
+         diagramme est noye sous la trainee du depart. */
+      let x = 0.42 + 0.11 * hash(salt + c, 7);
+      for (let i = 0; i < 110; i++) x = r * x * (1.0 - x);
+
+      const forward = (u - 0.46) * 6.40;
+      const spread = clamp01((r - 3.56) * 1.55);
+      for (let i = 0; i < 26; i++) {
+        x = r * x * (1.0 - x);
+        if (x <= 0.0 || x >= 1.0) break;
+        const lat = (hash(c * 31 + i, salt + 5) - 0.5) * 1.70 * spread;
+        const up = 0.22 + x * 2.55;
+        const near = 1.0 - 0.55 * spread;
+        const h = (0.052 + 0.030 * near) * (0.75 + 0.45 * (1.0 - u));
+        put(forward * live, 0.22 + (up - 0.22) * live, lat * live, h, h, h, u * 9.0 + i,
+            spread > 0.45 ? M_SPECTRUM : M_RAINBOW,
+            (i % 7 === 0) ? G_FRAME : (spread > 0.6 ? G_DEEP : G_BODY), 0.0,
+            a * (0.42 + 0.56 * near) * (0.35 + 0.65 * reveal));
+      }
+
+      /* Les separatrices : sans reperes, l'oeil voit une nappe qui s'effiloche au lieu
+         d'un arbre qui se divise. */
+      if (c % 24 === 3 && u < 0.72) {
+        for (let j = 0; j < 9; j++) {
+          put(forward * live, (0.18 + j * 0.30) * live, 0.0, 0.040, 0.040, 0.040, 0.0,
+              M_DUAL, G_GLASS, H_CYAN, a * 0.55 * (1.0 - j * 0.07) * reveal);
+        }
+      }
+    }
+
+    /* LA TIGE : avant la premiere bifurcation, l'orbite est UN point. */
+    for (let i = 0; i < 16; i++) {
+      const u = i / 15;
+      const r = R0 + 0.28 * u;
+      const xs = 1.0 - 1.0 / r;
+      put((-0.46 - u * 0.52) * 6.40 * 0.16 - 2.55, (0.22 + xs * 2.55) * live, 0.0,
+          0.070, 0.070, 0.070, 0.0, M_TINTED, G_FLASH, H_CYAN, a * 0.92);
+    }
+
+    /* L'AXE au sol : r est une grandeur, pas une direction de l'espace. */
+    for (let i = 0; i < 30; i++) {
+      const u = i / 29;
+      if (u > reveal) break;
+      put((u - 0.46) * 6.40, GROUND + 0.08, 0.0, 0.045, 0.030, 0.045, 0.0,
+          M_MONO, G_DEEP, 0.0, a * 0.50);
+    }
+  }
+
+  /* =======================================================================================
+     V. LE GRAIN DE TROP — miroir de ChaosSignatureVfx.renderSandpile().
+     Un vrai automate de Bak-Tang-Wiesenfeld : une case a quatre grains se vide sur ses
+     quatre voisines. Les losanges concentriques ne sont pas dessines, ils arrivent.
+     ======================================================================================= */
+  const PILE_N = 19, PILE_GRAINS = 900;
+  /* L'automate ne depend QUE du nombre de grains : sans ce cache on le relancerait en
+     entier a chaque trame pour un resultat identique, et la page tomberait a genoux. */
+  let pileCache = null, pileCacheGrains = -1;
+  function sandpileGrid(grains) {
+    if (pileCache && pileCacheGrains === grains) return pileCache;
+    const g = new Int32Array(PILE_N * PILE_N);
+    const mid = PILE_N >> 1;
+    for (let n = 0; n < grains; n++) {
+      g[mid * PILE_N + mid]++;
+      let moved = true, guard = 0;
+      while (moved && guard++ < 9000) {
+        moved = false;
+        for (let y = 0; y < PILE_N; y++) {
+          for (let x = 0; x < PILE_N; x++) {
+            const i = y * PILE_N + x;
+            if (g[i] < 4) continue;
+            g[i] -= 4; moved = true;
+            if (x > 0) g[i - 1]++;
+            if (x < PILE_N - 1) g[i + 1]++;
+            if (y > 0) g[i - PILE_N]++;
+            if (y < PILE_N - 1) g[i + PILE_N]++;
+          }
+        }
+      }
+    }
+    pileCache = g; pileCacheGrains = grains;
+    return g;
+  }
+
+  function sandpile(tt, emitPixels) {
+    if (emitPixels) return;
+    const tick = tt * 200.0;
+    const build = clamp01(tick / 150.0);
+    const fallen = tick >= 150.0;
+    const after = fallen ? clamp01((tick - 150.0) / 50.0) : 0.0;
+    const grains = Math.max(1, Math.round(PILE_GRAINS * build * build));
+    const g = sandpileGrid(grains);
+    const cell = 0.30, mid = (PILE_N - 1) * 0.5;
+
+    for (let y = 0; y < PILE_N; y++) {
+      for (let x = 0; x < PILE_N; x++) {
+        const hh = g[y * PILE_N + x];
+        if (hh <= 0) continue;
+        const fx = (x - mid) * cell, lz = (y - mid) * cell;
+        const dist = Math.hypot(fx, lz);
+        for (let k = 0; k < hh; k++) {
+          /* Depart immediat : after*after donnerait une avalanche qui demarre en
+             douceur, c'est-a-dire pas une avalanche. */
+          const blow = fallen ? sqrt(after) * (0.60 + 0.40 * after) * (1.0 + k * 0.22) : 0.0;
+          const hop = fallen ? sin(Math.min(1.0, blow) * TAU * 0.5) * (0.9 + k * 0.40) : 0.0;
+          const dirx = dist > 0.001 ? fx / dist : 0.3;
+          const dirz = dist > 0.001 ? lz / dist : 0.3;
+          const px = fx + dirx * blow * 4.2;
+          const pz = lz + dirz * blow * 4.2;
+          let py = GROUND + 0.10 + k * 0.19 + hop;
+          if (py < GROUND + 0.08) py = GROUND + 0.08;
+          const stress = build * build * (k >= 2 ? 1.0 : 0.25);
+          const shake = fallen ? 0.0 : stress * 0.045 * sin(tt * 62.0 + x * 2.3 + y * 1.7 + k);
+          const fade = fallen ? (1.0 - after * 0.92) : (0.55 + 0.45 * build);
+          /* La hauteur est portee par la COULEUR : vue de dessus, une plaque de trois
+             crans n'a pas de relief, donc sans code couleur le motif ne se lit pas. */
+          put(px + shake, py, pz + shake, 0.125, 0.095, 0.125, 0.0,
+              fallen ? M_EMBER : ((hh === 3) ? M_PULSE : M_TINTED),
+              (hh === 3) ? G_MID : (hh === 2 ? G_BODY : G_DEEP),
+              fallen ? H_EMBER_HUE : ((hh === 3) ? H_ROSE : H_VIOLET), a * fade * 0.95);
+        }
+      }
+    }
+
+    /* LE GRAIN QUI VA TOMBER, et son ombre portee : on sait ce qu'on attend. */
+    if (!fallen) {
+      const drop = 4.6 - 4.1 * build;
+      const h0 = 0.14 + 0.06 * build;
+      put(0.0, GROUND + 1.0 + drop, 0.0, h0, h0, h0, tt * 14.0,
+          M_STROBE, G_CORE, 0.0, a * (0.5 + 0.5 * build));
+      const hs = 0.10 + 0.10 * build;
+      put(0.0, GROUND + 0.06, 0.0, hs, 0.030, hs, 0.0, M_MONO, G_MASK, 0.0, a * 0.45);
+    }
+
+    /* L'ONDE DE DECHARGE au sol. */
+    if (fallen && after < 0.85) {
+      const wave = 0.5 + after * 7.0;
+      const f = 1.0 - after / 0.85;
+      for (let i = 0; i < 40; i++) {
+        const ang = i / 40 * TAU;
+        const hw = 0.155 * f + 0.03;
+        put(cos(ang) * wave, GROUND + 0.10, sin(ang) * wave, hw, 0.055, hw, ang,
+            (i % 4 === 0) ? M_EMBER : M_MONO, (i % 4 === 0) ? G_FLASH : G_MID,
+            H_EMBER_HUE, a * f * 0.92);
+      }
+    }
+  }
+
+  const FN = [kaleido, entropy, bigbang, feigenbaum, sandpile];
   const fn = FN[variant] || kaleido;
 
   /* --- LE REJEU. On repasse tous les ticks écoulés pour que les pixels libres existent. */
@@ -900,6 +1069,138 @@ function buildChaos(variant, t, salt = 4421) {
           put(cos(ang) * rr, up, sin(ang) * rr, h, h, h, ang * 3.0 + spin,
               (i % 4 === 0) ? M_DUAL : M_TINTED, (i % 4 === 0) ? G_FRAME : G_DEEP,
               H_ROSE, a * f * 0.88);
+        }
+      }
+    }
+
+  } else if (variant === 3) {
+    /* ---- CASCADE : six vagues, et CHAQUE COUP TOMBE SUR LE DIAGRAMME -------------
+       Le rang d'un coup dans sa vague fixe le r ou il frappe, et sa hauteur est la
+       valeur que l'attracteur prend vraiment a ce r : la carte logistique est reiteree
+       pour chaque impact. La vague 0 tape sur la tige ; la vague 5 fait pleuvoir
+       trente-deux coups sur toute la largeur de la nappe. La grele EPOUSE la cascade. */
+    const BEATS_F = [24, 48, 70, 88, 102, 112];
+    const R0 = 2.70, R1 = 3.99;
+    for (let k = 0; k < BEATS_F.length; k++) {
+      const since = nowT - BEATS_F[k];
+      const windK = 8.0 - k * 0.9, burstK = 7.0 - k * 0.7;
+      if (since < -windK || since > burstK) continue;
+      const pre = since < 0;
+      const w = pre ? 1.0 + since / windK : 1.0;
+      const r01 = pre ? 0.0 : since / burstK;
+      const shots = 1 << k;
+      /* L'echelle ne decroit que doucement : diviser par racine de 2^k rendait les
+         dernieres vagues litteralement invisibles -- des confettis, pas une grele. */
+      const scale = 1.0 / (1.0 + k * 0.25);
+      for (let i = 0; i < shots; i++) {
+        const u = (shots === 1) ? 0.08 : 0.04 + (i / (shots - 1)) * 0.92;
+        const rr = R0 + (R1 - R0) * u;
+        let xv = 0.42 + 0.11 * hash(salt + k * 31 + i, 11);
+        for (let s2 = 0; s2 < 70; s2++) xv = rr * xv * (1.0 - xv);
+        xv = xv < 0.02 ? 0.02 : (xv > 0.98 ? 0.98 : xv);
+        const spread = clamp01((rr - 3.56) * 1.55);
+        const fwd = (u - 0.46) * 6.40;
+        const lat = (hash(k * 97 + i, salt + 3) - 0.5) * 1.70 * spread;
+        const hgt = 0.22 + xv * 2.55;
+        if (pre) {
+          /* LA CHUTE, a la verticale : le diagramme se regarde de profil, et seule une
+             arrivee verticale se lit sur une figure vue de profil. */
+          const e = w * w;
+          const high = 2.30 - 2.15 * e;
+          const tail = Math.max(3, 8 - k);
+          for (let j = 0; j < tail; j++) {
+            const hh = (0.115 - j * 0.010) * scale * 1.35;
+            put(fwd, hgt + high + j * 0.26, lat, hh, hh * 1.9, hh, spin + i,
+                (j === 0) ? M_STROBE : M_DUAL, (j === 0) ? G_CORE : G_FRAME,
+                H_CYAN, a * w * (0.95 - j * 0.09));
+          }
+        } else {
+          /* L'IMPACT : un disque PLAT dans le plan de la nappe. */
+          const f = 1.0 - r01 * 0.88;
+          const ring = (0.18 + 0.95 * sqrt(r01)) * scale;
+          const n = Math.max(7, 14 - k);
+          for (let j = 0; j < n; j++) {
+            const ca = j / n * TAU + i * 0.7;
+            put(fwd + cos(ca) * ring, hgt + sin(ca) * ring * 0.55, lat,
+                0.075 * scale + 0.015, 0.075 * scale + 0.015, 0.045 * scale + 0.010, ca,
+                (j % 3 === 0) ? M_STROBE : M_SPECTRUM,
+                (j % 3 === 0) ? G_CORE : G_GLASS, 0.0, a * f * 0.95);
+          }
+          if (r01 < 0.45) {
+            const cf = 1.0 - r01 / 0.45;
+            const hc = (0.21 * cf + 0.055) * scale;
+            put(fwd, hgt, lat, hc, hc, hc, spin * 5.0, M_STROBE, G_CORE, 0.0, a * cf * 0.95);
+          }
+        }
+      }
+    }
+
+  } else if (variant === 4) {
+    /* ---- GRAIN DE TROP : trois frolements, puis une seule fois tout ---------------
+       Les trois premiers sont VOLONTAIREMENT maigres : ils disent que ca tient encore.
+       Le quatrieme dure vingt-cinq ticks au lieu de six, et c'est le seul evenement. */
+    const BEATS_S = [52, 92, 126, 150];
+    for (let k = 0; k < 3; k++) {
+      const since = nowT - BEATS_S[k];
+      if (since < 0.0 || since > 6.0) continue;
+      const u = since / 6.0;
+      const f = (1.0 - u) * (1.0 - u);
+      const side = k * 2.39996 + salt * 0.11;
+      for (let i = 0; i < 14; i++) {
+        const along = i / 13;
+        const ang = side + (along - 0.5) * 0.55;
+        const rr = 0.45 + along * (1.3 + u * 2.4);
+        const hw = 0.105 - along * 0.030;
+        put(cos(ang) * rr, 0.55 - along * 0.42 + 0.18 * (1.0 - u), sin(ang) * rr,
+            hw, 0.070, hw, ang, M_MONO, i < 3 ? G_MID : G_DEEP, 0.0, a * f * 0.85);
+      }
+    }
+
+    const since = nowT - BEATS_S[3];
+    if (since >= -6.0 && since <= 25.0) {
+      if (since < 0.0) {
+        /* LE DERNIER SOUFFLE : six ticks ou rien ne bouge, et c'est ce silence qui fait
+           le coup. */
+        const w = 1.0 + since / 6.0, g2 = w * w * w, h = 0.10 + 0.55 * g2;
+        put(0.0, 1.25, 0.0, h, h, h, spin * 10.0, M_STROBE, G_CORE, 0.0, a * g2);
+      } else {
+        const u = since / 25.0;
+        const f = (1.0 - u) * (1.0 - u * 0.45);
+        /* 1. LE CRATERE. */
+        for (let i = 0; i < 28; i++) {
+          const ang = i / 28 * TAU + spin * 0.3;
+          const rr = 0.35 + 1.05 * sqrt(u);
+          const hw = 0.175 * f + 0.03;
+          put(cos(ang) * rr, 0.12 + 0.55 * (1.0 - u), sin(ang) * rr, hw, 0.090, hw, ang,
+              M_EMBER, (i % 3 === 0) ? G_FLASH : G_MID, H_EMBER_HUE, a * f * 0.95);
+        }
+        /* 2. LA COULEE : huit langues qui descendent les flancs et vont loin. */
+        for (let lane = 0; lane < 8; lane++) {
+          const ang = lane / 8 * TAU + salt * 0.05;
+          for (let i = 0; i < 16; i++) {
+            const along = i / 15;
+            const lead = clamp01(u * 2.2 - along * 0.9);
+            if (lead <= 0.02) continue;
+            const rr = 0.5 + along * (1.6 + u * 6.2);
+            const wob = 0.22 * sin(along * 7.0 + lane);
+            const hw = 0.150 - along * 0.055;
+            put(cos(ang) * rr - sin(ang) * wob,
+                0.14 + 0.55 * (1.0 - along) * (1.0 - u * 0.6),
+                sin(ang) * rr + cos(ang) * wob, hw, 0.085, hw, ang,
+                (i % 5 === 0) ? M_EMBER : M_MONO,
+                (i % 5 === 0) ? G_FLASH : (along < 0.4 ? G_MID : G_DEEP),
+                H_EMBER_HUE, a * f * lead * 0.95);
+          }
+        }
+        /* 3. LA POUSSIERE : elle monte pendant que tout descend. */
+        for (let i = 0; i < 34; i++) {
+          const ang = i * 2.39996 + salt * 0.09;
+          const seedU = ((i * 17) % 23) / 23;
+          const rr = (0.4 + seedU * 2.6) * (0.4 + u * 1.9);
+          const h = 0.060 + 0.055 * seedU;
+          put(cos(ang) * rr, 0.20 + u * (1.4 + seedU * 2.6), sin(ang) * rr, h, h, h,
+              ang * 3.0 + spin, M_TINTED, G_DEEP, H_EMBER_HUE,
+              a * f * (0.40 + 0.45 * seedU));
         }
       }
     }
