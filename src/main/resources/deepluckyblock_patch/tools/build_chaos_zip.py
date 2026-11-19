@@ -6,7 +6,8 @@ REGLES DU LIVRABLE, apprises a la dure :
 
   * JAMAIS de build.gradle dans l'archive. Il ecraserait le bloc de patch que l'utilisateur
     maintient a la main dans son projet MCreator.
-  * Rien hors de src/, a la seule exception de LISEZ-MOI-CONTENU.txt.
+  * Rien hors de src/, a la seule exception du fichier .mcreator (le launcher du mod).
+  * AUCUN lisez-moi : l'utilisateur ne les lit pas, ils encombrent l'archive.
   * Les deux copies de chaque .java (source et miroir FIXES_MCREATOR) doivent etre
     IDENTIQUES au moment de l'empaquetage. Toute modification posterieure a une resynchro
     desynchronise les miroirs en silence : d'ou l'assert ci-dessous, qui refuse de produire
@@ -75,6 +76,16 @@ JAVA = [
     'src/main/java/deepluckyblock/client/SystemTooltipWindowRenderer.java',
 ]
 EXTRA = [
+    # T416 : LE FICHIER MCREATOR. C'est le launcher du mod et c'est LUI qui ecrase les
+    # fichiers de langue a la regeneration : une traduction absente de son language_map
+    # est une traduction perdue. Il voyage donc avec les sources, a la racine, la ou
+    # l'utilisateur le depose dans son projet.
+    'deep_lucky_block-neoforge-1.21.1.mcreator',
+    # Les deux fichiers de langue, pour que l'archive soit juste MEME sans passer par
+    # MCreator : qui recopie seulement src/ doit obtenir les memes textes que le
+    # language_map ci-dessus. Les trois sources sont verifiees identiques avant envoi.
+    'src/main/resources/assets/deep_lucky_block/lang/en_us.json',
+    'src/main/resources/assets/deep_lucky_block/lang/fr_fr.json',
     # T397-PIXEL3D : les trois fichiers du core shader. Ils ne vivent PAS sous
     # deepluckyblock_patch mais a leur emplacement reel dans assets/ : c'est la que le
     # chargeur de ressources les cherche, et un asset range ailleurs ne se charge pas.
@@ -89,8 +100,6 @@ EXTRA = [
     'src/main/resources/assets/deep_lucky_block/shaders/core/void_portal.fsh',
     'src/main/resources/assets/deep_lucky_block/textures/effect/void_sky.png',
     'src/main/resources/assets/deep_lucky_block/textures/effect/void_stars.png',
-    'src/main/resources/deepluckyblock_patch/WATER_SIGNATURES.md',
-    'src/main/resources/deepluckyblock_patch/LIRE-MOI-IMPORTANT.md',
     'src/main/resources/deepluckyblock_patch/tools/semcheck.py',
     'src/main/resources/deepluckyblock_patch/tools/floatcheck.py',
     # glslcheck : il attrape ce que la demo navigateur ne peut pas voir, c'est-a-dire les
@@ -127,159 +136,6 @@ EXTRA = [
     'src/main/resources/data/deep_lucky_block/enchantment/verdant_sap_bloom.json',
     'src/main/resources/data/deep_lucky_block/enchantment/wildwood_awakening.json',
 ]
-
-README = """DLB - SOURCES DU MOD : L ARCHIVE UNIQUE
-======================================
-
-Cette archive est la seule a telecharger. Elle porte toujours le meme nom
-(DLB_src.zip) et contient a chaque fois l integralite des fichiers a jour.
-
-------------------------------------------------------------------------------
-DERNIERE LIVRAISON : LES ANIMATIONS DEVIENNENT DES COMPETENCES  (T410)
-------------------------------------------------------------------------------
-Fichiers nouveaux :
-    src/main/java/deepluckyblock/enchantments/WeaponSkill.java
-    src/main/java/deepluckyblock/enchantments/WeaponSkillHandler.java
-    src/main/resources/data/deep_lucky_block/enchantment/  (14 fichiers)
-Fichiers a remplacer :
-    src/main/java/deepluckyblock/enchantments/WeaponVfxServerListener.java
-    src/main/java/deepluckyblock/enchantments/WeaponVisualEffectId.java
-    src/main/java/deepluckyblock/client/ClientTranslationInjector.java
-    src/main/java/deepluckyblock/client/EnchantmentTooltipHandler.java
-
-1. ON NE SUBIT PLUS LES GRANDES ANIMATIONS, ON LES LANCE.
-   Avant, une grosse animation tombait toute seule, sur trois pour cent des
-   coups d epee. Ce tirage n existe plus. Les quarante-cinq signatures sont
-   devenues des COMPETENCES : arme de melee en main, CLIC DROIT SUR UN MOB.
-   Pas de touche a retenir, pas de shift. Le clic droit dans le vide ne change
-   pas : il tend toujours l arc et mange toujours le pain.
-
-2. CHAQUE COMPETENCE A SA RECHARGE, ET ELLE EST CALCULEE.
-   Aucune valeur n a ete choisie a la main. La formule est la meme pour les
-   quarante-cinq, a partir de ce que fait vraiment l animation :
-       charge   = nombre de coups portes + duree de l animation / 40 ticks
-       recharge = 30 s + 2 s par point de charge, plafonnee a 90 s
-   Une animation qui frappe souvent ET longtemps coute donc plus cher. En
-   pratique les recharges vont de 32 a 60 secondes. Elle est ecrite en toutes
-   lettres sur l objet, dans la description de la competence.
-
-3. L ETAT SE LIT SUR L ARME, PAS DANS UNE BARRE.
-   Aucun voile gris, aucune ligne  pret . Quand la competence est chargee, le
-   halo de l arme change : il prend la couleur de son element, a l intensite 13
-   de l echelle de /glint, tres au-dessus du 4 habituel. Une fois lancee, le
-   halo redevient exactement ce qu il etait - y compris un /glint pose a la
-   main, qui est mis de cote et rendu intact.
-
-4. LES GRANDES ANIMATIONS NE SONT PAS PERDUES POUR LA DISTANCE.
-   Elles passent a l arc, a l arbalete et au trident lance, ou elles gardent
-   leur ancien role : cinq pour cent des impacts, avec le bonus de degats et
-   l effet elementaire. La signature jouee est celle des enchantements de l ARME
-   DE TIR, jamais ceux d une epee rangee dans l inventaire.
-
-5. QUATORZE ENCHANTEMENTS QUI MANQUAIENT.
-   Quatorze signatures sur quarante-cinq n avaient aucun enchantement capable de
-   les porter : elles etaient donc injouables. Les fichiers sont crees, avec une
-   rarete qui suit la puissance (poids 10 pour les recharges courtes, 5 au-dela
-   de 40 s, 2 au-dela de 50 s).
-
-6. LES TEXTES SONT DANS LE FICHIER MCREATOR, PAS DANS LES JSON DE LANGUE.
-   Les quatre-vingt-dix lignes francaises et les quatre-vingt-dix anglaises sont
-   posees dans ClientTranslationInjector, APRES la lecture des fichiers de
-   langue, donc elles gagnent sur eux. Un nouvel export MCreator ne les efface
-   plus.
-
-NON VERIFIE : javac est absent de l environnement, les bancs (semcheck,
-floatcheck, typecheck) ne valent donc pas une compilation, et rien n a pu etre
-observe en jeu.
-
-------------------------------------------------------------------------------
-CONTENU HISTORIQUE : CHAOS, LES SIGNATURES ET LES PIXELS 3D (T397+)
-------------------------------------------------------------------------------
-
-Treizieme et derniere famille refondue. Les trois signatures du Chaos passent de 18-22
-ticks a 150/170/200, avec un moteur voxel dedie, un gameplay serveur complet, une
-ressource partagee (la discordance) et un CORE SHADER maison : void_pixel.
-
-CE QUE CONTIENT CETTE ARCHIVE
------------------------------
-  src/main/java/...                  les sources, a copier dans ton projet
-  src/.../FIXES_MCREATOR/...         la copie miroir, identique fichier pour fichier
-  src/main/resources/assets/...      les assets des shaders, A LEUR EMPLACEMENT REEL
-  src/.../WATER_SIGNATURES.md        le journal technique
-  src/.../tools/                     les outils de controle et le miroir JS de l'apercu
-
-CE QU'ELLE NE CONTIENT PAS, ET POURQUOI
----------------------------------------
-Pas de build.gradle. Il ecraserait le bloc de patch que tu maintiens a la main.
-Rien hors de src/, a part ce fichier.
-
-LES DEUX FICHIERS JAVA NOUVEAUX
--------------------------------
-  ChaosSignatureVfx.java             le moteur voxel des cinq signatures
-  VoidPixelManager.java              LE SYSTEME DE PIXELS 3D : tableaux primitifs,
-                                     physique au tick, rendu en UN SEUL lot
-
-                                     tous les deux dans deepluckyblock/client/
-
-LES TROIS ASSETS NOUVEAUX
--------------------------
-  assets/deep_lucky_block/shaders/core/void_pixel.json
-  assets/deep_lucky_block/shaders/core/void_pixel.vsh
-  assets/deep_lucky_block/shaders/core/void_pixel.fsh
-
-  ATTENTION : le JSON ecrit "deep_lucky_block:void_pixel" dans ses champs vertex et
-  fragment. Ce n'est pas une coquetterie - vanilla ne cherche que dans minecraft:, et
-  c'est NeoForge qui patche le chargement pour accepter un namespace. Sans le prefixe,
-  le jeu cherche minecraft:shaders/core/void_pixel.vsh et echoue au demarrage.
-
-LE SYSTEME DE PIXELS 3D, EN BREF
---------------------------------
-Un Pixel 3D est un cube miniature (0,08 a 0,20 bloc) dont le coeur est anthracite
-#23232A a 65 % d'opacite et dont les DOUZE ARETES defilent en arc-en-ciel fullbright.
-
-  * Les aretes ne sont PAS de la geometrie. Chaque cube n'a que ses six faces, soit 24
-    sommets ; le fragment shader detecte le bord dans les UV de face et les quatre bords
-    de six faces donnent exactement douze aretes. Une arete modelisee aurait coute huit
-    fois plus de sommets.
-  * Fullbright par construction : le programme ne recoit ni lightmap ni overlay.
-  * Treize tableaux primitifs paralleles, 12 000 cubes, ZERO allocation a l'execution,
-    retrait par echange avec le dernier vivant en O(1).
-  * Un seul lot de rendu, a l'etape AFTER_TRANSLUCENT_BLOCKS - choix delibere contre
-    AFTER_PARTICLES : a cette etape l'eau et le verre sont deja dans le tampon de
-    profondeur, donc un cube derriere une vitre est correctement masque.
-  * La phase de l'onde est calculee cote CPU, UNE FOIS PAR CUBE, parce que l'attribut
-    Position d'un core shader est RELATIF A LA CAMERA : la calculer dans le shader aurait
-    fait glisser tout l'arc-en-ciel des que le joueur marche. Ce n'est pas une couleur
-    qui est calculee cote CPU, c'est un scalaire de position.
-
-  API :  VoidPixelManager.spawnPixel(x, y, z, vx, vy, vz, size, lifetimeTicks)
-         VoidPixelManager.spawnPixel(..., int mode, float hue, float gravity)
-         modes : MODE_RAINBOW = 0, MODE_TINTED = 1, MODE_MONO = 2
-
-LES POINTS D'ACCROCHE
----------------------
-  WeaponWorldVfxManager   durees 150/170/200, isChaosSignature, impactChaosSignature,
-                          la voix de swing du Chaos, la rotation /anim
-  WeaponVfxServerListener applyChaosGameplay + les trois signatures serveur,
-                          la discordance (CHAOS_DISCORDS), l'entropie (CHAOS_ENTROPIES),
-                          le pool ANIM_CHAOS et le balayage des deux cartes
-  AnimFamily              le Chaos devient la TREIZIEME famille : /anim chaos
-
-A TESTER EN JEU
----------------
-  /anim chaos  ·  /dlbvfx play 35  ·  36  ·  37  ·  /dlbvfx stop
-
-  Pour la Sphere, comparer RESTER et SORTIR au bout de trois pulsations : c'est tout le
-  sujet de la signature, et c'est la seule du mod ou partir est la bonne reponse.
-
-  Pour le Big Bang, comparer UN corps seul et SIX corps serres - la prime de foule est de
-  douze pour cent par corps, plafonnee a six.
-
-  Pour les Pixels 3D : les regarder DE NUIT et DANS UNE GROTTE. Les aretes doivent briller
-  exactement pareil. Puis F3+T pendant qu'une signature est a l'ecran : le shader doit se
-  recharger sans crash - c'est pour cela que ModShaders garde l'instance du callback et
-  jamais la candidate.
-"""
 
 
 def main():
@@ -319,13 +175,17 @@ def main():
             z.write(MIRROR + rel, MIRROR + rel)
         for rel in EXTRA:
             z.write(rel, rel)
-        z.writestr('LISEZ-MOI-CONTENU.txt', README)
 
     raw = io.open(out, 'rb').read()
     with zipfile.ZipFile(out) as z:
         names = z.namelist()
-    bad = [n for n in names if n != 'LISEZ-MOI-CONTENU.txt' and not n.startswith('src/')]
+    # T416 : le .mcreator est la SEULE entree admise hors de src/ ; les lisez-moi ont ete
+    # retires du livrable a la demande de l'utilisateur.
+    HORS_SRC_AUTORISE = {'deep_lucky_block-neoforge-1.21.1.mcreator'}
+    bad = [n for n in names if n not in HORS_SRC_AUTORISE and not n.startswith('src/')]
     assert not bad, 'chemins hors src/ : %r' % bad
+    assert not [n for n in names if 'LISEZ-MOI' in n or 'LIRE-MOI' in n], 'lisez-moi dans l archive'
+    assert 'deep_lucky_block-neoforge-1.21.1.mcreator' in names, 'fichier MCreator absent de l archive'
     assert not [n for n in names if n.endswith('build.gradle')], 'build.gradle dans l archive'
     print('%s : %d entrees, %d octets' % (out, len(names), len(raw)))
     print('SHA-256 %s' % hashlib.sha256(raw).hexdigest())
