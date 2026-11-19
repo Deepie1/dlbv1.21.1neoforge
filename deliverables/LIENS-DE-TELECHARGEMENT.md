@@ -24,7 +24,83 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > toujours la dernière version, une fois le cache expiré (quelques minutes). Les liens en
 > SHA sont l'adresse **immédiate**, à utiliser le jour de la livraison.
 
-## Chaos — le son des cinq signatures + la I en dôme · 4 novembre 2026 ⟵ **LOT COURANT**
+## Correctif anti-tremblement des animations · 4 novembre 2026 ⟵ **LOT COURANT**
+
+Les animations à Pixels tremblaient à l'échelle du pixel pendant qu'elles jouaient
+(constaté sur **Gaia Wood**, mais le défaut touchait **toutes** les familles). Deux causes
+se cumulaient, toutes deux dans l'infrastructure de rendu — aucune chéorégraphie, aucune
+couleur, aucune durée ne change.
+
+**1. Deux horloges qui dérivent.** La fraction de tick écoulée était recalculée à la main,
+en cinq endroits, par `clamp((System.nanoTime() - lastTickNanos) / 50_000_000, 0, 1)`. Ce
+calcul suppose qu'un tick dure *exactement* 50 ms. C'est faux : le client déclenche un
+tick quand son accumulateur dépasse 50 ms, donc à 60 images/s l'écart réel alterne entre
+**50,0 et 66,7 ms**. Dès qu'il dépasse 50 ms, la borne **sature à 1,0** : l'animation se
+fige une image entière, puis saute. Pendant ce temps la caméra est interpolée avec le
+partial tick officiel, qui ne sature jamais — les deux horloges s'écartaient image après
+image. Les cinq sites sont remplacés par un seul point d'entrée, `partialTick()`, qui lit
+`Minecraft.getTimer().getGameTimeDeltaPartialTick(true)` : l'argument `true` est celui dont
+`GameRenderer.renderLevel` tire le flottant qui **place la caméra**. Même valeur, même
+instant.
+
+**2. Une image de retard.** La couche de structure est remplie à `AFTER_PARTICLES`
+(stage 9), mais `VoidPixelManager` la dessinait à `AFTER_TRANSLUCENT_BLOCKS` (stage **7**)
+— donc *avant* le remplissage, avec le contenu de l'image précédente. Les positions étant
+stockées en absolu puis ramenées au repère caméra au rendu, le résultat valait
+`offset − (caméra_N − caméra_N−1)` : **le balancement de tête du joueur qui marche faisait
+osciller l'armature en opposition de phase**. Le rendu passe à `AFTER_WEATHER` (stage 10).
+
+### Le correctif seul — deux fichiers à remplacer
+
+C'est le téléchargement utile : il vaut pour **toutes** les familles à Pixels, Gaia
+comprise. Le ZIP contient `WeaponWorldVfxManager.java`, `VoidPixelManager.java` et un
+`LISEZ-MOI.txt` qui reprend tout le raisonnement.
+
+- **Immédiat (SHA, jamais mis en cache)** — `DLB_Anti_Jitter_Fix_src.zip` (3 entrées, 110 190 octets)
+  <br>https://github.com/Deepie1/dlbv1.21.1neoforge/raw/b292115fef9d505e08b6c3b6a0241f20b1af2078/deliverables/DLB_Anti_Jitter_Fix_src.zip
+- **Stable (suit la branche)**
+  <br>https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Anti_Jitter_Fix_src.zip
+
+SHA-256 : `ed30f613b5f4608c2c272e8eb3b2ffad6127a04ba5d5578ce38bc3e4dbb148e2`
+
+### Le lot Chaos complet, regénéré avec le code corrigé
+
+L'archive Chaos embarque les deux mêmes fichiers : elle a été **reconstruite**, celle
+d'hier contenait encore l'ancien code.
+
+- **Immédiat (SHA)** — `DLB_Chaos_Five_Signatures_src.zip` (82 entrées, 1 531 807 octets)
+  <br>https://github.com/Deepie1/dlbv1.21.1neoforge/raw/b292115fef9d505e08b6c3b6a0241f20b1af2078/deliverables/DLB_Chaos_Five_Signatures_src.zip
+- **Stable (branche)**
+  <br>https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Five_Signatures_src.zip
+
+SHA-256 : `0fcfa2105c24ee57857b0cb8d1b8a51bc088bd3a5c460ba7dab2f287577bb7d2`
+
+### La page de prévisualisation des cinq signatures
+
+Inchangée par ce correctif — elle montre la géométrie, que T407 ne touche pas.
+
+- **Immédiat (SHA)** — `DLB_Chaos_Five_Signatures_preview.html`
+  <br>https://github.com/Deepie1/dlbv1.21.1neoforge/raw/b292115fef9d505e08b6c3b6a0241f20b1af2078/deliverables/DLB_Chaos_Five_Signatures_preview.html
+- **Stable (branche)**
+  <br>https://github.com/Deepie1/dlbv1.21.1neoforge/raw/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/DLB_Chaos_Five_Signatures_preview.html
+
+### Ce qui a été vérifié, et ce qui ne l'a pas été
+
+L'API a été confirmée **sur les sources**, pas supposée : `RenderLevelStageEvent.getPartialTick()`
+rend bien un `DeltaTracker` (NeoForge branche `1.21.1`, fichier inchangé depuis 1.21-rc1,
+donc valable pour le **21.1.190** de ce projet) ; `getGameTimeDeltaPartialTick(boolean)`
+existe ; `Minecraft.getTimer()` est public ; l'ordre des dix stages a été relu pour
+établir que le stage 9 précède le stage 10.
+
+Bancs : `semcheck` 4 ERR connues / **0 nouvelle**, `floatcheck` **0**, `typecheck` rien de
+neuf sur 218 fichiers. Miroir `FIXES_MCREATOR` resynchronisé.
+
+**Non vérifié :** `javac` est absent de l'environnement, ces bancs **ne valent pas une
+compilation**, et le correctif n'a pas pu être observé en jeu. Si un tremblement résiduel
+persistait, l'information utile est de savoir s'il apparaît **surtout en marchant** (ce
+serait encore la couche de structure) ou **même à l'arrêt** (une troisième cause).
+
+## Chaos — le son des cinq signatures + la I en dôme · 4 novembre 2026
 
 ### (A) Pourquoi on n'entendait que l'enclume
 
