@@ -24,7 +24,16 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > toujours la dernière version, une fois le cache expiré (quelques minutes). Les liens en
 > SHA sont l'adresse **immédiate**, à utiliser le jour de la livraison.
 
-## Chaos — cinq signatures, la IV refaite en anneaux · 4 novembre 2026 ⟵ **LOT COURANT**
+## Chaos — la IV en anneaux + correctif de compilation · 19 novembre 2026 ⟵ **LOT COURANT**
+
+**⚠️ Correctif de compilation (19 novembre)** — `WeaponVfxServerListener.java:6293` :
+dans `chaosBeatMark()`, trois branches du switch rendaient un `SoundEvent` nu et la
+quatrième, `NOTE_BLOCK_HAT`, un `Holder.Reference<SoundEvent>` (en 1.21.1 les sons de
+note block sont déclarés en Holder). Une seule branche discordante fait échouer tout le
+switch — corrigé par `.value()`. **Le banc `semcheck` ne vérifiait qu’un sens** (le
+`.value()` en trop) ; il signale maintenant aussi le `.value()` **manquant**, dans les
+trois contextes qui exigent un son nu. Passé sur les 218 fichiers : aucune autre faute
+de cette famille.
 
 Ce que ce commit change — **IV. Cascade de Bifurcation** :
 
@@ -41,11 +50,11 @@ Ce que ce commit change — **IV. Cascade de Bifurcation** :
 - **Caméra** : des anneaux concentriques se regardent **de dessus** (pitch 0,20 → 1,00) ;
   de profil ils se cachent les uns derrière les autres.
 
-### Liens figés sur le commit `7038a239` — garantis frais
+### Liens figés sur le commit `d7a1602e` — garantis frais
 
-- **Aperçu des cinq signatures (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/7038a23929a9b408a819099f6c770aa8953373ab/deliverables/DLB_Chaos_Five_Signatures_preview.html
-- **Démo du shader Pixels 3D (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/7038a23929a9b408a819099f6c770aa8953373ab/deliverables/DLB_Void_Pixel_shader_demo.html
-- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/7038a23929a9b408a819099f6c770aa8953373ab/deliverables/DLB_Chaos_Five_Signatures_src.zip
+- **Aperçu des cinq signatures (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/d7a1602e00becc1ce703247a5b15207f1547c09f/deliverables/DLB_Chaos_Five_Signatures_preview.html
+- **Démo du shader Pixels 3D (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/d7a1602e00becc1ce703247a5b15207f1547c09f/deliverables/DLB_Void_Pixel_shader_demo.html
+- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/d7a1602e00becc1ce703247a5b15207f1547c09f/deliverables/DLB_Chaos_Five_Signatures_src.zip
 
 ### Liens stables sur la branche — toujours la dernière version
 
