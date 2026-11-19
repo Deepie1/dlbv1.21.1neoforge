@@ -2,62 +2,67 @@
 
 ## ⬇️ L'archive — c'est le seul lien
 
-https://github.com/Deepie1/dlbv1.21.1neoforge/raw/08e5184cd113e362982c8917a8a8c01314e6131e/deliverables/DLB_src.zip
+https://github.com/Deepie1/dlbv1.21.1neoforge/raw/b4625482a7061297d7ba7ee709d0368c2a24ffe6/deliverables/DLB_src.zip
 
-`DLB_src.zip` · 106 fichiers · 1 620 774 octets
-<br>SHA-256 `ad62d11d837ee23c97563759877ceb36d8fa2b842c82514cab43c579475cc6d7`
+`DLB_src.zip` · 112 fichiers · 1 925 574 octets
+<br>SHA-256 `88fc0fa39df77c4325eeb0764176b0db3f3858a6f95b7cf154b298bc8d6f71bc`
 
 **Il n'y a plus qu'une seule archive et un seul lien.** `DLB_src.zip` porte toujours le
 même nom et contient à chaque fois **tous** les fichiers à jour. L'adresse contient le
-numéro de la livraison (`08e5184…`) : c'est ce qui garantit que vous recevez la dernière
+numéro de la livraison (`b462548…`) : c'est ce qui garantit que vous recevez la dernière
 version et jamais une copie en cache.
 
-### Cinq défauts de la livraison précédente, corrigés
+### 1. Les compétences ne sont plus mélangées aux enchantements
 
-Vous aviez raison : il y avait des doublons et des morceaux qui ne servaient à rien.
-Voici ce qui n'allait pas, et ce qui a été fait.
+Un enchantement qui n'est **rien d'autre qu'un pouvoir à déclencher** n'a plus sa ligne
+dans la liste d'enchantements : il est entièrement décrit dans l'encart **COMPÉTENCE**,
+avec son nom, son déclencheur et sa recharge. Trois sont concernés : **Invocation
+d'Armée**, **Armée du Chaos** et **Détecteur de Minerais**.
 
-**1. Les noms de vos enchantements étaient remplacés par les miens.** Trente et un des
-quarante-cinq enchantements avaient déjà leur nom et leur description officiels dans les
-fichiers de langue du mod. Mes textes, posés après eux, gagnaient : « Tranchant
-Sanguin » devenait « Lame Ruisselante », « Vampirisme Absolu » devenait « Siphon
-Cramoisi ». **On n'écrit plus un nom que s'il n'existe pas** : 56 lignes au lieu de 180,
-et zéro collision vérifiée. Les deux lignes de compétence sont rangées sous des clés
-à part, qui ne peuvent rien écraser.
+**Ce qui reste volontairement dans la liste, et pourquoi.** Les quarante-cinq signatures
+y restent : leur enchantement fait aussi quelque chose **en permanence**. *Tranchant
+Avancé* ajoute des dégâts à chaque coup, que vous lanciez la compétence ou non — vous
+cacher cette ligne vous priverait d'une information qui n'a rien à voir avec la
+compétence. Même raison pour les huit enchantements à recharge des effets de frappe. Et
+*Commandant*, *Commandant Illageois* et *Commandant Mort-Vivant* se lisent sur le casque
+et choisissent seulement **quel type de mob** apparaît : ce ne sont pas des compétences.
 
-**2. L'infobulle affichait tout en double.** Le moteur d'infobulles du mod pose déjà le
-nom de l'enchantement et sa description. Mon encart les réaffichait juste en dessous.
-Il ne pose plus que ce qui n'existe nulle part ailleurs : comment on lance la
-compétence et sa recharge, puis l'effet chiffré, puis la phrase d'ambiance.
+**Deux pièges évités en chemin.** L'affichage lit aussi les enchantements **stockés sur
+les livres** : sur un livre enchanté, la ligne est conservée, sinon l'enchantement aurait
+disparu de l'infobulle sans rien pour le remplacer. Et l'encart lit les enchantements
+par **exactement le même chemin** que le filtre : deux lectures différentes auraient pu
+se contredire et rendre un enchantement complètement invisible.
 
-**3. Les quatorze enchantements créés ne servaient à rien.** Dans ce mod, un
-enchantement réel est déclaré à **deux** endroits : son fichier de données *et* une
-ligne de code qui lui donne sa rareté, sa catégorie et son niveau maximum. Les 435
-enchantements existants ont les deux. Les miens n'avaient que le fichier : ils
-existaient sur le papier et le reste du mod les ignorait — ils ne pouvaient donc jamais
-tomber en butin. Les quatorze lignes manquantes sont écrites.
+**Le Détecteur de Minerais n'avait aucune recharge.** Maintenir le clic droit relançait
+le balayage à chaque tick. Il a maintenant la sienne : **15 secondes**.
 
-**4. Du code qui n'était jamais appelé.** Cinq fonctions écrites « au cas où » et
-jamais utilisées. Supprimées.
+### 2. Une arme lootée sur vingt arrive avec une compétence — et elle se paie
 
-**5. Tenir une épée à compétence vous empêchait de commercer.** Le clic droit était
-aussi consommé **pendant la recharge** : impossible de commercer avec un villageois, de
-tondre un mouton ou de seller un cochon pendant trente à soixante secondes. Le clic
-n'est plus pris que lorsqu'une signature part réellement, et les marchands comme vos
-animaux apprivoisés ne sont jamais des cibles de compétence.
+**5 %** des épées, haches, masses et houes trouvées repartent avec une compétence. Elle
+ne s'ajoute pas gratuitement : l'arme la paie, par l'un des deux troc tirés à pile ou
+face.
 
-### Les contrôles que j'aurais dû faire la première fois
+* **Deux enchantements disparaissent**, pris au hasard parmi ceux de l'arme. Le troc
+  brutal : elle perd deux pouvoirs entiers et gagne une compétence.
+* **Tous les enchantements descendent de 0 à 3 niveaux.** Le troc diffus : l'arme garde
+  tout son répertoire, mais plus rien n'est à son maximum. Le tirage à **0** est laissé
+  exprès dans la fourchette — c'est le coup de chance où l'arme ne paie presque rien.
 
-Pour chacune des 45 compétences : la clé d'enchantement mène bien à sa signature
-(45/45), le fichier de données existe (45/45), aucune clé n'est enregistrée deux fois,
-aucun chemin n'est partagé par deux signatures. Les 511 fichiers d'enchantement ont
-été relus et sont valides.
+Un enchantement qui tomberait à zéro est **retiré**, jamais laissé à zéro : il
+s'afficherait dans l'infobulle sans plus rien faire.
+
+**Pourquoi seulement ces quatre armes.** Une compétence se lance au clic droit sur un
+mob, arme de mêlée en main. Sur une pioche ou un arc, ce serait un pouvoir que rien ne
+peut déclencher. Le tirage de butin interroge désormais **la même méthode** que le
+lanceur : les deux ne peuvent plus diverger.
 
 ### Ce qui n'a pas pu être vérifié
 
-`javac` est absent de l'environnement. `semcheck`, `typecheck` (rien de neuf sur 220
-fichiers) et `floatcheck` (0 alerte) sont au vert, **mais ces bancs ne valent pas une
-compilation**, et rien n'a pu être observé en jeu.
+`javac` est absent de l'environnement. `semcheck` (comparé message par message à la
+version précédente : aucune alerte nouvelle), `typecheck` (rien de neuf, 220 fichiers)
+et `floatcheck` (0 alerte) sont au vert, et les neuf contrôles de comportement ont été
+relus **à l'intérieur du ZIP produit**. **Mais ces bancs ne valent pas une compilation**,
+et rien n'a pu être observé en jeu.
 
 ---
 
