@@ -3,7 +3,6 @@ package deepluckyblock.enchantments;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.ItemStack;
 
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -101,19 +100,6 @@ public final class WeaponSkill {
         put(WeaponVisualEffectId.THORN_MAW_ROOT, "thorn_maw", 37);
         put(WeaponVisualEffectId.VERDANT_SAP_BLOOM, "verdant_sap_bloom", 37);
         put(WeaponVisualEffectId.WILDWOOD_AWAKENING, "wildwood_awakening", 35);
-    }
-
-    /** Vrai si cette animation est une compétence lançable (les 45 signatures le sont). */
-    public static boolean isSkill(WeaponVisualEffectId fx) {
-        return fx != null && BY_EFFECT.containsKey(fx);
-    }
-
-    public static Entry of(WeaponVisualEffectId fx) {
-        return fx == null ? null : BY_EFFECT.get(fx);
-    }
-
-    public static Map<WeaponVisualEffectId, Entry> all() {
-        return Collections.unmodifiableMap(BY_EFFECT);
     }
 
     /**

@@ -41,6 +41,26 @@ public class ModEnchantments {
     static {
 
     // ===================== 1. EPEES & COMBAT (SWORDS) =====================
+            // T410-SKILLS : quatorze signatures n'avaient AUCUN enchantement porteur.
+            // Le JSON seul ne suffit pas : sans create(), CustomEnchantment.META reste
+            // vide pour elles et tout le mod les ignore (rarete, categorie, slots,
+            // niveau max, compatibilite, generation de butin). La rarete reprend
+            // exactement le poids ecrit dans leur JSON.
+            CustomEnchantment.create("feigenbaum_cascade", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("sandpile_critical", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("titan_grasp", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("miasma_shroud", Rarity.MYTHIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("plague_nova", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("eclipse_veil", Rarity.MYTHIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("null_rift", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("horizon_gate", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("chain_collapse", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("sandstorm_dune", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("tempest", Rarity.VERY_RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("thorn_maw", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("verdant_sap_bloom", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+            CustomEnchantment.create("wildwood_awakening", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 3);
+
             CustomEnchantment.create("supreme_sharpness", Rarity.LEGENDARY, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 100);
             CustomEnchantment.create("advanced_sharpness", Rarity.RARE, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 25);
             CustomEnchantment.create("extreme_sharpness", Rarity.MYTHIC, CustomEnchantment.Cat.WEAPON, MAIN_HAND, 20);

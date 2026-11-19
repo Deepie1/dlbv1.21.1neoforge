@@ -3,7 +3,6 @@ package deepluckyblock.client;
 import deepluckyblock.enchantments.WeaponSkill;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
@@ -15,24 +14,29 @@ import java.util.List;
 
 /**
  * ═══════════════════════════════════════════════════════════════
- * 🌀 EnchantmentTooltipHandler — l'encart SKILL
+ * 🌀 EnchantmentTooltipHandler — l'encart SKILL, et rien d'autre
  * ═══════════════════════════════════════════════════════════════
  *
- * <p>Le rendu classique des enchantements (nom en chiffres romains + description sous SHIFT)
- * reste intégralement géré par {@code EnchantmentTooltipFixProcedure} : on ne le double pas.
- * Cette classe n'ajoute qu'une chose, et seulement sur les armes qui en portent une —
- * <b>l'encart de compétence</b>.</p>
+ * <p><b>Ce que cette classe n'affiche PAS, et pourquoi.</b> Le nom de l'enchantement et sa
+ * description sont déjà posés par {@code EnchantmentTooltipFixProcedure} — il les insère
+ * lui-même dans la liste (nom en chiffres romains, puis la description sous SHIFT). Les
+ * réafficher ici produirait deux fois le même texte sur chaque arme. C'est exactement le
+ * défaut qu'avait la première version de ce fichier : trois lignes ajoutées dont deux
+ * étaient des copies.</p>
  *
- * <p>Trois lignes, toujours les mêmes :</p>
+ * <p><b>Ce qu'elle ajoute, et qui n'existe nulle part ailleurs</b> — trois lignes qui
+ * parlent de la <i>compétence</i>, pas de l'enchantement :</p>
  * <ol>
- *   <li>le mot <b>SKILL</b> suivi du nom de la compétence, <b>à la couleur exacte de son
- *       élément</b> (la vraie valeur RVB de {@code DeepElement}, pas un code de couleur
- *       approché : Minecraft 1.21 accepte les couleurs vraies dans un {@code Style}) ;</li>
- *   <li>la description : ce que fait le skill, puis comment on le lance, puis sa recharge ;</li>
- *   <li>rien d'autre. Pas de voile gris sur l'icône, pas de ligne « prêt » : <b>c'est le
- *       halo de l'arme qui dit si la compétence est chargée</b>, et il le dit en permanence,
- *       sans qu'on ait besoin de survoler l'objet.</li>
+ *   <li>l'en-tête, <b>à la couleur exacte de l'élément</b> (vraie valeur RVB de
+ *       {@code DeepElement}, pas un code de couleur approché) : comment on la lance et
+ *       combien de temps elle met à revenir ;</li>
+ *   <li>l'effet, en chiffres relevés dans le code : nombre d'impacts, durée ;</li>
+ *   <li>la phrase qui dit ce qu'on voit.</li>
  * </ol>
+ *
+ * <p>Les trois clés vivent sous {@code skill.deep_lucky_block.*}, un espace de noms à
+ * part : elles ne peuvent donc pas entrer en collision avec les clés d'enchantement du
+ * mod, ni être écrasées par un export MCreator.</p>
  */
 @EventBusSubscriber(modid = "deep_lucky_block", value = Dist.CLIENT)
 public class EnchantmentTooltipHandler {
@@ -54,14 +58,12 @@ public class EnchantmentTooltipHandler {
         String path = entry.enchantPath();
         int rgb = entry.effect().element().primary & 0xFFFFFF;
 
-        MutableComponent title = Component.translatable("tooltip.deep_lucky_block.skill")
-                .append(Component.literal(" · "))
-                .append(Component.translatable("enchantment.deep_lucky_block." + path));
-        lines.add(title.withStyle(Style.EMPTY.withColor(rgb).withBold(true)));
-
-        // La description porte déjà le mode de lancement ET la recharge : elles sont écrites
-        // dans la même chaîne, donc traduites d'un bloc et impossibles à désynchroniser.
-        lines.add(Component.translatable("enchantment.deep_lucky_block." + path + ".desc")
+        lines.add(Component.translatable("tooltip.deep_lucky_block.skill_header",
+                        entry.cooldownSeconds())
+                .withStyle(Style.EMPTY.withColor(rgb).withBold(true)));
+        lines.add(Component.translatable("skill.deep_lucky_block." + path + ".1")
                 .withStyle(ChatFormatting.GRAY));
+        lines.add(Component.translatable("skill.deep_lucky_block." + path + ".2")
+                .withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC));
     }
 }

@@ -2,11 +2,12 @@ package deepluckyblock.enchantments;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.TamableAnimal;
+import net.minecraft.world.entity.npc.AbstractVillager;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.HoeItem;
@@ -30,11 +31,18 @@ import net.neoforged.neoforge.event.tick.PlayerTickEvent;
  * </ol>
  *
  * <p><b>Pourquoi un clic droit SUR un mob et pas dans le vide.</b> Le clic droit à vide est
- * déjà pris : il tend un arc, lance un trident, écorce une bûche, mange. Exiger une cible
- * supprime tout conflit sans ajouter de touche à retenir, et donne au skill une victime
- * désignée — ce dont les quarante-cinq chorégraphies ont besoin, puisqu'elles sont toutes
- * construites autour d'un corps. Les armes à distance sont exclues pour la même raison :
- * leur clic droit leur appartient.</p>
+ * déjà pris : il tend un arc, lance un trident, écorce une bûche, mange — et, dans ce mod,
+ * il déclenche déjà {@code army_summon} via {@code PlayerInteractEvent.RightClickItem}.
+ * Exiger une cible supprime tout conflit sans ajouter de touche à retenir, et donne au skill
+ * une victime désignée — ce dont les quarante-cinq chorégraphies ont besoin, puisqu'elles
+ * sont toutes construites autour d'un corps.</p>
+ *
+ * <p><b>Ce que le skill ne confisque jamais.</b> Un clic droit n'est annulé que lorsqu'une
+ * signature part réellement. Pendant la recharge, l'interaction vanilla reprend la main :
+ * sans cela, tenir une épée à competence rendrait impossible de commercer, de tondre ou de
+ * seller pendant trente à soixante secondes. Pour la même raison les marchands et les
+ * animaux apprivoisés du joueur ne sont jamais des cibles de compétence — chez eux le clic
+ * droit a un sens que personne n'accepterait de perdre.</p>
  *
  * <p><b>Pourquoi le glint sert de jauge.</b> Aucun voile gris, aucune ligne « prêt » : le
  * halo de l'arme change à lui seul. Chargé, il prend la couleur de l'élément au palier 13 de
@@ -62,6 +70,17 @@ public final class WeaponSkillHandler {
                 || stack.getItem() instanceof HoeItem;
     }
 
+    /**
+     * Corps sur lesquels le clic droit vaut mieux que n'importe quelle compétence :
+     * les marchands (commerce) et les animaux apprivoisés du joueur (ordre assis,
+     * équipement, soin). Les frapper reste possible — au clic GAUCHE, comme toujours.
+     */
+    private static boolean keepsVanillaInteraction(Player player, LivingEntity target) {
+        if (target instanceof AbstractVillager) return true;
+        return target instanceof TamableAnimal tame && tame.isTame()
+                && tame.getOwnerUUID() != null && tame.getOwnerUUID().equals(player.getUUID());
+    }
+
     // =====================================================================================
     //  1. LANCEMENT
     // =====================================================================================
@@ -74,6 +93,7 @@ public final class WeaponSkillHandler {
         if (!(player.level() instanceof ServerLevel sl)) return;
         if (!(event.getTarget() instanceof LivingEntity target)) return;
         if (target == player || !target.isAlive()) return;
+        if (keepsVanillaInteraction(player, target)) return;
 
         ItemStack weapon = player.getMainHandItem();
         if (!isMeleeSkillWeapon(weapon)) return;
@@ -82,13 +102,10 @@ public final class WeaponSkillHandler {
         if (entry == null) return;
 
         long now = sl.getGameTime();
-        if (!WeaponSkill.isCharged(weapon, now)) {
-            // En recharge : on consomme quand même le clic, sinon le joueur déclenche
-            // l'interaction vanilla de la créature (monter un cochon, tondre un mouton)
-            // alors qu'il voulait lancer son skill.
-            event.setCanceled(true);
-            return;
-        }
+        // En recharge, on ne consomme PAS le clic : l'interaction vanilla doit continuer
+        // de fonctionner normalement. Le joueur sait de toute facon ou il en est, le halo
+        // de l'arme le lui dit en permanence.
+        if (!WeaponSkill.isCharged(weapon, now)) return;
 
         boolean cast = WeaponVfxServerListener.castSkillSignature(
                 sl, player, target, weapon, entry.effect(), 6);
@@ -149,7 +166,7 @@ public final class WeaponSkillHandler {
                 tag.putInt(WeaponSkill.GLINT_SAVED_KEY,
                         tag.contains(force) ? tag.getInt(force) : -1);
             }
-            tag.putInt(force, 0xFF000000 | (elementGlintRgb(entry) & 0xFFFFFF));
+            tag.putInt(force, 0xFF000000 | (entry.effect().element().primary & 0xFFFFFF));
             tag.putInt(tier, WeaponSkill.CHARGED_GLINT_TIER);
             tag.putBoolean(WeaponSkill.GLINT_ON_KEY, true);
         } else {
@@ -165,26 +182,5 @@ public final class WeaponSkillHandler {
             tag.putBoolean(WeaponSkill.GLINT_ON_KEY, false);
         }
         deepluckyblock.util.DeepNbt.commit(stack, tag);
-    }
-
-    /** Couleur du halo chargé : celle de l'élément de la signature, comme les épées /anim. */
-    private static int elementGlintRgb(WeaponSkill.Entry entry) {
-        return entry.effect().element().primary;
-    }
-
-    /** Utilitaire partagé avec l'infobulle : secondes restantes, 0 si le skill est prêt. */
-    public static int remainingSeconds(ItemStack stack, long gameTime) {
-        return WeaponSkill.remainingSeconds(stack, gameTime);
-    }
-
-    /** Message d'état bref, utilisé par la commande de diagnostic. */
-    public static String debugState(ServerPlayer player) {
-        ItemStack held = player.getMainHandItem();
-        WeaponSkill.Entry entry = WeaponSkill.firstOn(held);
-        if (entry == null) return "aucune competence sur l'arme tenue";
-        long now = player.serverLevel().getGameTime();
-        int left = WeaponSkill.remainingSeconds(held, now);
-        return entry.effect().name() + " (" + entry.enchantPath() + ") recharge "
-                + entry.cooldownSeconds() + " s, restant " + left + " s";
     }
 }

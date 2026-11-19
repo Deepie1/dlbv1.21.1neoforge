@@ -2,8 +2,8 @@
 # Regenerer : python3 tools/typecheck.py --ecrire-base
 src/main/java/deepluckyblock/client/ClientTranslationInjector.java:379  ARITE  loadJsonResource(...) recoit 2 argument(s), declare(s) : [3]
 src/main/java/deepluckyblock/client/ClientTranslationInjector.java:380  ARITE  loadJsonResource(...) recoit 2 argument(s), declare(s) : [3]
-src/main/java/deepluckyblock/client/ClientTranslationInjector.java:703  ARITE  loadJsonResource(...) recoit 2 argument(s), declare(s) : [3]
-src/main/java/deepluckyblock/client/ClientTranslationInjector.java:704  ARITE  loadJsonResource(...) recoit 2 argument(s), declare(s) : [3]
+src/main/java/deepluckyblock/client/ClientTranslationInjector.java:739  ARITE  loadJsonResource(...) recoit 2 argument(s), declare(s) : [3]
+src/main/java/deepluckyblock/client/ClientTranslationInjector.java:740  ARITE  loadJsonResource(...) recoit 2 argument(s), declare(s) : [3]
 src/main/java/deepluckyblock/client/DeepEnchantmentDescriptionCompatibility.java:102  ARITE  descriptionLineScore(...) recoit 2 argument(s), declare(s) : [3]
 src/main/java/deepluckyblock/client/DeepEnchantmentDescriptionCompatibility.java:105  ARITE  descriptionLineScore(...) recoit 2 argument(s), declare(s) : [3]
 src/main/java/deepluckyblock/client/DeepEnchantmentDescriptionCompatibility.java:72  ARITE  addDescriptionKey(...) recoit 5 argument(s), declare(s) : [7]

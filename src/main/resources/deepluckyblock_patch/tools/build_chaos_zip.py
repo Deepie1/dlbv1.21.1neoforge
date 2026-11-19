@@ -56,6 +56,9 @@ JAVA = [
     'src/main/java/deepluckyblock/enchantments/WeaponSkillHandler.java',
     'src/main/java/deepluckyblock/client/EnchantmentTooltipHandler.java',
     'src/main/java/deepluckyblock/client/ClientTranslationInjector.java',
+    # T410-FIX : sans create(), les 14 enchantements neufs n'ont pas de metadonnees
+    # et tout le mod les ignore. Le JSON seul ne suffit pas.
+    'src/main/java/deepluckyblock/enchantments/ModEnchantments.java',
 ]
 EXTRA = [
     # T397-PIXEL3D : les trois fichiers du core shader. Ils ne vivent PAS sous
