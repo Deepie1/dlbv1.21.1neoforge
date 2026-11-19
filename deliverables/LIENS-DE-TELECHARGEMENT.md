@@ -24,13 +24,28 @@ Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin
 > toujours la dernière version, une fois le cache expiré (quelques minutes). Les liens en
 > SHA sont l'adresse **immédiate**, à utiliser le jour de la livraison.
 
-## Chaos — cinq signatures, deux nouvelles · 4 novembre 2026 ⟵ **LOT COURANT**
+## Chaos — cinq signatures, la IV refaite en anneaux · 4 novembre 2026 ⟵ **LOT COURANT**
 
-### Liens figés sur le commit `7fe030ee` — garantis frais
+Ce que ce commit change — **IV. Cascade de Bifurcation** :
 
-- **Aperçu des cinq signatures (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/7fe030ee518f0eb97eca2a39c291d07971a44118/deliverables/DLB_Chaos_Five_Signatures_preview.html
-- **Démo du shader Pixels 3D (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/7fe030ee518f0eb97eca2a39c291d07971a44118/deliverables/DLB_Void_Pixel_shader_demo.html
-- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/7fe030ee518f0eb97eca2a39c291d07971a44118/deliverables/DLB_Chaos_Five_Signatures_src.zip
+- **`r` n’est plus une direction de l’espace, c’est le temps.** L’orbite est itérée à un
+  seul `r` à la fois, et chaque valeur de l’attracteur devient le **rayon d’un anneau
+  centré sur la victime** : un anneau, puis deux, puis quatre, puis huit, puis la
+  couronne pleine. La nappe-graphique a disparu.
+- **Le nombre qu’on voit est le nombre qu’on encaisse** : les paliers de `r` sont calés
+  sur les six vagues de coups — à la vague k l’orbite a 2^k valeurs, donc 2^k anneaux,
+  et la vague compte 2^k impacts. Le compte est **mesuré** sur l’orbite triée, pas
+  décrété : 1 / 2 / 4 / 8 / 16 anneaux aux ticks 24 / 48 / 70 / 88 / 102.
+- **La fenêtre de période trois** ne plante plus une colonne au-dessus de la cible :
+  trois anneaux nets se détachent de la couronne et **se referment sur la victime**.
+- **Caméra** : des anneaux concentriques se regardent **de dessus** (pitch 0,20 → 1,00) ;
+  de profil ils se cachent les uns derrière les autres.
+
+### Liens figés sur le commit `7038a239` — garantis frais
+
+- **Aperçu des cinq signatures (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/7038a23929a9b408a819099f6c770aa8953373ab/deliverables/DLB_Chaos_Five_Signatures_preview.html
+- **Démo du shader Pixels 3D (page web)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/7038a23929a9b408a819099f6c770aa8953373ab/deliverables/DLB_Void_Pixel_shader_demo.html
+- **Sources (ZIP)** : https://github.com/Deepie1/dlbv1.21.1neoforge/raw/7038a23929a9b408a819099f6c770aa8953373ab/deliverables/DLB_Chaos_Five_Signatures_src.zip
 
 ### Liens stables sur la branche — toujours la dernière version
 
