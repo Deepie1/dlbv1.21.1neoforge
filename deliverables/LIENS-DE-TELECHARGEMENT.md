@@ -2,27 +2,63 @@
 
 ## ⬇️ L'archive — c'est le seul lien
 
-https://github.com/Deepie1/dlbv1.21.1neoforge/raw/afab88c5231ff68d390acdd9d0db42bc174a146a/deliverables/DLB_src.zip
+https://github.com/Deepie1/dlbv1.21.1neoforge/raw/05da189c9b2450d7adacb250a4b982f47631f54d/deliverables/DLB_src.zip
 
-`DLB_src.zip` · 82 fichiers · 1 541 161 octets
-<br>SHA-256 `2e830822cfcd4eeaa4dd7ba41d13649ba61843f4f9b0dd3f6636e4259c0d2ace`
+`DLB_src.zip` · 104 fichiers · 1 600 522 octets
+<br>SHA-256 `3a0d21626e290e10c7e79321c8bf9aae975d99f0d3eeb7d7b70f6abb81efedc2`
 
 **Il n'y a plus qu'une seule archive et un seul lien.** `DLB_src.zip` porte toujours le
-même nom et contient à chaque fois **tous** les fichiers à jour. Pas de version à
-choisir, pas de lot à recomposer. L'adresse contient le numéro de la livraison
-(`afab88c…`) : c'est ce qui garantit que vous recevez la dernière version et jamais une
-copie en cache. **Un nouveau lien vous sera donné à chaque livraison.**
+même nom et contient à chaque fois **tous** les fichiers à jour. L'adresse contient le
+numéro de la livraison (`05da189…`) : c'est ce qui garantit que vous recevez la dernière
+version et jamais une copie en cache. **Un nouveau lien vous sera donné à chaque
+livraison.**
 
-### Ce que corrige la livraison du 4 novembre 2026 (2ᵉ envoi)
+### Les 45 animations deviennent des compétences
 
-- **Les pixels et les slashs reviennent à une minorité d'armes.** Le tirage existait bien
-  (15 % en mêlée, 40 % à distance, décidé une fois pour toutes à la création de l'arme),
-  mais il était **ignoré dès que le bras bougeait** : il suffisait de frapper pour que
-  n'importe quelle arme se couvre de pixels, et l'arc de slash partait à chaque coup de
-  n'importe quelle arme. Comme on frappe sans arrêt, tout le butin semblait doté. Les deux
-  chemins obéissent désormais à la même décision ; les épées `/anim` gardent la leur.
-- **Arc de slash réduit.** Taille divisée par 1,7, en haut comme en bas de la plage, donc
-  la même variété d'arcs qu'avant, simplement plus petits.
+**On ne subit plus les grandes animations, on les lance.** Avant, une grosse animation
+tombait toute seule, sur trois pour cent des coups d'épée : vous la regardiez partir sans
+l'avoir décidé, souvent au mauvais moment. Ce tirage n'existe plus. Les quarante-cinq
+signatures sont devenues des **compétences** : arme de mêlée en main, **clic droit sur un
+mob**. Pas de touche à retenir, pas de combinaison. Le clic droit dans le vide ne change
+pas — il tend toujours l'arc et mange toujours le pain.
+
+**Chaque compétence a sa recharge, et elle n'a pas été choisie à la main.** La même
+formule s'applique aux quarante-cinq, à partir de ce que l'animation fait réellement :
+le nombre de coups qu'elle porte, plus la durée de sa chorégraphie. Une animation qui
+frappe souvent **et** longtemps coûte plus cher qu'un éclat bref. En pratique les
+recharges vont de **32 à 60 secondes**, et la valeur exacte est écrite sur l'objet, dans
+la description de la compétence.
+
+**L'état se lit sur l'arme, pas dans une barre.** Aucun voile gris, aucune ligne
+« prêt ». Quand la compétence est chargée, le halo de l'arme change : il prend la
+couleur de son élément, à l'intensité **13** de l'échelle de `/glint`, très au-dessus
+du 4 habituel — impossible à confondre. Une fois la compétence lancée, le halo redevient
+exactement ce qu'il était, y compris un `/glint` que vous auriez posé à la main : il est
+mis de côté, pas écrasé.
+
+**Les grandes animations ne sont pas perdues pour la distance.** Elles passent à l'arc,
+à l'arbalète et au trident lancé, où elles gardent leur ancien rôle : **cinq pour cent**
+des impacts, avec le bonus de dégâts et l'effet élémentaire. L'animation jouée est celle
+des enchantements de **l'arme de tir**, jamais ceux d'une épée rangée dans l'inventaire.
+
+**Quatorze enchantements qui manquaient.** Quatorze signatures sur quarante-cinq
+n'avaient aucun enchantement capable de les porter : rien ne pouvait les amener sur une
+arme, elles étaient donc injouables. Les fichiers sont créés, avec une rareté qui suit la
+puissance.
+
+**Les textes sont dans le fichier MCreator.** Les quatre-vingt-dix lignes françaises et
+les quatre-vingt-dix anglaises sont posées **après** la lecture des fichiers de langue,
+donc elles gagnent sur eux : un nouvel export MCreator ne les efface plus.
+
+### Ce qui n'a pas pu être vérifié
+
+`javac` est absent de l'environnement de travail. Les bancs automatiques ont tourné et
+sont au vert — `semcheck` ne signale que les 21 alertes déjà connues sur
+`WeaponVfxServerListener`, `typecheck` rien de neuf sur 220 fichiers, `floatcheck` zéro
+alerte — **mais ces bancs ne valent pas une compilation**, et rien n'a pu être observé en
+jeu. Les deux alertes qui semblaient nouvelles sur `ClientTranslationInjector` ont été
+vérifiées : elles figuraient déjà dans la liste des faux positifs connus, simplement
+décalées de quelques lignes par l'insertion des traductions.
 
 ---
 
