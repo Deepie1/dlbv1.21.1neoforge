@@ -1,28 +1,30 @@
-# Liens de téléchargement — toujours à jour
+# Telechargement
 
-Ces liens pointent sur la **branche de travail** (`arena/605e67fb-dlbv1-21-1neoforge`), pas sur un commit figé : ils servent donc **toujours la dernière version poussée**. Aucune mise à jour de ce fichier n'est nécessaire quand le code change.
+## ⬇️ L'archive — c'est le seul lien
 
-Forme utilisée : `https://github.com/<dépôt>/raw/refs/heads/<branche>/<chemin>` — GitHub redirige vers le fichier brut exact.
+https://github.com/Deepie1/dlbv1.21.1neoforge/raw/c02425ee43539642592f3ac782d8609014fb80f5/deliverables/DLB_src.zip
 
-> ## ⚠️ « Mais c'est la même page ! » — lire ceci avant de rouvrir un lien
->
-> **`?v=N` NE SERT À RIEN sur ces adresses, et c'était une erreur de le croire.** Mesuré le
-> 4 novembre 2026 : `github.com/…/raw/…/fichier.html` renvoie un **302** vers
-> `raw.githubusercontent.com/…/fichier.html` — **sans la chaîne de requête**. Le
-> paramètre est donc jeté par la redirection et n'atteint jamais le CDN qui sert
-> réellement les octets. Il n'a jamais cassé le cache ; quand ça marchait, c'est que le
-> cache avait simplement expiré tout seul.
->
-> **La seule adresse garantie fraîche est celle qui porte le SHA du commit**, parce que
-> son *chemin* est unique et n'a donc jamais pu être mis en cache :
->
-> ```
-> https://github.com/Deepie1/dlbv1.21.1neoforge/raw/<SHA>/deliverables/<fichier>
-> ```
->
-> Les liens en `refs/heads/…` ci-dessous restent la référence **stable** — ils serviront
-> toujours la dernière version, une fois le cache expiré (quelques minutes). Les liens en
-> SHA sont l'adresse **immédiate**, à utiliser le jour de la livraison.
+`DLB_src.zip` · 82 fichiers · 1 534 151 octets
+<br>SHA-256 `b707e30ff40a8ebea74e7a600fc59202824760757ec30d081037dde77ce3a3fa`
+
+**Il n'y a plus qu'une seule archive et un seul lien.** `DLB_src.zip` porte toujours le
+même nom et contient à chaque fois **tous** les fichiers à jour — le correctif du jour et
+tout ce qui l'entoure. Pas de version à choisir, pas de lot à recomposer.
+
+Un détail qui a son importance : l'adresse contient le numéro de la livraison
+(`c02425e…`). C'est voulu, et c'est ce qui garantit que vous recevez bien la dernière
+version et jamais une copie en cache. **Un nouveau lien vous sera donné à chaque
+livraison** — prenez toujours le plus récent.
+
+Dedans, `LISEZ-MOI-CONTENU.txt` décrit en premier le correctif de la livraison courante.
+
+---
+
+# Historique des livraisons
+
+Les sections ci-dessous documentent le travail passé. Les liens qu'elles contiennent
+pointent sur d'anciennes versions : pour récupérer le code, utilisez l'archive unique
+ci-dessus.
 
 ## Correctif anti-tremblement des animations · 4 novembre 2026 ⟵ **LOT COURANT**
 
