@@ -2,38 +2,27 @@
 
 ## ⬇️ L'archive — c'est le seul lien
 
-https://github.com/Deepie1/dlbv1.21.1neoforge/raw/6ef03d0e180e4e55a58b1681f809f6c3c4f5144a/deliverables/DLB_src.zip
+https://github.com/Deepie1/dlbv1.21.1neoforge/raw/afab88c5231ff68d390acdd9d0db42bc174a146a/deliverables/DLB_src.zip
 
-`DLB_src.zip` · 82 fichiers · 1 539 495 octets
-<br>SHA-256 `57d0d7c567ba5b70ffa13eb698f8216aecbffdbe8074fad434044d8a7286149a`
+`DLB_src.zip` · 82 fichiers · 1 541 161 octets
+<br>SHA-256 `2e830822cfcd4eeaa4dd7ba41d13649ba61843f4f9b0dd3f6636e4259c0d2ace`
 
 **Il n'y a plus qu'une seule archive et un seul lien.** `DLB_src.zip` porte toujours le
-même nom et contient à chaque fois **tous** les fichiers à jour — le correctif du jour et
-tout ce qui l'entoure. Pas de version à choisir, pas de lot à recomposer.
+même nom et contient à chaque fois **tous** les fichiers à jour. Pas de version à
+choisir, pas de lot à recomposer. L'adresse contient le numéro de la livraison
+(`afab88c…`) : c'est ce qui garantit que vous recevez la dernière version et jamais une
+copie en cache. **Un nouveau lien vous sera donné à chaque livraison.**
 
-Un détail qui a son importance : l'adresse contient le numéro de la livraison
-(`6ef03d0…`). C'est voulu, et c'est ce qui garantit que vous recevez bien la dernière
-version et jamais une copie en cache. **Un nouveau lien vous sera donné à chaque
-livraison** — prenez toujours le plus récent.
+### Ce que corrige la livraison du 4 novembre 2026 (2ᵉ envoi)
 
-Dedans, `LISEZ-MOI-CONTENU.txt` décrit en premier le correctif de la livraison courante.
-
-### Ce que corrige la livraison du 4 novembre 2026
-
-- **Gaia / Bois — les sons de l'animation.** Les trois signatures du Bois avaient des
-  sons, mais tous sous le volume 1,0 : Minecraft ne les diffusait alors qu'à **seize
-  blocs**, et ces animations se regardent de plus loin. Ils partaient, ils n'arrivaient
-  pas. Volumes relevés au-dessus du seuil, et trois véritables partitions calées sur
-  l'image : la poussée des ronces et leur rétraction, les racines puis les spores de
-  l'Éveil, la poussée, le feuillage, les fruits et la sève de l'Arbre sacré.
-- **Ombre / Éclipse — le disque se tenait debout.** Le calcul mélangeait deux systèmes
-  de coordonnées, si bien que l'inclinaison dépendait de votre position **absolue** dans
-  le monde. Loin de l'origine de la carte, le disque se redressait à la verticale. Il
-  fait de nouveau face au joueur placé dessous.
-- **Sang / Guillotine — le cadre ne se rejoignait plus.** Les pièces de charpente
-  tournaient de position mais pas de forme : le linteau restait couché sur un axe fixe
-  pendant que les montants suivaient la direction du coup, soit **0,85 bloc d'écart**
-  sur une attaque en diagonale. Charpente réorientée.
+- **Les pixels et les slashs reviennent à une minorité d'armes.** Le tirage existait bien
+  (15 % en mêlée, 40 % à distance, décidé une fois pour toutes à la création de l'arme),
+  mais il était **ignoré dès que le bras bougeait** : il suffisait de frapper pour que
+  n'importe quelle arme se couvre de pixels, et l'arc de slash partait à chaque coup de
+  n'importe quelle arme. Comme on frappe sans arrêt, tout le butin semblait doté. Les deux
+  chemins obéissent désormais à la même décision ; les épées `/anim` gardent la leur.
+- **Arc de slash réduit.** Taille divisée par 1,7, en haut comme en bas de la plage, donc
+  la même variété d'arcs qu'avant, simplement plus petits.
 
 ---
 
