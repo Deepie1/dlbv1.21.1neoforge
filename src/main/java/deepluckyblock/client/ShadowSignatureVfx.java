@@ -1339,9 +1339,19 @@ public final class ShadowSignatureVfx {
         // (le dôme, le sceau, les griffures) reste dans le repère du monde, parce que ces
         // objets-là ont une orientation réelle qu'on ne doit surtout pas truquer.
         final float sunWy = cy + sunY;
-        float vcx = (float) (WeaponWorldVfxManager.camX() - cx);
-        float vcy = (float) (WeaponWorldVfxManager.camY() - sunWy);
-        float vcz = (float) (WeaponWorldVfxManager.camZ() - cz);
+        // T408 — LE DISQUE SE TENAIT DEBOUT. Ces coordonnees sont RELATIVES A LA CAMERA :
+        // renderVoxelImpact les calcule en inst.x - cam.x avant de nous les passer. Dans ce
+        // repere la camera EST l'origine, donc le vecteur qui va du soleil vers elle est
+        // simplement l'oppose de la position du soleil.
+        //
+        // On lisait auparavant camX() - cx, c'est-a-dire la position ABSOLUE de la camera
+        // moins un decalage relatif : deux systemes de coordonnees melanges. A x=1000 le
+        // vecteur sortait a ~995 au lieu de ~-5, l'elevation calculee tombait a 0,04 au lieu
+        // de -0,9, et le disque se redressait a la verticale en pointant vers l'origine du
+        // monde. Pres du point (0,0) l'erreur se compensait, ce qui l'a longtemps masquee.
+        float vcx = -cx;
+        float vcy = -sunWy;
+        float vcz = -cz;
         float horiz = Mth.sqrt(vcx * vcx + vcz * vcz);
         final float hx;
         final float hz;

@@ -9925,9 +9925,33 @@ public final class WeaponVfxServerListener {
                     hurtWithCapturedWeapon(sl, attackerId, target, weaponDamage * randomPart);
                 });
             }
-            sl.playSound(null, x, y, z, SoundEvents.WOOD_BREAK, SoundSource.PLAYERS, 0.72f, 0.72f);
-            TestProcedure.schedule(sl, scheduleNow + 20, () -> sl.playSound(null, x, y, z,
-                    SoundEvents.GRASS_BREAK, SoundSource.PLAYERS, 0.58f, 0.82f));
+            // ===================================================== PARTITION I - LA GUEULE
+            // Les cent vingt-huit brins jaillissent en une vingtaine de ticks, la cage
+            // tient, puis se retracte des ticks 45 a 68 (retract = smooth01((t-0.63)/0.32)).
+            // La partition ne suit que cette courbe.
+            //
+            // Tous les volumes passent au-dessus de 1.0 : en dessous, playSound ne diffuse
+            // qu'a seize blocs et la camera de ces animations recule a huit ou dix. Le son
+            // partait deja ; il n'arrivait pas.
+            chaosHit(sl, x, y, z,
+                    SoundEvents.WARDEN_EMERGE, 1.55f, 0.58f,       // la terre s'ouvre
+                    SoundEvents.BAMBOO_BREAK, 1.30f, 0.76f);       // le bois claque
+            // Les ronces jaillissent : accelerando, elles se precipitent sur la proie.
+            chaosRoll(sl, scheduleNow, x, y, z, SoundEvents.MANGROVE_ROOTS_BREAK,
+                    1, 9, 2.70f, 0.86f, 0.85f, 1.45f, 0.70f, 1.18f);
+            // Le lacis se referme par-dessus, en montee lente.
+            chaosSwell(sl, scheduleNow, x, y, z, SoundEvents.WEEPING_VINES_PLACE,
+                    4, 5, 3, 1.25f, 0.82f, 1.26f);
+            // Quatre piqures pendant l'emprise. Les huit degats sont caches par la cage ;
+            // quatre accents suffisent a les faire exister sans saturer la figure.
+            for (int k = 0; k < 4; k++) {
+                final float pit = 1.30f + k * 0.12f;
+                TestProcedure.schedule(sl, scheduleNow + 14 + k * 11,
+                        () -> chaosSfx(sl, x, y, z, SoundEvents.CAVE_VINES_BREAK, 1.05f, pit));
+            }
+            // La retraction : le bois se detend et la hauteur redescend avec lui.
+            chaosFade(sl, scheduleNow, x, y, z, SoundEvents.VINE_BREAK,
+                    45, 7, 3, 1.30f, 1.05f, 0.62f);
             return;
         }
         if (fx == WeaponVisualEffectId.ZEPHYR_WIND_LANCE
@@ -9939,9 +9963,32 @@ public final class WeaponVfxServerListener {
             // Futaie : accent sonore seulement. La rotation du Bois gagne une animation,
             // pas une nouvelle emprise — aucun maintien, aucun dégât supplémentaire, donc
             // aucune interférence avec les priorités de MOVEMENT_HOLDS.
-            sl.playSound(null, x, y, z, SoundEvents.WOOD_BREAK, SoundSource.PLAYERS, 0.68f, 0.64f);
-            TestProcedure.schedule(sl, scheduleNow + 26, () -> sl.playSound(null, x, y, z,
-                    SoundEvents.GRASS_BREAK, SoundSource.PLAYERS, 0.60f, 0.98f));
+            // ================================================== PARTITION II - L'EVEIL
+            // Neuf racines sortent de terre des ticks 4 a 22 puis se retirent de 59 a 72 ;
+            // la futaie monte jusqu'au tick 31 ; soixante-quatre spores s'elevent des ticks
+            // 9 a 47. Cette signature n'a NI emprise NI degat : le son est le seul relief
+            // qu'elle possede, et c'est elle qui souffrait le plus du volume trop bas.
+            chaosHit(sl, x, y, z,
+                    SoundEvents.WARDEN_EMERGE, 1.55f, 0.52f,       // l'eveil, tres grave
+                    SoundEvents.ROOTED_DIRT_BREAK, 1.30f, 0.84f);  // la terre se dechire
+            // LES RACINES : accelerando, elles sortent de plus en plus vite.
+            chaosRoll(sl, scheduleNow, x, y, z, SoundEvents.MANGROVE_ROOTS_PLACE,
+                    4, 8, 2.80f, 0.88f, 0.90f, 1.45f, 0.64f, 1.02f);
+            // LA FUTAIE monte : la hauteur suit le tronc.
+            chaosSwell(sl, scheduleNow, x, y, z, SoundEvents.WOOD_PLACE,
+                    3, 7, 4, 1.45f, 0.62f, 1.16f);
+            // LES SPORES : ritardando, aigu, leger. C'est le contre-chant du socle grave —
+            // sans lui la figure n'est qu'un grondement, et l'oreille cesse de l'entendre.
+            chaosRoll(sl, scheduleNow, x, y, z, SoundEvents.SPORE_BLOSSOM_PLACE,
+                    9, 10, 3.00f, 1.06f, 1.15f, 0.70f, 1.26f, 1.74f);
+            // Le feuillage du banyan, puis la mousse qui gagne le sol.
+            TestProcedure.schedule(sl, scheduleNow + 20, () -> chaosSfx(sl, x, y, z,
+                    SoundEvents.AZALEA_LEAVES_PLACE, 1.35f, 0.88f));
+            TestProcedure.schedule(sl, scheduleNow + 44, () -> chaosSfx(sl, x, y, z,
+                    SoundEvents.MOSS_PLACE, 1.15f, 1.05f));
+            // Le retrait sous la terre.
+            chaosFade(sl, scheduleNow, x, y, z, SoundEvents.ROOTED_DIRT_PLACE,
+                    59, 7, 2, 1.40f, 0.92f, 0.56f);
             return;
         }
         if (fx != WeaponVisualEffectId.VERDANT_SAP_BLOOM) return;
@@ -9950,15 +9997,45 @@ public final class WeaponVfxServerListener {
         int holdEndSchedule = scheduleNow + 96;
         // Verdant dure 96 ticks : ne pas laisser le mob libre pendant la croissance (0..63).
         applyMovementHold(target, holdEndGame, false);
-        sl.playSound(null, x, y, z, SoundEvents.WARDEN_EMERGE,
-                SoundSource.PLAYERS, 0.40f, 0.75f);
-        sl.playSound(null, x, y, z, SoundEvents.BONE_MEAL_USE, SoundSource.PLAYERS, 0.72f, 0.82f);
+        // ================================================= PARTITION III - L'ARBRE SACRE
+        // La pousse occupe les trente-quatre premiers ticks, le feuillage s'ouvre vers le
+        // vingt-cinquieme, les fruits paraissent au trente-quatrieme, et l'arbre redescend
+        // sous le sol a partir du soixante-troisieme. Quatre mouvements, quatre matieres.
+        chaosHit(sl, x, y, z,
+                SoundEvents.WARDEN_EMERGE, 1.50f, 0.56f,           // la graine perce
+                SoundEvents.BONE_MEAL_USE, 1.30f, 1.05f);          // et prend
+        // LA POUSSE. La hauteur monte avec le tronc : c'est le seul endroit de tout le
+        // Bois ou le pitch raconte la geometrie plutot que l'intensite.
+        chaosSwell(sl, scheduleNow, x, y, z, SoundEvents.CHERRY_WOOD_PLACE,
+                2, 8, 4, 1.50f, 0.66f, 1.34f);
+        // Le bois travaille en grandissant : rafale qui ralentit a mesure que la croissance
+        // sature (growth = 1-(1-u)^3, elle s'arrete bien avant le tick 34).
+        chaosRoll(sl, scheduleNow, x, y, z, SoundEvents.WOOD_PLACE,
+                5, 7, 2.40f, 1.14f, 1.20f, 0.80f, 0.86f, 1.22f);
+        // Le feuillage s'ouvre.
+        TestProcedure.schedule(sl, scheduleNow + 25, () -> chaosHit(sl, x, y, z,
+                SoundEvents.AZALEA_LEAVES_PLACE, 1.40f, 0.92f,
+                SoundEvents.CHERRY_LEAVES_PLACE, 1.10f, 1.18f));
+        // LES FRUITS D'OR : un timbre cristallin, seul de son espece dans la figure. Un
+        // son qui n'a pas de voisin s'entend meme a volume modeste.
+        TestProcedure.schedule(sl, scheduleNow + 34, () -> chaosHit(sl, x, y, z,
+                SoundEvents.AMETHYST_BLOCK_CHIME, 1.35f, 1.42f,
+                SoundEvents.CAVE_VINES_PICK_BERRIES, 1.05f, 1.10f));
+        // LA SEVE : quatre gouttes espacees, de plus en plus graves — elles tombent.
+        chaosRoll(sl, scheduleNow, x, y, z, SoundEvents.BIG_DRIPLEAF_TILT_UP,
+                40, 4, 5.00f, 1.08f, 0.95f, 1.25f, 1.30f, 0.88f);
+        // L'arbre retourne sous le sol.
+        chaosFade(sl, scheduleNow, x, y, z, SoundEvents.ROOTED_DIRT_PLACE,
+                63, 6, 2, 1.35f, 0.96f, 0.58f);
         // Le maintien existe déjà depuis le tick 0 : on programme uniquement sa libération.
         TestProcedure.schedule(sl, scheduleNow + 74, () -> {
             if (!target.isAlive() || target.level() != sl) return;
             hurtWithCapturedWeapon(sl, attackerId, target, weaponDamage * 2.0f);
-            sl.playSound(null, x, y, z,
-                    SoundEvents.GENERIC_EXPLODE.value(), SoundSource.PLAYERS, 0.70f, 1.35f);
+            // GENERIC_EXPLODE est un holder : .value() est obligatoire, sans quoi le
+            // switch entier refuse de compiler (lecon T405).
+            chaosHit(sl, x, y, z,
+                    SoundEvents.GENERIC_EXPLODE.value(), 1.45f, 1.30f,
+                    SoundEvents.AZALEA_LEAVES_BREAK, 1.20f, 0.78f);
         });
         TestProcedure.schedule(sl, holdEndSchedule, () -> releaseMovementHold(target, holdEndGame));
     }

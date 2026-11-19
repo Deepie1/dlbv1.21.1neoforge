@@ -261,22 +261,22 @@ public final class BloodSignatureVfx {
                         float u = (i + 0.5f) / segs;
                         float yy = GROUND_Y + u * h - structureDrop;
                         if (yy < GROUND_Y - 0.3f) continue;
-                        box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, lat, yy,
+                        beam(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, lat, yy,
                                 0.115f, h / segs * 0.52f, 0.115f, TIMBER, opaque(a * 0.95f));
                         // Arête éclairée. Deux poutres brunes sur un monde sombre sont deux
                         // trous noirs : même règle que l'ombre, aucune masse sans liseré.
-                        box(vc, mat, tmp, cx, cy, cz, dx, dz, -0.112f, lat, yy,
+                        beam(vc, mat, tmp, cx, cy, cz, dx, dz, -0.112f, lat, yy,
                                 0.020f, h / segs * 0.50f, 0.118f, TIMBER_LIT, opaque(a * 0.85f));
                         // Rainure de guidage : le trait clair sur la face intérieure. C'est elle
                         // qui dit que quelque chose COULISSE là-dedans.
-                        box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, lat - side * 0.108f, yy,
+                        beam(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, lat - side * 0.108f, yy,
                                 0.030f, h / segs * 0.50f, 0.022f, IRON_DK, opaque(a * 0.80f));
                     }
                     // Ferrures : trois bagues de métal, aux tiers.
                     for (int k = 0; k < 3; k++) {
                         float yy = GROUND_Y + h * (0.22f + 0.30f * k) - structureDrop;
                         if (yy < GROUND_Y - 0.3f) continue;
-                        box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, lat, yy,
+                        beam(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, lat, yy,
                                 0.132f, 0.042f, 0.132f, IRON, opaque(a * 0.90f));
                     }
                 }
@@ -301,14 +301,14 @@ public final class BloodSignatureVfx {
         if (lintel > 0.001f) {
             float yy = GROUND_Y + 4.60f - structureDrop;
             float w = 1.18f * lintel;
-            box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, yy,
+            beam(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, yy,
                     0.135f, 0.115f, w, TIMBER, opaque(a));
-            box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, yy + 0.108f,
+            beam(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, yy + 0.108f,
                     0.140f, 0.026f, w * 0.96f, IRON, opaque(a * 0.85f));
-            box(vc, mat, tmp, cx, cy, cz, dx, dz, -0.132f, 0.0f, yy,
+            beam(vc, mat, tmp, cx, cy, cz, dx, dz, -0.132f, 0.0f, yy,
                     0.020f, 0.112f, w * 0.98f, TIMBER_LIT, opaque(a * 0.85f));
             // Poulie : deux joues et un axe. Petit, mais c'est l'objet qui explique la chaîne.
-            box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, yy - 0.16f,
+            beam(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, yy - 0.16f,
                     0.055f, 0.090f, 0.090f, IRON_DK, opaque(a * 0.90f));
         }
 
@@ -324,7 +324,7 @@ public final class BloodSignatureVfx {
                 float u = (i + 0.5f) / links;
                 float yy = bottom + (top - bottom) * u;
                 boolean flat = (i & 1) == 0;
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, yy,
+                beam(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, yy,
                         flat ? 0.052f : 0.022f, 0.062f, flat ? 0.022f : 0.052f,
                         IRON, opaque(a * 0.88f));
             }
@@ -354,17 +354,17 @@ public final class BloodSignatureVfx {
                 float mid = (low + high) * 0.5f;
                 float hh = (high - low) * 0.5f;
                 if (hh <= 0.004f) continue;
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, lat, mid,
+                beam(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, lat, mid,
                         0.058f, hh, halfW / cols, IRON, opaque(a));
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, -0.050f, lat, mid,
+                beam(vc, mat, tmp, cx, cy, cz, dx, dz, -0.050f, lat, mid,
                         0.016f, hh * 0.92f, halfW / cols * 0.9f, IRON_DK, opaque(a * 0.85f));
                 // Le fil : un liseré clair exactement sur la diagonale basse.
-                box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, lat, low + 0.018f,
+                beam(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, lat, low + 0.018f,
                         0.062f, 0.018f, halfW / cols, EDGE_LT, opaque(a));
                 // Sang séché sur l'acier, dès que la lame a mordu.
                 if (bite > 0.02f && hash(salt + 21, i * 17) < 0.45f) {
                     float sm = 0.10f + 0.30f * hash(salt + 22, i * 19);
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.058f, lat,
+                    beam(vc, mat, tmp, cx, cy, cz, dx, dz, 0.058f, lat,
                             low + 0.10f + sm * 0.5f,
                             0.012f, sm * 0.5f, halfW / cols * 0.7f, VENOUS, opaque(a * 0.9f));
                 }
@@ -372,9 +372,9 @@ public final class BloodSignatureVfx {
             // Le mouton : la masse qui donne son poids à la lame. Il est posé SUR le corps
             // de lame (by + bevel + bodyH), pas à une hauteur fixe.
             float crown = by + bevel + bodyH;
-            box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, crown + 0.15f,
+            beam(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, crown + 0.15f,
                     0.082f, 0.150f, halfW * 0.72f, IRON_DK, opaque(a));
-            box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, crown + 0.31f,
+            beam(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, crown + 0.31f,
                     0.088f, 0.022f, halfW * 0.70f, IRON, opaque(a * 0.9f));
 
             // Traînée de chute : trois rémanences au-dessus de la lame pendant les huit ticks.
@@ -382,7 +382,7 @@ public final class BloodSignatureVfx {
                 for (int k = 1; k <= 3; k++) {
                     float lag = by + k * 0.52f * (1.0f - fall);
                     if (lag > GROUND_Y + topY) continue;
-                    box(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, lag,
+                    beam(vc, mat, tmp, cx, cy, cz, dx, dz, 0.0f, 0.0f, lag,
                             0.040f, 0.030f, halfW * (1.0f - k * 0.18f),
                             EDGE_LT, opaque(a * (0.42f - k * 0.10f)));
                 }
@@ -1817,6 +1817,34 @@ public final class BloodSignatureVfx {
         float x = cx + dx * f - dz * lateral;
         float z = cz + dz * f + dx * lateral;
         WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp, x, cy + y, z, hf, hy, hl, rgb, alpha);
+    }
+
+    /**
+     * Poutre orientee : comme {@link #box}, mais la BOITE tourne avec sa position.
+     *
+     * <p>{@code box} place la piece dans le repere attaquant-cible puis emet un cube aligne
+     * sur les axes du monde : {@code hf} y est une demi-taille en X et {@code hl} une
+     * demi-taille en Z. Pour un petit cube c'est sans consequence, et c'est meme ce qu'on
+     * veut — le rendu est a pixels, ses grains doivent rester sur la grille du monde. Pour
+     * une POUTRE, non : le linteau de la guillotine mesure 1,18 de demi-longueur contre
+     * 0,135 d'epaisseur, et il restait couche sur l'axe Z pendant que les deux montants,
+     * eux, suivaient la diagonale de l'attaque. La traverse croisait les poteaux au lieu de
+     * les joindre.</p>
+     *
+     * <p>Le lacet {@code atan2(-dz, dx)} envoie {@code hf} sur l'axe attaquant-cible et
+     * {@code hl} sur le lateral : avec la convention roulis, tangage puis lacet du moteur et
+     * deux premiers angles nuls, l'axe X local sort en {@code (cos, 0, -sin)} et l'axe Z
+     * local en {@code (sin, 0, cos)}.</p>
+     */
+    private static void beam(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
+                             float cx, float cy, float cz, float dx, float dz,
+                             float f, float lateral, float y,
+                             float hf, float hy, float hl, int rgb, int alpha) {
+        if (alpha <= 0 || hf <= 0.0f || hy <= 0.0f || hl <= 0.0f) return;
+        float x = cx + dx * f - dz * lateral;
+        float z = cz + dz * f + dx * lateral;
+        WeaponWorldVfxManager.emitVoxelBoxRotated(vc, mat, tmp, x, cy + y, z,
+                hf, hy, hl, (float) Math.atan2(-dz, dx), 0.0f, 0.0f, rgb, alpha);
     }
 
     /**
