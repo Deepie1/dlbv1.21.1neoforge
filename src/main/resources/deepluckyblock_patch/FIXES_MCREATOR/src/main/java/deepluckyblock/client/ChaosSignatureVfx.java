@@ -1025,36 +1025,45 @@ public final class ChaosSignatureVfx {
         }
 
         // ===== LA FENETRE DE PERIODE TROIS — 132 / 140 / 148 ======================
-        // En plein chaos, l'ordre revient : trois colonnes verticales IDENTIQUES, bien
-        // separees, qui tombent sur la cible. Le seul endroit de la signature ou un geste
-        // se repete — et il ne se repete que parce que la carte logistique, elle aussi,
-        // retrouve une periode exacte vers r = 3,83.
+        // En plein chaos, l'ordre revient : la carte logistique retrouve vraiment une
+        // periode exacte vers r = 3,83. Trois anneaux nets se detachent de la couronne
+        // et se REFERMENT sur la victime. C'est le seul geste repete de la signature --
+        // il l'est parce que la periode, elle, est reellement exacte.
+        //
+        // La premiere version plantait ici une colonne verticale de quatorze cubes au-
+        // dessus de la cible : une tour qui flottait sans rapport avec la figure. Un
+        // geste doit sortir de ce que la signature EST, pas se poser a cote.
         for (int s = 0; s < 3; s++) {
             float since = now - (132 + s * 8);
             if (since < -5.0f || since > 6.0f) continue;
             boolean pre = since < 0.0f;
             float w = pre ? 1.0f + since / 5.0f : 1.0f;
             float r01 = pre ? 0.0f : since / 6.0f;
-            float col = pre ? (1.0f - w * w) : 0.0f;
-            int n = 14;
-            for (int j = 0; j < n; j++) {
-                float yy = aim + 0.30f + j * 0.26f + col * 3.2f;
-                float hh = 0.16f - j * 0.0055f;
-                put(cx, cy, cz, dx, dz, 0.0f, yy, 0.0f, hh, hh * 1.35f, hh, spin * 1.5f,
-                        (j == 0) ? M_STROBE : M_DUAL,
-                        (j == 0) ? G_CORE : G_FRAME, H_CYAN,
-                        a * (pre ? w : (1.0f - r01 * 0.88f)) * (1.0f - j * 0.045f));
-            }
-            if (!pre) {
-                float f2 = 1.0f - r01 * 0.88f;
-                int m = 20;
-                for (int j = 0; j < m; j++) {
-                    float ca = j / (float) m * TAU;
-                    float rr = 0.25f + 1.90f * Mth.sqrt(r01);
-                    put(cx, cy, cz, dx, dz, cos(ca) * rr, aim * 0.45f, sin(ca) * rr,
-                            0.10f * f2 + 0.02f, 0.045f, 0.10f * f2 + 0.02f, ca,
-                            M_DUAL, G_GLASS, H_CYAN, a * f2 * 0.88f);
+            float fade = pre ? w : (1.0f - r01 * 0.88f);
+
+            for (int ring = 0; ring < 3; ring++) {
+                // Les trois rayons de la fenetre : ils se detachent de la couronne...
+                float base = 0.75f + ring * 0.95f;
+                // ...puis tombent sur le corps.
+                float rad = pre ? base : base * (1.0f - r01 * 0.92f);
+                int n = 22;
+                for (int j = 0; j < n; j++) {
+                    float th = j / (float) n * TAU + ring * 0.42f + spin * 0.8f;
+                    put(cx, cy, cz, dx, dz, cos(th) * rad,
+                            aim + sin(th * 2.0f + ring) * 0.11f, sin(th) * rad,
+                            0.105f, 0.140f, 0.105f, th,
+                            (j % 7 == 0) ? M_STROBE : M_DUAL,
+                            (j % 7 == 0) ? G_CORE : G_FRAME,
+                            0.46f + ring * 0.21f, a * fade * 0.95f);
                 }
+            }
+            if (!pre && r01 > 0.55f) {
+                // LA RENCONTRE : les trois anneaux arrivent ensemble sur le torse.
+                float cf = (r01 - 0.55f) / 0.45f;
+                float g = 1.0f - cf;
+                put(cx, cy, cz, dx, dz, 0.0f, aim, 0.0f,
+                        0.16f + 0.42f * g, spin * 7.0f,
+                        M_STROBE, G_CORE, 0.0f, a * g * 0.95f);
             }
         }
     }
@@ -1885,88 +1894,242 @@ public final class ChaosSignatureVfx {
     private static final float FEIGEN_R0 = 2.70f;
     private static final float FEIGEN_R1 = 3.99f;
 
+    /**
+     * r(t) — LES PALIERS SONT CALES SUR LES SIX VAGUES DE COUPS, et c'est le coeur de la
+     * signature : a la vague k, l'orbite a exactement 2^k valeurs, donc <b>2^k anneaux</b>,
+     * et la vague compte <b>2^k impacts</b>. Le nombre qu'on voit et le nombre qu'on
+     * encaisse sont le meme nombre.
+     *
+     * <p>Une rampe reguliere ne donne pas ca : les fenetres de periode 4, 8 et 16 sont
+     * minuscules (3,449→3,544 puis 3,544→3,564 puis 3,564→3,569) et defileraient en un
+     * quart de seconde. Les valeurs ci-dessous posent r AU MILIEU de chaque fenetre a
+     * l'instant exact de la vague correspondante, et dans la fenetre de periode trois
+     * (3,8284→3,8415) pendant les ticks 132→148.</p>
+     */
+    private static final float[] FEIGEN_T  = { 0f, 24f, 48f, 70f, 88f, 102f, 112f, 132f, 148f, 170f };
+    private static final float[] FEIGEN_RV = { 2.700f, 2.920f, 3.200f, 3.490f, 3.5550f,
+                                               3.5660f, 3.600f, 3.8350f, 3.8420f, 3.990f };
+
+    private static float feigenR(float tick) {
+        if (tick <= FEIGEN_T[0]) return FEIGEN_RV[0];
+        for (int i = 1; i < FEIGEN_T.length; i++) {
+            if (tick <= FEIGEN_T[i]) {
+                float u = (tick - FEIGEN_T[i - 1]) / (FEIGEN_T[i] - FEIGEN_T[i - 1]);
+                return FEIGEN_RV[i - 1] + (FEIGEN_RV[i] - FEIGEN_RV[i - 1]) * u;
+            }
+        }
+        return FEIGEN_RV[FEIGEN_RV.length - 1];
+    }
+
     /** Les six temps : ils se resserrent, comme les doublements de période. */
     private static final int[] BEATS_FEIGEN = { 24, 48, 70, 88, 102, 112 };
 
+    /** Combien de pas d'orbite on trace. Un tampon fixe : la boucle de rendu tourne
+     *  soixante fois par seconde et n'a aucune raison d'allouer à chaque trame. */
+    private static final int FEIGEN_SAMPLES = 96;
+    private static final float[] FEIGEN_ORBIT = new float[FEIGEN_SAMPLES];
+    /** Tampons de tri : l'orbite range ses valeurs pour qu'on puisse COMPTER ses branches. */
+    private static final float[] FEIGEN_SORT = new float[FEIGEN_SAMPLES];
+    private static final float[] FEIGEN_CLUSTER = new float[FEIGEN_SAMPLES];
+    private static final int[] FEIGEN_BRANCH = new int[FEIGEN_SAMPLES];
+
+    /**
+     * T402b — {@code r} N'EST PLUS UNE DIRECTION DE L'ESPACE, C'EST LE TEMPS.
+     *
+     * <p>La première version traçait le diagramme de Feigenbaum tel qu'on le publie :
+     * {@code r} en abscisse sur un axe du monde, {@code x} en hauteur. C'est une figure
+     * exacte et c'est un <b>graphique</b> — mis en volume, épaissi latéralement pour ne
+     * pas disparaître par la tranche, il devient une nappe informe qui ne ressemble à
+     * rien. Un diagramme scientifique ne devient pas une attaque parce qu'on le dessine
+     * en cubes.</p>
+     *
+     * <p>Ici {@code r} monte <b>avec le temps</b>, et l'orbite est calculée à <b>un
+     * seul</b> {@code r} à la fois. Chaque valeur que prend l'attracteur devient le
+     * <b>rayon d'un anneau autour de la victime</b>. La conséquence est directe et c'est
+     * tout l'intérêt :</p>
+     *
+     * <ul>
+     *   <li>{@code r} &lt; 3,00 : l'orbite a <b>une</b> valeur — <b>un anneau</b>.</li>
+     *   <li>3,00 → 3,449 : <b>deux</b> valeurs — l'anneau <b>se dédouble sous les
+     *       yeux</b>.</li>
+     *   <li>3,449 → 3,544 : <b>quatre</b> anneaux. Puis huit, puis seize.</li>
+     *   <li>au-delà de 3,57 : le brouillard — une <b>couronne pleine</b>.</li>
+     *   <li>vers 3,83, la <b>fenêtre de période trois</b> : <b>trois anneaux nets
+     *       réapparaissent en plein chaos</b>, puis se redissolvent. Personne ne l'a
+     *       écrit : c'est l'itération qui le fait.</li>
+     * </ul>
+     *
+     * <p>Le rayon porte aussi la <b>teinte</b> ({@code 0,46 + 0,46·x}) : deux anneaux de
+     * rayons voisins ne sont donc jamais de la même couleur, et l'œil compte les anneaux
+     * sans avoir à les mesurer. Sans ce codage, quatre anneaux proches se lisent comme
+     * une bande large.</p>
+     */
     private static void renderFeigenbaum(float cx, float cy, float cz, float t,
                                          float dx, float dz, float a, int salt, float ground) {
-        // LE BALAYAGE. La figure se construit de la gauche (r petit, un seul point) vers la
-        // droite (r grand, le brouillard) : on ne montre que ce qui est deja atteint, sinon
-        // le dedoublement ne se LIT pas, il est deja la au premier tick.
-        float reveal = smooth(t, 0.04f, 0.62f);
-        // LA REPRISE : a 72 % le diagramme se replie vers la tige, puis repart. Le chaos
-        // « revient au moins une fois », c'est la regle du fichier.
-        float fold = smooth(t, 0.72f, 0.86f) * (1.0f - smooth(t, 0.88f, 0.99f));
-        float live = 1.0f - 0.72f * fold;
+        final float aim = 1.10f;
 
-        final int columns = 96;
-        for (int c = 0; c < columns; c++) {
-            float u = c / (float) (columns - 1);
-            if (u > reveal) break;
-            float r = FEIGEN_R0 + (FEIGEN_R1 - FEIGEN_R0) * u;
+        // r MONTE AVEC LE TEMPS, par paliers cales sur les vagues de coups.
+        float r = feigenR(t * 170.0f);
 
-            // L'ITERATION. On brule 110 pas pour laisser l'orbite se poser sur son
-            // attracteur, puis on trace les 26 suivants : sans le transitoire, le
-            // diagramme est noye sous la trainee du depart.
-            float x = 0.42f + 0.11f * hash(salt + c, 7);
-            for (int i = 0; i < 110; i++) x = r * x * (1.0f - x);
+        // L'ITERATION, pour de bon. 220 pas brûlés pour que l'orbite se pose exactement
+        // sur son attracteur : sans le transitoire, les anneaux bavent.
+        float x = 0.42f + 0.11f * hash(salt, 7);
+        for (int i = 0; i < 220; i++) x = r * x * (1.0f - x);
+        for (int i = 0; i < FEIGEN_SAMPLES; i++) {
+            x = r * x * (1.0f - x);
+            FEIGEN_ORBIT[i] = Mth.clamp(x, 0.015f, 0.985f);
+        }
 
-            float forward = (u - 0.46f) * 6.40f;          // r court vers la cible
-            float spread = Mth.clamp((r - 3.56f) * 1.55f, 0.0f, 1.0f);  // le desordre
-            int samples = 26;
-            for (int i = 0; i < samples; i++) {
-                x = r * x * (1.0f - x);
-                if (x <= 0.0f || x >= 1.0f) break;
+        // LE MICROSCOPE. Les fenêtres de la cascade sont minuscules : la période 4 tient
+        // entre 3,449 et 3,544, la période 8 entre 3,544 et 3,564, la 16 entre 3,564 et
+        // 3,569. Un rayon proportionnel à x les écraserait toutes sur la même épaisseur
+        // de cube — on verrait un anneau, puis deux, puis plus jamais rien de nouveau.
+        // Alors le rayon ne mesure pas x : il mesure la POSITION DE x DANS L'ATTRACTEUR
+        // DU MOMENT. L'instrument suit sa cible en zoomant, exactement comme on présente
+        // l'autosimilarité du diagramme — et chaque dédoublement s'ouvre à pleine largeur.
+        float lo = 1.0f, hi = 0.0f;
+        for (int i = 0; i < FEIGEN_SAMPLES; i++) {
+            float v = FEIGEN_ORBIT[i];
+            if (v < lo) lo = v;
+            if (v > hi) hi = v;
+        }
+        float mid = (lo + hi) * 0.5f;
+        float span = hi - lo;
 
-                // La nappe s'epaissit la ou l'orbite se disperse : un fil dans la zone
-                // periodique, un volume dans la zone chaotique.
-                float lat = (hash(c * 31 + i, salt + 5) - 0.5f) * 1.70f * spread;
-                float up = 0.22f + x * 2.55f;
-
-                // LE REPLIEMENT : tout revient vers la tige unique, puis repart.
-                float fx2 = forward * live;
-                float fy2 = 0.22f + (up - 0.22f) * live;
-                float lx2 = lat * live;
-
-                float near = 1.0f - 0.55f * spread;       // le brouillard est plus sourd
-                float half = (0.052f + 0.030f * near) * (0.75f + 0.45f * (1.0f - u));
-                int mode = spread > 0.45f ? M_SPECTRUM : M_RAINBOW;
-                int gray = (i % 7 == 0) ? G_FRAME : (spread > 0.6f ? G_DEEP : G_BODY);
-                put(cx, cy, cz, dx, dz, fx2, fy2, lx2, half, u * 9.0f + i,
-                        mode, gray, 0.0f, a * (0.42f + 0.56f * near) * (0.35f + 0.65f * reveal));
+        // COMBIEN DE BRANCHES ? On trie l'orbite et on regroupe les valeurs confondues :
+        // une période 4 ne donne que quatre valeurs distinctes, répétées vingt-quatre fois
+        // chacune. Le compte qui sort d'ici n'est pas décrété, il est MESURÉ sur l'orbite.
+        System.arraycopy(FEIGEN_ORBIT, 0, FEIGEN_SORT, 0, FEIGEN_SAMPLES);
+        for (int i = 1; i < FEIGEN_SAMPLES; i++) {
+            float v = FEIGEN_SORT[i];
+            int j = i - 1;
+            while (j >= 0 && FEIGEN_SORT[j] > v) { FEIGEN_SORT[j + 1] = FEIGEN_SORT[j]; j--; }
+            FEIGEN_SORT[j + 1] = v;
+        }
+        final float MERGE = 2.0e-5f;   // deux valeurs plus proches que ça sont LA MÊME
+        int branches = 0;
+        for (int i = 0; i < FEIGEN_SAMPLES; i++) {
+            if (branches == 0 || FEIGEN_SORT[i] - FEIGEN_CLUSTER[branches - 1] > MERGE) {
+                FEIGEN_CLUSTER[branches++] = FEIGEN_SORT[i];
             }
+        }
+        for (int i = 0; i < FEIGEN_SAMPLES; i++) {
+            int b = branches - 1;
+            for (int c = 0; c < branches; c++) {
+                if (FEIGEN_ORBIT[i] <= FEIGEN_CLUSTER[c] + MERGE) { b = c; break; }
+            }
+            FEIGEN_BRANCH[i] = b;
+        }
 
-            // LES DEUX SÉPARATRICES. Aux points de bifurcation, une barre verticale claire
-            // marque l'endroit exact ou la periode double : sans reperes, l'oeil voit une
-            // nappe qui s'effiloche au lieu d'un arbre qui se divise.
-            if (c % 24 == 3 && u < 0.72f) {
-                for (int j = 0; j < 9; j++) {
-                    put(cx, cy, cz, dx, dz, forward * live, (0.18f + j * 0.30f) * live, 0.0f,
-                            0.040f, 0.0f, M_DUAL, G_GLASS, H_CYAN,
-                            a * 0.55f * (1.0f - j * 0.07f) * reveal);
+        // LE RÉGULATEUR. Au début, le rayon porte la VRAIE position de la valeur dans
+        // l'attracteur : les deux premiers anneaux naissent l'un de l'autre, comme la
+        // bifurcation le fait vraiment. Plus haut, les branches se serrent en paquets
+        // autosimilaires et huit anneaux superposés ne se comptent plus ; le rayon glisse
+        // alors vers le RANG de la branche, régulièrement espacé. L'ordre et le nombre
+        // restent exacts — seul l'écartement est redressé, pour qu'il reste comptable.
+        float regul = Mth.clamp((r - 3.40f) / 0.16f, 0.0f, 1.0f);
+        // `open` fait ECLORE le dédoublement au lieu de le faire claquer : à r = 3,00 la
+        // largeur du 2-cycle vaut zéro et grandit en racine carrée, donc les deux anneaux
+        // s'écartent progressivement entre les ticks 31 et 48.
+        float open = Mth.clamp(span / 0.28f, 0.0f, 1.0f);
+        final float R_MID = 1.55f;
+        final float R_HALF = 1.05f;
+
+        // LE REPLI final : les anneaux se referment sur la victime au lieu de s'éteindre.
+        float close = smooth(t, 0.82f, 0.95f);
+        float live = 1.0f - 0.80f * close;
+        float spin = t * 1.15f;
+        // L'assemblage bascule lentement : un anneau strictement horizontal disparaît vu
+        // par la tranche, et en jeu la caméra est à hauteur d'œil.
+        float tilt = 0.20f + 0.13f * sin(t * TAU * 0.5f);
+
+        // UN ANNEAU PAR BRANCHE. Le nombre d'anneaux n'est pas un paramètre et ne peut
+        // pas l'être : c'est le nombre de valeurs distinctes que l'orbite vient de
+        // prendre. Chaque anneau reçoit un nombre de cubes proportionnel à son rayon,
+        // sinon le plus petit serait un amas et le plus grand un pointillé.
+        if (branches <= 20) {
+            for (int b = 0; b < branches; b++) {
+                float metric = span > 1.0e-5f ? (FEIGEN_CLUSTER[b] - mid) / span * 2.0f : 0.0f;
+                float rank = branches > 1 ? b / (float) (branches - 1) * 2.0f - 1.0f : 0.0f;
+                float norm = metric + (rank - metric) * regul;
+                float rad = (R_MID + norm * R_HALF * open) * live;
+                float hue = 0.46f + 0.23f * (norm + 1.0f);   // le rayon FAIT la couleur
+                // Budget : deux cent soixante cubes pour la couronne entière. Au-delà
+                // de huit branches, les anneaux se font pointillés — ce qui est exact :
+                // on approche du point d'accumulation, et il n'y a plus de place.
+                int n = Mth.clamp(Math.round(Math.min(rad * 23.0f, 260.0f / branches)), 7, 44);
+                for (int j = 0; j < n; j++) {
+                    // Chaque anneau est décalé : sans ça, les cubes s'alignent en rayons
+                    // et la figure se lit comme une roue au lieu d'une série d'anneaux.
+                    float th = j / (float) n * TAU + spin + b * 0.37f;
+                    float px = cos(th) * rad;
+                    float pz = sin(th) * rad;
+                    float py = aim + pz * tilt + 0.055f * sin(th * 3.0f + b);
+                    put(cx, cy, cz, dx, dz, px, py, pz,
+                            0.098f, 0.132f, 0.098f, th,
+                            (j % 6 == 0) ? M_DUAL : M_TINTED,
+                            (j % 6 == 0) ? G_FRAME : G_BODY, hue, a * 0.92f);
+                    // L'OMBRE AU SOL fait d'un empilement de cubes un jeu d'anneaux
+                    // CONCENTRIQUES : sans elle, on ne voit pas qu'ils ont un centre.
+                    if (j % 3 == 0) {
+                        put(cx, cy, cz, dx, dz, px, ground + 0.07f, pz,
+                                0.072f, 0.028f, 0.072f, th,
+                                M_MONO, G_MASK, 0.0f, a * 0.40f);
+                    }
+                }
+            }
+        } else {
+            // LE BROUILLARD. Au-delà de vingt branches il n'y a plus rien à compter :
+            // l'orbite ne se pose plus. On montre alors les quatre-vingt-seize valeurs
+            // telles quelles, et la couronne se remplit.
+            for (int i = 0; i < FEIGEN_SAMPLES; i++) {
+                float metric = span > 1.0e-5f ? (FEIGEN_ORBIT[i] - mid) / span * 2.0f : 0.0f;
+                float rank = FEIGEN_BRANCH[i] / (float) (branches - 1) * 2.0f - 1.0f;
+                float norm = metric + (rank - metric) * regul;
+                float rad = (R_MID + norm * R_HALF * open) * live;
+                float th = i / (float) FEIGEN_SAMPLES * TAU * 3.0f + spin;
+                float px = cos(th) * rad;
+                float pz = sin(th) * rad;
+                float py = aim + pz * tilt + 0.085f * sin(th * 3.0f + i * 0.7f);
+                put(cx, cy, cz, dx, dz, px, py, pz,
+                        0.098f, 0.132f, 0.098f, th,
+                        (i % 8 == 0) ? M_DUAL : M_TINTED,
+                        (i % 8 == 0) ? G_FRAME : G_BODY,
+                        0.46f + 0.23f * (norm + 1.0f), a * 0.92f);
+                if (i % 3 == 0) {
+                    put(cx, cy, cz, dx, dz, px, ground + 0.07f, pz,
+                            0.072f, 0.028f, 0.072f, th,
+                            M_MONO, G_MASK, 0.0f, a * 0.40f);
                 }
             }
         }
 
-        // LA TIGE. Avant la premiere bifurcation l'orbite est UN point : un trait net,
-        // en arriere, qui donne l'echelle de tout le reste.
-        for (int i = 0; i < 16; i++) {
-            float u = i / 15.0f;
-            float r = FEIGEN_R0 + 0.28f * u;
-            float xs = 1.0f - 1.0f / r;                   // le point fixe, exactement
-            put(cx, cy, cz, dx, dz, (-0.46f - u * 0.52f) * 6.40f * 0.16f - 2.55f,
-                    (0.22f + xs * 2.55f) * live, 0.0f,
-                    0.070f, 0.0f, M_TINTED, G_FLASH, H_CYAN, a * 0.92f);
+        // LES MONTANTS. Douze barreaux verticaux qui relient le sol à l'anneau le plus
+        // large : ils donnent une hauteur à la figure et empêchent la couronne de flotter
+        // sans rapport avec le terrain.
+        float outer = (R_MID + R_HALF * open) * live;
+        for (int p = 0; p < 12; p++) {
+            float th = p / 12.0f * TAU + spin;
+            float px = cos(th) * outer;
+            float pz = sin(th) * outer;
+            float top = aim + pz * tilt;
+            for (int j = 0; j < 5; j++) {
+                float u = j / 4.0f;
+                float py = ground + 0.10f + (top - ground - 0.10f) * u;
+                put(cx, cy, cz, dx, dz, px, py, pz,
+                        0.050f, 0.050f, 0.050f, th,
+                        M_MONO, G_DEEP, 0.0f, a * 0.30f * (0.35f + 0.65f * u));
+            }
         }
 
-        // LE SOL. Une ligne d'axe sous la figure : elle dit que r est une grandeur, pas
-        // une direction de l'espace.
-        for (int i = 0; i < 30; i++) {
-            float u = i / 29.0f;
-            if (u > reveal) break;
-            put(cx, cy, cz, dx, dz, (u - 0.46f) * 6.40f, ground + 0.08f, 0.0f,
-                    0.045f, 0.030f, 0.045f, 0.0f, M_MONO, G_DEEP, 0.0f, a * 0.50f);
-        }
+        // LE CŒUR. Un noyau à l'aplomb de la victime, qui dit où est le centre de tout
+        // ça — et qui bat de plus en plus vite à mesure que r approche du chaos.
+        float heat = Mth.clamp((r - 3.40f) / (FEIGEN_R1 - 3.40f), 0.0f, 1.0f);
+        float beat = 0.5f + 0.5f * sin(t * TAU * (3.0f + heat * 14.0f));
+        put(cx, cy, cz, dx, dz, 0.0f, aim, 0.0f,
+                (0.13f + 0.07f * beat) * (1.0f - 0.5f * close), t * 6.0f,
+                heat > 0.5f ? M_STROBE : M_PULSE, G_CORE, 0.0f,
+                a * (0.55f + 0.35f * beat));
     }
 
     // =================================================================================

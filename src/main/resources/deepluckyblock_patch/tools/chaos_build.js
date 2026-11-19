@@ -586,68 +586,163 @@ function buildChaos(variant, t, salt = 4421) {
      valeur visitee. Les fenetres de periodicite apparaissent toutes seules — on ne
      pourrait pas les inventer a la main.
      ======================================================================================= */
-  function feigenbaum(tt, emitPixels) {
-    /* Ces deux signatures n'emettent AUCUN pixel libre : leur matiere est entierement
-       recalculee a chaque trame depuis l'equation. Sans ce retour, le rejeu des ticks
-       ecoules redessinerait tout le diagramme a chaque pas (272 000 cubes mesures). */
-    if (emitPixels) return;
-    const R0 = 2.70, R1 = 3.99;
-    const reveal = sstep(tt, 0.04, 0.62);
-    const fold = sstep(tt, 0.72, 0.86) * (1.0 - sstep(tt, 0.88, 0.99));
-    const live = 1.0 - 0.72 * fold;
-    const columns = 96;
+  /* =======================================================================================
+     IV. CASCADE DE BIFURCATION — miroir de ChaosSignatureVfx.renderFeigenbaum().
+     r N'EST PLUS UNE DIRECTION DE L'ESPACE, C'EST LE TEMPS. La premiere version tracait
+     le diagramme tel qu'on le publie : r en abscisse, x en hauteur. Figure exacte, et
+     GRAPHIQUE -- mise en volume, epaissie pour ne pas disparaitre par la tranche, elle
+     devenait une nappe informe. Ici r monte avec le temps, l'orbite est calculee a un
+     seul r, et chaque valeur de l'attracteur devient le RAYON d'un anneau autour de la
+     victime : un anneau, puis deux, puis quatre, puis le brouillard -- et vers 3,83 la
+     fenetre de periode trois fait revenir TROIS anneaux nets en plein chaos.
+     ======================================================================================= */
+  const FEIGEN_SAMPLES = 96;
+  const FEIGEN_ORBIT = new Float32Array(FEIGEN_SAMPLES);
+  const FEIGEN_SORT = new Float32Array(FEIGEN_SAMPLES);
+  const FEIGEN_CLUSTER = new Float32Array(FEIGEN_SAMPLES);
+  const FEIGEN_BRANCH = new Int32Array(FEIGEN_SAMPLES);
 
-    for (let c = 0; c < columns; c++) {
-      const u = c / (columns - 1);
-      if (u > reveal) break;
-      const r = R0 + (R1 - R0) * u;
-
-      /* 110 pas brules pour que l'orbite se pose sur son attracteur : sans cela le
-         diagramme est noye sous la trainee du depart. */
-      let x = 0.42 + 0.11 * hash(salt + c, 7);
-      for (let i = 0; i < 110; i++) x = r * x * (1.0 - x);
-
-      const forward = (u - 0.46) * 6.40;
-      const spread = clamp01((r - 3.56) * 1.55);
-      for (let i = 0; i < 26; i++) {
-        x = r * x * (1.0 - x);
-        if (x <= 0.0 || x >= 1.0) break;
-        const lat = (hash(c * 31 + i, salt + 5) - 0.5) * 1.70 * spread;
-        const up = 0.22 + x * 2.55;
-        const near = 1.0 - 0.55 * spread;
-        const h = (0.052 + 0.030 * near) * (0.75 + 0.45 * (1.0 - u));
-        put(forward * live, 0.22 + (up - 0.22) * live, lat * live, h, h, h, u * 9.0 + i,
-            spread > 0.45 ? M_SPECTRUM : M_RAINBOW,
-            (i % 7 === 0) ? G_FRAME : (spread > 0.6 ? G_DEEP : G_BODY), 0.0,
-            a * (0.42 + 0.56 * near) * (0.35 + 0.65 * reveal));
+  /* r(t) : LES PALIERS SONT CALES SUR LES SIX VAGUES DE COUPS. A la vague k l'orbite a
+     exactement 2^k valeurs -- donc 2^k anneaux -- et la vague compte 2^k impacts. Les
+     fenetres de periode 4, 8 et 16 sont minuscules (3,449->3,544 ; 3,544->3,564 ;
+     3,564->3,569) : une rampe reguliere les ferait defiler en un quart de seconde. */
+  const FEIGEN_T  = [0, 24, 48, 70, 88, 102, 112, 132, 148, 170];
+  const FEIGEN_RV = [2.700, 2.920, 3.200, 3.490, 3.5550, 3.5660, 3.600, 3.8350, 3.8420, 3.990];
+  function feigenR(tick) {
+    if (tick <= FEIGEN_T[0]) return FEIGEN_RV[0];
+    for (let i = 1; i < FEIGEN_T.length; i++) {
+      if (tick <= FEIGEN_T[i]) {
+        const u = (tick - FEIGEN_T[i - 1]) / (FEIGEN_T[i] - FEIGEN_T[i - 1]);
+        return FEIGEN_RV[i - 1] + (FEIGEN_RV[i] - FEIGEN_RV[i - 1]) * u;
       }
+    }
+    return FEIGEN_RV[FEIGEN_RV.length - 1];
+  }
 
-      /* Les separatrices : sans reperes, l'oeil voit une nappe qui s'effiloche au lieu
-         d'un arbre qui se divise. */
-      if (c % 24 === 3 && u < 0.72) {
-        for (let j = 0; j < 9; j++) {
-          put(forward * live, (0.18 + j * 0.30) * live, 0.0, 0.040, 0.040, 0.040, 0.0,
-              M_DUAL, G_GLASS, H_CYAN, a * 0.55 * (1.0 - j * 0.07) * reveal);
+  function feigenbaum(tt, emitPixels) {
+    if (emitPixels) return;
+    const aim = 1.10;
+    const r = feigenR(tt * 170.0);   /* r monte par paliers cales sur les vagues */
+
+    let x = 0.42 + 0.11 * hash(salt, 7);
+    for (let i = 0; i < 220; i++) x = r * x * (1.0 - x);
+    for (let i = 0; i < FEIGEN_SAMPLES; i++) {
+      x = r * x * (1.0 - x);
+      FEIGEN_ORBIT[i] = x < 0.015 ? 0.015 : (x > 0.985 ? 0.985 : x);
+    }
+
+    /* LE MICROSCOPE. Les fenetres de la cascade sont minuscules (periode 4 : 3,449 ->
+       3,544 ; periode 8 : 3,544 -> 3,564 ; periode 16 : 3,564 -> 3,569). Un rayon
+       proportionnel a x les ecraserait toutes sur l'epaisseur d'un cube. Le rayon mesure
+       donc la POSITION DE x DANS L'ATTRACTEUR DU MOMENT : l'instrument suit sa cible en
+       zoomant, comme on presente l'autosimilarite du diagramme. */
+    let lo = 1.0, hi = 0.0;
+    for (let i = 0; i < FEIGEN_SAMPLES; i++) {
+      const v = FEIGEN_ORBIT[i];
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+    const mid = (lo + hi) * 0.5, span = hi - lo;
+
+    /* COMBIEN DE BRANCHES ? On trie l'orbite et on regroupe les valeurs confondues : une
+       periode 4 ne donne que quatre valeurs distinctes, repetees vingt-quatre fois. Le
+       compte n'est pas decrete, il est MESURE sur l'orbite. */
+    FEIGEN_SORT.set(FEIGEN_ORBIT);
+    FEIGEN_SORT.sort();
+    const MERGE = 2.0e-5;
+    let branches = 0;
+    for (let i = 0; i < FEIGEN_SAMPLES; i++) {
+      if (branches === 0 || FEIGEN_SORT[i] - FEIGEN_CLUSTER[branches - 1] > MERGE) {
+        FEIGEN_CLUSTER[branches++] = FEIGEN_SORT[i];
+      }
+    }
+    for (let i = 0; i < FEIGEN_SAMPLES; i++) {
+      let b = branches - 1;
+      for (let c = 0; c < branches; c++) {
+        if (FEIGEN_ORBIT[i] <= FEIGEN_CLUSTER[c] + MERGE) { b = c; break; }
+      }
+      FEIGEN_BRANCH[i] = b;
+    }
+
+    /* LE REGULATEUR : le rayon part de la vraie position dans l'attracteur, puis glisse
+       vers le RANG de la branche quand les paquets autosimilaires deviennent trop serres
+       pour etre comptes. L'ordre et le nombre restent exacts. */
+    const regul = clamp01((r - 3.40) / 0.16);
+    /* `open` fait ECLORE le dedoublement au lieu de le faire claquer. */
+    const open = clamp01(span / 0.28);
+    const R_MID = 1.55, R_HALF = 1.05;
+
+    const close = sstep(tt, 0.82, 0.95);
+    const live = 1.0 - 0.80 * close;
+    const spin2 = tt * 1.15;
+    const tilt = 0.20 + 0.13 * sin(tt * TAU * 0.5);
+
+    /* UN ANNEAU PAR BRANCHE. Le nombre d'anneaux n'est pas un parametre : c'est le
+       nombre de valeurs distinctes que l'orbite vient de prendre. Chaque anneau recoit un
+       nombre de cubes proportionnel a son rayon, sinon le plus petit serait un amas. */
+    if (branches <= 20) {
+      for (let b = 0; b < branches; b++) {
+        const metric = span > 1.0e-5 ? (FEIGEN_CLUSTER[b] - mid) / span * 2.0 : 0.0;
+        const rank = branches > 1 ? b / (branches - 1) * 2.0 - 1.0 : 0.0;
+        const norm = metric + (rank - metric) * regul;
+        const rad = (R_MID + norm * R_HALF * open) * live;
+        const hue = 0.46 + 0.23 * (norm + 1.0);
+        /* Budget : 260 cubes pour la couronne entiere ; au-dela de huit branches les
+           anneaux se font pointilles -- on approche du point d'accumulation. */
+        const n = Math.max(7, Math.min(44, Math.round(Math.min(rad * 23.0, 260.0 / branches))));
+        for (let j = 0; j < n; j++) {
+          const th = j / n * TAU + spin2 + b * 0.37;
+          const px = cos(th) * rad, pz = sin(th) * rad;
+          const py = aim + pz * tilt + 0.055 * sin(th * 3.0 + b);
+          put(px, py, pz, 0.098, 0.132, 0.098, th,
+              (j % 6 === 0) ? M_DUAL : M_TINTED, (j % 6 === 0) ? G_FRAME : G_BODY,
+              hue, a * 0.92);
+          if (j % 3 === 0) {
+            put(px, GROUND + 0.07, pz, 0.072, 0.028, 0.072, th,
+                M_MONO, G_MASK, 0.0, a * 0.40);
+          }
+        }
+      }
+    } else {
+      /* LE BROUILLARD : au-dela de vingt branches il n'y a plus rien a compter. */
+      for (let i = 0; i < FEIGEN_SAMPLES; i++) {
+        const metric = span > 1.0e-5 ? (FEIGEN_ORBIT[i] - mid) / span * 2.0 : 0.0;
+        const rank = FEIGEN_BRANCH[i] / (branches - 1) * 2.0 - 1.0;
+        const norm = metric + (rank - metric) * regul;
+        const rad = (R_MID + norm * R_HALF * open) * live;
+        const th = i / FEIGEN_SAMPLES * TAU * 3.0 + spin2;
+        const px = cos(th) * rad, pz = sin(th) * rad;
+        const py = aim + pz * tilt + 0.085 * sin(th * 3.0 + i * 0.7);
+        put(px, py, pz, 0.098, 0.132, 0.098, th,
+            (i % 8 === 0) ? M_DUAL : M_TINTED, (i % 8 === 0) ? G_FRAME : G_BODY,
+            0.46 + 0.23 * (norm + 1.0), a * 0.92);
+        if (i % 3 === 0) {
+          put(px, GROUND + 0.07, pz, 0.072, 0.028, 0.072, th,
+              M_MONO, G_MASK, 0.0, a * 0.40);
         }
       }
     }
 
-    /* LA TIGE : avant la premiere bifurcation, l'orbite est UN point. */
-    for (let i = 0; i < 16; i++) {
-      const u = i / 15;
-      const r = R0 + 0.28 * u;
-      const xs = 1.0 - 1.0 / r;
-      put((-0.46 - u * 0.52) * 6.40 * 0.16 - 2.55, (0.22 + xs * 2.55) * live, 0.0,
-          0.070, 0.070, 0.070, 0.0, M_TINTED, G_FLASH, H_CYAN, a * 0.92);
+    /* LES MONTANTS : douze barreaux du sol a l'anneau le plus large. */
+    const outer = (R_MID + R_HALF * open) * live;
+    for (let p = 0; p < 12; p++) {
+      const th = p / 12 * TAU + spin2;
+      const px = cos(th) * outer, pz = sin(th) * outer;
+      const top = aim + pz * tilt;
+      for (let j = 0; j < 5; j++) {
+        const u = j / 4;
+        const py = GROUND + 0.10 + (top - GROUND - 0.10) * u;
+        put(px, py, pz, 0.050, 0.050, 0.050, th,
+            M_MONO, G_DEEP, 0.0, a * 0.30 * (0.35 + 0.65 * u));
+      }
     }
 
-    /* L'AXE au sol : r est une grandeur, pas une direction de l'espace. */
-    for (let i = 0; i < 30; i++) {
-      const u = i / 29;
-      if (u > reveal) break;
-      put((u - 0.46) * 6.40, GROUND + 0.08, 0.0, 0.045, 0.030, 0.045, 0.0,
-          M_MONO, G_DEEP, 0.0, a * 0.50);
-    }
+    /* LE COEUR, qui bat de plus en plus vite a mesure que r approche du chaos. */
+    const heat = clamp01((r - 3.40) / (3.99 - 3.40));
+    const beat = 0.5 + 0.5 * sin(tt * TAU * (3.0 + heat * 14.0));
+    const hc = (0.13 + 0.07 * beat) * (1.0 - 0.5 * close);
+    put(0.0, aim, 0.0, hc, hc, hc, tt * 6.0,
+        heat > 0.5 ? M_STROBE : M_PULSE, G_CORE, 0.0, a * (0.55 + 0.35 * beat));
   }
 
   /* =======================================================================================
@@ -1279,29 +1374,32 @@ function buildChaos(variant, t, salt = 4421) {
     }
 
     /* LA FENETRE DE PERIODE TROIS — 132 / 140 / 148. En plein chaos l'ordre revient :
-       trois colonnes verticales IDENTIQUES. Le seul geste repete de la signature, et il
-       ne l'est que parce que la carte logistique retrouve vraiment une periode exacte. */
+       la carte logistique retrouve vraiment une periode exacte vers r = 3,83. Trois
+       anneaux nets se detachent de la couronne et se REFERMENT sur la victime.
+       La premiere version plantait ici une colonne verticale au-dessus de la cible :
+       une tour qui flottait sans rapport avec la figure. */
     for (let s2 = 0; s2 < 3; s2++) {
       const since = nowT - (132 + s2 * 8);
       if (since < -5.0 || since > 6.0) continue;
       const pre = since < 0;
       const w = pre ? 1.0 + since / 5.0 : 1.0;
       const r01 = pre ? 0.0 : since / 6.0;
-      const col = pre ? (1.0 - w * w) : 0.0;
-      for (let j = 0; j < 14; j++) {
-        const yy = aim + 0.30 + j * 0.26 + col * 3.2, hh = 0.16 - j * 0.0055;
-        put(0.0, yy, 0.0, hh, hh * 1.35, hh, spin * 1.5,
-            (j === 0) ? M_STROBE : M_DUAL, (j === 0) ? G_CORE : G_FRAME,
-            H_CYAN, a * (pre ? w : (1.0 - r01 * 0.88)) * (1.0 - j * 0.045));
-      }
-      if (!pre) {
-        const f2 = 1.0 - r01 * 0.88;
-        for (let j = 0; j < 20; j++) {
-          const ca = j / 20 * TAU, rr = 0.25 + 1.90 * sqrt(r01);
-          const hw = 0.10 * f2 + 0.02;
-          put(cos(ca) * rr, aim * 0.45, sin(ca) * rr, hw, 0.045, hw, ca,
-              M_DUAL, G_GLASS, H_CYAN, a * f2 * 0.88);
+      const fade = pre ? w : (1.0 - r01 * 0.88);
+      for (let ring = 0; ring < 3; ring++) {
+        const base = 0.75 + ring * 0.95;
+        const rad = pre ? base : base * (1.0 - r01 * 0.92);
+        for (let j = 0; j < 22; j++) {
+          const th = j / 22 * TAU + ring * 0.42 + spin * 0.8;
+          put(cos(th) * rad, aim + sin(th * 2.0 + ring) * 0.11, sin(th) * rad,
+              0.105, 0.140, 0.105, th,
+              (j % 7 === 0) ? M_STROBE : M_DUAL, (j % 7 === 0) ? G_CORE : G_FRAME,
+              0.46 + ring * 0.21, a * fade * 0.95);
         }
+      }
+      if (!pre && r01 > 0.55) {
+        const g = 1.0 - (r01 - 0.55) / 0.45;
+        const hc = 0.16 + 0.42 * g;
+        put(0.0, aim, 0.0, hc, hc, hc, spin * 7.0, M_STROBE, G_CORE, 0.0, a * g * 0.95);
       }
     }
 
