@@ -6290,7 +6290,7 @@ public final class WeaponVfxServerListener {
         // La trace aigue : elle dit ou le coup a porte, et elle aussi change de grain.
         SoundEvent edge = switch (Math.floorMod(voice, 4)) {
             case 1 -> SoundEvents.GLASS_BREAK;
-            case 2 -> SoundEvents.NOTE_BLOCK_HAT;
+            case 2 -> SoundEvents.NOTE_BLOCK_HAT.value();
             case 3 -> SoundEvents.ARROW_HIT;
             default -> SoundEvents.GLASS_BREAK;
         };

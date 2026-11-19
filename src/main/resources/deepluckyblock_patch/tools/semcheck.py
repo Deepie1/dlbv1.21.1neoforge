@@ -186,8 +186,48 @@ SOUND_TABLE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            'soundevents_1211.json')
 
 
+def _span_jusqu_au_point_virgule(clean, debut):
+    """Fin de l'instruction qui commence a `debut` : le premier ';' hors accolade et
+       hors parenthese. Un switch expression en contient plusieurs, d'ou le comptage."""
+    i, prof = debut, 0
+    while i < len(clean):
+        c = clean[i]
+        if c in '({[':
+            prof += 1
+        elif c in ')}]':
+            prof -= 1
+        elif c == ';' and prof <= 0:
+            return i
+        i += 1
+    return len(clean)
+
+
+def _args_de_premier_niveau(texte):
+    """Decoupe une liste d'arguments sur les virgules de premier niveau."""
+    args, prof, debut = [], 0, 0
+    for i, c in enumerate(texte):
+        if c in '({[':
+            prof += 1
+        elif c in ')}]':
+            prof -= 1
+        elif c == ',' and prof == 0:
+            args.append((debut, texte[debut:i]))
+            debut = i + 1
+    args.append((debut, texte[debut:]))
+    return args
+
+
 def check_sound_events(path, clean):
-    """(C) .value() sur un SoundEvent nu, et constantes inexistantes en 1.21.1."""
+    """(C) Le .value() en trop ET le .value() manquant, plus les constantes inexistantes.
+
+       Le .value() manquant ne se voit QUE dans un contexte type : `Level.playSound`
+       accepte aussi bien `SoundEvent` que `Holder<SoundEvent>`, donc l'immense majorite
+       des appels est licite dans les deux formes. Trois contextes exigent le son nu :
+         1. une declaration `SoundEvent x = ...;` (switch expression compris) ;
+         2. un `return` dans une methode qui rend un `SoundEvent` ;
+         3. un argument passe a une methode du fichier dont le parametre est `SoundEvent`.
+       C'est le cas 1 qui a casse la compilation en novembre 2026 : une branche de switch
+       rendait Holder.Reference<SoundEvent> quand les autres rendaient SoundEvent."""
     try:
         with open(SOUND_TABLE, encoding='utf-8') as fh:
             table = json.load(fh)
@@ -196,7 +236,74 @@ def check_sound_events(path, clean):
     holder = set(table['holder'])
     plain = set(table['plain'])
     problems = []
-    for m in re.finditer(r'SoundEvents\.([A-Z][A-Z0-9_]*)(\s*\.\s*value\s*\(\s*\))?', clean):
+    vus = set()
+    jeton = re.compile(r'SoundEvents\.([A-Z][A-Z0-9_]*)(\s*\.\s*value\s*\(\s*\))?')
+
+    def exige_son_nu(depart, fin, pourquoi):
+        for m in jeton.finditer(clean, depart, fin):
+            if m.group(2) or m.group(1) not in holder or m.start() in vus:
+                continue
+            vus.add(m.start())
+            problems.append((clean.count('\n', 0, m.start()) + 1, m.group(1),
+                             'declare Holder.Reference<SoundEvent> et ' + pourquoi
+                             + ' : .value() manquant (ne compile pas)'))
+
+    # 1. SoundEvent x = ... ;  — et surtout le switch expression, ou une seule branche
+    #    en Holder suffit a faire echouer tout le switch.
+    for d in re.finditer(r'(?<![\w.])SoundEvent\s+[a-zA-Z_]\w*\s*=', clean):
+        if clean[:d.start()].rstrip().endswith('<'):
+            continue
+        exige_son_nu(d.end(), _span_jusqu_au_point_virgule(clean, d.end()),
+                     'sert ici a remplir un SoundEvent')
+
+    # 2. return, dans une methode qui rend un SoundEvent nu.
+    for d in re.finditer(r'(?<![\w.<])SoundEvent\s+[a-zA-Z_]\w*\s*\([^;{)]*\)\s*\{', clean):
+        corps, prof, i = None, 0, d.end() - 1
+        while i < len(clean):
+            if clean[i] == '{':
+                prof += 1
+            elif clean[i] == '}':
+                prof -= 1
+                if prof == 0:
+                    corps = i
+                    break
+            i += 1
+        if corps is None:
+            continue
+        for r in re.finditer(r'(?<![\w.])return\b', clean[d.end():corps]):
+            depart = d.end() + r.end()
+            exige_son_nu(depart, _span_jusqu_au_point_virgule(clean, depart),
+                         'est rendu par une methode qui declare SoundEvent')
+
+    # 3. Les methodes du fichier qui prennent un SoundEvent en parametre.
+    attendus = {}
+    for d in re.finditer(r'(?<![\w.])(?:private|public|protected|static|final|\s)+'
+                         r'[\w.<>\[\]]+\s+([a-zA-Z_]\w*)\s*\(([^;{)]*)\)\s*\{', clean):
+        for rang, (_, arg) in enumerate(_args_de_premier_niveau(d.group(2))):
+            if re.search(r'(?<![\w.<])SoundEvent\s+[a-zA-Z_]\w*\s*$', arg.strip()):
+                attendus.setdefault(d.group(1), set()).add(rang)
+    for nom, rangs in attendus.items():
+        for appel in re.finditer(r'(?<![\w.])' + re.escape(nom) + r'\s*\(', clean):
+            fin, prof, i = None, 0, appel.end() - 1
+            while i < len(clean):
+                if clean[i] in '([{':
+                    prof += 1
+                elif clean[i] in ')]}':
+                    prof -= 1
+                    if prof == 0:
+                        fin = i
+                        break
+                i += 1
+            if fin is None:
+                continue
+            for rang, (decal, _) in enumerate(_args_de_premier_niveau(clean[appel.end():fin])):
+                if rang in rangs:
+                    debut = appel.end() + decal
+                    exige_son_nu(debut, appel.end() + decal + len(_args_de_premier_niveau(
+                        clean[appel.end():fin])[rang][1]),
+                        'est passe a ' + nom + '(), qui attend un SoundEvent')
+
+    for m in jeton.finditer(clean):
         ident, call = m.group(1), m.group(2)
         line = clean.count('\n', 0, m.start()) + 1
         if ident not in holder and ident not in plain:
@@ -204,6 +311,7 @@ def check_sound_events(path, clean):
         elif call and ident in plain:
             problems.append((line, ident,
                              'est un SoundEvent nu : .value() en trop (ne compile pas)'))
+    problems.sort()
     return problems
 
 
