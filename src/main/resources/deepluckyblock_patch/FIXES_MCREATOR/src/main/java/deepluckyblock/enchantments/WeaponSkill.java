@@ -345,6 +345,29 @@ public final class WeaponSkill {
         return gameTime >= readyAt(stack);
     }
 
+    /**
+     * T418 : cette arme porte-t-elle une competence de cet element, actuellement PRETE ?
+     *
+     * <p>Le rendu des cubes du Vide et du Chaos pose exactement cette question. Elle vit ici,
+     * et pas dans le renderer, pour une raison deja apprise a nos depens : le halo et les
+     * cubes doivent s'allumer et s'eteindre <b>ensemble</b>. S'ils interrogeaient deux codes
+     * differents — l'un les enchantements, l'autre la recharge — on verrait les cubes tourner
+     * autour d'une arme encore en recharge, ou un halo « pret » sans cubes.</p>
+     *
+     * <p>Le client peut repondre : {@code dlbSkillReadyAt} voyage dans CUSTOM_DATA, et le
+     * temps du monde est synchronise. Avant T415 cette donnee n'arrivait jamais a jour ;
+     * c'est le meme correctif de synchronisation qui rend ce test fiable.</p>
+     */
+    public static boolean hasChargedSkillOfElement(ItemStack stack, DeepElement element, long gameTime) {
+        if (stack == null || stack.isEmpty() || element == null) return false;
+        for (Entry e : allOn(stack)) {
+            if (e.element() == element) {
+                return isCharged(stack, gameTime);
+            }
+        }
+        return false;
+    }
+
     /** Secondes restantes avant rechargement, arrondies au supérieur. */
     public static int remainingSeconds(ItemStack stack, long gameTime) {
         long left = readyAt(stack) - gameTime;

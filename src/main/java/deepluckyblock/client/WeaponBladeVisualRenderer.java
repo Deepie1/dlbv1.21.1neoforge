@@ -162,7 +162,24 @@ public final class WeaponBladeVisualRenderer {
             //
             // armActive ne decide donc plus de l'affichage, seulement de sa densite (plancher
             // d'alpha) sur les armes qui ont effectivement gagne l'aura.
-            if (!animSword && !deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(stack)) return;
+            // T418-CUBES-CHARGES : les cubes du Vide et du Chaos ne repondent plus a l'aura,
+            // mais a la COMPETENCE. Ils s'allument quand l'arme porte une competence de cet
+            // element ET qu'elle est PRETE ; ils s'eteignent pendant la recharge. C'est le
+            // meme signal que le halo, lu par la meme methode, donc les deux ne peuvent pas
+            // se contredire.
+            long skillNow = 0L;
+            var mcLevel = Minecraft.getInstance().level;
+            if (mcLevel != null) skillNow = mcLevel.getGameTime();
+            boolean voidReady = deepluckyblock.enchantments.WeaponSkill
+                    .hasChargedSkillOfElement(stack, DeepElement.VOID, skillNow);
+            boolean chaosReady = deepluckyblock.enchantments.WeaponSkill
+                    .hasChargedSkillOfElement(stack, DeepElement.CHAOS, skillNow);
+
+            // L'aura decide des PIXELS DE LAME (regle de minorite posee au loot, T409) ; la
+            // competence chargee decide des CUBES. Une arme sans aura mais a competence prete
+            // garde donc sa lame nue et sort quand meme ses cubes.
+            boolean bladePixels = animSword || deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(stack);
+            if (!bladePixels && !voidReady && !chaosReady) return;
             WeaponWorldVfxManager.setAlphaFloor(armActive ? 0 : 172);
             WeaponWorldVfxManager.beginFrame(WeaponWorldVfxManager.smoothTimeSeconds());
 
@@ -172,7 +189,7 @@ public final class WeaponBladeVisualRenderer {
                 Matrix4f mat = poseStack.last().pose();
                 Vector3f tmp = new Vector3f();
 
-                for (int i = 0; i < layers.size(); i++) {
+                for (int i = 0; bladePixels && i < layers.size(); i++) {
                     WeaponVisualEffectId.ResolvedLayer layer = layers.get(i);
                     WeaponVisualEffectId fx = layer.effect();
                     VertexConsumer vc = bufferSource.getBuffer(
@@ -189,19 +206,15 @@ public final class WeaponBladeVisualRenderer {
                 // T392 : LES CUBES D'ABYSSE DE L'ARME DU VIDE. Dessinés APRÈS toutes les
                 // couches voxel, et pas entre deux : entrelacer deux RenderType non
                 // « fixed » sur la même BufferSource remonte en « Not building! ».
-                for (WeaponVisualEffectId.ResolvedLayer voidLayer : layers) {
-                    if (voidLayer.effect().element() != DeepElement.VOID) continue;
+                if (voidReady) {
                     renderVoidPortalCubes(bufferSource, mat, tmp, nodes, time);
-                    break;
                 }
 
                 // T401 : LES PIXELS 3D QUI GRAVITENT AUTOUR DE L'ARME DU CHAOS. Même
                 // précaution que ci-dessus — après toutes les couches voxel, jamais entre
                 // deux — et pour la même raison.
-                for (WeaponVisualEffectId.ResolvedLayer chaosLayer : layers) {
-                    if (chaosLayer.effect().element() != DeepElement.CHAOS) continue;
+                if (chaosReady) {
                     renderChaosPixelOrbit(bufferSource, mat, nodes, time);
-                    break;
                 }
             } catch (Throwable ignored) {
                 // Tolérance totale avec ImmediatelyFast / Sodium / Iris
