@@ -656,6 +656,21 @@ public final class DeepGlintColor {
     public static final int GRADIENT_MODE_VOID = 3;
 
     /**
+     * T426b-CHAOS-GLINT : mode de degrade reserve a la famille CHAOS.
+     *
+     * <p>Le Chaos portait jusqu'ici un violet tres sombre (0x2B0B38), sa couleur d'element.
+     * Au palier d'une competence chargee la generation de texture le poussait vers le blanc,
+     * si bien qu'on lisait tantot un presque-noir, tantot un eclat blanc, jamais le Chaos.
+     * Le mode 4 lui donne une rampe entierement GRISE, du graphite a l'os, posee sur le champ
+     * nuageux de l'Ombre.</p>
+     *
+     * <p>Le Chaos emprunte la REPARTITION de l'Ombre, pas sa palette : des volutes qui se
+     * defont conviennent a un element d'entropie, mais le violet de l'Ombre lui est interdit
+     * — c'est precisement la confusion qu'il fallait lever.</p>
+     */
+    public static final int GRADIENT_MODE_CHAOS = 4;
+
+    /**
      * True si l'un des enchantements de la pile appartient a la famille OMBRE.
      *
      * <p>On interroge le MEME classificateur que {@link #resolve(String, int)} plutot que de
@@ -715,6 +730,53 @@ public final class DeepGlintColor {
             if (s.contains("curse") || s.contains("cursed") || s.contains("blemish")
                     || s.contains("unlucky")) continue;
             if (baseColor(s) == DRAGON) return true;
+        }
+        return false;
+    }
+
+    /**
+     * True si la pile releve de la famille CHAOS.
+     *
+     * <p>Construite sur le modele exact de {@link #isVoidStack(ItemStack)}, et pour la meme
+     * raison : la competence du Chaos ne porte pas le mot « chaos » dans le nom de son
+     * enchantement, donc la reconnaissance par orthographe la manquait. On interroge d'abord
+     * l'element declare de la competence chargee, ensuite seulement les noms.</p>
+     *
+     * <p>Les maledictions sont ecartees comme ailleurs : une arme maudite reste rouge, meme
+     * si son nom contient un mot du Chaos.</p>
+     */
+    public static boolean isChaosStack(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        if (isChargedSkillOfElement(stack, deepluckyblock.enchantments.DeepElement.CHAOS)) return true;
+        try {
+            var tag = deepluckyblock.util.DeepNbt.tag(stack);
+            if (tag != null && deepluckyblock.util.AnimFamily.CHAOS.equals(
+                    deepluckyblock.util.AnimFamily.canonical(tag.getString("DlbAnimFamily")))) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+            // Une pile sans NBT lisible n'est simplement pas une epee de demonstration.
+        }
+        Map<net.minecraft.world.item.enchantment.Enchantment, Integer> enchants;
+        try {
+            enchants = deepluckyblock.util.DeepEnchant.map(stack);
+        } catch (Throwable t) {
+            return false;
+        }
+        if (enchants == null || enchants.isEmpty()) return false;
+        for (net.minecraft.world.item.enchantment.Enchantment ench : enchants.keySet()) {
+            if (ench == null) continue;
+            net.minecraft.resources.ResourceLocation rl;
+            try {
+                rl = deepluckyblock.util.DeepEnchant.getKeySafe(ench);
+            } catch (Throwable t) {
+                continue;
+            }
+            if (rl == null) continue;
+            String s = rl.toString().toLowerCase(Locale.ROOT);
+            if (s.contains("curse") || s.contains("cursed") || s.contains("blemish")
+                    || s.contains("unlucky")) continue;
+            if (baseColor(s) == CHAOS_BASE) return true;
         }
         return false;
     }

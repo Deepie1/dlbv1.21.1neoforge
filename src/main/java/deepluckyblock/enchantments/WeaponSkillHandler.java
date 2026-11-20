@@ -258,12 +258,13 @@ public final class WeaponSkillHandler {
      */
     private static int readyColor(int elementRgb, int savedRgb, boolean hadColor) {
         if (!hadColor) return elementRgb;
-        // T426 : ÉCLAIRCIR UN NOIR, C'EST LE SUPPRIMER. La règle T421 part du principe qu'une
-        // teinte plus lumineuse reste la même teinte — vrai d'un rouge, faux d'un élément dont
-        // toute l'identité est l'absence de lumière. Le Vide (0x444444) ressortait en gris
-        // clair, exactement le contraire du halo attendu. Sous ce seuil on garde la couleur
-        // brute : la compétence chargée se signale alors par son palier, pas par sa clarté.
-        if (value(elementRgb) < DARK_ELEMENT_VALUE) return elementRgb;
+        // T426b : AUCUNE EXCEPTION ICI. Un essai avait soustrait les éléments sombres à
+        // l'éclaircissement T421 pour obtenir un halo noir ; le résultat a été jugé en jeu —
+        // tous les halos chargés ont perdu en visibilité sans que le Vide devienne noir pour
+        // autant. La raison est ailleurs : au palier 13, la génération de texture désature la
+        // teinte vers le blanc, donc assombrir la couleur ne peut rien changer (voir
+        // EnchantGlintTyped). La couleur reste donc éclaircissable pour TOUS les éléments, et
+        // le noir du Vide comme le gris du Chaos sont obtenus par leur mode de dégradé.
         int dr = ((elementRgb >> 16) & 0xFF) - ((savedRgb >> 16) & 0xFF);
         int dg = ((elementRgb >> 8) & 0xFF) - ((savedRgb >> 8) & 0xFF);
         int db = (elementRgb & 0xFF) - (savedRgb & 0xFF);
@@ -272,26 +273,6 @@ public final class WeaponSkillHandler {
         if (Math.abs(dr) + Math.abs(dg) + Math.abs(db) >= 150) return elementRgb;
         return brighten(elementRgb);
     }
-
-    /**
-     * Valeur d'une couleur : son canal le plus fort, 0..255.
-     *
-     * <p>Et surtout pas une luminance perçue. Rec. 601 pondère le rouge à 0,299 et classerait
-     * le Sang (0xDD0000, valeur 221) comme sombre : la règle T421 ne s'appliquerait plus
-     * justement au cas qui l'a fait écrire, l'épée légendaire rouge à compétence BLOOD. La
-     * question posée ici n'est pas « cette couleur éclaire-t-elle ? » mais « reste-t-il de la
-     * lumière à éteindre ? », et c'est le canal maximal qui y répond.</p>
-     */
-    private static int value(int rgb) {
-        return Math.max((rgb >> 16) & 0xFF, Math.max((rgb >> 8) & 0xFF, rgb & 0xFF));
-    }
-
-    /**
-     * En dessous, l'élément est sombre par nature et garde sa couleur brute. Seuls le Vide
-     * (0x444444, valeur 68) et le Chaos (0x2B0B38, valeur 56) passent sous ce seuil ; l'Ombre
-     * (142), le Sang (221) et la Foudre (255) restent éclaircissables.
-     */
-    private static final int DARK_ELEMENT_VALUE = 96;
 
     /** Remonte la teinte vers le blanc de 55 %, en gardant son identité colorée. */
     private static int brighten(int rgb) {

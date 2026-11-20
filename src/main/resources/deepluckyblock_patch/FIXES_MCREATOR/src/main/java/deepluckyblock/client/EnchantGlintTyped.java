@@ -363,9 +363,13 @@ public final class EnchantGlintTyped {
                         int spatial = spatialTint(rgb, gradientRgb, gradientMode, gradient);
                         int tr = (spatial >> 16) & 0xFF, tg = (spatial >> 8) & 0xFF, tb = spatial & 0xFF;
                         int maxChan = Math.max(1, Math.max(tr, Math.max(tg, tb)));
-                        double sr = tr * 255.0 / maxChan;
-                        double sg = tg * 255.0 / maxChan;
-                        double sb = tb * 255.0 / maxChan;
+                        // Meme precaution que dans la branche des hauts paliers : une rampe
+                        // achromatique garde ses niveaux, sinon le noir du Vide et le gris du
+                        // Chaos virent au blanc des la premiere frappe.
+                        boolean achromatic = isAchromaticMode(gradientMode);
+                        double sr = achromatic ? tr : tr * 255.0 / maxChan;
+                        double sg = achromatic ? tg : tg * 255.0 / maxChan;
+                        double sb = achromatic ? tb : tb * 255.0 / maxChan;
                         int px = img.getPixelRGBA(x, y);
                         int r = px & 0xFF;
                         int g = (px >> 8) & 0xFF;
@@ -373,7 +377,8 @@ public final class EnchantGlintTyped {
                         int bright = Math.max(r, Math.max(g, b));
                         double norm = bright / 255.0;
                         double lifted = Math.min(1.0, (0.54 + flashBoost) + Math.pow(norm, 0.40) * 0.74);
-                        double core = norm > 0.40 ? Math.pow((norm - 0.40) / 0.60, 1.20) * (95.0 + flashBoost * 160.0) : 0.0;
+                        double core = (!achromatic && norm > 0.40)
+                                ? Math.pow((norm - 0.40) / 0.60, 1.20) * (95.0 + flashBoost * 160.0) : 0.0;
                         int outR = Math.min(255, (int) Math.round(sr * lifted + core));
                         int outG = Math.min(255, (int) Math.round(sg * lifted + core));
                         int outB = Math.min(255, (int) Math.round(sb * lifted + core));
@@ -399,6 +404,8 @@ public final class EnchantGlintTyped {
                 double coreStrength = tierClamped > 4 ? (tierClamped - 4) * 2.2 : 0.0;
                 // Compensation par emplacement (le plastron couvre le plus de surface)
                 double slotFactor = EnchantAura.currentWornSlotFactor();
+                boolean achromaticWorn = isAchromaticMode(gradientMode);
+                if (achromaticWorn) coreStrength = 0.0;
 
                 for (int x = 0; x < img.getWidth(); x++) {
                     for (int y = 0; y < img.getHeight(); y++) {
@@ -406,7 +413,8 @@ public final class EnchantGlintTyped {
                         int spatial = spatialTint(rgb, gradientRgb, gradientMode, gradient);
                         int tr = (spatial >> 16) & 0xFF, tg = (spatial >> 8) & 0xFF, tb = spatial & 0xFF;
                         int maxChan = Math.max(1, Math.max(tr, Math.max(tg, tb)));
-                        double satBlend = tier >= EnchantAura.DEFAULT_GLINT_TIER ? 0.58 : 0.30;
+                        double satBlend = achromaticWorn ? 0.0
+                                : (tier >= EnchantAura.DEFAULT_GLINT_TIER ? 0.58 : 0.30);
                         double effR = tr + (tr * 255.0 / maxChan - tr) * satBlend;
                         double effG = tg + (tg * 255.0 / maxChan - tg) * satBlend;
                         double effB = tb + (tb * 255.0 / maxChan - tb) * satBlend;
@@ -476,6 +484,15 @@ public final class EnchantGlintTyped {
                 double floor = 0.62 * Math.pow(u, 0.92);       // 0.048 -> 0.62 (halo ambiant permanent sur toute la surface)
                 double gain  = 1.0 + 0.42 * u;                 // 1.026 -> 1.42
                 double coreStrength = u > 0.30 ? ((u - 0.30) / 0.70) * 108.0 : 0.0;
+                // T426b : c'est ICI que le Vide cessait d'etre noir. Une compétence chargée
+                // monte au palier 13, donc dans cette branche, qui pousse chaque pixel vers son
+                // canal maximal (satBlend) puis ajoute un noyau blanc additif. Sur une teinte
+                // coloree c'est une saturation ; sur un gris, dont les trois canaux sont egaux,
+                // c'est une montee vers le BLANC — 0x141417 ressortait a 0xD0D0D0. Aucune
+                // palette sombre ne pouvait survivre a ce passage. Les deux modes achromatiques
+                // le court-circuitent : pas de saturation, pas de noyau.
+                boolean achromatic = isAchromaticMode(gradientMode);
+                if (achromatic) coreStrength = 0.0;
 
                 for (int x = 0; x < img.getWidth(); x++) {
                     for (int y = 0; y < img.getHeight(); y++) {
@@ -483,7 +500,7 @@ public final class EnchantGlintTyped {
                         int spatial = spatialTint(rgb, gradientRgb, gradientMode, gradient);
                         int tr = (spatial >> 16) & 0xFF, tg = (spatial >> 8) & 0xFF, tb = spatial & 0xFF;
                         int maxChan = Math.max(1, Math.max(tr, Math.max(tg, tb)));
-                        double satBlend = Math.min(1.0, u * 1.15);
+                        double satBlend = achromatic ? 0.0 : Math.min(1.0, u * 1.15);
                         double effR = tr + (tr * 255.0 / maxChan - tr) * satBlend;
                         double effG = tg + (tg * 255.0 / maxChan - tg) * satBlend;
                         double effB = tb + (tb * 255.0 / maxChan - tb) * satBlend;
@@ -559,20 +576,27 @@ public final class EnchantGlintTyped {
     }
 
     /**
-     * Rampe du Vide. Elle ne part pas d'un gris comme l'ombre : elle part du noir et n'en
-     * sort qu'au-dela de la moitie, pour finir sur la lavande glaciaire de la palette.
+     * T426b : RAMPE DU VIDE — NOIRE, PAS VIOLETTE.
      *
-     * <p>La teinte du glint n'entre PAS dans le calcul, contrairement a
+     * <p>Elle ne part pas d'un gris comme l'ombre : elle part du noir et n'en sort qu'au-dela
+     * de la moitie. La teinte du glint n'entre PAS dans le calcul, contrairement a
      * {@link #umbralTint(int, float)} : le magenta de rang ecrit dans le nom de l'arme est
      * precisement ce qu'on retire. Cinq arrets, parce que trois laissaient une marche
-     * visible entre le noir et le violet.</p>
+     * visible au sortir du noir.</p>
+     *
+     * <p>La version precedente tenait bien son fond dans le noir mais montait vers un violet
+     * franc (0x6C13A4, 0x9518E2) ; or ce sont les cretes qui se voient, donc c'est le violet
+     * qu'on lisait. Verdict en jeu : « pas violet, noir ». La rampe est desormais
+     * ACHROMATIQUE — meme repartition, memes points de rupture, mais plus un gramme de
+     * teinte. Les cretes montent jusqu'a un argent froid : une lame noire parcourue de
+     * fractures claires, et non une lame violette.</p>
      */
     private static int voidTint(float u) {
-        final int NOTHING  = 0x05010B; // noir, un soupcon de bleu : jamais 0x000000 pur
-        final int BASALT   = 0x2D0043;
-        final int HALO     = 0x6C13A4;
-        final int HORIZON  = 0x9518E2;
-        final int GLACIER  = 0xD7B4F7;
+        final int NOTHING  = 0x050506; // noir neutre : jamais 0x000000 pur, jamais teinte
+        final int BASALT   = 0x141417;
+        final int HALO     = 0x3C3C41;
+        final int HORIZON  = 0x72757C;
+        final int GLACIER  = 0xBFC3CA;
         if (u < 0.52f) {
             // Plus de la moitie de la rampe tient dans le noir : c'est le sujet.
             float k = u / 0.52f;
@@ -643,7 +667,58 @@ public final class EnchantGlintTyped {
         if (mode == deepluckyblock.client.DeepGlintColor.GRADIENT_MODE_VOID) {
             return voidTint(gradient);
         }
+        if (mode == deepluckyblock.client.DeepGlintColor.GRADIENT_MODE_CHAOS) {
+            return chaosTint(gradient);
+        }
         return mixGradient(rgb, gradientRgb, gradient);
+    }
+
+    /**
+     * Vrai pour les modes dont la rampe n'a PAS de teinte (Vide noir, Chaos gris).
+     *
+     * <p>Toute la generation de texture suppose une couleur : elle « sature » en poussant
+     * chaque pixel vers son canal le plus fort, et marque les cretes d'un noyau additif. Sur
+     * du gris, dont les trois canaux sont egaux, saturer veut dire blanchir. Ces deux modes
+     * doivent donc traverser la chaine sans ces deux traitements, faute de quoi leur palette
+     * est reecrite en blanc avant d'arriver a l'ecran.</p>
+     */
+    private static boolean isAchromaticMode(int mode) {
+        return mode == deepluckyblock.client.DeepGlintColor.GRADIENT_MODE_VOID
+                || mode == deepluckyblock.client.DeepGlintColor.GRADIENT_MODE_CHAOS;
+    }
+
+    /**
+     * T426b : LE CHAOS EST GRIS.
+     *
+     * <p>Son element est un violet tres sombre (0x2B0B38) et son halo tombait donc, suivant
+     * le palier, soit dans un violet presque noir soit dans le blanc de desaturation. Verdict
+     * en jeu : « chaos qui a un glint GRIS ». La rampe est donc un gris complet, du graphite
+     * au blanc casse, pose sur le champ nuageux de l'Ombre — des volutes, pas un degrade :
+     * un ordre qui se defait est l'image meme du chaos.</p>
+     *
+     * <p>Elle est franchement plus claire que celle du Vide : les deux familles sont
+     * achromatiques, elles ne peuvent plus se distinguer que par leur niveau.</p>
+     */
+    private static int chaosTint(float u) {
+        final int IRON   = 0x1E1E20;
+        final int SLATE  = 0x55575C;
+        final int ASH    = 0x8A8D94;
+        final int CHALK  = 0xBFC2C8;
+        final int BONE   = 0xE8EAEE;
+        if (u < 0.34f) {
+            float k = u / 0.34f;
+            return mixGradient(IRON, SLATE, k * k * (3.0f - 2.0f * k));
+        }
+        if (u < 0.62f) {
+            float k = (u - 0.34f) / 0.28f;
+            return mixGradient(SLATE, ASH, k * k * (3.0f - 2.0f * k));
+        }
+        if (u < 0.86f) {
+            float k = (u - 0.62f) / 0.24f;
+            return mixGradient(ASH, CHALK, k * k * (3.0f - 2.0f * k));
+        }
+        float k = (u - 0.86f) / 0.14f;
+        return mixGradient(CHALK, BONE, k * k * (3.0f - 2.0f * k));
     }
 
     private static float gradientPosition(int x, int y, int width, int height, int mode) {
@@ -652,6 +727,12 @@ public final class EnchantGlintTyped {
         }
         if (mode == deepluckyblock.client.DeepGlintColor.GRADIENT_MODE_VOID) {
             return voidField(x, y, width, height);
+        }
+        if (mode == deepluckyblock.client.DeepGlintColor.GRADIENT_MODE_CHAOS) {
+            // Le champ nuageux de l'Ombre, deja eprouve : des volutes et un grain par pixel.
+            // Le Chaos n'emprunte que la REPARTITION ; sa rampe grise, elle, n'appartient
+            // qu'a lui (voir chaosTint).
+            return umbralField(x, y, width, height);
         }
         if (mode == 0) {
             float v = y / (float) Math.max(1, height - 1);

@@ -420,6 +420,13 @@ public final class EnchantAura {
         if (DeepGlintColor.isVoidStack(stack)) {
             currentGradientMode = DeepGlintColor.GRADIENT_MODE_VOID;
         }
+        // T426b-CHAOS-GLINT : le Chaos passe EN DERNIER, et c'est voulu. Sa couleur d'element
+        // est un violet tres sombre : il croise donc l'Ombre par la teinte et le Vide par la
+        // valeur, et une arme qui releverait de deux familles doit tomber du cote du Chaos,
+        // dont le halo gris est le plus reconnaissable des trois.
+        if (DeepGlintColor.isChaosStack(stack)) {
+            currentGradientMode = DeepGlintColor.GRADIENT_MODE_CHAOS;
+        }
     }
 
     /**
