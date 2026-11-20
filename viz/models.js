@@ -1100,9 +1100,9 @@ const MODELS = {
   crown_halo: {
     titre: "crownHalo — couronne ponctuelle",
     famille: "ponctuel",
-    jeu: 'particules',
-    jeuNote: 'PAS ENCORE en pixels : en jeu, EnchantmentParticleFX.crownHalo émet encore des particules vanilla. Cette fiche montre la forme visée.',
-    accorde: "#093 Zéphyr (l.348), #091 Renaissance Solaire (l.1493), #083 Empereur de Légion (l.3057).",
+    jeu: 'pixels',
+    jeuNote: "En pixels depuis T438, sur l'enchantement general : le diadème est rendu en continu et entre dans la MÊME chaîne exclusive que les autres couronnes (avatar, dieu-lame, éternelle, roi) — deux couronnes sur un crâne ne se lisent pas. La salve de particules qui doublonnait toutes les 80 ticks a été retirée. Les autres appels à crownHalo restent en particules : ce sont des retours ponctuels (survie à un coup fatal, détecteur de minerai, combos), pas une parure portée.",
+    accorde: "Porté : enchantement general. Encore en particules ponctuelles : #093 Zéphyr (l.348), #091 Renaissance Solaire (l.1493), #083 Empereur de Légion (l.3057).",
     note: "Un diadème qui naît au ras du crâne, s'ouvre et s'efface en montant. Pas un simple jonc : DEUX cerceaux concentriques reliés par douze entretoises, cinq grandes pointes serties d'une gemme, cinq pointes courtes intercalées, et une pluie d'étincelles qui retombe pendant que l'anneau s'élève. Le relief vertical est ce qui le distingue de l'onde de choc, parfaitement plate.",
     build(t) {
       const o = [];
@@ -1110,7 +1110,10 @@ const MODELS = {
       const r = 0.172 + p * 0.330, y = 1.925 + p * 0.455;
       const al = Math.round(252 * Math.pow(1 - p, 0.75));
       const ph = p * 2.1;
-      const rI = r - 0.042;
+      // L'ecart doit depasser la largeur d'un cube, sinon les deux cerceaux
+      // n'en font qu'un, epais : 0.042 etait SOUS la largeur (0.046) a tous
+      // les rayons. On l'ouvre, proportionnellement pour qu'il tienne en grand.
+      const rI = r - Math.max(0.085, r * 0.22);
 
       // --- deux cerceaux concentriques -----------------------------------
       for (const [rr, w, k] of [[r, 0.046, 1.0], [rI, 0.038, 0.78]]) {
@@ -1171,8 +1174,8 @@ const MODELS = {
   wing_ribbons: {
     titre: "wingRibbons — rubans d'ailes",
     famille: "ponctuel",
-    jeu: 'particules',
-    jeuNote: 'PAS ENCORE en pixels : en jeu, EnchantmentParticleFX.wingRibbons émet encore des particules vanilla. Cette fiche montre la forme visée.',
+    jeu: 'pixels',
+    jeuNote: "En pixels depuis T438. Porte recopiée sur elytraTickImpl : élytre au torse, EN VOL PLANÉ, sous aerodynamic ou wind_rider. Les banderoles s'effacent si une vraie aile est présente (archange, voilure) — trois jeux d'ailes superposés ne font qu'une tache.",
     accorde: "#081 Ange à la Plume Céleste (l.646).",
     note: "Trois rubans PLATS par épaule, de longueur et de phase différentes, qui se déroulent derrière le dos en vrillant : la direction transversale tourne le long du ruban, si bien qu'il se présente tantôt de face, tantôt de chant. Sept plumes-rubans se détachent du brin principal, et des étincelles suivent la traîne. Strictement derrière le dos (z ≤ −0,18).",
     build(t) {

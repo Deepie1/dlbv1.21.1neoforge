@@ -463,19 +463,23 @@ public enum WeaponVisualEffectId {
     }
 
     /**
-     * T436-LOOT-ONLY : les effets de style ne s'approprient le rendu d'un enchantement
-     * VANILLA que si l'arme sort du Deep Lucky Block. Une épée enchantée à l'enclume ou à
-     * la table garde donc ses particules d'origine : on ne dérange pas le gameplay vanilla.
+     * T436-LOOT-ONLY : les effets de style ne s'approprient le rendu que si l'arme a été
+     * DROPPÉE par le mod, quel que soit l'enchantement qui les déclenche.
      *
-     * <p>Les enchantements du mod ({@code deep_lucky_block:*}), eux, gardent toujours leur
-     * effet — ils n'existent que par le mod, il n'y a aucun rendu vanilla à préempter.
+     * <p>Le loot du mod est très souvent une arme VANILLA portant des enchantements du mod :
+     * c'est donc la provenance de l'ITEM qui décide, jamais le namespace de l'enchantement.
+     * Une épée montée à l'enclume — même avec un enchantement du mod venu d'un livre — garde
+     * ses particules vanilla. On ne dérange pas le gameplay vanilla.</p>
+     *
+     * <p>Ce filtre ne touche que le VISUEL : les effets de jeu des enchantements continuent
+     * de s'appliquer partout où ils s'appliquaient.</p>
      */
     public static List<ResolvedLayer> resolveLayers(ItemStack stack, int maxLayers) {
         if (!isWeaponItem(stack)) return List.of();
         ItemEnchantments ench = stack.getEnchantments();
         if (ench.isEmpty()) return List.of();
 
-        final boolean duLuckyBlock = DeepNbt.isLuckyBlockOrigin(stack);
+        if (!DeepNbt.isModLoot(stack)) return List.of();
 
         boolean isPureUtilityTool = !(stack.getItem() instanceof SwordItem
                 || stack.getItem() instanceof AxeItem
@@ -500,10 +504,6 @@ public enum WeaponVisualEffectId {
                         || path.equals("mending") || path.equals("silk_touch"))) {
                 continue;
             }
-
-            // Un alias vanilla (tranchant, puissance, flamme...) ne prend le style du mod
-            // que sur du loot du mod. Ailleurs, il reste strictement vanilla.
-            if (!duLuckyBlock && !"deep_lucky_block".equals(loc.getNamespace())) continue;
 
             WeaponVisualEffectId fx = forEnchantmentLocation(loc);
             if (fx == null) continue;

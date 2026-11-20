@@ -270,6 +270,11 @@ public final class CosmeticPixelAura {
             CosmeticShapes.chaineEternelle(br, height);
         } else if ((flags & CosmeticAuraClientTicker.F_ENCH_KING) != 0) {
             CosmeticShapes.couronneRoi(br, height);
+        } else if ((flags & CosmeticAuraClientTicker.F_ENCH_CROWN_HALO) != 0) {
+            // Le diadème entre dans la MÊME chaîne exclusive : deux couronnes sur
+            // un seul crâne ne se lisent pas, elles se mangent. Dernier de la
+            // chaîne, car general est un enchantement simple, pas un combo.
+            CosmeticShapes.couronneAurore(br, height);
         }
         if ((flags & CosmeticAuraClientTicker.F_ENCH_MYSTIC_MIND) != 0) {
             CosmeticShapes.espritMystique(br, height);
@@ -336,6 +341,12 @@ public final class CosmeticPixelAura {
         } else if (winged) {
             CosmeticShapes.voilureGivre(br, -1, echelle);
             CosmeticShapes.voilureGivre(br, 1, echelle);
+        }
+        // Les banderoles sont la parure du dos quand il n'y a PAS d'aile. Trois jeux
+        // d'ailes superposés ne font qu'une tache : une vraie aile a la priorité.
+        if (!archangel && !winged && (flags & CosmeticAuraClientTicker.F_ENCH_WING_RIBBONS) != 0) {
+            CosmeticShapes.rubansAile(br, -1, echelle);
+            CosmeticShapes.rubansAile(br, 1, echelle);
         }
 
         budget = br.budget;

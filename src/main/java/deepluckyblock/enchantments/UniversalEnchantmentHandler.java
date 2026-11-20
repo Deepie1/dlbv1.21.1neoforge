@@ -1677,7 +1677,12 @@ public class UniversalEnchantmentHandler {
             int amp = Math.min(3, genLVL - 1);
             player.addEffect(new MobEffectInstance(MobEffects.DIG_SPEED, 40, amp, true, false));
             player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 40, amp, true, false));
-            if (player.tickCount % 80 == 0) EnchantmentParticleFX.crownHalo(player, EnchantmentParticleFX.GOLD_DIVINE, 6);
+            // T438 : le diadème de general est désormais rendu en pixels, en continu,
+            // par CosmeticPixelAura. La salve de particules toutes les 80 ticks ferait
+            // doublon par-dessus. Les AUTRES appels à crownHalo restent : ce sont des
+            // retours ponctuels (survie à un coup fatal, détecteur de minerai, combos),
+            // pas une parure portée.
+
             for (LivingEntity ally : player.level().getEntitiesOfClass(LivingEntity.class, player.getBoundingBox().inflate(12.0))) {
                 if (ally != player && (ally instanceof Player || (ally instanceof net.minecraft.world.entity.TamableAnimal ta && ta.isOwnedBy(player))
                         || (ally.getPersistentData().hasUUID("slb_ally_owner") && ally.getPersistentData().getUUID("slb_ally_owner").equals(player.getUUID())))) {
@@ -4379,7 +4384,9 @@ public class UniversalEnchantmentHandler {
         return deepluckyblock.util.DeepEnchant.softCappedLevel(ench, storedLevel);
     }
 
-    private static int getEnchantLvl(ItemStack stack, String id) {
+    /** Rendue publique en T436 : le rendu cosmetique doit pouvoir interroger UNE piece
+     *  precise, pour savoir si c'est bien elle qui vient du loot du mod. */
+    public static int getEnchantLvl(ItemStack stack, String id) {
         if (stack.isEmpty() || !stack.isEnchanted()) return 0;
         net.minecraft.world.item.enchantment.ItemEnchantments ie = stack.get(DataComponents.ENCHANTMENTS);
         if (ie != null && !ie.isEmpty()) {

@@ -143,6 +143,23 @@ public final class CosmeticShapes {
     }
 
     /**
+     * Comme {@link #trait}, mais écrasé : {@code hy} impose la demi-hauteur. Sans
+     * lui, un segment posé à plat sort en barreaux plus hauts que la pièce qu'il relie.
+     */
+    public static void trait(Brush br, float x0, float y0, float z0,
+                             float x1, float y1, float z1, float w, float hy, Paint paint) {
+        float dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
+        float L = Mth.sqrt(dx * dx + dy * dy + dz * dz);
+        int n = pasOuvert(L, w);
+        for (int i = 0; i < n && br.budget > 0; i++) {
+            float u = i / (float) (n - 1);
+            int col = paint.rgba(u, 0f);
+            br.cube(x0 + dx * u, y0 + dy * u, z0 + dz * u, w * 0.5f, hy, w * 0.5f,
+                    col & 0xFFFFFF, (col >>> 24));
+        }
+    }
+
+    /**
      * Une bande : une courbe élargie latéralement. {@code v} va de -0,5 à +0,5 en travers.
      * Le nombre de rangées se déduit de la largeur, donc une bande n'est jamais ajourée.
      */
@@ -180,6 +197,31 @@ public final class CosmeticShapes {
                 int col = paint.rgba(u, v);
                 br.cube(ca * r, cy, sa * r, w * 0.5f, hy, w * 0.5f,
                         col & 0xFFFFFF, (col >>> 24));
+            }
+        }
+    }
+
+    /**
+     * Une bande dont la latérale TOURNE le long de l'axe : c'est ce qui fait qu'un
+     * ruban se vrille au lieu de rester une planche. Même règle que {@link #bande} :
+     * le nombre de rangées se déduit de la largeur, donc jamais d'ajour.
+     */
+    public static void bandeTordue(Brush br, Path axe, float w, Scalar largeur,
+                                   Path laterale, Paint paint) {
+        float L = longueur(axe, br.a, br.b);
+        int n = pasOuvert(L, w);
+        float[] lat = new float[3];
+        for (int i = 0; i < n && br.budget > 0; i++) {
+            float u = i / (float) (n - 1);
+            axe.at(u, br.c);
+            laterale.at(u, lat);
+            float lg = Math.max(0f, largeur.at(u));
+            int nv = lg <= w * 0.5f ? 1 : pasOuvert(lg, w);
+            for (int j = 0; j < nv && br.budget > 0; j++) {
+                float v = nv == 1 ? 0f : (j / (float) (nv - 1)) - 0.5f;
+                int col = paint.rgba(u, v);
+                br.cube(br.c[0] + lat[0] * lg * v, br.c[1] + lat[1] * lg * v, br.c[2] + lat[2] * lg * v,
+                        w * 0.5f, w * 0.5f, w * 0.5f, col & 0xFFFFFF, (col >>> 24));
             }
         }
     }
@@ -1204,5 +1246,136 @@ public final class CosmeticShapes {
         br.cubeWorld(cx, cy - r, cz, hb, hb, hb, rgbBord, ab);
         br.cubeWorld(cx, cy, cz + r, hb, hb, hb, rgbBord, ab);
         br.cubeWorld(cx, cy, cz - r, hb, hb, hb, rgbBord, ab);
+    }
+
+    // =====================================================================
+    //  15. COURONNE PONCTUELLE — un diadème qui s'ouvre en montant
+    // =====================================================================
+    /** Deux cerceaux reliés par douze entretoises : le relief vertical est ce qui
+     *  le distingue de l'onde de choc, parfaitement plate. Porté par {@code general}. */
+    public static void couronneAurore(Brush br, float crane) {
+        final float t = br.time;
+        final float p = (t * 0.5f) % 1f;
+        final float r = 0.172f + p * 0.330f;
+        final float y = crane + 0.125f + p * 0.455f;
+        final int al = Math.round(252f * (float) Math.pow(1f - p, 0.75));
+        final float ph = p * 2.1f;
+        // L'écart doit dépasser la largeur d'un cube, sinon les deux cerceaux
+        // n'en font qu'un, épais : 0,042 était SOUS la largeur (0,046) à tous
+        // les rayons. On l'ouvre, proportionnellement pour qu'il tienne en grand.
+        final float rI = r - Math.max(0.085f, r * 0.22f);
+        final float TAU = (float) (Math.PI * 2.0);
+
+        // deux cerceaux concentriques
+        for (int c = 0; c < 2 && br.budget > 0; c++) {
+            float rr = c == 0 ? r : rI, w = c == 0 ? 0.046f : 0.038f, k = c == 0 ? 1.0f : 0.78f;
+            int n = pasFerme(TAU * rr, w);
+            for (int i = 0; i < n && br.budget > 0; i++) {
+                float u = i / (float) n;
+                float a = ph + TAU * u;
+                int rgb = mix(0xFFF3C8, 0xFFC63D, p * 0.7f + 0.3f * (0.5f + 0.5f * Mth.cos(TAU * u * 18f)));
+                br.cube(Mth.cos(a) * rr, y, Mth.sin(a) * rr, w * 0.5f, 0.011f, w * 0.5f,
+                        rgb, Math.round(al * k));
+            }
+        }
+
+        // douze entretoises qui relient les deux cerceaux
+        for (int i = 0; i < 12 && br.budget > 0; i++) {
+            float a = ph + TAU * i / 12f;
+            float ca = Mth.cos(a), sa = Mth.sin(a);
+            final int alEnt = Math.round(al * 0.85f);
+            trait(br, ca * rI, y, sa * rI, ca * r, y, sa * r, 0.036f, 0.010f,
+                    (u, v) -> rgba(0xFFE07A, alEnt));
+        }
+
+        // cinq grandes pointes serties, cinq courtes intercalées
+        for (int i = 0; i < 5 && br.budget > 0; i++) {
+            final float a = ph + TAU * i / 5f;
+            final float ca = Mth.cos(a), sa = Mth.sin(a);
+            final float h = 0.052f + p * 0.088f;
+            bande(br, (u, o) -> { o[0] = ca * r; o[1] = y + h * u; o[2] = sa * r; },
+                    0.040f, (u) -> 0.058f * (1f - u * 0.82f), -sa, 0f, ca,
+                    (u, v) -> rgba(mix(0xFFC63D, 0xFFFFFF, u), Math.round(al * (1f - u * 0.30f))), 0f);
+            bille(br, ca * r, y + h + 0.016f, sa * r, 0.016f,
+                    mix(0xFFFFFF, 0xFF9500, p), Math.round(al * 0.92f), 0xFFF3C8);
+
+            final float b = a + (float) Math.PI / 5f;
+            final float cb = Mth.cos(b), sb = Mth.sin(b);
+            bande(br, (u, o) -> { o[0] = cb * r; o[1] = y + h * 0.46f * u; o[2] = sb * r; },
+                    0.036f, (u) -> 0.040f * (1f - u * 0.80f), -sb, 0f, cb,
+                    (u, v) -> rgba(mix(0xFFA23C, 0xFFF3C8, u), Math.round(al * 0.80f)), 0f);
+        }
+
+        // étincelles qui retombent pendant que l'anneau monte
+        for (int i = 0; i < 6 && br.budget > 0; i++) {
+            float q = (p + i * 0.167f) % 1f;
+            float a = ph * 0.6f + TAU * i / 6f;
+            float rr = r * (0.80f + q * 0.30f);
+            float yy = y - q * 0.300f;
+            int ae = Math.round(al * (1f - q) * 0.8f);
+            if (ae < 14) continue;
+            float ex = Mth.cos(a) * rr, ez = Mth.sin(a) * rr;
+            // Une étincelle qui retombe passerait DEVANT LES YEUX : sous le crâne,
+            // on ne la garde que si elle est déjà sortie du cylindre du regard.
+            if (yy < crane && Mth.sqrt(ex * ex + ez * ez) < 0.60f) continue;
+            bille(br, ex, yy, ez, 0.013f, 0xFFF3C8, ae, 0xFFC63D);
+        }
+    }
+
+    // =====================================================================
+    //  16. BANDEROLES D'AILE — trois rubans qui s'écartent
+    // =====================================================================
+    /** Trois brins d'angles, de longueurs et d'ondulations franchement différents :
+     *  superposés ils ne faisaient qu'une tache jaune. Porté par {@code winging}. */
+    private static final float[][] BRINS = {
+            {1.00f, 0.0f, 0.095f, 242f, 0.62f, 3.4f},
+            {0.86f, 1.3f, 0.070f, 208f, 1.05f, 4.6f},
+            {0.70f, 2.6f, 0.052f, 178f, 0.22f, 5.8f}};
+
+    public static void rubansAile(Brush br, int side, float echelle) {
+        final float t = br.time;
+        final float s = side;
+        for (int b = 0; b < BRINS.length && br.budget > 0; b++) {
+            final float lg = BRINS[b][0], dph = BRINS[b][1], larg = BRINS[b][2];
+            final float al = BRINS[b][3], ouvre = BRINS[b][4], onde = BRINS[b][5];
+            final int rang = b;
+            final Path chemin = (u, o) -> {
+                o[0] = s * (0.165f + u * (0.235f + 0.300f * ouvre) * lg
+                        + Mth.sin(u * onde - t * 2.8f + dph) * 0.115f * u) * echelle;
+                o[1] = (1.470f - u * 0.880f * lg + Mth.cos(u * 3.7f - t * 2.3f + dph) * 0.062f) * echelle;
+                o[2] = (-0.205f - u * 0.430f * lg - rang * 0.055f) * echelle;
+            };
+            bandeTordue(br, chemin, 0.050f, (u) -> larg * (1f - u * 0.78f) * echelle,
+                    (u, o) -> {
+                        float tw = u * 3.5f - t * 2.1f + dph + (s > 0 ? 0f : 1.1f);
+                        o[0] = Mth.cos(tw) * s;
+                        o[1] = Mth.sin(tw) * 0.75f;
+                        o[2] = Mth.sin(tw) * 0.18f;
+                        norm(o);
+                    },
+                    (u, v) -> rgba(mix(0xFFFBEA, 0xFFC94E, u * 0.75f + Math.abs(v) * 0.5f),
+                            Math.round(al * (1f - u * 0.68f))));
+
+            // plumes-rubans qui se détachent du brin principal
+            if (b == 0) {
+                float[] pt = new float[3];
+                for (int i = 0; i < 6 && br.budget > 0; i++) {
+                    float u = 0.18f + 0.70f * (i / 5f);
+                    chemin.at(u, pt);
+                    float[] d = {s * (0.22f + 0.34f * (i / 5f)), -0.90f, -0.26f};
+                    norm(d);
+                    plume(br, new float[]{pt[0], pt[1], pt[2]}, d,
+                            (0.215f - i * 0.016f) * echelle, 0.092f * echelle, lateralePour(d),
+                            0xFFC94E, 0xFFFBEA, 216 - i * 10, (i % 2) == 1 ? 0.76f : 1.0f, 0, 0.060f);
+                }
+            }
+        }
+        // étincelles dans la traîne
+        for (int i = 0; i < 4 && br.budget > 0; i++) {
+            float q = (t * 0.5f + i * 0.25f) % 1f;
+            bille(br, s * (0.175f + q * 0.330f) * echelle, (1.430f - q * 0.700f) * echelle,
+                    (-0.235f - q * 0.420f) * echelle, 0.013f,
+                    0xFFF3C8, Math.round(210f * (1f - q)), 0xFFC94E);
+        }
     }
 }
