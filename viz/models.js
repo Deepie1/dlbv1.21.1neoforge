@@ -256,29 +256,95 @@ function boucleEgale(g, pas, echantillons) {
 // =============================================================================
 
 const PAS_TRAINEE = 0.52;          // espacement des empreintes, en blocs
+const VIE_EMPREINTE = 2.6;         // duree de vie d'une empreinte, en secondes
+
+// --- Le joueur marche, puis s'arrete, puis repart ---------------------------
+// La trainee n'est PAS un tapis roulant : c'est une memoire de pas. Tant que
+// le joueur avance, il en depose de nouvelles sous ses pieds ; des qu'il
+// s'arrete, plus rien n'est depose et les plus anciennes — donc les plus
+// lointaines — s'eteignent une a une : la trainee se RETRACTE vers lui. Quand
+// il repart, elle se redeploie. Il faut donc une distance parcourue, et non
+// un decalage proportionnel au temps.
+const CYCLE = 8.5;                 // marche 4,6 s, arret 3,1 s, deux rampes
+const RAMPE = 0.4;
+const D_CYCLE = 4.6 + RAMPE;       // blocs parcourus par cycle
+
+/** Vitesse normalisee (0 = arrete, 1 = en marche) a l'instant t. */
+function vitesseJoueur(t) {
+  const m = (typeof window !== 'undefined') ? window.DLB_MARCHE : undefined;
+  if (m === 0) return 0;
+  if (m === 1) return 1;
+  const u = ((t % CYCLE) + CYCLE) % CYCLE;
+  if (u < 4.6) return 1;
+  if (u < 4.6 + RAMPE) return 1 - (u - 4.6) / RAMPE;      // il freine
+  if (u < CYCLE - RAMPE) return 0;                        // il est a l'arret
+  return (u - (CYCLE - RAMPE)) / RAMPE;                   // il repart
+}
+
+/** Distance parcourue depuis l'origine des temps, en blocs. */
+function avanceJoueur(t) {
+  const m = (typeof window !== 'undefined') ? window.DLB_MARCHE : undefined;
+  if (m === 0) return 0;
+  if (m === 1) return t;
+  const n = Math.floor(t / CYCLE);
+  const u = t - n * CYCLE;
+  let d;
+  if (u < 4.6) d = u;
+  else if (u < 4.6 + RAMPE) { const x = u - 4.6; d = 4.6 + x - x * x / (2 * RAMPE); }
+  else if (u < CYCLE - RAMPE) d = 4.6 + RAMPE / 2;
+  else { const x = u - (CYCLE - RAMPE); d = 4.6 + RAMPE / 2 + x * x / (2 * RAMPE); }
+  return n * D_CYCLE + d;
+}
+
+/** Instant auquel le joueur se trouvait a la distance d (inverse de avanceJoueur). */
+function instantPour(d) {
+  const m = (typeof window !== 'undefined') ? window.DLB_MARCHE : undefined;
+  if (m === 0) return -1e9;        // rien ne bouge : tout vieillit
+  if (m === 1) return d;
+  const n = Math.floor(d / D_CYCLE);
+  const r = d - n * D_CYCLE;
+  let u;
+  if (r < 4.6) u = r;
+  else if (r < 4.6 + RAMPE / 2) {
+    // d = 4.6 + x - x^2/(2R)  ->  x = R - sqrt(R^2 - 2R(d-4.6))
+    const y = r - 4.6;
+    u = 4.6 + (RAMPE - Math.sqrt(Math.max(0, RAMPE * RAMPE - 2 * RAMPE * y)));
+  } else {
+    const y = r - (4.6 + RAMPE / 2);
+    u = (CYCLE - RAMPE) + Math.sqrt(Math.max(0, 2 * RAMPE * y));
+  }
+  return n * CYCLE + u;
+}
+
+/** Longueur visible d'un sillon continu : le trajet des `vie` dernieres
+ *  secondes, plafonne a `max`. A l'arret il fond jusqu'a zero, au depart il
+ *  se redeploie. */
+function longueurTrainee(t, max, vie) {
+  const d = avanceJoueur(t) - avanceJoueur(Math.max(0, t - vie));
+  return Math.min(max, d);
+}
 
 /**
- * Renvoie la liste des empreintes a dessiner : { z, k, age }.
- *   z   = recul derriere le joueur
- *   k   = facteur d'echelle (l'empreinte se resserre en s'eloignant)
- *   age = 0 (fraiche) a 1 (sur le point de disparaitre)
- * Le decalage `glisse` fait defiler les empreintes vers l'arriere, ce qui
- * donne l'impression que le joueur avance au lieu de pietiner.
+ * Empreintes encore vivantes derriere le joueur : { z, k, age }.
+ *   z   = recul (negatif), fige a l'endroit ou l'empreinte a ete deposee
+ *   k   = facteur d'echelle, l'empreinte se resserre en vieillissant
+ *   age = 0 (fraiche) a 1 (eteinte)
  */
-function empreintes(t, nb, vitesse, pas) {
+function empreintes(t, nb, vie, pas) {
   const ecart = (pas === undefined) ? PAS_TRAINEE : pas;
-  const glisse = ((t * (vitesse === undefined ? 0.45 : vitesse)) % 1);
+  const duree = (vie === undefined) ? VIE_EMPREINTE : vie;
+  const d = avanceJoueur(t);
   const sortie = [];
   for (let i = 0; i < nb; i++) {
-    const d = (i + glisse) / nb;             // 0 = au pied, 1 = evanouie
-    sortie.push({
-      z: -ecart * (i + glisse) - 0.30,
-      k: 1 - d * 0.55,
-      age: d
-    });
+    const D = (Math.floor(d / ecart) - i) * ecart;   // distances de depot
+    if (D < 0) continue;
+    const age = (t - instantPour(D)) / duree;
+    if (age >= 1 || age < 0) continue;
+    sortie.push({ z: -(d - D) - 0.26, k: 1 - age * 0.55, age });
   }
   return sortie;
 }
+
 
 // =============================================================================
 //  LES 12 ORNEMENTS PERMANENTS
@@ -290,6 +356,8 @@ const MODELS = {
   halo_continu: {
     titre: "Halo générique continu",
     famille: "permanent",
+    jeu: 'pixels',
+    jeuNote: 'Rendu en pixels par CosmeticShapes.haloContinu, drapeau F_HALO_CONTINUOUS.',
     accorde: "Arme à aura : trident enchanté en main, ou marque dlbWeaponAura (15 % en mêlée, 40 % à distance). Exclusif : ne sort que si aucun combo cosmétique n'est actif (CosmeticPixelAura l.232, flags == 0).",
     note: "Plaque annulaire de quatre rangées jointives, 0,236 à 0,330 de rayon. Trente-six cannelures gravées en font le tour, vingt dents courtes hérissent le bord extérieur (une sur trois est longue), une comète à traînée parcourt l'anneau et trois lucioles l'escortent. Épais de 2,2 cm : invisible de profil, net de dessus. C'est le détail qui manquait à la version précédente, pas l'épaisseur.",
     build(t) {
@@ -347,6 +415,8 @@ const MODELS = {
   avatar_110: {
     titre: "#110 Avatar Suprême du Deep Lucky",
     famille: "permanent",
+    jeu: 'pixels',
+    jeuNote: 'Rendu en pixels par CosmeticShapes.soleilAvatar, drapeau F_COMBO_110_AVATAR.',
     accorde: "Combo #110 — le plus haut du registre. Exclusif face à #097/#098 et à Roi (chaîne else if, CosmeticPixelAura l.242-254).",
     note: "Un soleil à deux couronnes : douze grands rayons triangulaires qui battent, douze petits dards intercalés qui battent en opposition, un disque annulaire gravé au centre et quatre protubérances qui tournent dans l'autre sens. Chaque rayon finit sur un seul cube.",
     build(t) {
@@ -402,6 +472,8 @@ const MODELS = {
   eternelle_097: {
     titre: "#097 Armure Éternelle Transcendante",
     famille: "permanent",
+    jeu: 'pixels',
+    jeuNote: 'Rendu en pixels par CosmeticShapes.chaineEternelle, drapeau F_COMBO_097_ETERNAL.',
     accorde: "Combo #097. Partageait jusqu'ici la même branche de code que #098 — deux combos distincts pour un seul visuel.",
     note: "Une CHAÎNE fermée : quatorze maillons ovales enfilés les uns dans les autres, inclinés alternativement à la verticale et à l'horizontale comme un vrai maillage. « Armure éternelle » : une boucle de métal sans début ni fin. Pas un anneau de plus — un objet articulé.",
     build(t) {
@@ -440,6 +512,8 @@ const MODELS = {
   dieu_lame_098: {
     titre: "#098 Dieu de la Lame Suprême",
     famille: "permanent",
+    jeu: 'pixels',
+    jeuNote: 'Rendu en pixels par CosmeticShapes.epeesDieuLame, drapeau F_COMBO_098_SWORD_GOD.',
     accorde: "Combo #098. Ne partage plus rien avec #097 : ce sont deux récompenses différentes, elles doivent se distinguer à l'œil nu.",
     note: "Six ÉPÉES dressées en cercle, pointe en l'air, et chacune est une vraie épée : lame à gouttière centrale claire et tranchants sombres, pointe en losange, quillons recourbés terminés par une boule, fusée tressée en quatre segments, pommeau rond serti. Elles flottent avec un déphasage. Un anneau doré ne dira jamais « Dieu de la Lame ».",
     build(t) {
@@ -500,6 +574,8 @@ const MODELS = {
   archange_101: {
     titre: "#101 Archange du Jugement Solaire",
     famille: "permanent",
+    jeu: 'pixels',
+    jeuNote: 'Rendu en pixels par CosmeticShapes.aileSeraphin, drapeau F_COMBO_101_ARCHANGEL.',
     accorde: "Combo #101. Ailes permanentes. Exclusif d'Endurance Ailée (CosmeticPixelAura l.269-275 : if (archangel) … else …).",
     note: "Une VRAIE aile : charpente en trois os (humerus, avant-bras, main), huit rémiges primaires portées par la main, six secondaires sur l'avant-bras, deux rangées de couvertures qui recouvrent leurs bases, et l'alula au poignet. Chaque plume a son rachis clair et son vexille qui s'élargit au tiers avant de s'effiler. Le recouvrement des rangées est ce qui la rend pleine.",
     build(t) { return aileSeraphin(t); }
@@ -509,6 +585,8 @@ const MODELS = {
   winged_endurance: {
     titre: "Endurance Ailée (enchantement d'armure)",
     famille: "permanent",
+    jeu: 'pixels',
+    jeuNote: 'Rendu en pixels par CosmeticShapes.voilureGivre, drapeau F_ENCH_WINGED_ENDURANCE.',
     accorde: "Enchantement d'armure d'endurance ailée. Ne sort QUE si le joueur ne touche pas le sol ou plane en élytre.",
     note: "Ce n'est PAS une aile à plumes en bleu : c'est une voilure. Longeron droit relevé vers le haut, cinq nervures rigides, membrane en panneaux facettés, bord de fuite tendu en ligne droite. Silhouette triangulaire et dure, là où l'Archange est arrondi et duveteux — aucun cube n'est calculé par le même code.",
     build(t) { return voilureGivre(t); }
@@ -518,6 +596,8 @@ const MODELS = {
   seigneur_guerre_106: {
     titre: "#106 Seigneur de Guerre de l'Apocalypse",
     famille: "permanent",
+    jeu: 'pixels',
+    jeuNote: 'Rendu en pixels par CosmeticShapes.sceauGuerre, drapeau F_COMBO_106_WARLORD.',
     accorde: "Combo #106. Ornement de SOL — ne monte jamais vers le torse.",
     note: "Un sceau gravé au sol, entièrement PLAT : double cercle contra-rotatif, croix de guerre, quatre chevrons runiques. Et surtout : le joueur LAISSE SA MARQUE. Quatre sceaux fantômes restent imprimés derrière lui, de plus en plus pâles et resserrés, suivis d'une file de chevrons de braise pointés vers l'avant. On voit d'où il vient, et dans quel sens il va.",
     build(t) {
@@ -549,7 +629,7 @@ const MODELS = {
       }
 
       // ---- 2. LA TRAINEE : quatre sceaux imprimes derriere le joueur ------
-      const emp = empreintes(t, 3, 0.40, 0.58);
+      const emp = empreintes(t, 3, 2.9, 0.58);
       for (let k = 0; k < emp.length; k++) {
         const e = emp[k];
         const R = rExt * e.k * 0.86;
@@ -573,12 +653,14 @@ const MODELS = {
       // ---- 3. une file de CHEVRONS de braise, pointe vers l'avant --------
       // (surtout pas deux rails continus : l'Aura de Terreur a deja un
       //  sillon droit, et deux ornements de sol ne doivent pas se ressembler)
-      for (let k = 0; k < 5; k++) {
-        const g = ((t * 0.40) % 1);
-        const zc = -0.42 - (k + g) * 0.33;
-        const al = Math.round(190 * Math.pow(1 - (k + g) / 6, 1.6));
+      // Les chevrons suivent la meme memoire de pas : ils restent la ou ils
+      // ont ete poses et s'eteignent, au lieu de defiler quand on pietine.
+      const chev = empreintes(t, 5, 2.4, 0.33);
+      for (let k = 0; k < chev.length; k++) {
+        const zc = chev[k].z - 0.16;
+        const al = Math.round(190 * Math.pow(1 - chev[k].age, 1.6));
         if (al < 14) continue;
-        const demi = 0.185 * (1 - (k + g) / 9);
+        const demi = 0.185 * chev[k].k;
         for (const c of [-1, 1]) {
           trait(o, [0, y - 0.006, zc + 0.075], [c * demi, y - 0.006, zc - 0.060], 0.064,
             (u) => ({ rgb: mixRgb(0xFFB040, 0x7A2A04, u * 0.8),
@@ -593,6 +675,8 @@ const MODELS = {
   peste_062: {
     titre: "#062 Peste Ambulante",
     famille: "permanent",
+    jeu: 'pixels',
+    jeuNote: 'Rendu en pixels par CosmeticShapes.pesteAmbulante, drapeau F_COMBO_062_PLAGUE.',
     accorde: "Combo #062. Ornement de SOL.",
     note: "Aucun cercle : quatre flaques PLEINES au contour irrégulier qui suintent sous les pieds, neuf grappes de bulles qui crèvent, et surtout une COULÉE d'infection — sept éclaboussures de taille décroissante marquent les pas précédents, reliées par un filet de sanie. Le joueur contamine le sol qu'il quitte.",
     build(t) {
@@ -619,7 +703,7 @@ const MODELS = {
       }
 
       // ---- LA COULEE : sept eclaboussures derriere le joueur -------------
-      const emp = empreintes(t, 6, 0.34, 0.38);
+      const emp = empreintes(t, 6, 3.2, 0.38);
       for (let k = 0; k < emp.length; k++) {
         const e = emp[k];
         const cote = (k % 2 ? 1 : -1) * (0.090 + (k % 3) * 0.052);
@@ -638,12 +722,15 @@ const MODELS = {
         }
       }
       // filet de sanie qui relie les eclaboussures
-      bande(o, 0.074,
-        (u) => [Math.sin(u * 5.4) * 0.080, 0.011, -0.26 - u * 2.05],
-        (u) => 0.135 * (1 - u * 0.72),
-        () => [1, 0, 0],
-        (u, v) => ({ rgb: mixRgb(0x53931A, 0x1C3806, u * 0.85 + Math.abs(v) * 0.3),
-                     a: Math.round(182 * (1 - u) * (1 - u * 0.6)), hy: 0.008 }));
+      const Lf = longueurTrainee(t, 2.05, 3.2);
+      if (Lf > 0.10) {
+        bande(o, 0.074,
+          (u) => [Math.sin(u * 5.4) * 0.080, 0.011, -0.26 - u * Lf],
+          (u) => 0.135 * (1 - u * 0.72),
+          () => [1, 0, 0],
+          (u, v) => ({ rgb: mixRgb(0x53931A, 0x1C3806, u * 0.85 + Math.abs(v) * 0.3),
+                       a: Math.round(182 * (1 - u) * (1 - u * 0.6)), hy: 0.008 }));
+      }
       return o;
     }
   },
@@ -652,6 +739,8 @@ const MODELS = {
   king: {
     titre: "Roi (enchantement d'armure)",
     famille: "permanent",
+    jeu: 'pixels',
+    jeuNote: 'Rendu en pixels par CosmeticShapes.couronneRoi, drapeau F_ENCH_KING.',
     accorde: "Enchantement d'armure « king ». Exclusif face à #110 et #097/#098.",
     note: "Une couronne royale complète, et POSÉE : elle ne tourne pas. Bandeau à double jonc serti de huit pierres alternées — rubis, émeraude — séparées par des perles ; quatre croix pattées et quatre fleurs de lys en alternance ; quatre arches qui montent se rejoindre sur le monde, surmonté de sa croix. Le rubis frontal, plus gros, pulse doucement. Rien ne dépasse le volume du crâne par le bas.",
     build(t) {
@@ -757,6 +846,8 @@ const MODELS = {
   mystic_mind: {
     titre: "Esprit Mystique (enchantement d'armure)",
     famille: "permanent",
+    jeu: 'pixels',
+    jeuNote: 'Rendu en pixels par CosmeticShapes.espritMystique, drapeau F_ENCH_MYSTIC_MIND.',
     accorde: "Enchantement d'armure « mystic_mind ». Se cumule avec les autres.",
     note: "Un signe d'infini — lemniscate de Bernoulli — qui tourne au-dessus du crâne. Ce n'est plus un fil : le ruban est épais de trois cubes, doublé d'un fil d'ombre, trois nœuds de pensée le parcourent en l'éclairant, quatre runes carrées flottent à l'extérieur et deux satellites tournent en sens inverse. Échantillonné à PAS CONSTANT EN LONGUEUR D'ARC, sans quoi la courbe se resserre au croisement.",
     build(t) {
@@ -820,6 +911,8 @@ const MODELS = {
   radiant_aegis: {
     titre: "Égide Radieuse (enchantement d'armure)",
     famille: "permanent",
+    jeu: 'pixels',
+    jeuNote: 'Rendu en pixels par CosmeticShapes.egideRadieuse, drapeau F_ENCH_RADIANT_AEGIS.',
     accorde: "Enchantement d'armure « heart_resonance ». Se cumule avec les autres.",
     note: "La coupole précédente était un casque de chantier : un dôme lisse posé sur le crâne, rien d'autre. Une égide est un BOUCLIER. Six pavois en écu — bord relevé, umbo central serti, quatre rivets — forment un mur qui tourne autour de la tête, et la lumière s'échappe entre eux en six rais. On lit « protection » en silhouette, et plus « chantier ».",
     build(t) {
@@ -879,6 +972,8 @@ const MODELS = {
   dread_aura: {
     titre: "Aura de Terreur (enchantement d'armure)",
     famille: "permanent",
+    jeu: 'pixels',
+    jeuNote: 'Rendu en pixels par CosmeticShapes.auraTerreur, drapeau F_ENCH_DREAD_AURA.',
     accorde: "Enchantement d'armure « dread_aura ». Ornement de SOL.",
     note: "Huit ronces qui sortent de terre, se courbent vers l'extérieur et se CROCHENT en pointe, plus quatre fissures qui rampent au sol. Derrière le joueur, la terre reste blessée : un sillon de corruption et cinq paires de ronces avortées de plus en plus courtes marquent son passage. Sommet à 0,40 — sous le genou. C'est du relief, à l'opposé du sceau plat du Seigneur de Guerre.",
     build(t) {
@@ -913,7 +1008,7 @@ const MODELS = {
       // ---- LA TRAINEE : la terre reste blessee derriere le passage -------
       // Cinq paires de ronces avortees, de plus en plus courtes, plantees de
       // part et d'autre du sillon de corruption.
-      const emp = empreintes(t, 4, 0.38, 0.48);
+      const emp = empreintes(t, 4, 3.0, 0.48);
       for (let k = 0; k < emp.length; k++) {
         const e = emp[k];
         const al = 190 * (1 - e.age) * (1 - e.age * 0.6);
@@ -932,12 +1027,15 @@ const MODELS = {
         }
       }
       // le sillon lui-meme : une bande de terre corrompue
-      bande(o, 0.072,
-        (u) => [Math.sin(u * 3.1) * 0.040, 0.009, -0.30 - u * 2.05],
-        (u) => 0.175 * (1 - u * 0.70),
-        () => [1, 0, 0],
-        (u, v) => ({ rgb: mixRgb(0x4A1086, 0x12021F, u * 0.8 + Math.abs(v) * 0.4),
-                     a: Math.round(172 * (1 - u) * (1 - u * 0.5)), hy: 0.008 }));
+      const Ls = longueurTrainee(t, 2.05, 3.0);
+      if (Ls > 0.10) {
+        bande(o, 0.072,
+          (u) => [Math.sin(u * 3.1) * 0.040, 0.009, -0.30 - u * Ls],
+          (u) => 0.175 * (1 - u * 0.70),
+          () => [1, 0, 0],
+          (u, v) => ({ rgb: mixRgb(0x4A1086, 0x12021F, u * 0.8 + Math.abs(v) * 0.4),
+                       a: Math.round(172 * (1 - u) * (1 - u * 0.5)), hy: 0.008 }));
+      }
       return o;
     }
   },
@@ -949,6 +1047,8 @@ const MODELS = {
   crown_halo: {
     titre: "crownHalo — couronne ponctuelle",
     famille: "ponctuel",
+    jeu: 'particules',
+    jeuNote: 'PAS ENCORE en pixels : en jeu, EnchantmentParticleFX.crownHalo émet encore des particules vanilla. Cette fiche montre la forme visée.',
     accorde: "#093 Zéphyr (l.348), #091 Renaissance Solaire (l.1493), #083 Empereur de Légion (l.3057).",
     note: "Un diadème qui naît au ras du crâne, s'ouvre et s'efface en montant. Pas un simple jonc : DEUX cerceaux concentriques reliés par douze entretoises, cinq grandes pointes serties d'une gemme, cinq pointes courtes intercalées, et une pluie d'étincelles qui retombe pendant que l'anneau s'élève. Le relief vertical est ce qui le distingue de l'onde de choc, parfaitement plate.",
     build(t) {
@@ -1018,6 +1118,8 @@ const MODELS = {
   wing_ribbons: {
     titre: "wingRibbons — rubans d'ailes",
     famille: "ponctuel",
+    jeu: 'particules',
+    jeuNote: 'PAS ENCORE en pixels : en jeu, EnchantmentParticleFX.wingRibbons émet encore des particules vanilla. Cette fiche montre la forme visée.',
     accorde: "#081 Ange à la Plume Céleste (l.646).",
     note: "Trois rubans PLATS par épaule, de longueur et de phase différentes, qui se déroulent derrière le dos en vrillant : la direction transversale tourne le long du ruban, si bien qu'il se présente tantôt de face, tantôt de chant. Sept plumes-rubans se détachent du brin principal, et des étincelles suivent la traîne. Strictement derrière le dos (z ≤ −0,18).",
     build(t) {
@@ -1072,6 +1174,8 @@ const MODELS = {
   double_helix: {
     titre: "doubleHelix — double hélice ascendante",
     famille: "ponctuel",
+    jeu: 'particules',
+    jeuNote: 'PAS ENCORE en pixels : en jeu, EnchantmentParticleFX.doubleHelix émet encore des particules vanilla. Cette fiche montre la forme visée.',
     accorde: "#086 Berserker Immortel (l.667).",
     note: "Deux brins et leurs BARREAUX, comme un brin d'ADN : sans barreaux, deux spirales côte à côte ne sont que deux spirales. Mais un barreau traverse l'axe, donc le visage : ceux-ci sont posés sous le genou et au-dessus du crâne, et la portion qui longe la tête reçoit des barbes tournées vers l'EXTÉRIEUR. Rayon 0,66, soit au-delà du champ de vision.",
     build(t) {
@@ -1113,38 +1217,44 @@ const MODELS = {
   cloud_cushion: {
     titre: "cloudCushion — coussin de nuages",
     famille: "ponctuel",
+    jeu: 'pixels',
+    jeuNote: "T436 : passe des particules aux pixels. CosmeticShapes.coussinNuage, drapeau F_ENCH_CLOUD_CUSHION (cloud_walker, air_walk, cloud_stride), visible en l'air uniquement.",
     accorde: "#063 Pont Dimensionnel (l.572), #090 Faucon Ouragan (l.703).",
-    note: "Cinq bouffées PLEINES qui se recouvrent pour former une galette sous les semelles, et un SILLAGE : six volutes qui s'échappent derrière, montent légèrement en s'éloignant et se délitent. C'est la différence entre être posé sur un nuage et voler dessus.",
+    note: "Une vraie galette de nuage, large de 0,78 bloc : le joueur a les deux pieds DEDANS, pas posés sur une pastille. Neuf bouffées pleines sur deux étages se recouvrent, dont une qui monte entre les chevilles et deux qui débordent devant les orteils. Derrière, un sillage de volutes qui montent en se délitant — et qui se rétracte quand le joueur s'arrête.",
     build(t) {
       const o = [];
-      const bouffees = [[0, 0, 0.125], [0.235, 0.055, 0.098], [-0.215, 0.085, 0.092],
-                        [0.070, -0.225, 0.090], [-0.090, 0.215, 0.086]];
+      // Deux etages : la galette au sol, et un voile plus etroit qui remonte
+      // entre les chevilles pour que le joueur soit DANS le nuage.
+      const bouffees = [[0, 0, 0.190], [0.300, 0.075, 0.150], [-0.285, 0.105, 0.142],
+                        [0.095, -0.295, 0.138], [-0.120, 0.280, 0.132],
+                        [0.255, -0.215, 0.120], [-0.240, -0.230, 0.116],
+                        [0.040, 0.330, 0.110], [0, 0.120, 0.098]];
       for (let k = 0; k < bouffees.length; k++) {
         const [dx, dz, R] = bouffees[k];
         const g = 1 + Math.sin(t * 1.35 + k * 1.25) * 0.085;
-        for (const [dy, ech] of [[0.040, 1.0], [0.098, 0.70]]) {
-          disqueH(o, dx, dy * g, dz, R * g * ech, 0.072, (fr) => ({
+        const etages = (k === 8) ? [[0.052, 1.0], [0.118, 0.82], [0.182, 0.55]]
+                                 : [[0.040, 1.0], [0.104, 0.72]];
+        for (const [dy, ech] of etages) {
+          disqueH(o, dx, dy * g, dz, R * g * ech, 0.078, (fr) => ({
             rgb: mixRgb(0xFFFFFF, 0xC9DCEE, fr * 0.55 + (1 - ech) * 0.3),
-            a: (212 - fr * 48) * (ech < 1 ? 0.88 : 1), hy: 0.030
+            a: (214 - fr * 46) * (ech < 1 ? 0.86 : 1), hy: 0.032
           }));
         }
       }
 
-      // ---- LE SILLAGE : six volutes qui s'echappent derriere -------------
-      const emp = empreintes(t, 6, 0.55, 0.375);
+      // ---- LE SILLAGE : volutes deposees, qui se retractent a l'arret ----
+      const emp = empreintes(t, 6, 1.9, 0.375);
       for (let k = 0; k < emp.length; k++) {
         const e = emp[k];
-        // Les volutes se CHEVAUCHENT : espacees, elles ne font que des
-        // petits pois ; jointives, elles font un sillage de vapeur.
-        const R = (0.150 - k * 0.011) * e.k;
+        const R = (0.162 - k * 0.011) * e.k;
         const al = 196 * (1 - e.age * 0.88);
         if (al < 16 || R < 0.030) continue;
         const cote = Math.sin(k * 1.35 + t * 0.6) * 0.082;
-        const haut = 0.050 + e.age * 0.120;      // la vapeur monte en reculant
+        const haut = 0.050 + e.age * 0.120;
         for (const [dy, ech] of [[0, 1.0], [0.052, 0.66]]) {
-          disqueH(o, cote, haut + dy, e.z, R * ech, 0.070, (fr) => ({
+          disqueH(o, cote, haut + dy, e.z, R * ech, 0.074, (fr) => ({
             rgb: mixRgb(0xFFFFFF, 0xA8C2DC, fr * 0.55 + e.age * 0.30),
-            a: (al - fr * 46) * (ech < 1 ? 0.82 : 1), hy: 0.026
+            a: (al - fr * 46) * (ech < 1 ? 0.82 : 1), hy: 0.028
           }));
         }
       }
@@ -1155,6 +1265,8 @@ const MODELS = {
   tether_beam: {
     titre: "tetherBeam — rayon tendu",
     famille: "ponctuel",
+    jeu: 'particules',
+    jeuNote: 'PAS ENCORE en pixels : en jeu, EnchantmentParticleFX.tetherBeam émet encore des particules vanilla. Cette fiche montre la forme visée.',
     accorde: "#099 Seigneur de Sang (l.1513), #084 Faucheur de Tempête (l.1963), #074 Archer d'Orage (l.3389).",
     note: "Un noyau rectiligne, une spirale qui l'enrobe sur trois tours et trois nœuds de charge qui filent vers la cible. Il part de la MAIN (y 1,02) et s'éloigne vers +Z : dès le quatrième cube il est hors du champ de vision, et il ne traverse jamais la tête du porteur.",
     build(t) {
@@ -1189,50 +1301,57 @@ const MODELS = {
   shockwave_ring: {
     titre: "shockwaveRing — onde de choc",
     famille: "ponctuel",
+    jeu: 'pixels',
+    jeuNote: "T436 : passe des particules aux pixels. CosmeticShapes.ondeChoc, drapeau F_ENCH_LANDING_WAVE (crash_landing, meteor_stomp), ancrée au point d'impact pendant 22 ticks.",
     accorde: "La forme la plus utilisée du registre : 43 appels dans EnchantmentComboHandler.",
-    note: "Un bourrelet plat qui s'étend au sol avec sa jupe de poussière, PLUS deux ondes plus anciennes abandonnées derrière le joueur : elles restent là où il les a déclenchées pendant qu'il avance, et s'effacent. Le nombre de cubes augmente avec le rayon, donc l'onde reste pleine du début à la fin.",
+    note: "AUCUNE traînée : cette onde ne naît qu'à l'atterrissage, le joueur ne la promène pas. En revanche elle porte la mémoire de la chute — un ÉCHO intérieur de un à quatre anneaux concentriques selon la hauteur tombée, avec une gerbe de débris d'autant plus haute. Le nombre de cubes augmente avec le rayon, donc l'onde reste pleine du début à la fin.",
     build(t) {
       const o = [];
+      // Hauteur de chute simulee pour l'apercu : 2 a 14 blocs.
+      const chute = (typeof window !== 'undefined' && window.DLB_CHUTE !== undefined)
+        ? window.DLB_CHUTE : (2 + 12 * (0.5 + 0.5 * Math.sin(t * 0.33)));
+      const force = Math.min(1, chute / 14);
+      const nEcho = 1 + Math.min(3, Math.floor(chute / 3.5));   // 1 a 4 anneaux
 
-      const onde = (p, cz, force) => {
-        const r = 0.24 + p * 0.92, w = 0.068;
-        const al = Math.round(244 * Math.pow(1 - p, 1.25) * force);
-        if (al < 10) return;
+      const onde = (p, rayon0, amplitude, teinte, force2) => {
+        const r = rayon0 + p * amplitude, w = 0.068;
+        const al = Math.round(248 * Math.pow(1 - p, 1.25) * force2);
+        if (al < 10 || r < 0.05) return;
         const n = pasFerme(TAU * r, w);
         for (let i = 0; i < n; i++) {
           const a = TAU * i / n;
           const ca = Math.cos(a), sa = Math.sin(a);
           const bosse = 0.045 * Math.sin(Math.PI * (1 - p)) * (0.8 + 0.2 * Math.sin(a * 7 + t));
-          cube(o, ca * r, 0.030 + bosse, cz + sa * r, w / 2, 0.016, w / 2,
-            mixRgb(0xFFE9A0, 0xFF8A20, p), al);
+          cube(o, ca * r, 0.030 + bosse, sa * r, w / 2, 0.016, w / 2,
+            mixRgb(teinte, 0xFF8A20, p), al);
           if (i % 5 === 0) {
-            cube(o, ca * (r - 0.030), 0.030 + bosse * 0.45, cz + sa * (r - 0.030),
+            cube(o, ca * (r - 0.030), 0.030 + bosse * 0.45, sa * (r - 0.030),
               0.022, 0.014, 0.022, mixRgb(0xFFC77A, 0x8A5A20, p), Math.round(al * 0.55));
           }
         }
       };
 
-      // Une onde est EMISE a chaque foulee puis abandonnee : elle continue de
-      // s'elargir sur place pendant que le joueur avance. Il faut donc faire
-      // tourner la phase (modulo) ET reculer le centre, sinon les ondes
-      // anciennes se retrouvent avec une opacite nulle et on ne voit rien.
-      const q = (t * 0.55) % 1;
-      for (let k = 0; k < 3; k++) {
-        const pk = (q + k * 0.34) % 1;
-        const zk = -(k + q) * 0.72;
-        onde(pk, zk, k === 0 ? 1 : (k === 1 ? 0.70 : 0.42));
+      const p = (t * 0.55) % 1;
+      // 1. l'onde principale, d'autant plus large que la chute etait haute
+      onde(p, 0.24, 0.72 + force * 0.62, 0xFFE9A0, 1);
+      // 2. l'echo interieur : des repliques qui partent du point d'impact,
+      //    en retard de phase. Leur NOMBRE dit la hauteur de la chute.
+      for (let k = 1; k <= nEcho; k++) {
+        const pk = p - k * 0.18;
+        if (pk <= 0) continue;
+        onde(pk, 0.10, 0.52 + force * 0.30, 0xFFF6D0, 0.78 - k * 0.14);
       }
-
-      // Poussiere soulevee dans le sillage. Des cubes isoles seraient des
-      // pixels perdus : ce sont de petites galettes pleines, jointives.
-      for (let k = 0; k < 4; k++) {
-        const e = ((t * 0.5 + k * 0.25) % 1);
-        const al = Math.round(158 * (1 - e));
-        if (al < 18) continue;
-        disqueH(o, Math.sin(k * 2.3 + t) * 0.095, 0.020 + e * 0.040, -0.34 - k * 0.42,
-          0.052 + e * 0.022, 0.044,
-          (fr) => ({ rgb: mixRgb(0xFFC77A, 0x6B4518, e * 0.7 + fr * 0.3),
-                     a: al - fr * 48, hy: 0.013 }));
+      // 3. la gerbe de debris au point d'impact, proportionnelle a la chute
+      const nd = 4 + Math.round(force * 8);
+      for (let i = 0; i < nd; i++) {
+        const a = i * 2.399 + t * 0.4;
+        const q = ((t * 0.9 + i * 0.137) % 1);
+        const h = (0.18 + force * 0.62) * Math.sin(Math.PI * q);
+        const rr = 0.07 + q * (0.20 + force * 0.22);
+        const al = Math.round(206 * (1 - q) * (0.45 + force * 0.55));
+        if (al < 16) continue;
+        bille(o, Math.cos(a) * rr, 0.030 + h, Math.sin(a) * rr, 0.016,
+          mixRgb(0xFFD089, 0x8A5A20, q), al, 0xFFF3C8);
       }
       return o;
     }
@@ -1241,6 +1360,8 @@ const MODELS = {
   burst_on_entity: {
     titre: "burstOnEntity — éclat sur la cible",
     famille: "ponctuel",
+    jeu: 'particules',
+    jeuNote: 'PAS ENCORE en pixels : en jeu, EnchantmentParticleFX.burstOnEntity émet encore des particules vanilla. Cette fiche montre la forme visée.',
     accorde: "La plus fréquente du registre : 44 appels. Se joue SUR LA CIBLE, jamais sur le porteur.",
     note: "Une étoile d'impact : onze dards qui jaillissent du point touché dans onze directions réparties en spirale de Fibonacci, plus le noyau incandescent. Rendu sur la cible, à 1,9 bloc devant le joueur. Une coque sphérique complète coûtait 2 248 cubes pour une lecture moins nette.",
     build(t) {

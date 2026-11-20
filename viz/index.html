@@ -36,6 +36,11 @@
        border:1px solid #2d3747;color:#9fb0c6;text-transform:uppercase;letter-spacing:.07em}
   .tag.perm{border-color:#2f6f4f;color:#67d99b}
   .tag.ponc{border-color:#7a5a24;color:#f0b760}
+    #jeu.pixels { color:#9fe6a0; }
+    #jeu.particules { color:#f0b45e; }
+    #liste a .etat { float:right; font-size:10px; opacity:.85; letter-spacing:.04em; }
+    #liste a .etat.pixels { color:#9fe6a0; }
+    #liste a .etat.particules { color:#f0b45e; }
 
   main{position:relative;min-width:0}
   #scene{position:absolute;inset:0}
@@ -81,6 +86,8 @@
       <p id="accorde">—</p>
       <h3>Lecture</h3>
       <p id="lecture">—</p>
+      <h3>En jeu</h3>
+      <p id="jeu">—</p>
     </div>
   </nav>
 
@@ -110,6 +117,7 @@
       <button id="vdessus">Vue de dessus</button>
       <button id="sq">Masquer le joueur</button>
       <button id="zone">Zone du regard</button>
+      <button id="marche">Déplacement : cycle</button>
       <span class="cpt" id="compteur">—</span>
     </div>
   </main>

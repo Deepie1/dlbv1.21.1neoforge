@@ -52,6 +52,18 @@ public final class CosmeticAuraClientTicker {
     /** Halo générique, limité aux armes dont le choix Lucky Block persisté l'autorise. */
     public static final int F_HALO_CONTINUOUS       = 1 << 11;
 
+    /**
+     * T436 : deux cosmétiques de plus quittent le monde des particules vanilla pour celui des
+     * pixels. Ils existaient déjà côté serveur ({@code EnchantmentParticleFX.cloudCushion} et
+     * {@code shockwaveRing}) mais AUCUN bit ne les portait jusqu'au rendu : le joueur ne voyait
+     * qu'un nuage de particules génériques, jamais la galette ni les anneaux de l'aperçu.
+     */
+    public static final int F_ENCH_CLOUD_CUSHION   = 1 << 12;
+    public static final int F_ENCH_LANDING_WAVE    = 1 << 13;
+
+    /** Les ornements posés au sol : ce sont eux, et eux seuls, qui laissent une traînée. */
+    public static final int F_SOL = F_COMBO_106_WARLORD | F_COMBO_062_PLAGUE | F_ENCH_DREAD_AURA;
+
     /** T349 : rayon de collecte des profils cosmétiques (rendu fait par CosmeticPixelAura). */
     private static final double CULL_DIST_SQR = 40.0 * 40.0;
 
@@ -74,6 +86,7 @@ public final class CosmeticAuraClientTicker {
 
             if (cachedLevel != level) {
                 PROFILE_CACHE.clear();
+                CosmeticTrail.vide();          // les pas d'un autre monde n'ont plus de sens
                 cachedLevel = level;
                 lastGameTime = -1L;
             }
@@ -97,13 +110,26 @@ public final class CosmeticAuraClientTicker {
             // ailes / couronnes / auras est fait une seule fois par frame par CosmeticPixelAura.
             getCosmeticFlags(viewer, now);
 
+            // T436 : la traînée au sol est une mémoire de pas en coordonnées monde. On la
+            // nourrit ici, une fois par tick : c'est ce qui la fait se rétracter à l'arrêt
+            // et se redéployer au départ, au lieu de défiler bêtement avec le temps.
+            int fv = getCosmeticFlags(viewer, now);
+            if ((fv & F_SOL) != 0) CosmeticTrail.suivre(viewer, now);
+            if ((fv & (F_ENCH_CLOUD_CUSHION | F_ENCH_LANDING_WAVE)) != 0) {
+                if ((fv & F_ENCH_CLOUD_CUSHION) != 0) CosmeticTrail.suivre(viewer, now);
+                CosmeticTrail.noteChute(viewer, now);
+            }
+
             List<? extends Player> nearbyPlayers = level.players();
             for (int i = 0, n = nearbyPlayers.size(); i < n; i++) {
                 Player other = nearbyPlayers.get(i);
                 if (other == viewer || !other.isAlive() || other.isSpectator()) continue;
                 if (other.distanceToSqr(viewer) > CULL_DIST_SQR) continue;
-                getCosmeticFlags(other, now);
+                int fo = getCosmeticFlags(other, now);
+                if ((fo & (F_SOL | F_ENCH_CLOUD_CUSHION)) != 0) CosmeticTrail.suivre(other, now);
+                if ((fo & F_ENCH_LANDING_WAVE) != 0) CosmeticTrail.noteChute(other, now);
             }
+            if ((now & 63L) == 0L) CosmeticTrail.nettoie(now);
         } catch (Throwable ignored) {}
     }
 
@@ -144,6 +170,18 @@ public final class CosmeticAuraClientTicker {
         if (UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:heart_resonance") > 0) f |= F_ENCH_RADIANT_AEGIS;
         if (UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:wing_toughness_armor") > 0) f |= F_ENCH_WINGED_ENDURANCE;
         if (UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:dread_aura") > 0) f |= F_ENCH_DREAD_AURA;
+
+        // Mêmes enchantements que les appels serveur de cloudCushion/shockwaveRing : le pixel
+        // et la particule parlent enfin du même équipement.
+        if (UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:cloud_walker") > 0
+                || UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:air_walk") > 0
+                || UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:cloud_stride") > 0) {
+            f |= F_ENCH_CLOUD_CUSHION;
+        }
+        if (UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:crash_landing") > 0
+                || UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:meteor_stomp") > 0) {
+            f |= F_ENCH_LANDING_WAVE;
+        }
 
         // Plus d'aura constante pour toute arme non à distance : lecture du choix persisté au loot.
         // Les tridents enchantés conservent explicitement leur comportement antérieur, sans tirage.

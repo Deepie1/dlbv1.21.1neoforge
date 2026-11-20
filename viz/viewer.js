@@ -116,6 +116,9 @@ const PX = 1.8 / 32;          // 1 pixel Minecraft pour un joueur de 1.8 bloc
     tag.className = 'tag ' + (d.famille === 'permanent' ? 'perm' : 'ponc');
     document.getElementById('accorde').textContent = d.accorde;
     document.getElementById('lecture').textContent = d.note;
+    const j = document.getElementById('jeu');
+    j.textContent = d.jeuNote;
+    j.className = d.jeu;
     for (const el of document.querySelectorAll('#liste a'))
       el.classList.toggle('actif', el.dataset.id === id);
     cadrer(id);
@@ -144,6 +147,21 @@ const PX = 1.8 / 32;          // 1 pixel Minecraft pour un joueur de 1.8 bloc
     e.target.classList.toggle('on', zone.visible);
     e.target.textContent = zone.visible ? 'Masquer la zone du regard' : 'Zone du regard';
   };
+  // Les trainees au sol sont une memoire de pas : elles se retractent quand le
+  // joueur s'arrete. Ce bouton force l'etat au lieu de subir le cycle.
+  const ETATS = [
+    { v: undefined, texte: 'Déplacement : cycle' },
+    { v: 1,         texte: 'Déplacement : en marche' },
+    { v: 0,         texte: 'Déplacement : à l\'arrêt' }
+  ];
+  let iEtat = 0;
+  document.getElementById('marche').onclick = e => {
+    iEtat = (iEtat + 1) % ETATS.length;
+    window.DLB_MARCHE = ETATS[iEtat].v;
+    e.target.textContent = ETATS[iEtat].texte;
+    e.target.classList.toggle('on', iEtat !== 0);
+  };
+
   document.getElementById('vdos').onclick = () => { lacet = Math.PI; tangage = 0.12; };
   document.getElementById('vdessus').onclick = () => { lacet = 0.0; tangage = 1.32; };
 
@@ -199,7 +217,8 @@ const PX = 1.8 / 32;          // 1 pixel Minecraft pour un joueur de 1.8 bloc
       const a = document.createElement('a');
       a.href = 'javascript:void 0';
       a.dataset.id = id;
-      a.innerHTML = '<strong>' + m.titre + '</strong>';
+      a.innerHTML = '<strong>' + m.titre + '</strong>'
+        + '<span class="etat ' + m.jeu + '">' + (m.jeu === 'pixels' ? 'pixels' : 'particules') + '</span>';
       a.onclick = () => choisir(id);
       liste.appendChild(a);
     }

@@ -23,6 +23,8 @@ import net.minecraft.world.item.TridentItem;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
 
+import deepluckyblock.util.DeepNbt;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -460,10 +462,20 @@ public enum WeaponVisualEffectId {
         return out.size() <= maxLayers ? out : out.subList(0, maxLayers);
     }
 
+    /**
+     * T436-LOOT-ONLY : les effets de style ne s'approprient le rendu d'un enchantement
+     * VANILLA que si l'arme sort du Deep Lucky Block. Une épée enchantée à l'enclume ou à
+     * la table garde donc ses particules d'origine : on ne dérange pas le gameplay vanilla.
+     *
+     * <p>Les enchantements du mod ({@code deep_lucky_block:*}), eux, gardent toujours leur
+     * effet — ils n'existent que par le mod, il n'y a aucun rendu vanilla à préempter.
+     */
     public static List<ResolvedLayer> resolveLayers(ItemStack stack, int maxLayers) {
         if (!isWeaponItem(stack)) return List.of();
         ItemEnchantments ench = stack.getEnchantments();
         if (ench.isEmpty()) return List.of();
+
+        final boolean duLuckyBlock = DeepNbt.isLuckyBlockOrigin(stack);
 
         boolean isPureUtilityTool = !(stack.getItem() instanceof SwordItem
                 || stack.getItem() instanceof AxeItem
@@ -488,6 +500,10 @@ public enum WeaponVisualEffectId {
                         || path.equals("mending") || path.equals("silk_touch"))) {
                 continue;
             }
+
+            // Un alias vanilla (tranchant, puissance, flamme...) ne prend le style du mod
+            // que sur du loot du mod. Ailleurs, il reste strictement vanilla.
+            if (!duLuckyBlock && !"deep_lucky_block".equals(loc.getNamespace())) continue;
 
             WeaponVisualEffectId fx = forEnchantmentLocation(loc);
             if (fx == null) continue;
