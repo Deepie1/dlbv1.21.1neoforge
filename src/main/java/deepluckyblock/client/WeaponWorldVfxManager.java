@@ -1696,26 +1696,22 @@ public final class WeaponWorldVfxManager {
         return gradientColorFor(stack, timeSeconds, 0);
     }
 
-    /** Dégradé multi-élément pour un rôle chromatique donné : 0 primaire, 1 secondaire, 2 accent. */
+    /**
+     * T431-FUSION-RETIREE : couleur d'un role pour l'element UNIQUE de l'arme.
+     *
+     * <p>Ces deux methodes faisaient tourner un index triangulaire sur la liste des familles
+     * portees par l'arme, de la premiere a la derniere puis retour, a 0,16 cycle par seconde :
+     * une arme feu + eau passait sans cesse du rouge au bleu. Il n'y a plus de liste.</p>
+     */
     public static int gradientColorFor(net.minecraft.world.item.ItemStack stack, float timeSeconds, int role) {
-        List<deepluckyblock.enchantments.DeepElement> els = WeaponVisualEffectId.elementsOf(stack);
-        if (els.isEmpty()) return 0;
-        float cycle = (timeSeconds * 0.16f) % 2.0f;
-        float tri = cycle < 1.0f ? cycle : 2.0f - cycle;
-        int index = Math.min(els.size() - 1, Math.max(0, Math.round(tri * (els.size() - 1))));
-        deepluckyblock.enchantments.DeepElement selected = els.get(index);
-        return elementRoleColor(selected, role);
+        deepluckyblock.enchantments.DeepElement el = WeaponVisualEffectId.singleElementOf(stack);
+        return el == null ? 0 : elementRoleColor(el, role);
     }
 
-    /** Famille actuellement sélectionnée pour une arme multi-éléments (alternance sans interpolation). */
+    /** T431 : la famille unique de l'arme, ou {@code null}. */
     public static deepluckyblock.enchantments.DeepElement gradientElementFor(
             net.minecraft.world.item.ItemStack stack, float timeSeconds) {
-        List<deepluckyblock.enchantments.DeepElement> els = WeaponVisualEffectId.elementsOf(stack);
-        if (els.isEmpty()) return null;
-        float cycle = (timeSeconds * 0.16f) % 2.0f;
-        float tri = cycle < 1.0f ? cycle : 2.0f - cycle;
-        int index = Math.min(els.size() - 1, Math.max(0, Math.round(tri * (els.size() - 1))));
-        return els.get(index);
+        return WeaponVisualEffectId.singleElementOf(stack);
     }
 
     private static int elementRoleColor(deepluckyblock.enchantments.DeepElement element, int role) {
@@ -1955,8 +1951,8 @@ public final class WeaponWorldVfxManager {
         double my = eye.y - 0.12 + look.y * 0.85;
         double mz = eye.z + look.z * 0.85;
         WeaponVisualEffectId fx = layers.get(0).effect();
-        spawnMiniPixelBurst(fx, mx, my, mz, 10, 0.030f, 0.12,
-                WeaponVisualEffectId.elementMaskOf(ranged));
+        // T431 : un seul bit, celui de l'animation minimale jouee au depart du tir.
+        spawnMiniPixelBurst(fx, mx, my, mz, 10, 0.030f, 0.12, 1 << fx.element().ordinal());
     }
 
     /**
@@ -1985,21 +1981,23 @@ public final class WeaponWorldVfxManager {
         ItemStack stack = p.getItemInHand(hand);
         if (!isMeleeSlashWeapon(stack)) return;
 
-        List<WeaponVisualEffectId.ResolvedLayer> layers = WeaponVisualEffectId.resolveLayers(stack, 2);
+        // T431 : LE SWING DE MELEE NE RESOUT PLUS AUCUNE COUCHE.
+        //
+        // resolveLayers(stack, 2) etait appele ici pour donner au slash la couleur et
+        // l'intensite de l'enchantement porte. Le geste du joueur en melee ne lit plus rien :
+        // seules les epees de demonstration /anim, reconnues a leur NBT DlbAnimFamily,
+        // slashent depuis le client.
         String animFamily = null;
         var tag = deepluckyblock.util.DeepNbt.tag(stack);
         if (tag != null) {
             // T374-ANIM-FAMILIES : noms anglais canoniques, anciennes valeurs acceptées en lecture.
             animFamily = deepluckyblock.util.AnimFamily.canonical(tag.getString("DlbAnimFamily"));
         }
-        if (layers.isEmpty() && animFamily == null) return;
         // T417-SLASH : SEULES LES EPEES DE DEMONSTRATION /anim SLASHENT DEPUIS LE CLIENT.
         //
-        // Le slash des armes lootees est desormais decide par le SERVEUR, au moment du coup
-        // (7 % des armes y ont droit, puis 6 % par coup, et ce coup frappe 10 % plus fort).
-        // Le laisser aussi partir d'ici le ferait apparaitre a chaque swing, bonus de degats
-        // absent, c'est-a-dire exactement l'inverse de la regle : l'image mentirait sur les
-        // degats. Une seule autorite par decision.
+        // Le slash des armes lootees est decide par le SERVEUR, au moment du coup, a partir
+        // de la competence accordee au drop. Le laisser aussi partir d'ici le ferait
+        // apparaitre a chaque swing, bonus de degats absent. Une seule autorite par decision.
         if (animFamily == null) return;
 
         int parity = PLAYER_SWING_PARITY.merge(p.getId(), 1, Integer::sum);
@@ -2009,13 +2007,12 @@ public final class WeaponWorldVfxManager {
         double ox = eye.x + look.x * 0.55;
         double oy = eye.y - 0.16 + look.y * 0.35;
         double oz = eye.z + look.z * 0.55;
-        WeaponVisualEffectId.ResolvedLayer primary = layers.isEmpty() ? null : layers.get(0);
-        WeaponVisualEffectId fx = primary != null ? primary.effect()
-                : animationSlashEffect(animFamily,
-                        p.level().random.nextInt(animationSlashCount(animFamily)));
-        int intensity = primary != null ? primary.level() : 6;
-        int paletteMask = WeaponVisualEffectId.elementMaskOf(stack);
-        if (paletteMask == 0) paletteMask = 1 << fx.element().ordinal();
+        // T431 : l'animation vient de la FAMILLE de l'epee de demonstration, jamais d'une
+        // couche resolue depuis ses enchantements, et sa palette ne porte qu'un bit.
+        WeaponVisualEffectId fx = animationSlashEffect(animFamily,
+                p.level().random.nextInt(animationSlashCount(animFamily)));
+        int intensity = 6;
+        int paletteMask = 1 << fx.element().ordinal();
         int duration = (fx == WeaponVisualEffectId.ANNIHILATING_ARC
                 || fx == WeaponVisualEffectId.CARNAGE_BERSERK) ? 11 : 8;
         float tilt = (fx == WeaponVisualEffectId.GUILLOTINE_CLEAVE) ? 1.48f : baseTilt;
@@ -2028,7 +2025,6 @@ public final class WeaponWorldVfxManager {
                 ox, oy, oz, ox + look.x * 3.2, oy + look.y * 3.2, oz + look.z * 3.2,
                 p.getYRot(), p.getXRot(), tilt, duration, System.nanoTime(), paletteMask));
 
-        if (layers.isEmpty()) return;
         // L'identifiant 4 déclenchait ici une SECONDE entaille différée de 4 ticks : c'était
         // tout le sens de l'ancienne « double entaille d'écho ». L'effet est devenu l'Appel de
         // l'orage, dont la répétition se joue en l'air et non dans le balayage de l'arme ;

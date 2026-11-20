@@ -429,16 +429,12 @@ public final class WeaponBladeVisualRenderer {
         int sRgb = WeaponWorldVfxManager.smoothBladeColor2(fx);
         int highlightRgb = WeaponWorldVfxManager.smoothColor(2000 + fx.id, fx.highlightRgb);
 
-        // T374-PALETTE-LOCK : primaire, secondaire et éclat restent dans le même rôle de chaque famille.
-        java.util.List<deepluckyblock.enchantments.DeepElement> elements =
-                WeaponVisualEffectId.elementsOf(stack);
+        // T431-FUSION-RETIREE : la lame porte la couleur de SON animation, point.
+        //
+        // Ce bloc demandait la liste des familles de l'arme et, des qu'il y en avait plus
+        // d'une, remplacait les trois couleurs par le degrade aller-retour qui alternait
+        // entre elles. C'etait la fusion d'elements vue sur l'objet tenu en main.
         DeepElement activeElement = fx.element();
-        if (elements.size() > 1) {
-            activeElement = WeaponWorldVfxManager.gradientElementFor(stack, time);
-            pRgb = WeaponWorldVfxManager.gradientColorFor(stack, time, 0);
-            sRgb = WeaponWorldVfxManager.gradientColorFor(stack, time, 1);
-            highlightRgb = WeaponWorldVfxManager.gradientColorFor(stack, time, 2);
-        }
         final boolean chaosContour = activeElement == DeepElement.CHAOS;
         // Le corps reste sombre; seuls le pourtour et les micro-accents de Chaos sont spectraux.
         final int white = chaosContour ? DeepElement.chaosEdge(time, 0.67f) : highlightRgb;

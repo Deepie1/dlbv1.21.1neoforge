@@ -118,8 +118,6 @@ public final class WeaponVfxServerListener {
     private static final Map<Integer, Long> LAST_RALLY_TICK = new ConcurrentHashMap<>();
     /** T351-BIG-BONUS : dernier tick où une GROSSE animation (critique) a été jouée, par attaquant. */
     private static final Map<Integer, Long> LAST_BIG_ANIM_TICK = new ConcurrentHashMap<>();
-    /** T352-ELEMENT-COMBO : dernier tick d'un combo multi-éléments, par attaquant (anti-doublon). */
-    private static final Map<Integer, Long> LAST_ELEMENT_COMBO_TICK = new ConcurrentHashMap<>();
     /** T349-VFX-FREQUENCY : cooldown réel et aléatoire par (attaquant, effet). */
     private static final Map<String, Long> EFFECT_COOLDOWN = new ConcurrentHashMap<>();
     /** Emprises Wood : immobilisation seule ou stun complet, expiration et état NoAi à restaurer. */
@@ -247,7 +245,8 @@ public final class WeaponVfxServerListener {
     /** T351 : part des déclenchements qui jouent un accent discret. */
     private static final int SUBTLE_SHARE_PERCENT = 90;
     /** Ancien bonus du pipeline projectile/critique manuel, conservé hors de la nouvelle mêlée. */
-    private static final float BIG_ANIM_DAMAGE_BONUS = 1.05f;
+    // T431 : BIG_ANIM_DAMAGE_BONUS retiree — plus aucune animation liee a un enchantement
+    // ne modifie les degats, le bonus n'a donc plus de porteur.
 
     /** T417 : chance, A CHAQUE COUP, qu'une arme autorisee sorte son slash. */
     private static final int SLASH_VISUAL_HIT_PERCENT = 6;
@@ -267,12 +266,8 @@ public final class WeaponVfxServerListener {
     /** Et reste dans le champ de la caméra, même sur un colosse. */
     private static final float BIG_VISUAL_MAX_SCALE = 4.00f;
     /**
-     * T352-ELEMENT-COMBO : sur une arme portant PLUSIEURS éléments, 6 % de chance de jouer en
-     * simultané une grosse animation de CHAQUE famille présente (une couleur par élément).
+     * T431-FUSION-RETIREE : les seuils du combo multi-éléments ont disparu avec lui.
      */
-    private static final int ELEMENT_COMBO_PERCENT = 6;
-    /** Garde-fou : au-delà de 6 éléments, on se limite aux 6 plus prioritaires (anti-spam réseau). */
-    private static final int ELEMENT_COMBO_MAX = 6;
 
     private static final WeaponVisualEffectId[] ANIM_FIRE = {
             WeaponVisualEffectId.MOLTEN_FIRE_WAVE, WeaponVisualEffectId.SOUL_FIRE_CRESCENT,
@@ -560,13 +555,6 @@ public final class WeaponVfxServerListener {
             return;
         }
 
-        // T352-ELEMENT-COMBO : combo possible uniquement quand le tirage a choisi une vraie grosse anim.
-        if (livingTarget != null) {
-            tryElementCombo(sl, attacker.getId(), attacker.getMainHandItem(), cx, cy, cz,
-                    (float) attacker.getX(), (float) attacker.getEyeY(), (float) attacker.getZ(),
-                    sizeScaleOf(target), livingTarget, signatureBaseDamage(attacker, livingTarget));
-        }
-
         // Grosse animation jouée -> le dégât de ce coup sera amplifié de 5 % (voir onLivingHurtVisuals).
         LAST_BIG_ANIM_TICK.put(attacker.getId(), now);
         // LA FAILLE EST LA SEULE SIGNATURE QUI NE SE JOUE PAS SUR LE MOB. Elle s'ouvre
@@ -694,79 +682,34 @@ public final class WeaponVfxServerListener {
         return WeaponVfxSubtle.pick(el, sl.random.nextLong()).index();
     }
 
+    // =========================================================================
+    // T431-FUSION-RETIREE - LE COMBO ELEMENTAIRE N'EXISTE PLUS.
+    //
+    // Les deux surcharges de tryElementCombo occupaient cet emplacement. Elles
+    // lisaient elementsOf(weapon), refusaient d'agir en dessous de DEUX familles,
+    // puis envoyaient une etincelle par element porte afin que le coup montre le
+    // melange des teintes de l'arme. C'etait la moitie aval de la fusion.
+    //
+    // Rien ne les remplace : une arme n'a plus qu'un element, il n'y a donc plus
+    // rien a fusionner. Les constantes ELEMENT_COMBO_PERCENT / ELEMENT_COMBO_MAX et
+    // la table LAST_ELEMENT_COMBO_TICK qui les cadencait sont parties avec elles.
+    // =========================================================================
+
     /**
-     * T352-ELEMENT-COMBO : joue, en même temps, la signature de chaque famille élémentaire portée par
-     * l'arme (6 % de chance, armes multi-éléments uniquement). Chaque animation part avec un masque
-     * réduit à SA famille : les couleurs restent donc pures et bien distinctes (feu rouge, eau bleue,
-     * chaos bariolé...), au lieu d'être moyennées.
+     * T431 : palette d'un effet — UN SEUL BIT, celui de l'element de l'animation jouee.
      *
-     * @return vrai si le combo élémentaire a été déclenché
+     * <p>Cette methode agregeait jusqu'ici {@code elementMaskOf(weapon)}, c'est-a-dire TOUTES
+     * les familles portees par l'arme, et ne retombait sur l'element de l'effet que si l'arme
+     * n'en portait aucune. C'est ce masque a plusieurs bits qui faisait melanger les teintes
+     * cote client. Il ne peut plus en contenir qu'un.</p>
      */
-    private static boolean tryElementCombo(ServerLevel sl, int attackerId, ItemStack weapon,
-                                           float tx, float ty, float tz,
-                                           float ax, float ay, float az, LivingEntity target) {
-        LivingEntity attacker = sl.getEntity(attackerId) instanceof LivingEntity living ? living : null;
-        return tryElementCombo(sl, attackerId, weapon, tx, ty, tz, ax, ay, az, 1.0f, target,
-                signatureBaseDamage(attacker, target));
-    }
-
-    /** T359-BIG-ANIM-SCALE : variante qui applique l'échelle de la cible à chacune des signatures. */
-    private static boolean tryElementCombo(ServerLevel sl, int attackerId, ItemStack weapon,
-                                           float tx, float ty, float tz,
-                                           float ax, float ay, float az, float sizeScale,
-                                           LivingEntity target, float weaponDamage) {
-        // Un seul combo par coup : le critique et le handler d'impact peuvent viser le même tick.
-        long now = sl.getGameTime();
-        Long last = LAST_ELEMENT_COMBO_TICK.get(attackerId);
-        if (last != null && now - last <= 1L) return false;
-        if (sl.random.nextInt(100) >= ELEMENT_COMBO_PERCENT) return false;
-        List<DeepElement> els = WeaponVisualEffectId.elementsOf(weapon);
-        if (els.size() < 2) return false;
-        LAST_ELEMENT_COMBO_TICK.put(attackerId, now);
-        if (LAST_ELEMENT_COMBO_TICK.size() > 512) LAST_ELEMENT_COMBO_TICK.clear();
-
-        int played = 0;
-        for (DeepElement el : els) {
-            if (played >= ELEMENT_COMBO_MAX) break;
-            if (el == null) continue;
-            // T429-PAS-DE-SIGNATURE-ETRANGERE : UNE ARME NE JOUE QUE SON PROPRE ELEMENT.
-            //
-            // Cette boucle lancait ici la SIGNATURE COMPLETE de chaque element porte —
-            // broadcastNear(sig) suivi des DIX apply*Gameplay — c'est-a-dire l'animation
-            // ET le gameplay d'un element que l'arme ne revendique pas. Une arme Poison
-            // portant le moindre enchantement de Terre executait donc reellement
-            // signatureFor(EARTH) : main de Titan, degats sismiques, le tout EN MEME TEMPS
-            // que sa propre signature. C'est le « une animation de Terre sur mon arme
-            // Poison » rapporte en jeu, et c'est interdit : une competence appartient a son
-            // element.
-            //
-            // Ne restent que les etincelles de famille ci-dessous. Elles ne nomment aucune
-            // competence et n'infligent rien : elles ne font que colorer le coup aux teintes
-            // reellement portees par l'arme, ce qui etait l'intention d'origine du combo.
-            // Les animations propres a l'arme continuent de partir par resolveLayers, en
-            // dehors d'ici.
-            //
-            // Étincelles de la famille, une par élément : le mélange de couleurs se voit tout de suite.
-            WeaponVfxSubtle.Subtle accent = WeaponVfxSubtle.pick(el, sl.random.nextLong());
-            broadcastNear(sl, tx, ty, tz, 0, WeaponVfxSubtle.NET_KIND_BASE + accent.index(), 1,
-                    tx, ty, tz, ax, ay, az, 1 << el.ordinal());
-            played++;
-        }
-        return played > 1;
-    }
-
-    /** T351-ELEMENT-BLEND : masque des éléments de l'arme (0 si inconnu) pour mélanger les couleurs. */
     private static int paletteOf(ItemStack weapon, WeaponVisualEffectId fx) {
-        int mask = WeaponVisualEffectId.elementMaskOf(weapon);
-        if (mask == 0 && fx != null) mask = 1 << fx.element.ordinal();
-        return mask;
+        return (fx == null) ? 0 : (1 << fx.element.ordinal());
     }
 
-    /** Famille élémentaire à utiliser : une des familles portées par l'arme (variété), sinon celle de l'effet. */
+    /** T431 : la famille de l'effet, sans tirage parmi les familles de l'arme. */
     private static DeepElement pickElement(ServerLevel sl, ItemStack weapon, WeaponVisualEffectId fx) {
-        List<DeepElement> els = WeaponVisualEffectId.elementsOf(weapon);
-        if (els.isEmpty()) return (fx == null) ? DeepElement.METAL : fx.element;
-        return els.get(sl.random.nextInt(els.size()));
+        return (fx == null) ? DeepElement.METAL : fx.element;
     }
 
     private static boolean shouldPlay(int attackerId, WeaponVisualEffectId fx, ServerLevel sl, boolean crit) {
@@ -10408,56 +10351,57 @@ public final class WeaponVfxServerListener {
     }
 
     /**
-     * Mêlée directe éligible : exactement UN jet serveur par événement de dégâts accepté.
+     * T431 — LA SEULE ANIMATION QUI RESTE EN CORPS A CORPS, ET ELLE VIENT DU DROP.
      *
-     * <p>T410-SKILLS : le jet ne comporte plus que DEUX issues, 77 % normal et 23 % slash.
-     * La troisième — 3 % de grande animation — a disparu : les quarante-cinq signatures sont
-     * devenues des compétences que le joueur lance lui-même au clic droit sur un mob, et une
-     * chorégraphie de huit secondes n'a plus à tomber du ciel au milieu d'un échange. Le
-     * visuel du slash reste produit au swing par le geste du joueur, donc identique sur un
-     * mob et dans le vide.</p>
+     * <p>Trois portes, dans cet ordre, toutes decidees ailleurs qu'ici :</p>
+     * <ol>
+     *   <li><b>{@code dlbSlashVisual}</b> — le droit au slash, tire une fois au drop ;</li>
+     *   <li><b>la competence accordee</b> — le tirage a 5 % du drop. Elle nomme l'animation
+     *       et sa couleur. C'est le remplacement exact de {@code resolveLayers} : avant
+     *       T431, une epee ramassee avec Tranchant sortait un slash de metal sans que rien
+     *       ne l'ait decide, parce que la couche resolue venait de l'enchantement ;</li>
+     *   <li><b>{@value #SLASH_VISUAL_HIT_PERCENT} %</b> par coup porte.</li>
+     * </ol>
+     *
+     * <p><b>Un seul tirage pour l'image et le bonus.</b> Le coup qui sort le slash frappe
+     * 10 % plus fort, depuis la meme ligne : les separer afficherait des slashs sans bonus
+     * et des bonus sans slash, et plus personne ne pourrait verifier la regle en jouant.</p>
+     *
+     * <p>L'ancien nom de cette methode etait {@code handleEligibleMelee}.</p>
      */
-    /**
-     * T417-SLASH : LE SLASH DE MELEE, ET SON UNIQUE DECISION.
-     *
-     * <p>La regle tient en trois temps. <b>7 %</b> des armes lachees par le bloc y ont droit
-     * — decide une seule fois au drop, et seulement si l'arme porte un enchantement lie a un
-     * element, faute de quoi le slash n'aurait aucune couleur a prendre. Puis <b>6 %</b> a
-     * chaque coup porte. Et le coup qui sort le slash frappe <b>10 % plus fort</b>.</p>
-     *
-     * <p><b>Un seul tirage pour les deux.</b> L'image et le bonus de degats sortent de la
-     * meme ligne : les separer afficherait des slashs sans bonus et des bonus sans slash,
-     * et plus personne ne pourrait verifier la regle en jouant.</p>
-     *
-     * <p>Ce qui etait la avant : un jet donnant 23 % de coups a +5 %, sans aucun visuel cote
-     * serveur — l'entaille venait du client, a CHAQUE swing d'une arme a aura. Les deux
-     * moities ne parlaient donc pas de la meme chose.</p>
-     */
-    private static void handleEligibleMelee(ServerLevel sl, LivingIncomingDamageEvent event,
-                                            LivingEntity attacker, LivingEntity target, ItemStack weapon,
-                                            List<WeaponVisualEffectId.ResolvedLayer> layers) {
-        if (layers.isEmpty()) return;
+    private static void handleDropGrantedMelee(ServerLevel sl, LivingIncomingDamageEvent event,
+                                               LivingEntity attacker, LivingEntity target, ItemStack weapon) {
+        // Premiere porte : la decision de slash prise au drop. Sans elle, rien.
         if (!deepluckyblock.util.DeepNbt.hasSlashVisual(weapon)) return;
+
+        // Seconde porte : l'arme doit porter la competence tiree au drop. C'est elle, et
+        // elle seule, qui dit QUELLE animation cette arme possede. Avant T431 cette
+        // reponse venait de resolveLayers, c'est-a-dire des enchantements : une epee
+        // ramassee avec Tranchant sortait un slash de metal sans que rien ne l'ait
+        // decide. Desormais l'arme montre l'animation qu'on lui a donnee, ou aucune.
+        deepluckyblock.enchantments.WeaponSkill.Entry granted =
+                deepluckyblock.enchantments.WeaponSkill.retainedOn(weapon);
+        if (granted == null || granted.effect() == null) return;
+
         if (sl.random.nextInt(100) >= SLASH_VISUAL_HIT_PERCENT) return;
 
-        WeaponVisualEffectId.ResolvedLayer top = layers.get(0);
+        WeaponVisualEffectId fx = granted.effect();
         float tx = (float) target.getX();
         float ty = (float) (target.getY() + target.getBbHeight() * 0.5);
         float tz = (float) target.getZ();
         float ax = (float) attacker.getX();
         float ay = (float) (attacker.getY() + attacker.getBbHeight() * 0.62);
         float az = (float) attacker.getZ();
-        // paletteOf : la teinte de l'element porte par l'arme, celle que les autres effets
-        // utilisent deja. Le slash sort donc « couleur de l'element », sans table parallele.
-        broadcastNear(sl, ax, ay, az, top.effect().id, KIND_SWING_SLASH, top.level(),
-                ax, ay, az, tx, ty, tz, paletteOf(weapon, top.effect()));
+        // Un seul bit de palette : celui de l'animation accordee. Plus de melange.
+        broadcastNear(sl, ax, ay, az, fx.id, KIND_SWING_SLASH, 1,
+                ax, ay, az, tx, ty, tz, paletteOf(weapon, fx));
         event.setAmount(event.getAmount() * SLASH_DAMAGE_BONUS);
     }
 
     /**
      * T410-SKILLS — LANCEMENT D'UNE SIGNATURE A LA DEMANDE.
      *
-     * <p>Corps exact de l'ancienne branche « grande animation » de {@link #handleEligibleMelee},
+     * <p>Corps exact de l'ancienne branche « grande animation » de la melee eligible,
      * extrait sans rien changer a son contenu : meme diffusion, meme echelle mesuree sur la
      * cible, memes appels de gameplay et dans le meme ordre. Seule l'entree change — un clic
      * droit volontaire au lieu d'un jet de des — et le bonus de degats est applique
@@ -10611,48 +10555,56 @@ public final class WeaponVfxServerListener {
             LAST_CRIT_TICK.clear();
             LAST_RALLY_TICK.clear();
             LAST_BIG_ANIM_TICK.clear();
-            LAST_ELEMENT_COMBO_TICK.clear();
         }
 
         ItemStack weapon = resolveImpactWeapon(attacker, direct);
         String animFamily = animationFamily(weapon);
-        if (animFamily != null && !isProjectileHit && direct == attacker) {
+        boolean pureMelee = !isProjectileHit && direct == attacker;
+        if (animFamily != null && pureMelee) {
             handleAnimMelee(sl, event, attacker, target, weapon, animFamily);
             return;
         }
-        List<WeaponVisualEffectId.ResolvedLayer> layers = resolveAttackerLayers(attacker, weapon, 2);
-        if (layers.isEmpty()) return;
 
-        // playerAttack/mobAttack direct uniquement : les projectiles et dégâts différés ne rerollent pas.
-        if (!isProjectileHit && direct == attacker) {
-            handleEligibleMelee(sl, event, attacker, target, weapon, layers);
+        // =============================================================================
+        // T431 — LE CORPS A CORPS NE LIT PLUS LES ENCHANTEMENTS. DU TOUT.
+        //
+        // Un coup de melee ne resout plus aucune couche : porter tel enchantement ne
+        // declenche plus aucune animation au contact. Ce qui subsiste en melee ne vient
+        // que de decisions prises AU DROP et inscrites en NBT sur l'arme :
+        //
+        //   - la competence tiree a 5 % (dlbSkillGranted), lancee au clic droit sur un
+        //     mob par WeaponSkillHandler, qui ne passe deja plus par resolveLayers ;
+        //   - le slash tire au drop (dlbSlashVisual), traite juste au-dessus pour les
+        //     epees /anim et par handleDropGrantedMelee pour les armes lootees ;
+        //   - les ornements de combos, pilotes par le bitmask cosmetique, qui n'ont
+        //     jamais rien lu ici.
+        //
+        // Tout le reste -- salves d'impact, accents discrets, combos elementaires,
+        // chaines apply*Gameplay -- etait declenche par la presence d'un enchantement
+        // sur l'arme. C'est precisement ce que la regle interdit, et c'est parti.
+        // =============================================================================
+        if (pureMelee) {
+            handleDropGrantedMelee(sl, event, attacker, target, weapon);
             return;
         }
 
+        List<WeaponVisualEffectId.ResolvedLayer> layers = resolveAttackerLayers(attacker, weapon, 2);
+        if (layers.isEmpty()) return;
+
         // =============================================================================
-        // T410-DISTANCE : LES GRANDES ANIMATIONS CHANGENT DE MAIN.
+        // T431 — A DISTANCE : LES ENCHANTEMENTS NE PARLENT PLUS QU'EN PETIT.
         //
-        // La melee ne les tire plus (elles y sont devenues des competences au clic droit).
-        // Elles ne disparaissent pas pour autant : elles passent a l'arc, a l'arbalete et
-        // au trident lance, ou elles retrouvent exactement le role qu'elles avaient --
-        // une recompense rare, cinq pour cent des impacts, qui ne coute rien a viser.
+        // T410 avait deplace les grandes signatures de la melee vers l'arc, l'arbalete et
+        // le trident : cinq pour cent des impacts declenchaient la choregraphie complete de
+        // l'enchantement porte par l'arme de tir. Ce bloc est retire. Un enchantement ne
+        // peut plus declencher une grande animation nulle part -- seul le tirage au drop le
+        // peut, par la competence au clic droit.
         //
-        // La signature jouee est celle des enchantements de l'ARME DE TIR (resolveImpactWeapon
-        // remonte l'arc depuis la fleche et le trident depuis son propre objet) : un arc de
-        // feu produit une signature de feu, jamais celle d'une epee rangee dans l'inventaire.
-        // Le bonus de degats est applique a la fleche elle-meme plutot que par un coup
-        // separe, pour que l'armure et les protections du defenseur le voient passer.
+        // Ce qui reste a distance est volontairement minimal : les accents discrets
+        // (playSubtleAccent, deux a neuf mini-pixels), le sillage attache au projectile et
+        // la salve d'impact. Ce sont les seules animations encore reliees a un enchantement
+        // dans tout le mod, et elles sont toutes de ce calibre.
         // =============================================================================
-        if (isProjectileHit && sl.random.nextInt(100) < NORMAL_TRIGGER_PERCENT) {
-            WeaponVisualEffectId.ResolvedLayer rangedLayer = layers.get(0);
-            float rangedScale = sizeScaleOf(target);
-            event.setAmount(event.getAmount() * (1.0f + bigMeleeBonusPercent(rangedScale) / 100.0f));
-            if (castSkillSignature(sl, attacker, target, weapon,
-                    rangedLayer.effect(), rangedLayer.level(), false)) {
-                LAST_BIG_ANIM_TICK.put(attacker.getId(), now);
-                return;
-            }
-        }
 
         float tx = (float) target.getX();
         float ty = (float) (target.getY() + target.getBbHeight() * 0.5);
@@ -10663,7 +10615,7 @@ public final class WeaponVfxServerListener {
 
         boolean meleeCritJustFired = (now - LAST_CRIT_TICK.getOrDefault(attacker.getId(), -100L)) <= 1L;
         boolean arrowCrit = (direct instanceof AbstractArrow arr) && arr.isCritArrow();
-        // T351-ELEMENT-BLEND : palette élémentaire de l'arme (feu + eau -> les deux teintes ensemble).
+        // T431 : un seul bit — l'element de l'animation jouee. Plus de melange feu + eau.
         int palette = paletteOf(weapon, layers.get(0).effect());
 
         // Critique à l'arc / arbalète : étoile critique pixel 3D dédiée si pas déjà en couche 0
@@ -10677,13 +10629,9 @@ public final class WeaponVfxServerListener {
 
         // T349-VFX-FREQUENCY : un seul effet par coup (rarement deux) au lieu de toute la pile
         int layerBudget = (sl.random.nextInt(100) < 22) ? 2 : 1;
-        // Le critique a-t-il déjà lancé une grosse animation ? Alors le +5 % est appliqué tout de suite.
-        boolean bigAnimBonusApplied = (now - LAST_BIG_ANIM_TICK.getOrDefault(attacker.getId(), -100L)) <= 2L;
-        // T352-ELEMENT-COMBO : un seul combo élémentaire par coup, même si deux couches partent.
-        boolean elementComboDone = false;
-        if (bigAnimBonusApplied) {
-            event.setAmount(event.getAmount() * BIG_ANIM_DAMAGE_BONUS);
-        }
+        // T431 : le drapeau elementComboDone a disparu avec le combo multi-elements, et le
+        // bonus BIG_ANIM_DAMAGE_BONUS avec les grandes animations qu'il recompensait. Un
+        // enchantement ne touche plus aux degats.
         for (int i = 0; i < layers.size(); i++) {
             if (layerBudget <= 0) break;
             WeaponVisualEffectId.ResolvedLayer layer = layers.get(i);
@@ -10696,42 +10644,26 @@ public final class WeaponVfxServerListener {
             }
 
             layerBudget--;
-            // La petite animation reste propre à l'enchantement et ne remplace plus le slash.
+            // T431 : L'ACCENT DISCRET D'ABORD, ET SURTOUT -- IL N'Y A PLUS RIEN D'AUTRE.
+            //
+            // Un enchantement a distance ne produit que ca : deux a neuf mini-pixels aux
+            // couleurs de sa famille. playSubtleAccent n'aboutit que dans SUBTLE_SHARE_PERCENT
+            // des cas ; quand il echoue, la salve d'impact ci-dessous prend le relais, et
+            // c'est la plus grosse chose qu'un enchantement puisse encore declencher.
             if (playSubtleAccent(sl, weapon, fx, tx, ty, tz, ax, ay, az)) {
                 continue;
             }
 
-            // T352-ELEMENT-COMBO : arme multi-éléments -> parfois une animation de CHAQUE élément.
-            if (!elementComboDone) {
-                elementComboDone = tryElementCombo(sl, attacker.getId(), weapon, tx, ty, tz, ax, ay, az,
-                        sizeScaleOf(target), target, Math.max(0.0f, event.getAmount()));
-            }
-
-            // T351-BIG-BONUS : les 10 % de grosses animations amplifient de 5 % les dégâts subis
-            // (une seule fois par coup, même si deux couches partent).
-            if (!bigAnimBonusApplied) {
-                bigAnimBonusApplied = true;
-                event.setAmount(event.getAmount() * BIG_ANIM_DAMAGE_BONUS);
-            }
-
-            if (fx == WeaponVisualEffectId.CRIMSON_SIPHON) {
-                broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
-                        tx, ty, tz, ax, ay, az, palette, lightVisualScaleOf(fx, target, sizeScaleOf(target)));
-            } else if (fx == WeaponVisualEffectId.ASTRAL_STAR_LANCE && attacker.distanceToSqr(target) > 9.0) {
-                broadcastNear(sl, tx, ty, tz, fx.id, KIND_BEAM_SIPHON, layer.level(),
-                        ax, (float) attacker.getEyeY() - 0.12f, az, tx, ty, tz, palette, lightVisualScaleOf(fx, target, sizeScaleOf(target)));
-                applyLightGameplay(attacker, target, fx, Math.max(0.0f, event.getAmount()), sizeScaleOf(target));
-            } else {
-                int boost = (arrowCrit && fx.category == WeaponVisualEffectId.Category.CRIT) ? layer.level() + 1 : layer.level();
-                broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, boost,
-                        tx, ty, tz, ax, ay, az, palette, lightVisualScaleOf(fx, target, sizeScaleOf(target)));
-                applyFireGameplay(attacker, target, fx, sizeScaleOf(target), Math.max(0.0f, event.getAmount()));
-                applyWoodGameplay(attacker, target, fx, sizeScaleOf(target), Math.max(0.0f, event.getAmount()));
-                applyEarthGameplay(attacker, target, fx, Math.max(0.0f, event.getAmount()));
-                applyMetalGameplay(attacker, target, fx, Math.max(0.0f, event.getAmount()));
-                applyLightGameplay(attacker, target, fx, Math.max(0.0f, event.getAmount()), sizeScaleOf(target));
-                applyPoisonGameplay(attacker, target, fx);
-            }
+            // CE QUI A ETE RETIRE ICI (T431) : le rayon du Siphon Cramoisi, la lance
+            // astrale a plus de trois blocs, et surtout la chaine des six apply*Gameplay
+            // (feu, bois, terre, metal, lumiere, poison) qui faisait qu'un enchantement
+            // n'infligeait pas qu'une image mais un VRAI effet de signature. Avec elles
+            // part le bonus de degats BIG_ANIM_DAMAGE_BONUS : plus aucune animation liee a
+            // un enchantement ne modifie les degats, nulle part.
+            int boost = (arrowCrit && fx.category == WeaponVisualEffectId.Category.CRIT)
+                    ? layer.level() + 1 : layer.level();
+            broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, boost,
+                    tx, ty, tz, ax, ay, az, palette, lightVisualScaleOf(fx, target, sizeScaleOf(target)));
         }
     }
 

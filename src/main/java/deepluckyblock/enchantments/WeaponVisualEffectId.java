@@ -512,58 +512,37 @@ public enum WeaponVisualEffectId {
         }
         sortByElement(all);
 
-        if (all.size() <= maxLayers) {
-            return all;
-        }
-
-        List<ResolvedLayer> picked = new ArrayList<>(maxLayers);
-        int usedCatMask = 0;
-        for (ResolvedLayer layer : all) {
-            // T350 : on privilégie une animation par FAMILLE ÉLÉMENTAIRE (et plus par catégorie technique),
-            // pour que l'arme montre des effets cohérents entre eux.
-            int bit = 1 << layer.effect().element.ordinal();
-            if ((usedCatMask & bit) == 0) {
-                usedCatMask |= bit;
-                picked.add(layer);
-                if (picked.size() >= maxLayers) return picked;
-            }
-        }
-        for (ResolvedLayer layer : all) {
-            if (!picked.contains(layer)) {
-                picked.add(layer);
-                if (picked.size() >= maxLayers) break;
-            }
-        }
-        return picked;
+        // T431-FUSION-RETIREE : la troncature est redevenue un simple « les premières de la
+        // liste triée ». Ce bloc répartissait auparavant les couches retenues UNE PAR FAMILLE
+        // ÉLÉMENTAIRE, pour qu'une arme feu+eau montre du feu ET de l'eau : c'était la moitié
+        // amont de la fusion d'éléments. Sans elle, une arme ne parle plus que d'une famille.
+        return all.size() <= maxLayers ? all : new ArrayList<>(all.subList(0, maxLayers));
     }
 
-    /**
-     * T351-MULTI-ELEMENT : familles élémentaires réellement portées par l'arme (sans doublon,
-     * dans l'ordre de tri élémentaire). Sert au dégradé aller-retour des pixels de la lame.
-     */
-    public static List<DeepElement> elementsOf(ItemStack stack) {
-        List<DeepElement> out = new ArrayList<>(4);
-        for (ResolvedLayer layer : resolveLayers(stack, 32)) {
-            DeepElement el = layer.effect().element;
-            if (!out.contains(el)) out.add(el);
-        }
-        return out;
-    }
-
-    /**
-     * T352-ELEMENT-COMPLET : animation « signature » d'une famille = sa plus haute priorité.
-     * Sert au déclenchement simultané (une animation de CHAQUE élément de l'arme).
-     */
-    public static WeaponVisualEffectId signatureFor(DeepElement el) {
-        WeaponVisualEffectId best = null;
-        for (WeaponVisualEffectId fx : values()) {
-            // (l'exclusion SANDSTORM/TEMPEST n'a plus lieu d'être : ils ont leur propre famille)
-            if (fx.element != el) continue;
-            if (best == null || fx.priority > best.priority) best = fx;
-        }
-        return best;
-    }
-
+    // =========================================================================
+    // T431-FUSION-RETIREE - CE QUI A DISPARU ICI.
+    //
+    // Trois methodes vivaient a cet endroit et formaient le systeme de fusion
+    // d'elements :
+    //
+    //   elementsOf(ItemStack)     la liste SANS DOUBLON des familles portees par
+    //                             une arme. C'etait le moteur de la fusion : tout
+    //                             le reste en decoulait.
+    //   elementMaskOf(ItemStack)  ces familles empaquetees en masque de bits,
+    //                             envoye au client pour qu'il MELANGE les teintes
+    //                             (feu + eau = les deux ensemble).
+    //   signatureFor(DeepElement) l'animation de plus haute priorite d'une famille,
+    //                             qui servait a jouer une signature de CHAQUE
+    //                             element de l'arme en meme temps. Elle n'avait
+    //                             deja plus d'appelant depuis T429.
+    //
+    // Le masque de palette n'a pas disparu du protocole reseau : il porte desormais
+    // au plus UN bit, pose par paletteOf a partir de l'element de l'animation
+    // elle-meme. Les branches client gardees par bitCount(mask) > 1 ne se
+    // declenchent donc plus jamais, sans qu'il ait fallu toucher au format des
+    // paquets. singleElementOf, plus bas, remplace elementsOf partout ou un
+    // appelant avait reellement besoin d'une famille - et d'une seule.
+    // =========================================================================
     /** Toutes les grosses animations d'une famille (au moins 3 garanties depuis T352). */
     public static List<WeaponVisualEffectId> animationsOf(DeepElement el) {
         // Ordre de rotation Terre confirmé, indépendant des identifiants historiques de l'énumération.
@@ -585,15 +564,15 @@ public enum WeaponVisualEffectId {
     }
 
     /**
-     * T351-ELEMENT-BLEND : masque des familles élémentaires portées par l'arme (bit {@code ordinal()}),
-     * transmis au client pour que les particules mélangent les couleurs (feu + eau, etc.).
+     * T431 : l'élément UNIQUE d'une arme, ou {@code null}. Remplace {@code elementsOf} partout
+     * où un appelant avait réellement besoin d'une famille — et d'une seule.
+     *
+     * <p>C'est la première couche résolue qui décide, celle de plus haute priorité après tri.
+     * Aucune liste, aucun mélange : une arme a un élément ou n'en a pas.</p>
      */
-    public static int elementMaskOf(ItemStack stack) {
-        int mask = 0;
-        for (DeepElement el : elementsOf(stack)) {
-            mask |= 1 << el.ordinal();
-        }
-        return mask & deepluckyblock.enchantments.DeepElement.MASK_ALL;
+    public static DeepElement singleElementOf(ItemStack stack) {
+        List<ResolvedLayer> layers = resolveLayers(stack, 1);
+        return layers.isEmpty() ? null : layers.get(0).effect().element;
     }
 
     private static int boostSharpnessTierLevel(String path, int lvl) {

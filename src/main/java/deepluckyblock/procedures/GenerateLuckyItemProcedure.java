@@ -3188,9 +3188,17 @@ public class GenerateLuckyItemProcedure {
     /**
      * T417 : decide UNE FOIS, au drop, si cette arme aura droit au slash visuel.
      *
-     * <p>Deux conditions, dans cet ordre : l'arme doit porter <b>un enchantement lie a un
-     * element</b> (sans element, le slash n'aurait aucune couleur a prendre), puis passer un
-     * tirage a {@value #SLASH_VISUAL_DROP_PERCENT} %.</p>
+     * <p>T431 — LA CONDITION D'ENTREE A CHANGE DE SOURCE. Elle etait « l'arme porte un
+     * enchantement lie a un element », mesuree par {@code elementMaskOf}. C'etait une
+     * lecture des enchantements, et le slash de melee qui en decoulait etait donc une
+     * animation reliee a un enchantement. La condition est desormais <b>l'arme a recu une
+     * competence au tirage de {@value #SKILL_DROP_PERCENT} %</b> : c'est cette competence,
+     * et elle seule, qui dit quelle animation l'arme possede et de quelle couleur.</p>
+     *
+     * <p>Consequence assumee sur les frequences : le slash ne concerne plus
+     * {@value #SLASH_VISUAL_DROP_PERCENT} % de toutes les armes lootees, mais
+     * {@value #SLASH_VISUAL_DROP_PERCENT} % des armes a competence. L'ordre d'appel le
+     * permet — {@code rollSkillOnDrop} puis {@code enforceSingleSkill} tournent avant.</p>
      *
      * <p>La decision est ecrite meme quand elle est negative : une arme sans la clef serait
      * retiree au sort a chaque coup, et la meme epee se mettrait a slasher un jour sur deux.</p>
@@ -3198,9 +3206,9 @@ public class GenerateLuckyItemProcedure {
     private static void rollSlashVisualOnDrop(ItemStack stack, RandomSource random) {
         if (stack == null || stack.isEmpty()) return;
         if (!deepluckyblock.enchantments.WeaponVisualEffectId.isWeaponItem(stack)) return;
-        boolean elementaire =
-                deepluckyblock.enchantments.WeaponVisualEffectId.elementMaskOf(stack) != 0;
-        boolean slash = elementaire && random.nextInt(100) < SLASH_VISUAL_DROP_PERCENT;
+        String competence = deepluckyblock.enchantments.WeaponSkill.grantedPath(stack);
+        boolean aUneCompetence = competence != null && !competence.isEmpty();
+        boolean slash = aUneCompetence && random.nextInt(100) < SLASH_VISUAL_DROP_PERCENT;
         CompoundTag tag = deepluckyblock.util.DeepNbt.getOrCreateTag(stack).copy();
         tag.putBoolean(deepluckyblock.util.DeepNbt.SLASH_VISUAL_NBT_KEY, slash);
         deepluckyblock.util.DeepNbt.commit(stack, tag);
