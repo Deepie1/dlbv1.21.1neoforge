@@ -3059,6 +3059,12 @@ public class GenerateLuckyItemProcedure {
         // volontairement de la puissance pour en remettre ailleurs, et un garde-fou de
         // palier qui passerait derriere lui annulerait ce troc.
         rollSkillOnDrop(stack, random);
+        // T425 : UNE competence par objet, controlee ICI, avant la decision de slash. Les
+        // 45 signatures sont de vrais enchantements du pool commun : deux peuvent tomber
+        // sur la meme arme sans qu'aucun tirage de competence n'ait eu lieu. Retirer celle
+        // en trop change l'element porte par l'arme, et c'est l'element qui decide du slash
+        // juste en dessous.
+        deepluckyblock.enchantments.WeaponSkill.enforceSingleSkill(stack);
         // Puis la decision de slash : APRES le tirage de competence, qui peut lui-meme poser
         // un enchantement elementaire et donc rendre l'arme eligible.
         rollSlashVisualOnDrop(stack, random);
@@ -3085,21 +3091,27 @@ public class GenerateLuckyItemProcedure {
      * <p>Un enchantement tombe a zero niveau est retire, jamais laisse a zero : un
      * enchantement de niveau nul s'affiche quand meme dans l'infobulle et ne fait rien.</p>
      *
-     * <p>Reserve aux epees, haches, masses et houes : {@code WeaponSkill.canCastSignature},
-     * la methode que le lanceur lui-meme interroge. Sur un casque, un arc ou une pioche, la
-     * competence serait un pouvoir que rien ne peut declencher.</p>
+     * <p>Reserve aux armes de melee — epee, hache, pioche, pelle, masse et houe — par
+     * {@code WeaponSkill.canCastSignature}, la methode que le lanceur lui-meme interroge.
+     * Sur un casque ou un arc, la competence serait un pouvoir que rien ne peut declencher.</p>
+     *
+     * <p><b>T425 : une seule competence par objet.</b> Un seul tirage, et rien du tout si
+     * l'arme en porte deja une.</p>
      */
     private static void rollSkillOnDrop(ItemStack stack, RandomSource random) {
         if (stack == null || stack.isEmpty()) return;
-        // Epee, hache, masse ou houe : les seules armes qui savent lancer une signature.
-        // Une competence sur une pioche ou un arc serait un pouvoir intriggerable.
+        // Les armes de melee : les seules qui savent lancer une signature. Une competence
+        // sur un casque ou un arc serait un pouvoir intriggerable.
         if (!deepluckyblock.enchantments.WeaponSkill.canCastSignature(stack)) return;
-        // T415-FIX-2 : DEUX tirages INDEPENDANTS a 5 %, et non un seul. Le premier decide
-        // d'une competence ; il n'est relance que s'il a donne, si bien qu'une DEUXIEME
-        // competence vaut 5 % x 5 % = 1 chance sur 400, et jamais davantage. Chaque
-        // competence paie son propre troc : deux competences coutent deux troc.
-        if (random.nextInt(100) >= SKILL_DROP_PERCENT) return;
-        if (!grantOneSkill(stack, random)) return;
+        // T425 : UN SEUL TIRAGE. T415 en faisait deux, si bien qu'une arme sur 400 repartait
+        // avec deux competences — et le jeu n'en sait jouer qu'une : le lanceur ne lit que
+        // la premiere et la recharge est une clef NBT unique, donc lancer l'une mettait
+        // l'autre en recharge.
+        //
+        // Le tirage n'a meme pas lieu si l'arme porte deja une competence : un enchantement
+        // de signature peut lui etre tombe dessus par le pool commun, et ajouter la notre
+        // par-dessus recreerait exactement le cas qu'on supprime.
+        if (!deepluckyblock.enchantments.WeaponSkill.scan(stack).isEmpty()) return;
         if (random.nextInt(100) >= SKILL_DROP_PERCENT) return;
         grantOneSkill(stack, random);
     }

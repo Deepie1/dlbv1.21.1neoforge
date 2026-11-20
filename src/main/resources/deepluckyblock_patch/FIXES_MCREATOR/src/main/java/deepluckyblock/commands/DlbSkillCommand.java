@@ -74,7 +74,10 @@ public final class DlbSkillCommand {
         }
         long now = player.serverLevel().getGameTime();
         boolean peutLancer = WeaponSkill.canCastSignature(held);
-        java.util.List<WeaponSkill.Entry> skills = WeaponSkill.allOn(held);
+        // T425 : la lecture BRUTE, pas la liste deja arbitree — c'est ici qu'on veut voir
+        // une eventuelle competence en trop AVANT que le nettoyage ne la retire.
+        java.util.List<WeaponSkill.Found> lues = WeaponSkill.scan(held);
+        WeaponSkill.Entry gardee = WeaponSkill.retainedOn(held);
         WeaponSkill.Entry premier = WeaponSkill.firstOn(held);
         long pret = WeaponSkill.readyAt(held);
         boolean charge = WeaponSkill.isCharged(held, now);
@@ -91,11 +94,20 @@ public final class DlbSkillCommand {
         StringBuilder sb = new StringBuilder();
         sb.append("\u00a7b[/dlbskill check] \u00a7f").append(held.getHoverName().getString()).append('\n');
         sb.append("\u00a77objet sait lancer une signature : ")
-          .append(peutLancer ? "\u00a7aoui" : "\u00a7cnon \u00a77(il faut une \u00e9p\u00e9e, hache, masse ou houe)").append("\n");
-        sb.append("\u00a77comp\u00e9tences lues : \u00a7f").append(skills.size());
-        for (WeaponSkill.Entry e : skills) {
-            sb.append("\n   \u00a7e").append(SkillNames.ofSkill(e.effect(), e.enchantPath(), true))
-              .append(" \u00a78(").append(e.enchantPath()).append(", ").append(e.cast().name()).append(')');
+          .append(peutLancer ? "\u00a7aoui"
+                  : "\u00a7cnon \u00a77(il faut une \u00e9p\u00e9e, hache, pioche, pelle, masse ou houe)").append("\n");
+        sb.append("\u00a77comp\u00e9tences port\u00e9es : \u00a7f").append(lues.size());
+        if (lues.size() > 1) {
+            sb.append(" \u00a7c(une seule par objet : les autres vont \u00eatre retir\u00e9es)");
+        }
+        for (WeaponSkill.Found f : lues) {
+            boolean retenue = gardee != null && gardee.enchantPath().equals(f.entry().enchantPath());
+            sb.append("\n   ").append(retenue ? "\u00a7a\u25b6 " : "\u00a78\u00d7 ")
+              .append(SkillNames.ofSkill(f.entry().effect(), f.entry().enchantPath(), true))
+              .append(" \u00a78(").append(f.entry().enchantPath())
+              .append(", niveau ").append(f.level())
+              .append(", ").append(f.entry().cast().name()).append(')')
+              .append(retenue ? " \u00a72retenue" : " \u00a7cen trop");
         }
         sb.append("\n\u00a77signature lan\u00e7able au clic droit sur un mob : ")
           .append(premier != null ? "\u00a7aoui" : "\u00a7cnon");

@@ -102,6 +102,17 @@ public final class WeaponSkill {
     /** Index par chemin d'enchantement : sert à l'infobulle et au tirage de butin. */
     private static final Map<String, Entry> BY_PATH = new LinkedHashMap<>(64);
 
+    /**
+     * T425 — rang de declaration de chaque competence, pour departager deux competences
+     * de MEME niveau sans jamais dependre de l'ordre de lecture.
+     *
+     * <p>{@code DeepEnchant.map} renvoie un {@code HashMap} : son ordre depend des adresses
+     * memoire des objets {@code Enchantment} et change d'un lancement du jeu au suivant.
+     * Arbitrer dessus ferait varier la competence retenue d'une partie a l'autre, couleur du
+     * halo comprise. Ce rang-la, lui, ne bouge jamais.</p>
+     */
+    private static final Map<String, Integer> ORDER = new java.util.HashMap<>(64);
+
     private static void put(WeaponVisualEffectId fx, String path, int seconds) {
         Entry e = new Entry(fx, path, seconds, fx.element(), Cast.ON_MOB, ACTIVE_ONLY.contains(path));
         BY_EFFECT.put(fx, e);
@@ -226,6 +237,23 @@ public final class WeaponSkill {
         active("slide", SLIDE_COOLDOWN_TICKS / 20, DeepElement.WIND, Cast.SNEAK_SPRINT);
     }
 
+    static {
+        // T425 — L'ORDRE DE DEPARTAGE, FIGE UNE FOIS LES DEUX TABLES REMPLIES.
+        //
+        // Il est calcule dans un TROISIEME bloc statique, et pas plus haut : un bloc
+        // statique ne voit que ce qui a deja ete initialise au-dessus de lui, et
+        // army_summon ne prend sa forme definitive que dans le bloc precedent (retire des
+        // signatures, reinscrit comme capacite).
+        //
+        // BY_PATH est un LinkedHashMap : les 44 signatures y sont entrees d'abord, les
+        // capacites ensuite. A niveau egal, une signature l'emporte donc sur une capacite
+        // — c'est elle que le halo et le clic droit savent montrer.
+        int rang = 0;
+        for (String chemin : BY_PATH.keySet()) {
+            ORDER.putIfAbsent(chemin, rang++);
+        }
+    }
+
     /**
      * Vrai si cet enchantement doit être retiré de la liste d'enchantements de l'infobulle
      * parce qu'il est entièrement décrit par l'encart SKILL.
@@ -236,60 +264,202 @@ public final class WeaponSkill {
         return e != null && e.ownsEnchant();
     }
 
-    /** Toutes les compétences portées par cet objet, sans doublon, dans l'ordre de pose. */
-    public static List<Entry> allOn(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) return List.of();
-        java.util.LinkedHashMap<String, Entry> found = new java.util.LinkedHashMap<>(4);
-        // 1. les signatures : on passe par la table d'enchantements complète, car une
-        //    même animation est atteignable par plusieurs clés (thorn_maw, briar_cage…).
-        // ... mais seulement si cet objet sait lancer une signature. La resolution de
-        // couches est VISUELLE : un trident avec sincere_loyalty resout vers le meme
-        // effet que la signature "warp". Sans ce test, l'encart annoncerait sur un
-        // trident un clic droit sur un mob qui ne declenche rien, et le joueur
-        // chercherait une touche inexistante.
-        // T415-FIX-1 : on part des ENCHANTEMENTS DU MOD reellement portes, et non de
-        // resolveLayers(). La resolution de couches accepte des alias VANILLA :
-        // minecraft:mending et minecraft:unbreaking resolvent vers CHRONO_ETERNAL_HALO,
-        // minecraft:silk_touch vers une autre couche. Une epee lootee portant Raccommodage
-        // se voyait donc attribuer la competence « chrono_mending » qu'elle ne porte PAS,
-        // en plus de sa vraie competence : c'est l'origine des competences vues par deux.
-        // On garde forEnchantmentLocation pour conserver les alias du MOD (briar_cage,
-        // thorn_maw... pointent vers la meme couche que leur signature canonique).
-        if (canCastSignature(stack)) {
-            for (net.minecraft.world.item.enchantment.Enchantment en
-                    : deepluckyblock.util.DeepEnchant.map(stack).keySet()) {
-                net.minecraft.resources.ResourceLocation loc =
-                        deepluckyblock.util.DeepEnchant.getKeySafe(en);
-                if (loc == null || !"deep_lucky_block".equals(loc.getNamespace())) continue;
-                WeaponVisualEffectId fx = WeaponVisualEffectId.forEnchantmentLocation(loc);
-                if (fx == null) continue;
-                Entry e = BY_EFFECT.get(fx);
-                if (e != null) found.putIfAbsent(e.enchantPath(), e);
+    /**
+     * Une competence LUE sur un objet : l'entree de la table, les enchantements reellement
+     * portes qui y menent, et le plus haut niveau parmi eux.
+     *
+     * <p>Plusieurs enchantements peuvent mener a la meme competence : les alias du mod
+     * designent une seule signature ({@code thorn_maw}, {@code briar_cage}...). Sans les
+     * garder tous, le nettoyage retirerait un alias et la competence reviendrait par
+     * l'autre, a chaque tick.</p>
+     */
+    public record Found(Entry entry, List<net.minecraft.resources.ResourceLocation> carried, int level) {}
+
+    /**
+     * La competence que cet enchantement porte sur CET objet, ou {@code null}. Les deux
+     * lectures du mod sont reunies ici pour qu'elles ne puissent plus diverger :
+     *
+     * <ol>
+     *   <li><b>signature</b> — seulement si l'objet sait en lancer une. On passe par la table
+     *       d'animations pour conserver les alias du MOD, mais on part des enchantements
+     *       REELLEMENT portes : {@code resolveLayers} accepte des alias vanilla
+     *       (Raccommodage vers CHRONO_ETERNAL_HALO) et attribuait des competences que
+     *       l'arme ne porte pas (T415) ;</li>
+     *   <li><b>capacite activee</b> — {@code BY_PATH} avec {@code effect() == null}. Le test
+     *       est indispensable : {@code put()} range AUSSI les 44 chemins de signature dans
+     *       cette table, et sans lui une signature s'affichait sur n'importe quel objet
+     *       (T423).</li>
+     * </ol>
+     */
+    private static Entry resolve(net.minecraft.resources.ResourceLocation loc, boolean melee) {
+        if (loc == null || !"deep_lucky_block".equals(loc.getNamespace())) return null;
+        if (melee) {
+            WeaponVisualEffectId fx = WeaponVisualEffectId.forEnchantmentLocation(loc);
+            if (fx != null) {
+                Entry signature = BY_EFFECT.get(fx);
+                if (signature != null) return signature;
             }
         }
-        // 2. les capacités activées, lues par le MEME chemin que le filtre d'infobulle :
-        //    DeepEnchant.map + getKeySafe. Deux lectures différentes pourraient diverger,
-        //    et un enchantement retiré de la liste sans apparaître dans l'encart serait
-        //    purement et simplement invisible.
-        //
-        // T423-FIX : « capacités activées » SEULEMENT, d'où le test sur effect().
-        // BY_PATH ne contient pas que les huit capacités : put() y range AUSSI les 44
-        // chemins de signature (ligne 108). Sans ce filtre, cette boucle — qui n'est pas
-        // protégée par canCastSignature — rendait une signature visible sur N'IMPORTE QUEL
-        // objet. Une pioche portant sharp_edge annonçait donc « Éclat du Rasoir » dans son
-        // encart COMPÉTENCES, alors que le lanceur et le halo, eux, exigent une arme de
-        // mêlée : aucun glint ne changeait et aucun clic ne déclenchait quoi que ce soit.
-        // Une signature ne peut venir que de l'étape 1 ci-dessus.
-        for (net.minecraft.world.item.enchantment.Enchantment en
-                : deepluckyblock.util.DeepEnchant.map(stack).keySet()) {
+        Entry parChemin = BY_PATH.get(loc.getPath());
+        return (parChemin != null && parChemin.effect() == null) ? parChemin : null;
+    }
+
+    /**
+     * T425 — LECTURE BRUTE : tout ce que cet objet porte comme competence, AVANT la regle
+     * d'unicite.
+     *
+     * <p>Elle peut en rendre plusieurs, et c'est voulu : il faut les voir toutes pour
+     * arbitrer laquelle reste, savoir lesquelles retirer, et les montrer dans
+     * {@code /dlbskill check}. Le jeu, lui, ne lit jamais cette liste : il passe par
+     * {@link #allOn(ItemStack)}, qui n'en rend qu'une.</p>
+     */
+    public static List<Found> scan(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return List.of();
+        boolean melee = canCastSignature(stack);
+        java.util.LinkedHashMap<String, Entry> entrees = new java.util.LinkedHashMap<>(4);
+        java.util.LinkedHashMap<String, java.util.ArrayList<net.minecraft.resources.ResourceLocation>> portes =
+                new java.util.LinkedHashMap<>(4);
+        java.util.LinkedHashMap<String, Integer> niveaux = new java.util.LinkedHashMap<>(4);
+        for (Map.Entry<net.minecraft.world.item.enchantment.Enchantment, Integer> tenu
+                : deepluckyblock.util.DeepEnchant.map(stack).entrySet()) {
             net.minecraft.resources.ResourceLocation loc =
-                    deepluckyblock.util.DeepEnchant.getKeySafe(en);
-            if (loc == null || !"deep_lucky_block".equals(loc.getNamespace())) continue;
-            Entry e = BY_PATH.get(loc.getPath());
-            if (e == null || e.effect() != null) continue;
-            found.putIfAbsent(e.enchantPath(), e);
+                    deepluckyblock.util.DeepEnchant.getKeySafe(tenu.getKey());
+            Entry trouvee = resolve(loc, melee);
+            if (trouvee == null) continue;
+            String cle = trouvee.enchantPath();
+            entrees.putIfAbsent(cle, trouvee);
+            portes.computeIfAbsent(cle, k -> new java.util.ArrayList<>(2)).add(loc);
+            niveaux.merge(cle, tenu.getValue() == null ? 0 : tenu.getValue(), Math::max);
         }
-        return List.copyOf(found.values());
+        java.util.ArrayList<Found> out = new java.util.ArrayList<>(entrees.size());
+        for (Map.Entry<String, Entry> paire : entrees.entrySet()) {
+            out.add(new Found(paire.getValue(), List.copyOf(portes.get(paire.getKey())),
+                    niveaux.getOrDefault(paire.getKey(), 0)));
+        }
+        return List.copyOf(out);
+    }
+
+    /**
+     * T425 — UNE SEULE COMPETENCE PAR OBJET.
+     *
+     * <p><b>Le defaut repare.</b> Un objet pouvait en porter deux : le butin faisait deux
+     * tirages successifs, et surtout les 45 signatures sont de vrais enchantements du pool
+     * commun, donc deux pouvaient tomber ensemble sur la meme arme sans aucun tirage de
+     * competence. Or le lanceur n'en connait qu'une ({@link #firstOn}) et la recharge est
+     * une clef NBT UNIQUE ({@value #READY_AT_KEY}) : lancer l'une mettait l'autre en
+     * recharge. Deux competences annoncees, une seule jouable, la seconde comme annulee.</p>
+     *
+     * <p><b>Laquelle reste.</b> Le plus haut niveau d'enchantement ; a niveau egal, l'ordre
+     * de declaration de la table ({@code ORDER}), ou les signatures passent avant les
+     * capacites. Jamais l'ordre de lecture : il n'est pas stable d'une partie a l'autre.</p>
+     *
+     * <p>La liste renvoyee garde sa forme, pour que l'infobulle, le halo et le lanceur
+     * continuent de lire la meme chose — elle ne contient simplement plus jamais deux
+     * elements.</p>
+     */
+    public static List<Entry> allOn(ItemStack stack) {
+        Entry gardee = retainedOn(stack);
+        return gardee == null ? List.of() : List.of(gardee);
+    }
+
+    /** T425 : la competence retenue par la regle d'unicite, ou {@code null}. */
+    public static Entry retainedOn(ItemStack stack) {
+        Found meilleure = winner(scan(stack));
+        return meilleure == null ? null : meilleure.entry();
+    }
+
+    /** La gagnante : plus haut niveau, puis ordre de declaration. Deterministe. */
+    private static Found winner(List<Found> trouvees) {
+        Found meilleure = null;
+        int meilleurRang = Integer.MAX_VALUE;
+        for (Found f : trouvees) {
+            int rang = ORDER.getOrDefault(f.entry().enchantPath(), Integer.MAX_VALUE);
+            if (meilleure == null || f.level() > meilleure.level()
+                    || (f.level() == meilleure.level() && rang < meilleurRang)) {
+                meilleure = f;
+                meilleurRang = rang;
+            }
+        }
+        return meilleure;
+    }
+
+    /**
+     * T425 : les enchantements de competence EN TROP sur cet objet. Vide quand il n'en porte
+     * qu'une, c'est-a-dire sur tous les objets normaux.
+     */
+    public static List<net.minecraft.resources.ResourceLocation> extraSkillEnchants(ItemStack stack) {
+        List<Found> trouvees = scan(stack);
+        if (trouvees.size() <= 1) return List.of();
+        Found gardee = winner(trouvees);
+        java.util.ArrayList<net.minecraft.resources.ResourceLocation> out = new java.util.ArrayList<>(4);
+        for (Found f : trouvees) {
+            if (f == gardee) continue;
+            out.addAll(f.carried());
+        }
+        return List.copyOf(out);
+    }
+
+    /**
+     * T425 — RETIRE LES COMPETENCES EN TROP. Renvoie vrai quand l'objet a change.
+     *
+     * <p>Destructif et assume : l'enchantement perdant quitte l'objet, bonus passif compris.
+     * Le masquer sans le retirer laisserait sur l'arme un enchantement qui pese dans sa
+     * puissance affichee sans plus rien faire.</p>
+     *
+     * <p><b>Serveur uniquement.</b> Modifier une pile cote client la ferait resynchroniser
+     * au tick suivant sans rien corriger.</p>
+     */
+    public static boolean enforceSingleSkill(ItemStack stack) {
+        List<net.minecraft.resources.ResourceLocation> enTrop = extraSkillEnchants(stack);
+        if (enTrop.isEmpty()) return false;
+        boolean change = false;
+        for (net.minecraft.resources.ResourceLocation id : enTrop) {
+            net.minecraft.world.item.enchantment.Enchantment en =
+                    deepluckyblock.util.DeepEnchant.byId(id.toString());
+            if (en == null) continue;
+            if (deepluckyblock.util.DeepEnchant.getLevel(stack, en) <= 0) continue;
+            deepluckyblock.util.DeepEnchant.remove(stack, en);
+            // On ne declare un changement qu'une fois le retrait CONSTATE. Sans cette
+            // relecture, un retrait qui echouerait (holder introuvable) ferait rediffuser
+            // l'inventaire au client toutes les cinq ticks, indefiniment.
+            if (deepluckyblock.util.DeepEnchant.getLevel(stack, en) <= 0) change = true;
+        }
+        return change;
+    }
+
+    /**
+     * T425 — LES COMPETENCES QU'UN OBJET APPORTERAIT A UN AUTRE, pour l'enclume.
+     *
+     * <p>On lit les enchantements de {@code source} — y compris ceux STOCKES sur un livre —
+     * mais on juge leur eligibilite sur {@code cible} : c'est elle qui decide si une
+     * signature peut s'y lancer. Un livre n'est jamais une arme de melee ; se fier a lui
+     * ferait croire qu'aucune signature n'est apportee.</p>
+     */
+    public static java.util.Set<String> skillPathsOffered(ItemStack source, ItemStack cible) {
+        if (source == null || source.isEmpty()) return java.util.Set.of();
+        boolean melee = canCastSignature(cible);
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>(4);
+        for (net.minecraft.world.item.enchantment.Enchantment en
+                : deepluckyblock.util.DeepEnchant.mapWithStored(source).keySet()) {
+            Entry e = resolve(deepluckyblock.util.DeepEnchant.getKeySafe(en), melee);
+            if (e != null) out.add(e.enchantPath());
+        }
+        return java.util.Set.copyOf(out);
+    }
+
+    /**
+     * T425 — variante liee a un objet de {@code isSkillEnchantment(id)}.
+     *
+     * <p>Une capacite activee quitte la liste d'enchantements de l'infobulle parce que
+     * l'encart COMPETENCES la decrit entierement. Depuis que cet encart n'affiche qu'une
+     * competence, la perdante ne doit plus etre masquee : elle serait invisible des deux
+     * cotes tant que le nettoyage ne l'a pas retiree.</p>
+     */
+    public static boolean isSkillEnchantment(ItemStack stack, net.minecraft.resources.ResourceLocation id) {
+        if (!isSkillEnchantment(id)) return false;
+        if (stack == null || stack.isEmpty()) return true;
+        Entry gardee = retainedOn(stack);
+        return gardee != null && gardee.enchantPath().equals(id.getPath());
     }
 
     /**

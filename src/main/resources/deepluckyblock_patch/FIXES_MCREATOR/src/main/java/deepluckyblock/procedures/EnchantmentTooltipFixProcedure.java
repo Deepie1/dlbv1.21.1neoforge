@@ -410,7 +410,10 @@ public final class EnchantmentTooltipFixProcedure {
                 // STOCKES (mapWithStored), et un livre n'a pas d'encart SKILL puisqu'on
                 // ne lance rien avec. Lui retirer la ligne effacerait l'enchantement de
                 // l'infobulle sans rien mettre a la place.
-                if (!isBook && deepluckyblock.enchantments.WeaponSkill.isSkillEnchantment(id)) continue;
+                // ... et sauf si cette capacite a PERDU la regle d'unicite de T425 : elle
+                // n'est plus dans l'encart COMPETENCES, donc la masquer ici la rendrait
+                // invisible des deux cotes jusqu'a ce que le nettoyage la retire.
+                if (!isBook && deepluckyblock.enchantments.WeaponSkill.isSkillEnchantment(stack, id)) continue;
 
                 Component nameLine;
                 try {

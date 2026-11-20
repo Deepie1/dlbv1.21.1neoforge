@@ -16,7 +16,7 @@ src/main/java/deepluckyblock/client/SystemTooltipWindowRenderer.java:691  ARITE 
 src/main/java/deepluckyblock/client/SystemTooltipWindowRenderer.java:692  ARITE  computeDeterministicSeed(...) recoit 3 argument(s), declare(s) : [4]
 src/main/java/deepluckyblock/enchantments/EquipmentExpansionHandler.java:401  LONG->INT  schedule(..., now+4, ...) : variable long << now >>
 src/main/java/deepluckyblock/enchantments/UniversalEnchantmentHandler.java:5185  ARITE  setTrackedBarrier(...) recoit 9 argument(s), declare(s) : [10]
-src/main/java/deepluckyblock/procedures/GenerateLuckyItemProcedure.java:3396  ARITE  currentPowerScore(...) recoit 2 argument(s), declare(s) : [3]
+src/main/java/deepluckyblock/procedures/GenerateLuckyItemProcedure.java:3408  ARITE  currentPowerScore(...) recoit 2 argument(s), declare(s) : [3]
 src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java:12320  ARITE  applyWaterPlans(...) recoit 2 argument(s), declare(s) : [4]
 src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java:12321  ARITE  applyWaterPlans(...) recoit 2 argument(s), declare(s) : [4]
 src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java:12322  ARITE  applyWaterPlans(...) recoit 2 argument(s), declare(s) : [4]

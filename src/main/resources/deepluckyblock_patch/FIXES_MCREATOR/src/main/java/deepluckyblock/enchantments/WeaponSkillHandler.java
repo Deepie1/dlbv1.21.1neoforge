@@ -117,6 +117,39 @@ public final class WeaponSkillHandler {
     }
 
     // =====================================================================================
+    //  1 bis. L'ENCLUME REFUSE LA SECONDE COMPÉTENCE
+    // =====================================================================================
+
+    /**
+     * T425 — UNE ENCLUME NE PEUT PLUS POSER UNE DEUXIÈME COMPÉTENCE.
+     *
+     * <p>La règle « une compétence par objet » est appliquée à la lecture de toute façon,
+     * mais la tenir aussi À LA SOURCE évite au joueur de dépenser des niveaux pour un
+     * pouvoir que le jeu lui retirerait aussitôt après. L'enclume n'affiche alors aucun
+     * résultat, comme pour n'importe quelle combinaison impossible.</p>
+     *
+     * <p>Elle ne refuse QUE cela. Une réparation, un renommage ou un livre ordinaire passe
+     * comme avant, même sur une arme qui porte déjà une compétence — le sacrifice doit en
+     * apporter une pour que la question se pose. Et reposer le MÊME enchantement de
+     * compétence pour en monter le niveau reste permis : cela fait toujours une seule
+     * compétence à l'arrivée.</p>
+     */
+    @SubscribeEvent
+    public static void onAnvilUpdate(net.neoforged.neoforge.event.AnvilUpdateEvent event) {
+        ItemStack gauche = event.getLeft();
+        ItemStack droite = event.getRight();
+        if (gauche == null || droite == null || gauche.isEmpty() || droite.isEmpty()) return;
+        // Ce que le sacrifice apporterait, jugé sur l'objet de GAUCHE : c'est lui qui décide
+        // si une signature peut s'y lancer, jamais le livre posé à droite.
+        java.util.Set<String> apportees = WeaponSkill.skillPathsOffered(droite, gauche);
+        if (apportees.isEmpty()) return;
+        java.util.HashSet<String> total =
+                new java.util.HashSet<>(WeaponSkill.skillPathsOffered(gauche, gauche));
+        total.addAll(apportees);
+        if (total.size() > 1) event.setCanceled(true);
+    }
+
+    // =====================================================================================
     //  2. LE GLINT COMME JAUGE
     // =====================================================================================
 
@@ -127,7 +160,12 @@ public final class WeaponSkillHandler {
         if (player.tickCount % GLINT_REFRESH_TICKS != 0) return;
         if (!(player.level() instanceof ServerLevel sl)) return;
         long now = sl.getGameTime();
-        boolean changed = refresh(player.getMainHandItem(), now);
+        // T425 : une seule competence par objet, et le nettoyage passe AVANT le halo.
+        // Dans l'autre ordre, le halo prendrait la couleur d'une competence sur le point
+        // d'etre retiree, puis changerait de teinte tout seul au tick suivant.
+        boolean changed = WeaponSkill.enforceSingleSkill(player.getMainHandItem());
+        changed |= WeaponSkill.enforceSingleSkill(player.getOffhandItem());
+        changed |= refresh(player.getMainHandItem(), now);
         changed |= refresh(player.getOffhandItem(), now);
         // T415-FIX-3 (2/2) : sans cette ligne le serveur gardait le nouvel etat pour lui.
         // On ne diffuse QUE sur changement : rediffuser l'inventaire cinq fois par seconde
