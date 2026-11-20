@@ -376,4 +376,5 @@ const MODELS = {
   }
 };
 
-export { MODELS, H };
+window.DLB_MODELS = MODELS;
+window.DLB_H = H;

@@ -1,9 +1,8 @@
-import * as THREE from './lib/three.module.js';
-import { MODELS, H } from './models.js';
 
 const PX = 1.8 / 32; // 1 pixel Minecraft, pour un joueur de 1.8 bloc
 
-export function boot(modelId) {
+function boot(modelId) {
+  const MODELS = window.DLB_MODELS, H = window.DLB_H;
   const def = MODELS[modelId];
   const root = document.getElementById('scene');
 
