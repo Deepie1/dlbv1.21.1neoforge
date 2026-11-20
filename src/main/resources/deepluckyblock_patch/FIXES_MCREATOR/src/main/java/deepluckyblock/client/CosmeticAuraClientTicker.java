@@ -5,6 +5,7 @@ import deepluckyblock.enchantments.EnchantmentComboRegistry;
 import deepluckyblock.enchantments.EnchantmentComboRegistry.ComboMask;
 import deepluckyblock.enchantments.UniversalEnchantmentHandler;
 import deepluckyblock.util.DeepEnchant;
+import deepluckyblock.util.DeepNbt;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
