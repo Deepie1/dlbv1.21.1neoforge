@@ -1311,29 +1311,49 @@ public final class SystemTooltipWindowRenderer {
     }
 
     /**
-     * Titre d'une compétence : le nom de son enchantement, décoré exactement comme dans la
-     * section ENCHANTEMENTS. Une compétence n'a pas de nom à elle — elle est le pouvoir
-     * d'un enchantement — et lui en inventer un obligerait à écrire quarante-cinq textes
-     * de plus pour dire ce que le nom de l'enchantement dit déjà.
+     * Titre d'une compétence : <b>son nom à elle</b>.
+     *
+     * <p>T421 — ce titre reprenait le nom de l'enchantement porteur. Une arme affichait donc
+     * « Blood Transfusion III » dans ses enchantements et « Blood Transfusion III » dans ses
+     * compétences : la même ligne deux fois, sans rien qui distingue l'enchantement du pouvoir.
+     * Même chose pour « Sharp Edge III ». Le raisonnement d'alors — « une compétence n'a pas de
+     * nom à elle » — était faux : chaque animation porte son nom depuis sa création, c'est son
+     * identifiant d'effet. {@link deepluckyblock.enchantments.SkillNames} ne fait que le rendre
+     * lisible, donc plus aucune compétence ne peut se confondre avec son enchantement.</p>
+     *
+     * <p>Le niveau reste affiché quand l'enchantement en a un : c'est lui qui règle la
+     * puissance du pouvoir, et on veut le lire sans survoler deux fois.</p>
      */
     private static Component skillTitle(ItemStack stack, deepluckyblock.enchantments.WeaponSkill.Entry sk,
                                         boolean brightWhite) {
         String path = sk.enchantPath();
+        boolean fr = TranslationFallback.isFrench();
+        String name = deepluckyblock.enchantments.SkillNames.ofSkill(sk.effect(), path, fr);
+        if (name == null || name.isBlank()) {
+            return Component.literal("\u00a7b\u2726 ")
+                    .append(Component.translatable("enchantment.deep_lucky_block." + path));
+        }
+        MutableComponent title = Component.literal(name);
         try {
             Enchantment ench = DeepEnchant.byId("deep_lucky_block:" + path);
             if (ench != null) {
-                ResourceLocation id = DeepEnchant.getKeySafe(ench);
-                if (id != null) {
-                    int lvl = Math.max(1, DeepEnchant.getLevel(stack, ench));
-                    return decorateEnchantBullet(ench,
-                            EnchantmentTooltipFixProcedure.formatEnchantTitle(ench, id, lvl), brightWhite);
-                }
+                int lvl = DeepEnchant.getLevel(stack, ench);
+                if (lvl > 1) title.append(Component.literal(" " + toRoman(lvl)));
+                return decorateEnchantBullet(ench, title, brightWhite);
             }
         } catch (Throwable ignored) {
-            // enchantement introuvable côté client : on retombe sur le nom traduit.
+            // enchantement introuvable côté client : le nom propre suffit, il ne dépend pas de lui.
         }
-        return Component.literal("\u00a7b\u2726 ")
-                .append(Component.translatable("enchantment.deep_lucky_block." + path));
+        return Component.literal("\u00a7b\u2726 ").append(title);
+    }
+
+    /** Chiffre romain court, pour les niveaux d'enchantement (1..10 couvre tout le mod). */
+    private static String toRoman(int lvl) {
+        return switch (Math.max(1, Math.min(10, lvl))) {
+            case 2 -> "II"; case 3 -> "III"; case 4 -> "IV"; case 5 -> "V";
+            case 6 -> "VI"; case 7 -> "VII"; case 8 -> "VIII"; case 9 -> "IX"; case 10 -> "X";
+            default -> "I";
+        };
     }
 
     /** Le geste et la recharge, en gras : les deux informations qu'on vient chercher. */

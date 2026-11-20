@@ -46,6 +46,7 @@ JAVA = [
     'src/main/java/deepluckyblock/client/DeepGlintColor.java',
     'src/main/java/deepluckyblock/client/EnchantAura.java',
     'src/main/java/deepluckyblock/commands/DlbVfxCommand.java',
+    'src/main/java/deepluckyblock/commands/DlbSkillCommand.java',
     'src/main/java/deepluckyblock/enchantments/WeaponVisualEffectId.java',
     'src/main/java/deepluckyblock/enchantments/WeaponVfxMotion.java',
     'src/main/java/deepluckyblock/enchantments/WeaponVfxSubtle.java',
@@ -53,6 +54,7 @@ JAVA = [
     'src/main/java/deepluckyblock/enchantments/GhostBlockMask.java',
     'src/main/java/deepluckyblock/enchantments/PixelFx.java',
     # T410-SKILLS : les quarante-cinq signatures deviennent des competences au clic droit.
+    'src/main/java/deepluckyblock/enchantments/SkillNames.java',
     'src/main/java/deepluckyblock/enchantments/WeaponSkill.java',
     # T417 : porte la clef dlbSlashVisual et sa lecture. Modifie sans etre livre, le
     # serveur chercherait une methode absente.

@@ -170,27 +170,71 @@ public final class WeaponSkillHandler {
         CompoundTag tag = deepluckyblock.util.DeepNbt.getOrCreateTag(stack).copy();
         String force = deepluckyblock.client.EnchantAura.GLINT_FORCE_NBT_KEY;
         String tier = deepluckyblock.client.EnchantAura.GLINT_TIER_NBT_KEY;
+        // T421 : une capacité activée n'a pas d'animation (effect() == null). Sans cette
+        // garde, lire entry.effect().element() lèverait une NullPointerException en plein
+        // tick serveur.
+        if (entry.effect() == null || entry.effect().element() == null) return;
         if (charged) {
             if (!tag.getBoolean(WeaponSkill.GLINT_ON_KEY)) {
                 // -1 = « il n'y avait aucune couleur forcée », à distinguer d'un noir opaque.
                 tag.putInt(WeaponSkill.GLINT_SAVED_KEY,
                         tag.contains(force) ? tag.getInt(force) : -1);
+                // T421 : et le PALIER, qu'on oubliait. Voir WeaponSkill.GLINT_SAVED_TIER_KEY.
+                tag.putInt(WeaponSkill.GLINT_SAVED_TIER_KEY,
+                        tag.contains(tier) ? tag.getInt(tier) : -1);
             }
-            tag.putInt(force, 0xFF000000 | (entry.effect().element().primary & 0xFFFFFF));
+            int savedRgb = tag.getInt(WeaponSkill.GLINT_SAVED_KEY) & 0xFFFFFF;
+            boolean hadColor = tag.getInt(WeaponSkill.GLINT_SAVED_KEY) != -1;
+            tag.putInt(force, 0xFF000000
+                    | readyColor(entry.effect().element().primary & 0xFFFFFF, savedRgb, hadColor));
             tag.putInt(tier, WeaponSkill.CHARGED_GLINT_TIER);
             tag.putBoolean(WeaponSkill.GLINT_ON_KEY, true);
         } else {
             int saved = tag.contains(WeaponSkill.GLINT_SAVED_KEY)
                     ? tag.getInt(WeaponSkill.GLINT_SAVED_KEY) : -1;
-            if (saved == -1) {
-                tag.remove(force);
-                tag.remove(tier);
-            } else {
-                tag.putInt(force, saved);
-            }
+            int savedTier = tag.contains(WeaponSkill.GLINT_SAVED_TIER_KEY)
+                    ? tag.getInt(WeaponSkill.GLINT_SAVED_TIER_KEY) : -1;
+            if (saved == -1) tag.remove(force); else tag.putInt(force, saved);
+            // T421 : le palier revient lui aussi à ce qu'il était, sinon l'arme reste
+            // éclatante en recharge et les deux états deviennent indiscernables.
+            if (savedTier == -1) tag.remove(tier); else tag.putInt(tier, savedTier);
             tag.remove(WeaponSkill.GLINT_SAVED_KEY);
+            tag.remove(WeaponSkill.GLINT_SAVED_TIER_KEY);
             tag.putBoolean(WeaponSkill.GLINT_ON_KEY, false);
         }
         deepluckyblock.util.DeepNbt.commit(stack, tag);
+    }
+
+    /**
+     * T421 — LA COULEUR « PRÊTE » NE PEUT PAS RESSEMBLER À CELLE DU RANG.
+     *
+     * <p>Le palier redescend maintenant pendant la recharge, mais il restait un cas où l'œil
+     * ne voit toujours rien : une arme dont le halo de rang est déjà proche de la couleur de
+     * l'élément. Une épée légendaire rouge portant une compétence BLOOD passait de rouge à
+     * rouge. Quand les deux teintes sont trop voisines, on éclaircit franchement celle de
+     * l'état prêt — elle reste la couleur de l'élément, en plus lumineuse.</p>
+     *
+     * @param elementRgb couleur de l'élément de la compétence
+     * @param savedRgb   couleur de halo que l'arme portait avant
+     * @param hadColor   faux quand l'arme n'avait aucune couleur forcée : rien à éviter
+     */
+    private static int readyColor(int elementRgb, int savedRgb, boolean hadColor) {
+        if (!hadColor) return elementRgb;
+        int dr = ((elementRgb >> 16) & 0xFF) - ((savedRgb >> 16) & 0xFF);
+        int dg = ((elementRgb >> 8) & 0xFF) - ((savedRgb >> 8) & 0xFF);
+        int db = (elementRgb & 0xFF) - (savedRgb & 0xFF);
+        // Distance de Manhattan : largement suffisante pour « ces deux teintes se
+        // confondent », et sans racine carrée dans un tick serveur.
+        if (Math.abs(dr) + Math.abs(dg) + Math.abs(db) >= 150) return elementRgb;
+        return brighten(elementRgb);
+    }
+
+    /** Remonte la teinte vers le blanc de 55 %, en gardant son identité colorée. */
+    private static int brighten(int rgb) {
+        int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+        r = r + (255 - r) * 55 / 100;
+        g = g + (255 - g) * 55 / 100;
+        b = b + (255 - b) * 55 / 100;
+        return (r << 16) | (g << 8) | b;
     }
 }

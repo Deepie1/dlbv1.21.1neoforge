@@ -537,8 +537,13 @@ public final class DlbVfxCommand {
             String enchant = keys.isEmpty() ? "§8—" : "§8" + keys.get(0);
             // T361-MOTIONS-UNIQUES : le mouvement est affiché à côté de chaque effet.
             String motionName = WeaponVfxMotion.labelOf(WeaponVfxMotion.of(fx).shape());
-            String label = String.format(Locale.ROOT, "§f#%02d §b%-20s §7%-10s §d%-8s §8%-24s %s",
-                    fx.id, fx.name(), fx.category.name().toLowerCase(Locale.ROOT),
+            // T421 : le NOM de l'animation, pas seulement sa constante. Les deux accents de
+            // coup critique n'ont pas de compétence et n'apparaissent donc dans aucune
+            // infobulle : cette liste est le seul endroit où leur nom peut se lire.
+            String properName = deepluckyblock.enchantments.SkillNames.of(
+                    fx, deepluckyblock.util.TranslationFallback.isFrench());
+            String label = String.format(Locale.ROOT, "§f#%02d §e%-24s §b%-20s §7%-10s §d%-8s §8%-24s %s",
+                    fx.id, properName, fx.name(), fx.category.name().toLowerCase(Locale.ROOT),
                     fx.element.displayName, motionName, enchant);
             src.sendSuccess(() -> Component.literal("  " + label), false);
         }

@@ -40,6 +40,17 @@ public final class WeaponSkill {
     public static final String GLINT_SAVED_KEY = "dlbSkillGlintSaved";
     /** Drapeau d’état du glint : 1 = glint de skill chargé posé, 0/absent = glint normal. */
     public static final String GLINT_ON_KEY = "dlbSkillGlintOn";
+    /**
+     * T421 : mémoire du <b>palier</b> d'origine, symétrique de {@link #GLINT_SAVED_KEY}.
+     *
+     * <p>Son absence était la vraie cause du « le halo ne change pas ». La pose sauvegardait
+     * la couleur mais pas le palier ; le retrait restaurait donc la couleur et laissait le
+     * palier à {@link #CHARGED_GLINT_TIER}. Dès la première compétence lancée, l'arme restait
+     * au palier 13 <b>dans les deux états</b> : il ne subsistait qu'un écart de teinte, et sur
+     * une arme dont le rang est déjà rouge, une compétence BLOOD prête ne se voyait plus du
+     * tout. {@code -1} signifie « aucun palier forcé », à distinguer du palier 0.</p>
+     */
+    public static final String GLINT_SAVED_TIER_KEY = "dlbSkillGlintSavedTier";
     /** Palier de glint imposé quand le skill est chargé (échelle 1..20 de {@code /glint}). */
     public static final int CHARGED_GLINT_TIER = 13;
 
