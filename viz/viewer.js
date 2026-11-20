@@ -1,5 +1,5 @@
 // =============================================================================
-//  Visualiseur unique : liste a gauche, apercu a droite.
+//  Visualiseur unique : selection A GAUCHE, apercu A DROITE.
 //  Scripts classiques (pas de modules ES) : la page s'ouvre aussi en file://,
 //  par simple double-clic, sans serveur.
 // =============================================================================
@@ -59,7 +59,7 @@ const PX = 1.8 / 32;          // 1 pixel Minecraft pour un joueur de 1.8 bloc
   scene.add(zone);
 
   // ---- cubes de l'ornement -------------------------------------------------
-  const POOL = 520;
+  const POOL = 900;   // l'aile de l'Archange culmine a 578 cubes
   const geo = new THREE.BoxGeometry(1, 1, 1);
   const cubes = [];
   for (let i = 0; i < POOL; i++) {
@@ -119,6 +119,10 @@ const PX = 1.8 / 32;          // 1 pixel Minecraft pour un joueur de 1.8 bloc
     for (const el of document.querySelectorAll('#liste a'))
       el.classList.toggle('actif', el.dataset.id === id);
     cadrer(id);
+    // Une aile ne se juge pas de face : on se place d'office derriere le dos.
+    if (id === 'archange_101' || id === 'winged_endurance' || id === 'wing_ribbons') {
+      lacet = Math.PI; tangage = 0.14;
+    }
     try { history.replaceState(null, '', '#' + id); } catch (e) { /* file:// */ }
   }
   window.choisir = choisir;
@@ -137,8 +141,11 @@ const PX = 1.8 / 32;          // 1 pixel Minecraft pour un joueur de 1.8 bloc
   };
   document.getElementById('zone').onclick = e => {
     zone.visible = !zone.visible;
+    e.target.classList.toggle('on', zone.visible);
     e.target.textContent = zone.visible ? 'Masquer la zone du regard' : 'Zone du regard';
   };
+  document.getElementById('vdos').onclick = () => { lacet = Math.PI; tangage = 0.12; };
+  document.getElementById('vdessus').onclick = () => { lacet = 0.0; tangage = 1.32; };
 
   // ---- boucle --------------------------------------------------------------
   function redim() {
