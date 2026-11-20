@@ -293,14 +293,28 @@ public final class WeaponSkill {
     }
 
     /**
-     * Armes sur lesquelles une signature peut reellement se lancer. Le lanceur
-     * ({@code WeaponSkillHandler}) et le tirage de butin lisent cette MEME methode : poser
-     * une competence sur une pioche produirait un pouvoir que rien ne peut declencher.
+     * Armes de melee sur lesquelles une signature peut se lancer. Le lanceur
+     * ({@code WeaponSkillHandler}), le halo de disponibilite et le tirage de butin lisent
+     * cette MEME methode : une seule definition, donc jamais de competence annoncee quelque
+     * part et injouable ailleurs.
+     *
+     * <p><b>T424 — la pioche et la pelle en font partie.</b> Elles en etaient exclues, et
+     * c'etait faux : dans ce mod, epee, hache, pioche, pelle, masse et houe sont toutes des
+     * armes de melee. L'exclusion se voyait en jeu — une pioche portant {@code sharp_edge}
+     * affichait « Eclat du Rasoir » sans halo ni clic qui fonctionne. Cette liste rejoint
+     * donc {@link WeaponVisualEffectId#isWeaponItem}, qui acceptait deja pioche et pelle via
+     * {@code TieredItem} : les deux definitions ne se contredisent plus.</p>
+     *
+     * <p>Le trident, l'arc et l'arbalete restent dehors : leur clic droit a deja un role
+     * (lancer, bander) que la competence n'a pas a confisquer. Sur une pioche, une pelle ou
+     * une houe, le clic droit <b>sur un mob</b> ne fait rien en vanilla — rien n'est perdu.</p>
      */
     public static boolean canCastSignature(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
         return stack.getItem() instanceof net.minecraft.world.item.SwordItem
                 || stack.getItem() instanceof net.minecraft.world.item.AxeItem
+                || stack.getItem() instanceof net.minecraft.world.item.PickaxeItem
+                || stack.getItem() instanceof net.minecraft.world.item.ShovelItem
                 || stack.getItem() instanceof net.minecraft.world.item.MaceItem
                 || stack.getItem() instanceof net.minecraft.world.item.HoeItem;
     }
