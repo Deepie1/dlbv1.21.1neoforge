@@ -254,9 +254,18 @@ public final class WeaponVfxServerListener {
     /** T417 : le coup qui porte le slash frappe 10 % plus fort. */
     private static final float SLASH_DAMAGE_BONUS = 1.10f;
     private static final float MELEE_SLASH_DAMAGE_MULTIPLIER = 1.05f;
+    /**
+     * T426 : échelle d'une grande animation sur un mob de référence (joueur, zombie — mesure 1,0).
+     * C'est exactement ce que donnait l'ancienne formule additive au même endroit : la cible
+     * courante ne change pas de taille, seuls les très petits et les très gros sont corrigés.
+     */
+    private static final float BIG_VISUAL_REFERENCE_SCALE = 1.75f;
+    /** < 1 : l'animation grandit avec le mob, mais un peu moins vite que lui. */
+    private static final double BIG_VISUAL_SIZE_EXPONENT = 0.70;
     /** Toute grande forme reste réellement agrandie, même sur une très petite cible. */
-    private static final float BIG_VISUAL_BASE_SCALE = 1.20f;
-    private static final float BIG_VISUAL_MEASURED_FACTOR = 0.55f;
+    private static final float BIG_VISUAL_MIN_SCALE = 0.85f;
+    /** Et reste dans le champ de la caméra, même sur un colosse. */
+    private static final float BIG_VISUAL_MAX_SCALE = 4.00f;
     /**
      * T352-ELEMENT-COMBO : sur une arme portant PLUSIEURS éléments, 6 % de chance de jouer en
      * simultané une grosse animation de CHAQUE famille présente (une couleur par élément).
@@ -482,9 +491,32 @@ public final class WeaponVfxServerListener {
         return 5 + Math.round(net.minecraft.util.Mth.clamp(rank, 0.0f, 1.0f) * 10.0f);
     }
 
-    /** Échelle visuelle monotone 1.365..3.40 : toujours une GRANDE animation, jamais une miniature. */
+    /**
+     * T426-ECHELLE : l'animation suit la TAILLE DU MOB, pas une constante plus un soupçon de mob.
+     *
+     * <p>L'ancienne forme était additive — {@code 1.20 + 0.55 × mesure} — et c'est précisément
+     * ce qui donnait des animations mal dimensionnées. Additionner une constante écrase le
+     * rapport entre l'animation et sa cible :</p>
+     * <pre>
+     *   poulet  (mesure 0,42) -> 1,43  soit 3,4 fois le mob   (il disparaît dessous)
+     *   zombie  (mesure 1,00) -> 1,75  soit 1,8 fois le mob
+     *   ravager (mesure 3,59) -> 3,18  soit 0,9 fois le mob   (l'animation est plus petite que lui)
+     * </pre>
+     * <p>Un écart de 1 à 4 sur ce rapport : la même signature engloutit une poule et se perd
+     * sur un ravager. La forme est donc MULTIPLICATIVE, avec un plancher qui garde une grande
+     * forme lisible sur les toutes petites cibles. L'exposant 0,70 laisse l'animation grandir
+     * un peu moins vite que le mob, sinon un colosse en recevrait une de douze blocs.</p>
+     * <pre>
+     *   poulet  -> 0,95  (2,3 fois le mob)      zombie -> 1,75  (inchangé, la référence)
+     *   ravager -> 4,00  (1,1 fois le mob)      plage  0,85..4,00
+     * </pre>
+     * <p>La valeur du mob de référence ne bouge pas d'un pouce : {@code 1,75} hier, {@code 1,75}
+     * aujourd'hui. Seuls les deux bouts de l'échelle sont corrigés.</p>
+     */
     private static float bigMeleeVisualScale(float measuredScale) {
-        return BIG_VISUAL_BASE_SCALE + BIG_VISUAL_MEASURED_FACTOR * measuredScale;
+        float safe = Math.max(0.05f, measuredScale);
+        float scaled = BIG_VISUAL_REFERENCE_SCALE * (float) Math.pow(safe, BIG_VISUAL_SIZE_EXPONENT);
+        return net.minecraft.util.Mth.clamp(scaled, BIG_VISUAL_MIN_SCALE, BIG_VISUAL_MAX_SCALE);
     }
 
     /** Échelle exacte d'une grosse frappe de mêlée sur cette cible, pour {@code /dummytest}. */
@@ -10440,16 +10472,46 @@ public final class WeaponVfxServerListener {
                     ax, (float) attacker.getEyeY() - 0.12f, az, tx, ty, tz, palette, lightVisualScaleOf(fx, target, bigScale));
             applyLightGameplay(attacker, target, fx, capturedWeaponDamage, bigScale);
         } else {
-            broadcastNear(sl, tx, ty, tz, fx.id, KIND_IMPACT, level,
-                    tx, ty, tz, ax, ay, az, palette, lightVisualScaleOf(fx, target, bigScale));
+            // T426-OFFSET-FAILLE : la Faille est la seule signature qui ne se joue pas SUR le
+            // mob — elle s'ouvre derriere lui et souffle a travers. notifyMeleeCrit reculait
+            // deja son point de reference avant diffusion ; le lancement au clic droit, lui,
+            // la posait sur le corps, si bien que l'image et le cone de degats partaient de
+            // deux endroits differents. Meme recul, meme ancrage, meme resultat.
+            float fxX = tx;
+            float fxZ = tz;
+            if (fx == WeaponVisualEffectId.WITHER_SHADOW_RIFT) {
+                double[] dir = towardWielder(attacker, tx, tz);
+                double[] anchor = riftAnchor(sl, tx, ty, tz, dir[0], dir[1], attacker.getId());
+                fxX = (float) anchor[0];
+                fxZ = (float) anchor[1];
+            }
+            broadcastNear(sl, fxX, ty, fxZ, fx.id, KIND_IMPACT, level,
+                    fxX, ty, fxZ, ax, ay, az, palette, lightVisualScaleOf(fx, target, bigScale));
+            // T426-GAMEPLAY-COMPLET : CETTE LISTE EST LE GAMEPLAY DE LA SIGNATURE, PAS UN EXTRAIT.
+            //
+            // Elle n'en comptait que huit. Les quatre familles absentes — Eau, Foudre, Ombre,
+            // Chaos — rassemblent QUATORZE des quarante-cinq signatures : les cinq du Chaos
+            // (dont Sandpile Critical), les trois de l'Ombre, les trois de la Foudre et les
+            // trois de l'Eau. Lancees au clic droit, ces quatorze jouaient leur animation
+            // entiere puis ne faisaient... rien. Le coup d'entree partait bien, l'effet de la
+            // signature jamais : pas d'avalanche, pas de chaine d'eclairs, pas de gel.
+            //
+            // L'ordre et les arguments sont ceux de handleAnimMelee, le seul chemin qui
+            // appelait deja les douze : deux listes identiques ne peuvent plus diverger en
+            // silence. Les familles s'excluent par leur propre test sur fx, donc une signature
+            // n'est traitee qu'une fois, meme en parcourant les douze.
             applyWoodGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyEarthGameplay(attacker, target, fx, capturedWeaponDamage);
             applyMetalGameplay(attacker, target, fx, capturedWeaponDamage);
             applyLightGameplay(attacker, target, fx, capturedWeaponDamage, bigScale);
             applyFireGameplay(attacker, target, fx, bigScale, capturedWeaponDamage);
             applyPoisonGameplay(attacker, target, fx);
+            applyWaterGameplay(attacker, target, fx, capturedWeaponDamage);
+            applyThunderGameplay(attacker, target, fx, capturedWeaponDamage);
+            applyShadowGameplay(attacker, target, fx, capturedWeaponDamage);
             applyBloodGameplay(attacker, target, fx, capturedWeaponDamage);
             applyVoidGameplay(attacker, target, fx, capturedWeaponDamage);
+            applyChaosGameplay(attacker, target, fx, capturedWeaponDamage);
         }
         return true;
     }

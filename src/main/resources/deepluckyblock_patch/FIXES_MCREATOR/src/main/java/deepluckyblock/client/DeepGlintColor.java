@@ -675,6 +675,17 @@ public final class DeepGlintColor {
      */
     public static boolean isVoidStack(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
+        // T426-VOID-GLINT : UNE COMPETENCE DU VIDE PRETE A PARTIR EST DU VIDE.
+        //
+        // Le mode 3 — le seul halo NOIR du mod — n'etait atteint que par le nom de
+        // l'enchantement (« void », « ender », « warp »...). Or la competence du Vide
+        // s'appelle chain_collapse : aucun de ces mots. Son halo charge retombait donc sur un
+        // degrade ordinaire, teinte par la couleur d'element du Vide (0x444444), c'est-a-dire
+        // un GRIS — d'ou « pourquoi le glint du skill charge type void n'est pas noir ».
+        // On interroge ici l'element declare de la competence, pas l'orthographe de son
+        // enchantement, et seulement quand le halo de charge est reellement pose
+        // (GLINT_ON_KEY) : une arme du Vide en recharge garde son halo habituel.
+        if (isChargedSkillOfElement(stack, deepluckyblock.enchantments.DeepElement.VOID)) return true;
         try {
             var tag = deepluckyblock.util.DeepNbt.tag(stack);
             if (tag != null && deepluckyblock.util.AnimFamily.VOID.equals(
@@ -706,6 +717,32 @@ public final class DeepGlintColor {
             if (baseColor(s) == DRAGON) return true;
         }
         return false;
+    }
+
+    /**
+     * T426 : vrai si la pile porte une competence de cet element ET que son halo de charge
+     * est actuellement pose.
+     *
+     * <p>Le drapeau NBT {@code dlbSkillGlintOn} est ecrit par le serveur en meme temps que la
+     * couleur forcee : le client n'a donc ni horloge a comparer ni paquet a attendre, et les
+     * deux cotes basculent sur la meme information. Une competence en recharge renvoie faux.</p>
+     */
+    private static boolean isChargedSkillOfElement(ItemStack stack,
+                                                   deepluckyblock.enchantments.DeepElement element) {
+        if (element == null) return false;
+        try {
+            var tag = deepluckyblock.util.DeepNbt.tag(stack);
+            if (tag == null
+                    || !tag.getBoolean(deepluckyblock.enchantments.WeaponSkill.GLINT_ON_KEY)) {
+                return false;
+            }
+            deepluckyblock.enchantments.WeaponSkill.Entry entry =
+                    deepluckyblock.enchantments.WeaponSkill.retainedOn(stack);
+            return entry != null && entry.element() == element;
+        } catch (Throwable ignored) {
+            // Une pile sans NBT lisible n'a pas de competence chargee.
+            return false;
+        }
     }
 
     public static boolean isShadowStack(ItemStack stack) {
