@@ -59,7 +59,7 @@ const PX = 1.8 / 32;          // 1 pixel Minecraft pour un joueur de 1.8 bloc
   scene.add(zone);
 
   // ---- cubes de l'ornement -------------------------------------------------
-  const POOL = 900;   // l'aile de l'Archange culmine a 578 cubes
+  const POOL = 1500;   // l'aile de l'Archange culmine a 1276 cubes (T435)
   const geo = new THREE.BoxGeometry(1, 1, 1);
   const cubes = [];
   for (let i = 0; i < POOL; i++) {

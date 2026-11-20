@@ -44,8 +44,18 @@ public final class CosmeticPixelAura {
 
     private CosmeticPixelAura() {}
 
-    /** Budget total de cubes par frame (tous joueurs confondus). */
-    private static final int MAX_CUBES_PER_FRAME = 1400;
+    /**
+     * Budget total de cubes par frame (tous joueurs confondus).
+     *
+     * <p>T435 : 1400 → 3400. L'ancien plafond datait d'ornements pauvres en
+     * détail (une aile = cinq quads). Les formes mesurées sur l'aperçu donnent,
+     * pour un joueur portant TOUT ce qui est cumulable (couronne d'épées 396
+     * + aile emplumée 1358 + esprit mystique + égide + sceau de guerre + peste
+     * + ronces = 1453), un pire cas réel de 3207 cubes. On garde 6 % de marge :
+     * un plafond collé au pire cas mesuré n'est plus un garde-fou, il casse au
+     * premier cube ajouté. Il coupe net au-delà, il ne cible rien.</p>
+     */
+    private static final int MAX_CUBES_PER_FRAME = 3400;
     /** Distance maximale de rendu d'une aura cosmétique. */
     private static final double MAX_DIST_SQR = 40.0 * 40.0;
 

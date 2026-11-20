@@ -246,6 +246,41 @@ function boucleEgale(g, pas, echantillons) {
 }
 
 // =============================================================================
+//  LA TRAINEE
+//
+//  Le joueur AVANCE vers +Z. Un effet de sol qui reste colle a ses pieds se
+//  lit comme un autocollant : rien ne dit qu'il se deplace. Chaque ornement
+//  de sol depose donc derriere lui (z < 0) des empreintes espacees qui
+//  s'effacent et s'enfoncent avec la distance. C'est la trainee qui donne le
+//  mouvement.
+// =============================================================================
+
+const PAS_TRAINEE = 0.52;          // espacement des empreintes, en blocs
+
+/**
+ * Renvoie la liste des empreintes a dessiner : { z, k, age }.
+ *   z   = recul derriere le joueur
+ *   k   = facteur d'echelle (l'empreinte se resserre en s'eloignant)
+ *   age = 0 (fraiche) a 1 (sur le point de disparaitre)
+ * Le decalage `glisse` fait defiler les empreintes vers l'arriere, ce qui
+ * donne l'impression que le joueur avance au lieu de pietiner.
+ */
+function empreintes(t, nb, vitesse, pas) {
+  const ecart = (pas === undefined) ? PAS_TRAINEE : pas;
+  const glisse = ((t * (vitesse === undefined ? 0.45 : vitesse)) % 1);
+  const sortie = [];
+  for (let i = 0; i < nb; i++) {
+    const d = (i + glisse) / nb;             // 0 = au pied, 1 = evanouie
+    sortie.push({
+      z: -ecart * (i + glisse) - 0.30,
+      k: 1 - d * 0.55,
+      age: d
+    });
+  }
+  return sortie;
+}
+
+// =============================================================================
 //  LES 12 ORNEMENTS PERMANENTS
 // =============================================================================
 
@@ -256,27 +291,54 @@ const MODELS = {
     titre: "Halo générique continu",
     famille: "permanent",
     accorde: "Arme à aura : trident enchanté en main, ou marque dlbWeaponAura (15 % en mêlée, 40 % à distance). Exclusif : ne sort que si aucun combo cosmétique n'est actif (CosmeticPixelAura l.232, flags == 0).",
-    note: "Une PLAQUE annulaire, pas un fil de fer. Trois rangées jointives entre 0,238 et 0,300 de rayon : vu d'en haut c'est un disque percé plein, vu de profil une ligne de 2 cm. C'est ça, un halo. La v2 posait un seul collier de cubes sur un cercle, et la v1 en empilait trois dont un AU SOL, à 1,9 bloc de la tête.",
+    note: "Plaque annulaire de quatre rangées jointives, 0,236 à 0,330 de rayon. Trente-six cannelures gravées en font le tour, vingt dents courtes hérissent le bord extérieur (une sur trois est longue), une comète à traînée parcourt l'anneau et trois lucioles l'escortent. Épais de 2,2 cm : invisible de profil, net de dessus. C'est le détail qui manquait à la version précédente, pas l'épaisseur.",
     build(t) {
       const o = [];
-      const y = 2.005 + Math.sin(t * 1.1) * 0.012;
-      const rInt = 0.238, rExt = 0.300, w = 0.046;
-      const chaud = (t * 0.15) % 1;           // le point chaud fait lentement le tour
-      nappe(o, TAU * rExt, rExt - rInt, w,
+      const y = 2.010 + Math.sin(t * 1.1) * 0.012;
+      const rI = 0.236, rE = 0.330, w = 0.046;
+      const ph = t * 0.20;
+      const comete = (t * 0.17) % 1;
+
+      // 1. la plaque, du bord interieur au bord exterieur
+      nappe(o, TAU * rE, rE - rI, w,
         (u, v) => {
-          const a = TAU * u, r = rInt + (rExt - rInt) * v;
+          const a = ph + TAU * u, r = rI + (rE - rI) * v;
           return [Math.cos(a) * r, y, Math.sin(a) * r];
         },
         (u, v) => {
-          let d = Math.abs(u - chaud); if (d > 0.5) d = 1 - d;
-          const g = Math.max(0, 1 - d * 4.2);
-          const bord = Math.abs(v - 0.5) * 2;           // 0 au milieu, 1 aux bords
+          let d = Math.abs(u - comete); if (d > 0.5) d = 1 - d;
+          const tete = Math.max(0, 1 - d * 12);
+          let q = comete - u; if (q < 0) q += 1;
+          const queue = Math.max(0, 1 - q * 6) * 0.70;
+          const g = Math.max(tete, queue);
+          const cannelure = 0.5 + 0.5 * Math.cos(TAU * u * 36);
+          const bord = Math.abs(v - 0.5) * 2;
+          const or = mixRgb(0xD99A14, 0xFFF3C8, 0.20 + cannelure * 0.40 + (1 - bord) * 0.34);
           return {
-            rgb: mixRgb(mixRgb(0xFFC63D, 0xFFF8DC, 1 - bord * 0.8), 0xFFFFFF, g * 0.7),
-            a: (206 + g * 49) * (1 - bord * 0.40),
-            hy: 0.010
+            rgb: mixRgb(or, 0xFFFFFF, g * 0.88),
+            a: (188 + cannelure * 34 + g * 56) * (1 - bord * 0.26),
+            hy: 0.011
           };
         }, true);
+
+      // 2. denture exterieure : une dent sur trois est longue
+      const nd = 20;
+      for (let i = 0; i < nd; i++) {
+        const a = ph + TAU * i / nd;
+        const lg = (i % 3 === 0) ? 0.056 : 0.030;
+        const ca = Math.cos(a), sa = Math.sin(a);
+        trait(o, [ca * (rE - 0.012), y, sa * (rE - 0.012)],
+                 [ca * (rE + lg), y, sa * (rE + lg)], 0.032,
+          (u) => ({ rgb: mixRgb(0xFFD764, 0xFFFFFF, u), a: 228 - u * 130, hy: 0.009 }));
+      }
+
+      // 3. trois lucioles en escorte, chacune une bille pleine
+      for (let i = 0; i < 3; i++) {
+        const a = -ph * 1.7 + TAU * i / 3;
+        const r = rE + 0.085 + Math.sin(t * 1.9 + i * 2.1) * 0.022;
+        bille(o, Math.cos(a) * r, y + 0.034 + Math.sin(t * 2.4 + i) * 0.018, Math.sin(a) * r,
+          0.016, 0xFFF3C8, 215, 0xFFC63D);
+      }
       return o;
     }
   },
@@ -286,30 +348,51 @@ const MODELS = {
     titre: "#110 Avatar Suprême du Deep Lucky",
     famille: "permanent",
     accorde: "Combo #110 — le plus haut du registre. Exclusif face à #097/#098 et à Roi (chaîne else if, CosmeticPixelAura l.242-254).",
-    note: "Un soleil : disque annulaire serré au centre, et douze rayons TRIANGULAIRES qui en jaillissent, longs et courts en alternance, chacun pointant jusqu'à un seul cube. Aucun rapport avec la plaque lisse du halo générique : ici la silhouette est dentelée.",
+    note: "Un soleil à deux couronnes : douze grands rayons triangulaires qui battent, douze petits dards intercalés qui battent en opposition, un disque annulaire gravé au centre et quatre protubérances qui tournent dans l'autre sens. Chaque rayon finit sur un seul cube.",
     build(t) {
       const o = [];
-      const ph = t * 0.26, y = 2.030;
-      const rInt = 0.158, rExt = 0.206;
-      nappe(o, TAU * rExt, rExt - rInt, 0.050,
+      const ph = t * 0.24, y = 2.034;
+      const rI = 0.148, rE = 0.212;
+
+      nappe(o, TAU * rE, rE - rI, 0.046,
         (u, v) => {
-          const a = ph + TAU * u, r = rInt + (rExt - rInt) * v;
+          const a = ph + TAU * u, r = rI + (rE - rI) * v;
           return [Math.cos(a) * r, y, Math.sin(a) * r];
         },
-        (u, v) => ({ rgb: mixRgb(0xFFA800, 0xFFF4C4, v), a: 252 - v * 22, hy: 0.011 }), true);
+        (u, v) => {
+          const grain = 0.5 + 0.5 * Math.cos(TAU * u * 24);
+          return { rgb: mixRgb(0xE08A00, 0xFFF4C4, v * 0.7 + grain * 0.3),
+                   a: 252 - v * 18, hy: 0.011 };
+        }, true);
+
       for (let i = 0; i < 12; i++) {
         const a = ph + TAU * i / 12;
-        const bat = 1 + Math.sin(t * 2.0 + i * 0.9) * 0.10;
-        const lng = (i % 2 ? 0.082 : 0.164) * bat;
-        const base = 0.058;
+        const bat = 1 + Math.sin(t * 2.0 + i * 0.9) * 0.14;
+        const lng = 0.178 * bat;
+        const ca = Math.cos(a), sa = Math.sin(a);
         bande(o, 0.042,
-          (u) => {
-            const r = rExt - 0.016 + lng * u;
-            return [Math.cos(a) * r, y + u * 0.024, Math.sin(a) * r];
-          },
-          (u) => base * (1 - u) * (1 - u * 0.35),       // triangle : finit sur un cube
-          () => [-Math.sin(a), 0, Math.cos(a)],
-          (u) => ({ rgb: mixRgb(0xFFD54A, 0xFFFFFF, u), a: 248 - u * 130, hy: 0.011 }));
+          (u) => [ca * (rE - 0.016 + lng * u), y + u * 0.026, sa * (rE - 0.016 + lng * u)],
+          (u) => 0.062 * (1 - u) * (1 - u * 0.30),
+          () => [-sa, 0, ca],
+          (u, v) => ({ rgb: mixRgb(0xFFC21E, 0xFFFFFF, u + (1 - Math.abs(v) * 2) * 0.25),
+                       a: 250 - u * 135, hy: 0.011 }));
+        // dard court intercale, en opposition de phase
+        const b = a + Math.PI / 12;
+        const cb = Math.cos(b), sb = Math.sin(b);
+        const lc = 0.082 * (1 - Math.sin(t * 2.0 + i * 0.9) * 0.14);
+        bande(o, 0.038,
+          (u) => [cb * (rE - 0.012 + lc * u), y - u * 0.012, sb * (rE - 0.012 + lc * u)],
+          (u) => 0.040 * (1 - u),
+          () => [-sb, 0, cb],
+          (u) => ({ rgb: mixRgb(0xFF9A00, 0xFFE9A0, u), a: 228 - u * 120, hy: 0.010 }));
+      }
+
+      // protuberances : quatre bouffees qui tournent a contresens
+      for (let i = 0; i < 4; i++) {
+        const a = -ph * 1.6 + TAU * i / 4;
+        const r = rE + 0.075 + Math.sin(t * 2.6 + i * 1.6) * 0.030;
+        bille(o, Math.cos(a) * r, y + 0.030, Math.sin(a) * r,
+          0.018, 0xFFE9A0, 225, 0xFF8A00);
       }
       return o;
     }
@@ -358,33 +441,56 @@ const MODELS = {
     titre: "#098 Dieu de la Lame Suprême",
     famille: "permanent",
     accorde: "Combo #098. Ne partage plus rien avec #097 : ce sont deux récompenses différentes, elles doivent se distinguer à l'œil nu.",
-    note: "Six ÉPÉES dressées en cercle autour du crâne, pointe en l'air : lame qui s'affine jusqu'à un cube, garde en croix, poignée et pommeau. Elles flottent avec un léger déphasage. On lit « Dieu de la Lame » en une seconde — ce qu'un anneau doré ne dira jamais.",
+    note: "Six ÉPÉES dressées en cercle, pointe en l'air, et chacune est une vraie épée : lame à gouttière centrale claire et tranchants sombres, pointe en losange, quillons recourbés terminés par une boule, fusée tressée en quatre segments, pommeau rond serti. Elles flottent avec un déphasage. Un anneau doré ne dira jamais « Dieu de la Lame ».",
     build(t) {
       const o = [];
       const ph = -t * 0.28, r = 0.268;
+      const ACIER = 0xFFBE28, VIF = 0xFFFFFF, SOMBRE = 0xB07A10, CUIR = 0x8A4A08;
       for (let i = 0; i < 6; i++) {
         const a = ph + TAU * i / 6;
         const ca = Math.cos(a), sa = Math.sin(a);
+        const tx = -sa, tz = ca;                   // travers de la lame
         const flot = Math.sin(t * 1.6 + i * 1.047) * 0.020;
-        const yg = 1.932 + flot;                   // hauteur de la garde
-        const Lb = 0.232, pencher = 0.055;         // la pointe s'ecarte un peu
-        // lame
-        bande(o, 0.038,
-          (u) => [ca * (r + pencher * u), yg + 0.030 + Lb * u, sa * (r + pencher * u)],
-          (u) => 0.056 * (1 - u * u * 0.90),
-          () => [-sa, 0, ca],
-          (u, v) => ({
-            rgb: mixRgb(0xFFBE28, 0xFFFFFF, 1 - Math.min(1, Math.abs(v) * 1.9)),
-            a: 250 - u * 62
-          }));
-        // garde en croix
-        trait(o, [ca * r - sa * 0.072, yg, sa * r + ca * 0.072],
-                 [ca * r + sa * 0.072, yg, sa * r - ca * 0.072], 0.034,
-          (u) => ({ rgb: mixRgb(0xFFE9A0, 0xFFB400, Math.abs(u - 0.5) * 2), a: 242 }));
-        // poignee + pommeau
-        trait(o, [ca * r, yg - 0.072, sa * r], [ca * r, yg, sa * r], 0.030,
-          (u) => ({ rgb: mixRgb(0xA85F0C, 0xFFD98A, u), a: 234,
-                    hx: u < 0.18 ? 0.021 : 0.015, hy: 0.015, hz: u < 0.18 ? 0.021 : 0.015 }));
+        const yg = 1.972 + flot;
+        const Lb = 0.268, pencher = 0.135;
+
+        // --- lame : gouttiere claire au centre, tranchants sombres -------
+        bande(o, 0.036,
+          (u) => [ca * (r + pencher * u), yg + 0.034 + Lb * u, sa * (r + pencher * u)],
+          (u) => 0.060 * (u > 0.82 ? (1 - u) / 0.18 : 1 - u * u * 0.30),
+          () => [tx, 0, tz],
+          (u, v) => {
+            const d = Math.min(1, Math.abs(v) * 2);
+            const gouttiere = Math.pow(1 - d, 2.4);
+            return {
+              rgb: mixRgb(mixRgb(SOMBRE, ACIER, 0.35 + (1 - d) * 0.45), VIF,
+                          gouttiere * 0.70 + (d > 0.86 ? 0.45 : 0)),
+              a: 252 - u * 26
+            };
+          });
+
+        // --- quillons recourbes, boule au bout ---------------------------
+        for (const c of [-1, 1]) {
+          courbe(o, 0.032,
+            (u) => [ca * r + tx * c * 0.082 * u,
+                    yg + 0.030 * u * u,
+                    sa * r + tz * c * 0.082 * u],
+            (u) => ({ rgb: mixRgb(0xFFE9A0, 0xFFB400, u * 0.7), a: 246,
+                      hx: 0.017 - u * 0.003, hy: 0.017 - u * 0.003, hz: 0.017 - u * 0.003 }));
+          bille(o, ca * r + tx * c * 0.086, yg + 0.032, sa * r + tz * c * 0.086,
+            0.015, 0xFFF3C8, 246, 0xFFB400);
+        }
+
+        // --- fusee tressee : quatre segments alternes --------------------
+        for (let k = 0; k < 4; k++) {
+          const y0 = yg - 0.020 - k * 0.019;
+          cube(o, ca * r, y0, sa * r, 0.017, 0.010, 0.017,
+            mixRgb(CUIR, k % 2 ? 0xD89A3C : 0x5E2F04, 0.5), 240);
+        }
+
+        // --- pommeau serti ------------------------------------------------
+        bille(o, ca * r, yg - 0.108, sa * r, 0.020,
+          mixRgb(0xFFD98A, 0xFFFFFF, (Math.sin(t * 2 + i) + 1) / 2), 248, 0xA85F0C);
       }
       return o;
     }
@@ -413,36 +519,71 @@ const MODELS = {
     titre: "#106 Seigneur de Guerre de l'Apocalypse",
     famille: "permanent",
     accorde: "Combo #106. Ornement de SOL — ne monte jamais vers le torse.",
-    note: "Un sceau gravé au sol, entièrement PLAT (rien au-dessus de 0,05 bloc) : double cercle contra-rotatif, croix de guerre qui relie les deux, et quatre chevrons runiques dans l'entre-deux. Volontairement sans relief, pour ne pas se confondre avec les ronces de l'Aura de Terreur, qui est l'autre ornement de sol.",
+    note: "Un sceau gravé au sol, entièrement PLAT : double cercle contra-rotatif, croix de guerre, quatre chevrons runiques. Et surtout : le joueur LAISSE SA MARQUE. Quatre sceaux fantômes restent imprimés derrière lui, de plus en plus pâles et resserrés, suivis d'une file de chevrons de braise pointés vers l'avant. On voit d'où il vient, et dans quel sens il va.",
     build(t) {
       const o = [];
       const y = 0.028, ph = -t * 0.16;
       const rExt = 0.505, rInt = 0.292;
-      // cercle exterieur
+
+      // ---- 1. le sceau sous les pieds ------------------------------------
       nappe(o, TAU * rExt, 0, 0.078,
         (u) => { const a = ph + TAU * u; return [Math.cos(a) * rExt, y, Math.sin(a) * rExt]; },
         (u) => ({ rgb: mixRgb(0xFF6A1E, 0xFFC46B, (Math.sin(TAU * u * 3 + t) + 1) / 2),
-                  a: 210, hy: 0.011 }), true);
-      // cercle interieur, en sens inverse
+                  a: 214, hy: 0.012 }), true);
       nappe(o, TAU * rInt, 0, 0.070,
         (u) => { const a = -ph * 1.7 + TAU * u; return [Math.cos(a) * rInt, y, Math.sin(a) * rInt]; },
-        () => ({ rgb: 0xFFA23C, a: 190, hy: 0.010 }), true);
+        () => ({ rgb: 0xFFA23C, a: 196, hy: 0.011 }), true);
       for (let i = 0; i < 4; i++) {
         const a = ph + TAU * i / 4 + 0.39;
         const ca = Math.cos(a), sa = Math.sin(a);
-        // branche de la croix
         trait(o, [ca * rInt, y, sa * rInt], [ca * rExt, y, sa * rExt], 0.062,
-          (u) => ({ rgb: mixRgb(0xFFA23C, 0xFF6A1E, u), a: 198, hy: 0.010 }));
-        // chevron runique entre les deux branches
+          (u) => ({ rgb: mixRgb(0xFFA23C, 0xFF6A1E, u), a: 202, hy: 0.011 }));
         const b = a + TAU / 8;
         const cb = Math.cos(b), sb = Math.sin(b), rm = (rExt + rInt) / 2;
         const puls = 0.5 + 0.5 * Math.sin(t * 1.9 + i * 1.57);
-        trait(o, [cb * (rm - 0.055) - sb * 0.060, y, sb * (rm - 0.055) + cb * 0.060],
-                 [cb * (rm + 0.062), y, sb * (rm + 0.062)], 0.048,
-          () => ({ rgb: mixRgb(0xFF8A33, 0xFFE0B0, puls), a: 150 + puls * 70, hy: 0.010 }));
-        trait(o, [cb * (rm - 0.055) + sb * 0.060, y, sb * (rm - 0.055) - cb * 0.060],
-                 [cb * (rm + 0.062), y, sb * (rm + 0.062)], 0.048,
-          () => ({ rgb: mixRgb(0xFF8A33, 0xFFE0B0, puls), a: 150 + puls * 70, hy: 0.010 }));
+        for (const c of [1, -1]) {
+          trait(o, [cb * (rm - 0.055) - sb * 0.060 * c, y, sb * (rm - 0.055) + cb * 0.060 * c],
+                   [cb * (rm + 0.062), y, sb * (rm + 0.062)], 0.048,
+            () => ({ rgb: mixRgb(0xFF8A33, 0xFFE0B0, puls), a: 150 + puls * 70, hy: 0.010 }));
+        }
+      }
+
+      // ---- 2. LA TRAINEE : quatre sceaux imprimes derriere le joueur ------
+      const emp = empreintes(t, 3, 0.40, 0.58);
+      for (let k = 0; k < emp.length; k++) {
+        const e = emp[k];
+        const R = rExt * e.k * 0.86;
+        const al = Math.round(176 * (1 - e.age) * (1 - e.age));
+        if (al < 12) continue;
+        // le cercle de braise
+        nappe(o, TAU * R, 0, 0.074,
+          (u) => { const a = ph * 0.6 + TAU * u; return [Math.cos(a) * R, y - 0.004, e.z + Math.sin(a) * R]; },
+          (u) => ({ rgb: mixRgb(0xC43A08, 0xFF9A3C, (Math.sin(TAU * u * 3) + 1) / 2),
+                    a: al, hy: 0.010 }), true);
+        // la croix, reduite a deux branches : une empreinte s'efface
+        for (let i = 0; i < 2; i++) {
+          const a = TAU * i / 2 + 0.39;
+          const ca = Math.cos(a), sa = Math.sin(a);
+          trait(o, [ca * R * 0.42, y - 0.004, e.z + sa * R * 0.42],
+                   [ca * R, y - 0.004, e.z + sa * R], 0.056,
+            () => ({ rgb: 0xE0691A, a: Math.round(al * 0.8), hy: 0.010 }));
+        }
+      }
+
+      // ---- 3. une file de CHEVRONS de braise, pointe vers l'avant --------
+      // (surtout pas deux rails continus : l'Aura de Terreur a deja un
+      //  sillon droit, et deux ornements de sol ne doivent pas se ressembler)
+      for (let k = 0; k < 5; k++) {
+        const g = ((t * 0.40) % 1);
+        const zc = -0.42 - (k + g) * 0.33;
+        const al = Math.round(190 * Math.pow(1 - (k + g) / 6, 1.6));
+        if (al < 14) continue;
+        const demi = 0.185 * (1 - (k + g) / 9);
+        for (const c of [-1, 1]) {
+          trait(o, [0, y - 0.006, zc + 0.075], [c * demi, y - 0.006, zc - 0.060], 0.064,
+            (u) => ({ rgb: mixRgb(0xFFB040, 0x7A2A04, u * 0.8),
+                      a: al - u * 40, hy: 0.009 }));
+        }
       }
       return o;
     }
@@ -453,7 +594,7 @@ const MODELS = {
     titre: "#062 Peste Ambulante",
     famille: "permanent",
     accorde: "Combo #062. Ornement de SOL.",
-    note: "Aucun cercle : quatre flaques PLEINES au contour irrégulier qui suintent sous les pieds, et neuf grappes de bulles qui montent, grossissent et crèvent. Chaque bulle est une bille de sept cubes jointifs — jamais un pixel seul perdu en l'air. Une peste n'est pas symétrique, c'est le seul ornement du lot qui l'assume.",
+    note: "Aucun cercle : quatre flaques PLEINES au contour irrégulier qui suintent sous les pieds, neuf grappes de bulles qui crèvent, et surtout une COULÉE d'infection — sept éclaboussures de taille décroissante marquent les pas précédents, reliées par un filet de sanie. Le joueur contamine le sol qu'il quitte.",
     build(t) {
       const o = [];
       const flaques = [[0.35, 0.30, 0.108], [2.45, 0.37, 0.090],
@@ -463,7 +604,6 @@ const MODELS = {
         const osc = Math.sin(t * 0.7 + k * 1.3) * 0.012;
         const cx = Math.cos(ang) * (d + osc), cz = Math.sin(ang) * (d + osc);
         disqueH(o, cx, 0.018, cz, ray, 0.062, (fr, th) => ({
-          // contour irregulier : le rayon local ne depasse jamais 1 -> aucun trou
           k: 0.70 + 0.30 * (0.5 + 0.5 * Math.sin(th * 3 + k * 2.1 + t * 0.35)),
           rgb: mixRgb(0x2F5E08, 0x7FBF22, fr * 0.8 + 0.2),
           a: 205 - fr * 70, hy: 0.009
@@ -473,10 +613,37 @@ const MODELS = {
         const p = (t * 0.33 + i * 0.111) % 1;
         const ang = i * 2.618 + Math.sin(i * 4.7) * 1.4;
         const r = 0.18 + (i % 4) * 0.075;
-        const rb = 0.0165 * (0.75 + p * 0.55);          // la bulle gonfle en montant
+        const rb = 0.0165 * (0.75 + p * 0.55);
         bille(o, Math.cos(ang) * r, 0.030 + p * 0.305, Math.sin(ang) * r, rb,
           mixRgb(0x9BDC33, 0x3E7A0C, p), 215 * (1 - p * p), 0xD8F2A0);
       }
+
+      // ---- LA COULEE : sept eclaboussures derriere le joueur -------------
+      const emp = empreintes(t, 6, 0.34, 0.38);
+      for (let k = 0; k < emp.length; k++) {
+        const e = emp[k];
+        const cote = (k % 2 ? 1 : -1) * (0.090 + (k % 3) * 0.052);
+        const R = (0.165 - k * 0.013) * e.k;
+        if (R < 0.030) continue;
+        const al = 196 * (1 - e.age) * (1 - e.age * 0.5);
+        disqueH(o, cote, 0.014, e.z, R, 0.070, (fr, th) => ({
+          k: 0.62 + 0.38 * (0.5 + 0.5 * Math.sin(th * 4 + k * 1.7)),
+          rgb: mixRgb(0x2A5409, 0x79BE1E, fr * 0.55 + 0.30),
+          a: al - fr * 44, hy: 0.009
+        }));
+        // une bulle survivante sur deux eclaboussures
+        if (k % 2 === 0 && al > 70) {
+          bille(o, cote, 0.034 + Math.abs(Math.sin(t * 1.6 + k)) * 0.046, e.z,
+            0.013, 0x7FBF22, Math.round(al * 0.75), 0xD8F2A0);
+        }
+      }
+      // filet de sanie qui relie les eclaboussures
+      bande(o, 0.074,
+        (u) => [Math.sin(u * 5.4) * 0.080, 0.011, -0.26 - u * 2.05],
+        (u) => 0.135 * (1 - u * 0.72),
+        () => [1, 0, 0],
+        (u, v) => ({ rgb: mixRgb(0x53931A, 0x1C3806, u * 0.85 + Math.abs(v) * 0.3),
+                     a: Math.round(182 * (1 - u) * (1 - u * 0.6)), hy: 0.008 }));
       return o;
     }
   },
@@ -486,33 +653,102 @@ const MODELS = {
     titre: "Roi (enchantement d'armure)",
     famille: "permanent",
     accorde: "Enchantement d'armure « king ». Exclusif face à #110 et #097/#098.",
-    note: "Une couronne POSÉE sur le crâne et qui NE TOURNE PAS — une couronne qui pivote sur la tête de son porteur n'a aucun sens. Bandeau cylindrique plein de 6 cm de haut, cinq fleurons trapézoïdaux, une perle au sommet de chacun, et quatre gemmes serties dans le bandeau.",
+    note: "Une couronne royale complète, et POSÉE : elle ne tourne pas. Bandeau à double jonc serti de huit pierres alternées — rubis, émeraude — séparées par des perles ; quatre croix pattées et quatre fleurs de lys en alternance ; quatre arches qui montent se rejoindre sur le monde, surmonté de sa croix. Le rubis frontal, plus gros, pulse doucement. Rien ne dépasse le volume du crâne par le bas.",
     build(t) {
       const o = [];
-      const r = 0.168, yb = 1.828, hb = 0.060;
+      const r = 0.170, yb = 1.822, hb = 0.066;
+      const APEX = yb + hb + 0.200;
       const lueur = (Math.sin(t * 1.5) + 1) / 2;
-      // bandeau : cylindre plein (nappe verticale fermee)
-      nappe(o, TAU * r, hb, 0.046,
+      const OR = 0xB07A10, ORCLAIR = 0xFFE07A, ORVIF = 0xFFF6D0;
+
+      // --- bandeau : cylindre plein, joncs clairs en haut et en bas --------
+      nappe(o, TAU * r, hb, 0.042,
         (u, v) => { const a = TAU * u; return [Math.cos(a) * r, yb + hb * v, Math.sin(a) * r]; },
-        (u, v) => ({ rgb: mixRgb(0xA8700C, 0xFFE07A, 0.25 + v * 0.75), a: 244 }), true);
-      for (let i = 0; i < 5; i++) {
-        const a = TAU * i / 5 - Math.PI / 2;            // un fleuron pile devant
+        (u, v) => {
+          const jonc = (v < 0.17 || v > 0.83) ? 1 : 0;
+          const grain = 0.5 + 0.5 * Math.cos(TAU * u * 28);
+          return { rgb: mixRgb(mixRgb(OR, ORCLAIR, 0.20 + grain * 0.35), ORVIF, jonc * 0.75),
+                   a: 246 };
+        }, true);
+
+      // --- huit pierres serties, alternees, separees par des perles --------
+      for (let i = 0; i < 8; i++) {
+        const a = TAU * i / 8 + Math.PI / 8;
         const ca = Math.cos(a), sa = Math.sin(a);
-        const hf = 0.072 + (i === 0 ? 0.026 : 0);       // celui de devant domine
-        // fleuron : trapeze plein qui se resserre vers le haut
-        bande(o, 0.042,
-          (u) => [ca * r, yb + hb + hf * u, sa * r],
-          (u) => 0.082 * (1 - u * 0.72),
-          () => [-sa, 0, ca],
-          (u) => ({ rgb: mixRgb(0xFFC93A, 0xFFF6D0, u * (0.4 + lueur * 0.6)), a: 246 - u * 16 }));
-        // perle au sommet, collee au fleuron
-        cube(o, ca * r, yb + hb + hf + 0.019, sa * r, 0.019, 0.019, 0.019,
-          mixRgb(0xFFF6D0, 0xFFFFFF, lueur), 250);
-        // gemme sertie dans le bandeau, entre deux fleurons
-        const b = a + Math.PI / 5;
-        cube(o, Math.cos(b) * (r + 0.009), yb + hb * 0.5, Math.sin(b) * (r + 0.009),
-          0.017, 0.019, 0.017, mixRgb(0xE03A5A, 0xFF9AB0, lueur * 0.7), 240);
+        const rubis = i % 2 === 0;
+        const teinte = rubis ? mixRgb(0xC01030, 0xFF7090, lueur * 0.55)
+                             : mixRgb(0x0E8A46, 0x74E8A8, lueur * 0.55);
+        cube(o, ca * (r + 0.012), yb + hb * 0.5, sa * (r + 0.012),
+          0.019, 0.021, 0.019, teinte, 248);
+        cube(o, ca * (r + 0.020), yb + hb * 0.5, sa * (r + 0.020),
+          0.011, 0.013, 0.011, mixRgb(teinte, 0xFFFFFF, 0.55), 240);
+        const b = a + TAU / 16;
+        cube(o, Math.cos(b) * (r + 0.010), yb + hb * 0.5, Math.sin(b) * (r + 0.010),
+          0.013, 0.013, 0.013, mixRgb(0xFFF6D0, 0xFFFFFF, lueur * 0.4), 244);
       }
+
+      // --- quatre croix pattees et quatre fleurs de lys --------------------
+      for (let i = 0; i < 8; i++) {
+        const a = TAU * i / 8 - Math.PI / 2;      // une croix pile devant
+        const ca = Math.cos(a), sa = Math.sin(a);
+        const tx = -sa, tz = ca;                  // direction tangentielle
+        const y0 = yb + hb;
+        if (i % 2 === 0) {
+          // croix pattee : montant + traverse, les deux evases
+          bande(o, 0.034,
+            (u) => [ca * r, y0 + 0.098 * u, sa * r],
+            (u) => 0.046 * (0.55 + 0.45 * Math.abs(u * 2 - 1)),
+            () => [tx, 0, tz],
+            (u) => ({ rgb: mixRgb(ORCLAIR, ORVIF, u), a: 250 }));
+          bande(o, 0.034,
+            (u) => [ca * r + tx * (u - 0.5) * 0.098, y0 + 0.058, sa * r + tz * (u - 0.5) * 0.098],
+            (u) => 0.040 * (0.55 + 0.45 * Math.abs(u * 2 - 1)),
+            () => [0, 1, 0],
+            () => ({ rgb: ORCLAIR, a: 248 }));
+          // pierre au coeur de la croix ; celle de devant est la plus grosse
+          const gros = (i === 0) ? 1.55 : 1.0;
+          cube(o, ca * (r + 0.008), y0 + 0.058, sa * (r + 0.008),
+            0.014 * gros, 0.014 * gros, 0.014 * gros,
+            mixRgb(0xC01030, 0xFF8FA8, 0.25 + lueur * 0.6), 252);
+        } else {
+          // fleur de lys : petale central droit, deux petales recourbes
+          trait(o, [ca * r, y0, sa * r], [ca * r, y0 + 0.086, sa * r], 0.034,
+            (u) => ({ rgb: mixRgb(ORCLAIR, ORVIF, u), a: 248,
+                      hx: 0.017 * (1 - u * 0.55), hy: 0.017, hz: 0.017 * (1 - u * 0.55) }));
+          for (const c of [-1, 1]) {
+            courbe(o, 0.030,
+              (u) => [ca * r + tx * c * (0.012 + 0.046 * Math.sin(u * 1.9)),
+                      y0 + 0.016 + 0.062 * u - 0.020 * u * u,
+                      sa * r + tz * c * (0.012 + 0.046 * Math.sin(u * 1.9))],
+              (u) => ({ rgb: mixRgb(ORCLAIR, ORVIF, u), a: 244 - u * 40,
+                        hx: 0.015, hy: 0.015, hz: 0.015 }));
+          }
+        }
+      }
+
+      // --- quatre arches qui se rejoignent sur le monde --------------------
+      for (let i = 0; i < 4; i++) {
+        const a = TAU * i / 4 - Math.PI / 2;
+        const ca = Math.cos(a), sa = Math.sin(a);
+        const depart = [ca * r, yb + hb + 0.100, sa * r];
+        courbe(o, 0.038,
+          (u) => {
+            const rr = r * (1 - u) + 0.012 * Math.sin(Math.PI * u);
+            return [ca * rr, depart[1] + (APEX - depart[1]) * Math.pow(u, 0.62), sa * rr];
+          },
+          (u) => ({ rgb: mixRgb(OR, ORVIF, 0.35 + u * 0.55), a: 250,
+                    hx: 0.019 - u * 0.004, hy: 0.019 - u * 0.004, hz: 0.019 - u * 0.004 }));
+      }
+
+      // --- le monde (orbe) et sa croix -------------------------------------
+      bille(o, 0, APEX + 0.014, 0, 0.024, mixRgb(0x2A6CC8, 0x9CD0FF, lueur), 250, 0xFFE07A);
+      nappe(o, TAU * 0.026, 0, 0.022,
+        (u) => { const a = TAU * u; return [Math.cos(a) * 0.026, APEX + 0.014, Math.sin(a) * 0.026]; },
+        () => ({ rgb: ORVIF, a: 250 }), true);
+      trait(o, [0, APEX + 0.034, 0], [0, APEX + 0.088, 0], 0.024,
+        (u) => ({ rgb: mixRgb(ORCLAIR, 0xFFFFFF, u), a: 252 }));
+      trait(o, [-0.024, APEX + 0.068, 0], [0.024, APEX + 0.068, 0], 0.022,
+        () => ({ rgb: ORVIF, a: 250 }));
       return o;
     }
   },
@@ -522,27 +758,59 @@ const MODELS = {
     titre: "Esprit Mystique (enchantement d'armure)",
     famille: "permanent",
     accorde: "Enchantement d'armure « mystic_mind ». Se cumule avec les autres.",
-    note: "Un signe d'infini — lemniscate de Bernoulli — qui tourne lentement au-dessus du crâne, avec trois nœuds de pensée qui le parcourent. Échantillonné à PAS CONSTANT EN LONGUEUR D'ARC : parcourue naïvement, une lemniscate se resserre au croisement et s'écarte aux pointes, ce qui aurait rouvert exactement le défaut d'espacement qu'on corrige.",
+    note: "Un signe d'infini — lemniscate de Bernoulli — qui tourne au-dessus du crâne. Ce n'est plus un fil : le ruban est épais de trois cubes, doublé d'un fil d'ombre, trois nœuds de pensée le parcourent en l'éclairant, quatre runes carrées flottent à l'extérieur et deux satellites tournent en sens inverse. Échantillonné à PAS CONSTANT EN LONGUEUR D'ARC, sans quoi la courbe se resserre au croisement.",
     build(t) {
       const o = [];
-      const A = 0.305, y = 2.060, spin = t * 0.42, w = 0.038;
-      const pts = boucleEgale((s) => {
+      const A = 0.305, y = 2.060, spin = t * 0.42, w = 0.034;
+      const courbeLem = (s, ech, dy) => {
         const th = TAU * s, d = 1 + Math.sin(th) * Math.sin(th);
-        const px = A * Math.cos(th) / d, pz = A * Math.sin(th) * Math.cos(th) / d;
+        const px = A * ech * Math.cos(th) / d, pz = A * ech * Math.sin(th) * Math.cos(th) / d;
         return [px * Math.cos(spin) - pz * Math.sin(spin),
-                y + Math.sin(th * 2) * 0.026,
+                y + dy + Math.sin(th * 2) * 0.026,
                 px * Math.sin(spin) + pz * Math.cos(spin)];
-      }, w * 0.9, 720);
-      for (let i = 0; i < pts.length; i++) {
-        const u = i / pts.length;
-        let eclat = 0;
+      };
+      const eclatEn = (u) => {
+        let e = 0;
         for (let k = 0; k < 3; k++) {
           let d = Math.abs(u - ((t * 0.21 + k / 3) % 1)); if (d > 0.5) d = 1 - d;
-          eclat = Math.max(eclat, Math.max(0, 1 - d * 13));
+          e = Math.max(e, Math.max(0, 1 - d * 13));
         }
-        cube(o, pts[i][0], pts[i][1], pts[i][2], 0.019, 0.019, 0.019,
-          mixRgb(mixRgb(0x7B3BE8, 0xC08BFF, (Math.sin(u * TAU * 2) + 1) / 2), 0xF2E6FF, eclat),
-          210 + eclat * 45);
+        return e;
+      };
+
+      // --- ruban principal : trois rangees de large --------------------
+      for (const [ech, dy, ep, al] of [[1.0, 0, 0.020, 215], [1.0, 0.032, 0.015, 180]]) {
+        const pts = boucleEgale((s) => courbeLem(s, ech, dy), w * 0.9, 720);
+        for (let i = 0; i < pts.length; i++) {
+          const u = i / pts.length, e = eclatEn(u);
+          cube(o, pts[i][0], pts[i][1], pts[i][2], ep, ep, ep,
+            mixRgb(mixRgb(0x7B3BE8, 0xC08BFF, (Math.sin(u * TAU * 2) + 1) / 2), 0xF2E6FF, e),
+            al + e * 45);
+        }
+      }
+
+      // --- quatre runes carrees qui flottent autour --------------------
+      for (let k = 0; k < 3; k++) {
+        const a = spin * 1.4 + TAU * k / 3;
+        const rr = 0.335, yy = y + Math.sin(t * 1.5 + k * 1.6) * 0.040;
+        const cx = Math.cos(a) * rr, cz = Math.sin(a) * rr;
+        const puls = 0.5 + 0.5 * Math.sin(t * 2.2 + k);
+        const cote = 0.040;
+        nappe(o, cote * 8, 0, 0.030,   // perimetre REEL : 4 cotes de 2*cote
+          (u) => {
+            const q = u * 4, f = q % 1, e = Math.floor(q) % 4;
+            const sx = [-1, 1, 1, -1][e], sz = [-1, -1, 1, 1][e];
+            const nx = [1, 1, -1, -1][e], nz = [-1, 1, 1, -1][e];
+            return [cx + (sx + (nx - sx) * f) * cote, yy, cz + (sz + (nz - sz) * f) * cote];
+          },
+          () => ({ rgb: mixRgb(0x9B5BFF, 0xF2E6FF, puls), a: 160 + puls * 70 }), true);
+      }
+
+      // --- deux satellites a contresens --------------------------------
+      for (let k = 0; k < 2; k++) {
+        const a = -spin * 2.1 + Math.PI * k;
+        bille(o, Math.cos(a) * 0.215, y + 0.090 + Math.sin(t * 1.8 + k * 2) * 0.030,
+          Math.sin(a) * 0.215, 0.017, 0xE6D2FF, 230, 0x7B3BE8);
       }
       return o;
     }
@@ -552,35 +820,57 @@ const MODELS = {
   radiant_aegis: {
     titre: "Égide Radieuse (enchantement d'armure)",
     famille: "permanent",
-    accorde: "Enchantement d'armure « heart_resonance ». Se cumule.",
-    note: "Une coupole, donc un volume : cercle équatorial, parallèle à 45°, cinq méridiens qui montent au zénith et une clef de voûte. Une égide est un bouclier — ça doit se voir en silhouette, de profil comme de face. Base à 1,985, sommet à 2,29.",
+    accorde: "Enchantement d'armure « heart_resonance ». Se cumule avec les autres.",
+    note: "La coupole précédente était un casque de chantier : un dôme lisse posé sur le crâne, rien d'autre. Une égide est un BOUCLIER. Six pavois en écu — bord relevé, umbo central serti, quatre rivets — forment un mur qui tourne autour de la tête, et la lumière s'échappe entre eux en six rais. On lit « protection » en silhouette, et plus « chantier ».",
     build(t) {
       const o = [];
-      const y0 = 1.985, R = 0.298, ph = t * 0.30;
-      // equateur
-      nappe(o, TAU * R, 0, 0.058,
-        (u) => { const a = ph + TAU * u; return [Math.cos(a) * R, y0, Math.sin(a) * R]; },
-        (u) => ({ rgb: mixRgb(0xBFE8FF, 0xFFF7D9, (Math.sin(TAU * u * 2 + t) + 1) / 2),
-                  a: 224, hy: 0.011 }), true);
-      // parallele a 45 degres
-      const e45 = Math.PI / 4, r45 = Math.cos(e45) * R;
-      nappe(o, TAU * r45, 0, 0.056,
-        (u) => { const a = -ph + TAU * u; return [Math.cos(a) * r45, y0 + Math.sin(e45) * R, Math.sin(a) * r45]; },
-        () => ({ rgb: 0xDCF2FF, a: 198, hy: 0.011 }), true);
-      // meridiens
-      for (let i = 0; i < 5; i++) {
-        const az = ph + TAU * i / 5;
-        courbe(o, 0.052,
-          (u) => {
-            const e = u * Math.PI / 2;
-            return [Math.cos(az) * Math.cos(e) * R, y0 + Math.sin(e) * R, Math.sin(az) * Math.cos(e) * R];
-          },
-          (u) => ({ rgb: mixRgb(0xBFE8FF, 0xFFFFFF, u), a: 210 - u * 30 }));
+      const ph = t * 0.26, R = 0.302, yc = 2.040;
+      const N = 6, Lx = 0.196, Hy = 0.232;
+      const ACIER = 0x6F9FC8, CLAIR = 0xE8F6FF, CHAUD = 0xFFF2C0;
+      const profil = (u) => (u < 0.40 ? 1 : 1 - Math.pow((u - 0.40) / 0.60, 1.7));
+
+      for (let i = 0; i < N; i++) {
+        const a = ph + TAU * i / N;
+        const ca = Math.cos(a), sa = Math.sin(a);
+        const tx = -sa, tz = ca;
+        const bat = Math.sin(t * 1.7 + i * 1.05) * 0.012;
+
+        // corps du pavois : u = du haut vers la pointe, v = en travers
+        bande(o, 0.046,
+          (u) => [ca * (R + bat), yc + Hy * (0.5 - u), sa * (R + bat)],
+          (u) => Lx * profil(u),
+          () => [tx, 0, tz],
+          (u, v) => {
+            const bordLat = Math.abs(v) * 2;                       // 0 au centre, 1 au bord
+            const bordHaut = (u < 0.10 || u > 0.93) ? 1 : 0;
+            const rim = Math.max(bordHaut, bordLat > 0.80 ? 1 : 0);
+            return {
+              rgb: mixRgb(mixRgb(0x2E5A80, ACIER, 0.35 + (1 - bordLat) * 0.5), CLAIR, rim * 0.85),
+              a: rim ? 250 : 168 + (1 - bordLat) * 46
+            };
+          });
+
+        // umbo serti au centre
+        bille(o, ca * (R + 0.026 + bat), yc + Hy * 0.10, sa * (R + 0.026 + bat),
+          0.020, mixRgb(CHAUD, 0xFFFFFF, (Math.sin(t * 2.1 + i) + 1) / 2), 252, 0xFFC63D);
+
+        // quatre rivets
+        for (const [du, dv] of [[0.14, -0.33], [0.14, 0.33], [0.52, -0.26], [0.52, 0.26]]) {
+          const lv = Lx * profil(du) * dv;
+          cube(o, ca * (R + 0.016 + bat) + tx * lv, yc + Hy * (0.5 - du), sa * (R + 0.016 + bat) + tz * lv,
+            0.012, 0.012, 0.012, CLAIR, 246);
+        }
+
+        // rai de lumiere qui s'echappe entre deux pavois
+        const b = a + Math.PI / N;
+        const cb = Math.cos(b), sb = Math.sin(b);
+        const puls = 0.55 + 0.45 * Math.sin(t * 2.4 + i * 1.9);
+        bande(o, 0.050,
+          (u) => [cb * (R - 0.010 + 0.155 * u * puls), yc + 0.012, sb * (R - 0.010 + 0.155 * u * puls)],
+          (u) => 0.050 * (1 - u),
+          () => [-sb, 0, cb],
+          (u) => ({ rgb: mixRgb(CHAUD, 0xFFFFFF, u), a: (235 - u * 165) * puls, hy: 0.012 }));
       }
-      // clef de voute, posee sur les meridiens
-      const p = (Math.sin(t * 1.9) + 1) / 2;
-      cube(o, 0, y0 + R + 0.018, 0, 0.024 + p * 0.006, 0.024 + p * 0.006, 0.024 + p * 0.006,
-        mixRgb(0xFFF7D9, 0xFFFFFF, p), 245);
       return o;
     }
   },
@@ -590,7 +880,7 @@ const MODELS = {
     titre: "Aura de Terreur (enchantement d'armure)",
     famille: "permanent",
     accorde: "Enchantement d'armure « dread_aura ». Ornement de SOL.",
-    note: "Neuf ronces qui sortent de terre, se courbent vers l'extérieur et se CROCHENT en pointe, plus cinq fissures qui rampent au sol depuis leur pied. Épaisses à la base, effilées au crochet. Sommet à 0,40 — sous le genou. C'est du relief, à l'opposé du sceau plat du Seigneur de Guerre.",
+    note: "Huit ronces qui sortent de terre, se courbent vers l'extérieur et se CROCHENT en pointe, plus quatre fissures qui rampent au sol. Derrière le joueur, la terre reste blessée : un sillon de corruption et cinq paires de ronces avortées de plus en plus courtes marquent son passage. Sommet à 0,40 — sous le genou. C'est du relief, à l'opposé du sceau plat du Seigneur de Guerre.",
     build(t) {
       const o = [];
       const ph = -t * 0.19;
@@ -619,6 +909,35 @@ const MODELS = {
             }));
         }
       }
+
+      // ---- LA TRAINEE : la terre reste blessee derriere le passage -------
+      // Cinq paires de ronces avortees, de plus en plus courtes, plantees de
+      // part et d'autre du sillon de corruption.
+      const emp = empreintes(t, 4, 0.38, 0.48);
+      for (let k = 0; k < emp.length; k++) {
+        const e = emp[k];
+        const al = 190 * (1 - e.age) * (1 - e.age * 0.6);
+        if (al < 16) continue;
+        for (const c of [-1, 1]) {
+          const xr = c * (0.115 + k * 0.022);
+          const h = (0.175 - k * 0.026) * e.k;
+          if (h < 0.030) continue;
+          courbe(o, 0.042,
+            (u) => [xr + c * 0.055 * u * u, 0.010 + h * Math.pow(u, 0.80),
+                    e.z - 0.045 * u],
+            (u) => ({ rgb: mixRgb(0x230540, 0x8A36D8, Math.pow(u, 0.7)),
+                      a: al - u * 50,
+                      hx: 0.023 * (1 - u * 0.40), hy: 0.023 * (1 - u * 0.40),
+                      hz: 0.023 * (1 - u * 0.40) }));
+        }
+      }
+      // le sillon lui-meme : une bande de terre corrompue
+      bande(o, 0.072,
+        (u) => [Math.sin(u * 3.1) * 0.040, 0.009, -0.30 - u * 2.05],
+        (u) => 0.175 * (1 - u * 0.70),
+        () => [1, 0, 0],
+        (u, v) => ({ rgb: mixRgb(0x4A1086, 0x12021F, u * 0.8 + Math.abs(v) * 0.4),
+                     a: Math.round(172 * (1 - u) * (1 - u * 0.5)), hy: 0.008 }));
       return o;
     }
   },
@@ -631,23 +950,66 @@ const MODELS = {
     titre: "crownHalo — couronne ponctuelle",
     famille: "ponctuel",
     accorde: "#093 Zéphyr (l.348), #091 Renaissance Solaire (l.1493), #083 Empereur de Légion (l.3057).",
-    note: "Un diadème qui naît au ras du crâne, s'ouvre et s'efface en montant : l'anneau porte cinq pointes qui se dressent au fur et à mesure. Ce relief vertical est ce qui le distingue de l'onde de choc, qui reste parfaitement plate.",
+    note: "Un diadème qui naît au ras du crâne, s'ouvre et s'efface en montant. Pas un simple jonc : DEUX cerceaux concentriques reliés par douze entretoises, cinq grandes pointes serties d'une gemme, cinq pointes courtes intercalées, et une pluie d'étincelles qui retombe pendant que l'anneau s'élève. Le relief vertical est ce qui le distingue de l'onde de choc, parfaitement plate.",
     build(t) {
       const o = [];
       const p = (t * 0.5) % 1;
       const r = 0.172 + p * 0.330, y = 1.925 + p * 0.455;
       const al = Math.round(252 * Math.pow(1 - p, 0.75));
-      nappe(o, TAU * r, 0, 0.046,
-        (u) => { const a = p * 2.1 + TAU * u; return [Math.cos(a) * r, y, Math.sin(a) * r]; },
-        () => ({ rgb: mixRgb(0xFFF3C8, 0xFFC63D, p), a: al, hy: 0.011 }), true);
-      for (let i = 0; i < 5; i++) {
-        const a = p * 2.1 + TAU * i / 5;
+      const ph = p * 2.1;
+      const rI = r - 0.042;
+
+      // --- deux cerceaux concentriques -----------------------------------
+      for (const [rr, w, k] of [[r, 0.046, 1.0], [rI, 0.038, 0.78]]) {
+        nappe(o, TAU * rr, 0, w,
+          (u) => { const a = ph + TAU * u; return [Math.cos(a) * rr, y, Math.sin(a) * rr]; },
+          (u) => ({ rgb: mixRgb(0xFFF3C8, 0xFFC63D, p * 0.7 + 0.3 * (0.5 + 0.5 * Math.cos(TAU * u * 18))),
+                    a: Math.round(al * k), hy: 0.011 }), true);
+      }
+
+      // --- douze entretoises qui relient les deux cerceaux ---------------
+      for (let i = 0; i < 12; i++) {
+        const a = ph + TAU * i / 12;
         const ca = Math.cos(a), sa = Math.sin(a);
+        trait(o, [ca * rI, y, sa * rI], [ca * r, y, sa * r], 0.036,
+          () => ({ rgb: 0xFFE07A, a: Math.round(al * 0.85), hy: 0.010 }));
+      }
+
+      // --- cinq grandes pointes serties + cinq courtes intercalees -------
+      for (let i = 0; i < 5; i++) {
+        const a = ph + TAU * i / 5;
+        const ca = Math.cos(a), sa = Math.sin(a);
+        const h = 0.052 + p * 0.088;
         bande(o, 0.040,
-          (u) => [ca * r, y + (0.045 + p * 0.070) * u, sa * r],
-          (u) => 0.055 * (1 - u * 0.85),
+          (u) => [ca * r, y + h * u, sa * r],
+          (u) => 0.058 * (1 - u * 0.82),
           () => [-sa, 0, ca],
-          (u) => ({ rgb: mixRgb(0xFFC63D, 0xFFFFFF, u), a: al * (1 - u * 0.35) }));
+          (u) => ({ rgb: mixRgb(0xFFC63D, 0xFFFFFF, u), a: al * (1 - u * 0.30) }));
+        bille(o, ca * r, y + h + 0.016, sa * r, 0.016,
+          mixRgb(0xFFFFFF, 0xFF9500, p), Math.round(al * 0.92), 0xFFF3C8);
+
+        const b = a + Math.PI / 5;
+        const cb = Math.cos(b), sb = Math.sin(b);
+        bande(o, 0.036,
+          (u) => [cb * r, y + h * 0.46 * u, sb * r],
+          (u) => 0.040 * (1 - u * 0.80),
+          () => [-sb, 0, cb],
+          (u) => ({ rgb: mixRgb(0xFFA23C, 0xFFF3C8, u), a: Math.round(al * 0.80) }));
+      }
+
+      // --- etincelles qui retombent pendant que l'anneau monte -----------
+      for (let i = 0; i < 6; i++) {
+        const q = (p + i * 0.167) % 1;
+        const a = ph * 0.6 + TAU * i / 6;
+        const rr = r * (0.80 + q * 0.30);
+        const yy = y - q * 0.300;
+        const ae = Math.round(al * (1 - q) * 0.8);
+        if (ae < 14) continue;
+        const ex = Math.cos(a) * rr, ez = Math.sin(a) * rr;
+        // Une etincelle qui retombe passerait devant les yeux : sous le crane,
+        // on ne la garde que si elle est deja sortie du cylindre du regard.
+        if (yy < CRANE && Math.sqrt(ex * ex + ez * ez) < 0.60) continue;
+        bille(o, ex, yy, ez, 0.013, 0xFFF3C8, ae, 0xFFC63D);
       }
       return o;
     }
@@ -657,21 +1019,51 @@ const MODELS = {
     titre: "wingRibbons — rubans d'ailes",
     famille: "ponctuel",
     accorde: "#081 Ange à la Plume Céleste (l.646).",
-    note: "Deux rubans PLATS qui se déroulent derrière les épaules. La largeur n'est pas un trait épaissi : c'est une bande dont la direction transversale tourne le long du ruban, si bien qu'il se présente tantôt de face, tantôt de chant. Strictement derrière le dos (z ≤ −0,18).",
+    note: "Trois rubans PLATS par épaule, de longueur et de phase différentes, qui se déroulent derrière le dos en vrillant : la direction transversale tourne le long du ruban, si bien qu'il se présente tantôt de face, tantôt de chant. Sept plumes-rubans se détachent du brin principal, et des étincelles suivent la traîne. Strictement derrière le dos (z ≤ −0,18).",
     build(t) {
       const o = [];
       for (const s of [-1, 1]) {
-        bande(o, 0.054,
-          (u) => [s * (0.165 + u * 0.300 + Math.sin(u * 4.6 - t * 2.8) * 0.095 * u),
-                  1.455 - u * 0.760 + Math.cos(u * 3.7 - t * 2.3) * 0.055,
-                  -0.205 - u * 0.400],
-          (u) => 0.090 * (1 - u * 0.78),
-          (u) => {
-            const tw = u * 3.5 - t * 2.1 + (s > 0 ? 0 : 1.1);
-            return norm([Math.cos(tw) * s, Math.sin(tw) * 0.75, Math.sin(tw) * 0.18]);
-          },
-          (u, v) => ({ rgb: mixRgb(0xFFFBEA, 0xFFC94E, u * 0.75 + Math.abs(v) * 0.5),
-                       a: 240 * (1 - u * 0.68) }));
+        // Trois banderoles qui s'ECARTENT : meme origine a l'epaule, mais des
+        // angles, des longueurs et des ondulations franchement differents.
+        // Superposees, elles ne faisaient qu'une tache jaune.
+        const brins = [[1.00, 0.0, 0.095, 242, 0.62, 3.4],
+                       [0.86, 1.3, 0.070, 208, 1.05, 4.6],
+                       [0.70, 2.6, 0.052, 178, 0.22, 5.8]];
+        for (let b = 0; b < brins.length; b++) {
+          const [lg, dph, larg, al, ouvre, onde] = brins[b];
+          const chemin = (u) => [
+            s * (0.165 + u * (0.235 + 0.300 * ouvre) * lg
+                 + Math.sin(u * onde - t * 2.8 + dph) * 0.115 * u),
+            1.470 - u * 0.880 * lg + Math.cos(u * 3.7 - t * 2.3 + dph) * 0.062,
+            -0.205 - u * 0.430 * lg - b * 0.055];
+          bande(o, 0.050,
+            chemin,
+            (u) => larg * (1 - u * 0.78),
+            (u) => {
+              const tw = u * 3.5 - t * 2.1 + dph + (s > 0 ? 0 : 1.1);
+              return norm([Math.cos(tw) * s, Math.sin(tw) * 0.75, Math.sin(tw) * 0.18]);
+            },
+            (u, v) => ({ rgb: mixRgb(0xFFFBEA, 0xFFC94E, u * 0.75 + Math.abs(v) * 0.5),
+                         a: al * (1 - u * 0.68) }));
+
+          // plumes-rubans qui se detachent du brin principal
+          if (b === 0) {
+            for (let i = 0; i < 6; i++) {
+              const u = 0.18 + 0.70 * (i / 5);
+              const p = chemin(u);
+              const d = norm([s * (0.22 + 0.34 * (i / 5)), -0.90, -0.26]);
+              const lat = norm(perp(d, [0, 0, 1]));
+              plume(o, p, d, 0.215 - i * 0.016, 0.092, lat,
+                0xFFC94E, 0xFFFBEA, 216 - i * 10, i % 2 ? 0.76 : 1.0, 0, 0.060);
+            }
+          }
+        }
+        // etincelles dans la traine
+        for (let i = 0; i < 4; i++) {
+          const q = ((t * 0.5 + i * 0.25) % 1);
+          bille(o, s * (0.175 + q * 0.330), 1.430 - q * 0.700, -0.235 - q * 0.420,
+            0.013, 0xFFF3C8, Math.round(210 * (1 - q)), 0xFFC94E);
+        }
       }
       return o;
     }
@@ -722,7 +1114,7 @@ const MODELS = {
     titre: "cloudCushion — coussin de nuages",
     famille: "ponctuel",
     accorde: "#063 Pont Dimensionnel (l.572), #090 Faucon Ouragan (l.703).",
-    note: "Cinq bouffées PLEINES qui se recouvrent pour former une galette sous les semelles — un volume, pas des anneaux emboîtés. Chaque bouffée est un empilement de deux disques pleins qui respire indépendamment. Hauteur maximale 0,15 : le joueur a l'air posé dessus.",
+    note: "Cinq bouffées PLEINES qui se recouvrent pour former une galette sous les semelles, et un SILLAGE : six volutes qui s'échappent derrière, montent légèrement en s'éloignant et se délitent. C'est la différence entre être posé sur un nuage et voler dessus.",
     build(t) {
       const o = [];
       const bouffees = [[0, 0, 0.125], [0.235, 0.055, 0.098], [-0.215, 0.085, 0.092],
@@ -734,6 +1126,25 @@ const MODELS = {
           disqueH(o, dx, dy * g, dz, R * g * ech, 0.072, (fr) => ({
             rgb: mixRgb(0xFFFFFF, 0xC9DCEE, fr * 0.55 + (1 - ech) * 0.3),
             a: (212 - fr * 48) * (ech < 1 ? 0.88 : 1), hy: 0.030
+          }));
+        }
+      }
+
+      // ---- LE SILLAGE : six volutes qui s'echappent derriere -------------
+      const emp = empreintes(t, 6, 0.55, 0.375);
+      for (let k = 0; k < emp.length; k++) {
+        const e = emp[k];
+        // Les volutes se CHEVAUCHENT : espacees, elles ne font que des
+        // petits pois ; jointives, elles font un sillage de vapeur.
+        const R = (0.150 - k * 0.011) * e.k;
+        const al = 196 * (1 - e.age * 0.88);
+        if (al < 16 || R < 0.030) continue;
+        const cote = Math.sin(k * 1.35 + t * 0.6) * 0.082;
+        const haut = 0.050 + e.age * 0.120;      // la vapeur monte en reculant
+        for (const [dy, ech] of [[0, 1.0], [0.052, 0.66]]) {
+          disqueH(o, cote, haut + dy, e.z, R * ech, 0.070, (fr) => ({
+            rgb: mixRgb(0xFFFFFF, 0xA8C2DC, fr * 0.55 + e.age * 0.30),
+            a: (al - fr * 46) * (ech < 1 ? 0.82 : 1), hy: 0.026
           }));
         }
       }
@@ -779,23 +1190,49 @@ const MODELS = {
     titre: "shockwaveRing — onde de choc",
     famille: "ponctuel",
     accorde: "La forme la plus utilisée du registre : 43 appels dans EnchantmentComboHandler.",
-    note: "Un bourrelet plat qui s'étend au sol, avec sa jupe de poussière accrochée dessous. Le nombre de cubes AUGMENTE avec le rayon — c'est tout l'intérêt de la règle : l'onde reste pleine du début à la fin, au lieu de se désagréger en pointillés comme le faisait la version à nombre fixe de particules.",
+    note: "Un bourrelet plat qui s'étend au sol avec sa jupe de poussière, PLUS deux ondes plus anciennes abandonnées derrière le joueur : elles restent là où il les a déclenchées pendant qu'il avance, et s'effacent. Le nombre de cubes augmente avec le rayon, donc l'onde reste pleine du début à la fin.",
     build(t) {
       const o = [];
-      const p = (t * 0.55) % 1;
-      const r = 0.24 + p * 0.92, w = 0.068;
-      const al = Math.round(244 * Math.pow(1 - p, 1.25));
-      const n = pasFerme(TAU * r, w);
-      for (let i = 0; i < n; i++) {
-        const a = TAU * i / n;
-        const ca = Math.cos(a), sa = Math.sin(a);
-        const bosse = 0.045 * Math.sin(Math.PI * (1 - p)) * (0.8 + 0.2 * Math.sin(a * 7 + t));
-        cube(o, ca * r, 0.030 + bosse, sa * r, w / 2, 0.016, w / 2,
-          mixRgb(0xFFE9A0, 0xFF8A20, p), al);
-        if (i % 5 === 0) {                     // jupe de poussiere, collee au bourrelet
-          cube(o, ca * (r - 0.030), 0.030 + bosse * 0.45, sa * (r - 0.030),
-            0.022, 0.014, 0.022, mixRgb(0xFFC77A, 0x8A5A20, p), Math.round(al * 0.55));
+
+      const onde = (p, cz, force) => {
+        const r = 0.24 + p * 0.92, w = 0.068;
+        const al = Math.round(244 * Math.pow(1 - p, 1.25) * force);
+        if (al < 10) return;
+        const n = pasFerme(TAU * r, w);
+        for (let i = 0; i < n; i++) {
+          const a = TAU * i / n;
+          const ca = Math.cos(a), sa = Math.sin(a);
+          const bosse = 0.045 * Math.sin(Math.PI * (1 - p)) * (0.8 + 0.2 * Math.sin(a * 7 + t));
+          cube(o, ca * r, 0.030 + bosse, cz + sa * r, w / 2, 0.016, w / 2,
+            mixRgb(0xFFE9A0, 0xFF8A20, p), al);
+          if (i % 5 === 0) {
+            cube(o, ca * (r - 0.030), 0.030 + bosse * 0.45, cz + sa * (r - 0.030),
+              0.022, 0.014, 0.022, mixRgb(0xFFC77A, 0x8A5A20, p), Math.round(al * 0.55));
+          }
         }
+      };
+
+      // Une onde est EMISE a chaque foulee puis abandonnee : elle continue de
+      // s'elargir sur place pendant que le joueur avance. Il faut donc faire
+      // tourner la phase (modulo) ET reculer le centre, sinon les ondes
+      // anciennes se retrouvent avec une opacite nulle et on ne voit rien.
+      const q = (t * 0.55) % 1;
+      for (let k = 0; k < 3; k++) {
+        const pk = (q + k * 0.34) % 1;
+        const zk = -(k + q) * 0.72;
+        onde(pk, zk, k === 0 ? 1 : (k === 1 ? 0.70 : 0.42));
+      }
+
+      // Poussiere soulevee dans le sillage. Des cubes isoles seraient des
+      // pixels perdus : ce sont de petites galettes pleines, jointives.
+      for (let k = 0; k < 4; k++) {
+        const e = ((t * 0.5 + k * 0.25) % 1);
+        const al = Math.round(158 * (1 - e));
+        if (al < 18) continue;
+        disqueH(o, Math.sin(k * 2.3 + t) * 0.095, 0.020 + e * 0.040, -0.34 - k * 0.42,
+          0.052 + e * 0.022, 0.044,
+          (fr) => ({ rgb: mixRgb(0xFFC77A, 0x6B4518, e * 0.7 + fr * 0.3),
+                     a: al - fr * 48, hy: 0.013 }));
       }
       return o;
     }
@@ -844,22 +1281,55 @@ const MODELS = {
 // =============================================================================
 
 /** Une plume : rachis clair au milieu, vexille qui s'elargit au tiers puis s'effile. */
-function plume(out, base, pointe, larg, w, rgbSombre, rgbClair, aBase, aPointe) {
-  const axe = norm([pointe[0] - base[0], pointe[1] - base[1], pointe[2] - base[2]]);
-  const lat = perp(axe, [axe[1] * 0 - axe[2] * 1, 0, 1 * axe[0] - 0 * axe[1]]);
-  bande(out, w,
-    (u) => lerp3(base, pointe, u),
-    (u) => larg * plumeProfil(u),
-    () => lat,
-    (u, v) => {
-      const rachis = 1 - Math.min(1, Math.abs(v) * 2.4);     // la nervure centrale est claire
-      return {
-        rgb: mixRgb(mixRgb(rgbSombre, rgbClair, u * 0.55), 0xFFFFFF, rachis * 0.45),
-        a: aBase + (aPointe - aBase) * u
-      };
-    });
-}
+function plume(out, base, dir, L, larg, lateral, couleur, pointe, alpha, ombre, barbes, w) {
+  // Une plume n'est pas un batonnet colore. Elle a un RACHIS clair au centre,
+  // deux vexilles ASYMETRIQUES (l'interieur plus etroit que l'exterieur), des
+  // STRIES obliques, et quelques BARBES qui depassent du bord. Le grain `w`
+  // est donne par l'appelant : une remige d'un metre ne se dessine pas au
+  // meme pas qu'une couverture de vingt centimetres.
+  const om = (ombre === undefined) ? 1 : ombre;
+  const al = (alpha === undefined) ? 240 : alpha;
+  const g = (w === undefined) ? 0.062 : w;
+  const bout = [base[0] + dir[0] * L, base[1] + dir[1] * L, base[2] + dir[2] * L];
 
+  for (const cote of [-1, 1]) {
+    const gain = (cote < 0 ? 0.80 : 1.0) * 0.5;
+    bande(out, g,
+      (u) => {
+        const p = lerp3(base, bout, u);
+        const dec = larg * plumeProfil(u) * gain * 0.5 * cote;
+        return [p[0] + lateral[0] * dec, p[1] + lateral[1] * dec, p[2] + lateral[2] * dec];
+      },
+      (u) => larg * plumeProfil(u) * gain,
+      () => lateral,
+      (u, v) => {
+        // distance au rachis, 0 au centre de la plume, 1 au bord du vexille
+        const d = Math.min(1, Math.abs(v * 2 + cote));
+        const rachis = Math.pow(1 - d, 2.2);
+        const strie = 0.5 + 0.5 * Math.cos(u * 26 + v * 11);
+        return {
+          rgb: mixRgb(mixRgb(couleur, pointe, Math.pow(u, 0.78)), 0xFFFFFF,
+                      rachis * 0.50 + strie * 0.10),
+          a: (al - u * 40) * om * (1 - d * 0.18)
+        };
+      });
+  }
+
+  const nb = (barbes === undefined) ? 0 : barbes;
+  for (let i = 0; i < nb; i++) {
+    const u = 0.34 + 0.52 * (i / Math.max(1, nb - 1));
+    const p = lerp3(base, bout, u);
+    const demi = larg * plumeProfil(u) * 0.5;
+    for (const cote of [-1, 1]) {
+      const q = [p[0] + lateral[0] * demi * cote * 1.34 + dir[0] * 0.042,
+                 p[1] + lateral[1] * demi * cote * 1.34 + dir[1] * 0.042,
+                 p[2] + lateral[2] * demi * cote * 1.34 + dir[2] * 0.042];
+      trait(out, [p[0] + lateral[0] * demi * cote, p[1] + lateral[1] * demi * cote,
+                  p[2] + lateral[2] * demi * cote], q, g * 0.80,
+        (x) => ({ rgb: mixRgb(pointe, 0xFFFFFF, x * 0.4), a: (al - 86) * om }));
+    }
+  }
+}
 function plumeProfil(u) {
   // Profil d'un vexille de plume. Etroit a la hampe (cette partie est de
   // toute facon recouverte par la plume voisine : la dessiner large ne
@@ -871,86 +1341,102 @@ function plumeProfil(u) {
 }
 
 function aileSeraphin(t) {
+  const paire = [];
+  for (const cote of [-1, 1]) paire.push(...uneAileSeraphin(t, cote));
+  return paire;
+}
+
+function uneAileSeraphin(t, s) {
+  // Anatomie : epaule E -> coude C -> poignet P -> main M. L'arche passe
+  // AU-DESSUS de la tete, puis la cascade de remiges retombe derriere.
   const o = [];
-  const resp = Math.sin(t * 1.15);                 // respiration lente, pas un battement
+  const resp = Math.sin(t * 1.15);
+  const E = [s * 0.110, 1.400, -0.200];
+  const C = [s * 0.235, 1.722 + resp * 0.026, -0.316];
+  const P = [s * 0.398, 1.988 + resp * 0.042, -0.398];
+  const M = [s * 0.524, 1.930 + resp * 0.048, -0.442];
   const OR = 0xD99420, CHAUD = 0xFFD264, CLAIR = 0xFFF3CF, PALE = 0xFFFBEA;
-  for (const s of [-1, 1]) {
-    // Charpente en ARCHE : l'epaule est basse, le coude monte a hauteur de
-    // crane et le poignet passe AU-DESSUS de la tete. C'est cette montee qui
-    // fait l'aile d'ange ; a plat, on n'obtient qu'un croissant colle aux
-    // omoplates — exactement ce que donnait la version precedente.
-    // Le dos du torse est a z = -0.113. Toute la piece est repoussee derriere
-    // lui : l'epaulette s'etale en largeur et mordait de 1,5 cm sur l'avant.
-    const E = [s * 0.110, 1.400, -0.200];                                  // epaule
-    const C = [s * 0.235, 1.722 + resp * 0.026, -0.316];                   // coude
-    const P = [s * 0.398, 1.988 + resp * 0.042, -0.398];                   // poignet
-    const M = [s * 0.524, 1.930 + resp * 0.048, -0.442];                   // bout de la main
 
-    // --- bord d'attaque : l'os, en bande pleine ----------------------------
-    for (const [a, b, lg] of [[E, C, 0.060], [C, P, 0.050], [P, M, 0.038]]) {
-      const ax = norm([b[0] - a[0], b[1] - a[1], b[2] - a[2]]);
-      const lat = perp(ax, [0, 0, 1]);
-      bande(o, 0.074,
-        (u) => lerp3(a, b, u), () => lg, () => lat,
-        (u, v) => ({ rgb: mixRgb(OR, CLAIR, 0.30 + Math.abs(v) * 1.2), a: 250 }));
+  // --- 1. la charpente : os visible de l'epaule a la main ------------------
+  const bras = (u) => {
+    if (u < 0.42) { const w = u / 0.42; return lerp3(E, C, w); }
+    if (u < 0.80) { const w = (u - 0.42) / 0.38; return lerp3(C, P, w); }
+    const w = (u - 0.80) / 0.20; return lerp3(P, M, w);
+  };
+  courbe(o, 0.062, bras, (u) => ({
+    rgb: mixRgb(OR, CLAIR, 0.30 + u * 0.45),
+    a: 250 - u * 30,
+    hx: 0.031 - u * 0.013, hy: 0.031 - u * 0.013, hz: 0.031 - u * 0.013
+  }));
+  // articulations marquees : coude et poignet
+  bille(o, C[0], C[1], C[2], 0.030, CLAIR, 250, OR);
+  bille(o, P[0], P[1], P[2], 0.026, CLAIR, 250, OR);
+
+  // --- 2. sept remiges primaires, en eventail ------------------------------
+  for (let i = 0; i < 7; i++) {
+    const f = i / 6;
+    const base = lerp3(P, M, f * 0.92);
+    const L = 0.590 + 0.600 * Math.pow(f, 0.88) + (i % 2 ? -0.054 : 0.038);
+    // Les doigts d'une aile s'ECARTENT : la composante laterale croit vite
+    // sur les externes, sinon la cascade se lit comme un seul bloc.
+    const d = norm([s * (0.010 + 0.520 * f * f), -0.975, -0.170 - 0.070 * f]);
+    const lat = norm(perp(d, [0, 0, 1]));
+    plume(o, base, d, L, 0.176, lat, OR, PALE, 244, i % 2 ? 0.72 : 1.0, 2, 0.084);
+  }
+
+  // --- 3. quatre secondaires, plus courtes, au-dessus du coude -------------
+  for (let i = 0; i < 4; i++) {
+    const f = i / 3;
+    const base = lerp3(C, P, f * 0.90);
+    const L = 0.470 + 0.145 * f;
+    const d = norm([s * (0.022 + 0.150 * f), -0.980, -0.185]);
+    const lat = norm(perp(d, [0, 0, 1]));
+    plume(o, base, d, L, 0.154, lat, OR, CLAIR, 232, i % 2 ? 0.78 : 1.0, 1, 0.082);
+  }
+
+  // --- 4. deux rangees de couvertures etagees : le "toit" de l'aile --------
+  for (const [rang, lg, al] of [[0.0, 0.215, 236], [1.0, 0.136, 220]]) {
+    const n = rang ? 3 : 5;
+    for (let i = 0; i < n; i++) {
+      const f = i / (n - 1);
+      const base = lerp3(C, P, 0.06 + f * 0.84);
+      const recul = rang * 0.052;
+      const dep = [base[0], base[1] - recul, base[2] - 0.016 * rang];
+      const L = lg + 0.040 * Math.sin(Math.PI * f);
+      const d = norm([s * (0.030 + 0.070 * f), -0.984, -0.150]);
+      const lat = norm(perp(d, [0, 0, 1]));
+      plume(o, dep, d, L, 0.130 - rang * 0.016, lat,
+            mixRgb(OR, CHAUD, 0.30 + rang * 0.35), CLAIR, al,
+            i % 2 ? 0.80 : 1.0, 0, 0.070);
     }
+  }
 
-    // --- 7 remiges primaires : la longue cascade portee par la main --------
-    for (let i = 0; i < 7; i++) {
-      const f = i / 6;
-      const base = lerp3(P, M, f * 0.98);
-      // La plus externe est la plus longue : c'est elle qui donne la ligne.
-      // Un leger decalage une plume sur deux evite un bord de fuite coupe au
-      // couteau, que l'oeil lit comme une decoupe de carton.
-      const L = 0.600 + 0.560 * Math.pow(f, 0.92) + (i % 2 ? -0.032 : 0.024);
-      const d = norm([s * (0.015 + 0.235 * f), -0.975, -0.170 - 0.040 * f]);
-      const bout = [base[0] + d[0] * L, base[1] + d[1] * L, base[2] + d[2] * L];
-      // une plume sur deux legerement plus sombre : c'est l'ombre de
-      // recouvrement qui fait qu'on compte les plumes au lieu de voir un bloc
-      const ombre = i % 2 ? 0.72 : 1.0;
-      plume(o, base, bout, 0.086, 0.085,
-        mixRgb(0x6B4408, OR, ombre), mixRgb(CHAUD, PALE, ombre), 248, 168);
-    }
+  // --- 5. l'epaulette : la masse de duvet qui ferme l'emplanture -----------
+  bande(o, 0.070,
+    (u) => lerp3(E, C, u),
+    (u) => 0.084 * (1 - u * 0.30),
+    () => [0, 0, 1],
+    (u, v) => {
+      const bord = Math.abs(v) * 2;
+      return { rgb: mixRgb(OR, CHAUD, 0.25 + (1 - bord) * 0.45),
+               a: 248 - u * 26 };
+    });
+  // duvet : petites touffes au bord de l'epaulette
+  for (let i = 0; i < 3; i++) {
+    const u = 0.14 + 0.70 * (i / 2);
+    const p = lerp3(E, C, u);
+    const d = norm([s * 0.10, -0.98, -0.16]);
+    const lat = norm(perp(d, [0, 0, 1]));
+    plume(o, [p[0], p[1] - 0.030, p[2] - 0.040], d, 0.108 + (i % 2) * 0.022,
+          0.104, lat, mixRgb(OR, CHAUD, 0.5), CLAIR, 214, i % 2 ? 0.82 : 1.0, 0, 0.066);
+  }
 
-    // --- 5 remiges secondaires : le rideau court de l'avant-bras -----------
-    for (let i = 0; i < 4; i++) {
-      const f = i / 3;
-      const base = lerp3(C, P, 0.06 + f * 0.88);
-      const L = 0.470 + 0.145 * f;
-      const d = norm([s * (0.022 + 0.062 * f), -0.980, -0.185]);
-      const bout = [base[0] + d[0] * L, base[1] + d[1] * L, base[2] + d[2] * L];
-      const ombre = i % 2 ? 0.74 : 1.0;
-      plume(o, base, bout, 0.080, 0.084,
-        mixRgb(0x6B4408, OR, ombre), mixRgb(CHAUD, CLAIR, ombre), 246, 196);
-    }
-
-    // --- 6 grandes couvertures : elles coiffent la base des secondaires ----
-    for (let i = 0; i < 5; i++) {
-      const f = i / 4;
-      const base = lerp3(C, P, 0.04 + f * 0.90);
-      const L = 0.215 + 0.040 * Math.sin(Math.PI * f);
-      const d = norm([s * 0.030, -0.975, -0.195]);
-      plume(o, [base[0], base[1] - 0.008, base[2] + 0.014],
-        [base[0] + d[0] * L, base[1] + d[1] * L - 0.008, base[2] + d[2] * L + 0.014],
-        0.062, 0.078, 0xB07813, CLAIR, 252, 222);
-    }
-
-    // --- epaulette : la masse de petites couvertures a l'emplanture --------
-    const axEp = norm([C[0] - E[0], C[1] - E[1], C[2] - E[2]]);
-    bande(o, 0.084,
-      (u) => lerp3(E, C, 0.05 + u * 0.88),
-      (u) => 0.112 * Math.sin(Math.PI * (0.24 + 0.66 * u)),
-      () => perp(axEp, [0, 0, 1]),
-      (u, v) => ({ rgb: mixRgb(0xA8710F, CLAIR, 0.22 + Math.abs(v) * 1.3), a: 246 }));
-
-    // --- alula : le petit bouquet du poignet -------------------------------
-    for (let i = 0; i < 2; i++) {
-      const base = [P[0] + s * 0.028 * (i + 1), P[1] - 0.012 * i, P[2] - 0.014];
-      const d = norm([s * (0.52 + 0.14 * i), -0.74, -0.42]);
-      const L = 0.145 - i * 0.022;
-      plume(o, base, [base[0] + d[0] * L, base[1] + d[1] * L, base[2] + d[2] * L],
-        0.048, 0.072, 0xE8A32A, 0xFFFFFF, 250, 200);
-    }
+  // --- 6. deux alula a la main, ecartees comme un pouce --------------------
+  for (let i = 0; i < 2; i++) {
+    const d = norm([s * (0.46 + i * 0.16), -0.80, -0.36]);
+    const lat = norm(perp(d, [0, 0, 1]));
+    plume(o, [M[0], M[1] - 0.012 * i, M[2]], d, 0.244 - i * 0.046, 0.118, lat,
+          CHAUD, PALE, 234, 1.0, 1, 0.076);
   }
   return o;
 }
@@ -969,65 +1455,120 @@ function aileSeraphin(t) {
 // =============================================================================
 
 function voilureGivre(t) {
+  const paire = [];
+  for (const cote of [-1, 1]) paire.push(...uneVoilureGivre(t, cote));
+  return paire;
+}
+
+function uneVoilureGivre(t, s) {
+  // Volontairement SANS plume : une membrane cristalline tendue sur des
+  // lattes de glace. L'oppose exact de l'aile de l'Archange.
   const o = [];
-  const souffle = Math.sin(t * 1.5);
   const GIVRE = 0x9ACFF5, BLANC = 0xFFFFFF, OMBRE = 0x3E6A92, CYAN = 0xD6F0FF;
-  const NP = 5;                                       // nombre de panneaux
-  for (const s of [-1, 1]) {
-    const E = [s * 0.118, 1.388, -0.174];                                   // emplanture
-    const P = [s * (0.790 + souffle * 0.022), 1.792 + souffle * 0.040, -0.332]; // bout du longeron
-    const dc = norm([0, -0.880, -0.470]);               // direction de la corde
-    const corde = (u) => 0.455 * (1 - 0.615 * u);
+  const souffle = Math.sin(t * 1.5);
+  const E = [s * 0.118, 1.388, -0.174];
+  const P = [s * (0.790 + souffle * 0.022), 1.792 + souffle * 0.040, -0.332];
+  const dc = norm([0, -0.880, -0.470]);
+  const corde = (u) => 0.455 * (1 - 0.615 * u);
+  const sur = (u) => lerp3(E, P, u);
 
-    // --- panneaux rigides, un par un : c'est le facettage qui fait la glace
-    for (let k = 0; k < NP; k++) {
-      const u0 = k / NP, u1 = (k + 1) / NP;
-      const clair = k % 2 ? 0.0 : 0.30;
-      bande(o, 0.078,
-        (u) => {
-          const uu = u0 + (u1 - u0) * u, c = lerp3(E, P, uu), h = corde(uu) * 0.5;
-          return [c[0] + dc[0] * h, c[1] + dc[1] * h, c[2] + dc[2] * h];
-        },
-        (u) => corde(u0 + (u1 - u0) * u) * 0.92,
-        () => dc,
-        (u, v) => ({
-          rgb: mixRgb(mixRgb(OMBRE, GIVRE, 0.34 + clair), BLANC, Math.max(0, 0.5 - Math.abs(v)) * 0.75),
-          a: 112 + clair * 150 + (0.5 - Math.abs(v)) * 54
-        }));
-    }
+  // --- 1. longeron principal, epais et facette ----------------------------
+  courbe(o, 0.062, sur, (u) => ({
+    rgb: mixRgb(mixRgb(OMBRE, GIVRE, 0.45 + u * 0.35), BLANC, 0.18),
+    a: 252 - u * 22,
+    hx: 0.029 - u * 0.012, hy: 0.029 - u * 0.012, hz: 0.029 - u * 0.012
+  }));
 
-    // --- longeron : l'arete d'attaque, franche et brillante ----------------
-    trait(o, E, P, 0.050, (u) => ({ rgb: mixRgb(CYAN, BLANC, u), a: 252 }));
-
-    // --- nervures : les aretes entre panneaux, bien plus claires -----------
-    for (let k = 0; k <= NP; k++) {
-      const u = k / NP, c = lerp3(E, P, u), cl = corde(u);
-      trait(o, c, [c[0] + dc[0] * cl, c[1] + dc[1] * cl, c[2] + dc[2] * cl], 0.040,
-        (v) => ({ rgb: mixRgb(BLANC, CYAN, v), a: 244 - v * 70 }));
-    }
-
-    // --- bord de fuite : la droite tendue qui ferme le triangle ------------
-    const F0 = [E[0] + dc[0] * corde(0), E[1] + dc[1] * corde(0), E[2] + dc[2] * corde(0)];
-    const F1 = [P[0] + dc[0] * corde(1), P[1] + dc[1] * corde(1), P[2] + dc[2] * corde(1)];
-    trait(o, F0, F1, 0.044, (u) => ({ rgb: mixRgb(GIVRE, BLANC, 0.25 + u * 0.6), a: 228 }));
-
-    // --- stalactites sous le bord de fuite : le detail qui dit << givre >> -
-    for (let k = 0; k < 5; k++) {
-      const u = 0.10 + k * 0.20;
-      const b = lerp3(F0, F1, u);
-      const lg = 0.115 - k * 0.016 + Math.sin(t * 2.1 + k) * 0.010;
-      bande(o, 0.036,
-        (v) => [b[0], b[1] - lg * v, b[2] - lg * v * 0.16],
-        (v) => 0.040 * (1 - v) * (1 - v),
-        () => norm([P[0] - E[0], 0, P[2] - E[2]]),
-        (v) => ({ rgb: mixRgb(CYAN, BLANC, v), a: 230 - v * 120 }));
-    }
-
-    // --- pointe de givre au bout du longeron -------------------------------
-    const ax = norm([P[0] - E[0], P[1] - E[1], P[2] - E[2]]);
-    bille(o, P[0] + ax[0] * 0.030, P[1] + ax[1] * 0.030, P[2] + ax[2] * 0.030,
-      0.021, BLANC, 252, CYAN);
+  // --- 2. cinq panneaux de membrane, alternativement clairs ---------------
+  const NP = 5;
+  for (let k = 0; k < NP; k++) {
+    const u0 = k / NP, u1 = (k + 1) / NP;
+    const clair = (k % 2) ? 0.52 : 0.0;
+    nappe(o, dist3(sur(u0), sur(u1)), corde((u0 + u1) / 2), 0.082,
+      (a, b) => {
+        const u = u0 + (u1 - u0) * a, p = sur(u), c = corde(u) * b;
+        return [p[0] + dc[0] * c, p[1] + dc[1] * c, p[2] + dc[2] * c];
+      },
+      (a, b) => {
+        const gel = 0.5 + 0.5 * Math.cos(a * 9 + b * 13 + k * 2.1);
+        return {
+          rgb: mixRgb(mixRgb(OMBRE, GIVRE, 0.30 + clair + b * 0.30 + gel * 0.16), CYAN, 0.20),
+          a: 238 - b * 52 + gel * 18,
+          hy: 0.015
+        };
+      });
   }
+
+  // --- 3. six nervures radiales, du longeron au bord de fuite -------------
+  for (let i = 0; i < 6; i++) {
+    const u = 0.055 + 0.90 * (i / 5);
+    const p = sur(u), c = corde(u);
+    trait(o, p, [p[0] + dc[0] * c, p[1] + dc[1] * c, p[2] + dc[2] * c], 0.052,
+      (w) => ({ rgb: mixRgb(GIVRE, BLANC, 0.55 + w * 0.40), a: 252 - w * 34,
+                hx: 0.025 - w * 0.009, hy: 0.025 - w * 0.009, hz: 0.025 - w * 0.009 }));
+    // fracture secondaire en Y : ce qui fait lire "glace" et non "tissu"
+    const mid = [p[0] + dc[0] * c * 0.46, p[1] + dc[1] * c * 0.46, p[2] + dc[2] * c * 0.46];
+    for (const cote of [-1, 1]) {
+      const dir = norm([dc[0] + cote * 0.52 * s, dc[1] * 0.70, dc[2] - cote * 0.18]);
+      trait(o, mid, [mid[0] + dir[0] * c * 0.34, mid[1] + dir[1] * c * 0.34,
+                     mid[2] + dir[2] * c * 0.34], 0.050,
+        (w) => ({ rgb: mixRgb(CYAN, BLANC, w * 0.6), a: 180 - w * 90,
+                  hx: 0.015, hy: 0.015, hz: 0.015 }));
+    }
+  }
+
+  // --- 4. bord de fuite feston : il festonne entre chaque nervure ---------
+  courbe(o, 0.054,
+    (u) => {
+      const p = sur(u), c = corde(u) * (1 + 0.075 * Math.sin(u * 19));
+      return [p[0] + dc[0] * c, p[1] + dc[1] * c, p[2] + dc[2] * c];
+    },
+    (u) => ({ rgb: mixRgb(GIVRE, BLANC, 0.40 + 0.35 * Math.sin(u * 19)),
+              a: 232, hx: 0.021, hy: 0.021, hz: 0.021 }));
+
+  // --- 4bis. quatre doigts de glace qui percent la membrane et depassent --
+  for (let i = 0; i < 4; i++) {
+    const u = 0.20 + 0.74 * (i / 3);
+    const p = sur(u), c = corde(u) * (1.14 + 0.06 * Math.sin(t * 1.3 + i));
+    const bout = [p[0] + dc[0] * c, p[1] + dc[1] * c, p[2] + dc[2] * c];
+    courbe(o, 0.054,
+      (w) => [p[0] + (bout[0] - p[0]) * w + s * 0.030 * Math.sin(Math.PI * w),
+              p[1] + (bout[1] - p[1]) * w,
+              p[2] + (bout[2] - p[2]) * w - 0.026 * Math.sin(Math.PI * w)],
+      (w) => ({ rgb: mixRgb(mixRgb(OMBRE, GIVRE, 0.5), BLANC, 0.25 + w * 0.45),
+                a: 250 - w * 36,
+                hx: 0.026 - w * 0.012, hy: 0.026 - w * 0.012, hz: 0.026 - w * 0.012 }));
+    bille(o, bout[0] + s * 0.004, bout[1], bout[2], 0.017, BLANC, 242, GIVRE);
+  }
+
+  // --- 5. huit stalactites qui pendent du bord, de longueur variable ------
+  for (let k = 0; k < 6; k++) {
+    const u = 0.105 + 0.835 * (k / 5);
+    const p = sur(u), c = corde(u);
+    const b = [p[0] + dc[0] * c, p[1] + dc[1] * c, p[2] + dc[2] * c];
+    const lg = 0.146 - k * 0.015 + Math.sin(t * 2.1 + k) * 0.012;
+    courbe(o, 0.046,
+      (w) => [b[0] + s * 0.016 * w * w, b[1] - lg * w, b[2] - 0.020 * w],
+      (w) => ({ rgb: mixRgb(CYAN, BLANC, w * 0.75), a: 250 - w * 90,
+                hx: 0.024 * (1 - w * 0.75), hy: 0.024, hz: 0.024 * (1 - w * 0.75) }));
+    if (k % 2 === 0) {
+      bille(o, b[0] + s * 0.016, b[1] - lg, b[2] - 0.020, 0.013, BLANC, 212, GIVRE);
+    }
+  }
+
+  // --- 6. emplanture : trois ecailles de glace qui ancrent l'aile ---------
+  for (let i = 0; i < 3; i++) {
+    const u = 0.02 + i * 0.055;
+    const p = sur(u), c = corde(u) * (0.30 + i * 0.10);
+    bande(o, 0.066,
+      (w) => [p[0] + dc[0] * c * w, p[1] + dc[1] * c * w, p[2] + dc[2] * c * w],
+      (w) => 0.062 * (1 - w * 0.5),
+      () => norm([s, 0, -0.35]),
+      (w) => ({ rgb: mixRgb(OMBRE, CYAN, 0.30 + w * 0.5), a: 240 - w * 40 }));
+  }
+
+  // --- 7. bille de givre en bout d'aile -----------------------------------
+  bille(o, P[0], P[1], P[2], 0.026, BLANC, 246, GIVRE);
   return o;
 }
 
