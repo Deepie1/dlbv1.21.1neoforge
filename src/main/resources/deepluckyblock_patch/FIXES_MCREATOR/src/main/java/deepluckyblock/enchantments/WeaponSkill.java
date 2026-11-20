@@ -271,13 +271,23 @@ public final class WeaponSkill {
         //    DeepEnchant.map + getKeySafe. Deux lectures différentes pourraient diverger,
         //    et un enchantement retiré de la liste sans apparaître dans l'encart serait
         //    purement et simplement invisible.
+        //
+        // T423-FIX : « capacités activées » SEULEMENT, d'où le test sur effect().
+        // BY_PATH ne contient pas que les huit capacités : put() y range AUSSI les 44
+        // chemins de signature (ligne 108). Sans ce filtre, cette boucle — qui n'est pas
+        // protégée par canCastSignature — rendait une signature visible sur N'IMPORTE QUEL
+        // objet. Une pioche portant sharp_edge annonçait donc « Éclat du Rasoir » dans son
+        // encart COMPÉTENCES, alors que le lanceur et le halo, eux, exigent une arme de
+        // mêlée : aucun glint ne changeait et aucun clic ne déclenchait quoi que ce soit.
+        // Une signature ne peut venir que de l'étape 1 ci-dessus.
         for (net.minecraft.world.item.enchantment.Enchantment en
                 : deepluckyblock.util.DeepEnchant.map(stack).keySet()) {
             net.minecraft.resources.ResourceLocation loc =
                     deepluckyblock.util.DeepEnchant.getKeySafe(en);
             if (loc == null || !"deep_lucky_block".equals(loc.getNamespace())) continue;
             Entry e = BY_PATH.get(loc.getPath());
-            if (e != null) found.putIfAbsent(e.enchantPath(), e);
+            if (e == null || e.effect() != null) continue;
+            found.putIfAbsent(e.enchantPath(), e);
         }
         return List.copyOf(found.values());
     }

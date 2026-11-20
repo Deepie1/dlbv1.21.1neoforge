@@ -51,8 +51,62 @@ public final class DlbSkillCommand {
         root.requires(src -> src.hasPermission(2));
         root.executes(DlbSkillCommand::giveNext)
                 .then(Commands.literal("next").executes(DlbSkillCommand::giveNext))
+                .then(Commands.literal("check").executes(DlbSkillCommand::check))
                 .then(Commands.literal("reset").executes(DlbSkillCommand::reset));
         event.getDispatcher().register(root);
+    }
+
+    /**
+     * T423 — {@code /dlbskill check} : pourquoi CET objet ne lance rien.
+     *
+     * <p>« Le halo ne change pas et le clic ne fait rien » peut avoir quatre causes
+     * distinctes : l'objet ne sait pas lancer de signature, il n'en porte aucune, elle est
+     * en recharge, ou le halo n'a pas encore été posé. Les deviner une par une coûte cher ;
+     * cette commande les lit toutes d'un coup sur l'objet tenu en main.</p>
+     */
+    private static int check(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer player = ctx.getSource().getPlayer();
+        if (player == null) return 0;
+        ItemStack held = player.getMainHandItem();
+        if (held.isEmpty()) {
+            ctx.getSource().sendFailure(Component.literal("\u00a7cRien dans la main principale."));
+            return 0;
+        }
+        long now = player.serverLevel().getGameTime();
+        boolean peutLancer = WeaponSkill.canCastSignature(held);
+        java.util.List<WeaponSkill.Entry> skills = WeaponSkill.allOn(held);
+        WeaponSkill.Entry premier = WeaponSkill.firstOn(held);
+        long pret = WeaponSkill.readyAt(held);
+        boolean charge = WeaponSkill.isCharged(held, now);
+
+        net.minecraft.nbt.CompoundTag tag = deepluckyblock.util.DeepNbt.tag(held);
+        String force = deepluckyblock.client.EnchantAura.GLINT_FORCE_NBT_KEY;
+        String tier = deepluckyblock.client.EnchantAura.GLINT_TIER_NBT_KEY;
+        String couleur = (tag != null && tag.contains(force))
+                ? String.format("#%06X", tag.getInt(force) & 0xFFFFFF) : "aucune";
+        String palier = (tag != null && tag.contains(tier))
+                ? String.valueOf(tag.getInt(tier)) : "4 (defaut)";
+        boolean halo = tag != null && tag.getBoolean(WeaponSkill.GLINT_ON_KEY);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("\u00a7b[/dlbskill check] \u00a7f").append(held.getHoverName().getString()).append('\n');
+        sb.append("\u00a77objet sait lancer une signature : ")
+          .append(peutLancer ? "\u00a7aoui" : "\u00a7cnon \u00a77(il faut une \u00e9p\u00e9e, hache, masse ou houe)").append("\n");
+        sb.append("\u00a77comp\u00e9tences lues : \u00a7f").append(skills.size());
+        for (WeaponSkill.Entry e : skills) {
+            sb.append("\n   \u00a7e").append(SkillNames.ofSkill(e.effect(), e.enchantPath(), true))
+              .append(" \u00a78(").append(e.enchantPath()).append(", ").append(e.cast().name()).append(')');
+        }
+        sb.append("\n\u00a77signature lan\u00e7able au clic droit sur un mob : ")
+          .append(premier != null ? "\u00a7aoui" : "\u00a7cnon");
+        sb.append("\n\u00a77pr\u00eate : ").append(charge ? "\u00a7aoui" : "\u00a7cnon \u00a77(encore "
+                + Math.max(0, (pret - now) / 20) + " s)");
+        sb.append("\n\u00a77halo : couleur \u00a7f").append(couleur)
+          .append(" \u00a77palier \u00a7f").append(palier)
+          .append(" \u00a77drapeau pr\u00eat \u00a7f").append(halo);
+        final String txt = sb.toString();
+        ctx.getSource().sendSuccess(() -> Component.literal(txt), false);
+        return 1;
     }
 
     private static int reset(CommandContext<CommandSourceStack> ctx) {
