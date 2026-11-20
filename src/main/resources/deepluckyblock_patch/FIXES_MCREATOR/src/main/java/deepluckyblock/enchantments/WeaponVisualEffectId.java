@@ -23,6 +23,8 @@ import net.minecraft.world.item.TridentItem;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
 
+import deepluckyblock.util.DeepNbt;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -460,10 +462,24 @@ public enum WeaponVisualEffectId {
         return out.size() <= maxLayers ? out : out.subList(0, maxLayers);
     }
 
+    /**
+     * T436-LOOT-ONLY : les effets de style ne s'approprient le rendu que si l'arme a été
+     * DROPPÉE par le mod, quel que soit l'enchantement qui les déclenche.
+     *
+     * <p>Le loot du mod est très souvent une arme VANILLA portant des enchantements du mod :
+     * c'est donc la provenance de l'ITEM qui décide, jamais le namespace de l'enchantement.
+     * Une épée montée à l'enclume — même avec un enchantement du mod venu d'un livre — garde
+     * ses particules vanilla. On ne dérange pas le gameplay vanilla.</p>
+     *
+     * <p>Ce filtre ne touche que le VISUEL : les effets de jeu des enchantements continuent
+     * de s'appliquer partout où ils s'appliquaient.</p>
+     */
     public static List<ResolvedLayer> resolveLayers(ItemStack stack, int maxLayers) {
         if (!isWeaponItem(stack)) return List.of();
         ItemEnchantments ench = stack.getEnchantments();
         if (ench.isEmpty()) return List.of();
+
+        if (!DeepNbt.isModLoot(stack)) return List.of();
 
         boolean isPureUtilityTool = !(stack.getItem() instanceof SwordItem
                 || stack.getItem() instanceof AxeItem

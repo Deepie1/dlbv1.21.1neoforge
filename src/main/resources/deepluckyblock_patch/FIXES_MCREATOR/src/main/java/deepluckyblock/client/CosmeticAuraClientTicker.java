@@ -9,8 +9,10 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -52,6 +54,28 @@ public final class CosmeticAuraClientTicker {
     /** Halo générique, limité aux armes dont le choix Lucky Block persisté l'autorise. */
     public static final int F_HALO_CONTINUOUS       = 1 << 11;
 
+    /**
+     * T436 : deux cosmétiques de plus quittent le monde des particules vanilla pour celui des
+     * pixels. Ils existaient déjà côté serveur ({@code EnchantmentParticleFX.cloudCushion} et
+     * {@code shockwaveRing}) mais AUCUN bit ne les portait jusqu'au rendu : le joueur ne voyait
+     * qu'un nuage de particules génériques, jamais la galette ni les anneaux de l'aperçu.
+     */
+    public static final int F_ENCH_CLOUD_CUSHION   = 1 << 12;
+    public static final int F_ENCH_LANDING_WAVE    = 1 << 13;
+
+    /**
+     * T436 : les deux derniers ornements de JOUEUR qui n'existaient qu'en particules.
+     * Les trois restants ({@code doubleHelix}, {@code tetherBeam}, {@code burstOnEntity})
+     * ne sont pas des ornements portés : ce sont des effets de combat tirés à une position
+     * arbitraire ou entre deux entités. Ils ne se déduisent pas de l'équipement et
+     * demanderaient un paquet serveur dédié — ils restent donc en particules.
+     */
+    public static final int F_ENCH_CROWN_HALO      = 1 << 14;
+    public static final int F_ENCH_WING_RIBBONS    = 1 << 15;
+
+    /** Les ornements posés au sol : ce sont eux, et eux seuls, qui laissent une traînée. */
+    public static final int F_SOL = F_COMBO_106_WARLORD | F_COMBO_062_PLAGUE | F_ENCH_DREAD_AURA;
+
     /** T349 : rayon de collecte des profils cosmétiques (rendu fait par CosmeticPixelAura). */
     private static final double CULL_DIST_SQR = 40.0 * 40.0;
 
@@ -74,6 +98,7 @@ public final class CosmeticAuraClientTicker {
 
             if (cachedLevel != level) {
                 PROFILE_CACHE.clear();
+                CosmeticTrail.vide();          // les pas d'un autre monde n'ont plus de sens
                 cachedLevel = level;
                 lastGameTime = -1L;
             }
@@ -97,13 +122,26 @@ public final class CosmeticAuraClientTicker {
             // ailes / couronnes / auras est fait une seule fois par frame par CosmeticPixelAura.
             getCosmeticFlags(viewer, now);
 
+            // T436 : la traînée au sol est une mémoire de pas en coordonnées monde. On la
+            // nourrit ici, une fois par tick : c'est ce qui la fait se rétracter à l'arrêt
+            // et se redéployer au départ, au lieu de défiler bêtement avec le temps.
+            int fv = getCosmeticFlags(viewer, now);
+            if ((fv & F_SOL) != 0) CosmeticTrail.suivre(viewer, now);
+            if ((fv & (F_ENCH_CLOUD_CUSHION | F_ENCH_LANDING_WAVE)) != 0) {
+                if ((fv & F_ENCH_CLOUD_CUSHION) != 0) CosmeticTrail.suivre(viewer, now);
+                CosmeticTrail.noteChute(viewer, now);
+            }
+
             List<? extends Player> nearbyPlayers = level.players();
             for (int i = 0, n = nearbyPlayers.size(); i < n; i++) {
                 Player other = nearbyPlayers.get(i);
                 if (other == viewer || !other.isAlive() || other.isSpectator()) continue;
                 if (other.distanceToSqr(viewer) > CULL_DIST_SQR) continue;
-                getCosmeticFlags(other, now);
+                int fo = getCosmeticFlags(other, now);
+                if ((fo & (F_SOL | F_ENCH_CLOUD_CUSHION)) != 0) CosmeticTrail.suivre(other, now);
+                if ((fo & F_ENCH_LANDING_WAVE) != 0) CosmeticTrail.noteChute(other, now);
             }
+            if ((now & 63L) == 0L) CosmeticTrail.nettoie(now);
         } catch (Throwable ignored) {}
     }
 
@@ -139,11 +177,41 @@ public final class CosmeticAuraClientTicker {
             return 0;
         }
 
-        if (UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:king") > 0) f |= F_ENCH_KING;
-        if (UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:mystic_mind") > 0) f |= F_ENCH_MYSTIC_MIND;
-        if (UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:heart_resonance") > 0) f |= F_ENCH_RADIANT_AEGIS;
-        if (UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:wing_toughness_armor") > 0) f |= F_ENCH_WINGED_ENDURANCE;
-        if (UniversalEnchantmentHandler.getArmorEnchantLvl(entity, "deep_lucky_block:dread_aura") > 0) f |= F_ENCH_DREAD_AURA;
+        // T436-LOOT-ONLY : c'est la PIÈCE qui porte l'enchantement qui doit venir du loot
+        // du mod. Une armure montée à l'enclume avec un livre du mod garde donc son rendu
+        // vanilla. On lit pièce par pièce, et non plus le maximum sur toute l'armure.
+        if (surLoot(entity, "deep_lucky_block:king")) f |= F_ENCH_KING;
+        if (surLoot(entity, "deep_lucky_block:mystic_mind")) f |= F_ENCH_MYSTIC_MIND;
+        if (surLoot(entity, "deep_lucky_block:heart_resonance")) f |= F_ENCH_RADIANT_AEGIS;
+        if (surLoot(entity, "deep_lucky_block:wing_toughness_armor")) f |= F_ENCH_WINGED_ENDURANCE;
+        if (surLoot(entity, "deep_lucky_block:dread_aura")) f |= F_ENCH_DREAD_AURA;
+
+        // Mêmes enchantements que les appels serveur de cloudCushion/shockwaveRing : le pixel
+        // et la particule parlent enfin du même équipement.
+        if (surLoot(entity, "deep_lucky_block:cloud_walker")
+                || surLoot(entity, "deep_lucky_block:air_walk")
+                || surLoot(entity, "deep_lucky_block:cloud_stride")) {
+            f |= F_ENCH_CLOUD_CUSHION;
+        }
+        if (surLoot(entity, "deep_lucky_block:crash_landing")
+                || surLoot(entity, "deep_lucky_block:meteor_stomp")) {
+            f |= F_ENCH_LANDING_WAVE;
+        }
+        // Mêmes portes que les appels serveur : general pour le diadème,
+        // winging (sur l'élytre) pour les banderoles.
+        if (surLoot(entity, "deep_lucky_block:general")) f |= F_ENCH_CROWN_HALO;
+        // Porte recopiée sur FishingTridentElytraHandler.elytraTickImpl : les banderoles
+        // ne sortent QUE d'une élytre au torse, EN VOL PLANÉ, sous aerodynamic ou
+        // wind_rider. Scanner toute l'armure, ou les afficher au sol, montrerait une
+        // parure que le jeu ne produit jamais.
+        // (Le serveur ajoute « vitesse < 3,5 » sur la seule branche aerodynamic ; on ne
+        //  le reprend pas, sinon les rubans clignoteraient au milieu d'un piqué.)
+        ItemStack torse = entity.getItemBySlot(EquipmentSlot.CHEST);
+        if (torse.is(Items.ELYTRA) && DeepNbt.isModLoot(torse) && entity.isFallFlying()
+                && (UniversalEnchantmentHandler.getEnchantLvl(torse, "deep_lucky_block:aerodynamic") > 0
+                 || UniversalEnchantmentHandler.getEnchantLvl(torse, "deep_lucky_block:wind_rider") > 0)) {
+            f |= F_ENCH_WING_RIBBONS;
+        }
 
         // Plus d'aura constante pour toute arme non à distance : lecture du choix persisté au loot.
         // Les tridents enchantés conservent explicitement leur comportement antérieur, sans tirage.
@@ -153,12 +221,29 @@ public final class CosmeticAuraClientTicker {
         return f;
     }
 
+    /**
+     * L'enchantement est-il porté par une pièce d'armure VENUE DU LOOT DU MOD ?
+     * Le loot du mod est souvent une pièce vanilla : c'est la provenance qui tranche,
+     * jamais le type de l'item ni le namespace de l'enchantement.
+     */
+    private static boolean surLoot(LivingEntity entity, String id) {
+        for (ItemStack piece : entity.getArmorSlots()) {
+            if (!deepluckyblock.util.DeepNbt.isModLoot(piece)) continue;
+            if (UniversalEnchantmentHandler.getEnchantLvl(piece, id) > 0) return true;
+        }
+        return false;
+    }
+
     /** Aucun aléa ici : seulement deux lectures d'items et le marqueur NBT déjà synchronisé. */
     private static boolean hasContinuousWeaponHalo(LivingEntity entity) {
         ItemStack main = entity.getMainHandItem();
         ItemStack off = entity.getOffhandItem();
-        if (main.getItem() instanceof net.minecraft.world.item.TridentItem && main.isEnchanted()) return true;
-        if (off.getItem() instanceof net.minecraft.world.item.TridentItem && off.isEnchanted()) return true;
+        // T436 : même un trident doit venir du loot du mod. Avant, N'IMPORTE quel trident
+        // enchanté — y compris à la table — déclenchait le halo continu.
+        if (deepluckyblock.util.DeepNbt.isModLoot(main)
+                && main.getItem() instanceof net.minecraft.world.item.TridentItem && main.isEnchanted()) return true;
+        if (deepluckyblock.util.DeepNbt.isModLoot(off)
+                && off.getItem() instanceof net.minecraft.world.item.TridentItem && off.isEnchanted()) return true;
         return deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(main)
                 || deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(off);
     }

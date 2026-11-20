@@ -191,6 +191,27 @@ public final class DeepNbt {
     }
 
     /**
+     * T436-LOOT-ONLY : l'item a-t-il été DROPPÉ par le mod ? C'est la seule question qui
+     * décide si les effets de style du mod (traînées, aura d'arme, traînée de flèche,
+     * ornements cosmétiques) s'approprient le rendu de cet item.
+     *
+     * <p><b>À ne pas confondre avec {@link #isLuckyBlockOrigin}</b>, qui exige EN PLUS un
+     * nom personnalisé ou un glint de grade. Ce second verrou sert à l'interface spéciale
+     * du mod : une pièce gradée a toujours un nom. Mais le loot du mod, lui, est très
+     * souvent une arme VANILLA portant seulement des enchantements du mod, et elle n'est
+     * pas toujours nommée. Brancher le style sur {@code isLuckyBlockOrigin} ferait donc
+     * disparaître les effets sur une partie du loot.</p>
+     *
+     * <p>Un item enchanté à l'enclume, à la table, par {@code /enchant} ou par un autre mod
+     * n'a jamais cette clé : son rendu vanilla n'est pas touché.</p>
+     */
+    public static boolean isModLoot(@Nullable ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        CompoundTag tag = tag(stack);
+        return tag != null && tag.getBoolean(LUCKY_ITEM_NBT_KEY);
+    }
+
+    /**
      * T333-GRADED-ORIGIN-ONLY : Retourne {@code true} UNIQUEMENT si l'item est une pièce
      * d'équipement gradée issue du Deep Lucky Block (ou d'un kit gradé {@code /dlbcombo give}).
      *

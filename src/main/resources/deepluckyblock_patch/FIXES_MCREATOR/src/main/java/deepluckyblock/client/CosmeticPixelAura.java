@@ -44,8 +44,26 @@ public final class CosmeticPixelAura {
 
     private CosmeticPixelAura() {}
 
-    /** Budget total de cubes par frame (tous joueurs confondus). */
-    private static final int MAX_CUBES_PER_FRAME = 1400;
+    /**
+     * Budget total de cubes par frame (tous joueurs confondus).
+     *
+     * <p>T435 : 1400 → 3400, les formes de l'aperçu étant bien plus détaillées
+     * que les ornements d'origine (une aile valait cinq quads).</p>
+     *
+     * <p>T436 : 3400 → 4200. Deux ornements de plus sont rendus en pixels —
+     * le coussin de nuage et l'onde de choc. Le pire cas n'est plus une somme
+     * de maxima indépendants mais une mesure INSTANT PAR INSTANT de ce qui
+     * coexiste vraiment ({@code /tmp/t436_budget.js}) : 3441 cubes en l'air
+     * (couronne + aile + cumulables + coussin) et 3718 au sol (les mêmes, plus
+     * l'onde). Le coussin et l'onde ne peuvent pas coexister : l'un se dessine
+     * en l'air, l'autre à l'atterrissage. 4200 laisse 11,5 % de marge — un
+     * plafond collé au pire cas n'est plus un garde-fou.</p>
+     *
+     * <p>Le coussin de nuage est passé de 520 à 214 cubes en changeant de
+     * technique : de gros pixels jointifs couvrent le même volume avec trois
+     * fois moins d'éléments que des disques fins empilés.</p>
+     */
+    private static final int MAX_CUBES_PER_FRAME = 4200;
     /** Distance maximale de rendu d'une aura cosmétique. */
     private static final double MAX_DIST_SQR = 40.0 * 40.0;
 
@@ -212,169 +230,159 @@ public final class CosmeticPixelAura {
         }
     }
 
+    /**
+     * T436 : le rendu passe désormais par {@link CosmeticShapes}, c'est-à-dire par les
+     * géométries validées sur l'aperçu — une forme propre PAR ornement. Avant, sept
+     * cosmétiques différents sortaient du même {@code haloRing} avec un rayon et une
+     * couleur changés : c'était un seul objet repeint, et troué.
+     */
     private static void renderPlayerAura(Player p, int flags, Vec3 cam, Matrix4f mat, Vector3f tmp,
                                          VertexConsumer add, VertexConsumer alpha, float time) {
-        float px = (float) (p.getX() - cam.x);
-        float py = (float) (p.getY() - cam.y);
-        float pz = (float) (p.getZ() - cam.z);
         float height = p.getBbHeight();
+        float echelle = height / 1.8f;
 
         float yaw = p.getYRot() * Mth.DEG_TO_RAD;
-        float fwdX = -Mth.sin(yaw);
-        float fwdZ = Mth.cos(yaw);
-        float rightX = -fwdZ;
-        float rightZ = fwdX;
+        CosmeticShapes.Brush br = BRUSH;
+        br.add = add;
+        br.alpha = alpha;
+        br.mat = mat;
+        br.tmp = tmp;
+        br.px = p.getX() - cam.x;
+        br.py = p.getY() - cam.y;
+        br.pz = p.getZ() - cam.z;
+        br.fwdX = -Mth.sin(yaw);
+        br.fwdZ = Mth.cos(yaw);
+        br.rightX = -br.fwdZ;
+        br.rightZ = br.fwdX;
+        br.time = time;
+        br.budget = budget;
 
-        // --- 1. COURONNES / HALOS (anneaux de pixels au-dessus de la tête) ---
-        // T360-HALO-CONTINU : couronne pixel permanente pour tout porteur d'équipement enchanté.
-        // Dessinée à chaque frame (donc jamais « une fois puis disparue »), elle respire lentement
-        // et tourne en continu autour de la tête.
+        // --- 1. ORNEMENTS DE TÊTE -------------------------------------------
+        // Exclusivité inchangée : #110 prime sur (#097|#098), qui priment sur Roi.
         if ((flags & CosmeticAuraClientTicker.F_HALO_CONTINUOUS) != 0) {
-            float bob = Mth.sin(time * 1.35f) * 0.035f;
-            haloRing(add, mat, tmp, px, py + height + 0.36f + bob, pz, 0.46f, time * 0.62f,
-                    14, 0xFFF3C8, 0xFFC63D, 240, 1.6f);
-            haloRing(add, mat, tmp, px, py + height + 0.50f + bob * 0.6f, pz, 0.33f, -time * 0.85f,
-                    10, 0xFFFFFF, 0xFFE9A0, 215, 1.35f);
-            // petit socle d'aura au sol : le halo se lit même de loin
-            haloRing(add, mat, tmp, px, py + 0.06f, pz, 0.58f, -time * 0.33f,
-                    10, 0xFFE9A0, 0xFFC63D, 150, 1.0f);
+            CosmeticShapes.haloContinu(br, height);
         }
         if ((flags & CosmeticAuraClientTicker.F_COMBO_110_AVATAR) != 0) {
-            // T350 : couronne double, plus large et plus lumineuse (halo du Combo #110 bien visible)
-            haloRing(add, mat, tmp, px, py + height + 0.30f, pz, 0.54f, time * 0.55f,
-                    16, 0xFFF6D0, 0xFFC63D, 250, 1.8f);
-            haloRing(add, mat, tmp, px, py + height + 0.44f, pz, 0.40f, -time * 0.72f,
-                    12, 0xFFFFFF, 0xFFE9A0, 235, 1.5f);
-        } else if ((flags & CosmeticAuraClientTicker.F_COMBO_097_ETERNAL) != 0
-                || (flags & CosmeticAuraClientTicker.F_COMBO_098_SWORD_GOD) != 0) {
-            haloRing(add, mat, tmp, px, py + height + 0.28f, pz, 0.40f, time * 0.5f,
-                    12, 0xFFE9A0, 0xFFB020, 235, 1.5f);
+            CosmeticShapes.soleilAvatar(br, height);
+        } else if ((flags & CosmeticAuraClientTicker.F_COMBO_098_SWORD_GOD) != 0) {
+            CosmeticShapes.epeesDieuLame(br, height);
+        } else if ((flags & CosmeticAuraClientTicker.F_COMBO_097_ETERNAL) != 0) {
+            CosmeticShapes.chaineEternelle(br, height);
         } else if ((flags & CosmeticAuraClientTicker.F_ENCH_KING) != 0) {
-            haloRing(add, mat, tmp, px, py + height + 0.26f, pz, 0.34f, time * 0.42f,
-                    10, 0xFFD34D, 0xFF9500, 225, 1.4f);
+            CosmeticShapes.couronneRoi(br, height);
+        } else if ((flags & CosmeticAuraClientTicker.F_ENCH_CROWN_HALO) != 0) {
+            // Le diadème entre dans la MÊME chaîne exclusive : deux couronnes sur
+            // un seul crâne ne se lisent pas, elles se mangent. Dernier de la
+            // chaîne, car general est un enchantement simple, pas un combo.
+            CosmeticShapes.couronneAurore(br, height);
         }
         if ((flags & CosmeticAuraClientTicker.F_ENCH_MYSTIC_MIND) != 0) {
-            haloRing(add, mat, tmp, px, py + height + 0.34f, pz, 0.32f, -time * 0.40f,
-                    10, 0xC08BFF, 0x7B3BE8, 215, 1.3f);
+            CosmeticShapes.espritMystique(br, height);
         }
         if ((flags & CosmeticAuraClientTicker.F_ENCH_RADIANT_AEGIS) != 0) {
-            haloRing(add, mat, tmp, px, py + height + 0.20f, pz, 0.36f, time * 0.36f,
-                    10, 0xFFF7D9, 0xBFE8FF, 210, 1.3f);
+            CosmeticShapes.egideRadieuse(br, height);
         }
 
-        // --- 2. AILES EN VRAIE MEMBRANE DE PIXELS (5 x 3 cubes par aile) ---
+        // --- 2. ORNEMENTS DE SOL, ET LEUR TRAÎNÉE ----------------------------
+        // Les empreintes sont en coordonnées MONDE : elles restent là où le joueur
+        // est passé, se rétractent quand il s'arrête, se redéploient quand il repart.
+        int solFlags = CosmeticAuraClientTicker.F_COMBO_106_WARLORD
+                | CosmeticAuraClientTicker.F_COMBO_062_PLAGUE
+                | CosmeticAuraClientTicker.F_ENCH_DREAD_AURA;
+        if ((flags & solFlags) != 0) {
+            long tick = p.level().getGameTime();
+            CosmeticTrail.Pas[] pas = CosmeticTrail.collecte(p, tick, 0f);
+            CosmeticTrail.Pas[] relatifs = relatifs(pas, cam);
+            double solY = p.getY() - cam.y;
+            if ((flags & CosmeticAuraClientTicker.F_COMBO_106_WARLORD) != 0) {
+                CosmeticShapes.sceauGuerre(br, relatifs, solY);
+            }
+            if ((flags & CosmeticAuraClientTicker.F_COMBO_062_PLAGUE) != 0) {
+                CosmeticShapes.pesteAmbulante(br, relatifs, solY);
+            }
+            if ((flags & CosmeticAuraClientTicker.F_ENCH_DREAD_AURA) != 0) {
+                CosmeticShapes.auraTerreur(br, relatifs, solY);
+            }
+        }
+
+        // --- 3. LE NUAGE ET L'ONDE : deux cosmétiques qui n'existaient qu'en particules ---
+        // Le coussin est un amorti de saut : il n'existe QUE quand le joueur est en l'air,
+        // exactement comme le déclencheur serveur. C'est aussi ce qui garantit qu'il ne
+        // coexiste jamais avec l'onde de choc, et donc que le budget mesuré tient.
+        if ((flags & CosmeticAuraClientTicker.F_ENCH_CLOUD_CUSHION) != 0 && !p.onGround()) {
+            long tick = p.level().getGameTime();
+            CosmeticTrail.Pas[] pas = relatifs(CosmeticTrail.collecte(p, tick, 0f), cam);
+            CosmeticShapes.coussinNuage(br, pas, p.getY() - cam.y);
+        }
+        if ((flags & CosmeticAuraClientTicker.F_ENCH_LANDING_WAVE) != 0) {
+            long tick = p.level().getGameTime();
+            CosmeticTrail.Impact im = CosmeticTrail.impact(p, tick);
+            if (im != null) {
+                // L'onde est ancrée au point d'impact : le joueur peut s'en éloigner,
+                // elle reste là où il a touché le sol. Aucune traînée, par construction.
+                float avance = (tick - im.tick) / (float) CosmeticTrail.ONDE_TICKS;
+                CosmeticShapes.ondeChoc(br, avance, im.chute,
+                        im.x - cam.x, im.y - cam.y, im.z - cam.z);
+            }
+        }
+
+        // --- 4. AILES (EN DERNIER) -------------------------------------------
+        // Volontairement tracées à la fin : ce sont de loin les plus grosses pièces.
+        // Si le plafond par frame était atteint, il vaut mieux perdre quelques plumes
+        // de bout d'aile qu'un ornement entier.
+        // Deux fonctions DISTINCTES : une aile emplumée et une voilure cristalline.
+        // Elles n'ont plus une seule ligne de calcul en commun.
         boolean archangel = (flags & CosmeticAuraClientTicker.F_COMBO_101_ARCHANGEL) != 0;
         boolean winged = (flags & CosmeticAuraClientTicker.F_ENCH_WINGED_ENDURANCE) != 0
                 && (!p.onGround() || p.isFallFlying());
-        if (archangel || winged) {
-            int outer;
-            int inner;
-            if (archangel) {
-                outer = 0xFFE9A0;
-                inner = 0xFFFBEA;
-            } else {
-                outer = 0xCFE8FF;
-                inner = 0xFFFFFF;
-            }
-            for (int side = -1; side <= 1; side += 2) {
-                wing(add, alpha, mat, tmp, px, py, pz, height,
-                        fwdX, fwdZ, rightX, rightZ, side, time, outer, inner,
-                        archangel ? 1.0f : 0.82f);
-            }
+        if (archangel) {
+            CosmeticShapes.aileSeraphin(br, -1, echelle);
+            CosmeticShapes.aileSeraphin(br, 1, echelle);
+        } else if (winged) {
+            CosmeticShapes.voilureGivre(br, -1, echelle);
+            CosmeticShapes.voilureGivre(br, 1, echelle);
+        }
+        // Les banderoles sont la parure du dos quand il n'y a PAS d'aile. Trois jeux
+        // d'ailes superposés ne font qu'une tache : une vraie aile a la priorité.
+        if (!archangel && !winged && (flags & CosmeticAuraClientTicker.F_ENCH_WING_RIBBONS) != 0) {
+            CosmeticShapes.rubansAile(br, -1, echelle);
+            CosmeticShapes.rubansAile(br, 1, echelle);
         }
 
-        // --- 3. AURA BASSE (anneau au sol) ---
-        if ((flags & CosmeticAuraClientTicker.F_COMBO_106_WARLORD) != 0) {
-            haloRing(add, mat, tmp, px, py + 0.10f, pz, 0.85f, -time * 0.45f,
-                    12, 0xFF7A2E, 0xFFC46B, 195, 1.2f);
-        }
-        if ((flags & CosmeticAuraClientTicker.F_COMBO_062_PLAGUE) != 0) {
-            haloRing(alpha, mat, tmp, px, py + 0.14f, pz, 0.95f, time * 0.30f,
-                    10, 0x6BAF1E, 0x3E7A0C, 150, 1.1f);
-        }
-        if ((flags & CosmeticAuraClientTicker.F_ENCH_DREAD_AURA) != 0) {
-            haloRing(alpha, mat, tmp, px, py + 0.32f, pz, 0.66f, -time * 0.38f,
-                    8, 0x3A0A66, 0x7B2BD6, 165, 1.0f);
-        }
+        budget = br.budget;
     }
 
-    /** Anneau de pixels (couronne / aura au sol), avec léger décalage vertical en dents de scie. */
-    private static void haloRing(VertexConsumer vc, Matrix4f mat, Vector3f tmp,
-                                 float cx, float cy, float cz, float radius, float phase,
-                                 int points, int rgbA, int rgbB, int alpha, float size) {
-        float step = 0.035f * size;
-        for (int i = 0; i < points && budget > 0; i++) {
-            float ang = phase + (float) (Math.PI * 2.0 * i / points);
-            float x = cx + Mth.cos(ang) * radius;
-            float z = cz + Mth.sin(ang) * radius;
-            float y = cy + Mth.sin(ang * 2.0f + phase) * 0.035f;
-            // T351-SMOOTH-GLINT : dégradé ANGULAIRE continu (A -> B -> A) au lieu d'une alternance
-            // pixel/pixel : plus aucun clignotement quand l'anneau tourne.
-            float t = (float) i / (float) points;
-            float tri = (t < 0.5f) ? (t * 2.0f) : (2.0f - t * 2.0f);
-            tri = tri * tri * (3.0f - 2.0f * tri);
-            int rgb = WeaponWorldVfxManager.mixRgb(rgbA, rgbB, tri);
-            int a = alpha - (i % 3) * 12;
-            WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp, x, y, z, step, step * 0.80f, step, rgb, a);
-            budget--;
-            // petit pixel intérieur pour l'épaisseur (un anneau doit être fait de pixels, pas d'un trait)
-            if (radius > 0.5f && (i & 1) == 0) {
-                WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp,
-                        cx + Mth.cos(ang) * (radius - step * 2.2f), y + step * 0.6f,
-                        cz + Mth.sin(ang) * (radius - step * 2.2f),
-                        step * 0.55f, step * 0.45f, step * 0.55f,
-                        WeaponWorldVfxManager.mixRgb(rgb, rgbB, 0.5f), Math.round(a * 0.7f));
-                budget--;
-            }
+    /** Le pinceau est unique et réutilisé : zéro allocation par frame, comme le reste du moteur. */
+    private static final CosmeticShapes.Brush BRUSH = new CosmeticShapes.Brush();
+    private static CosmeticTrail.Pas[] RELATIFS = new CosmeticTrail.Pas[0];
+
+    /** Les empreintes sont en coordonnées monde ; le rendu travaille en repère caméra. */
+    private static CosmeticTrail.Pas[] relatifs(CosmeticTrail.Pas[] pas, Vec3 cam) {
+        if (RELATIFS.length < pas.length) {
+            RELATIFS = new CosmeticTrail.Pas[pas.length];
+            for (int i = 0; i < pas.length; i++) RELATIFS[i] = new CosmeticTrail.Pas();
         }
+        CosmeticTrail.Pas[] out = new CosmeticTrail.Pas[pas.length];
+        for (int i = 0; i < pas.length; i++) {
+            CosmeticTrail.Pas d = RELATIFS[i];
+            if (d == null) {
+                d = new CosmeticTrail.Pas();
+                RELATIFS[i] = d;
+            }
+            d.x = pas[i].x - cam.x;
+            d.y = pas[i].y - cam.y;
+            d.z = pas[i].z - cam.z;
+            d.age = pas[i].age;
+            d.tick = pas[i].tick;
+            out[i] = d;
+        }
+        return out;
     }
 
     /**
-     * Une aile complète : membrane en escalier (5 colonnes x 3 rangées), plumes de bord plus fines,
-     * battement fluide (le bout de l'aile monte/descend avec un déphasage par colonne).
+     * T436 : {@code haloRing} et {@code wing} ont été SUPPRIMÉES. C'étaient les deux seules
+     * formes du moteur : un anneau de dix points rappelé pour sept cosmétiques différents, et
+     * une aile unique partagée par l'Archange et l'Endurance Ailée. Les géométries vivent
+     * maintenant dans {@link CosmeticShapes}, une par ornement.
      */
-    private static void wing(VertexConsumer add, VertexConsumer alpha, Matrix4f mat, Vector3f tmp,
-                             float px, float py, float pz, float height,
-                             float fwdX, float fwdZ, float rightX, float rightZ,
-                             int side, float time, int outerRgb, int innerRgb, float scale) {
-        float shoulderY = py + height * 0.66f;
-        float backOffset = 0.16f;
-        float flap = Mth.sin(time * 2.6f);
-
-        int cols = 5;
-        int rows = 3;
-        for (int c = 0; c < cols; c++) {
-            float cu = c / (float) (cols - 1);
-            float span = (0.20f + cu * 0.72f) * scale;
-            float sweepBack = backOffset + cu * 0.30f;
-            float colFlap = flap * (0.06f + cu * 0.16f);
-            for (int r = 0; r < rows; r++) {
-                float ru = r / (float) (rows - 1);
-                float lift = 0.34f - ru * 0.30f + colFlap;
-                float bx = px + rightX * span * side - fwdX * sweepBack;
-                float bz = pz + rightZ * span * side - fwdZ * sweepBack;
-                float by = shoulderY + lift;
-
-                float size = (0.058f + 0.030f * (1.0f - cu)) * (0.85f + 0.30f * ru) * scale;
-                // Membrane intérieure plus douce, bord extérieur plus vif : l'aile se lit comme des plumes
-                boolean outerEdge = (r == 0) || (c == cols - 1);
-                VertexConsumer vc = outerEdge ? add : alpha;
-                int rgb = outerEdge ? innerRgb : outerRgb;
-                int a = outerEdge ? 235 : 150;
-                if (budget <= 0) return;
-                WeaponWorldVfxManager.emitVoxelCube(vc, mat, tmp, bx, by, bz,
-                        size, size * 0.55f, size * 0.85f, rgb, a);
-                budget--;
-            }
-            // Plume de pointe plus fine, décalée vers le haut : silhouette d'aile, pas un rectangle
-            if (budget > 0) {
-                float tipX = px + rightX * (0.20f + cu * 0.72f) * scale * side - fwdX * (backOffset + cu * 0.30f);
-                float tipZ = pz + rightZ * (0.20f + cu * 0.72f) * scale * side - fwdZ * (backOffset + cu * 0.30f);
-                float tipY = shoulderY + 0.40f + colFlap + 0.05f * c;
-                WeaponWorldVfxManager.emitVoxelCube(add, mat, tmp, tipX, tipY, tipZ,
-                        0.034f * scale, 0.026f * scale, 0.050f * scale, innerRgb, 200);
-                budget--;
-            }
-        }
-    }
 }
