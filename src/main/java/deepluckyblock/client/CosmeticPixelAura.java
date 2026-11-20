@@ -53,11 +53,15 @@ public final class CosmeticPixelAura {
      * <p>T436 : 3400 → 4200. Deux ornements de plus sont rendus en pixels —
      * le coussin de nuage et l'onde de choc. Le pire cas n'est plus une somme
      * de maxima indépendants mais une mesure INSTANT PAR INSTANT de ce qui
-     * coexiste vraiment ({@code /tmp/t436_budget.js}) : 3747 cubes en l'air
+     * coexiste vraiment ({@code /tmp/t436_budget.js}) : 3441 cubes en l'air
      * (couronne + aile + cumulables + coussin) et 3718 au sol (les mêmes, plus
      * l'onde). Le coussin et l'onde ne peuvent pas coexister : l'un se dessine
-     * en l'air, l'autre à l'atterrissage. 4200 laisse 10,8 % de marge — un
+     * en l'air, l'autre à l'atterrissage. 4200 laisse 11,5 % de marge — un
      * plafond collé au pire cas n'est plus un garde-fou.</p>
+     *
+     * <p>Le coussin de nuage est passé de 520 à 214 cubes en changeant de
+     * technique : de gros pixels jointifs couvrent le même volume avec trois
+     * fois moins d'éléments que des disques fins empilés.</p>
      */
     private static final int MAX_CUBES_PER_FRAME = 4200;
     /** Distance maximale de rendu d'une aura cosmétique. */

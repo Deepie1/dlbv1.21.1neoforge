@@ -989,94 +989,127 @@ public final class CosmeticShapes {
     }
 
     // =====================================================================
-    //  13. COUSSIN DE NUAGES — une galette dans laquelle on a les pieds
+    //  13. COUSSIN DE NUAGES — le seul ornement en GROS pixels
     // =====================================================================
-    /** Neuf bouffées sur deux étages : le joueur est DANS le nuage, pas posé dessus. */
+    /**
+     * Un nuage n'a pas d'arête à suivre, il a du VOLUME : il se dessine donc en
+     * gros pixels jointifs et de plusieurs tailles, et non au trait comme les
+     * autres ornements. C'est le mélange des tailles qui fait le moutonnement.
+     *
+     * <p>Dix-neuf bouffées sur trois étages, 1,33 bloc d'envergure et 0,96
+     * d'épaisseur : la galette commence 0,14 bloc SOUS les pieds et monte à
+     * mi-cuisse, le joueur est dedans jusqu'aux genoux.</p>
+     */
+    // [dx, dz, rayon horizontal, rayon vertical, hauteur, grain, graine]
     private static final float[][] BOUFFEES = {
-            {0f, 0f, 0.190f}, {0.300f, 0.075f, 0.150f}, {-0.285f, 0.105f, 0.142f},
-            {0.095f, -0.295f, 0.138f}, {-0.120f, 0.280f, 0.132f},
-            {0.255f, -0.215f, 0.120f}, {-0.240f, -0.230f, 0.116f},
-            {0.040f, 0.330f, 0.110f}, {0f, 0.120f, 0.098f}};
+            // étage 0 : la couronne basse, les plus gros pixels
+            {0.000f,  0.000f, 0.355f, 0.215f, 0.165f, 0.090f,  0.7f},
+            {0.400f,  0.085f, 0.300f, 0.180f, 0.150f, 0.090f,  1.9f},
+            {-0.390f, 0.130f, 0.290f, 0.175f, 0.145f, 0.090f,  3.1f},
+            {0.140f, -0.400f, 0.290f, 0.172f, 0.142f, 0.078f,  4.3f},
+            {-0.165f, 0.395f, 0.285f, 0.170f, 0.152f, 0.078f,  5.5f},
+            {0.335f, -0.335f, 0.250f, 0.155f, 0.136f, 0.078f,  6.7f},
+            {-0.325f, -0.340f, 0.245f, 0.152f, 0.134f, 0.078f,  7.9f},
+            {0.070f,  0.455f, 0.245f, 0.152f, 0.140f, 0.078f,  9.1f},
+            {-0.080f, -0.465f, 0.240f, 0.148f, 0.132f, 0.078f, 10.3f},
+            // étage 1 : la masse médiane, elle remonte entre les chevilles
+            {0.000f,  0.030f, 0.310f, 0.205f, 0.360f, 0.090f, 11.5f},
+            {0.300f, -0.080f, 0.225f, 0.158f, 0.330f, 0.078f, 12.7f},
+            {-0.310f, 0.060f, 0.220f, 0.155f, 0.335f, 0.078f, 13.9f},
+            {0.060f,  0.330f, 0.215f, 0.152f, 0.322f, 0.078f, 15.1f},
+            {-0.050f, -0.335f, 0.212f, 0.150f, 0.318f, 0.078f, 16.3f},
+            // étage 2 : la crête, pixels moyens, elle coiffe le tout
+            {-0.010f, 0.010f, 0.250f, 0.175f, 0.545f, 0.078f, 17.5f},
+            {0.215f,  0.130f, 0.168f, 0.125f, 0.575f, 0.066f, 18.7f},
+            {-0.220f, -0.115f, 0.162f, 0.122f, 0.562f, 0.066f, 19.9f},
+            {0.030f, -0.220f, 0.158f, 0.118f, 0.588f, 0.066f, 21.1f},
+            {-0.035f, 0.215f, 0.154f, 0.116f, 0.570f, 0.066f, 22.3f}};
+
+    private static final int NUAGE_BAS = 0x6B88AF, NUAGE_HAUT = 0xFFFFFF;
+    private static final float NUAGE_Y_BAS = -0.07f, NUAGE_Y_ETENDUE = 0.80f;
+
+    private static float aleaPixel(float a, float b, float c) {
+        double v = Math.sin(a * 127.1 + b * 311.7 + c * 74.7) * 43758.5453;
+        return (float) (v - Math.floor(v));
+    }
 
     public static void coussinNuage(Brush br, CosmeticTrail.Pas[] pas, double solY) {
         final float t = br.time;
-        final float w = 0.078f;
         for (int k = 0; k < BOUFFEES.length && br.budget > 0; k++) {
-            final float dx = BOUFFEES[k][0], dz = BOUFFEES[k][1], R = BOUFFEES[k][2];
-            final float g = 1f + Mth.sin(t * 1.35f + k * 1.25f) * 0.085f;
-            // La bouffée centrale monte d'un troisième étage, entre les chevilles.
-            final float[][] etages = (k == 8)
-                    ? new float[][]{{0.052f, 1.0f}, {0.118f, 0.82f}, {0.182f, 0.55f}}
-                    : new float[][]{{0.040f, 1.0f}, {0.104f, 0.72f}};
-            for (float[] e : etages) {
-                final float ech = e[1];
-                disqueNuage(br, dx, e[0] * g, dz, R * g * ech, w, ech, 214f, 0f, 0xC9DCEE);
-            }
+            final float[] b = BOUFFEES[k];
+            final float g = 1f + Mth.sin(t * 1.35f + k * 1.25f) * 0.060f;
+            final float flot = Mth.sin(t * 0.95f + k * 0.80f) * 0.018f;
+            bouffeeNuage(br, b[0], b[4] * g + flot, b[1], b[2] * g, b[3] * g, b[2] * g,
+                    b[5], b[6], 238, NUAGE_Y_BAS, NUAGE_Y_ETENDUE, false, 0, 0, 0);
         }
 
-        // Le sillage : des volutes posées là où le joueur est passé. Elles montent en
-        // se délitant, et se rétractent quand il s'arrête puisque plus rien n'est déposé.
+        // Le sillage : des volutes posées là où le joueur est passé. Elles montent
+        // en se délitant, et se rétractent dès qu'il s'arrête puisque plus rien
+        // n'est déposé.
         if (pas == null) return;
         for (int k = 0; k < pas.length && k < 6 && br.budget > 0; k++) {
             CosmeticTrail.Pas e = pas[k];
             float vie = Mth.clamp(e.age, 0f, 1f);
-            float R = (0.162f - k * 0.011f) * (1f - vie * 0.55f);
-            float al = 196f * (1f - vie * 0.88f);
-            if (al < 16f || R < 0.030f) continue;
+            float R = (0.205f - k * 0.016f) * (1f - vie * 0.55f);
+            int al = Math.round(214f * (1f - vie * 0.85f));
             float cote = Mth.sin(k * 1.35f + t * 0.6f) * 0.082f;
-            float haut = 0.050f + vie * 0.120f;
-            float latX = cote * br.rightX, latZ = cote * br.rightZ;
-            for (int etage = 0; etage < 2; etage++) {
-                float ech = etage == 0 ? 1.0f : 0.66f;
-                float dy = etage == 0 ? 0f : 0.052f;
-                volutteMonde(br, e.x + latX, solY + haut + dy, e.z + latZ,
-                        R * ech, 0.074f, ech, al, vie);
-            }
+            float haut = 0.085f + vie * 0.150f;
+            // Le grain a un plancher : en dessous le gros pixel ne rentre plus dans
+            // la volute, qui se réduirait à UN cube seul perdu en l'air.
+            float grain = Math.max(0.052f, R * 0.32f);
+            if (al < 20 || R < grain * 2.9f) continue;
+            // yBas est compare a l'altitude MONDE du cube : il doit donc inclure solY,
+            // sinon la teinte du sillage est calculee dans un autre repere que lui.
+            bouffeeNuage(br, 0, 0, 0, R, R * 0.66f, R, grain, 20f + k * 2.3f, al,
+                    (float) (solY + haut - R * 0.8f), R * 1.9f, true,
+                    e.x + cote * br.rightX, solY + haut, e.z + cote * br.rightZ);
         }
     }
 
-    /** La galette, en repère joueur : elle suit les pieds. */
-    private static void disqueNuage(Brush br, float cx, float cy, float cz,
-                                    float rayon, float w, float ech, float al0, float vieillir, int teinte) {
-        int anneaux = Math.max(1, pasOuvert(rayon, w));
-        for (int k = 0; k < anneaux && br.budget > 0; k++) {
-            float fr = k / (float) Math.max(1, anneaux - 1);
-            float r = rayon * fr;
-            int rgb = mix(0xFFFFFF, teinte, fr * 0.55f + (1f - ech) * 0.30f + vieillir);
-            int al = Math.round((al0 - fr * 46f) * (ech < 1f ? 0.86f : 1f));
-            if (al < 8) continue;
-            if (r < 0.001f) {
-                br.cube(cx, cy, cz, w * 0.5f, 0.032f, w * 0.5f, rgb, al);
-                continue;
-            }
-            int n = pasFerme((float) (Math.PI * 2.0) * r, w);
-            for (int i = 0; i < n && br.budget > 0; i++) {
-                float ang = (float) (Math.PI * 2.0) * i / n;
-                br.cube(cx + Mth.cos(ang) * r, cy, cz + Mth.sin(ang) * r,
-                        w * 0.5f, 0.032f, w * 0.5f, rgb, al);
-            }
-        }
-    }
-
-    /** Une volute du sillage, en coordonnées MONDE : elle reste où le pas a été posé. */
-    private static void volutteMonde(Brush br, double cx, double cy, double cz,
-                                     float rayon, float w, float ech, float al0, float vie) {
-        int anneaux = Math.max(1, pasOuvert(rayon, w));
-        for (int k = 0; k < anneaux && br.budget > 0; k++) {
-            float fr = k / (float) Math.max(1, anneaux - 1);
-            float r = rayon * fr;
-            int rgb = mix(0xFFFFFF, 0xA8C2DC, fr * 0.55f + vie * 0.30f);
-            int al = Math.round((al0 - fr * 46f) * (ech < 1f ? 0.82f : 1f));
-            if (al < 8) continue;
-            if (r < 0.001f) {
-                br.cubeWorld(cx, cy, cz, w * 0.5f, 0.028f, w * 0.5f, rgb, al);
-                continue;
-            }
-            int n = pasFerme((float) (Math.PI * 2.0) * r, w);
-            for (int i = 0; i < n && br.budget > 0; i++) {
-                float ang = (float) (Math.PI * 2.0) * i / n;
-                br.cubeWorld(cx + Mth.cos(ang) * r, cy, cz + Mth.sin(ang) * r,
-                        w * 0.5f, 0.028f, w * 0.5f, rgb, al);
+    /**
+     * Remplit un ellipsoïde de gros cubes JOINTIFS (pas = deux fois le grain) :
+     * c'est la condition pour qu'on voie chaque pixel au lieu d'une patate lissée.
+     * La taille est uniforme dans une bouffée ; la variété vient du grain, qui
+     * change d'une bouffée à l'autre.
+     *
+     * @param monde {@code true} pour poser la bouffée en coordonnées MONDE
+     *              (le sillage reste où le pas a été déposé), {@code false} pour
+     *              la poser dans le repère du joueur (la galette le suit).
+     */
+    private static void bouffeeNuage(Brush br, float cx, float cy, float cz,
+                                     float rx, float ry, float rz, float grain, float graine,
+                                     int al0, float yBas, float yEtendue,
+                                     boolean monde, double wx, double wy, double wz) {
+        final float pas = grain * 2f;
+        final int nx = Mth.ceil(rx / pas), ny = Mth.ceil(ry / pas), nz = Mth.ceil(rz / pas);
+        for (int ix = -nx; ix <= nx && br.budget > 0; ix++) {
+            for (int iy = -ny; iy <= ny && br.budget > 0; iy++) {
+                for (int iz = -nz; iz <= nz && br.budget > 0; iz++) {
+                    float px = ix * pas, py = iy * pas, pz = iz * pas;
+                    float d = (float) Math.sqrt((px / rx) * (px / rx)
+                            + (py / ry) * (py / ry) + (pz / rz) * (pz / rz));
+                    // Bord bosselé mais COHÉRENT (fonction lisse de la position) :
+                    // des lobes larges, pas du bruit qui isolerait des cubes.
+                    float lobe = 0.11f * Mth.sin(px * 6.5f + graine) * Mth.cos(pz * 5.5f - graine)
+                            + 0.07f * Mth.sin(py * 8.0f + graine * 2.1f);
+                    if (d > 1f + lobe) continue;
+                    // La teinte suit la hauteur RÉELLE dans le nuage, pas la hauteur
+                    // dans la bouffée : sinon le sommet d'un lobe bas serait aussi
+                    // clair que la crête et l'éclairage se contredirait.
+                    float hGlob = Mth.clamp(((monde ? (float) wy : cy) + py - yBas) / yEtendue, 0f, 1f);
+                    float r = aleaPixel(ix + graine, iy - graine, iz + graine * 2f);
+                    float f = Mth.clamp(0.34f + 0.62f * (float) Math.pow(hGlob, 0.78)
+                            + (1f - Math.min(1f, d)) * 0.07f
+                            + (r - 0.5f) * 0.12f, 0f, 1f);
+                    // Teinte QUANTIFIÉE sur cinq valeurs : du pixel-art franc. Un
+                    // dégradé continu recolle tous les cubes en une seule tache.
+                    int rgb = mix(NUAGE_BAS, NUAGE_HAUT, Math.round(f * 4f) / 4f);
+                    if (monde) {
+                        br.cubeWorld(wx + px, wy + py, wz + pz, grain, grain, grain, rgb, al0);
+                    } else {
+                        br.cube(cx + px, cy + py, cz + pz, grain, grain, grain, rgb, al0);
+                    }
+                }
             }
         }
     }

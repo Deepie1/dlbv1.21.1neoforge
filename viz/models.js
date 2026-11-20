@@ -200,6 +200,55 @@ function bande(out, w, axe, largeur, lateral, f) {
 }
 
 /** Disque horizontal PLEIN (flaques, nuages). f(fr,theta) -> {rgb,a,k?} */
+// ---------------------------------------------------------------------------
+//  GROS PIXELS DE NUAGE
+//  Un nuage ne se dessine pas comme une arete : il n'a pas de trait a suivre,
+//  il a du VOLUME. On remplit donc un ellipsoide avec de gros cubes poses sur
+//  un reseau dont le pas est DEDUIT du grain (jamais en dur), et on fait varier
+//  la taille de chaque cube : gros au coeur, plus petits en bordure. C'est ce
+//  melange de tailles qui donne le moutonnement, la ou des cubes tous egaux
+//  donnent une patate lisse.
+// ---------------------------------------------------------------------------
+function aleaPixel(a, b, c) {
+  const s = Math.sin(a * 127.1 + b * 311.7 + c * 74.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+function bouffeeNuage(out, cx, cy, cz, rx, ry, rz, grain, graine, bas, haut, al0,
+                      yBas, yEtendue) {
+  // Pas = DEUX fois le grain : les cubes sont JOINTIFS, pas noyes les uns dans
+  // les autres. C'est la condition pour qu'on voie chaque gros pixel au lieu
+  // d'une patate lissee. La taille est uniforme DANS une bouffee ; la variete
+  // de tailles vient du grain, qui change d'une bouffee a l'autre.
+  const pas = grain * 2;
+  const nx = Math.ceil(rx / pas), ny = Math.ceil(ry / pas), nz = Math.ceil(rz / pas);
+  for (let ix = -nx; ix <= nx; ix++)
+    for (let iy = -ny; iy <= ny; iy++)
+      for (let iz = -nz; iz <= nz; iz++) {
+        const px = ix * pas, py = iy * pas, pz = iz * pas;
+        const d = Math.hypot(px / rx, py / ry, pz / rz);
+        // Bord bossele, mais COHERENT (fonction lisse de la position) : des
+        // lobes larges, pas du bruit point par point qui isolerait des cubes.
+        const lobe = 0.11 * Math.sin(px * 6.5 + graine) * Math.cos(pz * 5.5 - graine)
+                   + 0.07 * Math.sin(py * 8.0 + graine * 2.1);
+        if (d > 1 + lobe) continue;
+        // La teinte suit la hauteur REELLE dans le nuage, pas la hauteur dans
+        // la bouffee : sinon le sommet d'un lobe bas serait aussi clair que la
+        // crete, et l'eclairage se contredirait d'un lobe a l'autre.
+        const hGlob = Math.min(1, Math.max(0, (cy + py - yBas) / yEtendue));
+        const r = aleaPixel(ix + graine, iy - graine, iz + graine * 2);
+        // Le hasard ne sert qu'a departager deux cubes de meme hauteur : trop
+        // fort, il seme des blocs sombres au beau milieu du dessus eclaire.
+        const f = Math.min(1, Math.max(0, 0.34 + 0.62 * Math.pow(hGlob, 0.78)
+                                          + (1 - Math.min(1, d)) * 0.07
+                                          + (r - 0.5) * 0.12));
+        // Teinte QUANTIFIEE sur cinq valeurs : du pixel-art franc. Un degrade
+        // continu recolle tous les cubes en une seule tache blanche.
+        cube(out, cx + px, cy + py, cz + pz, grain, grain, grain,
+             mixRgb(bas, haut, Math.round(f * 4) / 4), al0);
+      }
+}
+
 function disqueH(out, cx, cy, cz, rayon, w, f) {
   const nr = Math.max(1, pasOuvert(rayon, w));
   for (let i = 0; i < nr; i++) {
@@ -1220,43 +1269,62 @@ const MODELS = {
     jeu: 'pixels',
     jeuNote: "T436 : passe des particules aux pixels. CosmeticShapes.coussinNuage, drapeau F_ENCH_CLOUD_CUSHION (cloud_walker, air_walk, cloud_stride), visible en l'air uniquement.",
     accorde: "#063 Pont Dimensionnel (l.572), #090 Faucon Ouragan (l.703).",
-    note: "Une vraie galette de nuage, large de 0,78 bloc : le joueur a les deux pieds DEDANS, pas posés sur une pastille. Neuf bouffées pleines sur deux étages se recouvrent, dont une qui monte entre les chevilles et deux qui débordent devant les orteils. Derrière, un sillage de volutes qui montent en se délitant — et qui se rétracte quand le joueur s'arrête.",
+    note: "Le seul ornement dessiné en GROS pixels, et de trois tailles : 0,132, 0,156 et 0,180 bloc. Un nuage n'a pas d'arête à suivre, il a du volume. Dix-neuf bouffées sur trois étages, 1,33 bloc d'envergure et 0,96 d'épaisseur : la galette commence 0,14 bloc SOUS les pieds et monte jusqu'à mi-cuisse, le joueur est dedans jusqu'aux genoux. Les pixels sont jointifs (le pas vaut deux fois le grain) et teintés sur cinq valeurs selon leur hauteur réelle dans le nuage — c'est ce qui fait qu'on distingue chaque bloc au lieu d'une seule tache blanche. Derrière, un sillage de volutes qui montent en se délitant, et qui se rétracte quand le joueur s'arrête.",
     build(t) {
       const o = [];
-      // Deux etages : la galette au sol, et un voile plus etroit qui remonte
-      // entre les chevilles pour que le joueur soit DANS le nuage.
-      const bouffees = [[0, 0, 0.190], [0.300, 0.075, 0.150], [-0.285, 0.105, 0.142],
-                        [0.095, -0.295, 0.138], [-0.120, 0.280, 0.132],
-                        [0.255, -0.215, 0.120], [-0.240, -0.230, 0.116],
-                        [0.040, 0.330, 0.110], [0, 0.120, 0.098]];
+      const BAS = 0x6B88AF, HAUT = 0xFFFFFF;
+      // Plus large et plus epais : 1,46 bloc d'envergure, 0,72 d'epaisseur.
+      // Chaque lobe doit faire au moins cinq gros pixels de large, sinon le
+      // gros pixel troue la masse au lieu de la construire.
+      // [dx, dz, rayon horizontal, rayon vertical, hauteur, grain, graine]
+      const bouffees = [
+        // --- etage 0 : la couronne basse, les plus gros pixels ---
+        [ 0.000,  0.000, 0.355, 0.215, 0.165, 0.090,  0.7],
+        [ 0.400,  0.085, 0.300, 0.180, 0.150, 0.090,  1.9],
+        [-0.390,  0.130, 0.290, 0.175, 0.145, 0.090,  3.1],
+        [ 0.140, -0.400, 0.290, 0.172, 0.142, 0.078,  4.3],
+        [-0.165,  0.395, 0.285, 0.170, 0.152, 0.078,  5.5],
+        [ 0.335, -0.335, 0.250, 0.155, 0.136, 0.078,  6.7],
+        [-0.325, -0.340, 0.245, 0.152, 0.134, 0.078,  7.9],
+        [ 0.070,  0.455, 0.245, 0.152, 0.140, 0.078,  9.1],
+        [-0.080, -0.465, 0.240, 0.148, 0.132, 0.078, 10.3],
+        // --- etage 1 : la masse mediane, elle remonte entre les chevilles ---
+        [ 0.000,  0.030, 0.310, 0.205, 0.360, 0.090, 11.5],
+        [ 0.300, -0.080, 0.225, 0.158, 0.330, 0.078, 12.7],
+        [-0.310,  0.060, 0.220, 0.155, 0.335, 0.078, 13.9],
+        [ 0.060,  0.330, 0.215, 0.152, 0.322, 0.078, 15.1],
+        [-0.050, -0.335, 0.212, 0.150, 0.318, 0.078, 16.3],
+        // --- etage 2 : la crete, pixels moyens, elle coiffe le tout ---
+        [-0.010,  0.010, 0.250, 0.175, 0.545, 0.078, 17.5],
+        [ 0.215,  0.130, 0.168, 0.125, 0.575, 0.066, 18.7],
+        [-0.220, -0.115, 0.162, 0.122, 0.562, 0.066, 19.9],
+        [ 0.030, -0.220, 0.158, 0.118, 0.588, 0.066, 21.1],
+        [-0.035,  0.215, 0.154, 0.116, 0.570, 0.066, 22.3]
+      ];
       for (let k = 0; k < bouffees.length; k++) {
-        const [dx, dz, R] = bouffees[k];
-        const g = 1 + Math.sin(t * 1.35 + k * 1.25) * 0.085;
-        const etages = (k === 8) ? [[0.052, 1.0], [0.118, 0.82], [0.182, 0.55]]
-                                 : [[0.040, 1.0], [0.104, 0.72]];
-        for (const [dy, ech] of etages) {
-          disqueH(o, dx, dy * g, dz, R * g * ech, 0.078, (fr) => ({
-            rgb: mixRgb(0xFFFFFF, 0xC9DCEE, fr * 0.55 + (1 - ech) * 0.3),
-            a: (214 - fr * 46) * (ech < 1 ? 0.86 : 1), hy: 0.032
-          }));
-        }
+        const [dx, dz, rh, rv, hy, grain, graine] = bouffees[k];
+        const g = 1 + Math.sin(t * 1.35 + k * 1.25) * 0.060;
+        const flot = Math.sin(t * 0.95 + k * 0.80) * 0.018;
+        bouffeeNuage(o, dx, hy * g + flot, dz, rh * g, rv * g, rh * g,
+                     grain, graine, BAS, HAUT, 238, -0.07, 0.80);
       }
 
       // ---- LE SILLAGE : volutes deposees, qui se retractent a l'arret ----
       const emp = empreintes(t, 6, 1.9, 0.375);
       for (let k = 0; k < emp.length; k++) {
         const e = emp[k];
-        const R = (0.162 - k * 0.011) * e.k;
-        const al = 196 * (1 - e.age * 0.88);
-        if (al < 16 || R < 0.030) continue;
+        const R = (0.205 - k * 0.016) * e.k;
+        const al = 214 * (1 - e.age * 0.85);
         const cote = Math.sin(k * 1.35 + t * 0.6) * 0.082;
-        const haut = 0.050 + e.age * 0.120;
-        for (const [dy, ech] of [[0, 1.0], [0.052, 0.66]]) {
-          disqueH(o, cote, haut + dy, e.z, R * ech, 0.074, (fr) => ({
-            rgb: mixRgb(0xFFFFFF, 0xA8C2DC, fr * 0.55 + e.age * 0.30),
-            a: (al - fr * 46) * (ech < 1 ? 0.82 : 1), hy: 0.028
-          }));
-        }
+        const haut = 0.085 + e.age * 0.150;
+        // Le grain suit la volute, mais il a un plancher : en dessous, le gros
+        // pixel ne rentre plus dans la volute. Une volute qui ne peut plus
+        // contenir trois pixels par axe se reduirait a UN cube seul perdu en
+        // l'air : on la supprime plutot que de la laisser flotter.
+        const grain = Math.max(0.052, R * 0.32);
+        if (al < 20 || R < grain * 2.9) continue;
+        bouffeeNuage(o, cote, haut, e.z, R, R * 0.66, R,
+                     grain, 20 + k * 2.3, 0x8EA8C6, 0xF4F9FF, al, haut - R * 0.8, R * 1.9);
       }
       return o;
     }
