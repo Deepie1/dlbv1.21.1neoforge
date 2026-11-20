@@ -112,6 +112,29 @@ public final class SkillNames {
     }
 
     /**
+     * Prefixe des cles de traduction des noms de competence.
+     *
+     * <p>Les noms vivent dans les fichiers de langue comme tout le reste du mod, et pas
+     * seulement dans cette classe : le {@code .mcreator} fait autorite et ecrase les
+     * traductions a chaque regeneration. La table ci-dessus reste le <b>secours</b>, pour
+     * qu'un nom ne disparaisse jamais si une cle manque.</p>
+     *
+     * <p>Identifiant : la constante d'animation en minuscules, ou le chemin d'enchantement
+     * pour les huit capacites activees. Les deux familles ne se chevauchent pas.</p>
+     */
+    public static final String KEY_PREFIX = "skill_name.deep_lucky_block.";
+
+    /** Cle de traduction du nom d'une animation. */
+    public static String keyOf(WeaponVisualEffectId fx) {
+        return fx == null ? null : KEY_PREFIX + fx.name().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** Cle de traduction du nom d'une capacite activee. */
+    public static String keyOfPath(String enchantPath) {
+        return enchantPath == null ? null : KEY_PREFIX + enchantPath;
+    }
+
+    /**
      * Nom propre d'une competence, animation ou capacite activee.
      *
      * <p>C'est le point d'entree unique de l'infobulle : il garantit qu'aucune
@@ -119,9 +142,30 @@ public final class SkillNames {
      */
     public static String ofSkill(WeaponVisualEffectId fx, String enchantPath, boolean french) {
         if (fx != null) return of(fx, french);
-        Name n = (enchantPath == null) ? null : BY_PATH_NAMES.get(enchantPath);
+        if (enchantPath == null) return "";
+        String traduit = translate(keyOfPath(enchantPath));
+        if (traduit != null) return traduit;
+        Name n = BY_PATH_NAMES.get(enchantPath);
         if (n != null) return french ? n.fr() : n.en();
-        return (enchantPath == null) ? "" : titleCase(enchantPath.toUpperCase(java.util.Locale.ROOT));
+        return titleCase(enchantPath.toUpperCase(java.util.Locale.ROOT));
+    }
+
+    /**
+     * Traduction d'une cle, ou {@code null} si elle n'est pas enregistree.
+     *
+     * <p>On passe par {@code TranslationFallback} et non par {@code Language} directement :
+     * c'est le seul chemin qui lit aussi le JSON packagé, donc le seul qui reponde encore
+     * quand MCreator vient de regenerer les fichiers de langue.</p>
+     */
+    private static String translate(String key) {
+        if (key == null) return null;
+        try {
+            String v = deepluckyblock.util.TranslationFallback.resolve(key);
+            if (v != null && !v.isBlank() && !v.equals(key)) return v;
+        } catch (Throwable ignored) {
+            // traduction indisponible (chargement precoce) : la table de secours repond.
+        }
+        return null;
     }
 
     /** Nombre de capacites activees nommees : lu par le banc de controle. */
@@ -138,6 +182,8 @@ public final class SkillNames {
      */
     public static String of(WeaponVisualEffectId fx, boolean french) {
         if (fx == null) return "";
+        String traduit = translate(keyOf(fx));
+        if (traduit != null) return traduit;
         Name n = NAMES.get(fx);
         if (n != null) return french ? n.fr() : n.en();
         return titleCase(fx.name());

@@ -91,6 +91,13 @@ EXTRA = [
     # language_map ci-dessus. Les trois sources sont verifiees identiques avant envoi.
     'src/main/resources/assets/deep_lucky_block/lang/en_us.json',
     'src/main/resources/assets/deep_lucky_block/lang/fr_fr.json',
+    # T422 : LE QUATRIEME FICHIER DE LANGUE, oublie jusqu'ici. TranslationFallback lit
+    # AUSSI /deepluckyblock_patch/lang/<lang>.json, c'est son secours quand MCreator
+    # vient de regenerer assets/. Il etait reste a 2518 entrees quand les trois autres
+    # sources en comptaient 2618 : les 100 cles de T416 n'y avaient jamais ete posees,
+    # et il ne partait meme pas dans l'archive. Les quatre sont desormais egales.
+    'src/main/resources/deepluckyblock_patch/lang/en_us.json',
+    'src/main/resources/deepluckyblock_patch/lang/fr_fr.json',
     # T397-PIXEL3D : les trois fichiers du core shader. Ils ne vivent PAS sous
     # deepluckyblock_patch mais a leur emplacement reel dans assets/ : c'est la que le
     # chargeur de ressources les cherche, et un asset range ailleurs ne se charge pas.
