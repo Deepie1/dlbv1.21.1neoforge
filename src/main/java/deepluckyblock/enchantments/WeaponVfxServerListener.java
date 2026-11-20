@@ -5728,11 +5728,22 @@ public final class WeaponVfxServerListener {
                         swallowed.remove(id);
                         continue;
                     }
-                    // DOUCEMENT : 134 ticks pour descendre, 22 pour remonter. Un corps
+                    // T427-ENFONCEMENT : 44 ticks pour descendre, 22 pour remonter. Un corps
                     // sorti de l'anneau remonte tout seul — la porte ne tient que ce qui
                     // est dedans.
+                    //
+                    // La descente durait 134 ticks, soit plus de SEPT FOIS l'intervalle entre
+                    // deux transits (18). Comme chaque transit recrachait le corps et remettait
+                    // son avancement a zero, l'enfoncement plafonnait a quinze pour cent, soit
+                    // VINGT CENTIMETRES sur une cible humaine — la hauteur d'une marche, sur un
+                    // corps de deux metres. L'effet n'etait pas regle trop lentement : il etait
+                    // structurellement inatteignable
+                    // — et la prime de profondeur de la fermeture, qui multiplie les degats par
+                    // l'avancement, ne se declenchait donc jamais non plus. Quarante-quatre
+                    // ticks tiennent dans l'intervalle : le corps disparait pour de bon, puis
+                    // la porte le recrache. On voit enfin les deux temps du verbe.
                     boolean held = !rising && st[2] == at;
-                    st[1] = held ? Math.min(1.0, st[1] + 2.0 / 134.0)
+                    st[1] = held ? Math.min(1.0, st[1] + 2.0 / 44.0)
                                  : Math.max(0.0, st[1] - 2.0 / 22.0);
                     // Le plafond est mesure sur les YEUX et pas sur la taille : un corps
                     // trapu (araignee, 0,90 de haut, oeil a 0,585) passait sous la surface
@@ -5761,35 +5772,61 @@ public final class WeaponVfxServerListener {
                 if (victims.isEmpty()) return;
                 // Le corps le plus proche de l'anneau : la porte avale ce qui est tombe
                 // dedans, pas ce qui passait au large.
-                LivingEntity taken = victims.get(0);
+                //
+                // T427-TRANSIT : ON NE RECRACHE PAS CE QU'ON EST EN TRAIN D'AVALER.
+                //
+                // Le transit prenait le corps le plus proche de l'anneau, point — y compris
+                // celui que la porte etait justement en train d'engloutir. Il le remontait a
+                // la surface et remettait son avancement a zero, toutes les dix-huit frames.
+                // En duel, ou ce corps est le seul candidat, l'enfoncement ne pouvait donc
+                // jamais aboutir : le joueur voyait un mob qui prend un degat et remonte
+                // aussitot, exactement ce qui a ete signale. Le verbe de la porte est pourtant
+                // sequentiel — elle AVALE, puis elle recrache. On ne prend donc pour passager
+                // qu'un corps que la porte ne tient pas, ou qu'elle a FINI d'avaler ; sinon le
+                // transit garde son degat et son bruit, et laisse la descente se terminer.
+                LivingEntity taken = null;
                 double bestGap = Double.MAX_VALUE;
+                LivingEntity sinking = null;
+                double sinkingGap = Double.MAX_VALUE;
                 for (LivingEntity candidate : victims) {
                     double ddx = candidate.getX() - ox;
                     double ddz = candidate.getZ() - oz;
                     double gap = Math.abs(Math.sqrt(ddx * ddx + ddz * ddz) - 2.12);
-                    if (gap < bestGap) { bestGap = gap; taken = candidate; }
+                    double[] progress = swallowed.get(candidate.getId());
+                    if (progress != null && progress[1] < 1.0) {
+                        if (gap < sinkingGap) { sinkingGap = gap; sinking = candidate; }
+                    } else if (gap < bestGap) {
+                        bestGap = gap;
+                        taken = candidate;
+                    }
                 }
-                final LivingEntity passenger = taken;
-                // LA PORTE LE RECRACHE. Il remonte AVANT d'etre pousse : sinon la parabole
-                // part d'un bloc sous le sol, et les vingt-six ticks de repit qui suivent
-                // laissent l'arc se terminer avant que l'anneau ne le reprenne.
-                double[] held = swallowed.remove(passenger.getId());
-                if (held != null) {
-                    releaseVoidGrip(passenger);
-                    passenger.setPos(passenger.getX(), held[0], passenger.getZ());
+                final boolean eject = taken != null;
+                final LivingEntity passenger = eject ? taken : sinking;
+                if (passenger == null) return;
+                if (eject) {
+                    // LA PORTE LE RECRACHE. Il remonte AVANT d'etre pousse : sinon la parabole
+                    // part d'un bloc sous le sol, et les vingt-six ticks de repit qui suivent
+                    // laissent l'arc se terminer avant que l'anneau ne le reprenne.
+                    double[] held = swallowed.remove(passenger.getId());
+                    if (held != null) {
+                        releaseVoidGrip(passenger);
+                        passenger.setPos(passenger.getX(), held[0], passenger.getZ());
+                    }
+                    spatOut.put(passenger.getId(), now + 34 + pass * 18 + 26);
+                    // En foule l'azimut TOURNE (dissemination) ; en duel il fait un demi-tour a
+                    // chaque passage (va-et-vient). Deux lectures du meme geste.
+                    double outAng = solo
+                            ? seedAng + pass * Math.PI
+                            : seedAng + pass * (Math.PI * 2.0 / 7.0);
+                    double throwSpeed = solo ? 0.52 : 0.78;
+                    voidPush(sl, passenger, Math.cos(outAng) * throwSpeed, solo ? 0.46 : 0.58,
+                            Math.sin(outAng) * throwSpeed);
                 }
-                spatOut.put(passenger.getId(), now + 34 + pass * 18 + 26);
-                // En foule l'azimut TOURNE (dissemination) ; en duel il fait un demi-tour a
-                // chaque passage (va-et-vient). Deux lectures du meme geste.
-                double outAng = solo
-                        ? seedAng + pass * Math.PI
-                        : seedAng + pass * (Math.PI * 2.0 / 7.0);
-                double throwSpeed = solo ? 0.52 : 0.78;
-                voidPush(sl, passenger, Math.cos(outAng) * throwSpeed, solo ? 0.46 : 0.58,
-                        Math.sin(outAng) * throwSpeed);
                 voidHurt(sl, attackerId, passenger, base * (solo ? 0.92f : 0.45f));
-                passenger.addEffect(new MobEffectInstance(MobEffects.LEVITATION, solo ? 18 : 26,
-                        0, true, false));
+                if (eject) {
+                    passenger.addEffect(new MobEffectInstance(MobEffects.LEVITATION, solo ? 18 : 26,
+                            0, true, false));
+                }
                 if (pass % 2 == 0) {
                     addVoidMark(sl, passenger, 1, attackerId, base * 0.28f, markEnd);
                 }
@@ -10433,6 +10470,17 @@ public final class WeaponVfxServerListener {
     }
 
     /**
+     * Delai, en ticks, entre le lancement d'une signature au clic droit et sa frappe d'entree.
+     *
+     * <p>Une demi-seconde. Assez pour que l'animation s'installe et que le joueur lise le geste
+     * qu'il vient de declencher ; assez court pour que le coup reste attache au clic et ne soit
+     * pas percu comme un degat venu de nulle part. C'est le seul endroit ou ce rythme est
+     * decide — les signatures lancees sur un degat deja en cours (fleche, carreau, trident)
+     * n'y passent pas, leur coup est deja parti.</p>
+     */
+    private static final int ENTRY_BLOW_DELAY_TICKS = 10;
+
+    /**
      * @param dealEntryDamage vrai pour un lancement au clic droit, ou la signature doit porter
      *                        elle-meme son coup d'entree ; faux quand elle se greffe sur un
      *                        degat deja en cours (fleche, carreau, trident), ou le bonus est
@@ -10457,10 +10505,23 @@ public final class WeaponVfxServerListener {
         float measuredScale = sizeScaleOf(target);
         // Le bonus que l'ancienne branche posait sur l'evenement de degats est ici porte par
         // un coup propre : sans lui, lancer le skill ne ferait aucun degat d'entree.
+        //
+        // T427-ENTREE-DIFFEREE : CE COUP NE PART PLUS AVANT L'ANIMATION.
+        //
+        // Pose ici sans delai, il s'executait AVANT le broadcastNear des branches ci-dessous :
+        // le clic droit se lisait donc comme un coup d'epee immediat, et l'animation suivait
+        // comme un decor. Pire, sur une cible affaiblie le coup la tuait sur place et toute la
+        // signature — image et gameplay — se jouait sur un cadavre. L'ordre voulu est l'inverse :
+        // la signature part, puis sa frappe d'entree touche. Un demi-seconde suffit a ce que
+        // l'oeil lise le geste avant le degat ; si la cible est morte entre-temps,
+        // hurtWithCapturedWeapon ne fait simplement rien.
         if (dealEntryDamage) {
             int bonusPercent = bigMeleeBonusPercent(measuredScale);
-            hurtWithCapturedWeapon(sl, attacker.getId(), target,
-                    capturedWeaponDamage * (1.0f + bonusPercent / 100.0f));
+            final float entryBlow = capturedWeaponDamage * (1.0f + bonusPercent / 100.0f);
+            final int attackerId = attacker.getId();
+            final LivingEntity victim = target;
+            TestProcedure.schedule(sl, TestProcedure.currentTick(sl) + ENTRY_BLOW_DELAY_TICKS,
+                    () -> hurtWithCapturedWeapon(sl, attackerId, victim, entryBlow));
         }
         float bigScale = bigMeleeVisualScale(measuredScale);
         if (fx == WeaponVisualEffectId.CRIMSON_SIPHON) {
