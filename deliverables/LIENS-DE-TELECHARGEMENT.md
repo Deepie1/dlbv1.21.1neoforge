@@ -2,66 +2,73 @@
 
 ## ⬇️ L'archive — c'est le seul lien
 
-https://github.com/Deepie1/dlbv1.21.1neoforge/raw/7617279ffae554d617da230ece75d6ed70e672b7/deliverables/DLB_src.zip
+https://github.com/Deepie1/dlbv1.21.1neoforge/raw/37d3158b6b0fd69e63c891557821f74453086b69/deliverables/DLB_src.zip
 
-`DLB_src.zip` · 116 fichiers · 2 148 548 octets
-<br>SHA-256 `2e103593f52f906a91f5a8527a13f4205389ed01d7eceefc4228b97331393906`
+`DLB_src.zip` · 118 fichiers · 2 159 750 octets
+<br>SHA-256 `7b0cfeae13f8db887cfaa42ab7740ac98dbeddea1fa32b7ce6098d44643e66fb`
 
-**Le fichier `deep_lucky_block-neoforge-1.21.1.mcreator` est dedans**, à la racine de
-l'archive, avec les deux fichiers de langue.
+Le fichier `deep_lucky_block-neoforge-1.21.1.mcreator` est dedans, à la racine.
 
 ---
 
-## Réponse à votre question : non, il en manquait 100
+## Vos deux règles, écrites telles quelles
 
-Vous aviez raison de demander. Le `.mcreator` portait **2 518 traductions par langue**, et
-**100 clés n'y étaient pas** :
+### Le skill au drop
 
-- les **90 textes de signature** (`skill.deep_lucky_block.<nom>.1` et `.2` : thorn_maw,
-  warp, tempest, chrono_mending…) ;
-- les **10 clés de l'encart compétence** : `section_skills`, `skill_header`,
-  `skill_named`, `cooldown_suffix` et les six `cast.*` (clic droit sur un mob, outil en
-  main, canne, main vide, fusée, accroupi en sprint).
+**5 % pour un skill d'élément aléatoire.** Je tire **l'élément d'abord**, puis une signature
+à l'intérieur de cet élément. Ce n'est pas un détail : tirer directement parmi les
+45 signatures ne donne pas le même résultat, parce que les éléments n'en portent pas le
+même nombre — les mieux fournis sortiraient bien plus souvent que les autres.
 
-Elles vivaient **uniquement dans le code Java**, qui les pose au démarrage. Ça marchait —
-mais ça ne tenait qu'à ce fichier de code. Comme c'est le `.mcreator` qui **écrase** les
-traductions à la régénération, une régénération fabriquait des fichiers de langue
-**sans** ces 100 clés.
+**Le troc a changé sur les deux branches**, parce qu'il ne disait pas ce que vous aviez
+demandé :
 
-C'est corrigé : **2 618 entrées par langue**, et les trois sources (le `.mcreator`,
-`en_us.json`, `fr_fr.json`) sont maintenant **identiques au caractère près**.
+| | Avant | Maintenant |
+|---|---|---|
+| Troc 1 | exactement **2** enchantements retirés | **0 à 3**, tirés au hasard |
+| Troc 2 | **une seule** valeur 0-3 appliquée à tout le monde | **chaque** enchantement a son propre tirage 0-3 |
 
-## Un vrai défaut trouvé en chemin : « Bondissant »
+Le second tirage indépendant à 5 % est conservé : deux skills = 1 chance sur 400.
 
-En comparant les textes un par un, deux clés françaises ne concordaient pas. Le
-`.mcreator` disait :
+### Le slash visuel
 
-> « Vous fait rebondir à chaque atterrissage » · « exactement comme sur un bloc de slime »
+- **Au drop : 7 %** des armes y ont droit, **à condition** de porter un enchantement lié à
+  un élément — sans élément, le slash n'aurait aucune couleur à prendre.
+- **Au coup : 6 %**, et le coup qui porte le slash frappe **+10 %**.
+- Le slash sort **à la couleur de l'élément** de l'arme.
 
-alors que son **propre texte anglais** et le fichier de langue disent :
+**Un seul tirage décide des deux.** L'image et le bonus de dégâts sortent de la même ligne,
+côté serveur. Si je les avais séparés, vous auriez vu des slashs sans bonus et encaissé des
+bonus sans slash — invérifiable en jouant.
 
-> « Le rebond suit la chute et perd de l'élan à chaque impact, jusqu'à s'arrêter. »
+**Ce que j'ai dû retirer pour que la règle tienne :**
 
-Le `.mcreator` gagnant, c'est la **vieille description, fausse**, qui serait partie en
-jeu. Les deux clés sont alignées sur le rebond amorti.
+- le **client** sortait un slash à **chaque swing** de toute arme à aura, sans aucun bonus
+  de dégâts. Il ne le fait plus que pour les épées de démonstration `/anim` ;
+- côté serveur, un ancien jet donnait **+5 % sur 23 %** des coups, sans aucun visuel. Jet et
+  constantes supprimés ;
+- deux blocs de slash devenus inatteignables, supprimés aussi.
 
-## Les lisez-moi sont partis
+## La mesure, pas la promesse
 
-Retirés de l'archive : `LISEZ-MOI-CONTENU.txt`, `LIRE-MOI-IMPORTANT.md` et le journal
-`WATER_SIGNATURES.md` (237 Ko). J'ai aussi supprimé du générateur le texte qui fabriquait
-le premier — 152 lignes de code devenu inutile — et retourné ses garde-fous : l'archive
-**refuse** désormais de se fabriquer si un lisez-moi s'y glisse ou si le `.mcreator`
-manque.
+Banc statistique sur **400 000 tirages**, avec les pourcentages **relus dans le code** :
 
-## Toujours inclus
+| Mesure | Résultat | Attendu |
+|---|---|---|
+| Au moins un skill | 4,97 % | 5 % |
+| Deux skills | 0,26 % | 0,25 % |
+| Slash, arme autorisée | 5,97 % des coups | 6 % |
+| Slash, arme ordinaire | 0,00 % | 0 % |
+| Dégâts du coup porteur | +10 % | +10 % |
 
-Les correctifs de la livraison précédente : compétences qui sortaient par deux
-(24 enchantements vanilla créaient des compétences fantômes), tirage à 5 % puis 5 %, et
-halo « compétence prête » enfin transmis au client.
+## Un piège évité de justesse
+
+`DeepNbt.java` portait la nouvelle clé `dlbSlashVisual`… et n'était **pas** dans la liste
+des fichiers livrés par le générateur. Il serait parti modifié mais absent : le serveur
+aurait cherché une méthode inexistante. C'est la **cinquième** fois que ce piège se
+présente ; le contrôle croisé est désormais systématique avant chaque archive.
 
 ## Ce que je n'ai pas pu vérifier
 
-`javac` n'existe pas ici : **la compilation n'est pas prouvée**. Et je ne peux pas lancer
-le jeu, donc le rendu du halo à l'écran reste à confirmer par vous. Le fichier `.mcreator`
-a été relu après écriture : JSON valide, 48 éléments de mod intacts, format d'origine
-respecté à l'octet près.
+`javac` n'existe pas ici : **la compilation n'est pas prouvée**. Et je ne peux pas lancer le
+jeu : le rendu du slash à l'écran et la bascule du halo restent à confirmer par vous.
