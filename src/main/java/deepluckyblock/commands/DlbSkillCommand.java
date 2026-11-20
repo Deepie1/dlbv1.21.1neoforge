@@ -167,6 +167,10 @@ public final class DlbSkillCommand {
         // lancer donnerait une arme muette et ferait croire \u00e0 une panne.
         ItemStack sword = new ItemStack(Items.DIAMOND_SWORD);
         deepluckyblock.util.DeepEnchant.setLevel(sword, ench, 3);
+        // T429 : poser l'enchantement ne suffit plus a donner la competence — c'est tout
+        // l'objet du correctif. Cette epee de test doit donc recevoir la meme marque que
+        // celle delivree par le tirage a 5 %, sinon /dlbskill livrerait une arme muette.
+        WeaponSkill.markGranted(sword, path);
 
         WeaponSkill.Entry entry = WeaponSkill.firstOn(sword);
         String skillName = (entry == null)

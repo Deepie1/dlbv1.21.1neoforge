@@ -3171,6 +3171,11 @@ public class GenerateLuckyItemProcedure {
             }
         }
         addEnchantment(stack, "deep_lucky_block:" + chosen, 1 + random.nextInt(3));
+        // T429 : SANS CETTE LIGNE, LE TIRAGE A 5 % NE SERT A RIEN. L'enchantement pose
+        // ci-dessus ne serait qu'une animation de plus, et c'est precisement le defaut
+        // corrige : toute arme de melee enchantee se croyait porteuse d'une competence.
+        // La marque est le seul titre valable, et elle n'est delivree qu'ici.
+        deepluckyblock.enchantments.WeaponSkill.markGranted(stack, chosen);
         return true;
     }
 

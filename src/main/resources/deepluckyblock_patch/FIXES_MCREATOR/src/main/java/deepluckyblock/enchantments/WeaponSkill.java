@@ -55,6 +55,56 @@ public final class WeaponSkill {
     public static final int CHARGED_GLINT_TIER = 13;
 
     /**
+     * T429 — LA MARQUE QUI FAIT D'UN ENCHANTEMENT UNE COMPETENCE.
+     *
+     * <p><b>Le defaut corrige.</b> Le butin annonce une competence sur 5 % des armes de melee,
+     * et en donnait a 100 % d'entre elles. La cause n'etait pas le tirage, qui est juste :
+     * c'etait la definition meme de « porter une competence ». {@code resolve} demandait a
+     * {@code WeaponVisualEffectId.forEnchantmentLocation} si l'enchantement correspond a une
+     * animation — et cette table en reconnait 253, dont 24 enchantements vanilla. Sur une
+     * epee, Solidite, Raccommodage ou Tranchant suffisaient donc a ouvrir le clic droit :
+     * les pools d'epee sont reconnus a 100 % par cette table, du rang COMMON a ETERNAL.</p>
+     *
+     * <p>Une animation n'est pas un pouvoir. Desormais une signature n'est une competence que
+     * si <b>le tirage a 5 % l'a deliberement posee</b> et a inscrit son chemin ici. Les
+     * signatures ramassees dans le butin gardent exactement ce qu'elles ont toujours ete :
+     * des animations au coup porte, lues par {@code resolveLayers}, que cette marque ne
+     * touche jamais.</p>
+     *
+     * <p>Les huit capacites activees ({@code effect() == null}) echappent a la regle : elles
+     * ne sont rien d'autre qu'un pouvoir, sans animation ni bonus passif. Les priver de
+     * competence faute de marque les rendrait muettes.</p>
+     */
+    public static final String GRANTED_KEY = "dlbSkillGranted";
+
+    /**
+     * Inscrit sur l'arme la competence que le tirage vient de lui accorder.
+     *
+     * <p>Seul appelant legitime : le code qui POSE la competence, juste apres avoir ajoute
+     * l'enchantement correspondant. Marquer un chemin que l'arme ne porte pas ne donne rien :
+     * {@link #scan} croise toujours la marque avec les enchantements reellement presents.</p>
+     */
+    public static void markGranted(ItemStack stack, String enchantPath) {
+        if (stack == null || stack.isEmpty() || enchantPath == null || enchantPath.isBlank()) return;
+        try {
+            net.minecraft.nbt.CompoundTag tag = deepluckyblock.util.DeepNbt.getOrCreateTag(stack).copy();
+            tag.putString(GRANTED_KEY, enchantPath);
+            deepluckyblock.util.DeepNbt.commit(stack, tag);
+        } catch (Throwable ignored) {
+            // NBT indisponible : l'arme repart sans competence, jamais avec une competence fantome.
+        }
+    }
+
+    /** Chemin de la competence accordee a cette arme, ou {@code null} si le tirage ne l'a pas choisie. */
+    public static String grantedPath(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return null;
+        net.minecraft.nbt.CompoundTag tag = deepluckyblock.util.DeepNbt.tag(stack);
+        if (tag == null) return null;
+        String chemin = tag.getString(GRANTED_KEY);
+        return (chemin == null || chemin.isBlank()) ? null : chemin;
+    }
+
+    /**
      * Comment le joueur déclenche la compétence.
      *
      * <p>Chaque valeur décrit un geste qui existait <b>déjà</b> dans le mod. Aucune n'a été
@@ -316,6 +366,9 @@ public final class WeaponSkill {
     public static List<Found> scan(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return List.of();
         boolean melee = canCastSignature(stack);
+        // T429 : la competence que le tirage a 5 % a accordee a CETTE arme. Hors d'elle, une
+        // signature portee reste une animation de coup et n'ouvre aucun clic droit.
+        final String accordee = grantedPath(stack);
         java.util.LinkedHashMap<String, Entry> entrees = new java.util.LinkedHashMap<>(4);
         java.util.LinkedHashMap<String, java.util.ArrayList<net.minecraft.resources.ResourceLocation>> portes =
                 new java.util.LinkedHashMap<>(4);
@@ -327,6 +380,10 @@ public final class WeaponSkill {
             Entry trouvee = resolve(loc, melee);
             if (trouvee == null) continue;
             String cle = trouvee.enchantPath();
+            // Une signature non accordee n'est pas une competence : elle reste l'animation
+            // que l'enchantement a toujours jouee au coup porte. Les capacites activees
+            // (effect() == null) passent sans marque : elles n'ont rien d'autre a offrir.
+            if (trouvee.effect() != null && !cle.equals(accordee)) continue;
             entrees.putIfAbsent(cle, trouvee);
             portes.computeIfAbsent(cle, k -> new java.util.ArrayList<>(2)).add(loc);
             niveaux.merge(cle, tenu.getValue() == null ? 0 : tenu.getValue(), Math::max);

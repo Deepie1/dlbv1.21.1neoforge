@@ -729,21 +729,23 @@ public final class WeaponVfxServerListener {
         for (DeepElement el : els) {
             if (played >= ELEMENT_COMBO_MAX) break;
             if (el == null) continue;
-            WeaponVisualEffectId sig = WeaponVisualEffectId.signatureFor(el);
-            if (sig == null) continue;
-            broadcastNear(sl, tx, ty, tz, sig.id, KIND_IMPACT, 3,
-                    tx, ty, tz, ax, ay, az, 1 << el.ordinal(), lightVisualScaleOf(sig, target, sizeScale));
-            LivingEntity comboAttacker = sl.getEntity(attackerId) instanceof LivingEntity living ? living : null;
-            applyFireGameplay(comboAttacker, target, sig, sizeScale, weaponDamage);
-            applyWoodGameplay(comboAttacker, target, sig, sizeScale, weaponDamage);
-            applyEarthGameplay(comboAttacker, target, sig, weaponDamage);
-            applyMetalGameplay(comboAttacker, target, sig, weaponDamage);
-            applyLightGameplay(comboAttacker, target, sig, weaponDamage, sizeScale);
-            applyPoisonGameplay(comboAttacker, target, sig);
-            applyWaterGameplay(comboAttacker, target, sig, weaponDamage);
-            applyThunderGameplay(comboAttacker, target, sig, weaponDamage);
-            applyShadowGameplay(comboAttacker, target, sig, weaponDamage);
-            applyBloodGameplay(comboAttacker, target, sig, weaponDamage);
+            // T429-PAS-DE-SIGNATURE-ETRANGERE : UNE ARME NE JOUE QUE SON PROPRE ELEMENT.
+            //
+            // Cette boucle lancait ici la SIGNATURE COMPLETE de chaque element porte —
+            // broadcastNear(sig) suivi des DIX apply*Gameplay — c'est-a-dire l'animation
+            // ET le gameplay d'un element que l'arme ne revendique pas. Une arme Poison
+            // portant le moindre enchantement de Terre executait donc reellement
+            // signatureFor(EARTH) : main de Titan, degats sismiques, le tout EN MEME TEMPS
+            // que sa propre signature. C'est le « une animation de Terre sur mon arme
+            // Poison » rapporte en jeu, et c'est interdit : une competence appartient a son
+            // element.
+            //
+            // Ne restent que les etincelles de famille ci-dessous. Elles ne nomment aucune
+            // competence et n'infligent rien : elles ne font que colorer le coup aux teintes
+            // reellement portees par l'arme, ce qui etait l'intention d'origine du combo.
+            // Les animations propres a l'arme continuent de partir par resolveLayers, en
+            // dehors d'ici.
+            //
             // Étincelles de la famille, une par élément : le mélange de couleurs se voit tout de suite.
             WeaponVfxSubtle.Subtle accent = WeaponVfxSubtle.pick(el, sl.random.nextLong());
             broadcastNear(sl, tx, ty, tz, 0, WeaponVfxSubtle.NET_KIND_BASE + accent.index(), 1,
