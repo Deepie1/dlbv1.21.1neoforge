@@ -1,64 +1,65 @@
+// =============================================================================
+//  Visualiseur unique : liste a gauche, apercu a droite.
+//  Scripts classiques (pas de modules ES) : la page s'ouvre aussi en file://,
+//  par simple double-clic, sans serveur.
+// =============================================================================
 
-const PX = 1.8 / 32; // 1 pixel Minecraft, pour un joueur de 1.8 bloc
+const PX = 1.8 / 32;          // 1 pixel Minecraft pour un joueur de 1.8 bloc
 
-function boot(modelId) {
-  const MODELS = window.DLB_MODELS, H = window.DLB_H;
-  const def = MODELS[modelId];
-  const root = document.getElementById('scene');
+(function () {
+  const MODELS = window.DLB_MODELS;
+  const ZR = window.DLB_ZONE_REGARD;
 
+  // ---- scene --------------------------------------------------------------
+  const hote = document.getElementById('scene');
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0e1117);
-
-  const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 100);
+  scene.background = new THREE.Color(0x0d1117);
+  const camera = new THREE.PerspectiveCamera(48, 1, 0.01, 100);
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  root.appendChild(renderer.domElement);
+  hote.appendChild(renderer.domElement);
 
-  // ---- sol et reperes ------------------------------------------------------
-  const grid = new THREE.GridHelper(8, 16, 0x2a3140, 0x1b2130);
-  scene.add(grid);
+  scene.add(new THREE.GridHelper(8, 32, 0x273041, 0x1a2130));
 
-  // regle verticale : un trait tous les 0.5 bloc, pour lire les hauteurs
-  const ruler = new THREE.Group();
-  for (let i = 0; i <= 5; i++) {
-    const y = i * 0.5;
-    const g = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-1.5, y, -1.5), new THREE.Vector3(-1.35, y, -1.5)]);
-    ruler.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x3d4760 })));
+  // ---- squelette du joueur (proportions Minecraft) -------------------------
+  const squelette = new THREE.Group();
+  function os(w, h, d, x, y, z) {
+    const g = new THREE.BoxGeometry(w, h, d);
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+      color: 0x7e93b4, transparent: true, opacity: 0.10, depthWrite: false }));
+    m.position.set(x, y + h / 2, z);
+    squelette.add(m);
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(g),
+      new THREE.LineBasicMaterial({ color: 0x6b82a6, transparent: true, opacity: 0.9 }));
+    e.position.copy(m.position);
+    squelette.add(e);
   }
-  scene.add(ruler);
+  os(4 * PX, 12 * PX, 4 * PX, -2 * PX, 0, 0);          // jambe gauche
+  os(4 * PX, 12 * PX, 4 * PX, 2 * PX, 0, 0);           // jambe droite
+  os(8 * PX, 12 * PX, 4 * PX, 0, 12 * PX, 0);          // torse
+  os(4 * PX, 12 * PX, 4 * PX, -6 * PX, 12 * PX, 0);    // bras gauche
+  os(4 * PX, 12 * PX, 4 * PX, 6 * PX, 12 * PX, 0);     // bras droit
+  os(8 * PX, 8 * PX, 8 * PX, 0, 24 * PX, 0);           // tete
+  scene.add(squelette);
 
-  // ---- squelette du joueur (proportions Minecraft, 1.8 bloc) ---------------
-  const skel = new THREE.Group();
-  function bone(w, h, d, x, y, z, label) {
-    const geo = new THREE.BoxGeometry(w, h, d);
-    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-      color: 0x8aa0c0, transparent: true, opacity: 0.13, depthWrite: false }));
-    mesh.position.set(x, y + h / 2, z);
-    skel.add(mesh);
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo),
-      new THREE.LineBasicMaterial({ color: 0x6f86a8, transparent: true, opacity: 0.85 }));
-    edges.position.copy(mesh.position);
-    skel.add(edges);
-    mesh.userData.label = label;
-  }
-  bone(4 * PX, 12 * PX, 4 * PX, -2 * PX, 0, 0, 'jambe G');
-  bone(4 * PX, 12 * PX, 4 * PX,  2 * PX, 0, 0, 'jambe D');
-  bone(8 * PX, 12 * PX, 4 * PX, 0, 12 * PX, 0, 'torse');
-  bone(4 * PX, 12 * PX, 4 * PX, -6 * PX, 12 * PX, 0, 'bras G');
-  bone(4 * PX, 12 * PX, 4 * PX,  6 * PX, 12 * PX, 0, 'bras D');
-  bone(8 * PX, 8 * PX, 8 * PX, 0, 24 * PX, 0, 'tete');
-  scene.add(skel);
-
-  // repere du regard : le joueur fait face a -Z (comme fwd dans le code)
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.14, 4),
+  // Le regard : le joueur fait face a +Z.
+  const nez = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.13, 4),
     new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
-  nose.position.set(0, 28 * PX, -0.30);
-  nose.rotation.x = -Math.PI / 2;
-  scene.add(nose);
+  nez.position.set(0, 1.62, 0.30);
+  nez.rotation.x = Math.PI / 2;
+  squelette.add(nez);
 
-  // ---- pool de cubes de l'ornement ----------------------------------------
-  const POOL = 400;
+  // ---- zone du regard : le volume qu'aucun effet constant ne doit occuper ---
+  const zoneGeo = new THREE.CylinderGeometry(ZR.rayon, ZR.rayon, ZR.haut - ZR.bas, 28, 1, true,
+    -Math.PI / 2, Math.PI);
+  const zone = new THREE.Mesh(zoneGeo, new THREE.MeshBasicMaterial({
+    color: 0xef4444, transparent: true, opacity: 0.10, side: THREE.DoubleSide, depthWrite: false }));
+  zone.position.set(0, (ZR.bas + ZR.haut) / 2, 0);
+  zone.visible = false;
+  scene.add(zone);
+
+  // ---- cubes de l'ornement -------------------------------------------------
+  const POOL = 520;
   const geo = new THREE.BoxGeometry(1, 1, 1);
   const cubes = [];
   for (let i = 0; i < POOL; i++) {
@@ -69,73 +70,136 @@ function boot(modelId) {
     cubes.push(m);
   }
 
-  // ---- camera orbitale (ecrite a la main : aucune dependance en plus) ------
-  let yaw = 0.7, pitch = 0.22, dist = 4.2, target = new THREE.Vector3(0, 1.1, 0);
-  let drag = false, lx = 0, ly = 0;
+  // ---- camera orbitale -----------------------------------------------------
+  let lacet = 0.65, tangage = 0.20, dist = 3.6;
+  const cible = new THREE.Vector3(0, 1.1, 0);
+  let tire = false, lx = 0, ly = 0;
   const cv = renderer.domElement;
-  cv.addEventListener('pointerdown', e => { drag = true; lx = e.clientX; ly = e.clientY; cv.setPointerCapture(e.pointerId); });
-  cv.addEventListener('pointerup', e => { drag = false; });
+  cv.addEventListener('pointerdown', e => { tire = true; lx = e.clientX; ly = e.clientY; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointerup', () => { tire = false; });
   cv.addEventListener('pointermove', e => {
-    if (!drag) return;
-    yaw -= (e.clientX - lx) * 0.008;
-    pitch = Math.max(-1.3, Math.min(1.45, pitch + (e.clientY - ly) * 0.006));
+    if (!tire) return;
+    lacet -= (e.clientX - lx) * 0.008;
+    tangage = Math.max(-1.3, Math.min(1.45, tangage + (e.clientY - ly) * 0.006));
     lx = e.clientX; ly = e.clientY;
   });
   cv.addEventListener('wheel', e => {
     e.preventDefault();
-    dist = Math.max(1.2, Math.min(12, dist * (1 + Math.sign(e.deltaY) * 0.12)));
+    dist = Math.max(0.8, Math.min(12, dist * (1 + Math.sign(e.deltaY) * 0.12)));
   }, { passive: false });
 
+  // ---- etat ---------------------------------------------------------------
+  let courant = null, t = 0, pause = false, vitesse = 1;
+
+  function cadrer(id) {
+    // cadrage automatique : tete, sol ou corps entier selon l'ornement
+    let bas = Infinity, haut = -Infinity, large = 0;
+    for (let k = 0; k < 8; k++) {
+      for (const c of MODELS[id].build(k * 0.4)) {
+        bas = Math.min(bas, c.y); haut = Math.max(haut, c.y);
+        large = Math.max(large, Math.hypot(c.x, c.z));
+      }
+    }
+    const centreY = (bas + haut) / 2;
+    // on garde toujours le joueur visible, mais on recentre vers l'ornement
+    cible.set(0, Math.max(0.55, Math.min(1.75, (centreY + 0.95) / 2)), 0);
+    dist = Math.max(2.4, Math.min(6.5, 2.0 + large * 2.3 + (haut - bas) * 0.8));
+  }
+
+  function choisir(id) {
+    courant = id;
+    t = 0;
+    const d = MODELS[id];
+    document.getElementById('titre').textContent = d.titre;
+    const tag = document.getElementById('famille');
+    tag.textContent = d.famille;
+    tag.className = 'tag ' + (d.famille === 'permanent' ? 'perm' : 'ponc');
+    document.getElementById('accorde').textContent = d.accorde;
+    document.getElementById('lecture').textContent = d.note;
+    for (const el of document.querySelectorAll('#liste a'))
+      el.classList.toggle('actif', el.dataset.id === id);
+    cadrer(id);
+    try { history.replaceState(null, '', '#' + id); } catch (e) { /* file:// */ }
+  }
+  window.choisir = choisir;
+
   // ---- commandes -----------------------------------------------------------
-  let paused = false, speed = 1, showSkel = true, t = 0;
   document.getElementById('pause').onclick = e => {
-    paused = !paused; e.target.textContent = paused ? 'Reprendre' : 'Pause';
+    pause = !pause; e.target.textContent = pause ? 'Reprendre' : 'Pause';
   };
-  document.getElementById('slow').onclick = e => {
-    speed = speed === 1 ? 0.25 : 1; e.target.textContent = speed === 1 ? 'Ralenti' : 'Vitesse normale';
+  document.getElementById('lent').onclick = e => {
+    vitesse = vitesse === 1 ? 0.25 : 1;
+    e.target.textContent = vitesse === 1 ? 'Ralenti' : 'Vitesse normale';
   };
-  document.getElementById('skel').onclick = e => {
-    showSkel = !showSkel; skel.visible = showSkel; nose.visible = showSkel;
-    e.target.textContent = showSkel ? 'Masquer le squelette' : 'Afficher le squelette';
+  document.getElementById('sq').onclick = e => {
+    squelette.visible = !squelette.visible;
+    e.target.textContent = squelette.visible ? 'Masquer le joueur' : 'Afficher le joueur';
+  };
+  document.getElementById('zone').onclick = e => {
+    zone.visible = !zone.visible;
+    e.target.textContent = zone.visible ? 'Masquer la zone du regard' : 'Zone du regard';
   };
 
-  const compteur = document.getElementById('compteur');
-
-  function resize() {
-    const w = root.clientWidth, h = root.clientHeight;
+  // ---- boucle --------------------------------------------------------------
+  function redim() {
+    const w = hote.clientWidth, h = hote.clientHeight;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
-  addEventListener('resize', resize);
-  resize();
+  addEventListener('resize', redim);
+  redim();
 
-  let last = performance.now();
-  function frame(now) {
-    const dt = Math.min(0.05, (now - last) / 1000);
-    last = now;
-    if (!paused) t += dt * speed;
+  let dernier = performance.now();
+  function image(now) {
+    const dt = Math.min(0.05, (now - dernier) / 1000);
+    dernier = now;
+    if (!pause) t += dt * vitesse;
 
-    const liste = def.build(t);
+    const liste = courant ? MODELS[courant].build(t) : [];
     for (let i = 0; i < POOL; i++) {
       const c = cubes[i];
       if (i >= liste.length) { c.visible = false; continue; }
       const v = liste[i];
       c.visible = true;
       c.position.set(v.x, v.y, v.z);
-      c.scale.set(v.hx * 2, v.hy * 2, v.hz * 2); // demi-extensions -> taille
+      c.scale.set(v.hx * 2, v.hy * 2, v.hz * 2);
       c.material.color.setHex(v.rgb);
       c.material.opacity = v.a;
     }
-    if (compteur) compteur.textContent = liste.length + ' cubes';
+    const cpt = document.getElementById('compteur');
+    if (cpt) cpt.textContent = liste.length + (liste.length > POOL ? '+' : '') + ' cubes';
 
     camera.position.set(
-      target.x + Math.cos(pitch) * Math.sin(yaw) * dist,
-      target.y + Math.sin(pitch) * dist,
-      target.z + Math.cos(pitch) * Math.cos(yaw) * dist);
-    camera.lookAt(target);
+      cible.x + Math.cos(tangage) * Math.sin(lacet) * dist,
+      cible.y + Math.sin(tangage) * dist,
+      cible.z + Math.cos(tangage) * Math.cos(lacet) * dist);
+    camera.lookAt(cible);
     renderer.render(scene, camera);
-    requestAnimationFrame(frame);
+    requestAnimationFrame(image);
   }
-  requestAnimationFrame(frame);
-}
+  requestAnimationFrame(image);
+
+  // ---- liste de gauche -----------------------------------------------------
+  const liste = document.getElementById('liste');
+  function section(titre, sous, famille) {
+    const h = document.createElement('div');
+    h.className = 'sect';
+    h.innerHTML = '<span>' + titre + '</span><em>' + sous + '</em>';
+    liste.appendChild(h);
+    for (const [id, m] of Object.entries(MODELS)) {
+      if (m.famille !== famille) continue;
+      const a = document.createElement('a');
+      a.href = 'javascript:void 0';
+      a.dataset.id = id;
+      a.innerHTML = '<strong>' + m.titre + '</strong>';
+      a.onclick = () => choisir(id);
+      liste.appendChild(a);
+    }
+  }
+  section('Permanents', 'rendus en cubes par CosmeticPixelAura', 'permanent');
+  section('Ponctuels', 'aujourd\'hui en particules vanilla', 'ponctuel');
+
+  const depart = location.hash.replace('#', '');
+  choisir(MODELS[depart] ? depart : 'halo_continu');
+})();

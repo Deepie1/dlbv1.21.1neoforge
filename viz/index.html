@@ -1,66 +1,113 @@
 <!doctype html>
-<html lang="fr"><head><meta charset="utf-8">
+<html lang="fr">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Ornements du Deep Lucky Block — modèles en cubes</title><style>
-*{box-sizing:border-box}
-body{margin:0;background:#0e1117;color:#e6edf3;font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}
-header{padding:16px 22px;border-bottom:1px solid #222b38;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
-h1{font-size:19px;margin:0}
-.tag{font-size:11px;padding:2px 9px;border-radius:99px;border:1px solid #2d3747;color:#9fb0c6;text-transform:uppercase;letter-spacing:.06em}
-.tag.perm{border-color:#2f6f4f;color:#67d99b}
-.tag.ponc{border-color:#7a5a24;color:#f0b760}
-a{color:#58a6ff;text-decoration:none}
-a:hover{text-decoration:underline}
-main{display:grid;grid-template-columns:1fr 330px;gap:0;height:calc(100vh - 62px)}
-#scene{width:100%;height:100%;min-height:380px}
-#scene canvas{display:block;width:100%;height:100%;cursor:grab}
-aside{border-left:1px solid #222b38;padding:20px;overflow:auto}
-aside h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:#8b98a9;margin:22px 0 7px}
-aside h2:first-child{margin-top:0}
-aside p{margin:0 0 4px}
-button{background:#1a2230;color:#e6edf3;border:1px solid #2d3747;border-radius:7px;padding:7px 12px;font-size:13px;cursor:pointer;margin:0 6px 6px 0}
-button:hover{background:#243044}
-.hint{color:#7d8da3;font-size:12.5px}
-code{background:#1a2230;padding:1px 6px;border-radius:4px;font-size:12.5px}
+<title>Ornements cosmétiques — Deep Lucky Block</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:#0d1117;color:#e6edf3;
+       font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
 
-.wrap{max-width:1080px;margin:0 auto;padding:28px 22px 60px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:13px;margin:14px 0 34px}
-.card{display:block;padding:15px 17px;border:1px solid #222b38;border-radius:11px;background:#121823;color:#e6edf3}
-.card:hover{border-color:#3d5578;background:#161e2c;text-decoration:none}
-.card strong{display:block;font-size:14.5px;margin-bottom:5px}
-.card span{display:block;font-size:12.5px;color:#8b98a9;line-height:1.5}
-h2{font-size:13px;text-transform:uppercase;letter-spacing:.09em;color:#8b98a9;margin:30px 0 4px}
-.lede{color:#9fb0c6;max-width:70ch}
-</style></head><body>
-<div class="wrap">
-<h1 style="margin:0 0 6px">Ornements des combos — modèles en petits cubes</h1>
-<p class="lede">Chaque modèle est reconstruit aux valeurs exactes du code, autour d'un
-squelette de joueur de 1.8 bloc. Glisser pour tourner, molette pour zoomer.</p>
+  .app{display:grid;grid-template-columns:272px 1fr 320px;height:100vh}
 
-<h2>Permanents — déjà en cubes dans le jeu (12)</h2>
-<p class="lede">Rendus par <code>CosmeticPixelAura</code> via <code>emitVoxelCube</code>.
-Ces pages montrent ce que le jeu dessine déjà.</p>
-<div class="grid"><a class="card" href="halo_continu.html"><strong>Halo générique continu</strong><span>Trois anneaux à la fois, avec une respiration verticale sin(t×1.35)×0.035. Ne sort que si AUCUN autre ornement</span></a>
-<a class="card" href="avatar_110.html"><strong>#110 Avatar Suprême du Deep Lucky</strong><span>Couronne double, la plus lumineuse du mod. Les deux anneaux tournent en sens inverse.</span></a>
-<a class="card" href="eternelle_097.html"><strong>#097 Armure Éternelle Transcendante</strong><span>Couronne simple dorée.</span></a>
-<a class="card" href="dieu_lame_098.html"><strong>#098 Dieu de la Lame Suprême</strong><span>Partage EXACTEMENT la branche de rendu de #097 : le même anneau, aux mêmes valeurs.</span></a>
-<a class="card" href="archange_101.html"><strong>#101 Archange du Jugement Solaire</strong><span>Deux ailes en membrane de pixels : 5 colonnes × 3 rangées + 5 plumes de pointe = 20 cubes par aile, 40 au tota</span></a>
-<a class="card" href="winged_endurance.html"><strong>Endurance Ailée (enchantement d&#x27;armure)</strong><span>Mêmes ailes que l&#x27;Archange mais 18 % plus petites (×0.82), en bleu glacier, et elles ne sortent QU&#x27;EN L&#x27;AIR ou</span></a>
-<a class="card" href="seigneur_guerre_106.html"><strong>#106 Seigneur de Guerre de l&#x27;Apocalypse</strong><span>Anneau au sol, le plus large du mod (rayon 0.85).</span></a>
-<a class="card" href="peste_062.html"><strong>#062 Peste Ambulante</strong><span>Le SEUL ornement permanent accessible hors ULTRA_RARE : deux pièces en diamant suffisent. Anneau au sol transl</span></a>
-<a class="card" href="king.html"><strong>Roi (enchantement d&#x27;armure)</strong><span>Troisième et dernier maillon de la chaîne de couronnes : s&#x27;efface devant #110 et #097/#098.</span></a>
-<a class="card" href="mystic_mind.html"><strong>Esprit Mystique (enchantement d&#x27;armure)</strong><span>Se cumule librement avec les autres couronnes. Tourne à l&#x27;envers.</span></a>
-<a class="card" href="radiant_aegis.html"><strong>Égide Radieuse (enchantement d&#x27;armure)</strong><span>La couronne la plus basse : seulement 0.20 au-dessus de la tête.</span></a>
-<a class="card" href="dread_aura.html"><strong>Aura de Terreur (enchantement d&#x27;armure)</strong><span>Anneau bas, à mi-mollet (y + 0.32), le plus sombre du lot.</span></a></div>
+  /* ---- colonne de gauche : la selection ---- */
+  nav{border-right:1px solid #1e2733;overflow:auto;background:#0b0f16}
+  nav h1{font-size:13px;margin:0;padding:18px 18px 4px;letter-spacing:.02em}
+  nav .lede{font-size:11.5px;color:#7d8da3;padding:0 18px 14px;line-height:1.5}
+  .sect{padding:14px 18px 6px;font-size:10.5px;text-transform:uppercase;
+        letter-spacing:.1em;color:#64748b;display:flex;flex-direction:column;gap:2px}
+  .sect em{font-style:normal;text-transform:none;letter-spacing:0;font-size:11px;color:#4e5c6e}
+  nav a{display:block;padding:8px 18px;color:#c6d2e0;text-decoration:none;
+        border-left:2px solid transparent;font-size:13.2px}
+  nav a:hover{background:#111824;color:#fff}
+  nav a.actif{background:#13203a;border-left-color:#58a6ff;color:#fff}
+  nav a strong{font-weight:500}
 
-<h2>Ponctuels — aujourd'hui en particules vanilla (7)</h2>
-<p class="lede">Ce sont eux le chantier : transposés ici en cubes, à la place des
-<code>ParticleTypes.*</code>.</p>
-<div class="grid"><a class="card" href="crown_halo.html"><strong>crownHalo — couronne ponctuelle</strong><span>Aujourd&#x27;hui en particules. Reconstruite ici en 12 cubes dorés au-dessus de la tête, palette GOLD_DIVINE.</span></a>
-<a class="card" href="wing_ribbons.html"><strong>wingRibbons — rubans d&#x27;ailes</strong><span>Aujourd&#x27;hui en particules derrière les épaules. Reconstruits ici en deux rubans de 9 cubes qui ondulent.</span></a>
-<a class="card" href="double_helix.html"><strong>doubleHelix — double hélice ascendante</strong><span>Aujourd&#x27;hui en particules CRIMSON_BLOOD. Deux brins opposés qui montent autour du corps.</span></a>
-<a class="card" href="cloud_cushion.html"><strong>cloudCushion — coussin de nuages</strong><span>Aujourd&#x27;hui en particules CLOUD sous les pieds. Reconstruit en amas de cubes blancs de tailles inégales.</span></a>
-<a class="card" href="tether_beam.html"><strong>tetherBeam — rayon tendu</strong><span>Aujourd&#x27;hui en particules entre deux positions. Reconstruit en chapelet de cubes, de la main vers une cible à </span></a>
-<a class="card" href="shockwave_ring.html"><strong>shockwaveRing — anneau d&#x27;onde de choc</strong><span>Aujourd&#x27;hui en particules. Anneau qui s&#x27;élargit au sol ; reconstruit en 20 cubes aplatis.</span></a>
-<a class="card" href="burst_on_entity.html"><strong>burstOnEntity — explosion ponctuelle</strong><span>Aujourd&#x27;hui en particules sur le buste. Reconstruite en 24 cubes projetés en sphère depuis le torse.</span></a></div>
-</div></body></html>
+  /* ---- colonne centrale : l'apercu ---- */
+  main{position:relative;min-width:0}
+  #scene{position:absolute;inset:0}
+  #scene canvas{display:block;width:100%;height:100%;cursor:grab}
+  #scene canvas:active{cursor:grabbing}
+  .barre{position:absolute;left:0;right:0;bottom:0;padding:12px 16px;
+         display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+         background:linear-gradient(transparent,#0d1117cc 45%)}
+  button{background:#161e2b;color:#e6edf3;border:1px solid #2a3647;border-radius:7px;
+         padding:7px 12px;font-size:12.5px;cursor:pointer}
+  button:hover{background:#1f2a3b;border-color:#3b4b63}
+  .cpt{margin-left:auto;font-size:12px;color:#8b98a9;
+       background:#0d1117aa;padding:4px 10px;border-radius:99px;border:1px solid #1e2733}
+
+  /* ---- colonne de droite : la fiche ---- */
+  aside{border-left:1px solid #1e2733;padding:20px;overflow:auto;background:#0b0f16}
+  aside h2{font-size:17px;margin:0 0 10px;line-height:1.3}
+  aside h3{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;
+           color:#64748b;margin:22px 0 6px}
+  aside p{margin:0;font-size:13.2px;color:#b7c4d4}
+  .tag{display:inline-block;font-size:10px;padding:2px 9px;border-radius:99px;
+       border:1px solid #2d3747;color:#9fb0c6;text-transform:uppercase;letter-spacing:.07em}
+  .tag.perm{border-color:#2f6f4f;color:#67d99b}
+  .tag.ponc{border-color:#7a5a24;color:#f0b760}
+  .regles{font-size:12px;color:#7d8da3;line-height:1.6;margin-top:6px}
+  .regles b{color:#a9b8c9;font-weight:600}
+  code{background:#161e2b;padding:1px 6px;border-radius:4px;font-size:12px}
+
+  @media (max-width:1100px){
+    .app{grid-template-columns:220px 1fr}
+    aside{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <nav>
+    <h1>Ornements cosmétiques</h1>
+    <p class="lede">Chaque modèle est reconstruit en petits cubes autour d'un
+       squelette de joueur de 1,8 bloc. Glisser pour tourner, molette pour zoomer.</p>
+    <div id="liste"></div>
+  </nav>
+
+  <main>
+    <div id="scene"></div>
+    <div class="barre">
+      <button id="pause">Pause</button>
+      <button id="lent">Ralenti</button>
+      <button id="sq">Masquer le joueur</button>
+      <button id="zone">Zone du regard</button>
+      <span class="cpt" id="compteur">—</span>
+    </div>
+  </main>
+
+  <aside>
+    <h2 id="titre">—</h2>
+    <span class="tag" id="famille">—</span>
+
+    <h3>Accordé par</h3>
+    <p id="accorde">—</p>
+
+    <h3>Lecture</h3>
+    <p id="lecture">—</p>
+
+    <h3>Les quatre règles</h3>
+    <p class="regles">
+      <b>Aucun écart.</b> Le nombre de cubes d'une forme se déduit de sa longueur
+      (<code>n = ⌈L / 0,9w⌉</code>), jamais d'une constante. Les anciens anneaux
+      étaient vides de 41 % à 87 %.<br><br>
+      <b>Fin.</b> Un halo est un trait, pas un tube : 0,042 bloc de large, et plus
+      plat que large pour disparaître de profil.<br><br>
+      <b>Jamais devant les yeux.</b> Ces effets sont constants. Rien ne pénètre le
+      volume rouge (bouton « Zone du regard »). Tête ≥ 1,95, sol ≤ 0,45, dos ≤ −0,10.<br><br>
+      <b>Une silhouette chacun.</b> Couronne, lames, torsade, coupole, herse, ailes :
+      aucun ornement n'est un anneau de plus.
+    </p>
+  </aside>
+
+</div>
+
+<script src="lib/three.classic.js"></script>
+<script src="models.js"></script>
+<script src="viewer.js"></script>
+</body>
+</html>
