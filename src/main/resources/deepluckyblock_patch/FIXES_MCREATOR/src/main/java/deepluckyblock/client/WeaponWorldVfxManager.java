@@ -1993,11 +1993,14 @@ public final class WeaponWorldVfxManager {
             animFamily = deepluckyblock.util.AnimFamily.canonical(tag.getString("DlbAnimFamily"));
         }
         if (layers.isEmpty() && animFamily == null) return;
-        // T409-AURA-MINORITE : le slash obeit a la MEME decision que les pixels de lame.
-        // L'arc partait a chaque coup de n'importe quelle arme enchantee ; c'est l'autre
-        // moitie du defaut signale (« tous les items lotes ont le slash visible »). Les
-        // epees de demonstration /anim gardent le leur : elles n'existent que pour montrer.
-        if (animFamily == null && !deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(stack)) return;
+        // T417-SLASH : SEULES LES EPEES DE DEMONSTRATION /anim SLASHENT DEPUIS LE CLIENT.
+        //
+        // Le slash des armes lootees est desormais decide par le SERVEUR, au moment du coup
+        // (7 % des armes y ont droit, puis 6 % par coup, et ce coup frappe 10 % plus fort).
+        // Le laisser aussi partir d'ici le ferait apparaitre a chaque swing, bonus de degats
+        // absent, c'est-a-dire exactement l'inverse de la regle : l'image mentirait sur les
+        // degats. Une seule autorite par decision.
+        if (animFamily == null) return;
 
         int parity = PLAYER_SWING_PARITY.merge(p.getId(), 1, Integer::sum);
         float baseTilt = ((parity & 1) == 0) ? 0.36f : -0.34f;

@@ -248,9 +248,11 @@ public final class WeaponVfxServerListener {
     private static final int SUBTLE_SHARE_PERCENT = 90;
     /** Ancien bonus du pipeline projectile/critique manuel, conservé hors de la nouvelle mêlée. */
     private static final float BIG_ANIM_DAMAGE_BONUS = 1.05f;
-    /** Mêlée éligible : un seul jet 0..99 = normal 0..76, slash 77..96, grande forme 97..99. */
-    private static final int MELEE_NORMAL_MAX_ROLL = 76;
-    private static final int MELEE_SLASH_MAX_ROLL = 96;
+
+    /** T417 : chance, A CHAQUE COUP, qu'une arme autorisee sorte son slash. */
+    private static final int SLASH_VISUAL_HIT_PERCENT = 6;
+    /** T417 : le coup qui porte le slash frappe 10 % plus fort. */
+    private static final float SLASH_DAMAGE_BONUS = 1.10f;
     private static final float MELEE_SLASH_DAMAGE_MULTIPLIER = 1.05f;
     /** Toute grande forme reste réellement agrandie, même sur une très petite cible. */
     private static final float BIG_VISUAL_BASE_SCALE = 1.20f;
@@ -10344,12 +10346,41 @@ public final class WeaponVfxServerListener {
      * visuel du slash reste produit au swing par le geste du joueur, donc identique sur un
      * mob et dans le vide.</p>
      */
+    /**
+     * T417-SLASH : LE SLASH DE MELEE, ET SON UNIQUE DECISION.
+     *
+     * <p>La regle tient en trois temps. <b>7 %</b> des armes lachees par le bloc y ont droit
+     * — decide une seule fois au drop, et seulement si l'arme porte un enchantement lie a un
+     * element, faute de quoi le slash n'aurait aucune couleur a prendre. Puis <b>6 %</b> a
+     * chaque coup porte. Et le coup qui sort le slash frappe <b>10 % plus fort</b>.</p>
+     *
+     * <p><b>Un seul tirage pour les deux.</b> L'image et le bonus de degats sortent de la
+     * meme ligne : les separer afficherait des slashs sans bonus et des bonus sans slash,
+     * et plus personne ne pourrait verifier la regle en jouant.</p>
+     *
+     * <p>Ce qui etait la avant : un jet donnant 23 % de coups a +5 %, sans aucun visuel cote
+     * serveur — l'entaille venait du client, a CHAQUE swing d'une arme a aura. Les deux
+     * moities ne parlaient donc pas de la meme chose.</p>
+     */
     private static void handleEligibleMelee(ServerLevel sl, LivingIncomingDamageEvent event,
                                             LivingEntity attacker, LivingEntity target, ItemStack weapon,
                                             List<WeaponVisualEffectId.ResolvedLayer> layers) {
-        int roll = sl.random.nextInt(100);
-        if (roll <= MELEE_NORMAL_MAX_ROLL) return;
-        event.setAmount(event.getAmount() * MELEE_SLASH_DAMAGE_MULTIPLIER);
+        if (layers.isEmpty()) return;
+        if (!deepluckyblock.util.DeepNbt.hasSlashVisual(weapon)) return;
+        if (sl.random.nextInt(100) >= SLASH_VISUAL_HIT_PERCENT) return;
+
+        WeaponVisualEffectId.ResolvedLayer top = layers.get(0);
+        float tx = (float) target.getX();
+        float ty = (float) (target.getY() + target.getBbHeight() * 0.5);
+        float tz = (float) target.getZ();
+        float ax = (float) attacker.getX();
+        float ay = (float) (attacker.getY() + attacker.getBbHeight() * 0.62);
+        float az = (float) attacker.getZ();
+        // paletteOf : la teinte de l'element porte par l'arme, celle que les autres effets
+        // utilisent deja. Le slash sort donc « couleur de l'element », sans table parallele.
+        broadcastNear(sl, ax, ay, az, top.effect().id, KIND_SWING_SLASH, top.level(),
+                ax, ay, az, tx, ty, tz, paletteOf(weapon, top.effect()));
+        event.setAmount(event.getAmount() * SLASH_DAMAGE_BONUS);
     }
 
     /**
@@ -10525,7 +10556,6 @@ public final class WeaponVfxServerListener {
         boolean bigAnimBonusApplied = (now - LAST_BIG_ANIM_TICK.getOrDefault(attacker.getId(), -100L)) <= 2L;
         // T352-ELEMENT-COMBO : un seul combo élémentaire par coup, même si deux couches partent.
         boolean elementComboDone = false;
-        boolean swingSlashPlayed = false;
         if (bigAnimBonusApplied) {
             event.setAmount(event.getAmount() * BIG_ANIM_DAMAGE_BONUS);
         }
@@ -10534,25 +10564,10 @@ public final class WeaponVfxServerListener {
             WeaponVisualEffectId.ResolvedLayer layer = layers.get(i);
             WeaponVisualEffectId fx = layer.effect();
 
-            // Le slash standard accompagne le coup critique même si le tirage rare de VFX échoue.
-            // Le petit/gros effet enchanté reste ensuite décidé une seule fois par shouldPlay.
-            if (!isProjectileHit && meleeCritJustFired && !swingSlashPlayed) {
-                broadcastNear(sl, ax, ay, az, fx.id, KIND_SWING_SLASH, layer.level(),
-                        ax, ay, az, tx, ty, tz, palette);
-                swingSlashPlayed = true;
-            }
             boolean critHit = arrowCrit || meleeCritJustFired
                     || fx.category == WeaponVisualEffectId.Category.CRIT;
             if (!shouldPlay(attacker.getId(), fx, sl, critHit)) {
                 continue;
-            }
-            // Slash de combat indépendant du tirage « petite ou grande animation » : les attaques
-            // sélectionnées gardent leur entaille même lorsque le gros effet est remplacé par un
-            // accent discret. Un seul slash par coup, jamais une superposition par couche.
-            if (!isProjectileHit && !swingSlashPlayed) {
-                broadcastNear(sl, ax, ay, az, fx.id, KIND_SWING_SLASH, layer.level(),
-                        ax, ay, az, tx, ty, tz, palette);
-                swingSlashPlayed = true;
             }
 
             layerBudget--;

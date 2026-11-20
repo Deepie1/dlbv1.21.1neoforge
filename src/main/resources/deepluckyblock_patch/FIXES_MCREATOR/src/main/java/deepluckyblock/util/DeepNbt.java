@@ -136,6 +136,20 @@ public final class DeepNbt {
     public static final String LUCKY_ITEM_NBT_KEY = "dlbLuckyItem";
     /** Décision d'aura persistée au loot : false est une décision, pas une absence de données. */
     public static final String WEAPON_AURA_NBT_KEY = "dlbWeaponAura";
+
+    /**
+     * T417-SLASH : l'arme a-t-elle le droit au slash visuel ? Decide UNE FOIS au drop du
+     * Lucky Block, jamais pendant la partie. Comme pour l'aura, {@code false} est une
+     * decision ecrite : sans cette distinction, une arme sans la clef serait retiree au
+     * sort a chaque coup et le joueur verrait son epee changer de comportement.
+     */
+    public static final String SLASH_VISUAL_NBT_KEY = "dlbSlashVisual";
+
+    /** Lecture seule de la decision de slash : ne cree aucun NBT, ne tire aucun nombre. */
+    public static boolean hasSlashVisual(@Nullable ItemStack stack) {
+        CompoundTag tag = tag(stack);
+        return tag != null && tag.getBoolean(SLASH_VISUAL_NBT_KEY);
+    }
     private static final int LUCKY_MELEE_AURA_PERCENT = 15;
     private static final int LUCKY_RANGED_AURA_PERCENT = 40;
 

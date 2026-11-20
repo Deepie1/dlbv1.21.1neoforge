@@ -290,6 +290,32 @@ public final class WeaponSkill {
     }
 
     /**
+     * T417 : les elements qui possedent AU MOINS une signature, dans l'ordre de la table.
+     *
+     * <p>Le butin tire « un skill d'element aleatoire » : il tire donc d'abord un element
+     * ici, puis une signature dans {@link #signaturePathsOf(DeepElement)}. Tirer directement
+     * parmi les 45 signatures ne reviendrait PAS au meme : les elements ne portent pas le
+     * meme nombre de signatures, et les mieux fournis sortiraient bien plus souvent.</p>
+     */
+    public static List<DeepElement> elementsWithSignature() {
+        java.util.LinkedHashSet<DeepElement> out = new java.util.LinkedHashSet<>(16);
+        for (Entry e : BY_EFFECT.values()) {
+            if (e.element() != null) out.add(e.element());
+        }
+        return List.copyOf(out);
+    }
+
+    /** T417 : les signatures d'un element donne, pour le tirage de butin. */
+    public static List<String> signaturePathsOf(DeepElement element) {
+        if (element == null) return List.of();
+        java.util.ArrayList<String> out = new java.util.ArrayList<>(8);
+        for (Entry e : BY_EFFECT.values()) {
+            if (e.element() == element) out.add(e.enchantPath());
+        }
+        return List.copyOf(out);
+    }
+
+    /**
      * Compétence portée par cette arme, ou {@code null}. On reprend la résolution de couches
      * déjà utilisée par le rendu : même arme, même enchantement, même animation — le skill ne
      * peut pas diverger de ce que l’arme montre.

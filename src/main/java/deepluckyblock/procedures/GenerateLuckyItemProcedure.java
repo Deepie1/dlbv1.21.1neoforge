@@ -3059,6 +3059,9 @@ public class GenerateLuckyItemProcedure {
         // volontairement de la puissance pour en remettre ailleurs, et un garde-fou de
         // palier qui passerait derriere lui annulerait ce troc.
         rollSkillOnDrop(stack, random);
+        // Puis la decision de slash : APRES le tirage de competence, qui peut lui-meme poser
+        // un enchantement elementaire et donc rendre l'arme eligible.
+        rollSlashVisualOnDrop(stack, random);
 
         // FIX v8 (resolu) : diagnostic retire (spammait a chaque generation).
     }
@@ -3108,35 +3111,50 @@ public class GenerateLuckyItemProcedure {
      */
     private static boolean grantOneSkill(ItemStack stack, RandomSource random) {
 
-        // On ne pose pas une competence que l'arme porte deja.
-        List<String> pool = new ArrayList<>();
-        for (String path : deepluckyblock.enchantments.WeaponSkill.signaturePaths()) {
-            Enchantment already = deepluckyblock.util.DeepEnchant.byId("deep_lucky_block:" + path);
-            if (already != null && deepluckyblock.util.DeepEnchant.getLevel(stack, already) > 0) continue;
-            pool.add(path);
+        // T417 : « un skill d'ELEMENT aleatoire ». On tire donc l'ELEMENT d'abord, puis une
+        // signature a l'interieur. Tirer directement parmi les 45 signatures donnerait un
+        // resultat different : les elements n'en portent pas le meme nombre, et les mieux
+        // fournis sortiraient bien plus souvent que les autres.
+        List<deepluckyblock.enchantments.DeepElement> elements =
+                new ArrayList<>(deepluckyblock.enchantments.WeaponSkill.elementsWithSignature());
+        String chosen = null;
+        while (chosen == null && !elements.isEmpty()) {
+            deepluckyblock.enchantments.DeepElement element =
+                    elements.remove(random.nextInt(elements.size()));
+            // On ne repose pas une competence que l'arme porte deja.
+            List<String> pool = new ArrayList<>();
+            for (String path : deepluckyblock.enchantments.WeaponSkill.signaturePathsOf(element)) {
+                Enchantment already = deepluckyblock.util.DeepEnchant.byId("deep_lucky_block:" + path);
+                if (already != null && deepluckyblock.util.DeepEnchant.getLevel(stack, already) > 0) continue;
+                pool.add(path);
+            }
+            // Element epuise (l'arme porte deja tout ce qu'il propose) : on en tire un autre,
+            // sinon le second tirage a 5 % echouerait sans raison visible pour le joueur.
+            if (!pool.isEmpty()) chosen = pool.get(random.nextInt(pool.size()));
         }
-        if (pool.isEmpty()) return false;
-        String chosen = pool.get(random.nextInt(pool.size()));
+        if (chosen == null) return false;
 
         List<Enchantment> present = new ArrayList<>(deepluckyblock.util.DeepEnchant.map(stack).keySet());
         if (random.nextBoolean()) {
-            // Troc 1 : deux enchantements disparaissent.
-            for (int removed = 0; removed < 2 && !present.isEmpty(); removed++) {
+            // Troc 1 : de 0 a 3 enchantements disparaissent, tires au hasard. Le zero est
+            // volontairement dans la fourchette : c'est l'arme qui ne paie presque rien.
+            int toRemove = random.nextInt(4); // 0, 1, 2 ou 3
+            for (int removed = 0; removed < toRemove && !present.isEmpty(); removed++) {
                 deepluckyblock.util.DeepEnchant.remove(stack, present.remove(random.nextInt(present.size())));
             }
         } else {
-            // Troc 2 : tout le monde redescend du meme nombre de niveaux.
-            int drop = random.nextInt(4); // 0, 1, 2 ou 3
-            if (drop > 0) {
-                for (Enchantment held : present) {
-                    int lvl = deepluckyblock.util.DeepEnchant.getLevel(stack, held);
-                    if (lvl <= 0) continue;
-                    int next = lvl - drop;
-                    if (next <= 0) {
-                        deepluckyblock.util.DeepEnchant.remove(stack, held);
-                    } else {
-                        deepluckyblock.util.DeepEnchant.setLevel(stack, held, next);
-                    }
+            // Troc 2 : CHAQUE enchantement perd son propre tirage de 0 a 3 niveaux. La perte
+            // n'est donc pas la meme pour tous : l'un peut tomber, le voisin ne rien perdre.
+            for (Enchantment held : present) {
+                int drop = random.nextInt(4); // 0, 1, 2 ou 3
+                if (drop <= 0) continue;
+                int lvl = deepluckyblock.util.DeepEnchant.getLevel(stack, held);
+                if (lvl <= 0) continue;
+                int next = lvl - drop;
+                if (next <= 0) {
+                    deepluckyblock.util.DeepEnchant.remove(stack, held);
+                } else {
+                    deepluckyblock.util.DeepEnchant.setLevel(stack, held, next);
                 }
             }
         }
@@ -3146,6 +3164,30 @@ public class GenerateLuckyItemProcedure {
 
     /** Part des epees, haches, masses et houes lootees qui repartent avec une competence. */
     private static final int SKILL_DROP_PERCENT = 5;
+
+    /** Part des armes lootees qui obtiennent le droit au slash visuel. */
+    private static final int SLASH_VISUAL_DROP_PERCENT = 7;
+
+    /**
+     * T417 : decide UNE FOIS, au drop, si cette arme aura droit au slash visuel.
+     *
+     * <p>Deux conditions, dans cet ordre : l'arme doit porter <b>un enchantement lie a un
+     * element</b> (sans element, le slash n'aurait aucune couleur a prendre), puis passer un
+     * tirage a {@value #SLASH_VISUAL_DROP_PERCENT} %.</p>
+     *
+     * <p>La decision est ecrite meme quand elle est negative : une arme sans la clef serait
+     * retiree au sort a chaque coup, et la meme epee se mettrait a slasher un jour sur deux.</p>
+     */
+    private static void rollSlashVisualOnDrop(ItemStack stack, RandomSource random) {
+        if (stack == null || stack.isEmpty()) return;
+        if (!deepluckyblock.enchantments.WeaponVisualEffectId.isWeaponItem(stack)) return;
+        boolean elementaire =
+                deepluckyblock.enchantments.WeaponVisualEffectId.elementMaskOf(stack) != 0;
+        boolean slash = elementaire && random.nextInt(100) < SLASH_VISUAL_DROP_PERCENT;
+        CompoundTag tag = deepluckyblock.util.DeepNbt.getOrCreateTag(stack).copy();
+        tag.putBoolean(deepluckyblock.util.DeepNbt.SLASH_VISUAL_NBT_KEY, slash);
+        deepluckyblock.util.DeepNbt.commit(stack, tag);
+    }
 
     // ╔══════════════════════════════════════════════════════════════════════╗
     // ║  PALIERS INVISIBLES DE PUISSANCE / ARMURE PAR RANG                   ║
