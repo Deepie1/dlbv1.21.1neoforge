@@ -1000,33 +1000,41 @@ public final class CosmeticShapes {
      * d'épaisseur : la galette commence 0,14 bloc SOUS les pieds et monte à
      * mi-cuisse, le joueur est dedans jusqu'aux genoux.</p>
      */
+    // Le grain est choisi PAR ETAGE, d'apres son epaisseur : un pixel plus epais
+    // que l'etage qui le porte le reduit a une tole d'un seul bloc.
     // [dx, dz, rayon horizontal, rayon vertical, hauteur, grain, graine]
     private static final float[][] BOUFFEES = {
-            // étage 0 : la couronne basse, les plus gros pixels
-            {0.000f,  0.000f, 0.355f, 0.215f, 0.165f, 0.090f,  0.7f},
-            {0.400f,  0.085f, 0.300f, 0.180f, 0.150f, 0.090f,  1.9f},
-            {-0.390f, 0.130f, 0.290f, 0.175f, 0.145f, 0.090f,  3.1f},
-            {0.140f, -0.400f, 0.290f, 0.172f, 0.142f, 0.078f,  4.3f},
-            {-0.165f, 0.395f, 0.285f, 0.170f, 0.152f, 0.078f,  5.5f},
-            {0.335f, -0.335f, 0.250f, 0.155f, 0.136f, 0.078f,  6.7f},
-            {-0.325f, -0.340f, 0.245f, 0.152f, 0.134f, 0.078f,  7.9f},
-            {0.070f,  0.455f, 0.245f, 0.152f, 0.140f, 0.078f,  9.1f},
-            {-0.080f, -0.465f, 0.240f, 0.148f, 0.132f, 0.078f, 10.3f},
-            // étage 1 : la masse médiane, elle remonte entre les chevilles
-            {0.000f,  0.030f, 0.310f, 0.205f, 0.360f, 0.090f, 11.5f},
-            {0.300f, -0.080f, 0.225f, 0.158f, 0.330f, 0.078f, 12.7f},
-            {-0.310f, 0.060f, 0.220f, 0.155f, 0.335f, 0.078f, 13.9f},
-            {0.060f,  0.330f, 0.215f, 0.152f, 0.322f, 0.078f, 15.1f},
-            {-0.050f, -0.335f, 0.212f, 0.150f, 0.318f, 0.078f, 16.3f},
-            // étage 2 : la crête, pixels moyens, elle coiffe le tout
-            {-0.010f, 0.010f, 0.250f, 0.175f, 0.545f, 0.078f, 17.5f},
-            {0.215f,  0.130f, 0.168f, 0.125f, 0.575f, 0.066f, 18.7f},
-            {-0.220f, -0.115f, 0.162f, 0.122f, 0.562f, 0.066f, 19.9f},
-            {0.030f, -0.220f, 0.158f, 0.118f, 0.588f, 0.066f, 21.1f},
-            {-0.035f, 0.215f, 0.154f, 0.116f, 0.570f, 0.066f, 22.3f}};
+            // etage 2 : le dessus, la ou on pose les pieds
+            {0.000f, 0.000f, 0.300f, 0.090f, 0.028f, 0.056f, 17.5f},
+            {0.235f, 0.140f, 0.205f, 0.077f, -0.005f, 0.056f, 18.7f},
+            {-0.240f, -0.125f, 0.200f, 0.076f, -0.018f, 0.056f, 19.9f},
+            {0.035f, -0.245f, 0.195f, 0.074f, -0.030f, 0.056f, 21.1f},
+            {-0.040f, 0.240f, 0.192f, 0.073f, -0.012f, 0.056f, 22.3f},
+            // etage 1 : la masse mediane, la plus large, les plus gros pixels
+            {0.000f, 0.025f, 0.360f, 0.121f, -0.212f, 0.078f, 11.5f},
+            {0.350f, -0.085f, 0.265f, 0.103f, -0.223f, 0.078f, 12.7f},
+            {-0.360f, 0.065f, 0.258f, 0.102f, -0.226f, 0.078f, 13.9f},
+            {0.070f, 0.380f, 0.252f, 0.100f, -0.228f, 0.078f, 15.1f},
+            {-0.060f, -0.385f, 0.248f, 0.098f, -0.231f, 0.078f, 16.3f},
+            {0.290f, -0.300f, 0.215f, 0.090f, -0.236f, 0.066f, 6.7f},
+            {-0.280f, -0.305f, 0.210f, 0.089f, -0.239f, 0.066f, 7.9f},
+            {0.255f, 0.310f, 0.212f, 0.090f, -0.234f, 0.066f, 9.1f},
+            {-0.265f, 0.300f, 0.208f, 0.088f, -0.237f, 0.066f, 10.3f},
+            // etage 0 : le dessous, des lobes qui pendent en se resserrant
+            {0.000f, 0.010f, 0.255f, 0.105f, -0.352f, 0.066f, 0.7f},
+            {0.215f, 0.060f, 0.185f, 0.087f, -0.344f, 0.066f, 1.9f},
+            {-0.220f, 0.085f, 0.180f, 0.085f, -0.342f, 0.066f, 3.1f},
+            {0.090f, -0.230f, 0.178f, 0.085f, -0.339f, 0.066f, 4.3f},
+            {-0.105f, 0.225f, 0.175f, 0.084f, -0.342f, 0.066f, 5.5f}};
 
     private static final int NUAGE_BAS = 0x6B88AF, NUAGE_HAUT = 0xFFFFFF;
-    private static final float NUAGE_Y_BAS = -0.07f, NUAGE_Y_ETENDUE = 0.80f;
+    /**
+     * Fenetre imposee : le nuage est un COUSSIN, il porte le joueur et vit donc
+     * SOUS ses pieds — de 0,50 bloc dessous a 0,10 bloc dessus. Les pieds ne s'y
+     * enfoncent que de 0,10 ; toute la masse pend en dessous.
+     */
+    private static final float NUAGE_Y_MIN = -0.50f, NUAGE_Y_MAX = 0.10f;
+    private static final float NUAGE_Y_BAS = NUAGE_Y_MIN, NUAGE_Y_ETENDUE = NUAGE_Y_MAX - NUAGE_Y_MIN;
 
     private static float aleaPixel(float a, float b, float c) {
         double v = Math.sin(a * 127.1 + b * 311.7 + c * 74.7) * 43758.5453;
@@ -1037,10 +1045,12 @@ public final class CosmeticShapes {
         final float t = br.time;
         for (int k = 0; k < BOUFFEES.length && br.budget > 0; k++) {
             final float[] b = BOUFFEES[k];
-            final float g = 1f + Mth.sin(t * 1.35f + k * 1.25f) * 0.060f;
-            final float flot = Mth.sin(t * 0.95f + k * 0.80f) * 0.018f;
-            bouffeeNuage(br, b[0], b[4] * g + flot, b[1], b[2] * g, b[3] * g, b[2] * g,
-                    b[5], b[6], 238, NUAGE_Y_BAS, NUAGE_Y_ETENDUE, false, 0, 0, 0);
+            // La respiration joue sur les RAYONS, pas sur la hauteur : b[4] est un
+            // ecart aux pieds du joueur, le multiplier ferait sortir de la fenetre.
+            final float g = 1f + Mth.sin(t * 1.35f + k * 1.25f) * 0.055f;
+            final float flot = Mth.sin(t * 0.95f + k * 0.80f) * 0.014f;
+            bouffeeNuage(br, b[0], b[4] + flot, b[1], b[2] * g, b[3] * g, b[2] * g,
+                    b[5], b[6], 238, NUAGE_Y_BAS, NUAGE_Y_ETENDUE, true, false, 0, 0, 0);
         }
 
         // Le sillage : des volutes posées là où le joueur est passé. Elles montent
@@ -1050,18 +1060,22 @@ public final class CosmeticShapes {
         for (int k = 0; k < pas.length && k < 6 && br.budget > 0; k++) {
             CosmeticTrail.Pas e = pas[k];
             float vie = Mth.clamp(e.age, 0f, 1f);
-            float R = (0.205f - k * 0.016f) * (1f - vie * 0.55f);
+            float R = (0.215f - k * 0.016f) * (1f - vie * 0.55f);
             int al = Math.round(214f * (1f - vie * 0.85f));
             float cote = Mth.sin(k * 1.35f + t * 0.6f) * 0.082f;
-            float haut = 0.085f + vie * 0.150f;
+            // Le sillage sort du nuage, donc SOUS les pieds, et remonte en se
+            // delitant sans jamais depasser le dessus du coussin.
+            float haut = -0.280f + vie * 0.130f;
             // Le grain a un plancher : en dessous le gros pixel ne rentre plus dans
             // la volute, qui se réduirait à UN cube seul perdu en l'air.
-            float grain = Math.max(0.052f, R * 0.32f);
+            // Plancher bas : une volute qui se delite a le droit de finir en pixels
+            // plus petits, c'est meme ce qui se lit comme une dissipation.
+            float grain = Math.max(0.038f, R * 0.32f);
             if (al < 20 || R < grain * 2.9f) continue;
             // yBas est compare a l'altitude MONDE du cube : il doit donc inclure solY,
             // sinon la teinte du sillage est calculee dans un autre repere que lui.
             bouffeeNuage(br, 0, 0, 0, R, R * 0.66f, R, grain, 20f + k * 2.3f, al,
-                    (float) (solY + haut - R * 0.8f), R * 1.9f, true,
+                    (float) (solY + haut - R * 0.8f), R * 1.9f, false, true,
                     e.x + cote * br.rightX, solY + haut, e.z + cote * br.rightZ);
         }
     }
@@ -1079,7 +1093,8 @@ public final class CosmeticShapes {
     private static void bouffeeNuage(Brush br, float cx, float cy, float cz,
                                      float rx, float ry, float rz, float grain, float graine,
                                      int al0, float yBas, float yEtendue,
-                                     boolean monde, double wx, double wy, double wz) {
+                                     boolean borne, boolean monde,
+                                     double wx, double wy, double wz) {
         final float pas = grain * 2f;
         final int nx = Mth.ceil(rx / pas), ny = Mth.ceil(ry / pas), nz = Mth.ceil(rz / pas);
         for (int ix = -nx; ix <= nx && br.budget > 0; ix++) {
@@ -1093,6 +1108,10 @@ public final class CosmeticShapes {
                     float lobe = 0.11f * Mth.sin(px * 6.5f + graine) * Mth.cos(pz * 5.5f - graine)
                             + 0.07f * Mth.sin(py * 8.0f + graine * 2.1f);
                     if (d > 1f + lobe) continue;
+                    // Butee dure sur la fenetre imposee : un cube qui en sortirait est
+                    // retire, pas rogne. Le reglage du tableau fait qu'elle ne mord
+                    // presque jamais ; elle garantit la regle quoi qu'il arrive.
+                    if (borne && (cy + py - grain < NUAGE_Y_MIN || cy + py + grain > NUAGE_Y_MAX)) continue;
                     // La teinte suit la hauteur RÉELLE dans le nuage, pas la hauteur
                     // dans la bouffée : sinon le sommet d'un lobe bas serait aussi
                     // clair que la crête et l'éclairage se contredirait.

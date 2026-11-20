@@ -215,7 +215,7 @@ function aleaPixel(a, b, c) {
 }
 
 function bouffeeNuage(out, cx, cy, cz, rx, ry, rz, grain, graine, bas, haut, al0,
-                      yBas, yEtendue) {
+                      yBas, yEtendue, yMin, yMax) {
   // Pas = DEUX fois le grain : les cubes sont JOINTIFS, pas noyes les uns dans
   // les autres. C'est la condition pour qu'on voie chaque gros pixel au lieu
   // d'une patate lissee. La taille est uniforme DANS une bouffee ; la variete
@@ -232,6 +232,10 @@ function bouffeeNuage(out, cx, cy, cz, rx, ry, rz, grain, graine, bas, haut, al0
         const lobe = 0.11 * Math.sin(px * 6.5 + graine) * Math.cos(pz * 5.5 - graine)
                    + 0.07 * Math.sin(py * 8.0 + graine * 2.1);
         if (d > 1 + lobe) continue;
+        // Butee dure sur la fenetre imposee : le nuage vit SOUS les pieds, un
+        // cube qui en sortirait est retire, pas rogne. Le reglage du tableau
+        // fait que cette butee ne mord presque jamais ; elle garantit la regle.
+        if (yMin !== undefined && (cy + py - grain < yMin || cy + py + grain > yMax)) continue;
         // La teinte suit la hauteur REELLE dans le nuage, pas la hauteur dans
         // la bouffee : sinon le sommet d'un lobe bas serait aussi clair que la
         // crete, et l'eclairage se contredirait d'un lobe a l'autre.
@@ -1269,59 +1273,69 @@ const MODELS = {
     jeu: 'pixels',
     jeuNote: "T436 : passe des particules aux pixels. CosmeticShapes.coussinNuage, drapeau F_ENCH_CLOUD_CUSHION (cloud_walker, air_walk, cloud_stride), visible en l'air uniquement.",
     accorde: "#063 Pont Dimensionnel (l.572), #090 Faucon Ouragan (l.703).",
-    note: "Le seul ornement dessiné en GROS pixels, et de trois tailles : 0,132, 0,156 et 0,180 bloc. Un nuage n'a pas d'arête à suivre, il a du volume. Dix-neuf bouffées sur trois étages, 1,33 bloc d'envergure et 0,96 d'épaisseur : la galette commence 0,14 bloc SOUS les pieds et monte jusqu'à mi-cuisse, le joueur est dedans jusqu'aux genoux. Les pixels sont jointifs (le pas vaut deux fois le grain) et teintés sur cinq valeurs selon leur hauteur réelle dans le nuage — c'est ce qui fait qu'on distingue chaque bloc au lieu d'une seule tache blanche. Derrière, un sillage de volutes qui montent en se délitant, et qui se rétracte quand le joueur s'arrête.",
+    note: "Un COUSSIN : il porte le joueur, donc il vit SOUS ses pieds — de 0,50 bloc dessous à 0,10 bloc dessus, les pieds ne s'y enfoncent que de 0,10 et toute la masse pend en dessous. Seul ornement dessiné en GROS pixels, de trois tailles (0,112, 0,132 et 0,156 bloc) : un nuage n'a pas d'arête à suivre, il a du volume. Dix-neuf bouffées sur trois étages, 1,33 bloc d'envergure. Le grain est choisi par étage d'après son épaisseur — un pixel plus épais que l'étage qui le porte le réduirait à une tôle d'un seul bloc. Pixels jointifs (le pas vaut deux fois le grain) et teintés sur cinq valeurs selon leur hauteur réelle dans le nuage. Derrière, un sillage de volutes qui se délitent en pixels plus petits, et qui se rétracte quand le joueur s'arrête.",
     build(t) {
       const o = [];
       const BAS = 0x6B88AF, HAUT = 0xFFFFFF;
-      // Plus large et plus epais : 1,46 bloc d'envergure, 0,72 d'epaisseur.
-      // Chaque lobe doit faire au moins cinq gros pixels de large, sinon le
-      // gros pixel troue la masse au lieu de la construire.
+      // Le nuage est un COUSSIN : il porte le joueur, donc il vit SOUS ses pieds.
+      // Fenetre imposee : de 0,50 bloc sous les pieds a 0,10 au-dessus. Les pieds
+      // ne s'y enfoncent que de 0,10 ; tout le reste de la masse pend dessous.
+      // Le grain est choisi PAR ETAGE, d'apres son epaisseur : un pixel plus
+      // epais que l'etage qui le porte le reduit a une tole d'un seul bloc.
+      // Etage mince dessus -> pixels moyens ; etage epais au milieu -> les plus gros.
       // [dx, dz, rayon horizontal, rayon vertical, hauteur, grain, graine]
       const bouffees = [
-        // --- etage 0 : la couronne basse, les plus gros pixels ---
-        [ 0.000,  0.000, 0.355, 0.215, 0.165, 0.090,  0.7],
-        [ 0.400,  0.085, 0.300, 0.180, 0.150, 0.090,  1.9],
-        [-0.390,  0.130, 0.290, 0.175, 0.145, 0.090,  3.1],
-        [ 0.140, -0.400, 0.290, 0.172, 0.142, 0.078,  4.3],
-        [-0.165,  0.395, 0.285, 0.170, 0.152, 0.078,  5.5],
-        [ 0.335, -0.335, 0.250, 0.155, 0.136, 0.078,  6.7],
-        [-0.325, -0.340, 0.245, 0.152, 0.134, 0.078,  7.9],
-        [ 0.070,  0.455, 0.245, 0.152, 0.140, 0.078,  9.1],
-        [-0.080, -0.465, 0.240, 0.148, 0.132, 0.078, 10.3],
-        // --- etage 1 : la masse mediane, elle remonte entre les chevilles ---
-        [ 0.000,  0.030, 0.310, 0.205, 0.360, 0.090, 11.5],
-        [ 0.300, -0.080, 0.225, 0.158, 0.330, 0.078, 12.7],
-        [-0.310,  0.060, 0.220, 0.155, 0.335, 0.078, 13.9],
-        [ 0.060,  0.330, 0.215, 0.152, 0.322, 0.078, 15.1],
-        [-0.050, -0.335, 0.212, 0.150, 0.318, 0.078, 16.3],
-        // --- etage 2 : la crete, pixels moyens, elle coiffe le tout ---
-        [-0.010,  0.010, 0.250, 0.175, 0.545, 0.078, 17.5],
-        [ 0.215,  0.130, 0.168, 0.125, 0.575, 0.066, 18.7],
-        [-0.220, -0.115, 0.162, 0.122, 0.562, 0.066, 19.9],
-        [ 0.030, -0.220, 0.158, 0.118, 0.588, 0.066, 21.1],
-        [-0.035,  0.215, 0.154, 0.116, 0.570, 0.066, 22.3]
+        // --- etage 2 : le dessus, la ou on pose les pieds ---
+        [ 0.000,  0.000, 0.300, 0.090,  0.028, 0.056, 17.5],
+        [ 0.235,  0.140, 0.205, 0.077, -0.005, 0.056, 18.7],
+        [-0.240, -0.125, 0.200, 0.076, -0.018, 0.056, 19.9],
+        [ 0.035, -0.245, 0.195, 0.074, -0.030, 0.056, 21.1],
+        [-0.040,  0.240, 0.192, 0.073, -0.012, 0.056, 22.3],
+        // --- etage 1 : la masse mediane, la plus large, les plus gros pixels ---
+        [ 0.000,  0.025, 0.360, 0.121, -0.212, 0.078, 11.5],
+        [ 0.350, -0.085, 0.265, 0.103, -0.223, 0.078, 12.7],
+        [-0.360,  0.065, 0.258, 0.102, -0.226, 0.078, 13.9],
+        [ 0.070,  0.380, 0.252, 0.100, -0.228, 0.078, 15.1],
+        [-0.060, -0.385, 0.248, 0.098, -0.231, 0.078, 16.3],
+        [ 0.290, -0.300, 0.215, 0.090, -0.236, 0.066,  6.7],
+        [-0.280, -0.305, 0.210, 0.089, -0.239, 0.066,  7.9],
+        [ 0.255,  0.310, 0.212, 0.090, -0.234, 0.066,  9.1],
+        [-0.265,  0.300, 0.208, 0.088, -0.237, 0.066, 10.3],
+        // --- etage 0 : le dessous, des lobes qui pendent en se resserrant ---
+        [ 0.000,  0.010, 0.255, 0.105, -0.352, 0.066,  0.7],
+        [ 0.215,  0.060, 0.185, 0.087, -0.344, 0.066,  1.9],
+        [-0.220,  0.085, 0.180, 0.085, -0.342, 0.066,  3.1],
+        [ 0.090, -0.230, 0.178, 0.085, -0.339, 0.066,  4.3],
+        [-0.105,  0.225, 0.175, 0.084, -0.342, 0.066,  5.5]
       ];
       for (let k = 0; k < bouffees.length; k++) {
         const [dx, dz, rh, rv, hy, grain, graine] = bouffees[k];
-        const g = 1 + Math.sin(t * 1.35 + k * 1.25) * 0.060;
-        const flot = Math.sin(t * 0.95 + k * 0.80) * 0.018;
-        bouffeeNuage(o, dx, hy * g + flot, dz, rh * g, rv * g, rh * g,
-                     grain, graine, BAS, HAUT, 238, -0.07, 0.80);
+        // La respiration joue sur les RAYONS, pas sur la hauteur : hy est un
+        // ecart aux pieds du joueur, le multiplier ferait sortir de la fenetre.
+        const g = 1 + Math.sin(t * 1.35 + k * 1.25) * 0.055;
+        const flot = Math.sin(t * 0.95 + k * 0.80) * 0.014;
+        bouffeeNuage(o, dx, hy + flot, dz, rh * g, rv * g, rh * g,
+                     grain, graine, BAS, HAUT, 238, -0.50, 0.60, -0.50, 0.10);
       }
 
       // ---- LE SILLAGE : volutes deposees, qui se retractent a l'arret ----
       const emp = empreintes(t, 6, 1.9, 0.375);
       for (let k = 0; k < emp.length; k++) {
         const e = emp[k];
-        const R = (0.205 - k * 0.016) * e.k;
+        const R = (0.215 - k * 0.016) * e.k;
         const al = 214 * (1 - e.age * 0.85);
         const cote = Math.sin(k * 1.35 + t * 0.6) * 0.082;
-        const haut = 0.085 + e.age * 0.150;
+        // Le sillage sort du nuage, donc SOUS les pieds, et remonte en se delitant
+        // sans jamais depasser le dessus du coussin.
+        const haut = -0.280 + e.age * 0.130;
         // Le grain suit la volute, mais il a un plancher : en dessous, le gros
         // pixel ne rentre plus dans la volute. Une volute qui ne peut plus
         // contenir trois pixels par axe se reduirait a UN cube seul perdu en
         // l'air : on la supprime plutot que de la laisser flotter.
-        const grain = Math.max(0.052, R * 0.32);
+        // Plancher bas : une volute qui se delite a le droit de finir en pixels
+        // plus petits, c'est meme ce qui se lit comme une dissipation. Un
+        // plancher trop haut tuait la volute des la moitie de sa vie.
+        const grain = Math.max(0.038, R * 0.32);
         if (al < 20 || R < grain * 2.9) continue;
         bouffeeNuage(o, cote, haut, e.z, R, R * 0.66, R,
                      grain, 20 + k * 2.3, 0x8EA8C6, 0xF4F9FF, al, haut - R * 0.8, R * 1.9);
