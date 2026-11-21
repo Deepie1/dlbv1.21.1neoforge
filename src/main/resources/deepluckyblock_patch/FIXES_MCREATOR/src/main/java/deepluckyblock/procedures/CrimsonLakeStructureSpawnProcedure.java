@@ -180,6 +180,23 @@ public class CrimsonLakeStructureSpawnProcedure {
      */
     private static final String NBT_NAME = System.getProperty("dlb.test.lakeTemplate", "crimsonlake");
 
+    /**
+     * T463 : largeur de la couronne de lissage, en % du rayon de base.
+     *
+     * <p>150 % = 54 blocs pour une emprise de 246x236. Mesure comparative du
+     * poids cumule de lissage sur la zone (couronne / puissance / chunks) :
+     * <pre>
+     *   AVANT (profil en gouttiere, 36) : 20,3 %   383 chunks
+     *    36 blocs : 28,0 %   383 chunks
+     *    54 blocs : 35,6 %   476 chunks   &lt;-- retenu
+     *    72 blocs : 41,1 %   579 chunks
+     * </pre>
+     * 54 donne 1,75x la puissance d'origine pour +24 % de chunks seulement,
+     * alors que 72 couterait +51 % — un cout lourd sur une structure qui a
+     * deja tenu 24 minutes de pre-chargement en T46.
+     */
+    private static final int LAKE_RING_PERCENT = 150;
+
     private static final Set<Long> TRIGGERED = ConcurrentHashMap.newKeySet();
     private static final List<PendingBuild> PENDING = new ArrayList<>();
     private static final Map<Long, SpawnTask> ACTIVE = new ConcurrentHashMap<>();
@@ -541,9 +558,16 @@ public class CrimsonLakeStructureSpawnProcedure {
                 StructureTerrainPrep.setStructureName(NBT_NAME);
                 BlockPos rMin = j.origin;
                 BlockPos rMax = j.origin.offset(j.sx - 1, Math.max(0, j.sy - 1), j.sz - 1);
+                StructureTerrainPrep.clearClearancePlan();   // T463 : idem avant le raccord
                 StructureTerrainPrep.protectFootprint(rMin, rMax);
                 StructureTerrainPrep.setForcedFootprintProtection(true);
-                StructureTerrainPrep.smoothAround(j.level, rMin, rMax, () -> {
+                // T463 : meme rayon explicite que la couronne d'avant pose. Sans
+                // cela ce raccord lisait terrainRing(), donc SMOOTH_RING — un
+                // etat global que seul prepZone renseigne, et que le lac
+                // n'appelle jamais : il heritait du rayon de la structure
+                // precedente.
+                int ringPost = StructureTerrainPrep.ringFor(rMin, rMax, LAKE_RING_PERCENT);
+                StructureTerrainPrep.smoothAround(j.level, rMin, rMax, ringPost, () -> {
                     StructureTerrainPrep.setForcedFootprintProtection(false);
                     StructureTerrainPrep.clearFootprintProtection();
                     // La liberation du keeper et du verrou de generation n'a lieu
@@ -900,7 +924,24 @@ public class CrimsonLakeStructureSpawnProcedure {
             // clear -- plus de blocage a la chaine sur un chunk manquant ; et
             // la deadline globale T234 (540 s) abandonne proprement AVANT le
             // garde-fou du keeper (600 s), jamais apres.
-            deepluckyblock.util.ChunkKeeper.track(level, finalOrigin.offset(0, minRelativeY, 0), max);
+            // T463 — CAUSE DES MARCHES ALIGNEES SUR LES BORDS DE CHUNK.
+            // On ne tenait QUE l'emprise exacte (marge 0) alors que le lissage
+            // qui suit travaille sur emprise + couronne. Les colonnes de la
+            // couronne tombaient donc sur des chunks jamais generes :
+            // captureHeightmap y lisait la sentinelle, despeckleHeightmap ne
+            // sait rattraper que des colonnes ISOLEES (sa mediane est prise
+            // dans le tableau brut, donc un chunk entier corrompu le reste), et
+            // rebuildTerrainBatched sautait les colonnes non chargees. D'ou des
+            // plateaux de 16x16 et des cassures pile sur la grille des chunks.
+            // Le pipeline normal (prepZoneInternal) tient depuis toujours
+            // emprise + terrainRing() + NATURALIZE_EXTRA_RING ; le lac, qui
+            // saute prepZone depuis T164, n'avait jamais recu cette marge.
+            final BlockPos keepMin0 = finalOrigin.offset(0, minRelativeY, 0);
+            final int lakeRing = StructureTerrainPrep.ringFor(keepMin0, max, LAKE_RING_PERCENT);
+            final int keepMargin = StructureTerrainPrep.keeperMarginFor(keepMin0, max, LAKE_RING_PERCENT);
+            deepluckyblock.util.ChunkKeeper.track(level,
+                    new BlockPos(keepMin0.getX() - keepMargin, keepMin0.getY(), keepMin0.getZ() - keepMargin),
+                    new BlockPos(max.getX() + keepMargin, max.getY(), max.getZ() + keepMargin));
             announceLakeProgress(level, "terrain locked, clearing starts (" + sx + "x" + sz + " blocks)...");
             // T303-PERF : regroupement lineaire O(N) par chunk monde (bucket counting sans Comparator ni GC,
             // ~6 ms sur 1,36 M blocs, respecte T175) pour ecrire chaque chunk en continu via LevelChunkSection.
@@ -921,9 +962,14 @@ public class CrimsonLakeStructureSpawnProcedure {
                 // On n'appelle NI prepZone NI decorateTerrainOnly : c'est ce
                 // couple que T164 a retire (504 chunks, 1,36 M blocs, plus de
                 // 100 s). smoothRingOnly ne fait que le lissage graduel.
+                // T463 : le lac n'appelle pas prepZone, donc CLEARANCE_PLAN est
+                // soit null, soit le plan de la structure PRECEDENTE. Dans le
+                // second cas le lissage se calait sur l'altitude d'un autre
+                // batiment (remblai glacis jusqu'a 16 blocs). On fixe l'etat.
+                StructureTerrainPrep.clearClearancePlan();
                 StructureTerrainPrep.protectFootprint(lakeMin, lakeMax);
                 StructureTerrainPrep.setForcedFootprintProtection(true);
-                StructureTerrainPrep.smoothRingOnly(level, lakeMin, lakeMax, () -> {
+                StructureTerrainPrep.smoothRingOnly(level, lakeMin, lakeMax, lakeRing, () -> {
                     StructureTerrainPrep.setForcedFootprintProtection(false);
                     StructureTerrainPrep.clearFootprintProtection();
                     PASTE_Q.offer(new PasteJob(level, bucketedFilt,
