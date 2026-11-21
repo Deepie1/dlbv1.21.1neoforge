@@ -74,6 +74,9 @@ public final class CosmeticPixelAura {
 
     private static final List<Player> TARGETS = new ArrayList<>(8);
 
+    /** T443 : vrai des qu'une exception de rendu a ete journalisee (une seule fois). */
+    private static boolean RENDU_EN_ERREUR = false;
+
     // =====================================================================
     // RENDER TYPES DÉDIÉS (aucune interférence avec les VFX d'armes)
     // =====================================================================
@@ -209,7 +212,17 @@ public final class CosmeticPixelAura {
                     // les autres halos (l'ancien catch englobant rendait le halo « invisible à vie »).
                     try {
                         renderPlayerAura(p, flags, cam, mat, tmp, add, alpha, time);
-                    } catch (RuntimeException ignored) {
+                    } catch (RuntimeException ex) {
+                        // T443 : ce catch etait MUET. Une aura qui disparait sans trace,
+                        // c'est un bug qu'on ne peut pas diagnostiquer. On journalise une
+                        // seule fois (sinon 60 lignes par seconde), avec la pile.
+                        if (!RENDU_EN_ERREUR) {
+                            RENDU_EN_ERREUR = true;
+                            deepluckyblock.DeepLuckyBlockMod.LOGGER.error(
+                                    "[DLB-DIAG] renderPlayerAura a leve une exception (flags=0x"
+                                    + Integer.toHexString(flags) + ") — l'aura de ce joueur "
+                                    + "sera incomplete. Message signale une seule fois.", ex);
+                        }
                     }
                 }
             } catch (RuntimeException ignored) {

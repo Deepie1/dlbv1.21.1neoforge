@@ -121,7 +121,7 @@ public final class CosmeticAuraClientTicker {
             // T349-COSMETIC-PIXEL-AURA : PLUS AUCUNE particule émise ici.
             // Le tick ne sert plus qu'à rafraîchir le bitmask (cache 10 ticks, gratuit) ; le dessin des
             // ailes / couronnes / auras est fait une seule fois par frame par CosmeticPixelAura.
-            getCosmeticFlags(viewer, now);
+            tracer(viewer, getCosmeticFlags(viewer, now));
 
             // T436 : la traînée au sol est une mémoire de pas en coordonnées monde. On la
             // nourrit ici, une fois par tick : c'est ce qui la fait se rétracter à l'arrêt
@@ -144,6 +144,31 @@ public final class CosmeticAuraClientTicker {
             }
             if ((now & 63L) == 0L) CosmeticTrail.nettoie(now);
         } catch (Throwable ignored) {}
+    }
+
+    /**
+     * T443 : traceur de diagnostic. N'ecrit QUE lorsque la valeur change, donc au plus
+     * quelques lignes. Il repond a la seule question qui compte quand une aura
+     * disparait : est-ce le CALCUL qui retombe a zero, ou le RENDU qui casse ?
+     * A retirer une fois la cause etablie.
+     */
+    private static int dernierTrace = -1;
+
+    private static void tracer(Player viewer, int f) {
+        if (f == dernierTrace) return;
+        dernierTrace = f;
+        ComboMask m = EnchantmentComboRegistry.getActiveMask(viewer);
+        StringBuilder prov = new StringBuilder();
+        for (EquipmentSlot sl : new EquipmentSlot[]{EquipmentSlot.HEAD, EquipmentSlot.CHEST,
+                EquipmentSlot.LEGS, EquipmentSlot.FEET}) {
+            ItemStack st = viewer.getItemBySlot(sl);
+            prov.append(st.isEmpty() ? '.' : (DeepNbt.isModLoot(st) ? 'L' : (st.isEnchanted() ? 'e' : '-')));
+        }
+        viewer.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                "\u00a7e[DLB-DIAG] \u00a7fdrapeaux=\u00a7b0x" + Integer.toHexString(f)
+                + " \u00a7fcombos=\u00a7b" + m.bitCount()
+                + " \u00a7farmure=\u00a7b" + prov
+                + " \u00a78(L=loot, e=enchante, -=nu, .=vide)"), false);
     }
 
     public static int getCosmeticFlags(LivingEntity entity, long now) {
