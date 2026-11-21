@@ -476,7 +476,7 @@ public enum WeaponVisualEffectId {
      * toute arme a projectile moddee. Elles gardent leurs petites animations resolues par
      * alias ; ce sont les seules.
      */
-    private static boolean estArmeADistance(ItemStack stack) {
+    public static boolean estArmeADistance(ItemStack stack) {
         Item item = stack.getItem();
         return item instanceof BowItem
                 || item instanceof CrossbowItem
@@ -532,6 +532,16 @@ public enum WeaponVisualEffectId {
         // venir que de la competence accordee a cette arme, jamais d'un enchantement
         // qu'elle porte. Voir calquesDeCompetenceAccordee pour le detail.
         if (!estArmeADistance(stack)) return calquesDeCompetenceAccordee(stack, maxLayers);
+
+        // T447 — UNE ARME A DISTANCE N'A QU'UN ELEMENT, DONC QU'UNE ANIMATION.
+        //
+        // Le defaut signale : « un arc ne devrait pas jouer une petite animation d'eau ET de
+        // poison ». La table d'alias rend une couche par enchantement reconnu, triee par
+        // priorite ; onLivingHurtVisuals en consommait jusqu'a DEUX (layerBudget), prises
+        // dans deux familles differentes. On tranche ici, a la source : la couche dominante
+        // et elle seule. Tous les appelants en heritent -- sillage du projectile, impact sur
+        // bloc, reflet de lame (qui demandait 2) et singleElementOf.
+        maxLayers = 1;
 
         boolean isPureUtilityTool = !(stack.getItem() instanceof SwordItem
                 || stack.getItem() instanceof AxeItem

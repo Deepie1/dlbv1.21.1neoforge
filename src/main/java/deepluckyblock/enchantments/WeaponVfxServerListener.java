@@ -649,7 +649,19 @@ public final class WeaponVfxServerListener {
     private static boolean playSubtleAccent(ServerLevel sl, ItemStack weapon, WeaponVisualEffectId fx,
                                             float tx, float ty, float tz,
                                             float ax, float ay, float az) {
-        if (sl.random.nextInt(100) >= SUBTLE_SHARE_PERCENT) return false;
+        return playSubtleAccent(sl, weapon, fx, tx, ty, tz, ax, ay, az, false);
+    }
+
+    /**
+     * T447 : {@code toujours} force l'accent a partir. Sur une arme a distance, l'accent n'est
+     * plus « la version discrete qui sort 90 % du temps » mais LE seul visuel autorise : s'il
+     * ne partait pas, le code retombait sur la signature complete — c'est par ce trou qu'une
+     * arbalete a lance le raz-de-maree Hydro.
+     */
+    private static boolean playSubtleAccent(ServerLevel sl, ItemStack weapon, WeaponVisualEffectId fx,
+                                            float tx, float ty, float tz,
+                                            float ax, float ay, float az, boolean toujours) {
+        if (!toujours && sl.random.nextInt(100) >= SUBTLE_SHARE_PERCENT) return false;
         int accentIndex = pickAccentIndex(sl, weapon, fx);
         int palette = paletteOf(weapon, fx);
         // Direction de frappe : de l'attaquant vers la cible, prolongée au-delà de la cible.
@@ -10613,13 +10625,18 @@ public final class WeaponVfxServerListener {
 
         boolean meleeCritJustFired = (now - LAST_CRIT_TICK.getOrDefault(attacker.getId(), -100L)) <= 1L;
         boolean arrowCrit = (direct instanceof AbstractArrow arr) && arr.isCritArrow();
+        // T447 : aucune des 47 signatures (toutes revues en apercu HTML, 3 a 5 par element)
+        // ni aucun slash ne peut partir d'un arc, d'une arbalete ou d'un trident. Il leur
+        // reste les accents discrets -- et un seul element, garanti par resolveLayers.
+        boolean aDistance = WeaponVisualEffectId.estArmeADistance(weapon);
         // T431 : un seul bit — l'element de l'animation jouee. Plus de melange feu + eau.
         int palette = paletteOf(weapon, layers.get(0).effect());
 
         // Critique à l'arc / arbalète : étoile critique pixel 3D dédiée si pas déjà en couche 0
         if (arrowCrit && layers.get(0).effect().category != WeaponVisualEffectId.Category.CRIT
                 && sl.random.nextInt(100) < CRIT_TRIGGER_PERCENT) {
-            if (!playSubtleAccent(sl, weapon, WeaponVisualEffectId.GOLDEN_CRIT_STAR, tx, ty, tz, ax, ay, az)) {
+            if (!playSubtleAccent(sl, weapon, WeaponVisualEffectId.GOLDEN_CRIT_STAR, tx, ty, tz, ax, ay, az,
+                    aDistance) && !aDistance) {
                 broadcastNear(sl, tx, ty, tz, WeaponVisualEffectId.GOLDEN_CRIT_STAR.id, KIND_IMPACT, 2,
                         tx, ty, tz, ax, ay, az, palette, sizeScaleOf(target));
             }
@@ -10648,9 +10665,12 @@ public final class WeaponVfxServerListener {
             // couleurs de sa famille. playSubtleAccent n'aboutit que dans SUBTLE_SHARE_PERCENT
             // des cas ; quand il echoue, la salve d'impact ci-dessous prend le relais, et
             // c'est la plus grosse chose qu'un enchantement puisse encore declencher.
-            if (playSubtleAccent(sl, weapon, fx, tx, ty, tz, ax, ay, az)) {
+            if (playSubtleAccent(sl, weapon, fx, tx, ty, tz, ax, ay, az, aDistance)) {
                 continue;
             }
+            // T447 : a distance, l'accent est TOUT. Le repli ci-dessous rejouait la signature
+            // complete une fois sur dix ; c'etait la giga-animation sur arbalete.
+            if (aDistance) continue;
 
             // CE QUI A ETE RETIRE ICI (T431) : le rayon du Siphon Cramoisi, la lance
             // astrale a plus de trois blocs, et surtout la chaine des six apply*Gameplay
@@ -10684,19 +10704,14 @@ public final class WeaponVfxServerListener {
         if (!shouldPlay(shooter.getId(), layers.get(0).effect(), sl, false)) return;
 
         WeaponVisualEffectId.ResolvedLayer top = layers.get(0);
-        int palette = paletteOf(weapon, top.effect());
         Vec3 hit = event.getRayTraceResult().getLocation();
-        if (top.effect() == WeaponVisualEffectId.ASTRAL_STAR_LANCE) {
-            broadcastNear(sl, (float) hit.x, (float) hit.y, (float) hit.z,
-                    top.effect().id, KIND_BEAM_SIPHON, top.level(),
-                    (float) shooter.getX(), (float) shooter.getEyeY() - 0.12f, (float) shooter.getZ(),
-                    (float) hit.x, (float) hit.y, (float) hit.z, palette);
-        } else {
-            broadcastNear(sl, (float) hit.x, (float) hit.y, (float) hit.z,
-                    top.effect().id, KIND_IMPACT, top.level(),
-                    (float) hit.x, (float) hit.y, (float) hit.z,
-                    (float) shooter.getX(), (float) shooter.getEyeY(), (float) shooter.getZ(), palette);
-        }
+        // T447 : une fleche plantee dans un mur gardait deux reliquats de grosse animation --
+        // le rayon d'ASTRAL_STAR_LANCE et, pour tout le reste, la salve KIND_IMPACT de la
+        // signature. Les deux sortaient d'un arc. Il ne reste que l'accent discret, demande
+        // explicitement : la trainee coloree reste, la signature part.
+        playSubtleAccent(sl, weapon, top.effect(),
+                (float) hit.x, (float) hit.y, (float) hit.z,
+                (float) shooter.getX(), (float) shooter.getEyeY(), (float) shooter.getZ(), true);
     }
 
     /**
