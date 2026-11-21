@@ -200,11 +200,22 @@ if s5 is not None:
 if s4 is not None:
     c4 = sans_commentaires(s4)
     n4 = len(re.findall(r"announceStructureSpawn\s*\(", c4))
-    if n4 < 2:
+    if n4 < 3:
         problemes.append(
-            "ANNONCE : Structures4Procedure ne contient que %d appel(s) d'annonce (2 attendus : "
-            "PasteJob pour circus/shipdead, EverestJob pour everest). C'est le defaut d'origine : "
-            "circus spawnait sans aucun message." % n4)
+            "ANNONCE : Structures4Procedure ne contient que %d appel(s) d'annonce (3 attendus : "
+            "PasteJob pour circus/shipdead, EverestJob pour everest, et le repli rawBlocks vide "
+            "qui pose par placeInWorld sans creer de PasteJob). C'est le fichier qui pose circus : "
+            "chacune de ses sorties de pose doit annoncer." % n4)
+
+    # Le repli direct (template.placeInWorld) ne cree aucun PasteJob : il doit
+    # annoncer lui-meme, sinon la structure apparait sans un mot.
+    for m in re.finditer(r"placeInWorld", c4):
+        fin = c4.find("return true", m.end())
+        if fin < 0 or "announceStructureSpawn" not in c4[m.end():fin]:
+            problemes.append(
+                "ANNONCE : une pose directe par template.placeInWorld sort sans annoncer. "
+                "Ce chemin ne cree pas de PasteJob et n'atteint donc jamais le point de "
+                "fin de pose : la structure apparaitrait en silence.")
     if "job.annMin" not in c4 or "job.annMax" not in c4:
         problemes.append(
             "ANNONCE : les bornes annMin/annMax de l'EverestJob ont disparu ; "
