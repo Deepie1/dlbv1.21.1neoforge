@@ -576,9 +576,9 @@ RECETTE = os.path.join(JAVA, "recipe", "DeepLuckyBlockCraftingRecipe.java")
 
 rec = lire(RECETTE)
 if rec is not None:
-    corps = corps_methode(sans_commentaires(rec), "private static int getLuckValue")
+    corps = corps_methode(sans_commentaires(rec), "private static int getLuckCenti")
     if corps is None:
-        problemes.append("LUCK : getLuckValue introuvable dans DeepLuckyBlockCraftingRecipe.")
+        problemes.append("LUCK : getLuckCenti introuvable dans DeepLuckyBlockCraftingRecipe.")
     else:
         # (a) les 10 aliments bannis. Le prefixe litteral « Items. » suffit a
         # distinguer APPLE de GOLDEN_APPLE et POTATO de POISONOUS_POTATO.
@@ -593,10 +593,14 @@ if rec is not None:
 
         # (b) ce qui DOIT rester, avec sa valeur exacte : formes dorees (que la
         # suppression des aliments ne doit pas emporter) et ancres de l'echelle T350.
-        ATTENDUS = (("GOLDEN_CARROT", 2), ("GOLDEN_APPLE", 6),
-                    ("ENCHANTED_GOLDEN_APPLE", 15), ("DIAMOND", 1),
-                    ("EMERALD", 1), ("NETHERITE_INGOT", 5),
-                    ("NETHERITE_BLOCK", 45), ("NETHER_STAR", 25))
+        # T458 : la table est en CENTIEMES de luck (100 = +1). C'est la raison
+        # d'etre de l'echelle : une table en entiers ne peut pas porter +0,75.
+        ATTENDUS = (("GOLD_INGOT", 50), ("GOLD_BLOCK", 500),
+                    ("EMERALD", 75), ("EMERALD_BLOCK", 700),
+                    ("DIAMOND", 100), ("DIAMOND_BLOCK", 1000),
+                    ("GOLDEN_CARROT", 200), ("GOLDEN_APPLE", 600),
+                    ("ENCHANTED_GOLDEN_APPLE", 1500), ("NETHERITE_INGOT", 500),
+                    ("NETHERITE_BLOCK", 4500), ("NETHER_STAR", 2500))
         for nom, val in ATTENDUS:
             m = re.search(r"Items\.%s\s*\)\s*\)?\s*return\s+(-?\d+)" % nom, corps)
             if m is None:
@@ -609,10 +613,10 @@ if rec is not None:
                     % (nom, m.group(1), val))
 
         # (c) le versant negatif reste entier : un menage ne doit pas le vider.
-        MALUS = (("ROTTEN_FLESH", -1), ("SLIME_BALL", -1), ("BONE", -1),
-                 ("SPIDER_EYE", -2), ("POISONOUS_POTATO", -3),
-                 ("FERMENTED_SPIDER_EYE", -6), ("PUFFERFISH", -6),
-                 ("WITHER_SKELETON_SKULL", -12))
+        MALUS = (("ROTTEN_FLESH", -100), ("SLIME_BALL", -100), ("BONE", -100),
+                 ("SPIDER_EYE", -200), ("POISONOUS_POTATO", -300),
+                 ("FERMENTED_SPIDER_EYE", -600), ("PUFFERFISH", -600),
+                 ("WITHER_SKELETON_SKULL", -1200))
         for nom, val in MALUS:
             m = re.search(r"Items\.%s\s*\)\s*\)?\s*return\s+(-?\d+)" % nom, corps)
             if m is None:
@@ -620,6 +624,29 @@ if rec is not None:
             elif int(m.group(1)) != val:
                 problemes.append("LUCK : Items.%s vaut %s, attendu %+d." % (nom, m.group(1), val))
 
+
+    # (d) T458 : l'accumulation DOIT rester en centiemes, avec un arrondi UNIQUE
+    # en fin de craft. Si quelqu'un remet un arrondi par materiau, +0,75 redevient
+    # +1 et tout le reequilibrage disparait sans qu'aucune valeur n'ait bouge.
+    corps_asm = corps_methode(sans_commentaires(rec), "public ItemStack assemble")
+    if corps_asm is None:
+        problemes.append("LUCK : assemble(...) introuvable.")
+    else:
+        for attendu in ("simulatedCenti", "toAddCenti", "DEGRESSIVE_THRESHOLD_CENTI"):
+            if attendu not in corps_asm:
+                problemes.append(
+                    "LUCK : assemble() n'utilise plus %s -- l'accumulation en "
+                    "centiemes a ete perdue (T458)." % attendu)
+        if re.search(r"simulated\s*>=\s*25\b", corps_asm):
+            problemes.append(
+                "LUCK : seuil degressif compare a 25 au lieu de 2500 centiemes (T458).")
+    m_seuil = re.search(r"DEGRESSIVE_THRESHOLD_CENTI\s*=\s*(\d+)\s*;",
+                        sans_commentaires(rec))
+    if m_seuil is None:
+        problemes.append("LUCK : DEGRESSIVE_THRESHOLD_CENTI introuvable.")
+    elif int(m_seuil.group(1)) != 2500:
+        problemes.append("LUCK : seuil degressif = %s centiemes, attendu 2500."
+                         % m_seuil.group(1))
 
 gen = lire(GEN)
 if gen is not None:
