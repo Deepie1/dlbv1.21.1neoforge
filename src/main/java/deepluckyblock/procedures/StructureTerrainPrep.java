@@ -335,64 +335,7 @@ public class StructureTerrainPrep {
      * (surface mesuree), seul l'anneau est lisse pour fondre la structure dans le terrain.
      * Synchronne : peut freezer 1 tick sur les grosses structures.
      */
-    /**
-     * T463 : rayon de lissage pour une emprise donnee, calcule SANS dependre
-     * d'aucun etat global.
-     *
-     * <p>Motif : {@code terrainRing()} lit {@code SMOOTH_RING}, qui n'est
-     * affecte que dans {@code prepZoneInternal}. Une structure qui n'appelle
-     * pas prepZone (crimsonlake depuis T164) heritait donc du rayon de la
-     * STRUCTURE PRECEDENTE — un etat global jamais initialise pour elle.
-     */
-    public static int ringFor(BlockPos min, BlockPos max, int scalePercent) {
-        int base = computeSmoothRing(min, max) + SMOOTH_EXTRA_RING;
-        int pct = Math.max(10, Math.min(400, scalePercent));
-        return Math.max(8, Math.round(base * pct / 100.0f));
-    }
-
-    /**
-     * T463 : marge (en blocs) qu'il faut MAINTENIR CHARGEE autour de l'emprise
-     * pour que le lissage de ce rayon soit realisable.
-     *
-     * <p>C'est la cause des « marches alignees sur les bords de chunk » :
-     * crimsonlake ne tenait que son emprise exacte alors qu'il lissait
-     * emprise+couronne. Les colonnes de la couronne tombaient donc sur des
-     * chunks non generes : {@code captureHeightmap} y lisait la sentinelle et
-     * {@code despeckleHeightmap} — qui prend la mediane des 8 voisins dans le
-     * tableau BRUT — ne sait corriger que des colonnes ISOLEES, pas un chunk
-     * entier. Resultat : un plateau fabrique de 16x16 par chunk manquant, puis
-     * {@code rebuildTerrainBatched} qui saute les colonnes non chargees.
-     */
-    public static int keeperMarginFor(BlockPos min, BlockPos max, int scalePercent) {
-        return ringFor(min, max, scalePercent) + NATURALIZE_EXTRA_RING;
-    }
-
-    /**
-     * T463 : oublie le plan de rasage de la structure PRECEDENTE.
-     *
-     * <p>{@code CLEARANCE_PLAN} n'est renseigne que par {@code prepZone}. Une
-     * structure qui ne l'appelle pas (crimsonlake depuis T164) heritait donc du
-     * plan d'une AUTRE structure. Or trois fonctions ne verifient que
-     * {@code != null}, sans {@code matches()} :
-     * {@code glacisRiseAllowance} (jusqu'a 16 blocs de REMBLAI),
-     * {@code glacisContactFloor} (plancher force a {@code groundY}) et
-     * {@code contactFloorSweep}. Avec un plan etranger, le lissage autour du
-     * lac se calait sur l'altitude d'un autre batiment — d'ou le risque de
-     * « montagne collee a la structure ».
-     *
-     * <p>Remis a null, les trois retombent sur le mode documente « sans plan
-     * de rasage valide : aucun plancher, regles historiques conservees », qui
-     * est deja le cas nominal quand le lac est la premiere structure du monde.
-     */
-    public static void clearClearancePlan() {
-        CLEARANCE_PLAN = null;
-    }
-
     public static void smoothAround(ServerLevel level, BlockPos min, BlockPos max, Runnable onDone) {
-        smoothAround(level, min, max, terrainRing(), onDone);
-    }
-
-    public static void smoothAround(ServerLevel level, BlockPos min, BlockPos max, int smoothRing, Runnable onDone) {
         RandomSource random = level.getRandom();
         int topY = Math.min(max.getY() + 10, level.getMaxBuildHeight() - 1);
         List<SavedTree> trees = scanTrees(level, min.getX() - RING, min.getZ() - RING, max.getX() + RING, max.getZ() + RING, topY);
@@ -405,6 +348,7 @@ public class StructureTerrainPrep {
         // protegee (aucun bloc de structure retouche), et les colonnes
         // exterieures continuent de respecter la fenetre adaptative T89 et
         // le feather T177.
+        int smoothRing = terrainRing();
         int x0 = min.getX() - smoothRing, x1 = max.getX() + smoothRing;
         int z0 = min.getZ() - smoothRing, z1 = max.getZ() + smoothRing;
         int w = x1 - x0 + 1, h = z1 - z0 + 1;
@@ -4483,11 +4427,7 @@ public class StructureTerrainPrep {
     private static final int[] SMOOTH_KERNEL_SCHEDULE_T109 = {7, 11, 15, 21, 29, 49, 55, 61, 67, 71};
 
     private static void smoothPassGradual(ServerLevel level, BlockPos structMin, BlockPos structMax, Runnable onDone) {
-        smoothPassGradual(level, structMin, structMax, terrainRing(), onDone);
-    }
-
-    private static void smoothPassGradual(ServerLevel level, BlockPos structMin, BlockPos structMax,
-                                          int smoothRing, Runnable onDone) {
+        int smoothRing = terrainRing();
         int x0 = structMin.getX() - smoothRing, x1 = structMax.getX() + smoothRing;
         int z0 = structMin.getZ() - smoothRing, z1 = structMax.getZ() + smoothRing;
         int w = x1 - x0 + 1, h = z1 - z0 + 1;
@@ -4508,15 +4448,6 @@ public class StructureTerrainPrep {
      */
     public static void smoothRingOnly(ServerLevel level, BlockPos min, BlockPos max, Runnable onDone) {
         smoothPassGradual(level, min, max, onDone);
-    }
-
-    /**
-     * T463 : variante a rayon EXPLICITE, pour les structures qui n'appellent
-     * pas prepZone et dont {@code SMOOTH_RING} n'a donc jamais ete calcule.
-     */
-    public static void smoothRingOnly(ServerLevel level, BlockPos min, BlockPos max,
-                                      int smoothRing, Runnable onDone) {
-        smoothPassGradual(level, min, max, smoothRing, onDone);
     }
 
     /** Nombre de chunks generes par tick pendant le pre-chargement etale. */
@@ -7775,16 +7706,8 @@ public class StructureTerrainPrep {
      *  LOIN de l'emprise (fenetre de fond T89). */
     private static final int MAX_SMOOTH_RISE = 10;
     /** T23 : creusage maximal autorise du lissage (vers le bas), en blocs,
-     *  LOIN de l'emprise (fenetre de fond T89).
-     *
-     *  <p>T463 : 2 -> 8. A 2 blocs, le lissage ne pouvait PLUS RIEN abaisser
-     *  au-dela de ~31 blocs de l'emprise (allowDrop = max(2, 64 - 2*dist)) :
-     *  mesure sur crimsonlake, la couronne gardait son relief brut et le
-     *  joueur voyait « le smooth n'est pas assez puissant ». La dissymetrie
-     *  T23 (monter beaucoup, creuser peu) reste la regle — elle protege du
-     *  « tu creuses encore des trous autour de la structure » — mais 8 blocs
-     *  autorisent enfin un vrai TASSEMENT de la couronne. */
-    private static final int MAX_SMOOTH_DROP = 8;
+     *  LOIN de l'emprise (fenetre de fond T89). */
+    private static final int MAX_SMOOTH_DROP = 2;
 
     /** T89 (B9) : derive maximale autorisee PILE AU BORD de l'emprise. Le fade
      *  doit pouvoir rabattre une paroi naturelle (montagne coupee a vif au
@@ -7932,8 +7855,7 @@ public class StructureTerrainPrep {
                 // bornes doivent s'appliquer, sinon la crique gelee au pied
                 // du mur gardait son passe-air (aucune autre passe ne la
                 // reconstruisait).
-                if (waterMask != null && waterMask[i][j]
-                        && Math.sqrt((double) dx * dx + (double) dz * dz) > 8.0) continue;
+                if (waterMask != null && waterMask[i][j] && Math.max(dx, dz) > 8) continue;
                 int d = hm[i][j] - ref[i][j];
                 int ad = Math.abs(d);
                 if (ad > worst) { worst = ad; worstX = i; worstZ = j; }
@@ -7955,20 +7877,7 @@ public class StructureTerrainPrep {
                 // garantie par limitSlope a convergence) tient lieu de garde
                 // contre crateres et terrasses.
                 // (dx/dz calcules en tete de boucle -- T288, garde nappe au ruban.)
-                // T463 (cause des « sillons paralleles » et des bandes
-                // terre/herbe) : la distance etait CHEBYCHEV (Math.max(dx,dz)),
-                // donc les lignes de niveau du plafond etaient des CARRES — et
-                // le plafond perdait EXACTEMENT 2 blocs par bloc d'eloignement
-                // en arithmetique entiere. Resultat : des terrasses de 2 blocs
-                // en anneaux carres, que rebuildColumnSection habille en
-                // GRASS au sommet et DIRT sur la contremarche -> l'alternance
-                // herbe/terre qui suit les courbes de niveau sur les captures.
-                // Le fade, lui, est EUCLIDIEN depuis le correctif « bords
-                // rectangulaires » : les deux etages se contredisaient.
-                // Desormais : meme metrique euclidienne, et allowances en
-                // DOUBLE (continues) — plus de marche d'escalier quantifiee.
-                double distC = Math.sqrt((double) dx * dx + (double) dz * dz);
-                double reach = ADAPTIVE_SMOOTH_MAX - 2.0 * distC;
+                int reach = ADAPTIVE_SMOOTH_MAX - 2 * Math.max(dx, dz);
                 // T244 : la fenetre de REMBLAI se referme 2x moins vite
                 // (1 bloc par bloc d'eloignement). Un creux de berge cote aval
                 // d'une pente reclame souvent 20-40 blocs de remblai jusque
@@ -7980,7 +7889,7 @@ public class StructureTerrainPrep {
                 // doit jamais recreuser. Le remblai reste borne par la cible
                 // elle-meme (fade vers 0 au bord + limitSlope pente <= 2),
                 // donc aucun mur artificiel ne peut naitre.
-                double reachRise = ADAPTIVE_SMOOTH_MAX - distC;
+                int reachRise = ADAPTIVE_SMOOTH_MAX - Math.max(dx, dz);
                 // T259 : le remblai est EN OUTRE borne au contact de
                 // l'emprise (anti-butte, cf. riseCapNearEmprise) — la coupe,
                 // elle, garde toute sa marge (paroi de montagne, T89).
@@ -7990,11 +7899,10 @@ public class StructureTerrainPrep {
                 // base). C'est ICI que le lissage construit l'insertion de la
                 // structure dans le sol — plus besoin du remblai post-pose
                 // T278 qui empilait le collet +16 au pied du mur.
-                int distI = (int) Math.round(distC);
-                double allowRise = Math.min(Math.max((double) MAX_SMOOTH_RISE, reachRise),
-                        Math.max((double) riseCapNearEmprise(distI),
-                                (double) glacisRiseAllowance(distI, ref[i][j])));
-                double allowDrop = Math.max((double) MAX_SMOOTH_DROP, reach);
+                int allowRise = Math.min(Math.max(MAX_SMOOTH_RISE, reachRise),
+                        Math.max(riseCapNearEmprise(Math.max(dx, dz)),
+                                glacisRiseAllowance(Math.max(dx, dz), ref[i][j])));
+                int allowDrop = Math.max(MAX_SMOOTH_DROP, reach);
                 // T177 — feather radial vers la frontière de la zone. Un smooth
                 // rectangulaire sans ce masque pouvait encore modifier de 10
                 // blocs la dernière colonne puis rencontrer brutalement le chunk
@@ -8003,12 +7911,12 @@ public class StructureTerrainPrep {
                 // toujours traités comme une seule surface; aucune couture par
                 // chunk n'est introduite.
                 int edgeDistance = Math.min(Math.min(i, w - 1 - i), Math.min(j, h - 1 - j));
-                double edgeT = Math.max(0.0, Math.min(1.0, edgeDistance / 16.0));
-                double feather = edgeT * edgeT * (3.0 - 2.0 * edgeT);
-                allowRise = allowRise * feather;
-                allowDrop = allowDrop * feather;
-                if (d > allowRise) { hm[i][j] = (int) Math.round(ref[i][j] + allowRise); clamped++; }
-                else if (d < -allowDrop) { hm[i][j] = (int) Math.round(ref[i][j] - allowDrop); clamped++; }
+                float edgeT = Math.max(0f, Math.min(1f, edgeDistance / 16f));
+                float feather = edgeT * edgeT * (3f - 2f * edgeT);
+                allowRise = Math.round(allowRise * feather);
+                allowDrop = Math.round(allowDrop * feather);
+                if (d > allowRise) { hm[i][j] = ref[i][j] + allowRise; clamped++; }
+                else if (d < -allowDrop) { hm[i][j] = ref[i][j] - allowDrop; clamped++; }
                 // T283 (retour client 20/10 : « en dessous du sol y0, il est
                 // INTERDIT de creer un trou autour des blocs ») : dans le
                 // ruban de contact (dd 1..8) le lissage ne peut plus
@@ -8024,11 +7932,7 @@ public class StructureTerrainPrep {
                 // revu. Plancher = PROFIL PUR de la rampe (jamais au-dessus
                 // de Y0, regle anti-montagne T282 inchangee) : le sol arrive
                 // exactement A LA RAMPE, ni fosse ni collet.
-                // T463 : meme metrique euclidienne que le plafond et que le
-                // fade. En Tchebychev ce ruban de contact etait un CARRE
-                // parfait au ras de la structure — l'endroit ou un contour
-                // geometrique se voit le plus.
-                int ddContact = distI;
+                int ddContact = Math.max(dx, dz);
                 if (ddContact >= 1 && ddContact <= 8) {
                     int floorLv = glacisContactFloor(ddContact);
                     if (floorLv != Integer.MIN_VALUE && hm[i][j] < floorLv) {
@@ -8300,25 +8204,7 @@ public class StructureTerrainPrep {
         // Le pic de flou (fade=1) est atteint a mi-couronne : le lissage du
         // paysage environnant reste donc plein, seule la zone pres du batiment
         // est desormais protegee.
-        // T463 — FIN DE LA GOUTTIERE. L'ancien profil montait de 0 (au contact
-        // de l'emprise) jusqu'a 1 a MI-COURONNE, puis redescendait a 0 au bord
-        // exterieur. Autrement dit : effet NUL la ou la structure touche le
-        // sol, maximal 18 blocs plus loin. Mesure sur crimsonlake (246x236,
-        // couronne 36) : emprise protegee = 60 % de la zone jamais touchee,
-        // et poids cumule du fade = 20,3 % seulement. C'est tout le grief
-        // « le smooth n'est pas assez puissant » / « pas seulement les bords ».
-        //
-        // T244 avait deja voulu ce correctif en mettant anchorMargin a 0, mais
-        // la MONTEE est restee : a 1 bloc de l'emprise le poids valait encore
-        // 1/18 = 0,06, soit rien. Le defaut a donc survecu a son correctif.
-        //
-        // NOUVEAU PROFIL (choix utilisateur T463 : « le terrain autour
-        // seulement », effet maximal AU CONTACT puis decroissant) :
-        //   - PLATEAU a 1.0 du bord de l'emprise jusqu'a plateauEnd,
-        //   - puis descente en SMOOTHSTEP jusqu'a 0 au bord exterieur.
-        // La smoothstep (derivee nulle aux deux bouts) supprime la cassure
-        // d'angle que la rampe lineaire laissait au raccord.
-        double plateauEnd = maxFade * 0.45;
+        double peakDist = anchorMargin + Math.max(1.0, (maxFade - anchorMargin) * 0.5);
         // FIX (rapporte en jeu : "on voit clairement des bords rectangulaires
         // terrain tout autour de la structure, c'est trop parfait, pas assez
         // naturel") : la distance utilisee ici etait Math.max(dx, dz), c'est-a-dire
@@ -8362,12 +8248,10 @@ public class StructureTerrainPrep {
                     fade = 1.0;
                 } else if (dist <= anchorMargin) {
                     fade = 0.0;
-                } else if (dist <= plateauEnd) {
-                    fade = 1.0; // T463 : plein effet DES le contact de l'emprise
+                } else if (dist <= peakDist) {
+                    fade = (dist - anchorMargin) / (peakDist - anchorMargin); // montee vers plein flou
                 } else {
-                    // descente douce vers le terrain naturel (smoothstep)
-                    double t = Math.min(1.0, (dist - plateauEnd) / (maxFade - plateauEnd));
-                    fade = 1.0 - t * t * (3.0 - 2.0 * t);
+                    fade = 1.0 - Math.min(1.0, (dist - peakDist) / (maxFade - peakDist)); // redescente vers terrain naturel
                 }
                 // REVERT (rapporte en jeu : « tu te mets a creuser jusqu'au
                 // dernier bloc de la structure pour le poser au sol pile poil,
