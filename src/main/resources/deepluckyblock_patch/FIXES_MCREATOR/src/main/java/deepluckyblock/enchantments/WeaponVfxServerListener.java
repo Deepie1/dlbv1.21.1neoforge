@@ -115,7 +115,6 @@ public final class WeaponVfxServerListener {
     private static final Map<Integer, Long> LAST_ATTACKER_HIT_TICK = new ConcurrentHashMap<>();
     private static final Map<Integer, Long> LAST_PROJECTILE_HIT_TICK = new ConcurrentHashMap<>();
     private static final Map<Integer, Long> LAST_CRIT_TICK = new ConcurrentHashMap<>();
-    private static final Map<Integer, Long> LAST_RALLY_TICK = new ConcurrentHashMap<>();
     /** T351-BIG-BONUS : dernier tick où une GROSSE animation (critique) a été jouée, par attaquant. */
     private static final Map<Integer, Long> LAST_BIG_ANIM_TICK = new ConcurrentHashMap<>();
     /** T349-VFX-FREQUENCY : cooldown réel et aléatoire par (attaquant, effet). */
@@ -10553,7 +10552,6 @@ public final class WeaponVfxServerListener {
             LAST_ATTACKER_HIT_TICK.clear();
             LAST_PROJECTILE_HIT_TICK.clear();
             LAST_CRIT_TICK.clear();
-            LAST_RALLY_TICK.clear();
             LAST_BIG_ANIM_TICK.clear();
         }
 
@@ -10701,33 +10699,44 @@ public final class WeaponVfxServerListener {
         }
     }
 
-    /** Clic droit avec une arme portant {@code army_summon} / {@code summon_army} -> Sceau Voxel #29 ! */
+    /**
+     * T444 — LE CLIC DROIT NE LANCE PLUS AUCUNE ANIMATION DE COMPETENCE.
+     *
+     * <p><b>Le defaut repare.</b> Cette methode jouait le Sceau #29 — animation de
+     * competence TERRE, celle aux drapeaux — des que {@link WeaponVisualEffectId#resolveLayers}
+     * voyait un calque {@code WARLORD_RALLY_SIGIL} sur l'objet tenu. Or ce calque se
+     * resout aussi depuis des alias VANILLA : {@code minecraft:looting} et
+     * {@code minecraft:fortune}. N'importe quelle epee portant Butin lancait donc le
+     * sceau, son fond sonore et sa prise de controle de zone, d'un simple clic droit.</p>
+     *
+     * <p><b>Pourquoi l'element etait faux.</b> Le sceau est prioritaire 91, la signature
+     * de feu {@code SOUL_FIRE_CRESCENT} ne l'est que 76 : sur une epee <i>blaze
+     * sanctuary</i> portant Butin, le calque TERRE passait DEVANT le calque de feu de
+     * l'arme et sortait en tete de {@code resolveLayers}. Une arme de feu jouait
+     * l'animation d'un autre element — exactement ce qui a ete signale.</p>
+     *
+     * <p><b>La regle.</b> Une animation de competence est le fait d'une COMPETENCE, jamais
+     * d'un enchantement. T429 l'a etablie pour les signatures lancees sur un mob ; ce
+     * chemin-ci lui echappait parce qu'il ne passait pas par {@code WeaponSkill} du tout.
+     * Le declencheur est donc retire, pas filtre : le reparer en exigeant le bon element,
+     * ou la bonne marque, laisserait un enchantement commander une animation de
+     * competence. {@code WARLORD_RALLY_SIGIL} a d'ailleurs quitte la table des signatures
+     * en T413, il n'a plus aucun titre a se lancer au clic droit.</p>
+     *
+     * <p><b>Ce qui ne bouge pas.</b> L'enchantement {@code army_summon} / {@code summon_army}
+     * garde tout son jeu — l'invocation, son cout en experience, sa recharge et son propre
+     * retour (son d'evocateur et anneau de particules) vivent dans
+     * {@code UniversalEnchantmentHandler} et ne sont pas touches. Seule l'animation de
+     * competence qui s'y etait greffee disparait. La prise de zone du sceau
+     * ({@code applyRallyGameplay}) reste branchee sur son chemin legitime, le coup porte.</p>
+     *
+     * <p>La garde d'etourdissement, elle, est conservee : elle n'a rien d'une animation,
+     * c'est la regle qui empeche un joueur fige par une signature d'utiliser ses objets.</p>
+     */
     @SubscribeEvent(priority = EventPriority.HIGH)
-    public static void onRightClickRallyVisuals(PlayerInteractEvent.RightClickItem event) {
-        Player player = event.getEntity();
-        if (isSignatureFullyStunned(player)) {
+    public static void onRightClickWhileStunned(PlayerInteractEvent.RightClickItem event) {
+        if (isSignatureFullyStunned(event.getEntity())) {
             event.setCanceled(true);
-            return;
-        }
-        if (!(player.level() instanceof ServerLevel sl)) return;
-        ItemStack stack = event.getItemStack();
-        if (stack.isEmpty() || player.getCooldowns().isOnCooldown(stack.getItem())) return;
-
-        List<WeaponVisualEffectId.ResolvedLayer> layers = WeaponVisualEffectId.resolveLayers(stack, 2);
-        for (WeaponVisualEffectId.ResolvedLayer l : layers) {
-            if (l.effect() == WeaponVisualEffectId.WARLORD_RALLY_SIGIL) {
-                long now = sl.getGameTime();
-                Long prev = LAST_RALLY_TICK.put(player.getId(), now);
-                if (prev != null && now - prev < 40L) return; // T349 : sceau moins spammable
-                float px = (float) player.getX();
-                float py = (float) (player.getY() + 0.45);
-                float pz = (float) player.getZ();
-                broadcastNear(sl, px, py, pz, WeaponVisualEffectId.WARLORD_RALLY_SIGIL.id, KIND_IMPACT, l.level(),
-                        px, py, pz, px, py + 1.0f, pz);
-                scheduleEarthSoundtrack(sl, player, WeaponVisualEffectId.WARLORD_RALLY_SIGIL);
-                applyRallyGameplay(player, sl);
-                break;
-            }
         }
     }
 
