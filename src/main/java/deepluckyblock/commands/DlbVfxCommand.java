@@ -1420,6 +1420,11 @@ public final class DlbVfxCommand {
     private static ItemStack enchanted(Item item, Holder<Enchantment> holder, int level) {
         ItemStack stack = new ItemStack(item);
         DeepEnchant.setLevel(stack, holder, Math.max(1, level));
+        // T441 : depuis la regle de provenance, seuls les items DROPPES par le mod
+        // produisent nos effets — resolveLayers rend une liste vide sinon. Sans cette
+        // marque, /dlbvfx give livrerait une arme parfaitement muette, et la commande
+        // de test des effets visuels ne testerait plus rien.
+        deepluckyblock.util.DeepNbt.markLuckyBlockOrigin(stack);
         return stack;
     }
 }

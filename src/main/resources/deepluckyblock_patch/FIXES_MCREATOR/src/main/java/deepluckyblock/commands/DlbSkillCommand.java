@@ -171,6 +171,10 @@ public final class DlbSkillCommand {
         // l'objet du correctif. Cette epee de test doit donc recevoir la meme marque que
         // celle delivree par le tirage a 5 %, sinon /dlbskill livrerait une arme muette.
         WeaponSkill.markGranted(sword, path);
+        // T441 : meme raisonnement pour le VISUEL. Seuls les items droppes par le mod
+        // portent nos effets ; sans cette marque l'epee lancerait la competence mais
+        // resterait visuellement nue, ce qui ferait croire a une panne du rendu.
+        deepluckyblock.util.DeepNbt.markLuckyBlockOrigin(sword);
 
         WeaponSkill.Entry entry = WeaponSkill.firstOn(sword);
         String skillName = (entry == null)
