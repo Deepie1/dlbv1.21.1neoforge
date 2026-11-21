@@ -902,7 +902,9 @@ public class Structures4Procedure {
                 PASTE_QUEUE.poll();
                 long elapsed = System.currentTimeMillis() - job.startTime;
                 deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4] {} finie en {}ms ({} blocs, {} a gravite -- ticks de chute neutralises par DLB-CLAMP)", job.name, elapsed, job.blocks.size(), job.grav);
-                if (job.player != null) job.player.sendSystemMessage(Component.literal("§a✓ §e" + job.name + "§a en " + elapsed + "ms"));
+                // T456 : chrono de diagnostic, masque pour la publication.
+                if (job.player != null && deepluckyblock.util.DebugLog.ENABLED)
+                    job.player.sendSystemMessage(Component.literal("§a✓ §e" + job.name + "§a en " + elapsed + "ms"));
                 // T449 : « lorsqu'une structure spawn, tu dois TOUJOURS mettre le
                 // message de discovery avec les coordonnees une fois apparu ». Ce
                 // pipeline (circus, shipdead) n'annoncait RIEN : seul Structures5
@@ -1096,7 +1098,11 @@ public class Structures4Procedure {
                 EVEREST_QUEUE.poll();
                 long elapsed = System.currentTimeMillis() - job.startTime;
                 deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4-EVEREST] EVEREST TERMINÉ en {}s ({} blocs)", elapsed / 1000.0, job.blocks.size());
-                if (job.player != null) job.player.sendSystemMessage(Component.literal("§b§l⛰ Everest en construction §7(~" + (elapsed / 1000.0) + "s)"));
+                // T456 : chrono de diagnostic. Ce message annoncait « en construction »
+                // alors que la pose venait de SE TERMINER, et doublonnait celui du
+                // depart ; masque pour la publication.
+                if (job.player != null && deepluckyblock.util.DebugLog.ENABLED)
+                    job.player.sendSystemMessage(Component.literal("§b§l⛰ Everest en construction §7(~" + (elapsed / 1000.0) + "s)"));
                 // FIX (coffres jamais nettoyes, voir Javadoc EverestJob.chests) :
                 // appel EFFECTIF, cette fois, de cleanupEverestChests -- l'ancienne
                 // methode existait deja dans Structures5Procedure mais n'etait

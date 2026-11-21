@@ -498,6 +498,74 @@ if s4 is not None:
                 "EVEREST : la colonne entierement vide n'est plus ecartee ; le mob "
                 "tomberait du ciel a cote de la montagne.")
 
+# ==================== T456 : HYGIENE DE PUBLICATION ====================
+# Le mod part en publication : aucune sortie de diagnostic PASSIVE ne doit subsister.
+# Les reponses des commandes op ne comptent pas (il faut les taper pour les voir).
+DBG = os.path.join(JAVA, "util", "DebugLog.java")
+dbg = lire(DBG)
+if dbg is not None:
+    cd = sans_commentaires_gardant_chaines(dbg)
+    for nom in ("ENABLED", "STRUCTURE", "HEART"):
+        m = re.search(r"boolean\s+%s\s*=\s*(\w+)\s*;" % nom, cd)
+        if m is None:
+            problemes.append("PUBLICATION : DebugLog.%s introuvable." % nom)
+        elif m.group(1) != "false":
+            problemes.append(
+                "PUBLICATION : DebugLog.%s vaut %s. La console doit etre muette par "
+                "defaut ; le rallumage passe par -Ddlb.debug=1." % (nom, m.group(1)))
+
+if tick is not None:
+    if "DLB-DIAG" in sans_commentaires_gardant_chaines(tick):
+        problemes.append(
+            "PUBLICATION : le traceur [DLB-DIAG] (T443) ecrit encore dans le chat du "
+            "joueur. Il a servi a etablir la cause du halo ; il n'a plus de raison d'etre.")
+
+# Tout System.out/err hors DebugLog doit etre garde par la propriete de debug.
+for racine, _, fichiers in os.walk(JAVA):
+    for nom in fichiers:
+        if not nom.endswith(".java") or nom == "DebugLog.java":
+            continue
+        chemin = os.path.join(racine, nom)
+        src = lire(chemin)
+        if src is None:
+            continue
+        propre = sans_commentaires_gardant_chaines(src)
+        if "System.out.print" not in propre and "System.err.print" not in propre:
+            continue
+        if "dlb.debug" not in propre and "DLB_DEBUG" not in propre:
+            problemes.append(
+                "PUBLICATION : %s ecrit sur System.out/err sans garde de debug." % nom)
+
+# Les chronos en chat doivent rester derriere l'interrupteur. La garde peut etre
+# sur la ligne meme ou sur le « if » qui la precede : il faut donc regarder les deux,
+# sans deborder sur l'instruction d'avant (bornee par « ; » ou « } »).
+for fichier, src in (("Structures4Procedure.java", s4), ("Structures5Procedure.java", s5)):
+    if src is None:
+        continue
+    lignes = sans_commentaires_gardant_chaines(src).splitlines()
+    for n, ligne in enumerate(lignes):
+        if "sendSystemMessage" not in ligne:
+            continue
+        if '"ms' not in ligne and "dur\\u00e9e totale" not in ligne:
+            continue
+        contexte = ligne
+        k = n - 1
+        while k >= 0 and n - k <= 4:
+            prec = lignes[k].strip()
+            if not prec:
+                k -= 1
+                continue
+            if prec.endswith(";") or prec.endswith("}"):
+                break
+            contexte = prec + "\n" + contexte
+            if prec.startswith("if ("):
+                break
+            k -= 1
+        if "DebugLog.ENABLED" not in contexte:
+            problemes.append(
+                "PUBLICATION : chrono en chat non masque dans %s -> %s"
+                % (fichier, ligne.strip()[:110]))
+
 gen = lire(GEN)
 if gen is not None:
     cg = sans_commentaires(gen)

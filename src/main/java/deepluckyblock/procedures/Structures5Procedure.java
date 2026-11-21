@@ -1028,7 +1028,11 @@ public class Structures5Procedure {
                 }
                 deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5] {} en {}ms ({} blocs, {} a gravite -- ticks de chute neutralises par DLB-CLAMP)", j.name, el, j.blocks.size(), j.grav);
                 if (j.player != null) {
-                    j.player.sendSystemMessage(Component.literal("\u00a7a\u2713 Pose brute \u00a7e" + j.name + "\u00a7a en " + el + "ms (phase paste seule, hors recherche) — finitions en cours"));
+                    // T456 : chrono + jargon interne (« phase paste seule »), masques pour la
+                    // publication. Le joueur garde la mise en file d'attente, la preparation du
+                    // terrain et le message de fin de structure.
+                    if (deepluckyblock.util.DebugLog.ENABLED)
+                        j.player.sendSystemMessage(Component.literal("\u00a7a\u2713 Pose brute \u00a7e" + j.name + "\u00a7a en " + el + "ms (phase paste seule, hors recherche) — finitions en cours"));
                 }
                 // T449 : HORS du test de porteur -- l'annonce de decouverte est due
                 // meme sans joueur a portee (voir announceStructureSpawn).
@@ -2567,7 +2571,11 @@ public class Structures5Procedure {
             Component done = Component.literal(
                     "\u00a7a\u2713 \u00a7l" + structureDisplayName(name) + "\u00a7r\u00a7a est enti\u00e8rement termin\u00e9e"
                             + " \u00a77(terrain, v\u00e9g\u00e9tation et arbres compris"
-                            + (totalMs > 0 ? ", dur\u00e9e totale " + (totalMs / 1000) + " s" : "") + placeCoords + ")");
+                            // T456 : la duree et les coordonnees de zone sont du diagnostic ; le
+                // joueur garde l'annonce de fin, qui est une vraie information de jeu.
+                + (deepluckyblock.util.DebugLog.ENABLED && totalMs > 0
+                        ? ", dur\u00e9e totale " + (totalMs / 1000) + " s" : "")
+                + (deepluckyblock.util.DebugLog.ENABLED ? placeCoords : "") + ")");
             for (Player pl : level.getServer().getPlayerList().getPlayers()) {
                 if (pl != null) pl.sendSystemMessage(done);
             }
