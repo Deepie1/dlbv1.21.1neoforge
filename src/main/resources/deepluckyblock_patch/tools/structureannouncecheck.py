@@ -292,6 +292,58 @@ if adv is not None:
                 "DROP : « %s » rend %s blocs, au-dessus de la valeur divisee par 2 (%d)."
                 % (nom, m.group(1), attendu))
 
+# T449b : les recompenses de serie doivent exister (divisees par 2), PAS disparaitre,
+# et rester a usage unique. T449 les avait supprimees : « aux achievements, je ne
+# recois plus un seul deep lucky block ».
+if adv is not None:
+    ca2 = sans_commentaires(adv)
+    for methode, cle, plafond in (
+            ("public static void triggerNegativeStreak", "negative_streak", 3),
+            ("public static void onLuckyStreak", "lucky_streak", 2)):
+        corps = corps_methode(ca2, methode)
+        if corps is None:
+            continue
+        if "dropOnFirstUnlock" not in corps:
+            problemes.append(
+                "DROP : %s ne verse plus AUCUN Deep Lucky Block. La consigne est "
+                "« divise par 2 les gains via les achievements », pas « supprime-les »."
+                % cle)
+        else:
+            d = corps.find("dropOnFirstUnlock")
+            g = corps.find("grantAdvancementFully")
+            if g >= 0 and d > g:
+                problemes.append(
+                    "DROP : dropOnFirstUnlock suit grantAdvancementFully pour %s. "
+                    "L'advancement serait deja acquis et la recompense jamais versee." % cle)
+    for nom, attendu in (("LUCKY_STREAK_REWARD", 2), ("NEGATIVE_STREAK_REWARD", 3)):
+        m = re.search(r"%s\s*=\s*(\d+)\s*;" % nom, ca2)
+        if m is None:
+            problemes.append("DROP : %s introuvable." % nom)
+        elif int(m.group(1)) > attendu:
+            problemes.append(
+                "DROP : %s = %s, au-dessus de la valeur divisee par 2 (%d)."
+                % (nom, m.group(1), attendu))
+
+# T449b : le halo de tete (F_HALO_CONTINUOUS) vient de ce tirage, pas d'un combo.
+NBT = os.path.join(JAVA, "util", "DeepNbt.java")
+nbt = lire(NBT)
+if nbt is not None:
+    cn = sans_commentaires(nbt)
+    mm = re.search(r"LUCKY_MELEE_AURA_PERCENT\s*=\s*(\d+)", cn)
+    mr = re.search(r"LUCKY_RANGED_AURA_PERCENT\s*=\s*(\d+)", cn)
+    if mr is None:
+        problemes.append("CHANCE : LUCKY_RANGED_AURA_PERCENT introuvable.")
+    elif int(mr.group(1)) > 5:
+        problemes.append(
+            "CHANCE : LUCKY_RANGED_AURA_PERCENT = %s. A ce taux, une arbalete lootee "
+            "sur deux porte un halo permanent que rien n'annonce (plafond : 5)."
+            % mr.group(1))
+    elif mm is not None and int(mr.group(1)) > int(mm.group(1)):
+        problemes.append(
+            "CHANCE : l'aura a distance (%s) repasse au-dessus de la melee (%s) ; "
+            "T447 fait des armes a distance le cas DISCRET."
+            % (mr.group(1), mm.group(1)))
+
 gen = lire(GEN)
 if gen is not None:
     cg = sans_commentaires(gen)

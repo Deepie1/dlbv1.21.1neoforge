@@ -105,13 +105,18 @@ public class DeepLuckyBlockAdvancements {
         // CriteriaTriggers (voir DeepLuckyBlockBrokenTrigger#onCommonSetup)
         DeepLuckyBlockBrokenTrigger.TRIGGER.get().trigger(player);
         grantHub(player, "hub_luck");
+        // T449b : RECOMPENSE RETABLIE, DIVISEE PAR 2, A USAGE UNIQUE.
+        // T449 l'avait SUPPRIMEE : sur-correction. La consigne disait
+        // « divise par 2 les gains de DLB via les achievements », pas
+        // « supprime-les » -- resultat en jeu : « aux achievements, je ne
+        // recois plus un seul deep lucky block ». Le defaut reel n'etait pas
+        // le montant mais la REPETITION : l'averse repartait a CHAQUE serie
+        // (seuil -3) sans verrou. Elle est desormais versee UNE SEULE FOIS, a
+        // la premiere obtention, comme grantCustomAchievement. L'appel precede
+        // grantAdvancementFully : apres, l'advancement serait deja acquis et le
+        // verrou refuserait toujours. 0-6 aleatoires -> 3 fixes, jamais zero.
+        dropOnFirstUnlock(player, "negative_streak", NEGATIVE_STREAK_REWARD);
         grantAdvancementFully(level, player, "negative_streak");
-
-        // T449 : AVERSE SUPPRIMEE. Elle versait 0-6 blocs a CHAQUE serie
-        // negative (seuil -3), sans verrou d'achievement : repetable a
-        // l'infini. Avec onLuckyStreak, c'etait la source des « plus d'une
-        // vingtaine » de DLB rendus sur 50 casses. Le retour de DLB passe
-        // maintenant par DeepLuckyBlockBlock.SELF_DROP_PERCENT (2 %).
     }
 
     // ==================== LUCKY STREAK ====================
@@ -126,12 +131,12 @@ public class DeepLuckyBlockAdvancements {
 
         ServerLevel level = player.serverLevel();
         grantHub(player, "hub_luck");
+        // T449b : retablie, divisee par 2, versee UNE SEULE FOIS
+        // (voir triggerNegativeStreak). 0-5 aleatoires -> 2 fixes.
+        dropOnFirstUnlock(player, "lucky_streak", LUCKY_STREAK_REWARD);
         grantAdvancementFully(level, player, "lucky_streak");
         // Chaîne de Chance : comptabilise cette série (3 -> achievement lucky_chain).
         onLuckyChain(player);
-
-        // T449 : AVERSE SUPPRIMEE (meme motif que la serie negative) --
-        // 0-5 blocs a chaque serie positive (seuil 5), sans verrou.
     }
 
     // ==================== VÉRIFICATION DEEP LUCKY BLOCK ====================
@@ -321,6 +326,24 @@ public class DeepLuckyBlockAdvancements {
      * drop des Deep Lucky Blocks brillants en récompense.
      * Utilise le trigger vanilla "minecraft:impossible" + award direct (comme lucky_streak).
      */
+    /** T449b : recompenses de serie, divisees par 2 et versees une seule fois. */
+    private static final int LUCKY_STREAK_REWARD    = 2;   // etait 0-5 aleatoires, a chaque serie
+    private static final int NEGATIVE_STREAK_REWARD = 3;   // etait 0-6 aleatoires, a chaque serie
+
+    /**
+     * T449b : verse {@code count} Deep Lucky Blocks UNIQUEMENT si l'advancement
+     * n'est pas deja obtenu. A appeler AVANT grantAdvancementFully.
+     */
+    private static void dropOnFirstUnlock(ServerPlayer player, String path, int count) {
+        if (player == null || count <= 0) return;
+        ServerLevel level = player.serverLevel();
+        AdvancementHolder advancement = level.getServer().getAdvancements().get(
+                ResourceLocation.tryParse(MODID + ":" + path));
+        if (advancement == null) return;
+        if (player.getAdvancements().getOrStartProgress(advancement).isDone()) return;
+        DeepLuckyBlockAdvancementIntegration.dropGlowingLuckyBlocks(level, player, count);
+    }
+
     public static void grantCustomAchievement(ServerPlayer player, String path, int rewardBlocks) {
         if (player == null) return;
         ServerLevel level = player.serverLevel();

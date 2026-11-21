@@ -151,7 +151,15 @@ public final class DeepNbt {
         return tag != null && tag.getBoolean(SLASH_VISUAL_NBT_KEY);
     }
     private static final int LUCKY_MELEE_AURA_PERCENT = 15;
-    private static final int LUCKY_RANGED_AURA_PERCENT = 40;
+    // T449b : 40 -> 5. Retour en jeu : « wtf pourquoi un halo vient au dessus
+    // de ma tete ? je tiens une arbalete avec flame et quickcharge 1 [...] il est
+    // indique nulle part le combo ». Le halo (F_HALO_CONTINUOUS, drapeau 0x800)
+    // n'est PAS un combo : c'est ce tirage, fait une seule fois a la creation du
+    // butin. A 40 %, presque une arbalete lootee sur deux posait une couronne
+    // permanente que rien n'annonce dans l'infobulle -- et a 2,7x le taux de la
+    // melee, alors que T447 a justement fait des armes a distance le cas DISCRET
+    // (un seul calque, aucune signature). Le tirage est ramene sous la melee.
+    private static final int LUCKY_RANGED_AURA_PERCENT = 5;
 
     /**
      * Estampille l'item et décide UNE FOIS, à sa création, si une arme éligible possède l'aura.
