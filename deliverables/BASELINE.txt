@@ -1,0 +1,29 @@
+a13d07092181a3c5e0fa3782584ec90fe11f55ff
+# ─────────────────────────────────────────────────────────────────────────────
+# ETAT DE REFERENCE DU POSTE DE L'UTILISATEUR
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# La premiere ligne est un commit, et un seul : le DERNIER dont on sait qu'il a
+# compile sur le poste de l'utilisateur (runClient reussi). C'est le seul point
+# de comparaison legitime pour construire DLB_src.zip, parce que le ZIP n'est
+# pas une copie du mod mais un DELTA : il doit contenir tout ce qui a change
+# depuis ce que l'utilisateur possede deja, ni plus ni moins.
+#
+# POURQUOI CE FICHIER EXISTE
+#   T461. Le ZIP etait construit depuis une liste de chemins ecrite A LA MAIN.
+#   Elle a derive : DeepLuckyBlockBlock.java y etait, DeepLuckyBlockBlockEntity
+#   .java non ; CrimsonLakeStructureSpawnProcedure.java y etait, StructureTerrain
+#   Prep.java non. L'utilisateur a donc recu des appelants sans leurs
+#   definitions, et son build a echoue sur 7 « cannot find symbol » -- alors que
+#   l'arbre du depot, lui, etait parfaitement coherent. Les huit bancs ne
+#   pouvaient rien voir : ils verifient le CODE, pas le COLIS.
+#
+# QUAND LE FAIRE AVANCER
+#   Seulement apres un runClient REUSSI rapporte par l'utilisateur, et sur le
+#   commit exact qu'il a compile. Jamais « parce que les bancs sont verts » :
+#   un banc vert ne prouve pas que le colis est arrive.
+#
+# A13D0709 = T449b, « fermeture du 3e chemin muet de Structures4Procedure ».
+# Le runClient de T461 portait sur d97d2a55, mais il a ECHOUE : la reference ne
+# bouge pas tant que la compilation n'est pas prouvee.
+# ─────────────────────────────────────────────────────────────────────────────

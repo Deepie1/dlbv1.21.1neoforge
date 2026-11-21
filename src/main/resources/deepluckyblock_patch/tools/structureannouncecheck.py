@@ -799,6 +799,56 @@ if rec is not None:
                 "LUCK025 : assemble() ne repart plus de la chance fractionnaire "
                 "existante (currentCenti).")
 
+# =====================================================================
+# ZIPLIVR (T461) — LE COLIS DOIT CONTENIR TOUT LE DIFF, ET A JOUR
+# =====================================================================
+# Les sept autres verrous lisent le CODE. Aucun ne regardait le COLIS.
+# T461 : l'arbre etait parfaitement coherent et le build de l'utilisateur
+# a quand meme echoue sur 7 « cannot find symbol », parce que DLB_src.zip
+# — dont la liste etait ecrite a la main — contenait DeepLuckyBlockBlock
+# .java sans DeepLuckyBlockBlockEntity.java, et CrimsonLakeStructureSpawn
+# Procedure.java sans StructureTerrainPrep.java. Des appelants sans leurs
+# definitions.
+#
+# Deux fautes distinctes sont refusees ici :
+#   - OMISSION : un fichier modifie depuis l'etat de reference manque ;
+#   - PEREMPTION : il est present, mais dans une version anterieure a
+#     l'arbre (ZIP construit avant la derniere edition).
+#
+# La regle se TAIT, sans echouer, la ou elle ne peut pas conclure (pas de
+# git, pas de depot, pas de BASELINE.txt) : elle sert avant la publication,
+# pas sur le poste de l'utilisateur.
+try:
+    import importlib.util as _ilu, zipfile as _zf
+    _spec = _ilu.spec_from_file_location(
+        "build_src_zip", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                      "build_src_zip.py"))
+    _bsz = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_bsz)
+    _liste, _base = _bsz.fichiers_livrables(RACINE)
+    _zpath = os.path.join(RACINE, "deliverables", "DLB_src.zip")
+    if not os.path.exists(_zpath):
+        print("ZIPLIVR : note — deliverables/DLB_src.zip absent, controle ignore.")
+    else:
+        with _zf.ZipFile(_zpath) as _z:
+            _dans = set(_z.namelist())
+            for _rel in _liste:
+                if _rel not in _dans:
+                    problemes.append(
+                        "ZIPLIVR : %s a change depuis %s mais MANQUE dans "
+                        "DLB_src.zip. C'est la panne de T461 : livrer un appelant "
+                        "sans sa definition casse la compilation de l'utilisateur "
+                        "alors que l'arbre est sain." % (_rel, _base[:8]))
+                    continue
+                with open(os.path.join(RACINE, _rel), "rb") as _fh:
+                    _arbre = _fh.read()
+                if _z.read(_rel) != _arbre:
+                    problemes.append(
+                        "ZIPLIVR : %s figure dans DLB_src.zip dans une version "
+                        "PERIMEE. Le ZIP a ete construit avant la derniere edition "
+                        "— reconstruis-le avant de publier." % _rel)
+except Exception as _exc:
+    print("ZIPLIVR : note — controle du colis impossible (%s)." % _exc)
+
 gen = lire(GEN)
 if gen is not None:
     cg = sans_commentaires(gen)
