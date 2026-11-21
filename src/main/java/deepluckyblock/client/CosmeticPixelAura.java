@@ -1,5 +1,6 @@
 package deepluckyblock.client;
 
+import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -24,7 +25,9 @@ import org.joml.Vector3f;
 import deepluckyblock.DeepLuckyBlockMod;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.SequencedMap;
 
 /**
  * T349-COSMETIC-PIXEL-AURA : moteur cosmétique maison, 100 % pixels 3D, sans AUCUNE particule vanilla.
@@ -71,6 +74,79 @@ public final class CosmeticPixelAura {
     private static RenderType auraTranslucentType;
 
     private static int budget;
+
+    // ============================================================================================
+    // T446-OWNED-AURA-SOURCE — fin du "IllegalStateException: Not building!" sur la passe cosmetique
+    // ============================================================================================
+    // Le defaut, trace par l'instrument T443 :
+    //     renderPlayerAura a leve une exception (flags=0x800)
+    //     java.lang.IllegalStateException: Not building!  at BufferBuilder.ensureBuilding
+    //
+    // MultiBufferSource.BufferSource (celui de Minecraft.renderBuffers()) ne possede QU'UN
+    // BufferBuilder partage pour tous les RenderType absents de sa carte `fixedBuffers`.
+    // Nos deux RenderType cosmetiques (dlb_cosmetic_aura_add / dlb_cosmetic_aura_alpha) n'y
+    // sont pas. Donc, dans onRenderLevelStage :
+    //     add   = buffers.getBuffer(getAdditiveType());    // ouvre le builder partage
+    //     alpha = buffers.getBuffer(getTranslucentType()); // TERMINE le precedent (endBatch)
+    // `add` etait mort des la ligne suivante, et le premier cube additif emis — le halo
+    // continu — levait "Not building!". Le halo s'affichait une image puis disparaissait.
+    //
+    // C'est exactement le defaut que WeaponWorldVfxManager a deja corrige (note T370) pour les
+    // VFX d'armes ; la passe cosmetique etait restee sur la source vanilla. On lui donne donc
+    // sa propre source, dont les DEUX RenderType sont declares "fixed" : getBuffer() ne termine
+    // plus la passe voisine, et aucun autre listener AFTER_PARTICLES ne peut vider nos buffers.
+    private static final int AURA_LAYER_BYTES = 2 * 1024 * 1024;
+
+    private static MultiBufferSource.BufferSource auraBuffers;
+    private static RenderType auraBuffersAddType;
+    private static RenderType auraBuffersAlphaType;
+    private static ByteBufferBuilder auraAddAllocator;
+    private static ByteBufferBuilder auraAlphaAllocator;
+    private static ByteBufferBuilder auraSharedAllocator;
+    private static boolean auraBuffersUnavailable;
+
+    /**
+     * Source de tampons possedee par la passe cosmetique : les deux RenderType de l'aura y sont
+     * "fixes", donc additif et translucide restent en construction EN MEME TEMPS. Creee une seule
+     * fois et reutilisee (ses ByteBufferBuilder gardent leur allocation native d'une image a
+     * l'autre) ; reconstruite seulement si l'identite d'un RenderType change.
+     *
+     * <p>Jamais bloquant : si l'allocation echoue, on retombe sur la source vanilla — le defaut
+     * d'affichage revient, mais le jeu continue de rendre.</p>
+     */
+    private static MultiBufferSource.BufferSource getAuraBufferSource() {
+        RenderType add = getAdditiveType();
+        RenderType alpha = getTranslucentType();
+        boolean sameTypes = auraBuffersAddType == add && auraBuffersAlphaType == alpha;
+        if (auraBuffers != null && sameTypes) return auraBuffers;
+        if (auraBuffersUnavailable && sameTypes) return Minecraft.getInstance().renderBuffers().bufferSource();
+        try {
+            SequencedMap<RenderType, ByteBufferBuilder> fixed = new LinkedHashMap<>(4);
+            auraAlphaAllocator = new ByteBufferBuilder(AURA_LAYER_BYTES);
+            fixed.put(alpha, auraAlphaAllocator);
+            auraAddAllocator = new ByteBufferBuilder(AURA_LAYER_BYTES);
+            fixed.put(add, auraAddAllocator);
+            auraSharedAllocator = new ByteBufferBuilder(AURA_LAYER_BYTES);
+            MultiBufferSource.BufferSource owned =
+                    MultiBufferSource.immediateWithBuffers(fixed, auraSharedAllocator);
+            auraBuffers = owned;
+            auraBuffersAddType = add;
+            auraBuffersAlphaType = alpha;
+            auraBuffersUnavailable = false;
+            return owned;
+        } catch (Throwable t) {
+            auraBuffers = null;
+            auraBuffersAddType = add;
+            auraBuffersAlphaType = alpha;
+            auraBuffersUnavailable = true;
+            auraAddAllocator = null;
+            auraAlphaAllocator = null;
+            auraSharedAllocator = null;
+            DeepLuckyBlockMod.LOGGER.warn(
+                    "[DLB-VFX] Source de tampons cosmetique dediee indisponible, repli sur la source partagee", t);
+            return Minecraft.getInstance().renderBuffers().bufferSource();
+        }
+    }
 
     private static final List<Player> TARGETS = new ArrayList<>(8);
 
@@ -172,7 +248,8 @@ public final class CosmeticPixelAura {
         Vec3 cam = event.getCamera().getPosition();
         Matrix4f mat = event.getPoseStack().last().pose();
         Vector3f tmp = new Vector3f();
-        MultiBufferSource.BufferSource buffers = mc.renderBuffers().bufferSource();
+        // T446 : source POSSEDEE (deux RenderType fixes) — voir getAuraBufferSource.
+        MultiBufferSource.BufferSource buffers = getAuraBufferSource();
 
         float time = WeaponWorldVfxManager.smoothTimeSeconds();
         WeaponWorldVfxManager.beginFrame(time);
