@@ -1486,6 +1486,26 @@ public final class DlbVfxCommand {
         // marque, /dlbvfx give livrerait une arme parfaitement muette, et la commande
         // de test des effets visuels ne testerait plus rien.
         deepluckyblock.util.DeepNbt.markLuckyBlockOrigin(stack);
+        // T445 : depuis que la melee ne s'anime plus que par la competence ACCORDEE, la
+        // seule provenance ne suffit plus — une epee de test serait restee muette, comme
+        // elle l'etait avant T441 pour l'autre raison. On lui accorde donc la competence
+        // que l'enchantement pose designe, exactement comme le fait le tirage a 5 % du
+        // butin. C'est ce que la commande est censee simuler ; sans cela elle testerait
+        // un chemin que le jeu n'emprunte pas.
+        //
+        // Rien n'est accorde si l'enchantement n'est pas une signature (capacite activee,
+        // enchantement ordinaire) ni si l'objet ne peut pas lancer de signature (arc,
+        // arbalete, trident, plastron) : l'arme reste alors ce qu'elle est.
+        net.minecraft.resources.ResourceLocation cle =
+                deepluckyblock.util.DeepEnchant.getKeySafe(holder.value());
+        if (cle != null && deepluckyblock.enchantments.WeaponSkill.canCastSignature(stack)) {
+            for (String signature : deepluckyblock.enchantments.WeaponSkill.signaturePaths()) {
+                if (signature.equals(cle.getPath())) {
+                    deepluckyblock.enchantments.WeaponSkill.markGranted(stack, signature);
+                    break;
+                }
+            }
+        }
         return stack;
     }
 }

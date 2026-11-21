@@ -341,17 +341,38 @@ public final class WeaponSkill {
      *       (T423).</li>
      * </ol>
      */
+    /**
+     * T445 — UNE COMPETENCE NE SE RECONNAIT PLUS QU'A SON PROPRE ENCHANTEMENT.
+     *
+     * <p><b>Ce qui a ete retire.</b> Cette methode passait par
+     * {@code WeaponVisualEffectId.forEnchantmentLocation}, c'est-a-dire par la TABLE
+     * D'ALIAS : les 45 signatures y sont chacune declarees sous une dizaine de noms
+     * d'enchantement, vanilla compris. N'importe lequel de ces alias produisait donc
+     * l'entree de competence correspondante. {@code blaze_sanctuary} rendait
+     * {@code SOUL_FIRE_CRESCENT}, {@code minecraft:looting} rendait le Sceau de
+     * Commandement Martial, et ainsi de suite pour 229 chemins.</p>
+     *
+     * <p><b>La regle.</b> Un enchantement est un enchantement, une competence est une
+     * competence, et aucun des deux ne mene a l'autre. Seul le chemin CANONIQUE d'une
+     * signature — celui que {@code put()} declare, celui que le tirage de butin accorde
+     * et inscrit dans {@code dlbSkillGranted} — la designe encore. Les alias ne sont plus
+     * lus ici du tout : ils ne servent qu'aux armes a distance, dans
+     * {@link WeaponVisualEffectId#resolveLayers}.</p>
+     *
+     * <p>Les capacites activees ({@code effect() == null} : {@code army_summon},
+     * {@code ore_detector}, la glissade...) sont inchangees. Ce sont de vrais
+     * enchantements avec un vrai geste, elles n'empruntent aucune animation de
+     * competence.</p>
+     */
     private static Entry resolve(net.minecraft.resources.ResourceLocation loc, boolean melee) {
         if (loc == null || !"deep_lucky_block".equals(loc.getNamespace())) return null;
-        if (melee) {
-            WeaponVisualEffectId fx = WeaponVisualEffectId.forEnchantmentLocation(loc);
-            if (fx != null) {
-                Entry signature = BY_EFFECT.get(fx);
-                if (signature != null) return signature;
-            }
-        }
         Entry parChemin = BY_PATH.get(loc.getPath());
-        return (parChemin != null && parChemin.effect() == null) ? parChemin : null;
+        if (parChemin == null) return null;
+        // Capacite activee : elle vit par son enchantement, c'est sa nature.
+        if (parChemin.effect() == null) return parChemin;
+        // Signature : uniquement son propre enchantement, et uniquement sur une arme de
+        // melee. La marque dlbSkillGranted reste exigee juste apres, dans scan().
+        return melee ? parChemin : null;
     }
 
     /**
@@ -423,6 +444,18 @@ public final class WeaponSkill {
     public static Entry retainedOn(ItemStack stack) {
         Found meilleure = winner(scan(stack));
         return meilleure == null ? null : meilleure.entry();
+    }
+
+    /**
+     * T445 : la competence retenue AVEC son niveau, ou {@code null}.
+     *
+     * <p>Meme resolution que {@link #retainedOn}, au niveau pres. Elle existe pour que le
+     * rendu des armes de melee ait une source unique : depuis T445, une arme de melee ne
+     * montre que l'animation de la competence qu'on lui a accordee, et le niveau de cette
+     * competence est ce qui en regle l'ampleur.</p>
+     */
+    public static Found retainedFoundOn(ItemStack stack) {
+        return winner(scan(stack));
     }
 
     /** La gagnante : plus haut niveau, puis ordre de declaration. Deterministe. */

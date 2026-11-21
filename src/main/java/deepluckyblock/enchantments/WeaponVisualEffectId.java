@@ -438,28 +438,25 @@ public enum WeaponVisualEffectId {
     }
 
     /** Résout les effets visuels de gantelet lorsque le porteur frappe à mains nues. */
+    /**
+     * T445 — LE GANTELET NE LANCE PLUS D'ANIMATION DE COMPETENCE.
+     *
+     * <p>Cette methode lisait les enchantements du PLASTRON et les traduisait en animations
+     * de signature par {@code GAUNTLET_MAP} : {@code iron_fist_gauntlet} jouait
+     * {@code SEISMIC_TECTONIC}, {@code blood_claw_gauntlet} jouait {@code CRIMSON_SIPHON},
+     * et tout chemin contenant simplement « gauntlet » retombait sur la faille sismique.
+     * C'est le meme defaut que la table d'alias des armes, pose sur l'armure : un
+     * enchantement y menait a une competence.</p>
+     *
+     * <p>Le poing nu ne joue donc plus de signature. Les enchantements de gantelet gardent
+     * tout leur JEU — degats, effets, cooldowns — qui ne passe pas par ici : seule
+     * l'animation de competence qu'ils s'etaient appropriee disparait.</p>
+     *
+     * <p>{@code GAUNTLET_MAP} est conservee : {@code /dlbaudit} s'en sert pour lister les
+     * correspondances, et la supprimer effacerait cette trace sans rien reparer de plus.</p>
+     */
     public static List<ResolvedLayer> resolveBareHandGauntletLayers(LivingEntity entity, int maxLayers) {
-        if (entity == null || !entity.getMainHandItem().isEmpty()) return List.of();
-        ItemStack chest = entity.getItemBySlot(EquipmentSlot.CHEST);
-        if (chest == null || chest.isEmpty()) return List.of();
-        ItemEnchantments ench = chest.getEnchantments();
-        if (ench.isEmpty()) return List.of();
-
-        List<ResolvedLayer> out = new ArrayList<>(4);
-        for (Holder<Enchantment> entry : ench.keySet()) {
-            Optional<ResourceKey<Enchantment>> rk = entry.unwrapKey();
-            if (rk.isEmpty()) continue;
-            String path = rk.get().location().getPath();
-            WeaponVisualEffectId fx = GAUNTLET_MAP.get(path);
-            if (fx == null && path.contains("gauntlet")) {
-                fx = SEISMIC_TECTONIC;
-            }
-            if (fx != null) {
-                out.add(new ResolvedLayer(fx, Math.max(1, ench.getLevel(entry))));
-            }
-        }
-        sortByElement(out);
-        return out.size() <= maxLayers ? out : out.subList(0, maxLayers);
+        return List.of();
     }
 
     /**
@@ -474,12 +471,67 @@ public enum WeaponVisualEffectId {
      * <p>Ce filtre ne touche que le VISUEL : les effets de jeu des enchantements continuent
      * de s'appliquer partout où ils s'appliquaient.</p>
      */
+    /**
+     * T445 : arme a distance au sens de l'exception demandee — arc, arbalete, trident, et
+     * toute arme a projectile moddee. Elles gardent leurs petites animations resolues par
+     * alias ; ce sont les seules.
+     */
+    private static boolean estArmeADistance(ItemStack stack) {
+        Item item = stack.getItem();
+        return item instanceof BowItem
+                || item instanceof CrossbowItem
+                || item instanceof TridentItem
+                || item instanceof ProjectileWeaponItem;
+    }
+
+    /**
+     * T445 — SUR UNE ARME DE MELEE, SEULE LA COMPETENCE ACCORDEE S'ANIME.
+     *
+     * <p><b>Le defaut repare.</b> {@code resolveLayers} lisait les enchantements de l'arme
+     * et les traduisait en animations par la table d'alias : 229 chemins, dont des
+     * enchantements VANILLA ({@code minecraft:looting}, {@code minecraft:fortune},
+     * {@code minecraft:mending}, {@code minecraft:sweeping_edge}...). Toute arme lootee
+     * portant l'un d'eux s'appropriait l'animation d'une competence qu'elle n'avait pas.
+     * Pire, le tri par priorite pouvait faire passer le calque d'un AUTRE element devant
+     * celui de l'arme : une epee de feu prioritaire 76 jouait le sceau de terre prioritaire
+     * 91. C'est exactement ce qui a ete signale, et ce n'etait pas un cas isole mais la
+     * regle de fonctionnement.</p>
+     *
+     * <p><b>La regle posee.</b> Un enchantement est un enchantement, une compet est une
+     * competence, et aucun des deux ne mene a l'autre. Le seul titre valable est la marque
+     * {@code dlbSkillGranted}, posee par le tirage a 5 % du butin et par lui seul. Une arme
+     * de melee sans competence accordee n'a donc plus AUCUNE animation de signature : ni
+     * aura de lame, ni balafre, ni effet au coup porte. Une arme qui en a une ne joue que
+     * celle-la, dans son propre element — un mauvais element n'est plus representable.</p>
+     *
+     * <p>Une seule couche est rendue, quel que soit {@code maxLayers} : il n'y a qu'une
+     * competence par objet depuis T425, donc il n'y a qu'une chose a montrer.</p>
+     */
+    private static List<ResolvedLayer> calquesDeCompetenceAccordee(ItemStack stack, int maxLayers) {
+        if (maxLayers <= 0) return List.of();
+        // Lecture NBT simple d'abord : la grande majorite des armes n'a pas de competence,
+        // et ce chemin est emprunte a chaque image par le rendu de la lame.
+        if (WeaponSkill.grantedPath(stack) == null) return List.of();
+        WeaponSkill.Found accordee = WeaponSkill.retainedFoundOn(stack);
+        if (accordee == null) return List.of();
+        WeaponVisualEffectId fx = accordee.entry().effect();
+        if (fx == null) return List.of();
+        return List.of(new ResolvedLayer(fx, Math.max(1, accordee.level())));
+    }
+
     public static List<ResolvedLayer> resolveLayers(ItemStack stack, int maxLayers) {
         if (!isWeaponItem(stack)) return List.of();
         ItemEnchantments ench = stack.getEnchantments();
         if (ench.isEmpty()) return List.of();
 
         if (!DeepNbt.isModLoot(stack)) return List.of();
+
+        // T445 — LA TABLE D'ALIAS NE S'APPLIQUE PLUS QU'AUX ARMES A DISTANCE.
+        //
+        // Sur une arme de melee, ce qui s'anime est une COMPETENCE : elle ne peut donc
+        // venir que de la competence accordee a cette arme, jamais d'un enchantement
+        // qu'elle porte. Voir calquesDeCompetenceAccordee pour le detail.
+        if (!estArmeADistance(stack)) return calquesDeCompetenceAccordee(stack, maxLayers);
 
         boolean isPureUtilityTool = !(stack.getItem() instanceof SwordItem
                 || stack.getItem() instanceof AxeItem
