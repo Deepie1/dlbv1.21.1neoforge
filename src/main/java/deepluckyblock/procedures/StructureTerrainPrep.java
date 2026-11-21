@@ -4438,6 +4438,18 @@ public class StructureTerrainPrep {
                 0, smoothRing, x0, z0, w, h, SMOOTH_KERNEL_SCHEDULE_T109, onDone);
     }
 
+    /**
+     * T459 : lissage graduel SEUL (aucune repeinte, aucun replant, aucun decor),
+     * expose pour les structures qui ne passent pas par le pipeline Structures5.
+     *
+     * <p>Couple a {@link #setForcedFootprintProtection(boolean)} il ne retouche
+     * que la couronne : c'est le « smooth avant paste » sans le cout de
+     * decorateTerrainOnly, que T164 avait justement retire du lac.
+     */
+    public static void smoothRingOnly(ServerLevel level, BlockPos min, BlockPos max, Runnable onDone) {
+        smoothPassGradual(level, min, max, onDone);
+    }
+
     /** Nombre de chunks generes par tick pendant le pre-chargement etale. */
     // 4 et non 8 : generer un chunk VIERGE coute ~45 ms (bruit, carving,
     // features). A 8/tick on depassait 350 ms par tick, soit 7x la duree d'un
@@ -9222,6 +9234,26 @@ public class StructureTerrainPrep {
         PROTECT_MIN = null; PROTECT_MAX = null;
     }
 
+    /**
+     * T459 : force la protection d'emprise MEME avant toute pose.
+     *
+     * <p>Par defaut (drapeau a false) la protection ne mord qu'une fois des
+     * blocs poses, c'est-a-dire quand PASTED_OCCUPIED n'est plus vide. En
+     * pre-paste T304 veut au contraire que l'emprise rasee soit relissee avec
+     * le terrain, sinon la STONE/GRAVEL reste a nu autour de la structure.
+     *
+     * <p>Crimson Lake est le cas inverse : son bassin est creuse par la matiere
+     * du template lui-meme, et le paste n'ecrit PAS l'air du NBT (T93). Toute
+     * terre remontee dans l'emprise par un lissage d'avant-pose resterait donc
+     * DANS le lac. Ce drapeau reste a false pour toutes les autres structures :
+     * aucun comportement existant n'est modifie.
+     */
+    private static boolean FORCE_FOOTPRINT_PROTECTION = false;
+
+    public static void setForcedFootprintProtection(boolean on) {
+        FORCE_FOOTPRINT_PROTECTION = on;
+    }
+
     /** La colonne appartient-elle a l'emprise protegee (marge incluse) ? */
     private static boolean isProtected(int x, int z) {
         if (PROTECT_MIN == null) return false;
@@ -9250,7 +9282,10 @@ public class StructureTerrainPrep {
                 // T304 : en pre-paste (PASTED_OCCUPIED vide), AUCUN bloc de structure n'est encore pose !
                 // Sauter isProtected(wx, wz) laissait toute la STONE/GRAVEL rasee par ClearFootprintJob
                 // a nu sous et autour de la structure (screen client 14.37.37) !
-                if ((!PASTED_OCCUPIED.isEmpty() && isProtected(wx, wz)) || orig[i][j] <= minValidOrig) continue;
+                // T459 : FORCE_FOOTPRINT_PROTECTION (false par defaut) permet a une
+                // structure qui creuse son propre volume d'etre protegee des le pre-paste.
+                if (((FORCE_FOOTPRINT_PROTECTION || !PASTED_OCCUPIED.isEmpty()) && isProtected(wx, wz))
+                        || orig[i][j] <= minValidOrig) continue;
                 if (!deepluckyblock.util.SafeSurface.isLoadedAt(level, wx, wz)) {
                     if (hm[i][j] != orig[i][j]) {
                         missed.add(new int[]{wx, wz, hm[i][j], orig[i][j]});

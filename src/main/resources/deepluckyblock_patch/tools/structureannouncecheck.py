@@ -648,6 +648,84 @@ if rec is not None:
         problemes.append("LUCK : seuil degressif = %s centiemes, attendu 2500."
                          % m_seuil.group(1))
 
+# ============ T459 : COURONNE + RACCORD DE TERRAIN POUR CRIMSON LAKE ============
+# Consigne : le lac doit, comme les autres structures, verrouiller la zone,
+# clear au-dessus du sol, puis LISSER et REPEINDRE un sol naturel.
+# Le verrou (ChunkKeeper.track) et le clear (clearBuildVolume) existaient deja ;
+# il manquait le lissage et la repeinte.
+#
+# Trois pieges, tous verifies ici :
+#  (a) T164 avait retire prepZone + decorateTerrainOnly du lac pour une raison
+#      mesuree (504 chunks, 1,36 M blocs, plus de 100 s). Ils ne doivent PAS
+#      revenir, pas plus que decorateFinish.
+#  (b) la protection d'emprise est INOPERANTE avant pose (la garde de
+#      rebuildTerrainBatched exige PASTED_OCCUPIED non vide). Sans le drapeau
+#      force, le lissage d'avant-pose remonterait de la terre dans le bassin,
+#      que le paste n'effacerait pas puisqu'il n'ecrit pas l'air du NBT (T93).
+#  (c) ce drapeau doit rester a false par defaut : sinon TOUTES les structures
+#      changent de comportement d'un coup.
+LAC = os.path.join(JAVA, "procedures", "CrimsonLakeStructureSpawnProcedure.java")
+PREP = os.path.join(JAVA, "procedures", "StructureTerrainPrep.java")
+
+lac = lire(LAC)
+if lac is not None:
+    clac = sans_commentaires(lac)
+    for appel, quand in (("smoothRingOnly", "couronne avant la pose"),
+                         ("smoothAround", "raccord apres la pose")):
+        if appel not in clac:
+            problemes.append(
+                "LAC : %s absent de CrimsonLake -- le %s n'est plus cable (T459)."
+                % (appel, quand))
+    # (a) le couple interdit par T164 ne doit pas revenir
+    for interdit in ("prepZone", "decorateTerrainOnly", "decorateFinish"):
+        if interdit in clac:
+            problemes.append(
+                "LAC : %s rappele dans CrimsonLake. T164 l'avait retire : "
+                "504 chunks et plus de 100 s de pose." % interdit)
+    # (b) chaque lissage doit etre encadre par la protection d'emprise forcee
+    n_on = len(re.findall(r"setForcedFootprintProtection\(true\)", clac))
+    n_off = len(re.findall(r"setForcedFootprintProtection\(false\)", clac))
+    n_prot = len(re.findall(r"protectFootprint\(", clac))
+    n_clear = len(re.findall(r"clearFootprintProtection\(", clac))
+    if n_on != 2 or n_off != 2:
+        problemes.append(
+            "LAC : protection d'emprise forcee posee %d fois et relachee %d fois, "
+            "attendu 2 et 2 (une par passe de lissage)." % (n_on, n_off))
+    if n_prot != 2 or n_clear != 2:
+        problemes.append(
+            "LAC : protectFootprint %d fois / clearFootprintProtection %d fois, "
+            "attendu 2 et 2. Une passe non protegee retoucherait le lac." % (n_prot, n_clear))
+    # chaque appel de lissage doit etre precede, dans les 400 caracteres, de la
+    # pose de la protection : un verrou pose trop loin ne prouve rien.
+    for appel in ("smoothRingOnly", "smoothAround"):
+        m = re.search(r"StructureTerrainPrep\.%s\(" % appel, clac)
+        if m is not None:
+            avant = clac[max(0, m.start() - 400):m.start()]
+            if "setForcedFootprintProtection(true)" not in avant or "protectFootprint(" not in avant:
+                problemes.append(
+                    "LAC : %s n'est pas precede de protectFootprint + "
+                    "setForcedFootprintProtection(true) (T459)." % appel)
+
+prep = lire(PREP)
+if prep is not None:
+    cprep = sans_commentaires(prep)
+    # (c) defaut imperativement false
+    m = re.search(r"boolean FORCE_FOOTPRINT_PROTECTION\s*=\s*(true|false)\s*;", cprep)
+    if m is None:
+        problemes.append("LAC : FORCE_FOOTPRINT_PROTECTION introuvable dans StructureTerrainPrep.")
+    elif m.group(1) != "false":
+        problemes.append(
+            "LAC : FORCE_FOOTPRINT_PROTECTION vaut %s par defaut. A true, TOUTES les "
+            "structures voient leur emprise protegee des le pre-paste, ce que T304 "
+            "interdit (STONE/GRAVEL laissee a nu)." % m.group(1))
+    if "smoothRingOnly" not in cprep:
+        problemes.append("LAC : smoothRingOnly absent de StructureTerrainPrep.")
+    # la garde de l'unique ecrivain doit consulter le drapeau
+    if not re.search(r"FORCE_FOOTPRINT_PROTECTION \|\| !PASTED_OCCUPIED\.isEmpty\(\)", cprep):
+        problemes.append(
+            "LAC : la garde de rebuildTerrainBatched ne consulte plus "
+            "FORCE_FOOTPRINT_PROTECTION -- la protection d'avant-pose est perdue.")
+
 gen = lire(GEN)
 if gen is not None:
     cg = sans_commentaires(gen)

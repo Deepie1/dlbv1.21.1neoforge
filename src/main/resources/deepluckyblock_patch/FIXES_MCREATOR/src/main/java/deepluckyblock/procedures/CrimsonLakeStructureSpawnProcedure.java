@@ -524,10 +524,34 @@ public class CrimsonLakeStructureSpawnProcedure {
                 // T164/Circus brut : le NBT Crimson contient déjà eau, berges,
                 // végétation et décors. Ne jamais lancer decorateFinish ici :
                 // cette passe générique rescannait/replantait les 504 chunks et
-                // représentait à elle seule plus de 100 secondes. Le clear puis
-                // le paste sont l'état final voulu du lac.
-                deepluckyblock.util.ChunkKeeper.release(j.level);
-                Structures5Procedure.notifyGenerationFinished(j.level);
+                // représentait à elle seule plus de 100 secondes.
+                //
+                // T459 : en revanche le RACCORD T240 (smoothAround) est lance ici.
+                // C'est la passe ecrite pour « fondre le bord de la coupe dans le
+                // relief » : lissage multi-rayons de la couronne, verification de
+                // la surface en herbe, replant des arbres sauves, naturalisation,
+                // degel de l'herbe enneigee et filet anti-gris. Elle ne porte
+                // AUCUN scatter de decor ni passe neige generique -- c'est ce qui
+                // la distingue de decorateFinish et la rend payable.
+                //
+                // L'emprise est protegee de force : PASTED_OCCUPIED reste vide
+                // (le lac ne publie pas la liste de ses blocs poses), donc sans
+                // ce verrou la protection serait inoperante et le raccord
+                // retoucherait le lac lui-meme.
+                StructureTerrainPrep.setStructureName(NBT_NAME);
+                BlockPos rMin = j.origin;
+                BlockPos rMax = j.origin.offset(j.sx - 1, Math.max(0, j.sy - 1), j.sz - 1);
+                StructureTerrainPrep.protectFootprint(rMin, rMax);
+                StructureTerrainPrep.setForcedFootprintProtection(true);
+                StructureTerrainPrep.smoothAround(j.level, rMin, rMax, () -> {
+                    StructureTerrainPrep.setForcedFootprintProtection(false);
+                    StructureTerrainPrep.clearFootprintProtection();
+                    // La liberation du keeper et du verrou de generation n'a lieu
+                    // qu'une fois le raccord fini : sans cela une autre structure
+                    // pourrait demarrer pendant que l'on lisse encore.
+                    deepluckyblock.util.ChunkKeeper.release(j.level);
+                    Structures5Procedure.notifyGenerationFinished(j.level);
+                });
 
                 // T111 (constat dev 30/09 : « crimson lake a fini ? je n'ai pas
                 // eu le message disant que c'etait apparu avec les coordonnees »)
@@ -880,9 +904,30 @@ public class CrimsonLakeStructureSpawnProcedure {
             // ~6 ms sur 1,36 M blocs, respecte T175) pour ecrire chaque chunk en continu via LevelChunkSection.
             final List<StructureTemplate.StructureBlockInfo> bucketedFilt =
                     bucketByWorldChunk(fFilt, finalOrigin.getX(), finalOrigin.getZ(), sx, sz);
-            clearBuildVolume(level, finalOrigin.offset(0, minRelativeY, 0), max,
-                    groundY + 1, () -> PASTE_Q.offer(new PasteJob(level, bucketedFilt,
-                            finalOrigin, bfly, System.currentTimeMillis(), sx, sz)));
+            final BlockPos lakeMin = finalOrigin.offset(0, minRelativeY, 0);
+            final BlockPos lakeMax = max;
+            clearBuildVolume(level, lakeMin, lakeMax, groundY + 1, () -> {
+                // T459 : COURONNE AVANT LA POSE. Le clear vient de trancher net le
+                // terrain a groundY+1 ; sans lissage le bord reste une falaise.
+                //
+                // L'emprise est protegee DE FORCE pendant cette passe. Sans ce
+                // verrou le lissage remonterait de la terre au-dessus de
+                // groundY+1 a l'interieur de l'emprise pour raccorder les reliefs
+                // voisins -- et le paste ne l'effacerait pas, puisqu'il n'ecrit
+                // pas l'air du NBT (T93). Le bassin se retrouverait comble.
+                //
+                // On n'appelle NI prepZone NI decorateTerrainOnly : c'est ce
+                // couple que T164 a retire (504 chunks, 1,36 M blocs, plus de
+                // 100 s). smoothRingOnly ne fait que le lissage graduel.
+                StructureTerrainPrep.protectFootprint(lakeMin, lakeMax);
+                StructureTerrainPrep.setForcedFootprintProtection(true);
+                StructureTerrainPrep.smoothRingOnly(level, lakeMin, lakeMax, () -> {
+                    StructureTerrainPrep.setForcedFootprintProtection(false);
+                    StructureTerrainPrep.clearFootprintProtection();
+                    PASTE_Q.offer(new PasteJob(level, bucketedFilt,
+                            finalOrigin, bfly, System.currentTimeMillis(), sx, sy, sz));
+                });
+            });
         });
     }
 
@@ -1341,7 +1386,7 @@ public class CrimsonLakeStructureSpawnProcedure {
         final BlockPos bfly;
         final long t0;
         final int total;
-        final int sx, sz;
+        final int sx, sy, sz;
         int idx;
         /** T48 : blocs dont le chunk n'etait pas en memoire (repose au tick suivant). */
         final List<Integer> defer = new ArrayList<>();
@@ -1354,8 +1399,9 @@ public class CrimsonLakeStructureSpawnProcedure {
         int waitTicks;
         /** T234 : debut de l'attente des blocs differes (0 = aucune attente). */
         long deferSinceMs;
-        PasteJob(ServerLevel l, List<StructureTemplate.StructureBlockInfo> b, BlockPos o, BlockPos bf, long t, int sx, int sz) {
-            level = l; blocks = b; origin = o; bfly = bf; t0 = t; total = b.size(); this.sx = sx; this.sz = sz; idx = 0;
+        PasteJob(ServerLevel l, List<StructureTemplate.StructureBlockInfo> b, BlockPos o, BlockPos bf, long t, int sx, int sy, int sz) {
+            level = l; blocks = b; origin = o; bfly = bf; t0 = t; total = b.size();
+            this.sx = sx; this.sy = sy; this.sz = sz; idx = 0;
         }
     }
 
