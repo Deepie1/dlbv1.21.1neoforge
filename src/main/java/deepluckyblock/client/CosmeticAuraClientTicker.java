@@ -3,7 +3,6 @@ package deepluckyblock.client;
 import deepluckyblock.DeepLuckyBlockMod;
 import deepluckyblock.enchantments.EnchantmentComboRegistry;
 import deepluckyblock.enchantments.EnchantmentComboRegistry.ComboMask;
-import deepluckyblock.enchantments.UniversalEnchantmentHandler;
 import deepluckyblock.util.DeepEnchant;
 import deepluckyblock.util.DeepNbt;
 import net.minecraft.client.Minecraft;
@@ -13,7 +12,6 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -197,45 +195,47 @@ public final class CosmeticAuraClientTicker {
             if (mask.has(EnchantmentComboRegistry.IDX_PESTE_AMBULANTE)) f |= F_COMBO_062_PLAGUE;
         }
 
-        boolean equipped = UniversalEnchantmentHandler.hasAnyEnchantedEquipment(entity);
-        if (f == 0 && !equipped) {
+        // T452 : AUCUN COSMETIQUE SANS COMBO ACTIF. L'ancienne garde demandait
+        // « porte-t-il un equipement enchante ? » : une propriete d'inventaire, qui
+        // laissait passer tous les drapeaux poses plus bas sur un simple enchantement.
+        // Le masque est maintenant la seule porte d'entree.
+        if (mask.isEmpty()) {
             cp.flags = 0;
             return 0;
         }
 
-        // T436-LOOT-ONLY : c'est la PIÈCE qui porte l'enchantement qui doit venir du loot
-        // du mod. Une armure montée à l'enclume avec un livre du mod garde donc son rendu
-        // vanilla. On lit pièce par pièce, et non plus le maximum sur toute l'armure.
-        if (surLoot(entity, "deep_lucky_block:king")) f |= F_ENCH_KING;
-        if (surLoot(entity, "deep_lucky_block:mystic_mind")) f |= F_ENCH_MYSTIC_MIND;
-        if (surLoot(entity, "deep_lucky_block:heart_resonance")) f |= F_ENCH_RADIANT_AEGIS;
-        if (surLoot(entity, "deep_lucky_block:wing_toughness_armor")) f |= F_ENCH_WINGED_ENDURANCE;
-        if (surLoot(entity, "deep_lucky_block:dread_aura")) f |= F_ENCH_DREAD_AURA;
+        // T452 : CES NEUF DRAPEAUX SE DECIDENT SUR LE COMBO, PLUS SUR L'ITEM.
+        // Ils lisaient surLoot(entity, "deep_lucky_block:X") : « une piece d'armure
+        // venue du loot porte-t-elle l'enchantement X ? ». C'etait encore une
+        // propriete d'item. Ils lisent desormais comboActif(mask, "X") : « un combo
+        // ACTIF exige-t-il X ? ». Un combo porte un nom et s'affiche en infobulle,
+        // donc le joueur peut nommer ce qu'il voit -- c'etait tout le reproche fait
+        // au halo. Le lien cosmetique <-> enchantement est conserve, mais c'est le
+        // combo qui l'allume : sans combo actif, aucun cosmetique. Consequence
+        // acceptee explicitement.
+        if (comboActif(mask, "king")) f |= F_ENCH_KING;
+        if (comboActif(mask, "mystic_mind")) f |= F_ENCH_MYSTIC_MIND;
+        if (comboActif(mask, "heart_resonance")) f |= F_ENCH_RADIANT_AEGIS;
+        // ATTENTION : wing_toughness_armor n'apparait dans AUCUN des 310 combos.
+        // Ce drapeau ne peut donc plus jamais s'allumer. Il n'est pas supprime : le
+        // jour ou l'enchantement entrera dans un combo, le cosmetique reviendra seul.
+        // structureannouncecheck.py surveille cette liste et refusera toute NOUVELLE
+        // victime du meme genre.
+        if (comboActif(mask, "wing_toughness_armor")) f |= F_ENCH_WINGED_ENDURANCE;
+        if (comboActif(mask, "dread_aura")) f |= F_ENCH_DREAD_AURA;
 
-        // Mêmes enchantements que les appels serveur de cloudCushion/shockwaveRing : le pixel
-        // et la particule parlent enfin du même équipement.
-        if (surLoot(entity, "deep_lucky_block:cloud_walker")
-                || surLoot(entity, "deep_lucky_block:air_walk")
-                || surLoot(entity, "deep_lucky_block:cloud_stride")) {
+        if (comboActif(mask, "cloud_walker", "air_walk", "cloud_stride")) {
             f |= F_ENCH_CLOUD_CUSHION;
         }
-        if (surLoot(entity, "deep_lucky_block:crash_landing")
-                || surLoot(entity, "deep_lucky_block:meteor_stomp")) {
+        if (comboActif(mask, "crash_landing", "meteor_stomp")) {
             f |= F_ENCH_LANDING_WAVE;
         }
-        // Mêmes portes que les appels serveur : general pour le diadème,
-        // winging (sur l'élytre) pour les banderoles.
-        if (surLoot(entity, "deep_lucky_block:general")) f |= F_ENCH_CROWN_HALO;
-        // Porte recopiée sur FishingTridentElytraHandler.elytraTickImpl : les banderoles
-        // ne sortent QUE d'une élytre au torse, EN VOL PLANÉ, sous aerodynamic ou
-        // wind_rider. Scanner toute l'armure, ou les afficher au sol, montrerait une
-        // parure que le jeu ne produit jamais.
-        // (Le serveur ajoute « vitesse < 3,5 » sur la seule branche aerodynamic ; on ne
-        //  le reprend pas, sinon les rubans clignoteraient au milieu d'un piqué.)
-        ItemStack torse = entity.getItemBySlot(EquipmentSlot.CHEST);
-        if (torse.is(Items.ELYTRA) && DeepNbt.isModLoot(torse) && entity.isFallFlying()
-                && (UniversalEnchantmentHandler.getEnchantLvl(torse, "deep_lucky_block:aerodynamic") > 0
-                 || UniversalEnchantmentHandler.getEnchantLvl(torse, "deep_lucky_block:wind_rider") > 0)) {
+        if (comboActif(mask, "general")) f |= F_ENCH_CROWN_HALO;
+        // Le VOL PLANE reste exige : c'est une situation, pas une propriete d'item,
+        // et des banderoles au sol montreraient une parure que le jeu ne produit
+        // jamais. isFallFlying() implique deja l'elytre, donc le test d'item et le
+        // isModLoot qui l'accompagnait disparaissent avec le reste.
+        if (entity.isFallFlying() && comboActif(mask, "aerodynamic", "wind_rider")) {
             f |= F_ENCH_WING_RIBBONS;
         }
 
@@ -257,14 +257,19 @@ public final class CosmeticAuraClientTicker {
     }
 
     /**
-     * L'enchantement est-il porté par une pièce d'armure VENUE DU LOOT DU MOD ?
-     * Le loot du mod est souvent une pièce vanilla : c'est la provenance qui tranche,
-     * jamais le type de l'item ni le namespace de l'enchantement.
+     * T452 : un combo ACTIF exige-t-il l'un de ces enchantements ?
+     * Remplace surLoot(...), qui interrogeait l'armure portee. Les chemins sont donnes
+     * SANS espace de noms : c'est la forme stockee par BY_ENCHANT_PATH.
+     * Un combo actif implique deja que le joueur porte l'enchantement -- c'est sa
+     * condition d'activation -- donc rien n'est perdu cote verification d'equipement.
      */
-    private static boolean surLoot(LivingEntity entity, String id) {
-        for (ItemStack piece : entity.getArmorSlots()) {
-            if (!deepluckyblock.util.DeepNbt.isModLoot(piece)) continue;
-            if (UniversalEnchantmentHandler.getEnchantLvl(piece, id) > 0) return true;
+    private static boolean comboActif(ComboMask mask, String... chemins) {
+        if (mask.isEmpty()) return false;
+        for (String chemin : chemins) {
+            for (EnchantmentComboRegistry.ComboDef def
+                    : EnchantmentComboRegistry.combosForEnchantPath(chemin)) {
+                if (mask.has(def.index())) return true;
+            }
         }
         return false;
     }

@@ -53,6 +53,38 @@ import os
 import re
 import sys
 
+def sans_commentaires_gardant_chaines(src):
+    """Retire // et /* */ sans toucher au contenu des chaines."""
+    out, i, n = [], 0, len(src)
+    while i < n:
+        c = src[i]
+        if c in '"\'':
+            j = i + 1
+            while j < n:
+                if src[j] == "\\":
+                    j += 2
+                    continue
+                if src[j] == c:
+                    break
+                j += 1
+            out.append(src[i:j + 1])
+            i = j + 1
+            continue
+        if src.startswith("//", i):
+            j = src.find("\n", i)
+            if j < 0:
+                break
+            i = j
+            continue
+        if src.startswith("/*", i):
+            j = src.find("*/", i)
+            i = (j + 2) if j >= 0 else n
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 RACINE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", ".."))
 JAVA = os.path.join(RACINE, "src", "main", "java", "deepluckyblock")
 
@@ -345,6 +377,57 @@ if tick is not None:
         problemes.append(
             "HALO : le predicat d'item hasContinuousWeaponHalo est de retour ; "
             "le halo redeviendrait une propriete de l'arme tenue.")
+    # T452 : les cosmetiques portes par le joueur se decident sur un combo actif.
+    if "surLoot(" in ct:
+        problemes.append(
+            "COSMETIQUE : surLoot(...) est de retour dans CosmeticAuraClientTicker. "
+            "Les drapeaux se decideraient a nouveau sur l'enchantement d'une piece "
+            "portee, c'est-a-dire sur un item.")
+    lignes = ct.splitlines()
+    for n, ligne in enumerate(lignes):
+        if "|=" not in ligne or "F_ENCH_" not in ligne:
+            continue
+        couvert = "comboActif" in ligne
+        if not couvert:
+            # UNIQUEMENT la ligne non vide juste au-dessus, et elle doit ouvrir le
+            # bloc. Un balayage plus large laisserait un « if (comboActif...) » voisin
+            # couvrir une pose qui ne lui appartient pas.
+            k = n - 1
+            while k >= 0 and not lignes[k].strip():
+                k -= 1
+            if k >= 0:
+                prec = lignes[k].strip()
+                couvert = prec.endswith("{") and "if (" in prec and "comboActif" in prec
+        if not couvert:
+            problemes.append(
+                "COSMETIQUE : %s est pose sans combo actif -> %s"
+                % (ligne.split("F_ENCH_")[1].split(";")[0].strip(), ligne.strip()))
+
+    # Un chemin absent de tout combo rend son cosmetique DEFINITIVEMENT muet.
+    # ATTENTION : sans_commentaires() VIDE aussi les chaines (c'est voulu, cela evite
+    # les faux positifs sur du texte). Les noms de chemins seraient donc invisibles :
+    # il faut une passe qui retire les commentaires MAIS conserve les chaines.
+    code_avec_chaines = sans_commentaires_gardant_chaines(tick)
+    REG = os.path.join(JAVA, "enchantments", "EnchantmentComboRegistry.java")
+    reg = lire(REG)
+    if reg is not None:
+        d = reg.index("List<ComboDef> list = new ArrayList<>(210);")
+        fin = reg.index("COMBOS = Collections.unmodifiableList(list);")
+        connus = set(re.findall(r'"([a-z0-9_]+)"', reg[d:fin]))
+        # Victime deja constatee et assumee ; toute NOUVELLE est refusee.
+        TOLERES = {"wing_toughness_armor"}
+        for appel in re.findall(r"comboActif\(mask,([^)]*)\)", code_avec_chaines):
+            chemins = re.findall(r'"([a-z0-9_]+)"', appel)
+            if not chemins:
+                continue
+            if any(c in connus for c in chemins):
+                continue
+            if set(chemins) <= TOLERES:
+                continue
+            problemes.append(
+                "COSMETIQUE : aucun des chemins %s n'appartient a un combo ; ce "
+                "cosmetique ne pourrait plus JAMAIS s'allumer." % chemins)
+
     if "hasLuckyWeaponAura" in ct:
         problemes.append(
             "HALO : CosmeticAuraClientTicker lit hasLuckyWeaponAura (booleen tire au "
