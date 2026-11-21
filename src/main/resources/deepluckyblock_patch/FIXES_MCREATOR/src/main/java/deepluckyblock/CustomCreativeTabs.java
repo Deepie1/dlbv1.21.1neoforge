@@ -76,13 +76,13 @@ public class CustomCreativeTabs {
 
                         // === BLOC luck +100 ===
                         ItemStack luck100 = new ItemStack(DeepLuckyBlockModItems.DEEP_LUCKY_BLOCK.get());
-                        deepluckyblock.util.DeepNbt.getOrCreateTag(luck100).putInt("SlbLuckBonus", 100);
+                        deepluckyblock.item.DeepLuckyBlockItem.setLuckCenti(luck100, 10000);   // T460 : passe par l'API centiemes
                         luck100.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("\u00a76\u00a7l\u2726 Deep's Lucky Block [+100 LUCK] \u2726"));
                         output.accept(luck100);
 
                         // === BLOC luck -100 ===
                         ItemStack luckM100 = new ItemStack(DeepLuckyBlockModItems.DEEP_LUCKY_BLOCK.get());
-                        deepluckyblock.util.DeepNbt.getOrCreateTag(luckM100).putInt("SlbLuckBonus", -100);
+                        deepluckyblock.item.DeepLuckyBlockItem.setLuckCenti(luckM100, -10000);   // T460 : passe par l'API centiemes
                         luckM100.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("\u00a74\u00a7l\u2726 Deep's Lucky Block [-100 LUCK] \u2726"));
                         output.accept(luckM100);
 

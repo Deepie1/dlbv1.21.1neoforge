@@ -84,21 +84,22 @@ public class DeepLuckyBlockCraftingRecipe extends CustomRecipe {
     // PORT 1.21.1 : Recipe.assemble(CraftingInput, HolderLookup.Provider).
     public ItemStack assemble(CraftingInput inv, net.minecraft.core.HolderLookup.Provider registries) {
         ItemStack sourceBlock = ItemStack.EMPTY;
-        int currentLuck = 0;
+        int currentCenti = 0;
 
         for (int i = 0; i < inv.size(); i++) {
             ItemStack s = inv.getItem(i);
             if (!s.isEmpty() && isDeepLuckyBlock(s)) {
                 sourceBlock = s;
-                currentLuck = DeepLuckyBlockItem.getLuckBonus(s);
+                currentCenti = DeepLuckyBlockItem.getLuckCenti(s);
                 break;
             }
         }
 
         if (sourceBlock.isEmpty()) return ItemStack.EMPTY;
 
-        // T458 : tout le calcul se fait en CENTIEMES de luck, puis un seul arrondi.
-        int simulatedCenti = currentLuck * 100;
+        // T458/T460 : tout le calcul se fait en CENTIEMES de luck, et il n'y a
+        // PLUS d'arrondi final : la chance stockee est elle-meme fractionnaire.
+        int simulatedCenti = currentCenti;
         int toAddCenti = 0;
 
         for (int i = 0; i < inv.size(); i++) {
@@ -114,24 +115,22 @@ public class DeepLuckyBlockCraftingRecipe extends CustomRecipe {
             // avec des valeurs fractionnaires, un plancher à 100 rendrait l'émeraude
             // (75) PLUS rentable après le seuil qu'avant, ce qui est absurde.
             if (simulatedCenti >= DEGRESSIVE_THRESHOLD_CENTI && val > 0) {
-                add = Math.max(1, val / 2);
+                // T460 : la moitie est recalee sur le pas de 0,25, et ne peut
+                // jamais tomber a zero (plancher a un quart).
+                add = DeepLuckyBlockItem.snapLuckCenti(val / 2);
             }
 
             simulatedCenti += add;
             toAddCenti += add;
         }
 
-        // Arrondi au plus proche, symétrique pour les malus (calcul entier : aucune
-        // dérive flottante possible).
-        int toAdd = toAddCenti >= 0
-                ? (toAddCenti + 50) / 100
-                : -((-toAddCenti + 50) / 100);
 
-        int finalLuck = Math.max(DeepLuckyBlockBlock.MIN_LUCK_BONUS,
-                Math.min(DeepLuckyBlockBlock.MAX_LUCK_BONUS, currentLuck + toAdd));
+        // T460 : aucun arrondi a l'entier. 10 + une emeraude (0,75) donne 10,75.
+        int finalCenti = Math.max(DeepLuckyBlockBlock.MIN_LUCK_CENTI,
+                Math.min(DeepLuckyBlockBlock.MAX_LUCK_CENTI, currentCenti + toAddCenti));
 
         ItemStack result = new ItemStack(DeepLuckyBlockModBlocks.DEEP_LUCKY_BLOCK.get(), 1);
-        DeepLuckyBlockItem.setLuckBonus(result, finalLuck);
+        DeepLuckyBlockItem.setLuckCenti(result, finalCenti);
         updateDisplayName(result);
 
         // FIX v7 (resolu) : trace de diagnostic retiree (se declenchait a
@@ -286,19 +285,20 @@ public class DeepLuckyBlockCraftingRecipe extends CustomRecipe {
     }
 
     private static void updateDisplayName(ItemStack stack) {
-        int luck = DeepLuckyBlockItem.getLuckBonus(stack);
-        if (luck >= 100) {
+        int centi = DeepLuckyBlockItem.getLuckCenti(stack);
+        String v = DeepLuckyBlockItem.formatLuck(centi);
+        if (centi >= DeepLuckyBlockBlock.MAX_LUCK_CENTI) {
             stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§6§l✦ DEEP'S LUCKY BLOCK [MAX] ✦"));
-        } else if (luck <= -100) {
+        } else if (centi <= DeepLuckyBlockBlock.MIN_LUCK_CENTI) {
             stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§4§l✦ DEEP'S LUCKY BLOCK [MAUDIT MAX] ✦"));
-        } else if (luck <= -50) {
-            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§c§lDeep's Lucky Block §4[" + luck + "]"));
-        } else if (luck < 0) {
-            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§6§lDeep's Lucky Block §c[" + luck + "]"));
-        } else if (luck >= 50) {
-            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§6§lDeep's Lucky Block §b[+" + luck + "]"));
-        } else if (luck > 0) {
-            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§6§lDeep's Lucky Block §7[+" + luck + "]"));
+        } else if (centi <= -5000) {
+            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§c§lDeep's Lucky Block §4[" + v + "]"));
+        } else if (centi < 0) {
+            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§6§lDeep's Lucky Block §c[" + v + "]"));
+        } else if (centi >= 5000) {
+            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§6§lDeep's Lucky Block §b[+" + v + "]"));
+        } else if (centi > 0) {
+            stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§6§lDeep's Lucky Block §7[+" + v + "]"));
         } else {
             stack.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME, Component.literal("§6§lDeep's Lucky Block"));
         }

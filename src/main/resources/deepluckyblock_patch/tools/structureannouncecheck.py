@@ -726,6 +726,79 @@ if prep is not None:
             "LAC : la garde de rebuildTerrainBatched ne consulte plus "
             "FORCE_FOOTPRINT_PROTECTION -- la protection d'avant-pose est perdue.")
 
+# ============ T460 : CHANCE FRACTIONNAIRE PAR PAS DE 0,25 ============
+# Consigne : « je veux absolument mettre le systeme de 0.25 minimum, pas 1
+# minimum en ajout ! on ne parle pas de % mais bien de valeur ajoutee, donc un
+# block a luck 10 + une emeraude donne block a 10.75 ».
+# Le piege central : la chance etait un ENTIER de bout en bout (item, block
+# entity, drop silk touch). Arrondir en fin de craft annulait les quarts.
+ITEM = os.path.join(JAVA, "item", "DeepLuckyBlockItem.java")
+BE = os.path.join(JAVA, "blockentity", "DeepLuckyBlockBlockEntity.java")
+
+item = lire(ITEM)
+if item is not None:
+    # sans_commentaires() vide le contenu des chaines : ici on cherche des
+    # litteraux (cles NBT, nom affiche), donc variante qui les preserve.
+    citem = sans_commentaires_gardant_chaines(item)
+    for api in ("getLuckCenti", "setLuckCenti", "snapLuckCenti", "formatLuck", "centiToLuck"):
+        if api not in citem:
+            problemes.append("LUCK025 : %s absent de DeepLuckyBlockItem (T460)." % api)
+    # le nom affiche ne doit plus parler de pourcentage
+    if re.search(r'Lucky Block[^"]*%\]', citem):
+        problemes.append(
+            "LUCK025 : le nom affiche contient encore un %. Consigne : « on ne "
+            "parle pas de % mais bien de valeur ajoutee ».")
+
+blocf = lire(BLOC)
+if blocf is not None:
+    cb = sans_commentaires_gardant_chaines(blocf)
+    m_key = re.search(r'NBT_LUCK_CENTI_KEY\s*=\s*"([^"]+)"', cb)
+    m_old = re.search(r'NBT_LUCK_KEY\s*=\s*"([^"]+)"', cb)
+    if m_key is None:
+        problemes.append("LUCK025 : NBT_LUCK_CENTI_KEY introuvable.")
+    elif m_old is not None and m_key.group(1) == m_old.group(1):
+        problemes.append(
+            "LUCK025 : NBT_LUCK_CENTI_KEY et NBT_LUCK_KEY partagent la cle '%s'. "
+            "Relire des centiemes dans l'ancienne cle transformerait un bloc a "
+            "+10 en bloc a +0,10." % m_key.group(1))
+    m_pas = re.search(r"LUCK_STEP_CENTI\s*=\s*(\d+)\s*;", cb)
+    if m_pas is None:
+        problemes.append("LUCK025 : LUCK_STEP_CENTI introuvable.")
+    elif int(m_pas.group(1)) != 25:
+        problemes.append(
+            "LUCK025 : pas de chance = %s centiemes, attendu 25 (0,25)." % m_pas.group(1))
+    # le drop silk touch doit porter les quarts
+    if "LuckCenti" not in cb:
+        problemes.append(
+            "LUCK025 : le bloc n'ecrit/ne lit nulle part LuckCenti -- la fraction "
+            "serait perdue a la pose ou au silk touch.")
+
+be = lire(BE)
+if be is not None:
+    cbe = sans_commentaires_gardant_chaines(be)
+    if "luckCenti" not in cbe or 'putInt("LuckCenti"' not in cbe:
+        problemes.append(
+            "LUCK025 : la block entity ne persiste pas LuckCenti -- poser puis "
+            "recasser un bloc a 10,75 le ramenerait a 11.")
+
+if rec is not None:
+    crec = sans_commentaires(rec)
+    corps_asm2 = corps_methode(crec, "public ItemStack assemble")
+    if corps_asm2 is not None:
+        if "setLuckCenti" not in corps_asm2:
+            problemes.append(
+                "LUCK025 : assemble() n'ecrit plus la chance en centiemes "
+                "(setLuckCenti) -- les quarts seraient perdus.")
+        if re.search(r"\(toAddCenti \+ 50\) / 100", corps_asm2):
+            problemes.append(
+                "LUCK025 : assemble() arrondit de nouveau l'apport a l'entier. "
+                "C'est exactement ce que T460 supprime : 10 + une emeraude doit "
+                "donner 10,75, pas 11.")
+        if "currentCenti" not in corps_asm2:
+            problemes.append(
+                "LUCK025 : assemble() ne repart plus de la chance fractionnaire "
+                "existante (currentCenti).")
+
 gen = lire(GEN)
 if gen is not None:
     cg = sans_commentaires(gen)

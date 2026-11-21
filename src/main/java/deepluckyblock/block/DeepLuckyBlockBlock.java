@@ -66,6 +66,29 @@ public class DeepLuckyBlockBlock extends Block implements EntityBlock {
 
     public static final int MIN_LUCK_BONUS = -100;
 
+    /**
+     * T460 : la chance est desormais FRACTIONNAIRE, par pas de 0,25.
+     *
+     * <p>Consigne : « je veux absolument mettre le systeme de 0,25 minimum, pas
+     * 1 minimum en ajout ! on ne parle pas de % mais bien de valeur ajoutee,
+     * donc un block a luck 10 + une emeraude donne block a 10.75 ».
+     *
+     * <p>Elle est stockee en CENTIEMES dans une cle NBT distincte. L'ancienne
+     * cle entiere {@link #NBT_LUCK_KEY} continue d'etre ecrite, arrondie, pour
+     * tous les lecteurs existants (wands, scripts, Lucky World Invasion) ; elle
+     * sert aussi de repli pour les blocs crees avant ce changement, relus comme
+     * {@code valeur x 100}. Reutiliser la cle d'origine aurait transforme un
+     * bloc a +10 en bloc a +0,10.
+     */
+    public static final String NBT_LUCK_CENTI_KEY = "SlbLuckCenti";
+
+    /** Pas minimal de chance, en centiemes : 0,25. */
+    public static final int LUCK_STEP_CENTI = 25;
+
+    public static final int MAX_LUCK_CENTI = MAX_LUCK_BONUS * 100;
+
+    public static final int MIN_LUCK_CENTI = MIN_LUCK_BONUS * 100;
+
     private static final Map<Long, Integer> PLACED_LUCK = new ConcurrentHashMap<>();
 
     public DeepLuckyBlockBlock() {
@@ -127,29 +150,36 @@ public class DeepLuckyBlockBlock extends Block implements EntityBlock {
         super.setPlacedBy(level, pos, state, placer, stack);
 
         if (!level.isClientSide()) {
-            int luck = DeepLuckyBlockItem.getLuckBonus(stack);
+            // T460 : tout se lit en CENTIEMES pour ne pas perdre les quarts.
+            int luckCenti = DeepLuckyBlockItem.getLuckCenti(stack);
 
-            // 1) Luck portée dans le tag racine de l'item (clé "SlbLuckBonus")
-            if (luck == 0 && deepluckyblock.util.DeepNbt.hasTag(stack)) {
+            // 1) Luck portée dans le tag racine de l'item
+            if (luckCenti == 0 && deepluckyblock.util.DeepNbt.hasTag(stack)) {
                 CompoundTag tag = deepluckyblock.util.DeepNbt.tag(stack);
-                if (tag != null && tag.contains(NBT_LUCK_KEY)) {
-                    luck = tag.getInt(NBT_LUCK_KEY);
+                if (tag != null && tag.contains(NBT_LUCK_CENTI_KEY)) {
+                    luckCenti = tag.getInt(NBT_LUCK_CENTI_KEY);
+                } else if (tag != null && tag.contains(NBT_LUCK_KEY)) {
+                    luckCenti = tag.getInt(NBT_LUCK_KEY) * 100;
                 }
             }
 
             // 2) Luck portée dans "BlockEntityTag" (bloc silk-touché).
             //    Le drop Silk Touch écrit la clé "Luck" → c'est la source principale.
-            if (luck == 0 && deepluckyblock.util.DeepNbt.hasTag(stack)) {
+            if (luckCenti == 0 && deepluckyblock.util.DeepNbt.hasTag(stack)) {
                 CompoundTag tag = deepluckyblock.util.DeepNbt.tag(stack);
                 if (tag != null && tag.contains("BlockEntityTag")) {
                     CompoundTag beTag = tag.getCompound("BlockEntityTag");
-                    if (beTag.contains("Luck")) {
-                        luck = beTag.getInt("Luck");
+                    // "LuckCenti" d'abord : c'est la seule cle qui porte les quarts.
+                    if (beTag.contains("LuckCenti")) {
+                        luckCenti = beTag.getInt("LuckCenti");
+                    } else if (beTag.contains("Luck")) {
+                        luckCenti = beTag.getInt("Luck") * 100;
                     } else if (beTag.contains(NBT_LUCK_KEY)) {
-                        luck = beTag.getInt(NBT_LUCK_KEY);
+                        luckCenti = beTag.getInt(NBT_LUCK_KEY) * 100;
                     }
                 }
             }
+            int luck = DeepLuckyBlockItem.centiToLuck(luckCenti);
 
             // FIX v7 (resolu, diagnostic desormais inutile en permanence) : la
             // trace [SLB-DEBUG] a servi a confirmer la valeur de luck lue dans
@@ -160,7 +190,7 @@ public class DeepLuckyBlockBlock extends Block implements EntityBlock {
             // 1. Stockage complet dans le BlockEntity natif ("Luck" + "SlbLuckBonus")
             BlockEntity be = level.getBlockEntity(pos);
             if (be instanceof DeepLuckyBlockBlockEntity dlBe) {
-                dlBe.setLuck(luck);
+                dlBe.setLuckCenti(luckCenti);   // T460 : met aussi l'entier a jour
                 dlBe.setSlbLuckBonus(0);
                 // FIX v7 : miroir dans getPersistentData() (NeoForgeData) pour
                 // couvrir les lecteurs qui passent par le persistent data.
@@ -199,8 +229,10 @@ public class DeepLuckyBlockBlock extends Block implements EntityBlock {
         if (be != null && be.getPersistentData().contains("dlbForcedBranch")) {
             forcedBranch = be.getPersistentData().getString("dlbForcedBranch");
         }
+        int mainLuckCenti = 0;
         if (be instanceof DeepLuckyBlockBlockEntity dlBe) {
             mainLuck = dlBe.getLuck();
+            mainLuckCenti = dlBe.getLuckCenti();
             slbBonus = dlBe.getSlbLuckBonus();
             // FIX v7 : fallback persistent data (miroir écrit dans setPlacedBy,
             // mondes anciens, wands...) si le champ du BE est a 0.
@@ -217,6 +249,10 @@ public class DeepLuckyBlockBlock extends Block implements EntityBlock {
 
         PLACED_LUCK.remove(pos.asLong());
 
+        // T460 : si aucun centieme n'a ete lu (BE etrangere, monde ancien, RAM),
+        // on retombe sur l'entier ; sinon la fraction est conservee.
+        if (mainLuckCenti == 0) mainLuckCenti = mainLuck * 100;
+        int totalCenti = mainLuckCenti + slbBonus * 100;
         int totalLuck = mainLuck + slbBonus;
 
         // FIX v7 (resolu) : trace de diagnostic retiree, voir setPlacedBy ci-dessus.
@@ -226,8 +262,13 @@ public class DeepLuckyBlockBlock extends Block implements EntityBlock {
         if (player != null && !player.isCreative() &&
                 EnchantmentHelper.getItemEnchantmentLevel(deepluckyblock.util.DeepEnchant.keyHolder(world.registryAccess(), Enchantments.SILK_TOUCH), player.getMainHandItem()) > 0) {
             ItemStack drop = new ItemStack(this);
-            if (totalLuck != 0) {
-                deepluckyblock.util.DeepNbt.getOrCreateTagElement(drop, "BlockEntityTag").putInt("Luck", totalLuck);
+            if (totalCenti != 0) {
+                CompoundTag beTag = deepluckyblock.util.DeepNbt.getOrCreateTagElement(drop, "BlockEntityTag");
+                // Les deux cles : "LuckCenti" porte les quarts, "Luck" reste
+                // lisible par les wands et les scripts externes.
+                beTag.putInt("LuckCenti", totalCenti);
+                beTag.putInt("Luck", DeepLuckyBlockItem.centiToLuck(totalCenti));
+                DeepLuckyBlockItem.setLuckCenti(drop, totalCenti);
             }
             Block.popResource(world, pos, drop);
             return true;
