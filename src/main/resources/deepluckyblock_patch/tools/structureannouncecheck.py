@@ -453,6 +453,51 @@ if tick is not None:
             "HALO : CosmeticAuraClientTicker lit hasLuckyWeaponAura (booleen tire au "
             "loot). Les cosmetiques portes par le joueur se decident sur les combos.")
 
+# ==================== T454 : GARNISON DU SOMMET DE L'EVEREST ====================
+if s4 is not None:
+    c4 = sans_commentaires_gardant_chaines(s4)
+    for nom, attendu in (("EVEREST_ZOMBIES_MAX", 7), ("EVEREST_SQUELETTES_MAX", 4),
+                         ("EVEREST_PIECES_MIN", 1), ("EVEREST_PIECES_MAX", 5),
+                         ("EVEREST_LUCK_MIN", 1), ("EVEREST_LUCK_MAX", 30)):
+        m = re.search(r"%s\s*=\s*(\d+)\s*;" % nom, c4)
+        if m is None:
+            problemes.append("EVEREST : %s introuvable." % nom)
+        elif int(m.group(1)) != attendu:
+            problemes.append("EVEREST : %s = %s, attendu %d."
+                             % (nom, m.group(1), attendu))
+
+    # La garnison doit etre posee au point de FIN de pose, le seul ou la montagne
+    # est complete : sinon le scan descendant tombe dans le vide.
+    m = re.search(r'announceStructureSpawn\(job\.level, job\.player, "everest".*?\n(.{0,400})',
+                  c4, re.S)
+    if m is None or "spawnEverestSummitMobs" not in m.group(1):
+        problemes.append(
+            "EVEREST : spawnEverestSummitMobs n'est pas appele juste apres l'annonce de "
+            "fin de pose. Pose plus tot, la surface de la montagne n'existe pas encore.")
+
+    # « SUR la structure, pas dedans » : garanti par un scan DESCENDANT depuis le
+    # plafond, puis deux blocs d'air libres. Retirer l'un des trois casse la garantie.
+    corps = corps_methode(c4, "private static BlockPos chercheSurfaceEverest")
+    if corps is None:
+        problemes.append("EVEREST : chercheSurfaceEverest introuvable.")
+    else:
+        if "Direction.DOWN" not in corps:
+            problemes.append(
+                "EVEREST : chercheSurfaceEverest ne descend plus depuis le plafond. "
+                "C'est ce balayage qui garantit la peau EXTERIEURE et non une cavite.")
+        for test, raison in (
+                ("getBlockState(pieds).isAir()",
+                 "le bloc ou se posent les pieds n'est plus verifie"),
+                ("getBlockState(pieds.above()).isAir()",
+                 "la place pour la tete n'est plus verifiee")):
+            if test not in corps:
+                problemes.append(
+                    "EVEREST : %s -> le mob peut apparaitre DANS la montagne." % raison)
+        if "sol.isAir()" not in corps:
+            problemes.append(
+                "EVEREST : la colonne entierement vide n'est plus ecartee ; le mob "
+                "tomberait du ciel a cote de la montagne.")
+
 gen = lire(GEN)
 if gen is not None:
     cg = sans_commentaires(gen)

@@ -1105,6 +1105,11 @@ public class Structures4Procedure {
                 // T449 : l'Everest a sa propre file (EVEREST_QUEUE) et echappait
                 // donc aussi a l'annonce. Emprise = bornes memorisees a la pose.
                 Structures5Procedure.announceStructureSpawn(job.level, job.player, "everest", job.annMin, job.annMax);
+                // T454 : garnison du sommet. Posee ICI et nulle part ailleurs : c'est le
+                // seul point ou la montagne est entierement batie, donc le seul ou l'on
+                // peut connaitre sa surface. Plus tot, le scan descendant tomberait dans
+                // le vide ou sur une couche intermediaire.
+                spawnEverestSummitMobs(job.level, job.annMin, job.annMax);
                 if (job.onComplete != null) try { job.onComplete.run(); } catch (Exception ex) { LOGGER.error("[STRUCT4-EVEREST] onComplete error", ex); }
             }
         }
@@ -2354,4 +2359,122 @@ public class Structures4Procedure {
         e.load(nbt); e.setCustomName(Component.literal("§6§l✦ Récompense Mystique ✦")); e.setCustomNameVisible(false);
         level.addFreshEntity(e);
     }
+    // ==================== T454 : GARNISON DU SOMMET DE L'EVEREST ====================
+
+    private static final int EVEREST_ZOMBIES_MAX   = 7;    // 0-7 zombies
+    private static final int EVEREST_SQUELETTES_MAX = 4;   // 0-4 squelettes
+    private static final int EVEREST_PIECES_MIN    = 1;    // 1-5 pieces par mob
+    private static final int EVEREST_PIECES_MAX    = 5;
+    private static final int EVEREST_LUCK_MIN      = 1;    // luck 1-30 par piece
+    private static final int EVEREST_LUCK_MAX      = 30;
+    /** Essais de colonne par mob : la boite englobante est carree, la montagne non. */
+    private static final int EVEREST_ESSAIS_COLONNE = 48;
+
+    /**
+     * Pose 0-7 zombies et 0-4 squelettes SUR la surface de l'Everest.
+     *
+     * « Sur, pas dedans » est garanti par la methode de recherche : on part du PLAFOND
+     * de la boite englobante et on descend jusqu'au premier bloc non-air. Ce bloc est
+     * forcement la peau exterieure de la montagne, jamais une cavite interne, puisque
+     * tout ce qui le surplombe est de l'air. Le mob est ensuite place sur le bloc
+     * au-dessus, apres verification de deux blocs d'air libres pour sa hauteur.
+     */
+    public static void spawnEverestSummitMobs(ServerLevel level, BlockPos min, BlockPos max) {
+        if (level == null || min == null || max == null) return;
+        try {
+            RandomSource random = level.getRandom();
+            int zombies = random.nextInt(EVEREST_ZOMBIES_MAX + 1);
+            int squelettes = random.nextInt(EVEREST_SQUELETTES_MAX + 1);
+            int poses = 0;
+            for (int i = 0; i < zombies + squelettes; i++) {
+                boolean squelette = i >= zombies;
+                BlockPos surface = chercheSurfaceEverest(level, min, max, random);
+                if (surface == null) continue;   // colonne vide ou encombree
+                net.minecraft.world.entity.Mob mob = squelette
+                        ? new net.minecraft.world.entity.monster.Skeleton(EntityType.SKELETON, level)
+                        : new net.minecraft.world.entity.monster.Zombie(EntityType.ZOMBIE, level);
+                mob.moveTo(surface.getX() + 0.5, surface.getY(), surface.getZ() + 0.5,
+                        random.nextFloat() * 360.0f, 0.0f);
+                equipeMobEverest(mob, level, random);
+                // Sans cela, la garnison se volatilise des que le joueur s'eloigne.
+                mob.setPersistenceRequired();
+                level.addFreshEntity(mob);
+                poses++;
+            }
+            deepluckyblock.util.DebugLog.info(LOGGER,
+                    "[STRUCT4-EVEREST] Garnison : {} zombies + {} squelettes demandes, {} poses",
+                    zombies, squelettes, poses);
+        } catch (Throwable t) {
+            LOGGER.error("[STRUCT4-EVEREST] Garnison du sommet impossible", t);
+        }
+    }
+
+    /** Premier bloc non-air en DESCENDANT depuis le plafond : la peau de la montagne. */
+    private static BlockPos chercheSurfaceEverest(ServerLevel level, BlockPos min, BlockPos max,
+                                                  RandomSource random) {
+        int dx = Math.max(0, max.getX() - min.getX());
+        int dz = Math.max(0, max.getZ() - min.getZ());
+        for (int essai = 0; essai < EVEREST_ESSAIS_COLONNE; essai++) {
+            int x = min.getX() + random.nextInt(dx + 1);
+            int z = min.getZ() + random.nextInt(dz + 1);
+            if (!level.isLoaded(new BlockPos(x, max.getY(), z))) continue;
+            BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos(x, max.getY(), z);
+            while (p.getY() > min.getY() && level.getBlockState(p).isAir()) {
+                p.move(Direction.DOWN);
+            }
+            net.minecraft.world.level.block.state.BlockState sol = level.getBlockState(p);
+            if (sol.isAir()) continue;                       // colonne entierement vide
+            if (!sol.getFluidState().isEmpty()) continue;    // pas de spawn sur un liquide
+            BlockPos pieds = p.above();
+            // Deux blocs d'air : sans cela le mob est insere DANS la montagne et
+            // suffoque ou se teleporte hors de la structure.
+            if (!level.getBlockState(pieds).isAir()) continue;
+            if (!level.getBlockState(pieds.above()).isAir()) continue;
+            return pieds;
+        }
+        return null;
+    }
+
+    /**
+     * Equipe le mob de 1 a 5 pieces, chacune tiree a un luck independant de 1 a 30.
+     *
+     * Les emplacements sont melanges puis consommes dans l'ordre : deux tirages
+     * independants pourraient designer deux fois le meme emplacement et le mob
+     * porterait alors moins de pieces que le compte annonce.
+     */
+    private static void equipeMobEverest(net.minecraft.world.entity.Mob mob, ServerLevel level,
+                                         RandomSource random) {
+        net.minecraft.world.entity.EquipmentSlot[] slots = {
+                net.minecraft.world.entity.EquipmentSlot.HEAD,
+                net.minecraft.world.entity.EquipmentSlot.CHEST,
+                net.minecraft.world.entity.EquipmentSlot.LEGS,
+                net.minecraft.world.entity.EquipmentSlot.FEET,
+                net.minecraft.world.entity.EquipmentSlot.MAINHAND
+        };
+        for (int i = slots.length - 1; i > 0; i--) {
+            int j = random.nextInt(i + 1);
+            net.minecraft.world.entity.EquipmentSlot tmp = slots[i];
+            slots[i] = slots[j];
+            slots[j] = tmp;
+        }
+        boolean squelette = mob instanceof net.minecraft.world.entity.monster.AbstractSkeleton;
+        int nb = EVEREST_PIECES_MIN + random.nextInt(EVEREST_PIECES_MAX - EVEREST_PIECES_MIN + 1);
+        for (int i = 0; i < nb && i < slots.length; i++) {
+            net.minecraft.world.entity.EquipmentSlot slot = slots[i];
+            int luck = EVEREST_LUCK_MIN + random.nextInt(EVEREST_LUCK_MAX - EVEREST_LUCK_MIN + 1);
+            ItemStack piece;
+            if (slot == net.minecraft.world.entity.EquipmentSlot.MAINHAND) {
+                // Un squelette sans arc perd son IA a distance : on lui donne un arc.
+                piece = GenerateLuckyItemProcedure.generateSimulatedLuckyPieceByType(
+                        level, luck, squelette ? "bow" : "sword", random);
+            } else {
+                piece = GenerateLuckyItemProcedure.generateSimulatedLuckyPiece(level, luck, slot, random);
+            }
+            if (piece == null || piece.isEmpty()) continue;
+            GenerateLuckyItemProcedure.sanitizeMobLuckyPiece(piece, random);
+            mob.setItemSlot(slot, piece);
+            mob.setDropChance(slot, 0.15f);
+        }
+    }
+
 }

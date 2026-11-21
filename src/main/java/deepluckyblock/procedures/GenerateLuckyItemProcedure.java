@@ -2188,7 +2188,8 @@ public class GenerateLuckyItemProcedure {
      * - retire echolocation (T113 : pas de halo mural permanent dans le noir) et unbreakable/eternal (T333),
      * - applique une durabilité restante aléatoire entre 1 % et 50 % du max (T333).
      */
-    private static void sanitizeMobLuckyPiece(ItemStack piece, RandomSource random) {
+    /** T454 : rendue publique pour la garnison de l'Everest (Structures4Procedure). */
+    public static void sanitizeMobLuckyPiece(ItemStack piece, RandomSource random) {
         if (piece == null || piece.isEmpty()) return;
         if (!piece.hasFoil()) {
             piece.set(net.minecraft.core.component.DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
