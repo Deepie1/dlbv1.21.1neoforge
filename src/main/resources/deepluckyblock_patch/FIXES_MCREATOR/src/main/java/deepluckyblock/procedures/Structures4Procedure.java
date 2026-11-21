@@ -2361,8 +2361,11 @@ public class Structures4Procedure {
     }
     // ==================== T454 : GARNISON DU SOMMET DE L'EVEREST ====================
 
-    private static final int EVEREST_ZOMBIES_MAX   = 7;    // 0-7 zombies
-    private static final int EVEREST_SQUELETTES_MAX = 4;   // 0-4 squelettes
+    // T455 : maxima TRIPLES (7 -> 21, 4 -> 12), soit 33 mobs au lieu de 11.
+    // Cout mesure sur le gabarit reel (174 x 278 x 123) : le pire cas passe de
+    // ~65 000 a ~195 000 lectures de bloc, en une seule fois a la fin de la pose.
+    private static final int EVEREST_ZOMBIES_MAX   = 21;   // 0-21 zombies
+    private static final int EVEREST_SQUELETTES_MAX = 12;  // 0-12 squelettes
     private static final int EVEREST_PIECES_MIN    = 1;    // 1-5 pieces par mob
     private static final int EVEREST_PIECES_MAX    = 5;
     private static final int EVEREST_LUCK_MIN      = 1;    // luck 1-30 par piece

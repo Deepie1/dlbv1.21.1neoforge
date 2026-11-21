@@ -456,7 +456,7 @@ if tick is not None:
 # ==================== T454 : GARNISON DU SOMMET DE L'EVEREST ====================
 if s4 is not None:
     c4 = sans_commentaires_gardant_chaines(s4)
-    for nom, attendu in (("EVEREST_ZOMBIES_MAX", 7), ("EVEREST_SQUELETTES_MAX", 4),
+    for nom, attendu in (("EVEREST_ZOMBIES_MAX", 21), ("EVEREST_SQUELETTES_MAX", 12),
                          ("EVEREST_PIECES_MIN", 1), ("EVEREST_PIECES_MAX", 5),
                          ("EVEREST_LUCK_MIN", 1), ("EVEREST_LUCK_MAX", 30)):
         m = re.search(r"%s\s*=\s*(\d+)\s*;" % nom, c4)
