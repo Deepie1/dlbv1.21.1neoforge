@@ -115,7 +115,7 @@ public class DeepLuckyBlockAdvancements {
         // la premiere obtention, comme grantCustomAchievement. L'appel precede
         // grantAdvancementFully : apres, l'advancement serait deja acquis et le
         // verrou refuserait toujours. 0-6 aleatoires -> 3 fixes, jamais zero.
-        dropOnFirstUnlock(player, "negative_streak", NEGATIVE_STREAK_REWARD);
+        dropOnFirstUnlock(player, "negative_streak", NEGATIVE_STREAK_REWARD_MAX);
         grantAdvancementFully(level, player, "negative_streak");
     }
 
@@ -132,8 +132,8 @@ public class DeepLuckyBlockAdvancements {
         ServerLevel level = player.serverLevel();
         grantHub(player, "hub_luck");
         // T449b : retablie, divisee par 2, versee UNE SEULE FOIS
-        // (voir triggerNegativeStreak). 0-5 aleatoires -> 2 fixes.
-        dropOnFirstUnlock(player, "lucky_streak", LUCKY_STREAK_REWARD);
+        // (voir triggerNegativeStreak). Tirage conserve : nextInt(6) -> 0-2.
+        dropOnFirstUnlock(player, "lucky_streak", LUCKY_STREAK_REWARD_MAX);
         grantAdvancementFully(level, player, "lucky_streak");
         // Chaîne de Chance : comptabilise cette série (3 -> achievement lucky_chain).
         onLuckyChain(player);
@@ -326,22 +326,28 @@ public class DeepLuckyBlockAdvancements {
      * drop des Deep Lucky Blocks brillants en récompense.
      * Utilise le trigger vanilla "minecraft:impossible" + award direct (comme lucky_streak).
      */
-    /** T449b : recompenses de serie, divisees par 2 et versees une seule fois. */
-    private static final int LUCKY_STREAK_REWARD    = 2;   // etait 0-5 aleatoires, a chaque serie
-    private static final int NEGATIVE_STREAK_REWARD = 3;   // etait 0-6 aleatoires, a chaque serie
+    /**
+     * T451 : recompenses de serie, bornes DIVISEES PAR 2 et tirage conserve.
+     * T449b avait fige les montants (2 et 3) ; la consigne est de garder l'aleatoire :
+     * « passe de 0-5 random a 0-2 random ; et de 0-6 random a 0-3 random ».
+     * Bornes INCLUSES : le tirage est nextInt(borne + 1), donc zero reste possible.
+     */
+    private static final int LUCKY_STREAK_REWARD_MAX    = 2;   // etait nextInt(6) -> 0-5
+    private static final int NEGATIVE_STREAK_REWARD_MAX = 3;   // etait nextInt(7) -> 0-6
 
     /**
-     * T449b : verse {@code count} Deep Lucky Blocks UNIQUEMENT si l'advancement
-     * n'est pas deja obtenu. A appeler AVANT grantAdvancementFully.
+     * T449b/T451 : tire 0..{@code maxCount} Deep Lucky Blocks et ne les verse QUE si
+     * l'advancement n'est pas deja obtenu. A appeler AVANT grantAdvancementFully.
      */
-    private static void dropOnFirstUnlock(ServerPlayer player, String path, int count) {
-        if (player == null || count <= 0) return;
+    private static void dropOnFirstUnlock(ServerPlayer player, String path, int maxCount) {
+        if (player == null || maxCount <= 0) return;
         ServerLevel level = player.serverLevel();
         AdvancementHolder advancement = level.getServer().getAdvancements().get(
                 ResourceLocation.tryParse(MODID + ":" + path));
         if (advancement == null) return;
         if (player.getAdvancements().getOrStartProgress(advancement).isDone()) return;
-        DeepLuckyBlockAdvancementIntegration.dropGlowingLuckyBlocks(level, player, count);
+        DeepLuckyBlockAdvancementIntegration.dropGlowingLuckyBlocks(
+                level, player, level.random.nextInt(maxCount + 1));
     }
 
     public static void grantCustomAchievement(ServerPlayer player, String path, int rewardBlocks) {

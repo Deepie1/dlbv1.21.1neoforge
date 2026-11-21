@@ -315,34 +315,40 @@ if adv is not None:
                 problemes.append(
                     "DROP : dropOnFirstUnlock suit grantAdvancementFully pour %s. "
                     "L'advancement serait deja acquis et la recompense jamais versee." % cle)
-    for nom, attendu in (("LUCKY_STREAK_REWARD", 2), ("NEGATIVE_STREAK_REWARD", 3)):
+    for nom, attendu in (("LUCKY_STREAK_REWARD_MAX", 2), ("NEGATIVE_STREAK_REWARD_MAX", 3)):
         m = re.search(r"%s\s*=\s*(\d+)\s*;" % nom, ca2)
         if m is None:
             problemes.append("DROP : %s introuvable." % nom)
-        elif int(m.group(1)) > attendu:
+        elif int(m.group(1)) != attendu:
             problemes.append(
-                "DROP : %s = %s, au-dessus de la valeur divisee par 2 (%d)."
+                "DROP : %s = %s, attendu %d (borne divisee par 2)."
                 % (nom, m.group(1), attendu))
+    if "nextInt(maxCount + 1)" not in ca2:
+        problemes.append(
+            "DROP : le tirage aleatoire a disparu. La consigne est « 0-2 random » et "
+            "« 0-3 random », pas un montant fige.")
 
-# T449b : le halo de tete (F_HALO_CONTINUOUS) vient de ce tirage, pas d'un combo.
-NBT = os.path.join(JAVA, "util", "DeepNbt.java")
-nbt = lire(NBT)
-if nbt is not None:
-    cn = sans_commentaires(nbt)
-    mm = re.search(r"LUCKY_MELEE_AURA_PERCENT\s*=\s*(\d+)", cn)
-    mr = re.search(r"LUCKY_RANGED_AURA_PERCENT\s*=\s*(\d+)", cn)
-    if mr is None:
-        problemes.append("CHANCE : LUCKY_RANGED_AURA_PERCENT introuvable.")
-    elif int(mr.group(1)) > 5:
+# T451 : le halo de tete doit etre la signature d'un COMBO, jamais d'un item.
+TICK = os.path.join(JAVA, "client", "CosmeticAuraClientTicker.java")
+tick = lire(TICK)
+if tick is not None:
+    ct = sans_commentaires(tick)
+    for ligne in ct.splitlines():
+        if "F_HALO_CONTINUOUS" not in ligne or "|=" not in ligne:
+            continue
+        if "mask" not in ligne:
+            problemes.append(
+                "HALO : F_HALO_CONTINUOUS est pose sans lire le masque de combos -> "
+                "%s. Un cosmetique qu'aucun combo n'explique est invisible en infobulle."
+                % ligne.strip())
+    if "hasContinuousWeaponHalo" in ct:
         problemes.append(
-            "CHANCE : LUCKY_RANGED_AURA_PERCENT = %s. A ce taux, une arbalete lootee "
-            "sur deux porte un halo permanent que rien n'annonce (plafond : 5)."
-            % mr.group(1))
-    elif mm is not None and int(mr.group(1)) > int(mm.group(1)):
+            "HALO : le predicat d'item hasContinuousWeaponHalo est de retour ; "
+            "le halo redeviendrait une propriete de l'arme tenue.")
+    if "hasLuckyWeaponAura" in ct:
         problemes.append(
-            "CHANCE : l'aura a distance (%s) repasse au-dessus de la melee (%s) ; "
-            "T447 fait des armes a distance le cas DISCRET."
-            % (mr.group(1), mm.group(1)))
+            "HALO : CosmeticAuraClientTicker lit hasLuckyWeaponAura (booleen tire au "
+            "loot). Les cosmetiques portes par le joueur se decident sur les combos.")
 
 gen = lire(GEN)
 if gen is not None:

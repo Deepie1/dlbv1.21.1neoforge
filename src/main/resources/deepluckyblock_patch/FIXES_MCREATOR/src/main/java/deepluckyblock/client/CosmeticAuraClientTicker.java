@@ -239,9 +239,18 @@ public final class CosmeticAuraClientTicker {
             f |= F_ENCH_WING_RIBBONS;
         }
 
-        // Plus d'aura constante pour toute arme non à distance : lecture du choix persisté au loot.
-        // Les tridents enchantés conservent explicitement leur comportement antérieur, sans tirage.
-        if (f == 0 && hasContinuousWeaponHalo(entity)) f |= F_HALO_CONTINUOUS;
+        // T451 : LE HALO EST LA SIGNATURE D'UN COMBO, PLUS CELLE D'UN ITEM.
+        // Il venait de hasContinuousWeaponHalo(entity) : un booleen tire UNE FOIS a la
+        // creation du butin, que rien n'affiche. Combine a la condition « f == 0 »,
+        // il s'allumait donc PRECISEMENT quand aucun combo n'etait actif -- d'ou le
+        // « wtf pourquoi un halo vient au dessus de ma tete ? » avec une arbalete
+        // Flame + Quick Charge, et le diagnostic drapeaux=0x800 combos=0 : un
+        // cosmetique qu'AUCUNE infobulle ne pouvait justifier.
+        // Il exige desormais un combo reellement actif. Le sens s'inverse : au lieu
+        // d'etre le lot de consolation de « aucun combo », le halo devient le blason
+        // generique des combos qui n'ont pas de cosmetique dedie (seuls 6 des 310 en
+        // ont un). combos=0 ne peut plus produire de halo.
+        if (f == 0 && !mask.isEmpty()) f |= F_HALO_CONTINUOUS;
 
         cp.flags = f;
         return f;
@@ -258,20 +267,6 @@ public final class CosmeticAuraClientTicker {
             if (UniversalEnchantmentHandler.getEnchantLvl(piece, id) > 0) return true;
         }
         return false;
-    }
-
-    /** Aucun aléa ici : seulement deux lectures d'items et le marqueur NBT déjà synchronisé. */
-    private static boolean hasContinuousWeaponHalo(LivingEntity entity) {
-        ItemStack main = entity.getMainHandItem();
-        ItemStack off = entity.getOffhandItem();
-        // T436 : même un trident doit venir du loot du mod. Avant, N'IMPORTE quel trident
-        // enchanté — y compris à la table — déclenchait le halo continu.
-        if (deepluckyblock.util.DeepNbt.isModLoot(main)
-                && main.getItem() instanceof net.minecraft.world.item.TridentItem && main.isEnchanted()) return true;
-        if (deepluckyblock.util.DeepNbt.isModLoot(off)
-                && off.getItem() instanceof net.minecraft.world.item.TridentItem && off.isEnchanted()) return true;
-        return deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(main)
-                || deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(off);
     }
 
     /**

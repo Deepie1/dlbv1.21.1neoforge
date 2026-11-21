@@ -151,15 +151,14 @@ public final class DeepNbt {
         return tag != null && tag.getBoolean(SLASH_VISUAL_NBT_KEY);
     }
     private static final int LUCKY_MELEE_AURA_PERCENT = 15;
-    // T449b : 40 -> 5. Retour en jeu : « wtf pourquoi un halo vient au dessus
-    // de ma tete ? je tiens une arbalete avec flame et quickcharge 1 [...] il est
-    // indique nulle part le combo ». Le halo (F_HALO_CONTINUOUS, drapeau 0x800)
-    // n'est PAS un combo : c'est ce tirage, fait une seule fois a la creation du
-    // butin. A 40 %, presque une arbalete lootee sur deux posait une couronne
-    // permanente que rien n'annonce dans l'infobulle -- et a 2,7x le taux de la
-    // melee, alors que T447 a justement fait des armes a distance le cas DISCRET
-    // (un seul calque, aucune signature). Le tirage est ramene sous la melee.
-    private static final int LUCKY_RANGED_AURA_PERCENT = 5;
+    // T451 : REMIS A 40. T449b l'avait baisse a 5 pour eteindre le halo de tete,
+    // mais c'etait traiter le symptome : le halo ne doit pas dependre d'un item du
+    // tout. Le lien est desormais coupe a la source (CosmeticAuraClientTicker pose
+    // F_HALO_CONTINUOUS sur le masque de combos). Ce tirage ne commande donc plus
+    // que les PIXELS DE LAME de WeaponBladeVisualRenderer -- un effet porte par
+    // l'arme elle-meme, pas par le joueur, et jamais mis en cause. Le laisser a 5
+    // aurait divise par huit une regle de minorite (T409) sans que ce soit demande.
+    private static final int LUCKY_RANGED_AURA_PERCENT = 40;
 
     /**
      * Estampille l'item et décide UNE FOIS, à sa création, si une arme éligible possède l'aura.
