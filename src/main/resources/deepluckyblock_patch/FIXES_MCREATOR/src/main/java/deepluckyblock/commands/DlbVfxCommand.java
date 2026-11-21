@@ -375,7 +375,9 @@ public final class DlbVfxCommand {
                                         .executes(ctx -> give(ctx, parseEffect(StringArgumentType.getString(ctx, "effect")),
                                                 IntegerArgumentType.getInteger(ctx, "level"))))))
                 // /dlbvfx clear
-                .then(Commands.literal("clear").executes(DlbVfxCommand::clear));
+                .then(Commands.literal("clear").executes(DlbVfxCommand::clear))
+                // T442 : releve de diagnostic des ornements cosmetiques.
+                .then(Commands.literal("cosmetics").executes(DlbVfxCommand::cosmetics));
 
         event.getDispatcher().register(root);
 
@@ -1324,6 +1326,65 @@ public final class DlbVfxCommand {
         // T350-DUMMY-DPS : affichage du DPS (dégâts encaissés sur 1 s) au-dessus de la tête
         deepluckyblock.util.TrainingDummyTracker.track(mob);
         return mob;
+    }
+
+    /**
+     * T442 : etat SERVEUR de tout ce qui decide d'un ornement cosmetique. Sert a
+     * trancher entre « la marque de provenance manque » et « la marque est la mais
+     * le client ne la voit pas / ne la garde pas ».
+     */
+    private static int cosmetics(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer p = requirePlayer(ctx);
+        CommandSourceStack src = ctx.getSource();
+        src.sendSuccess(() -> Component.literal("\u00a76\u00a7l[Cosmetiques] etat cote SERVEUR"), false);
+
+        String[] lus = {"king", "mystic_mind", "heart_resonance", "wing_toughness_armor",
+                "dread_aura", "cloud_walker", "air_walk", "cloud_stride",
+                "crash_landing", "meteor_stomp", "general", "aerodynamic", "wind_rider"};
+        for (net.minecraft.world.entity.EquipmentSlot slot : new net.minecraft.world.entity.EquipmentSlot[]{
+                net.minecraft.world.entity.EquipmentSlot.HEAD,
+                net.minecraft.world.entity.EquipmentSlot.CHEST,
+                net.minecraft.world.entity.EquipmentSlot.LEGS,
+                net.minecraft.world.entity.EquipmentSlot.FEET}) {
+            ItemStack st = p.getItemBySlot(slot);
+            if (st.isEmpty()) {
+                src.sendSuccess(() -> Component.literal("  \u00a78" + slot.getName() + " : vide"), false);
+                continue;
+            }
+            boolean loot = deepluckyblock.util.DeepNbt.isModLoot(st);
+            StringBuilder ench = new StringBuilder();
+            for (String id : lus) {
+                int lvl = deepluckyblock.enchantments.UniversalEnchantmentHandler
+                        .getEnchantLvl(st, "deep_lucky_block:" + id);
+                if (lvl > 0) ench.append(ench.length() == 0 ? "" : ", ").append(id).append(' ').append(lvl);
+            }
+            final String ligne = "  \u00a7f" + slot.getName() + " \u00a77" + st.getHoverName().getString()
+                    + " \u00a78| provenance " + (loot ? "\u00a7aOUI" : "\u00a7cNON")
+                    + " \u00a78| " + (ench.length() == 0 ? "\u00a78aucun ench. cosmetique" : "\u00a7b" + ench);
+            src.sendSuccess(() -> Component.literal(ligne), false);
+        }
+
+        deepluckyblock.enchantments.EnchantmentComboRegistry.ComboMask mask =
+                deepluckyblock.enchantments.EnchantmentComboRegistry.getActiveMask(p);
+        int[] idx = {
+                deepluckyblock.enchantments.EnchantmentComboRegistry.IDX_AVATAR_SUPREME_DEEP_LUCKY,
+                deepluckyblock.enchantments.EnchantmentComboRegistry.IDX_ARMURE_ETERNELLE_TRANSCENDANTE,
+                deepluckyblock.enchantments.EnchantmentComboRegistry.IDX_DIEU_LAME_SUPREME,
+                deepluckyblock.enchantments.EnchantmentComboRegistry.IDX_ARCHANGE_JUGEMENT_SOLAIRE,
+                deepluckyblock.enchantments.EnchantmentComboRegistry.IDX_SEIGNEUR_GUERRE_APOCALYPSE,
+                deepluckyblock.enchantments.EnchantmentComboRegistry.IDX_PESTE_AMBULANTE};
+        String[] noms = {"110 Avatar", "097 Eternelle", "098 Dieu-Lame",
+                "101 Archange", "106 Seigneur de Guerre", "062 Peste"};
+        StringBuilder actifs = new StringBuilder();
+        for (int i = 0; i < idx.length; i++) {
+            if (mask.has(idx[i])) actifs.append(actifs.length() == 0 ? "" : ", ").append(noms[i]);
+        }
+        final String ligneCombo = "  \u00a7fcombos a ornement : "
+                + (actifs.length() == 0 ? "\u00a78aucun" : "\u00a7a" + actifs);
+        src.sendSuccess(() -> Component.literal(ligneCombo), false);
+        src.sendSuccess(() -> Component.literal(
+                "\u00a77Si « provenance NON » sur une piece lootee, la marque a ete perdue."), false);
+        return 1;
     }
 
     private static int clear(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
