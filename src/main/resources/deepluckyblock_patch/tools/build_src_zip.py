@@ -30,6 +30,14 @@ BAS = os.path.join(RAC, 'deliverables', 'BASELINE.txt')
 # par applyMcreatorPatch en sortent, et ceux-la sont traites a part.
 EXCLUS = ('src/main/resources/deepluckyblock_patch/FIXES_MCREATOR/',)
 
+# T462 : UN ZIP N'EFFACE RIEN. Un fichier retire du depot survit indefiniment
+# dans le workspace de l'utilisateur. Constate en jeu : un .txt de licence oublie
+# dans un dossier d'assets faisait imprimer « Invalid path in pack ... ignoring »
+# -- une ERROR a chaque lancement, pour tout joueur. Ces chemins sont donc
+# ANNONCES dans le LISEZ-MOI, et supprimes automatiquement par le script Gradle
+# de reparation (tools/deep-lucky-block-patch.gradle).
+PARASITES = ['src/main/resources/assets/deep_lucky_block/font/PIXEL_MUSKETEER_LICENSE.txt']
+
 # Fichiers livres meme s'ils n'ont pas bouge depuis la reference : l'utilisateur
 # les a deja, les renvoyer ne coute rien et garantit la continuite du colis.
 EXTRA = ['src/main/java/deepluckyblock/util/DebugLog.java']
@@ -175,6 +183,22 @@ NOTICES = {
   "T461 : le constructeur du ZIP, sorti de /tmp et entre dans le depot. Sa liste de\n"
   "     fichiers est DERIVEE DE GIT, plus jamais recopiee a la main.",
 
+ 'src/main/resources/deepluckyblock_patch/tools/deep-lucky-block-patch.gradle':
+  "T462 : le script de reparation supprime desormais aussi les fichiers PARASITES.\n"
+  "     Un ZIP ajoute et ecrase, il n'efface jamais : PIXEL_MUSKETEER_LICENSE.txt,\n"
+  "     retire du depot depuis des dizaines de commits, survivait dans le workspace\n"
+  "     et faisait imprimer « Invalid path in pack ... ignoring » -- une ERROR a\n"
+  "     chaque lancement. ATTENTION : ce fichier n'agit que depuis\n"
+  "     %USERPROFILE%\\.mcreator\\gradle\\init.d\\ -- il faut l'y RECOPIER.",
+
+ 'src/main/java/deepluckyblock/procedures/CrimsonLakeStructureSpawnProcedure.java':
+  "T459/T462 : preparation de terrain du lac, puis nettoyage de son annonce.\n"
+  "     T459 : smoothRingOnly avant la pose et le raccord T240 apres, emprise\n"
+  "     protegee de force pendant les deux passes. T462 : l'annonce affichait\n"
+  "     « crimsonlake » en brut -- elle passe par structureDisplayName comme les six\n"
+  "     autres structures -- et la duree de pose (« built in 8.4s ») ne part plus aux\n"
+  "     joueurs : c'est une mesure de developpement, elle reste dans la trace muette.",
+
  'deliverables/BASELINE.txt':
   "T461 : l'etat de reference du poste de l'utilisateur -- le dernier commit dont on\n"
   "     sait qu'il a compile chez lui. Il n'avance que sur un runClient reussi.",
@@ -229,6 +253,15 @@ def fichiers_livrables(rac):
     return tete + sorted(vus - set(tete)), base
 
 
+def fichiers_supprimes(rac, base):
+    """Fichiers retires du depot depuis la reference : un ZIP ne peut PAS les
+    enlever du poste de l'utilisateur, il faut donc les lui nommer."""
+    r = _git(rac, 'diff', '--name-only', '--diff-filter=D', base, '--', 'src/')
+    if r.returncode != 0:
+        return []
+    return [x for x in r.stdout.splitlines() if x.strip()]
+
+
 def main():
     try:
         liste, base = fichiers_livrables(RAC)
@@ -252,6 +285,15 @@ def main():
            "",
            "Decompressez a la racine du workspace MCreator, en ecrasant.",
            ""]
+    aretirer = fichiers_supprimes(RAC, base) + [
+        q for q in PARASITES if not os.path.exists(os.path.join(RAC, q))]
+    if aretirer:
+        man += ["A SUPPRIMER A LA MAIN (un ZIP ajoute et ecrase, il n'efface jamais)",
+                "----------------------------------------------------------------"]
+        man += ['  ' + q for q in aretirer]
+        man += ["", "  Le script Gradle de reparation les supprime tout seul, a condition",
+                "  d'avoir recopie tools/deep-lucky-block-patch.gradle dans",
+                "  %USERPROFILE%\\.mcreator\\gradle\\init.d\\ .", ""]
     for rel in liste:
         man.append('  ' + rel)
         man.append('     ' + NOTICES.get(

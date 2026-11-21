@@ -800,6 +800,58 @@ if rec is not None:
                 "existante (currentCenti).")
 
 # =====================================================================
+# NOMLAC (T462) — L'ANNONCE DU LAC : UN NOM, PAS UN IDENTIFIANT
+# =====================================================================
+# Constate en jeu : « STRUCTURE DISCOVERED  Inoxtag Everest has spawned »
+# pour la montagne, mais « crimsonlake has spawned » pour le lac. Cause :
+# le lac construit son annonce dans SON PROPRE fichier et collait NBT_NAME
+# directement, sans passer par la table structureDisplayName -- il etait le
+# seul des sept dans ce cas, donc le seul a afficher un identifiant brut.
+#
+# Et la duree de pose (« built in 8.4s ») partait a tous les joueurs : une
+# mesure de developpement, contraire a « desactive tous les debugs ».
+lac462 = lire(LAC)
+s5_462 = lire(S5)
+if s5_462 is not None:
+    # La SIGNATURE, pas le nom seul : structureDisplayName est appelee l.982,
+    # bien avant d'etre declaree l.5296, et corps_methode prend la premiere
+    # occurrence -- on extrairait le corps du mauvais bloc.
+    corps_nom = corps_methode(s5_462, "public static String structureDisplayName")
+    if corps_nom is None:
+        problemes.append("NOMLAC : structureDisplayName introuvable dans Structures5.")
+    elif '"crimsonlake"' not in corps_nom:
+        problemes.append(
+            "NOMLAC : la table structureDisplayName n'a pas d'entree « crimsonlake » : "
+            "l'annonce retombe sur le « default -> rawName » et affiche l'identifiant.")
+if lac462 is not None:
+    bloc_ann = re.search(r"Component\s+discovered\s*=\s*Component\.literal\((.{0,1600}?)\);",
+                         lac462, re.S)
+    if bloc_ann is None:
+        problemes.append("NOMLAC : l'annonce de decouverte du lac est introuvable.")
+    else:
+        corps_ann = bloc_ann.group(1)
+        if "structureDisplayName" not in corps_ann:
+            problemes.append(
+                "NOMLAC : l'annonce du lac n'appelle pas structureDisplayName -- elle "
+                "affiche l'identifiant brut « crimsonlake » au lieu de « Crimson Lake ».")
+        if "built in" in corps_ann:
+            problemes.append(
+                "NOMLAC : la duree de pose (« built in ... s ») est de retour dans le "
+                "message envoye aux joueurs. C'est une mesure de developpement.")
+
+# Le fichier parasite que le colis ne peut pas effacer doit rester pris en
+# charge par le script Gradle, sinon l'ERROR « Invalid path in pack » revient.
+_gr = os.path.join(RACINE, "src", "main", "resources", "deepluckyblock_patch",
+                   "tools", "deep-lucky-block-patch.gradle")
+if os.path.isfile(_gr):
+    _txt = io.open(_gr, encoding="utf-8", errors="ignore").read()
+    if "PIXEL_MUSKETEER_LICENSE.txt" not in _txt or ".delete()" not in _txt:
+        problemes.append(
+            "NOMLAC : le script Gradle ne supprime plus le fichier parasite "
+            "PIXEL_MUSKETEER_LICENSE.txt -- l'ERROR « Invalid path in pack » "
+            "reviendra a chaque lancement, chez tout joueur.")
+
+# =====================================================================
 # ZIPLIVR (T461) — LE COLIS DOIT CONTENIR TOUT LE DIFF, ET A JOUR
 # =====================================================================
 # Les sept autres verrous lisent le CODE. Aucun ne regardait le COLIS.

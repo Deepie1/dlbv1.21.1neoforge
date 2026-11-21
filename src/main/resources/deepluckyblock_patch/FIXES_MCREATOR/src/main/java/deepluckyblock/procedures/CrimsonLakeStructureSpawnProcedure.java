@@ -566,10 +566,12 @@ public class CrimsonLakeStructureSpawnProcedure {
                             (System.currentTimeMillis() - j.t0) / 1000.0);
                     Component discovered = Component.literal(
                             "§6§l✦ STRUCTURE DISCOVERED ✦ §r"
-                                    + "§e§l" + NBT_NAME
+                                    + "§e§l" + Structures5Procedure.structureDisplayName(NBT_NAME)
                                     + " §f§lhas spawned! §7Center coordinates: "
                                     + "§b[" + cx + ", " + cy + ", " + cz + "]"
-                                    + " §7(built in " + dur + "s)"
+                                    // T462 : la duree de pose ne part plus aux joueurs. C'est une
+                                    // mesure de developpement, pas une information de jeu ; elle
+                                    // reste dans la trace DebugLog juste en dessous.
                                     + " §6✦");
                     for (var pl : j.level.players()) pl.sendSystemMessage(discovered);
                     // T234 : la fin de construction est toujours visible en

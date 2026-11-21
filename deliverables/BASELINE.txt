@@ -1,4 +1,4 @@
-a13d07092181a3c5e0fa3782584ec90fe11f55ff
+61cdc5cdff02258bf9a74acf0ade5d4f72a64c6e
 # ─────────────────────────────────────────────────────────────────────────────
 # ETAT DE REFERENCE DU POSTE DE L'UTILISATEUR
 # ─────────────────────────────────────────────────────────────────────────────
@@ -23,7 +23,9 @@ a13d07092181a3c5e0fa3782584ec90fe11f55ff
 #   commit exact qu'il a compile. Jamais « parce que les bancs sont verts » :
 #   un banc vert ne prouve pas que le colis est arrive.
 #
-# A13D0709 = T449b, « fermeture du 3e chemin muet de Structures4Procedure ».
-# Le runClient de T461 portait sur d97d2a55, mais il a ECHOUE : la reference ne
-# bouge pas tant que la compilation n'est pas prouvee.
+# 61CDC5CD = T461. AVANCEE LE 2026-11-21 : le runClient de l'utilisateur a
+# compile sans une seule erreur avec le colis construit sur ce commit, puis a
+# lance le jeu, pose l'Everest et le Crimson Lake. La compilation des travaux
+# T450 a T461 est donc prouvee -- c'etait la dette ouverte depuis T451.
+# (Precedent : a13d0709 = T449b. Le runClient de d97d2a55 avait ECHOUE.)
 # ─────────────────────────────────────────────────────────────────────────────

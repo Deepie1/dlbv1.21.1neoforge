@@ -94,6 +94,23 @@ gradle.rootProject { p ->
                     }
                 }
 
+                // ── 4) les fichiers PARASITES, que seule une suppression regle ──
+                // T462. Un colis de sources (DLB_src.zip) ajoute et ecrase, mais
+                // il ne supprime RIEN. Un fichier retire du depot survit donc
+                // indefiniment dans le workspace. Cas constate :
+                // assets/deep_lucky_block/font/PIXEL_MUSKETEER_LICENSE.txt, retire
+                // du depot il y a des dizaines de commits, provoquait encore a
+                // chaque lancement « Invalid path in pack: ... ignoring » -- une
+                // ERROR visible par tout joueur. Minecraft refuse tout fichier qui
+                // n'est pas une ressource valide dans un dossier d'assets.
+                ['assets/deep_lucky_block/font/PIXEL_MUSKETEER_LICENSE.txt'].each { rel ->
+                    def stale = new File(p.projectDir, 'src/main/resources/' + rel)
+                    if (stale.exists() && stale.delete()) {
+                        logger.lifecycle('[DLB-PATCH] fichier parasite supprime : ' + rel)
+                        done++
+                    }
+                }
+
                 logger.lifecycle('[DLB-PATCH] ' + done +
                     ' fichiers restaures (cadre MCreator + ressources + advancements).')
             }

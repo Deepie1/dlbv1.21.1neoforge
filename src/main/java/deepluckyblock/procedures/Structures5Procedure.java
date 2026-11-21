@@ -5301,6 +5301,10 @@ public class Structures5Procedure {
             case "circus" -> "Cursed Circus";
             case "shipdead" -> "Ghost Ship";
             case "everest" -> "Inoxtag Everest";
+            // T462 : le lac annoncait « crimsonlake » en brut, seul rescape de
+            // la table -- son annonce vit dans son propre fichier et n'etait pas
+            // passee par ici.
+            case "crimsonlake" -> "Crimson Lake";
             default -> rawName;
         };
     }
