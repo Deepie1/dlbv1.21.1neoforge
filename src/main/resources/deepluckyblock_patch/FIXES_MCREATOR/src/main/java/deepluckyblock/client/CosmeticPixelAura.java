@@ -347,11 +347,19 @@ public final class CosmeticPixelAura {
         br.time = time;
         br.budget = budget;
 
-        // --- 1. ORNEMENTS DE TÊTE -------------------------------------------
-        // Exclusivité inchangée : #110 prime sur (#097|#098), qui priment sur Roi.
-        if ((flags & CosmeticAuraClientTicker.F_HALO_CONTINUOUS) != 0) {
-            CosmeticShapes.haloContinu(br, height);
-        }
+        // --- 1. ORNEMENT DE TÊTE : UN SEUL, JAMAIS DEUX --------------------
+        //
+        // T448 : le defaut signale -- « avec le 110 j'ai deux cosmetiques tete qui se
+        // stackent, un halo et le truc des boucliers ». Il y avait QUATRE emplacements de
+        // tete independants : le halo continu, la chaine exclusive (#110/#098/#097/Roi/
+        // diademe), l'esprit mystique et l'egide radieuse. Trois d'entre eux etaient des
+        // « if » separes, donc cumulables : le combo #110 (drapeaux 0x1101) affichait le
+        // soleil ET l'egide sur le meme crane.
+        //
+        // La regle posee : UN ornement de tete, UN de torse, UN de pieds. La chaine
+        // ci-dessous est donc unique et ordonnee -- les combos d'abord (ils sont rares et
+        // identifient le kit), les enchantements ensuite, le halo generique en dernier
+        // puisque c'est le repli le moins specifique.
         if ((flags & CosmeticAuraClientTicker.F_COMBO_110_AVATAR) != 0) {
             CosmeticShapes.soleilAvatar(br, height);
         } else if ((flags & CosmeticAuraClientTicker.F_COMBO_098_SWORD_GOD) != 0) {
@@ -362,15 +370,14 @@ public final class CosmeticPixelAura {
             CosmeticShapes.couronneRoi(br, height);
         } else if ((flags & CosmeticAuraClientTicker.F_ENCH_CROWN_HALO) != 0) {
             // Le diadème entre dans la MÊME chaîne exclusive : deux couronnes sur
-            // un seul crâne ne se lisent pas, elles se mangent. Dernier de la
-            // chaîne, car general est un enchantement simple, pas un combo.
+            // un seul crâne ne se lisent pas, elles se mangent.
             CosmeticShapes.couronneAurore(br, height);
-        }
-        if ((flags & CosmeticAuraClientTicker.F_ENCH_MYSTIC_MIND) != 0) {
-            CosmeticShapes.espritMystique(br, height);
-        }
-        if ((flags & CosmeticAuraClientTicker.F_ENCH_RADIANT_AEGIS) != 0) {
+        } else if ((flags & CosmeticAuraClientTicker.F_ENCH_RADIANT_AEGIS) != 0) {
             CosmeticShapes.egideRadieuse(br, height);
+        } else if ((flags & CosmeticAuraClientTicker.F_ENCH_MYSTIC_MIND) != 0) {
+            CosmeticShapes.espritMystique(br, height);
+        } else if ((flags & CosmeticAuraClientTicker.F_HALO_CONTINUOUS) != 0) {
+            CosmeticShapes.haloContinu(br, height);
         }
 
         // --- 2. ORNEMENTS DE SOL, ET LEUR TRAÎNÉE ----------------------------
@@ -384,13 +391,14 @@ public final class CosmeticPixelAura {
             CosmeticTrail.Pas[] pas = CosmeticTrail.collecte(p, tick, 0f);
             CosmeticTrail.Pas[] relatifs = relatifs(pas, cam);
             double solY = p.getY() - cam.y;
+            // T448 : UN SEUL ornement de pieds. Les trois sceaux au sol se superposaient
+            // au meme rayon ; empiles, ils ne se lisaient plus (cf. « deux cerceaux a moins
+            // d'un cube fusionnent »).
             if ((flags & CosmeticAuraClientTicker.F_COMBO_106_WARLORD) != 0) {
                 CosmeticShapes.sceauGuerre(br, relatifs, solY);
-            }
-            if ((flags & CosmeticAuraClientTicker.F_COMBO_062_PLAGUE) != 0) {
+            } else if ((flags & CosmeticAuraClientTicker.F_COMBO_062_PLAGUE) != 0) {
                 CosmeticShapes.pesteAmbulante(br, relatifs, solY);
-            }
-            if ((flags & CosmeticAuraClientTicker.F_ENCH_DREAD_AURA) != 0) {
+            } else if ((flags & CosmeticAuraClientTicker.F_ENCH_DREAD_AURA) != 0) {
                 CosmeticShapes.auraTerreur(br, relatifs, solY);
             }
         }
@@ -399,12 +407,15 @@ public final class CosmeticPixelAura {
         // Le coussin est un amorti de saut : il n'existe QUE quand le joueur est en l'air,
         // exactement comme le déclencheur serveur. C'est aussi ce qui garantit qu'il ne
         // coexiste jamais avec l'onde de choc, et donc que le budget mesuré tient.
-        if ((flags & CosmeticAuraClientTicker.F_ENCH_CLOUD_CUSHION) != 0 && !p.onGround()) {
+        // T448 : le nuage et l'onde occupent eux aussi l'emplacement PIEDS. Ils ne
+        // s'ajoutent donc pas a un sceau permanent deja pose au sol.
+        boolean piedsPris = (flags & solFlags) != 0;
+        if (!piedsPris && (flags & CosmeticAuraClientTicker.F_ENCH_CLOUD_CUSHION) != 0 && !p.onGround()) {
             long tick = p.level().getGameTime();
             CosmeticTrail.Pas[] pas = relatifs(CosmeticTrail.collecte(p, tick, 0f), cam);
             CosmeticShapes.coussinNuage(br, pas, p.getY() - cam.y);
         }
-        if ((flags & CosmeticAuraClientTicker.F_ENCH_LANDING_WAVE) != 0) {
+        if (!piedsPris && (flags & CosmeticAuraClientTicker.F_ENCH_LANDING_WAVE) != 0) {
             long tick = p.level().getGameTime();
             CosmeticTrail.Impact im = CosmeticTrail.impact(p, tick);
             if (im != null) {
