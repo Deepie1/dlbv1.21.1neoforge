@@ -55,6 +55,13 @@ public class DeepLuckyBlockBlock extends Block implements EntityBlock {
 
     public static final String NBT_LUCK_KEY = "SlbLuckBonus";
 
+    /**
+     * T449 : taux de retour d'un Deep Lucky Block en cassant un Deep Lucky Block.
+     * Consigne utilisateur, litterale : « il faut fixer le taux de drop d'un
+     * nouveau DLB a 2 % ». Valeur unique et unique porte de retour par cassage.
+     */
+    public static final int SELF_DROP_PERCENT = 2;
+
     public static final int MAX_LUCK_BONUS = 100;
 
     public static final int MIN_LUCK_BONUS = -100;
@@ -224,6 +231,22 @@ public class DeepLuckyBlockBlock extends Block implements EntityBlock {
             }
             Block.popResource(world, pos, drop);
             return true;
+        }
+
+        // ================================================================
+        // T449 : RETOUR D'UN DEEP LUCKY BLOCK -- 2 %, PORTE UNIQUE
+        // ================================================================
+        // Retour utilisateur : « j'ai casse 50 DLB et j'en ai recupere plus
+        // d'une vingtaine hors achievement » (~40 %). Le coupable n'etait PAS
+        // un drop par cassage -- il n'en existait aucun -- mais les averses de
+        // serie : onLuckyStreak versait 0-5 blocs et triggerNegativeStreak
+        // 0-6, A CHAQUE serie (seuils 5 et -3), donc en boucle. Sur 50 casses
+        // cela faisait bien une vingtaine de blocs rendus. Ces averses sont
+        // supprimees (voir DeepLuckyBlockAdvancements) et le retour passe
+        // desormais par CETTE seule porte, a taux fixe.
+        if (world instanceof net.minecraft.server.level.ServerLevel dropLevel
+                && dropLevel.random.nextInt(100) < SELF_DROP_PERCENT) {
+            Block.popResource(world, pos, new ItemStack(this));
         }
 
         if (!forcedBranch.isEmpty() && world instanceof net.minecraft.server.level.ServerLevel serverLevel) {

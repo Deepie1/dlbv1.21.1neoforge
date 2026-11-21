@@ -107,8 +107,11 @@ public class DeepLuckyBlockAdvancements {
         grantHub(player, "hub_luck");
         grantAdvancementFully(level, player, "negative_streak");
 
-        // 🔴 Bad Luck Streak : prix de consolation = +0-6 blocs brillants (glow 10 s)
-        DeepLuckyBlockAdvancementIntegration.dropGlowingLuckyBlocks(level, player, level.random.nextInt(7));
+        // T449 : AVERSE SUPPRIMEE. Elle versait 0-6 blocs a CHAQUE serie
+        // negative (seuil -3), sans verrou d'achievement : repetable a
+        // l'infini. Avec onLuckyStreak, c'etait la source des « plus d'une
+        // vingtaine » de DLB rendus sur 50 casses. Le retour de DLB passe
+        // maintenant par DeepLuckyBlockBlock.SELF_DROP_PERCENT (2 %).
     }
 
     // ==================== LUCKY STREAK ====================
@@ -127,8 +130,8 @@ public class DeepLuckyBlockAdvancements {
         // Chaîne de Chance : comptabilise cette série (3 -> achievement lucky_chain).
         onLuckyChain(player);
 
-        // +0-5 blocs brillants
-        DeepLuckyBlockAdvancementIntegration.dropGlowingLuckyBlocks(level, player, level.random.nextInt(6));
+        // T449 : AVERSE SUPPRIMEE (meme motif que la serie negative) --
+        // 0-5 blocs a chaque serie positive (seuil 5), sans verrou.
     }
 
     // ==================== VÉRIFICATION DEEP LUCKY BLOCK ====================
@@ -209,11 +212,12 @@ public class DeepLuckyBlockAdvancements {
 
     private static int getMilestoneRewardCount(ServerLevel level, int milestone) {
         return switch (milestone) {
-            case 10 -> 2;                          // 2 blocs fixes
-            case 50 -> 5;                          // 5 blocs fixes
-            case 100 -> level.random.nextInt(11);  // 0-10 blocs
-            case 500 -> level.random.nextInt(21);  // 0-20 blocs
-            case 1000 -> 100;                      // 100 blocs fixes
+            // T449 : « divise par 2 les gains de DLB via les achievements ».
+            case 10 -> 1;                          // 2 -> 1
+            case 50 -> 2;                          // 5 -> 2 (arrondi bas)
+            case 100 -> level.random.nextInt(6);   // 0-10 -> 0-5
+            case 500 -> level.random.nextInt(11);  // 0-20 -> 0-10
+            case 1000 -> 50;                       // 100 -> 50
             default -> 0;
         };
     }
@@ -349,7 +353,7 @@ public class DeepLuckyBlockAdvancements {
     public static void grantStructureSpawned(ServerPlayer player, String structureKey) {
         if (structureKey == null || structureKey.isBlank()) return;
         grantHub(player, "hub_exploration");
-        grantCustomAchievement(player, "structure_" + structureKey, 2);
+        grantCustomAchievement(player, "structure_" + structureKey, 1);   // T449 : 2 -> 1
 
         // Sous-branche de zone (aère l'arbre : 3 zones au lieu de 6 feuilles plates).
         String zoneHub = switch (structureKey) {
@@ -371,7 +375,7 @@ public class DeepLuckyBlockAdvancements {
         int mask = player.getPersistentData().getInt(TAG_STRUCTURE_BITMASK) | bit;
         player.getPersistentData().putInt(TAG_STRUCTURE_BITMASK, mask);
         if ((mask & 63) == 63) { // toutes les 6 bitmask set
-            grantCustomAchievement(player, "all_structures", 10);
+            grantCustomAchievement(player, "all_structures", 5);   // T449 : 10 -> 5
         }
     }
 

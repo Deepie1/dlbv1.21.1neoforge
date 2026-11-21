@@ -467,9 +467,11 @@ public class Structures4Procedure {
         boolean lastChunkTouched = false;
         int waitTicks;      // ticks d'attente de la passe de rattrapage
         int redeferred;     // blocs finalement reposes par la passe de rattrapage
-        EverestJob(ServerLevel l, List<StructureTemplate.StructureBlockInfo> b, BlockPos o, Rotation r, Mirror m, long t, Player p, Runnable cb, BlockPos[] cherry) {
+        /** T449 : emprise retenue pour l'annonce « STRUCTURE DISCOVERED » de fin de pose. */
+        final BlockPos annMin, annMax;
+        EverestJob(ServerLevel l, List<StructureTemplate.StructureBlockInfo> b, BlockPos o, Rotation r, Mirror m, long t, Player p, Runnable cb, BlockPos[] cherry, BlockPos aMin, BlockPos aMax) {
             level = l; blocks = b; origin = o; rotation = r; mirror = m; startTime = t; player = p; onComplete = cb; index = 0; ticksElapsed = 0; cherryHolder = cherry;
-            waitTicks = 0; redeferred = 0;
+            waitTicks = 0; redeferred = 0; annMin = aMin != null ? aMin : o; annMax = aMax != null ? aMax : o;
         }
     }
 
@@ -901,6 +903,12 @@ public class Structures4Procedure {
                 long elapsed = System.currentTimeMillis() - job.startTime;
                 deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4] {} finie en {}ms ({} blocs, {} a gravite -- ticks de chute neutralises par DLB-CLAMP)", job.name, elapsed, job.blocks.size(), job.grav);
                 if (job.player != null) job.player.sendSystemMessage(Component.literal("§a✓ §e" + job.name + "§a en " + elapsed + "ms"));
+                // T449 : « lorsqu'une structure spawn, tu dois TOUJOURS mettre le
+                // message de discovery avec les coordonnees une fois apparu ». Ce
+                // pipeline (circus, shipdead) n'annoncait RIEN : seul Structures5
+                // le faisait. L'appel est hors du test de porteur -- la methode
+                // diffuse a la dimension quand aucun joueur n'est rattache.
+                Structures5Procedure.announceStructureSpawn(job.level, job.player, job.name, job.min, job.max);
                 if (job.onComplete != null) try { job.onComplete.run(); } catch (Exception ex) { LOGGER.error("[STRUCT4] onComplete error", ex); }
                 if (job.skipTerrain) {
                     // T39 : plus de passe finale de terrain APRES le paste (elle tourne
@@ -1094,6 +1102,9 @@ public class Structures4Procedure {
                 // methode existait deja dans Structures5Procedure mais n'etait
                 // jamais atteignable depuis le VRAI pipeline de pose de l'Everest.
                 Structures5Procedure.cleanupEverestChests(job.level, job.chests);
+                // T449 : l'Everest a sa propre file (EVEREST_QUEUE) et echappait
+                // donc aussi a l'annonce. Emprise = bornes memorisees a la pose.
+                Structures5Procedure.announceStructureSpawn(job.level, job.player, "everest", job.annMin, job.annMax);
                 if (job.onComplete != null) try { job.onComplete.run(); } catch (Exception ex) { LOGGER.error("[STRUCT4-EVEREST] onComplete error", ex); }
             }
         }
@@ -1545,7 +1556,7 @@ public class Structures4Procedure {
             // de 5 s (32,6 s mesurées, 100 % du coût Everest).
             final List<StructureTemplate.StructureBlockInfo> orderedEverestBlocks =
                     orderEverestByChunk(fEverestBlocks, footprintSettings, rotatedPos);
-            EVEREST_QUEUE.offer(new EverestJob(level, orderedEverestBlocks, rotatedPos, rotation, Mirror.NONE, t0, nearestPlayer, onComplete, cherryHolder));
+            EVEREST_QUEUE.offer(new EverestJob(level, orderedEverestBlocks, rotatedPos, rotation, Mirror.NONE, t0, nearestPlayer, onComplete, cherryHolder, min, max));
             POST_QUEUE.offer(new PostJob(level, min, max, "everest", false));
             deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT4-EVEREST] paste -a immédiat après l'unique chargement de zone");
             if (nearestPlayer != null) nearestPlayer.sendSystemMessage(Component.literal("§b§l⛰ Everest en construction"));

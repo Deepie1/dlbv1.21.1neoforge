@@ -140,7 +140,7 @@ public class GenerateLuckyItemProcedure {
 
     // ==================== STREAK SYSTEM ====================
     private static final int STREAK_THRESHOLD = 5;
-    private static final int STREAK_LUCK_BONUS = 5;
+    private static final int STREAK_LUCK_BONUS = 2;   // T449 : 5 -> 2 (bonus de chance baisse)
     private static final long STREAK_BUFF_DURATION_TICKS = 20L * 60L;
     private static final int NEGATIVE_STREAK_THRESHOLD = 3;
 
@@ -148,7 +148,7 @@ public class GenerateLuckyItemProcedure {
     private static final int PITY_ETERNAL_THRESHOLD = 500;
 
     // ==================== STORM SYSTEM ====================
-    private static final int STORM_LUCK_BONUS = 15;
+    private static final int STORM_LUCK_BONUS = 5;    // T449 : 15 -> 5 (bonus de chance le plus boosté)
     private static final int STORM_LIGHTNING_CHANCE = 20;
     private static final double STORM_LIGHTNING_MIN_DIST = 5.0;
     private static final double STORM_LIGHTNING_MAX_DIST = 8.0;

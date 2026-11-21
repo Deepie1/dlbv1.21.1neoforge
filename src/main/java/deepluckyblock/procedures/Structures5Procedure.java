@@ -1029,8 +1029,10 @@ public class Structures5Procedure {
                 deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5] {} en {}ms ({} blocs, {} a gravite -- ticks de chute neutralises par DLB-CLAMP)", j.name, el, j.blocks.size(), j.grav);
                 if (j.player != null) {
                     j.player.sendSystemMessage(Component.literal("\u00a7a\u2713 Pose brute \u00a7e" + j.name + "\u00a7a en " + el + "ms (phase paste seule, hors recherche) — finitions en cours"));
-                    announceStructureSpawn(j.player, j.name, j.min, j.max);
                 }
+                // T449 : HORS du test de porteur -- l'annonce de decouverte est due
+                // meme sans joueur a portee (voir announceStructureSpawn).
+                announceStructureSpawn(j.level, j.player, j.name, j.min, j.max);
                 CarveJob carve = buildCarveJob(j);
                 CARVE_Q.offer(carve);
                 deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT5] carve {} programmee ({} colonnes, {} blocs occupes, bottomY={})", j.name, carve.columns.size(), carve.occupied.size(), carve.bottomY);
@@ -5283,7 +5285,7 @@ public class Structures5Procedure {
     }
 
     /** T255 : nom d'affichage partage entre l'annonce de decouverte et l'annonce de fin. */
-    private static String structureDisplayName(String rawName) {
+    public static String structureDisplayName(String rawName) {
         return switch (rawName.toLowerCase(Locale.ROOT)) {
             case "citadel" -> "Sylvan Citadel";
             case "observatory" -> "Fae Observatory";
@@ -5295,8 +5297,36 @@ public class Structures5Procedure {
         };
     }
 
-    private static void announceStructureSpawn(Player player, String rawName, BlockPos min, BlockPos max) {
-        if (player == null) return;
+    // =====================================================================
+    // T449 : « STRUCTURE DISCOVERED » EST OBLIGATOIRE, POUR *TOUTE* STRUCTURE
+    // =====================================================================
+    //
+    // Retour utilisateur : « j'ai fait spawn circus et je n'ai eu aucun
+    // message ; lorsqu'une structure spawn, tu dois TOUJOURS mettre le
+    // message de discovery avec les coordonnees une fois apparu ».
+    //
+    // Deux defauts cumules, tous deux corriges ici :
+    //
+    //  1. UN SEUL des trois pipelines appelait cette methode. circus (id 3),
+    //     shipdead (id 4) et everest (id 5) sont poses par
+    //     Structures4Procedure, qui ne contenait AUCUNE annonce : seules
+    //     citadel/observatory/dragon (Structures5) etaient annoncees. Les
+    //     appels manquants sont ajoutes aux points de fin de pose de
+    //     Structures4 (PasteJob + EverestJob).
+    //
+    //  2. `if (player == null) return;` rendait l'annonce silencieuse. Le
+    //     porteur vient d'un getNearestPlayer(..., 128, ...) evalue au moment
+    //     du PLAN, alors que la pose se termine des minutes plus tard : hors
+    //     rayon, deconnecte, ou structure posee loin du joueur -> plus aucun
+    //     message, sans la moindre trace. Une structure qui apparait est un
+    //     evenement de monde : a defaut de porteur, l'annonce part vers tous
+    //     les joueurs de la dimension. Elle ne peut plus etre muette.
+    //
+    // Verrou permanent : src/main/resources/deepluckyblock_patch/tools/
+    // structureannouncecheck.py (echoue si un point de fin de pose n'annonce
+    // pas, ou si un retour silencieux reapparait ici).
+    public static void announceStructureSpawn(ServerLevel level, Player player, String rawName, BlockPos min, BlockPos max) {
+        if (rawName == null || min == null || max == null) return;
 
         String structureName = structureDisplayName(rawName);
 
@@ -5311,7 +5341,17 @@ public class Structures5Procedure {
                         + "\u00a7b[" + centerX + ", " + centerY + ", " + centerZ + "]"
                         + " \u00a76✦");
 
-        player.sendSystemMessage(message);
+        // T449 : le porteur connu est privilegie ; sinon toute la dimension est
+        // prevenue. Aucun chemin ne sort sans avoir envoye le message.
+        if (player != null) {
+            player.sendSystemMessage(message);
+        } else if (level != null) {
+            for (net.minecraft.server.level.ServerPlayer sp : level.players()) sp.sendSystemMessage(message);
+        } else {
+            return;
+        }
+        deepluckyblock.util.DebugLog.info(LOGGER, "[STRUCT-ANNOUNCE] {} annoncee en [{}, {}, {}] (porteur={})",
+                structureName, centerX, centerY, centerZ, player != null ? player.getName().getString() : "diffusion");
     }
 
     /** Vérifie sans charger/générer que toute la couronne d'édition est en mémoire. */
