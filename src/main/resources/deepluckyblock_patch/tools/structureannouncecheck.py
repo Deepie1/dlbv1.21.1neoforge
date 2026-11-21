@@ -566,6 +566,61 @@ for fichier, src in (("Structures4Procedure.java", s4), ("Structures5Procedure.j
                 "PUBLICATION : chrono en chat non masque dans %s -> %s"
                 % (fichier, ligne.strip()[:110]))
 
+# ==================== T457 : TABLE D'INFUSION DE LUCK ====================
+# Consigne : « retire tout ca : Pomme, carotte, pain, patate (crue/cuite),
+# boeuf/porc/poulet cuits, baies sucrees, baies lumineuses ».
+# Deux risques opposes : (a) un aliment revient dans la table ; (b) un retrait
+# trop large emporte les formes DOREES (carotte doree, pomme d'or, pomme d'or
+# enchantee), dont les identifiants contiennent ceux des aliments retires.
+RECETTE = os.path.join(JAVA, "recipe", "DeepLuckyBlockCraftingRecipe.java")
+
+rec = lire(RECETTE)
+if rec is not None:
+    corps = corps_methode(sans_commentaires(rec), "private static int getLuckValue")
+    if corps is None:
+        problemes.append("LUCK : getLuckValue introuvable dans DeepLuckyBlockCraftingRecipe.")
+    else:
+        # (a) les 10 aliments bannis. Le prefixe litteral « Items. » suffit a
+        # distinguer APPLE de GOLDEN_APPLE et POTATO de POISONOUS_POTATO.
+        BANNIS = ("APPLE", "CARROT", "BREAD", "POTATO", "BAKED_POTATO",
+                  "COOKED_BEEF", "COOKED_PORKCHOP", "COOKED_CHICKEN",
+                  "SWEET_BERRIES", "GLOW_BERRIES")
+        for nom in BANNIS:
+            if re.search(r"Items\.%s\s*\)" % nom, corps):
+                problemes.append(
+                    "LUCK : Items.%s est de nouveau un materiau d'infusion. "
+                    "Consigne T457 : la nourriture simple a ete retiree de la table." % nom)
+
+        # (b) ce qui DOIT rester, avec sa valeur exacte : formes dorees (que la
+        # suppression des aliments ne doit pas emporter) et ancres de l'echelle T350.
+        ATTENDUS = (("GOLDEN_CARROT", 2), ("GOLDEN_APPLE", 6),
+                    ("ENCHANTED_GOLDEN_APPLE", 15), ("DIAMOND", 1),
+                    ("EMERALD", 1), ("NETHERITE_INGOT", 5),
+                    ("NETHERITE_BLOCK", 45), ("NETHER_STAR", 25))
+        for nom, val in ATTENDUS:
+            m = re.search(r"Items\.%s\s*\)\s*\)?\s*return\s+(-?\d+)" % nom, corps)
+            if m is None:
+                problemes.append(
+                    "LUCK : Items.%s a disparu de la table d'infusion (attendu %+d). "
+                    "Un retrait trop large ?" % (nom, val))
+            elif int(m.group(1)) != val:
+                problemes.append(
+                    "LUCK : Items.%s vaut %s, attendu %+d."
+                    % (nom, m.group(1), val))
+
+        # (c) le versant negatif reste entier : un menage ne doit pas le vider.
+        MALUS = (("ROTTEN_FLESH", -1), ("SLIME_BALL", -1), ("BONE", -1),
+                 ("SPIDER_EYE", -2), ("POISONOUS_POTATO", -3),
+                 ("FERMENTED_SPIDER_EYE", -6), ("PUFFERFISH", -6),
+                 ("WITHER_SKELETON_SKULL", -12))
+        for nom, val in MALUS:
+            m = re.search(r"Items\.%s\s*\)\s*\)?\s*return\s+(-?\d+)" % nom, corps)
+            if m is None:
+                problemes.append("LUCK : le malus Items.%s a disparu (attendu %+d)." % (nom, val))
+            elif int(m.group(1)) != val:
+                problemes.append("LUCK : Items.%s vaut %s, attendu %+d." % (nom, m.group(1), val))
+
+
 gen = lire(GEN)
 if gen is not None:
     cg = sans_commentaires(gen)

@@ -191,18 +191,15 @@ public class DeepLuckyBlockCraftingRecipe extends CustomRecipe {
         if (stack.is(Items.GOLDEN_APPLE))            return 6;
         if (stack.is(Items.ENCHANTED_GOLDEN_APPLE))  return 15;
 
-        // Nourriture simple / récoltes : +1 (le minimum reste 1 pour que les recettes
-        // « avec mon bloc pour ajouter la luck » s'affichent toujours).
-        if (stack.is(Items.APPLE))                   return 1;
-        if (stack.is(Items.CARROT))                  return 1;
-        if (stack.is(Items.BREAD))                   return 1;
-        if (stack.is(Items.POTATO))                  return 1;
-        if (stack.is(Items.BAKED_POTATO))            return 1;
-        if (stack.is(Items.COOKED_BEEF))             return 1;
-        if (stack.is(Items.COOKED_PORKCHOP))         return 1;
-        if (stack.is(Items.COOKED_CHICKEN))          return 1;
-        if (stack.is(Items.SWEET_BERRIES))           return 1;
-        if (stack.is(Items.GLOW_BERRIES))            return 1;
+        // T457 : la nourriture simple / les récoltes NE SONT PLUS des matériaux d'infusion.
+        // Retirés : pomme, carotte, pain, pomme de terre (crue et cuite), bœuf / porc /
+        // poulet cuits, baies sucrées, baies lumineuses. Ils rendaient l'infusion triviale
+        // (+8 par craft avec des objets de ferme renouvelables à l'infini).
+        // ATTENTION si l'on souhaite un jour les réintégrer : ici une valeur 0 ne signifie
+        // pas « n'ajoute rien » mais « objet non reconnu », et matches() REFUSE alors la
+        // grille entière. Un aliment posé dans la table annule donc tout le craft.
+        // Les formes dorées restent valides : carotte dorée +2, pomme d'or +6, pomme d'or
+        // enchantée +15.
 
         // Toutes les formes de Netherite (ancre : lingot = 5)
         if (stack.is(Items.NETHERITE_SCRAP))         return 2;
