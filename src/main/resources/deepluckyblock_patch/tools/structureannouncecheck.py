@@ -387,18 +387,23 @@ if tick is not None:
     for n, ligne in enumerate(lignes):
         if "|=" not in ligne or "F_ENCH_" not in ligne:
             continue
-        couvert = "comboActif" in ligne
-        if not couvert:
-            # UNIQUEMENT la ligne non vide juste au-dessus, et elle doit ouvrir le
-            # bloc. Un balayage plus large laisserait un « if (comboActif...) » voisin
-            # couvrir une pose qui ne lui appartient pas.
-            k = n - 1
-            while k >= 0 and not lignes[k].strip():
+        # Remonte la condition, y compris sur plusieurs lignes, MAIS s'arrete des
+        # qu'une instruction precedente se termine (« ; » ou « } »). Sans cette borne,
+        # un « if (comboActif...) » voisin couvrirait une pose qui n'est pas la sienne.
+        contexte = ligne
+        k = n - 1
+        while k >= 0 and n - k <= 6:
+            prec = lignes[k].strip()
+            if not prec:
                 k -= 1
-            if k >= 0:
-                prec = lignes[k].strip()
-                couvert = prec.endswith("{") and "if (" in prec and "comboActif" in prec
-        if not couvert:
+                continue
+            if prec.endswith(";") or prec.endswith("}"):
+                break
+            contexte = prec + "\n" + contexte
+            if "if (" in prec or "if(" in prec:
+                break
+            k -= 1
+        if "comboActif" not in contexte and "mask.has(" not in contexte:
             problemes.append(
                 "COSMETIQUE : %s est pose sans combo actif -> %s"
                 % (ligne.split("F_ENCH_")[1].split(";")[0].strip(), ligne.strip()))
@@ -414,8 +419,9 @@ if tick is not None:
         d = reg.index("List<ComboDef> list = new ArrayList<>(210);")
         fin = reg.index("COMBOS = Collections.unmodifiableList(list);")
         connus = set(re.findall(r'"([a-z0-9_]+)"', reg[d:fin]))
-        # Victime deja constatee et assumee ; toute NOUVELLE est refusee.
-        TOLERES = {"wing_toughness_armor"}
+        # T453 : plus aucune tolerance. wing_toughness_armor etait la seule
+        # exception ; la voilure est desormais rattachee a trois combos reels.
+        TOLERES = set()
         for appel in re.findall(r"comboActif\(mask,([^)]*)\)", code_avec_chaines):
             chemins = re.findall(r'"([a-z0-9_]+)"', appel)
             if not chemins:
@@ -427,6 +433,20 @@ if tick is not None:
             problemes.append(
                 "COSMETIQUE : aucun des chemins %s n'appartient a un combo ; ce "
                 "cosmetique ne pourrait plus JAMAIS s'allumer." % chemins)
+
+    # T453 : la voilure n'a pas d'enchantement porteur ; elle tient a des index.
+    if reg is not None:
+        m = re.search(r"([^;}]*?)f \|= F_ENCH_WINGED_ENDURANCE", code_avec_chaines)
+        idx = sorted(set(re.findall(r"IDX_[A-Z0-9_]+", m.group(1)))) if m else []
+        if len(idx) < 3:
+            problemes.append(
+                "COSMETIQUE : F_ENCH_WINGED_ENDURANCE est accroche a %d combo(s) (%s) ; "
+                "il en faut 3, sinon le cosmetique redevient injoignable."
+                % (len(idx), ", ".join(idx) or "aucun"))
+        for nom in idx:
+            if not re.search(r"%s\s*=\s*\d+\s*;" % nom, reg):
+                problemes.append(
+                    "COSMETIQUE : %s n'est declare dans aucun combo du registre." % nom)
 
     if "hasLuckyWeaponAura" in ct:
         problemes.append(

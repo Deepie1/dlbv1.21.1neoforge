@@ -216,12 +216,21 @@ public final class CosmeticAuraClientTicker {
         if (comboActif(mask, "king")) f |= F_ENCH_KING;
         if (comboActif(mask, "mystic_mind")) f |= F_ENCH_MYSTIC_MIND;
         if (comboActif(mask, "heart_resonance")) f |= F_ENCH_RADIANT_AEGIS;
-        // ATTENTION : wing_toughness_armor n'apparait dans AUCUN des 310 combos.
-        // Ce drapeau ne peut donc plus jamais s'allumer. Il n'est pas supprime : le
-        // jour ou l'enchantement entrera dans un combo, le cosmetique reviendra seul.
-        // structureannouncecheck.py surveille cette liste et refusera toute NOUVELLE
-        // victime du meme genre.
-        if (comboActif(mask, "wing_toughness_armor")) f |= F_ENCH_WINGED_ENDURANCE;
+        // T453 : LA VOILURE EST RATTACHEE A TROIS COMBOS EXISTANTS.
+        // wing_toughness_armor n'appartient a aucun des 310 combos ; apres T452, ce
+        // drapeau ne pouvait donc plus jamais s'allumer. Il passe au meme mecanisme
+        // que les six combos a cosmetique dedie : un index, pas un enchantement.
+        // Les trois retenus sont les seuls a reunir AILES et ENDURANCE, et tous
+        // reposent sur l'elytre -- ce qui colle au rendu, une voilure que
+        // CosmeticPixelAura ne trace qu'en l'air (!onGround() || isFallFlying()).
+        //   #72  belier_ailes_fer             EPIC   iron_wings / winging + dash
+        //   #169 ailes_orageuses_maitrisees   RARE   maledictions d'ailes + veil
+        //   #199 aeronaute_supersonique_royal MYTHIC wind_rider + iron_wings + air_walk
+        if (mask.has(EnchantmentComboRegistry.IDX_BELIER_AILES_FER)
+                || mask.has(EnchantmentComboRegistry.IDX_AILES_ORAGEUSES_MAITRISEES)
+                || mask.has(EnchantmentComboRegistry.IDX_AERONAUTE_SUPERSONIQUE_ROYAL)) {
+            f |= F_ENCH_WINGED_ENDURANCE;
+        }
         if (comboActif(mask, "dread_aura")) f |= F_ENCH_DREAD_AURA;
 
         if (comboActif(mask, "cloud_walker", "air_walk", "cloud_stride")) {
