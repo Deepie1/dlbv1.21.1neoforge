@@ -792,8 +792,17 @@ public final class SafeSurface {
         return found;
     }
 
-    /** T83 : Y de la surface liquide de la colonne, ou {@link Integer#MIN_VALUE}. */
-    private static int waterSurfaceY(ServerLevel level, int x, int z) {
+    /**
+     * T83 : Y de la surface liquide de la colonne, ou {@link Integer#MIN_VALUE}.
+     *
+     * <p>T301-A : le drapeau wet de {@link #surfaceScanEx} couvre aussi la
+     * glace, et une couche de neige par-dessus ne la masque pas.
+     *
+     * <p>T465 : passee PUBLIQUE, sans changer une ligne de son corps. C'est le
+     * dernier recours du lac Crimson : quand aucun sol solide n'existe et
+     * qu'aucun site terrestre n'a ete trouve, la nappe tient lieu de sol.
+     */
+    public static int waterSurfaceY(ServerLevel level, int x, int z) {
         ChunkAccess c = chunkFor(level, x >> 4, z >> 4);
         if (c == null) return Integer.MIN_VALUE;
         boolean[] wetCell = new boolean[1];
@@ -1088,36 +1097,6 @@ public final class SafeSurface {
         return Integer.MIN_VALUE;
     }
 
-    /**
-     * T465 : Y de la COUCHE D'EAU LA PLUS HAUTE de la colonne, ou
-     * {@code Integer.MIN_VALUE} si la colonne n'est pas noyee.
-     *
-     * <p>Sert uniquement de DERNIER RECOURS : quand aucun sol solide n'existe
-     * et qu'aucun site terrestre n'a pu etre trouve, la surface de l'eau tient
-     * lieu de sol pour l'ancrage (decision utilisateur du 22/11). Une croute
-     * de glace compte comme surface, pour la meme raison.
-     */
-    public static int waterSurfaceY(ServerLevel level, int x, int z) {
-        int cx = x >> 4, cz = z >> 4;
-        net.minecraft.world.level.chunk.ChunkAccess c = cached(level, cx, cz);
-        if (c == null) {
-            if (hasZoneTicket(level, cx, cz)) request(level, cx, cz);
-            softMisses++;
-            return Integer.MIN_VALUE;
-        }
-        int top = height(level, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-        if (top <= level.getMinBuildHeight()) return Integer.MIN_VALUE;
-        int y0 = Math.min(level.getMaxBuildHeight() - 1, top + 1);
-        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
-        for (int y = y0; y > level.getMinBuildHeight() && y > y0 - 96; y--) {
-            BlockState s = c.getBlockState(m.set(x, y, z));
-            if (!s.getFluidState().isEmpty()) return y;          // la nappe
-            if (isFrozenSurface(s)) return y;                    // lac gele : la croute fait office de sol
-            if (s.isAir() || isCanopy(s) || isSnowCover(s)) continue;
-            if (s.blocksMotion()) return Integer.MIN_VALUE;      // du solide AVANT l'eau : colonne seche
-        }
-        return Integer.MIN_VALUE;
-    }
 
     /** T75 : vrai si la colonne est NOYEE (liquide au-dessus du sol) : on n'y
      *  plante ni arbre ni decor -- consigne utilisateur « placer les plantes,

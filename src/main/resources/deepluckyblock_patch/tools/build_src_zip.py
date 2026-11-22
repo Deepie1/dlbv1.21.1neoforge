@@ -214,6 +214,17 @@ NOTICES = {
   "     propriete systeme, pas DebugLog, qui n'est pas encore chargeable a ce stade.",
 
  'src/main/resources/deepluckyblock_patch/tools/typecheck.py':
+  "T466 : DEUX REGLES NEES D'UN ECHEC DE COMPILATION QUE LES 8 BANCS AVAIENT\n"
+  "     LAISSE PASSER (runClient du 22/11, 2 erreurs).\n"
+  "     D. DOUBLON : j'avais ajoute waterSurfaceY() a SafeSurface sans voir qu'une\n"
+  "     privee de MEME signature y existait depuis T83. Comparaison a l'effacement,\n"
+  "     par type englobant ; les classes anonymes comptent comme portee (sinon\n"
+  "     setupAnim redefinie dans un « new Model(){} » criait a tort) et la\n"
+  "     qualification de paquet est conservee (Logger slf4j vs log4j).\n"
+  "     E. ACCES PRIVE : appeler Classe.methode() privee depuis un autre fichier.\n"
+  "     Ne se declenche que si TOUTES les surcharges sont privees.\n"
+  "     Les deux ont ete validees en reintroduisant les erreurs exactes du log :\n"
+  "     elles sont signalees, et 0 faux positif sur les 225 fichiers.\n"
   "T464 : le banc comparait ses alertes connues en incluant « fichier:ligne ». La\n"
   "     moindre insertion decalait les 24 alertes de reference et il annoncait des\n"
   "     « NOUVEAUX problemes » sur du code non touche (6 faux positifs ce tour).\n"

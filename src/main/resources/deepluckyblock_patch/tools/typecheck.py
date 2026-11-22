@@ -127,10 +127,96 @@ def declarations(src):
     return out
 
 
+CLASS_HEAD = re.compile(r'\b(?:class|interface|enum|record)[ \t]+([A-Za-z_$]\w{0,80})')
+
+
+ANON_HEAD = re.compile(r'\bnew[ \t]+[A-Za-z_$][\w.$]{0,80}(?:<[^<>;{}]{0,200}>)?[ \t]*\(')
+
+
+def class_ranges(src):
+    # (ouverture, fermeture, nom) de chaque type declare dans le fichier.
+    out = []
+    for m in CLASS_HEAD.finditer(src):
+        b = src.find('{', m.end())
+        if b < 0:
+            continue
+        out.append((b, match_brace(src, b), m.group(1)))
+    # Les classes ANONYMES comptent aussi : « new EndKnightModel<>(...) { ... } »
+    # redefinit legitimement setupAnim() alors que la classe englobante la
+    # definit elle aussi. Sans cette portee, le banc criait au doublon.
+    for m in ANON_HEAD.finditer(src):
+        _args, close = balanced_call(src, m.end() - 1)
+        if _args is None:
+            continue
+        j = close + 1
+        while j < len(src) and src[j] in ' \t\r\n':
+            j += 1
+        if j < len(src) and src[j] == '{':
+            out.append((j, match_brace(src, j), '<anonyme>'))
+    return out
+
+
+def erasure(params):
+    # Signature a l'EFFACEMENT, comme la voit le compilateur : on retire
+    # annotations, final, nom du parametre, generiques et qualification de
+    # paquet. foo(List<String>) et foo(List<Integer>) se reduisent donc au
+    # meme jeton -- ce qui est exact, Java refuse aussi cette surcharge.
+    sig = []
+    for a in split_args(params):
+        a = re.sub(r'@[\w.]+(?:\([^()]*\))?', ' ', a)
+        a = re.sub(r'\bfinal\b', ' ', a)
+        a = re.sub(r'\s+', ' ', a).strip()
+        if not a:
+            continue
+        a = re.sub(r'\s+[A-Za-z_$]\w*$', '', a)      # nom du parametre
+        a = re.sub(r'<[^<>]*>', '', a)                 # generiques
+        a = a.strip()
+        # La qualification est CONSERVEE telle qu'ecrite : « Logger » (slf4j
+        # importe) et « org.apache.logging.log4j.Logger » sont deux types
+        # differents, et DebugLog surcharge legitimement sur ce seul critere.
+        # La couper rendait ces deux methodes identiques. Consequence assumee :
+        # un vrai doublon ecrit une fois qualifie et une fois non passerait --
+        # un banc qui crie a tort est pire qu'un banc qui rate ce cas la.
+        sig.append(a.replace(' ', ''))
+    return tuple(sig)
+
+
+def check_duplicates(path, src, decls):
+    """
+    D. DOUBLON -- deux methodes de meme signature dans le meme type.
+
+    Ajoute apres un echec de runClient que les 8 bancs avaient laisse passer :
+    j'avais ecrit une methode waterSurfaceY() dans SafeSurface sans voir qu'une
+    privee du meme nom et de la meme signature y existait deja depuis T83.
+    « method waterSurfaceY(ServerLevel,int,int) is already defined ». Aucune
+    regle ne regardait cela, et un doublon n'est visible qu'a la compilation.
+    Les constructeurs sont hors de portee du motif HEAD (il exige un type de
+    retour), ce qui ecarte d'emblee les faux positifs les plus probables.
+    """
+    ranges = class_ranges(src)
+    seen = {}
+    for start, name, params, _b in decls:
+        # type ENGLOBANT = le plus interieur qui contient la declaration :
+        # deux classes internes ont parfaitement le droit d'avoir la meme
+        # methode, ce n'est un doublon que dans un MEME type.
+        owner = None
+        for b, e, cname in ranges:
+            if b < start < e and (owner is None or b > owner[0]):
+                owner = (b, cname)
+        key = (owner[0] if owner else -1, name, erasure(params))
+        ln = src.count('\n', 0, start) + 1
+        if key in seen:
+            errors.append('%s:%d  DOUBLON  %s(%s) est deja defini ligne %d dans le meme type'
+                          % (path, ln, name, ','.join(key[2]), seen[key]))
+        else:
+            seen[key] = ln
+
+
 def check(path):
     raw = io.open(path, encoding='utf-8', errors='replace').read()
     src = strip_comments(raw)
     decls = declarations(src)
+    check_duplicates(path, src, decls)
 
     # Portees : (debut_declaration, fin_corps) de chaque methode du fichier.
     # On part de la DECLARATION, pas de l'accolade : un parametre « long now » appartient
@@ -231,6 +317,45 @@ def check(path):
                     seen[lab] = ln
 
 
+# =====================================================================
+# E. ACCES PRIVE -- appeler Classe.methode() alors qu'elle est privee
+# =====================================================================
+# Seconde erreur du runClient du 22/11 : « waterSurfaceY(ServerLevel,int,int)
+# has private access in SafeSurface ». Invisible a tous les bancs : la
+# syntaxe est parfaite, seule la visibilite est fautive. On ne regarde que
+# les classes DU DEPOT, et on exige que la methode soit privee dans TOUTES
+# ses surcharges du fichier cible -- une seule surcharge publique suffit a
+# rendre l'appel plausible, et le banc se tait.
+PRIV_CALL = re.compile(r'\b([A-Z][A-Za-z0-9_$]{2,60})\.([a-z][A-Za-z0-9_$]{0,60})[ \t]*\(')
+
+
+def build_visibility(paths):
+    table = {}
+    for p in paths:
+        cls = os.path.basename(p)[:-5]
+        src = strip_comments(io.open(p, encoding='utf-8', errors='replace').read())
+        meths = {}
+        for start, name, _params, _b in declarations(src):
+            line_start = src.rfind('\n', 0, start) + 1
+            head = src[line_start:start + 200]
+            meths.setdefault(name, []).append('private' in head.split('(')[0])
+        table[cls] = meths
+    return table
+
+
+def check_private_access(path, src, visibility):
+    me = os.path.basename(path)[:-5]
+    for m in PRIV_CALL.finditer(src):
+        cls, meth = m.group(1), m.group(2)
+        if cls == me or cls not in visibility:
+            continue
+        flags = visibility[cls].get(meth)
+        if flags and all(flags):          # toutes les surcharges sont privees
+            ln = src.count('\n', 0, m.start()) + 1
+            errors.append('%s:%d  ACCES PRIVE  %s.%s(...) est privee dans %s.java'
+                          % (path, ln, cls, meth, cls))
+
+
 BASELINE = os.path.join('src', 'main', 'resources', 'deepluckyblock_patch', 'tools',
                         'typecheck-baseline.txt')
 
@@ -240,6 +365,14 @@ targets = args or [os.path.join(d, f)
                    for d, _, fs in os.walk(ROOT) for f in fs if f.endswith('.java')]
 for t in sorted(targets):
     check(t)
+
+# La visibilite se juge APRES avoir vu tout le depot : l'appelant et la
+# definition sont dans deux fichiers differents.
+_all = [os.path.join(d, f) for d, _, fs in os.walk(ROOT) for f in fs if f.endswith('.java')]
+_vis = build_visibility(_all)
+for t in sorted(targets):
+    check_private_access(t, strip_comments(
+        io.open(t, encoding='utf-8', errors='replace').read()), _vis)
 
 # Le mod traine des tournures que l'heuristique lit de travers : methodes MCreator
 # compactees sur une seule ligne, classes internes, surcharges heritees. Elles sont
