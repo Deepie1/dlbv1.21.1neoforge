@@ -908,7 +908,12 @@ public class CrimsonLakeStructureSpawnProcedure {
                     bucketByWorldChunk(fFilt, finalOrigin.getX(), finalOrigin.getZ(), sx, sz);
             final BlockPos lakeMin = finalOrigin.offset(0, minRelativeY, 0);
             final BlockPos lakeMax = max;
-            clearBuildVolume(level, lakeMin, lakeMax, groundY + 1, () -> {
+            // T464 : SILHOUETTE REELLE DU TEMPLATE (une case par colonne).
+            // crimsonlake.nbt declare 246 x 284 au sol mais n'ecrit que
+            // X 0..215 / Z 14..267 : 26 447 colonnes (37,9 %, jusqu'a 122 blocs
+            // de large) etaient rasees ici puis jamais remplies ni lissees.
+            final boolean[] lakeCols = occupiedColumns(fFilt, sx, sz);
+            clearBuildVolume(level, lakeMin, lakeMax, groundY + 1, lakeCols, sx, sz, () -> {
                 // T459 : COURONNE AVANT LA POSE. Le clear vient de trancher net le
                 // terrain a groundY+1 ; sans lissage le bord reste une falaise.
                 //
@@ -921,7 +926,7 @@ public class CrimsonLakeStructureSpawnProcedure {
                 // On n'appelle NI prepZone NI decorateTerrainOnly : c'est ce
                 // couple que T164 a retire (504 chunks, 1,36 M blocs, plus de
                 // 100 s). smoothRingOnly ne fait que le lissage graduel.
-                StructureTerrainPrep.protectFootprint(lakeMin, lakeMax);
+                StructureTerrainPrep.protectFootprint(lakeMin, lakeMax, lakeCols, sx, sz);
                 StructureTerrainPrep.setForcedFootprintProtection(true);
                 StructureTerrainPrep.smoothRingOnly(level, lakeMin, lakeMax, () -> {
                     StructureTerrainPrep.setForcedFootprintProtection(false);
@@ -951,14 +956,36 @@ public class CrimsonLakeStructureSpawnProcedure {
      * l'eau et les parois PAR-DESSUS la terre conservee (l'air NBT n'etant pas
      * ecrit), le bassin est creuse par la matiere meme du template.
      */
-    static void clearBuildVolume(ServerLevel level, BlockPos min, BlockPos max, int clearFloorY, Runnable onReady) {
-        new LakeClearJob(level, min, max, clearFloorY, onReady).step();
+    static void clearBuildVolume(ServerLevel level, BlockPos min, BlockPos max, int clearFloorY,
+                                 boolean[] occupiedCols, int sx, int sz, Runnable onReady) {
+        new LakeClearJob(level, min, max, clearFloorY, occupiedCols, sx, sz, onReady).step();
+    }
+
+    /**
+     * T464 : colonnes que le paste va REELLEMENT remplir, en coordonnees locales
+     * du template (index = localX * sz + localZ). Une seule passe sur la liste
+     * deja filtree et deja en memoire : ~1,37 M lectures, aucune allocation par
+     * bloc. Le resultat sert a la fois au clear (ne rien raser ailleurs) et a la
+     * protection d'emprise (laisser la couronne raccorder le reste).
+     */
+    static boolean[] occupiedColumns(List<StructureTemplate.StructureBlockInfo> blocks, int sx, int sz) {
+        boolean[] occ = new boolean[sx * sz];
+        if (blocks == null) return occ;
+        for (StructureTemplate.StructureBlockInfo b : blocks) {
+            BlockPos p = b.pos();
+            int lx = p.getX(), lz = p.getZ();
+            if (lx < 0 || lx >= sx || lz < 0 || lz >= sz) continue;
+            occ[lx * sz + lz] = true;
+        }
+        return occ;
     }
 
     private static final class LakeClearJob {
         final ServerLevel level;
         final BlockPos min, max;
         final int clearFloorY;
+        final boolean[] occupiedCols;      // T464 : null = ancien comportement (tout raser)
+        final int osx, osz;
         final Runnable onReady;
         final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         final int cx0, cz0, cx1, cz1;
@@ -972,9 +999,12 @@ public class CrimsonLakeStructureSpawnProcedure {
         int blockedCx = Integer.MIN_VALUE, blockedCz = Integer.MIN_VALUE;
         long lastProgressLogMs;
 
-        LakeClearJob(ServerLevel level, BlockPos min, BlockPos max, int clearFloorY, Runnable onReady) {
+        LakeClearJob(ServerLevel level, BlockPos min, BlockPos max, int clearFloorY,
+                     boolean[] occupiedCols, int sx, int sz, Runnable onReady) {
             this.level = level; this.min = min; this.max = max;
             this.clearFloorY = clearFloorY; this.onReady = onReady;
+            this.occupiedCols = (occupiedCols != null && occupiedCols.length == sx * sz) ? occupiedCols : null;
+            this.osx = sx; this.osz = sz;
             cx0 = min.getX() >> 4; cz0 = min.getZ() >> 4;
             cx1 = max.getX() >> 4; cz1 = max.getZ() >> 4;
             cx = cx0; cz = cz0;
@@ -1091,6 +1121,19 @@ public class CrimsonLakeStructureSpawnProcedure {
             }
         }
 
+        /**
+         * T464 : cette colonne recevra-t-elle vraiment des blocs du template ?
+         * Si non, on ne la rase PAS : sinon elle reste un trou a ciel ouvert que
+         * ni le paste ni le lissage ne rebouchent (26 447 colonnes mesurees sur
+         * crimsonlake, jusqu'a 7,6 chunks de large => la tranchee rapportee).
+         */
+        private boolean clearsColumn(int wx, int wz) {
+            if (occupiedCols == null) return true;
+            int lx = wx - min.getX(), lz = wz - min.getZ();
+            if (lx < 0 || lx >= osx || lz < 0 || lz >= osz) return false;
+            return occupiedCols[lx * osz + lz];
+        }
+
         /** Chemin rapide : ecriture directe de palette, voir T101. Renvoie le nombre de blocs retires. */
         private long clearChunkDirect(net.minecraft.world.level.chunk.LevelChunk chunk) {
             long n = 0;
@@ -1106,7 +1149,8 @@ public class CrimsonLakeStructureSpawnProcedure {
             for (BlockPos be : chunk.getBlockEntities().keySet()) {
                 if (be.getY() >= yBot && be.getY() <= yTop
                         && be.getX() >= baseX + lx0 && be.getX() <= baseX + lx1
-                        && be.getZ() >= baseZ + lz0 && be.getZ() <= baseZ + lz1) {
+                        && be.getZ() >= baseZ + lz0 && be.getZ() <= baseZ + lz1
+                        && clearsColumn(be.getX(), be.getZ())) {   // T464
                     if (kill == null) kill = new ArrayList<>();
                     kill.add(be.immutable());
                 }
@@ -1114,6 +1158,14 @@ public class CrimsonLakeStructureSpawnProcedure {
             if (kill != null) for (BlockPos bp : kill) level.removeBlockEntity(bp);
             // 2) ecriture palette directe, section par section.
             if (yBot > yTop) return 0;
+            // T464 : masque de colonnes du chunk, calcule UNE fois (la boucle
+            // interne reste en O(1), l'ordre d'acces palette est preserve).
+            boolean[] keep = new boolean[256];
+            boolean anyKeep = false;
+            for (int lz = lz0; lz <= lz1; lz++)
+                for (int lx = lx0; lx <= lx1; lx++)
+                    if (clearsColumn(baseX + lx, baseZ + lz)) { keep[(lz << 4) | lx] = true; anyKeep = true; }
+            if (!anyKeep) return 0;
             var sections = chunk.getSections();
             int i0 = Math.max(0, chunk.getSectionIndex(yBot));
             int i1 = Math.min(sections.length - 1, chunk.getSectionIndex(yTop));
@@ -1130,6 +1182,7 @@ public class CrimsonLakeStructureSpawnProcedure {
                 for (int ly = ly0; ly <= ly1; ly++)
                     for (int lz = lz0; lz <= lz1; lz++)
                         for (int lx = lx0; lx <= lx1; lx++) {
+                            if (!keep[(lz << 4) | lx]) continue;   // T464
                             BlockState prev = states.get(lx, ly, lz);
                             if (prev.isAir() || prev.getBlock() == Blocks.BEDROCK) continue;
                             // T175 : supprimer également le NBT différé des block
@@ -1173,6 +1226,7 @@ public class CrimsonLakeStructureSpawnProcedure {
             int yBot = Math.max(Math.max(min.getY(), clearFloorY), level.getMinBuildHeight() + 1);
             for (int lx = lx0; lx <= lx1; lx++)
                 for (int lz = lz0; lz <= lz1; lz++) {
+                    if (!clearsColumn(baseX + lx, baseZ + lz)) continue;   // T464
                     int top = Math.min(level.getMaxBuildHeight() - 1,
                             chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, lx, lz));
                     for (int y = yBot; y <= top; y++) {

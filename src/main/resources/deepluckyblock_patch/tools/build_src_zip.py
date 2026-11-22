@@ -146,7 +146,21 @@ NOTICES = {
   "     LUCKY_RANGED_AURA_PERCENT = 40 pour les armes a distance, 15 % en melee.",
 
  'src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java':
-  "T459 : LE SECOND MAILLON QUI MANQUAIT AU COLIS (voir T461).\n"
+  "T464 : LA COURONNE REPOSE LE SOL DETECTE, ET ELLE RACCORDE LA MARGE.\n"
+  "     1) Fini le GRASS_BLOCK en dur. detectedTopBlock() rend le bloc LU sur place\n"
+  "     s'il est deja un dessus legitime (terre cuite, sable, gravier, mousse...),\n"
+  "     sinon la palette du chunk (paletteAt), et GRASS_BLOCK en dernier recours\n"
+  "     seulement. Le defaut existait en TROIS exemplaires : rebuildColumnSection et\n"
+  "     les deux chemins de rebuildColumnFast, plus un pre-filtre a liste explicite.\n"
+  "     Si la coupe tombe deja sur un dessus correct, on ne repeint plus du tout.\n"
+  "     2) protectFootprint accepte la SILHOUETTE reelle (un bit par colonne) : les\n"
+  "     26 447 colonnes de marge de crimsonlake cessent d'etre exclues du lissage.\n"
+  "     3) clampSmoothDelta et fade mesurent desormais la distance a cette silhouette\n"
+  "     (transformee de chanfrein), pas au rectangle englobant -- sinon la marge\n"
+  "     heritait d'un droit de coupe de 64 blocs et d'un saut de poids sur l'arete du\n"
+  "     rectangle, ce qui aurait recreuse la meme tranchee par un autre chemin.\n"
+  "     Masque absent => comportement rectangle d'origine, a l'identique.\n"
+  "     T459 (toujours valable) : porte smoothRingOnly et setForcedFootprintProtection.\n"
   "     Porte smoothRingOnly(level, min, max, onDone) et setForcedFootprintProtection\n"
   "     (boolean), tous deux appeles par CrimsonLakeStructureSpawnProcedure. Leur\n"
   "     absence du ZIP est la cause de 5 des 7 erreurs du runClient de T461.\n"
@@ -155,7 +169,16 @@ NOTICES = {
   "     la pose, precisement quand la couronne en a besoin. Defaut : false.",
 
  'src/main/java/deepluckyblock/procedures/CrimsonLakeStructureSpawnProcedure.java':
-  "T459 : le lac recoit enfin le lissage et la repeinte de terrain.\n"
+  "T464 : LE CLEAR NE RASE PLUS QUE LES COLONNES REELLEMENT BATIES.\n"
+  "     crimsonlake.nbt DECLARE 246 x 284 au sol mais n'ecrit que X 0..215 / Z 14..267\n"
+  "     (mesure sur les 1 366 835 blocs du fichier). clearBuildVolume rasait le\n"
+  "     rectangle entier : 26 447 colonnes, 37,9 %, jusqu'a 122 blocs de large, etaient\n"
+  "     videes puis jamais remplies par le paste (qui n'ecrit pas l'air du NBT) ni\n"
+  "     reconstruites par le lissage (isProtected les excluait). C'est la faille droite\n"
+  "     a angle droit rapportee en jeu. occupiedColumns() construit la silhouette en une\n"
+  "     passe ; elle borne les DEUX chemins de clear et la protection d'emprise.\n"
+  "     Verifie : 0 colonne enclavee, donc aucun relief ne peut rester au milieu du lac.\n"
+  "     T459 (toujours valable) : smoothRingOnly avant la pose, smoothAround apres.\n"
   "     Le verrou de zone et le clear au-dessus du sol existaient deja ; manquaient le\n"
   "     lissage et la repeinte. On n'a PAS rappele prepZone + decorateTerrainOnly, que\n"
   "     T164 avait retires pour une raison mesuree (504 chunks, 1,36 M blocs, 100 s+).\n"
@@ -168,6 +191,14 @@ NOTICES = {
   "T456 : commentaire seul. Le connecteur etait deja muet ; System.out y est\n"
   "     volontaire (il tourne avant tout logger du mod) et la garde l'est aussi : une\n"
   "     propriete systeme, pas DebugLog, qui n'est pas encore chargeable a ce stade.",
+
+ 'src/main/resources/deepluckyblock_patch/tools/typecheck.py':
+  "T464 : le banc comparait ses alertes connues en incluant « fichier:ligne ». La\n"
+  "     moindre insertion decalait les 24 alertes de reference et il annoncait des\n"
+  "     « NOUVEAUX problemes » sur du code non touche (6 faux positifs ce tour).\n"
+  "     La fonction key(), qui retire ce prefixe, etait deja ecrite juste au-dessus\n"
+  "     mais n'etait jamais appelee : elle l'est maintenant. Verifie apres coup sur un\n"
+  "     cas temoin : une vraie erreur d'arite fait toujours echouer le banc.",
 
  'src/main/resources/deepluckyblock_patch/tools/typecheck-baseline.txt':
   "Base du banc typecheck, recalee A LA MAIN a chaque decalage de lignes. Jamais\n"

@@ -901,6 +901,98 @@ try:
 except Exception as _exc:
     print("ZIPLIVR : note — controle du colis impossible (%s)." % _exc)
 
+# =====================================================================
+# T464 — LE CLEAR SUIT LA SILHOUETTE, ET LA COURONNE REPOSE LE SOL DETECTE
+# =====================================================================
+# Deux defauts rapportes en jeu le 22/11, corriges ensemble.
+#
+# (1) « faille droite dans le contour », « zones noires droites = trous
+#     direct ». Mesure sur les 1 366 835 blocs de crimsonlake.nbt : le
+#     template DECLARE 246 x 284 au sol mais n'ecrit que X 0..215 /
+#     Z 14..267. clearBuildVolume rasait le rectangle entier, donc 26 447
+#     colonnes (37,9 %) etaient videes puis jamais remplies -- le paste
+#     n'ecrit pas l'air du NBT, et le lissage les sautait via isProtected.
+#
+# (2) « la couronne repeinte n'est pas repeinte du meme bloc qu'avant : tu
+#     mets de la grass block par defaut ! non ! ». Le dessus etait code en
+#     dur, en TROIS exemplaires.
+#
+# CE QUE CE BANC GARDE AVANT TOUT : le piege de ce tour-la n'etait pas
+# d'ecrire le masque, c'etait de le brancher a moitie. Le masque avait ete
+# construit, passe en parametre et stocke dans LakeClearJob, et les boucles
+# qui effacent reellement les blocs ne le lisaient pas : zero effet. On
+# verifie donc le CONSOMMATEUR FINAL, pas la plomberie.
+lac464 = lire(LAC)
+prep464 = lire(PREP)
+
+if lac464 is not None:
+    c464 = sans_commentaires(lac464)
+    if "occupiedColumns(" not in c464:
+        problemes.append(
+            "T464 : occupiedColumns() a disparu de la procedure du lac. Sans la "
+            "silhouette reelle, clearBuildVolume rase les 26 447 colonnes de marge "
+            "que rien ne reconstruit ensuite -- c'est la faille droite du 22/11.")
+    if re.search(r"clearBuildVolume\(\s*level\s*,\s*lakeMin\s*,\s*lakeMax\s*,[^;]*?lakeCols", c464) is None:
+        problemes.append(
+            "T464 : l'appel a clearBuildVolume ne recoit plus le masque lakeCols.")
+    if re.search(r"protectFootprint\([^;]*?lakeCols", c464) is None:
+        problemes.append(
+            "T464 : protectFootprint ne recoit plus la silhouette. L'emprise "
+            "redeviendrait un rectangle et le lissage sauterait a nouveau la marge.")
+    # LE POINT CRITIQUE : les deux chemins d'effacement doivent CONSULTER le masque.
+    # Le motif vise la GARDE elle-meme, pas la simple presence du masque :
+    # « keep[ » restait vrai via sa declaration meme apres suppression du
+    # « continue », et le banc laissait alors passer la regression.
+    for methode, attendu in (("private long clearChunkDirect", "if (!keep["),
+                             ("private long clearChunkPerBlock", "if (!clearsColumn(")):
+        corps = corps_methode(c464, methode)
+        if corps is None:
+            problemes.append("T464 : %s introuvable dans la procedure du lac." % methode)
+        elif attendu not in corps:
+            problemes.append(
+                "T464 : %s n'interroge PAS la silhouette (« %s » absent). Le masque "
+                "serait construit et transporte pour rien : les colonnes de marge "
+                "repartiraient a l'air libre et la faille reviendrait telle quelle."
+                % (methode, attendu))
+
+if prep464 is not None:
+    c464p = sans_commentaires(prep464)
+    for nom in ("isSurfaceLikeTop", "detectedTopBlock", "silhouetteDistance"):
+        if nom not in c464p:
+            problemes.append("T464 : %s() absent de StructureTerrainPrep." % nom)
+    # Le dessus en dur existait en trois exemplaires : on verifie la zone de
+    # reconstruction de colonne dans son ensemble, pas un seul site.
+    deb = c464p.find("private static void rebuildColumnSection")
+    fin = c464p.find("private static boolean isNaturalTerrain")
+    if deb != -1 and fin > deb and "GRASS_BLOCK.defaultBlockState()" in c464p[deb:fin]:
+        problemes.append(
+            "T464 : GRASS_BLOCK.defaultBlockState() est de retour dans la "
+            "reconstruction de colonne. Consigne du 22/11 : « il faut remettre le "
+            "sol comme detecte avant » -- en badlands cela replaque de la prairie "
+            "au milieu du mesa.")
+    # Une seule metrique de distance dans clampSmoothDelta : deux metriques
+    # concurrentes finissent toujours par se contredire quelque part.
+    corps_clamp = corps_methode(c464p, "private static int[][] clampSmoothDelta")
+    if corps_clamp is not None:
+        if "silhouetteDistance(" not in corps_clamp:
+            problemes.append(
+                "T464 : clampSmoothDelta ne mesure plus la distance a la silhouette. "
+                "Les colonnes de marge retomberaient a distance 0 du rectangle, donc "
+                "avec un droit de coupe de 64 blocs : la tranchee serait recreusee "
+                "par le lissage lui-meme.")
+        if "Math.max(dx, dz)" in corps_clamp.replace(
+                "(distSil != null) ? Math.round(distSil[i][j]) : Math.max(dx, dz)", ""):
+            problemes.append(
+                "T464 : clampSmoothDelta utilise encore Math.max(dx, dz) ailleurs que "
+                "dans le repli. Une seule metrique, sinon les bornes se contredisent.")
+    corps_fade = corps_methode(c464p, "private static int[][] fade")
+    if corps_fade is not None and "distSilFade" not in corps_fade:
+        problemes.append(
+            "T464 : fade() ignore la silhouette. « insideStructure » redeviendrait "
+            "vrai sur tout le rectangle englobant et le poids sauterait de 1 a sa "
+            "valeur de couronne pile sur l'arete : une marche nette a angle droit, "
+            "exactement la signature du defaut corrige.")
+
 gen = lire(GEN)
 if gen is not None:
     cg = sans_commentaires(gen)

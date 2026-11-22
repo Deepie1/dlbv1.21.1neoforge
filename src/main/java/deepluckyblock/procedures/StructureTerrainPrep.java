@@ -5999,6 +5999,57 @@ public class StructureTerrainPrep {
         return null;                      // inconnu : CONSERVER l'existant
     }
 
+    /**
+     * T464 : RENDRE LE SOL REELLEMENT DETECTE, PAS DE LA PRAIRIE PAR DEFAUT.
+     *
+     * Consigne dev (22/11) : « la couronne qui est repeinte n'est pas repeinte
+     * reellement du meme block qu'avant : tu mets de la grass block par defaut !
+     * non ! il faut remettre le sol comme detecte avant ».
+     *
+     * Les trois reconstructions de colonne (rebuildColumnSection,
+     * rebuildColumnFast x2) ecrivaient GRASS_BLOCK + DIRT EN DUR. Dans un
+     * badlands (terre cuite en bandes), un desert (sable), une plage ou un
+     * sommet enneige, le lissage repeignait donc toute la couronne en prairie
+     * -- d'ou la zone verte plaquee au milieu du mesa visible en jeu.
+     *
+     * isSurfaceLikeTop : ce bloc est-il DEJA un dessus de terrain legitime ?
+     * Si oui on n'y touche pas du tout (la strate naturelle de terre cuite a
+     * cette altitude est deja la bonne couleur : la repeindre serait une
+     * regression, meme avec la "bonne" palette).
+     */
+    private static boolean isSurfaceLikeTop(BlockState s) {
+        if (s == null || s.isAir()) return false;
+        return s.is(Blocks.GRASS_BLOCK) || s.is(Blocks.PODZOL) || s.is(Blocks.MYCELIUM)
+            || s.is(Blocks.SAND) || s.is(Blocks.RED_SAND) || s.is(Blocks.GRAVEL)
+            || s.is(Blocks.COARSE_DIRT) || s.is(Blocks.MOSS_BLOCK) || s.is(Blocks.MUD)
+            || s.is(Blocks.CLAY) || s.is(Blocks.SNOW_BLOCK)
+            || s.is(net.minecraft.tags.BlockTags.TERRACOTTA)
+            || s.is(Blocks.SANDSTONE) || s.is(Blocks.RED_SANDSTONE);
+    }
+
+    /**
+     * Dessus a poser sur une colonne reconstruite, par ordre de fidelite :
+     *   1. le bloc de surface LU SUR PLACE avant toute modification ;
+     *   2. a defaut (colonne deja rasee, surface a nu en pierre/gravier), la
+     *      palette du chunk echantillonnee par paletteAt() -- deja utilisee
+     *      par executeContourChildRefill, donc coherente avec le reste ;
+     *   3. GRASS_BLOCK en tout dernier recours seulement.
+     */
+    private static Block detectedTopBlock(ServerLevel level, BlockState curSurf, int cx, int cz) {
+        if (isSurfaceLikeTop(curSurf)) return curSurf.getBlock();
+        SurfacePalette pal = paletteAt(level, cx >> 4, cz >> 4);
+        if (pal != null && pal.top() != null) return pal.top();
+        return Blocks.GRASS_BLOCK;
+    }
+
+    /** Sous-sol assorti au dessus retenu (terre cuite : on prolonge la meme matiere). */
+    private static Block detectedFillerBlock(Block top) {
+        Block f = fillerFor(top);
+        if (f != null) return f;
+        if (top.defaultBlockState().is(net.minecraft.tags.BlockTags.TERRACOTTA)) return top;
+        return Blocks.DIRT;
+    }
+
     /** Un bloc qui compte comme « sol » pour la palette. */
     private static boolean isGroundCandidate(BlockState s) {
         return s.blocksMotion() && isNaturalTerrain(s)
@@ -7828,6 +7879,67 @@ public class StructureTerrainPrep {
         return CLEARANCE_PLAN.groundY() - MAX_SLOPE_STEP * (dEm - 1);
     }
 
+    /**
+     * T464 : DISTANCE A LA SILHOUETTE REELLE, PAS AU RECTANGLE ENGLOBANT.
+     *
+     * clampSmoothDelta accorde une marge de coupe ENORME au contact de
+     * l'emprise (reach = 64 - 2*distance, soit 64 blocs a distance 0) pour
+     * pouvoir rabattre une paroi de montagne tranchee net (T89). Tant que
+     * TOUT le rectangle min..max etait protege, aucune colonne a distance 0
+     * n'etait jamais traitee et cette marge ne servait qu'au pourtour.
+     *
+     * Des que la couronne a le droit de raccorder les 26 447 colonnes de marge
+     * (T464), ces colonnes se retrouvent A L'INTERIEUR du rectangle : avec
+     * l'ancienne metrique elles auraient toutes herite d'un droit de coupe de
+     * 64 blocs, et le flou -- qui melange leur altitude naturelle avec le fond
+     * de bassin rase -- aurait recreuse exactement la tranchee qu'on supprime.
+     * C'est le piege de T463, par un autre chemin.
+     *
+     * On mesure donc la distance de Tchebychev aux colonnes REELLEMENT
+     * occupees. Une colonne de marge a 40 blocs du lac retombe sur la fenetre
+     * de conservation (-2), comme n'importe quel terrain naturel.
+     *
+     * Transformee de distance classique en deux balayages, O(w*h).
+     * Renvoie null si la silhouette est inconnue : metrique historique.
+     */
+    private static float[][] silhouetteDistance(int x0, int z0, int w, int h) {
+        if (PROTECT_COLS == null || PROTECT_MIN == null) return null;
+        final float BIG = 1e9f, D1 = 1.0f, D2 = 1.41421356f;   // chanfrein ~ euclidien
+        float[][] d = new float[w][h];
+        for (int i = 0; i < w; i++) {
+            int bx = x0 + i - PROTECT_MIN.getX();
+            for (int j = 0; j < h; j++) {
+                int bz = z0 + j - PROTECT_MIN.getZ();
+                boolean on = bx >= 0 && bx < PROTECT_SX && bz >= 0 && bz < PROTECT_SZ
+                        && PROTECT_COLS[bx * PROTECT_SZ + bz];
+                d[i][j] = on ? 0f : BIG;
+            }
+        }
+        for (int i = 0; i < w; i++)
+            for (int j = 0; j < h; j++) {
+                float v = d[i][j];
+                if (i > 0) {
+                    if (d[i - 1][j] + D1 < v) v = d[i - 1][j] + D1;
+                    if (j > 0 && d[i - 1][j - 1] + D2 < v) v = d[i - 1][j - 1] + D2;
+                    if (j + 1 < h && d[i - 1][j + 1] + D2 < v) v = d[i - 1][j + 1] + D2;
+                }
+                if (j > 0 && d[i][j - 1] + D1 < v) v = d[i][j - 1] + D1;
+                d[i][j] = v;
+            }
+        for (int i = w - 1; i >= 0; i--)
+            for (int j = h - 1; j >= 0; j--) {
+                float v = d[i][j];
+                if (i + 1 < w) {
+                    if (d[i + 1][j] + D1 < v) v = d[i + 1][j] + D1;
+                    if (j > 0 && d[i + 1][j - 1] + D2 < v) v = d[i + 1][j - 1] + D2;
+                    if (j + 1 < h && d[i + 1][j + 1] + D2 < v) v = d[i + 1][j + 1] + D2;
+                }
+                if (j + 1 < h && d[i][j + 1] + D1 < v) v = d[i][j + 1] + D1;
+                d[i][j] = v;
+            }
+        return d;
+    }
+
     /** T21 : borne ABSOLUE de la variation du lissage par rapport au terrain naturel.
      *  T89 (B9) : la borne est ADAPTATIVE -- plus la colonne est proche de
      *  l'emprise ({@code sMinI..sMaxI} x {@code sMinJ..sMaxJ}), plus la marge
@@ -7841,6 +7953,8 @@ public class StructureTerrainPrep {
         // pas : chaque passe avait le droit de deriver de 8 blocs de plus, et les
         // 5 a 8 lissages du pipeline finissaient par recreuser le paysage.
         int[][] ref = naturalReference(orig, x0, z0, w, h);
+        // T464 : distance a la silhouette reelle (null => metrique historique).
+        final float[][] distSil = silhouetteDistance(x0, z0, w, h);
         int clamped = 0, worst = 0, worstX = 0, worstZ = 0;
         int floored = 0;   // T283 : colonnes du ruban de contact relevees au plancher de coupe
         for (int i = 0; i < w; i++) {
@@ -7848,6 +7962,10 @@ public class StructureTerrainPrep {
                 if (isProtected(x0 + i, z0 + j)) continue;                  // emprise : aplanissement VOULU
                 int dx = i < sMinI ? sMinI - i : (i > sMaxI ? i - sMaxI : 0);
                 int dz = j < sMinJ ? sMinJ - j : (j > sMaxJ ? j - sMaxJ : 0);
+                // T464 : une seule metrique de distance pour TOUTE la fonction
+                // (voir silhouetteDistance). Deux metriques concurrentes dans la
+                // meme chaine se contredisent toujours quelque part (T283/T284).
+                final int dd = (distSil != null) ? Math.round(distSil[i][j]) : Math.max(dx, dz);
                 // T288 (P2/P4 : tranchees epousant la structure, ordre
                 // PERMANENT « jamais creuser sous y0 ») : la colonne d'eau/
                 // glace reste intouchable PARTOUT SAUF au ruban de contact
@@ -7855,7 +7973,7 @@ public class StructureTerrainPrep {
                 // bornes doivent s'appliquer, sinon la crique gelee au pied
                 // du mur gardait son passe-air (aucune autre passe ne la
                 // reconstruisait).
-                if (waterMask != null && waterMask[i][j] && Math.max(dx, dz) > 8) continue;
+                if (waterMask != null && waterMask[i][j] && dd > 8) continue;
                 int d = hm[i][j] - ref[i][j];
                 int ad = Math.abs(d);
                 if (ad > worst) { worst = ad; worstX = i; worstZ = j; }
@@ -7877,7 +7995,7 @@ public class StructureTerrainPrep {
                 // garantie par limitSlope a convergence) tient lieu de garde
                 // contre crateres et terrasses.
                 // (dx/dz calcules en tete de boucle -- T288, garde nappe au ruban.)
-                int reach = ADAPTIVE_SMOOTH_MAX - 2 * Math.max(dx, dz);
+                int reach = ADAPTIVE_SMOOTH_MAX - 2 * dd;
                 // T244 : la fenetre de REMBLAI se referme 2x moins vite
                 // (1 bloc par bloc d'eloignement). Un creux de berge cote aval
                 // d'une pente reclame souvent 20-40 blocs de remblai jusque
@@ -7889,7 +8007,7 @@ public class StructureTerrainPrep {
                 // doit jamais recreuser. Le remblai reste borne par la cible
                 // elle-meme (fade vers 0 au bord + limitSlope pente <= 2),
                 // donc aucun mur artificiel ne peut naitre.
-                int reachRise = ADAPTIVE_SMOOTH_MAX - Math.max(dx, dz);
+                int reachRise = ADAPTIVE_SMOOTH_MAX - dd;
                 // T259 : le remblai est EN OUTRE borne au contact de
                 // l'emprise (anti-butte, cf. riseCapNearEmprise) — la coupe,
                 // elle, garde toute sa marge (paroi de montagne, T89).
@@ -7900,8 +8018,8 @@ public class StructureTerrainPrep {
                 // structure dans le sol — plus besoin du remblai post-pose
                 // T278 qui empilait le collet +16 au pied du mur.
                 int allowRise = Math.min(Math.max(MAX_SMOOTH_RISE, reachRise),
-                        Math.max(riseCapNearEmprise(Math.max(dx, dz)),
-                                glacisRiseAllowance(Math.max(dx, dz), ref[i][j])));
+                        Math.max(riseCapNearEmprise(dd),
+                                glacisRiseAllowance(dd, ref[i][j])));
                 int allowDrop = Math.max(MAX_SMOOTH_DROP, reach);
                 // T177 — feather radial vers la frontière de la zone. Un smooth
                 // rectangulaire sans ce masque pouvait encore modifier de 10
@@ -7932,7 +8050,7 @@ public class StructureTerrainPrep {
                 // revu. Plancher = PROFIL PUR de la rampe (jamais au-dessus
                 // de Y0, regle anti-montagne T282 inchangee) : le sol arrive
                 // exactement A LA RAMPE, ni fosse ni collet.
-                int ddContact = Math.max(dx, dz);
+                int ddContact = dd;
                 if (ddContact >= 1 && ddContact <= 8) {
                     int floorLv = glacisContactFloor(ddContact);
                     if (floorLv != Integer.MIN_VALUE && hm[i][j] < floorLv) {
@@ -8219,12 +8337,23 @@ public class StructureTerrainPrep {
         // irregulier, facon transition de biome vanilla.
         long fadeSeed = level.getSeed() ^ ((long) structMin.getX() * 341873128712L)
                 ^ ((long) structMin.getZ() * 132897987541L);
+        // T464 : meme metrique que clampSmoothDelta. Sans elle, « insideStructure »
+        // (fade = 1, plein flou) resterait vrai sur TOUT le rectangle englobant,
+        // y compris les 26 447 colonnes de marge desormais traitees : le poids
+        // sauterait de 1 a sa valeur de couronne pile sur l'arete du rectangle
+        // => une marche nette, rectiligne, a angle droit. Exactement la
+        // signature du defaut qu'on corrige.
+        final float[][] distSilFade = silhouetteDistance(x0, z0, w, h);
         for (int i = 0; i < w; i++) {
             for (int j = 0; j < h; j++) {
                 int dx = (i < sMinI) ? (sMinI - i) : ((i > sMaxI) ? (i - sMaxI) : 0);
                 int dz = (j < sMinJ) ? (sMinJ - j) : ((j > sMaxJ) ? (j - sMaxJ) : 0);
                 // Distance euclidienne : plus de coins carres.
-                double dist = Math.sqrt((double) dx * dx + (double) dz * dz);
+                // T464 : a la SILHOUETTE quand elle est connue (la transformee de
+                // chanfrein est deja euclidienne et epouse le contour reel).
+                double dist = (distSilFade != null)
+                        ? distSilFade[i][j]
+                        : Math.sqrt((double) dx * dx + (double) dz * dz);
                 // Ondulation du contour : +/- 18% du ring, sur deux octaves pour
                 // eviter un motif periodique reconnaissable. N'est appliquee qu'a
                 // partir de l'ancrage, pour ne jamais perturber le sol du batiment.
@@ -8242,7 +8371,13 @@ public class StructureTerrainPrep {
                 // T121 : l'emprise fait partie du MEME champ de smooth. Elle
                 // etait auparavant forcee a fade=0 puis restauree plus bas :
                 // les chunks du batiment ne participaient donc jamais vraiment.
-                boolean insideStructure = i >= sMinI && i <= sMaxI && j >= sMinJ && j <= sMaxJ;
+                // T464 : « dans la structure » = colonne REELLEMENT occupee
+                // (dist == 0), pas « dans le rectangle englobant ». Les colonnes
+                // de marge redeviennent de la couronne : elles sont fondues par
+                // la meme rampe continue que le reste du paysage.
+                boolean insideStructure = (distSilFade != null)
+                        ? (distSilFade[i][j] <= 0.5f)
+                        : (i >= sMinI && i <= sMaxI && j >= sMinJ && j <= sMaxJ);
                 double fade;
                 if (insideStructure) {
                     fade = 1.0;
@@ -9226,12 +9361,56 @@ public class StructureTerrainPrep {
     }
 
     private static BlockPos PROTECT_MIN = null, PROTECT_MAX = null;
+    // T464 : silhouette reelle (1 bit par colonne, deja dilatee de 1), quand elle
+    // est connue. null = ancien comportement (tout le rectangle est protege).
+    private static boolean[] PROTECT_COLS = null;
+    private static int PROTECT_SX = 0, PROTECT_SZ = 0;
 
     public static void protectFootprint(BlockPos min, BlockPos max) {
         PROTECT_MIN = min; PROTECT_MAX = max;
+        PROTECT_COLS = null; PROTECT_SX = 0; PROTECT_SZ = 0;
     }
+
+    /**
+     * T464 : PROTEGER LA SILHOUETTE REELLE, PAS LE RECTANGLE ENGLOBANT.
+     *
+     * Mesure sur crimsonlake.nbt (1 366 835 blocs depouilles) : le template
+     * DECLARE 246 x 284 au sol mais n'ecrit que X 0..215 / Z 14..267. 26 447
+     * colonnes -- 37,9 % du rectangle, jusqu'a 122 blocs (7,6 chunks) de large
+     * sur le cote X+ -- ne recoivent JAMAIS un bloc. Rasees par clearBuildVolume,
+     * ignorees par le paste, et sautees par rebuildTerrainBatched parce que
+     * isProtected ne testait qu'un rectangle : personne ne les reconstruisait.
+     * C'est la tranchee a parois verticales suivant un angle droit rapportee en
+     * jeu (« faille droite dans le contour », « trous direct »).
+     *
+     * Le masque est dilate UNE SEULE FOIS ici : isProtected reste en O(1).
+     */
+    public static void protectFootprint(BlockPos min, BlockPos max, boolean[] occupiedCols, int sx, int sz) {
+        PROTECT_MIN = min; PROTECT_MAX = max;
+        if (occupiedCols == null || sx <= 0 || sz <= 0 || occupiedCols.length != sx * sz) {
+            PROTECT_COLS = null; PROTECT_SX = 0; PROTECT_SZ = 0;
+            return;
+        }
+        boolean[] dil = new boolean[sx * sz];
+        for (int i = 0; i < sx; i++)
+            for (int j = 0; j < sz; j++) {
+                if (!occupiedCols[i * sz + j]) continue;
+                for (int dx = -1; dx <= 1; dx++) {
+                    int ix = i + dx;
+                    if (ix < 0 || ix >= sx) continue;
+                    for (int dz = -1; dz <= 1; dz++) {
+                        int jz = j + dz;
+                        if (jz < 0 || jz >= sz) continue;
+                        dil[ix * sz + jz] = true;
+                    }
+                }
+            }
+        PROTECT_COLS = dil; PROTECT_SX = sx; PROTECT_SZ = sz;
+    }
+
     public static void clearFootprintProtection() {
         PROTECT_MIN = null; PROTECT_MAX = null;
+        PROTECT_COLS = null; PROTECT_SX = 0; PROTECT_SZ = 0;
     }
 
     /**
@@ -9258,8 +9437,12 @@ public class StructureTerrainPrep {
     private static boolean isProtected(int x, int z) {
         if (PROTECT_MIN == null) return false;
         final int margin = 1;
-        return x >= PROTECT_MIN.getX() - margin && x <= PROTECT_MAX.getX() + margin
-            && z >= PROTECT_MIN.getZ() - margin && z <= PROTECT_MAX.getZ() + margin;
+        if (x < PROTECT_MIN.getX() - margin || x > PROTECT_MAX.getX() + margin
+                || z < PROTECT_MIN.getZ() - margin || z > PROTECT_MAX.getZ() + margin) return false;
+        if (PROTECT_COLS == null) return true;   // silhouette inconnue : rectangle entier (ancien comportement)
+        int bx = x - PROTECT_MIN.getX(), bz = z - PROTECT_MIN.getZ();
+        if (bx < 0 || bx >= PROTECT_SX || bz < 0 || bz >= PROTECT_SZ) return false;
+        return PROTECT_COLS[bx * PROTECT_SZ + bz];
     }
 
     private static void rebuildTerrainBatched(ServerLevel level, int[][] hm, int[][] orig, int x0, int z0,
@@ -9301,10 +9484,10 @@ public class StructureTerrainPrep {
                             level.getChunkSource().getChunkNow(wx >> 4, wz >> 4);
                     if (lcCheck == null) continue;
                     BlockState topSt = lcCheck.getBlockState(new BlockPos(wx, hm[i][j], wz));
-                    if (!isNaturalTerrain(topSt) || isIceFamily(topSt)
-                            || topSt.is(Blocks.GRASS_BLOCK) || topSt.is(Blocks.PODZOL)
-                            || topSt.is(Blocks.MYCELIUM) || topSt.is(Blocks.SAND)
-                            || topSt.is(Blocks.RED_SAND) || topSt.is(Blocks.SNOW_BLOCK)) {
+                    // T464 : isSurfaceLikeTop couvre desormais AUSSI la terre cuite,
+                    // le gravier, la mousse, l'argile et le gres -- ces colonnes ne
+                    // sont plus mises en file pour etre repeintes en prairie.
+                    if (!isNaturalTerrain(topSt) || isIceFamily(topSt) || isSurfaceLikeTop(topSt)) {
                         continue;
                     }
                 }
@@ -9863,12 +10046,15 @@ public class StructureTerrainPrep {
         targetY = Math.max(targetY, collarGroundFloor(cx, cz));
         BlockState curSurf = chunk.getBlockState(mut.set(cx, Math.min(currentY, level.getMaxBuildHeight() - 1), cz));
         if (isIceFamily(curSurf)) return; // T305-NO-ICE : la glace est 100 % intouchable !
+        // T464 : le sol a reposer est celui DETECTE ici, pas GRASS_BLOCK en dur.
+        final Block detTop = detectedTopBlock(level, curSurf, cx, cz);
+        final Block detFiller = detectedFillerBlock(detTop);
         boolean hadSnowLayer = currentY < targetY
                 && chunk.getBlockState(mut.set(cx, currentY + 1, cz)).is(Blocks.SNOW);
         if (currentY < targetY) {
             for (int y = currentY + 1; y <= targetY; y++) {
-                BlockState fill = (y == targetY) ? Blocks.GRASS_BLOCK.defaultBlockState()
-                        : (y >= targetY - 3 ? Blocks.DIRT.defaultBlockState() : Blocks.STONE.defaultBlockState());
+                BlockState fill = (y == targetY) ? detTop.defaultBlockState()
+                        : (y >= targetY - 3 ? detFiller.defaultBlockState() : Blocks.STONE.defaultBlockState());
                 setPaletteBlockInChunk(level, chunk, cx, y, cz, fill, chunkMask);
             }
             BlockState belowBase = chunk.getBlockState(mut.set(cx, currentY, cz));
@@ -9893,16 +10079,19 @@ public class StructureTerrainPrep {
             BlockState atTarget = chunk.getBlockState(mut.set(cx, targetY, cz));
             if (atTarget.isAir() || !atTarget.blocksMotion()) {
                 underpinColumnSection(level, chunk, mut, cx, targetY + 1, cz, chunkMask);
-                setPaletteBlockInChunk(level, chunk, cx, targetY, cz, Blocks.GRASS_BLOCK.defaultBlockState(), chunkMask);
+                setPaletteBlockInChunk(level, chunk, cx, targetY, cz, detTop.defaultBlockState(), chunkMask);
             } else if (isNaturalTerrain(atTarget) && !isIceFamily(atTarget)) {
-                // T305 : quand on abaisse une montagne/colline, on habille immediatement la coupe en GRASS_BLOCK + 3 DIRT
-                if (!atTarget.is(Blocks.SAND) && !atTarget.is(Blocks.RED_SAND)
-                        && !atTarget.is(Blocks.PODZOL) && !atTarget.is(Blocks.MYCELIUM)) {
-                    setPaletteBlockInChunk(level, chunk, cx, targetY, cz, Blocks.GRASS_BLOCK.defaultBlockState(), chunkMask);
+                // T305 : quand on abaisse une montagne/colline, on habille la coupe a nu.
+                // T464 : mais SEULEMENT si elle est reellement a nu. Si la coupe tombe
+                // deja sur un dessus legitime -- la strate de terre cuite d'un badlands,
+                // du sable, du gravier --, ce bloc EST le sol correct a cette altitude :
+                // le repeindre (en prairie hier, en palette aujourd'hui) serait faux.
+                if (!isSurfaceLikeTop(atTarget)) {
+                    setPaletteBlockInChunk(level, chunk, cx, targetY, cz, detTop.defaultBlockState(), chunkMask);
                     for (int dy = 1; dy <= 3 && targetY - dy > level.getMinBuildHeight(); dy++) {
                         BlockState sub = chunk.getBlockState(mut.set(cx, targetY - dy, cz));
                         if (isNaturalTerrain(sub) && !isIceFamily(sub) && !sub.is(Blocks.BEDROCK)) {
-                            setPaletteBlockInChunk(level, chunk, cx, targetY - dy, cz, Blocks.DIRT.defaultBlockState(), chunkMask);
+                            setPaletteBlockInChunk(level, chunk, cx, targetY - dy, cz, detFiller.defaultBlockState(), chunkMask);
                         }
                     }
                 }
@@ -9910,15 +10099,12 @@ public class StructureTerrainPrep {
         } else {
             // currentY == targetY : colonne rasee par ClearFootprintJob restee en STONE/GRAVEL nu
             BlockState atTarget = chunk.getBlockState(mut.set(cx, targetY, cz));
-            if (isNaturalTerrain(atTarget) && !isIceFamily(atTarget)
-                    && !atTarget.is(Blocks.GRASS_BLOCK) && !atTarget.is(Blocks.SAND)
-                    && !atTarget.is(Blocks.RED_SAND) && !atTarget.is(Blocks.PODZOL)
-                    && !atTarget.is(Blocks.MYCELIUM) && !atTarget.is(Blocks.SNOW_BLOCK)) {
-                setPaletteBlockInChunk(level, chunk, cx, targetY, cz, Blocks.GRASS_BLOCK.defaultBlockState(), chunkMask);
+            if (isNaturalTerrain(atTarget) && !isIceFamily(atTarget) && !isSurfaceLikeTop(atTarget)) {
+                setPaletteBlockInChunk(level, chunk, cx, targetY, cz, detTop.defaultBlockState(), chunkMask);
                 for (int dy = 1; dy <= 2 && targetY - dy > level.getMinBuildHeight(); dy++) {
                     BlockState sub = chunk.getBlockState(mut.set(cx, targetY - dy, cz));
                     if (isNaturalTerrain(sub) && !isIceFamily(sub) && !sub.is(Blocks.BEDROCK)) {
-                        setPaletteBlockInChunk(level, chunk, cx, targetY - dy, cz, Blocks.DIRT.defaultBlockState(), chunkMask);
+                        setPaletteBlockInChunk(level, chunk, cx, targetY - dy, cz, detFiller.defaultBlockState(), chunkMask);
                     }
                 }
             }
@@ -9972,12 +10158,16 @@ public class StructureTerrainPrep {
         if (chunk == null) {
             int currentY = origY;
             targetY = Math.max(targetY, collarGroundFloor(cx, cz));
+            // T464 : meme regle que rebuildColumnSection -- on repose le sol detecte.
+            final Block detTop0 = detectedTopBlock(level,
+                    level.getBlockState(mut.set(cx, Math.min(currentY, level.getMaxBuildHeight() - 1), cz)), cx, cz);
+            final Block detFiller0 = detectedFillerBlock(detTop0);
             boolean hadSnowLayer = currentY < targetY
                     && level.getBlockState(mut.set(cx, currentY + 1, cz)).is(Blocks.SNOW);
             if (currentY < targetY) {
                 for (int y = currentY + 1; y <= targetY; y++) {
-                    BlockState fill = (y == targetY) ? Blocks.GRASS_BLOCK.defaultBlockState()
-                            : (y >= targetY - 3 ? Blocks.DIRT.defaultBlockState() : Blocks.STONE.defaultBlockState());
+                    BlockState fill = (y == targetY) ? detTop0.defaultBlockState()
+                            : (y >= targetY - 3 ? detFiller0.defaultBlockState() : Blocks.STONE.defaultBlockState());
                     level.setBlock(mut.set(cx, y, cz), fill, FAST_FLAG);
                 }
                 if (probeAir(level, mut, cx, currentY, cz))
@@ -9999,12 +10189,16 @@ public class StructureTerrainPrep {
         }
         int currentY = origY;
         targetY = Math.max(targetY, collarGroundFloor(cx, cz));
+        // T464 : meme regle que rebuildColumnSection -- on repose le sol detecte.
+        final Block detTop = detectedTopBlock(level,
+                chunk.getBlockState(mut.set(cx, Math.min(currentY, level.getMaxBuildHeight() - 1), cz)), cx, cz);
+        final Block detFiller = detectedFillerBlock(detTop);
         boolean hadSnowLayer = currentY < targetY
                 && chunk.getBlockState(mut.set(cx, currentY + 1, cz)).is(Blocks.SNOW);
         if (currentY < targetY) {
             for (int y = currentY + 1; y <= targetY; y++) {
-                BlockState fill = (y == targetY) ? Blocks.GRASS_BLOCK.defaultBlockState()
-                        : (y >= targetY - 3 ? Blocks.DIRT.defaultBlockState() : Blocks.STONE.defaultBlockState());
+                BlockState fill = (y == targetY) ? detTop.defaultBlockState()
+                        : (y >= targetY - 3 ? detFiller.defaultBlockState() : Blocks.STONE.defaultBlockState());
                 mut.set(cx, y, cz);
                 setFastInChunk(level, chunk, mut, fill);
             }

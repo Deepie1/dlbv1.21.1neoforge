@@ -259,7 +259,12 @@ known = set()
 if os.path.exists(BASELINE):
     known = {l.rstrip('\n') for l in io.open(BASELINE, encoding='utf-8')
              if l.strip() and not l.startswith('#')}
-fresh = [e for e in errors if e not in known]
+# T464 : la comparaison se fait sur le MESSAGE, pas sur 'fichier:ligne'.
+# key() etait deja defini juste au-dessus dans cette intention mais n'etait
+# jamais appele : la moindre insertion de ligne decalait les alertes connues
+# et le banc criait 'NOUVEAU probleme' pour du code non modifie.
+knownKeys = {key(k) for k in known}
+fresh = [e for e in errors if e not in known and key(e) not in knownKeys]
 
 if fresh:
     for e in fresh:
