@@ -648,84 +648,94 @@ if rec is not None:
         problemes.append("LUCK : seuil degressif = %s centiemes, attendu 2500."
                          % m_seuil.group(1))
 
-# ============ T459 : COURONNE + RACCORD DE TERRAIN POUR CRIMSON LAKE ============
-# Consigne : le lac doit, comme les autres structures, verrouiller la zone,
-# clear au-dessus du sol, puis LISSER et REPEINDRE un sol naturel.
-# Le verrou (ChunkKeeper.track) et le clear (clearBuildVolume) existaient deja ;
-# il manquait le lissage et la repeinte.
+# ====== T469 : LE LAC NE TOUCHE PLUS AU TERRAIN -- RETOUR A LA BASE GITHUB ======
+# Consigne dev du 22/11 23:22, apres le run de 19:21 :
+#   « aucun smooth visible »
+#   « gros trous toujours la ! reprends de la base originele que tu avais github »
+#   « et revois ton approche ! »
 #
-# Trois pieges, tous verifies ici :
-#  (a) T164 avait retire prepZone + decorateTerrainOnly du lac pour une raison
-#      mesuree (504 chunks, 1,36 M blocs, plus de 100 s). Ils ne doivent PAS
-#      revenir, pas plus que decorateFinish.
-#  (b) la protection d'emprise est INOPERANTE avant pose (la garde de
-#      rebuildTerrainBatched exige PASTED_OCCUPIED non vide). Sans le drapeau
-#      force, le lissage d'avant-pose remonterait de la terre dans le bassin,
-#      que le paste n'effacerait pas puisqu'il n'ecrit pas l'air du NBT (T93).
-#  (c) ce drapeau doit rester a false par defaut : sinon TOUTES les structures
-#      changent de comportement d'un coup.
+# Historique, pour que personne ne recable cela par reflexe : T459 avait
+# branche sur le lac les deux passes de lissage (smoothRingOnly avant la pose,
+# smoothAround apres). Cinq tours de correctifs ont suivi -- T463 (reverte),
+# T464, T465, T467, T468 -- et AUCUN run en jeu n'a jamais montre un raccord
+# correct : tranchee rectiligne sur plusieurs chunks, crevasse, couronne
+# repeinte en herbe, ancien relief laisse dans l'emprise, pics de glace
+# traversant la structure, puis « gros trous toujours la ».
+#
+# La chaine de lissage est donc DEBRANCHEE du lac. Le lac revient exactement a
+# ce qu'il etait a la base bf10dea : clear franc a groundY+1, puis paste. Le
+# bord est net et vertical -- c'est assume, et c'est verifiable -- mais il n'y
+# a plus ni trou ni faille.
+#
+# ATTENTION : smoothAround / protectFootprint / clearFootprintProtection
+# existent toujours dans StructureTerrainPrep et servent aux AUTRES
+# structures. Ce qui est interdit ici, c'est que le LAC les appelle.
 LAC = os.path.join(JAVA, "procedures", "CrimsonLakeStructureSpawnProcedure.java")
 SURF = os.path.join(JAVA, "util", "SafeSurface.java")
 PREP = os.path.join(JAVA, "procedures", "StructureTerrainPrep.java")
 
 lac = lire(LAC)
 if lac is not None:
-    clac = sans_commentaires(lac)
-    for appel, quand in (("smoothRingOnly", "couronne avant la pose"),
-                         ("smoothAround", "raccord apres la pose")):
-        if appel not in clac:
+    cl = sans_commentaires(lac)
+    # (a) aucune machinerie de terrain cablee sur le lac.
+    for appel in ("smoothRingOnly", "smoothAround", "protectFootprint",
+                  "setForcedFootprintProtection", "clearFootprintProtection"):
+        if appel in cl:
             problemes.append(
-                "LAC : %s absent de CrimsonLake -- le %s n'est plus cable (T459)."
-                % (appel, quand))
-    # (a) le couple interdit par T164 ne doit pas revenir
-    for interdit in ("prepZone", "decorateTerrainOnly", "decorateFinish"):
-        if interdit in clac:
+                "T469 : le lac rappelle %s(). La chaine de lissage a ete "
+                "debranchee apres cinq echecs en jeu (« gros trous toujours la ! "
+                "reprends de la base originele que tu avais github »). Ne pas la "
+                "recabler sans un nouveau run valide par le dev." % appel)
+    # (b) T164 : ces deux passes couteuses ne doivent pas revenir non plus.
+    for appel in ("prepZone", "decorateTerrainOnly", "decorateFinish"):
+        if appel in cl:
             problemes.append(
-                "LAC : %s rappele dans CrimsonLake. T164 l'avait retire : "
-                "504 chunks et plus de 100 s de pose." % interdit)
-    # (b) chaque lissage doit etre encadre par la protection d'emprise forcee
-    n_on = len(re.findall(r"setForcedFootprintProtection\(true\)", clac))
-    n_off = len(re.findall(r"setForcedFootprintProtection\(false\)", clac))
-    n_prot = len(re.findall(r"protectFootprint\(", clac))
-    n_clear = len(re.findall(r"clearFootprintProtection\(", clac))
-    if n_on != 2 or n_off != 2:
+                "T469/T164 : %s() est de retour dans le lac. T164 l'avait retire "
+                "sur mesure : 504 chunks, 1,36 M blocs, plus de 100 s." % appel)
+    # (c) le clear est celui de la base : 5 arguments, plancher groundY+1,
+    #     aucun masque de colonnes, le paste enchaine directement.
+    if re.search(r"clearBuildVolume\(\s*level\s*,\s*lakeMin\s*,\s*lakeMax\s*,"
+                 r"\s*groundY \+ 1\s*,\s*\(\)\s*->\s*PASTE_Q\.offer", cl) is None:
         problemes.append(
-            "LAC : protection d'emprise forcee posee %d fois et relachee %d fois, "
-            "attendu 2 et 2 (une par passe de lissage)." % (n_on, n_off))
-    if n_prot != 2 or n_clear != 2:
+            "T469 : le clear du lac n'est plus la forme de base "
+            "(clearBuildVolume(level, lakeMin, lakeMax, groundY + 1, () -> paste)). "
+            "Tout argument supplementaire signifie qu'un masque de colonnes ou un "
+            "plancher par colonne est revenu.")
+    if re.search(r"static void clearBuildVolume\(ServerLevel level, BlockPos min, "
+                 r"BlockPos max, int clearFloorY, Runnable onReady\)", cl) is None:
         problemes.append(
-            "LAC : protectFootprint %d fois / clearFootprintProtection %d fois, "
-            "attendu 2 et 2. Une passe non protegee retoucherait le lac." % (n_prot, n_clear))
-    # chaque appel de lissage doit etre precede, dans les 400 caracteres, de la
-    # pose de la protection : un verrou pose trop loin ne prouve rien.
-    for appel in ("smoothRingOnly", "smoothAround"):
-        m = re.search(r"StructureTerrainPrep\.%s\(" % appel, clac)
-        if m is not None:
-            avant = clac[max(0, m.start() - 400):m.start()]
-            if "setForcedFootprintProtection(true)" not in avant or "protectFootprint(" not in avant:
-                problemes.append(
-                    "LAC : %s n'est pas precede de protectFootprint + "
-                    "setForcedFootprintProtection(true) (T459)." % appel)
+            "T469 : la signature de clearBuildVolume n'est plus celle de la base. "
+            "Elle ne doit porter ni masque de colonnes ni plancher profond.")
+    # (d) le keeper et le verrou de generation sont relaches une fois la pose finie.
+    for appel in ("ChunkKeeper.release", "notifyGenerationFinished"):
+        if appel not in cl:
+            problemes.append(
+                "T469 : %s absent du lac -- la generation resterait verrouillee "
+                "et les chunks tenus indefiniment." % appel)
 
 prep = lire(PREP)
 if prep is not None:
-    cprep = sans_commentaires(prep)
-    # (c) defaut imperativement false
-    m = re.search(r"boolean FORCE_FOOTPRINT_PROTECTION\s*=\s*(true|false)\s*;", cprep)
-    if m is None:
-        problemes.append("LAC : FORCE_FOOTPRINT_PROTECTION introuvable dans StructureTerrainPrep.")
-    elif m.group(1) != "false":
-        problemes.append(
-            "LAC : FORCE_FOOTPRINT_PROTECTION vaut %s par defaut. A true, TOUTES les "
-            "structures voient leur emprise protegee des le pre-paste, ce que T304 "
-            "interdit (STONE/GRAVEL laissee a nu)." % m.group(1))
-    if "smoothRingOnly" not in cprep:
-        problemes.append("LAC : smoothRingOnly absent de StructureTerrainPrep.")
-    # la garde de l'unique ecrivain doit consulter le drapeau
-    if not re.search(r"FORCE_FOOTPRINT_PROTECTION \|\| !PASTED_OCCUPIED\.isEmpty\(\)", cprep):
-        problemes.append(
-            "LAC : la garde de rebuildTerrainBatched ne consulte plus "
-            "FORCE_FOOTPRINT_PROTECTION -- la protection d'avant-pose est perdue.")
+    cp469 = sans_commentaires(prep)
+    # (e) la machinerie specifique au lac doit avoir disparu de StructureTerrainPrep.
+    for nom, role in (("smoothRingOnly", "la couronne d'avant-pose"),
+                      ("FORCE_FOOTPRINT_PROTECTION", "la protection forcee"),
+                      ("silhouetteDistance", "la metrique de silhouette")):
+        if nom in cp469:
+            problemes.append(
+                "T469 : %s (%s) est revenu dans StructureTerrainPrep. Ce code "
+                "n'existait que pour le lac et c'est lui qui creusait les trous." % (nom, role))
+    # (f) ce qui servait AUX AUTRES structures doit, lui, rester intact.
+    #     On teste la SIGNATURE, pas le nom : "smoothAroundXX" contient
+    #     "smoothAround" et passerait un simple test de sous-chaine.
+    for sig, nom in (
+            ("public static void smoothAround(ServerLevel", "smoothAround"),
+            ("public static void protectFootprint(BlockPos", "protectFootprint"),
+            ("public static void clearFootprintProtection()", "clearFootprintProtection")):
+        if sig not in cp469:
+            problemes.append(
+                "T469 : %s a disparu de StructureTerrainPrep (signature « %s »). "
+                "Le lac ne s'en sert plus, mais les autres structures si -- "
+                "ne pas le supprimer." % (nom, sig))
 
 # ============ T460 : CHANCE FRACTIONNAIRE PAR PAS DE 0,25 ============
 # Consigne : « je veux absolument mettre le systeme de 0.25 minimum, pas 1
@@ -903,87 +913,6 @@ except Exception as _exc:
     print("ZIPLIVR : note — controle du colis impossible (%s)." % _exc)
 
 # =====================================================================
-# T468 — LE CLEAR VIDE TOUTE LA BOITE, ET UNE SEULE METRIQUE : LA BOITE
-# =====================================================================
-# Consigne dev du 22/11 18:05-18:07, apres T464 + T467 :
-#   « LE TERRAIN EST TOUJOURS DANS MA STRUCTURE, alors que tu etais cense
-#     clear TOUS les chunks structure a y sol de structure »
-#   « les spike de ice sont toujours la, et transpercent ma structure »
-#   « aucun smooth progressif logique inter chunks, aucun chunks touches a
-#     part troues »
-#   « tu pars clairement dans la mauvaise direction »
-#
-# T464 avait fait deux choses, toutes les deux a l'envers :
-#  (1) le clear sautait les 26 447 colonnes que le template n'ecrit pas =>
-#      l'ancien relief survit DANS l'emprise et traverse la structure ;
-#  (2) clampSmoothDelta mesurait depuis la SILHOUETTE. Or reach = 64 - 2*dd
-#      et allowDrop = max(2, reach) : sur la face X+ une colonne situee juste
-#      HORS de la boite est deja a 30-122 blocs de la matiere du lac, donc
-#      reach <= 4, negatif au-dela de 32. Le terrain autour etait gele a
-#      2 blocs pres du naturel pendant que la coupe faisait ~50 blocs de
-#      profond : falaise verticale au bord de la boite, zero pente.
-#
-# REGLE : ce qui est COUPE, c'est la boite. Tout se mesure donc depuis la
-# boite. Le lac ne doit installer AUCUN masque de silhouette -- sinon le
-# clamp, le fade, le brush et l'epinglage repartent sur deux metriques
-# concurrentes et la pente disparait a nouveau.
-lac468 = lire(LAC)
-prep468 = lire(PREP)
-
-if lac468 is not None:
-    c468 = sans_commentaires(lac468)
-    # (a) AUCUNE colonne ne doit etre sautee par le clear.
-    if "clearsColumn" in c468:
-        problemes.append(
-            "T468 : le clear saute de nouveau des colonnes (clearsColumn). "
-            "L'ancien relief survivrait DANS l'emprise et la traverserait "
-            "-- les spike de glace du 22/11 18:06.")
-    # (b) le plancher profond doit etre le Y0 de la STRUCTURE, pas groundY+1.
-    if re.search(r"clearBuildVolume\(\s*level\s*,\s*lakeMin\s*,\s*lakeMax\s*,"
-                 r"\s*groundY \+ 1\s*,\s*deepCols\s*,\s*lakeMin\.getY\(\)", c468) is None:
-        problemes.append(
-            "T468 : le clear ne descend plus au Y0 de la STRUCTURE "
-            "(lakeMin.getY() == groundY + 1 - SINK_BLOCKS). Les 20 couches "
-            "enfoncees garderaient l'ancien terrain, que le paste n'efface pas "
-            "puisqu'il n'ecrit pas l'air du NBT (T93).")
-    # (c) le plancher profond ne vaut que la ou le template pose de la matiere.
-    if re.search(r"final boolean\[\] deepCols = occupiedColumns\(", c468) is None:
-        problemes.append(
-            "T468 : deepCols ne vient plus d'occupiedColumns. Descendre au Y0 "
-            "sur TOUT le rectangle creuserait une fosse de 20 blocs sur les "
-            "26 447 colonnes que le template n'ecrit pas.")
-    # (d) metrique de lissage = la boite, donc protectFootprint SANS masque.
-    if re.search(r"protectFootprint\(\s*lakeMin\s*,\s*lakeMax\s*\)", c468) is None:
-        problemes.append(
-            "T468 : le lac n'installe plus la protection de BOITE. Avec un "
-            "masque de silhouette, clampSmoothDelta repartirait a 30-122 blocs "
-            "des le bord de la boite, reach = 64 - 2*dd tomberait a "
-            "allowDrop = 2, et la pente exterieure disparaitrait : falaise "
-            "verticale, « aucun smooth progressif ».")
-
-if prep468 is not None:
-    c468p = sans_commentaires(prep468)
-    # Les replis « metrique historique » doivent rester : c'est eux qui rendent
-    # la boite a tout le monde quand aucun masque n'est installe.
-    for garde, role in (
-            ("(distSil != null) ? Math.round(distSil[i][j]) : Math.max(dx, dz)", "clampSmoothDelta"),
-            ("Math.hypot(dx, dz)", "le brush radial")):
-        if garde not in c468p:
-            problemes.append(
-                "T468 : le repli sur la distance a la boite a disparu de %s "
-                "(« %s »). Sans lui, plus aucune metrique de secours." % (role, garde))
-    # T464 garde ce qui etait bon : le sol repose est le sol DETECTE.
-    for nom in ("isSurfaceLikeTop", "detectedTopBlock"):
-        if nom not in c468p:
-            problemes.append("T468 : %s() absent — consigne « remets le sol comme detecte avant »." % nom)
-    deb = c468p.find("private static void rebuildColumnSection")
-    fin = c468p.find("private static boolean isNaturalTerrain")
-    if deb != -1 and fin > deb and "GRASS_BLOCK.defaultBlockState()" in c468p[deb:fin]:
-        problemes.append(
-            "T468 : GRASS_BLOCK.defaultBlockState() est de retour dans la "
-            "reconstruction de colonne. En badlands cela replaque de la prairie.")
-
-# =====================================================================
 # T465 — LE LAC NE S'ANCRE PLUS SUR L'ALTITUDE DU JOUEUR
 # =====================================================================
 # Constate en jeu le 22/11 : « crimson lake posé au dessus de l'eau ».
@@ -1049,12 +978,14 @@ if lac465 is not None:
             "T465 : le relogement n'est plus borne par MAX_OCEAN_RELOCS -- "
             "risque de boucle de preload, la panne que la garde anti-boucle "
             "du conflit d'emprise avait deja du corriger une fois.")
-    # En mode nappe, lisser de l'eau n'a aucun sens : les DEUX passes sautent.
-    if c465l.count("if (lakeWaterMode)") < 2:
+    # T469 : la regle « le mode nappe saute les deux passes de lissage » est
+    # devenue sans objet -- il n'y a plus aucune passe de lissage sur le lac.
+    # Ce qui reste a garantir, c'est que le drapeau soit REMIS A ZERO en fin de
+    # pose : sinon la pose suivante croirait encore etre en mer.
+    if c465l.count("lakeWaterMode = false") < 2:
         problemes.append(
-            "T465 : le mode nappe ne court-circuite plus les DEUX passes de "
-            "lissage (avant-pose et raccord). L'utilisateur a tranche : « pas "
-            "besoin de smooth terrain ni alentour vu que c'est de l'eau ».")
+            "T465 : lakeWaterMode n'est plus remis a false apres la pose. "
+            "La structure suivante se croirait en mer et sauterait l'ancrage.")
 
 gen = lire(GEN)
 if gen is not None:

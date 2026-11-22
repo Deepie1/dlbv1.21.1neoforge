@@ -528,41 +528,28 @@ public class CrimsonLakeStructureSpawnProcedure {
                 // cette passe générique rescannait/replantait les 504 chunks et
                 // représentait à elle seule plus de 100 secondes.
                 //
-                // T459 : en revanche le RACCORD T240 (smoothAround) est lance ici.
-                // C'est la passe ecrite pour « fondre le bord de la coupe dans le
-                // relief » : lissage multi-rayons de la couronne, verification de
-                // la surface en herbe, replant des arbres sauves, naturalisation,
-                // degel de l'herbe enneigee et filet anti-gris. Elle ne porte
-                // AUCUN scatter de decor ni passe neige generique -- c'est ce qui
-                // la distingue de decorateFinish et la rend payable.
+                // T469 : RETOUR A LA BASE GITHUB. Consigne dev du 22/11 23:22,
+                // apres le run de 19:21 : « aucun smooth visible », « gros trous
+                // toujours la ! reprends de la base originele que tu avais github
+                // / et revois ton approche ! ».
                 //
-                // L'emprise est protegee de force : PASTED_OCCUPIED reste vide
-                // (le lac ne publie pas la liste de ses blocs poses), donc sans
-                // ce verrou la protection serait inoperante et le raccord
-                // retoucherait le lac lui-meme.
-                StructureTerrainPrep.setStructureName(NBT_NAME);
-                BlockPos rMin = j.origin;
-                BlockPos rMax = j.origin.offset(j.sx - 1, Math.max(0, j.sy - 1), j.sz - 1);
-                if (lakeWaterMode) {
-                    // T465 : meme raison qu'avant la pose -- aucun terrain autour.
-                    deepluckyblock.util.DebugLog.err("[DLB-LAKE] mode nappe : raccord de terrain IGNORE");
-                    lakeWaterMode = false;
-                    lakeOceanRelocs = 0;
-                    deepluckyblock.util.ChunkKeeper.release(j.level);
-                    Structures5Procedure.notifyGenerationFinished(j.level);
-                } else {
-                    StructureTerrainPrep.protectFootprint(rMin, rMax);
-                    StructureTerrainPrep.setForcedFootprintProtection(true);
-                    StructureTerrainPrep.smoothAround(j.level, rMin, rMax, () -> {
-                        StructureTerrainPrep.setForcedFootprintProtection(false);
-                        StructureTerrainPrep.clearFootprintProtection();
-                        // La liberation du keeper et du verrou de generation n'a lieu
-                        // qu'une fois le raccord fini : sans cela une autre structure
-                        // pourrait demarrer pendant que l'on lisse encore.
-                        deepluckyblock.util.ChunkKeeper.release(j.level);
-                        Structures5Procedure.notifyGenerationFinished(j.level);
-                    });
-                }
+                // T459 avait branche ici le raccord T240 (smoothAround) et, avant
+                // la pose, smoothRingOnly. Cinq tours de correctifs (T463, T464,
+                // T465, T467, T468) n'ont jamais rendu ce raccord correct : a
+                // chaque run il a produit soit une tranchee, soit une crevasse,
+                // soit l'ancien relief laisse dans l'emprise. La chaine de
+                // lissage est donc DEBRANCHEE du lac -- pas rafistolee une
+                // sixieme fois. Le lac redevient ce qu'il etait a la base :
+                // clear franc a groundY+1, puis paste. Le bord est net et
+                // vertical, mais il n'y a plus ni trou ni faille.
+                //
+                // smoothAround/protectFootprint restent intacts dans
+                // StructureTerrainPrep : les autres structures s'en servent.
+                // Seul le lac ne les appelle plus.
+                lakeWaterMode = false;
+                lakeOceanRelocs = 0;
+                deepluckyblock.util.ChunkKeeper.release(j.level);
+                Structures5Procedure.notifyGenerationFinished(j.level);
 
                 // T111 (constat dev 30/09 : « crimson lake a fini ? je n'ai pas
                 // eu le message disant que c'etait apparu avec les coordonnees »)
@@ -980,70 +967,13 @@ public class CrimsonLakeStructureSpawnProcedure {
                     bucketByWorldChunk(fFilt, finalOrigin.getX(), finalOrigin.getZ(), sx, sz);
             final BlockPos lakeMin = finalOrigin.offset(0, minRelativeY, 0);
             final BlockPos lakeMax = max;
-            // T468 : LE CLEAR REPREND TOUTE LA BOITE (consigne dev 22/11 18:05 :
-            // « LE TERRAIN EST TOUJOURS DANS MA STRUCTURE, alors que tu etais
-            // cense clear TOUS les chunks structure a y sol de structure »,
-            // « les spike de ice sont toujours la, et transpercent ma structure »).
-            //
-            // T464 avait fait sauter au clear les 26 447 colonnes que le template
-            // n'ecrit pas, pour eviter qu'elles restent a l'air libre. C'etait la
-            // mauvaise moitie du probleme : le resultat est que l'ancien relief
-            // survit A L'INTERIEUR de l'emprise et traverse la structure. Le
-            // volume de la structure se vide, point. Le raccord du bord est le
-            // travail du lissage, pas une raison de ne pas raser.
-            // lakeMin.getY() == finalOrigin.getY() + minRelativeY
-            //                 == groundY + 1 - SINK_BLOCKS : le Y0 de la STRUCTURE,
-            // pas celui du monde (consigne dev : « le clear au dessus de y 0
-            // STRUCTURE, pas y 0 world betement »).
-            final boolean[] deepCols = occupiedColumns(fFilt, sx, sz);
-            clearBuildVolume(level, lakeMin, lakeMax, groundY + 1, deepCols, lakeMin.getY(), sx, sz, () -> {
-                // T459 : COURONNE AVANT LA POSE. Le clear vient de trancher net le
-                // terrain a groundY+1 ; sans lissage le bord reste une falaise.
-                //
-                // L'emprise est protegee DE FORCE pendant cette passe. Sans ce
-                // verrou le lissage remonterait de la terre au-dessus de
-                // groundY+1 a l'interieur de l'emprise pour raccorder les reliefs
-                // voisins -- et le paste ne l'effacerait pas, puisqu'il n'ecrit
-                // pas l'air du NBT (T93). Le bassin se retrouverait comble.
-                //
-                // On n'appelle NI prepZone NI decorateTerrainOnly : c'est ce
-                // couple que T164 a retire (504 chunks, 1,36 M blocs, plus de
-                // 100 s). smoothRingOnly ne fait que le lissage graduel.
-                if (lakeWaterMode) {
-                    // T465 : pose en mer (dernier recours). Il n'y a pas de
-                    // terrain a raccorder -- la couronne est de l'eau. Lisser
-                    // ici ne ferait que remuer la nappe pour rien.
-                    deepluckyblock.util.DebugLog.err("[DLB-LAKE] mode nappe : lissage d'avant-pose IGNORE");
-                    PASTE_Q.offer(new PasteJob(level, bucketedFilt,
-                            finalOrigin, bfly, System.currentTimeMillis(), sx, sy, sz));
-                } else {
-                    // T468 : UNE SEULE METRIQUE, ET C'EST LA BOITE.
-                    //
-                    // Ce qui est COUPE, c'est la boite : c'est donc depuis le bord
-                    // de la boite que tout doit se mesurer. En passant la
-                    // silhouette ici, T464 faisait mesurer clampSmoothDelta depuis
-                    // la matiere du lac : sur la face X+ une colonne situee JUSTE
-                    // dehors est deja a 30-122 blocs de cette matiere, or
-                    // reach = 64 - 2*distance et allowDrop = max(2, reach). Le
-                    // terrain autour etait donc GELE a 2 blocs pres du naturel
-                    // pendant que la coupe faisait ~50 blocs de profond : falaise
-                    // verticale au bord de la boite et zero pente -- « aucun smooth
-                    // progressif logique inter chunks, aucun chunks touches a part
-                    // troues » (22/11 18:07).
-                    //
-                    // Sans masque, silhouetteDistance() rend null et le clamp, le
-                    // fade, le brush et l'epinglage retombent TOUS ensemble sur la
-                    // distance a la boite. Une seule metrique, celle de la coupe.
-                    StructureTerrainPrep.protectFootprint(lakeMin, lakeMax);
-                    StructureTerrainPrep.setForcedFootprintProtection(true);
-                    StructureTerrainPrep.smoothRingOnly(level, lakeMin, lakeMax, () -> {
-                        StructureTerrainPrep.setForcedFootprintProtection(false);
-                        StructureTerrainPrep.clearFootprintProtection();
-                        PASTE_Q.offer(new PasteJob(level, bucketedFilt,
-                                finalOrigin, bfly, System.currentTimeMillis(), sx, sy, sz));
-                    });
-                }
-            });
+            // T469 : le clear de la base, et rien d'autre. Plancher groundY+1
+            // (T93 : le sous-sol naturel est conserve, le bassin est creuse par
+            // la matiere meme du template), aucun masque de colonnes, aucune
+            // protection d'emprise, aucun lissage avant la pose.
+            clearBuildVolume(level, lakeMin, lakeMax, groundY + 1,
+                    () -> PASTE_Q.offer(new PasteJob(level, bucketedFilt,
+                            finalOrigin, bfly, System.currentTimeMillis(), sx, sy, sz)));
         });
     }
 
@@ -1132,40 +1062,14 @@ public class CrimsonLakeStructureSpawnProcedure {
      * l'eau et les parois PAR-DESSUS la terre conservee (l'air NBT n'etant pas
      * ecrit), le bassin est creuse par la matiere meme du template.
      */
-    static void clearBuildVolume(ServerLevel level, BlockPos min, BlockPos max, int clearFloorY,
-                                 boolean[] deepCols, int deepFloorY, int sx, int sz, Runnable onReady) {
-        new LakeClearJob(level, min, max, clearFloorY, deepCols, deepFloorY, sx, sz, onReady).step();
-    }
-
-    /**
-     * T464 : colonnes que le paste va REELLEMENT remplir, en coordonnees locales
-     * du template (index = localX * sz + localZ). Une seule passe sur la liste
-     * deja filtree et deja en memoire : ~1,37 M lectures, aucune allocation par
-     * bloc. Le resultat sert a la fois au clear (ne rien raser ailleurs) et a la
-     * protection d'emprise (laisser la couronne raccorder le reste).
-     */
-    static boolean[] occupiedColumns(List<StructureTemplate.StructureBlockInfo> blocks, int sx, int sz) {
-        boolean[] occ = new boolean[sx * sz];
-        if (blocks == null) return occ;
-        for (StructureTemplate.StructureBlockInfo b : blocks) {
-            BlockPos p = b.pos();
-            int lx = p.getX(), lz = p.getZ();
-            if (lx < 0 || lx >= sx || lz < 0 || lz >= sz) continue;
-            occ[lx * sz + lz] = true;
-        }
-        return occ;
+    static void clearBuildVolume(ServerLevel level, BlockPos min, BlockPos max, int clearFloorY, Runnable onReady) {
+        new LakeClearJob(level, min, max, clearFloorY, onReady).step();
     }
 
     private static final class LakeClearJob {
         final ServerLevel level;
         final BlockPos min, max;
-        final int clearFloorY;             // plancher par defaut : groundY + 1
-        // T468 : le masque ne sert PLUS a sauter des colonnes (T464) mais a
-        // choisir la PROFONDEUR : les colonnes ou le template pose vraiment de
-        // la matiere descendent jusqu'au Y0 de la structure.
-        final boolean[] deepCols;
-        final int deepFloorY;              // Y0 de la structure (groundY + 1 - SINK_BLOCKS)
-        final int osx, osz;
+        final int clearFloorY;
         final Runnable onReady;
         final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         final int cx0, cz0, cx1, cz1;
@@ -1179,13 +1083,9 @@ public class CrimsonLakeStructureSpawnProcedure {
         int blockedCx = Integer.MIN_VALUE, blockedCz = Integer.MIN_VALUE;
         long lastProgressLogMs;
 
-        LakeClearJob(ServerLevel level, BlockPos min, BlockPos max, int clearFloorY,
-                     boolean[] deepCols, int deepFloorY, int sx, int sz, Runnable onReady) {
+        LakeClearJob(ServerLevel level, BlockPos min, BlockPos max, int clearFloorY, Runnable onReady) {
             this.level = level; this.min = min; this.max = max;
             this.clearFloorY = clearFloorY; this.onReady = onReady;
-            this.deepCols = (deepCols != null && deepCols.length == sx * sz) ? deepCols : null;
-            this.deepFloorY = deepFloorY;
-            this.osx = sx; this.osz = sz;
             cx0 = min.getX() >> 4; cz0 = min.getZ() >> 4;
             cx1 = max.getX() >> 4; cz1 = max.getZ() >> 4;
             cx = cx0; cz = cz0;
@@ -1302,33 +1202,6 @@ public class CrimsonLakeStructureSpawnProcedure {
             }
         }
 
-        /**
-         * T468 : A QUELLE PROFONDEUR cette colonne est-elle rasee ? AUCUNE
-         * colonne n'est plus SAUTEE -- c'etait l'erreur de T464 : l'ancien
-         * relief survivait dans l'emprise et la traversait (« les spike de ice
-         * sont toujours la, et transpercent ma structure », 22/11 18:06).
-         *
-         * Deux profondeurs, parce que la structure est ENFONCEE de SINK_BLOCKS :
-         *  - la ou le template pose de la matiere, on descend jusqu'au Y0 de la
-         *    structure. Sinon ses 20 couches basses gardent l'ancien terrain,
-         *    que le paste n'efface pas puisqu'il n'ecrit pas l'air du NBT (T93).
-         *    Mesure sur crimsonlake : 43 417 / 43 417 colonnes occupees (100 %)
-         *    ecrivent un bloc dans ces 20 couches (colmin max = 14), donc le
-         *    paste les REMPLIT toutes -- on ne creuse aucun vide sous le lit.
-         *  - la ou il ne pose rien, on s'arrete a groundY+1 : descendre ici
-         *    creuserait une fosse de 20 blocs sur 26 447 colonnes, c'est-a-dire
-         *    exactement la tranchee que l'on cherche a supprimer.
-         */
-        private int floorForColumn(int wx, int wz) {
-            int floor = clearFloorY;
-            if (deepCols != null) {
-                int lx = wx - min.getX(), lz = wz - min.getZ();
-                if (lx >= 0 && lx < osx && lz >= 0 && lz < osz && deepCols[lx * osz + lz])
-                    floor = deepFloorY;
-            }
-            return Math.max(Math.max(min.getY(), floor), level.getMinBuildHeight() + 1);
-        }
-
         /** Chemin rapide : ecriture directe de palette, voir T101. Renvoie le nombre de blocs retires. */
         private long clearChunkDirect(net.minecraft.world.level.chunk.LevelChunk chunk) {
             long n = 0;
@@ -1336,26 +1209,15 @@ public class CrimsonLakeStructureSpawnProcedure {
             int lx0 = Math.max(0, min.getX() - baseX), lx1 = Math.min(15, max.getX() - baseX);
             int lz0 = Math.max(0, min.getZ() - baseZ), lz1 = Math.min(15, max.getZ() - baseZ);
             if (lx0 > lx1 || lz0 > lz1) return 0;
-            // T468 : plancher PAR COLONNE, calcule une fois pour le chunk.
-            // yBot = le plus bas des planchers presents, pour borner les sections.
-            int[] colFloor = new int[256];
-            int yBot = Integer.MAX_VALUE;
-            for (int lz = lz0; lz <= lz1; lz++)
-                for (int lx = lx0; lx <= lx1; lx++) {
-                    int fy = floorForColumn(baseX + lx, baseZ + lz);
-                    colFloor[(lz << 4) | lx] = fy;
-                    if (fy < yBot) yBot = fy;
-                }
-            if (yBot == Integer.MAX_VALUE) return 0;
+            int yBot = Math.max(Math.max(min.getY(), clearFloorY), level.getMinBuildHeight() + 1);
             int yTop = level.getMaxBuildHeight() - 2;
             BlockState air = Blocks.AIR.defaultBlockState();
             // 1) blocs-entites du volume : liberes AVANT toute ecriture palette.
             java.util.List<BlockPos> kill = null;
             for (BlockPos be : chunk.getBlockEntities().keySet()) {
-                if (be.getY() <= yTop
+                if (be.getY() >= yBot && be.getY() <= yTop
                         && be.getX() >= baseX + lx0 && be.getX() <= baseX + lx1
-                        && be.getZ() >= baseZ + lz0 && be.getZ() <= baseZ + lz1
-                        && be.getY() >= colFloor[((be.getZ() - baseZ) << 4) | (be.getX() - baseX)]) {   // T468
+                        && be.getZ() >= baseZ + lz0 && be.getZ() <= baseZ + lz1) {
                     if (kill == null) kill = new ArrayList<>();
                     kill.add(be.immutable());
                 }
@@ -1379,9 +1241,6 @@ public class CrimsonLakeStructureSpawnProcedure {
                 for (int ly = ly0; ly <= ly1; ly++)
                     for (int lz = lz0; lz <= lz1; lz++)
                         for (int lx = lx0; lx <= lx1; lx++) {
-                            // T468 : une colonne n'est jamais sautee, elle a
-                            // seulement un plancher propre.
-                            if (sy + ly < colFloor[(lz << 4) | lx]) continue;
                             BlockState prev = states.get(lx, ly, lz);
                             if (prev.isAir() || prev.getBlock() == Blocks.BEDROCK) continue;
                             // T175 : supprimer également le NBT différé des block
@@ -1422,9 +1281,9 @@ public class CrimsonLakeStructureSpawnProcedure {
             int lx0 = Math.max(0, min.getX() - baseX), lx1 = Math.min(15, max.getX() - baseX);
             int lz0 = Math.max(0, min.getZ() - baseZ), lz1 = Math.min(15, max.getZ() - baseZ);
             if (lx0 > lx1 || lz0 > lz1) return 0;
+            int yBot = Math.max(Math.max(min.getY(), clearFloorY), level.getMinBuildHeight() + 1);
             for (int lx = lx0; lx <= lx1; lx++)
                 for (int lz = lz0; lz <= lz1; lz++) {
-                    int yBot = floorForColumn(baseX + lx, baseZ + lz);   // T468
                     int top = Math.min(level.getMaxBuildHeight() - 1,
                             chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, lx, lz));
                     for (int y = yBot; y <= top; y++) {
