@@ -665,6 +665,7 @@ if rec is not None:
 #  (c) ce drapeau doit rester a false par defaut : sinon TOUTES les structures
 #      changent de comportement d'un coup.
 LAC = os.path.join(JAVA, "procedures", "CrimsonLakeStructureSpawnProcedure.java")
+SURF = os.path.join(JAVA, "util", "SafeSurface.java")
 PREP = os.path.join(JAVA, "procedures", "StructureTerrainPrep.java")
 
 lac = lire(LAC)
@@ -992,6 +993,79 @@ if prep464 is not None:
             "vrai sur tout le rectangle englobant et le poids sauterait de 1 a sa "
             "valeur de couronne pile sur l'arete : une marche nette a angle droit, "
             "exactement la signature du defaut corrige.")
+
+# =====================================================================
+# T465 — LE LAC NE S'ANCRE PLUS SUR L'ALTITUDE DU JOUEUR
+# =====================================================================
+# Constate en jeu le 22/11 : « crimson lake posé au dessus de l'eau ».
+# Reconstitution exacte de l'altitude annoncee [-811,84,-313] :
+#   groundY sondait de max(top, fallbackY)+1 vers le bas sur 96 blocs.
+#   Demande a Y=213, la fenetre couvrait 213 -> 118 : au-dessus d'un ocean
+#   (surface 62, fond ~40) elle ne rencontrait RIEN, et la methode rendait
+#   son repli muet -- l'altitude du declencheur, 212. Origine 193, rabotee
+#   par le clamp a maxBuildHeight - sy = 320 - 236 = 84. Soit 22 blocs
+#   au-dessus de la mer.
+# Le defaut n'etait pas oceanique : au-dessus d'une plaine a Y=70,
+# declenche a 213, la meme fenetre ratait le sol a l'identique.
+#
+# Decisions utilisateur du 22/11 : 1) refuser la mer et DEPLACER vers la
+# terre ferme ; 2) en DERNIER RECOURS seulement, poser en mer en comptant
+# la couche d'eau la plus haute comme sol, sans lissage de terrain.
+surf465 = lire(SURF)
+lac465 = lire(LAC)
+
+if surf465 is not None:
+    c465 = sans_commentaires(surf465)
+    corps_gom = corps_methode(c465, "public static int groundYOrMissing")
+    if corps_gom is None:
+        problemes.append(
+            "T465 : groundYOrMissing introuvable. C'est la sonde qui distingue "
+            "« pas de sol » d'une altitude mesuree ; sans elle le lac ne peut pas "
+            "savoir qu'il doit se reloger.")
+    else:
+        if "Math.max(top, fallbackY)" in corps_gom:
+            problemes.append(
+                "T465 : la fenetre de sondage repart de l'altitude de l'appelant. "
+                "C'est EXACTEMENT le calcul qui a suspendu le lac a Y=84.")
+        if "Integer.MIN_VALUE" not in corps_gom:
+            problemes.append(
+                "T465 : groundYOrMissing ne rend plus Integer.MIN_VALUE en cas "
+                "d'echec -- elle se remet a inventer une altitude.")
+    # La SIGNATURE, pas le nom : « waterSurfaceY » reste un sous-mot de
+    # n'importe quel renommage (waterSurfaceYDISABLED...), et le banc
+    # laissait alors passer la suppression.
+    if "public static int waterSurfaceY(" not in c465:
+        problemes.append(
+            "T465 : waterSurfaceY absente de SafeSurface. C'est le dernier "
+            "recours valide par l'utilisateur : « la couche la plus haute d'eau "
+            "est comptee comme sol ».")
+
+if lac465 is not None:
+    c465l = sans_commentaires(lac465)
+    if "groundY(level, px, pz, py - 1)" in c465l:
+        problemes.append(
+            "T465 : le lac est revenu a groundY(..., py - 1). Ce repli silencieux "
+            "sur l'altitude du declencheur est la cause du lac dans le ciel.")
+    if "groundYOrMissing(" not in c465l:
+        problemes.append("T465 : le lac n'utilise plus la sonde stricte.")
+    for nom, rolle in (("wetFraction", "detection d'un site marin"),
+                       ("findLandSite", "relogement vers la terre ferme"),
+                       ("lakeWaterMode", "mode nappe de dernier recours")):
+        if nom not in c465l:
+            problemes.append("T465 : %s absent du lac (%s)." % (nom, rolle))
+    # Le relogement doit etre BORNE : sans cela chaque echec relance queueBuild,
+    # donc un preload complet, indefiniment.
+    if "MAX_OCEAN_RELOCS" not in c465l:
+        problemes.append(
+            "T465 : le relogement n'est plus borne par MAX_OCEAN_RELOCS -- "
+            "risque de boucle de preload, la panne que la garde anti-boucle "
+            "du conflit d'emprise avait deja du corriger une fois.")
+    # En mode nappe, lisser de l'eau n'a aucun sens : les DEUX passes sautent.
+    if c465l.count("if (lakeWaterMode)") < 2:
+        problemes.append(
+            "T465 : le mode nappe ne court-circuite plus les DEUX passes de "
+            "lissage (avant-pose et raccord). L'utilisateur a tranche : « pas "
+            "besoin de smooth terrain ni alentour vu que c'est de l'eau ».")
 
 gen = lire(GEN)
 if gen is not None:

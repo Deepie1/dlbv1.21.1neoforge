@@ -1028,19 +1028,56 @@ public final class SafeSurface {
      * @param fallbackY Y rendu si la colonne est illisible (chunk pas encore charge)
      */
     public static int groundY(ServerLevel level, int x, int z, int fallbackY) {
+        int g = groundYOrMissing(level, x, z);
+        if (g != Integer.MIN_VALUE) return g;
+        // Le repli reste celui de l'appelant, MAIS il est trace : c'est son
+        // silence qui a laisse passer le lac suspendu (T465).
+        if (++groundFallbacks <= 5 || groundFallbacks % 200 == 0) {
+            deepluckyblock.util.DebugLog.warn(LOGGER, "[DLB-SURFACE] groundY({},{}) n'a trouve AUCUN sol solide "
+                    + "-- repli sur {} fourni par l'appelant [#{}]", x, z, fallbackY, groundFallbacks);
+        }
+        return fallbackY;
+    }
+
+    /** Nombre de replis de {@link #groundY} depuis le demarrage (diagnostic T465). */
+    private static int groundFallbacks = 0;
+
+    /**
+     * T465 : LE SOL REEL, OU {@code Integer.MIN_VALUE} -- JAMAIS UNE VALEUR INVENTEE.
+     *
+     * <p>Variante stricte de {@link #groundY} : l'appelant sait si la sonde a
+     * reussi. {@code groundY} reste disponible pour les appelants qui veulent
+     * un repli, mais il ne peut plus le maquiller en mesure.
+     *
+     * <p>CE QUI EST CORRIGE ICI (lac Crimson pose dans le ciel, 22/11) : la
+     * fenetre de sondage partait de {@code max(top, fallbackY) + 1}, c'est-a-dire
+     * de l'ALTITUDE DU DECLENCHEUR des que celui-ci volait au-dessus du relief.
+     * Demande a Y=213 sur un ocean (surface a 62, fond a ~40), la fenetre de
+     * 96 blocs couvrait 213 -> 118 : elle ne rencontrait ni le fond, ni meme la
+     * mer. La methode rendait alors son repli muet -- l'altitude du joueur --
+     * et le lac etait ancre 150 blocs trop haut, puis rabote par le clamp
+     * d'emprise a maxBuildHeight - sy = 84, l'altitude exacte constatee en jeu.
+     * Le defaut n'avait rien d'oceanique : au-dessus d'une plaine a Y=70,
+     * declenche a 213, la meme fenetre ratait le sol a l'identique.
+     *
+     * <p>La fenetre part desormais du SOMMET DU TERRAIN. Pour tout appelant
+     * dont le repli est deja sous ce sommet -- le cas normal -- le resultat est
+     * rigoureusement inchange.
+     */
+    public static int groundYOrMissing(ServerLevel level, int x, int z) {
         int cx = x >> 4, cz = z >> 4;
         net.minecraft.world.level.chunk.ChunkAccess c = cached(level, cx, cz);
         if (c == null) {
             if (hasZoneTicket(level, cx, cz)) request(level, cx, cz);
             softMisses++;
-            return fallbackY;
+            return Integer.MIN_VALUE;
         }
         // T74 : la heightmap ne sert QUE de borne haute (elle inclut les cimes) et
         // n'est jamais la valeur rendue : le sol est lu BLOC PAR BLOC, en descendant
         // depuis cette borne. Aucune generation declenchee, lecture bornee.
         int top = height(level, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-        if (top <= level.getMinBuildHeight()) top = fallbackY + 40;
-        int y0 = Math.min(level.getMaxBuildHeight() - 1, Math.max(top, fallbackY) + 1);
+        if (top <= level.getMinBuildHeight()) return Integer.MIN_VALUE;   // colonne vide : pas de sol
+        int y0 = Math.min(level.getMaxBuildHeight() - 1, top + 1);
         BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         for (int y = y0; y > level.getMinBuildHeight() && y > y0 - 96; y--) {
             BlockState s = c.getBlockState(m.set(x, y, z));
@@ -1048,7 +1085,38 @@ public final class SafeSurface {
             if (isFrozenSurface(s) || isSnowCover(s)) continue;   // T301-A
             if (s.blocksMotion()) return y;
         }
-        return fallbackY;
+        return Integer.MIN_VALUE;
+    }
+
+    /**
+     * T465 : Y de la COUCHE D'EAU LA PLUS HAUTE de la colonne, ou
+     * {@code Integer.MIN_VALUE} si la colonne n'est pas noyee.
+     *
+     * <p>Sert uniquement de DERNIER RECOURS : quand aucun sol solide n'existe
+     * et qu'aucun site terrestre n'a pu etre trouve, la surface de l'eau tient
+     * lieu de sol pour l'ancrage (decision utilisateur du 22/11). Une croute
+     * de glace compte comme surface, pour la meme raison.
+     */
+    public static int waterSurfaceY(ServerLevel level, int x, int z) {
+        int cx = x >> 4, cz = z >> 4;
+        net.minecraft.world.level.chunk.ChunkAccess c = cached(level, cx, cz);
+        if (c == null) {
+            if (hasZoneTicket(level, cx, cz)) request(level, cx, cz);
+            softMisses++;
+            return Integer.MIN_VALUE;
+        }
+        int top = height(level, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+        if (top <= level.getMinBuildHeight()) return Integer.MIN_VALUE;
+        int y0 = Math.min(level.getMaxBuildHeight() - 1, top + 1);
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        for (int y = y0; y > level.getMinBuildHeight() && y > y0 - 96; y--) {
+            BlockState s = c.getBlockState(m.set(x, y, z));
+            if (!s.getFluidState().isEmpty()) return y;          // la nappe
+            if (isFrozenSurface(s)) return y;                    // lac gele : la croute fait office de sol
+            if (s.isAir() || isCanopy(s) || isSnowCover(s)) continue;
+            if (s.blocksMotion()) return Integer.MIN_VALUE;      // du solide AVANT l'eau : colonne seche
+        }
+        return Integer.MIN_VALUE;
     }
 
     /** T75 : vrai si la colonne est NOYEE (liquide au-dessus du sol) : on n'y

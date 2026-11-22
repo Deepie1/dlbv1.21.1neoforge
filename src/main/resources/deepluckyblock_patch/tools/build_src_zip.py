@@ -145,6 +145,22 @@ NOTICES = {
   "Le generateur de butin : tirage des armes, des enchantements et des combos.\n"
   "     LUCKY_RANGED_AURA_PERCENT = 40 pour les armes a distance, 15 % en melee.",
 
+ 'src/main/java/deepluckyblock/util/SafeSurface.java':
+  "T465 : LA SONDE DE SOL NE PEUT PLUS INVENTER UNE ALTITUDE.\n"
+  "     groundY() sondait 96 blocs vers le bas A PARTIR DE max(sommet du terrain,\n"
+  "     altitude fournie par l'appelant). Declenche a Y=213 au-dessus d'un ocean,\n"
+  "     cela balayait 213 -> 118 : ni le fond (~40) ni meme la mer (62) n'etaient\n"
+  "     dans la fenetre. La methode rendait alors son repli SILENCIEUX, c'est-a-dire\n"
+  "     l'altitude du joueur. Le lac etait ancre a 212, origine 193, rabotee par le\n"
+  "     clamp a maxBuildHeight - sy = 84 : l'altitude exacte vue en jeu, 22 blocs\n"
+  "     au-dessus de la mer. Le defaut n'avait rien d'oceanique -- au-dessus d'une\n"
+  "     plaine a Y=70, declenche a 213, la fenetre ratait le sol pareillement.\n"
+  "     La fenetre part desormais du SOMMET DU TERRAIN. Pour un appelant dont le\n"
+  "     repli est deja sous ce sommet (le cas normal) le resultat est INCHANGE.\n"
+  "     Nouvelles : groundYOrMissing() rend Integer.MIN_VALUE au lieu d'inventer,\n"
+  "     et waterSurfaceY() rend la couche d'eau la plus haute (dernier recours).\n"
+  "     groundY() reste disponible avec son repli, mais le trace desormais.",
+
  'src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java':
   "T464 : LA COURONNE REPOSE LE SOL DETECTE, ET ELLE RACCORDE LA MARGE.\n"
   "     1) Fini le GRASS_BLOCK en dur. detectedTopBlock() rend le bloc LU sur place\n"
@@ -178,6 +194,11 @@ NOTICES = {
   "     a angle droit rapportee en jeu. occupiedColumns() construit la silhouette en une\n"
   "     passe ; elle borne les DEUX chemins de clear et la protection d'emprise.\n"
   "     Verifie : 0 colonne enclavee, donc aucun relief ne peut rester au milieu du lac.\n"
+  "     T465 : plus d'ancrage sur l'altitude du joueur. Si l'emprise est marine\n"
+  "     (25 sondes de bruit, zero chunk genere), le lac est RELOGE vers la terre\n"
+  "     ferme -- au plus 6 fois. En dernier recours seulement il se pose en mer,\n"
+  "     la couche d'eau la plus haute tenant lieu de sol, et les DEUX passes de\n"
+  "     lissage sont sautees : il n'y a pas de terrain a raccorder.\n"
   "     T459 (toujours valable) : smoothRingOnly avant la pose, smoothAround apres.\n"
   "     Le verrou de zone et le clear au-dessus du sol existaient deja ; manquaient le\n"
   "     lissage et la repeinte. On n'a PAS rappele prepZone + decorateTerrainOnly, que\n"

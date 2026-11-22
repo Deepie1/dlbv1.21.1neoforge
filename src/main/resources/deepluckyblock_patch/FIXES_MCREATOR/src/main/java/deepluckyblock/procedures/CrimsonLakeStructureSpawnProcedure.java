@@ -137,6 +137,8 @@ public class CrimsonLakeStructureSpawnProcedure {
         lakeBuildT0Ms = 0L;
         lakeFiltCache = null;
         lakeProbeAnnounced = false;
+        lakeOceanRelocs = 0;      // T465
+        lakeWaterMode = false;    // T465
         // Une pose en file pour le meme niveau ne doit pas demarrer apres abandon.
         PASTE_Q.removeIf(j -> j.level == level);
         deepluckyblock.util.ChunkKeeper.release(level);
@@ -541,17 +543,26 @@ public class CrimsonLakeStructureSpawnProcedure {
                 StructureTerrainPrep.setStructureName(NBT_NAME);
                 BlockPos rMin = j.origin;
                 BlockPos rMax = j.origin.offset(j.sx - 1, Math.max(0, j.sy - 1), j.sz - 1);
-                StructureTerrainPrep.protectFootprint(rMin, rMax);
-                StructureTerrainPrep.setForcedFootprintProtection(true);
-                StructureTerrainPrep.smoothAround(j.level, rMin, rMax, () -> {
-                    StructureTerrainPrep.setForcedFootprintProtection(false);
-                    StructureTerrainPrep.clearFootprintProtection();
-                    // La liberation du keeper et du verrou de generation n'a lieu
-                    // qu'une fois le raccord fini : sans cela une autre structure
-                    // pourrait demarrer pendant que l'on lisse encore.
+                if (lakeWaterMode) {
+                    // T465 : meme raison qu'avant la pose -- aucun terrain autour.
+                    deepluckyblock.util.DebugLog.err("[DLB-LAKE] mode nappe : raccord de terrain IGNORE");
+                    lakeWaterMode = false;
+                    lakeOceanRelocs = 0;
                     deepluckyblock.util.ChunkKeeper.release(j.level);
                     Structures5Procedure.notifyGenerationFinished(j.level);
-                });
+                } else {
+                    StructureTerrainPrep.protectFootprint(rMin, rMax);
+                    StructureTerrainPrep.setForcedFootprintProtection(true);
+                    StructureTerrainPrep.smoothAround(j.level, rMin, rMax, () -> {
+                        StructureTerrainPrep.setForcedFootprintProtection(false);
+                        StructureTerrainPrep.clearFootprintProtection();
+                        // La liberation du keeper et du verrou de generation n'a lieu
+                        // qu'une fois le raccord fini : sans cela une autre structure
+                        // pourrait demarrer pendant que l'on lisse encore.
+                        deepluckyblock.util.ChunkKeeper.release(j.level);
+                        Structures5Procedure.notifyGenerationFinished(j.level);
+                    });
+                }
 
                 // T111 (constat dev 30/09 : « crimson lake a fini ? je n'ai pas
                 // eu le message disant que c'etait apparu avec les coordonnees »)
@@ -697,6 +708,11 @@ public class CrimsonLakeStructureSpawnProcedure {
             lakeBuildT0Ms = System.currentTimeMillis();
             lakeLastAnnounceMs = lakeBuildT0Ms;
             lakeProbeAnnounced = false;
+            // T465 : etat marin remis a zero au demarrage d'une construction
+            // NEUVE seulement. Un relogement repasse par la branche else, donc
+            // son compteur survit -- c'est lui qui borne la boucle.
+            lakeOceanRelocs = 0;
+            lakeWaterMode = false;
         } else {
             // Borne globale : au-dela, meme une simple relance n'a plus lieu
             // d'etre (la zone tenue serait de toute facon coupee par le
@@ -813,7 +829,59 @@ public class CrimsonLakeStructureSpawnProcedure {
                         () -> queueBuild(level, px, py, pz));
                 return;
             }
-            int groundY = deepluckyblock.util.SafeSurface.groundY(level, px, pz, py - 1);
+            // =========================================================
+            // T465 : ANCRAGE VERTICAL -- MESURE, RELOGEMENT, PUIS NAPPE
+            // =========================================================
+            // Avant : groundY(level, px, pz, py - 1). Quand la sonde echouait,
+            // elle rendait py-1, c'est-a-dire L'ALTITUDE DU DECLENCHEUR, sans
+            // le dire. Demande a Y=213 au-dessus d'un ocean, cela donnait un
+            // ancrage a 212, une origine a 193, rabotee par le clamp a
+            // maxBuildHeight - sy = 84 : exactement le [-811,84,-313] annonce
+            // en jeu, soit 22 blocs au-dessus de la mer.
+            int probedY = deepluckyblock.util.SafeSurface.groundYOrMissing(level, px, pz);
+            lakeWaterMode = false;
+            double wet = wetFraction(level, px, pz, sx, sz);
+            if (wet > OCEAN_WET_TRIGGER || probedY == Integer.MIN_VALUE) {
+                // 1er choix (decision utilisateur) : REFUSER LA MER, ALLER A TERRE.
+                BlockPos land = (lakeOceanRelocs < MAX_OCEAN_RELOCS)
+                        ? findLandSite(level, px, pz, Math.max(sx, sz) / 2 + 16, 6, sx, sz)
+                        : null;
+                if (land != null) {
+                    lakeOceanRelocs++;
+                    deepluckyblock.util.DebugLog.err("[DLB-LAKE] site marin (" + Math.round(wet * 100)
+                            + "% d'eau sur l'emprise, sol " + (probedY == Integer.MIN_VALUE ? "INTROUVABLE" : "a Y=" + probedY)
+                            + ") : relogement " + lakeOceanRelocs + "/" + MAX_OCEAN_RELOCS
+                            + " vers [" + land.getX() + "," + land.getZ() + "]");
+                    deepluckyblock.util.ChunkKeeper.release(level);
+                    queueBuild(level, land.getX(), py, land.getZ());
+                    return;
+                }
+                // Dernier recours : la couche d'eau la plus haute fait office de
+                // sol, et on ne lisse rien -- lisser de l'eau n'a aucun sens.
+                int ws = deepluckyblock.util.SafeSurface.waterSurfaceY(level, px, pz);
+                if (ws != Integer.MIN_VALUE) {
+                    probedY = ws;
+                    lakeWaterMode = true;
+                    deepluckyblock.util.DebugLog.err("[DLB-LAKE] aucun site terrestre apres "
+                            + lakeOceanRelocs + " relogement(s) : pose EN MER, nappe a Y=" + ws
+                            + " prise pour sol, lissage de terrain desactive");
+                }
+            }
+            if (probedY == Integer.MIN_VALUE) {
+                // Ni sol, ni nappe : on ne devine plus une altitude. L'ancien
+                // repli muet est precisement ce qui a produit le lac dans le ciel.
+                deepluckyblock.util.DebugLog.err("[DLB-LAKE] ABORT: aucun sol ni nappe sous ["
+                        + px + "," + pz + "] -- aucune altitude inventee, aucun terrain modifie");
+                deepluckyblock.util.ChunkKeeper.release(level);
+                Structures5Procedure.notifyGenerationAborted(level);
+                lakeBuildT0Ms = 0L;
+                lakeFiltCache = null;
+                lakeProbeAnnounced = false;
+                lakeOceanRelocs = 0;
+                lakeWaterMode = false;
+                return;
+            }
+            int groundY = probedY;
             BlockPos origin = lakeOrigin(px, pz, groundY, minRelativeY, sx, sz);
             // T157 : adapter l'ancrage vertical AVANT toute annonce/passe au lieu
             // d'abandonner le lac dans les mondes bas ou près du plafond.
@@ -849,6 +917,8 @@ public class CrimsonLakeStructureSpawnProcedure {
                     lakeBuildT0Ms = 0L;
                     lakeFiltCache = null;
                     lakeProbeAnnounced = false;
+                    lakeOceanRelocs = 0;      // T465
+                    lakeWaterMode = false;    // T465
                     return;
                 }
                 if (deepluckyblock.util.DebugLog.ENABLED) deepluckyblock.util.DebugLog.out("[DLB-LAKE] conflit tardif avec '" + conflict
@@ -873,6 +943,8 @@ public class CrimsonLakeStructureSpawnProcedure {
                 lakeBuildT0Ms = 0L;
                 lakeFiltCache = null;
                 lakeProbeAnnounced = false;
+                lakeOceanRelocs = 0;      // T465
+                lakeWaterMode = false;    // T465
                 return;
             }
             if (deepluckyblock.util.DebugLog.ENABLED) deepluckyblock.util.DebugLog.out("[DLB-LAKE] anchor: ground=" + groundY + ", lowest block="
@@ -926,16 +998,92 @@ public class CrimsonLakeStructureSpawnProcedure {
                 // On n'appelle NI prepZone NI decorateTerrainOnly : c'est ce
                 // couple que T164 a retire (504 chunks, 1,36 M blocs, plus de
                 // 100 s). smoothRingOnly ne fait que le lissage graduel.
-                StructureTerrainPrep.protectFootprint(lakeMin, lakeMax, lakeCols, sx, sz);
-                StructureTerrainPrep.setForcedFootprintProtection(true);
-                StructureTerrainPrep.smoothRingOnly(level, lakeMin, lakeMax, () -> {
-                    StructureTerrainPrep.setForcedFootprintProtection(false);
-                    StructureTerrainPrep.clearFootprintProtection();
+                if (lakeWaterMode) {
+                    // T465 : pose en mer (dernier recours). Il n'y a pas de
+                    // terrain a raccorder -- la couronne est de l'eau. Lisser
+                    // ici ne ferait que remuer la nappe pour rien.
+                    deepluckyblock.util.DebugLog.err("[DLB-LAKE] mode nappe : lissage d'avant-pose IGNORE");
                     PASTE_Q.offer(new PasteJob(level, bucketedFilt,
                             finalOrigin, bfly, System.currentTimeMillis(), sx, sy, sz));
-                });
+                } else {
+                    StructureTerrainPrep.protectFootprint(lakeMin, lakeMax, lakeCols, sx, sz);
+                    StructureTerrainPrep.setForcedFootprintProtection(true);
+                    StructureTerrainPrep.smoothRingOnly(level, lakeMin, lakeMax, () -> {
+                        StructureTerrainPrep.setForcedFootprintProtection(false);
+                        StructureTerrainPrep.clearFootprintProtection();
+                        PASTE_Q.offer(new PasteJob(level, bucketedFilt,
+                                finalOrigin, bfly, System.currentTimeMillis(), sx, sy, sz));
+                    });
+                }
             });
         });
+    }
+
+    // =================================================================
+    // T465 : LE LAC NE SE POSE PLUS EN L'AIR AU-DESSUS DE LA MER
+    // =================================================================
+    // Au plus, ce nombre de relogements avant de renoncer et de se rabattre
+    // sur la nappe. Chaque relogement relance queueBuild, donc un preload :
+    // il est hors de question de boucler.
+    private static final int MAX_OCEAN_RELOCS = 6;
+    /** Au-dela : le site est considere comme marin et on cherche la terre. */
+    private static final double OCEAN_WET_TRIGGER = 0.50;
+    /** En deca : un site candidat est accepte comme terrestre. */
+    private static final double OCEAN_WET_ACCEPT = 0.25;
+    private static int lakeOceanRelocs = 0;
+    /** Dernier recours : la nappe tient lieu de sol, et on ne lisse rien. */
+    private static boolean lakeWaterMode = false;
+
+    /**
+     * T465 : part NOYEE de l'emprise, sondee SANS generer le moindre chunk.
+     *
+     * <p>Modele deja eprouve dans Structures5Procedure (choix de zone seche) :
+     * bruit pur {@code getBaseHeight(OCEAN_FLOOR_WG)} compare au niveau de la
+     * mer quand le chunk n'est pas charge, lecture reelle {@code columnWet}
+     * quand il l'est. 25 points repartis sur toute l'emprise -- le centre seul
+     * ne dit rien d'une emprise de 246 x 284.
+     */
+    private static double wetFraction(ServerLevel level, int cx, int cz, int sx, int sz) {
+        var gen = level.getChunkSource().getGenerator();
+        var rs = level.getChunkSource().randomState();
+        int minDryY = Math.max(63, level.getSeaLevel());
+        int stepX = Math.max(1, sx / 4), stepZ = Math.max(1, sz / 4);
+        int wet = 0, n = 0;
+        for (int ix = -2; ix <= 2; ix++) {
+            for (int iz = -2; iz <= 2; iz++) {
+                int qx = cx + ix * stepX, qz = cz + iz * stepZ;
+                n++;
+                if (deepluckyblock.util.SafeSurface.isLoadedAt(level, qx, qz)) {
+                    if (deepluckyblock.util.SafeSurface.columnWet(level, qx, qz)) wet++;
+                } else {
+                    int hf = gen.getBaseHeight(qx, qz,
+                            net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR_WG, level, rs);
+                    if (hf < minDryY) wet++;
+                }
+            }
+        }
+        return n == 0 ? 0.0 : (double) wet / (double) n;
+    }
+
+    /**
+     * T465 : premier site TERRESTRE autour du centre, en anneaux croissants.
+     * Sondage par bruit : aucun chunk genere, donc on peut regarder loin sans
+     * payer les 8 a 12 s de generation a froid redoutees par T304.
+     */
+    private static BlockPos findLandSite(ServerLevel level, int cx, int cz,
+                                         int step, int rings, int sx, int sz) {
+        for (int r = 1; r <= rings; r++) {
+            for (int dx = -r; dx <= r; dx++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue;
+                    int x = cx + dx * step, z = cz + dz * step;
+                    if (wetFraction(level, x, z, sx, sz) <= OCEAN_WET_ACCEPT) {
+                        return new BlockPos(x, 0, z);
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     static BlockPos lakeOrigin(int x, int z, int groundY, int minRelativeY, int sx, int sz) {
