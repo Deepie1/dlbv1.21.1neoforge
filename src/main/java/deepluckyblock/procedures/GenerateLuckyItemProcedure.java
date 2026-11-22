@@ -2877,6 +2877,11 @@ public class GenerateLuckyItemProcedure {
                 }
             }
             enforcePowerTier(stack, type, effectiveLuck, random);
+            // T470 : CETTE SORTIE SAUTAIT LE TIRAGE DE COMPETENCE. Une arme de rang ETERNAL
+            // (luck >= 100) repartait donc TOUJOURS sans competence : le `return` ci-dessous
+            // court-circuitait les finitions communes placees en fin de methode. Teste en
+            // jeu a luck 100, le tirage a 5 % ne pouvait tout simplement pas avoir lieu.
+            finishSkillAndSlashRolls(stack, random);
             return;
         }
 
@@ -3056,21 +3061,31 @@ public class GenerateLuckyItemProcedure {
             enforcePowerTier(stack, type, effectiveLuck, random);
         }
 
-        // Le tirage de competence vient EN DERNIER, apres enforcePowerTier : il retire
-        // volontairement de la puissance pour en remettre ailleurs, et un garde-fou de
-        // palier qui passerait derriere lui annulerait ce troc.
-        rollSkillOnDrop(stack, random);
-        // T425 : UNE competence par objet, controlee ICI, avant la decision de slash. Les
-        // 45 signatures sont de vrais enchantements du pool commun : deux peuvent tomber
-        // sur la meme arme sans qu'aucun tirage de competence n'ait eu lieu. Retirer celle
-        // en trop change l'element porte par l'arme, et c'est l'element qui decide du slash
-        // juste en dessous.
-        deepluckyblock.enchantments.WeaponSkill.enforceSingleSkill(stack);
-        // Puis la decision de slash : APRES le tirage de competence, qui peut lui-meme poser
-        // un enchantement elementaire et donc rendre l'arme eligible.
-        rollSlashVisualOnDrop(stack, random);
+        finishSkillAndSlashRolls(stack, random);
 
         // FIX v8 (resolu) : diagnostic retire (spammait a chaque generation).
+    }
+
+    /**
+     * Les finitions communes a TOUTES les sorties de {@code applyEnchantmentsFromConfig}.
+     *
+     * <p>Elles existent en methode parce que la methode appelante a deux sorties : la
+     * branche ETERNAL rend la main plus tot. Tant qu'elles etaient ecrites en ligne tout
+     * en bas, la branche ETERNAL ne les executait jamais et les armes de luck 100
+     * repartaient sans competence — defaut constate en jeu.</p>
+     *
+     * <p>L'ordre compte : le tirage vient APRES {@code enforcePowerTier}, parce qu'il retire
+     * volontairement de la puissance pour en remettre ailleurs et qu'un garde-fou de palier
+     * passant derriere lui annulerait ce troc. La regle d'unicite vient avant la decision de
+     * slash, parce que c'est l'element retenu qui decide du slash.</p>
+     */
+    private static void finishSkillAndSlashRolls(ItemStack stack, RandomSource random) {
+        rollSkillOnDrop(stack, random);
+        // T425 : UNE competence par objet. Les 45 signatures sont de vrais enchantements du
+        // pool commun : deux peuvent tomber sur la meme arme sans qu'aucun tirage de
+        // competence n'ait eu lieu.
+        deepluckyblock.enchantments.WeaponSkill.enforceSingleSkill(stack);
+        rollSlashVisualOnDrop(stack, random);
     }
 
     /**
@@ -3112,7 +3127,15 @@ public class GenerateLuckyItemProcedure {
         // Le tirage n'a meme pas lieu si l'arme porte deja une competence : un enchantement
         // de signature peut lui etre tombe dessus par le pool commun, et ajouter la notre
         // par-dessus recreerait exactement le cas qu'on supprime.
-        if (!deepluckyblock.enchantments.WeaponSkill.scan(stack).isEmpty()) return;
+        // T470 : on ne s'abstient que si l'arme porte deja une competence ACCORDEE.
+        //
+        // Ce test lisait scan(), qui compte aussi les huit capacites activees — et celles-ci
+        // passent sans marque, par construction. Une epee LEGENDARY+ ayant recu army_summon
+        // du pool commun, ou une pioche RARE+ ayant recu ore_detector, voyait donc son
+        // tirage a 5 % annule sans qu'aucune competence d'element ne lui ait jamais ete
+        // accordee. Une capacite activee n'est pas une signature : elle ne consomme plus le
+        // tirage. La marque reste le seul titre valable, ici comme ailleurs.
+        if (deepluckyblock.enchantments.WeaponSkill.grantedPath(stack) != null) return;
         if (random.nextInt(100) >= SKILL_DROP_PERCENT) return;
         grantOneSkill(stack, random);
     }

@@ -178,7 +178,26 @@ public final class WeaponBladeVisualRenderer {
             // L'aura decide des PIXELS DE LAME (regle de minorite posee au loot, T409) ; la
             // competence chargee decide des CUBES. Une arme sans aura mais a competence prete
             // garde donc sa lame nue et sort quand meme ses cubes.
-            boolean bladePixels = animSword || deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(stack);
+            // T470 — UNE COMPETENCE ACCORDEE N'EST PLUS CENSUREE PAR LE TIRAGE D'AURA.
+            //
+            // Le defaut signale : « les skills crees via nos animations, je ne les retrouve
+            // pas, peu importe le luck ». Cause exacte : deux tirages INDEPENDANTS devaient
+            // tomber ensemble pour qu'une animation de competence soit visible — celui de la
+            // competence (5 % au butin) et celui de l'aura (15 % en melee, pose par
+            // DeepNbt.markLuckyBlockOrigin). Les calques ne sont rendus que si bladePixels
+            // est vrai : une arme qui avait gagne sa competence mais pas l'aura restait nue.
+            // Le produit donnait 0,75 % d'armes de melee animees, soit moins d'une arme
+            // attendue sur trois cents blocs casses. L'animation n'etait pas absente, elle
+            // etait inatteignable.
+            //
+            // Depuis T445, les calques d'une arme de MELEE ne peuvent venir que de la
+            // competence accordee (calquesDeCompetenceAccordee) : s'il y en a, c'est qu'un
+            // tirage a 5 % a eu lieu, et ce tirage se suffit a lui-meme. L'aura garde son
+            // role de minorite decorative (T409) sur les armes SANS competence.
+            boolean skillPixels = deepluckyblock.enchantments.WeaponSkill.grantedPath(stack) != null
+                    && deepluckyblock.enchantments.WeaponSkill.retainedOn(stack) != null;
+            boolean bladePixels = animSword || deepluckyblock.util.DeepNbt.hasLuckyWeaponAura(stack)
+                    || skillPixels;
             if (!bladePixels && !voidReady && !chaosReady) return;
             WeaponWorldVfxManager.setAlphaFloor(armActive ? 0 : 172);
             WeaponWorldVfxManager.beginFrame(WeaponWorldVfxManager.smoothTimeSeconds());

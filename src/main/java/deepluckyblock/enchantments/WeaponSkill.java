@@ -442,7 +442,7 @@ public final class WeaponSkill {
 
     /** T425 : la competence retenue par la regle d'unicite, ou {@code null}. */
     public static Entry retainedOn(ItemStack stack) {
-        Found meilleure = winner(scan(stack));
+        Found meilleure = gardeeSur(stack);
         return meilleure == null ? null : meilleure.entry();
     }
 
@@ -455,7 +455,33 @@ public final class WeaponSkill {
      * competence est ce qui en regle l'ampleur.</p>
      */
     public static Found retainedFoundOn(ItemStack stack) {
-        return winner(scan(stack));
+        return gardeeSur(stack);
+    }
+
+    /**
+     * T470 — LA COMPETENCE ACCORDEE PASSE AVANT TOUT LE RESTE.
+     *
+     * <p>{@link #winner} arbitre au plus haut niveau. Cet arbitrage convient entre deux
+     * signatures, mais pas face a une capacite activee : celles-ci passent sans marque et
+     * portent souvent un niveau superieur. Une arme qui aurait recu {@code army_summon} du
+     * pool commun ET la competence du tirage a 5 % aurait donc vu la capacite l'emporter —
+     * et comme une capacite n'a pas d'animation ({@code effect() == null}), l'arme serait
+     * redevenue muette : pas de calque, pas de clic droit, pas d'encart. La marque est le
+     * titre, elle gagne.</p>
+     */
+    private static Found accordeeParmi(List<Found> trouvees, String accordee) {
+        if (accordee == null || trouvees == null) return null;
+        for (Found f : trouvees) {
+            if (accordee.equals(f.entry().enchantPath())) return f;
+        }
+        return null;
+    }
+
+    /** La competence que cet objet fait valoir : la marque d'abord, l'arbitrage ensuite. */
+    private static Found gardeeSur(ItemStack stack) {
+        List<Found> trouvees = scan(stack);
+        Found marquee = accordeeParmi(trouvees, grantedPath(stack));
+        return marquee != null ? marquee : winner(trouvees);
     }
 
     /** La gagnante : plus haut niveau, puis ordre de declaration. Deterministe. */
@@ -480,7 +506,10 @@ public final class WeaponSkill {
     public static List<net.minecraft.resources.ResourceLocation> extraSkillEnchants(ItemStack stack) {
         List<Found> trouvees = scan(stack);
         if (trouvees.size() <= 1) return List.of();
-        Found gardee = winner(trouvees);
+        // T470 : la marque decide qui reste, sinon le menage retirerait la competence que
+        // le tirage vient d'accorder au profit d'une capacite activee de plus haut niveau.
+        Found marquee = accordeeParmi(trouvees, grantedPath(stack));
+        Found gardee = marquee != null ? marquee : winner(trouvees);
         java.util.ArrayList<net.minecraft.resources.ResourceLocation> out = new java.util.ArrayList<>(4);
         for (Found f : trouvees) {
             if (f == gardee) continue;

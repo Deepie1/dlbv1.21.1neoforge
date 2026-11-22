@@ -28,6 +28,8 @@ import sys
 VFX = 'src/main/java/deepluckyblock/enchantments/WeaponVisualEffectId.java'
 SKILL = 'src/main/java/deepluckyblock/enchantments/WeaponSkill.java'
 APPEL_ALIAS = 'forEnchantmentLocation('
+RENDU = 'src/main/java/deepluckyblock/client/WeaponBladeVisualRenderer.java'
+GENERE = 'src/main/java/deepluckyblock/procedures/GenerateLuckyItemProcedure.java'
 
 
 def lire(racine, rel):
@@ -126,6 +128,88 @@ def controler(racine):
         echecs.append('VERROU 5 : la table d\'alias est lue hors de sa classe : %s'
                       % ', '.join(dehors))
 
+    # =====================================================================================
+    #  T470 -- UNE COMPETENCE ACCORDEE DOIT RESTER ATTEIGNABLE
+    # =====================================================================================
+    # Les verrous 1 a 5 empechent qu'un enchantement mene a une competence. Ceux-ci
+    # empechent l'inverse, constate en jeu apres plus de 300 blocs casses : une competence
+    # bel et bien accordee que RIEN ne laissait voir. Trois causes independantes, trois
+    # verrous.
+
+    rendu = lire(racine, RENDU)
+    genere = lire(racine, GENERE)
+    if rendu is None or genere is None:
+        echecs.append('T470 : WeaponBladeVisualRenderer ou GenerateLuckyItemProcedure introuvable')
+    else:
+        rendu = sans_commentaires(rendu)
+        genere = sans_commentaires(genere)
+
+        # VERROU 6 -- le rendu de lame ne subordonne plus la competence au tirage d'aura.
+        # Les deux tirages sont independants : 5 % pour la competence, 15 % en melee pour
+        # l'aura. Exiger les deux donnait 0,75 % d'armes animees.
+        m = re.search(r'boolean\s+bladePixels\s*=([^;]*);', rendu, re.S)
+        if m is None:
+            echecs.append('VERROU 6 : affectation de bladePixels introuvable dans le rendu de lame')
+        else:
+            expr = m.group(1)
+            if 'hasLuckyWeaponAura' in expr and 'skillPixels' not in expr:
+                echecs.append('VERROU 6 : bladePixels depend de hasLuckyWeaponAura sans porte '
+                              'de competence -- une arme a competence mais sans aura reste nue')
+            if 'skillPixels' in expr and 'WeaponSkill.grantedPath(' not in rendu:
+                echecs.append('VERROU 6 : skillPixels ne se fonde pas sur la marque '
+                              'dlbSkillGranted (WeaponSkill.grantedPath)')
+
+        # VERROU 7 -- le tirage ne s'annule plus devant une CAPACITE ACTIVEE.
+        # scan() compte aussi les huit capacites activees, qui passent sans marque :
+        # army_summon sur une epee LEGENDARY+, ore_detector sur une pioche RARE+ volaient
+        # le tirage sans qu'aucune competence d'element ne soit jamais accordee.
+        corps = corps_methode(genere, 'private static void rollSkillOnDrop(')
+        if corps is None:
+            echecs.append('VERROU 7 : methode rollSkillOnDrop introuvable')
+        else:
+            if 'WeaponSkill.scan(' in corps:
+                echecs.append('VERROU 7 : rollSkillOnDrop s\'abstient sur scan() -- une capacite '
+                              'activee tombee du pool commun annule le tirage a 5 %')
+            if 'WeaponSkill.grantedPath(' not in corps:
+                echecs.append('VERROU 7 : rollSkillOnDrop ne verifie plus la marque accordee')
+
+        # VERROU 8 -- TOUTES les sorties posent les finitions, branche ETERNAL comprise.
+        # applyEnchantmentsFromConfig rend la main deux fois ; tant que les finitions
+        # etaient ecrites en ligne tout en bas, le rang ETERNAL (luck >= 100) les sautait.
+        appels = len(re.findall(r'finishSkillAndSlashRolls\s*\(', genere))
+        if appels < 3:
+            echecs.append('VERROU 8 : finishSkillAndSlashRolls n\'est pas pose sur les DEUX '
+                          'sorties de applyEnchantmentsFromConfig (declaration + 2 appels '
+                          'attendus, %d occurrence(s) vue(s)) -- le rang ETERNAL repart sans '
+                          'competence' % appels)
+        poses = len(re.findall(r'(?<!void )rollSkillOnDrop\s*\(', genere))
+        if poses != 1:
+            echecs.append('VERROU 8 : rollSkillOnDrop doit etre appele depuis le seul point '
+                          'commun finishSkillAndSlashRolls (%d appel(s) vu(s))' % poses)
+
+    # VERROU 9 -- la marque l'emporte sur l'arbitrage au niveau.
+    # Une capacite activee porte souvent un niveau superieur a la competence accordee ;
+    # si elle gagnait l'arbitrage, l'arme redevenait muette (effect() == null : pas de
+    # calque, pas de clic droit, pas d'encart).
+    for nom in ('public static Entry retainedOn(', 'public static Found retainedFoundOn('):
+        corps = corps_methode(skill, nom)
+        if corps is None:
+            echecs.append('VERROU 9 : methode %s introuvable' % nom.split()[-1])
+        elif 'gardeeSur(' not in corps:
+            echecs.append('VERROU 9 : %s arbitre sans consulter la marque accordee '
+                          '(gardeeSur) -- une capacite activee de plus haut niveau peut '
+                          'evincer la competence' % nom.split()[-1])
+    corps = corps_methode(skill, 'private static Found gardeeSur(')
+    if corps is None:
+        echecs.append('VERROU 9 : methode gardeeSur introuvable')
+    elif 'grantedPath(' not in corps:
+        echecs.append('VERROU 9 : gardeeSur ne lit pas la marque dlbSkillGranted')
+    corps = corps_methode(skill, 'public static List<net.minecraft.resources.ResourceLocation> extraSkillEnchants(')
+    if corps is None:
+        echecs.append('VERROU 9 : methode extraSkillEnchants introuvable')
+    elif 'accordeeParmi(' not in corps:
+        echecs.append('VERROU 9 : extraSkillEnchants peut retirer la competence accordee')
+
     if echecs:
         for e in echecs:
             print('ECHEC  %s' % e)
@@ -133,8 +217,8 @@ def controler(racine):
               'une competence' % len(echecs))
         return 1
 
-    print('skillaliascheck : 5 verrous tiennent -- aucun enchantement ne mene a une '
-          'competence (melee) ; les armes a distance gardent leurs alias')
+    print('skillaliascheck : 9 verrous tiennent -- aucun enchantement ne mene a une '
+          'competence (melee), et une competence accordee reste visible, tiree et retenue')
     return 0
 
 

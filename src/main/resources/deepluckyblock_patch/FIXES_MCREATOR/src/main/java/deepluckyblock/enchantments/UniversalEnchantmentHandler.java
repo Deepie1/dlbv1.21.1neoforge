@@ -50,6 +50,7 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.event.entity.living.LivingFallEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingShieldBlockEvent;
 import net.neoforged.neoforge.event.entity.player.ArrowLooseEvent;
@@ -1831,13 +1832,8 @@ public class UniversalEnchantmentHandler {
         int focStead = getArmorEnchantLvl(player, "deep_lucky_block:focused_steadiness");
         if (focStead > 0 && player.isShiftKeyDown()) player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 20, focStead - 1, true, false));
 
-        int metStomp = getArmorEnchantLvl(player, "deep_lucky_block:meteor_stomp");
-        if (metStomp > 0 && player.fallDistance >= 4.0f && player.onGround()) {
-            player.level().explode(player, player.getX(), player.getY(), player.getZ(), 3.0f, Level.ExplosionInteraction.NONE);
-            if (player.level() instanceof ServerLevel slms) {
-                EnchantmentParticleFX.shockwaveRing(slms, player.getX(), player.getY() + 0.1, player.getZ(), ParticleTypes.LAVA, 2.2, 16, 0.06);
-            }
-        }
+        // T470 : Meteor Stomp a QUITTE le tick. Il se lit desormais sur LivingFallEvent, le
+        // seul endroit ou la hauteur de chute existe encore. Voir onMeteorStompFallImpl.
         // T306-OVERHAUL : rapid_drop_stop (plongeon rapide contrôlé sur Shift + frein de chute sécurisé !)
         // vs earth_bound (malédiction pesante constante qui vous tire vers le bas)
         int rapDrop = getArmorEnchantLvl(player, "deep_lucky_block:rapid_drop_stop");
@@ -2339,6 +2335,51 @@ public class UniversalEnchantmentHandler {
     }
 
     // 5. Mort : Phenix, Soul Bound & Eternal, Plunder Wealth, Décapitation, Coupe-Tête, Dévoration, Vétéran
+    // ==================== T470 : METEOR STOMP SE LIT A L'ATTERRISSAGE ====================
+
+    /**
+     * Hauteur de chute, en blocs, a partir de laquelle Meteor Stomp part. Toute chute qui
+     * atteint ce seuil est une activation : il n'y a plus aucune autre condition.
+     */
+    private static final float METEOR_STOMP_MIN_FALL = 6.0f;
+
+    /**
+     * T470 — POURQUOI CET ENCHANTEMENT NE PARTAIT QUE DANS UN CAS SUR DIX.
+     *
+     * <p>Il etait lu dans le tick du joueur, par {@code player.fallDistance >= 4 && onGround()}.
+     * Or le moteur remet {@code fallDistance} a zero PENDANT {@code entity.tick()}, dans
+     * {@code checkFallDamage()}, c'est-a-dire AVANT que {@code EntityTickEvent.Post} ne soit
+     * diffuse. Le tick ou le joueur touche le sol, le handler lisait donc toujours une chute
+     * de zero bloc. Les rares fois ou il partait quand meme etaient des accidents : un bloc
+     * a collision partielle, un rebond, un pas sur un bord, un serveur en retard — tout ce
+     * qui fait que {@code onGround} passe a vrai sur un tick ou la remise a zero n'a pas
+     * encore eu lieu. D'ou le « une fois sur dix » rapporte en jeu.</p>
+     *
+     * <p>{@link LivingFallEvent} est le seul endroit ou la hauteur de chute existe encore :
+     * il est diffuse depuis {@code causeFallDamage}, juste avant la remise a zero, et il
+     * porte la distance exacte. La condition devient donc litterale — plus de
+     * {@value #METEOR_STOMP_MIN_FALL} blocs de chute, l'onde part — et elle ne depend plus
+     * d'aucune course entre le moteur et nous.</p>
+     *
+     * <p>L'effet lui-meme n'a pas bouge : meme explosion sans degat de bloc, meme anneau de
+     * lave. Seul le declencheur change.</p>
+     */
+    @SubscribeEvent
+    public static void onMeteorStompFall(LivingFallEvent event){try{onMeteorStompFallImpl(event);}catch(Throwable t__){guard("onMeteorStompFall",t__);}}
+
+    private static void onMeteorStompFallImpl(LivingFallEvent event) {
+        LivingEntity faller = event.getEntity();
+        if (faller == null) return;
+        // L'evenement est aussi diffuse sur le client pour le joueur local : une explosion
+        // posee des deux cotes se verrait deux fois et ne ferait rien cote client.
+        if (!(faller.level() instanceof ServerLevel sl)) return;
+        if (event.getDistance() < METEOR_STOMP_MIN_FALL) return;
+        if (getArmorEnchantLvl(faller, "deep_lucky_block:meteor_stomp") <= 0) return;
+        sl.explode(faller, faller.getX(), faller.getY(), faller.getZ(), 3.0f, Level.ExplosionInteraction.NONE);
+        EnchantmentParticleFX.shockwaveRing(sl, faller.getX(), faller.getY() + 0.1, faller.getZ(),
+                ParticleTypes.LAVA, 2.2, 16, 0.06);
+    }
+
     @SubscribeEvent
     public static void onLivingDeath(LivingDeathEvent event){try{onLivingDeathImpl(event);}catch(Throwable t__){guard("onLivingDeath",t__);}}
     private static void onLivingDeathImpl(LivingDeathEvent event){

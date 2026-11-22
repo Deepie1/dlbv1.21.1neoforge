@@ -58,6 +58,9 @@ ORDRE = [
  'src/main/java/deepluckyblock/procedures/GenerateLuckyItemProcedure.java',
  'src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java',
  'src/main/java/deepluckyblock/procedures/CrimsonLakeStructureSpawnProcedure.java',
+ 'src/main/java/deepluckyblock/enchantments/UniversalEnchantmentHandler.java',
+ 'src/main/java/deepluckyblock/enchantments/WeaponSkill.java',
+ 'src/main/java/deepluckyblock/client/WeaponBladeVisualRenderer.java',
 ]
 
 NOTICES = {
@@ -142,8 +145,65 @@ NOTICES = {
   "     ne sont PAS masques : un mod publie qui avale ses erreurs est indebogable.",
 
  'src/main/java/deepluckyblock/procedures/GenerateLuckyItemProcedure.java':
-  "Le generateur de butin : tirage des armes, des enchantements et des combos.\n"
-  "     LUCKY_RANGED_AURA_PERCENT = 40 pour les armes a distance, 15 % en melee.",
+  "T470 : LE TIRAGE DE COMPETENCE AVAIT DEUX FUITES.\n"
+  "     1) La branche ETERNAL (luck >= 100) rendait la main AVANT les finitions, qui\n"
+  "     etaient ecrites en ligne tout en bas : une arme de rang ETERNAL ne pouvait\n"
+  "     structurellement jamais recevoir de competence. Les finitions sont passees en\n"
+  "     methode, finishSkillAndSlashRolls, appelee sur les DEUX sorties.\n"
+  "     2) rollSkillOnDrop s'abstenait des que scan() renvoyait quelque chose -- or\n"
+  "     scan() compte aussi les huit capacites activees, qui passent sans marque :\n"
+  "     army_summon sur une epee LEGENDARY+, ore_detector sur une pioche RARE+ volaient\n"
+  "     le tirage a 5 %. Il ne s'abstient plus que devant une competence ACCORDEE.\n"
+  "     Le taux reste 5 % et le troc reste entier, comme demande.",
+
+ 'src/main/resources/deepluckyblock_patch/tools/meteorstompcheck.py':
+  "T470 : BANC NEUF. Verifie que Meteor Stomp n'est pas retourne dans le tick, que\n"
+  "     son declencheur est bien abonne a LivingFallEvent, qu'il lit\n"
+  "     event.getDistance() et jamais fallDistance, et que le seuil ne depasse pas\n"
+  "     les 6 blocs demandes. Ses quatre verrous ont ete mis a l'epreuve en cassant\n"
+  "     l'invariant un par un -- dont le piege du sous-mot sur le nom de la methode.",
+
+ 'src/main/resources/deepluckyblock_patch/tools/skillaliascheck.py':
+  "T470 : QUATRE VERROUS AJOUTES (6 a 9). Les cinq premiers empechaient qu'un\n"
+  "     enchantement mene a une competence ; ceux-ci empechent l'inverse, constate en\n"
+  "     jeu : une competence accordee que rien ne laissait voir. Ils tiennent le rendu\n"
+  "     de lame (la competence ne depend plus du tirage d'aura), le tirage au butin\n"
+  "     (une capacite activee ne le vole plus, les deux sorties le posent) et\n"
+  "     l'arbitrage (la marque dlbSkillGranted passe avant le niveau).",
+
+ 'src/main/java/deepluckyblock/enchantments/UniversalEnchantmentHandler.java':
+  "T470 : METEOR STOMP NE SE LIT PLUS DANS LE TICK.\n"
+  "     Il testait player.fallDistance >= 4 && onGround() dans EntityTickEvent.Post.\n"
+  "     Le moteur remet fallDistance a zero pendant entity.tick(), dans\n"
+  "     checkFallDamage(), donc AVANT que ce handler ne tourne : le tick de\n"
+  "     l'atterrissage, la chute lue valait toujours zero. Les declenchements etaient\n"
+  "     des accidents de synchronisation -- d'ou le « une fois sur dix » signale.\n"
+  "     Nouveau declencheur : LivingFallEvent, diffuse depuis causeFallDamage juste\n"
+  "     avant la remise a zero, qui porte la distance exacte. Seuil nomme\n"
+  "     METEOR_STOMP_MIN_FALL = 6.0f : toute chute de plus de 6 blocs est une\n"
+  "     activation. L'effet (explosion 3.0 sans degat de bloc, anneau de lave) est\n"
+  "     inchange.",
+
+ 'src/main/java/deepluckyblock/enchantments/WeaponSkill.java':
+  "T470 : LA MARQUE L'EMPORTE SUR L'ARBITRAGE AU NIVEAU.\n"
+  "     retainedOn / retainedFoundOn / extraSkillEnchants arbitraient par winner(), au\n"
+  "     plus haut niveau. Depuis que le tirage ne s'abstient plus devant une capacite\n"
+  "     activee, une arme peut porter les deux -- et une capacite de plus haut niveau\n"
+  "     aurait evince la competence accordee. Comme une capacite n'a pas d'animation\n"
+  "     (effect() == null), l'arme serait redevenue muette : ni calque, ni clic droit,\n"
+  "     ni encart. gardeeSur() consulte dlbSkillGranted d'abord.",
+
+ 'src/main/java/deepluckyblock/client/WeaponBladeVisualRenderer.java':
+  "T470 : LA CAUSE PRINCIPALE DES « SKILLS INTROUVABLES ».\n"
+  "     Les calques d'une competence n'etaient rendus que si bladePixels etait vrai,\n"
+  "     c'est-a-dire si l'arme avait gagne l'AURA -- un tirage INDEPENDANT a 15 % en\n"
+  "     melee, pose au loot par DeepNbt.markLuckyBlockOrigin. Il fallait donc gagner\n"
+  "     DEUX tirages : 5 % pour la competence, puis 15 % pour avoir le droit de la\n"
+  "     voir. Produit : 0,75 % d'armes de melee animees, soit moins d'une arme\n"
+  "     attendue sur 300 blocs casses. L'animation n'etait pas absente, elle etait\n"
+  "     inatteignable. Depuis T445, les calques d'une arme de melee ne viennent QUE de\n"
+  "     la competence accordee : elle se suffit donc a elle-meme. L'aura garde son\n"
+  "     role de minorite decorative (T409) sur les armes SANS competence.",
 
  'src/main/java/deepluckyblock/util/SafeSurface.java':
   "T465 : LA SONDE DE SOL NE PEUT PLUS INVENTER UNE ALTITUDE.\n"
