@@ -8701,6 +8701,9 @@ public class StructureTerrainPrep {
             //     circulaire/stadium a contour organique, interieur inclus) : zero bordure carree/rectangulaire !
             applyWorldEditBrushAndLowCollar(orig, target, waterMask, x0, z0, w, h,
                     sMinI, sMaxI, sMinJ, sMaxJ, smoothRing, y0, level.getMinBuildHeight());
+            // T467 (INERTE depuis T468 : le lac n'installe plus de masque, donc
+            // distSilPin est null et TOUTE la boite est epinglee a y0 -- c'est ce
+            // que veut la consigne « clear tous les chunks structure a y sol »).
             // T467 : EPINGLER A Y0 LA SILHOUETTE, PLUS JAMAIS LE RECTANGLE.
             //
             // Cette boucle ecrasait target = y0 sur TOUT le rectangle declare,
@@ -8810,6 +8813,8 @@ public class StructureTerrainPrep {
                                                         int x0, int z0, int w, int h,
                                                         int sMinI, int sMaxI, int sMinJ, int sMaxJ,
                                                         int smoothRing, int y0, int minBuild) {
+        // T467 (INERTE depuis T468 : sans masque, distSilBrush est null et le
+        // brush retombe sur la distance a la BOITE, qui est ce qui est coupe).
         // T467 : MEME METRIQUE QUE LE RESTE DE LA CHAINE (T464).
         // Le collier et la jupe se mesuraient depuis le RECTANGLE declare. Sur
         // crimsonlake le rectangle deborde la matiere du template de 16 a 122

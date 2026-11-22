@@ -214,6 +214,12 @@ NOTICES = {
   "     propriete systeme, pas DebugLog, qui n'est pas encore chargeable a ce stade.",
 
  'src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java':
+  "T468 : les deux gardes T467 ci-dessous sont desormais INERTES, et c'est voulu.\n"
+  "     Le lac n'installant plus de masque, silhouetteDistance() rend null partout et\n"
+  "     le clamp, le fade, le brush et l'epinglage retombent tous sur la distance a la\n"
+  "     BOITE -- la seule metrique qui corresponde a ce qui est reellement coupe.\n"
+  "     Les replis null sont donc devenus le chemin NORMAL : ne pas les supprimer.\n"
+  "     Historique conserve ci-dessous pour comprendre pourquoi ils existent.\n"
   "T467 : LA FAILLE DROITE DE 17 BLOCS SUR LA FACE SUD -- c'est ma correction\n"
   "     T464 qui l'avait fabriquee.\n"
   "     T464 avait fait passer clampSmoothDelta et fade() a la SILHOUETTE reelle du\n"
@@ -283,12 +289,33 @@ NOTICES = {
   "     %USERPROFILE%\\.mcreator\\gradle\\init.d\\ -- il faut l'y RECOPIER.",
 
  'src/main/java/deepluckyblock/procedures/CrimsonLakeStructureSpawnProcedure.java':
-  "T459/T462 : preparation de terrain du lac, puis nettoyage de son annonce.\n"
-  "     T459 : smoothRingOnly avant la pose et le raccord T240 apres, emprise\n"
-  "     protegee de force pendant les deux passes. T462 : l'annonce affichait\n"
-  "     « crimsonlake » en brut -- elle passe par structureDisplayName comme les six\n"
-  "     autres structures -- et la duree de pose (« built in 8.4s ») ne part plus aux\n"
-  "     joueurs : c'est une mesure de developpement, elle reste dans la trace muette.",
+  "T468 : DEMI-TOUR. Mes deux correctifs precedents partaient dans le mauvais sens.\n"
+  "     Consigne dev 22/11 18:05 : « LE TERRAIN EST TOUJOURS DANS MA STRUCTURE, alors\n"
+  "     que tu etais cense clear TOUS les chunks structure a y sol de structure ».\n"
+  "     (1) AUCUNE colonne n'est plus sautee par le clear. T464 lui faisait sauter\n"
+  "     les 26 447 colonnes que le template n'ecrit pas : l'ancien relief survivait\n"
+  "     DANS l'emprise et la traversait -- les spike de glace de la capture 18:06.\n"
+  "     (2) Le clear descend desormais au Y0 de la STRUCTURE, plus a groundY+1.\n"
+  "     La structure est enfoncee de SINK_BLOCKS = 20 : ces 20 couches basses\n"
+  "     n'etaient JAMAIS rasees, et le paste ne les nettoie pas puisqu'il n'ecrit\n"
+  "     pas l'air du NBT (T93). Le plancher est choisi PAR COLONNE : profond la ou\n"
+  "     le template pose de la matiere, groundY+1 ailleurs -- descendre partout\n"
+  "     creuserait une fosse de 20 blocs sur ces memes 26 447 colonnes. Mesure sur\n"
+  "     crimsonlake.nbt : 43 417 / 43 417 colonnes occupees (100 %) ecrivent un bloc\n"
+  "     dans les 20 couches basses (colmin max = 14), donc le paste les remplit\n"
+  "     toutes : aucun vide creuse sous le lit du lac.\n"
+  "     (3) Le lac n'installe plus de masque de silhouette. Preuve arithmetique :\n"
+  "     clampSmoothDelta fait reach = 64 - 2*dd et allowDrop = max(2, reach). Mesuree\n"
+  "     depuis la silhouette, une colonne situee JUSTE hors de la boite est deja a\n"
+  "     30-122 blocs de la matiere du lac => reach <= 4, negatif au-dela de 32 => le\n"
+  "     terrain autour etait GELE a 2 blocs pres du naturel pendant que la coupe\n"
+  "     faisait ~50 blocs de profond. D'ou « aucun smooth progressif logique inter\n"
+  "     chunks, aucun chunks touches a part troues ».\n"
+  "     Ce qui est COUPE, c'est la boite : tout se mesure donc depuis la boite. Sans\n"
+  "     masque, silhouetteDistance() rend null et le clamp, le fade, le brush et\n"
+  "     l'epinglage y retombent TOUS ensemble. Une seule metrique, un seul plancher.\n"
+  "     NON VALIDE EN JEU : ceci retire la cause du gel de la pente ; cela ne prouve\n"
+  "     pas que la pente obtenue suffise pour ~50 blocs de denivele.",
 
  'deliverables/BASELINE.txt':
   "T461 : l'etat de reference du poste de l'utilisateur -- le dernier commit dont on\n"

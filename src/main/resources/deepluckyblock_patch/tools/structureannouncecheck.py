@@ -903,96 +903,85 @@ except Exception as _exc:
     print("ZIPLIVR : note — controle du colis impossible (%s)." % _exc)
 
 # =====================================================================
-# T464 — LE CLEAR SUIT LA SILHOUETTE, ET LA COURONNE REPOSE LE SOL DETECTE
+# T468 — LE CLEAR VIDE TOUTE LA BOITE, ET UNE SEULE METRIQUE : LA BOITE
 # =====================================================================
-# Deux defauts rapportes en jeu le 22/11, corriges ensemble.
+# Consigne dev du 22/11 18:05-18:07, apres T464 + T467 :
+#   « LE TERRAIN EST TOUJOURS DANS MA STRUCTURE, alors que tu etais cense
+#     clear TOUS les chunks structure a y sol de structure »
+#   « les spike de ice sont toujours la, et transpercent ma structure »
+#   « aucun smooth progressif logique inter chunks, aucun chunks touches a
+#     part troues »
+#   « tu pars clairement dans la mauvaise direction »
 #
-# (1) « faille droite dans le contour », « zones noires droites = trous
-#     direct ». Mesure sur les 1 366 835 blocs de crimsonlake.nbt : le
-#     template DECLARE 246 x 284 au sol mais n'ecrit que X 0..215 /
-#     Z 14..267. clearBuildVolume rasait le rectangle entier, donc 26 447
-#     colonnes (37,9 %) etaient videes puis jamais remplies -- le paste
-#     n'ecrit pas l'air du NBT, et le lissage les sautait via isProtected.
+# T464 avait fait deux choses, toutes les deux a l'envers :
+#  (1) le clear sautait les 26 447 colonnes que le template n'ecrit pas =>
+#      l'ancien relief survit DANS l'emprise et traverse la structure ;
+#  (2) clampSmoothDelta mesurait depuis la SILHOUETTE. Or reach = 64 - 2*dd
+#      et allowDrop = max(2, reach) : sur la face X+ une colonne situee juste
+#      HORS de la boite est deja a 30-122 blocs de la matiere du lac, donc
+#      reach <= 4, negatif au-dela de 32. Le terrain autour etait gele a
+#      2 blocs pres du naturel pendant que la coupe faisait ~50 blocs de
+#      profond : falaise verticale au bord de la boite, zero pente.
 #
-# (2) « la couronne repeinte n'est pas repeinte du meme bloc qu'avant : tu
-#     mets de la grass block par defaut ! non ! ». Le dessus etait code en
-#     dur, en TROIS exemplaires.
-#
-# CE QUE CE BANC GARDE AVANT TOUT : le piege de ce tour-la n'etait pas
-# d'ecrire le masque, c'etait de le brancher a moitie. Le masque avait ete
-# construit, passe en parametre et stocke dans LakeClearJob, et les boucles
-# qui effacent reellement les blocs ne le lisaient pas : zero effet. On
-# verifie donc le CONSOMMATEUR FINAL, pas la plomberie.
-lac464 = lire(LAC)
-prep464 = lire(PREP)
+# REGLE : ce qui est COUPE, c'est la boite. Tout se mesure donc depuis la
+# boite. Le lac ne doit installer AUCUN masque de silhouette -- sinon le
+# clamp, le fade, le brush et l'epinglage repartent sur deux metriques
+# concurrentes et la pente disparait a nouveau.
+lac468 = lire(LAC)
+prep468 = lire(PREP)
 
-if lac464 is not None:
-    c464 = sans_commentaires(lac464)
-    if "occupiedColumns(" not in c464:
+if lac468 is not None:
+    c468 = sans_commentaires(lac468)
+    # (a) AUCUNE colonne ne doit etre sautee par le clear.
+    if "clearsColumn" in c468:
         problemes.append(
-            "T464 : occupiedColumns() a disparu de la procedure du lac. Sans la "
-            "silhouette reelle, clearBuildVolume rase les 26 447 colonnes de marge "
-            "que rien ne reconstruit ensuite -- c'est la faille droite du 22/11.")
-    if re.search(r"clearBuildVolume\(\s*level\s*,\s*lakeMin\s*,\s*lakeMax\s*,[^;]*?lakeCols", c464) is None:
+            "T468 : le clear saute de nouveau des colonnes (clearsColumn). "
+            "L'ancien relief survivrait DANS l'emprise et la traverserait "
+            "-- les spike de glace du 22/11 18:06.")
+    # (b) le plancher profond doit etre le Y0 de la STRUCTURE, pas groundY+1.
+    if re.search(r"clearBuildVolume\(\s*level\s*,\s*lakeMin\s*,\s*lakeMax\s*,"
+                 r"\s*groundY \+ 1\s*,\s*deepCols\s*,\s*lakeMin\.getY\(\)", c468) is None:
         problemes.append(
-            "T464 : l'appel a clearBuildVolume ne recoit plus le masque lakeCols.")
-    if re.search(r"protectFootprint\([^;]*?lakeCols", c464) is None:
+            "T468 : le clear ne descend plus au Y0 de la STRUCTURE "
+            "(lakeMin.getY() == groundY + 1 - SINK_BLOCKS). Les 20 couches "
+            "enfoncees garderaient l'ancien terrain, que le paste n'efface pas "
+            "puisqu'il n'ecrit pas l'air du NBT (T93).")
+    # (c) le plancher profond ne vaut que la ou le template pose de la matiere.
+    if re.search(r"final boolean\[\] deepCols = occupiedColumns\(", c468) is None:
         problemes.append(
-            "T464 : protectFootprint ne recoit plus la silhouette. L'emprise "
-            "redeviendrait un rectangle et le lissage sauterait a nouveau la marge.")
-    # LE POINT CRITIQUE : les deux chemins d'effacement doivent CONSULTER le masque.
-    # Le motif vise la GARDE elle-meme, pas la simple presence du masque :
-    # « keep[ » restait vrai via sa declaration meme apres suppression du
-    # « continue », et le banc laissait alors passer la regression.
-    for methode, attendu in (("private long clearChunkDirect", "if (!keep["),
-                             ("private long clearChunkPerBlock", "if (!clearsColumn(")):
-        corps = corps_methode(c464, methode)
-        if corps is None:
-            problemes.append("T464 : %s introuvable dans la procedure du lac." % methode)
-        elif attendu not in corps:
-            problemes.append(
-                "T464 : %s n'interroge PAS la silhouette (« %s » absent). Le masque "
-                "serait construit et transporte pour rien : les colonnes de marge "
-                "repartiraient a l'air libre et la faille reviendrait telle quelle."
-                % (methode, attendu))
+            "T468 : deepCols ne vient plus d'occupiedColumns. Descendre au Y0 "
+            "sur TOUT le rectangle creuserait une fosse de 20 blocs sur les "
+            "26 447 colonnes que le template n'ecrit pas.")
+    # (d) metrique de lissage = la boite, donc protectFootprint SANS masque.
+    if re.search(r"protectFootprint\(\s*lakeMin\s*,\s*lakeMax\s*\)", c468) is None:
+        problemes.append(
+            "T468 : le lac n'installe plus la protection de BOITE. Avec un "
+            "masque de silhouette, clampSmoothDelta repartirait a 30-122 blocs "
+            "des le bord de la boite, reach = 64 - 2*dd tomberait a "
+            "allowDrop = 2, et la pente exterieure disparaitrait : falaise "
+            "verticale, « aucun smooth progressif ».")
 
-if prep464 is not None:
-    c464p = sans_commentaires(prep464)
-    for nom in ("isSurfaceLikeTop", "detectedTopBlock", "silhouetteDistance"):
-        if nom not in c464p:
-            problemes.append("T464 : %s() absent de StructureTerrainPrep." % nom)
-    # Le dessus en dur existait en trois exemplaires : on verifie la zone de
-    # reconstruction de colonne dans son ensemble, pas un seul site.
-    deb = c464p.find("private static void rebuildColumnSection")
-    fin = c464p.find("private static boolean isNaturalTerrain")
-    if deb != -1 and fin > deb and "GRASS_BLOCK.defaultBlockState()" in c464p[deb:fin]:
-        problemes.append(
-            "T464 : GRASS_BLOCK.defaultBlockState() est de retour dans la "
-            "reconstruction de colonne. Consigne du 22/11 : « il faut remettre le "
-            "sol comme detecte avant » -- en badlands cela replaque de la prairie "
-            "au milieu du mesa.")
-    # Une seule metrique de distance dans clampSmoothDelta : deux metriques
-    # concurrentes finissent toujours par se contredire quelque part.
-    corps_clamp = corps_methode(c464p, "private static int[][] clampSmoothDelta")
-    if corps_clamp is not None:
-        if "silhouetteDistance(" not in corps_clamp:
+if prep468 is not None:
+    c468p = sans_commentaires(prep468)
+    # Les replis « metrique historique » doivent rester : c'est eux qui rendent
+    # la boite a tout le monde quand aucun masque n'est installe.
+    for garde, role in (
+            ("(distSil != null) ? Math.round(distSil[i][j]) : Math.max(dx, dz)", "clampSmoothDelta"),
+            ("Math.hypot(dx, dz)", "le brush radial")):
+        if garde not in c468p:
             problemes.append(
-                "T464 : clampSmoothDelta ne mesure plus la distance a la silhouette. "
-                "Les colonnes de marge retomberaient a distance 0 du rectangle, donc "
-                "avec un droit de coupe de 64 blocs : la tranchee serait recreusee "
-                "par le lissage lui-meme.")
-        if "Math.max(dx, dz)" in corps_clamp.replace(
-                "(distSil != null) ? Math.round(distSil[i][j]) : Math.max(dx, dz)", ""):
-            problemes.append(
-                "T464 : clampSmoothDelta utilise encore Math.max(dx, dz) ailleurs que "
-                "dans le repli. Une seule metrique, sinon les bornes se contredisent.")
-    corps_fade = corps_methode(c464p, "private static int[][] fade")
-    if corps_fade is not None and "distSilFade" not in corps_fade:
+                "T468 : le repli sur la distance a la boite a disparu de %s "
+                "(« %s »). Sans lui, plus aucune metrique de secours." % (role, garde))
+    # T464 garde ce qui etait bon : le sol repose est le sol DETECTE.
+    for nom in ("isSurfaceLikeTop", "detectedTopBlock"):
+        if nom not in c468p:
+            problemes.append("T468 : %s() absent — consigne « remets le sol comme detecte avant »." % nom)
+    deb = c468p.find("private static void rebuildColumnSection")
+    fin = c468p.find("private static boolean isNaturalTerrain")
+    if deb != -1 and fin > deb and "GRASS_BLOCK.defaultBlockState()" in c468p[deb:fin]:
         problemes.append(
-            "T464 : fade() ignore la silhouette. « insideStructure » redeviendrait "
-            "vrai sur tout le rectangle englobant et le poids sauterait de 1 a sa "
-            "valeur de couronne pile sur l'arete : une marche nette a angle droit, "
-            "exactement la signature du defaut corrige.")
+            "T468 : GRASS_BLOCK.defaultBlockState() est de retour dans la "
+            "reconstruction de colonne. En badlands cela replaque de la prairie.")
 
 # =====================================================================
 # T465 — LE LAC NE S'ANCRE PLUS SUR L'ALTITUDE DU JOUEUR
@@ -1066,70 +1055,6 @@ if lac465 is not None:
             "T465 : le mode nappe ne court-circuite plus les DEUX passes de "
             "lissage (avant-pose et raccord). L'utilisateur a tranche : « pas "
             "besoin de smooth terrain ni alentour vu que c'est de l'eau ».")
-
-# =====================================================================
-# T467 — LE DERNIER MOT DU LISSAGE DOIT PARLER LA MEME LANGUE QUE T464
-# =====================================================================
-# Rapporte en jeu le 22/11 16:33, APRES T464 : « RETOUR DES TRANCHEES encore
-# plus grosses », « il n'y a qu'une face qui contient une giga faille, c'est
-# la face sud (toward positive Z) », « le trou fait exactement 17 blocs de
-# largeur », et « je vois de l'ancien terrain dans le crimsonlake ».
-#
-# T464 avait fait passer clampSmoothDelta et fade() a la silhouette reelle.
-# Mais les DEUX dernieres etapes avant rebuildTerrainBatched mesuraient encore
-# depuis le RECTANGLE declare, et ce sont elles qui ont le dernier mot :
-#   - applyWorldEditBrushAndLowCollar : dRad = hypot sur le rectangle ;
-#   - la boucle qui ecrase target = y0 sur tout le rectangle.
-# Les 26 447 colonnes que le template n'ecrit jamais n'etaient donc plus
-# rasees par le clear (T464) mais restaient epinglees a y0 — et comme
-# isProtected les exclut desormais, rebuildTerrainBatched les CREUSAIT.
-# Mesure sur crimsonlake.nbt : cette marge vaut 16 a 18 blocs sur la face Z+,
-# d'affilee sur 65 blocs (X 71..135) — les « 17 blocs de large », face sud.
-# Sur les autres faces elle vaut 30 a 122 blocs : terrain ancien laisse tel
-# quel, l'autre moitie du rapport.
-#
-# CE QUE CE BANC GARDE : la garde elle-meme, pas la presence du nom. Supprimer
-# le « continue » en laissant la variable declaree est exactement la maniere
-# dont T464 et T465 ont deja failli passer verts avec le bug dedans.
-prep467 = lire(PREP)
-if prep467 is not None:
-    c467 = sans_commentaires(prep467)
-    GARDE_PIN = "if (distSilPin != null && distSilPin[i][j] > 0.5f) { sparedY0++; continue; }"
-    EPINGLE = "target[i][j] = y0;"
-    deb467 = c467.find("applyWorldEditBrushAndLowCollar(orig, target, waterMask")
-    fin467 = c467.find("double ampN = 0")
-    if deb467 == -1 or fin467 <= deb467:
-        problemes.append(
-            "T467 : l'appel a applyWorldEditBrushAndLowCollar ou le diag T244 qui "
-            "le suit est introuvable — le banc ne sait plus ou regarder.")
-    else:
-        zone = c467[deb467:fin467]
-        if GARDE_PIN not in zone:
-            problemes.append(
-                "T467 : la boucle d'epinglage a y0 n'epargne plus la marge du "
-                "rectangle (garde « %s » absente). Elle ecraserait a nouveau "
-                "target = y0 sur les 26 447 colonnes que le template ne remplit "
-                "jamais, et rebuildTerrainBatched les creuserait : c'est la faille "
-                "droite de 17 blocs sur la face sud." % GARDE_PIN)
-        elif EPINGLE in zone and zone.index(EPINGLE) < zone.index(GARDE_PIN):
-            problemes.append(
-                "T467 : target = y0 est ecrit AVANT la garde de silhouette. Une "
-                "garde placee apres l'ecriture ne garde rien.")
-    corps_brush = corps_methode(c467, "private static void applyWorldEditBrushAndLowCollar")
-    if corps_brush is None:
-        problemes.append("T467 : applyWorldEditBrushAndLowCollar introuvable.")
-    else:
-        if "silhouetteDistance(" not in corps_brush:
-            problemes.append(
-                "T467 : le brush ne mesure plus la distance a la silhouette. Le "
-                "collier bas de 16 blocs se replacerait autour du RECTANGLE, donc "
-                "jusqu'a 122 blocs a cote de la vraie berge, et tout l'interieur du "
-                "rectangle retomberait a dRad = 0 donc force a y0.")
-        if "(distSilBrush != null) ? distSilBrush[i][j] : Math.hypot(dx, dz)" not in corps_brush:
-            problemes.append(
-                "T467 : dRad n'est plus la distance a la silhouette avec repli "
-                "historique. Une seule metrique dans toute la chaine : clampSmoothDelta, "
-                "fade(), le brush et l'epinglage doivent tous parler de la meme emprise.")
 
 gen = lire(GEN)
 if gen is not None:
