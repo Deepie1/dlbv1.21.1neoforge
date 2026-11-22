@@ -8701,9 +8701,39 @@ public class StructureTerrainPrep {
             //     circulaire/stadium a contour organique, interieur inclus) : zero bordure carree/rectangulaire !
             applyWorldEditBrushAndLowCollar(orig, target, waterMask, x0, z0, w, h,
                     sMinI, sMaxI, sMinJ, sMaxJ, smoothRing, y0, level.getMinBuildHeight());
+            // T467 : EPINGLER A Y0 LA SILHOUETTE, PLUS JAMAIS LE RECTANGLE.
+            //
+            // Cette boucle ecrasait target = y0 sur TOUT le rectangle declare,
+            // et c'est le DERNIER mot avant rebuildTerrainBatched : elle annulait
+            // le fade et le clamp, qui eux etaient deja passes a la silhouette en
+            // T464. Deux metriques concurrentes dans la meme chaine -- exactement
+            // ce que le commentaire de clampSmoothDelta interdit.
+            //
+            // Consequence mesuree sur crimsonlake.nbt : le template DECLARE
+            // 246 x 284 mais n'ecrit que 43 417 colonnes sur 69 864. Les 26 447
+            // autres ne sont plus rasees depuis T464 (elles gardent leur terrain)
+            // mais restaient epinglees a y0 ici, et rebuildTerrainBatched ne les
+            // saute pas (isProtected les exclut depuis T464) : il les CREUSAIT
+            // jusqu'a y0. Sur la face Z+ cette marge vaut 16 a 18 blocs sur
+            // 65 blocs de long d'affilee (X 71..135) -- la faille droite de
+            // 17 blocs de large rapportee en jeu le 22/11.
+            //
+            // Une colonne que le template ne remplira jamais n'est PAS l'emprise :
+            // elle est du terrain voisin, et c'est la jupe radiale du brush qui
+            // doit la raccorder, pas un aplanissement au sol de la structure.
+            final float[][] distSilPin = silhouetteDistance(x0, z0, w, h);
+            int pinnedY0 = 0, sparedY0 = 0;
             for (int i = Math.max(0, sMinI); i <= Math.min(w - 1, sMaxI); i++)
-                for (int j = Math.max(0, sMinJ); j <= Math.min(h - 1, sMaxJ); j++)
+                for (int j = Math.max(0, sMinJ); j <= Math.min(h - 1, sMaxJ); j++) {
+                    if (distSilPin != null && distSilPin[i][j] > 0.5f) { sparedY0++; continue; }
                     target[i][j] = y0;
+                    pinnedY0++;
+                }
+            if (sparedY0 > 0)
+                deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-STRUCTURE] T467 epinglage Y0 : {} colonnes de la "
+                                + "SILHOUETTE mises a y0={}, {} colonnes de la marge du rectangle EPARGNEES "
+                                + "(le template ne les remplit jamais -- les creuser faisait la faille droite)",
+                        pinnedY0, y0, sparedY0);
         }
 
         // === T244 : DIAG SYMETRIE DU LISSAGE -- preuve « 4 bords » ===
@@ -8780,6 +8810,17 @@ public class StructureTerrainPrep {
                                                         int x0, int z0, int w, int h,
                                                         int sMinI, int sMaxI, int sMinJ, int sMaxJ,
                                                         int smoothRing, int y0, int minBuild) {
+        // T467 : MEME METRIQUE QUE LE RESTE DE LA CHAINE (T464).
+        // Le collier et la jupe se mesuraient depuis le RECTANGLE declare. Sur
+        // crimsonlake le rectangle deborde la matiere du template de 16 a 122
+        // blocs selon la face : le collier bas tombait donc dans le vide, loin
+        // de la vraie berge, et tout l'interieur du rectangle (dRad = 0) etait
+        // force a y0 -- y compris les 26 447 colonnes que le template n'ecrit
+        // pas. Mesuree depuis la silhouette reelle, la berge epouse l'eau et la
+        // marge redevient du terrain voisin, raccorde puis strictement naturel
+        // au-dela de la jupe. Silhouette inconnue => metrique historique,
+        // comportement de toutes les autres structures inchange.
+        final float[][] distSilBrush = silhouetteDistance(x0, z0, w, h);
         final double rCollar = FORCED_LOW_COLLAR_RADIUS; // 16.0 blocs = 1 chunk
         final double rBaseMax = Math.max(rCollar + 8.0, smoothRing - 1.5);
         final int validFloor = minBuild + 4;
@@ -8794,7 +8835,7 @@ public class StructureTerrainPrep {
             for (int j = 0; j < h; j++) {
                 int wz = z0 + j;
                 double dz = j < sMinJ ? (sMinJ - j) : (j > sMaxJ ? (j - sMaxJ) : 0.0);
-                double dRad = Math.hypot(dx, dz);
+                double dRad = (distSilBrush != null) ? distSilBrush[i][j] : Math.hypot(dx, dz);   // T467
                 dGrid[i][j] = dRad;
                 double warp = 2.2 * Math.sin(wx * 0.11 + wz * 0.07)
                             + 1.6 * Math.cos(wx * 0.06 - wz * 0.13);

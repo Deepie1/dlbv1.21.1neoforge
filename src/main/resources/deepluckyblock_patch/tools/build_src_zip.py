@@ -213,6 +213,34 @@ NOTICES = {
   "     volontaire (il tourne avant tout logger du mod) et la garde l'est aussi : une\n"
   "     propriete systeme, pas DebugLog, qui n'est pas encore chargeable a ce stade.",
 
+ 'src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java':
+  "T467 : LA FAILLE DROITE DE 17 BLOCS SUR LA FACE SUD -- c'est ma correction\n"
+  "     T464 qui l'avait fabriquee.\n"
+  "     T464 avait fait passer clampSmoothDelta et fade() a la SILHOUETTE reelle du\n"
+  "     template, mais les deux DERNIERES etapes avant la reconstruction mesuraient\n"
+  "     encore depuis le RECTANGLE declare -- et ce sont elles qui ont le dernier mot :\n"
+  "     le brush/collier (dRad = hypot sur le rectangle) et la boucle qui ecrasait\n"
+  "     target = y0 sur tout le rectangle. Les 26 447 colonnes que crimsonlake.nbt\n"
+  "     n'ecrit jamais (43 417 occupees sur 69 864) n'etaient donc plus RASEES par le\n"
+  "     clear depuis T464, mais restaient EPINGLEES a y0 -- et comme isProtected les\n"
+  "     exclut desormais, rebuildTerrainBatched les creusait jusqu'a y0.\n"
+  "     Mesure sur le NBT : cette marge vaut 16 a 18 blocs sur la face Z+, d'affilee\n"
+  "     sur 65 blocs (X 71..135). C'est exactement « une seule face, la face sud,\n"
+  "     17 blocs de large ». Sur les autres faces elle vaut 30 a 122 blocs : terrain\n"
+  "     ancien laisse en place, l'autre moitie du rapport du 22/11.\n"
+  "     Correctif : une seule metrique dans toute la chaine. L'epinglage a y0 ne vise\n"
+  "     plus que la silhouette, et le brush mesure sa distance depuis elle. Silhouette\n"
+  "     inconnue => metrique historique : aucune autre structure ne change.\n"
+  "     Un compteur « T467 epinglage Y0 » dit en clair, au prochain run, combien de\n"
+  "     colonnes ont ete epinglees et combien epargnees.",
+
+ 'src/main/resources/deepluckyblock_patch/tools/structureannouncecheck.py':
+  "T467 : trois gardes, chacune testee EN CASSANT l'invariant.\n"
+  "     1) garde d'epinglage supprimee -> alerte ; 2) garde deplacee APRES l'ecriture\n"
+  "     de target = y0, le nom restant present -> alerte (c'est le piege du sous-mot\n"
+  "     qui m'avait deja eu deux fois) ; 3) brush remis sur Math.hypot du rectangle\n"
+  "     -> alerte. Restauration verifiee par cmp apres chaque essai.",
+
  'src/main/resources/deepluckyblock_patch/tools/typecheck.py':
   "T466 : DEUX REGLES NEES D'UN ECHEC DE COMPILATION QUE LES 8 BANCS AVAIENT\n"
   "     LAISSE PASSER (runClient du 22/11, 2 erreurs).\n"

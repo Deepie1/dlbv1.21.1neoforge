@@ -1067,6 +1067,70 @@ if lac465 is not None:
             "lissage (avant-pose et raccord). L'utilisateur a tranche : « pas "
             "besoin de smooth terrain ni alentour vu que c'est de l'eau ».")
 
+# =====================================================================
+# T467 — LE DERNIER MOT DU LISSAGE DOIT PARLER LA MEME LANGUE QUE T464
+# =====================================================================
+# Rapporte en jeu le 22/11 16:33, APRES T464 : « RETOUR DES TRANCHEES encore
+# plus grosses », « il n'y a qu'une face qui contient une giga faille, c'est
+# la face sud (toward positive Z) », « le trou fait exactement 17 blocs de
+# largeur », et « je vois de l'ancien terrain dans le crimsonlake ».
+#
+# T464 avait fait passer clampSmoothDelta et fade() a la silhouette reelle.
+# Mais les DEUX dernieres etapes avant rebuildTerrainBatched mesuraient encore
+# depuis le RECTANGLE declare, et ce sont elles qui ont le dernier mot :
+#   - applyWorldEditBrushAndLowCollar : dRad = hypot sur le rectangle ;
+#   - la boucle qui ecrase target = y0 sur tout le rectangle.
+# Les 26 447 colonnes que le template n'ecrit jamais n'etaient donc plus
+# rasees par le clear (T464) mais restaient epinglees a y0 — et comme
+# isProtected les exclut desormais, rebuildTerrainBatched les CREUSAIT.
+# Mesure sur crimsonlake.nbt : cette marge vaut 16 a 18 blocs sur la face Z+,
+# d'affilee sur 65 blocs (X 71..135) — les « 17 blocs de large », face sud.
+# Sur les autres faces elle vaut 30 a 122 blocs : terrain ancien laisse tel
+# quel, l'autre moitie du rapport.
+#
+# CE QUE CE BANC GARDE : la garde elle-meme, pas la presence du nom. Supprimer
+# le « continue » en laissant la variable declaree est exactement la maniere
+# dont T464 et T465 ont deja failli passer verts avec le bug dedans.
+prep467 = lire(PREP)
+if prep467 is not None:
+    c467 = sans_commentaires(prep467)
+    GARDE_PIN = "if (distSilPin != null && distSilPin[i][j] > 0.5f) { sparedY0++; continue; }"
+    EPINGLE = "target[i][j] = y0;"
+    deb467 = c467.find("applyWorldEditBrushAndLowCollar(orig, target, waterMask")
+    fin467 = c467.find("double ampN = 0")
+    if deb467 == -1 or fin467 <= deb467:
+        problemes.append(
+            "T467 : l'appel a applyWorldEditBrushAndLowCollar ou le diag T244 qui "
+            "le suit est introuvable — le banc ne sait plus ou regarder.")
+    else:
+        zone = c467[deb467:fin467]
+        if GARDE_PIN not in zone:
+            problemes.append(
+                "T467 : la boucle d'epinglage a y0 n'epargne plus la marge du "
+                "rectangle (garde « %s » absente). Elle ecraserait a nouveau "
+                "target = y0 sur les 26 447 colonnes que le template ne remplit "
+                "jamais, et rebuildTerrainBatched les creuserait : c'est la faille "
+                "droite de 17 blocs sur la face sud." % GARDE_PIN)
+        elif EPINGLE in zone and zone.index(EPINGLE) < zone.index(GARDE_PIN):
+            problemes.append(
+                "T467 : target = y0 est ecrit AVANT la garde de silhouette. Une "
+                "garde placee apres l'ecriture ne garde rien.")
+    corps_brush = corps_methode(c467, "private static void applyWorldEditBrushAndLowCollar")
+    if corps_brush is None:
+        problemes.append("T467 : applyWorldEditBrushAndLowCollar introuvable.")
+    else:
+        if "silhouetteDistance(" not in corps_brush:
+            problemes.append(
+                "T467 : le brush ne mesure plus la distance a la silhouette. Le "
+                "collier bas de 16 blocs se replacerait autour du RECTANGLE, donc "
+                "jusqu'a 122 blocs a cote de la vraie berge, et tout l'interieur du "
+                "rectangle retomberait a dRad = 0 donc force a y0.")
+        if "(distSilBrush != null) ? distSilBrush[i][j] : Math.hypot(dx, dz)" not in corps_brush:
+            problemes.append(
+                "T467 : dRad n'est plus la distance a la silhouette avec repli "
+                "historique. Une seule metrique dans toute la chaine : clampSmoothDelta, "
+                "fade(), le brush et l'epinglage doivent tous parler de la meme emprise.")
+
 gen = lire(GEN)
 if gen is not None:
     cg = sans_commentaires(gen)
