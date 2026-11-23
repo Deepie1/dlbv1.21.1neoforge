@@ -111,6 +111,24 @@ gradle.rootProject { p ->
                     }
                 }
 
+                // T472. Meme mecanique, cote SOURCES cette fois. L'outil d'audit de
+                // terrain livre au tour precedent a ete retire du depot : son approche
+                // etait mauvaise -- il etait appele depuis le pipeline du lac, donc
+                // impossible a supprimer sans casser la compilation -- et il est
+                // remplace par dev/DevTerrainScan.java, autonome. Mais le colis de
+                // sources qui l'avait installe ne peut pas le reprendre. Sans cette
+                // suppression, le workspace garderait indefiniment 989 lignes de code
+                // mort. Il compile encore, puisqu'il ne dependait que de SafeSurface,
+                // et c'est precisement le probleme : rien ne signalerait sa presence.
+                ['src/main/java/deepluckyblock/util/TerrainAudit.java',
+                 'src/main/resources/deepluckyblock_patch/tools/terrainauditcheck.py'].each { rel ->
+                    def stale = new File(p.projectDir, rel)
+                    if (stale.exists() && stale.delete()) {
+                        logger.lifecycle('[DLB-PATCH] source parasite supprimee : ' + rel)
+                        done++
+                    }
+                }
+
                 logger.lifecycle('[DLB-PATCH] ' + done +
                     ' fichiers restaures (cadre MCreator + ressources + advancements).')
             }

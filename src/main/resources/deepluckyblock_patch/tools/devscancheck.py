@@ -189,11 +189,16 @@ def controler(racine='.'):
     # la repercussion la plus sournoise qui soit, puisqu'elle ne se verrait qu'au
     # prochain gradlew. La tache applyMcreatorPatch recopie une liste fixe de fichiers
     # cadre depuis le miroir ; l'outil ne doit jamais y entrer.
+    #
+    # On lit le CODE et non la prose : le script explique en commentaire quel outil a
+    # remplace l'ancien, et une regle qui mord sur une phrase est un faux positif. Elle
+    # ne doit se declencher que si le nom apparait dans une instruction -- typiquement
+    # une entree de liste a recopier. Groovy partage la syntaxe // et /* */ de Java.
     gradle = lire(racine, 'src/main/resources/deepluckyblock_patch/tools/'
                           'deep-lucky-block-patch.gradle')
-    if gradle and CLASSE in gradle:
-        echecs.append('VERROU 7 : %s est nomme dans deep-lucky-block-patch.gradle -- la '
-                      'tache de patch le restaurerait apres suppression' % CLASSE)
+    if gradle and CLASSE in sans_commentaires(gradle):
+        echecs.append('VERROU 7 : %s est nomme dans le CODE de deep-lucky-block-patch.gradle '
+                      '-- la tache de patch le restaurerait apres suppression' % CLASSE)
 
     if echecs:
         for e in echecs:
