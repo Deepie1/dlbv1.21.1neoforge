@@ -273,16 +273,69 @@ def controler(racine='.'):
         echecs.append('VERROU 9 : plus de chien de garde de silence -- un pipeline qui '
                       'abandonne sans relacher la zone emporterait toutes les captures')
 
+    # ----------------------------------------------------------------- VERROU 10
+    # LA REDACTION NE DOIT JAMAIS TOURNER SUR LE FIL SERVEUR.
+    # Panne reellement constatee en jeu : le relief theorique (~140 000 appels a
+    # getBaseHeight) puis la redaction de ~10 Mio etaient faits sur le fil serveur au
+    # moment d'ecrire. La partie a gele entierement -- chat compris -- le joueur a du
+    # tuer le jeu, et aucun fichier n'est sorti. Tout ce que la redaction lit est deja
+    # capture en memoire : rien ne justifie de tenir le fil serveur.
+    corps_ecrire = ''
+    m = re.search(r'private static void ecrire\(Session s, String cause\) \{', code)
+    if m is None:
+        echecs.append('VERROU 10 : ecrire(Session, String) introuvable')
+    else:
+        suite = code[m.end():]
+        fin = suite.find('private static void rediger(')
+        corps_ecrire = suite if fin < 0 else suite[:fin]
+
+    if corps_ecrire:
+        if 'new Thread(' not in corps_ecrire:
+            echecs.append('VERROU 10 : ecrire() ne delegue plus a un fil de fond -- la '
+                          'redaction gelerait la partie, comme la panne deja subie')
+        if 'calculerBruit(' in corps_ecrire:
+            echecs.append('VERROU 10 : le relief theorique est calcule depuis ecrire(), '
+                          'donc sur le fil serveur : ~140 000 appels de bruit qui figent '
+                          'le jeu avant qu\'un seul fichier ne soit ecrit')
+        for lourd in ('section9Grilles(', 'coupesVerticales(', 'tableauParChunk('):
+            if lourd in corps_ecrire:
+                echecs.append('VERROU 10 : %s est appelee depuis ecrire() (fil serveur) '
+                              'au lieu du fil de redaction' % lourd.rstrip('('))
+        if 'createDirectories' not in corps_ecrire:
+            echecs.append('VERROU 10 : le dossier de sortie n\'est plus cree tout de '
+                          'suite -- en cas d\'echec le joueur n\'a meme pas un dossier '
+                          'ou regarder')
+
+    # Le relief doit demarrer des l'ouverture, pour etre pret quand on redige.
+    if 'lancerBruit(' not in code:
+        echecs.append('VERROU 10 : le relief theorique n\'est plus lance a l\'ouverture '
+                      '-- il serait paye d\'un bloc au moment d\'ecrire')
+    # Et il doit etre publie d'un coup, jamais lu a moitie rempli.
+    if not re.search(r'volatile int\[\] bruit', code):
+        echecs.append('VERROU 10 : le relief theorique n\'est pas volatile -- le fil de '
+                      'redaction pourrait lire un tableau a moitie ecrit')
+    # Parler au joueur depuis un fil de fond sans repasser par le serveur est une faute.
+    m = re.search(r'private static void rediger\(', code)
+    if m is None:
+        echecs.append('VERROU 10 : rediger(...) introuvable')
+    else:
+        suite = code[m.end():]
+        fin = suite.find('private static void direDepuisFond(')
+        corps = suite if fin < 0 else suite[:fin]
+        if 'dire(s.level' in corps:
+            echecs.append('VERROU 10 : rediger() parle au joueur directement depuis le '
+                          'fil de fond -- il faut repasser par serveur.execute')
+
     if echecs:
         for e in echecs:
             print('ECHEC  %s' % e)
         print('devscancheck : %d verrou(x) rompu(s)' % len(echecs))
         return 1
 
-    print('devscancheck : 9 verrous tiennent -- outil isole et supprimable, auto-accroche, '
+    print('devscancheck : 10 verrous tiennent -- outil isole et supprimable, auto-accroche, '
           'sonde passive, chunks absents jamais maquilles, grilles alignees sur les chunks, '
           '3 jalons suivis, aucune restauration par le build, un fichier par etape, '
-          'mesure sans armement manuel')
+          'mesure sans armement manuel, redaction hors du fil serveur')
     return 0
 
 

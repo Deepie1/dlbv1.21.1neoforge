@@ -143,6 +143,9 @@ public final class DevTerrainScan {
     /** La veille se reprend apres chaque ecriture, sauf si le dev l'a coupee. */
     private static volatile boolean veilleAuto = true;
 
+    /** Attente maximale du relief theorique avant de rediger sans lui. */
+    private static final long BRUIT_ATTENTE_MS = 120_000L;
+
     /** Au-dela de ce silence, on ecrit au lieu de risquer de tout perdre. */
     private static final long SILENCE_MAX_MS = 300_000L;
 
@@ -193,7 +196,13 @@ public final class DevTerrainScan {
         final List<String> palette = new ArrayList<>();
         final Map<String, Integer> paletteIdx = new HashMap<>();
         final List<String> journal = new ArrayList<>();
-        int[] bruit;            // relief theorique, pour les chunks jamais charges
+        /**
+         * Relief theorique. VOLATILE et publie d'un seul coup a la fin du calcul : il est
+         * rempli par un fil de fond, et un lecteur ne doit jamais voir un tableau a moitie
+         * ecrit.
+         */
+        volatile int[] bruit;
+        Thread filBruit;        // calcul du relief theorique, lance des l'ouverture
         int dernierPasteQ = -1;
         boolean zoneVue;
     }
@@ -510,6 +519,7 @@ public final class DevTerrainScan {
             s.yFloor = Math.max(level.getMinBuildHeight(), groundY - SCAN_BELOW);
             s.yTop = Math.min(level.getMaxBuildHeight() - 1, groundY + SCAN_ABOVE);
             s.derniereCaptureMs = System.currentTimeMillis();
+            lancerBruit(s);
             dire(level, "session ouverte : zone " + s.w + "x" + s.d + " blocs ("
                     + s.cw + "x" + s.cd + " chunks), sol de reference Y=" + groundY,
                     ChatFormatting.AQUA);
@@ -528,19 +538,64 @@ public final class DevTerrainScan {
      * chunk absent ne dirait meme pas quelle forme il aurait du avoir.</p>
      */
     private static void calculerBruit(Session s) {
-        s.bruit = new int[s.w * s.d];
+        long t0 = System.currentTimeMillis();
+        int[] tmp = new int[s.w * s.d];
         try {
             var gen = s.level.getChunkSource().getGenerator();
             var rs = s.level.getChunkSource().randomState();
             var type = net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR_WG;
             for (int z = 0; z < s.d; z++) {
                 for (int x = 0; x < s.w; x++) {
-                    s.bruit[z * s.w + x] = gen.getBaseHeight(s.x0 + x, s.z0 + z, type, s.level, rs);
+                    tmp[z * s.w + x] = gen.getBaseHeight(s.x0 + x, s.z0 + z, type, s.level, rs);
                 }
             }
+            s.bruit = tmp;      // publication en un seul coup
+            log("[DLB-SCAN] relief theorique pret : " + (s.w * s.d) + " colonnes en "
+                    + (System.currentTimeMillis() - t0) + " ms");
         } catch (Throwable t) {
-            java.util.Arrays.fill(s.bruit, ABSENT);
+            java.util.Arrays.fill(tmp, ABSENT);
+            s.bruit = tmp;
             log("[DLB-SCAN] relief theorique indisponible : " + t);
+        }
+    }
+
+    /**
+     * Lance le relief theorique DES L'OUVERTURE, sur un fil de fond.
+     *
+     * <p>Pourquoi : {@code getBaseHeight} echantillonne une colonne de bruit complete a
+     * chaque appel, et la zone en compte ~140 000. Mesure en jeu : appele sur le fil
+     * serveur au moment d'ecrire, il a GELE la partie entierement -- plus de chat, plus de
+     * tick, le joueur a du tuer le jeu, et aucun fichier n'est sorti. Lance ici, il tourne
+     * pendant les trois minutes de construction et il est pret quand on redige.</p>
+     */
+    private static void lancerBruit(Session s) {
+        try {
+            Thread t = new Thread(() -> calculerBruit(s), "DLB-SCAN-relief");
+            t.setDaemon(true);
+            t.setPriority(Thread.MIN_PRIORITY);   // jamais au detriment du serveur
+            s.filBruit = t;
+            t.start();
+        } catch (Throwable t) {
+            log("[DLB-SCAN] fil du relief theorique non lance : " + t);
+        }
+    }
+
+    /** Attend le relief theorique sans bloquer indefiniment ; a defaut, sections vides. */
+    private static void attendreBruit(Session s) {
+        Thread t = s.filBruit;
+        if (t != null && t.isAlive()) {
+            log("[DLB-SCAN] attente du relief theorique...");
+            try {
+                t.join(BRUIT_ATTENTE_MS);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        if (s.bruit == null) {
+            int[] vide = new int[s.w * s.d];
+            java.util.Arrays.fill(vide, ABSENT);
+            s.bruit = vide;
+            log("[DLB-SCAN] relief theorique non termine a temps : sections theoriques vides");
         }
     }
 
@@ -702,24 +757,61 @@ public final class DevTerrainScan {
     //  ECRITURE — UN SEUL FICHIER TEXTE
     // =================================================================================
 
+    /**
+     * Prepare le dossier sur le fil serveur, puis REDIGE AILLEURS.
+     *
+     * <p>La redaction produit une dizaine de Mio de texte et lit ~140 000 colonnes par
+     * etape. Mesure en jeu : faite sur le fil serveur, elle a fige la partie -- chat
+     * compris -- et le joueur a du tuer le jeu avant qu'un seul fichier ne soit ecrit. Or
+     * tout ce qu'elle lit est deja capture en memoire (tableaux d'entiers et palette) :
+     * rien n'oblige a tenir le fil serveur pendant ce temps. Le dossier, lui, est cree
+     * tout de suite et son chemin annonce : meme si la suite echoue, le joueur sait ou
+     * regarder.</p>
+     */
     private static void ecrire(Session s, String cause) {
         if (s.etapes.isEmpty()) {
             log("[DLB-SCAN] rien a ecrire : aucune etape capturee");
             return;
         }
-        // Le relief theorique coute ~135 000 appels a getBaseHeight, soit quelques
-        // secondes. On le paie ICI, une seule fois, APRES la fin du pipeline -- jamais
-        // pendant la construction, ou le serveur est deja en retard de plusieurs centaines
-        // de ticks.
-        calculerBruit(s);
+        // Affectation en deux temps puis copie dans des finales : une finale vierge
+        // affectee dans un try et capturee ensuite par une lambda est legale, mais sans
+        // JDK sous la main je ne prends aucun risque de compilation sur un detail pareil.
+        java.nio.file.Path dirTmp = null;
+        net.minecraft.server.MinecraftServer serveurTmp = null;
         try {
+            serveurTmp = s.level.getServer();
             String stamp = new java.text.SimpleDateFormat("yyyyMMdd-HHmmss")
                     .format(new java.util.Date());
-            java.nio.file.Path dir = s.level.getServer()
+            dirTmp = serveurTmp
                     .getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
                     .resolve("dlb_scan").resolve("scan-" + stamp);
-            java.nio.file.Files.createDirectories(dir);
+            java.nio.file.Files.createDirectories(dirTmp);
+        } catch (Throwable t) {
+            log("[DLB-SCAN] dossier de sortie impossible : " + t);
+            dire(s.level, "ECHEC : dossier de sortie impossible : " + t, ChatFormatting.RED);
+            return;
+        }
+        final java.nio.file.Path dir = dirTmp;
+        final net.minecraft.server.MinecraftServer serveur = serveurTmp;
+        log("[DLB-SCAN] dossier cree : " + dir);
+        dire(s.level, "redaction en cours en tache de fond (" + s.etapes.size()
+                + " etapes) -- le jeu reste jouable. Dossier : " + dir, ChatFormatting.AQUA);
+        try {
+            Thread w = new Thread(() -> rediger(s, cause, dir, serveur), "DLB-SCAN-redaction");
+            w.setDaemon(true);
+            w.start();
+        } catch (Throwable t) {
+            log("[DLB-SCAN] fil de redaction non lance, repli sur le fil serveur : " + t);
+            rediger(s, cause, dir, serveur);
+        }
+    }
 
+    /** Redaction integrale : hors du fil serveur. Ne touche qu'a des donnees capturees. */
+    private static void rediger(Session s, String cause, java.nio.file.Path dir,
+                                net.minecraft.server.MinecraftServer serveur) {
+        long tDebut = System.currentTimeMillis();
+        attendreBruit(s);
+        try {
             long total = 0;
             List<String> ecrits = new ArrayList<>();
 
@@ -757,13 +849,34 @@ public final class DevTerrainScan {
             section10Palette(r, s);
             total += ecrireFichier(s, dir.resolve("00_SOMMAIRE.txt"), r, ecrits);
 
-            dire(s.level, (s.etapes.size() + 1) + " fichiers ecrits, " + (total / 1024L)
-                    + " Kio au total, dans : " + dir, ChatFormatting.AQUA);
-            dire(s.level, "ouvre 00_SOMMAIRE.txt en premier : il designe les chunks fautifs "
-                    + "et renvoie au fichier d'etape qui les detaille.", ChatFormatting.AQUA);
+            final long ko = total / 1024L;
+            final long secondes = (System.currentTimeMillis() - tDebut) / 1000L;
+            log("[DLB-SCAN] termine : " + (s.etapes.size() + 1) + " fichiers, " + ko
+                    + " Kio, en " + secondes + " s, dans " + dir);
+            direDepuisFond(serveur, s, (s.etapes.size() + 1) + " fichiers ecrits, " + ko
+                    + " Kio au total en " + secondes + " s, dans : " + dir, ChatFormatting.AQUA);
+            direDepuisFond(serveur, s, "ouvre 00_SOMMAIRE.txt en premier : il designe les "
+                    + "chunks fautifs et renvoie au fichier d'etape qui les detaille.",
+                    ChatFormatting.AQUA);
         } catch (Throwable t) {
             log("[DLB-SCAN] ecriture impossible : " + t);
-            dire(s.level, "ECHEC d'ecriture : " + t, ChatFormatting.RED);
+            direDepuisFond(serveur, s, "ECHEC d'ecriture : " + t, ChatFormatting.RED);
+        }
+    }
+
+    /**
+     * Parler au joueur depuis le fil de redaction.
+     *
+     * <p>Toucher la liste des joueurs hors du fil serveur est une faute : on repasse par
+     * {@code serveur.execute}. Si le serveur s'arrete entretemps, le message est perdu
+     * mais les fichiers, eux, sont deja sur le disque -- et le log les nomme.</p>
+     */
+    private static void direDepuisFond(net.minecraft.server.MinecraftServer serveur,
+                                       Session s, String texte, ChatFormatting couleur) {
+        try {
+            serveur.execute(() -> dire(s.level, texte, couleur));
+        } catch (Throwable ignored) {
+            // serveur deja arrete : le log a deja tout dit
         }
     }
 
