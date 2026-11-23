@@ -61,9 +61,24 @@ ORDRE = [
  'src/main/java/deepluckyblock/enchantments/UniversalEnchantmentHandler.java',
  'src/main/java/deepluckyblock/enchantments/WeaponSkill.java',
  'src/main/java/deepluckyblock/client/WeaponBladeVisualRenderer.java',
+ 'src/main/java/deepluckyblock/util/TerrainAudit.java',
 ]
 
 NOTICES = {
+ 'src/main/java/deepluckyblock/util/TerrainAudit.java':
+  "T471 : LA PHOTOGRAPHIE DU TERRAIN, ETAPE PAR ETAPE, AU BLOC PRES.\n"
+  "     Huit tours de correctifs sur le raccord du Crimson Lake (T459 a T468) ont ete\n"
+  "     poses puis annules en bloc sans rien reparer. La cause tenait en une phrase :\n"
+  "     personne n'avait jamais VU le terrain. Cette classe ne corrige rien, elle\n"
+  "     mesure. Elle photographie toute l'emprise PLUS trois chunks d'anneau, a trois\n"
+  "     jalons -- avant le clear, apres le clear, apres la pose -- et rend UN seul ZIP\n"
+  "     dans <monde>/dlb_audit/ : vues du dessus, chunks sautes, ancien terrain reste\n"
+  "     dans l'emprise, hauteur des marches, profil du raccord, grilles pleine\n"
+  "     resolution. La sonde est strictement PASSIVE (SafeSurface.cached, et relief par\n"
+  "     bruit OCEAN_FLOOR_WG quand le chunk n'est pas la) : un audit qui generait des\n"
+  "     chunks montrerait un terrain que le pipeline n'avait pas, et couterait 8 a 12 s\n"
+  "     par chunk a froid (T304). Arme par /dlbtest crimsonlake, desarme apres usage.",
+
  'src/main/java/deepluckyblock/procedures/Structures5Procedure.java':
   "T449 : LE MESSAGE DE DECOUVERTE, PARTAGE ET PLUS JAMAIS MUET.\n"
   "     announceStructureSpawn(ServerLevel, Player, nom, min, max) est passee PUBLIQUE :\n"
@@ -155,6 +170,19 @@ NOTICES = {
   "     army_summon sur une epee LEGENDARY+, ore_detector sur une pioche RARE+ volaient\n"
   "     le tirage a 5 %. Il ne s'abstient plus que devant une competence ACCORDEE.\n"
   "     Le taux reste 5 % et le troc reste entier, comme demande.",
+
+ 'src/main/resources/deepluckyblock_patch/tools/terrainauditcheck.py':
+  "T471 : LE BANC QUI PROTEGE LA MESURE.\n"
+  "     Six verrous sur TerrainAudit, parce qu'une instrumentation se casse sans que\n"
+  "     rien ne s'arrete dans le jeu : 1) la sonde reste PASSIVE (aucun getChunk,\n"
+  "     getChunkNow, request ni level.getBlockState -- sinon elle genere le terrain\n"
+  "     qu'elle pretend observer) ; 2) les trois jalons AVANT_CLEAR / APRES_CLEAR /\n"
+  "     APRES_PASTE sont bien poses ; 3) la derniere photographie PRECEDE\n"
+  "     ChunkKeeper.release, sans quoi toute la zone se lirait « absente » ;\n"
+  "     4) l'audit s'arme explicitement et se desarme apres usage ; 5) le rendu reste\n"
+  "     UN seul ZIP, annonce hors du canal limite a 20 s ; 6) le repli par bruit\n"
+  "     OCEAN_FLOOR_WG survit, seul moyen de lire l'anneau non charge.\n"
+  "     Les neuf cassures correspondantes ont ete testees : toutes rendent le code 1.",
 
  'src/main/resources/deepluckyblock_patch/tools/meteorstompcheck.py':
   "T470 : BANC NEUF. Verifie que Meteor Stomp n'est pas retourne dans le tick, que\n"

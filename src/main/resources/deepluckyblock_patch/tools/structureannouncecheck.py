@@ -672,6 +672,51 @@ if rec is not None:
 # structures. Ce qui est interdit ici, c'est que le LAC les appelle.
 LAC = os.path.join(JAVA, "procedures", "CrimsonLakeStructureSpawnProcedure.java")
 SURF = os.path.join(JAVA, "util", "SafeSurface.java")
+def arguments_appel(src, amorce):
+    """Arguments de haut niveau du premier appel `amorce`, par equilibrage de parentheses.
+
+    On ne borne JAMAIS par simple comptage de caracteres : les chaines du code
+    contiennent des parentheses et des accolades (lecon de la cassure E, T470). Les
+    litteraux de chaine et de caractere sont donc traverses sans etre comptes.
+    """
+    i = src.find(amorce)
+    if i < 0:
+        return None
+    i += len(amorce)
+    prof, args, cur = 1, [], []
+    dans_chaine = dans_car = False
+    while i < len(src):
+        c = src[i]
+        if dans_chaine:
+            if c == '\\':
+                cur.append(c); i += 1
+                if i < len(src): cur.append(src[i])
+                i += 1; continue
+            if c == '"': dans_chaine = False
+        elif dans_car:
+            if c == '\\':
+                cur.append(c); i += 1
+                if i < len(src): cur.append(src[i])
+                i += 1; continue
+            if c == "'": dans_car = False
+        elif c == '"':
+            dans_chaine = True
+        elif c == "'":
+            dans_car = True
+        elif c in '([{':
+            prof += 1
+        elif c in ')]}':
+            prof -= 1
+            if prof == 0:
+                args.append(''.join(cur))
+                return [a.strip() for a in args]
+        elif c == ',' and prof == 1:
+            args.append(''.join(cur)); cur = []; i += 1; continue
+        cur.append(c)
+        i += 1
+    return None
+
+
 PREP = os.path.join(JAVA, "procedures", "StructureTerrainPrep.java")
 
 lac = lire(LAC)
@@ -694,13 +739,34 @@ if lac is not None:
                 "sur mesure : 504 chunks, 1,36 M blocs, plus de 100 s." % appel)
     # (c) le clear est celui de la base : 5 arguments, plancher groundY+1,
     #     aucun masque de colonnes, le paste enchaine directement.
-    if re.search(r"clearBuildVolume\(\s*level\s*,\s*lakeMin\s*,\s*lakeMax\s*,"
-                 r"\s*groundY \+ 1\s*,\s*\(\)\s*->\s*PASTE_Q\.offer", cl) is None:
+    # T471 : la regle controle desormais les ARGUMENTS, pas une forme de texte. La
+    # version litterale exigeait le lambda d'une seule expression « () -> PASTE_Q.offer »
+    # et se declenchait des qu'on inserait une ligne dans le callback -- y compris pour
+    # une simple photographie d'audit, qui ne change rien au clear. Ce qui compte, et
+    # que T469 voulait vraiment verrouiller : CINQ arguments, un plancher qui vaut
+    # exactement groundY + 1, et une pose qui part bien depuis le callback.
+    args = arguments_appel(cl, "clearBuildVolume(")
+    if args is None:
         problemes.append(
-            "T469 : le clear du lac n'est plus la forme de base "
-            "(clearBuildVolume(level, lakeMin, lakeMax, groundY + 1, () -> paste)). "
+            "T469 : plus aucun appel a clearBuildVolume dans le lac -- le clear de la "
+            "base a disparu.")
+    elif len(args) != 5:
+        problemes.append(
+            "T469 : clearBuildVolume est appele avec %d arguments au lieu de 5 (%s). "
             "Tout argument supplementaire signifie qu'un masque de colonnes ou un "
-            "plancher par colonne est revenu.")
+            "plancher par colonne est revenu." % (len(args), " | ".join(args[:6])))
+    else:
+        attendus = ("level", "lakeMin", "lakeMax", "groundY + 1")
+        for i, att in enumerate(attendus):
+            if " ".join(args[i].split()) != att:
+                problemes.append(
+                    "T469 : argument %d du clear = « %s » au lieu de « %s » -- le "
+                    "plancher ou le volume de base a change."
+                    % (i + 1, " ".join(args[i].split()), att))
+        if "PASTE_Q.offer" not in args[4]:
+            problemes.append(
+                "T469 : le callback du clear ne met plus la pose en file "
+                "(PASTE_Q.offer absent) -- le paste n'enchaine plus directement.")
     if re.search(r"static void clearBuildVolume\(ServerLevel level, BlockPos min, "
                  r"BlockPos max, int clearFloorY, Runnable onReady\)", cl) is None:
         problemes.append(
