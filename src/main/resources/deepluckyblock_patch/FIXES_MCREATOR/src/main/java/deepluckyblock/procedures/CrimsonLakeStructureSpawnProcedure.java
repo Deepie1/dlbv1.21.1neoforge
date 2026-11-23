@@ -868,7 +868,28 @@ public class CrimsonLakeStructureSpawnProcedure {
                 lakeWaterMode = false;
                 return;
             }
-            int groundY = probedY;
+            // T477 : ANCRAGE SUR L'EMPRISE, PLUS SUR UNE SEULE COLONNE.
+            //
+            // Mesure en jeu (log du 23/11, monde TEST, graine 3668398517386263602,
+            // lac centre [-189,83,488]) : la sonde a lu le sol a Y=102 parce que la
+            // colonne du centre tombait sur un sommet enneige, alors que le relief
+            // moyen des 246 x 284 blocs de l'emprise est a Y~88. Le clear part de
+            // groundY+1 : il a donc tranche le monde a plat a Y=102 et laisse
+            // intacte une dalle de montagne de 14 blocs DANS le bassin. Le rapport
+            // de scan le prouve : 44 chunks sur 81 plafonnent a exactement 102,
+            // aucun ne depasse, 13 % des colonnes ont une section de tronc ou de
+            // feuillage comme bloc de surface et 24,7 % ont de l'air piege dessous.
+            // Les trois symptomes vus par le joueur (sol non repeint, arbres coupes
+            // a moitie, trou angulaire) sont ce seul defaut.
+            //
+            // Correctif : la colonne du centre reste la SEULE lecture reelle (regle
+            // T7 : jamais de lecture sur chunk non charge, et elle seule est
+            // chargee ici), mais on la corrige de l'ecart entre le relief theorique
+            // du centre et la MEDIANE du relief theorique de toute l'emprise. Le
+            // bruit de generation ne charge ni ne genere rien : c'est le meme
+            // procede que wetFraction juste en dessous. Mediane et non moyenne :
+            // un seul pic ne doit pas deplacer l'ancrage.
+            int groundY = ancrerSurEmprise(level, px, pz, sx, sz, probedY);
             BlockPos origin = lakeOrigin(px, pz, groundY, minRelativeY, sx, sz);
             // T157 : adapter l'ancrage vertical AVANT toute annonce/passe au lieu
             // d'abandonner le lac dans les mondes bas ou près du plafond.
@@ -991,6 +1012,64 @@ public class CrimsonLakeStructureSpawnProcedure {
     private static int lakeOceanRelocs = 0;
     /** Dernier recours : la nappe tient lieu de sol, et on ne lisse rien. */
     private static boolean lakeWaterMode = false;
+
+    /** T477 : cote de la grille d'echantillons de l'ancrage (81 points). */
+    private static final int ANCHOR_GRID = 8;
+    /** T477 : correction d'ancrage bornee -- une mediane aberrante ne doit pas noyer le lac. */
+    private static final int ANCHOR_MAX_SHIFT = 48;
+
+    /**
+     * T477 : ancrage vertical calcule sur TOUTE l'emprise, et non sur la seule
+     * colonne du centre.
+     *
+     * <p>Renvoie l'altitude de sol a utiliser comme {@code groundY}. Le point de
+     * depart est {@code probedY}, seule lecture REELLE du terrain (chunk du centre,
+     * charge, heightmap primee). On lui applique l'ecart entre le relief theorique
+     * du centre et la mediane du relief theorique de 81 points repartis sur
+     * l'emprise : si le centre est sur un pic, l'ancrage redescend au niveau
+     * typique du lac ; si l'emprise est plate, la correction est nulle et le
+     * comportement est exactement celui d'avant.</p>
+     *
+     * <p>{@code getBaseHeight} est du bruit pur : aucun chunk n'est charge ni
+     * genere, et le cout est celui de 82 colonnes de bruit.</p>
+     */
+    private static int ancrerSurEmprise(ServerLevel level, int px, int pz, int sx, int sz, int probedY) {
+        try {
+            var gen = level.getChunkSource().getGenerator();
+            var rs = level.getChunkSource().randomState();
+            var type = net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR_WG;
+            int stepX = Math.max(1, sx / ANCHOR_GRID), stepZ = Math.max(1, sz / ANCHOR_GRID);
+            int half = ANCHOR_GRID / 2;
+            int[] ech = new int[(ANCHOR_GRID + 1) * (ANCHOR_GRID + 1)];
+            int n = 0;
+            for (int ix = -half; ix <= half; ix++) {
+                for (int iz = -half; iz <= half; iz++) {
+                    ech[n] = gen.getBaseHeight(px + ix * stepX, pz + iz * stepZ, type, level, rs);
+                    n++;
+                }
+            }
+            if (n == 0) return probedY;
+            java.util.Arrays.sort(ech, 0, n);
+            int theoMedian = ech[n / 2];
+            int theoCentre = gen.getBaseHeight(px, pz, type, level, rs);
+            int correction = theoMedian - theoCentre;
+            if (correction < -ANCHOR_MAX_SHIFT) correction = -ANCHOR_MAX_SHIFT;
+            if (correction > ANCHOR_MAX_SHIFT) correction = ANCHOR_MAX_SHIFT;
+            int ancre = probedY + correction;
+            int minY = level.getMinBuildHeight() + 2;
+            int maxY = level.getMaxBuildHeight() - 2;
+            if (ancre < minY) ancre = minY;
+            if (ancre > maxY) ancre = maxY;
+            deepluckyblock.util.DebugLog.out("[DLB-LAKE] T477 ancrage : colonne centrale Y=" + probedY
+                    + ", relief theorique centre=" + theoCentre + " mediane emprise=" + theoMedian
+                    + " (" + n + " points sur " + sx + "x" + sz + "), correction " + correction
+                    + " -> groundY=" + ancre);
+            return ancre;
+        } catch (Throwable t) {
+            deepluckyblock.util.DebugLog.err("[DLB-LAKE] T477 ancrage indisponible, colonne centrale conservee : " + t);
+            return probedY;
+        }
+    }
 
     /**
      * T465 : part NOYEE de l'emprise, sondee SANS generer le moindre chunk.

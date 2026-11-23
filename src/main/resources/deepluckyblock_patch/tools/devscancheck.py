@@ -207,9 +207,15 @@ def controler(racine='.'):
     # retomber sur un fichier monolithique (intransportable), et laisser une section
     # n'analyser QUE la derniere etape tout en pretendant couvrir le scan -- le fichier
     # paraissait complet alors que trois etapes sur quatre n'etaient pas examinees.
-    if '%02d_%s.txt' not in code:
+    # T477 : chaque etape produit DESORMAIS trois fichiers (texte, _CARTES, _GRILLES).
+    # Le prefixe numerote reste la garantie qu'il y a bien un jeu de fichiers par etape
+    # et non un monolithe ; les trois resolve() sont verifies au verrou 12.
+    if '%02d_%s' not in code:
         echecs.append('VERROU 8 : le scan ne nomme plus un fichier par etape -- on est '
                       'revenu a un fichier unique, que l\'utilisateur ne peut pas envoyer')
+    if 'resolve(base + ".txt")' not in code:
+        echecs.append('VERROU 8 : le fichier principal de l\'etape n\'est plus ecrit sous '
+                      'son nom numerote -- les etapes ne seraient plus separees')
     # On teste l'ECRITURE du fichier, pas la mention de son nom : l'outil cite
     # « 00_SOMMAIRE.txt » dans le texte qu'il imprime pour guider la lecture, et
     # chercher le nom tout court laissait donc passer la suppression du fichier.
@@ -326,16 +332,99 @@ def controler(racine='.'):
             echecs.append('VERROU 10 : rediger() parle au joueur directement depuis le '
                           'fil de fond -- il faut repasser par serveur.execute')
 
+    # ----------------------------------------------------------------- VERROU 11
+    # L'EMPRISE DOIT ETRE SUIVIE, PAS FIGEE A L'OUVERTURE.
+    # Panne reellement constatee en jeu (23/11) : le rapport annonce une emprise de
+    # 48 x 48 blocs pour un lac de 246 x 284 qui a clere 304 chunks -- 30 fois trop
+    # petit. La premiere zone epinglee n'est pas l'emprise de la structure : c'est la
+    # sonde de placement (probeMin/probeMax +/- 8, elargie de 8 par preloadBox,
+    # arrondie au chunk = 3 x 3 chunks). Le vrai track() arrive ensuite et ETEND la
+    # zone. Lire zoneBlockBounds() une seule fois condamne la mesure a viser a cote.
+    if 'elargir(' not in code:
+        echecs.append('VERROU 11 : plus de suivi de l\'emprise -- la session resterait '
+                      'figee sur la premiere zone epinglee, qui est la sonde de '
+                      'placement et non l\'emprise de la structure (mesure 30x trop petite)')
+    else:
+        m = re.search(r'private static boolean elargir\(Session s, int\[\] zone\) \{', code)
+        if m is None:
+            echecs.append('VERROU 11 : elargir(Session, int[]) introuvable')
+        else:
+            suite = code[m.end():]
+            fin = suite.find('\n    private static ')
+            corps = suite if fin < 0 else suite[:fin]
+            # Il doit reellement reindexer les etapes deja capturees, pas seulement
+            # changer les bornes : sinon les tableaux restent indexes sur l'ancienne grille.
+            for attendu, pourquoi in (
+                    ('poserGeometrie(', 'la grille n\'est pas reconstruite'),
+                    ('e.ySolid =', 'les etapes deja capturees ne sont pas reindexees'),
+                    ('e.chunkCharge =', 'l\'etat de chargement des chunks n\'est pas reindexe'),
+                    ('lancerBruit(', 'le relief theorique n\'est pas recalcule sur la nouvelle grille')):
+                if attendu not in corps:
+                    echecs.append('VERROU 11 : elargir() n\'appelle pas %s -- %s'
+                                  % (attendu, pourquoi))
+        # Et il doit etre branche dans le tick, sinon il ne sert a rien.
+        if not re.search(r'if \(zone != null\) elargir\(s, zone\)', code):
+            echecs.append('VERROU 11 : elargir() n\'est pas appele a chaque tick depuis la '
+                          'boucle de garde -- l\'emprise ne serait jamais relue')
+    # Publication perimee : un elargissement relance le calcul du relief ; l'ancien fil
+    # ne doit jamais publier un tableau dimensionne pour la grille precedente.
+    if 'bruitGen' not in code:
+        echecs.append('VERROU 11 : pas de garde de generation sur le relief theorique -- '
+                      'apres un elargissement, l\'ancien fil publierait un tableau de la '
+                      'mauvaise taille')
+
+    # ----------------------------------------------------------------- VERROU 12
+    # LA COUVERTURE DOIT ETRE PROUVEE, PAS SUPPOSEE.
+    # Une carte ne vaut rien si la grille qui la porte saute des chunks en silence.
+    # Le « continue » muet sur une colonne hors grille est exactement ce qui permet a
+    # une grille incomplete de passer pour complete.
+    # < 2 occurrences = definie mais jamais appelee. Chercher le nom tout court
+    # laissait passer la suppression de l'appel : la definition porte deja le nom.
+    if code.count('section0Couverture(') < 2:
+        echecs.append('VERROU 12 : la section de couverture est absente ou definie sans '
+                      'jamais etre ecrite -- rien ne prouverait qu\'aucun chunk ni aucune '
+                      'colonne n\'a ete saute')
+    for champ, pourquoi in (
+            ('chunksVisites', 'le nombre de chunks parcourus n\'est plus compte'),
+            ('colonnesVisitees', 'le nombre de colonnes parcourues n\'est plus compte'),
+            ('horsGrille', 'les colonnes tombees hors grille ne sont plus comptees'),
+            ('colonnesParChunk', 'le compte de colonnes PAR CHUNK disparait : '
+                                 'un chunk a 255 colonnes passerait inapercu')):
+        if champ not in code:
+            echecs.append('VERROU 12 : compteur %s absent -- %s' % (champ, pourquoi))
+    # Les compteurs doivent etre CONFRONTES a la taille attendue, pas seulement affiches.
+    if 'COUVERTURE ROMPUE' not in code:
+        echecs.append('VERROU 12 : les compteurs ne sont jamais confrontes a la taille '
+                      'attendue de la grille -- compter sans comparer ne verifie rien')
+    # Les cartes demandees doivent exister ET etre ecrites.
+    for appel, quoi in (('carteHauteurs(', 'altitude absolue'),
+                        ('carteRelief(', 'relief ombre (les courbes)'),
+                        ('carteProfondeur(', 'profondeurs'),
+                        ('carteAnomalies(', 'trous nets et falaises'),
+                        ('vue3D(', 'vue 3D')):
+        if code.count(appel) < 2:
+            echecs.append('VERROU 12 : la carte « %s » est definie mais jamais appelee '
+                          '(ou absente) -- une section qui n\'est pas ecrite n\'existe pas'
+                          % quoi)
+    # Decouper, jamais alleger : les trois fichiers par etape doivent etre ecrits.
+    # On teste l'ECRITURE, pas la mention : le sommaire imprime ces noms pour guider
+    # la lecture, et chercher le nom tout court laissait donc passer leur suppression.
+    for motif in ('_CARTES.txt', '_GRILLES.txt'):
+        if ('resolve(base + "%s")' % motif) not in code:
+            echecs.append('VERROU 12 : le fichier %s n\'est plus ECRIT -- on decoupe le '
+                          'rapport, on ne le supprime pas' % motif)
+
     if echecs:
         for e in echecs:
             print('ECHEC  %s' % e)
         print('devscancheck : %d verrou(x) rompu(s)' % len(echecs))
         return 1
 
-    print('devscancheck : 10 verrous tiennent -- outil isole et supprimable, auto-accroche, '
+    print('devscancheck : 12 verrous tiennent -- outil isole et supprimable, auto-accroche, '
           'sonde passive, chunks absents jamais maquilles, grilles alignees sur les chunks, '
           '3 jalons suivis, aucune restauration par le build, un fichier par etape, '
-          'mesure sans armement manuel, redaction hors du fil serveur')
+          'mesure sans armement manuel, redaction hors du fil serveur, '
+          'emprise suivie et non figee, couverture prouvee chunk par chunk')
     return 0
 
 
