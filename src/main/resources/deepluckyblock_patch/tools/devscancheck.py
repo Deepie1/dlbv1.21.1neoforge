@@ -447,18 +447,44 @@ def controler(racine='.'):
         echecs.append('VERROU 13 : la section 3 n\'ecrit plus de verdict -- le lecteur '
                       'devrait de nouveau interpreter des compteurs bruts')
 
+    # --- VERROU 14 (T480) : le chronometre des captures PENDANT la pose doit etre
+    # ARME a la transition "file vide -> file pleine". Laisse a 0, le delai est deja
+    # ecoule au premier tick ou la file est non vide : la premiere capture part avant
+    # la moindre ecriture et redit mot pour mot l'etape precedente. Constate sur le run
+    # TEST2 : P2_PENDANT_POSE a t+13.9 s contre 2_APRES_CLEAR a t+13.2 s, zero colonne
+    # d'ecart sur 116 224 mesurees -- une etape entiere de rapport pour rien.
+    # On compte les AFFECTATIONS, pas les mentions : une declaration ou un commentaire
+    # qui nomme le champ ne l'arme pas.
+    armements = code.count('dernierePastePeriodiqueMs = System.currentTimeMillis()')
+    if armements < 2:
+        echecs.append('VERROU 14 : le chronometre des captures pendant la pose n\'est arme '
+                      'qu\'a %d endroit(s) -- il faut l\'armer AUSSI a la transition file '
+                      'vide -> file pleine, sinon la premiere capture part a zero ecriture '
+                      'et duplique l\'etape precedente' % armements)
+    else:
+        # Et il faut que l'un de ces armements soit bien DANS la branche de transition,
+        # pas deux fois dans la capture periodique.
+        i = code.find('dernierPasteQ == 0 && q > 0')
+        j = code.find('dernierPasteQ > 0 && q == 0')
+        if i < 0 or j < 0 or j < i or \
+           'dernierePastePeriodiqueMs = System.currentTimeMillis()' not in code[i:j]:
+            echecs.append('VERROU 14 : le chronometre est bien arme deux fois, mais aucun '
+                          'armement ne se trouve dans la branche de transition file vide -> '
+                          'file pleine : la premiere capture pendant la pose repartira a vide')
+
     if echecs:
         for e in echecs:
             print('ECHEC  %s' % e)
         print('devscancheck : %d verrou(x) rompu(s)' % len(echecs))
         return 1
 
-    print('devscancheck : 13 verrous tiennent -- outil isole et supprimable, auto-accroche, '
+    print('devscancheck : 14 verrous tiennent -- outil isole et supprimable, auto-accroche, '
           'sonde passive, chunks absents jamais maquilles, grilles alignees sur les chunks, '
           '3 jalons suivis, aucune restauration par le build, un fichier par etape, '
           'mesure sans armement manuel, redaction hors du fil serveur, '
           'emprise suivie et non figee, couverture prouvee chunk par chunk, '
-          'sauts reels distingues des non-sauts')
+          'sauts reels distingues des non-sauts, '
+          'captures pendant la pose armees a la transition')
     return 0
 
 
