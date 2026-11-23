@@ -73,11 +73,6 @@ const DIAG = [{"g":3,"t":"Mesure incomplete a l'etape 1_DEBUT_CLEAR","d":"45824 
 "use strict";
 var cv=document.getElementById("cv"), elErr=document.getElementById("err");
 function fatal(m){elErr.style.display="flex";elErr.textContent=m;}
-var gl=cv.getContext("webgl2"), v2=!!gl;
-if(!gl){gl=cv.getContext("webgl")||cv.getContext("experimental-webgl");
- if(gl&&!gl.getExtension("OES_element_index_uint")){
-   fatal("Ce navigateur ne gere pas les maillages de plus de 65000 points. Regenerez la page avec --pas 2.");return;}}
-if(!gl){fatal("WebGL indisponible dans ce navigateur.");return;}
 
 function dec(b){var s=atob(b),n=s.length,a=new Uint8Array(n);for(var i=0;i<n;i++)a[i]=s.charCodeAt(i);return a;}
 var W=DATA.w,D=DATA.d,PAS=DATA.pas,YMIN=DATA.ymin,X0=DATA.x0,Z0=DATA.z0,SOL=DATA.sol,ET=DATA.etapes;
@@ -149,21 +144,55 @@ function couleurs(){
     col[o]=c[0];col[o+1]=c[1];col[o+2]=c[2];
   }
 }
-function sh(t,src){var o=gl.createShader(t);gl.shaderSource(o,src);gl.compileShader(o);
-  if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))fatal(gl.getShaderInfoLog(o));return o;}
-var VS=(v2?"#version 300 es\n#define IN in\n#define OUT out\n":"#define IN attribute\n#define OUT varying\n")+
-"precision highp float;IN vec3 aP;IN vec3 aN;IN vec3 aC;uniform mat4 uMVP;uniform float uVex;uniform float uY0;"+
-"OUT vec3 vN;OUT vec3 vC;void main(){vec3 p=aP;p.y=(p.y-uY0)*uVex;gl_Position=uMVP*vec4(p,1.0);"+
-"vN=normalize(vec3(aN.x,aN.y/uVex,aN.z));vC=aC;}";
-var FS=(v2?"#version 300 es\n#define IN in\nout vec4 oC;\n#define FRAG oC\n":"#define IN varying\n#define FRAG gl_FragColor\n")+
-"precision highp float;IN vec3 vN;IN vec3 vC;uniform float uA;uniform float uTint;void main(){"+
-"vec3 L=normalize(vec3(0.45,0.82,0.35));float d=max(dot(normalize(vN),L),0.0);float s=0.34+0.66*d;"+
-"vec3 b=mix(vC,vec3(0.16,0.46,0.78),uTint);FRAG=vec4(b*s,uA);}";
-var pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,VS));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,FS));
-gl.bindAttribLocation(pr,0,"aP");gl.bindAttribLocation(pr,1,"aN");gl.bindAttribLocation(pr,2,"aC");
-gl.linkProgram(pr);
-if(!gl.getProgramParameter(pr,gl.LINK_STATUS)){fatal(gl.getProgramInfoLog(pr));return;}
-gl.useProgram(pr);
+// GLSL. PIEGE : en GLSL ES 3.00 un fragment shader n a AUCUNE precision par defaut
+// pour float. "precision highp float;" doit donc preceder TOUTE declaration qui
+// emploie un type flottant, y compris la sortie "out vec4". Placee apres, le
+// compilateur refuse -- "type requires declaration of default precision qualifier" --
+// et le navigateur ne montre plus que "Fragment shader is not compiled".
+function sources(deux){
+ var vs=(deux?"#version 300 es\nprecision highp float;\n#define IN in\n#define OUT out\n"
+             :"precision highp float;\n#define IN attribute\n#define OUT varying\n")+
+  "IN vec3 aP;IN vec3 aN;IN vec3 aC;uniform mat4 uMVP;uniform float uVex;uniform float uY0;"+
+  "OUT vec3 vN;OUT vec3 vC;void main(){vec3 p=aP;p.y=(p.y-uY0)*uVex;gl_Position=uMVP*vec4(p,1.0);"+
+  "vN=normalize(vec3(aN.x,aN.y/uVex,aN.z));vC=aC;}";
+ var fs=(deux?"#version 300 es\nprecision highp float;\nout vec4 oC;\n#define IN in\n#define FRAG oC\n"
+             :"precision highp float;\n#define IN varying\n#define FRAG gl_FragColor\n")+
+  "IN vec3 vN;IN vec3 vC;uniform float uA;uniform float uTint;void main(){"+
+  "vec3 L=normalize(vec3(0.45,0.82,0.35));float d=max(dot(normalize(vN),L),0.0);float s=0.34+0.66*d;"+
+  "vec3 b=mix(vC,vec3(0.16,0.46,0.78),uTint);FRAG=vec4(b*s,uA);}";
+ return {vs:vs,fs:fs};
+}
+function construire(g,deux){
+ var s=sources(deux),jo=[];
+ function sh(t,src){var o=g.createShader(t);g.shaderSource(o,src);g.compileShader(o);
+  if(!g.getShaderParameter(o,g.COMPILE_STATUS)){
+    jo.push((t===g.VERTEX_SHADER?"vertex : ":"fragment : ")+(g.getShaderInfoLog(o)||"refuse sans message"));
+    return null;}
+  return o;}
+ var a=sh(g.VERTEX_SHADER,s.vs),b=sh(g.FRAGMENT_SHADER,s.fs);
+ if(!a||!b)return{err:jo.join("\n")};
+ var p=g.createProgram();g.attachShader(p,a);g.attachShader(p,b);
+ g.bindAttribLocation(p,0,"aP");g.bindAttribLocation(p,1,"aN");g.bindAttribLocation(p,2,"aC");
+ g.linkProgram(p);
+ if(!g.getProgramParameter(p,g.LINK_STATUS))
+   return{err:"edition de liens : "+(g.getProgramInfoLog(p)||"refusee sans message")};
+ return {pr:p};
+}
+// WebGL2 d abord. Si ses shaders sont refuses on REPART sur un canvas neuf en WebGL1
+// (un canvas ne peut pas changer de type de contexte) : un refus de shader ne doit
+// jamais se solder par un rectangle noir muet.
+var gl=cv.getContext("webgl2"), v2=!!gl, res=gl?construire(gl,true):null;
+if(gl&&res&&res.err){
+  var neuf=cv.cloneNode(false);cv.parentNode.replaceChild(neuf,cv);cv=neuf;
+  gl=cv.getContext("webgl")||cv.getContext("experimental-webgl");v2=false;res=null;
+}
+if(!gl){gl=cv.getContext("webgl")||cv.getContext("experimental-webgl");v2=false;}
+if(!gl){fatal("WebGL indisponible dans ce navigateur.");return;}
+if(!v2&&!gl.getExtension("OES_element_index_uint")){
+  fatal("Ce navigateur ne gere pas les maillages de plus de 65000 points. Regenerez la page avec --pas 2.");return;}
+if(!res)res=construire(gl,v2);
+if(res.err){fatal("Les shaders n ont pas compile :\n"+res.err);return;}
+var pr=res.pr;gl.useProgram(pr);
 var uMVP=gl.getUniformLocation(pr,"uMVP"),uVex=gl.getUniformLocation(pr,"uVex"),
     uA=gl.getUniformLocation(pr,"uA"),uY0=gl.getUniformLocation(pr,"uY0"),
     uTint=gl.getUniformLocation(pr,"uTint");
