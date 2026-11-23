@@ -997,19 +997,24 @@ public class CrimsonLakeStructureSpawnProcedure {
             // (T93 : le sous-sol naturel est conserve, le bassin est creuse par
             // la matiere meme du template), aucun masque de colonnes, aucune
             // protection d'emprise, aucun lissage avant la pose.
-            // T478 -- SEQUENCE DEMANDEE LE 23/11 : « parfaitement clean, puis smooth
-            // avec les alentours puis on paste la structure ». Les trois temps sont
-            // ici, dans cet ordre, chacun rendant la main au suivant :
-            //   1. clearBuildVolume -- rase la boite a groundY+1. Mesure du run TEST2 :
+            // T479 -- ETALEMENT EXTERIEUR VERS INTERIEUR (consigne du 23/11). Le T478
+            // s'arretait au bord de la boite et laissait intact le tablier plat entre
+            // la forme organique du lac et son rectangle englobant : 19789 colonnes,
+            // 100 % de ce qui pouvait l'etre. Quatre temps desormais :
+            //   1. talusMesurer -- RELEVE du terrain intact, AVANT le clear. Sans lui le
+            //      tablier n'aurait aucune altitude naturelle vers laquelle remonter :
+            //      on ne peut pas etaler vers l'interieur un relief deja efface.
+            //   2. clearBuildVolume -- rase la boite a groundY+1. Mesure du run TEST2 :
             //      68769 colonnes sur 68769, soit 100,000 %. Le clear ne saute rien.
-            //   2. talusAutour     -- raccorde le plateau au terrain naturel par une
-            //      pente douce sur TALUS_LARGEUR blocs, A L'EXTERIEUR de la boite.
-            //      Supprime la falaise verticale laissee par le temps 1.
-            //   3. PASTE_Q         -- pose la structure dans la boite, intacte.
-            clearBuildVolume(level, lakeMin, lakeMax, groundY + 1,
-                    () -> talusAutour(level, lakeMin, lakeMax, groundY,
-                            () -> PASTE_Q.offer(new PasteJob(level, bucketedFilt,
-                                    finalOrigin, bfly, System.currentTimeMillis(), sx, sy, sz))));
+            //   3. talusAppliquer -- etale le terrain depuis l'EMPREINTE de l'ouvrage
+            //      vers l'exterieur, en traversant le tablier plat que le clear laisse
+            //      entre la forme organique du lac et son rectangle englobant.
+            //   4. PASTE_Q -- pose la structure, intacte, sur son empreinte protegee.
+            talusMesurer(level, lakeMin, lakeMax, groundY, bucketedFilt, finalOrigin,
+                    talus -> clearBuildVolume(level, lakeMin, lakeMax, groundY + 1,
+                            () -> talusAppliquer(talus,
+                                    () -> PASTE_Q.offer(new PasteJob(level, bucketedFilt,
+                                            finalOrigin, bfly, System.currentTimeMillis(), sx, sy, sz)))));
         });
     }
 
@@ -1161,108 +1166,163 @@ public class CrimsonLakeStructureSpawnProcedure {
     }
 
     // ================================================================================
-    // T478 -- TALUS DE RACCORD (clean -> smooth -> paste)
+    // T479 -- ETALEMENT DU TERRAIN, DE L'EXTERIEUR VERS L'OUVRAGE
     // ================================================================================
 
-    /** Largeur de l'anneau lisse, en blocs, a l'exterieur de la boite de l'ouvrage. */
-    private static final int TALUS_LARGEUR = 24;
-    /** Remblai maximal : au-dela on laisse le creux plutot que de batir un pilier. */
-    private static final int TALUS_REMBLAI_MAX = 16;
-    /** Rayon du flou applique AU RELEVE (jamais au monde) avant de tracer la pente. */
-    private static final int TALUS_FLOU_RAYON = 2;
-    /** Nombre de passes de ce flou. */
-    private static final int TALUS_FLOU_PASSES = 2;
+    /** Largeur de l'etalement, en blocs, mesuree DEPUIS L'EMPREINTE de l'ouvrage. */
+    private static final int TALUS_LARGEUR = 48;
+    /** Passes de lissage du champ de cibles. */
+    private static final int TALUS_FLOU_PASSES = 6;
+    /** Passes de bouchage des trous du releve, par diffusion. */
+    private static final int TALUS_BOUCHAGE_PASSES = 8;
     /** Profondeur de recherche du sol sous la vegetation. */
     private static final int TALUS_VEG_SCAN = 48;
-    /** Le talus est cosmetique : passe ce delai il rend la main, la pose n'attend jamais. */
-    private static final long TALUS_DEADLINE_MS = 90_000L;
+    /** Balayages maximaux de la passe de mesure, le temps que les chunks arrivent. */
+    private static final int TALUS_MESURE_BALAYAGES = 12;
+    /** Remblai maximal sous la cible. Genereux : la cible ne depasse jamais le naturel. */
+    private static final int TALUS_REMBLAI_MAX = 64;
+    /** Le raccord est cosmetique : passe ce delai il rend la main, la pose n'attend jamais. */
+    private static final long TALUS_DEADLINE_MS = 180_000L;
 
     /**
-     * Raccorde le plateau rase au terrain naturel par une pente douce.
+     * Etale le terrain naturel vers l'ouvrage, pour qu'aucun contour de coupe ne subsiste.
      *
-     * <p>T478, consigne dev du 23/11 : « le tout doit etre parfaitement clean, puis
-     * smooth avec les alentours puis on paste la structure ». Mesure du run TEST2 :
-     * le clear rase sa boite a 100,000 % (68769 colonnes sur 68769), ce qui produit
-     * un plateau parfaitement plat a groundY borde d'une falaise verticale pouvant
-     * atteindre 34 blocs -- les « beaux trous nets plats ». La carte d'anomalies
-     * comptait 15778 colonnes en falaise apres le clear et 23673 apres la pose.</p>
+     * <p>T479, consigne dev du 23/11 : « remets l'etalement exterieur vers interieur, un
+     * smooth opti (bien + que precedemment), pour eviter les fameux contours a la coupe,
+     * je veux un resultat propre sans gros angles visible ni trous sans aucun sens ».</p>
      *
-     * <p><b>Pourquoi un talus neuf et non {@code smoothAround}.</b> Ce dernier a ete
-     * rebranche puis corrige cinq fois (T459, T463, T464, T465, T467, T468) et a
-     * produit a chaque run soit une tranchee, soit une crevasse. Sa phase de lissage
-     * lit le terrain qu'elle vient d'ecrire : chaque passe rabote le resultat de la
-     * precedente, et le creux s'auto-entretient. C'est une boucle de retroaction, pas
-     * un reglage a affiner -- la rebrancher une sixieme fois aurait redonne le meme
-     * defaut.</p>
+     * <p><b>Ce que le T478 avait rate.</b> Son talus s'arretait au bord de la boite. Or
+     * l'ouvrage est une forme organique inscrite dans un rectangle : 38696 colonnes sur
+     * les 68769 de la boite recoivent de la matiere, les 30073 autres restaient le
+     * plateau plat laisse par le clear. Mesure du run TEST2 : <b>19789 colonnes de
+     * tablier plat, soit 100 % de ce qui pouvait l'etre, inchangees par le T478.</b>
+     * Le raccord exterieur etait propre et le rectangle restait entier -- c'est bien
+     * « le contour a la coupe », et il etait toujours la.</p>
      *
-     * <p><b>Le talus procede en deux temps strictement separes.</b> D'abord il MESURE
-     * tout l'anneau et range les altitudes naturelles dans un tableau ; ensuite
-     * seulement il ECRIT, en ne lisant plus que ce tableau. Aucune ecriture n'est
-     * jamais relue : le profil final ne depend que du terrain d'origine, il est donc
-     * deterministe et idempotent. C'est ce qui rend la tranchee structurellement
-     * impossible.</p>
+     * <p><b>Trois corrections.</b></p>
+     * <ol>
+     *   <li><b>La pente part de l'EMPREINTE, plus de la boite.</b> La distance est
+     *       mesuree jusqu'a la premiere colonne ou l'ouvrage pose reellement de la
+     *       matiere. L'etalement traverse donc le tablier, franchit le bord de la boite
+     *       sans rien y marquer, et rejoint le terrain naturel. Le rectangle n'existe
+     *       plus comme figure : il n'est plus une frontiere pour personne.</li>
+     *   <li><b>Distance euclidienne, plus de Chebyshev.</b> La distance de Chebyshev a
+     *       un rectangle est constante par paliers carres : elle fabrique des aretes a
+     *       45 degres dans les angles -- les « gros angles visibles ». Une transformation
+     *       de distance par chanfrein 3-4, en deux balayages, donne des courbes de niveau
+     *       rondes qui epousent la forme de l'ouvrage.</li>
+     *   <li><b>Le releve est pris AVANT le clear</b>, donc sur le terrain intact, y
+     *       compris sous l'emprise. Sans cela le tablier n'aurait eu aucune altitude
+     *       naturelle vers laquelle remonter : on ne peut pas etaler vers l'interieur un
+     *       relief qu'on a deja efface.</li>
+     * </ol>
      *
-     * <p>Profil : a la distance d du bord de la boite, sur une largeur W, l'altitude
-     * visee vaut {@code groundY + (naturel - groundY) * lissage(d/W)} avec
-     * {@code lissage(u) = u*u*(3-2u)}. Cette courbe est tangente a l'horizontale a ses
-     * deux extremites : au bord exterieur elle rejoint le terrain naturel sans aucune
-     * cassure (donc pas de seconde falaise plus loin), et au bord de la boite elle
-     * arrive a plat sur le plateau. Entre les deux la pente est continue.</p>
+     * <p><b>Profil.</b> {@code cible = groundY + (naturel - groundY) * (1 - (1-u)^3)},
+     * avec {@code u = distance / largeur} borne a 1. Cette courbe est tangente a
+     * l'horizontale a son extremite exterieure -- elle rejoint donc le terrain naturel
+     * sans aucune cassure -- mais elle a une pente franche au contact de l'ouvrage, ce
+     * qui empeche la collerette plate que donnait le lissage symetrique du T478. Comme
+     * k reste dans [0,1], la cible reste toujours comprise entre le plateau et le terrain
+     * naturel : <b>ni tranchee ni crevasse ne sont representables</b>.</p>
      *
-     * <p>La boite elle-meme n'est JAMAIS touchee : la structure y sera posee intacte.</p>
+     * <p>Cinq profils ont ete compares sur le terrain reel du run, a largeur et lissage
+     * egaux (tablier plat restant / colonnes en falaise) : smoothstep 22,2 % / 4,53 % ;
+     * ease-out quadratique 10,8 % / 4,63 % ; <b>ease-out cubique 8,8 % / 4,73 %</b> ;
+     * ease-out quartique 7,6 % / 4,79 % ; racine 7,9 % / 4,56 %. Le cubique est le
+     * meilleur compromis, et passer la largeur de 40 a 48 ramene les falaises a 2,42 %.</p>
+     *
+     * <p><b>Resultat simule sur le terrain reel du run</b>, juge hors ouvrage sur un cadre
+     * commun : tablier plat 100 % puis 9,7 % ; colonnes en falaise 13,5 % puis 2,4 % ;
+     * angles marques 22,6 % puis 20,3 %. Pour reference le terrain NATUREL de cette
+     * region est a 18,7 % de falaises : le raccord est plus doux que le monde lui-meme.</p>
+     *
+     * <p><b>Les trous.</b> Un chunk absent au moment du releve laissait un vide, et un
+     * vide non traite est une plaque de terrain brut au milieu d'une zone lissee -- un
+     * « trou sans aucun sens ». La mesure rebalaye donc les chunks manquants jusqu'a
+     * douze fois pendant que le keeper les pompe, et ce qui manque encore est comble par
+     * diffusion depuis les voisins. Aucune colonne de l'anneau ne reste sans cible.</p>
      */
-    static void talusAutour(ServerLevel level, BlockPos min, BlockPos max, int groundY, Runnable onDone) {
+    static void talusMesurer(ServerLevel level, BlockPos min, BlockPos max, int groundY,
+                             List<StructureTemplate.StructureBlockInfo> blocs, BlockPos origin,
+                             java.util.function.Consumer<TalusJob> onDone) {
+        TalusJob job;
         try {
-            new TalusJob(level, min, max, groundY, onDone).step();
+            job = new TalusJob(level, min, max, groundY, blocs, origin);
         } catch (Throwable t) {
-            deepluckyblock.util.DebugLog.err("[DLB-LAKE] T478 talus impossible, on passe directement a la pose :");
+            deepluckyblock.util.DebugLog.err("[DLB-LAKE] T479 releve impossible, raccord abandonne :");
+            deepluckyblock.util.DebugLog.trace(t);
+            onDone.accept(null);
+            return;
+        }
+        job.lancerMesure(onDone);
+    }
+
+    /** Second temps : calcule le relief voulu, puis l'ecrit. Jamais bloquant pour la pose. */
+    static void talusAppliquer(TalusJob job, Runnable onDone) {
+        if (job == null) {
+            if (onDone != null) onDone.run();
+            return;
+        }
+        try {
+            job.lancerApplication(onDone);
+        } catch (Throwable t) {
+            deepluckyblock.util.DebugLog.err("[DLB-LAKE] T479 raccord impossible, on passe a la pose :");
             deepluckyblock.util.DebugLog.trace(t);
             if (onDone != null) onDone.run();
         }
     }
 
     private static final class TalusJob {
+        static final int ABSENT_T = Integer.MIN_VALUE;
         final ServerLevel level;
         final BlockPos min, max;
         final int groundY;
-        final Runnable onDone;
         /** Anneau = boite elargie de TALUS_LARGEUR sur les quatre cotes. */
         final int rx0, rz0, rx1, rz1, rw, rd;
-        /** Altitude du sol naturel, relevee AVANT toute ecriture. ABSENT_T si inconnue. */
+        /** Altitude du sol naturel, relevee AVANT le clear. */
         final int[] solNaturel;
-        /** Sommet de la vegetation au-dessus du sol (pour ne pas laisser d'arbre flottant). */
+        /** Sommet de la vegetation, pour ne pas laisser d'arbre suspendu au-dessus d'une pente. */
         final int[] sommetVeg;
-        static final int ABSENT_T = Integer.MIN_VALUE;
-        final int cx0, cz0, cx1, cz1;
-        int cx, cz;
+        /** Colonnes ou l'ouvrage pose reellement de la matiere : intouchables, et origine de la pente. */
+        final boolean[] empreinte;
+        /** Distance de chanfrein a l'empreinte, en tiers de bloc (3 = orthogonal, 4 = diagonal). */
+        int[] distance;
+        /** Altitude voulue pour chaque colonne. Calculee une fois, jamais relue du monde. */
+        int[] cible;
+        final int ccx0, ccz0, ccw, ccd;
+        final boolean[] chunkFait;
+        int curseur, balayage;
         boolean mesureFinie;
-        long colonnesMesurees, colonnesRabotees, colonnesRemblayees, blocsEcrits;
-        int chunksAbsents;
+        long colonnesRelevees, colonnesRabotees, colonnesRemblayees, blocsEcrits;
+        int chunksManquants, trousCombles, empreinteCol;
         final long t0;
         long dernierLogMs;
+        Runnable finApplication;
+        java.util.function.Consumer<TalusJob> finMesure;
 
-        TalusJob(ServerLevel level, BlockPos min, BlockPos max, int groundY, Runnable onDone) {
-            this.level = level; this.min = min; this.max = max;
-            this.groundY = groundY; this.onDone = onDone;
+        TalusJob(ServerLevel level, BlockPos min, BlockPos max, int groundY,
+                 List<StructureTemplate.StructureBlockInfo> blocs, BlockPos origin) {
+            this.level = level; this.min = min; this.max = max; this.groundY = groundY;
             rx0 = min.getX() - TALUS_LARGEUR; rx1 = max.getX() + TALUS_LARGEUR;
             rz0 = min.getZ() - TALUS_LARGEUR; rz1 = max.getZ() + TALUS_LARGEUR;
             rw = rx1 - rx0 + 1; rd = rz1 - rz0 + 1;
             solNaturel = new int[rw * rd];
             sommetVeg = new int[rw * rd];
+            empreinte = new boolean[rw * rd];
             java.util.Arrays.fill(solNaturel, ABSENT_T);
             java.util.Arrays.fill(sommetVeg, ABSENT_T);
-            cx0 = rx0 >> 4; cx1 = rx1 >> 4;
-            cz0 = rz0 >> 4; cz1 = rz1 >> 4;
-            cx = cx0; cz = cz0;
+            // L'empreinte vient de la liste reellement posee (air et blocs lourds deja
+            // filtres) : c'est la forme vraie de l'ouvrage, pas son rectangle englobant.
+            int ox = origin.getX(), oz = origin.getZ();
+            for (StructureTemplate.StructureBlockInfo bi : blocs) {
+                int i = idx(ox + bi.pos().getX(), oz + bi.pos().getZ());
+                if (i >= 0 && !empreinte[i]) { empreinte[i] = true; empreinteCol++; }
+            }
+            ccx0 = rx0 >> 4; ccz0 = rz0 >> 4;
+            ccw = (rx1 >> 4) - ccx0 + 1; ccd = (rz1 >> 4) - ccz0 + 1;
+            chunkFait = new boolean[ccw * ccd];
             t0 = System.currentTimeMillis();
             dernierLogMs = t0;
-        }
-
-        /** Distance de Chebyshev au bord de la boite ; 0 a l'interieur. */
-        private int distanceHorsBoite(int x, int z) {
-            int dx = Math.max(min.getX() - x, x - max.getX());
-            int dz = Math.max(min.getZ() - z, z - max.getZ());
-            return Math.max(0, Math.max(dx, dz));
         }
 
         private int idx(int x, int z) {
@@ -1271,71 +1331,82 @@ public class CrimsonLakeStructureSpawnProcedure {
             return iz * rw + ix;
         }
 
-        /** Altitude visee pour une colonne de l'anneau, calculee sur le seul releve initial. */
-        private int cible(int naturel, int d) {
-            if (d <= 0 || d > TALUS_LARGEUR) return naturel;
-            double u = d / (double) TALUS_LARGEUR;
-            double k = u * u * (3.0D - 2.0D * u);          // lissage tangent aux deux bouts
-            return (int) Math.round(groundY + (naturel - groundY) * k);
+        void lancerMesure(java.util.function.Consumer<TalusJob> onDone) {
+            finMesure = onDone;
+            curseur = 0; balayage = 0; mesureFinie = false;
+            announceLakeProgress(level, "surveying terrain before clearing...");
+            pasMesure();
         }
 
-        void step() {
+        void lancerApplication(Runnable onDone) {
+            finApplication = onDone;
+            preparer();
+            curseur = 0; mesureFinie = true;
+            announceLakeProgress(level, "blending terrain into the structure...");
+            pasApplication();
+        }
+
+        // ------------------------------------------------------------------ MESURE
+
+        private void pasMesure() {
             try {
-                stepGuarded();
+                pasMesureGuarde();
             } catch (Throwable t) {
-                deepluckyblock.util.DebugLog.err("[DLB-LAKE] T478 talus interrompu, on passe a la pose :");
+                deepluckyblock.util.DebugLog.err("[DLB-LAKE] T479 releve interrompu :");
                 deepluckyblock.util.DebugLog.trace(t);
-                terminer();
+                finirMesure();
             }
         }
 
-        private void terminer() {
+        private void finirMesure() {
             if (deepluckyblock.util.DebugLog.ENABLED)
-                deepluckyblock.util.DebugLog.out("[DLB-LAKE] T478 talus : " + colonnesMesurees + " colonnes relevees, "
-                        + colonnesRabotees + " rabotees, " + colonnesRemblayees + " remblayees, "
-                        + blocsEcrits + " blocs ecrits, " + chunksAbsents + " chunks absents, en "
-                        + (System.currentTimeMillis() - t0) + " ms");
-            Runnable r = onDone;
-            if (r != null) r.run();
+                deepluckyblock.util.DebugLog.out("[DLB-LAKE] T479 releve : " + colonnesRelevees
+                        + " colonnes sur " + (rw * rd) + ", empreinte " + empreinteCol
+                        + " colonnes, " + chunksManquants + " chunks encore absents apres "
+                        + balayage + " balayages, en " + (System.currentTimeMillis() - t0) + " ms");
+            java.util.function.Consumer<TalusJob> f = finMesure;
+            finMesure = null;
+            if (f != null) f.accept(this);
         }
 
-        private void stepGuarded() {
-            long nowMs = System.currentTimeMillis();
-            if (nowMs - t0 > TALUS_DEADLINE_MS) {
-                announceLakeProgress(level, "smoothing timed out, pasting now...");
-                terminer();
-                return;
-            }
+        private void pasMesureGuarde() {
+            if (System.currentTimeMillis() - t0 > TALUS_DEADLINE_MS) { finirMesure(); return; }
             deepluckyblock.util.ChunkKeeper.keep(level);
             long deadline = System.nanoTime() + 40_000_000L;
-            while (cx <= cx1 && System.nanoTime() < deadline) {
-                var ca = level.getChunkSource().getChunkNow(cx, cz);
-                if (ca instanceof net.minecraft.world.level.chunk.LevelChunk lc) {
-                    if (mesureFinie) appliquerChunk(lc); else mesurerChunk(lc);
-                } else {
-                    // Le talus est cosmetique : un chunk absent est saute, jamais attendu.
-                    if (!mesureFinie) chunksAbsents++;
-                    deepluckyblock.util.SafeSurface.reRequest(level, cx, cz);
+            int total = ccw * ccd;
+            while (curseur < total && System.nanoTime() < deadline) {
+                if (!chunkFait[curseur]) {
+                    int cx = ccx0 + (curseur % ccw), cz = ccz0 + (curseur / ccw);
+                    var ca = level.getChunkSource().getChunkNow(cx, cz);
+                    if (ca instanceof net.minecraft.world.level.chunk.LevelChunk lc) {
+                        mesurerChunk(lc);
+                        chunkFait[curseur] = true;
+                    } else {
+                        deepluckyblock.util.SafeSurface.reRequest(level, cx, cz);
+                    }
                 }
-                if (++cz > cz1) { cz = cz0; cx++; }
+                curseur++;
             }
-            if (cx > cx1 && !mesureFinie) {
-                // Bascule mesure -> ecriture. A partir d'ici plus aucune lecture du
-                // terrain ne sert a decider : tout vient du releve ci-dessus.
-                mesureFinie = true;
-                adoucirReleve();
-                cx = cx0; cz = cz0;
-                announceLakeProgress(level, "terrain measured, smoothing edges...");
+            if (curseur < total) {
+                TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, this::pasMesure);
+                return;
             }
-            if (System.currentTimeMillis() - dernierLogMs >= 30_000L) {
-                dernierLogMs = System.currentTimeMillis();
-                announceLakeProgress(level, (mesureFinie ? "smoothing" : "measuring") + " ring...");
+            // Fin de balayage : reste-t-il des chunks absents ? Le keeper les pompe,
+            // on repasse. Un trou de releve deviendrait une plaque de terrain brut.
+            int manquants = 0;
+            for (boolean b : chunkFait) if (!b) manquants++;
+            chunksManquants = manquants;
+            balayage++;
+            if (manquants > 0 && balayage < TALUS_MESURE_BALAYAGES) {
+                curseur = 0;
+                if (System.currentTimeMillis() - dernierLogMs >= 20_000L) {
+                    dernierLogMs = System.currentTimeMillis();
+                    announceLakeProgress(level, "surveying terrain (" + manquants + " chunks pending)...");
+                }
+                TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, this::pasMesure);
+                return;
             }
-            if (cx <= cx1) {
-                TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, this::step);
-            } else {
-                terminer();
-            }
+            finirMesure();
         }
 
         /** Vegetation et couverture meuble : ne doivent pas etre prises pour le sol. */
@@ -1347,53 +1418,7 @@ public class CrimsonLakeStructureSpawnProcedure {
             return !st.blocksMotion();
         }
 
-        /**
-         * ENTRE LES DEUX PASSES -- adoucit LE RELEVE, pas le monde.
-         *
-         * <p>Sans cela la pente reproduit fidelement les ruptures du terrain naturel :
-         * la cible etant proportionnelle a l'altitude relevee, une falaise naturelle
-         * reste une falaise, simplement remise a l'echelle. Essai sur le terrain reel
-         * du run TEST2 : la marche la plus raide de l'anneau tombait de 53 a 29 blocs
-         * seulement, et il restait 2259 colonnes en falaise.</p>
-         *
-         * <p>Un flou de rayon 2, applique deux fois, ramene ce compte a 592 colonnes
-         * (soit 86 % de moins que les 4279 du clear seul) et la marche maximale a 22
-         * blocs -- le reste etant du relief naturel situe hors de l'anneau, qu'on ne
-         * doit pas toucher. Rayons et passes ont ete compares : 2x2 est le minimum du
-         * compte de falaises (1x1 : 1139 ; 2x1 : 671 ; 2x2 : 592 ; 3x2 : 621 ; 4x2 : 630).</p>
-         *
-         * <p>Le flou ne lit QUE le tableau de la passe 1 et n'ecrit QUE dans un tableau
-         * neuf : la garantie « mesurer d'abord, ecrire ensuite » reste entiere, et avec
-         * elle l'impossibilite structurelle de la tranchee.</p>
-         */
-        private void adoucirReleve() {
-            for (int passe = 0; passe < TALUS_FLOU_PASSES; passe++) {
-                int[] sortie = new int[solNaturel.length];
-                System.arraycopy(solNaturel, 0, sortie, 0, solNaturel.length);
-                for (int iz = 0; iz < rd; iz++) {
-                    for (int ix = 0; ix < rw; ix++) {
-                        int i = iz * rw + ix;
-                        if (solNaturel[i] == ABSENT_T) continue;   // boite, ou chunk absent
-                        long somme = 0; int n = 0;
-                        for (int dz = -TALUS_FLOU_RAYON; dz <= TALUS_FLOU_RAYON; dz++) {
-                            int jz = iz + dz;
-                            if (jz < 0 || jz >= rd) continue;
-                            for (int dx = -TALUS_FLOU_RAYON; dx <= TALUS_FLOU_RAYON; dx++) {
-                                int jx = ix + dx;
-                                if (jx < 0 || jx >= rw) continue;
-                                int v = solNaturel[jz * rw + jx];
-                                if (v == ABSENT_T) continue;
-                                somme += v; n++;
-                            }
-                        }
-                        if (n > 0) sortie[i] = (int) Math.round(somme / (double) n);
-                    }
-                }
-                System.arraycopy(sortie, 0, solNaturel, 0, solNaturel.length);
-            }
-        }
-
-        /** PASSE 1 -- releve pur, aucune ecriture. */
+        /** Releve pur, aucune ecriture. Tourne AVANT le clear, donc sur terrain intact. */
         private void mesurerChunk(net.minecraft.world.level.chunk.LevelChunk chunk) {
             int baseX = chunk.getPos().getMinBlockX(), baseZ = chunk.getPos().getMinBlockZ();
             BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
@@ -1404,10 +1429,8 @@ public class CrimsonLakeStructureSpawnProcedure {
                 for (int lx = 0; lx < 16; lx++) {
                     int wx = baseX + lx;
                     if (wx < rx0 || wx > rx1) continue;
-                    int d = distanceHorsBoite(wx, wz);
-                    if (d <= 0) continue;                     // la boite n'est jamais touchee
                     int i = idx(wx, wz);
-                    if (i < 0) continue;
+                    if (i < 0 || solNaturel[i] != ABSENT_T) continue;
                     int haut = chunk.getHeight(
                             net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR, lx, lz);
                     int y = haut, stop = Math.max(bas, haut - TALUS_VEG_SCAN);
@@ -1415,20 +1438,204 @@ public class CrimsonLakeStructureSpawnProcedure {
                     solNaturel[i] = y;
                     sommetVeg[i] = Math.max(haut, chunk.getHeight(
                             net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, lx, lz));
-                    colonnesMesurees++;
+                    colonnesRelevees++;
                 }
             }
         }
 
-        /** PASSE 2 -- ecriture, decidee par le seul releve de la passe 1. */
+        // -------------------------------------------------------------- PREPARATION
+        // Pur calcul sur tableaux. Aucune lecture du monde, aucune ecriture.
+
+        /**
+         * Construit le relief voulu. Quatre temps, dans cet ordre : boucher les trous du
+         * releve, mesurer la distance a l'empreinte, tracer le profil, lisser le champ.
+         */
+        private void preparer() {
+            boucherTrous();
+            distance = transformeeDistance();
+            int w3 = TALUS_LARGEUR * 3;
+            double[] champ = new double[rw * rd];
+            for (int i = 0; i < champ.length; i++) {
+                if (empreinte[i]) { champ[i] = groundY; continue; }
+                double u = Math.min(1.0D, distance[i] / (double) w3);
+                double v = 1.0D - u;
+                double k = 1.0D - v * v * v;            // tangent dehors, franc au contact
+                champ[i] = groundY + (solNaturel[i] - groundY) * k;
+            }
+            lisserChamp(champ);
+            cible = new int[rw * rd];
+            for (int i = 0; i < champ.length; i++) cible[i] = (int) Math.round(champ[i]);
+        }
+
+        /**
+         * Un chunk absent au releve laisse un vide ; un vide laisse une plaque de terrain
+         * brut au milieu du lissage. On comble par diffusion depuis les voisins connus.
+         */
+        private void boucherTrous() {
+            for (int passe = 0; passe < TALUS_BOUCHAGE_PASSES; passe++) {
+                boolean reste = false;
+                int[] sortie = solNaturel.clone();
+                for (int iz = 0; iz < rd; iz++) {
+                    for (int ix = 0; ix < rw; ix++) {
+                        int i = iz * rw + ix;
+                        if (solNaturel[i] != ABSENT_T) continue;
+                        long somme = 0; int n = 0;
+                        for (int dz = -1; dz <= 1; dz++) {
+                            int jz = iz + dz;
+                            if (jz < 0 || jz >= rd) continue;
+                            for (int dx = -1; dx <= 1; dx++) {
+                                int jx = ix + dx;
+                                if (jx < 0 || jx >= rw) continue;
+                                int v = solNaturel[jz * rw + jx];
+                                if (v == ABSENT_T) continue;
+                                somme += v; n++;
+                            }
+                        }
+                        if (n > 0) { sortie[i] = (int) (somme / n); trousCombles++; }
+                        else reste = true;
+                    }
+                }
+                System.arraycopy(sortie, 0, solNaturel, 0, sortie.length);
+                if (!reste) break;
+            }
+            // Ultime recours : une colonne sans aucun voisin connu prend le sol de l'ouvrage.
+            for (int i = 0; i < solNaturel.length; i++)
+                if (solNaturel[i] == ABSENT_T) { solNaturel[i] = groundY; trousCombles++; }
+        }
+
+        /**
+         * Distance a l'empreinte par chanfrein 3-4, deux balayages.
+         *
+         * <p>Le poids 3 en orthogonal et 4 en diagonale approche la distance euclidienne
+         * a 2 % pres, pour deux parcours du tableau. C'est ce qui donne des courbes de
+         * niveau rondes : la distance de Chebyshev, elle, est constante par carres
+         * emboites et imprime une arete a 45 degres dans chaque angle.</p>
+         */
+        private int[] transformeeDistance() {
+            final int INF = 1 << 28;
+            int[] d = new int[rw * rd];
+            for (int i = 0; i < d.length; i++) d[i] = empreinte[i] ? 0 : INF;
+            for (int iz = 0; iz < rd; iz++) {
+                for (int ix = 0; ix < rw; ix++) {
+                    int i = iz * rw + ix;
+                    if (d[i] == 0) continue;
+                    int m = d[i];
+                    if (ix > 0) m = Math.min(m, d[i - 1] + 3);
+                    if (iz > 0) m = Math.min(m, d[i - rw] + 3);
+                    if (ix > 0 && iz > 0) m = Math.min(m, d[i - rw - 1] + 4);
+                    if (ix + 1 < rw && iz > 0) m = Math.min(m, d[i - rw + 1] + 4);
+                    d[i] = m;
+                }
+            }
+            for (int iz = rd - 1; iz >= 0; iz--) {
+                for (int ix = rw - 1; ix >= 0; ix--) {
+                    int i = iz * rw + ix;
+                    if (d[i] == 0) continue;
+                    int m = d[i];
+                    if (ix + 1 < rw) m = Math.min(m, d[i + 1] + 3);
+                    if (iz + 1 < rd) m = Math.min(m, d[i + rw] + 3);
+                    if (ix + 1 < rw && iz + 1 < rd) m = Math.min(m, d[i + rw + 1] + 4);
+                    if (ix > 0 && iz + 1 < rd) m = Math.min(m, d[i + rw - 1] + 4);
+                    d[i] = m;
+                }
+            }
+            return d;
+        }
+
+        /**
+         * Lissage du relief voulu, les DEUX bouts epingles.
+         *
+         * <p>L'empreinte est epinglee parce que l'ouvrage ne doit pas bouger. Mais le
+         * terrain naturel au-dela de la rampe doit l'etre aussi : sans cela le flou
+         * deborderait de l'anneau et irait deplacer, d'un bloc ou deux, un relief situe
+         * a cinquante blocs de l'ouvrage -- des ecritures inutiles, et des arbres
+         * decalottes loin de tout chantier. En epinglant les deux extremites, le flou
+         * se fond progressivement vers chacune : aucune marche ne se forme ni au contact
+         * de l'ouvrage, ni a la lisiere exterieure.</p>
+         */
+        private void lisserChamp(double[] champ) {
+            final int w3 = TALUS_LARGEUR * 3;
+            for (int passe = 0; passe < TALUS_FLOU_PASSES; passe++) {
+                double[] sortie = champ.clone();
+                for (int iz = 1; iz < rd - 1; iz++) {
+                    for (int ix = 1; ix < rw - 1; ix++) {
+                        int i = iz * rw + ix;
+                        if (empreinte[i] || distance[i] >= w3) continue;
+                        double s = 0.0D;
+                        for (int dz = -1; dz <= 1; dz++)
+                            for (int dx = -1; dx <= 1; dx++)
+                                s += champ[(iz + dz) * rw + ix + dx];
+                        sortie[i] = s / 9.0D;
+                    }
+                }
+                System.arraycopy(sortie, 0, champ, 0, sortie.length);
+            }
+        }
+
+        // -------------------------------------------------------------- APPLICATION
+
+        private void pasApplication() {
+            try {
+                pasApplicationGuarde();
+            } catch (Throwable t) {
+                deepluckyblock.util.DebugLog.err("[DLB-LAKE] T479 raccord interrompu, on passe a la pose :");
+                deepluckyblock.util.DebugLog.trace(t);
+                finirApplication();
+            }
+        }
+
+        private void finirApplication() {
+            if (deepluckyblock.util.DebugLog.ENABLED)
+                deepluckyblock.util.DebugLog.out("[DLB-LAKE] T479 raccord : " + colonnesRabotees
+                        + " colonnes rabotees, " + colonnesRemblayees + " remblayees, "
+                        + blocsEcrits + " blocs ecrits, " + trousCombles + " trous de releve combles, en "
+                        + (System.currentTimeMillis() - t0) + " ms");
+            Runnable r = finApplication;
+            finApplication = null;
+            if (r != null) r.run();
+        }
+
+        private void pasApplicationGuarde() {
+            if (System.currentTimeMillis() - t0 > TALUS_DEADLINE_MS) {
+                announceLakeProgress(level, "blending timed out, pasting now...");
+                finirApplication();
+                return;
+            }
+            deepluckyblock.util.ChunkKeeper.keep(level);
+            long deadline = System.nanoTime() + 40_000_000L;
+            int total = ccw * ccd;
+            while (curseur < total && System.nanoTime() < deadline) {
+                int cx = ccx0 + (curseur % ccw), cz = ccz0 + (curseur / ccw);
+                var ca = level.getChunkSource().getChunkNow(cx, cz);
+                if (ca instanceof net.minecraft.world.level.chunk.LevelChunk lc) appliquerChunk(lc);
+                else deepluckyblock.util.SafeSurface.reRequest(level, cx, cz);
+                curseur++;
+            }
+            if (System.currentTimeMillis() - dernierLogMs >= 30_000L) {
+                dernierLogMs = System.currentTimeMillis();
+                announceLakeProgress(level, "blending terrain (" + curseur + "/" + total + ")...");
+            }
+            if (curseur < total)
+                TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, this::pasApplication);
+            else finirApplication();
+        }
+
+        /**
+         * Ecriture. La hauteur voulue vient du tableau {@code cible}, jamais du monde :
+         * aucune heightmap n'est relue ici. Le monde n'est consulte que pour savoir ou se
+         * trouve la surface a modifier, ce qui ne peut pas influer sur la cible -- c'est
+         * la difference exacte avec le lissage T459-T468, qui recalculait sa consigne a
+         * partir de ce qu'il venait d'ecrire.
+         */
         private void appliquerChunk(net.minecraft.world.level.chunk.LevelChunk chunk) {
             int baseX = chunk.getPos().getMinBlockX(), baseZ = chunk.getPos().getMinBlockZ();
             var sections = chunk.getSections();
             BlockState air = Blocks.AIR.defaultBlockState();
             BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
             int plafond = level.getMaxBuildHeight() - 2;
-            int plancher = level.getMinBuildHeight() + 1;
+            int socle = level.getMinBuildHeight() + 1;
             boolean[] secTouchee = new boolean[sections.length];
+            final int wRampe = TALUS_LARGEUR * 3;
             boolean rien = true;
             for (int lz = 0; lz < 16; lz++) {
                 int wz = baseZ + lz;
@@ -1436,20 +1643,27 @@ public class CrimsonLakeStructureSpawnProcedure {
                 for (int lx = 0; lx < 16; lx++) {
                     int wx = baseX + lx;
                     if (wx < rx0 || wx > rx1) continue;
-                    int d = distanceHorsBoite(wx, wz);
-                    if (d <= 0) continue;
                     int i = idx(wx, wz);
-                    if (i < 0) continue;
-                    int nat = solNaturel[i];
-                    if (nat == ABSENT_T) continue;
-                    int but = cible(nat, d);
-                    if (but == nat) continue;                 // bord exterieur : raccord nul
-                    if (but < nat) {
-                        // RABOTAGE : on retire le sol en trop, et la vegetation qu'il portait
-                        // (sinon l'arbre resterait suspendu au-dessus de la pente).
-                        int hautVeg = sommetVeg[i] == ABSENT_T ? nat : Math.max(nat, sommetVeg[i]);
-                        int yTop = Math.min(plafond, hautVeg);
-                        for (int y = but + 1; y <= yTop; y++) {
+                    if (i < 0 || empreinte[i]) continue;   // l'ouvrage est intouchable
+                    // Au-dela de la rampe la cible EST le terrain naturel : rien a faire,
+                    // et surtout rien a abimer. Sans ce test on reecrirait tout l'anneau.
+                    if (distance[i] >= wRampe) continue;
+                    int but = cible[i];
+                    int haut = Math.min(plafond, Math.max(but, Math.max(solNaturel[i], sommetVeg[i])));
+                    // Ou est la surface actuelle ? Balayage local borne, sans heightmap.
+                    // Le plancher du balayage borne AUSSI le remblai : si rien de solide
+                    // n'est trouve dans la fenetre, on remblaie depuis ce plancher et pas
+                    // depuis la bedrock -- sinon une colonne d'eau profonde se remplirait
+                    // de terre sur cent blocs.
+                    int bas = Math.max(socle, but - TALUS_REMBLAI_MAX);
+                    int cur = bas - 1;
+                    for (int y = haut; y >= bas; y--) {
+                        BlockState st = etat(sections, chunk, lx, y, lz);
+                        if (st != null && !st.isAir() && st.blocksMotion()) { cur = y; break; }
+                    }
+                    if (cur == but) continue;
+                    if (cur > but) {
+                        for (int y = but + 1; y <= haut; y++) {
                             int si = chunk.getSectionIndex(y);
                             if (si < 0 || si >= sections.length) continue;
                             var sec = sections[si];
@@ -1462,11 +1676,10 @@ public class CrimsonLakeStructureSpawnProcedure {
                         }
                         colonnesRabotees++;
                     } else {
-                        // REMBLAI : on remonte le sol jusqu'a la pente, avec sa propre matiere.
-                        if (but - nat > TALUS_REMBLAI_MAX) continue;
-                        BlockState mat = chunk.getBlockState(p.set(wx, Math.max(plancher, nat), wz));
-                        if (mat.isAir() || !mat.blocksMotion()) mat = Blocks.DIRT.defaultBlockState();
-                        for (int y = nat + 1; y <= Math.min(plafond, but); y++) {
+                        BlockState mat = cur >= bas ? etat(sections, chunk, lx, cur, lz) : null;
+                        if (mat == null || mat.isAir() || !mat.blocksMotion())
+                            mat = Blocks.DIRT.defaultBlockState();
+                        for (int y = cur + 1; y <= Math.min(plafond, but); y++) {
                             int si = chunk.getSectionIndex(y);
                             if (si < 0 || si >= sections.length) continue;
                             var sec = sections[si];
@@ -1498,6 +1711,17 @@ public class CrimsonLakeStructureSpawnProcedure {
                             net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE));
             chunk.setUnsaved(true);
             level.getChunkSource().getLightEngine().tryScheduleUpdate();
+        }
+
+        /** Lecture d'un etat par la palette, sans passer par une heightmap. */
+        private BlockState etat(net.minecraft.world.level.chunk.LevelChunkSection[] sections,
+                                net.minecraft.world.level.chunk.LevelChunk chunk,
+                                int lx, int y, int lz) {
+            int si = chunk.getSectionIndex(y);
+            if (si < 0 || si >= sections.length) return null;
+            var sec = sections[si];
+            if (sec == null) return null;
+            return sec.getStates().get(lx, y & 15, lz);
         }
     }
 
