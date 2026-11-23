@@ -216,12 +216,20 @@ public final class DevTerrainScan {
                             scanImmediat(ctx.getSource());
                             return 1;
                         }))
+                        // T472 : « light » et « full » ARMENT aussi, en plus de regler le
+                        // drapeau. Tant qu'ils se contentaient de le regler, taper
+                        // /dlbscan light puis lancer le lac ne capturait RIEN : il fallait
+                        // deviner qu'un /dlbscan nu restait necessaire. Une construction de
+                        // lac dure plusieurs minutes -- faire perdre cette manche a
+                        // l'utilisateur pour une subtilite de sous-commande est inacceptable
+                        // dans un outil dont tout l'interet est la boucle essai/correction.
                         .then(Commands.literal("light").executes(ctx -> {
                             grillesCompletes = false;
                             ctx.getSource().sendSuccess(() -> Component.literal(
                                     "[DLB-SCAN] grilles pleine resolution DESACTIVEES : le "
                                             + "fichier ne gardera que l'analyse et les vues "
                                             + "(~450 Kio).").withStyle(ChatFormatting.GRAY), false);
+                            armer(ctx.getSource());
                             return 1;
                         }))
                         .then(Commands.literal("full").executes(ctx -> {
@@ -229,6 +237,7 @@ public final class DevTerrainScan {
                             ctx.getSource().sendSuccess(() -> Component.literal(
                                     "[DLB-SCAN] grilles pleine resolution ACTIVEES (~4,5 Mio).")
                                     .withStyle(ChatFormatting.GRAY), false);
+                            armer(ctx.getSource());
                             return 1;
                         }))
                         .then(Commands.literal("stop").executes(ctx -> {
