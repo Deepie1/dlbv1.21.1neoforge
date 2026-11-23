@@ -61,23 +61,28 @@ ORDRE = [
  'src/main/java/deepluckyblock/enchantments/UniversalEnchantmentHandler.java',
  'src/main/java/deepluckyblock/enchantments/WeaponSkill.java',
  'src/main/java/deepluckyblock/client/WeaponBladeVisualRenderer.java',
- 'src/main/java/deepluckyblock/util/TerrainAudit.java',
+ 'src/main/java/deepluckyblock/dev/DevTerrainScan.java',
 ]
 
 NOTICES = {
- 'src/main/java/deepluckyblock/util/TerrainAudit.java':
-  "T471 : LA PHOTOGRAPHIE DU TERRAIN, ETAPE PAR ETAPE, AU BLOC PRES.\n"
+ 'src/main/java/deepluckyblock/dev/DevTerrainScan.java':
+  "T471 : SCAN DE TERRAIN -- OUTIL DE DEVELOPPEMENT, FICHIER JETABLE.\n"
   "     Huit tours de correctifs sur le raccord du Crimson Lake (T459 a T468) ont ete\n"
-  "     poses puis annules en bloc sans rien reparer. La cause tenait en une phrase :\n"
-  "     personne n'avait jamais VU le terrain. Cette classe ne corrige rien, elle\n"
-  "     mesure. Elle photographie toute l'emprise PLUS trois chunks d'anneau, a trois\n"
-  "     jalons -- avant le clear, apres le clear, apres la pose -- et rend UN seul ZIP\n"
-  "     dans <monde>/dlb_audit/ : vues du dessus, chunks sautes, ancien terrain reste\n"
-  "     dans l'emprise, hauteur des marches, profil du raccord, grilles pleine\n"
-  "     resolution. La sonde est strictement PASSIVE (SafeSurface.cached, et relief par\n"
-  "     bruit OCEAN_FLOOR_WG quand le chunk n'est pas la) : un audit qui generait des\n"
-  "     chunks montrerait un terrain que le pipeline n'avait pas, et couterait 8 a 12 s\n"
-  "     par chunk a froid (T304). Arme par /dlbtest crimsonlake, desarme apres usage.",
+  "     poses puis annules sans rien reparer : personne n'avait jamais VU le terrain.\n"
+  "     Cette classe ne corrige rien, elle mesure. Elle scanne TOUTE la zone (emprise\n"
+  "     epinglee + 3 chunks d'anneau, soit ~352x384 = 135 000 colonnes sur 528 chunks)\n"
+  "     a chaque etape -- debut du clear, fin du clear, fin de la pose, fin du\n"
+  "     pipeline -- et rend UN seul .txt dans <monde>/dlb_scan/ : chunks non charges,\n"
+  "     chunks sautes entre deux etapes, ancien terrain reste dans l'emprise,\n"
+  "     composition de surface, air piege, raccords INTER-CHUNKS mesures a la couture,\n"
+  "     marches, profil du bord, vues du dessus et grilles de Y ABSOLUS pleine\n"
+  "     resolution avec regles de coordonnees et separateurs de chunk.\n"
+  "     ENTIEREMENT AUTONOME : aucune autre classe ne la nomme, elle s'enregistre seule\n"
+  "     et observe le pipeline sans le modifier (zone ChunkKeeper + file de pose lue par\n"
+  "     reflexion). SUPPRIMER CE FICHIER SUFFIT A RETIRER L'OUTIL, rien d'autre ne casse.\n"
+  "     Sonde strictement passive (getChunkNow seul) : un chunk absent est declare\n"
+  "     absent, jamais comble par une valeur plausible -- c'est l'objet meme du scan.\n"
+  "     Commandes : /dlbscan, /dlbscan now, light, full, stop, status.",
 
  'src/main/java/deepluckyblock/procedures/Structures5Procedure.java':
   "T449 : LE MESSAGE DE DECOUVERTE, PARTAGE ET PLUS JAMAIS MUET.\n"
@@ -171,18 +176,18 @@ NOTICES = {
   "     le tirage a 5 %. Il ne s'abstient plus que devant une competence ACCORDEE.\n"
   "     Le taux reste 5 % et le troc reste entier, comme demande.",
 
- 'src/main/resources/deepluckyblock_patch/tools/terrainauditcheck.py':
-  "T471 : LE BANC QUI PROTEGE LA MESURE.\n"
-  "     Six verrous sur TerrainAudit, parce qu'une instrumentation se casse sans que\n"
-  "     rien ne s'arrete dans le jeu : 1) la sonde reste PASSIVE (aucun getChunk,\n"
-  "     getChunkNow, request ni level.getBlockState -- sinon elle genere le terrain\n"
-  "     qu'elle pretend observer) ; 2) les trois jalons AVANT_CLEAR / APRES_CLEAR /\n"
-  "     APRES_PASTE sont bien poses ; 3) la derniere photographie PRECEDE\n"
-  "     ChunkKeeper.release, sans quoi toute la zone se lirait « absente » ;\n"
-  "     4) l'audit s'arme explicitement et se desarme apres usage ; 5) le rendu reste\n"
-  "     UN seul ZIP, annonce hors du canal limite a 20 s ; 6) le repli par bruit\n"
-  "     OCEAN_FLOOR_WG survit, seul moyen de lire l'anneau non charge.\n"
-  "     Les neuf cassures correspondantes ont ete testees : toutes rendent le code 1.",
+ 'src/main/resources/deepluckyblock_patch/tools/devscancheck.py':
+  "T471 : LE BANC QUI GARDE L'OUTIL DE SCAN JETABLE ET HONNETE.\n"
+  "     Il tient deux promesses. JETABLE : si DevTerrainScan.java n'existe pas, ce banc\n"
+  "     est VERT et se tait -- un banc rouge apres suppression serait lui-meme la\n"
+  "     repercussion qu'on voulait eviter ; et tant que le fichier existe, aucune autre\n"
+  "     classe ne doit le nommer. HONNETE : sonde passive (aucun getChunk, request ni\n"
+  "     level.getBlockState), chunks absents jamais maquilles (marqueur ABSENT, « ---- »\n"
+  "     dans les grilles, et exactement deux appels a getBaseHeight -- un troisieme\n"
+  "     servirait a combler les trous), grilles alignees sur les chunks (bornage << 4,\n"
+  "     pas divisant 16, separateur tous les 16 blocs), et les trois jalons suivis.\n"
+  "     Onze cassures testees, toutes rendent le code 1 ; la suppression de l'outil et\n"
+  "     les sous-mots getChunkSource / getChunkNow restent verts.",
 
  'src/main/resources/deepluckyblock_patch/tools/meteorstompcheck.py':
   "T470 : BANC NEUF. Verifie que Meteor Stomp n'est pas retourne dans le tick, que\n"

@@ -1,0 +1,1415 @@
+package deepluckyblock.dev;
+
+import net.minecraft.ChatFormatting;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * OUTIL DE DEVELOPPEMENT — SCAN DE TERRAIN DU CRIMSON LAKE, AU BLOC PRES.
+ *
+ * <h2>Ce fichier est jetable</h2>
+ * Il est <b>entierement autonome</b> : aucune autre classe du mod ne le nomme, ne l'importe
+ * et ne l'appelle. Il s'enregistre tout seul ({@code @EventBusSubscriber}), s'accroche au
+ * pipeline par <b>observation</b> et non par modification, et lit l'etat du lac par
+ * reflexion tolerante aux pannes. <b>Supprimer ce fichier suffit a retirer la totalite de
+ * l'outil</b> : rien d'autre ne cesse de compiler, rien d'autre ne change de comportement.
+ * Le package {@code deepluckyblock.dev} n'existe que pour lui.
+ *
+ * <h2>Pourquoi il existe</h2>
+ * Huit tours de correctifs sur le raccord de terrain (T459 a T468) ont ete poses puis
+ * annules en bloc sans rien reparer. La cause tenait en une phrase : personne n'avait
+ * jamais VU le terrain. On corrigeait sur des captures d'ecran, en relancant une pose de
+ * huit minutes a chaque essai. Cet outil ne corrige rien : il <b>mesure</b>, et il rend un
+ * seul fichier texte, lisible hors du jeu, qui dit l'etat exact du terrain a chaque etape.
+ *
+ * <h2>Ce qu'il garantit sur la geometrie</h2>
+ * <ul>
+ *   <li><b>Orientation explicite et verifiable.</b> Une ligne du fichier = un Z constant ;
+ *       X croit vers la droite (est), Z croit vers le bas (sud). Chaque grille porte ses
+ *       propres regles de coordonnees monde, en tete et en marge, donc l'orientation se
+ *       controle sans me croire sur parole.</li>
+ *   <li><b>Alignement sur les chunks.</b> La zone scannee est bornee aux frontieres de
+ *       chunk ({@code cx << 4}), jamais sur une coupe arbitraire, et les grilles portent un
+ *       separateur visible toutes les 16 colonnes et toutes les 16 lignes. Une colonne de
+ *       la grille appartient donc a un chunk identifiable a l'oeil.</li>
+ *   <li><b>Y absolus, pas des symboles.</b> Les grilles principales donnent la hauteur
+ *       reelle de chaque colonne en clair. Les vues en caracteres ne sont qu'un resume
+ *       pour la forme d'ensemble.</li>
+ *   <li><b>Les chunks absents ne sont jamais maquilles.</b> Un chunk qui n'est pas en
+ *       memoire s'ecrit {@code ----}, se compte, et se liste. C'est le point que le dev
+ *       veut verifier : il ne doit surtout pas etre masque par une valeur plausible.</li>
+ *   <li><b>Les frontieres inter-chunks sont mesurees pour elles-memes</b> (section 5) :
+ *       le denivele exactement entre x=15 d'un chunk et x=0 du suivant, ce qu'une vue
+ *       d'ensemble ne montre pas.</li>
+ * </ul>
+ *
+ * <h2>Lecture strictement passive</h2>
+ * Aucune generation, aucun chargement, aucune attente de chunk : lecture par
+ * {@code getChunkSource().getChunkNow(...)} seulement, et chunk absent = chunk declare
+ * absent. Un scan qui chargerait ses chunks montrerait un terrain que le pipeline n'avait
+ * pas, et couterait 8 a 12 s par chunk a froid (mesure T304) sur un serveur qui affiche
+ * deja « Can't keep up! ».
+ *
+ * <h2>Usage</h2>
+ * <pre>
+ *   /dlbscan            arme le scan ; la prochaine construction de lac est mesuree
+ *   /dlbscan now        scan immediat autour du joueur, ecrit le fichier tout de suite
+ *   /dlbscan light      fichier allege : analyse et vues seules (~450 Kio)
+ *   /dlbscan full       fichier complet, grilles au bloc pres (~4,5 Mio, defaut)
+ *   /dlbscan stop       desarme ; ecrit ce qui a deja ete capture
+ *   /dlbscan status     etat courant
+ * </pre>
+ * Le fichier sort dans {@code <monde>/dlb_scan/} et son chemin est annonce en chat.
+ */
+@EventBusSubscriber(modid = "deep_lucky_block")
+public final class DevTerrainScan {
+
+    private DevTerrainScan() {
+    }
+
+    // =================================================================================
+    //  REGLAGES
+    // =================================================================================
+
+    /** Anneau ajoute autour de l'emprise, en chunks. C'est la que vit le raccord. */
+    private static final int RING_CHUNKS = 3;
+
+    /** Hauteur scannee au-dessus du sol de reference. */
+    private static final int SCAN_ABOVE = 140;
+    /** Profondeur scannee sous le sol de reference. */
+    private static final int SCAN_BELOW = 90;
+    /** Profondeur de recherche d'air PIEGE sous le premier bloc solide. */
+    private static final int AIR_PROBE_DEPTH = 48;
+
+    /** Demi-cote de la zone prise par {@code /dlbscan now}, en blocs. */
+    private static final int MANUAL_RADIUS = 176;
+
+    /** Plafond d'etapes : au-dela le fichier devient inexploitable. */
+    private static final int MAX_ETAPES = 8;
+
+    /** Capture de progression pendant les phases longues. */
+    private static final long CAPTURE_PERIODIQUE_MS = 120_000L;
+
+    /** Palette de blocs ; au-dela les blocs en trop tombent dans « (deborde) ». */
+    private static final int PALETTE_MAX = 4000;
+
+    /** Colonne sans chunk en memoire. */
+    private static final int ABSENT = Integer.MIN_VALUE;
+    /** Colonne lue mais entierement vide sur la tranche scannee. */
+    private static final int VIDE = Integer.MIN_VALUE + 1;
+
+    private static final String LAC = "deepluckyblock.procedures.CrimsonLakeStructureSpawnProcedure";
+
+    // =================================================================================
+    //  ETAT
+    // =================================================================================
+
+    private enum Phase { DESARME, ARME, EN_COURS }
+
+    private static volatile Phase phase = Phase.DESARME;
+
+    /**
+     * Grilles de Y pleine resolution dans le fichier (section 9).
+     *
+     * <p>Par defaut oui : c'est la donnee au bloc pres, et c'est l'objet de l'outil. Le
+     * fichier pese alors environ 4,5 Mio, dont les 450 premiers Kio portent deja toute
+     * l'analyse et les vues d'ensemble. {@code /dlbscan light} coupe la section 9 quand le
+     * fichier doit juste etre transmis rapidement.</p>
+     */
+    private static volatile boolean grillesCompletes = true;
+
+    private static final class Etape {
+        final String nom;
+        final String detail;
+        final long tMs;
+        final int[] ySolid;      // sommet du premier bloc solide (ni air ni fluide)
+        final int[] ySurface;    // sommet du premier bloc non-air (eau et feuillage compris)
+        final int[] yWater;      // surface du premier fluide
+        final char[] idSolid;    // index palette du bloc solide de surface
+        final char[] idSurface;  // index palette du bloc de surface
+        final short[] airSous;   // blocs d'air piges sous le premier solide
+        final short[] nSolides;  // nombre de blocs pleins dans la tranche (densite)
+        final boolean[] chunkCharge;
+        int lues, absentes;
+
+        Etape(String nom, String detail, long tMs, int n, int nc) {
+            this.nom = nom;
+            this.detail = detail;
+            this.tMs = tMs;
+            this.ySolid = new int[n];
+            this.ySurface = new int[n];
+            this.yWater = new int[n];
+            this.idSolid = new char[n];
+            this.idSurface = new char[n];
+            this.airSous = new short[n];
+            this.nSolides = new short[n];
+            this.chunkCharge = new boolean[nc];
+        }
+    }
+
+    private static final class Session {
+        ServerLevel level;
+        long t0 = System.currentTimeMillis();
+        long derniereCaptureMs;
+        // emprise de la structure (bornes monde, incluses)
+        int ex0, ez0, ex1, ez1;
+        boolean empriseConnue;
+        int groundY;
+        // zone scannee, alignee chunk
+        int x0, z0, w, d, cx0, cz0, cw, cd;
+        int yFloor, yTop;
+        final List<Etape> etapes = new ArrayList<>(MAX_ETAPES);
+        final List<String> palette = new ArrayList<>();
+        final Map<String, Integer> paletteIdx = new HashMap<>();
+        final List<String> journal = new ArrayList<>();
+        int[] bruit;            // relief theorique, pour les chunks jamais charges
+        int dernierPasteQ = -1;
+        boolean zoneVue;
+    }
+
+    private static volatile Session session;
+
+    private static void log(Object msg) {
+        org.slf4j.LoggerFactory.getLogger("deep_lucky_block").info("{}", msg);
+    }
+
+    private static void dire(ServerLevel level, String texte, ChatFormatting couleur) {
+        try {
+            Component c = Component.literal("[DLB-SCAN] " + texte).withStyle(couleur);
+            for (ServerPlayer p : level.players()) p.sendSystemMessage(c);
+        } catch (Throwable ignored) {
+        }
+        log("[DLB-SCAN] " + texte);
+    }
+
+    // =================================================================================
+    //  COMMANDE
+    // =================================================================================
+
+    @SubscribeEvent
+    public static void register(RegisterCommandsEvent event) {
+        event.getDispatcher().register(
+                Commands.literal("dlbscan")
+                        .requires(src -> src.hasPermission(2))
+                        .executes(ctx -> {
+                            armer(ctx.getSource());
+                            return 1;
+                        })
+                        .then(Commands.literal("now").executes(ctx -> {
+                            scanImmediat(ctx.getSource());
+                            return 1;
+                        }))
+                        .then(Commands.literal("light").executes(ctx -> {
+                            grillesCompletes = false;
+                            ctx.getSource().sendSuccess(() -> Component.literal(
+                                    "[DLB-SCAN] grilles pleine resolution DESACTIVEES : le "
+                                            + "fichier ne gardera que l'analyse et les vues "
+                                            + "(~450 Kio).").withStyle(ChatFormatting.GRAY), false);
+                            return 1;
+                        }))
+                        .then(Commands.literal("full").executes(ctx -> {
+                            grillesCompletes = true;
+                            ctx.getSource().sendSuccess(() -> Component.literal(
+                                    "[DLB-SCAN] grilles pleine resolution ACTIVEES (~4,5 Mio).")
+                                    .withStyle(ChatFormatting.GRAY), false);
+                            return 1;
+                        }))
+                        .then(Commands.literal("stop").executes(ctx -> {
+                            stop(ctx.getSource());
+                            return 1;
+                        }))
+                        .then(Commands.literal("status").executes(ctx -> {
+                            statut(ctx.getSource());
+                            return 1;
+                        }))
+        );
+    }
+
+    private static void armer(CommandSourceStack src) {
+        phase = Phase.ARME;
+        session = null;
+        src.sendSuccess(() -> Component.literal(
+                "[DLB-SCAN] arme. Lance maintenant /dlbtest crimsonlake : chaque etape sera "
+                        + "mesuree et un fichier unique sortira dans <monde>/dlb_scan/.")
+                .withStyle(ChatFormatting.AQUA), false);
+    }
+
+    private static void stop(CommandSourceStack src) {
+        Session s = session;
+        if (s != null && !s.etapes.isEmpty()) {
+            ecrire(s, "arret manuel");
+        }
+        phase = Phase.DESARME;
+        session = null;
+        src.sendSuccess(() -> Component.literal("[DLB-SCAN] desarme.")
+                .withStyle(ChatFormatting.GRAY), false);
+    }
+
+    private static void statut(CommandSourceStack src) {
+        Session s = session;
+        final String txt;
+        if (s == null) {
+            txt = "phase=" + phase + ", aucune session ouverte. File de pose du lac = "
+                    + pasteQueueSize() + " (-1 = reflexion indisponible).";
+        } else {
+            txt = "phase=" + phase + ", " + s.etapes.size() + " etape(s) capturee(s), zone "
+                    + s.w + "x" + s.d + " (" + s.cw + "x" + s.cd + " chunks), emprise "
+                    + (s.empriseConnue ? (s.ex0 + ".." + s.ex1 + " / " + s.ez0 + ".." + s.ez1)
+                                       : "pas encore connue");
+        }
+        src.sendSuccess(() -> Component.literal("[DLB-SCAN] " + txt)
+                .withStyle(ChatFormatting.AQUA), false);
+    }
+
+    private static void scanImmediat(CommandSourceStack src) {
+        ServerLevel level = src.getLevel();
+        BlockPos p = BlockPos.containing(src.getPosition());
+        Session s = ouvrir(level,
+                p.getX() - MANUAL_RADIUS, p.getZ() - MANUAL_RADIUS,
+                p.getX() + MANUAL_RADIUS, p.getZ() + MANUAL_RADIUS,
+                p.getY(), false);
+        if (s == null) {
+            src.sendFailure(Component.literal("[DLB-SCAN] ouverture impossible."));
+            return;
+        }
+        session = s;
+        capturer(s, "SCAN_MANUEL", "demande par /dlbscan now autour de " + p.toShortString());
+        ecrire(s, "scan manuel");
+        session = null;
+        phase = Phase.DESARME;
+    }
+
+    // =================================================================================
+    //  OBSERVATION DU PIPELINE  (aucune modification du lac)
+    // =================================================================================
+
+    /**
+     * Taille de la file de pose du lac, lue par reflexion.
+     *
+     * <p>C'est le signal de phase le plus net qui existe sans toucher au lac : la file
+     * recoit son job <b>dans le callback de fin de clear</b>, et le perd a la derniere
+     * tranche posee. Passer de 0 a 1 date donc exactement la fin du clear, et revenir a 0
+     * la fin de la pose. Si la reflexion echoue, on rend -1 et l'outil retombe sur un
+     * echantillonnage periodique : degrade, mais jamais muet.</p>
+     */
+    private static int pasteQueueSize() {
+        try {
+            Class<?> c = Class.forName(LAC);
+            java.lang.reflect.Field f = c.getDeclaredField("PASTE_Q");
+            f.setAccessible(true);
+            Object q = f.get(null);
+            if (q instanceof java.util.Collection<?> col) return col.size();
+        } catch (Throwable ignored) {
+        }
+        return -1;
+    }
+
+    @SubscribeEvent
+    public static void tick(ServerTickEvent.Post event) {
+        if (phase == Phase.DESARME) return;
+        try {
+            tickGarde(event);
+        } catch (Throwable t) {
+            log("[DLB-SCAN] tick en echec, scan desarme : " + t);
+            phase = Phase.DESARME;
+            session = null;
+        }
+    }
+
+    private static void tickGarde(ServerTickEvent.Post event) {
+        var server = event.getServer();
+        if (server == null) return;
+        // En attente, on sonde a CHAQUE tick : le clear demarre dans le tick meme ou
+        // ChunkKeeper epingle la zone, et il s'accorde 40 ms par passe. Sonder une fois
+        // sur huit laisserait disparaitre jusqu'a 300 ms de terrain avant la 1re mesure.
+        // Une fois la session ouverte, un sondage sur huit suffit largement.
+        if (session != null && (server.getTickCount() & 7) != 0) return;
+
+        for (ServerLevel level : server.getAllLevels()) {
+            int[] zone = zoneTenue(level);
+            Session s = session;
+
+            // --- ouverture : la zone epinglee apparait = le pipeline vient de reserver
+            //     son emprise, juste avant le premier coup de pioche du clear.
+            if (s == null && zone != null && phase == Phase.ARME) {
+                int gy = solDeReference(level, zone);
+                s = ouvrir(level, zone[0], zone[1], zone[2], zone[3], gy, true);
+                if (s == null) continue;
+                session = s;
+                phase = Phase.EN_COURS;
+                s.zoneVue = true;
+                s.dernierPasteQ = Math.max(0, pasteQueueSize());
+                capturer(s, "1_DEBUT_CLEAR",
+                        "premier tick ou la zone epinglee est visible ; le clear vient de "
+                                + "demarrer dans le tick precedent (voir section 1 pour "
+                                + "l'ecart deja creuse)");
+                continue;
+            }
+            if (s == null || s.level != level) continue;
+
+            // --- transitions de la file de pose
+            int q = pasteQueueSize();
+            if (q >= 0) {
+                if (s.dernierPasteQ == 0 && q > 0) {
+                    capturer(s, "2_APRES_CLEAR",
+                            "la file de pose vient de recevoir son job : le clear est termine");
+                } else if (s.dernierPasteQ > 0 && q == 0) {
+                    capturer(s, "3_APRES_PASTE",
+                            "la file de pose s'est videe : la derniere tranche est posee");
+                }
+                s.dernierPasteQ = q;
+            }
+
+            // --- progression : une capture de temps en temps, pour voir le clear avancer
+            if (System.currentTimeMillis() - s.derniereCaptureMs > CAPTURE_PERIODIQUE_MS
+                    && s.etapes.size() < MAX_ETAPES - 1) {
+                capturer(s, "P" + s.etapes.size() + "_PROGRESSION",
+                        "capture periodique, file de pose = " + q);
+            }
+
+            // --- fermeture : la zone est relachee = le pipeline a fini (ou abandonne)
+            if (zone == null && s.zoneVue) {
+                // Le lac relache la zone dans le bloc meme ou il retire son job de la
+                // file : sans ce garde-fou, 3_APRES_PASTE et 4_FIN tomberaient au meme
+                // tick et le fichier porterait deux fois la meme photo, pour 600 Kio.
+                boolean dejaPrise = !s.etapes.isEmpty()
+                        && s.etapes.get(s.etapes.size() - 1).nom.equals("3_APRES_PASTE")
+                        && System.currentTimeMillis() - s.derniereCaptureMs < 2000L;
+                if (!dejaPrise) {
+                    capturer(s, "4_FIN",
+                            "ChunkKeeper a relache la zone : fin (ou abandon) du pipeline");
+                }
+                ecrire(s, "fin du pipeline");
+                session = null;
+                phase = Phase.DESARME;
+                return;
+            }
+            if (s.etapes.size() >= MAX_ETAPES) {
+                ecrire(s, "plafond d'etapes atteint");
+                session = null;
+                phase = Phase.DESARME;
+                return;
+            }
+        }
+    }
+
+    private static int[] zoneTenue(ServerLevel level) {
+        try {
+            return deepluckyblock.util.ChunkKeeper.zoneBlockBounds(level);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Sol de reference : mediane grossiere du relief theorique au centre de la zone. */
+    private static int solDeReference(ServerLevel level, int[] zone) {
+        try {
+            var gen = level.getChunkSource().getGenerator();
+            var rs = level.getChunkSource().randomState();
+            int cx = (zone[0] + zone[2]) / 2, cz = (zone[1] + zone[3]) / 2;
+            int somme = 0, n = 0;
+            for (int dx = -64; dx <= 64; dx += 32) {
+                for (int dz = -64; dz <= 64; dz += 32) {
+                    somme += gen.getBaseHeight(cx + dx, cz + dz,
+                            net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR_WG,
+                            level, rs);
+                    n++;
+                }
+            }
+            return n > 0 ? somme / n : level.getSeaLevel();
+        } catch (Throwable t) {
+            return level.getSeaLevel();
+        }
+    }
+
+    // =================================================================================
+    //  SESSION
+    // =================================================================================
+
+    private static Session ouvrir(ServerLevel level, int ex0, int ez0, int ex1, int ez1,
+                                  int groundY, boolean empriseConnue) {
+        try {
+            Session s = new Session();
+            s.level = level;
+            s.ex0 = Math.min(ex0, ex1);
+            s.ex1 = Math.max(ex0, ex1);
+            s.ez0 = Math.min(ez0, ez1);
+            s.ez1 = Math.max(ez0, ez1);
+            s.empriseConnue = empriseConnue;
+            s.groundY = groundY;
+
+            int ring = RING_CHUNKS * 16;
+            s.cx0 = (s.ex0 - ring) >> 4;
+            s.cz0 = (s.ez0 - ring) >> 4;
+            s.cw = ((s.ex1 + ring) >> 4) - s.cx0 + 1;
+            s.cd = ((s.ez1 + ring) >> 4) - s.cz0 + 1;
+            s.x0 = s.cx0 << 4;
+            s.z0 = s.cz0 << 4;
+            s.w = s.cw * 16;
+            s.d = s.cd * 16;
+
+            s.yFloor = Math.max(level.getMinBuildHeight(), groundY - SCAN_BELOW);
+            s.yTop = Math.min(level.getMaxBuildHeight() - 1, groundY + SCAN_ABOVE);
+            s.derniereCaptureMs = System.currentTimeMillis();
+            dire(level, "session ouverte : zone " + s.w + "x" + s.d + " blocs ("
+                    + s.cw + "x" + s.cd + " chunks), sol de reference Y=" + groundY,
+                    ChatFormatting.AQUA);
+            return s;
+        } catch (Throwable t) {
+            log("[DLB-SCAN] ouverture impossible : " + t);
+            return null;
+        }
+    }
+
+    /**
+     * Relief THEORIQUE de toute la zone, par bruit pur.
+     *
+     * <p>Ne genere rien et ne charge rien. Sert de reference absolue du terrain d'origine,
+     * et surtout de point de comparaison pour les chunks jamais charges : sans lui, un
+     * chunk absent ne dirait meme pas quelle forme il aurait du avoir.</p>
+     */
+    private static void calculerBruit(Session s) {
+        s.bruit = new int[s.w * s.d];
+        try {
+            var gen = s.level.getChunkSource().getGenerator();
+            var rs = s.level.getChunkSource().randomState();
+            var type = net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR_WG;
+            for (int z = 0; z < s.d; z++) {
+                for (int x = 0; x < s.w; x++) {
+                    s.bruit[z * s.w + x] = gen.getBaseHeight(s.x0 + x, s.z0 + z, type, s.level, rs);
+                }
+            }
+        } catch (Throwable t) {
+            java.util.Arrays.fill(s.bruit, ABSENT);
+            log("[DLB-SCAN] relief theorique indisponible : " + t);
+        }
+    }
+
+    // =================================================================================
+    //  CAPTURE — SCAN COMPLET DE TOUTE LA ZONE, A CHAQUE ETAPE
+    // =================================================================================
+
+    private static void capturer(Session s, String nom, String detail) {
+        if (s.etapes.size() >= MAX_ETAPES) return;
+        long t0 = System.nanoTime();
+        Etape e = new Etape(nom, detail, System.currentTimeMillis() - s.t0,
+                s.w * s.d, s.cw * s.cd);
+        BlockPos.MutableBlockPos bp = new BlockPos.MutableBlockPos();
+
+        for (int cz = 0; cz < s.cd; cz++) {
+            for (int cx = 0; cx < s.cw; cx++) {
+                ChunkAccess chunk = chunkPassif(s.level, s.cx0 + cx, s.cz0 + cz);
+                boolean charge = chunk != null;
+                e.chunkCharge[cz * s.cw + cx] = charge;
+                int bx0 = (s.cx0 + cx) << 4, bz0 = (s.cz0 + cz) << 4;
+                // Depart de scan calcule UNE FOIS PAR CHUNK : le ciel represente
+                // l'essentiel de la tranche et se saute en O(1) par section vide.
+                int yDepart = charge ? departScan(chunk, s.yTop, s.yFloor) : s.yFloor;
+                for (int oz = 0; oz < 16; oz++) {
+                    for (int ox = 0; ox < 16; ox++) {
+                        int i = (bz0 + oz - s.z0) * s.w + (bx0 + ox - s.x0);
+                        if (i < 0 || i >= e.ySolid.length) continue;
+                        if (!charge) {
+                            // JAMAIS de valeur de remplacement plausible : un chunk absent
+                            // doit se voir, c'est precisement ce qu'on vient verifier.
+                            e.ySolid[i] = ABSENT;
+                            e.ySurface[i] = ABSENT;
+                            e.yWater[i] = ABSENT;
+                            e.absentes++;
+                        } else {
+                            lireColonne(s, e, chunk, bp, bx0 + ox, bz0 + oz, i, yDepart);
+                            e.lues++;
+                        }
+                    }
+                }
+            }
+        }
+        s.etapes.add(e);
+        s.derniereCaptureMs = System.currentTimeMillis();
+        int nCharges = 0;
+        for (boolean b : e.chunkCharge) if (b) nCharges++;
+        String ligne = nom + " : " + e.lues + " colonnes lues, " + e.absentes + " absentes, "
+                + nCharges + "/" + e.chunkCharge.length + " chunks charges, "
+                + ((System.nanoTime() - t0) / 1_000_000L) + " ms";
+        s.journal.add(ligne);
+        dire(s.level, ligne, ChatFormatting.GRAY);
+    }
+
+    /** Chunk SANS jamais generer, charger ni attendre. Null = reellement absent. */
+    private static ChunkAccess chunkPassif(ServerLevel level, int cx, int cz) {
+        try {
+            return level.getChunkSource().getChunkNow(cx, cz);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Y du sommet de la plus haute section non vide : au-dessus, il n'y a que du ciel. */
+    private static int departScan(ChunkAccess chunk, int yTop, int yFloor) {
+        try {
+            LevelChunkSection[] secs = chunk.getSections();
+            for (int si = secs.length - 1; si >= 0; si--) {
+                LevelChunkSection sec = secs[si];
+                if (sec == null || sec.hasOnlyAir()) continue;
+                return Math.min(yTop, chunk.getMinBuildHeight() + (si << 4) + 15);
+            }
+            return yFloor;
+        } catch (Throwable t) {
+            return yTop;
+        }
+    }
+
+    private static void lireColonne(Session s, Etape e, ChunkAccess chunk,
+                                    BlockPos.MutableBlockPos bp, int x, int z, int i,
+                                    int yDepart) {
+        int ySurface = ABSENT, ySolid = ABSENT, yWater = ABSENT;
+        BlockState stSurface = null, stSolid = null;
+        int air = 0, pleins = 0;
+        boolean solideVu = false;
+        int yStop = s.yFloor;
+
+        for (int y = yDepart; y >= yStop; y--) {
+            bp.set(x, y, z);
+            BlockState st;
+            try {
+                st = chunk.getBlockState(bp);
+            } catch (Throwable t) {
+                break;
+            }
+            if (st == null) continue;
+            boolean estAir = st.isAir();
+            boolean estFluide = !st.getFluidState().isEmpty();
+            if (!estAir) {
+                pleins++;
+                if (ySurface == ABSENT) {
+                    ySurface = y;
+                    stSurface = st;
+                }
+            }
+            if (estFluide && yWater == ABSENT) yWater = y;
+            if (!estAir && !estFluide && !solideVu) {
+                ySolid = y;
+                stSolid = st;
+                solideVu = true;
+                // Sous le premier solide on ne cherche plus que l'air piege, et sur une
+                // profondeur bornee : le sous-sol profond ne dit rien du raccord.
+                yStop = Math.max(s.yFloor, y - AIR_PROBE_DEPTH);
+            }
+            if (solideVu && estAir) air++;
+        }
+
+        e.ySurface[i] = ySurface == ABSENT ? VIDE : ySurface;
+        e.ySolid[i] = ySolid == ABSENT ? VIDE : ySolid;
+        e.yWater[i] = yWater == ABSENT ? VIDE : yWater;
+        e.idSurface[i] = (char) idDe(s, stSurface);
+        e.idSolid[i] = (char) idDe(s, stSolid);
+        e.airSous[i] = (short) Math.min(Short.MAX_VALUE, air);
+        e.nSolides[i] = (short) Math.min(Short.MAX_VALUE, pleins);
+    }
+
+    private static int idDe(Session s, BlockState st) {
+        if (st == null) return 0;
+        String nom;
+        try {
+            nom = BuiltInRegistries.BLOCK.getKey(st.getBlock()).toString();
+        } catch (Throwable t) {
+            return 0;
+        }
+        Integer k = s.paletteIdx.get(nom);
+        if (k != null) return k;
+        if (s.palette.size() >= PALETTE_MAX) return PALETTE_MAX;
+        s.palette.add(nom);
+        int v = s.palette.size();
+        s.paletteIdx.put(nom, v);
+        return v;
+    }
+
+    private static int idx(Session s, int wx, int wz) {
+        int dx = wx - s.x0, dz = wz - s.z0;
+        if (dx < 0 || dz < 0 || dx >= s.w || dz >= s.d) return -1;
+        return dz * s.w + dx;
+    }
+
+    private static boolean dansEmprise(Session s, int wx, int wz) {
+        return wx >= s.ex0 && wx <= s.ex1 && wz >= s.ez0 && wz <= s.ez1;
+    }
+
+    private static boolean chunkDansEmprise(Session s, int cx, int cz) {
+        int wx = (s.cx0 + cx) << 4, wz = (s.cz0 + cz) << 4;
+        return wx + 15 >= s.ex0 && wx <= s.ex1 && wz + 15 >= s.ez0 && wz <= s.ez1;
+    }
+
+    // =================================================================================
+    //  ECRITURE — UN SEUL FICHIER TEXTE
+    // =================================================================================
+
+    private static void ecrire(Session s, String cause) {
+        if (s.etapes.isEmpty()) {
+            log("[DLB-SCAN] rien a ecrire : aucune etape capturee");
+            return;
+        }
+        // Le relief theorique coute ~135 000 appels a getBaseHeight, soit quelques
+        // secondes. On le paie ICI, une seule fois, APRES la fin du pipeline -- jamais
+        // pendant la construction, ou le serveur est deja en retard de plusieurs centaines
+        // de ticks.
+        calculerBruit(s);
+        try {
+            java.nio.file.Path dir = s.level.getServer()
+                    .getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
+                    .resolve("dlb_scan");
+            java.nio.file.Files.createDirectories(dir);
+            String stamp = new java.text.SimpleDateFormat("yyyyMMdd-HHmmss")
+                    .format(new java.util.Date());
+            java.nio.file.Path out = dir.resolve("dlb-scan-" + stamp + ".txt");
+
+            StringBuilder r = new StringBuilder(8 << 20);
+            entete(r, s, cause);
+            section1Etapes(r, s);
+            section2ChunksAbsents(r, s);
+            section3ChunksNonTouches(r, s);
+            section4AncienTerrain(r, s);
+            section4bComposition(r, s);
+            section5InterChunks(r, s);
+            section6Marches(r, s);
+            section7Profil(r, s);
+            section8Vues(r, s);
+            if (grillesCompletes) {
+                section9Grilles(r, s);
+            } else {
+                titre(r, "9. GRILLES DE Y ABSOLUS -- OMISES (/dlbscan light)");
+                r.append("Relance avec /dlbscan full pour obtenir la hauteur de chaque colonne.\n");
+            }
+            section10Palette(r, s);
+
+            java.nio.file.Files.write(out,
+                    r.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            long ko = Math.max(1L, java.nio.file.Files.size(out) / 1024L);
+            dire(s.level, "fichier ecrit (" + ko + " Kio) : " + out, ChatFormatting.AQUA);
+        } catch (Throwable t) {
+            log("[DLB-SCAN] ecriture impossible : " + t);
+            dire(s.level, "ECHEC d'ecriture : " + t, ChatFormatting.RED);
+        }
+    }
+
+    private static void titre(StringBuilder r, String t) {
+        r.append('\n').append("=".repeat(100)).append('\n')
+         .append(' ').append(t).append('\n')
+         .append("=".repeat(100)).append('\n');
+    }
+
+    private static void entete(StringBuilder r, Session s, String cause) {
+        r.append("=".repeat(100)).append('\n');
+        r.append(" DLB -- SCAN DE TERRAIN (outil de developpement, fichier jetable)\n");
+        r.append("=".repeat(100)).append('\n');
+        r.append("date            : ").append(new java.util.Date()).append('\n');
+        r.append("cause d'ecriture: ").append(cause).append('\n');
+        r.append("dimension       : ").append(s.level.dimension().location()).append('\n');
+        r.append("graine          : ").append(s.level.getSeed()).append('\n');
+        r.append("emprise         : ")
+         .append(s.empriseConnue ? "(zone epinglee par ChunkKeeper, ARRONDIE AU CHUNK) "
+                                 : "(ESTIMEE autour du joueur) ")
+         .append("x ").append(s.ex0).append("..").append(s.ex1)
+         .append("   z ").append(s.ez0).append("..").append(s.ez1)
+         .append("   (").append(s.ex1 - s.ex0 + 1).append(" x ").append(s.ez1 - s.ez0 + 1)
+         .append(" blocs)\n");
+        r.append("zone scannee    : x ").append(s.x0).append("..").append(s.x0 + s.w - 1)
+         .append("   z ").append(s.z0).append("..").append(s.z0 + s.d - 1)
+         .append("   (").append(s.w).append(" x ").append(s.d).append(" = ")
+         .append(s.w * s.d).append(" colonnes)\n");
+        r.append("chunks          : ").append(s.cw).append(" x ").append(s.cd).append(" = ")
+         .append(s.cw * s.cd).append("   (chunk X ").append(s.cx0).append("..")
+         .append(s.cx0 + s.cw - 1).append(", chunk Z ").append(s.cz0).append("..")
+         .append(s.cz0 + s.cd - 1).append(")\n");
+        r.append("anneau autour   : ").append(RING_CHUNKS).append(" chunks\n");
+        r.append("                  NOTE : l'emprise ci-dessus est celle que le pipeline a\n");
+        r.append("                  reellement epinglee, arrondie aux frontieres de chunk. Elle\n");
+        r.append("                  deborde donc un peu le rectangle exact du gabarit NBT.\n");
+        r.append("sol de reference: Y=").append(s.groundY)
+         .append("   tranche scannee Y ").append(s.yFloor).append("..").append(s.yTop).append('\n');
+        r.append('\n');
+        r.append("ORIENTATION (a verifier d'un coup d'oeil sur les regles de chaque grille)\n");
+        r.append("  X croit vers la DROITE (est).  Z croit vers le BAS (sud).\n");
+        r.append("  Une ligne de grille = un Z constant. Une colonne = un X constant.\n");
+        r.append("  La zone est bornee aux frontieres de chunk : chaque bloc de 16 colonnes\n");
+        r.append("  separe par « | » est exactement un chunk, et les lignes sont groupees par 16.\n");
+        r.append('\n');
+        r.append("CONVENTIONS DE VALEUR\n");
+        r.append("  ----  chunk NON CHARGE au moment de la lecture (valeur inconnue, jamais devinee)\n");
+        r.append("  ....  colonne lue mais entierement vide sur la tranche scannee\n");
+        r.append("  sinon la hauteur Y ABSOLUE du bloc concerne\n");
+        r.append('\n');
+        r.append("SOMMAIRE\n");
+        r.append("  1  etapes capturees\n");
+        r.append("  2  CHUNKS NON CHARGES par etape (les « chunks qui manquent »)\n");
+        r.append("  3  chunks NON TOUCHES d'une etape a l'autre (sautes par le clear / la pose)\n");
+        r.append("  4  ancien terrain reste dans l'emprise\n");
+        r.append(" 4b  composition de la surface dans l'emprise, et air piege\n");
+        r.append("  5  RACCORDS INTER-CHUNKS (denivele exactement aux frontieres)\n");
+        r.append("  6  marches et failles\n");
+        r.append("  7  profil du raccord, du bord vers l'exterieur\n");
+        r.append("  8  vues du dessus en caracteres\n");
+        r.append("  9  GRILLES DE Y ABSOLUS, pleine resolution, par etape")
+         .append(grillesCompletes ? " (gros)\n" : " -- OMISES (/dlbscan light)\n");
+        r.append(" 10  palette des blocs\n");
+    }
+
+    // ---------------------------------------------------------------- 1
+    private static void section1Etapes(StringBuilder r, Session s) {
+        titre(r, "1. ETAPES CAPTUREES");
+        r.append(String.format("%-3s %-20s %9s %10s %10s %14s%n",
+                "#", "etape", "t(ms)", "lues", "absentes", "chunks charges"));
+        for (int n = 0; n < s.etapes.size(); n++) {
+            Etape e = s.etapes.get(n);
+            int ch = 0;
+            for (boolean b : e.chunkCharge) if (b) ch++;
+            r.append(String.format("%-3d %-20s %9d %10d %10d %14s%n",
+                    n, e.nom, e.tMs, e.lues, e.absentes,
+                    ch + "/" + e.chunkCharge.length));
+        }
+        r.append('\n');
+        for (Etape e : s.etapes) {
+            r.append("  ").append(e.nom).append(" : ").append(e.detail).append('\n');
+        }
+        r.append('\n');
+        r.append("Les etapes sont detectees SANS modifier le pipeline : l'apparition de la zone\n");
+        r.append("epinglee date le debut du clear, la file de pose qui recoit son job date la fin\n");
+        r.append("du clear, la meme file qui se vide date la fin de la pose, et le relachement de\n");
+        r.append("la zone date la fin du pipeline.\n\n");
+
+        // Honnetete de la mesure : la 1re capture ne peut pas preceder le tout premier
+        // coup de pioche, puisque le clear part dans le tick meme ou la zone est epinglee.
+        // Plutot que de taire cette limite, on la CHIFFRE en comparant la 1re capture au
+        // relief theorique de generation.
+        Etape p = s.etapes.get(0);
+        int compares = 0, deja = 0, creuseMax = 0;
+        for (int i = 0; i < p.ySolid.length; i++) {
+            int b = s.bruit[i];
+            if (!mesurable(p.ySolid[i]) || b == ABSENT) continue;
+            compares++;
+            int ecart = b - p.ySolid[i];
+            if (ecart >= 3) {
+                deja++;
+                if (ecart > creuseMax) creuseMax = ecart;
+            }
+        }
+        r.append("RETARD DE LA PREMIERE CAPTURE (limite assumee, pas un defaut cache)\n");
+        r.append("  Le clear demarre dans le tick meme ou la zone est epinglee : aucune mesure\n");
+        r.append("  externe ne peut le preceder. Ecart mesure entre la 1re capture et le relief\n");
+        r.append("  theorique de generation :\n");
+        r.append("    colonnes comparables                    : ").append(compares).append('\n');
+        r.append("    colonnes deja plus basses de >= 3 blocs : ").append(deja)
+         .append(pct(deja, compares)).append('\n');
+        r.append("    creusement maximal deja constate        : ").append(creuseMax)
+         .append(" bloc(s)\n");
+        r.append("  Attention : cet ecart melange ce que le clear a deja mange ET les\n");
+        r.append("  differences normales entre le bruit pur et le monde decore (arbres, grottes,\n");
+        r.append("  structures vanilla, constructions du joueur). Il se lit comme une BORNE\n");
+        r.append("  SUPERIEURE du retard, pas comme sa valeur exacte.\n");
+        r.append("  La reference d'origine fiable reste la grille 9.THEORIQUE.\n");
+    }
+
+    // ---------------------------------------------------------------- 2
+    private static void section2ChunksAbsents(StringBuilder r, Session s) {
+        titre(r, "2. CHUNKS NON CHARGES PAR ETAPE  (les « chunks qui manquent »)");
+        r.append("Un chunk non charge ne peut etre ni coupe, ni pose, ni lisse. S'il tombe dans\n");
+        r.append("l'emprise, c'est l'anomalie elle-meme et non un defaut de la mesure. La colonne\n");
+        r.append("« theorique » rappelle la hauteur que le bruit de generation prevoyait la, pour\n");
+        r.append("situer le trou sans jamais le combler dans les grilles.\n\n");
+        for (Etape e : s.etapes) {
+            int manquantsEmprise = 0, manquantsDehors = 0;
+            StringBuilder liste = new StringBuilder();
+            for (int cz = 0; cz < s.cd; cz++) {
+                for (int cx = 0; cx < s.cw; cx++) {
+                    if (e.chunkCharge[cz * s.cw + cx]) continue;
+                    boolean dans = chunkDansEmprise(s, cx, cz);
+                    if (dans) manquantsEmprise++; else manquantsDehors++;
+                    if (dans && manquantsEmprise <= 200) {
+                        int wx = (s.cx0 + cx) << 4, wz = (s.cz0 + cz) << 4;
+                        int b = s.bruit[idx(s, wx + 8, wz + 8) < 0 ? 0 : idx(s, wx + 8, wz + 8)];
+                        liste.append("      chunk ").append(s.cx0 + cx).append(',')
+                             .append(s.cz0 + cz).append("   blocs x ").append(wx).append("..")
+                             .append(wx + 15).append("  z ").append(wz).append("..").append(wz + 15)
+                             .append("   theorique Y~").append(b).append('\n');
+                    }
+                }
+            }
+            r.append("  ").append(e.nom).append(" : ").append(manquantsEmprise)
+             .append(" chunk(s) NON CHARGE(S) DANS L'EMPRISE, ").append(manquantsDehors)
+             .append(" hors emprise\n");
+            if (liste.length() > 0) r.append(liste);
+            r.append('\n');
+        }
+    }
+
+    // ---------------------------------------------------------------- 3
+    private static void section3ChunksNonTouches(StringBuilder r, Session s) {
+        titre(r, "3. CHUNKS NON TOUCHES D'UNE ETAPE A L'AUTRE  (sautes par le clear / la pose)");
+        if (s.etapes.size() < 2) {
+            r.append("  (une seule etape capturee : rien a comparer)\n");
+            return;
+        }
+        for (int n = 1; n < s.etapes.size(); n++) {
+            Etape a = s.etapes.get(n - 1), b = s.etapes.get(n);
+            int empriseTot = 0, sautes = 0, touches = 0;
+            StringBuilder liste = new StringBuilder();
+            for (int cz = 0; cz < s.cd; cz++) {
+                for (int cx = 0; cx < s.cw; cx++) {
+                    int ch = colonnesChangees(s, a, b, cx, cz);
+                    boolean dans = chunkDansEmprise(s, cx, cz);
+                    if (ch > 0) touches++;
+                    if (!dans) continue;
+                    empriseTot++;
+                    if (ch == 0) {
+                        sautes++;
+                        if (sautes <= 200) {
+                            int wx = (s.cx0 + cx) << 4, wz = (s.cz0 + cz) << 4;
+                            boolean chargeA = a.chunkCharge[cz * s.cw + cx];
+                            boolean chargeB = b.chunkCharge[cz * s.cw + cx];
+                            liste.append("      chunk ").append(s.cx0 + cx).append(',')
+                                 .append(s.cz0 + cz).append("   blocs x ").append(wx).append("..")
+                                 .append(wx + 15).append("  z ").append(wz).append("..")
+                                 .append(wz + 15)
+                                 .append("   charge avant=").append(chargeA ? "oui" : "NON")
+                                 .append(" apres=").append(chargeB ? "oui" : "NON").append('\n');
+                        }
+                    }
+                }
+            }
+            r.append("  ").append(a.nom).append("  ->  ").append(b.nom).append('\n');
+            r.append("      chunks modifies (toute la zone) : ").append(touches).append('\n');
+            r.append("      chunks d'emprise touches        : ").append(empriseTot - sautes)
+             .append('/').append(empriseTot).append('\n');
+            r.append("      chunks d'emprise SAUTES         : ").append(sautes).append('\n');
+            if (liste.length() > 0) r.append(liste);
+            r.append('\n');
+        }
+    }
+
+    private static int colonnesChangees(Session s, Etape a, Etape b, int cx, int cz) {
+        int n = 0;
+        int bx0 = (s.cx0 + cx) << 4, bz0 = (s.cz0 + cz) << 4;
+        for (int oz = 0; oz < 16; oz++) {
+            for (int ox = 0; ox < 16; ox++) {
+                int i = idx(s, bx0 + ox, bz0 + oz);
+                if (i < 0) continue;
+                if (a.ySolid[i] == ABSENT || b.ySolid[i] == ABSENT) continue;
+                if (a.ySolid[i] != b.ySolid[i] || a.ySurface[i] != b.ySurface[i]
+                        || a.nSolides[i] != b.nSolides[i]) n++;
+            }
+        }
+        return n;
+    }
+
+    // ---------------------------------------------------------------- 4
+    private static void section4AncienTerrain(StringBuilder r, Session s) {
+        titre(r, "4. ANCIEN TERRAIN RESTE DANS L'EMPRISE");
+        Etape prem = s.etapes.get(0), dern = s.etapes.get(s.etapes.size() - 1);
+        int tot = 0, inchangees = 0, plusHautQueRef = 0;
+        StringBuilder liste = new StringBuilder();
+        int listees = 0;
+        for (int wz = s.ez0; wz <= s.ez1; wz++) {
+            for (int wx = s.ex0; wx <= s.ex1; wx++) {
+                int i = idx(s, wx, wz);
+                if (i < 0) continue;
+                if (prem.ySolid[i] == ABSENT || dern.ySolid[i] == ABSENT) continue;
+                tot++;
+                boolean identique = prem.ySolid[i] == dern.ySolid[i]
+                        && prem.ySurface[i] == dern.ySurface[i]
+                        && prem.nSolides[i] == dern.nSolides[i];
+                if (identique) {
+                    inchangees++;
+                    if (dern.ySolid[i] != VIDE && dern.ySolid[i] > s.groundY) {
+                        plusHautQueRef++;
+                        if (listees < 120) {
+                            liste.append("      x=").append(wx).append(" z=").append(wz)
+                                 .append("   Y=").append(dern.ySolid[i])
+                                 .append("  (+").append(dern.ySolid[i] - s.groundY)
+                                 .append(" au-dessus du sol de reference)   chunk ")
+                                 .append(wx >> 4).append(',').append(wz >> 4).append('\n');
+                            listees++;
+                        }
+                    }
+                }
+            }
+        }
+        r.append("  colonnes d'emprise comparables       : ").append(tot).append('\n');
+        r.append("  INCHANGEES de bout en bout           : ").append(inchangees)
+         .append(pct(inchangees, tot)).append('\n');
+        r.append("  dont plus hautes que le sol de ref.  : ").append(plusHautQueRef)
+         .append(pct(plusHautQueRef, tot)).append("   <-- ancien relief visible dans la structure\n");
+        if (liste.length() > 0) r.append(liste);
+        r.append("\n  Une colonne inchangee entre la premiere et la derniere etape n'a recu ni\n");
+        r.append("  coupe ni bloc : elle montre exactement ce qu'il y avait avant.\n");
+    }
+
+    /**
+     * Composition de la surface dans l'emprise, et air piege sous le sol.
+     *
+     * <p>Deux questions que la hauteur seule ne tranche pas : « la surface qu'on voit
+     * est-elle celle de la structure ou l'ancien terrain » (un GRASS_BLOCK ou un STONE au
+     * milieu d'un lac de nether repond tout seul), et « y a-t-il des cavites sous la
+     * croute » (un clear qui creuse sans que rien ne retombe laisse de l'air piege).</p>
+     */
+    private static void section4bComposition(StringBuilder r, Session s) {
+        titre(r, "4b. COMPOSITION DE LA SURFACE DANS L'EMPRISE, ET AIR PIEGE");
+        Etape e = s.etapes.get(s.etapes.size() - 1);
+        r.append("  etape mesuree : ").append(e.nom).append("\n\n");
+
+        int[] compte = new int[s.palette.size() + 2];
+        int[] compteSolide = new int[s.palette.size() + 2];
+        int colonnes = 0, avecAir = 0;
+        long totalAir = 0;
+        List<int[]> grosAir = new ArrayList<>();
+        for (int wz = s.ez0; wz <= s.ez1; wz++) {
+            for (int wx = s.ex0; wx <= s.ex1; wx++) {
+                int i = idx(s, wx, wz);
+                if (i < 0 || e.ySolid[i] == ABSENT) continue;
+                colonnes++;
+                int id = e.idSurface[i];
+                if (id >= 0 && id < compte.length) compte[id]++;
+                int ids = e.idSolid[i];
+                if (ids >= 0 && ids < compteSolide.length) compteSolide[ids]++;
+                int air = e.airSous[i];
+                if (air > 0) {
+                    avecAir++;
+                    totalAir += air;
+                    if (air >= 8) grosAir.add(new int[]{air, wx, wz});
+                }
+            }
+        }
+        r.append("  blocs de surface, par frequence (colonnes d'emprise lues : ")
+         .append(colonnes).append(") :\n");
+        List<int[]> tri = new ArrayList<>();
+        for (int i = 0; i < compte.length; i++) if (compte[i] > 0) tri.add(new int[]{compte[i], i});
+        tri.sort((a, b) -> b[0] - a[0]);
+        for (int k = 0; k < Math.min(40, tri.size()); k++) {
+            int[] t = tri.get(k);
+            String nom = t[1] == 0 ? "(rien)"
+                    : (t[1] <= s.palette.size() ? s.palette.get(t[1] - 1) : "(deborde)");
+            r.append(String.format("     %9d  %s  %s%n", t[0], pct(t[0], colonnes).trim(), nom));
+        }
+        r.append("\n  premier bloc SOLIDE de la colonne (l'eau et le feuillage sont ignores) :\n");
+        r.append("  C'est lui qui trahit le fond d'origine : un GRASS_BLOCK ou un STONE sous la\n");
+        r.append("  nappe du lac veut dire que la coupe n'est jamais passee a cet endroit.\n");
+        List<int[]> triS = new ArrayList<>();
+        for (int i = 0; i < compteSolide.length; i++) {
+            if (compteSolide[i] > 0) triS.add(new int[]{compteSolide[i], i});
+        }
+        triS.sort((a, b) -> b[0] - a[0]);
+        for (int k = 0; k < Math.min(40, triS.size()); k++) {
+            int[] t = triS.get(k);
+            String nom = t[1] == 0 ? "(rien)"
+                    : (t[1] <= s.palette.size() ? s.palette.get(t[1] - 1) : "(deborde)");
+            r.append(String.format("     %9d  %s  %s%n", t[0], pct(t[0], colonnes).trim(), nom));
+        }
+
+        r.append("\n  colonnes avec de l'air PIEGE sous le premier solide : ").append(avecAir)
+         .append(pct(avecAir, colonnes)).append("   total ").append(totalAir)
+         .append(" bloc(s) d'air\n");
+        grosAir.sort((a, b) -> b[0] - a[0]);
+        int n = Math.min(80, grosAir.size());
+        if (n > 0) r.append("  les ").append(n).append(" plus profondes (>= 8 blocs d'air) :\n");
+        for (int k = 0; k < n; k++) {
+            int[] t = grosAir.get(k);
+            r.append("      ").append(t[0]).append(" blocs d'air   x=").append(t[1])
+             .append(" z=").append(t[2]).append("   chunk ").append(t[1] >> 4)
+             .append(',').append(t[2] >> 4).append('\n');
+        }
+    }
+
+    // ---------------------------------------------------------------- 5
+    private static void section5InterChunks(StringBuilder r, Session s) {
+        titre(r, "5. RACCORDS INTER-CHUNKS  (denivele exactement a la frontiere)");
+        r.append("Mesure prise entre la derniere colonne d'un chunk et la premiere du suivant\n");
+        r.append("(x=15 contre x=0, puis z=15 contre z=0). C'est le defaut qu'une vue d'ensemble\n");
+        r.append("ne montre pas : une marche franche pile sur la couture de deux chunks.\n\n");
+        Etape e = s.etapes.get(s.etapes.size() - 1);
+        r.append("  etape mesuree : ").append(e.nom).append("\n\n");
+
+        List<int[]> pires = new ArrayList<>();
+        long sommeFront = 0;
+        int nFront = 0, nAbs = 0;
+        // frontieres verticales (entre chunk cx et cx+1)
+        for (int cx = 0; cx < s.cw - 1; cx++) {
+            for (int z = 0; z < s.d; z++) {
+                int xa = ((s.cx0 + cx) << 4) + 15, xb = xa + 1;
+                int ia = idx(s, xa, s.z0 + z), ib = idx(s, xb, s.z0 + z);
+                if (ia < 0 || ib < 0) continue;
+                int ha = e.ySolid[ia], hb = e.ySolid[ib];
+                if (!mesurable(ha) || !mesurable(hb)) { nAbs++; continue; }
+                int dd = Math.abs(ha - hb);
+                sommeFront += dd;
+                nFront++;
+                if (dd >= 4) pires.add(new int[]{dd, xa, s.z0 + z, 0});
+            }
+        }
+        // frontieres horizontales (entre chunk cz et cz+1)
+        for (int cz = 0; cz < s.cd - 1; cz++) {
+            for (int x = 0; x < s.w; x++) {
+                int za = ((s.cz0 + cz) << 4) + 15, zb = za + 1;
+                int ia = idx(s, s.x0 + x, za), ib = idx(s, s.x0 + x, zb);
+                if (ia < 0 || ib < 0) continue;
+                int ha = e.ySolid[ia], hb = e.ySolid[ib];
+                if (!mesurable(ha) || !mesurable(hb)) { nAbs++; continue; }
+                int dd = Math.abs(ha - hb);
+                sommeFront += dd;
+                nFront++;
+                if (dd >= 4) pires.add(new int[]{dd, s.x0 + x, za, 1});
+            }
+        }
+        r.append("  paires de colonnes mesurees aux frontieres : ").append(nFront).append('\n');
+        r.append("  paires inexploitables (chunk absent)       : ").append(nAbs).append('\n');
+        if (nFront > 0) {
+            r.append(String.format("  denivele moyen a la frontiere              : %.2f bloc(s)%n",
+                    (double) sommeFront / nFront));
+        }
+        r.append("  paires a denivele >= 4                     : ").append(pires.size()).append('\n');
+
+        // comparaison avec l'interieur des chunks : une couture anormale se voit par ecart
+        long sommeInt = 0;
+        int nInt = 0;
+        for (int z = 0; z < s.d; z++) {
+            for (int x = 0; x < s.w - 1; x++) {
+                if (((s.x0 + x) & 15) == 15) continue;   // on saute les frontieres
+                int ia = idx(s, s.x0 + x, s.z0 + z), ib = idx(s, s.x0 + x + 1, s.z0 + z);
+                if (ia < 0 || ib < 0) continue;
+                int ha = e.ySolid[ia], hb = e.ySolid[ib];
+                if (!mesurable(ha) || !mesurable(hb)) continue;
+                sommeInt += Math.abs(ha - hb);
+                nInt++;
+            }
+        }
+        if (nInt > 0 && nFront > 0) {
+            double mf = (double) sommeFront / nFront, mi = (double) sommeInt / nInt;
+            r.append(String.format("  denivele moyen a l'INTERIEUR des chunks    : %.2f bloc(s)%n", mi));
+            r.append(String.format("  rapport frontiere / interieur              : %.2f%n", mf / mi));
+            r.append("  Un rapport proche de 1 signifie que les coutures ne se distinguent pas du\n");
+            r.append("  reste du relief. Nettement au-dessus de 1, le defaut est bien le decoupage\n");
+            r.append("  en chunks lui-meme, et non la forme generale du terrain.\n");
+        }
+        pires.sort((p, q) -> q[0] - p[0]);
+        int n = Math.min(120, pires.size());
+        if (n > 0) r.append("\n  les ").append(n).append(" pires coutures :\n");
+        for (int k = 0; k < n; k++) {
+            int[] t = pires.get(k);
+            r.append("      ").append(t[0]).append(" blocs   ")
+             .append(t[3] == 0 ? "frontiere X entre x=" + t[1] + " et x=" + (t[1] + 1) + ", z=" + t[2]
+                               : "frontiere Z entre z=" + t[2] + " et z=" + (t[2] + 1) + ", x=" + t[1])
+             .append("   chunks ").append(t[1] >> 4).append(',').append(t[2] >> 4).append('\n');
+        }
+    }
+
+    private static boolean mesurable(int y) {
+        return y != ABSENT && y != VIDE;
+    }
+
+    // ---------------------------------------------------------------- 6
+    private static void section6Marches(StringBuilder r, Session s) {
+        titre(r, "6. MARCHES ET FAILLES");
+        Etape e = s.etapes.get(s.etapes.size() - 1);
+        r.append("  etape mesuree : ").append(e.nom).append("\n\n");
+        int[] histo = new int[9];
+        List<int[]> top = new ArrayList<>();
+        for (int z = 0; z < s.d; z++) {
+            for (int x = 0; x < s.w; x++) {
+                int i = z * s.w + x;
+                if (!mesurable(e.ySolid[i])) continue;
+                int pire = 0;
+                if (x + 1 < s.w) pire = Math.max(pire, delta(e, i, i + 1));
+                if (z + 1 < s.d) pire = Math.max(pire, delta(e, i, i + s.w));
+                histo[tranche(pire)]++;
+                if (pire >= 6) top.add(new int[]{pire, s.x0 + x, s.z0 + z});
+            }
+        }
+        String[] noms = {"0", "1", "2-3", "4-5", "6-9", "10-15", "16-25", "26-50", ">50"};
+        r.append("  denivele maximal avec le voisin est/sud, par colonne :\n");
+        for (int i = 0; i < histo.length; i++) {
+            r.append(String.format("     %-7s %9d%n", noms[i], histo[i]));
+        }
+        top.sort((a, b) -> b[0] - a[0]);
+        r.append("  colonnes a marche >= 6 : ").append(top.size()).append('\n');
+        int n = Math.min(120, top.size());
+        if (n > 0) r.append("  les ").append(n).append(" plus hautes :\n");
+        for (int k = 0; k < n; k++) {
+            int[] t = top.get(k);
+            r.append("      ").append(t[0]).append(" blocs   x=").append(t[1])
+             .append(" z=").append(t[2]).append("   chunk ").append(t[1] >> 4)
+             .append(',').append(t[2] >> 4)
+             .append(dansEmprise(s, t[1], t[2]) ? "   (dans l'emprise)" : "   (dehors)")
+             .append('\n');
+        }
+    }
+
+    private static int delta(Etape e, int i, int j) {
+        if (!mesurable(e.ySolid[i]) || !mesurable(e.ySolid[j])) return 0;
+        return Math.abs(e.ySolid[i] - e.ySolid[j]);
+    }
+
+    private static int tranche(int d) {
+        if (d == 0) return 0;
+        if (d == 1) return 1;
+        if (d <= 3) return 2;
+        if (d <= 5) return 3;
+        if (d <= 9) return 4;
+        if (d <= 15) return 5;
+        if (d <= 25) return 6;
+        if (d <= 50) return 7;
+        return 8;
+    }
+
+    // ---------------------------------------------------------------- 7
+    private static void section7Profil(StringBuilder r, Session s) {
+        titre(r, "7. PROFIL DU RACCORD, DU BORD VERS L'EXTERIEUR");
+        Etape prem = s.etapes.get(0), dern = s.etapes.get(s.etapes.size() - 1);
+        int rayon = RING_CHUNKS * 16;
+        double[] sa = new double[2 * rayon + 1], sb = new double[2 * rayon + 1];
+        int[] n = new int[2 * rayon + 1];
+        for (int z = 0; z < s.d; z++) {
+            for (int x = 0; x < s.w; x++) {
+                int dBord = distanceAuBord(s, s.x0 + x, s.z0 + z);
+                if (dBord < -rayon || dBord > rayon) continue;
+                int i = z * s.w + x;
+                if (!mesurable(prem.ySolid[i]) || !mesurable(dern.ySolid[i])) continue;
+                int k = dBord + rayon;
+                sa[k] += prem.ySolid[i];
+                sb[k] += dern.ySolid[i];
+                n[k]++;
+            }
+        }
+        r.append("  distance au bord de l'emprise : negatif = dedans, positif = dehors.\n");
+        r.append(String.format("    %8s %10s %10s %10s %10s%n",
+                "dist", "avant", "apres", "delta", "colonnes"));
+        for (int k = 0; k < n.length; k++) {
+            if (n[k] == 0) continue;
+            double a = sa[k] / n[k], b = sb[k] / n[k];
+            r.append(String.format("    %8d %10.2f %10.2f %10.2f %10d%n",
+                    k - rayon, a, b, b - a, n[k]));
+        }
+        r.append("\n  Une colonne « delta » qui tombe brutalement a zero des le premier bloc\n");
+        r.append("  exterieur signe un bord vertical : aucune transition n'a ete appliquee.\n");
+    }
+
+    private static int distanceAuBord(Session s, int x, int z) {
+        if (dansEmprise(s, x, z)) {
+            return -Math.min(Math.min(x - s.ex0, s.ex1 - x), Math.min(z - s.ez0, s.ez1 - z));
+        }
+        return Math.max(Math.max(s.ex0 - x, x - s.ex1), Math.max(s.ez0 - z, z - s.ez1));
+    }
+
+    // ---------------------------------------------------------------- 8
+    private static void section8Vues(StringBuilder r, Session s) {
+        int p = pas(s);
+        titre(r, "8. VUES DU DESSUS EN CARACTERES  (1 caractere = " + p + " x " + p + " blocs)");
+        r.append("  Ecart au sol de reference Y=").append(s.groundY).append(" :\n");
+        r.append("    '#' <-15   ';' -15..-8   ':' -7..-4   ',' -3..-2   '.' -1..+1\n");
+        r.append("    '-' +2..+3  '=' +4..+7   '+' +8..+15  '*' >+15\n");
+        r.append("    '@' chunk NON CHARGE     ' ' colonne vide\n");
+        r.append("    '[' ']' bords gauche/droit de l'emprise   '_' bords haut/bas\n");
+        r.append("  Les lignes sont groupees par 16 (un chunk) et les colonnes separees par '|'.\n\n");
+        for (Etape e : s.etapes) {
+            r.append("  >>> ").append(e.nom).append('\n');
+            vueHauteurs(r, s, e, p);
+            r.append('\n');
+        }
+        r.append("  >>> CHARGEMENT DES CHUNKS (1 caractere = 1 chunk)\n");
+        r.append("      dans l'emprise : 'O' charge,  'X' NON CHARGE  <-- a examiner\n");
+        r.append("      dehors         : 'o' charge,  '.' non charge (attendu)\n\n");
+        for (Etape e : s.etapes) {
+            r.append("      --- ").append(e.nom).append('\n');
+            vueChunks(r, s, e);
+            r.append('\n');
+        }
+        if (s.etapes.size() >= 2) {
+            for (int n = 1; n < s.etapes.size(); n++) {
+                r.append("  >>> CHANGEMENTS ").append(s.etapes.get(n - 1).nom).append(" -> ")
+                 .append(s.etapes.get(n).nom)
+                 .append("   ('#' modifie, ' ' intact, '@' chunk absent)\n");
+                vueDiff(r, s, s.etapes.get(n - 1), s.etapes.get(n), p);
+                r.append('\n');
+            }
+        }
+    }
+
+    private static int pas(Session s) {
+        int p = 1;
+        while (s.w / p > 176) p += 1;
+        while (16 % p != 0 && p < 16) p += 1;   // un caractere ne doit jamais chevaucher 2 chunks
+        return p;
+    }
+
+    private static void regleX(StringBuilder r, Session s, int p, int marge) {
+        // Deux lignes de graduation : centaines/dizaines du X monde au debut de chaque chunk.
+        int parChunk = 16 / p;
+        StringBuilder l1 = new StringBuilder(), l2 = new StringBuilder();
+        l1.append(" ".repeat(marge));
+        l2.append(" ".repeat(marge));
+        for (int cx = 0; cx < s.cw; cx++) {
+            String etiq = Integer.toString((s.cx0 + cx) << 4);
+            if (etiq.length() > parChunk) etiq = etiq.substring(etiq.length() - parChunk);
+            l1.append('|').append(etiq);
+            for (int k = etiq.length(); k < parChunk; k++) l1.append(' ');
+            l2.append('|').append(Integer.toString(s.cx0 + cx).length() <= parChunk
+                    ? Integer.toString(s.cx0 + cx) : "");
+            int ln = Integer.toString(s.cx0 + cx).length();
+            for (int k = (ln <= parChunk ? ln : 0); k < parChunk; k++) l2.append(' ');
+        }
+        r.append(l1).append("|   <- X monde au debut de chaque chunk\n");
+        r.append(l2).append("|   <- numero de chunk X\n");
+    }
+
+    private static void vueHauteurs(StringBuilder r, Session s, Etape e, int p) {
+        regleX(r, s, p, 9);
+        for (int z = 0; z < s.d; z += p) {
+            if ((z & 15) == 0 && z > 0) {
+                r.append(" ".repeat(9));
+                for (int cx = 0; cx < s.cw; cx++) {
+                    r.append('+').append("-".repeat(16 / p));
+                }
+                r.append("+\n");
+            }
+            r.append(String.format("z=%6d ", s.z0 + z));
+            for (int x = 0; x < s.w; x += p) {
+                if ((x & 15) == 0) r.append('|');
+                r.append(carHauteur(s, e, z * s.w + x, s.x0 + x, s.z0 + z, p));
+            }
+            r.append("|\n");
+        }
+    }
+
+    private static char carHauteur(Session s, Etape e, int i, int wx, int wz, int p) {
+        int h = e.ySolid[i];
+        if (h == ABSENT) return '@';
+        boolean dansX = wx + p > s.ex0 && wx <= s.ex1;
+        boolean dansZ = wz + p > s.ez0 && wz <= s.ez1;
+        if (dansZ && wx <= s.ex0 && wx + p > s.ex0) return '[';
+        if (dansZ && wx <= s.ex1 && wx + p > s.ex1) return ']';
+        if (dansX && ((wz <= s.ez0 && wz + p > s.ez0) || (wz <= s.ez1 && wz + p > s.ez1))) return '_';
+        if (h == VIDE) return ' ';
+        int d = h - s.groundY;
+        if (d > 15) return '*';
+        if (d >= 8) return '+';
+        if (d >= 4) return '=';
+        if (d >= 2) return '-';
+        if (d >= -1) return '.';
+        if (d >= -3) return ',';
+        if (d >= -7) return ':';
+        if (d >= -15) return ';';
+        return '#';
+    }
+
+    private static void vueChunks(StringBuilder r, Session s, Etape e) {
+        r.append("          ");
+        for (int cx = 0; cx < s.cw; cx++) r.append(Math.abs((s.cx0 + cx) % 10));
+        r.append("   <- chunk X (dernier chiffre)\n");
+        for (int cz = 0; cz < s.cd; cz++) {
+            r.append(String.format("   cz=%5d ", s.cz0 + cz));
+            for (int cx = 0; cx < s.cw; cx++) {
+                boolean dans = chunkDansEmprise(s, cx, cz);
+                boolean ch = e.chunkCharge[cz * s.cw + cx];
+                r.append(dans ? (ch ? 'O' : 'X') : (ch ? 'o' : '.'));
+            }
+            r.append('\n');
+        }
+    }
+
+    private static void vueDiff(StringBuilder r, Session s, Etape a, Etape b, int p) {
+        regleX(r, s, p, 9);
+        for (int z = 0; z < s.d; z += p) {
+            r.append(String.format("z=%6d ", s.z0 + z));
+            for (int x = 0; x < s.w; x += p) {
+                if ((x & 15) == 0) r.append('|');
+                int i = z * s.w + x;
+                if (a.ySolid[i] == ABSENT || b.ySolid[i] == ABSENT) r.append('@');
+                else r.append(a.ySolid[i] != b.ySolid[i] || a.ySurface[i] != b.ySurface[i]
+                        || a.nSolides[i] != b.nSolides[i] ? '#' : ' ');
+            }
+            r.append("|\n");
+        }
+    }
+
+    // ---------------------------------------------------------------- 9
+    private static void section9Grilles(StringBuilder r, Session s) {
+        titre(r, "9. GRILLES DE Y ABSOLUS, PLEINE RESOLUTION");
+        r.append("Une ligne par Z, une valeur par colonne X, groupees par chunk.\n");
+        r.append("  ----  chunk non charge        ....  colonne vide\n");
+        r.append("Pour chaque etape : ySolid (sommet du premier bloc solide) puis ySurface\n");
+        r.append("(sommet du premier bloc non-air, eau et feuillage compris).\n");
+        for (int n = 0; n < s.etapes.size(); n++) {
+            Etape e = s.etapes.get(n);
+            r.append("\n").append("-".repeat(100)).append('\n');
+            r.append(" 9.").append(e.nom).append(" -- ySolid (Y absolu du premier bloc solide)\n");
+            r.append("-".repeat(100)).append('\n');
+            grilleY(r, s, e.ySolid);
+            // ySurface ne sort qu'aux deux bornes : sur les etapes intermediaires il
+            // doublerait le poids du fichier sans rien apprendre de plus.
+            if (n == 0 || n == s.etapes.size() - 1) {
+                r.append("\n").append("-".repeat(100)).append('\n');
+                r.append(" 9.").append(e.nom)
+                 .append(" -- ySurface (Y absolu du premier bloc non-air)\n");
+                r.append("-".repeat(100)).append('\n');
+                grilleY(r, s, e.ySurface);
+            }
+        }
+        r.append("\n").append("-".repeat(100)).append('\n');
+        r.append(" 9.THEORIQUE -- relief de generation par bruit pur (reference d'origine)\n");
+        r.append("-".repeat(100)).append('\n');
+        grilleY(r, s, s.bruit);
+    }
+
+    private static void grilleY(StringBuilder r, Session s, int[] data) {
+        // regle X : le X monde du debut de chaque chunk, aligne sur 4 caracteres par colonne
+        r.append(" ".repeat(9));
+        for (int cx = 0; cx < s.cw; cx++) {
+            String e = "x=" + ((s.cx0 + cx) << 4);
+            r.append('|').append(e);
+            for (int k = e.length(); k < 16 * 4; k++) r.append(' ');
+        }
+        r.append("|\n");
+        for (int z = 0; z < s.d; z++) {
+            if ((z & 15) == 0) {
+                r.append(" ".repeat(9));
+                for (int cx = 0; cx < s.cw; cx++) r.append('+').append("-".repeat(64));
+                r.append("+\n");
+            }
+            r.append(String.format("z=%6d ", s.z0 + z));
+            for (int x = 0; x < s.w; x++) {
+                if ((x & 15) == 0) r.append('|');
+                int v = data[z * s.w + x];
+                if (v == ABSENT) r.append("----");
+                else if (v == VIDE) r.append("....");
+                else r.append(String.format("%4d", v));
+            }
+            r.append("|\n");
+        }
+    }
+
+    // ---------------------------------------------------------------- 10
+    private static void section10Palette(StringBuilder r, Session s) {
+        titre(r, "10. PALETTE DES BLOCS");
+        r.append("0\t(rien / colonne vide)\n");
+        for (int i = 0; i < s.palette.size(); i++) {
+            r.append(i + 1).append('\t').append(s.palette.get(i)).append('\n');
+        }
+    }
+
+    private static String pct(int a, int b) {
+        return b <= 0 ? "" : String.format("  (%.1f %%)", 100.0 * a / b);
+    }
+}

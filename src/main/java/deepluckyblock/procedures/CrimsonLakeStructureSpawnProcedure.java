@@ -139,16 +139,6 @@ public class CrimsonLakeStructureSpawnProcedure {
         lakeProbeAnnounced = false;
         lakeOceanRelocs = 0;      // T465
         lakeWaterMode = false;    // T465
-        // T471 : une construction qui echoue est precisement le cas qu'on veut lire. On
-        // ecrit donc ce qui a ete capture jusque-la plutot que de tout jeter.
-        if (deepluckyblock.util.TerrainAudit.running()) {
-            deepluckyblock.util.TerrainAudit.note("CONSTRUCTION ABANDONNEE : " + reason);
-            deepluckyblock.util.TerrainAudit.snapshot(level, "A_L_ABANDON");
-            deepluckyblock.util.TerrainAudit.finish(level);
-        }
-        // Desarmement inconditionnel : un echec survenu AVANT la premiere capture laisserait
-        // sinon l'audit arme pour le prochain spawn naturel.
-        deepluckyblock.util.TerrainAudit.abort(reason);
         // Une pose en file pour le meme niveau ne doit pas demarrer apres abandon.
         PASTE_Q.removeIf(j -> j.level == level);
         deepluckyblock.util.ChunkKeeper.release(level);
@@ -236,9 +226,6 @@ public class CrimsonLakeStructureSpawnProcedure {
             TRIGGERED.clear();
             PENDING.clear();
         } catch (Throwable ignored) { }
-        // T471 : la commande de test arme l'audit de terrain. Un spawn naturel ne l'arme
-        // pas -- il faut -Ddlb.audit.terrain=true pour cela.
-        deepluckyblock.util.TerrainAudit.arm();
         triggerAt(level, player, positionInFront(level, player), "dlbtest crimsonlake");
         return true;
     }
@@ -561,14 +548,6 @@ public class CrimsonLakeStructureSpawnProcedure {
                 // Seul le lac ne les appelle plus.
                 lakeWaterMode = false;
                 lakeOceanRelocs = 0;
-                // T471 : derniere photographie AVANT de relacher les chunks -- apres le
-                // release ils peuvent etre decharges et la zone se lirait « absente ».
-                // Si une passe de terrain revient un jour apres la pose, il suffit
-                // d'ajouter un snapshot entre elle et cette ligne.
-                if (deepluckyblock.util.TerrainAudit.running()) {
-                    deepluckyblock.util.TerrainAudit.snapshot(j.level, "APRES_PASTE");
-                    deepluckyblock.util.TerrainAudit.finish(j.level);
-                }
                 deepluckyblock.util.ChunkKeeper.release(j.level);
                 Structures5Procedure.notifyGenerationFinished(j.level);
 
@@ -992,33 +971,9 @@ public class CrimsonLakeStructureSpawnProcedure {
             // (T93 : le sous-sol naturel est conserve, le bassin est creuse par
             // la matiere meme du template), aucun masque de colonnes, aucune
             // protection d'emprise, aucun lissage avant la pose.
-            // T471 : PHOTOGRAPHIE DU TERRAIN, ETAPE PAR ETAPE.
-            //
-            // Huit tours de correctifs sur ce raccord (T459 a T468) ont echoue parce que
-            // personne n'a jamais VU le terrain : on corrigeait sur des captures d'ecran, en
-            // relancant une pose de huit minutes a chaque essai. L'audit lit la zone AVANT
-            // la moindre ecriture, apres le clear, puis apres la pose, et rend un fichier
-            // unique comparable hors du jeu. Il est passif : aucun chunk n'est genere ni
-            // demande. Hors commande de test il ne s'arme pas et ne coute rien.
-            if (deepluckyblock.util.TerrainAudit.armed()) {
-                deepluckyblock.util.TerrainAudit.begin(level, "crimsonlake", lakeMin, lakeMax,
-                        groundY, deepluckyblock.util.TerrainAudit.DEFAULT_RING_CHUNKS);
-                deepluckyblock.util.TerrainAudit.note("gabarit " + sx + "x" + sy + "x" + sz
-                        + ", sink=" + SINK_BLOCKS + ", plancher de clear Y=" + (groundY + 1)
-                        + ", waterMode=" + lakeWaterMode);
-                for (StructureTemplate.StructureBlockInfo bi : bucketedFilt) {
-                    BlockPos rp = bi.pos();
-                    deepluckyblock.util.TerrainAudit.noteTemplateBlock(
-                            finalOrigin.getX() + rp.getX(), finalOrigin.getZ() + rp.getZ());
-                }
-                deepluckyblock.util.TerrainAudit.snapshot(level, "AVANT_CLEAR");
-            }
             clearBuildVolume(level, lakeMin, lakeMax, groundY + 1,
-                    () -> {
-                        deepluckyblock.util.TerrainAudit.snapshot(level, "APRES_CLEAR");
-                        PASTE_Q.offer(new PasteJob(level, bucketedFilt,
-                                finalOrigin, bfly, System.currentTimeMillis(), sx, sy, sz));
-                    });
+                    () -> PASTE_Q.offer(new PasteJob(level, bucketedFilt,
+                            finalOrigin, bfly, System.currentTimeMillis(), sx, sy, sz)));
         });
     }
 
