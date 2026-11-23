@@ -26,7 +26,7 @@ Ce banc tient donc deux promesses a la fois.
       geometrique fausse sans que rien ne le signale.
 
 Usage :  python3 src/main/resources/deepluckyblock_patch/tools/devscancheck.py [racine]
-Sortie :  code 0 si l'outil est absent OU si les sept verrous tiennent, 1 sinon.
+Sortie :  code 0 si l'outil est absent OU si les huit verrous tiennent, 1 sinon.
 """
 
 import io
@@ -200,15 +200,45 @@ def controler(racine='.'):
         echecs.append('VERROU 7 : %s est nomme dans le CODE de deep-lucky-block-patch.gradle '
                       '-- la tache de patch le restaurerait apres suppression' % CLASSE)
 
+    # ------------------------------------------------------------------ VERROU 8
+    # UN FICHIER PAR ETAPE, et chaque etape reellement analysee.
+    #
+    # Deux regressions distinctes sont possibles et toutes deux ont deja eu lieu :
+    # retomber sur un fichier monolithique (intransportable), et laisser une section
+    # n'analyser QUE la derniere etape tout en pretendant couvrir le scan -- le fichier
+    # paraissait complet alors que trois etapes sur quatre n'etaient pas examinees.
+    if '%02d_%s.txt' not in code:
+        echecs.append('VERROU 8 : le scan ne nomme plus un fichier par etape -- on est '
+                      'revenu a un fichier unique, que l\'utilisateur ne peut pas envoyer')
+    # On teste l'ECRITURE du fichier, pas la mention de son nom : l'outil cite
+    # « 00_SOMMAIRE.txt » dans le texte qu'il imprime pour guider la lecture, et
+    # chercher le nom tout court laissait donc passer la suppression du fichier.
+    if 'resolve("00_SOMMAIRE' not in code:
+        echecs.append('VERROU 8 : le fichier de synthese n\'est plus ECRIT -- les '
+                      'comparaisons entre etapes n\'appartiennent a aucun fichier d\'etape '
+                      'et seraient perdues')
+    if 'Etape e = s.etapes.get(s.etapes.size() - 1);' in code:
+        echecs.append('VERROU 8 : une section ne lit que la DERNIERE etape -- elle serait '
+                      'recopiee a l\'identique dans chaque fichier d\'etape et mentirait sur '
+                      'ce qu\'elle mesure')
+    for sec in ('section2ChunksAbsents', 'section4bComposition', 'section5InterChunks',
+                'section6Marches', 'tableauParChunk', 'coupesVerticales'):
+        m = re.search(r'private static void ' + sec + r'\(([^)]*)\)', code)
+        if m is None:
+            echecs.append('VERROU 8 : section %s introuvable' % sec)
+        elif 'Etape ' not in m.group(1):
+            echecs.append('VERROU 8 : %s ne recoit pas l\'etape a mesurer -- elle ne peut '
+                          'pas produire une analyse par etape' % sec)
+
     if echecs:
         for e in echecs:
             print('ECHEC  %s' % e)
         print('devscancheck : %d verrou(x) rompu(s)' % len(echecs))
         return 1
 
-    print('devscancheck : 7 verrous tiennent -- outil isole et supprimable, auto-accroche, '
+    print('devscancheck : 8 verrous tiennent -- outil isole et supprimable, auto-accroche, '
           'sonde passive, chunks absents jamais maquilles, grilles alignees sur les chunks, '
-          '3 jalons suivis, aucune restauration par le build')
+          '3 jalons suivis, aucune restauration par le build, un fichier par etape')
     return 0
 
 
