@@ -176,6 +176,25 @@ NOTICES = {
   "     le tirage a 5 %. Il ne s'abstient plus que devant une competence ACCORDEE.\n"
   "     Le taux reste 5 % et le troc reste entier, comme demande.",
 
+ 'src/main/resources/deepluckyblock_patch/tools/laketaluscheck.py':
+  "T478 : LE BANC QUI INTERDIT A NOUVEAU LA TRANCHEE AUTOUR DU LAC.\n"
+  "     Le raccord de terrain avait ete DEBRANCHE en T469 apres cinq reparations\n"
+  "     ratees (T459, T463, T464, T465, T467, T468) qui avaient produit a chaque run\n"
+  "     soit une tranchee, soit une crevasse. La cause n'etait pas un reglage trop\n"
+  "     fort : l'ancien lissage RELISAIT le terrain qu'il venait d'ecrire, donc chaque\n"
+  "     passe rabotait le resultat de la precedente -- une boucle de retroaction.\n"
+  "     Le talus T478 separe strictement deux temps : il MESURE tout l'anneau dans un\n"
+  "     tableau, puis il ECRIT sans plus consulter que ce tableau. Le profil vaut\n"
+  "     groundY + (naturel - groundY) * k avec k dans [0,1], donc il reste toujours\n"
+  "     compris entre le plateau et le terrain naturel : la tranchee devient\n"
+  "     impossible par construction, pas par reglage.\n"
+  "     Les sept verrous : sequence clear -> talus -> pose respectee ; mesure et\n"
+  "     ecriture separees (appliquerChunk n'a pas le droit d'appeler getHeight) ;\n"
+  "     flou applique au releve et jamais au monde ; boite de l'ouvrage intouchee ;\n"
+  "     pose jamais bloquee par le raccord (delai + reprise sur exception) ; anneau\n"
+  "     tenu charge aux QUATRE bords ; profil tangent aux deux bouts.\n"
+  "     Treize sabotages ont ete joues contre lui ; les treize le font rougir.",
+
  'src/main/resources/deepluckyblock_patch/tools/devscancheck.py':
   "T471 : LE BANC QUI GARDE L'OUTIL DE SCAN JETABLE ET HONNETE.\n"
   "     Il tient deux promesses. JETABLE : si DevTerrainScan.java n'existe pas, ce banc\n"

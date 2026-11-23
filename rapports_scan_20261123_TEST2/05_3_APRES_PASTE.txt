@@ -1,0 +1,1156 @@
+====================================================================================================
+ DLB -- SCAN DE TERRAIN   ETAPE 5 / 5   :   3_APRES_PASTE
+====================================================================================================
+etape               : 3_APRES_PASTE   la file de pose s'est videe : la derniere tranche est posee
+instant             : t+19635 ms apres l'ouverture du scan
+etape precedente    : P3_PENDANT_POSE   (t+16911 ms, soit 2724 ms plus tot)
+ecriture declenchee : fin du pipeline
+colonnes lues       : 116224 / 140800   non mesurables (chunk absent) : 24576
+chunks charges      : 454 / 550
+zone scannee        : x -48..303   z 128..527   (352 x 400 blocs, 22 x 25 chunks)
+emprise structure   : x 0..255   z 176..479   + anneau de 3 chunks
+tranche sondee      : y -24 .. 206   sol de reference y=66
+
+CE FICHIER CONTIENT, POUR CETTE SEULE ETAPE :
+    2   chunks non charges  (les « chunks qui manquent »)
+    3b  tableau par chunk   (une ligne par chunk de toute la zone)
+    4b  composition de la surface, premier bloc solide, air piege
+    5   raccords inter-chunks, mesures a la couture
+    6   marches et failles
+    8   vues du dessus en caracteres
+    8b  coupes verticales   (le terrain vu de cote)
+    9   donnees au bloc pres : ySolid, ySurface, ecart depuis l'etape
+        precedente, eau, air piege
+   10   palette des blocs
+Les comparaisons entre etapes sont dans 00_SOMMAIRE.txt.
+
+====================================================================================================
+ 0. COUVERTURE DE LA GRILLE  (controle de non-omission)
+====================================================================================================
+  grille           : 22 x 25 chunks  =  550 chunks,  352 x 400 blocs  =  140800 colonnes
+  origine grille   : x -48  z 128   (chunk -3,8)
+  emprise          : x 0..255   z 176..479   (256 x 304 blocs, 304 chunks)
+
+  COMPTEURS DE PARCOURS (mesures pendant la capture, pas recalcules) :
+      chunks visites par la boucle            : 550  attendu 550   OK
+      colonnes visitees                       : 140800  attendu 140800   OK
+      colonnes lues + absentes                : 140800  attendu 140800   OK
+      colonnes tombees hors grille            : 0  attendu 0   OK
+      colonnes lues (chunk charge)   : 116224
+      colonnes absentes (chunk hors memoire) : 24576
+      chunks charges                 : 454 / 550   dont dans l'emprise 304 / 304
+
+  CHUNKS N'AYANT PAS RENDU LEURS 256 COLONNES (doit etre vide) :
+      (aucun : les 550 chunks ont tous rendu exactement 256 colonnes)
+
+  VERDICT : COUVERTURE COMPLETE -- aucun chunk, aucune colonne n'a ete saute.
+
+
+====================================================================================================
+ 2. CHUNKS NON CHARGES A CETTE ETAPE  (les « chunks qui manquent »)
+====================================================================================================
+Un chunk non charge ne peut etre ni coupe, ni pose, ni lisse. S'il tombe dans
+l'emprise, c'est l'anomalie elle-meme et non un defaut de la mesure. La colonne
+« theorique » rappelle la hauteur que le bruit de generation prevoyait la, pour
+situer le trou sans jamais le combler dans les grilles.
+
+  3_APRES_PASTE : 0 chunk(s) NON CHARGE(S) DANS L'EMPRISE, 96 hors emprise
+
+
+====================================================================================================
+ 3b. TABLEAU PAR CHUNK  (une ligne par chunk de toute la zone)
+====================================================================================================
+E = chunk dans l'emprise de la structure. d.theo = ecart MOYEN au relief
+theorique de generation : proche de 0 => le terrain d'origine est intact ici.
+Un chunk ABSENT n'a aucune valeur : elle n'est ni estimee ni comblee.
+
+chunk     blocs x / z             E etat    lues  yMin  yMoy  yMax vides   air   d.theo  bloc de surface dominant
+-3,8      -48..-33 / 128..143       ok       256    46    53    62     0    19        -  minecraft:water
+-2,8      -32..-17 / 128..143       ok       256    46    49    59     0    60        -  minecraft:water
+-1,8      -16..-1 / 128..143        ok       256    46    49    62     0   100        -  minecraft:water
+0,8       0..15 / 128..143          ok       256    46    53    62     0    60        -  minecraft:water
+1,8       16..31 / 128..143         ok       256    47    59    62     0    90        -  minecraft:ice
+2,8       32..47 / 128..143         ok       256    27    57    65     0    62        -  minecraft:ice
+3,8       48..63 / 128..143         ok       256    27    44    64     0   102        -  minecraft:water
+4,8       64..79 / 128..143         ok       256    47    47    64     0   116        -  minecraft:water
+5,8       80..95 / 128..143         ok       256    47    51    77     0     8        -  minecraft:water
+6,8       96..111 / 128..143        ok       256    48    69    83     0    38        -  minecraft:packed_ice
+7,8       112..127 / 128..143       ok       256    49    56    71     0    14        -  minecraft:water
+8,8       128..143 / 128..143       ok       256    48    64    77     0    99        -  minecraft:packed_ice
+9,8       144..159 / 128..143       ok       256    52    67    76     0    19        -  minecraft:stone
+10,8      160..175 / 128..143       ok       256    69    75    85     0     0        -  minecraft:snow
+11,8      176..191 / 128..143       ok       256    81    97   112     0     0        -  minecraft:snow
+12,8      192..207 / 128..143       ok       256    97   110   120     0   145        -  minecraft:snow
+13,8      208..223 / 128..143       ok       256   105   121   130     0   228        -  minecraft:snow
+14,8      224..239 / 128..143       ok       256   110   122   129     0   217        -  minecraft:snow
+15,8      240..255 / 128..143       ok       256   108   117   126     0   191        -  minecraft:powder_snow
+16,8      256..271 / 128..143       ok       256   109   113   118     0    26        -  minecraft:snow
+17,8      272..287 / 128..143       ok       256   104   108   113     0     0        -  minecraft:snow
+18,8      288..303 / 128..143       ok       256    91    98   104     0     6        -  minecraft:powder_snow
+-3,9      -48..-33 / 144..159       ok       256    46    47    62     0    72        -  minecraft:water
+-2,9      -32..-17 / 144..159       ok       256    46    48    62     0   126        -  minecraft:water
+-1,9      -16..-1 / 144..159        ok       256    46    59    62     0   143        -  minecraft:ice
+0,9       0..15 / 144..159          ok       256    62    62    62     0     7        -  minecraft:ice
+1,9       16..31 / 144..159         ok       256    47    60    62     0    13        -  minecraft:ice
+2,9       32..47 / 144..159         ok       256    27    46    64     0     1        -  minecraft:water
+3,9       48..63 / 144..159         ok       256    27    43    62     0    19        -  minecraft:water
+4,9       64..79 / 144..159         ok       256    47    53    67     0     6        -  minecraft:water
+5,9       80..95 / 144..159         ok       256    47    57    62     0    77        -  minecraft:ice
+6,9       96..111 / 144..159        ok       256    45    60    62     0     0        -  minecraft:ice
+7,9       112..127 / 144..159       ok       256    48    56    62     0     0        -  minecraft:ice
+8,9       128..143 / 144..159       ok       256    33    59    72     0    62        -  minecraft:ice
+9,9       144..159 / 144..159       ok       256    34    60    71     0    98        -  minecraft:stone
+10,9      160..175 / 144..159       ok       256    69    74    82     0   106        -  minecraft:snow
+11,9      176..191 / 144..159       ok       256    72    82    97     0    43        -  minecraft:snow
+12,9      192..207 / 144..159       ok       256    78    91   103     0   158        -  minecraft:snow
+13,9      208..223 / 144..159       ok       256    89   101   111     0   227        -  minecraft:snow
+14,9      224..239 / 144..159       ok       256    96   103   112     0   192        -  minecraft:snow
+15,9      240..255 / 144..159       ok       256   102   109   114     0    57        -  minecraft:snow
+16,9      256..271 / 144..159       ok       256   108   109   111     0    68        -  minecraft:snow
+17,9      272..287 / 144..159       ok       256   102   106   109     0    87        -  minecraft:snow
+18,9      288..303 / 144..159       ok       256    99   100   103     0    86        -  minecraft:snow
+-3,10     -48..-33 / 160..175       ok       256    46    47    62     0     0        -  minecraft:water
+-2,10     -32..-17 / 160..175       ok       256    46    57    62     0    26        -  minecraft:ice
+-1,10     -16..-1 / 160..175        ok       256    62    62    62     0   124        -  minecraft:ice
+0,10      0..15 / 160..175          ok       256    41    59    62     0   121        -  minecraft:ice
+1,10      16..31 / 160..175         ok       256    43    50    62     0    63        -  minecraft:water
+2,10      32..47 / 160..175         ok       256    46    47    62     0    10        -  minecraft:water
+3,10      48..63 / 160..175         ok       256    29    46    62     0    13        -  minecraft:water
+4,10      64..79 / 160..175         ok       256    47    59    62     0    37        -  minecraft:ice
+5,10      80..95 / 160..175         ok       256    62    62    66     0    41        -  minecraft:ice
+6,10      96..111 / 160..175        ok       256    48    61    62     0     0        -  minecraft:ice
+7,10      112..127 / 160..175       ok       256    48    62    69     0     1        -  minecraft:ice
+8,10      128..143 / 160..175       ok       256    49    63    78     0     5        -  minecraft:ice
+9,10      144..159 / 160..175       ok       256    40    60    93     0    74        -  minecraft:water
+10,10     160..175 / 160..175       ok       256    60    67    75     0   163        -  minecraft:snow
+11,10     176..191 / 160..175       ok       256    65    73    79     0   218        -  minecraft:snow
+12,10     192..207 / 160..175       ok       256    76    81    88     0   187        -  minecraft:snow
+13,10     208..223 / 160..175       ok       256    84    91    96     0   150        -  minecraft:snow
+14,10     224..239 / 160..175       ok       256    72    96   104     0   157        -  minecraft:snow
+15,10     240..255 / 160..175       ok       256    96   102   110     0    31        -  minecraft:snow
+16,10     256..271 / 160..175       ok       256    96   105   111     0     0        -  minecraft:snow
+17,10     272..287 / 160..175       ok       256   101   102   107     0   114        -  minecraft:snow
+18,10     288..303 / 160..175       ok       256   101   101   102     0    49        -  minecraft:snow
+-3,11     -48..-33 / 176..191       ok       256    46    47    62     0    33        -  minecraft:water
+-2,11     -32..-17 / 176..191       ok       256    46    52    62     0     1        -  minecraft:water
+-1,11     -16..-1 / 176..191        ok       256    48    53    62     0    46        -  minecraft:water
+0,11      0..15 / 176..191        E ok       256    15    48    66     0    18        -  minecraft:water
+1,11      16..31 / 176..191       E ok       256    14    35    65     0    36        -  minecraft:water
+2,11      32..47 / 176..191       E ok       256    17    43    62     0     2        -  minecraft:water
+3,11      48..63 / 176..191       E ok       256    20    45    62     0     0        -  minecraft:water
+4,11      64..79 / 176..191       E ok       256    45    60    62     0    24        -  minecraft:ice
+5,11      80..95 / 176..191       E ok       256    47    59    66     0    15        -  minecraft:ice
+6,11      96..111 / 176..191      E ok       256    21    60    65     0     3        -  minecraft:ice
+7,11      112..127 / 176..191     E ok       256    62    65    70     0     6        -  minecraft:packed_ice
+8,11      128..143 / 176..191     E ok       256    45    64    76     0     1        -  minecraft:packed_ice
+9,11      144..159 / 176..191     E ok       256    37    47    86     0    11        -  minecraft:water
+10,11     160..175 / 176..191     E ok       256    39    58    68     0    74        -  minecraft:ice
+11,11     176..191 / 176..191     E ok       256    62    66    75     0   173        -  minecraft:snow
+12,11     192..207 / 176..191     E ok       256    62    68    82     0   191        -  minecraft:stone
+13,11     208..223 / 176..191     E ok       256    57    70    94     0   108        -  minecraft:snow
+14,11     224..239 / 176..191     E ok       256    57    74    97     0    33        -  minecraft:stone
+15,11     240..255 / 176..191     E ok       256    65    75    99     0    73        -  minecraft:stone
+16,11     256..271 / 176..191       ok       256    92    96   102     0    80        -  minecraft:snow
+17,11     272..287 / 176..191       ok       256    94    97   101     0   164        -  minecraft:snow
+18,11     288..303 / 176..191       ok       256    97    99   102     0   106        -  minecraft:snow
+-3,12     -48..-33 / 192..207       ok       256    47    58    62     0    60        -  minecraft:ice
+-2,12     -32..-17 / 192..207       ok       256    49    58    66     0    97        -  minecraft:ice
+-1,12     -16..-1 / 192..207        ok       256    47    57    69     0    14        -  minecraft:water
+0,12      0..15 / 192..207        E ok       256    47    51    64     0     0        -  minecraft:water
+1,12      16..31 / 192..207       E ok       256    14    44    62     0    12        -  minecraft:water
+2,12      32..47 / 192..207       E ok       256    17    47    62     0    36        -  minecraft:ice
+3,12      48..63 / 192..207       E ok       256    14    51    62     0     0        -  minecraft:ice
+4,12      64..79 / 192..207       E ok       256    44    49    62     0    21        -  minecraft:water
+5,12      80..95 / 192..207       E ok       256    46    48    62     0     1        -  minecraft:water
+6,12      96..111 / 192..207      E ok       256    47    52    65     0    12        -  minecraft:water
+7,12      112..127 / 192..207     E ok       256    49    62    68     0     2        -  minecraft:packed_ice
+8,12      128..143 / 192..207     E ok       256    46    65    75     0     2        -  minecraft:grass_block
+9,12      144..159 / 192..207     E ok       256    37    60    71     0     0        -  minecraft:ice
+10,12     160..175 / 192..207     E ok       256    38    54    62     0     0        -  minecraft:ice
+11,12     176..191 / 192..207     E ok       256    38    60    65     0    56        -  minecraft:ice
+12,12     192..207 / 192..207     E ok       256    57    62    65     0   178        -  minecraft:ice
+13,12     208..223 / 192..207     E ok       256    62    63    65     0   200        -  minecraft:stone
+14,12     224..239 / 192..207     E ok       256    65    65    65     0    44        -  minecraft:stone
+15,12     240..255 / 192..207     E ok       256    58    64    65     0   134        -  minecraft:stone
+16,12     256..271 / 192..207       ok       256    87    90    94     0    45        -  minecraft:snow
+17,12     272..287 / 192..207       ok       256    87    90    96     0   114        -  minecraft:snow
+18,12     288..303 / 192..207       ok       256    90    93    98     0    80        -  minecraft:snow
+-3,13     -48..-33 / 208..223       ok       256    62    62    62     0    66        -  minecraft:ice
+-2,13     -32..-17 / 208..223       ok       256    62    62    62     0    66        -  minecraft:ice
+-1,13     -16..-1 / 208..223        ok       256    50    63    72     0     0        -  minecraft:ice
+0,13      0..15 / 208..223        E ok       256    46    60    69     0     2        -  minecraft:ice
+1,13      16..31 / 208..223       E ok       256    47    59    62     0     0        -  minecraft:ice
+2,13      32..47 / 208..223       E ok       256    47    61    65     0     0        -  minecraft:ice
+3,13      48..63 / 208..223       E ok       256    42    55    65     0     8        -  minecraft:water
+4,13      64..79 / 208..223       E ok       256    44    46    62     0     0        -  minecraft:water
+5,13      80..95 / 208..223       E ok       256    46    51    65     0     0        -  minecraft:water
+6,13      96..111 / 208..223      E ok       256    47    61    73     0     2        -  minecraft:grass_block
+7,13      112..127 / 208..223     E ok       256    56    69    75     0     4        -  minecraft:grass_block
+8,13      128..143 / 208..223     E ok       256    69    72    75     0     0        -  minecraft:grass_block
+9,13      144..159 / 208..223     E ok       256    56    71    75     0     4        -  minecraft:grass_block
+10,13     160..175 / 208..223     E ok       256    38    61    73     0   102        -  minecraft:stone
+11,13     176..191 / 208..223     E ok       256    38    56    65     0    62        -  minecraft:ice
+12,13     192..207 / 208..223     E ok       256    62    62    62     0     0        -  minecraft:ice
+13,13     208..223 / 208..223     E ok       256    62    62    65     0     4        -  minecraft:ice
+14,13     224..239 / 208..223     E ok       256    62    64    65     0     2        -  minecraft:stone
+15,13     240..255 / 208..223     E ok       256    65    65    65     0    53        -  minecraft:stone
+16,13     256..271 / 208..223       ok       256    72    83    90     0     0        -  minecraft:snow
+17,13     272..287 / 208..223       ok       256    82    85    89     0   102        -  minecraft:snow
+18,13     288..303 / 208..223       ok       256    86    88    94     0   203        -  minecraft:snow
+-3,14     -48..-33 / 224..239       ok       256    62    62    62     0   203        -  minecraft:ice
+-2,14     -32..-17 / 224..239       ok       256    62    62    62     0   130        -  minecraft:ice
+-1,14     -16..-1 / 224..239        ok       256    48    60    72     0     3        -  minecraft:ice
+0,14      0..15 / 224..239        E ok       256    47    54    69     0     1        -  minecraft:water
+1,14      16..31 / 224..239       E ok       256    47    57    65     0     2        -  minecraft:packed_ice
+2,14      32..47 / 224..239       E ok       256    46    58    65     0     0        -  minecraft:ice
+3,14      48..63 / 224..239       E ok       256    46    56    65     0     4        -  minecraft:ice
+4,14      64..79 / 224..239       E ok       256    46    55    68     0     0        -  minecraft:water
+5,14      80..95 / 224..239       E ok       256    51    66    75     0     1        -  minecraft:grass_block
+6,14      96..111 / 224..239      E ok       256    67    73    87     0     0        -  minecraft:grass_block
+7,14      112..127 / 224..239     E ok       256    73    82   113     0     8        -  minecraft:tuff
+8,14      128..143 / 224..239     E ok       256    73    90   112     0    64        -  minecraft:tuff
+9,14      144..159 / 224..239     E ok       256    73    81   103     0     8        -  minecraft:tuff
+10,14     160..175 / 224..239     E ok       256    65    72    77     0    51        -  minecraft:grass_block
+11,14     176..191 / 224..239     E ok       256    56    66    75     0   121        -  minecraft:grass_block
+12,14     192..207 / 224..239     E ok       256    62    62    62     0     1        -  minecraft:ice
+13,14     208..223 / 224..239     E ok       256    62    62    62     0     9        -  minecraft:ice
+14,14     224..239 / 224..239     E ok       256    62    62    65     0     0        -  minecraft:ice
+15,14     240..255 / 224..239     E ok       256    62    63    65     0     5        -  minecraft:ice
+16,14     256..271 / 224..239       ok       256    71    74    80     0    52        -  minecraft:snow
+17,14     272..287 / 224..239       ok       256    77    81    87     0   168        -  minecraft:snow
+18,14     288..303 / 224..239       ok       256    83    87    91     0   209        -  minecraft:snow
+-3,15     -48..-33 / 240..255       ok       256    62    62    70     0    13        -  minecraft:ice
+-2,15     -32..-17 / 240..255       ok       256    56    62    69     0    31        -  minecraft:ice
+-1,15     -16..-1 / 240..255        ok       256    53    57    66     0     0        -  minecraft:water
+0,15      0..15 / 240..255        E ok       256    49    52    54     0     0        -  minecraft:water
+1,15      16..31 / 240..255       E ok       256    49    58    65     0     3        -  minecraft:packed_ice
+2,15      32..47 / 240..255       E ok       256    48    60    65     0     0        -  minecraft:packed_ice
+3,15      48..63 / 240..255       E ok       256    50    62    71     0     0        -  minecraft:ice
+4,15      64..79 / 240..255       E ok       256    57    68    73     0     0        -  minecraft:grass_block
+5,15      80..95 / 240..255       E ok       256    70    72    75     0     0        -  minecraft:grass_block
+6,15      96..111 / 240..255      E ok       256    73    84    95     0     0        -  minecraft:tuff
+7,15      112..127 / 240..255     E ok       256    90   100   126     0    75        -  minecraft:cobblestone
+8,15      128..143 / 240..255     E ok       256    91   101   125     0   117        -  minecraft:grass_block
+9,15      144..159 / 240..255     E ok       256    80    96   113     0    53        -  minecraft:grass_block
+10,15     160..175 / 240..255     E ok       256    73    79    97     0    40        -  minecraft:tuff
+11,15     176..191 / 240..255     E ok       256    62    71    75     0    29        -  minecraft:grass_block
+12,15     192..207 / 240..255     E ok       256    59    62    71     0    24        -  minecraft:ice
+13,15     208..223 / 240..255     E ok       256    62    62    62     0   155        -  minecraft:ice
+14,15     224..239 / 240..255     E ok       256    62    62    62     0    14        -  minecraft:ice
+15,15     240..255 / 240..255     E ok       256    62    62    65     0     0        -  minecraft:ice
+16,15     256..271 / 240..255       ok       256    66    73    76     0    59        -  minecraft:snow
+17,15     272..287 / 240..255       ok       256    75    79    89     0    73        -  minecraft:snow
+18,15     288..303 / 240..255       ok       256    80    87    92     0   201        -  minecraft:snow
+-3,16     -48..-33 / 256..271       ok       256    54    64    75     0    81        -  minecraft:packed_ice
+-2,16     -32..-17 / 256..271       ok       256    51    59    80     0     9        -  minecraft:water
+-1,16     -16..-1 / 256..271        ok       256    53    56    65     0     0        -  minecraft:water
+0,16      0..15 / 256..271        E ok       256    52    53    62     0     0        -  minecraft:water
+1,16      16..31 / 256..271       E ok       256    51    57    65     0     0        -  minecraft:water
+2,16      32..47 / 256..271       E ok       256    62    63    72     0     3        -  minecraft:ice
+3,16      48..63 / 256..271       E ok       256    62    70    75     0     3        -  minecraft:grass_block
+4,16      64..79 / 256..271       E ok       256    72    73    75     0     0        -  minecraft:grass_block
+5,16      80..95 / 256..271       E ok       256    73    75   118     0     6        -  minecraft:grass_block
+6,16      96..111 / 256..271      E ok       256    75   106   141     0   173        -  minecraft:spruce_leaves
+7,16      112..127 / 256..271     E ok       256    77   114   151     0   210        -  minecraft:spruce_leaves
+8,16      128..143 / 256..271     E ok       256    74    99   129     0   115        -  minecraft:cobblestone
+9,16      144..159 / 256..271     E ok       256    74    89   121     0    28        -  minecraft:grass_block
+10,16     160..175 / 256..271     E ok       256    77   110   140     0   169        -  minecraft:azalea_leaves
+11,16     176..191 / 256..271     E ok       256    73    84   139     0    76        -  minecraft:tuff
+12,16     192..207 / 256..271     E ok       256    62    68    75     0   115        -  minecraft:grass_block
+13,16     208..223 / 256..271     E ok       256    62    62    66     0    76        -  minecraft:ice
+14,16     224..239 / 256..271     E ok       256    62    62    62     0     0        -  minecraft:ice
+15,16     240..255 / 256..271     E ok       256    62    62    65     0    57        -  minecraft:ice
+16,16     256..271 / 256..271       ok       256    66    72    83     0    17        -  minecraft:snow
+17,16     272..287 / 256..271       ok       256    76    85    90     0     0        -  minecraft:snow
+18,16     288..303 / 256..271       ok       256    88    90    92     0   106        -  minecraft:snow
+-3,17     -48..-33 / 272..287       ok       256    22    53    68     0   175        -  minecraft:water
+-2,17     -32..-17 / 272..287       ok       256    24    46    62     0    90        -  minecraft:water
+-1,17     -16..-1 / 272..287        ok       256    44    53    57     0     0        -  minecraft:water
+0,17      0..15 / 272..287        E ok       256    52    56    62     0     0        -  minecraft:water
+1,17      16..31 / 272..287       E ok       256    51    63    70     0     8        -  minecraft:packed_ice
+2,17      32..47 / 272..287       E ok       256    62    71    75     0    60        -  minecraft:grass_block
+3,17      48..63 / 272..287       E ok       256    73    73    75     0     0        -  minecraft:grass_block
+4,17      64..79 / 272..287       E ok       256    73    74    83     0     0        -  minecraft:grass_block
+5,17      80..95 / 272..287       E ok       256    73    84   123     0    76        -  minecraft:tuff
+6,17      96..111 / 272..287      E ok       256    77   110   131     0   211        -  minecraft:grass_block
+7,17      112..127 / 272..287     E ok       256    73   102   138     0   146        -  minecraft:oak_leaves
+8,17      128..143 / 272..287     E ok       256    74   131   185     0   251        -  minecraft:oak_leaves
+9,17      144..159 / 272..287     E ok       256    73   116   188     0   214        -  minecraft:dark_oak_wood
+10,17     160..175 / 272..287     E ok       256    82   125   148     0   232        -  minecraft:oak_leaves
+11,17     176..191 / 272..287     E ok       256    73    92   145     0   118        -  minecraft:tuff
+12,17     192..207 / 272..287     E ok       256    69    73    77     0    98        -  minecraft:grass_block
+13,17     208..223 / 272..287     E ok       256    62    65    73     0    49        -  minecraft:grass_block
+14,17     224..239 / 272..287     E ok       256    62    62    62     0    16        -  minecraft:ice
+15,17     240..255 / 272..287     E ok       256    62    62    65     0   143        -  minecraft:ice
+16,17     256..271 / 272..287       ok       256    62    70    92     0    25        -  minecraft:snow
+17,17     272..287 / 272..287       ok       256    79    91   101     0    71        -  minecraft:snow
+18,17     288..303 / 272..287       ok       256    85    90   102     0    57        -  minecraft:snow
+-3,18     -48..-33 / 288..303       ok       256    22    57    62     0    75        -  minecraft:ice
+-2,18     -32..-17 / 288..303       ok       256    41    55    62     0     0        -  minecraft:water
+-1,18     -16..-1 / 288..303        ok       256    51    58    62     0     0        -  minecraft:ice
+0,18      0..15 / 288..303        E ok       256    51    53    62     0     0        -  minecraft:water
+1,18      16..31 / 288..303       E ok       256    51    60    73     0    17        -  minecraft:water
+2,18      32..47 / 288..303       E ok       256    71    72    75     0    36        -  minecraft:grass_block
+3,18      48..63 / 288..303       E ok       256    73    77   114     0    15        -  minecraft:grass_block
+4,18      64..79 / 288..303       E ok       256    76   122   180     0   185        -  minecraft:green_stained_glass
+5,18      80..95 / 288..303       E ok       256    85   122   179     0   251        -  minecraft:spruce_leaves
+6,18      96..111 / 288..303      E ok       256    69    81   107     0    66        -  minecraft:grass_block
+7,18      112..127 / 288..303     E ok       256    73   112   155     0   153        -  minecraft:oak_leaves
+8,18      128..143 / 288..303     E ok       256    74   162   190     0   255        -  minecraft:oak_leaves
+9,18      144..159 / 288..303     E ok       256   114   176   190     0   256        -  minecraft:oak_leaves
+10,18     160..175 / 288..303     E ok       256   106   149   170     0   256        -  minecraft:oak_leaves
+11,18     176..191 / 288..303     E ok       256    79   112   149     0    99        -  minecraft:cobblestone
+12,18     192..207 / 288..303     E ok       256    73    74    81     0   153        -  minecraft:grass_block
+13,18     208..223 / 288..303     E ok       256    62    66    75     0    31        -  minecraft:grass_block
+14,18     224..239 / 288..303     E ok       256    62    62    62     0    18        -  minecraft:ice
+15,18     240..255 / 288..303     E ok       256    62    62    62     0    27        -  minecraft:ice
+16,18     256..271 / 288..303       ok       256    62    67    79     0    57        -  minecraft:snow
+17,18     272..287 / 288..303       ok       256    68    86   100     0    57        -  minecraft:snow
+18,18     288..303 / 288..303       ok       256    83    91   101     0   147        -  minecraft:snow
+-3,19     -48..-33 / 304..319       ok       256    46    52    62     0     0        -  minecraft:water
+-2,19     -32..-17 / 304..319       ok       256    48    55    62     0     0        -  minecraft:water
+-1,19     -16..-1 / 304..319        ok       256    54    61    62     0    41        -  minecraft:ice
+0,19      0..15 / 304..319        E ok       256    47    56    62     0    22        -  minecraft:water
+1,19      16..31 / 304..319       E ok       256    49    67    75     0    39        -  minecraft:grass_block
+2,19      32..47 / 304..319       E ok       256    73    73    77     0     0        -  minecraft:grass_block
+3,19      48..63 / 304..319       E ok       256    73    98   130     0   186        -  minecraft:tuff
+4,19      64..79 / 304..319       E ok       256    81   141   180     0   245        -  minecraft:green_stained_glass
+5,19      80..95 / 304..319       E ok       256    56   145   179     0   237        -  minecraft:oak_leaves
+6,19      96..111 / 304..319      E ok       256    57    71   105     0    80        -  minecraft:light
+7,19      112..127 / 304..319     E ok       256    74    83   149     0    38        -  minecraft:light
+8,19      128..143 / 304..319     E ok       256    74   152   176     0   251        -  minecraft:oak_leaves
+9,19      144..159 / 304..319     E ok       256    73   127   181     0   169        -  minecraft:jungle_leaves
+10,19     160..175 / 304..319     E ok       256    84   127   166     0   206        -  minecraft:oak_leaves
+11,19     176..191 / 304..319     E ok       256    76   105   150     0   101        -  minecraft:cobblestone
+12,19     192..207 / 304..319     E ok       256    73    73    81     0    88        -  minecraft:grass_block
+13,19     208..223 / 304..319     E ok       256    53    68    75     0    10        -  minecraft:grass_block
+14,19     224..239 / 304..319     E ok       256    41    55    62     0    67        -  minecraft:ice
+15,19     240..255 / 304..319     E ok       256    62    62    65     0     0        -  minecraft:ice
+16,19     256..271 / 304..319       ok       256    62    76    88     0    77        -  minecraft:snow
+17,19     272..287 / 304..319       ok       256    69    83    92     0    93        -  minecraft:snow
+18,19     288..303 / 304..319       ok       256    81    87    95     0   131        -  minecraft:snow
+-3,20     -48..-33 / 320..335       ok       256    17    53    71     0    92        -  minecraft:water
+-2,20     -32..-17 / 320..335       ok       256    49    59    70     0    59        -  minecraft:water
+-1,20     -16..-1 / 320..335        ok       256    51    59    72     0    59        -  minecraft:water
+0,20      0..15 / 320..335        E ok       256    43    53    62     0    73        -  minecraft:water
+1,20      16..31 / 320..335       E ok       256    59    69    75     0    73        -  minecraft:grass_block
+2,20      32..47 / 320..335       E ok       256    73    73   120     0    14        -  minecraft:grass_block
+3,20      48..63 / 320..335       E ok       256    73   111   126     0   232        -  minecraft:oak_leaves
+4,20      64..79 / 320..335       E ok       256    72   167   191     0   254        -  minecraft:oak_leaves
+5,20      80..95 / 320..335       E ok       256    56   145   188     0   244        -  minecraft:oak_leaves
+6,20      96..111 / 320..335      E ok       256    59    76   168     0    77        -  minecraft:grass_block
+7,20      112..127 / 320..335     E ok       256    74    75    91     0    25        -  minecraft:grass_block
+8,20      128..143 / 320..335     E ok       256    74    99   154     0   171        -  minecraft:green_stained_glass
+9,20      144..159 / 320..335     E ok       256    73    91   151     0   161        -  minecraft:green_stained_glass
+10,20     160..175 / 320..335     E ok       256    78   112   138     0   171        -  minecraft:oak_leaves
+11,20     176..191 / 320..335     E ok       256    74    98   137     0   138        -  minecraft:tuff
+12,20     192..207 / 320..335     E ok       256    73    73    75     0   129        -  minecraft:grass_block
+13,20     208..223 / 320..335     E ok       256    48    68    75     0    20        -  minecraft:grass_block
+14,20     224..239 / 320..335     E ok       256    39    51    62     0    74        -  minecraft:water
+15,20     240..255 / 320..335     E ok       256    44    60    65     0     0        -  minecraft:ice
+16,20     256..271 / 320..335       ok       256    76    80    89     0   109        -  minecraft:snow
+17,20     272..287 / 320..335       ok       256    76    82    94     0   124        -  minecraft:snow
+18,20     288..303 / 320..335       ok       256    79    86    93     0   177        -  minecraft:snow
+-3,21     -48..-33 / 336..351       ok       256    64    71    73     0   243        -  minecraft:stone
+-2,21     -32..-17 / 336..351       ok       256    61    68    70     0   256        -  minecraft:stone
+-1,21     -16..-1 / 336..351        ok       256    59    65    70     0   159        -  minecraft:stone
+0,21      0..15 / 336..351        E ok       256    55    62    66     0     0        -  minecraft:stone
+1,21      16..31 / 336..351       E ok       256    63    71    87     0     9        -  minecraft:grass_block
+2,21      32..47 / 336..351       E ok       256    73    96   175     0   178        -  minecraft:grass_block
+3,21      48..63 / 336..351       E ok       256    73   132   180     0   249        -  minecraft:oak_leaves
+4,21      64..79 / 336..351       E ok       256    75   161   188     0   230        -  minecraft:oak_leaves
+5,21      80..95 / 336..351       E ok       256    57   140   185     0   196        -  minecraft:oak_leaves
+6,21      96..111 / 336..351      E ok       256    74   116   170     0   217        -  minecraft:birch_leaves
+7,21      112..127 / 336..351     E ok       256    74    86    96     0   204        -  minecraft:birch_leaves
+8,21      128..143 / 336..351     E ok       256    73    77   102     0    55        -  minecraft:light
+9,21      144..159 / 336..351     E ok       256    73    78   101     0   109        -  minecraft:grass_block
+10,21     160..175 / 336..351     E ok       256    75    90   101     0   188        -  minecraft:oak_leaves
+11,21     176..191 / 336..351     E ok       256    73    78    95     0   222        -  minecraft:grass_block
+12,21     192..207 / 336..351     E ok       256    73    73    75     0   134        -  minecraft:grass_block
+13,21     208..223 / 336..351     E ok       256    46    68    75     0    65        -  minecraft:grass_block
+14,21     224..239 / 336..351     E ok       256    37    54    62     0    71        -  minecraft:ice
+15,21     240..255 / 336..351     E ok       256    43    56    65     0    79        -  minecraft:water
+16,21     256..271 / 336..351       ok       256    72    80    91     0   139        -  minecraft:snow
+17,21     272..287 / 336..351       ok       256    78    84    94     0   119        -  minecraft:snow
+18,21     288..303 / 336..351       ok       256    71    77    89     0    88        -  minecraft:snow
+-3,22     -48..-33 / 352..367       ok       256    59    72    82     0   255        -  minecraft:snow
+-2,22     -32..-17 / 352..367       ok       256    67    71    80     0   252        -  minecraft:snow
+-1,22     -16..-1 / 352..367        ok       256    43    60    69     0   193        -  minecraft:water
+0,22      0..15 / 352..367        E ok       256    59    62    70     0     0        -  minecraft:stone
+1,22      16..31 / 352..367       E ok       256    67    76   101     0    60        -  minecraft:grass_block
+2,22      32..47 / 352..367       E ok       256    88   137   180     0   256        -  minecraft:grass_block
+3,22      48..63 / 352..367       E ok       256   138   173   187     0   256        -  minecraft:oak_leaves
+4,22      64..79 / 352..367       E ok       256    86   172   188     0   251        -  minecraft:oak_leaves
+5,22      80..95 / 352..367       E ok       256    61   144   185     0   224        -  minecraft:oak_leaves
+6,22      96..111 / 352..367      E ok       256    74   124   170     0   236        -  minecraft:birch_leaves
+7,22      112..127 / 352..367     E ok       256    74    87   101     0   211        -  minecraft:birch_leaves
+8,22      128..143 / 352..367     E ok       256    73    75    98     0   116        -  minecraft:light
+9,22      144..159 / 352..367     E ok       256    75    94   129     0   222        -  minecraft:grass_block
+10,22     160..175 / 352..367     E ok       256    73    80   109     0   117        -  minecraft:grass_block
+11,22     176..191 / 352..367     E ok       256    73    73    75     0    64        -  minecraft:grass_block
+12,22     192..207 / 352..367     E ok       256    73    73    75     0    41        -  minecraft:grass_block
+13,22     208..223 / 352..367     E ok       256    34    63    75     0    87        -  minecraft:grass_block
+14,22     224..239 / 352..367     E ok       256    32    52    62     0    15        -  minecraft:ice
+15,22     240..255 / 352..367     E ok       256    36    61    65     0     0        -  minecraft:stone
+16,22     256..271 / 352..367       ok       256    62    75    84     0   137        -  minecraft:snow
+17,22     272..287 / 352..367       ok       256    72    78    89     0   102        -  minecraft:snow
+18,22     288..303 / 352..367       ok       256    71    76    87     0   131        -  minecraft:snow
+-3,23     -48..-33 / 368..383       ok       256    71    73    79     0   253        -  minecraft:snow
+-2,23     -32..-17 / 368..383       ok       256    68    73    82     0   254        -  minecraft:snow
+-1,23     -16..-1 / 368..383        ok       256    60    66    76     0   181        -  minecraft:powder_snow
+0,23      0..15 / 368..383        E ok       256    60    64    70     0    55        -  minecraft:powder_snow
+1,23      16..31 / 368..383       E ok       256    65    76   142     0    87        -  minecraft:grass_block
+2,23      32..47 / 368..383       E ok       256   115   172   187     0   256        -  minecraft:grass_block
+3,23      48..63 / 368..383       E ok       256   122   180   188     0   256        -  minecraft:oak_leaves
+4,23      64..79 / 368..383       E ok       256    76   129   187     0   148        -  minecraft:jungle_leaves
+5,23      80..95 / 368..383       E ok       256    74    82   153     0   130        -  minecraft:andesite_stairs
+6,23      96..111 / 368..383      E ok       256    74   105   206     0   117        -  minecraft:light
+7,23      112..127 / 368..383     E ok       256    74   110   206     0   137        -  minecraft:light
+8,23      128..143 / 368..383     E ok       256    74    95   168     0   132        -  minecraft:light
+9,23      144..159 / 368..383     E ok       256   101   139   174     0   256        -  minecraft:grass_block
+10,23     160..175 / 368..383     E ok       256    73   105   171     0   232        -  minecraft:grass_block
+11,23     176..191 / 368..383     E ok       256    73    73    75     0   137        -  minecraft:grass_block
+12,23     192..207 / 368..383     E ok       256    64    72    75     0    89        -  minecraft:grass_block
+13,23     208..223 / 368..383     E ok       256    33    57    72     0    30        -  minecraft:water
+14,23     224..239 / 368..383     E ok       256    32    50    62     0    18        -  minecraft:ice
+15,23     240..255 / 368..383     E ok       256    39    61    65     0     1        -  minecraft:stone
+16,23     256..271 / 368..383       ok       256    62    74    82     0    97        -  minecraft:snow
+17,23     272..287 / 368..383       ok       256    62    72    83     0   154        -  minecraft:snow
+18,23     288..303 / 368..383       ok       256    69    73    81     0   132        -  minecraft:snow
+-3,24     -48..-33 / 384..399       ok       256    71    74    81     0   164        -  minecraft:snow
+-2,24     -32..-17 / 384..399       ok       256    67    73    84     0   211        -  minecraft:snow
+-1,24     -16..-1 / 384..399        ok       256    66    70    81     0   205        -  minecraft:powder_snow
+0,24      0..15 / 384..399        E ok       256    65    66    76     0    90        -  minecraft:powder_snow
+1,24      16..31 / 384..399       E ok       256    64    69    75     0   205        -  minecraft:grass_block
+2,24      32..47 / 384..399       E ok       256    72   164   187     0   256        -  minecraft:grass_block
+3,24      48..63 / 384..399       E ok       256    73   146   185     0   184        -  minecraft:grass_block
+4,24      64..79 / 384..399       E ok       256    68    83   185     0    36        -  minecraft:grass_block
+5,24      80..95 / 384..399       E ok       256    68    74    79     0   130        -  minecraft:light
+6,24      96..111 / 384..399      E ok       256    74   125   206     0   103        -  minecraft:light
+7,24      112..127 / 384..399     E ok       256    74   155   206     0   162        -  minecraft:light
+8,24      128..143 / 384..399     E ok       256    73   127   206     0   158        -  minecraft:light
+9,24      144..159 / 384..399     E ok       256   150   185   206     0   256        -  minecraft:grass_block
+10,24     160..175 / 384..399     E ok       256    73   160   206     0   256        -  minecraft:grass_block
+11,24     176..191 / 384..399     E ok       256    65    80   206     0   201        -  minecraft:grass_block
+12,24     192..207 / 384..399     E ok       256    63    66    75     0   131        -  minecraft:grass_block
+13,24     208..223 / 384..399     E ok       256    36    58    65     0    20        -  minecraft:water
+14,24     224..239 / 384..399     E ok       256    36    56    62     0    48        -  minecraft:ice
+15,24     240..255 / 384..399     E ok       256    39    62    65     0     0        -  minecraft:stone
+16,24     256..271 / 384..399       ok       256    72    81    92     0   115        -  minecraft:snow
+17,24     272..287 / 384..399       ok       256    62    74    85     0    91        -  minecraft:snow
+18,24     288..303 / 384..399       ok       256    69    73    83     0    85        -  minecraft:snow
+-3,25     -48..-33 / 400..415       ABSENT     -     -     -     -     -     -        -  
+-2,25     -32..-17 / 400..415       ABSENT     -     -     -     -     -     -        -  
+-1,25     -16..-1 / 400..415        ABSENT     -     -     -     -     -     -        -  
+0,25      0..15 / 400..415        E ok       256    57    68    82     0   187        -  minecraft:snow
+1,25      16..31 / 400..415       E ok       256    58    65    71     0   172        -  minecraft:stone
+2,25      32..47 / 400..415       E ok       256    65    82   174     0   227        -  minecraft:grass_block
+3,25      48..63 / 400..415       E ok       256    72    85   170     0    34        -  minecraft:grass_block
+4,25      64..79 / 400..415       E ok       256    73    76   123     0    21        -  minecraft:grass_block
+5,25      80..95 / 400..415       E ok       256    69    90   123     0    96        -  minecraft:black_concrete
+6,25      96..111 / 400..415      E ok       256    73    91   205     0    98        -  minecraft:light
+7,25      112..127 / 400..415     E ok       256    73   155   206     0   212        -  minecraft:black_concrete
+8,25      128..143 / 400..415     E ok       256    73   116   197     0   241        -  minecraft:grass_block
+9,25      144..159 / 400..415     E ok       256   180   188   202     0   256        -  minecraft:dark_oak_wood
+10,25     160..175 / 400..415     E ok       256    65   135   183     0   244        -  minecraft:grass_block
+11,25     176..191 / 400..415     E ok       256    65    66    75     0   207        -  minecraft:grass_block
+12,25     192..207 / 400..415     E ok       256    65    65    65     0   126        -  minecraft:stone
+13,25     208..223 / 400..415     E ok       256    62    62    65     0     0        -  minecraft:ice
+14,25     224..239 / 400..415     E ok       256    62    62    62     0     0        -  minecraft:ice
+15,25     240..255 / 400..415     E ok       256    50    62    65     0     0        -  minecraft:ice
+16,25     256..271 / 400..415       ABSENT     -     -     -     -     -     -        -  
+17,25     272..287 / 400..415       ABSENT     -     -     -     -     -     -        -  
+18,25     288..303 / 400..415       ABSENT     -     -     -     -     -     -        -  
+-3,26     -48..-33 / 416..431       ABSENT     -     -     -     -     -     -        -  
+-2,26     -32..-17 / 416..431       ABSENT     -     -     -     -     -     -        -  
+-1,26     -16..-1 / 416..431        ABSENT     -     -     -     -     -     -        -  
+0,26      0..15 / 416..431        E ok       256    62    68    81     0   201        -  minecraft:snow
+1,26      16..31 / 416..431       E ok       256    61    64    65     0   226        -  minecraft:stone
+2,26      32..47 / 416..431       E ok       256    65    65    71     0   197        -  minecraft:stone
+3,26      48..63 / 416..431       E ok       256    65    71    75     0    16        -  minecraft:grass_block
+4,26      64..79 / 416..431       E ok       256    72    76   123     0    22        -  minecraft:grass_block
+5,26      80..95 / 416..431       E ok       256    73    90   122     0   113        -  minecraft:grass_block
+6,26      96..111 / 416..431      E ok       256    73    90   120     0   103        -  minecraft:grass_block
+7,26      112..127 / 416..431     E ok       256    73    90   120     0   133        -  minecraft:grass_block
+8,26      128..143 / 416..431     E ok       256    73    92   182     0   248        -  minecraft:grass_block
+9,26      144..159 / 416..431     E ok       256    70   111   186     0   214        -  minecraft:grass_block
+10,26     160..175 / 416..431     E ok       256    65    71   183     0   130        -  minecraft:grass_block
+11,26     176..191 / 416..431     E ok       256    65    65    65     0    65        -  minecraft:stone
+12,26     192..207 / 416..431     E ok       256    65    65    65     0    74        -  minecraft:stone
+13,26     208..223 / 416..431     E ok       256    52    63    65     0     7        -  minecraft:stone
+14,26     224..239 / 416..431     E ok       256    62    62    65     0     0        -  minecraft:ice
+15,26     240..255 / 416..431     E ok       256    62    62    62     0     0        -  minecraft:ice
+16,26     256..271 / 416..431       ABSENT     -     -     -     -     -     -        -  
+17,26     272..287 / 416..431       ABSENT     -     -     -     -     -     -        -  
+18,26     288..303 / 416..431       ABSENT     -     -     -     -     -     -        -  
+-3,27     -48..-33 / 432..447       ABSENT     -     -     -     -     -     -        -  
+-2,27     -32..-17 / 432..447       ABSENT     -     -     -     -     -     -        -  
+-1,27     -16..-1 / 432..447        ABSENT     -     -     -     -     -     -        -  
+0,27      0..15 / 432..447        E ok       256    65    76    91     0   135        -  minecraft:snow
+1,27      16..31 / 432..447       E ok       256    65    65    65     0    41        -  minecraft:stone
+2,27      32..47 / 432..447       E ok       256    65    65    65     0   148        -  minecraft:stone
+3,27      48..63 / 432..447       E ok       256    65    65    71     0    69        -  minecraft:stone
+4,27      64..79 / 432..447       E ok       256    65    67    75     0    98        -  minecraft:stone
+5,27      80..95 / 432..447       E ok       256    65    68    75     0    90        -  minecraft:grass_block
+6,27      96..111 / 432..447      E ok       256    60    68    75     0   150        -  minecraft:grass_block
+7,27      112..127 / 432..447     E ok       256    65    68    75     0   182        -  minecraft:grass_block
+8,27      128..143 / 432..447     E ok       256    65    68    75     0   171        -  minecraft:grass_block
+9,27      144..159 / 432..447     E ok       256    65    67    74     0   182        -  minecraft:grass_block
+10,27     160..175 / 432..447     E ok       256    65    65    69     0     5        -  minecraft:stone
+11,27     176..191 / 432..447     E ok       256    65    65    65     0     0        -  minecraft:stone
+12,27     192..207 / 432..447     E ok       256    65    65    65     0    20        -  minecraft:stone
+13,27     208..223 / 432..447     E ok       256    62    64    65     0    94        -  minecraft:stone
+14,27     224..239 / 432..447     E ok       256    62    62    65     0     0        -  minecraft:ice
+15,27     240..255 / 432..447     E ok       256    62    62    65     0     0        -  minecraft:ice
+16,27     256..271 / 432..447       ABSENT     -     -     -     -     -     -        -  
+17,27     272..287 / 432..447       ABSENT     -     -     -     -     -     -        -  
+18,27     288..303 / 432..447       ABSENT     -     -     -     -     -     -        -  
+-3,28     -48..-33 / 448..463       ABSENT     -     -     -     -     -     -        -  
+-2,28     -32..-17 / 448..463       ABSENT     -     -     -     -     -     -        -  
+-1,28     -16..-1 / 448..463        ABSENT     -     -     -     -     -     -        -  
+0,28      0..15 / 448..463        E ok       256    63    77    95     0   186        -  minecraft:snow
+1,28      16..31 / 448..463       E ok       256    59    64    65     0   155        -  minecraft:stone
+2,28      32..47 / 448..463       E ok       256    62    64    65     0   162        -  minecraft:stone
+3,28      48..63 / 448..463       E ok       256    65    65    65     0   146        -  minecraft:stone
+4,28      64..79 / 448..463       E ok       256    65    65    65     0   136        -  minecraft:stone
+5,28      80..95 / 448..463       E ok       256    65    65    65     0    97        -  minecraft:stone
+6,28      96..111 / 448..463      E ok       256    65    65    65     0   169        -  minecraft:stone
+7,28      112..127 / 448..463     E ok       256    65    65    65     0   146        -  minecraft:stone
+8,28      128..143 / 448..463     E ok       256    65    65    65     0   127        -  minecraft:stone
+9,28      144..159 / 448..463     E ok       256    65    65    65     0   163        -  minecraft:stone
+10,28     160..175 / 448..463     E ok       256    65    65    65     0   105        -  minecraft:stone
+11,28     176..191 / 448..463     E ok       256    65    65    65     0    39        -  minecraft:stone
+12,28     192..207 / 448..463     E ok       256    65    65    65     0     0        -  minecraft:stone
+13,28     208..223 / 448..463     E ok       256    62    64    65     0     0        -  minecraft:stone
+14,28     224..239 / 448..463     E ok       256    62    62    64     0     0        -  minecraft:ice
+15,28     240..255 / 448..463     E ok       256    62    62    65     0     0        -  minecraft:snow
+16,28     256..271 / 448..463       ABSENT     -     -     -     -     -     -        -  
+17,28     272..287 / 448..463       ABSENT     -     -     -     -     -     -        -  
+18,28     288..303 / 448..463       ABSENT     -     -     -     -     -     -        -  
+-3,29     -48..-33 / 464..479       ABSENT     -     -     -     -     -     -        -  
+-2,29     -32..-17 / 464..479       ABSENT     -     -     -     -     -     -        -  
+-1,29     -16..-1 / 464..479        ABSENT     -     -     -     -     -     -        -  
+0,29      0..15 / 464..479        E ok       256    65    82    94     0   211        -  minecraft:powder_snow
+1,29      16..31 / 464..479       E ok       256    65    88   100     0   159        -  minecraft:snow
+2,29      32..47 / 464..479       E ok       256    65    95   110     0   231        -  minecraft:snow
+3,29      48..63 / 464..479       E ok       256    65   103   114     0   161        -  minecraft:snow
+4,29      64..79 / 464..479       E ok       256    65   107   120     0   132        -  minecraft:snow
+5,29      80..95 / 464..479       E ok       256    65   111   123     0   134        -  minecraft:snow
+6,29      96..111 / 464..479      E ok       256    65   109   121     0   185        -  minecraft:snow
+7,29      112..127 / 464..479     E ok       256    65   109   121     0   227        -  minecraft:snow
+8,29      128..143 / 464..479     E ok       256    65   105   118     0    65        -  minecraft:powder_snow
+9,29      144..159 / 464..479     E ok       256    65   103   115     0   156        -  minecraft:snow
+10,29     160..175 / 464..479     E ok       256    65   100   112     0    87        -  minecraft:snow
+11,29     176..191 / 464..479     E ok       256    65    95   104     0   104        -  minecraft:snow
+12,29     192..207 / 464..479     E ok       256    65    90   103     0   183        -  minecraft:snow
+13,29     208..223 / 464..479     E ok       256    63    76    92     0    88        -  minecraft:snow
+14,29     224..239 / 464..479     E ok       256    62    69    79     0   134        -  minecraft:snow
+15,29     240..255 / 464..479     E ok       256    63    67    77     0    84        -  minecraft:snow
+16,29     256..271 / 464..479       ABSENT     -     -     -     -     -     -        -  
+17,29     272..287 / 464..479       ABSENT     -     -     -     -     -     -        -  
+18,29     288..303 / 464..479       ABSENT     -     -     -     -     -     -        -  
+-3,30     -48..-33 / 480..495       ABSENT     -     -     -     -     -     -        -  
+-2,30     -32..-17 / 480..495       ABSENT     -     -     -     -     -     -        -  
+-1,30     -16..-1 / 480..495        ABSENT     -     -     -     -     -     -        -  
+0,30      0..15 / 480..495          ABSENT     -     -     -     -     -     -        -  
+1,30      16..31 / 480..495         ABSENT     -     -     -     -     -     -        -  
+2,30      32..47 / 480..495         ABSENT     -     -     -     -     -     -        -  
+3,30      48..63 / 480..495         ABSENT     -     -     -     -     -     -        -  
+4,30      64..79 / 480..495         ABSENT     -     -     -     -     -     -        -  
+5,30      80..95 / 480..495         ABSENT     -     -     -     -     -     -        -  
+6,30      96..111 / 480..495        ABSENT     -     -     -     -     -     -        -  
+7,30      112..127 / 480..495       ABSENT     -     -     -     -     -     -        -  
+8,30      128..143 / 480..495       ABSENT     -     -     -     -     -     -        -  
+9,30      144..159 / 480..495       ABSENT     -     -     -     -     -     -        -  
+10,30     160..175 / 480..495       ABSENT     -     -     -     -     -     -        -  
+11,30     176..191 / 480..495       ABSENT     -     -     -     -     -     -        -  
+12,30     192..207 / 480..495       ABSENT     -     -     -     -     -     -        -  
+13,30     208..223 / 480..495       ABSENT     -     -     -     -     -     -        -  
+14,30     224..239 / 480..495       ABSENT     -     -     -     -     -     -        -  
+15,30     240..255 / 480..495       ABSENT     -     -     -     -     -     -        -  
+16,30     256..271 / 480..495       ABSENT     -     -     -     -     -     -        -  
+17,30     272..287 / 480..495       ABSENT     -     -     -     -     -     -        -  
+18,30     288..303 / 480..495       ABSENT     -     -     -     -     -     -        -  
+-3,31     -48..-33 / 496..511       ABSENT     -     -     -     -     -     -        -  
+-2,31     -32..-17 / 496..511       ABSENT     -     -     -     -     -     -        -  
+-1,31     -16..-1 / 496..511        ABSENT     -     -     -     -     -     -        -  
+0,31      0..15 / 496..511          ABSENT     -     -     -     -     -     -        -  
+1,31      16..31 / 496..511         ABSENT     -     -     -     -     -     -        -  
+2,31      32..47 / 496..511         ABSENT     -     -     -     -     -     -        -  
+3,31      48..63 / 496..511         ABSENT     -     -     -     -     -     -        -  
+4,31      64..79 / 496..511         ABSENT     -     -     -     -     -     -        -  
+5,31      80..95 / 496..511         ABSENT     -     -     -     -     -     -        -  
+6,31      96..111 / 496..511        ABSENT     -     -     -     -     -     -        -  
+7,31      112..127 / 496..511       ABSENT     -     -     -     -     -     -        -  
+8,31      128..143 / 496..511       ABSENT     -     -     -     -     -     -        -  
+9,31      144..159 / 496..511       ABSENT     -     -     -     -     -     -        -  
+10,31     160..175 / 496..511       ABSENT     -     -     -     -     -     -        -  
+11,31     176..191 / 496..511       ABSENT     -     -     -     -     -     -        -  
+12,31     192..207 / 496..511       ABSENT     -     -     -     -     -     -        -  
+13,31     208..223 / 496..511       ABSENT     -     -     -     -     -     -        -  
+14,31     224..239 / 496..511       ABSENT     -     -     -     -     -     -        -  
+15,31     240..255 / 496..511       ABSENT     -     -     -     -     -     -        -  
+16,31     256..271 / 496..511       ABSENT     -     -     -     -     -     -        -  
+17,31     272..287 / 496..511       ABSENT     -     -     -     -     -     -        -  
+18,31     288..303 / 496..511       ABSENT     -     -     -     -     -     -        -  
+-3,32     -48..-33 / 512..527       ABSENT     -     -     -     -     -     -        -  
+-2,32     -32..-17 / 512..527       ABSENT     -     -     -     -     -     -        -  
+-1,32     -16..-1 / 512..527        ABSENT     -     -     -     -     -     -        -  
+0,32      0..15 / 512..527          ABSENT     -     -     -     -     -     -        -  
+1,32      16..31 / 512..527         ABSENT     -     -     -     -     -     -        -  
+2,32      32..47 / 512..527         ABSENT     -     -     -     -     -     -        -  
+3,32      48..63 / 512..527         ABSENT     -     -     -     -     -     -        -  
+4,32      64..79 / 512..527         ABSENT     -     -     -     -     -     -        -  
+5,32      80..95 / 512..527         ABSENT     -     -     -     -     -     -        -  
+6,32      96..111 / 512..527        ABSENT     -     -     -     -     -     -        -  
+7,32      112..127 / 512..527       ABSENT     -     -     -     -     -     -        -  
+8,32      128..143 / 512..527       ABSENT     -     -     -     -     -     -        -  
+9,32      144..159 / 512..527       ABSENT     -     -     -     -     -     -        -  
+10,32     160..175 / 512..527       ABSENT     -     -     -     -     -     -        -  
+11,32     176..191 / 512..527       ABSENT     -     -     -     -     -     -        -  
+12,32     192..207 / 512..527       ABSENT     -     -     -     -     -     -        -  
+13,32     208..223 / 512..527       ABSENT     -     -     -     -     -     -        -  
+14,32     224..239 / 512..527       ABSENT     -     -     -     -     -     -        -  
+15,32     240..255 / 512..527       ABSENT     -     -     -     -     -     -        -  
+16,32     256..271 / 512..527       ABSENT     -     -     -     -     -     -        -  
+17,32     272..287 / 512..527       ABSENT     -     -     -     -     -     -        -  
+18,32     288..303 / 512..527       ABSENT     -     -     -     -     -     -        -  
+
+====================================================================================================
+ 4b. COMPOSITION DE LA SURFACE DANS L'EMPRISE, ET AIR PIEGE
+====================================================================================================
+  etape mesuree : 3_APRES_PASTE
+
+  blocs de surface, par frequence (colonnes d'emprise lues : 77824) :
+         17534  (22.5 %)  minecraft:grass_block
+         12376  (15.9 %)  minecraft:ice
+         10460  (13.4 %)  minecraft:stone
+          7905  (10.2 %)  minecraft:water
+          4695  (6.0 %)  minecraft:snow
+          3187  (4.1 %)  minecraft:oak_leaves
+          2610  (3.4 %)  minecraft:tuff
+          2122  (2.7 %)  minecraft:light
+          1802  (2.3 %)  minecraft:jungle_leaves
+          1775  (2.3 %)  minecraft:spruce_leaves
+          1710  (2.2 %)  minecraft:cobblestone
+          1511  (1.9 %)  minecraft:packed_ice
+          1184  (1.5 %)  minecraft:andesite
+          1111  (1.4 %)  minecraft:powder_snow
+           878  (1.1 %)  minecraft:green_stained_glass
+           797  (1.0 %)  minecraft:dirt
+           686  (0.9 %)  minecraft:black_concrete
+           682  (0.9 %)  minecraft:tall_grass
+           648  (0.8 %)  minecraft:birch_leaves
+           630  (0.8 %)  minecraft:dark_oak_wood
+           507  (0.7 %)  minecraft:azalea_leaves
+           365  (0.5 %)  minecraft:snow_block
+           363  (0.5 %)  minecraft:dandelion
+           351  (0.5 %)  minecraft:gravel
+           308  (0.4 %)  minecraft:lime_terracotta
+           180  (0.2 %)  minecraft:andesite_stairs
+           153  (0.2 %)  minecraft:coal_ore
+           148  (0.2 %)  minecraft:andesite_slab
+           136  (0.2 %)  minecraft:weeping_vines_plant
+           106  (0.1 %)  minecraft:poppy
+            76  (0.1 %)  minecraft:spruce_wood
+            75  (0.1 %)  minecraft:copper_ore
+            69  (0.1 %)  minecraft:mud_brick_wall
+            62  (0.1 %)  minecraft:weeping_vines
+            59  (0.1 %)  minecraft:rooted_dirt
+            57  (0.1 %)  minecraft:coarse_dirt
+            56  (0.1 %)  minecraft:spruce_slab
+            51  (0.1 %)  minecraft:mossy_cobblestone_stairs
+            46  (0.1 %)  minecraft:azure_bluet
+            39  (0.1 %)  minecraft:oxeye_daisy
+
+  premier bloc SOLIDE de la colonne (l'eau et le feuillage sont ignores) :
+  C'est lui qui trahit le fond d'origine : un GRASS_BLOCK ou un STONE sous la
+  nappe du lac veut dire que la coupe n'est jamais passee a cet endroit.
+         18622  (23.9 %)  minecraft:grass_block
+         12376  (15.9 %)  minecraft:ice
+         11174  (14.4 %)  minecraft:stone
+          5393  (6.9 %)  minecraft:gravel
+          4695  (6.0 %)  minecraft:snow
+          3187  (4.1 %)  minecraft:oak_leaves
+          2610  (3.4 %)  minecraft:tuff
+          2121  (2.7 %)  minecraft:light
+          1802  (2.3 %)  minecraft:jungle_leaves
+          1775  (2.3 %)  minecraft:spruce_leaves
+          1713  (2.2 %)  minecraft:cobblestone
+          1547  (2.0 %)  minecraft:packed_ice
+          1266  (1.6 %)  minecraft:andesite
+          1111  (1.4 %)  minecraft:powder_snow
+          1064  (1.4 %)  minecraft:dirt
+           878  (1.1 %)  minecraft:green_stained_glass
+           686  (0.9 %)  minecraft:black_concrete
+           682  (0.9 %)  minecraft:tall_grass
+           648  (0.8 %)  minecraft:birch_leaves
+           630  (0.8 %)  minecraft:dark_oak_wood
+           507  (0.7 %)  minecraft:azalea_leaves
+           503  (0.6 %)  minecraft:sand
+           365  (0.5 %)  minecraft:snow_block
+           363  (0.5 %)  minecraft:dandelion
+           308  (0.4 %)  minecraft:lime_terracotta
+           180  (0.2 %)  minecraft:andesite_stairs
+           171  (0.2 %)  minecraft:coal_ore
+           144  (0.2 %)  minecraft:andesite_slab
+           136  (0.2 %)  minecraft:weeping_vines_plant
+           106  (0.1 %)  minecraft:poppy
+            87  (0.1 %)  minecraft:diorite
+            82  (0.1 %)  minecraft:copper_ore
+            76  (0.1 %)  minecraft:spruce_wood
+            69  (0.1 %)  minecraft:mud_brick_wall
+            62  (0.1 %)  minecraft:weeping_vines
+            59  (0.1 %)  minecraft:rooted_dirt
+            57  (0.1 %)  minecraft:coarse_dirt
+            56  (0.1 %)  minecraft:spruce_slab
+            51  (0.1 %)  minecraft:mossy_cobblestone_stairs
+            46  (0.1 %)  minecraft:azure_bluet
+
+  colonnes avec de l'air PIEGE sous le premier solide : 28466  (36.6 %)   total 545218 bloc(s) d'air
+  les 80 plus profondes (>= 8 blocs d'air) :
+      48 blocs d'air   x=174 z=261   chunk 10,16
+      48 blocs d'air   x=177 z=264   chunk 11,16
+      48 blocs d'air   x=120 z=278   chunk 7,17
+      48 blocs d'air   x=122 z=279   chunk 7,17
+      48 blocs d'air   x=123 z=279   chunk 7,17
+      48 blocs d'air   x=126 z=279   chunk 7,17
+      48 blocs d'air   x=119 z=280   chunk 7,17
+      48 blocs d'air   x=123 z=281   chunk 7,17
+      48 blocs d'air   x=126 z=281   chunk 7,17
+      48 blocs d'air   x=127 z=281   chunk 7,17
+      48 blocs d'air   x=140 z=281   chunk 8,17
+      48 blocs d'air   x=141 z=281   chunk 8,17
+      48 blocs d'air   x=118 z=283   chunk 7,17
+      48 blocs d'air   x=122 z=283   chunk 7,17
+      48 blocs d'air   x=120 z=284   chunk 7,17
+      48 blocs d'air   x=123 z=284   chunk 7,17
+      48 blocs d'air   x=120 z=285   chunk 7,17
+      48 blocs d'air   x=146 z=285   chunk 9,17
+      48 blocs d'air   x=165 z=285   chunk 10,17
+      48 blocs d'air   x=119 z=286   chunk 7,17
+      48 blocs d'air   x=123 z=286   chunk 7,17
+      48 blocs d'air   x=144 z=286   chunk 9,17
+      48 blocs d'air   x=146 z=286   chunk 9,17
+      48 blocs d'air   x=147 z=286   chunk 9,17
+      48 blocs d'air   x=149 z=286   chunk 9,17
+      48 blocs d'air   x=163 z=286   chunk 10,17
+      48 blocs d'air   x=174 z=286   chunk 10,17
+      48 blocs d'air   x=176 z=286   chunk 11,17
+      48 blocs d'air   x=117 z=287   chunk 7,17
+      48 blocs d'air   x=145 z=287   chunk 9,17
+      48 blocs d'air   x=148 z=287   chunk 9,17
+      48 blocs d'air   x=149 z=287   chunk 9,17
+      48 blocs d'air   x=179 z=287   chunk 11,17
+      48 blocs d'air   x=117 z=288   chunk 7,18
+      48 blocs d'air   x=147 z=288   chunk 9,18
+      48 blocs d'air   x=178 z=288   chunk 11,18
+      48 blocs d'air   x=115 z=289   chunk 7,18
+      48 blocs d'air   x=120 z=289   chunk 7,18
+      48 blocs d'air   x=147 z=289   chunk 9,18
+      48 blocs d'air   x=116 z=290   chunk 7,18
+      48 blocs d'air   x=117 z=290   chunk 7,18
+      48 blocs d'air   x=119 z=290   chunk 7,18
+      48 blocs d'air   x=143 z=290   chunk 8,18
+      48 blocs d'air   x=114 z=291   chunk 7,18
+      48 blocs d'air   x=145 z=291   chunk 9,18
+      48 blocs d'air   x=115 z=292   chunk 7,18
+      48 blocs d'air   x=113 z=294   chunk 7,18
+      48 blocs d'air   x=114 z=294   chunk 7,18
+      48 blocs d'air   x=115 z=294   chunk 7,18
+      48 blocs d'air   x=116 z=294   chunk 7,18
+      48 blocs d'air   x=84 z=295   chunk 5,18
+      48 blocs d'air   x=118 z=295   chunk 7,18
+      48 blocs d'air   x=170 z=295   chunk 10,18
+      48 blocs d'air   x=117 z=296   chunk 7,18
+      48 blocs d'air   x=121 z=296   chunk 7,18
+      48 blocs d'air   x=171 z=296   chunk 10,18
+      48 blocs d'air   x=114 z=297   chunk 7,18
+      48 blocs d'air   x=118 z=297   chunk 7,18
+      48 blocs d'air   x=120 z=297   chunk 7,18
+      48 blocs d'air   x=124 z=297   chunk 7,18
+      48 blocs d'air   x=87 z=298   chunk 5,18
+      48 blocs d'air   x=118 z=299   chunk 7,18
+      48 blocs d'air   x=119 z=299   chunk 7,18
+      48 blocs d'air   x=121 z=299   chunk 7,18
+      48 blocs d'air   x=169 z=299   chunk 10,18
+      48 blocs d'air   x=122 z=300   chunk 7,18
+      48 blocs d'air   x=90 z=302   chunk 5,18
+      48 blocs d'air   x=125 z=303   chunk 7,18
+      48 blocs d'air   x=127 z=303   chunk 7,18
+      48 blocs d'air   x=129 z=305   chunk 8,19
+      48 blocs d'air   x=92 z=306   chunk 5,19
+      48 blocs d'air   x=92 z=307   chunk 5,19
+      48 blocs d'air   x=144 z=307   chunk 9,19
+      48 blocs d'air   x=150 z=307   chunk 9,19
+      48 blocs d'air   x=151 z=307   chunk 9,19
+      48 blocs d'air   x=92 z=308   chunk 5,19
+      48 blocs d'air   x=127 z=308   chunk 7,19
+      48 blocs d'air   x=129 z=308   chunk 8,19
+      48 blocs d'air   x=145 z=308   chunk 9,19
+      48 blocs d'air   x=146 z=308   chunk 9,19
+
+====================================================================================================
+ 5. RACCORDS INTER-CHUNKS  (denivele exactement a la frontiere)
+====================================================================================================
+Mesure prise entre la derniere colonne d'un chunk et la premiere du suivant
+(x=15 contre x=0, puis z=15 contre z=0). C'est le defaut qu'une vue d'ensemble
+ne montre pas : une marche franche pile sur la couture de deux chunks.
+
+  etape mesuree : 3_APRES_PASTE
+
+  paires de colonnes mesurees aux frontieres : 13824
+  paires inexploitables (chunk absent)       : 3024
+  denivele moyen a la frontiere              : 2.43 bloc(s)
+  paires a denivele >= 4                     : 1499
+  denivele moyen a l'INTERIEUR des chunks    : 2.28 bloc(s)
+  rapport frontiere / interieur              : 1.07
+  Un rapport proche de 1 signifie que les coutures ne se distinguent pas du
+  reste du relief. Nettement au-dessus de 1, le defaut est bien le decoupage
+  en chunks lui-meme, et non la forme generale du terrain.
+
+  les 120 pires coutures :
+      133 blocs   frontiere X entre x=127 et x=128, z=406   chunks 7,25
+      133 blocs   frontiere X entre x=175 et x=176, z=393   chunks 10,24
+      133 blocs   frontiere X entre x=175 et x=176, z=398   chunks 10,24
+      133 blocs   frontiere Z entre z=399 et z=400, x=177   chunks 11,24
+      133 blocs   frontiere Z entre z=399 et z=400, x=179   chunks 11,24
+      132 blocs   frontiere X entre x=111 et x=112, z=374   chunks 6,23
+      132 blocs   frontiere X entre x=111 et x=112, z=375   chunks 6,23
+      132 blocs   frontiere X entre x=111 et x=112, z=379   chunks 6,23
+      132 blocs   frontiere X entre x=111 et x=112, z=397   chunks 6,24
+      132 blocs   frontiere X entre x=175 et x=176, z=388   chunks 10,24
+      132 blocs   frontiere Z entre z=383 et z=384, x=103   chunks 6,23
+      132 blocs   frontiere Z entre z=383 et z=384, x=104   chunks 6,23
+      132 blocs   frontiere Z entre z=383 et z=384, x=106   chunks 6,23
+      132 blocs   frontiere Z entre z=383 et z=384, x=115   chunks 7,23
+      132 blocs   frontiere Z entre z=383 et z=384, x=120   chunks 7,23
+      131 blocs   frontiere X entre x=111 et x=112, z=382   chunks 6,23
+      131 blocs   frontiere X entre x=111 et x=112, z=383   chunks 6,23
+      131 blocs   frontiere X entre x=111 et x=112, z=385   chunks 6,24
+      131 blocs   frontiere Z entre z=383 et z=384, x=109   chunks 6,23
+      131 blocs   frontiere Z entre z=383 et z=384, x=113   chunks 7,23
+      131 blocs   frontiere Z entre z=383 et z=384, x=116   chunks 7,23
+      131 blocs   frontiere Z entre z=383 et z=384, x=118   chunks 7,23
+      130 blocs   frontiere X entre x=111 et x=112, z=390   chunks 6,24
+      130 blocs   frontiere X entre x=127 et x=128, z=400   chunks 7,25
+      130 blocs   frontiere Z entre z=383 et z=384, x=110   chunks 6,23
+      130 blocs   frontiere Z entre z=383 et z=384, x=111   chunks 6,23
+      130 blocs   frontiere Z entre z=383 et z=384, x=122   chunks 7,23
+      130 blocs   frontiere Z entre z=399 et z=400, x=127   chunks 7,24
+      129 blocs   frontiere X entre x=111 et x=112, z=377   chunks 6,23
+      111 blocs   frontiere X entre x=63 et x=64, z=389   chunks 3,24
+      110 blocs   frontiere X entre x=63 et x=64, z=381   chunks 3,23
+      110 blocs   frontiere Z entre z=319 et z=320, x=88   chunks 5,19
+      109 blocs   frontiere Z entre z=287 et z=288, x=146   chunks 9,17
+      107 blocs   frontiere X entre x=63 et x=64, z=386   chunks 3,24
+      106 blocs   frontiere X entre x=143 et x=144, z=286   chunks 8,17
+      105 blocs   frontiere X entre x=63 et x=64, z=390   chunks 3,24
+      105 blocs   frontiere Z entre z=351 et z=352, x=89   chunks 5,21
+      104 blocs   frontiere Z entre z=415 et z=416, x=164   chunks 10,25
+      103 blocs   frontiere Z entre z=383 et z=384, x=68   chunks 4,23
+      102 blocs   frontiere X entre x=95 et x=96, z=332   chunks 5,20
+      102 blocs   frontiere Z entre z=319 et z=320, x=79   chunks 4,19
+      102 blocs   frontiere Z entre z=383 et z=384, x=69   chunks 4,23
+      101 blocs   frontiere X entre x=95 et x=96, z=333   chunks 5,20
+      100 blocs   frontiere X entre x=79 et x=80, z=320   chunks 4,20
+      100 blocs   frontiere Z entre z=319 et z=320, x=74   chunks 4,19
+      98 blocs   frontiere X entre x=31 et x=32, z=385   chunks 1,24
+      98 blocs   frontiere X entre x=31 et x=32, z=386   chunks 1,24
+      98 blocs   frontiere X entre x=31 et x=32, z=387   chunks 1,24
+      98 blocs   frontiere X entre x=31 et x=32, z=388   chunks 1,24
+      97 blocs   frontiere X entre x=31 et x=32, z=384   chunks 1,24
+      97 blocs   frontiere X entre x=31 et x=32, z=389   chunks 1,24
+      96 blocs   frontiere X entre x=31 et x=32, z=383   chunks 1,23
+      96 blocs   frontiere X entre x=31 et x=32, z=390   chunks 1,24
+      96 blocs   frontiere X entre x=79 et x=80, z=339   chunks 4,21
+      95 blocs   frontiere X entre x=79 et x=80, z=341   chunks 4,21
+      93 blocs   frontiere Z entre z=319 et z=320, x=78   chunks 4,19
+      93 blocs   frontiere Z entre z=383 et z=384, x=134   chunks 8,23
+      92 blocs   frontiere X entre x=95 et x=96, z=366   chunks 5,22
+      92 blocs   frontiere X entre x=127 et x=128, z=383   chunks 7,23
+      92 blocs   frontiere X entre x=127 et x=128, z=385   chunks 7,24
+      92 blocs   frontiere Z entre z=383 et z=384, x=126   chunks 7,23
+      92 blocs   frontiere Z entre z=383 et z=384, x=128   chunks 8,23
+      91 blocs   frontiere X entre x=159 et x=160, z=419   chunks 9,26
+      90 blocs   frontiere Z entre z=319 et z=320, x=73   chunks 4,19
+      89 blocs   frontiere X entre x=31 et x=32, z=382   chunks 1,23
+      89 blocs   frontiere Z entre z=335 et z=336, x=67   chunks 4,20
+      88 blocs   frontiere X entre x=31 et x=32, z=381   chunks 1,23
+      88 blocs   frontiere X entre x=95 et x=96, z=330   chunks 5,20
+      88 blocs   frontiere X entre x=111 et x=112, z=410   chunks 6,25
+      88 blocs   frontiere Z entre z=383 et z=384, x=138   chunks 8,23
+      88 blocs   frontiere Z entre z=399 et z=400, x=40   chunks 2,24
+      87 blocs   frontiere X entre x=31 et x=32, z=380   chunks 1,23
+      85 blocs   frontiere Z entre z=367 et z=368, x=95   chunks 5,22
+      85 blocs   frontiere Z entre z=399 et z=400, x=39   chunks 2,24
+      82 blocs   frontiere X entre x=63 et x=64, z=374   chunks 3,23
+      81 blocs   frontiere X entre x=127 et x=128, z=307   chunks 7,19
+      80 blocs   frontiere X entre x=63 et x=64, z=341   chunks 3,21
+      80 blocs   frontiere X entre x=143 et x=144, z=317   chunks 8,19
+      80 blocs   frontiere Z entre z=351 et z=352, x=88   chunks 5,21
+      77 blocs   frontiere X entre x=31 et x=32, z=379   chunks 1,23
+      75 blocs   frontiere Z entre z=351 et z=352, x=103   chunks 6,21
+      73 blocs   frontiere X entre x=79 et x=80, z=374   chunks 4,23
+      73 blocs   frontiere X entre x=159 et x=160, z=314   chunks 9,19
+      73 blocs   frontiere Z entre z=367 et z=368, x=86   chunks 5,22
+      71 blocs   frontiere X entre x=63 et x=64, z=326   chunks 3,20
+      71 blocs   frontiere X entre x=127 et x=128, z=319   chunks 7,19
+      71 blocs   frontiere Z entre z=319 et z=320, x=128   chunks 8,19
+      71 blocs   frontiere Z entre z=319 et z=320, x=130   chunks 8,19
+      70 blocs   frontiere Z entre z=351 et z=352, x=104   chunks 6,21
+      69 blocs   frontiere X entre x=143 et x=144, z=292   chunks 8,18
+      68 blocs   frontiere Z entre z=351 et z=352, x=91   chunks 5,21
+      67 blocs   frontiere Z entre z=335 et z=336, x=66   chunks 4,20
+      67 blocs   frontiere Z entre z=351 et z=352, x=92   chunks 5,21
+      66 blocs   frontiere Z entre z=367 et z=368, x=100   chunks 6,22
+      65 blocs   frontiere Z entre z=351 et z=352, x=90   chunks 5,21
+      64 blocs   frontiere Z entre z=287 et z=288, x=142   chunks 8,17
+      63 blocs   frontiere X entre x=31 et x=32, z=378   chunks 1,23
+      63 blocs   frontiere X entre x=63 et x=64, z=372   chunks 3,23
+      63 blocs   frontiere X entre x=95 et x=96, z=367   chunks 5,22
+      63 blocs   frontiere Z entre z=367 et z=368, x=99   chunks 6,22
+      62 blocs   frontiere X entre x=79 et x=80, z=318   chunks 4,19
+      62 blocs   frontiere Z entre z=287 et z=288, x=151   chunks 9,17
+      61 blocs   frontiere X entre x=143 et x=144, z=288   chunks 8,18
+      60 blocs   frontiere X entre x=127 et x=128, z=303   chunks 7,18
+      60 blocs   frontiere X entre x=143 et x=144, z=420   chunks 8,26
+      60 blocs   frontiere Z entre z=287 et z=288, x=119   chunks 7,17
+      60 blocs   frontiere Z entre z=287 et z=288, x=121   chunks 7,17
+      60 blocs   frontiere Z entre z=303 et z=304, x=127   chunks 7,18
+      59 blocs   frontiere Z entre z=287 et z=288, x=143   chunks 8,17
+      58 blocs   frontiere X entre x=143 et x=144, z=415   chunks 8,25
+      58 blocs   frontiere Z entre z=287 et z=288, x=120   chunks 7,17
+      58 blocs   frontiere Z entre z=303 et z=304, x=125   chunks 7,18
+      57 blocs   frontiere X entre x=63 et x=64, z=347   chunks 3,21
+      56 blocs   frontiere X entre x=63 et x=64, z=344   chunks 3,21
+      56 blocs   frontiere X entre x=143 et x=144, z=416   chunks 8,26
+      56 blocs   frontiere X entre x=143 et x=144, z=417   chunks 8,26
+      54 blocs   frontiere X entre x=63 et x=64, z=371   chunks 3,23
+      54 blocs   frontiere Z entre z=319 et z=320, x=71   chunks 4,19
+      52 blocs   frontiere Z entre z=319 et z=320, x=145   chunks 9,19
+      51 blocs   frontiere X entre x=127 et x=128, z=280   chunks 7,17
+
+====================================================================================================
+ 6. MARCHES ET FAILLES
+====================================================================================================
+  etape mesuree : 3_APRES_PASTE
+
+  denivele maximal avec le voisin est/sud, par colonne :
+     0           58363
+     1           26699
+     2-3         14461
+     4-5          3823
+     6-9          3697
+     10-15        3548
+     16-25        2277
+     26-50        1665
+     >50          1691
+  colonnes a marche >= 6 : 12878
+  les 120 plus hautes :
+      133 blocs   x=174 z=391   chunk 10,24   (dans l'emprise)
+      133 blocs   x=172 z=392   chunk 10,24   (dans l'emprise)
+      133 blocs   x=173 z=392   chunk 10,24   (dans l'emprise)
+      133 blocs   x=174 z=392   chunk 10,24   (dans l'emprise)
+      133 blocs   x=175 z=392   chunk 10,24   (dans l'emprise)
+      133 blocs   x=173 z=393   chunk 10,24   (dans l'emprise)
+      133 blocs   x=174 z=393   chunk 10,24   (dans l'emprise)
+      133 blocs   x=175 z=393   chunk 10,24   (dans l'emprise)
+      133 blocs   x=179 z=393   chunk 11,24   (dans l'emprise)
+      133 blocs   x=135 z=394   chunk 8,24   (dans l'emprise)
+      133 blocs   x=174 z=394   chunk 10,24   (dans l'emprise)
+      133 blocs   x=177 z=394   chunk 11,24   (dans l'emprise)
+      133 blocs   x=178 z=394   chunk 11,24   (dans l'emprise)
+      133 blocs   x=179 z=394   chunk 11,24   (dans l'emprise)
+      133 blocs   x=175 z=395   chunk 10,24   (dans l'emprise)
+      133 blocs   x=176 z=395   chunk 11,24   (dans l'emprise)
+      133 blocs   x=177 z=395   chunk 11,24   (dans l'emprise)
+      133 blocs   x=178 z=395   chunk 11,24   (dans l'emprise)
+      133 blocs   x=180 z=395   chunk 11,24   (dans l'emprise)
+      133 blocs   x=173 z=396   chunk 10,24   (dans l'emprise)
+      133 blocs   x=175 z=396   chunk 10,24   (dans l'emprise)
+      133 blocs   x=177 z=396   chunk 11,24   (dans l'emprise)
+      133 blocs   x=180 z=396   chunk 11,24   (dans l'emprise)
+      133 blocs   x=176 z=397   chunk 11,24   (dans l'emprise)
+      133 blocs   x=175 z=398   chunk 10,24   (dans l'emprise)
+      133 blocs   x=176 z=398   chunk 11,24   (dans l'emprise)
+      133 blocs   x=177 z=398   chunk 11,24   (dans l'emprise)
+      133 blocs   x=179 z=398   chunk 11,24   (dans l'emprise)
+      133 blocs   x=176 z=399   chunk 11,24   (dans l'emprise)
+      133 blocs   x=177 z=399   chunk 11,24   (dans l'emprise)
+      133 blocs   x=178 z=399   chunk 11,24   (dans l'emprise)
+      133 blocs   x=179 z=399   chunk 11,24   (dans l'emprise)
+      133 blocs   x=125 z=403   chunk 7,25   (dans l'emprise)
+      133 blocs   x=127 z=405   chunk 7,25   (dans l'emprise)
+      133 blocs   x=115 z=406   chunk 7,25   (dans l'emprise)
+      133 blocs   x=116 z=406   chunk 7,25   (dans l'emprise)
+      133 blocs   x=121 z=406   chunk 7,25   (dans l'emprise)
+      133 blocs   x=126 z=406   chunk 7,25   (dans l'emprise)
+      133 blocs   x=127 z=406   chunk 7,25   (dans l'emprise)
+      133 blocs   x=115 z=407   chunk 7,25   (dans l'emprise)
+      133 blocs   x=121 z=407   chunk 7,25   (dans l'emprise)
+      133 blocs   x=115 z=408   chunk 7,25   (dans l'emprise)
+      133 blocs   x=123 z=408   chunk 7,25   (dans l'emprise)
+      133 blocs   x=124 z=409   chunk 7,25   (dans l'emprise)
+      132 blocs   x=125 z=372   chunk 7,23   (dans l'emprise)
+      132 blocs   x=105 z=373   chunk 6,23   (dans l'emprise)
+      132 blocs   x=106 z=373   chunk 6,23   (dans l'emprise)
+      132 blocs   x=109 z=373   chunk 6,23   (dans l'emprise)
+      132 blocs   x=115 z=373   chunk 7,23   (dans l'emprise)
+      132 blocs   x=124 z=373   chunk 7,23   (dans l'emprise)
+      132 blocs   x=125 z=373   chunk 7,23   (dans l'emprise)
+      132 blocs   x=104 z=374   chunk 6,23   (dans l'emprise)
+      132 blocs   x=109 z=374   chunk 6,23   (dans l'emprise)
+      132 blocs   x=110 z=374   chunk 6,23   (dans l'emprise)
+      132 blocs   x=111 z=374   chunk 6,23   (dans l'emprise)
+      132 blocs   x=112 z=374   chunk 7,23   (dans l'emprise)
+      132 blocs   x=115 z=374   chunk 7,23   (dans l'emprise)
+      132 blocs   x=104 z=375   chunk 6,23   (dans l'emprise)
+      132 blocs   x=105 z=375   chunk 6,23   (dans l'emprise)
+      132 blocs   x=109 z=375   chunk 6,23   (dans l'emprise)
+      132 blocs   x=110 z=375   chunk 6,23   (dans l'emprise)
+      132 blocs   x=111 z=375   chunk 6,23   (dans l'emprise)
+      132 blocs   x=126 z=375   chunk 7,23   (dans l'emprise)
+      132 blocs   x=103 z=376   chunk 6,23   (dans l'emprise)
+      132 blocs   x=104 z=376   chunk 6,23   (dans l'emprise)
+      132 blocs   x=105 z=376   chunk 6,23   (dans l'emprise)
+      132 blocs   x=107 z=376   chunk 6,23   (dans l'emprise)
+      132 blocs   x=108 z=376   chunk 6,23   (dans l'emprise)
+      132 blocs   x=118 z=376   chunk 7,23   (dans l'emprise)
+      132 blocs   x=119 z=376   chunk 7,23   (dans l'emprise)
+      132 blocs   x=121 z=376   chunk 7,23   (dans l'emprise)
+      132 blocs   x=125 z=376   chunk 7,23   (dans l'emprise)
+      132 blocs   x=126 z=376   chunk 7,23   (dans l'emprise)
+      132 blocs   x=105 z=377   chunk 6,23   (dans l'emprise)
+      132 blocs   x=106 z=377   chunk 6,23   (dans l'emprise)
+      132 blocs   x=107 z=377   chunk 6,23   (dans l'emprise)
+      132 blocs   x=108 z=377   chunk 6,23   (dans l'emprise)
+      132 blocs   x=109 z=377   chunk 6,23   (dans l'emprise)
+      132 blocs   x=110 z=377   chunk 6,23   (dans l'emprise)
+      132 blocs   x=111 z=377   chunk 6,23   (dans l'emprise)
+      132 blocs   x=113 z=377   chunk 7,23   (dans l'emprise)
+      132 blocs   x=114 z=377   chunk 7,23   (dans l'emprise)
+      132 blocs   x=119 z=377   chunk 7,23   (dans l'emprise)
+      132 blocs   x=120 z=377   chunk 7,23   (dans l'emprise)
+      132 blocs   x=121 z=377   chunk 7,23   (dans l'emprise)
+      132 blocs   x=103 z=378   chunk 6,23   (dans l'emprise)
+      132 blocs   x=104 z=378   chunk 6,23   (dans l'emprise)
+      132 blocs   x=105 z=378   chunk 6,23   (dans l'emprise)
+      132 blocs   x=107 z=378   chunk 6,23   (dans l'emprise)
+      132 blocs   x=108 z=378   chunk 6,23   (dans l'emprise)
+      132 blocs   x=110 z=378   chunk 6,23   (dans l'emprise)
+      132 blocs   x=115 z=378   chunk 7,23   (dans l'emprise)
+      132 blocs   x=116 z=378   chunk 7,23   (dans l'emprise)
+      132 blocs   x=118 z=378   chunk 7,23   (dans l'emprise)
+      132 blocs   x=119 z=378   chunk 7,23   (dans l'emprise)
+      132 blocs   x=125 z=378   chunk 7,23   (dans l'emprise)
+      132 blocs   x=126 z=378   chunk 7,23   (dans l'emprise)
+      132 blocs   x=102 z=379   chunk 6,23   (dans l'emprise)
+      132 blocs   x=103 z=379   chunk 6,23   (dans l'emprise)
+      132 blocs   x=104 z=379   chunk 6,23   (dans l'emprise)
+      132 blocs   x=106 z=379   chunk 6,23   (dans l'emprise)
+      132 blocs   x=108 z=379   chunk 6,23   (dans l'emprise)
+      132 blocs   x=111 z=379   chunk 6,23   (dans l'emprise)
+      132 blocs   x=112 z=379   chunk 7,23   (dans l'emprise)
+      132 blocs   x=116 z=379   chunk 7,23   (dans l'emprise)
+      132 blocs   x=119 z=379   chunk 7,23   (dans l'emprise)
+      132 blocs   x=120 z=379   chunk 7,23   (dans l'emprise)
+      132 blocs   x=122 z=379   chunk 7,23   (dans l'emprise)
+      132 blocs   x=124 z=379   chunk 7,23   (dans l'emprise)
+      132 blocs   x=125 z=379   chunk 7,23   (dans l'emprise)
+      132 blocs   x=126 z=379   chunk 7,23   (dans l'emprise)
+      132 blocs   x=102 z=380   chunk 6,23   (dans l'emprise)
+      132 blocs   x=108 z=380   chunk 6,23   (dans l'emprise)
+      132 blocs   x=118 z=380   chunk 7,23   (dans l'emprise)
+      132 blocs   x=119 z=380   chunk 7,23   (dans l'emprise)
+      132 blocs   x=120 z=380   chunk 7,23   (dans l'emprise)
+      132 blocs   x=122 z=380   chunk 7,23   (dans l'emprise)
+      132 blocs   x=101 z=381   chunk 6,23   (dans l'emprise)
+      132 blocs   x=102 z=381   chunk 6,23   (dans l'emprise)
+      132 blocs   x=105 z=381   chunk 6,23   (dans l'emprise)
+
+====================================================================================================
+ 10. PALETTE DES BLOCS
+====================================================================================================
+0	(rien / colonne vide)
+1	minecraft:ice
+2	minecraft:water
+3	minecraft:gravel
+4	minecraft:stone
+5	minecraft:coal_ore
+6	minecraft:granite
+7	minecraft:packed_ice
+8	minecraft:snow_block
+9	minecraft:diorite
+10	minecraft:copper_ore
+11	minecraft:dirt
+12	minecraft:blue_ice
+13	minecraft:sand
+14	minecraft:snow
+15	minecraft:grass_block
+16	minecraft:powder_snow
+17	minecraft:andesite
+18	minecraft:iron_ore
+19	minecraft:short_grass
+20	minecraft:sugar_cane
+21	minecraft:lapis_ore
+22	minecraft:clay
+23	minecraft:poppy
+24	minecraft:dandelion
+25	minecraft:spruce_leaves
+26	minecraft:large_fern
+27	minecraft:fern
+28	minecraft:lava
+29	minecraft:glow_lichen
+30	minecraft:spruce_log
+31	minecraft:emerald_ore
+32	minecraft:red_mushroom
+33	minecraft:tall_grass
+34	minecraft:cornflower
+35	minecraft:azure_bluet
+36	minecraft:tuff
+37	minecraft:cobblestone
+38	minecraft:oxeye_daisy
+39	minecraft:green_stained_glass
+40	minecraft:azalea_leaves
+41	minecraft:lime_terracotta
+42	minecraft:azalea
+43	minecraft:dark_oak_slab
+44	minecraft:oak_leaves
+45	minecraft:mud_brick_wall
+46	minecraft:jungle_leaves
+47	minecraft:light
+48	minecraft:dark_oak_wood
+49	minecraft:dark_oak_fence_gate
+50	minecraft:sweet_berry_bush
+51	minecraft:stone_brick_wall
+52	minecraft:flowering_azalea_leaves
+53	minecraft:dark_oak_leaves
+54	minecraft:lantern
+55	minecraft:spawner
+56	minecraft:orange_wool
+57	minecraft:white_wool
+58	minecraft:potted_lily_of_the_valley
+59	minecraft:pink_wool
+60	minecraft:cake
+61	minecraft:purple_wool
+62	minecraft:spruce_wall_sign
+63	minecraft:rooted_dirt
+64	minecraft:coarse_dirt
+65	minecraft:mossy_cobblestone_stairs
+66	minecraft:mossy_cobblestone_slab
+67	minecraft:weeping_vines_plant
+68	minecraft:chest
+69	minecraft:spruce_slab
+70	minecraft:birch_leaves
+71	minecraft:spruce_wood
+72	minecraft:weeping_vines
+73	minecraft:andesite_stairs
+74	minecraft:terracotta
+75	minecraft:andesite_slab
+76	minecraft:black_concrete
+77	minecraft:dark_oak_fence
+78	minecraft:red_candle
+79	minecraft:crafting_table
+80	minecraft:lime_stained_glass
+81	minecraft:stripped_spruce_wood

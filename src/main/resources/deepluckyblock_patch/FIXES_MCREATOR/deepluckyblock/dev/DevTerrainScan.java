@@ -77,7 +77,7 @@ import java.util.Map;
  *   /dlbscan status     etat courant
  * </pre>
  * La sortie est un DOSSIER {@code <monde>/dlb_scan/scan-<horodatage>/} contenant UN
- * FICHIER PAR ETAPE -- {@code 01_1_DEBUT_CLEAR.txt}, {@code 02_2_APRES_CLEAR.txt}, ... --
+ * FICHIER PAR ETAPE -- {@code 01_1_DEBUT_CLEAR.txt}, {@code 02_2_APRES_CLEAR_ET_TALUS.txt}, ... --
  * chacun portant le scan complet de toute la zone a cet instant et lisible seul, plus un
  * {@code 00_SOMMAIRE.txt} qui ne contient que les comparaisons d'une etape a l'autre. Le
  * chemin du dossier est annonce en chat.
@@ -467,8 +467,14 @@ public final class DevTerrainScan {
             int q = pasteQueueSize();
             if (q >= 0) {
                 if (s.dernierPasteQ == 0 && q > 0) {
-                    capturer(s, "2_APRES_CLEAR",
-                            "la file de pose vient de recevoir son job : le clear est termine");
+                    // T478 : ce jalon ne date plus le seul clear. Depuis que la
+                    // sequence est clear -> talus -> pose, la file de pose recoit son
+                    // job APRES le raccord de terrain. Le nom le dit, sinon le rapport
+                    // attribuerait au clear un relief que le talus vient de modeler --
+                    // un jalon qui date la mauvaise chose est un piege a diagnostic.
+                    capturer(s, "2_APRES_CLEAR_ET_TALUS",
+                            "la file de pose vient de recevoir son job : le clear ET le "
+                            + "raccord de terrain sont termines");
                 } else if (s.dernierPasteQ > 0 && q == 0) {
                     capturer(s, "3_APRES_PASTE",
                             "la file de pose s'est videe : la derniere tranche est posee");
@@ -1368,44 +1374,154 @@ public final class DevTerrainScan {
     }
 
     // ---------------------------------------------------------------- 3
+    /**
+     * Section 3 -- CE QUE L'OPERATION A VRAIMENT SAUTE.
+     *
+     * <p>T478. Cette section a menti au dev. Elle annoncait « chunks d'emprise SAUTES :
+     * 153/304 » sur le run du 23/11, ce qui donnait l'impression que le clear ne coupait
+     * que la moitie de ce qu'il devait. Verification faite sur les grilles du meme run :
+     * la boite reelle de l'ouvrage (x 12..254, z 181..463) etait rasee a
+     * <b>68769 colonnes sur 68769, soit 100,000 %</b>, zero colonne au-dessus du plancher.
+     * Le clear n'avait rien saute du tout.</p>
+     *
+     * <p>Le defaut etait ici : {@code if (colonnesChangees == 0) sautes++}. Un compteur
+     * qui appelle « saut » toute absence de changement confond trois situations qui
+     * n'ont rien a voir :</p>
+     * <ol>
+     *   <li><b>non comparable</b> -- le chunk n'etait pas charge a l'etape precedente,
+     *       donc aucune colonne ne peut etre comparee. On ne sait pas. (83 chunks.)</li>
+     *   <li><b>rien a couper</b> -- le sol etait deja sous le plancher de l'operation.
+     *       Sur un ocean gele, la moitie de l'emprise est deja au niveau de la mer :
+     *       l'operation n'a rien a y faire, et ne rien faire est le bon comportement.
+     *       (65 chunks.)</li>
+     *   <li><b>vrai saut</b> -- il restait de la matiere au-dessus du plancher et elle
+     *       est toujours la. C'est le seul cas qui soit un defaut. (0 chunk.)</li>
+     * </ol>
+     *
+     * <p>Seconde cause de confusion, corrigee elle aussi : l'emprise de ce rapport est
+     * ARRONDIE AU CHUNK, donc plus large que la boite de l'ouvrage (jusqu'a 15 blocs par
+     * bord). Les 4925 colonnes restees hautes du run etaient, toutes, hors de la boite --
+     * du terrain que le clear n'avait aucune raison de toucher. La boite reellement
+     * modifiee est desormais mesuree et imprimee a cote de l'emprise, pour que les deux
+     * ne soient plus confondues.</p>
+     */
     private static void section3ChunksNonTouches(StringBuilder r, Session s) {
-        titre(r, "3. CHUNKS NON TOUCHES D'UNE ETAPE A L'AUTRE  (sautes par le clear / la pose)");
+        titre(r, "3. CE QUE L'OPERATION A VRAIMENT SAUTE  (clear / pose)");
         if (s.etapes.size() < 2) {
             r.append("  (une seule etape capturee : rien a comparer)\n");
             return;
         }
+        r.append("  COMMENT LIRE. L'emprise de ce rapport est arrondie au chunk : elle deborde la\n")
+         .append("  boite reelle de l'ouvrage de 15 blocs au plus par bord. Et une operation qui\n")
+         .append("  rase a un plancher ne change rien la ou le sol etait deja dessous. Ces deux\n")
+         .append("  cas ne sont PAS des sauts. Seul  VRAI SAUT  signale un defaut.\n\n");
         for (int n = 1; n < s.etapes.size(); n++) {
             Etape a = s.etapes.get(n - 1), b = s.etapes.get(n);
-            int empriseTot = 0, sautes = 0, touches = 0;
+
+            // --- passe 1 : plancher effectif de l'operation + boite reellement modifiee.
+            // Le plancher est le 95e centile du sol APRES, mesure sur les seules colonnes
+            // qui ont bouge : c'est le niveau auquel l'operation a arase. Le centile (et
+            // non le maximum) absorbe les quelques colonnes aberrantes de bordure.
+            final int DEC = 64, NB = 384;          // y de -64 a 319, negatifs compris
+            int[] hist = new int[NB];
+            int nch = 0;
+            int mx0 = Integer.MAX_VALUE, mx1 = Integer.MIN_VALUE;
+            int mz0 = Integer.MAX_VALUE, mz1 = Integer.MIN_VALUE;
+            for (int z = s.ez0; z <= s.ez1; z++) {
+                for (int x = s.ex0; x <= s.ex1; x++) {
+                    int i = idx(s, x, z);
+                    if (i < 0) continue;
+                    if (a.ySolid[i] == ABSENT || b.ySolid[i] == ABSENT) continue;
+                    if (a.ySolid[i] == b.ySolid[i] && a.ySurface[i] == b.ySurface[i]
+                            && a.nSolides[i] == b.nSolides[i]) continue;
+                    nch++;
+                    if (x < mx0) mx0 = x;
+                    if (x > mx1) mx1 = x;
+                    if (z < mz0) mz0 = z;
+                    if (z > mz1) mz1 = z;
+                    int v = b.ySolid[i] + DEC;
+                    if (v < 0) v = 0;
+                    if (v >= NB) v = NB - 1;
+                    hist[v]++;
+                }
+            }
+            boolean planConnu = nch > 0;
+            int plancher = 0;
+            if (planConnu) {
+                int seuil = (int) (nch * 0.95D), cum = 0;
+                for (int v = 0; v < NB; v++) {
+                    cum += hist[v];
+                    if (cum >= seuil) { plancher = v - DEC; break; }
+                }
+            }
+
+            // --- passe 2 : classement de chaque chunk d'emprise.
+            int empriseTot = 0, touches = 0, rienACouper = 0, nonComparable = 0, vraiSaut = 0;
             StringBuilder liste = new StringBuilder();
             for (int cz = 0; cz < s.cd; cz++) {
                 for (int cx = 0; cx < s.cw; cx++) {
-                    int ch = colonnesChangees(s, a, b, cx, cz);
-                    boolean dans = chunkDansEmprise(s, cx, cz);
-                    if (ch > 0) touches++;
-                    if (!dans) continue;
+                    if (!chunkDansEmprise(s, cx, cz)) continue;
                     empriseTot++;
-                    if (ch == 0) {
-                        sautes++;
-                        if (sautes <= 200) {
-                            int wx = (s.cx0 + cx) << 4, wz = (s.cz0 + cz) << 4;
-                            boolean chargeA = a.chunkCharge[cz * s.cw + cx];
-                            boolean chargeB = b.chunkCharge[cz * s.cw + cx];
-                            liste.append("      chunk ").append(s.cx0 + cx).append(',')
-                                 .append(s.cz0 + cz).append("   blocs x ").append(wx).append("..")
-                                 .append(wx + 15).append("  z ").append(wz).append("..")
-                                 .append(wz + 15)
-                                 .append("   charge avant=").append(chargeA ? "oui" : "NON")
-                                 .append(" apres=").append(chargeB ? "oui" : "NON").append('\n');
+                    int ch = colonnesChangees(s, a, b, cx, cz);
+                    if (ch > 0) { touches++; continue; }
+                    // aucun changement : lequel des trois cas ?
+                    int bx0 = (s.cx0 + cx) << 4, bz0 = (s.cz0 + cz) << 4;
+                    int cmp = 0, hautMax = Integer.MIN_VALUE;
+                    for (int oz = 0; oz < 16; oz++) {
+                        for (int ox = 0; ox < 16; ox++) {
+                            int i = idx(s, bx0 + ox, bz0 + oz);
+                            if (i < 0) continue;
+                            if (a.ySolid[i] == ABSENT || b.ySolid[i] == ABSENT) continue;
+                            cmp++;
+                            if (b.ySolid[i] > hautMax) hautMax = b.ySolid[i];
                         }
+                    }
+                    if (cmp == 0) { nonComparable++; continue; }
+                    if (!planConnu || hautMax <= plancher) { rienACouper++; continue; }
+                    vraiSaut++;
+                    if (vraiSaut <= 200) {
+                        liste.append("      VRAI SAUT  chunk ").append(s.cx0 + cx).append(',')
+                             .append(s.cz0 + cz).append("   blocs x ").append(bx0).append("..")
+                             .append(bx0 + 15).append("  z ").append(bz0).append("..")
+                             .append(bz0 + 15)
+                             .append("   sol le plus haut apres = ").append(hautMax)
+                             .append("  (plancher ").append(plancher).append(")\n");
                     }
                 }
             }
+
             r.append("  ").append(a.nom).append("  ->  ").append(b.nom).append('\n');
-            r.append("      chunks modifies (toute la zone) : ").append(touches).append('\n');
-            r.append("      chunks d'emprise touches        : ").append(empriseTot - sautes)
-             .append('/').append(empriseTot).append('\n');
-            r.append("      chunks d'emprise SAUTES         : ").append(sautes).append('\n');
+            r.append("      plancher effectif de l'operation : ");
+            if (planConnu) r.append("y=").append(plancher)
+                            .append("   (95e centile du sol apres, sur ").append(nch)
+                            .append(" colonnes modifiees)\n");
+            else r.append("inconnu -- aucune colonne modifiee\n");
+            r.append("      boite REELLEMENT modifiee        : ");
+            if (nch > 0) r.append("x ").append(mx0).append("..").append(mx1)
+                          .append("   z ").append(mz0).append("..").append(mz1)
+                          .append("   (").append(mx1 - mx0 + 1).append(" x ")
+                          .append(mz1 - mz0 + 1).append(" blocs)\n");
+            else r.append("aucune\n");
+            r.append("      emprise du rapport (chunk ronde) : x ").append(s.ex0).append("..")
+             .append(s.ex1).append("   z ").append(s.ez0).append("..").append(s.ez1)
+             .append("   (").append(empriseTot).append(" chunks)\n");
+            r.append("      chunks modifies (toute la zone)  : ").append(touches).append('\n');
+            r.append("      --- classement des ").append(empriseTot).append(" chunks d'emprise ---\n");
+            r.append("      touches par l'operation          : ").append(touches).append('\n');
+            r.append("      rien a couper (deja sous y=")
+             .append(planConnu ? String.valueOf(plancher) : "?").append(")   : ").append(rienACouper).append('\n');
+            r.append("      non comparable (absent avant)    : ").append(nonComparable).append('\n');
+            r.append("      VRAI SAUT (defaut)               : ").append(vraiSaut).append('\n');
+            int juges = touches + rienACouper + vraiSaut;
+            r.append("      VERDICT : ");
+            if (vraiSaut == 0 && juges > 0)
+                r.append("AUCUN SAUT. ").append(juges).append(" chunks jugeables sur ")
+                 .append(empriseTot).append(", tous conformes.\n");
+            else if (vraiSaut > 0)
+                r.append(vraiSaut).append(" CHUNKS REELLEMENT SAUTES sur ").append(juges)
+                 .append(" jugeables -- voir la liste.\n");
+            else
+                r.append("INDECIDABLE : aucun chunk comparable.\n");
             if (liste.length() > 0) r.append(liste);
             r.append('\n');
         }

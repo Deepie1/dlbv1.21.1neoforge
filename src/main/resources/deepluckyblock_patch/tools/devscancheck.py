@@ -414,17 +414,51 @@ def controler(racine='.'):
             echecs.append('VERROU 12 : le fichier %s n\'est plus ECRIT -- on decoupe le '
                           'rapport, on ne le supprime pas' % motif)
 
+    # ----------------------------------------------------------------- VERROU 13
+    # NE PAS APPELER « SAUT » CE QUI N'EN EST PAS UN.
+    # T478. La section 3 annoncait « chunks d'emprise SAUTES : 153/304 » sur le run du
+    # 23/11 et a fait croire au dev que le clear ne faisait que la moitie du travail.
+    # Verification sur les grilles du meme run : la boite reelle etait rasee a 68769
+    # colonnes sur 68769, soit 100,000 %. Le compteur fautif tenait en une ligne :
+    # « si aucune colonne n'a change, alors le chunk a ete saute ». Il confondait le
+    # vrai defaut avec deux situations parfaitement normales -- le chunk qui n'etait
+    # pas charge a l'etape precedente (on ne sait pas) et celui dont le sol etait deja
+    # sous le plancher (rien a couper). Un rapport de mesure qui accuse a tort est pire
+    # qu'un rapport muet : il envoie corriger du code qui marche.
+    for champ, pourquoi in (
+            ('vraiSaut', 'le seul cas qui soit un defaut n\'est plus distingue'),
+            ('rienACouper', 'le sol deja sous le plancher serait de nouveau compte comme saut'),
+            ('nonComparable', 'le chunk absent a l\'etape precedente serait compte comme saut')):
+        if champ not in code:
+            echecs.append('VERROU 13 : la section 3 ne classe plus les chunks (%s absent) -- '
+                          '%s' % (champ, pourquoi))
+    # Le plancher doit etre MESURE sur les colonnes qui ont bouge, pas suppose.
+    if 'plancher' not in code or 'planConnu' not in code:
+        echecs.append('VERROU 13 : le plancher effectif de l\'operation n\'est plus mesure -- '
+                      'sans lui on ne peut pas dire si un chunk avait quelque chose a couper')
+    # La boite reellement modifiee doit etre imprimee a cote de l'emprise arrondie au
+    # chunk : c'est leur confusion qui a fait prendre 4925 colonnes hors boite pour du
+    # travail non fait.
+    if 'boite REELLEMENT modifiee' not in code:
+        echecs.append('VERROU 13 : la boite reellement modifiee n\'est plus imprimee -- '
+                      'elle serait de nouveau confondue avec l\'emprise arrondie au chunk')
+    # Et le verdict doit etre ECRIT, pas laisse a deduire d'une liste de chunks.
+    if 'AUCUN SAUT' not in code or 'CHUNKS REELLEMENT SAUTES' not in code:
+        echecs.append('VERROU 13 : la section 3 n\'ecrit plus de verdict -- le lecteur '
+                      'devrait de nouveau interpreter des compteurs bruts')
+
     if echecs:
         for e in echecs:
             print('ECHEC  %s' % e)
         print('devscancheck : %d verrou(x) rompu(s)' % len(echecs))
         return 1
 
-    print('devscancheck : 12 verrous tiennent -- outil isole et supprimable, auto-accroche, '
+    print('devscancheck : 13 verrous tiennent -- outil isole et supprimable, auto-accroche, '
           'sonde passive, chunks absents jamais maquilles, grilles alignees sur les chunks, '
           '3 jalons suivis, aucune restauration par le build, un fichier par etape, '
           'mesure sans armement manuel, redaction hors du fil serveur, '
-          'emprise suivie et non figee, couverture prouvee chunk par chunk')
+          'emprise suivie et non figee, couverture prouvee chunk par chunk, '
+          'sauts reels distingues des non-sauts')
     return 0
 
 
