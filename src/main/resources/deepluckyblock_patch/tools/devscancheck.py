@@ -230,15 +230,59 @@ def controler(racine='.'):
             echecs.append('VERROU 8 : %s ne recoit pas l\'etape a mesurer -- elle ne peut '
                           'pas produire une analyse par etape' % sec)
 
+    # ------------------------------------------------------------------ VERROU 9
+    # L'outil doit MESURER SANS QU'ON AIT RIEN A TAPER.
+    # Panne reellement constatee en jeu : phase partait a DESARME, le dev a lance
+    # /dlbtest crimsonlake sans avoir tape /dlbscan, le lac s'est construit pendant
+    # cinq minutes, et AUCUN fichier n'est sorti -- sans le moindre avertissement.
+    # Un outil de mesure qu'on peut oublier d'allumer ne mesure rien.
+    if re.search(r'Phase\s+phase\s*=\s*Phase\.DESARME', code):
+        echecs.append('VERROU 9 : le scan demarre DESARME -- il faudrait penser a taper '
+                      '/dlbscan AVANT chaque test, et son silence serait indiscernable '
+                      'd\'une panne (regression deja subie une fois)')
+    if not re.search(r'Phase\s+phase\s*=\s*Phase\.ARME', code):
+        echecs.append('VERROU 9 : la phase initiale n\'est plus ARME -- plus rien ne '
+                      'garantit qu\'une construction lancee sans preparation soit mesuree')
+    # Apres ecriture la veille doit se reprendre, sinon seule la 1re structure est vue.
+    # Compter les occurrences ne suffit pas : un seuil chiffre laisse regresser un site
+    # sur N sans rien dire (verifie -- retirer 1 des 4 sites passait au travers). On
+    # verrouille l'INTENTION : tout endroit qui ecrit puis ferme la session doit rendre
+    # la main a la veille.
+    fermetures = 0
+    for m in re.finditer(r'ecrire\(s,', code):
+        bloc = code[m.start():m.start() + 320]
+        if 'session = null;' not in bloc:
+            continue
+        fermetures += 1
+        if 'veilleAuto ?' not in bloc:
+            echecs.append('VERROU 9 : une fermeture de session ("%s") ne rend pas la main '
+                          'a la veille -- apres cette ecriture, la construction suivante '
+                          'repasserait inapercue'
+                          % bloc.split('ecrire(s,')[1].split(')')[0].strip().strip('"'))
+    if fermetures < 5:
+        echecs.append('VERROU 9 : %d site(s) de fermeture trouve(s) au lieu des 5 attendus '
+                      '(arret manuel, scan manuel, fin de pipeline, plafond d\'etapes, '
+                      'silence) -- un chemin de sortie a disparu ou n\'ecrit plus rien'
+                      % fermetures)
+    # Et l'outil doit s'annoncer : un log au demarrage prouve qu'il est dans la build.
+    if 'banniereFaite' not in code:
+        echecs.append('VERROU 9 : plus aucune annonce au demarrage -- impossible de '
+                      'distinguer un outil absent de la build d\'un outil qui dort')
+    # Enfin, une session ne doit jamais rester ouverte sans jamais rien ecrire.
+    if 'SILENCE_MAX_MS' not in code:
+        echecs.append('VERROU 9 : plus de chien de garde de silence -- un pipeline qui '
+                      'abandonne sans relacher la zone emporterait toutes les captures')
+
     if echecs:
         for e in echecs:
             print('ECHEC  %s' % e)
         print('devscancheck : %d verrou(x) rompu(s)' % len(echecs))
         return 1
 
-    print('devscancheck : 8 verrous tiennent -- outil isole et supprimable, auto-accroche, '
+    print('devscancheck : 9 verrous tiennent -- outil isole et supprimable, auto-accroche, '
           'sonde passive, chunks absents jamais maquilles, grilles alignees sur les chunks, '
-          '3 jalons suivis, aucune restauration par le build, un fichier par etape')
+          '3 jalons suivis, aucune restauration par le build, un fichier par etape, '
+          'mesure sans armement manuel')
     return 0
 
 

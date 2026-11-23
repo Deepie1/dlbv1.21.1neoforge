@@ -69,9 +69,11 @@ import java.util.Map;
  *
  * <h2>Usage</h2>
  * <pre>
- *   /dlbscan            arme le scan ; la prochaine construction de lac est mesuree
- *   /dlbscan now        scan immediat autour du joueur, ecrit le fichier tout de suite
- *   /dlbscan stop       desarme ; ecrit ce qui a deja ete capture
+ *   (rien a taper)      l'outil est ARME D'OFFICE au demarrage du serveur
+ *   /dlbscan            remet la veille et repart de zero
+ *   /dlbscan now        scan immediat autour du joueur, ecrit les fichiers tout de suite
+ *   /dlbscan off        coupe la veille (ecrit ce qui a deja ete capture)
+ *   /dlbscan stop       ecrit ce qui a deja ete capture, la veille reste active
  *   /dlbscan status     etat courant
  * </pre>
  * La sortie est un DOSSIER {@code <monde>/dlb_scan/scan-<horodatage>/} contenant UN
@@ -125,7 +127,27 @@ public final class DevTerrainScan {
 
     private enum Phase { DESARME, ARME, EN_COURS }
 
-    private static volatile Phase phase = Phase.DESARME;
+    /**
+     * ARME D'OFFICE, et non DESARME.
+     *
+     * <p>Premiere version : l'outil demarrait desarme et il fallait penser a taper
+     * {@code /dlbscan} AVANT de declencher la structure. Resultat constate en jeu : le lac
+     * s'est construit pendant cinq minutes, l'outil a dormi, aucun fichier n'est sorti, et
+     * RIEN n'avait prevenu. Un outil de mesure qu'on peut oublier d'allumer ne mesure
+     * rien. Le cout d'une veille permanente est nul tant qu'aucune zone n'est epinglee --
+     * un seul appel a ChunkKeeper par tick -- et cette classe est de toute facon
+     * supprimee avant publication. {@code /dlbscan off} coupe la veille.</p>
+     */
+    private static volatile Phase phase = Phase.ARME;
+
+    /** La veille se reprend apres chaque ecriture, sauf si le dev l'a coupee. */
+    private static volatile boolean veilleAuto = true;
+
+    /** Au-dela de ce silence, on ecrit au lieu de risquer de tout perdre. */
+    private static final long SILENCE_MAX_MS = 300_000L;
+
+    /** Annonce unique : son absence du log prouve que l'outil n'est pas dans la build. */
+    private static volatile boolean banniereFaite;
 
     private static final class Etape {
         final String nom;
@@ -208,6 +230,15 @@ public final class DevTerrainScan {
                             scanImmediat(ctx.getSource());
                             return 1;
                         }))
+                        .then(Commands.literal("off").executes(ctx -> {
+                            veilleAuto = false;
+                            stop(ctx.getSource());
+                            ctx.getSource().sendSuccess(() -> Component.literal(
+                                    "[DLB-SCAN] veille COUPEE : plus aucune construction ne "
+                                            + "sera mesuree jusqu'a /dlbscan.")
+                                    .withStyle(ChatFormatting.GRAY), false);
+                            return 1;
+                        }))
                         .then(Commands.literal("stop").executes(ctx -> {
                             stop(ctx.getSource());
                             return 1;
@@ -221,6 +252,7 @@ public final class DevTerrainScan {
 
     private static void armer(CommandSourceStack src) {
         phase = Phase.ARME;
+        veilleAuto = true;
         session = null;
         src.sendSuccess(() -> Component.literal(
                 "[DLB-SCAN] arme. Lance maintenant /dlbtest crimsonlake : toute la zone "
@@ -234,9 +266,16 @@ public final class DevTerrainScan {
         if (s != null && !s.etapes.isEmpty()) {
             ecrire(s, "arret manuel");
         }
-        phase = Phase.DESARME;
+        // /dlbscan stop ECRIT puis rend la main ; il ne coupe pas la veille, sinon la
+        // construction suivante repasserait inapercue -- la panne meme qu'on repare ici.
+        // Seul /dlbscan off coupe la veille, et il a deja mis veilleAuto a false.
+        phase = veilleAuto ? Phase.ARME : Phase.DESARME;
         session = null;
-        src.sendSuccess(() -> Component.literal("[DLB-SCAN] desarme.")
+        final boolean veille = veilleAuto;
+        src.sendSuccess(() -> Component.literal(veille
+                        ? "[DLB-SCAN] capture ecrite ; la veille reste active pour la "
+                                + "prochaine construction."
+                        : "[DLB-SCAN] desarme.")
                 .withStyle(ChatFormatting.GRAY), false);
     }
 
@@ -244,7 +283,9 @@ public final class DevTerrainScan {
         Session s = session;
         final String txt;
         if (s == null) {
-            txt = "phase=" + phase + ", aucune session ouverte. File de pose du lac = "
+            txt = "phase=" + phase + (veilleAuto ? " (VEILLE ACTIVE : la prochaine "
+                    + "construction sera mesuree)" : " (veille COUPEE)")
+                    + ", aucune session ouverte. File de pose du lac = "
                     + pasteQueueSize() + " (-1 = reflexion indisponible).";
         } else {
             txt = "phase=" + phase + ", " + s.etapes.size() + " etape(s) capturee(s), zone "
@@ -271,7 +312,9 @@ public final class DevTerrainScan {
         capturer(s, "SCAN_MANUEL", "demande par /dlbscan now autour de " + p.toShortString());
         ecrire(s, "scan manuel");
         session = null;
-        phase = Phase.DESARME;
+        // Un releve ponctuel ne doit pas eteindre la surveillance : sinon un /dlbscan now
+        // de controle rendrait la construction suivante invisible, sans que rien ne le dise.
+        phase = veilleAuto ? Phase.ARME : Phase.DESARME;
     }
 
     // =================================================================================
@@ -301,6 +344,13 @@ public final class DevTerrainScan {
 
     @SubscribeEvent
     public static void tick(ServerTickEvent.Post event) {
+        if (!banniereFaite) {
+            banniereFaite = true;
+            log("[DLB-SCAN] present et EN VEILLE : la prochaine construction de structure "
+                    + "sera mesuree a chaque etape, sans rien avoir a taper. Sortie dans "
+                    + "<monde>/dlb_scan/scan-<horodatage>/, un fichier par etape. "
+                    + "/dlbscan off pour couper, /dlbscan status pour l'etat.");
+        }
         if (phase == Phase.DESARME) return;
         try {
             tickGarde(event);
@@ -362,6 +412,20 @@ public final class DevTerrainScan {
                         "capture periodique, file de pose = " + q);
             }
 
+            // --- chien de garde : plus rien ne bouge, on ECRIT plutot que de tout perdre.
+            // Le pipeline peut abandonner sans relacher la zone, et le joueur peut quitter
+            // le monde en pleine construction. Sans cela la session reste ouverte pour
+            // toujours et aucun fichier ne sort : le pire resultat possible pour un outil
+            // dont l'unique role est de produire une mesure.
+            if (System.currentTimeMillis() - s.derniereCaptureMs > SILENCE_MAX_MS) {
+                capturer(s, "9_SILENCE", "plus aucune evolution depuis "
+                        + (SILENCE_MAX_MS / 1000L) + " s : pipeline arrete ou abandonne");
+                ecrire(s, "silence prolonge du pipeline");
+                session = null;
+                phase = veilleAuto ? Phase.ARME : Phase.DESARME;
+                return;
+            }
+
             // --- fermeture : la zone est relachee = le pipeline a fini (ou abandonne)
             if (zone == null && s.zoneVue) {
                 // Le lac relache la zone dans le bloc meme ou il retire son job de la
@@ -376,13 +440,13 @@ public final class DevTerrainScan {
                 }
                 ecrire(s, "fin du pipeline");
                 session = null;
-                phase = Phase.DESARME;
+                phase = veilleAuto ? Phase.ARME : Phase.DESARME;
                 return;
             }
             if (s.etapes.size() >= MAX_ETAPES) {
                 ecrire(s, "plafond d'etapes atteint");
                 session = null;
-                phase = Phase.DESARME;
+                phase = veilleAuto ? Phase.ARME : Phase.DESARME;
                 return;
             }
         }
