@@ -84,9 +84,14 @@ const out={};
 // WebGL1). La TROISIEME simule le defaut signale par l'utilisateur : le pilote
 // accepte tout mais ne peint RIEN. Un harnais qui ne sait pas produire un
 // canevas noir ne pourra jamais prouver que la page s'en releve.
+// T485 : quatre passes. Deux rendus normaux, puis les DEUX pannes distinctes --
+// elles n'appellent pas la meme reponse. Signal MOU (le pilote accepte tout mais
+// ne peint rien) : la 3D doit RESTER, avec un avertissement. Panne DURE (aucun
+// contexte) : il n'y a plus de 3D a preserver, la carte 2D doit prendre le relais.
 const PASSES=[{v2:true,peint:true,suf:'2'},
               {v2:false,peint:true,suf:'1'},
-              {v2:true,peint:false,suf:'N'}];
+              {v2:true,peint:false,suf:'N'},
+              {v2:true,peint:true,sansGL:true,suf:'Z'}];
 for(const cfg of PASSES){
   const v2=cfg.v2, vus=[];
   const GL=new Proxy({},{get(_,p){
@@ -126,7 +131,8 @@ for(const cfg of PASSES){
       appendChild(c){this.children.push(c);},addEventListener(){},
       classList:{contains:()=>false,add(){},remove(){}},
       getBoundingClientRect:()=>({left:0,top:0,width:900,height:600}),
-      getContext:k=>(k==='2d')?mk2d(id):(((k==='webgl2')===v2)?GL:null),
+      getContext:k=>(k==='2d')?mk2d(id)
+                   :(cfg.sansGL?null:(((k==='webgl2')===v2)?GL:null)),
       cloneNode(){return elem(id+'_c');},
       parentNode:{replaceChild(){}},
       clientWidth:900,clientHeight:600,width:900,height:600};
@@ -156,6 +162,9 @@ for(const cfg of PASSES){
   out['carteOn'+suf]=noeuds['carteCv']?noeuds['carteCv'].className:'(absent)';
   out['diag'+suf]=noeuds['diagGl']?String(noeuds['diagGl'].textContent):'';
   out['diagOn'+suf]=noeuds['diagGl']?noeuds['diagGl'].className:'(absent)';
+  out['avisOn'+suf]=noeuds['avisGl']?noeuds['avisGl'].className:'(absent)';
+  out['fatal'+suf]=(noeuds['err']&&noeuds['err'].style.display==='flex')
+                   ?String(noeuds['err'].textContent):null;
 }
 process.stdout.write(JSON.stringify(out));
 '''
@@ -296,42 +305,71 @@ def controler(dossier):
                     echecs.append('VERROU 8 : la coupe n\'affiche aucune altitude en %s '
                                   '-- elle est sans echelle' % nom)
 
-            # --- VERROU 9 : un pilote qui ne peint rien ne doit pas donner un ecran noir.
-            # L'utilisateur a eu une zone 3D entierement noire alors que les 8 verrous
-            # precedents etaient verts : tous validaient que la page APPELLE le dessin,
-            # aucun que quelque chose APPARAIT. La passe 'N' simule un contexte qui
-            # accepte tout et ne peint rien ; la page doit alors (a) s'en apercevoir,
-            # (b) basculer sur la carte 2D, (c) dire pourquoi.
-            diagN = (info.get('diagN') or '')
-            carteN = info.get('carteN') or {}
-            # Compter les appels ne suffit pas : un drawImage d'un canevas vide
-            # "dessine" sans rien montrer. On exige les DEUX etapes -- les
-            # pixels ecrits (putImageData) PUIS leur report (drawImage).
-            tamponN = info.get('tamponN') or {}
-            peintN = min(carteN.get('drawImage', 0), tamponN.get('putImageData', 0))
-            if info.get('carteN') is None:
-                echecs.append('VERROU 9 : aucune carte de secours -- la page n\'a pas de '
-                              'repli quand la 3D ne peint rien')
-            if peintN < 1:
-                echecs.append('VERROU 9 : la 3D n\'a rien peint et la carte 2D de secours '
-                              'n\'a pas ete remplie (putImageData=%d, drawImage=%d) '
-                              '-- l\'ecran reste noir'
-                              % (tamponN.get('putImageData', 0),
-                                 carteN.get('drawImage', 0)))
-            if info.get('carteOnN') == 'off':
-                echecs.append('VERROU 9 : la carte de secours a ete dessinee mais reste '
-                              'masquee -- l\'utilisateur voit toujours du noir')
-            if 'PIXELS PEINTS' not in diagN or 'AUCUN' not in diagN:
-                echecs.append('VERROU 9 : le diagnostic ne dit pas que rien n\'a ete peint '
-                              '(%r) -- la panne reste muette' % diagN[:120])
-            if info.get('diagOnN') == 'off':
-                echecs.append('VERROU 9 : le diagnostic existe mais n\'est pas montre '
-                              'quand la 3D echoue')
-            # L'autre sens : quand la 3D peint, la page ne doit PAS se rabattre d'office,
-            # sinon le repli masque la 3D et le verrou ci-dessus serait satisfait a vide.
-            if info.get('carteOn2') == '':
-                echecs.append('VERROU 9 : la carte 2D s\'impose meme quand la 3D peint '
-                              '-- le detecteur ne discrimine pas')
+            # --- VERROU 9 : une panne ne doit jamais etre muette, et la 3D ne doit
+        # JAMAIS etre escamotee sur un simple soupcon.
+        # RETARGETE (T485). La version precedente EXIGEAIT le basculement
+        # automatique en 2D des que les pixels semblaient vides. Resultat chez
+        # l'utilisateur : une page 2D a la place de la vue 3D manipulable qu'il
+        # demandait, sur la foi d'un test de pixels faillible. On distingue
+        # desormais les deux pannes, et ce qui etait protege avant reste protege :
+        # la panne est toujours signalee et le diagnostic toujours disponible.
+        diagN = (info.get('diagN') or '')
+        # (a) SIGNAL MOU : contexte present, rien de peint -> la 3D reste.
+        if info.get('carteOnN') == '':
+            echecs.append('VERROU 9 : la carte 2D s\'impose sur un simple soupcon de '
+                          'pixels vides -- la vue 3D demandee est escamotee')
+        if info.get('avisOnN') != '':
+            echecs.append('VERROU 9 : aucun avertissement visible quand la 3D ne peint '
+                          'rien -- la panne reste muette')
+        if 'PIXELS PEINTS' not in diagN or 'AUCUN' not in diagN:
+            echecs.append('VERROU 9 : le diagnostic ne dit pas que rien n\'a ete peint '
+                          '(%r)' % diagN[:120])
+        # (b) PANNE DURE : aucun contexte -> il n'y a plus de 3D a preserver, la
+        # carte 2D doit prendre le relais, remplie et visible.
+        carteZ = info.get('carteZ') or {}
+        tamponZ = info.get('tamponZ') or {}
+        if not info.get('fatalZ'):
+            echecs.append('VERROU 9 : aucun message quand le navigateur ne donne aucun '
+                          'contexte WebGL')
+        if min(carteZ.get('drawImage', 0), tamponZ.get('putImageData', 0)) < 1:
+            echecs.append('VERROU 9 : sans contexte WebGL la carte 2D n\'est pas remplie '
+                          '(putImageData=%d, drawImage=%d) -- la page ne montre aucune '
+                          'donnee' % (tamponZ.get('putImageData', 0),
+                                      carteZ.get('drawImage', 0)))
+        if info.get('carteZ') is None or info.get('carteOnZ') == 'off':
+            echecs.append('VERROU 9 : sans contexte WebGL la carte 2D reste masquee')
+        # (c) l'autre sens : quand la 3D peint, ni repli ni avertissement.
+        if info.get('carteOn2') == '':
+            echecs.append('VERROU 9 : la carte 2D s\'impose meme quand la 3D peint '
+                          '-- le detecteur ne discrimine pas')
+        if info.get('avisOn2') == '':
+            echecs.append('VERROU 9 : un avertissement s\'affiche alors que la 3D peint '
+                          '-- fausse alerte')
+
+
+    # --- VERROU 10 : le defaut le plus visible en jeu doit etre MESURE.
+    # L'utilisateur voyait l'ancien terrain au milieu de la structure pendant que
+    # la page n'en disait rien et se terminait sur une ligne verte. Un rapport qui
+    # tait ce que le joueur voit est pire qu'absent : il rassure a tort.
+    brut = open(SCANVIEW, encoding='utf-8').read()
+    # Un commentaire qui CITE la phrase bannie n'est pas la phrase : sans ce
+    # filtre, le commentaire expliquant le retrait declenchait le verrou.
+    src = '\n'.join(l for l in brut.split('\n') if not l.strip().startswith('#'))
+    if 'Ancien terrain laisse dans la structure' not in src:
+        echecs.append('VERROU 10 : la page ne mesure plus l\'ancien terrain reste dans '
+                      'l\'ouvrage -- le defaut le plus visible en jeu serait tu')
+    if 'le raccord de terrain a fait son travail' in src:
+        echecs.append('VERROU 10 : la page conclut « le raccord de terrain a fait son '
+                      'travail » a partir du seul tablier plat -- conclusion plus large '
+                      'que la mesure qui la porte')
+    # L'empreinte doit couvrir TOUTE la pose, pas sa derniere fenetre.
+    if 'def _empreinte' in src:
+        bloc = src[src.index('def _empreinte'):]
+        bloc = bloc[:bloc.index('\nreturn') if '\nreturn' in bloc else 2000]
+        if 'etapes[-2]' in bloc:
+            echecs.append('VERROU 10 : l\'empreinte repart des deux dernieres captures '
+                          '-- elle ne voit que la fin de la pose (1 750 colonnes au lieu '
+                          'de 43 000 sur le run du 24 nov.)')
 
     if echecs:
         for e in echecs:
@@ -340,11 +378,13 @@ def controler(dossier):
         return 1
 
     oracle = 'avec glslangValidator' if os.environ.get('GLSLANG') else 'regle d\'ordre seule'
-    print('scanviewcheck : 9 verrous tiennent -- generateur fonctionnel, page autonome, '
+    print('scanviewcheck : 10 verrous tiennent -- generateur fonctionnel, page autonome, '
           'panneau d\'etapes present, colonne non mesuree distinguee d\'un trou, '
           'page chargee sans exception en WebGL2 ET WebGL1, shaders valides (%s), '
           'repli WebGL1 en place, coupe verticale qui trace et gradue, '
-          'carte 2D de secours + diagnostic quand la 3D ne peint rien' % oracle)
+          '3D jamais escamotee sur un soupcon, avertissement si elle ne peint rien, '
+          'carte 2D en relais quand il n y a aucun contexte WebGL, '
+          'ancien terrain restant dans l ouvrage mesure et annonce' % oracle)
     return 0
 
 
