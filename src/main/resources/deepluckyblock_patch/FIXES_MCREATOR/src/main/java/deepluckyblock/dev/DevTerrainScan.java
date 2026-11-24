@@ -257,6 +257,7 @@ public final class DevTerrainScan {
         int elargissements;
         /** T477 : emprise d'origine, avant tout elargissement. */
         int ox0, oz0, ox1, oz1;
+        // T480 : arme a la transition file vide -> file pleine, jamais laisse a 0.
         long dernierePastePeriodiqueMs;
     }
 
@@ -475,6 +476,13 @@ public final class DevTerrainScan {
                     capturer(s, "2_APRES_CLEAR_ET_TALUS",
                             "la file de pose vient de recevoir son job : le clear ET le "
                             + "raccord de terrain sont termines");
+                    // T480 : on ARME ici le chronometre des captures pendant la pose.
+                    // Sans cela il vaut 0, le delai est deja ecoule au premier tick ou la
+                    // file est non vide, et la premiere capture "PENDANT_POSE" part avant
+                    // la moindre ecriture : elle redit mot pour mot l'etape precedente.
+                    // Mesure sur le run TEST2 : P2_PENDANT_POSE a t+13.9 s contre
+                    // 2_APRES_CLEAR a t+13.2 s, zero colonne d'ecart sur 116 224 mesurees.
+                    s.dernierePastePeriodiqueMs = System.currentTimeMillis();
                 } else if (s.dernierPasteQ > 0 && q == 0) {
                     capturer(s, "3_APRES_PASTE",
                             "la file de pose s'est videe : la derniere tranche est posee");
