@@ -94,13 +94,26 @@ for(const v2 of [true,false]){
     return ()=>{};
   }});
   const noeuds={};
+  // T482 : la coupe verticale dessine dans un canvas 2D. Un harnais qui ne sait
+  // rendre qu'un contexte WebGL renverrait null ici et ne verrait JAMAIS si la
+  // coupe se dessine -- exactement le genre de banc complaisant deja rencontre.
+  const d2={n:{},txt:[]};
+  const CTX2D=new Proxy({},{get(_,p){
+    if(p==='canvas')return null;
+    if(p==='setTransform'||p==='save'||p==='restore')return ()=>{};
+    if(p==='fillText')return (t)=>{ d2.n.fillText=(d2.n.fillText||0)+1; d2.txt.push(String(t)); };
+    return (...a)=>{ d2.n[p]=(d2.n[p]||0)+1; };
+  },set(){return true;}});
   function elem(id){ if(noeuds[id])return noeuds[id];
     const n={id,children:[],style:{},className:'',checked:true,value:'',textContent:'',innerHTML:'',
       appendChild(c){this.children.push(c);},addEventListener(){},
+      classList:{contains:()=>false,add(){},remove(){}},
       getBoundingClientRect:()=>({left:0,top:0,width:900,height:600}),
-      getContext:k=>((k==='webgl2')===v2)?GL:null,
+      getContext:k=>(k==='2d')?CTX2D:(((k==='webgl2')===v2)?GL:null),
       clientWidth:900,clientHeight:600,width:900,height:600};
-    if(id==='mode')n.value='alt'; if(id==='vex')n.value='3'; noeuds[id]=n; return n;}
+    if(id==='mode')n.value='alt'; if(id==='vex')n.value='3';
+    if(id==='cpAxe')n.value='z'; if(id==='cpPos')n.value='0';
+    noeuds[id]=n; return n;}
   global.document={getElementById:elem,createElement:()=>({children:[],style:{},innerHTML:'',
     appendChild(){},set onclick(f){},get onclick(){return null;}})};
   global.window={addEventListener(){},devicePixelRatio:1};
@@ -112,6 +125,7 @@ for(const v2 of [true,false]){
   out['exception'+suf]=boom;
   out['erreur'+suf]=(noeuds['err']&&noeuds['err'].style.display==='flex')?noeuds['err'].textContent:null;
   out['etapes'+suf]=noeuds['steps']?noeuds['steps'].children.length:0;
+  out['coupe'+suf]=d2.n; out['coupetxt'+suf]=d2.txt;
 }
 process.stdout.write(JSON.stringify(out));
 '''
@@ -223,6 +237,35 @@ def controler(dossier):
                 echecs.append('VERROU 7 : le repli WebGL1 a disparu -- un refus de '
                               'shader redonnerait un ecran noir muet')
 
+            # --- VERROU 8 : LA COUPE VERTICALE SE DESSINE VRAIMENT.
+            # Une vue du dessus ne montre que le sommet des colonnes : elle est
+            # aveugle a ce qui se passe dans l'epaisseur, donc au terrain reste
+            # DANS la structure. La coupe est la seule vue qui le revele ; une
+            # coupe presente dans le HTML mais qui ne trace rien ne vaut rien.
+            if 'id="cpCv"' not in html:
+                echecs.append('VERROU 8 : la coupe verticale a disparu de la page')
+            for suf, nom in (('2', 'WebGL2'), ('1', 'WebGL1')):
+                d2 = info.get('coupe' + suf) or {}
+                txt = info.get('coupetxt' + suf) or []
+                netapes = info.get('etapes' + suf, 0)
+                traces = d2.get('stroke', 0)
+                # Il faut au MOINS un trait par etape : sinon le panneau n'affiche
+                # qu'une ligne de reference et le joueur ne compare rien. Un seuil
+                # a 2 serait satisfait par la seule ligne de sol.
+                if traces < max(2, netapes):
+                    echecs.append('VERROU 8 : la coupe ne trace pas un profil par '
+                                  'etape en %s (%d traits pour %d etapes)'
+                                  % (nom, traces, netapes))
+                if d2.get('lineTo', 0) < 200:
+                    echecs.append('VERROU 8 : les profils de la coupe sont vides en %s '
+                                  '(%d segments) -- rien n\'est suivi le long de la ligne'
+                                  % (nom, d2.get('lineTo', 0)))
+                # La graduation doit nommer le sol de reference : sans altitude
+                # ecrite, une coupe n'est qu'un gribouillis sans echelle.
+                if not any(t.startswith('Y=') for t in txt):
+                    echecs.append('VERROU 8 : la coupe n\'affiche aucune altitude en %s '
+                                  '-- elle est sans echelle' % nom)
+
     if echecs:
         for e in echecs:
             print('ECHEC  %s' % e)
@@ -230,10 +273,10 @@ def controler(dossier):
         return 1
 
     oracle = 'avec glslangValidator' if os.environ.get('GLSLANG') else 'regle d\'ordre seule'
-    print('scanviewcheck : 7 verrous tiennent -- generateur fonctionnel, page autonome, '
+    print('scanviewcheck : 8 verrous tiennent -- generateur fonctionnel, page autonome, '
           'panneau d\'etapes present, colonne non mesuree distinguee d\'un trou, '
           'page chargee sans exception en WebGL2 ET WebGL1, shaders valides (%s), '
-          'repli WebGL1 en place' % oracle)
+          'repli WebGL1 en place, coupe verticale qui trace et gradue' % oracle)
     return 0
 
 

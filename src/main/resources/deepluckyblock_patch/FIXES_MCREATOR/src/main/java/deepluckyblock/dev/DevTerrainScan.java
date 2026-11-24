@@ -1255,9 +1255,35 @@ public final class DevTerrainScan {
             r.append("                  session l'a suivie. Surface finale / initiale = ")
              .append(av > 0 ? (ap * 10 / av) / 10.0 : 0.0).append(" x\n");
         }
-        r.append("couverture      : ").append(s.couvertureRompue
+        // T482 : ne plus annoncer « couverture complete » quand des dizaines de
+        // milliers de colonnes n'ont pas pu etre lues. Le drapeau couvertureRompue
+        // ne verifie QUE l'integrite du balayage (chaque case a bien ete visitee) ;
+        // il ne dit rien de ce qui a ete MESURE. Au run du 24/11 il annoncait
+        // « complete » alors que 48 128 colonnes sur 222 208 (21,7 %) etaient
+        // illisibles faute de chunk charge : le rapport se contredisait tout seul.
+        // Les deux faits sont desormais distincts et affiches cote a cote.
+        int pireAbsentes = 0;
+        String pireEtape = "";
+        for (Etape e2 : s.etapes) {
+            if (e2.absentes > pireAbsentes) { pireAbsentes = e2.absentes; pireEtape = e2.nom; }
+        }
+        int ncolTot = s.w * s.d;
+        r.append("balayage        : ").append(s.couvertureRompue
                 ? "AU MOINS UNE CAPTURE INCOMPLETE -- voir section 0 de chaque etape"
-                : "complete sur toutes les captures (section 0 de chaque etape)").append('\n');
+                : "complet sur toutes les captures (chaque case a ete visitee)").append('\n');
+        r.append("mesure          : ");
+        if (pireAbsentes == 0) {
+            r.append("toutes les colonnes ont pu etre lues");
+        } else {
+            r.append("INCOMPLETE -- jusqu'a ").append(pireAbsentes).append(" colonnes sur ")
+             .append(ncolTot).append(" (")
+             .append(ncolTot > 0 ? (pireAbsentes * 1000L / ncolTot) / 10.0 : 0.0)
+             .append(" %) non mesurables faute de chunk charge, au pire a l'etape ")
+             .append(pireEtape)
+             .append("\n                  une colonne non mesuree n'est PAS un trou du terrain :")
+             .append(" c'est un angle mort de l'outil");
+        }
+        r.append('\n');
         r.append("sol de reference: Y=").append(s.groundY)
          .append("   tranche scannee Y ").append(s.yFloor).append("..").append(s.yTop).append('\n');
         r.append('\n');

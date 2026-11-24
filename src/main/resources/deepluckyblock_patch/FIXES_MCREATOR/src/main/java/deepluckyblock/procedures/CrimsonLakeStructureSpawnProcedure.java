@@ -1004,14 +1004,23 @@ public class CrimsonLakeStructureSpawnProcedure {
             //   1. talusMesurer -- RELEVE du terrain intact, AVANT le clear. Sans lui le
             //      tablier n'aurait aucune altitude naturelle vers laquelle remonter :
             //      on ne peut pas etaler vers l'interieur un relief deja efface.
-            //   2. clearBuildVolume -- rase la boite a groundY+1. Mesure du run TEST2 :
-            //      68769 colonnes sur 68769, soit 100,000 %. Le clear ne saute rien.
+            //   2. clearBuildVolume -- T482 : creuse la FORME du lac, une profondeur par
+            //      colonne, du bloc le plus bas que le gabarit y posera jusqu'au plafond
+            //      du monde. Avant, il rasait le RECTANGLE englobant a groundY+1 : les
+            //      20 niveaux du bassin n'etaient jamais creuses (l'ancien terrain
+            //      traversait la structure, 42,2 % des cases sous le plancher) et les
+            //      angles du rectangle, a 61..91 blocs de l'ouvrage donc hors rampe du
+            //      talus, restaient en parois droites.
             //   3. talusAppliquer -- etale le terrain depuis l'EMPREINTE de l'ouvrage
             //      vers l'exterieur, en traversant le tablier plat que le clear laisse
             //      entre la forme organique du lac et son rectangle englobant.
             //   4. PASTE_Q -- pose la structure, intacte, sur son empreinte protegee.
+            final MasqueClear masqueClear = new MasqueClear(bucketedFilt, finalOrigin, lakeMin, lakeMax);
+            if (deepluckyblock.util.DebugLog.ENABLED) deepluckyblock.util.DebugLog.out(
+                    "[DLB-LAKE] T482 masque de creusement : " + masqueClear.colonnes + " colonnes d'ouvrage sur "
+                    + (masqueClear.w * masqueClear.d) + " de la boite ; plancher par colonne, plafond = ciel");
             talusMesurer(level, lakeMin, lakeMax, groundY, bucketedFilt, finalOrigin,
-                    talus -> clearBuildVolume(level, lakeMin, lakeMax, groundY + 1,
+                    talus -> clearBuildVolume(level, lakeMin, lakeMax, masqueClear,
                             () -> talusAppliquer(talus,
                                     () -> PASTE_Q.offer(new PasteJob(level, bucketedFilt,
                                             finalOrigin, bfly, System.currentTimeMillis(), sx, sy, sz)))));
@@ -1149,20 +1158,93 @@ public class CrimsonLakeStructureSpawnProcedure {
     }
 
     /**
-     * Clear the footprint up to open sky without deleting whole chunks or their metadata.
+     * Creuse la place de l'ouvrage, COLONNE PAR COLONNE, jusqu'au ciel.
      *
-     * T93 (consigne dev 29/09 : « tu supprimes meme les parties qui sont sol et
-     * en dessous du sol -- efface UNIQUEMENT LE HAUT ») : le volume n'est plus
-     * vide depuis le FOND DU TEMPLATE ({@code min}), mais seulement a partir de
-     * {@code clearFloorY} (= groundY + 1, le sol selectionne). Le sol et le
-     * sous-sol naturels restent intacts. Mesure NBT (crimsonlake, 16 couches
-     * sous le sol) : socle 100 % plein y=0..8 et bassin quasi plein au-dela --
-     * SEULS ~78 blocs d'air existent sous le sol ; le paste ecrit donc le socle,
-     * l'eau et les parois PAR-DESSUS la terre conservee (l'air NBT n'etant pas
-     * ecrit), le bassin est creuse par la matiere meme du template.
+     * <p><b>T482 -- pourquoi le T93 etait faux.</b> Le T93 (consigne dev 29/09 :
+     * « tu supprimes meme les parties qui sont sol et en dessous du sol -- efface
+     * UNIQUEMENT LE HAUT ») avait remonte le plancher du creusement a
+     * {@code groundY + 1}, en s'appuyant sur cette mesure : « socle 100 % plein,
+     * SEULS ~78 blocs d'air existent sous le sol, le bassin est donc creuse par la
+     * matiere meme du template ».
+     *
+     * <p><b>Cette mesure comptait les blocs d'air EXPLICITES d'un fichier qui n'en
+     * contient aucun.</b> La palette de {@code crimsonlake.nbt} compte 366 etats et
+     * zero air : le gabarit est creux PAR ABSENCE D'ENTREE, pas par de l'air pose.
+     * Compter les entrees « air » y donne forcement ~0, et en conclure que le bassin
+     * est plein est un contresens. Le bon decompte est celui des cases SANS entree :
+     * 26 447 colonnes sur 69 864 (37,9 %) ne recoivent jamais un bloc, et sous
+     * l'ancien plancher 590 038 cases sur 1 397 280 (42,2 %) restaient en terre.
+     *
+     * <p>S'y ajoutait une impossibilite de principe : la pose saute l'air
+     * ({@code info.state().isAir() -> continue}), donc <b>elle ne sait qu'ajouter de
+     * la matiere, jamais en retirer</b>. Le bassin ne pouvait pas « etre creuse par
+     * le template ». Resultat en jeu, run du 24/11 : l'ancien terrain traversait la
+     * structure.
+     *
+     * <p><b>Ce que fait desormais le creusement</b> (consigne dev 24/11 : « creuser la
+     * forme du lac mais monter a y max pour assurer que la moindre montagne n'y
+     * soit ») :
+     * <ul>
+     *   <li>il suit la <b>forme reelle</b> de l'ouvrage, pas son rectangle englobant :
+     *       une colonne ou le gabarit ne pose rien n'est pas touchee du tout. C'est
+     *       ce qui supprime la fosse rectangulaire et ses parois droites ;</li>
+     *   <li>dans une colonne de l'ouvrage, il part du <b>bloc le plus bas que le
+     *       gabarit y posera</b> -- la place de la structure est donc vide, bassin
+     *       compris ;</li>
+     *   <li>et il monte jusqu'au <b>plafond du monde</b>, pour qu'aucune montagne ne
+     *       subsiste au-dessus de l'ouvrage.</li>
+     * </ul>
+     * Sous ce plancher par colonne, le sol et le sous-sol naturels restent intacts :
+     * la structure repose toujours sur la terre du monde.
+     *
+     * @param masque profondeur de creusement par colonne, voir {@link MasqueClear}
      */
-    static void clearBuildVolume(ServerLevel level, BlockPos min, BlockPos max, int clearFloorY, Runnable onReady) {
-        new LakeClearJob(level, min, max, clearFloorY, onReady).step();
+    static void clearBuildVolume(ServerLevel level, BlockPos min, BlockPos max,
+                                 MasqueClear masque, Runnable onReady) {
+        new LakeClearJob(level, min, max, masque, onReady).step();
+    }
+
+    /**
+     * T482 : masque de creusement -- une profondeur par colonne, deduite du gabarit.
+     *
+     * <p>Pour chaque colonne (x,z) du monde, retient l'altitude du bloc le PLUS BAS
+     * que la pose y ecrira. Une colonne ou le gabarit ne pose rien reste
+     * {@link #ABSENTE} : le creusement ne doit pas y toucher.
+     *
+     * <p>La liste recue est celle reellement posee (air et blocs lourds deja filtres),
+     * exactement la meme que celle dont {@code TalusJob} tire son empreinte : le trou
+     * et le raccord de terrain parlent donc de la meme forme.
+     */
+    static final class MasqueClear {
+        static final int ABSENTE = Integer.MIN_VALUE;
+        final int x0, z0, w, d;
+        private final int[] plancher;
+        int colonnes;
+
+        MasqueClear(List<StructureTemplate.StructureBlockInfo> blocs, BlockPos origin,
+                    BlockPos min, BlockPos max) {
+            x0 = min.getX(); z0 = min.getZ();
+            w = max.getX() - x0 + 1; d = max.getZ() - z0 + 1;
+            plancher = new int[Math.max(1, w * d)];
+            java.util.Arrays.fill(plancher, ABSENTE);
+            int ox = origin.getX(), oy = origin.getY(), oz = origin.getZ();
+            for (StructureTemplate.StructureBlockInfo bi : blocs) {
+                int ix = ox + bi.pos().getX() - x0;
+                int iz = oz + bi.pos().getZ() - z0;
+                if (ix < 0 || iz < 0 || ix >= w || iz >= d) continue;
+                int i = iz * w + ix;
+                int wy = oy + bi.pos().getY();
+                if (plancher[i] == ABSENTE) { plancher[i] = wy; colonnes++; }
+                else if (wy < plancher[i]) plancher[i] = wy;
+            }
+        }
+
+        /** Altitude a partir de laquelle creuser cette colonne, ou {@link #ABSENTE}. */
+        int plancherDe(int wx, int wz) {
+            int ix = wx - x0, iz = wz - z0;
+            if (ix < 0 || iz < 0 || ix >= w || iz >= d) return ABSENTE;
+            return plancher[iz * w + ix];
+        }
     }
 
     // ================================================================================
@@ -1728,8 +1810,12 @@ public class CrimsonLakeStructureSpawnProcedure {
     private static final class LakeClearJob {
         final ServerLevel level;
         final BlockPos min, max;
-        final int clearFloorY;
+        /** T482 : profondeur de creusement par colonne (forme reelle de l'ouvrage). */
+        final MasqueClear masque;
         final Runnable onReady;
+        /** Plancher de chaque colonne du chunk courant, {@link Integer#MAX_VALUE} = colonne a ne pas toucher. */
+        private final int[] planCol = new int[256];
+        long colonnesCreusees, colonnesEpargnees;
         final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         final int cx0, cz0, cx1, cz1;
         int cx, cz;
@@ -1742,9 +1828,9 @@ public class CrimsonLakeStructureSpawnProcedure {
         int blockedCx = Integer.MIN_VALUE, blockedCz = Integer.MIN_VALUE;
         long lastProgressLogMs;
 
-        LakeClearJob(ServerLevel level, BlockPos min, BlockPos max, int clearFloorY, Runnable onReady) {
+        LakeClearJob(ServerLevel level, BlockPos min, BlockPos max, MasqueClear masque, Runnable onReady) {
             this.level = level; this.min = min; this.max = max;
-            this.clearFloorY = clearFloorY; this.onReady = onReady;
+            this.masque = masque; this.onReady = onReady;
             cx0 = min.getX() >> 4; cz0 = min.getZ() >> 4;
             cx1 = max.getX() >> 4; cz1 = max.getZ() >> 4;
             cx = cx0; cz = cz0;
@@ -1778,8 +1864,10 @@ public class CrimsonLakeStructureSpawnProcedure {
          *      par section (recalcBlockCounts), heightmaps re-amorcees
          *      (primeHeightmaps), lumiere re-planifiee (updateSectionStatus +
          *      tryScheduleUpdate) et chunk marque a sauvegarder.
-         * Le plancher T93 (clearFloorY = groundY + 1) et la bedrock sont
-         * conserves exactement comme avant. Si un chunk de la boite n'est pas un
+         * T482 : le plancher n'est plus unique (groundY + 1, plancher T93) mais
+         * PROPRE A CHAQUE COLONNE, pris dans {@link MasqueClear} ; une colonne hors
+         * ouvrage n'est pas touchee. La bedrock reste intouchable comme avant.
+         * Si un chunk de la boite n'est pas un
          * LevelChunk (ProtoChunk en cours de worldgen -- ne devrait pas arriver
          * dans la zone epinglee), on replie sur l'ancien chemin setBlock pour
          * ce chunk-la seulement : securite d'abord, vitesse ensuite.
@@ -1856,7 +1944,9 @@ public class CrimsonLakeStructureSpawnProcedure {
                 TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, this::step);
             } else {
                 if (deepluckyblock.util.DebugLog.ENABLED) deepluckyblock.util.DebugLog.out("[DLB-LAKE] CLEAR COMPLETE (T101 direct-sections): " + cleared
-                        + " blocks removed on " + chunksDone + " chunks; paste may start");
+                        + " blocks removed on " + chunksDone + " chunks; paste may start"
+                        + " -- T482 colonnes creusees " + colonnesCreusees
+                        + ", epargnees (hors forme du lac) " + colonnesEpargnees);
                 if (onReady != null) onReady.run();
             }
         }
@@ -1868,22 +1958,36 @@ public class CrimsonLakeStructureSpawnProcedure {
             int lx0 = Math.max(0, min.getX() - baseX), lx1 = Math.min(15, max.getX() - baseX);
             int lz0 = Math.max(0, min.getZ() - baseZ), lz1 = Math.min(15, max.getZ() - baseZ);
             if (lx0 > lx1 || lz0 > lz1) return 0;
-            int yBot = Math.max(Math.max(min.getY(), clearFloorY), level.getMinBuildHeight() + 1);
+            // T482 : un plancher PAR COLONNE. Une colonne ou l'ouvrage ne pose rien
+            // garde Integer.MAX_VALUE et n'est pas touchee : c'est ce qui fait suivre
+            // au trou la forme du lac au lieu de son rectangle englobant.
+            final int solMin = level.getMinBuildHeight() + 1;
             int yTop = level.getMaxBuildHeight() - 2;
+            int yBot = Integer.MAX_VALUE;
+            java.util.Arrays.fill(planCol, Integer.MAX_VALUE);
+            for (int lz = lz0; lz <= lz1; lz++)
+                for (int lx = lx0; lx <= lx1; lx++) {
+                    int p = masque.plancherDe(baseX + lx, baseZ + lz);
+                    if (p == MasqueClear.ABSENTE) { colonnesEpargnees++; continue; }
+                    p = Math.max(p, solMin);
+                    planCol[(lz << 4) | lx] = p;
+                    if (p < yBot) yBot = p;
+                    colonnesCreusees++;
+                }
+            if (yBot == Integer.MAX_VALUE || yBot > yTop) return 0;   // aucune colonne d'ouvrage ici
             BlockState air = Blocks.AIR.defaultBlockState();
             // 1) blocs-entites du volume : liberes AVANT toute ecriture palette.
             java.util.List<BlockPos> kill = null;
             for (BlockPos be : chunk.getBlockEntities().keySet()) {
-                if (be.getY() >= yBot && be.getY() <= yTop
-                        && be.getX() >= baseX + lx0 && be.getX() <= baseX + lx1
-                        && be.getZ() >= baseZ + lz0 && be.getZ() <= baseZ + lz1) {
-                    if (kill == null) kill = new ArrayList<>();
-                    kill.add(be.immutable());
-                }
+                if (be.getY() > yTop
+                        || be.getX() < baseX + lx0 || be.getX() > baseX + lx1
+                        || be.getZ() < baseZ + lz0 || be.getZ() > baseZ + lz1) continue;
+                if (be.getY() < planCol[((be.getZ() - baseZ) << 4) | (be.getX() - baseX)]) continue;
+                if (kill == null) kill = new ArrayList<>();
+                kill.add(be.immutable());
             }
             if (kill != null) for (BlockPos bp : kill) level.removeBlockEntity(bp);
             // 2) ecriture palette directe, section par section.
-            if (yBot > yTop) return 0;
             var sections = chunk.getSections();
             int i0 = Math.max(0, chunk.getSectionIndex(yBot));
             int i1 = Math.min(sections.length - 1, chunk.getSectionIndex(yTop));
@@ -1900,6 +2004,9 @@ public class CrimsonLakeStructureSpawnProcedure {
                 for (int ly = ly0; ly <= ly1; ly++)
                     for (int lz = lz0; lz <= lz1; lz++)
                         for (int lx = lx0; lx <= lx1; lx++) {
+                            // T482 : sous le plancher de SA colonne, on ne touche a rien
+                            // (terre porteuse) ; hors ouvrage le plancher vaut MAX_VALUE.
+                            if (sy + ly < planCol[(lz << 4) | lx]) continue;
                             BlockState prev = states.get(lx, ly, lz);
                             if (prev.isAir() || prev.getBlock() == Blocks.BEDROCK) continue;
                             // T175 : supprimer également le NBT différé des block
@@ -1940,9 +2047,13 @@ public class CrimsonLakeStructureSpawnProcedure {
             int lx0 = Math.max(0, min.getX() - baseX), lx1 = Math.min(15, max.getX() - baseX);
             int lz0 = Math.max(0, min.getZ() - baseZ), lz1 = Math.min(15, max.getZ() - baseZ);
             if (lx0 > lx1 || lz0 > lz1) return 0;
-            int yBot = Math.max(Math.max(min.getY(), clearFloorY), level.getMinBuildHeight() + 1);
+            final int solMin = level.getMinBuildHeight() + 1;
             for (int lx = lx0; lx <= lx1; lx++)
                 for (int lz = lz0; lz <= lz1; lz++) {
+                    // T482 : meme masque par colonne que le chemin rapide.
+                    int yBot = masque.plancherDe(baseX + lx, baseZ + lz);
+                    if (yBot == MasqueClear.ABSENTE) continue;
+                    yBot = Math.max(yBot, solMin);
                     int top = Math.min(level.getMaxBuildHeight() - 1,
                             chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, lx, lz));
                     for (int y = yBot; y <= top; y++) {

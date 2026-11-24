@@ -237,17 +237,104 @@ def controler(racine='.'):
             echecs.append('VERROU 9 : la zone tenue ne couvre pas les bords sud/est '
                           'de l\'anneau -- le raccord y sauterait des pans entiers')
 
+    # ------------------------------------------------------------------ VERROU 10
+    # T482 : LE CREUSEMENT SUIT LA FORME DU LAC, PAS SON RECTANGLE.
+    # Avant, clearBuildVolume recevait un plancher unique (groundY + 1) applique a
+    # TOUT le rectangle englobant. Consequences mesurees sur le run du 24/11 :
+    # 48,2 % des colonnes de l'ouvrage n'etaient pas creusees du tout (leur terrain
+    # etait deja sous ce plancher) et les angles du rectangle, hors rampe du talus,
+    # restaient en parois droites. Le creusement doit desormais recevoir un MASQUE
+    # par colonne construit sur la liste reellement posee.
+    appel = re.search(r'clearBuildVolume\s*\(([^;]*?)\)\s*,?\s*$', code, re.M)
+    if 'clearBuildVolume' not in code:
+        echecs.append('VERROU 10 : plus aucun appel a clearBuildVolume')
+    else:
+        seg = code[code.find('clearBuildVolume'):]
+        seg = seg[:400]
+        if 'groundY + 1' in seg or 'groundY+1' in seg:
+            echecs.append('VERROU 10 : le creusement repart d\'un plancher unique '
+                          'groundY + 1 -- le bassin ne serait plus creuse et la fosse '
+                          'redeviendrait rectangulaire')
+        if 'masque' not in seg.lower():
+            echecs.append('VERROU 10 : le creusement ne recoit plus de masque par colonne')
+    # Le trou et le raccord de terrain doivent parler de LA MEME forme : le masque
+    # de creusement et l'empreinte du talus sont construits sur la meme liste de
+    # blocs poses. Si l'un des deux change de source, le trou et la pente se
+    # decalent -- exactement le defaut des bords droits.
+    mc = re.search(r'new\s+MasqueClear\s*\(\s*([A-Za-z_][\w]*)\s*,', code)
+    tm = re.search(r'talusMesurer\s*\(\s*[^,]+,\s*[^,]+,\s*[^,]+,\s*[^,]+,\s*([A-Za-z_][\w]*)\s*,', code)
+    if mc is None:
+        echecs.append('VERROU 10 : le masque de creusement n\'est plus construit')
+    elif tm is None:
+        echecs.append('VERROU 10 : appel a talusMesurer introuvable')
+    elif mc.group(1) != tm.group(1):
+        echecs.append('VERROU 10 : le creusement (%s) et le raccord (%s) ne partent '
+                      'plus de la meme liste de blocs -- le trou et la pente ne '
+                      'decriraient plus la meme forme' % (mc.group(1), tm.group(1)))
+
+    if 'class MasqueClear' not in code:
+        echecs.append('VERROU 10 : la classe MasqueClear a disparu')
+    else:
+        ctor = corps(code, 'MasqueClear(List<StructureTemplate.StructureBlockInfo> blocs')
+        if ctor is None:
+            echecs.append('VERROU 10 : constructeur de MasqueClear introuvable')
+        elif 'bi.pos().getY()' not in ctor or 'ABSENTE' not in ctor:
+            echecs.append('VERROU 10 : MasqueClear ne retient pas le bloc le plus bas '
+                          'de chaque colonne')
+        # Mentionner la hauteur ne suffit pas : c'est le SENS de la comparaison qui
+        # decide. Retenir le bloc le plus HAUT laisserait tout le bassin en terre.
+        elif not re.search(r'wy\s*<\s*plancher\[\s*i\s*\]', ctor):
+            echecs.append('VERROU 10 : MasqueClear ne garde pas le MINIMUM de la '
+                          'colonne (comparaison absente ou inversee) -- le creusement '
+                          'partirait du sommet et laisserait le bassin plein de terre')
+
+    # ------------------------------------------------------------------ VERROU 11
+    # UNE COLONNE HORS OUVRAGE N'EST PAS TOUCHEE, ET LE PLANCHER EST BIEN RELU
+    # PAR COLONNE DANS LA BOUCLE D'ECRITURE. Une regle qui se contenterait de
+    # verifier la presence de "planCol" serait satisfaite par la seule declaration :
+    # on exige l'usage comme BORNE dans la boucle, et le saut sur ABSENTE.
+    direct = corps(code, 'private long clearChunkDirect(')
+    if direct is None:
+        echecs.append('VERROU 11 : clearChunkDirect introuvable')
+    else:
+        if 'MasqueClear.ABSENTE' not in direct:
+            echecs.append('VERROU 11 : clearChunkDirect ne distingue plus les colonnes '
+                          'hors ouvrage -- il raserait de nouveau tout le rectangle')
+        if not re.search(r'if\s*\(\s*sy\s*\+\s*ly\s*<\s*planCol\[', direct):
+            echecs.append('VERROU 11 : la boucle d\'ecriture ne borne plus chaque '
+                          'colonne par son propre plancher')
+        if 'getMaxBuildHeight' not in direct:
+            echecs.append('VERROU 11 : le creusement ne monte plus jusqu\'au plafond '
+                          'du monde -- une montagne pourrait rester sur l\'ouvrage')
+    repli = corps(code, 'private long clearChunkPerBlock(')
+    if repli is None:
+        echecs.append('VERROU 11 : clearChunkPerBlock introuvable')
+    elif 'MasqueClear.ABSENTE' not in repli:
+        echecs.append('VERROU 11 : le chemin de repli ignore le masque -- il creuserait '
+                      'le rectangle entier la ou le chemin rapide suit la forme')
+
+    # ------------------------------------------------------------------ VERROU 12
+    # LA BEDROCK ET LA TERRE PORTEUSE RESTENT INTOUCHEES.
+    if direct is not None:
+        if 'Blocks.BEDROCK' not in direct:
+            echecs.append('VERROU 12 : la bedrock n\'est plus protegee du creusement')
+        if 'getMinBuildHeight' not in direct:
+            echecs.append('VERROU 12 : le plancher par colonne n\'est plus borne par '
+                          'le fond du monde')
+
     if echecs:
         for e in echecs:
             print('ECHEC  %s' % e)
         print('laketaluscheck : %d verrou(x) rompu(s)' % len(echecs))
         return 1
 
-    print('laketaluscheck : 9 verrous tiennent -- releve avant le clear, cible calculee '
+    print('laketaluscheck : 12 verrous tiennent -- releve avant le clear, cible calculee '
           'une fois et jamais pendant l\'ecriture, pente partant de l\'empreinte et non '
           'du rectangle, distance euclidienne par chanfrein, profil franc au contact et '
           'tangent dehors, lissage epingle aux deux bouts, aucune colonne sans cible, '
-          'pose jamais bloquee, anneau tenu aux quatre bords')
+          'pose jamais bloquee, anneau tenu aux quatre bords, creusement suivant la '
+          'forme du lac avec un plancher par colonne jusqu\'au plafond du monde, '
+          'colonnes hors ouvrage epargnees, bedrock et terre porteuse intouchees')
     return 0
 
 

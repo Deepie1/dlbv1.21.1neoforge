@@ -56,17 +56,30 @@ La pose **saute l'air**. Et le fichier `crimsonlake.nbt` ne contient **aucun ét
 > **Une pose qui saute l'air ne peut rien creuser. Elle ne sait qu'ajouter de la matière.**
 > Le bassin ne sera donc jamais excavé par le template, contrairement à ce que le commentaire T93 affirme depuis des mois.
 
-### Le chiffrage
+### Le chiffrage — avec une correction de ma part
 
-Dans les 20 couches sous le plancher de creusement (monde Y 48→67) :
+> **Correction.** J'ai d'abord annoncé « 590 038 cellules (42,2 %) restées en ancien terrain ».
+> **Ce chiffre était trompeur** : il comptait les 20 couches sur **tout le rectangle**, y compris
+> les 26 447 colonnes où le lac ne pose rien et qui ne font donc pas partie de la structure.
+> Les bons chiffres, mesurés en alignant le gabarit sur l'empreinte réellement observée
+> (origine `x=3, z=200`, recouvrement 87,1 %), sont ci-dessous.
 
-| | cellules | part |
+**Ce que le joueur voit — y avait-il seulement un trou ?**
+
+| | colonnes | part |
 |---|---|---|
-| total | 1 397 280 | 100 % |
-| écrites par la pose | 807 242 | 57,8 % |
-| **laissées en ancien terrain** | **590 038** | **42,2 %** |
+| colonnes de l'ouvrage confrontées au terrain | 36 800 | 100 % |
+| **ne recevant AUCUN creusement** (terrain déjà sous Y 68) | **17 751** | **48,2 %** |
 
-Et sur l'ensemble du gabarit : **26 447 colonnes sur 69 864 (37,9 %) ne reçoivent jamais le moindre bloc.** C'est le « un tiers » que vous décrivez — le chiffre est remarquablement juste.
+**Près de la moitié de l'emprise du lac n'était pas creusée du tout.** Votre « un tiers » décrivait
+exactement cela. Sur terrain plat au niveau du sol, le creusement partait d'une altitude
+*au-dessus* du terrain : il n'enlevait rien, et aucune fosse n'existait.
+
+**Ancien terrain réellement enfermé dans le volume de l'ouvrage** : 4 882 cases dans
+1 585 colonnes (c'est moins que ce que je craignais, parce que le socle du gabarit est
+effectivement plein — le T93 avait raison sur ce point précis, et tort sur sa conclusion).
+
+Sur l'ensemble du gabarit : **26 447 colonnes sur 69 864 (37,9 %) ne reçoivent jamais le moindre bloc.**
 
 ### Ce que j'ai cru à tort en chemin
 
@@ -134,15 +147,41 @@ Le talus **améliore** réellement (27,7 % → 15,8 %), mais la simulation du T4
 
 ---
 
-## 4. Les trois correctifs, et l'arbitrage qui vous revient
+## 4. Le correctif appliqué (choix du 24/11)
 
-| # | Défaut | Correctif | Coût / risque |
-|---|---|---|---|
-| 3 | ancien terrain dans le bassin | creusement **masqué par colonne** jusqu'au bloc le plus bas du gabarit | réintroduit le masque de colonnes supprimé au T469 ; +0 à 1,4 M blocs effacés |
-| 2 | parois droites aux angles | faire porter le talus sur la **boîte du clear**, pas sur l'empreinte organique ; ou creuser en forme organique plutôt qu'en rectangle | rampe à porter de 48 à ~96, ou masque de clear organique |
-| 1 | raccord peu visible | découle de 2 et 3 : sans fosse, pas de raccord visible | — |
+> Consigne : « creuser la forme du lac mais monter à y max pour assurer que la moindre montagne n'y soit ».
 
-Le point 3 a une variante **beaucoup plus agressive** (creuser tout le rectangle à Y=48) que je **déconseille** : elle produirait une fosse rectangulaire de 20 blocs autour du lac.
+Le creusement ne reçoit plus un plancher unique mais un **masque par colonne**
+(`MasqueClear`), construit sur **la liste réellement posée** — exactement la même que celle
+dont le talus tire son empreinte, pour que le trou et la pente décrivent la même forme :
+
+- colonne où le gabarit ne pose rien → **pas touchée du tout** (fin de la fosse rectangulaire) ;
+- colonne de l'ouvrage → creusée **depuis le bloc le plus bas que le gabarit y posera** ;
+- et toujours **jusqu'au plafond du monde**, pour qu'aucune montagne ne reste au-dessus.
+
+La terre sous ce plancher reste en place : la structure repose toujours sur le sol du monde,
+et la bedrock est intouchable.
+
+### Effet mesuré sur les données du run (`tools/simclear.py`)
+
+| | avant | après |
+|---|---|---|
+| ancien terrain enfermé dans l'ouvrage | 4 882 cases | **0** |
+| colonnes de l'ouvrage sans aucun creusement | 17 751 (48,2 %) | **16 248 désormais creusées, 15,1 blocs de profondeur en moyenne (max 20)** |
+| colonnes rasées hors de la forme du lac | 1 451 | **0** |
+| cases solides retirées | 172 798 | 786 378 (**+355 %**) |
+
+**Le coût est réel** : environ 4,5 fois plus de blocs à effacer. Le creusement écrit
+directement dans les palettes de sections par tranches de 40 ms et saute les sections vides ;
+le facteur limitant reste la disponibilité des chunks, pas l'écriture. La borne globale de
+construction (540 s) laisse de la marge, mais **la phase de creusement sera plus longue
+qu'avant** — c'est à surveiller au prochain essai.
+
+### Ce qui n'est PAS corrigé
+
+Le défaut n°1 (raccord peu visible) n'a pas reçu de correctif propre : il devrait découler
+des deux autres, puisqu'il existe désormais une vraie fosse dans laquelle le raccord peut se
+voir. **Ce n'est pas démontré** — il faudra le juger en jeu.
 
 ---
 
@@ -175,3 +214,32 @@ L'emplacement canonique est donc resté **périmé** (sans le correctif T480) pe
 Corrigé dans ce tour : fichier remis à l'emplacement canonique, doublon supprimé, et nouveau banc **`tools/mirrorcheck.py`** qui vérifie *deux* choses — l'identité des contenus **et** le respect de la convention de chemin. Les deux sabotages (rejeu exact de la faute T480 ; contenu divergent) sont mordus.
 
 > **Leçon, à ajouter aux précédentes : un contrôle qui partage la convention de l'erreur qu'il doit détecter confirme l'erreur au lieu de la signaler.**
+
+---
+
+## 7. Côté outil de scan
+
+**Le rapport ne ment plus.** La ligne « couverture : complete sur toutes les captures » venait
+d'un drapeau qui ne vérifiait que l'intégrité du **balayage** (chaque case a bien été visitée),
+jamais ce qui avait été **mesuré**. Les deux faits sont désormais séparés :
+
+```
+balayage        : complet sur toutes les captures (chaque case a ete visitee)
+mesure          : INCOMPLETE -- jusqu'a 77312 colonnes sur 222208 (34.8 %) non
+                  mesurables faute de chunk charge, au pire a l'etape 1_DEBUT_CLEAR
+                  une colonne non mesuree n'est PAS un trou du terrain : c'est un
+                  angle mort de l'outil
+```
+
+**Coupes verticales** : la page 3D a désormais un panneau de coupe. Une vue du dessus ne montre
+que le *sommet* de chaque colonne — elle est structurellement aveugle au terrain enfermé dans
+l'épaisseur, c'est-à-dire au défaut n°3. La coupe trace, le long d'une ligne (axe et position
+réglables, ou suivi de la souris), le profil de **chaque étape du pipeline superposé** : on y lit
+directement si une fosse a été creusée, jusqu'où, et avec quels bords. Une interruption du trait
+signale une colonne non mesurée, jamais un trou.
+
+**Ce que je n'ai PAS fait, volontairement** : augmenter la couverture réelle. Cela suppose de
+réchauffer la zone d'observation via `ChunkKeeper`, or ce dernier gère **une seule zone** par
+niveau et le lac appelle `release()` — ce que le scan surveille justement pour clore sa session.
+Toucher à cela dans le même tour que le creusement aurait rendu le prochain essai illisible :
+on n'aurait pas su à quoi attribuer un changement. **À traiter seul, dans un tour dédié.**

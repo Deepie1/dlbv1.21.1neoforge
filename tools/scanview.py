@@ -447,6 +447,22 @@ def _gabarit():
  #diag .it b{display:block;color:#e6edf6;margin-bottom:2px;font-size:11.5px}
  #diag .it em{display:block;color:#6d7b8d;font-style:normal;margin-top:3px}
  #view{flex:1;position:relative;min-width:0}
+ #coupe{position:absolute;left:0;right:0;bottom:0;height:232px;background:rgba(8,11,16,.94);
+  border-top:1px solid #2a3340;display:flex;flex-direction:column;z-index:5}
+ #coupe.off{display:none}
+ #coupeBar{display:flex;align-items:center;gap:10px;padding:5px 10px;font-size:12px;
+  color:#cfd8e3;border-bottom:1px solid #202833;flex-wrap:wrap}
+ #coupeBar b{color:#eaf2ff}
+ #coupeBar label{display:flex;align-items:center;gap:4px}
+ #coupeBar select,#coupeBar button{background:#141a22;color:#cfd8e3;border:1px solid #2a3340;
+  border-radius:3px;padding:2px 6px;font:inherit;cursor:pointer}
+ #cpPos{width:210px}
+ #cpVal{color:#8fb7ff;min-width:150px}
+ #cpCv{flex:1;width:100%;display:block;min-height:0}
+ #cpLeg{padding:4px 10px 6px;font-size:11px;color:#9fb0c4;display:flex;gap:14px;flex-wrap:wrap}
+ #cpLeg i{display:inline-block;width:18px;height:3px;margin-right:5px;vertical-align:middle}
+ #coupeOn{position:absolute;left:12px;bottom:12px;z-index:6;background:#141a22;color:#cfd8e3;
+  border:1px solid #2a3340;border-radius:3px;padding:5px 9px;font:inherit;cursor:pointer;display:none}
  canvas{display:block;width:100%;height:100%;cursor:grab}
  canvas:active{cursor:grabbing}
  #hud{position:absolute;left:12px;bottom:12px;background:rgba(10,14,20,.86);border:1px solid #2a3340;
@@ -482,7 +498,21 @@ def _gabarit():
   <div class="grp"><label class="ttl">Defauts releves</label><div id="diag"></div></div>
  </div>
  <div id="view"><canvas id="cv"></canvas>
-  <div id="tag"></div><div id="hud"></div><div id="err"></div></div>
+  <div id="tag"></div><div id="hud"></div><div id="err"></div>
+  <div id="coupe">
+   <div id="coupeBar">
+    <b>Coupe verticale</b>
+    <label>axe <select id="cpAxe"><option value="z">le long de X (z fixe)</option><option value="x">le long de Z (x fixe)</option></select></label>
+    <label id="cpPosL">z</label><input type="range" id="cpPos" min="0" max="1" step="1" value="0">
+    <span id="cpVal"></span>
+    <label><input type="checkbox" id="cpSuit" checked> suivre la souris</label>
+    <button id="cpFerme" type="button">masquer</button>
+   </div>
+   <canvas id="cpCv"></canvas>
+   <div id="cpLeg"></div>
+  </div>
+  <button id="coupeOn" type="button">Coupe verticale</button>
+ </div>
 </div>
 <script>
 /*__DONNEES__*/
@@ -678,7 +708,7 @@ ET.forEach(function(e,i){
   b.innerHTML="<b>"+(i+1)+". "+e.nom+"</b><span>t+"+(e.t/1000).toFixed(1)+" s -- "+e.chunks[0]+"/"+e.chunks[1]+" chunks mesures</span>";
   b.onclick=function(){cur=i;
     for(var k=0;k<elSteps.children.length;k++)elSteps.children[k].className="step"+(k===i?" on":"");
-    majTag();majStats();majGeom();};
+    majTag();majStats();majGeom();cpDessine();};
   elSteps.appendChild(b);});
 function majTag(){document.getElementById("tag").textContent=(cur+1)+"/"+ET.length+"   "+ET[cur].nom;}
 function majStats(){var e=ET[cur],c=e.colonnes;
@@ -737,16 +767,87 @@ function survol(e){
   }
   if(trouve){
     var wx=X0+trouve[0]*PAS, wz=Z0+trouve[1]*PAS;
+    if(cpSuit&&cpSuit.checked&&!cpBox.classList.contains("off")){
+      cpPos.value=String(cpAxe.value==="z"?trouve[1]:trouve[0]);cpMaj();}
     var noms=["rien a signaler","TROU NET","tour isolee","falaise","air piege","creuse","remblai","non charge","vide"];
     hud.textContent="x "+wx+"   z "+wz+"   y "+trouve[2]+"\n"+
       (noms[A.AN[trouve[1]*W+trouve[0]]]||"rien a signaler")+"   (sol de reference "+SOL+")";
   } else hud.textContent=AIDE;
 }
+/* ---------------------------------------------------------------- COUPE 2D
+   Une vue du dessus ne montre que le SOMMET de chaque colonne : elle est
+   aveugle a ce qui se passe dans l'epaisseur. La coupe trace, le long d'une
+   ligne, le profil de CHAQUE etape du pipeline l'un sur l'autre : on y lit
+   directement si un trou a ete creuse, jusqu'ou, et avec quels bords.        */
+var cpBox=document.getElementById("coupe"),cpCv=document.getElementById("cpCv"),
+    cpAxe=document.getElementById("cpAxe"),cpPos=document.getElementById("cpPos"),
+    cpVal=document.getElementById("cpVal"),cpSuit=document.getElementById("cpSuit"),
+    cpLeg=document.getElementById("cpLeg"),cpPosL=document.getElementById("cpPosL"),
+    cpFerme=document.getElementById("cpFerme"),coupeOn=document.getElementById("coupeOn"),
+    cpx=cpCv.getContext("2d");
+var CPC=["#6ee7ff","#9bffa6","#ffd36e","#ff8f6e","#d99bff","#9bb7ff"];
+function cpMaj(){
+  var ax=cpAxe.value;
+  cpPosL.textContent=(ax==="z")?"z":"x";
+  cpPos.max=String((ax==="z"?D-1:W-1));
+  if(+cpPos.value>+cpPos.max)cpPos.value=cpPos.max;
+  var i=+cpPos.value;
+  cpVal.textContent=(ax==="z")?("z = "+(Z0+i*PAS)):("x = "+(X0+i*PAS));
+  cpDessine();
+}
+function cpDessine(){
+  if(cpBox.classList.contains("off"))return;
+  var d=window.devicePixelRatio||1;
+  var cw=Math.max(1,Math.floor(cpCv.clientWidth*d)),ch=Math.max(1,Math.floor(cpCv.clientHeight*d));
+  if(cpCv.width!==cw||cpCv.height!==ch){cpCv.width=cw;cpCv.height=ch;}
+  cpx.setTransform(1,0,0,1,0,0);cpx.clearRect(0,0,cw,ch);
+  cpx.fillStyle="#0a0e14";cpx.fillRect(0,0,cw,ch);
+  var ax=cpAxe.value,i=+cpPos.value,n=(ax==="z")?W:D;
+  /* bornes verticales reelles sur cette ligne, toutes etapes confondues */
+  var lo=1e9,hi=-1e9,k,j,v;
+  for(k=0;k<ET.length;k++){var hs=ET[k].HS;
+    for(j=0;j<n;j++){v=hy(hs,(ax==="z")?(i*W+j):(j*W+i));
+      if(v===null)continue;if(v<lo)lo=v;if(v>hi)hi=v;}}
+  if(lo>hi){cpx.fillStyle="#7d8da0";cpx.font=(13*d)+"px system-ui";
+    cpx.fillText("aucune colonne mesuree sur cette ligne",12*d,24*d);return;}
+  lo-=2;hi+=2;
+  var pad=34*d,padB=18*d;
+  function sx(j){return pad+(cw-pad-6*d)*(j/Math.max(1,n-1));}
+  function sy(y){return (ch-padB)-(ch-padB-8*d)*((y-lo)/Math.max(1,hi-lo));}
+  /* sol de reference */
+  cpx.strokeStyle="#39465a";cpx.lineWidth=1*d;cpx.setLineDash([4*d,4*d]);
+  cpx.beginPath();cpx.moveTo(pad,sy(SOL));cpx.lineTo(cw-6*d,sy(SOL));cpx.stroke();
+  cpx.setLineDash([]);
+  cpx.fillStyle="#7d8da0";cpx.font=(10*d)+"px system-ui";
+  cpx.fillText("Y="+SOL,4*d,sy(SOL)-3*d);
+  cpx.fillText("Y="+hi,4*d,sy(hi)+9*d);
+  cpx.fillText("Y="+lo,4*d,sy(lo)-2*d);
+  /* un trait par etape ; une rupture = chunk non mesure, jamais un trou */
+  for(k=0;k<ET.length;k++){
+    var hs2=ET[k].HS;cpx.strokeStyle=CPC[k%CPC.length];cpx.lineWidth=(k===cur?2.2:1.1)*d;
+    cpx.globalAlpha=(k===cur)?1:.55;cpx.beginPath();var on=false;
+    for(j=0;j<n;j++){v=hy(hs2,(ax==="z")?(i*W+j):(j*W+i));
+      if(v===null){on=false;continue;}
+      if(!on){cpx.moveTo(sx(j),sy(v));on=true;}else cpx.lineTo(sx(j),sy(v));}
+    cpx.stroke();
+  }
+  cpx.globalAlpha=1;
+  var lab=(ax==="z")?("x de "+X0+" a "+(X0+(n-1)*PAS)):("z de "+Z0+" a "+(Z0+(n-1)*PAS));
+  cpx.fillStyle="#7d8da0";cpx.fillText(lab,pad,ch-4*d);
+}
+function cpLegende(){var h="";for(var k=0;k<ET.length;k++)
+  h+='<span><i style="background:'+CPC[k%CPC.length]+'"></i>'+ET[k].nom+"</span>";
+  h+='<span style="color:#7d8da0">une interruption du trait = colonne non mesuree, pas un trou du terrain</span>';
+  cpLeg.innerHTML=h;}
+cpAxe.addEventListener("change",cpMaj);
+cpPos.addEventListener("input",cpMaj);
+cpFerme.addEventListener("click",function(){cpBox.classList.add("off");coupeOn.style.display="block";});
+coupeOn.addEventListener("click",function(){cpBox.classList.remove("off");coupeOn.style.display="none";cpMaj();});
 function taille(){var d=window.devicePixelRatio||1;
-  cv.width=Math.max(1,Math.floor(cv.clientWidth*d));cv.height=Math.max(1,Math.floor(cv.clientHeight*d));dessine();}
+  cv.width=Math.max(1,Math.floor(cv.clientWidth*d));cv.height=Math.max(1,Math.floor(cv.clientHeight*d));dessine();cpDessine();}
 window.addEventListener("resize",taille);
 document.getElementById("hud").textContent=AIDE;
-cible();majTag();majStats();majLeg();majGeom();taille();
+cible();majTag();majStats();majLeg();majGeom();cpLegende();cpPos.value=String(Math.floor(D/2));cpMaj();taille();
 })();
 </script></body></html>
 '''

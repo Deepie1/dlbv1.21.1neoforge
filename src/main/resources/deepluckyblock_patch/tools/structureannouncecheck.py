@@ -756,22 +756,34 @@ if lac is not None:
             "Tout argument supplementaire signifie qu'un masque de colonnes ou un "
             "plancher par colonne est revenu." % (len(args), " | ".join(args[:6])))
     else:
-        attendus = ("level", "lakeMin", "lakeMax", "groundY + 1")
+        # T482 -- LE PLANCHER UNIQUE EST ABANDONNE, SUR DECISION DU 24/11.
+        # T469 figeait ici « groundY + 1 » et interdisait tout masque de colonnes,
+        # pour empecher le retour de l'ancienne machinerie de lissage. Mesure du run
+        # du 24/11 : ce plancher unique laissait 48,2 % des colonnes de l'ouvrage
+        # SANS AUCUN creusement (leur terrain etait deja plus bas), et rasait en
+        # rectangle 1 451 colonnes hors de la forme du lac -- d'ou les parois droites.
+        # Consigne dev : « creuser la forme du lac mais monter a y max pour assurer
+        # que la moindre montagne n'y soit ». Le masque par colonne est donc voulu.
+        # CE QUE CETTE REGLE PROTEGE TOUJOURS : cinq arguments, le meme volume de
+        # base, et une pose qui enchaine depuis le callback. Le retour de l'ancienne
+        # chaine de lissage reste interdit par les regles (a) et (b) ci-dessus.
+        attendus = ("level", "lakeMin", "lakeMax", "masqueClear")
         for i, att in enumerate(attendus):
             if " ".join(args[i].split()) != att:
                 problemes.append(
-                    "T469 : argument %d du clear = « %s » au lieu de « %s » -- le "
-                    "plancher ou le volume de base a change."
+                    "T469/T482 : argument %d du clear = « %s » au lieu de « %s » -- le "
+                    "volume de base ou le masque de creusement a change."
                     % (i + 1, " ".join(args[i].split()), att))
         if "PASTE_Q.offer" not in args[4]:
             problemes.append(
                 "T469 : le callback du clear ne met plus la pose en file "
                 "(PASTE_Q.offer absent) -- le paste n'enchaine plus directement.")
-    if re.search(r"static void clearBuildVolume\(ServerLevel level, BlockPos min, "
-                 r"BlockPos max, int clearFloorY, Runnable onReady\)", cl) is None:
+    if re.search(r"static void clearBuildVolume\(ServerLevel level, BlockPos min,\s*"
+                 r"BlockPos max,\s*MasqueClear masque, Runnable onReady\)", cl) is None:
         problemes.append(
-            "T469 : la signature de clearBuildVolume n'est plus celle de la base. "
-            "Elle ne doit porter ni masque de colonnes ni plancher profond.")
+            "T469/T482 : la signature de clearBuildVolume n'est plus celle attendue. "
+            "Elle doit porter le masque de creusement par colonne (MasqueClear), "
+            "jamais un plancher unique.")
     # (d) le keeper et le verrou de generation sont relaches une fois la pose finie.
     for appel in ("ChunkKeeper.release", "notifyGenerationFinished"):
         if appel not in cl:
