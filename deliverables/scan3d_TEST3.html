@@ -32,6 +32,17 @@
  #coupe{position:absolute;left:0;right:0;bottom:0;height:232px;background:rgba(8,11,16,.94);
   border-top:1px solid #2a3340;display:flex;flex-direction:column;z-index:5}
  #coupe.off{display:none}
+ #carteCv{position:absolute;left:0;top:0;width:100%;height:100%;display:block;z-index:2}
+ #carteCv.off{display:none}
+ #barre2d{position:absolute;left:12px;top:12px;z-index:7;display:flex;gap:6px}
+ #barre2d button{background:rgba(20,26,34,.92);color:#cfd8e3;border:1px solid #2a3340;
+  border-radius:4px;padding:5px 9px;font:inherit;font-size:12px;cursor:pointer}
+ #barre2d button.on{background:#1d4e86;color:#eaf2ff;border-color:#2f6fb5}
+ #diagGl{position:absolute;left:12px;top:48px;z-index:8;max-width:620px;max-height:62%;
+  overflow:auto;background:rgba(10,14,20,.97);border:1px solid #3a4658;border-radius:6px;
+  padding:10px 12px;font-size:11px;color:#cfd8e3;white-space:pre-wrap;line-height:1.55}
+ #diagGl.off{display:none}
+ #diagGl b{color:#ffd36e}
  #coupeBar{display:flex;align-items:center;gap:10px;padding:5px 10px;font-size:12px;
   color:#cfd8e3;border-bottom:1px solid #202833;flex-wrap:wrap}
  #coupeBar b{color:#eaf2ff}
@@ -80,6 +91,9 @@
   <div class="grp"><label class="ttl">Defauts releves</label><div id="diag"></div></div>
  </div>
  <div id="view"><canvas id="cv"></canvas>
+  <canvas id="carteCv" class="off"></canvas>
+  <div id="barre2d"><button id="btn2d" type="button">Vue 2D</button><button id="btnDiag" type="button">Diagnostic</button></div>
+  <div id="diagGl" class="off"></div>
   <div id="tag"></div><div id="hud"></div><div id="err"></div>
   <div id="coupe">
    <div id="coupeBar">
@@ -276,6 +290,7 @@ function dessine(){
     att(bP,cadreP,0,0);att(bN,cadreN,1,0);att(bC,cadreC,2,0);
     gl.drawArrays(gl.LINES,0,nCadre);
   }
+  if(mode2d)dessine2d();
 }
 function majGeom(){
   indices();
@@ -356,6 +371,103 @@ function survol(e){
       (noms[A.AN[trouve[1]*W+trouve[0]]]||"rien a signaler")+"   (sol de reference "+SOL+")";
   } else hud.textContent=AIDE;
 }
+/* ------------------------------------------- SECOURS 2D ET AUTO-DIAGNOSTIC
+   Un ecran noir muet est le pire des resultats : on ne sait meme pas quoi
+   corriger. Deux garde-fous ici.
+   1. Une VUE 2D qui ne depend d'AUCUN WebGL : elle lit les memes hauteurs et
+      les peint en teintes d'altitude. Quoi qu'il arrive au pilote 3D, la page
+      montre les donnees.
+   2. Un DIAGNOSTIC qui, apres le premier rendu, relit reellement les pixels du
+      canevas 3D. Si rien n'a ete peint, il bascule tout seul en 2D et affiche
+      les faits : contexte obtenu, journaux de compilation, nombre de sommets,
+      viewport, taille du canevas, code d'erreur GL.                          */
+var carteCv=document.getElementById("carteCv"),
+    ctx2=carteCv?carteCv.getContext("2d"):null,
+    elDiag=document.getElementById("diagGl"),
+    btn2d=document.getElementById("btn2d"),
+    btnDiag=document.getElementById("btnDiag"),
+    mode2d=false, diagTexte="(diagnostic non encore etabli)";
+function teinte(y,lo,hi){
+  var u=(hi>lo)?(y-lo)/(hi-lo):0.5; if(u<0)u=0; if(u>1)u=1;
+  var p=[[62,106,160],[74,150,96],[196,170,88],[226,232,238]];
+  var t=u*3, k=Math.min(2,Math.floor(t)), f=t-k, a=p[k], b=p[k+1];
+  return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f, a[2]+(b[2]-a[2])*f];
+}
+function dessine2d(){
+  if(!ctx2)return;
+  var dpr=window.devicePixelRatio||1;
+  var cw=Math.max(1,Math.floor(carteCv.clientWidth*dpr)),
+      chh=Math.max(1,Math.floor(carteCv.clientHeight*dpr));
+  if(carteCv.width!==cw||carteCv.height!==chh){carteCv.width=cw;carteCv.height=chh;}
+  ctx2.setTransform(1,0,0,1,0,0);
+  ctx2.fillStyle="#0a0e14";ctx2.fillRect(0,0,cw,chh);
+  var HS=ET[cur].HS, lo=1e9, hi=-1e9, i, v;
+  for(i=0;i<W*D;i++){v=hy(HS,i);if(v===null)continue;if(v<lo)lo=v;if(v>hi)hi=v;}
+  if(lo>hi){ctx2.fillStyle="#7d8da0";ctx2.font=(14*dpr)+"px system-ui";
+    ctx2.fillText("aucune colonne mesuree a cette etape",16*dpr,28*dpr);return;}
+  var img=ctx2.createImageData(W,D), dd=img.data;
+  for(var z=0;z<D;z++)for(var x=0;x<W;x++){
+    var j=z*W+x, o=j*4; v=hy(HS,j);
+    if(v===null){dd[o]=38;dd[o+1]=44;dd[o+2]=54;dd[o+3]=255;continue;}
+    var c=teinte(v,lo,hi);
+    /* relief : on eclaire par la pente est-ouest, sinon tout est plat a l'oeil */
+    var g=hy(HS,(x>0)?j-1:j), pente=(g===null)?0:(v-g);
+    var m=1+Math.max(-0.45,Math.min(0.45,pente*0.14));
+    dd[o]=Math.max(0,Math.min(255,c[0]*m));
+    dd[o+1]=Math.max(0,Math.min(255,c[1]*m));
+    dd[o+2]=Math.max(0,Math.min(255,c[2]*m));
+    dd[o+3]=255;}
+  var tmp=document.createElement("canvas");tmp.width=W;tmp.height=D;
+  tmp.getContext("2d").putImageData(img,0,0);
+  var s=Math.min(cw/W,chh/D), dw=W*s, dh=D*s;
+  ctx2.imageSmoothingEnabled=false;
+  ctx2.drawImage(tmp,(cw-dw)/2,(chh-dh)/2,dw,dh);
+  ctx2.fillStyle="#9fb0c4";ctx2.font=(11*dpr)+"px system-ui";
+  ctx2.fillText("vue du dessus -- x "+X0+".."+(X0+(W-1)*PAS)+"   z "+Z0+".."+(Z0+(D-1)*PAS)
+    +"   altitudes "+lo+".."+hi+"   gris = non mesure",10*dpr,chh-8*dpr);
+}
+function bascule2d(on){
+  mode2d=!!on;
+  carteCv.className=mode2d?"":"off";
+  btn2d.className=mode2d?"on":"";
+  btn2d.textContent=mode2d?"Vue 3D":"Vue 2D";
+  if(mode2d)dessine2d();
+}
+/* Le canevas a-t-il VRAIMENT recu de la peinture ? On relit les pixels. */
+function rienDessine(){
+  try{
+    if(!gl||!cv.width||!cv.height)return true;
+    var n=24, px=new Uint8Array(4), x, y, vus=0;
+    for(var k=0;k<n;k++){
+      x=Math.floor(cv.width*(0.08+0.84*((k%6)/5)));
+      y=Math.floor(cv.height*(0.08+0.84*(Math.floor(k/6)/3)));
+      gl.readPixels(x,y,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);
+      if(px[0]>14||px[1]>18||px[2]>26)vus++;
+    }
+    return vus===0;
+  }catch(e){return false;}
+}
+function etablirDiag(vide){
+  var L=[];
+  L.push("CONTEXTE        : "+(gl?(v2?"WebGL2":"WebGL1"):"AUCUN -- le navigateur n'a donne aucun contexte"));
+  L.push("CANEVAS         : "+cv.width+" x "+cv.height+" pixels reels, "
+         +cv.clientWidth+" x "+cv.clientHeight+" CSS");
+  L.push("SOMMETS ENVOYES : "+nIdx+" indices de terrain, "+nEau+" d'eau, "+nCadre+" de cadre");
+  L.push("PROGRAMME       : "+(res&&res.err?("REFUSE -- "+res.err):"accepte"));
+  try{ L.push("ERREUR GL       : "+(gl?gl.getError():"-")); }catch(e){ L.push("ERREUR GL       : illisible"); }
+  L.push("PIXELS PEINTS   : "+(vide?"AUCUN -- la 3D n'a rien dessine":"oui"));
+  L.push("");
+  L.push(vide
+    ? "La vue 2D de secours a ete activee automatiquement : les donnees sont affichees sans WebGL."
+    : "La 3D a bien peint des pixels.");
+  L.push("Copiez ce texte tel quel si le probleme persiste.");
+  diagTexte=L.join("\n");
+  elDiag.textContent=diagTexte;
+}
+if(btn2d)btn2d.addEventListener("click",function(){bascule2d(!mode2d);});
+if(btnDiag)btnDiag.addEventListener("click",function(){
+  elDiag.className=(elDiag.className==="off")?"":"off";});
+
 /* ---------------------------------------------------------------- COUPE 2D
    Une vue du dessus ne montre que le SOMMET de chaque colonne : elle est
    aveugle a ce qui se passe dans l'epaisseur. La coupe trace, le long d'une
@@ -430,5 +542,10 @@ function taille(){var d=window.devicePixelRatio||1;
 window.addEventListener("resize",taille);
 document.getElementById("hud").textContent=AIDE;
 cible();majTag();majStats();majLeg();majGeom();cpLegende();cpPos.value=String(Math.floor(D/2));cpMaj();taille();
+/* Verdict apres le tout premier rendu : la 3D a-t-elle peint quelque chose ?
+   Si non, on bascule seul en vue 2D et on ouvre le diagnostic -- plutot qu un
+   rectangle noir sans explication. */
+(function(){ var vide=rienDessine(); etablirDiag(vide);
+  if(vide){ bascule2d(true); elDiag.className=""; } })();
 })();
 </script></body></html>

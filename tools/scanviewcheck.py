@@ -80,52 +80,82 @@ const fs=require('fs');
 const h=fs.readFileSync(process.argv[2],'utf8');
 const js=h.slice(h.indexOf('<script>')+8,h.lastIndexOf('</script>'));
 const out={};
-for(const v2 of [true,false]){
-  const vus=[];
+// T484 : trois passes. Les deux premieres rendent normalement (WebGL2 puis
+// WebGL1). La TROISIEME simule le defaut signale par l'utilisateur : le pilote
+// accepte tout mais ne peint RIEN. Un harnais qui ne sait pas produire un
+// canevas noir ne pourra jamais prouver que la page s'en releve.
+const PASSES=[{v2:true,peint:true,suf:'2'},
+              {v2:false,peint:true,suf:'1'},
+              {v2:true,peint:false,suf:'N'}];
+for(const cfg of PASSES){
+  const v2=cfg.v2, vus=[];
   const GL=new Proxy({},{get(_,p){
     if(p==='VERTEX_SHADER')return 35633; if(p==='FRAGMENT_SHADER')return 35632;
     if(p==='COMPILE_STATUS'||p==='LINK_STATUS')return 1;
+    if(p==='RGBA')return 6408; if(p==='UNSIGNED_BYTE')return 5121;
     if(p==='getShaderParameter'||p==='getProgramParameter')return ()=>true;
+    if(p==='getError')return ()=>0;
     if(p==='getExtension')return ()=>({});
     if(p==='createShader')return t=>({t});
     if(p==='shaderSource')return (sh,src)=>{vus.push([sh.t,src]);};
     if(p==='getUniformLocation')return ()=>({});
     if(p==='createBuffer'||p==='createProgram')return ()=>({});
+    // Le coeur de la passe N : on rend un canevas entierement noir.
+    if(p==='readPixels')return (x,y,w,hh,f,t,px)=>{
+      const val=cfg.peint?200:0;
+      for(let i=0;i<px.length;i++)px[i]=(i%4===3)?255:val;};
     return ()=>{};
   }});
   const noeuds={};
-  // T482 : la coupe verticale dessine dans un canvas 2D. Un harnais qui ne sait
-  // rendre qu'un contexte WebGL renverrait null ici et ne verrait JAMAIS si la
-  // coupe se dessine -- exactement le genre de banc complaisant deja rencontre.
-  const d2={n:{},txt:[]};
-  const CTX2D=new Proxy({},{get(_,p){
-    if(p==='canvas')return null;
-    if(p==='setTransform'||p==='save'||p==='restore')return ()=>{};
-    if(p==='fillText')return (t)=>{ d2.n.fillText=(d2.n.fillText||0)+1; d2.txt.push(String(t)); };
-    return (...a)=>{ d2.n[p]=(d2.n[p]||0)+1; };
-  },set(){return true;}});
+  // Chaque canevas recoit SON contexte 2D, sinon on ne distingue pas la coupe
+  // verticale de la carte de secours.
+  const d2={};
+  function mk2d(tag){
+    const b=d2[tag]||(d2[tag]={n:{},txt:[]});
+    return new Proxy({},{get(_,p){
+      if(p==='canvas')return null;
+      if(p==='createImageData')return (w,hh)=>({width:w,height:hh,
+        data:new Uint8ClampedArray(Math.max(1,w*hh*4))});
+      if(p==='setTransform'||p==='save'||p==='restore')return ()=>{};
+      if(p==='fillText')return (t)=>{ b.n.fillText=(b.n.fillText||0)+1; b.txt.push(String(t)); };
+      return (...a)=>{ b.n[p]=(b.n[p]||0)+1; };
+    },set(){return true;}});
+  }
   function elem(id){ if(noeuds[id])return noeuds[id];
     const n={id,children:[],style:{},className:'',checked:true,value:'',textContent:'',innerHTML:'',
       appendChild(c){this.children.push(c);},addEventListener(){},
       classList:{contains:()=>false,add(){},remove(){}},
       getBoundingClientRect:()=>({left:0,top:0,width:900,height:600}),
-      getContext:k=>(k==='2d')?CTX2D:(((k==='webgl2')===v2)?GL:null),
+      getContext:k=>(k==='2d')?mk2d(id):(((k==='webgl2')===v2)?GL:null),
+      cloneNode(){return elem(id+'_c');},
+      parentNode:{replaceChild(){}},
       clientWidth:900,clientHeight:600,width:900,height:600};
+    // Le faux DOM doit refleter l'etat INITIAL du vrai HTML : ces deux noeuds
+    // naissent masques (class="off"). Les naitre visibles rendrait impossible
+    // de distinguer "jamais touche" de "reellement affiche".
+    if(id==='carteCv'||id==='diagGl')n.className='off';
     if(id==='mode')n.value='alt'; if(id==='vex')n.value='3';
     if(id==='cpAxe')n.value='z'; if(id==='cpPos')n.value='0';
     noeuds[id]=n; return n;}
-  global.document={getElementById:elem,createElement:()=>({children:[],style:{},innerHTML:'',
-    appendChild(){},set onclick(f){},get onclick(){return null;}})};
+  global.document={getElementById:elem,createElement:t=>({children:[],style:{},innerHTML:'',
+    width:0,height:0,appendChild(){},getContext:k=>mk2d('tmp'),
+    set onclick(f){},get onclick(){return null;}})};
   global.window={addEventListener(){},devicePixelRatio:1};
   global.atob=b=>Buffer.from(b,'base64').toString('binary');
   let boom=null;
   try{ eval(js); }catch(e){ boom=e.message; }
-  const suf=v2?'2':'1';
+  const suf=cfg.suf;
   for(const [t,src] of vus) out[(t===35633?'vs':'fs')+suf]=src;
   out['exception'+suf]=boom;
   out['erreur'+suf]=(noeuds['err']&&noeuds['err'].style.display==='flex')?noeuds['err'].textContent:null;
   out['etapes'+suf]=noeuds['steps']?noeuds['steps'].children.length:0;
-  out['coupe'+suf]=d2.n; out['coupetxt'+suf]=d2.txt;
+  out['coupe'+suf]=(d2['cpCv']||{n:{}}).n; out['coupetxt'+suf]=(d2['cpCv']||{txt:[]}).txt;
+  out['carte'+suf]=(d2['carteCv']||{n:{}}).n;
+  out['cartetxt'+suf]=(d2['carteCv']||{txt:[]}).txt;
+  out['tampon'+suf]=(d2['tmp']||{n:{}}).n;
+  out['carteOn'+suf]=noeuds['carteCv']?noeuds['carteCv'].className:'(absent)';
+  out['diag'+suf]=noeuds['diagGl']?String(noeuds['diagGl'].textContent):'';
+  out['diagOn'+suf]=noeuds['diagGl']?noeuds['diagGl'].className:'(absent)';
 }
 process.stdout.write(JSON.stringify(out));
 '''
@@ -266,6 +296,43 @@ def controler(dossier):
                     echecs.append('VERROU 8 : la coupe n\'affiche aucune altitude en %s '
                                   '-- elle est sans echelle' % nom)
 
+            # --- VERROU 9 : un pilote qui ne peint rien ne doit pas donner un ecran noir.
+            # L'utilisateur a eu une zone 3D entierement noire alors que les 8 verrous
+            # precedents etaient verts : tous validaient que la page APPELLE le dessin,
+            # aucun que quelque chose APPARAIT. La passe 'N' simule un contexte qui
+            # accepte tout et ne peint rien ; la page doit alors (a) s'en apercevoir,
+            # (b) basculer sur la carte 2D, (c) dire pourquoi.
+            diagN = (info.get('diagN') or '')
+            carteN = info.get('carteN') or {}
+            # Compter les appels ne suffit pas : un drawImage d'un canevas vide
+            # "dessine" sans rien montrer. On exige les DEUX etapes -- les
+            # pixels ecrits (putImageData) PUIS leur report (drawImage).
+            tamponN = info.get('tamponN') or {}
+            peintN = min(carteN.get('drawImage', 0), tamponN.get('putImageData', 0))
+            if info.get('carteN') is None:
+                echecs.append('VERROU 9 : aucune carte de secours -- la page n\'a pas de '
+                              'repli quand la 3D ne peint rien')
+            if peintN < 1:
+                echecs.append('VERROU 9 : la 3D n\'a rien peint et la carte 2D de secours '
+                              'n\'a pas ete remplie (putImageData=%d, drawImage=%d) '
+                              '-- l\'ecran reste noir'
+                              % (tamponN.get('putImageData', 0),
+                                 carteN.get('drawImage', 0)))
+            if info.get('carteOnN') == 'off':
+                echecs.append('VERROU 9 : la carte de secours a ete dessinee mais reste '
+                              'masquee -- l\'utilisateur voit toujours du noir')
+            if 'PIXELS PEINTS' not in diagN or 'AUCUN' not in diagN:
+                echecs.append('VERROU 9 : le diagnostic ne dit pas que rien n\'a ete peint '
+                              '(%r) -- la panne reste muette' % diagN[:120])
+            if info.get('diagOnN') == 'off':
+                echecs.append('VERROU 9 : le diagnostic existe mais n\'est pas montre '
+                              'quand la 3D echoue')
+            # L'autre sens : quand la 3D peint, la page ne doit PAS se rabattre d'office,
+            # sinon le repli masque la 3D et le verrou ci-dessus serait satisfait a vide.
+            if info.get('carteOn2') == '':
+                echecs.append('VERROU 9 : la carte 2D s\'impose meme quand la 3D peint '
+                              '-- le detecteur ne discrimine pas')
+
     if echecs:
         for e in echecs:
             print('ECHEC  %s' % e)
@@ -273,10 +340,11 @@ def controler(dossier):
         return 1
 
     oracle = 'avec glslangValidator' if os.environ.get('GLSLANG') else 'regle d\'ordre seule'
-    print('scanviewcheck : 8 verrous tiennent -- generateur fonctionnel, page autonome, '
+    print('scanviewcheck : 9 verrous tiennent -- generateur fonctionnel, page autonome, '
           'panneau d\'etapes present, colonne non mesuree distinguee d\'un trou, '
           'page chargee sans exception en WebGL2 ET WebGL1, shaders valides (%s), '
-          'repli WebGL1 en place, coupe verticale qui trace et gradue' % oracle)
+          'repli WebGL1 en place, coupe verticale qui trace et gradue, '
+          'carte 2D de secours + diagnostic quand la 3D ne peint rien' % oracle)
     return 0
 
 
