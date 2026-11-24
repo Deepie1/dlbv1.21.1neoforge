@@ -1367,6 +1367,15 @@ public class CrimsonLakeStructureSpawnProcedure {
         final int[] sommetVeg;
         /** Colonnes ou l'ouvrage pose reellement de la matiere : intouchables, et origine de la pente. */
         final boolean[] empreinte;
+        /**
+         * T484 : altitude de la SURFACE de l'ouvrage, colonne par colonne d'empreinte.
+         * Le gabarit n'a aucune marge vide du cote ouest : son bord tranche le bassin
+         * en plein, et la surface y est ~18 blocs sous le sol naturel. Sans cette
+         * mesure la pente visait un plancher constant et laissait une falaise franche.
+         */
+        final int[] surfaceOuvrage;
+        /** Altitude a rejoindre au contact, propagee depuis la colonne d'empreinte la plus proche. */
+        int[] ancre;
         /** Distance de chanfrein a l'empreinte, en tiers de bloc (3 = orthogonal, 4 = diagonal). */
         int[] distance;
         /** Altitude voulue pour chaque colonne. Calculee une fois, jamais relue du monde. */
@@ -1391,14 +1400,19 @@ public class CrimsonLakeStructureSpawnProcedure {
             solNaturel = new int[rw * rd];
             sommetVeg = new int[rw * rd];
             empreinte = new boolean[rw * rd];
+            surfaceOuvrage = new int[rw * rd];
             java.util.Arrays.fill(solNaturel, ABSENT_T);
+            java.util.Arrays.fill(surfaceOuvrage, ABSENT_T);
             java.util.Arrays.fill(sommetVeg, ABSENT_T);
             // L'empreinte vient de la liste reellement posee (air et blocs lourds deja
             // filtres) : c'est la forme vraie de l'ouvrage, pas son rectangle englobant.
-            int ox = origin.getX(), oz = origin.getZ();
+            int ox = origin.getX(), oz = origin.getZ(), oy = origin.getY();
             for (StructureTemplate.StructureBlockInfo bi : blocs) {
                 int i = idx(ox + bi.pos().getX(), oz + bi.pos().getZ());
-                if (i >= 0 && !empreinte[i]) { empreinte[i] = true; empreinteCol++; }
+                if (i < 0) continue;
+                if (!empreinte[i]) { empreinte[i] = true; empreinteCol++; }
+                int ySurf = oy + bi.pos().getY();
+                if (surfaceOuvrage[i] == ABSENT_T || ySurf > surfaceOuvrage[i]) surfaceOuvrage[i] = ySurf;
             }
             ccx0 = rx0 >> 4; ccz0 = rz0 >> 4;
             ccw = (rx1 >> 4) - ccx0 + 1; ccd = (rz1 >> 4) - ccz0 + 1;
@@ -1538,11 +1552,20 @@ public class CrimsonLakeStructureSpawnProcedure {
             int w3 = TALUS_LARGEUR * 3;
             double[] champ = new double[rw * rd];
             for (int i = 0; i < champ.length; i++) {
-                if (empreinte[i]) { champ[i] = groundY; continue; }
+                if (empreinte[i]) {
+                    champ[i] = surfaceOuvrage[i] == ABSENT_T ? groundY : surfaceOuvrage[i];
+                    continue;
+                }
+                // T484 : on part de la surface REELLE de l'ouvrage au contact (ancre),
+                // pas d'un plancher commun. Mesure du 24 nov. : au bord ouest la surface
+                // de l'ouvrage est a Y 59..64 alors que groundY vaut 68 et le sol
+                // naturel monte jusqu'a 82 -- l'ancienne formule laissait la falaise
+                // entiere a la charge de personne.
+                int a = ancre[i] == ABSENT_T ? groundY : ancre[i];
                 double u = Math.min(1.0D, distance[i] / (double) w3);
                 double v = 1.0D - u;
                 double k = 1.0D - v * v * v;            // tangent dehors, franc au contact
-                champ[i] = groundY + (solNaturel[i] - groundY) * k;
+                champ[i] = a + (solNaturel[i] - a) * k;
             }
             lisserChamp(champ);
             cible = new int[rw * rd];
@@ -1594,31 +1617,39 @@ public class CrimsonLakeStructureSpawnProcedure {
          * emboites et imprime une arete a 45 degres dans chaque angle.</p>
          */
         private int[] transformeeDistance() {
+            // T484 : le chanfrein transporte AUSSI l'altitude de l'ouvrage le plus
+            // proche. Connaitre la distance ne suffisait pas : il faut savoir QUELLE
+            // altitude rejoindre, sinon la pente vise un plancher constant et tranche
+            // net partout ou le bord du gabarit coupe le bassin en pleine profondeur.
             final int INF = 1 << 28;
             int[] d = new int[rw * rd];
-            for (int i = 0; i < d.length; i++) d[i] = empreinte[i] ? 0 : INF;
+            ancre = new int[rw * rd];
+            for (int i = 0; i < d.length; i++) {
+                if (empreinte[i]) { d[i] = 0; ancre[i] = surfaceOuvrage[i]; }
+                else { d[i] = INF; ancre[i] = ABSENT_T; }
+            }
             for (int iz = 0; iz < rd; iz++) {
                 for (int ix = 0; ix < rw; ix++) {
                     int i = iz * rw + ix;
                     if (d[i] == 0) continue;
-                    int m = d[i];
-                    if (ix > 0) m = Math.min(m, d[i - 1] + 3);
-                    if (iz > 0) m = Math.min(m, d[i - rw] + 3);
-                    if (ix > 0 && iz > 0) m = Math.min(m, d[i - rw - 1] + 4);
-                    if (ix + 1 < rw && iz > 0) m = Math.min(m, d[i - rw + 1] + 4);
-                    d[i] = m;
+                    int m = d[i], a = ancre[i];
+                    if (ix > 0 && d[i - 1] + 3 < m) { m = d[i - 1] + 3; a = ancre[i - 1]; }
+                    if (iz > 0 && d[i - rw] + 3 < m) { m = d[i - rw] + 3; a = ancre[i - rw]; }
+                    if (ix > 0 && iz > 0 && d[i - rw - 1] + 4 < m) { m = d[i - rw - 1] + 4; a = ancre[i - rw - 1]; }
+                    if (ix + 1 < rw && iz > 0 && d[i - rw + 1] + 4 < m) { m = d[i - rw + 1] + 4; a = ancre[i - rw + 1]; }
+                    d[i] = m; ancre[i] = a;
                 }
             }
             for (int iz = rd - 1; iz >= 0; iz--) {
                 for (int ix = rw - 1; ix >= 0; ix--) {
                     int i = iz * rw + ix;
                     if (d[i] == 0) continue;
-                    int m = d[i];
-                    if (ix + 1 < rw) m = Math.min(m, d[i + 1] + 3);
-                    if (iz + 1 < rd) m = Math.min(m, d[i + rw] + 3);
-                    if (ix + 1 < rw && iz + 1 < rd) m = Math.min(m, d[i + rw + 1] + 4);
-                    if (ix > 0 && iz + 1 < rd) m = Math.min(m, d[i + rw - 1] + 4);
-                    d[i] = m;
+                    int m = d[i], a = ancre[i];
+                    if (ix + 1 < rw && d[i + 1] + 3 < m) { m = d[i + 1] + 3; a = ancre[i + 1]; }
+                    if (iz + 1 < rd && d[i + rw] + 3 < m) { m = d[i + rw] + 3; a = ancre[i + rw]; }
+                    if (ix + 1 < rw && iz + 1 < rd && d[i + rw + 1] + 4 < m) { m = d[i + rw + 1] + 4; a = ancre[i + rw + 1]; }
+                    if (ix > 0 && iz + 1 < rd && d[i + rw - 1] + 4 < m) { m = d[i + rw - 1] + 4; a = ancre[i + rw - 1]; }
+                    d[i] = m; ancre[i] = a;
                 }
             }
             return d;

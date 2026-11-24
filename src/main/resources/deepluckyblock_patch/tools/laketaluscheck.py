@@ -134,10 +134,18 @@ def controler(racine='.'):
     td = corps(code, 'private int[] transformeeDistance(')
     if td is None:
         echecs.append('VERROU 3 : transformeeDistance absente')
-    elif 'empreinte[i] ? 0' not in td:
-        echecs.append('VERROU 3 : la distance n\'est plus mesuree depuis l\'empreinte -- '
-                      'le tablier plat entre la forme de l\'ouvrage et son rectangle '
-                      'ne serait plus traite')
+    else:
+        # T484 : la graine s'ecrit desormais en bloc (elle pose aussi l'ancre), plus
+        # en ternaire. Ce qui compte n'a pas change : l'empreinte vaut 0, le reste INF.
+        graine = (re.search(r'empreinte\[i\]\s*\?\s*0', td)
+                  or re.search(r'if\s*\(\s*empreinte\[i\]\s*\)\s*\{[^}]*\bd\[i\]\s*=\s*0\b', td))
+        if graine is None:
+            echecs.append('VERROU 3 : la distance n\'est plus mesuree depuis l\'empreinte '
+                          '-- le tablier plat entre la forme de l\'ouvrage et son '
+                          'rectangle ne serait plus traite')
+        if not re.search(r'd\[i\]\s*=\s*INF|:\s*INF', td):
+            echecs.append('VERROU 3 : les colonnes hors empreinte ne partent plus de '
+                          'l\'infini -- la distance serait fausse des le premier balayage')
     if appl is not None and 'empreinte[i]' not in appl:
         echecs.append('VERROU 3 : appliquerChunk ne protege plus l\'empreinte -- '
                       'l\'etalement raboterait le terrain ou la structure doit etre posee')
@@ -152,12 +160,20 @@ def controler(racine='.'):
         # Tester la seule PRESENCE des poids laissait passer leur permutation :
         # mettre 4 en orthogonal rend la distance fausse sans rien faire disparaitre.
         # (Sabotage Z7 : ne mordait pas sans ce comptage.)
-        if td.count('+ 3') != 4 or td.count('+ 4') != 4:
-            echecs.append('VERROU 4 : les poids de chanfrein ne sont plus 3 en '
-                          'orthogonal et 4 en diagonale, quatre fois chacun (lu : %d et '
-                          '%d) -- une autre ponderation ne vaut plus la distance '
-                          'euclidienne et les angles a 45 degres reviennent dans les '
-                          'coins' % (td.count('+ 3'), td.count('+ 4')))
+        # T484 : compter les occurrences etait fragile -- le transport de l'ancre
+        # double chaque mention. On verifie maintenant QUI porte quel poids :
+        # les quatre voisins orthogonaux a 3, les quatre diagonaux a 4. C'est
+        # l'enonce exact de la regle, et il resiste a une reecriture.
+        orth = re.findall(r'd\[i (?:- 1|\+ 1|- rw|\+ rw)\]\s*\+\s*(\d+)', td)
+        diag = re.findall(r'd\[i (?:- rw - 1|- rw \+ 1|\+ rw \+ 1|\+ rw - 1)\]\s*\+\s*(\d+)', td)
+        if len(set(orth)) != 1 or (orth and orth[0] != '3') or len(orth) < 4:
+            echecs.append('VERROU 4 : les voisins orthogonaux ne pesent plus 3 '
+                          '(lu : %r) -- la distance cesse d\'approcher l\'euclidienne'
+                          % (orth,))
+        if len(set(diag)) != 1 or (diag and diag[0] != '4') or len(diag) < 4:
+            echecs.append('VERROU 4 : les voisins diagonaux ne pesent plus 4 '
+                          '(lu : %r) -- les aretes a 45 degres reviennent dans les coins'
+                          % (diag,))
         if td.count('for (') < 4:
             echecs.append('VERROU 4 : la transformee de distance n\'a plus ses deux '
                           'balayages -- un seul balayage laisse des distances fausses '
@@ -172,9 +188,24 @@ def controler(racine='.'):
         echecs.append('VERROU 5 : le profil n\'est plus l\'ease-out cubique 1-(1-u)^3 -- '
                       'une courbe tangente aussi du cote de l\'ouvrage recree la '
                       'collerette plate, une courbe non tangente dehors recree une arete')
-    if prof is not None and 'groundY +' not in prof:
-        echecs.append('VERROU 5 : la cible n\'est plus ancree sur groundY -- elle '
-                      'pourrait passer sous le plateau et recreuser une tranchee')
+    # T484 : RETARGETE, PAS SUPPRIME. L'ancien verrou exigeait 'groundY +' dans la
+    # cible. Il figeait precisement le defaut signale : la pente rejoignait un
+    # plancher CONSTANT, alors que la surface de l'ouvrage descend a Y 59 au bord
+    # ouest (le gabarit n'y a aucune marge vide, mesure du 24 nov.). La pente vise
+    # desormais l'altitude reelle de l'ouvrage le plus proche. Ce qui reste protege
+    # est l'essentiel d'avant : la cible est une INTERPOLATION entre deux altitudes
+    # mesurees, donc elle ne peut pas passer sous les deux ni creuser de tranchee.
+    if prof is not None:
+        if 'ancre[' not in prof:
+            echecs.append('VERROU 5 : la cible n\'utilise plus l\'ancre -- retour a un '
+                          'plancher constant, et la falaise franche au bord du gabarit')
+        if not re.search(r'=\s*a\s*\+\s*\(\s*solNaturel\[i\]\s*-\s*a\s*\)\s*\*\s*k', prof):
+            echecs.append('VERROU 5 : la cible n\'interpole plus entre l\'ancre et le sol '
+                          'naturel -- elle pourrait sortir de cet intervalle et creuser '
+                          'une tranchee')
+        if not re.search(r'ancre\[i\]\s*==\s*ABSENT_T\s*\?\s*groundY', prof):
+            echecs.append('VERROU 5 : aucune valeur de repli quand l\'ancre manque -- '
+                          'une colonne sans ouvrage proche viserait n\'importe quoi')
 
     # ------------------------------------------------------------------- VERROU 6
     # LES DEUX BOUTS DU LISSAGE SONT EPINGLES.
@@ -322,19 +353,71 @@ def controler(racine='.'):
             echecs.append('VERROU 12 : le plancher par colonne n\'est plus borne par '
                           'le fond du monde')
 
+    # ------------------------------------------------------------------ VERROU 13
+    # L'ANCRE EST LA SURFACE REELLE DE L'OUVRAGE, ET ELLE VOYAGE.
+    # Mesure du 24 nov. : le gabarit a 30 colonnes de marge vide a l'est, 14 au nord,
+    # 16 au sud et ZERO a l'ouest. Du cote sans marge son bord tranche le bassin en
+    # pleine profondeur ; la marche au contact y atteint 14 blocs contre 2 ailleurs.
+    # Trois exigences, car deux ne suffisaient pas :
+    #   a) la surface est relevee par colonne, au MAXIMUM des blocs poses ;
+    #   b) elle est semee dans la transformee de distance et propagee avec elle ;
+    #   c) elle part de origin.getY(), donc en coordonnees du monde.
+    ctor = corps(code, 'TalusJob(ServerLevel level, BlockPos min, BlockPos max, int groundY,')
+    if ctor is None:
+        echecs.append('VERROU 13 : constructeur de TalusJob introuvable')
+    else:
+        if 'surfaceOuvrage' not in ctor:
+            echecs.append('VERROU 13 : la surface de l\'ouvrage n\'est plus relevee -- '
+                          'la pente ne saurait plus quelle altitude rejoindre')
+        if not re.search(r'ySurf\s*>\s*surfaceOuvrage\[i\]', ctor):
+            echecs.append('VERROU 13 : la surface retenue n\'est plus le MAXIMUM des '
+                          'blocs poses -- viser le bas de l\'ouvrage ferait plonger la '
+                          'pente sous le bassin')
+        if not re.search(r'oy\s*=\s*origin\.getY\(\)', ctor) or 'oy + bi.pos().getY()' not in ctor:
+            echecs.append('VERROU 13 : la surface n\'est plus ramenee en altitude monde '
+                          'par origin.getY() -- elle resterait relative au gabarit')
+    # Le champ doit EXISTER, pas seulement etre affecte : un renommage de la
+    # declaration laisse le constructeur intact et le banc aveugle.
+    if not re.search(r'final\s+int\[\]\s+surfaceOuvrage\s*;', code):
+        echecs.append('VERROU 13 : le champ surfaceOuvrage n\'est plus declare')
+    if not re.search(r'int\[\]\s+ancre\s*;', code):
+        echecs.append('VERROU 13 : le champ ancre n\'est plus declare')
+    if td is not None:
+        # Une sortie anticipee laisse le second balayage en place dans le texte tout
+        # en le rendant mort : l'ancre resterait fausse du cote non parcouru.
+        if td.count('return d') != 1:
+            echecs.append('VERROU 13 : la transformee de distance ne sort plus en un '
+                          'seul point (%d) -- un retour anticipe rendrait le second '
+                          'balayage mort et l\'ancre fausse d\'un cote'
+                          % td.count('return d'))
+        if 'ancre' not in td:
+            echecs.append('VERROU 13 : la transformee de distance ne transporte plus '
+                          'l\'ancre -- connaitre la distance sans connaitre l\'altitude '
+                          'a rejoindre ne sert a rien')
+        if 'ancre[i] = surfaceOuvrage[i]' not in td:
+            echecs.append('VERROU 13 : l\'ancre n\'est plus semee sur la surface de '
+                          'l\'ouvrage -- elle propagerait une valeur sans rapport')
+        # L'ancre doit suivre le MEME voisin que la distance, sinon elle vient d'une
+        # colonne qui n'est pas la plus proche et la pente vise de travers.
+        if len(re.findall(r'\{\s*m\s*=\s*d\[[^\]]+\]\s*\+\s*\d+;\s*a\s*=\s*ancre\[[^\]]+\];\s*\}', td)) < 8:
+            echecs.append('VERROU 13 : l\'ancre ne suit plus le voisin qui a fourni la '
+                          'distance -- elle viendrait d\'une autre colonne que la plus '
+                          'proche')
+
     if echecs:
         for e in echecs:
             print('ECHEC  %s' % e)
         print('laketaluscheck : %d verrou(x) rompu(s)' % len(echecs))
         return 1
 
-    print('laketaluscheck : 12 verrous tiennent -- releve avant le clear, cible calculee '
+    print('laketaluscheck : 13 verrous tiennent -- releve avant le clear, cible calculee '
           'une fois et jamais pendant l\'ecriture, pente partant de l\'empreinte et non '
           'du rectangle, distance euclidienne par chanfrein, profil franc au contact et '
           'tangent dehors, lissage epingle aux deux bouts, aucune colonne sans cible, '
           'pose jamais bloquee, anneau tenu aux quatre bords, creusement suivant la '
           'forme du lac avec un plancher par colonne jusqu\'au plafond du monde, '
-          'colonnes hors ouvrage epargnees, bedrock et terre porteuse intouchees')
+          'colonnes hors ouvrage epargnees, bedrock et terre porteuse intouchees, '
+          'pente rejoignant la surface reelle de l\'ouvrage au contact')
     return 0
 
 
