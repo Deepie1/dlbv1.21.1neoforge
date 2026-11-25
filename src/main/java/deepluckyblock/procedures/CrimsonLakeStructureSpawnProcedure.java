@@ -1260,7 +1260,25 @@ public class CrimsonLakeStructureSpawnProcedure {
     /** Profondeur de recherche du sol sous la vegetation. */
     private static final int TALUS_VEG_SCAN = 48;
     /** Balayages maximaux de la passe de mesure, le temps que les chunks arrivent. */
-    private static final int TALUS_MESURE_BALAYAGES = 12;
+    /**
+     * T486 : nombre de balayages consecutifs SANS le moindre chunk gagne avant
+     * d'abandonner. L'ancien critere etait un nombre de tours fixe : sur le run du
+     * 24 nov. les 12 tours ont ete consommes pendant que le serveur affichait
+     * « Can't keep up! » (10,5 s de gel), et le releve a rendu la main avec 60 chunks
+     * jamais vus -- tous au sud, parce que le curseur balaie les z croissants et que
+     * le dernier servi est toujours le meme cote. Compter la STAGNATION et non les
+     * tours laisse le keeper finir son travail tant qu'il progresse.
+     */
+    private static final int TALUS_STAGNATION_MAX = 8;
+    /**
+     * T486 : temps laisse au ChunkKeeper pour pomper l'anneau AVANT que le releve
+     * commence. Le pipeline lancait le releve dans la foulee de track() : le keeper
+     * venait de recevoir 550 chunks et n'en avait encore aucun. Le releve balayait
+     * alors du vide, consommait ses tours et rendait la main. Sur le run du 24 nov.
+     * tout le pipeline a tenu en 26 s pour 550 chunks a charger -- il n'a jamais
+     * laisse au monde le temps d'exister au sud.
+     */
+    private static final long TALUS_PRECHARGE_MS = 60_000L;
     /** Remblai maximal sous la cible. Genereux : la cible ne depasse jamais le naturel. */
     private static final int TALUS_REMBLAI_MAX = 64;
     /** Le raccord est cosmetique : passe ce delai il rend la main, la pose n'attend jamais. */
@@ -1386,6 +1404,17 @@ public class CrimsonLakeStructureSpawnProcedure {
         boolean mesureFinie;
         long colonnesRelevees, colonnesRabotees, colonnesRemblayees, blocsEcrits;
         int chunksManquants, trousCombles, empreinteCol;
+        /**
+         * T486 : une colonne dont le sol naturel n'a JAMAIS ete relevee et qu'aucun
+         * voisin releve n'a pu combler. L'ultime recours de boucherTrous() lui donnait
+         * groundY -- une altitude CONSTANTE, exactement le defaut que T484bis venait de
+         * corriger pour l'ancre : la pente vise alors un plancher fictif et taille une
+         * marche dans du terrain qu'on n'a jamais mesure. Sur le run du 24 nov. cela
+         * touchait 10 136 colonnes de l'anneau (13,5 %), dont 9 280 au sud et dans les
+         * coins sud. On les marque pour ne PAS y toucher.
+         */
+        boolean[] inventee;
+        int colonnesInventees, chunksTardifs, balayagesSteriles;
         final long t0;
         long dernierLogMs;
         Runnable finApplication;
@@ -1431,13 +1460,44 @@ public class CrimsonLakeStructureSpawnProcedure {
             finMesure = onDone;
             curseur = 0; balayage = 0; mesureFinie = false;
             announceLakeProgress(level, "surveying terrain before clearing...");
+            attendreZone();
+        }
+
+        /**
+         * T486 : on ne releve pas un terrain qui n'est pas encore charge. Tant que le
+         * keeper a des chunks en attente, on lui rend la main tick par tick. Borne par
+         * TALUS_PRECHARGE_MS : un chunk qui ne vient jamais ne doit pas retenir la pose.
+         */
+        private void attendreZone() {
+            try {
+                deepluckyblock.util.ChunkKeeper.keep(level);
+                if (System.currentTimeMillis() - t0 < TALUS_PRECHARGE_MS
+                        && !deepluckyblock.util.ChunkKeeper.zoneComplete(level)) {
+                    if (System.currentTimeMillis() - dernierLogMs >= 20_000L) {
+                        dernierLogMs = System.currentTimeMillis();
+                        announceLakeProgress(level, "waiting for terrain chunks to load...");
+                    }
+                    TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1,
+                            this::attendreZone);
+                    return;
+                }
+            } catch (Throwable t) {
+                deepluckyblock.util.DebugLog.err("[DLB-LAKE] T486 attente de zone interrompue :");
+                deepluckyblock.util.DebugLog.trace(t);
+            }
             pasMesure();
         }
 
         void lancerApplication(Runnable onDone) {
             finApplication = onDone;
             preparer();
-            curseur = 0; mesureFinie = true;
+            // T486 : l'application ne faisait qu'UN passage. Un chunk absent etait
+            // re-demande puis definitivement saute -- il arrivait une seconde plus tard
+            // et ne recevait jamais le raccord. On reutilise chunkFait pour repasser
+            // tant qu'il en manque, exactement comme le releve.
+            java.util.Arrays.fill(chunkFait, false);
+            balayage = 0;
+            curseur = 0; mesureFinie = true; balayagesSteriles = 0; chunksManquants = 0;
             announceLakeProgress(level, "blending terrain into the structure...");
             pasApplication();
         }
@@ -1491,9 +1551,13 @@ public class CrimsonLakeStructureSpawnProcedure {
             // on repasse. Un trou de releve deviendrait une plaque de terrain brut.
             int manquants = 0;
             for (boolean b : chunkFait) if (!b) manquants++;
+            // T486 : un tour ne compte que s'il n'a RIEN rapporte. Tant que les chunks
+            // arrivent, on continue -- la deadline reste le garde-fou.
+            if (balayage == 0 || manquants < chunksManquants) balayagesSteriles = 0;
+            else balayagesSteriles++;
             chunksManquants = manquants;
             balayage++;
-            if (manquants > 0 && balayage < TALUS_MESURE_BALAYAGES) {
+            if (manquants > 0 && balayagesSteriles < TALUS_STAGNATION_MAX) {
                 curseur = 0;
                 if (System.currentTimeMillis() - dernierLogMs >= 20_000L) {
                     dernierLogMs = System.currentTimeMillis();
@@ -1603,9 +1667,19 @@ public class CrimsonLakeStructureSpawnProcedure {
                 System.arraycopy(sortie, 0, solNaturel, 0, sortie.length);
                 if (!reste) break;
             }
-            // Ultime recours : une colonne sans aucun voisin connu prend le sol de l'ouvrage.
+            // T486 : ultime recours. Une colonne sans AUCUN voisin releve prenait le sol
+            // de l'ouvrage -- une altitude constante, donc une cible fausse partout ou le
+            // terrain reel n'est pas a cette altitude. On lui donne toujours groundY pour
+            // que les calculs restent bornes, mais on la MARQUE : appliquerChunk() n'y
+            // ecrira rien. Mieux vaut du terrain brut qu'une marche creusee vers un
+            // plancher invente.
+            inventee = new boolean[solNaturel.length];
             for (int i = 0; i < solNaturel.length; i++)
-                if (solNaturel[i] == ABSENT_T) { solNaturel[i] = groundY; trousCombles++; }
+                if (solNaturel[i] == ABSENT_T) {
+                    solNaturel[i] = groundY;
+                    inventee[i] = true;
+                    colonnesInventees++;
+                }
         }
 
         /**
@@ -1701,8 +1775,17 @@ public class CrimsonLakeStructureSpawnProcedure {
             if (deepluckyblock.util.DebugLog.ENABLED)
                 deepluckyblock.util.DebugLog.out("[DLB-LAKE] T479 raccord : " + colonnesRabotees
                         + " colonnes rabotees, " + colonnesRemblayees + " remblayees, "
-                        + blocsEcrits + " blocs ecrits, " + trousCombles + " trous de releve combles, en "
+                        + blocsEcrits + " blocs ecrits, " + trousCombles + " trous de releve combles, "
+                        + colonnesInventees + " colonnes SANS releve laissees brutes, "
+                        + chunksManquants + " chunks jamais obtenus, " + chunksTardifs
+                        + " rattrapes au rebalayage, en "
                         + (System.currentTimeMillis() - t0) + " ms");
+            // T486 : un raccord incomplet est un defaut VISIBLE en jeu. Le taire derriere
+            // un log de debogage desactive revient a livrer une marche sans le dire.
+            if (colonnesInventees > 0 || chunksManquants > 0)
+                announceLakeProgress(level, "terrain blended, but " + chunksManquants
+                        + " chunks never loaded and " + colonnesInventees
+                        + " columns were left raw (no survey)");
             Runnable r = finApplication;
             finApplication = null;
             if (r != null) r.run();
@@ -1718,19 +1801,42 @@ public class CrimsonLakeStructureSpawnProcedure {
             long deadline = System.nanoTime() + 40_000_000L;
             int total = ccw * ccd;
             while (curseur < total && System.nanoTime() < deadline) {
-                int cx = ccx0 + (curseur % ccw), cz = ccz0 + (curseur / ccw);
-                var ca = level.getChunkSource().getChunkNow(cx, cz);
-                if (ca instanceof net.minecraft.world.level.chunk.LevelChunk lc) appliquerChunk(lc);
-                else deepluckyblock.util.SafeSurface.reRequest(level, cx, cz);
+                if (!chunkFait[curseur]) {
+                    int cx = ccx0 + (curseur % ccw), cz = ccz0 + (curseur / ccw);
+                    var ca = level.getChunkSource().getChunkNow(cx, cz);
+                    if (ca instanceof net.minecraft.world.level.chunk.LevelChunk lc) {
+                        appliquerChunk(lc);
+                        chunkFait[curseur] = true;
+                        if (balayage > 0) chunksTardifs++;
+                    } else {
+                        deepluckyblock.util.SafeSurface.reRequest(level, cx, cz);
+                    }
+                }
                 curseur++;
             }
             if (System.currentTimeMillis() - dernierLogMs >= 30_000L) {
                 dernierLogMs = System.currentTimeMillis();
                 announceLakeProgress(level, "blending terrain (" + curseur + "/" + total + ")...");
             }
-            if (curseur < total)
+            if (curseur < total) {
                 TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, this::pasApplication);
-            else finirApplication();
+                return;
+            }
+            // T486 : fin de balayage. Tant qu'il manque un chunk, le keeper le pompe et
+            // on repasse -- la deadline reste le seul garde-fou. Sans cette reprise les
+            // 60 chunks du sud arrives en cours de route n'etaient jamais raccordes.
+            int restants = 0;
+            for (boolean b : chunkFait) if (!b) restants++;
+            if (balayage == 0 || restants < chunksManquants) balayagesSteriles = 0;
+            else balayagesSteriles++;
+            chunksManquants = restants;
+            balayage++;
+            if (restants > 0 && balayagesSteriles < TALUS_STAGNATION_MAX) {
+                curseur = 0;
+                TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, this::pasApplication);
+                return;
+            }
+            finirApplication();
         }
 
         /**
@@ -1758,6 +1864,10 @@ public class CrimsonLakeStructureSpawnProcedure {
                     if (wx < rx0 || wx > rx1) continue;
                     int i = idx(wx, wz);
                     if (i < 0 || empreinte[i]) continue;   // l'ouvrage est intouchable
+                    // T486 : sol naturel jamais releve ni comble par un voisin reel. Y
+                    // appliquer la pente reviendrait a raboter vers groundY un terrain
+                    // dont on ignore l'altitude.
+                    if (inventee != null && inventee[i]) continue;
                     // Au-dela de la rampe la cible EST le terrain naturel : rien a faire,
                     // et surtout rien a abimer. Sans ce test on reecrirait tout l'anneau.
                     if (distance[i] >= wRampe) continue;

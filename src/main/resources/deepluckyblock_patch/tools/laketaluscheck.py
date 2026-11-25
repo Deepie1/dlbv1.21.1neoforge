@@ -233,12 +233,51 @@ def controler(racine='.'):
                       'laisserait une plaque de terrain brut au milieu du lissage')
     elif 'ABSENT_T' not in bt:
         echecs.append('VERROU 7 : boucherTrous ne cherche plus les colonnes non relevees')
-    # < 2 occurrences = constante declaree mais jamais utilisee. Chercher le nom tout
-    # court etait satisfait par sa propre DECLARATION -- troisieme fois que ce piege
-    # se referme sur moi. (Sabotage Z12 : ne mordait pas sans ce comptage.)
-    if code.count('TALUS_MESURE_BALAYAGES') < 2:
-        echecs.append('VERROU 7 : la mesure ne rebalaye plus les chunks absents -- elle '
-                      'abandonnerait au premier passage, alors que le keeper les pompe')
+    # T486 -- RETARGE. L'ancienne regle comptait les occurrences de
+    # TALUS_MESURE_BALAYAGES : un nombre de TOURS fixe. Sur le run du 24 nov. les
+    # 12 tours ont ete consommes pendant 10,5 s de gel serveur et le releve a rendu
+    # la main avec 60 chunks jamais vus, tous au sud. Le critere juste n'est pas le
+    # nombre de tours mais la STAGNATION. On verifie donc les trois roles, pas un nom.
+    for fn, quoi in (('private void pasMesureGuarde(', 'le releve'),
+                     ('private void pasApplicationGuarde(', 'l\'application')):
+        b = corps(code, fn)
+        if b is None:
+            echecs.append('VERROU 7 : %s est introuvable' % quoi)
+            continue
+        if 'chunkFait[curseur] = true' not in b:
+            echecs.append('VERROU 7 : %s ne marque pas les chunks traites -- sans marque '
+                          'il ne peut pas repasser sur ceux qui manquaient' % quoi)
+        if 'balayagesSteriles' not in b:
+            echecs.append('VERROU 7 : %s n\'abandonne pas sur la STAGNATION mais sur un '
+                          'nombre de tours -- un gel serveur consomme les tours et le '
+                          'cote balaye en dernier (le sud) reste a nu' % quoi)
+        if 'curseur = 0' not in b:
+            echecs.append('VERROU 7 : %s ne rebalaye jamais -- il abandonnerait au '
+                          'premier passage, alors que le keeper pompe encore' % quoi)
+    # Une colonne jamais relevee ne doit pas etre rabotee vers une altitude inventee.
+    if 'inventee' not in (bt or ''):
+        echecs.append('VERROU 7 : boucherTrous ne marque pas les colonnes inventees -- '
+                      'son ultime recours leur donne groundY, une altitude CONSTANTE, '
+                      'et la pente taille alors une marche dans du terrain non mesure')
+    if 'inventee[i] = true' not in (bt or ''):
+        echecs.append('VERROU 7 : boucherTrous declare le marquage mais ne marque '
+                      'aucune colonne -- la garde d\'appliquerChunk serait morte')
+    # Relever un terrain pas encore charge, c'est relever du vide. Le pipeline doit
+    # laisser au keeper le temps de pomper l'anneau avant de commencer.
+    lm = corps(code, 'void lancerMesure(')
+    az = corps(code, 'private void attendreZone(')
+    if lm is None or 'attendreZone()' not in lm:
+        echecs.append('VERROU 7 : le releve demarre sans attendre que la zone soit '
+                      'chargee -- il balaierait du vide et consommerait ses tours')
+    if az is None or 'zoneComplete' not in az:
+        echecs.append('VERROU 7 : l\'attente de zone ne consulte pas le keeper')
+    if az is not None and 'TALUS_PRECHARGE_MS' not in az:
+        echecs.append('VERROU 7 : l\'attente de zone n\'est pas bornee -- un chunk qui '
+                      'ne vient jamais retiendrait la pose')
+    ap = corps(code, 'private void appliquerChunk(')
+    if ap is None or 'inventee[i]' not in ap:
+        echecs.append('VERROU 7 : appliquerChunk ecrit sur les colonnes sans releve -- '
+                      'mieux vaut du terrain brut qu\'une marche vers un plancher fictif')
 
     # ------------------------------------------------------------------- VERROU 8
     # LE RACCORD EST COSMETIQUE : IL NE DOIT JAMAIS EMPECHER LA POSE.
