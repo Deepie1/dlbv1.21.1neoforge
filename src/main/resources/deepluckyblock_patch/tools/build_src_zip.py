@@ -212,6 +212,19 @@ NOTICES = {
   "     Onze cassures testees, toutes rendent le code 1 ; la suppression de l'outil et\n"
   "     les sous-mots getChunkSource / getChunkNow restent verts.",
 
+ 'src/main/resources/deepluckyblock_patch/tools/subscribecheck.py':
+  "T488 : BANC NEUF, ne apres un CRASH AU DEMARRAGE. Une methode utilitaire avait\n"
+  "     ete inseree ENTRE une annotation @SubscribeEvent et la methode qu'elle\n"
+  "     annotait ; l'annotation s'est reportee sur l'utilitaire et NeoForge a refuse\n"
+  "     de charger le mod (« must have only one parameter that is an Event\n"
+  "     subtype »). Les quinze bancs etaient verts : aucun ne verifiait ce qu'une\n"
+  "     annotation annote reellement. Le banc parcourt les 227 .java et exige, pour\n"
+  "     chaque @SubscribeEvent, une METHODE a EXACTEMENT un parametre de type Event,\n"
+  "     static si la classe est @EventBusSubscriber. Les arguments propres de\n"
+  "     l'annotation sont sautes, sans quoi 20 gestionnaires sains seraient accuses.\n"
+  "     166 annotations sur 63 fichiers controlees ; quatre sabotages joues, quatre\n"
+  "     mordus, dont la reproduction exacte du crash ; zero faux positif.",
+
  'src/main/resources/deepluckyblock_patch/tools/lakefinitioncheck.py':
   "T488 : BANC NEUF. Le dev voyait « dans les airs des fragments d'anciens terrains »\n"
   "     (tapis de neige, herbes, fleurs, neige poudreuse), des chunks d'ancien terrain\n"

@@ -404,7 +404,6 @@ public class CrimsonLakeStructureSpawnProcedure {
         loginTick = Long.MIN_VALUE;
     }
 
-    @SubscribeEvent
     /**
      * T488 -- renvoie aux clients une TRANCHE des chunks reecrits, puis rend la main.
      *
@@ -424,6 +423,7 @@ public class CrimsonLakeStructureSpawnProcedure {
         return LAKE_CHUNKS_REECRITS.size();
     }
 
+    @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event) {
         if (!buildAllowed()) return;
 
