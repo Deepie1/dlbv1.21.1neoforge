@@ -55,6 +55,8 @@ CE QUE VERIFIENT LES VERROUS :
   V13 le lac diffuse SA PROPRE liste de chunks, pas seulement le registre global que
       prepZoneInternal() remet a zero ; liste alimentee par les deux chemins
       d'ecriture et videe au demarrage de chaque chantier
+  V14 la diffusion est POMPEE par tranches bornees a chaque tick, et la pompe tourne
+      avant toute sortie anticipee du tick (sinon le reliquat ne part jamais)
 
 USAGE : python3 lakefinitioncheck.py [racine]
 """
@@ -362,7 +364,9 @@ def controler(racine):
             echecs.append('V13 : la liste propre n est pas videe au demarrage du '
                           'chantier (lancerMesure) ; un chantier rediffuserait les '
                           'chunks du chantier precedent.')
-        iB = lac.find('broadcastChunkKeys')
+        # DERNIERE occurrence : la premiere est celle de la pompe, qui retire ses
+        # chunks un a un par iterateur et n'a donc pas a les « clear ».
+        iB = lac.rfind('broadcastChunkKeys')
         iC = [m.start() for m in re.finditer(r'LAKE_CHUNKS_REECRITS\.clear\(\)', lac)]
         if iB >= 0:
             if not any(iB < c < iB + 400 for c in iC):
@@ -374,12 +378,61 @@ def controler(racine):
     if not re.search(r'public\s+static\s+void\s+broadcastChunkKeys\s*\(', prep):
         echecs.append('V13 : broadcastChunkKeys doit etre public dans StructureTerrainPrep.')
 
+    # ---- V14 : diffusion etalee, bornee, et pompee avant toute sortie ----
+    if 'pomperDiffusion' not in lac:
+        echecs.append('V14 : aucune pompe de diffusion. Les ~870 chunks du chantier '
+                      'partiraient tous dans le meme tick, sur un serveur qui affiche '
+                      'deja « Can\'t keep up! » jusqu a 23 s.')
+    else:
+        pompe = corps(lac, 'private static int pomperDiffusion') or ''
+        # Chercher la constante N IMPORTE OU dans la pompe serait aveugle : elle
+        # figure aussi dans la taille initiale de la liste. C'est la CONDITION DE
+        # BOUCLE qui doit la porter, sinon la pompe draine tout en un tick.
+        def conditions_de_boucle(code):
+            out = []
+            for m in re.finditer(r'\b(while|for)\s*\(', code):
+                i = m.end() - 1
+                prof, k = 0, i
+                while k < len(code):
+                    if code[k] == '(':
+                        prof += 1
+                    elif code[k] == ')':
+                        prof -= 1
+                        if prof == 0:
+                            out.append(code[i + 1:k])
+                            break
+                    k += 1
+            return out
+        if not any('DIFFUSION_CHUNKS_PAR_TICK' in c for c in conditions_de_boucle(pompe)):
+            echecs.append('V14 : la boucle de la pompe n est pas bornee par '
+                          'DIFFUSION_CHUNKS_PAR_TICK ; elle enverrait tous les chunks '
+                          'dans le meme tick, ce qui annule son interet.')
+        if not re.search(r'private\s+static\s+final\s+int\s+DIFFUSION_CHUNKS_PAR_TICK\s*=\s*\d+',
+                         lac):
+            echecs.append('V14 : la borne par tick doit etre une constante chiffree.')
+        if 'it.remove()' not in pompe and 'remove(' not in pompe:
+            echecs.append('V14 : la pompe ne retire pas les chunks envoyes ; elle '
+                          'renverrait indefiniment les memes.')
+        # La pompe doit tourner AVANT la sortie anticipee du tick, sinon le
+        # reliquat reste en attente des que les files du lac se vident.
+        tick = corps(lac, 'public static void onServerTick') or ''
+        iP = tick.find('pomperDiffusion')
+        iR = tick.find('return;')
+        if iP < 0:
+            echecs.append('V14 : la pompe n est pas appelee dans le tick serveur.')
+        else:
+            sortie = re.search(r'if\s*\(PASTE_Q\.isEmpty\(\)[^;]*\)\s*return;', tick)
+            if sortie and iP > sortie.start():
+                echecs.append('V14 : la pompe est appelee APRES la sortie anticipee du '
+                              'tick. Des que les files du lac se vident, le reliquat de '
+                              'chunks ne serait plus jamais diffuse.')
+
     if echecs:
         for e in echecs:
             print('!! ' + e)
         print('!! lakefinitioncheck : %d probleme(s)' % len(echecs))
         return 1
-    print('lakefinitioncheck : OK (13 verrous)')
+    print('lakefinitioncheck : OK (14 verrous)')
     return 0
 
 

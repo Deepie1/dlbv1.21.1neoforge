@@ -405,8 +405,34 @@ public class CrimsonLakeStructureSpawnProcedure {
     }
 
     @SubscribeEvent
+    /**
+     * T488 -- renvoie aux clients une TRANCHE des chunks reecrits, puis rend la main.
+     *
+     * Appelee a chaque tick tant qu'il reste des chunks en attente, y compris quand
+     * les files du lac sont vides : la diffusion doit survivre a la fin du chantier
+     * pour vider son reliquat. Renvoie le nombre de chunks encore en attente.
+     */
+    private static int pomperDiffusion(net.minecraft.server.level.ServerLevel level) {
+        if (level == null || LAKE_CHUNKS_REECRITS.isEmpty()) return 0;
+        java.util.List<Long> tranche = new java.util.ArrayList<>(DIFFUSION_CHUNKS_PAR_TICK);
+        java.util.Iterator<Long> it = LAKE_CHUNKS_REECRITS.iterator();
+        while (it.hasNext() && tranche.size() < DIFFUSION_CHUNKS_PAR_TICK) {
+            tranche.add(it.next());
+            it.remove();
+        }
+        if (!tranche.isEmpty()) StructureTerrainPrep.broadcastChunkKeys(level, tranche);
+        return LAKE_CHUNKS_REECRITS.size();
+    }
+
     public static void onServerTick(ServerTickEvent.Post event) {
         if (!buildAllowed()) return;
+
+        // T488 : la diffusion est pompee AVANT toute sortie anticipee. Placee plus
+        // bas, elle s'arreterait des que les files du lac se vident -- c'est-a-dire
+        // precisement au moment ou il reste le reliquat a envoyer.
+        if (!LAKE_CHUNKS_REECRITS.isEmpty() && lakeDiffusionLevel != null) {
+            pomperDiffusion(lakeDiffusionLevel);
+        }
 
         if (diceTick++ % 1200 == 0 && PASTE_Q.isEmpty() && PENDING.isEmpty()) {
             rollDice();
@@ -574,10 +600,12 @@ public class CrimsonLakeStructureSpawnProcedure {
                     }
                     StructureTerrainPrep.sweepFloatingNaturalPass(flvl, aMin, aMax, () -> {
                         // Diffusion EN DERNIER : tout ce qui precede ecrit en palette.
-                        // Notre propre liste : insensible au vidage du registre global.
+                        // Reliquat : la pompe a deja diffuse l'essentiel pendant le
+                        // chantier ; ce qui reste part ici, en un seul envoi.
+                        int reste = LAKE_CHUNKS_REECRITS.size();
                         StructureTerrainPrep.broadcastChunkKeys(flvl, LAKE_CHUNKS_REECRITS);
-                        deepluckyblock.util.DebugLog.out("[DLB-LAKE] T488 diffusion de "
-                                + LAKE_CHUNKS_REECRITS.size() + " chunks reecrits aux clients");
+                        deepluckyblock.util.DebugLog.out("[DLB-LAKE] T488 diffusion finale : "
+                                + reste + " chunks restants renvoyes aux clients");
                         LAKE_CHUNKS_REECRITS.clear();
                         StructureTerrainPrep.broadcastModifiedChunks(flvl);
                         StructureTerrainPrep.clearFootprintProtection();
@@ -1113,6 +1141,20 @@ public class CrimsonLakeStructureSpawnProcedure {
      */
     private static final java.util.Set<Long> LAKE_CHUNKS_REECRITS = new java.util.HashSet<>();
 
+    /** T488 -- niveau ou pomper la diffusion ; pose au demarrage du chantier. */
+    private static net.minecraft.server.level.ServerLevel lakeDiffusionLevel = null;
+
+    /**
+     * T488 -- combien de chunks on renvoie aux clients PAR TICK.
+     *
+     * Diffuser d'un bloc les ~870 chunks du chantier a la toute fin enverrait
+     * autant de paquets pleins dans le meme tick, sur un serveur qui affiche deja
+     * « Can't keep up! » jusqu'a 23 s. On etale donc l'envoi, et on le commence
+     * PENDANT le chantier : le joueur voit le terrain se nettoyer au fur et a
+     * mesure au lieu de contempler l'ancien monde pendant les 250 s de la pose.
+     */
+    private static final int DIFFUSION_CHUNKS_PAR_TICK = 8;
+
     private static int lakeOceanRelocs = 0;
     /** Dernier recours : la nappe tient lieu de sol, et on ne lisse rien. */
     private static boolean lakeWaterMode = false;
@@ -1536,6 +1578,7 @@ public class CrimsonLakeStructureSpawnProcedure {
             // ni diffuser les chunks du precedent.
             StructureTerrainPrep.resetCapturedTrees();
             LAKE_CHUNKS_REECRITS.clear();
+            lakeDiffusionLevel = level;
             finMesure = onDone;
             curseur = 0; balayage = 0; mesureFinie = false;
             announceLakeProgress(level, "surveying terrain before clearing...");

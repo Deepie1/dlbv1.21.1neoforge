@@ -235,7 +235,11 @@ NOTICES = {
   "     la chaine de lissage debranchee en T469. Les chunks restent tenus jusqu'au bout.\n"
   "     Les arbres sont releves chunk par chunk pendant la mesure du talus, donc AVANT\n"
   "     le creusement, puis replantes apres la pose ; le sol est repeint et\n"
-  "     revegetalise, l'emprise etant protegee le temps de l'habillage.",
+  "     revegetalise, l'emprise etant protegee le temps de l'habillage. La diffusion\n"
+  "     aux clients est POMPEE par tranches de 8 chunks par tick, des le debut du\n"
+  "     chantier et jusqu'a epuisement : ni burst de 870 paquets, ni 250 s d'ancien\n"
+  "     terrain affiche. Le lac tient sa propre liste de chunks reecrits, car le\n"
+  "     registre global est remis a zero par prepZoneInternal().",
 
  'src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java':
   "T488 : huit acces publics ajoutes, dont broadcastChunkKeys -- diffusion d'une\n"
