@@ -667,9 +667,20 @@ if rec is not None:
 # bord est net et vertical -- c'est assume, et c'est verifiable -- mais il n'y
 # a plus ni trou ni faille.
 #
-# ATTENTION : smoothAround / protectFootprint / clearFootprintProtection
-# existent toujours dans StructureTerrainPrep et servent aux AUTRES
-# structures. Ce qui est interdit ici, c'est que le LAC les appelle.
+# ATTENTION : smoothAround existe toujours dans StructureTerrainPrep et sert aux
+# AUTRES structures. Ce qui est interdit ici, c'est que le LAC l'appelle.
+#
+# T488 -- RETARGETAGE. Ce verrou rangeait protectFootprint() et
+# clearFootprintProtection() parmi la « chaine de lissage ». C'est une erreur de
+# classement : ces deux fonctions ne deplacent aucun bloc et ne changent aucune
+# altitude. Elles posent/levent un simple marqueur (PROTECT_MIN/PROTECT_MAX) que
+# isProtected() consulte pour s'INTERDIRE d'ecrire dans l'emprise. C'est donc
+# l'exact contraire d'un remodelage : une garde. Depuis T488 le lac repeint et
+# revegetalise son anneau ; sans cette garde l'habillage passerait par-dessus la
+# structure posee. Les interdire reviendrait a interdire la correction demandee.
+# Ce qui reste interdit, c'est ce qui RESHAPE le terrain -- liste ci-dessous,
+# desormais elargie a fuseGroundToStructure et enforceGlacisGradient, les deux
+# vrais coupables des tranchees de T469.
 LAC = os.path.join(JAVA, "procedures", "CrimsonLakeStructureSpawnProcedure.java")
 SURF = os.path.join(JAVA, "util", "SafeSurface.java")
 def arguments_appel(src, amorce):
@@ -723,8 +734,8 @@ lac = lire(LAC)
 if lac is not None:
     cl = sans_commentaires(lac)
     # (a) aucune machinerie de terrain cablee sur le lac.
-    for appel in ("smoothRingOnly", "smoothAround", "protectFootprint",
-                  "setForcedFootprintProtection", "clearFootprintProtection"):
+    for appel in ("smoothRingOnly", "smoothAround", "setForcedFootprintProtection",
+                  "fuseGroundToStructure", "enforceGlacisGradient"):
         if appel in cl:
             problemes.append(
                 "T469 : le lac rappelle %s(). La chaine de lissage a ete "

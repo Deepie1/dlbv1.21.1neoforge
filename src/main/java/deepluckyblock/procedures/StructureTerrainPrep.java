@@ -10747,6 +10747,50 @@ public class StructureTerrainPrep {
     }
 
     /**
+     * T488 -- releve des arbres d'UN chunk, a appeler AVANT tout creusement.
+     * Le lac n'a jamais passe par prepZone, donc {@code LAST_TREES} restait vide et
+     * replantTrees() n'avait rien a replanter : reproche dev du 25/11 « je vois que tu
+     * n'as pas replante les arbres dans le terrain ». On se greffe sur le balayage de
+     * chunks deja budgete du talus, un chunk a la fois, pour ne pas ajouter une passe
+     * de 222 000 colonnes a un chantier qui peine deja a tenir le tick.
+     */
+    public static void captureTreesInChunk(ServerLevel level, int cx, int cz, int topY) {
+        int x0 = cx << 4, z0 = cz << 4;
+        LAST_TREES.addAll(scanTrees(level, x0, z0, x0 + 15, z0 + 15, topY));
+    }
+
+    /** T488 -- vide le releve d'arbres avant un nouveau chantier. */
+    public static void resetCapturedTrees() {
+        LAST_TREES = new ArrayList<>();
+    }
+
+    /** T488 -- combien d'arbres ont ete releves (pour la trace du chantier). */
+    public static int capturedTreeCount() {
+        return LAST_TREES.size();
+    }
+
+    /**
+     * T488 -- replantation des arbres releves. ReplantJob re-ancre chaque arbre sur le
+     * sol COURANT via findNaturalGroundY() et refait pousser une vraie essence : un
+     * terrain abaisse par le talus ne produit donc pas de troncs suspendus.
+     */
+    public static void replantCapturedTrees(ServerLevel level, BlockPos min, BlockPos max,
+                                            Runnable onDone) {
+        replantTrees(level, LAST_TREES, min, max, onDone);
+    }
+
+    /**
+     * T488 -- repeinture du sol et revegetalisation : reproche dev du 25/11 « t'as pas
+     * repeint ni remis de la vegetation sur le sol repeint ». Delegue a dressOrLegacy,
+     * qui habille la surface avec la palette naturelle du chunk puis repose herbes,
+     * fleurs et champignons. Aucune altitude n'est touchee : ce n'est pas du lissage.
+     */
+    public static void dressAndRevegetate(ServerLevel level, BlockPos min, BlockPos max,
+                                          Runnable onDone) {
+        dressOrLegacy(level, min, max, true, onDone);
+    }
+
+    /**
      * T488 -- acces public a la purge finale des couvertures volantes (tapis de neige,
      * herbes, fleurs, plantes a support invalide). Critere porte par {@code isSurfaceDecor},
      * qui raisonne par CLASSE de bloc et par TAG : la famille entiere est couverte, blocs

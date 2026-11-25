@@ -566,7 +566,7 @@ public class CrimsonLakeStructureSpawnProcedure {
                 final BlockPos fMax = j.origin.offset(j.sx - 1, Math.max(0, j.sy - 1), j.sz - 1);
                 final BlockPos aMin = fMin.offset(-TALUS_LARGEUR, 0, -TALUS_LARGEUR);
                 final BlockPos aMax = fMax.offset(TALUS_LARGEUR, 0, TALUS_LARGEUR);
-                final Runnable finFinition = () -> {
+                final Runnable finPurge = () -> {
                     try {
                         StructureTerrainPrep.clearFlyingCover(flvl, aMin, aMax);
                     } catch (Throwable t) {
@@ -575,11 +575,32 @@ public class CrimsonLakeStructureSpawnProcedure {
                     StructureTerrainPrep.sweepFloatingNaturalPass(flvl, aMin, aMax, () -> {
                         // Diffusion EN DERNIER : tout ce qui precede ecrit en palette.
                         StructureTerrainPrep.broadcastModifiedChunks(flvl);
+                        StructureTerrainPrep.clearFootprintProtection();
                         deepluckyblock.util.ChunkKeeper.release(flvl);
                         deepluckyblock.util.DebugLog.out("[DLB-LAKE] T488 finition terminee "
                                 + "(fixwater + purge des flottants + diffusion aux clients)");
                     });
                 };
+                // Repeinture du sol + vegetation, puis replantation des arbres releves
+                // avant le creusement. Les deux passes viennent APRES fixwater (le sol
+                // doit etre sec pour etre habille) et AVANT la purge des flottants, qui
+                // sert alors de controle final sur ce qui vient d'etre pose.
+                final Runnable finFinition = () -> {
+                    // L'ouvrage est intouchable : le NBT du lac apporte deja ses propres
+                    // sol, berges et decors. Sans cette protection, l'habillage repeindrait
+                    // par-dessus la structure posee.
+                    StructureTerrainPrep.protectFootprint(fMin, fMax);
+                    try {
+                        StructureTerrainPrep.dressAndRevegetate(flvl, fMin, fMax, () ->
+                                StructureTerrainPrep.replantCapturedTrees(flvl, fMin, fMax, finPurge));
+                    } catch (Throwable t) {
+                        deepluckyblock.util.DebugLog.err(
+                                "[DLB-LAKE] T488 repeinture/replantation echouee : " + t);
+                        finPurge.run();
+                    }
+                };
+                deepluckyblock.util.DebugLog.out("[DLB-LAKE] T488 finition : "
+                        + StructureTerrainPrep.capturedTreeCount() + " arbres releves avant creusement");
                 try {
                     StructureTerrainPrep.fixWaterAround(flvl, fMin, fMax, TALUS_LARGEUR, finFinition);
                 } catch (Throwable t) {
@@ -1495,6 +1516,8 @@ public class CrimsonLakeStructureSpawnProcedure {
         }
 
         void lancerMesure(java.util.function.Consumer<TalusJob> onDone) {
+            // T488 : un chantier ne doit pas replanter les arbres du chantier precedent.
+            StructureTerrainPrep.resetCapturedTrees();
             finMesure = onDone;
             curseur = 0; balayage = 0; mesureFinie = false;
             announceLakeProgress(level, "surveying terrain before clearing...");
@@ -1619,6 +1642,18 @@ public class CrimsonLakeStructureSpawnProcedure {
         /** Releve pur, aucune ecriture. Tourne AVANT le clear, donc sur terrain intact. */
         private void mesurerChunk(net.minecraft.world.level.chunk.LevelChunk chunk) {
             int baseX = chunk.getPos().getMinBlockX(), baseZ = chunk.getPos().getMinBlockZ();
+            // T488 (reproche dev du 25/11 : « je vois que tu n'as pas replante les arbres
+            // dans le terrain ») : le lac ne passe pas par prepZone, donc personne n'avait
+            // jamais releve ses arbres et replantTrees() n'avait rien a replanter. On se
+            // greffe ici, sur le balayage de chunks DEJA budgete de la mesure, et avant
+            // tout creusement -- apres le clear il serait trop tard, les arbres ont disparu.
+            try {
+                StructureTerrainPrep.captureTreesInChunk(level, chunk.getPos().x, chunk.getPos().z,
+                        level.getMaxBuildHeight() - 2);
+            } catch (Throwable t) {
+                deepluckyblock.util.DebugLog.err("[DLB-LAKE] T488 releve des arbres du chunk "
+                        + chunk.getPos() + " echoue : " + t);
+            }
             BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
             int bas = level.getMinBuildHeight() + 1;
             for (int lz = 0; lz < 16; lz++) {

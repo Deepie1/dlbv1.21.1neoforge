@@ -232,13 +232,18 @@ NOTICES = {
   "     ecritures directes de palette (clearChunkDirect, appliquerChunk) marquent leur\n"
   "     chunk ; passe de finition apres la pose -- fixwater, purge des couvertures\n"
   "     volantes, balayage des flottants, puis diffusion aux clients -- sans rappeler\n"
-  "     la chaine de lissage debranchee en T469. Les chunks restent tenus jusqu'au bout.",
+  "     la chaine de lissage debranchee en T469. Les chunks restent tenus jusqu'au bout.\n"
+  "     Les arbres sont releves chunk par chunk pendant la mesure du talus, donc AVANT\n"
+  "     le creusement, puis replantes apres la pose ; le sol est repeint et\n"
+  "     revegetalise, l'emprise etant protegee le temps de l'habillage.",
 
  'src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java':
-  "T488 : deux acces publics ajoutes -- fixWaterAround (delegue a la fonction\n"
-  "     existante fixWaterNearStructure, jusque-la privee et donc inatteignable du\n"
-  "     lac) et clearFlyingCover (purge des couvertures volantes). Aucun changement\n"
-  "     de comportement pour les autres structures.",
+  "T488 : sept acces publics ajoutes, tous de simples delegations vers des fonctions\n"
+  "     existantes mais privees, donc inatteignables depuis le lac (qui ne passe pas\n"
+  "     par prepZone/decorateFinish) : fixWaterAround, clearFlyingCover,\n"
+  "     captureTreesInChunk / resetCapturedTrees / capturedTreeCount,\n"
+  "     replantCapturedTrees et dressAndRevegetate. Aucun changement de comportement\n"
+  "     pour les autres structures.",
 
  'src/main/resources/deepluckyblock_patch/tools/combosoundcheck.py':
   "T487 : BANC NEUF. Le son d'annonce de combo partait a CHAQUE activation : le code\n"

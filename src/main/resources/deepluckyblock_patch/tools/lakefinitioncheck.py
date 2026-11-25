@@ -48,6 +48,10 @@ CE QUE VERIFIENT LES VERROUS :
   V6  la finition ne rappelle PAS la chaine de lissage debranchee en T469
   V7  les chunks restent tenus jusqu'a la fin de la finition (release dans le callback)
   V8  le critere de purge reste generique (classes + tags), jamais une liste de blocs
+  V9  les arbres sont releves AVANT le creusement, et le releve est vide a chaque chantier
+  V10 les arbres sont replantes, et la replantation se re-ancre sur le sol COURANT
+  V11 le sol est repeint et revegetalise apres la pose
+  V12 l'emprise est protegee pendant l'habillage, puis la protection est levee
 
 USAGE : python3 lakefinitioncheck.py [racine]
 """
@@ -251,12 +255,91 @@ def controler(racine):
             echecs.append('V8 : isSurfaceDecor ne raisonne plus par tag ; le dev a demande '
                           'un correctif preventif « moddes inclus », donc pas une liste.')
 
+    # ---- V9 : releve des arbres avant le creusement, remis a zero par chantier ----
+    if 'captureTreesInChunk' not in lac:
+        echecs.append('V9 : aucun releve d arbres dans le lac. replantTrees() n aurait '
+                      'alors rien a replanter : le dev « tu n as pas replante les arbres ».')
+    else:
+        mes = corps(lac, 'private void mesurerChunk')
+        if mes is None or 'captureTreesInChunk' not in mes:
+            echecs.append('V9 : le releve des arbres doit se faire dans mesurerChunk, '
+                          'c est-a-dire AVANT le creusement et sur un balayage deja '
+                          'budgete. Apres le clear les arbres n existent plus.')
+        elif re.search(r'if\s*\(\s*(false|0\s*[=!]=\s*1|1\s*==\s*0)\s*\)[\s\S]{0,160}$',
+                       mes[:mes.find('captureTreesInChunk')]):
+            # Un verrou de PRESENCE ne verifie pas l'EFFET : « if (false) capture... »
+            # laisse le texte en place tout en desactivant le releve.
+            echecs.append('V9 : le releve des arbres est desactive par une garde '
+                          'toujours fausse. Le texte est la, l effet non.')
+        # Le releve doit avoir lieu a la MESURE, jamais a l'application : a ce
+        # moment le clear est passe et il n y a plus d arbre a relever.
+        app = corps(lac, 'private void appliquerChunk') or ''
+        if 'captureTreesInChunk' in app:
+            echecs.append('V9 : un releve d arbres a lieu dans appliquerChunk, donc '
+                          'APRES le creusement : il ne releverait que du vide.')
+    if 'resetCapturedTrees' not in lac:
+        echecs.append('V9 : le releve d arbres n est jamais vide ; un chantier '
+                      'replanterait les arbres du chantier precedent.')
+    if not re.search(r'public\s+static\s+void\s+captureTreesInChunk\s*\(', prep):
+        echecs.append('V9 : captureTreesInChunk doit etre public dans StructureTerrainPrep.')
+    capt = corps(prep, 'public static void captureTreesInChunk') or ''
+    if 'scanTrees' not in capt:
+        echecs.append('V9 : captureTreesInChunk doit deleguer a scanTrees, la fonction '
+                      'existante -- pas en reecrire une autre.')
+
+    # ---- V10 : replantation, re-ancree sur le sol courant ----
+    if 'replantCapturedTrees' not in lac:
+        echecs.append('V10 : les arbres releves ne sont jamais replantes.')
+    rep = corps(prep, 'public static void replantCapturedTrees') or ''
+    if 'replantTrees' not in rep:
+        echecs.append('V10 : replantCapturedTrees doit deleguer a replantTrees.')
+    job = corps(prep, 'private static final class ReplantJob') or ''
+    if 'findNaturalGroundY' not in job:
+        echecs.append('V10 : ReplantJob ne cherche plus le sol courant '
+                      '(findNaturalGroundY). Sur un terrain abaisse par le talus, les '
+                      'arbres seraient replantes a leur ancienne altitude, donc '
+                      'suspendus -- precisement le defaut qu on corrige.')
+
+    # ---- V11 : repeinture et revegetalisation ----
+    if 'dressAndRevegetate' not in lac:
+        echecs.append('V11 : le sol n est ni repeint ni revegetalise. Le dev : « t as '
+                      'pas repeint ni remis de la vegetation sur le sol repeint ».')
+    dre = corps(prep, 'public static void dressAndRevegetate') or ''
+    if 'dressOrLegacy' not in dre:
+        echecs.append('V11 : dressAndRevegetate doit deleguer a dressOrLegacy, qui '
+                      'habille avec la palette naturelle puis repose la vegetation.')
+    iDress = lac.find('dressAndRevegetate')
+    iPlant = lac.find('replantCapturedTrees')
+    if iDress >= 0 and iPlant >= 0 and iPlant < iDress:
+        echecs.append('V11 : les arbres sont replantes AVANT la repeinture du sol ; '
+                      'l habillage repasserait sur leurs pieds.')
+
+    # ---- V12 : emprise protegee pendant l habillage, protection levee ensuite ----
+    iProt = lac.find('protectFootprint')
+    if iProt < 0:
+        echecs.append('V12 : l emprise n est pas protegee pendant l habillage ; la '
+                      'repeinture passerait par-dessus la structure posee.')
+    elif iDress >= 0 and iProt > iDress:
+        echecs.append('V12 : protectFootprint est pose APRES l habillage, donc trop tard.')
+    iLeve = lac.find('clearFootprintProtection')
+    if iLeve < 0:
+        echecs.append('V12 : la protection d emprise n est jamais levee ; elle fuirait '
+                      'sur le chantier suivant.')
+    elif iDiff >= 0 and not (iDiff < iLeve < iDiff + 300):
+        # L'ordre du TEXTE ne dit rien ici : les etapes sont des lambdas definies
+        # dans l'ordre inverse de leur execution. On verifie donc le ROLE -- la
+        # levee doit se faire dans le bloc final, celui qui diffuse aux clients.
+        echecs.append('V12 : la protection d emprise n est pas levee dans le bloc final '
+                      '(celui de la diffusion). Levee trop tot, l habillage deborderait '
+                      'sur la structure ; jamais levee, elle fuirait sur le chantier '
+                      'suivant.')
+
     if echecs:
         for e in echecs:
             print('!! ' + e)
         print('!! lakefinitioncheck : %d probleme(s)' % len(echecs))
         return 1
-    print('lakefinitioncheck : OK (8 verrous)')
+    print('lakefinitioncheck : OK (12 verrous)')
     return 0
 
 
