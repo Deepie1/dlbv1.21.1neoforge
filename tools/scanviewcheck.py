@@ -94,6 +94,7 @@ const PASSES=[{v2:true,peint:true,suf:'2'},
               {v2:true,peint:true,sansGL:true,suf:'Z'}];
 for(const cfg of PASSES){
   const v2=cfg.v2, vus=[];
+  const geo={pos:null,mvp:null,vex:1,y0:0};
   const GL=new Proxy({},{get(_,p){
     if(p==='VERTEX_SHADER')return 35633; if(p==='FRAGMENT_SHADER')return 35632;
     if(p==='COMPILE_STATUS'||p==='LINK_STATUS')return 1;
@@ -103,9 +104,17 @@ for(const cfg of PASSES){
     if(p==='getExtension')return ()=>({});
     if(p==='createShader')return t=>({t});
     if(p==='shaderSource')return (sh,src)=>{vus.push([sh.t,src]);};
-    if(p==='getUniformLocation')return ()=>({});
+    if(p==='getUniformLocation')return (prog,nom)=>({n:nom});
     if(p==='createBuffer'||p==='createProgram')return ()=>({});
     // Le coeur de la passe N : on rend un canevas entierement noir.
+    // T486 : on retient la matrice et les sommets pour verifier, par le calcul,
+    // que la camera cadre vraiment le terrain. Un ecran noir peut survenir sans
+    // la moindre erreur GL si la matrice projette tout hors du volume de vue.
+    if(p==='uniformMatrix4fv')return (loc,tr,m)=>{ if(loc&&loc.n==='uMVP'&&!geo.mvp) geo.mvp=Array.from(m); };
+    if(p==='uniform1f')return (loc,v)=>{ if(loc&&loc.n==='uVex')geo.vex=v; if(loc&&loc.n==='uY0')geo.y0=v; };
+    if(p==='bufferData')return (cible,data)=>{
+      if(cible===34962 && data && data.length>100000 && !geo.pos) geo.pos=data; };
+    if(p==='ARRAY_BUFFER')return 34962;
     if(p==='readPixels')return (x,y,w,hh,f,t,px)=>{
       const val=cfg.peint?200:0;
       for(let i=0;i<px.length;i++)px[i]=(i%4===3)?255:val;};
@@ -163,6 +172,17 @@ for(const cfg of PASSES){
   out['diag'+suf]=noeuds['diagGl']?String(noeuds['diagGl'].textContent):'';
   out['diagOn'+suf]=noeuds['diagGl']?noeuds['diagGl'].className:'(absent)';
   out['avisOn'+suf]=noeuds['avisGl']?noeuds['avisGl'].className:'(absent)';
+  // fraction des sommets qui tombent reellement dans le volume de vue
+  if(geo.pos&&geo.mvp){
+    let dans=0,tot=0;
+    for(let i=0;i<geo.pos.length;i+=3*97){
+      const x=geo.pos[i], y=(geo.pos[i+1]-geo.y0)*geo.vex, z=geo.pos[i+2], o=[0,0,0,0];
+      for(let r=0;r<4;r++) o[r]=geo.mvp[r]*x+geo.mvp[4+r]*y+geo.mvp[8+r]*z+geo.mvp[12+r];
+      tot++;
+      if(o[3]>0 && Math.abs(o[0])<=o[3] && Math.abs(o[1])<=o[3] && o[2]>=-o[3] && o[2]<=o[3]) dans++;
+    }
+    out['cadrage'+suf]=tot?dans/tot:0; out['cadrageN'+suf]=tot;
+  } else { out['cadrage'+suf]=null; }
   out['fatal'+suf]=(noeuds['err']&&noeuds['err'].style.display==='flex')
                    ?String(noeuds['err'].textContent):null;
 }
@@ -346,6 +366,24 @@ def controler(dossier):
             echecs.append('VERROU 9 : un avertissement s\'affiche alors que la 3D peint '
                           '-- fausse alerte')
 
+        # --- VERROU 11 : LA CAMERA CADRE-T-ELLE LE TERRAIN ?
+        # Le vrai defaut de l'ecran noir : gl_Position = uMVP * v suppose la
+        # convention vecteur-colonne, donc M = P . V ; le code ecrivait V . P.
+        # Resultat : 0 sommet sur 2 291 dans le volume de vue, tout decoupe par
+        # la carte graphique, programme accepte, getError() a 0. AUCUN verrou
+        # textuel ne pouvait voir ca. Celui-ci refait la projection et compte.
+        for suf, nom in (('2', 'WebGL2'), ('1', 'WebGL1')):
+            cad = info.get('cadrage' + suf)
+            if cad is None:
+                echecs.append('VERROU 11 : impossible de verifier le cadrage en %s '
+                              '(matrice ou sommets non captures)' % nom)
+            elif cad < 0.30:
+                echecs.append('VERROU 11 : la camera ne cadre pas le terrain en %s -- '
+                              '%.1f %% des sommets seulement tombent dans le volume '
+                              'de vue (%d testes). L\'ecran sera noir sans erreur GL.'
+                              % (nom, 100.0 * cad, info.get('cadrageN' + suf) or 0))
+
+
 
     # --- VERROU 10 : le defaut le plus visible en jeu doit etre MESURE.
     # L'utilisateur voyait l'ancien terrain au milieu de la structure pendant que
@@ -371,6 +409,35 @@ def controler(dossier):
                           '-- elle ne voit que la fin de la pose (1 750 colonnes au lieu '
                           'de 43 000 sur le run du 24 nov.)')
 
+
+    # --- VERROU 12 : UN COMPTEUR GLOBAL NE DIT PAS DE QUEL COTE IL MANQUE.
+    # L'utilisateur a entoure le bas de la vue en ecrivant « MARGE » : il voyait
+    # du terrain raccorde au nord, a l'ouest et a l'est, et rien au sud. La page
+    # annoncait bien « N colonnes non mesurees », chiffre exact et inutile : il
+    # ne disait pas OU. Le diagnostic doit ventiler la marge par cote et refuser
+    # de conclure la ou la mesure s'arrete avant la fin de la rampe.
+    _k = html.index('const DIAG = ')
+    _diags = json.loads(html[_k + 13:html.index(chr(10), _k)].rstrip(';'))
+    marge = [e for e in _diags if 'Marge' in e.get('t', '')]
+    if not marge:
+        echecs.append('VERROU 12 : la page ne mesure pas la marge de terrain par cote '
+                      '-- un total de colonnes non mesurees ne dit pas de quel cote '
+                      'le raccord est invisible')
+    else:
+        txt = ' '.join('%s %s %s' % (e.get('t', ''), e.get('d', ''), e.get('o', ''))
+                       for e in marge)
+        for cote in ('nord', 'sud', 'ouest', 'est'):
+            if cote not in txt:
+                echecs.append('VERROU 12 : le cote %s est absent de la mesure de marge '
+                              '(%r)' % (cote, txt[:160]))
+        if 'sud' not in ' '.join(e.get('t', '') for e in marge):
+            echecs.append('VERROU 12 : sur le run de reference la marge sud est nulle '
+                          '(mesure arretee a z=527 pour une emprise qui va a z=543) ; '
+                          'le titre du diagnostic doit nommer le cote en cause')
+        if max(e.get('g', 0) for e in marge) < 3:
+            echecs.append('VERROU 12 : une marge trop courte pour juger le raccord est '
+                          'signalee en mineur -- or elle interdit toute conclusion sur '
+                          'ce cote')
     if echecs:
         for e in echecs:
             print('ECHEC  %s' % e)
@@ -378,13 +445,14 @@ def controler(dossier):
         return 1
 
     oracle = 'avec glslangValidator' if os.environ.get('GLSLANG') else 'regle d\'ordre seule'
-    print('scanviewcheck : 10 verrous tiennent -- generateur fonctionnel, page autonome, '
+    print('scanviewcheck : 12 verrous tiennent -- generateur fonctionnel, page autonome, '
           'panneau d\'etapes present, colonne non mesuree distinguee d\'un trou, '
           'page chargee sans exception en WebGL2 ET WebGL1, shaders valides (%s), '
           'repli WebGL1 en place, coupe verticale qui trace et gradue, '
           '3D jamais escamotee sur un soupcon, avertissement si elle ne peint rien, '
           'carte 2D en relais quand il n y a aucun contexte WebGL, '
-          'ancien terrain restant dans l ouvrage mesure et annonce' % oracle)
+          'ancien terrain restant dans l ouvrage mesure et annonce, '
+          'camera qui cadre reellement le terrain, marge de terrain ventilee par cote' % oracle)
     return 0
 
 

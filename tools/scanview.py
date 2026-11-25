@@ -230,6 +230,62 @@ def diagnostic(meta, etapes):
                    'angle mort de l\'outil.' % (abs_, tot, 100.0 * abs_ / tot, manque_emp),
                    'calque « chargement », colonnes grises')
 
+    # --- 1bis. DE QUEL COTE manque-t-il du terrain ?
+    # Un compteur global de colonnes non mesurees ne dit pas OU est le trou.
+    # L'utilisateur a entoure le bas de la vue en ecrivant « MARGE » : il voyait
+    # du terrain raccorde au nord, a l'ouest et a l'est, et rien au sud. La
+    # rampe de raccord fait TALUS_LARGEUR = 48 blocs ; si la marge mesuree d'un
+    # cote est plus courte que la rampe, le raccord de ce cote n'est pas
+    # observable -- ce n'est pas la preuve qu'il manque, c'est l'aveu qu'on
+    # ne peut pas le voir.
+    fin = etapes[-1] if etapes else None
+    if fin is not None and ex1 >= ex0 and ez1 >= ez0:
+        sy = fin['sol_y']
+
+        def mesuree(x, z):
+            prof_d = meta['z1'] - meta['z0'] + 1
+            if not (meta['x0'] <= x <= meta['x1'] and meta['z0'] <= z <= meta['z1']):
+                return False
+            return sy[(z - meta['z0']) * w + (x - meta['x0'])] != ABSENT
+
+        RAMPE = 48
+        marges = []
+        for nom, pas, fixe in (('nord', (0, -1), 'x'), ('sud', (0, 1), 'x'),
+                               ('ouest', (-1, 0), 'z'), ('est', (1, 0), 'z')):
+            dx, dz = pas
+            prof = []
+            for t in (range(ex0, ex1 + 1) if fixe == 'x' else range(ez0, ez1 + 1)):
+                if fixe == 'x':
+                    x, z = t, (ez0 - 1 if dz < 0 else ez1 + 1)
+                else:
+                    x, z = (ex0 - 1 if dx < 0 else ex1 + 1), t
+                k = 0
+                while mesuree(x + dx * k, z + dz * k):
+                    k += 1
+                prof.append(k)
+            prof.sort()
+            marges.append((nom, prof[0], prof[len(prof) // 2], prof[-1],
+                           sum(1 for v in prof if v < RAMPE), len(prof)))
+        courts = [m for m in marges if m[4] * 2 > m[5]]
+        resume = ' ; '.join('%s %d blocs (median)' % (m[0], m[2]) for m in marges)
+        if courts:
+            ajoute(3, 'Marge de terrain trop courte pour juger le raccord : %s'
+                      % ', '.join(m[0] for m in courts),
+                   'Marge mesuree au-dela de l\'ouvrage -- %s. La rampe de raccord fait '
+                   '%d blocs. Du cote %s la mesure s\'arrete avant la fin de la rampe '
+                   '(%s), donc CETTE PAGE NE PEUT PAS DIRE si le raccord y est correct. '
+                   'Cause : les chunks de ce secteur n\'etaient pas charges pendant le '
+                   'scan, pas un defaut du terrain.'
+                   % (resume, RAMPE, ' et '.join(m[0] for m in courts),
+                      ' ; '.join('%s : %d lignes sur %d sous %d blocs'
+                                 % (m[0], m[4], m[5], RAMPE) for m in courts)),
+                   'calque « chargement » ; bord %s de la vue' % '/'.join(m[0] for m in courts))
+        else:
+            ajoute(1, 'Marge de terrain suffisante sur les quatre cotes',
+                   'Marge mesuree au-dela de l\'ouvrage -- %s. La rampe fait %d blocs : '
+                   'le raccord est observable tout autour.' % (resume, RAMPE),
+                   'calque « chargement »')
+
     # --- 2. etape sans effet : deux captures identiques signalent un jalon mal place
     for n in range(1, len(etapes)):
         a, b = etapes[n - 1], etapes[n]
@@ -862,7 +918,12 @@ function mat(){
   var V=[xx,yx,zx,0, xy,yy,zy,0, xz,yz,zz,0,
         -(xx*ex+xy*ey+xz*ez), -(yx*ex+yy*ey+yz*ez), -(zx*ex+zy*ey+zz*ez), 1];
   var M=new Float32Array(16);
-  for(var r=0;r<4;r++)for(var c=0;c<4;c++){var s=0;for(var k=0;k<4;k++)s+=V[k*4+r]*P[c*4+k];M[c*4+r]=s;}
+  // gl_Position = uMVP * vec4(p,1) : convention vecteur-colonne, donc M = P . V.
+  // Le produit etait ecrit V . P. Consequence exacte : 0 sommet sur 2 291 tombait
+  // dans le volume de vue, la carte graphique decoupait tout, et le canevas
+  // restait vide SANS la moindre erreur GL -- programme accepte, 1 327 590
+  // indices envoyes, getError() a 0. Un ecran noir parfaitement silencieux.
+  for(var r=0;r<4;r++)for(var c=0;c<4;c++){var s=0;for(var k=0;k<4;k++)s+=P[k*4+r]*V[c*4+k];M[c*4+r]=s;}
   return {M:M,eye:[ex,ey,ez],fwd:[-zx,-zy,-zz],right:[xx,xy,xz],up:[yx,yy,yz],f:f,ar:ar};
 }
 function dessine(){
@@ -1068,7 +1129,7 @@ function verdict(){
 }
 if(!gl || (res && res.err)){ bascule2d(true); elDiag.className=""; etablirDiag(true); }
 else if(window.requestAnimationFrame){
-  requestAnimationFrame(function(){ taille(); verdict(); });
+  window.requestAnimationFrame(function(){ taille(); verdict(); });
 } else { verdict(); }
 })();
 </script></body></html>
