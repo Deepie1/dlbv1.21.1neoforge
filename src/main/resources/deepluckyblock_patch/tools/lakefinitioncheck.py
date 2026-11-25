@@ -52,6 +52,9 @@ CE QUE VERIFIENT LES VERROUS :
   V10 les arbres sont replantes, et la replantation se re-ancre sur le sol COURANT
   V11 le sol est repeint et revegetalise apres la pose
   V12 l'emprise est protegee pendant l'habillage, puis la protection est levee
+  V13 le lac diffuse SA PROPRE liste de chunks, pas seulement le registre global que
+      prepZoneInternal() remet a zero ; liste alimentee par les deux chemins
+      d'ecriture et videe au demarrage de chaque chantier
 
 USAGE : python3 lakefinitioncheck.py [racine]
 """
@@ -334,12 +337,49 @@ def controler(racine):
                       'sur la structure ; jamais levee, elle fuirait sur le chantier '
                       'suivant.')
 
+    # ---- V13 : la diffusion ne depend pas d'un registre qu'un tiers peut vider ----
+    if 'broadcastChunkKeys' not in lac:
+        echecs.append('V13 : le lac ne diffuse que via le registre global '
+                      'MODIFIED_CHUNK_KEYS. prepZoneInternal() le remet a zero, donc '
+                      'toute autre structure apparue pendant les 540 s du chantier '
+                      'efface les chunks du lac avant diffusion : le joueur garderait '
+                      'l ancien terrain affiche, par intermittence.')
+    else:
+        if not re.search(r'(private\s+static\s+final\s+)?java\.util\.Set<Long>\s+LAKE_CHUNKS_REECRITS',
+                         lac):
+            echecs.append('V13 : le lac n a pas de liste propre de chunks reecrits.')
+        for nom, entete in (('appliquerChunk', 'private void appliquerChunk'),
+                            ('clearChunkDirect', 'private long clearChunkDirect')):
+            b = corps(lac, entete) or ''
+            if 'LAKE_CHUNKS_REECRITS' not in b:
+                echecs.append('V13 : %s n alimente pas la liste propre du lac ; ses '
+                              'chunks ne seraient jamais diffuses.' % nom)
+        # Trois exigences de ROLE, verifiees separement : un simple « il existe un
+        # clear quelque part » est satisfait par n'importe lequel des deux et ne
+        # mord sur rien.
+        lm = corps(lac, 'void lancerMesure') or ''
+        if 'LAKE_CHUNKS_REECRITS.clear()' not in lm:
+            echecs.append('V13 : la liste propre n est pas videe au demarrage du '
+                          'chantier (lancerMesure) ; un chantier rediffuserait les '
+                          'chunks du chantier precedent.')
+        iB = lac.find('broadcastChunkKeys')
+        iC = [m.start() for m in re.finditer(r'LAKE_CHUNKS_REECRITS\.clear\(\)', lac)]
+        if iB >= 0:
+            if not any(iB < c < iB + 400 for c in iC):
+                echecs.append('V13 : la liste propre n est pas videe APRES la '
+                              'diffusion ; elle enflerait d un chantier a l autre.')
+            if any(iB - 400 < c < iB for c in iC):
+                echecs.append('V13 : la liste propre est videe juste AVANT la '
+                              'diffusion, qui partirait alors a vide.')
+    if not re.search(r'public\s+static\s+void\s+broadcastChunkKeys\s*\(', prep):
+        echecs.append('V13 : broadcastChunkKeys doit etre public dans StructureTerrainPrep.')
+
     if echecs:
         for e in echecs:
             print('!! ' + e)
         print('!! lakefinitioncheck : %d probleme(s)' % len(echecs))
         return 1
-    print('lakefinitioncheck : OK (12 verrous)')
+    print('lakefinitioncheck : OK (13 verrous)')
     return 0
 
 

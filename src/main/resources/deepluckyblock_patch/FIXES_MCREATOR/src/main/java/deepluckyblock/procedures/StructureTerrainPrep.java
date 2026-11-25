@@ -179,6 +179,24 @@ public class StructureTerrainPrep {
         if (level == null || MODIFIED_CHUNK_KEYS.isEmpty()) return;
         java.util.List<Long> keys = new java.util.ArrayList<>(MODIFIED_CHUNK_KEYS);
         MODIFIED_CHUNK_KEYS.clear();
+        broadcastChunkKeys(level, keys);
+    }
+
+    /**
+     * T488 -- diffusion d'une liste de chunks FOURNIE par l'appelant.
+     *
+     * {@link #broadcastModifiedChunks} s'appuie sur le registre global
+     * MODIFIED_CHUNK_KEYS, que prepZoneInternal() REMET A ZERO au demarrage de tout
+     * chantier. Le lac carmin ne tient pas la chaine terrain et son chantier dure
+     * jusqu'a 540 s : il suffit qu'une autre structure apparaisse pendant ce temps
+     * pour que les chunks marques par le lac soient effaces du registre avant d'avoir
+     * ete diffuses. Le joueur garde alors l'ancien terrain affiche -- exactement le
+     * defaut qu'on corrige, mais de facon intermittente, donc bien pire a diagnostiquer.
+     * Le lac tient donc SA PROPRE liste et la passe ici.
+     */
+    public static void broadcastChunkKeys(ServerLevel level, java.util.Collection<Long> keysIn) {
+        if (level == null || keysIn == null || keysIn.isEmpty()) return;
+        java.util.List<Long> keys = new java.util.ArrayList<>(keysIn);
         var chunkMap = level.getChunkSource().chunkMap;
         var lightEngine = level.getChunkSource().getLightEngine();
         var server = level.getServer();

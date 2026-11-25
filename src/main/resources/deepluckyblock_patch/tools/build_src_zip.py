@@ -238,7 +238,10 @@ NOTICES = {
   "     revegetalise, l'emprise etant protegee le temps de l'habillage.",
 
  'src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java':
-  "T488 : sept acces publics ajoutes, tous de simples delegations vers des fonctions\n"
+  "T488 : huit acces publics ajoutes, dont broadcastChunkKeys -- diffusion d'une\n"
+  "     liste FOURNIE, car le registre global MODIFIED_CHUNK_KEYS est remis a zero\n"
+  "     par prepZoneInternal(), donc par toute autre structure apparue pendant le\n"
+  "     chantier du lac. Et sept autres acces, tous de simples delegations vers des fonctions\n"
   "     existantes mais privees, donc inatteignables depuis le lac (qui ne passe pas\n"
   "     par prepZone/decorateFinish) : fixWaterAround, clearFlyingCover,\n"
   "     captureTreesInChunk / resetCapturedTrees / capturedTreeCount,\n"

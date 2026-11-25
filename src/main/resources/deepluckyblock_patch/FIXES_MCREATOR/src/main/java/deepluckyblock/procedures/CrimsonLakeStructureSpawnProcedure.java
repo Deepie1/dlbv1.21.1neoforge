@@ -574,6 +574,11 @@ public class CrimsonLakeStructureSpawnProcedure {
                     }
                     StructureTerrainPrep.sweepFloatingNaturalPass(flvl, aMin, aMax, () -> {
                         // Diffusion EN DERNIER : tout ce qui precede ecrit en palette.
+                        // Notre propre liste : insensible au vidage du registre global.
+                        StructureTerrainPrep.broadcastChunkKeys(flvl, LAKE_CHUNKS_REECRITS);
+                        deepluckyblock.util.DebugLog.out("[DLB-LAKE] T488 diffusion de "
+                                + LAKE_CHUNKS_REECRITS.size() + " chunks reecrits aux clients");
+                        LAKE_CHUNKS_REECRITS.clear();
                         StructureTerrainPrep.broadcastModifiedChunks(flvl);
                         StructureTerrainPrep.clearFootprintProtection();
                         deepluckyblock.util.ChunkKeeper.release(flvl);
@@ -1097,6 +1102,17 @@ public class CrimsonLakeStructureSpawnProcedure {
     private static final double OCEAN_WET_TRIGGER = 0.50;
     /** En deca : un site candidat est accepte comme terrestre. */
     private static final double OCEAN_WET_ACCEPT = 0.25;
+    /**
+     * T488 -- chunks que CE chantier a reecrits en palette, a diffuser aux clients.
+     *
+     * On ne se repose pas sur le registre global de StructureTerrainPrep : il est
+     * remis a zero par prepZoneInternal(), donc par toute autre structure qui
+     * apparait pendant les 540 s du chantier du lac -- lequel ne tient pas la chaine
+     * terrain. Les chunks marques seraient alors effaces avant d'avoir ete diffuses
+     * et le joueur garderait l'ancien terrain affiche, de facon intermittente.
+     */
+    private static final java.util.Set<Long> LAKE_CHUNKS_REECRITS = new java.util.HashSet<>();
+
     private static int lakeOceanRelocs = 0;
     /** Dernier recours : la nappe tient lieu de sol, et on ne lisse rien. */
     private static boolean lakeWaterMode = false;
@@ -1516,8 +1532,10 @@ public class CrimsonLakeStructureSpawnProcedure {
         }
 
         void lancerMesure(java.util.function.Consumer<TalusJob> onDone) {
-            // T488 : un chantier ne doit pas replanter les arbres du chantier precedent.
+            // T488 : un chantier ne doit pas replanter les arbres du chantier precedent,
+            // ni diffuser les chunks du precedent.
             StructureTerrainPrep.resetCapturedTrees();
+            LAKE_CHUNKS_REECRITS.clear();
             finMesure = onDone;
             curseur = 0; balayage = 0; mesureFinie = false;
             announceLakeProgress(level, "surveying terrain before clearing...");
@@ -2022,6 +2040,7 @@ public class CrimsonLakeStructureSpawnProcedure {
             // « revenir comme un rollback » (le client annule sa prediction et revient
             // a l'etat perime qu'il a en cache). Voir broadcast en fin de chantier.
             StructureTerrainPrep.markChunkModified(chunk);
+            LAKE_CHUNKS_REECRITS.add(chunk.getPos().toLong());
         }
 
         /** Lecture d'un etat par la palette, sans passer par une heightmap. */
@@ -2267,6 +2286,7 @@ public class CrimsonLakeStructureSpawnProcedure {
                 // T488 : meme dette que le talus -- le clear ecrit en palette sans
                 // prevenir les clients. Marque ici, diffuse en fin de chantier.
                 StructureTerrainPrep.markChunkModified(chunk);
+                LAKE_CHUNKS_REECRITS.add(chunk.getPos().toLong());
                 level.getChunkSource().getLightEngine().tryScheduleUpdate();
             }
             return n;
