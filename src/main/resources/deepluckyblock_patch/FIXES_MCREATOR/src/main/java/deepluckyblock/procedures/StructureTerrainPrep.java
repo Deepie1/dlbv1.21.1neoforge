@@ -10734,6 +10734,28 @@ public class StructureTerrainPrep {
         fixWaterNearStructure(level, min, max, radius, null);
     }
 
+    /**
+     * T488 -- acces public au correcteur d'eau, pour les pipelines qui ne passent pas
+     * par {@code prepZone} / {@code decorateFinish}. Le lac carmin construit son terrain
+     * lui-meme (clear direct + talus) et n'avait donc JAMAIS de passe d'eau : reproche
+     * dev du 25/11 « tu as oublie de fixwater aussi, on a une fonction pour ca
+     * normalement ». C'est bien cette fonction-la, elle etait seulement inaccessible.
+     */
+    public static void fixWaterAround(ServerLevel level, BlockPos min, BlockPos max, int radius,
+                                      Runnable onDone) {
+        fixWaterNearStructure(level, min, max, radius, onDone);
+    }
+
+    /**
+     * T488 -- acces public a la purge finale des couvertures volantes (tapis de neige,
+     * herbes, fleurs, plantes a support invalide). Critere porte par {@code isSurfaceDecor},
+     * qui raisonne par CLASSE de bloc et par TAG : la famille entiere est couverte, blocs
+     * moddes compris, sans liste nominative a maintenir.
+     */
+    public static void clearFlyingCover(ServerLevel level, BlockPos min, BlockPos max) {
+        clearAllFlyingCoverFinalPass(level, min, max);
+    }
+
     private static void fixWaterNearStructure(ServerLevel level, BlockPos min, BlockPos max, int radius,
                                               Runnable onDone) {
         // T90 (B10/B12) : la "cascade rayon x 10 passes" (T78/T81) est remplacee

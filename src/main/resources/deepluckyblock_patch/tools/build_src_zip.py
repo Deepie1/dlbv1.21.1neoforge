@@ -212,6 +212,34 @@ NOTICES = {
   "     Onze cassures testees, toutes rendent le code 1 ; la suppression de l'outil et\n"
   "     les sous-mots getChunkSource / getChunkNow restent verts.",
 
+ 'src/main/resources/deepluckyblock_patch/tools/lakefinitioncheck.py':
+  "T488 : BANC NEUF. Le dev voyait « dans les airs des fragments d'anciens terrains »\n"
+  "     (tapis de neige, herbes, fleurs, neige poudreuse), des chunks d'ancien terrain\n"
+  "     restes dans la structure, et un bloc casse a la main qui « se remet\n"
+  "     instantanement comme du rollback ». Deux causes : le releve du sommet de\n"
+  "     colonne utilisait la heightmap MOTION_BLOCKING, qui ignore par definition tout\n"
+  "     bloc sans collision -- le rabotage s'arretait donc SOUS eux ; et les deux\n"
+  "     ecritures directes de palette ne prevenaient aucun client, d'ou l'ancien\n"
+  "     terrain encore affiche et la prediction de cassage annulee par le client. Le\n"
+  "     banc exige WORLD_SURFACE, le marquage des deux chemins d'ecriture, la\n"
+  "     diffusion en dernier, fixwater et la purge des couvertures volantes sur\n"
+  "     l'anneau, le critere generique (classes + tags, mods inclus), et refuse le\n"
+  "     retour de la chaine de lissage debranchee en T469. Dix sabotages joues\n"
+  "     isolement, dix mordus ; le banc rejette aussi le code d'avant.",
+
+ 'src/main/java/deepluckyblock/procedures/CrimsonLakeStructureSpawnProcedure.java':
+  "T488 : sommetVeg releve avec WORLD_SURFACE et non plus MOTION_BLOCKING ; les deux\n"
+  "     ecritures directes de palette (clearChunkDirect, appliquerChunk) marquent leur\n"
+  "     chunk ; passe de finition apres la pose -- fixwater, purge des couvertures\n"
+  "     volantes, balayage des flottants, puis diffusion aux clients -- sans rappeler\n"
+  "     la chaine de lissage debranchee en T469. Les chunks restent tenus jusqu'au bout.",
+
+ 'src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java':
+  "T488 : deux acces publics ajoutes -- fixWaterAround (delegue a la fonction\n"
+  "     existante fixWaterNearStructure, jusque-la privee et donc inatteignable du\n"
+  "     lac) et clearFlyingCover (purge des couvertures volantes). Aucun changement\n"
+  "     de comportement pour les autres structures.",
+
  'src/main/resources/deepluckyblock_patch/tools/combosoundcheck.py':
   "T487 : BANC NEUF. Le son d'annonce de combo partait a CHAQUE activation : le code\n"
   "     comparait le masque au tick precedent, et ce masque ne vit qu'en memoire\n"

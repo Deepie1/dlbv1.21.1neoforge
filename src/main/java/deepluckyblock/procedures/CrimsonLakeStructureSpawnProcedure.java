@@ -548,7 +548,45 @@ public class CrimsonLakeStructureSpawnProcedure {
                 // Seul le lac ne les appelle plus.
                 lakeWaterMode = false;
                 lakeOceanRelocs = 0;
-                deepluckyblock.util.ChunkKeeper.release(j.level);
+
+                // T488 -- PASSE DE FINITION. Le lac batit son terrain lui-meme (clear
+                // direct + talus) et ne passait donc par AUCUNE des finitions que les
+                // autres structures recoivent via decorateFinish. D'ou les reproches du
+                // 25/11. On n'appelle PAS decorateFinish en entier : il relance
+                // fuseGroundToStructure/enforceGlacisGradient, c'est-a-dire la chaine de
+                // lissage debranchee en T469 apres cinq rafistolages rates. On reprend
+                // seulement les passes COSMETIQUES, qui ne retouchent aucune altitude :
+                //   1. fixwater sur l'emprise + anneau,
+                //   2. purge des couvertures volantes (famille entiere, mods compris),
+                //   3. balayage des naturels flottants,
+                //   4. diffusion aux clients de TOUT ce que le chantier a ecrit en
+                //      palette -- sans elle le joueur garde l'ancien terrain affiche.
+                final net.minecraft.server.level.ServerLevel flvl = j.level;
+                final BlockPos fMin = j.origin;
+                final BlockPos fMax = j.origin.offset(j.sx - 1, Math.max(0, j.sy - 1), j.sz - 1);
+                final BlockPos aMin = fMin.offset(-TALUS_LARGEUR, 0, -TALUS_LARGEUR);
+                final BlockPos aMax = fMax.offset(TALUS_LARGEUR, 0, TALUS_LARGEUR);
+                final Runnable finFinition = () -> {
+                    try {
+                        StructureTerrainPrep.clearFlyingCover(flvl, aMin, aMax);
+                    } catch (Throwable t) {
+                        deepluckyblock.util.DebugLog.err("[DLB-LAKE] T488 purge des couvertures volantes echouee : " + t);
+                    }
+                    StructureTerrainPrep.sweepFloatingNaturalPass(flvl, aMin, aMax, () -> {
+                        // Diffusion EN DERNIER : tout ce qui precede ecrit en palette.
+                        StructureTerrainPrep.broadcastModifiedChunks(flvl);
+                        deepluckyblock.util.ChunkKeeper.release(flvl);
+                        deepluckyblock.util.DebugLog.out("[DLB-LAKE] T488 finition terminee "
+                                + "(fixwater + purge des flottants + diffusion aux clients)");
+                    });
+                };
+                try {
+                    StructureTerrainPrep.fixWaterAround(flvl, fMin, fMax, TALUS_LARGEUR, finFinition);
+                } catch (Throwable t) {
+                    deepluckyblock.util.DebugLog.err("[DLB-LAKE] T488 fixwater echoue : " + t);
+                    finFinition.run();
+                }
+
                 Structures5Procedure.notifyGenerationFinished(j.level);
 
                 // T111 (constat dev 30/09 : « crimson lake a fini ? je n'ai pas
@@ -1596,8 +1634,17 @@ public class CrimsonLakeStructureSpawnProcedure {
                     int y = haut, stop = Math.max(bas, haut - TALUS_VEG_SCAN);
                     while (y > stop && estVegetation(chunk.getBlockState(p.set(wx, y, wz)))) y--;
                     solNaturel[i] = y;
+                    // T488 (reproche dev du 25/11 : « je vois dans les airs des fragments
+                    // d'anciens terrains [...] tout ce qui est entite qui est reste dans les
+                    // aires (blocs non solides genre snow carpet, herbes, fleurs etc) [...] des
+                    // blocs de neige [...] des blocs de powdered snow ») : le releve utilisait
+                    // MOTION_BLOCKING, qui par DEFINITION ignore tout bloc sans collision --
+                    // couche de neige, tapis, herbes, fleurs, neige poudreuse. Le sommet releve
+                    // tombait donc SOUS eux ; appliquerChunk() rabotait jusqu'a « haut » et les
+                    // laissait flotter au-dessus du vide. WORLD_SURFACE = premier bloc NON AIR :
+                    // il englobe toute la famille, blocs moddes compris, sans liste en dur.
                     sommetVeg[i] = Math.max(haut, chunk.getHeight(
-                            net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, lx, lz));
+                            net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, lx, lz));
                     colonnesRelevees++;
                 }
             }
@@ -1934,6 +1981,12 @@ public class CrimsonLakeStructureSpawnProcedure {
                             net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE));
             chunk.setUnsaved(true);
             level.getChunkSource().getLightEngine().tryScheduleUpdate();
+            // T488 : une ecriture directe de palette ne previent AUCUN client. Sans ce
+            // marquage le joueur continue d'afficher l'ancien terrain la ou le serveur
+            // a deja pose de l'air -- et casser un de ces blocs fantomes le fait
+            // « revenir comme un rollback » (le client annule sa prediction et revient
+            // a l'etat perime qu'il a en cache). Voir broadcast en fin de chantier.
+            StructureTerrainPrep.markChunkModified(chunk);
         }
 
         /** Lecture d'un etat par la palette, sans passer par une heightmap. */
@@ -2176,6 +2229,9 @@ public class CrimsonLakeStructureSpawnProcedure {
                                 net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR,
                                 net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE));
                 chunk.setUnsaved(true);
+                // T488 : meme dette que le talus -- le clear ecrit en palette sans
+                // prevenir les clients. Marque ici, diffuse en fin de chantier.
+                StructureTerrainPrep.markChunkModified(chunk);
                 level.getChunkSource().getLightEngine().tryScheduleUpdate();
             }
             return n;
