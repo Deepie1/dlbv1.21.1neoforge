@@ -314,6 +314,44 @@ public final class EnchantmentComboHandler {
         }
     }
 
+    /**
+     * T487 : sous-balise que NeoForge recopie au respawn. C'est le SEUL morceau de
+     * getPersistentData() qui survit a la mort du joueur. Ecrite a la racine, la
+     * liste des combos decouverts serait oubliee a chaque mort et le son reviendrait
+     * -- on aurait remplace un spam par un spam plus rare.
+     */
+    private static final String TAG_PERSIST = "PlayerPersisted";
+    /** Un bit par index de combo : 310 combos tiennent dans 5 long. */
+    private static final String TAG_COMBOS_VUS = "DlbCombosVus";
+
+    /** Sous-balise persistante du joueur, creee et RATTACHEE si elle manquait. */
+    private static net.minecraft.nbt.CompoundTag persistOf(ServerPlayer sp) {
+        net.minecraft.nbt.CompoundTag racine = sp.getPersistentData();
+        net.minecraft.nbt.CompoundTag p = racine.getCompound(TAG_PERSIST);
+        // getCompound rend un tag NEUF et DETACHE quand la cle manque : sans ce put,
+        // tout ce qu'on y ecrit serait perdu a la sauvegarde.
+        racine.put(TAG_PERSIST, p);
+        return p;
+    }
+
+    /**
+     * Marque un combo comme decouvert.
+     *
+     * @return true seulement la PREMIERE fois que ce joueur active ce combo.
+     */
+    private static boolean marquerComboDecouvert(ServerPlayer sp, int index) {
+        if (index < 0) return false;
+        net.minecraft.nbt.CompoundTag p = persistOf(sp);
+        long[] bits = p.getLongArray(TAG_COMBOS_VUS);
+        int mot = index >> 6;
+        if (mot >= bits.length) bits = java.util.Arrays.copyOf(bits, mot + 1);
+        long bit = 1L << (index & 63);
+        if ((bits[mot] & bit) != 0L) return false;
+        bits[mot] |= bit;
+        p.putLongArray(TAG_COMBOS_VUS, bits);
+        return true;
+    }
+
     private static void handleServerComboTick(LivingEntity entity) {
         if (!(entity instanceof Player)) {
             if (entity.tickCount % 10 != 0) return;
@@ -342,9 +380,17 @@ public final class EnchantmentComboHandler {
                                 .append(" ")
                                 .append(c.tier().badge());
                         sp.displayClientMessage(banner, true);
-                        sp.serverLevel().playSound(null, sp.getX(), sp.getY(), sp.getZ(),
-                                c.tier() == ComboTier.ULTRA_RARE ? SoundEvents.UI_TOAST_CHALLENGE_COMPLETE : SoundEvents.AMETHYST_BLOCK_CHIME,
-                                SoundSource.PLAYERS, c.tier() == ComboTier.ULTRA_RARE ? 0.65f : 0.95f, 1.35f);
+                        // T487 : le son ne sonne qu'a la DECOUVERTE. Il partait a chaque
+                        // activation, or un combo se reactive des qu'on rechange une piece
+                        // d'equipement, qu'on meurt ou qu'on se reconnecte (prevServerMask
+                        // ne vit qu'en memoire, et STATES.clear() le vide tous les
+                        // 511 ticks). La banniere, elle, reste a chaque activation : elle
+                        // est muette.
+                        if (marquerComboDecouvert(sp, c.index())) {
+                            sp.serverLevel().playSound(null, sp.getX(), sp.getY(), sp.getZ(),
+                                    c.tier() == ComboTier.ULTRA_RARE ? SoundEvents.UI_TOAST_CHALLENGE_COMPLETE : SoundEvents.AMETHYST_BLOCK_CHIME,
+                                    SoundSource.PLAYERS, c.tier() == ComboTier.ULTRA_RARE ? 0.65f : 0.95f, 1.35f);
+                        }
                         EnchantmentParticleFX.crownHalo(sp, dustOf(c.rgb(), 1.15f), c.tier() == ComboTier.ULTRA_RARE ? 20 : 12);
                         break;
                     }

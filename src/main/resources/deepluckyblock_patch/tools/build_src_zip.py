@@ -212,6 +212,17 @@ NOTICES = {
   "     Onze cassures testees, toutes rendent le code 1 ; la suppression de l'outil et\n"
   "     les sous-mots getChunkSource / getChunkNow restent verts.",
 
+ 'src/main/resources/deepluckyblock_patch/tools/combosoundcheck.py':
+  "T487 : BANC NEUF. Le son d'annonce de combo partait a CHAQUE activation : le code\n"
+  "     comparait le masque au tick precedent, et ce masque ne vit qu'en memoire\n"
+  "     (STATES.clear() tous les 511 ticks, remise a zero a la mort et a la\n"
+  "     reconnexion, rallumage des qu'on rechange une piece). « Nouveau depuis le tick\n"
+  "     d'avant » n'est pas « jamais vu ». Le banc exige que le son soit garde par une\n"
+  "     premiere decouverte PERSISTEE sous \"PlayerPersisted\" -- seule sous-balise que\n"
+  "     NeoForge recopie au respawn -- que le bit soit reellement ecrit et le tag\n"
+  "     rattache, et que la banniere muette reste affichee a chaque activation. Six\n"
+  "     sabotages joues isolement, six mordus ; le banc rejette aussi le code d'avant.",
+
  'src/main/resources/deepluckyblock_patch/tools/meteorstompcheck.py':
   "T470 : BANC NEUF. Verifie que Meteor Stomp n'est pas retourne dans le tick, que\n"
   "     son declencheur est bien abonne a LivingFallEvent, qu'il lit\n"
@@ -226,6 +237,17 @@ NOTICES = {
   "     de lame (la competence ne depend plus du tirage d'aura), le tirage au butin\n"
   "     (une capacite activee ne le vole plus, les deux sorties le posent) et\n"
   "     l'arbitrage (la marque dlbSkillGranted passe avant le niveau).",
+
+ 'src/main/java/deepluckyblock/enchantments/EnchantmentComboHandler.java':
+  "T487 : le son d'annonce de combo ne sonne plus qu'a la PREMIERE decouverte.\n"
+  "     Il partait a chaque activation, et un combo se reactive sans arret : des\n"
+  "     qu'on rechange une piece d'equipement, a la mort, a la reconnexion, et parce\n"
+  "     que le masque de reference (prevServerMask) ne vit qu'en memoire -- STATES\n"
+  "     est vide des qu'il depasse 256 entrees. Les combos vus sont desormais\n"
+  "     memorises en bits sous la sous-balise \"PlayerPersisted\", la seule que\n"
+  "     NeoForge recopie au respawn : rangee ailleurs, la decouverte serait oubliee a\n"
+  "     chaque mort et le son reviendrait. La banniere d'activation, elle, reste\n"
+  "     affichee a chaque fois : elle est muette.",
 
  'src/main/java/deepluckyblock/enchantments/UniversalEnchantmentHandler.java':
   "T470 : METEOR STOMP NE SE LIT PLUS DANS LE TICK.\n"
