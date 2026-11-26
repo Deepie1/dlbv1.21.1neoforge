@@ -136,6 +136,32 @@ jobs:
           echo "::notice::compilation reussie — $S fichiers source, $N classes produites"
           test "$N" -gt 0 || { echo "::error::aucune classe produite"; exit 1; }
 
+      - name: Empreinte des sources — Gradle et Python doivent concorder
+        # Le script de reparation imprime une empreinte des 226 .java a chaque
+        # build, pour que le developpeur sache en UNE ligne quelle version
+        # tourne chez lui. Encore faut-il que cette empreinte soit juste : elle
+        # est calculee deux fois, par deux implementations ecrites separement
+        # (Groovy dans le script, Python ici). Si elles divergent, l'empreinte
+        # ne vaut rien et ce banc echoue — une mesure a laquelle on ne peut pas
+        # se fier est pire que pas de mesure du tout.
+        run: |
+          set -euo pipefail
+          mkdir -p build/ci
+          PY=$(python3 tools/empreinte_sources.py | awk '{print $1}')
+          ./gradlew --no-daemon applyMcreatorPatch 2>&1 | tee build/ci/patch.log
+          GR=$(sed -n 's/.*empreinte des sources Java : \([0-9a-f]\{12\}\).*/\1/p' build/ci/patch.log | head -1)
+          echo "Python : $PY"
+          echo "Gradle : ${GR:-<aucune>}"
+          if [ -z "$GR" ]; then
+            echo "::error::le script de reparation n'imprime aucune empreinte"
+            exit 1
+          fi
+          if [ "$PY" != "$GR" ]; then
+            echo "::error::empreintes divergentes — Python=$PY Gradle=$GR"
+            exit 1
+          fi
+          echo "::notice::empreinte des sources : $PY — calculee a l'identique par Gradle et par Python"
+
       - name: Accepter l'EULA et configurer le serveur
         run: |
           set -euo pipefail
@@ -169,12 +195,43 @@ jobs:
           echo "Fichier du lac remplace par la version qui a crashe :"
           git diff --stat HEAD -- src/main/java/deepluckyblock/procedures/CrimsonLakeStructureSpawnProcedure.java
 
-      - name: Controle negatif — recompiler
+      - name: Controle negatif — la garde DOIT bloquer le build
+        # Premiere ligne de defense : le script de reparation refuse le build
+        # quand un commentaire s'intercale entre @SubscribeEvent et sa
+        # declaration. C'est la forme exacte qui a detourne l'annotation le
+        # 25/11 et fait crasher le jeu trois fois. On exige ici que le build
+        # soit refuse, ET que ce soit bien la garde qui le refuse.
         if: ${{ success() && !inputs.ref }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/ci
+          code=0
+          ./gradlew --no-daemon applyMcreatorPatch > build/ci/garde.log 2>&1 || code=$?
+          echo "code de sortie Gradle : $code"
+          tail -n 30 build/ci/garde.log
+          if [ "$code" -eq 0 ]; then
+            echo "::error::LA GARDE N'A PAS MORDU : le build passe alors que le defaut du 25/11 est present."
+            exit 1
+          fi
+          if ! grep -q 'Un commentaire est intercale entre une annotation' build/ci/garde.log; then
+            echo "::error::build refuse, mais pas par la garde — motif inattendu, voir garde.log"
+            exit 1
+          fi
+          echo "::notice::[garde] build refuse par la garde @SubscribeEvent, comme attendu"
+
+      - name: Controle negatif — recompiler (garde desarmee)
+        # Garde desarmee volontairement : on veut que le defaut atteigne le
+        # jeu, pour prouver a l'etape suivante qu'il casse encore reellement.
+        # Sinon on ne testerait plus que la garde, et plus la panne.
+        if: ${{ success() && !inputs.ref }}
+        env:
+          DLB_PATCH_GUARD: "off"
         run: ./gradlew --no-daemon compileJava
 
       - name: Controle negatif — le serveur DOIT refuser de demarrer
         if: ${{ success() && !inputs.ref }}
+        env:
+          DLB_PATCH_GUARD: "off"
         run: bash tools/ci_boot_server.sh build/ci/serveur-controle-negatif.log casse controle-negatif
 
       - name: Controle negatif — restaurer le fichier

@@ -129,6 +129,99 @@ gradle.rootProject { p ->
                     }
                 }
 
+                // ── 5) EMPREINTE DES SOURCES ────────────────────────────────
+                // T490. Trois lancements de suite ont crashe avec le meme
+                // message alors que le correctif etait livre depuis des heures :
+                // les fichiers du poste n'avaient pas bouge, et RIEN ne le
+                // disait. Seule la ligne « compileJava UP-TO-DATE », noyee dans
+                // deux mille lignes, le trahissait. Cette empreinte repond a la
+                // question « quelle version tourne ? » en une ligne, a chaque
+                // build. Elle est comparee a celle annoncee avec la livraison.
+                // Definition identique a tools/empreinte_sources.py, verifiee
+                // par le banc GitHub : chemins relatifs tries en ordre d'octets,
+                // pour chacun chemin + \n + contenu + \n, SHA-1, 12 hex.
+                try {
+                    def base = new File(p.projectDir, 'src/main/java')
+                    if (base.isDirectory()) {
+                        def entrees = []
+                        base.eachFileRecurse { f ->
+                            if (f.isFile() && f.name.endsWith('.java')) {
+                                entrees << [base.toPath().relativize(f.toPath())
+                                                .toString().replace('\\', '/'), f]
+                            }
+                        }
+                        entrees.sort { a, b ->
+                            byte[] x = a[0].getBytes('UTF-8')
+                            byte[] y = b[0].getBytes('UTF-8')
+                            int n = Math.min(x.length, y.length)
+                            for (int i = 0; i < n; i++) {
+                                int d = (x[i] & 0xFF) - (y[i] & 0xFF)
+                                if (d != 0) return d
+                            }
+                            return x.length - y.length
+                        }
+                        def md = java.security.MessageDigest.getInstance('SHA-1')
+                        entrees.each { e ->
+                            md.update(e[0].getBytes('UTF-8'))
+                            md.update((byte) 10)
+                            md.update(e[1].bytes)
+                            md.update((byte) 10)
+                        }
+                        def hex = md.digest().collect { String.format('%02x', it) }
+                                    .join('').substring(0, 12)
+                        logger.lifecycle('[DLB-PATCH] empreinte des sources Java : ' +
+                            hex + ' (' + entrees.size() + ' fichiers)')
+                    }
+                } catch (Exception e) {
+                    logger.lifecycle('[DLB-PATCH] empreinte non calculee : ' + e)
+                }
+
+                // ── 6) GARDE-FOU @SubscribeEvent ────────────────────────────
+                // T489. Une methode utilitaire inseree ENTRE une annotation
+                // @SubscribeEvent et la methode qu'elle annotait a detourne
+                // l'annotation : NeoForge a refuse de charger le mod et le jeu
+                // a crashe au demarrage, trois fois.
+                // La regle appliquee ici est volontairement ETROITE et de
+                // nature stylistique : aucun commentaire ne doit s'intercaler
+                // entre @SubscribeEvent et sa declaration. C'est exactement la
+                // forme qui masque le defaut, et elle n'apparait nulle part
+                // dans les 226 sources saines (verifie).
+                // Ce n'est PAS le controle complet : celui-la vit dans
+                // subscribecheck.py et dans le banc de demarrage GitHub, qui
+                // compile et lance reellement un serveur. Ici on veut seulement
+                // transformer un crash de deux mille lignes en une phrase.
+                // DLB_PATCH_GUARD=off desarme la garde (le banc s'en sert pour
+                // prouver que le defaut casse encore le jeu en aval).
+                try {
+                    if (System.getenv('DLB_PATCH_GUARD') != 'off') {
+                        def motif = ~/@SubscribeEvent[ \t]*\r?\n[ \t]*\/\*/
+                        def coupables = []
+                        def base2 = new File(p.projectDir, 'src/main/java')
+                        if (base2.isDirectory()) {
+                            base2.eachFileRecurse { f ->
+                                if (f.isFile() && f.name.endsWith('.java') &&
+                                    motif.matcher(f.getText('UTF-8')).find()) {
+                                    coupables << f.name
+                                }
+                            }
+                        }
+                        if (coupables) {
+                            throw new GradleException(
+                                '[DLB-PATCH] Un commentaire est intercale entre une annotation ' +
+                                '@SubscribeEvent et sa declaration, dans : ' + coupables.join(', ') +
+                                '. L\'annotation porte alors sur la MAUVAISE methode et NeoForge ' +
+                                'refusera de charger le mod (« must have only one parameter that ' +
+                                'is an Event subtype »). C\'est la panne du 25 novembre. Si vous ' +
+                                'n\'avez pas touche a ce fichier, votre workspace est perime : ' +
+                                'relancez deliverables/METTRE-A-JOUR.ps1.')
+                        }
+                    }
+                } catch (GradleException ge) {
+                    throw ge
+                } catch (Exception e) {
+                    logger.lifecycle('[DLB-PATCH] garde @SubscribeEvent inoperante : ' + e)
+                }
+
                 logger.lifecycle('[DLB-PATCH] ' + done +
                     ' fichiers restaures (cadre MCreator + ressources + advancements).')
             }
