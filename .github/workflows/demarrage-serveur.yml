@@ -72,7 +72,7 @@ jobs:
 
     steps:
       - name: Recuperer les sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref || github.sha }}
 
@@ -84,13 +84,13 @@ jobs:
           echo "::notice::commit eprouve $(git rev-parse --short HEAD) — attendu ${{ inputs.attendu || 'demarre' }}"
 
       - name: Installer le JDK 21 (Temurin)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Preparer Gradle (avec cache)
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       - name: Installer le script de reparation MCreator
         # Place exactement ou le developpeur le place : GRADLE_USER_HOME/init.d.
@@ -243,7 +243,7 @@ jobs:
 
       - name: Conserver les journaux
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: journaux-serveur
           path: |

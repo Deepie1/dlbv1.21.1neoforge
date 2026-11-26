@@ -213,7 +213,12 @@ gradle.rootProject { p ->
                                 'refusera de charger le mod (« must have only one parameter that ' +
                                 'is an Event subtype »). C\'est la panne du 25 novembre. Si vous ' +
                                 'n\'avez pas touche a ce fichier, votre workspace est perime : ' +
-                                'relancez deliverables/METTRE-A-JOUR.ps1.')
+                                'lancez le script de mise a jour :\n' +
+                                '  https://raw.githubusercontent.com/Deepie1/dlbv1.21.1neoforge'+
+                                '/refs/heads/arena/605e67fb-dlbv1-21-1neoforge/deliverables/METTRE-A-JOUR.ps1\n' +
+                                '(clic droit > Enregistrer la cible, puis clic droit sur le fichier\n' +
+                                ' > Executer avec PowerShell). Il installera les bonnes sources et\n' +
+                                ' vous montrera l empreinte avant / apres.')
                         }
                     }
                 } catch (GradleException ge) {
