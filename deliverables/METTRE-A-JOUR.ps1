@@ -1,12 +1,27 @@
 # =====================================================================
-#  Deep Lucky Block — MISE A JOUR DU WORKSPACE MCREATOR
+#  Deep Lucky Block -- MISE A JOUR DU WORKSPACE MCREATOR
+# =====================================================================
+#
+#  CE FICHIER EST EN ASCII PUR, ET IL DOIT LE RESTER.
+#     Windows PowerShell 5.1 lit un .ps1 SANS BOM comme de l'ANSI
+#     (page de codes 1252), pas comme de l'UTF-8. Un tiret cadratin
+#     U+2014 y est code E2 80 94 ; relu en 1252 cela donne trois
+#     caracteres, dont 0x94 = guillemet fermant courbe. Or PowerShell
+#     accepte les guillemets courbes comme DELIMITEURS DE CHAINE : le
+#     tiret refermait donc la chaine en plein milieu, et tout le reste
+#     du fichier devenait incomprehensible. Le script a ete livre une
+#     premiere fois avec un tel tiret ligne 251 et a refuse de
+#     s'analyser, en signalant des erreurs trente lignes plus loin.
+#     Le collage dans la console marchait, lui, parce que le texte y
+#     arrive deja decode : seule la lecture du FICHIER echouait.
+#     Un banc (tools/ps1asciicheck.py) le verifie a chaque livraison.
 # =====================================================================
 #
 #  A QUOI CA SERT
 #     Votre workspace MCreator n'est pas un depot Git. Quand je publie un
 #     correctif, rien ne le fait descendre chez vous. Les quatre derniers
-#     crashs venaient de la, pas du code : Gradle affichait « compileJava
-#     UP-TO-DATE » — aucune source n'a change — et relancait un .class du
+#     crashs venaient de la, pas du code : Gradle affichait "compileJava
+#     UP-TO-DATE" -- aucune source n'a change -- et relancait un .class du
 #     25 novembre.
 #
 #     Ce script fait la copie, puis il la PROUVE : il affiche l'empreinte des
@@ -18,11 +33,11 @@
 #     2. le script de reparation Gradle, dans
 #        %USERPROFILE%\.mcreator\gradle\init.d\
 #        Votre journal du 26/11 a 05:35 ne contenait PAS la ligne
-#        « [DLB-PATCH] empreinte des sources Java : ... » : c'est la preuve
+#        "[DLB-PATCH] empreinte des sources Java : ..." : c'est la preuve
 #        que votre copie de ce script date, elle aussi. Sans lui, ni
 #        l'empreinte ni le garde-fou ne peuvent vous prevenir.
 #
-#  UTILISATION — clic droit sur le fichier > « Executer avec PowerShell ».
+#  UTILISATION -- clic droit sur le fichier > "Executer avec PowerShell".
 #  Ou, dans une fenetre PowerShell :
 #     powershell -ExecutionPolicy Bypass -File METTRE-A-JOUR.ps1
 #
@@ -60,8 +75,8 @@ function Alerte($t){ Write-Host "  [!]     $t" -ForegroundColor Yellow }
 function Erreur($t){ Write-Host "  [ECHEC] $t" -ForegroundColor Red }
 
 # ---------------------------------------------------------------------
-#  SORTIE DU SCRIPT — pourquoi tout ce ceremonial pour un « exit »
-#     Lance par « Executer avec PowerShell », Windows ferme la fenetre des
+#  SORTIE DU SCRIPT -- pourquoi tout ce ceremonial pour un "exit"
+#     Lance par "Executer avec PowerShell", Windows ferme la fenetre des
 #     que le script se termine. La premiere version disparaissait donc avant
 #     qu'on ait pu lire l'empreinte -- c'est-a-dire avant d'avoir montre la
 #     seule chose qu'elle existait pour montrer. Et les trois chemins
@@ -238,7 +253,7 @@ Copy-Item -Path (Join-Path $srcJava "*") -Destination $dstJava -Recurse -Force
 Ok ("" + (Get-ChildItem -Path $dstJava -Filter *.java -Recurse -File).Count + " fichiers .java installes")
 
 # ---------------------------------------------------------------------
-#  5) Installer le script de reparation — L'ETAPE OUBLIEE
+#  5) Installer le script de reparation -- L'ETAPE OUBLIEE
 #     Il ne vit pas dans le workspace mais dans le GRADLE_USER_HOME de
 #     MCreator. Copier seulement src\ le laisse perime indefiniment, et
 #     c'est precisement ce qui s'est passe : le journal du 26/11 n'avait
@@ -248,7 +263,7 @@ Titre "5/7  Installation du script de reparation Gradle"
 
 $initSrc = Join-Path $extrait "src\main\resources\deepluckyblock_patch\tools\deep-lucky-block-patch.gradle"
 if (-not (Test-Path $initSrc)) {
-    Alerte "script de reparation absent du colis — etape ignoree"
+    Alerte "script de reparation absent du colis -- etape ignoree"
 } else {
     New-Item -ItemType Directory -Path $initDir -Force | Out-Null
     $initDst = Join-Path $initDir "deep-lucky-block-patch.gradle"
@@ -269,7 +284,7 @@ if (-not (Test-Path $initSrc)) {
 }
 
 # ---------------------------------------------------------------------
-#  6) Casser l'« UP-TO-DATE »
+#  6) Casser l'"UP-TO-DATE"
 #     Gradle compare des horodatages. Une copie peut lui sembler plus
 #     ancienne que le .class deja produit : il ne recompile alors rien et
 #     relance l'ancien binaire. C'est la cause des quatre crashs.
@@ -318,7 +333,7 @@ Ok "sources installees et verifiees : $($apres.hash)"
 Write-Host ""
 Write-Host "  ETAPE SUIVANTE" -ForegroundColor Cyan
 Write-Host "    Relancez le jeu depuis MCreator. Dans la console, cette ligne" -ForegroundColor White
-Write-Host "    doit apparaitre, juste avant « 61 fichiers restaures » :" -ForegroundColor White
+Write-Host "    doit apparaitre, juste avant "61 fichiers restaures" :" -ForegroundColor White
 Write-Host ""
 Write-Host "      [DLB-PATCH] empreinte des sources Java : $attendu ($($apres.n) fichiers)" -ForegroundColor Green
 Write-Host ""

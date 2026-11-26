@@ -104,7 +104,7 @@ jobs:
           echo "Script de reparation installe :"
           ls -l ~/.gradle/init.d/
 
-      - name: Controles statiques (les 17 bancs)
+      - name: Controles statiques (les 18 bancs)
         # Ils ne prouvent rien en jeu, mais ils sont rapides et cadrent le
         # diagnostic : si un banc mord ICI, on sait avant meme de compiler.
         continue-on-error: true
@@ -119,12 +119,24 @@ jobs:
               echecs=$((echecs+1)); echo "::warning::banc $b en echec"; tail -20 "/tmp/$b.out"
             fi
           done
-          for b in scanviewcheck mirrorcheck synczipcheck; do
+          for b in scanviewcheck mirrorcheck synczipcheck reliefcoutcheck; do
             if ! python3 "tools/$b.py" > "/tmp/$b.out" 2>&1; then
               echecs=$((echecs+1)); echo "::warning::banc $b en echec"; tail -20 "/tmp/$b.out"
             fi
           done
-          echo "bancs en echec : $echecs / 17"
+          echo "bancs en echec : $echecs / 18"
+
+      - name: Le script de mise a jour DOIT etre analysable par PowerShell
+        # BLOQUANT, contrairement aux autres bancs. Le 26/11 au soir, le dev
+        # n'a pas pu mettre son poste a jour du tout : METTRE-A-JOUR.ps1 etait
+        # en UTF-8 sans BOM et un tiret cadratin, relu en cp1252 par Windows
+        # PowerShell 5.1, refermait une chaine en plein milieu. Un correctif
+        # qu'on ne peut pas installer n'est pas un correctif, et le colis le
+        # mieux construit ne sert a rien si le script qui le pose ne demarre
+        # pas. Ce defaut-la ne doit jamais repartir en livraison.
+        run: |
+          set -euo pipefail
+          python3 tools/ps1asciicheck.py
 
       - name: COMPILER le mod
         # L'etape qui manquait depuis le debut du projet.
