@@ -151,86 +151,38 @@ jobs:
 
       - name: DEMARRER le serveur dedie
         id: serveur
+        run: bash tools/ci_boot_server.sh build/ci/serveur.log "${{ inputs.attendu || 'demarre' }}" livre
+
+      # ── CONTROLE NEGATIF ─────────────────────────────────────────────────
+      # Un banc qui n'a jamais refuse quoi que ce soit ne protege de rien.
+      # On remet ICI, dans le meme job, le fichier exact du commit a977e6c -- celui
+      # qui a reellement crashe le jeu le 25/11 -- on recompile, on redemarre,
+      # et on EXIGE que le serveur refuse de charger. Si le banc laissait
+      # passer, le job echouerait. Rien de casse n'est pousse sur la branche :
+      # le fichier est restaure juste apres.
+      - name: Controle negatif — reinjecter le defaut du 25/11
+        if: ${{ success() && !inputs.ref }}
         run: |
-          set -uo pipefail
-          ATTENDU="${{ inputs.attendu || 'demarre' }}"
-          mkdir -p build/ci
-          LOG=build/ci/serveur.log
-          : > "$LOG"
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin a977e6c7befab97708e0b384b872859325e190a5
+          git checkout FETCH_HEAD -- src/main/java/deepluckyblock/procedures/CrimsonLakeStructureSpawnProcedure.java
+          echo "Fichier du lac remplace par la version qui a crashe :"
+          git diff --stat HEAD -- src/main/java/deepluckyblock/procedures/CrimsonLakeStructureSpawnProcedure.java
 
-          # setsid : le serveur tourne dans sa propre session, ce qui permet de
-          # tuer TOUT le groupe (Gradle + JVM forkee) une fois le verdict pris.
-          setsid bash -c './gradlew --no-daemon --stacktrace runServer' > "$LOG" 2>&1 &
-          PGID=$!
+      - name: Controle negatif — recompiler
+        if: ${{ success() && !inputs.ref }}
+        run: ./gradlew --no-daemon compileJava
 
-          verdict=limite_de_temps
-          for _ in $(seq 1 3000); do          # 50 min maximum
-            if grep -qE 'Done \([0-9.]+s\)!' "$LOG" 2>/dev/null; then verdict=demarre; break; fi
-            if grep -qE 'ModLoadingCrashException|has failed to load correctly|Cowardly refusing to send event|Failed to register class' "$LOG" 2>/dev/null; then
-              verdict=mod_casse; break
-            fi
-            if ! kill -0 "$PGID" 2>/dev/null; then verdict=sorti_prematurement; break; fi
-            sleep 1
-          done
+      - name: Controle negatif — le serveur DOIT refuser de demarrer
+        if: ${{ success() && !inputs.ref }}
+        run: bash tools/ci_boot_server.sh build/ci/serveur-controle-negatif.log casse controle-negatif
 
-          kill -TERM -"$PGID" 2>/dev/null || true
-          sleep 10
-          kill -KILL -"$PGID" 2>/dev/null || true
-
-          # ── PREUVES, emises en annotations donc lisibles par l'API ────────
-          echo "::notice::verdict=$verdict (attendu=$ATTENDU)"
-          L=$(grep -oE 'Done \([0-9.]+s\)!.*' "$LOG" 2>/dev/null | tail -1 | tr -d '\r')
-          [ -n "$L" ] && echo "::notice::serveur pret — $L"
-          grep -q 'Subscribing @EventBusSubscriber class Ldeepluckyblock/procedures/CrimsonLakeStructureSpawnProcedure' "$LOG" 2>/dev/null \
-            && echo "::notice::le gestionnaire du lac a bien ete enregistre sur le bus d'evenements"
-          C=$(grep -m1 -oE '[A-Za-z0-9_.]+\.[A-Za-z0-9_]+\([^)]*\) annotated with @SubscribeEvent' "$LOG" 2>/dev/null | tr -d '\r')
-          [ -n "$C" ] && echo "::notice::defaut @SubscribeEvent detecte sur $C"
-
-          {
-            echo "### Banc de demarrage"
-            echo
-            echo "| element | valeur |"
-            echo "|---|---|"
-            echo "| commit | \`$(git rev-parse --short HEAD)\` |"
-            echo "| attendu | $ATTENDU |"
-            echo "| verdict | **$verdict** |"
-            [ -n "$L" ] && echo "| serveur | $L |"
-            echo
-            echo '```'
-            tail -40 "$LOG"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          echo "::group::200 dernieres lignes du serveur"; tail -200 "$LOG"; echo "::endgroup::"
-
-          # ── CONTROLE NEGATIF : on EXIGE que le banc morde ─────────────────
-          if [ "$ATTENDU" = casse ]; then
-            if [ "$verdict" = demarre ]; then
-              echo "::error::le banc N'A PAS MORDU sur un commit repute casse — il ne protege de rien"
-              exit 1
-            fi
-            echo "Controle negatif concluant : le banc a bien refuse ce commit ($verdict)."
-            exit 0
-          fi
-
-          case "$verdict" in
-            demarre)
-              echo "Le serveur a atteint « Done ( ... s)! » : le mod charge et tourne."
-              ;;
-            mod_casse)
-              echo "::error::Le mod ne charge pas."
-              grep -nE 'ModLoadingCrashException|has failed to load correctly|Failed to register class|IllegalArgumentException' "$LOG" | head -20
-              exit 1
-              ;;
-            sorti_prematurement)
-              echo "::error::Le build ou le serveur s'est arrete avant d'etre pret."
-              exit 1
-              ;;
-            *)
-              echo "::error::Le serveur n'a jamais atteint « Done ( » dans le temps imparti."
-              exit 1
-              ;;
-          esac
+      - name: Controle negatif — restaurer le fichier
+        if: ${{ always() && !inputs.ref }}
+        run: |
+          set -euo pipefail
+          git checkout HEAD -- src/main/java/deepluckyblock/procedures/CrimsonLakeStructureSpawnProcedure.java
+          git diff --quiet HEAD -- src/main/java/deepluckyblock/procedures/CrimsonLakeStructureSpawnProcedure.java && echo "Fichier restaure a l'identique."
 
       - name: Conserver les journaux
         if: always()
