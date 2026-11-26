@@ -275,6 +275,29 @@ public final class DebugLog {
         if (ENABLED && STRUCTURE) LOGGER.info("[DLB-STRUCTURE] " + fmt, args);
     }
 
+    /**
+     * T493 -- ALERTE : « le travail demande n'a PAS ete fait entierement ».
+     *
+     * <p>CE CANAL NE S'ETEINT JAMAIS. Il ne lit ni {@link #ENABLED} ni
+     * {@link #STRUCTURE}, et c'est tout l'interet.
+     *
+     * <p>Pourquoi il existe : T492 a ajoute un rattrapage des colonnes non habillees et
+     * un compte-rendu du reliquat... emis par {@code structure()} et {@code warn()}, qui
+     * exigent tous deux {@code ENABLED}, <b>false par defaut depuis T221</b>. Le
+     * correctif etait donc muet chez le dev : il aurait relance sa partie, revu du sol
+     * nu au sud, et son log ne lui aurait rien dit -- ni que le rattrapage avait eu
+     * lieu, ni qu'il avait echoue, ni sur combien de colonnes. Exactement le silence qui
+     * avait laisse passer le defaut au depart.
+     *
+     * <p>Regle d'usage, stricte : reserve aux fins d'operation ou le resultat est
+     * INCOMPLET, en volume borne (un bilan par operation, jamais par colonne ni par
+     * tick). Le diagnostic bavard reste derriere {@code structure()} ; ce qui dit « ce
+     * que tu vas voir en jeu est faux » passe par ici.
+     */
+    public static void alerte(String fmt, Object... args) {
+        LOGGER.warn("[DLB-ALERTE] " + fmt, args);
+    }
+
     /** Categorie (b) : enchantements de coeur (attache, niveau, regen, HUD cote joueur). */
     public static void heart(String fmt, Object... args) {
         if (ENABLED && HEART) LOGGER.info("[DLB-HEART] " + fmt, args);

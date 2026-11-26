@@ -177,15 +177,36 @@ def controler(racine='.'):
     # silencieuse en T470 (les chaines du code contiennent des accolades, et une branche
     # un peu longue sort de la fenetre). Deux appels sont legitimes et seulement deux :
     # le sol de reference, et le calcul du relief theorique complet.
-    appels_bruit = code.count('getBaseHeight(')
-    if appels_bruit > 2:
-        echecs.append('VERROU 4 : %d appels a getBaseHeight au lieu de 2 -- un troisieme '
-                      'sert tres probablement a combler les chunks absents avec du relief '
+    #
+    # T493 : un TROISIEME appel est desormais legitime -- et un seul : la sonde de
+    # CALIBRAGE, qui mesure le cout reel d'une colonne pour decider si le relief tient
+    # dans son budget. Elle JETTE son resultat (aucune affectation), donc elle ne peut
+    # rien boucher. On ne releve donc pas betement le plafond a 3 : on exige que le
+    # troisieme appel soit bien celui-la, et qu'il reste sans valeur de retour utilisee.
+    appels = [m for m in re.finditer(r'getBaseHeight\s*\(', code)]
+    appels_bruit = len(appels)
+    jetes = 0
+    for m in appels:
+        debut = code.rfind('\n', 0, m.start()) + 1
+        tete = code[debut:m.start()]
+        # Un resultat EXPLOITE est affecte ou renvoye ; une sonde de calibrage est une
+        # instruction nue. C'est l'affectation qui distingue, pas le recepteur.
+        if '=' not in tete and 'return' not in tete:
+            jetes += 1
+    attendus = 2 + jetes
+    if appels_bruit > attendus:
+        echecs.append('VERROU 4 : %d appels a getBaseHeight pour %d legitime(s) (2 utiles '
+                      '+ %d sonde(s) de calibrage a resultat jete) -- un appel de plus sert '
+                      'tres probablement a combler les chunks absents avec du relief '
                       'theorique, ce qui masquerait exactement ce que le scan doit montrer'
-                      % appels_bruit)
-    if appels_bruit < 2:
-        echecs.append('VERROU 4 : %d appel(s) a getBaseHeight au lieu de 2 -- la grille de '
-                      'reference du relief d\'origine a disparu' % appels_bruit)
+                      % (appels_bruit, attendus, jetes))
+    if appels_bruit - jetes < 2:
+        echecs.append('VERROU 4 : %d appel(s) utile(s) a getBaseHeight au lieu de 2 -- la '
+                      'grille de reference du relief d\'origine a disparu'
+                      % (appels_bruit - jetes))
+    if jetes > 1:
+        echecs.append('VERROU 4 : %d sondes de calibrage a resultat jete au lieu d\'une '
+                      'seule -- au-dela, ce n\'est plus un calibrage' % jetes)
 
     # ------------------------------------------------------------------ VERROU 5
     # Alignement des grilles sur les chunks : sans lui, toute lecture est fausse.

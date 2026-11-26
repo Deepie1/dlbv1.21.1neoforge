@@ -7224,8 +7224,10 @@ public class StructureTerrainPrep {
                 // incomplet qui se tait se lit comme un habillage complet -- c'est ce
                 // silence qui a laisse partir un lac au sol nu au sud.
                 if (!manques.isEmpty()) {
-                    deepluckyblock.util.DebugLog.warn(LOGGER,
-                            "[DLB-HABILL] {} colonne(s) NON HABILLEES apres {} tour(s) : leur chunk "
+                    // T493 : alerte() et non warn() -- warn() exige DebugLog.ENABLED, false
+                    // par defaut. Ce compte-rendu aurait ete invisible chez le dev.
+                    deepluckyblock.util.DebugLog.alerte(
+                            "{} colonne(s) NON HABILLEES apres {} tour(s) : leur chunk "
                                     + "n'est jamais arrive (z {}..{}). Le sol y reste celui laisse par "
                                     + "la coupe -- c'est exactement le defaut « sol non repeint » signale.",
                             manques.size(), tours[0], manqueZ0[0], manqueZ1[0]);
@@ -10549,8 +10551,9 @@ public class StructureTerrainPrep {
                             + "{} duplicate columns ignored, {} covered footprint columns skipped (T92), {} skipped unloaded halo (T157)",
                     planted, shrunken, refused, duplicates, protectedSkipped, unloadedSkipped);
             if (!aReprendre.isEmpty()) {
-                deepluckyblock.util.DebugLog.warn(LOGGER,
-                        "[DLB-HABILL] {} arbre(s) NON REPLANTES apres {} tour(s) : leur halo n'est "
+                // T493 : alerte() -- warn() etait eteint par defaut (DebugLog.ENABLED).
+                deepluckyblock.util.DebugLog.alerte(
+                        "{} arbre(s) NON REPLANTES apres {} tour(s) : leur halo n'est "
                                 + "jamais arrive en memoire. C'est le defaut « tu n'as pas replante ».",
                         aReprendre.size(), tourRattrapage);
             }

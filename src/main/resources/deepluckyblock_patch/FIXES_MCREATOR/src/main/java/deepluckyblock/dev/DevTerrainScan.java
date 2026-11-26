@@ -172,7 +172,44 @@ public final class DevTerrainScan {
      * repli silencieux-mais-degrade reste une perte de donnee. Le delai est double ET la
      * priorite du fil relevee (voir lancerBruit).</p>
      */
-    private static final long BRUIT_ATTENTE_MS = 240_000L;
+    /**
+     * T493 : 20 s, et non plus 240 s.
+     *
+     * <p>Mesure du 26/11 : le redacteur a attendu QUATRE MINUTES (06:11:07 -> 06:15:07),
+     * le relief n'etait toujours pas pret, et il a ecrit sans lui -- puis a recommence
+     * pour la seconde session (06:12:49 -> 06:16:49). Les « 249 s de redaction »
+     * annoncees etaient 240 s d'attente et 9 s d'ecriture reelle. Attendre quatre
+     * minutes un resultat qui n'arrivera pas ne le fait pas arriver : ca retarde juste
+     * les fichiers d'autant. Le relief est desormais BORNE (voir BRUIT_BUDGET_MS) :
+     * s'il doit arriver, il arrive vite ; sinon il n'est pas lance du tout.</p>
+     */
+    private static final long BRUIT_ATTENTE_MS = 20_000L;
+
+    /**
+     * T493 -- BUDGET DUR DU RELIEF THEORIQUE.
+     *
+     * <p>Cout mesure le 26/11 : 12 544 colonnes en 442 530 ms, soit 35,3 ms PAR COLONNE.
+     * La zone reelle du lac en comptait 230 144 : au meme cout, 8 119 s, soit
+     * <b>2 h 17</b>. Ce calcul n'avait aucune chance d'aboutir -- et il a tourne quand
+     * meme, en NORM_PRIORITY-1, pendant 7 min 22, pendant que le serveur accumulait
+     * 10 a 15 secondes de retard par rapport au temps reel, SANS DISCONTINUER, bien
+     * apres que le lac fut termine (06:13:41 -> 06:19:28 au moins). Le joueur a paye
+     * huit minutes de jeu injouable pour une section de rapport qui est sortie vide.
+     *
+     * <p>Un diagnostic qui coute plus cher que le defaut qu'il diagnostique n'est pas un
+     * diagnostic. Le calcul s'alloue desormais ce budget, estime son cout AVANT de
+     * commencer, et s'il n'entre pas il ne commence pas.
+     */
+    private static final long BRUIT_BUDGET_MS = 45_000L;
+
+    /** T493 : nombre de sondes de calibrage avant de decider du pas d'echantillonnage. */
+    private static final int BRUIT_SONDES_CALIBRAGE = 64;
+
+    /** T493 : pas maximal du reseau d'echantillonnage (le bruit est lisse, 16 suffit). */
+    private static final int BRUIT_PAS_MAX = 16;
+
+    /** T493 : taille d'un lot entre deux respirations du fil. */
+    private static final int BRUIT_LOT = 192;
 
     /** Au-dela de ce silence, on ecrit au lieu de risquer de tout perdre. */
     private static final long SILENCE_MAX_MS = 300_000L;
@@ -267,6 +304,15 @@ public final class DevTerrainScan {
          * tableau -- il aurait la mauvaise taille et le mauvais origine.
          */
         volatile int bruitGen;
+
+        /**
+         * T493 : annulation REELLE du fil de relief. Avant, le seul moyen d'arreter le
+         * calcul etait d'incrementer bruitGen -- ce que seule une relance faisait. Quand
+         * le redacteur renoncait (06:15:07), le fil continuait pour personne : il a
+         * tourne 3 min 25 de plus, jusqu'a 06:18:32, et a publie un resultat que plus
+         * aucun fichier n'allait lire. Du CPU vole au serveur pour rien.
+         */
+        volatile boolean bruitAnnule;
         int dernierPasteQ = -1;
         boolean zoneVue;
         /** T477 : au moins une capture n'a pas couvert toute la grille. */
@@ -393,6 +439,7 @@ public final class DevTerrainScan {
     private static void scanImmediat(CommandSourceStack src) {
         ServerLevel level = src.getLevel();
         BlockPos p = BlockPos.containing(src.getPosition());
+        couperBruit(session);   // T493 : un scan manuel ne doit pas laisser courir le precedent
         Session s = ouvrir(level,
                 p.getX() - MANUAL_RADIUS, p.getZ() - MANUAL_RADIUS,
                 p.getX() + MANUAL_RADIUS, p.getZ() + MANUAL_RADIUS,
@@ -475,6 +522,13 @@ public final class DevTerrainScan {
             //     son emprise, juste avant le premier coup de pioche du clear.
             if (s == null && zone != null && phase == Phase.ARME) {
                 int gy = solDeReference(level, zone);
+                // T493 : couper le relief de la session precedente AVANT d'en ouvrir une
+                // autre. Le 26/11, la session fantome a lance son propre calcul pendant
+                // que celui de la vraie session tournait encore : les deux se sont
+                // disputes la machine, et c'est le resultat de la FAUSSE (12 544
+                // colonnes) qui est sorti a 06:18:32 -- celui de la vraie n'a jamais
+                // existe.
+                couperBruit(session);
                 s = ouvrir(level, zone[0], zone[1], zone[2], zone[3], gy, true);
                 if (s == null) continue;
                 session = s;
@@ -572,6 +626,7 @@ public final class DevTerrainScan {
                             + "n'y ait lieu (file de pose toujours vide, emprise jamais "
                             + "elargie). C'est une sonde de placement : la mesurer "
                             + "produirait deux photos identiques d'un terrain intact.");
+                    couperBruit(s);                 // T493 : et on coupe son calcul
                     session = null;
                     phase = veilleAuto ? Phase.ARME : Phase.DESARME;
                     return;
@@ -798,27 +853,139 @@ public final class DevTerrainScan {
      * et surtout de point de comparaison pour les chunks jamais charges : sans lui, un
      * chunk absent ne dirait meme pas quelle forme il aurait du avoir.</p>
      */
+    /**
+     * T493 : coupe le relief theorique d'une session dont plus personne n'attend rien.
+     *
+     * <p>Appelee a CHAQUE ouverture de session -- il y a deux points d'ouverture
+     * (automatique et {@code /dlbscan} manuel) et les deux peuvent se superposer a une
+     * session encore vivante. Le 26/11, c'est la session fantome qui a publie SON
+     * relief (12 544 colonnes) a la place de celui de la vraie session (230 144).</p>
+     */
+    private static void couperBruit(Session s) {
+        if (s == null) return;
+        s.bruitAnnule = true;
+        Thread f = s.filBruit;
+        if (f != null) f.interrupt();
+    }
+
+    /** T493 : le calcul est-il devenu inutile (grille changee, ou session abandonnee) ? */
+    private static boolean bruitPerime(Session s, int gGen) {
+        return s.bruitGen != gGen || s.bruitAnnule;
+    }
+
     private static void calculerBruit(Session s, int gw, int gd, int gx0, int gz0, int gGen) {
         long t0 = System.currentTimeMillis();
         int[] tmp = new int[gw * gd];
+        java.util.Arrays.fill(tmp, ABSENT);
         try {
             var gen = s.level.getChunkSource().getGenerator();
             var rs = s.level.getChunkSource().randomState();
             var type = net.minecraft.world.level.levelgen.Heightmap.Types.OCEAN_FLOOR_WG;
-            for (int z = 0; z < gd; z++) {
-                // T477 : grille perimee -- inutile de finir un calcul que personne ne lira.
-                if (s.bruitGen != gGen) return;
-                for (int x = 0; x < gw; x++) {
-                    tmp[z * gw + x] = gen.getBaseHeight(gx0 + x, gz0 + z, type, s.level, rs);
+
+            // ---- 1) CALIBRAGE : combien coute REELLEMENT une colonne, ici, maintenant ?
+            // On ne suppose pas, on mesure. Le cout depend de la machine, du generateur
+            // et de la charge du serveur ; une constante codee en dur serait fausse
+            // partout sauf sur la machine ou elle a ete ecrite.
+            long tCal = System.nanoTime();
+            int sondes = 0;
+            for (int i = 0; i < BRUIT_SONDES_CALIBRAGE; i++) {
+                if (bruitPerime(s, gGen)) return;
+                int px = (int) (((long) i * 7919L) % gw);
+                int pz = (int) (((long) i * 6271L) % gd);
+                gen.getBaseHeight(gx0 + px, gz0 + pz, type, s.level, rs);
+                sondes++;
+            }
+            double nsCol = sondes > 0 ? (double) (System.nanoTime() - tCal) / sondes : 1e9;
+
+            // ---- 2) PAS ADAPTATIF : le bruit de generation est LISSE. L'echantillonner
+            // tous les PAS blocs et interpoler donne la meme carte a un bloc pres, pour
+            // PAS^2 fois moins de calcul. On choisit le plus petit pas qui tient dans le
+            // budget.
+            int pas = 1;
+            long ech = (long) gw * gd;
+            while (pas < BRUIT_PAS_MAX
+                    && ech * nsCol > BRUIT_BUDGET_MS * 1_000_000.0) {
+                pas *= 2;
+                ech = (long) ((gw + pas - 1) / pas + 1) * ((gd + pas - 1) / pas + 1);
+            }
+            double prevuMs = ech * nsCol / 1e6;
+
+            // ---- 3) S'IL N'ENTRE PAS, ON NE COMMENCE PAS.
+            // C'est le coeur du correctif : le 26/11, 230 144 colonnes a 35,3 ms ont ete
+            // lancees sans que personne n'ait calcule que cela faisait 2 h 17.
+            if (prevuMs > BRUIT_BUDGET_MS) {
+                log("[DLB-SCAN] relief theorique NON LANCE : " + gw + "x" + gd + " = "
+                        + ((long) gw * gd) + " colonnes a " + String.format("%.1f", nsCol / 1e6)
+                        + " ms/colonne, soit " + Math.round(prevuMs / 1000.0) + " s meme au pas "
+                        + pas + " -- au-dessus du budget de " + (BRUIT_BUDGET_MS / 1000)
+                        + " s. Les sections theoriques seront vides, mais le serveur reste "
+                        + "jouable : un diagnostic ne doit jamais couter plus cher que le "
+                        + "defaut qu'il diagnostique.");
+                if (!bruitPerime(s, gGen)) s.bruit = tmp;
+                return;
+            }
+
+            // ---- 4) ECHANTILLONNAGE, avec respiration et date butoir.
+            int nx = (gw + pas - 1) / pas + 1;
+            int nz = (gd + pas - 1) / pas + 1;
+            int[] grille = new int[nx * nz];
+            java.util.Arrays.fill(grille, ABSENT);
+            int faits = 0;
+            long tLot = System.nanoTime();
+            boolean coupe = false;
+            for (int j = 0; j < nz && !coupe; j++) {
+                int wz = gz0 + Math.min(gd - 1, j * pas);
+                for (int i = 0; i < nx; i++) {
+                    if (bruitPerime(s, gGen)) return;
+                    if (System.currentTimeMillis() - t0 > BRUIT_BUDGET_MS) { coupe = true; break; }
+                    int wx = gx0 + Math.min(gw - 1, i * pas);
+                    grille[j * nx + i] = gen.getBaseHeight(wx, wz, type, s.level, rs);
+                    if (++faits % BRUIT_LOT == 0) {
+                        // Respiration : on rend la main. Le fil tourne en MIN_PRIORITY,
+                        // mais sur une machine a 4 coeurs la priorite seule ne suffit
+                        // pas -- c'est ce qui a vole 10 a 15 s par tick au serveur.
+                        long dt = System.nanoTime() - tLot;
+                        try {
+                            Thread.sleep(Math.max(1L, Math.min(25L, dt / 1_000_000L * 2L)));
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            return;
+                        }
+                        tLot = System.nanoTime();
+                    }
                 }
             }
-            if (s.bruitGen != gGen) return;
+            if (bruitPerime(s, gGen)) return;
+
+            // ---- 5) INTERPOLATION bilineaire du reseau vers chaque colonne.
+            for (int z = 0; z < gd; z++) {
+                double fz = (double) z / pas;
+                int j0 = (int) fz; if (j0 > nz - 2) j0 = Math.max(0, nz - 2);
+                double tz = fz - j0;
+                for (int x = 0; x < gw; x++) {
+                    double fx = (double) x / pas;
+                    int i0 = (int) fx; if (i0 > nx - 2) i0 = Math.max(0, nx - 2);
+                    double tx = fx - i0;
+                    int v00 = grille[j0 * nx + i0];
+                    int v10 = grille[j0 * nx + Math.min(nx - 1, i0 + 1)];
+                    int v01 = grille[Math.min(nz - 1, j0 + 1) * nx + i0];
+                    int v11 = grille[Math.min(nz - 1, j0 + 1) * nx + Math.min(nx - 1, i0 + 1)];
+                    // Une valeur manquante ne s'invente pas : la colonne reste ABSENT.
+                    if (v00 == ABSENT || v10 == ABSENT || v01 == ABSENT || v11 == ABSENT) continue;
+                    double lo = v00 + (v10 - v00) * tx;
+                    double hi = v01 + (v11 - v01) * tx;
+                    tmp[z * gw + x] = (int) Math.round(lo + (hi - lo) * tz);
+                }
+            }
+            if (bruitPerime(s, gGen)) return;
             s.bruit = tmp;      // publication en un seul coup
-            log("[DLB-SCAN] relief theorique pret : " + (gw * gd) + " colonnes en "
-                    + (System.currentTimeMillis() - t0) + " ms");
+            log("[DLB-SCAN] relief theorique pret : " + ((long) gw * gd) + " colonnes en "
+                    + (System.currentTimeMillis() - t0) + " ms (pas " + pas + ", "
+                    + faits + " sondes" + (coupe ? ", INTERROMPU par la date butoir" : "")
+                    + ", " + String.format("%.2f", nsCol / 1e6) + " ms/colonne mesures)");
         } catch (Throwable t) {
             java.util.Arrays.fill(tmp, ABSENT);
-            if (s.bruitGen == gGen) s.bruit = tmp;
+            if (!bruitPerime(s, gGen)) s.bruit = tmp;
             log("[DLB-SCAN] relief theorique indisponible : " + t);
         }
     }
@@ -845,7 +1012,11 @@ public final class DevTerrainScan {
             // pendant que le serveur rattrapait 588 ticks de retard, et le relief
             // theorique n'etait pas pret au bout de 120 s. Un cran sous la normale
             // suffit a ne pas concurrencer le fil serveur tout en avancant.
-            t.setPriority(Math.max(Thread.MIN_PRIORITY, Thread.NORM_PRIORITY - 1));
+            // T493 : RETOUR EN MIN_PRIORITY. T477 l'avait releve a NORM-1 pour que le
+            // calcul aboutisse ; il a abouti, en volant 10 a 15 s par tick au serveur
+            // pendant 7 min 22. Ce n'etait pas le bon arbitrage : le jeu passe avant le
+            // rapport. La respiration par lots (BRUIT_LOT) remplace la priorite elevee.
+            t.setPriority(Thread.MIN_PRIORITY);
             s.filBruit = t;
             t.start();
         } catch (Throwable t) {
@@ -866,10 +1037,17 @@ public final class DevTerrainScan {
         }
         int[] b = s.bruit;
         if (b == null || b.length != s.w * s.d) {
+            // T493 : ON ANNULE. Le 26/11, le redacteur a renonce a 06:15:07 et le fil a
+            // continue jusqu'a 06:18:32 -- 3 min 25 de CPU vole au serveur pour publier
+            // un resultat que plus aucun fichier n'allait lire.
+            couperBruit(s);
             int[] vide = new int[s.w * s.d];
             java.util.Arrays.fill(vide, ABSENT);
             s.bruit = vide;
-            log("[DLB-SCAN] relief theorique non termine a temps : sections theoriques vides");
+            log("[DLB-SCAN] relief theorique non termine a temps : sections theoriques "
+                    + "vides, et le calcul est ARRETE (il ne servirait plus a rien).");
+        } else {
+            s.bruitAnnule = true;   // resultat obtenu : plus rien a calculer
         }
     }
 
