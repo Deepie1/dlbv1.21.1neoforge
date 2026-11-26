@@ -45,12 +45,23 @@ on:
       - 'docs/**'
       - '**.md'
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit ou branche a eprouver (vide = HEAD de la branche)"
+        required: false
+        type: string
+      attendu:
+        description: "Resultat attendu : demarre (defaut) ou casse (controle negatif)"
+        required: false
+        default: demarre
+        type: choice
+        options: [demarre, casse]
 
 permissions:
   contents: read
 
 concurrency:
-  group: demarrage-serveur-${{ github.ref }}
+  group: demarrage-serveur-${{ github.ref }}-${{ inputs.ref || 'head' }}-${{ inputs.attendu || 'demarre' }}
   cancel-in-progress: true
 
 jobs:
@@ -62,6 +73,15 @@ jobs:
     steps:
       - name: Recuperer les sources
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Annoncer ce qui est eprouve
+        run: |
+          set -euo pipefail
+          echo "commit eprouve : $(git rev-parse HEAD)"
+          echo "resultat attendu : ${{ inputs.attendu || 'demarre' }}"
+          echo "::notice::commit eprouve $(git rev-parse --short HEAD) — attendu ${{ inputs.attendu || 'demarre' }}"
 
       - name: Installer le JDK 21 (Temurin)
         uses: actions/setup-java@v4
@@ -108,7 +128,13 @@ jobs:
 
       - name: COMPILER le mod
         # L'etape qui manquait depuis le debut du projet.
-        run: ./gradlew --no-daemon --stacktrace compileJava processResources
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --stacktrace compileJava processResources
+          N=$(find build/classes/java/main -name '*.class' 2>/dev/null | wc -l)
+          S=$(find src/main/java -name '*.java' | wc -l)
+          echo "::notice::compilation reussie — $S fichiers source, $N classes produites"
+          test "$N" -gt 0 || { echo "::error::aucune classe produite"; exit 1; }
 
       - name: Accepter l'EULA et configurer le serveur
         run: |
@@ -127,12 +153,13 @@ jobs:
         id: serveur
         run: |
           set -uo pipefail
+          ATTENDU="${{ inputs.attendu || 'demarre' }}"
           mkdir -p build/ci
           LOG=build/ci/serveur.log
           : > "$LOG"
 
-          # setsid : le serveur est lance dans sa propre session, ce qui permet
-          # de tuer TOUT le groupe (Gradle + JVM forkee) une fois le verdict pris.
+          # setsid : le serveur tourne dans sa propre session, ce qui permet de
+          # tuer TOUT le groupe (Gradle + JVM forkee) une fois le verdict pris.
           setsid bash -c './gradlew --no-daemon --stacktrace runServer' > "$LOG" 2>&1 &
           PGID=$!
 
@@ -146,21 +173,52 @@ jobs:
             sleep 1
           done
 
-          # Arret propre puis sans sommation.
           kill -TERM -"$PGID" 2>/dev/null || true
           sleep 10
           kill -KILL -"$PGID" 2>/dev/null || true
 
-          echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+          # ── PREUVES, emises en annotations donc lisibles par l'API ────────
+          echo "::notice::verdict=$verdict (attendu=$ATTENDU)"
+          L=$(grep -oE 'Done \([0-9.]+s\)!.*' "$LOG" 2>/dev/null | tail -1 | tr -d '\r')
+          [ -n "$L" ] && echo "::notice::serveur pret — $L"
+          grep -q 'Subscribing @EventBusSubscriber class Ldeepluckyblock/procedures/CrimsonLakeStructureSpawnProcedure' "$LOG" 2>/dev/null \
+            && echo "::notice::le gestionnaire du lac a bien ete enregistre sur le bus d'evenements"
+          C=$(grep -m1 -oE '[A-Za-z0-9_.]+\.[A-Za-z0-9_]+\([^)]*\) annotated with @SubscribeEvent' "$LOG" 2>/dev/null | tr -d '\r')
+          [ -n "$C" ] && echo "::notice::defaut @SubscribeEvent detecte sur $C"
+
+          {
+            echo "### Banc de demarrage"
+            echo
+            echo "| element | valeur |"
+            echo "|---|---|"
+            echo "| commit | \`$(git rev-parse --short HEAD)\` |"
+            echo "| attendu | $ATTENDU |"
+            echo "| verdict | **$verdict** |"
+            [ -n "$L" ] && echo "| serveur | $L |"
+            echo
+            echo '```'
+            tail -40 "$LOG"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
           echo "::group::200 dernieres lignes du serveur"; tail -200 "$LOG"; echo "::endgroup::"
+
+          # ── CONTROLE NEGATIF : on EXIGE que le banc morde ─────────────────
+          if [ "$ATTENDU" = casse ]; then
+            if [ "$verdict" = demarre ]; then
+              echo "::error::le banc N'A PAS MORDU sur un commit repute casse — il ne protege de rien"
+              exit 1
+            fi
+            echo "Controle negatif concluant : le banc a bien refuse ce commit ($verdict)."
+            exit 0
+          fi
 
           case "$verdict" in
             demarre)
               echo "Le serveur a atteint « Done ( ... s)! » : le mod charge et tourne."
-              grep -E 'Done \([0-9.]+s\)!' "$LOG" | tail -1
               ;;
             mod_casse)
-              echo "::error::Le mod ne charge pas. Extrait fautif :"
+              echo "::error::Le mod ne charge pas."
               grep -nE 'ModLoadingCrashException|has failed to load correctly|Failed to register class|IllegalArgumentException' "$LOG" | head -20
               exit 1
               ;;
