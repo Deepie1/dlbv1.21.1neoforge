@@ -510,24 +510,64 @@ public final class TerrainMother {
         auraAllZero = false;
         auraAllOne = false;
 
-        // Étape 2 (T305) : pont doux uniquement sur couloirs opposés entre deux terres neigeuses,
-        // SANS remplissage uniforme de boîte (0.62) afin qu'un chunk entouré de 3 côtés neige
-        // (+ 1 côté glace/sec) conserve un vrai dégradé progressif entrant depuis ses 3 bords neigeux !
+        // ====================================================================
+        // Étape 2 (T492) -- DIFFUSION DIRECTIONNELLE, DÉGRESSIVE ET ADDITIVE
+        //
+        // Consigne dev du 26/11, mot pour mot : « quand tu as un chunk de neige,
+        // pense toujours à faire spread dans les chunks à côté en dégressif [...]
+        // si deux chunks ont de la neige avec un sans au centre, il y a DEUX
+        // ENTRÉES de spread, EN ADDITIF [...] calcule bien les sens, d'où ça
+        // vient, où ça finit ».
+        //
+        // CE QUE FAISAIT LE CODE PRÉCÉDENT, ET POURQUOI C'ÉTAIT LA CAUSE DES
+        // LIGNES DE DÉMARCATION NETTES :
+        //   card == 4                      -> 0.42   (valeur fixe)
+        //   deux voisins OPPOSÉS           -> 0.22   (valeur fixe)
+        //   TOUT LE RESTE                  -> 0
+        // Autrement dit un chunk bordé de neige sur UN, DEUX côtés adjacents ou
+        // TROIS côtés recevait ZÉRO. Le commentaire d'origine affirmait pourtant
+        // qu'un chunk « entouré de 3 côtés neige conserve un vrai dégradé » : le
+        // code disait l'inverse du commentaire. D'où la cassure franche en bord
+        // de massif, exactement le reproche.
+        //
+        // CE QUE FAIT CELUI-CI : chaque direction cardinale est UNE ENTRÉE de
+        // spread. On marche depuis la cellule vers l'extérieur ; la première
+        // cellule neigeuse rencontrée à la distance k alimente une entrée de
+        // poids SPREAD_ENTREE / k -- dégressif. Les quatre entrées S'ADDITIONNENT.
+        // La marche s'arrête sur la glace ou l'eau (T305-NO-ICE : zéro dégradé
+        // avec l'ice), ce qui répond au « d'où ça vient, où ça finit ».
+        //
+        // CALIBRAGE -- on retombe EXACTEMENT sur les deux valeurs éprouvées :
+        //   SPREAD_ENTREE = 0.105
+        //   4 voisins à k=1 : 4 x 0.105 = 0.42  (identique à l'ancien cas card==4)
+        //   2 opposés à k=1 : 2 x 0.105 = 0.21  (ancien 0.22, écart 0.01)
+        // et les cas jusqu'ici muets reçoivent enfin leur part :
+        //   1 voisin  : 0.105     2 adjacents : 0.21     3 voisins : 0.315
+        // Le plafond garde la valeur maximale historique : une enclave ne devient
+        // jamais un cœur de massif, elle reste une diffusion.
+        // ====================================================================
         final float[] linkedPotential = cellPotential.clone();
         for (int cj = 1; cj < hh - 1; cj++) {
             for (int ci = 1; ci < hw - 1; ci++) {
                 int idx = cj * hw + ci;
                 if (cellWeight[idx] <= 0.15f || cellPotential[idx] > 0f) continue;
-                boolean n = cellWeight[(cj - 1) * hw + ci] > 0.15f && cellPotential[(cj - 1) * hw + ci] > 0.5f;
-                boolean s = cellWeight[(cj + 1) * hw + ci] > 0.15f && cellPotential[(cj + 1) * hw + ci] > 0.5f;
-                boolean w = cellWeight[cj * hw + (ci - 1)] > 0.15f && cellPotential[cj * hw + (ci - 1)] > 0.5f;
-                boolean e = cellWeight[cj * hw + (ci + 1)] > 0.15f && cellPotential[cj * hw + (ci + 1)] > 0.5f;
-                int card = (n ? 1 : 0) + (s ? 1 : 0) + (w ? 1 : 0) + (e ? 1 : 0);
-                if (card == 4) {
-                    linkedPotential[idx] = 0.42f; // enclave 4/4 terres neigeuses
-                } else if ((n && s && !w && !e) || (w && e && !n && !s)) {
-                    linkedPotential[idx] = 0.22f; // pont doux entre deux massifs opposés
+                float acc = 0f;
+                for (int d = 0; d < 4; d++) {
+                    int pasI = (d == 2 ? -1 : (d == 3 ? 1 : 0));
+                    int pasJ = (d == 0 ? -1 : (d == 1 ? 1 : 0));
+                    for (int k = 1; k <= SPREAD_PORTEE_CHUNKS; k++) {
+                        int vi = ci + pasI * k, vj = cj + pasJ * k;
+                        if (vi < 0 || vi >= hw || vj < 0 || vj >= hh) break;
+                        int vIdx = vj * hw + vi;
+                        // glace / eau : la diffusion ne la traverse pas et n'en vient pas.
+                        if (cellWeight[vIdx] <= 0.15f) break;
+                        if (cellPotential[vIdx] > 0.5f) {
+                            acc += SPREAD_ENTREE / (float) k;   // dégressif en 1/k
+                            break;                              // une seule entrée par sens
+                        }
+                    }
                 }
+                if (acc > 0f) linkedPotential[idx] = Math.min(SPREAD_PLAFOND, acc);
             }
         }
 
@@ -574,6 +614,13 @@ public final class TerrainMother {
      *
      * <p>Renvoie {@code -1f} uniquement si aucun enfant n'a encore été renseigné.
      */
+    /** T492 : poids d'UNE entrée de spread de neige, à une cellule de distance. */
+    private static final float SPREAD_ENTREE = 0.105f;
+    /** T492 : portée de la diffusion, en chunks (au-delà, plus rien ne vient). */
+    private static final int SPREAD_PORTEE_CHUNKS = 3;
+    /** T492 : plafond du cumul — valeur maximale historique d'une enclave 4/4. */
+    private static final float SPREAD_PLAFOND = 0.42f;
+
     private boolean isIceOrWaterCell(int cx, int cz) {
         if (cx >= gx0 && cx < gx0 + gw && cz >= gz0 && cz < gz0 + gh) {
             Child c = grid[(cz - gz0) * gw + (cx - gx0)];

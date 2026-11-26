@@ -65,6 +65,24 @@ ORDRE = [
 ]
 
 NOTICES = {
+ 'src/main/java/deepluckyblock/util/TerrainMother.java':
+  "T492 : DIFFUSION DE LA NEIGE -- DEGRESSIVE ET ADDITIVE.\n"
+  "     Consigne dev du 26/11 : « quand tu as un chunk de neige, pense toujours a\n"
+  "     faire spread dans les chunks a cote en degressif [...] si deux chunks ont de\n"
+  "     la neige avec un sans au centre, il y a DEUX ENTREES de spread, EN ADDITIF\n"
+  "     [...] calcule bien les sens, d'ou ca vient, ou ca finit ».\n"
+  "     L'ancienne regle ne traitait QUE deux cas, avec des valeurs fixes : 4 voisins\n"
+  "     -> 0.42, deux voisins OPPOSES -> 0.22. Tout le reste recevait ZERO : un chunk\n"
+  "     borde de neige sur UN, DEUX cotes adjacents ou TROIS cotes n'avait aucun\n"
+  "     degrade -- d'ou les lignes de demarcation nettes. Le commentaire d'origine\n"
+  "     affirmait pourtant le contraire de ce que faisait le code.\n"
+  "     Desormais chaque direction cardinale est UNE ENTREE : on marche vers\n"
+  "     l'exterieur, la premiere cellule neigeuse a la distance k alimente une entree\n"
+  "     de poids 0.105/k (degressif), les quatre entrees S'ADDITIONNENT, et la marche\n"
+  "     s'arrete sur la glace ou l'eau. Calibrage retombant sur l'existant :\n"
+  "     4 voisins = 4 x 0.105 = 0.42 (identique), 2 opposes = 0.21 (ancien 0.22),\n"
+  "     et les cas muets recoivent enfin 0.105 / 0.21 / 0.315. Plafond 0.42 :\n"
+  "     une enclave reste une diffusion, jamais un coeur de massif.",
  'src/main/java/deepluckyblock/dev/DevTerrainScan.java':
   "T471 : SCAN DE TERRAIN -- OUTIL DE DEVELOPPEMENT, FICHIER JETABLE.\n"
   "     Huit tours de correctifs sur le raccord du Crimson Lake (T459 a T468) ont ete\n"

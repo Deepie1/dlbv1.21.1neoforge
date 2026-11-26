@@ -71,6 +71,22 @@ public class StructureTerrainPrep {
     // La vegetation depasse legerement la zone de terrain (~12 blocs -> ~48 blocs total).
     private static final int NATURALIZE_EXTRA_RING = 12;
 
+    /** T492 : tours de rattrapage de l'habillage sur les colonnes dont le chunk manquait. */
+    private static final int DRESS_RETRY_TOURS = 6;
+    /** T492 : attente entre deux tours, le temps que ChunkKeeper fasse arriver les chunks. */
+    private static final int DRESS_RETRY_ATTENTE_TICKS = 40;
+    /** T492 : plafond de colonnes memorisees pour rattrapage (garde-fou memoire). */
+    private static final int DRESS_RETRY_MAX_COLS = 300_000;
+    /** T492 : au-dela, on rend la main meme s'il reste des manques -- et on le DIT. */
+    private static final long DRESS_RETRY_DEADLINE_MS = 240_000L;
+
+    /** T492 : tours de rattrapage de la replantation sur les arbres au halo non charge. */
+    private static final int REPLANT_RETRY_TOURS = 6;
+    /** T492 : attente entre deux tours de replantation, en ticks. */
+    private static final int REPLANT_RETRY_ATTENTE_TICKS = 40;
+    /** T492 : plafond d'arbres mis de cote (garde-fou memoire). */
+    private static final int REPLANT_RETRY_MAX = 20_000;
+
     // T305-ULTRA-5S : suivi des chunks modifies par ecriture directe LevelChunkSection
     // pour envoyer 1 seul ClientboundLevelChunkWithLightPacket par chunk en fin de chantier
     // (elimine les ~300 000 remeshes intermediaires sur GPU client integre type Intel HD 630 !).
@@ -6913,7 +6929,9 @@ public class StructureTerrainPrep {
 
         final long vegSeed = level.getSeed()
                 ^ ((long) min.getX() * 912931L) ^ ((long) min.getZ() * 182883L) ^ 0x5EEDL;
-        final List<int[]> cols = zone.chunkMajorColumns();
+        // T492 : liste MODIFIABLE -- les tours de rattrapage la reduisent aux colonnes
+        // dont le chunk manquait. chunkMajorColumns() peut renvoyer une vue immuable.
+        final List<int[]> cols = new java.util.ArrayList<>(zone.chunkMajorColumns());
         if (cols.isEmpty()) {
             clearDressingCaches();
             if (onDone != null) onDone.run();
@@ -6922,7 +6940,14 @@ public class StructureTerrainPrep {
 
         // 0 fastChunks | 1 blendChunks | 2 surfaceSet | 3 fillerSet
         // 4 plantes    | 5 sautees     | 6 sauvees reposees
-        final int[] stats = new int[7];
+        // 7 (T492) sautees FAUTE DE CHUNK CHARGE -- sous-ensemble de 5, compte a part
+        final int[] stats = new int[8];
+        // T492 : colonnes a repasser quand leur chunk sera arrive, et emprise en Z
+        // des manques (pour dire OU le travail n'a pas ete fait, pas seulement combien).
+        final java.util.List<int[]> manques = new java.util.ArrayList<>();
+        final int[] manqueZ0 = {Integer.MAX_VALUE};
+        final int[] manqueZ1 = {Integer.MIN_VALUE};
+        final int[] tours = {0};
         final int[] cursor = {0};
         final BlockPos.MutableBlockPos mut = new BlockPos.MutableBlockPos();
         final BlockPos.MutableBlockPos snowProbe = new BlockPos.MutableBlockPos();
@@ -6968,7 +6993,21 @@ public class StructureTerrainPrep {
                         curPal = null; curEco = null;
                     }
                 }
-                if (curCa == null || curPal == null) { stats[5]++; continue; }
+                if (curCa == null || curPal == null) {
+                    // T492 : une colonne sautee faute de CHUNK n'est pas une colonne
+                    // sautee par choix. Les deux tombaient dans le meme compteur, si
+                    // bien qu'un habillage qui n'avait traite que la moitie nord de la
+                    // zone se journalisait exactement comme un habillage complet.
+                    // Mesure du 26/11 : 60 chunks de l'emprise jamais charges, TOUS au
+                    // sud (z 432..543, dont 50 a z >= 496) -- d'ou le reproche « du
+                    // milieu vers le sud tu n'as ni repeint ni replante ». On les compte
+                    // a part, on retient leur emprise, et on les repasse.
+                    stats[5]++; stats[7]++;
+                    if (manques.size() < DRESS_RETRY_MAX_COLS) manques.add(new int[]{x, z});
+                    if (z < manqueZ0[0]) manqueZ0[0] = z;
+                    if (z > manqueZ1[0]) manqueZ1[0] = z;
+                    continue;
+                }
                 if (StructureScatterDecor.isInsideDecor(x, z, 1)) { stats[5]++; continue; }
 
                 boolean protectedColumn = isProtected(x, z);
@@ -7152,12 +7191,45 @@ public class StructureTerrainPrep {
             cursor[0] = i;
             if (i < sz) {
                 TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, stepSlice[0]);
+            } else if (!manques.isEmpty() && tours[0] < DRESS_RETRY_TOURS
+                    && System.currentTimeMillis() - t0 < DRESS_RETRY_DEADLINE_MS) {
+                // T492 -- ON REPASSE SUR LES MANQUES.
+                // Les chunks du sud n'etaient pas absents pour toujours : ils
+                // n'etaient pas ENCORE arrives. L'habillage les traversait une seule
+                // fois, au plus tot, et ne revenait jamais. On redemande leur maintien
+                // et on rejoue uniquement les colonnes manquantes, quelques tours.
+                tours[0]++;
+                int restants = manques.size();
+                deepluckyblock.util.ChunkKeeper.keep(level);
+                deepluckyblock.util.DebugLog.structure(
+                        "dressAndPlant : tour de rattrapage {}/{} sur {} colonne(s) dont le chunk "
+                                + "n'etait pas charge (z {}..{})",
+                        tours[0], DRESS_RETRY_TOURS, restants, manqueZ0[0], manqueZ1[0]);
+                cols.clear();
+                cols.addAll(manques);
+                manques.clear();
+                manqueZ0[0] = Integer.MAX_VALUE;
+                manqueZ1[0] = Integer.MIN_VALUE;
+                cursor[0] = 0;
+                stats[7] = 0;
+                TestProcedure.schedule(level, TestProcedure.currentTick(level) + DRESS_RETRY_ATTENTE_TICKS,
+                        stepSlice[0]);
             } else {
                 deepluckyblock.util.DebugLog.structure(
                         "dressAndPlant (T304 direct-sections) : {} chunks rapides / {} melanges, {} surfaces, "
                                 + "{} sous-sols, {} plantes, {} colonnes sautees, {} replis de palette en {} ms",
                         stats[0], stats[1], stats[2], stats[3], stats[4], stats[5],
                         paletteFallbacksSoFar(), System.currentTimeMillis() - t0);
+                // T492 : le reliquat est dit a voix haute, avec son emprise. Un habillage
+                // incomplet qui se tait se lit comme un habillage complet -- c'est ce
+                // silence qui a laisse partir un lac au sol nu au sud.
+                if (!manques.isEmpty()) {
+                    deepluckyblock.util.DebugLog.warn(LOGGER,
+                            "[DLB-HABILL] {} colonne(s) NON HABILLEES apres {} tour(s) : leur chunk "
+                                    + "n'est jamais arrive (z {}..{}). Le sol y reste celui laisse par "
+                                    + "la coupe -- c'est exactement le defaut « sol non repeint » signale.",
+                            manques.size(), tours[0], manqueZ0[0], manqueZ1[0]);
+                }
                 clearDressingCaches();
                 if (onDone != null) onDone.run();
             }
@@ -10318,6 +10390,14 @@ public class StructureTerrainPrep {
         private final Set<Long> visited = new HashSet<>();
         private int cursor, planted, duplicates, protectedSkipped, refused, shrunken, unloadedSkipped;
         private boolean done;
+        /**
+         * T492 : arbres mis de cote parce que leur halo n'etait pas charge. Avant, ils
+         * etaient marques « vus » et perdus pour de bon -- ce qui, le 26/11, a laisse
+         * tout le sud du lac sans un arbre, les chunks y arrivant apres le passage
+         * unique de la replantation. On les rejoue, quelques tours.
+         */
+        private final List<SavedTree> aReprendre = new ArrayList<>();
+        private int tourRattrapage;
 
         ReplantJob(ServerLevel level, List<SavedTree> trees, BlockPos min, BlockPos max, Runnable onDone) {
             this.level = level; this.trees = trees; this.min = min; this.max = max; this.onDone = onDone;
@@ -10369,7 +10449,11 @@ public class StructureTerrainPrep {
                         BlockPos a8 = new BlockPos(x - 8, min.getY(), z - 8);
                         BlockPos b8 = new BlockPos(x + 8, max.getY(), z + 8);
                         if (!deepluckyblock.util.ChunkKeeper.zoneLoaded(level, a8, b8)) {
-                            visited.add(key); cursor++; unloadedSkipped++;
+                            // T492 : NE PAS marquer « vu ». Le chunk n'est pas absent
+                            // pour toujours, il n'est pas ENCORE arrive : on remet
+                            // l'arbre dans la file de rattrapage.
+                            cursor++; unloadedSkipped++;
+                            if (aReprendre.size() < REPLANT_RETRY_MAX) aReprendre.add(tree);
                             continue;
                         }
                         variant = tree.type();          // petit halo => petit arbre
@@ -10443,11 +10527,33 @@ public class StructureTerrainPrep {
                 TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, this::slice);
                 return;
             }
+            if (!aReprendre.isEmpty() && tourRattrapage < REPLANT_RETRY_TOURS) {
+                tourRattrapage++;
+                int n = aReprendre.size();
+                deepluckyblock.util.ChunkKeeper.keep(level);
+                deepluckyblock.util.DebugLog.structure(
+                        "replantTrees : tour de rattrapage {}/{} sur {} arbre(s) dont le halo "
+                                + "n'etait pas charge", tourRattrapage, REPLANT_RETRY_TOURS, n);
+                trees.clear();
+                trees.addAll(aReprendre);
+                aReprendre.clear();
+                cursor = 0;
+                unloadedSkipped = 0;
+                TestProcedure.schedule(level,
+                        TestProcedure.currentTick(level) + REPLANT_RETRY_ATTENTE_TICKS, this::slice);
+                return;
+            }
             done = true;
             deepluckyblock.util.DebugLog.structure(
                     "replantTrees: {} trees planted ({} shrunken small-halo T261, {} refused by feature), "
                             + "{} duplicate columns ignored, {} covered footprint columns skipped (T92), {} skipped unloaded halo (T157)",
                     planted, shrunken, refused, duplicates, protectedSkipped, unloadedSkipped);
+            if (!aReprendre.isEmpty()) {
+                deepluckyblock.util.DebugLog.warn(LOGGER,
+                        "[DLB-HABILL] {} arbre(s) NON REPLANTES apres {} tour(s) : leur halo n'est "
+                                + "jamais arrive en memoire. C'est le defaut « tu n'as pas replante ».",
+                        aReprendre.size(), tourRattrapage);
+            }
             if (onDone != null) onDone.run();
         }
     }
