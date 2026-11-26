@@ -4,46 +4,53 @@
 #
 #  A QUOI CA SERT
 #     Votre workspace MCreator n'est pas un depot Git. Quand je publie un
-#     correctif, rien ne le fait descendre chez vous : il faut recopier les
-#     fichiers a la main. Les trois derniers crashs venaient de la — pas du
-#     code. Gradle disait « compileJava UP-TO-DATE », c'est-a-dire « aucune
-#     source n'a change », et rejouait un .class de la veille.
+#     correctif, rien ne le fait descendre chez vous. Les quatre derniers
+#     crashs venaient de la, pas du code : Gradle affichait « compileJava
+#     UP-TO-DATE » — aucune source n'a change — et relancait un .class du
+#     25 novembre.
 #
 #     Ce script fait la copie, puis il la PROUVE : il affiche l'empreinte des
-#     sources avant et apres. Si elle ne change pas alors qu'elle aurait du,
-#     il vous le dit au lieu de vous laisser croire que c'est fait.
+#     sources avant et apres, et s'arrete en erreur si elle ne correspond pas
+#     a celle attendue. Plus de supposition.
+#
+#  IL INSTALLE DEUX CHOSES, ET LA SECONDE EST CELLE QU'ON OUBLIE TOUJOURS :
+#     1. les 226 fichiers .java du mod, dans le workspace ;
+#     2. le script de reparation Gradle, dans
+#        %USERPROFILE%\.mcreator\gradle\init.d\
+#        Votre journal du 26/11 a 05:35 ne contenait PAS la ligne
+#        « [DLB-PATCH] empreinte des sources Java : ... » : c'est la preuve
+#        que votre copie de ce script date, elle aussi. Sans lui, ni
+#        l'empreinte ni le garde-fou ne peuvent vous prevenir.
 #
 #  UTILISATION — clic droit sur le fichier > « Executer avec PowerShell ».
 #  Ou, dans une fenetre PowerShell :
 #     powershell -ExecutionPolicy Bypass -File METTRE-A-JOUR.ps1
 #
 #  Si votre workspace n'est pas a l'endroit habituel :
-#     powershell -ExecutionPolicy Bypass -File METTRE-A-JOUR.ps1 -Workspace "D:\chemin\vers\le\workspace"
+#     powershell -ExecutionPolicy Bypass -File METTRE-A-JOUR.ps1 -Workspace "D:\chemin\du\workspace"
 #
 #  CE QUE LE SCRIPT NE FAIT PAS : il ne touche ni a vos mondes, ni a vos
-#  reglages MCreator, ni a quoi que ce soit hors de src\. Et il sauvegarde
-#  l'ancien src\ avant de le remplacer.
+#  reglages MCreator, ni a vos ressources, ni a quoi que ce soit hors de
+#  src\main\java. Et il sauvegarde ce qu'il remplace.
 # =====================================================================
 
 param(
     [string] $Workspace = "",
-    # Par defaut : la derniere version de la branche de travail. L'identite
-    # de ce qui est installe n'est pas le numero de commit mais l'empreinte
-    # affichee en fin de script — c'est elle qu'on compare.
-    # Pour figer une version precise : -Commit "4c0d89a4987..."
-    [string] $Commit    = "refs/heads/arena/605e67fb-dlbv1-21-1neoforge",
+    # Par defaut : la derniere version de la branche de travail. L'identite de
+    # ce qui est installe n'est pas le numero de commit mais l'empreinte, qui
+    # voyage DANS le colis (EMPREINTE.txt) et qui est verifiee a la fin.
+    [string] $Branche   = "arena/605e67fb-dlbv1-21-1neoforge",
     [switch] $PasDeSauvegarde
 )
 
 $ErrorActionPreference = "Stop"
-chcp 65001 > $null 2>&1
-$OutputEncoding = [System.Text.Encoding]::UTF8
+try { chcp 65001 > $null 2>&1 } catch { }
 
 function Titre($t) {
     Write-Host ""
-    Write-Host ("=" * 70) -ForegroundColor DarkCyan
+    Write-Host ("=" * 72) -ForegroundColor DarkCyan
     Write-Host "  $t" -ForegroundColor Cyan
-    Write-Host ("=" * 70) -ForegroundColor DarkCyan
+    Write-Host ("=" * 72) -ForegroundColor DarkCyan
 }
 function Ok($t)    { Write-Host "  [ok]    $t" -ForegroundColor Green }
 function Info($t)  { Write-Host "  [info]  $t" -ForegroundColor Gray }
@@ -52,11 +59,14 @@ function Erreur($t){ Write-Host "  [ECHEC] $t" -ForegroundColor Red }
 
 # ---------------------------------------------------------------------
 #  Empreinte des sources Java.
-#  Definition identique a tools\empreinte_sources.py et au script Gradle :
-#  chemins relatifs tries en ordre d'octets ; pour chacun, octets du chemin,
+#  Meme definition que tools\empreinte_sources.py et que le script Gradle :
+#  chemins relatifs tries en ordre d'OCTETS ; pour chacun, octets du chemin,
 #  saut de ligne, octets du fichier, saut de ligne ; SHA-1 ; 12 hex.
-#  Les fichiers sont lus en OCTETS : ni encodage ni fin de ligne n'entrent
-#  en jeu, donc la valeur est la meme sous Windows et sous Linux.
+#  Lecture en octets : ni l'encodage ni les fins de ligne n'entrent en jeu,
+#  donc la valeur est la meme sous Windows et sous Linux.
+#  Le tri passe par un encodage decimal a 3 chiffres par octet, parce que le
+#  tri par defaut de PowerShell depend de la culture et ignore la casse : il
+#  donnerait un ordre different, donc une empreinte differente.
 # ---------------------------------------------------------------------
 function Get-Empreinte([string] $racineJava) {
     if (-not (Test-Path $racineJava)) { return @{ hash = "(absent)"; n = 0 } }
@@ -66,16 +76,13 @@ function Get-Empreinte([string] $racineJava) {
     foreach ($f in $fichiers) {
         $rel = $f.FullName.Substring($base.Length + 1).Replace('\', '/')
         $liste += [pscustomobject]@{
-            rel  = $rel
+            rel = $rel
             full = $f.FullName
-            cle  = [System.Text.Encoding]::UTF8.GetBytes($rel)
+            tri = (([System.Text.Encoding]::UTF8.GetBytes($rel) |
+                    ForEach-Object { $_.ToString("000") }) -join '')
         }
     }
-    # Tri en ordre d'octets non signes (et non selon la culture Windows).
-    $liste = $liste | Sort-Object -Property @{ Expression = {
-        ($_.cle | ForEach-Object { $_.ToString("000") }) -join ''
-    }}
-    $sha = [System.Security.Cryptography.SHA1]::Create()
+    if ($liste.Count -gt 1) { $liste = $liste | Sort-Object -Property tri }
     $flux = New-Object System.IO.MemoryStream
     foreach ($e in $liste) {
         $c = [System.Text.Encoding]::UTF8.GetBytes($e.rel)
@@ -86,6 +93,7 @@ function Get-Empreinte([string] $racineJava) {
         $flux.WriteByte(10)
     }
     $flux.Position = 0
+    $sha = [System.Security.Cryptography.SHA1]::Create()
     $h = $sha.ComputeHash($flux)
     $flux.Dispose(); $sha.Dispose()
     $hex = ($h | ForEach-Object { $_.ToString("x2") }) -join ''
@@ -93,52 +101,51 @@ function Get-Empreinte([string] $racineJava) {
 }
 
 Titre "Deep Lucky Block - mise a jour du workspace MCreator"
-Info "commit a installer : $Commit"
 
 # ---------------------------------------------------------------------
 #  1) Trouver le workspace
 # ---------------------------------------------------------------------
-Titre "1/6  Localisation du workspace"
+Titre "1/7  Localisation du workspace"
 
 if ($Workspace -eq "") {
-    $candidats = @(
-        (Join-Path $env:USERPROFILE "MCreatorWorkspaces\deep_lucky_block-neoforge-1.21.1"),
-        (Join-Path $env:USERPROFILE "MCreatorWorkspaces\deep_lucky_block")
-    )
-    foreach ($c in $candidats) {
-        if (Test-Path (Join-Path $c "src\main\java")) { $Workspace = $c; break }
-    }
-    if ($Workspace -eq "") {
-        $racine = Join-Path $env:USERPROFILE "MCreatorWorkspaces"
-        if (Test-Path $racine) {
-            $trouve = Get-ChildItem -Path $racine -Directory -ErrorAction SilentlyContinue |
-                      Where-Object { Test-Path (Join-Path $_.FullName "src\main\java\deepluckyblock") } |
-                      Select-Object -First 1
-            if ($trouve) { $Workspace = $trouve.FullName }
-        }
+    $racine = Join-Path $env:USERPROFILE "MCreatorWorkspaces"
+    $prefere = Join-Path $racine "deep_lucky_block-neoforge-1.21.1"
+    if (Test-Path (Join-Path $prefere "src\main\java")) {
+        $Workspace = $prefere
+    } elseif (Test-Path $racine) {
+        $trouve = Get-ChildItem -Path $racine -Directory -ErrorAction SilentlyContinue |
+                  Where-Object { Test-Path (Join-Path $_.FullName "src\main\java\deepluckyblock") } |
+                  Select-Object -First 1
+        if ($trouve) { $Workspace = $trouve.FullName }
     }
 }
-
 if ($Workspace -eq "" -or -not (Test-Path (Join-Path $Workspace "src\main\java"))) {
     Erreur "workspace MCreator introuvable."
     Info "Relancez en donnant le chemin, par exemple :"
-    Info '  powershell -ExecutionPolicy Bypass -File METTRE-A-JOUR.ps1 -Workspace "C:\Users\...\MCreatorWorkspaces\deep_lucky_block-neoforge-1.21.1"'
+    Info '  powershell -ExecutionPolicy Bypass -File METTRE-A-JOUR.ps1 -Workspace "C:\Users\Nazario Delucci\MCreatorWorkspaces\deep_lucky_block-neoforge-1.21.1"'
     exit 1
 }
 Ok "workspace : $Workspace"
 
 $avant = Get-Empreinte (Join-Path $Workspace "src\main\java")
-Info "empreinte AVANT : $($avant.hash)  ($($avant.n) fichiers)"
+Info "empreinte actuelle : $($avant.hash)  ($($avant.n) fichiers)"
+
+# MCreator utilise son propre GRADLE_USER_HOME. C'est la, et nulle part
+# ailleurs, que Gradle lit les scripts d'initialisation.
+$gradleHome = Join-Path $env:USERPROFILE ".mcreator\gradle"
+if (-not (Test-Path $gradleHome)) { $gradleHome = Join-Path $env:USERPROFILE ".gradle" }
+$initDir = Join-Path $gradleHome "init.d"
+Info "scripts d'init Gradle : $initDir"
 
 # ---------------------------------------------------------------------
-#  2) Telecharger l'archive du commit
+#  2) Telecharger le colis de synchronisation (environ 2 Mo)
 # ---------------------------------------------------------------------
-Titre "2/6  Telechargement depuis GitHub"
+Titre "2/7  Telechargement"
 
 $travail = Join-Path $env:TEMP ("dlb_maj_" + (Get-Date -Format "yyyyMMdd_HHmmss"))
 New-Item -ItemType Directory -Path $travail -Force | Out-Null
-$zip = Join-Path $travail "source.zip"
-$url = "https://codeload.github.com/Deepie1/dlbv1.21.1neoforge/zip/$Commit"
+$zip = Join-Path $travail "DLB_sync.zip"
+$url = "https://raw.githubusercontent.com/Deepie1/dlbv1.21.1neoforge/refs/heads/$Branche/deliverables/DLB_sync.zip"
 
 Info "source : $url"
 try {
@@ -147,107 +154,127 @@ try {
     Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
 } catch {
     Erreur "telechargement impossible : $_"
-    Info "Verifiez votre connexion, ou telechargez l'archive a la main depuis"
-    Info "  $url"
-    Info "puis relancez avec -Workspace et une archive deja extraite."
+    Info "Verifiez la connexion, ou telechargez le fichier a la main depuis l'adresse"
+    Info "ci-dessus, placez-le a cote de ce script et relancez."
     exit 1
 }
-$ko = [math]::Round((Get-Item $zip).Length / 1KB)
-Ok "archive recue ($ko Ko)"
+Ok ("colis recu (" + [math]::Round((Get-Item $zip).Length / 1MB, 1) + " Mo)")
 
-Expand-Archive -Path $zip -DestinationPath $travail -Force
-$extrait = Get-ChildItem -Path $travail -Directory |
-           Where-Object { Test-Path (Join-Path $_.FullName "src\main\java") } |
-           Select-Object -First 1
-if (-not $extrait) { Erreur "archive inattendue : src\main\java absent."; exit 1 }
-Ok "archive extraite"
+$extrait = Join-Path $travail "colis"
+Expand-Archive -Path $zip -DestinationPath $extrait -Force
+$srcJava = Join-Path $extrait "src\main\java"
+if (-not (Test-Path $srcJava)) { Erreur "colis inattendu : src\main\java absent."; exit 1 }
 
-$refJava = Join-Path $extrait.FullName "src\main\java"
-$ref = Get-Empreinte $refJava
-Info "empreinte de reference (ce qui doit etre installe) : $($ref.hash)  ($($ref.n) fichiers)"
+# L'empreinte attendue voyage DANS le colis : elle ne depend pas d'une valeur
+# recopiee a la main dans un message, qui pourrait etre celle d'hier.
+$attendu = (Get-Content (Join-Path $extrait "EMPREINTE.txt") -Raw).Trim().Split(' ')[0]
+Info "empreinte attendue : $attendu"
 
-if ($ref.hash -eq $avant.hash) {
-    Titre "DEJA A JOUR"
-    Ok "votre workspace contient deja exactement ces sources ($($ref.hash))."
-    Alerte "Si le jeu crashe encore, le probleme n'est PAS la version des sources."
-    Alerte "Envoyez-moi le journal complet : on cherchera ailleurs."
-    Info "menage : $travail"
-    Remove-Item -Path $travail -Recurse -Force -ErrorAction SilentlyContinue
-    exit 0
+if ($attendu -eq $avant.hash) {
+    Alerte "vos sources Java sont DEJA a la bonne version ($attendu)."
+    Info "On continue quand meme : le script de reparation et les classes"
+    Info "compilees sont peut-etre perimes, eux."
 }
 
 # ---------------------------------------------------------------------
 #  3) Sauvegarde
 # ---------------------------------------------------------------------
-Titre "3/6  Sauvegarde de l'existant"
+Titre "3/7  Sauvegarde de l'existant"
 
 if ($PasDeSauvegarde) {
     Alerte "sauvegarde desactivee (-PasDeSauvegarde)"
 } else {
-    $sauve = Join-Path $Workspace ("src_sauvegarde_" + (Get-Date -Format "yyyyMMdd_HHmmss"))
-    Copy-Item -Path (Join-Path $Workspace "src") -Destination $sauve -Recurse -Force
-    Ok "ancien src\ copie dans : $sauve"
-    Info "(vous pouvez le supprimer quand tout fonctionne)"
+    $sauve = Join-Path $Workspace ("src_main_java_sauvegarde_" + (Get-Date -Format "yyyyMMdd_HHmmss"))
+    Copy-Item -Path (Join-Path $Workspace "src\main\java") -Destination $sauve -Recurse -Force
+    Ok "ancien src\main\java copie dans :"
+    Info "  $sauve"
+    Info "(supprimable une fois que tout fonctionne)"
 }
 
 # ---------------------------------------------------------------------
-#  4) Copie
+#  4) Installer les sources Java
 # ---------------------------------------------------------------------
-Titre "4/6  Installation des sources"
+Titre "4/7  Installation des sources Java"
 
-foreach ($sous in @("src\main\java", "src\main\resources")) {
-    $src = Join-Path $extrait.FullName $sous
-    $dst = Join-Path $Workspace $sous
-    if (-not (Test-Path $src)) { Alerte "$sous absent de l'archive, ignore"; continue }
-    if (Test-Path $dst) { Remove-Item -Path $dst -Recurse -Force }
-    New-Item -ItemType Directory -Path $dst -Force | Out-Null
-    Copy-Item -Path (Join-Path $src "*") -Destination $dst -Recurse -Force
-    $n = (Get-ChildItem -Path $dst -Recurse -File).Count
-    Ok "$sous installe ($n fichiers)"
+$dstJava = Join-Path $Workspace "src\main\java"
+Remove-Item -Path $dstJava -Recurse -Force
+New-Item -ItemType Directory -Path $dstJava -Force | Out-Null
+Copy-Item -Path (Join-Path $srcJava "*") -Destination $dstJava -Recurse -Force
+Ok ("" + (Get-ChildItem -Path $dstJava -Filter *.java -Recurse -File).Count + " fichiers .java installes")
+
+# ---------------------------------------------------------------------
+#  5) Installer le script de reparation — L'ETAPE OUBLIEE
+#     Il ne vit pas dans le workspace mais dans le GRADLE_USER_HOME de
+#     MCreator. Copier seulement src\ le laisse perime indefiniment, et
+#     c'est precisement ce qui s'est passe : le journal du 26/11 n'avait
+#     pas la ligne d'empreinte.
+# ---------------------------------------------------------------------
+Titre "5/7  Installation du script de reparation Gradle"
+
+$initSrc = Join-Path $extrait "src\main\resources\deepluckyblock_patch\tools\deep-lucky-block-patch.gradle"
+if (-not (Test-Path $initSrc)) {
+    Alerte "script de reparation absent du colis — etape ignoree"
+} else {
+    New-Item -ItemType Directory -Path $initDir -Force | Out-Null
+    $initDst = Join-Path $initDir "deep-lucky-block-patch.gradle"
+    if ((Test-Path $initDst) -and (-not $PasDeSauvegarde)) {
+        Copy-Item -Path $initDst -Destination ($initDst + ".ancien") -Force
+        Info "ancienne version conservee sous deep-lucky-block-patch.gradle.ancien"
+    }
+    Copy-Item -Path $initSrc -Destination $initDst -Force
+    Ok "installe : $initDst"
+
+    # Le meme fichier vit aussi dans le workspace, en tant que source de
+    # reference. On le synchronise pour que les deux copies ne divergent pas.
+    $miroir = Join-Path $Workspace "src\main\resources\deepluckyblock_patch\tools\deep-lucky-block-patch.gradle"
+    if (Test-Path (Split-Path $miroir -Parent)) {
+        Copy-Item -Path $initSrc -Destination $miroir -Force
+        Ok "copie de reference du workspace synchronisee"
+    }
 }
 
 # ---------------------------------------------------------------------
-#  5) Casser l'« UP-TO-DATE »
-#     Gradle compare les horodatages. Une copie peut lui sembler plus
+#  6) Casser l'« UP-TO-DATE »
+#     Gradle compare des horodatages. Une copie peut lui sembler plus
 #     ancienne que le .class deja produit : il ne recompile alors rien et
-#     relance l'ancien binaire. C'est exactement ce qui s'est passe trois
-#     fois. On supprime donc les classes compilees du mod.
+#     relance l'ancien binaire. C'est la cause des quatre crashs.
 # ---------------------------------------------------------------------
-Titre "5/6  Invalidation des classes compilees"
+Titre "6/7  Invalidation des classes compilees"
 
 $cibles = @(
     (Join-Path $Workspace "build\classes\java\main\deepluckyblock"),
-    (Join-Path $Workspace "build\resources\main"),
     (Join-Path $Workspace "build\tmp\compileJava")
 )
 $efface = 0
 foreach ($c in $cibles) {
-    if (Test-Path $c) { Remove-Item -Path $c -Recurse -Force -ErrorAction SilentlyContinue; $efface++; Ok "supprime : $c" }
+    if (Test-Path $c) {
+        Remove-Item -Path $c -Recurse -Force -ErrorAction SilentlyContinue
+        $efface++; Ok "supprime : $c"
+    }
 }
 if ($efface -eq 0) { Info "rien a supprimer (pas encore compile)" }
 
-# Horodatage des sources force a maintenant, ceinture et bretelles.
-Get-ChildItem -Path (Join-Path $Workspace "src\main\java") -Filter *.java -Recurse -File |
+Get-ChildItem -Path $dstJava -Filter *.java -Recurse -File |
     ForEach-Object { $_.LastWriteTime = Get-Date }
 Ok "horodatage des .java rafraichi"
 
 # ---------------------------------------------------------------------
-#  6) Preuve
+#  7) Preuve
 # ---------------------------------------------------------------------
-Titre "6/6  Verification"
+Titre "7/7  Verification"
 
-$apres = Get-Empreinte (Join-Path $Workspace "src\main\java")
+$apres = Get-Empreinte $dstJava
 Write-Host ""
-Write-Host "    attendu : $($ref.hash)   ($($ref.n) fichiers)" -ForegroundColor White
+Write-Host "    attendu : $attendu" -ForegroundColor White
 Write-Host "    obtenu  : $($apres.hash)   ($($apres.n) fichiers)" -ForegroundColor White
-Write-Host "    (avant la mise a jour : $($avant.hash))" -ForegroundColor DarkGray
+Write-Host "    (avant  : $($avant.hash))" -ForegroundColor DarkGray
 Write-Host ""
 
 Remove-Item -Path $travail -Recurse -Force -ErrorAction SilentlyContinue
 
-if ($apres.hash -ne $ref.hash) {
-    Erreur "les sources installees ne correspondent PAS a l'archive."
-    Alerte "Causes possibles : un fichier etait verrouille par MCreator ou par"
+if ($apres.hash -ne $attendu) {
+    Erreur "les sources installees ne correspondent PAS au colis."
+    Alerte "Cause probable : un fichier etait verrouille par MCreator ou par"
     Alerte "l'explorateur Windows. Fermez MCreator et relancez ce script."
     exit 1
 }
@@ -255,13 +282,13 @@ if ($apres.hash -ne $ref.hash) {
 Ok "sources installees et verifiees : $($apres.hash)"
 Write-Host ""
 Write-Host "  ETAPE SUIVANTE" -ForegroundColor Cyan
-Write-Host "    Relancez le jeu depuis MCreator." -ForegroundColor White
-Write-Host "    Dans la console, vous devez voir cette ligne passer :" -ForegroundColor White
+Write-Host "    Relancez le jeu depuis MCreator. Dans la console, cette ligne" -ForegroundColor White
+Write-Host "    doit apparaitre, juste avant « 61 fichiers restaures » :" -ForegroundColor White
 Write-Host ""
-Write-Host "      [DLB-PATCH] empreinte des sources Java : $($apres.hash) ($($apres.n) fichiers)" -ForegroundColor Green
+Write-Host "      [DLB-PATCH] empreinte des sources Java : $attendu ($($apres.n) fichiers)" -ForegroundColor Green
 Write-Host ""
-Write-Host "    Si l'empreinte affichee par Gradle est differente de celle-la," -ForegroundColor White
-Write-Host "    c'est que Gradle lit un AUTRE dossier que celui mis a jour :" -ForegroundColor White
-Write-Host "    envoyez-moi la ligne, elle me dira lequel." -ForegroundColor White
+Write-Host "    - ligne ABSENTE      : Gradle ne lit pas $initDir" -ForegroundColor White
+Write-Host "    - empreinte AUTRE    : Gradle ne lit pas $dstJava" -ForegroundColor White
+Write-Host "    Dans les deux cas, envoyez-moi juste cette ligne : elle suffit." -ForegroundColor White
 Write-Host ""
 exit 0

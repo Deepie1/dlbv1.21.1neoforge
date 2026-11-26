@@ -104,7 +104,7 @@ jobs:
           echo "Script de reparation installe :"
           ls -l ~/.gradle/init.d/
 
-      - name: Controles statiques (les 16 bancs)
+      - name: Controles statiques (les 17 bancs)
         # Ils ne prouvent rien en jeu, mais ils sont rapides et cadrent le
         # diagnostic : si un banc mord ICI, on sait avant meme de compiler.
         continue-on-error: true
@@ -119,12 +119,12 @@ jobs:
               echecs=$((echecs+1)); echo "::warning::banc $b en echec"; tail -20 "/tmp/$b.out"
             fi
           done
-          for b in scanviewcheck mirrorcheck; do
+          for b in scanviewcheck mirrorcheck synczipcheck; do
             if ! python3 "tools/$b.py" > "/tmp/$b.out" 2>&1; then
               echecs=$((echecs+1)); echo "::warning::banc $b en echec"; tail -20 "/tmp/$b.out"
             fi
           done
-          echo "bancs en echec : $echecs / 16"
+          echo "bancs en echec : $echecs / 17"
 
       - name: COMPILER le mod
         # L'etape qui manquait depuis le debut du projet.
