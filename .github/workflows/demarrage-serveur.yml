@@ -1,0 +1,189 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# DEEP LUCKY BLOCK — BANC DE DEMARRAGE REEL (serveur dedie NeoForge)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# POURQUOI CE FICHIER EXISTE
+#   Le 25/11, le mod a crashe au demarrage : une methode utilitaire avait ete
+#   inseree entre une annotation @SubscribeEvent et la methode qu'elle annotait.
+#   Les seize bancs Python etaient verts. Ils ne pouvaient pas voir l'erreur :
+#   aucun d'eux ne compile ni ne lance quoi que ce soit. Un banc vert ne prouve
+#   rien en jeu.
+#
+#   L'agent qui ecrit ce mod n'a ni JDK ni acces aux depots Maven de Mojang et
+#   de NeoForge : il lui est MATERIELLEMENT impossible de compiler ou de lancer
+#   le jeu. Ce workflow est le seul endroit ou ces deux choses se produisent
+#   vraiment. Il remplace « je crois que ca compile » par un fait verifiable.
+#
+# CE QU'IL FAIT, DANS L'ORDRE
+#   1. installe un VRAI JDK 21 Temurin ;
+#   2. installe le script de reparation MCreator exactement comme sur le poste
+#      du developpeur (dans GRADLE_USER_HOME/init.d), donc teste aussi ce
+#      mecanisme ;
+#   3. COMPILE les 226 fichiers source — toute erreur de syntaxe, tout symbole
+#      absent, toute signature incompatible arrete ici ;
+#   4. DEMARRE un serveur dedie NeoForge 21.1.190, c'est-a-dire execute
+#      reellement AutomaticEventSubscriber.inject(), l'etape precise qui a
+#      crashe le 25/11 ;
+#   5. exige la ligne « Done (...s)! » du serveur, et refuse le moindre signe
+#      de mod casse.
+#
+# CE QU'IL NE PROUVE PAS
+#   Que le lac se construit correctement, que le terrain est beau, que les
+#   chunks sont diffuses. Il prouve que le mod CHARGE et que le serveur TOURNE.
+#   C'est le plancher, pas le plafond.
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: Demarrage serveur
+
+on:
+  push:
+    branches:
+      - 'arena/605e67fb-dlbv1-21-1neoforge'
+    paths-ignore:
+      - 'deliverables/**'
+      - 'rapports_scan_**'
+      - 'docs/**'
+      - '**.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: demarrage-serveur-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  demarrage:
+    name: Compiler puis demarrer un serveur dedie
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Recuperer les sources
+        uses: actions/checkout@v4
+
+      - name: Installer le JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Preparer Gradle (avec cache)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Installer le script de reparation MCreator
+        # Place exactement ou le developpeur le place : GRADLE_USER_HOME/init.d.
+        # Le build echoue donc aussi si CE mecanisme casse.
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.gradle/init.d
+          cp src/main/resources/deepluckyblock_patch/tools/deep-lucky-block-patch.gradle \
+             ~/.gradle/init.d/deep-lucky-block-patch.gradle
+          chmod +x ./gradlew
+          echo "Script de reparation installe :"
+          ls -l ~/.gradle/init.d/
+
+      - name: Controles statiques (les 16 bancs)
+        # Ils ne prouvent rien en jeu, mais ils sont rapides et cadrent le
+        # diagnostic : si un banc mord ICI, on sait avant meme de compiler.
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          echecs=0
+          for b in importcheck semcheck typecheck skillaliascheck rangedcheck \
+                   vfxbuffercheck cosmeticslotcheck structureannouncecheck \
+                   meteorstompcheck devscancheck laketaluscheck combosoundcheck \
+                   lakefinitioncheck subscribecheck; do
+            if ! python3 "src/main/resources/deepluckyblock_patch/tools/$b.py" > "/tmp/$b.out" 2>&1; then
+              echecs=$((echecs+1)); echo "::warning::banc $b en echec"; tail -20 "/tmp/$b.out"
+            fi
+          done
+          for b in scanviewcheck mirrorcheck; do
+            if ! python3 "tools/$b.py" > "/tmp/$b.out" 2>&1; then
+              echecs=$((echecs+1)); echo "::warning::banc $b en echec"; tail -20 "/tmp/$b.out"
+            fi
+          done
+          echo "bancs en echec : $echecs / 16"
+
+      - name: COMPILER le mod
+        # L'etape qui manquait depuis le debut du projet.
+        run: ./gradlew --no-daemon --stacktrace compileJava processResources
+
+      - name: Accepter l'EULA et configurer le serveur
+        run: |
+          set -euo pipefail
+          # ModDevGradle place le repertoire de jeu dans run/ ; on couvre aussi
+          # les variantes pour qu'un changement de version ne fasse pas echouer
+          # le banc sur un detail d'emplacement.
+          for d in run runs/server run/server; do
+            mkdir -p "$d"
+            printf 'eula=true\n' > "$d/eula.txt"
+            printf 'online-mode=false\nmax-players=1\nview-distance=4\nsimulation-distance=4\nmotd=banc de demarrage\n' \
+              > "$d/server.properties"
+          done
+
+      - name: DEMARRER le serveur dedie
+        id: serveur
+        run: |
+          set -uo pipefail
+          mkdir -p build/ci
+          LOG=build/ci/serveur.log
+          : > "$LOG"
+
+          # setsid : le serveur est lance dans sa propre session, ce qui permet
+          # de tuer TOUT le groupe (Gradle + JVM forkee) une fois le verdict pris.
+          setsid bash -c './gradlew --no-daemon --stacktrace runServer' > "$LOG" 2>&1 &
+          PGID=$!
+
+          verdict=limite_de_temps
+          for _ in $(seq 1 3000); do          # 50 min maximum
+            if grep -qE 'Done \([0-9.]+s\)!' "$LOG" 2>/dev/null; then verdict=demarre; break; fi
+            if grep -qE 'ModLoadingCrashException|has failed to load correctly|Cowardly refusing to send event|Failed to register class' "$LOG" 2>/dev/null; then
+              verdict=mod_casse; break
+            fi
+            if ! kill -0 "$PGID" 2>/dev/null; then verdict=sorti_prematurement; break; fi
+            sleep 1
+          done
+
+          # Arret propre puis sans sommation.
+          kill -TERM -"$PGID" 2>/dev/null || true
+          sleep 10
+          kill -KILL -"$PGID" 2>/dev/null || true
+
+          echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+          echo "::group::200 dernieres lignes du serveur"; tail -200 "$LOG"; echo "::endgroup::"
+
+          case "$verdict" in
+            demarre)
+              echo "Le serveur a atteint « Done ( ... s)! » : le mod charge et tourne."
+              grep -E 'Done \([0-9.]+s\)!' "$LOG" | tail -1
+              ;;
+            mod_casse)
+              echo "::error::Le mod ne charge pas. Extrait fautif :"
+              grep -nE 'ModLoadingCrashException|has failed to load correctly|Failed to register class|IllegalArgumentException' "$LOG" | head -20
+              exit 1
+              ;;
+            sorti_prematurement)
+              echo "::error::Le build ou le serveur s'est arrete avant d'etre pret."
+              exit 1
+              ;;
+            *)
+              echo "::error::Le serveur n'a jamais atteint « Done ( » dans le temps imparti."
+              exit 1
+              ;;
+          esac
+
+      - name: Conserver les journaux
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: journaux-serveur
+          path: |
+            build/ci/serveur.log
+            run/logs/**
+            run/crash-reports/**
+            runs/server/logs/**
+            runs/server/crash-reports/**
+          if-no-files-found: warn
+          retention-days: 14
