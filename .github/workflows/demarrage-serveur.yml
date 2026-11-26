@@ -128,13 +128,37 @@ jobs:
 
       - name: COMPILER le mod
         # L'etape qui manquait depuis le debut du projet.
+        #
+        # Les journaux bruts d'Actions sont inatteignables depuis mon poste
+        # (redirection vers un stockage bloque). Quand cette etape a echoue
+        # le 26/11, je n'ai eu qu'un « exit code 1 » : impossible de dire si
+        # c'etait une erreur de compilation ou un telechargement rate. Une
+        # etape qui echoue sans dire pourquoi ne vaut guere mieux qu'une
+        # etape absente. La sortie de Gradle est donc capturee et ses lignes
+        # utiles sont reemises en annotations, qui, elles, se lisent.
         run: |
-          set -euo pipefail
-          ./gradlew --no-daemon --stacktrace compileJava processResources
+          set -uo pipefail
+          set +e
+          mkdir -p build/ci
+          ./gradlew --no-daemon --stacktrace compileJava processResources \
+            > build/ci/compilation.log 2>&1
+          code=$?
+          tail -n 60 build/ci/compilation.log
+          if [ "$code" -ne 0 ]; then
+            echo "::error::compilation ECHOUEE (code $code)"
+            grep -nE "error:|FAILURE:|What went wrong|^\* |Caused by:|Could not (resolve|download|GET)" \
+              build/ci/compilation.log | head -n 15 | while IFS= read -r ligne; do
+                echo "::error::$ligne"
+              done
+            exit 1
+          fi
           N=$(find build/classes/java/main -name '*.class' 2>/dev/null | wc -l)
           S=$(find src/main/java -name '*.java' | wc -l)
+          if [ "$N" -le 0 ]; then
+            echo "::error::aucune classe produite malgre un Gradle satisfait"
+            exit 1
+          fi
           echo "::notice::compilation reussie — $S fichiers source, $N classes produites"
-          test "$N" -gt 0 || { echo "::error::aucune classe produite"; exit 1; }
 
       - name: Empreinte des sources — Gradle et Python doivent concorder
         # Le script de reparation imprime une empreinte des 226 .java a chaque
@@ -247,6 +271,7 @@ jobs:
         with:
           name: journaux-serveur
           path: |
+            build/ci/compilation.log
             build/ci/serveur.log
             run/logs/**
             run/crash-reports/**
