@@ -177,6 +177,24 @@ public final class DevTerrainScan {
     /** Au-dela de ce silence, on ecrit au lieu de risquer de tout perdre. */
     private static final long SILENCE_MAX_MS = 300_000L;
 
+    /**
+     * T491 -- DELAI DE GRACE APRES LE RELACHEMENT DE LA ZONE.
+     *
+     * <p>Le lac relache son emprise dans le tick meme ou sa file de pose se vide.
+     * Jusqu'ici la session se fermait la, et l'etape {@code 4_FIN} etait meme
+     * SUPPRIMEE pour ne pas dupliquer la photo de {@code 3_APRES_PASTE}. Le
+     * resultat : plus rien ne mesurait l'habillage, la replantation et la
+     * finition, qui se jouent APRES la pose. Autrement dit l'outil fermait les
+     * yeux exactement la ou le defaut signale par le dev se trouve (« le sol
+     * n'a pas ete repeint, tu n'as pas replante »). Un instrument qui s'arrete
+     * avant la fin de l'operation ne mesure pas l'operation.
+     *
+     * <p>La session reste donc ouverte ce delai apres le relachement, puis prend
+     * {@code 4_FIN}. Les chunks peuvent avoir commence a se decharger : ce n'est
+     * pas masque, la capture compte et liste ses colonnes non mesurables.
+     */
+    private static final long APRES_RELACHE_MS = 30_000L;
+
     /** Annonce unique : son absence du log prouve que l'outil n'est pas dans la build. */
     private static volatile boolean banniereFaite;
 
@@ -259,6 +277,18 @@ public final class DevTerrainScan {
         int ox0, oz0, ox1, oz1;
         // T480 : arme a la transition file vide -> file pleine, jamais laisse a 0.
         long dernierePastePeriodiqueMs;
+
+        /** T491 : instant du relachement de la zone, 0 tant qu'elle est tenue. */
+        long relacheeDepuisMs;
+
+        /**
+         * T491 : vrai des que la file de pose a quitte 0, c'est-a-dire des qu'une
+         * construction a reellement eu lieu dans cette emprise. Une emprise
+         * epinglee puis relachee sans que rien ne soit bati est une SONDE DE
+         * PLACEMENT, pas un chantier : la mesurer produit deux photos identiques
+         * d'un terrain intact.
+         */
+        boolean chantierVu;
     }
 
     private static volatile Session session;
@@ -467,6 +497,7 @@ public final class DevTerrainScan {
             // --- transitions de la file de pose
             int q = pasteQueueSize();
             if (q >= 0) {
+                if (q > 0) s.chantierVu = true;
                 if (s.dernierPasteQ == 0 && q > 0) {
                     // T478 : ce jalon ne date plus le seul clear. Depuis que la
                     // sequence est clear -> talus -> pose, la file de pose recoit son
@@ -523,17 +554,62 @@ public final class DevTerrainScan {
 
             // --- fermeture : la zone est relachee = le pipeline a fini (ou abandonne)
             if (zone == null && s.zoneVue) {
-                // Le lac relache la zone dans le bloc meme ou il retire son job de la
-                // file : sans ce garde-fou, 3_APRES_PASTE et 4_FIN tomberaient au meme
-                // tick et le fichier porterait deux fois la meme photo, pour 600 Kio.
-                boolean dejaPrise = !s.etapes.isEmpty()
-                        && s.etapes.get(s.etapes.size() - 1).nom.equals("3_APRES_PASTE")
-                        && System.currentTimeMillis() - s.derniereCaptureMs < 2000L;
-                if (!dejaPrise) {
-                    capturer(s, "4_FIN",
-                            "ChunkKeeper a relache la zone : fin (ou abandon) du pipeline");
+
+                // T491 -- SONDE DE PLACEMENT, PAS CHANTIER.
+                // Une emprise epinglee puis relachee sans que la file de pose ait
+                // jamais bouge n'a rien bati. Le 26/11, une telle sonde d'un seul
+                // chunk s'est epinglee a 279 blocs du lac une seconde apres la
+                // fermeture de la vraie session : le scan, re-arme, l'a prise pour un
+                // nouveau chantier et a produit un second dossier d'apparence
+                // legitime -- 946 Kio et 240 s de redaction en pleine partie -- ou
+                // 1_DEBUT_CLEAR et 4_FIN etaient la meme photo d'un terrain intact.
+                // Deux dossiers pour un seul essai, dont un entierement faux : c'est
+                // pire que pas de mesure, parce que ca se lit comme une mesure.
+                if (!s.chantierVu && s.elargissements == 0) {
+                    log("[DLB-SCAN] session abandonnee sans ecriture : l'emprise x "
+                            + s.ex0 + ".." + s.ex1 + "  z " + s.ez0 + ".." + s.ez1
+                            + " a ete epinglee puis relachee sans qu'aucune construction "
+                            + "n'y ait lieu (file de pose toujours vide, emprise jamais "
+                            + "elargie). C'est une sonde de placement : la mesurer "
+                            + "produirait deux photos identiques d'un terrain intact.");
+                    session = null;
+                    phase = veilleAuto ? Phase.ARME : Phase.DESARME;
+                    return;
                 }
-                ecrire(s, "fin du pipeline");
+
+                // T491 -- DELAI DE GRACE.
+                // Ne PAS fermer ici. Le lac relache son emprise dans le tick meme ou
+                // sa file se vide, mais l'habillage, la replantation et la finition
+                // viennent ensuite. Fermer maintenant revient a photographier un
+                // chantier avant le coup de balai, puis a conclure sur la proprete.
+                if (s.relacheeDepuisMs == 0L) {
+                    s.relacheeDepuisMs = System.currentTimeMillis();
+                    dire(level, "zone relachee : derniere mesure dans "
+                            + (APRES_RELACHE_MS / 1000L) + " s, le temps que la finition "
+                            + "(habillage, replantation) se termine.",
+                            ChatFormatting.AQUA);
+                    continue;
+                }
+                if (System.currentTimeMillis() - s.relacheeDepuisMs < APRES_RELACHE_MS) {
+                    continue;
+                }
+
+                capturer(s, "4_FIN",
+                        "zone relachee depuis " + (APRES_RELACHE_MS / 1000L)
+                        + " s : etat FINAL, finition comprise (habillage, replantation)");
+                ecrire(s, "fin du pipeline + delai de finition");
+                session = null;
+                phase = veilleAuto ? Phase.ARME : Phase.DESARME;
+                return;
+            }
+
+            // T491 : la zone a ete re-epinglee pendant le delai de grace (un nouveau
+            // chantier demarre). On rend la main immediatement plutot que de melanger
+            // deux chantiers dans une seule session.
+            if (zone != null && s.relacheeDepuisMs != 0L) {
+                capturer(s, "4_FIN",
+                        "zone re-epinglee avant la fin du delai : mesure finale anticipee");
+                ecrire(s, "fin du pipeline (un nouveau chantier demarre)");
                 session = null;
                 phase = veilleAuto ? Phase.ARME : Phase.DESARME;
                 return;

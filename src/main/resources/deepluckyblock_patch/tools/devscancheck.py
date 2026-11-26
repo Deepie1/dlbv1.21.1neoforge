@@ -67,6 +67,35 @@ def sans_commentaires(src):
     return src
 
 
+def bloc_equilibre(code, depuis):
+    """Retourne le bloc { ... } qui suit `depuis`, accolades appariees.
+
+    Defaut corrige (T491) : le verrou 15 bornait la branche a une fenetre de 2600
+    caracteres. La fenetre debordait sur le bloc suivant -- qui capture lui aussi
+    4_FIN -- si bien que supprimer la capture de la branche examinee ne declenchait
+    rien : le verrou voyait le 4_FIN du voisin. Un verrou qui lit au-dela de ce
+    qu'il controle finit toujours par se faire rassurer par le code d'a cote.
+    """
+    i = code.find('{', depuis)
+    if i < 0:
+        return ''
+    prof, j, n = 0, i, len(code)
+    while j < n:
+        c = code[j]
+        if c == '"':
+            j += 1
+            while j < n and code[j] != '"':
+                j += 2 if code[j] == '\\' else 1
+        elif c == '{':
+            prof += 1
+        elif c == '}':
+            prof -= 1
+            if prof == 0:
+                return code[i:j + 1]
+        j += 1
+    return code[i:]
+
+
 def controler(racine='.'):
     src = lire(racine, OUTIL)
 
@@ -472,19 +501,117 @@ def controler(racine='.'):
                           'armement ne se trouve dans la branche de transition file vide -> '
                           'file pleine : la premiere capture pendant la pose repartira a vide')
 
+    # ---------------------------------------------------------------------------
+    # VERROU 15 (T491) -- LA MESURE FINALE NE PART PAS AVANT LA FINITION.
+    #
+    # Defaut d'origine : la session se fermait dans le tick meme ou ChunkKeeper
+    # relachait la zone. Or le lac relache son emprise quand sa FILE DE POSE se
+    # vide -- l'habillage du sol, la replantation et la finition viennent apres.
+    # L'outil photographiait donc le chantier avant le coup de balai, puis on
+    # concluait sur la proprete. Pire : 4_FIN etait carrement supprimee quand
+    # elle tombait pres de 3_APRES_PASTE, si bien qu'aucune etape ne montrait
+    # jamais l'etat final.
+    # On exige un delai de grace explicite entre le relachement et la capture.
+    # ---------------------------------------------------------------------------
+    if 'APRES_RELACHE_MS' not in code:
+        echecs.append('VERROU 15 : plus de delai de grace apres le relachement de la zone '
+                      '-- la mesure finale repartirait avant la finition (habillage, '
+                      'replantation) et ne montrerait jamais l\'etat reellement livre')
+    elif 'relacheeDepuisMs' not in code:
+        echecs.append('VERROU 15 : le delai APRES_RELACHE_MS existe mais rien ne date le '
+                      'relachement -- il ne peut pas etre attendu')
+    else:
+        # La capture 4_FIN de la branche « zone relachee » doit etre precedee, dans
+        # cette meme branche, de l'attente du delai. On borne la recherche a la
+        # branche elle-meme pour ne pas se laisser convaincre par un test situe
+        # ailleurs dans le fichier.
+        i = code.find('zone == null && s.zoneVue')
+        if i < 0:
+            echecs.append('VERROU 15 : branche de fermeture sur zone relachee introuvable')
+        else:
+            branche = bloc_equilibre(code, i)
+            jf = branche.find('"4_FIN"')
+            if jf < 0:
+                echecs.append('VERROU 15 : la branche de fermeture ne capture plus 4_FIN '
+                              '-- aucune etape ne mesurerait l\'etat final, exactement le '
+                              'trou qui a fait manquer l\'habillage et la replantation')
+            else:
+                avant = branche[:jf]
+                # Il ne suffit pas que les deux NOMS apparaissent : il faut une
+                # comparaison effective. Neutraliser le test en « if (false) » laisse
+                # les noms en place dans le corps -- et un verrou qui se contente de
+                # voir un nom se fait berner par n'importe quel code mort.
+                if not re.search(r'relacheeDepuisMs\s*<\s*APRES_RELACHE_MS', avant):
+                    echecs.append('VERROU 15 : 4_FIN est capturee sans qu\'aucune '
+                                  'comparaison n\'attende reellement APRES_RELACHE_MS '
+                                  '-- la finition (habillage, replantation) resterait '
+                                  'hors de la mesure finale')
+                if not re.search(r'relacheeDepuisMs\s*=\s*System\.currentTimeMillis\(\)', avant):
+                    echecs.append('VERROU 15 : l\'instant du relachement n\'est jamais '
+                                  'date avant la capture -- le delai ne peut pas courir')
+                if 'continue;' not in avant:
+                    echecs.append('VERROU 15 : la branche ne rend jamais la main au tick '
+                                  'pendant l\'attente -- le delai ne serait pas respecte')
+
+    # ---------------------------------------------------------------------------
+    # VERROU 16 (T491) -- UNE SONDE DE PLACEMENT N'EST PAS UN CHANTIER.
+    #
+    # Mesure du 26/11 : une emprise d'un seul chunk s'est epinglee a 279 blocs du
+    # lac, une seconde apres la fermeture de la vraie session, puis s'est
+    # relachee sans que rien n'y soit construit. Le scan, re-arme, l'a prise pour
+    # un nouveau chantier : SECOND DOSSIER COMPLET, 946 Kio, 240 s de redaction
+    # en pleine partie, ou 1_DEBUT_CLEAR et 4_FIN etaient la meme photo d'un
+    # terrain intact. Deux dossiers pour un seul essai, dont un faux -- et un
+    # faux qui se lit exactement comme une mesure. C'est pire que pas de mesure.
+    # On exige que la session sache si une construction a vraiment eu lieu, et
+    # qu'elle se ferme SANS ECRIRE dans le cas contraire.
+    # ---------------------------------------------------------------------------
+    if 'chantierVu' not in code:
+        echecs.append('VERROU 16 : rien ne distingue un chantier reel d\'une emprise '
+                      'epinglee puis relachee a vide -- une sonde de placement '
+                      'produirait un seCond dossier de scan entierement faux '
+                      '(deux photos identiques d\'un terrain intact)')
+    else:
+        # (a) le temoin doit etre pose quand la file de pose est non vide : c'est
+        #     la seule preuve qu'une construction a eu lieu dans cette emprise.
+        if not re.search(r'q\s*>\s*0\s*\)?\s*s\.chantierVu\s*=\s*true', code) and \
+           not re.search(r'if\s*\(\s*q\s*>\s*0\s*\)\s*\{?\s*s\.chantierVu\s*=\s*true', code):
+            echecs.append('VERROU 16 : chantierVu n\'est pas arme sur une file de pose non '
+                          'vide -- le temoin ne temoigne de rien')
+        # (b) la sortie sans chantier doit fermer la session SANS ecrire de dossier.
+        k = code.find('!s.chantierVu')
+        if k < 0:
+            echecs.append('VERROU 16 : chantierVu existe mais n\'est jamais teste a la '
+                          'fermeture -- la sonde de placement serait quand meme redigee')
+        else:
+            sortie = code[k:k + 900]
+            fin = sortie.find('return')
+            sortie = sortie[:fin if fin > 0 else len(sortie)]
+            if 'session = null' not in sortie:
+                echecs.append('VERROU 16 : la branche sans chantier ne ferme pas la session')
+            if 'ecrire(' in sortie:
+                echecs.append('VERROU 16 : la branche sans chantier ECRIT quand meme un '
+                              'dossier -- c\'est precisement le second dossier faux du '
+                              '26/11 que ce verrou doit empecher')
+            if 'veilleAuto ?' not in sortie:
+                echecs.append('VERROU 16 : la branche sans chantier ne rend pas la main a '
+                              'la veille -- le vrai chantier suivant passerait inapercu')
+
     if echecs:
         for e in echecs:
             print('ECHEC  %s' % e)
         print('devscancheck : %d verrou(x) rompu(s)' % len(echecs))
         return 1
 
-    print('devscancheck : 14 verrous tiennent -- outil isole et supprimable, auto-accroche, '
+    print('devscancheck : 16 verrous tiennent -- outil isole et supprimable, auto-accroche, '
           'sonde passive, chunks absents jamais maquilles, grilles alignees sur les chunks, '
           '3 jalons suivis, aucune restauration par le build, un fichier par etape, '
           'mesure sans armement manuel, redaction hors du fil serveur, '
           'emprise suivie et non figee, couverture prouvee chunk par chunk, '
           'sauts reels distingues des non-sauts, '
-          'captures pendant la pose armees a la transition')
+          'captures pendant la pose armees a la transition, '
+          'mesure finale apres le delai de finition, '
+          'sonde de placement jamais prise pour un chantier')
     return 0
 
 
