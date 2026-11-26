@@ -72,7 +72,37 @@ public class StructureTerrainPrep {
     private static final int NATURALIZE_EXTRA_RING = 12;
 
     /** T492 : tours de rattrapage de l'habillage sur les colonnes dont le chunk manquait. */
-    private static final int DRESS_RETRY_TOURS = 6;
+    /**
+     * T494 : plafond DUR du nombre de tours, et non plus le reglage principal.
+     *
+     * <p>T492 s'arretait a 6 tours de 40 ticks, soit 12 s -- un chiffre choisi sans
+     * aucune mesure. Le releve des scans du 26/11 montre que les chunks du sud ont mis
+     * bien plus longtemps que cela : ils etaient 60 absents a 2_APRES_CLEAR, encore 60 a
+     * la troisieme capture d'APRES_PASTE, et 0 seulement a la quatrieme. En 12 s, le
+     * rattrapage aurait expire avant leur arrivee et le sol serait reste nu.
+     *
+     * <p>Le nombre de tours n'est donc plus le critere : c'est le PROGRES. On continue
+     * tant que chaque tour recupere des colonnes, on s'arrete des que deux tours de
+     * suite n'en recuperent plus (inutile d'attendre ce qui ne vient pas), et ce plafond
+     * ne sert qu'a garantir la terminaison.</p>
+     */
+    private static final int DRESS_RETRY_TOURS = 40;
+
+    /** T494 : deux tours sans le moindre progres valent abandon -- rien n'arrivera plus. */
+    private static final int DRESS_RETRY_STAGNATION_MAX = 2;
+
+    /**
+     * T494 : tours de GRACE avant que la stagnation puisse conclure.
+     *
+     * <p>Trouve en simulant le correctif avant de le livrer : une arrivee tardive (rien
+     * pendant les premiers tours, puis tout d'un coup) etait abandonnee au 3e tour par
+     * le compteur de stagnation -- le rattrapage serait mort juste avant que les chunks
+     * arrivent. Le chargement d'un chunk a une latence : une demande part, le serveur
+     * genere, et rien ne revient entre-temps. Deux tours vides au debut ne veulent donc
+     * pas dire « rien ne viendra », ils veulent dire « ca n'est pas encore revenu ».
+     * Pendant ces tours de grace, seules la date butoir et le plafond s'appliquent.</p>
+     */
+    private static final int DRESS_RETRY_GRACE_TOURS = 10;
     /** T492 : attente entre deux tours, le temps que ChunkKeeper fasse arriver les chunks. */
     private static final int DRESS_RETRY_ATTENTE_TICKS = 40;
     /** T492 : plafond de colonnes memorisees pour rattrapage (garde-fou memoire). */
@@ -81,7 +111,14 @@ public class StructureTerrainPrep {
     private static final long DRESS_RETRY_DEADLINE_MS = 240_000L;
 
     /** T492 : tours de rattrapage de la replantation sur les arbres au halo non charge. */
-    private static final int REPLANT_RETRY_TOURS = 6;
+    /** T494 : plafond de terminaison ; c'est le progres qui decide (voir ReplantJob). */
+    private static final int REPLANT_RETRY_TOURS = 40;
+
+    /** T494 : deux tours sans un arbre recupere valent abandon. */
+    private static final int REPLANT_RETRY_STAGNATION_MAX = 2;
+
+    /** T494 : tours de grace avant que la stagnation conclue (latence de chargement). */
+    private static final int REPLANT_RETRY_GRACE_TOURS = 10;
     /** T492 : attente entre deux tours de replantation, en ticks. */
     private static final int REPLANT_RETRY_ATTENTE_TICKS = 40;
     /** T492 : plafond d'arbres mis de cote (garde-fou memoire). */
@@ -6948,6 +6985,8 @@ public class StructureTerrainPrep {
         final int[] manqueZ0 = {Integer.MAX_VALUE};
         final int[] manqueZ1 = {Integer.MIN_VALUE};
         final int[] tours = {0};
+        final int[] stagne = {0};          // T494 : tours consecutifs sans progres
+        final int[] restantsPrec = {-1};   // T494 : reliquat du tour precedent
         final int[] cursor = {0};
         final BlockPos.MutableBlockPos mut = new BlockPos.MutableBlockPos();
         final BlockPos.MutableBlockPos snowProbe = new BlockPos.MutableBlockPos();
@@ -7192,6 +7231,7 @@ public class StructureTerrainPrep {
             if (i < sz) {
                 TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, stepSlice[0]);
             } else if (!manques.isEmpty() && tours[0] < DRESS_RETRY_TOURS
+                    && stagne[0] < DRESS_RETRY_STAGNATION_MAX
                     && System.currentTimeMillis() - t0 < DRESS_RETRY_DEADLINE_MS) {
                 // T492 -- ON REPASSE SUR LES MANQUES.
                 // Les chunks du sud n'etaient pas absents pour toujours : ils
@@ -7200,11 +7240,23 @@ public class StructureTerrainPrep {
                 // et on rejoue uniquement les colonnes manquantes, quelques tours.
                 tours[0]++;
                 int restants = manques.size();
+                // T494 : le PROGRES decide, pas le compteur de tours. Si ce tour n'a rien
+                // recupere par rapport au precedent, on note la stagnation ; deux de suite
+                // et on arrete. Sinon on continue jusqu'a la date butoir.
+                if (tours[0] <= DRESS_RETRY_GRACE_TOURS) {
+                    stagne[0] = 0;              // T494 : latence de chargement, pas stagnation
+                } else if (restantsPrec[0] >= 0 && restants >= restantsPrec[0]) {
+                    stagne[0]++;
+                } else {
+                    stagne[0] = 0;
+                }
+                restantsPrec[0] = restants;
                 deepluckyblock.util.ChunkKeeper.keep(level);
                 deepluckyblock.util.DebugLog.structure(
                         "dressAndPlant : tour de rattrapage {}/{} sur {} colonne(s) dont le chunk "
-                                + "n'etait pas charge (z {}..{})",
-                        tours[0], DRESS_RETRY_TOURS, restants, manqueZ0[0], manqueZ1[0]);
+                                + "n'etait pas charge (z {}..{}), stagnation {}/{}",
+                        tours[0], DRESS_RETRY_TOURS, restants, manqueZ0[0], manqueZ1[0],
+                        stagne[0], DRESS_RETRY_STAGNATION_MAX);
                 cols.clear();
                 cols.addAll(manques);
                 manques.clear();
@@ -10400,6 +10452,10 @@ public class StructureTerrainPrep {
          */
         private final List<SavedTree> aReprendre = new ArrayList<>();
         private int tourRattrapage;
+        /** T494 : tours consecutifs sans le moindre arbre recupere. */
+        private int stagnation;
+        /** T494 : reliquat du tour precedent (-1 = aucun tour encore joue). */
+        private int reliquatPrec = -1;
 
         ReplantJob(ServerLevel level, List<SavedTree> trees, BlockPos min, BlockPos max, Runnable onDone) {
             this.level = level; this.trees = trees; this.min = min; this.max = max; this.onDone = onDone;
@@ -10529,9 +10585,22 @@ public class StructureTerrainPrep {
                 TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, this::slice);
                 return;
             }
-            if (!aReprendre.isEmpty() && tourRattrapage < REPLANT_RETRY_TOURS) {
+            if (!aReprendre.isEmpty() && tourRattrapage < REPLANT_RETRY_TOURS
+                    && stagnation < REPLANT_RETRY_STAGNATION_MAX) {
                 tourRattrapage++;
                 int n = aReprendre.size();
+                // T494 : on continue tant que les halos arrivent ; deux tours sans le
+                // moindre progres et on arrete. Les 6 tours de T492 etaient un chiffre
+                // sans mesure -- les scans du 26/11 montrent que les chunks du sud ont
+                // mis bien plus de 12 s a se charger.
+                if (tourRattrapage <= REPLANT_RETRY_GRACE_TOURS) {
+                    stagnation = 0;             // T494 : latence de chargement
+                } else if (reliquatPrec >= 0 && n >= reliquatPrec) {
+                    stagnation++;
+                } else {
+                    stagnation = 0;
+                }
+                reliquatPrec = n;
                 deepluckyblock.util.ChunkKeeper.keep(level);
                 deepluckyblock.util.DebugLog.structure(
                         "replantTrees : tour de rattrapage {}/{} sur {} arbre(s) dont le halo "
