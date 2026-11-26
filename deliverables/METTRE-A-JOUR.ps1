@@ -40,7 +40,9 @@ param(
     # ce qui est installe n'est pas le numero de commit mais l'empreinte, qui
     # voyage DANS le colis (EMPREINTE.txt) et qui est verifiee a la fin.
     [string] $Branche   = "arena/605e67fb-dlbv1-21-1neoforge",
-    [switch] $PasDeSauvegarde
+    [switch] $PasDeSauvegarde,
+    # Pour un appel automatise, ou la fenetre ne doit pas attendre.
+    [switch] $SansPause
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,6 +58,39 @@ function Ok($t)    { Write-Host "  [ok]    $t" -ForegroundColor Green }
 function Info($t)  { Write-Host "  [info]  $t" -ForegroundColor Gray }
 function Alerte($t){ Write-Host "  [!]     $t" -ForegroundColor Yellow }
 function Erreur($t){ Write-Host "  [ECHEC] $t" -ForegroundColor Red }
+
+# ---------------------------------------------------------------------
+#  SORTIE DU SCRIPT — pourquoi tout ce ceremonial pour un « exit »
+#     Lance par « Executer avec PowerShell », Windows ferme la fenetre des
+#     que le script se termine. La premiere version disparaissait donc avant
+#     qu'on ait pu lire l'empreinte -- c'est-a-dire avant d'avoir montre la
+#     seule chose qu'elle existait pour montrer. Et les trois chemins
+#     d'erreur se refermaient encore plus vite, en silence.
+#     Desormais : tout est transcrit dans un fichier qui survit a la
+#     fermeture, et la fenetre attend une touche avant de partir.
+# ---------------------------------------------------------------------
+$rapport = Join-Path ([Environment]::GetFolderPath('Desktop')) "DLB_mise_a_jour.txt"
+if (-not (Test-Path (Split-Path $rapport -Parent))) {
+    $rapport = Join-Path $env:USERPROFILE "DLB_mise_a_jour.txt"
+}
+$transcription = $false
+try { Start-Transcript -Path $rapport -Force | Out-Null; $transcription = $true } catch { }
+
+function Fin([int] $code) {
+    Write-Host ""
+    if ($transcription) {
+        try { Stop-Transcript | Out-Null } catch { }
+        Write-Host "  Compte rendu complet enregistre dans :" -ForegroundColor Gray
+        Write-Host "    $rapport" -ForegroundColor White
+        Write-Host "  (envoyez-moi ce fichier si quelque chose cloche)" -ForegroundColor Gray
+    }
+    if (-not $SansPause) {
+        Write-Host ""
+        Write-Host "  --- Appuyez sur Entree pour fermer cette fenetre ---" -ForegroundColor DarkCyan
+        try { Read-Host | Out-Null } catch { Start-Sleep -Seconds 30 }
+    }
+    exit $code
+}
 
 # ---------------------------------------------------------------------
 #  Empreinte des sources Java.
@@ -123,7 +158,7 @@ if ($Workspace -eq "" -or -not (Test-Path (Join-Path $Workspace "src\main\java")
     Erreur "workspace MCreator introuvable."
     Info "Relancez en donnant le chemin, par exemple :"
     Info '  powershell -ExecutionPolicy Bypass -File METTRE-A-JOUR.ps1 -Workspace "C:\Users\Nazario Delucci\MCreatorWorkspaces\deep_lucky_block-neoforge-1.21.1"'
-    exit 1
+    Fin 1
 }
 Ok "workspace : $Workspace"
 
@@ -156,7 +191,7 @@ try {
     Erreur "telechargement impossible : $_"
     Info "Verifiez la connexion, ou telechargez le fichier a la main depuis l'adresse"
     Info "ci-dessus, placez-le a cote de ce script et relancez."
-    exit 1
+    Fin 1
 }
 Ok ("colis recu (" + [math]::Round((Get-Item $zip).Length / 1MB, 1) + " Mo)")
 
@@ -276,7 +311,7 @@ if ($apres.hash -ne $attendu) {
     Erreur "les sources installees ne correspondent PAS au colis."
     Alerte "Cause probable : un fichier etait verrouille par MCreator ou par"
     Alerte "l'explorateur Windows. Fermez MCreator et relancez ce script."
-    exit 1
+    Fin 1
 }
 
 Ok "sources installees et verifiees : $($apres.hash)"
@@ -291,4 +326,4 @@ Write-Host "    - ligne ABSENTE      : Gradle ne lit pas $initDir" -ForegroundCo
 Write-Host "    - empreinte AUTRE    : Gradle ne lit pas $dstJava" -ForegroundColor White
 Write-Host "    Dans les deux cas, envoyez-moi juste cette ligne : elle suffit." -ForegroundColor White
 Write-Host ""
-exit 0
+Fin 0
