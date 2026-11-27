@@ -248,6 +248,7 @@ public final class DevTerrainScan {
         char[] idSurface;  // index palette du bloc de surface
         short[] airSous;   // blocs d'air piges sous le premier solide
         short[] nSolides;  // nombre de blocs pleins dans la tranche (densite)
+        boolean[] coucheNeige; // vraie couche SNOW dans les 48 blocs sous/au-dessus de la surface observee
         boolean[] chunkCharge;
         /** T477 : colonnes effectivement lues par chunk -- doit valoir 256 partout. */
         short[] colonnesParChunk;
@@ -272,6 +273,7 @@ public final class DevTerrainScan {
             this.idSurface = new char[n];
             this.airSous = new short[n];
             this.nSolides = new short[n];
+            this.coucheNeige = new boolean[n];
             this.chunkCharge = new boolean[nc];
             this.colonnesParChunk = new short[nc];
         }
@@ -1167,6 +1169,7 @@ public final class DevTerrainScan {
         int ySurface = ABSENT, ySolid = ABSENT, yWater = ABSENT;
         BlockState stSurface = null, stSolid = null;
         int air = 0, pleins = 0;
+        boolean coucheNeige = false;
         boolean solideVu = false;
         int yStop = s.yFloor;
 
@@ -1188,6 +1191,12 @@ public final class DevTerrainScan {
                     stSurface = st;
                 }
             }
+            // Observe la vraie couche SNOW (comme celle posee par la finition),
+            // y compris sous la canopee. Fenetre bornee a 48 blocs autour du premier
+            // bloc de surface pour ne pas confondre une grotte profonde et le manteau.
+            if (st.is(Blocks.SNOW) && ySurface != ABSENT && y >= ySurface - AIR_PROBE_DEPTH) {
+                coucheNeige = true;
+            }
             if (estFluide && yWater == ABSENT) yWater = y;
             if (!estAir && !estFluide && !solideVu) {
                 ySolid = y;
@@ -1207,6 +1216,7 @@ public final class DevTerrainScan {
         e.idSolid[i] = (char) idDe(s, stSolid);
         e.airSous[i] = (short) Math.min(Short.MAX_VALUE, air);
         e.nSolides[i] = (short) Math.min(Short.MAX_VALUE, pleins);
+        e.coucheNeige[i] = coucheNeige;
     }
 
     private static int idDe(Session s, BlockState st) {
@@ -2642,9 +2652,9 @@ public final class DevTerrainScan {
 
         r.append('\n').append("-".repeat(100)).append('\n');
         r.append(" 9g. COUVERTURE DE NEIGE OBSERVEE PAR COLONNE\n");
-        r.append("     1000=surface de colonne en snow/snow_block/powder_snow; 0000=autre\n");
-        r.append("     surface; ????=colonne non lue; ----=chunk absent. Mesure visuelle\n");
-        r.append("     directe apres la passe, distincte du potentiel calcule en 9f.\n");
+        r.append("     1000=vraie couche SNOW trouvee dans les 48 blocs autour de la surface\n");
+        r.append("     (canopee comprise); 0000=aucune couche; ????=colonne non lue; ----=chunk absent.\n");
+        r.append("     Mesure directe, distincte du potentiel calcule en 9f; cavernes profondes exclues.\n");
         r.append("-".repeat(100)).append('\n');
         grilleSnowObserved(r, s, e);
     }
@@ -2770,7 +2780,7 @@ public final class DevTerrainScan {
         }
     }
 
-    /** Carte brute de la neige visible au sommet de chaque colonne lue. */
+    /** Carte brute de toute couche SNOW dans la tranche de surface, canopee comprise. */
     private static void grilleSnowObserved(StringBuilder r, Session s, Etape e) {
         for (int cz = 0; cz < s.cd; cz++) {
             r.append(" ".repeat(9));
@@ -2788,9 +2798,7 @@ public final class DevTerrainScan {
                         int i = z * s.w + x;
                         if (!e.chunkCharge[cz * s.cw + cx]) { r.append("----"); continue; }
                         if (e.ySurface[i] == ABSENT || e.idSurface[i] == 0) { r.append("????"); continue; }
-                        String block = nomBloc(s, e.idSurface[i]).toLowerCase(java.util.Locale.ROOT);
-                        r.append(block.endsWith(":snow") || block.endsWith(":snow_block")
-                                || block.endsWith(":powder_snow") ? "1000" : "0000");
+                        r.append(e.coucheNeige[i] ? "1000" : "0000");
                     }
                 }
                 r.append("|\n");

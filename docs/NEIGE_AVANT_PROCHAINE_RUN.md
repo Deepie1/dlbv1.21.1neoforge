@@ -12,10 +12,10 @@ Le changement collecte maintenant les positions non-air et le Y de base par colo
 
 Le dernier rapport pré-refonte couvrait l'emprise x=-64..319, z=112..527 et un scan x=-112..367, z=64..575 : 48 blocs (3 chunks) de halo sur chaque bord. À la capture initiale, la section neige avait 176 896 cellules `????` et 68 864 `----`; à la fin, 216 064 `????` et 29 696 `----`, sur 245 760. Elle ne contenait donc **aucune valeur numérique de potentiel**. Les chunks absents ne sont pas des colonnes sèches; ces données ne permettent pas de reconstruire un gradient ni de savoir quelle zone avait réellement une couche de neige.
 
-La version préparée du scanner ajoute à chaque étape deux grilles pleine résolution dans le fichier d'étape :
+La version préparée du scanner ajoute à chaque étape deux grilles pleine résolution dans le fichier d'étape; la neige est sondée jusqu'à 48 blocs sous le haut de la surface pour inclure le sol sous les arbres, mais pas les cavernes profondes :
 
 - `9f` — potentiel continu neige par colonne, lu depuis le snapshot du champ utilisé;
-- `9g` — neige observée au sommet de chaque colonne : `1000` pour neige/neige compacte/neige poudreuse, `0000` pour autre surface, `????` si non mesurée, `----` si le chunk était absent.
+- `9g` — vraie couche `SNOW` observée dans les 48 blocs autour de la surface de chaque colonne (canopee comprise) : `1000` si trouvée, `0000` sinon, `????` si non mesurée, `----` si le chunk était absent. Les cavernes profondes sont exclues.
 
 Les étapes avant/après la pose permettront de voir où la neige existait réellement, où elle a disparu et si le champ utilisé suit ces observations. Le domaine de trois chunks est la fenêtre scannée; il ne prouve pas l'état au-delà, notamment quand le domain-warp déplace un échantillon.
 
@@ -31,7 +31,7 @@ python tools\scanview.py "CHEMIN\VERS\dlb_scan\scan-HORODATAGE" -o "CHEMIN\VERS\
 
 1. Fermer MCreator, sauvegarder le workspace et copier le monde de test.
 2. Utiliser `deliverables/METTRE-A-JOUR.ps1` du commit de livraison; il télécharge le colis immuable et vérifie son empreinte. Ne pas lancer le jeu si la copie échoue ou si l'empreinte diffère.
-3. Empreinte attendue pour le colis courant : `e78426265918` (226 fichiers Java). Le journal Gradle doit afficher exactement la même empreinte.
+3. Empreinte attendue pour le colis courant : `dddc0c9d4d7b` (226 fichiers Java). Le journal Gradle doit afficher exactement la même empreinte.
 4. Rouvrir MCreator, attendre la fin du build, puis refaire le test ci-dessus.
 
 ## Critère de conclusion

@@ -663,8 +663,14 @@ def controler(racine='.'):
         echecs.append('VERROU 17 : grille potentielle ou carte observee absente du rapport')
     observed = re.search(r'private static void grilleSnowObserved\(StringBuilder r, Session s, Etape e\)\s*\{', code)
     observed_body = bloc_equilibre(code, observed.start()) if observed else ''
-    if '1000' not in observed_body or '0000' not in observed_body or 'chunkCharge' not in observed_body:
+    if ('1000' not in observed_body or '0000' not in observed_body or 'chunkCharge' not in observed_body
+            or 'coucheNeige' not in observed_body):
         echecs.append('VERROU 17 : carte de neige observee colonne par colonne invalide')
+    lire_col = re.search(r'private static void lireColonne\(Session s, Etape e, ChunkAccess chunk,', code)
+    lire_col_body = bloc_equilibre(code, lire_col.start()) if lire_col else ''
+    if ('st.is(Blocks.SNOW)' not in lire_col_body or 'AIR_PROBE_DEPTH' not in lire_col_body
+            or 'e.coucheNeige[i] = coucheNeige' not in lire_col_body):
+        echecs.append('VERROU 17 : la couche SNOW sous canopee n est pas observee dans la tranche de surface')
 
     if echecs:
         for e in echecs:
