@@ -668,7 +668,8 @@ def controler(racine='.'):
         echecs.append('VERROU 17 : carte de neige observee colonne par colonne invalide')
     lire_col = re.search(r'private static void lireColonne\(Session s, Etape e, ChunkAccess chunk,', code)
     lire_col_body = bloc_equilibre(code, lire_col.start()) if lire_col else ''
-    if ('st.is(Blocks.SNOW)' not in lire_col_body or 'AIR_PROBE_DEPTH' not in lire_col_body
+    if ('import net.minecraft.world.level.block.Blocks;' not in code
+            or 'st.is(Blocks.SNOW)' not in lire_col_body or 'AIR_PROBE_DEPTH' not in lire_col_body
             or 'e.coucheNeige[i] = coucheNeige' not in lire_col_body):
         echecs.append('VERROU 17 : la couche SNOW sous canopee n est pas observee dans la tranche de surface')
 

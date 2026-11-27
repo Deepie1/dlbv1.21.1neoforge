@@ -31,7 +31,7 @@ python tools\scanview.py "CHEMIN\VERS\dlb_scan\scan-HORODATAGE" -o "CHEMIN\VERS\
 
 1. Fermer MCreator, sauvegarder le workspace et copier le monde de test.
 2. Utiliser `deliverables/METTRE-A-JOUR.ps1` du commit de livraison; il télécharge le colis immuable et vérifie son empreinte. Ne pas lancer le jeu si la copie échoue ou si l'empreinte diffère.
-3. Empreinte attendue pour le colis courant : `dddc0c9d4d7b` (226 fichiers Java). Le journal Gradle doit afficher exactement la même empreinte.
+3. Empreinte attendue pour le colis courant : `0bf4e93a3c86` (226 fichiers Java). Le journal Gradle doit afficher exactement la même empreinte.
 4. Rouvrir MCreator, attendre la fin du build, puis refaire le test ci-dessus.
 
 ## Critère de conclusion
