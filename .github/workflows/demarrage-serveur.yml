@@ -38,7 +38,7 @@ name: Demarrage serveur
 on:
   push:
     branches:
-      - 'arena/605e67fb-dlbv1-21-1neoforge'
+      - 'arena/54be05b4-dlbv1-21-1neoforge'
     paths-ignore:
       - 'deliverables/**'
       - 'rapports_scan_**'
