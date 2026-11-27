@@ -13,7 +13,7 @@
    ```
 
    Ajouter `-Workspace "D:\chemin\du\workspace"` si l'auto-détection ne trouve pas MCreator.
-4. Vérifier le message de fin et la valeur d'empreinte indiqués dans la livraison. Ne pas lancer le jeu si la copie échoue ou si l'empreinte diffère.
+4. Vérifier le message de fin et l'empreinte attendue `02c65b86baef` (226 fichiers Java). Ne pas lancer le jeu si la copie échoue ou si l'empreinte diffère.
 5. Rouvrir MCreator et vérifier que le journal Gradle affiche exactement la ligne d'empreinte attendue. Utiliser une copie du monde, pas le monde de référence.
 
 ## Test en jeu et scan

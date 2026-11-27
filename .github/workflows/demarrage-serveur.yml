@@ -40,7 +40,8 @@ on:
     branches:
       - 'arena/54be05b4-dlbv1-21-1neoforge'
     paths-ignore:
-      - 'deliverables/**'
+      - 'deliverables/DLB_src.zip'
+      - 'deliverables/DLB_sync.zip'
       - 'rapports_scan_**'
       - 'docs/**'
       - '**.md'
