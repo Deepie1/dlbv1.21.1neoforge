@@ -27,6 +27,8 @@ USAGE
     GLSLANG=/chemin/glslangValidator python3 tools/scanviewcheck.py   (oracle reel)
 """
 
+import base64
+import json
 import os
 import re
 import subprocess
@@ -438,6 +440,64 @@ def controler(dossier):
             echecs.append('VERROU 12 : une marge trop courte pour juger le raccord est '
                           'signalee en mineur -- or elle interdit toute conclusion sur '
                           'ce cote')
+    # --- VERROU 13 : FORMAT COMPOSITE ET CALQUE DU SPREAD DE NEIGE.
+    # Le scan T496 a reuni grilles/cartes/rapport en un seul fichier d'etape.
+    # Cette fixture verifie l'entree reelle, les marqueurs inconnus/eau, l'encodage
+    # des milli-unites et la presence du calque dans la page, pas une simple mention.
+    compose = os.path.join(tmp, 'composite')
+    os.makedirs(compose, exist_ok=True)
+    def ligne_grille(vals):
+        return '         |x=0' + ' ' * 59 + '|\n' + '         +' + '-' * 64 + '+\n' + \
+               'z=     0 ' + ''.join('%4s' % v for v in vals) + '|\n'
+    entete_fixture = (
+        'etape : 1_TEST neige\n'
+        'instant : t+0 ms\n'
+        'colonnes lues : 16 / 16   non mesurables (chunk absent) : 0\n'
+        'chunks charges : 1 / 1\n'
+        'zone scannee        : x 0..15   z 0..0   (16 x 1 blocs, 1 x 1 chunks)\n'
+        'emprise structure   : x 0..15   z 0..0\n'
+        'sol de reference y=64\n')
+    rapport = entete_fixture + ' 9a. ySolid\n' + ligne_grille([64] * 16)
+    rapport += ' 9b. ySurface\n' + ligne_grille([64] * 16)
+    rapport += ' 9f. TAUX BRUT DU SPREAD DE NEIGE PAR COLONNE\n'
+    rapport += ligne_grille([0, 105, 210, 315, 420, 1000, 'NEUT', '????', '----'] + [0] * 7)
+    rapport += ' 10. PALETTE DES BLOCS\n'
+    with open(os.path.join(compose, '01_1_TEST.txt'), 'w', encoding='utf-8') as f:
+        f.write(rapport)
+    with open(os.path.join(compose, '00_SOMMAIRE.txt'), 'w', encoding='utf-8') as f:
+        f.write("ce sommaire n'est pas une etape\n")
+    snow_page = os.path.join(tmp, 'composite.html')
+    run = subprocess.run([sys.executable, SCANVIEW, compose, '-o', snow_page],
+                         capture_output=True, timeout=120)
+    if run.returncode != 0 or not os.path.isfile(snow_page):
+        echecs.append('VERROU 13 : le visualisateur refuse le fichier composite fusionne')
+    else:
+        snow_html = open(snow_page, encoding='utf-8').read()
+        dm = re.search(r'const DATA = (\{.*\});', snow_html)
+        if not dm:
+            echecs.append('VERROU 13 : les donnees du rapport composite ne sont pas embarquees')
+        else:
+            data = json.loads(dm.group(1))
+            raw = base64.b64decode(data['etapes'][0]['sn'])
+            values = [int.from_bytes(raw[i:i + 2], 'big') for i in range(0, len(raw), 2)]
+            attendu = [0, 105, 210, 315, 420, 1000, 65534, 65533, 65535] + [0] * 7
+            if len(values) != 16 or values != attendu:
+                echecs.append('VERROU 13 : parsing/encodage du taux neige faux : %r' % values[:9])
+        for marqueur, pourquoi in (
+                ('value="snow"', 'le calque neige a disparu du menu'),
+                ('else if(m==="snow")', 'la 3D ne colore plus le calque neige'),
+                ("snowMode?neigeRGB", "la carte 2D de secours n'affiche plus le taux neige")):
+            if marqueur not in snow_html:
+                echecs.append('VERROU 13 : %s' % pourquoi)
+    brut_scanview = open(SCANVIEW, encoding='utf-8').read()
+    for marqueur, pourquoi in (
+            ("cel == 'NEUT'", 'eau/glace ne sont plus distinguees'),
+            ("cel == '????'", 'un profil absent peut devenir une valeur plausible'),
+            ("cel == '----'", 'un chunk absent peut devenir une valeur plausible'),
+            ('min(65532, max(0, snow))', 'les milli-unites ne sont pas bornees/encodees comme prevu')):
+        if marqueur not in brut_scanview:
+            echecs.append('VERROU 13 : lecteur de spread : %s' % pourquoi)
+
     if echecs:
         for e in echecs:
             print('ECHEC  %s' % e)
@@ -445,14 +505,15 @@ def controler(dossier):
         return 1
 
     oracle = 'avec glslangValidator' if os.environ.get('GLSLANG') else 'regle d\'ordre seule'
-    print('scanviewcheck : 12 verrous tiennent -- generateur fonctionnel, page autonome, '
+    print('scanviewcheck : 13 verrous tiennent -- generateur fonctionnel, page autonome, '
           'panneau d\'etapes present, colonne non mesuree distinguee d\'un trou, '
           'page chargee sans exception en WebGL2 ET WebGL1, shaders valides (%s), '
           'repli WebGL1 en place, coupe verticale qui trace et gradue, '
           '3D jamais escamotee sur un soupcon, avertissement si elle ne peint rien, '
           'carte 2D en relais quand il n y a aucun contexte WebGL, '
           'ancien terrain restant dans l ouvrage mesure et annonce, '
-          'camera qui cadre reellement le terrain, marge de terrain ventilee par cote' % oracle)
+          'camera qui cadre reellement le terrain, marge de terrain ventilee par cote, '
+          'rapport composite + calque directionnel de neige dans la visionneuse' % oracle)
     return 0
 
 

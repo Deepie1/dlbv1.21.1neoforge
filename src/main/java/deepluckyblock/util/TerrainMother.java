@@ -41,6 +41,34 @@ import java.util.Map;
  */
 public final class TerrainMother {
 
+    /** Instantané immuable du potentiel directionnel brut transmis au lissage de neige. */
+    public static final class SnowSpreadSnapshot {
+        public static final float NEUTRAL = -1.0f; // eau/glace : arrêt et aucune contribution
+        private final int hx0, hz0, hw, hh;
+        private final float[] potential;
+        private final boolean[] neutral;
+
+        private SnowSpreadSnapshot(int hx0, int hz0, int hw, int hh,
+                                   float[] potential, float[] weight) {
+            this.hx0 = hx0;
+            this.hz0 = hz0;
+            this.hw = hw;
+            this.hh = hh;
+            this.potential = java.util.Arrays.copyOf(potential, potential.length);
+            this.neutral = new boolean[weight.length];
+            for (int i = 0; i < weight.length; i++) neutral[i] = weight[i] <= 0.15f;
+        }
+
+        /** Valeur du damier source pour une colonne monde; NaN = hors instantané. */
+        public float rateAtBlock(int x, int z) {
+            int ci = (x >> 4) - hx0;
+            int cj = (z >> 4) - hz0;
+            if (ci < 0 || cj < 0 || ci >= hw || cj >= hh) return Float.NaN;
+            int i = cj * hw + ci;
+            return neutral[i] ? NEUTRAL : potential[i];
+        }
+    }
+
     /** Écart maximal autorisé (en blocs) entre le Y sol de deux chunks STRUCTURE adjacents (règle A1). */
     public static final int MAX_STRUCTURE_CHUNK_STEP_Y = 2;
 
@@ -146,12 +174,27 @@ public final class TerrainMother {
     // MERE
     // ------------------------------------------------------------------
     private static volatile TerrainMother CURRENT;
+    private static volatile SnowSpreadSnapshot LAST_SNOW_SPREAD_SNAPSHOT;
+    private volatile SnowSpreadSnapshot snowSpreadSnapshot;
 
     /** Mère active (une seule chaîne terrain à la fois, garantie par TerrainChain / FIFO). */
     public static TerrainMother current() { return CURRENT; }
 
+    /** Instantané déjà calculé; ne déclenche jamais la construction coûteuse du champ. */
+    public static SnowSpreadSnapshot latestSnowSpreadSnapshot() {
+        TerrainMother m = CURRENT;
+        return m != null ? m.snowSpreadSnapshot : LAST_SNOW_SPREAD_SNAPSHOT;
+    }
+
+    private void publishSnowSpreadSnapshot(float[] potential, float[] weight) {
+        SnowSpreadSnapshot snapshot = new SnowSpreadSnapshot(hx0, hz0, hw, hh, potential, weight);
+        snowSpreadSnapshot = snapshot;
+        LAST_SNOW_SPREAD_SNAPSHOT = snapshot;
+    }
+
     /** Installe la mère de la zone (boîte = zone finale tenue par ChunkKeeper, en chunks). */
     public static TerrainMother begin(int gx0, int gz0, int gx1, int gz1) {
+        LAST_SNOW_SPREAD_SNAPSHOT = null;
         TerrainMother m = new TerrainMother(gx0, gz0, gx1, gz1);
         CURRENT = m;
         return m;
@@ -164,6 +207,7 @@ public final class TerrainMother {
             java.util.concurrent.CompletableFuture<MotherAISnowDirector.SnowPlan> f = m.aiFuture;
             if (f != null && !f.isDone()) f.cancel(true);
             m.aiPlan = null;
+            if (m.snowSpreadSnapshot != null) LAST_SNOW_SPREAD_SNAPSHOT = m.snowSpreadSnapshot;
             m.auraQuartGrid = null;
         }
         CURRENT = null;
@@ -494,6 +538,7 @@ public final class TerrainMother {
         }
 
         if (totalLandSnowy == 0) {
+            publishSnowSpreadSnapshot(new float[hw * hh], cellWeight);
             auraAllZero = true;
             auraAllOne = false;
             float[] empty = new float[0];
@@ -501,6 +546,7 @@ public final class TerrainMother {
             return empty;
         }
         if (totalLandSnowy == totalLandKnown && totalLandKnown > 0 && plan == null) {
+            publishSnowSpreadSnapshot(cellPotential, cellWeight);
             auraAllOne = true;
             auraAllZero = false;
             float[] full = new float[0];
@@ -570,6 +616,7 @@ public final class TerrainMother {
                 if (acc > 0f) linkedPotential[idx] = Math.min(SPREAD_PLAFOND, acc);
             }
         }
+        publishSnowSpreadSnapshot(linkedPotential, cellWeight);
 
         // Étape 3 (T306-ECOTONE) : Convolution éparse sur réseau hexagonal jitterisé
         // (KdotJPG ScatteredBiomeBlender, noyau quartique (R^2 - d^2)^2, SANS grille carrée),

@@ -213,17 +213,22 @@ NOTICES = {
   "     quatre bords. Seize sabotages joues, seize le font rougir.",
 
  'src/main/resources/deepluckyblock_patch/tools/devscancheck.py':
-  "T471 : LE BANC QUI GARDE L'OUTIL DE SCAN JETABLE ET HONNETE.\n"
-  "     Il tient deux promesses. JETABLE : si DevTerrainScan.java n'existe pas, ce banc\n"
-  "     est VERT et se tait -- un banc rouge apres suppression serait lui-meme la\n"
-  "     repercussion qu'on voulait eviter ; et tant que le fichier existe, aucune autre\n"
-  "     classe ne doit le nommer. HONNETE : sonde passive (aucun getChunk, request ni\n"
-  "     level.getBlockState), chunks absents jamais maquilles (marqueur ABSENT, « ---- »\n"
-  "     dans les grilles, et exactement deux appels a getBaseHeight -- un troisieme\n"
-  "     servirait a combler les trous), grilles alignees sur les chunks (bornage << 4,\n"
-  "     pas divisant 16, separateur tous les 16 blocs), et les trois jalons suivis.\n"
-  "     Onze cassures testees, toutes rendent le code 1 ; la suppression de l'outil et\n"
-  "     les sous-mots getChunkSource / getChunkNow restent verts.",
+  "T471/T492 : BANC QUI GARDE LE SCAN PASSIF ET SON PROFIL NEIGE.\n"
+  "     Le scan photographie l'instantane directionnel deja calcule par TerrainMother ;\n"
+  "     il ne relit ni le monde ni les chunks. Le profil reste disponible apres end(),\n"
+  "     est capture a chaque etape et apparait en grille 9f : milli-unites, eau/glace,\n"
+  "     profil absent et chunk non charge gardent chacun leur marqueur.\n"
+  "     Le verrou 17 verifie publication, conservation, capture et emission ; neuf\n"
+  "     sabotages cibles ont ete testes ici et tous echouent comme attendu.",
+
+ 'src/main/java/deepluckyblock/dev/DevTerrainScan.java':
+  "T492 : GRILLE 9f DU POTENTIEL DIRECTIONNEL BRUT DE NEIGE.\n"
+  "     Chaque etape consigne le profil deja publie par TerrainMother, sans demander\n"
+  "     de chunks et sans le recalculer. Les valeurs sont en milli-unites, repetees\n"
+  "     sur les 256 colonnes du chunk ; NEUT, ???? et ---- distinguent respectivement\n"
+  "     les cellules neutres eau/glace/poids faible, les profils non disponibles et\n"
+  "     les chunks non charges. Ce n'est pas un pourcentage de blocs enneiges, ni la\n"
+  "     decision finale de pose apres ecotone et tirage.",
 
  'src/main/resources/deepluckyblock_patch/tools/subscribecheck.py':
   "T488 : BANC NEUF, ne apres un CRASH AU DEMARRAGE. Une methode utilitaire avait\n"

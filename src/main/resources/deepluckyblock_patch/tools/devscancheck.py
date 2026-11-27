@@ -638,13 +638,69 @@ def controler(racine='.'):
                 echecs.append('VERROU 16 : la branche sans chantier ne rend pas la main a '
                               'la veille -- le vrai chantier suivant passerait inapercu')
 
+    # ---------------------------------------------------------------- VERROU 17
+    # LA NEIGE EST MESURABLE SANS LA RECALCULER DANS LE SCAN.
+    # Le scan doit conserver le potentiel directionnel deja produit par Mother,
+    # y compris apres end(), puis l'imprimer colonne par colonne sans charger de chunks.
+    mother = lire(racine, 'src/main/java/deepluckyblock/util/TerrainMother.java') or ''
+    mother_code = sans_commentaires(mother)
+    if not re.search(r'SPREAD_ENTREE\s*=\s*0\.105f', mother_code) or \
+       not re.search(r'SPREAD_PORTEE_CHUNKS\s*=\s*3\s*;', mother_code) or \
+       not re.search(r'SPREAD_PLAFOND\s*=\s*0\.42f', mother_code):
+        echecs.append('VERROU 17 : les constantes de diffusion attendues (.105, 3 chunks, '
+                      '.42) ont change ou ne sont plus des valeurs de code')
+    m = re.search(r'private float\[\] ensureAuraField\(\)\s*\{', mother_code)
+    corps_mere = bloc_equilibre(mother_code, m.start()) if m else ''
+    if 'Math.min(SPREAD_PLAFOND, acc)' not in corps_mere or \
+       'publishSnowSpreadSnapshot(linkedPotential, cellWeight)' not in corps_mere:
+        echecs.append("VERROU 17 : le profil brut publie ne correspond plus au cumul directionnel "
+                      "plafonne qui alimente l'ecotone")
+    if ('if (totalLandSnowy == 0)' not in corps_mere or
+            'publishSnowSpreadSnapshot(new float[hw * hh], cellWeight)' not in corps_mere or
+            'publishSnowSpreadSnapshot(cellPotential, cellWeight)' not in corps_mere):
+        echecs.append('VERROU 17 : les cas tout-sec / tout-neige ne publient pas leur profil '
+                      '-- une carte absente pourrait etre confondue avec zero')
+    snap = re.search(r'public static final class SnowSpreadSnapshot\s*\{', mother_code)
+    snap_body = bloc_equilibre(mother_code, snap.start()) if snap else ''
+    if ('weight[i] <= 0.15f' not in snap_body or
+            'return neutral[i] ? NEUTRAL : potential[i]' not in snap_body or
+            'rateAtBlock(int x, int z)' not in snap_body):
+        echecs.append("VERROU 17 : l'instantane ne distingue plus l'eau/glace neutre du "
+                      'potentiel, ou ne repond plus par coordonnee monde')
+    getter = re.search(r'public static SnowSpreadSnapshot latestSnowSpreadSnapshot\(\)\s*\{', mother_code)
+    fin_mere = re.search(r'public static void end\(\)\s*\{', mother_code)
+    corps_getter = bloc_equilibre(mother_code, getter.start()) if getter else ''
+    corps_fin_mere = bloc_equilibre(mother_code, fin_mere.start()) if fin_mere else ''
+    if ('m.snowSpreadSnapshot' not in corps_getter or 'LAST_SNOW_SPREAD_SNAPSHOT' not in corps_getter or
+            'LAST_SNOW_SPREAD_SNAPSHOT = m.snowSpreadSnapshot' not in corps_fin_mere):
+        echecs.append("VERROU 17 : le profil n'est pas conserve apres la fin de TerrainMother; "
+                      'la capture finale perdrait la neige')
+    cap = re.search(r'private static void capturer\(Session s, String nom, String detail\)\s*\{', code)
+    corps_cap = bloc_equilibre(code, cap.start()) if cap else ''
+    if ('latestSnowSpreadSnapshot()' not in corps_cap or 'e.snowSpread = s.snowSpreadSnapshot' not in corps_cap):
+        echecs.append("VERROU 17 : capturer() ne fige pas le dernier profil neige dans l'etape")
+    grilles = re.search(r'private static void section9Grilles\(StringBuilder r, Session s, Etape e, Etape prec\)\s*\{', code)
+    corps_grilles = bloc_equilibre(code, grilles.start()) if grilles else ''
+    if 'grilleSnowSpread(r, s, e)' not in corps_grilles:
+        echecs.append("VERROU 17 : la grille 9f n'est pas ecrite dans chaque rapport d'etape")
+    carte_neige = re.search(r'private static void grilleSnowSpread\(StringBuilder r, Session s, Etape e\)\s*\{', code)
+    corps_carte_neige = bloc_equilibre(code, carte_neige.start()) if carte_neige else ''
+    for token, why in (('e.chunkCharge[chunkIndex]', 'un chunk absent serait maquille'),
+                       ('rateAtBlock(', 'la valeur ne vient plus du profil mesure'),
+                       ('"NEUT"', 'eau/glace ne serait plus distinguee'),
+                       ('"????"', 'profil absent ne serait plus explicite'),
+                       ('"----"', 'chunk non charge ne serait plus explicite'),
+                       ('rate * 1000.0', 'les milli-unites ne seraient plus fideles')):
+        if token not in corps_carte_neige:
+            echecs.append('VERROU 17 : carte neige : %s' % why)
+
     if echecs:
         for e in echecs:
             print('ECHEC  %s' % e)
         print('devscancheck : %d verrou(x) rompu(s)' % len(echecs))
         return 1
 
-    print('devscancheck : 16 verrous tiennent -- outil isole et supprimable, auto-accroche, '
+    print('devscancheck : 17 verrous tiennent -- outil isole et supprimable, auto-accroche, '
           'sonde passive, chunks absents jamais maquilles, grilles alignees sur les chunks, '
           '3 jalons suivis, aucune restauration par le build, un fichier par etape avec '
           'RAPPORT/CARTES/GRILLES reunis et compteur reel, '
@@ -653,7 +709,8 @@ def controler(racine='.'):
           'sauts reels distingues des non-sauts, '
           'captures pendant la pose armees a la transition, '
           'mesure finale apres le delai de finition, '
-          'sonde de placement jamais prise pour un chantier')
+          'sonde de placement jamais prise pour un chantier, '
+          'profil directionnel de neige mesure par colonne et conserve apres fin de Mother')
     return 0
 
 
