@@ -3833,7 +3833,9 @@ public class StructureTerrainPrep {
                 if (cx >= gx0 && cx <= gx1 && cz >= gz0 && cz <= gz1) continue;
                 int wx = (cx << 4) + 8, wz = (cz << 4) + 8;
                 if (deepluckyblock.util.SafeSurface.loaded(level, cx, cz)) {
-                    // T305 : un chunk du halo en glace ou en eau est marque neutre (ni neige 1, ni plaine seche 0 !)
+                    ChunkAccess haloChunk = deepluckyblock.util.SafeSurface.chunkFor(level, cx, cz);
+                    if (haloChunk == null) continue;
+                    // T305 : le potentiel du halo est echantillonne en continu, pas classe neige/sec par chunk.
                     int icyOrWet = 0, snowCount = 0, valid = 0;
                     for (int lx = 2; lx <= 14; lx += 4) {
                         for (int lz = 2; lz <= 14; lz += 4) {
@@ -3844,7 +3846,7 @@ public class StructureTerrainPrep {
                             int y = deepluckyblock.util.SafeSurface.height(level,
                                     Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, px, pz) - 1;
                             if (y > level.getMinBuildHeight()) {
-                                BlockState surface = chunk.getBlockState(new BlockPos(px, y, pz));
+                                BlockState surface = haloChunk.getBlockState(new BlockPos(px, y, pz));
                                 if (surface.is(Blocks.SNOW) || surface.is(Blocks.SNOW_BLOCK)) snowCount++;
                             }
                         }
