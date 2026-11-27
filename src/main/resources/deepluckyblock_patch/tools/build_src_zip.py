@@ -76,12 +76,12 @@ NOTICES = {
   "     de la pose. La CI simule les voisinages et sabote huit regressions, sans\n"
   "     pretendre prouver le rendu en jeu.",
  'src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java':
-  "PEINTURE DU SOL EPAISSIE, SOURCE DE NEIGE CALIBREE.\n"
-  "     La surface prend une profondeur aleatoire mais stable de 1 a 4 blocs :\n"
-  "     grass_block au sommet puis dirt en dessous. Le tirage est stable par\n"
-  "     colonne et ne remplace pas les filons, l'eau ou la glace. Le potentiel neige\n"
-  "     utilise coldEnoughToSnow, sans coefficient arbitraire de 25 pour cent; les\n"
-  "     ecotones restent fractionnaires et controles colonne par colonne.",
+  "SPREAD NEIGE CONTINU, PEINTURE EPAISSIE DANS LA PASSE ACTIVE, REPLANTATION.\n"
+  "     La decision de neige de TerrainMother prime sur le repli biome/ChunkKeeper\n"
+  "     pendant la chaine active, afin de garder un spread par colonne sans carres\n"
+  "     de chunk. dressAndPlant peint maintenant une profondeur stable de 1 a 4\n"
+  "     blocs (surface, puis dirt), en preservant minerais, eau, glace et structures.\n"
+  "     La meme classe porte le rattrapage de replantation active des arbres.",
 
  'src/main/resources/deepluckyblock_patch/tools/snowspreadcheck.py':
   "BANC CIBLE POUR LA REGRESSION DE NEIGE.\n"

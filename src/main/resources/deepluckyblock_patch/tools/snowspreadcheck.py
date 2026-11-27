@@ -50,6 +50,8 @@ def static_errors(root: Path) -> list[str]:
     scout = body(prep, "private static void scoutChild(ServerLevel level, deepluckyblock.util.TerrainMother mother,")
     paint = body(prep, "private static void paintNaturalSoil(ServerLevel level, int x, int surfaceY, int z,")
     grass_pass = body(prep, "private static void verifyGrassColumn(ServerLevel level, int x, int z, int[] counters)")
+    active_dress = body(prep, "private static void dressAndPlant(ServerLevel level, BlockPos min, BlockPos max,")
+    snow_cover = body(prep, "private static boolean snowCoverHere(ServerLevel level, long seed, int x, int z)")
     warp = density[density.find("if (worldSeed != 0L)"):density.find("// Coordonnée continue")]
 
     if "HALO_CHUNKS = 3" not in mother:
@@ -71,6 +73,15 @@ def static_errors(root: Path) -> list[str]:
         errors.append("natural soil paint must use stable random depth 1-4, grass on top, dirt below, and preserve ores")
     if grass_pass.count("paintNaturalSoil(level, x, surfY, z, s, mut, counters)") < 2:
         errors.append("both snowy and dry surface paint paths must apply the 1-4 block topsoil depth")
+    if ("driftHash01(paintSeed, x, z) * 4.0" not in active_dress
+            or "d < depth" not in active_dress
+            or "Blocks.DIRT.defaultBlockState()" not in active_dress
+            or "isOreForSurfacePaint(under)" not in active_dress):
+        errors.append("active dressAndPlant path must paint randomized 1-4-block depth with dirt below, preserving ores")
+    mother_decision = snow_cover.find("mother.shouldPlaceSnow(seed, x, z)")
+    keeper_fallback = snow_cover.find("ChunkKeeper.coversChunk(level, x >> 4, z >> 4)")
+    if mother_decision < 0 or keeper_fallback < 0 or mother_decision > keeper_fallback:
+        errors.append("active continuous Mother spread must take precedence over biome/ChunkKeeper snow fallback")
     if "SPREAD_ENTREE" in aura or "SPREAD_PORTEE_CHUNKS" in aura or "pasI" in aura or "pasJ" in aura:
         errors.append("cardinal chunk-neighbor spread remains in ensureAuraField")
     if "w <= 0.08f" in aura or "isIceOrWaterCell" in density or "isIceOrWaterCell" in warp:
