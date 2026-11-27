@@ -38,7 +38,7 @@ name: Demarrage serveur
 on:
   push:
     branches:
-      - 'arena/605e67fb-dlbv1-21-1neoforge'
+      - 'arena/54be05b4-dlbv1-21-1neoforge'
     paths-ignore:
       - 'deliverables/**'
       - 'rapports_scan_**'
@@ -125,6 +125,16 @@ jobs:
             fi
           done
           echo "bancs en echec : $echecs / 18"
+
+      - name: Garde bloquante du profil neige, de la carte et des sabotages
+        # Ces verrous font echouer le job avant compilation si le champ continu,
+        # la carte colonne par colonne ou la detection des regressions est rompue.
+        run: |
+          set -euo pipefail
+          python3 src/main/resources/deepluckyblock_patch/tools/devscancheck.py .
+          python3 tools/scanviewcheck.py
+          python3 tools/snowspreadcheck.py .
+          python3 tools/snowspreadcheck.py . --self-test
 
       - name: Le script de mise a jour DOIT etre analysable par PowerShell
         # BLOQUANT, contrairement aux autres bancs. Le 26/11 au soir, le dev

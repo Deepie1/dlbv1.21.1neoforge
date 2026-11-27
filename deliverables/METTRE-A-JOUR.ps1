@@ -54,7 +54,7 @@ param(
     # Par defaut : la derniere version de la branche de travail. L'identite de
     # ce qui est installe n'est pas le numero de commit mais l'empreinte, qui
     # voyage DANS le colis (EMPREINTE.txt) et qui est verifiee a la fin.
-    [string] $Branche   = "arena/605e67fb-dlbv1-21-1neoforge",
+    [string] $Branche   = "arena/54be05b4-dlbv1-21-1neoforge",
     [switch] $PasDeSauvegarde,
     # Pour un appel automatise, ou la fenetre ne doit pas attendre.
     [switch] $SansPause

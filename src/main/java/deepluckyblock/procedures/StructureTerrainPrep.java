@@ -3834,27 +3834,28 @@ public class StructureTerrainPrep {
                 int wx = (cx << 4) + 8, wz = (cz << 4) + 8;
                 if (deepluckyblock.util.SafeSurface.loaded(level, cx, cz)) {
                     // T305 : un chunk du halo en glace ou en eau est marque neutre (ni neige 1, ni plaine seche 0 !)
-                    int icyOrWet = 0;
-                    for (int lx = 4; lx <= 12; lx += 8) {
-                        for (int lz = 4; lz <= 12; lz += 8) {
+                    int icyOrWet = 0, snowCount = 0, valid = 0;
+                    for (int lx = 2; lx <= 14; lx += 4) {
+                        for (int lz = 2; lz <= 14; lz += 4) {
                             int px = (cx << 4) + lx, pz = (cz << 4) + lz;
                             if (deepluckyblock.util.SafeSurface.columnIcy(level, px, pz)
-                                    || deepluckyblock.util.SafeSurface.columnWet(level, px, pz)) {
-                                icyOrWet++;
+                                    || deepluckyblock.util.SafeSurface.columnWet(level, px, pz)) { icyOrWet++; continue; }
+                            valid++;
+                            int y = deepluckyblock.util.SafeSurface.height(level,
+                                    Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, px, pz) - 1;
+                            if (y > level.getMinBuildHeight()) {
+                                BlockState surface = chunk.getBlockState(new BlockPos(px, y, pz));
+                                if (surface.is(Blocks.SNOW) || surface.is(Blocks.SNOW_BLOCK)) snowCount++;
                             }
                         }
                     }
-                    if (icyOrWet >= 2) {
-                        mother.setHaloIceOrWater(cx, cz);
-                    } else {
-                        boolean snowy = snowRateCell(level, cx, cz) >= 0.45f
-                                || isSnowyCell(level, new BlockPos(wx, 64, wz));
-                        mother.setHaloSnowy(cx, cz, snowy);
-                    }
+                    float land = (16 - icyOrWet) / 16f;
+                    float source = valid > 0 ? (snowCount / (float) valid) : noiseBiomeSnowPotential(level, wx, wz);
+                    mother.setHaloLandWeight(cx, cz, land);
+                    mother.setHaloSnowPotential(cx, cz, source);
                 } else {
-                    int nbState = noiseBiomeSnowState(level, wx, wz);
-                    if (nbState == 2) mother.setHaloIceOrWater(cx, cz);
-                    else mother.setHaloSnowy(cx, cz, nbState == 1);
+                    mother.setHaloLandWeight(cx, cz, 1f);
+                    mother.setHaloSnowPotential(cx, cz, noiseBiomeSnowPotential(level, wx, wz));
                 }
             }
         }
@@ -3877,6 +3878,16 @@ public class StructureTerrainPrep {
         } catch (Throwable t) {
             return 0;
         }
+    }
+
+    /** Moyenne continue de 16 biomes bruités dans le chunk du halo, sans classification binaire. */
+    private static float noiseBiomeSnowPotential(ServerLevel level, int x, int z) {
+        int snow = 0, land = 0;
+        for (int dx = 2; dx <= 14; dx += 4) for (int dz = 2; dz <= 14; dz += 4) {
+            int state = noiseBiomeSnowState(level, (x & ~15) + dx, (z & ~15) + dz);
+            if (state != 2) { land++; if (state == 1) snow++; }
+        }
+        return land == 0 ? 0f : snow / 16f;
     }
 
     private static boolean isSnowyNoiseBiome(ServerLevel level, int x, int z) {
@@ -3949,12 +3960,12 @@ public class StructureTerrainPrep {
         // Reponse franche =isSnowy (true / false) de l'enfant : neige vierge photographiee OU biome neige sur terre seche
         child.snowyRatio = Math.max(0f, Math.min(1f, snowRateCell(level, cx, cz)));
         boolean biomeSnow = isSnowyCell(level, new BlockPos((cx << 4) + 8, 64, (cz << 4) + 8));
+        float biomePotential = noiseBiomeSnowPotential(level, (cx << 4) + 8, (cz << 4) + 8);
+        // Le verdict enfant reste informatif; la source du champ ne franchit plus de seuil binaire.
+        child.snowyRatio = Math.max(child.snowyRatio, 0.25f * biomePotential);
         boolean childSnowy = (child.waterRatio < 0.65f && child.iceRatio < 0.65f)
                 && (child.snowyRatio >= 0.45f || biomeSnow);
         child.setSnowy(childSnowy);
-        if (childSnowy && child.snowyRatio < 0.85f) {
-            child.snowyRatio = 1.0f; // biome neige vierge : potentiel franc 1.0 pour le damier Mother
-        }
         mother.invalidateSnowField();
     }
 
@@ -5564,11 +5575,6 @@ public class StructureTerrainPrep {
         long key = (((long) cx) << 32) | (cz & 0xffffffffL);
         SNOW_RATE_CACHE.remove(key);          // ecrase tout repli anterieur
         snowRateCell(level, cx, cz);          // mesure vierge -> cache
-        SNOW_NEIGHBOR_CACHE.remove(key);
-        SNOW_NEIGHBOR_CACHE.remove((((long) cx) << 32) | ((cz - 1) & 0xffffffffL));
-        SNOW_NEIGHBOR_CACHE.remove((((long) cx) << 32) | ((cz + 1) & 0xffffffffL));
-        SNOW_NEIGHBOR_CACHE.remove((((long) (cx - 1)) << 32) | (cz & 0xffffffffL));
-        SNOW_NEIGHBOR_CACHE.remove((((long) (cx + 1)) << 32) | (cz & 0xffffffffL));
     }
 
     // ==================================================================
@@ -5589,8 +5595,6 @@ public class StructureTerrainPrep {
     //  encadree de neige ni de chunk oublie.
 
     /** Voisinage neigeux RÉEL d'un chunk (une fois par chunk). [0]=N(z-), [1]=S(z+), [2]=O(x-), [3]=E(x+). */
-    private static final Map<Long, float[]> SNOW_NEIGHBOR_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
-
     /** T254 : taux REEL de neige en surface d'un chunk (blocs du dessus lus
      *  reellement) : SNOW layer au-dessus du sol ou SNOW_BLOCK. Repli sur le
      *  froid du biome si le chunk est indisponible (jamais de generation). */
@@ -5649,37 +5653,20 @@ public class StructureTerrainPrep {
             }
         }
         if (valid >= 6) rate = (float) snow / (float) valid;
-        else rate = isSnowyCell(level, probe.set((cx << 4) + 8, 80, (cz << 4) + 8)) ? 1f : 0f;
+        else rate = noiseBiomeSnowPotential(level, (cx << 4) + 8, (cz << 4) + 8);
         SNOW_RATE_CACHE.put(key, rate);
         return rate;
     }
 
-    private static float[] snowyRates(ServerLevel level, int cx, int cz) {
-        long key = (((long) cx) << 32) | (cz & 0xffffffffL);
-        float[] cached = SNOW_NEIGHBOR_CACHE.get(key);
-        if (cached != null) return cached;
-        float[] nb = new float[4];
-        nb[0] = snowRateCell(level, cx, cz - 1);
-        nb[1] = snowRateCell(level, cx, cz + 1);
-        nb[2] = snowRateCell(level, cx - 1, cz);
-        nb[3] = snowRateCell(level, cx + 1, cz);
-        SNOW_NEIGHBOR_CACHE.put(key, nb);
-        return nb;
-    }
-
-    /** T256 : vrai si un voisin du chunk porte de la neige (= le fondu a une
-     *  raison d'exister ici). Filtre bon marche (un tableau cache) pour ne
-     *  lancer placeSnowOrUnsnow hors biome enneige QUE pres d'un champ de
-     *  neige — generalisation aux zones non-biome-neige sans cout en plaine. */
+    /** Source locale de proximité; hors chaîne, on conserve uniquement la règle biome vanilla. */
     private static boolean snowInfluenceNear(ServerLevel level, int x, int z) {
-        deepluckyblock.util.TerrainMother m = deepluckyblock.util.TerrainMother.current();
-        if (m != null) {
-            m.setWorldSeed(level.getSeed());
-            float d = m.snowDensity(x, z);
-            if (d >= 0f) return d > 0.02f;
+        deepluckyblock.util.TerrainMother mother = deepluckyblock.util.TerrainMother.current();
+        if (mother != null) {
+            mother.setWorldSeed(level.getSeed());
+            float density = mother.snowDensity(x, z);
+            if (density >= 0f) return density > 0f;
         }
-        float[] nb = snowyRates(level, x >> 4, z >> 4);
-        return nb[0] > 0.02f || nb[1] > 0.02f || nb[2] > 0.02f || nb[3] > 0.02f;
+        return isSnowyCell(level, new BlockPos(x, 64, z));
     }
 
     /** T289 / T303 : densite d'aura de neige continue calculee par Mother sur son damier QuartPos. */
@@ -5691,6 +5678,9 @@ public class StructureTerrainPrep {
     }
 
     private static boolean snowCoverHere(ServerLevel level, long seed, int x, int z) {
+        // Garantie physique: eau/glace jamais enneigées; test à la colonne réelle, jamais au chunk.
+        if (deepluckyblock.util.SafeSurface.columnWet(level, x, z)
+                || deepluckyblock.util.SafeSurface.columnIcy(level, x, z)) return false;
         // T303 : REFONTE COMPLETE DU GRADIENT DE NEIGE PAR MOTHER.
         // Suppression definitive :
         //  (1) du court-circuit dur « if (isSnowyCell) return true » a l'interieur du chantier

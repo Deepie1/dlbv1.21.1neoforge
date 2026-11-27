@@ -257,9 +257,8 @@ def controler(racine='.'):
     # retomber sur un fichier monolithique (intransportable), et laisser une section
     # n'analyser QUE la derniere etape tout en pretendant couvrir le scan -- le fichier
     # paraissait complet alors que trois etapes sur quatre n'etaient pas examinees.
-    # T477 : chaque etape produit DESORMAIS trois fichiers (texte, _CARTES, _GRILLES).
-    # Le prefixe numerote reste la garantie qu'il y a bien un jeu de fichiers par etape
-    # et non un monolithe ; les trois resolve() sont verifies au verrou 12.
+    # Les trois familles de donnees sont reunies dans UN fichier numerote par etape ;
+    # le verrou 12 verifie les trois sections et l'absence de fichiers annexes.
     if '%02d_%s' not in code:
         echecs.append('VERROU 8 : le scan ne nomme plus un fichier par etape -- on est '
                       'revenu a un fichier unique, que l\'utilisateur ne peut pas envoyer')
@@ -456,13 +455,34 @@ def controler(racine='.'):
             echecs.append('VERROU 12 : la carte « %s » est definie mais jamais appelee '
                           '(ou absente) -- une section qui n\'est pas ecrite n\'existe pas'
                           % quoi)
-    # Decouper, jamais alleger : les trois fichiers par etape doivent etre ecrits.
-    # On teste l'ECRITURE, pas la mention : le sommaire imprime ces noms pour guider
-    # la lecture, et chercher le nom tout court laissait donc passer leur suppression.
-    for motif in ('_CARTES.txt', '_GRILLES.txt'):
-        if ('resolve(base + "%s")' % motif) not in code:
-            echecs.append('VERROU 12 : le fichier %s n\'est plus ECRIT -- on decoupe le '
-                          'rapport, on ne le supprime pas' % motif)
+    # Un fichier par etape doit garder les trois contenus sous des en-tetes explicites.
+    # Le test est borne au redacteur : des mentions ailleurs ne peuvent pas faire passer
+    # une section supprimee ou une ancienne sortie en fichiers annexes.
+    m = re.search(r'private static void rediger\(Session s, String cause,.*?\n    private static void direDepuisFond\(',
+                  code, re.S)
+    if m is None:
+        echecs.append('VERROU 12 : bloc rediger() introuvable pour verifier le format de sortie')
+    else:
+        redacteur = m.group(0)
+        for label, appel in (("RAPPORT", 'section0Couverture(r, s, e)'),
+                             ("CARTES", 'section8Vues(r, s, e, prec)'),
+                             ("GRILLES", 'section9Grilles(r, s, e, prec)')):
+            if not re.search(r'titre\(r,\s*"' + label + r'"\)\s*;.*?'
+                             + re.escape(appel), redacteur, re.S):
+                echecs.append('VERROU 12 : section %s absente de la sortie unique par etape'
+                              % label)
+        if 'resolve(base + "_CARTES.txt")' in redacteur or \
+           'resolve(base + "_GRILLES.txt")' in redacteur:
+            echecs.append('VERROU 12 : des fichiers CARTES/GRILLES separent encore les '
+                          'sections -- le plafond de 20 pieces reste depasse')
+        if not re.search(r'log\("\[DLB-SCAN\] termine : "\s*\+\s*'
+                         r'ecrits\.size\(\)\s*\+\s*" fichiers', redacteur):
+            echecs.append('VERROU 12 : le compteur du journal ne derive pas du nombre de '
+                          'fichiers effectivement ecrits')
+        if not re.search(r'direDepuisFond\(serveur, s, ecrits\.size\(\)\s*\+'
+                         r'\s*" fichiers ecrits', redacteur):
+            echecs.append('VERROU 12 : le compteur annonce au joueur ne derive pas du nombre '
+                          'de fichiers effectivement ecrits')
 
     # ----------------------------------------------------------------- VERROU 13
     # NE PAS APPELER « SAUT » CE QUI N'EN EST PAS UN.
@@ -618,21 +638,51 @@ def controler(racine='.'):
                 echecs.append('VERROU 16 : la branche sans chantier ne rend pas la main a '
                               'la veille -- le vrai chantier suivant passerait inapercu')
 
+    # ---------------------------------------------------------------- VERROU 17
+    # Le profil est continu par colonne et le rapport expose aussi la neige observee.
+    mother = lire(racine, 'src/main/java/deepluckyblock/util/TerrainMother.java') or ''
+    mother_code = sans_commentaires(mother)
+    snapshot = re.search(r'public static final class SnowSpreadSnapshot\s*\{', mother_code)
+    snap_body = bloc_equilibre(mother_code, snapshot.start()) if snapshot else ''
+    if 'rateAtBlock(int x, int z)' not in snap_body or 'potential[iz * qw + ix]' not in snap_body:
+        echecs.append('VERROU 17 : snapshot non interpole a l echelle colonne/quart')
+    getter = re.search(r'public static SnowSpreadSnapshot latestSnowSpreadSnapshot\(\)\s*\{', mother_code)
+    fin_mere = re.search(r'public static void end\(\)\s*\{', mother_code)
+    corps_getter = bloc_equilibre(mother_code, getter.start()) if getter else ''
+    corps_fin_mere = bloc_equilibre(mother_code, fin_mere.start()) if fin_mere else ''
+    if ('m.snowSpreadSnapshot' not in corps_getter or 'LAST_SNOW_SPREAD_SNAPSHOT' not in corps_getter or
+            'LAST_SNOW_SPREAD_SNAPSHOT = m.snowSpreadSnapshot' not in corps_fin_mere):
+        echecs.append('VERROU 17 : profil continu perdu apres la fin de Mother')
+    cap = re.search(r'private static void capturer\(Session s, String nom, String detail\)\s*\{', code)
+    corps_cap = bloc_equilibre(code, cap.start()) if cap else ''
+    if ('latestSnowSpreadSnapshot()' not in corps_cap or 'e.snowSpread = s.snowSpreadSnapshot' not in corps_cap):
+        echecs.append('VERROU 17 : capturer() ne fige pas le profil neige')
+    grilles = re.search(r'private static void section9Grilles\(StringBuilder r, Session s, Etape e, Etape prec\)\s*\{', code)
+    corps_grilles = bloc_equilibre(code, grilles.start()) if grilles else ''
+    if 'grilleSnowSpread(r, s, e)' not in corps_grilles or 'grilleSnowObserved(r, s, e)' not in corps_grilles:
+        echecs.append('VERROU 17 : grille potentielle ou carte observee absente du rapport')
+    observed = re.search(r'private static void grilleSnowObserved\(StringBuilder r, Session s, Etape e\)\s*\{', code)
+    observed_body = bloc_equilibre(code, observed.start()) if observed else ''
+    if '1000' not in observed_body or '0000' not in observed_body or 'chunkCharge' not in observed_body:
+        echecs.append('VERROU 17 : carte de neige observee colonne par colonne invalide')
+
     if echecs:
         for e in echecs:
             print('ECHEC  %s' % e)
         print('devscancheck : %d verrou(x) rompu(s)' % len(echecs))
         return 1
 
-    print('devscancheck : 16 verrous tiennent -- outil isole et supprimable, auto-accroche, '
+    print('devscancheck : 17 verrous tiennent -- outil isole et supprimable, auto-accroche, '
           'sonde passive, chunks absents jamais maquilles, grilles alignees sur les chunks, '
-          '3 jalons suivis, aucune restauration par le build, un fichier par etape, '
+          '3 jalons suivis, aucune restauration par le build, un fichier par etape avec '
+          'RAPPORT/CARTES/GRILLES reunis et compteur reel, '
           'mesure sans armement manuel, redaction hors du fil serveur, '
           'emprise suivie et non figee, couverture prouvee chunk par chunk, '
           'sauts reels distingues des non-sauts, '
           'captures pendant la pose armees a la transition, '
           'mesure finale apres le delai de finition, '
-          'sonde de placement jamais prise pour un chantier')
+          'sonde de placement jamais prise pour un chantier, '
+          'potentiel neige continu, map observee par colonne et snapshot conserve apres fin de Mother')
     return 0
 
 
