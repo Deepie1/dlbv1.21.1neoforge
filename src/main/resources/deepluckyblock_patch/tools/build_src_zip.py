@@ -85,22 +85,17 @@ NOTICES = {
   "     une enclave reste une diffusion, jamais un coeur de massif.",
  'src/main/java/deepluckyblock/dev/DevTerrainScan.java':
   "T471 : SCAN DE TERRAIN -- OUTIL DE DEVELOPPEMENT, FICHIER JETABLE.\n"
-  "     Huit tours de correctifs sur le raccord du Crimson Lake (T459 a T468) ont ete\n"
-  "     poses puis annules sans rien reparer : personne n'avait jamais VU le terrain.\n"
-  "     Cette classe ne corrige rien, elle mesure. Elle scanne TOUTE la zone (emprise\n"
-  "     epinglee + 3 chunks d'anneau, soit ~352x384 = 135 000 colonnes sur 528 chunks)\n"
-  "     a chaque etape -- debut du clear, fin du clear, fin de la pose, fin du\n"
-  "     pipeline -- et rend UN seul .txt dans <monde>/dlb_scan/ : chunks non charges,\n"
-  "     chunks sautes entre deux etapes, ancien terrain reste dans l'emprise,\n"
-  "     composition de surface, air piege, raccords INTER-CHUNKS mesures a la couture,\n"
-  "     marches, profil du bord, vues du dessus et grilles de Y ABSOLUS pleine\n"
-  "     resolution avec regles de coordonnees et separateurs de chunk.\n"
-  "     ENTIEREMENT AUTONOME : aucune autre classe ne la nomme, elle s'enregistre seule\n"
-  "     et observe le pipeline sans le modifier (zone ChunkKeeper + file de pose lue par\n"
-  "     reflexion). SUPPRIMER CE FICHIER SUFFIT A RETIRER L'OUTIL, rien d'autre ne casse.\n"
-  "     Sonde strictement passive (getChunkNow seul) : un chunk absent est declare\n"
-  "     absent, jamais comble par une valeur plausible -- c'est l'objet meme du scan.\n"
-  "     Commandes : /dlbscan, /dlbscan now, light, full, stop, status.",
+  "     Cette classe observe le pipeline sans le modifier et scanne toute la zone\n"
+  "     (emprise epinglee + 3 chunks d'anneau) a chaque etape utile. Elle produit\n"
+  "     un fichier numerote par etape, avec trois sections explicites : RAPPORT,\n"
+  "     CARTES et GRILLES. Les mesures sont toutes conservees ; les trois anciens\n"
+  "     fichiers par etape sont concatenees pour respecter la limite d'envoi de 20\n"
+  "     fichiers. Le sommaire garde les comparaisons entre etapes et le compteur\n"
+  "     annonce le nombre de fichiers effectivement ecrits.\n"
+  "     Entierement autonome, sonde passive (getChunkNow seul), chunks absents\n"
+  "     declares absents : supprimer ce fichier retire tout l'outil.\n"
+  "     Les grilles gardent les Y absolus, regles de coordonnees et separateurs\n"
+  "     de chunk. Commandes : /dlbscan, /dlbscan now, stop et status.",
 
  'src/main/java/deepluckyblock/procedures/Structures5Procedure.java':
   "T449 : LE MESSAGE DE DECOUVERTE, PARTAGE ET PLUS JAMAIS MUET.\n"

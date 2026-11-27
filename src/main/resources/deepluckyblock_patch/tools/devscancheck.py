@@ -257,9 +257,8 @@ def controler(racine='.'):
     # retomber sur un fichier monolithique (intransportable), et laisser une section
     # n'analyser QUE la derniere etape tout en pretendant couvrir le scan -- le fichier
     # paraissait complet alors que trois etapes sur quatre n'etaient pas examinees.
-    # T477 : chaque etape produit DESORMAIS trois fichiers (texte, _CARTES, _GRILLES).
-    # Le prefixe numerote reste la garantie qu'il y a bien un jeu de fichiers par etape
-    # et non un monolithe ; les trois resolve() sont verifies au verrou 12.
+    # Les trois familles de donnees sont reunies dans UN fichier numerote par etape ;
+    # le verrou 12 verifie les trois sections et l'absence de fichiers annexes.
     if '%02d_%s' not in code:
         echecs.append('VERROU 8 : le scan ne nomme plus un fichier par etape -- on est '
                       'revenu a un fichier unique, que l\'utilisateur ne peut pas envoyer')
@@ -456,13 +455,34 @@ def controler(racine='.'):
             echecs.append('VERROU 12 : la carte « %s » est definie mais jamais appelee '
                           '(ou absente) -- une section qui n\'est pas ecrite n\'existe pas'
                           % quoi)
-    # Decouper, jamais alleger : les trois fichiers par etape doivent etre ecrits.
-    # On teste l'ECRITURE, pas la mention : le sommaire imprime ces noms pour guider
-    # la lecture, et chercher le nom tout court laissait donc passer leur suppression.
-    for motif in ('_CARTES.txt', '_GRILLES.txt'):
-        if ('resolve(base + "%s")' % motif) not in code:
-            echecs.append('VERROU 12 : le fichier %s n\'est plus ECRIT -- on decoupe le '
-                          'rapport, on ne le supprime pas' % motif)
+    # Un fichier par etape doit garder les trois contenus sous des en-tetes explicites.
+    # Le test est borne au redacteur : des mentions ailleurs ne peuvent pas faire passer
+    # une section supprimee ou une ancienne sortie en fichiers annexes.
+    m = re.search(r'private static void rediger\(Session s, String cause,.*?\n    private static void direDepuisFond\(',
+                  code, re.S)
+    if m is None:
+        echecs.append('VERROU 12 : bloc rediger() introuvable pour verifier le format de sortie')
+    else:
+        redacteur = m.group(0)
+        for label, appel in (("RAPPORT", 'section0Couverture(r, s, e)'),
+                             ("CARTES", 'section8Vues(r, s, e, prec)'),
+                             ("GRILLES", 'section9Grilles(r, s, e, prec)')):
+            if not re.search(r'titre\(r,\s*"' + label + r'"\)\s*;.*?'
+                             + re.escape(appel), redacteur, re.S):
+                echecs.append('VERROU 12 : section %s absente de la sortie unique par etape'
+                              % label)
+        if 'resolve(base + "_CARTES.txt")' in redacteur or \
+           'resolve(base + "_GRILLES.txt")' in redacteur:
+            echecs.append('VERROU 12 : des fichiers CARTES/GRILLES separent encore les '
+                          'sections -- le plafond de 20 pieces reste depasse')
+        if not re.search(r'log\("\[DLB-SCAN\] termine : "\s*\+\s*'
+                         r'ecrits\.size\(\)\s*\+\s*" fichiers', redacteur):
+            echecs.append('VERROU 12 : le compteur du journal ne derive pas du nombre de '
+                          'fichiers effectivement ecrits')
+        if not re.search(r'direDepuisFond\(serveur, s, ecrits\.size\(\)\s*\+'
+                         r'\s*" fichiers ecrits', redacteur):
+            echecs.append('VERROU 12 : le compteur annonce au joueur ne derive pas du nombre '
+                          'de fichiers effectivement ecrits')
 
     # ----------------------------------------------------------------- VERROU 13
     # NE PAS APPELER « SAUT » CE QUI N'EN EST PAS UN.
@@ -626,7 +646,8 @@ def controler(racine='.'):
 
     print('devscancheck : 16 verrous tiennent -- outil isole et supprimable, auto-accroche, '
           'sonde passive, chunks absents jamais maquilles, grilles alignees sur les chunks, '
-          '3 jalons suivis, aucune restauration par le build, un fichier par etape, '
+          '3 jalons suivis, aucune restauration par le build, un fichier par etape avec '
+          'RAPPORT/CARTES/GRILLES reunis et compteur reel, '
           'mesure sans armement manuel, redaction hors du fil serveur, '
           'emprise suivie et non figee, couverture prouvee chunk par chunk, '
           'sauts reels distingues des non-sauts, '

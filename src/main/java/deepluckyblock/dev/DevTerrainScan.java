@@ -78,9 +78,8 @@ import java.util.Map;
  * </pre>
  * La sortie est un DOSSIER {@code <monde>/dlb_scan/scan-<horodatage>/} contenant UN
  * FICHIER PAR ETAPE -- {@code 01_1_DEBUT_CLEAR.txt}, {@code 02_2_APRES_CLEAR_ET_TALUS.txt}, ... --
- * chacun portant le scan complet de toute la zone a cet instant et lisible seul, plus un
- * {@code 00_SOMMAIRE.txt} qui ne contient que les comparaisons d'une etape a l'autre. Le
- * chemin du dossier est annonce en chat.
+ * avec les sections RAPPORT, CARTES et GRILLES clairement separees dans chaque fichier,
+ * plus un {@code 00_SOMMAIRE.txt} pour comparer les etapes. Le chemin est annonce en chat.
  */
 @EventBusSubscriber(modid = "deep_lucky_block")
 public final class DevTerrainScan {
@@ -1296,19 +1295,19 @@ public final class DevTerrainScan {
             long total = 0;
             List<String> ecrits = new ArrayList<>();
 
-            // UN FICHIER PAR ETAPE. Chacun porte le scan COMPLET de toute la zone a cet
-            // instant precis et se lit seul : un seul fichier monolithique melangeait les
-            // etapes et devenait intransportable.
+            // UN FICHIER PAR ETAPE : rapport, cartes et grilles sont reunis sous des
+            // en-tetes explicites. Toutes les mesures restent presentes et lisibles ;
+            // seule la separation en trois pieces disparait.
             for (int n = 0; n < s.etapes.size(); n++) {
                 Etape e = s.etapes.get(n);
                 Etape prec = n > 0 ? s.etapes.get(n - 1) : null;
-                // T477 : TROIS fichiers par etape, et rien d'omis. Les cartes pleine
-                // resolution et les grilles au bloc pres pesent chacune plusieurs Mio sur
-                // une emprise de 246 x 284 ; les garder dans un fichier unique le rendait
-                // inouvrable. On DECOUPE -- on n'allege jamais en supprimant une section.
+                // Un seul fichier par etape, mais trois blocs faciles a reperer et a
+                // lire seuls. Aucun contenu n'est supprime ; les cartes et grilles sont
+                // simplement concatenees apres leurs en-tetes de section.
                 String base = String.format("%02d_%s", n + 1, nomFichier(e.nom));
-                StringBuilder r = new StringBuilder(1 << 20);
+                StringBuilder r = new StringBuilder(8 << 20);
                 enteteEtape(r, s, e, prec, n, cause);
+                titre(r, "RAPPORT");
                 section0Couverture(r, s, e);
                 section2ChunksAbsents(r, s, e);
                 tableauParChunk(r, s, e);
@@ -1316,19 +1315,14 @@ public final class DevTerrainScan {
                 section5InterChunks(r, s, e);
                 section6Marches(r, s, e);
                 section10Palette(r, s);
+
+                titre(r, "CARTES");
+                section8Vues(r, s, e, prec);
+                coupesVerticales(r, s, e);
+
+                titre(r, "GRILLES");
+                section9Grilles(r, s, e, prec);
                 total += ecrireFichier(s, dir.resolve(base + ".txt"), r, ecrits);
-
-                StringBuilder rc = new StringBuilder(4 << 20);
-                enteteEtape(rc, s, e, prec, n, cause);
-                section8Vues(rc, s, e, prec);
-                coupesVerticales(rc, s, e);
-                total += ecrireFichier(s, dir.resolve(base + "_CARTES.txt"), rc, ecrits);
-
-                StringBuilder rg = new StringBuilder(4 << 20);
-                enteteEtape(rg, s, e, prec, n, cause);
-                section9Grilles(rg, s, e, prec);
-                section10Palette(rg, s);
-                total += ecrireFichier(s, dir.resolve(base + "_GRILLES.txt"), rg, ecrits);
             }
 
             // Le sommaire ne porte QUE ce qui compare les etapes entre elles.
@@ -1345,13 +1339,12 @@ public final class DevTerrainScan {
 
             final long ko = total / 1024L;
             final long secondes = (System.currentTimeMillis() - tDebut) / 1000L;
-            log("[DLB-SCAN] termine : " + (s.etapes.size() + 1) + " fichiers, " + ko
+            log("[DLB-SCAN] termine : " + ecrits.size() + " fichiers, " + ko
                     + " Kio, en " + secondes + " s, dans " + dir);
-            direDepuisFond(serveur, s, (s.etapes.size() + 1) + " fichiers ecrits, " + ko
+            direDepuisFond(serveur, s, ecrits.size() + " fichiers ecrits, " + ko
                     + " Kio au total en " + secondes + " s, dans : " + dir, ChatFormatting.AQUA);
-            direDepuisFond(serveur, s, "ouvre 00_SOMMAIRE.txt en premier ; les fichiers "
-                    + "_CARTES portent les vues du dessus et la 3D, les _GRILLES la valeur "
-                    + "de chaque colonne.", ChatFormatting.AQUA);
+            direDepuisFond(serveur, s, "ouvre 00_SOMMAIRE.txt en premier ; chaque fichier "
+                    + "d'etape contient RAPPORT, CARTES et GRILLES.", ChatFormatting.AQUA);
         } catch (Throwable t) {
             log("[DLB-SCAN] ecriture impossible : " + t);
             direDepuisFond(serveur, s, "ECHEC d'ecriture : " + t, ChatFormatting.RED);
@@ -1400,8 +1393,8 @@ public final class DevTerrainScan {
     private static void sommaireFichiers(StringBuilder r, Session s, List<String> ecrits) {
         titre(r, "0. LES FICHIERS DE CE SCAN");
         r.append("Un fichier par etape, chacun portant le scan COMPLET de toute la zone a cet\n");
-        r.append("instant et lisible seul. Le present fichier ne porte que les COMPARAISONS\n");
-        r.append("d'une etape a l'autre, qui n'appartiennent a aucune des deux.\n\n");
+        r.append("instant. RAPPORT, CARTES et GRILLES sont reunis sous des en-tetes distincts.\n");
+        r.append("Le present fichier porte les COMPARAISONS entre etapes.\n\n");
         for (String f : ecrits) r.append("   ").append(f).append('\n');
         r.append("\nOrdre de lecture : la section 3 ci-dessous nomme les chunks sautes d'une\n");
         r.append("etape a l'autre ; le fichier de l'etape concernee en donne le detail au bloc\n");
@@ -1553,12 +1546,11 @@ public final class DevTerrainScan {
         r.append("  sinon la hauteur Y ABSOLUE du bloc concerne\n");
         r.append('\n');
         r.append("FICHIERS PRODUITS PAR ETAPE\n");
-        r.append("  NN_<etape>.txt          couverture, chunks absents, tableau par chunk,\n");
-        r.append("                          composition, raccords, marches, palette\n");
-        r.append("  NN_<etape>_CARTES.txt   altitude, relief ombre, courbes de niveau,\n");
-        r.append("                          profondeurs, anomalies, chargement, 3D, coupes\n");
-        r.append("  NN_<etape>_GRILLES.txt  la valeur de CHAQUE colonne, au bloc pres\n");
-        r.append("Rien n'est omis : le contenu est DECOUPE, jamais allege.\n\n");
+        r.append("  NN_<etape>.txt : un fichier unique avec trois sections lisibles seules :\n");
+        r.append("    RAPPORT : couverture, chunks absents, composition, raccords, marches\n");
+        r.append("    CARTES  : vues du dessus, relief, profondeurs, anomalies, 3D et coupes\n");
+        r.append("    GRILLES : valeur de CHAQUE colonne, au bloc pres\n");
+        r.append("Rien n'est omis ; seules les trois pieces sont reunies.\n\n");
         r.append("SOMMAIRE DE CE FICHIER\n");
         r.append("  1  etapes capturees\n");
         r.append("  2  CHUNKS NON CHARGES par etape (les « chunks qui manquent »)\n");
@@ -1567,10 +1559,8 @@ public final class DevTerrainScan {
         r.append("  7  profil du raccord, du bord vers l'exterieur\n");
         r.append(" 9z  relief theorique de generation (reference commune)\n");
         r.append(" 10  palette des blocs\n");
-        r.append("\nTout le reste -- couverture, composition, raccords inter-chunks, marches,\n");
-        r.append("cartes, vue 3D, coupes verticales et grilles au bloc pres -- est dans les\n");
-        r.append("fichiers de CHAQUE etape, puisque ces mesures appartiennent a un instant\n");
-        r.append("precis et non a la serie.\n");
+        r.append("\nLes rapports, cartes, coupes et grilles au bloc pres sont dans le fichier\n");
+        r.append("de chaque etape ; le present sommaire garde les comparaisons de la serie.\n");
     }
 
     // ---------------------------------------------------------------- 1
