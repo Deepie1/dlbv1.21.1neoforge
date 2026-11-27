@@ -111,14 +111,8 @@ public class StructureTerrainPrep {
     private static final long DRESS_RETRY_DEADLINE_MS = 240_000L;
 
     /** T492 : tours de rattrapage de la replantation sur les arbres au halo non charge. */
-    /** T494 : plafond de terminaison ; c'est le progres qui decide (voir ReplantJob). */
+    /** Plafond borne du rattrapage arbre : 40 tours de 2 s, sans abandon anticipe sur stagnation. */
     private static final int REPLANT_RETRY_TOURS = 40;
-
-    /** T494 : deux tours sans un arbre recupere valent abandon. */
-    private static final int REPLANT_RETRY_STAGNATION_MAX = 2;
-
-    /** T494 : tours de grace avant que la stagnation conclue (latence de chargement). */
-    private static final int REPLANT_RETRY_GRACE_TOURS = 10;
     /** T492 : attente entre deux tours de replantation, en ticks. */
     private static final int REPLANT_RETRY_ATTENTE_TICKS = 40;
     /** T492 : plafond d'arbres mis de cote (garde-fou memoire). */
@@ -161,7 +155,7 @@ public class StructureTerrainPrep {
         }
     }
 
-    private static void clearPastedStructureContext() {
+    public static void clearPastedStructureContext() {
         PASTED_OCCUPIED = java.util.Collections.emptySet();
         PASTED_BASE_COLS = java.util.Collections.emptySet();
         PASTED_NEAR_BASE_COLS.clear();
@@ -3833,28 +3827,31 @@ public class StructureTerrainPrep {
                 if (cx >= gx0 && cx <= gx1 && cz >= gz0 && cz <= gz1) continue;
                 int wx = (cx << 4) + 8, wz = (cz << 4) + 8;
                 if (deepluckyblock.util.SafeSurface.loaded(level, cx, cz)) {
-                    // T305 : un chunk du halo en glace ou en eau est marque neutre (ni neige 1, ni plaine seche 0 !)
-                    int icyOrWet = 0;
-                    for (int lx = 4; lx <= 12; lx += 8) {
-                        for (int lz = 4; lz <= 12; lz += 8) {
+                    ChunkAccess haloChunk = deepluckyblock.util.SafeSurface.chunkFor(level, cx, cz);
+                    if (haloChunk == null) continue;
+                    // T305 : le potentiel du halo est echantillonne en continu, pas classe neige/sec par chunk.
+                    int icyOrWet = 0, snowCount = 0, valid = 0;
+                    for (int lx = 2; lx <= 14; lx += 4) {
+                        for (int lz = 2; lz <= 14; lz += 4) {
                             int px = (cx << 4) + lx, pz = (cz << 4) + lz;
                             if (deepluckyblock.util.SafeSurface.columnIcy(level, px, pz)
-                                    || deepluckyblock.util.SafeSurface.columnWet(level, px, pz)) {
-                                icyOrWet++;
+                                    || deepluckyblock.util.SafeSurface.columnWet(level, px, pz)) { icyOrWet++; continue; }
+                            valid++;
+                            int y = deepluckyblock.util.SafeSurface.height(level,
+                                    Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, px, pz) - 1;
+                            if (y > level.getMinBuildHeight()) {
+                                BlockState surface = haloChunk.getBlockState(new BlockPos(px, y, pz));
+                                if (surface.is(Blocks.SNOW) || surface.is(Blocks.SNOW_BLOCK)) snowCount++;
                             }
                         }
                     }
-                    if (icyOrWet >= 2) {
-                        mother.setHaloIceOrWater(cx, cz);
-                    } else {
-                        boolean snowy = snowRateCell(level, cx, cz) >= 0.45f
-                                || isSnowyCell(level, new BlockPos(wx, 64, wz));
-                        mother.setHaloSnowy(cx, cz, snowy);
-                    }
+                    float land = (16 - icyOrWet) / 16f;
+                    float source = valid > 0 ? (snowCount / (float) valid) : noiseBiomeSnowPotential(level, wx, wz);
+                    mother.setHaloLandWeight(cx, cz, land);
+                    mother.setHaloSnowPotential(cx, cz, source);
                 } else {
-                    int nbState = noiseBiomeSnowState(level, wx, wz);
-                    if (nbState == 2) mother.setHaloIceOrWater(cx, cz);
-                    else mother.setHaloSnowy(cx, cz, nbState == 1);
+                    mother.setHaloLandWeight(cx, cz, 1f);
+                    mother.setHaloSnowPotential(cx, cz, noiseBiomeSnowPotential(level, wx, wz));
                 }
             }
         }
@@ -3870,13 +3867,27 @@ public class StructureTerrainPrep {
             if (key.isEmpty()) return 0;
             String p = key.get().location().getPath().toLowerCase();
             if (p.contains("ocean") || p.contains("river")) {
-                return 2; // T305 : eau/glace exclue de tout degrade de neige !
+                return 2; // eau/glace exclue du signal terrestre de neige
             }
-            return (p.contains("snow") || p.contains("ice_spikes") || p.contains("grove")
-                    || p.contains("frozen_peaks") || p.contains("jagged_peaks")) ? 1 : 0;
+            // Reprendre la vraie regle vanilla (temperature/altitude), pas le nom
+            // du biome : le nom omet des biomes froids et classait a 0 leur sol.
+            return bh.value().coldEnoughToSnow(new BlockPos(x, 64, z)) ? 1 : 0;
         } catch (Throwable t) {
             return 0;
         }
+    }
+
+    /** Fraction de biomes froids parmi les 16 echantillons terrestres (regle vanilla). */
+    private static float noiseBiomeSnowPotential(ServerLevel level, int x, int z) {
+        int snow = 0, land = 0;
+        for (int dx = 2; dx <= 14; dx += 4) for (int dz = 2; dz <= 14; dz += 4) {
+            int state = noiseBiomeSnowState(level, (x & ~15) + dx, (z & ~15) + dz);
+            if (state != 2) { land++; if (state == 1) snow++; }
+        }
+        // La fraction eau/glace est appliquee separement comme poids terrestre.
+        // Normaliser ici par les echantillons terrestres evite de penaliser deux fois
+        // les chunks mixtes (signal puis poids dans TerrainMother).
+        return land == 0 ? 0f : snow / (float) land;
     }
 
     private static boolean isSnowyNoiseBiome(ServerLevel level, int x, int z) {
@@ -3949,12 +3960,15 @@ public class StructureTerrainPrep {
         // Reponse franche =isSnowy (true / false) de l'enfant : neige vierge photographiee OU biome neige sur terre seche
         child.snowyRatio = Math.max(0f, Math.min(1f, snowRateCell(level, cx, cz)));
         boolean biomeSnow = isSnowyCell(level, new BlockPos((cx << 4) + 8, 64, (cz << 4) + 8));
+        float biomePotential = noiseBiomeSnowPotential(level, (cx << 4) + 8, (cz << 4) + 8);
+        // Le biome froid est une source reelle du champ, meme si le decor de surface
+        // a deja ete retire avant cette mesure. L'ancien coefficient 0.25 abaissait
+        // tout le champ sous le seuil utile de couverture : le sol restait nu.
+        // Le signal reste fractionnaire aux ecotones; un chunk entier froid vaut 1.
+        child.snowyRatio = Math.max(child.snowyRatio, biomePotential);
         boolean childSnowy = (child.waterRatio < 0.65f && child.iceRatio < 0.65f)
                 && (child.snowyRatio >= 0.45f || biomeSnow);
         child.setSnowy(childSnowy);
-        if (childSnowy && child.snowyRatio < 0.85f) {
-            child.snowyRatio = 1.0f; // biome neige vierge : potentiel franc 1.0 pour le damier Mother
-        }
         mother.invalidateSnowField();
     }
 
@@ -5380,13 +5394,13 @@ public class StructureTerrainPrep {
         pass.slice();
     }
 
-    /** T70 / T303-PERF : intervalle des reprises de colonnes non chargees (3 ticks = 150 ms au lieu de 500 ms). */
-    private static final int MISS_RETRY_TICKS = 3;
-    /** T70 : nombre maximal de reprises (30 s au total = 200 x 3 ticks) avant d'abandonner honnetement. */
-    private static final int MAX_MISS_RETRIES = 200;
+    /** T70 : intervalle des reprises; 1 s limite le balayage/redemande repetes sous forte charge. */
+    private static final int MISS_RETRY_TICKS = 20;
+    /** T82 : budget de rattrapage borne a 90 s avant une alerte explicite de manques residuels. */
+    private static final int MAX_MISS_RETRIES = 90;
 
     /**
-     * T82 : re-enregistre chaque colonne encore manquante pour chargement.
+     * T82 : re-enregistre chaque chunk encore manquant (pas chaque colonne) pour chargement.
      * <ul>
      *   <li>Chunk hors zone tenue ({@code trackAdditionalChunk} ouvre l'accueil)
      *       : il rejoint la file du ChunkKeeper, qui le demandera, l'epinglera,
@@ -5400,15 +5414,18 @@ public class StructureTerrainPrep {
     private static void reregisterMissedColumnChunks(ServerLevel level, java.util.List<int[]> missed,
                                                      String label, int retry) {
         int joinedZone = 0, reRequested = 0;
+        java.util.Set<Long> seenChunks = new java.util.HashSet<>();
         for (int[] col : missed) {
             int cx = col[0] >> 4, cz = col[1] >> 4;
+            long key = net.minecraft.world.level.ChunkPos.asLong(cx, cz);
+            if (!seenChunks.add(key)) continue;
             if (deepluckyblock.util.ChunkKeeper.trackAdditionalChunk(level, cx, cz)) joinedZone++;
             else { deepluckyblock.util.SafeSurface.reRequest(level, cx, cz); reRequested++; }
         }
-        if (retry % 6 == 0 || retry == MAX_MISS_RETRIES - 20) {
+        if (retry == 0 || retry % 10 == 0 || retry == MAX_MISS_RETRIES - 1) {
             deepluckyblock.util.DebugLog.structure(
-                    "{} : T82 -- {} colonne(s) attendent encore un chunk ({} ajout(s) zone, {} re-demande(s)) -- reprise {}/{}",
-                    label, missed.size(), joinedZone, reRequested, retry + 1, MAX_MISS_RETRIES);
+                    "{} : T82 -- {} colonne(s), {} chunk(s) uniques attendent ({} ajout(s) zone, {} re-demande(s)) -- reprise {}/{}",
+                    label, missed.size(), seenChunks.size(), joinedZone, reRequested, retry + 1, MAX_MISS_RETRIES);
         }
     }
 
@@ -5564,11 +5581,6 @@ public class StructureTerrainPrep {
         long key = (((long) cx) << 32) | (cz & 0xffffffffL);
         SNOW_RATE_CACHE.remove(key);          // ecrase tout repli anterieur
         snowRateCell(level, cx, cz);          // mesure vierge -> cache
-        SNOW_NEIGHBOR_CACHE.remove(key);
-        SNOW_NEIGHBOR_CACHE.remove((((long) cx) << 32) | ((cz - 1) & 0xffffffffL));
-        SNOW_NEIGHBOR_CACHE.remove((((long) cx) << 32) | ((cz + 1) & 0xffffffffL));
-        SNOW_NEIGHBOR_CACHE.remove((((long) (cx - 1)) << 32) | (cz & 0xffffffffL));
-        SNOW_NEIGHBOR_CACHE.remove((((long) (cx + 1)) << 32) | (cz & 0xffffffffL));
     }
 
     // ==================================================================
@@ -5589,8 +5601,6 @@ public class StructureTerrainPrep {
     //  encadree de neige ni de chunk oublie.
 
     /** Voisinage neigeux RÉEL d'un chunk (une fois par chunk). [0]=N(z-), [1]=S(z+), [2]=O(x-), [3]=E(x+). */
-    private static final Map<Long, float[]> SNOW_NEIGHBOR_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
-
     /** T254 : taux REEL de neige en surface d'un chunk (blocs du dessus lus
      *  reellement) : SNOW layer au-dessus du sol ou SNOW_BLOCK. Repli sur le
      *  froid du biome si le chunk est indisponible (jamais de generation). */
@@ -5649,37 +5659,20 @@ public class StructureTerrainPrep {
             }
         }
         if (valid >= 6) rate = (float) snow / (float) valid;
-        else rate = isSnowyCell(level, probe.set((cx << 4) + 8, 80, (cz << 4) + 8)) ? 1f : 0f;
+        else rate = noiseBiomeSnowPotential(level, (cx << 4) + 8, (cz << 4) + 8);
         SNOW_RATE_CACHE.put(key, rate);
         return rate;
     }
 
-    private static float[] snowyRates(ServerLevel level, int cx, int cz) {
-        long key = (((long) cx) << 32) | (cz & 0xffffffffL);
-        float[] cached = SNOW_NEIGHBOR_CACHE.get(key);
-        if (cached != null) return cached;
-        float[] nb = new float[4];
-        nb[0] = snowRateCell(level, cx, cz - 1);
-        nb[1] = snowRateCell(level, cx, cz + 1);
-        nb[2] = snowRateCell(level, cx - 1, cz);
-        nb[3] = snowRateCell(level, cx + 1, cz);
-        SNOW_NEIGHBOR_CACHE.put(key, nb);
-        return nb;
-    }
-
-    /** T256 : vrai si un voisin du chunk porte de la neige (= le fondu a une
-     *  raison d'exister ici). Filtre bon marche (un tableau cache) pour ne
-     *  lancer placeSnowOrUnsnow hors biome enneige QUE pres d'un champ de
-     *  neige — generalisation aux zones non-biome-neige sans cout en plaine. */
+    /** Source locale de proximité; hors chaîne, on conserve uniquement la règle biome vanilla. */
     private static boolean snowInfluenceNear(ServerLevel level, int x, int z) {
-        deepluckyblock.util.TerrainMother m = deepluckyblock.util.TerrainMother.current();
-        if (m != null) {
-            m.setWorldSeed(level.getSeed());
-            float d = m.snowDensity(x, z);
-            if (d >= 0f) return d > 0.02f;
+        deepluckyblock.util.TerrainMother mother = deepluckyblock.util.TerrainMother.current();
+        if (mother != null) {
+            mother.setWorldSeed(level.getSeed());
+            float density = mother.snowDensity(x, z);
+            if (density >= 0f) return density > 0f;
         }
-        float[] nb = snowyRates(level, x >> 4, z >> 4);
-        return nb[0] > 0.02f || nb[1] > 0.02f || nb[2] > 0.02f || nb[3] > 0.02f;
+        return isSnowyCell(level, new BlockPos(x, 64, z));
     }
 
     /** T289 / T303 : densite d'aura de neige continue calculee par Mother sur son damier QuartPos. */
@@ -5691,27 +5684,28 @@ public class StructureTerrainPrep {
     }
 
     private static boolean snowCoverHere(ServerLevel level, long seed, int x, int z) {
-        // T303 : REFONTE COMPLETE DU GRADIENT DE NEIGE PAR MOTHER.
-        // Suppression definitive :
-        //  (1) du court-circuit dur « if (isSnowyCell) return true » a l'interieur du chantier
-        //      qui forçait 100 % de neige jusqu'au rang 15 du chunk neigeux (mur net au bord) ;
-        //  (2) de l'ancien gradient par paires de chunks (wN/wS/wO/wE excluant le chunk courant
-        //      qui fabriquait une giga ligne de neige sur la derniere ligne du chunk).
-        // Desormais :
-        //  - Hors fenetre ChunkKeeper (coussin d'audit externe sur monde vierge intouchable) :
-        //    on preserve telle quelle la neige vanilla des biomes neigeux ;
-        //  - Dans toute la zone tenue par Mother : l'aura gaussienne continue QuartPos (4 blocs,
-        //    rayon 1 a 3 chunks selon le damier + liaisons entre enfants snowy + domain-warp
-        //    bi-octave type Vanilla Blender) decide des DEUX cotes des frontieres de chunks.
+        // Garantie physique: eau/glace jamais enneigées; test à la colonne réelle, jamais au chunk.
+        if (deepluckyblock.util.SafeSurface.columnWet(level, x, z)
+                || deepluckyblock.util.SafeSurface.columnIcy(level, x, z)) return false;
+        // T306 : tant que la MERE de la chaine est active, son decisionneur continu
+        // prime TOUJOURS sur l'appartenance au ChunkKeeper. Le vieux test Keeper en
+        // premier court-circuitait les chunks nouvellement charges ou presents dans
+        // l'anneau de finition, et reimposait alors le biome en binaire par chunk :
+        // c'est la couverture en blocs-carres observee au run du 27/11.
+        deepluckyblock.util.TerrainMother mother = deepluckyblock.util.TerrainMother.current();
+        if (mother != null) {
+            mother.setWorldSeed(seed);
+            if (mother.snowDensity(x, z) >= 0f) {
+                return mother.shouldPlaceSnow(seed, x, z);
+            }
+        }
+        // Hors chaine active, conserver la neige vanilla du biome seulement pour
+        // les chunks hors fenetre tenue; ne jamais court-circuiter le champ actif.
         if (!deepluckyblock.util.ChunkKeeper.coversChunk(level, x >> 4, z >> 4)
                 && isSnowyCell(level, new BlockPos(x, 64, z))) {
             return true;
         }
-        deepluckyblock.util.TerrainMother m303 = deepluckyblock.util.TerrainMother.current();
-        if (m303 != null && m303.snowDensity(x, z) >= 0f) {
-            return m303.shouldPlaceSnow(level.getSeed(), x, z);
-        }
-        // Repli hors chaine (aucune Mother active) : biome neigeux uniquement, zero ligne artificielle.
+        // Repli sans MERE ou avant le premier enfant source disponible.
         return isSnowyCell(level, new BlockPos(x, 64, z));
     }
 
@@ -6855,7 +6849,6 @@ public class StructureTerrainPrep {
     }
 
     // ---- Passe principale ----
-    private static final int SUBSOIL_DEPTH = 3;
 
     /**
      * HABILLAGE + VEGETATION en UNE passe par colonne (guide §61),
@@ -6955,7 +6948,6 @@ public class StructureTerrainPrep {
                                       boolean postPaste, Runnable onDone) {
         if (!dressingEnabled()) { if (onDone != null) onDone.run(); return; }
         final long t0 = System.currentTimeMillis();
-        final int innerRing = terrainRing();
         final int outerRing = terrainRing() + NATURALIZE_EXTRA_RING;
         SNOW_ZONE_MIN = min; SNOW_ZONE_MAX = max; SNOW_ZONE_RING = Math.max(1, outerRing);
         final ChunkMajorZone zone = new ChunkMajorZone(level, new BlockPos(
@@ -7123,9 +7115,6 @@ public class StructureTerrainPrep {
                 // est du sol naturel (pas un bloc de structure) -> on le REPEINT aussi dans la zone structure !
                 boolean vegetationOnly = protectedColumn && postPaste && PASTED_OCCUPIED.isEmpty();
                 Block chosen = vegetationOnly ? actualSurface.getBlock() : curPal.top();
-                boolean inner = x >= min.getX() - innerRing && x <= max.getX() + innerRing
-                             && z >= min.getZ() - innerRing && z <= max.getZ() + innerRing;
-
                 if (!vegetationOnly && curEco != null) {
                     Block ecoBlock = ecotoneBlockOf(curEco[(lz << 4) | lx]);
                     if (ecoBlock != null && !isIceFamily(ecoBlock.defaultBlockState())) {
@@ -7156,16 +7145,32 @@ public class StructureTerrainPrep {
                         }
                     }
 
-                    Block filler = (inner && (!postPaste || protectedColumn)) ? fillerFor(chosen) : null;
-                    if (filler != null) {
-                        int subDepth = postPaste ? 2 : SUBSOIL_DEPTH;
-                        for (int d = 1; d <= subDepth; d++) {
-                            if (!PASTED_OCCUPIED.isEmpty() && PASTED_OCCUPIED.contains(BlockPos.asLong(x, surfY - d, z))) break;
-                            BlockState s = readBlock(level, curCa, mut, x, surfY - d, z);
-                            if (!isNaturalTerrain(s) || isIceFamily(s) || !s.blocksMotion()) break;
-                            if (s.getBlock() == filler) continue;
-                            if (curLc != null) setPaletteBlockInChunk(level, curLc, x, surfY - d, z, filler.defaultBlockState(), chunkMask);
-                            else level.setBlock(mut.set(x, surfY - d, z), filler.defaultBlockState(), FAST_FLAG);
+                    // La passe active est dressAndPlant (pas verifyGrassSurface) :
+                    // applique ici la vraie epaisseur aleatoire par colonne. La couche
+                    // de surface compte comme bloc 1; les blocs 2..N deviennent dirt.
+                    boolean soilSurface = chosen != Blocks.SAND && chosen != Blocks.SANDSTONE
+                            && chosen != Blocks.RED_SAND && chosen != Blocks.SNOW_BLOCK
+                            && chosen != Blocks.ICE && chosen != Blocks.PACKED_ICE
+                            && chosen != Blocks.BLUE_ICE;
+                    if (!underOverhang && soilSurface) {
+                        long paintSeed = level.getSeed() ^ 0x6A09E667F3BCC909L;
+                        int depth = 1 + Math.min(3,
+                                (int) (driftHash01(paintSeed, x, z) * 4.0));
+                        for (int d = 1; d < depth; d++) {
+                            int dirtY = surfY - d;
+                            if (dirtY <= level.getMinBuildHeight()
+                                    || (!PASTED_OCCUPIED.isEmpty()
+                                    && PASTED_OCCUPIED.contains(BlockPos.asLong(x, dirtY, z)))) break;
+                            BlockState under = readBlock(level, curCa, mut, x, dirtY, z);
+                            if (!under.blocksMotion() || !isNaturalTerrain(under)
+                                    || isIceFamily(under) || !under.getFluidState().isEmpty()
+                                    || under.is(Blocks.SNOW) || under.is(Blocks.POWDER_SNOW)
+                                    || under.is(Blocks.SNOW_BLOCK) || isLog(under) || isLeaf(under)
+                                    || isOreForSurfacePaint(under)) break;
+                            if (under.is(Blocks.DIRT)) continue;
+                            if (curLc != null) setPaletteBlockInChunk(level, curLc, x, dirtY, z,
+                                    Blocks.DIRT.defaultBlockState(), chunkMask);
+                            else level.setBlock(mut.set(x, dirtY, z), Blocks.DIRT.defaultBlockState(), FAST_FLAG);
                             stats[3]++;
                         }
                     }
@@ -10262,14 +10267,14 @@ public class StructureTerrainPrep {
         // pre-peinture = fondu symetrique, aucune retroaction poussiere) ;
         // on positionne la zone pour la retombee a 0 au perimetre.
         SNOW_ZONE_MIN = structMin; SNOW_ZONE_MAX = structMax; SNOW_ZONE_RING = Math.max(1, terrainRing());
-        final int[] counters = {0, 0, 0};   // [0] = grass, [1] = snow, [2] = snow refusee par le degrade T243
+        final int[] counters = {0, 0, 0, 0}; // grass columns, snow layers, snow refusals, dirt blocks
         startColumnPass(level, "verifyGrassSurface",
                 columnsOf(structMin, structMax, terrainRing()), BATCH_COLS, col -> {
                     verifyGrassColumn(level, col[0], col[1], counters);
                 }, () -> {
-                    if (counters[0] > 0 || counters[1] > 0 || counters[2] > 0)
-                        deepluckyblock.util.DebugLog.structure("verifyGrassSurface : {} grass, {} snow layers, {} refusees par degrade T243",
-                                counters[0], counters[1], counters[2]);
+                    if (counters[0] > 0 || counters[1] > 0 || counters[2] > 0 || counters[3] > 0)
+                        deepluckyblock.util.DebugLog.structure("verifyGrassSurface : {} surface(s) en herbe, {} bloc(s) de sous-sol en dirt, {} snow layers, {} refusees par degrade T243",
+                                counters[0], counters[3], counters[1], counters[2]);
                     if (onDone != null) onDone.run();
                 });
     }
@@ -10324,7 +10329,54 @@ public class StructureTerrainPrep {
         });
     }
 
-    /** Une colonne de verifyGrassSurface (met a jour counters[grass, snow]). */
+    /** Ne jamais detruire un filon en repeignant le sous-sol. */
+    private static boolean isOreForSurfacePaint(BlockState s) {
+        return s.is(Blocks.COAL_ORE) || s.is(Blocks.IRON_ORE) || s.is(Blocks.COPPER_ORE)
+                || s.is(Blocks.GOLD_ORE) || s.is(Blocks.REDSTONE_ORE) || s.is(Blocks.LAPIS_ORE)
+                || s.is(Blocks.DIAMOND_ORE) || s.is(Blocks.EMERALD_ORE)
+                || s.is(Blocks.DEEPSLATE_COAL_ORE) || s.is(Blocks.DEEPSLATE_IRON_ORE)
+                || s.is(Blocks.DEEPSLATE_COPPER_ORE) || s.is(Blocks.DEEPSLATE_GOLD_ORE)
+                || s.is(Blocks.DEEPSLATE_REDSTONE_ORE) || s.is(Blocks.DEEPSLATE_LAPIS_ORE)
+                || s.is(Blocks.DEEPSLATE_DIAMOND_ORE) || s.is(Blocks.DEEPSLATE_EMERALD_ORE);
+    }
+
+    /**
+     * Peint une epaisseur deterministe de 1 a 4 blocs de sol naturel : grass_block
+     * au sommet, puis dirt a partir du deuxieme bloc. Le choix est aleatoire par
+     * colonne mais stable entre les passes, donc un rattrapage ne change pas le motif.
+     */
+    private static void paintNaturalSoil(ServerLevel level, int x, int surfaceY, int z,
+                                         BlockState surface, BlockPos.MutableBlockPos mut,
+                                         int[] counters) {
+        if (!surface.blocksMotion() || !isNaturalTerrain(surface)
+                || isIceFamily(surface) || !surface.getFluidState().isEmpty()
+                || surface.is(Blocks.SAND) || surface.is(Blocks.SANDSTONE)
+                || surface.is(Blocks.RED_SAND)) return;
+
+        long paintSeed = level.getSeed() ^ 0x6A09E667F3BCC909L;
+        int depth = 1 + Math.min(3, (int) (driftHash01(paintSeed, x, z) * 4.0));
+        if (!surface.is(Blocks.GRASS_BLOCK)) {
+            level.setBlock(mut.set(x, surfaceY, z), Blocks.GRASS_BLOCK.defaultBlockState(), FAST_FLAG);
+            counters[0]++;
+        }
+
+        for (int layer = 1; layer < depth; layer++) {
+            int y = surfaceY - layer;
+            if (y <= level.getMinBuildHeight()
+                    || (!PASTED_OCCUPIED.isEmpty() && PASTED_OCCUPIED.contains(BlockPos.asLong(x, y, z)))) break;
+            BlockState under = level.getBlockState(mut.set(x, y, z));
+            if (!under.blocksMotion() || !isNaturalTerrain(under)
+                    || isIceFamily(under) || !under.getFluidState().isEmpty()
+                    || under.is(Blocks.SNOW) || under.is(Blocks.POWDER_SNOW)
+                    || isLog(under) || isLeaf(under) || isOreForSurfacePaint(under)) break;
+            if (!under.is(Blocks.DIRT)) {
+                level.setBlock(mut.set(x, y, z), Blocks.DIRT.defaultBlockState(), FAST_FLAG);
+                counters[3]++;
+            }
+        }
+    }
+
+    /** Une colonne de verifyGrassSurface (met a jour counters[grass, snow, refus, dirt]). */
     private static void verifyGrassColumn(ServerLevel level, int x, int z, int[] counters) {
         BlockPos.MutableBlockPos mut = new BlockPos.MutableBlockPos();
         int surfY = deepluckyblock.util.SafeSurface.height(level, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
@@ -10382,10 +10434,7 @@ public class StructureTerrainPrep {
             }
         } else if (snowy) {
             // Biome enneigé : sol en herbe + snow layer (sinon texture buggée).
-            if (s.blocksMotion() && isNaturalTerrain(s) && !s.is(Blocks.GRASS_BLOCK)
-                    && !s.is(Blocks.SAND) && !s.is(Blocks.SANDSTONE) && !s.is(Blocks.RED_SAND)) {
-                level.setBlock(mut.set(x, surfY, z), Blocks.GRASS_BLOCK.defaultBlockState(), 2); counters[0]++;
-            }
+            paintNaturalSoil(level, x, surfY, z, s, mut, counters);
             // T245 : degrade + patches T243, epaisseur variable (snow carpet
             // a differentes hauteurs), et en cas de refus on DE-NEIGE une
             // herbe heritee snowy=true laissee exposee (c'est la cause de
@@ -10402,9 +10451,7 @@ public class StructureTerrainPrep {
             // fondue dessus meme avec des chunks voisins couverts. Les cotes
             // « prairie deja en herbe » restaient nus, les sols retouches
             // (dirt/podzol repeints) recevaient le fondu — d'ou l'asymetrie.
-            if (!s.is(Blocks.GRASS_BLOCK)) {
-                level.setBlock(mut.set(x, surfY, z), Blocks.GRASS_BLOCK.defaultBlockState(), 2); counters[0]++;
-            }
+            paintNaturalSoil(level, x, surfY, z, s, mut, counters);
             // T254 : la passe snow n'est plus gatee au BIOME (« seulement
             // 1-2 chunks total ») : hors biome enneige, la decision se prend
             // sur le TAUX REEL des chunks alentour (snowCoverHere) — fondu
@@ -10452,10 +10499,6 @@ public class StructureTerrainPrep {
          */
         private final List<SavedTree> aReprendre = new ArrayList<>();
         private int tourRattrapage;
-        /** T494 : tours consecutifs sans le moindre arbre recupere. */
-        private int stagnation;
-        /** T494 : reliquat du tour precedent (-1 = aucun tour encore joue). */
-        private int reliquatPrec = -1;
 
         ReplantJob(ServerLevel level, List<SavedTree> trees, BlockPos min, BlockPos max, Runnable onDone) {
             this.level = level; this.trees = trees; this.min = min; this.max = max; this.onDone = onDone;
@@ -10585,22 +10628,12 @@ public class StructureTerrainPrep {
                 TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, this::slice);
                 return;
             }
-            if (!aReprendre.isEmpty() && tourRattrapage < REPLANT_RETRY_TOURS
-                    && stagnation < REPLANT_RETRY_STAGNATION_MAX) {
+            if (!aReprendre.isEmpty() && tourRattrapage < REPLANT_RETRY_TOURS) {
                 tourRattrapage++;
                 int n = aReprendre.size();
-                // T494 : on continue tant que les halos arrivent ; deux tours sans le
-                // moindre progres et on arrete. Les 6 tours de T492 etaient un chiffre
-                // sans mesure -- les scans du 26/11 montrent que les chunks du sud ont
-                // mis bien plus de 12 s a se charger.
-                if (tourRattrapage <= REPLANT_RETRY_GRACE_TOURS) {
-                    stagnation = 0;             // T494 : latence de chargement
-                } else if (reliquatPrec >= 0 && n >= reliquatPrec) {
-                    stagnation++;
-                } else {
-                    stagnation = 0;
-                }
-                reliquatPrec = n;
+                // Ne pas conclure a la stagnation : un chunk en generation peut
+                // rester absent plusieurs tours puis arriver. Le plafond borne le
+                // delai total a 80 s sans bloquer un tick serveur.
                 deepluckyblock.util.ChunkKeeper.keep(level);
                 deepluckyblock.util.DebugLog.structure(
                         "replantTrees : tour de rattrapage {}/{} sur {} arbre(s) dont le halo "

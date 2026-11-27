@@ -51,10 +51,9 @@
 
 param(
     [string] $Workspace = "",
-    # Par defaut : la derniere version de la branche de travail. L'identite de
-    # ce qui est installe n'est pas le numero de commit mais l'empreinte, qui
-    # voyage DANS le colis (EMPREINTE.txt) et qui est verifiee a la fin.
-    [string] $Branche   = "arena/605e67fb-dlbv1-21-1neoforge",
+    # Revision immuable dont le colis DLB_sync.zip a ete construit et verifie par CI.
+    # Pour changer de livraison, utiliser le script telecharge depuis le SHA correspondant.
+    [string] $Revision  = "07a986a9f4693e420765d8fee947e77b89afd7b3",
     [switch] $PasDeSauvegarde,
     # Pour un appel automatise, ou la fenetre ne doit pas attendre.
     [switch] $SansPause
@@ -195,7 +194,7 @@ Titre "2/7  Telechargement"
 $travail = Join-Path $env:TEMP ("dlb_maj_" + (Get-Date -Format "yyyyMMdd_HHmmss"))
 New-Item -ItemType Directory -Path $travail -Force | Out-Null
 $zip = Join-Path $travail "DLB_sync.zip"
-$url = "https://raw.githubusercontent.com/Deepie1/dlbv1.21.1neoforge/refs/heads/$Branche/deliverables/DLB_sync.zip"
+$url = "https://raw.githubusercontent.com/Deepie1/dlbv1.21.1neoforge/$Revision/deliverables/DLB_sync.zip"
 
 Info "source : $url"
 try {

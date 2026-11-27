@@ -609,6 +609,7 @@ public class CrimsonLakeStructureSpawnProcedure {
                         LAKE_CHUNKS_REECRITS.clear();
                         StructureTerrainPrep.broadcastModifiedChunks(flvl);
                         StructureTerrainPrep.clearFootprintProtection();
+                        StructureTerrainPrep.clearPastedStructureContext();
                         deepluckyblock.util.ChunkKeeper.release(flvl);
                         deepluckyblock.util.DebugLog.out("[DLB-LAKE] T488 finition terminee "
                                 + "(fixwater + purge des flottants + diffusion aux clients)");
@@ -620,8 +621,8 @@ public class CrimsonLakeStructureSpawnProcedure {
                 // sert alors de controle final sur ce qui vient d'etre pose.
                 final Runnable finFinition = () -> {
                     // L'ouvrage est intouchable : le NBT du lac apporte deja ses propres
-                    // sol, berges et decors. Sans cette protection, l'habillage repeindrait
-                    // par-dessus la structure posee.
+                    // sol, berges et decors. L'empreinte exacte a ete publiee au debut de
+                    // la finition, avant fixwater et la peinture.
                     StructureTerrainPrep.protectFootprint(fMin, fMax);
                     try {
                         StructureTerrainPrep.dressAndRevegetate(flvl, fMin, fMax, () ->
@@ -634,6 +635,7 @@ public class CrimsonLakeStructureSpawnProcedure {
                 };
                 deepluckyblock.util.DebugLog.out("[DLB-LAKE] T488 finition : "
                         + StructureTerrainPrep.capturedTreeCount() + " arbres releves avant creusement");
+                installLakeStructureContext(j);
                 try {
                     StructureTerrainPrep.fixWaterAround(flvl, fMin, fMax, TALUS_LARGEUR, finFinition);
                 } catch (Throwable t) {
@@ -784,6 +786,7 @@ public class CrimsonLakeStructureSpawnProcedure {
         // T234 : horloge de construction. Premiere entree = debut du build ;
         // toutes les deadlines T234 (global + par phase) s'y referent.
         if (lakeBuildT0Ms == 0L) {
+            StructureTerrainPrep.clearPastedStructureContext();
             lakeBuildT0Ms = System.currentTimeMillis();
             lakeLastAnnounceMs = lakeBuildT0Ms;
             lakeProbeAnnounced = false;
@@ -2381,6 +2384,32 @@ public class CrimsonLakeStructureSpawnProcedure {
         }
     }
 
+    /**
+     * Publie au finisseur l'empreinte reelle du NBT (blocs effectivement poses),
+     * collectee en meme temps que la passe PASTE. C'est le garde-fou qui permet de
+     * repeindre les colonnes naturelles ouvertes sans jamais traverser les blocs du lac.
+     */
+    private static void installLakeStructureContext(PasteJob j) {
+        var baseY = j.baseYByColumn;
+        int count = baseY.size();
+        long[] baseCols = new long[count];
+        int[] floors = new int[count];
+        int n = 0;
+        for (it.unimi.dsi.fastutil.longs.Long2IntMap.Entry e : baseY.long2IntEntrySet()) {
+            long key = e.getLongKey();
+            baseCols[n] = key;
+            floors[n] = e.getIntValue();
+            n++;
+        }
+        java.util.Arrays.sort(floors, 0, n);
+        int structureY0 = n == 0 ? j.origin.getY() : floors[n / 2];
+        var baseSet = new it.unimi.dsi.fastutil.longs.LongOpenHashSet(baseCols);
+        StructureTerrainPrep.setPastedStructureContext(j.pastedOccupied, baseSet, structureY0);
+        deepluckyblock.util.DebugLog.out("[DLB-LAKE] contexte de finition publie : "
+                + j.pastedOccupied.size() + " blocs poses, " + baseSet.size()
+                + " colonnes de base, Y0=" + structureY0);
+    }
+
     private static boolean placeCrimsonOne(PasteJob j, int i, StructurePlaceSettings rs, BlockPos.MutableBlockPos bp) {
         var info = j.blocks.get(i);
         // T303-PERF : CrimsonLake est pose sans rotation ni miroir -> evite 1,36 M d'allocations calculateRelativePosition.
@@ -2438,6 +2467,15 @@ public class CrimsonLakeStructureSpawnProcedure {
                 tag.putInt("x", bp.getX()); tag.putInt("y", bp.getY()); tag.putInt("z", bp.getZ());
                 be.loadWithComponents(tag, j.level.registryAccess());
             }
+        }
+        // Seules les positions non-air reelement traitees deviennent proteges.
+        // Le set et la carte des fonds sont alimentes pendant les tranches de pose,
+        // pas par un balayage monolithique de 1,3 million d'entrees a la fin.
+        if (!target.isAir()) {
+            j.pastedOccupied.add(BlockPos.asLong(wx, wy, wz));
+            long colKey = (((long) wx) << 32) | (wz & 0xffffffffL);
+            int floor = j.baseYByColumn.get(colKey);
+            if (wy < floor) j.baseYByColumn.put(colKey, wy);
         }
         return true;
     }
@@ -2570,6 +2608,12 @@ public class CrimsonLakeStructureSpawnProcedure {
         final List<Integer> defer = new ArrayList<>();
         /** T53 / T303-PERF : cache direct LevelChunk + etat dirty pour primeHeightmaps unique par chunk. */
         final deepluckyblock.util.SafeSurface.ChunkMemo memo = new deepluckyblock.util.SafeSurface.ChunkMemo();
+        /** Empreinte non-air de la structure, collectee incrementalement pendant PASTE. */
+        final it.unimi.dsi.fastutil.longs.LongOpenHashSet pastedOccupied =
+                new it.unimi.dsi.fastutil.longs.LongOpenHashSet();
+        /** Y minimal pose par colonne monde, pour le garde-fou sous les auvents. */
+        final it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap baseYByColumn =
+                new it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap();
         int lastCx = Integer.MIN_VALUE, lastCz = Integer.MIN_VALUE;
         boolean lastLoaded = false;
         net.minecraft.world.level.chunk.LevelChunk lastChunk = null;
@@ -2580,6 +2624,7 @@ public class CrimsonLakeStructureSpawnProcedure {
         PasteJob(ServerLevel l, List<StructureTemplate.StructureBlockInfo> b, BlockPos o, BlockPos bf, long t, int sx, int sy, int sz) {
             level = l; blocks = b; origin = o; bfly = bf; t0 = t; total = b.size();
             this.sx = sx; this.sy = sy; this.sz = sz; idx = 0;
+            baseYByColumn.defaultReturnValue(Integer.MAX_VALUE);
         }
     }
 

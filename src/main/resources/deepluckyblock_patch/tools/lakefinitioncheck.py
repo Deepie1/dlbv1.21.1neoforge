@@ -333,11 +333,28 @@ def controler(racine):
     elif iDiff >= 0 and not (iDiff < iLeve < iDiff + 300):
         # L'ordre du TEXTE ne dit rien ici : les etapes sont des lambdas definies
         # dans l'ordre inverse de leur execution. On verifie donc le ROLE -- la
-        # levee doit se faire dans le bloc final, celui qui diffuse aux clients.
+        # levee doit se faire dans le bloc final, celui de la diffusion.
         echecs.append('V12 : la protection d emprise n est pas levee dans le bloc final '
                       '(celui de la diffusion). Levee trop tot, l habillage deborderait '
                       'sur la structure ; jamais levee, elle fuirait sur le chantier '
                       'suivant.')
+
+    # ---- V14 : empreinte de pose connue avant peinture du Crimson Lake ----
+    paste = corps(lac, 'private static boolean placeCrimsonOne') or ''
+    install = corps(lac, 'private static void installLakeStructureContext') or ''
+    if 'j.pastedOccupied.add(BlockPos.asLong(wx, wy, wz))' not in paste:
+        echecs.append('V14 : la pose du lac ne collecte pas les positions non-air reelles.')
+    if 'j.baseYByColumn.put(colKey, wy)' not in paste:
+        echecs.append('V14 : les colonnes de base du NBT ne sont pas collectees pendant la pose.')
+    if ('setPastedStructureContext(j.pastedOccupied, baseSet, structureY0)' not in install
+            or 'baseY.long2IntEntrySet()' not in install):
+        echecs.append('V14 : le contexte exact de structure n est pas publie a partir des blocs poses.')
+    iInstall = lac.find('installLakeStructureContext(j);')
+    iFixwater = lac.find('fixWaterAround(flvl, fMin, fMax')
+    if iInstall < 0 or iFixwater < 0 or iInstall > iFixwater:
+        echecs.append('V14 : le contexte exact doit etre installe avant les passes de finition.')
+    if 'StructureTerrainPrep.clearPastedStructureContext();' not in lac:
+        echecs.append('V14 : le contexte de la structure doit etre efface a la fin du chantier.')
 
     # ---- V13 : la diffusion ne depend pas d'un registre qu'un tiers peut vider ----
     if 'broadcastChunkKeys' not in lac:

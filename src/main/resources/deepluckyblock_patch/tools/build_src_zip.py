@@ -66,41 +66,45 @@ ORDRE = [
 
 NOTICES = {
  'src/main/java/deepluckyblock/util/TerrainMother.java':
-  "T492 : DIFFUSION DE LA NEIGE -- DEGRESSIVE ET ADDITIVE.\n"
-  "     Consigne dev du 26/11 : « quand tu as un chunk de neige, pense toujours a\n"
-  "     faire spread dans les chunks a cote en degressif [...] si deux chunks ont de\n"
-  "     la neige avec un sans au centre, il y a DEUX ENTREES de spread, EN ADDITIF\n"
-  "     [...] calcule bien les sens, d'ou ca vient, ou ca finit ».\n"
-  "     L'ancienne regle ne traitait QUE deux cas, avec des valeurs fixes : 4 voisins\n"
-  "     -> 0.42, deux voisins OPPOSES -> 0.22. Tout le reste recevait ZERO : un chunk\n"
-  "     borde de neige sur UN, DEUX cotes adjacents ou TROIS cotes n'avait aucun\n"
-  "     degrade -- d'ou les lignes de demarcation nettes. Le commentaire d'origine\n"
-  "     affirmait pourtant le contraire de ce que faisait le code.\n"
-  "     Desormais chaque direction cardinale est UNE ENTREE : on marche vers\n"
-  "     l'exterieur, la premiere cellule neigeuse a la distance k alimente une entree\n"
-  "     de poids 0.105/k (degressif), les quatre entrees S'ADDITIONNENT, et la marche\n"
-  "     s'arrete sur la glace ou l'eau. Calibrage retombant sur l'existant :\n"
-  "     4 voisins = 4 x 0.105 = 0.42 (identique), 2 opposes = 0.21 (ancien 0.22),\n"
-  "     et les cas muets recoivent enfin 0.105 / 0.21 / 0.315. Plafond 0.42 :\n"
-  "     une enclave reste une diffusion, jamais un coeur de massif.",
+  "REFONTE DU SPREAD -- LE CHUNK STOCKE, IL NE DECIDE PLUS.\n"
+  "     La source est un ratio continu mesure par les sondes de surface, prolonge\n"
+  "     par une fraction de biomes dans le halo. Plus de seuil binaire source, de\n"
+  "     diffusion cardinale, de veto eau/glace par chunk ou de garde de domain-warp.\n"
+  "     Le champ est interpole au pas QuartPos, le rayon reste fixe a 3 chunks, et\n"
+  "     la decision locale est une couverture probabiliste continue calibree de 0 a\n"
+  "     0.78. L'eau et la glace sont exclues au niveau de la colonne physique lors\n"
+  "     de la pose. La CI simule les voisinages et sabote huit regressions, sans\n"
+  "     pretendre prouver le rendu en jeu.",
+ 'src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java':
+  "SPREAD NEIGE CONTINU, PEINTURE EPAISSIE DANS LA PASSE ACTIVE, REPLANTATION.\n"
+  "     La decision de neige de TerrainMother prime sur le repli biome/ChunkKeeper\n"
+  "     pendant la chaine active, afin de garder un spread par colonne sans carres\n"
+  "     de chunk. dressAndPlant peint maintenant une profondeur stable de 1 a 4\n"
+  "     blocs (surface, puis dirt), en preservant minerais, eau, glace et structures.\n"
+  "     La meme classe porte le rattrapage de replantation active des arbres.",
+
+ 'src/main/resources/deepluckyblock_patch/tools/snowspreadcheck.py':
+  "BANC CIBLE POUR LA REGRESSION DE NEIGE.\n"
+  "     Verifie la source vanilla coldEnoughToSnow, la normalisation terre/eau et\n"
+  "     les gardes anti-seuil de chunk; 8 sabotages doivent echouer et se restaurer.\n"
+  "     Simulation et controles statiques uniquement : pas une validation visuelle\n"
+  "     du jeu ni une reproduction du monde de test.",
+
  'src/main/java/deepluckyblock/dev/DevTerrainScan.java':
   "T471 : SCAN DE TERRAIN -- OUTIL DE DEVELOPPEMENT, FICHIER JETABLE.\n"
-  "     Huit tours de correctifs sur le raccord du Crimson Lake (T459 a T468) ont ete\n"
-  "     poses puis annules sans rien reparer : personne n'avait jamais VU le terrain.\n"
-  "     Cette classe ne corrige rien, elle mesure. Elle scanne TOUTE la zone (emprise\n"
-  "     epinglee + 3 chunks d'anneau, soit ~352x384 = 135 000 colonnes sur 528 chunks)\n"
-  "     a chaque etape -- debut du clear, fin du clear, fin de la pose, fin du\n"
-  "     pipeline -- et rend UN seul .txt dans <monde>/dlb_scan/ : chunks non charges,\n"
-  "     chunks sautes entre deux etapes, ancien terrain reste dans l'emprise,\n"
-  "     composition de surface, air piege, raccords INTER-CHUNKS mesures a la couture,\n"
-  "     marches, profil du bord, vues du dessus et grilles de Y ABSOLUS pleine\n"
-  "     resolution avec regles de coordonnees et separateurs de chunk.\n"
-  "     ENTIEREMENT AUTONOME : aucune autre classe ne la nomme, elle s'enregistre seule\n"
-  "     et observe le pipeline sans le modifier (zone ChunkKeeper + file de pose lue par\n"
-  "     reflexion). SUPPRIMER CE FICHIER SUFFIT A RETIRER L'OUTIL, rien d'autre ne casse.\n"
-  "     Sonde strictement passive (getChunkNow seul) : un chunk absent est declare\n"
-  "     absent, jamais comble par une valeur plausible -- c'est l'objet meme du scan.\n"
-  "     Commandes : /dlbscan, /dlbscan now, light, full, stop, status.",
+  "     Cette classe observe le pipeline sans le modifier et scanne toute la zone\n"
+  "     (emprise epinglee + 3 chunks d'anneau) a chaque etape utile. Elle produit\n"
+  "     un fichier numerote par etape, avec trois sections explicites : RAPPORT,\n"
+  "     CARTES et GRILLES. Les mesures sont toutes conservees ; les trois anciens\n"
+  "     fichiers par etape sont concatenees pour respecter la limite d'envoi de 20\n"
+  "     fichiers. Le sommaire garde les comparaisons entre etapes et le compteur\n"
+  "     annonce le nombre de fichiers effectivement ecrits.\n"
+  "     Entierement autonome, sonde passive (getChunkNow seul), chunks absents\n"
+  "     declares absents : supprimer ce fichier retire tout l'outil.\n"
+  "     Les grilles gardent les Y absolus, regles de coordonnees et separateurs\n"
+  "     de chunk. La section 9f donne le potentiel continu par colonne, la section\n"
+  "     9g la couverture de neige effectivement observee a chaque colonne. Commandes\n"
+  "     : /dlbscan, /dlbscan now, stop et status.",
 
  'src/main/java/deepluckyblock/procedures/Structures5Procedure.java':
   "T449 : LE MESSAGE DE DECOUVERTE, PARTAGE ET PLUS JAMAIS MUET.\n"
@@ -218,17 +222,22 @@ NOTICES = {
   "     quatre bords. Seize sabotages joues, seize le font rougir.",
 
  'src/main/resources/deepluckyblock_patch/tools/devscancheck.py':
-  "T471 : LE BANC QUI GARDE L'OUTIL DE SCAN JETABLE ET HONNETE.\n"
-  "     Il tient deux promesses. JETABLE : si DevTerrainScan.java n'existe pas, ce banc\n"
-  "     est VERT et se tait -- un banc rouge apres suppression serait lui-meme la\n"
-  "     repercussion qu'on voulait eviter ; et tant que le fichier existe, aucune autre\n"
-  "     classe ne doit le nommer. HONNETE : sonde passive (aucun getChunk, request ni\n"
-  "     level.getBlockState), chunks absents jamais maquilles (marqueur ABSENT, « ---- »\n"
-  "     dans les grilles, et exactement deux appels a getBaseHeight -- un troisieme\n"
-  "     servirait a combler les trous), grilles alignees sur les chunks (bornage << 4,\n"
-  "     pas divisant 16, separateur tous les 16 blocs), et les trois jalons suivis.\n"
-  "     Onze cassures testees, toutes rendent le code 1 ; la suppression de l'outil et\n"
-  "     les sous-mots getChunkSource / getChunkNow restent verts.",
+  "T471/T492 : BANC QUI GARDE LE SCAN PASSIF ET SON PROFIL NEIGE.\n"
+  "     Le scan photographie l'instantane directionnel deja calcule par TerrainMother ;\n"
+  "     il ne relit ni le monde ni les chunks. Le profil reste disponible apres end(),\n"
+  "     est capture a chaque etape et apparait en grille 9f : milli-unites, eau/glace,\n"
+  "     profil absent et chunk non charge gardent chacun leur marqueur.\n"
+  "     Le verrou 17 verifie publication, conservation, capture et emission ; neuf\n"
+  "     sabotages cibles ont ete testes ici et tous echouent comme attendu.",
+
+ 'src/main/java/deepluckyblock/dev/DevTerrainScan.java':
+  "T492 : GRILLE 9f DU POTENTIEL DIRECTIONNEL BRUT DE NEIGE.\n"
+  "     Chaque etape consigne le profil deja publie par TerrainMother, sans demander\n"
+  "     de chunks et sans le recalculer. Les valeurs sont en milli-unites, repetees\n"
+  "     sur les 256 colonnes du chunk ; NEUT, ???? et ---- distinguent respectivement\n"
+  "     les cellules neutres eau/glace/poids faible, les profils non disponibles et\n"
+  "     les chunks non charges. Ce n'est pas un pourcentage de blocs enneiges, ni la\n"
+  "     decision finale de pose apres ecotone et tirage.",
 
  'src/main/resources/deepluckyblock_patch/tools/subscribecheck.py':
   "T488 : BANC NEUF, ne apres un CRASH AU DEMARRAGE. Une methode utilitaire avait\n"
@@ -266,11 +275,15 @@ NOTICES = {
   "     la chaine de lissage debranchee en T469. Les chunks restent tenus jusqu'au bout.\n"
   "     Les arbres sont releves chunk par chunk pendant la mesure du talus, donc AVANT\n"
   "     le creusement, puis replantes apres la pose ; le sol est repeint et\n"
-  "     revegetalise, l'emprise etant protegee le temps de l'habillage. La diffusion\n"
+  "     revegetalise, l'emprise etant protegee le temps de l'habillage. Cause de la\n"
+  "     repeinture manquante : le lac ne transmettait pas PASTED_OCCUPIED ; dans la\n"
+  "     zone protegee, dressAndPlant basculait alors en vegetation-only. L'empreinte\n"
+  "     non-air et ses colonnes de base sont maintenant collectees au fil de la pose\n"
+  "     et publiees avant fixwater/peinture. Le scan et les controles statiques ne\n"
+  "     prouvent pas encore le rendu en jeu : retester avant de conclure. La diffusion\n"
   "     aux clients est POMPEE par tranches de 8 chunks par tick, des le debut du\n"
-  "     chantier et jusqu'a epuisement : ni burst de 870 paquets, ni 250 s d'ancien\n"
-  "     terrain affiche. Le lac tient sa propre liste de chunks reecrits, car le\n"
-  "     registre global est remis a zero par prepZoneInternal().",
+  "     chantier et jusqu'a epuisement. Le lac tient sa propre liste de chunks reecrits,\n"
+  "     car le registre global est remis a zero par prepZoneInternal().",
 
  'src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java':
   "T488 : huit acces publics ajoutes, dont broadcastChunkKeys -- diffusion d'une\n"

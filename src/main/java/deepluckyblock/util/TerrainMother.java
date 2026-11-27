@@ -41,11 +41,37 @@ import java.util.Map;
  */
 public final class TerrainMother {
 
+    /** Instantané immuable du potentiel continu échantillonné à l'échelle colonne/quart. */
+    public static final class SnowSpreadSnapshot {
+        private final int qx0, qz0, qw, qh;
+        private final float[] potential;
+        private SnowSpreadSnapshot(int qx0, int qz0, int qw, int qh, float[] potential) {
+            this.qx0 = qx0; this.qz0 = qz0; this.qw = qw; this.qh = qh;
+            this.potential = java.util.Arrays.copyOf(potential, potential.length);
+        }
+        /** Potentiel continu interpolé à la colonne monde; NaN = hors instantané. */
+        public float rateAtBlock(int x, int z) {
+            double fx = (x - 2.0) * 0.25 - qx0;
+            double fz = (z - 2.0) * 0.25 - qz0;
+            if (fx < 0 || fz < 0 || fx >= qw - 1 || fz >= qh - 1) return Float.NaN;
+            int ix = (int) Math.floor(fx), iz = (int) Math.floor(fz);
+            float tx = (float) (fx - ix), tz = (float) (fz - iz);
+            float a = potential[iz * qw + ix], b = potential[iz * qw + ix + 1];
+            float c = potential[(iz + 1) * qw + ix], d = potential[(iz + 1) * qw + ix + 1];
+            float top = a + (b - a) * tx, bottom = c + (d - c) * tx;
+            return top + (bottom - top) * tz;
+        }
+    }
+
     /** Écart maximal autorisé (en blocs) entre le Y sol de deux chunks STRUCTURE adjacents (règle A1). */
     public static final int MAX_STRUCTURE_CHUNK_STEP_Y = 2;
 
-    /** Marge halo (en chunks) observée autour du damier pour éliminer tout effet de bord sur l'aura neige. */
+    /** Marge de stockage monde observée autour du damier. */
     public static final int HALO_CHUNKS = 3;
+    /** Densité à partir de laquelle la couverture devient pleine; source utile et frange sont entre 0 et cette valeur. */
+    public static final float SNOW_FULL_COVERAGE_AURA = 0.78f;
+    /** Rayon du noyau continu, inférieur aux 48 blocs disponibles dans le halo de trois chunks. */
+    private static final double SNOW_FIELD_RADIUS_BLOCKS = 47.0;
 
     // ------------------------------------------------------------------
     // ENFANT (1 cerveau par chunk 16x16)
@@ -146,12 +172,27 @@ public final class TerrainMother {
     // MERE
     // ------------------------------------------------------------------
     private static volatile TerrainMother CURRENT;
+    private static volatile SnowSpreadSnapshot LAST_SNOW_SPREAD_SNAPSHOT;
+    private volatile SnowSpreadSnapshot snowSpreadSnapshot;
 
     /** Mère active (une seule chaîne terrain à la fois, garantie par TerrainChain / FIFO). */
     public static TerrainMother current() { return CURRENT; }
 
+    /** Instantané déjà calculé; ne déclenche jamais la construction coûteuse du champ. */
+    public static SnowSpreadSnapshot latestSnowSpreadSnapshot() {
+        TerrainMother m = CURRENT;
+        return m != null ? m.snowSpreadSnapshot : LAST_SNOW_SPREAD_SNAPSHOT;
+    }
+
+    private void publishSnowSpreadSnapshot(float[] potential, int qx0, int qz0, int qw, int qh) {
+        SnowSpreadSnapshot snapshot = new SnowSpreadSnapshot(qx0, qz0, qw, qh, potential);
+        snowSpreadSnapshot = snapshot;
+        LAST_SNOW_SPREAD_SNAPSHOT = snapshot;
+    }
+
     /** Installe la mère de la zone (boîte = zone finale tenue par ChunkKeeper, en chunks). */
     public static TerrainMother begin(int gx0, int gz0, int gx1, int gz1) {
+        LAST_SNOW_SPREAD_SNAPSHOT = null;
         TerrainMother m = new TerrainMother(gx0, gz0, gx1, gz1);
         CURRENT = m;
         return m;
@@ -164,6 +205,7 @@ public final class TerrainMother {
             java.util.concurrent.CompletableFuture<MotherAISnowDirector.SnowPlan> f = m.aiFuture;
             if (f != null && !f.isDone()) f.cancel(true);
             m.aiPlan = null;
+            if (m.snowSpreadSnapshot != null) LAST_SNOW_SPREAD_SNAPSHOT = m.snowSpreadSnapshot;
             m.auraQuartGrid = null;
         }
         CURRENT = null;
@@ -175,7 +217,8 @@ public final class TerrainMother {
     // Halo externe (gx0 - HALO_CHUNKS .. gx1 + HALO_CHUNKS) pour que le bord du chantier
     // connaisse les chunks secs / enneigés situés juste au-delà de ChunkKeeper (zéro mur en ligne 15).
     private final int hx0, hz0, hw, hh;
-    private final byte[] haloSnowy; // -1 = inconnu, 0 = false (sec), 1 = true (neige)
+    private final float[] haloSnowPotential; // NaN = inconnu; [0,1] = source neige continue
+    private final float[] haloLandWeight; // [0,1] fraction terrestre, eau/glace sans veto par chunk
 
     private int scx0 = Integer.MIN_VALUE, scz0 = Integer.MIN_VALUE;
     private int scx1 = Integer.MIN_VALUE, scz1 = Integer.MIN_VALUE;
@@ -197,8 +240,10 @@ public final class TerrainMother {
         this.hz0 = gz0 - HALO_CHUNKS;
         this.hw = gw + HALO_CHUNKS * 2;
         this.hh = gh + HALO_CHUNKS * 2;
-        this.haloSnowy = new byte[hw * hh];
-        java.util.Arrays.fill(this.haloSnowy, (byte) -1);
+        this.haloSnowPotential = new float[hw * hh];
+        this.haloLandWeight = new float[hw * hh];
+        java.util.Arrays.fill(this.haloSnowPotential, Float.NaN);
+        java.util.Arrays.fill(this.haloLandWeight, Float.NaN);
     }
 
     /** Associe la semence du monde pour le domain-warp organique (façon Vanilla Blender SHIFT_NOISE). */
@@ -222,25 +267,24 @@ public final class TerrainMother {
         }
     }
 
-    /** Renseigne la réponse {@code =isSnowy} d'un chunk du halo externe (sans le générer). */
-    public void setHaloSnowy(int cx, int cz, boolean snowy) {
+    /** Enregistre une mesure continue du potentiel neigeux d'un chunk du halo (aucune décision binaire). */
+    public void setHaloSnowPotential(int cx, int cz, float potential) {
         int i = cx - hx0, j = cz - hz0;
         if (i < 0 || j < 0 || i >= hw || j >= hh) return;
-        byte v = (byte) (snowy ? 1 : 0);
-        if (haloSnowy[j * hw + i] != v) {
-            haloSnowy[j * hw + i] = v;
+        float v = Math.max(0f, Math.min(1f, potential));
+        int idx = j * hw + i;
+        if (Float.isNaN(haloSnowPotential[idx]) || haloSnowPotential[idx] != v) {
+            haloSnowPotential[idx] = v;
             auraQuartGrid = null;
         }
     }
 
-    /** T305 : marque un chunk du halo comme glace/eau (exclu de tout dégradé de neige : ni source 1 ni puits 0). */
-    public void setHaloIceOrWater(int cx, int cz) {
+    /** Stocke une fraction terrestre mesurée pour l'écotone eau/glace du halo. */
+    public void setHaloLandWeight(int cx, int cz, float weight) {
         int i = cx - hx0, j = cz - hz0;
         if (i < 0 || j < 0 || i >= hw || j >= hh) return;
-        if (haloSnowy[j * hw + i] != 2) {
-            haloSnowy[j * hw + i] = 2;
-            auraQuartGrid = null;
-        }
+        haloLandWeight[j * hw + i] = Math.max(0f, Math.min(1f, weight));
+        auraQuartGrid = null;
     }
 
     /** Invalide le champ d'aura précalculé après mise à jour d'enfants. */
@@ -376,12 +420,10 @@ public final class TerrainMother {
 
     /** Impose le rayon de l'aura en chunks (1..4) et invalide la grille précalculée. */
     public void setSnowRadiusChunks(int r) {
-        int clamped = Math.max(1, Math.min(4, r));
-        if (snowRadiusChunks != clamped || !snowRadiusLocked) {
-            snowRadiusChunks = clamped;
-            snowRadiusLocked = true;
-            auraQuartGrid = null;
-        }
+        // API gardée pour l'ancien plan IA; la portée ne dépend plus d'un compte de chunks.
+        snowRadiusChunks = HALO_CHUNKS;
+        snowRadiusLocked = true;
+        auraQuartGrid = null;
     }
 
     /**
@@ -389,50 +431,24 @@ public final class TerrainMother {
      * choisit une portée de 1 à 3 chunks selon le mélange d'enfants {@code isSnowy=true/false}.
      */
     private void evaluateSnowRadius() {
-        if (snowRadiusLocked) return;
-        int snowy = 0, total = 0;
-        for (Child c : grid) {
-            if (c != null && c.present && c.surfaceYMedian != Integer.MIN_VALUE) {
-                total++;
-                if (c.isSnowy()) snowy++;
-            }
-        }
-        if (total == 0) return;
-        float frac = snowy / (float) total;
-        if (frac >= 0.92f || frac <= 0.08f) snowRadiusChunks = 1;
-        else if (frac >= 0.25f && frac <= 0.75f) snowRadiusChunks = 3;
-        else snowRadiusChunks = 2;
+        // Rayon fixe indépendant du motif de chunks; le halo contractuel vaut trois chunks.
+        snowRadiusChunks = HALO_CHUNKS;
     }
 
-    /** État neigeux unifié d'une case (cx, cz) du damier étendu : 2 = glace/eau (neutre), 1 = neige, 0 = terre sèche, -1 = inconnu. */
-    private int cellSnowState(int cx, int cz) {
+    /** Potentiel source mesuré [0,1], sans seuil de classification par chunk. */
+    private float cellSnowPotential(int cx, int cz) {
         Child c = child(cx, cz);
-        if (c != null && c.present && c.surfaceYMedian != Integer.MIN_VALUE) {
-            if (c.isIceOrWaterDominated()) return 2;
-            return c.isSnowy() ? 1 : 0;
+        if (c != null && c.present && c.surfaceYMedian != Integer.MIN_VALUE)
+            return Math.max(0f, Math.min(1f, c.snowyRatio));
+        int i = cx - hx0, j = cz - hz0;
+        if (i >= 0 && j >= 0 && i < hw && j < hh) {
+            float value = haloSnowPotential[j * hw + i];
+            return Float.isNaN(value) ? 0f : value;
         }
-        int hi = cx - hx0, hj = cz - hz0;
-        if (hi >= 0 && hj >= 0 && hi < hw && hj < hh) {
-            byte b = haloSnowy[hj * hw + hi];
-            if (b >= 0) return b;
-        }
-        return -1; // inconnu : sera prolongé par le plus proche enfant connu (clamp bord WorldEdit)
+        return 0f;
     }
 
-    /**
-     * Construit en une passe (~0,18 ms) la carte continue d'aura neige au pas QuartPos (4 blocs) :
-     * <ol>
-     *   <li>Lecture {@code isSnowy()} sur chaque case de TERRE FERME (+ halo de 3 chunks) ;</li>
-     *   <li><b>Exclusion stricte de la GLACE et de l'EAU (T305)</b> : toute case glace/eau reçoit un
-     *       poids {@code cellWeight = 0} au numérateur ET au dénominateur de la Gaussienne normalisée.
-     *       Ainsi : (a) un chunk neigeux bordant un lac gelé reste à {@code 1.0 / 1.0 = 1.0} jusqu'à la
-     *       rive sans aucun dégradé avec la glace ; (b) un chunk non-neige entouré par 3 côtés de neige
-     *       et 1 côté de glace reçoit le dégradé entrant depuis <b>les 3 bords neigeux à la fois</b>,
-     *       sans jamais impliquer le bord de glace ;</li>
-     *   <li><b>Convolution gaussienne 2D séparable normalisée</b> ({@code num / den}) sur toute la
-     *       grille QuartPos continue.</li>
-     * </ol>
-     */
+    /** Construit le champ continu au pas QuartPos depuis ratios sources et poids eau/terre fractionnaires. */
     private float[] ensureAuraField() {
         awaitAiPlanOnce();
         float[] ready = auraQuartGrid;
@@ -449,127 +465,61 @@ public final class TerrainMother {
         final MotherAISnowDirector.SnowPlan plan = aiPlan;
         final float[] cellPotential = new float[hw * hh];
         final float[] cellWeight = new float[hw * hh];
-        int totalLandKnown = 0, totalLandSnowy = 0;
+        boolean anyLand = false;
 
         for (int cj = 0; cj < hh; cj++) {
             int cz = hz0 + cj;
             for (int ci = 0; ci < hw; ci++) {
                 int cx = hx0 + ci;
-                int st = cellSnowState(cx, cz);
-                if (st < 0) {
-                    int clampedCx = Math.max(gx0, Math.min(gx0 + gw - 1, cx));
-                    int clampedCz = Math.max(gz0, Math.min(gz0 + gh - 1, cz));
-                    st = cellSnowState(clampedCx, clampedCz);
-                }
                 int idx = cj * hw + ci;
-                if (st == 2) {
-                    // T305 : GLACE / EAU = poids 0 absolu (ni source de neige, ni puits de fonte !).
-                    cellPotential[idx] = 0.0f;
-                    cellWeight[idx] = 0.0f;
-                    continue;
-                }
                 Child ch = child(cx, cz);
-                float lw = (ch != null && ch.present && ch.surfaceYMedian != Integer.MIN_VALUE)
-                        ? ch.landWeight() : 1.0f;
-                if (lw <= 0.15f) {
-                    cellPotential[idx] = 0.0f;
-                    cellWeight[idx] = 0.0f;
-                    continue;
+                float land = 1f;
+                if (ch != null && ch.present && ch.surfaceYMedian != Integer.MIN_VALUE) {
+                    // Fondu continu de la part eau/glace observée, pas de veto catégoriel du chunk.
+                    land = Math.max(0f, 1f - Math.min(1f, ch.waterRatio + ch.iceRatio));
+                } else if (ci >= 0 && cj >= 0 && ci < hw && cj < hh
+                        && !Float.isNaN(haloLandWeight[idx])) {
+                    land = haloLandWeight[idx];
                 }
-                if (st < 0) st = 0;
-                else {
-                    totalLandKnown++;
-                    if (st == 1) totalLandSnowy++;
-                }
-                float val = (st == 1) ? 1.0f : 0.0f;
-                if (plan != null && val > 0f) {
+                cellWeight[idx] = land;
+                float source = cellSnowPotential(cx, cz) * land;
+                if (plan != null && source > 0f) {
                     Float boost = plan.childAuraBoost().get((((long) cx) << 32) | (cz & 0xffffffffL));
-                    if (boost != null) {
-                        val *= boost;
-                    }
+                    if (boost != null) source = Math.max(0f, Math.min(1f, source * boost));
                 }
-                cellPotential[idx] = val;
-                cellWeight[idx] = lw;
+                cellPotential[idx] = source;
+                anyLand |= land > 0.15f;
             }
         }
 
-        if (totalLandSnowy == 0) {
+        boolean anySource = false;
+        boolean allSource = true;
+        for (int i = 0; i < cellPotential.length; i++) {
+            if (cellWeight[i] > 0.15f) {
+                anySource |= cellPotential[i] > 0f;
+                allSource &= cellPotential[i] >= 0.999f;
+            }
+        }
+        if (!anySource) {
             auraAllZero = true;
             auraAllOne = false;
-            float[] empty = new float[0];
-            auraQuartGrid = empty;
-            return empty;
+            auraQx0 = hx0 * 4; auraQz0 = hz0 * 4; auraQw = hw * 4; auraQh = hh * 4;
+            auraQuartGrid = new float[auraQw * auraQh];
+            publishSnowSpreadSnapshot(auraQuartGrid, auraQx0, auraQz0, auraQw, auraQh);
+            return auraQuartGrid;
         }
-        if (totalLandSnowy == totalLandKnown && totalLandKnown > 0 && plan == null) {
+        if (allSource && anyLand && plan == null) {
             auraAllOne = true;
             auraAllZero = false;
-            float[] full = new float[0];
-            auraQuartGrid = full;
-            return full;
+            auraQx0 = hx0 * 4; auraQz0 = hz0 * 4; auraQw = hw * 4; auraQh = hh * 4;
+            auraQuartGrid = new float[auraQw * auraQh];
+            java.util.Arrays.fill(auraQuartGrid, 1f);
+            publishSnowSpreadSnapshot(auraQuartGrid, auraQx0, auraQz0, auraQw, auraQh);
+            return auraQuartGrid;
         }
         auraAllZero = false;
         auraAllOne = false;
-
-        // ====================================================================
-        // Étape 2 (T492) -- DIFFUSION DIRECTIONNELLE, DÉGRESSIVE ET ADDITIVE
-        //
-        // Consigne dev du 26/11, mot pour mot : « quand tu as un chunk de neige,
-        // pense toujours à faire spread dans les chunks à côté en dégressif [...]
-        // si deux chunks ont de la neige avec un sans au centre, il y a DEUX
-        // ENTRÉES de spread, EN ADDITIF [...] calcule bien les sens, d'où ça
-        // vient, où ça finit ».
-        //
-        // CE QUE FAISAIT LE CODE PRÉCÉDENT, ET POURQUOI C'ÉTAIT LA CAUSE DES
-        // LIGNES DE DÉMARCATION NETTES :
-        //   card == 4                      -> 0.42   (valeur fixe)
-        //   deux voisins OPPOSÉS           -> 0.22   (valeur fixe)
-        //   TOUT LE RESTE                  -> 0
-        // Autrement dit un chunk bordé de neige sur UN, DEUX côtés adjacents ou
-        // TROIS côtés recevait ZÉRO. Le commentaire d'origine affirmait pourtant
-        // qu'un chunk « entouré de 3 côtés neige conserve un vrai dégradé » : le
-        // code disait l'inverse du commentaire. D'où la cassure franche en bord
-        // de massif, exactement le reproche.
-        //
-        // CE QUE FAIT CELUI-CI : chaque direction cardinale est UNE ENTRÉE de
-        // spread. On marche depuis la cellule vers l'extérieur ; la première
-        // cellule neigeuse rencontrée à la distance k alimente une entrée de
-        // poids SPREAD_ENTREE / k -- dégressif. Les quatre entrées S'ADDITIONNENT.
-        // La marche s'arrête sur la glace ou l'eau (T305-NO-ICE : zéro dégradé
-        // avec l'ice), ce qui répond au « d'où ça vient, où ça finit ».
-        //
-        // CALIBRAGE -- on retombe EXACTEMENT sur les deux valeurs éprouvées :
-        //   SPREAD_ENTREE = 0.105
-        //   4 voisins à k=1 : 4 x 0.105 = 0.42  (identique à l'ancien cas card==4)
-        //   2 opposés à k=1 : 2 x 0.105 = 0.21  (ancien 0.22, écart 0.01)
-        // et les cas jusqu'ici muets reçoivent enfin leur part :
-        //   1 voisin  : 0.105     2 adjacents : 0.21     3 voisins : 0.315
-        // Le plafond garde la valeur maximale historique : une enclave ne devient
-        // jamais un cœur de massif, elle reste une diffusion.
-        // ====================================================================
         final float[] linkedPotential = cellPotential.clone();
-        for (int cj = 1; cj < hh - 1; cj++) {
-            for (int ci = 1; ci < hw - 1; ci++) {
-                int idx = cj * hw + ci;
-                if (cellWeight[idx] <= 0.15f || cellPotential[idx] > 0f) continue;
-                float acc = 0f;
-                for (int d = 0; d < 4; d++) {
-                    int pasI = (d == 2 ? -1 : (d == 3 ? 1 : 0));
-                    int pasJ = (d == 0 ? -1 : (d == 1 ? 1 : 0));
-                    for (int k = 1; k <= SPREAD_PORTEE_CHUNKS; k++) {
-                        int vi = ci + pasI * k, vj = cj + pasJ * k;
-                        if (vi < 0 || vi >= hw || vj < 0 || vj >= hh) break;
-                        int vIdx = vj * hw + vi;
-                        // glace / eau : la diffusion ne la traverse pas et n'en vient pas.
-                        if (cellWeight[vIdx] <= 0.15f) break;
-                        if (cellPotential[vIdx] > 0.5f) {
-                            acc += SPREAD_ENTREE / (float) k;   // dégressif en 1/k
-                            break;                              // une seule entrée par sens
-                        }
-                    }
-                }
-                if (acc > 0f) linkedPotential[idx] = Math.min(SPREAD_PLAFOND, acc);
-            }
-        }
 
         // Étape 3 (T306-ECOTONE) : Convolution éparse sur réseau hexagonal jitterisé
         // (KdotJPG ScatteredBiomeBlender, noyau quartique (R^2 - d^2)^2, SANS grille carrée),
@@ -579,8 +529,7 @@ public final class TerrainMother {
         final int qH = hh * 4;
         final int qx0 = hx0 * 4;
         final int qz0 = hz0 * 4;
-        final int rChunks = Math.max(1, Math.min(3, snowRadiusChunks));
-        final double radiusBlocks = (rChunks == 1) ? 23.0 : (rChunks == 2 ? 35.0 : 47.0);
+        final double radiusBlocks = SNOW_FIELD_RADIUS_BLOCKS;
         final long effSeed = worldSeed != 0L ? worldSeed : 0x517CC1B727220A95L;
 
         final int fHx0 = hx0, fHz0 = hz0, fHw = hw, fHh = hh;
@@ -593,8 +542,7 @@ public final class TerrainMother {
                     int cj = ccz - fHz0;
                     if (ci < 0 || ci >= fHw || cj < 0 || cj >= fHh) return -1f;
                     int cIdx = cj * fHw + ci;
-                    float w = cellWeight[cIdx];
-                    if (w <= 0.08f) return -1f; // GLACE / EAU : ignoré (0 influence !)
+                    // Eau/glace entrent comme potentiel nul et poids continu, pas comme coupure catégorielle.
                     return linkedPotential[cIdx];
                 });
 
@@ -603,44 +551,23 @@ public final class TerrainMother {
         this.auraQw = qW;
         this.auraQh = qH;
         this.auraQuartGrid = out;
+        publishSnowSpreadSnapshot(out, qx0, qz0, qW, qH);
         return out;
     }
 
     /**
-     * Densité d'aura de neige continue en {@code (x, z)} :
-     * interpolation Hermite C1 sur le champ hexagonal jitterisé {@link BiomeEcotoneSpread},
-     * combinée à un domain-warp Simplex 2D isotrope bi-octave (±9 blocs, sans biais d'axe X/Z)
-     * et garde stricte anti-glace/eau.
-     *
-     * <p>Renvoie {@code -1f} uniquement si aucun enfant n'a encore été renseigné.
+     * Densite continue au niveau colonne: interpolation du champ jitterise et domain-warp
+     * isotrope applique sans garde de chunk. L'eau/glace est geree par son poids fractionnaire
+     * puis par le garde physique colonne au point de pose.
+     * Renvoie -1f uniquement si aucun enfant n'a encore ete renseigne.
      */
-    /** T492 : poids d'UNE entrée de spread de neige, à une cellule de distance. */
-    private static final float SPREAD_ENTREE = 0.105f;
-    /** T492 : portée de la diffusion, en chunks (au-delà, plus rien ne vient). */
-    private static final int SPREAD_PORTEE_CHUNKS = 3;
-    /** T492 : plafond du cumul — valeur maximale historique d'une enclave 4/4. */
-    private static final float SPREAD_PLAFOND = 0.42f;
 
-    private boolean isIceOrWaterCell(int cx, int cz) {
-        if (cx >= gx0 && cx < gx0 + gw && cz >= gz0 && cz < gz0 + gh) {
-            Child c = grid[(cz - gz0) * gw + (cx - gx0)];
-            return c != null && c.present && c.isIceOrWaterDominated();
-        }
-        int hx0 = gx0 - HALO_CHUNKS, hz0 = gz0 - HALO_CHUNKS;
-        int hw = gw + 2 * HALO_CHUNKS, hh = gh + 2 * HALO_CHUNKS;
-        if (cx >= hx0 && cx < hx0 + hw && cz >= hz0 && cz < hz0 + hh) {
-            return haloSnowy[(cz - hz0) * hw + (cx - hx0)] == 2;
-        }
-        return false;
-    }
 
     public float snowDensity(int x, int z) {
         awaitAiPlanOnce();
         evaluateSnowRadius();
         float[] field = ensureAuraField();
         if (field == null) return -1f;
-        // T305-NO-ICE : la glace/eau = 0 neige strict et 0 degrade avec l'ice !
-        if (isIceOrWaterCell(x >> 4, z >> 4)) return 0f;
         if (auraAllZero) return 0f;
         if (auraAllOne) return 1f;
 
@@ -652,12 +579,8 @@ public final class TerrainMother {
                       + BiomeEcotoneSpread.simplex2(worldSeed ^ 0xBB67AE8584CAA73BL, x / 9.5,  z / 9.5)  * 2.8;
             double wz = BiomeEcotoneSpread.simplex2(worldSeed ^ 0x3C6EF372FE94F82BL, x / 22.0 + 19.1, z / 22.0 - 13.7) * 7.5
                       + BiomeEcotoneSpread.simplex2(worldSeed ^ 0xA54FF53A5F1D36F1L, x / 9.5  - 7.3,  z / 9.5  + 11.9) * 2.8;
-            int wcx = ((int) Math.floor(sampleX + wx)) >> 4;
-            int wcz = ((int) Math.floor(sampleZ + wz)) >> 4;
-            if (!isIceOrWaterCell(wcx, wcz)) {
-                sampleX += wx;
-                sampleZ += wz;
-            }
+            sampleX += wx;
+            sampleZ += wz;
         }
 
         // Coordonnée continue dans la grille QuartPos (centre d'un quart = q*4 + 2.0)
@@ -699,13 +622,13 @@ public final class TerrainMother {
         setWorldSeed(seed);
         float aura = snowDensity(x, z);
         if (aura < 0f) return false;
-        if (aura >= 0.85f) return true;
-        if (aura <= 0.04f) return false;
-        float t = Math.max(0f, Math.min(1f, (aura - 0.04f) / (0.85f - 0.04f)));
-        float smoothT = t * t * (3f - 2f * t);
-        float env = 4f * smoothT * (1f - smoothT);
-        float patch = BiomeEcotoneSpread.warpedPatchSigned(seed ^ 0xD217F00D5EEDL, x, z); // [-0.5, +0.5]
-        return (smoothT + 0.62f * env * patch) >= 0.50f;
+        if (aura >= SNOW_FULL_COVERAGE_AURA) return true;
+        if (aura <= 0f) return false;
+        float t = Math.max(0f, Math.min(1f, aura / SNOW_FULL_COVERAGE_AURA));
+        float coverageProbability = t * t * (3f - 2f * t);
+        float patch = BiomeEcotoneSpread.warpedPatchSigned(seed ^ 0xD217F00D5EEDL, x, z) + 0.5f;
+        // La variation spatiale tranche la probabilité continue; aucune discontinuité au seuil d'un chunk.
+        return patch < coverageProbability;
     }
 
     /**
