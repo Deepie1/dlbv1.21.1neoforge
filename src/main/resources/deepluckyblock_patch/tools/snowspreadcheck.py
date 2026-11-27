@@ -48,6 +48,8 @@ def static_errors(root: Path) -> list[str]:
     biome_source = body(prep, "private static float noiseBiomeSnowPotential(ServerLevel level, int x, int z)")
     biome_state = body(prep, "private static int noiseBiomeSnowState(ServerLevel level, int x, int z)")
     scout = body(prep, "private static void scoutChild(ServerLevel level, deepluckyblock.util.TerrainMother mother,")
+    paint = body(prep, "private static void paintNaturalSoil(ServerLevel level, int x, int surfaceY, int z,")
+    grass_pass = body(prep, "private static void verifyGrassColumn(ServerLevel level, int x, int z, int[] counters)")
     warp = density[density.find("if (worldSeed != 0L)"):density.find("// Coordonnée continue")]
 
     if "HALO_CHUNKS = 3" not in mother:
@@ -62,6 +64,13 @@ def static_errors(root: Path) -> list[str]:
         errors.append("biome potential must be normalized over land samples before applying land weight")
     if "Math.max(child.snowyRatio, biomePotential)" not in scout or "0.25f * biomePotential" in scout:
         errors.append("a cold biome must remain a full-strength local source after surface decor is stripped")
+    if ("1 + Math.min(3, (int) (driftHash01(paintSeed, x, z) * 4.0))" not in paint
+            or "layer = 1; layer < depth" not in paint
+            or "Blocks.DIRT.defaultBlockState()" not in paint
+            or "isOreForSurfacePaint(under)" not in paint):
+        errors.append("natural soil paint must use stable random depth 1-4, grass on top, dirt below, and preserve ores")
+    if grass_pass.count("paintNaturalSoil(level, x, surfY, z, s, mut, counters)") < 2:
+        errors.append("both snowy and dry surface paint paths must apply the 1-4 block topsoil depth")
     if "SPREAD_ENTREE" in aura or "SPREAD_PORTEE_CHUNKS" in aura or "pasI" in aura or "pasJ" in aura:
         errors.append("cardinal chunk-neighbor spread remains in ensureAuraField")
     if "w <= 0.08f" in aura or "isIceOrWaterCell" in density or "isIceOrWaterCell" in warp:

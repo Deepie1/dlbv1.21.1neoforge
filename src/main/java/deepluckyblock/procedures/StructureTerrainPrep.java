@@ -10258,14 +10258,14 @@ public class StructureTerrainPrep {
         // pre-peinture = fondu symetrique, aucune retroaction poussiere) ;
         // on positionne la zone pour la retombee a 0 au perimetre.
         SNOW_ZONE_MIN = structMin; SNOW_ZONE_MAX = structMax; SNOW_ZONE_RING = Math.max(1, terrainRing());
-        final int[] counters = {0, 0, 0};   // [0] = grass, [1] = snow, [2] = snow refusee par le degrade T243
+        final int[] counters = {0, 0, 0, 0}; // grass columns, snow layers, snow refusals, dirt blocks
         startColumnPass(level, "verifyGrassSurface",
                 columnsOf(structMin, structMax, terrainRing()), BATCH_COLS, col -> {
                     verifyGrassColumn(level, col[0], col[1], counters);
                 }, () -> {
-                    if (counters[0] > 0 || counters[1] > 0 || counters[2] > 0)
-                        deepluckyblock.util.DebugLog.structure("verifyGrassSurface : {} grass, {} snow layers, {} refusees par degrade T243",
-                                counters[0], counters[1], counters[2]);
+                    if (counters[0] > 0 || counters[1] > 0 || counters[2] > 0 || counters[3] > 0)
+                        deepluckyblock.util.DebugLog.structure("verifyGrassSurface : {} surface(s) en herbe, {} bloc(s) de sous-sol en dirt, {} snow layers, {} refusees par degrade T243",
+                                counters[0], counters[3], counters[1], counters[2]);
                     if (onDone != null) onDone.run();
                 });
     }
@@ -10320,7 +10320,54 @@ public class StructureTerrainPrep {
         });
     }
 
-    /** Une colonne de verifyGrassSurface (met a jour counters[grass, snow]). */
+    /** Ne jamais detruire un filon en repeignant le sous-sol. */
+    private static boolean isOreForSurfacePaint(BlockState s) {
+        return s.is(Blocks.COAL_ORE) || s.is(Blocks.IRON_ORE) || s.is(Blocks.COPPER_ORE)
+                || s.is(Blocks.GOLD_ORE) || s.is(Blocks.REDSTONE_ORE) || s.is(Blocks.LAPIS_ORE)
+                || s.is(Blocks.DIAMOND_ORE) || s.is(Blocks.EMERALD_ORE)
+                || s.is(Blocks.DEEPSLATE_COAL_ORE) || s.is(Blocks.DEEPSLATE_IRON_ORE)
+                || s.is(Blocks.DEEPSLATE_COPPER_ORE) || s.is(Blocks.DEEPSLATE_GOLD_ORE)
+                || s.is(Blocks.DEEPSLATE_REDSTONE_ORE) || s.is(Blocks.DEEPSLATE_LAPIS_ORE)
+                || s.is(Blocks.DEEPSLATE_DIAMOND_ORE) || s.is(Blocks.DEEPSLATE_EMERALD_ORE);
+    }
+
+    /**
+     * Peint une epaisseur deterministe de 1 a 4 blocs de sol naturel : grass_block
+     * au sommet, puis dirt a partir du deuxieme bloc. Le choix est aleatoire par
+     * colonne mais stable entre les passes, donc un rattrapage ne change pas le motif.
+     */
+    private static void paintNaturalSoil(ServerLevel level, int x, int surfaceY, int z,
+                                         BlockState surface, BlockPos.MutableBlockPos mut,
+                                         int[] counters) {
+        if (!surface.blocksMotion() || !isNaturalTerrain(surface)
+                || isIceFamily(surface) || !surface.getFluidState().isEmpty()
+                || surface.is(Blocks.SAND) || surface.is(Blocks.SANDSTONE)
+                || surface.is(Blocks.RED_SAND)) return;
+
+        long paintSeed = level.getSeed() ^ 0x6A09E667F3BCC909L;
+        int depth = 1 + Math.min(3, (int) (driftHash01(paintSeed, x, z) * 4.0));
+        if (!surface.is(Blocks.GRASS_BLOCK)) {
+            level.setBlock(mut.set(x, surfaceY, z), Blocks.GRASS_BLOCK.defaultBlockState(), FAST_FLAG);
+            counters[0]++;
+        }
+
+        for (int layer = 1; layer < depth; layer++) {
+            int y = surfaceY - layer;
+            if (y <= level.getMinBuildHeight()
+                    || (!PASTED_OCCUPIED.isEmpty() && PASTED_OCCUPIED.contains(BlockPos.asLong(x, y, z)))) break;
+            BlockState under = level.getBlockState(mut.set(x, y, z));
+            if (!under.blocksMotion() || !isNaturalTerrain(under)
+                    || isIceFamily(under) || !under.getFluidState().isEmpty()
+                    || under.is(Blocks.SNOW) || under.is(Blocks.POWDER_SNOW)
+                    || isLog(under) || isLeaf(under) || isOreForSurfacePaint(under)) break;
+            if (!under.is(Blocks.DIRT)) {
+                level.setBlock(mut.set(x, y, z), Blocks.DIRT.defaultBlockState(), FAST_FLAG);
+                counters[3]++;
+            }
+        }
+    }
+
+    /** Une colonne de verifyGrassSurface (met a jour counters[grass, snow, refus, dirt]). */
     private static void verifyGrassColumn(ServerLevel level, int x, int z, int[] counters) {
         BlockPos.MutableBlockPos mut = new BlockPos.MutableBlockPos();
         int surfY = deepluckyblock.util.SafeSurface.height(level, Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
@@ -10378,10 +10425,7 @@ public class StructureTerrainPrep {
             }
         } else if (snowy) {
             // Biome enneigé : sol en herbe + snow layer (sinon texture buggée).
-            if (s.blocksMotion() && isNaturalTerrain(s) && !s.is(Blocks.GRASS_BLOCK)
-                    && !s.is(Blocks.SAND) && !s.is(Blocks.SANDSTONE) && !s.is(Blocks.RED_SAND)) {
-                level.setBlock(mut.set(x, surfY, z), Blocks.GRASS_BLOCK.defaultBlockState(), 2); counters[0]++;
-            }
+            paintNaturalSoil(level, x, surfY, z, s, mut, counters);
             // T245 : degrade + patches T243, epaisseur variable (snow carpet
             // a differentes hauteurs), et en cas de refus on DE-NEIGE une
             // herbe heritee snowy=true laissee exposee (c'est la cause de
@@ -10398,9 +10442,7 @@ public class StructureTerrainPrep {
             // fondue dessus meme avec des chunks voisins couverts. Les cotes
             // « prairie deja en herbe » restaient nus, les sols retouches
             // (dirt/podzol repeints) recevaient le fondu — d'ou l'asymetrie.
-            if (!s.is(Blocks.GRASS_BLOCK)) {
-                level.setBlock(mut.set(x, surfY, z), Blocks.GRASS_BLOCK.defaultBlockState(), 2); counters[0]++;
-            }
+            paintNaturalSoil(level, x, surfY, z, s, mut, counters);
             // T254 : la passe snow n'est plus gatee au BIOME (« seulement
             // 1-2 chunks total ») : hors biome enneige, la decision se prend
             // sur le TAUX REEL des chunks alentour (snowCoverHere) — fondu

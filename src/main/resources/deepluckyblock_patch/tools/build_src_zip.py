@@ -76,12 +76,12 @@ NOTICES = {
   "     de la pose. La CI simule les voisinages et sabote huit regressions, sans\n"
   "     pretendre prouver le rendu en jeu.",
  'src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java':
-  "SOURCE DE NEIGE CALIBREE SUR LA REGLE VANILLA.\n"
-  "     Le potentiel combine la neige mesuree et coldEnoughToSnow, meme apres le\n"
-  "     retrait du decor. Le biome n'est plus rabaisse arbitrairement a 25 pour cent;\n"
-  "     les ecotones restent fractionnaires et normalises sur la terre ferme avant\n"
-  "     l'application du poids eau/glace. La couverture physique garde le test par\n"
-  "     colonne, et le scan distingue le champ calcule de la neige observee.",
+  "PEINTURE DU SOL EPAISSIE, SOURCE DE NEIGE CALIBREE.\n"
+  "     La surface prend une profondeur aleatoire mais stable de 1 a 4 blocs :\n"
+  "     grass_block au sommet puis dirt en dessous. Le tirage est stable par\n"
+  "     colonne et ne remplace pas les filons, l'eau ou la glace. Le potentiel neige\n"
+  "     utilise coldEnoughToSnow, sans coefficient arbitraire de 25 pour cent; les\n"
+  "     ecotones restent fractionnaires et controles colonne par colonne.",
 
  'src/main/resources/deepluckyblock_patch/tools/snowspreadcheck.py':
   "BANC CIBLE POUR LA REGRESSION DE NEIGE.\n"
