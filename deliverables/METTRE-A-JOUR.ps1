@@ -53,7 +53,7 @@ param(
     [string] $Workspace = "",
     # Revision immuable dont le colis DLB_sync.zip a ete construit et verifie par CI.
     # Pour changer de livraison, utiliser le script telecharge depuis le SHA correspondant.
-    [string] $Revision  = "b6dadea6e2fa7ebffe93de2e30fcc28af1bed5ca",
+    [string] $Revision  = "ba4e820b3d45f5e7e4971e78c5fe254c37c1d42a",
     [switch] $PasDeSauvegarde,
     # Pour un appel automatise, ou la fenetre ne doit pas attendre.
     [switch] $SansPause
