@@ -45,6 +45,9 @@ def static_errors(root: Path) -> list[str]:
     aura = body(mother, "private float[] ensureAuraField()")
     cell_source = body(mother, "private float cellSnowPotential(int cx, int cz)")
     cover = body(prep, "private static boolean snowCoverHere(ServerLevel level, long seed, int x, int z)")
+    biome_source = body(prep, "private static float noiseBiomeSnowPotential(ServerLevel level, int x, int z)")
+    biome_state = body(prep, "private static int noiseBiomeSnowState(ServerLevel level, int x, int z)")
+    scout = body(prep, "private static void scoutChild(ServerLevel level, deepluckyblock.util.TerrainMother mother,")
     warp = density[density.find("if (worldSeed != 0L)"):density.find("// Coordonnée continue")]
 
     if "HALO_CHUNKS = 3" not in mother:
@@ -53,6 +56,12 @@ def static_errors(root: Path) -> list[str]:
         errors.append("halo/source must carry a continuous float potential")
     if "c.snowyRatio" not in cell_source or "c.isSnowy() ?" in cell_source:
         errors.append("source is binary rather than measured continuously")
+    if "coldEnoughToSnow" not in biome_state:
+        errors.append("biome sources must use vanilla coldEnoughToSnow, not biome-name guesses")
+    if "snow / (float) land" not in biome_source or "snow / 16f" in biome_source:
+        errors.append("biome potential must be normalized over land samples before applying land weight")
+    if "Math.max(child.snowyRatio, biomePotential)" not in scout or "0.25f * biomePotential" in scout:
+        errors.append("a cold biome must remain a full-strength local source after surface decor is stripped")
     if "SPREAD_ENTREE" in aura or "SPREAD_PORTEE_CHUNKS" in aura or "pasI" in aura or "pasJ" in aura:
         errors.append("cardinal chunk-neighbor spread remains in ensureAuraField")
     if "w <= 0.08f" in aura or "isIceOrWaterCell" in density or "isIceOrWaterCell" in warp:

@@ -76,12 +76,19 @@ NOTICES = {
   "     de la pose. La CI simule les voisinages et sabote huit regressions, sans\n"
   "     pretendre prouver le rendu en jeu.",
  'src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java':
-  "SOURCE ET POSE DE NEIGE CONTINUES.\n"
-  "     Les sondes de surface alimentent un ratio, sans promouvoir un biome entier\n"
-  "     a 100 pour cent. Le halo echantillonne 16 points, la fraction eau/glace\n"
-  "     attenue le signal; la couverture physique teste l'eau et la glace colonne\n"
-  "     par colonne. Le scan DevTerrainScan ecrit une grille de couverture observee\n"
-  "     par colonne en section 9g, distincte du champ calcule en 9f.",
+  "SOURCE DE NEIGE CALIBREE SUR LA REGLE VANILLA.\n"
+  "     Le potentiel combine la neige mesuree et coldEnoughToSnow, meme apres le\n"
+  "     retrait du decor. Le biome n'est plus rabaisse arbitrairement a 25 pour cent;\n"
+  "     les ecotones restent fractionnaires et normalises sur la terre ferme avant\n"
+  "     l'application du poids eau/glace. La couverture physique garde le test par\n"
+  "     colonne, et le scan distingue le champ calcule de la neige observee.",
+
+ 'src/main/resources/deepluckyblock_patch/tools/snowspreadcheck.py':
+  "BANC CIBLE POUR LA REGRESSION DE NEIGE.\n"
+  "     Verifie la source vanilla coldEnoughToSnow, la normalisation terre/eau et\n"
+  "     les gardes anti-seuil de chunk; 8 sabotages doivent echouer et se restaurer.\n"
+  "     Simulation et controles statiques uniquement : pas une validation visuelle\n"
+  "     du jeu ni une reproduction du monde de test.",
 
  'src/main/java/deepluckyblock/dev/DevTerrainScan.java':
   "T471 : SCAN DE TERRAIN -- OUTIL DE DEVELOPPEMENT, FICHIER JETABLE.\n"

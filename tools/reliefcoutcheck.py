@@ -252,34 +252,26 @@ def v11_alerte_bornee(c):
 
 # ---------------------------------------------------------------- 12
 def v12_rattrapage_pilote_par_progres(c):
-    """Le rattrapage ne doit pas dependre d'un nombre de tours choisi au hasard."""
-    # Chercher le NOM ne suffit pas : renommer la declaration laisse les usages
-    # intacts et le simple « in c » se fait rassurer par eux. On exige une
-    # DECLARATION reelle, avec une valeur utilisable, ET au moins un usage.
+    """L'habillage conserve un critere prudent de stagnation; la replantation, non."""
     manquants = []
-    for pref, quoi in (('DRESS_RETRY', 'habillage'), ('REPLANT_RETRY', 'replantation')):
-        for suffixe, role, mini in (('STAGNATION_MAX', 'critere de stagnation', 1),
-                                    ('GRACE_TOURS', 'tours de grace', 1)):
-            nom = '%s_%s' % (pref, suffixe)
-            m = re.search(r'static\s+final\s+int\s+' + nom + r'\s*=\s*([0-9_]+)\s*;', c)
-            if not m:
-                manquants.append("%s : %s NON DECLARE (%s). Le rattrapage retomberait sur "
-                                 "un compteur de tours arbitraire -- 6 tours en T492, soit "
-                                 "12 s, alors que les chunks du sud ont mis bien plus "
-                                 "longtemps a arriver." % (quoi, role, nom))
-                continue
-            if int(m.group(1).replace('_', '')) < mini:
-                manquants.append("%s : %s declare a %s, donc inoperant."
-                                 % (quoi, role, m.group(1)))
-            # declare mais jamais lu = decoration
-            if len(re.findall(nom + r'\b', c)) < 2:
-                manquants.append("%s : %s declare mais JAMAIS lu." % (quoi, role))
+    for suffixe, role in (('STAGNATION_MAX', 'critere de stagnation'),
+                          ('GRACE_TOURS', 'tours de grace')):
+        nom = 'DRESS_RETRY_' + suffixe
+        m = re.search(r'static\s+final\s+int\s+' + nom + r'\s*=\s*([0-9_]+)\s*;', c)
+        if not m:
+            manquants.append("habillage : %s absent" % nom)
+        elif int(m.group(1).replace('_', '')) < 1 or len(re.findall(nom + r'\b', c)) < 2:
+            manquants.append("habillage : %s inoperant ou non utilise" % role)
+    # Pour la replantation, seule la butee explicite est admise : le log a
+    # montre un abandon a 13 tours alors que 551 arbres attendaient des chunks.
+    if 'REPLANT_RETRY_STAGNATION_MAX' in c or 'REPLANT_RETRY_GRACE_TOURS' in c:
+        manquants.append("replantation : abandon anticipe par stagnation encore present")
     return " | ".join(manquants) if manquants else None
 
 
 # ---------------------------------------------------------------- 13
 def v13_rattrapage_termine(c):
-    """La boucle de rattrapage doit avoir un plafond, une stagnation ET une butoir."""
+    """Les deux rattrapages ont une butee; la replantation attend son plafond entier."""
     m = re.search(r'DRESS_RETRY_TOURS\s*=\s*([0-9_]+)\s*;', c)
     if not m:
         return "DRESS_RETRY_TOURS introuvable"
@@ -289,15 +281,34 @@ def v13_rattrapage_termine(c):
     if i < 0:
         return "la condition de poursuite du rattrapage d'habillage est introuvable"
     cond = c[i:i + 320]
-    for quoi, nom in (('DRESS_RETRY_STAGNATION_MAX', 'la stagnation'),
-                      ('DRESS_RETRY_DEADLINE_MS', 'la date butoir')):
-        if quoi not in cond:
-            return "la poursuite du rattrapage ne consulte pas %s" % nom
+    for nom in ('DRESS_RETRY_STAGNATION_MAX', 'DRESS_RETRY_DEADLINE_MS'):
+        if nom not in cond:
+            return "la poursuite du rattrapage d'habillage ne consulte pas %s" % nom
     j = c.find('tourRattrapage < REPLANT_RETRY_TOURS')
     if j < 0:
         return "la condition de poursuite de la replantation est introuvable"
-    if 'REPLANT_RETRY_STAGNATION_MAX' not in c[j:j + 320]:
-        return "la poursuite de la replantation ne consulte pas la stagnation"
+    r = re.search(r'REPLANT_RETRY_TOURS\s*=\s*([0-9_]+)\s*;', c)
+    if not r or int(r.group(1).replace('_', '')) > 100:
+        return "la replantation doit avoir un plafond raisonnable et explicite"
+    if 'REPLANT_RETRY_STAGNATION_MAX' in c[j:j + 320]:
+        return "la replantation s'arrete encore avant son plafond sur stagnation"
+    return None
+
+
+# ---------------------------------------------------------------- 14
+def v14_reprises_chunks_dedup(c):
+    """Les colonnes manquantes se re-demandent sans marteler le meme chunk."""
+    delay = re.search(r'MISS_RETRY_TICKS\s*=\s*([0-9_]+)\s*;', c)
+    retries = re.search(r'MAX_MISS_RETRIES\s*=\s*([0-9_]+)\s*;', c)
+    if not delay or int(delay.group(1).replace('_', '')) < 20:
+        return "reprises des colonnes trop rapprochées sous charge"
+    if not retries or int(retries.group(1).replace('_', '')) < 90:
+        return "fenetre de rattrapage des colonnes trop courte"
+    start = c.find('private static void reregisterMissedColumnChunks(')
+    end = c.find('\n    }', start)
+    body = c[start:end]
+    if 'seenChunks' not in body or '!seenChunks.add(key)' not in body:
+        return "les demandes de chunks ne sont pas dedoublonnees"
     return None
 
 
@@ -315,6 +326,7 @@ VERROUS = [
     ("11 alerte jamais en boucle",             PREP,  v11_alerte_bornee),
     ("12 rattrapage pilote par le progres",    PREP,  v12_rattrapage_pilote_par_progres),
     ("13 rattrapage qui termine",              PREP,  v13_rattrapage_termine),
+    ("14 rattrapage chunks dedoublonne",        PREP,  v14_reprises_chunks_dedup),
 ]
 
 

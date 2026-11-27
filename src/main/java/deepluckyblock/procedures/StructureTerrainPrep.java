@@ -111,14 +111,8 @@ public class StructureTerrainPrep {
     private static final long DRESS_RETRY_DEADLINE_MS = 240_000L;
 
     /** T492 : tours de rattrapage de la replantation sur les arbres au halo non charge. */
-    /** T494 : plafond de terminaison ; c'est le progres qui decide (voir ReplantJob). */
+    /** Plafond borne du rattrapage arbre : 40 tours de 2 s, sans abandon anticipe sur stagnation. */
     private static final int REPLANT_RETRY_TOURS = 40;
-
-    /** T494 : deux tours sans un arbre recupere valent abandon. */
-    private static final int REPLANT_RETRY_STAGNATION_MAX = 2;
-
-    /** T494 : tours de grace avant que la stagnation conclue (latence de chargement). */
-    private static final int REPLANT_RETRY_GRACE_TOURS = 10;
     /** T492 : attente entre deux tours de replantation, en ticks. */
     private static final int REPLANT_RETRY_ATTENTE_TICKS = 40;
     /** T492 : plafond d'arbres mis de cote (garde-fou memoire). */
@@ -3873,23 +3867,27 @@ public class StructureTerrainPrep {
             if (key.isEmpty()) return 0;
             String p = key.get().location().getPath().toLowerCase();
             if (p.contains("ocean") || p.contains("river")) {
-                return 2; // T305 : eau/glace exclue de tout degrade de neige !
+                return 2; // eau/glace exclue du signal terrestre de neige
             }
-            return (p.contains("snow") || p.contains("ice_spikes") || p.contains("grove")
-                    || p.contains("frozen_peaks") || p.contains("jagged_peaks")) ? 1 : 0;
+            // Reprendre la vraie regle vanilla (temperature/altitude), pas le nom
+            // du biome : le nom omet des biomes froids et classait a 0 leur sol.
+            return bh.value().coldEnoughToSnow(new BlockPos(x, 64, z)) ? 1 : 0;
         } catch (Throwable t) {
             return 0;
         }
     }
 
-    /** Moyenne continue de 16 biomes bruités dans le chunk du halo, sans classification binaire. */
+    /** Fraction de biomes froids parmi les 16 echantillons terrestres (regle vanilla). */
     private static float noiseBiomeSnowPotential(ServerLevel level, int x, int z) {
         int snow = 0, land = 0;
         for (int dx = 2; dx <= 14; dx += 4) for (int dz = 2; dz <= 14; dz += 4) {
             int state = noiseBiomeSnowState(level, (x & ~15) + dx, (z & ~15) + dz);
             if (state != 2) { land++; if (state == 1) snow++; }
         }
-        return land == 0 ? 0f : snow / 16f;
+        // La fraction eau/glace est appliquee separement comme poids terrestre.
+        // Normaliser ici par les echantillons terrestres evite de penaliser deux fois
+        // les chunks mixtes (signal puis poids dans TerrainMother).
+        return land == 0 ? 0f : snow / (float) land;
     }
 
     private static boolean isSnowyNoiseBiome(ServerLevel level, int x, int z) {
@@ -3963,8 +3961,11 @@ public class StructureTerrainPrep {
         child.snowyRatio = Math.max(0f, Math.min(1f, snowRateCell(level, cx, cz)));
         boolean biomeSnow = isSnowyCell(level, new BlockPos((cx << 4) + 8, 64, (cz << 4) + 8));
         float biomePotential = noiseBiomeSnowPotential(level, (cx << 4) + 8, (cz << 4) + 8);
-        // Le verdict enfant reste informatif; la source du champ ne franchit plus de seuil binaire.
-        child.snowyRatio = Math.max(child.snowyRatio, 0.25f * biomePotential);
+        // Le biome froid est une source reelle du champ, meme si le decor de surface
+        // a deja ete retire avant cette mesure. L'ancien coefficient 0.25 abaissait
+        // tout le champ sous le seuil utile de couverture : le sol restait nu.
+        // Le signal reste fractionnaire aux ecotones; un chunk entier froid vaut 1.
+        child.snowyRatio = Math.max(child.snowyRatio, biomePotential);
         boolean childSnowy = (child.waterRatio < 0.65f && child.iceRatio < 0.65f)
                 && (child.snowyRatio >= 0.45f || biomeSnow);
         child.setSnowy(childSnowy);
@@ -5393,13 +5394,13 @@ public class StructureTerrainPrep {
         pass.slice();
     }
 
-    /** T70 / T303-PERF : intervalle des reprises de colonnes non chargees (3 ticks = 150 ms au lieu de 500 ms). */
-    private static final int MISS_RETRY_TICKS = 3;
-    /** T70 : nombre maximal de reprises (30 s au total = 200 x 3 ticks) avant d'abandonner honnetement. */
-    private static final int MAX_MISS_RETRIES = 200;
+    /** T70 : intervalle des reprises; 1 s limite le balayage/redemande repetes sous forte charge. */
+    private static final int MISS_RETRY_TICKS = 20;
+    /** T82 : budget de rattrapage borne a 90 s avant une alerte explicite de manques residuels. */
+    private static final int MAX_MISS_RETRIES = 90;
 
     /**
-     * T82 : re-enregistre chaque colonne encore manquante pour chargement.
+     * T82 : re-enregistre chaque chunk encore manquant (pas chaque colonne) pour chargement.
      * <ul>
      *   <li>Chunk hors zone tenue ({@code trackAdditionalChunk} ouvre l'accueil)
      *       : il rejoint la file du ChunkKeeper, qui le demandera, l'epinglera,
@@ -5413,15 +5414,18 @@ public class StructureTerrainPrep {
     private static void reregisterMissedColumnChunks(ServerLevel level, java.util.List<int[]> missed,
                                                      String label, int retry) {
         int joinedZone = 0, reRequested = 0;
+        java.util.Set<Long> seenChunks = new java.util.HashSet<>();
         for (int[] col : missed) {
             int cx = col[0] >> 4, cz = col[1] >> 4;
+            long key = net.minecraft.world.level.ChunkPos.asLong(cx, cz);
+            if (!seenChunks.add(key)) continue;
             if (deepluckyblock.util.ChunkKeeper.trackAdditionalChunk(level, cx, cz)) joinedZone++;
             else { deepluckyblock.util.SafeSurface.reRequest(level, cx, cz); reRequested++; }
         }
-        if (retry % 6 == 0 || retry == MAX_MISS_RETRIES - 20) {
+        if (retry == 0 || retry % 10 == 0 || retry == MAX_MISS_RETRIES - 1) {
             deepluckyblock.util.DebugLog.structure(
-                    "{} : T82 -- {} colonne(s) attendent encore un chunk ({} ajout(s) zone, {} re-demande(s)) -- reprise {}/{}",
-                    label, missed.size(), joinedZone, reRequested, retry + 1, MAX_MISS_RETRIES);
+                    "{} : T82 -- {} colonne(s), {} chunk(s) uniques attendent ({} ajout(s) zone, {} re-demande(s)) -- reprise {}/{}",
+                    label, missed.size(), seenChunks.size(), joinedZone, reRequested, retry + 1, MAX_MISS_RETRIES);
         }
     }
 
@@ -10444,10 +10448,6 @@ public class StructureTerrainPrep {
          */
         private final List<SavedTree> aReprendre = new ArrayList<>();
         private int tourRattrapage;
-        /** T494 : tours consecutifs sans le moindre arbre recupere. */
-        private int stagnation;
-        /** T494 : reliquat du tour precedent (-1 = aucun tour encore joue). */
-        private int reliquatPrec = -1;
 
         ReplantJob(ServerLevel level, List<SavedTree> trees, BlockPos min, BlockPos max, Runnable onDone) {
             this.level = level; this.trees = trees; this.min = min; this.max = max; this.onDone = onDone;
@@ -10577,22 +10577,12 @@ public class StructureTerrainPrep {
                 TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, this::slice);
                 return;
             }
-            if (!aReprendre.isEmpty() && tourRattrapage < REPLANT_RETRY_TOURS
-                    && stagnation < REPLANT_RETRY_STAGNATION_MAX) {
+            if (!aReprendre.isEmpty() && tourRattrapage < REPLANT_RETRY_TOURS) {
                 tourRattrapage++;
                 int n = aReprendre.size();
-                // T494 : on continue tant que les halos arrivent ; deux tours sans le
-                // moindre progres et on arrete. Les 6 tours de T492 etaient un chiffre
-                // sans mesure -- les scans du 26/11 montrent que les chunks du sud ont
-                // mis bien plus de 12 s a se charger.
-                if (tourRattrapage <= REPLANT_RETRY_GRACE_TOURS) {
-                    stagnation = 0;             // T494 : latence de chargement
-                } else if (reliquatPrec >= 0 && n >= reliquatPrec) {
-                    stagnation++;
-                } else {
-                    stagnation = 0;
-                }
-                reliquatPrec = n;
+                // Ne pas conclure a la stagnation : un chunk en generation peut
+                // rester absent plusieurs tours puis arriver. Le plafond borne le
+                // delai total a 80 s sans bloquer un tick serveur.
                 deepluckyblock.util.ChunkKeeper.keep(level);
                 deepluckyblock.util.DebugLog.structure(
                         "replantTrees : tour de rattrapage {}/{} sur {} arbre(s) dont le halo "
