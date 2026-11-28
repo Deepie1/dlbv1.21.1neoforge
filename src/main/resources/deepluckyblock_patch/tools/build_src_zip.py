@@ -66,29 +66,33 @@ ORDRE = [
 
 NOTICES = {
  'src/main/java/deepluckyblock/util/TerrainMother.java':
-  "REFONTE DU SPREAD -- LE CHUNK STOCKE, IL NE DECIDE PLUS.\n"
-  "     La source est un ratio continu mesure par les sondes de surface, prolonge\n"
-  "     par une fraction de biomes dans le halo. Plus de seuil binaire source, de\n"
-  "     diffusion cardinale, de veto eau/glace par chunk ou de garde de domain-warp.\n"
-  "     Le champ est interpole au pas QuartPos, le rayon reste fixe a 3 chunks, et\n"
-  "     la decision locale est une couverture probabiliste continue calibree de 0 a\n"
-  "     0.78. L'eau et la glace sont exclues au niveau de la colonne physique lors\n"
-  "     de la pose. La CI simule les voisinages et sabote huit regressions, sans\n"
-  "     pretendre prouver le rendu en jeu.",
+  "MOTHER EST DESORMAIS UN FOURNISSEUR DE MESURES, PAS LE MOTEUR DE SPREAD.\n"
+  "     Elle stocke les ratios continus de neige, les poids terre/eau/glace et les\n"
+  "     limites du damier/halo, puis expose une revision des sources pour invalider\n"
+  "     le cache. Elle ne calcule plus de champ, de densite, de decision de pose ni\n"
+  "     d'epaisseur : tout cela appartient a StructureTerrainPrep.",
+ 'src/main/java/deepluckyblock/util/BiomeEcotoneSpread.java':
+  "PRIMITIVE DE CONVOLUTION REUTILISEE PAR TERRAINPREP.\n"
+  "     Le sampler scatter effectue une convolution continue et ponderee par la\n"
+  "     fraction terrestre. TerrainPrep en reste le proprietaire fonctionnel :\n"
+  "     cette classe utilitaire ne decide ni de la pose de neige ni de sa paint.\n",
+
  'src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java':
-  "SPREAD NEIGE CONTINU, PEINTURE EPAISSIE DANS LA PASSE ACTIVE, REPLANTATION.\n"
-  "     La decision de neige de TerrainMother prime sur le repli biome/ChunkKeeper\n"
-  "     pendant la chaine active, afin de garder un spread par colonne sans carres\n"
-  "     de chunk. dressAndPlant peint maintenant une profondeur stable de 1 a 4\n"
-  "     blocs (surface, puis dirt), en preservant minerais, eau, glace et structures.\n"
-  "     La meme classe porte le rattrapage de replantation active des arbres.",
+  "SPREAD NEIGE ET PEINTURE DU SOL EXECUTES DANS TERRAINPREP.\n"
+  "     TerrainPrep construit le champ continu au pas QuartPos depuis les sources\n"
+  "     mesurees par Mother, applique le domain-warp a chaque colonne, decide la\n"
+  "     couverture et son epaisseur, et refuse eau/glace au support reel. Le gros\n"
+  "     scan TXT ne fournit ni ne declenche le spread; il garde seulement la neige\n"
+  "     observee en 9g. Les deux passes de peinture partagent le meme peintre stable\n"
+  "     de sous-sol, profondeur 1-4, qui preserve minerais, structures et supports.\n"
+  "     La classe conserve aussi le rattrapage de replantation active des arbres.",
 
  'src/main/resources/deepluckyblock_patch/tools/snowspreadcheck.py':
-  "BANC CIBLE POUR LA REGRESSION DE NEIGE.\n"
-  "     Verifie la source vanilla coldEnoughToSnow, la normalisation terre/eau et\n"
-  "     les gardes anti-seuil de chunk; 8 sabotages doivent echouer et se restaurer.\n"
-  "     Simulation et controles statiques uniquement : pas une validation visuelle\n"
-  "     du jeu ni une reproduction du monde de test.",
+  "GARDE D'ARCHITECTURE POUR LE SPREAD ET LA PAINTURE.\n"
+  "     Verifie que le calcul reste dans TerrainPrep, que le scan passif est decouple,\n"
+  "     que les poids fractionnaires eau/terre affectent numerateur et denominateur,\n"
+  "     et que les deux passes utilisent la peinture commune avec protection des ores.\n"
+  "     Cinq mutations doivent echouer et se restaurer; ce banc ne remplace pas le jeu.",
 
  'src/main/java/deepluckyblock/dev/DevTerrainScan.java':
   "T471 : SCAN DE TERRAIN -- OUTIL DE DEVELOPPEMENT, FICHIER JETABLE.\n"
@@ -102,8 +106,9 @@ NOTICES = {
   "     Entierement autonome, sonde passive (getChunkNow seul), chunks absents\n"
   "     declares absents : supprimer ce fichier retire tout l'outil.\n"
   "     Les grilles gardent les Y absolus, regles de coordonnees et separateurs\n"
-  "     de chunk. La section 9f donne le potentiel continu par colonne, la section\n"
-  "     9g la couverture de neige effectivement observee a chaque colonne. Commandes\n"
+  "     de chunk. La section 9g donne uniquement la couverture de neige observee;\n"
+  "     le potentiel/spread est execute par TerrainPrep et n'est pas rendu dans le scan.\n"
+  "     Commandes\n"
   "     : /dlbscan, /dlbscan now, stop et status.",
 
  'src/main/java/deepluckyblock/procedures/Structures5Procedure.java':
@@ -222,22 +227,19 @@ NOTICES = {
   "     quatre bords. Seize sabotages joues, seize le font rougir.",
 
  'src/main/resources/deepluckyblock_patch/tools/devscancheck.py':
-  "T471/T492 : BANC QUI GARDE LE SCAN PASSIF ET SON PROFIL NEIGE.\n"
-  "     Le scan photographie l'instantane directionnel deja calcule par TerrainMother ;\n"
-  "     il ne relit ni le monde ni les chunks. Le profil reste disponible apres end(),\n"
-  "     est capture a chaque etape et apparait en grille 9f : milli-unites, eau/glace,\n"
-  "     profil absent et chunk non charge gardent chacun leur marqueur.\n"
-  "     Le verrou 17 verifie publication, conservation, capture et emission ; neuf\n"
-  "     sabotages cibles ont ete testes ici et tous echouent comme attendu.",
+  "BANC QUI GARDE LE SCAN PASSIF ET LE SEPARE DU SPREAD.\n"
+  "     Le rapport observe la neige existante par colonne en 9g, mais ne lit pas, ne\n"
+  "     declenche pas et ne represente jamais le moteur theorique de TerrainPrep.\n"
+  "     Les verrous assurent que l'outil reste jetable, passif, complet et que la\n"
+  "     mesure de couche sous canopee reste distincte du potentiel.",
 
  'src/main/java/deepluckyblock/dev/DevTerrainScan.java':
-  "T492 : GRILLE 9f DU POTENTIEL DIRECTIONNEL BRUT DE NEIGE.\n"
-  "     Chaque etape consigne le profil deja publie par TerrainMother, sans demander\n"
-  "     de chunks et sans le recalculer. Les valeurs sont en milli-unites, repetees\n"
-  "     sur les 256 colonnes du chunk ; NEUT, ???? et ---- distinguent respectivement\n"
-  "     les cellules neutres eau/glace/poids faible, les profils non disponibles et\n"
-  "     les chunks non charges. Ce n'est pas un pourcentage de blocs enneiges, ni la\n"
-  "     decision finale de pose apres ecotone et tirage.",
+  "SCAN PASSIF DU RENDU OBSERVE, SANS COUPLAGE AU SPREAD.\n"
+  "     Ce fichier autonome ne represente que les blocs effectivement presents a\n"
+  "     chaque etape; 9g detecte les couches neigeuses pres de la surface/canopee.\n"
+  "     Il ne lit ni n'appelle TerrainPrep ou TerrainMother pour calculer le potentiel.\n"
+  "     Les chunks absents, colonnes non lues et mesures observees gardent leurs\n"
+  "     separateurs distincts. Commandes : /dlbscan, /dlbscan now, stop et status.",
 
  'src/main/resources/deepluckyblock_patch/tools/subscribecheck.py':
   "T488 : BANC NEUF, ne apres un CRASH AU DEMARRAGE. Une methode utilitaire avait\n"

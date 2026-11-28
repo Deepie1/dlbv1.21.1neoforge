@@ -639,28 +639,24 @@ def controler(racine='.'):
                               'la veille -- le vrai chantier suivant passerait inapercu')
 
     # ---------------------------------------------------------------- VERROU 17
-    # Le profil est continu par colonne et le rapport expose aussi la neige observee.
-    mother = lire(racine, 'src/main/java/deepluckyblock/util/TerrainMother.java') or ''
-    mother_code = sans_commentaires(mother)
-    snapshot = re.search(r'public static final class SnowSpreadSnapshot\s*\{', mother_code)
-    snap_body = bloc_equilibre(mother_code, snapshot.start()) if snapshot else ''
-    if 'rateAtBlock(int x, int z)' not in snap_body or 'potential[iz * qw + ix]' not in snap_body:
-        echecs.append('VERROU 17 : snapshot non interpole a l echelle colonne/quart')
-    getter = re.search(r'public static SnowSpreadSnapshot latestSnowSpreadSnapshot\(\)\s*\{', mother_code)
-    fin_mere = re.search(r'public static void end\(\)\s*\{', mother_code)
-    corps_getter = bloc_equilibre(mother_code, getter.start()) if getter else ''
-    corps_fin_mere = bloc_equilibre(mother_code, fin_mere.start()) if fin_mere else ''
-    if ('m.snowSpreadSnapshot' not in corps_getter or 'LAST_SNOW_SPREAD_SNAPSHOT' not in corps_getter or
-            'LAST_SNOW_SPREAD_SNAPSHOT = m.snowSpreadSnapshot' not in corps_fin_mere):
-        echecs.append('VERROU 17 : profil continu perdu apres la fin de Mother')
-    cap = re.search(r'private static void capturer\(Session s, String nom, String detail\)\s*\{', code)
-    corps_cap = bloc_equilibre(code, cap.start()) if cap else ''
-    if ('latestSnowSpreadSnapshot()' not in corps_cap or 'e.snowSpread = s.snowSpreadSnapshot' not in corps_cap):
-        echecs.append('VERROU 17 : capturer() ne fige pas le profil neige')
+    # Le scanner mesure le rendu observe uniquement; le spread reste dans TerrainPrep.
+    mother_refs = []
+    for dossier, _, fichiers in os.walk(os.path.join(racine, JAVA)):
+        for f in fichiers:
+            if not f.endswith('.java') or f == os.path.basename(OUTIL):
+                continue
+            rel = os.path.relpath(os.path.join(dossier, f), racine).replace(os.sep, '/')
+            with io.open(os.path.join(dossier, f), encoding='utf-8') as fh:
+                if 'DevTerrainScan' in fh.read():
+                    mother_refs.append(rel)
+    if mother_refs:
+        echecs.append('VERROU 17 : scanner relie au code de production (%s)' % ', '.join(mother_refs[:4]))
+    if 'SnowSpreadSnapshot' in code or 'grilleSnowSpread' in code or ' 9f. TAUX BRUT DU SPREAD' in code:
+        echecs.append('VERROU 17 : le rapport de rendu contient encore le spread theorique')
     grilles = re.search(r'private static void section9Grilles\(StringBuilder r, Session s, Etape e, Etape prec\)\s*\{', code)
     corps_grilles = bloc_equilibre(code, grilles.start()) if grilles else ''
-    if 'grilleSnowSpread(r, s, e)' not in corps_grilles or 'grilleSnowObserved(r, s, e)' not in corps_grilles:
-        echecs.append('VERROU 17 : grille potentielle ou carte observee absente du rapport')
+    if 'grilleSnowObserved(r, s, e)' not in corps_grilles:
+        echecs.append('VERROU 17 : carte de neige observee absente du rapport')
     observed = re.search(r'private static void grilleSnowObserved\(StringBuilder r, Session s, Etape e\)\s*\{', code)
     observed_body = bloc_equilibre(code, observed.start()) if observed else ''
     if ('1000' not in observed_body or '0000' not in observed_body or 'chunkCharge' not in observed_body
@@ -689,7 +685,7 @@ def controler(racine='.'):
           'captures pendant la pose armees a la transition, '
           'mesure finale apres le delai de finition, '
           'sonde de placement jamais prise pour un chantier, '
-          'potentiel neige continu, map observee par colonne et snapshot conserve apres fin de Mother')
+          'neige observee par colonne uniquement, spread et peinture hors du scanner')
     return 0
 
 

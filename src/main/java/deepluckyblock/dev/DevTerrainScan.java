@@ -260,9 +260,6 @@ public final class DevTerrainScan {
         int chunksVisites, colonnesVisitees, horsGrille;
         /** T477 : la zone a ete relachee avant la capture -- les chunks ne sont plus la. */
         boolean zoneRelachee;
-        /** Instantane du potentiel directionnel neige, jamais recalcule par le scan. */
-        deepluckyblock.util.TerrainMother.SnowSpreadSnapshot snowSpread;
-
         Etape(String nom, String detail, long tMs, int n, int nc) {
             this.nom = nom;
             this.detail = detail;
@@ -295,8 +292,6 @@ public final class DevTerrainScan {
         final List<String> palette = new ArrayList<>();
         final Map<String, Integer> paletteIdx = new HashMap<>();
         final List<String> journal = new ArrayList<>();
-        /** Dernier potentiel neige publie par TerrainMother, conserve apres son end(). */
-        deepluckyblock.util.TerrainMother.SnowSpreadSnapshot snowSpreadSnapshot;
         /**
          * Relief theorique. VOLATILE et publie d'un seul coup a la fin du calcul : il est
          * rempli par un fil de fond, et un lecteur ne doit jamais voir un tableau a moitie
@@ -1066,10 +1061,6 @@ public final class DevTerrainScan {
         long t0 = System.nanoTime();
         Etape e = new Etape(nom, detail, System.currentTimeMillis() - s.t0,
                 s.w * s.d, s.cw * s.cd);
-        deepluckyblock.util.TerrainMother.SnowSpreadSnapshot snow =
-                deepluckyblock.util.TerrainMother.latestSnowSpreadSnapshot();
-        if (snow != null) s.snowSpreadSnapshot = snow;
-        e.snowSpread = s.snowSpreadSnapshot;
         BlockPos.MutableBlockPos bp = new BlockPos.MutableBlockPos();
 
         for (int cz = 0; cz < s.cd; cz++) {
@@ -2644,18 +2635,10 @@ public final class DevTerrainScan {
         grilleParChunk(r, s, null, e.airSous);
 
         r.append('\n').append("-".repeat(100)).append('\n');
-        r.append(" 9f. TAUX BRUT DU SPREAD DE NEIGE PAR COLONNE\n");
-        r.append("     Potentiel continu lisse en milli-unites (0..1000), echantillonne aux\n");
-        r.append("     coordonnees monde de chaque colonne; aucun seuil ni decision par chunk.\n");
-        r.append("     ????=profil non disponible, ----=chunk non charge a cette capture.\n");
-        r.append("-".repeat(100)).append('\n');
-        grilleSnowSpread(r, s, e);
-
-        r.append('\n').append("-".repeat(100)).append('\n');
         r.append(" 9g. COUVERTURE DE NEIGE OBSERVEE PAR COLONNE\n");
         r.append("     1000=vraie couche SNOW trouvee dans les 48 blocs autour de la surface\n");
         r.append("     (canopee comprise); 0000=aucune couche; ????=colonne non lue; ----=chunk absent.\n");
-        r.append("     Mesure directe, distincte du potentiel calcule en 9f; cavernes profondes exclues.\n");
+        r.append("     Mesure directe; cavernes profondes exclues.\n");
         r.append("-".repeat(100)).append('\n');
         grilleSnowObserved(r, s, e);
     }
@@ -2738,44 +2721,6 @@ public final class DevTerrainScan {
                 if (v == ABSENT) r.append("----");
                 else if (v == VIDE) r.append("....");
                 else r.append(String.format("%4d", v));
-            }
-            r.append("|\n");
-        }
-    }
-
-    /** Grille monde du potentiel continu ; lecture seule d'un instantane deja publie. */
-    private static void grilleSnowSpread(StringBuilder r, Session s, Etape e) {
-        r.append(" ".repeat(9));
-        for (int cx = 0; cx < s.cw; cx++) {
-            String label = "x=" + ((s.cx0 + cx) << 4);
-            r.append('|').append(label);
-            for (int k = label.length(); k < 16 * 4; k++) r.append(' ');
-        }
-        r.append("|\n");
-        for (int z = 0; z < s.d; z++) {
-            if ((z & 15) == 0) {
-                r.append(" ".repeat(9));
-                for (int cx = 0; cx < s.cw; cx++) r.append('+').append("-".repeat(64));
-                r.append("+\n");
-            }
-            r.append(String.format("z=%6d ", s.z0 + z));
-            for (int x = 0; x < s.w; x++) {
-                if ((x & 15) == 0) r.append('|');
-                int chunkIndex = (z >> 4) * s.cw + (x >> 4);
-                if (!e.chunkCharge[chunkIndex]) {
-                    r.append("----");
-                    continue;
-                }
-                float rate = e.snowSpread == null ? Float.NaN
-                        : e.snowSpread.rateAtBlock(s.x0 + x, s.z0 + z);
-                if (Float.isNaN(rate)) r.append("????");
-                else if (rate < 0f) r.append("NEUT");
-                else {
-                    // Stabilise les float binaires (.315f peut etre 314.99999)
-                    // sans arrondir .0525 vers 0.053 : ces valeurs cadrent le modele.
-                    int milli = (int) Math.floor(rate * 1000.0 + 0.001);
-                    r.append(String.format("%4d", Math.max(0, Math.min(9999, milli))));
-                }
             }
             r.append("|\n");
         }

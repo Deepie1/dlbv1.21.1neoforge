@@ -149,44 +149,6 @@ def carte(txt, section, x0, x1, z0, z1):
     return out
 
 
-def grille_neige(txt, x0, x1, z0, z1):
-    """Lit la grille 9f : milli-unites, NEUT, ???? et ---- restent distincts."""
-    m = re.search(r'^\s*9f\. TAUX BRUT DU SPREAD DE NEIGE PAR COLONNE\s*$', txt, re.M)
-    if not m:
-        return None
-    bloc = txt[m.start():]
-    fin = re.search(r'^\s*10\. PALETTE DES BLOCS', bloc, re.M)
-    if fin:
-        bloc = bloc[:fin.start()]
-    w = x1 - x0 + 1
-    out = [-2] * (w * (z1 - z0 + 1))  # -2 = profil non disponible
-    for ligne in bloc.split('\n'):
-        if not ligne.startswith('z='):
-            continue
-        try:
-            z = int(ligne[2:8])
-        except ValueError:
-            continue
-        if z < z0 or z > z1:
-            continue
-        corps = ligne[9:].replace('|', '')
-        base = (z - z0) * w
-        for k in range(min(len(corps) // 4, w)):
-            cel = corps[4 * k:4 * k + 4].strip()
-            if cel == '----':
-                out[base + k] = -3       # chunk non charge
-            elif cel == 'NEUT':
-                out[base + k] = -1       # eau/glace : neutre
-            elif cel == '????' or not cel:
-                out[base + k] = -2       # profil indisponible
-            else:
-                try:
-                    out[base + k] = max(0, int(cel))
-                except ValueError:
-                    out[base + k] = -2
-    return out
-
-
 def charger(dossier):
     """Lit les anciens rapports separes et le nouveau format composite."""
     noms = sorted(f for f in os.listdir(dossier) if f.endswith('_GRILLES.txt'))
@@ -209,7 +171,6 @@ def charger(dossier):
         e['fichier'] = nom
         e['sol_y'] = grille(tg, '9a.', x0, x1, z0, z1)
         e['surf_y'] = grille(tg, '9b.', x0, x1, z0, z1)
-        e['snow'] = grille_neige(tg, x0, x1, z0, z1)
         if separes:
             nomc = nom.replace('_GRILLES.txt', '_CARTES.txt')
             pc = os.path.join(dossier, nomc)
@@ -506,8 +467,7 @@ def encoder(meta, etapes, pas):
         hs = bytearray(w * d)
         hw = bytearray(w * d)
         an = bytearray(w * d)
-        sn = bytearray(w * d * 2)
-        src_s, src_w, src_a, src_n = e['sol_y'], e['surf_y'], e['anom'], e['snow']
+        src_s, src_w, src_a = e['sol_y'], e['surf_y'], e['anom']
         for jz in range(d):
             sz = jz * pas
             for jx in range(w):
@@ -531,16 +491,10 @@ def encoder(meta, etapes, pas):
                     an[o] = k if k >= 0 else 0
                 else:
                     an[o] = 0
-                snow = -2 if src_n is None else src_n[i]
-                code = 65535 if snow == -3 else (65534 if snow == -1 else
-                       (65533 if snow == -2 else min(65532, max(0, snow))))
-                sn[2 * o] = (code >> 8) & 255
-                sn[2 * o + 1] = code & 255
         paquets.append({
             'nom': e['nom'], 'detail': e['detail'], 't': e['t'],
             'fichier': e['fichier'], 'chunks': e['chunks'], 'colonnes': e['colonnes'],
             'hs': _b64(bytes(hs)), 'hw': _b64(bytes(hw)), 'an': _b64(bytes(an)),
-            'sn': _b64(bytes(sn)),
         })
     return {'w': w, 'd': d, 'pas': pas, 'ymin': ymin, 'ymax': ymax,
             'x0': x0, 'z0': z0, 'sol': meta['sol'],
@@ -670,7 +624,6 @@ def _gabarit():
     <option value="diff0">Changement depuis la premiere etape</option>
     <option value="charge">Chargement des chunks</option>
     <option value="sol">Ecart au sol de reference</option>
-    <option value="snow">Spread brut de neige</option>
    </select></div>
   <div class="grp"><label class="ttl">Calques</label>
    <label class="chk"><input type="checkbox" id="cEau" checked> Eau et feuillage</label>
@@ -752,7 +705,7 @@ function dessine2d(){
   ctx2.setTransform(1,0,0,1,0,0);
   ctx2.fillStyle="#0a0e14";ctx2.fillRect(0,0,cw,chh);
   var k0=(typeof cur==='number'&&ET[cur])?cur:0;
-  var HS=ET[k0].HS, snowMode=document.getElementById("mode").value==="snow", lo=1e9, hi=-1e9, i, v;
+  var HS=ET[k0].HS, lo=1e9, hi=-1e9, i, v;
   for(i=0;i<W*D;i++){v=hy(HS,i);if(v===null)continue;if(v<lo)lo=v;if(v>hi)hi=v;}
   if(lo>hi){ctx2.fillStyle="#7d8da0";ctx2.font=(14*dpr)+"px system-ui";
     ctx2.fillText("aucune colonne mesuree a cette etape",16*dpr,28*dpr);return;}
@@ -760,10 +713,9 @@ function dessine2d(){
   for(var z=0;z<D;z++)for(var x=0;x<W;x++){
     var j=z*W+x, o=j*4; v=hy(HS,j);
     if(v===null){dd[o]=38;dd[o+1]=44;dd[o+2]=54;dd[o+3]=255;continue;}
-    var c=snowMode?neigeRGB(neigeCode(ET[k0],j)):teinte(v,lo,hi);
-    /* Le calque neige porte un taux, pas une altitude : ne pas l'ombrer par la pente. */
+    var c=teinte(v,lo,hi);
     var g=hy(HS,(x>0)?j-1:j), pente=(g===null)?0:(v-g);
-    var m=snowMode?1:(1+Math.max(-0.45,Math.min(0.45,pente*0.14)));
+    var m=1+Math.max(-0.45,Math.min(0.45,pente*0.14));
     dd[o]=Math.max(0,Math.min(255,c[0]*m));
     dd[o+1]=Math.max(0,Math.min(255,c[1]*m));
     dd[o+2]=Math.max(0,Math.min(255,c[2]*m));
@@ -774,9 +726,8 @@ function dessine2d(){
   ctx2.imageSmoothingEnabled=false;
   ctx2.drawImage(tmp,(cw-dw)/2,(chh-dh)/2,dw,dh);
   ctx2.fillStyle="#9fb0c4";ctx2.font=(11*dpr)+"px system-ui";
-  ctx2.fillText(snowMode?"spread directionnel brut -- valeurs en milli-unites, avant ecotone"
-    :("vue du dessus -- x "+X0+".."+(X0+(W-1)*PAS)+"   z "+Z0+".."+(Z0+(D-1)*PAS)
-      +"   altitudes "+lo+".."+hi+"   gris = non mesure"),10*dpr,chh-8*dpr);
+  ctx2.fillText("vue du dessus -- x "+X0+".."+(X0+(W-1)*PAS)+"   z "+Z0+".."+(Z0+(D-1)*PAS)
+      +"   altitudes "+lo+".."+hi+"   gris = non mesure",10*dpr,chh-8*dpr);
 }
 function bascule2d(on){
   mode2d=!!on;
@@ -826,28 +777,11 @@ if(ad)ad.addEventListener("click",function(){elDiag.className="";});
 if(btnDiag)btnDiag.addEventListener("click",function(){
   elDiag.className=(elDiag.className==="off")?"":"off";});
 
-for(var q=0;q<ET.length;q++){ET[q].HS=dec(ET[q].hs);ET[q].HW=dec(ET[q].hw);ET[q].AN=dec(ET[q].an);ET[q].SN=dec(ET[q].sn);
-  ET[q].hs=null;ET[q].hw=null;ET[q].an=null;ET[q].sn=null;}
+for(var q=0;q<ET.length;q++){ET[q].HS=dec(ET[q].hs);ET[q].HW=dec(ET[q].hw);ET[q].AN=dec(ET[q].an);
+  ET[q].hs=null;ET[q].hw=null;ET[q].an=null;}
 var N=W*D, cur=0, vex=3;
 var CX=(W-1)*PAS/2, CZ=(D-1)*PAS/2, BAS=YMIN-6;
 function hy(a,i){var v=a[i];return v>=254?null:v+YMIN;}
-function neigeCode(A,i){return (A.SN[2*i]<<8)|A.SN[2*i+1];}
-function neigeRGB(code){
-  if(code===65535)return [0.17,0.19,0.23]; // chunk absent
-  if(code===65534)return [0.08,0.30,0.46]; // eau/glace neutre
-  if(code===65533)return [0.38,0.38,0.40]; // pas de profil
-  var v=code/1000;
-  var stops=[[0.0,[0.12,0.14,0.18]],[0.105,[0.18,0.42,0.82]],
-             [0.210,[0.12,0.73,0.77]],[0.315,[0.92,0.76,0.22]],
-             [0.420,[1.0,0.43,0.13]],[1.0,[0.96,0.97,1.0]]];
-  if(v<=0)return stops[0][1];
-  for(var k=1;k<stops.length;k++)if(v<=stops[k][0]){
-    var a=stops[k-1],b=stops[k],t=(v-a[0])/(b[0]-a[0]);
-    return [a[1][0]+(b[1][0]-a[1][0])*t,a[1][1]+(b[1][1]-a[1][1])*t,a[1][2]+(b[1][2]-a[1][2])*t];
-  }
-  return stops[stops.length-1][1];
-}
-
 var pos=new Float32Array(N*3), nor=new Float32Array(N*3), col=new Float32Array(N*3);
 var posEau=new Float32Array(N*3);
 var idx=new Uint32Array(0), idxEau=new Uint32Array(0), nIdx=0, nEau=0;
@@ -899,7 +833,6 @@ function couleurs(){
     else if(m==="alt"){c=ramp((y-lo)/(hi-lo));}
     else if(m==="anom"){c=ANC[AN[j]]||ANC[0];}
     else if(m==="charge"){c=[0.30,0.62,0.40];}
-    else if(m==="snow"){c=neigeRGB(neigeCode(A,j));}
     else if(m==="sol"){var dd=y-SOL;
       c=dd===0?[0.85,0.85,0.88]:(dd>0?ramp(0.55+Math.min(0.45,dd/40)):[0.15,0.30+Math.max(-0.25,dd/60),0.55]);}
     else{var r=hy(ref.HS,j);
@@ -1050,9 +983,7 @@ var LEG={
  diff0:[["#b94040","abaisse"],["#44b874","releve"],["#43484f","inchange"],["#30353f","non mesure"]],
  charge:[["#4c9e66","mesure"],["#30353f","NON mesure : angle mort, PAS un trou du terrain"]],
  sol:[["#d9d9e0","au sol de reference"],["#b8a855","au-dessus"],["#2a4a73","en dessous"],["#30353f","non mesure"]],
- snow:[["#20242e","0.000 : aucune entree"],["#2e6bd1","0.105 : une entree a k=1"],
-       ["#20babe","0.210"],["#ebc238","0.315"],["#ff6e21","0.420 : plafond directionnel"],
-       ["#eff1ff","1.000 : source enneigee"],["#145078","eau/glace neutre"],["#606066","profil absent"]]};
+};
 function majLeg(){var m=document.getElementById("mode").value,h="";
  LEG[m].forEach(function(p){h+="<i style=\"background:"+p[0]+"\"></i>"+p[1]+"<br>";});
  document.getElementById("legende").innerHTML=h;}
@@ -1099,14 +1030,8 @@ function survol(e){
     if(cpSuit&&cpSuit.checked&&!cpBox.classList.contains("off")){
       cpPos.value=String(cpAxe.value==="z"?trouve[1]:trouve[0]);cpMaj();}
     var noms=["rien a signaler","TROU NET","tour isolee","falaise","air piege","creuse","remblai","non charge","vide"];
-    var extra="";
-    if(document.getElementById("mode").value==="snow"){
-      var sc=neigeCode(A,trouve[1]*W+trouve[0]);
-      extra=sc===65535?"\nspread: chunk non charge":(sc===65534?"\nspread: eau/glace neutre":
-        (sc===65533?"\nspread: profil indisponible":"\nspread brut: "+(sc/1000).toFixed(3)));
-    }
     hud.textContent="x "+wx+"   z "+wz+"   y "+trouve[2]+"\n"+
-      (noms[A.AN[trouve[1]*W+trouve[0]]]||"rien a signaler")+"   (sol de reference "+SOL+")"+extra;
+      (noms[A.AN[trouve[1]*W+trouve[0]]]||"rien a signaler")+"   (sol de reference "+SOL+")";
   } else hud.textContent=AIDE;
 }
 /* ---------------------------------------------------------------- COUPE 2D

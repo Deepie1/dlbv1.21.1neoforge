@@ -626,9 +626,9 @@ public class StructureTerrainPrep {
         // damier couvrant TOUTE la zone finale tenue + halo externe de 3 chunks.
         // Mother est seule responsable des chunks de la STRUCTURE (setStructureBounds)
         // et commande tous les enfants des contours.
+        ACTIVE_SNOW_SPREAD = null;
         deepluckyblock.util.TerrainMother motherInit =
                 deepluckyblock.util.TerrainMother.begin(px0 >> 4, pz0 >> 4, px1 >> 4, pz1 >> 4);
-        motherInit.setWorldSeed(level.getSeed());
         motherInit.setStructureBounds(min.getX() >> 4, min.getZ() >> 4, max.getX() >> 4, max.getZ() >> 4);
         primeMotherHalo(level, motherInit, px0 >> 4, pz0 >> 4, px1 >> 4, pz1 >> 4);
         preloadChunksBatched(level, px0, pz0, px1, pz1, px1 - px0 + 1, pz1 - pz0 + 1,
@@ -2596,13 +2596,13 @@ public class StructureTerrainPrep {
         long purgedWaterIce = 0;   // T285 : couches RETIREES d'un support eau/glace (stock herite + neige gelee vanilla)
         long strippedInner = 0, unflaggedInner = 0;   // T277 : neige dedans, pleine colonne
         deepluckyblock.util.TerrainMother mSweep = deepluckyblock.util.TerrainMother.current();
-        boolean motherZeroSnow = (mSweep != null && mSweep.compileVerdict().snowyChildren() == 0);
+        boolean noSnowSources = (mSweep != null && !mSweep.hasSnowSources());
         for (int cx = xMin2 >> 4; cx <= xMax2 >> 4; cx++) {
             for (int cz = zMin2 >> 4; cz <= zMax2 >> 4; cz++) {
                 ChunkAccess chunk = deepluckyblock.util.SafeSurface.chunkFor(level, cx, cz); // T301-B
                 if (chunk == null) { skippedChunks++; continue; }
                 chunkCount++;
-                if (motherZeroSnow && deepluckyblock.util.ChunkKeeper.coversChunk(level, cx, cz)
+                if (noSnowSources && deepluckyblock.util.ChunkKeeper.coversChunk(level, cx, cz)
                         && !chunkHasAnySectionWith(chunk, HAS_SNOW_OR_SNOWY_DIRT)) {
                     continue;
                 }
@@ -2888,7 +2888,7 @@ public class StructureTerrainPrep {
                         deepluckyblock.util.TerrainMother mLayer = deepluckyblock.util.TerrainMother.current();
                         int k;
                         if (mLayer != null) {
-                            k = mLayer.snowLayersAt(level.getSeed(), x, z);
+                            k = terrainSnowLayers(mLayer, level.getSeed(), x, z);
                         } else {
                             long h = (long) x * 0x9E3779B97F4A7C15L;
                             h += (long) z + 0x9E3779B97F4A7C15L + (h << 6) + (h >>> 2);
@@ -3151,13 +3151,13 @@ public class StructureTerrainPrep {
         long fixedPlaced = 0, fixedUnsnow = 0, alreadyLayered = 0, refuseIce = 0, skipObstacle = 0;
         long refuseWater = 0, bareEarthSeen = 0;   // T285 : garde eau + peau terreuse nue
         deepluckyblock.util.TerrainMother mAudit = deepluckyblock.util.TerrainMother.current();
-        boolean motherAuditZeroSnow = (mAudit != null && mAudit.compileVerdict().snowyChildren() == 0);
+        boolean noSnowSources = (mAudit != null && !mAudit.hasSnowSources());
         for (int cx = xMin2 >> 4; cx <= xMax2 >> 4; cx++) {
             for (int cz = zMin2 >> 4; cz <= zMax2 >> 4; cz++) {
                 ChunkAccess chunk = deepluckyblock.util.SafeSurface.chunkFor(level, cx, cz); // T301-B
                 if (chunk == null) { skippedChunks++; continue; }
                 chunkCount++;
-                if (motherAuditZeroSnow && deepluckyblock.util.ChunkKeeper.coversChunk(level, cx, cz)
+                if (noSnowSources && deepluckyblock.util.ChunkKeeper.coversChunk(level, cx, cz)
                         && !chunkHasAnySectionWith(chunk, HAS_SNOW_OR_SNOWY_DIRT)) {
                     continue;
                 }
@@ -3969,7 +3969,7 @@ public class StructureTerrainPrep {
         boolean childSnowy = (child.waterRatio < 0.65f && child.iceRatio < 0.65f)
                 && (child.snowyRatio >= 0.45f || biomeSnow);
         child.setSnowy(childSnowy);
-        mother.invalidateSnowField();
+        mother.markSnowSourceDataChanged();
     }
 
     /**
@@ -5664,23 +5664,177 @@ public class StructureTerrainPrep {
         return rate;
     }
 
+    // ==================================================================
+    // T306 : SPREAD DE NEIGE — moteur et décisions dans TerrainPrep.
+    // ==================================================================
+    private static final float SNOW_FULL_COVERAGE_AURA = 0.78f;
+    private static final double SNOW_FIELD_RADIUS_BLOCKS = 47.0;
+    private static volatile SnowSpreadField ACTIVE_SNOW_SPREAD;
+
+    private static final class SnowSpreadField {
+        final deepluckyblock.util.TerrainMother mother;
+        final long seed, revision;
+        final int qx0, qz0, qw, qh;
+        final float[] quarter;
+        final boolean allZero, allOne;
+
+        SnowSpreadField(deepluckyblock.util.TerrainMother mother, long seed) {
+            this.mother = mother;
+            this.seed = seed;
+            this.revision = mother.snowInputRevision();
+            int hx0 = mother.snowGridMinChunkX(), hz0 = mother.snowGridMinChunkZ();
+            int hw = mother.snowGridWidth(), hh = mother.snowGridHeight();
+            this.qx0 = hx0 * 4; this.qz0 = hz0 * 4;
+            this.qw = hw * 4; this.qh = hh * 4;
+            int known = mother.knownSnowSourceChunks();
+            if (known == 0 && !mother.hasSnowSources()) {
+                quarter = null; allZero = false; allOne = false;
+                return;
+            }
+
+            float[] potential = new float[hw * hh];
+            float[] land = new float[hw * hh];
+            boolean anyLand = false, anySource = false, allSource = true;
+            deepluckyblock.util.MotherAISnowDirector.SnowPlan plan = mother.activeAiPlan();
+            for (int j = 0; j < hh; j++) {
+                int cz = hz0 + j;
+                for (int i = 0; i < hw; i++) {
+                    int cx = hx0 + i, idx = j * hw + i;
+                    float w = clamp01(mother.snowLandWeightAtChunk(cx, cz));
+                    float p = clamp01(mother.snowSourceAtChunk(cx, cz));
+                    if (plan != null && p > 0f) {
+                        Float boost = plan.childAuraBoost().get((((long) cx) << 32) | (cz & 0xffffffffL));
+                        if (boost != null) p = clamp01(p * boost);
+                    }
+                    land[idx] = w;
+                    potential[idx] = p;
+                    anyLand |= w > 0.15f;
+                    if (w > 0f) {
+                        anySource |= p > 0f;
+                        allSource &= p >= 0.999f && w >= 0.999f;
+                    }
+                }
+            }
+            allZero = !anySource;
+            allOne = allSource && anyLand && plan == null;
+            if (allZero) {
+                quarter = new float[qw * qh];
+            } else if (allOne) {
+                quarter = new float[qw * qh];
+                java.util.Arrays.fill(quarter, 1f);
+            } else {
+                final int fHx0 = hx0, fHz0 = hz0, fHw = hw, fHh = hh;
+                quarter = deepluckyblock.util.BiomeEcotoneSpread.buildScatteredSnowField(
+                        seed, qx0, qz0, qw, qh, SNOW_FIELD_RADIUS_BLOCKS,
+                        (wx, wz) -> {
+                            int cx = Math.floorDiv(wx, 16) - fHx0;
+                            int cz = Math.floorDiv(wz, 16) - fHz0;
+                            if (cx < 0 || cx >= fHw || cz < 0 || cz >= fHh) return -1f;
+                            return potential[cz * fHw + cx];
+                        },
+                        (wx, wz) -> {
+                            int cx = Math.floorDiv(wx, 16) - fHx0;
+                            int cz = Math.floorDiv(wz, 16) - fHz0;
+                            if (cx < 0 || cx >= fHw || cz < 0 || cz >= fHh) return 0f;
+                            return land[cz * fHw + cx];
+                        });
+            }
+        }
+
+        float density(int x, int z) {
+            if (quarter == null) return -1f;
+            if (allZero) return 0f;
+            if (allOne) return 1f;
+            double sampleX = x + 0.5, sampleZ = z + 0.5;
+            double wx = deepluckyblock.util.BiomeEcotoneSpread.simplex2(
+                    seed ^ 0x6A09E667F3BCC909L, x / 22.0, z / 22.0) * 7.5
+                    + deepluckyblock.util.BiomeEcotoneSpread.simplex2(
+                    seed ^ 0xBB67AE8584CAA73BL, x / 9.5, z / 9.5) * 2.8;
+            double wz = deepluckyblock.util.BiomeEcotoneSpread.simplex2(
+                    seed ^ 0x3C6EF372FE94F82BL, x / 22.0 + 19.1, z / 22.0 - 13.7) * 7.5
+                    + deepluckyblock.util.BiomeEcotoneSpread.simplex2(
+                    seed ^ 0xA54FF53A5F1D36F1L, x / 9.5 - 7.3, z / 9.5 + 11.9) * 2.8;
+            sampleX += wx; sampleZ += wz;
+            double fx = (sampleX - 2.0) * 0.25 - qx0;
+            double fz = (sampleZ - 2.0) * 0.25 - qz0;
+            double cx = Math.max(0.0, Math.min(qw - 1.0001, fx));
+            double cz = Math.max(0.0, Math.min(qh - 1.0001, fz));
+            int ix = (int) Math.floor(cx), iz = (int) Math.floor(cz);
+            int ix1 = Math.min(qw - 1, ix + 1), iz1 = Math.min(qh - 1, iz + 1);
+            float tx = quintic((float) (cx - ix)), tz = quintic((float) (cz - iz));
+            float a = quarter[iz * qw + ix], b = quarter[iz * qw + ix1];
+            float c = quarter[iz1 * qw + ix], d = quarter[iz1 * qw + ix1];
+            float top = a + (b - a) * tx, bottom = c + (d - c) * tx;
+            return clamp01(top + (bottom - top) * tz);
+        }
+    }
+
+    private static float clamp01(float value) {
+        if (!Float.isFinite(value)) return 0f;
+        return Math.max(0f, Math.min(1f, value));
+    }
+
+    private static float quintic(float t) {
+        t = clamp01(t);
+        return t * t * t * (t * (t * 6f - 15f) + 10f);
+    }
+
+    private static SnowSpreadField snowSpreadField(
+            deepluckyblock.util.TerrainMother mother, long seed) {
+        if (mother == null) return null;
+        long revision = mother.snowInputRevision();
+        SnowSpreadField field = ACTIVE_SNOW_SPREAD;
+        if (field != null && field.mother == mother && field.seed == seed && field.revision == revision)
+            return field;
+        synchronized (StructureTerrainPrep.class) {
+            field = ACTIVE_SNOW_SPREAD;
+            revision = mother.snowInputRevision();
+            if (field == null || field.mother != mother || field.seed != seed || field.revision != revision) {
+                field = new SnowSpreadField(mother, seed);
+                // If scouting changed sources during the build, do not publish a stale field.
+                if (field.revision != mother.snowInputRevision()) field = new SnowSpreadField(mother, seed);
+                ACTIVE_SNOW_SPREAD = field;
+            }
+            return field;
+        }
+    }
+
+    private static float terrainSnowDensity(deepluckyblock.util.TerrainMother mother, long seed, int x, int z) {
+        SnowSpreadField field = snowSpreadField(mother, seed);
+        return field == null ? -1f : field.density(x, z);
+    }
+
+    private static boolean terrainShouldPlaceSnow(
+            deepluckyblock.util.TerrainMother mother, long seed, int x, int z) {
+        float aura = terrainSnowDensity(mother, seed, x, z);
+        if (aura < 0f || aura <= 0f) return false;
+        if (aura >= SNOW_FULL_COVERAGE_AURA) return true;
+        float t = Math.max(0f, Math.min(1f, aura / SNOW_FULL_COVERAGE_AURA));
+        float probability = t * t * (3f - 2f * t);
+        return deepluckyblock.util.BiomeEcotoneSpread.warpedPatchSigned(
+                seed ^ 0xD217F00D5EEDL, x, z) + 0.5f < probability;
+    }
+
+    private static int terrainSnowLayers(
+            deepluckyblock.util.TerrainMother mother, long seed, int x, int z) {
+        float aura = terrainSnowDensity(mother, seed, x, z);
+        if (aura < 0.46f) return 1;
+        double drift = 0.5 * (1.0 + 0.68 * deepluckyblock.util.BiomeEcotoneSpread.simplex2(
+                seed ^ 0x9E3779B97F4A7C15L, x / 13.0, z / 13.0)
+                + 0.32 * deepluckyblock.util.BiomeEcotoneSpread.simplex2(
+                seed ^ 0xBF58476D1CE4E5B9L, x / 5.5, z / 5.5));
+        if (aura < 0.72f) return drift < 0.58 ? 1 : 2;
+        return drift < 0.52 ? 1 : (drift < 0.71 ? 2 : 3);
+    }
+
     /** Source locale de proximité; hors chaîne, on conserve uniquement la règle biome vanilla. */
     private static boolean snowInfluenceNear(ServerLevel level, int x, int z) {
         deepluckyblock.util.TerrainMother mother = deepluckyblock.util.TerrainMother.current();
         if (mother != null) {
-            mother.setWorldSeed(level.getSeed());
-            float density = mother.snowDensity(x, z);
+            float density = terrainSnowDensity(mother, level.getSeed(), x, z);
             if (density >= 0f) return density > 0f;
         }
         return isSnowyCell(level, new BlockPos(x, 64, z));
-    }
-
-    /** T289 / T303 : densite d'aura de neige continue calculee par Mother sur son damier QuartPos. */
-    private static float motherSnowDensity(ServerLevel level, int x, int z) {
-        deepluckyblock.util.TerrainMother m289 = deepluckyblock.util.TerrainMother.current();
-        if (m289 == null) return -1f;
-        m289.setWorldSeed(level.getSeed());
-        return m289.snowDensity(x, z);
     }
 
     private static boolean snowCoverHere(ServerLevel level, long seed, int x, int z) {
@@ -5694,9 +5848,8 @@ public class StructureTerrainPrep {
         // c'est la couverture en blocs-carres observee au run du 27/11.
         deepluckyblock.util.TerrainMother mother = deepluckyblock.util.TerrainMother.current();
         if (mother != null) {
-            mother.setWorldSeed(seed);
-            if (mother.snowDensity(x, z) >= 0f) {
-                return mother.shouldPlaceSnow(seed, x, z);
+            if (terrainSnowDensity(mother, seed, x, z) >= 0f) {
+                return terrainShouldPlaceSnow(mother, seed, x, z);
             }
         }
         // Hors chaine active, conserver la neige vanilla du biome seulement pour
@@ -5749,8 +5902,8 @@ public class StructureTerrainPrep {
      */
     private static BlockState snowVaried(ServerLevel level, long seed, int x, int z) {
         deepluckyblock.util.TerrainMother m303 = deepluckyblock.util.TerrainMother.current();
-        if (m303 != null && m303.snowDensity(x, z) >= 0f) {
-            int layers = m303.snowLayersAt(level.getSeed(), x, z);
+        if (m303 != null && terrainSnowDensity(m303, level.getSeed(), x, z) >= 0f) {
+            int layers = terrainSnowLayers(m303, level.getSeed(), x, z);
             return Blocks.SNOW.defaultBlockState()
                     .setValue(BlockStateProperties.LAYERS, layers);
         }
@@ -6817,7 +6970,7 @@ public class StructureTerrainPrep {
         float snowTaper = 1.0f;
         deepluckyblock.util.TerrainMother m306 = deepluckyblock.util.TerrainMother.current();
         if (m306 != null) {
-            float sd = m306.snowDensity(x, z);
+            float sd = terrainSnowDensity(m306, level.getSeed(), x, z);
             if (sd > 0.05f) snowTaper = Math.max(0.22f, 1.0f - 0.65f * sd);
         }
         float target = baseDensity * Math.max(0f, Math.min(1.35f, densityScale * clump * snowTaper));
@@ -6915,7 +7068,7 @@ public class StructureTerrainPrep {
         float snowTaper = 1.0f;
         deepluckyblock.util.TerrainMother m306 = deepluckyblock.util.TerrainMother.current();
         if (m306 != null) {
-            float sd = m306.snowDensity(x, z);
+            float sd = terrainSnowDensity(m306, level.getSeed(), x, z);
             if (sd > 0.05f) snowTaper = Math.max(0.22f, 1.0f - 0.65f * sd);
         }
         float target = baseDensity * Math.max(0f, Math.min(1.35f, densityScale * clump * snowTaper));
@@ -7106,7 +7259,8 @@ public class StructureTerrainPrep {
 
                 BlockState actualSurface = readBlock(level, curCa, mut, x, surfY, z);
                 if (isIceFamily(actualSurface) || !actualSurface.getFluidState().isEmpty()) continue;
-                if (!isNaturalTerrain(actualSurface) || !actualSurface.blocksMotion()) {
+                if (!isNaturalTerrain(actualSurface) || !actualSurface.blocksMotion()
+                        || isOreForSurfacePaint(actualSurface)) {
                     stats[5]++;
                     continue;
                 }
@@ -7145,34 +7299,14 @@ public class StructureTerrainPrep {
                         }
                     }
 
-                    // La passe active est dressAndPlant (pas verifyGrassSurface) :
-                    // applique ici la vraie epaisseur aleatoire par colonne. La couche
-                    // de surface compte comme bloc 1; les blocs 2..N deviennent dirt.
+                    // Meme peintre de sous-sol que verifyGrassSurface : profondeur stable,
+                    // protection des minerais et ecriture directe dans la section du chunk.
                     boolean soilSurface = chosen != Blocks.SAND && chosen != Blocks.SANDSTONE
                             && chosen != Blocks.RED_SAND && chosen != Blocks.SNOW_BLOCK
                             && chosen != Blocks.ICE && chosen != Blocks.PACKED_ICE
                             && chosen != Blocks.BLUE_ICE;
                     if (!underOverhang && soilSurface) {
-                        long paintSeed = level.getSeed() ^ 0x6A09E667F3BCC909L;
-                        int depth = 1 + Math.min(3,
-                                (int) (driftHash01(paintSeed, x, z) * 4.0));
-                        for (int d = 1; d < depth; d++) {
-                            int dirtY = surfY - d;
-                            if (dirtY <= level.getMinBuildHeight()
-                                    || (!PASTED_OCCUPIED.isEmpty()
-                                    && PASTED_OCCUPIED.contains(BlockPos.asLong(x, dirtY, z)))) break;
-                            BlockState under = readBlock(level, curCa, mut, x, dirtY, z);
-                            if (!under.blocksMotion() || !isNaturalTerrain(under)
-                                    || isIceFamily(under) || !under.getFluidState().isEmpty()
-                                    || under.is(Blocks.SNOW) || under.is(Blocks.POWDER_SNOW)
-                                    || under.is(Blocks.SNOW_BLOCK) || isLog(under) || isLeaf(under)
-                                    || isOreForSurfacePaint(under)) break;
-                            if (under.is(Blocks.DIRT)) continue;
-                            if (curLc != null) setPaletteBlockInChunk(level, curLc, x, dirtY, z,
-                                    Blocks.DIRT.defaultBlockState(), chunkMask);
-                            else level.setBlock(mut.set(x, dirtY, z), Blocks.DIRT.defaultBlockState(), FAST_FLAG);
-                            stats[3]++;
-                        }
+                        stats[3] += paintNaturalSubsoil(level, x, surfY, z, actualSurface, curLc, chunkMask);
                     }
                     chosen = borderFadePick(level, min, max, outerRing, x, z, chosen);
                 }
@@ -10348,32 +10482,52 @@ public class StructureTerrainPrep {
     private static void paintNaturalSoil(ServerLevel level, int x, int surfaceY, int z,
                                          BlockState surface, BlockPos.MutableBlockPos mut,
                                          int[] counters) {
-        if (!surface.blocksMotion() || !isNaturalTerrain(surface)
+        if (!surface.blocksMotion() || !isNaturalTerrain(surface) || isOreForSurfacePaint(surface)
                 || isIceFamily(surface) || !surface.getFluidState().isEmpty()
                 || surface.is(Blocks.SAND) || surface.is(Blocks.SANDSTONE)
                 || surface.is(Blocks.RED_SAND)) return;
 
-        long paintSeed = level.getSeed() ^ 0x6A09E667F3BCC909L;
-        int depth = 1 + Math.min(3, (int) (driftHash01(paintSeed, x, z) * 4.0));
         if (!surface.is(Blocks.GRASS_BLOCK)) {
             level.setBlock(mut.set(x, surfaceY, z), Blocks.GRASS_BLOCK.defaultBlockState(), FAST_FLAG);
             counters[0]++;
         }
 
+        counters[3] += paintNaturalSubsoil(level, x, surfaceY, z, surface, null, null);
+    }
+
+    /** Peint le profil de terre commun aux deux passes sans franchir un bloc artificiel ou un filon. */
+    private static int paintNaturalSubsoil(ServerLevel level, int x, int surfaceY, int z,
+                                           BlockState naturalSurface,
+                                           net.minecraft.world.level.chunk.LevelChunk chunk,
+                                           long[] touchedSections) {
+        if (!naturalSurface.blocksMotion() || !isNaturalTerrain(naturalSurface)
+                || isOreForSurfacePaint(naturalSurface)
+                || isIceFamily(naturalSurface) || !naturalSurface.getFluidState().isEmpty()
+                || naturalSurface.is(Blocks.SAND) || naturalSurface.is(Blocks.SANDSTONE)
+                || naturalSurface.is(Blocks.RED_SAND) || naturalSurface.is(Blocks.SNOW_BLOCK)) return 0;
+        long paintSeed = level.getSeed() ^ 0x6A09E667F3BCC909L;
+        int depth = 1 + Math.min(3, (int) (driftHash01(paintSeed, x, z) * 4.0));
+        int painted = 0;
+        BlockPos.MutableBlockPos mut = new BlockPos.MutableBlockPos();
         for (int layer = 1; layer < depth; layer++) {
             int y = surfaceY - layer;
             if (y <= level.getMinBuildHeight()
                     || (!PASTED_OCCUPIED.isEmpty() && PASTED_OCCUPIED.contains(BlockPos.asLong(x, y, z)))) break;
-            BlockState under = level.getBlockState(mut.set(x, y, z));
+            BlockState under = chunk != null
+                    ? readBlock(level, chunk, mut, x, y, z)
+                    : level.getBlockState(mut.set(x, y, z));
             if (!under.blocksMotion() || !isNaturalTerrain(under)
                     || isIceFamily(under) || !under.getFluidState().isEmpty()
                     || under.is(Blocks.SNOW) || under.is(Blocks.POWDER_SNOW)
-                    || isLog(under) || isLeaf(under) || isOreForSurfacePaint(under)) break;
-            if (!under.is(Blocks.DIRT)) {
-                level.setBlock(mut.set(x, y, z), Blocks.DIRT.defaultBlockState(), FAST_FLAG);
-                counters[3]++;
-            }
+                    || under.is(Blocks.SNOW_BLOCK) || isLog(under) || isLeaf(under)
+                    || isOreForSurfacePaint(under)) break;
+            if (under.is(Blocks.DIRT)) continue;
+            if (chunk != null) setPaletteBlockInChunk(level, chunk, x, y, z,
+                    Blocks.DIRT.defaultBlockState(), touchedSections);
+            else level.setBlock(mut.set(x, y, z), Blocks.DIRT.defaultBlockState(), FAST_FLAG);
+            painted++;
         }
+        return painted;
     }
 
     /** Une colonne de verifyGrassSurface (met a jour counters[grass, snow, refus, dirt]). */

@@ -89,6 +89,12 @@ public final class BiomeEcotoneSpread {
         float sampleSnowPotential(int worldX, int worldZ);
     }
 
+    /** Poids terrestre [0,1] d'un echantillon; zero exclut eau/glace du numerateur ET du denominateur. */
+    @FunctionalInterface
+    public interface TerrestrialLandWeightSampler {
+        float sampleLandWeight(int worldX, int worldZ);
+    }
+
     private static final class LatticeOffset {
         final int xsvp, zsvp;
         final double xv, zv;
@@ -466,7 +472,8 @@ public final class BiomeEcotoneSpread {
                                                   int qW,
                                                   int qH,
                                                   double radiusBlocks,
-                                                  TerrestrialSnowSampler sampler) {
+                                                  TerrestrialSnowSampler sampler,
+                                                  TerrestrialLandWeightSampler landSampler) {
         double freq = 0.095; // ~1 point jitterise tous les ~10.5 blocs (couverture dense et ultra-rapide)
         double invFreq = 1.0 / freq;
         double r = Math.max(18.0, radiusBlocks);
@@ -497,6 +504,7 @@ public final class BiomeEcotoneSpread {
         float[] px = new float[maxPts];
         float[] pz = new float[maxPts];
         float[] pv = new float[maxPts];
+        float[] pw = new float[maxPts];
         int nPts = 0;
 
         int seedLo = (int) (seed & 0xFFFFFFFFL);
@@ -526,14 +534,19 @@ public final class BiomeEcotoneSpread {
                 double wz = (j + t + JITTER_SINCOS[idx + SINCOS_OFFSET]) * invFreq;
                 if (wx < minWx || wx > maxWx || wz < minWz || wz > maxWz) continue;
 
-                float pot = sampler.sampleSnowPotential(fastFloor(wx + 0.5), fastFloor(wz + 0.5));
-                if (pot < 0f) continue; // ICE ou EAU : 0 poids dans le denominateur et le numerateur !
+                int sampleX = fastFloor(wx + 0.5), sampleZ = fastFloor(wz + 0.5);
+                float pot = sampler.sampleSnowPotential(sampleX, sampleZ);
+                if (pot < 0f) continue;
+                float land = landSampler.sampleLandWeight(sampleX, sampleZ);
+                if (!(land > 0f)) continue; // glace/eau: zero dans numerateur et denominateur
+                land = Math.max(0f, Math.min(1f, land));
 
                 if (nPts >= px.length) {
                     int nCap = px.length * 2;
                     px = Arrays.copyOf(px, nCap);
                     pz = Arrays.copyOf(pz, nCap);
                     pv = Arrays.copyOf(pv, nCap);
+                    pw = Arrays.copyOf(pw, nCap);
                     next = Arrays.copyOf(next, nCap);
                 }
                 int cxCell = (fastFloor(wx) >> cellShift) - cellX0;
@@ -543,6 +556,7 @@ public final class BiomeEcotoneSpread {
                 px[nPts] = (float) wx;
                 pz[nPts] = (float) wz;
                 pv[nPts] = pot;
+                pw[nPts] = land;
                 int cIdx = czCell * cellW + cxCell;
                 next[nPts] = head[cIdx];
                 head[cIdx] = nPts;
@@ -580,8 +594,9 @@ public final class BiomeEcotoneSpread {
                             if (dSq < rSqF) {
                                 double w = rSqF - dSq;
                                 w *= w; // (R^2 - d^2)^2
-                                accV += pv[p] * w;
-                                accW += w;
+                                double weighted = w * pw[p];
+                                accV += pv[p] * weighted;
+                                accW += weighted;
                             }
                         }
                     }
