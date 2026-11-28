@@ -29,3 +29,18 @@ Le correcteur est maintenant appelé après la pose et avant fixwater pour photo
 2. Pour quantifier le décalage de niveau, relever les coordonnées X/Z et le Y de la source incriminée avant/après fixwater, plus le Y de surface dans la même colonne avant le chantier. Une capture seule ne donne pas ce repère.
 3. Conserver les compteurs `dressAndPlant` (appels paint/blocs peints/plantes/colonnes sautées), les lignes `[DLB-SNOW]` et le nombre d'arbres capturés/replantés.
 4. Laisser le calcul théorique terminer ou préserver son délai indépendant de la rédaction TXT; ne pas inclure le spread théorique dans le scanner passif.
+
+## Addendum — run TEST2 (11), démarré à 04:17:24
+
+Le nouveau journal fourni confirme `applyMcreatorPatch` à l'empreinte `eae7b4b29d53` (226 fichiers), puis `:compileJava`, `:classes` et `:runClient` réussis. Le scan Crimson Lake de `448 x 496` a produit un relief théorique de `222 208` colonnes en `35 536 ms` (pas 16, 928 sondes, 16,13 ms/colonne mesurée). Les huit fichiers du scan ont été écrits en 22 s (43 969 Kio). Une estimation distincte de `464 x 512` à 67 s a été refusée par le budget de 45 s; ce n'est pas un échec du calcul principal. Le journal signale aussi des retards « Can't keep up » de plusieurs centaines de ticks.
+
+Le journal s'arrête sans résultat terminal de fixwater ni fin de pipeline. Il ne prouve donc ni que les deux passes d'eau ont été exécutées, ni que neige et paint ont terminé. Les symptômes rapportés par le joueur restent ouverts.
+
+### Correctif apporté après cette trace
+
+- Fixwater parcourt maintenant l'emprise demandée (rayon Crimson Lake 100), après le talus/lissage et le paste. Chaque colonne chargée est relue depuis le relief final courant; les sources d'une colonne de surface sont recensées jusqu'à 48 blocs de profondeur de nappe, sans traverser le sol. Pour éviter d'aggraver la lenteur par un chargement massif, le fixwater ne force pas la génération du nouvel anneau: il compte les colonnes/chunks absents et les rapporte au bilan.
+- La propagation est strictement horizontale au Y de chaque source: air et eau non-source deviennent une source d'eau, tandis qu'un bloc plein arrête le front. Aucun voisin vertical n'est modifié. La deuxième passe efface son plan et son ensemble visité, puis rescane le terrain déjà modifié.
+- Le scan et le BFS journalisent leur progression, l'attente de chunks et un bilan terminal avec sources, cellules visitées et niveaux Y édités. La finition journalise aussi l'avancement de repaint et, à son terme, les appels/blocs paint, couches de neige, refus, plantes et colonnes sautées.
+- La purge finale des couvertures est synchrone et précède la diffusion des chunks aux clients. Elle journalise désormais ses trois sous-étapes et leurs durées/progrès. Ainsi, l'absence d'un changement visible avant le message de fin ne permet pas de conclure que la paint/neige n'a pas été posée; les compteurs serveur puis la diffusion finale trancheront.
+
+Ces changements sont des diagnostics et un comportement à tester au prochain run; ils ne valident pas rétroactivement le run TEST2 (11). Le bac local ne dispose pas de Java (`JAVA_HOME`/`java` absents), donc la compilation ne peut pas être répétée ici; l'utilisateur devra confirmer `:compileJava` dans MCreator.

@@ -1597,6 +1597,11 @@ public class StructureTerrainPrep {
         BlockState air = Blocks.AIR.defaultBlockState();
         BlockPos.MutableBlockPos mut = new BlockPos.MutableBlockPos();
         int clearedSnow = 0, clearedOther = 0, fixedGrey = 0;
+        int diagnosticChunks = 0;
+        long lastDiagnosticMs = tic;
+        deepluckyblock.util.DebugLog.info(LOGGER,
+                "[DLB-FINISH] purge finale demarree : chunks X {}..{}, Z {}..{} (hauteur Y {}..{}), publication client apres cette passe",
+                cx0, cx1, cz0, cz1, minY, maxY);
 
         // Etape 1 (T304-NO-STUMPS + T305-FOOTPRINT-REPAINT) : purger toute souche solitaire d'arbre coupe
         // (1 a 2 blocs verticaux de LOGS sans feuilles ni construction adjacente) dans [min-24..max+24],
@@ -1712,8 +1717,19 @@ public class StructureTerrainPrep {
                     }
                 }
                 if (mask[0] != 0L) flushChunkSections(level, lc, mask[0]);
+                diagnosticChunks++;
+                long diagnosticNow = System.currentTimeMillis();
+                if (diagnosticNow - lastDiagnosticMs >= 5_000L) {
+                    lastDiagnosticMs = diagnosticNow;
+                    deepluckyblock.util.DebugLog.info(LOGGER,
+                            "[DLB-FINISH] purge souche/paint : chunk {},{}, {} chunks traites, {} blocs nettoyes / {} neige, {} ms",
+                            cx, cz, diagnosticChunks, clearedOther, clearedSnow, diagnosticNow - tic);
+                }
             }
         }
+        deepluckyblock.util.DebugLog.info(LOGGER,
+                "[DLB-FINISH] purge souche/paint terminee : {} chunks, {} ms; debut balayage des amas d'arbres",
+                diagnosticChunks, System.currentTimeMillis() - tic);
 
         // Etape 2 (T305-FINAL-GLOBAL-TREES) : vider tout cache perime SWEEP_ANCHORED et verifier sur l'etat 3D reel final
         // que CHAQUE amas arbre/feuillage est relie globalement (26-connexite, 0-1 Deque) AU SOL ou A UNE STRUCTURE !
@@ -1755,8 +1771,19 @@ public class StructureTerrainPrep {
                         }
                     }
                 }
+                diagnosticChunks++;
+                long diagnosticNow = System.currentTimeMillis();
+                if (diagnosticNow - lastDiagnosticMs >= 5_000L) {
+                    lastDiagnosticMs = diagnosticNow;
+                    deepluckyblock.util.DebugLog.info(LOGGER,
+                            "[DLB-FINISH] balayage amas arbres : chunk {},{}, {} chunks traites, {} blocs nettoyes, {} ms",
+                            cx, cz, diagnosticChunks, clearedOther, diagnosticNow - tic);
+                }
             }
         }
+        deepluckyblock.util.DebugLog.info(LOGGER,
+                "[DLB-FINISH] balayage amas arbres termine : {} chunks visites, debut verification des couches/plantes volantes",
+                diagnosticChunks);
         for (var entry : leafFinalMasks.long2LongEntrySet()) {
             long ck = entry.getLongKey();
             long m = entry.getLongValue();
@@ -1879,6 +1906,14 @@ public class StructureTerrainPrep {
                 }
                 if (mask[0] != 0L) {
                     flushChunkSections(level, lc, mask[0]);
+                }
+                diagnosticChunks++;
+                long diagnosticNow = System.currentTimeMillis();
+                if (diagnosticNow - lastDiagnosticMs >= 5_000L) {
+                    lastDiagnosticMs = diagnosticNow;
+                    deepluckyblock.util.DebugLog.info(LOGGER,
+                            "[DLB-FINISH] couches/plantes volantes : chunk {},{}, {} chunks traites, {} neige / {} autres retires, {} supports snowy corriges, {} ms",
+                            cx, cz, diagnosticChunks, clearedSnow, clearedOther, fixedGrey, diagnosticNow - tic);
                 }
             }
         }
@@ -7138,8 +7173,9 @@ public class StructureTerrainPrep {
         // 0 fastChunks | 1 blendChunks | 2 surfaceSet | 3 fillerSet
         // 4 plantes    | 5 sautees     | 6 sauvees reposees
         // 7 (T492) sautees FAUTE DE CHUNK CHARGE -- sous-ensemble de 5, compte a part
-        // 8 appels effectifs au peintre commun (distincts des blocs réellement modifies)
-        final int[] stats = new int[9];
+        // 8 appels au peintre | 9 couches de neige posées | 10 refus de neige
+        final int[] stats = new int[11];
+        final long[] lastDressProgressMs = {t0};
         // T492 : colonnes a repasser quand leur chunk sera arrive, et emprise en Z
         // des manques (pour dire OU le travail n'a pas ete fait, pas seulement combien).
         final java.util.List<int[]> manques = new java.util.ArrayList<>();
@@ -7365,10 +7401,14 @@ public class StructureTerrainPrep {
                         BlockState snowLayer = snowVaried(level, level.getSeed(), x, z);
                         if (curLc != null) setPaletteBlockInChunk(level, curLc, x, surfY + 1, z, snowLayer, chunkMask);
                         else level.setBlock(mut.set(x, surfY + 1, z), snowLayer, FAST_FLAG);
-                    } else if (!ab.is(Blocks.SNOW) && cur.hasProperty(BlockStateProperties.SNOWY) && cur.getValue(BlockStateProperties.SNOWY)) {
-                        BlockState unsnowed = cur.setValue(BlockStateProperties.SNOWY, false);
-                        if (curLc != null) setPaletteBlockInChunk(level, curLc, x, surfY, z, unsnowed, chunkMask);
-                        else level.setBlock(mut.set(x, surfY, z), unsnowed, FAST_FLAG);
+                        stats[9]++;
+                    } else if (!ab.is(Blocks.SNOW)) {
+                        stats[10]++;
+                        if (cur.hasProperty(BlockStateProperties.SNOWY) && cur.getValue(BlockStateProperties.SNOWY)) {
+                            BlockState unsnowed = cur.setValue(BlockStateProperties.SNOWY, false);
+                            if (curLc != null) setPaletteBlockInChunk(level, curLc, x, surfY, z, unsnowed, chunkMask);
+                            else level.setBlock(mut.set(x, surfY, z), unsnowed, FAST_FLAG);
+                        }
                     }
                 }
 
@@ -7387,6 +7427,13 @@ public class StructureTerrainPrep {
                 chunkMask[0] = 0L;
             }
             cursor[0] = i;
+            long dressNow = System.currentTimeMillis();
+            if (dressNow - lastDressProgressMs[0] >= 5_000L) {
+                lastDressProgressMs[0] = dressNow;
+                deepluckyblock.util.DebugLog.info(LOGGER,
+                        "[DLB-FINISH] repeinture en cours : {}/{} colonnes ({}%), {} appels paint, {} blocs peints, {} couches de neige, {} refus neige, {} plantes, {} colonnes sautees",
+                        i, sz, 100 * i / Math.max(1, sz), stats[8], stats[3], stats[9], stats[10], stats[4], stats[5]);
+            }
             if (i < sz) {
                 TestProcedure.schedule(level, TestProcedure.currentTick(level) + 1, stepSlice[0]);
             } else if (!manques.isEmpty() && tours[0] < DRESS_RETRY_TOURS
@@ -7428,9 +7475,9 @@ public class StructureTerrainPrep {
             } else {
                 deepluckyblock.util.DebugLog.info(LOGGER,
                         "dressAndPlant (T304 direct-sections) : {} chunks rapides / {} melanges, {} surfaces, "
-                                + "{} appels paint / {} blocs de sous-sol peints, {} plantes, {} colonnes sautees, "
+                                + "{} appels paint / {} blocs de sous-sol peints, {} couches de neige posees / {} refus neige, {} plantes, {} colonnes sautees, "
                                 + "{} replis de palette en {} ms",
-                        stats[0], stats[1], stats[2], stats[8], stats[3], stats[4], stats[5],
+                        stats[0], stats[1], stats[2], stats[8], stats[3], stats[9], stats[10], stats[4], stats[5],
                         paletteFallbacksSoFar(), System.currentTimeMillis() - t0);
                 // T492 : le reliquat est dit a voix haute, avec son emprise. Un habillage
                 // incomplet qui se tait se lit comme un habillage complet -- c'est ce
@@ -7553,7 +7600,7 @@ public class StructureTerrainPrep {
         // T297 : promu en INFO visible (une ligne par structure) -- c'est le
         // chronometrage qui confirmera ou non le mega-tick cote machine faible.
         deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-STRUCTURE] nappe d'eau de reference memorisee : {} colonne(s) sur {}x{} en {},{} en {} ms (T295/T489 scan chunk-major) -- "
-                        + "fixwater borne a cette photographie, hors contacts de bord explicitement qualifies (T112/T116)",
+                        + "reference partagee avec les gardes de nappe; fixwater T490 opere au meme Y autour des sources",
                 n, w, h, x0, z0, System.currentTimeMillis() - t0);
     }
 
@@ -11151,13 +11198,11 @@ public class StructureTerrainPrep {
     }
 
     /**
-     * T489 -- photographie la nappe d'eau deja presente juste avant un fixwater
+     * T489 -- photographie les colonnes d'eau présentes juste avant le fixwater
      * sur un pipeline autonome (ex. CrimsonLake, qui ne passe pas par prepZone).
-     * Sans cette reference, le correcteur historique considerait toute poche d'air
-     * atteignable comme eligible et pouvait etendre artificiellement l'eau sur de
-     * la terre. L'emprise inclut le rayon reel du fixwater; le remplissage reste
-     * autorise uniquement dans les colonnes deja aquatiques, sauf contacts d'eau
-     * explicitement qualifies par la detection de bande.
+     * Cette référence sert aux autres gardes de terrain; le correcteur T490, lui,
+     * répare explicitement l'air et l'eau courante qui touchent une source, au même
+     * Y, dans son rayon borné. L'emprise photographiée inclut ce rayon.
      */
     public static void captureWaterReferenceForFix(ServerLevel level, BlockPos min, BlockPos max,
                                                    int radius) {
@@ -11258,8 +11303,12 @@ public class StructureTerrainPrep {
 
     private static void fixWaterNearStructure(ServerLevel level, BlockPos min, BlockPos max, int radius,
                                               Runnable onDone) {
-        // T90 (B10/B12) : la "cascade rayon x 10 passes" (T78/T81) est remplacee
-        // par la propagation CONNECTEE FixWaterJob : voir sa javadoc.
+        // T490 : le rayon de lecture est 100 blocs, mais on ne demande pas de
+        // génération de chunks supplémentaire. Le scan travaille sur les chunks
+        // présents et compte explicitement ceux qui restent absents.
+        deepluckyblock.util.DebugLog.info(LOGGER,
+                "[DLB-WATER] fixwater démarre après relief/paste : rayon {}, scan post-lissage du relief courant (chunks présents seulement), sources horizontales au même Y, 2 passes",
+                radius);
         new FixWaterJob(level, min, max, radius, onDone).slice();
     }
 
@@ -11268,9 +11317,9 @@ public class StructureTerrainPrep {
      *  en attente du budget de tranche ou d'un chunk absent). T107 : avec le
      *  fixwater WorldEdit (pose de source directe), un tour suffit en pratique
      *  et le second constate rapidement « zone saine ». */
-    private static final int FIXWATER_MAX_ROUNDS = 3;
-    /** T90 : plafond de cellules d'eau visitees (garde-fou ocean). */
-    private static final int FIXWATER_SEEN_MAX = 400_000;
+    private static final int FIXWATER_MAX_ROUNDS = 2;
+    /** T90/T490 : plafond global de cellules source candidates, garde-fou d'ocean. */
+    private static final int FIXWATER_SEEN_MAX = 1_000_000;
     /** T90 : profondeur de recherche de la graine sous la surface. */
     private static final int FIXWATER_SEED_DEPTH = 48;
     /** T112 : largeur de la bande exterieure scannee autour de la zone, en chunks. */
@@ -11283,29 +11332,13 @@ public class StructureTerrainPrep {
     private static final int FIXWATER_BAND_DEPTH = 64;
 
     /**
-     * T90 (B10/B12) -- CASCADE D'EAU CONNECTEE, en tranches.
-     *
-     * <p>Remplace la cascade « rayon » historique : chaque appel balayait
-     * TOUTES les colonnes de la boite (jusqu'a ~93 000), jusqu'a
-     * 10 passes a la suite, et la methode etait
-     * appelee ~11 fois par pipeline (prepZone x2, decorate x2, sealWaterLeaks
-     * x8). Mesure du run du 29/09 : 250,9 s de fixWaterNearStructure +
-     * 179,3 s de sealWaterLeaks -- de loin le premier poste du run, et la
-     * douleur signalee en direct par le dev (« c'est ATTROCEMENT LONG !! »,
-     * ecrit pendant l'iteration 4 du seal).
-     *
-     * <p>Principe : on ne visite QUE l'eau REELLE, une fois chacune.
-     * <ol>
-     *   <li>GRAINES : chaque colonne contribue son PREMIER bloc d'eau (scan
-     *       qui s'arrete au premier bloc plein, eau ou non) ;</li>
-     *   <li>BFS 6 directions a travers les blocs d'eau connectes ; chaque
-     *       bloc d'eau ayant de l'AIR sur un cote ou en dessous sert
-     *       d'ORIGINE a un fixwater WorldEdit EXACT (T107 : source posee
-     *       directement, plus de tick de fluide a l'aveugle) ;</li>
-     *   <li>nouveau tour SEULEMENT si des cellules ont ete corrigees, au plus
-     *       {@link #FIXWATER_MAX_ROUNDS} fois.</li>
-     * </ol>
-     * Une nappe stable ne coute plus que sa propre traversée, une fois.
+     * T490 -- réparation bornée des surfaces d'eau, en tranches de 45 ms.
+     * Les graines sont uniquement les blocs WATER source observés au sommet d'une
+     * colonne. Depuis chacune, le BFS visite les quatre voisins horizontaux au même
+     * Y : l'air et les blocs non pleins deviennent source, l'eau courante est promue, un bloc plein ferme le
+     * front. Aucun déplacement vertical, donc le niveau des sources ne peut pas
+     * remonter ou descendre. La passe 2 refait le scan sur le monde modifié pour
+     * vérifier les sources nouvellement créées et compléter les trous du rayon.
      */
     private static final class FixWaterJob {
         private final ServerLevel level;
@@ -11317,7 +11350,9 @@ public class StructureTerrainPrep {
         private final java.util.ArrayDeque<Long> queue = new java.util.ArrayDeque<>();
         private final long t0 = System.currentTimeMillis();
         private int round = 1, scanX, scanZ, changed, capped, skippedChunk, slices;
-        private int airSkippedNoWaterReference, airWaterPlaced, flowingWaterPromoted;
+        private int sourceSeeds, airWaterPlaced, flowingWaterPromoted;
+        private int airSkippedNoWaterReference; // T112 legacy path, non appelé par la passe T490
+        private long visitedTotal, lastProgressLogMs;
         private int minWaterEditY = Integer.MAX_VALUE, maxWaterEditY = Integer.MIN_VALUE;
         // ---- T112 : bande exterieure d'un chunk autour de la zone ----
         private java.util.ArrayList<Long> bandRing;               // chunks de la bande (cle (cx<<32)^cz)
@@ -11341,8 +11376,9 @@ public class StructureTerrainPrep {
 
         FixWaterJob(ServerLevel level, BlockPos min, BlockPos max, int radius, Runnable onDone) {
             this.level = level; this.radius = radius; this.onDone = onDone;
-            this.x0 = min.getX() - radius; this.x1 = max.getX() + radius;
-            this.z0 = min.getZ() - radius; this.z1 = max.getZ() + radius;
+            int margin = Math.max(1, radius);
+            this.x0 = min.getX() - margin; this.x1 = max.getX() + margin;
+            this.z0 = min.getZ() - margin; this.z1 = max.getZ() + margin;
             this.scanX = x0; this.scanZ = z0;
         }
 
@@ -11351,17 +11387,30 @@ public class StructureTerrainPrep {
             TestProcedure.schedule(level, TestProcedure.currentTick(level) + delay, this::slice);
         }
 
-        /** 1) graine : premier bloc d'eau de la colonne (scan borne, pas de generation). */
+        /**
+         * Graine : collecte chaque source d'une colonne de nappe de surface,
+         * jusqu'a la profondeur bornee. Les couches de neige/terre arretent la
+         * recherche; le scan ne traverse pas le sol pour toucher une grotte.
+         */
         private void seedColumn(int x, int z) {
             if (!deepluckyblock.util.SafeSurface.isLoadedAt(level, x, z)) { skippedChunk++; return; }
             int surf = deepluckyblock.util.SafeSurface.height(level, Heightmap.Types.WORLD_SURFACE, x, z);
             int yBot = Math.max(level.getMinBuildHeight(), surf - FIXWATER_SEED_DEPTH);
+            boolean foundWaterLayer = false;
             for (int y = surf - 1; y >= yBot; y--) {
-                BlockState s = level.getBlockState(mut.set(x, y, z));
-                if (s.isAir()) continue;
-                if (s.is(Blocks.WATER))
-                    queue.add(BlockPos.asLong(x, y, z));
-                break;   // premier bloc plein (eau ou non) : la colonne est classee
+                BlockState state = level.getBlockState(mut.set(x, y, z));
+                if (state.is(Blocks.WATER)) {
+                    foundWaterLayer = true;
+                    if (state.getFluidState().isSource()) {
+                        long packed = BlockPos.asLong(x, y, z);
+                        if (!seen.contains(packed)) {
+                            if (seen.size() >= FIXWATER_SEEN_MAX) { capped++; continue; }
+                            if (seen.add(packed)) { queue.add(packed); sourceSeeds++; }
+                        }
+                    }
+                    continue;
+                }
+                if (foundWaterLayer || !state.isAir()) break;
             }
         }
 
@@ -11709,113 +11758,117 @@ public class StructureTerrainPrep {
             slices++;
             deepluckyblock.util.TerrainChain.heartbeat();
             deepluckyblock.util.ChunkKeeper.keep(level);
-            // Portillon de zone : jamais d'acces bloc au chunk absent.
-            if (!deepluckyblock.util.ChunkKeeper.zoneComplete(level)) { resume(1); return; }
+            if (!deepluckyblock.util.ChunkKeeper.zoneComplete(level)) {
+                long waitNow = System.currentTimeMillis();
+                if (waitNow - lastProgressLogMs >= 5_000L) {
+                    lastProgressLogMs = waitNow;
+                    deepluckyblock.util.DebugLog.info(LOGGER,
+                            "[DLB-WATER] chargement de l'emprise de rayon {} en attente; fixwater suspendu sans bloquer le tick",
+                            radius);
+                }
+                resume(1);
+                return;
+            }
             long deadline = System.currentTimeMillis() + 45L;
 
-            // T140 : budget dedie 45 ms pour reduire les 51 attentes inter-ticks
-            // du fixwater, sans changer ordre, convergence ni rayon.
-            // 0) T112 : bande exterieure d'un chunk (fenetre glissante 4x4,
-            //    fixwater rayon 100 au contact eau/air du bord) -- SANS ELLE,
-            //    l'eau coupee au bord n'a jamais de graine et le fixwater ne
-            //    corrige rien (0 cellule posee, constate en jeu par le dev).
-            if (!bandDone && bandStep(deadline)) return;   // bande en cours (reprise planifiee)
-            bandDone = true;
-
-            // 1) graines, colonne par colonne
+            // Passe 1/2: photo des sources au niveau de surface, puis BFS horizontal
+            // unique. Chaque case d'air/eau courante touche directement une source
+            // avant d'être convertie; le Y ne bouge jamais et les blocs pleins ferment
+            // la propagation. Le second passage rescane le monde déjà modifié.
             while (scanX <= x1) {
                 while (scanZ <= z1) {
                     seedColumn(scanX, scanZ);
                     scanZ++;
-                    if (System.currentTimeMillis() >= deadline) { resume(1); return; }
+                    long scanNow = System.currentTimeMillis();
+                    if (scanNow - lastProgressLogMs >= 5_000L) {
+                        lastProgressLogMs = scanNow;
+                        deepluckyblock.util.DebugLog.info(LOGGER,
+                                "[DLB-WATER] passe {}/{} : scan post-relief x={}, z={}, {} source(s) collectees",
+                                round, FIXWATER_MAX_ROUNDS, scanX, scanZ, sourceSeeds);
+                    }
+                    if (scanNow >= deadline) { resume(1); return; }
                 }
-                scanZ = z0; scanX++;
+                scanZ = z0;
+                scanX++;
             }
 
-            // 2) BFS dans la nappe connectee
-            while (!queue.isEmpty() || activeFill != null) {
-                if (System.currentTimeMillis() >= deadline) { resume(1); return; }
-                if (activeFill != null) {
-                    // T114 : terminer le fill en cours AVANT toute nouvelle
-                    // origine. L'etat survit entre tranches -- jamais de
-                    // redemarrage a zero (gel crimsonlake repare).
-                    if (!fillSlice(activeFill, deadline)) { resume(1); return; }
-                    changed += activeFill.fixed;
-                    activeFill = null;
-                    continue;
+            while (!queue.isEmpty()) {
+                long now = System.currentTimeMillis();
+                if (now >= deadline) { resume(1); return; }
+                if (now - lastProgressLogMs >= 5_000L) {
+                    lastProgressLogMs = now;
+                    deepluckyblock.util.DebugLog.info(LOGGER,
+                            "[DLB-WATER] passe {}/{} en cours : {} sources, {} cellules visitees, {} air/blocs non pleins remplis, {} eau(x) courante(s) sourcees",
+                            round, FIXWATER_MAX_ROUNDS, sourceSeeds, visitedTotal,
+                            airWaterPlaced, flowingWaterPromoted);
                 }
                 long packed = queue.poll();
-                if (!seen.add(packed)) continue;
-                if (seen.size() > FIXWATER_SEEN_MAX) { capped++; continue; }
                 int x = BlockPos.getX(packed), y = BlockPos.getY(packed), z = BlockPos.getZ(packed);
-                if (!deepluckyblock.util.SafeSurface.loaded(level, x >> 4, z >> 4)) { skippedChunk++; continue; } // T301-B
-                BlockState state = level.getBlockState(mut.set(x, y, z));
-                if (!state.is(Blocks.WATER)) continue;
-
-                // De l'air lateralement OU dessous => l'eau aurait du couler la :
-                // T107 (PRIORITE dev 30/09 : « IMPORTER EXACTEMENT le fixwater de
-                // worldedit ... remplacer mon fixwater bidon par lui ») : on ne
-                // declenche plus de tick de fluide vanilla a l'aveugle (T81),
-                // on applique l'algorithme WorldEdit //fixwater lui-meme -- voir
-                // fillSlice()/FillState (T114) definis plus bas. T95 : chaque lecture
-                // laterale reste GARDEE par isLoadedAt (sinon generation
-                // synchrone ~0,3-0,5 s piece en pleine boucle BFS).
-                boolean open = false;
-                for (int d = 0; d < 5 && !open; d++) {
-                    int sx = x + (d == 0 ? 1 : d == 1 ? -1 : 0);
-                    int sz = z + (d == 2 ? 1 : d == 3 ? -1 : 0);
-                    int sy = (d == 4) ? y - 1 : y;
-                    if (sy < level.getMinBuildHeight()) continue;
-                    if (!deepluckyblock.util.SafeSurface.isLoadedAt(level, sx, sz)) { skippedChunk++; continue; }
-                    open = level.getBlockState(side.set(sx, sy, sz)).isAir();
+                visitedTotal++;
+                if (visitedTotal > (long) FIXWATER_SEEN_MAX * FIXWATER_MAX_ROUNDS) {
+                    capped++;
+                    queue.clear();
+                    break;
                 }
-                if (open && activeFill == null) {
-                    // T114 : on CREE l'etat du fill reprendable ; il sera
-                    // execute en tete de boucle des la prochaine iteration,
-                    // sur autant de tranches qu'il faut.
-                    activeFill = new FillState(x, y, z, radius);
-                }
+                if (!deepluckyblock.util.SafeSurface.isLoadedAt(level, x, z)) { skippedChunk++; continue; }
+                BlockState source = level.getBlockState(mut.set(x, y, z));
+                if (!source.is(Blocks.WATER) || !source.getFluidState().isSource()) continue;
 
-                // Propagation 6 directions dans l'eau (nappe entiere, une fois).
-                // T95 : le BFS est BORNE a la boite [x0,x1]x[z0,z1] -- sans cette
-                // borne, une graine au bord d'un ocean/lac voisin traversait la
-                // nappe ENTIERE (66 908 cellules mesurees pour 371 declenchements
-                // utiles) et les lectures hors boite tombaient dans des chunks
-                // non charges (generation synchrone, voir plus haut).
-                for (int d = 0; d < 6; d++) {
+                // Ordre exact demandé : +X, -X, +Z, -Z au Y source. Un bloc plein
+                // est conservé; air, bloc non plein et eau non-source deviennent source.
+                for (int d = 0; d < 4; d++) {
                     int nx = x + (d == 0 ? 1 : d == 1 ? -1 : 0);
                     int nz = z + (d == 2 ? 1 : d == 3 ? -1 : 0);
-                    int ny = y + (d == 4 ? -1 : d == 5 ? 1 : 0);
-                    if (ny < level.getMinBuildHeight() || ny > level.getMaxBuildHeight() - 1) continue;
                     if (nx < x0 || nx > x1 || nz < z0 || nz > z1) continue;
-                    long nk = BlockPos.asLong(nx, ny, nz);
-                    if (seen.contains(nk)) continue;
+                    if (isProtected(nx, nz)) continue;
                     if (!deepluckyblock.util.SafeSurface.isLoadedAt(level, nx, nz)) { skippedChunk++; continue; }
-                    if (level.getBlockState(side.set(nx, ny, nz)).is(Blocks.WATER))
-                        queue.add(nk);
+                    BlockState neighbor = level.getBlockState(side.set(nx, y, nz));
+                    if (neighbor.isAir()
+                            || (!neighbor.blocksMotion() && neighbor.getFluidState().isEmpty())) {
+                        level.setBlock(mut.set(nx, y, nz), Blocks.WATER.defaultBlockState(), FAST_FLAG);
+                        airWaterPlaced++;
+                        changed++;
+                        minWaterEditY = Math.min(minWaterEditY, y);
+                        maxWaterEditY = Math.max(maxWaterEditY, y);
+                    } else if (neighbor.is(Blocks.WATER)) {
+                        if (!neighbor.getFluidState().isSource()) {
+                            level.setBlock(mut.set(nx, y, nz), Blocks.WATER.defaultBlockState(), FAST_FLAG);
+                            flowingWaterPromoted++;
+                            changed++;
+                            minWaterEditY = Math.min(minWaterEditY, y);
+                            maxWaterEditY = Math.max(maxWaterEditY, y);
+                        }
+                    } else {
+                        continue; // plein : bordure étanche, aucun contournement vertical
+                    }
+                    long next = BlockPos.asLong(nx, y, nz);
+                    if (seen.add(next)) queue.add(next);
                 }
             }
 
-            // 3) fin de tour : on ne recommence que si des cellules ont ete corrigees
-            if (changed > 0 && round < FIXWATER_MAX_ROUNDS) {
+            if (round < FIXWATER_MAX_ROUNDS) {
                 round++;
                 seen.clear();
-                scanX = x0; scanZ = z0;
-                resume(2);   // laisse les ticks de fluide s'executer d'abord
+                queue.clear();
+                sourceSeeds = 0;
+                scanX = x0;
+                scanZ = z0;
+                lastProgressLogMs = 0L;
+                deepluckyblock.util.DebugLog.info(LOGGER,
+                        "[DLB-WATER] passe 1 terminee : {} cellules modifiees; re-scan du terrain courant avant la passe 2",
+                        changed);
+                resume(2);
                 return;
             }
-            deepluckyblock.util.DebugLog.structure(
-                    "fixWaterNearStructure (rayon {}) TERMINE : {} cellule(s) modifiee(s) par fixwater WorldEdit (T107) "
-                            + "sur {} cellule(s) d'eau connectee(s) visitees, {} tour(s), {} origine(s) de bande rayon 100 (T112), "
-                            + "{} bloc(s) d'air converti(s), {} eau(x) courante(s) promue(s), Y edits {}..{}{}{}{} ({} tranches, {} ms) -- cascade connectee T90, fills reprenables T114",
-                    radius, changed, seen.size(), round, bandFires, airWaterPlaced, flowingWaterPromoted,
+
+            deepluckyblock.util.DebugLog.info(LOGGER,
+                    "[DLB-WATER] fixwater termine : rayon {}, {} passes, {} sources re-scannees, {} cellules visitees, "
+                            + "{} air/blocs non pleins remplis, {} eaux courantes sourcees, Y edits {}..{}{}{} ({} tranches, {} ms)",
+                    radius, round, sourceSeeds, visitedTotal, airWaterPlaced, flowingWaterPromoted,
                     minWaterEditY == Integer.MAX_VALUE ? "n/a" : Integer.toString(minWaterEditY),
                     maxWaterEditY == Integer.MIN_VALUE ? "n/a" : Integer.toString(maxWaterEditY),
-                    skippedChunk > 0 ? ", " + skippedChunk + " colonne(s)/cellule(s) sans chunk" : "",
-                    capped > 0 ? ", PLAFOND " + FIXWATER_SEEN_MAX + " atteint (" + capped + " cellule(s) ignorees)" : "",
-                    airSkippedNoWaterReference > 0 ? ", " + airSkippedNoWaterReference
-                            + " bloc(s) d'air refuses faute de photographie de nappe (T489)" : "",
-                    changed == 0 ? ", zone saine" : "",
+                    skippedChunk > 0 ? ", " + skippedChunk + " cellules hors chunk charge" : "",
+                    capped > 0 ? ", plafond de securite atteint" : "",
                     slices, System.currentTimeMillis() - t0);
             if (onDone != null) onDone.run();
         }

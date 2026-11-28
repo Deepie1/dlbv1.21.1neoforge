@@ -643,8 +643,8 @@ public class CrimsonLakeStructureSpawnProcedure {
                     // AVANT fixwater empeche la passe de creer un lac artificiel sur
                     // les colonnes de terrain sec.
                     StructureTerrainPrep.captureWaterReferenceForFix(
-                            flvl, fMin, fMax, TALUS_LARGEUR);
-                    StructureTerrainPrep.fixWaterAround(flvl, fMin, fMax, TALUS_LARGEUR, finFinition);
+                            flvl, fMin, fMax, FIXWATER_RADIUS);
+                    StructureTerrainPrep.fixWaterAround(flvl, fMin, fMax, FIXWATER_RADIUS, finFinition);
                 } catch (Throwable t) {
                     deepluckyblock.util.DebugLog.err("[DLB-LAKE] T488 fixwater echoue : " + t);
                     finFinition.run();
@@ -1380,6 +1380,8 @@ public class CrimsonLakeStructureSpawnProcedure {
 
     /** Largeur de l'etalement, en blocs, mesuree DEPUIS L'EMPREINTE de l'ouvrage. */
     private static final int TALUS_LARGEUR = 48;
+    /** T490 : rayon de réparation horizontale de l'eau, élargi après le dernier run. */
+    private static final int FIXWATER_RADIUS = 100;
     /** Passes de lissage du champ de cibles. */
     private static final int TALUS_FLOU_PASSES = 6;
     /** Passes de bouchage des trous du releve, par diffusion. */
