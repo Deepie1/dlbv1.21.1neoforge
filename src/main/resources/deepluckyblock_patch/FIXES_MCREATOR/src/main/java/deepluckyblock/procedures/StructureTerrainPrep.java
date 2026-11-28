@@ -7552,8 +7552,8 @@ public class StructureTerrainPrep {
         NW_X0 = x0; NW_Z0 = z0; NW_W = w; NW_H = h; NATURAL_WATER_COUNT = n;
         // T297 : promu en INFO visible (une ligne par structure) -- c'est le
         // chronometrage qui confirmera ou non le mega-tick cote machine faible.
-        deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-STRUCTURE] nappe vanilla memorisee : {} colonne(s) d'eau sur {}x{} en {},{} en {} ms (T295 scan chunk-major) -- "
-                        + "fixwater borne a cette base naturelle (T103, plus de lac artificiel)",
+        deepluckyblock.util.DebugLog.info(LOGGER, "[DLB-STRUCTURE] nappe d'eau de reference memorisee : {} colonne(s) sur {}x{} en {},{} en {} ms (T295/T489 scan chunk-major) -- "
+                        + "fixwater borne a cette photographie, hors contacts de bord explicitement qualifies (T112/T116)",
                 n, w, h, x0, z0, System.currentTimeMillis() - t0);
     }
 
@@ -11151,6 +11151,26 @@ public class StructureTerrainPrep {
     }
 
     /**
+     * T489 -- photographie la nappe d'eau deja presente juste avant un fixwater
+     * sur un pipeline autonome (ex. CrimsonLake, qui ne passe pas par prepZone).
+     * Sans cette reference, le correcteur historique considerait toute poche d'air
+     * atteignable comme eligible et pouvait etendre artificiellement l'eau sur de
+     * la terre. L'emprise inclut le rayon reel du fixwater; le remplissage reste
+     * autorise uniquement dans les colonnes deja aquatiques, sauf contacts d'eau
+     * explicitement qualifies par la detection de bande.
+     */
+    public static void captureWaterReferenceForFix(ServerLevel level, BlockPos min, BlockPos max,
+                                                   int radius) {
+        int x0 = min.getX() - radius;
+        int z0 = min.getZ() - radius;
+        int x1 = max.getX() + radius;
+        int z1 = max.getZ() + radius;
+        NATURAL_WATER = null;
+        NATURAL_WATER_COUNT = 0;
+        captureNaturalWater(level, x0, z0, x1 - x0 + 1, z1 - z0 + 1);
+    }
+
+    /**
      * T488 -- releve des arbres d'UN chunk, a appeler AVANT tout creusement.
      * Le lac n'a jamais passe par prepZone, donc {@code LAST_TREES} restait vide et
      * replantTrees() n'avait rien a replanter : reproche dev du 25/11 « je vois que tu
@@ -11265,6 +11285,8 @@ public class StructureTerrainPrep {
         private final java.util.ArrayDeque<Long> queue = new java.util.ArrayDeque<>();
         private final long t0 = System.currentTimeMillis();
         private int round = 1, scanX, scanZ, changed, capped, skippedChunk, slices;
+        private int airSkippedNoWaterReference, airWaterPlaced, flowingWaterPromoted;
+        private int minWaterEditY = Integer.MAX_VALUE, maxWaterEditY = Integer.MIN_VALUE;
         // ---- T112 : bande exterieure d'un chunk autour de la zone ----
         private java.util.ArrayList<Long> bandRing;               // chunks de la bande (cle (cx<<32)^cz)
         private final java.util.ArrayDeque<Long> bandQueue = new java.util.ArrayDeque<>(); // origines detectees
@@ -11600,10 +11622,14 @@ public class StructureTerrainPrep {
                 int x = BlockPos.getX(pk), y = BlockPos.getY(pk), z = BlockPos.getZ(pk);
                 BlockState cur = level.getBlockState(mut.set(x, y, z));
                 if (cur.isAir()) {
-                    // T103 (inchange) : aucune pose d'eau sur de la terre
-                    // naturelle hors nappe vanilla, ni sur colonne protegee.
+                    // T489 : un correcteur sans photographie d'eau n'a pas le droit
+                    // de creer des sources dans l'air (en particulier sur les pipelines
+                    // autonomes). On peut toujours stabiliser les blocs d'eau existants.
+                    if (!hasNaturalWaterRef()) { airSkippedNoWaterReference++; continue; }
+                    // T103/T489 : aucune pose d'eau sur la terre naturelle hors nappe
+                    // memorisee, ni sur colonne protegee.
                     if (isProtected(x, z)) continue;
-                    if (hasNaturalWaterRef() && !naturalWaterAt(x, z)) {
+                    if (!naturalWaterAt(x, z)) {
                         // T116 : la photo T103 ne couvre que la boite interieure.
                         // Une cellule d'un chunk exterieur explicitement
                         // qualifie par le contact eau/air de bande ne peut donc
@@ -11613,10 +11639,16 @@ public class StructureTerrainPrep {
                     }
                     level.setBlock(mut, Blocks.WATER.defaultBlockState(), FAST_FLAG);
                     f.fixed++;    // BlockReplace : l'air devient eau stationnaire
+                    airWaterPlaced++;
+                    minWaterEditY = Math.min(minWaterEditY, y);
+                    maxWaterEditY = Math.max(maxWaterEditY, y);
                 } else if (cur.is(Blocks.WATER)) {
                     if (!cur.getFluidState().isSource()) {
                         level.setBlock(mut, Blocks.WATER.defaultBlockState(), FAST_FLAG);
                         f.fixed++;  // fixwater : « flowing -> stationary »
+                        flowingWaterPromoted++;
+                        minWaterEditY = Math.min(minWaterEditY, y);
+                        maxWaterEditY = Math.max(maxWaterEditY, y);
                     }
                 } else continue;  // bloc plein : hors masque (mur)
                 // NonRisingVisitor : +X, -X, +Z, -Z, -Y (jamais +Y).
@@ -11741,11 +11773,16 @@ public class StructureTerrainPrep {
                 return;
             }
             deepluckyblock.util.DebugLog.structure(
-                    "fixWaterNearStructure (rayon {}) TERMINE : {} cellule(s) posee(s) source par fixwater WorldEdit exact (T107) "
-                            + "sur {} cellule(s) d'eau connectee(s) visitees, {} tour(s), {} origine(s) de bande rayon 100 (T112){}{}{} ({} tranches, {} ms) -- cascade connectee T90, fills reprenables T114",
-                    radius, changed, seen.size(), round, bandFires,
+                    "fixWaterNearStructure (rayon {}) TERMINE : {} cellule(s) modifiee(s) par fixwater WorldEdit (T107) "
+                            + "sur {} cellule(s) d'eau connectee(s) visitees, {} tour(s), {} origine(s) de bande rayon 100 (T112), "
+                            + "{} bloc(s) d'air converti(s), {} eau(x) courante(s) promue(s), Y edits {}..{}{}{}{} ({} tranches, {} ms) -- cascade connectee T90, fills reprenables T114",
+                    radius, changed, seen.size(), round, bandFires, airWaterPlaced, flowingWaterPromoted,
+                    minWaterEditY == Integer.MAX_VALUE ? "n/a" : Integer.toString(minWaterEditY),
+                    maxWaterEditY == Integer.MIN_VALUE ? "n/a" : Integer.toString(maxWaterEditY),
                     skippedChunk > 0 ? ", " + skippedChunk + " colonne(s)/cellule(s) sans chunk" : "",
                     capped > 0 ? ", PLAFOND " + FIXWATER_SEEN_MAX + " atteint (" + capped + " cellule(s) ignorees)" : "",
+                    airSkippedNoWaterReference > 0 ? ", " + airSkippedNoWaterReference
+                            + " bloc(s) d'air refuses faute de photographie de nappe (T489)" : "",
                     changed == 0 ? ", zone saine" : "",
                     slices, System.currentTimeMillis() - t0);
             if (onDone != null) onDone.run();

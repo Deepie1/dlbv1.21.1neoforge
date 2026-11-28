@@ -637,6 +637,12 @@ public class CrimsonLakeStructureSpawnProcedure {
                         + StructureTerrainPrep.capturedTreeCount() + " arbres releves avant creusement");
                 installLakeStructureContext(j);
                 try {
+                    // T489 : ce pipeline autonome ne photographie pas la nappe via
+                    // prepZone. Capturer l'eau deja presente APRES la pose/clear et
+                    // AVANT fixwater empeche la passe de creer un lac artificiel sur
+                    // les colonnes de terrain sec.
+                    StructureTerrainPrep.captureWaterReferenceForFix(
+                            flvl, fMin, fMax, TALUS_LARGEUR);
                     StructureTerrainPrep.fixWaterAround(flvl, fMin, fMax, TALUS_LARGEUR, finFinition);
                 } catch (Throwable t) {
                     deepluckyblock.util.DebugLog.err("[DLB-LAKE] T488 fixwater echoue : " + t);
