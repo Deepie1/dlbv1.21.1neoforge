@@ -18,7 +18,8 @@ Le correcteur est maintenant appelé après la pose et avant fixwater pour photo
 ## Neige, paint et arbres : statut
 
 - Le champ de spread et le peintre restent dans `StructureTerrainPrep`; le TXT reste découplé et ne consomme pas le champ théorique.
-- Le pipeline Crimson Lake appelle bien `dressAndRevegetate`, qui passe par `dressOrLegacy` puis `dressAndPlant`. Toutefois, le chemin personnalisé ne démarre pas le contexte `TerrainMother` de `prepZone`; il retombe donc au fallback biome dans `snowCoverHere`. La couverture observée ci-dessus ne prouve pas le spread continu piloté par les sources de `TerrainMother` pour ce run.
+- Pour le run joint, le pipeline Crimson Lake personnalisé n'a pas démarré le contexte `TerrainMother` de `prepZone`; il retombait donc au fallback biome dans `snowCoverHere`. La couverture observée ne prouve pas le spread continu piloté par les sources de `TerrainMother` pour ce run.
+- Le correctif courant initialise désormais un contexte autonome de `TerrainMother` avant le relevé pré-clear du talus. Les chunks relevés alimentent les sources neige/poids terre dans `StructureTerrainPrep`, puis le contexte est fermé après la finition. Au prochain run, vérifier la ligne `[DLB-SNOW] contexte autonome...` et les diagnostics `[DLB-SNOW] champ TerrainPrep...`; ceci améliore le chemin, mais ne transforme pas le rapport du 28 novembre en validation rétroactive.
 - La peinture est bien atteignable par `dressAndPlant`, mais aucun compteur paint de son journal d'exécution n'est inclus dans les fichiers joints. Son succès visuel reste à confirmer par les logs dédiés (`dressAndPlant ... appels paint / ... blocs de sous-sol peints`).
 - Le rapport de scan ne contient pas de preuve permettant d'évaluer la replantation des arbres; le compteur `[DLB-LAKE] ... arbres releves avant creusement` et les résultats du callback de replantation sont nécessaires.
 

@@ -7426,7 +7426,7 @@ public class StructureTerrainPrep {
                 TestProcedure.schedule(level, TestProcedure.currentTick(level) + DRESS_RETRY_ATTENTE_TICKS,
                         stepSlice[0]);
             } else {
-                deepluckyblock.util.DebugLog.structure(
+                deepluckyblock.util.DebugLog.info(LOGGER,
                         "dressAndPlant (T304 direct-sections) : {} chunks rapides / {} melanges, {} surfaces, "
                                 + "{} appels paint / {} blocs de sous-sol peints, {} plantes, {} colonnes sautees, "
                                 + "{} replis de palette en {} ms",
@@ -11178,9 +11178,41 @@ public class StructureTerrainPrep {
      * chunks deja budgete du talus, un chunk a la fois, pour ne pas ajouter une passe
      * de 222 000 colonnes a un chantier qui peine deja a tenir le tick.
      */
+    public static void beginStandaloneSnowContext(ServerLevel level, BlockPos min, BlockPos max,
+                                                  int surveyedMargin) {
+        // Le lac a son propre relevé pré-clear, mais partage ensuite le même
+        // moteur de spread que prepZone. Sa grille source doit donc couvrir
+        // exactement la zone réellement sondée avant le talus.
+        deepluckyblock.util.TerrainMother.end();
+        ACTIVE_SNOW_SPREAD = null;
+        int margin = Math.max(0, surveyedMargin);
+        int cx0 = (min.getX() - margin) >> 4, cz0 = (min.getZ() - margin) >> 4;
+        int cx1 = (max.getX() + margin) >> 4, cz1 = (max.getZ() + margin) >> 4;
+        deepluckyblock.util.TerrainMother mother =
+                deepluckyblock.util.TerrainMother.begin(cx0, cz0, cx1, cz1);
+        mother.setStructureBounds(min.getX() >> 4, min.getZ() >> 4,
+                max.getX() >> 4, max.getZ() >> 4);
+        primeMotherHalo(level, mother, cx0, cz0, cx1, cz1);
+        deepluckyblock.util.DebugLog.info(LOGGER,
+                "[DLB-SNOW] contexte autonome TerrainPrep prêt : grille {}x{} chunks, sources relevées avant clear",
+                cx1 - cx0 + 1, cz1 - cz0 + 1);
+    }
+
+    /** Ferme uniquement le contexte de spread possédé par une finition autonome. */
+    public static void endStandaloneSnowContext() {
+        ACTIVE_SNOW_SPREAD = null;
+        deepluckyblock.util.TerrainMother.end();
+    }
+
     public static void captureTreesInChunk(ServerLevel level, int cx, int cz, int topY) {
         int x0 = cx << 4, z0 = cz << 4;
-        LAST_TREES.addAll(scanTrees(level, x0, z0, x0 + 15, z0 + 15, topY));
+        List<SavedTree> captured = scanTrees(level, x0, z0, x0 + 15, z0 + 15, topY);
+        LAST_TREES.addAll(captured);
+        deepluckyblock.util.TerrainMother mother = deepluckyblock.util.TerrainMother.current();
+        if (mother != null) {
+            primeSnowRates(level, cx, cz);
+            scoutChild(level, mother, cx, cz, captured.size());
+        }
     }
 
     /** T488 -- vide le releve d'arbres avant un nouveau chantier. */

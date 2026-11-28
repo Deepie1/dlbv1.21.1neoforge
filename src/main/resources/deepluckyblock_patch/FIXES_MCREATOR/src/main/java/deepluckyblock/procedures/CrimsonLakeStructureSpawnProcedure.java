@@ -608,6 +608,7 @@ public class CrimsonLakeStructureSpawnProcedure {
                                 + reste + " chunks restants renvoyes aux clients");
                         LAKE_CHUNKS_REECRITS.clear();
                         StructureTerrainPrep.broadcastModifiedChunks(flvl);
+                        StructureTerrainPrep.endStandaloneSnowContext();
                         StructureTerrainPrep.clearFootprintProtection();
                         StructureTerrainPrep.clearPastedStructureContext();
                         deepluckyblock.util.ChunkKeeper.release(flvl);
@@ -1473,6 +1474,10 @@ public class CrimsonLakeStructureSpawnProcedure {
                              java.util.function.Consumer<TalusJob> onDone) {
         TalusJob job;
         try {
+            // T489 : initialiser le champ continu de neige avant le relevé du
+            // talus. mesurerChunk/captureTreesInChunk photographient ensuite les
+            // sources neigeuses vierges, toujours dans StructureTerrainPrep.
+            StructureTerrainPrep.beginStandaloneSnowContext(level, min, max, TALUS_LARGEUR);
             job = new TalusJob(level, min, max, groundY, blocs, origin);
         } catch (Throwable t) {
             deepluckyblock.util.DebugLog.err("[DLB-LAKE] T479 releve impossible, raccord abandonne :");
