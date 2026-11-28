@@ -5689,12 +5689,17 @@ public class StructureTerrainPrep {
             int known = mother.knownSnowSourceChunks();
             if (known == 0 && !mother.hasSnowSources()) {
                 quarter = null; allZero = false; allOne = false;
+                deepluckyblock.util.DebugLog.info(LOGGER,
+                        "[DLB-SNOW] champ TerrainPrep indisponible : aucun chunk source mesure (grille {}x{})",
+                        hw, hh);
                 return;
             }
 
             float[] potential = new float[hw * hh];
             float[] land = new float[hw * hh];
             boolean anyLand = false, anySource = false, allSource = true;
+            int sourceChunks = 0;
+            float maxSource = 0f;
             deepluckyblock.util.MotherAISnowDirector.SnowPlan plan = mother.activeAiPlan();
             for (int j = 0; j < hh; j++) {
                 int cz = hz0 + j;
@@ -5708,8 +5713,10 @@ public class StructureTerrainPrep {
                     }
                     land[idx] = w;
                     potential[idx] = p;
-                    anyLand |= w > 0.15f;
+                    anyLand |= w > 0f;
                     if (w > 0f) {
+                        if (p > 0f) sourceChunks++;
+                        maxSource = Math.max(maxSource, p);
                         anySource |= p > 0f;
                         allSource &= p >= 0.999f && w >= 0.999f;
                     }
@@ -5717,6 +5724,10 @@ public class StructureTerrainPrep {
             }
             allZero = !anySource;
             allOne = allSource && anyLand && plan == null;
+            deepluckyblock.util.DebugLog.info(LOGGER,
+                    "[DLB-SNOW] champ TerrainPrep : {}x{} chunks source, {} connus, {} sources terrestres, max={}; etat={}",
+                    hw, hh, known, sourceChunks, String.format(java.util.Locale.ROOT, "%.3f", maxSource),
+                    allZero ? "ZERO" : (allOne ? "PLEIN" : "continu"));
             if (allZero) {
                 quarter = new float[qw * qh];
             } else if (allOne) {
@@ -5805,14 +5816,17 @@ public class StructureTerrainPrep {
     }
 
     private static boolean terrainShouldPlaceSnow(
-            deepluckyblock.util.TerrainMother mother, long seed, int x, int z) {
-        float aura = terrainSnowDensity(mother, seed, x, z);
+            deepluckyblock.util.TerrainMother mother, long worldSeed, long decisionSeed, int x, int z) {
+        // Le champ est toujours lie a la graine du monde. decisionSeed ne sert qu'a
+        // decorreler les plaques; sinon snowCoverHere alternait de graine avec
+        // plantOnSection/snowInfluenceNear et reconstruisait le champ entier a chaque colonne.
+        float aura = terrainSnowDensity(mother, worldSeed, x, z);
         if (aura < 0f || aura <= 0f) return false;
         if (aura >= SNOW_FULL_COVERAGE_AURA) return true;
         float t = Math.max(0f, Math.min(1f, aura / SNOW_FULL_COVERAGE_AURA));
         float probability = t * t * (3f - 2f * t);
         return deepluckyblock.util.BiomeEcotoneSpread.warpedPatchSigned(
-                seed ^ 0xD217F00D5EEDL, x, z) + 0.5f < probability;
+                decisionSeed ^ 0xD217F00D5EEDL, x, z) + 0.5f < probability;
     }
 
     private static int terrainSnowLayers(
@@ -5848,8 +5862,9 @@ public class StructureTerrainPrep {
         // c'est la couverture en blocs-carres observee au run du 27/11.
         deepluckyblock.util.TerrainMother mother = deepluckyblock.util.TerrainMother.current();
         if (mother != null) {
-            if (terrainSnowDensity(mother, seed, x, z) >= 0f) {
-                return terrainShouldPlaceSnow(mother, seed, x, z);
+            long worldSeed = level.getSeed();
+            if (terrainSnowDensity(mother, worldSeed, x, z) >= 0f) {
+                return terrainShouldPlaceSnow(mother, worldSeed, seed, x, z);
             }
         }
         // Hors chaine active, conserver la neige vanilla du biome seulement pour
@@ -7123,7 +7138,8 @@ public class StructureTerrainPrep {
         // 0 fastChunks | 1 blendChunks | 2 surfaceSet | 3 fillerSet
         // 4 plantes    | 5 sautees     | 6 sauvees reposees
         // 7 (T492) sautees FAUTE DE CHUNK CHARGE -- sous-ensemble de 5, compte a part
-        final int[] stats = new int[8];
+        // 8 appels effectifs au peintre commun (distincts des blocs réellement modifies)
+        final int[] stats = new int[9];
         // T492 : colonnes a repasser quand leur chunk sera arrive, et emprise en Z
         // des manques (pour dire OU le travail n'a pas ete fait, pas seulement combien).
         final java.util.List<int[]> manques = new java.util.ArrayList<>();
@@ -7299,16 +7315,20 @@ public class StructureTerrainPrep {
                         }
                     }
 
-                    // Meme peintre de sous-sol que verifyGrassSurface : profondeur stable,
-                    // protection des minerais et ecriture directe dans la section du chunk.
-                    boolean soilSurface = chosen != Blocks.SAND && chosen != Blocks.SANDSTONE
-                            && chosen != Blocks.RED_SAND && chosen != Blocks.SNOW_BLOCK
-                            && chosen != Blocks.ICE && chosen != Blocks.PACKED_ICE
-                            && chosen != Blocks.BLUE_ICE;
-                    if (!underOverhang && soilSurface) {
-                        stats[3] += paintNaturalSubsoil(level, x, surfY, z, actualSurface, curLc, chunkMask);
-                    }
                     chosen = borderFadePick(level, min, max, outerRing, x, z, chosen);
+                }
+
+                // La paint du sous-sol ne depend ni de l'ecotone calcule pour ce chunk,
+                // ni de la presence du journal PASTED_OCCUPIED, ni d'un blocage par auvent.
+                // La cible reste le vrai sol naturel photographie; le peintre s'arrete lui-meme
+                // aux fluides, minerais, glace et cellules marquees comme blocs de structure.
+                boolean soilSurface = chosen != Blocks.SAND && chosen != Blocks.SANDSTONE
+                        && chosen != Blocks.RED_SAND && chosen != Blocks.SNOW_BLOCK
+                        && chosen != Blocks.ICE && chosen != Blocks.PACKED_ICE
+                        && chosen != Blocks.BLUE_ICE;
+                if (soilSurface) {
+                    stats[8]++;
+                    stats[3] += paintNaturalSubsoil(level, x, surfY, z, actualSurface, curLc, chunkMask);
                 }
 
                 // Sous un auvent ferme en zone enneigee centrale, si chosen == SNOW_BLOCK on garde l'herbe verte sous l'auvent
@@ -7408,8 +7428,9 @@ public class StructureTerrainPrep {
             } else {
                 deepluckyblock.util.DebugLog.structure(
                         "dressAndPlant (T304 direct-sections) : {} chunks rapides / {} melanges, {} surfaces, "
-                                + "{} sous-sols, {} plantes, {} colonnes sautees, {} replis de palette en {} ms",
-                        stats[0], stats[1], stats[2], stats[3], stats[4], stats[5],
+                                + "{} appels paint / {} blocs de sous-sol peints, {} plantes, {} colonnes sautees, "
+                                + "{} replis de palette en {} ms",
+                        stats[0], stats[1], stats[2], stats[8], stats[3], stats[4], stats[5],
                         paletteFallbacksSoFar(), System.currentTimeMillis() - t0);
                 // T492 : le reliquat est dit a voix haute, avec son emprise. Un habillage
                 // incomplet qui se tait se lit comme un habillage complet -- c'est ce

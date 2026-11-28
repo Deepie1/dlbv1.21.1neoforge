@@ -81,10 +81,11 @@ NOTICES = {
   "SPREAD NEIGE ET PEINTURE DU SOL EXECUTES DANS TERRAINPREP.\n"
   "     TerrainPrep construit le champ continu au pas QuartPos depuis les sources\n"
   "     mesurees par Mother, applique le domain-warp a chaque colonne, decide la\n"
-  "     couverture et son epaisseur, et refuse eau/glace au support reel. Le gros\n"
-  "     scan TXT ne fournit ni ne declenche le spread; il garde seulement la neige\n"
-  "     observee en 9g. Les deux passes de peinture partagent le meme peintre stable\n"
-  "     de sous-sol, profondeur 1-4, qui preserve minerais, structures et supports.\n"
+  "     couverture et son epaisseur, et refuse eau/glace au support reel. Le cache\n"
+  "     utilise toujours la graine du monde; la graine des plaques ne le reconstruit\n"
+  "     plus par colonne. Le scan TXT ne declenche pas le spread; il garde 9g observee.\n"
+  "     Les deux passes partagent le peintre stable de sous-sol 1-4 blocs, independant\n"
+  "     de l'ecotone et de l'auvent, avec protection minerais/structures/supports.\n"
   "     La classe conserve aussi le rattrapage de replantation active des arbres.",
 
  'src/main/resources/deepluckyblock_patch/tools/snowspreadcheck.py':
@@ -92,7 +93,8 @@ NOTICES = {
   "     Verifie que le calcul reste dans TerrainPrep, que le scan passif est decouple,\n"
   "     que les poids fractionnaires eau/terre affectent numerateur et denominateur,\n"
   "     et que les deux passes utilisent la peinture commune avec protection des ores.\n"
-  "     Cinq mutations doivent echouer et se restaurer; ce banc ne remplace pas le jeu.",
+  "     Sept mutations couvrent seed stable, paint independante, minerais et eau/glace;\n"
+  "     ce banc statique ne remplace pas une verification en jeu.",
 
  'src/main/java/deepluckyblock/dev/DevTerrainScan.java':
   "T471 : SCAN DE TERRAIN -- OUTIL DE DEVELOPPEMENT, FICHIER JETABLE.\n"
@@ -108,7 +110,8 @@ NOTICES = {
   "     Les grilles gardent les Y absolus, regles de coordonnees et separateurs\n"
   "     de chunk. La section 9g donne uniquement la couverture de neige observee;\n"
   "     le potentiel/spread est execute par TerrainPrep et n'est pas rendu dans le scan.\n"
-  "     Commandes\n"
+  "     T500 : publication atomique du relief asynchrone et bornage des index a la\n"
+  "     redaction; un ancien tableau ne peut plus faire planter le rapport. Commandes\n"
   "     : /dlbscan, /dlbscan now, stop et status.",
 
  'src/main/java/deepluckyblock/procedures/Structures5Procedure.java':
@@ -230,8 +233,8 @@ NOTICES = {
   "BANC QUI GARDE LE SCAN PASSIF ET LE SEPARE DU SPREAD.\n"
   "     Le rapport observe la neige existante par colonne en 9g, mais ne lit pas, ne\n"
   "     declenche pas et ne represente jamais le moteur theorique de TerrainPrep.\n"
-  "     Les verrous assurent que l'outil reste jetable, passif, complet et que la\n"
-  "     mesure de couche sous canopee reste distincte du potentiel.",
+  "     18 verrous gardent l'outil jetable/passif, la mesure de neige sous canopee\n"
+  "     distincte du potentiel, et la redaction protege contre une grille obsolete.",
 
  'src/main/java/deepluckyblock/dev/DevTerrainScan.java':
   "SCAN PASSIF DU RENDU OBSERVE, SANS COUPLAGE AU SPREAD.\n"

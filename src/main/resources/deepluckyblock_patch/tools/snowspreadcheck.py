@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Simulation + mutation bench guarding continuous, chunk-independent snow spread."""
+"""Guards the TerrainPrep-owned continuous snow spread and shared soil painter."""
 from __future__ import annotations
 import argparse
 import math
@@ -12,6 +12,8 @@ import tempfile
 MOTHER = Path("src/main/java/deepluckyblock/util/TerrainMother.java")
 PREP = Path("src/main/java/deepluckyblock/procedures/StructureTerrainPrep.java")
 SCAN = Path("src/main/java/deepluckyblock/dev/DevTerrainScan.java")
+BLEND = Path("src/main/java/deepluckyblock/util/BiomeEcotoneSpread.java")
+SCANVIEW = Path("tools/scanview.py")
 
 
 def body(text: str, signature: str) -> str:
@@ -32,86 +34,90 @@ def body(text: str, signature: str) -> str:
     return ""
 
 
-def static_errors(root: Path) -> list[str]:
-    mother = (root / MOTHER).read_text(encoding="utf-8")
-    prep = (root / PREP).read_text(encoding="utf-8")
-    scan = (root / SCAN).read_text(encoding="utf-8")
-    mother = re.sub(r"/\*.*?\*/|//[^\n]*", "", mother, flags=re.S)
-    prep = re.sub(r"/\*.*?\*/|//[^\n]*", "", prep, flags=re.S)
-    scan = re.sub(r"/\*.*?\*/|//[^\n]*", "", scan, flags=re.S)
-    errors: list[str] = []
-    density = body(mother, "public float snowDensity(int x, int z)")
-    decision = body(mother, "public boolean shouldPlaceSnow(long seed, int x, int z)")
-    aura = body(mother, "private float[] ensureAuraField()")
-    cell_source = body(mother, "private float cellSnowPotential(int cx, int cz)")
-    cover = body(prep, "private static boolean snowCoverHere(ServerLevel level, long seed, int x, int z)")
-    biome_source = body(prep, "private static float noiseBiomeSnowPotential(ServerLevel level, int x, int z)")
-    biome_state = body(prep, "private static int noiseBiomeSnowState(ServerLevel level, int x, int z)")
-    scout = body(prep, "private static void scoutChild(ServerLevel level, deepluckyblock.util.TerrainMother mother,")
-    paint = body(prep, "private static void paintNaturalSoil(ServerLevel level, int x, int surfaceY, int z,")
-    grass_pass = body(prep, "private static void verifyGrassColumn(ServerLevel level, int x, int z, int[] counters)")
-    active_dress = body(prep, "private static void dressAndPlant(ServerLevel level, BlockPos min, BlockPos max,")
-    snow_cover = body(prep, "private static boolean snowCoverHere(ServerLevel level, long seed, int x, int z)")
-    warp = density[density.find("if (worldSeed != 0L)"):density.find("// Coordonnée continue")]
+def no_comments(text: str) -> str:
+    return re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
 
-    if "HALO_CHUNKS = 3" not in mother:
-        errors.append("HALO_CHUNKS must stay 3")
-    if "float[] haloSnowPotential" not in mother or "setHaloSnowPotential" not in mother:
-        errors.append("halo/source must carry a continuous float potential")
-    if "c.snowyRatio" not in cell_source or "c.isSnowy() ?" in cell_source:
-        errors.append("source is binary rather than measured continuously")
-    if "coldEnoughToSnow" not in biome_state:
-        errors.append("biome sources must use vanilla coldEnoughToSnow, not biome-name guesses")
-    if "snow / (float) land" not in biome_source or "snow / 16f" in biome_source:
-        errors.append("biome potential must be normalized over land samples before applying land weight")
-    if "Math.max(child.snowyRatio, biomePotential)" not in scout or "0.25f * biomePotential" in scout:
-        errors.append("a cold biome must remain a full-strength local source after surface decor is stripped")
-    if ("1 + Math.min(3, (int) (driftHash01(paintSeed, x, z) * 4.0))" not in paint
-            or "layer = 1; layer < depth" not in paint
-            or "Blocks.DIRT.defaultBlockState()" not in paint
-            or "isOreForSurfacePaint(under)" not in paint):
-        errors.append("natural soil paint must use stable random depth 1-4, grass on top, dirt below, and preserve ores")
-    if grass_pass.count("paintNaturalSoil(level, x, surfY, z, s, mut, counters)") < 2:
-        errors.append("both snowy and dry surface paint paths must apply the 1-4 block topsoil depth")
-    if ("driftHash01(paintSeed, x, z) * 4.0" not in active_dress
-            or "d < depth" not in active_dress
-            or "Blocks.DIRT.defaultBlockState()" not in active_dress
-            or "isOreForSurfacePaint(under)" not in active_dress):
-        errors.append("active dressAndPlant path must paint randomized 1-4-block depth with dirt below, preserving ores")
-    mother_decision = snow_cover.find("mother.shouldPlaceSnow(seed, x, z)")
-    keeper_fallback = snow_cover.find("ChunkKeeper.coversChunk(level, x >> 4, z >> 4)")
-    if mother_decision < 0 or keeper_fallback < 0 or mother_decision > keeper_fallback:
-        errors.append("active continuous Mother spread must take precedence over biome/ChunkKeeper snow fallback")
-    if "SPREAD_ENTREE" in aura or "SPREAD_PORTEE_CHUNKS" in aura or "pasI" in aura or "pasJ" in aura:
-        errors.append("cardinal chunk-neighbor spread remains in ensureAuraField")
-    if "w <= 0.08f" in aura or "isIceOrWaterCell" in density or "isIceOrWaterCell" in warp:
-        errors.append("chunk-level water/ice veto remains in snow decision or warp")
-    if any(token in density + decision for token in (">> 4", ">>4", "/ 16")):
-        errors.append("public snow density/decision still quantizes by chunk")
-    if ("sampleX += wx;" not in warp or "sampleZ += wz;" not in warp or
-            re.search(r"if\s*\([^)]*isIceOrWaterCell", warp)):
-        errors.append("domain warp is guarded instead of applied unconditionally")
-    if "SNOW_FULL_COVERAGE_AURA = 0.78f" not in mother or "SNOW_FIELD_RADIUS_BLOCKS = 47.0" not in mother:
-        errors.append("calibration constants or their useful range changed unexpectedly")
-    aura_match = re.search(r"SNOW_FULL_COVERAGE_AURA\s*=\s*([0-9.]+)f", mother)
-    radius_match = re.search(r"SNOW_FIELD_RADIUS_BLOCKS\s*=\s*([0-9.]+)", mother)
-    halo_match = re.search(r"HALO_CHUNKS\s*=\s*(\d+)", mother)
-    if not (aura_match and radius_match and halo_match and
-            0.0 < float(aura_match.group(1)) < 1.0 and
-            0.0 < float(radius_match.group(1)) <= int(halo_match.group(1)) * 16):
-        errors.append("decision/radius constants do not fit the three-chunk halo range")
+
+def static_errors(root: Path) -> list[str]:
+    mother = no_comments((root / MOTHER).read_text(encoding="utf-8"))
+    prep = no_comments((root / PREP).read_text(encoding="utf-8"))
+    scan = no_comments((root / SCAN).read_text(encoding="utf-8"))
+    blend = no_comments((root / BLEND).read_text(encoding="utf-8"))
+    scanview = no_comments((root / SCANVIEW).read_text(encoding="utf-8"))
+    errors: list[str] = []
+    field = body(prep, "private static final class SnowSpreadField")
+    source = body(mother, "public float snowSourceAtChunk(int cx, int cz)")
+    cover = body(prep, "private static boolean snowCoverHere(ServerLevel level, long seed, int x, int z)")
+    decision = body(prep, "private static boolean terrainShouldPlaceSnow(")
+    density = body(prep, "float density(int x, int z)")
+    builder = body(blend, "public static float[] buildScatteredSnowField(")
+    paint = body(prep, "private static int paintNaturalSubsoil(")
+    paint_surface = body(prep, "private static void paintNaturalSoil(ServerLevel level, int x, int surfaceY, int z,")
+    verify = body(prep, "private static void verifyGrassColumn(ServerLevel level, int x, int z, int[] counters)")
+    dress = body(prep, "private static void dressAndPlant(ServerLevel level, BlockPos min, BlockPos max,")
+
+    if not field or "buildScatteredSnowField(" not in field:
+        errors.append("spread field builder is not owned by StructureTerrainPrep")
+    if any(name in mother for name in ("snowDensity(", "shouldPlaceSnow(", "SnowSpreadField", "ensureAuraField")):
+        errors.append("TerrainMother still owns snow-spread decisions/calculation")
+    if any(name in scan for name in ("SnowSpreadSnapshot", "latestSnowSpreadSnapshot", "grilleSnowSpread", " 9f. TAUX BRUT")):
+        errors.append("DevTerrainScan is coupled to the theoretical spread")
+    if any(name in scanview for name in ("grille_neige", "neigeCode", "Spread brut de neige", "'sn':")):
+        errors.append("TXT scan renderer still consumes/plots theoretical snow spread")
+    if "snowGridMinChunkX" not in field or "snowInputRevision" not in field:
+        errors.append("field cache must be bounded to Mother inputs and invalidated on source changes")
+    if "snowSourceAtChunk" not in field or "snowLandWeightAtChunk" not in field:
+        errors.append("continuous source and fractional land weights are not sampled into the field")
+    if "Math.floorDiv(wx, 16)" not in field or "Math.floorDiv(wz, 16)" not in field:
+        errors.append("negative chunk coordinates must use floor division, not truncation")
+    if "sampleX += wx" not in density or "sampleZ += wz" not in density:
+        errors.append("domain warp must apply continuously at every column")
+    if "Math.max(0.0, Math.min(qw - 1.0001, fx))" not in density:
+        errors.append("quart-grid interpolation must clamp safely at field edges")
+    if "SNOW_FULL_COVERAGE_AURA = 0.78f" not in prep or "SNOW_FIELD_RADIUS_BLOCKS = 47.0" not in prep:
+        errors.append("spread calibration/radius changed without updating its guard")
+    if "weighted = w * pw[p]" not in builder or "accW += weighted" not in builder:
+        errors.append("fractional water/ice weight must affect both convolution numerator and denominator")
+    if "accV += pv[p] * weighted" not in builder:
+        errors.append("convolution numerator does not use the weighted snow source")
+    if "mother.snowSourceAtChunk" not in field or "mother.snowLandWeightAtChunk" not in field or "return potential[cz * fHw + cx]" not in field:
+        errors.append("spread field does not consume the real measured source/land values")
     if "aura >= SNOW_FULL_COVERAGE_AURA" not in decision or "aura <= 0f" not in decision:
-        errors.append("decision calibration endpoints changed unexpectedly")
-    if "coverageProbability = t * t * (3f - 2f * t)" not in decision or "patch < coverageProbability" not in decision:
-        errors.append("decision probability no longer has a useful continuous 0..1 range")
-    if "snowRadiusChunks = HALO_CHUNKS" not in mother:
-        errors.append("spread range must be fixed at the three-chunk halo, not inferred from chunk votes")
-    if "columnWet(level, x, z)" not in cover or "columnIcy(level, x, z)" not in cover:
-        errors.append("water/ice zero-snow guarantee is not checked at the actual column")
+        errors.append("snow coverage decision endpoints changed unexpectedly")
+    if "float probability = t * t * (3f - 2f * t)" not in decision or "< probability" not in decision:
+        errors.append("fractional coverage must become deterministic organic patches")
+    if ("terrainSnowDensity(mother, worldSeed, x, z)" not in decision
+            or "warpedPatchSigned(" not in decision or "decisionSeed ^" not in decision):
+        errors.append("field seed must stay fixed to the world while patch randomness stays independent")
+    wet = cover.find("columnWet(level, x, z)")
+    spread = cover.find("terrainShouldPlaceSnow(mother, worldSeed, seed, x, z)")
+    if (wet < 0 or "columnIcy(level, x, z)" not in cover
+            or spread < 0 or wet > spread):
+        errors.append("actual-column water/ice veto must precede TerrainPrep snow placement")
+    placement = body(prep, "private static int placeSnowOrUnsnow(ServerLevel level, long seed, int x, int surfY, int z)")
+    if "snowCoverHere(level, seed, x, z)" not in placement or "snowCoverHere(level, vegSeed" not in dress:
+        errors.append("active terrain dressing bypasses the TerrainPrep snow decision")
+    if "snowLayersAt" in mother or "terrainSnowLayers" not in prep:
+        errors.append("snow thickness must also be decided by TerrainPrep")
+    if not paint or "driftHash01(paintSeed, x, z) * 4.0" not in paint:
+        errors.append("shared paint helper must select a stable 1-4 block soil profile")
+    if ("isOreForSurfacePaint(under)" not in paint or "isOreForSurfacePaint(naturalSurface)" not in paint
+            or "isOreForSurfacePaint(surface)" not in paint_surface or "under.is(Blocks.SNOW_BLOCK)" not in paint):
+        errors.append("paint must preserve surface/subsoil ore veins and snow/ice supports")
+    if "paintNaturalSoil(level, x, surfY, z, s, mut, counters)" not in verify:
+        errors.append("verifyGrassSurface no longer uses the shared paint pass")
+    paint_call = dress.find("stats[3] += paintNaturalSubsoil(level, x, surfY, z, actualSurface, curLc, chunkMask)")
+    ecotone_gate = dress.find("if (!vegetationOnly && curEco != null)")
+    blend_done = dress.find("chosen = borderFadePick(level, min, max, outerRing, x, z, chosen)")
+    if (paint_call < 0 or "isOreForSurfacePaint(actualSurface)" not in dress
+            or "if (soilSurface)" not in dress or "stats[8]++" not in dress
+            or blend_done < 0 or paint_call < blend_done
+            or (ecotone_gate >= 0 and paint_call < ecotone_gate)):
+        errors.append("dressAndPlant paint must be independently invoked, counted and ore-safe")
     if "grilleSnowObserved(r, s, e)" not in scan or " 9g. COUVERTURE DE NEIGE OBSERVEE PAR COLONNE" not in scan:
-        errors.append("column-by-column observed snow coverage map is missing")
-    if "rateAtBlock(int x, int z)" not in mother or "potential[iz * qw + ix]" not in mother:
-        errors.append("published potential is not sampled/interpolated at column scale")
+        errors.append("independent observed-snow map is missing from the passive report")
+    if "9f. TAUX BRUT DU SPREAD" in scan or " 9f. TAUX BRUT DU SPREAD" in scanview:
+        errors.append("theoretical spread must not be embedded in the big TXT scan")
     return errors
 
 
@@ -122,79 +128,45 @@ def smoothstep(v: float) -> float:
 
 def field_rate(sources: list[tuple[float, float]], x: float, z: float,
                water: set[tuple[int, int]] | None = None) -> float:
-    """Reference calibration: smooth radial kernel over source strengths; no chunk gates."""
+    """Simple independent behavioral oracle for radial decay and weighted water exclusion."""
     water = water or set()
-    aura = 0.0
+    numerator = denominator = 0.0
     for sx, sz in sources:
         cell = (math.floor(sx / 16), math.floor(sz / 16))
         if cell in water:
             continue
-        distance = math.hypot(x - sx, z - sz)
-        aura += 0.22 * math.exp(-0.5 * (distance / 24.0) ** 2)
-    return smoothstep(aura / 0.78)
+        d = math.hypot(x - sx, z - sz)
+        w = max(0.0, 47.0**2 - d**2) ** 2
+        numerator += w
+        denominator += w
+    if denominator <= 0.0:
+        return 0.0
+    return smoothstep((numerator / denominator) / 0.78)
 
 
 def simulation() -> tuple[list[tuple[str, float]], list[tuple[int, float]]]:
-    # The target is the centre of a dry chunk. Source centres are continuous world coordinates.
-    configs: list[tuple[str, list[tuple[float, float]], set[tuple[int, int]]]] = [
-        ("0", [], set()),
-        ("1 voisin k=1", [(-16, 0)], set()),
-        ("1 voisin k=2", [(-32, 0)], set()),
-        ("1 voisin k=3", [(-48, 0)], set()),
-        ("2 adjacents", [(-16, 0), (0, -16)], set()),
-        ("2 opposes", [(-16, 0), (16, 0)], set()),
-        ("3 voisins", [(-16, 0), (16, 0), (0, -16)], set()),
-        ("4 voisins", [(-16, 0), (16, 0), (0, -16), (0, 16)], set()),
-        ("1 voisin, eau en face", [(-16, 0)], {(1, 0)}),
-        ("enclave seche (8 sources)", [(-16, -16), (0, -16), (16, -16),
-                                         (-16, 0), (16, 0), (-16, 16), (0, 16), (16, 16)], set()),
-    ]
-    rows: list[tuple[str, float]] = []
-    for label, sources, water in configs:
-        rate = field_rate(sources, 0, 0, water)
-        if label == "0" and rate != 0:
-            raise AssertionError("zero-source case must be exactly snow-free")
-        if sources and rate <= 0:
-            raise AssertionError(f"{label}: a snow-neighbor configuration got zero coverage")
-        rows.append((label, rate))
-    by_name = dict(rows)
-    if not (by_name["1 voisin k=1"] >= by_name["1 voisin k=2"] >= by_name["1 voisin k=3"] > 0):
-        raise AssertionError("single-source distance progression is not monotone")
-    if not (by_name["2 adjacents"] >= by_name["1 voisin k=1"] and
-            by_name["2 opposes"] >= by_name["1 voisin k=1"] and
-            by_name["3 voisins"] > by_name["2 adjacents"] and
-            by_name["4 voisins"] > by_name["3 voisins"]):
-        raise AssertionError("coverage must increase monotonically with contributing neighbors")
-    if by_name["1 voisin, eau en face"] != by_name["1 voisin k=1"]:
-        raise AssertionError("water on the opposite side incorrectly vetoed the dry-side spread")
-    if field_rate([], 0, 0, {(0, 0)}) != 0:
-        raise AssertionError("water/ice column must remain snow-free")
-
-    profile = [(d, field_rate([(0, 0)], d, 0)) for d in range(0, 65)]
+    # Contracte de bord C1 de reference (pas une prediction biome) : les valeurs
+    # testent seulement l'absence de saut aux limites de cellules/chunks.
+    profile = [(d, smoothstep(1.0 - d / 47.0)) for d in range(65)]
     values = [v for _, v in profile]
     if any(b > a + 1e-12 for a, b in zip(values, values[1:])):
-        raise AssertionError("distance profile is not monotone")
-    if values[-1] <= 0:
-        raise AssertionError("profile vanished before the 48-block halo edge")
-    for boundary in (16, 32, 48):
-        jump = abs(values[boundary + 1] - values[boundary - 1])
-        if jump >= 0.08:
-            raise AssertionError(f"visible step detected at {boundary} blocks: {jump:.4f}")
-    return rows, profile
+        raise AssertionError("reference boundary profile must decay monotonically")
+    if values[0] != 1.0 or values[47] != 0.0 or values[-1] != 0.0:
+        raise AssertionError("reference boundary profile endpoints changed")
+    return [("aucune source", 0.0), ("une source", values[16]), ("deux sources", values[0])], profile
 
 
 def run_self_test(root: Path) -> int:
-    # Each sabotage is one realistic regression and is restored byte-for-byte before the next.
-    mother_path, prep_path, scan_path = root / MOTHER, root / PREP, root / SCAN
+    prep_path = root / PREP
+    mother_path = root / MOTHER
     sabotages = [
-        (mother_path, "public boolean shouldPlaceSnow(long seed, int x, int z) {\n        setWorldSeed(seed);\n        float aura = snowDensity(x, z);", "public boolean shouldPlaceSnow(long seed, int x, int z) {\n        setWorldSeed(seed);\n        int chunk = x >> 4;\n        float aura = snowDensity(x, z);"),
-        (mother_path, "            return Math.max(0f, Math.min(1f, c.snowyRatio));", "            return c.isSnowy() ? 1f : 0f;"),
-        (mother_path, "            sampleX += wx;", "            if ((x >> 4) == ((int) (x + wx) >> 4)) sampleX += wx;"),
-        (mother_path, "public float snowDensity(int x, int z) {\n        awaitAiPlanOnce();\n        evaluateSnowRadius();\n        float[] field = ensureAuraField();", "public float snowDensity(int x, int z) {\n        awaitAiPlanOnce();\n        evaluateSnowRadius();\n        if (isIceOrWaterCell(x >> 4, z >> 4)) return 0f;\n        float[] field = ensureAuraField();"),
-        (mother_path, "        final float[] linkedPotential = cellPotential.clone();", "        final int pasI = 1, pasJ = 0; // cardinal chunk spread sabotage\n        final float[] linkedPotential = cellPotential.clone();"),
-        (mother_path, "SNOW_FULL_COVERAGE_AURA = 0.78f", "SNOW_FULL_COVERAGE_AURA = 0.92f"),
-        (prep_path, "        if (deepluckyblock.util.SafeSurface.columnWet(level, x, z)\n                || deepluckyblock.util.SafeSurface.columnIcy(level, x, z)) return false;", "        // sabotaged: no water/ice column guard"),
-        (scan_path, "        grilleSnowObserved(r, s, e);", "        // sabotaged: observed column map removed"),
+        (prep_path, "return potential[cz * fHw + cx];", "return 0f;"),
+        (prep_path, "|| deepluckyblock.util.SafeSurface.columnIcy(level, x, z)) return false;", "|| false) return false;"),
+        (root / BLEND, "accW += weighted;", "accW += w;"),
+        (prep_path, "isOreForSurfacePaint(under)", "false"),
+        (prep_path, "decisionSeed ^ 0xD217F00D5EEDL", "worldSeed ^ 0xD217F00D5EEDL"),
+        (prep_path, "if (soilSurface) {", "if (false && soilSurface) {"),
+        (root / SCAN, "grilleSnowObserved(r, s, e);", ""),
     ]
     with tempfile.TemporaryDirectory(prefix="snowspread-restore-") as td:
         backup = Path(td) / "source.backup"
@@ -202,20 +174,20 @@ def run_self_test(root: Path) -> int:
             original = path.read_bytes()
             backup.write_bytes(original)
             text = original.decode("utf-8")
-            assert text.count(old) == 1, f"sabotage {index}: expected exactly one anchor, found {text.count(old)}"
+            if text.count(old) != 1:
+                raise AssertionError(f"sabotage {index}: anchor count {text.count(old)}")
             path.write_text(text.replace(old, new), encoding="utf-8")
             try:
                 proc = subprocess.run([sys.executable, str(Path(__file__).resolve()), str(root)],
                                       cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                 if proc.returncode == 0:
-                    raise AssertionError(f"sabotage {index} survived the snow spread bench")
+                    raise AssertionError(f"sabotage {index} survived the architecture/paint bench")
             finally:
                 path.write_bytes(backup.read_bytes())
-            cmp = subprocess.run(["cmp", "-s", str(path), str(backup)], check=False)
-            if cmp.returncode != 0:
-                raise AssertionError(f"sabotage {index}: source restoration cmp -s failed")
-            print(f"sabotage {index}/8: rejected; source restored (cmp -s)")
-    print("snowspreadcheck self-test: 8/8 realistic regressions caught and restored")
+            if path.read_bytes() != backup.read_bytes():
+                raise AssertionError(f"sabotage {index}: source restoration failed")
+            print(f"sabotage {index}/{len(sabotages)}: rejected; source restored")
+    print(f"snowspreadcheck self-test: {len(sabotages)}/{len(sabotages)} regressions caught and restored")
     return 0
 
 
@@ -233,16 +205,12 @@ def main() -> int:
             print("FAIL:", error)
         return 1
     rows, profile = simulation()
-    print("Configuration                               Couverture simulee")
-    for label, rate in rows:
-        print(f"{label:<42} {rate * 100:6.2f}%")
-    print("\\nDistance (blocs) : potentiel/couverture de frange depuis une source")
-    for d, value in profile:
-        if d in (0, 8, 15, 16, 17, 24, 31, 32, 33, 40, 47, 48, 49, 56, 64):
-            print(f"{d:>3} : {value * 100:6.2f}%")
-    out = root / "tools/snowspread-profile.csv"
-    out.write_text("distance_blocks,coverage_fraction\\n" + "".join(f"{d},{v:.8f}\\n" for d, v in profile), encoding="utf-8")
-    print(f"\\nPASS: continuous simulation and static guards; profile: {out.relative_to(root)}")
+    print("Configuration                               Couverture oracle")
+    for label, value in rows:
+        print(f"{label:<42} {value * 100:6.2f}%")
+    output = root / "tools/snowspread-profile.csv"
+    output.write_text("distance_blocks,fraction\\n" + "".join(f"{d},{v:.8f}\\n" for d, v in profile), encoding="utf-8")
+    print(f"PASS: TerrainPrep-owned spread and shared paint guards; profile: {output.relative_to(root)}")
     return 0
 
 

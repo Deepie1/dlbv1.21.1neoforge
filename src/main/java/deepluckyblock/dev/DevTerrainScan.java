@@ -874,6 +874,17 @@ public final class DevTerrainScan {
         return s.bruitGen != gGen || s.bruitAnnule;
     }
 
+    /** Publication atomique : un vieux fil ne doit jamais remplacer le relief d'une grille elargie. */
+    private static boolean publierBruitSiCourant(Session s, int gw, int gd, int gx0, int gz0,
+                                                  int gGen, int[] relief) {
+        synchronized (s) {
+            if (s.bruitGen != gGen || s.bruitAnnule
+                    || s.w != gw || s.d != gd || s.x0 != gx0 || s.z0 != gz0) return false;
+            s.bruit = relief;
+            return true;
+        }
+    }
+
     private static void calculerBruit(Session s, int gw, int gd, int gx0, int gz0, int gGen) {
         long t0 = System.currentTimeMillis();
         int[] tmp = new int[gw * gd];
@@ -922,7 +933,7 @@ public final class DevTerrainScan {
                         + " s. Les sections theoriques seront vides, mais le serveur reste "
                         + "jouable : un diagnostic ne doit jamais couter plus cher que le "
                         + "defaut qu'il diagnostique.");
-                if (!bruitPerime(s, gGen)) s.bruit = tmp;
+                publierBruitSiCourant(s, gw, gd, gx0, gz0, gGen, tmp);
                 return;
             }
 
@@ -978,15 +989,14 @@ public final class DevTerrainScan {
                     tmp[z * gw + x] = (int) Math.round(lo + (hi - lo) * tz);
                 }
             }
-            if (bruitPerime(s, gGen)) return;
-            s.bruit = tmp;      // publication en un seul coup
+            if (!publierBruitSiCourant(s, gw, gd, gx0, gz0, gGen, tmp)) return;
             log("[DLB-SCAN] relief theorique pret : " + ((long) gw * gd) + " colonnes en "
                     + (System.currentTimeMillis() - t0) + " ms (pas " + pas + ", "
                     + faits + " sondes" + (coupe ? ", INTERROMPU par la date butoir" : "")
                     + ", " + String.format("%.2f", nsCol / 1e6) + " ms/colonne mesures)");
         } catch (Throwable t) {
             java.util.Arrays.fill(tmp, ABSENT);
-            if (!bruitPerime(s, gGen)) s.bruit = tmp;
+            publierBruitSiCourant(s, gw, gd, gx0, gz0, gGen, tmp);
             log("[DLB-SCAN] relief theorique indisponible : " + t);
         }
     }
@@ -1002,11 +1012,14 @@ public final class DevTerrainScan {
      */
     private static void lancerBruit(Session s) {
         try {
-            // T477 : la geometrie est FIGEE a l'instant du lancement. Le fil ne relit
-            // jamais s.w/s.d/s.x0/s.z0 : un elargissement les change sous ses pieds.
-            final int gw = s.w, gd = s.d, gx0 = s.x0, gz0 = s.z0;
-            final int gGen = ++s.bruitGen;
-            s.bruit = null;
+            // T477/T500 : capture de geometrie, invalidation et generation sont atomiques
+            // par rapport aux publications de fond.
+            final int gw, gd, gx0, gz0, gGen;
+            synchronized (s) {
+                gw = s.w; gd = s.d; gx0 = s.x0; gz0 = s.z0;
+                gGen = ++s.bruitGen;
+                s.bruit = null;
+            }
             Thread t = new Thread(() -> calculerBruit(s, gw, gd, gx0, gz0, gGen), "DLB-SCAN-relief");
             t.setDaemon(true);
             // T477 : NORM-1 et non MIN. En MIN_PRIORITY le fil n'a recu aucun CPU
@@ -2700,6 +2713,15 @@ public final class DevTerrainScan {
     }
 
     private static void grilleY(StringBuilder r, Session s, int[] data) {
+        // T500 : une publication concurrente de l'ancien relief ne doit jamais faire
+        // planter la redaction. Toute cellule hors taille est explicitement ABSENT.
+        int attendu = Math.max(0, s.w * s.d);
+        if (data == null || data.length != attendu) {
+            r.append("[RELIEF THEORIQUE INCOHERENT : taille ")
+                    .append(data == null ? "absente" : data.length)
+                    .append(", attendu ").append(attendu)
+                    .append("; le scan continue et marque ces cellules ----]\n");
+        }
         // regle X : le X monde du debut de chaque chunk, aligne sur 4 caracteres par colonne
         r.append(" ".repeat(9));
         for (int cx = 0; cx < s.cw; cx++) {
@@ -2717,7 +2739,8 @@ public final class DevTerrainScan {
             r.append(String.format("z=%6d ", s.z0 + z));
             for (int x = 0; x < s.w; x++) {
                 if ((x & 15) == 0) r.append('|');
-                int v = data[z * s.w + x];
+                int index = z * s.w + x;
+                int v = data != null && index < data.length ? data[index] : ABSENT;
                 if (v == ABSENT) r.append("----");
                 else if (v == VIDE) r.append("....");
                 else r.append(String.format("%4d", v));

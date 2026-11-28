@@ -422,6 +422,16 @@ def controler(racine='.'):
                       'apres un elargissement, l\'ancien fil publierait un tableau de la '
                       'mauvaise taille')
 
+    # ----------------------------------------------------------------- VERROU 18
+    # Une course de publication a produit un relief 144x144 sous une grille 480x512
+    # puis fait planter la redaction (Index 92336 / longueur 20736). Publication et
+    # invalidation doivent etre atomiques et grilleY doit borner chaque acces.
+    if ('publierBruitSiCourant(' not in code or 'synchronized (s)' not in code
+            or 's.w != gw || s.d != gd || s.x0 != gx0 || s.z0 != gz0' not in code
+            or 'data != null && index < data.length ? data[index] : ABSENT' not in code):
+        echecs.append('VERROU 18 : le relief peut encore etre publie avec une ancienne taille '
+                      'et faire echouer la redaction par depassement de tableau')
+
     # ----------------------------------------------------------------- VERROU 12
     # LA COUVERTURE DOIT ETRE PROUVEE, PAS SUPPOSEE.
     # Une carte ne vaut rien si la grille qui la porte saute des chunks en silence.
@@ -675,7 +685,7 @@ def controler(racine='.'):
         print('devscancheck : %d verrou(x) rompu(s)' % len(echecs))
         return 1
 
-    print('devscancheck : 17 verrous tiennent -- outil isole et supprimable, auto-accroche, '
+    print('devscancheck : 18 verrous tiennent -- outil isole et supprimable, auto-accroche, '
           'sonde passive, chunks absents jamais maquilles, grilles alignees sur les chunks, '
           '3 jalons suivis, aucune restauration par le build, un fichier par etape avec '
           'RAPPORT/CARTES/GRILLES reunis et compteur reel, '
@@ -685,7 +695,8 @@ def controler(racine='.'):
           'captures pendant la pose armees a la transition, '
           'mesure finale apres le delai de finition, '
           'sonde de placement jamais prise pour un chantier, '
-          'neige observee par colonne uniquement, spread et peinture hors du scanner')
+          'neige observee par colonne uniquement, spread et peinture hors du scanner, '
+          'relief asynchrone versionne et index de grille bornes')
     return 0
 
 

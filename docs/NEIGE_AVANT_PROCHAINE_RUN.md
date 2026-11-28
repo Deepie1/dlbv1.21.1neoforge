@@ -1,39 +1,43 @@
 # TEST2 — diagnostic terrain et neige avant le prochain run
 
-> **Statut : correctif préparé, pas validé en jeu.** Le dossier `scan-20261127-195953` n'est pas présent dans ce dépôt ni dans Google Drive connecté. Le run signale explicitement zéro dégradé et une seule couche peinte; il faut encore récupérer les rapports bruts pour caractériser les colonnes réellement enneigées et sèches.
+> **Résultat du run du 28 novembre : build et démarrage réussis, résultat terrain négatif.** Le log MCreator fourni montre `:compileJava`, `:runClient`, le chargement du monde et le lancement de Crimson Lake; il rapporte ensuite « aucune neige » et « le sol n'a pas ete repeint ». Ce run prouve que la version précédente compilait et démarrait, mais ne valide pas le spread ni la paint. Le scanner a également échoué pendant la rédaction : `ArrayIndexOutOfBoundsException: Index 92336 out of bounds for length 20736`.
 
-## Cause démontrée pour le sol peint sur une seule couche
+## Correctifs apportés après ce run
 
-Crimson Lake contourne `prepZone` et ne publiait donc jamais `PASTED_OCCUPIED` ni les colonnes de base du NBT. Pourtant, sa finition appelait `dressAndRevegetate(..., postPaste=true)`. Dans `dressAndPlant`, une emprise protégée avec `PASTED_OCCUPIED` vide bascule en `vegetationOnly`; le choix de palette et la peinture de profondeur sont alors sautés. C'est une différence de chemin d'exécution propre au lac, pas un problème de graine ou de variation aléatoire.
+### Spread neige
 
-Le changement collecte maintenant les positions non-air et le Y de base par colonne au fil des blocs effectivement posés, publie ce contexte avant `fixWater` et l'habillage, puis l'efface à la fin. Les écritures de sol continuent de refuser les positions appartenant à la structure, les minerais, l'eau et la glace. Un contrôle statique ciblé vérifie ce chemin; cela ne prouve pas le résultat visuel.
+Le moteur utilisait un cache global de champ indexé par graine. Plusieurs chemins lui passaient la graine du monde, mais `snowCoverHere` pouvait lui passer une graine de variation de plaques. Les appels alternaient donc les clés du cache et pouvaient reconstruire le champ complet à répétition. Le champ est maintenant toujours construit avec la graine du monde; seule la décision déterministe des plaques reçoit la graine de variation. Le pipeline journalise aussi le nombre de chunks sources terrestres et l'état du champ (`ZERO`, `PLEIN` ou continu), pour que le prochain journal distingue « aucune source » d'« échec de pose ».
 
-## Mesures disponibles et limites
+### Paint du sous-sol
 
-Le dernier rapport pré-refonte couvrait l'emprise x=-64..319, z=112..527 et un scan x=-112..367, z=64..575 : 48 blocs (3 chunks) de halo sur chaque bord. À la capture initiale, la section neige avait 176 896 cellules `????` et 68 864 `----`; à la fin, 216 064 `????` et 29 696 `----`, sur 245 760. Elle ne contenait donc **aucune valeur numérique de potentiel**. Les chunks absents ne sont pas des colonnes sèches; ces données ne permettent pas de reconstruire un gradient ni de savoir quelle zone avait réellement une couche de neige.
+Dans `dressAndPlant`, l'appel au peintre partagé était à l'intérieur du bloc qui dépend de la présence d'une carte d'écotone (`curEco`) et était aussi exclu sous un auvent. Il est désormais indépendant de ces deux conditions et de `vegetationOnly`; le peintre garde ses propres protections contre minerais, fluides, glace et positions de structure. Le résumé de fin distingue les appels au peintre des blocs de sous-sol réellement modifiés.
 
-La version préparée du scanner ajoute à chaque étape deux grilles pleine résolution dans le fichier d'étape; la neige est sondée jusqu'à 48 blocs sous le haut de la surface pour inclure le sol sous les arbres, mais pas les cavernes profondes :
+### Rédaction du scan
 
-- `9f` — potentiel continu neige par colonne, lu depuis le snapshot du champ utilisé;
-- `9g` — vraie couche `SNOW` observée dans les 48 blocs autour de la surface de chaque colonne (canopee comprise) : `1000` si trouvée, `0000` sinon, `????` si non mesurée, `----` si le chunk était absent. Les cavernes profondes sont exclues.
+Le fil asynchrone pouvait publier un relief calculé pour l'ancienne emprise après son élargissement. La publication est désormais versionnée et atomique; `grilleY` borne aussi les index et marque `----` au lieu de faire échouer la rédaction si un tableau incohérent subsiste. Le scan demeure passif : 9g est la neige observée, et le spread opérationnel n'est ni déclenché ni visualisé par lui.
 
-Les étapes avant/après la pose permettront de voir où la neige existait réellement, où elle a disparu et si le champ utilisé suit ces observations. Le domaine de trois chunks est la fenêtre scannée; il ne prouve pas l'état au-delà, notamment quand le domain-warp déplace un échantillon.
+## Validation disponible
 
-## Nouveau test à transmettre
+Les contrôles statiques locaux passent : `snowspreadcheck.py` et son auto-test (7/7 mutations attrapées), `devscancheck.py` (18 verrous), `scanviewcheck.py` (13 verrous), `mirrorcheck.py` et `git diff --check`. Ils ne remplacent pas la compilation Java ni un run en jeu. Les changements ci-dessus n'ont pas encore été compilés ou testés dans Minecraft après le run négatif du 28 novembre.
 
-Armer `/dlbscan` avant `/dlbtest crimsonlake`, laisser finir le pipeline et la capture `4_FIN`, puis conserver le dossier complet `dlb_scan/scan-<horodatage>`, le journal MCreator et des captures d'écran avec coordonnées. Transmettre au minimum `00_SOMMAIRE.txt` et tous les fichiers d'étape. Pour produire une vue :
+## Vérification du prochain run
+
+Utiliser un monde copié et conserver le journal complet, surtout les lignes `[DLB-SNOW] champ TerrainPrep`, `dressAndPlant (T304 direct-sections)` et `T285 audit final`. Elles diront si le champ a une source, combien d'appels de paint ont eu lieu et combien de blocs ont changé. Armer `/dlbscan` avant `/dlbtest crimsonlake`, attendre la fin complète du pipeline et de la rédaction, puis garder tout le dossier `dlb_scan/scan-<horodatage>` et les captures avec coordonnées. Vérifier séparément :
+
+- **Neige** : présence de sources non nulles, pose visible et fondu continu; aucune pose sur eau/glace.
+- **Paint** : compteur d'appels supérieur à zéro et changements visibles du profil naturel, sans toucher structure/minerais/supports protégés.
+- **Scanner** : rédaction complète, sans exception de tableau.
+
+Pour produire une vue à partir du rapport :
 
 ```powershell
 python tools\scanview.py "CHEMIN\VERS\dlb_scan\scan-HORODATAGE" -o "CHEMIN\VERS\neige.html"
 ```
 
-## Installation contrôlée
+## Empreinte des sources à installer
 
-1. Fermer MCreator, sauvegarder le workspace et copier le monde de test.
-2. Utiliser `deliverables/METTRE-A-JOUR.ps1` du commit de livraison; il télécharge le colis immuable et vérifie son empreinte. Ne pas lancer le jeu si la copie échoue ou si l'empreinte diffère.
-3. Empreinte attendue pour le colis courant : `0bf4e93a3c86` (226 fichiers Java). Le journal Gradle doit afficher exactement la même empreinte.
-4. Rouvrir MCreator, attendre la fin du build, puis refaire le test ci-dessus.
+Empreinte recalculée après ces correctifs : `10c9a014bb7c` (226 fichiers Java). Le journal Gradle du prochain run devra afficher exactement cette empreinte. Le run fourni précédemment affichait `da62465d0682`, donc il ne contient pas ces derniers changements.
 
 ## Critère de conclusion
 
-Le correctif de peinture ne sera considéré validé qu'après constat en jeu de plusieurs couches (surface puis dirt, profondeur variable 1 à 4) tout en laissant intacte la structure. La neige ne sera considérée corrigée qu'après comparaison de 9f à 9g sur toutes les zones et confirmation visuelle d'un dégradé continu, avec eau/glace sans neige. Ni les bancs statiques ni la compilation ne remplacent cette validation.
+La paint ne sera considérée validée qu'après constat en jeu d'une profondeur variable de 1 à 4 blocs, sans altérer structure, minerais, eau ni glace. Le spread ne sera validé qu'après vérification visuelle d'un fondu continu et absence de neige sur eau/glace. Les bancs statiques, même verts, ne suffisent pas.
